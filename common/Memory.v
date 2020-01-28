@@ -64,6 +64,7 @@ Record mem' : Type := mkmem {
   mem_contents: PMap.t (ZMap.t memval);  (**r [block -> offset -> memval] *)
   mem_access: PMap.t (Z -> perm_kind -> option permission);
                                          (**r [block -> offset -> kind -> option permission] *)
+  mem_compartments: PMap.t compartment;  (**r [block -> compartment] *)
   nextblock: block;
   access_max:
     forall b ofs, perm_order'' (mem_access#b ofs Max) (mem_access#b ofs Cur);
@@ -76,9 +77,9 @@ Record mem' : Type := mkmem {
 Definition mem := mem'.
 
 Lemma mkmem_ext:
- forall cont1 cont2 acc1 acc2 next1 next2 a1 a2 b1 b2 c1 c2,
-  cont1=cont2 -> acc1=acc2 -> next1=next2 ->
-  mkmem cont1 acc1 next1 a1 b1 c1 = mkmem cont2 acc2 next2 a2 b2 c2.
+ forall cont1 cont2 acc1 acc2 comp1 comp2 next1 next2 a1 a2 b1 b2 c1 c2,
+  cont1=cont2 -> acc1=acc2 -> comp1=comp2 -> next1=next2 ->
+  mkmem cont1 acc1 comp1 next1 a1 b1 c1 = mkmem cont2 acc2 comp2 next2 a2 b2 c2.
 Proof.
   intros. subst. f_equal; apply proof_irr.
 Qed.
@@ -344,6 +345,7 @@ Qed.
 Program Definition empty: mem :=
   mkmem (PMap.init (ZMap.init Undef))
         (PMap.init (fun ofs k => None))
+        (PMap.init default_compartment)
         1%positive _ _ _.
 Next Obligation.
   repeat rewrite PMap.gi. red; auto.
@@ -360,13 +362,14 @@ Qed.
   undefined cells.  Note that allocation never fails: we model an
   infinite memory. *)
 
-Program Definition alloc (m: mem) (lo hi: Z) :=
+Program Definition alloc (m: mem) (c: compartment) (lo hi: Z) :=
   (mkmem (PMap.set m.(nextblock)
                    (ZMap.init Undef)
                    m.(mem_contents))
          (PMap.set m.(nextblock)
                    (fun ofs k => if zle lo ofs && zlt ofs hi then Some Freeable else None)
                    m.(mem_access))
+         (PMap.set m.(nextblock) c m.(mem_compartments))
          (Pos.succ m.(nextblock))
          _ _ _,
    m.(nextblock)).
@@ -395,6 +398,7 @@ Program Definition unchecked_free (m: mem) (b: block) (lo hi: Z): mem :=
         (PMap.set b
                 (fun ofs k => if zle lo ofs && zlt ofs hi then None else m.(mem_access)#b ofs k)
                 m.(mem_access))
+        m.(mem_compartments)
         m.(nextblock) _ _ _.
 Next Obligation.
   repeat rewrite PMap.gsspec. destruct (peq b0 b).
@@ -549,6 +553,7 @@ Program Definition store (chunk: memory_chunk) (m: mem) (b: block) (ofs: Z) (v: 
                           (setN (encode_val chunk v) ofs (m.(mem_contents)#b))
                           m.(mem_contents))
                 m.(mem_access)
+                m.(mem_compartments)
                 m.(nextblock)
                 _ _ _)
   else
@@ -579,6 +584,7 @@ Program Definition storebytes (m: mem) (b: block) (ofs: Z) (bytes: list memval) 
     Some (mkmem
              (PMap.set b (setN bytes ofs (m.(mem_contents)#b)) m.(mem_contents))
              m.(mem_access)
+             m.(mem_compartments)
              m.(nextblock)
              _ _ _)
   else
@@ -602,6 +608,7 @@ Program Definition drop_perm (m: mem) (b: block) (lo hi: Z) (p: permission): opt
                 (PMap.set b
                         (fun ofs k => if zle lo ofs && zlt ofs hi then Some p else m.(mem_access)#b ofs k)
                         m.(mem_access))
+                m.(mem_compartments)
                 m.(nextblock) _ _ _)
   else None.
 Next Obligation.
@@ -1670,10 +1677,11 @@ Qed.
 Section ALLOC.
 
 Variable m1: mem.
+Variable c: compartment.
 Variables lo hi: Z.
 Variable m2: mem.
 Variable b: block.
-Hypothesis ALLOC: alloc m1 lo hi = (m2, b).
+Hypothesis ALLOC: alloc m1 c lo hi = (m2, b).
 
 Theorem nextblock_alloc:
   nextblock m2 = Pos.succ (nextblock m1).
@@ -2605,9 +2613,9 @@ Qed.
 (** Preservation of allocations *)
 
 Lemma alloc_right_inj:
-  forall f m1 m2 lo hi b2 m2',
+  forall f m1 m2 c lo hi b2 m2',
   mem_inj f m1 m2 ->
-  alloc m2 lo hi = (m2', b2) ->
+  alloc m2 c lo hi = (m2', b2) ->
   mem_inj f m1 m2'.
 Proof.
   intros. injection H0. intros NEXT MEM.
@@ -2626,9 +2634,9 @@ Proof.
 Qed.
 
 Lemma alloc_left_unmapped_inj:
-  forall f m1 m2 lo hi m1' b1,
+  forall f m1 m2 c lo hi m1' b1,
   mem_inj f m1 m2 ->
-  alloc m1 lo hi = (m1', b1) ->
+  alloc m1 c lo hi = (m1', b1) ->
   f b1 = None ->
   mem_inj f m1' m2.
 Proof.
@@ -2652,9 +2660,9 @@ Definition inj_offset_aligned (delta: Z) (size: Z) : Prop :=
   forall chunk, size_chunk chunk <= size -> (align_chunk chunk | delta).
 
 Lemma alloc_left_mapped_inj:
-  forall f m1 m2 lo hi m1' b1 b2 delta,
+  forall f m1 m2 c lo hi m1' b1 b2 delta,
   mem_inj f m1 m2 ->
-  alloc m1 lo hi = (m1', b1) ->
+  alloc m1 c lo hi = (m1', b1) ->
   valid_block m2 b2 ->
   inj_offset_aligned delta (hi-lo) ->
   (forall ofs k p, lo <= ofs < hi -> perm m2 b2 (ofs + delta) k p) ->
@@ -2986,25 +2994,25 @@ Proof.
 Qed.
 
 Theorem alloc_extends:
-  forall m1 m2 lo1 hi1 b m1' lo2 hi2,
+  forall m1 m2 c lo1 hi1 b m1' lo2 hi2,
   extends m1 m2 ->
-  alloc m1 lo1 hi1 = (m1', b) ->
+  alloc m1 c lo1 hi1 = (m1', b) ->
   lo2 <= lo1 -> hi1 <= hi2 ->
   exists m2',
-     alloc m2 lo2 hi2 = (m2', b)
+     alloc m2 c lo2 hi2 = (m2', b)
   /\ extends m1' m2'.
 Proof.
   intros. inv H.
-  case_eq (alloc m2 lo2 hi2); intros m2' b' ALLOC.
+  case_eq (alloc m2 c lo2 hi2); intros m2' b' ALLOC.
   assert (b' = b).
-    rewrite (alloc_result _ _ _ _ _ H0).
-    rewrite (alloc_result _ _ _ _ _ ALLOC).
+    rewrite (alloc_result _ _ _ _ _ _ H0).
+    rewrite (alloc_result _ _ _ _ _ _ ALLOC).
     auto.
   subst b'.
   exists m2'; split; auto.
   constructor.
-  rewrite (nextblock_alloc _ _ _ _ _ H0).
-  rewrite (nextblock_alloc _ _ _ _ _ ALLOC).
+  rewrite (nextblock_alloc _ _ _ _ _ _ H0).
+  rewrite (nextblock_alloc _ _ _ _ _ _ ALLOC).
   congruence.
   eapply alloc_left_mapped_inj with (m1 := m1) (m2 := m2') (b2 := b) (delta := 0); eauto.
   eapply alloc_right_inj; eauto.
@@ -3015,7 +3023,7 @@ Proof.
   eapply perm_alloc_2; eauto.
   omega.
   intros. eapply perm_alloc_inv in H; eauto.
-  generalize (perm_alloc_inv _ _ _ _ _ H0 b0 ofs Max Nonempty); intros PERM.
+  generalize (perm_alloc_inv _ _ _ _ _ _ H0 b0 ofs Max Nonempty); intros PERM.
   destruct (eq_block b0 b).
   subst b0.
   assert (EITHER: lo1 <= ofs < hi1 \/ ~(lo1 <= ofs < hi1)) by omega.
@@ -3675,9 +3683,9 @@ Qed.
 (* Preservation of allocations *)
 
 Theorem alloc_right_inject:
-  forall f m1 m2 lo hi b2 m2',
+  forall f m1 m2 c lo hi b2 m2',
   inject f m1 m2 ->
-  alloc m2 lo hi = (m2', b2) ->
+  alloc m2 c lo hi = (m2', b2) ->
   inject f m1 m2'.
 Proof.
   intros. injection H0. intros NEXT MEM.
@@ -3699,9 +3707,9 @@ Proof.
 Qed.
 
 Theorem alloc_left_unmapped_inject:
-  forall f m1 m2 lo hi m1' b1,
+  forall f m1 m2 c lo hi m1' b1,
   inject f m1 m2 ->
-  alloc m1 lo hi = (m1', b1) ->
+  alloc m1 c lo hi = (m1', b1) ->
   exists f',
      inject f' m1' m2
   /\ inject_incr f f'
@@ -3752,9 +3760,9 @@ Proof.
 Qed.
 
 Theorem alloc_left_mapped_inject:
-  forall f m1 m2 lo hi m1' b1 b2 delta,
+  forall f m1 m2 c lo hi m1' b1 b2 delta,
   inject f m1 m2 ->
-  alloc m1 lo hi = (m1', b1) ->
+  alloc m1 c lo hi = (m1', b1) ->
   valid_block m2 b2 ->
   0 <= delta <= Ptrofs.max_unsigned ->
   (forall ofs k p, perm m2 b2 ofs k p -> delta = 0 \/ 0 <= ofs < Ptrofs.max_unsigned) ->
@@ -3780,16 +3788,16 @@ Proof.
     inversion mi_inj0; constructor; eauto with mem.
     unfold f'; intros. destruct (eq_block b0 b1).
       inversion H8. subst b0 b3 delta0.
-      elim (fresh_block_alloc _ _ _ _ _ H0). eauto with mem.
+      elim (fresh_block_alloc _ _ _ _ _ _ H0). eauto with mem.
       eauto.
     unfold f'; intros. destruct (eq_block b0 b1).
       inversion H8. subst b0 b3 delta0.
-      elim (fresh_block_alloc _ _ _ _ _ H0).
+      elim (fresh_block_alloc _ _ _ _ _ _ H0).
       eapply perm_valid_block with (ofs := ofs). apply H9. generalize (size_chunk_pos chunk); omega.
       eauto.
     unfold f'; intros. destruct (eq_block b0 b1).
       inversion H8. subst b0 b3 delta0.
-      elim (fresh_block_alloc _ _ _ _ _ H0). eauto with mem.
+      elim (fresh_block_alloc _ _ _ _ _ _ H0). eauto with mem.
       apply memval_inject_incr with f; auto.
   exists f'. split. constructor.
 (* inj *)
@@ -3842,19 +3850,19 @@ Proof.
 Qed.
 
 Theorem alloc_parallel_inject:
-  forall f m1 m2 lo1 hi1 m1' b1 lo2 hi2,
+  forall f m1 m2 c lo1 hi1 m1' b1 lo2 hi2,
   inject f m1 m2 ->
-  alloc m1 lo1 hi1 = (m1', b1) ->
+  alloc m1 c lo1 hi1 = (m1', b1) ->
   lo2 <= lo1 -> hi1 <= hi2 ->
   exists f', exists m2', exists b2,
-  alloc m2 lo2 hi2 = (m2', b2)
+  alloc m2 c lo2 hi2 = (m2', b2)
   /\ inject f' m1' m2'
   /\ inject_incr f f'
   /\ f' b1 = Some(b2, 0)
   /\ (forall b, b <> b1 -> f' b = f b).
 Proof.
   intros.
-  case_eq (alloc m2 lo2 hi2). intros m2' b2 ALLOC.
+  case_eq (alloc m2 c lo2 hi2). intros m2' b2 ALLOC.
   exploit alloc_left_mapped_inject.
   eapply alloc_right_inject; eauto.
   eauto.
@@ -4222,8 +4230,8 @@ Proof.
 Qed.
 
 Theorem alloc_inject_neutral:
-  forall thr m lo hi b m',
-  alloc m lo hi = (m', b) ->
+  forall thr m c lo hi b m',
+  alloc m c lo hi = (m', b) ->
   inject_neutral thr m ->
   Plt (nextblock m) thr ->
   inject_neutral thr m'.
@@ -4236,7 +4244,7 @@ Proof.
   apply perm_implies with Freeable; auto with mem.
   eapply perm_alloc_2; eauto. omega.
   unfold flat_inj. apply pred_dec_true.
-  rewrite (alloc_result _ _ _ _ _ H). auto.
+  rewrite (alloc_result _ _ _ _ _ _ H). auto.
 Qed.
 
 Theorem store_inject_neutral:
@@ -4421,12 +4429,12 @@ Proof.
 Qed.
 
 Lemma alloc_unchanged_on:
-  forall m lo hi m' b,
-  alloc m lo hi = (m', b) ->
+  forall m c lo hi m' b,
+  alloc m c lo hi = (m', b) ->
   unchanged_on m m'.
 Proof.
   intros; constructor; intros.
-- rewrite (nextblock_alloc _ _ _ _ _ H). apply Ple_succ.
+- rewrite (nextblock_alloc _ _ _ _ _ _ H). apply Ple_succ.
 - split; intros.
   eapply perm_alloc_1; eauto.
   eapply perm_alloc_4; eauto.

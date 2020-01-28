@@ -658,12 +658,12 @@ Definition perm_globvar (gv: globvar V) : permission :=
 Definition alloc_global (m: mem) (idg: ident * globdef F V): option mem :=
   match idg with
   | (id, Gfun f) =>
-      let (m1, b) := Mem.alloc m 0 1 in
+      let (m1, b) := Mem.alloc m default_compartment 0 1 in
       Mem.drop_perm m1 b 0 1 Nonempty
   | (id, Gvar v) =>
       let init := v.(gvar_init) in
       let sz := init_data_list_size init in
-      let (m1, b) := Mem.alloc m 0 sz in
+      let (m1, b) := Mem.alloc m default_compartment 0 sz in
       match store_zeros m1 b 0 sz with
       | None => None
       | Some m2 =>
@@ -727,12 +727,12 @@ Proof.
   unfold alloc_global. intros.
   destruct g as [id [f|v]].
   (* function *)
-  destruct (Mem.alloc m 0 1) as [m1 b] eqn:?.
+  destruct (Mem.alloc m default_compartment 0 1) as [m1 b] eqn:?.
   erewrite Mem.nextblock_drop; eauto. erewrite Mem.nextblock_alloc; eauto.
   (* variable *)
   set (init := gvar_init v) in *.
   set (sz := init_data_list_size init) in *.
-  destruct (Mem.alloc m 0 sz) as [m1 b] eqn:?.
+  destruct (Mem.alloc m default_compartment 0 sz) as [m1 b] eqn:?.
   destruct (store_zeros m1 b 0 sz) as [m2|] eqn:?; try discriminate.
   destruct (store_init_data_list m2 b 0 init) as [m3|] eqn:?; try discriminate.
   erewrite Mem.nextblock_drop; eauto.
@@ -801,7 +801,7 @@ Remark alloc_global_perm:
 Proof.
   intros. destruct idg as [id [f|v]]; simpl in H.
   (* function *)
-  destruct (Mem.alloc m 0 1) as [m1 b] eqn:?.
+  destruct (Mem.alloc m default_compartment 0 1) as [m1 b] eqn:?.
   assert (b' <> b). apply Mem.valid_not_valid_diff with m; eauto with mem.
   split; intros.
   eapply Mem.perm_drop_3; eauto. eapply Mem.perm_alloc_1; eauto.
@@ -809,7 +809,7 @@ Proof.
   (* variable *)
   set (init := gvar_init v) in *.
   set (sz := init_data_list_size init) in *.
-  destruct (Mem.alloc m 0 sz) as [m1 b] eqn:?.
+  destruct (Mem.alloc m default_compartment 0 sz) as [m1 b] eqn:?.
   destruct (store_zeros m1 b 0 sz) as [m2|] eqn:?; try discriminate.
   destruct (store_init_data_list m2 b 0 init) as [m3|] eqn:?; try discriminate.
   assert (b' <> b). apply Mem.valid_not_valid_diff with m; eauto with mem.
@@ -1113,7 +1113,7 @@ Remark alloc_global_unchanged:
 Proof.
   intros. destruct g as [f|v]; simpl in H.
 - (* function *)
-  destruct (Mem.alloc m 0 1) as [m1 b] eqn:?.
+  destruct (Mem.alloc m default_compartment 0 1) as [m1 b] eqn:?.
   set (Q := fun b' (ofs: Z) => b' <> b).
   apply Mem.unchanged_on_implies with Q.
   apply Mem.unchanged_on_trans with m1.
@@ -1123,7 +1123,7 @@ Proof.
 - (* variable *)
   set (init := gvar_init v) in *.
   set (sz := init_data_list_size init) in *.
-  destruct (Mem.alloc m 0 sz) as [m1 b] eqn:?.
+  destruct (Mem.alloc m default_compartment 0 sz) as [m1 b] eqn:?.
   destruct (store_zeros m1 b 0 sz) as [m2|] eqn:?; try discriminate.
   destruct (store_init_data_list m2 b 0 init) as [m3|] eqn:?; try discriminate.
   set (Q := fun b' (ofs: Z) => b' <> b).
@@ -1192,7 +1192,7 @@ Proof.
   red; intros. unfold find_def in H2; simpl in H2.
   rewrite PTree.gsspec in H2. destruct (peq b (genv_next g)).
 + inv H2. destruct gd0 as [f|v]; simpl in H0.
-* destruct (Mem.alloc m 0 1) as [m1 b] eqn:ALLOC.
+* destruct (Mem.alloc m default_compartment 0 1) as [m1 b] eqn:ALLOC.
   exploit Mem.alloc_result; eauto. intros RES.
   rewrite H, <- RES. split.
   eapply Mem.perm_drop_1; eauto. omega.
@@ -1202,7 +1202,7 @@ Proof.
   split. omega. inv ORD; auto.
 * set (init := gvar_init v) in *.
   set (sz := init_data_list_size init) in *.
-  destruct (Mem.alloc m 0 sz) as [m1 b] eqn:?.
+  destruct (Mem.alloc m default_compartment 0 sz) as [m1 b] eqn:?.
   destruct (store_zeros m1 b 0 sz) as [m2|] eqn:?; try discriminate.
   destruct (store_init_data_list m2 b 0 init) as [m3|] eqn:?; try discriminate.
   exploit Mem.alloc_result; eauto. intro RES.
@@ -1404,17 +1404,17 @@ Lemma alloc_global_neutral:
 Proof.
   intros. destruct idg as [id [f|v]]; simpl in H.
   (* function *)
-  destruct (Mem.alloc m 0 1) as [m1 b] eqn:?.
-  assert (Plt b thr). rewrite (Mem.alloc_result _ _ _ _ _ Heqp). auto.
+  destruct (Mem.alloc m default_compartment 0 1) as [m1 b] eqn:?.
+  assert (Plt b thr). rewrite (Mem.alloc_result _ _ _ _ _ _ Heqp). auto.
   eapply Mem.drop_inject_neutral; eauto.
   eapply Mem.alloc_inject_neutral; eauto.
   (* variable *)
   set (init := gvar_init v) in *.
   set (sz := init_data_list_size init) in *.
-  destruct (Mem.alloc m 0 sz) as [m1 b] eqn:?.
+  destruct (Mem.alloc m default_compartment 0 sz) as [m1 b] eqn:?.
   destruct (store_zeros m1 b 0 sz) as [m2|] eqn:?; try discriminate.
   destruct (store_init_data_list ge m2 b 0 init) as [m3|] eqn:?; try discriminate.
-  assert (Plt b thr). rewrite (Mem.alloc_result _ _ _ _ _ Heqp). auto.
+  assert (Plt b thr). rewrite (Mem.alloc_result _ _ _ _ _ _ Heqp). auto.
   eapply Mem.drop_inject_neutral; eauto.
   eapply store_init_data_list_neutral with (m := m2) (b := b); eauto.
   eapply store_zeros_neutral with (m := m1); eauto.
@@ -1545,7 +1545,7 @@ Proof.
   destruct H0.
 + subst idg1; simpl in A.
   set (il := gvar_init v) in *. set (sz := init_data_list_size il) in *.
-  destruct (Mem.alloc m 0 sz) as [m1 b].
+  destruct (Mem.alloc m default_compartment 0 sz) as [m1 b].
   destruct (store_zeros m1 b 0 sz) as [m2|]; try discriminate.
   destruct (store_init_data_list ge m2 b 0 il) as [m3|] eqn:B; try discriminate.
   split. eapply store_init_data_list_aligned; eauto. intros; eapply store_init_data_list_free_idents; eauto.
@@ -1620,13 +1620,13 @@ Lemma alloc_global_exists:
   exists m', alloc_global ge m idg = Some m'.
 Proof.
   intros m [id [f|v]]; intros; simpl.
-- destruct (Mem.alloc m 0 1) as [m1 b] eqn:ALLOC.
+- destruct (Mem.alloc m default_compartment 0 1) as [m1 b] eqn:ALLOC.
   destruct (Mem.range_perm_drop_2 m1 b 0 1 Nonempty) as [m2 DROP].
   red; intros; eapply Mem.perm_alloc_2; eauto.
   exists m2; auto.
 - destruct H as [P Q].
   set (sz := init_data_list_size (gvar_init v)).
-  destruct (Mem.alloc m 0 sz) as [m1 b] eqn:ALLOC.
+  destruct (Mem.alloc m default_compartment 0 sz) as [m1 b] eqn:ALLOC.
   assert (P1: Mem.range_perm m1 b 0 sz Cur Freeable) by (red; intros; eapply Mem.perm_alloc_2; eauto).
   destruct (@store_zeros_exists m1 b 0 sz) as [m2 ZEROS].
   red; intros. apply Mem.perm_implies with Freeable; auto with mem.
@@ -1822,7 +1822,7 @@ Proof.
   - auto.
   - inv H; simpl in *.
     set (sz := init_data_list_size init) in *.
-    destruct (Mem.alloc m 0 sz) as [m2 b] eqn:?.
+    destruct (Mem.alloc m default_compartment 0 sz) as [m2 b] eqn:?.
     destruct (store_zeros m2 b 0 sz) as [m3|] eqn:?; try discriminate.
     destruct (store_init_data_list (globalenv p) m3 b 0 init) as [m4|] eqn:?; try discriminate.
     erewrite store_init_data_list_match; eauto.

@@ -3798,8 +3798,8 @@ Proof.
 Qed.
 
 Lemma romatch_alloc:
-  forall m b lo hi m' rm,
-  Mem.alloc m lo hi = (m', b) ->
+  forall m c b lo hi m' rm,
+  Mem.alloc m c lo hi = (m', b) ->
   bc_below bc (Mem.nextblock m) ->
   romatch m rm ->
   romatch m' rm.

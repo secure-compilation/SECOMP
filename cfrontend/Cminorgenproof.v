@@ -293,9 +293,9 @@ Qed.
 (** [match_env] and allocations *)
 
 Lemma match_env_alloc:
-  forall f1 id cenv e sp lo m1 sz m2 b ofs f2,
+  forall f1 id cenv e sp lo m1 c sz m2 b ofs f2,
   match_env f1 (PTree.remove id cenv) e sp lo (Mem.nextblock m1) ->
-  Mem.alloc m1 0 sz = (m2, b) ->
+  Mem.alloc m1 c 0 sz = (m2, b) ->
   cenv!id = Some ofs ->
   inject_incr f1 f2 ->
   f2 b = Some(sp, ofs) ->
@@ -669,9 +669,9 @@ Qed.
 (** [match_callstack] and allocations *)
 
 Lemma match_callstack_alloc_right:
-  forall f m tm cs tf tm' sp le te cenv,
+  forall f m tm c cs tf tm' sp le te cenv,
   match_callstack f m tm cs (Mem.nextblock m) (Mem.nextblock tm) ->
-  Mem.alloc tm 0 tf.(fn_stackspace) = (tm', sp) ->
+  Mem.alloc tm c 0 tf.(fn_stackspace) = (tm', sp) ->
   Mem.inject f m tm ->
   match_temps f le te ->
   (forall id, cenv!id = None) ->
@@ -700,11 +700,11 @@ Proof.
 Qed.
 
 Lemma match_callstack_alloc_left:
-  forall f1 m1 tm id cenv tf e le te sp lo cs sz m2 b f2 ofs,
+  forall f1 m1 tm c id cenv tf e le te sp lo cs sz m2 b f2 ofs,
   match_callstack f1 m1 tm
     (Frame (PTree.remove id cenv) tf e le te sp lo (Mem.nextblock m1) :: cs)
     (Mem.nextblock m1) (Mem.nextblock tm) ->
-  Mem.alloc m1 0 sz = (m2, b) ->
+  Mem.alloc m1 c 0 sz = (m2, b) ->
   cenv!id = Some ofs ->
   inject_incr f1 f2 ->
   f2 b = Some(sp, ofs) ->
@@ -852,8 +852,8 @@ Proof.
 Qed.
 
 Lemma match_callstack_alloc_variables:
-  forall tm1 sp tm2 m1 vars e m2 cenv f1 cs fn le te,
-  Mem.alloc tm1 0 (fn_stackspace fn) = (tm2, sp) ->
+  forall tm1 c sp tm2 m1 vars e m2 cenv f1 cs fn le te,
+  Mem.alloc tm1 c 0 (fn_stackspace fn) = (tm2, sp) ->
   fn_stackspace fn <= Ptrofs.max_unsigned ->
   alloc_variables empty_env m1 vars e m2 ->
   list_norepet (map fst vars) ->
@@ -1223,7 +1223,7 @@ Qed.
 (** The main result in this section. *)
 
 Theorem match_callstack_function_entry:
-  forall fn cenv tf m e m' tm tm' sp f cs args targs le,
+  forall fn cenv tf m e m' tm c tm' sp f cs args targs le,
   build_compilenv fn = (cenv, tf.(fn_stackspace)) ->
   tf.(fn_stackspace) <= Ptrofs.max_unsigned ->
   list_norepet (map fst (Csharpminor.fn_vars fn)) ->
@@ -1232,7 +1232,7 @@ Theorem match_callstack_function_entry:
   alloc_variables Csharpminor.empty_env m (Csharpminor.fn_vars fn) e m' ->
   bind_parameters (Csharpminor.fn_params fn) args (create_undef_temps fn.(fn_temps)) = Some le ->
   Val.inject_list f args targs ->
-  Mem.alloc tm 0 tf.(fn_stackspace) = (tm', sp) ->
+  Mem.alloc tm c 0 tf.(fn_stackspace) = (tm', sp) ->
   match_callstack f m tm cs (Mem.nextblock m) (Mem.nextblock tm) ->
   Mem.inject f m tm ->
   let te := set_locals (Csharpminor.fn_temps fn) (set_params targs (Csharpminor.fn_params fn)) in
@@ -2170,7 +2170,7 @@ Opaque PTree.set.
                         (Csharpminor.fn_temps f)
                         sz
                         x0) in *.
-  caseEq (Mem.alloc tm 0 (fn_stackspace tf)). intros tm' sp ALLOC'.
+  caseEq (Mem.alloc tm default_compartment 0 (fn_stackspace tf)). intros tm' sp ALLOC'.
   exploit match_callstack_function_entry; eauto. simpl; eauto. simpl; auto.
   intros [f2 [MCS2 MINJ2]].
   left; econstructor; split.

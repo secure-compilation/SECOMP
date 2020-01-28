@@ -285,9 +285,9 @@ Proof.
 Qed.
 
 Lemma range_private_alloc_left:
-  forall F m m' sp' base hi sz m1 sp F1,
+  forall F m c m' sp' base hi sz m1 sp F1,
   range_private F m m' sp' base hi ->
-  Mem.alloc m 0 sz = (m1, sp) ->
+  Mem.alloc m c 0 sz = (m1, sp) ->
   F1 sp = Some(sp', base) ->
   (forall b, b <> sp -> F1 b = F b) ->
   range_private F1 m1 m' sp' (base + Z.max sz 0) hi.
@@ -696,10 +696,10 @@ Qed.
 (** Preservation by an allocation *)
 
 Lemma match_stacks_inside_alloc_left:
-  forall F m m' stk stk' f' ctx sp' rs',
+  forall F m c m' stk stk' f' ctx sp' rs',
   match_stacks_inside F m m' stk stk' f' ctx sp' rs' ->
   forall sz m1 b F1 delta,
-  Mem.alloc m 0 sz = (m1, b) ->
+  Mem.alloc m c 0 sz = (m1, b) ->
   inject_incr F F1 ->
   F1 b = Some(sp', delta) ->
   (forall b1, b1 <> b -> F1 b1 = F b1) ->

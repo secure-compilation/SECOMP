@@ -460,8 +460,8 @@ End NOSTACK.
 Ltac splitall := repeat (match goal with |- _ /\ _ => split end).
 
 Theorem allocate_stack:
-  forall m sz m' sp bc ge rm am,
-  Mem.alloc m 0 sz = (m', sp) ->
+  forall m c sz m' sp bc ge rm am,
+  Mem.alloc m c 0 sz = (m', sp) ->
   genv_match bc ge ->
   romatch bc m rm ->
   mmatch bc m am ->
@@ -1739,7 +1739,7 @@ Lemma alloc_global_match:
   initial_mem_match bc m' (Genv.add_global g idg).
 Proof.
   intros; red; intros. destruct idg as [id1 [fd | gv]]; simpl in *.
-- destruct (Mem.alloc m 0 1) as [m1 b1] eqn:ALLOC.
+- destruct (Mem.alloc m default_compartment 0 1) as [m1 b1] eqn:ALLOC.
   unfold Genv.find_symbol in H2; simpl in H2.
   unfold Genv.find_var_info, Genv.find_def in H3; simpl in H3.
   rewrite PTree.gsspec in H2. destruct (peq id id1).
@@ -1754,7 +1754,7 @@ Proof.
   eapply Mem.loadbytes_drop; eauto.
   eapply Mem.loadbytes_alloc_unchanged; eauto.
 - set (sz := init_data_list_size (gvar_init gv)) in *.
-  destruct (Mem.alloc m 0 sz) as [m1 b1] eqn:ALLOC.
+  destruct (Mem.alloc m default_compartment 0 sz) as [m1 b1] eqn:ALLOC.
   destruct (store_zeros m1 b1 0 sz) as [m2 | ] eqn:STZ; try discriminate.
   destruct (Genv.store_init_data_list ge m2 b1 0 (gvar_init gv)) as [m3 | ] eqn:SIDL; try discriminate.
   unfold Genv.find_symbol in H2; simpl in H2.
