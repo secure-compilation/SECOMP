@@ -156,6 +156,11 @@ Fixpoint free_list (m: mem) (l: list (block * Z * Z)) {struct l}: option mem :=
       end
   end.
 
+(** [block_compartment m b] returns the compartment associated with the block
+  [b] in the memory [m], or [None] if [b] is not allocated in [m]. *)
+
+Parameter block_compartment: forall (m: mem) (b: block), option compartment.
+
 (** [drop_perm m b lo hi p] sets the permissions of the byte range
     [(b, lo) ... (b, hi - 1)] to [p].  These bytes must have [Freeable] permissions
     in the initial memory state [m].

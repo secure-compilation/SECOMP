@@ -64,7 +64,7 @@ Record mem' : Type := mkmem {
   mem_contents: PMap.t (ZMap.t memval);  (**r [block -> offset -> memval] *)
   mem_access: PMap.t (Z -> perm_kind -> option permission);
                                          (**r [block -> offset -> kind -> option permission] *)
-  mem_compartments: PMap.t compartment;  (**r [block -> compartment] *)
+  mem_compartments: PTree.t compartment; (**r [block -> compartment] *)
   nextblock: block;
   access_max:
     forall b ofs, perm_order'' (mem_access#b ofs Max) (mem_access#b ofs Cur);
@@ -345,7 +345,7 @@ Qed.
 Program Definition empty: mem :=
   mkmem (PMap.init (ZMap.init Undef))
         (PMap.init (fun ofs k => None))
-        (PMap.init default_compartment)
+        (PTree.empty _)
         1%positive _ _ _.
 Next Obligation.
   repeat rewrite PMap.gi. red; auto.
@@ -369,7 +369,7 @@ Program Definition alloc (m: mem) (c: compartment) (lo hi: Z) :=
          (PMap.set m.(nextblock)
                    (fun ofs k => if zle lo ofs && zlt ofs hi then Some Freeable else None)
                    m.(mem_access))
-         (PMap.set m.(nextblock) c m.(mem_compartments))
+         (PTree.set m.(nextblock) c m.(mem_compartments))
          (Pos.succ m.(nextblock))
          _ _ _,
    m.(nextblock)).
@@ -596,6 +596,12 @@ Next Obligation.
   rewrite setN_default. apply contents_default.
   apply contents_default.
 Qed.
+
+(** [block_compartment m b] returns the compartment associated with the block
+  [b] in the memory [m], or [None] if [b] is not allocated in [m]. *)
+
+Definition block_compartment (m: mem) (b: block) :=
+  PTree.get b m.(mem_compartments).
 
 (** [drop_perm m b lo hi p] sets the max permissions of the byte range
     [(b, lo) ... (b, hi - 1)] to [p].  These bytes must have current permissions
