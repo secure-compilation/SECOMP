@@ -387,9 +387,9 @@ Axiom loadbytes_split:
 
 (** ** Properties of [store]. *)
 
-(** [store] preserves block validity, permissions, access validity, and bounds.
-  Moreover, a [store] succeeds if and only if the corresponding access
-  is valid for writing. *)
+(** [store] preserves block validity, permissions, access validity,
+  compartments, and bounds.  Moreover, a [store] succeeds if and only if the
+  corresponding access is valid for writing. *)
 
 Axiom nextblock_store:
   forall chunk m1 b ofs v m2, store chunk m1 b ofs v = Some m2 ->
@@ -423,6 +423,11 @@ Axiom store_valid_access_2:
 Axiom store_valid_access_3:
   forall chunk m1 b ofs v m2, store chunk m1 b ofs v = Some m2 ->
   valid_access m1 chunk b ofs Writable.
+
+Axiom store_block_compartment:
+  forall chunk m1 b ofs v m2, store chunk m1 b ofs v = Some m2 ->
+  forall b',
+  block_compartment m2 b' = block_compartment m1 b'.
 
 (** Load-store properties. *)
 

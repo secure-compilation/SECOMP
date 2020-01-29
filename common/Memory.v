@@ -601,7 +601,7 @@ Qed.
   [b] in the memory [m], or [None] if [b] is not allocated in [m]. *)
 
 Definition block_compartment (m: mem) (b: block) :=
-  PTree.get b m.(mem_compartments).
+  m.(mem_compartments)!b.
 
 (** [drop_perm m b lo hi p] sets the max permissions of the byte range
     [(b, lo) ... (b, hi - 1)] to [p].  These bytes must have current permissions
@@ -1054,6 +1054,16 @@ Proof.
 Qed.
 
 Local Hint Resolve store_valid_access_1 store_valid_access_2 store_valid_access_3: mem.
+
+Theorem store_block_compartment:
+  forall b',
+  block_compartment m2 b' = block_compartment m1 b'.
+Proof.
+  unfold store in STORE.
+  destruct valid_access_dec; try easy.
+  injection STORE.
+  now intros <- b'.
+Qed.
 
 Theorem load_store_similar:
   forall chunk',
