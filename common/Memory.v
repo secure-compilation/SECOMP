@@ -71,15 +71,19 @@ Record mem' : Type := mkmem {
   nextblock_noaccess:
     forall b ofs k, ~(Plt b nextblock) -> mem_access#b ofs k = None;
   contents_default:
-    forall b, fst mem_contents#b = Undef
+    forall b, fst mem_contents#b = Undef;
+  nextblock_compartments:
+    forall b, ~Plt b nextblock -> mem_compartments!b = None;
 }.
 
 Definition mem := mem'.
 
 Lemma mkmem_ext:
- forall cont1 cont2 acc1 acc2 comp1 comp2 next1 next2 a1 a2 b1 b2 c1 c2,
+ forall cont1 cont2 acc1 acc2 comp1 comp2 next1 next2,
+ forall a1 a2 b1 b2 c1 c2 d1 d2,
   cont1=cont2 -> acc1=acc2 -> comp1=comp2 -> next1=next2 ->
-  mkmem cont1 acc1 comp1 next1 a1 b1 c1 = mkmem cont2 acc2 comp2 next2 a2 b2 c2.
+  mkmem cont1 acc1 comp1 next1 a1 b1 c1 d1 =
+  mkmem cont2 acc2 comp2 next2 a2 b2 c2 d2.
 Proof.
   intros. subst. f_equal; apply proof_irr.
 Qed.
@@ -98,6 +102,20 @@ Proof.
 Qed.
 
 Local Hint Resolve valid_not_valid_diff: mem.
+
+(** [block_compartment m b] returns the compartment associated with the block
+  [b] in the memory [m], or [None] if [b] is not allocated in [m]. *)
+
+Definition block_compartment (m: mem) (b: block) :=
+  m.(mem_compartments)!b.
+
+Theorem block_compartment_valid_block:
+  forall m b,
+  ~valid_block m b ->
+  block_compartment m b = None.
+Proof.
+  apply nextblock_compartments.
+Qed.
 
 (** Permissions *)
 
@@ -346,7 +364,7 @@ Program Definition empty: mem :=
   mkmem (PMap.init (ZMap.init Undef))
         (PMap.init (fun ofs k => None))
         (PTree.empty _)
-        1%positive _ _ _.
+        1%positive _ _ _ _.
 Next Obligation.
   repeat rewrite PMap.gi. red; auto.
 Qed.
@@ -355,6 +373,9 @@ Next Obligation.
 Qed.
 Next Obligation.
   rewrite PMap.gi. auto.
+Qed.
+Next Obligation.
+  now rewrite PTree.gempty.
 Qed.
 
 (** Allocation of a fresh block with the given bounds.  Return an updated
@@ -371,7 +392,7 @@ Program Definition alloc (m: mem) (c: compartment) (lo hi: Z) :=
                    m.(mem_access))
          (PTree.set m.(nextblock) c m.(mem_compartments))
          (Pos.succ m.(nextblock))
-         _ _ _,
+         _ _ _ _,
    m.(nextblock)).
 Next Obligation.
   repeat rewrite PMap.gsspec. destruct (peq b (nextblock m)).
@@ -387,6 +408,14 @@ Qed.
 Next Obligation.
   rewrite PMap.gsspec. destruct (peq b (nextblock m)). auto. apply contents_default.
 Qed.
+Next Obligation.
+  rewrite PTree.gsspec.
+  destruct (peq b (nextblock m)) as [->|ne].
+- exfalso. apply H. apply Plt_succ.
+- apply nextblock_compartments.
+  contradict H.
+  now apply Plt_trans_succ.
+Qed.
 
 (** Freeing a block between the given bounds.
   Return the updated memory state where the given range of the given block
@@ -399,7 +428,7 @@ Program Definition unchecked_free (m: mem) (b: block) (lo hi: Z): mem :=
                 (fun ofs k => if zle lo ofs && zlt ofs hi then None else m.(mem_access)#b ofs k)
                 m.(mem_access))
         m.(mem_compartments)
-        m.(nextblock) _ _ _.
+        m.(nextblock) _ _ _ _.
 Next Obligation.
   repeat rewrite PMap.gsspec. destruct (peq b0 b).
   destruct (zle lo ofs && zlt ofs hi). red; auto. apply access_max.
@@ -412,6 +441,9 @@ Next Obligation.
 Qed.
 Next Obligation.
   apply contents_default.
+Qed.
+Next Obligation.
+  eapply nextblock_compartments; eauto.
 Qed.
 
 Definition free (m: mem) (b: block) (lo hi: Z): option mem :=
@@ -555,7 +587,7 @@ Program Definition store (chunk: memory_chunk) (m: mem) (b: block) (ofs: Z) (v: 
                 m.(mem_access)
                 m.(mem_compartments)
                 m.(nextblock)
-                _ _ _)
+                _ _ _ _)
   else
     None.
 Next Obligation. apply access_max. Qed.
@@ -564,6 +596,9 @@ Next Obligation.
   rewrite PMap.gsspec. destruct (peq b0 b).
   rewrite setN_default. apply contents_default.
   apply contents_default.
+Qed.
+Next Obligation.
+  eapply nextblock_compartments. eauto.
 Qed.
 
 (** [storev chunk m addr v] is similar, but the address and offset are given
@@ -586,7 +621,7 @@ Program Definition storebytes (m: mem) (b: block) (ofs: Z) (bytes: list memval) 
              m.(mem_access)
              m.(mem_compartments)
              m.(nextblock)
-             _ _ _)
+             _ _ _ _)
   else
     None.
 Next Obligation. apply access_max. Qed.
@@ -596,12 +631,9 @@ Next Obligation.
   rewrite setN_default. apply contents_default.
   apply contents_default.
 Qed.
-
-(** [block_compartment m b] returns the compartment associated with the block
-  [b] in the memory [m], or [None] if [b] is not allocated in [m]. *)
-
-Definition block_compartment (m: mem) (b: block) :=
-  m.(mem_compartments)!b.
+Next Obligation.
+  now apply nextblock_compartments.
+Qed.
 
 (** [drop_perm m b lo hi p] sets the max permissions of the byte range
     [(b, lo) ... (b, hi - 1)] to [p].  These bytes must have current permissions
@@ -615,7 +647,7 @@ Program Definition drop_perm (m: mem) (b: block) (lo hi: Z) (p: permission): opt
                         (fun ofs k => if zle lo ofs && zlt ofs hi then Some p else m.(mem_access)#b ofs k)
                         m.(mem_access))
                 m.(mem_compartments)
-                m.(nextblock) _ _ _)
+                m.(nextblock) _ _ _ _)
   else None.
 Next Obligation.
   repeat rewrite PMap.gsspec. destruct (peq b0 b). subst b0.
@@ -632,6 +664,9 @@ Next Obligation.
 Qed.
 Next Obligation.
   apply contents_default.
+Qed.
+Next Obligation.
+  now apply nextblock_compartments.
 Qed.
 
 (** * Properties of the memory operations *)

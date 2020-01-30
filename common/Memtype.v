@@ -156,11 +156,6 @@ Fixpoint free_list (m: mem) (l: list (block * Z * Z)) {struct l}: option mem :=
       end
   end.
 
-(** [block_compartment m b] returns the compartment associated with the block
-  [b] in the memory [m], or [None] if [b] is not allocated in [m]. *)
-
-Parameter block_compartment: forall (m: mem) (b: block), option compartment.
-
 (** [drop_perm m b lo hi p] sets the permissions of the byte range
     [(b, lo) ... (b, hi - 1)] to [p].  These bytes must have [Freeable] permissions
     in the initial memory state [m].
@@ -168,7 +163,7 @@ Parameter block_compartment: forall (m: mem) (b: block), option compartment.
 
 Parameter drop_perm: forall (m: mem) (b: block) (lo hi: Z) (p: permission), option mem.
 
-(** * Permissions, block validity, access validity, and bounds *)
+(** * Permissions, block validity, access validity, compartments, and bounds *)
 
 (** The next block of a memory state is the block identifier for the
   next allocation.  It increases by one at each allocation.
@@ -184,6 +179,16 @@ Definition valid_block (m: mem) (b: block) := Plt b (nextblock m).
 
 Axiom valid_not_valid_diff:
   forall m b b', valid_block m b -> ~(valid_block m b') -> b <> b'.
+
+(** [block_compartment m b] returns the compartment associated with the block
+  [b] in the memory [m], or [None] if [b] is not allocated in [m]. *)
+
+Parameter block_compartment: forall (m: mem) (b: block), option compartment.
+
+Axiom block_compartment_valid_block:
+  forall (m: mem) (b: block),
+  ~valid_block m b ->
+  block_compartment m b = None.
 
 (** [perm m b ofs k p] holds if the address [b, ofs] in memory state [m]
   has permission [p]: one of freeable, writable, readable, and nonempty.
