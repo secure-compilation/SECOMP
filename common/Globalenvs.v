@@ -148,6 +148,7 @@ Record t: Type := mkgenv {
   genv_public: list ident;              (**r which symbol names are public *)
   genv_symb: PTree.t block;             (**r mapping symbol -> block *)
   genv_defs: PTree.t (globdef F V);     (**r mapping block -> definition *)
+  genv_comps: PTree.t compartment;      (**r mapping symbol -> compartment *)
   genv_next: block;                     (**r next symbol pointer *)
   genv_symb_range: forall id b, PTree.get id genv_symb = Some b -> Plt b genv_next;
   genv_defs_range: forall b g, PTree.get b genv_defs = Some g -> Plt b genv_next;
@@ -229,6 +230,7 @@ Program Definition add_global (ge: t) (idg: ident * globdef F V) : t :=
     ge.(genv_public)
     (PTree.set idg#1 ge.(genv_next) ge.(genv_symb))
     (PTree.set ge.(genv_next) idg#2 ge.(genv_defs))
+    (PTree.set idg#1 default_compartment ge.(genv_comps))
     (Pos.succ ge.(genv_next))
     _ _ _.
 Next Obligation.
@@ -263,7 +265,7 @@ Proof.
 Qed.
 
 Program Definition empty_genv (pub: list ident): t :=
-  @mkgenv pub (PTree.empty _) (PTree.empty _) 1%positive _ _ _.
+  @mkgenv pub (PTree.empty _) (PTree.empty _) (PTree.empty _) 1%positive _ _ _.
 Next Obligation.
   rewrite PTree.gempty in H. discriminate.
 Qed.
