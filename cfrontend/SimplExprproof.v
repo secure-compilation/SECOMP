@@ -63,20 +63,22 @@ Lemma senv_preserved:
 Proof (Genv.senv_match (proj1 TRANSL)).
 
 Lemma function_ptr_translated:
-  forall b f,
-  Genv.find_funct_ptr ge b = Some f ->
+  forall b c f,
+  Genv.find_funct_ptr ge b = Some (c, f) ->
   exists tf,
-  Genv.find_funct_ptr tge b = Some tf /\ tr_fundef f tf.
+  Genv.find_funct_ptr tge b = Some (c, tf) /\
+  tr_fundef f tf.
 Proof.
   intros.
   edestruct (Genv.find_funct_ptr_match (proj1 TRANSL)) as (ctx & tf & A & B & C); eauto.
 Qed.
 
 Lemma functions_translated:
-  forall v f,
-  Genv.find_funct ge v = Some f ->
+  forall v c f,
+  Genv.find_funct ge v = Some (c, f) ->
   exists tf,
-  Genv.find_funct tge v = Some tf /\ tr_fundef f tf.
+  Genv.find_funct tge v = Some (c, tf) /\
+  tr_fundef f tf.
 Proof.
   intros.
   edestruct (Genv.find_funct_match (proj1 TRANSL)) as (ctx & tf & A & B & C); eauto.

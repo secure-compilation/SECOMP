@@ -180,7 +180,7 @@ Definition destroyed_by_getstack (s: slot): list mreg :=
   | _        => nil
   end.
 
-Definition find_function (ros: mreg + ident) (rs: locset) : option fundef :=
+Definition find_function (ros: mreg + ident) (rs: locset) : option (compartment * fundef) :=
   match ros with
   | inl r => Genv.find_funct ge (rs (R r))
   | inr symb =>
@@ -229,14 +229,14 @@ Inductive step: state -> trace -> state -> Prop :=
       rs' = undef_regs (destroyed_by_store chunk addr) rs ->
       step (Block s f sp (Lstore chunk addr args src :: bb) rs m)
         E0 (Block s f sp bb rs' m')
-  | exec_Lcall: forall s f sp sig ros bb rs m fd,
-      find_function ros rs = Some fd ->
+  | exec_Lcall: forall s f sp sig ros bb rs m c fd,
+      find_function ros rs = Some (c, fd) ->
       funsig fd = sig ->
       step (Block s f sp (Lcall sig ros :: bb) rs m)
         E0 (Callstate (Stackframe f sp rs bb :: s) fd rs m)
-  | exec_Ltailcall: forall s f sp sig ros bb rs m fd rs' m',
+  | exec_Ltailcall: forall s f sp sig ros bb rs m c fd rs' m',
       rs' = return_regs (parent_locset s) rs ->
-      find_function ros rs' = Some fd ->
+      find_function ros rs' = Some (c, fd) ->
       funsig fd = sig ->
       Mem.free m sp 0 f.(fn_stacksize) = Some m' ->
       step (Block s f (Vptr sp Ptrofs.zero) (Ltailcall sig ros :: bb) rs m)
@@ -289,11 +289,11 @@ End RELSEM.
   by the calling conventions. *)
 
 Inductive initial_state (p: program): state -> Prop :=
-  | initial_state_intro: forall b f m0,
+  | initial_state_intro: forall b c f m0,
       let ge := Genv.globalenv p in
       Genv.init_mem p = Some m0 ->
       Genv.find_symbol ge p.(prog_main) = Some b ->
-      Genv.find_funct_ptr ge b = Some f ->
+      Genv.find_funct_ptr ge b = Some (c, f) ->
       funsig f = signature_main ->
       initial_state p (Callstate nil f (Locmap.init Vundef) m0).
 

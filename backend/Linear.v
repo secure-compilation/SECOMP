@@ -93,7 +93,7 @@ Section RELSEM.
 
 Variable ge: genv.
 
-Definition find_function (ros: mreg + ident) (rs: locset) : option fundef :=
+Definition find_function (ros: mreg + ident) (rs: locset) : option (compartment * fundef) :=
   match ros with
   | inl r => Genv.find_funct ge (rs (R r))
   | inr symb =>
@@ -174,15 +174,15 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State s f sp (Lstore chunk addr args src :: b) rs m)
         E0 (State s f sp b rs' m')
   | exec_Lcall:
-      forall s f sp sig ros b rs m f',
-      find_function ros rs = Some f' ->
+      forall s f sp sig ros b rs m c f',
+      find_function ros rs = Some (c, f') ->
       sig = funsig f' ->
       step (State s f sp (Lcall sig ros :: b) rs m)
         E0 (Callstate (Stackframe f sp rs b:: s) f' rs m)
   | exec_Ltailcall:
-      forall s f stk sig ros b rs m rs' f' m',
+      forall s f stk sig ros b rs m rs' c f' m',
       rs' = return_regs (parent_locset s) rs ->
-      find_function ros rs' = Some f' ->
+      find_function ros rs' = Some (c, f') ->
       sig = funsig f' ->
       Mem.free m stk 0 f.(fn_stacksize) = Some m' ->
       step (State s f (Vptr stk Ptrofs.zero) (Ltailcall sig ros :: b) rs m)
@@ -250,11 +250,11 @@ Inductive step: state -> trace -> state -> Prop :=
 End RELSEM.
 
 Inductive initial_state (p: program): state -> Prop :=
-  | initial_state_intro: forall b f m0,
+  | initial_state_intro: forall b c f m0,
       let ge := Genv.globalenv p in
       Genv.init_mem p = Some m0 ->
       Genv.find_symbol ge p.(prog_main) = Some b ->
-      Genv.find_funct_ptr ge b = Some f ->
+      Genv.find_funct_ptr ge b = Some (c, f) ->
       funsig f = signature_main ->
       initial_state p (Callstate nil f (Locmap.init Vundef) m0).
 

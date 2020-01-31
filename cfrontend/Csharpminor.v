@@ -382,10 +382,10 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Sstore chunk addr a) k e le m)
         E0 (State f Sskip k e le m')
 
-  | step_call: forall f optid sig a bl k e le m vf vargs fd,
+  | step_call: forall f optid sig a bl k e le m vf vargs c fd,
       eval_expr e le m a vf ->
       eval_exprlist e le m bl vargs ->
-      Genv.find_funct ge vf = Some fd ->
+      Genv.find_funct ge vf = Some (c, fd) ->
       funsig fd = sig ->
       step (State f (Scall optid sig a bl) k e le m)
         E0 (Callstate fd vargs (Kcall optid f e le k) m)
@@ -474,11 +474,11 @@ End RELSEM.
   without arguments and with an empty continuation. *)
 
 Inductive initial_state (p: program): state -> Prop :=
-  | initial_state_intro: forall b f m0,
+  | initial_state_intro: forall b c f m0,
       let ge := Genv.globalenv p in
       Genv.init_mem p = Some m0 ->
       Genv.find_symbol ge p.(prog_main) = Some b ->
-      Genv.find_funct_ptr ge b = Some f ->
+      Genv.find_funct_ptr ge b = Some (c, f) ->
       funsig f = signature_main ->
       initial_state p (Callstate f nil Kstop m0).
 

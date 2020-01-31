@@ -199,20 +199,24 @@ Global Opaque Linker_unit.
 
 Definition link_def {F V: Type} {LF: Linker F} {LV: Linker V} (gd1 gd2: globdef F V) :=
   match gd1, gd2 with
-  | Gfun f1, Gfun f2 =>
-      match link f1 f2 with Some f => Some (Gfun f) | None => None end
-  | Gvar v1, Gvar v2 =>
-      match link v1 v2 with Some v => Some (Gvar v) | None => None end
+  | Gfun c1 f1, Gfun c2 f2 =>
+      if eq_compartment c1 c2 then
+        match link f1 f2 with Some f => Some (Gfun c1 f) | None => None end
+      else None
+  | Gvar c1 v1, Gvar c2 v2 =>
+      if eq_compartment c1 c2 then
+        match link v1 v2 with Some v => Some (Gvar c1 v) | None => None end
+      else None
   | _, _ => None
   end.
 
 Inductive linkorder_def {F V: Type} {LF: Linker F} {LV: Linker V}: globdef F V -> globdef F V -> Prop :=
-  | linkorder_def_fun: forall fd1 fd2,
+  | linkorder_def_fun: forall c fd1 fd2,
       linkorder fd1 fd2 ->
-      linkorder_def (Gfun fd1) (Gfun fd2)
-  | linkorder_def_var: forall v1 v2,
+      linkorder_def (Gfun c fd1) (Gfun c fd2)
+  | linkorder_def_var: forall c v1 v2,
       linkorder v1 v2 ->
-      linkorder_def (Gvar v1) (Gvar v2).
+      linkorder_def (Gvar c v1) (Gvar c v2).
 
 Program Instance Linker_def (F V: Type) {LF: Linker F} {LV: Linker V}: Linker (globdef F V) := {
   link := link_def;
@@ -226,10 +230,14 @@ Next Obligation.
 Defined.
 Next Obligation.
   unfold link_def; intros.
-  destruct x as [f1|v1], y as [f2|v2]; try discriminate.
-+ simpl in H. destruct (link f1 f2) as [f|] eqn:L. inv H. apply link_linkorder in L.
+  destruct x as [c1 f1|c1 v1], y as [c2 f2|c2 v2]; try discriminate.
++ simpl in H.
+  destruct (eq_compartment c1 c2) as [e|ne]; try easy. subst c2.
+  destruct (link f1 f2) as [f|] eqn:L. inv H. apply link_linkorder in L.
   split; constructor; tauto. discriminate.
-+ simpl in H; destruct (link v1 v2) as [v|] eqn:L; inv H. apply link_linkorder in L.
++ simpl in H.
+  destruct (eq_compartment c1 c2) as [e|ne]; try easy. subst c2.
+  destruct (link v1 v2) as [v|] eqn:L; inv H. apply link_linkorder in L.
   split; constructor; tauto.
 Defined.
 
@@ -408,13 +416,13 @@ Inductive match_globvar: globvar V1 -> globvar V2 -> Prop :=
       match_globvar (mkglobvar i1 init ro vo) (mkglobvar i2 init ro vo).
 
 Inductive match_globdef (ctx: C): globdef F1 V1 -> globdef F2 V2 -> Prop :=
-  | match_globdef_fun: forall ctx' f1 f2,
+  | match_globdef_fun: forall ctx' c f1 f2,
       linkorder ctx' ctx ->
       match_fundef ctx' f1 f2 ->
-      match_globdef ctx (Gfun f1) (Gfun f2)
-  | match_globdef_var: forall v1 v2,
+      match_globdef ctx (Gfun c f1) (Gfun c f2)
+  | match_globdef_var: forall c v1 v2,
       match_globvar v1 v2 ->
-      match_globdef ctx (Gvar v1) (Gvar v2).
+      match_globdef ctx (Gvar c v1) (Gvar c v2).
 
 Definition match_ident_globdef
      (ctx: C) (ig1: ident * globdef F1 V1) (ig2: ident * globdef F2 V2) : Prop :=
@@ -504,7 +512,7 @@ Proof.
   revert x EQ. generalize (prog_defs p).
   induction l as [ | [i g] l]; simpl; intros.
 - monadInv EQ. constructor.
-- destruct g as [f|v].
+- destruct g as [c f|c v].
 + destruct (transf_fun i f) as [tf|?] eqn:TF; monadInv EQ.
   constructor; auto. split; simpl; auto. econstructor. apply linkorder_refl. eauto.
 + destruct (transf_globvar transf_var i v) as [tv|?] eqn:TV; monadInv EQ.
@@ -610,18 +618,25 @@ Lemma link_match_globdef:
   match_globdef match_fundef match_varinfo ctx2 g2 tg2 ->
   exists tg, link tg1 tg2 = Some tg /\ match_globdef match_fundef match_varinfo ctx g tg.
 Proof.
-  simpl link. unfold link_def. intros. inv H2; inv H3; try discriminate.
-- destruct (link f1 f0) as [f|] eqn:LF; inv H1.
+  simpl link. unfold link_def.
+  intros ctx1 ctx2 ctx g1 tg1 g2 tg2 g LO1 LO2 L MATCH1 MATCH2.
+  destruct MATCH1 as [ctx1' c1 f1 tf1 LO1' MATCH1|c1 v1 tv1];
+  destruct MATCH2 as [ctx2' c2 f2 tf2 LO2' MATCH2|c2 v2 tv2];
+  try discriminate.
+- destruct (eq_compartment c1 c2); try easy; subst c2.
+  destruct (link f1 f2) as [f|] eqn:LF; try easy.
   exploit link_match_fundef; eauto. intros (tf & P & Q).
   assert (X: exists ctx', linkorder ctx' ctx /\ match_fundef ctx' f tf).
   { destruct Q as [Q|Q]; econstructor; (split; [|eassumption]).
     apply linkorder_trans with ctx1; auto.
     apply linkorder_trans with ctx2; auto. }
   destruct X as (cu & X & Y).
-  exists (Gfun tf); split. rewrite P; auto. econstructor; eauto.
-- destruct (link v1 v0) as [v|] eqn:LVAR; inv H1.
+  exists (Gfun c1 tf); split. rewrite P; auto.
+  inv L. econstructor; eauto.
+- destruct (eq_compartment c1 c2); try easy; subst c2.
+  destruct (link v1 v2) as [v|] eqn:LVAR; try easy.
   exploit link_match_globvar; eauto. intros (tv & P & Q).
-  exists (Gvar tv); split. rewrite P; auto. constructor; auto.
+  exists (Gvar c1 tv); split. rewrite P; auto. inv L. constructor; auto.
 Qed.
 
 Lemma match_globdef_linkorder:

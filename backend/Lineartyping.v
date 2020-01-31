@@ -281,13 +281,13 @@ Variable prog: program.
 Let ge := Genv.globalenv prog.
 
 Hypothesis wt_prog:
-  forall i fd, In (i, Gfun fd) prog.(prog_defs) -> wt_fundef fd.
+  forall i c fd, In (i, Gfun c fd) prog.(prog_defs) -> wt_fundef fd.
 
 Lemma wt_find_function:
-  forall ros rs f, find_function ge ros rs = Some f -> wt_fundef f.
+  forall ros rs c f, find_function ge ros rs = Some (c, f) -> wt_fundef f.
 Proof.
   intros.
-  assert (X: exists i, In (i, Gfun f) prog.(prog_defs)).
+  assert (X: exists i, In (i, Gfun c f) prog.(prog_defs)).
   {
     destruct ros as [r | s]; simpl in H.
     eapply Genv.find_funct_inversion; eauto.

@@ -187,7 +187,7 @@ Inductive wt_fundef: fundef -> Prop :=
       wt_fundef (Internal f).
 
 Definition wt_program (p: program): Prop :=
-  forall i f, In (i, Gfun f) (prog_defs p) -> wt_fundef f.
+  forall i c f, In (i, Gfun c f) (prog_defs p) -> wt_fundef f.
 
 (** * Type inference *)
 
@@ -935,10 +935,10 @@ Proof.
   (* Icall *)
   assert (wt_fundef fd).
     destruct ros; simpl in H0.
-    pattern fd. apply Genv.find_funct_prop with fundef unit p (rs#r).
+    pattern fd. apply Genv.find_funct_prop with unit p (rs#r) c.
     exact wt_p. exact H0.
     caseEq (Genv.find_symbol ge i); intros; rewrite H1 in H0.
-    pattern fd. apply Genv.find_funct_ptr_prop with fundef unit p b.
+    pattern fd. apply Genv.find_funct_ptr_prop with unit p b c.
     exact wt_p. exact H0.
     discriminate.
   econstructor; eauto.
@@ -947,10 +947,10 @@ Proof.
   (* Itailcall *)
   assert (wt_fundef fd).
     destruct ros; simpl in H0.
-    pattern fd. apply Genv.find_funct_prop with fundef unit p (rs#r).
+    pattern fd. apply Genv.find_funct_prop with unit p (rs#r) c.
     exact wt_p. exact H0.
     caseEq (Genv.find_symbol ge i); intros; rewrite H1 in H0.
-    pattern fd. apply Genv.find_funct_ptr_prop with fundef unit p b.
+    pattern fd. apply Genv.find_funct_ptr_prop with unit p b c.
     exact wt_p. exact H0.
     discriminate.
   econstructor; eauto.
@@ -981,7 +981,7 @@ Lemma wt_initial_state:
   forall S, initial_state p S -> wt_state S.
 Proof.
   intros. inv H. constructor. constructor. rewrite H3; auto.
-  pattern f. apply Genv.find_funct_ptr_prop with fundef unit p b.
+  pattern f. apply Genv.find_funct_ptr_prop with unit p b c.
   exact wt_p. exact H2.
   rewrite H3. constructor.
 Qed.

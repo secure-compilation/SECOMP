@@ -55,15 +55,15 @@ Lemma senv_preserved:
 Proof (Genv.senv_match (proj1 TRANSF)).
 
 Lemma functions_translated:
-  forall (v: val) (f: fundef),
-  Genv.find_funct ge v = Some f ->
-  exists tf, Genv.find_funct tge v = Some tf /\ transf_fundef f = OK tf.
+  forall (v: val) (c: compartment) (f: fundef),
+  Genv.find_funct ge v = Some (c, f) ->
+  exists tf, Genv.find_funct tge v = Some (c, tf) /\ transf_fundef f = OK tf.
 Proof (Genv.find_funct_transf_partial (proj1 TRANSF)).
 
 Lemma function_ptr_translated:
-  forall (b: block) (f: fundef),
-  Genv.find_funct_ptr ge b = Some f ->
-  exists tf, Genv.find_funct_ptr tge b = Some tf /\ transf_fundef f = OK tf.
+  forall (b: block) (c: compartment) (f: fundef),
+  Genv.find_funct_ptr ge b = Some (c, f) ->
+  exists tf, Genv.find_funct_ptr tge b = Some (c, tf) /\ transf_fundef f = OK tf.
 Proof (Genv.find_funct_ptr_transf_partial (proj1 TRANSF)).
 
 Lemma type_of_fundef_preserved:
@@ -1353,8 +1353,8 @@ Inductive match_globalenvs (f: meminj) (bound: block): Prop :=
       (DOMAIN: forall b, Plt b bound -> f b = Some(b, 0))
       (IMAGE: forall b1 b2 delta, f b1 = Some(b2, delta) -> Plt b2 bound -> b1 = b2)
       (SYMBOLS: forall id b, Genv.find_symbol ge id = Some b -> Plt b bound)
-      (FUNCTIONS: forall b fd, Genv.find_funct_ptr ge b = Some fd -> Plt b bound)
-      (VARINFOS: forall b gv, Genv.find_var_info ge b = Some gv -> Plt b bound).
+      (FUNCTIONS: forall b c fd, Genv.find_funct_ptr ge b = Some (c, fd) -> Plt b bound)
+      (VARINFOS: forall b c gv, Genv.find_var_info ge b = Some (c, gv) -> Plt b bound).
 
 Lemma match_globalenvs_preserves_globals:
   forall f,
@@ -1726,11 +1726,11 @@ Qed.
 Hint Resolve match_cont_globalenv: compat.
 
 Lemma match_cont_find_funct:
-  forall f cenv k tk m bound tbound vf fd tvf,
+  forall f cenv k tk m bound tbound vf c fd tvf,
   match_cont f cenv k tk m bound tbound ->
-  Genv.find_funct ge vf = Some fd ->
+  Genv.find_funct ge vf = Some (c, fd) ->
   Val.inject f vf tvf ->
-  exists tfd, Genv.find_funct tge tvf = Some tfd /\ transf_fundef fd = OK tfd.
+  exists tfd, Genv.find_funct tge tvf = Some (c, tfd) /\ transf_fundef fd = OK tfd.
 Proof.
   intros. exploit match_cont_globalenv; eauto. intros [bound1 MG]. destruct MG.
   inv H1; simpl in H0; try discriminate. destruct (Ptrofs.eq_dec ofs1 Ptrofs.zero); try discriminate.

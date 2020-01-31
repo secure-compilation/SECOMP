@@ -223,16 +223,19 @@ Lemma symbols_preserved:
 Proof (Genv.find_symbol_transf TRANSL).
 
 Lemma functions_translated:
-  forall (v: val) (f: RTL.fundef),
-  Genv.find_funct ge v = Some f ->
-  Genv.find_funct tge v = Some (transf_fundef f).
+  forall (v: val) (c: compartment) (f: RTL.fundef),
+  Genv.find_funct ge v = Some (c, f) ->
+  Genv.find_funct tge v = Some (c, transf_fundef f).
 Proof (Genv.find_funct_transf TRANSL).
 
 Lemma funct_ptr_translated:
-  forall (b: block) (f: RTL.fundef),
-  Genv.find_funct_ptr ge b = Some f ->
-  Genv.find_funct_ptr tge b = Some (transf_fundef f).
-Proof (Genv.find_funct_ptr_transf TRANSL).
+  forall (b: block) (c: compartment) (f: RTL.fundef),
+  Genv.find_funct_ptr ge b = Some (c, f) ->
+  Genv.find_funct_ptr tge b = Some (c, transf_fundef f).
+Proof.
+  intros b c f.
+  apply (Genv.find_funct_ptr_transf TRANSL).
+Qed.
 
 Lemma senv_preserved:
   Senv.equiv ge tge.
@@ -253,10 +256,10 @@ Proof.
 Qed.
 
 Lemma find_function_translated:
-  forall ros rs rs' f,
-  find_function ge ros rs = Some f ->
+  forall ros rs rs' c f,
+  find_function ge ros rs = Some (c, f) ->
   regs_lessdef rs rs' ->
-  find_function tge ros rs' = Some (transf_fundef f).
+  find_function tge ros rs' = Some (c, transf_fundef f).
 Proof.
   intros until f; destruct ros; simpl.
   intros.

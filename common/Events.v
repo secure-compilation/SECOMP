@@ -1544,8 +1544,8 @@ Qed.
 
 Definition meminj_preserves_globals (F V: Type) (ge: Genv.t F V) (f: block -> option (block * Z)) : Prop :=
      (forall id b, Genv.find_symbol ge id = Some b -> f b = Some(b, 0))
-  /\ (forall b gv, Genv.find_var_info ge b = Some gv -> f b = Some(b, 0))
-  /\ (forall b1 b2 delta gv, Genv.find_var_info ge b2 = Some gv -> f b1 = Some(b2, delta) -> b2 = b1).
+  /\ (forall b c gv, Genv.find_var_info ge b = Some (c, gv) -> f b = Some(b, 0))
+  /\ (forall b1 b2 delta c gv, Genv.find_var_info ge b2 = Some (c, gv) -> f b1 = Some(b2, delta) -> b2 = b1).
 
 Lemma external_call_mem_inject:
   forall ef F V (ge: Genv.t F V) vargs m1 t vres m2 f m1' vargs',
@@ -1568,9 +1568,9 @@ Proof.
   + simpl in H3. exploit A; eauto. intros EQ; rewrite EQ in H; inv H. auto.
   + simpl in H3. exists b1; split; eauto.
   + simpl; unfold Genv.block_is_volatile.
-    destruct (Genv.find_var_info ge b1) as [gv1|] eqn:V1.
+    destruct (Genv.find_var_info ge b1) as [[c1 gv1]|] eqn:V1.
     * exploit B; eauto. intros EQ; rewrite EQ in H; inv H. rewrite V1; auto.
-    * destruct (Genv.find_var_info ge b2) as [gv2|] eqn:V2; auto.
+    * destruct (Genv.find_var_info ge b2) as [[c2 gv2]|] eqn:V2; auto.
       exploit C; eauto. intros EQ; subst b2. congruence.
 Qed.
 

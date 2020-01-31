@@ -1322,9 +1322,9 @@ Inductive match_stacks (j: meminj):
   | match_stacks_empty: forall sg,
       tailcall_possible sg ->
       match_stacks j nil nil sg
-  | match_stacks_cons: forall f sp ls c cs fb sp' ra c' cs' sg trf
+  | match_stacks_cons: forall f sp ls c cs fb sp' ra c' cs' sg cmp trf
         (TAIL: is_tail c (Linear.fn_code f))
-        (FINDF: Genv.find_funct_ptr tge fb = Some (Internal trf))
+        (FINDF: Genv.find_funct_ptr tge fb = Some (cmp, Internal trf))
         (TRF: transf_function f = OK trf)
         (TRC: transl_code (make_env (function_bounds f)) c = c')
         (INJ: j sp = Some(sp', (fe_stack_data (make_env (function_bounds f)))))
@@ -1528,17 +1528,17 @@ Lemma senv_preserved:
 Proof (Genv.senv_match TRANSF).
 
 Lemma functions_translated:
-  forall v f,
-  Genv.find_funct ge v = Some f ->
+  forall v c f,
+  Genv.find_funct ge v = Some (c, f) ->
   exists tf,
-  Genv.find_funct tge v = Some tf /\ transf_fundef f = OK tf.
+  Genv.find_funct tge v = Some (c, tf) /\ transf_fundef f = OK tf.
 Proof (Genv.find_funct_transf_partial TRANSF).
 
 Lemma function_ptr_translated:
-  forall b f,
-  Genv.find_funct_ptr ge b = Some f ->
+  forall b c f,
+  Genv.find_funct_ptr ge b = Some (c, f) ->
   exists tf,
-  Genv.find_funct_ptr tge b = Some tf /\ transf_fundef f = OK tf.
+  Genv.find_funct_ptr tge b = Some (c, tf) /\ transf_fundef f = OK tf.
 Proof (Genv.find_funct_ptr_transf_partial TRANSF).
 
 Lemma sig_preserved:
@@ -1551,13 +1551,13 @@ Proof.
 Qed.
 
 Lemma find_function_translated:
-  forall j ls rs m ros f,
+  forall j ls rs m ros c f,
   agree_regs j ls rs ->
   m |= globalenv_inject ge j ->
-  Linear.find_function ge ros ls = Some f ->
+  Linear.find_function ge ros ls = Some (c, f) ->
   exists bf, exists tf,
      find_function_ptr tge ros rs = Some bf
-  /\ Genv.find_funct_ptr tge bf = Some tf
+  /\ Genv.find_funct_ptr tge bf = Some (c, tf)
   /\ transf_fundef f = OK tf.
 Proof.
   intros until f; intros AG [bound [_ [?????]]] FF.
@@ -1766,10 +1766,10 @@ End BUILTIN_ARGUMENTS.
 
 Inductive match_states: Linear.state -> Mach.state -> Prop :=
   | match_states_intro:
-      forall cs f sp c ls m cs' fb sp' rs m' j tf
+      forall cs f sp c ls m cs' fb sp' rs m' j cmp tf
         (STACKS: match_stacks j cs cs' f.(Linear.fn_sig))
         (TRANSL: transf_function f = OK tf)
-        (FIND: Genv.find_funct_ptr tge fb = Some (Internal tf))
+        (FIND: Genv.find_funct_ptr tge fb = Some (cmp, Internal tf))
         (AGREGS: agree_regs j ls rs)
         (AGLOCS: agree_locs f ls (parent_locset cs))
         (INJSP: j sp = Some(sp', fe_stack_data (make_env (function_bounds f))))
@@ -1781,10 +1781,10 @@ Inductive match_states: Linear.state -> Mach.state -> Prop :=
       match_states (Linear.State cs f (Vptr sp Ptrofs.zero) c ls m)
                    (Mach.State cs' fb (Vptr sp' Ptrofs.zero) (transl_code (make_env (function_bounds f)) c) rs m')
   | match_states_call:
-      forall cs f ls m cs' fb rs m' j tf
+      forall cs f ls m cs' fb rs m' j cmp tf
         (STACKS: match_stacks j cs cs' (Linear.funsig f))
         (TRANSL: transf_fundef f = OK tf)
-        (FIND: Genv.find_funct_ptr tge fb = Some tf)
+        (FIND: Genv.find_funct_ptr tge fb = Some (cmp, tf))
         (AGREGS: agree_regs j ls rs)
         (SEP: m' |= stack_contents j cs cs'
                  ** minjection j m
@@ -2143,12 +2143,12 @@ Proof.
 Qed.
 
 Lemma wt_prog:
-  forall i fd, In (i, Gfun fd) prog.(prog_defs) -> wt_fundef fd.
+  forall i c fd, In (i, Gfun c fd) prog.(prog_defs) -> wt_fundef fd.
 Proof.
   intros.
   exploit list_forall2_in_left. eexact (proj1 TRANSF). eauto.
   intros ([i' g] & P & Q & R). simpl in *. inv R. destruct fd; simpl in *.
-- monadInv H2. unfold transf_function in EQ.
+- monadInv H4. unfold transf_function in EQ.
   destruct (wt_function f). auto. discriminate.
 - auto.
 Qed.

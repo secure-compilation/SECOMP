@@ -1018,15 +1018,15 @@ Lemma senv_preserved:
 Proof (Genv.senv_match TRANSL).
 
 Lemma function_ptr_translated:
-  forall v f,
-  Genv.find_funct_ptr ge v = Some f ->
-  exists cu tf, Genv.find_funct_ptr tge v = Some tf /\ match_fundef cu f tf /\ linkorder cu prog.
+  forall v c f,
+  Genv.find_funct_ptr ge v = Some (c, f) ->
+  exists cu tf, Genv.find_funct_ptr tge v = Some (c, tf) /\ match_fundef cu f tf /\ linkorder cu prog.
 Proof (Genv.find_funct_ptr_match TRANSL).
 
 Lemma functions_translated:
-  forall v f,
-  Genv.find_funct ge v = Some f ->
-  exists cu tf, Genv.find_funct tge v = Some tf /\ match_fundef cu f tf /\ linkorder cu prog.
+  forall v c f,
+  Genv.find_funct ge v = Some (c, f) ->
+  exists cu tf, Genv.find_funct tge v = Some (c, tf) /\ match_fundef cu f tf /\ linkorder cu prog.
 Proof (Genv.find_funct_match TRANSL).
 
 (** * Matching between environments *)

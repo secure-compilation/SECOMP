@@ -801,8 +801,8 @@ Inductive globalenv_preserved {F V: Type} (ge: Genv.t F V) (j: meminj) (bound: b
       (DOMAIN: forall b, Plt b bound -> j b = Some(b, 0))
       (IMAGE: forall b1 b2 delta, j b1 = Some(b2, delta) -> Plt b2 bound -> b1 = b2)
       (SYMBOLS: forall id b, Genv.find_symbol ge id = Some b -> Plt b bound)
-      (FUNCTIONS: forall b fd, Genv.find_funct_ptr ge b = Some fd -> Plt b bound)
-      (VARINFOS: forall b gv, Genv.find_var_info ge b = Some gv -> Plt b bound).
+      (FUNCTIONS: forall b c fd, Genv.find_funct_ptr ge b = Some (c, fd) -> Plt b bound)
+      (VARINFOS: forall b c gv, Genv.find_var_info ge b = Some (c, gv) -> Plt b bound).
 
 Program Definition globalenv_inject {F V: Type} (ge: Genv.t F V) (j: meminj) : massert := {|
   m_pred := fun m => exists bound, Ple bound (Mem.nextblock m) /\ globalenv_preserved ge j bound;

@@ -78,9 +78,9 @@ Definition prog_map : Type := PTree.t (globdef fundef unit).
 Definition add_ref_definition (pm: prog_map) (id: ident) (w: workset): workset :=
   match pm!id with
   | None => w
-  | Some (Gfun (Internal f)) => add_ref_function f w
-  | Some (Gfun (External ef)) => w
-  | Some (Gvar gv) => add_ref_globvar gv w
+  | Some (Gfun c (Internal f)) => add_ref_function f w
+  | Some (Gfun c (External ef)) => w
+  | Some (Gvar c gv) => add_ref_globvar gv w
   end.
 
 (** The initial workset is composed of all public definitions of the compilation unit,

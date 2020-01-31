@@ -41,17 +41,19 @@ Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
 
 Lemma functions_translated:
-  forall v f,
-  Genv.find_funct ge v = Some f ->
+  forall v c f,
+  Genv.find_funct ge v = Some (c, f) ->
   exists tf,
-  Genv.find_funct tge v = Some tf /\ transf_fundef f = OK tf.
+  Genv.find_funct tge v = Some (c, tf) /\
+  transf_fundef f = OK tf.
 Proof (Genv.find_funct_transf_partial TRANSF).
 
 Lemma function_ptr_translated:
-  forall v f,
-  Genv.find_funct_ptr ge v = Some f ->
+  forall v c f,
+  Genv.find_funct_ptr ge v = Some (c, f) ->
   exists tf,
-  Genv.find_funct_ptr tge v = Some tf /\ transf_fundef f = OK tf.
+  Genv.find_funct_ptr tge v = Some (c, tf) /\
+  transf_fundef f = OK tf.
 Proof (Genv.find_funct_ptr_transf_partial TRANSF).
 
 Lemma symbols_preserved:
@@ -61,7 +63,7 @@ Proof (Genv.find_symbol_transf_partial TRANSF).
 
 Lemma senv_preserved:
   Senv.equiv ge tge.
-Proof (Genv.senv_transf_partial TRANSF).
+Proof. exact (Genv.senv_transf_partial TRANSF). Qed.
 
 Lemma sig_preserved:
   forall f tf,
@@ -82,10 +84,11 @@ Proof.
 Qed.
 
 Lemma find_function_translated:
-  forall ros ls f,
-  LTL.find_function ge ros ls = Some f ->
+  forall ros ls c f,
+  LTL.find_function ge ros ls = Some (c, f) ->
   exists tf,
-  find_function tge ros ls = Some tf /\ transf_fundef f = OK tf.
+  find_function tge ros ls = Some (c, tf) /\
+  transf_fundef f = OK tf.
 Proof.
   unfold LTL.find_function; intros; destruct ros; simpl.
   apply functions_translated; auto.

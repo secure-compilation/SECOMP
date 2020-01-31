@@ -34,16 +34,16 @@ Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
 
 Lemma functions_translated:
-  forall v f,
-  Genv.find_funct ge v = Some f ->
-  Genv.find_funct tge v = Some (transf_fundef f).
-Proof (Genv.find_funct_transf TRANSL).
+  forall v c f,
+  Genv.find_funct ge v = Some (c, f) ->
+  Genv.find_funct tge v = Some (c, transf_fundef f).
+Proof. exact (Genv.find_funct_transf TRANSL). Qed.
 
 Lemma function_ptr_translated:
-  forall v f,
-  Genv.find_funct_ptr ge v = Some f ->
-  Genv.find_funct_ptr tge v = Some (transf_fundef f).
-Proof (Genv.find_funct_ptr_transf TRANSL).
+  forall v c f,
+  Genv.find_funct_ptr ge v = Some (c, f) ->
+  Genv.find_funct_ptr tge v = Some (c, transf_fundef f).
+Proof. exact (Genv.find_funct_ptr_transf TRANSL). Qed.
 
 Lemma symbols_preserved:
   forall id,
@@ -61,9 +61,9 @@ Proof.
 Qed.
 
 Lemma find_function_translated:
-  forall ros rs fd,
-  find_function ge ros rs = Some fd ->
-  find_function tge ros rs = Some (transf_fundef fd).
+  forall ros rs c fd,
+  find_function ge ros rs = Some (c, fd) ->
+  find_function tge ros rs = Some (c, transf_fundef fd).
 Proof.
   unfold find_function; intros. destruct ros as [r|id].
   eapply functions_translated; eauto.

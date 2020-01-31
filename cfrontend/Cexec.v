@@ -873,7 +873,7 @@ Fixpoint step_expr (k: kind) (a: expr) (m: mem): reducts expr :=
       | Some(vf, tyf), Some vtl =>
           match classify_fun tyf with
           | fun_case_f tyargs tyres cconv =>
-              do fd <- Genv.find_funct ge vf;
+              do _, fd <- Genv.find_funct ge vf;
               do vargs <- sem_cast_arguments vtl tyargs m;
               check type_eq (type_of_fundef fd) (Tfunction tyargs tyres cconv);
               topred (Callred "red_call" fd vargs ty m)
@@ -990,9 +990,9 @@ Definition invert_expr_prop (a: expr) (m: mem) : Prop :=
       exists v, sem_cast v1 ty1 tycast m = Some v
   | Ecall (Eval vf tyf) rargs ty =>
       exprlist_all_values rargs ->
-      exists tyargs tyres cconv fd vl,
+      exists tyargs tyres cconv c fd vl,
          classify_fun tyf = fun_case_f tyargs tyres cconv
-      /\ Genv.find_funct ge vf = Some fd
+      /\ Genv.find_funct ge vf = Some (c, fd)
       /\ cast_arguments m rargs tyargs vl
       /\ type_of_fundef fd = Tfunction tyargs tyres cconv
   | Ebuiltin ef tyargs rargs ty =>
@@ -1039,7 +1039,7 @@ Lemma callred_invert:
   invert_expr_prop r m.
 Proof.
   intros. inv H. simpl.
-  intros. exists tyargs, tyres, cconv, fd, args; auto.
+  intros. exists tyargs, tyres, cconv, c, fd, args; auto.
 Qed.
 
 Scheme context_ind2 := Minimality for context Sort Prop
@@ -1484,7 +1484,7 @@ Proof with (try (apply not_invert_ok; simpl; intro; myinv; intuition congruence;
   rewrite (is_val_inv _ _ _ Heqo). exploit is_val_list_all_values; eauto. intros ALLVAL.
   (* top *)
   destruct (classify_fun tyf) as [tyargs tyres cconv|] eqn:?...
-  destruct (Genv.find_funct ge vf) as [fd|] eqn:?...
+  destruct (Genv.find_funct ge vf) as [[c fd]|] eqn:?...
   destruct (sem_cast_arguments vtl tyargs m) as [vargs|] eqn:?...
   destruct (type_eq (type_of_fundef fd) (Tfunction tyargs tyres cconv))...
   apply topred_ok; auto. red. split; auto. eapply red_call; eauto.
@@ -2225,7 +2225,7 @@ Definition do_initial_state (p: program): option (genv * state) :=
   let ge := globalenv p in
   do m0 <- Genv.init_mem p;
   do b <- Genv.find_symbol ge p.(prog_main);
-  do f <- Genv.find_funct_ptr ge b;
+  do _, f <- Genv.find_funct_ptr ge b;
   check (type_eq (type_of_fundef f) (Tfunction Tnil type_int32s cc_default));
   Some (ge, Callstate f nil Kstop m0).
 

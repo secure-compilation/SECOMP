@@ -145,15 +145,15 @@ Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
 
 Lemma functions_translated:
-  forall v f,
-  Genv.find_funct ge v = Some f ->
-  Genv.find_funct tge v = Some (tunnel_fundef f).
-Proof (Genv.find_funct_transf TRANSL).
+  forall v c f,
+  Genv.find_funct ge v = Some (c, f) ->
+  Genv.find_funct tge v = Some (c, tunnel_fundef f).
+Proof. exact (Genv.find_funct_transf TRANSL). Qed.
 
 Lemma function_ptr_translated:
-  forall v f,
-  Genv.find_funct_ptr ge v = Some f ->
-  Genv.find_funct_ptr tge v = Some (tunnel_fundef f).
+  forall v c f,
+  Genv.find_funct_ptr ge v = Some (c, f) ->
+  Genv.find_funct_ptr tge v = Some (c, tunnel_fundef f).
 Proof (Genv.find_funct_ptr_transf TRANSL).
 
 Lemma symbols_preserved:
@@ -345,10 +345,10 @@ Proof.
 Qed.
 
 Lemma find_function_translated:
-  forall ros ls tls fd,
+  forall ros ls tls c fd,
   locmap_lessdef ls tls ->
-  find_function ge ros ls = Some fd ->
-  find_function tge ros tls = Some (tunnel_fundef fd).
+  find_function ge ros ls = Some (c, fd) ->
+  find_function tge ros tls = Some (c, tunnel_fundef fd).
 Proof.
   intros. destruct ros; simpl in *.
 - assert (E: tls (R m) = ls (R m)).
@@ -544,7 +544,7 @@ Proof.
   apply (Genv.init_mem_transf TRANSL); auto.
   rewrite (match_program_main TRANSL).
   rewrite symbols_preserved. eauto.
-  apply function_ptr_translated; auto.
+  apply function_ptr_translated; eauto.
   rewrite <- H3. apply sig_preserved.
   constructor. constructor. red; simpl; auto. apply Mem.extends_refl.
 Qed.

@@ -43,15 +43,15 @@ Lemma senv_preserved:
 Proof (Genv.senv_match TRANSF).
 
 Lemma functions_translated:
-  forall (v: val) (f: fundef),
-  Genv.find_funct ge v = Some f ->
-  exists cu f', Genv.find_funct tge v = Some f' /\ transf_fundef (funenv_program cu) f = OK f' /\ linkorder cu prog.
+  forall (v: val) (c: compartment) (f: fundef),
+  Genv.find_funct ge v = Some (c, f) ->
+  exists cu f', Genv.find_funct tge v = Some (c, f') /\ transf_fundef (funenv_program cu) f = OK f' /\ linkorder cu prog.
 Proof (Genv.find_funct_match TRANSF).
 
 Lemma function_ptr_translated:
-  forall (b: block) (f: fundef),
-  Genv.find_funct_ptr ge b = Some f ->
-  exists cu f', Genv.find_funct_ptr tge b = Some f' /\ transf_fundef (funenv_program cu) f = OK f' /\ linkorder cu prog.
+  forall (b: block) (c: compartment) (f: fundef),
+  Genv.find_funct_ptr ge b = Some (c, f) ->
+  exists cu f', Genv.find_funct_ptr tge b = Some (c, f') /\ transf_fundef (funenv_program cu) f = OK f' /\ linkorder cu prog.
 Proof (Genv.find_funct_ptr_match TRANSF).
 
 Lemma sig_function_translated:
@@ -361,16 +361,18 @@ Inductive match_globalenvs (F: meminj) (bound: block): Prop :=
       (DOMAIN: forall b, Plt b bound -> F b = Some(b, 0))
       (IMAGE: forall b1 b2 delta, F b1 = Some(b2, delta) -> Plt b2 bound -> b1 = b2)
       (SYMBOLS: forall id b, Genv.find_symbol ge id = Some b -> Plt b bound)
-      (FUNCTIONS: forall b fd, Genv.find_funct_ptr ge b = Some fd -> Plt b bound)
-      (VARINFOS: forall b gv, Genv.find_var_info ge b = Some gv -> Plt b bound).
+      (FUNCTIONS: forall b c fd, Genv.find_funct_ptr ge b = Some (c, fd) -> Plt b bound)
+      (VARINFOS: forall b c gv, Genv.find_var_info ge b = Some (c, gv) -> Plt b bound).
 
 Lemma find_function_agree:
-  forall ros rs fd F ctx rs' bound,
-  find_function ge ros rs = Some fd ->
+  forall ros rs c fd F ctx rs' bound,
+  find_function ge ros rs = Some (c, fd) ->
   agree_regs F ctx rs rs' ->
   match_globalenvs F bound ->
   exists cu fd',
-  find_function tge (sros ctx ros) rs' = Some fd' /\ transf_fundef (funenv_program cu) fd = OK fd' /\ linkorder cu prog.
+  find_function tge (sros ctx ros) rs' = Some (c, fd') /\
+  transf_fundef (funenv_program cu) fd = OK fd' /\
+  linkorder cu prog.
 Proof.
   intros. destruct ros as [r | id]; simpl in *.
 - (* register *)
@@ -379,7 +381,7 @@ Proof.
     assert (A: Val.inject F rs#r rs'#(sreg ctx r)). eapply agree_val_reg; eauto.
     rewrite EQ in A; inv A.
     inv H1. rewrite DOMAIN in H5. inv H5. auto.
-    apply FUNCTIONS with fd.
+    apply FUNCTIONS with c fd.
     rewrite EQ in H; rewrite Genv.find_funct_find_funct_ptr in H. auto.
   }
   rewrite EQ. eapply functions_translated; eauto.
@@ -389,14 +391,16 @@ Proof.
 Qed.
 
 Lemma find_inlined_function:
-  forall fenv id rs fd f,
+  forall fenv id rs c fd f,
   fenv_compat prog fenv ->
-  find_function ge (inr id) rs = Some fd ->
+  find_function ge (inr id) rs = Some (c, fd) ->
   fenv!id = Some f ->
   fd = Internal f.
 Proof.
   intros.
-  apply H in H1. apply Genv.find_def_symbol in H1. destruct H1 as (b & A & B).
+  apply H in H1.
+  destruct H1 as [c' H1].
+  apply Genv.find_def_symbol in H1. destruct H1 as (b & A & B).
   simpl in H0. unfold ge, fundef in H0. rewrite A in H0.
   rewrite <- Genv.find_funct_ptr_iff in B.
   congruence.
@@ -540,7 +544,9 @@ Qed.
 Lemma match_globalenvs_preserves_globals:
   forall b, match_globalenvs F b -> meminj_preserves_globals ge F.
 Proof.
-  intros. inv H. red. split. eauto. split. eauto.
+  intros. inv H. red.
+  split. now eauto.
+  split. now eauto.
   intros. symmetry. eapply IMAGE; eauto.
 Qed.
 

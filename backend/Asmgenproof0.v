@@ -542,8 +542,8 @@ Qed.
 Inductive transl_code_at_pc (ge: Mach.genv):
     val -> block -> Mach.function -> Mach.code -> bool -> Asm.function -> Asm.code -> Prop :=
   transl_code_at_pc_intro:
-    forall b ofs f c ep tf tc,
-    Genv.find_funct_ptr ge b = Some(Internal f) ->
+    forall b ofs cmp f c ep tf tc,
+    Genv.find_funct_ptr ge b = Some(cmp, Internal f) ->
     transf_function f = Errors.OK tf ->
     transl_code f c ep = OK tc ->
     code_tail (Ptrofs.unsigned ofs) (fn_code tf) tc ->
@@ -853,12 +853,12 @@ Qed.
   (predicate [exec_straight]) correspond to correct Asm executions. *)
 
 Lemma exec_straight_steps_1:
-  forall c rs m c' rs' m',
+  forall c rs m c' rs' m' cmp,
   exec_straight c rs m c' rs' m' ->
   list_length_z (fn_code fn) <= Ptrofs.max_unsigned ->
   forall b ofs,
   rs#PC = Vptr b ofs ->
-  Genv.find_funct_ptr ge b = Some (Internal fn) ->
+  Genv.find_funct_ptr ge b = Some (cmp, Internal fn) ->
   code_tail (Ptrofs.unsigned ofs) (fn_code fn) c ->
   plus step ge (State rs m) E0 (State rs' m').
 Proof.
@@ -877,12 +877,12 @@ Proof.
 Qed.
 
 Lemma exec_straight_steps_2:
-  forall c rs m c' rs' m',
+  forall c rs m c' rs' m' cmp,
   exec_straight c rs m c' rs' m' ->
   list_length_z (fn_code fn) <= Ptrofs.max_unsigned ->
   forall b ofs,
   rs#PC = Vptr b ofs ->
-  Genv.find_funct_ptr ge b = Some (Internal fn) ->
+  Genv.find_funct_ptr ge b = Some (cmp, Internal fn) ->
   code_tail (Ptrofs.unsigned ofs) (fn_code fn) c ->
   exists ofs',
      rs'#PC = Vptr b ofs'
@@ -957,8 +957,8 @@ Variable ge: Mach.genv.
 Inductive match_stack: list Mach.stackframe -> Prop :=
   | match_stack_nil:
       match_stack nil
-  | match_stack_cons: forall fb sp ra c s f tf tc,
-      Genv.find_funct_ptr ge fb = Some (Internal f) ->
+  | match_stack_cons: forall fb sp ra c s cmp f tf tc,
+      Genv.find_funct_ptr ge fb = Some (cmp, Internal f) ->
       transl_code_at_pc ge ra fb f c false tf tc ->
       sp <> Vundef ->
       match_stack s ->

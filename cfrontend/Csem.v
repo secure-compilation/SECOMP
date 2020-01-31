@@ -307,8 +307,8 @@ Inductive rred: expr -> mem -> trace -> expr -> mem -> Prop :=
     (More exactly, identification of function calls that can reduce.) *)
 
 Inductive callred: expr -> mem -> fundef -> list val -> type -> Prop :=
-  | red_call: forall vf tyf m tyargs tyres cconv el ty fd vargs,
-      Genv.find_funct ge vf = Some fd ->
+  | red_call: forall vf tyf m tyargs tyres cconv el ty c fd vargs,
+      Genv.find_funct ge vf = Some (c, fd) ->
       cast_arguments m el tyargs vargs ->
       type_of_fundef fd = Tfunction tyargs tyres cconv ->
       classify_fun tyf = fun_case_f tyargs tyres cconv ->
@@ -812,11 +812,11 @@ End SEMANTICS.
   without arguments and with an empty continuation. *)
 
 Inductive initial_state (p: program): state -> Prop :=
-  | initial_state_intro: forall b f m0,
+  | initial_state_intro: forall b c f m0,
       let ge := globalenv p in
       Genv.init_mem p = Some m0 ->
       Genv.find_symbol ge p.(prog_main) = Some b ->
-      Genv.find_funct_ptr ge b = Some f ->
+      Genv.find_funct_ptr ge b = Some (c, f) ->
       type_of_fundef f = Tfunction Tnil type_int32s cc_default ->
       initial_state p (Callstate f nil Kstop m0).
 

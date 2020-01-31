@@ -53,17 +53,18 @@ Qed.
 Lemma lookup_helper_correct_1:
   forall globs name sg id,
   lookup_helper globs name sg = OK id ->
-  globs!id = Some (Gfun (External (EF_runtime name sg))).
+  globs!id = Some (Gfun default_compartment (External (EF_runtime name sg))).
 Proof.
   intros.
-  set (P := fun (m: PTree.t globdef) res => res = Some id -> m!id = Some(Gfun(External (EF_runtime name sg)))).
+  set (P := fun (m: PTree.t globdef) res => res = Some id -> m!id = Some(Gfun default_compartment (External (EF_runtime name sg)))).
   assert (P globs (PTree.fold (lookup_helper_aux name sg) globs None)).
   { apply PTree_Properties.fold_rec; red; intros.
   - rewrite <- H0. apply H1; auto.
   - discriminate.
-  - assert (EITHER: k = id /\ v = Gfun (External (EF_runtime name sg))
+  - assert (EITHER: k = id /\ v = Gfun default_compartment (External (EF_runtime name sg))
                 \/  a = Some id).
     { unfold lookup_helper_aux in H3. destruct v; auto. destruct f; auto. destruct e; auto.
+      destruct (eq_compartment c default_compartment); eauto. subst c.
       destruct (String.string_dec name name0); auto.
       destruct (signature_eq sg sg0); auto.
       inversion H3. left; split; auto. repeat f_equal; auto. }
@@ -106,7 +107,7 @@ Proof.
   assert (X: forall id name sg, helper_declared p id name sg -> helper_declared p' id name sg).
   { unfold helper_declared; intros.
     destruct (prog_defmap_linkorder _ _ _ _ H0 H1) as (gd & P & Q).
-    inv Q. inv H3. auto. }
+    inv Q. inv H5. auto. }
   red in H. decompose [Logic.and] H; clear H. red; auto 20.
 Qed.
 
@@ -125,7 +126,7 @@ Proof.
   red; intros. destruct TRANSF as [A _].
   exploit list_forall2_in_left; eauto.
   intros ((i' & gd') & B & (C & D)). simpl in *. inv D. 
-  destruct H2 as (hf & P & Q). destruct f; monadInv Q.
+  destruct H4 as (hf & P & Q). destruct f; monadInv Q.
 - monadInv EQ. econstructor; apply type_function_sound; eauto.
 - constructor.
 Qed.
@@ -139,16 +140,22 @@ Lemma senv_preserved:
 Proof (Genv.senv_match TRANSF).
 
 Lemma function_ptr_translated:
-  forall (b: block) (f: Cminor.fundef),
-  Genv.find_funct_ptr ge b = Some f ->
-  exists cu tf, Genv.find_funct_ptr tge b = Some tf /\ match_fundef cu f tf /\ linkorder cu prog.
+  forall (b: block) (c: compartment) (f: Cminor.fundef),
+  Genv.find_funct_ptr ge b = Some (c, f) ->
+  exists cu tf,
+  Genv.find_funct_ptr tge b = Some (c, tf) /\
+  match_fundef cu f tf /\
+  linkorder cu prog.
 Proof (Genv.find_funct_ptr_match TRANSF).
 
 Lemma functions_translated:
-  forall (v v': val) (f: Cminor.fundef),
-  Genv.find_funct ge v = Some f ->
+  forall (v v': val) (c: compartment) (f: Cminor.fundef),
+  Genv.find_funct ge v = Some (c, f) ->
   Val.lessdef v v' ->
-  exists cu tf, Genv.find_funct tge v' = Some tf /\ match_fundef cu f tf /\ linkorder cu prog.
+  exists cu tf,
+  Genv.find_funct tge v' = Some (c, tf) /\
+  match_fundef cu f tf /\
+  linkorder cu prog.
 Proof.
   intros. inv H0.
   eapply Genv.find_funct_match; eauto.
@@ -174,7 +181,7 @@ Proof.
   { unfold helper_declared; intros.
     generalize (match_program_defmap _ _ _ _ _ TRANSF id).
     unfold Cminor.fundef; rewrite H; intros R; inv R. inv H2.
-    destruct H4 as (cu & A & B). monadInv B. auto. }
+    destruct H6 as (cu & A & B). monadInv B. auto. }
   unfold helper_functions_declared; intros. decompose [Logic.and] H; clear H. auto 20.
 Qed.
 
@@ -413,10 +420,10 @@ Proof.
 Qed.
 
 Lemma classify_call_correct:
-  forall unit sp e m a v fd,
+  forall unit sp e m a v c fd,
   linkorder unit prog ->
   Cminor.eval_expr ge sp e m a v ->
-  Genv.find_funct ge v = Some fd ->
+  Genv.find_funct ge v = Some (c, fd) ->
   match classify_call (prog_defmap unit) a with
   | Call_default => True
   | Call_imm id => exists b, Genv.find_symbol ge id = Some b /\ v = Vptr b Ptrofs.zero
@@ -430,10 +437,10 @@ Proof.
   destruct (Genv.find_symbol ge id) as [b|] eqn:FS; try discriminate.
   rewrite Genv.find_funct_find_funct_ptr in H1.
   assert (DFL: exists b1, Genv.find_symbol ge id = Some b1 /\ Vptr b Ptrofs.zero = Vptr b1 Ptrofs.zero) by (exists b; auto).
-  unfold globdef; destruct (prog_defmap unit)!id as [[[f|ef] |gv] |] eqn:G; auto.
+  unfold globdef; destruct (prog_defmap unit)!id as [[c' [f|ef] |c' gv] |] eqn:G; auto.
   destruct (ef_inline ef) eqn:INLINE; auto.
   destruct (prog_defmap_linkorder _ _ _ _ H G) as (gd & P & Q).
-  inv Q. inv H2.
+  inv Q. inv H4.
 - apply Genv.find_def_symbol in P. destruct P as (b' & X & Y). fold ge in X, Y.
   rewrite <- Genv.find_funct_ptr_iff in Y. congruence.
 - simpl in INLINE. discriminate.

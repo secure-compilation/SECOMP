@@ -47,15 +47,15 @@ Lemma senv_preserved:
 Proof (Genv.senv_transf TRANSL).
 
 Lemma functions_translated:
-  forall v f,
-  Genv.find_funct ge v = Some f ->
-  Genv.find_funct tge v = Some (transf_fundef f).
+  forall v c f,
+  Genv.find_funct ge v = Some (c, f) ->
+  Genv.find_funct tge v = Some (c, transf_fundef f).
 Proof (Genv.find_funct_transf TRANSL).
 
 Lemma function_ptr_translated:
-  forall v f,
-  Genv.find_funct_ptr ge v = Some f ->
-  Genv.find_funct_ptr tge v = Some (transf_fundef f).
+  forall v c f,
+  Genv.find_funct_ptr ge v = Some (c, f) ->
+  Genv.find_funct_ptr tge v = Some (c, transf_fundef f).
 Proof (Genv.find_funct_ptr_transf TRANSL).
 
 Lemma sig_function_translated:
@@ -66,9 +66,9 @@ Proof.
 Qed.
 
 Lemma find_function_translated:
-  forall ros ls f,
-  find_function ge ros ls = Some f ->
-  find_function tge ros ls = Some (transf_fundef f).
+  forall ros ls c f,
+  find_function ge ros ls = Some (c, f) ->
+  find_function tge ros ls = Some (c, transf_fundef f).
 Proof.
   unfold find_function; intros; destruct ros; simpl.
   apply functions_translated; auto.
@@ -332,7 +332,7 @@ Proof.
   eapply initial_state_intro with (f := transf_fundef f).
   eapply (Genv.init_mem_transf TRANSL); eauto.
   rewrite (match_program_main TRANSL), symbols_preserved; eauto.
-  apply function_ptr_translated; auto.
+  apply function_ptr_translated; eauto.
   rewrite sig_function_translated. auto.
   constructor; auto. constructor.
 Qed.

@@ -51,18 +51,18 @@ Lemma senv_preserved:
 Proof (Genv.senv_match TRANSL).
 
 Lemma functions_translated:
-  forall (v: val) (f: fundef),
-  Genv.find_funct ge v = Some f ->
-  exists cunit, Genv.find_funct tge v = Some (transf_fundef (romem_for cunit) f) /\ linkorder cunit prog.
+  forall (v: val) (c: compartment) (f: fundef),
+  Genv.find_funct ge v = Some (c, f) ->
+  exists cunit, Genv.find_funct tge v = Some (c, transf_fundef (romem_for cunit) f) /\ linkorder cunit prog.
 Proof.
   intros. exploit (Genv.find_funct_match TRANSL); eauto.
   intros (cu & tf & A & B & C). subst tf. exists cu; auto.
 Qed.
 
 Lemma function_ptr_translated:
-  forall (b: block) (f: fundef),
-  Genv.find_funct_ptr ge b = Some f ->
-  exists cunit, Genv.find_funct_ptr tge b = Some (transf_fundef (romem_for cunit) f) /\ linkorder cunit prog.
+  forall (b: block) (c: compartment) (f: fundef),
+  Genv.find_funct_ptr ge b = Some (c, f) ->
+  exists cunit, Genv.find_funct_ptr tge b = Some (c, transf_fundef (romem_for cunit) f) /\ linkorder cunit prog.
 Proof.
   intros. exploit (Genv.find_funct_ptr_match TRANSL); eauto.
   intros (cu & tf & A & B & C). subst tf. exists cu; auto.
@@ -87,13 +87,13 @@ Proof.
 Qed.
 
 Lemma transf_ros_correct:
-  forall bc rs ae ros f rs',
+  forall bc rs ae ros c f rs',
   genv_match bc ge ->
   ematch bc rs ae ->
-  find_function ge ros rs = Some f ->
+  find_function ge ros rs = Some (c, f) ->
   regs_lessdef rs rs' ->
   exists cunit,
-     find_function tge (transf_ros ae ros) rs' = Some (transf_fundef (romem_for cunit) f)
+     find_function tge (transf_ros ae ros) rs' = Some (c, transf_fundef (romem_for cunit) f)
   /\ linkorder cunit prog.
 Proof.
   intros until rs'; intros GE EM FF RLD. destruct ros; simpl in *.
@@ -101,7 +101,7 @@ Proof.
   generalize (EM r); fold (areg ae r); intro VM. generalize (RLD r); intro LD.
   assert (DEFAULT:
     exists cunit,
-       find_function tge (inl _ r) rs' = Some (transf_fundef (romem_for cunit) f)
+       find_function tge (inl _ r) rs' = Some (c, transf_fundef (romem_for cunit) f)
     /\ linkorder cunit prog).
   {
     simpl. inv LD. apply functions_translated; auto. rewrite <- H0 in FF; discriminate.

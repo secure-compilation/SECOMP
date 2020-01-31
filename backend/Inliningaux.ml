@@ -70,8 +70,8 @@ let inlining_analysis (p: program) =
   if !Clflags.option_finline && !Clflags.option_finline_functions_called_once then
     List.fold_left (fun io idg ->
         match idg with
-        | fid, Gfun (Internal f) -> fun_inline_analysis fid io f
-        | _, Gvar gv -> used_in_globvar io gv
+        | fid, Gfun (_, Internal f) -> fun_inline_analysis fid io f
+        | _, Gvar (_, gv) -> used_in_globvar io gv
         | _ -> io) empty_inlining_info p.prog_defs
   else
     empty_inlining_info

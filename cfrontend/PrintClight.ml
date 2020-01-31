@@ -292,13 +292,13 @@ let print_fundecl p id fd =
 
 let print_globdef var p (id, gd) =
   match gd with
-  | AST.Gfun f -> print_fundef var p id f
-  | AST.Gvar v -> print_globvar p id v  (* from PrintCsyntax *)
+  | AST.Gfun (_, f) -> print_fundef var p id f
+  | AST.Gvar (_, v) -> print_globvar p id v  (* from PrintCsyntax *)
 
 let print_globdecl p (id, gd) =
   match gd with
-  | AST.Gfun f -> print_fundecl p id f
-  | AST.Gvar v -> ()
+  | AST.Gfun (_, f) -> print_fundecl p id f
+  | AST.Gvar (_, v) -> ()
 
 let print_program ver p prog =
   fprintf p "@[<v 0>";

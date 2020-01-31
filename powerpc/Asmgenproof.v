@@ -46,17 +46,17 @@ Lemma senv_preserved:
 Proof (Genv.senv_match TRANSF).
 
 Lemma functions_translated:
-  forall b f,
-  Genv.find_funct_ptr ge b = Some f ->
+  forall b c f,
+  Genv.find_funct_ptr ge b = Some (c, f) ->
   exists tf,
-  Genv.find_funct_ptr tge b = Some tf /\ transf_fundef f = OK tf.
+  Genv.find_funct_ptr tge b = Some (c, tf) /\ transf_fundef f = OK tf.
 Proof (Genv.find_funct_ptr_transf_partial TRANSF).
 
 Lemma functions_transl:
-  forall fb f tf,
-  Genv.find_funct_ptr ge fb = Some (Internal f) ->
+  forall fb c f tf,
+  Genv.find_funct_ptr ge fb = Some (c, Internal f) ->
   transf_function f = OK tf ->
-  Genv.find_funct_ptr tge fb = Some (Internal tf).
+  Genv.find_funct_ptr tge fb = Some (c, Internal tf).
 Proof.
   intros. exploit functions_translated; eauto. intros [tf' [A B]].
   monadInv B. rewrite H0 in EQ; inv EQ; auto.
@@ -96,7 +96,7 @@ Proof.
   eapply transf_function_no_overflow; eauto.
   eapply functions_transl; eauto.
   intros [ofs' [PC' CT']].
-  rewrite PC'. constructor; auto.
+  rewrite PC'. econstructor; eauto.
 Qed.
 
 (** The following lemmas show that the translation from Mach to PPC
@@ -383,8 +383,8 @@ End TRANSL_LABEL.
   transition in the generated PPC code. *)
 
 Lemma find_label_goto_label:
-  forall f tf lbl rs m c' b ofs,
-  Genv.find_funct_ptr ge b = Some (Internal f) ->
+  forall cmp f tf lbl rs m c' b ofs,
+  Genv.find_funct_ptr ge b = Some (cmp, Internal f) ->
   transf_function f = OK tf ->
   rs PC = Vptr b ofs ->
   Mach.find_label lbl f.(Mach.fn_code) = Some c' ->
@@ -399,7 +399,7 @@ Proof.
   intros [pos' [P [Q R]]].
   exists tc; exists (rs#PC <- (Vptr b (Ptrofs.repr pos'))).
   split. unfold goto_label. rewrite P. rewrite H1. auto.
-  split. rewrite Pregmap.gss. constructor; auto.
+  split. rewrite Pregmap.gss. econstructor; eauto.
   rewrite Ptrofs.unsigned_repr. replace (pos' - 0) with pos' in Q.
   auto. omega.
   generalize (transf_function_no_overflow _ _ H0). omega.
@@ -442,9 +442,9 @@ Qed.
 
 Inductive match_states: Mach.state -> Asm.state -> Prop :=
   | match_states_intro:
-      forall s fb sp c ep ms m m' rs f tf tc
+      forall s fb sp c ep ms m m' rs cmp f tf tc
         (STACKS: match_stack ge s)
-        (FIND: Genv.find_funct_ptr ge fb = Some (Internal f))
+        (FIND: Genv.find_funct_ptr ge fb = Some (cmp, Internal f))
         (MEXT: Mem.extends m m')
         (AT: transl_code_at_pc ge (rs PC) fb f c ep tf tc)
         (AG: agree ms sp rs)
@@ -471,10 +471,10 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
                    (Asm.State rs m').
 
 Lemma exec_straight_steps:
-  forall s fb f rs1 i c ep tf tc m1' m2 m2' sp ms2,
+  forall s fb cmp f rs1 i c ep tf tc m1' m2 m2' sp ms2,
   match_stack ge s ->
   Mem.extends m2 m2' ->
-  Genv.find_funct_ptr ge fb = Some (Internal f) ->
+  Genv.find_funct_ptr ge fb = Some (cmp, Internal f) ->
   transl_code_at_pc ge (rs1 PC) fb f (i :: c) ep tf tc ->
   (is_leaf_function f = true -> rs1#LR = parent_ra s) ->
   (forall k c (TR: transl_instr f i ep k = OK c),
@@ -495,10 +495,10 @@ Proof.
 Qed.
 
 Lemma exec_straight_steps_goto:
-  forall s fb f rs1 i c ep tf tc m1' m2 m2' sp ms2 lbl c',
+  forall s fb cmp f rs1 i c ep tf tc m1' m2 m2' sp ms2 lbl c',
   match_stack ge s ->
   Mem.extends m2 m2' ->
-  Genv.find_funct_ptr ge fb = Some (Internal f) ->
+  Genv.find_funct_ptr ge fb = Some (cmp, Internal f) ->
   Mach.find_label lbl f.(Mach.fn_code) = Some c' ->
   transl_code_at_pc ge (rs1 PC) fb f (i :: c) ep tf tc ->
   it1_is_parent ep i = false ->
@@ -515,7 +515,7 @@ Lemma exec_straight_steps_goto:
 Proof.
   intros. inversion H3. subst. monadInv H10.
   exploit H6; eauto. intros (jmp & k' & rs2 & A & B & C & D).
-  generalize (functions_transl _ _ _ H8 H9); intro FN.
+  generalize (functions_transl _ _ _ _ H8 H9); intro FN.
   generalize (transf_function_no_overflow _ _ H9); intro NOOV.
   exploit exec_straight_steps_2; eauto.
   intros [ofs' [PC2 CT2]].
@@ -927,7 +927,7 @@ Local Transparent destroyed_by_jumptable.
   eapply exec_straight_steps_1; eauto. omega. constructor.
   econstructor; eauto.
   change (rs5 PC) with (Val.offset_ptr (Val.offset_ptr (Val.offset_ptr (Val.offset_ptr (rs0 PC) Ptrofs.one) Ptrofs.one) Ptrofs.one) Ptrofs.one).
-  rewrite ATPC. simpl. constructor; eauto.
+  rewrite ATPC. simpl. econstructor; eauto.
   eapply code_tail_next_int. omega.
   eapply code_tail_next_int. omega.
   eapply code_tail_next_int. omega.

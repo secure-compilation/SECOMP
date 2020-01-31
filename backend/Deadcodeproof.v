@@ -395,17 +395,21 @@ Lemma senv_preserved:
 Proof (Genv.senv_match TRANSF).
 
 Lemma functions_translated:
-  forall (v: val) (f: RTL.fundef),
-  Genv.find_funct ge v = Some f ->
+  forall (v: val) (c: compartment) (f: RTL.fundef),
+  Genv.find_funct ge v = Some (c, f) ->
   exists cu tf,
-  Genv.find_funct tge v = Some tf /\ transf_fundef (romem_for cu) f = OK tf /\ linkorder cu prog.
+  Genv.find_funct tge v = Some (c, tf) /\
+  transf_fundef (romem_for cu) f = OK tf /\
+  linkorder cu prog.
 Proof (Genv.find_funct_match TRANSF).
 
 Lemma function_ptr_translated:
-  forall (b: block) (f: RTL.fundef),
-  Genv.find_funct_ptr ge b = Some f ->
+  forall (b: block) (c: compartment) (f: RTL.fundef),
+  Genv.find_funct_ptr ge b = Some (c, f) ->
   exists cu tf,
-  Genv.find_funct_ptr tge b = Some tf /\ transf_fundef (romem_for cu) f = OK tf /\ linkorder cu prog.
+  Genv.find_funct_ptr tge b = Some (c, tf) /\
+  transf_fundef (romem_for cu) f = OK tf /\
+  linkorder cu prog.
 Proof (Genv.find_funct_ptr_match TRANSF).
 
 Lemma sig_function_translated:
@@ -462,11 +466,11 @@ Proof.
 Qed.
 
 Lemma find_function_translated:
-  forall ros rs fd trs ne,
-  find_function ge ros rs = Some fd ->
+  forall ros rs c fd trs ne,
+  find_function ge ros rs = Some (c, fd) ->
   eagree rs trs (add_ros_need_all ros ne) ->
   exists cu tfd,
-     find_function tge ros trs = Some tfd
+     find_function tge ros trs = Some (c, tfd)
   /\ transf_fundef (romem_for cu) fd = OK tfd
   /\ linkorder cu prog.
 Proof.

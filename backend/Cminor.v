@@ -456,18 +456,18 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Sstore chunk addr a) k sp e m)
         E0 (State f Sskip k sp e m')
 
-  | step_call: forall f optid sig a bl k sp e m vf vargs fd,
+  | step_call: forall f optid sig a bl k sp e m vf vargs c fd,
       eval_expr sp e m a vf ->
       eval_exprlist sp e m bl vargs ->
-      Genv.find_funct ge vf = Some fd ->
+      Genv.find_funct ge vf = Some (c, fd) ->
       funsig fd = sig ->
       step (State f (Scall optid sig a bl) k sp e m)
         E0 (Callstate fd vargs (Kcall optid f sp e k) m)
 
-  | step_tailcall: forall f sig a bl k sp e m vf vargs fd m',
+  | step_tailcall: forall f sig a bl k sp e m vf vargs c fd m',
       eval_expr (Vptr sp Ptrofs.zero) e m a vf ->
       eval_exprlist (Vptr sp Ptrofs.zero) e m bl vargs ->
-      Genv.find_funct ge vf = Some fd ->
+      Genv.find_funct ge vf = Some (c, fd) ->
       funsig fd = sig ->
       Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
       step (State f (Stailcall sig a bl) k (Vptr sp Ptrofs.zero) e m)
@@ -554,11 +554,11 @@ End RELSEM.
   without arguments and with an empty continuation. *)
 
 Inductive initial_state (p: program): state -> Prop :=
-  | initial_state_intro: forall b f m0,
+  | initial_state_intro: forall b c f m0,
       let ge := Genv.globalenv p in
       Genv.init_mem p = Some m0 ->
       Genv.find_symbol ge p.(prog_main) = Some b ->
-      Genv.find_funct_ptr ge b = Some f ->
+      Genv.find_funct_ptr ge b = Some (c, f) ->
       funsig f = signature_main ->
       initial_state p (Callstate f nil Kstop m0).
 
@@ -745,10 +745,10 @@ with exec_stmt:
       Mem.storev chunk m vaddr v = Some m' ->
       exec_stmt f sp e m (Sstore chunk addr a) E0 e m' Out_normal
   | exec_Scall:
-      forall f sp e m optid sig a bl vf vargs fd t m' vres e',
+      forall f sp e m optid sig a bl vf vargs c fd t m' vres e',
       eval_expr ge sp e m a vf ->
       eval_exprlist ge sp e m bl vargs ->
-      Genv.find_funct ge vf = Some fd ->
+      Genv.find_funct ge vf = Some (c, fd) ->
       funsig fd = sig ->
       eval_funcall m fd vargs t m' vres ->
       e' = set_optvar optid vres e ->
@@ -808,10 +808,10 @@ with exec_stmt:
       eval_expr ge sp e m a v ->
       exec_stmt f sp e m (Sreturn (Some a)) E0 e m (Out_return (Some v))
   | exec_Stailcall:
-      forall f sp e m sig a bl vf vargs fd t m' m'' vres,
+      forall f sp e m sig a bl vf vargs c fd t m' m'' vres,
       eval_expr ge (Vptr sp Ptrofs.zero) e m a vf ->
       eval_exprlist ge (Vptr sp Ptrofs.zero) e m bl vargs ->
-      Genv.find_funct ge vf = Some fd ->
+      Genv.find_funct ge vf = Some (c, fd) ->
       funsig fd = sig ->
       Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
       eval_funcall m' fd vargs t m'' vres ->
@@ -845,10 +845,10 @@ CoInductive evalinf_funcall:
 with execinf_stmt:
          function -> val -> env -> mem -> stmt -> traceinf -> Prop :=
   | execinf_Scall:
-      forall f sp e m optid sig a bl vf vargs fd t,
+      forall f sp e m optid sig a bl vf vargs c fd t,
       eval_expr ge sp e m a vf ->
       eval_exprlist ge sp e m bl vargs ->
-      Genv.find_funct ge vf = Some fd ->
+      Genv.find_funct ge vf = Some (c, fd) ->
       funsig fd = sig ->
       evalinf_funcall m fd vargs t ->
       execinf_stmt f sp e m (Scall optid sig a bl) t
@@ -883,10 +883,10 @@ with execinf_stmt:
       execinf_stmt f sp e m s t ->
       execinf_stmt f sp e m (Sblock s) t
   | execinf_Stailcall:
-      forall f sp e m sig a bl vf vargs fd m' t,
+      forall f sp e m sig a bl vf vargs c fd m' t,
       eval_expr ge (Vptr sp Ptrofs.zero) e m a vf ->
       eval_exprlist ge (Vptr sp Ptrofs.zero) e m bl vargs ->
-      Genv.find_funct ge vf = Some fd ->
+      Genv.find_funct ge vf = Some (c, fd) ->
       funsig fd = sig ->
       Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
       evalinf_funcall m' fd vargs t ->
@@ -898,22 +898,22 @@ End NATURALSEM.
 
 Inductive bigstep_program_terminates (p: program): trace -> int -> Prop :=
   | bigstep_program_terminates_intro:
-      forall b f m0 t m r,
+      forall b c f m0 t m r,
       let ge := Genv.globalenv p in
       Genv.init_mem p = Some m0 ->
       Genv.find_symbol ge p.(prog_main) = Some b ->
-      Genv.find_funct_ptr ge b = Some f ->
+      Genv.find_funct_ptr ge b = Some (c, f) ->
       funsig f = signature_main ->
       eval_funcall ge m0 f nil t m (Vint r) ->
       bigstep_program_terminates p t r.
 
 Inductive bigstep_program_diverges (p: program): traceinf -> Prop :=
   | bigstep_program_diverges_intro:
-      forall b f m0 t,
+      forall b c f m0 t,
       let ge := Genv.globalenv p in
       Genv.init_mem p = Some m0 ->
       Genv.find_symbol ge p.(prog_main) = Some b ->
-      Genv.find_funct_ptr ge b = Some f ->
+      Genv.find_funct_ptr ge b = Some (c, f) ->
       funsig f = signature_main ->
       evalinf_funcall ge m0 f nil t ->
       bigstep_program_diverges p t.

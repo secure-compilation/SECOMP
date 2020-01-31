@@ -142,11 +142,11 @@ module Printer(Target:TARGET) =
 
     let print_globdef oc (name,gdef) =
       match gdef with
-      | Gfun (Internal code) ->
+      | Gfun (_, Internal code) ->
         if not (C2C.atom_is_iso_inline_definition name) then
           print_function oc name code
-      | Gfun (External ef) ->   ()
-      | Gvar v -> print_var oc name v
+      | Gfun (_, External ef) ->   ()
+      | Gvar (_, v) -> print_var oc name v
 
     let print_ais_annot oc =
       let annots = get_ais_annots () in

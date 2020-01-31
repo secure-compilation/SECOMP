@@ -31,6 +31,11 @@ Definition ident := positive.
 
 Definition ident_eq := peq.
 
+Definition compartment : Type := positive.
+Definition default_compartment : compartment := 1%positive.
+Definition eq_compartment (c1 c2: compartment) :=
+  peq c1 c2.
+
 (** The intermediate languages are weakly typed, using the following types: *)
 
 Inductive typ : Type :=
@@ -257,11 +262,17 @@ taken as parameters to the [program] type.  The other parts of whole
 programs are common to all languages. *)
 
 Inductive globdef (F V: Type) : Type :=
-  | Gfun (f: F)
-  | Gvar (v: globvar V).
+  | Gfun (c: compartment) (f: F)
+  | Gvar (c: compartment) (v: globvar V).
 
 Arguments Gfun [F V].
 Arguments Gvar [F V].
+
+Definition globdef_compartment F V (g: globdef F V) : compartment :=
+  match g with
+  | Gfun c _ => c
+  | Gvar c _ => c
+  end.
 
 Record program (F V: Type) : Type := mkprogram {
   prog_defs: list (ident * globdef F V);
@@ -328,8 +339,8 @@ Variable transf: A -> B.
 
 Definition transform_program_globdef (idg: ident * globdef A V) : ident * globdef B V :=
   match idg with
-  | (id, Gfun f) => (id, Gfun (transf f))
-  | (id, Gvar v) => (id, Gvar v)
+  | (id, Gfun c f) => (id, Gfun c (transf f))
+  | (id, Gvar c v) => (id, Gvar c v)
   end.
 
 Definition transform_program (p: program A V) : program B V :=
@@ -365,17 +376,17 @@ Definition transf_globvar (i: ident) (g: globvar V) : res (globvar W) :=
 Fixpoint transf_globdefs (l: list (ident * globdef A V)) : res (list (ident * globdef B W)) :=
   match l with
   | nil => OK nil
-  | (id, Gfun f) :: l' =>
+  | (id, Gfun c f) :: l' =>
     match transf_fun id f with
       | Error msg => Error (MSG "In function " :: CTX id :: MSG ": " :: msg)
       | OK tf =>
-        do tl' <- transf_globdefs l'; OK ((id, Gfun tf) :: tl')
+        do tl' <- transf_globdefs l'; OK ((id, Gfun c tf) :: tl')
     end
-  | (id, Gvar v) :: l' =>
+  | (id, Gvar c v) :: l' =>
     match transf_globvar id v with
       | Error msg => Error (MSG "In variable " :: CTX id :: MSG ": " :: msg)
       | OK tv =>
-        do tl' <- transf_globdefs l'; OK ((id, Gvar tv) :: tl')
+        do tl' <- transf_globdefs l'; OK ((id, Gvar c tv) :: tl')
     end
   end.
 

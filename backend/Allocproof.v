@@ -1798,17 +1798,17 @@ Lemma senv_preserved:
 Proof (Genv.senv_match TRANSF).
 
 Lemma functions_translated:
-  forall (v: val) (f: RTL.fundef),
-  Genv.find_funct ge v = Some f ->
+  forall (v: val) (c: compartment) (f: RTL.fundef),
+  Genv.find_funct ge v = Some (c, f) ->
   exists tf,
-  Genv.find_funct tge v = Some tf /\ transf_fundef f = OK tf.
+  Genv.find_funct tge v = Some (c, tf) /\ transf_fundef f = OK tf.
 Proof (Genv.find_funct_transf_partial TRANSF).
 
 Lemma function_ptr_translated:
-  forall (b: block) (f: RTL.fundef),
-  Genv.find_funct_ptr ge b = Some f ->
+  forall (b: block) (c: compartment) (f: RTL.fundef),
+  Genv.find_funct_ptr ge b = Some (c, f) ->
   exists tf,
-  Genv.find_funct_ptr tge b = Some tf /\ transf_fundef f = OK tf.
+  Genv.find_funct_ptr tge b = Some (c, tf) /\ transf_fundef f = OK tf.
 Proof (Genv.find_funct_ptr_transf_partial TRANSF).
 
 Lemma sig_function_translated:
@@ -1822,12 +1822,12 @@ Proof.
 Qed.
 
 Lemma find_function_translated:
-  forall ros rs fd ros' e e' ls,
-  RTL.find_function ge ros rs = Some fd ->
+  forall ros rs c fd ros' e e' ls,
+  RTL.find_function ge ros rs = Some (c, fd) ->
   add_equation_ros ros ros' e = Some e' ->
   satisf rs ls e' ->
   exists tfd,
-  LTL.find_function tge ros' ls = Some tfd /\ transf_fundef fd = OK tfd.
+  LTL.find_function tge ros' ls = Some (c, tfd) /\ transf_fundef fd = OK tfd.
 Proof.
   unfold RTL.find_function, LTL.find_function; intros.
   destruct ros as [r|id]; destruct ros' as [r'|id']; simpl in H0; MonadInv.
@@ -2518,7 +2518,7 @@ Proof.
   exploit list_forall2_in_left. eexact (proj1 TRANSF). eauto.
   intros ([i' gd] & A & B & C). simpl in *; subst i'.
   inv C. destruct f; simpl in *.
-- monadInv H2.
+- monadInv H4.
   unfold transf_function in EQ.
   destruct (type_function f) as [env|] eqn:TF; try discriminate.
   econstructor. eapply type_function_correct; eauto.

@@ -349,11 +349,11 @@ let print_globvar p gv =
 
 let print_globdef p (id, gd) =
   match gd with
-  | Gfun(External ef) ->
+  | Gfun(_, External ef) ->
       print_extfun p id ef
-  | Gfun(Internal f) ->
+  | Gfun(_, Internal f) ->
       print_function p id f
-  | Gvar gv ->
+  | Gvar (_, gv) ->
      fprintf p "var \"%s\" %a\n" (extern_atom id) print_globvar gv
 
 let print_program p prog =

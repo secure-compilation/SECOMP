@@ -241,9 +241,9 @@ Definition definitive_initializer (init: list init_data) : bool :=
 
 Definition alloc_global (rm: romem) (idg: ident * globdef fundef unit): romem :=
   match idg with
-  | (id, Gfun f) =>
+  | (id, Gfun c f) =>
       PTree.remove id rm
-  | (id, Gvar v) =>
+  | (id, Gvar c v) =>
       if v.(gvar_readonly) && negb v.(gvar_volatile) && definitive_initializer v.(gvar_init)
       then PTree.set id (store_init_data_list (ablock_init Pbot) 0 v.(gvar_init)) rm
       else PTree.remove id rm
@@ -1726,8 +1726,8 @@ Proof.
 Qed.
 
 Definition initial_mem_match (bc: block_classification) (m: mem) (g: genv) :=
-  forall id b v,
-  Genv.find_symbol g id = Some b -> Genv.find_var_info g b = Some v ->
+  forall id b c v,
+  Genv.find_symbol g id = Some b -> Genv.find_var_info g b = Some (c, v) ->
   v.(gvar_volatile) = false -> v.(gvar_readonly) = true ->
   bmatch bc m b (store_init_data_list (ablock_init Pbot) 0 v.(gvar_init)).
 
@@ -1738,8 +1738,8 @@ Lemma alloc_global_match:
   Genv.alloc_global ge m idg = Some m' ->
   initial_mem_match bc m' (Genv.add_global g idg).
 Proof.
-  intros; red; intros. destruct idg as [id1 [fd | gv]]; simpl in *.
-- destruct (Mem.alloc m default_compartment 0 1) as [m1 b1] eqn:ALLOC.
+  intros; red; intros. destruct idg as [id1 [c' fd | c' gv]]; simpl in *.
+- destruct (Mem.alloc m c' 0 1) as [m1 b1] eqn:ALLOC.
   unfold Genv.find_symbol in H2; simpl in H2.
   unfold Genv.find_var_info, Genv.find_def in H3; simpl in H3.
   rewrite PTree.gsspec in H2. destruct (peq id id1).
@@ -1754,7 +1754,7 @@ Proof.
   eapply Mem.loadbytes_drop; eauto.
   eapply Mem.loadbytes_alloc_unchanged; eauto.
 - set (sz := init_data_list_size (gvar_init gv)) in *.
-  destruct (Mem.alloc m default_compartment 0 sz) as [m1 b1] eqn:ALLOC.
+  destruct (Mem.alloc m c' 0 sz) as [m1 b1] eqn:ALLOC.
   destruct (store_zeros m1 b1 0 sz) as [m2 | ] eqn:STZ; try discriminate.
   destruct (Genv.store_init_data_list ge m2 b1 0 (gvar_init gv)) as [m3 | ] eqn:SIDL; try discriminate.
   unfold Genv.find_symbol in H2; simpl in H2.
@@ -1762,6 +1762,7 @@ Proof.
   rewrite PTree.gsspec in H2. destruct (peq id id1).
 + injection H2; clear H2; intro EQ.
   rewrite EQ, PTree.gss in H3. injection H3; clear H3; intros EQ'; subst v.
+  intros ->.
   assert (b = b1). { erewrite Mem.alloc_result by eauto. congruence. }
   clear EQ. subst b.
   apply bmatch_inv with m3.
@@ -1804,8 +1805,8 @@ Qed.
 Definition romem_consistent (defmap: PTree.t (globdef fundef unit)) (rm: romem) :=
   forall id ab,
   rm!id = Some ab ->
-  exists v,
-     defmap!id = Some (Gvar v)
+  exists c v,
+     defmap!id = Some (Gvar c v)
   /\ v.(gvar_readonly) = true
   /\ v.(gvar_volatile) = false
   /\ definitive_initializer v.(gvar_init) = true
@@ -1816,13 +1817,13 @@ Lemma alloc_global_consistent:
   romem_consistent dm rm ->
   romem_consistent (PTree.set (fst idg) (snd idg) dm) (alloc_global rm idg).
 Proof.
-  intros; red; intros. destruct idg as [id1 [f1 | v1]]; simpl in *.
+  intros; red; intros. destruct idg as [id1 [c1 f1 | c1 v1]]; simpl in *.
 - rewrite PTree.grspec in H0. destruct (PTree.elt_eq id id1); try discriminate.
   rewrite PTree.gso by auto. apply H; auto.
 - destruct (gvar_readonly v1 && negb (gvar_volatile v1) && definitive_initializer (gvar_init v1)) eqn:RO.
 + InvBooleans. rewrite negb_true_iff in H4.
   rewrite PTree.gsspec in *. destruct (peq id id1).
-* inv H0. exists v1; auto.
+* inv H0. exists c1, v1; auto.
 * apply H; auto.
 + rewrite PTree.grspec in H0. destruct (PTree.elt_eq id id1); try discriminate.
   rewrite PTree.gso by auto. apply H; auto.
@@ -1844,13 +1845,13 @@ Lemma romem_for_consistent_2:
   forall cunit, linkorder cunit prog -> romem_consistent (prog_defmap prog) (romem_for cunit).
 Proof.
   intros; red; intros.
-  exploit (romem_for_consistent cunit); eauto. intros (v & DM & RO & VO & DEFN & AB).
+  exploit (romem_for_consistent cunit); eauto. intros (c & v & DM & RO & VO & DEFN & AB).
   destruct (prog_defmap_linkorder _ _ _ _ H DM) as (gd & P & Q).
-  assert (gd = Gvar v).
-  { inv Q. inv H2. simpl in *. f_equal. f_equal.
+  assert (gd = Gvar c v).
+  { inv Q. inv H4. simpl in *. f_equal. f_equal.
     destruct info1, info2; auto.
-    inv H3; auto; discriminate. }
-  subst gd. exists v; auto.
+    inv H2; auto; discriminate. }
+  subst gd. exists c, v; auto.
 Qed.
 
 End INIT.
@@ -1876,7 +1877,7 @@ Proof.
   }
   assert (B: romem_consistent (prog_defmap prog) (romem_for cunit)) by (apply romem_for_consistent_2; auto).
   red; intros.
-  exploit B; eauto. intros (v & DM & RO & NVOL & DEFN & EQ).
+  exploit B; eauto. intros (c & v & DM & RO & NVOL & DEFN & EQ).
   rewrite Genv.find_def_symbol in DM. destruct DM as (b1 & FS & FD).
   rewrite <- Genv.find_var_info_iff in FD.
   assert (b1 = b). { apply INV in H1. unfold ge in H1; congruence. }

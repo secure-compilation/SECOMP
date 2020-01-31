@@ -104,7 +104,7 @@ let print_function pp id f =
 
 let print_globdef pp (id, gd) =
   match gd with
-  | Gfun(Internal f) -> print_function pp id f
+  | Gfun(_, Internal f) -> print_function pp id f
   | _ -> ()
 
 let print_program pp (prog: RTL.program) =

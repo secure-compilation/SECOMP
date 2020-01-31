@@ -48,17 +48,17 @@ Lemma senv_preserved:
 Proof (Genv.senv_transf_partial TRANSL).
 
 Lemma function_ptr_translated:
-  forall (b: block) (f: Csharpminor.fundef),
-  Genv.find_funct_ptr ge b = Some f ->
+  forall (b: block) (c: compartment) (f: Csharpminor.fundef),
+  Genv.find_funct_ptr ge b = Some (c, f) ->
   exists tf,
-  Genv.find_funct_ptr tge b = Some tf /\ transl_fundef f = OK tf.
+  Genv.find_funct_ptr tge b = Some (c, tf) /\ transl_fundef f = OK tf.
 Proof (Genv.find_funct_ptr_transf_partial TRANSL).
 
 Lemma functions_translated:
-  forall (v: val) (f: Csharpminor.fundef),
-  Genv.find_funct ge v = Some f ->
+  forall (v: val) (c: compartment) (f: Csharpminor.fundef),
+  Genv.find_funct ge v = Some (c, f) ->
   exists tf,
-  Genv.find_funct tge v = Some tf /\ transl_fundef f = OK tf.
+  Genv.find_funct tge v = Some (c, tf) /\ transl_fundef f = OK tf.
 Proof (Genv.find_funct_transf_partial TRANSL).
 
 Lemma sig_preserved_body:
@@ -426,8 +426,8 @@ Inductive match_globalenvs (f: meminj) (bound: block): Prop :=
       (DOMAIN: forall b, Plt b bound -> f b = Some(b, 0))
       (IMAGE: forall b1 b2 delta, f b1 = Some(b2, delta) -> Plt b2 bound -> b1 = b2)
       (SYMBOLS: forall id b, Genv.find_symbol ge id = Some b -> Plt b bound)
-      (FUNCTIONS: forall b fd, Genv.find_funct_ptr ge b = Some fd -> Plt b bound)
-      (VARINFOS: forall b gv, Genv.find_var_info ge b = Some gv -> Plt b bound).
+      (FUNCTIONS: forall b c fd, Genv.find_funct_ptr ge b = Some (c, fd) -> Plt b bound)
+      (VARINFOS: forall b c gv, Genv.find_var_info ge b = Some (c, gv) -> Plt b bound).
 
 Remark inj_preserves_globals:
   forall f hi,
@@ -1626,8 +1626,8 @@ Inductive match_states: Csharpminor.state -> Cminor.state -> Prop :=
                    (Returnstate tv tk tm).
 
 Remark val_inject_function_pointer:
-  forall bound v fd f tv,
-  Genv.find_funct ge v = Some fd ->
+  forall bound v c fd f tv,
+  Genv.find_funct ge v = Some (c, fd) ->
   match_globalenvs f bound ->
   Val.inject f v tv ->
   tv = v.

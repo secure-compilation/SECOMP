@@ -277,7 +277,7 @@ Inductive wt_fundef: fundef -> Prop :=
       wt_fundef (External ef).
 
 Definition wt_program (p: program): Prop :=
-  forall i f, In (i, Gfun f) (prog_defs p) -> wt_fundef f.
+  forall i c f, In (i, Gfun c f) (prog_defs p) -> wt_fundef f.
 
 (** * Soundness of type inference *)
 
@@ -623,8 +623,8 @@ Proof.
 - split. eapply wt_eval_expr; eauto. eauto.
 Qed.
 
-Lemma wt_find_funct: forall v fd,
-  Genv.find_funct ge v = Some fd -> wt_fundef fd.
+Lemma wt_find_funct: forall v c fd,
+  Genv.find_funct ge v = Some (c, fd) -> wt_fundef fd.
 Proof.
   intros. eapply Genv.find_funct_prop; eauto.
 Qed.

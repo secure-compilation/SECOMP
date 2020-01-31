@@ -375,18 +375,18 @@ Proof
   (Genv.find_symbol_transf_partial TRANSL).
 
 Lemma function_ptr_translated:
-  forall (b: block) (f: CminorSel.fundef),
-  Genv.find_funct_ptr ge b = Some f ->
+  forall (b: block) (c: compartment) (f: CminorSel.fundef),
+  Genv.find_funct_ptr ge b = Some (c, f) ->
   exists tf,
-  Genv.find_funct_ptr tge b = Some tf /\ transl_fundef f = OK tf.
+  Genv.find_funct_ptr tge b = Some (c, tf) /\ transl_fundef f = OK tf.
 Proof
   (Genv.find_funct_ptr_transf_partial TRANSL).
 
 Lemma functions_translated:
-  forall (v: val) (f: CminorSel.fundef),
-  Genv.find_funct ge v = Some f ->
+  forall (v: val) (c: compartment) (f: CminorSel.fundef),
+  Genv.find_funct ge v = Some (c, f) ->
   exists tf,
-  Genv.find_funct tge v = Some tf /\ transl_fundef f = OK tf.
+  Genv.find_funct tge v = Some (c, tf) /\ transl_fundef f = OK tf.
 Proof
   (Genv.find_funct_transf_partial TRANSL).
 
@@ -724,9 +724,9 @@ Proof.
 Qed.
 
 Lemma transl_expr_Eexternal_correct:
-  forall le id sg al b ef vl v,
+  forall le id sg al b c ef vl v,
   Genv.find_symbol ge id = Some b ->
-  Genv.find_funct_ptr ge b = Some (External ef) ->
+  Genv.find_funct_ptr ge b = Some (c, External ef) ->
   ef_sig ef = sg ->
   eval_exprlist ge sp e m le al vl ->
   transl_exprlist_prop le al vl ->

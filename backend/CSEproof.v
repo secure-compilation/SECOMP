@@ -825,16 +825,22 @@ Lemma senv_preserved:
 Proof (Genv.senv_match TRANSF).
 
 Lemma functions_translated:
-  forall (v: val) (f: RTL.fundef),
-  Genv.find_funct ge v = Some f ->
-  exists cu tf, Genv.find_funct tge v = Some tf /\ transf_fundef (romem_for cu) f = OK tf /\ linkorder cu prog.
-Proof (Genv.find_funct_match TRANSF).
+  forall (v: val) (c: compartment) (f: RTL.fundef),
+  Genv.find_funct ge v = Some (c, f) ->
+  exists cu tf,
+  Genv.find_funct tge v = Some (c, tf) /\
+  transf_fundef (romem_for cu) f = OK tf /\
+  linkorder cu prog.
+Proof. exact (Genv.find_funct_match TRANSF). Qed.
 
 Lemma funct_ptr_translated:
-  forall (b: block) (f: RTL.fundef),
-  Genv.find_funct_ptr ge b = Some f ->
-  exists cu tf, Genv.find_funct_ptr tge b = Some tf /\ transf_fundef (romem_for cu) f = OK tf /\ linkorder cu prog.
-Proof (Genv.find_funct_ptr_match TRANSF).
+  forall (b: block) (c: compartment) (f: RTL.fundef),
+  Genv.find_funct_ptr ge b = Some (c, f) ->
+  exists cu tf,
+  Genv.find_funct_ptr tge b = Some (c, tf) /\
+  transf_fundef (romem_for cu) f = OK tf /\
+  linkorder cu prog.
+Proof. exact (Genv.find_funct_ptr_match TRANSF). Qed.
 
 Lemma sig_preserved:
   forall rm f tf, transf_fundef rm f = OK tf -> funsig tf = funsig f.
@@ -882,10 +888,10 @@ Proof.
 Qed.
 
 Lemma find_function_translated:
-  forall ros rs fd rs',
-  find_function ge ros rs = Some fd ->
+  forall ros rs c fd rs',
+  find_function ge ros rs = Some (c, fd) ->
   regs_lessdef rs rs' ->
-  exists cu tfd, find_function tge ros rs' = Some tfd
+  exists cu tfd, find_function tge ros rs' = Some (c, tfd)
               /\ transf_fundef (romem_for cu) fd = OK tfd
               /\ linkorder cu prog.
 Proof.

@@ -210,7 +210,7 @@ Definition classify_call (e: Cminor.expr) : call_kind :=
   | None => Call_default
   | Some id =>
       match defmap!id with
-      | Some(Gfun(External ef)) => if ef_inline ef then Call_builtin ef else Call_imm id
+      | Some(Gfun c (External ef)) => if ef_inline ef then Call_builtin ef else Call_imm id
       | _ => Call_imm id
       end
   end.
@@ -461,7 +461,7 @@ Definition sel_fundef (dm: PTree.t globdef) (hf: helper_functions) (f: Cminor.fu
 
 Definition globdef_of_interest (gd: globdef) : bool :=
   match gd with
-  | Gfun (External (EF_runtime name sg)) => true
+  | Gfun c (External (EF_runtime name sg)) => true
   | _ => false
   end.
 
@@ -474,8 +474,8 @@ Definition lookup_helper_aux
      (name: String.string) (sg: signature) (res: option ident)
      (id: ident) (gd: globdef) :=
   match gd with
-  | Gfun (External (EF_runtime name' sg')) =>
-      if String.string_dec name name' && signature_eq sg sg'
+  | Gfun c (External (EF_runtime name' sg')) =>
+      if eq_compartment c default_compartment && String.string_dec name name' && signature_eq sg sg'
       then Some id
       else res
   | _ => res

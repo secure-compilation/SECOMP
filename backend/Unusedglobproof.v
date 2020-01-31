@@ -53,8 +53,8 @@ Definition ref_init (il: list init_data) (id: ident) : Prop :=
 
 Definition ref_def (gd: globdef fundef unit) (id: ident) : Prop :=
   match gd with
-  | Gfun fd => ref_fundef fd id
-  | Gvar gv => ref_init gv.(gvar_init) id
+  | Gfun c fd => ref_fundef fd id
+  | Gvar c gv => ref_init gv.(gvar_init) id
   end.
 
 Record valid_used_set (p: program) (u: IS.t) : Prop := {
@@ -148,7 +148,7 @@ Lemma add_ref_definition_incl:
   forall pm id w, workset_incl w (add_ref_definition pm id w).
 Proof.
   unfold add_ref_definition; intros.
-  destruct (pm!id) as [[[] | ? ] | ].
+  destruct (pm!id) as [[c [] |c ? ] | ].
   apply add_ref_function_incl.
   apply workset_incl_refl.
   apply add_ref_globvar_incl.
@@ -204,7 +204,8 @@ Lemma seen_add_ref_definition:
   forall pm id gd id' w,
   pm!id = Some gd -> ref_def gd id' -> IS.In id' (add_ref_definition pm id w).
 Proof.
-  unfold add_ref_definition; intros. rewrite H. red in H0; destruct gd as [[f|ef]|gv].
+  unfold add_ref_definition; intros.
+  rewrite H. red in H0; destruct gd as [c [f|ef]|c gv].
   apply seen_add_ref_function; auto.
   contradiction.
   destruct H0 as (ofs & IN).
@@ -610,11 +611,11 @@ Proof.
     eapply kept_public; eauto.
     intros (b' & A & B); exists b'; auto.
   + simpl. unfold Genv.block_is_volatile.
-    destruct (Genv.find_var_info ge b1) as [gv|] eqn:V1.
+    destruct (Genv.find_var_info ge b1) as [[c gv]|] eqn:V1.
     rewrite Genv.find_var_info_iff in V1.
     exploit defs_inject; eauto. intros (A & B & C).
     rewrite <- Genv.find_var_info_iff in A. rewrite A; auto.
-    destruct (Genv.find_var_info tge b2) as [gv|] eqn:V2; auto.
+    destruct (Genv.find_var_info tge b2) as [[c gv]|] eqn:V2; auto.
     rewrite Genv.find_var_info_iff in V2.
     exploit defs_rev_inject; eauto. intros (A & B).
     rewrite <- Genv.find_var_info_iff in A. congruence.
@@ -795,11 +796,11 @@ Proof.
 Qed.
 
 Lemma find_function_inject:
-  forall j ros rs fd trs,
+  forall j ros rs c fd trs,
   meminj_preserves_globals j ->
-  find_function ge ros rs = Some fd ->
+  find_function ge ros rs = Some (c, fd) ->
   match ros with inl r => regset_inject j rs trs | inr id => kept id end ->
-  find_function tge ros trs = Some fd /\ (forall id, ref_fundef fd id -> kept id).
+  find_function tge ros trs = Some (c, fd) /\ (forall id, ref_fundef fd id -> kept id).
 Proof.
   intros. destruct ros as [r|id]; simpl in *.
 - exploit Genv.find_funct_inv; eauto. intros (b & R). rewrite R in H0.
@@ -1136,7 +1137,7 @@ Proof.
 - exploit init_meminj_invert_strong; eauto. intros (A & id & gd & B & C & D & E & F).
   exploit (Genv.init_mem_characterization_gen p); eauto.
   exploit (Genv.init_mem_characterization_gen tp); eauto.
-  destruct gd as [f|v].
+  destruct gd as [c f|c v].
 + intros (P2 & Q2) (P1 & Q1).
   apply Q1 in H0. destruct H0. subst.
   apply Mem.perm_cur. auto.
@@ -1149,7 +1150,7 @@ Proof.
 - exploit init_meminj_invert_strong; eauto. intros (A & id & gd & B & C & D & E & F).
   exploit (Genv.init_mem_characterization_gen p); eauto.
   exploit (Genv.init_mem_characterization_gen tp); eauto.
-  destruct gd as [f|v].
+  destruct gd as [c f|c v].
 + intros (P2 & Q2) (P1 & Q1).
   apply Q1 in H0. destruct H0; discriminate.
 + intros (P2 & Q2 & R2 & S2) (P1 & Q1 & R1 & S1).
@@ -1202,15 +1203,15 @@ Lemma init_mem_exists:
   exists tm, Genv.init_mem tp = Some tm.
 Proof.
   intros. apply Genv.init_mem_exists.
-  intros.
-  assert (P: (prog_defmap tp)!id = Some (Gvar v)).
+  intros id c v H0.
+  assert (P: (prog_defmap tp)!id = Some (Gvar c v)).
   { eapply prog_defmap_norepet; eauto. eapply match_prog_unique; eauto. }
   rewrite (match_prog_def _ _ _ TRANSF) in P. destruct (IS.mem id used) eqn:U; try discriminate.
   exploit Genv.init_mem_inversion; eauto. apply in_prog_defmap; eauto. intros [AL FV].
   split. auto.
   intros. exploit FV; eauto. intros (b & FS).
   apply transform_find_symbol_1 with b; auto.
-  apply kept_closed with id (Gvar v).
+  apply kept_closed with id (Gvar c v).
   apply IS.mem_2; auto. auto. red. red. exists o; auto.
 Qed.
 
@@ -1279,14 +1280,18 @@ Remark link_def_either:
 Proof with (try discriminate).
   intros until gd.
 Local Transparent Linker_def Linker_fundef Linker_varinit Linker_vardef Linker_unit.
-  destruct gd1 as [f1|v1], gd2 as [f2|v2]...
-(* Two fundefs *)
+  destruct gd1 as [c1 f1|c1 v1], gd2 as [c2 f2|c2 v2]...
+- (* Two fundefs *)
+  simpl.
+  destruct (eq_compartment c1 c2); try easy; subst c2.
   destruct f1 as [f1|ef1], f2 as [f2|ef2]; simpl...
   destruct ef2; intuition congruence.
   destruct ef1; intuition congruence.
   destruct (external_function_eq ef1 ef2); intuition congruence.
-(* Two vardefs *)
-  simpl. unfold link_vardef. destruct v1 as [info1 init1 ro1 vo1], v2 as [info2 init2 ro2 vo2]; simpl.
+- (* Two vardefs *)
+  simpl.
+  destruct (eq_compartment c1 c2); try easy; subst c2.
+  unfold link_vardef. destruct v1 as [info1 init1 ro1 vo1], v2 as [info2 init2 ro2 vo2]; simpl.
   destruct (link_varinit init1 init2) as [init|] eqn:LI...
   destruct (eqb ro1 ro2) eqn:RO...
   destruct (eqb vo1 vo2) eqn:VO...

@@ -21,11 +21,6 @@ Require Import AST.
 Require Import Integers.
 Require Import Floats.
 
-Definition compartment : Type := positive.
-Definition default_compartment : compartment := 1%positive.
-Definition eq_compartment (c1 c2: compartment) :=
-  peq c1 c2.
-
 Definition block : Type := positive.
 Definition eq_block := peq.
 

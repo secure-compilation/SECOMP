@@ -24,22 +24,22 @@ Local Open Scope string_scope.
 (** * Properties of the helper functions *)
 
 Definition helper_declared {F V: Type} (p: AST.program (AST.fundef F) V) (id: ident) (name: string) (sg: signature) : Prop :=
-  (prog_defmap p)!id = Some (Gfun (External (EF_runtime name sg))).
+  (prog_defmap p)!id = Some (Gfun default_compartment (External (EF_runtime name sg))).
 
 Definition helper_functions_declared {F V: Type} (p: AST.program (AST.fundef F) V) (hf: helper_functions) : Prop :=
-     helper_declared p i64_dtos "__compcert_i64_dtos" sig_f_l
-  /\ helper_declared p i64_dtou "__compcert_i64_dtou" sig_f_l
-  /\ helper_declared p i64_stod "__compcert_i64_stod" sig_l_f
-  /\ helper_declared p i64_utod "__compcert_i64_utod" sig_l_f
-  /\ helper_declared p i64_stof "__compcert_i64_stof" sig_l_s
-  /\ helper_declared p i64_utof "__compcert_i64_utof" sig_l_s
-  /\ helper_declared p i64_sdiv "__compcert_i64_sdiv" sig_ll_l
-  /\ helper_declared p i64_udiv "__compcert_i64_udiv" sig_ll_l
-  /\ helper_declared p i64_smod "__compcert_i64_smod" sig_ll_l
-  /\ helper_declared p i64_umod "__compcert_i64_umod" sig_ll_l
-  /\ helper_declared p i64_shl "__compcert_i64_shl" sig_li_l
-  /\ helper_declared p i64_shr "__compcert_i64_shr" sig_li_l
-  /\ helper_declared p i64_sar "__compcert_i64_sar" sig_li_l
+     helper_declared p i64_dtos  "__compcert_i64_dtos" sig_f_l
+  /\ helper_declared p i64_dtou  "__compcert_i64_dtou" sig_f_l
+  /\ helper_declared p i64_stod  "__compcert_i64_stod" sig_l_f
+  /\ helper_declared p i64_utod  "__compcert_i64_utod" sig_l_f
+  /\ helper_declared p i64_stof  "__compcert_i64_stof" sig_l_s
+  /\ helper_declared p i64_utof  "__compcert_i64_utof" sig_l_s
+  /\ helper_declared p i64_sdiv  "__compcert_i64_sdiv" sig_ll_l
+  /\ helper_declared p i64_udiv  "__compcert_i64_udiv" sig_ll_l
+  /\ helper_declared p i64_smod  "__compcert_i64_smod" sig_ll_l
+  /\ helper_declared p i64_umod  "__compcert_i64_umod" sig_ll_l
+  /\ helper_declared p i64_shl   "__compcert_i64_shl" sig_li_l
+  /\ helper_declared p i64_shr   "__compcert_i64_shr" sig_li_l
+  /\ helper_declared p i64_sar   "__compcert_i64_sar" sig_li_l
   /\ helper_declared p i64_umulh "__compcert_i64_umulh" sig_ll_l
   /\ helper_declared p i64_smulh "__compcert_i64_smulh" sig_ll_l.
 

@@ -35,7 +35,7 @@ Parameter should_inline: inlining_info -> ident -> function -> bool.
 
 Definition add_globdef (io: inlining_info) (fenv: funenv) (idg: ident * globdef fundef unit) : funenv :=
   match idg with
-  | (id, Gfun (Internal f)) =>
+  | (id, Gfun c (Internal f)) =>
       if should_inline io id f
       then PTree.set id f fenv
       else PTree.remove id fenv

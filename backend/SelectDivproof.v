@@ -786,7 +786,7 @@ Proof.
   simpl in H1. destruct (Int64.eq n2 Int64.zero); inv H1.
   econstructor; split. apply eval_longconst. constructor.
 + destruct (Int64.is_power2' n2) as [l|] eqn:POW.
-* exploit Val.divlu_pow2; eauto. intros EQ; subst z. apply eval_shrluimm; auto.
+* exploit Val.divlu_pow2; eauto. intros EQ; subst z. eapply eval_shrluimm; eauto.
 * destruct (Compopts.optim_for_size tt). eapply eval_divlu_base; eauto.
   destruct (divlu_mul_params (Int64.unsigned n2)) as [[p M]|] eqn:PARAMS.
 ** destruct x; simpl in H1; try discriminate.

@@ -303,17 +303,18 @@ Lemma senv_preserved:
 Proof (Genv.senv_match TRANSF).
 
 Lemma functions_translated:
-  forall (v: val) (f: fundef),
-  Genv.find_funct ge v = Some f ->
+  forall (v: val) (c: compartment) (f: fundef),
+  Genv.find_funct ge v = Some (c, f) ->
   exists tf,
-  Genv.find_funct tge v = Some tf /\ transf_fundef f = OK tf.
-Proof (Genv.find_funct_transf_partial TRANSF).
+  Genv.find_funct tge v = Some (c, tf) /\
+  transf_fundef f = OK tf.
+Proof. exact (Genv.find_funct_transf_partial TRANSF). Qed.
 
 Lemma function_ptr_translated:
-  forall (b: block) (f: fundef),
-  Genv.find_funct_ptr ge b = Some f ->
+  forall (b: block) (c: compartment) (f: fundef),
+  Genv.find_funct_ptr ge b = Some (c, f) ->
   exists tf,
-  Genv.find_funct_ptr tge b = Some tf /\ transf_fundef f = OK tf.
+  Genv.find_funct_ptr tge b = Some (c, tf) /\ transf_fundef f = OK tf.
 Proof (Genv.find_funct_ptr_transf_partial TRANSF).
 
 Lemma sig_preserved:
@@ -328,10 +329,10 @@ Proof.
 Qed.
 
 Lemma find_function_translated:
-  forall ros ls f,
-  find_function ge ros ls = Some f ->
+  forall ros ls c f,
+  find_function ge ros ls = Some (c, f) ->
   exists tf,
-  find_function tge ros ls = Some tf /\ transf_fundef f = OK tf.
+  find_function tge ros ls = Some (c, tf) /\ transf_fundef f = OK tf.
 Proof.
   unfold find_function; intros; destruct ros; simpl.
   apply functions_translated; auto.

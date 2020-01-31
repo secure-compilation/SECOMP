@@ -24,14 +24,16 @@ Require Import Inlining.
 
 Definition fenv_compat (p: program) (fenv: funenv) : Prop :=
   forall id f,
-  fenv!id = Some f -> (prog_defmap p)!id = Some (Gfun (Internal f)).
+  fenv!id = Some f ->
+  exists c, (prog_defmap p)!id = Some (Gfun c (Internal f)).
 
 Lemma funenv_program_compat:
   forall p, fenv_compat p (funenv_program p).
 Proof.
   set (P := fun (dm: PTree.t (globdef fundef unit)) (fenv: funenv) =>
               forall id f,
-              fenv!id = Some f -> dm!id = Some (Gfun (Internal f))).
+              fenv!id = Some f ->
+              exists c, dm!id = Some (Gfun c (Internal f))).
   assert (REMOVE: forall dm fenv id g,
              P dm fenv ->
              P (PTree.set id g dm) (PTree.remove id fenv)).
@@ -43,10 +45,10 @@ Proof.
              P dm fenv ->
              P (PTree.set (fst idg) (snd idg) dm) (add_globdef io fenv idg)).
   { intros io dm fenv [id g]; simpl; intros.
-    destruct g as [ [f|ef] | v]; auto.
+    destruct g as [ c [f|ef] | c v]; auto.
     destruct (should_inline io id f); auto.
     red; intros. rewrite ! PTree.gsspec in *.
-    destruct (peq id0 id); auto. inv H0; auto.
+    destruct (peq id0 id); auto. inv H0; eauto.
   }
   assert (REC: forall p l dm fenv,
             P dm fenv ->
@@ -64,8 +66,9 @@ Lemma fenv_compat_linkorder:
   linkorder cunit prog -> fenv_compat cunit fenv -> fenv_compat prog fenv.
 Proof.
   intros; red; intros. apply H0 in H1.
+  destruct H1 as [c H1].
   destruct (prog_defmap_linkorder _ _ _ _ H H1) as (gd' & P & Q).
-  inv Q. inv H3. auto.
+  inv Q. inv H5. eauto.
 Qed.
 
 (** ** Properties of shifting *)
