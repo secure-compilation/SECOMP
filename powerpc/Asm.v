@@ -709,7 +709,7 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : out
       Next (nextinstr (rs#rd <- (Val.addl rs#r1 rs#CARRY)
                        #CARRY <- (Val.addl_carry rs#r1 (Vlong Int64.zero) rs#CARRY))) m
   | Pallocframe sz ofs _ =>
-      let (m1, stk) := Mem.alloc m 0 sz in
+      let (m1, stk) := Mem.alloc m default_compartment 0 sz in
       let sp := Vptr stk Ptrofs.zero in
       match Mem.storev Mint32 m1 (Val.offset_ptr sp ofs) rs#GPR1 with
       | None => Stuck

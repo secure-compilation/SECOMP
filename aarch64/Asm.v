@@ -1060,7 +1060,7 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : out
       Next (nextinstr (rs#rd <- v)) m
   (** Pseudo-instructions *)
   | Pallocframe sz pos =>
-      let (m1, stk) := Mem.alloc m 0 sz in
+      let (m1, stk) := Mem.alloc m default_compartment 0 sz in
       let sp := (Vptr stk Ptrofs.zero) in
       match Mem.storev Mint64 m1 (Val.offset_ptr sp pos) rs#SP with
       | None => Stuck
