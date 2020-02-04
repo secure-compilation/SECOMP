@@ -73,9 +73,9 @@ Proof.
 Qed.
 
 Lemma exec_straight_exec:
-  forall fb f c ep tf tc c' rs m rs' m',
-  transl_code_at_pc ge (rs PC) fb f c ep tf tc ->
-  exec_straight tge tf tc rs m c' rs' m' ->
+  forall cp fb f c ep tf tc c' rs m rs' m',
+  transl_code_at_pc ge (rs PC) fb cp f c ep tf tc ->
+  exec_straight tge cp tf tc rs m c' rs' m' ->
   plus step tge (State rs m) E0 (State rs' m').
 Proof.
   intros. inv H.
@@ -85,11 +85,11 @@ Proof.
 Qed.
 
 Lemma exec_straight_at:
-  forall fb f c ep tf tc c' ep' tc' rs m rs' m',
-  transl_code_at_pc ge (rs PC) fb f c ep tf tc ->
+  forall cp fb f c ep tf tc c' ep' tc' rs m rs' m',
+  transl_code_at_pc ge (rs PC) fb cp f c ep tf tc ->
   transl_code f c' ep' = OK tc' ->
-  exec_straight tge tf tc rs m tc' rs' m' ->
-  transl_code_at_pc ge (rs' PC) fb f c' ep' tf tc'.
+  exec_straight tge cp tf tc rs m tc' rs' m' ->
+  transl_code_at_pc ge (rs' PC) fb cp f c' ep' tf tc'.
 Proof.
   intros. inv H.
   exploit exec_straight_steps_2; eauto.
@@ -383,14 +383,14 @@ End TRANSL_LABEL.
   transition in the generated PPC code. *)
 
 Lemma find_label_goto_label:
-  forall cmp f tf lbl rs m c' b ofs,
-  Genv.find_funct_ptr ge b = Some (cmp, Internal f) ->
+  forall cp f tf lbl rs m c' b ofs,
+  Genv.find_funct_ptr ge b = Some (cp, Internal f) ->
   transf_function f = OK tf ->
   rs PC = Vptr b ofs ->
   Mach.find_label lbl f.(Mach.fn_code) = Some c' ->
   exists tc', exists rs',
     goto_label tf lbl rs m = Next rs' m
-  /\ transl_code_at_pc ge (rs' PC) b f c' false tf tc'
+  /\ transl_code_at_pc ge (rs' PC) b cp f c' false tf tc'
   /\ forall r, r <> PC -> rs'#r = rs#r.
 Proof.
   intros. exploit (transl_find_label lbl f tf); eauto. rewrite H2.
@@ -442,11 +442,11 @@ Qed.
 
 Inductive match_states: Mach.state -> Asm.state -> Prop :=
   | match_states_intro:
-      forall s fb sp c ep ms m m' rs cmp f tf tc
+      forall s fb sp c ep ms m m' rs cp f tf tc
         (STACKS: match_stack ge s)
-        (FIND: Genv.find_funct_ptr ge fb = Some (cmp, Internal f))
+        (FIND: Genv.find_funct_ptr ge fb = Some (cp, Internal f))
         (MEXT: Mem.extends m m')
-        (AT: transl_code_at_pc ge (rs PC) fb f c ep tf tc)
+        (AT: transl_code_at_pc ge (rs PC) fb cp f c ep tf tc)
         (AG: agree ms sp rs)
         (DXP: ep = true -> rs#GPR11 = parent_sp s)
         (LEAF: is_leaf_function f = true -> rs#LR = parent_ra s),
@@ -471,15 +471,15 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
                    (Asm.State rs m').
 
 Lemma exec_straight_steps:
-  forall s fb cmp f rs1 i c ep tf tc m1' m2 m2' sp ms2,
+  forall s fb cp f rs1 i c ep tf tc m1' m2 m2' sp ms2,
   match_stack ge s ->
   Mem.extends m2 m2' ->
-  Genv.find_funct_ptr ge fb = Some (cmp, Internal f) ->
-  transl_code_at_pc ge (rs1 PC) fb f (i :: c) ep tf tc ->
+  Genv.find_funct_ptr ge fb = Some (cp, Internal f) ->
+  transl_code_at_pc ge (rs1 PC) fb cp f (i :: c) ep tf tc ->
   (is_leaf_function f = true -> rs1#LR = parent_ra s) ->
   (forall k c (TR: transl_instr f i ep k = OK c),
    exists rs2,
-       exec_straight tge tf c rs1 m1' k rs2 m2'
+       exec_straight tge cp tf c rs1 m1' k rs2 m2'
     /\ agree ms2 sp rs2
     /\ (it1_is_parent ep i = true -> rs2#GPR11 = parent_sp s)
     /\ rs2#LR = rs1#LR) ->
@@ -495,19 +495,19 @@ Proof.
 Qed.
 
 Lemma exec_straight_steps_goto:
-  forall s fb cmp f rs1 i c ep tf tc m1' m2 m2' sp ms2 lbl c',
+  forall s fb cp f rs1 i c ep tf tc m1' m2 m2' sp ms2 lbl c',
   match_stack ge s ->
   Mem.extends m2 m2' ->
-  Genv.find_funct_ptr ge fb = Some (cmp, Internal f) ->
+  Genv.find_funct_ptr ge fb = Some (cp, Internal f) ->
   Mach.find_label lbl f.(Mach.fn_code) = Some c' ->
-  transl_code_at_pc ge (rs1 PC) fb f (i :: c) ep tf tc ->
+  transl_code_at_pc ge (rs1 PC) fb cp f (i :: c) ep tf tc ->
   it1_is_parent ep i = false ->
   (is_leaf_function f = true -> rs1#LR = parent_ra s) ->
   (forall k c (TR: transl_instr f i ep k = OK c),
    exists jmp, exists k', exists rs2,
-       exec_straight tge tf c rs1 m1' (jmp :: k') rs2 m2'
+       exec_straight tge cp tf c rs1 m1' (jmp :: k') rs2 m2'
     /\ agree ms2 sp rs2
-    /\ exec_instr tge tf jmp rs2 m2' = goto_label tf lbl rs2 m2'
+    /\ exec_instr tge cp tf jmp rs2 m2' = goto_label tf lbl rs2 m2'
     /\ rs2#LR = rs1#LR) ->
   exists st',
   plus step tge (State rs1 m1') E0 st' /\
@@ -673,6 +673,7 @@ Opaque loadind.
 
 - (* Mcall *)
   assert (f0 = f) by congruence.  subst f0.
+  assert (cp0 = cp) by congruence.  subst cp0.
   inv AT.
   assert (NOOV: list_length_z tf.(fn_code) <= Int.max_unsigned).
     eapply transf_function_no_overflow; eauto.
@@ -685,7 +686,7 @@ Opaque loadind.
     exploit ireg_val; eauto. rewrite H5; intros LD; inv LD; auto.
   generalize (code_tail_next_int _ _ _ _ NOOV H6). intro CT1.
   generalize (code_tail_next_int _ _ _ _ NOOV CT1). intro CT2.
-  assert (TCA: transl_code_at_pc ge (Vptr fb (Ptrofs.add (Ptrofs.add ofs Ptrofs.one) Ptrofs.one)) fb f c false tf x).
+  assert (TCA: transl_code_at_pc ge (Vptr fb (Ptrofs.add (Ptrofs.add ofs Ptrofs.one) Ptrofs.one)) fb cp f c false tf x).
     econstructor; eauto.
   exploit return_address_offset_correct; eauto. intros; subst ra.
   left; econstructor; split.
@@ -703,7 +704,7 @@ Opaque loadind.
   Simpl. rewrite <- H2. auto.
 + (* Direct call *)
   generalize (code_tail_next_int _ _ _ _ NOOV H6). intro CT1.
-  assert (TCA: transl_code_at_pc ge (Vptr fb (Ptrofs.add ofs Ptrofs.one)) fb f c false tf x).
+  assert (TCA: transl_code_at_pc ge (Vptr fb (Ptrofs.add ofs Ptrofs.one)) fb cp f c false tf x).
     econstructor; eauto.
   exploit return_address_offset_correct; eauto. intros; subst ra.
   left; econstructor; split.
@@ -718,6 +719,7 @@ Opaque loadind.
 
 - (* Mtailcall *)
   assert (f0 = f) by congruence.  subst f0.
+  assert (cp0 = cp) by congruence.  subst cp0.
   inversion AT; subst.
   assert (NOOV: list_length_z tf.(fn_code) <= Ptrofs.max_unsigned).
     eapply transf_function_no_overflow; eauto.
@@ -732,7 +734,7 @@ Opaque loadind.
   assert (AG1: agree rs (Vptr stk soff) rs1). { apply agree_nextinstr. apply agree_set_other; auto. }
   exploit transl_epilogue_correct; eauto. 
   intros (rs2 & m2' & A & B & C & D & E & F). 
-  assert (A': exec_straight tge tf
+  assert (A': exec_straight tge cp tf
             (Pmtctr x0 :: transl_epilogue f (Pbctr sig :: x))
             rs0 m'0
             (Pbctr sig :: x) rs2 m2').
@@ -808,10 +810,11 @@ Opaque loadind.
 
 - (* Mcond true *)
   assert (f0 = f) by congruence. subst f0.
+  assert (cp0 = cp) by congruence.  subst cp0.
   exploit eval_condition_lessdef. eapply preg_vals; eauto. eauto. eauto. intros EC.
   left; eapply exec_straight_steps_goto; eauto.
   intros. simpl in TR.
-  destruct (transl_cond_correct_1 tge tf cond args _ rs0 m' _ TR) as [rs' [A [B C]]].
+  destruct (transl_cond_correct_1 tge cp tf cond args _ rs0 m' _ TR) as [rs' [A [B C]]].
   rewrite EC in B.
   destruct (snd (crbit_for_cond cond)).
   (* Pbt, taken *)
@@ -828,7 +831,7 @@ Opaque loadind.
 - (* Mcond false *)
   exploit eval_condition_lessdef. eapply preg_vals; eauto. eauto. eauto. intros EC.
   left; eapply exec_straight_steps; eauto. intros. simpl in TR.
-  destruct (transl_cond_correct_1 tge tf cond args _ rs0 m' _ TR) as [rs' [A [B C]]].
+  destruct (transl_cond_correct_1 tge cp tf cond args _ rs0 m' _ TR) as [rs' [A [B C]]].
   rewrite EC in B.
   econstructor; split.
   eapply exec_straight_trans. eexact A.
@@ -909,7 +912,7 @@ Local Transparent destroyed_by_jumptable.
   set (rs4 := nextinstr rs3).
   set (rs5 := nextinstr rs4).
   assert (EXEC_PROLOGUE:
-            exec_straight tge tf
+            exec_straight tge cp tf
               tf.(fn_code) rs0 m'
               x0 rs5 m3').
   change (fn_code tf) with tfbody; unfold tfbody.

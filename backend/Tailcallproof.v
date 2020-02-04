@@ -337,12 +337,12 @@ Inductive match_states: state -> state -> Prop :=
       match_states (State s f (Vptr sp Ptrofs.zero) pc rs m)
                    (State s' (transf_function f) (Vptr sp Ptrofs.zero) pc rs' m')
   | match_states_call:
-      forall s f args m s' args' m',
+      forall s c f args m s' args' m',
       match_stackframes s s' ->
       Val.lessdef_list args args' ->
       Mem.extends m m' ->
-      match_states (Callstate s f args m)
-                   (Callstate s' (transf_fundef f) args' m')
+      match_states (Callstate s c f args m)
+                   (Callstate s' c (transf_fundef f) args' m')
   | match_states_return:
       forall s v m s' v' m',
       match_stackframes s s' ->
@@ -380,7 +380,7 @@ Inductive match_states: state -> state -> Prop :=
 Definition measure (st: state) : nat :=
   match st with
   | State s f sp pc rs m => (List.length s * (niter + 2) + return_measure f.(fn_code) pc + 1)%nat
-  | Callstate s f args m => 0%nat
+  | Callstate s c f args m => 0%nat
   | Returnstate s v m => (List.length s * (niter + 2))%nat
   end.
 
@@ -462,14 +462,14 @@ Proof.
     apply Mem.range_perm_free. rewrite stacksize_preserved. rewrite H7.
     red; intros; omegaContradiction.
   destruct X as [m'' FREE].
-  left. exists (Callstate s' (transf_fundef fd) (rs'##args) m''); split.
+  left. exists (Callstate s' c (transf_fundef fd) (rs'##args) m''); split.
   eapply exec_Itailcall; eauto. apply sig_preserved.
   constructor. eapply match_stackframes_tail; eauto. apply regs_lessdef_regs; auto.
   eapply Mem.free_right_extends; eauto.
   rewrite stacksize_preserved. rewrite H7. intros. omegaContradiction.
 + (* call that remains a call *)
   left. exists (Callstate (Stackframe res (transf_function f) (Vptr sp0 Ptrofs.zero) pc' rs' :: s')
-                          (transf_fundef fd) (rs'##args) m'); split.
+                          c (transf_fundef fd) (rs'##args) m'); split.
   eapply exec_Icall; eauto. apply sig_preserved.
   constructor. constructor; auto. apply regs_lessdef_regs; auto. auto.
 
@@ -477,7 +477,7 @@ Proof.
   exploit find_function_translated; eauto. intro FIND'.
   exploit Mem.free_parallel_extends; eauto. intros [m'1 [FREE EXT]].
   TransfInstr.
-  left. exists (Callstate s' (transf_fundef fd) (rs'##args) m'1); split.
+  left. exists (Callstate s' c (transf_fundef fd) (rs'##args) m'1); split.
   eapply exec_Itailcall; eauto. apply sig_preserved.
   rewrite stacksize_preserved; auto.
   constructor. auto.  apply regs_lessdef_regs; auto. auto.
@@ -576,7 +576,7 @@ Lemma transf_initial_states:
 Proof.
   intros. inv H.
   exploit funct_ptr_translated; eauto. intro FIND.
-  exists (Callstate nil (transf_fundef f) nil m0); split.
+  exists (Callstate nil c (transf_fundef f) nil m0); split.
   econstructor; eauto. apply (Genv.init_mem_transf TRANSL). auto.
   replace (prog_main tprog) with (prog_main prog).
   rewrite symbols_preserved. eauto.

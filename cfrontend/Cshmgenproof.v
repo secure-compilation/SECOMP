@@ -1374,14 +1374,14 @@ Inductive match_states: Clight.state -> Csharpminor.state -> Prop :=
       match_states (Clight.State f s k e le m)
                    (State tf ts' tk' te le m)
   | match_callstate:
-      forall fd args k m tfd tk targs tres cconv cu ce
+      forall c fd args k m tfd tk targs tres cconv cu ce
           (LINK: linkorder cu prog)
           (TR: match_fundef cu fd tfd)
           (MK: match_cont ce Tvoid 0%nat 0%nat k tk)
           (ISCC: Clight.is_call_cont k)
           (TY: type_of_fundef fd = Tfunction targs tres cconv),
-      match_states (Clight.Callstate fd args k m)
-                   (Callstate tfd args tk m)
+      match_states (Clight.Callstate c fd args k m)
+                   (Callstate c tfd args tk m)
   | match_returnstate:
       forall res k m tk ce
           (MK: match_cont ce Tvoid 0%nat 0%nat k tk),

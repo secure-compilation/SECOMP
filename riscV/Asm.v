@@ -611,7 +611,7 @@ Definition eval_branch (f: function) (l: label) (rs: regset) (m: mem) (res: opti
     we generate cannot use those registers to hold values that must
     survive the execution of the pseudo-instruction. *)
 
-Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : outcome :=
+Definition exec_instr (c: compartment) (f: function) (i: instruction) (rs: regset) (m: mem) : outcome :=
   match i with
   | Pmv d s =>
       Next (nextinstr (rs#d <- (rs#s))) m
@@ -921,7 +921,7 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : out
 
 (** Pseudo-instructions *)
   | Pallocframe sz pos =>
-      let (m1, stk) := Mem.alloc m default_compartment 0 sz in
+      let (m1, stk) := Mem.alloc m c 0 sz in
       let sp := (Vptr stk Ptrofs.zero) in
       match Mem.storev Mptr m1 (Val.offset_ptr sp pos) rs#SP with
       | None => Stuck
@@ -1060,16 +1060,16 @@ Inductive state: Type :=
 
 Inductive step: state -> trace -> state -> Prop :=
   | exec_step_internal:
-      forall b ofs cmp f i rs m rs' m',
+      forall b ofs cp f i rs m rs' m',
       rs PC = Vptr b ofs ->
-      Genv.find_funct_ptr ge b = Some (cmp, Internal f) ->
+      Genv.find_funct_ptr ge b = Some (cp, Internal f) ->
       find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
-      exec_instr f i rs m = Next rs' m' ->
+      exec_instr cp f i rs m = Next rs' m' ->
       step (State rs m) E0 (State rs' m')
   | exec_step_builtin:
-      forall b ofs cmp f ef args res rs m vargs t vres rs' m',
+      forall b ofs cp f ef args res rs m vargs t vres rs' m',
       rs PC = Vptr b ofs ->
-      Genv.find_funct_ptr ge b = Some (cmp, Internal f) ->
+      Genv.find_funct_ptr ge b = Some (cp, Internal f) ->
       find_instr (Ptrofs.unsigned ofs) f.(fn_code) = Some (Pbuiltin ef args res) ->
       eval_builtin_args ge rs (rs SP) m args vargs ->
       external_call ef ge vargs m t vres m' ->
@@ -1079,9 +1079,9 @@ Inductive step: state -> trace -> state -> Prop :=
                    (rs#X31 <- Vundef))) ->
       step (State rs m) t (State rs' m')
   | exec_step_external:
-      forall b cmp ef args res rs m t rs' m',
+      forall b cp ef args res rs m t rs' m',
       rs PC = Vptr b Ptrofs.zero ->
-      Genv.find_funct_ptr ge b = Some (cmp, External ef) ->
+      Genv.find_funct_ptr ge b = Some (cp, External ef) ->
       external_call ef ge args m t res m' ->
       extcall_arguments rs m (ef_sig ef) args ->
       rs' = (set_pair (loc_external_result (ef_sig ef) ) res (undef_caller_save_regs rs))#PC <- (rs RA) ->

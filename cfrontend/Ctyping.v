@@ -2033,7 +2033,7 @@ Inductive wt_state: state -> Prop :=
         (WTK: wt_call_cont k (fundef_return fd))
         (WTFD: wt_fundef fd)
         (FIND: Genv.find_funct ge b = Some (c, fd)),
-      wt_state (Callstate fd vargs k m)
+      wt_state (Callstate c fd vargs k m)
   | wt_return_state: forall v k m ty
         (WTK: wt_call_cont k ty)
         (VAL: wt_val v ty),
@@ -2182,7 +2182,7 @@ Proof.
 - constructor.
 - apply Genv.find_funct_ptr_prop with (p := prog) (b := b) (c := c); auto.
   intros. inv WTPROG. destruct f0; simpl; auto. apply H4 with id c0; auto.
-- instantiate (2 := (Vptr b Ptrofs.zero)). rewrite Genv.find_funct_find_funct_ptr. eauto.
+- instantiate (1 := (Vptr b Ptrofs.zero)). rewrite Genv.find_funct_find_funct_ptr. eauto.
 Qed.
 
 End PRESERVATION.

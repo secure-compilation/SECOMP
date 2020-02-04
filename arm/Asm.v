@@ -583,7 +583,7 @@ Definition eval_testcond (c: testcond) (rs: regset) : option bool :=
     or to the non-S form, whichever is more compact in Thumb2.
 *)
 
-Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : outcome :=
+Definition exec_instr (c: compartment) (f: function) (i: instruction) (rs: regset) (m: mem) : outcome :=
   match i with
   | Padd r1 r2 so =>
       Next (nextinstr_nf (rs#r1 <- (Val.add rs#r2 (eval_shift_op so rs)))) m
@@ -753,7 +753,7 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : out
       exec_store Mfloat32 (Val.add rs#r2 (Vint n)) r1 rs m
   (* Pseudo-instructions *)
   | Pallocframe sz pos =>
-      let (m1, stk) := Mem.alloc m default_compartment 0 sz in
+      let (m1, stk) := Mem.alloc m c 0 sz in
       let sp := (Vptr stk Ptrofs.zero) in
       match Mem.storev Mint32 m1 (Val.offset_ptr sp pos) rs#IR13 with
       | None => Stuck
@@ -912,7 +912,7 @@ Inductive step: state -> trace -> state -> Prop :=
       rs PC = Vptr b ofs ->
       Genv.find_funct_ptr ge b = Some (c, Internal f) ->
       find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
-      exec_instr f i rs m = Next rs' m' ->
+      exec_instr c f i rs m = Next rs' m' ->
       step (State rs m) E0 (State rs' m')
   | exec_step_builtin:
       forall b ofs c f ef args res rs m vargs t vres rs' m',

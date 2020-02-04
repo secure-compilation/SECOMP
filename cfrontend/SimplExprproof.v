@@ -1043,11 +1043,11 @@ Inductive match_states: Csem.state -> state -> Prop :=
       match_cont k tk ->
       match_states (Csem.State f s k e m)
                    (State tf ts tk e le m)
-  | match_callstates: forall fd args k m tfd tk,
+  | match_callstates: forall c fd args k m tfd tk,
       tr_fundef fd tfd ->
       match_cont k tk ->
-      match_states (Csem.Callstate fd args k m)
-                   (Callstate tfd args tk m)
+      match_states (Csem.Callstate c fd args k m)
+                   (Callstate c tfd args tk m)
   | match_returnstates: forall res k m tk,
       match_cont k tk ->
       match_states (Csem.Returnstate res k m)
@@ -2246,7 +2246,7 @@ Proof.
   econstructor; eauto.
 
 (* internal function *)
-  inv H7. inversion H3; subst.
+  inv H8. inversion H3; subst.
   econstructor; split.
   left; apply plus_one. eapply step_internal_function. econstructor.
   rewrite H6; rewrite H7; auto.
@@ -2256,7 +2256,7 @@ Proof.
   constructor; auto.
 
 (* external function *)
-  inv H5.
+  inv H6.
   econstructor; split.
   left; apply plus_one. econstructor; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.

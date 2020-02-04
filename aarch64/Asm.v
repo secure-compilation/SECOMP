@@ -682,7 +682,7 @@ Definition float64_of_bits (v: val): val :=
     survive the execution of the pseudo-instruction.
 *)
 
-Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : outcome :=
+Definition exec_instr (c: compartment) (f: function) (i: instruction) (rs: regset) (m: mem) : outcome :=
   match i with
   (** Branches *)
   | Pb lbl =>
@@ -1060,7 +1060,7 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : out
       Next (nextinstr (rs#rd <- v)) m
   (** Pseudo-instructions *)
   | Pallocframe sz pos =>
-      let (m1, stk) := Mem.alloc m default_compartment 0 sz in
+      let (m1, stk) := Mem.alloc m c 0 sz in
       let sp := (Vptr stk Ptrofs.zero) in
       match Mem.storev Mint64 m1 (Val.offset_ptr sp pos) rs#SP with
       | None => Stuck
@@ -1195,7 +1195,7 @@ Inductive step: state -> trace -> state -> Prop :=
       rs PC = Vptr b ofs ->
       Genv.find_funct_ptr ge b = Some (c, Internal f) ->
       find_instr (Ptrofs.unsigned ofs) f.(fn_code) = Some i ->
-      exec_instr f i rs m = Next rs' m' ->
+      exec_instr c f i rs m = Next rs' m' ->
       step (State rs m) E0 (State rs' m')
   | exec_step_builtin:
       forall b ofs c f ef args res rs m vargs t vres rs' m',

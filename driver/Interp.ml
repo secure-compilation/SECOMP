@@ -128,7 +128,7 @@ let print_state p (prog, ge, s) =
       fprintf p "in function %s, expression@ @[<hv 0>%a@]"
               (name_of_function prog f)
               PrintCsyntax.print_expr r
-  | Callstate(fd, args, k, m) ->
+  | Callstate(_, fd, args, k, m) ->
       PrintCsyntax.print_pointer_hook := print_pointer ge.genv_genv Maps.PTree.empty;
       fprintf p "calling@ @[<hov 2>%s(%a)@]"
               (name_of_fundef prog fd)
@@ -222,7 +222,7 @@ let rank_state = function
 let mem_state = function
   | State(f, s, k, e, m) -> m
   | ExprState(f, r, k, e, m) -> m
-  | Callstate(fd, args, k, m) -> m
+  | Callstate(_, fd, args, k, m) -> m
   | Returnstate(res, k, m) -> m
   | Stuckstate -> assert false
 
@@ -239,8 +239,8 @@ let compare_state s1 s2 =
       let c = compare (f1,r1,e1) (f2,r2,e2) in if c <> 0 then c else
       let c = compare_cont k1 k2 in if c <> 0 then c else
       compare_mem m1 m2
-  | Callstate(fd1,args1,k1,m1), Callstate(fd2,args2,k2,m2) ->
-      let c = compare (fd1,args1) (fd2,args2) in if c <> 0 then c else
+  | Callstate(cp1,fd1,args1,k1,m1), Callstate(cp2,fd2,args2,k2,m2) ->
+      let c = compare (cp1,fd1,args1) (cp2,fd2,args2) in if c <> 0 then c else
       let c = compare_cont k1 k2 in if c <> 0 then c else
       compare_mem m1 m2
   | Returnstate(res1,k1,m1), Returnstate(res2,k2,m2) ->

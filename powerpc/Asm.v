@@ -679,7 +679,7 @@ Definition compare_float (rs: regset) (v1 v2: val) :=
     must survive the execution of the pseudo-instruction.
 *)
 
-Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : outcome :=
+Definition exec_instr (c: compartment) (f: function) (i: instruction) (rs: regset) (m: mem) : outcome :=
   match i with
   | Padd rd r1 r2 =>
       Next (nextinstr (rs#rd <- (Val.add rs#r1 rs#r2))) m
@@ -709,7 +709,7 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : out
       Next (nextinstr (rs#rd <- (Val.addl rs#r1 rs#CARRY)
                        #CARRY <- (Val.addl_carry rs#r1 (Vlong Int64.zero) rs#CARRY))) m
   | Pallocframe sz ofs _ =>
-      let (m1, stk) := Mem.alloc m default_compartment 0 sz in
+      let (m1, stk) := Mem.alloc m c 0 sz in
       let sp := Vptr stk Ptrofs.zero in
       match Mem.storev Mint32 m1 (Val.offset_ptr sp ofs) rs#GPR1 with
       | None => Stuck
@@ -1193,7 +1193,7 @@ Inductive step: state -> trace -> state -> Prop :=
       rs PC = Vptr b ofs ->
       Genv.find_funct_ptr ge b = Some (c, Internal f) ->
       find_instr (Ptrofs.unsigned ofs) f.(fn_code) = Some i ->
-      exec_instr f i rs m = Next rs' m' ->
+      exec_instr c f i rs m = Next rs' m' ->
       step (State rs m) E0 (State rs' m')
   | exec_step_builtin:
       forall b ofs c f ef args res rs m vargs t vres rs' m',

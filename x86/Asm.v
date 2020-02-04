@@ -605,7 +605,7 @@ Definition exec_store (chunk: memory_chunk) (m: mem)
     but we do not need to model this precisely.
 *)
 
-Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : outcome :=
+Definition exec_instr (c: compartment) (f: function) (i: instruction) (rs: regset) (m: mem) : outcome :=
   match i with
   (** Moves *)
   | Pmov_rr rd r1 =>
@@ -940,7 +940,7 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : out
   | Plabel lbl =>
       Next (nextinstr rs) m
   | Pallocframe sz ofs_ra ofs_link =>
-      let (m1, stk) := Mem.alloc m default_compartment 0 sz in
+      let (m1, stk) := Mem.alloc m c 0 sz in
       let sp := Vptr stk Ptrofs.zero in
       match Mem.storev Mptr m1 (Val.offset_ptr sp ofs_link) rs#RSP with
       | None => Stuck
@@ -1099,7 +1099,7 @@ Inductive step: state -> trace -> state -> Prop :=
       rs PC = Vptr b ofs ->
       Genv.find_funct_ptr ge b = Some (c, Internal f) ->
       find_instr (Ptrofs.unsigned ofs) f.(fn_code) = Some i ->
-      exec_instr f i rs m = Next rs' m' ->
+      exec_instr c f i rs m = Next rs' m' ->
       step (State rs m) E0 (State rs' m')
   | exec_step_builtin:
       forall b ofs c f ef args res rs m vargs t vres rs' m',

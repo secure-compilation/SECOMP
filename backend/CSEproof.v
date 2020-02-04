@@ -949,14 +949,14 @@ Inductive match_states: state -> state -> Prop :=
       match_states (State s f sp pc rs m)
                    (State s' (transf_function' f approx) sp pc rs' m')
   | match_states_call:
-      forall s f tf args m s' args' m' cu
+      forall s c f tf args m s' args' m' cu
              (LINK: linkorder cu prog)
              (STACKS: match_stackframes s s')
              (TFD: transf_fundef (romem_for cu) f = OK tf)
              (ARGS: Val.lessdef_list args args')
              (MEXT: Mem.extends m m'),
-      match_states (Callstate s f args m)
-                   (Callstate s' tf args' m')
+      match_states (Callstate s c f args m)
+                   (Callstate s' c tf args' m')
   | match_states_return:
       forall s s' v v' m m'
              (STACK: match_stackframes s s')
@@ -1226,7 +1226,7 @@ Lemma transf_initial_states:
 Proof.
   intros. inversion H.
   exploit funct_ptr_translated; eauto. intros (cu & tf & A & B & C).
-  exists (Callstate nil tf nil m0); split.
+  exists (Callstate nil c tf nil m0); split.
   econstructor; eauto.
   eapply (Genv.init_mem_match TRANSF); eauto.
   replace (prog_main tprog) with (prog_main prog).

@@ -1228,13 +1228,13 @@ Inductive match_states: CminorSel.state -> RTL.state -> Prop :=
       match_states (CminorSel.State f s k sp e m)
                    (RTL.State cs tf sp ns rs tm)
   | match_callstate:
-      forall f args targs k m tm cs tf
+      forall c f args targs k m tm cs tf
         (TF: transl_fundef f = OK tf)
         (MS: match_stacks k cs)
         (LD: Val.lessdef_list args targs)
         (MEXT: Mem.extends m tm),
-      match_states (CminorSel.Callstate f args k m)
-                   (RTL.Callstate cs tf targs tm)
+      match_states (CminorSel.Callstate c f args k m)
+                   (RTL.Callstate cs c tf targs tm)
   | match_returnstate:
       forall v tv k m tm cs
         (MS: match_stacks k cs)

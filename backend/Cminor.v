@@ -231,7 +231,8 @@ Inductive state: Type :=
              (m: mem),                  (**r current memory state *)
       state
   | Callstate:                  (**r Invocation of a function *)
-      forall (f: fundef)                (**r function to invoke *)
+      forall (c: compartment)           (**r compartment to invoke *)
+             (f: fundef)                (**r function to invoke *)
              (args: list val)           (**r arguments provided by caller *)
              (k: cont)                  (**r what to do next  *)
              (m: mem),                  (**r memory state *)
@@ -462,7 +463,7 @@ Inductive step: state -> trace -> state -> Prop :=
       Genv.find_funct ge vf = Some (c, fd) ->
       funsig fd = sig ->
       step (State f (Scall optid sig a bl) k sp e m)
-        E0 (Callstate fd vargs (Kcall optid f sp e k) m)
+        E0 (Callstate c fd vargs (Kcall optid f sp e k) m)
 
   | step_tailcall: forall f sig a bl k sp e m vf vargs c fd m',
       eval_expr (Vptr sp Ptrofs.zero) e m a vf ->
@@ -471,7 +472,7 @@ Inductive step: state -> trace -> state -> Prop :=
       funsig fd = sig ->
       Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
       step (State f (Stailcall sig a bl) k (Vptr sp Ptrofs.zero) e m)
-        E0 (Callstate fd vargs (call_cont k) m')
+        E0 (Callstate c fd vargs (call_cont k) m')
 
   | step_builtin: forall f optid ef bl k sp e m vargs t vres m',
       eval_exprlist sp e m bl vargs ->
@@ -532,14 +533,14 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Sgoto lbl) k sp e m)
         E0 (State f s' k' sp e m)
 
-  | step_internal_function: forall f vargs k m m' sp e,
-      Mem.alloc m default_compartment 0 f.(fn_stackspace) = (m', sp) ->
+  | step_internal_function: forall c f vargs k m m' sp e,
+      Mem.alloc m c 0 f.(fn_stackspace) = (m', sp) ->
       set_locals f.(fn_vars) (set_params vargs f.(fn_params)) = e ->
-      step (Callstate (Internal f) vargs k m)
+      step (Callstate c (Internal f) vargs k m)
         E0 (State f f.(fn_body) k (Vptr sp Ptrofs.zero) e m')
-  | step_external_function: forall ef vargs k m t vres m',
+  | step_external_function: forall c ef vargs k m t vres m',
       external_call ef ge vargs m t vres m' ->
-      step (Callstate (External ef) vargs k m)
+      step (Callstate c (External ef) vargs k m)
          t (Returnstate vres k m')
 
   | step_return: forall v optid f sp e k m,
@@ -560,7 +561,7 @@ Inductive initial_state (p: program): state -> Prop :=
       Genv.find_symbol ge p.(prog_main) = Some b ->
       Genv.find_funct_ptr ge b = Some (c, f) ->
       funsig f = signature_main ->
-      initial_state p (Callstate f nil Kstop m0).
+      initial_state p (Callstate c f nil Kstop m0).
 
 (** A final state is a [Returnstate] with an empty continuation. *)
 
@@ -641,7 +642,7 @@ Proof.
     apply B in H; destruct H; congruence.
   + subst v0. assert (b0 = b) by (inv H2; inv H13; auto). subst b0; auto.
   + assert (n0 = n) by (inv H2; inv H14; auto). subst n0; auto.
-  + exploit external_call_determ. eexact H1. eexact H7.
+  + exploit external_call_determ. eexact H1. eexact H8.
     intros (A & B). split; intros; auto.
     apply B in H; destruct H; congruence.
 - (* single event *)
@@ -697,29 +698,29 @@ Section NATURALSEM.
 
 Variable ge: genv.
 
-(** Evaluation of a function invocation: [eval_funcall ge m f args t m' res]
+(** Evaluation of a function invocation: [eval_funcall ge c m f args t m' res]
   means that the function [f], applied to the arguments [args] in
   memory state [m], returns the value [res] in modified memory state [m'].
   [t] is the trace of observable events generated during the invocation.
 *)
 
 Inductive eval_funcall:
-        mem -> fundef -> list val -> trace ->
+        compartment -> mem -> fundef -> list val -> trace ->
         mem -> val -> Prop :=
   | eval_funcall_internal:
-      forall m f vargs m1 sp e t e2 m2 out vres m3,
-      Mem.alloc m default_compartment 0 f.(fn_stackspace) = (m1, sp) ->
+      forall c m f vargs m1 sp e t e2 m2 out vres m3,
+      Mem.alloc m c 0 f.(fn_stackspace) = (m1, sp) ->
       set_locals f.(fn_vars) (set_params vargs f.(fn_params)) = e ->
-      exec_stmt f (Vptr sp Ptrofs.zero) e m1 f.(fn_body) t e2 m2 out ->
+      exec_stmt c f (Vptr sp Ptrofs.zero) e m1 f.(fn_body) t e2 m2 out ->
       outcome_result_value out f.(fn_sig).(sig_res) vres ->
       outcome_free_mem out m2 sp f.(fn_stackspace) m3 ->
-      eval_funcall m (Internal f) vargs t m3 vres
+      eval_funcall c m (Internal f) vargs t m3 vres
   | eval_funcall_external:
-      forall ef m args t res m',
+      forall c ef m args t res m',
       external_call ef ge args m t res m' ->
-      eval_funcall m (External ef) args t m' res
+      eval_funcall c m (External ef) args t m' res
 
-(** Execution of a statement: [exec_stmt ge f sp e m s t e' m' out]
+(** Execution of a statement: [exec_stmt ge c f sp e m s t e' m' out]
   means that statement [s] executes with outcome [out].
   [e] is the initial environment and [m] is the initial memory state.
   [e'] is the final environment, reflecting variable assignments performed
@@ -728,94 +729,94 @@ Inductive eval_funcall:
   the execution.  The other parameters are as in [eval_expr]. *)
 
 with exec_stmt:
-         function -> val ->
+         compartment -> function -> val ->
          env -> mem -> stmt -> trace ->
          env -> mem -> outcome -> Prop :=
   | exec_Sskip:
-      forall f sp e m,
-      exec_stmt f sp e m Sskip E0 e m Out_normal
+      forall c f sp e m,
+      exec_stmt c f sp e m Sskip E0 e m Out_normal
   | exec_Sassign:
-      forall f sp e m id a v,
+      forall c f sp e m id a v,
       eval_expr ge sp e m a v ->
-      exec_stmt f sp e m (Sassign id a) E0 (PTree.set id v e) m Out_normal
+      exec_stmt c f sp e m (Sassign id a) E0 (PTree.set id v e) m Out_normal
   | exec_Sstore:
-      forall f sp e m chunk addr a vaddr v m',
+      forall c f sp e m chunk addr a vaddr v m',
       eval_expr ge sp e m addr vaddr ->
       eval_expr ge sp e m a v ->
       Mem.storev chunk m vaddr v = Some m' ->
-      exec_stmt f sp e m (Sstore chunk addr a) E0 e m' Out_normal
+      exec_stmt c f sp e m (Sstore chunk addr a) E0 e m' Out_normal
   | exec_Scall:
-      forall f sp e m optid sig a bl vf vargs c fd t m' vres e',
+      forall c f sp e m optid sig a bl vf vargs c' fd t m' vres e',
       eval_expr ge sp e m a vf ->
       eval_exprlist ge sp e m bl vargs ->
-      Genv.find_funct ge vf = Some (c, fd) ->
+      Genv.find_funct ge vf = Some (c', fd) ->
       funsig fd = sig ->
-      eval_funcall m fd vargs t m' vres ->
+      eval_funcall c' m fd vargs t m' vres ->
       e' = set_optvar optid vres e ->
-      exec_stmt f sp e m (Scall optid sig a bl) t e' m' Out_normal
+      exec_stmt c f sp e m (Scall optid sig a bl) t e' m' Out_normal
   | exec_Sbuiltin:
-      forall f sp e m optid ef bl t m' vargs vres e',
+      forall c f sp e m optid ef bl t m' vargs vres e',
       eval_exprlist ge sp e m bl vargs ->
       external_call ef ge vargs m t vres m' ->
       e' = set_optvar optid vres e ->
-      exec_stmt f sp e m (Sbuiltin optid ef bl) t e' m' Out_normal
+      exec_stmt c f sp e m (Sbuiltin optid ef bl) t e' m' Out_normal
   | exec_Sifthenelse:
-      forall f sp e m a s1 s2 v b t e' m' out,
+      forall c f sp e m a s1 s2 v b t e' m' out,
       eval_expr ge sp e m a v ->
       Val.bool_of_val v b ->
-      exec_stmt f sp e m (if b then s1 else s2) t e' m' out ->
-      exec_stmt f sp e m (Sifthenelse a s1 s2) t e' m' out
+      exec_stmt c f sp e m (if b then s1 else s2) t e' m' out ->
+      exec_stmt c f sp e m (Sifthenelse a s1 s2) t e' m' out
   | exec_Sseq_continue:
-      forall f sp e m t s1 t1 e1 m1 s2 t2 e2 m2 out,
-      exec_stmt f sp e m s1 t1 e1 m1 Out_normal ->
-      exec_stmt f sp e1 m1 s2 t2 e2 m2 out ->
+      forall c f sp e m t s1 t1 e1 m1 s2 t2 e2 m2 out,
+      exec_stmt c f sp e m s1 t1 e1 m1 Out_normal ->
+      exec_stmt c f sp e1 m1 s2 t2 e2 m2 out ->
       t = t1 ** t2 ->
-      exec_stmt f sp e m (Sseq s1 s2) t e2 m2 out
+      exec_stmt c f sp e m (Sseq s1 s2) t e2 m2 out
   | exec_Sseq_stop:
-      forall f sp e m t s1 s2 e1 m1 out,
-      exec_stmt f sp e m s1 t e1 m1 out ->
+      forall c f sp e m t s1 s2 e1 m1 out,
+      exec_stmt c f sp e m s1 t e1 m1 out ->
       out <> Out_normal ->
-      exec_stmt f sp e m (Sseq s1 s2) t e1 m1 out
+      exec_stmt c f sp e m (Sseq s1 s2) t e1 m1 out
   | exec_Sloop_loop:
-      forall f sp e m s t t1 e1 m1 t2 e2 m2 out,
-      exec_stmt f sp e m s t1 e1 m1 Out_normal ->
-      exec_stmt f sp e1 m1 (Sloop s) t2 e2 m2 out ->
+      forall c f sp e m s t t1 e1 m1 t2 e2 m2 out,
+      exec_stmt c f sp e m s t1 e1 m1 Out_normal ->
+      exec_stmt c f sp e1 m1 (Sloop s) t2 e2 m2 out ->
       t = t1 ** t2 ->
-      exec_stmt f sp e m (Sloop s) t e2 m2 out
+      exec_stmt c f sp e m (Sloop s) t e2 m2 out
   | exec_Sloop_stop:
-      forall f sp e m t s e1 m1 out,
-      exec_stmt f sp e m s t e1 m1 out ->
+      forall c f sp e m t s e1 m1 out,
+      exec_stmt c f sp e m s t e1 m1 out ->
       out <> Out_normal ->
-      exec_stmt f sp e m (Sloop s) t e1 m1 out
+      exec_stmt c f sp e m (Sloop s) t e1 m1 out
   | exec_Sblock:
-      forall f sp e m s t e1 m1 out,
-      exec_stmt f sp e m s t e1 m1 out ->
-      exec_stmt f sp e m (Sblock s) t e1 m1 (outcome_block out)
+      forall c f sp e m s t e1 m1 out,
+      exec_stmt c f sp e m s t e1 m1 out ->
+      exec_stmt c f sp e m (Sblock s) t e1 m1 (outcome_block out)
   | exec_Sexit:
-      forall f sp e m n,
-      exec_stmt f sp e m (Sexit n) E0 e m (Out_exit n)
+      forall c f sp e m n,
+      exec_stmt c f sp e m (Sexit n) E0 e m (Out_exit n)
   | exec_Sswitch:
-      forall f sp e m islong a cases default v n,
+      forall c f sp e m islong a cases default v n,
       eval_expr ge sp e m a v ->
       switch_argument islong v n ->
-      exec_stmt f sp e m (Sswitch islong a cases default)
+      exec_stmt c f sp e m (Sswitch islong a cases default)
                 E0 e m (Out_exit (switch_target n default cases))
   | exec_Sreturn_none:
-      forall f sp e m,
-      exec_stmt f sp e m (Sreturn None) E0 e m (Out_return None)
+      forall c f sp e m,
+      exec_stmt c f sp e m (Sreturn None) E0 e m (Out_return None)
   | exec_Sreturn_some:
-      forall f sp e m a v,
+      forall c f sp e m a v,
       eval_expr ge sp e m a v ->
-      exec_stmt f sp e m (Sreturn (Some a)) E0 e m (Out_return (Some v))
+      exec_stmt c f sp e m (Sreturn (Some a)) E0 e m (Out_return (Some v))
   | exec_Stailcall:
-      forall f sp e m sig a bl vf vargs c fd t m' m'' vres,
+      forall c f sp e m sig a bl vf vargs c' fd t m' m'' vres,
       eval_expr ge (Vptr sp Ptrofs.zero) e m a vf ->
       eval_exprlist ge (Vptr sp Ptrofs.zero) e m bl vargs ->
-      Genv.find_funct ge vf = Some (c, fd) ->
+      Genv.find_funct ge vf = Some (c', fd) ->
       funsig fd = sig ->
       Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
-      eval_funcall m' fd vargs t m'' vres ->
-      exec_stmt f (Vptr sp Ptrofs.zero) e m (Stailcall sig a bl) t e m'' (Out_tailcall_return vres).
+      eval_funcall c' m' fd vargs t m'' vres ->
+      exec_stmt c f (Vptr sp Ptrofs.zero) e m (Stailcall sig a bl) t e m'' (Out_tailcall_return vres).
 
 Scheme eval_funcall_ind2 := Minimality for eval_funcall Sort Prop
   with exec_stmt_ind2 := Minimality for exec_stmt Sort Prop.
@@ -823,74 +824,74 @@ Combined Scheme eval_funcall_exec_stmt_ind2
   from eval_funcall_ind2, exec_stmt_ind2.
 
 (** Coinductive semantics for divergence.
-  [evalinf_funcall ge m f args t]
+  [evalinf_funcall ge c m f args t]
   means that the function [f] diverges when applied to the arguments [args] in
   memory state [m].  The infinite trace [t] is the trace of
   observable events generated during the invocation.
 *)
 
 CoInductive evalinf_funcall:
-        mem -> fundef -> list val -> traceinf -> Prop :=
+        compartment -> mem -> fundef -> list val -> traceinf -> Prop :=
   | evalinf_funcall_internal:
-      forall m f vargs m1 sp e t,
-      Mem.alloc m default_compartment 0 f.(fn_stackspace) = (m1, sp) ->
+      forall c m f vargs m1 sp e t,
+      Mem.alloc m c 0 f.(fn_stackspace) = (m1, sp) ->
       set_locals f.(fn_vars) (set_params vargs f.(fn_params)) = e ->
-      execinf_stmt f (Vptr sp Ptrofs.zero) e m1 f.(fn_body) t ->
-      evalinf_funcall m (Internal f) vargs t
+      execinf_stmt c f (Vptr sp Ptrofs.zero) e m1 f.(fn_body) t ->
+      evalinf_funcall c m (Internal f) vargs t
 
-(** [execinf_stmt ge sp e m s t] means that statement [s] diverges.
+(** [execinf_stmt ge c sp e m s t] means that statement [s] diverges.
   [e] is the initial environment, [m] is the initial memory state,
   and [t] the trace of observable events performed during the execution. *)
 
 with execinf_stmt:
-         function -> val -> env -> mem -> stmt -> traceinf -> Prop :=
+         compartment -> function -> val -> env -> mem -> stmt -> traceinf -> Prop :=
   | execinf_Scall:
-      forall f sp e m optid sig a bl vf vargs c fd t,
+      forall c f sp e m optid sig a bl vf vargs c' fd t,
       eval_expr ge sp e m a vf ->
       eval_exprlist ge sp e m bl vargs ->
-      Genv.find_funct ge vf = Some (c, fd) ->
+      Genv.find_funct ge vf = Some (c', fd) ->
       funsig fd = sig ->
-      evalinf_funcall m fd vargs t ->
-      execinf_stmt f sp e m (Scall optid sig a bl) t
+      evalinf_funcall c' m fd vargs t ->
+      execinf_stmt c f sp e m (Scall optid sig a bl) t
   | execinf_Sifthenelse:
-      forall f sp e m a s1 s2 v b t,
+      forall c f sp e m a s1 s2 v b t,
       eval_expr ge sp e m a v ->
       Val.bool_of_val v b ->
-      execinf_stmt f sp e m (if b then s1 else s2) t ->
-      execinf_stmt f sp e m (Sifthenelse a s1 s2) t
+      execinf_stmt c f sp e m (if b then s1 else s2) t ->
+      execinf_stmt c f sp e m (Sifthenelse a s1 s2) t
   | execinf_Sseq_1:
-      forall f sp e m t s1 s2,
-      execinf_stmt f sp e m s1 t ->
-      execinf_stmt f sp e m (Sseq s1 s2) t
+      forall c f sp e m t s1 s2,
+      execinf_stmt c f sp e m s1 t ->
+      execinf_stmt c f sp e m (Sseq s1 s2) t
   | execinf_Sseq_2:
-      forall f sp e m t s1 t1 e1 m1 s2 t2,
-      exec_stmt f sp e m s1 t1 e1 m1 Out_normal ->
-      execinf_stmt f sp e1 m1 s2 t2 ->
+      forall c f sp e m t s1 t1 e1 m1 s2 t2,
+      exec_stmt c f sp e m s1 t1 e1 m1 Out_normal ->
+      execinf_stmt c f sp e1 m1 s2 t2 ->
       t = t1 *** t2 ->
-      execinf_stmt f sp e m (Sseq s1 s2) t
+      execinf_stmt c f sp e m (Sseq s1 s2) t
   | execinf_Sloop_body:
-      forall f sp e m s t,
-      execinf_stmt f sp e m s t ->
-      execinf_stmt f sp e m (Sloop s) t
+      forall c f sp e m s t,
+      execinf_stmt c f sp e m s t ->
+      execinf_stmt c f sp e m (Sloop s) t
   | execinf_Sloop_loop:
-      forall f sp e m s t t1 e1 m1 t2,
-      exec_stmt f sp e m s t1 e1 m1 Out_normal ->
-      execinf_stmt f sp e1 m1 (Sloop s) t2 ->
+      forall c f sp e m s t t1 e1 m1 t2,
+      exec_stmt c f sp e m s t1 e1 m1 Out_normal ->
+      execinf_stmt c f sp e1 m1 (Sloop s) t2 ->
       t = t1 *** t2 ->
-      execinf_stmt f sp e m (Sloop s) t
+      execinf_stmt c f sp e m (Sloop s) t
   | execinf_Sblock:
-      forall f sp e m s t,
-      execinf_stmt f sp e m s t ->
-      execinf_stmt f sp e m (Sblock s) t
+      forall c f sp e m s t,
+      execinf_stmt c f sp e m s t ->
+      execinf_stmt c f sp e m (Sblock s) t
   | execinf_Stailcall:
-      forall f sp e m sig a bl vf vargs c fd m' t,
+      forall c f sp e m sig a bl vf vargs c' fd m' t,
       eval_expr ge (Vptr sp Ptrofs.zero) e m a vf ->
       eval_exprlist ge (Vptr sp Ptrofs.zero) e m bl vargs ->
-      Genv.find_funct ge vf = Some (c, fd) ->
+      Genv.find_funct ge vf = Some (c', fd) ->
       funsig fd = sig ->
       Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
-      evalinf_funcall m' fd vargs t ->
-      execinf_stmt f (Vptr sp Ptrofs.zero) e m (Stailcall sig a bl) t.
+      evalinf_funcall c' m' fd vargs t ->
+      execinf_stmt c f (Vptr sp Ptrofs.zero) e m (Stailcall sig a bl) t.
 
 End NATURALSEM.
 
@@ -904,7 +905,7 @@ Inductive bigstep_program_terminates (p: program): trace -> int -> Prop :=
       Genv.find_symbol ge p.(prog_main) = Some b ->
       Genv.find_funct_ptr ge b = Some (c, f) ->
       funsig f = signature_main ->
-      eval_funcall ge m0 f nil t m (Vint r) ->
+      eval_funcall ge c m0 f nil t m (Vint r) ->
       bigstep_program_terminates p t r.
 
 Inductive bigstep_program_diverges (p: program): traceinf -> Prop :=
@@ -915,7 +916,7 @@ Inductive bigstep_program_diverges (p: program): traceinf -> Prop :=
       Genv.find_symbol ge p.(prog_main) = Some b ->
       Genv.find_funct_ptr ge b = Some (c, f) ->
       funsig f = signature_main ->
-      evalinf_funcall ge m0 f nil t ->
+      evalinf_funcall ge c m0 f nil t ->
       bigstep_program_diverges p t.
 
 Definition bigstep_semantics (p: program) :=
@@ -968,14 +969,14 @@ Proof.
 Qed.
 
 Lemma eval_funcall_exec_stmt_steps:
-  (forall m fd args t m' res,
-   eval_funcall ge m fd args t m' res ->
+  (forall c m fd args t m' res,
+   eval_funcall ge c m fd args t m' res ->
    forall k,
    is_call_cont k ->
-   star step ge (Callstate fd args k m)
+   star step ge (Callstate c fd args k m)
               t (Returnstate res k m'))
-/\(forall f sp e m s t e' m' out,
-   exec_stmt ge f sp e m s t e' m' out ->
+/\(forall c f sp e m s t e' m' out,
+   exec_stmt ge c f sp e m s t e' m' out ->
    forall k,
    exists S,
    star step ge (State f s k sp e m) t S
@@ -1130,17 +1131,17 @@ Proof.
 Qed.
 
 Lemma eval_funcall_steps:
-   forall m fd args t m' res,
-   eval_funcall ge m fd args t m' res ->
+   forall c m fd args t m' res,
+   eval_funcall ge c m fd args t m' res ->
    forall k,
    is_call_cont k ->
-   star step ge (Callstate fd args k m)
+   star step ge (Callstate c fd args k m)
               t (Returnstate res k m').
-Proof (proj1 eval_funcall_exec_stmt_steps).
+Proof. exact (proj1 eval_funcall_exec_stmt_steps). Qed.
 
 Lemma exec_stmt_steps:
-   forall f sp e m s t e' m' out,
-   exec_stmt ge f sp e m s t e' m' out ->
+   forall c f sp e m s t e' m' out,
+   exec_stmt ge c f sp e m s t e' m' out ->
    forall k,
    exists S,
    star step ge (State f s k sp e m) t S
@@ -1148,13 +1149,13 @@ Lemma exec_stmt_steps:
 Proof (proj2 eval_funcall_exec_stmt_steps).
 
 Lemma evalinf_funcall_forever:
-  forall m fd args T k,
-  evalinf_funcall ge m fd args T ->
-  forever_plus step ge (Callstate fd args k m) T.
+  forall c m fd args T k,
+  evalinf_funcall ge c m fd args T ->
+  forever_plus step ge (Callstate c fd args k m) T.
 Proof.
   cofix CIH_FUN.
-  assert (forall sp e m s T f k,
-          execinf_stmt ge f sp e m s T ->
+  assert (forall c sp e m s T f k,
+          execinf_stmt ge c f sp e m s T ->
           forever_plus step ge (State f s k sp e m) T).
   cofix CIH_STMT.
   intros. inv H.
@@ -1167,40 +1168,40 @@ Proof.
 (* ifthenelse *)
   eapply forever_plus_intro with (s2 := State f (if b then s1 else s2) k sp e m).
   apply plus_one. econstructor; eauto.
-  apply CIH_STMT. eauto. traceEq.
+  eapply CIH_STMT. eauto. traceEq.
 
 (* seq 1 *)
   eapply forever_plus_intro.
   apply plus_one. constructor.
-  apply CIH_STMT. eauto. traceEq.
+  eapply CIH_STMT. eauto. traceEq.
 
 (* seq 2 *)
-  destruct (exec_stmt_steps _ _ _ _ _ _ _ _ _ H0 (Kseq s2 k))
+  destruct (exec_stmt_steps _ _ _ _ _ _ _ _ _ _ H0 (Kseq s2 k))
   as [S [A B]]. inv B.
   eapply forever_plus_intro.
   eapply plus_left. constructor.
   eapply star_right. eexact A. constructor.
   reflexivity. reflexivity.
-  apply CIH_STMT. eauto. traceEq.
+  eapply CIH_STMT. eauto. traceEq.
 
 (* loop body *)
   eapply forever_plus_intro.
   apply plus_one. econstructor; eauto.
-  apply CIH_STMT. eauto. traceEq.
+  eapply CIH_STMT. eauto. traceEq.
 
 (* loop loop *)
-  destruct (exec_stmt_steps _ _ _ _ _ _ _ _ _ H0 (Kseq (Sloop s0) k))
+  destruct (exec_stmt_steps _ _ _ _ _ _ _ _ _ _ H0 (Kseq (Sloop s0) k))
   as [S [A B]]. inv B.
   eapply forever_plus_intro.
   eapply plus_left. constructor.
   eapply star_right. eexact A. constructor.
   reflexivity. reflexivity.
-  apply CIH_STMT. eauto. traceEq.
+  eapply CIH_STMT. eauto. traceEq.
 
 (* block *)
   eapply forever_plus_intro.
   apply plus_one. econstructor; eauto.
-  apply CIH_STMT. eauto. traceEq.
+  eapply CIH_STMT. eauto. traceEq.
 
 (* tailcall *)
   eapply forever_plus_intro.
@@ -1211,7 +1212,7 @@ Proof.
   intros. inv H0.
   eapply forever_plus_intro.
   apply plus_one. econstructor; eauto.
-  apply H. eauto.
+  eapply H. eauto.
   traceEq.
 Qed.
 
