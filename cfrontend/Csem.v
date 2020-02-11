@@ -514,7 +514,7 @@ Inductive cont: Type :=
 Fixpoint call_cont (k: cont) : cont :=
   match k with
   | Kstop => k
-  | Kdo k => k
+  | Kdo k => call_cont k
   | Kseq s k => call_cont k
   | Kifthenelse s1 s2 k => call_cont k
   | Kwhile1 e s k => call_cont k
