@@ -499,12 +499,12 @@ Theorem match_transform_partial_program2:
   forall {C F1 V1 F2 V2: Type} {LC: Linker C} {LF: Linker F1} {LV: Linker V1}
          (match_fundef: C -> F1 -> F2 -> Prop)
          (match_varinfo: V1 -> V2 -> Prop)
-         (transf_fun: ident -> F1 -> res F2)
-         (transf_var: ident -> V1 -> res V2)
+         (transf_fun: ident -> compartment -> F1 -> res F2)
+         (transf_var: ident -> compartment -> V1 -> res V2)
          (ctx: C) (p: program F1 V1) (tp: program F2 V2),
   transform_partial_program2 transf_fun transf_var p = OK tp ->
-  (forall i f tf, transf_fun i f = OK tf -> match_fundef ctx f tf) ->
-  (forall i v tv, transf_var i v = OK tv -> match_varinfo v tv) ->
+  (forall i c f tf, transf_fun i c f = OK tf -> match_fundef ctx f tf) ->
+  (forall i c v tv, transf_var i c v = OK tv -> match_varinfo v tv) ->
   match_program_gen match_fundef match_varinfo ctx p tp.
 Proof.
   unfold transform_partial_program2; intros. monadInv H.
@@ -513,9 +513,9 @@ Proof.
   induction l as [ | [i g] l]; simpl; intros.
 - monadInv EQ. constructor.
 - destruct g as [c f|c v].
-+ destruct (transf_fun i f) as [tf|?] eqn:TF; monadInv EQ.
++ destruct (transf_fun i c f) as [tf|?] eqn:TF; monadInv EQ.
   constructor; auto. split; simpl; auto. econstructor. apply linkorder_refl. eauto.
-+ destruct (transf_globvar transf_var i v) as [tv|?] eqn:TV; monadInv EQ.
++ destruct (transf_globvar transf_var i c v) as [tv|?] eqn:TV; monadInv EQ.
   constructor; auto. split; simpl; auto. constructor.
   monadInv TV. destruct v; simpl; constructor. eauto.
 Qed.

@@ -41,7 +41,7 @@ Proof.
   eexact H.
 - intros. destruct f; simpl in H0.
 + monadInv H0. constructor; auto.
-+ destruct (signature_eq (ef_sig e) (signature_of_type t t0 c)); inv H0.
++ destruct (signature_eq (ef_sig e) (signature_of_type t t0 c0)); inv H0.
   constructor; auto.
 - intros; red; auto.
 Qed.

@@ -366,24 +366,24 @@ Local Open Scope error_monad_scope.
 Section TRANSF_PROGRAM_GEN.
 
 Variables A B V W: Type.
-Variable transf_fun: ident -> A -> res B.
-Variable transf_var: ident -> V -> res W.
+Variable transf_fun: ident -> compartment -> A -> res B.
+Variable transf_var: ident -> compartment -> V -> res W.
 
-Definition transf_globvar (i: ident) (g: globvar V) : res (globvar W) :=
-  do info' <- transf_var i g.(gvar_info);
+Definition transf_globvar (i: ident) (c: compartment) (g: globvar V) : res (globvar W) :=
+  do info' <- transf_var i c g.(gvar_info);
   OK (mkglobvar info' g.(gvar_init) g.(gvar_readonly) g.(gvar_volatile)).
 
 Fixpoint transf_globdefs (l: list (ident * globdef A V)) : res (list (ident * globdef B W)) :=
   match l with
   | nil => OK nil
   | (id, Gfun c f) :: l' =>
-    match transf_fun id f with
+    match transf_fun id c f with
       | Error msg => Error (MSG "In function " :: CTX id :: MSG ": " :: msg)
       | OK tf =>
         do tl' <- transf_globdefs l'; OK ((id, Gfun c tf) :: tl')
     end
   | (id, Gvar c v) :: l' =>
-    match transf_globvar id v with
+    match transf_globvar id c v with
       | Error msg => Error (MSG "In variable " :: CTX id :: MSG ": " :: msg)
       | OK tv =>
         do tl' <- transf_globdefs l'; OK ((id, Gvar c tv) :: tl')
@@ -396,8 +396,9 @@ Definition transform_partial_program2 (p: program A V) : res (program B W) :=
 
 End TRANSF_PROGRAM_GEN.
 
-(** The following is a special case of [transform_partial_program2],
-  where only function definitions are transformed, but not variable definitions. *)
+(** The following is a special case of [transform_partial_program2], where only
+  function definitions are transformed (but not variable definitions), and
+  compartments are not taken into account. *)
 
 Section TRANSF_PARTIAL_PROGRAM.
 
@@ -405,7 +406,7 @@ Variable A B V: Type.
 Variable transf_fun: A -> res B.
 
 Definition transform_partial_program (p: program A V) : res (program B V) :=
-  transform_partial_program2 (fun i f => transf_fun f) (fun i v => OK v) p.
+  transform_partial_program2 (fun i c f => transf_fun f) (fun i c v => OK v) p.
 
 End TRANSF_PARTIAL_PROGRAM.
 
@@ -415,7 +416,7 @@ Lemma transform_program_partial_program:
 Proof.
   intros. unfold transform_partial_program, transform_partial_program2.
   assert (EQ: forall l,
-              transf_globdefs (fun i f => OK (transf_fun f)) (fun i (v: V) => OK v) l =
+              transf_globdefs (fun i c f => OK (transf_fun f)) (fun i c (v: V) => OK v) l =
               OK (List.map (transform_program_globdef transf_fun) l)).
   { induction l as [ | [id g] l]; simpl.
   - auto.
