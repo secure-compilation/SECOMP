@@ -22,6 +22,15 @@ Require Import ValueDomain ValueAnalysis NeedDomain NeedOp Deadcode.
 Definition match_prog (prog tprog: RTL.program) :=
   match_program (fun cu f tf => transf_fundef (romem_for cu) f = OK tf) eq prog tprog.
 
+Instance comp_transf_fundef:
+  has_comp_match (fun cu f tf => transf_fundef (romem_for cu) f = OK tf).
+Proof.
+  unfold transf_fundef, transf_function.
+  intros cu [f|ef] ? H; monadInv H; trivial.
+  destruct analyze; try easy.
+  now inv EQ.
+Qed.
+
 Lemma transf_program_match:
   forall prog tprog, transf_program prog = OK tprog -> match_prog prog tprog.
 Proof.
@@ -395,19 +404,19 @@ Lemma senv_preserved:
 Proof (Genv.senv_match TRANSF).
 
 Lemma functions_translated:
-  forall (v: val) (c: compartment) (f: RTL.fundef),
-  Genv.find_funct ge v = Some (c, f) ->
+  forall (v: val) (f: RTL.fundef),
+  Genv.find_funct ge v = Some f ->
   exists cu tf,
-  Genv.find_funct tge v = Some (c, tf) /\
+  Genv.find_funct tge v = Some tf /\
   transf_fundef (romem_for cu) f = OK tf /\
   linkorder cu prog.
 Proof (Genv.find_funct_match TRANSF).
 
 Lemma function_ptr_translated:
-  forall (b: block) (c: compartment) (f: RTL.fundef),
-  Genv.find_funct_ptr ge b = Some (c, f) ->
+  forall (b: block) (f: RTL.fundef),
+  Genv.find_funct_ptr ge b = Some f ->
   exists cu tf,
-  Genv.find_funct_ptr tge b = Some (c, tf) /\
+  Genv.find_funct_ptr tge b = Some tf /\
   transf_fundef (romem_for cu) f = OK tf /\
   linkorder cu prog.
 Proof (Genv.find_funct_ptr_match TRANSF).
@@ -466,11 +475,11 @@ Proof.
 Qed.
 
 Lemma find_function_translated:
-  forall ros rs c fd trs ne,
-  find_function ge ros rs = Some (c, fd) ->
+  forall ros rs fd trs ne,
+  find_function ge ros rs = Some fd ->
   eagree rs trs (add_ros_need_all ros ne) ->
   exists cu tfd,
-     find_function tge ros trs = Some (c, tfd)
+     find_function tge ros trs = Some tfd
   /\ transf_fundef (romem_for cu) fd = OK tfd
   /\ linkorder cu prog.
 Proof.
@@ -509,14 +518,14 @@ Inductive match_states: state -> state -> Prop :=
       match_states (State s f (Vptr sp Ptrofs.zero) pc e m)
                    (State ts tf (Vptr sp Ptrofs.zero) pc te tm)
   | match_call_states:
-      forall s c f args m ts tf targs tm cu
+      forall s f args m ts tf targs tm cu
         (STACKS: list_forall2 match_stackframes s ts)
         (LINK: linkorder cu prog)
         (FUN: transf_fundef (romem_for cu) f = OK tf)
         (ARGS: Val.lessdef_list args targs)
         (MEM: Mem.extends m tm),
-      match_states (Callstate s c f args m)
-                   (Callstate ts c tf targs tm)
+      match_states (Callstate s f args m)
+                   (Callstate ts tf targs tm)
   | match_return_states:
       forall s v m ts tv tm
         (STACKS: list_forall2 match_stackframes s ts)
@@ -1116,7 +1125,7 @@ Lemma transf_initial_states:
 Proof.
   intros. inversion H.
   exploit function_ptr_translated; eauto. intros (cu & tf & A & B & C).
-  exists (Callstate nil c tf nil m0); split.
+  exists (Callstate nil tf nil m0); split.
   econstructor; eauto.
   eapply (Genv.init_mem_match TRANSF); eauto.
   replace (prog_main tprog) with (prog_main prog).

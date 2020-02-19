@@ -268,7 +268,8 @@ Definition transf_function (f: function) : res function :=
   do body' <- simpl_stmt cenv f.(fn_body);
   let vars' := remove_lifted cenv (f.(fn_params) ++ f.(fn_vars)) in
   let temps' := add_lifted cenv f.(fn_vars) f.(fn_temps) in
-  OK {| fn_return := f.(fn_return);
+  OK {| fn_comp := f.(fn_comp);
+        fn_return := f.(fn_return);
         fn_callconv := f.(fn_callconv);
         fn_params := f.(fn_params);
         fn_vars := vars';

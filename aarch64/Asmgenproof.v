@@ -21,6 +21,16 @@ Require Import Asmgen Asmgenproof0 Asmgenproof1.
 Definition match_prog (p: Mach.program) (tp: Asm.program) :=
   match_program (fun _ f tf => transf_fundef f = OK tf) eq p tp.
 
+Instance comp_transf_fundef P:
+  has_comp_match (fun (_: P) f tf => transf_fundef f = OK tf).
+Proof.
+  unfold transf_fundef, transf_function, transl_function.
+  intros cu [f|ef] ? H; monadInv H; trivial.
+  destruct transl_code'; simpl in *; try easy.
+  destruct zlt; try easy.
+  now inv EQ.
+Qed.
+
 Lemma transf_program_match:
   forall p tp, transf_program p = OK tp -> match_prog p tp.
 Proof.
@@ -44,17 +54,17 @@ Lemma senv_preserved:
 Proof (Genv.senv_match TRANSF).
 
 Lemma functions_translated:
-  forall b c f,
-  Genv.find_funct_ptr ge b = Some (c, f) ->
+  forall b f,
+  Genv.find_funct_ptr ge b = Some f ->
   exists tf,
-  Genv.find_funct_ptr tge b = Some (c, tf) /\ transf_fundef f = OK tf.
+  Genv.find_funct_ptr tge b = Some tf /\ transf_fundef f = OK tf.
 Proof. exact (Genv.find_funct_ptr_transf_partial TRANSF). Qed.
 
 Lemma functions_transl:
-  forall fb c f tf,
-  Genv.find_funct_ptr ge fb = Some (c, Internal f) ->
+  forall fb f tf,
+  Genv.find_funct_ptr ge fb = Some (Internal f) ->
   transf_function f = OK tf ->
-  Genv.find_funct_ptr tge fb = Some (c, Internal tf).
+  Genv.find_funct_ptr tge fb = Some (Internal tf).
 Proof.
   intros. exploit functions_translated; eauto. intros [tf' [A B]].
   monadInv B. rewrite H0 in EQ; inv EQ; auto.
@@ -71,9 +81,9 @@ Proof.
 Qed.
 
 Lemma exec_straight_exec:
-  forall cp fb f c ep tf tc c' rs m rs' m',
-  transl_code_at_pc ge (rs PC) fb cp f c ep tf tc ->
-  exec_straight tge cp tf tc rs m c' rs' m' ->
+  forall fb f c ep tf tc c' rs m rs' m',
+  transl_code_at_pc ge (rs PC) fb f c ep tf tc ->
+  exec_straight tge tf tc rs m c' rs' m' ->
   plus step tge (State rs m) E0 (State rs' m').
 Proof.
   intros. inv H.
@@ -83,11 +93,11 @@ Proof.
 Qed.
 
 Lemma exec_straight_at:
-  forall cp fb f c ep tf tc c' ep' tc' rs m rs' m',
-  transl_code_at_pc ge (rs PC) fb cp f c ep tf tc ->
+  forall fb f c ep tf tc c' ep' tc' rs m rs' m',
+  transl_code_at_pc ge (rs PC) fb f c ep tf tc ->
   transl_code f c' ep' = OK tc' ->
-  exec_straight tge cp tf tc rs m tc' rs' m' ->
-  transl_code_at_pc ge (rs' PC) fb cp f c' ep' tf tc'.
+  exec_straight tge tf tc rs m tc' rs' m' ->
+  transl_code_at_pc ge (rs' PC) fb f c' ep' tf tc'.
 Proof.
   intros. inv H.
   exploit exec_straight_steps_2; eauto.
@@ -406,14 +416,14 @@ End TRANSL_LABEL.
   transition in the generated Asm code. *)
 
 Lemma find_label_goto_label:
-  forall cp f tf lbl rs m c b ofs,
-  Genv.find_funct_ptr ge b = Some (cp, Internal f) ->
+  forall f tf lbl rs m c b ofs,
+  Genv.find_funct_ptr ge b = Some (Internal f) ->
   transf_function f = OK tf ->
   rs PC = Vptr b ofs ->
   Mach.find_label lbl f.(Mach.fn_code) = Some c ->
   exists tc', exists rs',
      goto_label tf lbl rs m = Next rs' m
-  /\ transl_code_at_pc ge (rs' PC) b cp f c false tf tc'
+  /\ transl_code_at_pc ge (rs' PC) b f c false tf tc'
   /\ forall r, r <> PC -> rs'#r = rs#r.
 Proof.
   intros. exploit (transl_find_label lbl f tf); eauto. rewrite H2.
@@ -466,11 +476,11 @@ Qed.
 
 Inductive match_states: Mach.state -> Asm.state -> Prop :=
   | match_states_intro:
-      forall s fb sp c ep ms m m' rs cp f tf tc
+      forall s fb sp c ep ms m m' rs f tf tc
         (STACKS: match_stack ge s)
-        (FIND: Genv.find_funct_ptr ge fb = Some (cp, Internal f))
+        (FIND: Genv.find_funct_ptr ge fb = Some (Internal f))
         (MEXT: Mem.extends m m')
-        (AT: transl_code_at_pc ge (rs PC) fb cp f c ep tf tc)
+        (AT: transl_code_at_pc ge (rs PC) fb f c ep tf tc)
         (AG: agree ms sp rs)
         (DXP: ep = true -> rs#X29 = parent_sp s),
       match_states (Mach.State s fb sp c ms m)
@@ -494,14 +504,14 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
                    (Asm.State rs m').
 
 Lemma exec_straight_steps:
-  forall s fb cp f rs1 i c ep tf tc m1' m2 m2' sp ms2,
+  forall s fb f rs1 i c ep tf tc m1' m2 m2' sp ms2,
   match_stack ge s ->
   Mem.extends m2 m2' ->
-  Genv.find_funct_ptr ge fb = Some (cp, Internal f) ->
-  transl_code_at_pc ge (rs1 PC) fb cp f (i :: c) ep tf tc ->
+  Genv.find_funct_ptr ge fb = Some (Internal f) ->
+  transl_code_at_pc ge (rs1 PC) fb f (i :: c) ep tf tc ->
   (forall k c (TR: transl_instr f i ep k = OK c),
    exists rs2,
-       exec_straight tge cp tf c rs1 m1' k rs2 m2'
+       exec_straight tge tf c rs1 m1' k rs2 m2'
     /\ agree ms2 sp rs2
     /\ (it1_is_parent ep i = true -> rs2#X29 = parent_sp s)) ->
   exists st',
@@ -516,25 +526,25 @@ Proof.
 Qed.
 
 Lemma exec_straight_steps_goto:
-  forall s fb cp f rs1 i c ep tf tc m1' m2 m2' sp ms2 lbl c',
+  forall s fb f rs1 i c ep tf tc m1' m2 m2' sp ms2 lbl c',
   match_stack ge s ->
   Mem.extends m2 m2' ->
-  Genv.find_funct_ptr ge fb = Some (cp, Internal f) ->
+  Genv.find_funct_ptr ge fb = Some (Internal f) ->
   Mach.find_label lbl f.(Mach.fn_code) = Some c' ->
-  transl_code_at_pc ge (rs1 PC) fb cp f (i :: c) ep tf tc ->
+  transl_code_at_pc ge (rs1 PC) fb f (i :: c) ep tf tc ->
   it1_is_parent ep i = false ->
   (forall k c (TR: transl_instr f i ep k = OK c),
    exists jmp, exists k', exists rs2,
-       exec_straight tge cp tf c rs1 m1' (jmp :: k') rs2 m2'
+       exec_straight tge tf c rs1 m1' (jmp :: k') rs2 m2'
     /\ agree ms2 sp rs2
-    /\ exec_instr tge cp tf jmp rs2 m2' = goto_label tf lbl rs2 m2') ->
+    /\ exec_instr tge tf jmp rs2 m2' = goto_label tf lbl rs2 m2') ->
   exists st',
   plus step tge (State rs1 m1') E0 st' /\
   match_states (Mach.State s fb sp c' ms2 m2) st'.
 Proof.
   intros. inversion H3. subst. monadInv H9.
   exploit H5; eauto. intros [jmp [k' [rs2 [A [B C]]]]].
-  generalize (functions_transl _ _ _ _ H7 H8); intro FN.
+  generalize (functions_transl _ _ _ H7 H8); intro FN.
   generalize (transf_function_no_overflow _ _ H8); intro NOOV.
   exploit exec_straight_steps_2; eauto.
   intros [ofs' [PC2 CT2]].
@@ -553,25 +563,25 @@ Proof.
 Qed.
 
 Lemma exec_straight_opt_steps_goto:
-  forall s fb cp f rs1 i c ep tf tc m1' m2 m2' sp ms2 lbl c',
+  forall s fb f rs1 i c ep tf tc m1' m2 m2' sp ms2 lbl c',
   match_stack ge s ->
   Mem.extends m2 m2' ->
-  Genv.find_funct_ptr ge fb = Some (cp, Internal f) ->
+  Genv.find_funct_ptr ge fb = Some (Internal f) ->
   Mach.find_label lbl f.(Mach.fn_code) = Some c' ->
-  transl_code_at_pc ge (rs1 PC) fb cp f (i :: c) ep tf tc ->
+  transl_code_at_pc ge (rs1 PC) fb f (i :: c) ep tf tc ->
   it1_is_parent ep i = false ->
   (forall k c (TR: transl_instr f i ep k = OK c),
    exists jmp, exists k', exists rs2,
-       exec_straight_opt tge cp tf c rs1 m1' (jmp :: k') rs2 m2'
+       exec_straight_opt tge tf c rs1 m1' (jmp :: k') rs2 m2'
     /\ agree ms2 sp rs2
-    /\ exec_instr tge cp tf jmp rs2 m2' = goto_label tf lbl rs2 m2') ->
+    /\ exec_instr tge tf jmp rs2 m2' = goto_label tf lbl rs2 m2') ->
   exists st',
   plus step tge (State rs1 m1') E0 st' /\
   match_states (Mach.State s fb sp c' ms2 m2) st'.
 Proof.
   intros. inversion H3. subst. monadInv H9.
   exploit H5; eauto. intros [jmp [k' [rs2 [A [B C]]]]].
-  generalize (functions_transl _ _ _ _ H7 H8); intro FN.
+  generalize (functions_transl _ _ _ H7 H8); intro FN.
   generalize (transf_function_no_overflow _ _ H8); intro NOOV.
   inv A.
 - exploit find_label_goto_label; eauto.
@@ -663,7 +673,6 @@ Proof.
 
 - (* Mgetparam *)
   assert (f0 = f) by congruence; subst f0.
-  assert (cp0 = cp) by congruence; subst cp0.
   unfold load_stack in *.
   exploit Mem.loadv_extends. eauto. eexact H0. auto.
   intros [parent' [A B]]. rewrite (sp_val' _ _ _ AG) in A.
@@ -736,7 +745,6 @@ Local Transparent destroyed_by_op.
 
 - (* Mcall *)
   assert (f0 = f) by congruence.  subst f0.
-  assert (cp0 = cp) by congruence.  subst cp0.
   inv AT.
   assert (NOOV: list_length_z tf.(fn_code) <= Ptrofs.max_unsigned).
   { eapply transf_function_no_overflow; eauto. }
@@ -748,7 +756,7 @@ Local Transparent destroyed_by_op.
   assert (rs0 x0 = Vptr f' Ptrofs.zero).
   { exploit ireg_val; eauto. rewrite H5; intros LD; inv LD; auto. }
   generalize (code_tail_next_int _ _ _ _ NOOV H6). intro CT1.
-  assert (TCA: transl_code_at_pc ge (Vptr fb (Ptrofs.add ofs Ptrofs.one)) fb cp f c false tf x).
+  assert (TCA: transl_code_at_pc ge (Vptr fb (Ptrofs.add ofs Ptrofs.one)) fb f c false tf x).
   {  econstructor; eauto. }
   exploit return_address_offset_correct; eauto. intros; subst ra.
   left; econstructor; split.
@@ -762,7 +770,7 @@ Local Transparent destroyed_by_op.
   Simpl. rewrite <- H2. auto.
 + (* Direct call *)
   generalize (code_tail_next_int _ _ _ _ NOOV H6). intro CT1.
-  assert (TCA: transl_code_at_pc ge (Vptr fb (Ptrofs.add ofs Ptrofs.one)) fb cp f c false tf x).
+  assert (TCA: transl_code_at_pc ge (Vptr fb (Ptrofs.add ofs Ptrofs.one)) fb f c false tf x).
     econstructor; eauto.
   exploit return_address_offset_correct; eauto. intros; subst ra.
   left; econstructor; split.
@@ -777,7 +785,6 @@ Local Transparent destroyed_by_op.
 
 - (* Mtailcall *)
   assert (f0 = f) by congruence.  subst f0.
-  assert (cp0 = cp) by congruence.  subst cp0.
   inversion AT; subst.
   assert (NOOV: list_length_z tf.(fn_code) <= Ptrofs.max_unsigned).
   { eapply transf_function_no_overflow; eauto. }
@@ -845,7 +852,6 @@ Local Transparent destroyed_by_op.
 
 - (* Mgoto *)
   assert (f0 = f) by congruence. subst f0.
-  assert (cp0 = cp) by congruence. subst cp0.
   inv AT. monadInv H4.
   exploit find_label_goto_label; eauto. intros [tc' [rs' [GOTO [AT2 INV]]]].
   left; exists (State rs' m'); split.
@@ -859,7 +865,6 @@ Local Transparent destroyed_by_op.
 
 - (* Mcond true *)
   assert (f0 = f) by congruence. subst f0.
-  assert (cp0 = cp) by congruence. subst cp0.
   exploit eval_condition_lessdef. eapply preg_vals; eauto. eauto. eauto. intros EC.
   left; eapply exec_straight_opt_steps_goto; eauto.
   intros. simpl in TR.
@@ -880,7 +885,6 @@ Local Transparent destroyed_by_op.
 
 - (* Mjumptable *)
   assert (f0 = f) by congruence. subst f0.
-  assert (cp0 = cp) by congruence. subst cp0.
   inv AT. monadInv H6.
   exploit functions_transl; eauto. intro FN.
   generalize (transf_function_no_overflow _ _ H5); intro NOOV.
@@ -901,7 +905,6 @@ Local Transparent destroyed_by_op.
 
 - (* Mreturn *)
   assert (f0 = f) by congruence. subst f0.
-  assert (cp0 = cp) by congruence. subst cp0.
   inversion AT; subst. simpl in H6; monadInv H6.
   assert (NOOV: list_length_z tf.(fn_code) <= Ptrofs.max_unsigned).
     eapply transf_function_no_overflow; eauto.
@@ -938,18 +941,20 @@ Local Transparent destroyed_by_op.
                  storeptr RA XSP (fn_retaddr_ofs f) x0) in *.
   set (tf := {| fn_sig := Mach.fn_sig f; fn_code := tfbody |}) in *.
   set (rs2 := nextinstr (rs0#X29 <- (parent_sp s) #SP <- sp #X16 <- Vundef)).
-  exploit (storeptr_correct tge cp tf XSP (fn_retaddr_ofs f) RA x0 m2' m3' rs2).
+  exploit (storeptr_correct tge tf XSP (fn_retaddr_ofs f) RA x0 m2' m3' rs2).
     simpl preg_of_iregsp. change (rs2 X30) with (rs0 X30). rewrite ATLR. 
     change (rs2 X2) with sp. eexact P. 
     simpl; congruence. congruence.
   intros (rs3 & U & V).
   assert (EXEC_PROLOGUE:
-            exec_straight tge cp tf
+            exec_straight tge tf
               tf.(fn_code) rs0 m'
               x0 rs3 m3').
   { change (fn_code tf) with tfbody; unfold tfbody.
     apply exec_straight_step with rs2 m2'.
-    unfold exec_instr. rewrite C. fold sp.
+    unfold exec_instr.
+    change (fn_comp tf) with (Mach.fn_comp f).
+    rewrite C. fold sp.
     rewrite <- (sp_val _ _ _ AG). rewrite F. reflexivity.
     reflexivity. 
     eexact U. }

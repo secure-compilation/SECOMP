@@ -943,7 +943,7 @@ Definition transl_code' (f: Mach.function) (il: list Mach.instruction) (it1p: bo
 
 Definition transl_function (f: Mach.function) :=
   do c <- transl_code' f f.(Mach.fn_code) false;
-  OK (mkfunction f.(Mach.fn_sig)
+  OK (mkfunction f.(Mach.fn_comp) f.(Mach.fn_sig)
        (Pallocframe f.(fn_stacksize) f.(fn_link_ofs) f.(fn_retaddr_ofs) ::
         Pmflr GPR0 ::
         Pstw GPR0 (Cint (Ptrofs.to_int f.(fn_retaddr_ofs))) GPR1 ::

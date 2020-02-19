@@ -142,6 +142,8 @@ Section GENV.
 Variable F: Type.  (**r The type of function descriptions *)
 Variable V: Type.  (**r The type of information attached to variables *)
 
+Context {CF: has_comp F}.
+
 (** The type of global environments. *)
 
 Record t: Type := mkgenv {
@@ -188,13 +190,13 @@ Definition find_def (ge: t) (b: block) : option (globdef F V) :=
 (** [find_funct_ptr ge b] returns the function description associated with
     the given address. *)
 
-Definition find_funct_ptr (ge: t) (b: block) : option (compartment * F) :=
-  match find_def ge b with Some (Gfun c f) => Some (c, f) | _ => None end.
+Definition find_funct_ptr (ge: t) (b: block) : option F :=
+  match find_def ge b with Some (Gfun f) => Some f | _ => None end.
 
 (** [find_funct] is similar to [find_funct_ptr], but the function address
     is given as a value, which must be a pointer with offset 0. *)
 
-Definition find_funct (ge: t) (v: val) : option (compartment * F) :=
+Definition find_funct (ge: t) (v: val) : option F :=
   match v with
   | Vptr b ofs => if Ptrofs.eq_dec ofs Ptrofs.zero then find_funct_ptr ge b else None
   | _ => None
@@ -210,8 +212,8 @@ Definition invert_symbol (ge: t) (b: block) : option ident :=
 (** [find_var_info ge b] returns the information attached to the variable
    at address [b]. *)
 
-Definition find_var_info (ge: t) (b: block) : option (compartment * globvar V) :=
-  match find_def ge b with Some (Gvar c v) => Some (c, v) | _ => None end.
+Definition find_var_info (ge: t) (b: block) : option (globvar V) :=
+  match find_def ge b with Some (Gvar v) => Some v | _ => None end.
 
 (** [block_is_volatile ge b] returns [true] if [b] points to a global variable
   of volatile type, [false] otherwise. *)
@@ -219,7 +221,7 @@ Definition find_var_info (ge: t) (b: block) : option (compartment * globvar V) :
 Definition block_is_volatile (ge: t) (b: block) : bool :=
   match find_var_info ge b with
   | None => false
-  | Some gv => gv#2.(gvar_volatile)
+  | Some gv => gv.(gvar_volatile)
   end.
 
 (** ** Constructing the global environment *)
@@ -405,21 +407,21 @@ Proof.
 Qed.
 
 Theorem find_funct_ptr_iff:
-  forall ge b c f,
-  find_funct_ptr ge b = Some (c, f) <->
-  find_def ge b = Some (Gfun c f).
+  forall ge b f,
+  find_funct_ptr ge b = Some f <->
+  find_def ge b = Some (Gfun f).
 Proof.
   intros. unfold find_funct_ptr.
-  destruct (find_def ge b) as [[c1 f1|c1 v1]|]; intuition congruence.
+  destruct (find_def ge b) as [[f1|v1]|]; intuition congruence.
 Qed.
 
 Theorem find_var_info_iff:
-  forall ge b c v,
-  find_var_info ge b = Some (c, v) <->
-  find_def ge b = Some (Gvar c v).
+  forall ge b v,
+  find_var_info ge b = Some v <->
+  find_def ge b = Some (Gvar v).
 Proof.
   intros. unfold find_var_info.
-  destruct (find_def ge b) as [[c1 f1|c1 v1]|]; intuition congruence.
+  destruct (find_def ge b) as [[f1|v1]|]; intuition congruence.
 Qed.
 
 Theorem find_def_symbol:
@@ -494,17 +496,17 @@ Proof.
 Qed.
 
 Corollary find_funct_ptr_inversion:
-  forall p b c f,
-  find_funct_ptr (globalenv p) b = Some (c, f) ->
-  exists id, In (id, Gfun c f) (prog_defs p).
+  forall p b f,
+  find_funct_ptr (globalenv p) b = Some f ->
+  exists id, In (id, Gfun f) (prog_defs p).
 Proof.
   intros. apply find_def_inversion with b. apply find_funct_ptr_iff; auto.
 Qed.
 
 Corollary find_funct_inversion:
-  forall p v c f,
-  find_funct (globalenv p) v = Some (c, f) ->
-  exists id, In (id, Gfun c f) (prog_defs p).
+  forall p v f,
+  find_funct (globalenv p) v = Some f ->
+  exists id, In (id, Gfun f) (prog_defs p).
 Proof.
   intros. exploit find_funct_inv; eauto. intros [b EQ]. subst v.
   rewrite find_funct_find_funct_ptr in H.
@@ -512,18 +514,18 @@ Proof.
 Qed.
 
 Theorem find_funct_ptr_prop:
-  forall (P: F -> Prop) p b c f,
-  (forall id c f, In (id, Gfun c f) (prog_defs p) -> P f) ->
-  find_funct_ptr (globalenv p) b = Some (c, f) ->
+  forall (P: F -> Prop) p b f,
+  (forall id f, In (id, Gfun f) (prog_defs p) -> P f) ->
+  find_funct_ptr (globalenv p) b = Some f ->
   P f.
 Proof.
   intros. exploit find_funct_ptr_inversion; eauto. intros [id IN]. eauto.
 Qed.
 
 Theorem find_funct_prop:
-  forall (P: F -> Prop) p v c f,
-  (forall id c f, In (id, Gfun c f) (prog_defs p) -> P f) ->
-  find_funct (globalenv p) v = Some (c, f) ->
+  forall (P: F -> Prop) p v f,
+  (forall id f, In (id, Gfun f) (prog_defs p) -> P f) ->
+  find_funct (globalenv p) v = Some f ->
   P f.
 Proof.
   intros. exploit find_funct_inversion; eauto. intros [id IN]. eauto.
@@ -663,13 +665,13 @@ Definition perm_globvar (gv: globvar V) : permission :=
 
 Definition alloc_global (m: mem) (idg: ident * globdef F V): option mem :=
   match idg with
-  | (id, Gfun c f) =>
-      let (m1, b) := Mem.alloc m c 0 1 in
+  | (id, Gfun f) =>
+      let (m1, b) := Mem.alloc m (comp_of f) 0 1 in
       Mem.drop_perm m1 b 0 1 Nonempty
-  | (id, Gvar c v) =>
+  | (id, Gvar v) =>
       let init := v.(gvar_init) in
       let sz := init_data_list_size init in
-      let (m1, b) := Mem.alloc m c 0 sz in
+      let (m1, b) := Mem.alloc m v.(gvar_comp) 0 sz in
       match store_zeros m1 b 0 sz with
       | None => None
       | Some m2 =>
@@ -731,15 +733,15 @@ Remark alloc_global_nextblock:
   Mem.nextblock m' = Pos.succ(Mem.nextblock m).
 Proof.
   unfold alloc_global. intros.
-  destruct g as [id [c f|c v]].
+  destruct g as [id [f|v]].
 - (* function *)
-  destruct (Mem.alloc m c 0 1) as [m1 b] eqn:?.
+  destruct (Mem.alloc m _ 0 1) as [m1 b] eqn:?.
   erewrite Mem.nextblock_drop; eauto.
   now erewrite Mem.nextblock_alloc; eauto.
 - (* variable *)
   set (init := gvar_init v) in *.
   set (sz := init_data_list_size init) in *.
-  destruct (Mem.alloc m c 0 sz) as [m1 b] eqn:?.
+  destruct (Mem.alloc m _ 0 sz) as [m1 b] eqn:?.
   destruct (store_zeros m1 b 0 sz) as [m2|] eqn:?; try discriminate.
   destruct (store_init_data_list m2 b 0 init) as [m3|] eqn:?; try discriminate.
   erewrite Mem.nextblock_drop; eauto.
@@ -806,9 +808,9 @@ Remark alloc_global_perm:
   Mem.valid_block m b' ->
   (Mem.perm m b' q k prm <-> Mem.perm m' b' q k prm).
 Proof.
-  intros. destruct idg as [id [c f|c v]]; simpl in H.
+  intros. destruct idg as [id [f|v]]; simpl in H.
 - (* function *)
-  destruct (Mem.alloc m c 0 1) as [m1 b] eqn:?.
+  destruct (Mem.alloc m _ 0 1) as [m1 b] eqn:?.
   assert (b' <> b). apply Mem.valid_not_valid_diff with m; eauto with mem.
   split; intros.
   eapply Mem.perm_drop_3; eauto. eapply Mem.perm_alloc_1; eauto.
@@ -816,7 +818,7 @@ Proof.
 - (* variable *)
   set (init := gvar_init v) in *.
   set (sz := init_data_list_size init) in *.
-  destruct (Mem.alloc m c 0 sz) as [m1 b] eqn:?.
+  destruct (Mem.alloc m _ 0 sz) as [m1 b] eqn:?.
   destruct (store_zeros m1 b 0 sz) as [m2|] eqn:?; try discriminate.
   destruct (store_init_data_list m2 b 0 init) as [m3|] eqn:?; try discriminate.
   assert (b' <> b). apply Mem.valid_not_valid_diff with m; eauto with mem.
@@ -1118,9 +1120,9 @@ Remark alloc_global_unchanged:
   alloc_global m (id, g) = Some m' ->
   Mem.unchanged_on P m m'.
 Proof.
-  intros. destruct g as [c f|c v]; simpl in H.
+  intros. destruct g as [f|v]; simpl in H.
 - (* function *)
-  destruct (Mem.alloc m c 0 1) as [m1 b] eqn:?.
+  destruct (Mem.alloc m _ 0 1) as [m1 b] eqn:?.
   set (Q := fun b' (ofs: Z) => b' <> b).
   apply Mem.unchanged_on_implies with Q.
   apply Mem.unchanged_on_trans with m1.
@@ -1130,7 +1132,7 @@ Proof.
 - (* variable *)
   set (init := gvar_init v) in *.
   set (sz := init_data_list_size init) in *.
-  destruct (Mem.alloc m c 0 sz) as [m1 b] eqn:?.
+  destruct (Mem.alloc m _ 0 sz) as [m1 b] eqn:?.
   destruct (store_zeros m1 b 0 sz) as [m2|] eqn:?; try discriminate.
   destruct (store_init_data_list m2 b 0 init) as [m3|] eqn:?; try discriminate.
   set (Q := fun b' (ofs: Z) => b' <> b).
@@ -1174,10 +1176,10 @@ Definition globals_initialized (g: t) (m: mem) :=
   forall b gd,
   find_def g b = Some gd ->
   match gd with
-  | Gfun c f =>
+  | Gfun f =>
          Mem.perm m b 0 Cur Nonempty
       /\ (forall ofs k p, Mem.perm m b ofs k p -> ofs = 0 /\ p = Nonempty)
-  | Gvar c v =>
+  | Gvar v =>
          Mem.range_perm m b 0 (init_data_list_size v.(gvar_init)) Cur (perm_globvar v)
       /\ (forall ofs k p, Mem.perm m b ofs k p ->
             0 <= ofs < init_data_list_size v.(gvar_init) /\ perm_order (perm_globvar v) p)
@@ -1198,8 +1200,8 @@ Proof.
 - (* globals-initialized *)
   red; intros. unfold find_def in H2; simpl in H2.
   rewrite PTree.gsspec in H2. destruct (peq b (genv_next g)).
-+ inv H2. destruct gd0 as [c f|c v]; simpl in H0.
-* destruct (Mem.alloc m c 0 1) as [m1 b] eqn:ALLOC.
++ inv H2. destruct gd0 as [f|v]; simpl in H0.
+* destruct (Mem.alloc m _ 0 1) as [m1 b] eqn:ALLOC.
   exploit Mem.alloc_result; eauto. intros RES.
   rewrite H, <- RES. split.
   eapply Mem.perm_drop_1; eauto. omega.
@@ -1209,7 +1211,7 @@ Proof.
   split. omega. inv ORD; auto.
 * set (init := gvar_init v) in *.
   set (sz := init_data_list_size init) in *.
-  destruct (Mem.alloc m c 0 sz) as [m1 b] eqn:?.
+  destruct (Mem.alloc m _ 0 sz) as [m1 b] eqn:?.
   destruct (store_zeros m1 b 0 sz) as [m2|] eqn:?; try discriminate.
   destruct (store_init_data_list m2 b 0 init) as [m3|] eqn:?; try discriminate.
   exploit Mem.alloc_result; eauto. intro RES.
@@ -1299,17 +1301,17 @@ Proof.
 Qed.
 
 Theorem find_funct_ptr_not_fresh:
-  forall p b c f m,
+  forall p b f m,
   init_mem p = Some m ->
-  find_funct_ptr (globalenv p) b = Some (c, f) -> Mem.valid_block m b.
+  find_funct_ptr (globalenv p) b = Some f -> Mem.valid_block m b.
 Proof.
   intros. rewrite find_funct_ptr_iff in H0. eapply find_def_not_fresh; eauto.
 Qed.
 
 Theorem find_var_info_not_fresh:
-  forall p b c gv m,
+  forall p b gv m,
   init_mem p = Some m ->
-  find_var_info (globalenv p) b = Some (c, gv) -> Mem.valid_block m b.
+  find_var_info (globalenv p) b = Some gv -> Mem.valid_block m b.
 Proof.
   intros. rewrite find_var_info_iff in H0. eapply find_def_not_fresh; eauto.
 Qed.
@@ -1326,8 +1328,8 @@ Proof.
 Qed.
 
 Theorem init_mem_characterization:
-  forall p b c gv m,
-  find_var_info (globalenv p) b = Some (c, gv) ->
+  forall p b gv m,
+  find_var_info (globalenv p) b = Some gv ->
   init_mem p = Some m ->
   Mem.range_perm m b 0 (init_data_list_size gv.(gvar_init)) Cur (perm_globvar gv)
   /\ (forall ofs k p, Mem.perm m b ofs k p ->
@@ -1342,8 +1344,8 @@ Proof.
 Qed.
 
 Theorem init_mem_characterization_2:
-  forall p b c fd m,
-  find_funct_ptr (globalenv p) b = Some (c, fd) ->
+  forall p b fd m,
+  find_funct_ptr (globalenv p) b = Some fd ->
   init_mem p = Some m ->
   Mem.perm m b 0 Cur Nonempty
   /\ (forall ofs k p, Mem.perm m b ofs k p -> ofs = 0 /\ p = Nonempty).
@@ -1409,16 +1411,16 @@ Lemma alloc_global_neutral:
   Plt (Mem.nextblock m) thr ->
   Mem.inject_neutral thr m'.
 Proof.
-  intros. destruct idg as [id [c f|c v]]; simpl in H.
+  intros. destruct idg as [id [f|v]]; simpl in H.
 - (* function *)
-  destruct (Mem.alloc m c 0 1) as [m1 b] eqn:?.
+  destruct (Mem.alloc m _ 0 1) as [m1 b] eqn:?.
   assert (Plt b thr). rewrite (Mem.alloc_result _ _ _ _ _ _ Heqp). auto.
   eapply Mem.drop_inject_neutral; eauto.
   eapply Mem.alloc_inject_neutral; eauto.
 - (* variable *)
   set (init := gvar_init v) in *.
   set (sz := init_data_list_size init) in *.
-  destruct (Mem.alloc m c 0 sz) as [m1 b] eqn:?.
+  destruct (Mem.alloc m _ 0 sz) as [m1 b] eqn:?.
   destruct (store_zeros m1 b 0 sz) as [m2|] eqn:?; try discriminate.
   destruct (store_init_data_list ge m2 b 0 init) as [m3|] eqn:?; try discriminate.
   assert (Plt b thr). rewrite (Mem.alloc_result _ _ _ _ _ _ Heqp). auto.
@@ -1538,9 +1540,9 @@ Qed.
 End INITMEM_INVERSION.
 
 Theorem init_mem_inversion:
-  forall p m id c v,
+  forall p m id v,
   init_mem p = Some m ->
-  In (id, Gvar c v) p.(prog_defs) ->
+  In (id, Gvar v) p.(prog_defs) ->
   init_data_list_aligned 0 v.(gvar_init)
   /\ forall i o, In (Init_addrof i o) v.(gvar_init) -> exists b, find_symbol (globalenv p) i = Some b.
 Proof.
@@ -1552,7 +1554,7 @@ Proof.
   destruct H0.
 + subst idg1; simpl in A.
   set (il := gvar_init v) in *. set (sz := init_data_list_size il) in *.
-  destruct (Mem.alloc m c 0 sz) as [m1 b].
+  destruct (Mem.alloc m _ 0 sz) as [m1 b].
   destruct (store_zeros m1 b 0 sz) as [m2|]; try discriminate.
   destruct (store_init_data_list ge m2 b 0 il) as [m3|] eqn:B; try discriminate.
   split. eapply store_init_data_list_aligned; eauto. intros; eapply store_init_data_list_free_idents; eauto.
@@ -1619,21 +1621,21 @@ Qed.
 Lemma alloc_global_exists:
   forall m idg,
   match idg with
-  | (id, Gfun c f) => True
-  | (id, Gvar c v) =>
+  | (id, Gfun f) => True
+  | (id, Gvar v) =>
         init_data_list_aligned 0 v.(gvar_init)
      /\ forall i o, In (Init_addrof i o) v.(gvar_init) -> exists b, find_symbol ge i = Some b
   end ->
   exists m', alloc_global ge m idg = Some m'.
 Proof.
-  intros m [id [c f|c v]]; intros; simpl.
-- destruct (Mem.alloc m c 0 1) as [m1 b] eqn:ALLOC.
+  intros m [id [f|v]]; intros; simpl.
+- destruct (Mem.alloc m _ 0 1) as [m1 b] eqn:ALLOC.
   destruct (Mem.range_perm_drop_2 m1 b 0 1 Nonempty) as [m2 DROP].
   red; intros; eapply Mem.perm_alloc_2; eauto.
   exists m2; auto.
 - destruct H as [P Q].
   set (sz := init_data_list_size (gvar_init v)).
-  destruct (Mem.alloc m c 0 sz) as [m1 b] eqn:ALLOC.
+  destruct (Mem.alloc m _ 0 sz) as [m1 b] eqn:ALLOC.
   assert (P1: Mem.range_perm m1 b 0 sz Cur Freeable) by (red; intros; eapply Mem.perm_alloc_2; eauto).
   destruct (@store_zeros_exists m1 b 0 sz) as [m2 ZEROS].
   red; intros. apply Mem.perm_implies with Freeable; auto with mem.
@@ -1653,7 +1655,7 @@ End INITMEM_EXISTS.
 
 Theorem init_mem_exists:
   forall p,
-  (forall id c v, In (id, Gvar c v) (prog_defs p) ->
+  (forall id v, In (id, Gvar v) (prog_defs p) ->
         init_data_list_aligned 0 v.(gvar_init)
      /\ forall i o, In (Init_addrof i o) v.(gvar_init) -> exists b, find_symbol (globalenv p) i = Some b) ->
   exists m, init_mem p = Some m.
@@ -1715,11 +1717,13 @@ End MATCH_GENVS.
 Section MATCH_PROGRAMS.
 
 Context {C F1 V1 F2 V2: Type} {LC: Linker C} {LF: Linker F1} {LV: Linker V1}.
+Context {CF1: has_comp F1} {CF2: has_comp F2}.
 Variable match_fundef: C -> F1 -> F2 -> Prop.
 Variable match_varinfo: V1 -> V2 -> Prop.
 Variable ctx: C.
 Variable p: program F1 V1.
 Variable tp: program F2 V2.
+Context {match_fundef_comp: has_comp_match match_fundef}.
 Hypothesis progmatch: match_program_gen match_fundef match_varinfo ctx p tp.
 
 Lemma globalenvs_match:
@@ -1745,10 +1749,10 @@ Proof.
 Qed.
 
 Theorem find_funct_ptr_match:
-  forall b c f,
-  find_funct_ptr (globalenv p) b = Some (c, f) ->
+  forall b f,
+  find_funct_ptr (globalenv p) b = Some f ->
   exists cunit tf,
-  find_funct_ptr (globalenv tp) b = Some (c, tf) /\ match_fundef cunit f tf /\ linkorder cunit ctx.
+  find_funct_ptr (globalenv tp) b = Some tf /\ match_fundef cunit f tf /\ linkorder cunit ctx.
 Proof.
   intros. rewrite find_funct_ptr_iff in *. apply find_def_match in H.
   destruct H as (tg & P & Q). inv Q.
@@ -1756,10 +1760,10 @@ Proof.
 Qed.
 
 Theorem find_funct_match:
-  forall v c f,
-  find_funct (globalenv p) v = Some (c, f) ->
+  forall v f,
+  find_funct (globalenv p) v = Some f ->
   exists cunit tf,
-  find_funct (globalenv tp) v = Some (c, tf) /\ match_fundef cunit f tf /\ linkorder cunit ctx.
+  find_funct (globalenv tp) v = Some tf /\ match_fundef cunit f tf /\ linkorder cunit ctx.
 Proof.
   intros. exploit find_funct_inv; eauto. intros [b EQ]. subst v.
   rewrite find_funct_find_funct_ptr in H.
@@ -1768,10 +1772,10 @@ Proof.
 Qed.
 
 Theorem find_var_info_match:
-  forall b c v,
-  find_var_info (globalenv p) b = Some (c, v) ->
+  forall b v,
+  find_var_info (globalenv p) b = Some v ->
   exists tv,
-  find_var_info (globalenv tp) b = Some (c, tv) /\ match_globvar match_varinfo v tv.
+  find_var_info (globalenv tp) b = Some tv /\ match_globvar match_varinfo v tv.
 Proof.
   intros. rewrite find_var_info_iff in *. apply find_def_match in H.
   destruct H as (tg & P & Q). inv Q.
@@ -1826,8 +1830,8 @@ Proof.
   assert (X: alloc_global (globalenv tp) m b1 = Some m1).
   { destruct a1 as [id1 g1]; destruct b1 as [id2 g2]; destruct H; simpl in *.
     subst id2. inv H2.
-  - auto.
-  - inv H; simpl in *.
+  - erewrite <- match_fundef_comp; eauto.
+  - inv H; simpl in *. simpl in Heqo.
     set (sz := init_data_list_size init) in *.
     destruct (Mem.alloc m _ 0 sz) as [m2 b] eqn:?.
     destruct (store_zeros m2 b 0 sz) as [m3|] eqn:?; try discriminate.
@@ -1851,24 +1855,26 @@ End MATCH_PROGRAMS.
 Section TRANSFORM_PARTIAL.
 
 Context {A B V: Type} {LA: Linker A} {LV: Linker V}.
+Context {CA: has_comp A} {CB: has_comp B}.
 Context {transf: A -> res B} {p: program A V} {tp: program B V}.
+Context {CAB: has_comp_match (fun (cu: program A V) f tf => transf f = OK tf)}.
 Hypothesis progmatch: match_program (fun cu f tf => transf f = OK tf) eq p tp.
 
 Theorem find_funct_ptr_transf_partial:
-  forall b c f,
-  find_funct_ptr (globalenv p) b = Some (c, f) ->
+  forall b f,
+  find_funct_ptr (globalenv p) b = Some f ->
   exists tf,
-  find_funct_ptr (globalenv tp) b = Some (c, tf) /\ transf f = OK tf.
+  find_funct_ptr (globalenv tp) b = Some tf /\ transf f = OK tf.
 Proof.
   intros. exploit (find_funct_ptr_match progmatch); eauto.
   intros (cu & tf & P & Q & R); exists tf; auto.
 Qed.
 
 Theorem find_funct_transf_partial:
-  forall v c f,
-  find_funct (globalenv p) v = Some (c, f) ->
+  forall v f,
+  find_funct (globalenv p) v = Some f ->
   exists tf,
-  find_funct (globalenv tp) v = Some (c, tf) /\ transf f = OK tf.
+  find_funct (globalenv tp) v = Some tf /\ transf f = OK tf.
 Proof.
   intros. exploit (find_funct_match progmatch); eauto.
   intros (cu & tf & P & Q & R); exists tf; auto.
@@ -1900,22 +1906,24 @@ End TRANSFORM_PARTIAL.
 Section TRANSFORM_TOTAL.
 
 Context {A B V: Type} {LA: Linker A} {LV: Linker V}.
+Context {CA: has_comp A} {CB: has_comp B}.
 Context {transf: A -> B} {p: program A V} {tp: program B V}.
+Context {CAB: has_comp_match (fun (cu: program A V) f tf => tf = transf f)}.
 Hypothesis progmatch: match_program (fun cu f tf => tf = transf f) eq p tp.
 
 Theorem find_funct_ptr_transf:
-  forall b c f,
-  find_funct_ptr (globalenv p) b = Some (c, f) ->
-  find_funct_ptr (globalenv tp) b = Some (c, transf f).
+  forall b f,
+  find_funct_ptr (globalenv p) b = Some f ->
+  find_funct_ptr (globalenv tp) b = Some (transf f).
 Proof.
   intros. exploit (find_funct_ptr_match progmatch); eauto.
   intros (cu & tf & P & Q & R). congruence.
 Qed.
 
 Theorem find_funct_transf:
-  forall v c f,
-  find_funct (globalenv p) v = Some (c, f) ->
-  find_funct (globalenv tp) v = Some (c, transf f).
+  forall v f,
+  find_funct (globalenv p) v = Some f ->
+  find_funct (globalenv tp) v = Some (transf f).
 Proof.
   intros. exploit (find_funct_match progmatch); eauto.
   intros (cu & tf & P & Q & R). congruence.

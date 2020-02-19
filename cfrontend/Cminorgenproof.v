@@ -25,6 +25,16 @@ Local Open Scope error_monad_scope.
 Definition match_prog (p: Csharpminor.program) (tp: Cminor.program) :=
   match_program (fun cu f tf => transl_fundef f = OK tf) eq p tp.
 
+Instance comp_transl_fundef P:
+  has_comp_match (fun (cu: P) f tf => transl_fundef f = OK tf).
+Proof.
+  unfold transl_fundef, transl_function, transl_funbody.
+  intros cu [f|ef] tf H; monadInv H; trivial.
+  destruct build_compilenv.
+  destruct zle; try easy.
+  now monadInv EQ.
+Qed.
+
 Lemma transf_program_match:
   forall p tp, transl_program p = OK tp -> match_prog p tp.
 Proof.
@@ -48,17 +58,17 @@ Lemma senv_preserved:
 Proof (Genv.senv_transf_partial TRANSL).
 
 Lemma function_ptr_translated:
-  forall (b: block) (c: compartment) (f: Csharpminor.fundef),
-  Genv.find_funct_ptr ge b = Some (c, f) ->
+  forall (b: block) (f: Csharpminor.fundef),
+  Genv.find_funct_ptr ge b = Some f ->
   exists tf,
-  Genv.find_funct_ptr tge b = Some (c, tf) /\ transl_fundef f = OK tf.
+  Genv.find_funct_ptr tge b = Some tf /\ transl_fundef f = OK tf.
 Proof (Genv.find_funct_ptr_transf_partial TRANSL).
 
 Lemma functions_translated:
-  forall (v: val) (c: compartment) (f: Csharpminor.fundef),
-  Genv.find_funct ge v = Some (c, f) ->
+  forall (v: val) (f: Csharpminor.fundef),
+  Genv.find_funct ge v = Some f ->
   exists tf,
-  Genv.find_funct tge v = Some (c, tf) /\ transl_fundef f = OK tf.
+  Genv.find_funct tge v = Some tf /\ transl_fundef f = OK tf.
 Proof (Genv.find_funct_transf_partial TRANSL).
 
 Lemma sig_preserved_body:
@@ -426,8 +436,8 @@ Inductive match_globalenvs (f: meminj) (bound: block): Prop :=
       (DOMAIN: forall b, Plt b bound -> f b = Some(b, 0))
       (IMAGE: forall b1 b2 delta, f b1 = Some(b2, delta) -> Plt b2 bound -> b1 = b2)
       (SYMBOLS: forall id b, Genv.find_symbol ge id = Some b -> Plt b bound)
-      (FUNCTIONS: forall b c fd, Genv.find_funct_ptr ge b = Some (c, fd) -> Plt b bound)
-      (VARINFOS: forall b c gv, Genv.find_var_info ge b = Some (c, gv) -> Plt b bound).
+      (FUNCTIONS: forall b fd, Genv.find_funct_ptr ge b = Some fd -> Plt b bound)
+      (VARINFOS: forall b gv, Genv.find_var_info ge b = Some gv -> Plt b bound).
 
 Remark inj_preserves_globals:
   forall f hi,
@@ -1607,15 +1617,15 @@ Inductive match_states: Csharpminor.state -> Cminor.state -> Prop :=
       match_states (Csharpminor.State fn (Csharpminor.Sseq s1 s2) k e le m)
                    (State tfn ts1 tk (Vptr sp Ptrofs.zero) te tm)
   | match_callstate:
-      forall c fd args k m tfd targs tk tm f cs cenv
+      forall fd args k m tfd targs tk tm f cs cenv
       (TR: transl_fundef fd = OK tfd)
       (MINJ: Mem.inject f m tm)
       (MCS: match_callstack f m tm cs (Mem.nextblock m) (Mem.nextblock tm))
       (MK: match_cont k tk cenv nil cs)
       (ISCC: Csharpminor.is_call_cont k)
       (ARGSINJ: Val.inject_list f args targs),
-      match_states (Csharpminor.Callstate c fd args k m)
-                   (Callstate c tfd targs tk tm)
+      match_states (Csharpminor.Callstate fd args k m)
+                   (Callstate tfd targs tk tm)
   | match_returnstate:
       forall v k m tv tk tm f cs cenv
       (MINJ: Mem.inject f m tm)
@@ -1626,8 +1636,8 @@ Inductive match_states: Csharpminor.state -> Cminor.state -> Prop :=
                    (Returnstate tv tk tm).
 
 Remark val_inject_function_pointer:
-  forall bound v c fd f tv,
-  Genv.find_funct ge v = Some (c, fd) ->
+  forall bound v fd f tv,
+  Genv.find_funct ge v = Some fd ->
   match_globalenvs f bound ->
   Val.inject f v tv ->
   tv = v.
@@ -2165,12 +2175,13 @@ Opaque PTree.set.
   destruct (zle sz Ptrofs.max_unsigned); try congruence.
   intro TRBODY.
   generalize TRBODY; intro TMP. monadInv TMP.
-  set (tf := mkfunction (Csharpminor.fn_sig f)
+  set (tf := mkfunction (Csharpminor.fn_comp f)
+                        (Csharpminor.fn_sig f)
                         (Csharpminor.fn_params f)
                         (Csharpminor.fn_temps f)
                         sz
                         x0) in *.
-  caseEq (Mem.alloc tm c 0 (fn_stackspace tf)). intros tm' sp ALLOC'.
+  caseEq (Mem.alloc tm (fn_comp tf) 0 (fn_stackspace tf)). intros tm' sp ALLOC'.
   exploit match_callstack_function_entry; eauto. simpl; eauto. simpl; auto.
   intros [f2 [MCS2 MINJ2]].
   left; econstructor; split.

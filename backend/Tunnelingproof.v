@@ -21,6 +21,12 @@ Require Import Tunneling.
 Definition match_prog (p tp: program) :=
   match_program (fun ctx f tf => tf = tunnel_fundef f) eq p tp.
 
+Instance comp_tunnel_fundef P:
+  has_comp_match (fun (_: P) f tf => tf = tunnel_fundef f).
+Proof.
+  now intros cu [f|tf] ? ->.
+Qed.
+
 Lemma transf_program_match:
   forall p, match_prog p (tunnel_program p).
 Proof.
@@ -145,15 +151,15 @@ Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
 
 Lemma functions_translated:
-  forall v c f,
-  Genv.find_funct ge v = Some (c, f) ->
-  Genv.find_funct tge v = Some (c, tunnel_fundef f).
+  forall v f,
+  Genv.find_funct ge v = Some f ->
+  Genv.find_funct tge v = Some (tunnel_fundef f).
 Proof. exact (Genv.find_funct_transf TRANSL). Qed.
 
 Lemma function_ptr_translated:
-  forall v c f,
-  Genv.find_funct_ptr ge v = Some (c, f) ->
-  Genv.find_funct_ptr tge v = Some (c, tunnel_fundef f).
+  forall v f,
+  Genv.find_funct_ptr ge v = Some f ->
+  Genv.find_funct_ptr tge v = Some (tunnel_fundef f).
 Proof (Genv.find_funct_ptr_transf TRANSL).
 
 Lemma symbols_preserved:
@@ -234,12 +240,12 @@ Inductive match_states: state -> state -> Prop :=
       match_states (Block s f sp (Lbranch pc :: bb) ls m)
                    (State ts (tunnel_function f) sp (branch_target f pc) tls tm)
   | match_states_call:
-      forall s c f ls m ts tls tm
+      forall s f ls m ts tls tm
         (STK: list_forall2 match_stackframes s ts)
         (LS: locmap_lessdef ls tls)
         (MEM: Mem.extends m tm),
-      match_states (Callstate s c f ls m)
-                   (Callstate ts c (tunnel_fundef f) tls tm)
+      match_states (Callstate s f ls m)
+                   (Callstate ts (tunnel_fundef f) tls tm)
   | match_states_return:
       forall s ls m ts tls tm
         (STK: list_forall2 match_stackframes s ts)
@@ -345,10 +351,10 @@ Proof.
 Qed.
 
 Lemma find_function_translated:
-  forall ros ls tls c fd,
+  forall ros ls tls fd,
   locmap_lessdef ls tls ->
-  find_function ge ros ls = Some (c, fd) ->
-  find_function tge ros tls = Some (c, tunnel_fundef fd).
+  find_function ge ros ls = Some fd ->
+  find_function tge ros tls = Some (tunnel_fundef fd).
 Proof.
   intros. destruct ros; simpl in *.
 - assert (E: tls (R m) = ls (R m)).
@@ -386,7 +392,7 @@ Definition measure (st: state) : nat :=
   | State s f sp pc ls m => (count_gotos f pc * 2)%nat
   | Block s f sp (Lbranch pc :: _) ls m => (count_gotos f pc * 2 + 1)%nat
   | Block s f sp bb ls m => 0%nat
-  | Callstate s c f ls m => 0%nat
+  | Callstate s f ls m => 0%nat
   | Returnstate s ls m => 0%nat
   end.
 
@@ -539,7 +545,7 @@ Lemma transf_initial_states:
   exists st2, initial_state tprog st2 /\ match_states st1 st2.
 Proof.
   intros. inversion H.
-  exists (Callstate nil c (tunnel_fundef f) (Locmap.init Vundef) m0); split.
+  exists (Callstate nil (tunnel_fundef f) (Locmap.init Vundef) m0); split.
   econstructor; eauto.
   apply (Genv.init_mem_transf TRANSL); auto.
   rewrite (match_program_main TRANSL).

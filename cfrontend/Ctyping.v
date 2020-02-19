@@ -517,14 +517,14 @@ Inductive wt_function (ce: composite_env) (e: typenv) : function -> Prop :=
 Fixpoint bind_globdef (e: typenv) (l: list (ident * globdef fundef type)) : typenv :=
   match l with
   | nil => e
-  | (id, Gfun c fd) :: l => bind_globdef (PTree.set id (type_of_fundef fd) e) l
-  | (id, Gvar c v) :: l => bind_globdef (PTree.set id v.(gvar_info) e) l
+  | (id, Gfun fd) :: l => bind_globdef (PTree.set id (type_of_fundef fd) e) l
+  | (id, Gvar v) :: l => bind_globdef (PTree.set id v.(gvar_info) e) l
   end.
 
 Inductive wt_program : program -> Prop :=
   | wt_program_intro: forall p,
       let e := bind_globdef (PTree.empty _) p.(prog_defs) in
-      (forall id c f, In (id, Gfun c (Internal f)) p.(prog_defs) ->
+      (forall id f, In (id, Gfun (Internal f)) p.(prog_defs) ->
          wt_function p.(prog_comp_env) e f) ->
       wt_program p.
 
@@ -906,7 +906,8 @@ with retype_lblstmts (ce: composite_env) (e: typenv) (rt: type) (sl: labeled_sta
 Definition retype_function (ce: composite_env) (e: typenv) (f: function) : res function :=
   let e := bind_vars (bind_vars e f.(fn_params)) f.(fn_vars) in
   do s <- retype_stmt ce e f.(fn_return) f.(fn_body);
-  OK (mkfunction f.(fn_return)
+  OK (mkfunction f.(fn_comp)
+                 f.(fn_return)
                  f.(fn_callconv)
                  f.(fn_params)
                  f.(fn_vars)
@@ -1398,7 +1399,7 @@ Proof.
   induction 1; simpl; intros.
   contradiction.
   destruct H0; auto. subst b1; inv H. simpl in H1. inv H1. 
-  destruct f1; monadInv H5. eapply retype_function_sound; eauto.
+  destruct f1; monadInv H4. eapply retype_function_sound; eauto.
 Qed.
 
 (** * Subject reduction *)
@@ -1896,8 +1897,8 @@ Let ge := globalenv prog.
 Let gtenv := bind_globdef (PTree.empty _) prog.(prog_defs).
 
 Hypothesis WT_EXTERNAL:
-  forall id c ef args res cc vargs m t vres m',
-  In (id, Gfun c (External ef args res cc)) prog.(prog_defs) ->
+  forall id ef args res cc vargs m t vres m',
+  In (id, Gfun (External ef args res cc)) prog.(prog_defs) ->
   external_call ef ge vargs m t vres m' ->
   wt_val vres res.
 
@@ -2012,10 +2013,10 @@ Definition fundef_return (fd: fundef) : type :=
   end.
 
 Lemma wt_find_funct:
-  forall v c fd, Genv.find_funct ge v = Some (c, fd) -> wt_fundef fd.
+  forall v fd, Genv.find_funct ge v = Some fd -> wt_fundef fd.
 Proof.
-  intros. apply Genv.find_funct_prop with (p := prog) (v := v) (c := c); auto.
-  intros. inv WTPROG. destruct f; simpl; auto. apply H1 with id c0; auto.
+  intros. apply Genv.find_funct_prop with (p := prog) (v := v); auto.
+  intros. inv WTPROG. destruct f; simpl; auto. apply H1 with id; auto.
 Qed.
 
 Inductive wt_state: state -> Prop :=
@@ -2029,11 +2030,11 @@ Inductive wt_state: state -> Prop :=
         (WTB: wt_stmt ge te f.(fn_return) f.(fn_body))
         (WTE: wt_rvalue ge te r),
       wt_state (ExprState f r k e m)
-  | wt_call_state: forall b c fd vargs k m
+  | wt_call_state: forall b fd vargs k m
         (WTK: wt_call_cont k (fundef_return fd))
         (WTFD: wt_fundef fd)
-        (FIND: Genv.find_funct ge b = Some (c, fd)),
-      wt_state (Callstate c fd vargs k m)
+        (FIND: Genv.find_funct ge b = Some fd),
+      wt_state (Callstate fd vargs k m)
   | wt_return_state: forall v k m ty
         (WTK: wt_call_cont k ty)
         (VAL: wt_val v ty),
@@ -2180,8 +2181,8 @@ Theorem wt_initial_state:
 Proof.
   intros. inv H. econstructor.
 - constructor.
-- apply Genv.find_funct_ptr_prop with (p := prog) (b := b) (c := c); auto.
-  intros. inv WTPROG. destruct f0; simpl; auto. apply H4 with id c0; auto.
+- apply Genv.find_funct_ptr_prop with (p := prog) (b := b); auto.
+  intros. inv WTPROG. destruct f0; simpl; auto. apply H4 with id; auto.
 - instantiate (1 := (Vptr b Ptrofs.zero)). rewrite Genv.find_funct_find_funct_ptr. eauto.
 Qed.
 

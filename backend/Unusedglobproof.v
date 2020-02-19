@@ -53,8 +53,8 @@ Definition ref_init (il: list init_data) (id: ident) : Prop :=
 
 Definition ref_def (gd: globdef fundef unit) (id: ident) : Prop :=
   match gd with
-  | Gfun c fd => ref_fundef fd id
-  | Gvar c gv => ref_init gv.(gvar_init) id
+  | Gfun fd => ref_fundef fd id
+  | Gvar gv => ref_init gv.(gvar_init) id
   end.
 
 Record valid_used_set (p: program) (u: IS.t) : Prop := {
@@ -148,7 +148,7 @@ Lemma add_ref_definition_incl:
   forall pm id w, workset_incl w (add_ref_definition pm id w).
 Proof.
   unfold add_ref_definition; intros.
-  destruct (pm!id) as [[c [] |c ? ] | ].
+  destruct (pm!id) as [[[] |? ] | ].
   apply add_ref_function_incl.
   apply workset_incl_refl.
   apply add_ref_globvar_incl.
@@ -205,7 +205,7 @@ Lemma seen_add_ref_definition:
   pm!id = Some gd -> ref_def gd id' -> IS.In id' (add_ref_definition pm id w).
 Proof.
   unfold add_ref_definition; intros.
-  rewrite H. red in H0; destruct gd as [c [f|ef]|c gv].
+  rewrite H. red in H0; destruct gd as [[f|ef]|gv].
   apply seen_add_ref_function; auto.
   contradiction.
   destruct H0 as (ofs & IN).
@@ -762,13 +762,13 @@ Inductive match_states: state -> state -> Prop :=
          (MEMINJ: Mem.inject j m tm),
       match_states (State s f (Vptr sp Ptrofs.zero) pc rs m)
                    (State ts f (Vptr tsp Ptrofs.zero) pc trs tm)
-  | match_states_call: forall s c fd args m ts targs tm j
+  | match_states_call: forall s fd args m ts targs tm j
          (STACKS: match_stacks j s ts (Mem.nextblock m) (Mem.nextblock tm))
          (KEPT: forall id, ref_fundef fd id -> kept id)
          (ARGINJ: Val.inject_list j args targs)
          (MEMINJ: Mem.inject j m tm),
-      match_states (Callstate s c fd args m)
-                   (Callstate ts c fd targs tm)
+      match_states (Callstate s fd args m)
+                   (Callstate ts fd targs tm)
   | match_states_return: forall s res m ts tres tm j
          (STACKS: match_stacks j s ts (Mem.nextblock m) (Mem.nextblock tm))
          (RESINJ: Val.inject j res tres)
@@ -796,11 +796,11 @@ Proof.
 Qed.
 
 Lemma find_function_inject:
-  forall j ros rs c fd trs,
+  forall j ros rs fd trs,
   meminj_preserves_globals j ->
-  find_function ge ros rs = Some (c, fd) ->
+  find_function ge ros rs = Some fd ->
   match ros with inl r => regset_inject j rs trs | inr id => kept id end ->
-  find_function tge ros trs = Some (c, fd) /\ (forall id, ref_fundef fd id -> kept id).
+  find_function tge ros trs = Some fd /\ (forall id, ref_fundef fd id -> kept id).
 Proof.
   intros. destruct ros as [r|id]; simpl in *.
 - exploit Genv.find_funct_inv; eauto. intros (b & R). rewrite R in H0.
@@ -1137,7 +1137,7 @@ Proof.
 - exploit init_meminj_invert_strong; eauto. intros (A & id & gd & B & C & D & E & F).
   exploit (Genv.init_mem_characterization_gen p); eauto.
   exploit (Genv.init_mem_characterization_gen tp); eauto.
-  destruct gd as [c f|c v].
+  destruct gd as [f|v].
 + intros (P2 & Q2) (P1 & Q1).
   apply Q1 in H0. destruct H0. subst.
   apply Mem.perm_cur. auto.
@@ -1150,7 +1150,7 @@ Proof.
 - exploit init_meminj_invert_strong; eauto. intros (A & id & gd & B & C & D & E & F).
   exploit (Genv.init_mem_characterization_gen p); eauto.
   exploit (Genv.init_mem_characterization_gen tp); eauto.
-  destruct gd as [c f|c v].
+  destruct gd as [f|v].
 + intros (P2 & Q2) (P1 & Q1).
   apply Q1 in H0. destruct H0; discriminate.
 + intros (P2 & Q2 & R2 & S2) (P1 & Q1 & R1 & S1).
@@ -1203,15 +1203,15 @@ Lemma init_mem_exists:
   exists tm, Genv.init_mem tp = Some tm.
 Proof.
   intros. apply Genv.init_mem_exists.
-  intros id c v H0.
-  assert (P: (prog_defmap tp)!id = Some (Gvar c v)).
+  intros id v H0.
+  assert (P: (prog_defmap tp)!id = Some (Gvar v)).
   { eapply prog_defmap_norepet; eauto. eapply match_prog_unique; eauto. }
   rewrite (match_prog_def _ _ _ TRANSF) in P. destruct (IS.mem id used) eqn:U; try discriminate.
   exploit Genv.init_mem_inversion; eauto. apply in_prog_defmap; eauto. intros [AL FV].
   split. auto.
   intros. exploit FV; eauto. intros (b & FS).
   apply transform_find_symbol_1 with b; auto.
-  apply kept_closed with id (Gvar c v).
+  apply kept_closed with id (Gvar v).
   apply IS.mem_2; auto. auto. red. red. exists o; auto.
 Qed.
 
@@ -1237,7 +1237,7 @@ Proof.
   exploit defs_inject. eauto. eexact Q. exact H2.
   intros (R & S & T).
   rewrite <- Genv.find_funct_ptr_iff in R.
-  exists (Callstate nil c f nil tm); split.
+  exists (Callstate nil f nil tm); split.
   econstructor; eauto.
   fold tge. erewrite match_prog_main by eauto. auto.
   econstructor; eauto.
@@ -1280,19 +1280,19 @@ Remark link_def_either:
 Proof with (try discriminate).
   intros until gd.
 Local Transparent Linker_def Linker_fundef Linker_varinit Linker_vardef Linker_unit.
-  destruct gd1 as [c1 f1|c1 v1], gd2 as [c2 f2|c2 v2]...
+  destruct gd1 as [f1|v1], gd2 as [f2|v2]...
 - (* Two fundefs *)
   simpl.
-  destruct (eq_compartment c1 c2); try easy; subst c2.
   destruct f1 as [f1|ef1], f2 as [f2|ef2]; simpl...
   destruct ef2; intuition congruence.
   destruct ef1; intuition congruence.
   destruct (external_function_eq ef1 ef2); intuition congruence.
 - (* Two vardefs *)
   simpl.
-  destruct (eq_compartment c1 c2); try easy; subst c2.
-  unfold link_vardef. destruct v1 as [info1 init1 ro1 vo1], v2 as [info2 init2 ro2 vo2]; simpl.
+  unfold link_vardef.
+  destruct v1 as [info1 c1 init1 ro1 vo1], v2 as [info2 c2 init2 ro2 vo2]; simpl.
   destruct (link_varinit init1 init2) as [init|] eqn:LI...
+  destruct eq_compartment...
   destruct (eqb ro1 ro2) eqn:RO...
   destruct (eqb vo1 vo2) eqn:VO...
   simpl.

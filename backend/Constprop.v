@@ -243,6 +243,7 @@ Definition transf_instr (f: function) (an: PMap.t VA.t) (rm: romem)
 Definition transf_function (rm: romem) (f: function) : function :=
   let an := ValueAnalysis.analyze rm f in
   mkfunction
+    f.(fn_comp)
     f.(fn_sig)
     f.(fn_params)
     f.(fn_stacksize)

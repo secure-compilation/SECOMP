@@ -181,6 +181,7 @@ Definition transf_function (f: Linear.function) : res Mach.function :=
     Error (msg "Too many spilled variables, stack size exceeded")
   else
     OK (Mach.mkfunction
+         f.(Linear.fn_comp)
          f.(Linear.fn_sig)
          (transl_body f fe)
          fe.(fe_size)

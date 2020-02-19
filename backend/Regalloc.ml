@@ -323,7 +323,8 @@ let function_of_RTL_function f tyenv =
               (loc_parameters f.RTL.fn_sig)
               f.RTL.fn_params
               [Xbranch f.RTL.fn_entrypoint] in
-  { fn_sig = f.RTL.fn_sig;
+  { fn_comp = f.RTL.fn_comp;
+    fn_sig = f.RTL.fn_sig;
     fn_stacksize = f.RTL.fn_stacksize;
     fn_entrypoint = pc_entrypoint;
     fn_code = PTree.set pc_entrypoint b_entrypoint xc }
@@ -1141,7 +1142,8 @@ let rec transl_block alloc blk =
   | instr :: blk' -> transl_instr alloc instr (transl_block alloc blk')
 
 let transl_function fn alloc =
-  { LTL.fn_sig = fn.fn_sig;
+  { LTL.fn_comp = fn.fn_comp;
+    LTL.fn_sig = fn.fn_sig;
     LTL.fn_stacksize = fn.fn_stacksize;
     LTL.fn_entrypoint = fn.fn_entrypoint;
     LTL.fn_code = PTree.map1 (transl_block alloc) fn.fn_code

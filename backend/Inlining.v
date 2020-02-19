@@ -35,7 +35,7 @@ Parameter should_inline: inlining_info -> ident -> function -> bool.
 
 Definition add_globdef (io: inlining_info) (fenv: funenv) (idg: ident * globdef fundef unit) : funenv :=
   match idg with
-  | (id, Gfun c (Internal f)) =>
+  | (id, Gfun (Internal f)) =>
       if should_inline io id f
       then PTree.set id f fenv
       else PTree.remove id fenv
@@ -450,7 +450,8 @@ Local Open Scope string_scope.
 Definition transf_function (fenv: funenv) (f: function) : Errors.res function :=
   let '(R ctx s _) := expand_function fenv f initstate in
   if zlt s.(st_stksize) Ptrofs.max_unsigned then
-    OK (mkfunction f.(fn_sig)
+    OK (mkfunction f.(fn_comp)
+                   f.(fn_sig)
                    (sregs ctx f.(fn_params))
                    s.(st_stksize)
                    s.(st_code)

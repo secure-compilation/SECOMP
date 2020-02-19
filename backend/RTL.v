@@ -83,12 +83,15 @@ Inductive instruction: Type :=
 Definition code: Type := PTree.t instruction.
 
 Record function: Type := mkfunction {
+  fn_comp: compartment;
   fn_sig: signature;
   fn_params: list reg;
   fn_stacksize: Z;
   fn_code: code;
   fn_entrypoint: node
 }.
+
+Instance has_comp_function : has_comp function := fn_comp.
 
 (** A function description comprises a control-flow graph (CFG) [fn_code]
     (a partial finite mapping from nodes to instructions).  As in Cminor,
@@ -169,7 +172,6 @@ Inductive state : Type :=
       state
   | Callstate:
       forall (stack: list stackframe) (**r call stack *)
-             (c: compartment)         (**r compartment to call *)
              (f: fundef)              (**r function to call *)
              (args: list val)         (**r arguments to the call *)
              (m: mem),                (**r memory state *)
@@ -185,7 +187,7 @@ Section RELSEM.
 Variable ge: genv.
 
 Definition find_function
-      (ros: reg + ident) (rs: regset) : option (compartment * fundef) :=
+      (ros: reg + ident) (rs: regset) : option fundef :=
   match ros with
   | inl r => Genv.find_funct ge rs#r
   | inr symb =>
@@ -227,20 +229,20 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State s f sp pc rs m)
         E0 (State s f sp pc' rs m')
   | exec_Icall:
-      forall s f sp pc rs m sig ros args res pc' c fd,
+      forall s f sp pc rs m sig ros args res pc' fd,
       (fn_code f)!pc = Some(Icall sig ros args res pc') ->
-      find_function ros rs = Some (c, fd) ->
+      find_function ros rs = Some fd ->
       funsig fd = sig ->
       step (State s f sp pc rs m)
-        E0 (Callstate (Stackframe res f sp pc' rs :: s) c fd rs##args m)
+        E0 (Callstate (Stackframe res f sp pc' rs :: s) fd rs##args m)
   | exec_Itailcall:
-      forall s f stk pc rs m sig ros args c fd m',
+      forall s f stk pc rs m sig ros args fd m',
       (fn_code f)!pc = Some(Itailcall sig ros args) ->
-      find_function ros rs = Some (c, fd) ->
+      find_function ros rs = Some fd ->
       funsig fd = sig ->
       Mem.free m stk 0 f.(fn_stacksize) = Some m' ->
       step (State s f (Vptr stk Ptrofs.zero) pc rs m)
-        E0 (Callstate s c fd rs##args m')
+        E0 (Callstate s fd rs##args m')
   | exec_Ibuiltin:
       forall s f sp pc rs m ef args res pc' vargs t vres m',
       (fn_code f)!pc = Some(Ibuiltin ef args res pc') ->
@@ -269,9 +271,9 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State s f (Vptr stk Ptrofs.zero) pc rs m)
         E0 (Returnstate s (regmap_optget or Vundef rs) m')
   | exec_function_internal:
-      forall s c f args m m' stk,
-      Mem.alloc m c 0 f.(fn_stacksize) = (m', stk) ->
-      step (Callstate s c (Internal f) args m)
+      forall s f args m m' stk,
+      Mem.alloc m f.(fn_comp) 0 f.(fn_stacksize) = (m', stk) ->
+      step (Callstate s (Internal f) args m)
         E0 (State s
                   f
                   (Vptr stk Ptrofs.zero)
@@ -279,9 +281,9 @@ Inductive step: state -> trace -> state -> Prop :=
                   (init_regs args f.(fn_params))
                   m')
   | exec_function_external:
-      forall s c ef args res t m m',
+      forall s ef args res t m m',
       external_call ef ge args m t res m' ->
-      step (Callstate s c (External ef) args m)
+      step (Callstate s (External ef) args m)
          t (Returnstate s res m')
   | exec_return:
       forall res f sp pc rs s vres m,
@@ -319,13 +321,13 @@ End RELSEM.
   without arguments and with an empty call stack. *)
 
 Inductive initial_state (p: program): state -> Prop :=
-  | initial_state_intro: forall b c f m0,
+  | initial_state_intro: forall b f m0,
       let ge := Genv.globalenv p in
       Genv.init_mem p = Some m0 ->
       Genv.find_symbol ge p.(prog_main) = Some b ->
-      Genv.find_funct_ptr ge b = Some (c, f) ->
+      Genv.find_funct_ptr ge b = Some f ->
       funsig f = signature_main ->
-      initial_state p (Callstate nil c f nil m0).
+      initial_state p (Callstate nil f nil m0).
 
 (** A final state is a [Returnstate] with an empty call stack. *)
 
@@ -370,6 +372,7 @@ Variable transf: node -> instruction -> instruction.
 
 Definition transf_function (f: function) : function :=
   mkfunction
+    f.(fn_comp)
     f.(fn_sig)
     f.(fn_params)
     f.(fn_stacksize)

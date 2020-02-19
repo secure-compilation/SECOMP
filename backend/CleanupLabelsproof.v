@@ -24,6 +24,12 @@ Module LabelsetFacts := FSetFacts.Facts(Labelset).
 Definition match_prog (p tp: Linear.program) :=
   match_program (fun ctx f tf => tf = transf_fundef f) eq p tp.
 
+Instance comp_match_prog P:
+  has_comp_match (fun (ctx: P) f tf => tf = transf_fundef f).
+Proof.
+  now intros ctx [f|ef] ? ->.
+Qed.
+
 Lemma transf_program_match:
   forall p, match_prog p (transf_program p).
 Proof.
@@ -47,15 +53,15 @@ Lemma senv_preserved:
 Proof (Genv.senv_transf TRANSL).
 
 Lemma functions_translated:
-  forall v c f,
-  Genv.find_funct ge v = Some (c, f) ->
-  Genv.find_funct tge v = Some (c, transf_fundef f).
+  forall v f,
+  Genv.find_funct ge v = Some f ->
+  Genv.find_funct tge v = Some (transf_fundef f).
 Proof (Genv.find_funct_transf TRANSL).
 
 Lemma function_ptr_translated:
-  forall v c f,
-  Genv.find_funct_ptr ge v = Some (c, f) ->
-  Genv.find_funct_ptr tge v = Some (c, transf_fundef f).
+  forall v f,
+  Genv.find_funct_ptr ge v = Some f ->
+  Genv.find_funct_ptr tge v = Some (transf_fundef f).
 Proof (Genv.find_funct_ptr_transf TRANSL).
 
 Lemma sig_function_translated:
@@ -66,9 +72,9 @@ Proof.
 Qed.
 
 Lemma find_function_translated:
-  forall ros ls c f,
-  find_function ge ros ls = Some (c, f) ->
-  find_function tge ros ls = Some (c, transf_fundef f).
+  forall ros ls f,
+  find_function ge ros ls = Some f ->
+  find_function tge ros ls = Some (transf_fundef f).
 Proof.
   unfold find_function; intros; destruct ros; simpl.
   apply functions_translated; auto.
@@ -205,10 +211,10 @@ Inductive match_states: state -> state -> Prop :=
       match_states (State s f sp c ls m)
                    (State ts (transf_function f) sp (remove_unused_labels (labels_branched_to f.(fn_code)) c) ls m)
   | match_states_call:
-      forall s c f ls m ts,
+      forall s f ls m ts,
       list_forall2 match_stackframes s ts ->
-      match_states (Callstate s c f ls m)
-                   (Callstate ts c (transf_fundef f) ls m)
+      match_states (Callstate s f ls m)
+                   (Callstate ts (transf_fundef f) ls m)
   | match_states_return:
       forall s ls m ts,
       list_forall2 match_stackframes s ts ->

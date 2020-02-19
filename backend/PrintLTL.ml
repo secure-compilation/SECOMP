@@ -123,7 +123,7 @@ let print_function pp id f =
 
 let print_globdef pp (id, gd) =
   match gd with
-  | Gfun(_, Internal f) -> print_function pp id f
+  | Gfun(Internal f) -> print_function pp id f
   | _ -> ()
 
 let print_program pp (prog: LTL.program) =

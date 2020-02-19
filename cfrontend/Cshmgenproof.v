@@ -33,6 +33,12 @@ Definition match_varinfo (v: type) (tv: unit) := True.
 Definition match_prog (p: Clight.program) (tp: Csharpminor.program) : Prop :=
   match_program_gen match_fundef match_varinfo p p tp.
 
+Instance comp_match_fundef: has_comp_match match_fundef.
+Proof.
+  intros cu ? ? [f tf H|]; trivial.
+  unfold transl_function in H; now monadInv H.
+Qed.
+
 Lemma transf_program_match:
   forall p tp, transl_program p = OK tp -> match_prog p tp.
 Proof.
@@ -41,7 +47,7 @@ Proof.
   eexact H.
 - intros. destruct f; simpl in H0.
 + monadInv H0. constructor; auto.
-+ destruct (signature_eq (ef_sig e) (signature_of_type t t0 c0)); inv H0.
++ destruct (signature_eq (ef_sig e) (signature_of_type t t0 c)); inv H0.
   constructor; auto.
 - intros; red; auto.
 Qed.
@@ -1018,15 +1024,15 @@ Lemma senv_preserved:
 Proof (Genv.senv_match TRANSL).
 
 Lemma function_ptr_translated:
-  forall v c f,
-  Genv.find_funct_ptr ge v = Some (c, f) ->
-  exists cu tf, Genv.find_funct_ptr tge v = Some (c, tf) /\ match_fundef cu f tf /\ linkorder cu prog.
+  forall v f,
+  Genv.find_funct_ptr ge v = Some f ->
+  exists cu tf, Genv.find_funct_ptr tge v = Some tf /\ match_fundef cu f tf /\ linkorder cu prog.
 Proof (Genv.find_funct_ptr_match TRANSL).
 
 Lemma functions_translated:
-  forall v c f,
-  Genv.find_funct ge v = Some (c, f) ->
-  exists cu tf, Genv.find_funct tge v = Some (c, tf) /\ match_fundef cu f tf /\ linkorder cu prog.
+  forall v f,
+  Genv.find_funct ge v = Some f ->
+  exists cu tf, Genv.find_funct tge v = Some tf /\ match_fundef cu f tf /\ linkorder cu prog.
 Proof (Genv.find_funct_match TRANSL).
 
 (** * Matching between environments *)
@@ -1374,14 +1380,14 @@ Inductive match_states: Clight.state -> Csharpminor.state -> Prop :=
       match_states (Clight.State f s k e le m)
                    (State tf ts' tk' te le m)
   | match_callstate:
-      forall c fd args k m tfd tk targs tres cconv cu ce
+      forall fd args k m tfd tk targs tres cconv cu ce
           (LINK: linkorder cu prog)
           (TR: match_fundef cu fd tfd)
           (MK: match_cont ce Tvoid 0%nat 0%nat k tk)
           (ISCC: Clight.is_call_cont k)
           (TY: type_of_fundef fd = Tfunction targs tres cconv),
-      match_states (Clight.Callstate c fd args k m)
-                   (Callstate c tfd args tk m)
+      match_states (Clight.Callstate fd args k m)
+                   (Callstate tfd args tk m)
   | match_returnstate:
       forall res k m tk ce
           (MK: match_cont ce Tvoid 0%nat 0%nat k tk),

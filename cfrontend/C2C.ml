@@ -369,9 +369,9 @@ let global_for_string s id =
     init := AST.Init_int8(Z.of_uint(Char.code c)) :: !init in
   add_char '\000';
   for i = String.length s - 1 downto 0 do add_char s.[i] done;
-  (id, AST.Gvar (AST.default_compartment,
-                 { AST.gvar_info = typeStringLiteral s;  AST.gvar_init = !init;
-                   AST.gvar_readonly = true;  AST.gvar_volatile = false}))
+  (id, AST.Gvar { AST.gvar_comp = AST.default_compartment;
+                  AST.gvar_info = typeStringLiteral s;  AST.gvar_init = !init;
+                  AST.gvar_readonly = true;  AST.gvar_volatile = false})
 
 let name_for_wide_string_literal s =
   try
@@ -411,9 +411,9 @@ let global_for_wide_string s id =
     init := init_of_char(Z.of_uint64 c) :: !init in
   List.iter add_char s;
   add_char 0L;
-   AST.(id,  Gvar (AST.default_compartment,
-                   { gvar_info = typeWideStringLiteral s;  gvar_init = List.rev !init;
-                     gvar_readonly = true; gvar_volatile = false}))
+   AST.(id,  Gvar { gvar_comp = default_compartment;
+                    gvar_info = typeWideStringLiteral s;  gvar_init = List.rev !init;
+                    gvar_readonly = true; gvar_volatile = false})
 
 let globals_for_strings globs =
   let globs1 =
@@ -1229,9 +1229,9 @@ let convertFundef loc env fd =
       a_access = Sections.Access_default;
       a_inline = inline;
       a_loc = loc };
-  (id',  AST.Gfun(AST.default_compartment,
-                  Ctypes.Internal
-                    {fn_return = ret;
+  (id',  AST.Gfun(Ctypes.Internal
+                    {fn_comp = AST.default_compartment;
+                     fn_return = ret;
                      fn_callconv = convertCallconv fd.fd_vararg false fd.fd_attrib;
                      fn_params = params;
                      fn_vars = vars;
@@ -1258,7 +1258,7 @@ let convertFundecl env (sto, id, ty, optinit) =
     && List.mem_assoc id.name builtins.builtin_functions
     then AST.EF_builtin(id'', sg)
     else AST.EF_external(id'', sg) in
-  (id',  AST.Gfun(AST.default_compartment, Ctypes.External(ef, args, res, cconv)))
+  (id',  AST.Gfun(Ctypes.External(ef, args, res, cconv)))
 
 (** Initializers *)
 
@@ -1318,9 +1318,9 @@ let convertGlobvar loc env (sto, id, ty, optinit) =
       a_loc = loc };
   let volatile = List.mem C.AVolatile attr in
   let readonly = List.mem C.AConst attr && not volatile in
-  (id',  AST.Gvar (AST.default_compartment,
-                   { AST.gvar_info = ty'; gvar_init = init';
-                     gvar_readonly = readonly; gvar_volatile = volatile}))
+  (id',  AST.Gvar { AST.gvar_comp = AST.default_compartment;
+                    AST.gvar_info = ty'; gvar_init = init';
+                     gvar_readonly = readonly; gvar_volatile = volatile})
 
 (** Convert a list of global declarations.
   Result is a list of CompCert C global declarations (functions +

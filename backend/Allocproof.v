@@ -25,6 +25,19 @@ Require Import Allocation.
 Definition match_prog (p: RTL.program) (tp: LTL.program) :=
   match_program (fun _ f tf => transf_fundef f = OK tf) eq p tp.
 
+Instance comp_transf_fundef P:
+  has_comp_match (fun (_: P) f tf => transf_fundef f = OK tf).
+Proof.
+  unfold transf_fundef, transf_function, check_function.
+  intros cu [f|ef] ? H; monadInv H; trivial.
+  destruct type_function; try easy.
+  destruct regalloc; try easy.
+  destruct analyze; try easy.
+  destruct eq_compartment as [e|?]; try easy.
+  monadInv EQ.
+  exact e.
+Qed.
+
 Lemma transf_program_match:
   forall p tp, transf_program p = OK tp -> match_prog p tp.
 Proof.
@@ -1726,6 +1739,7 @@ Qed.
 Inductive transf_function_spec (f: RTL.function) (tf: LTL.function) : Prop :=
   | transf_function_spec_intro:
       forall env an mv k e1 e2,
+      forall (COMP: RTL.fn_comp f = LTL.fn_comp tf),
       wt_function f env ->
       analyze f env (pair_codes f tf) = Some an ->
       (LTL.fn_code tf)!(LTL.fn_entrypoint tf) = Some(expand_moves mv (Lbranch (RTL.fn_entrypoint f) :: k)) ->
@@ -1749,6 +1763,7 @@ Proof.
   destruct (check_function f f0 env) as [] eqn:?; inv H.
   unfold check_function in Heqr.
   destruct (analyze f env (pair_codes f tf)) as [an|] eqn:?; try discriminate.
+  destruct eq_compartment as [e|]; try discriminate.
   monadInv Heqr.
   destruct (check_entrypoints_aux f tf env x) as [y|] eqn:?; try discriminate.
   unfold check_entrypoints_aux, pair_entrypoints in Heqo0. MonadInv.
@@ -1798,17 +1813,17 @@ Lemma senv_preserved:
 Proof (Genv.senv_match TRANSF).
 
 Lemma functions_translated:
-  forall (v: val) (c: compartment) (f: RTL.fundef),
-  Genv.find_funct ge v = Some (c, f) ->
+  forall (v: val) (f: RTL.fundef),
+  Genv.find_funct ge v = Some f ->
   exists tf,
-  Genv.find_funct tge v = Some (c, tf) /\ transf_fundef f = OK tf.
+  Genv.find_funct tge v = Some tf /\ transf_fundef f = OK tf.
 Proof (Genv.find_funct_transf_partial TRANSF).
 
 Lemma function_ptr_translated:
-  forall (b: block) (c: compartment) (f: RTL.fundef),
-  Genv.find_funct_ptr ge b = Some (c, f) ->
+  forall (b: block) (f: RTL.fundef),
+  Genv.find_funct_ptr ge b = Some f ->
   exists tf,
-  Genv.find_funct_ptr tge b = Some (c, tf) /\ transf_fundef f = OK tf.
+  Genv.find_funct_ptr tge b = Some tf /\ transf_fundef f = OK tf.
 Proof (Genv.find_funct_ptr_transf_partial TRANSF).
 
 Lemma sig_function_translated:
@@ -1822,12 +1837,12 @@ Proof.
 Qed.
 
 Lemma find_function_translated:
-  forall ros rs c fd ros' e e' ls,
-  RTL.find_function ge ros rs = Some (c, fd) ->
+  forall ros rs fd ros' e e' ls,
+  RTL.find_function ge ros rs = Some fd ->
   add_equation_ros ros ros' e = Some e' ->
   satisf rs ls e' ->
   exists tfd,
-  LTL.find_function tge ros' ls = Some (c, tfd) /\ transf_fundef fd = OK tfd.
+  LTL.find_function tge ros' ls = Some tfd /\ transf_fundef fd = OK tfd.
 Proof.
   unfold RTL.find_function, LTL.find_function; intros.
   destruct ros as [r|id]; destruct ros' as [r'|id']; simpl in H0; MonadInv.
@@ -1930,15 +1945,15 @@ Inductive match_states: RTL.state -> LTL.state -> Prop :=
       match_states (RTL.State s f sp pc rs m)
                    (LTL.State ts tf sp pc ls m')
   | match_states_call:
-      forall s c f args m ts tf ls m'
+      forall s f args m ts tf ls m'
         (STACKS: match_stackframes s ts (funsig tf))
         (FUN: transf_fundef f = OK tf)
         (ARGS: Val.lessdef_list args (map (fun p => Locmap.getpair p ls) (loc_arguments (funsig tf))))
         (AG: agree_callee_save (parent_locset ts) ls)
         (MEM: Mem.extends m m')
         (WTARGS: Val.has_type_list args (sig_args (funsig tf))),
-      match_states (RTL.Callstate s c f args m)
-                   (LTL.Callstate ts c tf ls m')
+      match_states (RTL.Callstate s f args m)
+                   (LTL.Callstate ts tf ls m')
   | match_states_return:
       forall s res m ts ls m' sg
         (STACKS: match_stackframes s ts sg)
@@ -2446,7 +2461,7 @@ Proof.
     exact WTRS.
   intros [ls1 [A B]].
   econstructor; split.
-  eapply plus_left. econstructor; eauto.
+  eapply plus_left. econstructor; eauto. rewrite <- COMP; eauto.
   eapply star_left. econstructor; eauto.
   eapply star_right. eexact A.
   econstructor; eauto.
@@ -2489,7 +2504,7 @@ Proof.
   intros. inv H.
   exploit function_ptr_translated; eauto. intros [tf [FIND TR]].
   exploit sig_function_translated; eauto. intros SIG.
-  exists (LTL.Callstate nil c tf (Locmap.init Vundef) m0); split.
+  exists (LTL.Callstate nil tf (Locmap.init Vundef) m0); split.
   econstructor; eauto.
   eapply (Genv.init_mem_transf_partial TRANSF); eauto.
   rewrite symbols_preserved.
@@ -2518,7 +2533,7 @@ Proof.
   exploit list_forall2_in_left. eexact (proj1 TRANSF). eauto.
   intros ([i' gd] & A & B & C). simpl in *; subst i'.
   inv C. destruct f; simpl in *.
-- monadInv H4.
+- monadInv H2.
   unfold transf_function in EQ.
   destruct (type_function f) as [env|] eqn:TF; try discriminate.
   econstructor. eapply type_function_correct; eauto.

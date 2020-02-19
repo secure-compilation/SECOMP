@@ -1544,8 +1544,8 @@ Qed.
 
 Definition meminj_preserves_globals (F V: Type) (ge: Genv.t F V) (f: block -> option (block * Z)) : Prop :=
      (forall id b, Genv.find_symbol ge id = Some b -> f b = Some(b, 0))
-  /\ (forall b c gv, Genv.find_var_info ge b = Some (c, gv) -> f b = Some(b, 0))
-  /\ (forall b1 b2 delta c gv, Genv.find_var_info ge b2 = Some (c, gv) -> f b1 = Some(b2, delta) -> b2 = b1).
+  /\ (forall b gv, Genv.find_var_info ge b = Some gv -> f b = Some(b, 0))
+  /\ (forall b1 b2 delta gv, Genv.find_var_info ge b2 = Some gv -> f b1 = Some(b2, delta) -> b2 = b1).
 
 Lemma external_call_mem_inject:
   forall ef F V (ge: Genv.t F V) vargs m1 t vres m2 f m1' vargs',

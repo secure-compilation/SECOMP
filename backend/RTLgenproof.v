@@ -351,6 +351,16 @@ Require Import Errors.
 Definition match_prog (p: CminorSel.program) (tp: RTL.program) :=
   match_program (fun cu f tf => transl_fundef f = Errors.OK tf) eq p tp.
 
+Instance comp_transl_function P:
+  has_comp_match (fun (cu : P) f tf => transl_fundef f = Errors.OK tf).
+Proof.
+  unfold transl_fundef, transf_partial_fundef, transl_function.
+  intros cu [f|?] tf H; simpl; monadInv H; trivial.
+  destruct (reserve_labels _ _) as [l s].
+  destruct (transl_fun _ _ _) as [|[??] ? ?]; try discriminate.
+  now monadInv EQ.
+Qed.
+
 Lemma transf_program_match:
   forall p tp, transl_program p = OK tp -> match_prog p tp.
 Proof.
@@ -375,18 +385,17 @@ Proof
   (Genv.find_symbol_transf_partial TRANSL).
 
 Lemma function_ptr_translated:
-  forall (b: block) (c: compartment) (f: CminorSel.fundef),
-  Genv.find_funct_ptr ge b = Some (c, f) ->
+  forall (b: block) (f: CminorSel.fundef),
+  Genv.find_funct_ptr ge b = Some f ->
   exists tf,
-  Genv.find_funct_ptr tge b = Some (c, tf) /\ transl_fundef f = OK tf.
-Proof
-  (Genv.find_funct_ptr_transf_partial TRANSL).
+  Genv.find_funct_ptr tge b = Some tf /\ transl_fundef f = OK tf.
+Proof. exact (Genv.find_funct_ptr_transf_partial TRANSL). Qed.
 
 Lemma functions_translated:
-  forall (v: val) (c: compartment) (f: CminorSel.fundef),
-  Genv.find_funct ge v = Some (c, f) ->
+  forall (v: val) (f: CminorSel.fundef),
+  Genv.find_funct ge v = Some f ->
   exists tf,
-  Genv.find_funct tge v = Some (c, tf) /\ transl_fundef f = OK tf.
+  Genv.find_funct tge v = Some tf /\ transl_fundef f = OK tf.
 Proof
   (Genv.find_funct_transf_partial TRANSL).
 
@@ -724,9 +733,9 @@ Proof.
 Qed.
 
 Lemma transl_expr_Eexternal_correct:
-  forall le id sg al b c ef vl v,
+  forall le id sg al b ef vl v,
   Genv.find_symbol ge id = Some b ->
-  Genv.find_funct_ptr ge b = Some (c, External ef) ->
+  Genv.find_funct_ptr ge b = Some (External ef) ->
   ef_sig ef = sg ->
   eval_exprlist ge sp e m le al vl ->
   transl_exprlist_prop le al vl ->
@@ -1228,13 +1237,13 @@ Inductive match_states: CminorSel.state -> RTL.state -> Prop :=
       match_states (CminorSel.State f s k sp e m)
                    (RTL.State cs tf sp ns rs tm)
   | match_callstate:
-      forall c f args targs k m tm cs tf
+      forall f args targs k m tm cs tf
         (TF: transl_fundef f = OK tf)
         (MS: match_stacks k cs)
         (LD: Val.lessdef_list args targs)
         (MEXT: Mem.extends m tm),
-      match_states (CminorSel.Callstate c f args k m)
-                   (RTL.Callstate cs c tf targs tm)
+      match_states (CminorSel.Callstate f args k m)
+                   (RTL.Callstate cs tf targs tm)
   | match_returnstate:
       forall v tv k m tm cs
         (MS: match_stacks k cs)

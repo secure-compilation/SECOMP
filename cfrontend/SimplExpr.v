@@ -510,6 +510,7 @@ Definition transl_function (f: Csyntax.function) : res function :=
       Error msg
   | Res tbody g i =>
       OK (mkfunction
+              f.(Csyntax.fn_comp)
               f.(Csyntax.fn_return)
               f.(Csyntax.fn_callconv)
               f.(Csyntax.fn_params)

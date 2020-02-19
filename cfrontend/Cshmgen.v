@@ -674,13 +674,14 @@ Definition transl_function (ce: composite_env) (f: Clight.function) : res functi
   do tbody <- transl_statement ce f.(Clight.fn_return) 1%nat 0%nat (Clight.fn_body f);
   do tvars <- mmap (transl_var ce) (Clight.fn_vars f);
   OK (mkfunction
+       (Clight.fn_comp f)
        (signature_of_function f)
        (map fst (Clight.fn_params f))
        tvars
        (map fst (Clight.fn_temps f))
        tbody).
 
-Definition transl_fundef (ce: composite_env) (id: ident) (c: compartment) (f: Clight.fundef) : res fundef :=
+Definition transl_fundef (ce: composite_env) (id: ident) (f: Clight.fundef) : res fundef :=
   match f with
   | Internal g =>
       do tg <- transl_function ce g; OK(AST.Internal tg)
@@ -692,7 +693,7 @@ Definition transl_fundef (ce: composite_env) (id: ident) (c: compartment) (f: Cl
 
 (** ** Translation of programs *)
 
-Definition transl_globvar (id: ident) (c: compartment) (ty: type) := OK tt.
+Definition transl_globvar (id: ident) (ty: type) := OK tt.
 
 Definition transl_program (p: Clight.program) : res program :=
   transform_partial_program2 (transl_fundef p.(prog_comp_env)) transl_globvar p.

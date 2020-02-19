@@ -23,6 +23,12 @@ Require Import ConstpropOp ConstpropOpproof Constprop.
 Definition match_prog (prog tprog: program) :=
   match_program (fun cu f tf => tf = transf_fundef (romem_for cu) f) eq prog tprog.
 
+Instance comp_transf_fundef:
+  has_comp_match (fun cu f tf => tf = transf_fundef (romem_for cu) f).
+Proof.
+  now intros cu [f|ef] ? ->.
+Qed.
+
 Lemma transf_program_match:
   forall prog, match_prog prog (transf_program prog).
 Proof.
@@ -51,18 +57,18 @@ Lemma senv_preserved:
 Proof (Genv.senv_match TRANSL).
 
 Lemma functions_translated:
-  forall (v: val) (c: compartment) (f: fundef),
-  Genv.find_funct ge v = Some (c, f) ->
-  exists cunit, Genv.find_funct tge v = Some (c, transf_fundef (romem_for cunit) f) /\ linkorder cunit prog.
+  forall (v: val) (f: fundef),
+  Genv.find_funct ge v = Some f ->
+  exists cunit, Genv.find_funct tge v = Some (transf_fundef (romem_for cunit) f) /\ linkorder cunit prog.
 Proof.
   intros. exploit (Genv.find_funct_match TRANSL); eauto.
   intros (cu & tf & A & B & C). subst tf. exists cu; auto.
 Qed.
 
 Lemma function_ptr_translated:
-  forall (b: block) (c: compartment) (f: fundef),
-  Genv.find_funct_ptr ge b = Some (c, f) ->
-  exists cunit, Genv.find_funct_ptr tge b = Some (c, transf_fundef (romem_for cunit) f) /\ linkorder cunit prog.
+  forall (b: block) (f: fundef),
+  Genv.find_funct_ptr ge b = Some f ->
+  exists cunit, Genv.find_funct_ptr tge b = Some (transf_fundef (romem_for cunit) f) /\ linkorder cunit prog.
 Proof.
   intros. exploit (Genv.find_funct_ptr_match TRANSL); eauto.
   intros (cu & tf & A & B & C). subst tf. exists cu; auto.
@@ -87,13 +93,13 @@ Proof.
 Qed.
 
 Lemma transf_ros_correct:
-  forall bc rs ae ros c f rs',
+  forall bc rs ae ros f rs',
   genv_match bc ge ->
   ematch bc rs ae ->
-  find_function ge ros rs = Some (c, f) ->
+  find_function ge ros rs = Some f ->
   regs_lessdef rs rs' ->
   exists cunit,
-     find_function tge (transf_ros ae ros) rs' = Some (c, transf_fundef (romem_for cunit) f)
+     find_function tge (transf_ros ae ros) rs' = Some (transf_fundef (romem_for cunit) f)
   /\ linkorder cunit prog.
 Proof.
   intros until rs'; intros GE EM FF RLD. destruct ros; simpl in *.
@@ -101,7 +107,7 @@ Proof.
   generalize (EM r); fold (areg ae r); intro VM. generalize (RLD r); intro LD.
   assert (DEFAULT:
     exists cunit,
-       find_function tge (inl _ r) rs' = Some (c, transf_fundef (romem_for cunit) f)
+       find_function tge (inl _ r) rs' = Some (transf_fundef (romem_for cunit) f)
     /\ linkorder cunit prog).
   {
     simpl. inv LD. apply functions_translated; auto. rewrite <- H0 in FF; discriminate.
@@ -301,13 +307,13 @@ Inductive match_states: nat -> state -> state -> Prop :=
       match_states n (State s f sp pc rs m)
                     (State s' (transf_function (romem_for cu) f) sp pc' rs' m')
   | match_states_call:
-      forall s c f args m s' args' m' cu
+      forall s f args m s' args' m' cu
            (LINK: linkorder cu prog)
            (STACKS: list_forall2 match_stackframes s s')
            (ARGS: Val.lessdef_list args args')
            (MEM: Mem.extends m m'),
-      match_states O (Callstate s c f args m)
-                     (Callstate s' c (transf_fundef (romem_for cu) f) args' m')
+      match_states O (Callstate s f args m)
+                     (Callstate s' (transf_fundef (romem_for cu) f) args' m')
   | match_states_return:
       forall s v m s' v' m'
            (STACKS: list_forall2 match_stackframes s s')
@@ -584,7 +590,7 @@ Lemma transf_initial_states:
 Proof.
   intros. inversion H.
   exploit function_ptr_translated; eauto. intros (cu & FIND & LINK).
-  exists O; exists (Callstate nil c (transf_fundef (romem_for cu) f) nil m0); split.
+  exists O; exists (Callstate nil (transf_fundef (romem_for cu) f) nil m0); split.
   econstructor; eauto.
   apply (Genv.init_mem_match TRANSL); auto.
   replace (prog_main tprog) with (prog_main prog).

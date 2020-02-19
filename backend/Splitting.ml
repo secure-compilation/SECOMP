@@ -179,7 +179,8 @@ let rename_function f =
     | Some maps -> maps in
   let before_entrypoint =
     transfer f f.fn_entrypoint (PMap.get f.fn_entrypoint maps) in
-  { fn_sig = f.fn_sig;
+  { fn_comp = f.fn_comp;
+    fn_sig = f.fn_sig;
     fn_params = ren_regs before_entrypoint f.fn_params;
     fn_stacksize = f.fn_stacksize;
     fn_code = PTree.map (ren_instr f maps) f.fn_code;

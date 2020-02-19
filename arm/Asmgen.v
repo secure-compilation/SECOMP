@@ -823,7 +823,7 @@ Definition transl_code' (f: Mach.function) (il: list Mach.instruction) (it1p: bo
 Definition transl_function (f: Mach.function) :=
   do c <- transl_code f f.(Mach.fn_code)
                       (save_lr_preserves_R12 f.(fn_retaddr_ofs));
-  OK (mkfunction f.(Mach.fn_sig)
+  OK (mkfunction f.(Mach.fn_comp) f.(Mach.fn_sig)
         (Pallocframe f.(fn_stacksize) f.(fn_link_ofs) ::
          save_lr f.(fn_retaddr_ofs)
            (Pcfi_rel_offset (Ptrofs.to_int f.(fn_retaddr_ofs)):: c))).

@@ -79,16 +79,16 @@ let print_event p = function
 let name_of_fundef prog fd =
   let rec find_name = function
   | [] -> "<unknown function>"
-  | (id, Gfun (_, fd')) :: rem ->
+  | (id, Gfun fd') :: rem ->
       if fd == fd' then extern_atom id else find_name rem
-  | (id, Gvar (_, v)) :: rem ->
+  | (id, Gvar v) :: rem ->
       find_name rem
   in find_name prog.Ctypes.prog_defs
 
 let name_of_function prog fn =
   let rec find_name = function
   | [] -> "<unknown function>"
-  | (id, Gfun(_, Ctypes.Internal fn')) :: rem ->
+  | (id, Gfun(Ctypes.Internal fn')) :: rem ->
       if fn == fn' then extern_atom id else find_name rem
   | (id, _) :: rem ->
       find_name rem
@@ -128,7 +128,7 @@ let print_state p (prog, ge, s) =
       fprintf p "in function %s, expression@ @[<hv 0>%a@]"
               (name_of_function prog f)
               PrintCsyntax.print_expr r
-  | Callstate(_, fd, args, k, m) ->
+  | Callstate(fd, args, k, m) ->
       PrintCsyntax.print_pointer_hook := print_pointer ge.genv_genv Maps.PTree.empty;
       fprintf p "calling@ @[<hov 2>%s(%a)@]"
               (name_of_fundef prog fd)
@@ -222,7 +222,7 @@ let rank_state = function
 let mem_state = function
   | State(f, s, k, e, m) -> m
   | ExprState(f, r, k, e, m) -> m
-  | Callstate(_, fd, args, k, m) -> m
+  | Callstate(fd, args, k, m) -> m
   | Returnstate(res, k, m) -> m
   | Stuckstate -> assert false
 
@@ -239,8 +239,8 @@ let compare_state s1 s2 =
       let c = compare (f1,r1,e1) (f2,r2,e2) in if c <> 0 then c else
       let c = compare_cont k1 k2 in if c <> 0 then c else
       compare_mem m1 m2
-  | Callstate(cp1,fd1,args1,k1,m1), Callstate(cp2,fd2,args2,k2,m2) ->
-      let c = compare (cp1,fd1,args1) (cp2,fd2,args2) in if c <> 0 then c else
+  | Callstate(fd1,args1,k1,m1), Callstate(fd2,args2,k2,m2) ->
+      let c = compare (fd1,args1) (fd2,args2) in if c <> 0 then c else
       let c = compare_cont k1 k2 in if c <> 0 then c else
       compare_mem m1 m2
   | Returnstate(res1,k1,m1), Returnstate(res2,k2,m2) ->
@@ -574,14 +574,14 @@ let rec explore_all p prog ge time states =
 let world_program prog =
   let change_def (id, gd) =
     match gd with
-    | Gvar (c, gv) ->
+    | Gvar gv ->
         let gv' =
           if gv.gvar_volatile then
             {gv with gvar_readonly = false; gvar_volatile = false}
           else
             {gv with gvar_init = []} in
-        (id, Gvar (c, gv'))
-    | Gfun (_, fd) ->
+        (id, Gvar gv')
+    | Gfun fd ->
         (id, gd) in
  {prog with Ctypes.prog_defs = List.map change_def prog.Ctypes.prog_defs}
 
@@ -594,19 +594,20 @@ let change_main_function p old_main old_main_ty =
   let body =
     Sreturn(Some(Ecall(old_main, Econs(arg1, Econs(arg2, Enil)), type_int32s))) in
   let new_main_fn =
-    { fn_return = type_int32s; fn_callconv = cc_default;
+    { fn_comp = AST.default_compartment;
+      fn_return = type_int32s; fn_callconv = cc_default;
       fn_params = []; fn_vars = []; fn_body = body } in
   let new_main_id = intern_string "___main" in
   { prog_main = new_main_id;
-    Ctypes.prog_defs = (new_main_id, Gfun(AST.default_compartment, Ctypes.Internal new_main_fn)) :: p.Ctypes.prog_defs;
+    Ctypes.prog_defs = (new_main_id, Gfun(Ctypes.Internal new_main_fn)) :: p.Ctypes.prog_defs;
     Ctypes.prog_public = p.Ctypes.prog_public;
     prog_types = p.prog_types;
     prog_comp_env = p.prog_comp_env }
 
 let rec find_main_function name = function
   | [] -> None
-  | (id, Gfun (_, fd)) :: gdl -> if id = name then Some fd else find_main_function name gdl
-  | (id, Gvar (_, v)) :: gdl -> find_main_function name gdl
+  | (id, Gfun fd) :: gdl -> if id = name then Some fd else find_main_function name gdl
+  | (id, Gvar v) :: gdl -> find_main_function name gdl
 
 let fixup_main p =
   match find_main_function p.Ctypes.prog_main p.Ctypes.prog_defs with
@@ -636,7 +637,7 @@ let execute prog =
   | Some prog1 ->
       let wprog = world_program prog1 in
       let wge = globalenv wprog in
-      match Genv.init_mem (program_of_program wprog) with
+      match Genv.init_mem (has_comp_fundef has_comp_function) (program_of_program wprog) with
       | None ->
           fprintf p "ERROR: World memory state undefined@."; exit 126
       | Some wm ->

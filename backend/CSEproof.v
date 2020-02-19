@@ -22,6 +22,15 @@ Require Import CSEdomain CombineOp CombineOpproof CSE.
 Definition match_prog (prog tprog: RTL.program) :=
   match_program (fun cu f tf => transf_fundef (romem_for cu) f = OK tf) eq prog tprog.
 
+Instance comp_transf_fundef:
+  has_comp_match (fun cu f tf => transf_fundef (romem_for cu) f = OK tf).
+Proof.
+  unfold transf_fundef, transf_function.
+  intros cu [f|ef] ? H; monadInv H; trivial.
+  destruct analyze; try easy.
+  now inv EQ.
+Qed.
+
 Lemma transf_program_match:
   forall prog tprog, transf_program prog = OK tprog -> match_prog prog tprog.
 Proof.
@@ -825,19 +834,19 @@ Lemma senv_preserved:
 Proof (Genv.senv_match TRANSF).
 
 Lemma functions_translated:
-  forall (v: val) (c: compartment) (f: RTL.fundef),
-  Genv.find_funct ge v = Some (c, f) ->
+  forall (v: val) (f: RTL.fundef),
+  Genv.find_funct ge v = Some f ->
   exists cu tf,
-  Genv.find_funct tge v = Some (c, tf) /\
+  Genv.find_funct tge v = Some tf /\
   transf_fundef (romem_for cu) f = OK tf /\
   linkorder cu prog.
 Proof. exact (Genv.find_funct_match TRANSF). Qed.
 
 Lemma funct_ptr_translated:
-  forall (b: block) (c: compartment) (f: RTL.fundef),
-  Genv.find_funct_ptr ge b = Some (c, f) ->
+  forall (b: block) (f: RTL.fundef),
+  Genv.find_funct_ptr ge b = Some f ->
   exists cu tf,
-  Genv.find_funct_ptr tge b = Some (c, tf) /\
+  Genv.find_funct_ptr tge b = Some tf /\
   transf_fundef (romem_for cu) f = OK tf /\
   linkorder cu prog.
 Proof. exact (Genv.find_funct_ptr_match TRANSF). Qed.
@@ -852,6 +861,7 @@ Qed.
 
 Definition transf_function' (f: function) (approxs: PMap.t numbering) : function :=
   mkfunction
+    f.(fn_comp)
     f.(fn_sig)
     f.(fn_params)
     f.(fn_stacksize)
@@ -888,10 +898,10 @@ Proof.
 Qed.
 
 Lemma find_function_translated:
-  forall ros rs c fd rs',
-  find_function ge ros rs = Some (c, fd) ->
+  forall ros rs fd rs',
+  find_function ge ros rs = Some fd ->
   regs_lessdef rs rs' ->
-  exists cu tfd, find_function tge ros rs' = Some (c, tfd)
+  exists cu tfd, find_function tge ros rs' = Some tfd
               /\ transf_fundef (romem_for cu) fd = OK tfd
               /\ linkorder cu prog.
 Proof.
@@ -949,14 +959,14 @@ Inductive match_states: state -> state -> Prop :=
       match_states (State s f sp pc rs m)
                    (State s' (transf_function' f approx) sp pc rs' m')
   | match_states_call:
-      forall s c f tf args m s' args' m' cu
+      forall s f tf args m s' args' m' cu
              (LINK: linkorder cu prog)
              (STACKS: match_stackframes s s')
              (TFD: transf_fundef (romem_for cu) f = OK tf)
              (ARGS: Val.lessdef_list args args')
              (MEXT: Mem.extends m m'),
-      match_states (Callstate s c f args m)
-                   (Callstate s' c tf args' m')
+      match_states (Callstate s f args m)
+                   (Callstate s' tf args' m')
   | match_states_return:
       forall s s' v v' m m'
              (STACK: match_stackframes s s')
@@ -1226,7 +1236,7 @@ Lemma transf_initial_states:
 Proof.
   intros. inversion H.
   exploit funct_ptr_translated; eauto. intros (cu & tf & A & B & C).
-  exists (Callstate nil c tf nil m0); split.
+  exists (Callstate nil tf nil m0); split.
   econstructor; eauto.
   eapply (Genv.init_mem_match TRANSF); eauto.
   replace (prog_main tprog) with (prog_main prog).

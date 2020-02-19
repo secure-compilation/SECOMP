@@ -24,6 +24,14 @@ Module NodesetFacts := FSetFacts.Facts(Nodeset).
 Definition match_prog (p: LTL.program) (tp: Linear.program) :=
   match_program (fun ctx f tf => transf_fundef f = OK tf) eq p tp.
 
+Instance comp_transf_fundef P:
+  has_comp_match (fun (ctx: P) f tf => transf_fundef f = OK tf).
+Proof.
+  unfold transf_fundef, transf_function.
+  intros cu [f|ef] ? H; monadInv H; trivial.
+  now monadInv EQ.
+Qed.
+
 Lemma transf_program_match:
   forall p tp, transf_program p = OK tp -> match_prog p tp.
 Proof.
@@ -41,18 +49,18 @@ Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
 
 Lemma functions_translated:
-  forall v c f,
-  Genv.find_funct ge v = Some (c, f) ->
+  forall v f,
+  Genv.find_funct ge v = Some f ->
   exists tf,
-  Genv.find_funct tge v = Some (c, tf) /\
+  Genv.find_funct tge v = Some tf /\
   transf_fundef f = OK tf.
 Proof (Genv.find_funct_transf_partial TRANSF).
 
 Lemma function_ptr_translated:
-  forall v c f,
-  Genv.find_funct_ptr ge v = Some (c, f) ->
+  forall v f,
+  Genv.find_funct_ptr ge v = Some f ->
   exists tf,
-  Genv.find_funct_ptr tge v = Some (c, tf) /\
+  Genv.find_funct_ptr tge v = Some tf /\
   transf_fundef f = OK tf.
 Proof (Genv.find_funct_ptr_transf_partial TRANSF).
 
@@ -64,6 +72,15 @@ Proof (Genv.find_symbol_transf_partial TRANSF).
 Lemma senv_preserved:
   Senv.equiv ge tge.
 Proof. exact (Genv.senv_transf_partial TRANSF). Qed.
+
+Lemma comp_preserved:
+  forall f tf,
+  transf_function f = OK tf ->
+  Linear.fn_comp tf = LTL.fn_comp f.
+Proof.
+  unfold transf_fundef, transf_partial_fundef; intros.
+  destruct f. monadInv H. monadInv EQ. reflexivity.
+Qed.
 
 Lemma sig_preserved:
   forall f tf,
@@ -84,10 +101,10 @@ Proof.
 Qed.
 
 Lemma find_function_translated:
-  forall ros ls c f,
-  LTL.find_function ge ros ls = Some (c, f) ->
+  forall ros ls f,
+  LTL.find_function ge ros ls = Some f ->
   exists tf,
-  find_function tge ros ls = Some (c, tf) /\
+  find_function tge ros ls = Some tf /\
   transf_fundef f = OK tf.
 Proof.
   unfold LTL.find_function; intros; destruct ros; simpl.
@@ -532,11 +549,11 @@ Inductive match_states: LTL.state -> Linear.state -> Prop :=
       match_states (LTL.Block s f sp bb ls m)
                    (Linear.State ts tf sp (linearize_block bb c) ls m)
   | match_states_call:
-      forall s c f ls m tf ts,
+      forall s f ls m tf ts,
       list_forall2 match_stackframes s ts ->
       transf_fundef f = OK tf ->
-      match_states (LTL.Callstate s c f ls m)
-                   (Linear.Callstate ts c tf ls m)
+      match_states (LTL.Callstate s f ls m)
+                   (Linear.Callstate ts tf ls m)
   | match_states_return:
       forall s ls m ts,
       list_forall2 match_stackframes s ts ->
@@ -687,15 +704,16 @@ Proof.
   (* internal functions *)
   assert (REACH: (reachable f)!!(LTL.fn_entrypoint f) = true).
     apply reachable_entrypoint.
-  monadInv H8.
+  monadInv H7.
   left; econstructor; split.
   apply plus_one. eapply exec_function_internal; eauto.
-  rewrite (stacksize_preserved _ _ EQ). eauto.
+  rewrite (stacksize_preserved _ _ EQ).
+  rewrite (comp_preserved _ _ EQ). eauto.
   generalize EQ; intro EQ'; monadInv EQ'. simpl.
   econstructor; eauto. simpl. eapply is_tail_add_branch. constructor.
 
   (* external function *)
-  monadInv H9. left; econstructor; split.
+  monadInv H8. left; econstructor; split.
   apply plus_one. eapply exec_function_external; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   econstructor; eauto.
@@ -713,7 +731,7 @@ Lemma transf_initial_states:
 Proof.
   intros. inversion H.
   exploit function_ptr_translated; eauto. intros [tf [A B]].
-  exists (Callstate nil c tf (Locmap.init Vundef) m0); split.
+  exists (Callstate nil tf (Locmap.init Vundef) m0); split.
   econstructor; eauto. eapply (Genv.init_mem_transf_partial TRANSF); eauto.
   rewrite (match_program_main TRANSF).
   rewrite symbols_preserved. eauto.

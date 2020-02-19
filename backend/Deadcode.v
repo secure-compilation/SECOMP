@@ -202,7 +202,8 @@ Definition transf_function (rm: romem) (f: function) : res function :=
   let approx := ValueAnalysis.analyze rm f in
   match analyze approx f with
   | Some an =>
-      OK {| fn_sig := f.(fn_sig);
+      OK {| fn_comp := f.(fn_comp);
+            fn_sig := f.(fn_sig);
             fn_params := f.(fn_params);
             fn_stacksize := f.(fn_stacksize);
             fn_code := PTree.map (transf_instr approx an) f.(fn_code);

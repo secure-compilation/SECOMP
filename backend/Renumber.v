@@ -67,6 +67,7 @@ End RENUMBER.
 Definition transf_function (f: function) : function :=
   let pnum := postorder (successors_map f) f.(fn_entrypoint) in
   mkfunction
+    f.(fn_comp)
     f.(fn_sig)
     f.(fn_params)
     f.(fn_stacksize)

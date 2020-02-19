@@ -70,11 +70,14 @@ Inductive instruction: Type :=
 Definition code := list instruction.
 
 Record function: Type := mkfunction
-  { fn_sig: signature;
+  { fn_comp: compartment;
+    fn_sig: signature;
     fn_code: code;
     fn_stacksize: Z;
     fn_link_ofs: ptrofs;
     fn_retaddr_ofs: ptrofs }.
+
+Instance has_comp_function: has_comp function := fn_comp.
 
 Definition fundef := AST.fundef function.
 
@@ -307,8 +310,8 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State s f sp (Msetstack src ofs ty :: c) rs m)
         E0 (State s f sp c rs' m')
   | exec_Mgetparam:
-      forall s fb cp f sp ofs ty dst c rs m v rs',
-      Genv.find_funct_ptr ge fb = Some (cp, Internal f) ->
+      forall s fb f sp ofs ty dst c rs m v rs',
+      Genv.find_funct_ptr ge fb = Some (Internal f) ->
       load_stack m sp Tptr f.(fn_link_ofs) = Some (parent_sp s) ->
       load_stack m (parent_sp s) ty ofs = Some v ->
       rs' = (rs # temp_for_parent_frame <- Vundef # dst <- v) ->
@@ -335,17 +338,17 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State s f sp (Mstore chunk addr args src :: c) rs m)
         E0 (State s f sp c rs' m')
   | exec_Mcall:
-      forall s fb sp sig ros c rs m cp f f' ra,
+      forall s fb sp sig ros c rs m f f' ra,
       find_function_ptr ge ros rs = Some f' ->
-      Genv.find_funct_ptr ge fb = Some (cp, Internal f) ->
+      Genv.find_funct_ptr ge fb = Some (Internal f) ->
       return_address_offset f c ra ->
       step (State s fb sp (Mcall sig ros :: c) rs m)
         E0 (Callstate (Stackframe fb sp (Vptr fb ra) c :: s)
                        f' rs m)
   | exec_Mtailcall:
-      forall s fb stk soff sig ros c rs m cp f f' m',
+      forall s fb stk soff sig ros c rs m f f' m',
       find_function_ptr ge ros rs = Some f' ->
-      Genv.find_funct_ptr ge fb = Some (cp, Internal f) ->
+      Genv.find_funct_ptr ge fb = Some (Internal f) ->
       load_stack m (Vptr stk soff) Tptr f.(fn_link_ofs) = Some (parent_sp s) ->
       load_stack m (Vptr stk soff) Tptr f.(fn_retaddr_ofs) = Some (parent_ra s) ->
       Mem.free m stk 0 f.(fn_stacksize) = Some m' ->
@@ -359,15 +362,15 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State s f sp (Mbuiltin ef args res :: b) rs m)
          t (State s f sp b rs' m')
   | exec_Mgoto:
-      forall s fb cp f sp lbl c rs m c',
-      Genv.find_funct_ptr ge fb = Some (cp, Internal f) ->
+      forall s fb f sp lbl c rs m c',
+      Genv.find_funct_ptr ge fb = Some (Internal f) ->
       find_label lbl f.(fn_code) = Some c' ->
       step (State s fb sp (Mgoto lbl :: c) rs m)
         E0 (State s fb sp c' rs m)
   | exec_Mcond_true:
-      forall s fb cp f sp cond args lbl c rs m c' rs',
+      forall s fb f sp cond args lbl c rs m c' rs',
       eval_condition cond rs##args m = Some true ->
-      Genv.find_funct_ptr ge fb = Some (cp, Internal f) ->
+      Genv.find_funct_ptr ge fb = Some (Internal f) ->
       find_label lbl f.(fn_code) = Some c' ->
       rs' = undef_regs (destroyed_by_cond cond) rs ->
       step (State s fb sp (Mcond cond args lbl :: c) rs m)
@@ -379,26 +382,26 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State s f sp (Mcond cond args lbl :: c) rs m)
         E0 (State s f sp c rs' m)
   | exec_Mjumptable:
-      forall s fb cp f sp arg tbl c rs m n lbl c' rs',
+      forall s fb f sp arg tbl c rs m n lbl c' rs',
       rs arg = Vint n ->
       list_nth_z tbl (Int.unsigned n) = Some lbl ->
-      Genv.find_funct_ptr ge fb = Some (cp, Internal f) ->
+      Genv.find_funct_ptr ge fb = Some (Internal f) ->
       find_label lbl f.(fn_code) = Some c' ->
       rs' = undef_regs destroyed_by_jumptable rs ->
       step (State s fb sp (Mjumptable arg tbl :: c) rs m)
         E0 (State s fb sp c' rs' m)
   | exec_Mreturn:
-      forall s fb stk soff c rs m cp f m',
-      Genv.find_funct_ptr ge fb = Some (cp, Internal f) ->
+      forall s fb stk soff c rs m f m',
+      Genv.find_funct_ptr ge fb = Some (Internal f) ->
       load_stack m (Vptr stk soff) Tptr f.(fn_link_ofs) = Some (parent_sp s) ->
       load_stack m (Vptr stk soff) Tptr f.(fn_retaddr_ofs) = Some (parent_ra s) ->
       Mem.free m stk 0 f.(fn_stacksize) = Some m' ->
       step (State s fb (Vptr stk soff) (Mreturn :: c) rs m)
         E0 (Returnstate s rs m')
   | exec_function_internal:
-      forall s fb rs m cp f m1 m2 m3 stk rs',
-      Genv.find_funct_ptr ge fb = Some (cp, Internal f) ->
-      Mem.alloc m cp 0 f.(fn_stacksize) = (m1, stk) ->
+      forall s fb rs m f m1 m2 m3 stk rs',
+      Genv.find_funct_ptr ge fb = Some (Internal f) ->
+      Mem.alloc m f.(fn_comp) 0 f.(fn_stacksize) = (m1, stk) ->
       let sp := Vptr stk Ptrofs.zero in
       store_stack m1 sp Tptr f.(fn_link_ofs) (parent_sp s) = Some m2 ->
       store_stack m2 sp Tptr f.(fn_retaddr_ofs) (parent_ra s) = Some m3 ->
@@ -406,8 +409,8 @@ Inductive step: state -> trace -> state -> Prop :=
       step (Callstate s fb rs m)
         E0 (State s fb sp f.(fn_code) rs' m3)
   | exec_function_external:
-      forall s fb rs m t rs' cp ef args res m',
-      Genv.find_funct_ptr ge fb = Some (cp, External ef) ->
+      forall s fb rs m t rs' ef args res m',
+      Genv.find_funct_ptr ge fb = Some (External ef) ->
       extcall_arguments rs m (parent_sp s) (ef_sig ef) args ->
       external_call ef ge args m t res m' ->
       rs' = set_pair (loc_result (ef_sig ef)) res (undef_caller_save_regs rs) ->
@@ -455,16 +458,16 @@ Variable rao: function -> code -> ptrofs -> Prop.
 Variable ge: genv.
 
 Inductive wf_frame: stackframe -> Prop :=
-  | wf_stackframe_intro: forall fb sp ra c cp f
-        (CODE: Genv.find_funct_ptr ge fb = Some (cp, Internal f))
+  | wf_stackframe_intro: forall fb sp ra c f
+        (CODE: Genv.find_funct_ptr ge fb = Some (Internal f))
         (LEAF: is_leaf_function f = false)
         (TAIL: is_tail c f.(fn_code)),
       wf_frame (Stackframe fb sp ra c).
 
 Inductive wf_state: state -> Prop :=
-  | wf_normal_state: forall s fb sp c rs m cp f
+  | wf_normal_state: forall s fb sp c rs m f
         (STACK: Forall wf_frame s)
-        (CODE: Genv.find_funct_ptr ge fb = Some (cp, Internal f))
+        (CODE: Genv.find_funct_ptr ge fb = Some (Internal f))
         (TAIL: is_tail c f.(fn_code)),
       wf_state (State s fb sp c rs m)
   | wf_call_state: forall s fb rs m

@@ -187,7 +187,7 @@ Inductive wt_fundef: fundef -> Prop :=
       wt_fundef (Internal f).
 
 Definition wt_program (p: program): Prop :=
-  forall i c f, In (i, Gfun c f) (prog_defs p) -> wt_fundef f.
+  forall i f, In (i, Gfun f) (prog_defs p) -> wt_fundef f.
 
 (** * Type inference *)
 
@@ -890,11 +890,11 @@ Inductive wt_state: state -> Prop :=
         (WT_RS: wt_regset env rs),
       wt_state (State s f sp pc rs m)
   | wt_state_call:
-      forall s c f args m,
+      forall s f args m,
       wt_stackframes s (funsig f) ->
       wt_fundef f ->
       Val.has_type_list args (sig_args (funsig f)) ->
-      wt_state (Callstate s c f args m)
+      wt_state (Callstate s f args m)
   | wt_state_return:
       forall s v m sg,
       wt_stackframes s sg ->
@@ -935,10 +935,10 @@ Proof.
   (* Icall *)
   assert (wt_fundef fd).
     destruct ros; simpl in H0.
-    pattern fd. apply Genv.find_funct_prop with unit p (rs#r) c.
+    pattern fd. apply Genv.find_funct_prop with unit p (rs#r).
     exact wt_p. exact H0.
     caseEq (Genv.find_symbol ge i); intros; rewrite H1 in H0.
-    pattern fd. apply Genv.find_funct_ptr_prop with unit p b c.
+    pattern fd. apply Genv.find_funct_ptr_prop with unit p b.
     exact wt_p. exact H0.
     discriminate.
   econstructor; eauto.
@@ -947,10 +947,10 @@ Proof.
   (* Itailcall *)
   assert (wt_fundef fd).
     destruct ros; simpl in H0.
-    pattern fd. apply Genv.find_funct_prop with unit p (rs#r) c.
+    pattern fd. apply Genv.find_funct_prop with unit p (rs#r).
     exact wt_p. exact H0.
     caseEq (Genv.find_symbol ge i); intros; rewrite H1 in H0.
-    pattern fd. apply Genv.find_funct_ptr_prop with unit p b c.
+    pattern fd. apply Genv.find_funct_ptr_prop with unit p b.
     exact wt_p. exact H0.
     discriminate.
   econstructor; eauto.
@@ -966,7 +966,7 @@ Proof.
   econstructor; eauto.
   inv WTI; simpl. auto. unfold proj_sig_res; rewrite H2. auto.
   (* internal function *)
-  simpl in *. inv H6.
+  simpl in *. inv H5.
   econstructor; eauto.
   inv H1. apply wt_init_regs; auto. rewrite wt_params0. auto.
   (* external function *)
@@ -981,7 +981,7 @@ Lemma wt_initial_state:
   forall S, initial_state p S -> wt_state S.
 Proof.
   intros. inv H. constructor. constructor. rewrite H3; auto.
-  pattern f. apply Genv.find_funct_ptr_prop with unit p b c.
+  pattern f. apply Genv.find_funct_ptr_prop with unit p b.
   exact wt_p. exact H2.
   rewrite H3. constructor.
 Qed.

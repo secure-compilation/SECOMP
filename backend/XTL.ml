@@ -47,6 +47,7 @@ type code = block PTree.t
   (* mapping node -> block *)
 
 type xfunction = {
+  fn_comp: compartment;
   fn_sig: signature;
   fn_stacksize: Z.t;
   fn_code: code;

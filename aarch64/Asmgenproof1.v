@@ -63,7 +63,6 @@ Ltac Simpl := repeat Simplif.
 Section CONSTRUCTORS.
 
 Variable ge: genv.
-Variable cp: compartment.
 Variable fn: function.
 
 (** Decomposition of integer literals *)
@@ -209,7 +208,7 @@ Lemma exec_loadimm_k_w:
   forall (rs: regset) accu,
   rs#rd = Vint (Int.repr accu) ->
   exists rs',
-     exec_straight_opt ge cp fn (loadimm_k W rd l k) rs m k rs' m
+     exec_straight_opt ge fn (loadimm_k W rd l k) rs m k rs' m
   /\ rs'#rd = Vint (Int.repr (recompose_int accu l))
   /\ forall r, r <> PC -> r <> rd -> rs'#r = rs#r.
 Proof.
@@ -230,7 +229,7 @@ Lemma exec_loadimm_z_w:
   forall rd l k rs m,
   wf_decomposition l ->
   exists rs',
-     exec_straight ge cp fn (loadimm_z W rd l k) rs m k rs' m
+     exec_straight ge fn (loadimm_z W rd l k) rs m k rs' m
   /\ rs'#rd = Vint (Int.repr (recompose_int 0 l))
   /\ forall r, r <> PC -> r <> rd -> rs'#r = rs#r.
 Proof.
@@ -255,7 +254,7 @@ Lemma exec_loadimm_n_w:
   forall rd l k rs m,
   wf_decomposition l ->
   exists rs',
-     exec_straight ge cp fn (loadimm_n W rd l k) rs m k rs' m
+     exec_straight ge fn (loadimm_n W rd l k) rs m k rs' m
   /\ rs'#rd = Vint (Int.repr (Z.lnot (recompose_int 0 l)))
   /\ forall r, r <> PC -> r <> rd -> rs'#r = rs#r.
 Proof.
@@ -282,7 +281,7 @@ Qed.
 Lemma exec_loadimm32:
   forall rd n k rs m,
   exists rs',
-     exec_straight ge cp fn (loadimm32 rd n k) rs m k rs' m
+     exec_straight ge fn (loadimm32 rd n k) rs m k rs' m
   /\ rs'#rd = Vint n
   /\ forall r, r <> PC -> r <> rd -> rs'#r = rs#r.
 Proof.
@@ -313,7 +312,7 @@ Lemma exec_loadimm_k_x:
   forall (rs: regset) accu,
   rs#rd = Vlong (Int64.repr accu) ->
   exists rs',
-     exec_straight_opt ge cp fn (loadimm_k X rd l k) rs m k rs' m
+     exec_straight_opt ge fn (loadimm_k X rd l k) rs m k rs' m
   /\ rs'#rd = Vlong (Int64.repr (recompose_int accu l))
   /\ forall r, r <> PC -> r <> rd -> rs'#r = rs#r.
 Proof.
@@ -334,7 +333,7 @@ Lemma exec_loadimm_z_x:
   forall rd l k rs m,
   wf_decomposition l ->
   exists rs',
-     exec_straight ge cp fn (loadimm_z X rd l k) rs m k rs' m
+     exec_straight ge fn (loadimm_z X rd l k) rs m k rs' m
   /\ rs'#rd = Vlong (Int64.repr (recompose_int 0 l))
   /\ forall r, r <> PC -> r <> rd -> rs'#r = rs#r.
 Proof.
@@ -359,7 +358,7 @@ Lemma exec_loadimm_n_x:
   forall rd l k rs m,
   wf_decomposition l ->
   exists rs',
-     exec_straight ge cp fn (loadimm_n X rd l k) rs m k rs' m
+     exec_straight ge fn (loadimm_n X rd l k) rs m k rs' m
   /\ rs'#rd = Vlong (Int64.repr (Z.lnot (recompose_int 0 l)))
   /\ forall r, r <> PC -> r <> rd -> rs'#r = rs#r.
 Proof.
@@ -386,7 +385,7 @@ Qed.
 Lemma exec_loadimm64:
   forall rd n k rs m,
   exists rs',
-     exec_straight ge cp fn (loadimm64 rd n k) rs m k rs' m
+     exec_straight ge fn (loadimm64 rd n k) rs m k rs' m
   /\ rs'#rd = Vlong n
   /\ forall r, r <> PC -> r <> rd -> rs'#r = rs#r.
 Proof.
@@ -416,12 +415,12 @@ Qed.
 Lemma exec_addimm_aux_32:
   forall (insn: iregsp -> iregsp -> Z -> instruction) (sem: val -> val -> val),
   (forall rd r1 n rs m,
-    exec_instr ge cp fn (insn rd r1 n) rs m =
+    exec_instr ge fn (insn rd r1 n) rs m =
       Next (nextinstr (rs#rd <- (sem rs#r1 (Vint (Int.repr n))))) m) ->
   (forall v n1 n2, sem (sem v (Vint n1)) (Vint n2) = sem v (Vint (Int.add n1 n2))) ->
   forall rd r1 n k rs m,
   exists rs',
-     exec_straight ge cp fn (addimm_aux insn rd r1 (Int.unsigned n) k) rs m k rs' m
+     exec_straight ge fn (addimm_aux insn rd r1 (Int.unsigned n) k) rs m k rs' m
   /\ rs'#rd = sem rs#r1 (Vint n)
   /\ forall r, data_preg r = true -> r <> rd -> rs'#r = rs#r.
 Proof.
@@ -447,7 +446,7 @@ Lemma exec_addimm32:
   forall rd r1 n k rs m,
   r1 <> X16 ->
   exists rs',
-     exec_straight ge cp fn (addimm32 rd r1 n k) rs m k rs' m
+     exec_straight ge fn (addimm32 rd r1 n k) rs m k rs' m
   /\ rs'#rd = Val.add rs#r1 (Vint n)
   /\ forall r, data_preg r = true -> r <> rd -> rs'#r = rs#r.
 Proof.
@@ -474,12 +473,12 @@ Qed.
 Lemma exec_addimm_aux_64:
   forall (insn: iregsp -> iregsp -> Z -> instruction) (sem: val -> val -> val),
   (forall rd r1 n rs m,
-    exec_instr ge cp fn (insn rd r1 n) rs m =
+    exec_instr ge fn (insn rd r1 n) rs m =
       Next (nextinstr (rs#rd <- (sem rs#r1 (Vlong (Int64.repr n))))) m) ->
   (forall v n1 n2, sem (sem v (Vlong n1)) (Vlong n2) = sem v (Vlong (Int64.add n1 n2))) ->
   forall rd r1 n k rs m,
   exists rs',
-     exec_straight ge cp fn (addimm_aux insn rd r1 (Int64.unsigned n) k) rs m k rs' m
+     exec_straight ge fn (addimm_aux insn rd r1 (Int64.unsigned n) k) rs m k rs' m
   /\ rs'#rd = sem rs#r1 (Vlong n)
   /\ forall r, data_preg r = true -> r <> rd -> rs'#r = rs#r.
 Proof.
@@ -505,7 +504,7 @@ Lemma exec_addimm64:
   forall rd r1 n k rs m,
   preg_of_iregsp r1 <> X16 ->
   exists rs',
-     exec_straight ge cp fn (addimm64 rd r1 n k) rs m k rs' m
+     exec_straight ge fn (addimm64 rd r1 n k) rs m k rs' m
   /\ rs'#rd = Val.addl rs#r1 (Vlong n)
   /\ forall r, data_preg r = true -> r <> rd -> rs'#r = rs#r.
 Proof.
@@ -537,15 +536,15 @@ Lemma exec_logicalimm32:
          (insn2: ireg -> ireg0 -> ireg -> shift_op -> instruction)
          (sem: val -> val -> val),
   (forall rd r1 n rs m,
-    exec_instr ge cp fn (insn1 rd r1 n) rs m =
+    exec_instr ge fn (insn1 rd r1 n) rs m =
       Next (nextinstr (rs#rd <- (sem rs##r1 (Vint (Int.repr n))))) m) ->
   (forall rd r1 r2 s rs m,
-    exec_instr ge cp fn (insn2 rd r1 r2 s) rs m =
+    exec_instr ge fn (insn2 rd r1 r2 s) rs m =
       Next (nextinstr (rs#rd <- (sem rs##r1 (eval_shift_op_int rs#r2 s)))) m) ->
   forall rd r1 n k rs m,
   r1 <> X16 ->
   exists rs',
-     exec_straight ge cp fn (logicalimm32 insn1 insn2 rd r1 n k) rs m k rs' m
+     exec_straight ge fn (logicalimm32 insn1 insn2 rd r1 n k) rs m k rs' m
   /\ rs'#rd = sem rs#r1 (Vint n)
   /\ forall r, data_preg r = true -> r <> rd -> rs'#r = rs#r.
 Proof.
@@ -567,15 +566,15 @@ Lemma exec_logicalimm64:
          (insn2: ireg -> ireg0 -> ireg -> shift_op -> instruction)
          (sem: val -> val -> val),
   (forall rd r1 n rs m,
-    exec_instr ge cp fn (insn1 rd r1 n) rs m =
+    exec_instr ge fn (insn1 rd r1 n) rs m =
       Next (nextinstr (rs#rd <- (sem rs###r1 (Vlong (Int64.repr n))))) m) ->
   (forall rd r1 r2 s rs m,
-    exec_instr ge cp fn (insn2 rd r1 r2 s) rs m =
+    exec_instr ge fn (insn2 rd r1 r2 s) rs m =
       Next (nextinstr (rs#rd <- (sem rs###r1 (eval_shift_op_long rs#r2 s)))) m) ->
   forall rd r1 n k rs m,
   r1 <> X16 ->
   exists rs',
-     exec_straight ge cp fn (logicalimm64 insn1 insn2 rd r1 n k) rs m k rs' m
+     exec_straight ge fn (logicalimm64 insn1 insn2 rd r1 n k) rs m k rs' m
   /\ rs'#rd = sem rs#r1 (Vlong n)
   /\ forall r, data_preg r = true -> r <> rd -> rs'#r = rs#r.
 Proof.
@@ -597,7 +596,7 @@ Qed.
 Lemma exec_loadsymbol: forall rd s ofs k rs m,
   rd <> X16 \/ Archi.pic_code tt = false ->
   exists rs',
-     exec_straight ge cp fn (loadsymbol rd s ofs k) rs m k rs' m
+     exec_straight ge fn (loadsymbol rd s ofs k) rs m k rs' m
   /\ rs'#rd = Genv.symbol_address ge s ofs
   /\ forall r, data_preg r = true -> r <> rd -> rs'#r = rs#r.
 Proof.
@@ -686,7 +685,7 @@ Qed.
 
 Lemma exec_move_extended_base: forall rd r1 ex k rs m,
   exists rs',
-     exec_straight ge cp fn (move_extended_base rd r1 ex k) rs m k rs' m
+     exec_straight ge fn (move_extended_base rd r1 ex k) rs m k rs' m
   /\ rs' rd = match ex with Xsgn32 => Val.longofint rs#r1 | Xuns32 => Val.longofintu rs#r1 end
   /\ forall r, r <> PC -> r <> rd -> rs'#r = rs#r.
 Proof.
@@ -696,7 +695,7 @@ Qed.
 
 Lemma exec_move_extended: forall rd r1 ex (a: amount64) k rs m,
   exists rs',
-     exec_straight ge cp fn (move_extended rd r1 ex a k) rs m k rs' m
+     exec_straight ge fn (move_extended rd r1 ex a k) rs m k rs' m
   /\ rs' rd = Op.eval_extend ex rs#r1 a
   /\ forall r, r <> PC -> r <> rd -> rs'#r = rs#r.
 Proof.
@@ -719,15 +718,15 @@ Lemma exec_arith_extended:
          (insnX: iregsp -> iregsp -> ireg -> extend_op -> instruction)
          (insnS: ireg -> ireg0 -> ireg -> shift_op -> instruction),
   (forall rd r1 r2 x rs m,
-    exec_instr ge cp fn (insnX rd r1 r2 x) rs m =
+    exec_instr ge fn (insnX rd r1 r2 x) rs m =
       Next (nextinstr (rs#rd <- (sem rs#r1 (eval_extend rs#r2 x)))) m) ->
   (forall rd r1 r2 s rs m,
-    exec_instr ge cp fn (insnS rd r1 r2 s) rs m =
+    exec_instr ge fn (insnS rd r1 r2 s) rs m =
       Next (nextinstr (rs#rd <- (sem rs###r1 (eval_shift_op_long rs#r2 s)))) m) ->
   forall (rd r1 r2: ireg) (ex: extension) (a: amount64) (k: code) rs m,
   r1 <> X16 ->
   exists rs',
-     exec_straight ge cp fn (arith_extended insnX insnS rd r1 r2 ex a k) rs m k rs' m
+     exec_straight ge fn (arith_extended insnX insnS rd r1 r2 ex a k) rs m k rs' m
   /\ rs'#rd = sem rs#r1 (Op.eval_extend ex rs#r2 a)
   /\ forall r, data_preg r = true -> r <> rd -> rs'#r = rs#r.
 Proof.
@@ -751,7 +750,7 @@ Lemma exec_shrx32: forall (rd r1: ireg) (n: int) k v (rs: regset) m,
   Val.shrx rs#r1 (Vint n) = Some v ->
   r1 <> X16 ->
   exists rs',
-     exec_straight ge cp fn (shrx32 rd r1 n k) rs m k rs' m
+     exec_straight ge fn (shrx32 rd r1 n k) rs m k rs' m
   /\ rs'#rd = v
   /\ forall r, data_preg r = true -> r <> rd -> rs'#r = rs#r.
 Proof.
@@ -771,7 +770,7 @@ Lemma exec_shrx64: forall (rd r1: ireg) (n: int) k v (rs: regset) m,
   Val.shrxl rs#r1 (Vint n) = Some v ->
   r1 <> X16 ->
   exists rs',
-     exec_straight ge cp fn (shrx64 rd r1 n k) rs m k rs' m
+     exec_straight ge fn (shrx64 rd r1 n k) rs m k rs' m
   /\ rs'#rd = v
   /\ forall r, data_preg r = true -> r <> rd -> rs'#r = rs#r.
 Proof.
@@ -1044,7 +1043,7 @@ Lemma transl_cond_correct:
   forall cond args k c rs m,
   transl_cond cond args k = OK c ->
   exists rs',
-     exec_straight ge cp fn c rs m k rs' m
+     exec_straight ge fn c rs m k rs' m
   /\ (forall b,
       eval_condition cond (map rs (map preg_of args)) m = Some b ->
       eval_testcond (cond_for_cond cond) rs' = Some b)
@@ -1236,8 +1235,8 @@ Lemma transl_cond_branch_correct:
   transl_cond_branch cond args lbl k = OK c ->
   eval_condition cond (map rs (map preg_of args)) m = Some b ->
   exists rs' insn,
-     exec_straight_opt ge cp fn c rs m (insn :: k) rs' m
-  /\ exec_instr ge cp fn insn rs' m =
+     exec_straight_opt ge fn c rs m (insn :: k) rs' m
+  /\ exec_instr ge fn insn rs' m =
          (if b then goto_label fn lbl rs' m else Next (nextinstr rs') m)
   /\ forall r, data_preg r = true -> rs'#r = rs#r.
 Proof.
@@ -1245,8 +1244,8 @@ Proof.
   assert (DFL:
     transl_cond_branch_default cond args lbl k = OK c ->
     exists rs' insn,
-       exec_straight_opt ge cp fn c rs m (insn :: k) rs' m
-    /\ exec_instr ge cp fn insn rs' m =
+       exec_straight_opt ge fn c rs m (insn :: k) rs' m
+    /\ exec_instr ge fn insn rs' m =
          (if b then goto_label fn lbl rs' m else Next (nextinstr rs') m)
     /\ forall r, data_preg r = true -> rs'#r = rs#r).
   {
@@ -1361,7 +1360,7 @@ Lemma transl_op_correct:
   transl_op op args res k = OK c ->
   eval_operation ge (rs#SP) op (map rs (map preg_of args)) m = Some v ->
   exists rs',
-     exec_straight ge cp fn c rs m k rs' m
+     exec_straight ge fn c rs m k rs' m
   /\ Val.lessdef v rs'#(preg_of res)
   /\ forall r, data_preg r = true -> r <> preg_of res -> preg_notin r (destroyed_by_op op) -> rs' r = rs r.
 Proof.
@@ -1549,7 +1548,7 @@ Lemma transl_addressing_correct:
   transl_addressing sz addr args insn k = OK c ->
   Op.eval_addressing ge (rs#SP) addr (map rs (map preg_of args)) = Some (Vptr b o) ->
   exists ad rs',
-     exec_straight_opt ge cp fn c rs m (insn ad :: k) rs' m
+     exec_straight_opt ge fn c rs m (insn ad :: k) rs' m
   /\ Asm.eval_addressing ge ad rs' = Vptr b o
   /\ forall r, data_preg r = true -> rs' r = rs r.
 Proof.
@@ -1625,14 +1624,14 @@ Lemma transl_load_correct:
   Op.eval_addressing ge (rs#SP) addr (map rs (map preg_of args)) = Some vaddr ->
   Mem.loadv chunk m vaddr = Some v ->
   exists rs',
-     exec_straight ge cp fn c rs m k rs' m
+     exec_straight ge fn c rs m k rs' m
   /\ rs'#(preg_of dst) = v
   /\ forall r, data_preg r = true -> r <> preg_of dst -> rs' r = rs r.
 Proof.
   intros. destruct vaddr; try discriminate. 
   assert (A: exists sz insn,
                 transl_addressing sz addr args insn k = OK c
-             /\ (forall ad rs', exec_instr ge cp fn (insn ad) rs' m =
+             /\ (forall ad rs', exec_instr ge fn (insn ad) rs' m =
                               exec_load ge chunk (fun v => v) ad (preg_of dst) rs' m)).
   {
     destruct chunk; monadInv H;
@@ -1656,7 +1655,7 @@ Lemma transl_store_correct:
   Op.eval_addressing ge (rs#SP) addr (map rs (map preg_of args)) = Some vaddr ->
   Mem.storev chunk m vaddr rs#(preg_of src) = Some m' ->
   exists rs',
-     exec_straight ge cp fn c rs m k rs' m'
+     exec_straight ge fn c rs m k rs' m'
   /\ forall r, data_preg r = true -> rs' r = rs r.
 Proof.
   intros. destruct vaddr; try discriminate. 
@@ -1665,7 +1664,7 @@ Proof.
                                 | _ => chunk end).
   assert (A: exists sz insn,
                 transl_addressing sz addr args insn k = OK c
-             /\ (forall ad rs', exec_instr ge cp fn (insn ad) rs' m =
+             /\ (forall ad rs', exec_instr ge fn (insn ad) rs' m =
                               exec_store ge chunk' ad rs'#(preg_of src) rs' m)).
   {
     unfold chunk'; destruct chunk; monadInv H;
@@ -1693,7 +1692,7 @@ Lemma indexed_memory_access_correct: forall insn sz (base: iregsp) ofs k (rs: re
   preg_of_iregsp base <> IR X16 ->
   Val.offset_ptr rs#base ofs = Vptr b i ->
   exists ad rs',
-     exec_straight_opt ge cp fn (indexed_memory_access insn sz base ofs k) rs m (insn ad :: k) rs' m
+     exec_straight_opt ge fn (indexed_memory_access insn sz base ofs k) rs m (insn ad :: k) rs' m
   /\ Asm.eval_addressing ge ad rs' = Vptr b i
   /\ forall r, r <> PC -> r <> X16 -> rs' r = rs r.
 Proof.
@@ -1711,7 +1710,7 @@ Lemma loadptr_correct: forall (base: iregsp) ofs dst k m v (rs: regset),
   Mem.loadv Mint64 m (Val.offset_ptr rs#base ofs) = Some v ->
   preg_of_iregsp base <> IR X16 ->
   exists rs',
-     exec_straight ge cp fn (loadptr base ofs dst k) rs m k rs' m
+     exec_straight ge fn (loadptr base ofs dst k) rs m k rs' m
   /\ rs'#dst = v
   /\ forall r, r <> PC -> r <> X16 -> r <> dst -> rs' r = rs r.
 Proof.
@@ -1729,7 +1728,7 @@ Lemma storeptr_correct: forall (base: iregsp) ofs (src: ireg) k m m' (rs: regset
   preg_of_iregsp base <> IR X16 ->
   src <> X16 ->
   exists rs',
-     exec_straight ge cp fn (storeptr src base ofs k) rs m k rs' m'
+     exec_straight ge fn (storeptr src base ofs k) rs m k rs' m'
   /\ forall r, r <> PC -> r <> X16 -> rs' r = rs r.
 Proof.
   intros. 
@@ -1746,7 +1745,7 @@ Lemma loadind_correct: forall (base: iregsp) ofs ty dst k c (rs: regset) m v,
   Mem.loadv (chunk_of_type ty) m (Val.offset_ptr rs#base ofs) = Some v ->
   preg_of_iregsp base <> IR X16 ->
   exists rs',
-     exec_straight ge cp fn c rs m k rs' m
+     exec_straight ge fn c rs m k rs' m
   /\ rs'#(preg_of dst) = v
   /\ forall r, data_preg r = true -> r <> preg_of dst -> rs' r = rs r.
 Proof.
@@ -1754,7 +1753,7 @@ Proof.
   destruct (Val.offset_ptr rs#base ofs) eqn:V; try discriminate.
   assert (X: exists sz insn,
                 c = indexed_memory_access insn sz base ofs k
-             /\ (forall ad rs', exec_instr ge cp fn (insn ad) rs' m =
+             /\ (forall ad rs', exec_instr ge fn (insn ad) rs' m =
                               exec_load ge (chunk_of_type ty) (fun v => v) ad (preg_of dst) rs' m)).
   {
     unfold loadind in H; destruct ty; destruct (preg_of dst); inv H; do 2 econstructor; eauto.
@@ -1772,14 +1771,14 @@ Lemma storeind_correct: forall (base: iregsp) ofs ty src k c (rs: regset) m m',
   Mem.storev (chunk_of_type ty) m (Val.offset_ptr rs#base ofs) rs#(preg_of src) = Some m' ->
   preg_of_iregsp base <> IR X16 ->
   exists rs',
-     exec_straight ge cp fn c rs m k rs' m'
+     exec_straight ge fn c rs m k rs' m'
   /\ forall r, data_preg r = true -> rs' r = rs r.
 Proof.
   intros. 
   destruct (Val.offset_ptr rs#base ofs) eqn:V; try discriminate.
   assert (X: exists sz insn,
                 c = indexed_memory_access insn sz base ofs k
-             /\ (forall ad rs', exec_instr ge cp fn (insn ad) rs' m =
+             /\ (forall ad rs', exec_instr ge fn (insn ad) rs' m =
                               exec_store ge (chunk_of_type ty) ad rs'#(preg_of src) rs' m)).
   {
     unfold storeind in H; destruct ty; destruct (preg_of src); inv H; do 2 econstructor; eauto.
@@ -1803,7 +1802,7 @@ Lemma make_epilogue_correct:
   Mem.extends m tm ->
   match_stack ge0 cs ->
   exists rs', exists tm',
-     exec_straight ge cp fn (make_epilogue f k) rs tm k rs' tm'
+     exec_straight ge fn (make_epilogue f k) rs tm k rs' tm'
   /\ agree ms (parent_sp cs) rs'
   /\ Mem.extends m' tm'
   /\ rs'#RA = parent_ra cs

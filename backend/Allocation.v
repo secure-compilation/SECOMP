@@ -1343,7 +1343,10 @@ Definition check_function (rtl: RTL.function) (ltl: LTL.function) (env: regenv):
   let bsh := pair_codes rtl ltl in
   match analyze rtl env bsh with
   | None => Error (msg "allocation analysis diverges")
-  | Some a => check_entrypoints rtl ltl env bsh a
+  | Some a =>
+    if eq_compartment rtl.(RTL.fn_comp) ltl.(LTL.fn_comp) then
+      check_entrypoints rtl ltl env bsh a
+    else Error (msg "register allocation changed the function compartment")
   end.
 
 (** [regalloc] is the external register allocator.  It is written in OCaml

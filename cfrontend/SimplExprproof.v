@@ -25,6 +25,13 @@ Definition match_prog (p: Csyntax.program) (tp: Clight.program) :=
     match_program (fun ctx f tf => tr_fundef f tf) eq p tp
  /\ prog_types tp = prog_types p.
 
+Instance comp_tr_fundef P:
+  has_comp_match (fun (ctx: P) f tf => tr_fundef f tf).
+Proof.
+  intros ctx f tf [? ? []|]; trivial.
+  symmetry; eauto.
+Qed.
+
 Lemma transf_program_match:
   forall p tp, transl_program p = OK tp -> match_prog p tp.
 Proof.
@@ -63,10 +70,10 @@ Lemma senv_preserved:
 Proof (Genv.senv_match (proj1 TRANSL)).
 
 Lemma function_ptr_translated:
-  forall b c f,
-  Genv.find_funct_ptr ge b = Some (c, f) ->
+  forall b f,
+  Genv.find_funct_ptr ge b = Some f ->
   exists tf,
-  Genv.find_funct_ptr tge b = Some (c, tf) /\
+  Genv.find_funct_ptr tge b = Some tf /\
   tr_fundef f tf.
 Proof.
   intros.
@@ -74,10 +81,10 @@ Proof.
 Qed.
 
 Lemma functions_translated:
-  forall v c f,
-  Genv.find_funct ge v = Some (c, f) ->
+  forall v f,
+  Genv.find_funct ge v = Some f ->
   exists tf,
-  Genv.find_funct tge v = Some (c, tf) /\
+  Genv.find_funct tge v = Some tf /\
   tr_fundef f tf.
 Proof.
   intros.
@@ -1043,11 +1050,11 @@ Inductive match_states: Csem.state -> state -> Prop :=
       match_cont k tk ->
       match_states (Csem.State f s k e m)
                    (State tf ts tk e le m)
-  | match_callstates: forall c fd args k m tfd tk,
+  | match_callstates: forall fd args k m tfd tk,
       tr_fundef fd tfd ->
       match_cont k tk ->
-      match_states (Csem.Callstate c fd args k m)
-                   (Callstate c tfd args tk m)
+      match_states (Csem.Callstate fd args k m)
+                   (Callstate tfd args tk m)
   | match_returnstates: forall res k m tk,
       match_cont k tk ->
       match_states (Csem.Returnstate res k m)
@@ -2246,17 +2253,17 @@ Proof.
   econstructor; eauto.
 
 (* internal function *)
-  inv H8. inversion H3; subst.
+  inv H7. inversion H3; subst.
   econstructor; split.
   left; apply plus_one. eapply step_internal_function. econstructor.
-  rewrite H6; rewrite H7; auto.
-  rewrite H6; rewrite H7. eapply alloc_variables_preserved; eauto.
-  rewrite H6. eapply bind_parameters_preserved; eauto.
+  rewrite H7; rewrite H9; auto.
+  rewrite H7; rewrite H9. eapply alloc_variables_preserved; eauto.
+  rewrite H7. eapply bind_parameters_preserved; eauto.
   eauto.
   constructor; auto.
 
 (* external function *)
-  inv H6.
+  inv H5.
   econstructor; split.
   left; apply plus_one. econstructor; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.

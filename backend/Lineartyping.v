@@ -259,13 +259,13 @@ Inductive wt_state: state -> Prop :=
         (WTC: wt_code f c = true)
         (WTRS: wt_locset rs),
       wt_state (State s f sp c rs m)
-  | wt_call_state: forall s c fd rs m
+  | wt_call_state: forall s fd rs m
         (WTSTK: wt_callstack s)
         (WTFD: wt_fundef fd)
         (WTRS: wt_locset rs)
         (AGCS: agree_callee_save rs (parent_locset s))
         (AGARGS: agree_outgoing_arguments (funsig fd) rs (parent_locset s)),
-      wt_state (Callstate s c fd rs m)
+      wt_state (Callstate s fd rs m)
   | wt_return_state: forall s rs m
         (WTSTK: wt_callstack s)
         (WTRS: wt_locset rs)
@@ -281,13 +281,13 @@ Variable prog: program.
 Let ge := Genv.globalenv prog.
 
 Hypothesis wt_prog:
-  forall i c fd, In (i, Gfun c fd) prog.(prog_defs) -> wt_fundef fd.
+  forall i fd, In (i, Gfun fd) prog.(prog_defs) -> wt_fundef fd.
 
 Lemma wt_find_function:
-  forall ros rs c f, find_function ge ros rs = Some (c, f) -> wt_fundef f.
+  forall ros rs f, find_function ge ros rs = Some f -> wt_fundef f.
 Proof.
   intros.
-  assert (X: exists i, In (i, Gfun c f) prog.(prog_defs)).
+  assert (X: exists i, In (i, Gfun f) prog.(prog_defs)).
   {
     destruct ros as [r | s]; simpl in H.
     eapply Genv.find_funct_inversion; eauto.
@@ -437,16 +437,16 @@ Proof.
 Qed.
 
 Lemma wt_callstate_wt_regs:
-  forall s c f rs m,
-  wt_state (Callstate s c f rs m) ->
+  forall s f rs m,
+  wt_state (Callstate s f rs m) ->
   forall r, Val.has_type (rs (R r)) (mreg_type r).
 Proof.
   intros. inv H. apply WTRS.
 Qed.
 
 Lemma wt_callstate_agree:
-  forall s c f rs m,
-  wt_state (Callstate s c f rs m) ->
+  forall s f rs m,
+  wt_state (Callstate s f rs m) ->
   agree_callee_save rs (parent_locset s) /\ agree_outgoing_arguments (funsig f) rs (parent_locset s).
 Proof.
   intros. inv H; auto.

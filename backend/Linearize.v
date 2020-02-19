@@ -206,6 +206,7 @@ Definition linearize_body (f: LTL.function) (enum: list node) : code :=
 Definition transf_function (f: LTL.function) : res Linear.function :=
   do enum <- enumerate f;
   OK (mkfunction
+       (LTL.fn_comp f)
        (LTL.fn_sig f)
        (LTL.fn_stacksize f)
        (add_branch (LTL.fn_entrypoint f) (linearize_body f enum))).

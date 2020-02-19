@@ -60,6 +60,7 @@ Definition cleanup_labels (c: code) :=
 
 Definition transf_function (f: function) : function :=
   mkfunction
+     (fn_comp f)
      (fn_sig f)
      (fn_stacksize f)
      (cleanup_labels (fn_code f)).

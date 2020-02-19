@@ -915,6 +915,7 @@ Inductive tr_function: CminorSel.function -> RTL.function -> Prop :=
       tr_stmt code map2 f.(CminorSel.fn_body) nentry nret nil ngoto nret orret ->
       code!nret = Some(Ireturn orret) ->
       tr_function f (RTL.mkfunction
+                       f.(CminorSel.fn_comp)
                        f.(CminorSel.fn_sig)
                        rparams
                        f.(CminorSel.fn_stackspace)

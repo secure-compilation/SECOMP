@@ -20,6 +20,13 @@ Require Import Op Registers RTL Renumber.
 Definition match_prog (p tp: RTL.program) :=
   match_program (fun ctx f tf => tf = transf_fundef f) eq p tp.
 
+Instance comp_transf_fundef P:
+  has_comp_match (fun (cu: P) f tf => tf = transf_fundef f).
+Proof.
+  unfold transf_fundef, transf_function.
+  now intros cu [f|ef] ? ->.
+Qed.
+
 Lemma transf_program_match:
   forall p, match_prog p (transf_program p).
 Proof.
@@ -34,15 +41,15 @@ Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
 
 Lemma functions_translated:
-  forall v c f,
-  Genv.find_funct ge v = Some (c, f) ->
-  Genv.find_funct tge v = Some (c, transf_fundef f).
+  forall v f,
+  Genv.find_funct ge v = Some f ->
+  Genv.find_funct tge v = Some (transf_fundef f).
 Proof. exact (Genv.find_funct_transf TRANSL). Qed.
 
 Lemma function_ptr_translated:
-  forall v c f,
-  Genv.find_funct_ptr ge v = Some (c, f) ->
-  Genv.find_funct_ptr tge v = Some (c, transf_fundef f).
+  forall v f,
+  Genv.find_funct_ptr ge v = Some f ->
+  Genv.find_funct_ptr tge v = Some (transf_fundef f).
 Proof. exact (Genv.find_funct_ptr_transf TRANSL). Qed.
 
 Lemma symbols_preserved:
@@ -61,9 +68,9 @@ Proof.
 Qed.
 
 Lemma find_function_translated:
-  forall ros rs c fd,
-  find_function ge ros rs = Some (c, fd) ->
-  find_function tge ros rs = Some (c, transf_fundef fd).
+  forall ros rs fd,
+  find_function ge ros rs = Some fd ->
+  find_function tge ros rs = Some (transf_fundef fd).
 Proof.
   unfold find_function; intros. destruct ros as [r|id].
   eapply functions_translated; eauto.
@@ -146,10 +153,10 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
         (REACH: reach f pc),
       match_states (State stk f sp pc rs m)
                    (State stk' (transf_function f) sp (renum_pc (pnum f) pc) rs m)
-  | match_callstates: forall stk c f args m stk'
+  | match_callstates: forall stk f args m stk'
         (STACKS: list_forall2 match_frames stk stk'),
-      match_states (Callstate stk c f args m)
-                   (Callstate stk' c (transf_fundef f) args m)
+      match_states (Callstate stk f args m)
+                   (Callstate stk' (transf_fundef f) args m)
   | match_returnstates: forall stk v m stk'
         (STACKS: list_forall2 match_frames stk stk'),
       match_states (Returnstate stk v m)

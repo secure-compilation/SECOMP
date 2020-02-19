@@ -357,7 +357,7 @@ Definition transf_function (f: function) : res function :=
   match ana_function f with
   | None => Error (msg "Debugvar: analysis diverges")
   | Some lm =>
-      OK (mkfunction f.(fn_sig) f.(fn_stacksize)
+      OK (mkfunction f.(fn_comp) f.(fn_sig) f.(fn_stacksize)
                      (transf_code lm (Some top) f.(fn_code)))
   end.
 

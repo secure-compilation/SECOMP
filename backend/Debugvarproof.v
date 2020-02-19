@@ -23,6 +23,14 @@ Require Import Debugvar.
 Definition match_prog (p tp: program) :=
   match_program (fun _ f tf => transf_fundef f = OK tf) eq p tp.
 
+Instance comp_transf_fundef P:
+  has_comp_match (fun (_: P) f tf => transf_fundef f = OK tf).
+Proof.
+  unfold transf_fundef, transf_function.
+  intros cu [f|ef] ? H; monadInv H; trivial.
+  now destruct ana_function; inv EQ.
+Qed.
+
 Lemma transf_program_match:
   forall p tp, transf_program p = OK tp -> match_prog p tp.
 Proof.
@@ -70,7 +78,7 @@ Qed.
 Inductive match_function: function -> function -> Prop :=
   | match_function_intro: forall f c,
       match_code f.(fn_code) c ->
-      match_function f (mkfunction f.(fn_sig) f.(fn_stacksize) c).
+      match_function f (mkfunction f.(fn_comp) f.(fn_sig) f.(fn_stacksize) c).
 
 Lemma transf_function_match:
   forall f tf, transf_function f = OK tf -> match_function f tf.
@@ -303,18 +311,18 @@ Lemma senv_preserved:
 Proof (Genv.senv_match TRANSF).
 
 Lemma functions_translated:
-  forall (v: val) (c: compartment) (f: fundef),
-  Genv.find_funct ge v = Some (c, f) ->
+  forall (v: val) (f: fundef),
+  Genv.find_funct ge v = Some f ->
   exists tf,
-  Genv.find_funct tge v = Some (c, tf) /\
+  Genv.find_funct tge v = Some tf /\
   transf_fundef f = OK tf.
 Proof. exact (Genv.find_funct_transf_partial TRANSF). Qed.
 
 Lemma function_ptr_translated:
-  forall (b: block) (c: compartment) (f: fundef),
-  Genv.find_funct_ptr ge b = Some (c, f) ->
+  forall (b: block) (f: fundef),
+  Genv.find_funct_ptr ge b = Some f ->
   exists tf,
-  Genv.find_funct_ptr tge b = Some (c, tf) /\ transf_fundef f = OK tf.
+  Genv.find_funct_ptr tge b = Some tf /\ transf_fundef f = OK tf.
 Proof (Genv.find_funct_ptr_transf_partial TRANSF).
 
 Lemma sig_preserved:
@@ -329,10 +337,10 @@ Proof.
 Qed.
 
 Lemma find_function_translated:
-  forall ros ls c f,
-  find_function ge ros ls = Some (c, f) ->
+  forall ros ls f,
+  find_function ge ros ls = Some f ->
   exists tf,
-  find_function tge ros ls = Some (c, tf) /\ transf_fundef f = OK tf.
+  find_function tge ros ls = Some tf /\ transf_fundef f = OK tf.
 Proof.
   unfold find_function; intros; destruct ros; simpl.
   apply functions_translated; auto.
@@ -400,11 +408,11 @@ Inductive match_states: Linear.state ->  Linear.state -> Prop :=
       match_states (State s f sp c rs m)
                    (State ts tf sp tc rs m)
   | match_states_call:
-      forall s c f rs m tf ts,
+      forall s f rs m tf ts,
       list_forall2 match_stackframes s ts ->
       transf_fundef f = OK tf ->
-      match_states (Callstate s c f rs m)
-                   (Callstate ts c tf rs m)
+      match_states (Callstate s f rs m)
+                   (Callstate ts tf rs m)
   | match_states_return:
       forall s rs m ts,
       list_forall2 match_stackframes s ts ->
@@ -510,14 +518,14 @@ Proof.
   apply plus_one.  constructor. inv TRF; eauto. traceEq.
   rewrite (parent_locset_match _ _ STACKS). constructor; auto.
 - (* internal function *)
-  monadInv H8. rename x into tf.
+  monadInv H7. rename x into tf.
   assert (MF: match_function f tf) by (apply transf_function_match; auto).
   inversion MF; subst.
   econstructor; split.
   apply plus_one. constructor. simpl; eauto. reflexivity.
   constructor; auto.
 - (* external function *)
-  monadInv H9. econstructor; split.
+  monadInv H8. econstructor; split.
   apply plus_one. econstructor; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   constructor; auto.
@@ -534,7 +542,7 @@ Lemma transf_initial_states:
 Proof.
   intros. inversion H.
   exploit function_ptr_translated; eauto. intros [tf [A B]].
-  exists (Callstate nil c tf (Locmap.init Vundef) m0); split.
+  exists (Callstate nil tf (Locmap.init Vundef) m0); split.
   econstructor; eauto. eapply (Genv.init_mem_transf_partial TRANSF); eauto.
   rewrite (match_program_main TRANSF), symbols_preserved. auto.
   rewrite <- H3. apply sig_preserved. auto.

@@ -25,6 +25,14 @@ Definition match_prog (p tp: program) : Prop :=
     match_program (fun ctx f tf => transf_fundef f = OK tf) eq p tp
  /\ prog_types tp = prog_types p.
 
+Instance comp_transf_fundef P:
+  has_comp_match (fun (ctx : P) f tf => transf_fundef f = OK tf).
+Proof.
+  unfold transf_fundef, transf_function.
+  intros cu [f|ef] ? H; monadInv H; trivial.
+  now monadInv EQ.
+Qed.
+
 Lemma match_transf_program:
   forall p tp, transf_program p = OK tp -> match_prog p tp.
 Proof.
@@ -55,15 +63,15 @@ Lemma senv_preserved:
 Proof (Genv.senv_match (proj1 TRANSF)).
 
 Lemma functions_translated:
-  forall (v: val) (c: compartment) (f: fundef),
-  Genv.find_funct ge v = Some (c, f) ->
-  exists tf, Genv.find_funct tge v = Some (c, tf) /\ transf_fundef f = OK tf.
+  forall (v: val) (f: fundef),
+  Genv.find_funct ge v = Some f ->
+  exists tf, Genv.find_funct tge v = Some tf /\ transf_fundef f = OK tf.
 Proof (Genv.find_funct_transf_partial (proj1 TRANSF)).
 
 Lemma function_ptr_translated:
-  forall (b: block) (c: compartment) (f: fundef),
-  Genv.find_funct_ptr ge b = Some (c, f) ->
-  exists tf, Genv.find_funct_ptr tge b = Some (c, tf) /\ transf_fundef f = OK tf.
+  forall (b: block) (f: fundef),
+  Genv.find_funct_ptr ge b = Some f ->
+  exists tf, Genv.find_funct_ptr tge b = Some tf /\ transf_fundef f = OK tf.
 Proof (Genv.find_funct_ptr_transf_partial (proj1 TRANSF)).
 
 Lemma type_of_fundef_preserved:
@@ -1353,8 +1361,8 @@ Inductive match_globalenvs (f: meminj) (bound: block): Prop :=
       (DOMAIN: forall b, Plt b bound -> f b = Some(b, 0))
       (IMAGE: forall b1 b2 delta, f b1 = Some(b2, delta) -> Plt b2 bound -> b1 = b2)
       (SYMBOLS: forall id b, Genv.find_symbol ge id = Some b -> Plt b bound)
-      (FUNCTIONS: forall b c fd, Genv.find_funct_ptr ge b = Some (c, fd) -> Plt b bound)
-      (VARINFOS: forall b c gv, Genv.find_var_info ge b = Some (c, gv) -> Plt b bound).
+      (FUNCTIONS: forall b fd, Genv.find_funct_ptr ge b = Some fd -> Plt b bound)
+      (VARINFOS: forall b gv, Genv.find_var_info ge b = Some gv -> Plt b bound).
 
 Lemma match_globalenvs_preserves_globals:
   forall f,
@@ -1726,11 +1734,11 @@ Qed.
 Hint Resolve match_cont_globalenv: compat.
 
 Lemma match_cont_find_funct:
-  forall f cenv k tk m bound tbound vf c fd tvf,
+  forall f cenv k tk m bound tbound vf fd tvf,
   match_cont f cenv k tk m bound tbound ->
-  Genv.find_funct ge vf = Some (c, fd) ->
+  Genv.find_funct ge vf = Some fd ->
   Val.inject f vf tvf ->
-  exists tfd, Genv.find_funct tge tvf = Some (c, tfd) /\ transf_fundef fd = OK tfd.
+  exists tfd, Genv.find_funct tge tvf = Some tfd /\ transf_fundef fd = OK tfd.
 Proof.
   intros. exploit match_cont_globalenv; eauto. intros [bound1 MG]. destruct MG.
   inv H1; simpl in H0; try discriminate. destruct (Ptrofs.eq_dec ofs1 Ptrofs.zero); try discriminate.
@@ -1757,15 +1765,15 @@ Inductive match_states: state -> state -> Prop :=
       match_states (State f s k e le m)
                    (State tf ts tk te tle tm)
   | match_call_state:
-      forall c fd vargs k m tfd tvargs tk tm j targs tres cconv
+      forall fd vargs k m tfd tvargs tk tm j targs tres cconv
         (TRFD: transf_fundef fd = OK tfd)
         (MCONT: forall cenv, match_cont j cenv k tk m (Mem.nextblock m) (Mem.nextblock tm))
         (MINJ: Mem.inject j m tm)
         (AINJ: Val.inject_list j vargs tvargs)
         (FUNTY: type_of_fundef fd = Tfunction targs tres cconv)
         (ANORM: val_casted_list vargs targs),
-      match_states (Callstate c fd vargs k m)
-                   (Callstate c tfd tvargs tk tm)
+      match_states (Callstate fd vargs k m)
+                   (Callstate tfd tvargs tk tm)
   | match_return_state:
       forall v k m tv tk tm j
         (MCONT: forall cenv, match_cont j cenv k tk m (Mem.nextblock m) (Mem.nextblock tm))

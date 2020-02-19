@@ -185,12 +185,15 @@ with labeled_statements : Type :=            (**r cases of a [switch] *)
   function (a statement, [fn_body]). *)
 
 Record function : Type := mkfunction {
+  fn_comp: compartment;
   fn_return: type;
   fn_callconv: calling_convention;
   fn_params: list (ident * type);
   fn_vars: list (ident * type);
   fn_body: statement
 }.
+
+Instance has_comp_function : has_comp function := fn_comp.
 
 Definition var_names (vars: list(ident * type)) : list ident :=
   List.map (@fst ident type) vars.

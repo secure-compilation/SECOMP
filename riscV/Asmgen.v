@@ -919,7 +919,7 @@ Definition transl_code' (f: Mach.function) (il: list Mach.instruction) (it1p: bo
 
 Definition transl_function (f: Mach.function) :=
   do c <- transl_code' f f.(Mach.fn_code) true;
-  OK (mkfunction f.(Mach.fn_sig)
+  OK (mkfunction f.(Mach.fn_comp) f.(Mach.fn_sig)
         (Pallocframe f.(fn_stacksize) f.(fn_link_ofs) ::
          storeind_ptr RA SP f.(fn_retaddr_ofs) c)).
 

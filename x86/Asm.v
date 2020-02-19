@@ -292,7 +292,8 @@ Inductive instruction: Type :=
   | Psubq_ri (rd: ireg) (n: int64).
 
 Definition code := list instruction.
-Record function : Type := mkfunction { fn_sig: signature; fn_code: code }.
+Record function : Type := mkfunction { fn_comp: compartment; fn_sig: signature; fn_code: code }.
+Instance has_comp_function: has_comp function := fn_comp.
 Definition fundef := AST.fundef function.
 Definition program := AST.program fundef unit.
 
@@ -605,7 +606,7 @@ Definition exec_store (chunk: memory_chunk) (m: mem)
     but we do not need to model this precisely.
 *)
 
-Definition exec_instr (c: compartment) (f: function) (i: instruction) (rs: regset) (m: mem) : outcome :=
+Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : outcome :=
   match i with
   (** Moves *)
   | Pmov_rr rd r1 =>
@@ -940,7 +941,7 @@ Definition exec_instr (c: compartment) (f: function) (i: instruction) (rs: regse
   | Plabel lbl =>
       Next (nextinstr rs) m
   | Pallocframe sz ofs_ra ofs_link =>
-      let (m1, stk) := Mem.alloc m c 0 sz in
+      let (m1, stk) := Mem.alloc m f.(fn_comp) 0 sz in
       let sp := Vptr stk Ptrofs.zero in
       match Mem.storev Mptr m1 (Val.offset_ptr sp ofs_link) rs#RSP with
       | None => Stuck
@@ -1095,16 +1096,16 @@ Inductive state: Type :=
 
 Inductive step: state -> trace -> state -> Prop :=
   | exec_step_internal:
-      forall b ofs c f i rs m rs' m',
+      forall b ofs f i rs m rs' m',
       rs PC = Vptr b ofs ->
-      Genv.find_funct_ptr ge b = Some (c, Internal f) ->
+      Genv.find_funct_ptr ge b = Some (Internal f) ->
       find_instr (Ptrofs.unsigned ofs) f.(fn_code) = Some i ->
-      exec_instr c f i rs m = Next rs' m' ->
+      exec_instr f i rs m = Next rs' m' ->
       step (State rs m) E0 (State rs' m')
   | exec_step_builtin:
-      forall b ofs c f ef args res rs m vargs t vres rs' m',
+      forall b ofs f ef args res rs m vargs t vres rs' m',
       rs PC = Vptr b ofs ->
-      Genv.find_funct_ptr ge b = Some (c, Internal f) ->
+      Genv.find_funct_ptr ge b = Some (Internal f) ->
       find_instr (Ptrofs.unsigned ofs) f.(fn_code) = Some (Pbuiltin ef args res) ->
       eval_builtin_args ge rs (rs RSP) m args vargs ->
       external_call ef ge vargs m t vres m' ->
@@ -1113,9 +1114,9 @@ Inductive step: state -> trace -> state -> Prop :=
                (undef_regs (map preg_of (destroyed_by_builtin ef)) rs)) ->
       step (State rs m) t (State rs' m')
   | exec_step_external:
-      forall b c ef args res rs m t rs' m',
+      forall b ef args res rs m t rs' m',
       rs PC = Vptr b Ptrofs.zero ->
-      Genv.find_funct_ptr ge b = Some (c, External ef) ->
+      Genv.find_funct_ptr ge b = Some (External ef) ->
       extcall_arguments rs m (ef_sig ef) args ->
       external_call ef ge args m t res m' ->
       rs' = (set_pair (loc_external_result (ef_sig ef)) res (undef_caller_save_regs rs)) #PC <- (rs RA) ->

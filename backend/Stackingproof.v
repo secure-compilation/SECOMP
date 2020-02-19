@@ -26,6 +26,16 @@ Local Open Scope sep_scope.
 Definition match_prog (p: Linear.program) (tp: Mach.program) :=
   match_program (fun _ f tf => transf_fundef f = OK tf) eq p tp.
 
+Instance comp_transf_fundef P:
+  has_comp_match (fun (_: P) f tf => transf_fundef f = OK tf).
+Proof.
+  unfold transf_fundef, transf_function.
+  intros _ [f|ef] tf H; monadInv H; trivial.
+  destruct negb; try easy.
+  destruct zlt; try easy.
+  now monadInv EQ.
+Qed.
+
 Lemma transf_program_match:
   forall p tp, transf_program p = OK tp -> match_prog p tp.
 Proof.
@@ -99,6 +109,7 @@ Hypothesis TRANSF_F: transf_function f = OK tf.
 
 Lemma unfold_transf_function:
   tf = Mach.mkfunction
+         f.(Linear.fn_comp)
          f.(Linear.fn_sig)
          (transl_body f fe)
          fe.(fe_size)
@@ -1036,18 +1047,18 @@ Qed.
   saving of the used callee-save registers). *)
 
 Lemma function_prologue_correct:
-  forall j ls ls0 ls1 rs rs1 m1 c m1' m2 sp parent ra cs fb k P,
+  forall j ls ls0 ls1 rs rs1 m1 m1' m2 sp parent ra cs fb k P,
   agree_regs j ls rs ->
   agree_callee_save ls ls0 ->
   agree_outgoing_arguments (Linear.fn_sig f) ls ls0 ->
   (forall r, Val.has_type (ls (R r)) (mreg_type r)) ->
   ls1 = LTL.undef_regs destroyed_at_function_entry (LTL.call_regs ls) ->
   rs1 = undef_regs destroyed_at_function_entry rs ->
-  Mem.alloc m1 c 0 f.(Linear.fn_stacksize) = (m2, sp) ->
+  Mem.alloc m1 f.(Linear.fn_comp) 0 f.(Linear.fn_stacksize) = (m2, sp) ->
   Val.has_type parent Tptr -> Val.has_type ra Tptr ->
   m1' |= minjection j m1 ** globalenv_inject ge j ** P ->
   exists j', exists rs', exists m2', exists sp', exists m3', exists m4', exists m5',
-     Mem.alloc m1' c 0 tf.(fn_stacksize) = (m2', sp')
+     Mem.alloc m1' tf.(fn_comp) 0 tf.(fn_stacksize) = (m2', sp')
   /\ store_stack m2' (Vptr sp' Ptrofs.zero) Tptr tf.(fn_link_ofs) parent = Some m3'
   /\ store_stack m3' (Vptr sp' Ptrofs.zero) Tptr tf.(fn_retaddr_ofs) ra = Some m4'
   /\ star step tge
@@ -1067,7 +1078,7 @@ Local Opaque b fe.
   generalize (frame_env_range b) (frame_env_aligned b). replace (make_env b) with fe by auto. simpl.
   intros LAYOUT1 LAYOUT2.
   (* Allocation step *)
-  destruct (Mem.alloc m1' c 0 (fe_size fe)) as [m2' sp'] eqn:ALLOC'.
+  destruct (Mem.alloc m1' _ 0 (fe_size fe)) as [m2' sp'] eqn:ALLOC'.
   exploit alloc_parallel_rule_2.
   eexact SEP. eexact ALLOC. eexact ALLOC'.
   instantiate (1 := fe_stack_data fe). tauto.
@@ -1322,9 +1333,9 @@ Inductive match_stacks (j: meminj):
   | match_stacks_empty: forall sg,
       tailcall_possible sg ->
       match_stacks j nil nil sg
-  | match_stacks_cons: forall f sp ls c cs fb sp' ra c' cs' sg cmp trf
+  | match_stacks_cons: forall f sp ls c cs fb sp' ra c' cs' sg trf
         (TAIL: is_tail c (Linear.fn_code f))
-        (FINDF: Genv.find_funct_ptr tge fb = Some (cmp, Internal trf))
+        (FINDF: Genv.find_funct_ptr tge fb = Some (Internal trf))
         (TRF: transf_function f = OK trf)
         (TRC: transl_code (make_env (function_bounds f)) c = c')
         (INJ: j sp = Some(sp', (fe_stack_data (make_env (function_bounds f)))))
@@ -1528,17 +1539,17 @@ Lemma senv_preserved:
 Proof (Genv.senv_match TRANSF).
 
 Lemma functions_translated:
-  forall v c f,
-  Genv.find_funct ge v = Some (c, f) ->
+  forall v f,
+  Genv.find_funct ge v = Some f ->
   exists tf,
-  Genv.find_funct tge v = Some (c, tf) /\ transf_fundef f = OK tf.
+  Genv.find_funct tge v = Some tf /\ transf_fundef f = OK tf.
 Proof (Genv.find_funct_transf_partial TRANSF).
 
 Lemma function_ptr_translated:
-  forall b c f,
-  Genv.find_funct_ptr ge b = Some (c, f) ->
+  forall b f,
+  Genv.find_funct_ptr ge b = Some f ->
   exists tf,
-  Genv.find_funct_ptr tge b = Some (c, tf) /\ transf_fundef f = OK tf.
+  Genv.find_funct_ptr tge b = Some tf /\ transf_fundef f = OK tf.
 Proof (Genv.find_funct_ptr_transf_partial TRANSF).
 
 Lemma sig_preserved:
@@ -1551,13 +1562,13 @@ Proof.
 Qed.
 
 Lemma find_function_translated:
-  forall j ls rs m ros c f,
+  forall j ls rs m ros f,
   agree_regs j ls rs ->
   m |= globalenv_inject ge j ->
-  Linear.find_function ge ros ls = Some (c, f) ->
+  Linear.find_function ge ros ls = Some f ->
   exists bf, exists tf,
      find_function_ptr tge ros rs = Some bf
-  /\ Genv.find_funct_ptr tge bf = Some (c, tf)
+  /\ Genv.find_funct_ptr tge bf = Some tf
   /\ transf_fundef f = OK tf.
 Proof.
   intros until f; intros AG [bound [_ [?????]]] FF.
@@ -1766,10 +1777,10 @@ End BUILTIN_ARGUMENTS.
 
 Inductive match_states: Linear.state -> Mach.state -> Prop :=
   | match_states_intro:
-      forall cs f sp c ls m cs' fb sp' rs m' j cmp tf
+      forall cs f sp c ls m cs' fb sp' rs m' j tf
         (STACKS: match_stacks j cs cs' f.(Linear.fn_sig))
         (TRANSL: transf_function f = OK tf)
-        (FIND: Genv.find_funct_ptr tge fb = Some (cmp, Internal tf))
+        (FIND: Genv.find_funct_ptr tge fb = Some (Internal tf))
         (AGREGS: agree_regs j ls rs)
         (AGLOCS: agree_locs f ls (parent_locset cs))
         (INJSP: j sp = Some(sp', fe_stack_data (make_env (function_bounds f))))
@@ -1781,15 +1792,15 @@ Inductive match_states: Linear.state -> Mach.state -> Prop :=
       match_states (Linear.State cs f (Vptr sp Ptrofs.zero) c ls m)
                    (Mach.State cs' fb (Vptr sp' Ptrofs.zero) (transl_code (make_env (function_bounds f)) c) rs m')
   | match_states_call:
-      forall cs f ls m cs' fb rs m' j cmp tf
+      forall cs f ls m cs' fb rs m' j tf
         (STACKS: match_stacks j cs cs' (Linear.funsig f))
         (TRANSL: transf_fundef f = OK tf)
-        (FIND: Genv.find_funct_ptr tge fb = Some (cmp, tf))
+        (FIND: Genv.find_funct_ptr tge fb = Some (tf))
         (AGREGS: agree_regs j ls rs)
         (SEP: m' |= stack_contents j cs cs'
                  ** minjection j m
                  ** globalenv_inject ge j),
-      match_states (Linear.Callstate cs cmp f ls m)
+      match_states (Linear.Callstate cs f ls m)
                    (Mach.Callstate cs' fb rs m')
   | match_states_return:
       forall cs ls m cs' rs m' j sg
@@ -2143,12 +2154,12 @@ Proof.
 Qed.
 
 Lemma wt_prog:
-  forall i c fd, In (i, Gfun c fd) prog.(prog_defs) -> wt_fundef fd.
+  forall i fd, In (i, Gfun fd) prog.(prog_defs) -> wt_fundef fd.
 Proof.
   intros.
   exploit list_forall2_in_left. eexact (proj1 TRANSF). eauto.
   intros ([i' g] & P & Q & R). simpl in *. inv R. destruct fd; simpl in *.
-- monadInv H4. unfold transf_function in EQ.
+- monadInv H2. unfold transf_function in EQ.
   destruct (wt_function f). auto. discriminate.
 - auto.
 Qed.

@@ -277,7 +277,7 @@ Inductive wt_fundef: fundef -> Prop :=
       wt_fundef (External ef).
 
 Definition wt_program (p: program): Prop :=
-  forall i c f, In (i, Gfun c f) (prog_defs p) -> wt_fundef f.
+  forall i f, In (i, Gfun f) (prog_defs p) -> wt_fundef f.
 
 (** * Soundness of type inference *)
 
@@ -445,11 +445,11 @@ Inductive wt_state: state -> Prop :=
         (WT_ENV: wt_env env e)
         (DEF_ENV: def_env f e),
       wt_state (State f s k sp e m)
-  | wt_call_state: forall c f args k m
+  | wt_call_state: forall f args k m
         (WT_FD: wt_fundef f)
         (WT_ARGS: Val.has_type_list args (funsig f).(sig_args))
         (WT_CONT: wt_cont_call k (funsig f).(sig_res)),
-      wt_state (Callstate c f args k m)
+      wt_state (Callstate f args k m)
   | wt_return_state: forall v k m tret
         (WT_RES: Val.has_type v (match tret with None => Tint | Some t => t end))
         (WT_CONT: wt_cont_call k tret),
@@ -623,8 +623,8 @@ Proof.
 - split. eapply wt_eval_expr; eauto. eauto.
 Qed.
 
-Lemma wt_find_funct: forall v c fd,
-  Genv.find_funct ge v = Some (c, fd) -> wt_fundef fd.
+Lemma wt_find_funct: forall v fd,
+  Genv.find_funct ge v = Some fd -> wt_fundef fd.
 Proof.
   intros. eapply Genv.find_funct_prop; eauto.
 Qed.

@@ -1124,6 +1124,13 @@ Inductive fundef : Type :=
   | Internal: F -> fundef
   | External: external_function -> typelist -> type -> calling_convention -> fundef.
 
+Global Instance has_comp_fundef {CF: has_comp F} : has_comp fundef :=
+  fun fd =>
+    match fd with
+    | Internal f => comp_of f
+    | External ef _ _ _ => comp_of ef
+    end.
+
 (** A program, or compilation unit, is composed of:
 - a list of definitions of functions and global variables;
 - the names of functions and global variables that are public (not static);

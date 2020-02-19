@@ -31,10 +31,25 @@ Definition ident := positive.
 
 Definition ident_eq := peq.
 
+(** Programs entities can be grouped into compartments, which remain isolated
+  from each other during execution. *)
+
 Definition compartment : Type := positive.
 Definition default_compartment : compartment := 1%positive.
 Definition eq_compartment (c1 c2: compartment) :=
   peq c1 c2.
+
+Set Typeclasses Strict Resolution.
+(** An instance of [has_comp] represents a syntactic entity that belongs to a
+  compartment. We turn on strict resolution to prevent typeclass inference from
+  triggering when the type parameter is still unknown.  *)
+Class has_comp (T: Type) := comp_of: T -> compartment.
+Unset Typeclasses Strict Resolution.
+
+Class has_comp_match (C T S: Type) {CT: has_comp T} {CS: has_comp S}
+                     (R : C -> T -> S -> Prop) :=
+  comp_match:
+    forall c x y, R c x y -> comp_of x = comp_of y.
 
 (** The intermediate languages are weakly typed, using the following types: *)
 
@@ -244,10 +259,13 @@ Qed.
 
 Record globvar (V: Type) : Type := mkglobvar {
   gvar_info: V;                    (**r language-dependent info, e.g. a type *)
+  gvar_comp: compartment;          (**r the compartment where the variable resides *)
   gvar_init: list init_data;       (**r initialization data *)
   gvar_readonly: bool;             (**r read-only variable? (const) *)
   gvar_volatile: bool              (**r volatile variable? *)
 }.
+
+Instance has_comp_globvar V : has_comp (globvar V) := @gvar_comp _.
 
 (** Whole programs consist of:
 - a collection of global definitions (name and description);
@@ -262,17 +280,18 @@ taken as parameters to the [program] type.  The other parts of whole
 programs are common to all languages. *)
 
 Inductive globdef (F V: Type) : Type :=
-  | Gfun (c: compartment) (f: F)
-  | Gvar (c: compartment) (v: globvar V).
+  | Gfun (f: F)
+  | Gvar (v: globvar V).
 
 Arguments Gfun [F V].
 Arguments Gvar [F V].
 
-Definition globdef_compartment F V (g: globdef F V) : compartment :=
-  match g with
-  | Gfun c _ => c
-  | Gvar c _ => c
-  end.
+Instance has_comp_globdef F V {CF: has_comp F} : has_comp (globdef F V) :=
+  fun gd =>
+    match gd with
+    | Gfun f => comp_of f
+    | Gvar v => comp_of v
+    end.
 
 Record program (F V: Type) : Type := mkprogram {
   prog_defs: list (ident * globdef F V);
@@ -339,8 +358,8 @@ Variable transf: A -> B.
 
 Definition transform_program_globdef (idg: ident * globdef A V) : ident * globdef B V :=
   match idg with
-  | (id, Gfun c f) => (id, Gfun c (transf f))
-  | (id, Gvar c v) => (id, Gvar c v)
+  | (id, Gfun f) => (id, Gfun (transf f))
+  | (id, Gvar v) => (id, Gvar v)
   end.
 
 Definition transform_program (p: program A V) : program B V :=
@@ -366,27 +385,27 @@ Local Open Scope error_monad_scope.
 Section TRANSF_PROGRAM_GEN.
 
 Variables A B V W: Type.
-Variable transf_fun: ident -> compartment -> A -> res B.
-Variable transf_var: ident -> compartment -> V -> res W.
+Variable transf_fun: ident -> A -> res B.
+Variable transf_var: ident -> V -> res W.
 
-Definition transf_globvar (i: ident) (c: compartment) (g: globvar V) : res (globvar W) :=
-  do info' <- transf_var i c g.(gvar_info);
-  OK (mkglobvar info' g.(gvar_init) g.(gvar_readonly) g.(gvar_volatile)).
+Definition transf_globvar (i: ident) (g: globvar V) : res (globvar W) :=
+  do info' <- transf_var i g.(gvar_info);
+  OK (mkglobvar info' g.(gvar_comp) g.(gvar_init) g.(gvar_readonly) g.(gvar_volatile)).
 
 Fixpoint transf_globdefs (l: list (ident * globdef A V)) : res (list (ident * globdef B W)) :=
   match l with
   | nil => OK nil
-  | (id, Gfun c f) :: l' =>
-    match transf_fun id c f with
+  | (id, Gfun f) :: l' =>
+    match transf_fun id f with
       | Error msg => Error (MSG "In function " :: CTX id :: MSG ": " :: msg)
       | OK tf =>
-        do tl' <- transf_globdefs l'; OK ((id, Gfun c tf) :: tl')
+        do tl' <- transf_globdefs l'; OK ((id, Gfun tf) :: tl')
     end
-  | (id, Gvar c v) :: l' =>
-    match transf_globvar id c v with
+  | (id, Gvar v) :: l' =>
+    match transf_globvar id v with
       | Error msg => Error (MSG "In variable " :: CTX id :: MSG ": " :: msg)
       | OK tv =>
-        do tl' <- transf_globdefs l'; OK ((id, Gvar c tv) :: tl')
+        do tl' <- transf_globdefs l'; OK ((id, Gvar tv) :: tl')
     end
   end.
 
@@ -406,7 +425,7 @@ Variable A B V: Type.
 Variable transf_fun: A -> res B.
 
 Definition transform_partial_program (p: program A V) : res (program B V) :=
-  transform_partial_program2 (fun i c f => transf_fun f) (fun i c v => OK v) p.
+  transform_partial_program2 (fun i f => transf_fun f) (fun i v => OK v) p.
 
 End TRANSF_PARTIAL_PROGRAM.
 
@@ -416,7 +435,7 @@ Lemma transform_program_partial_program:
 Proof.
   intros. unfold transform_partial_program, transform_partial_program2.
   assert (EQ: forall l,
-              transf_globdefs (fun i c f => OK (transf_fun f)) (fun i c (v: V) => OK v) l =
+              transf_globdefs (fun i f => OK (transf_fun f)) (fun i (v: V) => OK v) l =
               OK (List.map (transform_program_globdef transf_fun) l)).
   { induction l as [ | [id g] l]; simpl.
   - auto.
@@ -482,6 +501,12 @@ Inductive external_function : Type :=
          assembly.  Takes zero, one or several arguments like [EF_annot].
          Unlike [EF_annot], produces no observable event. *)
 
+(** For now, we group all external functions together in the default
+compartment.  Eventually this will probably be refined. *)
+
+Instance has_comp_external_function : has_comp external_function :=
+  fun _ => default_compartment.
+
 (** The type signature of an external function. *)
 
 Definition ef_sig (ef: external_function): signature :=
@@ -543,6 +568,13 @@ Inductive fundef (F: Type): Type :=
   | External: external_function -> fundef F.
 
 Arguments External [F].
+
+Instance has_comp_fundef F {CF: has_comp F} : has_comp (fundef F) :=
+  fun fd =>
+    match fd with
+    | Internal f => comp_of f
+    | External ef => comp_of ef
+    end.
 
 Section TRANSF_FUNDEF.
 

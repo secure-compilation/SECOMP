@@ -687,6 +687,7 @@ Definition transl_function (f: CminorSel.function) : Errors.res RTL.function :=
   | Error msg => Errors.Error msg
   | OK (nentry, rparams) s i =>
       Errors.OK (RTL.mkfunction
+                   f.(CminorSel.fn_comp)
                    f.(CminorSel.fn_sig)
                    rparams
                    f.(CminorSel.fn_stackspace)

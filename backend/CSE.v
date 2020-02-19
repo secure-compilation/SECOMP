@@ -566,6 +566,7 @@ Definition transf_function (rm: romem) (f: function) : res function :=
   | None => Error (msg "CSE failure")
   | Some approxs =>
       OK(mkfunction
+           f.(fn_comp)
            f.(fn_sig)
            f.(fn_params)
            f.(fn_stacksize)

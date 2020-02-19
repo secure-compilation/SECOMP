@@ -24,7 +24,7 @@ Local Open Scope string_scope.
 (** * Properties of the helper functions *)
 
 Definition helper_declared {F V: Type} (p: AST.program (AST.fundef F) V) (id: ident) (name: string) (sg: signature) : Prop :=
-  (prog_defmap p)!id = Some (Gfun default_compartment (External (EF_runtime name sg))).
+  (prog_defmap p)!id = Some (Gfun (External (EF_runtime name sg))).
 
 Definition helper_functions_declared {F V: Type} (p: AST.program (AST.fundef F) V) (hf: helper_functions) : Prop :=
      helper_declared p i64_dtos  "__compcert_i64_dtos" sig_f_l

@@ -644,7 +644,7 @@ Qed.
 Inductive reduction: Type :=
   | Lred (rule: string) (l': expr) (m': mem)
   | Rred (rule: string) (r': expr) (m': mem) (t: trace)
-  | Callred (rule: string) (c: compartment) (fd: fundef) (args: list val) (tyres: type) (m': mem)
+  | Callred (rule: string) (fd: fundef) (args: list val) (tyres: type) (m': mem)
   | Stuckred.
 
 Section EXPRS.
@@ -873,10 +873,10 @@ Fixpoint step_expr (k: kind) (a: expr) (m: mem): reducts expr :=
       | Some(vf, tyf), Some vtl =>
           match classify_fun tyf with
           | fun_case_f tyargs tyres cconv =>
-              do c, fd <- Genv.find_funct ge vf;
+              do fd <- Genv.find_funct ge vf;
               do vargs <- sem_cast_arguments vtl tyargs m;
               check type_eq (type_of_fundef fd) (Tfunction tyargs tyres cconv);
-              topred (Callred "red_call" c fd vargs ty m)
+              topred (Callred "red_call" fd vargs ty m)
           | _ => stuck
           end
       | _, _ =>
@@ -921,8 +921,8 @@ Inductive imm_safe_t: kind -> expr -> mem -> Prop :=
       rred ge r m t r' m' -> possible_trace w t w' ->
       context RV to C ->
       imm_safe_t to (C r) m
-  | imm_safe_t_callred: forall to C r m c fd args ty,
-      callred ge r m c fd args ty ->
+  | imm_safe_t_callred: forall to C r m fd args ty,
+      callred ge r m fd args ty ->
       context RV to C ->
       imm_safe_t to (C r) m.
 
@@ -990,9 +990,9 @@ Definition invert_expr_prop (a: expr) (m: mem) : Prop :=
       exists v, sem_cast v1 ty1 tycast m = Some v
   | Ecall (Eval vf tyf) rargs ty =>
       exprlist_all_values rargs ->
-      exists tyargs tyres cconv c fd vl,
+      exists tyargs tyres cconv fd vl,
          classify_fun tyf = fun_case_f tyargs tyres cconv
-      /\ Genv.find_funct ge vf = Some (c, fd)
+      /\ Genv.find_funct ge vf = Some fd
       /\ cast_arguments m rargs tyargs vl
       /\ type_of_fundef fd = Tfunction tyargs tyres cconv
   | Ebuiltin ef tyargs rargs ty =>
@@ -1034,12 +1034,12 @@ Proof.
 Qed.
 
 Lemma callred_invert:
-  forall r c fd args ty m,
-  callred ge r m c fd args ty ->
+  forall r fd args ty m,
+  callred ge r m fd args ty ->
   invert_expr_prop r m.
 Proof.
   intros. inv H. simpl.
-  intros. exists tyargs, tyres, cconv, c, fd, args; auto.
+  intros. exists tyargs, tyres, cconv, fd, args; auto.
 Qed.
 
 Scheme context_ind2 := Minimality for context Sort Prop
@@ -1131,7 +1131,7 @@ Definition reduction_ok (k: kind) (a: expr) (m: mem) (rd: reduction) : Prop :=
   match k, rd with
   | LV, Lred _ l' m' => lred ge e a m l' m'
   | RV, Rred _ r' m' t => rred ge a m t r' m' /\ exists w', possible_trace w t w'
-  | RV, Callred _ c fd args tyres m' => callred ge a m c fd args tyres /\ m' = m
+  | RV, Callred _ fd args tyres m' => callred ge a m fd args tyres /\ m' = m
   | LV, Stuckred => ~imm_safe_t k a m
   | RV, Stuckred => ~imm_safe_t k a m
   | _, _ => False
@@ -1484,7 +1484,7 @@ Proof with (try (apply not_invert_ok; simpl; intro; myinv; intuition congruence;
   rewrite (is_val_inv _ _ _ Heqo). exploit is_val_list_all_values; eauto. intros ALLVAL.
   (* top *)
   destruct (classify_fun tyf) as [tyargs tyres cconv|] eqn:?...
-  destruct (Genv.find_funct ge vf) as [[c fd]|] eqn:?...
+  destruct (Genv.find_funct ge vf) as [fd|] eqn:?...
   destruct (sem_cast_arguments vtl tyargs m) as [vargs|] eqn:?...
   destruct (type_eq (type_of_fundef fd) (Tfunction tyargs tyres cconv))...
   apply topred_ok; auto. red. split; auto. eapply red_call; eauto.
@@ -1613,9 +1613,9 @@ Proof.
 Qed.
 
 Lemma callred_topred:
-  forall a c fd args ty m,
-  callred ge a m c fd args ty ->
-  exists rule, step_expr RV a m = topred (Callred rule c fd args ty m).
+  forall a fd args ty m,
+  callred ge a m fd args ty ->
+  exists rule, step_expr RV a m = topred (Callred rule fd args ty m).
 Proof.
   induction 1; simpl.
   rewrite H2. exploit sem_cast_arguments_complete; eauto. intros [vtl [A B]].
@@ -1933,7 +1933,7 @@ Definition expr_final_state (f: function) (k: cont) (e: env) (C_rd: (expr -> exp
   match snd C_rd with
   | Lred rule a m => TR rule E0 (ExprState f (fst C_rd a) k e m)
   | Rred rule a m t => TR rule t (ExprState f (fst C_rd a) k e m)
-  | Callred rule c fd vargs ty m => TR rule E0 (Callstate c fd vargs (Kcall f e (fst C_rd) ty k) m)
+  | Callred rule fd vargs ty m => TR rule E0 (Callstate fd vargs (Kcall f e (fst C_rd) ty k) m)
   | Stuckred => TR "step_stuck" E0 Stuckstate
   end.
 
@@ -2045,12 +2045,12 @@ Definition do_step (w: world) (s: state) : list transition :=
       | None => nil
       end
 
-  | Callstate c (Internal f) vargs k m =>
+  | Callstate (Internal f) vargs k m =>
       check (list_norepet_dec ident_eq (var_names (fn_params f) ++ var_names (fn_vars f)));
       let (e,m1) := do_alloc_variables empty_env m (f.(fn_params) ++ f.(fn_vars)) in
       do m2 <- sem_bind_parameters w e m1 f.(fn_params) vargs;
       ret "step_internal_function" (State f f.(fn_body) k e m2)
-  | Callstate c (External ef _ _ _) vargs k m =>
+  | Callstate (External ef _ _ _) vargs k m =>
       match do_external ef w vargs m with
       | None => nil
       | Some(w',t,v,m') => TR "step_external_function" t (Returnstate v k m') :: nil
@@ -2177,7 +2177,7 @@ Proof with (unfold ret; eauto with coqlib).
   unfold do_step; rewrite NOTVAL.
   exploit callred_topred; eauto. instantiate (1 := w). instantiate (1 := e).
   intros (rule & STEP). exists rule.
-  change (TR rule E0 (Callstate c fd vargs (Kcall f e C ty k) m)) with (expr_final_state f k e (C, Callred rule c fd vargs ty m)).
+  change (TR rule E0 (Callstate fd vargs (Kcall f e C ty k) m)) with (expr_final_state f k e (C, Callred rule fd vargs ty m)).
   apply in_map.
   generalize (step_expr_context e w _ _ _ H1 a m). unfold reducts_incl.
   intro. replace C with (fun x => C x). apply H2.
@@ -2225,9 +2225,9 @@ Definition do_initial_state (p: program): option (genv * state) :=
   let ge := globalenv p in
   do m0 <- Genv.init_mem p;
   do b <- Genv.find_symbol ge p.(prog_main);
-  do c, f <- Genv.find_funct_ptr ge b;
+  do f <- Genv.find_funct_ptr ge b;
   check (type_eq (type_of_fundef f) (Tfunction Tnil type_int32s cc_default));
-  Some (ge, Callstate c f nil Kstop m0).
+  Some (ge, Callstate f nil Kstop m0).
 
 Definition at_final_state (S: state): option int :=
   match S with
