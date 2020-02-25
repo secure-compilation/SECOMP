@@ -25,11 +25,10 @@ Definition match_prog (p tp: program) : Prop :=
     match_program (fun ctx f tf => transf_fundef f = OK tf) eq p tp
  /\ prog_types tp = prog_types p.
 
-Instance comp_transf_fundef P:
-  has_comp_match (fun (ctx : P) f tf => transf_fundef f = OK tf).
+Instance comp_transf_fundef: has_comp_transl_partial transf_fundef.
 Proof.
   unfold transf_fundef, transf_function.
-  intros cu [f|ef] ? H; monadInv H; trivial.
+  intros [f|ef] ? H; monadInv H; trivial.
   now monadInv EQ.
 Qed.
 

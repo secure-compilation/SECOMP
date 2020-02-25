@@ -46,10 +46,38 @@ Set Typeclasses Strict Resolution.
 Class has_comp (T: Type) := comp_of: T -> compartment.
 Unset Typeclasses Strict Resolution.
 
-Class has_comp_match (C T S: Type) {CT: has_comp T} {CS: has_comp S}
+Class has_comp_transl {T S: Type}
+                      {CT: has_comp T} {CS: has_comp S}
+                      (f : T -> S) :=
+  comp_transl:
+    forall x, comp_of (f x) = comp_of x.
+
+Class has_comp_transl_partial {T S: Type}
+                              {CT: has_comp T} {CS: has_comp S}
+                              (f : T -> res S) :=
+  comp_transl_partial:
+    forall x y, f x = OK y -> comp_of x = comp_of y.
+
+Class has_comp_match {C T S: Type} {CT: has_comp T} {CS: has_comp S}
                      (R : C -> T -> S -> Prop) :=
   comp_match:
     forall c x y, R c x y -> comp_of x = comp_of y.
+
+Instance has_comp_transl_match:
+  forall {C T S: Type}
+         {CT: has_comp T} {CS: has_comp S}
+         (f: T -> S) {Cf: has_comp_transl f},
+  has_comp_match (fun (c : C) x y => y = f x).
+Proof. now intros C T S ???? c x y ->; rewrite comp_transl. Qed.
+
+Instance has_comp_transl_partial_match:
+  forall {C T S: Type}
+         {CT: has_comp T} {CS: has_comp S}
+         (f: T -> res S) {Cf: has_comp_transl_partial f},
+  has_comp_match (fun (c : C) x y => f x = OK y).
+Proof.
+  intros C T S ???? c. exact comp_transl_partial.
+Qed.
 
 (** The intermediate languages are weakly typed, using the following types: *)
 

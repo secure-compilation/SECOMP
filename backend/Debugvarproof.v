@@ -23,11 +23,10 @@ Require Import Debugvar.
 Definition match_prog (p tp: program) :=
   match_program (fun _ f tf => transf_fundef f = OK tf) eq p tp.
 
-Instance comp_transf_fundef P:
-  has_comp_match (fun (_: P) f tf => transf_fundef f = OK tf).
+Instance comp_transf_fundef: has_comp_transl_partial transf_fundef.
 Proof.
   unfold transf_fundef, transf_function.
-  intros cu [f|ef] ? H; monadInv H; trivial.
+  intros [f|ef] ? H; monadInv H; trivial.
   now destruct ana_function; inv EQ.
 Qed.
 

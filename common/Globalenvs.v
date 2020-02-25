@@ -1857,7 +1857,7 @@ Section TRANSFORM_PARTIAL.
 Context {A B V: Type} {LA: Linker A} {LV: Linker V}.
 Context {CA: has_comp A} {CB: has_comp B}.
 Context {transf: A -> res B} {p: program A V} {tp: program B V}.
-Context {CAB: has_comp_match (fun (cu: program A V) f tf => transf f = OK tf)}.
+Context {CAB: has_comp_transl_partial transf}.
 Hypothesis progmatch: match_program (fun cu f tf => transf f = OK tf) eq p tp.
 
 Theorem find_funct_ptr_transf_partial:
@@ -1908,7 +1908,7 @@ Section TRANSFORM_TOTAL.
 Context {A B V: Type} {LA: Linker A} {LV: Linker V}.
 Context {CA: has_comp A} {CB: has_comp B}.
 Context {transf: A -> B} {p: program A V} {tp: program B V}.
-Context {CAB: has_comp_match (fun (cu: program A V) f tf => tf = transf f)}.
+Context {CAB: has_comp_transl transf}.
 Hypothesis progmatch: match_program (fun cu f tf => tf = transf f) eq p tp.
 
 Theorem find_funct_ptr_transf:

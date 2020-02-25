@@ -204,11 +204,10 @@ Qed.
 Definition match_prog (p tp: RTL.program) :=
   match_program (fun cu f tf => tf = transf_fundef f) eq p tp.
 
-Instance comp_transf_fundef P:
-  has_comp_match (fun (cu : P) f tf => tf = transf_fundef f).
+Instance comp_transf_fundef: has_comp_transl transf_fundef.
 Proof.
   unfold transf_fundef, transf_function, RTL.transf_function.
-  intros cu [f|ef] ? ->; simpl; trivial.
+  intros [f|ef]; simpl; trivial.
   now destruct zeq.
 Qed.
 

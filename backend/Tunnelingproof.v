@@ -21,11 +21,8 @@ Require Import Tunneling.
 Definition match_prog (p tp: program) :=
   match_program (fun ctx f tf => tf = tunnel_fundef f) eq p tp.
 
-Instance comp_tunnel_fundef P:
-  has_comp_match (fun (_: P) f tf => tf = tunnel_fundef f).
-Proof.
-  now intros cu [f|tf] ? ->.
-Qed.
+Instance comp_tunnel_fundef: has_comp_transl tunnel_fundef.
+Proof. now intros [f|tf]. Qed.
 
 Lemma transf_program_match:
   forall p, match_prog p (tunnel_program p).
