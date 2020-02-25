@@ -511,7 +511,7 @@ Definition do_builtin_or_external (name: string) (sg: signature)
 Definition do_external (ef: external_function):
        world -> list val -> mem -> option (world * trace * val * mem) :=
   match ef with
-  | EF_external name sg => do_external_function name sg ge
+  | EF_external name cp sg => do_external_function name sg ge
   | EF_builtin name sg => do_builtin_or_external name sg
   | EF_runtime name sg => do_builtin_or_external name sg
   | EF_vload chunk => do_ef_volatile_load chunk

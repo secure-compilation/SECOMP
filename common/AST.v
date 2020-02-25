@@ -453,7 +453,7 @@ Qed.
   and associated operations. *)
 
 Inductive external_function : Type :=
-  | EF_external (name: string) (sg: signature)
+  | EF_external (name: string) (cp: compartment) (sg: signature)
      (** A system call or library function.  Produces an event
          in the trace. *)
   | EF_builtin (name: string) (sg: signature)
@@ -501,17 +501,17 @@ Inductive external_function : Type :=
          assembly.  Takes zero, one or several arguments like [EF_annot].
          Unlike [EF_annot], produces no observable event. *)
 
-(** For now, we group all external functions together in the default
+(** For now, we group most external functions together in the default
 compartment.  Eventually this will probably be refined. *)
 
 Instance has_comp_external_function : has_comp external_function :=
-  fun _ => default_compartment.
+  fun ef => match ef with EF_external _ cp _ => cp | _ => default_compartment end.
 
 (** The type signature of an external function. *)
 
 Definition ef_sig (ef: external_function): signature :=
   match ef with
-  | EF_external name sg => sg
+  | EF_external name cp sg => sg
   | EF_builtin name sg => sg
   | EF_runtime name sg => sg
   | EF_vload chunk => mksignature (Tptr :: nil) (Some (type_of_chunk chunk)) cc_default
@@ -529,7 +529,7 @@ Definition ef_sig (ef: external_function): signature :=
 
 Definition ef_inline (ef: external_function) : bool :=
   match ef with
-  | EF_external name sg => false
+  | EF_external name cp sg => false
   | EF_builtin name sg => true
   | EF_runtime name sg => false
   | EF_vload chunk => true

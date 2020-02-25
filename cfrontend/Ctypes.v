@@ -1404,16 +1404,16 @@ Definition link_fundef {F: Type} (fd1 fd2: fundef F) :=
       then Some (External ef1 targs1 tres1 cc1)
       else None
   | Internal f, External ef targs tres cc =>
-      match ef with EF_external id sg => Some (Internal f) | _ => None end
+      match ef with EF_external id cp sg => Some (Internal f) | _ => None end
   | External ef targs tres cc, Internal f =>
-      match ef with EF_external id sg => Some (Internal f) | _ => None end
+      match ef with EF_external id cp sg => Some (Internal f) | _ => None end
   end.
 
 Inductive linkorder_fundef {F: Type}: fundef F -> fundef F -> Prop :=
   | linkorder_fundef_refl: forall fd,
       linkorder_fundef fd fd
-  | linkorder_fundef_ext_int: forall f id sg targs tres cc,
-      linkorder_fundef (External (EF_external id sg) targs tres cc) (Internal f).
+  | linkorder_fundef_ext_int: forall f id cp sg targs tres cc,
+      linkorder_fundef (External (EF_external id cp sg) targs tres cc) (Internal f).
 
 Program Instance Linker_fundef (F: Type): Linker (fundef F) := {
   link := link_fundef;

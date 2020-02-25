@@ -966,7 +966,7 @@ let rec convertExpr env e =
       let sg =
         signature_of_type targs tres
            { AST.cc_vararg = true; cc_unproto = false; cc_structret = false} in
-      Ebuiltin( AST.EF_external(coqstring_of_camlstring "printf", sg),
+      Ebuiltin( AST.EF_external(coqstring_of_camlstring "printf", AST.default_compartment, sg),
                targs, convertExprList env args, tres)
 
   | C.ECall(fn, args) ->
@@ -1257,7 +1257,7 @@ let convertFundecl env (sto, id, ty, optinit) =
     if Str.string_match re_builtin id.name 0
     && List.mem_assoc id.name builtins.builtin_functions
     then AST.EF_builtin(id'', sg)
-    else AST.EF_external(id'', sg) in
+    else AST.EF_external(id'', AST.default_compartment, sg) in
   (id',  AST.Gfun(Ctypes.External(ef, args, res, cconv)))
 
 (** Initializers *)
