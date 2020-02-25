@@ -374,8 +374,8 @@ Proof.
 Qed.
 
 Lemma expand_instr_unchanged:
-  forall ctx pc instr s x s' i pc',
-  expand_instr fe rec ctx pc instr s = R x s' i ->
+  forall ctx cp pc instr s x s' i pc',
+  expand_instr fe rec ctx cp pc instr s = R x s' i ->
   Ple ctx.(dpc) s.(st_nextnode) ->
   Plt pc' s.(st_nextnode) ->
   pc' <> spc ctx pc ->
@@ -384,7 +384,7 @@ Proof.
   generalize set_instr_other; intros A.
   intros. unfold expand_instr in H; destruct instr; eauto.
 (* call *)
-  destruct (can_inline fe s1). eauto.
+  destruct (can_inline fe cp s1). eauto.
   monadInv H. unfold inline_function in EQ. monadInv EQ.
   transitivity (s2.(st_code)!pc'). eauto.
   transitivity (s5.(st_code)!pc'). eapply add_moves_unchanged; eauto.
@@ -394,7 +394,7 @@ Proof.
     simpl. monadInv EQ1; simpl. auto.
   monadInv EQ; simpl. monadInv EQ1; simpl. auto.
 (* tailcall *)
-  destruct (can_inline fe s1).
+  destruct (can_inline fe cp s1).
   destruct (retinfo ctx) as [[rpc rreg]|]; eauto.
   monadInv H. unfold inline_tail_function in EQ. monadInv EQ.
   transitivity (s2.(st_code)!pc'). eauto.
@@ -409,8 +409,8 @@ Proof.
 Qed.
 
 Lemma iter_expand_instr_unchanged:
-  forall ctx pc l s x s' i,
-  mlist_iter2 (expand_instr fe rec ctx) l s = R x s' i ->
+  forall ctx cp pc l s x s' i,
+  mlist_iter2 (expand_instr fe rec ctx cp) l s = R x s' i ->
   Ple ctx.(dpc) s.(st_nextnode) ->
   Plt pc s.(st_nextnode) ->
   ~In pc (List.map (spc ctx) (List.map (@fst _ _) l)) ->
@@ -476,8 +476,8 @@ Ltac inv_incr :=
   end.
 
 Lemma expand_instr_spec:
-  forall ctx pc instr s x s' i c,
-  expand_instr fe rec ctx pc instr s = R x s' i ->
+  forall ctx cp pc instr s x s' i c,
+  expand_instr fe rec ctx cp pc instr s = R x s' i ->
   (forall r, instr_defs instr = Some r -> Ple r ctx.(mreg)) ->
   Plt (spc ctx pc) s.(st_nextnode) ->
   Ple (ctx.(dreg) + ctx.(mreg)) s.(st_nextreg) ->
@@ -492,7 +492,7 @@ Proof.
   unfold expand_instr in EXP; destruct instr; simpl in DEFS;
   try (econstructor; eauto; fail).
 (* call *)
-  destruct (can_inline fe s1) as [|id f P Q].
+  destruct (can_inline fe cp s1) as [|id f P Q].
   (* not inlined *)
   eapply tr_call; eauto.
   (* inlined *)
@@ -519,7 +519,7 @@ Proof.
   red; simpl. subst s2; simpl in *. xomega.
   red; simpl. split. auto. apply align_le. apply min_alignment_pos.
 (* tailcall *)
-  destruct (can_inline fe s1) as [|id f P Q].
+  destruct (can_inline fe cp s1) as [|id f P Q].
   (* not inlined *)
   destruct (retinfo ctx) as [[rpc rreg] | ] eqn:?.
   (* turned into a call *)
@@ -560,8 +560,8 @@ subst s2; simpl in *; xomega.
 Qed.
 
 Lemma iter_expand_instr_spec:
-  forall ctx l s x s' i c,
-  mlist_iter2 (expand_instr fe rec ctx) l s = R x s' i ->
+  forall ctx cp l s x s' i c,
+  mlist_iter2 (expand_instr fe rec ctx cp) l s = R x s' i ->
   list_norepet (List.map (@fst _ _) l) ->
   (forall pc instr r, In (pc, instr) l -> instr_defs instr = Some r -> Ple r ctx.(mreg)) ->
   (forall pc instr, In (pc, instr) l -> Plt (spc ctx pc) s.(st_nextnode)) ->

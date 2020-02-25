@@ -293,10 +293,17 @@ Inductive inline_decision (ros: reg + ident) : Type :=
   | Cannot_inline
   | Can_inline (id: ident) (f: function) (P: ros = inr reg id) (Q: fenv!id = Some f).
 
-Program Definition can_inline (ros: reg + ident): inline_decision ros :=
+Program Definition can_inline (cp: compartment) (ros: reg + ident): inline_decision ros :=
   match ros with
   | inl r => Cannot_inline _
-  | inr id => match fenv!id with Some f => Can_inline _ id f _ _ | None => Cannot_inline _ end
+  | inr id =>
+    match fenv!id with
+    | Some f =>
+      if eq_compartment cp f.(fn_comp) then
+        Can_inline _ id f _ _
+      else Cannot_inline _
+    | None => Cannot_inline _
+    end
   end.
 
 (** Inlining of a call to function [f].  An appropriate context is
@@ -357,7 +364,7 @@ Definition inline_return (ctx: context) (or: option reg) (retinfo: node * reg) :
   into the destination register, then branches back to the successor
   of the inlined call. *)
 
-Definition expand_instr (ctx: context) (pc: node) (i: instruction): mon unit :=
+Definition expand_instr (ctx: context) (cp: compartment) (pc: node) (i: instruction): mon unit :=
   match i with
   | Inop s =>
       set_instr (spc ctx pc) (Inop (spc ctx s))
@@ -371,7 +378,7 @@ Definition expand_instr (ctx: context) (pc: node) (i: instruction): mon unit :=
       set_instr (spc ctx pc)
                 (Istore chunk (saddr ctx addr) (sregs ctx args) (sreg ctx src) (spc ctx s))
   | Icall sg ros args res s =>
-      match can_inline ros with
+      match can_inline cp ros with
       | Cannot_inline =>
           set_instr (spc ctx pc)
                     (Icall sg (sros ctx ros) (sregs ctx args) (sreg ctx res) (spc ctx s))
@@ -380,7 +387,7 @@ Definition expand_instr (ctx: context) (pc: node) (i: instruction): mon unit :=
           set_instr (spc ctx pc) (Inop n)
       end
   | Itailcall sg ros args =>
-      match can_inline ros with
+      match can_inline cp ros with
       | Cannot_inline =>
           match ctx.(retinfo) with
           | None =>
@@ -417,7 +424,7 @@ Definition expand_instr (ctx: context) (pc: node) (i: instruction): mon unit :=
 
 Definition expand_cfg_rec (ctx: context) (f: function): mon unit :=
   do x <- request_stack (ctx.(dstk) + ctx.(mstk));
-  ptree_mfold (expand_instr ctx) f.(fn_code).
+  ptree_mfold (expand_instr ctx f.(fn_comp)) f.(fn_code).
 
 End EXPAND_CFG.
 
