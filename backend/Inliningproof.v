@@ -20,11 +20,11 @@ Require Import Inlining Inliningspec.
 Definition match_prog (prog tprog: program) :=
   match_program (fun cunit f tf => transf_fundef (funenv_program cunit) f = OK tf) eq prog tprog.
 
-Instance comp_function_translated:
-  has_comp_match (fun cu f tf => transf_fundef (funenv_program cu) f = OK tf).
+Instance comp_transl_function fenv:
+  has_comp_transl_partial (transf_function fenv).
 Proof.
-  unfold transf_fundef, transf_partial_fundef, transf_function.
-  intros cu [f|ef] tf H; try now inv H.
+  unfold transf_function.
+  intros f tf H; try now inv H.
   destruct (expand_function _ _ _).
   destruct (zlt _ _); try easy.
   simpl in *.

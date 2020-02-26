@@ -22,13 +22,13 @@ Require Import CSEdomain CombineOp CombineOpproof CSE.
 Definition match_prog (prog tprog: RTL.program) :=
   match_program (fun cu f tf => transf_fundef (romem_for cu) f = OK tf) eq prog tprog.
 
-Instance comp_transf_fundef:
-  has_comp_match (fun cu f tf => transf_fundef (romem_for cu) f = OK tf).
+Instance comp_transf_function rm:
+  has_comp_transl_partial (transf_function rm).
 Proof.
-  unfold transf_fundef, transf_function.
-  intros cu [f|ef] ? H; monadInv H; trivial.
+  unfold transf_function.
+  intros f ? H.
   destruct analyze; try easy.
-  now inv EQ.
+  now inv H.
 Qed.
 
 Lemma transf_program_match:

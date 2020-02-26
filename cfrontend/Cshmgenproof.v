@@ -33,10 +33,15 @@ Definition match_varinfo (v: type) (tv: unit) := True.
 Definition match_prog (p: Clight.program) (tp: Csharpminor.program) : Prop :=
   match_program_gen match_fundef match_varinfo p p tp.
 
+Instance comp_transl_function ctx: has_comp_transl_partial (transl_function ctx).
+Proof.
+  unfold transl_function. now intros ?? H; monadInv H.
+Qed.
+
 Instance comp_match_fundef: has_comp_match match_fundef.
 Proof.
   intros cu ? ? [f tf H|]; trivial.
-  unfold transl_function in H; now monadInv H.
+  exact (comp_transl_partial _ H).
 Qed.
 
 Lemma transf_program_match:
@@ -1813,8 +1818,18 @@ Local Transparent Ctypes.Linker_program.
 Local Transparent Linker_fundef Linking.Linker_fundef.
   inv H3; inv H4; simpl in H2.
 + discriminate.
-+ destruct ef; inv H2. econstructor; split. simpl; eauto. left; constructor; auto.
-+ destruct ef; inv H2. econstructor; split. simpl; eauto. right; constructor; auto.
++ destruct ef; try easy.
+  destruct eq_compartment; try easy.
+  subst cp. inv H2.
+  econstructor; split.
+* simpl. rewrite (comp_transl_partial _ H5), dec_eq_true; eauto.
+* left; constructor; auto.
++ destruct ef; try easy.
+  destruct eq_compartment; try easy.
+  subst cp. inv H2.
+  econstructor; split.
+* simpl. rewrite (comp_transl_partial _ H3), dec_eq_true; eauto.
+* right; constructor; auto.
 + destruct (external_function_eq ef ef0 && typelist_eq args args0 &&
          type_eq res res0 && calling_convention_eq cc cc0) eqn:E'; inv H2.
   InvBooleans. subst ef0. econstructor; split.

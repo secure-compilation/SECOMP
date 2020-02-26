@@ -44,22 +44,34 @@ Class Linker (A: Type) := {
   linking is the internal definition.  Two external functions can link
   if they are identical. *)
 
-Definition link_fundef {F: Type} (fd1 fd2: fundef F) :=
+Definition link_fundef {F: Type} {CF: has_comp F} (fd1 fd2: fundef F) :=
   match fd1, fd2 with
   | Internal _, Internal _ => None
   | External ef1, External ef2 =>
       if external_function_eq ef1 ef2 then Some (External ef1) else None
   | Internal f, External ef =>
-      match ef with EF_external id cp sg => Some (Internal f) | _ => None end
+      match ef with
+      | EF_external id cp sg =>
+        if eq_compartment cp (comp_of f)
+        then Some (Internal f)
+        else None
+      | _ => None
+      end
   | External ef, Internal f =>
-      match ef with EF_external id cp sg => Some (Internal f) | _ => None end
+      match ef with
+      | EF_external id cp sg =>
+        if eq_compartment cp (comp_of f)
+        then Some (Internal f)
+        else None
+      | _ => None
+      end
   end.
 
-Inductive linkorder_fundef {F: Type}: fundef F -> fundef F -> Prop :=
+Inductive linkorder_fundef {F: Type} {CF: has_comp F} : fundef F -> fundef F -> Prop :=
   | linkorder_fundef_refl: forall fd, linkorder_fundef fd fd
-  | linkorder_fundef_ext_int: forall f id cp sg, linkorder_fundef (External (EF_external id cp sg)) (Internal f).
+  | linkorder_fundef_ext_int: forall f id sg, linkorder_fundef (External (EF_external id (comp_of f) sg)) (Internal f).
 
-Program Instance Linker_fundef (F: Type): Linker (fundef F) := {
+Program Instance Linker_fundef (F: Type) {CP: has_comp F} : Linker (fundef F) := {
   link := link_fundef;
   linkorder := linkorder_fundef
 }.
@@ -72,8 +84,14 @@ Defined.
 Next Obligation.
   destruct x, y; simpl in H.
 + discriminate.
-+ destruct e; inv H. split; constructor.
-+ destruct e; inv H. split; constructor.
++ destruct e; inv H.
+  destruct eq_compartment; try easy.
+  subst cp. inv H1.
+  split; constructor.
++ destruct e; inv H.
+  destruct eq_compartment; try easy.
+  subst cp. inv H1.
+  split; constructor.
 + destruct (external_function_eq e e0); inv H. split; constructor.
 Defined.
 
@@ -692,7 +710,10 @@ Class TransfLink {A B: Type} {LA: Linker A} {LB: Linker B} (transf: A -> B -> Pr
     exists tp, link tp1 tp2 = Some tp /\ transf p tp.
 
 Remark link_transf_partial_fundef:
-  forall (A B: Type) (tr1 tr2: A -> res B) (f1 f2: fundef A) (tf1 tf2: fundef B) (f: fundef A),
+  forall (A B: Type) {CA: has_comp A} {CB: has_comp B}
+         (tr1 tr2: A -> res B)
+         {CAB1: has_comp_transl_partial tr1} {CAB2: has_comp_transl_partial tr2}
+         (f1 f2: fundef A) (tf1 tf2: fundef B) (f: fundef A),
   link f1 f2 = Some f ->
   transf_partial_fundef tr1 f1 = OK tf1 ->
   transf_partial_fundef tr2 f2 = OK tf2 ->
@@ -703,14 +724,26 @@ Proof.
 Local Transparent Linker_fundef.
   simpl; intros. destruct f1 as [f1|ef1], f2 as [f2|ef2]; simpl in *; monadInv H0; monadInv H1.
 - discriminate.
-- destruct ef2; inv H. exists (Internal x); split; auto. left; simpl; rewrite EQ; auto.
-- destruct ef1; inv H. exists (Internal x); split; auto. right; simpl; rewrite EQ; auto.
+- destruct ef2; inv H.
+  destruct eq_compartment; try easy.
+  subst cp. inv H1.
+  exists (Internal x); split.
+    rewrite (CAB1 _ _ EQ). simpl. now rewrite dec_eq_true.
+  left; simpl; rewrite EQ; auto.
+- destruct ef1; inv H.
+  destruct eq_compartment; try easy.
+  subst cp. inv H1.
+  exists (Internal x). split.
+    rewrite (CAB2 _ _ EQ). simpl. now rewrite dec_eq_true.
+  right; simpl; rewrite EQ; auto.
 - destruct (external_function_eq ef1 ef2); inv H. exists (External ef2); split; auto. simpl. rewrite dec_eq_true; auto.
 Qed.
 
 Instance TransfPartialContextualLink
            {A B C V: Type} {LV: Linker V}
+           {CA: has_comp A} {CB: has_comp B}
            (tr_fun: C -> A -> res B)
+           {CAB: forall ctx, has_comp_transl_partial (tr_fun ctx)}
            (ctx_for: program (fundef A) V -> C):
   TransfLink (fun (p1: program (fundef A) V) (p2: program (fundef B) V) =>
               match_program
@@ -725,7 +758,9 @@ Qed.
 
 Instance TransfPartialLink
            {A B V: Type} {LV: Linker V}
-           (tr_fun: A -> res B):
+           {CA: has_comp A} {CB: has_comp B}
+           (tr_fun: A -> res B)
+           {CAB: has_comp_transl_partial tr_fun}:
   TransfLink (fun (p1: program (fundef A) V) (p2: program (fundef B) V) =>
               match_program
                 (fun cu f tf => AST.transf_partial_fundef tr_fun f = OK tf)
@@ -738,8 +773,10 @@ Proof.
 Qed.
 
 Instance TransfTotallContextualLink
-           {A B C V: Type} {LV: Linker V}
+           {A B C V: Type}
+           {CA: has_comp A} {CB: has_comp B} {LV: Linker V}
            (tr_fun: C -> A -> B)
+           {CAB: forall ctx, has_comp_transl (tr_fun ctx)}
            (ctx_for: program (fundef A) V -> C):
   TransfLink (fun (p1: program (fundef A) V) (p2: program (fundef B) V) =>
               match_program
@@ -750,15 +787,25 @@ Proof.
   eapply link_match_program; eauto.
 - intros. subst. destruct f1, f2; simpl in *.
 + discriminate.
-+ destruct e; inv H2. econstructor; eauto.
-+ destruct e; inv H2. econstructor; eauto.
++ destruct e; try easy.
+  destruct eq_compartment; try easy.
+  subst cp. inv H2.
+  rewrite CAB, dec_eq_true.
+  econstructor; eauto.
++ destruct e; try easy.
+  destruct eq_compartment; try easy.
+  subst cp. inv H2.
+  rewrite CAB, dec_eq_true.
+  econstructor; eauto.
 + destruct (external_function_eq e e0); inv H2. econstructor; eauto.
 - intros; subst. exists v; auto.
 Qed.
 
 Instance TransfTotalLink
-           {A B V: Type} {LV: Linker V}
-           (tr_fun: A -> B):
+           {A B V: Type}
+           {CA: has_comp A} {CB: has_comp B} {LV: Linker V}
+           (tr_fun: A -> B)
+           {CAB: has_comp_transl tr_fun}:
   TransfLink (fun (p1: program (fundef A) V) (p2: program (fundef B) V) =>
               match_program
                 (fun cu f tf => tf = AST.transf_fundef tr_fun f)
@@ -768,8 +815,16 @@ Proof.
   eapply link_match_program; eauto.
 - intros. subst. destruct f1, f2; simpl in *.
 + discriminate.
-+ destruct e; inv H2. econstructor; eauto.
-+ destruct e; inv H2. econstructor; eauto.
++ destruct e; try easy.
+  destruct eq_compartment; try easy.
+  subst cp. inv H2.
+  rewrite CAB, dec_eq_true.
+  econstructor; eauto.
++ destruct e; try easy.
+  destruct eq_compartment; try easy.
+  subst cp. inv H2.
+  rewrite CAB, dec_eq_true.
+  econstructor; eauto.
 + destruct (external_function_eq e e0); inv H2. econstructor; eauto.
 - intros; subst. exists v; auto.
 Qed.

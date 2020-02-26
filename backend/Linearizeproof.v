@@ -24,11 +24,10 @@ Module NodesetFacts := FSetFacts.Facts(Nodeset).
 Definition match_prog (p: LTL.program) (tp: Linear.program) :=
   match_program (fun ctx f tf => transf_fundef f = OK tf) eq p tp.
 
-Instance comp_transf_fundef: has_comp_transl_partial transf_fundef.
+Instance comp_transf_fundef: has_comp_transl_partial transf_function.
 Proof.
-  unfold transf_fundef, transf_function.
-  intros [f|ef] ? H; monadInv H; trivial.
-  now monadInv EQ.
+  unfold transf_function.
+  intros f ? H; now monadInv H.
 Qed.
 
 Lemma transf_program_match:

@@ -25,15 +25,15 @@ Require Import Allocation.
 Definition match_prog (p: RTL.program) (tp: LTL.program) :=
   match_program (fun _ f tf => transf_fundef f = OK tf) eq p tp.
 
-Instance comp_transf_fundef: has_comp_transl_partial transf_fundef.
+Instance comp_transf_fundef: has_comp_transl_partial transf_function.
 Proof.
-  unfold transf_fundef, transf_function, check_function.
-  intros [f|ef] ? H; monadInv H; trivial.
+  unfold transf_function, check_function.
+  intros f ? H.
   destruct type_function; try easy.
   destruct regalloc; try easy.
   destruct analyze; try easy.
   destruct eq_compartment as [e|?]; try easy.
-  monadInv EQ.
+  monadInv H.
   exact e.
 Qed.
 

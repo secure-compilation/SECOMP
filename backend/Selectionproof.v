@@ -31,12 +31,17 @@ Definition match_fundef (cunit: Cminor.program) (f: Cminor.fundef) (tf: CminorSe
 Definition match_prog (p: Cminor.program) (tp: CminorSel.program) :=
   match_program match_fundef eq p tp.
 
+Instance comp_sel_fundef ctx hf: has_comp_transl_partial (sel_function ctx hf).
+Proof.
+  unfold sel_function.
+  intros f tf H; try monadInv H; trivial.
+Qed.
+
 Instance comp_match_fundef: has_comp_match match_fundef.
 Proof.
   intros cunit f tf (hf & _ & H).
-  unfold sel_fundef, transf_partial_fundef, sel_function in H.
-  destruct f as [f|ef]; try monadInv H; trivial.
-  now monadInv EQ.
+  destruct f as [f|ef]; monadInv H; trivial.
+  exact (comp_transl_partial _ EQ).
 Qed.
 
 (** Processing of helper functions *)
@@ -1484,7 +1489,15 @@ Proof.
 Local Transparent Linker_fundef.
   simpl in *. destruct f1, f2; simpl in *; monadInv B1; monadInv B2; simpl.
 - discriminate.
-- destruct e; inv H2. econstructor; eauto.
-- destruct e; inv H2. econstructor; eauto.
+- destruct e; try easy.
+  destruct eq_compartment; try easy.
+  subst cp. inv H2.
+  rewrite <- (comp_transl_partial _ EQ), dec_eq_true.
+  econstructor; eauto.
+- destruct e; try easy.
+  destruct eq_compartment; try easy.
+  subst cp. inv H2.
+  rewrite <- (comp_transl_partial _ EQ), dec_eq_true.
+  econstructor; eauto.
 - destruct (external_function_eq e e0); inv H2. econstructor; eauto.
 Qed.

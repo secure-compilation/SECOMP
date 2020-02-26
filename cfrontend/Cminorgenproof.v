@@ -25,13 +25,13 @@ Local Open Scope error_monad_scope.
 Definition match_prog (p: Csharpminor.program) (tp: Cminor.program) :=
   match_program (fun cu f tf => transl_fundef f = OK tf) eq p tp.
 
-Instance comp_transl_fundef: has_comp_transl_partial transl_fundef.
+Instance comp_transl_function: has_comp_transl_partial transl_function.
 Proof.
-  unfold transl_fundef, transl_function, transl_funbody.
-  intros [f|ef] tf H; monadInv H; trivial.
+  unfold transl_function, transl_funbody.
+  intros f tf H.
   destruct build_compilenv.
   destruct zle; try easy.
-  now monadInv EQ.
+  now monadInv H.
 Qed.
 
 Lemma transf_program_match:

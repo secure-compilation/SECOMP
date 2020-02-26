@@ -79,6 +79,26 @@ Proof.
   intros C T S ???? c. exact comp_transl_partial.
 Qed.
 
+Instance has_comp_transl_match_contextual:
+  forall {C D T S: Type}
+         {CT: has_comp T} {CS: has_comp S}
+         (f: D -> T -> S) {Cf: forall d, has_comp_transl (f d)}
+         (g: C -> D),
+  has_comp_match (fun (c : C) x y => y = f (g c) x).
+Proof.
+now intros C D T S CT CS f Cf g ??? ->; rewrite comp_transl.
+Qed.
+
+Instance has_comp_transl_partial_match_contextual:
+  forall {C D T S: Type}
+         {CT: has_comp T} {CS: has_comp S}
+         (f: D -> T -> res S) {Cf: forall d, has_comp_transl_partial (f d)}
+         (g: C -> D),
+  has_comp_match (fun (c : C) x y => f (g c) x = OK y).
+Proof.
+intros C D T S CT CS f Cf g c. exact comp_transl_partial.
+Qed.
+
 (** The intermediate languages are weakly typed, using the following types: *)
 
 Inductive typ : Type :=
@@ -615,6 +635,14 @@ Definition transf_fundef (fd: fundef A): fundef B :=
   | External ef => External ef
   end.
 
+Global Instance comp_transf_fundef:
+  forall {CA: has_comp A} {CB: has_comp B}
+         {CAB: has_comp_transl transf},
+  has_comp_transl transf_fundef.
+Proof.
+  intros CA CB CAB [f|ef]; simpl; eauto using comp_transl.
+Qed.
+
 End TRANSF_FUNDEF.
 
 Section TRANSF_PARTIAL_FUNDEF.
@@ -627,6 +655,15 @@ Definition transf_partial_fundef (fd: fundef A): res (fundef B) :=
   | Internal f => do f' <- transf_partial f; OK (Internal f')
   | External ef => OK (External ef)
   end.
+
+Global Instance comp_transf_partial_fundef:
+  forall {CA: has_comp A} {CB: has_comp B}
+         {CAB: has_comp_transl_partial transf_partial},
+  has_comp_transl_partial transf_partial_fundef.
+Proof.
+  intros CA CB CAB [f|ef] tf H; simpl in *; monadInv H; trivial.
+  eauto using comp_transl_partial.
+Qed.
 
 End TRANSF_PARTIAL_FUNDEF.
 

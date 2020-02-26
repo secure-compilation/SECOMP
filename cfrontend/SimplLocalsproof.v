@@ -25,6 +25,12 @@ Definition match_prog (p tp: program) : Prop :=
     match_program (fun ctx f tf => transf_fundef f = OK tf) eq p tp
  /\ prog_types tp = prog_types p.
 
+Instance comp_transf_function: has_comp_transl_partial transf_function.
+Proof.
+  unfold transf_function.
+  intros f ? H; monadInv H; trivial.
+Qed.
+
 Instance comp_transf_fundef: has_comp_transl_partial transf_fundef.
 Proof.
   unfold transf_fundef, transf_function.
@@ -2300,13 +2306,21 @@ End PRESERVATION.
 Instance TransfSimplLocalsLink : TransfLink match_prog.
 Proof.
   red; intros. eapply Ctypes.link_match_program; eauto. 
-- intros.
+  intros.
 Local Transparent Linker_fundef.
   simpl in *; unfold link_fundef in *.
   destruct f1; monadInv H3; destruct f2; monadInv H4; try discriminate.
-  destruct e; inv H2. exists (Internal x); split; auto. simpl; rewrite EQ; auto.
-  destruct e; inv H2. exists (Internal x); split; auto. simpl; rewrite EQ; auto.
-  destruct (external_function_eq e e0 && typelist_eq t t1 &&
+- destruct e; inv H2.
+  destruct eq_compartment; try easy. subst cp. inv H4.
+  exists (Internal x); split; auto.
+* now rewrite <- (comp_transl_partial _ EQ), dec_eq_true.
+* simpl; rewrite EQ; auto.
+- destruct e; inv H2.
+  destruct eq_compartment; try easy. subst cp. inv H4.
+  exists (Internal x); split; auto.
+* now rewrite <- (comp_transl_partial _ EQ), dec_eq_true.
+* simpl; rewrite EQ; auto.
+- destruct (external_function_eq e e0 && typelist_eq t t1 &&
             type_eq t0 t2 && calling_convention_eq c c0); inv H2.
   econstructor; split; eauto. 
 Qed.

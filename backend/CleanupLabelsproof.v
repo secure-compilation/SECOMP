@@ -24,8 +24,8 @@ Module LabelsetFacts := FSetFacts.Facts(Labelset).
 Definition match_prog (p tp: Linear.program) :=
   match_program (fun ctx f tf => tf = transf_fundef f) eq p tp.
 
-Instance comp_match_prog: has_comp_transl transf_fundef.
-Proof. now intros [f|ef]. Qed.
+Instance comp_match_prog: has_comp_transl transf_function.
+Proof. now intros f. Qed.
 
 Lemma transf_program_match:
   forall p, match_prog p (transf_program p).

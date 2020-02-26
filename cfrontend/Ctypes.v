@@ -1393,7 +1393,7 @@ Qed.
 
 (** ** Linking function definitions *)
 
-Definition link_fundef {F: Type} (fd1 fd2: fundef F) :=
+Definition link_fundef {F: Type} {CF: has_comp F} (fd1 fd2: fundef F) :=
   match fd1, fd2 with
   | Internal _, Internal _ => None
   | External ef1 targs1 tres1 cc1, External ef2 targs2 tres2 cc2 =>
@@ -1404,18 +1404,28 @@ Definition link_fundef {F: Type} (fd1 fd2: fundef F) :=
       then Some (External ef1 targs1 tres1 cc1)
       else None
   | Internal f, External ef targs tres cc =>
-      match ef with EF_external id cp sg => Some (Internal f) | _ => None end
+      match ef with
+      | EF_external id cp sg =>
+        if eq_compartment cp (comp_of f) then Some (Internal f)
+        else None
+      | _ => None
+      end
   | External ef targs tres cc, Internal f =>
-      match ef with EF_external id cp sg => Some (Internal f) | _ => None end
+      match ef with
+      | EF_external id cp sg =>
+        if eq_compartment cp (comp_of f) then Some (Internal f)
+        else None
+      | _ => None
+      end
   end.
 
-Inductive linkorder_fundef {F: Type}: fundef F -> fundef F -> Prop :=
+Inductive linkorder_fundef {F: Type} {CF: has_comp F}: fundef F -> fundef F -> Prop :=
   | linkorder_fundef_refl: forall fd,
       linkorder_fundef fd fd
-  | linkorder_fundef_ext_int: forall f id cp sg targs tres cc,
-      linkorder_fundef (External (EF_external id cp sg) targs tres cc) (Internal f).
+  | linkorder_fundef_ext_int: forall f id sg targs tres cc,
+      linkorder_fundef (External (EF_external id (comp_of f) sg) targs tres cc) (Internal f).
 
-Program Instance Linker_fundef (F: Type): Linker (fundef F) := {
+Program Instance Linker_fundef (F: Type) {CF: has_comp F}: Linker (fundef F) := {
   link := link_fundef;
   linkorder := linkorder_fundef
 }.
@@ -1428,18 +1438,28 @@ Defined.
 Next Obligation.
   destruct x, y; simpl in H.
 + discriminate.
-+ destruct e; inv H. split; constructor.
-+ destruct e; inv H. split; constructor.
++ destruct e; try easy.
+  destruct eq_compartment; try easy.
+  subst cp. inv H.
+  split; constructor.
++ destruct e; try easy.
+  destruct eq_compartment; try easy.
+  subst cp. inv H.
+  split; constructor.
 + destruct (external_function_eq e e0 && typelist_eq t t1 && type_eq t0 t2 && calling_convention_eq c c0) eqn:A; inv H.
   InvBooleans. subst. split; constructor.
 Defined.
 
 Remark link_fundef_either:
-  forall (F: Type) (f1 f2 f: fundef F), link f1 f2 = Some f -> f = f1 \/ f = f2.
+  forall (F: Type) {CF: has_comp F} (f1 f2 f: fundef F), link f1 f2 = Some f -> f = f1 \/ f = f2.
 Proof.
   simpl; intros. unfold link_fundef in H. destruct f1, f2; try discriminate.
-- destruct e; inv H. auto.
-- destruct e; inv H. auto.
+- destruct e; try easy.
+  destruct eq_compartment; try easy.
+  subst cp. inv H; eauto.
+- destruct e; try easy.
+  destruct eq_compartment; try easy.
+  subst cp. inv H; eauto.
 - destruct (external_function_eq e e0 && typelist_eq t t1 && type_eq t0 t2 && calling_convention_eq c c0); inv H; auto.
 Qed.
 
@@ -1452,7 +1472,7 @@ Proof.
   destruct opt. left; exists a; auto. right; auto. 
 Defined.
 
-Definition link_program {F:Type} (p1 p2: program F): option (program F) :=
+Definition link_program {F:Type} {CF: has_comp F} (p1 p2: program F): option (program F) :=
   match link (program_of_program p1) (program_of_program p2) with
   | None => None
   | Some p =>
@@ -1474,11 +1494,11 @@ Definition link_program {F:Type} (p1 p2: program F): option (program F) :=
       end
   end.
 
-Definition linkorder_program {F: Type} (p1 p2: program F) : Prop :=
+Definition linkorder_program {F: Type} {CF: has_comp F} (p1 p2: program F) : Prop :=
      linkorder (program_of_program p1) (program_of_program p2)
   /\ (forall id co, p1.(prog_comp_env)!id = Some co -> p2.(prog_comp_env)!id = Some co).
 
-Program Instance Linker_program (F: Type): Linker (program F) := {
+Program Instance Linker_program (F: Type) {CF: has_comp F}: Linker (program F) := {
   link := link_program;
   linkorder := linkorder_program
 }.
@@ -1508,6 +1528,7 @@ Global Opaque Linker_program.
 Section LINK_MATCH_PROGRAM.
 
 Context {F G: Type}.
+Context {CF: has_comp F} {CG: has_comp G}.
 Variable match_fundef: fundef F -> fundef G -> Prop.
 
 Hypothesis link_match_fundef:

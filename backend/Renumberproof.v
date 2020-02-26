@@ -20,11 +20,8 @@ Require Import Op Registers RTL Renumber.
 Definition match_prog (p tp: RTL.program) :=
   match_program (fun ctx f tf => tf = transf_fundef f) eq p tp.
 
-Instance comp_transf_fundef: has_comp_transl transf_fundef.
-Proof.
-  unfold transf_fundef, transf_function.
-  now intros [f|ef].
-Qed.
+Instance comp_transf_function: has_comp_transl transf_function.
+Proof. now intros. Qed.
 
 Lemma transf_program_match:
   forall p, match_prog p (transf_program p).

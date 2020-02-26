@@ -1284,9 +1284,13 @@ Local Transparent Linker_def Linker_fundef Linker_varinit Linker_vardef Linker_u
 - (* Two fundefs *)
   simpl.
   destruct f1 as [f1|ef1], f2 as [f2|ef2]; simpl...
-  destruct ef2; intuition congruence.
-  destruct ef1; intuition congruence.
-  destruct (external_function_eq ef1 ef2); intuition congruence.
+  + destruct ef2; try easy.
+    destruct eq_compartment; try easy. subst cp.
+    intros H. inv H. auto.
+  + destruct ef1; try easy.
+    destruct eq_compartment; try easy. subst cp.
+    intros H. inv H. auto.
+  + destruct (external_function_eq ef1 ef2); intuition congruence.
 - (* Two vardefs *)
   simpl.
   unfold link_vardef.

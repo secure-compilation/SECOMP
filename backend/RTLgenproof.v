@@ -351,13 +351,13 @@ Require Import Errors.
 Definition match_prog (p: CminorSel.program) (tp: RTL.program) :=
   match_program (fun cu f tf => transl_fundef f = Errors.OK tf) eq p tp.
 
-Instance comp_transl_function: has_comp_transl_partial transl_fundef.
+Instance comp_transl_function: has_comp_transl_partial transl_function.
 Proof.
-  unfold transl_fundef, transf_partial_fundef, transl_function.
-  intros [f|?] tf H; simpl; monadInv H; trivial.
+  unfold transl_function.
+  intros f tf H; simpl in *.
   destruct (reserve_labels _ _) as [l s].
   destruct (transl_fun _ _ _) as [|[??] ? ?]; try discriminate.
-  now monadInv EQ.
+  now inv H.
 Qed.
 
 Lemma transf_program_match:

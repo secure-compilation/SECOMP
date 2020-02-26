@@ -21,13 +21,13 @@ Require Import Asmgen Asmgenproof0 Asmgenproof1.
 Definition match_prog (p: Mach.program) (tp: Asm.program) :=
   match_program (fun _ f tf => transf_fundef f = OK tf) eq p tp.
 
-Instance comp_transf_fundef: has_comp_transl_partial transf_fundef.
+Instance comp_transf_function: has_comp_transl_partial transf_function.
 Proof.
-  unfold transf_fundef, transf_function, transl_function.
-  intros [f|ef] ? H; monadInv H; trivial.
+  unfold transf_function, transl_function.
+  intros f ? H; monadInv H; trivial.
   destruct transl_code'; simpl in *; try easy.
-  destruct zlt; try easy.
-  now inv EQ.
+  inv EQ. destruct zlt; try easy.
+  now inv EQ0.
 Qed.
 
 Lemma transf_program_match:

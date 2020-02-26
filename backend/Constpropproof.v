@@ -23,11 +23,8 @@ Require Import ConstpropOp ConstpropOpproof Constprop.
 Definition match_prog (prog tprog: program) :=
   match_program (fun cu f tf => tf = transf_fundef (romem_for cu) f) eq prog tprog.
 
-Instance comp_transf_fundef:
-  has_comp_match (fun cu f tf => tf = transf_fundef (romem_for cu) f).
-Proof.
-  now intros cu [f|ef] ? ->.
-Qed.
+Instance comp_transf_function rm: has_comp_transl (transf_function rm).
+Proof. now intro. Qed.
 
 Lemma transf_program_match:
   forall prog, match_prog prog (transf_program prog).

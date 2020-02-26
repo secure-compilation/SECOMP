@@ -2334,12 +2334,25 @@ End PRESERVATION.
 Instance TransfSimplExprLink : TransfLink match_prog.
 Proof.
   red; intros. eapply Ctypes.link_match_program; eauto. 
-- intros.
+  intros.
 Local Transparent Linker_fundef.
-  simpl in *; unfold link_fundef in *. inv H3; inv H4; try discriminate.
-  destruct ef; inv H2. exists (Internal tf); split; auto. constructor; auto.
-  destruct ef; inv H2. exists (Internal tf); split; auto. constructor; auto.
-  destruct (external_function_eq ef ef0 && typelist_eq targs targs0 &&
+  simpl in *; unfold link_fundef in *.
+  assert (COMP1 := comp_tr_fundef _ p _ _ H3).
+  assert (COMP2 := comp_tr_fundef _ p _ _ H4).
+  inv H3; inv H4; try discriminate.
+- destruct ef; try easy. inv H2.
+  assert (E: comp_of f0 = comp_of tf) by trivial.
+  rewrite <- E.
+  destruct eq_compartment; try easy.
+  subst cp. inv H4.
+  exists (Internal tf); split; auto. constructor; auto.
+- destruct ef; try easy. inv H2.
+  assert (E: comp_of f0 = comp_of tf) by trivial.
+  rewrite <- E.
+  destruct eq_compartment; try easy.
+  subst cp. inv H5.
+  exists (Internal tf); split; auto. constructor; auto.
+- destruct (external_function_eq ef ef0 && typelist_eq targs targs0 &&
             type_eq tres tres0 && calling_convention_eq cconv cconv0); inv H2.
   exists (External ef targs tres cconv); split; auto. constructor.
 Qed.

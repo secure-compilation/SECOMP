@@ -26,13 +26,13 @@ Local Open Scope sep_scope.
 Definition match_prog (p: Linear.program) (tp: Mach.program) :=
   match_program (fun _ f tf => transf_fundef f = OK tf) eq p tp.
 
-Instance comp_transf_fundef: has_comp_transl_partial transf_fundef.
+Instance comp_transf_function: has_comp_transl_partial transf_function.
 Proof.
-  unfold transf_fundef, transf_function.
-  intros [f|ef] tf H; monadInv H; trivial.
+  unfold transf_function.
+  intros f tf H.
   destruct negb; try easy.
   destruct zlt; try easy.
-  now monadInv EQ.
+  now monadInv H.
 Qed.
 
 Lemma transf_program_match:
