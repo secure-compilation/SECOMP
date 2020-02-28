@@ -1,0 +1,12 @@
+* DONE [T1] Edit the inlining pass (backend/Inlining.v) to prevent inter-compartment inlining.
+Possible refinement: allow inlining for built-ins. Might require adding a new
+special compartment (cf. default_compartment in common/AST.v) and also changing
+the definition of has_comp_external_function in common/AST.v.
+* DONE [T2] Force linking to preserve compartments
+* TODO [T3] (Jérémy + Adrien) Add another argument to external calls to record the calling compartment. (cf. extcall_sem in common/Events.v).
+Probably depends on T5 and T6.
+* TODO [T4] Change the definition of extcall_malloc_sem to allocate new memory for the calling compartment.
+Depends on T3.
+* TODO [T5] Disable tailcall optimizations for inter-compartment calls
+* TODO [T6] Change all semantics to get stuck on inter-compartment tailcalls
+Depends on T5
