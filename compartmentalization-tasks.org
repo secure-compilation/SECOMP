@@ -1,3 +1,26 @@
+WARNING
+
+When editing the sources, please make sure that everything is compiling before
+pushing your changes.  Unfortunately, parts of the CompCert use
+architecture-specific Coq files, and the dependencies are set up when you
+configure the project.  If you modify ANY files in the directories
+
+    arm/
+    x86/
+    x86_32/
+    x86_64/
+    powerpc/
+    riscV/
+    aarch64/
+
+you will probably need to propagate these changes to ALL the corresponding files
+in each of these directories, and ensure that compilation works.  To do this,
+simply run
+
+    ./configure -no-runtime-lib <target>-linux && make
+
+where <target> is each one of arm, x86_32, powerpc, rv64 and aarch64.
+
 * DONE [T1] Edit the inlining pass (backend/Inlining.v) to prevent inter-compartment inlining.
 Possible refinement: allow inlining for built-ins. Might require adding a new
 special compartment (cf. default_compartment in common/AST.v) and also changing
@@ -10,3 +33,4 @@ Depends on T3.
 * TODO [T5] Disable tailcall optimizations for inter-compartment calls
 * TODO [T6] Change all semantics to get stuck on inter-compartment tailcalls
 Depends on T5
+* TODO [T7] Enable continuous integration so that we don't have to test the development for each possible backend.
