@@ -2352,6 +2352,7 @@ Proof.
   eapply plus_left. econstructor; eauto.
   eapply star_right. eexact A1. econstructor; eauto.
   rewrite <- E. apply find_function_tailcall; auto.
+  rewrite <- (comp_transl_partial _ F), COMP. now apply (comp_transl_partial _ FUN).
   replace (fn_stacksize tf) with (RTL.fn_stacksize f); eauto.
   destruct (transf_function_inv _ _ FUN); auto.
   eauto. traceEq.
