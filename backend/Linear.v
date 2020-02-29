@@ -187,6 +187,7 @@ Inductive step: state -> trace -> state -> Prop :=
       rs' = return_regs (parent_locset s) rs ->
       find_function ros rs' = Some f' ->
       sig = funsig f' ->
+      forall COMP: comp_of f' = comp_of f,
       Mem.free m stk 0 f.(fn_stacksize) = Some m' ->
       step (State s f (Vptr stk Ptrofs.zero) (Ltailcall sig ros :: b) rs m)
         E0 (Callstate s f' rs' m')

@@ -478,6 +478,7 @@ Proof.
   apply plus_one.
   econstructor. eauto. rewrite PLS. eexact A.
   symmetry; apply sig_preserved; auto.
+  now rewrite <- (comp_transl_partial _ B); inv TRF.
   inv TRF; eauto. traceEq.
   rewrite PLS. constructor; auto.
 - (* builtin *)

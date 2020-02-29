@@ -273,6 +273,7 @@ Proof.
   left; econstructor; split.
   econstructor. erewrite match_parent_locset; eauto. eapply find_function_translated; eauto.
   symmetry; apply sig_function_translated.
+  now rewrite ! comp_transl.
   simpl. eauto.
   econstructor; eauto.
 (* Lbuiltin *)
