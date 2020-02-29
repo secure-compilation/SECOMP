@@ -1325,9 +1325,12 @@ Proof.
   exploit classify_call_correct. eexact LINK. eauto. eauto.
   destruct (classify_call (prog_defmap cunit)) as [ | id | ef]; intros.
   econstructor; eauto. econstructor; eauto. eapply sig_function_translated; eauto.
+  rewrite <- (comp_function_translated _ _ _ F), COMP. now apply (comp_transl_partial _ TF).
   destruct H2 as [b [U V]]. subst vf. inv B.
   econstructor; eauto. econstructor; eauto. rewrite symbols_preserved; eauto. eapply sig_function_translated; eauto.
+  rewrite <- (comp_function_translated _ _ _ F), COMP. now apply (comp_transl_partial _ TF).
   econstructor; eauto. econstructor; eauto. eapply sig_function_translated; eauto.
+  rewrite <- (comp_function_translated _ _ _ F), COMP. now apply (comp_transl_partial _ TF).
   eapply match_callstate with (cunit := cunit'); eauto.
   eapply call_cont_commut; eauto.
 - (* Sbuiltin *)

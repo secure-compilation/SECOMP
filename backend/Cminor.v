@@ -472,6 +472,7 @@ Inductive step: state -> trace -> state -> Prop :=
       eval_exprlist (Vptr sp Ptrofs.zero) e m bl vargs ->
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
+      forall (COMP: comp_of fd = f.(fn_comp)),
       Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
       step (State f (Stailcall sig a bl) k (Vptr sp Ptrofs.zero) e m)
         E0 (Callstate fd vargs (call_cont k) m')
@@ -816,6 +817,7 @@ with exec_stmt:
       eval_exprlist ge (Vptr sp Ptrofs.zero) e m bl vargs ->
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
+      forall (COMP: comp_of fd = f.(fn_comp)),
       Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
       eval_funcall m' fd vargs t m'' vres ->
       exec_stmt f (Vptr sp Ptrofs.zero) e m (Stailcall sig a bl) t e m'' (Out_tailcall_return vres).
@@ -891,6 +893,7 @@ with execinf_stmt:
       eval_exprlist ge (Vptr sp Ptrofs.zero) e m bl vargs ->
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
+      forall (COMP: comp_of fd = f.(fn_comp)),
       Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
       evalinf_funcall  m' fd vargs t ->
       execinf_stmt f (Vptr sp Ptrofs.zero) e m (Stailcall sig a bl) t.

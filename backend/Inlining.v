@@ -289,20 +289,20 @@ Variable rec: forall fenv', (size_fenv fenv' < size_fenv fenv)%nat -> context ->
 
 (** Given a register-or-symbol [ros], can we inline the corresponding call? *)
 
-Inductive inline_decision (ros: reg + ident) : Type :=
+Inductive inline_decision cp (ros: reg + ident) : Type :=
   | Cannot_inline
-  | Can_inline (id: ident) (f: function) (P: ros = inr reg id) (Q: fenv!id = Some f).
+  | Can_inline (id: ident) (f: function) (P: ros = inr reg id) (Q: fenv!id = Some f) (R: cp = f.(fn_comp)).
 
-Program Definition can_inline (cp: compartment) (ros: reg + ident): inline_decision ros :=
+Program Definition can_inline (cp: compartment) (ros: reg + ident): inline_decision cp ros :=
   match ros with
-  | inl r => Cannot_inline _
+  | inl r => Cannot_inline _ _
   | inr id =>
     match fenv!id with
     | Some f =>
       if eq_compartment cp f.(fn_comp) then
-        Can_inline _ id f _ _
-      else Cannot_inline _
-    | None => Cannot_inline _
+        Can_inline _ _ id f _ _ _
+      else Cannot_inline _ _
+    | None => Cannot_inline _ _
     end
   end.
 
@@ -382,7 +382,7 @@ Definition expand_instr (ctx: context) (cp: compartment) (pc: node) (i: instruct
       | Cannot_inline =>
           set_instr (spc ctx pc)
                     (Icall sg (sros ctx ros) (sregs ctx args) (sreg ctx res) (spc ctx s))
-      | Can_inline id f P Q =>
+      | Can_inline id f P Q _ =>
           do n <- inline_function ctx id f Q args s res;
           set_instr (spc ctx pc) (Inop n)
       end
@@ -397,7 +397,7 @@ Definition expand_instr (ctx: context) (cp: compartment) (pc: node) (i: instruct
               set_instr (spc ctx pc)
                         (Icall sg (sros ctx ros) (sregs ctx args) rreg rpc)
           end
-      | Can_inline id f P Q =>
+      | Can_inline id f P Q _ =>
           do n <- inline_tail_function ctx id f Q args;
           set_instr (spc ctx pc) (Inop n)
       end

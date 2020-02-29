@@ -240,6 +240,7 @@ Inductive step: state -> trace -> state -> Prop :=
       (fn_code f)!pc = Some(Itailcall sig ros args) ->
       find_function ros rs = Some fd ->
       funsig fd = sig ->
+      forall COMP: comp_of fd = f.(fn_comp),
       Mem.free m stk 0 f.(fn_stacksize) = Some m' ->
       step (State s f (Vptr stk Ptrofs.zero) pc rs m)
         E0 (Callstate s fd rs##args m')

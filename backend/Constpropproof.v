@@ -471,6 +471,7 @@ Proof.
   TransfInstr; intro.
   left; econstructor; econstructor; split.
   eapply exec_Itailcall; eauto. apply sig_function_translated; auto.
+    rewrite comp_transl, COMP. symmetry. now apply (comp_transl f).
   constructor; auto.
   apply regs_lessdef_regs; auto.
 

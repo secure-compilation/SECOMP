@@ -487,6 +487,7 @@ Inductive match_stacks (F: meminj) (m m': mem):
       match_stacks F m m' nil nil bound
   | match_stacks_cons: forall res f sp pc rs stk f' sp' rs' stk' bound fenv ctx
         (MS: match_stacks_inside F m m' stk stk' f' ctx sp' rs')
+        (SAMECOMP: f.(fn_comp) = f'.(fn_comp))
         (COMPAT: fenv_compat prog fenv)
         (FB: tr_funbody fenv f'.(fn_stacksize) ctx f f'.(fn_code))
         (AG: agree_regs F ctx rs rs')
@@ -521,6 +522,7 @@ with match_stacks_inside (F: meminj) (m m': mem):
       match_stacks_inside F m m' stk stk' f' ctx sp' rs'
   | match_stacks_inside_inlined: forall res f sp pc rs stk stk' f' fenv ctx sp' rs' ctx'
         (MS: match_stacks_inside F m m' stk stk' f' ctx' sp' rs')
+        (SAMECOMP: f.(fn_comp) = f'.(fn_comp))
         (COMPAT: fenv_compat prog fenv)
         (FB: tr_funbody fenv f'.(fn_stacksize) ctx' f f'.(fn_code))
         (AG: agree_regs F ctx' rs rs')
@@ -876,6 +878,7 @@ Qed.
 Inductive match_states: RTL.state -> RTL.state -> Prop :=
   | match_regular_states: forall stk f sp pc rs m stk' f' sp' rs' m' F fenv ctx
         (MS: match_stacks_inside F m m' stk stk' f' ctx sp' rs')
+        (SAMECOMP: f.(fn_comp) = f'.(fn_comp))
         (COMPAT: fenv_compat prog fenv)
         (FB: tr_funbody fenv f'.(fn_stacksize) ctx f f'.(fn_code))
         (AG: agree_regs F ctx rs rs')
@@ -897,6 +900,7 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
                    (Callstate stk' fd' args' m')
   | match_call_regular_states: forall stk f vargs m stk' f' sp' rs' m' F fenv ctx ctx' pc' pc1' rargs
         (MS: match_stacks_inside F m m' stk stk' f' ctx sp' rs')
+        (SAMECOMP: f.(fn_comp) = f'.(fn_comp))
         (COMPAT: fenv_compat prog fenv)
         (FB: tr_funbody fenv f'.(fn_stacksize) ctx f f'.(fn_code))
         (BELOW: context_below ctx' ctx)
@@ -940,7 +944,7 @@ Definition measure (S: RTL.state) : nat :=
 
 Lemma tr_funbody_inv:
   forall fenv sz cts f c pc i,
-  tr_funbody fenv sz cts f c -> f.(fn_code)!pc = Some i -> tr_instr fenv sz cts pc i c.
+  tr_funbody fenv sz cts f c -> f.(fn_code)!pc = Some i -> tr_instr fenv sz cts f.(fn_comp) pc i c.
 Proof.
   intros. inv H. eauto.
 Qed.
@@ -1033,9 +1037,10 @@ Proof.
   right; split. simpl; omega. split. auto.
   econstructor; eauto.
   eapply match_stacks_inside_inlined; eauto.
-  red; intros. apply PRIV. inv H13. destruct H16. xomega.
+  red; intros. apply PRIV. inv H14. destruct H17. xomega.
+  congruence.
   apply agree_val_regs_gen; auto.
-  red; intros; apply PRIV. destruct H16. omega.
+  red; intros; apply PRIV. destruct H17. omega.
 
 - (* tailcall *)
   exploit match_stacks_inside_globalenvs; eauto. intros [bound G].
@@ -1055,6 +1060,7 @@ Proof.
   left; econstructor; split.
   eapply plus_one. eapply exec_Itailcall; eauto.
   eapply sig_function_translated; eauto.
+    now rewrite <- (comp_transl_partial _ B), COMP.
   econstructor; eauto.
   eapply match_stacks_bound with (bound := sp').
   eapply match_stacks_invariant; eauto.
@@ -1086,10 +1092,11 @@ Proof.
   eapply match_stacks_inside_inlined_tailcall; eauto.
   eapply match_stacks_inside_invariant; eauto.
     intros. eapply Mem.perm_free_3; eauto.
+    congruence.
   apply agree_val_regs_gen; auto.
   eapply Mem.free_left_inject; eauto.
   red; intros; apply PRIV'.
-    assert (dstk ctx <= dstk ctx'). red in H14; rewrite H14. apply align_le. apply min_alignment_pos.
+    assert (dstk ctx <= dstk ctx'). red in H15; rewrite H15. apply align_le. apply min_alignment_pos.
     omega.
 
 - (* builtin *)
@@ -1242,7 +1249,8 @@ Proof.
   eapply match_stacks_inside_alloc_left; eauto.
   eapply match_stacks_inside_invariant; eauto.
   omega.
-  eauto. auto.
+
+  eauto. eauto. auto.
   apply agree_regs_incr with F; auto.
   auto. auto. auto.
   rewrite H2. eapply range_private_alloc_left; eauto.
@@ -1281,7 +1289,7 @@ Proof.
   eapply plus_one. eapply exec_return.
   eapply match_regular_states.
   eapply match_stacks_inside_set_reg; eauto.
-  eauto. auto.
+  eauto. eauto. auto.
   apply agree_set_reg; auto.
   auto. auto. auto.
   red; intros. destruct (zlt ofs (dstk ctx)). apply PAD; omega. apply PRIV; omega.

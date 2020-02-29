@@ -195,6 +195,8 @@ Proof.
   eapply exec_Itailcall with (fd := transf_fundef fd); eauto.
     eapply find_function_translated; eauto.
     apply sig_preserved.
+    rewrite comp_transl, COMP.
+    symmetry. now apply (comp_transl f).
   constructor. auto.
 (* builtin *)
   econstructor; split.

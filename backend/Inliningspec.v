@@ -264,26 +264,27 @@ Section INLINING_BODY_SPEC.
 
 Variable stacksize: Z.
 
-Inductive tr_instr: context -> node -> instruction -> code -> Prop :=
-  | tr_nop: forall ctx pc c s,
+Inductive tr_instr: context -> compartment -> node -> instruction -> code -> Prop :=
+  | tr_nop: forall ctx cp pc c s,
       c!(spc ctx pc) = Some (Inop (spc ctx s)) ->
-      tr_instr ctx pc (Inop s) c
-  | tr_op: forall ctx pc c op args res s,
+      tr_instr ctx cp pc (Inop s) c
+  | tr_op: forall ctx cp pc c op args res s,
       Ple res ctx.(mreg) ->
       c!(spc ctx pc) = Some (Iop (sop ctx op) (sregs ctx args) (sreg ctx res) (spc ctx s)) ->
-      tr_instr ctx pc (Iop op args res s) c
-  | tr_load: forall ctx pc c chunk addr args res s,
+      tr_instr ctx cp pc (Iop op args res s) c
+  | tr_load: forall ctx cp pc c chunk addr args res s,
       Ple res ctx.(mreg) ->
       c!(spc ctx pc) = Some (Iload chunk (saddr ctx addr) (sregs ctx args) (sreg ctx res) (spc ctx s)) ->
-      tr_instr ctx pc (Iload chunk addr args res s) c
-  | tr_store: forall ctx pc c chunk addr args src s,
+      tr_instr ctx cp pc (Iload chunk addr args res s) c
+  | tr_store: forall ctx cp pc c chunk addr args src s,
       c!(spc ctx pc) = Some (Istore chunk (saddr ctx addr) (sregs ctx args) (sreg ctx src) (spc ctx s)) ->
-      tr_instr ctx pc (Istore chunk addr args src s) c
-  | tr_call: forall ctx pc c sg ros args res s,
+      tr_instr ctx cp pc (Istore chunk addr args src s) c
+  | tr_call: forall ctx cp pc c sg ros args res s,
       Ple res ctx.(mreg) ->
       c!(spc ctx pc) = Some (Icall sg (sros ctx ros) (sregs ctx args) (sreg ctx res) (spc ctx s)) ->
-      tr_instr ctx pc (Icall sg ros args res s) c
-  | tr_call_inlined:forall ctx pc sg id args res s c f pc1 ctx',
+      tr_instr ctx cp pc (Icall sg ros args res s) c
+  | tr_call_inlined:forall ctx cp pc sg id args res s c f pc1 ctx',
+      forall SAMECOMP: cp = f.(fn_comp),
       Ple res ctx.(mreg) ->
       fenv!id = Some f ->
       c!(spc ctx pc) = Some(Inop pc1) ->
@@ -292,16 +293,17 @@ Inductive tr_instr: context -> node -> instruction -> code -> Prop :=
       ctx'.(retinfo) = Some(spc ctx s, sreg ctx res) ->
       context_below ctx ctx' ->
       context_stack_call ctx ctx' ->
-      tr_instr ctx pc (Icall sg (inr _ id) args res s) c
-  | tr_tailcall: forall ctx pc c sg ros args,
+      tr_instr ctx cp pc (Icall sg (inr _ id) args res s) c
+  | tr_tailcall: forall ctx cp pc c sg ros args,
       c!(spc ctx pc) = Some (Itailcall sg (sros ctx ros) (sregs ctx args)) ->
       ctx.(retinfo) = None ->
-      tr_instr ctx pc (Itailcall sg ros args) c
-  | tr_tailcall_call: forall ctx pc c sg ros args res s,
+      tr_instr ctx cp pc (Itailcall sg ros args) c
+  | tr_tailcall_call: forall ctx cp pc c sg ros args res s,
       c!(spc ctx pc) = Some (Icall sg (sros ctx ros) (sregs ctx args) res s) ->
       ctx.(retinfo) = Some(s, res) ->
-      tr_instr ctx pc (Itailcall sg ros args) c
-  | tr_tailcall_inlined: forall ctx pc sg id args c f pc1 ctx',
+      tr_instr ctx cp pc (Itailcall sg ros args) c
+  | tr_tailcall_inlined: forall ctx cp pc sg id args c f pc1 ctx',
+      forall SAMECOMP: cp = f.(fn_comp),
       fenv!id = Some f ->
       c!(spc ctx pc) = Some(Inop pc1) ->
       tr_moves c pc1 (sregs ctx args) (sregs ctx' f.(fn_params)) (spc ctx' f.(fn_entrypoint)) ->
@@ -309,30 +311,30 @@ Inductive tr_instr: context -> node -> instruction -> code -> Prop :=
       ctx'.(retinfo) = ctx.(retinfo) ->
       context_below ctx ctx' ->
       context_stack_tailcall ctx f ctx' ->
-      tr_instr ctx pc (Itailcall sg (inr _ id) args) c
-  | tr_builtin: forall ctx pc c ef args res s,
+      tr_instr ctx cp pc (Itailcall sg (inr _ id) args) c
+  | tr_builtin: forall ctx cp pc c ef args res s,
       match res with BR r => Ple r ctx.(mreg) | _ => True end ->
       c!(spc ctx pc) = Some (Ibuiltin ef (map (sbuiltinarg ctx) args) (sbuiltinres ctx res) (spc ctx s)) ->
-      tr_instr ctx pc (Ibuiltin ef args res s) c
-  | tr_cond: forall ctx pc cond args s1 s2 c,
+      tr_instr ctx cp pc (Ibuiltin ef args res s) c
+  | tr_cond: forall ctx cp pc cond args s1 s2 c,
       c!(spc ctx pc) = Some (Icond cond (sregs ctx args) (spc ctx s1) (spc ctx s2)) ->
-      tr_instr ctx pc (Icond cond args s1 s2) c
-  | tr_jumptable: forall ctx pc r tbl c,
+      tr_instr ctx cp pc (Icond cond args s1 s2) c
+  | tr_jumptable: forall ctx cp pc r tbl c,
       c!(spc ctx pc) = Some (Ijumptable (sreg ctx r) (List.map (spc ctx) tbl)) ->
-      tr_instr ctx pc (Ijumptable r tbl) c
-  | tr_return: forall ctx pc or c,
+      tr_instr ctx cp pc (Ijumptable r tbl) c
+  | tr_return: forall ctx cp pc or c,
       c!(spc ctx pc) = Some (Ireturn (option_map (sreg ctx) or)) ->
       ctx.(retinfo) = None ->
-      tr_instr ctx pc (Ireturn or) c
-  | tr_return_inlined: forall ctx pc or c rinfo,
+      tr_instr ctx cp pc (Ireturn or) c
+  | tr_return_inlined: forall ctx cp pc or c rinfo,
       c!(spc ctx pc) = Some (inline_return ctx or rinfo) ->
       ctx.(retinfo) = Some rinfo ->
-      tr_instr ctx pc (Ireturn or) c
+      tr_instr ctx cp pc (Ireturn or) c
 
 with tr_funbody: context -> function -> code -> Prop :=
   | tr_funbody_intro: forall ctx f c,
       (forall r, In r f.(fn_params) -> Ple r ctx.(mreg)) ->
-      (forall pc i, f.(fn_code)!pc = Some i -> tr_instr ctx pc i c) ->
+      (forall pc i, f.(fn_code)!pc = Some i -> tr_instr ctx f.(fn_comp) pc i c) ->
       ctx.(mstk) = Z.max f.(fn_stacksize) 0 ->
       (min_alignment f.(fn_stacksize) | ctx.(dstk)) ->
       ctx.(dstk) >= 0 -> ctx.(dstk) + ctx.(mstk) <= stacksize ->
@@ -485,14 +487,14 @@ Lemma expand_instr_spec:
   s'.(st_stksize) <= stacksize ->
   (forall pc', Ple s.(st_nextnode) pc' -> Plt pc' s'.(st_nextnode) -> c!pc' = s'.(st_code)!pc') ->
   c!(spc ctx pc) = s'.(st_code)!(spc ctx pc) ->
-  tr_instr ctx pc instr c.
+  tr_instr ctx cp pc instr c.
 Proof.
   intros until c; intros EXP DEFS OPC OREG STK1 STK2 STK3 S1 S2.
   generalize set_instr_same; intros BASE.
   unfold expand_instr in EXP; destruct instr; simpl in DEFS;
   try (econstructor; eauto; fail).
 (* call *)
-  destruct (can_inline fe cp s1) as [|id f P Q].
+  destruct (can_inline fe cp s1) as [|id f P Q R].
   (* not inlined *)
   eapply tr_call; eauto.
   (* inlined *)
@@ -519,7 +521,7 @@ Proof.
   red; simpl. subst s2; simpl in *. xomega.
   red; simpl. split. auto. apply align_le. apply min_alignment_pos.
 (* tailcall *)
-  destruct (can_inline fe cp s1) as [|id f P Q].
+  destruct (can_inline fe cp s1) as [|id f P Q R].
   (* not inlined *)
   destruct (retinfo ctx) as [[rpc rreg] | ] eqn:?.
   (* turned into a call *)
@@ -570,7 +572,7 @@ Lemma iter_expand_instr_spec:
   s'.(st_stksize) <= stacksize ->
   (forall pc', Ple s.(st_nextnode) pc' -> Plt pc' s'.(st_nextnode) -> c!pc' = s'.(st_code)!pc') ->
   (forall pc instr, In (pc, instr) l -> c!(spc ctx pc) = s'.(st_code)!(spc ctx pc)) ->
-  forall pc instr, In (pc, instr) l -> tr_instr ctx pc instr c.
+  forall pc instr, In (pc, instr) l -> tr_instr ctx cp pc instr c.
 Proof.
   induction l; simpl; intros.
   (* base case *)

@@ -374,6 +374,7 @@ Inductive step: state -> trace -> state -> Prop :=
       eval_exprlist (Vptr sp Ptrofs.zero) e m nil bl vargs ->
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
+      forall COMP: comp_of fd = f.(fn_comp),
       Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
       step (State f (Stailcall sig a bl) k (Vptr sp Ptrofs.zero) e m)
         E0 (Callstate fd vargs (call_cont k) m')

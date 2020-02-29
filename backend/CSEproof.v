@@ -1120,6 +1120,7 @@ Proof.
   econstructor; split.
   eapply exec_Itailcall; eauto.
   eapply sig_preserved; eauto.
+  now rewrite <- (comp_transl_partial _ TRANSF'), COMP.
   econstructor; eauto.
   apply regs_lessdef_regs; auto.
 
