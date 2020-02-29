@@ -876,6 +876,7 @@ Qed.
 Inductive match_states: RTL.state -> RTL.state -> Prop :=
   | match_regular_states: forall stk f sp pc rs m stk' f' sp' rs' m' F fenv ctx
         (MS: match_stacks_inside F m m' stk stk' f' ctx sp' rs')
+        (SAMECOMP: f.(fn_comp) = f'.(fn_comp))
         (COMPAT: fenv_compat prog fenv)
         (FB: tr_funbody fenv f'.(fn_stacksize) ctx f f'.(fn_code))
         (AG: agree_regs F ctx rs rs')
@@ -897,6 +898,7 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
                    (Callstate stk' fd' args' m')
   | match_call_regular_states: forall stk f vargs m stk' f' sp' rs' m' F fenv ctx ctx' pc' pc1' rargs
         (MS: match_stacks_inside F m m' stk stk' f' ctx sp' rs')
+        (SAMECOMP: f.(fn_comp) = f'.(fn_comp))
         (COMPAT: fenv_compat prog fenv)
         (FB: tr_funbody fenv f'.(fn_stacksize) ctx f f'.(fn_code))
         (BELOW: context_below ctx' ctx)
@@ -1055,6 +1057,7 @@ Proof.
   left; econstructor; split.
   eapply plus_one. eapply exec_Itailcall; eauto.
   eapply sig_function_translated; eauto.
+    now rewrite <- (comp_transl_partial _ B), COMP.
   econstructor; eauto.
   eapply match_stacks_bound with (bound := sp').
   eapply match_stacks_invariant; eauto.
@@ -1242,6 +1245,7 @@ Proof.
   eapply match_stacks_inside_alloc_left; eauto.
   eapply match_stacks_inside_invariant; eauto.
   omega.
+
   eauto. auto.
   apply agree_regs_incr with F; auto.
   auto. auto. auto.

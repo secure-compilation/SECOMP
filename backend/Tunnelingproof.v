@@ -476,6 +476,7 @@ Proof.
   eapply exec_Ltailcall with (fd := tunnel_fundef fd); eauto.
   eapply find_function_translated; eauto using return_regs_lessdef, match_parent_locset.
   apply sig_preserved.
+  unfold tunnel_fundef. now rewrite comp_tunnel_fundef, comp_transl.
   econstructor; eauto using return_regs_lessdef, match_parent_locset.
 - (* Lbuiltin *)
   exploit eval_builtin_args_lessdef. eexact LS. eauto. eauto. intros (tvargs & EVA & LDA).

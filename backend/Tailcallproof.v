@@ -335,6 +335,23 @@ Proof.
   inv Q. inv H2; eauto.
 Qed.
 
+Lemma find_function_intra_compartment_call ce ros rs fd cp:
+  cenv_compat prog ce ->
+  find_function ge ros rs = Some fd ->
+  intra_compartment_call ce ros cp = true ->
+  comp_of fd = cp.
+Proof.
+  destruct ros as [?|id]; try easy.
+  simpl. destruct (ce ! id) as [cp'|] eqn:GETce; try easy.
+  intros COMPAT. specialize (COMPAT _ _ GETce).
+  destruct COMPAT as (f & GETprog & ?). subst cp'.
+  apply Genv.find_def_symbol in GETprog.
+  destruct GETprog as (b & FIND1 & FIND2).
+  unfold ge. rewrite FIND1.
+  unfold Genv.find_funct_ptr. rewrite FIND2.
+  intros ? EQ. apply proj_sumbool_true in EQ. congruence.
+Qed.
+
 (** Consider an execution of a call/move/nop/return sequence in the
   original code and the corresponding tailcall in the transformed code.
   The transition sequences are of the following form
@@ -533,6 +550,9 @@ Proof.
   left.
   exists (Callstate s' (transf_fundef (compenv_program cu) fd) (rs'##args) m''); split.
   eapply exec_Itailcall; eauto. apply sig_preserved.
+    change (fn_comp _) with (comp_of (transf_function ce f)).
+    rewrite comp_transl, comp_transl.
+    now exploit find_function_intra_compartment_call; eauto.
   constructor. eapply match_stackframes_tail; eauto.
     apply (cenv_compat_linkorder _ _ _ ORDER (compenv_program_compat _)).
   apply regs_lessdef_regs; auto.
@@ -553,6 +573,9 @@ Proof.
   TransfInstr.
   left. exists (Callstate s' (transf_fundef (compenv_program cu) fd) (rs'##args) m'1); split.
   eapply exec_Itailcall; eauto. apply sig_preserved.
+    rewrite comp_transl, COMP.
+    change (fn_comp (transf_function _ _)) with (comp_of (transf_function ce f)).
+    now rewrite comp_transl.
   rewrite stacksize_preserved; auto.
   constructor. auto.
     apply (cenv_compat_linkorder _ _ _ ORDER (compenv_program_compat _)).

@@ -892,6 +892,7 @@ Ltac UseTransfer :=
   intros (tm' & C & D).
   econstructor; split.
   eapply exec_Itailcall; eauto. eapply sig_function_translated; eauto.
+  rewrite <- (comp_transl_partial _ B), COMP. now apply (comp_transl_partial _ FUN).
   erewrite stacksize_translated by eauto. eexact C.
   eapply match_call_states with (cu := cu'); eauto 2 with na.
   eapply magree_extends; eauto. apply nlive_all.

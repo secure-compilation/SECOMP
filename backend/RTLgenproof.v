@@ -1192,6 +1192,7 @@ Inductive tr_fun (tf: function) (map: mapping) (f: CminorSel.function)
       rret = ret_reg f.(CminorSel.fn_sig) r ->
       tr_stmt tf.(fn_code) map f.(fn_body) nentry nret nil ngoto nret rret ->
       tf.(fn_stacksize) = f.(fn_stackspace) ->
+      forall COMP: tf.(fn_comp) = f.(CminorSel.fn_comp),
       tr_fun tf map f ngoto nret rret.
 
 Inductive tr_cont: RTL.code -> mapping ->
@@ -1402,6 +1403,7 @@ Proof.
   left; eapply plus_right. eapply star_trans. eexact A. eexact E. reflexivity.
   eapply exec_Itailcall; eauto. simpl. rewrite J. destruct C. eauto. discriminate P. simpl; auto.
   apply sig_transl_function; auto.
+    rewrite <- (comp_transl_partial fd Q), COMP. inv TF; congruence.
   rewrite H; eauto.
   traceEq.
   constructor; auto.
@@ -1417,6 +1419,7 @@ Proof.
   eapply exec_Itailcall; eauto. simpl. rewrite symbols_preserved. rewrite H5.
   rewrite Genv.find_funct_find_funct_ptr in P. eauto.
   apply sig_transl_function; auto.
+  rewrite <- (comp_transl_partial _ Q), COMP. inv TF; congruence.
   rewrite H; eauto.
   traceEq.
   constructor; auto.
