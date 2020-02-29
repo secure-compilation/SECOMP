@@ -30,7 +30,7 @@ the definition of has_comp_external_function in common/AST.v.
 Probably depends on T5 and T6.
 * TODO [T4] Change the definition of extcall_malloc_sem to allocate new memory for the calling compartment.
 Depends on T3.
-* TODO [T5] Disable tailcall optimizations for inter-compartment calls
+* DONE [T5] Disable tailcall optimizations for inter-compartment calls
 * TODO [T6] Change all semantics to get stuck on inter-compartment tailcalls
 Depends on T5
 * TODO [T7] Enable continuous integration so that we don't have to test the development for each possible backend.

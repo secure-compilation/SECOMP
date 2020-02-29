@@ -68,6 +68,33 @@ at most [niter] instructions. *)
 
 Definition niter := 5%nat.
 
+(** Tailcalls between compartments are not allowed.  The [ce: compenv]
+  environments below record which functions belong to which compartments, so
+  that we can prevent inter-compartment calls from turning into tailcalls.
+  Currently, this forces us to prevent tailcalls to any function that is not a
+  constant. *)
+
+Definition compenv := PTree.t compartment.
+
+Definition add_globdef (ce: compenv) (idg: ident * globdef fundef unit): compenv :=
+  match idg with
+  | (id, Gfun f) => PTree.set id (comp_of f) ce
+  | (id, Gvar _) => PTree.remove id ce
+  end.
+
+Definition compenv_program (p: program): compenv :=
+  List.fold_left add_globdef p.(prog_defs) (PTree.empty compartment).
+
+Definition intra_compartment_call (ce: compenv) (ros: reg + ident) (cp: compartment): bool :=
+  match ros with
+  | inr id =>
+    match ce!id with
+    | Some cp' => eq_compartment cp cp'
+    | None     => false
+    end
+  | _ => false
+  end.
+
 (** The code transformation is straightforward: call instructions
   followed by an appropriate nop/move/return sequence become
   tail calls; other instructions are unchanged.
@@ -77,12 +104,13 @@ Definition niter := 5%nat.
   allowed by the calling conventions, and where the result signatures
   match. *)
 
-Definition transf_instr (f: function) (pc: node) (instr: instruction) :=
+Definition transf_instr (ce: compenv) (f: function) (pc: node) (instr: instruction) :=
   match instr with
   | Icall sig ros args res s =>
       if is_return niter f s res
       && tailcall_is_possible sig
       && opt_typ_eq sig.(sig_res) f.(fn_sig).(sig_res)
+      && intra_compartment_call ce ros f.(fn_comp)
       then Itailcall sig ros args
       else instr
   | _ => instr
@@ -91,13 +119,13 @@ Definition transf_instr (f: function) (pc: node) (instr: instruction) :=
 (** A function is transformed only if its stack block is empty,
     as explained above.  *)
 
-Definition transf_function (f: function) : function :=
+Definition transf_function (ce: compenv) (f: function) : function :=
   if zeq f.(fn_stacksize) 0
-  then RTL.transf_function (transf_instr f) f
+  then RTL.transf_function (transf_instr ce f) f
   else f.
 
-Definition transf_fundef (fd: fundef) : fundef :=
-  AST.transf_fundef transf_function fd.
+Definition transf_fundef (ce: compenv) (fd: fundef) : fundef :=
+  AST.transf_fundef (transf_function ce) fd.
 
 Definition transf_program (p: program) : program :=
-  transform_program transf_fundef p.
+  transform_program (transf_fundef (compenv_program p)) p.
