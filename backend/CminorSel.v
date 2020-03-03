@@ -165,6 +165,7 @@ Section EVAL_EXPR.
 
 Variable sp: val.
 Variable e: env.
+Variable cp: compartment.
 Variable m: mem.
 
 Inductive eval_expr: letenv -> expr -> val -> Prop :=
@@ -193,14 +194,14 @@ Inductive eval_expr: letenv -> expr -> val -> Prop :=
       eval_expr le (Eletvar n) v
   | eval_Ebuiltin: forall le ef al vl v,
       eval_exprlist le al vl ->
-      external_call ef ge vl m E0 v m ->
+      external_call ef ge cp vl m E0 v m ->
       eval_expr le (Ebuiltin ef al) v
   | eval_Eexternal: forall le id sg al b ef vl v,
       Genv.find_symbol ge id = Some b ->
       Genv.find_funct_ptr ge b = Some (External ef) ->
       ef_sig ef = sg ->
       eval_exprlist le al vl ->
-      external_call ef ge vl m E0 v m ->
+      external_call ef ge cp vl m E0 v m ->
       eval_expr le (Eexternal id sg al) v
 
 with eval_exprlist: letenv -> exprlist -> list val -> Prop :=
@@ -349,30 +350,32 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f Sskip k (Vptr sp Ptrofs.zero) e m)
         E0 (Returnstate Vundef k m')
 
-  | step_assign: forall f id a k sp e m v,
-      eval_expr sp e m nil a v ->
+  | step_assign: forall f cp id a k sp e m v,
+      cp = f.(fn_comp) ->
+      eval_expr sp e cp m nil a v ->
       step (State f (Sassign id a) k sp e m)
         E0 (State f Sskip k sp (PTree.set id v e) m)
 
-  | step_store: forall f chunk addr al b k sp e m vl v vaddr m',
-      eval_exprlist sp e m nil al vl ->
-      eval_expr sp e m nil b v ->
+  | step_store: forall f cp chunk addr al b k sp e m vl v vaddr m',
+      cp = f.(fn_comp) ->
+      eval_exprlist sp e cp m nil al vl ->
+      eval_expr sp e cp m nil b v ->
       eval_addressing ge sp addr vl = Some vaddr ->
       Mem.storev chunk m vaddr v = Some m' ->
       step (State f (Sstore chunk addr al b) k sp e m)
         E0 (State f Sskip k sp e m')
 
   | step_call: forall f optid sig a bl k sp e m vf vargs fd,
-      eval_expr_or_symbol sp e m nil a vf ->
-      eval_exprlist sp e m nil bl vargs ->
+      eval_expr_or_symbol sp e f.(fn_comp) m nil a vf ->
+      eval_exprlist sp e f.(fn_comp) m nil bl vargs ->
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
       step (State f (Scall optid sig a bl) k sp e m)
         E0 (Callstate fd vargs f.(fn_comp) (Kcall optid f sp e k) m)
 
-| step_tailcall: forall f sig a bl k sp e m vf vargs fd m',
-      eval_expr_or_symbol (Vptr sp Ptrofs.zero) e m nil a vf ->
-      eval_exprlist (Vptr sp Ptrofs.zero) e m nil bl vargs ->
+  | step_tailcall: forall f sig a bl k sp e m vf vargs fd m',
+      eval_expr_or_symbol (Vptr sp Ptrofs.zero) e f.(fn_comp) m nil a vf ->
+      eval_exprlist (Vptr sp Ptrofs.zero) e f.(fn_comp) m nil bl vargs ->
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
       forall COMP: comp_of fd = f.(fn_comp),
@@ -380,9 +383,10 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Stailcall sig a bl) k (Vptr sp Ptrofs.zero) e m)
         E0 (Callstate fd vargs f.(fn_comp) (call_cont k) m')
 
-  | step_builtin: forall f res ef al k sp e m vl t v m',
-      list_forall2 (eval_builtin_arg sp e m) al vl ->
-      external_call ef ge vl m t v m' ->
+  | step_builtin: forall f cp res ef al k sp e m vl t v m',
+      cp = f.(fn_comp) ->
+      list_forall2 (eval_builtin_arg sp e cp m) al vl ->
+      external_call ef ge cp vl m t v m' ->
       step (State f (Sbuiltin res ef al) k sp e m)
          t (State f Sskip k sp (set_builtin_res res v e) m')
 
@@ -390,8 +394,9 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Sseq s1 s2) k sp e m)
         E0 (State f s1 (Kseq s2 k) sp e m)
 
-  | step_ifthenelse: forall f c s1 s2 k sp e m b,
-      eval_condexpr sp e m nil c b ->
+  | step_ifthenelse: forall f cp c s1 s2 k sp e m b,
+      cp = f.(fn_comp) ->
+      eval_condexpr sp e cp m nil c b ->
       step (State f (Sifthenelse c s1 s2) k sp e m)
         E0 (State f (if b then s1 else s2) k sp e m)
 
@@ -413,8 +418,9 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Sexit (S n)) (Kblock k) sp e m)
         E0 (State f (Sexit n) k sp e m)
 
-  | step_switch: forall f a k sp e m n,
-      eval_exitexpr sp e m nil a n ->
+  | step_switch: forall f cp a k sp e m n,
+      cp = f.(fn_comp) ->
+      eval_exitexpr sp e cp m nil a n ->
       step (State f (Sswitch a) k sp e m)
         E0 (State f (Sexit n) k sp e m)
 
@@ -422,8 +428,9 @@ Inductive step: state -> trace -> state -> Prop :=
       Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
       step (State f (Sreturn None) k (Vptr sp Ptrofs.zero) e m)
         E0 (Returnstate Vundef (call_cont k) m')
-  | step_return_1: forall f a k sp e m v m',
-      eval_expr (Vptr sp Ptrofs.zero) e m nil a v ->
+  | step_return_1: forall f cp a k sp e m v m',
+      cp = f.(fn_comp) ->
+      eval_expr (Vptr sp Ptrofs.zero) e cp m nil a v ->
       Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
       step (State f (Sreturn (Some a)) k (Vptr sp Ptrofs.zero) e m)
         E0 (Returnstate v (call_cont k) m')
@@ -442,8 +449,9 @@ Inductive step: state -> trace -> state -> Prop :=
       set_locals f.(fn_vars) (set_params vargs f.(fn_params)) = e ->
       step (Callstate (Internal f) vargs cp k m)
         E0 (State f f.(fn_body) k (Vptr sp Ptrofs.zero) e m')
+
   | step_external_function: forall ef vargs cp k m t vres m',
-      external_call ef ge vargs m t vres m' ->
+      external_call ef ge cp vargs m t vres m' ->
       step (Callstate (External ef) vargs cp k m)
          t (Returnstate vres k m')
 
@@ -546,22 +554,22 @@ Proof.
 Qed.
 
 Lemma eval_lift_expr:
-  forall ge sp e m w le a v,
-  eval_expr ge sp e m le a v ->
+  forall ge sp e cp m w le a v,
+  eval_expr ge sp e cp m le a v ->
   forall p le', insert_lenv le p w le' ->
-  eval_expr ge sp e m le' (lift_expr p a) v.
+  eval_expr ge sp e cp m le' (lift_expr p a) v.
 Proof.
   intros until w.
-  apply (eval_expr_ind3 ge sp e m
+  apply (eval_expr_ind3 ge sp e cp m
     (fun le a v =>
       forall p le', insert_lenv le p w le' ->
-      eval_expr ge sp e m le' (lift_expr p a) v)
+      eval_expr ge sp e cp m le' (lift_expr p a) v)
     (fun le al vl =>
       forall p le', insert_lenv le p w le' ->
-      eval_exprlist ge sp e m le' (lift_exprlist p al) vl)
+      eval_exprlist ge sp e cp m le' (lift_exprlist p al) vl)
     (fun le a b =>
       forall p le', insert_lenv le p w le' ->
-      eval_condexpr ge sp e m le' (lift_condexpr p a) b));
+      eval_condexpr ge sp e cp m le' (lift_condexpr p a) b));
   simpl; intros; eauto with evalexpr.
 
   eapply eval_Econdition; eauto. destruct va; eauto.
@@ -577,9 +585,9 @@ Proof.
 Qed.
 
 Lemma eval_lift:
-  forall ge sp e m le a v w,
-  eval_expr ge sp e m le a v ->
-  eval_expr ge sp e m (w::le) (lift a) v.
+  forall ge sp e cp m le a v w,
+  eval_expr ge sp e cp m le a v ->
+  eval_expr ge sp e cp m (w::le) (lift a) v.
 Proof.
   intros. unfold lift. eapply eval_lift_expr.
   eexact H. apply insert_lenv_0.

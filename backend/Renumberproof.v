@@ -195,8 +195,8 @@ Proof.
   eapply exec_Itailcall with (fd := transf_fundef fd); eauto.
     eapply find_function_translated; eauto.
     apply sig_preserved.
-    rewrite comp_transl, COMP.
-    symmetry. now apply (comp_transl f).
+    rewrite comp_transl, COMP. eauto.
+    rewrite COMP.
   constructor. auto.
 (* builtin *)
   econstructor; split.
@@ -226,7 +226,8 @@ Proof.
 (* external function *)
   econstructor; split.
   eapply exec_function_external; eauto.
-    eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+    eapply external_call_symbols_preserved; eauto.
+     apply senv_preserved.
   constructor; auto.
 (* return *)
   inv STACKS. inv H1.

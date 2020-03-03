@@ -230,14 +230,16 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State s f sp pc rs m)
         E0 (State s f sp pc' rs m')
   | exec_Icall:
-      forall s f sp pc rs m sig ros args res pc' fd,
+      forall s f cp sp pc rs m sig ros args res pc' fd,
+      cp = f.(fn_comp) ->
       (fn_code f)!pc = Some(Icall sig ros args res pc') ->
       find_function ros rs = Some fd ->
       funsig fd = sig ->
       step (State s f sp pc rs m)
         E0 (Callstate (Stackframe res f sp pc' rs :: s) fd rs##args f.(fn_comp) m)
   | exec_Itailcall:
-      forall s f stk pc rs m sig ros args fd m',
+      forall s f cp stk pc rs m sig ros args fd m',
+      cp = f.(fn_comp) ->
       (fn_code f)!pc = Some(Itailcall sig ros args) ->
       find_function ros rs = Some fd ->
       funsig fd = sig ->
@@ -246,10 +248,11 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State s f (Vptr stk Ptrofs.zero) pc rs m)
         E0 (Callstate s fd rs##args f.(fn_comp) m')
   | exec_Ibuiltin:
-      forall s f sp pc rs m ef args res pc' vargs t vres m',
+      forall s f cp sp pc rs m ef args res pc' vargs t vres m',
+      cp = f.(fn_comp) ->
       (fn_code f)!pc = Some(Ibuiltin ef args res pc') ->
       eval_builtin_args ge (fun r => rs#r) sp m args vargs ->
-      external_call ef ge vargs m t vres m' ->
+      external_call ef ge cp vargs m t vres m' ->
       step (State s f sp pc rs m)
          t (State s f sp pc' (regmap_setres res vres rs) m')
   | exec_Icond:
@@ -284,7 +287,7 @@ Inductive step: state -> trace -> state -> Prop :=
                   m')
   | exec_function_external:
       forall s ef args cp res t m m',
-      external_call ef ge args m t res m' ->
+      external_call ef ge cp args m t res m' ->
       step (Callstate s (External ef) args cp m)
          t (Returnstate s res m')
   | exec_return:

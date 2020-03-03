@@ -318,6 +318,7 @@ Section EVAL_EXPR.
 Variable e: env.
 Variable le: temp_env.
 Variable m: mem.
+(* JT: TODO: Might probably need to add a compartment variable to this section *)
 
 Inductive eval_expr: expr -> val -> Prop :=
   | eval_Evar: forall id v,
@@ -394,9 +395,10 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Scall optid sig a bl) k e le m)
         E0 (Callstate fd vargs f.(fn_comp) (Kcall optid f e le k) m)
 
-  | step_builtin: forall f optid ef bl k e le m vargs t vres m',
+  | step_builtin: forall f cp optid ef bl k e le m vargs t vres m',
+      cp = f.(fn_comp) ->
       eval_exprlist e le m bl vargs ->
-      external_call ef ge vargs m t vres m' ->
+      external_call ef ge cp vargs m t vres m' ->
       step (State f (Sbuiltin optid ef bl) k e le m)
          t (State f Sskip k e (Cminor.set_optvar optid vres le) m')
 
@@ -462,7 +464,7 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State f f.(fn_body) k e le m1)
 
   | step_external_function: forall ef vargs cp k m t vres m',
-      external_call ef ge vargs m t vres m' ->
+      external_call ef ge cp vargs m t vres m' ->
       step (Callstate (External ef) vargs cp k m)
          t (Returnstate vres k m')
 

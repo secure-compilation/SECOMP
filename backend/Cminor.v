@@ -391,7 +391,7 @@ Inductive eval_exprlist: list expr -> list val -> Prop :=
 
 End EVAL_EXPR.
 
-(** Pop continuation until a call or stop *)
+(** Pop continuation until a call or stop while skipping tail frames *)
 
 Fixpoint call_cont (k: cont) : cont :=
   match k with
@@ -478,9 +478,10 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Stailcall sig a bl) k (Vptr sp Ptrofs.zero) e m)
         E0 (Callstate fd vargs f.(fn_comp) (call_cont k) m')
 
-  | step_builtin: forall f optid ef bl k sp e m vargs t vres m',
+  | step_builtin: forall f optid ef bl k sp e m c vargs t vres m',
       eval_exprlist sp e m bl vargs ->
-      external_call ef ge vargs m t vres m' ->
+      c = f.(fn_comp) ->
+      external_call ef ge c vargs m t vres m' ->
       step (State f (Sbuiltin optid ef bl) k sp e m)
          t (State f Sskip k sp (set_optvar optid vres e) m')
 
@@ -543,7 +544,7 @@ Inductive step: state -> trace -> state -> Prop :=
       step (Callstate (Internal f) vargs cp k m)
         E0 (State f f.(fn_body) k (Vptr sp Ptrofs.zero) e m')
   | step_external_function: forall ef cp vargs k m t vres m',
-      external_call ef ge vargs m t vres m' ->
+      external_call ef ge cp vargs m t vres m' ->
       step (Callstate (External ef) vargs cp k m)
          t (Returnstate vres k m')
 
@@ -641,7 +642,7 @@ Proof.
   intros. constructor; set (ge := Genv.globalenv p); simpl; intros.
 - (* determ *)
   inv H; inv H0; Determ.
-  + subst vargs0. exploit external_call_determ. eexact H2. eexact H13.
+  + subst vargs0. exploit external_call_determ. eexact H3.  eexact H14.
     intros (A & B). split; intros; auto.
     apply B in H; destruct H; congruence.
   + subst v0. assert (b0 = b) by (inv H2; inv H13; auto). subst b0; auto.
@@ -714,27 +715,28 @@ Section NATURALSEM.
 
 Variable ge: genv.
 
-(** Evaluation of a function invocation: [eval_funcall ge m f args t m' res]
+(** Evaluation of a function invocation: [eval_funcall ge cp m f args t m' res]
   means that the function [f], applied to the arguments [args] in
   memory state [m], returns the value [res] in modified memory state [m'].
   [t] is the trace of observable events generated during the invocation.
 *)
 
 Inductive eval_funcall:
+        compartment ->
         mem -> fundef -> list val -> trace ->
         mem -> val -> Prop :=
   | eval_funcall_internal:
-      forall m f vargs m1 sp e t e2 m2 out vres m3,
+      forall cp m f vargs m1 sp e t e2 m2 out vres m3,
       Mem.alloc m f.(fn_comp) 0 f.(fn_stackspace) = (m1, sp) ->
       set_locals f.(fn_vars) (set_params vargs f.(fn_params)) = e ->
       exec_stmt f (Vptr sp Ptrofs.zero) e m1 f.(fn_body) t e2 m2 out ->
       outcome_result_value out vres ->
       outcome_free_mem out m2 sp f.(fn_stackspace) m3 ->
-      eval_funcall m (Internal f) vargs t m3 vres
+      eval_funcall cp m (Internal f) vargs t m3 vres
   | eval_funcall_external:
-      forall ef m args t res m',
-      external_call ef ge args m t res m' ->
-      eval_funcall m (External ef) args t m' res
+      forall ef cp m args t res m',
+      external_call ef ge cp args m t res m' ->
+      eval_funcall cp m (External ef) args t m' res
 
 (** Execution of a statement: [exec_stmt ge f sp e m s t e' m' out]
   means that statement [s] executes with outcome [out].
@@ -767,13 +769,13 @@ with exec_stmt:
       eval_exprlist ge sp e m bl vargs ->
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
-      eval_funcall m fd vargs t m' vres ->
+      eval_funcall f.(fn_comp) m fd vargs t m' vres ->
       e' = set_optvar optid vres e ->
       exec_stmt f sp e m (Scall optid sig a bl) t e' m' Out_normal
   | exec_Sbuiltin:
       forall f sp e m optid ef bl t m' vargs vres e',
       eval_exprlist ge sp e m bl vargs ->
-      external_call ef ge vargs m t vres m' ->
+      external_call ef ge f.(fn_comp) vargs m t vres m' ->
       e' = set_optvar optid vres e ->
       exec_stmt f sp e m (Sbuiltin optid ef bl) t e' m' Out_normal
   | exec_Sifthenelse:
@@ -832,7 +834,7 @@ with exec_stmt:
       funsig fd = sig ->
       forall (COMP: comp_of fd = f.(fn_comp)),
       Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
-      eval_funcall m' fd vargs t m'' vres ->
+      eval_funcall f.(fn_comp) m' fd vargs t m'' vres ->
       exec_stmt f (Vptr sp Ptrofs.zero) e m (Stailcall sig a bl) t e m'' (Out_tailcall_return vres).
 
 Scheme eval_funcall_ind2 := Minimality for eval_funcall Sort Prop
@@ -923,7 +925,7 @@ Inductive bigstep_program_terminates (p: program): trace -> int -> Prop :=
       Genv.find_symbol ge p.(prog_main) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
       funsig f = signature_main ->
-      eval_funcall ge m0 f nil t m (Vint r) ->
+      eval_funcall ge default_compartment m0 f nil t m (Vint r) ->
       bigstep_program_terminates p t r.
 
 Inductive bigstep_program_diverges (p: program): traceinf -> Prop :=
@@ -987,9 +989,9 @@ Proof.
 Qed.
 
 Lemma eval_funcall_exec_stmt_steps:
-  (forall m fd args t m' res,
-   eval_funcall ge m fd args t m' res ->
-   forall cp k,
+  (forall cp m fd args t m' res,
+   eval_funcall ge cp m fd args t m' res ->
+   forall k,
    is_call_cont k ->
    star step ge (Callstate fd args cp k m)
               t (Returnstate res k m'))
@@ -1023,7 +1025,7 @@ Proof.
   reflexivity. traceEq.
 
 (* funcall external *)
-  apply star_one. constructor; auto.
+  apply star_one. econstructor; eauto.
 
 (* skip *)
   econstructor; split.
@@ -1149,9 +1151,9 @@ Proof.
 Qed.
 
 Lemma eval_funcall_steps:
-   forall m fd args t m' res,
-   eval_funcall ge m fd args t m' res ->
-   forall cp k,
+   forall cp m fd args t m' res,
+   eval_funcall ge cp m fd args t m' res ->
+   forall k,
    is_call_cont k ->
    star step ge (Callstate fd args cp k m)
               t (Returnstate res k m').
