@@ -407,6 +407,12 @@ Definition is_call_cont (k: cont) : Prop :=
   | _ => False
   end.
 
+Definition get_call_cont_compartment (k: cont) : option compartment :=
+  match k with
+  | Kcall _ f _ _ _ => Some f.(fn_comp)
+  | _ => None
+  end.
+
 (** Find the statement and manufacture the continuation
   corresponding to a label *)
 
@@ -460,28 +466,27 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Sstore chunk addr a) k sp e m)
         E0 (State f Sskip k sp e m')
 
-  | step_call: forall f c optid sig a bl k sp e m vf vargs fd,
+  | step_call: forall f optid sig a bl k sp e m vf vargs fd,
       eval_expr sp e m a vf ->
       eval_exprlist sp e m bl vargs ->
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
-      fn_comp f = c ->
       step (State f (Scall optid sig a bl) k sp e m)
         E0 (Callstate fd vargs (Kcall optid f sp e k) m)
 
-  | step_tailcall: forall f c sig a bl k sp e m vf vargs fd m',
+  | step_tailcall: forall f sig a bl k sp e m vf vargs fd m',
       eval_expr (Vptr sp Ptrofs.zero) e m a vf ->
       eval_exprlist (Vptr sp Ptrofs.zero) e m bl vargs ->
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
       forall (COMP: comp_of fd = f.(fn_comp)),
       Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
-      fn_comp f = c ->
       step (State f (Stailcall sig a bl) k (Vptr sp Ptrofs.zero) e m)
         E0 (Callstate fd vargs (call_cont k) m')
 
   | step_builtin: forall f optid ef bl k sp e m c vargs t vres m',
       eval_exprlist sp e m bl vargs ->
+      c = f.(fn_comp) ->
       external_call ef ge c vargs m t vres m' ->
       step (State f (Sbuiltin optid ef bl) k sp e m)
          t (State f Sskip k sp (set_optvar optid vres e) m')
@@ -542,14 +547,11 @@ Inductive step: state -> trace -> state -> Prop :=
   | step_internal_function: forall f vargs k m m' sp e,
       Mem.alloc m f.(fn_comp) 0 f.(fn_stackspace) = (m', sp) ->
       set_locals f.(fn_vars) (set_params vargs f.(fn_params)) = e ->
-      (* k = Kcall _ g _ _ _ -> *)
-      (* c = g.(fn_comp) -> *)
       step (Callstate (Internal f) vargs k m)
         E0 (State f f.(fn_body) k (Vptr sp Ptrofs.zero) e m')
-  | step_external_function: forall ef id g v e k' c vargs k m t vres m',
+  | step_external_function: forall ef c vargs k m t vres m',
       external_call ef ge c vargs m t vres m' ->
-      k = Kcall id g v e k' ->
-      c = g.(fn_comp) ->
+      get_call_cont_compartment k = Some c ->
       step (Callstate (External ef) vargs k m)
          t (Returnstate vres k m')
 
@@ -647,12 +649,13 @@ Proof.
   intros. constructor; set (ge := Genv.globalenv p); simpl; intros.
 - (* determ *)
   inv H; inv H0; Determ.
-  + subst vargs0. exploit external_call_determ. eexact H2.  eexact H13.
+  + subst vargs0. exploit external_call_determ. eexact H3.  eexact H14.
     intros (A & B). split; intros; auto.
     apply B in H; destruct H; congruence.
   + subst v0. assert (b0 = b) by (inv H2; inv H13; auto). subst b0; auto.
   + assert (n0 = n) by (inv H2; inv H14; auto). subst n0; auto.
-  + exploit external_call_determ. eexact H1. eexact H7.
+  + assert (c = c0) by congruence; subst c0.
+    exploit external_call_determ. eexact H1. eexact H8.
     intros (A & B). split; intros; auto.
     apply B in H; destruct H; congruence.
 - (* single event *)
