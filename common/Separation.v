@@ -848,12 +848,12 @@ Proof.
 Qed.
 
 Lemma external_call_parallel_rule:
-  forall (F V: Type) ef (ge: Genv.t F V) c vargs1 m1 t vres1 m1' m2 j P vargs2,
-  external_call ef ge c vargs1 m1 t vres1 m1' ->
+  forall (F V: Type) ef (ge: Genv.t F V) vargs1 m1 t vres1 m1' m2 j P vargs2,
+  external_call ef ge vargs1 m1 t vres1 m1' ->
   m2 |= minjection j m1 ** globalenv_inject ge j ** P ->
   Val.inject_list j vargs1 vargs2 ->
   exists j' vres2 m2',
-     external_call ef ge c vargs2 m2 t vres2 m2'
+     external_call ef ge vargs2 m2 t vres2 m2'
   /\ Val.inject j' vres1 vres2
   /\ m2' |= minjection j' m1' ** globalenv_inject ge j' ** P
   /\ inject_incr j j'

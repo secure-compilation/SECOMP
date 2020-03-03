@@ -554,16 +554,6 @@ Fixpoint output_trace (t: trace) : Prop :=
 
 (** * Semantics of volatile memory accesses *)
 
-(* JT: NOTE: Volatile loads may appear on the trace.
-   1) Does that cause any issue with compartmentalization?
-   2) Cross-component volatile loads should be forbidden, probably.
- *)
-
-(* JT: NOTE: Should the semantics of volatile loads depend on the component
- that perform them? IE, should we add a parameter [c] to the next definition? *)
-(* AD: ANSWER: Probably, because we eventually want to prevent cross-component
- memory interactions. But maybe the enforcement should happen somewhere else, for
- instance in [volatile_load_sem] *)
 Inductive volatile_load (ge: Senv.t):
                    memory_chunk -> mem -> block -> ptrofs -> trace -> val -> Prop :=
   | volatile_load_vol: forall chunk m b ofs id ev v,
@@ -604,7 +594,7 @@ Inductive volatile_store (ge: Senv.t):
 *)
 
 Definition extcall_sem : Type :=
-  Senv.t -> compartment -> list val -> mem -> trace -> val -> mem -> Prop.
+  Senv.t -> list val -> mem -> trace -> val -> mem -> Prop.
 
 (** We now specify the expected properties of this predicate. *)
 
@@ -631,47 +621,47 @@ Record extcall_properties (sem: extcall_sem) (sg: signature) : Prop :=
 
 (** The return value of an external call must agree with its signature. *)
   ec_well_typed:
-    forall ge c vargs m1 t vres m2,
-    sem ge c vargs m1 t vres m2 ->
+    forall ge vargs m1 t vres m2,
+    sem ge vargs m1 t vres m2 ->
     Val.has_type vres (proj_sig_res sg);
 
 (** The semantics is invariant under change of global environment that preserves symbols. *)
   ec_symbols_preserved:
-    forall ge1 ge2 c vargs m1 t vres m2,
+    forall ge1 ge2 vargs m1 t vres m2,
     Senv.equiv ge1 ge2 ->
-    sem ge1 c vargs m1 t vres m2 ->
-    sem ge2 c vargs m1 t vres m2;
+    sem ge1 vargs m1 t vres m2 ->
+    sem ge2 vargs m1 t vres m2;
 
 (** External calls cannot invalidate memory blocks.  (Remember that
   freeing a block does not invalidate its block identifier.) *)
   ec_valid_block:
-    forall ge c vargs m1 t vres m2 b,
-    sem ge c vargs m1 t vres m2 ->
+    forall ge vargs m1 t vres m2 b,
+    sem ge vargs m1 t vres m2 ->
     Mem.valid_block m1 b -> Mem.valid_block m2 b;
 
 (** External calls cannot increase the max permissions of a valid block.
     They can decrease the max permissions, e.g. by freeing. *)
   ec_max_perm:
-    forall ge c vargs m1 t vres m2 b ofs p,
-    sem ge c vargs m1 t vres m2 ->
+    forall ge vargs m1 t vres m2 b ofs p,
+    sem ge vargs m1 t vres m2 ->
     Mem.valid_block m1 b -> Mem.perm m2 b ofs Max p -> Mem.perm m1 b ofs Max p;
 
 (** External call cannot modify memory unless they have [Max, Writable]
    permissions. *)
   ec_readonly:
-    forall ge c vargs m1 t vres m2,
-    sem ge c vargs m1 t vres m2 ->
+    forall ge vargs m1 t vres m2,
+    sem ge vargs m1 t vres m2 ->
     Mem.unchanged_on (loc_not_writable m1) m1 m2;
 
 (** External calls must commute with memory extensions, in the
   following sense. *)
   ec_mem_extends:
-    forall ge c vargs m1 t vres m2 m1' vargs',
-    sem ge c vargs m1 t vres m2 ->
+    forall ge vargs m1 t vres m2 m1' vargs',
+    sem ge vargs m1 t vres m2 ->
     Mem.extends m1 m1' ->
     Val.lessdef_list vargs vargs' ->
     exists vres', exists m2',
-       sem ge c vargs' m1' t vres' m2'
+       sem ge vargs' m1' t vres' m2'
     /\ Val.lessdef vres vres'
     /\ Mem.extends m2 m2'
     /\ Mem.unchanged_on (loc_out_of_bounds m1) m1' m2';
@@ -679,13 +669,13 @@ Record extcall_properties (sem: extcall_sem) (sg: signature) : Prop :=
 (** External calls must commute with memory injections,
   in the following sense. *)
   ec_mem_inject:
-    forall ge1 ge2 c vargs m1 t vres m2 f m1' vargs',
+    forall ge1 ge2 vargs m1 t vres m2 f m1' vargs',
     symbols_inject f ge1 ge2 ->
-    sem ge1 c vargs m1 t vres m2 ->
+    sem ge1 vargs m1 t vres m2 ->
     Mem.inject f m1 m1' ->
     Val.inject_list f vargs vargs' ->
     exists f', exists vres', exists m2',
-       sem ge2 c vargs' m1' t vres' m2'
+       sem ge2 vargs' m1' t vres' m2'
     /\ Val.inject f' vres vres'
     /\ Mem.inject f' m2 m2'
     /\ Mem.unchanged_on (loc_unmapped f) m1 m2
@@ -695,29 +685,29 @@ Record extcall_properties (sem: extcall_sem) (sg: signature) : Prop :=
 
 (** External calls produce at most one event. *)
   ec_trace_length:
-    forall ge c vargs m t vres m',
-    sem ge c vargs m t vres m' -> (length t <= 1)%nat;
+    forall ge vargs m t vres m',
+    sem ge vargs m t vres m' -> (length t <= 1)%nat;
 
 (** External calls must be receptive to changes of traces by another, matching trace. *)
   ec_receptive:
-    forall ge c vargs m t1 vres1 m1 t2,
-    sem ge c vargs m t1 vres1 m1 -> match_traces ge t1 t2 ->
-    exists vres2, exists m2, sem ge c vargs m t2 vres2 m2;
+    forall ge vargs m t1 vres1 m1 t2,
+    sem ge vargs m t1 vres1 m1 -> match_traces ge t1 t2 ->
+    exists vres2, exists m2, sem ge vargs m t2 vres2 m2;
 
 (** External calls must be deterministic up to matching between traces. *)
   ec_determ:
-    forall ge c vargs m t1 vres1 m1 t2 vres2 m2,
-    sem ge c vargs m t1 vres1 m1 -> sem ge c vargs m t2 vres2 m2 ->
+    forall ge vargs m t1 vres1 m1 t2 vres2 m2,
+    sem ge vargs m t1 vres1 m1 -> sem ge vargs m t2 vres2 m2 ->
     match_traces ge t1 t2 /\ (t1 = t2 -> vres1 = vres2 /\ m1 = m2)
 }.
 
 (** ** Semantics of volatile loads *)
 
 Inductive volatile_load_sem (chunk: memory_chunk) (ge: Senv.t):
-              compartment -> list val -> mem -> trace -> val -> mem -> Prop :=
-  | volatile_load_sem_intro: forall c b ofs m t v,
+              list val -> mem -> trace -> val -> mem -> Prop :=
+  | volatile_load_sem_intro: forall b ofs m t v,
       volatile_load ge chunk m b ofs t v ->
-      volatile_load_sem chunk ge c (Vptr b ofs :: nil) m t v m.
+      volatile_load_sem chunk ge (Vptr b ofs :: nil) m t v m.
 
 Lemma volatile_load_preserved:
   forall ge1 ge2 chunk m b ofs t v,
@@ -810,7 +800,7 @@ Proof.
 - inv H. exploit volatile_load_receptive; eauto. intros [v2 A].
   exists v2; exists m1; constructor; auto.
 (* determ *)
-- inv H; inv H0. inv H1; inv H8; try congruence.
+- inv H; inv H0. inv H1; inv H7; try congruence.
   assert (id = id0) by (eapply Senv.find_symbol_injective; eauto). subst id0.
   split. constructor.
   eapply eventval_match_valid; eauto.
@@ -824,13 +814,11 @@ Qed.
 
 (** ** Semantics of volatile stores *)
 
-(* JT: Note: Same remarks as for volatile loads *)
-
 Inductive volatile_store_sem (chunk: memory_chunk) (ge: Senv.t):
-              compartment -> list val -> mem -> trace -> val -> mem -> Prop :=
-  | volatile_store_sem_intro: forall b c ofs m1 v t m2,
+              list val -> mem -> trace -> val -> mem -> Prop :=
+  | volatile_store_sem_intro: forall b ofs m1 v t m2,
       volatile_store ge chunk m1 b ofs v t m2 ->
-      volatile_store_sem chunk ge c (Vptr b ofs :: v :: nil) m1 t Vundef m2.
+      volatile_store_sem chunk ge (Vptr b ofs :: v :: nil) m1 t Vundef m2.
 
 Lemma volatile_store_preserved:
   forall ge1 ge2 chunk m1 b ofs v t m2,
@@ -961,7 +949,7 @@ Proof.
 - assert (t1 = t2). inv H. eapply volatile_store_receptive; eauto.
   subst t2; exists vres1; exists m1; auto.
 (* determ *)
-- inv H; inv H0. inv H1; inv H9; try congruence.
+- inv H; inv H0. inv H1; inv H8; try congruence.
   assert (id = id0) by (eapply Senv.find_symbol_injective; eauto). subst id0.
   assert (ev = ev0) by (eapply eventval_match_determ_2; eauto). subst ev0.
   split. constructor. auto.
@@ -970,14 +958,12 @@ Qed.
 
 (** ** Semantics of dynamic memory allocation (malloc) *)
 
-(* JT: NOTE: Same remarks as for volatile loads and stores *)
-
 Inductive extcall_malloc_sem (ge: Senv.t):
-              compartment -> list val -> mem -> trace -> val -> mem -> Prop :=
-  | extcall_malloc_sem_intro: forall c sz m m' b m'',
+              list val -> mem -> trace -> val -> mem -> Prop :=
+  | extcall_malloc_sem_intro: forall sz m m' b m'',
       Mem.alloc m default_compartment (- size_chunk Mptr) (Ptrofs.unsigned sz) = (m', b) ->
       Mem.store Mptr m' b (- size_chunk Mptr) (Vptrofs sz) = Some m'' ->
-      extcall_malloc_sem ge c (Vptrofs sz :: nil) m E0 (Vptr b Ptrofs.zero) m''.
+      extcall_malloc_sem ge (Vptrofs sz :: nil) m E0 (Vptr b Ptrofs.zero) m''.
 
 Lemma extcall_malloc_ok:
   extcall_properties extcall_malloc_sem
@@ -1047,7 +1033,7 @@ Proof.
 (* determ *)
 - inv H. simple inversion H0.
   assert (EQ2: sz0 = sz).
-  { unfold Vptrofs in H5; destruct Archi.ptr64 eqn:SF.
+  { unfold Vptrofs in H4; destruct Archi.ptr64 eqn:SF.
     rewrite <- (Ptrofs.of_int64_to_int64 SF sz0), <- (Ptrofs.of_int64_to_int64 SF sz). congruence.
     rewrite <- (Ptrofs.of_int_to_int SF sz0), <- (Ptrofs.of_int_to_int SF sz). congruence.
   }
@@ -1057,15 +1043,13 @@ Qed.
 
 (** ** Semantics of dynamic memory deallocation (free) *)
 
-(* JT: NOTE: Same remarks as before. *)
-
 Inductive extcall_free_sem (ge: Senv.t):
-              compartment -> list val -> mem -> trace -> val -> mem -> Prop :=
-  | extcall_free_sem_intro: forall c b lo sz m m',
+              list val -> mem -> trace -> val -> mem -> Prop :=
+  | extcall_free_sem_intro: forall b lo sz m m',
       Mem.load Mptr m b (Ptrofs.unsigned lo - size_chunk Mptr) = Some (Vptrofs sz) ->
       Ptrofs.unsigned sz > 0 ->
       Mem.free m b (Ptrofs.unsigned lo - size_chunk Mptr) (Ptrofs.unsigned lo + Ptrofs.unsigned sz) = Some m' ->
-      extcall_free_sem ge c (Vptr b lo :: nil) m E0 Vundef m'.
+      extcall_free_sem ge (Vptr b lo :: nil) m E0 Vundef m'.
 
 Lemma extcall_free_ok:
   extcall_properties extcall_free_sem
@@ -1147,11 +1131,9 @@ Qed.
 
 (** ** Semantics of [memcpy] operations. *)
 
-(* JT: NOTE: Same remarks as before. *)
-
 Inductive extcall_memcpy_sem (sz al: Z) (ge: Senv.t):
-                        compartment -> list val -> mem -> trace -> val -> mem -> Prop :=
-  | extcall_memcpy_sem_intro: forall c bdst odst bsrc osrc m bytes m',
+                        list val -> mem -> trace -> val -> mem -> Prop :=
+  | extcall_memcpy_sem_intro: forall bdst odst bsrc osrc m bytes m',
       al = 1 \/ al = 2 \/ al = 4 \/ al = 8 -> sz >= 0 -> (al | sz) ->
       (sz > 0 -> (al | Ptrofs.unsigned osrc)) ->
       (sz > 0 -> (al | Ptrofs.unsigned odst)) ->
@@ -1160,7 +1142,7 @@ Inductive extcall_memcpy_sem (sz al: Z) (ge: Senv.t):
                    \/ Ptrofs.unsigned odst + sz <= Ptrofs.unsigned osrc ->
       Mem.loadbytes m bsrc (Ptrofs.unsigned osrc) sz = Some bytes ->
       Mem.storebytes m bdst (Ptrofs.unsigned odst) bytes = Some m' ->
-      extcall_memcpy_sem sz al ge c (Vptr bdst odst :: Vptr bsrc osrc :: nil) m E0 Vundef m'.
+      extcall_memcpy_sem sz al ge (Vptr bdst odst :: Vptr bsrc osrc :: nil) m E0 Vundef m'.
 
 Lemma extcall_memcpy_ok:
   forall sz al,
@@ -1267,13 +1249,11 @@ Qed.
 
 (** ** Semantics of annotations. *)
 
-(* JT: NOTE: Same as before *)
-
 Inductive extcall_annot_sem (text: string) (targs: list typ) (ge: Senv.t):
-              compartment -> list val -> mem -> trace -> val -> mem -> Prop :=
-  | extcall_annot_sem_intro: forall c vargs m args,
+              list val -> mem -> trace -> val -> mem -> Prop :=
+  | extcall_annot_sem_intro: forall vargs m args,
       eventval_list_match ge args targs vargs ->
-      extcall_annot_sem text targs ge c vargs m (Event_annot text args :: E0) Vundef m.
+      extcall_annot_sem text targs ge vargs m (Event_annot text args :: E0) Vundef m.
 
 Lemma extcall_annot_ok:
   forall text targs,
@@ -1315,10 +1295,10 @@ Proof.
 Qed.
 
 Inductive extcall_annot_val_sem (text: string) (targ: typ) (ge: Senv.t):
-              compartment -> list val -> mem -> trace -> val -> mem -> Prop :=
-  | extcall_annot_val_sem_intro: forall c varg m arg,
+              list val -> mem -> trace -> val -> mem -> Prop :=
+  | extcall_annot_val_sem_intro: forall varg m arg,
       eventval_match ge arg targ varg ->
-      extcall_annot_val_sem text targ ge c (varg :: nil) m (Event_annot text (arg :: nil) :: E0) varg m.
+      extcall_annot_val_sem text targ ge (varg :: nil) m (Event_annot text (arg :: nil) :: E0) varg m.
 
 Lemma extcall_annot_val_ok:
   forall text targ,
@@ -1360,9 +1340,9 @@ Proof.
 Qed.
 
 Inductive extcall_debug_sem (ge: Senv.t):
-              compartment -> list val -> mem -> trace -> val -> mem -> Prop :=
-  | extcall_debug_sem_intro: forall c vargs m,
-      extcall_debug_sem ge c vargs m E0 Vundef m.
+              list val -> mem -> trace -> val -> mem -> Prop :=
+  | extcall_debug_sem_intro: forall vargs m,
+      extcall_debug_sem ge vargs m E0 Vundef m.
 
 Lemma extcall_debug_ok:
   forall targs,
@@ -1400,19 +1380,15 @@ Qed.
 
 (** ** Semantics of known built-in functions. *)
 
-(* JT: NOTE: Same as before *)
-(* JT: NOTE: Also, this is the kind of functions that should be inlinable even
-  when they are used in another component *)
-
 (** Some built-in functions and runtime support functions have known semantics
   as defined in the [Builtin] modules.
   These built-in functions have no observable effects and do not access memory. *)
 
 Inductive known_builtin_sem (bf: builtin_function) (ge: Senv.t):
-              compartment -> list val -> mem -> trace -> val -> mem -> Prop :=
-  | known_builtin_sem_intro: forall c vargs vres m,
+              list val -> mem -> trace -> val -> mem -> Prop :=
+  | known_builtin_sem_intro: forall vargs vres m,
       builtin_function_sem bf vargs = Some vres ->
-      known_builtin_sem bf ge c vargs m E0 vres m.
+      known_builtin_sem bf ge vargs m E0 vres m.
 
 Lemma known_builtin_ok: forall bf,
   extcall_properties (known_builtin_sem bf) (builtin_function_sig bf).
@@ -1554,8 +1530,8 @@ Definition external_call_determ ef := ec_determ (external_call_spec ef).
 (** Corollary of [external_call_valid_block]. *)
 
 Lemma external_call_nextblock:
-  forall ef ge c vargs m1 t vres m2,
-  external_call ef ge c vargs m1 t vres m2 ->
+  forall ef ge vargs m1 t vres m2,
+  external_call ef ge vargs m1 t vres m2 ->
   Ple (Mem.nextblock m1) (Mem.nextblock m2).
 Proof.
   intros. destruct (plt (Mem.nextblock m2) (Mem.nextblock m1)).
@@ -1572,13 +1548,13 @@ Definition meminj_preserves_globals (F V: Type) (ge: Genv.t F V) (f: block -> op
   /\ (forall b1 b2 delta gv, Genv.find_var_info ge b2 = Some gv -> f b1 = Some(b2, delta) -> b2 = b1).
 
 Lemma external_call_mem_inject:
-  forall ef F V (ge: Genv.t F V) c vargs m1 t vres m2 f m1' vargs',
+  forall ef F V (ge: Genv.t F V) vargs m1 t vres m2 f m1' vargs',
   meminj_preserves_globals ge f ->
-  external_call ef ge c vargs m1 t vres m2 ->
+  external_call ef ge vargs m1 t vres m2 ->
   Mem.inject f m1 m1' ->
   Val.inject_list f vargs vargs' ->
   exists f', exists vres', exists m2',
-     external_call ef ge c vargs' m1' t vres' m2'
+     external_call ef ge vargs' m1' t vres' m2'
     /\ Val.inject f' vres vres'
     /\ Mem.inject f' m2 m2'
     /\ Mem.unchanged_on (loc_unmapped f) m1 m2
@@ -1601,18 +1577,18 @@ Qed.
 (** Corollaries of [external_call_determ]. *)
 
 Lemma external_call_match_traces:
-  forall ef ge c vargs m t1 vres1 m1 t2 vres2 m2,
-  external_call ef ge c vargs m t1 vres1 m1 ->
-  external_call ef ge c vargs m t2 vres2 m2 ->
+  forall ef ge vargs m t1 vres1 m1 t2 vres2 m2,
+  external_call ef ge vargs m t1 vres1 m1 ->
+  external_call ef ge vargs m t2 vres2 m2 ->
   match_traces ge t1 t2.
 Proof.
   intros. exploit external_call_determ. eexact H. eexact H0. tauto.
 Qed.
 
 Lemma external_call_deterministic:
-  forall ef ge c vargs m t vres1 m1 vres2 m2,
-  external_call ef ge c vargs m t vres1 m1 ->
-  external_call ef ge c vargs m t vres2 m2 ->
+  forall ef ge vargs m t vres1 m1 vres2 m2,
+  external_call ef ge vargs m t vres1 m1 ->
+  external_call ef ge vargs m t vres2 m2 ->
   vres1 = vres2 /\ m1 = m2.
 Proof.
   intros. exploit external_call_determ. eexact H. eexact H0. intuition.
