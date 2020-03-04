@@ -251,7 +251,7 @@ let expand_builtin_va_start_32 r =
     invalid_arg "Fatal error: va_start used in non-vararg function";
   let ofs =
     Int32.(add (add !PrintAsmaux.current_function_stacksize 4l)
-               (mul 4l (Z.to_int32 (Conventions1.size_arguments
+               (mul 4l (Z.to_int32 (Conventions.size_arguments
                                       (get_current_function_sig ()))))) in
   emit (Pleal (RAX, linear_addr RSP (Z.of_uint32 ofs)));
   emit (Pmovl_mr (linear_addr r _0z, RAX))
@@ -506,7 +506,7 @@ let expand_instruction instr =
          (* Save the registers *)
          emit (Pleaq (R10, linear_addr RSP (Z.of_uint save_regs)));
          emit (Pcall_s (intern_string "__compcert_va_saveregs",
-                        {sig_args = []; sig_res = None; sig_cc = cc_default}))
+                        {sig_args = []; sig_res = Tvoid; sig_cc = cc_default}))
        end;
        (* Stack chaining *)
        let fullsz = sz + 8 in

@@ -104,13 +104,12 @@ Definition is_float_reg (r: mreg): bool :=
   representation with a single LDM instruction. *)
 
 Definition loc_result (s: signature) : rpair mreg :=
-  match s.(sig_res) with
-  | None => One R0
-  | Some (Tint | Tany32) => One R0
-  | Some (Tfloat | Tsingle | Tany64) => One F0
-  | Some Tlong => if Archi.big_endian
-                  then Twolong R0 R1
-                  else Twolong R1 R0
+  match proj_sig_res s with
+  | Tint | Tany32 => One R0
+  | Tfloat | Tsingle | Tany64 => One F0
+  | Tlong => if Archi.big_endian
+             then Twolong R0 R1
+             else Twolong R1 R0
   end.
 
 (** The result registers have types compatible with that given in the signature. *)
@@ -119,7 +118,7 @@ Lemma loc_result_type:
   forall sig,
   subtype (proj_sig_res sig) (typ_rpair mreg_type (loc_result sig)) = true.
 Proof.
-  intros. unfold proj_sig_res, loc_result. destruct (sig_res sig) as [[]|]; destruct Archi.big_endian; auto.
+  intros. unfold loc_result. destruct (proj_sig_res sig); destruct Archi.big_endian; auto.
 Qed.
 
 (** The result locations are caller-save registers *)
@@ -129,7 +128,7 @@ Lemma loc_result_caller_save:
   forall_rpair (fun r => is_callee_save r = false) (loc_result s).
 Proof.
   intros.
-  unfold loc_result. destruct (sig_res s) as [[]|]; destruct Archi.big_endian; simpl; auto.
+  unfold loc_result. destruct (proj_sig_res s); destruct Archi.big_endian; simpl; auto.
 Qed.
 
 (** If the result is in a pair of registers, those registers are distinct and have type [Tint] at least. *)
@@ -139,14 +138,13 @@ Lemma loc_result_pair:
   match loc_result sg with
   | One _ => True
   | Twolong r1 r2 =>
-        r1 <> r2 /\ sg.(sig_res) = Some Tlong
+        r1 <> r2 /\ proj_sig_res sg = Tlong
      /\ subtype Tint (mreg_type r1) = true /\ subtype Tint (mreg_type r2) = true
      /\ Archi.ptr64 = false
   end.
 Proof.
-  intros; unfold loc_result; destruct (sig_res sg) as [[]|]; destruct Archi.big_endian; auto.
-  intuition congruence.
-  intuition congruence.
+  intros; unfold loc_result; destruct (proj_sig_res sg); auto.
+  destruct Archi.big_endian; intuition congruence.
 Qed.
 
 (** The location of the result depends only on the result part of the signature *)
@@ -154,7 +152,7 @@ Qed.
 Lemma loc_result_exten:
   forall s1 s2, s1.(sig_res) = s2.(sig_res) -> loc_result s1 = loc_result s2.
 Proof.
-  intros. unfold loc_result. rewrite H; auto.
+  intros. unfold loc_result, proj_sig_res. rewrite H; auto.
 Qed.
 
 (** ** Location of function arguments *)
@@ -269,48 +267,6 @@ Definition loc_arguments (s: signature) : list (rpair loc) :=
       if s.(sig_cc).(cc_vararg)
       then loc_arguments_sf s.(sig_args) (-4)
       else loc_arguments_hf s.(sig_args) 0 0 0
-  end.
-
-(** [size_arguments s] returns the number of [Outgoing] slots used
-  to call a function with signature [s]. *)
-
-Fixpoint size_arguments_hf (tyl: list typ) (ir fr ofs: Z) {struct tyl} : Z :=
-  match tyl with
-  | nil => ofs
-  | (Tint|Tany32) :: tys =>
-      if zlt ir 4
-      then size_arguments_hf tys (ir + 1) fr ofs
-      else size_arguments_hf tys ir fr (ofs + 1)
-  | (Tfloat|Tany64) :: tys =>
-      if zlt fr 8
-      then size_arguments_hf tys ir (fr + 1) ofs
-      else size_arguments_hf tys ir fr (align ofs 2 + 2)
-  | Tsingle :: tys =>
-      if zlt fr 8
-      then size_arguments_hf tys ir (fr + 1) ofs
-      else size_arguments_hf tys ir fr (ofs + 1)
-  | Tlong :: tys =>
-      let ir := align ir 2 in
-      if zlt ir 4
-      then size_arguments_hf tys (ir + 2) fr ofs
-      else size_arguments_hf tys ir fr (align ofs 2 + 2)
-  end.
-
-Fixpoint size_arguments_sf (tyl: list typ) (ofs: Z) {struct tyl} : Z :=
-  match tyl with
-  | nil => Z.max 0 ofs
-  | (Tint | Tsingle | Tany32) :: tys => size_arguments_sf tys (ofs + 1)
-  | (Tfloat | Tlong | Tany64) :: tys => size_arguments_sf tys (align ofs 2 + 2)
-  end.
-
-Definition size_arguments (s: signature) : Z :=
-  match Archi.abi with
-  | Archi.Softfloat =>
-      size_arguments_sf s.(sig_args) (-4)
-  | Archi.Hardfloat =>
-      if s.(sig_cc).(cc_vararg)
-      then size_arguments_sf s.(sig_args) (-4)
-      else size_arguments_hf s.(sig_args) 0 0 0
   end.
 
 (** Argument locations are either non-temporary registers or [Outgoing]
@@ -473,173 +429,15 @@ Qed.
 
 Hint Resolve loc_arguments_acceptable: locs.
 
-(** The offsets of [Outgoing] arguments are below [size_arguments s]. *)
-
-Remark size_arguments_hf_above:
-  forall tyl ir fr ofs0,
-  ofs0 <= size_arguments_hf tyl ir fr ofs0.
-Proof.
-  induction tyl; simpl; intros.
-  omega.
-  destruct a.
-  destruct (zlt ir 4); eauto. apply Z.le_trans with (ofs0 + 1); auto; omega.
-  destruct (zlt fr 8); eauto.
-  apply Z.le_trans with (align ofs0 2). apply align_le; omega.
-  apply Z.le_trans with (align ofs0 2 + 2); auto; omega.
-  set (ir' := align ir 2).
-  destruct (zlt ir' 4); eauto.
-  apply Z.le_trans with (align ofs0 2). apply align_le; omega.
-  apply Z.le_trans with (align ofs0 2 + 2); auto; omega.
-  destruct (zlt fr 8); eauto.
-  apply Z.le_trans with (ofs0 + 1); eauto. omega.
-  destruct (zlt ir 4); eauto. apply Z.le_trans with (ofs0 + 1); auto; omega.
-  destruct (zlt fr 8); eauto.
-  apply Z.le_trans with (align ofs0 2). apply align_le; omega.
-  apply Z.le_trans with (align ofs0 2 + 2); auto; omega.
-Qed.
-
-Remark size_arguments_sf_above:
-  forall tyl ofs0,
-  Z.max 0 ofs0 <= size_arguments_sf tyl ofs0.
-Proof.
-  induction tyl; simpl; intros.
-  omega.
-  destruct a; (eapply Z.le_trans; [idtac|eauto]).
-  xomega.
-  assert (ofs0 <= align ofs0 2) by (apply align_le; omega). xomega.
-  assert (ofs0 <= align ofs0 2) by (apply align_le; omega). xomega.
-  xomega.
-  xomega.
-  assert (ofs0 <= align ofs0 2) by (apply align_le; omega). xomega.
-Qed.
-
-Lemma size_arguments_above:
-  forall s, size_arguments s >= 0.
-Proof.
-  intros; unfold size_arguments. apply Z.le_ge.
-  assert (0 <= size_arguments_sf (sig_args s) (-4)).
-  { change 0 with (Z.max 0 (-4)). apply size_arguments_sf_above. }
-  assert (0 <= size_arguments_hf (sig_args s) 0 0 0).
-  { apply size_arguments_hf_above. }
-  destruct Archi.abi; [ | destruct (cc_vararg (sig_cc s)) ]; auto.
-Qed.
-
-Lemma loc_arguments_hf_bounded:
-  forall ofs ty tyl ir fr ofs0,
-  In (S Outgoing ofs ty) (regs_of_rpairs (loc_arguments_hf tyl ir fr ofs0)) ->
-  ofs + typesize ty <= size_arguments_hf tyl ir fr ofs0.
-Proof.
-  induction tyl; simpl; intros.
-  elim H.
-  destruct a.
-- (* int *)
-  destruct (zlt ir 4); destruct H.
-  discriminate.
-  eauto.
-  inv H. apply size_arguments_hf_above.
-  eauto.
-- (* float *)
-  destruct (zlt fr 8); destruct H.
-  discriminate.
-  eauto.
-  inv H. apply size_arguments_hf_above.
-  eauto.
-- (* long *)
-  destruct (zlt (align ir 2) 4).
-  destruct H. discriminate. destruct H. discriminate. eauto.
-  destruct Archi.big_endian.
-  destruct H. inv H.
-  eapply Z.le_trans. 2: apply size_arguments_hf_above. simpl; omega.
-  destruct H. inv H.
-  rewrite <- Z.add_assoc. simpl. apply size_arguments_hf_above.
-  eauto.
-  destruct H. inv H.
-  rewrite <- Z.add_assoc. simpl. apply size_arguments_hf_above.
-  destruct H. inv H.
-  eapply Z.le_trans. 2: apply size_arguments_hf_above. simpl; omega.
-  eauto.
-- (* float *)
-  destruct (zlt fr 8); destruct H.
-  discriminate.
-  eauto.
-  inv H. apply size_arguments_hf_above.
-  eauto.
-- (* any32 *)
-  destruct (zlt ir 4); destruct H.
-  discriminate.
-  eauto.
-  inv H. apply size_arguments_hf_above.
-  eauto.
-- (* any64 *)
-  destruct (zlt fr 8); destruct H.
-  discriminate.
-  eauto.
-  inv H. apply size_arguments_hf_above.
-  eauto.
-Qed.
-
-Lemma loc_arguments_sf_bounded:
-  forall ofs ty tyl ofs0,
-  In (S Outgoing ofs ty) (regs_of_rpairs (loc_arguments_sf tyl ofs0)) ->
-  Z.max 0 (ofs + typesize ty) <= size_arguments_sf tyl ofs0.
-Proof.
-  induction tyl; simpl; intros.
-  elim H.
-  destruct a.
-- (* int *)
-  destruct H.
-  destruct (zlt ofs0 0); inv H. apply size_arguments_sf_above.
-  eauto.
-- (* float *)
-  destruct H.
-  destruct (zlt (align ofs0 2) 0); inv H. apply size_arguments_sf_above.
-  eauto.
-- (* long *)
-  destruct H.
-  destruct Archi.big_endian.
-  destruct (zlt (align ofs0 2) 0); inv H.
-  eapply Z.le_trans. 2: apply size_arguments_sf_above. simpl; xomega.
-  destruct (zlt (align ofs0 2) 0); inv H.
-  rewrite <- Z.add_assoc. simpl. apply size_arguments_sf_above.
-  destruct H.
-  destruct Archi.big_endian.
-  destruct (zlt (align ofs0 2) 0); inv H.
-  rewrite <- Z.add_assoc. simpl. apply size_arguments_sf_above.
-  destruct (zlt (align ofs0 2) 0); inv H.
-  eapply Z.le_trans. 2: apply size_arguments_sf_above. simpl; xomega.
-  eauto.
-- (* float *)
-  destruct H.
-  destruct (zlt ofs0 0); inv H. apply size_arguments_sf_above.
-  eauto.
-- (* any32 *)
-  destruct H.
-  destruct (zlt ofs0 0); inv H. apply size_arguments_sf_above.
-  eauto.
-- (* any64 *)
-  destruct H.
-  destruct (zlt (align ofs0 2) 0); inv H. apply size_arguments_sf_above.
-  eauto.
-Qed.
-
-Lemma loc_arguments_bounded:
-  forall (s: signature) (ofs: Z) (ty: typ),
-  In (S Outgoing ofs ty) (regs_of_rpairs (loc_arguments s)) ->
-  ofs + typesize ty <= size_arguments s.
-Proof.
-  unfold loc_arguments, size_arguments; intros.
-  assert (In (S Outgoing ofs ty) (regs_of_rpairs (loc_arguments_sf (sig_args s) (-4))) ->
-          ofs + typesize ty <= size_arguments_sf (sig_args s) (-4)).
-  { intros. eapply Z.le_trans. 2: eapply loc_arguments_sf_bounded; eauto. xomega. }
-  assert (In (S Outgoing ofs ty) (regs_of_rpairs (loc_arguments_hf (sig_args s) 0 0 0)) ->
-          ofs + typesize ty <= size_arguments_hf (sig_args s) 0 0 0).
-  { intros. eapply loc_arguments_hf_bounded; eauto. }
-  destruct Archi.abi; [ | destruct (cc_vararg (sig_cc s)) ]; eauto.
-Qed.
-
 Lemma loc_arguments_main:
   loc_arguments signature_main = nil.
 Proof.
   unfold loc_arguments.
   destruct Archi.abi; reflexivity.
 Qed.
+
+(** ** Normalization of function results *)
+
+(** No normalization needed. *)
+
+Definition return_value_needs_normalization (t: rettype) := false.

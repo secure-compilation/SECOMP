@@ -21,7 +21,7 @@ open Machine
 open Cabs
 open C
 open Diagnostics
-open !Cutil
+open! Cutil
 
 (** * Utility functions *)
 
@@ -452,7 +452,8 @@ let elab_constant loc = function
       let (v, fk) = elab_float_constant f in
       CFloat(v, fk)
   | CONST_CHAR(wide, s) ->
-      CInt(elab_char_constant loc wide s, IInt, "")
+      let ikind = if wide then wchar_ikind () else IInt in
+      CInt(elab_char_constant loc wide s, ikind, "")
   | CONST_STRING(wide, s) ->
       elab_string_literal loc wide s
 
@@ -2427,8 +2428,8 @@ let enter_typedef loc env sto (s, ty, init) =
       env
     end
     else begin
-      error loc "typedef redefinition with different types (%a vs %a)"
-        (print_typ env) ty (print_typ env) ty';
+      error loc "redefinition of typedef '%s' with different type (%a vs %a)"
+        s (print_typ env) ty (print_typ env) ty';
       env
     end
   | _ ->

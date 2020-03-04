@@ -530,14 +530,14 @@ missingtools=false
 echo "Testing Coq... " | tr -d '\n'
 coq_ver=$(${COQBIN}coqc -v 2>/dev/null | sed -n -e 's/The Coq Proof Assistant, version \([^ ]*\).*$/\1/p')
 case "$coq_ver" in
-  8.8.0|8.8.1|8.8.2|8.9.0|8.9.1|8.10.0|8.10.1|8.10.2)
+  8.8.0|8.8.1|8.8.2|8.9.0|8.9.1|8.10.0|8.10.1|8.10.2|8.11.0)
         echo "version $coq_ver -- good!";;
   ?*)
         echo "version $coq_ver -- UNSUPPORTED"
         if $ignore_coq_version; then
             echo "Warning: this version of Coq is unsupported, proceed at your own risks."
         else
-            echo "Error: CompCert requires one of the following Coq versions: 8.10.1, 8.10.0, 8.9.1, 8.9.0, 8.8.2, 8.8.1, 8.8.0"
+            echo "Error: CompCert requires one of the following Coq versions: 8.11.0, 8.10.2, 8.10.1, 8.10.0, 8.9.1, 8.9.0, 8.8.2, 8.8.1, 8.8.0"
             missingtools=true
         fi;;
   "")
@@ -553,15 +553,15 @@ case "$ocaml_ver" in
         echo "version $ocaml_ver -- UNSUPPORTED"
         echo "Error: CompCert requires OCaml version 4.05 or later."
         missingtools=true;;
-  4.0*)
+  4.*)
         echo "version $ocaml_ver -- good!";;
   ?.*)
         echo "version $ocaml_ver -- UNSUPPORTED"
-        echo "Error: CompCert requires OCaml version 4.02 or later."
+        echo "Error: CompCert requires OCaml version 4.05 or later."
         missingtools=true;;
   *)
         echo "NOT FOUND"
-        echo "Error: make sure OCaml version 4.02 or later is installed."
+        echo "Error: make sure OCaml version 4.05 or later is installed."
         missingtools=true;;
 esac
 
@@ -582,8 +582,8 @@ case "$menhir_ver" in
   20[0-9][0-9][0-9][0-9][0-9][0-9])
       if test "$menhir_ver" -ge $MENHIR_REQUIRED; then
           echo "version $menhir_ver -- good!"
-          menhir_include_dir=$(menhir --suggest-menhirLib | tr -d '\r' | tr '\\' '/')
-          if test -z "$menhir_include_dir"; then
+          menhir_dir=$(menhir --suggest-menhirLib | tr -d '\r' | tr '\\' '/')
+          if test -z "$menhir_dir"; then
               echo "Error: cannot determine the location of the Menhir API library."
               echo "This can be due to an incorrect Menhir package."
               echo "Consider using the OPAM package for Menhir."
@@ -677,7 +677,7 @@ MANDIR=$sharedir/man
 SHAREDIR=$sharedir
 COQDEVDIR=$coqdevdir
 OCAML_OPT_COMP=$ocaml_opt_comp
-MENHIR_INCLUDES=-I "$menhir_include_dir"
+MENHIR_DIR=$menhir_dir
 COMPFLAGS=-bin-annot
 EOF
 

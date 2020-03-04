@@ -99,22 +99,20 @@ Definition is_float_reg (r: mreg) :=
   function with one integer result. *)
 
 Definition loc_result_32 (s: signature) : rpair mreg :=
-  match s.(sig_res) with
-  | None => One AX
-  | Some (Tint | Tany32) => One AX
-  | Some (Tfloat | Tsingle) => One FP0
-  | Some Tany64 => One X0
-  | Some Tlong => Twolong DX AX
+  match proj_sig_res s with
+  | Tint | Tany32 => One AX
+  | Tfloat | Tsingle => One FP0
+  | Tany64 => One X0
+  | Tlong => Twolong DX AX
   end.
 
 (** In 64 bit mode, he result value of a function is passed back to
   the caller in registers [AX] or [X0]. *)
 
 Definition loc_result_64 (s: signature) : rpair mreg :=
-  match s.(sig_res) with
-  | None => One AX
-  | Some (Tint | Tlong | Tany32 | Tany64) => One AX
-  | Some (Tfloat | Tsingle) => One X0
+  match proj_sig_res s with
+  | Tint | Tlong | Tany32 | Tany64 => One AX
+  | Tfloat | Tsingle => One X0
   end.
 
 Definition loc_result :=
@@ -126,8 +124,8 @@ Lemma loc_result_type:
   forall sig,
   subtype (proj_sig_res sig) (typ_rpair mreg_type (loc_result sig)) = true.
 Proof.
-  intros. unfold proj_sig_res, loc_result, loc_result_32, loc_result_64, mreg_type;
-  destruct Archi.ptr64; destruct (sig_res sig) as [[]|]; auto.
+  intros. unfold loc_result, loc_result_32, loc_result_64, mreg_type;
+  destruct Archi.ptr64; destruct (proj_sig_res sig); auto.
 Qed.
 
 (** The result locations are caller-save registers *)
@@ -137,7 +135,7 @@ Lemma loc_result_caller_save:
   forall_rpair (fun r => is_callee_save r = false) (loc_result s).
 Proof.
   intros. unfold loc_result, loc_result_32, loc_result_64, is_callee_save;
-  destruct Archi.ptr64; destruct (sig_res s) as [[]|]; simpl; auto.
+  destruct Archi.ptr64; destruct (proj_sig_res s); simpl; auto.
 Qed.
 
 (** If the result is in a pair of registers, those registers are distinct and have type [Tint] at least. *)
@@ -147,14 +145,14 @@ Lemma loc_result_pair:
   match loc_result sg with
   | One _ => True
   | Twolong r1 r2 =>
-       r1 <> r2 /\ sg.(sig_res) = Some Tlong
+       r1 <> r2 /\ proj_sig_res sg = Tlong
     /\ subtype Tint (mreg_type r1) = true /\ subtype Tint (mreg_type r2) = true
     /\ Archi.ptr64 = false
   end.
 Proof.
   intros. 
   unfold loc_result, loc_result_32, loc_result_64, mreg_type;
-  destruct Archi.ptr64; destruct (sig_res sg) as [[]|]; auto.
+  destruct Archi.ptr64; destruct (proj_sig_res sg); auto.
   split; auto. congruence.
 Qed.
 
@@ -163,7 +161,7 @@ Qed.
 Lemma loc_result_exten:
   forall s1 s2, s1.(sig_res) = s2.(sig_res) -> loc_result s1 = loc_result s2.
 Proof.
-  intros. unfold loc_result, loc_result_32, loc_result_64.
+  intros. unfold loc_result, loc_result_32, loc_result_64, proj_sig_res.
   destruct Archi.ptr64; rewrite H; auto.
 Qed.
 
@@ -221,36 +219,6 @@ Definition loc_arguments (s: signature) : list (rpair loc) :=
   if Archi.ptr64
   then loc_arguments_64 s.(sig_args) 0 0 0
   else loc_arguments_32 s.(sig_args) 0.
-
-(** [size_arguments s] returns the number of [Outgoing] slots used
-  to call a function with signature [s]. *)
-
-Fixpoint size_arguments_32
-    (tyl: list typ) (ofs: Z) {struct tyl} : Z :=
-  match tyl with
-  | nil => ofs
-  | ty :: tys => size_arguments_32 tys (ofs + typesize ty)
-  end.
-
-Fixpoint size_arguments_64 (tyl: list typ) (ir fr ofs: Z) {struct tyl} : Z :=
-  match tyl with
-  | nil => ofs
-  | (Tint | Tlong | Tany32 | Tany64) :: tys =>
-      match list_nth_z int_param_regs ir with
-      | None => size_arguments_64 tys ir fr (ofs + 2)
-      | Some ireg => size_arguments_64 tys (ir + 1) fr ofs
-      end
-  | (Tfloat | Tsingle) :: tys =>
-      match list_nth_z float_param_regs fr with
-      | None => size_arguments_64 tys ir fr (ofs + 2)
-      | Some freg => size_arguments_64 tys ir (fr + 1) ofs
-      end
-  end.
-
-Definition size_arguments (s: signature) : Z :=
-  if Archi.ptr64
-  then size_arguments_64 s.(sig_args) 0 0 0
-  else size_arguments_32 s.(sig_args) 0.
 
 (** Argument locations are either caller-save registers or [Outgoing]
   stack slots at nonnegative offsets. *)
@@ -353,123 +321,22 @@ Qed.
 
 Hint Resolve loc_arguments_acceptable: locs.
 
-(** The offsets of [Outgoing] arguments are below [size_arguments s]. *)
-
-Remark size_arguments_32_above:
-  forall tyl ofs0, ofs0 <= size_arguments_32 tyl ofs0.
-Proof.
-  induction tyl; simpl; intros.
-  omega.
-  apply Z.le_trans with (ofs0 + typesize a); auto.
-  generalize (typesize_pos a); omega.
-Qed.
-
-Remark size_arguments_64_above:
-  forall tyl ir fr ofs0,
-  ofs0 <= size_arguments_64 tyl ir fr ofs0.
-Proof.
-  induction tyl; simpl; intros.
-  omega.
-  assert (A: ofs0 <=
-    match list_nth_z int_param_regs ir with
-    | Some _ => size_arguments_64 tyl (ir + 1) fr ofs0
-    | None => size_arguments_64 tyl ir fr (ofs0 + 2)
-    end).
-  { destruct (list_nth_z int_param_regs ir); eauto.
-    apply Z.le_trans with (ofs0 + 2); auto. omega. }
-  assert (B: ofs0 <=
-    match list_nth_z float_param_regs fr with
-    | Some _ => size_arguments_64 tyl ir (fr + 1) ofs0
-    | None => size_arguments_64 tyl ir fr (ofs0 + 2)
-    end).
-  { destruct (list_nth_z float_param_regs fr); eauto.
-    apply Z.le_trans with (ofs0 + 2); auto. omega. }
-  destruct a; auto.
-Qed.
-
-Lemma size_arguments_above:
-  forall s, size_arguments s >= 0.
-Proof.
-  intros; unfold size_arguments. apply Z.le_ge.
-  destruct Archi.ptr64; [apply size_arguments_64_above|apply size_arguments_32_above].
-Qed.
-
-Lemma loc_arguments_32_bounded:
-  forall ofs ty tyl ofs0,
-  In (S Outgoing ofs ty) (regs_of_rpairs (loc_arguments_32 tyl ofs0)) ->
-  ofs + typesize ty <= size_arguments_32 tyl ofs0.
-Proof.
-  induction tyl as [ | t l]; simpl; intros x IN.
-- contradiction.
-- rewrite in_app_iff in IN; destruct IN as [IN|IN].
-+ apply Z.le_trans with (x + typesize t); [|apply size_arguments_32_above].
-  Ltac decomp :=
-  match goal with
-  | [ H: _ \/ _ |- _ ] => destruct H; decomp
-  | [ H: S _ _ _ = S _ _ _ |- _ ] => inv H
-  | [ H: False |- _ ] => contradiction
-  end.
-  destruct t; simpl in IN; decomp; simpl; omega.
-+ apply IHl; auto.
-Qed.
-
-Lemma loc_arguments_64_bounded:
-  forall ofs ty tyl ir fr ofs0,
-  In (S Outgoing ofs ty) (regs_of_rpairs (loc_arguments_64 tyl ir fr ofs0)) ->
-  ofs + typesize ty <= size_arguments_64 tyl ir fr ofs0.
-Proof.
-  induction tyl; simpl; intros.
-  contradiction.
-  assert (T: forall ty0, typesize ty0 <= 2).
-  { destruct ty0; simpl; omega. }
-  assert (A: forall ty0,
-             In (S Outgoing ofs ty) (regs_of_rpairs
-              match list_nth_z int_param_regs ir with
-              | Some ireg =>
-                  One (R ireg) :: loc_arguments_64 tyl (ir + 1) fr ofs0
-              | None => One (S Outgoing ofs0 ty0) :: loc_arguments_64 tyl ir fr (ofs0 + 2)
-              end) ->
-             ofs + typesize ty <=
-             match list_nth_z int_param_regs ir with
-             | Some _ => size_arguments_64 tyl (ir + 1) fr ofs0
-             | None => size_arguments_64 tyl ir fr (ofs0 + 2)
-             end).
-  { intros. destruct (list_nth_z int_param_regs ir); simpl in H0; destruct H0.
-  - discriminate.
-  - eapply IHtyl; eauto.
-  - inv H0. apply Z.le_trans with (ofs + 2). specialize (T ty). omega. apply size_arguments_64_above.
-  - eapply IHtyl; eauto. }
-  assert (B: forall ty0,
-             In (S Outgoing ofs ty) (regs_of_rpairs
-              match list_nth_z float_param_regs fr with
-              | Some ireg =>
-                  One (R ireg) :: loc_arguments_64 tyl ir (fr + 1) ofs0
-              | None => One (S Outgoing ofs0 ty0) :: loc_arguments_64 tyl ir fr (ofs0 + 2)
-              end) ->
-             ofs + typesize ty <=
-             match list_nth_z float_param_regs fr with
-             | Some _ => size_arguments_64 tyl ir (fr + 1) ofs0
-             | None => size_arguments_64 tyl ir fr (ofs0 + 2)
-             end).
-  { intros. destruct (list_nth_z float_param_regs fr); simpl in H0; destruct H0.
-  - discriminate.
-  - eapply IHtyl; eauto.
-  - inv H0. apply Z.le_trans with (ofs + 2). specialize (T ty). omega. apply size_arguments_64_above.
-  - eapply IHtyl; eauto. }
-  destruct a; eauto.
-Qed.
-
-Lemma loc_arguments_bounded:
-  forall (s: signature) (ofs: Z) (ty: typ),
-  In (S Outgoing ofs ty) (regs_of_rpairs (loc_arguments s)) ->
-  ofs + typesize ty <= size_arguments s.
-Proof.
-  unfold loc_arguments, size_arguments; intros.
-  destruct Archi.ptr64; eauto using loc_arguments_32_bounded, loc_arguments_64_bounded.
-Qed.
-
 Lemma loc_arguments_main:
   loc_arguments signature_main = nil.
 Proof.
   unfold loc_arguments; destruct Archi.ptr64; reflexivity.
 Qed.
+
+(** ** Normalization of function results *)
+
+(** In the x86 ABI, a return value of type "char" is returned in
+    register AL, leaving the top 24 bits of EAX unspecified.
+    Likewise, a return value of type "short" is returned in register
+    AH, leaving the top 16 bits of EAX unspecified.  Hence, return
+    values of small integer types need re-normalization after calls. *)
+
+Definition return_value_needs_normalization (t: rettype) : bool :=
+  match t with
+  | Tint8signed | Tint8unsigned | Tint16signed | Tint16unsigned => true
+  | _ => false
+  end.

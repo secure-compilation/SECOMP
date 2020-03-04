@@ -109,7 +109,7 @@ Definition transf_instr (ce: compenv) (f: function) (pc: node) (instr: instructi
   | Icall sig ros args res s =>
       if is_return niter f s res
       && tailcall_is_possible sig
-      && opt_typ_eq sig.(sig_res) f.(fn_sig).(sig_res)
+      && rettype_eq sig.(sig_res) f.(fn_sig).(sig_res)
       && intra_compartment_call ce ros f.(fn_comp)
       then Itailcall sig ros args
       else instr

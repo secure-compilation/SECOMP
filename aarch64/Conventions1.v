@@ -102,10 +102,9 @@ Definition is_float_reg (r: mreg): bool :=
   with one integer result. *)
 
 Definition loc_result (s: signature) : rpair mreg :=
-  match s.(sig_res) with
-  | None => One R0
-  | Some (Tint | Tlong | Tany32 | Tany64) => One R0
-  | Some (Tfloat | Tsingle) => One F0
+  match proj_sig_res s with
+  | Tint | Tlong | Tany32 | Tany64 => One R0
+  | Tfloat | Tsingle => One F0
   end.
 
 (** The result registers have types compatible with that given in the signature. *)
@@ -114,7 +113,7 @@ Lemma loc_result_type:
   forall sig,
   subtype (proj_sig_res sig) (typ_rpair mreg_type (loc_result sig)) = true.
 Proof.
-  intros. unfold proj_sig_res, loc_result. destruct (sig_res sig) as [[]|]; auto.
+  intros. unfold loc_result. destruct (proj_sig_res sig); auto.
 Qed.
 
 (** The result locations are caller-save registers *)
@@ -124,7 +123,7 @@ Lemma loc_result_caller_save:
   forall_rpair (fun r => is_callee_save r = false) (loc_result s).
 Proof.
   intros.
-  unfold loc_result. destruct (sig_res s) as [[]|]; simpl; auto.
+  unfold loc_result. destruct (proj_sig_res s); simpl; auto.
 Qed.
 
 (** If the result is in a pair of registers, those registers are distinct and have type [Tint] at least. *)
@@ -134,12 +133,12 @@ Lemma loc_result_pair:
   match loc_result sg with
   | One _ => True
   | Twolong r1 r2 =>
-        r1 <> r2 /\ sg.(sig_res) = Some Tlong
+        r1 <> r2 /\ proj_sig_res sg = Tlong
      /\ subtype Tint (mreg_type r1) = true /\ subtype Tint (mreg_type r2) = true
      /\ Archi.ptr64 = false
   end.
 Proof.
-  intros; unfold loc_result; destruct (sig_res sg) as [[]|]; exact I.
+  intros; unfold loc_result; destruct (proj_sig_res sg); exact I.
 Qed.
 
 (** The location of the result depends only on the result part of the signature *)
@@ -147,7 +146,7 @@ Qed.
 Lemma loc_result_exten:
   forall s1 s2, s1.(sig_res) = s2.(sig_res) -> loc_result s1 = loc_result s2.
 Proof.
-  intros. unfold loc_result. rewrite H; auto.
+  intros. unfold loc_result, proj_sig_res. rewrite H; auto.
 Qed.
 
 (** ** Location of function arguments *)
@@ -190,27 +189,6 @@ Fixpoint loc_arguments_rec
 
 Definition loc_arguments (s: signature) : list (rpair loc) :=
   loc_arguments_rec s.(sig_args) 0 0 0.
-
-(** [size_arguments s] returns the number of [Outgoing] slots used
-  to call a function with signature [s]. *)
-
-Fixpoint size_arguments_rec (tyl: list typ) (ir fr ofs: Z) {struct tyl} : Z :=
-  match tyl with
-  | nil => ofs
-  | (Tint | Tlong | Tany32 | Tany64) :: tys =>
-      match list_nth_z int_param_regs ir with
-      | None => size_arguments_rec tys ir fr (ofs + 2)
-      | Some ireg => size_arguments_rec tys (ir + 1) fr ofs
-      end
-  | (Tfloat | Tsingle) :: tys =>
-      match list_nth_z float_param_regs fr with
-      | None => size_arguments_rec tys ir fr (ofs + 2)
-      | Some freg => size_arguments_rec tys ir (fr + 1) ofs
-      end
-  end.
-
-Definition size_arguments (s: signature) : Z :=
-  size_arguments_rec s.(sig_args) 0 0 0.
 
 (** Argument locations are either caller-save registers or [Outgoing]
   stack slots at nonnegative offsets. *)
@@ -286,95 +264,22 @@ Qed.
 
 Hint Resolve loc_arguments_acceptable: locs.
 
-(** The offsets of [Outgoing] arguments are below [size_arguments s]. *)
-
-Remark size_arguments_rec_above:
-  forall tyl ir fr ofs0,
-  ofs0 <= size_arguments_rec tyl ir fr ofs0.
-Proof.
-  induction tyl; simpl; intros.
-  omega.
-  assert (A: ofs0 <=
-    match list_nth_z int_param_regs ir with
-    | Some _ => size_arguments_rec tyl (ir + 1) fr ofs0
-    | None => size_arguments_rec tyl ir fr (ofs0 + 2)
-    end).
-  { destruct (list_nth_z int_param_regs ir); eauto.
-    apply Z.le_trans with (ofs0 + 2); auto. omega. }
-  assert (B: ofs0 <=
-    match list_nth_z float_param_regs fr with
-    | Some _ => size_arguments_rec tyl ir (fr + 1) ofs0
-    | None => size_arguments_rec tyl ir fr (ofs0 + 2)
-    end).
-  { destruct (list_nth_z float_param_regs fr); eauto.
-    apply Z.le_trans with (ofs0 + 2); auto. omega. }
-  destruct a; auto.
-Qed.
-
-Lemma size_arguments_above:
-  forall s, size_arguments s >= 0.
-Proof.
-  intros; unfold size_arguments. apply Z.le_ge. apply size_arguments_rec_above.
-Qed.
-
-Lemma loc_arguments_rec_bounded:
-  forall ofs ty tyl ir fr ofs0,
-  In (S Outgoing ofs ty) (regs_of_rpairs (loc_arguments_rec tyl ir fr ofs0)) ->
-  ofs + typesize ty <= size_arguments_rec tyl ir fr ofs0.
-Proof.
-  induction tyl; simpl; intros.
-- contradiction.
-- assert (T: forall ty0, typesize ty0 <= 2).
-  { destruct ty0; simpl; omega. }
-  assert (A: forall ty0,
-             In (S Outgoing ofs ty) (regs_of_rpairs
-              match list_nth_z int_param_regs ir with
-              | Some ireg =>
-                  One (R ireg) :: loc_arguments_rec tyl (ir + 1) fr ofs0
-              | None => One (S Outgoing ofs0 ty0) :: loc_arguments_rec tyl ir fr (ofs0 + 2)
-              end) ->
-             ofs + typesize ty <=
-             match list_nth_z int_param_regs ir with
-             | Some _ => size_arguments_rec tyl (ir + 1) fr ofs0
-             | None => size_arguments_rec tyl ir fr (ofs0 + 2)
-             end).
-  { intros. destruct (list_nth_z int_param_regs ir); simpl in H0; destruct H0.
-  - discriminate.
-  - eapply IHtyl; eauto.
-  - inv H0. apply Z.le_trans with (ofs + 2). specialize (T ty). omega. apply size_arguments_rec_above.
-  - eapply IHtyl; eauto. }
-  assert (B: forall ty0,
-             In (S Outgoing ofs ty) (regs_of_rpairs
-              match list_nth_z float_param_regs fr with
-              | Some ireg =>
-                  One (R ireg) :: loc_arguments_rec tyl ir (fr + 1) ofs0
-              | None => One (S Outgoing ofs0 ty0) :: loc_arguments_rec tyl ir fr (ofs0 + 2)
-              end) ->
-             ofs + typesize ty <=
-             match list_nth_z float_param_regs fr with
-             | Some _ => size_arguments_rec tyl ir (fr + 1) ofs0
-             | None => size_arguments_rec tyl ir fr (ofs0 + 2)
-             end).
-  { intros. destruct (list_nth_z float_param_regs fr); simpl in H0; destruct H0.
-  - discriminate.
-  - eapply IHtyl; eauto.
-  - inv H0. apply Z.le_trans with (ofs + 2). specialize (T ty). omega. apply size_arguments_rec_above.
-  - eapply IHtyl; eauto. }
-  destruct a; eauto.
-Qed.
-
-Lemma loc_arguments_bounded:
-  forall (s: signature) (ofs: Z) (ty: typ),
-  In (S Outgoing ofs ty) (regs_of_rpairs (loc_arguments s)) ->
-  ofs + typesize ty <= size_arguments s.
-Proof.
-  unfold loc_arguments, size_arguments; intros.
-  eauto using loc_arguments_rec_bounded.
-Qed.
-
 Lemma loc_arguments_main:
   loc_arguments signature_main = nil.
 Proof.
   unfold loc_arguments; reflexivity.
 Qed.
 
+(** ** Normalization of function results *)
+
+(** According to the AAPCS64 ABI specification, "padding bits" in the return
+    value of a function have unpredictable values and must be ignored.
+    Consequently, we force normalization of return values of small integer
+    types (8- and 16-bit integers), so that the top bits (the "padding bits")
+    are proper sign- or zero-extensions of the small integer value. *)
+
+Definition return_value_needs_normalization (t: rettype) : bool :=
+  match t with
+  | Tint8signed | Tint8unsigned | Tint16signed | Tint16unsigned => true
+  | _ => false
+  end.
