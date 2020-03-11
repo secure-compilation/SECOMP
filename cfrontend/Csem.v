@@ -189,6 +189,7 @@ Inductive cast_arguments (m: mem): exprlist -> typelist -> list val -> Prop :=
 Section EXPR.
 
 Variable e: env.
+Variable cp: compartment.
 
 (** The semantics of expressions follows the popular Wright-Felleisen style.
   It is a small-step semantics that reduces one redex at a time.
@@ -298,7 +299,7 @@ Inductive rred: expr -> mem -> trace -> expr -> mem -> Prop :=
         E0 (Eval v ty) m
   | red_builtin: forall ef tyargs el ty m vargs t vres m',
       cast_arguments m el tyargs vargs ->
-      external_call ef ge vargs m t vres m' ->
+      external_call ef ge cp vargs m t vres m' ->
       rred (Ebuiltin ef tyargs el ty) m
          t (Eval vres ty) m'.
 
@@ -560,6 +561,7 @@ Inductive state: Type :=
   | Callstate                           (**r calling a function *)
       (fd: fundef)
       (args: list val)
+      (cp: compartment)
       (k: cont)
       (m: mem) : state
   | Returnstate                         (**r returning from a function *)
@@ -630,20 +632,23 @@ Inductive estep: state -> trace -> state -> Prop :=
       estep (ExprState f (C a) k e m)
          E0 (ExprState f (C a') k e m')
 
-  | step_rred: forall C f a k e m t a' m',
-      rred a m t a' m' ->
+  | step_rred: forall cp C f a k e m t a' m',
+      cp = f.(fn_comp) ->
+      rred cp a m t a' m' ->
       context RV RV C ->
       estep (ExprState f (C a) k e m)
           t (ExprState f (C a') k e m')
 
-  | step_call: forall C f a k e m fd vargs ty,
+  | step_call: forall cp C f a k e m fd vargs ty,
+      cp = f.(fn_comp) ->
       callred a m fd vargs ty ->
       context RV RV C ->
       estep (ExprState f (C a) k e m)
-         E0 (Callstate fd vargs (Kcall f e C ty k) m)
+         E0 (Callstate fd vargs cp (Kcall f e C ty k) m)
 
-  | step_stuck: forall C f a k e m K,
-      context K RV C -> ~(imm_safe e K a m) ->
+  | step_stuck: forall cp C f a k e m K,
+      cp = f.(fn_comp) ->
+      context K RV C -> ~(imm_safe e cp K a m) ->
       estep (ExprState f (C a) k e m)
          E0 Stuckstate.
 
@@ -783,16 +788,16 @@ Inductive sstep: state -> trace -> state -> Prop :=
       sstep (State f (Sgoto lbl) k e m)
          E0 (State f s' k' e m)
 
-  | step_internal_function: forall f vargs k m e m1 m2,
+  | step_internal_function: forall f cp vargs k m e m1 m2,
       list_norepet (var_names (fn_params f) ++ var_names (fn_vars f)) ->
       alloc_variables empty_env m (f.(fn_params) ++ f.(fn_vars)) e m1 ->
       bind_parameters e m1 f.(fn_params) vargs m2 ->
-      sstep (Callstate (Internal f) vargs k m)
+      sstep (Callstate (Internal f) vargs cp k m)
          E0 (State f f.(fn_body) k e m2)
 
-  | step_external_function: forall ef targs tres cc vargs k m vres t m',
-      external_call ef  ge vargs m t vres m' ->
-      sstep (Callstate (External ef targs tres cc) vargs k m)
+  | step_external_function: forall ef cp targs tres cc vargs k m vres t m',
+      external_call ef ge cp vargs m t vres m' ->
+      sstep (Callstate (External ef targs tres cc) vargs cp k m)
           t (Returnstate vres k m')
 
   | step_returnstate: forall v f e C ty k m,
@@ -818,7 +823,7 @@ Inductive initial_state (p: program): state -> Prop :=
       Genv.find_symbol ge p.(prog_main) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
       type_of_fundef f = Tfunction Tnil type_int32s cc_default ->
-      initial_state p (Callstate f nil Kstop m0).
+      initial_state p (Callstate f nil default_compartment Kstop m0).
 
 (** A final state is a [Returnstate] with an empty continuation. *)
 
@@ -843,7 +848,7 @@ Proof.
   assert (ASSIGN: forall chunk m b ofs t v m', assign_loc ge chunk m b ofs v t m' -> (length t <= 1)%nat).
     intros. inv H0; simpl; try omega. inv H3; simpl; try omega.
   destruct H.
-  inv H; simpl; try omega. inv H0; eauto; simpl; try omega.
+  inv H; simpl; try omega. inv H1; eauto; simpl; try omega.
   eapply external_call_trace_length; eauto.
   inv H; simpl; try omega. eapply external_call_trace_length; eauto.
 Qed.
