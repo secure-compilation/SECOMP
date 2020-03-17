@@ -149,10 +149,10 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
         (REACH: reach f pc),
       match_states (State stk f sp pc rs m)
                    (State stk' (transf_function f) sp (renum_pc (pnum f) pc) rs m)
-  | match_callstates: forall stk f args m stk'
+  | match_callstates: forall stk f args c m stk'
         (STACKS: list_forall2 match_frames stk stk'),
-      match_states (Callstate stk f args m)
-                   (Callstate stk' (transf_fundef f) args m)
+      match_states (Callstate stk f args c m)
+                   (Callstate stk' (transf_fundef f) args c m)
   | match_returnstates: forall stk v m stk'
         (STACKS: list_forall2 match_frames stk stk'),
       match_states (Returnstate stk v m)
@@ -195,8 +195,8 @@ Proof.
   eapply exec_Itailcall with (fd := transf_fundef fd); eauto.
     eapply find_function_translated; eauto.
     apply sig_preserved.
-    rewrite comp_transl, COMP.
-    symmetry. now apply (comp_transl f).
+    rewrite comp_transl, COMP. eauto.
+    rewrite COMP.
   constructor. auto.
 (* builtin *)
   econstructor; split.
@@ -226,7 +226,8 @@ Proof.
 (* external function *)
   econstructor; split.
   eapply exec_function_external; eauto.
-    eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+    eapply external_call_symbols_preserved; eauto.
+     apply senv_preserved.
   constructor; auto.
 (* return *)
   inv STACKS. inv H1.
