@@ -176,13 +176,13 @@ Proof.
 Qed.
 
 Lemma rred_simple:
-  forall r m t r' m', rred ge r m t r' m' -> simple r -> simple r'.
+  forall cp r m t r' m', rred ge cp r m t r' m' -> simple r -> simple r'.
 Proof.
   induction 1; simpl; intuition. destruct b; auto.
 Qed.
 
 Lemma rred_compat:
-  forall e r m r' m', rred ge r m E0 r' m' ->
+  forall e cp r m r' m', rred ge cp r m E0 r' m' ->
   simple r ->
   m = m' /\ compat_eval RV e r r' m.
 Proof.
@@ -276,7 +276,7 @@ Proof.
   eapply simple_context_2; eauto. eapply rred_simple; eauto.
   (* callred *)
   assert (S: simple a) by (eapply simple_context_1; eauto).
-  inv H8; simpl in S; contradiction.
+  inv H9; simpl in S; contradiction.
   (* stuckred *)
   inv H0. destruct H1; inv H0.
 Qed.
