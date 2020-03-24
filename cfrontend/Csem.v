@@ -560,6 +560,7 @@ Inductive state: Type :=
   | Callstate                           (**r calling a function *)
       (fd: fundef)
       (args: list val)
+      (cp: compartment)
       (k: cont)
       (m: mem) : state
   | Returnstate                         (**r returning from a function *)
@@ -640,7 +641,7 @@ Inductive estep: state -> trace -> state -> Prop :=
       callred a m fd vargs ty ->
       context RV RV C ->
       estep (ExprState f (C a) k e m)
-         E0 (Callstate fd vargs (Kcall f e C ty k) m)
+         E0 (Callstate fd vargs f.(fn_comp) (Kcall f e C ty k) m)
 
   | step_stuck: forall C f a k e m K,
       context K RV C -> ~(imm_safe e K a m) ->
@@ -783,16 +784,16 @@ Inductive sstep: state -> trace -> state -> Prop :=
       sstep (State f (Sgoto lbl) k e m)
          E0 (State f s' k' e m)
 
-  | step_internal_function: forall f vargs k m e m1 m2,
+  | step_internal_function: forall f vargs cp k m e m1 m2,
       list_norepet (var_names (fn_params f) ++ var_names (fn_vars f)) ->
       alloc_variables empty_env m (f.(fn_params) ++ f.(fn_vars)) e m1 ->
       bind_parameters e m1 f.(fn_params) vargs m2 ->
-      sstep (Callstate (Internal f) vargs k m)
+      sstep (Callstate (Internal f) vargs cp k m)
          E0 (State f f.(fn_body) k e m2)
 
-  | step_external_function: forall ef targs tres cc vargs k m vres t m',
+  | step_external_function: forall ef targs tres cc vargs cp k m vres t m',
       external_call ef  ge vargs m t vres m' ->
-      sstep (Callstate (External ef targs tres cc) vargs k m)
+      sstep (Callstate (External ef targs tres cc) vargs cp k m)
           t (Returnstate vres k m')
 
   | step_returnstate: forall v f e C ty k m,
@@ -818,7 +819,7 @@ Inductive initial_state (p: program): state -> Prop :=
       Genv.find_symbol ge p.(prog_main) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
       type_of_fundef f = Tfunction Tnil type_int32s cc_default ->
-      initial_state p (Callstate f nil Kstop m0).
+      initial_state p (Callstate f nil default_compartment Kstop m0).
 
 (** A final state is a [Returnstate] with an empty continuation. *)
 

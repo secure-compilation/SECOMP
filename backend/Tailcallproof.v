@@ -416,13 +416,13 @@ Inductive match_states: state -> state -> Prop :=
       match_states (State s f (Vptr sp Ptrofs.zero) pc rs m)
                    (State s' (transf_function ce f) (Vptr sp Ptrofs.zero) pc rs' m')
   | match_states_call:
-      forall s ce f args m s' args' m',
+      forall s ce f args cp m s' args' m',
       match_stackframes s s' ->
       forall COMPAT: cenv_compat prog ce,
       Val.lessdef_list args args' ->
       Mem.extends m m' ->
-      match_states (Callstate s f args m)
-                   (Callstate s' (transf_fundef ce f) args' m')
+      match_states (Callstate s f args cp m)
+                   (Callstate s' (transf_fundef ce f) args' cp m')
   | match_states_return:
       forall s v m s' v' m',
       match_stackframes s s' ->
@@ -460,7 +460,7 @@ Inductive match_states: state -> state -> Prop :=
 Definition measure (st: state) : nat :=
   match st with
   | State s f sp pc rs m => (List.length s * (niter + 2) + return_measure f.(fn_code) pc + 1)%nat
-  | Callstate s f args m => 0%nat
+  | Callstate s f args cp m => 0%nat
   | Returnstate s v m => (List.length s * (niter + 2))%nat
   end.
 
@@ -545,11 +545,12 @@ Proof.
     red; intros; omegaContradiction.
   destruct X as [m'' FREE].
   left.
-  exists (Callstate s' (transf_fundef (compenv_program cu) fd) (rs'##args) m''); split.
+  exists (Callstate s' (transf_fundef (compenv_program cu) fd) (rs'##args) (comp_of (transf_function ce f)) m''); split.
   eapply exec_Itailcall; eauto. apply sig_preserved.
     change (fn_comp _) with (comp_of (transf_function ce f)).
     rewrite comp_transl, comp_transl.
     now exploit find_function_intra_compartment_call; eauto.
+  rewrite comp_transl.
   constructor. eapply match_stackframes_tail; eauto.
     apply (cenv_compat_linkorder _ _ _ ORDER (compenv_program_compat _)).
   apply regs_lessdef_regs; auto.
@@ -557,8 +558,10 @@ Proof.
   rewrite stacksize_preserved. rewrite H7. intros. omegaContradiction.
 + (* call that remains a call *)
   left. exists (Callstate (Stackframe res (transf_function ce f) (Vptr sp0 Ptrofs.zero) pc' rs' :: s')
-                          (transf_fundef (compenv_program cu) fd) (rs'##args) m'); split.
+                          (transf_fundef (compenv_program cu) fd) (rs'##args)
+                          (comp_of (transf_function ce f)) m'); split.
   eapply exec_Icall; eauto. apply sig_preserved.
+  rewrite comp_transl.
   constructor. constructor; auto.
     apply (cenv_compat_linkorder _ _ _ ORDER (compenv_program_compat _)).
   apply regs_lessdef_regs; auto. auto.
@@ -568,12 +571,13 @@ Proof.
   intros (cu & tf & FIND' & Etf & ORDER). subst tf.
   exploit Mem.free_parallel_extends; eauto. intros [m'1 [FREE EXT]].
   TransfInstr.
-  left. exists (Callstate s' (transf_fundef (compenv_program cu) fd) (rs'##args) m'1); split.
+  left. exists (Callstate s' (transf_fundef (compenv_program cu) fd) (rs'##args) (comp_of (transf_function ce f)) m'1); split.
   eapply exec_Itailcall; eauto. apply sig_preserved.
     rewrite comp_transl, COMP.
     change (fn_comp (transf_function _ _)) with (comp_of (transf_function ce f)).
     now rewrite comp_transl.
   rewrite stacksize_preserved; auto.
+  rewrite comp_transl.
   constructor. auto.
     apply (cenv_compat_linkorder _ _ _ ORDER (compenv_program_compat _)).
   apply regs_lessdef_regs; auto. auto.
@@ -674,7 +678,7 @@ Proof.
   intros. inv H.
   exploit funct_ptr_translated; eauto.
   intros (cu & tf & FIND & Etf & ORDER). subst tf.
-  exists (Callstate nil (transf_fundef (compenv_program cu) f) nil m0); split.
+  exists (Callstate nil (transf_fundef (compenv_program cu) f) nil default_compartment m0); split.
   econstructor; eauto.
   eapply (Genv.init_mem_match TRANSL); eauto.
   replace (prog_main tprog) with (prog_main prog).

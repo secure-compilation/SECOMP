@@ -407,11 +407,11 @@ Inductive match_states: Linear.state ->  Linear.state -> Prop :=
       match_states (State s f sp c rs m)
                    (State ts tf sp tc rs m)
   | match_states_call:
-      forall s f rs m tf ts,
+      forall s f rs cp m tf ts,
       list_forall2 match_stackframes s ts ->
       transf_fundef f = OK tf ->
-      match_states (Callstate s f rs m)
-                   (Callstate ts tf rs m)
+      match_states (Callstate s f rs cp m)
+                   (Callstate ts tf rs cp m)
   | match_states_return:
       forall s rs m ts,
       list_forall2 match_stackframes s ts ->
@@ -470,6 +470,8 @@ Proof.
   econstructor; split.
   apply plus_one.
   econstructor. eexact A. symmetry; apply sig_preserved; auto. traceEq.
+  assert (E: tf.(fn_comp) = f.(fn_comp)) by now inv TRF.
+  rewrite E.
   constructor; auto. constructor; auto. constructor; auto.
 - (* tailcall *)
   exploit find_function_translated; eauto. intros (tf' & A & B).
@@ -479,8 +481,8 @@ Proof.
   econstructor. eauto. rewrite PLS. eexact A.
   symmetry; apply sig_preserved; auto.
   now rewrite <- (comp_transl_partial _ B); inv TRF.
-  inv TRF; eauto. traceEq.
-  rewrite PLS. constructor; auto.
+  inv TRF; eauto.
+  inv TRF. simpl. rewrite PLS. constructor; auto.
 - (* builtin *)
   econstructor; split.
   eapply plus_left.
@@ -518,14 +520,14 @@ Proof.
   apply plus_one.  constructor. inv TRF; eauto. traceEq.
   rewrite (parent_locset_match _ _ STACKS). constructor; auto.
 - (* internal function *)
-  monadInv H7. rename x into tf.
+  monadInv H8. rename x into tf.
   assert (MF: match_function f tf) by (apply transf_function_match; auto).
   inversion MF; subst.
   econstructor; split.
   apply plus_one. constructor. simpl; eauto. reflexivity.
   constructor; auto.
 - (* external function *)
-  monadInv H8. econstructor; split.
+  monadInv H9. econstructor; split.
   apply plus_one. econstructor; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   constructor; auto.
@@ -542,7 +544,7 @@ Lemma transf_initial_states:
 Proof.
   intros. inversion H.
   exploit function_ptr_translated; eauto. intros [tf [A B]].
-  exists (Callstate nil tf (Locmap.init Vundef) m0); split.
+  exists (Callstate nil tf (Locmap.init Vundef) default_compartment m0); split.
   econstructor; eauto. eapply (Genv.init_mem_transf_partial TRANSF); eauto.
   rewrite (match_program_main TRANSF), symbols_preserved. auto.
   rewrite <- H3. apply sig_preserved. auto.

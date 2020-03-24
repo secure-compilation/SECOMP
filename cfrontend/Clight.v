@@ -489,6 +489,7 @@ Inductive state: Type :=
   | Callstate
       (fd: fundef)
       (args: list val)
+      (cp: compartment)
       (k: cont)
       (m: mem) : state
   | Returnstate
@@ -569,7 +570,7 @@ Inductive step: state -> trace -> state -> Prop :=
       Genv.find_funct ge vf = Some fd ->
       type_of_fundef fd = Tfunction tyargs tyres cconv ->
       step (State f (Scall optid a al) k e le m)
-        E0 (Callstate fd vargs (Kcall optid f e le k) m)
+        E0 (Callstate fd vargs f.(fn_comp) (Kcall optid f e le k) m)
 
   | step_builtin:   forall f optid ef tyargs al k e le m vargs t vres m',
       eval_exprlist e le m al tyargs vargs ->
@@ -651,14 +652,14 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Sgoto lbl) k e le m)
         E0 (State f s' k' e le m)
 
-  | step_internal_function: forall f vargs k m e le m1,
+  | step_internal_function: forall f vargs cp k m e le m1,
       function_entry f vargs m e le m1 ->
-      step (Callstate (Internal f) vargs k m)
+      step (Callstate (Internal f) vargs cp k m)
         E0 (State f f.(fn_body) k e le m1)
 
-  | step_external_function: forall ef targs tres cconv vargs k m vres t m',
+  | step_external_function: forall ef targs tres cconv vargs cp k m vres t m',
       external_call ef ge vargs m t vres m' ->
-      step (Callstate (External ef targs tres cconv) vargs k m)
+      step (Callstate (External ef targs tres cconv) vargs cp k m)
          t (Returnstate vres k m')
 
   | step_returnstate: forall v optid f e le k m,
@@ -679,7 +680,7 @@ Inductive initial_state (p: program): state -> Prop :=
       Genv.find_symbol ge p.(prog_main) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
       type_of_fundef f = Tfunction Tnil type_int32s cc_default ->
-      initial_state p (Callstate f nil Kstop m0).
+      initial_state p (Callstate f nil default_compartment Kstop m0).
 
 (** A final state is a [Returnstate] with an empty continuation. *)
 

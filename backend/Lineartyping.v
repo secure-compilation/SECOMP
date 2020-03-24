@@ -259,13 +259,13 @@ Inductive wt_state: state -> Prop :=
         (WTC: wt_code f c = true)
         (WTRS: wt_locset rs),
       wt_state (State s f sp c rs m)
-  | wt_call_state: forall s fd rs m
+  | wt_call_state: forall s fd rs cp m
         (WTSTK: wt_callstack s)
         (WTFD: wt_fundef fd)
         (WTRS: wt_locset rs)
         (AGCS: agree_callee_save rs (parent_locset s))
         (AGARGS: agree_outgoing_arguments (funsig fd) rs (parent_locset s)),
-      wt_state (Callstate s fd rs m)
+      wt_state (Callstate s fd rs cp m)
   | wt_return_state: forall s rs m
         (WTSTK: wt_callstack s)
         (WTRS: wt_locset rs)
@@ -437,16 +437,16 @@ Proof.
 Qed.
 
 Lemma wt_callstate_wt_regs:
-  forall s f rs m,
-  wt_state (Callstate s f rs m) ->
+  forall s f rs cp m,
+  wt_state (Callstate s f rs cp m) ->
   forall r, Val.has_type (rs (R r)) (mreg_type r).
 Proof.
   intros. inv H. apply WTRS.
 Qed.
 
 Lemma wt_callstate_agree:
-  forall s f rs m,
-  wt_state (Callstate s f rs m) ->
+  forall s f rs cp m,
+  wt_state (Callstate s f rs cp m) ->
   agree_callee_save rs (parent_locset s) /\ agree_outgoing_arguments (funsig f) rs (parent_locset s).
 Proof.
   intros. inv H; auto.

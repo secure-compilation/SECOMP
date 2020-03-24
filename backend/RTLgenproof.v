@@ -1237,13 +1237,13 @@ Inductive match_states: CminorSel.state -> RTL.state -> Prop :=
       match_states (CminorSel.State f s k sp e m)
                    (RTL.State cs tf sp ns rs tm)
   | match_callstate:
-      forall f args targs k m tm cs tf
+      forall f args targs cp k m tm cs tf
         (TF: transl_fundef f = OK tf)
         (MS: match_stacks k cs)
         (LD: Val.lessdef_list args targs)
         (MEXT: Mem.extends m tm),
-      match_states (CminorSel.Callstate f args k m)
-                   (RTL.Callstate cs tf targs tm)
+      match_states (CminorSel.Callstate f args cp k m)
+                   (RTL.Callstate cs tf targs cp tm)
   | match_returnstate:
       forall v tv k m tm cs
         (MS: match_stacks k cs)
@@ -1375,6 +1375,8 @@ Proof.
   eapply exec_Icall; eauto. simpl. rewrite J. destruct C. eauto. discriminate P. simpl; auto.
   apply sig_transl_function; auto.
   traceEq.
+  assert (H: tf.(fn_comp) = f.(CminorSel.fn_comp)) by now inv TF.
+  rewrite H.
   constructor; auto. econstructor; eauto.
   (* direct *)
   exploit transl_exprlist_correct; eauto.
@@ -1386,6 +1388,8 @@ Proof.
     rewrite Genv.find_funct_find_funct_ptr in P. eauto.
   apply sig_transl_function; auto.
   traceEq.
+  assert (H: tf.(fn_comp) = f.(CminorSel.fn_comp)) by now inv TF.
+  rewrite H.
   constructor; auto. econstructor; eauto.
 
   (* tailcall *)
@@ -1406,6 +1410,8 @@ Proof.
     rewrite <- (comp_transl_partial fd Q), COMP. inv TF; congruence.
   rewrite H; eauto.
   traceEq.
+  assert (H': tf.(fn_comp) = f.(CminorSel.fn_comp)) by now inv TF.
+  rewrite H'.
   constructor; auto.
   (* direct *)
   exploit transl_exprlist_correct; eauto.
@@ -1422,6 +1428,8 @@ Proof.
   rewrite <- (comp_transl_partial _ Q), COMP. inv TF; congruence.
   rewrite H; eauto.
   traceEq.
+  assert (H': tf.(fn_comp) = f.(CminorSel.fn_comp)) by now inv TF.
+  rewrite H'.
   constructor; auto.
 
   (* builtin *)

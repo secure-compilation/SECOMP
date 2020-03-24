@@ -208,10 +208,10 @@ Inductive match_states: state -> state -> Prop :=
       match_states (State s f sp c ls m)
                    (State ts (transf_function f) sp (remove_unused_labels (labels_branched_to f.(fn_code)) c) ls m)
   | match_states_call:
-      forall s f ls m ts,
+      forall s f ls cp m ts,
       list_forall2 match_stackframes s ts ->
-      match_states (Callstate s f ls m)
-                   (Callstate ts (transf_fundef f) ls m)
+      match_states (Callstate s f ls cp m)
+                   (Callstate ts (transf_fundef f) ls cp m)
   | match_states_return:
       forall s ls m ts,
       list_forall2 match_stackframes s ts ->
