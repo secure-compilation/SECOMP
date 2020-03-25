@@ -588,6 +588,8 @@ Proof.
   eapply exec_Ibuiltin; eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  change (fn_comp (transf_function _ _)) with (comp_of (transf_function ce f)).
+  now rewrite comp_transl.
   econstructor; eauto. apply set_res_lessdef; auto.
 
 - (* cond *)
@@ -708,4 +710,3 @@ Proof.
 Qed.
 
 End PRESERVATION.
-

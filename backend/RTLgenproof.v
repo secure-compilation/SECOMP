@@ -1374,7 +1374,7 @@ Proof.
 
   (* call *)
   assert (COMP: f.(CminorSel.fn_comp) = tf.(fn_comp)) by now inv TF.
-  inv TS; inv H0.
+  inv TS; inv H.
   (* indirect *)
   exploit transl_expr_correct; eauto.
   intros [rs' [tm' [A [B [C [D X]]]]]].
@@ -1401,7 +1401,7 @@ Proof.
 
   (* tailcall *)
   assert (COMP': f.(CminorSel.fn_comp) = tf.(fn_comp)) by now inv TF.
-  inv TS; inv H0.
+  inv TS; inv H.
   (* indirect *)
   exploit transl_expr_correct; eauto.
   intros [rs' [tm' [A [B [C [D X]]]]]].
