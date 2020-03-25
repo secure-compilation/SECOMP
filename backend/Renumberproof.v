@@ -196,7 +196,8 @@ Proof.
     eapply find_function_translated; eauto.
     apply sig_preserved.
     rewrite comp_transl, COMP. eauto.
-    rewrite COMP.
+    change (fn_comp (transf_function _)) with (comp_of (transf_function f)).
+    rewrite comp_transl.
   constructor. auto.
 (* builtin *)
   econstructor; split.
@@ -266,10 +267,3 @@ Proof.
 Qed.
 
 End PRESERVATION.
-
-
-
-
-
-
-
