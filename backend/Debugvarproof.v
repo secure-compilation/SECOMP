@@ -487,6 +487,7 @@ Proof.
   econstructor; eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  inversion TRF. simpl in *. eauto.
   apply eval_add_delta_ranges. traceEq.
   constructor; auto.
 - (* label *)

@@ -237,19 +237,19 @@ Proof.
 Qed.
 
 Lemma builtin_strength_reduction_correct:
-  forall sp bc ae rs ef args vargs m t vres m',
+  forall cp sp bc ae rs ef args vargs m t vres m',
   ematch bc rs ae ->
   eval_builtin_args ge (fun r => rs#r) sp m args vargs ->
-  external_call ef ge vargs m t vres m' ->
+  external_call ef ge cp vargs m t vres m' ->
   exists vargs',
      eval_builtin_args ge (fun r => rs#r) sp m (builtin_strength_reduction ae ef args) vargs'
-  /\ external_call ef ge vargs' m t vres m'.
+  /\ external_call ef ge cp vargs' m t vres m'.
 Proof.
   intros.
   assert (DEFAULT: forall cl,
     exists vargs',
        eval_builtin_args ge (fun r => rs#r) sp m (builtin_args_strength_reduction ae args cl) vargs'
-    /\ external_call ef ge vargs' m t vres m').
+    /\ external_call ef ge cp vargs' m t vres m').
   { exists vargs; split; auto. eapply builtin_args_strength_reduction_correct; eauto. }
   unfold builtin_strength_reduction.
   destruct ef; auto.
@@ -505,7 +505,7 @@ Opaque builtin_strength_reduction.
   destruct (lookup_builtin_function name sg) as [bf|] eqn:LK; auto.
   destruct (eval_static_builtin_function ae am rm bf args) as [a|] eqn:ES; auto.
   destruct (const_for_result a) as [cop|] eqn:CR; auto.
-  clear DFL. simpl in H1; red in H1; rewrite LK in H1; inv H1.
+  clear DFL. simpl in H2; red in H2; rewrite LK in H2; inv H2.
   exploit const_for_result_correct; eauto. 
   eapply eval_static_builtin_function_sound; eauto.
   intros (v' & A & B).

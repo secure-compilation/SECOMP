@@ -698,17 +698,17 @@ Qed.
 (** Properties of volatile memory accesses *)
 
 Lemma transf_volatile_store:
-  forall v1 v2 v1' v2' m tm chunk sp nm t v m',
-  volatile_store_sem chunk ge (v1::v2::nil) m t v m' ->
+  forall cp v1 v2 v1' v2' m tm chunk sp nm t v m',
+  volatile_store_sem chunk ge cp (v1::v2::nil) m t v m' ->
   Val.lessdef v1 v1' ->
   vagree v2 v2' (store_argument chunk) ->
   magree m tm (nlive ge sp nm) ->
   v = Vundef /\
-  exists tm', volatile_store_sem chunk ge (v1'::v2'::nil) tm t Vundef tm'
+  exists tm', volatile_store_sem chunk ge cp (v1'::v2'::nil) tm t Vundef tm'
            /\ magree m' tm' (nlive ge sp nm).
 Proof.
   intros. inv H. split; auto.
-  inv H0. inv H9.
+  inv H0. inv H10.
 - (* volatile *)
   exists tm; split; auto. econstructor. econstructor; eauto.
   eapply eventval_match_lessdef; eauto. apply store_argument_load_result; auto.
@@ -902,17 +902,17 @@ Ltac UseTransfer :=
   functional induction (transfer_builtin (vanalyze cu f)#pc ef args res ne nm);
   simpl in *; intros.
 + (* volatile load *)
-  inv H0. inv H6. rename b1 into v1.
+  inv H1. inv H6. rename b1 into v1.
   destruct (transfer_builtin_arg All
               (kill_builtin_res res ne,
               nmem_add nm (aaddr_arg (vanalyze cu f) # pc a1)
                 (size_chunk chunk)) a1) as (ne1, nm1) eqn: TR.
   InvSoundState. exploit transfer_builtin_arg_sound; eauto.
   intros (tv1 & A & B & C & D).
-  inv H1. simpl in B. inv B.
+  inv H2. simpl in B. inv B.
   assert (X: exists tvres, volatile_load ge chunk tm b ofs t tvres /\ Val.lessdef vres tvres).
   {
-    inv H2.
+    inv H3.
   * exists (Val.load_result chunk v); split; auto. constructor; auto.
   * exploit magree_load; eauto.
     exploit aaddr_arg_sound_1; eauto. rewrite <- AN. intros.
@@ -931,7 +931,7 @@ Ltac UseTransfer :=
   apply eagree_set_res; auto.
   eapply magree_monotone; eauto. intros. apply incl_nmem_add; auto.
 + (* volatile store *)
-  inv H0. inv H6. inv H7. rename b1 into v1. rename b0 into v2.
+  inv H1. inv H6. inv H7. rename b1 into v1. rename b0 into v2.
   destruct (transfer_builtin_arg (store_argument chunk)
               (kill_builtin_res res ne, nm) a2) as (ne2, nm2) eqn: TR2.
   destruct (transfer_builtin_arg All (ne2, nm2) a1) as (ne1, nm1) eqn: TR1.
@@ -947,12 +947,12 @@ Ltac UseTransfer :=
   apply eval_builtin_args_preserved with (ge1 := ge). exact symbols_preserved.
   constructor. eauto. constructor. eauto. constructor.
   eapply external_call_symbols_preserved. apply senv_preserved.
-  simpl; eauto.
+  simpl; eauto. rewrite <- comp_transf_function; eauto.
   eapply match_succ_states; eauto. simpl; auto.
   apply eagree_set_res; auto.
 + (* memcpy *)
   rewrite e1 in TI.
-  inv H0. inv H6. inv H7. rename b1 into v1. rename b0 into v2.
+  inv H1. inv H6. inv H7. rename b1 into v1. rename b0 into v2.
   set (adst := aaddr_arg (vanalyze cu f) # pc dst) in *.
   set (asrc := aaddr_arg (vanalyze cu f) # pc src) in *.
   destruct (transfer_builtin_arg All
@@ -965,7 +965,7 @@ Ltac UseTransfer :=
   intros (tv1 & A1 & B1 & C1 & D1).
   exploit transfer_builtin_arg_sound. eexact H4. eauto. eauto. eauto. eauto. eauto.
   intros (tv2 & A2 & B2 & C2 & D2).
-  inv H1.
+  inv H2.
   exploit magree_loadbytes. eauto. eauto.
   intros. eapply nlive_add; eauto.
   unfold asrc, vanalyze; rewrite AN; eapply aaddr_arg_sound_1; eauto.
@@ -992,10 +992,10 @@ Ltac UseTransfer :=
   apply eagree_set_res; auto.
 + (* memcpy eliminated *)
   rewrite e1 in TI.
-  inv H0. inv H6. inv H7. rename b1 into v1. rename b0 into v2.
+  inv H1. inv H6. inv H7. rename b1 into v1. rename b0 into v2.
   set (adst := aaddr_arg (vanalyze cu f) # pc dst) in *.
   set (asrc := aaddr_arg (vanalyze cu f) # pc src) in *.
-  inv H1.
+  inv H2.
   econstructor; split.
   eapply exec_Inop; eauto.
   eapply match_succ_states; eauto. simpl; auto.
@@ -1005,13 +1005,13 @@ Ltac UseTransfer :=
   exploit aaddr_arg_sound; eauto.
   intros (bc & A & B & C).
   intros. eapply nlive_contains; eauto.
-  erewrite Mem.loadbytes_length in H0 by eauto.
-  rewrite Z2Nat.id in H0 by omega. auto.
+  erewrite Mem.loadbytes_length in H by eauto.
+  rewrite Z2Nat.id in H by omega. auto.
 + (* annot *)
   destruct (transfer_builtin_args (kill_builtin_res res ne, nm) _x2) as (ne1, nm1) eqn:TR.
   InvSoundState.
   exploit transfer_builtin_args_sound; eauto. intros (tvl & A & B & C & D).
-  inv H1.
+  inv H2.
   econstructor; split.
   eapply exec_Ibuiltin; eauto.
   apply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
@@ -1023,7 +1023,7 @@ Ltac UseTransfer :=
   destruct (transfer_builtin_args (kill_builtin_res res ne, nm) _x2) as (ne1, nm1) eqn:TR.
   InvSoundState.
   exploit transfer_builtin_args_sound; eauto. intros (tvl & A & B & C & D).
-  inv H1. inv B. inv H6.
+  inv H2. inv B. inv H6.
   econstructor; split.
   eapply exec_Ibuiltin; eauto.
   apply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
@@ -1033,7 +1033,7 @@ Ltac UseTransfer :=
   eapply match_succ_states; eauto. simpl; auto.
   apply eagree_set_res; auto.
 + (* debug *)
-  inv H1.
+  inv H2.
   exploit can_eval_builtin_args; eauto. intros (vargs' & A).
   econstructor; split.
   eapply exec_Ibuiltin; eauto. constructor.
@@ -1054,7 +1054,7 @@ Ltac UseTransfer :=
   econstructor; split.
   eapply exec_Ibuiltin; eauto.
   apply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
-  eapply external_call_symbols_preserved. apply senv_preserved. eauto.
+  eapply external_call_symbols_preserved. apply senv_preserved. rewrite <- comp_transf_function. eauto. eauto.
   eapply match_succ_states; eauto. simpl; auto.
   apply eagree_set_res; auto.
   eapply mextends_agree; eauto.
