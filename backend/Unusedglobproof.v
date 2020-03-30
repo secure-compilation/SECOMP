@@ -777,13 +777,13 @@ Inductive match_states: state -> state -> Prop :=
                    (Returnstate ts tres tm).
 
 Lemma external_call_inject:
-  forall ef vargs m1 t vres m2 f m1' vargs',
+  forall cp ef vargs m1 t vres m2 f m1' vargs',
   meminj_preserves_globals f ->
-  external_call ef ge vargs m1 t vres m2 ->
+  external_call ef ge cp vargs m1 t vres m2 ->
   Mem.inject f m1 m1' ->
   Val.inject_list f vargs vargs' ->
   exists f', exists vres', exists m2',
-    external_call ef tge vargs' m1' t vres' m2'
+    external_call ef tge cp vargs' m1' t vres' m2'
     /\ Val.inject f' vres vres'
     /\ Mem.inject f' m2 m2'
     /\ Mem.unchanged_on (loc_unmapped f) m1 m2

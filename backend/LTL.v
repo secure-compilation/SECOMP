@@ -248,7 +248,7 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (Callstate s fd rs' f.(fn_comp) m')
   | exec_Lbuiltin: forall s f sp ef args res bb rs m vargs t vres rs' m',
       eval_builtin_args ge rs sp m args vargs ->
-      external_call ef ge vargs m t vres m' ->
+      external_call ef ge f.(fn_comp) vargs m t vres m' ->
       rs' = Locmap.setres res vres (undef_regs (destroyed_by_builtin ef) rs) ->
       step (Block s f sp (Lbuiltin ef args res :: bb) rs m)
          t (Block s f sp bb rs' m')
@@ -278,7 +278,7 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State s f (Vptr sp Ptrofs.zero) f.(fn_entrypoint) rs' m')
   | exec_function_external: forall s ef t args res rs cp m rs' m',
       args = map (fun p => Locmap.getpair p rs) (loc_arguments (ef_sig ef)) ->
-      external_call ef ge args m t res m' ->
+      external_call ef ge cp args m t res m' ->
       rs' = Locmap.setpair (loc_result (ef_sig ef)) res (undef_caller_save_regs rs) ->
       step (Callstate s (External ef) rs cp m)
          t (Returnstate s rs' m')

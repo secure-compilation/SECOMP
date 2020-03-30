@@ -1631,7 +1631,7 @@ Proof.
 Qed.
 
 Lemma add_equations_builtin_eval:
-  forall ef env args args' e1 e2 m1 m1' rs ls (ge: RTL.genv) sp vargs t vres m2,
+  forall cp ef env args args' e1 e2 m1 m1' rs ls (ge: RTL.genv) sp vargs t vres m2,
   wt_regset env rs ->
   match ef with
   | EF_debug _ _ _ => add_equations_debug_args env args args' e1
@@ -1640,11 +1640,11 @@ Lemma add_equations_builtin_eval:
   Mem.extends m1 m1' ->
   satisf rs ls e2 ->
   eval_builtin_args ge (fun r => rs # r) sp m1 args vargs ->
-  external_call ef ge vargs m1 t vres m2 ->
+  external_call ef ge cp vargs m1 t vres m2 ->
   satisf rs ls e1 /\
   exists vargs' vres' m2',
      eval_builtin_args ge ls sp m1' args' vargs'
-  /\ external_call ef ge vargs' m1' t vres' m2'
+  /\ external_call ef ge cp vargs' m1' t vres' m2'
   /\ Val.lessdef vres vres'
   /\ Mem.extends m2 m2'.
 Proof.
@@ -1653,7 +1653,7 @@ Proof.
     satisf rs ls e1 /\
     exists vargs' vres' m2',
        eval_builtin_args ge ls sp m1' args' vargs'
-    /\ external_call ef ge vargs' m1' t vres' m2'
+    /\ external_call ef ge cp vargs' m1' t vres' m2'
     /\ Val.lessdef vres vres'
     /\ Mem.extends m2 m2').
   {
@@ -2381,7 +2381,7 @@ Proof.
   eapply star_trans. eexact A1.
   eapply star_left. econstructor.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
-  eapply external_call_symbols_preserved. apply senv_preserved. eauto.
+  eapply external_call_symbols_preserved. apply senv_preserved. rewrite comp_transf_fundef in E. eauto. eauto.
   instantiate (1 := ls2); auto.
   eapply star_right. eexact A3.
   econstructor.
