@@ -137,6 +137,12 @@ Inductive state: Type :=
              (m: mem),                (**r memory state *)
       state.
 
+Definition call_comp (stack: list stackframe): compartment :=
+  match stack with
+  | nil => default_compartment
+  | Stackframe f _ _ _ :: _ => f.(fn_comp)
+  end.
+
 (** [parent_locset cs] returns the mapping of values for locations
   of the caller function. *)
 Definition parent_locset (stack: list stackframe) : locset :=
@@ -242,7 +248,7 @@ Inductive step: state -> trace -> state -> Prop :=
   | exec_function_external:
       forall s ef args res rs1 rs2 m t m',
       args = map (fun p => Locmap.getpair p rs1) (loc_arguments (ef_sig ef)) ->
-      external_call ef ge cp args m t res m' ->
+      external_call ef ge (call_comp s) args m t res m' ->
       rs2 = Locmap.setpair (loc_result (ef_sig ef)) res (undef_caller_save_regs rs1) ->
       step (Callstate s (External ef) rs1 m)
          t (Returnstate s rs2 m')

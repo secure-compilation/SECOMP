@@ -255,9 +255,9 @@ Definition extcall_arguments
 Inductive stackframe: Type :=
   | Stackframe:
       forall (f: block)       (**r pointer to calling function *)
-             (sp: val)        (**r stack pointer in calling function *)
-             (retaddr: val)   (**r Asm return address in calling function *)
-             (c: code),       (**r program point in calling function *)
+             (sp: val)         (**r stack pointer in calling function *)
+             (retaddr: val)    (**r Asm return address in calling function *)
+             (c: code),        (**r program point in calling function *)
       stackframe.
 
 Inductive state: Type :=
@@ -280,6 +280,16 @@ Inductive state: Type :=
              (rs: regset)              (**r register state *)
              (m: mem),                 (**r memory state *)
       state.
+
+Definition call_comp (stack: list stackframe): compartment :=
+  match stack with
+  | nil => default_compartment
+  | Stackframe fb _ _ _ :: _ =>
+    match Genv.find_funct_ptr ge fb with
+    | Some f => comp_of f
+    | None   => default_compartment
+    end
+  end.
 
 Definition parent_sp (s: list stackframe) : val :=
   match s with
@@ -357,7 +367,7 @@ Inductive step: state -> trace -> state -> Prop :=
   | exec_Mbuiltin:
       forall s f sp rs m ef args res b vargs t vres rs' m',
       eval_builtin_args ge rs sp m args vargs ->
-      external_call ef ge vargs m t vres m' ->
+      external_call ef ge (call_comp s) vargs m t vres m' ->
       rs' = set_res res vres (undef_regs (destroyed_by_builtin ef) rs) ->
       step (State s f sp (Mbuiltin ef args res :: b) rs m)
          t (State s f sp b rs' m')
@@ -412,7 +422,7 @@ Inductive step: state -> trace -> state -> Prop :=
       forall s fb rs m t rs' ef args res m',
       Genv.find_funct_ptr ge fb = Some (External ef) ->
       extcall_arguments rs m (parent_sp s) (ef_sig ef) args ->
-      external_call ef ge args m t res m' ->
+      external_call ef ge (call_comp s) args m t res m' ->
       rs' = set_pair (loc_result (ef_sig ef)) res (undef_caller_save_regs rs) ->
       step (Callstate s fb rs m)
          t (Returnstate s rs' m')

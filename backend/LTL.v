@@ -163,6 +163,12 @@ Inductive state : Type :=
              (m: mem),                (**r memory state *)
       state.
 
+Definition call_comp (stack: list stackframe) : compartment :=
+  match stack with
+  | nil => default_compartment
+  | Stackframe f _ _ _ :: _ => f.(fn_comp)
+  end.
+
 
 Section RELSEM.
 
@@ -277,7 +283,7 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State s f (Vptr sp Ptrofs.zero) f.(fn_entrypoint) rs' m')
   | exec_function_external: forall s ef t args res rs m rs' m',
       args = map (fun p => Locmap.getpair p rs) (loc_arguments (ef_sig ef)) ->
-      external_call ef ge cp args m t res m' ->
+      external_call ef ge (call_comp s) args m t res m' ->
       rs' = Locmap.setpair (loc_result (ef_sig ef)) res (undef_caller_save_regs rs) ->
       step (Callstate s (External ef) rs m)
          t (Returnstate s rs' m')
