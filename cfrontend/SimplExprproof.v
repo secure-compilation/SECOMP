@@ -847,7 +847,7 @@ Proof.
   intros. exploit deref_loc_translated; eauto. rewrite <- H1.
   unfold make_set. destruct (chunk_for_volatile_type (typeof a)) as [chunk|].
 (* volatile case *)
-  intros. change (PTree.set id v le) with (set_opttemp (Some id) v le). econstructor.
+  intros. change (PTree.set id v le) with (set_opttemp (Some id) v le). econstructor. eauto.
   econstructor. constructor. eauto.
   simpl. unfold sem_cast. simpl. eauto. constructor.
   simpl. econstructor; eauto.
@@ -868,7 +868,7 @@ Proof.
   intros. exploit assign_loc_translated; eauto. rewrite <- H3.
   unfold make_assign. destruct (chunk_for_volatile_type (typeof a1)) as [chunk|].
 (* volatile case *)
-  intros. change le with (set_opttemp None Vundef le) at 2. econstructor.
+  intros. change le with (set_opttemp None Vundef le) at 2. econstructor. eauto.
   econstructor. constructor. eauto.
   simpl. unfold sem_cast. simpl. eauto.
   econstructor; eauto. rewrite H3; eauto. constructor.
@@ -1951,6 +1951,8 @@ Proof.
   left. eapply plus_left. constructor.  apply star_one.
   econstructor; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+    replace (fn_comp tf) with (Csyntax.fn_comp f) by now inv H8.
+    eauto.
   traceEq.
   econstructor; eauto.
   change sl2 with (nil ++ sl2). apply S. constructor. simpl; auto. auto.
@@ -1961,6 +1963,8 @@ Proof.
   left. eapply plus_left. constructor. apply star_one.
   econstructor; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+    replace (fn_comp tf) with (Csyntax.fn_comp f) by now inv H8.
+    eauto.
   traceEq.
   econstructor; eauto.
   change sl2 with (nil ++ sl2). apply S.
