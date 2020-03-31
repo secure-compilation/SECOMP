@@ -982,7 +982,8 @@ Proof.
   exploit transl_alignof_blockcopy. eexact LINK. eauto. intros [A B]. rewrite A, B.
   change le with (set_optvar None Vundef le) at 2.
   econstructor.
-  econstructor. eauto. econstructor. eauto. constructor.
+  econstructor. eauto. econstructor. eauto. constructor; eauto.
+  econstructor; eauto.
   econstructor; eauto.
   apply alignof_blockcopy_1248.
   apply sizeof_pos.
@@ -1639,6 +1640,7 @@ Proof.
   monadInv TR. inv MTR.
   econstructor; split.
   apply plus_one. econstructor.
+    apply (comp_transl_partial _ TRF).
   eapply transl_arglist_correct; eauto.
   eapply external_call_symbols_preserved with (ge1 := ge). apply senv_preserved. eauto.
   eapply match_states_skip; eauto.
