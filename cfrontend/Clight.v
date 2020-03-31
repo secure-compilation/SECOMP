@@ -476,7 +476,7 @@ Definition is_call_cont (k: cont) : Prop :=
   | _ => False
   end.
 
-Fixpoint call_comp (k: cont) : compartment :=
+Definition call_comp (k: cont) : compartment :=
   match call_cont k with
   | Kcall _ f _ _ _ => f.(fn_comp)
   | _ => default_compartment

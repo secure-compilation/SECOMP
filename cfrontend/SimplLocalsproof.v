@@ -306,7 +306,7 @@ Lemma step_Sdebug_temp:
   step2 tge (State f (Sdebug_temp id ty) k e le m)
          E0 (State f Sskip k e le m).
 Proof.
-  intros. unfold Sdebug_temp. eapply step_builtin with (optid := None).
+  intros. unfold Sdebug_temp. eapply step_builtin with (optid := None); eauto.
   econstructor. constructor. eauto. simpl. eapply cast_typeconv; eauto. constructor.
   simpl. constructor.
 Qed.
@@ -317,7 +317,7 @@ Lemma step_Sdebug_var:
   step2 tge (State f (Sdebug_var id ty) k e le m)
          E0 (State f Sskip k e le m).
 Proof.
-  intros. unfold Sdebug_var. eapply step_builtin with (optid := None).
+  intros. unfold Sdebug_var. eapply step_builtin with (optid := None); eauto.
   econstructor. constructor. constructor. eauto.
   simpl. reflexivity. constructor.
   simpl. constructor.
@@ -1681,6 +1681,17 @@ Proof.
   induction 1; simpl; auto; intros; econstructor; eauto.
 Qed.
 
+Lemma match_cont_call_comp:
+  forall f cenv k tk m bound tbound,
+  match_cont f cenv k tk m bound tbound ->
+  call_comp k = call_comp tk.
+Proof.
+  intros f cenv k tk m bound tbound H.
+  unfold call_comp.
+  induction H; simpl; auto.
+  now apply comp_transl_partial.
+Qed.
+
 (** [match_cont] and freeing of environment blocks *)
 
 Remark free_list_nextblock:
@@ -2077,6 +2088,8 @@ Proof.
   intros [j' [tvres [tm' [P [Q [R [S [T [U V]]]]]]]]].
   econstructor; split.
   apply plus_one. econstructor; eauto. eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+    replace (fn_comp tf) with (fn_comp f) by now apply comp_transl_partial.
+    eauto.
   econstructor; eauto with compat.
   eapply match_envs_set_opttemp; eauto.
   eapply match_envs_extcall; eauto.
@@ -2238,6 +2251,7 @@ Proof.
   intros [j' [tvres [tm' [P [Q [R [S [T [U V]]]]]]]]].
   econstructor; split.
   apply plus_one. econstructor; eauto. eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  rewrite <- (match_cont_call_comp _ _ _ _ _ _ _ (MCONT VSet.empty)); eauto.
   econstructor; eauto.
   intros. apply match_cont_incr_bounds with (Mem.nextblock m) (Mem.nextblock tm).
   eapply match_cont_extcall; eauto. xomega. xomega.
