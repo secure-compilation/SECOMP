@@ -276,7 +276,7 @@ Proof.
   eapply simple_context_2; eauto. eapply rred_simple; eauto.
   (* callred *)
   assert (S: simple a) by (eapply simple_context_1; eauto).
-  inv H9; simpl in S; contradiction.
+  inv H8; simpl in S; contradiction.
   (* stuckred *)
   inv H0. destruct H1; inv H0.
 Qed.

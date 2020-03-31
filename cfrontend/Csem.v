@@ -538,6 +538,12 @@ Definition is_call_cont (k: cont) : Prop :=
   | _ => False
   end.
 
+Definition call_comp (k: cont) : compartment :=
+  match call_cont k with
+  | Kcall f _ _ _ _ => f.(fn_comp)
+  | _ => default_compartment
+  end.
+
 (** Execution states of the program are grouped in 4 classes corresponding
   to the part of the program we are currently executing.  It can be
   a statement ([State]), an expression ([ExprState]), a transition
@@ -561,7 +567,6 @@ Inductive state: Type :=
   | Callstate                           (**r calling a function *)
       (fd: fundef)
       (args: list val)
-      (cp: compartment)
       (k: cont)
       (m: mem) : state
   | Returnstate                         (**r returning from a function *)
@@ -632,23 +637,20 @@ Inductive estep: state -> trace -> state -> Prop :=
       estep (ExprState f (C a) k e m)
          E0 (ExprState f (C a') k e m')
 
-  | step_rred: forall cp C f a k e m t a' m',
-      cp = f.(fn_comp) ->
-      rred cp a m t a' m' ->
+  | step_rred: forall C f a k e m t a' m',
+      rred f.(fn_comp) a m t a' m' ->
       context RV RV C ->
       estep (ExprState f (C a) k e m)
           t (ExprState f (C a') k e m')
 
-  | step_call: forall cp C f a k e m fd vargs ty,
-      cp = f.(fn_comp) ->
+  | step_call: forall C f a k e m fd vargs ty,
       callred a m fd vargs ty ->
       context RV RV C ->
       estep (ExprState f (C a) k e m)
-         E0 (Callstate fd vargs cp (Kcall f e C ty k) m)
+         E0 (Callstate fd vargs (Kcall f e C ty k) m)
 
-  | step_stuck: forall cp C f a k e m K,
-      cp = f.(fn_comp) ->
-      context K RV C -> ~(imm_safe e cp K a m) ->
+  | step_stuck: forall C f a k e m K,
+      context K RV C -> ~(imm_safe e f.(fn_comp) K a m) ->
       estep (ExprState f (C a) k e m)
          E0 Stuckstate.
 
@@ -788,16 +790,16 @@ Inductive sstep: state -> trace -> state -> Prop :=
       sstep (State f (Sgoto lbl) k e m)
          E0 (State f s' k' e m)
 
-  | step_internal_function: forall f cp vargs k m e m1 m2,
+  | step_internal_function: forall f vargs k m e m1 m2,
       list_norepet (var_names (fn_params f) ++ var_names (fn_vars f)) ->
       alloc_variables empty_env m (f.(fn_params) ++ f.(fn_vars)) e m1 ->
       bind_parameters e m1 f.(fn_params) vargs m2 ->
-      sstep (Callstate (Internal f) vargs cp k m)
+      sstep (Callstate (Internal f) vargs k m)
          E0 (State f f.(fn_body) k e m2)
 
-  | step_external_function: forall ef cp targs tres cc vargs k m vres t m',
-      external_call ef ge cp vargs m t vres m' ->
-      sstep (Callstate (External ef targs tres cc) vargs cp k m)
+  | step_external_function: forall ef targs tres cc vargs k m vres t m',
+      external_call ef ge (call_comp k) vargs m t vres m' ->
+      sstep (Callstate (External ef targs tres cc) vargs k m)
           t (Returnstate vres k m')
 
   | step_returnstate: forall v f e C ty k m,
@@ -823,7 +825,7 @@ Inductive initial_state (p: program): state -> Prop :=
       Genv.find_symbol ge p.(prog_main) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
       type_of_fundef f = Tfunction Tnil type_int32s cc_default ->
-      initial_state p (Callstate f nil default_compartment Kstop m0).
+      initial_state p (Callstate f nil Kstop m0).
 
 (** A final state is a [Returnstate] with an empty continuation. *)
 
@@ -848,7 +850,7 @@ Proof.
   assert (ASSIGN: forall chunk m b ofs t v m', assign_loc ge chunk m b ofs v t m' -> (length t <= 1)%nat).
     intros. inv H0; simpl; try omega. inv H3; simpl; try omega.
   destruct H.
-  inv H; simpl; try omega. inv H1; eauto; simpl; try omega.
+  inv H; simpl; try omega. inv H0; eauto; simpl; try omega.
   eapply external_call_trace_length; eauto.
   inv H; simpl; try omega. eapply external_call_trace_length; eauto.
 Qed.
