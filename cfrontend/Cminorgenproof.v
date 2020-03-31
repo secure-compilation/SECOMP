@@ -2049,6 +2049,7 @@ Proof.
   intros [f' [vres' [tm' [EC [VINJ [MINJ' [UNMAPPED [OUTOFREACH [INCR SEPARATED]]]]]]]]].
   left; econstructor; split.
   apply plus_one. econstructor. eauto.
+    apply (comp_transl_partial _ TRF).
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   assert (MCS': match_callstack f' m' tm'
                  (Frame cenv tfn e le te sp lo hi :: cs)
