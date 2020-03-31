@@ -1751,8 +1751,8 @@ Proof.
 Qed.
 
 Lemma wt_rred:
-  forall ge tenv a m t a' m',
-  rred ge a m t a' m' -> wt_rvalue ge tenv a -> wt_rvalue ge tenv a'.
+  forall ge cp tenv a m t a' m',
+  rred ge cp a m t a' m' -> wt_rvalue ge tenv a -> wt_rvalue ge tenv a'.
 Proof.
   induction 1; intros WT; inversion WT.
 - (* valof *) simpl in *. constructor. eapply wt_deref_loc; eauto.
@@ -1817,8 +1817,8 @@ Proof.
 Qed.
 
 Lemma rred_same_type:
-  forall ge a m t a' m',
-  rred ge a m t a' m' -> typeof a' = typeof a.
+  forall ge cp a m t a' m',
+  rred ge cp a m t a' m' -> typeof a' = typeof a.
 Proof.
   induction 1; auto.
 Qed.
