@@ -1997,6 +1997,8 @@ Proof.
   apply plus_one. econstructor; eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+    replace (fn_comp tf) with (Linear.fn_comp f) by now apply (comp_transl_partial _ TRANSL).
+    eauto.
   eapply match_states_intro with (j := j'); eauto with coqlib.
   eapply match_stacks_change_meminj; eauto.
   apply agree_regs_set_res; auto. apply agree_regs_undef_regs; auto. eapply agree_regs_inject_incr; eauto.
