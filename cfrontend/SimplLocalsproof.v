@@ -306,7 +306,7 @@ Lemma step_Sdebug_temp:
   step2 tge (State f (Sdebug_temp id ty) k e le m)
          E0 (State f Sskip k e le m).
 Proof.
-  intros. unfold Sdebug_temp. eapply step_builtin with (optid := None).
+  intros. unfold Sdebug_temp. eapply step_builtin with (optid := None); eauto.
   econstructor. constructor. eauto. simpl. eapply cast_typeconv; eauto. constructor.
   simpl. constructor.
 Qed.
@@ -317,7 +317,7 @@ Lemma step_Sdebug_var:
   step2 tge (State f (Sdebug_var id ty) k e le m)
          E0 (State f Sskip k e le m).
 Proof.
-  intros. unfold Sdebug_var. eapply step_builtin with (optid := None).
+  intros. unfold Sdebug_var. eapply step_builtin with (optid := None); eauto.
   econstructor. constructor. constructor. eauto.
   simpl. reflexivity. constructor.
   simpl. constructor.
@@ -2078,6 +2078,8 @@ Proof.
   intros [j' [tvres [tm' [P [Q [R [S [T [U V]]]]]]]]].
   econstructor; split.
   apply plus_one. econstructor; eauto. eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+    replace (fn_comp tf) with (fn_comp f) by now apply comp_transl_partial.
+    eauto.
   econstructor; eauto with compat.
   eapply match_envs_set_opttemp; eauto.
   eapply match_envs_extcall; eauto.
