@@ -991,7 +991,7 @@ Qed.
 Inductive extcall_malloc_sem (ge: Senv.t):
               compartment -> list val -> mem -> trace -> val -> mem -> Prop :=
   | extcall_malloc_sem_intro: forall c sz m m' b m'',
-      Mem.alloc m default_compartment (- size_chunk Mptr) (Ptrofs.unsigned sz) = (m', b) ->
+      Mem.alloc m c (- size_chunk Mptr) (Ptrofs.unsigned sz) = (m', b) ->
       Mem.store Mptr m' b (- size_chunk Mptr) (Vptrofs sz) = Some m'' ->
       extcall_malloc_sem ge c (Vptrofs sz :: nil) m E0 (Vptr b Ptrofs.zero) m''.
 
@@ -1000,8 +1000,8 @@ Lemma extcall_malloc_ok:
                      (mksignature (Tptr :: nil) Tptr cc_default).
 Proof.
   assert (UNCHANGED:
-    forall (P: block -> Z -> Prop) m lo hi v m' b m'',
-    Mem.alloc m default_compartment lo hi = (m', b) ->
+    forall (P: block -> Z -> Prop) m c lo hi v m' b m'',
+    Mem.alloc m c lo hi = (m', b) ->
     Mem.store Mptr m' b lo v = Some m'' ->
     Mem.unchanged_on P m m'').
   {

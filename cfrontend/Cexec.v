@@ -384,54 +384,54 @@ Qed.
 (** External calls *)
 
 Variable do_external_function:
-  string -> signature -> Senv.t -> world -> list val -> mem -> option (world * trace * val * mem).
+  string -> signature -> Senv.t -> world -> compartment -> list val -> mem -> option (world * trace * val * mem).
 
 Hypothesis do_external_function_sound:
-  forall id sg ge vargs m t vres m' w w',
-  do_external_function id sg ge w vargs m = Some(w', t, vres, m') ->
-  external_functions_sem id sg ge vargs m t vres m' /\ possible_trace w t w'.
+  forall id sg ge cp vargs m t vres m' w w',
+  do_external_function id sg ge w cp vargs m = Some(w', t, vres, m') ->
+  external_functions_sem id sg ge cp vargs m t vres m' /\ possible_trace w t w'.
 
 Hypothesis do_external_function_complete:
-  forall id sg ge vargs m t vres m' w w',
-  external_functions_sem id sg ge vargs m t vres m' ->
+  forall id sg ge cp vargs m t vres m' w w',
+  external_functions_sem id sg ge cp vargs m t vres m' ->
   possible_trace w t w' ->
-  do_external_function id sg ge w vargs m = Some(w', t, vres, m').
+  do_external_function id sg ge w cp vargs m = Some(w', t, vres, m').
 
 Variable do_inline_assembly:
-  string -> signature -> Senv.t -> world -> list val -> mem -> option (world * trace * val * mem).
+  string -> signature -> Senv.t -> world -> compartment -> list val -> mem -> option (world * trace * val * mem).
 
 Hypothesis do_inline_assembly_sound:
-  forall txt sg ge vargs m t vres m' w w',
-  do_inline_assembly txt sg ge w vargs m = Some(w', t, vres, m') ->
-  inline_assembly_sem txt sg ge vargs m t vres m' /\ possible_trace w t w'.
+  forall txt sg ge cp vargs m t vres m' w w',
+  do_inline_assembly txt sg ge w cp vargs m = Some(w', t, vres, m') ->
+  inline_assembly_sem txt sg ge cp vargs m t vres m' /\ possible_trace w t w'.
 
 Hypothesis do_inline_assembly_complete:
-  forall txt sg ge vargs m t vres m' w w',
-  inline_assembly_sem txt sg ge vargs m t vres m' ->
+  forall txt sg ge cp vargs m t vres m' w w',
+  inline_assembly_sem txt sg ge cp vargs m t vres m' ->
   possible_trace w t w' ->
-  do_inline_assembly txt sg ge w vargs m = Some(w', t, vres, m').
+  do_inline_assembly txt sg ge w cp vargs m = Some(w', t, vres, m').
 
 Definition do_ef_volatile_load (chunk: memory_chunk)
-       (w: world) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
+       (w: world) (cp: compartment) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
   match vargs with
   | Vptr b ofs :: nil => do w',t,v <- do_volatile_load w chunk m b ofs; Some(w',t,v,m)
   | _ => None
   end.
 
 Definition do_ef_volatile_store (chunk: memory_chunk)
-       (w: world) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
+       (w: world) (cp: compartment) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
   match vargs with
   | Vptr b ofs :: v :: nil => do w',t,m' <- do_volatile_store w chunk m b ofs v; Some(w',t,Vundef,m')
   | _ => None
   end.
 
 Definition do_ef_volatile_load_global (chunk: memory_chunk) (id: ident) (ofs: ptrofs)
-       (w: world) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
-  do b <- Genv.find_symbol ge id; do_ef_volatile_load chunk w (Vptr b ofs :: vargs) m.
+       (w: world) (cp: compartment) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
+  do b <- Genv.find_symbol ge id; do_ef_volatile_load chunk w cp (Vptr b ofs :: vargs) m.
 
 Definition do_ef_volatile_store_global (chunk: memory_chunk) (id: ident) (ofs: ptrofs)
-       (w: world) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
-  do b <- Genv.find_symbol ge id; do_ef_volatile_store chunk w (Vptr b ofs :: vargs) m.
+       (w: world) (cp: compartment) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
+  do b <- Genv.find_symbol ge id; do_ef_volatile_store chunk w cp (Vptr b ofs :: vargs) m.
 
 Definition do_alloc_size (v: val) : option ptrofs :=
   match v with
@@ -441,18 +441,18 @@ Definition do_alloc_size (v: val) : option ptrofs :=
   end.
 
 Definition do_ef_malloc
-       (w: world) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
+       (w: world) (cp: compartment) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
   match vargs with
   | v :: nil =>
       do sz <- do_alloc_size v;
-      let (m', b) := Mem.alloc m default_compartment (- size_chunk Mptr) (Ptrofs.unsigned sz) in
+      let (m', b) := Mem.alloc m cp (- size_chunk Mptr) (Ptrofs.unsigned sz) in
       do m'' <- Mem.store Mptr m' b (- size_chunk Mptr) v;
       Some(w, E0, Vptr b Ptrofs.zero, m'')
   | _ => None
   end.
 
 Definition do_ef_free
-       (w: world) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
+       (w: world) (cp: compartment) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
   match vargs with
   | Vptr b lo :: nil =>
       do vsz <- Mem.load Mptr m b (Ptrofs.unsigned lo - size_chunk Mptr);
@@ -480,7 +480,7 @@ Definition memcpy_args_ok
    /\ (bsrc <> bdst \/ osrc = odst \/ osrc + sz <= odst \/ odst + sz <= osrc).
 
 Definition do_ef_memcpy (sz al: Z)
-       (w: world) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
+       (w: world) (cp: compartment) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
   match vargs with
   | Vptr bdst odst :: Vptr bsrc osrc :: nil =>
       if decide (memcpy_args_ok sz al bdst (Ptrofs.unsigned odst) bsrc (Ptrofs.unsigned osrc)) then
@@ -492,12 +492,12 @@ Definition do_ef_memcpy (sz al: Z)
   end.
 
 Definition do_ef_annot (text: string) (targs: list typ)
-       (w: world) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
+       (w: world) (cp: compartment) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
   do args <- list_eventval_of_val vargs targs;
   Some(w, Event_annot text args :: E0, Vundef, m).
 
 Definition do_ef_annot_val (text: string) (targ: typ)
-       (w: world) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
+       (w: world) (cp: compartment) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
   match vargs with
   | varg :: nil =>
       do arg <- eventval_of_val varg targ;
@@ -506,18 +506,18 @@ Definition do_ef_annot_val (text: string) (targ: typ)
   end.
 
 Definition do_ef_debug (kind: positive) (text: ident) (targs: list typ)
-       (w: world) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
+       (w: world) (cp: compartment) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
   Some(w, E0, Vundef, m).
 
 Definition do_builtin_or_external (name: string) (sg: signature)
-       (w: world) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
+       (w: world) (cp: compartment) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
   match lookup_builtin_function name sg with
   | Some bf => match builtin_function_sem bf vargs with Some v => Some(w, E0, v, m) | None => None end
-  | None    => do_external_function name sg ge w vargs m
+  | None    => do_external_function name sg ge w cp vargs m
   end.
 
 Definition do_external (ef: external_function):
-       world -> list val -> mem -> option (world * trace * val * mem) :=
+       world -> compartment -> list val -> mem -> option (world * trace * val * mem) :=
   match ef with
   | EF_external name cp sg => do_external_function name sg ge
   | EF_builtin name sg => do_builtin_or_external name sg
@@ -534,17 +534,17 @@ Definition do_external (ef: external_function):
   end.
 
 Lemma do_ef_external_sound:
-  forall ef w vargs m w' t vres m',
-  do_external ef w vargs m = Some(w', t, vres, m') ->
-  external_call ef ge vargs m t vres m' /\ possible_trace w t w'.
+  forall ef w cp vargs m w' t vres m',
+  do_external ef w cp vargs m = Some(w', t, vres, m') ->
+  external_call ef ge cp vargs m t vres m' /\ possible_trace w t w'.
 Proof with try congruence.
   intros until m'.
   assert (SIZE: forall v sz, do_alloc_size v = Some sz -> v = Vptrofs sz).
   { intros until sz; unfold Vptrofs; destruct v; simpl; destruct Archi.ptr64 eqn:SF; 
     intros EQ; inv EQ; f_equal; symmetry; eauto with ptrofs. }
   assert (BF_EX: forall name sg,
-    do_builtin_or_external name sg w vargs m = Some (w', t, vres, m') ->
-    builtin_or_external_sem name sg ge vargs m t vres m' /\ possible_trace w t w').
+    do_builtin_or_external name sg w cp vargs m = Some (w', t, vres, m') ->
+    builtin_or_external_sem name sg ge cp vargs m t vres m' /\ possible_trace w t w').
   { unfold do_builtin_or_external, builtin_or_external_sem; intros. 
     destruct (lookup_builtin_function name sg ) as [bf|].
   - destruct (builtin_function_sem bf vargs) as [vres1|] eqn:BF; inv H.
@@ -568,7 +568,7 @@ Proof with try congruence.
   exploit do_volatile_store_sound; eauto. intuition. econstructor; eauto.
 - (* EF_malloc *)
   unfold do_ef_malloc. destruct vargs... destruct vargs... mydestr.
-  destruct (Mem.alloc m default_compartment (- size_chunk Mptr) (Ptrofs.unsigned i)) as [m1 b] eqn:?. mydestr.
+  destruct (Mem.alloc m cp (- size_chunk Mptr) (Ptrofs.unsigned i)) as [m1 b] eqn:?. mydestr.
   split. apply SIZE in Heqo. subst v. econstructor; eauto. constructor.
 - (* EF_free *)
   unfold do_ef_free. destruct vargs... destruct v... 
@@ -601,9 +601,9 @@ Proof with try congruence.
 Qed.
 
 Lemma do_ef_external_complete:
-  forall ef w vargs m w' t vres m',
-  external_call ef ge vargs m t vres m' -> possible_trace w t w' ->
-  do_external ef w vargs m = Some(w', t, vres, m').
+  forall ef w cp vargs m w' t vres m',
+  external_call ef ge cp vargs m t vres m' -> possible_trace w t w' ->
+  do_external ef w cp vargs m = Some(w', t, vres, m').
 Proof.
   intros.
   assert (SIZE: forall n, do_alloc_size (Vptrofs n) = Some n).
@@ -611,8 +611,8 @@ Proof.
     rewrite Ptrofs.of_int64_to_int64; auto.
     rewrite Ptrofs.of_int_to_int; auto. }
   assert (BF_EX: forall name sg,
-    builtin_or_external_sem name sg ge vargs m t vres m' ->
-    do_builtin_or_external name sg w vargs m = Some (w', t, vres, m')).
+    builtin_or_external_sem name sg ge cp vargs m t vres m' ->
+    do_builtin_or_external name sg w cp vargs m = Some (w', t, vres, m')).
   { unfold do_builtin_or_external, builtin_or_external_sem; intros.
     destruct (lookup_builtin_function name sg) as [bf|].
   - inv H1. inv H0. rewrite H2. auto.
@@ -666,6 +666,7 @@ Section EXPRS.
 
 Variable e: env.
 Variable w: world.
+Variable cp: compartment.
 
 Fixpoint sem_cast_arguments (vtl: list (val * type)) (tl: typelist) (m: mem) : option (list val) :=
   match vtl, tl with
@@ -902,7 +903,7 @@ Fixpoint step_expr (k: kind) (a: expr) (m: mem): reducts expr :=
       match is_val_list rargs with
       | Some vtl =>
           do vargs <- sem_cast_arguments vtl tyargs m;
-          match do_external ef w vargs m with
+          match do_external ef w cp vargs m with
           | None => stuck
           | Some(w',t,v,m') => topred (Rred "red_builtin" (Eval v ty) m' t)
           end
@@ -933,7 +934,7 @@ Inductive imm_safe_t: kind -> expr -> mem -> Prop :=
       context LV to C ->
       imm_safe_t to (C l) m
   | imm_safe_t_rred: forall to C r m t r' m' w',
-      rred ge r m t r' m' -> possible_trace w t w' ->
+      rred ge cp r m t r' m' -> possible_trace w t w' ->
       context RV to C ->
       imm_safe_t to (C r) m
   | imm_safe_t_callred: forall to C r m fd args ty,
@@ -942,7 +943,7 @@ Inductive imm_safe_t: kind -> expr -> mem -> Prop :=
       imm_safe_t to (C r) m.
 
 Remark imm_safe_t_imm_safe:
-  forall k a m, imm_safe_t k a m -> imm_safe ge e k a m.
+  forall k a m, imm_safe_t k a m -> imm_safe ge e cp k a m.
 Proof.
   induction 1.
   constructor.
@@ -1014,7 +1015,7 @@ Definition invert_expr_prop (a: expr) (m: mem) : Prop :=
       exprlist_all_values rargs ->
       exists vargs t vres m' w',
          cast_arguments m rargs tyargs vargs
-      /\ external_call ef ge vargs m t vres m'
+      /\ external_call ef ge cp vargs m t vres m'
       /\ possible_trace w t w'
   | _ => True
   end.
@@ -1031,7 +1032,7 @@ Proof.
 Qed.
 
 Lemma rred_invert:
-  forall w' r m t r' m', rred ge r m t r' m' -> possible_trace w t w' -> invert_expr_prop r m.
+  forall w' r m t r' m', rred ge cp r m t r' m' -> possible_trace w t w' -> invert_expr_prop r m.
 Proof.
   induction 1; intros; red; auto.
   split; auto; exists t; exists v; exists w'; auto.
@@ -1145,7 +1146,7 @@ Local Hint Resolve context_compose contextlist_compose : core.
 Definition reduction_ok (k: kind) (a: expr) (m: mem) (rd: reduction) : Prop :=
   match k, rd with
   | LV, Lred _ l' m' => lred ge e a m l' m'
-  | RV, Rred _ r' m' t => rred ge a m t r' m' /\ exists w', possible_trace w t w'
+  | RV, Rred _ r' m' t => rred ge cp a m t r' m' /\ exists w', possible_trace w t w'
   | RV, Callred _ fd args tyres m' => callred ge a m fd args tyres /\ m' = m
   | LV, Stuckred => ~imm_safe_t k a m
   | RV, Stuckred => ~imm_safe_t k a m
@@ -1517,7 +1518,7 @@ Proof with (try (apply not_invert_ok; simpl; intro; myinv; intuition congruence;
   exploit is_val_list_all_values; eauto. intros ALLVAL.
   (* top *)
   destruct (sem_cast_arguments vtl tyargs m) as [vargs|] eqn:?...
-  destruct (do_external ef w vargs m) as [[[[? ?] v] m'] | ] eqn:?...
+  destruct (do_external ef w cp vargs m) as [[[[? ?] v] m'] | ] eqn:?...
   exploit do_ef_external_sound; eauto. intros [EC PT].
   apply topred_ok; auto. red. split; auto. eapply red_builtin; eauto.
   eapply sem_cast_arguments_sound; eauto.
@@ -1581,7 +1582,7 @@ Qed.
 
 Lemma rred_topred:
   forall w' r1 m1 t r2 m2,
-  rred ge r1 m1 t r2 m2 -> possible_trace w t w' ->
+  rred ge cp r1 m1 t r2 m2 -> possible_trace w t w' ->
   exists rule, step_expr RV r1 m1 = topred (Rred rule r2 m2 t).
 Proof.
   induction 1; simpl; intros.
@@ -1842,10 +1843,10 @@ Qed.
 
 Lemma imm_safe_imm_safe_t:
   forall k a m,
-  imm_safe ge e k a m ->
+  imm_safe ge e cp k a m ->
   imm_safe_t k a m \/
   exists C, exists a1, exists t, exists a1', exists m',
-    context RV k C /\ a = C a1 /\ rred ge a1 m t a1' m' /\ forall w', ~possible_trace w t w'.
+    context RV k C /\ a = C a1 /\ rred ge cp a1 m t a1' m' /\ forall w', ~possible_trace w t w'.
 Proof.
   intros. inv H.
   left. apply imm_safe_t_val.
@@ -1865,16 +1866,18 @@ Definition can_crash_world (w: world) (S: state) : Prop :=
 
 Theorem not_imm_safe_t:
   forall K C a m f k,
+  forall COMP: cp = f.(fn_comp),
   context K RV C ->
   ~imm_safe_t K a m ->
   Csem.step ge (ExprState f (C a) k e m) E0 Stuckstate \/ can_crash_world w (ExprState f (C a) k e m).
 Proof.
-  intros. destruct (classic (imm_safe ge e K a m)).
+  intros. destruct (classic (imm_safe ge e cp K a m)).
   exploit imm_safe_imm_safe_t; eauto.
   intros [A | [C1 [a1 [t [a1' [m' [A [B [D E]]]]]]]]]. contradiction.
   right. red. exists t; econstructor; split; auto.
   left. rewrite B. eapply step_rred with (C := fun x => C(C1 x)). eauto. eauto.
-  left. left. eapply step_stuck; eauto.
+  eauto. left. left. eapply step_stuck; eauto.
+  congruence.
 Qed.
 
 End EXPRS.
@@ -1994,7 +1997,7 @@ Definition do_step (w: world) (s: state) : list transition :=
         end
 
       | None =>
-          map (expr_final_state f k e) (step_expr e w RV a m)
+          map (expr_final_state f k e) (step_expr e w f.(fn_comp) RV a m)
       end
 
   | State f (Sdo x) k e m =>
@@ -2066,7 +2069,7 @@ Definition do_step (w: world) (s: state) : list transition :=
       do m2 <- sem_bind_parameters w e m1 f.(fn_params) vargs;
       ret "step_internal_function" (State f f.(fn_body) k e m2)
   | Callstate (External ef _ _ _) vargs cp k m =>
-      match do_external ef w vargs m with
+      match do_external ef w cp vargs m with
       | None => nil
       | Some(w',t,v,m') => TR "step_external_function" t (Returnstate v k m') :: nil
       end
@@ -2118,7 +2121,7 @@ Proof with try (left; right; econstructor; eauto; fail).
   destruct k; myinv...
   (* expression reduces *)
   intros. exploit list_in_map_inv; eauto. intros [[C rd] [A B]].
-  generalize (step_expr_sound e w r RV m). unfold reducts_ok. intros [P Q].
+  generalize (step_expr_sound e w f.(fn_comp) r RV m). unfold reducts_ok. intros [P Q].
   exploit P; eauto. intros [a' [k' [CTX [EQ RD]]]].
   unfold expr_final_state in A. simpl in A.
   destruct k'; destruct rd; inv A; simpl in RD; try contradiction.
@@ -2127,7 +2130,7 @@ Proof with try (left; right; econstructor; eauto; fail).
   (* stuck lred *)
   exploit not_imm_safe_t; eauto. intros [R | R]; eauto.
   (* rred *)
-  destruct RD. left; left; apply step_rred; auto.
+  destruct RD. left; left; eapply step_rred; auto.
   (* callred *)
   destruct RD; subst m'. left; left; apply step_call; eauto.
   (* stuck rred *)
@@ -2156,7 +2159,7 @@ Proof.
     induction 1; simpl; auto.
   inv H.
   destruct (H0 a0 _ _ _ H9) as [[A B] | A]. subst. inv H8; auto. auto.
-  destruct (H0 a0 _ _ _ H9) as [[A B] | A]. subst. inv H8; auto. auto.
+  destruct (H0 a0 _ _ _ H10) as [[A B] | A]. subst. inv H9; auto. auto.
   destruct (H0 a0 _ _ _ H9) as [[A B] | A]. subst. inv H8; auto. auto.
   destruct (H0 a0 _ _ _ H8) as [[A B] | A]. subst. destruct a0; auto. elim H9. constructor. auto.
 Qed.
@@ -2171,10 +2174,10 @@ Proof with (unfold ret; eauto with coqlib).
   inversion H; subst; exploit estep_not_val; eauto; intro NOTVAL.
 (* lred *)
   unfold do_step; rewrite NOTVAL.
-  exploit lred_topred; eauto. instantiate (1 := w). intros (rule & STEP).
+  exploit lred_topred; eauto. instantiate (1 := f.(fn_comp)). instantiate (1 := w). intros (rule & STEP).
   exists rule. change (TR rule E0 (ExprState f (C a') k e m')) with (expr_final_state f k e (C, Lred rule a' m')).
   apply in_map.
-  generalize (step_expr_context e w _ _ _ H1 a m). unfold reducts_incl.
+  generalize (step_expr_context e w f.(fn_comp) _ _ _ H1 a m). unfold reducts_incl.
   intro. replace C with (fun x => C x). apply H2.
   rewrite STEP. unfold topred; auto with coqlib.
   apply extensionality; auto.
@@ -2184,17 +2187,17 @@ Proof with (unfold ret; eauto with coqlib).
   exists rule.
   change (TR rule t (ExprState f (C a') k e m')) with (expr_final_state f k e (C, Rred rule a' m' t)).
   apply in_map.
-  generalize (step_expr_context e w _ _ _ H1 a m). unfold reducts_incl.
-  intro. replace C with (fun x => C x). apply H2.
+  generalize (step_expr_context e w f.(fn_comp) _ _ _ H2 a m). unfold reducts_incl.
+  intro. replace C with (fun x => C x). apply H0.
   rewrite STEP; unfold topred; auto with coqlib.
   apply extensionality; auto.
 (* callred *)
   unfold do_step; rewrite NOTVAL.
-  exploit callred_topred; eauto. instantiate (1 := w). instantiate (1 := e).
+  exploit callred_topred; eauto. instantiate (1 := f.(fn_comp)). instantiate (1 := w). instantiate (1 := e).
   intros (rule & STEP). exists rule.
   change (TR rule E0 (Callstate fd vargs f.(fn_comp) (Kcall f e C ty k) m)) with (expr_final_state f k e (C, Callred rule fd vargs ty m)).
   apply in_map.
-  generalize (step_expr_context e w _ _ _ H1 a m). unfold reducts_incl.
+  generalize (step_expr_context e w f.(fn_comp) _ _ _ H1 a m). unfold reducts_incl.
   intro. replace C with (fun x => C x). apply H2.
   rewrite STEP; unfold topred; auto with coqlib.
   apply extensionality; auto.
