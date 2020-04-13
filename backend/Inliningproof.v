@@ -890,15 +890,15 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
         (SSZ2: forall ofs, Mem.perm m' sp' ofs Max Nonempty -> 0 <= ofs <= f'.(fn_stacksize)),
       match_states (State stk f (Vptr sp Ptrofs.zero) pc rs m)
                    (State stk' f' (Vptr sp' Ptrofs.zero) (spc ctx pc) rs' m')
-  | match_call_states: forall stk fd args cp m stk' fd' args' m' cunit F
+  | match_call_states: forall stk fd args m stk' fd' args' m' cunit F
         (MS: match_stacks F m m' stk stk' (Mem.nextblock m'))
         (LINK: linkorder cunit prog)
         (FD: transf_fundef (funenv_program cunit) fd = OK fd')
         (VINJ: Val.inject_list F args args')
         (MINJ: Mem.inject F m m'),
-      match_states (Callstate stk fd args cp m)
-                   (Callstate stk' fd' args' cp m')
-  | match_call_regular_states: forall stk f vargs cp m stk' f' sp' rs' m' F fenv ctx ctx' pc' pc1' rargs
+      match_states (Callstate stk fd args m)
+                   (Callstate stk' fd' args' m')
+  | match_call_regular_states: forall stk f vargs m stk' f' sp' rs' m' F fenv ctx ctx' pc' pc1' rargs
         (MS: match_stacks_inside F m m' stk stk' f' ctx sp' rs')
         (SAMECOMP: f.(fn_comp) = f'.(fn_comp))
         (COMPAT: fenv_compat prog fenv)
@@ -912,7 +912,7 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
         (PRIV: range_private F m m' sp' ctx.(dstk) f'.(fn_stacksize))
         (SSZ1: 0 <= f'.(fn_stacksize) < Ptrofs.max_unsigned)
         (SSZ2: forall ofs, Mem.perm m' sp' ofs Max Nonempty -> 0 <= ofs <= f'.(fn_stacksize)),
-      match_states (Callstate stk (Internal f) vargs cp m)
+      match_states (Callstate stk (Internal f) vargs m)
                    (State stk' f' (Vptr sp' Ptrofs.zero) pc' rs' m')
   | match_return_states: forall stk v m stk' v' m' F
         (MS: match_stacks F m m' stk stk' (Mem.nextblock m'))
@@ -937,9 +937,9 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
 
 Definition measure (S: RTL.state) : nat :=
   match S with
-  | State _ _ _ _ _ _   => 1%nat
-  | Callstate _ _ _ _ _ => 0%nat
-  | Returnstate _ _ _   => 0%nat
+  | State _ _ _ _ _ _ => 1%nat
+  | Callstate _ _ _ _ => 0%nat
+  | Returnstate _ _ _ => 0%nat
   end.
 
 Lemma tr_funbody_inv:
@@ -1028,7 +1028,6 @@ Proof.
   left; econstructor; split.
   eapply plus_one. eapply exec_Icall; eauto.
   eapply sig_function_translated; eauto.
-  rewrite SAMECOMP.
   econstructor; eauto.
   eapply match_stacks_cons; eauto.
   eapply agree_val_regs; eauto.
@@ -1062,7 +1061,6 @@ Proof.
   eapply plus_one. eapply exec_Itailcall; eauto.
   eapply sig_function_translated; eauto.
     now rewrite <- (comp_transl_partial _ B), COMP.
-  rewrite SAMECOMP.
   econstructor; eauto.
   eapply match_stacks_bound with (bound := sp').
   eapply match_stacks_invariant; eauto.
@@ -1080,7 +1078,6 @@ Proof.
   left; econstructor; split.
   eapply plus_one. eapply exec_Icall; eauto.
   eapply sig_function_translated; eauto.
-  rewrite SAMECOMP.
   econstructor; eauto.
   eapply match_stacks_untailcall; eauto.
   eapply match_stacks_inside_invariant; eauto.
@@ -1319,7 +1316,7 @@ Lemma transf_initial_states:
 Proof.
   intros. inv H.
   exploit function_ptr_translated; eauto. intros (cu & tf & FIND & TR & LINK).
-  exists (Callstate nil tf nil default_compartment m0); split.
+  exists (Callstate nil tf nil m0); split.
   econstructor; eauto.
     eapply (Genv.init_mem_match TRANSF); eauto.
     rewrite symbols_preserved. replace (prog_main tprog) with (prog_main prog). auto.

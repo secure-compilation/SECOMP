@@ -370,7 +370,7 @@ Inductive estep: state -> trace -> state -> Prop :=
       Genv.find_funct ge vf = Some fd ->
       type_of_fundef fd = Tfunction targs tres cconv ->
       estep (ExprState f (C (Ecall rf rargs ty)) k e m)
-         E0 (Callstate fd vargs f.(fn_comp) (Kcall f e C ty k) m)
+         E0 (Callstate fd vargs (Kcall f e C ty k) m)
 
   | step_builtin: forall f C ef tyargs rargs ty k e m vargs t vres m',
       leftcontext RV RV C ->
@@ -2202,9 +2202,9 @@ Lemma bigstep_to_steps:
    star step ge (State f s k e m) t S /\ outcome_state_match e m' f k out S)
 /\(forall m fd args t m' res,
    eval_funcall m fd args t m' res ->
-   forall cp k,
+   forall k,
    is_call_cont k ->
-   star step ge (Callstate fd args cp k m) t (Returnstate res k m')).
+   star step ge (Callstate fd args k m) t (Returnstate res k m')).
 Proof.
   apply bigstep_induction; intros.
 (* expression, general *)
@@ -2648,9 +2648,9 @@ Proof (proj1 (proj2 (proj2 (proj2 bigstep_to_steps)))).
 Lemma eval_funcall_to_steps:
   forall m fd args t m' res,
   eval_funcall m fd args t m' res ->
-  forall cp k,
+  forall k,
   is_call_cont k ->
-  star step ge (Callstate fd args cp k m) t (Returnstate res k m').
+  star step ge (Callstate fd args k m) t (Returnstate res k m').
 Proof (proj2 (proj2 (proj2 (proj2 bigstep_to_steps)))).
 
 Fixpoint esize (a: expr) : nat :=
@@ -2706,9 +2706,9 @@ Proof.
 Qed.
 
 Lemma evalinf_funcall_steps:
-  forall m fd args cp t k,
+  forall m fd args t k,
   evalinf_funcall m fd args t ->
-  forever_N step lt ge O (Callstate fd args cp k m) t.
+  forever_N step lt ge O (Callstate fd args k m) t.
 Proof.
   cofix COF.
 

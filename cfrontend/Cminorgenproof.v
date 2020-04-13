@@ -25,13 +25,6 @@ Local Open Scope error_monad_scope.
 Definition match_prog (p: Csharpminor.program) (tp: Cminor.program) :=
   match_program (fun cu f tf => transl_fundef f = OK tf) eq p tp.
 
-Instance comp_transl_funbody cenv stacksize: has_comp_transl_partial (transl_funbody cenv stacksize).
-Proof.
-  unfold transl_funbody.
-  intros f tf H.
-  now monadInv H.
-Qed.
-
 Instance comp_transl_function: has_comp_transl_partial transl_function.
 Proof.
   unfold transl_function, transl_funbody.
@@ -1623,15 +1616,15 @@ Inductive match_states: Csharpminor.state -> Cminor.state -> Prop :=
       match_states (Csharpminor.State fn (Csharpminor.Sseq s1 s2) k e le m)
                    (State tfn ts1 tk (Vptr sp Ptrofs.zero) te tm)
   | match_callstate:
-      forall fd args cp k m tfd targs tk tm f cs cenv
+      forall fd args k m tfd targs tk tm f cs cenv
       (TR: transl_fundef fd = OK tfd)
       (MINJ: Mem.inject f m tm)
       (MCS: match_callstack f m tm cs (Mem.nextblock m) (Mem.nextblock tm))
       (MK: match_cont k tk cenv nil cs)
       (ISCC: Csharpminor.is_call_cont k)
       (ARGSINJ: Val.inject_list f args targs),
-      match_states (Csharpminor.Callstate fd args cp k m)
-                   (Callstate tfd targs cp tk tm)
+      match_states (Csharpminor.Callstate fd args k m)
+                   (Callstate tfd targs tk tm)
   | match_returnstate:
       forall v k m tv tk tm f cs cenv
       (MINJ: Mem.inject f m tm)
@@ -2034,7 +2027,6 @@ Proof.
   left; econstructor; split.
   apply plus_one. eapply step_call; eauto.
   apply sig_preserved; eauto.
-  replace (fn_comp tfn) with (Csharpminor.fn_comp f) by apply (comp_transl_partial _ TRF).
   econstructor; eauto.
   eapply match_Kcall with (cenv' := cenv); eauto.
   red; auto.

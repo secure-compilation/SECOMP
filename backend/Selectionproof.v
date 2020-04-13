@@ -1082,15 +1082,15 @@ Inductive match_states: Cminor.state -> CminorSel.state -> Prop :=
       match_states
         (Cminor.State f s k sp e m)
         (State f' s' k' sp e' m')
-  | match_callstate: forall cunit f f' args args' cp k k' m m'
+  | match_callstate: forall cunit f f' args args' k k' m m'
         (LINK: linkorder cunit prog)
         (TF: match_fundef cunit f f')
         (MC: match_call_cont k k')
         (LD: Val.lessdef_list args args')
         (ME: Mem.extends m m'),
       match_states
-        (Cminor.Callstate f args cp k m)
-        (Callstate f' args' cp k' m')
+        (Cminor.Callstate f args k m)
+        (Callstate f' args' k' m')
   | match_returnstate: forall v v' k k' m m'
         (MC: match_call_cont k k')
         (LD: Val.lessdef v v')
@@ -1108,7 +1108,7 @@ Inductive match_states: Cminor.state -> CminorSel.state -> Prop :=
         (LDE: env_lessdef e e')
         (ME: Mem.extends m m'),
       match_states
-        (Cminor.Callstate (External ef) args f.(Cminor.fn_comp) (Cminor.Kcall optid f sp e k) m)
+        (Cminor.Callstate (External ef) args (Cminor.Kcall optid f sp e k) m)
         (State f' (sel_builtin optid ef al) k' sp e' m')
   | match_builtin_2: forall cunit hf v v' optid f sp e k m f' e' m' k' env
         (LINK: linkorder cunit prog)
@@ -1253,9 +1253,9 @@ Qed.
 
 Definition measure (s: Cminor.state) : nat :=
   match s with
-  | Cminor.Callstate _ _ _ _ _ => 0%nat
-  | Cminor.State _ _ _ _ _ _   => 1%nat
-  | Cminor.Returnstate _ _ _   => 2%nat
+  | Cminor.Callstate _ _ _ _ => 0%nat
+  | Cminor.State _ _ _ _ _ _ => 1%nat
+  | Cminor.Returnstate _ _ _ => 2%nat
   end.
 
 Lemma sel_step_correct:
@@ -1300,7 +1300,6 @@ Proof.
   left; econstructor; split.
   econstructor; eauto. econstructor; eauto.
   eapply sig_function_translated; eauto.
-  rewrite comp_sel_fundef; eauto.
   eapply match_callstate with (cunit := cunit'); eauto.
   eapply match_cont_call with (cunit := cunit) (hf := hf); eauto.
 + (* direct *)
@@ -1311,7 +1310,6 @@ Proof.
   econstructor; eauto.
   subst vf. econstructor; eauto. rewrite symbols_preserved; eauto.
   eapply sig_function_translated; eauto.
-  rewrite comp_sel_fundef; eauto.
   eapply match_callstate with (cunit := cunit'); eauto.
   eapply match_cont_call with (cunit := cunit) (hf := hf); eauto.
 + (* turned into Sbuiltin *)
@@ -1333,7 +1331,6 @@ Proof.
   rewrite <- (comp_function_translated _ _ _ F), COMP. now apply (comp_transl_partial _ TF).
   econstructor; eauto. econstructor; eauto. eapply sig_function_translated; eauto.
   rewrite <- (comp_function_translated _ _ _ F), COMP. now apply (comp_transl_partial _ TF).
-  rewrite comp_sel_fundef; eauto.
   eapply match_callstate with (cunit := cunit'); eauto.
   eapply call_cont_commut; eauto.
 - (* Sbuiltin *)

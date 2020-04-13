@@ -236,7 +236,6 @@ Inductive state: Type :=
   | Callstate:                  (**r Invocation of a function *)
       forall (f: fundef)                (**r function to invoke *)
              (args: list val)           (**r arguments provided by caller *)
-             (cp: compartment)          (**r calling compartment *)
              (k: cont)                  (**r what to do next  *)
              (m: mem),                  (**r memory state *)
       state
@@ -466,7 +465,7 @@ Inductive step: state -> trace -> state -> Prop :=
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
       step (State f (Scall optid sig a bl) k sp e m)
-        E0 (Callstate fd vargs f.(fn_comp) (Kcall optid f sp e k) m)
+        E0 (Callstate fd vargs (Kcall optid f sp e k) m)
 
   | step_tailcall: forall f sig a bl k sp e m vf vargs fd m',
       eval_expr (Vptr sp Ptrofs.zero) e m a vf ->
@@ -476,7 +475,7 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (COMP: comp_of fd = f.(fn_comp)),
       Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
       step (State f (Stailcall sig a bl) k (Vptr sp Ptrofs.zero) e m)
-        E0 (Callstate fd vargs f.(fn_comp) (call_cont k) m')
+        E0 (Callstate fd vargs (call_cont k) m')
 
   | step_builtin: forall f optid ef bl k sp e m vargs t vres m',
       eval_exprlist sp e m bl vargs ->
@@ -537,14 +536,14 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Sgoto lbl) k sp e m)
         E0 (State f s' k' sp e m)
 
-  | step_internal_function: forall f cp vargs k m m' sp e,
+  | step_internal_function: forall f vargs k m m' sp e,
       Mem.alloc m f.(fn_comp) 0 f.(fn_stackspace) = (m', sp) ->
       set_locals f.(fn_vars) (set_params vargs f.(fn_params)) = e ->
-      step (Callstate (Internal f) vargs cp k m)
+      step (Callstate (Internal f) vargs k m)
         E0 (State f f.(fn_body) k (Vptr sp Ptrofs.zero) e m')
-  | step_external_function: forall ef cp vargs k m t vres m',
+  | step_external_function: forall ef vargs k m t vres m',
       external_call ef ge vargs m t vres m' ->
-      step (Callstate (External ef) vargs cp k m)
+      step (Callstate (External ef) vargs k m)
          t (Returnstate vres k m')
 
   | step_return: forall v optid f sp e k m,
@@ -565,7 +564,7 @@ Inductive initial_state (p: program): state -> Prop :=
       Genv.find_symbol ge p.(prog_main) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
       funsig f = signature_main ->
-      initial_state p (Callstate f nil default_compartment Kstop m0).
+      initial_state p (Callstate f nil Kstop m0).
 
 (** A final state is a [Returnstate] with an empty continuation. *)
 
@@ -646,7 +645,7 @@ Proof.
     apply B in H; destruct H; congruence.
   + subst v0. assert (b0 = b) by (inv H2; inv H13; auto). subst b0; auto.
   + assert (n0 = n) by (inv H2; inv H14; auto). subst n0; auto.
-  + exploit external_call_determ. eexact H1. eexact H8.
+  + exploit external_call_determ. eexact H1. eexact H7.
     intros (A & B). split; intros; auto.
     apply B in H; destruct H; congruence.
 - (* single event *)
@@ -989,9 +988,9 @@ Qed.
 Lemma eval_funcall_exec_stmt_steps:
   (forall m fd args t m' res,
    eval_funcall ge m fd args t m' res ->
-   forall cp k,
+   forall k,
    is_call_cont k ->
-   star step ge (Callstate fd args cp k m)
+   star step ge (Callstate fd args k m)
               t (Returnstate res k m'))
 /\(forall f sp e m s t e' m' out,
    exec_stmt ge f sp e m s t e' m' out ->
@@ -1151,9 +1150,9 @@ Qed.
 Lemma eval_funcall_steps:
    forall m fd args t m' res,
    eval_funcall ge m fd args t m' res ->
-   forall cp k,
+   forall k,
    is_call_cont k ->
-   star step ge (Callstate fd args cp k m)
+   star step ge (Callstate fd args k m)
               t (Returnstate res k m').
 Proof. exact (proj1 eval_funcall_exec_stmt_steps). Qed.
 
@@ -1167,9 +1166,9 @@ Lemma exec_stmt_steps:
 Proof (proj2 eval_funcall_exec_stmt_steps).
 
 Lemma evalinf_funcall_forever:
-  forall cp m fd args T k,
+  forall m fd args T k,
   evalinf_funcall ge m fd args T ->
-  forever_plus step ge (Callstate fd args cp k m) T.
+  forever_plus step ge (Callstate fd args k m) T.
 Proof.
   cofix CIH_FUN.
   assert (forall sp e m s T f k,

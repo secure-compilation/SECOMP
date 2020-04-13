@@ -1414,14 +1414,14 @@ Inductive match_states: Clight.state -> Csharpminor.state -> Prop :=
       match_states (Clight.State f s k e le m)
                    (State tf ts' tk' te le m)
   | match_callstate:
-      forall fd args cp k m tfd tk targs tres cconv cu ce
+      forall fd args k m tfd tk targs tres cconv cu ce
           (LINK: linkorder cu prog)
           (TR: match_fundef cu fd tfd)
           (MK: match_cont ce tres 0%nat 0%nat k tk)
           (ISCC: Clight.is_call_cont k)
           (TY: type_of_fundef fd = Tfunction targs tres cconv),
-      match_states (Clight.Callstate fd args cp k m)
-                   (Callstate tfd args cp tk m)
+      match_states (Clight.Callstate fd args k m)
+                   (Callstate tfd args tk m)
   | match_returnstate:
       forall res tres k m tk ce
           (MK: match_cont ce tres 0%nat 0%nat k tk)
@@ -1618,7 +1618,6 @@ Proof.
     apply plus_one. eapply step_call; eauto.
     eapply transl_expr_correct with (cunit := cu); eauto.
     eapply transl_arglist_correct with (cunit := cu); eauto.
-    replace (fn_comp tf) with (Clight.fn_comp f) by apply (comp_transl_partial _ TRF).
     econstructor; eauto.
     eapply match_Kcall with (ce := prog_comp_env cu') (cu := cu); eauto.
     exact I.
@@ -1629,7 +1628,6 @@ Proof.
     eapply transl_expr_correct with (cunit := cu); eauto.
     eapply transl_arglist_correct with (cunit := cu); eauto.
     traceEq.
-    replace (fn_comp tf) with (Clight.fn_comp f) by apply (comp_transl_partial _ TRF).
     econstructor; eauto.
     eapply match_Kcall_normalize  with (ce := prog_comp_env cu') (cu := cu); eauto.
     intros. eapply make_normalization_correct; eauto. constructor; eauto.

@@ -306,9 +306,9 @@ Lemma exec_stmt_eval_funcall_steps:
 /\
   (forall m fd args t m' res,
    eval_funcall ge m fd args t m' res ->
-   forall cp k,
+   forall k,
    is_call_cont k ->
-   star step1 ge (Callstate fd args cp k m) t (Returnstate res k m')).
+   star step1 ge (Callstate fd args k m) t (Returnstate res k m')).
 Proof.
   apply exec_stmt_funcall_ind; intros.
 
@@ -486,17 +486,17 @@ Proof (proj1 exec_stmt_eval_funcall_steps).
 Lemma eval_funcall_steps:
    forall m fd args t m' res,
    eval_funcall ge m fd args t m' res ->
-   forall cp k,
+   forall k,
    is_call_cont k ->
-   star step1 ge (Callstate fd args cp k m) t (Returnstate res k m').
+   star step1 ge (Callstate fd args k m) t (Returnstate res k m').
 Proof (proj2 exec_stmt_eval_funcall_steps).
 
 Definition order (x y: unit) := False.
 
 Lemma evalinf_funcall_forever:
-  forall m fd args T cp k,
+  forall m fd args T k,
   evalinf_funcall ge m fd args T ->
-  forever_N step1 order ge tt (Callstate fd args cp k m) T.
+  forever_N step1 order ge tt (Callstate fd args k m) T.
 Proof.
   cofix CIH_FUN.
   assert (forall e c le m s T f k,

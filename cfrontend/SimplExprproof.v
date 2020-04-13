@@ -1050,11 +1050,11 @@ Inductive match_states: Csem.state -> state -> Prop :=
       match_cont k tk ->
       match_states (Csem.State f s k e m)
                    (State tf ts tk e le m)
-  | match_callstates: forall fd args cp k m tfd tk,
+  | match_callstates: forall fd args k m tfd tk,
       tr_fundef fd tfd ->
       match_cont k tk ->
-      match_states (Csem.Callstate fd args cp k m)
-                   (Callstate tfd args cp tk m)
+      match_states (Csem.Callstate fd args k m)
+                   (Callstate tfd args tk m)
   | match_returnstates: forall res k m tk,
       match_cont k tk ->
       match_states (Csem.Returnstate res k m)
@@ -1917,7 +1917,6 @@ Proof.
   econstructor; eauto. rewrite <- TY1; eauto.
   exploit type_of_fundef_preserved; eauto. congruence.
   traceEq.
-  replace (fn_comp tf) with (Csyntax.fn_comp f) by now inv H11.
   constructor; auto. econstructor; eauto.
   intros. change sl2 with (nil ++ sl2). apply S.
   constructor. auto. auto.
@@ -1931,7 +1930,6 @@ Proof.
   econstructor; eauto. rewrite <- TY1; eauto.
   exploit type_of_fundef_preserved; eauto. congruence.
   traceEq.
-  replace (fn_comp tf) with (Csyntax.fn_comp f) by now inv H11.
   constructor; auto. econstructor; eauto.
   intros. apply S.
   destruct dst'; constructor.
@@ -2255,17 +2253,17 @@ Proof.
   econstructor; eauto.
 
 (* internal function *)
-  inv H8. inversion H3; subst.
+  inv H7. inversion H3; subst.
   econstructor; split.
   left; apply plus_one. eapply step_internal_function. econstructor.
-  rewrite H7; rewrite H8; auto.
-  rewrite H7; rewrite H8. eapply alloc_variables_preserved; eauto.
+  rewrite H7; rewrite H9; auto.
+  rewrite H7; rewrite H9. eapply alloc_variables_preserved; eauto.
   rewrite H7. eapply bind_parameters_preserved; eauto.
   eauto.
   constructor; auto.
 
 (* external function *)
-  inv H6.
+  inv H5.
   econstructor; split.
   left; apply plus_one. econstructor; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.

@@ -1948,7 +1948,7 @@ Definition expr_final_state (f: function) (k: cont) (e: env) (C_rd: (expr -> exp
   match snd C_rd with
   | Lred rule a m => TR rule E0 (ExprState f (fst C_rd a) k e m)
   | Rred rule a m t => TR rule t (ExprState f (fst C_rd a) k e m)
-  | Callred rule fd vargs ty m => TR rule E0 (Callstate fd vargs f.(fn_comp) (Kcall f e (fst C_rd) ty k) m)
+  | Callred rule fd vargs ty m => TR rule E0 (Callstate fd vargs (Kcall f e (fst C_rd) ty k) m)
   | Stuckred => TR "step_stuck" E0 Stuckstate
   end.
 
@@ -2060,12 +2060,12 @@ Definition do_step (w: world) (s: state) : list transition :=
       | None => nil
       end
 
-  | Callstate (Internal f) vargs cp k m =>
+  | Callstate (Internal f) vargs k m =>
       check (list_norepet_dec ident_eq (var_names (fn_params f) ++ var_names (fn_vars f)));
       let (e,m1) := do_alloc_variables empty_env m (f.(fn_params) ++ f.(fn_vars)) in
       do m2 <- sem_bind_parameters w e m1 f.(fn_params) vargs;
       ret "step_internal_function" (State f f.(fn_body) k e m2)
-  | Callstate (External ef _ _ _) vargs cp k m =>
+  | Callstate (External ef _ _ _) vargs k m =>
       match do_external ef w vargs m with
       | None => nil
       | Some(w',t,v,m') => TR "step_external_function" t (Returnstate v k m') :: nil
@@ -2192,7 +2192,7 @@ Proof with (unfold ret; eauto with coqlib).
   unfold do_step; rewrite NOTVAL.
   exploit callred_topred; eauto. instantiate (1 := w). instantiate (1 := e).
   intros (rule & STEP). exists rule.
-  change (TR rule E0 (Callstate fd vargs f.(fn_comp) (Kcall f e C ty k) m)) with (expr_final_state f k e (C, Callred rule fd vargs ty m)).
+  change (TR rule E0 (Callstate fd vargs (Kcall f e C ty k) m)) with (expr_final_state f k e (C, Callred rule fd vargs ty m)).
   apply in_map.
   generalize (step_expr_context e w _ _ _ H1 a m). unfold reducts_incl.
   intro. replace C with (fun x => C x). apply H2.
@@ -2242,7 +2242,7 @@ Definition do_initial_state (p: program): option (genv * state) :=
   do b <- Genv.find_symbol ge p.(prog_main);
   do f <- Genv.find_funct_ptr ge b;
   check (type_eq (type_of_fundef f) (Tfunction Tnil type_int32s cc_default));
-  Some (ge, Callstate f nil default_compartment Kstop m0).
+  Some (ge, Callstate f nil Kstop m0).
 
 Definition at_final_state (S: state): option int :=
   match S with

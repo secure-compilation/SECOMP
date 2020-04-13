@@ -462,13 +462,13 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
       match_states (Mach.State s fb sp c ms m)
                    (Asm.State rs m')
   | match_states_call:
-      forall s fb ms cp m m' rs
+      forall s fb ms m m' rs
         (STACKS: match_stack ge s)
         (MEXT: Mem.extends m m')
         (AG: agree ms (parent_sp s) rs)
         (ATPC: rs PC = Vptr fb Ptrofs.zero)
         (ATLR: rs RA = parent_ra s),
-      match_states (Mach.Callstate s fb ms cp m)
+      match_states (Mach.Callstate s fb ms m)
                    (Asm.State rs m')
   | match_states_return:
       forall s ms m m' rs
@@ -553,9 +553,9 @@ Qed.
 
 Definition measure (s: Mach.state) : nat :=
   match s with
-  | Mach.State _ _ _ _ _ _   => 0%nat
-  | Mach.Callstate _ _ _ _ _ => 0%nat
-  | Mach.Returnstate _ _ _   => 1%nat
+  | Mach.State _ _ _ _ _ _ => 0%nat
+  | Mach.Callstate _ _ _ _ => 0%nat
+  | Mach.Returnstate _ _ _ => 1%nat
   end.
 
 Remark preg_of_not_GPR11: forall r, negb (mreg_eq r R11) = true -> IR GPR11 <> preg_of r.
