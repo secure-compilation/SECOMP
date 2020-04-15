@@ -332,6 +332,18 @@ Proof.
   intros. apply match_states_intro; auto. constructor.
 Qed.
 
+Lemma match_stacks_call_comp:
+  forall s s',
+  list_forall2 match_stackframes s s' ->
+  call_comp s = call_comp s'.
+Proof.
+  intros s s' H.
+  destruct H; trivial.
+  now match goal with
+  | H : match_stackframes _ _ |- _ => inv H
+  end.
+Qed.
+
 Lemma transf_instr_at:
   forall rm f pc i,
   f.(fn_code)!pc = Some i ->
@@ -505,7 +517,7 @@ Opaque builtin_strength_reduction.
   destruct (lookup_builtin_function name sg) as [bf|] eqn:LK; auto.
   destruct (eval_static_builtin_function ae am rm bf args) as [a|] eqn:ES; auto.
   destruct (const_for_result a) as [cop|] eqn:CR; auto.
-  clear DFL. simpl in H2; red in H2; rewrite LK in H2; inv H2.
+  clear DFL. simpl in H1; red in H1; rewrite LK in H1; inv H1.
   exploit const_for_result_correct; eauto. 
   eapply eval_static_builtin_function_sound; eauto.
   intros (v' & A & B).
@@ -573,6 +585,7 @@ Opaque builtin_strength_reduction.
   simpl. left; econstructor; econstructor; split.
   eapply exec_function_external; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  erewrite <- match_stacks_call_comp; eauto.
   constructor; auto.
 
 - (* return *)

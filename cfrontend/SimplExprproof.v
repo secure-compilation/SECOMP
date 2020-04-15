@@ -848,7 +848,7 @@ Proof.
   unfold make_set. destruct (chunk_for_volatile_type (typeof a)) as [chunk|].
 (* volatile case *)
   intros. change (PTree.set id v le) with (set_opttemp (Some id) v le). econstructor.
-  econstructor. constructor. eauto.
+  econstructor. econstructor. eauto.
   simpl. unfold sem_cast. simpl. eauto. constructor.
   simpl. econstructor; eauto.
 (* nonvolatile case *)
@@ -1033,6 +1033,18 @@ Lemma match_cont_call:
   match_cont (Csem.call_cont k) (call_cont tk).
 Proof.
   induction 1; simpl; auto. constructor. econstructor; eauto.
+Qed.
+
+Lemma match_cont_call_comp:
+  forall k tk,
+  match_cont k tk ->
+  Csem.call_comp k = call_comp tk.
+Proof.
+  intros k tk H.
+  apply match_cont_call in H.
+  unfold Csem.call_comp, call_comp.
+  destruct H; simpl; trivial.
+  now match goal with H : tr_function _ _ |- _ => inv H end.
 Qed.
 
 (** Matching between states *)
@@ -1940,6 +1952,8 @@ Proof.
 
 (* builtin *)
   exploit tr_top_leftcontext; eauto. clear H9.
+  assert (COMP: tf.(fn_comp) = f.(Csyntax.fn_comp)).
+  { now match goal with H : tr_function _ _ |- _ => inv H end. }
   intros [dst' [sl1 [sl2 [a' [tmp' [P [Q [R S]]]]]]]].
   inv P. inv H2.
   (* for effects *)
@@ -1949,6 +1963,7 @@ Proof.
   left. eapply plus_left. constructor.  apply star_one.
   econstructor; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  { rewrite COMP; eauto. }
   traceEq.
   econstructor; eauto.
   change sl2 with (nil ++ sl2). apply S. constructor. simpl; auto. auto.
@@ -1959,6 +1974,7 @@ Proof.
   left. eapply plus_left. constructor. apply star_one.
   econstructor; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  { rewrite COMP; eauto. }
   traceEq.
   econstructor; eauto.
   change sl2 with (nil ++ sl2). apply S.
@@ -2267,6 +2283,7 @@ Proof.
   econstructor; split.
   left; apply plus_one. econstructor; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  erewrite <- match_cont_call_comp; eauto.
   constructor; auto.
 
 (* return *)

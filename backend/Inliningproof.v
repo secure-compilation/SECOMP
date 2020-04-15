@@ -892,6 +892,7 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
                    (State stk' f' (Vptr sp' Ptrofs.zero) (spc ctx pc) rs' m')
   | match_call_states: forall stk fd args m stk' fd' args' m' cunit F
         (MS: match_stacks F m m' stk stk' (Mem.nextblock m'))
+        (UPD: uptodate_caller (comp_of fd) (call_comp stk) (call_comp stk'))
         (LINK: linkorder cunit prog)
         (FD: transf_fundef (funenv_program cunit) fd = OK fd')
         (VINJ: Val.inject_list F args args')
@@ -1030,6 +1031,7 @@ Proof.
   eapply sig_function_translated; eauto.
   econstructor; eauto.
   eapply match_stacks_cons; eauto.
+  { red; eauto. }
   eapply agree_val_regs; eauto.
 + (* inlined *)
   assert (EQ: fd = Internal f0) by (eapply find_inlined_function; eauto).
@@ -1061,6 +1063,7 @@ Proof.
   eapply plus_one. eapply exec_Itailcall; eauto.
   eapply sig_function_translated; eauto.
     now rewrite <- (comp_transl_partial _ B), COMP.
+  congruence.
   econstructor; eauto.
   eapply match_stacks_bound with (bound := sp').
   eapply match_stacks_invariant; eauto.
@@ -1068,6 +1071,7 @@ Proof.
     intros. eapply Mem.perm_free_1; eauto with ordered_type.
     intros. eapply Mem.perm_free_3; eauto.
   erewrite Mem.nextblock_free; eauto. red in VB; xomega.
+  { unfold uptodate_caller. rewrite COMP, ALLOWED. easy. }
   eapply agree_val_regs; eauto.
   eapply Mem.free_right_inject; eauto. eapply Mem.free_left_inject; eauto.
   (* show that no valid location points into the stack block being freed *)
@@ -1082,6 +1086,7 @@ Proof.
   eapply match_stacks_untailcall; eauto.
   eapply match_stacks_inside_invariant; eauto.
     intros. eapply Mem.perm_free_3; eauto.
+  { unfold uptodate_caller. rewrite COMP, ALLOWED. easy. }
   eapply agree_val_regs; eauto.
   eapply Mem.free_left_inject; eauto.
 + (* inlined *)
@@ -1109,6 +1114,7 @@ Proof.
   left; econstructor; split.
   eapply plus_one. eapply exec_Ibuiltin; eauto.
     eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  rewrite <- SAMECOMP. eauto.
   econstructor.
     eapply match_stacks_inside_set_res.
     eapply match_stacks_inside_extcall with (F1 := F) (F2 := F1) (m1 := m) (m1' := m'0); eauto.
@@ -1265,6 +1271,9 @@ Proof.
   left; econstructor; split.
   eapply plus_one. eapply exec_function_external; eauto.
     eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  { destruct (needs_calling_comp (comp_of ef)) eqn:ALLOWED.
+    - rewrite <- (UPD ALLOWED). eauto.
+    - eapply external_call_caller_independent; eauto. }
   econstructor.
     eapply match_stacks_bound with (Mem.nextblock m'0).
     eapply match_stacks_extcall with (F1 := F) (F2 := F1) (m1 := m) (m1' := m'0); eauto.
@@ -1332,6 +1341,7 @@ Proof.
     eapply Genv.find_funct_ptr_not_fresh; eauto.
     eapply Genv.find_var_info_not_fresh; eauto.
     apply Ple_refl.
+    unfold uptodate_caller; eauto.
   eapply Genv.initmem_inject; eauto.
 Qed.
 

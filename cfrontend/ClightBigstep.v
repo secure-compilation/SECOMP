@@ -330,7 +330,9 @@ Proof.
   constructor.
 
 (* builtin *)
-  econstructor; split. apply star_one. econstructor; eauto. constructor.
+  subst c.
+  econstructor; split. apply star_one; econstructor; eauto.
+  econstructor.
 
 (* sequence 2 *)
   destruct (H0 f (Kseq s2 k)) as [S1 [A1 B1]]. assumption. inv B1.

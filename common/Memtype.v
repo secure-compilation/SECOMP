@@ -190,6 +190,12 @@ Axiom block_compartment_valid_block:
   ~valid_block m b ->
   block_compartment m b = None.
 
+Definition val_compartment (m: mem) (v: val): option compartment :=
+  match v with
+  | Vptr b _ => block_compartment m b
+  | _ => None
+  end.
+
 (** [perm m b ofs k p] holds if the address [b, ofs] in memory state [m]
   has permission [p]: one of freeable, writable, readable, and nonempty.
   If the address is empty, [perm m b ofs p] is false for all values of [p].

@@ -365,12 +365,13 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State s fb (Vptr stk soff) (Mtailcall sig ros :: c) rs m)
         E0 (Callstate s f' rs m')
   | exec_Mbuiltin:
-      forall s f sp rs m ef args res b vargs t vres rs' m',
+      forall s fb f sp rs m ef args res b vargs t vres rs' m',
       eval_builtin_args ge rs sp m args vargs ->
-      external_call ef ge (call_comp s) vargs m t vres m' ->
+      forall FUN: Genv.find_funct_ptr ge fb = Some f,
+      external_call ef ge (comp_of f) vargs m t vres m' ->
       rs' = set_res res vres (undef_regs (destroyed_by_builtin ef) rs) ->
-      step (State s f sp (Mbuiltin ef args res :: b) rs m)
-         t (State s f sp b rs' m')
+      step (State s fb sp (Mbuiltin ef args res :: b) rs m)
+         t (State s fb sp b rs' m')
   | exec_Mgoto:
       forall s fb f sp lbl c rs m c',
       Genv.find_funct_ptr ge fb = Some (Internal f) ->

@@ -111,6 +111,7 @@ Definition transf_instr (ce: compenv) (f: function) (pc: node) (instr: instructi
       && tailcall_is_possible sig
       && rettype_eq sig.(sig_res) f.(fn_sig).(sig_res)
       && intra_compartment_call ce ros f.(fn_comp)
+      && negb (needs_calling_comp f.(fn_comp))
       then Itailcall sig ros args
       else instr
   | _ => instr

@@ -143,16 +143,29 @@ Inductive match_frames: RTL.stackframe -> RTL.stackframe -> Prop :=
       match_frames (Stackframe res f sp pc rs)
                    (Stackframe res (transf_function f) sp (renum_pc (pnum f) pc) rs).
 
+Lemma match_stacks_call_comp:
+  forall stk1 stk2,
+  list_forall2 match_frames stk1 stk2 ->
+  call_comp stk1 = call_comp stk2.
+Proof.
+  intros stk1 stk2 H.
+  destruct H; trivial.
+  match goal with
+  | H : match_frames _ _ |- _ =>
+    destruct H; trivial
+  end.
+Qed.
+
 Inductive match_states: RTL.state -> RTL.state -> Prop :=
   | match_regular_states: forall stk f sp pc rs m stk'
         (STACKS: list_forall2 match_frames stk stk')
         (REACH: reach f pc),
       match_states (State stk f sp pc rs m)
                    (State stk' (transf_function f) sp (renum_pc (pnum f) pc) rs m)
-  | match_callstates: forall stk f args c m stk'
+  | match_callstates: forall stk f args m stk'
         (STACKS: list_forall2 match_frames stk stk'),
-      match_states (Callstate stk f args c m)
-                   (Callstate stk' (transf_fundef f) args c m)
+      match_states (Callstate stk f args m)
+                   (Callstate stk' (transf_fundef f) args m)
   | match_returnstates: forall stk v m stk'
         (STACKS: list_forall2 match_frames stk stk'),
       match_states (Returnstate stk v m)
@@ -196,8 +209,6 @@ Proof.
     eapply find_function_translated; eauto.
     apply sig_preserved.
     rewrite comp_transl, COMP. eauto.
-    change (fn_comp (transf_function _)) with (comp_of (transf_function f)).
-    rewrite comp_transl.
   constructor. auto.
 (* builtin *)
   econstructor; split.
@@ -229,6 +240,7 @@ Proof.
   eapply exec_function_external; eauto.
     eapply external_call_symbols_preserved; eauto.
      apply senv_preserved.
+    rewrite <- (match_stacks_call_comp _ _ STACKS); eauto.
   constructor; auto.
 (* return *)
   inv STACKS. inv H1.

@@ -426,6 +426,21 @@ Proof.
   induction 1; simpl. auto. inv H; auto.
 Qed.
 
+Lemma match_stacks_call_comp:
+  forall s ts,
+  list_forall2 match_stackframes s ts ->
+  call_comp s = call_comp ts.
+Proof.
+  intros s ts H.
+  destruct H; trivial.
+  match goal with
+  | H : match_stackframes _ _ |- _ => destruct H
+  end.
+  now match goal with
+  | H : match_function _ _ |- _ => destruct H
+  end.
+Qed.
+
 (** The simulation diagram. *)
 
 Theorem transf_step_correct:
@@ -479,7 +494,7 @@ Proof.
   econstructor. eauto. rewrite PLS. eexact A.
   symmetry; apply sig_preserved; auto.
   now rewrite <- (comp_transl_partial _ B); inv TRF.
-  inv TRF; eauto. traceEq.
+  inv TRF; eauto. inv TRF; eauto.
   rewrite PLS. constructor; auto.
 - (* builtin *)
   econstructor; split.
@@ -529,6 +544,7 @@ Proof.
   monadInv H8. econstructor; split.
   apply plus_one. econstructor; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  erewrite <- match_stacks_call_comp; eauto.
   constructor; auto.
 - (* return *)
   inv H3. inv H1.

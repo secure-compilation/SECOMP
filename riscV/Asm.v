@@ -1068,22 +1068,24 @@ Inductive step: state -> trace -> state -> Prop :=
       exec_instr f i rs m = Next rs' m' ->
       step (State rs m) E0 (State rs' m')
   | exec_step_builtin:
-      forall b ofs f ef args res rs m vargs t vres rs' m',
+      forall b ofs f ef args res rs m vargs t vres rs' m' cp,
       rs PC = Vptr b ofs ->
+      forall COMP: Mem.val_compartment m (rs RA) = Some cp,
       Genv.find_funct_ptr ge b = Some (Internal f) ->
       find_instr (Ptrofs.unsigned ofs) f.(fn_code) = Some (Pbuiltin ef args res) ->
       eval_builtin_args ge rs (rs SP) m args vargs ->
-      external_call ef ge vargs m t vres m' ->
+      external_call ef ge cp vargs m t vres m' ->
       rs' = nextinstr
               (set_res res vres
                 (undef_regs (map preg_of (destroyed_by_builtin ef))
                    (rs#X31 <- Vundef))) ->
       step (State rs m) t (State rs' m')
   | exec_step_external:
-      forall b ef args res rs m t rs' m',
+      forall b ef args res rs m t rs' m' cp,
       rs PC = Vptr b Ptrofs.zero ->
+      forall COMP: Mem.val_compartment m (rs RA) = Some cp,
       Genv.find_funct_ptr ge b = Some (External ef) ->
-      external_call ef ge args m t res m' ->
+      external_call ef ge cp args m t res m' ->
       extcall_arguments rs m (ef_sig ef) args ->
       rs' = (set_pair (loc_external_result (ef_sig ef) ) res (undef_caller_save_regs rs))#PC <- (rs RA) ->
       step (State rs m) t (State rs' m').

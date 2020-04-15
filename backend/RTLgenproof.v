@@ -724,8 +724,7 @@ Proof.
   eapply exec_Ibuiltin; eauto.
   eapply eval_builtin_args_trivial.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  subst cp. eauto.
-  reflexivity.
+  eauto.
 (* Match-env *)
   split. eauto with rtlg.
 (* Result reg *)
@@ -1233,6 +1232,19 @@ with match_stacks: CminorSel.cont -> list RTL.stackframe -> Prop :=
       tr_cont tf.(fn_code) map k n nexits ngoto nret rret cs ->
       match_stacks (Kcall optid f sp e k) (Stackframe r tf sp n rs :: cs).
 
+Lemma match_stacks_call_comp:
+  forall k stk,
+  match_stacks k stk ->
+  CminorSel.call_comp k = call_comp stk.
+Proof.
+  intros k stk H.
+  destruct H; trivial; simpl.
+  match goal with
+  | TF : tr_fun _ _ _ _ _ _ |- _ =>
+    inv TF; symmetry; eauto
+  end.
+Qed.
+
 Inductive match_states: CminorSel.state -> RTL.state -> Prop :=
   | match_state:
       forall f s k sp e m tm cs tf ns rs map ncont nexits ngoto nret rret
@@ -1245,13 +1257,13 @@ Inductive match_states: CminorSel.state -> RTL.state -> Prop :=
       match_states (CminorSel.State f s k sp e m)
                    (RTL.State cs tf sp ns rs tm)
   | match_callstate:
-      forall f args targs cp k m tm cs tf
+      forall f args targs k m tm cs tf
         (TF: transl_fundef f = OK tf)
         (MS: match_stacks k cs)
         (LD: Val.lessdef_list args targs)
         (MEXT: Mem.extends m tm),
-      match_states (CminorSel.Callstate f args cp k m)
-                   (RTL.Callstate cs tf targs cp tm)
+      match_states (CminorSel.Callstate f args k m)
+                   (RTL.Callstate cs tf targs tm)
   | match_returnstate:
       forall v tv k m tm cs
         (MS: match_stacks k cs)
@@ -1374,7 +1386,7 @@ Proof.
 
   (* call *)
   assert (COMP: f.(CminorSel.fn_comp) = tf.(fn_comp)) by now inv TF.
-  inv TS; inv H.
+  inv TS; inv H0.
   (* indirect *)
   exploit transl_expr_correct; eauto.
   intros [rs' [tm' [A [B [C [D X]]]]]].
@@ -1416,6 +1428,7 @@ Proof.
   eapply exec_Itailcall; eauto. simpl. rewrite J. destruct C. eauto. discriminate P. simpl; auto.
   apply sig_transl_function; auto.
     rewrite <- (comp_transl_partial fd Q), COMP. inv TF; congruence.
+  rewrite <- COMP'; eauto.
   rewrite H; eauto.
   traceEq.
   constructor; auto.
@@ -1432,6 +1445,7 @@ Proof.
   rewrite Genv.find_funct_find_funct_ptr in P. eauto.
   apply sig_transl_function; auto.
   rewrite <- (comp_transl_partial _ Q), COMP. inv TF; congruence.
+  rewrite <- COMP'. eauto.
   rewrite H; eauto.
   traceEq.
   constructor; auto.
@@ -1453,6 +1467,7 @@ Proof.
   eapply exec_Ibuiltin; eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
   eapply external_call_symbols_preserved. apply senv_preserved. eauto.
+  rewrite <- COMP. eauto.
   traceEq.
   econstructor; eauto. constructor.
   eapply match_env_update_res; eauto.
@@ -1574,6 +1589,7 @@ Proof.
   econstructor; split.
   left; apply plus_one. eapply exec_function_external; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  rewrite <- (match_stacks_call_comp _ _ MS); eauto.
   constructor; auto.
 
   (* return *)

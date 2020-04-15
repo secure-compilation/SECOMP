@@ -232,6 +232,18 @@ Proof.
   induction 1; simpl. auto. inv H; auto.
 Qed.
 
+Lemma match_stacks_call_comp:
+  forall s ts,
+  list_forall2 match_stackframes s ts ->
+  call_comp s = call_comp ts.
+Proof.
+  intros s ts H.
+  destruct H; auto.
+  now match goal with
+  | H : match_stackframes _ _ |- _ => inv H
+  end.
+Qed.
+
 Theorem transf_step_correct:
   forall s1 t s2, step ge s1 t s2 ->
   forall s1' (MS: match_states s1 s1'),
@@ -274,7 +286,7 @@ Proof.
   econstructor. erewrite match_parent_locset; eauto. eapply find_function_translated; eauto.
   symmetry; apply sig_function_translated.
   now rewrite ! comp_transl.
-  simpl. eauto.
+  simpl. eauto. eauto.
   econstructor; eauto.
 (* Lbuiltin *)
   left; econstructor; split.
@@ -320,6 +332,7 @@ Proof.
 (* external function *)
   left; econstructor; split.
   econstructor; eauto. eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  erewrite <- match_stacks_call_comp; eauto.
   econstructor; eauto with coqlib.
 (* return *)
   inv H3. inv H1. left; econstructor; split.

@@ -174,7 +174,6 @@ Inductive state : Type :=
       forall (stack: list stackframe) (**r call stack *)
              (f: fundef)              (**r function to call *)
              (args: list val)         (**r arguments to the call *)
-             (cp: compartment)        (**r current compartment *)
              (m: mem),                (**r memory state *)
       state
   | Returnstate:
@@ -182,6 +181,12 @@ Inductive state : Type :=
              (v: val)                 (**r return value for the call *)
              (m: mem),                (**r memory state *)
       state.
+
+Definition call_comp (stack: list stackframe): compartment :=
+  match stack with
+  | nil => default_compartment
+  | Stackframe _ f _ _ _ :: _ => f.(fn_comp)
+  end.
 
 Section RELSEM.
 
@@ -230,29 +235,27 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State s f sp pc rs m)
         E0 (State s f sp pc' rs m')
   | exec_Icall:
-      forall s f cp sp pc rs m sig ros args res pc' fd,
-      cp = f.(fn_comp) ->
+      forall s f sp pc rs m sig ros args res pc' fd,
       (fn_code f)!pc = Some(Icall sig ros args res pc') ->
       find_function ros rs = Some fd ->
       funsig fd = sig ->
       step (State s f sp pc rs m)
-        E0 (Callstate (Stackframe res f sp pc' rs :: s) fd rs##args cp m)
+        E0 (Callstate (Stackframe res f sp pc' rs :: s) fd rs##args m)
   | exec_Itailcall:
-      forall s f cp stk pc rs m sig ros args fd m',
-      cp = f.(fn_comp) ->
+      forall s f stk pc rs m sig ros args fd m',
       (fn_code f)!pc = Some(Itailcall sig ros args) ->
       find_function ros rs = Some fd ->
       funsig fd = sig ->
       forall COMP: comp_of fd = f.(fn_comp),
+      forall ALLOWED: needs_calling_comp f.(fn_comp) = false,
       Mem.free m stk 0 f.(fn_stacksize) = Some m' ->
       step (State s f (Vptr stk Ptrofs.zero) pc rs m)
-        E0 (Callstate s fd rs##args cp m')
+        E0 (Callstate s fd rs##args m')
   | exec_Ibuiltin:
-      forall s f cp sp pc rs m ef args res pc' vargs t vres m',
-      cp = f.(fn_comp) ->
+      forall s f sp pc rs m ef args res pc' vargs t vres m',
       (fn_code f)!pc = Some(Ibuiltin ef args res pc') ->
       eval_builtin_args ge (fun r => rs#r) sp m args vargs ->
-      external_call ef ge cp vargs m t vres m' ->
+      external_call ef ge f.(fn_comp) vargs m t vres m' ->
       step (State s f sp pc rs m)
          t (State s f sp pc' (regmap_setres res vres rs) m')
   | exec_Icond:
@@ -276,9 +279,9 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State s f (Vptr stk Ptrofs.zero) pc rs m)
         E0 (Returnstate s (regmap_optget or Vundef rs) m')
   | exec_function_internal:
-      forall s cp f args m m' stk,
+      forall s f args m m' stk,
       Mem.alloc m f.(fn_comp) 0 f.(fn_stacksize) = (m', stk) ->
-      step (Callstate s (Internal f) args cp m)
+      step (Callstate s (Internal f) args m)
         E0 (State s
                   f
                   (Vptr stk Ptrofs.zero)
@@ -286,9 +289,9 @@ Inductive step: state -> trace -> state -> Prop :=
                   (init_regs args f.(fn_params))
                   m')
   | exec_function_external:
-      forall s cp ef args res t m m',
-      external_call ef ge cp args m t res m' ->
-      step (Callstate s (External ef) args cp m)
+      forall s ef args res t m m',
+      external_call ef ge (call_comp s) args m t res m' ->
+      step (Callstate s (External ef) args m)
          t (Returnstate s res m')
   | exec_return:
       forall res f sp pc rs s vres m,
@@ -332,7 +335,7 @@ Inductive initial_state (p: program): state -> Prop :=
       Genv.find_symbol ge p.(prog_main) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
       funsig f = signature_main ->
-      initial_state p (Callstate nil f nil default_compartment m0).
+      initial_state p (Callstate nil f nil m0).
 
 (** A final state is a [Returnstate] with an empty call stack. *)
 

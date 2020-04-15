@@ -947,6 +947,14 @@ Inductive match_stackframes: list stackframe -> list stackframe -> Prop :=
       (Stackframe res f sp pc rs :: s)
       (Stackframe res (transf_function' f approx) sp pc rs' :: s').
 
+Lemma match_stackframes_call_comp:
+  forall s s',
+  match_stackframes s s' ->
+  call_comp s = call_comp s'.
+Proof.
+  intros s s' H. now inv H.
+Qed.
+
 Inductive match_states: state -> state -> Prop :=
   | match_states_intro:
       forall s sp pc rs m s' rs' m' f cu approx
@@ -1110,7 +1118,7 @@ Proof.
   econstructor; eauto.
   eapply match_stackframes_cons with (cu := cu); eauto.
   intros. eapply analysis_correct_1; eauto. simpl; auto.
-  unfold transfer; rewrite H0.
+  unfold transfer; rewrite H.
   exists (fun _ => Vundef); apply empty_numbering_holds.
   apply regs_lessdef_regs; auto.
 
@@ -1135,7 +1143,7 @@ Proof.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   econstructor; eauto.
   eapply analysis_correct_1; eauto. simpl; auto.
-* unfold transfer; rewrite H0.
+* unfold transfer; rewrite H.
   destruct SAT as [valu NH].
   assert (CASE1: exists valu, numbering_holds valu ge sp (regmap_setres res vres rs) m' empty_numbering).
   { exists valu; apply empty_numbering_holds. }
@@ -1147,15 +1155,15 @@ Proof.
   destruct ef.
   + apply CASE1.
   + destruct (lookup_builtin_function name sg) as [bf|] eqn:LK.
-    ++ apply CASE2. simpl in H2; red in H2; rewrite LK in H2; inv H2. auto.
+    ++ apply CASE2. simpl in H1; red in H1; rewrite LK in H1; inv H1. auto.
     ++ apply CASE3.
   + apply CASE1.
-  + apply CASE2; inv H2; auto.
+  + apply CASE2; inv H1; auto.
   + apply CASE3.
   + apply CASE1.
   + apply CASE1.
-  + inv H1; auto. inv H3; auto. inv H4; auto.
-    simpl in H2. inv H2.
+  + inv H0; auto. inv H3; auto. inv H4; auto.
+    simpl in H1. inv H1.
     exists valu.
     apply set_res_unknown_holds.
     InvSoundState. unfold vanalyze; rewrite AN.
@@ -1167,10 +1175,10 @@ Proof.
     eapply kill_loads_after_storebytes_holds; eauto.
     eapply Mem.loadbytes_length; eauto.
     simpl. apply Ple_refl.
-  + apply CASE2; inv H2; auto.
-  + apply CASE2; inv H2; auto.
+  + apply CASE2; inv H1; auto.
+  + apply CASE2; inv H1; auto.
   + apply CASE1.
-  + apply CASE2; inv H2; auto.
+  + apply CASE2; inv H1; auto.
 * apply set_res_lessdef; auto.
 
 - (* Icond *)
@@ -1221,6 +1229,7 @@ Proof.
   econstructor; split.
   eapply exec_function_external; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  erewrite <- match_stackframes_call_comp; eauto.
   econstructor; eauto.
 
 - (* return *)

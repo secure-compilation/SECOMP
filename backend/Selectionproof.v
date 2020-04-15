@@ -1144,6 +1144,15 @@ Proof.
   destruct 1; intros; try contradiction. split; auto. inv H; auto.
 Qed.
 
+Lemma match_call_cont_call_comp:
+  forall k k',
+  match_call_cont k k' ->
+  Cminor.call_comp k = call_comp k'.
+Proof.
+  intros k k' H.
+  now destruct H.
+Qed.
+
 (*
 Remark match_call_cont_cont:
   forall k k', match_call_cont k k' -> exists cunit hf ki env, match_cont cunit hf ki env k k'.
@@ -1332,11 +1341,14 @@ Proof.
   destruct (classify_call (prog_defmap cunit)) as [ | id | ef]; intros.
   econstructor; eauto. econstructor; eauto. eapply sig_function_translated; eauto.
   rewrite <- (comp_function_translated _ _ _ F), COMP. now apply (comp_transl_partial _ TF).
+  rewrite <- CPT; trivial.
   destruct H2 as [b [U V]]. subst vf. inv B.
   econstructor; eauto. econstructor; eauto. rewrite symbols_preserved; eauto. eapply sig_function_translated; eauto.
   rewrite <- (comp_function_translated _ _ _ F), COMP. now apply (comp_transl_partial _ TF).
+  rewrite <- CPT; trivial.
   econstructor; eauto. econstructor; eauto. eapply sig_function_translated; eauto.
   rewrite <- (comp_function_translated _ _ _ F), COMP. now apply (comp_transl_partial _ TF).
+  rewrite <- CPT; trivial.
   eapply match_callstate with (cunit := cunit'); eauto.
   eapply call_cont_commut; eauto.
 - (* Sbuiltin *)
@@ -1431,6 +1443,7 @@ Proof.
   intros [vres' [m2 [A [B [C D]]]]].
   left; econstructor; split.
   econstructor. eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  erewrite <- match_call_cont_call_comp; eauto.
   econstructor; eauto.
 - (* external call turned into a Sbuiltin *)
   exploit sel_builtin_correct; eauto. rewrite <- CPT; eauto. intros (e2' & m2' & P & Q & R).

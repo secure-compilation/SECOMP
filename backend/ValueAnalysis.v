@@ -1282,7 +1282,7 @@ Proof.
 
 - (* call *)
   assert (TR: transfer f rm pc ae am = transfer_call ae am args res).
-  { unfold transfer; rewrite H0; auto. }
+  { unfold transfer; rewrite H; auto. }
   unfold transfer_call, analyze_call in TR.
   destruct (pincl (am_nonstack am) Nonstack &&
             forallb (fun av => vpincl av Nonstack) (aregs ae args)) eqn:NOLEAK.
@@ -1328,7 +1328,7 @@ Proof.
 - (* builtin *)
   assert (SPVALID: Plt sp0 (Mem.nextblock m)) by (eapply mmatch_below; eauto with va).
   assert (TR: transfer f rm pc ae am = transfer_builtin ae am rm ef args res).
-  { unfold transfer; rewrite H0; auto. }
+  { unfold transfer; rewrite H; auto. }
   (* The default case *)
   assert (DEFAULT:
             transfer f rm pc ae am = transfer_builtin_default ae am rm args res ->
@@ -1388,16 +1388,16 @@ Proof.
 + (* builtin function *)
   destruct (lookup_builtin_function name sg) as [bf|] eqn:LK; auto.
   destruct (eval_static_builtin_function ae am rm bf args) as [av|] eqn:ES; auto.
-  simpl in H2. red in H2. rewrite LK in H2. inv H2.
+  simpl in H1. red in H1. rewrite LK in H1. inv H1.
   eapply sound_succ_state; eauto. simpl; auto.
   apply set_builtin_res_sound; auto.
   eapply eval_static_builtin_function_sound; eauto.
 + (* volatile load *)
-  inv H1; auto. inv H3; auto. inv H2.
+  inv H1; auto. inv H0; auto. inv H6.
   exploit abuiltin_arg_sound; eauto. intros VM1.
   eapply sound_succ_state; eauto. simpl; auto.
   apply set_builtin_res_sound; auto.
-  inv H4.
+  inv H2.
   * (* true volatile access *)
     assert (V: vmatch bc v (Ifptr Glob)).
     { inv H3; simpl in *; constructor. econstructor. eapply GE; eauto. }
@@ -1409,10 +1409,10 @@ Proof.
     apply vmatch_lub_l. auto.
     eapply vnormalize_cast; eauto. eapply vmatch_top; eauto.
 + (* volatile store *)
-  inv H1; auto. inv H3; auto. inv H4; auto. inv H2.
-  exploit abuiltin_arg_sound. eauto. eauto. eauto. eauto. eauto. eexact H. intros VM1.
-  exploit abuiltin_arg_sound. eauto. eauto. eauto. eauto. eauto. eexact H1. intros VM2.
-  inv H10.
+  inv H1; auto. inv H0; auto. inv H6; auto. inv H7.
+  exploit abuiltin_arg_sound. eauto. eauto. eauto. eauto. eauto. eexact H4. intros VM1.
+  exploit abuiltin_arg_sound. eauto. eauto. eauto. eauto. eauto. eexact H5. intros VM2.
+  inv H2.
   * (* true volatile access *)
     eapply sound_succ_state; eauto. simpl; auto.
     apply set_builtin_res_sound; auto. constructor.
@@ -1421,13 +1421,13 @@ Proof.
     eapply sound_succ_state; eauto. simpl; auto.
     apply set_builtin_res_sound; auto. constructor.
     apply mmatch_lub_r. eapply storev_sound; eauto.
-    apply H3.
+    eauto.
     eapply romatch_store ; eauto.
     eapply sound_stack_storev with (addr := Vptr b ofs); simpl; eauto.
 + (* memcpy *)
-  inv H1; auto. inv H3; auto. inv H4; auto. inv H2.
-  exploit abuiltin_arg_sound. eauto. eauto. eauto. eauto. eauto. eexact H. intros VM1.
-  exploit abuiltin_arg_sound. eauto. eauto. eauto. eauto. eauto. eexact H1. intros VM2.
+  inv H0; auto. inv H3; auto. inv H4; auto. inv H1.
+  exploit abuiltin_arg_sound. eauto. eauto. eauto. eauto. eauto. eexact H0. intros VM1.
+  exploit abuiltin_arg_sound. eauto. eauto. eauto. eauto. eauto. eexact H2. intros VM2.
   eapply sound_succ_state; eauto. simpl; auto.
   apply set_builtin_res_sound; auto. constructor.
   eapply storebytes_sound; eauto.
@@ -1437,13 +1437,13 @@ Proof.
   eapply romatch_storebytes; eauto.
   eapply sound_stack_storebytes; eauto.
 + (* annot *)
-  inv H2. eapply sound_succ_state; eauto. simpl; auto. apply set_builtin_res_sound; auto. constructor.
+  inv H1. eapply sound_succ_state; eauto. simpl; auto. apply set_builtin_res_sound; auto. constructor.
 + (* annot val *)
-  inv H1; auto. inv H3; auto. inv H2.
+  inv H0; auto. inv H3; auto. inv H1.
   eapply sound_succ_state; eauto. simpl; auto.
   apply set_builtin_res_sound; auto. eapply abuiltin_arg_sound; eauto.
 + (* debug *)
-  inv H2. eapply sound_succ_state; eauto. simpl; auto. apply set_builtin_res_sound; auto. constructor.
+  inv H1. eapply sound_succ_state; eauto. simpl; auto. apply set_builtin_res_sound; auto. constructor.
 
 - (* cond *)
   eapply sound_succ_state; eauto.

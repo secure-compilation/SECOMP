@@ -571,6 +571,23 @@ Proof.
   induction 1; simpl. auto. inv H; auto.
 Qed.
 
+Lemma match_stacks_call_comp:
+  forall s ts,
+  list_forall2 match_stackframes s ts ->
+  LTL.call_comp s = call_comp ts.
+Proof.
+  intros s ts H.
+  destruct H; trivial.
+  match goal with
+  | H : match_stackframes _ _ |- _ =>
+    destruct H
+  end.
+  match goal with
+  | H : transf_function _ = _ |- _ =>
+    apply (comp_transl_partial _ H)
+  end.
+Qed.
+
 Theorem transf_step_correct:
   forall s1 t s2, LTL.step ge s1 t s2 ->
   forall s1' (MS: match_states s1 s1'),
@@ -648,6 +665,7 @@ Proof.
   rewrite (match_parent_locset _ _ STACKS). eauto.
   symmetry; eapply sig_preserved; eauto.
   now rewrite <- (comp_transl_partial _ B), <- (comp_transl_partial _ TRF).
+  now rewrite <- (comp_transl_partial _ TRF).
   rewrite (stacksize_preserved _ _ TRF); eauto.
   rewrite (match_parent_locset _ _ STACKS).
   econstructor; eauto.
@@ -715,6 +733,7 @@ Proof.
   monadInv H8. left; econstructor; split.
   apply plus_one. eapply exec_function_external; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  erewrite <- match_stacks_call_comp; eauto.
   econstructor; eauto.
 
   (* return *)

@@ -704,6 +704,15 @@ Proof.
   induction 1; auto.
 Qed.
 
+Lemma match_stacks_call_comp:
+  forall j stk1 stk2 b1 b2,
+  match_stacks j stk1 stk2 b1 b2 ->
+  call_comp stk1 = call_comp stk2.
+Proof.
+  intros j stk1 stk2 b1 b2 H.
+  now destruct H.
+Qed.
+
 Lemma match_stacks_incr:
   forall j j', inject_incr j j' ->
   forall s ts bound tbound, match_stacks j s ts bound tbound ->
@@ -1033,6 +1042,7 @@ Proof.
   intros (j' & tres & tm' & A & B & C & D & E & F & G).
   econstructor; split.
   eapply exec_function_external; eauto.
+  { rewrite <- (match_stacks_call_comp _ _ _ _ _ STACKS); eauto. }
   eapply match_states_return with (j := j'); eauto.
   apply match_stacks_bound with (Mem.nextblock m) (Mem.nextblock tm).
   apply match_stacks_incr with j; auto.

@@ -1976,6 +1976,16 @@ Proof.
   intros. rewrite (loc_result_exten sg' sg) in H by auto. eauto.
 Qed.
 
+Lemma match_stackframes_call_comp:
+  forall s ts sg,
+  match_stackframes s ts sg ->
+  RTL.call_comp s = call_comp ts.
+Proof.
+  intros s ts sg H.
+  destruct H; trivial; simpl.
+  now apply (comp_transl_partial _ FUN).
+Qed.
+
 Ltac UseShape :=
   match goal with
   | [ WT: wt_function _ _, CODE: (RTL.fn_code _)!_ = Some _, EQ: transfer _ _ _ _ _ = OK _ |- _ ] =>
@@ -2353,6 +2363,7 @@ Proof.
   eapply star_right. eexact A1. econstructor; eauto.
   rewrite <- E. apply find_function_tailcall; auto.
   rewrite <- (comp_transl_partial _ F), COMP. now apply (comp_transl_partial _ FUN).
+  change tf.(fn_comp) with (comp_of tf). rewrite <- (comp_transl_partial _ FUN). eauto.
   replace (fn_stacksize tf) with (RTL.fn_stacksize f); eauto.
   destruct (transf_function_inv _ _ FUN); auto.
   eauto. traceEq.
@@ -2474,6 +2485,7 @@ Proof.
   econstructor; split.
   apply plus_one. econstructor; eauto.
   eapply external_call_symbols_preserved with (ge1 := ge); eauto. apply senv_preserved.
+  erewrite <- match_stackframes_call_comp; eauto.
   econstructor; eauto.
   simpl. destruct (loc_result (ef_sig ef)) eqn:RES; simpl.
   rewrite Locmap.gss; auto.

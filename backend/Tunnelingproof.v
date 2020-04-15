@@ -403,6 +403,16 @@ Proof.
 - inv H; auto.
 Qed.
 
+Lemma match_stackframes_call_comp:
+  forall s ts,
+  list_forall2 match_stackframes s ts ->
+  call_comp s = call_comp ts.
+Proof.
+  intros s ts H.
+  destruct H as [|sf1 ? sf2 ? STACK]; eauto.
+  now destruct STACK.
+Qed.
+
 Lemma tunnel_step_correct:
   forall st1 t st2, step ge st1 t st2 ->
   forall st1' (MS: match_states st1 st1'),
@@ -530,6 +540,7 @@ Proof.
   left; simpl; econstructor; split.
   eapply exec_function_external; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  rewrite <- (match_stackframes_call_comp _ _ STK); eauto.
   simpl. econstructor; eauto using locmap_setpair_lessdef, locmap_undef_caller_save_regs_lessdef.
 - (* return *)
   inv STK. inv H1.

@@ -194,6 +194,7 @@ Inductive step: state -> trace -> state -> Prop :=
       find_function ros rs' = Some f' ->
       sig = funsig f' ->
       forall COMP: comp_of f' = comp_of f,
+      forall ALLOWED: needs_calling_comp (comp_of f) = false,
       Mem.free m stk 0 f.(fn_stacksize) = Some m' ->
       step (State s f (Vptr stk Ptrofs.zero) (Ltailcall sig ros :: b) rs m)
         E0 (Callstate s f' rs' m')

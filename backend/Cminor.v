@@ -236,7 +236,6 @@ Inductive state: Type :=
   | Callstate:                  (**r Invocation of a function *)
       forall (f: fundef)                (**r function to invoke *)
              (args: list val)           (**r arguments provided by caller *)
-             (cp: compartment)          (**r calling compartment *)
              (k: cont)                  (**r what to do next  *)
              (m: mem),                  (**r memory state *)
       state
@@ -407,6 +406,12 @@ Definition is_call_cont (k: cont) : Prop :=
   | _ => False
   end.
 
+Definition call_comp (k: cont) : compartment :=
+  match call_cont k with
+  | Kcall _ f _ _ _ => f.(fn_comp)
+  | _ => default_compartment
+  end.
+
 (** Find the statement and manufacture the continuation
   corresponding to a label *)
 
@@ -466,7 +471,7 @@ Inductive step: state -> trace -> state -> Prop :=
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
       step (State f (Scall optid sig a bl) k sp e m)
-        E0 (Callstate fd vargs f.(fn_comp) (Kcall optid f sp e k) m)
+        E0 (Callstate fd vargs (Kcall optid f sp e k) m)
 
   | step_tailcall: forall f sig a bl k sp e m vf vargs fd m',
       eval_expr (Vptr sp Ptrofs.zero) e m a vf ->
@@ -474,14 +479,14 @@ Inductive step: state -> trace -> state -> Prop :=
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
       forall (COMP: comp_of fd = f.(fn_comp)),
+      forall (ALLOWED: needs_calling_comp f.(fn_comp) = false),
       Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
       step (State f (Stailcall sig a bl) k (Vptr sp Ptrofs.zero) e m)
-        E0 (Callstate fd vargs f.(fn_comp) (call_cont k) m')
+        E0 (Callstate fd vargs (call_cont k) m')
 
-  | step_builtin: forall f optid ef bl k sp e m c vargs t vres m',
+  | step_builtin: forall f optid ef bl k sp e m vargs t vres m',
       eval_exprlist sp e m bl vargs ->
-      c = f.(fn_comp) ->
-      external_call ef ge c vargs m t vres m' ->
+      external_call ef ge f.(fn_comp) vargs m t vres m' ->
       step (State f (Sbuiltin optid ef bl) k sp e m)
          t (State f Sskip k sp (set_optvar optid vres e) m')
 
@@ -538,14 +543,14 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Sgoto lbl) k sp e m)
         E0 (State f s' k' sp e m)
 
-  | step_internal_function: forall f cp vargs k m m' sp e,
+  | step_internal_function: forall f vargs k m m' sp e,
       Mem.alloc m f.(fn_comp) 0 f.(fn_stackspace) = (m', sp) ->
       set_locals f.(fn_vars) (set_params vargs f.(fn_params)) = e ->
-      step (Callstate (Internal f) vargs cp k m)
+      step (Callstate (Internal f) vargs k m)
         E0 (State f f.(fn_body) k (Vptr sp Ptrofs.zero) e m')
-  | step_external_function: forall ef cp vargs k m t vres m',
-      external_call ef ge cp vargs m t vres m' ->
-      step (Callstate (External ef) vargs cp k m)
+  | step_external_function: forall ef vargs k m t vres m',
+      external_call ef ge (call_comp k) vargs m t vres m' ->
+      step (Callstate (External ef) vargs k m)
          t (Returnstate vres k m')
 
   | step_return: forall v optid f sp e k m,
@@ -566,7 +571,7 @@ Inductive initial_state (p: program): state -> Prop :=
       Genv.find_symbol ge p.(prog_main) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
       funsig f = signature_main ->
-      initial_state p (Callstate f nil default_compartment Kstop m0).
+      initial_state p (Callstate f nil Kstop m0).
 
 (** A final state is a [Returnstate] with an empty continuation. *)
 
@@ -642,12 +647,12 @@ Proof.
   intros. constructor; set (ge := Genv.globalenv p); simpl; intros.
 - (* determ *)
   inv H; inv H0; Determ.
-  + subst vargs0. exploit external_call_determ. eexact H3.  eexact H14.
+  + subst vargs0. exploit external_call_determ. eexact H2.  eexact H13.
     intros (A & B). split; intros; auto.
     apply B in H; destruct H; congruence.
   + subst v0. assert (b0 = b) by (inv H2; inv H13; auto). subst b0; auto.
   + assert (n0 = n) by (inv H2; inv H14; auto). subst n0; auto.
-  + exploit external_call_determ. eexact H1. eexact H8.
+  + exploit external_call_determ. eexact H1. eexact H7.
     intros (A & B). split; intros; auto.
     apply B in H; destruct H; congruence.
 - (* single event *)
@@ -833,6 +838,7 @@ with exec_stmt:
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
       forall (COMP: comp_of fd = f.(fn_comp)),
+      forall (ALLOWED: needs_calling_comp f.(fn_comp) = false),
       Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
       eval_funcall f.(fn_comp) m' fd vargs t m'' vres ->
       exec_stmt f (Vptr sp Ptrofs.zero) e m (Stailcall sig a bl) t e m'' (Out_tailcall_return vres).
@@ -909,6 +915,7 @@ with execinf_stmt:
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
       forall (COMP: comp_of fd = f.(fn_comp)),
+      forall (ALLOWED: needs_calling_comp f.(fn_comp) = false),
       Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
       evalinf_funcall  m' fd vargs t ->
       execinf_stmt f (Vptr sp Ptrofs.zero) e m (Stailcall sig a bl) t.
@@ -992,8 +999,9 @@ Lemma eval_funcall_exec_stmt_steps:
   (forall cp m fd args t m' res,
    eval_funcall ge cp m fd args t m' res ->
    forall k,
+   forall UPD: uptodate_caller (comp_of fd) cp (call_comp k),
    is_call_cont k ->
-   star step ge (Callstate fd args cp k m)
+   star step ge (Callstate fd args k m)
               t (Returnstate res k m'))
 /\(forall f sp e m s t e' m' out,
    exec_stmt ge f sp e m s t e' m' out ->
@@ -1026,6 +1034,7 @@ Proof.
 
 (* funcall external *)
   apply star_one. econstructor; eauto.
+  now eapply external_call_caller_independent; eauto.
 
 (* skip *)
   econstructor; split.
@@ -1045,7 +1054,8 @@ Proof.
 (* call *)
   econstructor; split.
   eapply star_left. econstructor; eauto.
-  eapply star_right. apply H4. red; auto.
+  eapply star_right. apply H4; simpl; eauto.
+  easy.
   constructor. reflexivity. traceEq.
   subst e'. constructor.
 
@@ -1146,7 +1156,9 @@ Proof.
 (* tailcall *)
   econstructor; split.
   eapply star_left. econstructor; eauto.
-  apply H5. apply is_call_cont_call_cont. traceEq.
+  apply H5; eauto; try apply is_call_cont_call_cont.
+  { red. now rewrite COMP, ALLOWED. }
+  traceEq.
   econstructor.
 Qed.
 
@@ -1154,8 +1166,9 @@ Lemma eval_funcall_steps:
    forall cp m fd args t m' res,
    eval_funcall ge cp m fd args t m' res ->
    forall k,
+   forall COMP: uptodate_caller (comp_of fd) cp (call_comp k),
    is_call_cont k ->
-   star step ge (Callstate fd args cp k m)
+   star step ge (Callstate fd args k m)
               t (Returnstate res k m').
 Proof. exact (proj1 eval_funcall_exec_stmt_steps). Qed.
 
@@ -1166,12 +1179,12 @@ Lemma exec_stmt_steps:
    exists S,
    star step ge (State f s k sp e m) t S
    /\ outcome_state_match sp e' m' f k out S.
-Proof (proj2 eval_funcall_exec_stmt_steps).
+Proof. exact (proj2 eval_funcall_exec_stmt_steps). Qed.
 
 Lemma evalinf_funcall_forever:
-  forall cp m fd args T k,
+  forall m fd args T k,
   evalinf_funcall ge m fd args T ->
-  forever_plus step ge (Callstate fd args cp k m) T.
+  forever_plus step ge (Callstate fd args k m) T.
 Proof.
   cofix CIH_FUN.
   assert (forall sp e m s T f k,
@@ -1243,7 +1256,7 @@ Proof.
 (* termination *)
   inv H. econstructor; econstructor.
   split. econstructor; eauto.
-  split. apply eval_funcall_steps. eauto. red; auto.
+  split. eapply (eval_funcall_steps default_compartment); try red; eauto.
   econstructor.
 (* divergence *)
   inv H. econstructor.

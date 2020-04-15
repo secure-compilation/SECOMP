@@ -25,6 +25,14 @@ Local Open Scope error_monad_scope.
 Definition match_prog (p: Csharpminor.program) (tp: Cminor.program) :=
   match_program (fun cu f tf => transl_fundef f = OK tf) eq p tp.
 
+Instance comp_transl_funbody ce stacksize:
+  has_comp_transl_partial (transl_funbody ce stacksize).
+Proof.
+  unfold transl_funbody.
+  intros f tf H.
+  now monadInv H.
+Qed.
+
 Instance comp_transl_function: has_comp_transl_partial transl_function.
 Proof.
   unfold transl_function, transl_funbody.
@@ -1616,15 +1624,15 @@ Inductive match_states: Csharpminor.state -> Cminor.state -> Prop :=
       match_states (Csharpminor.State fn (Csharpminor.Sseq s1 s2) k e le m)
                    (State tfn ts1 tk (Vptr sp Ptrofs.zero) te tm)
   | match_callstate:
-      forall fd args c k m tfd targs tk tm f cs cenv
+      forall fd args k m tfd targs tk tm f cs cenv
       (TR: transl_fundef fd = OK tfd)
       (MINJ: Mem.inject f m tm)
       (MCS: match_callstack f m tm cs (Mem.nextblock m) (Mem.nextblock tm))
       (MK: match_cont k tk cenv nil cs)
       (ISCC: Csharpminor.is_call_cont k)
       (ARGSINJ: Val.inject_list f args targs),
-      match_states (Csharpminor.Callstate fd args c k m)
-                   (Callstate tfd targs c tk tm)
+      match_states (Csharpminor.Callstate fd args k m)
+                   (Callstate tfd targs tk tm)
   | match_returnstate:
       forall v k m tv tk tm f cs cenv
       (MINJ: Mem.inject f m tm)
@@ -1653,6 +1661,20 @@ Lemma match_call_cont:
   match_cont (Csharpminor.call_cont k) (call_cont tk) cenv nil cs.
 Proof.
   induction 1; simpl; auto; econstructor; eauto.
+Qed.
+
+Lemma match_cont_call_comp:
+  forall k tk cenv xenv cs,
+  match_cont k tk cenv xenv cs ->
+  Csharpminor.call_comp k = call_comp tk.
+Proof.
+  intros k tk cenv xenv cs H.
+  unfold Csharpminor.call_comp, call_comp.
+  induction H; simpl; trivial.
+  match goal with
+  | H : transl_funbody _ _ _ = _ |- _ =>
+    apply (comp_transl_partial _ H)
+  end.
 Qed.
 
 Lemma match_is_call_cont:
@@ -2042,15 +2064,16 @@ Proof.
   left; econstructor; split.
   apply plus_one. econstructor. eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  change (fn_comp tfn) with (comp_of tfn). rewrite <- (comp_transl_partial _ TRF). eauto.
   assert (MCS': match_callstack f' m' tm'
                  (Frame cenv tfn e le te sp lo hi :: cs)
                  (Mem.nextblock m') (Mem.nextblock tm')).
-    apply match_callstack_incr_bound with (Mem.nextblock m) (Mem.nextblock tm).
+  { apply match_callstack_incr_bound with (Mem.nextblock m) (Mem.nextblock tm).
     eapply match_callstack_external_call; eauto.
     intros. eapply external_call_max_perm; eauto.
     xomega. xomega.
     eapply external_call_nextblock; eauto.
-    eapply external_call_nextblock; eauto.
+    eapply external_call_nextblock; eauto. }
   econstructor; eauto.
 Opaque PTree.set.
   unfold set_optvar. destruct optid; simpl.
@@ -2197,6 +2220,7 @@ Opaque PTree.set.
   left; econstructor; split.
   apply plus_one. econstructor.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  erewrite <- match_cont_call_comp; eauto.
   econstructor; eauto.
   apply match_callstack_incr_bound with (Mem.nextblock m) (Mem.nextblock tm).
   eapply match_callstack_external_call; eauto.

@@ -370,7 +370,7 @@ Inductive estep: state -> trace -> state -> Prop :=
       Genv.find_funct ge vf = Some fd ->
       type_of_fundef fd = Tfunction targs tres cconv ->
       estep (ExprState f (C (Ecall rf rargs ty)) k e m)
-         E0 (Callstate fd vargs f.(fn_comp) (Kcall f e C ty k) m)
+         E0 (Callstate fd vargs (Kcall f e C ty k) m)
 
   | step_builtin: forall f C ef tyargs rargs ty k e m vargs t vres m',
       leftcontext RV RV C ->
@@ -1416,9 +1416,9 @@ Proof.
     (* lred *)
     eapply can_estep; eauto. inv H2; auto.
     (* rred *)
-    eapply can_estep; eauto. inv H3; auto. inv H2; auto.
+    eapply can_estep; eauto. inv H2; auto. inv H1; auto.
     (* callred *)
-    eapply can_estep; eauto. inv H3; auto. inv H2; auto.
+    eapply can_estep; eauto. inv H2; auto. inv H1; auto.
     (* stuck *)
     exploit (H Stuckstate). apply star_one. left. econstructor; eauto.
     intros [[r F] | [t [S' R]]]. inv F. inv R. inv H0. inv H0.
@@ -2207,8 +2207,9 @@ Lemma bigstep_to_steps:
 /\(forall c m fd args t m' res,
    eval_funcall c m fd args t m' res ->
    forall k,
+   forall COMP: c = call_comp k,
    is_call_cont k ->
-   star step ge (Callstate fd args c k m) t (Returnstate res k m')).
+   star step ge (Callstate fd args k m) t (Returnstate res k m')).
 Proof.
   apply bigstep_induction; intros.
 (* expression, general *)
@@ -2351,7 +2352,7 @@ Proof.
   eapply star_trans. eexact D.
   eapply star_trans. eexact F.
   eapply star_left. left; eapply step_call; eauto. congruence.
-  eapply star_right. subst c. eapply H9. red; auto.
+  eapply star_right. subst c. eapply H9; simpl; eauto.
   right; constructor.
   reflexivity. reflexivity. reflexivity. traceEq.
 (* nil *)
@@ -2615,6 +2616,7 @@ Proof.
 
 (* call external *)
   apply star_one. right; apply step_external_function; auto.
+  congruence.
 Qed.
 
 Lemma eval_expression_to_steps:
@@ -2653,8 +2655,9 @@ Lemma eval_funcall_to_steps:
   forall c m fd args t m' res,
   eval_funcall c m fd args t m' res ->
   forall k,
+  forall COMP: c = call_comp k,
   is_call_cont k ->
-  star step ge (Callstate fd args c k m) t (Returnstate res k m').
+  star step ge (Callstate fd args k m) t (Returnstate res k m').
 Proof (proj2 (proj2 (proj2 (proj2 bigstep_to_steps)))).
 
 Fixpoint esize (a: expr) : nat :=
@@ -2710,9 +2713,9 @@ Proof.
 Qed.
 
 Lemma evalinf_funcall_steps:
-  forall m fd args t k c,
+  forall m fd args t k,
   evalinf_funcall m fd args t ->
-  forever_N step lt ge O (Callstate fd args c k m) t.
+  forever_N step lt ge O (Callstate fd args k m) t.
 Proof.
   cofix COF.
 
@@ -3058,7 +3061,7 @@ Proof.
 (* termination *)
   inv H. econstructor; econstructor.
   split. econstructor; eauto.
-  split. apply eval_funcall_to_steps. eauto. red; auto.
+  split. apply (eval_funcall_to_steps _ default_compartment); simpl; eauto.
   econstructor.
 (* divergence *)
   inv H. econstructor.
