@@ -27,36 +27,37 @@ Section CMCONSTR.
 Variable ge: genv.
 Variable sp: val.
 Variable e: env.
+Variable cp: compartment.
 Variable m: mem.
 
 Definition unary_constructor_sound (cstr: expr -> expr) (sem: val -> val) : Prop :=
   forall le a x,
-  eval_expr ge sp e m le a x ->
-  exists v, eval_expr ge sp e m le (cstr a) v /\ Val.lessdef (sem x) v.
+  eval_expr ge sp e cp m le a x ->
+  exists v, eval_expr ge sp e cp m le (cstr a) v /\ Val.lessdef (sem x) v.
 
 Definition binary_constructor_sound (cstr: expr -> expr -> expr) (sem: val -> val -> val) : Prop :=
   forall le a x b y,
-  eval_expr ge sp e m le a x ->
-  eval_expr ge sp e m le b y ->
-  exists v, eval_expr ge sp e m le (cstr a b) v /\ Val.lessdef (sem x y) v.
+  eval_expr ge sp e cp m le a x ->
+  eval_expr ge sp e cp m le b y ->
+  exists v, eval_expr ge sp e cp m le (cstr a b) v /\ Val.lessdef (sem x y) v.
 
 Definition partial_unary_constructor_sound (cstr: expr -> expr) (sem: val -> option val) : Prop :=
   forall le a x y,
-  eval_expr ge sp e m le a x ->
+  eval_expr ge sp e cp m le a x ->
   sem x = Some y ->
-  exists v, eval_expr ge sp e m le (cstr a) v /\ Val.lessdef y v.
+  exists v, eval_expr ge sp e cp m le (cstr a) v /\ Val.lessdef y v.
 
 Definition partial_binary_constructor_sound (cstr: expr -> expr -> expr) (sem: val -> val -> option val) : Prop :=
   forall le a x b y z,
-  eval_expr ge sp e m le a x ->
-  eval_expr ge sp e m le b y ->
+  eval_expr ge sp e cp m le a x ->
+  eval_expr ge sp e cp m le b y ->
   sem x y = Some z ->
-  exists v, eval_expr ge sp e m le (cstr a b) v /\ Val.lessdef z v.
+  exists v, eval_expr ge sp e cp m le (cstr a b) v /\ Val.lessdef z v.
 
 (** ** Constants *)
 
 Theorem eval_longconst:
-  forall le n, eval_expr ge sp e m le (longconst n) (Vlong n).
+  forall le n, eval_expr ge sp e cp m le (longconst n) (Vlong n).
 Proof.
   intros; EvalOp.
 Qed.
@@ -163,9 +164,9 @@ Qed.
 (** ** Immediate shifts *)
 
 Remark eval_shllimm_base: forall le a n x,
-  eval_expr ge sp e m le a x ->
+  eval_expr ge sp e cp m le a x ->
   Int.ltu n Int64.iwordsize' = true ->
-  eval_expr ge sp e m le (shllimm_base a n) (Val.shll x (Vint n)).
+  eval_expr ge sp e cp m le (shllimm_base a n) (Val.shll x (Vint n)).
 Proof.
 Local Opaque mk_amount64.
   unfold shlimm_base; intros; EvalOp. simpl. rewrite mk_amount64_eq by auto. auto.
@@ -210,9 +211,9 @@ Proof.
 Qed.
 
 Remark eval_shrluimm_base: forall le a n x,
-  eval_expr ge sp e m le a x ->
+  eval_expr ge sp e cp m le a x ->
   Int.ltu n Int64.iwordsize' = true ->
-  eval_expr ge sp e m le (shrluimm_base a n) (Val.shrlu x (Vint n)).
+  eval_expr ge sp e cp m le (shrluimm_base a n) (Val.shrlu x (Vint n)).
 Proof.
   unfold shrluimm_base; intros; EvalOp. simpl. rewrite mk_amount64_eq by auto. auto.
 Qed.
@@ -271,9 +272,9 @@ Local Opaque Int64.zwordsize.
 Qed.
 
 Remark eval_shrlimm_base: forall le a n x,
-  eval_expr ge sp e m le a x ->
+  eval_expr ge sp e cp m le a x ->
   Int.ltu n Int64.iwordsize' = true ->
-  eval_expr ge sp e m le (shrlimm_base a n) (Val.shrl x (Vint n)).
+  eval_expr ge sp e cp m le (shrlimm_base a n) (Val.shrl x (Vint n)).
 Proof.
   unfold shrlimm_base; intros; EvalOp. simpl. rewrite mk_amount64_eq by auto. auto.
 Qed.
@@ -322,7 +323,7 @@ Lemma eval_mullimm_base:
   forall n, unary_constructor_sound (mullimm_base n) (fun x => Val.mull x (Vlong n)).
 Proof.
   intros; red; intros; unfold mullimm_base.
-  assert (DFL: exists v, eval_expr ge sp e m le (Eop Omull (Eop (Olongconst n) Enil ::: a ::: Enil)) v /\ Val.lessdef (Val.mull x (Vlong n)) v).
+  assert (DFL: exists v, eval_expr ge sp e cp m le (Eop Omull (Eop (Olongconst n) Enil ::: a ::: Enil)) v /\ Val.lessdef (Val.mull x (Vlong n)) v).
   { rewrite Val.mull_commut; TrivialExists. } 
   generalize (Int64.one_bits'_decomp n); generalize (Int64.one_bits'_range n);
   destruct (Int64.one_bits' n) as [ | i [ | j []]]; intros P Q.
@@ -579,9 +580,9 @@ Qed.
 
 Theorem eval_shrxlimm:
   forall le a n x z,
-  eval_expr ge sp e m le a x ->
+  eval_expr ge sp e cp m le a x ->
   Val.shrxl x (Vint n) = Some z ->
-  exists v, eval_expr ge sp e m le (shrxlimm a n) v /\ Val.lessdef z v.
+  exists v, eval_expr ge sp e cp m le (shrxlimm a n) v /\ Val.lessdef z v.
 Proof.
   intros; unfold shrxlimm. 
   predSpec Int.eq Int.eq_spec n Int.zero.
@@ -642,8 +643,8 @@ Hypothesis sem_default: forall c v n,
 
 Lemma eval_complimm_default: forall le a x c n2 v,
   sem c x (Vlong n2) = Some v ->
-  eval_expr ge sp e m le a x ->
-  eval_expr ge sp e m le (Eop (Ocmp (default c n2)) (a:::Enil)) v.
+  eval_expr ge sp e cp m le a x ->
+  eval_expr ge sp e cp m le (Eop (Ocmp (default c n2)) (a:::Enil)) v.
 Proof.
   intros. EvalOp. simpl. rewrite sem_default in H. apply option_map_of_bool_inv in H.
   congruence.
@@ -651,9 +652,9 @@ Qed.
 
 Lemma eval_complimm:
   forall le c a n2 x v,
-  eval_expr ge sp e m le a x ->
+  eval_expr ge sp e cp m le a x ->
   sem c x (Vlong n2) = Some v ->
-  eval_expr ge sp e m le (complimm default intsem c a n2) v.
+  eval_expr ge sp e cp m le (complimm default intsem c a n2) v.
 Proof.
   intros until x; unfold complimm; case (complimm_match c a); intros; InvEval; subst.
 - (* constant *)
@@ -677,9 +678,9 @@ Hypothesis sem_swap:
 
 Lemma eval_complimm_swap:
   forall le c a n2 x v,
-  eval_expr ge sp e m le a x ->
+  eval_expr ge sp e cp m le a x ->
   sem c (Vlong n2) x = Some v ->
-  eval_expr ge sp e m le (complimm default intsem (swap_comparison c) a n2) v.
+  eval_expr ge sp e cp m le (complimm default intsem (swap_comparison c) a n2) v.
 Proof.
   intros. eapply eval_complimm; eauto. rewrite sem_swap; auto.
 Qed.
@@ -688,10 +689,10 @@ End COMP_IMM.
 
 Theorem eval_cmpl:
   forall c le a x b y v,
-  eval_expr ge sp e m le a x ->
-  eval_expr ge sp e m le b y ->
+  eval_expr ge sp e cp m le a x ->
+  eval_expr ge sp e cp m le b y ->
   Val.cmpl c x y = Some v ->
-  eval_expr ge sp e m le (cmpl c a b) v.
+  eval_expr ge sp e cp m le (cmpl c a b) v.
 Proof.
   intros until y; unfold cmpl; case (cmpl_match a b); intros; InvEval; subst.
 - apply eval_complimm_swap with (sem := Val.cmpl) (x := y); auto.
@@ -704,10 +705,10 @@ Qed.
 
 Theorem eval_cmplu:
   forall c le a x b y v,
-  eval_expr ge sp e m le a x ->
-  eval_expr ge sp e m le b y ->
+  eval_expr ge sp e cp m le a x ->
+  eval_expr ge sp e cp m le b y ->
   Val.cmplu (Mem.valid_pointer m) c x y = Some v ->
-  eval_expr ge sp e m le (cmplu c a b) v.
+  eval_expr ge sp e cp m le (cmplu c a b) v.
 Proof.
   intros until y; unfold cmplu; case (cmplu_match a b); intros; InvEval; subst.
 - apply eval_complimm_swap with (sem := Val.cmplu (Mem.valid_pointer m)) (x := y); auto.

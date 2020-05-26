@@ -256,7 +256,7 @@ Inductive stackframe: Type :=
   | Stackframe:
       forall (f: block)       (**r pointer to calling function *)
              (sp: val)         (**r stack pointer in calling function *)
-             (retaddr: val)    (**r Asm return address in calling function *)
+             (retaddr: ptrofs) (**r Asm return address in calling function *)
              (c: code),        (**r program point in calling function *)
       stackframe.
 
@@ -281,16 +281,6 @@ Inductive state: Type :=
              (m: mem),                 (**r memory state *)
       state.
 
-Definition call_comp (stack: list stackframe): compartment :=
-  match stack with
-  | nil => default_compartment
-  | Stackframe fb _ _ _ :: _ =>
-    match Genv.find_funct_ptr ge fb with
-    | Some f => comp_of f
-    | None   => default_compartment
-    end
-  end.
-
 Definition parent_sp (s: list stackframe) : val :=
   match s with
   | nil => Vnullptr
@@ -300,8 +290,11 @@ Definition parent_sp (s: list stackframe) : val :=
 Definition parent_ra (s: list stackframe) : val :=
   match s with
   | nil => Vnullptr
-  | Stackframe f sp ra c :: s' => ra
+  | Stackframe f sp ra c :: s' => Vptr f ra
   end.
+
+Definition call_comp (s: list stackframe): option compartment :=
+  Genv.find_comp ge (parent_ra s).
 
 Inductive step: state -> trace -> state -> Prop :=
   | exec_Mlabel:
@@ -353,7 +346,7 @@ Inductive step: state -> trace -> state -> Prop :=
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
       return_address_offset f c ra ->
       step (State s fb sp (Mcall sig ros :: c) rs m)
-        E0 (Callstate (Stackframe fb sp (Vptr fb ra) c :: s)
+        E0 (Callstate (Stackframe fb sp ra c :: s)
                        f' rs m)
   | exec_Mtailcall:
       forall s fb stk soff sig ros c rs m f f' m',
@@ -420,10 +413,11 @@ Inductive step: state -> trace -> state -> Prop :=
       step (Callstate s fb rs m)
         E0 (State s fb sp f.(fn_code) rs' m3)
   | exec_function_external:
-      forall s fb rs m t rs' ef args res m',
+      forall s fb rs m t rs' ef args res m' cp,
       Genv.find_funct_ptr ge fb = Some (External ef) ->
       extcall_arguments rs m (parent_sp s) (ef_sig ef) args ->
-      external_call ef ge (call_comp s) args m t res m' ->
+      forall COMP: call_comp s = Some cp,
+      external_call ef ge cp args m t res m' ->
       rs' = set_pair (loc_result (ef_sig ef)) res (undef_caller_save_regs rs) ->
       step (Callstate s fb rs m)
          t (Returnstate s rs' m')

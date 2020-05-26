@@ -1338,7 +1338,8 @@ Inductive match_stacks (j: meminj):
         (TRF: transf_function f = OK trf)
         (TRC: transl_code (make_env (function_bounds f)) c = c')
         (INJ: j sp = Some(sp', (fe_stack_data (make_env (function_bounds f)))))
-        (TY_RA: Val.has_type ra Tptr)
+        (* TODO: Consider removing the invariant below *)
+        (TY_RA: Val.has_type (Vptr fb ra) Tptr)
         (AGL: agree_locs f ls (parent_locset cs))
         (ARGS: forall ofs ty,
            In (S Outgoing ofs ty) (regs_of_rpairs (loc_arguments sg)) ->
@@ -1410,11 +1411,13 @@ Qed.
 Lemma match_stacks_call_comp:
   forall j cs cs' sg,
   match_stacks j cs cs' sg ->
-  Linear.call_comp cs = call_comp tge cs'.
+  call_comp tge cs' = Some (Linear.call_comp cs).
 Proof.
+  unfold call_comp.
   intros j cs cs' sg H.
-  destruct H; trivial; simpl.
-  rewrite FINDF.
+  destruct H; simpl.
+- now rewrite Genv.find_comp_null.
+- rewrite FINDF. symmetry. f_equal.
   apply (comp_transl_partial _ TRF).
 Qed.
 
@@ -2101,8 +2104,8 @@ Proof.
   intros (j' & res' & m1' & A & B & C & D & E).
   econstructor; split.
   apply plus_one. eapply exec_function_external; eauto.
+  { erewrite (match_stacks_call_comp); eauto. }
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  erewrite <- match_stacks_call_comp; eauto.
   eapply match_states_return with (j := j').
   eapply match_stacks_change_meminj; eauto.
   apply agree_regs_set_pair. apply agree_regs_undef_caller_save_regs. 

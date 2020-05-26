@@ -383,7 +383,7 @@ let rec convert_external_args ge vl tl =
       convert_external_args ge vl tl >>= fun el -> Some (e1 :: el)
   | _, _ -> None
 
-let do_external_function id sg ge w args m =
+let do_external_function id sg ge w cp args m =
   match camlstring_of_coqstring id, args with
   | "printf", Vptr(b, ofs) :: args' ->
       extract_string m b ofs >>= fun fmt ->
@@ -396,7 +396,7 @@ let do_external_function id sg ge w args m =
   | _ ->
       None
 
-let do_inline_assembly txt sg ge w args m = None
+let do_inline_assembly txt sg ge w cp args m = None
 
 (* Implementing external functions producing observable events *)
 
@@ -462,7 +462,7 @@ let diagnose_stuck_expr p ge w f a kont e m =
     | RV, Ebuiltin(ef, tyargs, rargs, ty) -> diagnose_list rargs
     | _, _ -> false in
   if found then true else begin
-    let l = Cexec.step_expr ge do_external_function do_inline_assembly e w k a m in
+    let l = Cexec.step_expr ge do_external_function do_inline_assembly e w f.fn_comp k a m in
     if List.exists (fun (ctx,red) -> red = Cexec.Stuckred) l then begin
       PrintCsyntax.print_pointer_hook := print_pointer ge.genv_genv e;
       fprintf p "@[<hov 2>Stuck subexpression:@ %a@]@."

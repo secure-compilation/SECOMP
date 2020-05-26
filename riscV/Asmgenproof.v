@@ -59,6 +59,12 @@ Lemma functions_translated:
   Genv.find_funct_ptr tge b = Some tf /\ transf_fundef f = OK tf.
 Proof (Genv.find_funct_ptr_transf_partial TRANSF).
 
+Lemma comp_translated:
+  forall v cp,
+  Genv.find_comp ge  v = Some cp ->
+  Genv.find_comp tge v = Some cp.
+Proof (Genv.find_comp_transf_partial TRANSF).
+
 Lemma functions_transl:
   forall fb f tf,
   Genv.find_funct_ptr ge fb = Some (Internal f) ->
@@ -840,6 +846,9 @@ Local Transparent destroyed_by_op.
   erewrite <- sp_val by eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  replace (comp_of tf) with (comp_of f); eauto.
+  { rewrite <- comp_transf_function; eauto.
+    now replace f with (Internal f0) by congruence. }
   eauto.
   econstructor; eauto.
   instantiate (2 := tf); instantiate (1 := x).
@@ -984,6 +993,9 @@ Local Transparent destroyed_at_function_entry.
   intros [res' [m2' [P [Q [R S]]]]].
   left; econstructor; split.
   apply plus_one. eapply exec_step_external; eauto.
+  { unfold call_comp in COMP.
+    rewrite <- ATLR in COMP.
+    apply comp_translated; eauto. }
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   econstructor; eauto.
   unfold loc_external_result. apply agree_set_other; auto. apply agree_set_pair; auto.
