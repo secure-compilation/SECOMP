@@ -187,7 +187,7 @@ Parameter block_compartment: forall (m: mem) (b: block), option compartment.
 
 Axiom block_compartment_valid_block:
   forall (m: mem) (b: block),
-  ~valid_block m b ->
+  ~valid_block m b <->
   block_compartment m b = None.
 
 (** [perm m b ofs k p] holds if the address [b, ofs] in memory state [m]

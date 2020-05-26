@@ -73,7 +73,7 @@ Record mem' : Type := mkmem {
   contents_default:
     forall b, fst mem_contents#b = Undef;
   nextblock_compartments:
-    forall b, ~Plt b nextblock -> mem_compartments!b = None;
+    forall b, ~Plt b nextblock <-> mem_compartments!b = None;
 }.
 
 Definition mem := mem'.
@@ -111,7 +111,7 @@ Definition block_compartment (m: mem) (b: block) :=
 
 Theorem block_compartment_valid_block:
   forall m b,
-  ~valid_block m b ->
+  ~valid_block m b <->
   block_compartment m b = None.
 Proof.
   apply nextblock_compartments.
@@ -375,7 +375,11 @@ Next Obligation.
   rewrite PMap.gi. auto.
 Qed.
 Next Obligation.
-  now rewrite PTree.gempty.
+  unfold Plt.
+  rewrite PTree.gempty.
+  split; trivial.
+  intros _.
+  apply Pos.nlt_1_r.
 Qed.
 
 (** Allocation of a fresh block with the given bounds.  Return an updated
@@ -411,10 +415,14 @@ Qed.
 Next Obligation.
   rewrite PTree.gsspec.
   destruct (peq b (nextblock m)) as [->|ne].
-- exfalso. apply H. apply Plt_succ.
-- apply nextblock_compartments.
-  contradict H.
+- split; try easy.
+  intros H. exfalso. apply H. apply Plt_succ.
+- rewrite <- nextblock_compartments; split.
++ intros H. contradict H.
   now apply Plt_trans_succ.
++ intros H. contradict H.
+  apply Plt_succ_inv in H.
+  destruct H; trivial; congruence.
 Qed.
 
 (** Freeing a block between the given bounds.
@@ -598,7 +606,7 @@ Next Obligation.
   apply contents_default.
 Qed.
 Next Obligation.
-  eapply nextblock_compartments. eauto.
+  eapply nextblock_compartments.
 Qed.
 
 (** [storev chunk m addr v] is similar, but the address and offset are given
