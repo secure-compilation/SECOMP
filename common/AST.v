@@ -36,8 +36,20 @@ Definition ident_eq := peq.
 
 Definition compartment : Type := positive.
 Definition default_compartment : compartment := 1%positive.
+Definition privileged_compartment : compartment := 2%positive.
 Definition eq_compartment (c1 c2: compartment) :=
   peq c1 c2.
+
+(** Calls into certain compartments cannot be inlined or transformed into tail
+  calls because they need to know who the calling compartment is.  These
+  compartments are recorded in the following map. *)
+
+Definition needs_calling_comp_map : PMap.t bool :=
+  let comps := privileged_compartment :: nil in
+  fold_left (fun m cp => PMap.set cp true m) comps (PMap.init false).
+
+Definition needs_calling_comp (cp: compartment) : bool :=
+  PMap.get cp needs_calling_comp_map.
 
 Set Typeclasses Strict Resolution.
 (** An instance of [has_comp] represents a syntactic entity that belongs to a
@@ -592,7 +604,12 @@ Inductive external_function : Type :=
 compartment.  Eventually this will probably be refined. *)
 
 Instance has_comp_external_function : has_comp external_function :=
-  fun ef => match ef with EF_external _ cp _ => cp | _ => default_compartment end.
+  fun ef =>
+    match ef with
+    | EF_external _ cp _ => cp
+    | EF_malloc | EF_free => privileged_compartment
+    | _ => default_compartment
+    end.
 
 (** The type signature of an external function. *)
 

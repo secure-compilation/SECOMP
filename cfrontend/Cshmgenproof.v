@@ -1414,14 +1414,14 @@ Inductive match_states: Clight.state -> Csharpminor.state -> Prop :=
       match_states (Clight.State f s k e le m)
                    (State tf ts' tk' te le m)
   | match_callstate:
-      forall fd args cp k m tfd tk targs tres cconv cu ce
+      forall fd args k m tfd tk targs tres cconv cu ce
           (LINK: linkorder cu prog)
           (TR: match_fundef cu fd tfd)
           (MK: match_cont ce tres 0%nat 0%nat k tk)
           (ISCC: Clight.is_call_cont k)
           (TY: type_of_fundef fd = Tfunction targs tres cconv),
-      match_states (Clight.Callstate fd args cp k m)
-                   (Callstate tfd args cp tk m)
+      match_states (Clight.Callstate fd args k m)
+                   (Callstate tfd args tk m)
   | match_returnstate:
       forall res tres k m tk ce
           (MK: match_cont ce tres 0%nat 0%nat k tk)
@@ -1565,6 +1565,21 @@ Proof.
   split; auto; eapply match_Kcall_normalize; eauto.
 Qed.
 
+Lemma match_cont_call_comp:
+  forall ce tyret nbrk ncnt k tk,
+  match_cont ce tyret nbrk ncnt k tk ->
+  Clight.call_comp k = call_comp tk.
+Proof.
+  intros ce tyret nbrk ncnt k tk H.
+  unfold Clight.call_comp, call_comp.
+  apply (match_cont_call_cont ce nbrk ncnt) in H.
+  destruct H; trivial.
+  all: match goal with
+  | H : transl_function _ _ = _ |- _ =>
+    apply (comp_transl_partial _ H)
+  end.
+Qed.
+
 (** The simulation proof *)
 
 Lemma transl_step:
@@ -1618,7 +1633,6 @@ Proof.
     apply plus_one. eapply step_call; eauto.
     eapply transl_expr_correct with (cunit := cu); eauto.
     eapply transl_arglist_correct with (cunit := cu); eauto.
-    replace (fn_comp tf) with (Clight.fn_comp f) by apply (comp_transl_partial _ TRF).
     econstructor; eauto.
     eapply match_Kcall with (ce := prog_comp_env cu') (cu := cu); eauto.
     exact I.
@@ -1629,7 +1643,6 @@ Proof.
     eapply transl_expr_correct with (cunit := cu); eauto.
     eapply transl_arglist_correct with (cunit := cu); eauto.
     traceEq.
-    replace (fn_comp tf) with (Clight.fn_comp f) by apply (comp_transl_partial _ TRF).
     econstructor; eauto.
     eapply match_Kcall_normalize  with (ce := prog_comp_env cu') (cu := cu); eauto.
     intros. eapply make_normalization_correct; eauto. constructor; eauto.
@@ -1641,6 +1654,7 @@ Proof.
   apply plus_one. econstructor.
   eapply transl_arglist_correct; eauto.
   eapply external_call_symbols_preserved with (ge1 := ge). apply senv_preserved. eauto.
+  change tf.(fn_comp) with (comp_of tf). now rewrite <- (comp_transl_partial _ TRF); eauto.
   eapply match_states_skip; eauto.
 
 - (* seq *)
@@ -1822,6 +1836,7 @@ Proof.
   econstructor; split.
   apply plus_one. constructor.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  erewrite <- match_cont_call_comp; eauto.
   eapply match_returnstate with (ce := ce); eauto.
   apply has_rettype_wt_val. 
   replace (rettype_of_type tres0) with (sig_res (ef_sig ef)).

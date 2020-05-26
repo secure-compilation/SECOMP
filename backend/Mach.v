@@ -255,9 +255,9 @@ Definition extcall_arguments
 Inductive stackframe: Type :=
   | Stackframe:
       forall (f: block)       (**r pointer to calling function *)
-             (sp: val)        (**r stack pointer in calling function *)
-             (retaddr: val)   (**r Asm return address in calling function *)
-             (c: code),       (**r program point in calling function *)
+             (sp: val)         (**r stack pointer in calling function *)
+             (retaddr: ptrofs) (**r Asm return address in calling function *)
+             (c: code),        (**r program point in calling function *)
       stackframe.
 
 Inductive state: Type :=
@@ -273,7 +273,6 @@ Inductive state: Type :=
       forall (stack: list stackframe)  (**r call stack *)
              (f: block)                (**r pointer to function to call *)
              (rs: regset)              (**r register state *)
-             (cp: compartment)         (**r calling compartment *)
              (m: mem),                 (**r memory state *)
       state
   | Returnstate:
@@ -291,8 +290,11 @@ Definition parent_sp (s: list stackframe) : val :=
 Definition parent_ra (s: list stackframe) : val :=
   match s with
   | nil => Vnullptr
-  | Stackframe f sp ra c :: s' => ra
+  | Stackframe f sp ra c :: s' => Vptr f ra
   end.
+
+Definition call_comp (s: list stackframe): option compartment :=
+  Genv.find_comp ge (parent_ra s).
 
 Inductive step: state -> trace -> state -> Prop :=
   | exec_Mlabel:
@@ -344,8 +346,8 @@ Inductive step: state -> trace -> state -> Prop :=
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
       return_address_offset f c ra ->
       step (State s fb sp (Mcall sig ros :: c) rs m)
-        E0 (Callstate (Stackframe fb sp (Vptr fb ra) c :: s)
-                       f' rs f.(fn_comp) m)
+        E0 (Callstate (Stackframe fb sp ra c :: s)
+                       f' rs m)
   | exec_Mtailcall:
       forall s fb stk soff sig ros c rs m f f' m',
       find_function_ptr ge ros rs = Some f' ->
@@ -354,14 +356,15 @@ Inductive step: state -> trace -> state -> Prop :=
       load_stack m (Vptr stk soff) Tptr f.(fn_retaddr_ofs) = Some (parent_ra s) ->
       Mem.free m stk 0 f.(fn_stacksize) = Some m' ->
       step (State s fb (Vptr stk soff) (Mtailcall sig ros :: c) rs m)
-        E0 (Callstate s f' rs f.(fn_comp) m')
+        E0 (Callstate s f' rs m')
   | exec_Mbuiltin:
-      forall s f sp rs m ef args res b vargs t vres rs' m',
+      forall s fb f sp rs m ef args res b vargs t vres rs' m',
       eval_builtin_args ge rs sp m args vargs ->
-      external_call ef ge vargs m t vres m' ->
+      forall FUN: Genv.find_funct_ptr ge fb = Some f,
+      external_call ef ge (comp_of f) vargs m t vres m' ->
       rs' = set_res res vres (undef_regs (destroyed_by_builtin ef) rs) ->
-      step (State s f sp (Mbuiltin ef args res :: b) rs m)
-         t (State s f sp b rs' m')
+      step (State s fb sp (Mbuiltin ef args res :: b) rs m)
+         t (State s fb sp b rs' m')
   | exec_Mgoto:
       forall s fb f sp lbl c rs m c',
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
@@ -400,22 +403,23 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State s fb (Vptr stk soff) (Mreturn :: c) rs m)
         E0 (Returnstate s rs m')
   | exec_function_internal:
-      forall s fb rs cp m f m1 m2 m3 stk rs',
+      forall s fb rs m f m1 m2 m3 stk rs',
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
       Mem.alloc m f.(fn_comp) 0 f.(fn_stacksize) = (m1, stk) ->
       let sp := Vptr stk Ptrofs.zero in
       store_stack m1 sp Tptr f.(fn_link_ofs) (parent_sp s) = Some m2 ->
       store_stack m2 sp Tptr f.(fn_retaddr_ofs) (parent_ra s) = Some m3 ->
       rs' = undef_regs destroyed_at_function_entry rs ->
-      step (Callstate s fb rs cp m)
+      step (Callstate s fb rs m)
         E0 (State s fb sp f.(fn_code) rs' m3)
   | exec_function_external:
-      forall s fb rs cp m t rs' ef args res m',
+      forall s fb rs m t rs' ef args res m' cp,
       Genv.find_funct_ptr ge fb = Some (External ef) ->
       extcall_arguments rs m (parent_sp s) (ef_sig ef) args ->
-      external_call ef ge args m t res m' ->
+      forall COMP: call_comp s = Some cp,
+      external_call ef ge cp args m t res m' ->
       rs' = set_pair (loc_result (ef_sig ef)) res (undef_caller_save_regs rs) ->
-      step (Callstate s fb rs cp m)
+      step (Callstate s fb rs m)
          t (Returnstate s rs' m')
   | exec_return:
       forall s f sp ra c rs m,
@@ -429,7 +433,7 @@ Inductive initial_state (p: program): state -> Prop :=
       let ge := Genv.globalenv p in
       Genv.init_mem p = Some m0 ->
       Genv.find_symbol ge p.(prog_main) = Some fb ->
-      initial_state p (Callstate nil fb (Regmap.init Vundef) default_compartment m0).
+      initial_state p (Callstate nil fb (Regmap.init Vundef) m0).
 
 Inductive final_state: state -> int -> Prop :=
   | final_state_intro: forall rs m r retcode,
@@ -471,9 +475,9 @@ Inductive wf_state: state -> Prop :=
         (CODE: Genv.find_funct_ptr ge fb = Some (Internal f))
         (TAIL: is_tail c f.(fn_code)),
       wf_state (State s fb sp c rs m)
-  | wf_call_state: forall s fb rs cp m
+  | wf_call_state: forall s fb rs m
         (STACK: Forall wf_frame s),
-      wf_state (Callstate s fb rs cp m)
+      wf_state (Callstate s fb rs m)
   | wf_return_state: forall s rs m
         (STACK: Forall wf_frame s),
       wf_state (Returnstate s rs m).

@@ -59,6 +59,12 @@ Lemma functions_translated:
   Genv.find_funct_ptr tge b = Some tf /\ transf_fundef f = OK tf.
 Proof. exact (Genv.find_funct_ptr_transf_partial TRANSF). Qed.
 
+Lemma comp_translated:
+  forall v cp,
+  Genv.find_comp ge  v = Some cp ->
+  Genv.find_comp tge v = Some cp.
+Proof. exact (Genv.find_comp_transf_partial TRANSF). Qed.
+
 Lemma functions_transl:
   forall fb f tf,
   Genv.find_funct_ptr ge fb = Some (Internal f) ->
@@ -392,13 +398,13 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
       match_states (Mach.State s fb sp c ms m)
                    (Asm.State rs m')
   | match_states_call:
-      forall s fb ms cp m m' rs
+      forall s fb ms m m' rs
         (STACKS: match_stack ge s)
         (MEXT: Mem.extends m m')
         (AG: agree ms (parent_sp s) rs)
         (ATPC: rs PC = Vptr fb Ptrofs.zero)
         (ATLR: rs RA = parent_ra s),
-      match_states (Mach.Callstate s fb ms cp m)
+      match_states (Mach.Callstate s fb ms m)
                    (Asm.State rs m')
   | match_states_return:
       forall s ms m m' rs
@@ -478,9 +484,9 @@ Qed.
 
 Definition measure (s: Mach.state) : nat :=
   match s with
-  | Mach.State _ _ _ _ _ _   => 0%nat
-  | Mach.Callstate _ _ _ _ _ => 0%nat
-  | Mach.Returnstate _ _ _   => 1%nat
+  | Mach.State _ _ _ _ _ _ => 0%nat
+  | Mach.Callstate _ _ _ _ => 0%nat
+  | Mach.Returnstate _ _ _ => 1%nat
   end.
 
 (** This is the simulation diagram.  We prove it by case analysis on the Mach transition. *)
@@ -692,6 +698,9 @@ Opaque loadind.
   erewrite <- sp_val by eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  replace (comp_of tf) with (comp_of f); eauto.
+  { rewrite <- comp_transf_function; eauto.
+    now replace f with (Internal f0) by congruence. }
   eauto.
   econstructor; eauto.
   instantiate (2 := tf); instantiate (1 := x).
@@ -879,6 +888,9 @@ Transparent destroyed_at_function_entry.
   intros [res' [m2' [P [Q [R S]]]]].
   left; econstructor; split.
   apply plus_one. eapply exec_step_external; eauto.
+  { unfold call_comp in COMP.
+    rewrite <- ATLR in COMP.
+    apply comp_translated; eauto. }
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   econstructor; eauto.
   unfold loc_external_result. apply agree_set_other; auto. apply agree_set_pair; auto.

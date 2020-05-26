@@ -117,6 +117,12 @@ Proof.
   apply nextblock_compartments.
 Qed.
 
+Definition val_compartment (m: mem) (v: val): option compartment :=
+  match v with
+  | Vptr b _ => block_compartment m b
+  | _ => None
+  end.
+
 (** Permissions *)
 
 Definition perm (m: mem) (b: block) (ofs: Z) (k: perm_kind) (p: permission) : Prop :=

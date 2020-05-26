@@ -155,7 +155,6 @@ Inductive state : Type :=
       forall (stack: list stackframe) (**r call stack *)
              (f: fundef)              (**r function to call *)
              (ls: locset)             (**r location state of caller *)
-             (cp: compartment)        (**r calling compartment *)
              (m: mem),                (**r memory state *)
       state
   | Returnstate:
@@ -163,6 +162,12 @@ Inductive state : Type :=
              (ls: locset)             (**r location state of callee *)
              (m: mem),                (**r memory state *)
       state.
+
+Definition call_comp (stack: list stackframe) : compartment :=
+  match stack with
+  | nil => default_compartment
+  | Stackframe f _ _ _ :: _ => f.(fn_comp)
+  end.
 
 
 Section RELSEM.
@@ -237,18 +242,19 @@ Inductive step: state -> trace -> state -> Prop :=
       find_function ros rs = Some fd ->
       funsig fd = sig ->
       step (Block s f sp (Lcall sig ros :: bb) rs m)
-        E0 (Callstate (Stackframe f sp rs bb :: s) fd rs f.(fn_comp) m)
+        E0 (Callstate (Stackframe f sp rs bb :: s) fd rs m)
   | exec_Ltailcall: forall s f sp sig ros bb rs m fd rs' m',
       rs' = return_regs (parent_locset s) rs ->
       find_function ros rs' = Some fd ->
       funsig fd = sig ->
       forall COMP: comp_of fd = f.(fn_comp),
+      forall ALLOWED: needs_calling_comp f.(fn_comp) = false,
       Mem.free m sp 0 f.(fn_stacksize) = Some m' ->
       step (Block s f (Vptr sp Ptrofs.zero) (Ltailcall sig ros :: bb) rs m)
-        E0 (Callstate s fd rs' f.(fn_comp) m')
+        E0 (Callstate s fd rs' m')
   | exec_Lbuiltin: forall s f sp ef args res bb rs m vargs t vres rs' m',
       eval_builtin_args ge rs sp m args vargs ->
-      external_call ef ge vargs m t vres m' ->
+      external_call ef ge f.(fn_comp) vargs m t vres m' ->
       rs' = Locmap.setres res vres (undef_regs (destroyed_by_builtin ef) rs) ->
       step (Block s f sp (Lbuiltin ef args res :: bb) rs m)
          t (Block s f sp bb rs' m')
@@ -271,16 +277,16 @@ Inductive step: state -> trace -> state -> Prop :=
       Mem.free m sp 0 f.(fn_stacksize) = Some m' ->
       step (Block s f (Vptr sp Ptrofs.zero) (Lreturn :: bb) rs m)
         E0 (Returnstate s (return_regs (parent_locset s) rs) m')
-  | exec_function_internal: forall s f rs cp m m' sp rs',
+  | exec_function_internal: forall s f rs m m' sp rs',
       Mem.alloc m f.(fn_comp) 0 f.(fn_stacksize) = (m', sp) ->
       rs' = undef_regs destroyed_at_function_entry (call_regs rs) ->
-      step (Callstate s (Internal f) rs cp m)
+      step (Callstate s (Internal f) rs m)
         E0 (State s f (Vptr sp Ptrofs.zero) f.(fn_entrypoint) rs' m')
-  | exec_function_external: forall s ef t args res rs cp m rs' m',
+  | exec_function_external: forall s ef t args res rs m rs' m',
       args = map (fun p => Locmap.getpair p rs) (loc_arguments (ef_sig ef)) ->
-      external_call ef ge args m t res m' ->
+      external_call ef ge (call_comp s) args m t res m' ->
       rs' = Locmap.setpair (loc_result (ef_sig ef)) res (undef_caller_save_regs rs) ->
-      step (Callstate s (External ef) rs cp m)
+      step (Callstate s (External ef) rs m)
          t (Returnstate s rs' m')
   | exec_return: forall f sp rs1 bb s rs m,
       step (Returnstate (Stackframe f sp rs1 bb :: s) rs m)
@@ -300,7 +306,7 @@ Inductive initial_state (p: program): state -> Prop :=
       Genv.find_symbol ge p.(prog_main) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
       funsig f = signature_main ->
-      initial_state p (Callstate nil f (Locmap.init Vundef) default_compartment m0).
+      initial_state p (Callstate nil f (Locmap.init Vundef) m0).
 
 Inductive final_state: state -> int -> Prop :=
   | final_state_intro: forall rs m retcode,

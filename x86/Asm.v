@@ -1108,17 +1108,18 @@ Inductive step: state -> trace -> state -> Prop :=
       Genv.find_funct_ptr ge b = Some (Internal f) ->
       find_instr (Ptrofs.unsigned ofs) f.(fn_code) = Some (Pbuiltin ef args res) ->
       eval_builtin_args ge rs (rs RSP) m args vargs ->
-      external_call ef ge vargs m t vres m' ->
+      external_call ef ge (comp_of f) vargs m t vres m' ->
       rs' = nextinstr_nf
              (set_res res vres
                (undef_regs (map preg_of (destroyed_by_builtin ef)) rs)) ->
       step (State rs m) t (State rs' m')
   | exec_step_external:
-      forall b ef args res rs m t rs' m',
+      forall b ef args res rs m t rs' m' cp,
       rs PC = Vptr b Ptrofs.zero ->
       Genv.find_funct_ptr ge b = Some (External ef) ->
+      forall COMP: Genv.find_comp ge (rs RA) = Some cp,
       extcall_arguments rs m (ef_sig ef) args ->
-      external_call ef ge args m t res m' ->
+      external_call ef ge cp args m t res m' ->
       rs' = (set_pair (loc_external_result (ef_sig ef)) res (undef_caller_save_regs rs)) #PC <- (rs RA) ->
       step (State rs m) t (State rs' m').
 

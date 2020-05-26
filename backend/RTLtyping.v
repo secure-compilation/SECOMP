@@ -857,7 +857,7 @@ Qed.
 Lemma wt_exec_Ibuiltin:
   forall env f ef (ge: genv) args res s vargs m t vres m' rs,
   wt_instr f env (Ibuiltin ef args res s) ->
-  external_call ef ge vargs m t vres m' ->
+  external_call ef ge f.(fn_comp) vargs m t vres m' ->
   wt_regset env rs ->
   wt_regset env (regmap_setres res vres rs).
 Proof.
@@ -893,11 +893,11 @@ Inductive wt_state: state -> Prop :=
         (WT_RS: wt_regset env rs),
       wt_state (State s f sp pc rs m)
   | wt_state_call:
-      forall s f args cp m,
+      forall s f args m,
       wt_stackframes s (funsig f) ->
       wt_fundef f ->
       Val.has_type_list args (sig_args (funsig f)) ->
-      wt_state (Callstate s f args cp m)
+      wt_state (Callstate s f args m)
   | wt_state_return:
       forall s v m sg,
       wt_stackframes s sg ->
@@ -921,12 +921,19 @@ Hypothesis wt_p: wt_program p.
 
 Let ge := Genv.globalenv p.
 
+Ltac apply_wt_instrs :=
+  match goal with
+  | WT_FN : wt_function ?f ?env,
+    INSTR : ?f.(fn_code) ! ?pc = Some ?instr |- _ =>
+    generalize (wt_instrs _ _ WT_FN pc _ INSTR); intros WTI
+  end.
+
 Lemma subject_reduction:
   forall st1 t st2, step ge st1 t st2 ->
   forall (WT: wt_state st1), wt_state st2.
 Proof.
   induction 1; intros; inv WT;
-  try (generalize (wt_instrs _ _ WT_FN pc _ H); intros WTI).
+  try apply_wt_instrs.
   (* Inop *)
   econstructor; eauto.
   (* Iop *)
@@ -951,10 +958,10 @@ Proof.
   assert (wt_fundef fd).
     destruct ros; simpl in H0.
     pattern fd. apply Genv.find_funct_prop with unit p (rs#r).
-    exact wt_p. exact H0.
+    exact wt_p. now eauto.
     caseEq (Genv.find_symbol ge i); intros; rewrite H1 in H0.
     pattern fd. apply Genv.find_funct_ptr_prop with unit p b.
-    exact wt_p. exact H0.
+    exact wt_p. now eauto.
     discriminate.
   econstructor; eauto.
   inv WTI. apply wt_stackframes_change_sig with (fn_sig f); auto.
@@ -969,7 +976,7 @@ Proof.
   econstructor; eauto.
   inv WTI; simpl. auto. rewrite <- H3. auto.
   (* internal function *)
-  simpl in *. inv H6.
+  simpl in *. inv H5.
   econstructor; eauto.
   inv H1. apply wt_init_regs; auto. rewrite wt_params0. auto.
   (* external function *)

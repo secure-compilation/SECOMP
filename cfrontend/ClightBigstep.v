@@ -96,12 +96,12 @@ Inductive exec_stmt: env -> compartment -> temp_env ->
       eval_exprlist ge e le m al tyargs vargs ->
       Genv.find_funct ge vf = Some f ->
       type_of_fundef f = Tfunction tyargs tyres cconv ->
-      eval_funcall m f vargs t m' vres ->
+      eval_funcall c m f vargs t m' vres ->
       exec_stmt e c le m (Scall optid a al)
                 t (set_opttemp optid vres le) m' Out_normal
   | exec_Sbuiltin:   forall e c le m optid ef al tyargs vargs t m' vres,
       eval_exprlist ge e le m al tyargs vargs ->
-      external_call ef ge vargs m t vres m' ->
+      external_call ef ge c vargs m t vres m' ->
       exec_stmt e c le m (Sbuiltin optid ef tyargs al)
                 t (set_opttemp optid vres le) m' Out_normal
   | exec_Sseq_1:   forall e c le m s1 s2 t1 le1 m1 t2 le2 m2 out,
@@ -159,22 +159,22 @@ Inductive exec_stmt: env -> compartment -> temp_env ->
       exec_stmt e c le m (Sswitch a sl)
                 t le1 m1 (outcome_switch out)
 
-(** [eval_funcall m1 fd args t m2 res] describes the invocation of
-  function [fd] with arguments [args].  [res] is the value returned
-  by the call.  *)
+(** [eval_funcall c m1 fd args t m2 res] describes the invocation of function
+  [fd] with arguments [args] in compartment [c]. [res] is the value returned by
+  the call. *)
 
-with eval_funcall: mem -> fundef -> list val -> trace -> mem -> val -> Prop :=
-  | eval_funcall_internal: forall le m f vargs t e m1 m2 m3 out vres m4,
+with eval_funcall: compartment -> mem -> fundef -> list val -> trace -> mem -> val -> Prop :=
+  | eval_funcall_internal: forall le c m f vargs t e m1 m2 m3 out vres m4,
       alloc_variables ge empty_env m (f.(fn_params) ++ f.(fn_vars)) e m1 ->
       list_norepet (var_names f.(fn_params) ++ var_names f.(fn_vars)) ->
       bind_parameters ge e m1 f.(fn_params) vargs m2 ->
       exec_stmt e f.(fn_comp) (create_undef_temps f.(fn_temps)) m2 f.(fn_body) t le m3 out ->
       outcome_result_value out f.(fn_return) vres m3 ->
       Mem.free_list m3 (blocks_of_env ge e) = Some m4 ->
-      eval_funcall m (Internal f) vargs t m4 vres
-  | eval_funcall_external: forall m ef targs tres cconv vargs t vres m',
-      external_call ef ge vargs m t vres m' ->
-      eval_funcall m (External ef targs tres cconv) vargs t m' vres.
+      eval_funcall c m (Internal f) vargs t m4 vres
+  | eval_funcall_external: forall c m ef targs tres cconv vargs t vres m',
+      external_call ef ge c vargs m t vres m' ->
+      eval_funcall c m (External ef targs tres cconv) vargs t m' vres.
 
 Scheme exec_stmt_ind2 := Minimality for exec_stmt Sort Prop
   with eval_funcall_ind2 := Minimality for eval_funcall Sort Prop.
@@ -243,15 +243,15 @@ End BIGSTEP.
 
 (** Big-step execution of a whole program.  *)
 
-Inductive bigstep_program_terminates (p: program): trace -> int -> Prop :=
+Inductive bigstep_program_terminates (p: program) (c: compartment): trace -> int -> Prop :=
   | bigstep_program_terminates_intro: forall b f m0 m1 t r,
       let ge := globalenv p in
       Genv.init_mem p = Some m0 ->
       Genv.find_symbol ge p.(prog_main) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
       type_of_fundef f = Tfunction Tnil type_int32s cc_default ->
-      eval_funcall ge m0 f nil t m1 (Vint r) ->
-      bigstep_program_terminates p t r.
+      eval_funcall ge c m0 f nil t m1 (Vint r) ->
+      bigstep_program_terminates p c t r.
 
 Inductive bigstep_program_diverges (p: program): traceinf -> Prop :=
   | bigstep_program_diverges_intro: forall b f m0 t,
@@ -264,7 +264,7 @@ Inductive bigstep_program_diverges (p: program): traceinf -> Prop :=
       bigstep_program_diverges p t.
 
 Definition bigstep_semantics (p: program) :=
-  Bigstep_semantics (bigstep_program_terminates p) (bigstep_program_diverges p).
+  Bigstep_semantics (bigstep_program_terminates p default_compartment) (bigstep_program_diverges p).
 
 (** * Implication from big-step semantics to transition semantics *)
 
@@ -300,15 +300,17 @@ Qed.
 Lemma exec_stmt_eval_funcall_steps:
   (forall e c le m s t le' m' out,
    exec_stmt ge e c le m s t le' m' out ->
-   forall f k, exists S,
+   forall f k, c = f.(fn_comp) ->
+   exists S,
    star step1 ge (State f s k e le m) t S
    /\ outcome_state_match e le' m' f k out S)
 /\
-  (forall m fd args t m' res,
-   eval_funcall ge m fd args t m' res ->
-   forall cp k,
+  (forall c m fd args t m' res,
+   eval_funcall ge c m fd args t m' res ->
+   forall k,
+   forall COMP: c = call_comp k,
    is_call_cont k ->
-   star step1 ge (Callstate fd args cp k m) t (Returnstate res k m')).
+   star step1 ge (Callstate fd args k m) t (Returnstate res k m')).
 Proof.
   apply exec_stmt_funcall_ind; intros.
 
@@ -324,15 +326,17 @@ Proof.
 (* call *)
   econstructor; split.
   eapply star_left. econstructor; eauto.
-  eapply star_right. apply H5. simpl; auto. econstructor. reflexivity. traceEq.
+  eapply star_right. apply H5; eauto. simpl; auto. econstructor. reflexivity. traceEq.
   constructor.
 
 (* builtin *)
-  econstructor; split. apply star_one. econstructor; eauto. constructor.
+  subst c.
+  econstructor; split. apply star_one; econstructor; eauto.
+  econstructor.
 
 (* sequence 2 *)
-  destruct (H0 f (Kseq s2 k)) as [S1 [A1 B1]]. inv B1.
-  destruct (H2 f k) as [S2 [A2 B2]].
+  destruct (H0 f (Kseq s2 k)) as [S1 [A1 B1]]. assumption. inv B1.
+  destruct (H2 f k) as [S2 [A2 B2]]. reflexivity.
   econstructor; split.
   eapply star_left. econstructor.
   eapply star_trans. eexact A1.
@@ -341,7 +345,7 @@ Proof.
   auto.
 
 (* sequence 1 *)
-  destruct (H0 f (Kseq s2 k)) as [S1 [A1 B1]].
+  destruct (H0 f (Kseq s2 k)) as [S1 [A1 B1]]. assumption.
   set (S2 :=
     match out with
     | Out_break => State f Sbreak k e le1 m1
@@ -361,7 +365,7 @@ Proof.
   unfold S2; inv B1; congruence || econstructor; eauto.
 
 (* ifthenelse *)
-  destruct (H2 f k) as [S1 [A1 B1]].
+  destruct (H2 f k) as [S1 [A1 B1]]. assumption.
   exists S1; split.
   eapply star_left. 2: eexact A1. eapply step_ifthenelse; eauto. traceEq.
   auto.
@@ -379,7 +383,7 @@ Proof.
   econstructor; split. apply star_refl. constructor.
 
 (* loop stop 1 *)
-  destruct (H0 f (Kloop1 s1 s2 k)) as [S1 [A1 B1]].
+  destruct (H0 f (Kloop1 s1 s2 k)) as [S1 [A1 B1]]. assumption.
   set (S2 :=
     match out' with
     | Out_break => State f Sskip k e le' m'
@@ -395,8 +399,8 @@ Proof.
   unfold S2. inversion H1; subst. constructor. inv B1; econstructor; eauto.
 
 (* loop stop 2 *)
-  destruct (H0 f (Kloop1 s1 s2 k)) as [S1 [A1 B1]].
-  destruct (H3 f (Kloop2 s1 s2 k)) as [S2 [A2 B2]].
+  destruct (H0 f (Kloop1 s1 s2 k)) as [S1 [A1 B1]]. assumption.
+  destruct (H3 f (Kloop2 s1 s2 k)) as [S2 [A2 B2]]. assumption.
   set (S3 :=
     match out2 with
     | Out_break => State f Sskip k e le2 m2
@@ -414,9 +418,9 @@ Proof.
   unfold S3. inversion H4; subst. constructor. inv B2; econstructor; eauto.
 
 (* loop loop *)
-  destruct (H0 f (Kloop1 s1 s2 k)) as [S1 [A1 B1]].
-  destruct (H3 f (Kloop2 s1 s2 k)) as [S2 [A2 B2]].
-  destruct (H5 f k) as [S3 [A3 B3]].
+  destruct (H0 f (Kloop1 s1 s2 k)) as [S1 [A1 B1]]. assumption.
+  destruct (H3 f (Kloop2 s1 s2 k)) as [S2 [A2 B2]]. assumption.
+  destruct (H5 f k) as [S3 [A3 B3]]. assumption.
   exists S3; split.
   eapply star_left. eapply step_loop.
   eapply star_trans. eexact A1.
@@ -430,7 +434,7 @@ Proof.
   auto.
 
 (* switch *)
-  destruct (H2 f (Kswitch k)) as [S1 [A1 B1]].
+  destruct (H2 f (Kswitch k)) as [S1 [A1 B1]]. assumption.
   set (S2 :=
     match out with
     | Out_normal => State f Sskip k e le1 m1
@@ -451,7 +455,7 @@ Proof.
   unfold S2. inv B1; simpl; econstructor; eauto.
 
 (* call internal *)
-  destruct (H3 f k) as [S1 [A1 B1]].
+  destruct (H3 f k) as [S1 [A1 B1]]. reflexivity.
   eapply star_left. eapply step_internal_function; eauto. econstructor; eauto.
   eapply star_right. eexact A1.
    inv B1; simpl in H4; try contradiction.
@@ -473,37 +477,42 @@ Proof.
 
 (* call external *)
   apply star_one. apply step_external_function; auto.
+  congruence.
 Qed.
 
 Lemma exec_stmt_steps:
    forall e c le m s t le' m' out,
    exec_stmt ge e c le m s t le' m' out ->
-   forall f k, exists S,
+   forall f k, c = f.(fn_comp) -> exists S,
    star step1 ge (State f s k e le m) t S
    /\ outcome_state_match e le' m' f k out S.
-Proof (proj1 exec_stmt_eval_funcall_steps).
+Proof.
+  exact (proj1 exec_stmt_eval_funcall_steps).
+Qed.
 
 Lemma eval_funcall_steps:
-   forall m fd args t m' res,
-   eval_funcall ge m fd args t m' res ->
-   forall cp k,
+   forall cp m fd args t m' res,
+   eval_funcall ge cp m fd args t m' res ->
+   forall k,
+   forall COMP: cp = call_comp k,
    is_call_cont k ->
-   star step1 ge (Callstate fd args cp k m) t (Returnstate res k m').
+   star step1 ge (Callstate fd args k m) t (Returnstate res k m').
 Proof (proj2 exec_stmt_eval_funcall_steps).
 
 Definition order (x y: unit) := False.
 
 Lemma evalinf_funcall_forever:
-  forall m fd args T cp k,
+  forall m fd args T k,
   evalinf_funcall ge m fd args T ->
-  forever_N step1 order ge tt (Callstate fd args cp k m) T.
+  forever_N step1 order ge tt (Callstate fd args k m) T.
 Proof.
   cofix CIH_FUN.
   assert (forall e c le m s T f k,
+          c = f.(fn_comp) ->
           execinf_stmt ge e c le m s T ->
           forever_N step1 order ge tt (State f s k e le m) T).
   cofix CIH_STMT.
-  intros. inv H.
+  intros. inv H0.
 
 (* call  *)
   eapply forever_N_plus.
@@ -515,7 +524,7 @@ Proof.
   apply plus_one. econstructor.
   eapply CIH_STMT; eauto. traceEq.
 (* seq 2 *)
-  destruct (exec_stmt_steps _ _ _ _ _ _ _ _ _ H0 f (Kseq s2 k)) as [S1 [A1 B1]].
+  destruct (exec_stmt_steps _ _ _ _ _ _ _ _ _ H1 f (Kseq s2 k)) as [S1 [A1 B1]]. reflexivity.
   inv B1.
   eapply forever_N_plus.
   eapply plus_left. constructor. eapply star_trans. eexact A1.
@@ -532,20 +541,20 @@ Proof.
   eapply plus_one. constructor.
   eapply CIH_STMT; eauto. traceEq.
 (* loop body 2 *)
-  destruct (exec_stmt_steps _ _ _ _ _ _ _ _ _ H0 f (Kloop1 s1 s2 k)) as [S1 [A1 B1]].
+  destruct (exec_stmt_steps _ _ _ _ _ _ _ _ _ H1 f (Kloop1 s1 s2 k)) as [S1 [A1 B1]]. reflexivity.
   eapply forever_N_plus with (s2 := State f s2 (Kloop2 s1 s2 k) e le1 m1).
   eapply plus_left. constructor.
   eapply star_right. eexact A1.
-  inv H1; inv B1; constructor; auto.
+  inv H2; inv B1; constructor; auto.
   reflexivity. reflexivity.
   eapply CIH_STMT; eauto. traceEq.
 (* loop loop *)
-  destruct (exec_stmt_steps _ _ _ _ _ _ _ _ _ H0 f (Kloop1 s1 s2 k)) as [S1 [A1 B1]].
-  destruct (exec_stmt_steps _ _ _ _ _ _ _ _ _ H2 f (Kloop2 s1 s2 k)) as [S2 [A2 B2]].
+  destruct (exec_stmt_steps _ _ _ _ _ _ _ _ _ H1 f (Kloop1 s1 s2 k)) as [S1 [A1 B1]]. reflexivity.
+  destruct (exec_stmt_steps _ _ _ _ _ _ _ _ _ H3 f (Kloop2 s1 s2 k)) as [S2 [A2 B2]]. reflexivity.
   eapply forever_N_plus with (s2 := State f (Sloop s1 s2) k e le2 m2).
   eapply plus_left. constructor.
   eapply star_trans. eexact A1.
-  eapply star_left. inv H1; inv B1; constructor; auto.
+  eapply star_left. inv H2; inv B1; constructor; auto.
   eapply star_right. eexact A2.
   inv B2. constructor.
   reflexivity. reflexivity. reflexivity. reflexivity.
@@ -572,7 +581,7 @@ Proof.
 (* termination *)
   inv H. econstructor; econstructor.
   split. econstructor; eauto.
-  split. eapply eval_funcall_steps. eauto. red; auto.
+  split. eapply eval_funcall_steps. eauto. eauto. red; auto.
   econstructor.
 (* divergence *)
   inv H. econstructor.

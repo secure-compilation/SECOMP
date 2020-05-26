@@ -237,12 +237,12 @@ Inductive match_states: state -> state -> Prop :=
       match_states (Block s f sp (Lbranch pc :: bb) ls m)
                    (State ts (tunnel_function f) sp (branch_target f pc) tls tm)
   | match_states_call:
-      forall s f ls cp m ts tls tm
+      forall s f ls m ts tls tm
         (STK: list_forall2 match_stackframes s ts)
         (LS: locmap_lessdef ls tls)
         (MEM: Mem.extends m tm),
-      match_states (Callstate s f ls cp m)
-                   (Callstate ts (tunnel_fundef f) tls cp tm)
+      match_states (Callstate s f ls m)
+                   (Callstate ts (tunnel_fundef f) tls tm)
   | match_states_return:
       forall s ls m ts tls tm
         (STK: list_forall2 match_stackframes s ts)
@@ -389,7 +389,7 @@ Definition measure (st: state) : nat :=
   | State s f sp pc ls m => (count_gotos f pc * 2)%nat
   | Block s f sp (Lbranch pc :: _) ls m => (count_gotos f pc * 2 + 1)%nat
   | Block s f sp bb ls m => 0%nat
-  | Callstate s f ls cp m => 0%nat
+  | Callstate s f ls m => 0%nat
   | Returnstate s ls m => 0%nat
   end.
 
@@ -401,6 +401,16 @@ Proof.
   induction 1; simpl.
 - red; auto.
 - inv H; auto.
+Qed.
+
+Lemma match_stackframes_call_comp:
+  forall s ts,
+  list_forall2 match_stackframes s ts ->
+  call_comp s = call_comp ts.
+Proof.
+  intros s ts H.
+  destruct H as [|sf1 ? sf2 ? STACK]; eauto.
+  now destruct STACK.
 Qed.
 
 Lemma tunnel_step_correct:
@@ -530,6 +540,7 @@ Proof.
   left; simpl; econstructor; split.
   eapply exec_function_external; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  rewrite <- (match_stackframes_call_comp _ _ STK); eauto.
   simpl. econstructor; eauto using locmap_setpair_lessdef, locmap_undef_caller_save_regs_lessdef.
 - (* return *)
   inv STK. inv H1.
@@ -543,7 +554,7 @@ Lemma transf_initial_states:
   exists st2, initial_state tprog st2 /\ match_states st1 st2.
 Proof.
   intros. inversion H.
-  exists (Callstate nil (tunnel_fundef f) (Locmap.init Vundef) default_compartment m0); split.
+  exists (Callstate nil (tunnel_fundef f) (Locmap.init Vundef) m0); split.
   econstructor; eauto.
   apply (Genv.init_mem_transf TRANSL); auto.
   rewrite (match_program_main TRANSL).

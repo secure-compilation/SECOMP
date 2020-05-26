@@ -128,7 +128,7 @@ let print_state p (prog, ge, s) =
       fprintf p "in function %s, expression@ @[<hv 0>%a@]"
               (name_of_function prog f)
               PrintCsyntax.print_expr r
-  | Callstate(fd, args, cp, k, m) ->
+  | Callstate(fd, args, k, m) ->
       PrintCsyntax.print_pointer_hook := print_pointer ge.genv_genv Maps.PTree.empty;
       fprintf p "calling@ @[<hov 2>%s(%a)@]"
               (name_of_fundef prog fd)
@@ -222,7 +222,7 @@ let rank_state = function
 let mem_state = function
   | State(f, s, k, e, m) -> m
   | ExprState(f, r, k, e, m) -> m
-  | Callstate(fd, args, cp, k, m) -> m
+  | Callstate(fd, args, k, m) -> m
   | Returnstate(res, k, m) -> m
   | Stuckstate -> assert false
 
@@ -239,8 +239,8 @@ let compare_state s1 s2 =
       let c = compare (f1,r1,e1) (f2,r2,e2) in if c <> 0 then c else
       let c = compare_cont k1 k2 in if c <> 0 then c else
       compare_mem m1 m2
-  | Callstate(fd1,args1,cp1,k1,m1), Callstate(fd2,args2,cp2,k2,m2) ->
-      let c = compare (fd1,args1,cp1) (fd2,args2,cp2) in if c <> 0 then c else
+  | Callstate(fd1,args1,k1,m1), Callstate(fd2,args2,k2,m2) ->
+      let c = compare (fd1,args1) (fd2,args2) in if c <> 0 then c else
       let c = compare_cont k1 k2 in if c <> 0 then c else
       compare_mem m1 m2
   | Returnstate(res1,k1,m1), Returnstate(res2,k2,m2) ->
@@ -383,7 +383,7 @@ let rec convert_external_args ge vl tl =
       convert_external_args ge vl tl >>= fun el -> Some (e1 :: el)
   | _, _ -> None
 
-let do_external_function id sg ge w args m =
+let do_external_function id sg ge w cp args m =
   match camlstring_of_coqstring id, args with
   | "printf", Vptr(b, ofs) :: args' ->
       extract_string m b ofs >>= fun fmt ->
@@ -396,7 +396,7 @@ let do_external_function id sg ge w args m =
   | _ ->
       None
 
-let do_inline_assembly txt sg ge w args m = None
+let do_inline_assembly txt sg ge w cp args m = None
 
 (* Implementing external functions producing observable events *)
 
@@ -462,7 +462,7 @@ let diagnose_stuck_expr p ge w f a kont e m =
     | RV, Ebuiltin(ef, tyargs, rargs, ty) -> diagnose_list rargs
     | _, _ -> false in
   if found then true else begin
-    let l = Cexec.step_expr ge do_external_function do_inline_assembly e w k a m in
+    let l = Cexec.step_expr ge do_external_function do_inline_assembly e w f.fn_comp k a m in
     if List.exists (fun (ctx,red) -> red = Cexec.Stuckred) l then begin
       PrintCsyntax.print_pointer_hook := print_pointer ge.genv_genv e;
       fprintf p "@[<hov 2>Stuck subexpression:@ %a@]@."

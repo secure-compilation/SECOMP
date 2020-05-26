@@ -208,10 +208,10 @@ Inductive match_states: state -> state -> Prop :=
       match_states (State s f sp c ls m)
                    (State ts (transf_function f) sp (remove_unused_labels (labels_branched_to f.(fn_code)) c) ls m)
   | match_states_call:
-      forall s f ls cp m ts,
+      forall s f ls m ts,
       list_forall2 match_stackframes s ts ->
-      match_states (Callstate s f ls cp m)
-                   (Callstate ts (transf_fundef f) ls cp m)
+      match_states (Callstate s f ls m)
+                   (Callstate ts (transf_fundef f) ls m)
   | match_states_return:
       forall s ls m ts,
       list_forall2 match_stackframes s ts ->
@@ -230,6 +230,18 @@ Lemma match_parent_locset:
   parent_locset ts = parent_locset s.
 Proof.
   induction 1; simpl. auto. inv H; auto.
+Qed.
+
+Lemma match_stacks_call_comp:
+  forall s ts,
+  list_forall2 match_stackframes s ts ->
+  call_comp s = call_comp ts.
+Proof.
+  intros s ts H.
+  destruct H; auto.
+  now match goal with
+  | H : match_stackframes _ _ |- _ => inv H
+  end.
 Qed.
 
 Theorem transf_step_correct:
@@ -274,7 +286,7 @@ Proof.
   econstructor. erewrite match_parent_locset; eauto. eapply find_function_translated; eauto.
   symmetry; apply sig_function_translated.
   now rewrite ! comp_transl.
-  simpl. eauto.
+  simpl. eauto. eauto.
   econstructor; eauto.
 (* Lbuiltin *)
   left; econstructor; split.
@@ -320,6 +332,7 @@ Proof.
 (* external function *)
   left; econstructor; split.
   econstructor; eauto. eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  erewrite <- match_stacks_call_comp; eauto.
   econstructor; eauto with coqlib.
 (* return *)
   inv H3. inv H1. left; econstructor; split.

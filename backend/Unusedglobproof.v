@@ -704,6 +704,15 @@ Proof.
   induction 1; auto.
 Qed.
 
+Lemma match_stacks_call_comp:
+  forall j stk1 stk2 b1 b2,
+  match_stacks j stk1 stk2 b1 b2 ->
+  call_comp stk1 = call_comp stk2.
+Proof.
+  intros j stk1 stk2 b1 b2 H.
+  now destruct H.
+Qed.
+
 Lemma match_stacks_incr:
   forall j j', inject_incr j j' ->
   forall s ts bound tbound, match_stacks j s ts bound tbound ->
@@ -762,13 +771,13 @@ Inductive match_states: state -> state -> Prop :=
          (MEMINJ: Mem.inject j m tm),
       match_states (State s f (Vptr sp Ptrofs.zero) pc rs m)
                    (State ts f (Vptr tsp Ptrofs.zero) pc trs tm)
-  | match_states_call: forall s fd args cp m ts targs tm j
+  | match_states_call: forall s fd args m ts targs tm j
          (STACKS: match_stacks j s ts (Mem.nextblock m) (Mem.nextblock tm))
          (KEPT: forall id, ref_fundef fd id -> kept id)
          (ARGINJ: Val.inject_list j args targs)
          (MEMINJ: Mem.inject j m tm),
-      match_states (Callstate s fd args cp m)
-                   (Callstate ts fd targs cp tm)
+      match_states (Callstate s fd args m)
+                   (Callstate ts fd targs tm)
   | match_states_return: forall s res m ts tres tm j
          (STACKS: match_stacks j s ts (Mem.nextblock m) (Mem.nextblock tm))
          (RESINJ: Val.inject j res tres)
@@ -777,13 +786,13 @@ Inductive match_states: state -> state -> Prop :=
                    (Returnstate ts tres tm).
 
 Lemma external_call_inject:
-  forall ef vargs m1 t vres m2 f m1' vargs',
+  forall cp ef vargs m1 t vres m2 f m1' vargs',
   meminj_preserves_globals f ->
-  external_call ef ge vargs m1 t vres m2 ->
+  external_call ef ge cp vargs m1 t vres m2 ->
   Mem.inject f m1 m1' ->
   Val.inject_list f vargs vargs' ->
   exists f', exists vres', exists m2',
-    external_call ef tge vargs' m1' t vres' m2'
+    external_call ef tge cp vargs' m1' t vres' m2'
     /\ Val.inject f' vres vres'
     /\ Mem.inject f' m2 m2'
     /\ Mem.unchanged_on (loc_unmapped f) m1 m2
@@ -1033,6 +1042,7 @@ Proof.
   intros (j' & tres & tm' & A & B & C & D & E & F & G).
   econstructor; split.
   eapply exec_function_external; eauto.
+  { rewrite <- (match_stacks_call_comp _ _ _ _ _ STACKS); eauto. }
   eapply match_states_return with (j := j'); eauto.
   apply match_stacks_bound with (Mem.nextblock m) (Mem.nextblock tm).
   apply match_stacks_incr with j; auto.
@@ -1237,7 +1247,7 @@ Proof.
   exploit defs_inject. eauto. eexact Q. exact H2.
   intros (R & S & T).
   rewrite <- Genv.find_funct_ptr_iff in R.
-  exists (Callstate nil f nil default_compartment tm); split.
+  exists (Callstate nil f nil tm); split.
   econstructor; eauto.
   fold tge. erewrite match_prog_main by eauto. auto.
   econstructor; eauto.

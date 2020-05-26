@@ -848,7 +848,7 @@ Proof.
   unfold make_set. destruct (chunk_for_volatile_type (typeof a)) as [chunk|].
 (* volatile case *)
   intros. change (PTree.set id v le) with (set_opttemp (Some id) v le). econstructor.
-  econstructor. constructor. eauto.
+  econstructor. econstructor. eauto.
   simpl. unfold sem_cast. simpl. eauto. constructor.
   simpl. econstructor; eauto.
 (* nonvolatile case *)
@@ -1035,6 +1035,18 @@ Proof.
   induction 1; simpl; auto. constructor. econstructor; eauto.
 Qed.
 
+Lemma match_cont_call_comp:
+  forall k tk,
+  match_cont k tk ->
+  Csem.call_comp k = call_comp tk.
+Proof.
+  intros k tk H.
+  apply match_cont_call in H.
+  unfold Csem.call_comp, call_comp.
+  destruct H; simpl; trivial.
+  now match goal with H : tr_function _ _ |- _ => inv H end.
+Qed.
+
 (** Matching between states *)
 
 Inductive match_states: Csem.state -> state -> Prop :=
@@ -1050,11 +1062,11 @@ Inductive match_states: Csem.state -> state -> Prop :=
       match_cont k tk ->
       match_states (Csem.State f s k e m)
                    (State tf ts tk e le m)
-  | match_callstates: forall fd args cp k m tfd tk,
+  | match_callstates: forall fd args k m tfd tk,
       tr_fundef fd tfd ->
       match_cont k tk ->
-      match_states (Csem.Callstate fd args cp k m)
-                   (Callstate tfd args cp tk m)
+      match_states (Csem.Callstate fd args k m)
+                   (Callstate tfd args tk m)
   | match_returnstates: forall res k m tk,
       match_cont k tk ->
       match_states (Csem.Returnstate res k m)
@@ -1917,7 +1929,6 @@ Proof.
   econstructor; eauto. rewrite <- TY1; eauto.
   exploit type_of_fundef_preserved; eauto. congruence.
   traceEq.
-  replace (fn_comp tf) with (Csyntax.fn_comp f) by now inv H11.
   constructor; auto. econstructor; eauto.
   intros. change sl2 with (nil ++ sl2). apply S.
   constructor. auto. auto.
@@ -1931,7 +1942,6 @@ Proof.
   econstructor; eauto. rewrite <- TY1; eauto.
   exploit type_of_fundef_preserved; eauto. congruence.
   traceEq.
-  replace (fn_comp tf) with (Csyntax.fn_comp f) by now inv H11.
   constructor; auto. econstructor; eauto.
   intros. apply S.
   destruct dst'; constructor.
@@ -1942,6 +1952,8 @@ Proof.
 
 (* builtin *)
   exploit tr_top_leftcontext; eauto. clear H9.
+  assert (COMP: tf.(fn_comp) = f.(Csyntax.fn_comp)).
+  { now match goal with H : tr_function _ _ |- _ => inv H end. }
   intros [dst' [sl1 [sl2 [a' [tmp' [P [Q [R S]]]]]]]].
   inv P. inv H2.
   (* for effects *)
@@ -1951,6 +1963,7 @@ Proof.
   left. eapply plus_left. constructor.  apply star_one.
   econstructor; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  { rewrite COMP; eauto. }
   traceEq.
   econstructor; eauto.
   change sl2 with (nil ++ sl2). apply S. constructor. simpl; auto. auto.
@@ -1961,6 +1974,7 @@ Proof.
   left. eapply plus_left. constructor. apply star_one.
   econstructor; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  { rewrite COMP; eauto. }
   traceEq.
   econstructor; eauto.
   change sl2 with (nil ++ sl2). apply S.
@@ -2255,20 +2269,21 @@ Proof.
   econstructor; eauto.
 
 (* internal function *)
-  inv H8. inversion H3; subst.
+  inv H7. inversion H3; subst.
   econstructor; split.
   left; apply plus_one. eapply step_internal_function. econstructor.
-  rewrite H7; rewrite H8; auto.
-  rewrite H7; rewrite H8. eapply alloc_variables_preserved; eauto.
+  rewrite H7; rewrite H9; auto.
+  rewrite H7; rewrite H9. eapply alloc_variables_preserved; eauto.
   rewrite H7. eapply bind_parameters_preserved; eauto.
   eauto.
   constructor; auto.
 
 (* external function *)
-  inv H6.
+  inv H5.
   econstructor; split.
   left; apply plus_one. econstructor; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  erewrite <- match_cont_call_comp; eauto.
   constructor; auto.
 
 (* return *)

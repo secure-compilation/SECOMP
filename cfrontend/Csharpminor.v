@@ -161,7 +161,6 @@ Inductive state: Type :=
   | Callstate:                  (**r Invocation of a function *)
       forall (f: fundef)                (**r function to invoke *)
              (args: list val)           (**r arguments provided by caller *)
-             (cp: compartment)          (**r calling compartment *)
              (k: cont)                  (**r what to do next  *)
              (m: mem),                  (**r memory state *)
       state
@@ -185,6 +184,12 @@ Definition is_call_cont (k: cont) : Prop :=
   | Kstop => True
   | Kcall _ _ _ _ _ => True
   | _ => False
+  end.
+
+Definition call_comp (k: cont) : compartment :=
+  match call_cont k with
+  | Kcall _ f _ _ _ => f.(fn_comp)
+  | _ => default_compartment
   end.
 
 (** Resolve [switch] statements. *)
@@ -318,6 +323,7 @@ Section EVAL_EXPR.
 Variable e: env.
 Variable le: temp_env.
 Variable m: mem.
+(* JT: TODO: Might probably need to add a compartment variable to this section *)
 
 Inductive eval_expr: expr -> val -> Prop :=
   | eval_Evar: forall id v,
@@ -392,11 +398,11 @@ Inductive step: state -> trace -> state -> Prop :=
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
       step (State f (Scall optid sig a bl) k e le m)
-        E0 (Callstate fd vargs f.(fn_comp) (Kcall optid f e le k) m)
+        E0 (Callstate fd vargs (Kcall optid f e le k) m)
 
   | step_builtin: forall f optid ef bl k e le m vargs t vres m',
       eval_exprlist e le m bl vargs ->
-      external_call ef ge vargs m t vres m' ->
+      external_call ef ge f.(fn_comp) vargs m t vres m' ->
       step (State f (Sbuiltin optid ef bl) k e le m)
          t (State f Sskip k e (Cminor.set_optvar optid vres le) m')
 
@@ -452,18 +458,18 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Sgoto lbl) k e le m)
         E0 (State f s' k' e le m)
 
-  | step_internal_function: forall f vargs cp k m m1 e le,
+  | step_internal_function: forall f vargs k m m1 e le,
       list_norepet (map fst f.(fn_vars)) ->
       list_norepet f.(fn_params) ->
       list_disjoint f.(fn_params) f.(fn_temps) ->
       alloc_variables empty_env m (fn_vars f) e m1 ->
       bind_parameters f.(fn_params) vargs (create_undef_temps f.(fn_temps)) = Some le ->
-      step (Callstate (Internal f) vargs cp k m)
+      step (Callstate (Internal f) vargs k m)
         E0 (State f f.(fn_body) k e le m1)
 
-  | step_external_function: forall ef vargs cp k m t vres m',
-      external_call ef ge vargs m t vres m' ->
-      step (Callstate (External ef) vargs cp k m)
+  | step_external_function: forall ef vargs k m t vres m',
+      external_call ef ge (call_comp k) vargs m t vres m' ->
+      step (Callstate (External ef) vargs k m)
          t (Returnstate vres k m')
 
   | step_return: forall v optid f e le k m,
@@ -484,7 +490,7 @@ Inductive initial_state (p: program): state -> Prop :=
       Genv.find_symbol ge p.(prog_main) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
       funsig f = signature_main ->
-      initial_state p (Callstate f nil default_compartment Kstop m0).
+      initial_state p (Callstate f nil Kstop m0).
 
 (** A final state is a [Returnstate] with an empty continuation. *)
 

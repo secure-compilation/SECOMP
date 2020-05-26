@@ -505,6 +505,20 @@ Inductive match_stackframes: stackframe -> stackframe -> Prop :=
       match_stackframes (Stackframe res f (Vptr sp Ptrofs.zero) pc e)
                         (Stackframe res tf (Vptr sp Ptrofs.zero) pc te).
 
+Lemma match_stacks_call_comp:
+  forall s s',
+  list_forall2 match_stackframes s s' ->
+  call_comp s = call_comp s'.
+Proof.
+  intros ?? H.
+  destruct H; trivial.
+  match goal with
+  | H : match_stackframes _ _ |- _ => destruct H
+  end.
+  simpl.
+  eapply (comp_transl_partial); eauto.
+Qed.
+
 Inductive match_states: state -> state -> Prop :=
   | match_regular_states:
       forall s f sp pc e m ts tf te tm cu an
@@ -517,14 +531,14 @@ Inductive match_states: state -> state -> Prop :=
       match_states (State s f (Vptr sp Ptrofs.zero) pc e m)
                    (State ts tf (Vptr sp Ptrofs.zero) pc te tm)
   | match_call_states:
-      forall s f args cp m ts tf targs tm cu
+      forall s f args m ts tf targs tm cu
         (STACKS: list_forall2 match_stackframes s ts)
         (LINK: linkorder cu prog)
         (FUN: transf_fundef (romem_for cu) f = OK tf)
         (ARGS: Val.lessdef_list args targs)
         (MEM: Mem.extends m tm),
-      match_states (Callstate s f args cp m)
-                   (Callstate ts tf targs cp tm)
+      match_states (Callstate s f args m)
+                   (Callstate ts tf targs tm)
   | match_return_states:
       forall s v m ts tv tm
         (STACKS: list_forall2 match_stackframes s ts)
@@ -698,17 +712,17 @@ Qed.
 (** Properties of volatile memory accesses *)
 
 Lemma transf_volatile_store:
-  forall v1 v2 v1' v2' m tm chunk sp nm t v m',
-  volatile_store_sem chunk ge (v1::v2::nil) m t v m' ->
+  forall cp v1 v2 v1' v2' m tm chunk sp nm t v m',
+  volatile_store_sem chunk ge cp (v1::v2::nil) m t v m' ->
   Val.lessdef v1 v1' ->
   vagree v2 v2' (store_argument chunk) ->
   magree m tm (nlive ge sp nm) ->
   v = Vundef /\
-  exists tm', volatile_store_sem chunk ge (v1'::v2'::nil) tm t Vundef tm'
+  exists tm', volatile_store_sem chunk ge cp (v1'::v2'::nil) tm t Vundef tm'
            /\ magree m' tm' (nlive ge sp nm).
 Proof.
   intros. inv H. split; auto.
-  inv H0. inv H9.
+  inv H0. inv H10.
 - (* volatile *)
   exists tm; split; auto. econstructor. econstructor; eauto.
   eapply eventval_match_lessdef; eauto. apply store_argument_load_result; auto.
@@ -875,7 +889,6 @@ Ltac UseTransfer :=
   exploit find_function_translated; eauto 2 with na. intros (cu' & tfd & A & B & C).
   econstructor; split.
   eapply exec_Icall; eauto. eapply sig_function_translated; eauto.
-  rewrite comp_transf_function; eauto.
   eapply match_call_states with (cu := cu'); eauto.
   constructor; auto. eapply match_stackframes_intro with (cu := cu); eauto.
   intros.
@@ -894,8 +907,8 @@ Ltac UseTransfer :=
   econstructor; split.
   eapply exec_Itailcall; eauto. eapply sig_function_translated; eauto.
   rewrite <- (comp_transl_partial _ B), COMP. now apply (comp_transl_partial _ FUN).
+  change (fn_comp tf) with (comp_of tf). now rewrite <- (comp_transl_partial _ FUN).
   erewrite stacksize_translated by eauto. eexact C.
-  rewrite comp_transf_function; eauto.
   eapply match_call_states with (cu := cu'); eauto 2 with na.
   eapply magree_extends; eauto. apply nlive_all.
 
@@ -914,7 +927,7 @@ Ltac UseTransfer :=
   inv H1. simpl in B. inv B.
   assert (X: exists tvres, volatile_load ge chunk tm b ofs t tvres /\ Val.lessdef vres tvres).
   {
-    inv H2.
+    inv H3.
   * exists (Val.load_result chunk v); split; auto. constructor; auto.
   * exploit magree_load; eauto.
     exploit aaddr_arg_sound_1; eauto. rewrite <- AN. intros.
@@ -949,7 +962,7 @@ Ltac UseTransfer :=
   apply eval_builtin_args_preserved with (ge1 := ge). exact symbols_preserved.
   constructor. eauto. constructor. eauto. constructor.
   eapply external_call_symbols_preserved. apply senv_preserved.
-  simpl; eauto.
+  simpl; eauto. rewrite <- comp_transf_function; eauto.
   eapply match_succ_states; eauto. simpl; auto.
   apply eagree_set_res; auto.
 + (* memcpy *)
@@ -1056,7 +1069,7 @@ Ltac UseTransfer :=
   econstructor; split.
   eapply exec_Ibuiltin; eauto.
   apply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
-  eapply external_call_symbols_preserved. apply senv_preserved. eauto.
+  eapply external_call_symbols_preserved. apply senv_preserved. rewrite <- comp_transf_function. eauto. eauto.
   eapply match_succ_states; eauto. simpl; auto.
   apply eagree_set_res; auto.
   eapply mextends_agree; eauto.
@@ -1112,6 +1125,7 @@ Ltac UseTransfer :=
   econstructor; split.
   econstructor; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  erewrite <- match_stacks_call_comp; eauto.
   econstructor; eauto.
 
 - (* return *)
@@ -1127,7 +1141,7 @@ Lemma transf_initial_states:
 Proof.
   intros. inversion H.
   exploit function_ptr_translated; eauto. intros (cu & tf & A & B & C).
-  exists (Callstate nil tf nil default_compartment m0); split.
+  exists (Callstate nil tf nil m0); split.
   econstructor; eauto.
   eapply (Genv.init_mem_match TRANSF); eauto.
   replace (prog_main tprog) with (prog_main prog).

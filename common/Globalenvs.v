@@ -202,6 +202,29 @@ Definition find_funct (ge: t) (v: val) : option F :=
   | _ => None
   end.
 
+(** [find_comp ge v] finds the compartment associated with the pointer [v] as it
+    is recorded in [ge]. *)
+
+Definition find_comp (ge: t) (v: val) : option compartment :=
+  match v with
+  | Vptr b _ =>
+    match find_funct_ptr ge b with
+    | Some f => Some (comp_of f)
+    | None   => None
+    end
+  | _ => Some default_compartment
+  (* FIXME: Should this be a None? It would probably require changing the
+     [call_comp] functions to be optional as well, returning [None] on an empty
+     call stack. *)
+  end.
+
+Lemma find_comp_null:
+  forall ge, find_comp ge Vnullptr = Some default_compartment.
+Proof.
+  unfold find_comp, Vnullptr.
+  now destruct Archi.ptr64.
+Qed.
+
 (** [invert_symbol ge b] returns the name associated with the given block, if any *)
 
 Definition invert_symbol (ge: t) (b: block) : option ident :=
@@ -1868,6 +1891,19 @@ Theorem find_funct_ptr_transf_partial:
 Proof.
   intros. exploit (find_funct_ptr_match progmatch); eauto.
   intros (cu & tf & P & Q & R); exists tf; auto.
+Qed.
+
+Lemma find_comp_transf_partial:
+  forall v cp,
+  find_comp (globalenv p)  v = Some cp ->
+  find_comp (globalenv tp) v = Some cp.
+Proof.
+  unfold find_comp. intros v cp.
+  destruct v as [| | | | |b ofs]; trivial.
+  destruct (find_funct_ptr (globalenv p) b) as [f|] eqn:Ef; try easy.
+  intros Ecp.
+  destruct (find_funct_ptr_transf_partial _ Ef) as (tf & H1 & H2).
+  now rewrite H1, <- (comp_transl_partial _ H2).
 Qed.
 
 Theorem find_funct_transf_partial:

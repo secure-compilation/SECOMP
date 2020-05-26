@@ -539,6 +539,7 @@ Qed.
   and [tc] is the tail of the generated code at the position corresponding
   to the code pointer [pc]. *)
 
+(* TODO: Consider making the [val] argument a [ptrofs]. *)
 Inductive transl_code_at_pc (ge: Mach.genv):
     val -> block -> Mach.function -> Mach.code -> bool -> Asm.function -> Asm.code -> Prop :=
   transl_code_at_pc_intro:
@@ -960,7 +961,7 @@ Inductive match_stack: list Mach.stackframe -> Prop :=
       match_stack nil
   | match_stack_cons: forall fb sp ra c s f tf tc,
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
-      transl_code_at_pc ge ra fb f c false tf tc ->
+      transl_code_at_pc ge (Vptr fb ra) fb f c false tf tc ->
       sp <> Vundef ->
       match_stack s ->
       match_stack (Stackframe fb sp ra c :: s).

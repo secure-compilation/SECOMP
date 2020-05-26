@@ -547,11 +547,11 @@ Inductive match_states: LTL.state -> Linear.state -> Prop :=
       match_states (LTL.Block s f sp bb ls m)
                    (Linear.State ts tf sp (linearize_block bb c) ls m)
   | match_states_call:
-      forall s f ls cp m tf ts,
+      forall s f ls m tf ts,
       list_forall2 match_stackframes s ts ->
       transf_fundef f = OK tf ->
-      match_states (LTL.Callstate s f ls cp m)
-                   (Linear.Callstate ts tf ls cp m)
+      match_states (LTL.Callstate s f ls m)
+                   (Linear.Callstate ts tf ls m)
   | match_states_return:
       forall s ls m ts,
       list_forall2 match_stackframes s ts ->
@@ -569,6 +569,23 @@ Remark match_parent_locset:
   forall s ts, list_forall2 match_stackframes s ts -> parent_locset ts = LTL.parent_locset s.
 Proof.
   induction 1; simpl. auto. inv H; auto.
+Qed.
+
+Lemma match_stacks_call_comp:
+  forall s ts,
+  list_forall2 match_stackframes s ts ->
+  LTL.call_comp s = call_comp ts.
+Proof.
+  intros s ts H.
+  destruct H; trivial.
+  match goal with
+  | H : match_stackframes _ _ |- _ =>
+    destruct H
+  end.
+  match goal with
+  | H : transf_function _ = _ |- _ =>
+    apply (comp_transl_partial _ H)
+  end.
 Qed.
 
 Theorem transf_step_correct:
@@ -639,7 +656,6 @@ Proof.
   left; econstructor; split. simpl.
   apply plus_one. econstructor; eauto.
   symmetry; eapply sig_preserved; eauto.
-  replace (LTL.fn_comp f) with (fn_comp tf) by (symmetry; apply (comp_transl_partial _ TRF)).
   econstructor; eauto. constructor; auto. econstructor; eauto.
 
   (* Ltailcall *)
@@ -649,16 +665,16 @@ Proof.
   rewrite (match_parent_locset _ _ STACKS). eauto.
   symmetry; eapply sig_preserved; eauto.
   now rewrite <- (comp_transl_partial _ B), <- (comp_transl_partial _ TRF).
+  now rewrite <- (comp_transl_partial _ TRF).
   rewrite (stacksize_preserved _ _ TRF); eauto.
   rewrite (match_parent_locset _ _ STACKS).
-  replace (LTL.fn_comp f) with (fn_comp tf) by (symmetry; apply (comp_transl_partial _ TRF)).
   econstructor; eauto.
 
   (* Lbuiltin *)
   left; econstructor; split. simpl.
   apply plus_one. eapply exec_Lbuiltin; eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
-  eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  eapply external_call_symbols_preserved; eauto. apply senv_preserved. erewrite comp_preserved; eauto.
   econstructor; eauto.
 
   (* Lbranch *)
@@ -705,7 +721,7 @@ Proof.
   (* internal functions *)
   assert (REACH: (reachable f)!!(LTL.fn_entrypoint f) = true).
     apply reachable_entrypoint.
-  monadInv H8.
+  monadInv H7.
   left; econstructor; split.
   apply plus_one. eapply exec_function_internal; eauto.
   rewrite (stacksize_preserved _ _ EQ).
@@ -714,9 +730,10 @@ Proof.
   econstructor; eauto. simpl. eapply is_tail_add_branch. constructor.
 
   (* external function *)
-  monadInv H9. left; econstructor; split.
+  monadInv H8. left; econstructor; split.
   apply plus_one. eapply exec_function_external; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  erewrite <- match_stacks_call_comp; eauto.
   econstructor; eauto.
 
   (* return *)
@@ -732,7 +749,7 @@ Lemma transf_initial_states:
 Proof.
   intros. inversion H.
   exploit function_ptr_translated; eauto. intros [tf [A B]].
-  exists (Callstate nil tf (Locmap.init Vundef) default_compartment m0); split.
+  exists (Callstate nil tf (Locmap.init Vundef) m0); split.
   econstructor; eauto. eapply (Genv.init_mem_transf_partial TRANSF); eauto.
   rewrite (match_program_main TRANSF).
   rewrite symbols_preserved. eauto.

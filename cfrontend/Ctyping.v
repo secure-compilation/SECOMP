@@ -1751,8 +1751,8 @@ Proof.
 Qed.
 
 Lemma wt_rred:
-  forall ge tenv a m t a' m',
-  rred ge a m t a' m' -> wt_rvalue ge tenv a -> wt_rvalue ge tenv a'.
+  forall ge cp tenv a m t a' m',
+  rred ge cp a m t a' m' -> wt_rvalue ge tenv a -> wt_rvalue ge tenv a'.
 Proof.
   induction 1; intros WT; inversion WT.
 - (* valof *) simpl in *. constructor. eapply wt_deref_loc; eauto.
@@ -1817,8 +1817,8 @@ Proof.
 Qed.
 
 Lemma rred_same_type:
-  forall ge a m t a' m',
-  rred ge a m t a' m' -> typeof a' = typeof a.
+  forall ge cp a m t a' m',
+  rred ge cp a m t a' m' -> typeof a' = typeof a.
 Proof.
   induction 1; auto.
 Qed.
@@ -2057,11 +2057,11 @@ Inductive wt_state: state -> Prop :=
         (WTB: wt_stmt ge te f.(fn_return) f.(fn_body))
         (WTE: wt_rvalue ge te r),
       wt_state (ExprState f r k e m)
-  | wt_call_state: forall b fd vargs cp k m
+  | wt_call_state: forall b fd vargs k m
         (WTK: wt_call_cont k (fundef_return fd))
         (WTFD: wt_fundef ge gtenv fd)
         (FIND: Genv.find_funct ge b = Some fd),
-      wt_state (Callstate fd vargs cp k m)
+      wt_state (Callstate fd vargs k m)
   | wt_return_state: forall v k m ty
         (WTK: wt_call_cont k ty)
         (VAL: wt_val v ty),

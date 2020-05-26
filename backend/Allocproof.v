@@ -1631,7 +1631,7 @@ Proof.
 Qed.
 
 Lemma add_equations_builtin_eval:
-  forall ef env args args' e1 e2 m1 m1' rs ls (ge: RTL.genv) sp vargs t vres m2,
+  forall cp ef env args args' e1 e2 m1 m1' rs ls (ge: RTL.genv) sp vargs t vres m2,
   wt_regset env rs ->
   match ef with
   | EF_debug _ _ _ => add_equations_debug_args env args args' e1
@@ -1640,11 +1640,11 @@ Lemma add_equations_builtin_eval:
   Mem.extends m1 m1' ->
   satisf rs ls e2 ->
   eval_builtin_args ge (fun r => rs # r) sp m1 args vargs ->
-  external_call ef ge vargs m1 t vres m2 ->
+  external_call ef ge cp vargs m1 t vres m2 ->
   satisf rs ls e1 /\
   exists vargs' vres' m2',
      eval_builtin_args ge ls sp m1' args' vargs'
-  /\ external_call ef ge vargs' m1' t vres' m2'
+  /\ external_call ef ge cp vargs' m1' t vres' m2'
   /\ Val.lessdef vres vres'
   /\ Mem.extends m2 m2'.
 Proof.
@@ -1653,7 +1653,7 @@ Proof.
     satisf rs ls e1 /\
     exists vargs' vres' m2',
        eval_builtin_args ge ls sp m1' args' vargs'
-    /\ external_call ef ge vargs' m1' t vres' m2'
+    /\ external_call ef ge cp vargs' m1' t vres' m2'
     /\ Val.lessdef vres vres'
     /\ Mem.extends m2 m2').
   {
@@ -1944,15 +1944,15 @@ Inductive match_states: RTL.state -> LTL.state -> Prop :=
       match_states (RTL.State s f sp pc rs m)
                    (LTL.State ts tf sp pc ls m')
   | match_states_call:
-      forall s f args cp m ts tf ls m'
+      forall s f args m ts tf ls m'
         (STACKS: match_stackframes s ts (funsig tf))
         (FUN: transf_fundef f = OK tf)
         (ARGS: Val.lessdef_list args (map (fun p => Locmap.getpair p ls) (loc_arguments (funsig tf))))
         (AG: agree_callee_save (parent_locset ts) ls)
         (MEM: Mem.extends m m')
         (WTARGS: Val.has_type_list args (sig_args (funsig tf))),
-      match_states (RTL.Callstate s f args cp m)
-                   (LTL.Callstate ts tf ls cp m')
+      match_states (RTL.Callstate s f args m)
+                   (LTL.Callstate ts tf ls m')
   | match_states_return:
       forall s res m ts ls m' sg
         (STACKS: match_stackframes s ts sg)
@@ -1974,6 +1974,16 @@ Proof.
   econstructor; eauto.
   unfold proj_sig_res in *. rewrite H0; auto.
   intros. rewrite (loc_result_exten sg' sg) in H by auto. eauto.
+Qed.
+
+Lemma match_stackframes_call_comp:
+  forall s ts sg,
+  match_stackframes s ts sg ->
+  RTL.call_comp s = call_comp ts.
+Proof.
+  intros s ts sg H.
+  destruct H; trivial; simpl.
+  now apply (comp_transl_partial _ FUN).
 Qed.
 
 Ltac UseShape :=
@@ -2322,7 +2332,6 @@ Proof.
   eapply star_right. eexact A1. econstructor; eauto.
   eauto. traceEq.
   exploit analyze_successors; eauto. simpl. left; eauto. intros [enext [U V]].
-  replace (fn_comp tf) with (RTL.fn_comp f) by apply (comp_transl_partial _ FUN).
   econstructor; eauto.
   econstructor; eauto.
   inv WTI. congruence.
@@ -2354,10 +2363,10 @@ Proof.
   eapply star_right. eexact A1. econstructor; eauto.
   rewrite <- E. apply find_function_tailcall; auto.
   rewrite <- (comp_transl_partial _ F), COMP. now apply (comp_transl_partial _ FUN).
+  change tf.(fn_comp) with (comp_of tf). rewrite <- (comp_transl_partial _ FUN). eauto.
   replace (fn_stacksize tf) with (RTL.fn_stacksize f); eauto.
   destruct (transf_function_inv _ _ FUN); auto.
   eauto. traceEq.
-  replace (fn_comp tf) with (RTL.fn_comp f) by apply (comp_transl_partial _ FUN).
   econstructor; eauto.
   eapply match_stackframes_change_sig; eauto. rewrite SIG. rewrite e0. decEq.
   destruct (transf_function_inv _ _ FUN); auto.
@@ -2381,7 +2390,7 @@ Proof.
   eapply star_trans. eexact A1.
   eapply star_left. econstructor.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
-  eapply external_call_symbols_preserved. apply senv_preserved. eauto.
+  eapply external_call_symbols_preserved. apply senv_preserved. rewrite comp_transf_fundef in E. eauto. eauto.
   instantiate (1 := ls2); auto.
   eapply star_right. eexact A3.
   econstructor.
@@ -2476,6 +2485,7 @@ Proof.
   econstructor; split.
   apply plus_one. econstructor; eauto.
   eapply external_call_symbols_preserved with (ge1 := ge); eauto. apply senv_preserved.
+  erewrite <- match_stackframes_call_comp; eauto.
   econstructor; eauto.
   simpl. destruct (loc_result (ef_sig ef)) eqn:RES; simpl.
   rewrite Locmap.gss; auto.
@@ -2507,7 +2517,7 @@ Proof.
   intros. inv H.
   exploit function_ptr_translated; eauto. intros [tf [FIND TR]].
   exploit sig_function_translated; eauto. intros SIG.
-  exists (LTL.Callstate nil tf (Locmap.init Vundef) default_compartment m0); split.
+  exists (LTL.Callstate nil tf (Locmap.init Vundef) m0); split.
   econstructor; eauto.
   eapply (Genv.init_mem_transf_partial TRANSF); eauto.
   rewrite symbols_preserved.
