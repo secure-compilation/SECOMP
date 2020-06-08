@@ -240,8 +240,11 @@ Inductive assign_loc (ce: composite_env) (ty: type) (m: mem) (b: block) (ofs: pt
       Mem.storebytes m b (Ptrofs.unsigned ofs) bytes = Some m' ->
       assign_loc ce ty m b ofs (Vptr b' ofs') m'.
 
+Definition policy := Policy.t (F := function).
+
 Section SEMANTICS.
 
+Variable pol: policy.
 Variable ge: genv.
 
 (** Allocation of function-local variables.
@@ -659,6 +662,7 @@ Inductive step: state -> trace -> state -> Prop :=
 
   | step_internal_function: forall f vargs k m e le m1,
       function_entry f vargs m e le m1 ->
+      forall ALLOWED: Policy.allowed_call pol (call_comp k) f,
       step (Callstate (Internal f) vargs k m)
         E0 (State f f.(fn_body) k e le m1)
 
@@ -705,7 +709,7 @@ Inductive function_entry1 (ge: genv) (f: function) (vargs: list val) (m: mem) (e
       le = create_undef_temps f.(fn_temps) ->
       function_entry1 ge f vargs m e le m'.
 
-Definition step1 (ge: genv) := step ge (function_entry1 ge).
+Definition step1 (pol: policy) (ge: genv) := step pol ge (function_entry1 ge).
 
 (** Second, parameters as temporaries. *)
 
@@ -718,17 +722,21 @@ Inductive function_entry2 (ge: genv)  (f: function) (vargs: list val) (m: mem) (
       bind_parameter_temps f.(fn_params) vargs (create_undef_temps f.(fn_temps)) = Some le ->
       function_entry2 ge f vargs m e le m'.
 
-Definition step2 (ge: genv) := step ge (function_entry2 ge).
+Definition step2 (pol: policy) (ge: genv) := step pol ge (function_entry2 ge).
+
+Section WithPolicy.
+
+Variable pol: policy.
 
 (** Wrapping up these definitions in two small-step semantics. *)
 
 Definition semantics1 (p: program) :=
   let ge := globalenv p in
-  Semantics_gen step1 (initial_state p) final_state ge ge.
+  Semantics_gen (step1 pol) (initial_state p) final_state ge ge.
 
 Definition semantics2 (p: program) :=
   let ge := globalenv p in
-  Semantics_gen step2 (initial_state p) final_state ge ge.
+  Semantics_gen (step2 pol) (initial_state p) final_state ge ge.
 
 (** This semantics is receptive to changes in events. *)
 
@@ -738,7 +746,7 @@ Proof.
   intros. unfold semantics1.
   set (ge := globalenv p). constructor; simpl; intros.
 (* receptiveness *)
-  assert (t1 = E0 -> exists s2, step1 ge s t2 s2).
+  assert (t1 = E0 -> exists s2, step1 pol ge s t2 s2).
     intros. subst. inv H0. exists s1; auto.
   inversion H; subst; auto.
   (* builtin *)
@@ -752,3 +760,5 @@ Proof.
   eapply external_call_trace_length; eauto.
   eapply external_call_trace_length; eauto.
 Qed.
+
+End WithPolicy.
