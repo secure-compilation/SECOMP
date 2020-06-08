@@ -1988,4 +1988,24 @@ End TRANSFORM_TOTAL.
 
 End Genv.
 
+Module Policy.
+Section POLICY.
+
+Variable F: Type.  (**r The type of function descriptions *)
+Context {CF: has_comp F}.
+
+Record t : Type := mkpolicy {
+  policy_export : compartment -> list F; (* The list of exported functions *)
+  policy_import : compartment -> list (compartment * F); (* The list of imported functions and their compartment *)
+  (* Well-formedness conditions on the interface *)
+  export_in_cp: forall cp f, In f (policy_export cp) -> comp_of f = cp;
+  }.
+
+Definition allowed_cross_call (pol: t) (cp: compartment) (f: F) :=
+  In (comp_of f, f) (policy_import pol cp) /\
+  In f (policy_export pol (comp_of f)).
+
+End POLICY.
+End Policy.
+
 Coercion Genv.to_senv: Genv.t >-> Senv.t.
