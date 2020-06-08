@@ -2008,6 +2008,23 @@ Definition allowed_cross_call (pol: t) (cp: compartment) (f: F) :=
 Definition allowed_call (pol: t) (cp: compartment) (f: F) :=
   comp_of f = cp \/ allowed_cross_call pol cp f.
 
+(* TODO: Write the proper definition of these *)
+Axiom allowed_call_b: t -> compartment -> F -> bool.
+Axiom allowed_call_reflect : forall pol cp f,
+    allowed_call pol cp f <-> allowed_call_b pol cp f = true.
+
+(* Definition allowed_cross_call_p (pol: t) (cp: compartment) (f: F) := *)
+(*   if in_dec _ (comp_of f, f) (policy_import pol cp) then *)
+(*     if (in_dec _ f (policy_export pol (comp_of f))) then *)
+(*       true *)
+(*     else false *)
+(*   else false. *)
+
+(* Definition allowed_call_b (pol: t) (cp: compartment) (f: F) := *)
+(*   if peq (comp_of f) cp then *)
+(*     true *)
+(*   else allowed_cross_call_b pol cp f. *)
+
 End POLICY.
 End Policy.
 
