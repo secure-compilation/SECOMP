@@ -90,6 +90,7 @@ Defined.
 
 Section EXEC.
 
+Variable pol: policy.
 Variable ge: genv.
 
 Definition eventval_of_val (v: val) (t: typ) : option eventval :=
@@ -1861,13 +1862,13 @@ Qed.
   whose trace is not accepted by the external world. *)
 
 Definition can_crash_world (w: world) (S: state) : Prop :=
-  exists t, exists S', Csem.step ge S t S' /\ forall w', ~possible_trace w t w'.
+  exists t, exists S', Csem.step pol ge S t S' /\ forall w', ~possible_trace w t w'.
 
 Theorem not_imm_safe_t:
   forall K C a m f k,
   context K RV C ->
   ~imm_safe_t f.(fn_comp) K a m ->
-  Csem.step ge (ExprState f (C a) k e m) E0 Stuckstate \/ can_crash_world w (ExprState f (C a) k e m).
+  Csem.step pol ge (ExprState f (C a) k e m) E0 Stuckstate \/ can_crash_world w (ExprState f (C a) k e m).
 Proof.
   intros. destruct (classic (imm_safe ge e f.(fn_comp) K a m)).
   exploit imm_safe_imm_safe_t; eauto.
@@ -2061,6 +2062,7 @@ Definition do_step (w: world) (s: state) : list transition :=
       end
 
   | Callstate (Internal f) vargs k m =>
+      check (Policy.allowed_call_b pol (call_comp k) f);
       check (list_norepet_dec ident_eq (var_names (fn_params f) ++ var_names (fn_vars f)));
       let (e,m1) := do_alloc_variables empty_env m (f.(fn_params) ++ f.(fn_vars)) in
       do m2 <- sem_bind_parameters w e m1 f.(fn_params) vargs;
@@ -2098,7 +2100,7 @@ Local Hint Extern 3 => exact I : core.
 Theorem do_step_sound:
   forall w S rule t S',
   In (TR rule t S') (do_step w S) ->
-  Csem.step ge S t S' \/ (t = E0 /\ S' = Stuckstate /\ can_crash_world w S).
+  Csem.step pol ge S t S' \/ (t = E0 /\ S' = Stuckstate /\ can_crash_world w S).
 Proof with try (left; right; econstructor; eauto; fail).
   intros until S'. destruct S; simpl.
 (* State *)
@@ -2139,6 +2141,7 @@ Proof with try (left; right; econstructor; eauto; fail).
   myinv. left; right; apply step_internal_function with m1. auto.
   change e with (fst (e,m1)). change m1 with (snd (e,m1)) at 2. rewrite <- Heqp.
   apply do_alloc_variables_sound. eapply sem_bind_parameters_sound; eauto.
+  apply Policy.allowed_call_reflect; auto.
   (* external *)
   destruct p as [[[w' tr] v] m']. myinv. left; right; constructor.
   eapply do_ef_external_sound; eauto.
@@ -2163,7 +2166,7 @@ Qed.
 
 Theorem do_step_complete:
   forall w S t S' w',
-  possible_trace w t w' -> Csem.step ge S t S' -> exists rule, In (TR rule t S') (do_step w S).
+  possible_trace w t w' -> Csem.step pol ge S t S' -> exists rule, In (TR rule t S') (do_step w S).
 Proof with (unfold ret; eauto with coqlib).
   intros until w'; intros PT H.
   destruct H.
@@ -2229,6 +2232,7 @@ Proof with (unfold ret; eauto with coqlib).
   (* Call step *)
   rewrite pred_dec_true; auto. rewrite (do_alloc_variables_complete _ _ _ _ _ H1).
   rewrite (sem_bind_parameters_complete _ _ _ _ _ _ H2)...
+  rewrite ((proj1 (Policy.allowed_call_reflect _ _ _)) ALLOWED)...
   exploit do_ef_external_complete; eauto. intro EQ; rewrite EQ. auto with coqlib.
 Qed.
 
