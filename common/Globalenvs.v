@@ -2005,6 +2005,9 @@ Definition allowed_cross_call (pol: t) (cp: compartment) (f: F) :=
   In (comp_of f, f) (policy_import pol cp) /\
   In f (policy_export pol (comp_of f)).
 
+Definition allowed_call (pol: t) (cp: compartment) (f: F) :=
+  comp_of f = cp \/ allowed_cross_call pol cp f.
+
 End POLICY.
 End Policy.
 
