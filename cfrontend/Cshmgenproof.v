@@ -226,6 +226,7 @@ Section CONSTRUCTORS.
 
 Variables cunit prog: Clight.program.
 Hypothesis LINK: linkorder cunit prog.
+Variable pol: policy.
 Variable ge: genv.
 
 Lemma make_intconst_correct:
@@ -975,7 +976,7 @@ Lemma make_memcpy_correct:
   assign_loc prog.(prog_comp_env) ty m b ofs v m' ->
   access_mode ty = By_copy ->
   make_memcpy cunit.(prog_comp_env) dst src ty = OK s ->
-  step ge (State f s k e le m) E0 (State f Sskip k e le m').
+  step pol ge (State f s k e le m) E0 (State f Sskip k e le m').
 Proof.
   intros. inv H1; try congruence.
   monadInv H3.
@@ -995,7 +996,7 @@ Lemma make_store_correct:
   eval_expr ge e le m addr (Vptr b ofs) ->
   eval_expr ge e le m rhs v ->
   assign_loc prog.(prog_comp_env) ty m b ofs v m' ->
-  step ge (State f code k e le m) E0 (State f Sskip k e le m').
+  step pol ge (State f code k e le m) E0 (State f Sskip k e le m').
 Proof.
   unfold make_store. intros until k; intros MKSTORE EV1 EV2 ASSIGN.
   inversion ASSIGN; subst.
@@ -1036,6 +1037,10 @@ Section CORRECTNESS.
 Variable prog: Clight.program.
 Variable tprog: Csharpminor.program.
 Hypothesis TRANSL: match_prog prog tprog.
+
+Variable pol: Clight.policy.
+Variable tpol: Csharpminor.policy.
+Hypothesis TRANSPOL: Policy.match_pol (fun ctx f tf => transl_function ctx.(prog_comp_env) f = OK tf) prog pol tpol.
 
 Let ge := globalenv prog.
 Let tge := Genv.globalenv tprog.
@@ -1349,7 +1354,7 @@ Inductive match_transl: stmt -> cont -> stmt -> cont -> Prop :=
 Lemma match_transl_step:
   forall ts tk ts' tk' f te le m,
   match_transl (Sblock ts) tk ts' tk' ->
-  star step tge (State f ts' tk' te le m) E0 (State f ts (Kblock tk) te le m).
+  star (step tpol) tge (State f ts' tk' te le m) E0 (State f ts (Kblock tk) te le m).
 Proof.
   intros. inv H.
   apply star_one. constructor.
@@ -1583,9 +1588,9 @@ Qed.
 (** The simulation proof *)
 
 Lemma transl_step:
-  forall S1 t S2, Clight.step2 ge S1 t S2 ->
+  forall S1 t S2, Clight.step2 pol ge S1 t S2 ->
   forall T1, match_states S1 T1 ->
-  exists T2, plus step tge T1 t T2 /\ match_states S2 T2.
+  exists T2, plus (step tpol) tge T1 t T2 /\ match_states S2 T2.
 Proof.
   induction 1; intros T1 MST; inv MST.
 
@@ -1824,6 +1829,8 @@ Proof.
   simpl. assumption.
   simpl; eauto.
   simpl. rewrite create_undef_temps_match. eapply bind_parameter_temps_match; eauto.
+  reflexivity.
+  eapply TRANSPOL. admit. rewrite <- (match_cont_call_comp _ _ _ _ _ _ MK). eauto. 
   simpl. econstructor; eauto.
   unfold transl_function. rewrite EQ; simpl. rewrite EQ1; simpl. auto.
   constructor.
@@ -1855,7 +1862,7 @@ Proof.
     simpl. apply H13. eauto. apply PTree.gss.
     traceEq.
     simpl. rewrite PTree.set2. econstructor; eauto. simpl; reflexivity. constructor.
-Qed.
+Admitted.
 
 Lemma transl_initial_states:
   forall S, Clight.initial_state prog S ->
@@ -1880,7 +1887,7 @@ Proof.
 Qed.
 
 Theorem transl_program_correct:
-  forward_simulation (Clight.semantics2 prog) (Csharpminor.semantics tprog).
+  forward_simulation (Clight.semantics2 pol prog) (Csharpminor.semantics tpol tprog).
 Proof.
   eapply forward_simulation_plus.
   apply senv_preserved.

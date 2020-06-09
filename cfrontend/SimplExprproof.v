@@ -49,7 +49,7 @@ Section PRESERVATION.
 
 Variable pol: Csem.policy.
 Variable tpol: Clight.policy.
-Hypothesis TRANSPOL: Policy.match_pol tr_function pol tpol.
+Hypothesis TRANSPOL: match_pol tr_function pol tpol.
 
 Variable prog: Csyntax.program.
 Variable tprog: Clight.program.

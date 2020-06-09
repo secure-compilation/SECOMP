@@ -49,7 +49,7 @@ Section PRESERVATION.
 
 Variable pol: policy.
 Variable tpol: policy.
-Hypothesis TRANSPOL: Policy.match_pol (fun f tf => transf_function f = OK tf) pol tpol.
+Hypothesis TRANSPOL: match_pol (fun f tf => transf_function f = OK tf) pol tpol.
 
 Variable prog: program.
 Variable tprog: program.

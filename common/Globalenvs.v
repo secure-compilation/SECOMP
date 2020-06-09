@@ -2029,21 +2029,26 @@ End POLICY.
 
 Section MATCH_POLICIES.
 
-Context {F1 F2: Type}.
+Context {C F1 F2: Type}.
 Context {CF1: has_comp F1} {CF2: has_comp F2}.
-Variable match_fundef: F1 -> F2 -> Prop.
-Context {match_fundef_comp: forall C, has_comp_match (fun (ctx: C) f1 f2 => match_fundef f1 f2)}.
+Variable match_fundef: C -> F1 -> F2 -> Prop.
+Context {match_fundef_comp: has_comp_match (fun ctx f1 f2 => match_fundef ctx f1 f2)}.
 
 (* The definition of matching policies between languages must depend on how the function names are
  compiled *)
-Definition match_pol  (pol: t (F := F1)) (tpol: t (F := F2)) :=
+Definition match_pol (ctx: C) (pol: t (F := F1)) (tpol: t (F := F2)) :=
   forall f tf,
-    match_fundef f tf ->
+    match_fundef ctx f tf ->
     forall cp,
       allowed_call pol cp f <-> allowed_call tpol cp tf.
-
 
 End MATCH_POLICIES.
 End Policy.
 
 Coercion Genv.to_senv: Genv.t >-> Senv.t.
+
+(* A definition that ignores the context *)
+Definition match_pol {F1 F2: Type} {CF1: has_comp F1} {CF2: has_comp F2}
+           (match_fundef: F1 -> F2 -> Prop)
+           (f1: Policy.t (F := F1)) (f2: Policy.t (F := F2)) : Prop :=
+  Policy.match_pol (fun _: unit => match_fundef) tt f1 f2.
