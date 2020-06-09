@@ -190,6 +190,9 @@ Definition funsig (fd: fundef) :=
 Definition genv := Genv.t fundef unit.
 Definition env := PTree.t val.
 
+(* Policies are defined as usual *)
+Definition policy := Policy.t (F := function).
+
 (** The following functions build the initial local environment at
   function entry, binding parameters to the provided arguments and
   initializing local variables to [Vundef]. *)
@@ -247,6 +250,7 @@ Inductive state: Type :=
 
 Section RELSEM.
 
+Variable pol: policy.
 Variable ge: genv.
 
 (** Evaluation of constants and operator applications.
@@ -543,9 +547,11 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Sgoto lbl) k sp e m)
         E0 (State f s' k' sp e m)
 
-  | step_internal_function: forall f vargs k m m' sp e,
+  | step_internal_function: forall cp f vargs k m m' sp e,
       Mem.alloc m f.(fn_comp) 0 f.(fn_stackspace) = (m', sp) ->
       set_locals f.(fn_vars) (set_params vargs f.(fn_params)) = e ->
+      cp = call_comp k ->
+      forall ALLOWED: Policy.allowed_call pol cp f,
       step (Callstate (Internal f) vargs k m)
         E0 (State f f.(fn_body) k (Vptr sp Ptrofs.zero) e m')
   | step_external_function: forall ef vargs k m t vres m',
@@ -581,17 +587,17 @@ Inductive final_state: state -> int -> Prop :=
 
 (** The corresponding small-step semantics. *)
 
-Definition semantics (p: program) :=
-  Semantics step (initial_state p) final_state (Genv.globalenv p).
+Definition semantics (pol: policy) (p: program) :=
+  Semantics (step pol) (initial_state p) final_state (Genv.globalenv p).
 
 (** This semantics is receptive to changes in events. *)
 
 Lemma semantics_receptive:
-  forall (p: program), receptive (semantics p).
+  forall (pol: policy) (p: program), receptive (semantics pol p).
 Proof.
   intros. constructor; simpl; intros.
 (* receptiveness *)
-  assert (t1 = E0 -> exists s2, step (Genv.globalenv p) s t2 s2).
+  assert (t1 = E0 -> exists s2, step pol (Genv.globalenv p) s t2 s2).
     intros. subst. inv H0. exists s1; auto.
   inversion H; subst; auto.
   exploit external_call_receptive; eauto. intros [vres2 [m2 EC2]].
@@ -642,7 +648,7 @@ Ltac Determ :=
   end.
 
 Lemma semantics_determinate:
-  forall (p: program), determinate (semantics p).
+  forall (pol: policy) (p: program), determinate (semantics pol p).
 Proof.
   intros. constructor; set (ge := Genv.globalenv p); simpl; intros.
 - (* determ *)
@@ -718,6 +724,7 @@ Definition outcome_free_mem
 
 Section NATURALSEM.
 
+Variable pol: policy.
 Variable ge: genv.
 
 (** Evaluation of a function invocation: [eval_funcall ge cp m f args t m' res]
@@ -737,6 +744,7 @@ Inductive eval_funcall:
       exec_stmt f (Vptr sp Ptrofs.zero) e m1 f.(fn_body) t e2 m2 out ->
       outcome_result_value out vres ->
       outcome_free_mem out m2 sp f.(fn_stackspace) m3 ->
+      forall ALLOWED: Policy.allowed_call pol cp f,
       eval_funcall cp m (Internal f) vargs t m3 vres
   | eval_funcall_external:
       forall ef cp m args t res m',
@@ -856,13 +864,14 @@ Combined Scheme eval_funcall_exec_stmt_ind2
 *)
 
 CoInductive evalinf_funcall:
-        mem -> fundef -> list val -> traceinf -> Prop :=
+        compartment -> mem -> fundef -> list val -> traceinf -> Prop :=
   | evalinf_funcall_internal:
-      forall m f vargs m1 sp e t,
+      forall cp m f vargs m1 sp e t,
       Mem.alloc m f.(fn_comp) 0 f.(fn_stackspace) = (m1, sp) ->
       set_locals f.(fn_vars) (set_params vargs f.(fn_params)) = e ->
       execinf_stmt f (Vptr sp Ptrofs.zero) e m1 f.(fn_body) t ->
-      evalinf_funcall m (Internal f) vargs t
+      forall ALLOWED: Policy.allowed_call pol cp f,
+      evalinf_funcall cp m (Internal f) vargs t
 
 (** [execinf_stmt ge sp e m s t] means that statement [s] diverges.
   [e] is the initial environment, [m] is the initial memory state,
@@ -871,12 +880,13 @@ CoInductive evalinf_funcall:
 with execinf_stmt:
          function -> val -> env -> mem -> stmt -> traceinf -> Prop :=
   | execinf_Scall:
-      forall f sp e m optid sig a bl vf vargs fd t,
+      forall cp f sp e m optid sig a bl vf vargs fd t,
       eval_expr ge sp e m a vf ->
       eval_exprlist ge sp e m bl vargs ->
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
-      evalinf_funcall m fd vargs t ->
+      evalinf_funcall cp m fd vargs t ->
+      cp = f.(fn_comp) ->
       execinf_stmt f sp e m (Scall optid sig a bl) t
   | execinf_Sifthenelse:
       forall f sp e m a s1 s2 v b t,
@@ -917,14 +927,14 @@ with execinf_stmt:
       forall (COMP: comp_of fd = f.(fn_comp)),
       forall (ALLOWED: needs_calling_comp f.(fn_comp) = false),
       Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
-      evalinf_funcall  m' fd vargs t ->
+      evalinf_funcall  f.(fn_comp) m' fd vargs t ->
       execinf_stmt f (Vptr sp Ptrofs.zero) e m (Stailcall sig a bl) t.
 
 End NATURALSEM.
 
 (** Big-step execution of a whole program *)
 
-Inductive bigstep_program_terminates (p: program): trace -> int -> Prop :=
+Inductive bigstep_program_terminates (pol: policy) (p: program): trace -> int -> Prop :=
   | bigstep_program_terminates_intro:
       forall b f m0 t m r,
       let ge := Genv.globalenv p in
@@ -932,10 +942,10 @@ Inductive bigstep_program_terminates (p: program): trace -> int -> Prop :=
       Genv.find_symbol ge p.(prog_main) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
       funsig f = signature_main ->
-      eval_funcall ge default_compartment m0 f nil t m (Vint r) ->
-      bigstep_program_terminates p t r.
+      eval_funcall pol ge default_compartment m0 f nil t m (Vint r) ->
+      bigstep_program_terminates pol p t r.
 
-Inductive bigstep_program_diverges (p: program): traceinf -> Prop :=
+Inductive bigstep_program_diverges (pol: policy) (p: program): traceinf -> Prop :=
   | bigstep_program_diverges_intro:
       forall b f m0 t,
       let ge := Genv.globalenv p in
@@ -943,16 +953,17 @@ Inductive bigstep_program_diverges (p: program): traceinf -> Prop :=
       Genv.find_symbol ge p.(prog_main) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
       funsig f = signature_main ->
-      evalinf_funcall ge m0 f nil t ->
-      bigstep_program_diverges p t.
+      evalinf_funcall pol ge default_compartment m0 f nil t ->
+      bigstep_program_diverges pol p t.
 
-Definition bigstep_semantics (p: program) :=
-  Bigstep_semantics (bigstep_program_terminates p) (bigstep_program_diverges p).
+Definition bigstep_semantics (pol: policy) (p: program) :=
+  Bigstep_semantics (bigstep_program_terminates pol p) (bigstep_program_diverges pol p).
 
 (** ** Correctness of the big-step semantics with respect to the transition semantics *)
 
 Section BIGSTEP_TO_TRANSITION.
 
+Variable pol: policy.
 Variable prog: program.
 Let ge := Genv.globalenv prog.
 
@@ -997,17 +1008,17 @@ Qed.
 
 Lemma eval_funcall_exec_stmt_steps:
   (forall cp m fd args t m' res,
-   eval_funcall ge cp m fd args t m' res ->
+   eval_funcall pol ge cp m fd args t m' res ->
    forall k,
    forall UPD: uptodate_caller (comp_of fd) cp (call_comp k),
    is_call_cont k ->
-   star step ge (Callstate fd args k m)
+   star (step pol) ge (Callstate fd args k m)
               t (Returnstate res k m'))
 /\(forall f sp e m s t e' m' out,
-   exec_stmt ge f sp e m s t e' m' out ->
+   exec_stmt pol ge f sp e m s t e' m' out ->
    forall k,
    exists S,
-   star step ge (State f s k sp e m) t S
+   star (step pol) ge (State f s k sp e m) t S
    /\ outcome_state_match sp e' m' f k out S).
 Proof.
   apply eval_funcall_exec_stmt_ind2; intros.
@@ -1016,6 +1027,8 @@ Proof.
   destruct (H2 k) as [S [A B]].
   assert (call_cont k = k) by (apply call_cont_is_call_cont; auto).
   eapply star_left. econstructor; eauto.
+  unfold uptodate_caller in UPD. 
+  rewrite <- UPD. eauto. admit.
   eapply star_trans. eexact A.
   inversion B; clear B; subst out; simpl in H3; simpl; try contradiction.
   (* Out normal *)
@@ -1160,43 +1173,43 @@ Proof.
   { red. now rewrite COMP, ALLOWED. }
   traceEq.
   econstructor.
-Qed.
+Admitted.
 
 Lemma eval_funcall_steps:
    forall cp m fd args t m' res,
-   eval_funcall ge cp m fd args t m' res ->
+   eval_funcall pol ge cp m fd args t m' res ->
    forall k,
    forall COMP: uptodate_caller (comp_of fd) cp (call_comp k),
    is_call_cont k ->
-   star step ge (Callstate fd args k m)
+   star (step pol) ge (Callstate fd args k m)
               t (Returnstate res k m').
 Proof. exact (proj1 eval_funcall_exec_stmt_steps). Qed.
 
 Lemma exec_stmt_steps:
    forall f sp e m s t e' m' out,
-   exec_stmt ge f sp e m s t e' m' out ->
+   exec_stmt pol ge f sp e m s t e' m' out ->
    forall k,
    exists S,
-   star step ge (State f s k sp e m) t S
+   star (step pol) ge (State f s k sp e m) t S
    /\ outcome_state_match sp e' m' f k out S.
 Proof. exact (proj2 eval_funcall_exec_stmt_steps). Qed.
 
 Lemma evalinf_funcall_forever:
-  forall m fd args T k,
-  evalinf_funcall ge m fd args T ->
-  forever_plus step ge (Callstate fd args k m) T.
+  forall cp m fd args T k,
+  evalinf_funcall pol ge cp m fd args T ->
+  forever_plus (step pol) ge (Callstate fd args k m) T.
 Proof.
   cofix CIH_FUN.
   assert (forall sp e m s T f k,
-          execinf_stmt ge f sp e m s T ->
-          forever_plus step ge (State f s k sp e m) T).
+          execinf_stmt pol ge f sp e m s T ->
+          forever_plus (step pol) ge (State f s k sp e m) T).
   cofix CIH_STMT.
   intros. inv H.
 
 (* call *)
   eapply forever_plus_intro.
   apply plus_one. econstructor; eauto.
-  apply CIH_FUN. eauto. traceEq.
+  eapply CIH_FUN. eauto. traceEq.
 
 (* ifthenelse *)
   eapply forever_plus_intro with (s2 := State f (if b then s1 else s2) k sp e m).
@@ -1239,18 +1252,19 @@ Proof.
 (* tailcall *)
   eapply forever_plus_intro.
   apply plus_one. econstructor; eauto.
-  apply CIH_FUN. eauto. traceEq.
+  eapply CIH_FUN. eauto. traceEq.
 
 (* function call *)
   intros. inv H0.
   eapply forever_plus_intro.
   apply plus_one. econstructor; eauto.
+  admit.
   eapply H. eauto.
   traceEq.
-Qed.
+Admitted.
 
 Theorem bigstep_semantics_sound:
-  bigstep_sound (bigstep_semantics prog) (semantics prog).
+  bigstep_sound (bigstep_semantics pol prog) (semantics pol prog).
 Proof.
   constructor; intros.
 (* termination *)
