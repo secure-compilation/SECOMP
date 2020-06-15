@@ -56,6 +56,10 @@ Hypothesis TRANSL: match_prog prog tprog.
 Let ge : Csharpminor.genv := Genv.globalenv prog.
 Let tge: genv := Genv.globalenv tprog.
 
+Variable pol: Csharpminor.policy.
+Variable tpol: policy.
+Hypothesis TRANSPOL: match_pol (fun f tf => transl_fundef f = OK tf) pol tpol.
+
 Lemma symbols_preserved:
   forall (s: ident), Genv.find_symbol tge s = Genv.find_symbol ge s.
 Proof (Genv.find_symbol_transf_partial TRANSL).
@@ -1682,7 +1686,7 @@ Lemma match_is_call_cont:
   match_cont k tk cenv xenv cs ->
   Csharpminor.is_call_cont k ->
   exists tk',
-    star step tge (State tfn Sskip tk sp te tm)
+    star (step tpol) tge (State tfn Sskip tk sp te tm)
                E0 (State tfn Sskip tk' sp te tm)
     /\ is_call_cont tk'
     /\ match_cont k tk' cenv nil cs.
@@ -1776,7 +1780,7 @@ Lemma switch_descent:
   exists k',
   transl_lblstmt_cont cenv xenv ls k k'
   /\ (forall f sp e m,
-      plus step tge (State f s k sp e m) E0 (State f body k' sp e m)).
+      plus (step tpol) tge (State f s k sp e m) E0 (State f body k' sp e m)).
 Proof.
   induction ls; intros.
 - monadInv H. econstructor; split.
@@ -1796,7 +1800,7 @@ Lemma switch_ascent:
   forall k k1,
   transl_lblstmt_cont cenv xenv ls k k1 ->
   exists k2,
-  star step tge (State f (Sexit n) k1 sp e m)
+  star (step tpol) tge (State f (Sexit n) k1 sp e m)
              E0 (State f (Sexit O) k2 sp e m)
   /\ transl_lblstmt_cont cenv xenv ls' k k2.
 Proof.
@@ -1830,7 +1834,7 @@ Lemma switch_match_states:
     (MK: match_cont k tk cenv xenv cs)
     (TK: transl_lblstmt_cont cenv xenv ls tk tk'),
   exists S,
-  plus step tge (State tfn (Sexit O) tk' (Vptr sp Ptrofs.zero) te tm) E0 S
+  plus (step tpol) tge (State tfn (Sexit O) tk' (Vptr sp Ptrofs.zero) te tm) E0 S
   /\ match_states (Csharpminor.State fn (seq_of_lbl_stmt ls) k e le m) S.
 Proof.
   intros. inv TK.
@@ -1975,9 +1979,9 @@ Definition measure (S: Csharpminor.state) : nat :=
   end.
 
 Lemma transl_step_correct:
-  forall S1 t S2, Csharpminor.step ge S1 t S2 ->
+  forall S1 t S2, Csharpminor.step pol ge S1 t S2 ->
   forall T1, match_states S1 T1 ->
-  (exists T2, plus step tge T1 t T2 /\ match_states S2 T2)
+  (exists T2, plus (step tpol) tge T1 t T2 /\ match_states S2 T2)
   \/ (measure S2 < measure S1 /\ t = E0 /\ match_states S2 T1)%nat.
 Proof.
   induction 1; intros T1 MSTATE; inv MSTATE.
@@ -2049,6 +2053,8 @@ Proof.
   left; econstructor; split.
   apply plus_one. eapply step_call; eauto.
   apply sig_preserved; eauto.
+  eapply TRANSPOL. eauto.
+  change (fn_comp tfn) with (comp_of tfn). rewrite <- (comp_transl_partial _ TRF). eauto.
   econstructor; eauto.
   eapply match_Kcall with (cenv' := cenv); eauto.
   red; auto.
@@ -2207,7 +2213,7 @@ Opaque PTree.set.
   exploit match_callstack_function_entry; eauto. simpl; eauto. simpl; auto.
   intros [f2 [MCS2 MINJ2]].
   left; econstructor; split.
-  apply plus_one. constructor; simpl; eauto.
+  apply plus_one. econstructor; simpl; eauto.
   econstructor. eexact TRBODY. eauto. eexact MINJ2. eexact MCS2.
   inv MK; simpl in ISCC; contradiction || econstructor; eauto.
 
@@ -2282,7 +2288,7 @@ Proof.
 Qed.
 
 Theorem transl_program_correct:
-  forward_simulation (Csharpminor.semantics prog) (Cminor.semantics tprog).
+  forward_simulation (Csharpminor.semantics pol prog) (Cminor.semantics tpol tprog).
 Proof.
   eapply forward_simulation_star; eauto.
   apply senv_preserved.

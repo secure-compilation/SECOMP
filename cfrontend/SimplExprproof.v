@@ -49,7 +49,7 @@ Section PRESERVATION.
 
 Variable pol: Csem.policy.
 Variable tpol: Clight.policy.
-Hypothesis TRANSPOL: match_pol tr_function pol tpol.
+Hypothesis TRANSPOL: match_pol tr_fundef pol tpol.
 
 Variable prog: Csyntax.program.
 Variable tprog: Clight.program.
@@ -1454,7 +1454,7 @@ Proof.
 Qed.
 
 Lemma estep_simulation:
-  forall S1 t S2, Cstrategy.estep ge S1 t S2 ->
+  forall S1 t S2, Cstrategy.estep pol ge S1 t S2 ->
   forall S1' (MS: match_states S1 S1'),
   exists S2',
      (plus (step1 tpol) tge S1' t S2' \/
@@ -1934,6 +1934,10 @@ Proof.
   left. eapply plus_left. constructor.  apply star_one.
   econstructor; eauto. rewrite <- TY1; eauto.
   exploit type_of_fundef_preserved; eauto. congruence.
+  eapply TRANSPOL; eauto.
+  assert (COMP: tf.(fn_comp) = f.(Csyntax.fn_comp)).
+  { now match goal with H : tr_function _ _ |- _ => inv H end. }
+  now rewrite COMP.
   traceEq.
   constructor; auto. econstructor; eauto.
   intros. change sl2 with (nil ++ sl2). apply S.
@@ -1947,10 +1951,13 @@ Proof.
   left. eapply plus_left. constructor.  apply star_one.
   econstructor; eauto. rewrite <- TY1; eauto.
   exploit type_of_fundef_preserved; eauto. congruence.
+  eapply TRANSPOL. eauto. 
+  assert (COMP: tf.(fn_comp) = f.(Csyntax.fn_comp)).
+  { now match goal with H : tr_function _ _ |- _ => inv H end. }
+  now rewrite COMP.
   traceEq.
   constructor; auto. econstructor; eauto.
-  intros. apply S.
-  destruct dst'; constructor.
+  intros. apply S. destruct dst'; constructor.
   auto. intros. constructor. rewrite H5; auto. apply PTree.gss.
   auto. intros. constructor. rewrite H5; auto. apply PTree.gss.
   intros. apply PTree.gso. intuition congruence.
@@ -2027,7 +2034,7 @@ Proof.
 Qed.
 
 Lemma sstep_simulation:
-  forall S1 t S2, Csem.sstep pol ge S1 t S2 ->
+  forall S1 t S2, Csem.sstep ge S1 t S2 ->
   forall S1' (MS: match_states S1 S1'),
   exists S2',
      (plus (step1 tpol) tge S1' t S2' \/
@@ -2282,7 +2289,6 @@ Proof.
   rewrite H7; rewrite H9. eapply alloc_variables_preserved; eauto.
   rewrite H7. eapply bind_parameters_preserved; eauto.
   eauto.
-  eapply TRANSPOL; eauto. erewrite <- match_cont_call_comp; eauto.
   constructor; auto.
 
 (* external function *)

@@ -91,13 +91,14 @@ Inductive exec_stmt: env -> compartment -> temp_env ->
       eval_expr ge e le m a v ->
       exec_stmt e c le m (Sset id a)
                E0 (PTree.set id v le) m Out_normal
-  | exec_Scall:   forall e le m optid a al tyargs tyres cconv vf vargs c f t m' vres,
+  | exec_Scall:   forall e le m optid a al tyargs tyres cconv vf vargs c fd t m' vres,
       classify_fun (typeof a) = fun_case_f tyargs tyres cconv ->
       eval_expr ge e le m a vf ->
       eval_exprlist ge e le m al tyargs vargs ->
-      Genv.find_funct ge vf = Some f ->
-      type_of_fundef f = Tfunction tyargs tyres cconv ->
-      eval_funcall c m f vargs t m' vres ->
+      Genv.find_funct ge vf = Some fd ->
+      type_of_fundef fd = Tfunction tyargs tyres cconv ->
+      eval_funcall c m fd vargs t m' vres ->
+      forall (ALLOWED: Policy.allowed_call pol c fd),
       exec_stmt e c le m (Scall optid a al)
                 t (set_opttemp optid vres le) m' Out_normal
   | exec_Sbuiltin:   forall e c le m optid ef al tyargs vargs t m' vres,
@@ -172,7 +173,6 @@ with eval_funcall: compartment -> mem -> fundef -> list val -> trace -> mem -> v
       exec_stmt e f.(fn_comp) (create_undef_temps f.(fn_temps)) m2 f.(fn_body) t le m3 out ->
       outcome_result_value out f.(fn_return) vres m3 ->
       Mem.free_list m3 (blocks_of_env ge e) = Some m4 ->
-      forall ALLOWED: Policy.allowed_call pol c f,
       eval_funcall c m (Internal f) vargs t m4 vres
   | eval_funcall_external: forall c m ef targs tres cconv vargs t vres m',
       external_call ef ge c vargs m t vres m' ->
@@ -196,7 +196,8 @@ CoInductive execinf_stmt: env -> compartment -> temp_env -> mem -> statement -> 
       eval_exprlist ge e le m al tyargs vargs ->
       Genv.find_funct ge vf = Some f ->
       type_of_fundef f = Tfunction tyargs tyres cconv ->
-      evalinf_funcall c m f vargs t ->
+      evalinf_funcall m f vargs t ->
+      forall (ALLOWED: Policy.allowed_call pol c f),
       execinf_stmt e c le m (Scall optid a al) t
   | execinf_Sseq_1:   forall e c le m s1 s2 t,
       execinf_stmt e c le m s1 t ->
@@ -233,14 +234,13 @@ CoInductive execinf_stmt: env -> compartment -> temp_env -> mem -> statement -> 
 (** [evalinf_funcall ge m fd args t] holds if the invocation of function
     [fd] on arguments [args] diverges, with observable trace [t]. *)
 
-with evalinf_funcall: compartment -> mem -> fundef -> list val -> traceinf -> Prop :=
-  | evalinf_funcall_internal: forall cp m f vargs t e m1 m2,
+with evalinf_funcall: mem -> fundef -> list val -> traceinf -> Prop :=
+  | evalinf_funcall_internal: forall m f vargs t e m1 m2,
       alloc_variables ge empty_env m (f.(fn_params) ++ f.(fn_vars)) e m1 ->
       list_norepet (var_names f.(fn_params) ++ var_names f.(fn_vars)) ->
       bind_parameters ge e m1 f.(fn_params) vargs m2 ->
       execinf_stmt e f.(fn_comp) (create_undef_temps f.(fn_temps)) m2 f.(fn_body) t ->
-      forall ALLOWED: Policy.allowed_call pol cp f,
-      evalinf_funcall cp m (Internal f) vargs t.
+      evalinf_funcall m (Internal f) vargs t.
 
 End BIGSTEP.
 
@@ -256,19 +256,19 @@ Inductive bigstep_program_terminates (pol: policy) (p: program) (c: compartment)
       eval_funcall pol ge c m0 f nil t m1 (Vint r) ->
       bigstep_program_terminates pol p c t r.
 
-Inductive bigstep_program_diverges (pol: policy) (p: program) (c: compartment): traceinf -> Prop :=
+Inductive bigstep_program_diverges (pol: policy) (p: program): traceinf -> Prop :=
   | bigstep_program_diverges_intro: forall b f m0 t,
       let ge := globalenv p in
       Genv.init_mem p = Some m0 ->
       Genv.find_symbol ge p.(prog_main) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
       type_of_fundef f = Tfunction Tnil type_int32s cc_default ->
-      evalinf_funcall pol ge c m0 f nil t ->
-      bigstep_program_diverges pol p c t.
+      evalinf_funcall pol ge m0 f nil t ->
+      bigstep_program_diverges pol p t.
 
 Definition bigstep_semantics (pol: policy) (p: program) :=
   Bigstep_semantics (bigstep_program_terminates pol p default_compartment)
-                    (bigstep_program_diverges pol p default_compartment).
+                    (bigstep_program_diverges pol p).
 
 (** * Implication from big-step semantics to transition semantics *)
 
@@ -331,6 +331,7 @@ Proof.
 (* call *)
   econstructor; split.
   eapply star_left. econstructor; eauto.
+  rewrite <- H6; auto.
   eapply star_right. apply H5; eauto. simpl; auto. econstructor. reflexivity. traceEq.
   constructor.
 
@@ -462,7 +463,6 @@ Proof.
 (* call internal *)
   destruct (H3 f k) as [S1 [A1 B1]]. reflexivity.
   eapply star_left. eapply step_internal_function; eauto. econstructor; eauto.
-  rewrite <- COMP; eauto.
   eapply star_right. eexact A1.
    inv B1; simpl in H4; try contradiction.
   (* Out_normal *)
@@ -510,7 +510,7 @@ Definition order (x y: unit) := False.
 Lemma evalinf_funcall_forever:
   forall cp m fd args T k,
   forall KCOMP: cp = call_comp k,
-  evalinf_funcall pol ge cp m fd args T ->
+  evalinf_funcall pol ge m fd args T ->
   forever_N (step1 pol) order ge tt (Callstate fd args k m) T.
 Proof.
   cofix CIH_FUN.

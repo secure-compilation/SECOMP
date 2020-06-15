@@ -40,7 +40,7 @@ Definition env := PTree.t (block * type). (* map variable -> location & type *)
 
 Definition empty_env: env := (PTree.empty (block * type)).
 
-Definition policy := Policy.t (F := function).
+Definition policy := Policy.t (F := fundef).
 
 Section SEMANTICS.
 
@@ -315,6 +315,7 @@ Inductive callred: expr -> mem -> fundef -> list val -> type -> Prop :=
       cast_arguments m el tyargs vargs ->
       type_of_fundef fd = Tfunction tyargs tyres cconv ->
       classify_fun tyf = fun_case_f tyargs tyres cconv ->
+      forall (ALLOWED: Policy.allowed_call pol cp fd),
       callred (Ecall (Eval vf tyf) el ty) m
               fd vargs ty.
 
@@ -424,6 +425,7 @@ Inductive imm_safe: kind -> expr -> mem -> Prop :=
   | imm_safe_callred: forall to C e m fd args ty,
       callred e m fd args ty ->
       context RV to C ->
+      forall (ALLOWED: Policy.allowed_call pol cp fd),
       imm_safe to (C e) m.
 
 Definition not_stuck (e: expr) (m: mem) : Prop :=
@@ -646,7 +648,7 @@ Inductive estep: state -> trace -> state -> Prop :=
           t (ExprState f (C a') k e m')
 
   | step_call: forall C f a k e m fd vargs ty,
-      callred a m fd vargs ty ->
+      callred f.(fn_comp) a m fd vargs ty ->
       context RV RV C ->
       estep (ExprState f (C a) k e m)
          E0 (Callstate fd vargs (Kcall f e C ty k) m)
@@ -796,7 +798,6 @@ Inductive sstep: state -> trace -> state -> Prop :=
       list_norepet (var_names (fn_params f) ++ var_names (fn_vars f)) ->
       alloc_variables empty_env m (f.(fn_params) ++ f.(fn_vars)) e m1 ->
       bind_parameters e m1 f.(fn_params) vargs m2 ->
-      forall ALLOWED: Policy.allowed_call pol (call_comp k) f,
       sstep (Callstate (Internal f) vargs k m)
          E0 (State f f.(fn_body) k e m2)
 
@@ -836,19 +837,15 @@ Inductive final_state: state -> int -> Prop :=
   | final_state_intro: forall r m,
       final_state (Returnstate (Vint r) Kstop m) r.
 
-Section WithPolicy.
-
-Variable pol: policy.
-
 (** Wrapping up these definitions in a small-step semantics. *)
 
-Definition semantics (p: program) :=
+Definition semantics (pol: policy) (p: program) :=
   Semantics_gen (step pol) (initial_state p) final_state (globalenv p) (globalenv p).
 
 (** This semantics has the single-event property. *)
 
-Lemma semantics_single_events:
-  forall p, single_events (semantics p).
+Lemma semantics_single_events (pol: policy) :
+  forall p, single_events (semantics pol p).
 Proof.
   unfold semantics; intros; red; simpl; intros.
   set (ge := globalenv p) in *.
@@ -861,5 +858,3 @@ Proof.
   eapply external_call_trace_length; eauto.
   inv H; simpl; try omega. eapply external_call_trace_length; eauto.
 Qed.
-
-End WithPolicy.

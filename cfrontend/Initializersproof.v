@@ -256,7 +256,7 @@ Qed.
 Lemma compat_eval_steps_aux f r e m r' m' s2 :
   simple r ->
   star (step pol) ge s2 nil (ExprState f r' Kstop e m') ->
-  estep ge (ExprState f r Kstop e m) nil s2 ->
+  estep pol ge (ExprState f r Kstop e m) nil s2 ->
   exists r1,
     s2 = ExprState f r1 Kstop e m /\
     compat_eval RV e r r1 m /\ simple r1.

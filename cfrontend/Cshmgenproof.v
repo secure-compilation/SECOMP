@@ -1040,7 +1040,7 @@ Hypothesis TRANSL: match_prog prog tprog.
 
 Variable pol: Clight.policy.
 Variable tpol: Csharpminor.policy.
-Hypothesis TRANSPOL: Policy.match_pol (fun ctx f tf => transl_function ctx.(prog_comp_env) f = OK tf) prog pol tpol.
+Hypothesis TRANSPOL: Policy.match_pol match_fundef prog pol tpol.
 
 Let ge := globalenv prog.
 Let tge := Genv.globalenv tprog.
@@ -1638,6 +1638,8 @@ Proof.
     apply plus_one. eapply step_call; eauto.
     eapply transl_expr_correct with (cunit := cu); eauto.
     eapply transl_arglist_correct with (cunit := cu); eauto.
+    (* eapply TRANSPOL with the correct value for the context *)
+    admit.
     econstructor; eauto.
     eapply match_Kcall with (ce := prog_comp_env cu') (cu := cu); eauto.
     exact I.
@@ -1647,6 +1649,8 @@ Proof.
     eapply plus_two. apply step_seq. eapply step_call; eauto. 
     eapply transl_expr_correct with (cunit := cu); eauto.
     eapply transl_arglist_correct with (cunit := cu); eauto.
+    (* eapply TRANSPOL with the correct value for the context *)
+    admit.
     traceEq.
     econstructor; eauto.
     eapply match_Kcall_normalize  with (ce := prog_comp_env cu') (cu := cu); eauto.
@@ -1829,8 +1833,6 @@ Proof.
   simpl. assumption.
   simpl; eauto.
   simpl. rewrite create_undef_temps_match. eapply bind_parameter_temps_match; eauto.
-  reflexivity.
-  eapply TRANSPOL. admit. rewrite <- (match_cont_call_comp _ _ _ _ _ _ MK). eauto. 
   simpl. econstructor; eauto.
   unfold transl_function. rewrite EQ; simpl. rewrite EQ1; simpl. auto.
   constructor.

@@ -2118,7 +2118,7 @@ Qed.
 End WT_FIND_LABEL.
 
 Lemma preservation_estep:
-  forall S t S', estep ge S t S' -> wt_state S -> wt_state S'.
+  forall S t S', estep pol ge S t S' -> wt_state S -> wt_state S'.
 Proof.
   induction 1; intros WT; inv WT.
 - (* lred *)
@@ -2150,7 +2150,7 @@ Proof.
 Qed.
 
 Lemma preservation_sstep:
-  forall S t S', sstep pol ge S t S' -> wt_state S -> wt_state S'.
+  forall S t S', sstep ge S t S' -> wt_state S -> wt_state S'.
 Proof.
   induction 1; intros WT; inv WT.
 - inv WTS; eauto with ty.

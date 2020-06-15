@@ -370,6 +370,7 @@ Inductive estep: state -> trace -> state -> Prop :=
       eval_simple_list e m rargs targs vargs ->
       Genv.find_funct ge vf = Some fd ->
       type_of_fundef fd = Tfunction targs tres cconv ->
+      forall (ALLOWED: Policy.allowed_call pol f.(fn_comp) fd),
       estep (ExprState f (C (Ecall rf rargs ty)) k e m)
          E0 (Callstate fd vargs (Kcall f e C ty k) m)
 
@@ -381,7 +382,7 @@ Inductive estep: state -> trace -> state -> Prop :=
           t (ExprState f (C (Eval vres ty)) k e m').
 
 Definition step (S: state) (t: trace) (S': state) : Prop :=
-  estep S t S' \/ sstep pol ge S t S'.
+  estep S t S' \/ sstep ge S t S'.
 
 (** Properties of contexts *)
 
@@ -439,9 +440,9 @@ Lemma safe_imm_safe:
   forall f C a k e m K,
   safe (ExprState f (C a) k e m) ->
   context K RV C ->
-  imm_safe ge e f.(fn_comp) K a m.
+  imm_safe pol ge e f.(fn_comp) K a m.
 Proof.
-  intros. destruct (classic (imm_safe ge e f.(fn_comp) K a m)); auto.
+  intros. destruct (classic (imm_safe pol ge e f.(fn_comp) K a m)); auto.
   destruct (H Stuckstate).
   apply star_one. left. econstructor; eauto.
   destruct H2 as [r F]. inv F.
@@ -472,7 +473,7 @@ Proof.
 Qed.
 
 Lemma callred_kind:
-  forall a m fd args ty, callred ge a m fd args ty -> expr_kind a = RV.
+  forall cp a m fd args ty, callred pol ge cp a m fd args ty -> expr_kind a = RV.
 Proof.
   induction 1; auto.
 Qed.
@@ -484,7 +485,7 @@ Proof.
 Qed.
 
 Lemma imm_safe_kind:
-  forall e cp k a m, imm_safe ge e cp k a m -> expr_kind a = k.
+  forall e cp k a m, imm_safe pol ge e cp k a m -> expr_kind a = k.
 Proof.
   induction 1.
   auto.
@@ -569,6 +570,7 @@ Definition invert_expr_prop (cp: compartment) (a: expr) (m: mem) : Prop :=
       /\ Genv.find_funct ge vf = Some fd
       /\ cast_arguments m rargs tyargs vl
       /\ type_of_fundef fd = Tfunction tyargs tyres cconv
+      /\ Policy.allowed_call pol cp fd
   | Ebuiltin ef tyargs rargs ty =>
       exprlist_all_values rargs ->
       exists vargs, exists t, exists vres, exists m',
@@ -608,7 +610,7 @@ Qed.
 
 Lemma callred_invert:
   forall cp r fd args ty m,
-  callred ge r m fd args ty ->
+  callred pol ge cp r m fd args ty ->
   invert_expr_prop cp r m.
 Proof.
   intros. inv H. simpl.
@@ -658,7 +660,7 @@ Qed.
 
 Lemma imm_safe_inv:
   forall cp k a m,
-  imm_safe ge e cp k a m ->
+  imm_safe pol ge e cp k a m ->
   match a with
   | Eloc _ _ _ => True
   | Eval _ _ => True
@@ -1371,7 +1373,7 @@ Proof.
   eapply safe_steps. eexact S1.
   apply (eval_simple_list_steps f k e m rargs vl E2 C'); auto.
   simpl. intros X. exploit X. eapply rval_list_all_values.
-  intros [tyargs [tyres [cconv [fd [vargs [P [Q [U V]]]]]]]].
+  intros [tyargs [tyres [cconv [fd [vargs [P [Q [U [V W]]]]]]]]].
   econstructor; econstructor; eapply step_call; eauto. eapply can_eval_simple_list; eauto.
 + (* builtin *)
   pose (C' := fun x => C(Ebuiltin ef tyargs x ty)).
@@ -1772,6 +1774,7 @@ with eval_expr: compartment -> env -> mem -> kind -> expr -> trace -> mem -> exp
       Genv.find_funct ge vf = Some fd ->
       type_of_fundef fd = Tfunction targs tres cconv ->
       eval_funcall c m2 fd vargs t3 m3 vres ->
+      forall (ALLOWED: Policy.allowed_call pol c fd),
       eval_expr c e m RV (Ecall rf rargs ty) (t1**t2**t3) m3 (Eval vres ty)
 
 with eval_exprlist: compartment -> env -> mem -> exprlist -> trace -> mem -> exprlist -> Prop :=
@@ -1909,7 +1912,6 @@ with eval_funcall: compartment -> mem -> fundef -> list val -> trace -> mem -> v
       exec_stmt f.(fn_comp) e m2 f.(fn_body) t m3 out ->
       outcome_result_value out f.(fn_return) vres m3 ->
       Mem.free_list m3 (blocks_of_env ge e) = Some m4 ->
-      forall ALLOWED: Policy.allowed_call pol cp f,
       eval_funcall cp m (Internal f) vargs t m4 vres
   | eval_funcall_external: forall cp m ef targs tres cconv vargs t vres m',
       external_call ef ge cp vargs m t vres m' ->
@@ -2017,6 +2019,7 @@ CoInductive evalinf_expr: compartment -> env -> mem -> kind -> expr -> traceinf 
       Genv.find_funct ge vf = Some fd ->
       type_of_fundef fd = Tfunction targs tres cconv ->
       evalinf_funcall c m2 fd vargs t3 ->
+      forall (ALLOWED: Policy.allowed_call pol c fd),
       evalinf_expr c e m RV (Ecall rf rargs ty) (t1***t2***t3)
 
 with evalinf_exprlist: compartment -> env -> mem -> exprlist -> traceinf -> Prop :=
@@ -2130,7 +2133,6 @@ with evalinf_funcall: compartment -> mem -> fundef -> list val -> traceinf -> Pr
       alloc_variables ge empty_env m (f.(fn_params) ++ f.(fn_vars)) e m1 ->
       bind_parameters ge e m1 f.(fn_params) vargs m2 ->
       execinf_stmt f.(fn_comp) e m2 f.(fn_body) t ->
-      forall ALLOWED: Policy.allowed_call pol cp f,
       evalinf_funcall cp m (Internal f) vargs t.
 
 (** ** Implication from big-step semantics to transition semantics *)
@@ -2361,6 +2363,7 @@ Proof.
   eapply star_trans. eexact D.
   eapply star_trans. eexact F.
   eapply star_left. left; eapply step_call; eauto. congruence.
+  rewrite <- COMP; auto.
   eapply star_right. subst c. eapply H9; simpl; eauto.
   right; constructor.
   reflexivity. reflexivity. reflexivity. traceEq.
@@ -2606,7 +2609,6 @@ Proof.
 (* call internal *)
   destruct (H3 f k) as [S1 [A1 B1]]; eauto.
   eapply star_left. right; eapply step_internal_function; eauto.
-  rewrite <- COMP; auto.
   eapply star_right. eexact A1.
   inv B1; simpl in H4; try contradiction.
   (* Out_normal *)

@@ -122,7 +122,7 @@ Definition empty_temp_env : temp_env := PTree.empty val.
 
 
 (** Policies *)
-Definition policy := Policy.t (F := function).
+Definition policy := Policy.t (F := fundef).
 
 (** Initialization of temporary variables *)
 
@@ -402,6 +402,7 @@ Inductive step: state -> trace -> state -> Prop :=
       eval_exprlist e le m bl vargs ->
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
+      forall (ALLOWED: Policy.allowed_call pol f.(fn_comp) fd),
       step (State f (Scall optid sig a bl) k e le m)
         E0 (Callstate fd vargs (Kcall optid f e le k) m)
 
@@ -463,14 +464,12 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Sgoto lbl) k e le m)
         E0 (State f s' k' e le m)
 
-  | step_internal_function: forall cp f vargs k m m1 e le,
+  | step_internal_function: forall f vargs k m m1 e le,
       list_norepet (map fst f.(fn_vars)) ->
       list_norepet f.(fn_params) ->
       list_disjoint f.(fn_params) f.(fn_temps) ->
       alloc_variables empty_env m (fn_vars f) e m1 ->
       bind_parameters f.(fn_params) vargs (create_undef_temps f.(fn_temps)) = Some le ->
-      cp = call_comp k ->
-      forall ALLOWED: Policy.allowed_call pol cp f,
       step (Callstate (Internal f) vargs k m)
         E0 (State f f.(fn_body) k e le m1)
 

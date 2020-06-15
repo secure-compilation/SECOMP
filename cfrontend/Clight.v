@@ -240,7 +240,7 @@ Inductive assign_loc (ce: composite_env) (ty: type) (m: mem) (b: block) (ofs: pt
       Mem.storebytes m b (Ptrofs.unsigned ofs) bytes = Some m' ->
       assign_loc ce ty m b ofs (Vptr b' ofs') m'.
 
-Definition policy := Policy.t (F := function).
+Definition policy := Policy.t (F := fundef).
 
 Section SEMANTICS.
 
@@ -577,6 +577,7 @@ Inductive step: state -> trace -> state -> Prop :=
       eval_exprlist e le m al tyargs vargs ->
       Genv.find_funct ge vf = Some fd ->
       type_of_fundef fd = Tfunction tyargs tyres cconv ->
+      forall (ALLOWED: Policy.allowed_call pol f.(fn_comp) fd),
       step (State f (Scall optid a al) k e le m)
         E0 (Callstate fd vargs (Kcall optid f e le k) m)
 
@@ -662,7 +663,6 @@ Inductive step: state -> trace -> state -> Prop :=
 
   | step_internal_function: forall f vargs k m e le m1,
       function_entry f vargs m e le m1 ->
-      forall ALLOWED: Policy.allowed_call pol (call_comp k) f,
       step (Callstate (Internal f) vargs k m)
         E0 (State f f.(fn_body) k e le m1)
 
@@ -724,24 +724,20 @@ Inductive function_entry2 (ge: genv)  (f: function) (vargs: list val) (m: mem) (
 
 Definition step2 (pol: policy) (ge: genv) := step pol ge (function_entry2 ge).
 
-Section WithPolicy.
-
-Variable pol: policy.
-
 (** Wrapping up these definitions in two small-step semantics. *)
 
-Definition semantics1 (p: program) :=
+Definition semantics1 (pol: policy) (p: program) :=
   let ge := globalenv p in
   Semantics_gen (step1 pol) (initial_state p) final_state ge ge.
 
-Definition semantics2 (p: program) :=
+Definition semantics2 (pol: policy) (p: program) :=
   let ge := globalenv p in
   Semantics_gen (step2 pol) (initial_state p) final_state ge ge.
 
 (** This semantics is receptive to changes in events. *)
 
-Lemma semantics_receptive:
-  forall (p: program), receptive (semantics1 p).
+Lemma semantics_receptive (pol: policy):
+  forall (p: program), receptive (semantics1 pol p).
 Proof.
   intros. unfold semantics1.
   set (ge := globalenv p). constructor; simpl; intros.
@@ -760,5 +756,3 @@ Proof.
   eapply external_call_trace_length; eauto.
   eapply external_call_trace_length; eauto.
 Qed.
-
-End WithPolicy.

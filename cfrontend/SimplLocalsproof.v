@@ -49,7 +49,7 @@ Section PRESERVATION.
 
 Variable pol: policy.
 Variable tpol: policy.
-Hypothesis TRANSPOL: match_pol (fun f tf => transf_function f = OK tf) pol tpol.
+Hypothesis TRANSPOL: match_pol (fun f tf => transf_fundef f = OK tf) pol tpol.
 
 Variable prog: program.
 Variable tprog: program.
@@ -2083,6 +2083,7 @@ Proof.
   rewrite typeof_simpl_expr. eauto.
   eauto. eauto. eauto.
   erewrite type_of_fundef_preserved; eauto.
+  eapply TRANSPOL; eauto. rewrite <- (comp_transf_function); eauto.
   econstructor; eauto.
   intros. econstructor; eauto.
 
@@ -2231,8 +2232,6 @@ Proof.
   econstructor; split.
   eapply plus_left. econstructor.
   econstructor. exact Y. exact X. exact Z. simpl. eexact A. simpl. eexact Q.
-  eapply TRANSPOL; eauto.
-  rewrite <- (match_cont_call_comp _ _ _ _ _ _ _ (MCONT VSet.empty)); eauto.
   simpl. eapply star_trans. eapply step_add_debug_params. auto. eapply forall2_val_casted_inject; eauto. eexact Q.
   eapply star_trans. eexact P. eapply step_add_debug_vars.
   unfold remove_lifted; intros. rewrite List.filter_In in H3. destruct H3.
