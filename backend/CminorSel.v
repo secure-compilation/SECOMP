@@ -119,7 +119,7 @@ Definition funsig (fd: fundef) :=
 
 Definition genv := Genv.t fundef unit.
 Definition letenv := list val.
-Definition policy := Policy.t (F := function).
+Definition policy := Policy.t (F := fundef).
 
 (** Continuations *)
 
@@ -378,6 +378,7 @@ Inductive step: state -> trace -> state -> Prop :=
       eval_exprlist sp e cp m nil bl vargs ->
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
+      forall ALLOWED: Policy.allowed_call pol f.(fn_comp) fd,
       step (State f (Scall optid sig a bl) k sp e m)
         E0 (Callstate fd vargs (Kcall optid f sp e k) m)
 
@@ -386,8 +387,9 @@ Inductive step: state -> trace -> state -> Prop :=
       eval_exprlist (Vptr sp Ptrofs.zero) e f.(fn_comp) m nil bl vargs ->
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
-      forall COMP: comp_of fd = f.(fn_comp),
-      forall ALLOWED: needs_calling_comp f.(fn_comp) = false,
+      forall (COMP: comp_of fd = f.(fn_comp)),
+      forall (ALLOWED: needs_calling_comp f.(fn_comp) = false),
+      forall (ALLOWED': Policy.allowed_call pol f.(fn_comp) fd),
       Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
       step (State f (Stailcall sig a bl) k (Vptr sp Ptrofs.zero) e m)
         E0 (Callstate fd vargs (call_cont k) m')
@@ -457,7 +459,6 @@ Inductive step: state -> trace -> state -> Prop :=
       Mem.alloc m f.(fn_comp) 0 f.(fn_stackspace) = (m', sp) ->
       set_locals f.(fn_vars) (set_params vargs f.(fn_params)) = e ->
       cp = call_comp k ->
-      forall ALLOWED: Policy.allowed_call pol cp f,
       step (Callstate (Internal f) vargs k m)
         E0 (State f f.(fn_body) k (Vptr sp Ptrofs.zero) e m')
   | step_external_function: forall ef vargs k m t vres m',
