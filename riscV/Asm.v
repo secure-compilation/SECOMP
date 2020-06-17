@@ -439,6 +439,7 @@ Definition program := AST.program fundef unit.
 
 Definition regset := Pregmap.t val.
 Definition genv := Genv.t fundef unit.
+Definition policy := Policy.t (F := fundef).
 
 Definition get0w (rs: regset) (r: ireg0) : val :=
   match r with
@@ -525,6 +526,7 @@ Fixpoint label_pos (lbl: label) (pos: Z) (c: code) {struct c} : option Z :=
       if is_label lbl instr then Some (pos + 1) else label_pos lbl (pos + 1) c'
   end.
 
+Variable pol: policy.
 Variable ge: genv.
 
 (** The two functions below axiomatize how the linker processes
@@ -754,13 +756,40 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : out
   | Pj_r r sg =>
       Next (rs#PC <- (rs#r)) m
   | Pjal_s s sg =>
-      Next (rs#PC <- (Genv.symbol_address ge s Ptrofs.zero)
-              #RA <- (Val.offset_ptr rs#PC Ptrofs.one)
-           ) m
+    Next (rs#PC <- (Genv.symbol_address ge s Ptrofs.zero)
+            #RA <- (Val.offset_ptr rs#PC Ptrofs.one)
+         ) m
+    (* let v := Genv.symbol_address ge s Ptrofs.zero in *)
+    (* match v, rs#PC with *)
+    (* | Vptr b ofs, Vptr b' ofs' =>  *)
+    (*   match Genv.find_funct_ptr ge b, Genv.find_funct_ptr ge b' with *)
+    (*   | Some fd, Some fd' => *)
+    (*     if Policy.allowed_call_b pol (comp_of fd') fd then *)
+    (*       Next (rs#PC <- v *)
+    (*               #RA <- (Val.offset_ptr rs#PC Ptrofs.one) *)
+    (*            ) m *)
+    (*     else Stuck *)
+    (*   | _, _ => Stuck *)
+    (*   end *)
+    (* | _, _ => Stuck *)
+    (* end *)
   | Pjal_r r sg =>
       Next (rs#PC <- (rs#r)
               #RA <- (Val.offset_ptr rs#PC Ptrofs.one)
            ) m
+    (* match rs#r, rs#PC with *)
+    (* | Vptr b ofs, Vptr b' ofs' => *)
+    (*   match Genv.find_funct_ptr ge b, Genv.find_funct_ptr ge b' with *)
+    (*   | Some fd, Some fd' => *)
+    (*     if Policy.allowed_call_b pol (comp_of fd') fd then *)
+    (*       Next (rs#PC <- (rs#r) *)
+    (*               #RA <- (Val.offset_ptr rs#PC Ptrofs.one) *)
+    (*            ) m *)
+    (*     else Stuck *)
+    (*   | _, _ => Stuck *)
+    (*   end *)
+    (* | _, _ => Stuck *)
+    (* end *)
 (** Conditional branches, 32-bit comparisons *)
   | Pbeqw s1 s2 l =>
       eval_branch f l rs m (Val.cmpu_bool (Mem.valid_pointer m) Ceq rs##s1 rs##s2)
@@ -1061,11 +1090,14 @@ Inductive state: Type :=
 
 Inductive step: state -> trace -> state -> Prop :=
   | exec_step_internal:
-      forall b ofs f i rs m rs' m',
+      forall b ofs f i rs m rs' m' b' ofs' fd,
       rs PC = Vptr b ofs ->
       Genv.find_funct_ptr ge b = Some (Internal f) ->
       find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
       exec_instr f i rs m = Next rs' m' ->
+      forall (NEXTPC: rs' PC = Vptr b' ofs'),
+      forall (NEXTFUN: Genv.find_funct_ptr ge b' = Some fd),
+      forall (ALLOWED: Policy.allowed_call pol f.(fn_comp) fd),
       step (State rs m) E0 (State rs' m')
   | exec_step_builtin:
       forall b ofs f ef args res rs m vargs t vres rs' m',
@@ -1073,6 +1105,7 @@ Inductive step: state -> trace -> state -> Prop :=
       Genv.find_funct_ptr ge b = Some (Internal f) ->
       find_instr (Ptrofs.unsigned ofs) f.(fn_code) = Some (Pbuiltin ef args res) ->
       eval_builtin_args ge rs (rs SP) m args vargs ->
+      forall (ALLOWED: Policy.allowed_call pol f.(fn_comp) (External ef)),
       external_call ef ge (comp_of f) vargs m t vres m' ->
       rs' = nextinstr
               (set_res res vres
@@ -1084,6 +1117,7 @@ Inductive step: state -> trace -> state -> Prop :=
       rs PC = Vptr b Ptrofs.zero ->
       Genv.find_funct_ptr ge b = Some (External ef) ->
       forall COMP: Genv.find_comp ge (rs RA) = Some cp,
+      forall (ALLOWED: Policy.allowed_call pol cp (External ef)),
       external_call ef ge cp args m t res m' ->
       extcall_arguments rs m (ef_sig ef) args ->
       rs' = (set_pair (loc_external_result (ef_sig ef) ) res (undef_caller_save_regs rs))#PC <- (rs RA) ->
@@ -1110,8 +1144,8 @@ Inductive final_state: state -> int -> Prop :=
       rs X10 = Vint r ->
       final_state (State rs m) r.
 
-Definition semantics (p: program) :=
-  Semantics step (initial_state p) final_state (Genv.globalenv p).
+Definition semantics (pol: policy) (p: program) :=
+  Semantics (step pol) (initial_state p) final_state (Genv.globalenv p).
 
 (** Determinacy of the [Asm] semantics. *)
 
@@ -1137,7 +1171,7 @@ Proof.
   intros. eapply C; eauto.
 Qed.
 
-Lemma semantics_determinate: forall p, determinate (semantics p).
+Lemma semantics_determinate (pol: policy): forall p, determinate (semantics pol p).
 Proof.
 Ltac Equalities :=
   match goal with
