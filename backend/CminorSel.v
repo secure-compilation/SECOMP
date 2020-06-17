@@ -119,6 +119,7 @@ Definition funsig (fd: fundef) :=
 
 Definition genv := Genv.t fundef unit.
 Definition letenv := list val.
+Definition policy := Policy.t (F := function).
 
 (** Continuations *)
 
@@ -154,6 +155,7 @@ Inductive state: Type :=
 
 Section RELSEM.
 
+Variable pol: policy.
 Variable ge: genv.
 
 (** The evaluation predicates have the same general shape as those
@@ -451,9 +453,11 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Sgoto lbl) k sp e m)
         E0 (State f s' k' sp e m)
 
-  | step_internal_function: forall f vargs k m m' sp e,
+  | step_internal_function: forall cp f vargs k m m' sp e,
       Mem.alloc m f.(fn_comp) 0 f.(fn_stackspace) = (m', sp) ->
       set_locals f.(fn_vars) (set_params vargs f.(fn_params)) = e ->
+      cp = call_comp k ->
+      forall ALLOWED: Policy.allowed_call pol cp f,
       step (Callstate (Internal f) vargs k m)
         E0 (State f f.(fn_body) k (Vptr sp Ptrofs.zero) e m')
   | step_external_function: forall ef vargs k m t vres m',
@@ -480,8 +484,8 @@ Inductive final_state: state -> int -> Prop :=
   | final_state_intro: forall r m,
       final_state (Returnstate (Vint r) Kstop m) r.
 
-Definition semantics (p: program) :=
-  Semantics step (initial_state p) final_state (Genv.globalenv p).
+Definition semantics (pol : policy) (p: program) :=
+  Semantics (step pol) (initial_state p) final_state (Genv.globalenv p).
 
 Hint Constructors eval_expr eval_exprlist eval_condexpr: evalexpr.
 
