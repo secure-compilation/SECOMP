@@ -135,6 +135,15 @@ Hypothesis TRANSF: match_prog prog tprog.
 
 (* Added for interfaces *)
 Variable pol : Cminor.policy.
+Variable polt : policy.
+Definition match_functions (F : Cminor.function) (F' : function) := 
+    Cminor.fn_comp F = F'.(fn_comp)
+ /\ Cminor.fn_sig F = F'.(fn_sig).
+Inductive match_fundef_light : (Cminor.fundef) -> fundef -> Prop := 
+ | match_fundef_internal : forall f f', match_functions f f' -> match_fundef_light (Internal f) (Internal f')
+ | match_fundef_external : forall f, match_fundef_light (External f) (External f).
+
+Hypothesis matching_pol : match_pol (fun x y => exists f, match_fundef f x y) pol polt.
 
 Lemma wt_prog : wt_program prog.
 Proof.
@@ -278,7 +287,7 @@ Lemma eval_store:
   eval_expr tge sp e f.(fn_comp) m nil a1 v1 ->
   eval_expr tge sp e f.(fn_comp) m nil a2 v2 ->
   Mem.storev chunk m v1 v2 = Some m' ->
-  step tge (State f (store chunk a1 a2) k sp e m)
+  step polt tge (State f (store chunk a1 a2) k sp e m)
         E0 (State f Sskip k sp e m').
 Proof.
   intros. generalize H1; destruct v1; simpl; intro; try discriminate.
@@ -875,7 +884,7 @@ Lemma sel_builtin_default_correct:
   external_call ef ge f.(fn_comp) vl m1 t v m2 ->
   env_lessdef e1 e1' -> Mem.extends m1 m1' ->
   exists e2' m2',
-     step tge (State f (sel_builtin_default optid ef al) k sp e1' m1')
+     step polt tge (State f (sel_builtin_default optid ef al) k sp e1' m1')
             t (State f Sskip k sp e2' m2')
   /\ env_lessdef (set_optvar optid v e1) e2'
   /\ Mem.extends m2 m2'.
@@ -894,7 +903,7 @@ Lemma sel_builtin_correct:
   external_call ef ge f.(fn_comp) vl m1 t v m2 ->
   env_lessdef e1 e1' -> Mem.extends m1 m1' ->
   exists e2' m2',
-     step tge (State f (sel_builtin optid ef al) k sp e1' m1')
+     step polt tge (State f (sel_builtin optid ef al) k sp e1' m1')
             t (State f Sskip k sp e2' m2')
   /\ env_lessdef (set_optvar optid v e1) e2'
   /\ Mem.extends m2 m2'.
@@ -1000,7 +1009,7 @@ Lemma if_conversion_correct:
   env_lessdef e e' -> Mem.extends m m' ->
   let s0 := if b then ifso else ifnot in
   exists e1 e1',
-     step tge (State f' s k' sp e' m') E0 (State f' Sskip k' sp e1' m')
+     step polt tge (State f' s k' sp e' m') E0 (State f' Sskip k' sp e1' m')
   /\ star (Cminor.step pol) ge (Cminor.State f s0 k sp e m) E0 (Cminor.State f Cminor.Sskip k sp e1 m)
   /\ env_lessdef e1 e1'.
 Proof.
@@ -1279,9 +1288,9 @@ Definition measure (s: Cminor.state) : nat :=
 Lemma sel_step_correct:
   forall S1 t S2, Cminor.step pol ge S1 t S2 ->
   forall T1, match_states S1 T1 -> wt_state S1 ->
-  (exists T2, step tge T1 t T2 /\ match_states S2 T2)
+  (exists T2, step polt tge T1 t T2 /\ match_states S2 T2)
   \/ (measure S2 < measure S1 /\ t = E0 /\ match_states S2 T1)%nat
-  \/ (exists S3 T2, star (Cminor.step pol) ge S2 E0 S3 /\ step tge T1 t T2 /\ match_states S3 T2).
+  \/ (exists S3 T2, star (Cminor.step pol) ge S2 E0 S3 /\ step polt tge T1 t T2 /\ match_states S3 T2).
 Proof.
   induction 1; intros T1 ME WTS; inv ME; try (monadInv TS).
 - (* skip seq *)
@@ -1318,6 +1327,7 @@ Proof.
   left; econstructor; split.
   econstructor; eauto. econstructor; eauto.
   eapply sig_function_translated; eauto.
+   eapply matching_pol; [| rewrite CPT in ALLOWED; eassumption]. exists cunit'. eapply V.
   eapply match_callstate with (cunit := cunit'); eauto.
   eapply match_cont_call with (cunit := cunit) (hf := hf); eauto.
 + (* direct *)
@@ -1328,6 +1338,7 @@ Proof.
   econstructor; eauto.
   subst vf. econstructor; eauto. rewrite symbols_preserved; eauto.
   eapply sig_function_translated; eauto.
+  eapply matching_pol. exists cunit'; eapply Y. rewrite<- CPT. eassumption.
   eapply match_callstate with (cunit := cunit'); eauto.
   eapply match_cont_call with (cunit := cunit) (hf := hf); eauto.
 + (* turned into Sbuiltin *)
@@ -1345,13 +1356,16 @@ Proof.
   econstructor; eauto. econstructor; eauto. eapply sig_function_translated; eauto.
   rewrite <- (comp_function_translated _ _ _ F), COMP. now apply (comp_transl_partial _ TF).
   rewrite <- CPT; trivial.
+  eapply matching_pol; [exists cunit'; eapply F|rewrite<- CPT; eassumption]. 
   destruct H2 as [b [U V]]. subst vf. inv B.
   econstructor; eauto. econstructor; eauto. rewrite symbols_preserved; eauto. eapply sig_function_translated; eauto.
   rewrite <- (comp_function_translated _ _ _ F), COMP. now apply (comp_transl_partial _ TF).
   rewrite <- CPT; trivial.
+  eapply matching_pol; [exists cunit'; eapply F|rewrite<- CPT; eassumption]. 
   econstructor; eauto. econstructor; eauto. eapply sig_function_translated; eauto.
   rewrite <- (comp_function_translated _ _ _ F), COMP. now apply (comp_transl_partial _ TF).
   rewrite <- CPT; trivial.
+  eapply matching_pol; [exists cunit'; eapply F|rewrite<- CPT; eassumption]. 
   eapply match_callstate with (cunit := cunit'); eauto.
   eapply call_cont_commut; eauto.
 - (* Sbuiltin *)
@@ -1483,7 +1497,7 @@ Proof.
 Qed.
 
 Theorem transf_program_correct:
-  forward_simulation (Cminor.semantics pol prog) (CminorSel.semantics  tprog).
+  forward_simulation (Cminor.semantics pol prog) (CminorSel.semantics polt tprog).
 Proof.
   set (MS := fun S T => match_states S T /\ wt_state S).
   apply forward_simulation_determ_star with (match_states := MS) (measure := measure).
