@@ -916,14 +916,10 @@ Qed.
 
 (** If-conversion *)
 
-Definition uncurrify {A : Type} {B : Type} {C : Type} (f : A -> B -> C) : (A * B -> C) := 
-  fun x => match x with (a,b) => f a b end.
-
-
 Lemma classify_stmt_sound_1:
   forall f sp e m s k,
   classify_stmt s = SCskip ->
-  star (uncurrify Cminor.step) (pol,ge) (Cminor.State f s k sp e m) E0 (Cminor.State f Cminor.Sskip k sp e m).
+  star (Cminor.step pol) ge (Cminor.State f s k sp e m) E0 (Cminor.State f Cminor.Sskip k sp e m).
 Proof.
   intros until s; functional induction (classify_stmt s); intros; try discriminate.
   - apply star_refl.
@@ -939,7 +935,7 @@ Lemma classify_stmt_sound_2:
   Cminor.eval_expr ge sp e m a v ->
   forall s k,
   classify_stmt s = SCassign id a ->
-  star (uncurrify Cminor.step) (pol,ge) (Cminor.State f s k sp e m) E0 (Cminor.State f Cminor.Sskip k sp (PTree.set id v e) m).
+  star (Cminor.step pol) ge (Cminor.State f s k sp e m) E0 (Cminor.State f Cminor.Sskip k sp (PTree.set id v e) m).
 Proof.
   intros until s; functional induction (classify_stmt s); intros; try discriminate.
   - inv H0. apply star_one. constructor; auto.
@@ -1005,7 +1001,7 @@ Lemma if_conversion_correct:
   let s0 := if b then ifso else ifnot in
   exists e1 e1',
      step tge (State f' s k' sp e' m') E0 (State f' Sskip k' sp e1' m')
-  /\ star (uncurrify Cminor.step) (pol,ge) (Cminor.State f s0 k sp e m) E0 (Cminor.State f Cminor.Sskip k sp e1 m)
+  /\ star (Cminor.step pol) ge (Cminor.State f s0 k sp e m) E0 (Cminor.State f Cminor.Sskip k sp e1 m)
   /\ env_lessdef e1 e1'.
 Proof.
   unfold if_conversion; intros until m'; intros IFC DE WTE WT1 WT2 EVC BOV ELD MEXT.
@@ -1285,7 +1281,7 @@ Lemma sel_step_correct:
   forall T1, match_states S1 T1 -> wt_state S1 ->
   (exists T2, step tge T1 t T2 /\ match_states S2 T2)
   \/ (measure S2 < measure S1 /\ t = E0 /\ match_states S2 T1)%nat
-  \/ (exists S3 T2, star Cminor.step ge S2 E0 S3 /\ step tge T1 t T2 /\ match_states S3 T2).
+  \/ (exists S3 T2, star (Cminor.step pol) ge S2 E0 S3 /\ step tge T1 t T2 /\ match_states S3 T2).
 Proof.
   induction 1; intros T1 ME WTS; inv ME; try (monadInv TS).
 - (* skip seq *)
@@ -1497,13 +1493,13 @@ Proof.
   exists T; split; auto; split; auto. eapply wt_initial_state. eexact wt_prog. auto. 
 - intros. destruct H. eapply sel_final_states; eauto.
 - intros S1 t S2 A T1 [B C].
-  assert (wt_state S2) by (eapply subject_reduction; eauto using wt_prog. apply A.
+  assert (wt_state S2) by (eapply subject_reduction; eauto using wt_prog; eapply A).
   unfold MS.
   exploit sel_step_correct; eauto.
   intros [(T2 & D & E) | [(D & E & F) | (S3 & T2 & D & E & F)]].
 + exists S2, T2. intuition auto using star_refl, plus_one.
 + subst t. exists S2, T1. intuition auto using star_refl.
-+ assert (wt_state S3) by (eapply subject_reduction_star; eauto using wt_prog).
++ assert (wt_state S3) by (eapply subject_reduction_star; eauto using wt_prog; simpl in D; eapply D).
   exists S3, T2. intuition auto using plus_one.
 Qed.
 
