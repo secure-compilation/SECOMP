@@ -133,6 +133,9 @@ Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
 Hypothesis TRANSF: match_prog prog tprog.
 
+(* Added for interfaces *)
+Variable pol : Cminor.policy.
+
 Lemma wt_prog : wt_program prog.
 Proof.
   red; intros. destruct TRANSF as [A _].
@@ -913,10 +916,14 @@ Qed.
 
 (** If-conversion *)
 
+Definition uncurrify {A : Type} {B : Type} {C : Type} (f : A -> B -> C) : (A * B -> C) := 
+  fun x => match x with (a,b) => f a b end.
+
+
 Lemma classify_stmt_sound_1:
   forall f sp e m s k,
   classify_stmt s = SCskip ->
-  star Cminor.step ge (Cminor.State f s k sp e m) E0 (Cminor.State f Cminor.Sskip k sp e m).
+  star (uncurrify Cminor.step) (pol,ge) (Cminor.State f s k sp e m) E0 (Cminor.State f Cminor.Sskip k sp e m).
 Proof.
   intros until s; functional induction (classify_stmt s); intros; try discriminate.
   - apply star_refl.
@@ -932,7 +939,7 @@ Lemma classify_stmt_sound_2:
   Cminor.eval_expr ge sp e m a v ->
   forall s k,
   classify_stmt s = SCassign id a ->
-  star Cminor.step ge (Cminor.State f s k sp e m) E0 (Cminor.State f Cminor.Sskip k sp (PTree.set id v e) m).
+  star (uncurrify Cminor.step) (pol,ge) (Cminor.State f s k sp e m) E0 (Cminor.State f Cminor.Sskip k sp (PTree.set id v e) m).
 Proof.
   intros until s; functional induction (classify_stmt s); intros; try discriminate.
   - inv H0. apply star_one. constructor; auto.
@@ -998,7 +1005,7 @@ Lemma if_conversion_correct:
   let s0 := if b then ifso else ifnot in
   exists e1 e1',
      step tge (State f' s k' sp e' m') E0 (State f' Sskip k' sp e1' m')
-  /\ star Cminor.step ge (Cminor.State f s0 k sp e m) E0 (Cminor.State f Cminor.Sskip k sp e1 m)
+  /\ star (uncurrify Cminor.step) (pol,ge) (Cminor.State f s0 k sp e m) E0 (Cminor.State f Cminor.Sskip k sp e1 m)
   /\ env_lessdef e1 e1'.
 Proof.
   unfold if_conversion; intros until m'; intros IFC DE WTE WT1 WT2 EVC BOV ELD MEXT.
@@ -1274,7 +1281,7 @@ Definition measure (s: Cminor.state) : nat :=
   end.
 
 Lemma sel_step_correct:
-  forall S1 t S2, Cminor.step ge S1 t S2 ->
+  forall S1 t S2, Cminor.step pol ge S1 t S2 ->
   forall T1, match_states S1 T1 -> wt_state S1 ->
   (exists T2, step tge T1 t T2 /\ match_states S2 T2)
   \/ (measure S2 < measure S1 /\ t = E0 /\ match_states S2 T1)%nat
@@ -1480,7 +1487,7 @@ Proof.
 Qed.
 
 Theorem transf_program_correct:
-  forward_simulation (Cminor.semantics prog) (CminorSel.semantics tprog).
+  forward_simulation (Cminor.semantics pol prog) (CminorSel.semantics  tprog).
 Proof.
   set (MS := fun S T => match_states S T /\ wt_state S).
   apply forward_simulation_determ_star with (match_states := MS) (measure := measure).
@@ -1490,7 +1497,7 @@ Proof.
   exists T; split; auto; split; auto. eapply wt_initial_state. eexact wt_prog. auto. 
 - intros. destruct H. eapply sel_final_states; eauto.
 - intros S1 t S2 A T1 [B C].
-  assert (wt_state S2) by (eapply subject_reduction; eauto using wt_prog).
+  assert (wt_state S2) by (eapply subject_reduction; eauto using wt_prog. apply A.
   unfold MS.
   exploit sel_step_correct; eauto.
   intros [(T2 & D & E) | [(D & E & F) | (S3 & T2 & D & E & F)]].
