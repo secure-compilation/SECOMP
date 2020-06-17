@@ -28,6 +28,10 @@ Require Import Integers.
 
 Set Implicit Arguments.
 
+(* Define uncurrify to use genv to store policies *)
+Definition uncurrify {A : Type} {B : Type} {C : Type} (f : A -> B -> C) : (A * B -> C) := 
+  fun x => match x with (a,b) => f a b end.
+
 (** * Closures of transitions relations *)
 
 Section CLOSURES.
