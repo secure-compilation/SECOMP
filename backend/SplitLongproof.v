@@ -50,6 +50,7 @@ Section CMCONSTR.
 Variable prog: program.
 Variable hf: helper_functions.
 Hypothesis HELPERS: helper_functions_declared prog hf.
+Variable pol: policy.
 Let ge := Genv.globalenv prog.
 Variable sp: val.
 Variable e: env.
@@ -60,48 +61,52 @@ Ltac DeclHelper := red in HELPERS; decompose [Logic.and] HELPERS; eauto.
 
 Lemma eval_helper:
   forall bf le id name sg args vargs vres,
-  eval_exprlist ge sp e cp m le args vargs ->
+  eval_exprlist pol ge sp e cp m le args vargs ->
   helper_declared prog id name sg  ->
   lookup_builtin_function name sg = Some bf ->
   builtin_function_sem bf vargs = Some vres ->
-  eval_expr ge sp e cp m le (Eexternal id sg args) vres.
+  (* forall (ALLOWED: Policy.allowed_call pol cp (External (EF_runtime name sg))), *)
+  eval_expr pol ge sp e cp m le (Eexternal id sg args) vres.
 Proof.
   intros.
   red in H0. apply Genv.find_def_symbol in H0. destruct H0 as (b & P & Q).
   rewrite <- Genv.find_funct_ptr_iff in Q.
   econstructor; eauto. 
   simpl. red. rewrite H1. constructor; auto.
-Qed.
+  admit.
+Admitted.
 
 Corollary eval_helper_1:
   forall bf le id name sg arg1 varg1 vres,
-  eval_expr ge sp e cp m le arg1 varg1 ->
+  eval_expr pol ge sp e cp m le arg1 varg1 ->
   helper_declared prog id name sg  ->
   lookup_builtin_function name sg = Some bf ->
   builtin_function_sem bf (varg1 :: nil) = Some vres ->
-  eval_expr ge sp e cp m le (Eexternal id sg (arg1 ::: Enil)) vres.
+  (* forall (ALLOWED: Policy.allowed_call pol cp (External (EF_runtime name sg))), *)
+  eval_expr pol ge sp e cp m le (Eexternal id sg (arg1 ::: Enil)) vres.
 Proof.
   intros. eapply eval_helper; eauto. constructor; auto. constructor.
 Qed.
 
 Corollary eval_helper_2:
   forall bf le id name sg arg1 arg2 varg1 varg2 vres,
-  eval_expr ge sp e cp m le arg1 varg1 ->
-  eval_expr ge sp e cp m le arg2 varg2 ->
+  eval_expr pol ge sp e cp m le arg1 varg1 ->
+  eval_expr pol ge sp e cp m le arg2 varg2 ->
   helper_declared prog id name sg  ->
   lookup_builtin_function name sg = Some bf ->
   builtin_function_sem bf (varg1 :: varg2 :: nil) = Some vres ->
-  eval_expr ge sp e cp m le (Eexternal id sg (arg1 ::: arg2 ::: Enil)) vres.
+  (* forall (ALLOWED: Policy.allowed_call pol cp (External (EF_runtime name sg))), *)
+  eval_expr pol ge sp e cp m le (Eexternal id sg (arg1 ::: arg2 ::: Enil)) vres.
 Proof.
   intros. eapply eval_helper; eauto. constructor; auto. constructor; auto. constructor.
 Qed.
 
 Remark eval_builtin_1:
   forall bf le id sg arg1 varg1 vres,
-  eval_expr ge sp e cp m le arg1 varg1 ->
+  eval_expr pol ge sp e cp m le arg1 varg1 ->
   lookup_builtin_function id sg = Some bf ->
   builtin_function_sem bf (varg1 :: nil) = Some vres ->
-  eval_expr ge sp e cp m le (Ebuiltin (EF_builtin id sg) (arg1 ::: Enil)) vres.
+  eval_expr pol ge sp e cp m le (Ebuiltin (EF_builtin id sg) (arg1 ::: Enil)) vres.
 Proof.
   intros. econstructor. econstructor. eauto. constructor.
   simpl. red. rewrite H0. constructor. auto.
@@ -109,11 +114,11 @@ Qed.
 
 Remark eval_builtin_2:
   forall bf le id sg arg1 arg2 varg1 varg2 vres,
-  eval_expr ge sp e cp m le arg1 varg1 ->
-  eval_expr ge sp e cp m le arg2 varg2 ->
+  eval_expr pol ge sp e cp m le arg1 varg1 ->
+  eval_expr pol ge sp e cp m le arg2 varg2 ->
   lookup_builtin_function id sg = Some bf ->
   builtin_function_sem bf (varg1 :: varg2 :: nil) = Some vres ->
-  eval_expr ge sp e cp m le (Ebuiltin (EF_builtin id sg) (arg1 ::: arg2 ::: Enil)) vres.
+  eval_expr pol ge sp e cp m le (Ebuiltin (EF_builtin id sg) (arg1 ::: arg2 ::: Enil)) vres.
 Proof.
   intros. econstructor. constructor; eauto. constructor; eauto. constructor.
   simpl. red. rewrite H1. constructor. auto.
@@ -121,37 +126,37 @@ Qed.
 
 Definition unary_constructor_sound (cstr: expr -> expr) (sem: val -> val) : Prop :=
   forall le a x,
-  eval_expr ge sp e cp m le a x ->
-  exists v, eval_expr ge sp e cp m le (cstr a) v /\ Val.lessdef (sem x) v.
+  eval_expr pol ge sp e cp m le a x ->
+  exists v, eval_expr pol ge sp e cp m le (cstr a) v /\ Val.lessdef (sem x) v.
 
 Definition binary_constructor_sound (cstr: expr -> expr -> expr) (sem: val -> val -> val) : Prop :=
   forall le a x b y,
-  eval_expr ge sp e cp m le a x ->
-  eval_expr ge sp e cp m le b y ->
-  exists v, eval_expr ge sp e cp m le (cstr a b) v /\ Val.lessdef (sem x y) v.
+  eval_expr pol ge sp e cp m le a x ->
+  eval_expr pol ge sp e cp m le b y ->
+  exists v, eval_expr pol ge sp e cp m le (cstr a b) v /\ Val.lessdef (sem x y) v.
 
 Ltac EvalOp :=
   eauto;
   match goal with
-  | [ |- eval_exprlist _ _ _ _ _ _ Enil _ ] => constructor
-  | [ |- eval_exprlist _ _ _ _ _ _ (_:::_) _ ] => econstructor; EvalOp
-  | [ |- eval_expr _ _ _ _ _ _ (Eletvar _) _ ] => constructor; simpl; eauto
-  | [ |- eval_expr _ _ _ _ _ _ (Elet _ _) _ ] => econstructor; EvalOp
-  | [ |- eval_expr _ _ _ _ _ _ (lift _) _ ] => apply eval_lift; EvalOp
-  | [ |- eval_expr _ _ _ _ _ _ _ _ ] => eapply eval_Eop; [EvalOp | simpl; eauto]
+  | [ |- eval_exprlist _ _ _ _ _ _ _ Enil _ ] => constructor
+  | [ |- eval_exprlist _ _ _ _ _ _ _ (_:::_) _ ] => econstructor; EvalOp
+  | [ |- eval_expr _ _ _ _ _ _ _ (Eletvar _) _ ] => constructor; simpl; eauto
+  | [ |- eval_expr _ _ _ _ _ _ _ (Elet _ _) _ ] => econstructor; EvalOp
+  | [ |- eval_expr _ _ _ _ _ _ _ (lift _) _ ] => apply eval_lift; EvalOp
+  | [ |- eval_expr _ _ _ _ _ _ _ _ _ ] => eapply eval_Eop; [EvalOp | simpl; eauto]
   | _ => idtac
   end.
 
 Lemma eval_splitlong:
   forall le a f v sem,
   (forall le a b x y,
-   eval_expr ge sp e cp m le a x ->
-   eval_expr ge sp e cp m le b y ->
-   exists v, eval_expr ge sp e cp m le (f a b) v /\
+   eval_expr pol ge sp e cp m le a x ->
+   eval_expr pol ge sp e cp m le b y ->
+   exists v, eval_expr pol ge sp e cp m le (f a b) v /\
              (forall p q, x = Vint p -> y = Vint q -> v = sem (Vlong (Int64.ofwords p q)))) ->
   match v with Vlong _ => True | _ => sem v = Vundef end ->
-  eval_expr ge sp e cp m le a v ->
-  exists v', eval_expr ge sp e cp m le (splitlong a f) v' /\ Val.lessdef (sem v) v'.
+  eval_expr pol ge sp e cp m le a v ->
+  exists v', eval_expr pol ge sp e cp m le (splitlong a f) v' /\ Val.lessdef (sem v) v'.
 Proof.
   intros until sem; intros EXEC UNDEF.
   unfold splitlong. case (splitlong_match a); intros.
@@ -170,12 +175,12 @@ Qed.
 
 Lemma eval_splitlong_strict:
   forall le a f va v,
-  eval_expr ge sp e cp m le a (Vlong va) ->
+  eval_expr pol ge sp e cp m le a (Vlong va) ->
   (forall le a1 a2,
-     eval_expr ge sp e cp m le a1 (Vint (Int64.hiword va)) ->
-     eval_expr ge sp e cp m le a2 (Vint (Int64.loword va)) ->
-     eval_expr ge sp e cp m le (f a1 a2) v) ->
-  eval_expr ge sp e cp m le (splitlong a f) v.
+     eval_expr pol ge sp e cp m le a1 (Vint (Int64.hiword va)) ->
+     eval_expr pol ge sp e cp m le a2 (Vint (Int64.loword va)) ->
+     eval_expr pol ge sp e cp m le (f a1 a2) v) ->
+  eval_expr pol ge sp e cp m le (splitlong a f) v.
 Proof.
   intros until v.
   unfold splitlong. case (splitlong_match a); intros.
@@ -187,19 +192,19 @@ Qed.
 Lemma eval_splitlong2:
   forall le a b f va vb sem,
   (forall le a1 a2 b1 b2 x1 x2 y1 y2,
-   eval_expr ge sp e cp m le a1 x1 ->
-   eval_expr ge sp e cp m le a2 x2 ->
-   eval_expr ge sp e cp m le b1 y1 ->
-   eval_expr ge sp e cp m le b2 y2 ->
+   eval_expr pol ge sp e cp m le a1 x1 ->
+   eval_expr pol ge sp e cp m le a2 x2 ->
+   eval_expr pol ge sp e cp m le b1 y1 ->
+   eval_expr pol ge sp e cp m le b2 y2 ->
    exists v,
-     eval_expr ge sp e cp m le (f a1 a2 b1 b2) v /\
+     eval_expr pol ge sp e cp m le (f a1 a2 b1 b2) v /\
      (forall p1 p2 q1 q2,
        x1 = Vint p1 -> x2 = Vint p2 -> y1 = Vint q1 -> y2 = Vint q2 ->
        v = sem (Vlong (Int64.ofwords p1 p2)) (Vlong (Int64.ofwords q1 q2)))) ->
   match va, vb with Vlong _, Vlong _ => True | _, _ => sem va vb = Vundef end ->
-  eval_expr ge sp e cp m le a va ->
-  eval_expr ge sp e cp m le b vb ->
-  exists v, eval_expr ge sp e cp m le (splitlong2 a b f) v /\ Val.lessdef (sem va vb) v.
+  eval_expr pol ge sp e cp m le a va ->
+  eval_expr pol ge sp e cp m le b vb ->
+  exists v, eval_expr pol ge sp e cp m le (splitlong2 a b f) v /\ Val.lessdef (sem va vb) v.
 Proof.
   intros until sem; intros EXEC UNDEF.
   unfold splitlong2. case (splitlong2_match a b); intros.
@@ -246,15 +251,15 @@ Qed.
 
 Lemma eval_splitlong2_strict:
   forall le a b f va vb v,
-  eval_expr ge sp e cp m le a (Vlong va) ->
-  eval_expr ge sp e cp m le b (Vlong vb) ->
+  eval_expr pol ge sp e cp m le a (Vlong va) ->
+  eval_expr pol ge sp e cp m le b (Vlong vb) ->
   (forall le a1 a2 b1 b2,
-     eval_expr ge sp e cp m le a1 (Vint (Int64.hiword va)) ->
-     eval_expr ge sp e cp m le a2 (Vint (Int64.loword va)) ->
-     eval_expr ge sp e cp m le b1 (Vint (Int64.hiword vb)) ->
-     eval_expr ge sp e cp m le b2 (Vint (Int64.loword vb)) ->
-     eval_expr ge sp e cp m le (f a1 a2 b1 b2) v) ->
-  eval_expr ge sp e cp m le (splitlong2 a b f) v.
+     eval_expr pol ge sp e cp m le a1 (Vint (Int64.hiword va)) ->
+     eval_expr pol ge sp e cp m le a2 (Vint (Int64.loword va)) ->
+     eval_expr pol ge sp e cp m le b1 (Vint (Int64.hiword vb)) ->
+     eval_expr pol ge sp e cp m le b2 (Vint (Int64.loword vb)) ->
+     eval_expr pol ge sp e cp m le (f a1 a2 b1 b2) v) ->
+  eval_expr pol ge sp e cp m le (splitlong2 a b f) v.
 Proof.
   assert (INV: forall v1 v2 n,
     Val.longofwords v1 v2 = Vlong n -> v1 = Vint(Int64.hiword n) /\ v2 = Vint(Int64.loword n)).
@@ -276,7 +281,7 @@ Qed.
 Lemma is_longconst_sound:
   forall le a x n,
   is_longconst a = Some n ->
-  eval_expr ge sp e cp m le a x ->
+  eval_expr pol ge sp e cp m le a x ->
   x = Vlong n.
 Proof.
   unfold is_longconst; intros until n; intros LC.
@@ -288,7 +293,7 @@ Qed.
 Lemma is_longconst_zero_sound:
   forall le a x,
   is_longconst_zero a = true ->
-  eval_expr ge sp e cp m le a x ->
+  eval_expr pol ge sp e cp m le a x ->
   x = Vlong Int64.zero.
 Proof.
   unfold is_longconst_zero; intros.
@@ -317,7 +322,7 @@ Proof.
 Qed.
 
 Lemma eval_longconst:
-  forall le n, eval_expr ge sp e cp m le (longconst n) (Vlong n).
+  forall le n, eval_expr pol ge sp e cp m le (longconst n) (Vlong n).
 Proof.
   intros. EvalOp. rewrite Int64.ofwords_recompose; auto.
 Qed.
@@ -343,7 +348,7 @@ Theorem eval_longofint: unary_constructor_sound longofint Val.longofint.
 Proof.
   red; intros. unfold longofint. destruct (longofint_match a).
 - InvEval. econstructor; split. apply eval_longconst. auto.
-- exploit (eval_shrimm ge sp e cp m (Int.repr 31) (x :: le) (Eletvar 0)). EvalOp.
+- exploit (eval_shrimm pol ge sp e cp m (Int.repr 31) (x :: le) (Eletvar 0)). EvalOp.
   intros [v1 [A B]].
   econstructor; split. EvalOp.
   destruct x; simpl; auto.
@@ -385,9 +390,9 @@ Qed.
 
 Theorem eval_longoffloat:
   forall le a x y,
-  eval_expr ge sp e cp m le a x ->
+  eval_expr pol ge sp e cp m le a x ->
   Val.longoffloat x = Some y ->
-  exists v, eval_expr ge sp e cp m le (longoffloat a) v /\ Val.lessdef y v.
+  exists v, eval_expr pol ge sp e cp m le (longoffloat a) v /\ Val.lessdef y v.
 Proof.
   intros; unfold longoffloat. econstructor; split.
   eapply (eval_helper_1 (BI_standard BI_i64_dtos)); eauto. DeclHelper. auto. auto.
@@ -395,9 +400,9 @@ Qed.
 
 Theorem eval_longuoffloat:
   forall le a x y,
-  eval_expr ge sp e cp m le a x ->
+  eval_expr pol ge sp e cp m le a x ->
   Val.longuoffloat x = Some y ->
-  exists v, eval_expr ge sp e cp m le (longuoffloat a) v /\ Val.lessdef y v.
+  exists v, eval_expr pol ge sp e cp m le (longuoffloat a) v /\ Val.lessdef y v.
 Proof.
   intros; unfold longuoffloat. econstructor; split.
   eapply (eval_helper_1 (BI_standard BI_i64_dtou)); eauto. DeclHelper. auto. auto.
@@ -405,9 +410,9 @@ Qed.
 
 Theorem eval_floatoflong:
   forall le a x y,
-  eval_expr ge sp e cp m le a x ->
+  eval_expr pol ge sp e cp m le a x ->
   Val.floatoflong x = Some y ->
-  exists v, eval_expr ge sp e cp m le (floatoflong a) v /\ Val.lessdef y v.
+  exists v, eval_expr pol ge sp e cp m le (floatoflong a) v /\ Val.lessdef y v.
 Proof.
   intros; unfold floatoflong. exists y; split; auto.
   eapply (eval_helper_1 (BI_standard BI_i64_stod)); eauto. DeclHelper. auto.
@@ -416,9 +421,9 @@ Qed.
 
 Theorem eval_floatoflongu:
   forall le a x y,
-  eval_expr ge sp e cp m le a x ->
+  eval_expr pol ge sp e cp m le a x ->
   Val.floatoflongu x = Some y ->
-  exists v, eval_expr ge sp e cp m le (floatoflongu a) v /\ Val.lessdef y v.
+  exists v, eval_expr pol ge sp e cp m le (floatoflongu a) v /\ Val.lessdef y v.
 Proof.
   intros; unfold floatoflongu. exists y; split; auto.
   eapply (eval_helper_1 (BI_standard BI_i64_utod)); eauto. DeclHelper. auto.
@@ -427,9 +432,9 @@ Qed.
 
 Theorem eval_longofsingle:
   forall le a x y,
-  eval_expr ge sp e cp m le a x ->
+  eval_expr pol ge sp e cp m le a x ->
   Val.longofsingle x = Some y ->
-  exists v, eval_expr ge sp e cp m le (longofsingle a) v /\ Val.lessdef y v.
+  exists v, eval_expr pol ge sp e cp m le (longofsingle a) v /\ Val.lessdef y v.
 Proof.
   intros; unfold longofsingle.
   destruct x; simpl in H0; inv H0. destruct (Float32.to_long f) as [n|] eqn:EQ; simpl in H2; inv H2.
@@ -441,9 +446,9 @@ Qed.
 
 Theorem eval_longuofsingle:
   forall le a x y,
-  eval_expr ge sp e cp m le a x ->
+  eval_expr pol ge sp e cp m le a x ->
   Val.longuofsingle x = Some y ->
-  exists v, eval_expr ge sp e cp m le (longuofsingle a) v /\ Val.lessdef y v.
+  exists v, eval_expr pol ge sp e cp m le (longuofsingle a) v /\ Val.lessdef y v.
 Proof.
   intros; unfold longuofsingle.
   destruct x; simpl in H0; inv H0. destruct (Float32.to_longu f) as [n|] eqn:EQ; simpl in H2; inv H2.
@@ -455,9 +460,9 @@ Qed.
 
 Theorem eval_singleoflong:
   forall le a x y,
-  eval_expr ge sp e cp m le a x ->
+  eval_expr pol ge sp e cp m le a x ->
   Val.singleoflong x = Some y ->
-  exists v, eval_expr ge sp e cp m le (singleoflong a) v /\ Val.lessdef y v.
+  exists v, eval_expr pol ge sp e cp m le (singleoflong a) v /\ Val.lessdef y v.
 Proof.
   intros; unfold singleoflong. exists y; split; auto.
   eapply (eval_helper_1 (BI_standard BI_i64_stof)); eauto. DeclHelper. auto.
@@ -466,9 +471,9 @@ Qed.
 
 Theorem eval_singleoflongu:
   forall le a x y,
-  eval_expr ge sp e cp m le a x ->
+  eval_expr pol ge sp e cp m le a x ->
   Val.singleoflongu x = Some y ->
-  exists v, eval_expr ge sp e cp m le (singleoflongu a) v /\ Val.lessdef y v.
+  exists v, eval_expr pol ge sp e cp m le (singleoflongu a) v /\ Val.lessdef y v.
 Proof.
   intros; unfold singleoflongu. exists y; split; auto.
   eapply (eval_helper_1 (BI_standard BI_i64_utof)); eauto. DeclHelper. auto.
@@ -514,7 +519,7 @@ Qed.
 Lemma is_intconst_sound:
   forall le a x n,
   is_intconst a = Some n ->
-  eval_expr ge sp e cp m le a x ->
+  eval_expr pol ge sp e cp m le a x ->
   x = Vint n.
 Proof.
   unfold is_intconst; intros until n; intros LC.
@@ -685,7 +690,7 @@ Proof.
     destruct x; auto.
   + (* 32 <= n < 64 *)
     exploit eval_highlong. eexact H. intros [v1 [A1 B1]].
-    assert (eval_expr ge sp e cp m (v1 :: le) (Eletvar 0) v1) by EvalOp.
+    assert (eval_expr pol ge sp e cp m (v1 :: le) (Eletvar 0) v1) by EvalOp.
     exploit eval_shrimm. eexact H2. instantiate (1 := Int.sub n Int.iwordsize). intros [v2 [A2 B2]].
     exploit eval_shrimm. eexact H2. instantiate (1 := Int.repr 31). intros [v3 [A3 B3]].
     econstructor; split. EvalOp.
@@ -718,7 +723,7 @@ Proof.
   unfold addl; red; intros.
   set (default := Ebuiltin (EF_builtin "__builtin_addl" sig_ll_l) (a ::: b ::: Enil)).
   assert (DEFAULT:
-    exists v, eval_expr ge sp e cp m le default v /\ Val.lessdef (Val.addl x y) v).
+    exists v, eval_expr pol ge sp e cp m le default v /\ Val.lessdef (Val.addl x y) v).
   {
     econstructor; split. eapply eval_builtin_2; eauto. reflexivity. reflexivity. auto.
   }
@@ -741,7 +746,7 @@ Proof.
   unfold subl; red; intros.
   set (default := Ebuiltin (EF_builtin "__builtin_subl" sig_ll_l) (a ::: b ::: Enil)).
   assert (DEFAULT:
-    exists v, eval_expr ge sp e cp m le default v /\ Val.lessdef (Val.subl x y) v).
+    exists v, eval_expr pol ge sp e cp m le default v /\ Val.lessdef (Val.subl x y) v).
   {
     econstructor; split. eapply eval_builtin_2; eauto. reflexivity. reflexivity. auto.
   }
@@ -765,8 +770,8 @@ Proof.
   unfold mull_base; red; intros. apply eval_splitlong2; auto.
 - intros.
   set (p := Val.mull' x2 y2). set (le1 := p :: le0).
-  assert (E1: eval_expr ge sp e cp m le1 (Eop Olowlong (Eletvar O ::: Enil)) (Val.loword p)) by EvalOp.
-  assert (E2: eval_expr ge sp e cp m le1 (Eop Ohighlong (Eletvar O ::: Enil)) (Val.hiword p)) by EvalOp.
+  assert (E1: eval_expr pol ge sp e cp m le1 (Eop Olowlong (Eletvar O ::: Enil)) (Val.loword p)) by EvalOp.
+  assert (E2: eval_expr pol ge sp e cp m le1 (Eop Ohighlong (Eletvar O ::: Enil)) (Val.hiword p)) by EvalOp.
   exploit eval_mul. apply eval_lift. eexact H2. apply eval_lift. eexact H3.
   instantiate (1 := p). fold le1. intros [v3 [E3 L3]].
   exploit eval_mul. apply eval_lift. eexact H1. apply eval_lift. eexact H4.
@@ -835,9 +840,9 @@ Qed.
 Theorem eval_shrxlimm:
   forall le a n x z,
   Archi.ptr64 = false ->
-  eval_expr ge sp e cp m le a x ->
+  eval_expr pol ge sp e cp m le a x ->
   Val.shrxl x (Vint n) = Some z ->
-  exists v, eval_expr ge sp e cp m le (shrxlimm a n) v /\ Val.lessdef z v.
+  exists v, eval_expr pol ge sp e cp m le (shrxlimm a n) v /\ Val.lessdef z v.
 Proof.
   intros.
   apply Val.shrxl_shrl_2 in H1. unfold shrxlimm.
@@ -865,10 +870,10 @@ Qed.
 
 Theorem eval_divlu_base:
   forall le a b x y z,
-  eval_expr ge sp e cp m le a x ->
-  eval_expr ge sp e cp m le b y ->
+  eval_expr pol ge sp e cp m le a x ->
+  eval_expr pol ge sp e cp m le b y ->
   Val.divlu x y = Some z ->
-  exists v, eval_expr ge sp e cp m le (divlu_base a b) v /\ Val.lessdef z v.
+  exists v, eval_expr pol ge sp e cp m le (divlu_base a b) v /\ Val.lessdef z v.
 Proof.
   intros; unfold divlu_base.
   econstructor; split. eapply eval_helper_2; eauto. DeclHelper. reflexivity. eassumption. auto.
@@ -876,10 +881,10 @@ Qed.
 
 Theorem eval_modlu_base:
   forall le a b x y z,
-  eval_expr ge sp e cp m le a x ->
-  eval_expr ge sp e cp m le b y ->
+  eval_expr pol ge sp e cp m le a x ->
+  eval_expr pol ge sp e cp m le b y ->
   Val.modlu x y = Some z ->
-  exists v, eval_expr ge sp e cp m le (modlu_base a b) v /\ Val.lessdef z v.
+  exists v, eval_expr pol ge sp e cp m le (modlu_base a b) v /\ Val.lessdef z v.
 Proof.
   intros; unfold modlu_base.
   econstructor; split. eapply eval_helper_2; eauto. DeclHelper. reflexivity. eassumption. auto.
@@ -887,10 +892,10 @@ Qed.
 
 Theorem eval_divls_base:
   forall le a b x y z,
-  eval_expr ge sp e cp m le a x ->
-  eval_expr ge sp e cp m le b y ->
+  eval_expr pol ge sp e cp m le a x ->
+  eval_expr pol ge sp e cp m le b y ->
   Val.divls x y = Some z ->
-  exists v, eval_expr ge sp e cp m le (divls_base a b) v /\ Val.lessdef z v.
+  exists v, eval_expr pol ge sp e cp m le (divls_base a b) v /\ Val.lessdef z v.
 Proof.
   intros; unfold divls_base.
   econstructor; split. eapply eval_helper_2; eauto. DeclHelper. reflexivity. eassumption. auto.
@@ -898,10 +903,10 @@ Qed.
 
 Theorem eval_modls_base:
   forall le a b x y z,
-  eval_expr ge sp e cp m le a x ->
-  eval_expr ge sp e cp m le b y ->
+  eval_expr pol ge sp e cp m le a x ->
+  eval_expr pol ge sp e cp m le b y ->
   Val.modls x y = Some z ->
-  exists v, eval_expr ge sp e cp m le (modls_base a b) v /\ Val.lessdef z v.
+  exists v, eval_expr pol ge sp e cp m le (modls_base a b) v /\ Val.lessdef z v.
 Proof.
   intros; unfold modls_base.
   econstructor; split. eapply eval_helper_2; eauto. DeclHelper. reflexivity. eassumption. auto.
@@ -936,8 +941,8 @@ Qed.
 
 Lemma eval_cmpl_eq_zero:
   forall le a x,
-  eval_expr ge sp e cp m le a (Vlong x) ->
-  eval_expr ge sp e cp m le (cmpl_eq_zero a) (Val.of_bool (Int64.eq x Int64.zero)).
+  eval_expr pol ge sp e cp m le a (Vlong x) ->
+  eval_expr pol ge sp e cp m le (cmpl_eq_zero a) (Val.of_bool (Int64.eq x Int64.zero)).
 Proof.
   intros. unfold cmpl_eq_zero.
   eapply eval_splitlong_strict; eauto. intros.
@@ -952,8 +957,8 @@ Qed.
 
 Lemma eval_cmpl_ne_zero:
   forall le a x,
-  eval_expr ge sp e cp m le a (Vlong x) ->
-  eval_expr ge sp e cp m le (cmpl_ne_zero a) (Val.of_bool (negb (Int64.eq x Int64.zero))).
+  eval_expr pol ge sp e cp m le a (Vlong x) ->
+  eval_expr pol ge sp e cp m le (cmpl_ne_zero a) (Val.of_bool (negb (Int64.eq x Int64.zero))).
 Proof.
   intros. unfold cmpl_ne_zero.
   eapply eval_splitlong_strict; eauto. intros.
@@ -968,9 +973,9 @@ Qed.
 
 Lemma eval_cmplu_gen:
   forall ch cl a b le x y,
-  eval_expr ge sp e cp m le a (Vlong x) ->
-  eval_expr ge sp e cp m le b (Vlong y) ->
-  eval_expr ge sp e cp m le (cmplu_gen ch cl a b)
+  eval_expr pol ge sp e cp m le a (Vlong x) ->
+  eval_expr pol ge sp e cp m le b (Vlong y) ->
+  eval_expr pol ge sp e cp m le (cmplu_gen ch cl a b)
     (Val.of_bool (if Int.eq (Int64.hiword x) (Int64.hiword y)
                   then Int.cmpu cl (Int64.loword x) (Int64.loword y)
                   else Int.cmpu ch (Int64.hiword x) (Int64.hiword y))).
@@ -993,11 +998,11 @@ Qed.
 
 Theorem eval_cmplu:
   forall c le a x b y v,
-  eval_expr ge sp e cp m le a x ->
-  eval_expr ge sp e cp m le b y ->
+  eval_expr pol ge sp e cp m le a x ->
+  eval_expr pol ge sp e cp m le b y ->
   Val.cmplu (Mem.valid_pointer m) c x y = Some v ->
   Archi.ptr64 = false ->
-  eval_expr ge sp e cp m le (cmplu c a b) v.
+  eval_expr pol ge sp e cp m le (cmplu c a b) v.
 Proof.
   intros. unfold Val.cmplu, Val.cmplu_bool in H1. rewrite H2 in H1. simpl in H1.
   destruct x; simpl in H1; try discriminate H1; destruct y; inv H1.
@@ -1027,9 +1032,9 @@ Qed.
 
 Lemma eval_cmpl_gen:
   forall ch cl a b le x y,
-  eval_expr ge sp e cp m le a (Vlong x) ->
-  eval_expr ge sp e cp m le b (Vlong y) ->
-  eval_expr ge sp e cp m le (cmpl_gen ch cl a b)
+  eval_expr pol ge sp e cp m le a (Vlong x) ->
+  eval_expr pol ge sp e cp m le b (Vlong y) ->
+  eval_expr pol ge sp e cp m le (cmpl_gen ch cl a b)
     (Val.of_bool (if Int.eq (Int64.hiword x) (Int64.hiword y)
                   then Int.cmpu cl (Int64.loword x) (Int64.loword y)
                   else Int.cmp ch (Int64.hiword x) (Int64.hiword y))).
@@ -1059,10 +1064,10 @@ Qed.
 
 Theorem eval_cmpl:
   forall c le a x b y v,
-  eval_expr ge sp e cp m le a x ->
-  eval_expr ge sp e cp m le b y ->
+  eval_expr pol ge sp e cp m le a x ->
+  eval_expr pol ge sp e cp m le b y ->
   Val.cmpl c x y = Some v ->
-  eval_expr ge sp e cp m le (cmpl c a b) v.
+  eval_expr pol ge sp e cp m le (cmpl c a b) v.
 Proof.
   intros. unfold Val.cmpl in H1.
   destruct x; simpl in H1; try discriminate. destruct y; inv H1.
@@ -1109,4 +1114,3 @@ Proof.
 Qed.
 
 End CMCONSTR.
-

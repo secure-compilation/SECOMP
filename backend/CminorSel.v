@@ -203,6 +203,7 @@ Inductive eval_expr: letenv -> expr -> val -> Prop :=
       ef_sig ef = sg ->
       eval_exprlist le al vl ->
       external_call ef ge cp vl m E0 v m ->
+      forall (ALLOWED: Policy.allowed_call pol cp (External ef)),
       eval_expr le (Eexternal id sg al) v
 
 with eval_exprlist: letenv -> exprlist -> list val -> Prop :=
@@ -565,22 +566,22 @@ Proof.
 Qed.
 
 Lemma eval_lift_expr:
-  forall ge sp e cp m w le a v,
-  eval_expr ge sp e cp m le a v ->
+  forall pol ge sp e cp m w le a v,
+  eval_expr pol ge sp e cp m le a v ->
   forall p le', insert_lenv le p w le' ->
-  eval_expr ge sp e cp m le' (lift_expr p a) v.
+  eval_expr pol ge sp e cp m le' (lift_expr p a) v.
 Proof.
   intros until w.
-  apply (eval_expr_ind3 ge sp e cp m
+  apply (eval_expr_ind3 pol ge sp e cp m
     (fun le a v =>
       forall p le', insert_lenv le p w le' ->
-      eval_expr ge sp e cp m le' (lift_expr p a) v)
+      eval_expr pol ge sp e cp m le' (lift_expr p a) v)
     (fun le al vl =>
       forall p le', insert_lenv le p w le' ->
-      eval_exprlist ge sp e cp m le' (lift_exprlist p al) vl)
+      eval_exprlist pol ge sp e cp m le' (lift_exprlist p al) vl)
     (fun le a b =>
       forall p le', insert_lenv le p w le' ->
-      eval_condexpr ge sp e cp m le' (lift_condexpr p a) b));
+      eval_condexpr pol ge sp e cp m le' (lift_condexpr p a) b));
   simpl; intros; eauto with evalexpr.
 
   eapply eval_Econdition; eauto. destruct va; eauto.
@@ -596,9 +597,9 @@ Proof.
 Qed.
 
 Lemma eval_lift:
-  forall ge sp e cp m le a v w,
-  eval_expr ge sp e cp m le a v ->
-  eval_expr ge sp e cp m (w::le) (lift a) v.
+  forall pol ge sp e cp m le a v w,
+  eval_expr pol ge sp e cp m le a v ->
+  eval_expr pol ge sp e cp m (w::le) (lift a) v.
 Proof.
   intros. unfold lift. eapply eval_lift_expr.
   eexact H. apply insert_lenv_0.
