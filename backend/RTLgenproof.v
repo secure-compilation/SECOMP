@@ -372,6 +372,10 @@ Variable prog: CminorSel.program.
 Variable tprog: RTL.program.
 Hypothesis TRANSL: match_prog prog tprog.
 
+Variable pol: CminorSel.policy.
+Variable tpol: RTL.policy.
+Hypothesis TRANSPOL: match_pol (fun f tf => transl_fundef f = OK tf) pol tpol.
+
 Let ge : CminorSel.genv := Genv.globalenv prog.
 Let tge : RTL.genv := Genv.globalenv tprog.
 
@@ -424,7 +428,7 @@ Lemma tr_move_correct:
   forall r1 ns r2 nd cs f sp rs m,
   tr_move f.(fn_code) ns r1 nd r2 ->
   exists rs',
-  star step tge (State cs f sp ns rs m) E0 (State cs f sp nd rs' m) /\
+  star (step tpol) tge (State cs f sp ns rs m) E0 (State cs f sp nd rs' m) /\
   rs'#r2 = rs#r1 /\
   (forall r, r <> r2 -> rs'#r = rs#r).
 Proof.
@@ -484,7 +488,7 @@ Definition transl_expr_prop
     (ME: match_env map e le rs)
     (EXT: Mem.extends m tm),
   exists rs', exists tm',
-     star step tge (State cs f sp ns rs tm) E0 (State cs f sp nd rs' tm')
+     star (step tpol) tge (State cs f sp ns rs tm) E0 (State cs f sp nd rs' tm')
   /\ match_env map (set_optvar dst v e) le rs'
   /\ Val.lessdef v rs'#rd
   /\ (forall r, In r pr -> rs'#r = rs#r)
@@ -499,7 +503,7 @@ Definition transl_exprlist_prop
     (ME: match_env map e le rs)
     (EXT: Mem.extends m tm),
   exists rs', exists tm',
-     star step tge (State cs f sp ns rs tm) E0 (State cs f sp nd rs' tm')
+     star (step tpol) tge (State cs f sp ns rs tm) E0 (State cs f sp nd rs' tm')
   /\ match_env map e le rs'
   /\ Val.lessdef_list vl rs'##rl
   /\ (forall r, In r pr -> rs'#r = rs#r)
@@ -514,7 +518,7 @@ Definition transl_condexpr_prop
     (ME: match_env map e le rs)
     (EXT: Mem.extends m tm),
   exists rs', exists tm',
-     plus step tge (State cs f sp ns rs tm) E0 (State cs f sp (if v then ntrue else nfalse) rs' tm')
+     plus (step tpol) tge (State cs f sp ns rs tm) E0 (State cs f sp (if v then ntrue else nfalse) rs' tm')
   /\ match_env map e le rs'
   /\ (forall r, In r pr -> rs'#r = rs#r)
   /\ Mem.extends m tm'.
@@ -557,7 +561,7 @@ Qed.
 Lemma transl_expr_Eop_correct:
   forall (le : letenv) (op : operation) (args : exprlist)
          (vargs : list val) (v : val),
-  eval_exprlist ge sp e cp m le args vargs ->
+  eval_exprlist pol ge sp e cp m le args vargs ->
   transl_exprlist_prop le args vargs ->
   eval_operation ge sp op vargs m = Some v ->
   transl_expr_prop le (Eop op args) v.
@@ -585,7 +589,7 @@ Qed.
 Lemma transl_expr_Eload_correct:
   forall (le : letenv) (chunk : memory_chunk) (addr : Op.addressing)
          (args : exprlist) (vargs : list val) (vaddr v : val),
-  eval_exprlist ge sp e cp m le args vargs ->
+  eval_exprlist pol ge sp e cp m le args vargs ->
   transl_exprlist_prop le args vargs ->
   Op.eval_addressing ge sp addr vargs = Some vaddr ->
   Mem.loadv chunk m vaddr = Some v ->
@@ -614,9 +618,9 @@ Qed.
 Lemma transl_expr_Econdition_correct:
   forall (le : letenv) (a: condexpr) (ifso ifnot : expr)
          (va : bool) (v : val),
-  eval_condexpr ge sp e cp m le a va ->
+  eval_condexpr pol ge sp e cp m le a va ->
   transl_condexpr_prop le a va ->
-  eval_expr ge sp e cp m le (if va then ifso else ifnot) v ->
+  eval_expr pol ge sp e cp m le (if va then ifso else ifnot) v ->
   transl_expr_prop le (if va then ifso else ifnot) v ->
   transl_expr_prop le (Econdition a ifso ifnot) v.
 Proof.
@@ -640,9 +644,9 @@ Qed.
 
 Lemma transl_expr_Elet_correct:
   forall (le : letenv) (a1 a2 : expr) (v1 v2 : val),
-  eval_expr ge sp e cp m le a1 v1 ->
+  eval_expr pol ge sp e cp m le a1 v1 ->
   transl_expr_prop le a1 v1 ->
-  eval_expr ge sp e cp m (v1 :: le) a2 v2 ->
+  eval_expr pol ge sp e cp m (v1 :: le) a2 v2 ->
   transl_expr_prop (v1 :: le) a2 v2 ->
   transl_expr_prop le (Elet a1 a2) v2.
 Proof.
@@ -708,7 +712,7 @@ Qed.
 
 Lemma transl_expr_Ebuiltin_correct:
   forall le ef al vl v,
-  eval_exprlist ge sp e cp m le al vl ->
+  eval_exprlist pol ge sp e cp m le al vl ->
   transl_exprlist_prop le al vl ->
   external_call ef ge cp vl m E0 v m ->
   transl_expr_prop le (Ebuiltin ef al) v.
@@ -740,9 +744,10 @@ Lemma transl_expr_Eexternal_correct:
   Genv.find_symbol ge id = Some b ->
   Genv.find_funct_ptr ge b = Some (External ef) ->
   ef_sig ef = sg ->
-  eval_exprlist ge sp e cp m le al vl ->
+  eval_exprlist pol ge sp e cp m le al vl ->
   transl_exprlist_prop le al vl ->
   external_call ef ge cp vl m E0 v m ->
+  forall (ALLOWED: Policy.allowed_call pol cp (External ef)),
   transl_expr_prop le (Eexternal id sg al) v.
 Proof.
   intros; red; intros. inv TE.
@@ -755,6 +760,7 @@ Proof.
   split. eapply star_trans. eexact EX1.
   eapply star_left. eapply exec_Icall; eauto.
   simpl. rewrite symbols_preserved. rewrite H. eauto. auto.
+  eapply TRANSPOL; eauto. reflexivity.
   eapply star_left. eapply exec_function_external.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   subst cp. eauto.
@@ -785,9 +791,9 @@ Qed.
 Lemma transl_exprlist_Econs_correct:
   forall (le : letenv) (a1 : expr) (al : exprlist) (v1 : val)
          (vl : list val),
-  eval_expr ge sp e cp m le a1 v1 ->
+  eval_expr pol ge sp e cp m le a1 v1 ->
   transl_expr_prop le a1 v1 ->
-  eval_exprlist ge sp e cp m le al vl ->
+  eval_exprlist pol ge sp e cp m le al vl ->
   transl_exprlist_prop le al vl ->
   transl_exprlist_prop le (Econs a1 al) (v1 :: vl).
 Proof.
@@ -813,7 +819,7 @@ Qed.
 
 Lemma transl_condexpr_CEcond_correct:
   forall le cond al vl vb,
-  eval_exprlist ge sp e cp m le al vl ->
+  eval_exprlist pol ge sp e cp m le al vl ->
   transl_exprlist_prop le al vl ->
   eval_condition cond vl m = Some vb ->
   transl_condexpr_prop le (CEcond cond al) vb.
@@ -834,9 +840,9 @@ Qed.
 
 Lemma transl_condexpr_CEcondition_correct:
   forall le a b c va v,
-  eval_condexpr ge sp e cp m le a va ->
+  eval_condexpr pol ge sp e cp m le a va ->
   transl_condexpr_prop le a va ->
-  eval_condexpr ge sp e cp m le (if va then b else c) v ->
+  eval_condexpr pol ge sp e cp m le (if va then b else c) v ->
   transl_condexpr_prop le (if va then b else c) v ->
   transl_condexpr_prop le (CEcondition a b c) v.
 Proof.
@@ -858,9 +864,9 @@ Qed.
 
 Lemma transl_condexpr_CElet_correct:
   forall le a b v1 v2,
-  eval_expr ge sp e cp m le a v1 ->
+  eval_expr pol ge sp e cp m le a v1 ->
   transl_expr_prop le a v1 ->
-  eval_condexpr ge sp e cp m (v1 :: le) b v2 ->
+  eval_condexpr pol ge sp e cp m (v1 :: le) b v2 ->
   transl_condexpr_prop (v1 :: le) b v2 ->
   transl_condexpr_prop le (CElet a b) v2.
 Proof.
@@ -883,10 +889,9 @@ Qed.
 
 Theorem transl_expr_correct:
   forall le a v,
-  eval_expr ge sp e cp m le a v ->
+  eval_expr pol ge sp e cp m le a v ->
   transl_expr_prop le a v.
-Proof
-  (eval_expr_ind3 ge sp e cp m
+Proof (eval_expr_ind3 pol ge sp e cp m
      transl_expr_prop
      transl_exprlist_prop
      transl_condexpr_prop
@@ -906,10 +911,10 @@ Proof
 
 Theorem transl_exprlist_correct:
   forall le a v,
-  eval_exprlist ge sp e cp m le a v ->
+  eval_exprlist pol ge sp e cp m le a v ->
   transl_exprlist_prop le a v.
 Proof
-  (eval_exprlist_ind3 ge sp e cp m
+  (eval_exprlist_ind3 pol ge sp e cp m
      transl_expr_prop
      transl_exprlist_prop
      transl_condexpr_prop
@@ -929,10 +934,10 @@ Proof
 
 Theorem transl_condexpr_correct:
   forall le a v,
-  eval_condexpr ge sp e cp m le a v ->
+  eval_condexpr pol ge sp e cp m le a v ->
   transl_condexpr_prop le a v.
 Proof
-  (eval_condexpr_ind3 ge sp e cp m
+  (eval_condexpr_ind3 pol ge sp e cp m
      transl_expr_prop
      transl_exprlist_prop
      transl_condexpr_prop
@@ -961,14 +966,14 @@ Definition transl_exitexpr_prop
     (ME: match_env map e le rs)
     (EXT: Mem.extends m tm),
   exists nd, exists rs', exists tm',
-     star step tge (State cs f sp ns rs tm) E0 (State cs f sp nd rs' tm')
+     star (step tpol) tge (State cs f sp ns rs tm) E0 (State cs f sp nd rs' tm')
   /\ nth_error nexits x = Some nd
   /\ match_env map e le rs'
   /\ Mem.extends m tm'.
 
 Theorem transl_exitexpr_correct:
   forall le a x,
-  eval_exitexpr ge sp e cp m le a x ->
+  eval_exitexpr pol ge sp e cp m le a x ->
   transl_exitexpr_prop le a x.
 Proof.
   induction 1; red; intros;
@@ -1008,9 +1013,9 @@ Qed.
 
 Lemma eval_exprlist_append:
   forall le al1 vl1 al2 vl2,
-  eval_exprlist ge sp e cp m le (exprlist_of_expr_list al1) vl1 ->
-  eval_exprlist ge sp e cp m le (exprlist_of_expr_list al2) vl2 ->
-  eval_exprlist ge sp e cp m le (exprlist_of_expr_list (al1 ++ al2)) (vl1 ++ vl2).
+  eval_exprlist pol ge sp e cp m le (exprlist_of_expr_list al1) vl1 ->
+  eval_exprlist pol ge sp e cp m le (exprlist_of_expr_list al2) vl2 ->
+  eval_exprlist pol ge sp e cp m le (exprlist_of_expr_list (al1 ++ al2)) (vl1 ++ vl2).
 Proof.
   induction al1; simpl; intros vl1 al2 vl2 E1 E2; inv E1.
 - auto.
@@ -1019,9 +1024,9 @@ Qed.
 
 Lemma invert_eval_builtin_arg:
   forall a v,
-  eval_builtin_arg ge sp e cp m a v ->
+  eval_builtin_arg pol ge sp e cp m a v ->
   exists vl,
-     eval_exprlist ge sp e cp m nil (exprlist_of_expr_list (params_of_builtin_arg a)) vl
+     eval_exprlist pol ge sp e cp m nil (exprlist_of_expr_list (params_of_builtin_arg a)) vl
   /\ Events.eval_builtin_arg ge (fun v => v) sp m (fst (convert_builtin_arg a vl)) v
   /\ (forall vl', convert_builtin_arg a (vl ++ vl') = (fst (convert_builtin_arg a vl), vl')).
 Proof.
@@ -1041,9 +1046,9 @@ Qed.
 
 Lemma invert_eval_builtin_args:
   forall al vl,
-  list_forall2 (eval_builtin_arg ge sp e cp m) al vl ->
+  list_forall2 (eval_builtin_arg pol ge sp e cp m) al vl ->
   exists vl',
-     eval_exprlist ge sp e cp m nil (exprlist_of_expr_list (params_of_builtin_args al)) vl'
+     eval_exprlist pol ge sp e cp m nil (exprlist_of_expr_list (params_of_builtin_args al)) vl'
   /\ Events.eval_builtin_args ge (fun v => v) sp m (convert_builtin_args al vl') vl.
 Proof.
   induction 1; simpl.
@@ -1324,10 +1329,10 @@ Proof.
 Qed.
 
 Theorem transl_step_correct:
-  forall S1 t S2, CminorSel.step ge S1 t S2 ->
+  forall S1 t S2, CminorSel.step pol ge S1 t S2 ->
   forall R1, match_states S1 R1 ->
   exists R2,
-  (plus RTL.step tge R1 t R2 \/ (star RTL.step tge R1 t R2 /\ lt_state S2 S1))
+  (plus (RTL.step tpol) tge R1 t R2 \/ (star (RTL.step tpol) tge R1 t R2 /\ lt_state S2 S1))
   /\ match_states S2 R2.
 Proof.
   induction 1; intros R1 MSTATE; inv MSTATE.
@@ -1397,6 +1402,8 @@ Proof.
   left; eapply plus_right. eapply star_trans. eexact A. eexact E. reflexivity.
   eapply exec_Icall; eauto. simpl. rewrite J. destruct C. eauto. discriminate P. simpl; auto.
   apply sig_transl_function; auto.
+  eapply TRANSPOL; eauto. 
+  rewrite <- COMP; auto.
   traceEq.
   constructor; auto. econstructor; eauto.
   (* direct *)
@@ -1408,6 +1415,8 @@ Proof.
   eapply exec_Icall; eauto. simpl. rewrite symbols_preserved. rewrite H4.
     rewrite Genv.find_funct_find_funct_ptr in P. eauto.
   apply sig_transl_function; auto.
+  eapply TRANSPOL; eauto.
+  rewrite <- COMP; auto.
   traceEq.
   constructor; auto. econstructor; eauto.
 
@@ -1429,6 +1438,8 @@ Proof.
   apply sig_transl_function; auto.
     rewrite <- (comp_transl_partial fd Q), COMP. inv TF; congruence.
   rewrite <- COMP'; eauto.
+  eapply TRANSPOL; eauto.
+  rewrite <- COMP'; auto.
   rewrite H; eauto.
   traceEq.
   constructor; auto.
@@ -1446,6 +1457,8 @@ Proof.
   apply sig_transl_function; auto.
   rewrite <- (comp_transl_partial _ Q), COMP. inv TF; congruence.
   rewrite <- COMP'. eauto.
+  eapply TRANSPOL; eauto.
+  rewrite <- COMP'; auto.
   rewrite H; eauto.
   traceEq.
   constructor; auto.
@@ -1624,7 +1637,7 @@ Proof.
 Qed.
 
 Theorem transf_program_correct:
-  forward_simulation (CminorSel.semantics prog) (RTL.semantics tprog).
+  forward_simulation (CminorSel.semantics pol prog) (RTL.semantics tpol tprog).
 Proof.
   eapply forward_simulation_star_wf with (order := lt_state).
   apply senv_preserved.
