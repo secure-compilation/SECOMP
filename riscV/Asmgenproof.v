@@ -44,6 +44,10 @@ Hypothesis TRANSF: match_prog prog tprog.
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
 
+Variable pol: Mach.policy.
+Variable tpol: Asm.policy.
+Hypothesis TRANSPOL: match_pol (fun f tf => transf_fundef f = OK tf) pol tpol.
+
 Lemma symbols_preserved:
   forall (s: ident), Genv.find_symbol tge s = Genv.find_symbol ge s.
 Proof (Genv.find_symbol_match TRANSF).
@@ -89,7 +93,7 @@ Lemma exec_straight_exec:
   forall fb f c ep tf tc c' rs m rs' m',
   transl_code_at_pc ge (rs PC) fb f c ep tf tc ->
   exec_straight tge tf tc rs m c' rs' m' ->
-  plus step tge (State rs m) E0 (State rs' m').
+  plus (step tpol) tge (State rs m) E0 (State rs' m').
 Proof.
   intros. inv H.
   eapply exec_straight_steps_1; eauto.
@@ -499,12 +503,13 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
       match_states (Mach.State s fb sp c ms m)
                    (Asm.State rs m')
   | match_states_call:
-      forall s fb ms m m' rs
+      forall s fb ms m m' rs fd
         (STACKS: match_stack ge s)
         (MEXT: Mem.extends m m')
         (AG: agree ms (parent_sp s) rs)
         (ATPC: rs PC = Vptr fb Ptrofs.zero)
-        (ATLR: rs RA = parent_ra s),
+        (ATLR: rs RA = parent_ra s)
+        (FIND: Genv.find_funct_ptr ge fb = Some fd),
       match_states (Mach.Callstate s fb ms m)
                    (Asm.State rs m')
   | match_states_return:
@@ -528,7 +533,7 @@ Lemma exec_straight_steps:
     /\ agree ms2 sp rs2
     /\ (it1_is_parent ep i = true -> rs2#X30 = parent_sp s)) ->
   exists st',
-  plus step tge (State rs1 m1') E0 st' /\
+  plus (step tpol) tge (State rs1 m1') E0 st' /\
   match_states (Mach.State s fb sp c ms2 m2) st'.
 Proof.
   intros. inversion H2. subst. monadInv H7.
@@ -552,7 +557,7 @@ Lemma exec_straight_steps_goto:
     /\ agree ms2 sp rs2
     /\ exec_instr tge tf jmp rs2 m2' = goto_label tf lbl rs2 m2') ->
   exists st',
-  plus step tge (State rs1 m1') E0 st' /\
+  plus (step tpol) tge (State rs1 m1') E0 st' /\
   match_states (Mach.State s fb sp c' ms2 m2) st'.
 Proof.
   intros. inversion H3. subst. monadInv H9.
@@ -563,12 +568,14 @@ Proof.
   intros [ofs' [PC2 CT2]].
   exploit find_label_goto_label; eauto.
   intros [tc' [rs3 [GOTO [AT' OTH]]]].
+  inversion AT'; subst.
   exists (State rs3 m2'); split.
   eapply plus_right'.
   eapply exec_straight_steps_1; eauto.
   econstructor; eauto.
   eapply find_instr_tail. eauto.
   rewrite C. eexact GOTO.
+  left; auto.
   traceEq.
   econstructor; eauto.
   apply agree_exten with rs2; auto with asmgen.
@@ -589,7 +596,7 @@ Lemma exec_straight_opt_steps_goto:
     /\ agree ms2 sp rs2
     /\ exec_instr tge tf jmp rs2 m2' = goto_label tf lbl rs2 m2') ->
   exists st',
-  plus step tge (State rs1 m1') E0 st' /\
+  plus (step tpol) tge (State rs1 m1') E0 st' /\
   match_states (Mach.State s fb sp c' ms2 m2) st'.
 Proof.
   intros. inversion H3. subst. monadInv H9.
@@ -599,10 +606,12 @@ Proof.
   inv A.
 - exploit find_label_goto_label; eauto.
   intros [tc' [rs3 [GOTO [AT' OTH]]]].
+  inversion AT'; subst.
   exists (State rs3 m2'); split.
   apply plus_one. econstructor; eauto.
   eapply find_instr_tail. eauto.
   rewrite C. eexact GOTO.
+  left; auto.
   econstructor; eauto.
   apply agree_exten with rs2; auto with asmgen.
   congruence.
@@ -610,12 +619,14 @@ Proof.
   intros [ofs' [PC2 CT2]].
   exploit find_label_goto_label; eauto.
   intros [tc' [rs3 [GOTO [AT' OTH]]]].
+  inversion AT'; subst.
   exists (State rs3 m2'); split.
   eapply plus_right'.
   eapply exec_straight_steps_1; eauto.
   econstructor; eauto.
   eapply find_instr_tail. eauto.
   rewrite C. eexact GOTO.
+  left; auto.
   traceEq.
   econstructor; eauto.
   apply agree_exten with rs2; auto with asmgen.
@@ -646,9 +657,9 @@ Qed.
 (** This is the simulation diagram.  We prove it by case analysis on the Mach transition. *)
 
 Theorem step_simulation:
-  forall S1 t S2, Mach.step return_address_offset ge S1 t S2 ->
+  forall S1 t S2, Mach.step return_address_offset pol ge S1 t S2 ->
   forall S1' (MS: match_states S1 S1'),
-  (exists S2', plus step tge S1' t S2' /\ match_states S2 S2')
+  (exists S2', plus (step tpol) tge S1' t S2' /\ match_states S2 S2')
   \/ (measure S2 < measure S1 /\ t = E0 /\ match_states S2 S1')%nat.
 Proof.
   induction 1; intros; inv MS.
@@ -770,9 +781,14 @@ Local Transparent destroyed_by_op.
     econstructor; eauto.
   exploit return_address_offset_correct; eauto. intros; subst ra.
   left; econstructor; split.
-  apply plus_one. eapply exec_step_internal. Simpl. rewrite <- H2; simpl; eauto.
+  apply plus_one. eapply exec_step_internal.
+  Simpl. rewrite <- H2; simpl; eauto.
   eapply functions_transl; eauto. eapply find_instr_tail; eauto.
-  simpl. eauto.
+  simpl. eauto. Simpl. eauto.
+  eapply functions_transl; eauto.
+  
+  admit.
+  left; auto.
   econstructor; eauto.
   econstructor; eauto.
   eapply agree_sp_def; eauto.
@@ -787,6 +803,9 @@ Local Transparent destroyed_by_op.
   apply plus_one. eapply exec_step_internal. eauto.
   eapply functions_transl; eauto. eapply find_instr_tail; eauto.
   simpl. unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H. eauto.
+  Simpl. destruct fd. eapply functions_transl.
+   eapply CALLED. 
+  admit. admit.
   econstructor; eauto.
   econstructor; eauto.
   eapply agree_sp_def; eauto.
@@ -813,6 +832,7 @@ Local Transparent destroyed_by_op.
   eapply plus_right'. eapply exec_straight_exec; eauto.
   econstructor. eexact P. eapply functions_transl; eauto. eapply find_instr_tail. eexact Q.
   simpl. reflexivity.
+  Simpl. admit. admit. admit.
   traceEq.
   (* match states *)
   econstructor; eauto.
@@ -827,6 +847,7 @@ Local Transparent destroyed_by_op.
   eapply plus_right'. eapply exec_straight_exec; eauto.
   econstructor. eexact P. eapply functions_transl; eauto. eapply find_instr_tail. eexact Q.
   simpl. reflexivity.
+  Simpl. admit. admit. admit.
   traceEq.
   (* match states *)
   econstructor; eauto.
@@ -845,6 +866,7 @@ Local Transparent destroyed_by_op.
   eapply find_instr_tail; eauto.
   erewrite <- sp_val by eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
+  admit.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   replace (comp_of tf) with (comp_of f); eauto.
   { rewrite <- comp_transf_function; eauto.
@@ -866,11 +888,13 @@ Local Transparent destroyed_by_op.
   assert (f0 = f) by congruence. subst f0.
   inv AT. monadInv H4.
   exploit find_label_goto_label; eauto. intros [tc' [rs' [GOTO [AT2 INV]]]].
-  left; exists (State rs' m'); split.
+  left. inversion AT2; subst. exists (State rs' m'); split.
   apply plus_one. econstructor; eauto.
   eapply functions_transl; eauto.
   eapply find_instr_tail; eauto.
   simpl; eauto.
+  eapply functions_transl; eauto.
+  left; auto.
   econstructor; eauto.
   eapply agree_exten; eauto with asmgen.
   congruence.
@@ -909,7 +933,9 @@ Local Transparent destroyed_by_op.
   left; econstructor; split.
   apply plus_one. econstructor; eauto.
   eapply find_instr_tail; eauto.
-  simpl. rewrite <- H9. unfold Mach.label in H0; unfold label; rewrite H0. eexact A.
+  simpl. rewrite <- H9. unfold Mach.label in H0; unfold label; rewrite H0.
+  (* eexact A. *)
+  admit. admit.
   econstructor; eauto.
   eapply agree_undef_regs; eauto.
   simpl. intros. rewrite C; auto with asmgen. Simpl.

@@ -1097,7 +1097,7 @@ Inductive step: state -> trace -> state -> Prop :=
       exec_instr f i rs m = Next rs' m' ->
       forall (NEXTPC: rs' PC = Vptr b' ofs'),
       forall (NEXTFUN: Genv.find_funct_ptr ge b' = Some fd),
-      forall (ALLOWED: Policy.allowed_call pol f.(fn_comp) fd),
+    forall (ALLOWED: Policy.allowed_call pol f.(fn_comp) fd),
       step (State rs m) E0 (State rs' m')
   | exec_step_builtin:
       forall b ofs f ef args res rs m vargs t vres rs' m',
