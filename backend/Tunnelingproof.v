@@ -144,6 +144,9 @@ Section PRESERVATION.
 
 Variables prog tprog: program.
 Hypothesis TRANSL: match_prog prog tprog.
+Variable pol: policy.
+Variable tpol: policy.
+Hypothesis TRANSPOL: match_pol (fun f tf => tf = tunnel_fundef f) pol tpol.
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
 
@@ -414,9 +417,9 @@ Proof.
 Qed.
 
 Lemma tunnel_step_correct:
-  forall st1 t st2, step ge st1 t st2 ->
+  forall st1 t st2, step pol ge st1 t st2 ->
   forall st1' (MS: match_states st1 st1'),
-  (exists st2', step tge st1' t st2' /\ match_states st2 st2')
+  (exists st2', step tpol tge st1' t st2' /\ match_states st2 st2')
   \/ (measure st2 < measure st1 /\ t = E0 /\ match_states st2 st1')%nat.
 Proof.
   induction 1; intros; try inv MS.
@@ -424,7 +427,7 @@ Proof.
 - (* entering a block *)
   assert (DEFAULT: branch_target f pc = pc ->
     (exists st2' : state,
-     step tge (State ts (tunnel_function f) sp (branch_target f pc) tls tm) E0 st2'
+     step tpol tge (State ts (tunnel_function f) sp (branch_target f pc) tls tm) E0 st2'
      /\ match_states (Block s f sp bb rs m) st2')).
   { intros. rewrite H0. econstructor; split.
     econstructor. simpl. rewrite PTree.gmap1. rewrite H. simpl. eauto.
@@ -477,6 +480,7 @@ Proof.
   eapply exec_Lcall with (fd := tunnel_fundef fd); eauto.
   eapply find_function_translated; eauto.
   rewrite sig_preserved. auto.
+  eapply TRANSPOL; eauto.
   econstructor; eauto.
   constructor; auto.
   constructor; auto.
@@ -487,6 +491,7 @@ Proof.
   eapply find_function_translated; eauto using return_regs_lessdef, match_parent_locset.
   apply sig_preserved.
   unfold tunnel_fundef. now rewrite comp_tunnel_fundef, comp_transl.
+  eapply TRANSPOL; eauto.
   econstructor; eauto using return_regs_lessdef, match_parent_locset.
 - (* Lbuiltin *)
   exploit eval_builtin_args_lessdef. eexact LS. eauto. eauto. intros (tvargs & EVA & LDA).
@@ -575,7 +580,7 @@ Proof.
 Qed.
 
 Theorem transf_program_correct:
-  forward_simulation (LTL.semantics prog) (LTL.semantics tprog).
+  forward_simulation (LTL.semantics pol prog) (LTL.semantics tpol tprog).
 Proof.
   eapply forward_simulation_opt.
   apply senv_preserved.
