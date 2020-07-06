@@ -37,6 +37,16 @@ Section PRESERVATION.
 Variable prog: program.
 Variable tprog: program.
 Hypothesis TRANSL: match_prog prog tprog.
+Variable pol: policy.
+Variable tpol: policy.
+Hypothesis TRANSPOL: Policy.match_pol (fun cu f tf => tf = transf_fundef (romem_for cu) f) prog pol tpol.
+
+Lemma linkorder_policy:
+  forall cunit, linkorder cunit prog ->
+           Policy.match_pol (fun cu f tf => tf = transf_fundef (romem_for cu) f) prog pol tpol ->
+           Policy.match_pol (fun cu f tf => tf = transf_fundef (romem_for cu) f) cunit pol tpol.
+Admitted.
+
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
 
@@ -364,9 +374,9 @@ Ltac TransfInstr :=
 
 Lemma transf_step_correct:
   forall s1 t s2,
-  step ge s1 t s2 ->
+  step pol ge s1 t s2 ->
   forall n1 s1' (SS: sound_state prog s1) (MS: match_states n1 s1 s1'),
-  (exists n2, exists s2', step tge s1' t s2' /\ match_states n2 s2 s2')
+  (exists n2, exists s2', step tpol tge s1' t s2' /\ match_states n2 s2 s2')
   \/ (exists n2, n2 < n1 /\ t = E0 /\ match_states n2 s2 s1')%nat.
 Proof.
   induction 1; intros; inv MS; try InvSoundState; try (inv PC; try congruence).
@@ -473,6 +483,7 @@ Proof.
   TransfInstr; intro.
   left; econstructor; econstructor; split.
   eapply exec_Icall; eauto. apply sig_function_translated; auto.
+  eapply linkorder_policy; eauto.
   constructor; auto. constructor; auto.
   econstructor; eauto.
   apply regs_lessdef_regs; auto.
@@ -484,6 +495,7 @@ Proof.
   left; econstructor; econstructor; split.
   eapply exec_Itailcall; eauto. apply sig_function_translated; auto.
     rewrite comp_transl, COMP. symmetry. now apply (comp_transl f).
+  eapply linkorder_policy; eauto.
   constructor; auto.
   apply regs_lessdef_regs; auto.
 
@@ -494,7 +506,7 @@ Opaque builtin_strength_reduction.
   set (rm := romem_for cu) in *.
   assert (DFL: (fn_code (transf_function rm f))!pc = Some dfl ->
           exists (n2 : nat) (s2' : state),
-            step tge
+            step tpol tge
              (State s' (transf_function rm f) (Vptr sp0 Ptrofs.zero) pc rs' m'0) t s2' /\
             match_states n2
              (State s f (Vptr sp0 Ptrofs.zero) pc' (regmap_setres res vres rs) m') s2').
@@ -622,7 +634,7 @@ Qed.
   follows. *)
 
 Theorem transf_program_correct:
-  forward_simulation (RTL.semantics prog) (RTL.semantics tprog).
+  forward_simulation (RTL.semantics pol prog) (RTL.semantics tpol tprog).
 Proof.
   apply Forward_simulation with lt (fun n s1 s2 => sound_state prog s1 /\ match_states n s1 s2); constructor.
 - apply lt_wf.

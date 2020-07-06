@@ -42,8 +42,20 @@ Section INLINING.
 Variable prog: program.
 Variable tprog: program.
 Hypothesis TRANSF: match_prog prog tprog.
+
+Variable pol: policy.
+Variable tpol: policy.
+Hypothesis TRANSPOL: Policy.match_pol (fun cunit f tf => transf_fundef (funenv_program cunit) f = OK tf) prog pol tpol.
+
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
+
+Lemma linkorder_policy:
+  forall cunit, linkorder cunit prog ->
+           Policy.match_pol (fun cunit f tf => transf_fundef (funenv_program cunit) f = OK tf) prog pol tpol ->
+           Policy.match_pol (fun cunit f tf => transf_fundef (funenv_program cunit) f = OK tf) cunit pol tpol.
+Proof.
+Admitted.
 
 Lemma symbols_preserved:
   forall (s: ident), Genv.find_symbol tge s = Genv.find_symbol ge s.
@@ -235,7 +247,7 @@ Lemma tr_moves_init_regs:
   (forall r, In r rdsts -> Ple r ctx2.(mreg)) ->
   list_forall2 (val_reg_charact F ctx1 rs1) vl rsrcs ->
   exists rs2,
-    star step tge (State stk f sp pc1 rs1 m)
+    star (step tpol) tge (State stk f sp pc1 rs1 m)
                E0 (State stk f sp pc2 rs2 m)
   /\ agree_regs F ctx2 (init_regs vl rdsts) rs2
   /\ forall r, Plt r ctx2.(dreg) -> rs2#r = rs1#r.
@@ -952,9 +964,9 @@ Qed.
 
 Theorem step_simulation:
   forall S1 t S2,
-  step ge S1 t S2 ->
+  step pol ge S1 t S2 ->
   forall S1' (MS: match_states S1 S1'),
-  (exists S2', plus step tge S1' t S2' /\ match_states S2 S2')
+  (exists S2', plus (step tpol) tge S1' t S2' /\ match_states S2 S2')
   \/ (measure S2 < measure S1 /\ t = E0 /\ match_states S2 S1')%nat.
 Proof.
   induction 1; intros; inv MS.
@@ -1029,6 +1041,8 @@ Proof.
   left; econstructor; split.
   eapply plus_one. eapply exec_Icall; eauto.
   eapply sig_function_translated; eauto.
+  eapply linkorder_policy; eauto.
+  rewrite <- SAMECOMP; auto.
   econstructor; eauto.
   eapply match_stacks_cons; eauto.
   { red; eauto. }
@@ -1064,6 +1078,8 @@ Proof.
   eapply sig_function_translated; eauto.
     now rewrite <- (comp_transl_partial _ B), COMP.
   congruence.
+  eapply linkorder_policy; eauto.
+  rewrite <- SAMECOMP; auto.
   econstructor; eauto.
   eapply match_stacks_bound with (bound := sp').
   eapply match_stacks_invariant; eauto.
@@ -1082,6 +1098,8 @@ Proof.
   left; econstructor; split.
   eapply plus_one. eapply exec_Icall; eauto.
   eapply sig_function_translated; eauto.
+  eapply linkorder_policy; eauto.
+  rewrite <- SAMECOMP; auto.
   econstructor; eauto.
   eapply match_stacks_untailcall; eauto.
   eapply match_stacks_inside_invariant; eauto.
@@ -1355,7 +1373,7 @@ Proof.
 Qed.
 
 Theorem transf_program_correct:
-  forward_simulation (semantics prog) (semantics tprog).
+  forward_simulation (semantics pol prog) (semantics tpol tprog).
 Proof.
   eapply forward_simulation_star.
   apply senv_preserved.

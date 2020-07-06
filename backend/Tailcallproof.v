@@ -226,8 +226,19 @@ Section PRESERVATION.
 Variable prog tprog: program.
 Hypothesis TRANSL: match_prog prog tprog.
 
+Variable pol: policy.
+Variable tpol: policy.
+Hypothesis TRANSPOL: Policy.match_pol (fun cunit f tf => tf = transf_fundef (compenv_program cunit) f) prog pol tpol.
+
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
+
+Lemma linkorder_policy:
+  forall cunit, linkorder cunit prog ->
+           Policy.match_pol (fun cunit f tf => tf = transf_fundef (compenv_program cunit) f) prog pol tpol ->
+           Policy.match_pol (fun cunit f tf => tf = transf_fundef (compenv_program cunit) f) cunit pol tpol.
+Proof.
+Admitted.
 
 Lemma symbols_preserved:
   forall (s: ident), Genv.find_symbol tge s = Genv.find_symbol ge s.
@@ -488,9 +499,9 @@ Ltac EliminatedInstr :=
   of the ``option'' kind. *)
 
 Lemma transf_step_correct:
-  forall s1 t s2, step ge s1 t s2 ->
+  forall s1 t s2, step pol ge s1 t s2 ->
   forall s1' (MS: match_states s1 s1'),
-  (exists s2', step tge s1' t s2' /\ match_states s2 s2')
+  (exists s2', step tpol tge s1' t s2' /\ match_states s2 s2')
   \/ (measure s2 < measure s1 /\ t = E0 /\ match_states s2 s1')%nat.
 Proof.
   induction 1; intros; inv MS; EliminatedInstr.
@@ -562,9 +573,11 @@ Proof.
   { change (fn_comp _) with (comp_of (transf_function ce f)).
     now rewrite comp_transl, comp_transl. }
   { now rewrite <- E. }
+  eapply linkorder_policy; eauto.
+  rewrite <- E; auto.
   constructor. eapply match_stackframes_tail; eauto.
     apply (cenv_compat_linkorder _ _ _ ORDER (compenv_program_compat _)).
-  { red. now rewrite Efd, ALLOWED. }
+  { red. now rewrite Efd, ALLOWED0. }
   apply regs_lessdef_regs; auto.
   eapply Mem.free_right_extends; eauto.
   rewrite stacksize_preserved. rewrite H7. intros. omegaContradiction.
@@ -572,6 +585,8 @@ Proof.
   left. exists (Callstate (Stackframe res (transf_function ce f) (Vptr sp0 Ptrofs.zero) pc' rs' :: s')
                           (transf_fundef (compenv_program cu) fd) (rs'##args) m'); split.
   eapply exec_Icall; eauto. apply sig_preserved.
+  eapply linkorder_policy; eauto.
+  rewrite <- E; auto.
   constructor. constructor; auto.
     apply (cenv_compat_linkorder _ _ _ ORDER (compenv_program_compat _)).
   { easy. }
@@ -587,6 +602,8 @@ Proof.
   eapply exec_Itailcall; eauto. apply sig_preserved.
     now rewrite comp_transl, COMP.
   { now rewrite Ef in ALLOWED. }
+  eapply linkorder_policy; eauto.
+  rewrite Ef in ALLOWED'; auto.
   rewrite stacksize_preserved; auto.
   constructor. auto.
     apply (cenv_compat_linkorder _ _ _ ORDER (compenv_program_compat _)).
@@ -719,7 +736,7 @@ Qed.
   follows. *)
 
 Theorem transf_program_correct:
-  forward_simulation (RTL.semantics prog) (RTL.semantics tprog).
+  forward_simulation (RTL.semantics pol prog) (RTL.semantics tpol tprog).
 Proof.
   eapply forward_simulation_opt with (measure := measure); eauto.
   apply senv_preserved.

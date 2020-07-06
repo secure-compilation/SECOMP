@@ -391,6 +391,16 @@ Section PRESERVATION.
 Variable prog: program.
 Variable tprog: program.
 Hypothesis TRANSF: match_prog prog tprog.
+Variable pol: policy.
+Variable tpol: policy.
+Hypothesis TRANSPOL: Policy.match_pol (fun cu f tf => OK tf = transf_fundef (romem_for cu) f) prog pol tpol.
+
+Lemma linkorder_policy:
+  forall cunit, linkorder cunit prog ->
+           Policy.match_pol (fun cu f tf => OK tf = transf_fundef (romem_for cu) f) prog pol tpol ->
+           Policy.match_pol (fun cu f tf => OK tf = transf_fundef (romem_for cu) f) cunit pol tpol.
+Admitted.
+
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
 
@@ -742,9 +752,9 @@ Qed.
 (** * The simulation diagram *)
 
 Theorem step_simulation:
-  forall S1 t S2, step ge S1 t S2 ->
+  forall S1 t S2, step pol ge S1 t S2 ->
   forall S1', match_states S1 S1' -> sound_state prog S1 ->
-  exists S2', step tge S1' t S2' /\ match_states S2 S2'.
+  exists S2', step tpol tge S1' t S2' /\ match_states S2 S2'.
 Proof.
 
 Ltac TransfInstr :=
@@ -889,6 +899,8 @@ Ltac UseTransfer :=
   exploit find_function_translated; eauto 2 with na. intros (cu' & tfd & A & B & C).
   econstructor; split.
   eapply exec_Icall; eauto. eapply sig_function_translated; eauto.
+  eapply linkorder_policy; eauto.
+  change  (fn_comp tf) with (comp_of tf); now rewrite <- (comp_transl_partial _ FUN).
   eapply match_call_states with (cu := cu'); eauto.
   constructor; auto. eapply match_stackframes_intro with (cu := cu); eauto.
   intros.
@@ -908,6 +920,8 @@ Ltac UseTransfer :=
   eapply exec_Itailcall; eauto. eapply sig_function_translated; eauto.
   rewrite <- (comp_transl_partial _ B), COMP. now apply (comp_transl_partial _ FUN).
   change (fn_comp tf) with (comp_of tf). now rewrite <- (comp_transl_partial _ FUN).
+  eapply linkorder_policy; eauto.
+  change  (fn_comp tf) with (comp_of tf); now rewrite <- (comp_transl_partial _ FUN).
   erewrite stacksize_translated by eauto. eexact C.
   eapply match_call_states with (cu := cu'); eauto 2 with na.
   eapply magree_extends; eauto. apply nlive_all.
@@ -1161,7 +1175,7 @@ Qed.
 (** * Semantic preservation *)
 
 Theorem transf_program_correct:
-  forward_simulation (RTL.semantics prog) (RTL.semantics tprog).
+  forward_simulation (RTL.semantics pol prog) (RTL.semantics tpol tprog).
 Proof.
   intros.
   apply forward_simulation_step with

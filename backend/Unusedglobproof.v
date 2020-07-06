@@ -450,6 +450,10 @@ Variable tp: program.
 Variable used: IS.t.
 Hypothesis USED_VALID: valid_used_set p used.
 Hypothesis TRANSF: match_prog_1 used p tp.
+Variable pol: policy.
+Variable tpol: policy.
+Hypothesis TRANSPOL: match_pol (fun f tf => f = tf) pol tpol.
+
 Let ge := Genv.globalenv p.
 Let tge := Genv.globalenv tp.
 Let pm := prog_defmap p.
@@ -890,9 +894,9 @@ Proof.
 Qed.
 
 Theorem step_simulation:
-  forall S1 t S2, step ge S1 t S2 ->
+  forall S1 t S2, step pol ge S1 t S2 ->
   forall S1' (MS: match_states S1 S1'),
-  exists S2', step tge S1' t S2' /\ match_states S2 S2'.
+  exists S2', step tpol tge S1' t S2' /\ match_states S2 S2'.
 Proof.
   induction 1; intros; inv MS.
 
@@ -955,6 +959,7 @@ Proof.
   destruct ros as [r|id]. eauto. apply KEPT. red. econstructor; econstructor; split; eauto. simpl; auto.
   intros (A & B).
   econstructor; split. eapply exec_Icall; eauto.
+  eapply TRANSPOL; eauto.
   econstructor; eauto.
   econstructor; eauto.
   change (Mem.valid_block m sp0). eapply Mem.valid_block_inject_1; eauto.
@@ -969,6 +974,7 @@ Proof.
   exploit Mem.free_parallel_inject; eauto. rewrite ! Z.add_0_r. intros (tm' & C & D).
   econstructor; split.
   eapply exec_Itailcall; eauto.
+  eapply TRANSPOL; eauto.
   econstructor; eauto.
   apply match_stacks_bound with stk tsp; auto.
   apply Plt_Ple.
@@ -1264,7 +1270,7 @@ Proof.
 Qed.
 
 Lemma transf_program_correct_1:
-  forward_simulation (semantics p) (semantics tp).
+  forward_simulation (semantics pol p) (semantics tpol tp).
 Proof.
   intros.
   eapply forward_simulation_step.
@@ -1276,10 +1282,11 @@ Qed.
 
 End SOUNDNESS.
 
-Theorem transf_program_correct:
-  forall p tp, match_prog p tp -> forward_simulation (semantics p) (semantics tp).
+Theorem transf_program_correct (pol: policy):
+  forall p tp, match_prog p tp -> forward_simulation (semantics pol p) (semantics pol tp).
 Proof.
   intros p tp (used & A & B).  apply transf_program_correct_1 with used; auto.
+  constructor; subst; auto.
 Qed.
 
 (** * Commutation with linking *)
