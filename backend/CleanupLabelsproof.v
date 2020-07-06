@@ -37,6 +37,9 @@ Section CLEANUP.
 
 Variables prog tprog: program.
 Hypothesis TRANSL: match_prog prog tprog.
+Variable pol: policy.
+Variable tpol: policy.
+Hypothesis TRANSPOL: match_pol (fun f tf => tf = transf_fundef f) pol tpol.
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
 
@@ -245,9 +248,9 @@ Proof.
 Qed.
 
 Theorem transf_step_correct:
-  forall s1 t s2, step ge s1 t s2 ->
+  forall s1 t s2, step pol ge s1 t s2 ->
   forall s1' (MS: match_states s1 s1'),
-  (exists s2', step tge s1' t s2' /\ match_states s2 s2')
+  (exists s2', step tpol tge s1' t s2' /\ match_states s2 s2')
   \/ (measure s2 < measure s1 /\ t = E0 /\ match_states s2 s1')%nat.
 Proof.
   induction 1; intros; inv MS; try rewrite remove_unused_labels_cons.
@@ -280,13 +283,16 @@ Proof.
   left; econstructor; split.
   econstructor. eapply find_function_translated; eauto.
   symmetry; apply sig_function_translated.
+  eapply TRANSPOL; eauto.
   econstructor; eauto. constructor; auto. constructor; eauto with coqlib.
 (* Ltailcall *)
   left; econstructor; split.
   econstructor. erewrite match_parent_locset; eauto. eapply find_function_translated; eauto.
   symmetry; apply sig_function_translated.
   now rewrite ! comp_transl.
-  simpl. eauto. eauto.
+  simpl. eauto.
+  eapply TRANSPOL; eauto.
+  eauto.
   econstructor; eauto.
 (* Lbuiltin *)
   left; econstructor; split.
@@ -362,7 +368,7 @@ Proof.
 Qed.
 
 Theorem transf_program_correct:
-  forward_simulation (Linear.semantics prog) (Linear.semantics tprog).
+  forward_simulation (Linear.semantics pol prog) (Linear.semantics tpol tprog).
 Proof.
   eapply forward_simulation_opt.
   apply senv_preserved.
@@ -372,4 +378,3 @@ Proof.
 Qed.
 
 End CLEANUP.
-
