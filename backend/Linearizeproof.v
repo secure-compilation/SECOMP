@@ -40,8 +40,9 @@ Section LINEARIZATION.
 
 Variable prog: LTL.program.
 Variable tprog: Linear.program.
-
 Hypothesis TRANSF: match_prog prog tprog.
+Variable pol: LTL.policy.
+Variable tpol: Linear.policy.
 
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
