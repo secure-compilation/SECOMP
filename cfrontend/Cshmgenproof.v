@@ -1042,6 +1042,13 @@ Variable pol: Clight.policy.
 Variable tpol: Csharpminor.policy.
 Hypothesis TRANSPOL: Policy.match_pol match_fundef prog pol tpol.
 
+Lemma linkorder_policy:
+  forall cunit, linkorder cunit prog ->
+           Policy.match_pol match_fundef prog pol tpol ->
+           Policy.match_pol match_fundef cunit pol tpol.
+Proof.
+Admitted.
+
 Let ge := globalenv prog.
 Let tge := Genv.globalenv tprog.
 
@@ -1639,7 +1646,10 @@ Proof.
     eapply transl_expr_correct with (cunit := cu); eauto.
     eapply transl_arglist_correct with (cunit := cu); eauto.
     (* eapply TRANSPOL with the correct value for the context *)
-    admit.
+    (* eapply TRANSPOL; eauto. *)
+    eapply linkorder_policy with (cunit := cu'); eauto.
+    change (fn_comp tf) with (comp_of tf).
+    rewrite <- (comp_transl_partial _ TRF). eauto.
     econstructor; eauto.
     eapply match_Kcall with (ce := prog_comp_env cu') (cu := cu); eauto.
     exact I.
@@ -1650,7 +1660,9 @@ Proof.
     eapply transl_expr_correct with (cunit := cu); eauto.
     eapply transl_arglist_correct with (cunit := cu); eauto.
     (* eapply TRANSPOL with the correct value for the context *)
-    admit.
+    eapply linkorder_policy with (cunit := cu'); eauto.
+    change (fn_comp tf) with (comp_of tf).
+    rewrite <- (comp_transl_partial _ TRF). eauto.
     traceEq.
     econstructor; eauto.
     eapply match_Kcall_normalize  with (ce := prog_comp_env cu') (cu := cu); eauto.

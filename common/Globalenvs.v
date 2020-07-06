@@ -2029,7 +2029,7 @@ End POLICY.
 
 Section MATCH_POLICIES.
 
-Context {C F1 F2: Type}.
+Context {C F1 F2: Type} {LC: Linker C} {LF1: Linker F1} {LF2: Linker F2}.
 Context {CF1: has_comp F1} {CF2: has_comp F2}.
 Variable match_fundef: C -> F1 -> F2 -> Prop.
 Context {match_fundef_comp: has_comp_match (fun ctx f1 f2 => match_fundef ctx f1 f2)}.
