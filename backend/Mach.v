@@ -423,7 +423,6 @@ Inductive step: state -> trace -> state -> Prop :=
       Genv.find_funct_ptr ge fb = Some (External ef) ->
       extcall_arguments rs m (parent_sp s) (ef_sig ef) args ->
       forall COMP: call_comp s = Some cp,
-      forall (ALLOWED: Policy.allowed_call pol cp (External ef)),
       external_call ef ge cp args m t res m' ->
       rs' = set_pair (loc_result (ef_sig ef)) res (undef_caller_save_regs rs) ->
       step (Callstate s fb rs m)
