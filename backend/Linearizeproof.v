@@ -43,6 +43,7 @@ Variable tprog: Linear.program.
 Hypothesis TRANSF: match_prog prog tprog.
 Variable pol: LTL.policy.
 Variable tpol: Linear.policy.
+Hypothesis TRANSPOL: match_pol (fun f tf => transf_fundef f = OK tf) pol tpol.
 
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
@@ -271,7 +272,7 @@ Lemma starts_with_correct:
   unique_labels c2 ->
   starts_with lbl c1 = true ->
   find_label lbl c2 = Some c3 ->
-  plus step tge (State s f sp c1 ls m)
+  plus (step tpol) tge (State s f sp c1 ls m)
              E0 (State s f sp c3 ls m).
 Proof.
   induction c1.
@@ -475,7 +476,7 @@ Lemma add_branch_correct:
   transf_function f = OK tf ->
   is_tail k tf.(fn_code) ->
   find_label lbl tf.(fn_code) = Some c ->
-  plus step tge (State s tf sp (add_branch lbl k) ls m)
+  plus (step tpol) tge (State s tf sp (add_branch lbl k) ls m)
              E0 (State s tf sp c ls m).
 Proof.
   intros. unfold add_branch.
@@ -590,9 +591,9 @@ Proof.
 Qed.
 
 Theorem transf_step_correct:
-  forall s1 t s2, LTL.step ge s1 t s2 ->
+  forall s1 t s2, LTL.step pol ge s1 t s2 ->
   forall s1' (MS: match_states s1 s1'),
-  (exists s2', plus Linear.step tge s1' t s2' /\ match_states s2 s2')
+  (exists s2', plus (Linear.step tpol) tge s1' t s2' /\ match_states s2 s2')
   \/ (measure s2 < measure s1 /\ t = E0 /\ match_states s2 s1')%nat.
 Proof.
   induction 1; intros; try (inv MS).
@@ -657,6 +658,9 @@ Proof.
   left; econstructor; split. simpl.
   apply plus_one. econstructor; eauto.
   symmetry; eapply sig_preserved; eauto.
+  eapply TRANSPOL; eauto.
+  change (fn_comp tf) with (comp_of tf).
+  rewrite <- (comp_transl_partial _ TRF); auto.
   econstructor; eauto. constructor; auto. econstructor; eauto.
 
   (* Ltailcall *)
@@ -667,6 +671,9 @@ Proof.
   symmetry; eapply sig_preserved; eauto.
   now rewrite <- (comp_transl_partial _ B), <- (comp_transl_partial _ TRF).
   now rewrite <- (comp_transl_partial _ TRF).
+  eapply TRANSPOL; eauto.
+  change (fn_comp tf) with (comp_of tf).
+  rewrite <- (comp_transl_partial _ TRF); auto.
   rewrite (stacksize_preserved _ _ TRF); eauto.
   rewrite (match_parent_locset _ _ STACKS).
   econstructor; eauto.
@@ -766,7 +773,7 @@ Proof.
 Qed.
 
 Theorem transf_program_correct:
-  forward_simulation (LTL.semantics prog) (Linear.semantics tprog).
+  forward_simulation (LTL.semantics pol prog) (Linear.semantics tpol tprog).
 Proof.
   eapply forward_simulation_star.
   apply senv_preserved.

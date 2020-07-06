@@ -61,6 +61,7 @@ Definition funsig (fd: fundef) :=
   end.
 
 Definition genv := Genv.t fundef unit.
+Definition policy := Policy.t (F := fundef).
 Definition locset := Locmap.t.
 
 (** * Operational semantics *)
@@ -94,6 +95,7 @@ Fixpoint find_label (lbl: label) (c: code) {struct c} : option code :=
 
 Section RELSEM.
 
+Variable pol: policy.
 Variable ge: genv.
 
 Definition find_function (ros: mreg + ident) (rs: locset) : option fundef :=
@@ -186,6 +188,7 @@ Inductive step: state -> trace -> state -> Prop :=
       forall s f sp sig ros b rs m f',
       find_function ros rs = Some f' ->
       sig = funsig f' ->
+      forall (ALLOWED: Policy.allowed_call pol f.(fn_comp) f'),
       step (State s f sp (Lcall sig ros :: b) rs m)
         E0 (Callstate (Stackframe f sp rs b:: s) f' rs m)
   | exec_Ltailcall:
@@ -195,6 +198,7 @@ Inductive step: state -> trace -> state -> Prop :=
       sig = funsig f' ->
       forall COMP: comp_of f' = comp_of f,
       forall ALLOWED: needs_calling_comp (comp_of f) = false,
+      forall (ALLOWED': Policy.allowed_call pol f.(fn_comp) f'),
       Mem.free m stk 0 f.(fn_stacksize) = Some m' ->
       step (State s f (Vptr stk Ptrofs.zero) (Ltailcall sig ros :: b) rs m)
         E0 (Callstate s f' rs' m')
@@ -274,5 +278,5 @@ Inductive final_state: state -> int -> Prop :=
       Locmap.getpair (map_rpair R (loc_result signature_main)) rs = Vint retcode ->
       final_state (Returnstate nil rs m) retcode.
 
-Definition semantics (p: program) :=
-  Semantics step (initial_state p) final_state (Genv.globalenv p).
+Definition semantics (pol: policy) (p: program) :=
+  Semantics (step pol) (initial_state p) final_state (Genv.globalenv p).

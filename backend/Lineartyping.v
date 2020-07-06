@@ -278,6 +278,7 @@ Inductive wt_state: state -> Prop :=
 Section SOUNDNESS.
 
 Variable prog: program.
+Variable pol: policy.
 Let ge := Genv.globalenv prog.
 
 Hypothesis wt_prog:
@@ -298,7 +299,7 @@ Proof.
 Qed.
 
 Theorem step_type_preservation:
-  forall S1 t S2, step ge S1 t S2 -> wt_state S1 -> wt_state S2.
+  forall S1 t S2, step pol ge S1 t S2 -> wt_state S1 -> wt_state S2.
 Proof.
 Local Opaque mreg_type.
   induction 1; intros WTS; inv WTS.
