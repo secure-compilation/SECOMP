@@ -1800,6 +1800,10 @@ Variable prog: RTL.program.
 Variable tprog: LTL.program.
 Hypothesis TRANSF: match_prog prog tprog.
 
+Variable pol: RTL.policy.
+Variable tpol: LTL.policy.
+Hypothesis TRANSPOL: match_pol (fun f tf => transf_fundef f = OK tf) pol tpol.
+
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
 
@@ -1861,7 +1865,7 @@ Lemma exec_moves:
   satisf rs ls e' ->
   wt_regset env rs ->
   exists ls',
-    star step tge (Block s f sp (expand_moves mv bb) ls m)
+    star (step tpol) tge (Block s f sp (expand_moves mv bb) ls m)
                E0 (Block s f sp bb ls' m)
   /\ satisf rs ls' e.
 Proof.
@@ -1922,7 +1926,7 @@ Inductive match_stackframes: list RTL.stackframe -> list LTL.stackframe -> signa
            Val.has_type v (env res) ->
            agree_callee_save ls ls1 ->
            exists ls2,
-           star LTL.step tge (Block ts tf sp bb ls1 m)
+           star (LTL.step tpol) tge (Block ts tf sp bb ls1 m)
                           E0 (State ts tf sp pc ls2 m)
            /\ satisf (rs#res <- v) ls2 e),
       match_stackframes
@@ -2012,9 +2016,9 @@ Qed.
     "plus" kind. *)
 
 Lemma step_simulation:
-  forall S1 t S2, RTL.step ge S1 t S2 -> wt_state S1 ->
+  forall S1 t S2, RTL.step pol ge S1 t S2 -> wt_state S1 ->
   forall S1', match_states S1 S1' ->
-  exists S2', plus LTL.step tge S1' t S2' /\ match_states S2 S2'.
+  exists S2', plus (LTL.step tpol) tge S1' t S2' /\ match_states S2 S2'.
 Proof.
   induction 1; intros WT S1' MS; inv MS; try UseShape.
 
@@ -2330,6 +2334,8 @@ Proof.
   econstructor; split.
   eapply plus_left. econstructor; eauto.
   eapply star_right. eexact A1. econstructor; eauto.
+  eapply TRANSPOL; eauto.
+  change tf.(fn_comp) with (comp_of tf). rewrite <- (comp_transl_partial _ FUN). eauto.
   eauto. traceEq.
   exploit analyze_successors; eauto. simpl. left; eauto. intros [enext [U V]].
   econstructor; eauto.
@@ -2363,6 +2369,8 @@ Proof.
   eapply star_right. eexact A1. econstructor; eauto.
   rewrite <- E. apply find_function_tailcall; auto.
   rewrite <- (comp_transl_partial _ F), COMP. now apply (comp_transl_partial _ FUN).
+  change tf.(fn_comp) with (comp_of tf). rewrite <- (comp_transl_partial _ FUN). eauto.
+  eapply TRANSPOL; eauto.
   change tf.(fn_comp) with (comp_of tf). rewrite <- (comp_transl_partial _ FUN). eauto.
   replace (fn_stacksize tf) with (RTL.fn_stacksize f); eauto.
   destruct (transf_function_inv _ _ FUN); auto.
@@ -2554,7 +2562,7 @@ Proof.
 Qed.
 
 Theorem transf_program_correct:
-  forward_simulation (RTL.semantics prog) (LTL.semantics tprog).
+  forward_simulation (RTL.semantics pol prog) (LTL.semantics tpol tprog).
 Proof.
   set (ms := fun s s' => wt_state s /\ match_states s s').
   eapply forward_simulation_plus with (match_states := ms).
@@ -2566,7 +2574,7 @@ Proof.
 - intros. destruct H0.
   exploit step_simulation; eauto. intros [s2' [A B]].
   exists s2'; split. exact A. split.
-  eapply subject_reduction; eauto. eexact wt_prog. eexact H.
+  eapply subject_reduction; eauto. eexact wt_prog. apply H.
   auto.
 Qed.
 
