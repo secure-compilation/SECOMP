@@ -73,8 +73,9 @@ Proof.
   rewrite <- Genv.find_funct_ptr_iff in Q.
   econstructor; eauto. 
   simpl. red. rewrite H1. constructor; auto.
-  admit.
-Admitted.
+  eapply Policy.pol_accepts_runtime_builtins; eauto.
+Qed.
+
 
 Corollary eval_helper_1:
   forall bf le id name sg arg1 varg1 vres,

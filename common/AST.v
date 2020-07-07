@@ -680,6 +680,18 @@ Instance has_comp_fundef F {CF: has_comp F} : has_comp (fundef F) :=
     | External ef => comp_of ef
     end.
 
+Class is_fundef (FD: Type) {CFD: has_comp FD} := {
+  F : Type;
+  has_comp_F: has_comp F;
+  simpl_fundef: FD -> fundef F;
+  preserves_comp: forall f, comp_of f = comp_of (simpl_fundef f) }.
+
+Instance is_fundef_fundef F {CF: has_comp F}: @is_fundef (fundef F) _ := {
+  F := F;
+  has_comp_F := CF;
+  simpl_fundef := id;
+  preserves_comp := fun f => eq_refl; }.
+
 Section TRANSF_FUNDEF.
 
 Variable A B: Type.

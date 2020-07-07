@@ -197,8 +197,7 @@ Definition policy := Policy.t (F := fundef).
   function entry, binding parameters to the provided arguments and
   initializing local variables to [Vundef]. *)
 
-Fixpoint set_params (vl: list val) (il: list ident) {struct il} : env :=
-  match il, vl with
+Fixpoint set_params (vl: list val) (il: list ident) {struct il} : env := match il, vl with
   | i1 :: is, v1 :: vs => PTree.set i1 v1 (set_params vs is)
   | i1 :: is, nil => PTree.set i1 Vundef (set_params nil is)
   | _, _ => PTree.empty val

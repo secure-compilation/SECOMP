@@ -36,7 +36,7 @@
 Require Import Recdef.
 Require Import Zwf.
 Require Import Axioms Coqlib Errors Maps AST Linking.
-Require Import Integers Floats Values Memory.
+Require Import Integers Floats Values Memory Builtins.
 
 Notation "s #1" := (fst s) (at level 9, format "s '#1'") : pair_scope.
 Notation "s #2" := (snd s) (at level 9, format "s '#2'") : pair_scope.
@@ -1991,14 +1991,25 @@ End Genv.
 Module Policy.
 Section POLICY.
 
+
 Variable F: Type.  (**r The type of function descriptions *)
-Context {CF: has_comp F}.
+Context {CF: has_comp F} {FD: @is_fundef F CF}.
 
 Record t : Type := mkpolicy {
   policy_export : compartment -> list F; (* The list of exported functions *)
   policy_import : compartment -> list (compartment * F); (* The list of imported functions and their compartment *)
   (* Well-formedness conditions on the interface *)
   export_in_cp: forall cp f, In f (policy_export cp) -> comp_of f = cp;
+  (* All runtime builtin functions can be called from any compartment *)
+  imports_runtime_builtins: forall cp name f sg bf,
+      lookup_builtin_function name sg = Some bf ->
+      simpl_fundef f = External (EF_runtime name sg) ->
+      In (default_compartment, f) (policy_import cp);
+  exports_runtime_builtins: forall name f sg bf,
+      lookup_builtin_function name sg = Some bf ->
+      simpl_fundef f = External (EF_runtime name sg) ->
+      In f (policy_export default_compartment)
+
   }.
 
 Definition allowed_cross_call (pol: t) (cp: compartment) (f: F) :=
@@ -2007,6 +2018,21 @@ Definition allowed_cross_call (pol: t) (cp: compartment) (f: F) :=
 
 Definition allowed_call (pol: t) (cp: compartment) (f: F) :=
   comp_of f = cp \/ allowed_cross_call pol cp f.
+
+Lemma pol_accepts_runtime_builtins: forall pol cp name f sg bf,
+    lookup_builtin_function name sg = Some bf ->
+    simpl_fundef f = External (EF_runtime name sg) ->
+    allowed_call pol cp f.
+Proof.
+  intros pol cp name f sg bf H1 H2; subst.
+  right; split.
+  - erewrite preserves_comp.
+    rewrite H2.
+    eapply imports_runtime_builtins; eauto.
+  - erewrite preserves_comp.
+    rewrite H2.
+    eapply exports_runtime_builtins; eauto.
+Qed.
 
 (* TODO: Write the proper definition of these *)
 Axiom allowed_call_b: t -> compartment -> F -> bool.
@@ -2031,6 +2057,7 @@ Section MATCH_POLICIES.
 
 Context {C F1 F2: Type} {LC: Linker C} {LF1: Linker F1} {LF2: Linker F2}.
 Context {CF1: has_comp F1} {CF2: has_comp F2}.
+Context {FD1: @is_fundef F1 _} {FD2: @is_fundef F2 _}.
 Variable match_fundef: C -> F1 -> F2 -> Prop.
 Context {match_fundef_comp: has_comp_match (fun ctx f1 f2 => match_fundef ctx f1 f2)}.
 
@@ -2048,7 +2075,7 @@ End Policy.
 Coercion Genv.to_senv: Genv.t >-> Senv.t.
 
 (* A definition that ignores the context *)
-Definition match_pol {F1 F2: Type} {CF1: has_comp F1} {CF2: has_comp F2}
+Definition match_pol {F1 F2: Type} {CF1: has_comp F1} {CF2: has_comp F2} {FD1: @is_fundef F1 _} {FD2: @is_fundef F2 _}
            (match_fundef: F1 -> F2 -> Prop)
            (f1: Policy.t (F := F1)) (f2: Policy.t (F := F2)) : Prop :=
   Policy.match_pol (fun _: unit => match_fundef) tt f1 f2.
