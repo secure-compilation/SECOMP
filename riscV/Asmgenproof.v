@@ -656,6 +656,10 @@ Qed.
 
 (** This is the simulation diagram.  We prove it by case analysis on the Mach transition. *)
 
+Lemma transf_function_comp :
+  forall f tf, transf_function f = OK tf -> Mach.fn_comp f = fn_comp tf.
+Admitted.
+
 Theorem step_simulation:
   forall S1 t S2, Mach.step return_address_offset pol ge S1 t S2 ->
   forall S1' (MS: match_states S1 S1'),
@@ -781,14 +785,13 @@ Local Transparent destroyed_by_op.
     econstructor; eauto.
   exploit return_address_offset_correct; eauto. intros; subst ra.
   left; econstructor; split.
+  pose proof Genv.find_funct_ptr_match TRANSF _ CALLED as [_ [tf' [TFIND [TTRANSF _]]]].
   apply plus_one. eapply exec_step_internal.
   Simpl. rewrite <- H2; simpl; eauto.
   eapply functions_transl; eauto. eapply find_instr_tail; eauto.
   simpl. eauto. Simpl. eauto.
-  eapply functions_transl; eauto.
-  
-  admit.
-  left; auto.
+  eassumption.
+  eapply TRANSPOL. eassumption. erewrite <- transf_function_comp; eassumption.
   econstructor; eauto.
   econstructor; eauto.
   eapply agree_sp_def; eauto.
@@ -800,12 +803,12 @@ Local Transparent destroyed_by_op.
     econstructor; eauto.
   exploit return_address_offset_correct; eauto. intros; subst ra.
   left; econstructor; split.
+  pose proof Genv.find_funct_ptr_match TRANSF _ CALLED as [_ [tf' [TFIND [TTRANSF _]]]].
   apply plus_one. eapply exec_step_internal. eauto.
   eapply functions_transl; eauto. eapply find_instr_tail; eauto.
   simpl. unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H. eauto.
-  Simpl. destruct fd. eapply functions_transl.
-   eapply CALLED. 
-  admit. admit.
+  Simpl. eassumption.
+  eapply TRANSPOL. eassumption. erewrite <- transf_function_comp; eassumption.
   econstructor; eauto.
   econstructor; eauto.
   eapply agree_sp_def; eauto.
