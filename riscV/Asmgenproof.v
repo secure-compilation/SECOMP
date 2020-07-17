@@ -656,10 +656,6 @@ Qed.
 
 (** This is the simulation diagram.  We prove it by case analysis on the Mach transition. *)
 
-Lemma transf_function_comp :
-  forall f tf, transf_function f = OK tf -> Mach.fn_comp f = fn_comp tf.
-Admitted.
-
 Theorem step_simulation:
   forall S1 t S2, Mach.step return_address_offset pol ge S1 t S2 ->
   forall S1' (MS: match_states S1 S1'),

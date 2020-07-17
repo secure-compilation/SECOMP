@@ -934,3 +934,18 @@ Definition transf_fundef (f: Mach.fundef) : res Asm.fundef :=
 
 Definition transf_program (p: Mach.program) : res Asm.program :=
   transform_partial_program transf_fundef p.
+
+Lemma transf_function_comp :
+  forall f tf, transf_function f = OK tf -> Mach.fn_comp f = fn_comp tf.
+Proof.
+  intros f tf Htransl.
+  unfold transf_function in Htransl.
+  apply bind_inversion in Htransl as [f' [Htransl Hsize]].
+  destruct (zlt Ptrofs.max_unsigned (list_length_z (fn_code f'))) as [Hlst | Hgeq];
+    [now inv Hlst |].
+  inv Hsize.
+  unfold transl_function in Htransl.
+  apply bind_inversion in Htransl as [c [Htransl Hf']].
+  inv Hf'.
+  reflexivity.
+Qed.
