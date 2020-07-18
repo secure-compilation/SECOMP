@@ -934,16 +934,21 @@ Local Transparent destroyed_by_op.
   intros [tc' [rs' [A [B C]]]].
   exploit ireg_val; eauto. rewrite H. intros LD; inv LD.
   left; econstructor; split.
-  apply plus_one. econstructor; eauto.
+  assert (exists ofs, rs' PC = Vptr fb ofs) as [ofs' Hptr]. {
+    destruct (rs' PC); inversion B.
+    eauto.
+  }
+  apply plus_one. econstructor. eauto. eauto.
   eapply find_instr_tail; eauto.
   simpl. rewrite <- H9. unfold Mach.label in H0; unfold label; rewrite H0.
-  (* eexact A. *)
-  admit. admit.
+  eexact A.
+  eexact Hptr.
+  eassumption.
+  constructor; auto.
   econstructor; eauto.
-  admit.
   eapply agree_undef_regs; eauto.
-  (* simpl. intros. rewrite C; auto with asmgen. Simpl. *)
-  (* congruence. *)
+  simpl. intros. rewrite C; auto with asmgen. Simpl.
+  congruence.
 
 - (* Mreturn *)
   assert (f0 = f) by congruence. subst f0.
@@ -951,7 +956,7 @@ Local Transparent destroyed_by_op.
   assert (NOOV: list_length_z tf.(fn_code) <= Ptrofs.max_unsigned).
     eapply transf_function_no_overflow; eauto.
   exploit make_epilogue_correct; eauto. intros (rs1 & m1 & U & V & W & X & Y & Z).
-  exploit exec_straight_steps_2; eauto using functions_transl.                      
+  exploit exec_straight_steps_2; eauto using functions_transl.
   intros (ofs' & P & Q).
   left; econstructor; split.
   (* execution *)
