@@ -970,56 +970,56 @@ Local Transparent destroyed_by_op.
   apply agree_set_other; auto with asmgen.
 
 - (* internal function *)
-(*   exploit functions_translated; eauto. intros [tf [A B]]. monadInv B. *)
-(*   generalize EQ; intros EQ'. monadInv EQ'. *)
-(*   destruct (zlt Ptrofs.max_unsigned (list_length_z x0.(fn_code))); inversion EQ1. clear EQ1. subst x0. *)
-(*   unfold store_stack in *. *)
-(*   exploit Mem.alloc_extends. eauto. eauto. apply Z.le_refl. apply Z.le_refl. *)
-(*   intros [m1' [C D]]. *)
-(*   exploit Mem.storev_extends. eexact D. eexact H1. eauto. eauto. *)
-(*   intros [m2' [F G]]. *)
-(*   simpl chunk_of_type in F. *)
-(*   exploit Mem.storev_extends. eexact G. eexact H2. eauto. eauto. *)
-(*   intros [m3' [P Q]]. *)
-(*   (* Execution of function prologue *) *)
-(*   monadInv EQ0. rewrite transl_code'_transl_code in EQ1. *)
-(*   set (tfbody := Pallocframe (fn_stacksize f) (fn_link_ofs f) :: *)
-(*                  storeind_ptr RA SP (fn_retaddr_ofs f) x0) in *. *)
-(*   set (tf := {| fn_sig := Mach.fn_sig f; fn_code := tfbody |}) in *. *)
-(*   set (rs2 := nextinstr (rs0#X30 <- (parent_sp s) #SP <- sp #X31 <- Vundef)). *)
-(*   exploit (storeind_ptr_correct tge tf SP (fn_retaddr_ofs f) RA x0 rs2 m2'). *)
-(*     rewrite chunk_of_Tptr in P. change (rs2 X1) with (rs0 X1). rewrite ATLR. *)
-(*     change (rs2 X2) with sp. eexact P. *)
-(*     congruence. congruence. *)
-(*   intros (rs3 & U & V). *)
-(*   assert (EXEC_PROLOGUE: *)
-(*             exec_straight tge tf *)
-(*               tf.(fn_code) rs0 m' *)
-(*               x0 rs3 m3'). *)
-(*   { change (fn_code tf) with tfbody; unfold tfbody. *)
-(*     apply exec_straight_step with rs2 m2'. *)
-(*     unfold exec_instr. *)
-(*     change (fn_comp tf) with (Mach.fn_comp f). *)
-(*     rewrite C. fold sp. *)
-(*     rewrite <- (sp_val _ _ _ AG). rewrite chunk_of_Tptr in F. rewrite F. reflexivity. *)
-(*     reflexivity. *)
-(*     eexact U. } *)
-(*   exploit exec_straight_steps_2; eauto using functions_transl. omega. constructor. *)
-(*   intros (ofs' & X & Y). *)
-(*   left; exists (State rs3 m3'); split. *)
-(*   eapply exec_straight_steps_1; eauto. omega. constructor. *)
-(*   econstructor; eauto. *)
-(*   rewrite X; econstructor; eauto. *)
-(*   apply agree_exten with rs2; eauto with asmgen. *)
-(*   unfold rs2. *)
-(*   apply agree_nextinstr. apply agree_set_other; auto with asmgen. *)
-(*   apply agree_change_sp with (parent_sp s). *)
-(*   apply agree_undef_regs with rs0. auto. *)
-(* Local Transparent destroyed_at_function_entry. *)
-(*   simpl; intros; Simpl. *)
-(*   unfold sp; congruence. *)
-(*   intros. rewrite V by auto with asmgen. reflexivity. *)
-  admit.
+  rewrite FIND in H. inv H.
+  exploit functions_translated; eauto. intros [tf [A B]]. monadInv B.
+  generalize EQ; intros EQ'. monadInv EQ'.
+  destruct (zlt Ptrofs.max_unsigned (list_length_z x0.(fn_code))); inversion EQ1. clear EQ1. subst x0.
+  unfold store_stack in *.
+  exploit Mem.alloc_extends. eauto. eauto. apply Z.le_refl. apply Z.le_refl.
+  intros [m1' [C D]].
+  exploit Mem.storev_extends. eexact D. eexact H1. eauto. eauto.
+  intros [m2' [F G]].
+  simpl chunk_of_type in F.
+  exploit Mem.storev_extends. eexact G. eexact H2. eauto. eauto.
+  intros [m3' [P Q]].
+  (* Execution of function prologue *)
+  monadInv EQ0. rewrite transl_code'_transl_code in EQ1.
+  set (tfbody := Pallocframe (fn_stacksize f) (fn_link_ofs f) ::
+                 storeind_ptr RA SP (fn_retaddr_ofs f) x0) in *.
+  set (tf := {| fn_sig := Mach.fn_sig f; fn_code := tfbody |}) in *.
+  set (rs2 := nextinstr (rs0#X30 <- (parent_sp s) #SP <- sp #X31 <- Vundef)).
+  exploit (storeind_ptr_correct tge tf SP (fn_retaddr_ofs f) RA x0 rs2 m2').
+    rewrite chunk_of_Tptr in P. change (rs2 X1) with (rs0 X1). rewrite ATLR.
+    change (rs2 X2) with sp. eexact P.
+    congruence. congruence.
+  intros (rs3 & U & V).
+  assert (EXEC_PROLOGUE:
+            exec_straight tge tf
+              tf.(fn_code) rs0 m'
+              x0 rs3 m3').
+  { change (fn_code tf) with tfbody; unfold tfbody.
+    apply exec_straight_step with rs2 m2'.
+    unfold exec_instr.
+    change (fn_comp tf) with (Mach.fn_comp f).
+    rewrite C. fold sp.
+    rewrite <- (sp_val _ _ _ AG). rewrite chunk_of_Tptr in F. rewrite F. reflexivity.
+    reflexivity.
+    eexact U. }
+  exploit exec_straight_steps_2; eauto using functions_transl. omega. constructor.
+  intros (ofs' & X & Y).
+  left; exists (State rs3 m3'); split.
+  eapply exec_straight_steps_1; eauto. omega. constructor.
+  econstructor; eauto.
+  rewrite X; econstructor; eauto.
+  apply agree_exten with rs2; eauto with asmgen.
+  unfold rs2.
+  apply agree_nextinstr. apply agree_set_other; auto with asmgen.
+  apply agree_change_sp with (parent_sp s).
+  apply agree_undef_regs with rs0. auto.
+Local Transparent destroyed_at_function_entry.
+  simpl; intros; Simpl.
+  unfold sp; congruence.
+  intros. rewrite V by auto with asmgen. reflexivity.
 
 - (* external function *)
   exploit functions_translated; eauto.
