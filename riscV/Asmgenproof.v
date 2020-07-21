@@ -503,12 +503,14 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
       match_states (Mach.State s fb sp c ms m)
                    (Asm.State rs m')
   | match_states_call:
-      forall s fb ms m m' rs fd
+      forall s fb ms m m' rs fd cp
         (STACKS: match_stack ge s)
         (MEXT: Mem.extends m m')
         (AG: agree ms (parent_sp s) rs)
         (ATPC: rs PC = Vptr fb Ptrofs.zero)
         (ATLR: rs RA = parent_ra s)
+        (COMP: call_comp ge s = Some cp)
+        (ALLOWED: Policy.allowed_call pol cp fd)
         (FIND: Genv.find_funct_ptr ge fb = Some fd),
       match_states (Mach.Callstate s fb ms m)
                    (Asm.State rs m')
@@ -793,6 +795,7 @@ Local Transparent destroyed_by_op.
   eapply agree_sp_def; eauto.
   simpl. eapply agree_exten; eauto. intros. Simpl.
   Simpl. rewrite <- H2. auto.
+  unfold call_comp; simpl. rewrite FIND. reflexivity.
 + (* Direct call *)
   generalize (code_tail_next_int _ _ _ _ NOOV H6). intro CT1.
   assert (TCA: transl_code_at_pc ge (Vptr fb (Ptrofs.add ofs Ptrofs.one)) fb f c false tf x).
@@ -809,6 +812,7 @@ Local Transparent destroyed_by_op.
   eapply agree_sp_def; eauto.
   simpl. eapply agree_exten; eauto. intros. Simpl.
   Simpl. rewrite <- H2. auto.
+  unfold call_comp; simpl. rewrite FIND. reflexivity.
 
 - (* Mtailcall *)
   assert (f0 = f) by congruence.  subst f0.
@@ -839,6 +843,7 @@ Local Transparent destroyed_by_op.
   econstructor; eauto.
   apply agree_set_other; auto with asmgen.
   Simpl. rewrite Z by (rewrite <- (ireg_of_eq _ _ EQ1); eauto with asmgen). assumption.
+  admit.
 + (* Direct call *)
   exploit make_epilogue_correct; eauto. intros (rs1 & m1 & U & V & W & X & Y & Z).
   exploit exec_straight_steps_2; eauto using functions_transl.
@@ -856,6 +861,7 @@ Local Transparent destroyed_by_op.
   econstructor; eauto.
   apply agree_set_other; auto with asmgen.
   Simpl. unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H. auto.
+  unfold call_comp; simpl. admit.
 
 - (* Mbuiltin *)
   inv AT. monadInv H4.
