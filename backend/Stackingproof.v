@@ -1995,6 +1995,9 @@ Proof.
   intros [bf [tf' [A [B C]]]].
   econstructor; split.
   eapply plus_right. eexact S. econstructor; eauto.
+  rewrite <- (comp_transl_partial _ TRANSL).
+  rewrite <- (comp_transl_partial _ C). eauto.
+  rewrite <- (comp_transl_partial _ TRANSL). eauto.
   eapply TRANSPOL; eauto.
   change (fn_comp tf) with (comp_of tf). rewrite <- (comp_transl_partial _ TRANSL); auto.
   traceEq.

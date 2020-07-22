@@ -360,7 +360,9 @@ Inductive step: state -> trace -> state -> Prop :=
       load_stack m (Vptr stk soff) Tptr f.(fn_retaddr_ofs) = Some (parent_ra s) ->
       Mem.free m stk 0 f.(fn_stacksize) = Some m' ->
       forall (CALLED: Genv.find_funct_ptr ge f' = Some fd),
-      forall (ALLOWED: Policy.allowed_call pol f.(fn_comp) fd),
+      forall COMP: comp_of fd = comp_of f,
+      forall ALLOWED: needs_calling_comp (comp_of f) = false,
+      forall (ALLOWED': Policy.allowed_call pol f.(fn_comp) fd),
       step (State s fb (Vptr stk soff) (Mtailcall sig ros :: c) rs m)
         E0 (Callstate s f' rs m')
   | exec_Mbuiltin:
@@ -495,13 +497,14 @@ Proof.
   induction 1; intros WF; inv WF; try (econstructor; now eauto with coqlib).
 - (* call *)
   assert (f0 = f) by congruence. subst f0.
-  constructor.
+  econstructor.
   constructor; auto. econstructor; eauto with coqlib.
   destruct (is_leaf_function f) eqn:E; auto.
   unfold is_leaf_function in E; rewrite forallb_forall in E. 
   symmetry. apply (E (Mcall sig ros)). eapply is_tail_in; eauto.
 - (* goto *)
-  assert (f0 = f) by congruence. subst f0. econstructor; eauto using find_label_tail.  
+  assert (f0 = f) by congruence. subst f0.
+  econstructor; eauto using find_label_tail.
 - (* cond *)
   assert (f0 = f) by congruence. subst f0. econstructor; eauto using find_label_tail.  
 - (* jumptable *)
