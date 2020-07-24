@@ -248,22 +248,23 @@ Defined.
 - The offset [ofs] is aligned.
 *)
 
-Definition valid_access (m: mem) (chunk: memory_chunk) (b: block) (ofs: Z) (p: permission): Prop :=
+Definition valid_access (m: mem) (chunk: memory_chunk) (b: block) (ofs: Z) (p: permission) (cp: compartment): Prop :=
   range_perm m b ofs (ofs + size_chunk chunk) Cur p
+  /\ PTree.get b (mem_compartments m) = Some cp
   /\ (align_chunk chunk | ofs).
 
 Theorem valid_access_implies:
-  forall m chunk b ofs p1 p2,
-  valid_access m chunk b ofs p1 -> perm_order p1 p2 ->
-  valid_access m chunk b ofs p2.
+  forall m chunk b ofs p1 p2 cp,
+  valid_access m chunk b ofs p1 cp -> perm_order p1 p2 ->
+  valid_access m chunk b ofs p2 cp.
 Proof.
   intros. inv H. constructor; eauto with mem.
 Qed.
 
 Theorem valid_access_freeable_any:
-  forall m chunk b ofs p,
-  valid_access m chunk b ofs Freeable ->
-  valid_access m chunk b ofs p.
+  forall m chunk b ofs p cp,
+  valid_access m chunk b ofs Freeable cp ->
+  valid_access m chunk b ofs p cp.
 Proof.
   intros.
   eapply valid_access_implies; eauto. constructor.
@@ -272,8 +273,8 @@ Qed.
 Local Hint Resolve valid_access_implies: mem.
 
 Theorem valid_access_valid_block:
-  forall m chunk b ofs,
-  valid_access m chunk b ofs Nonempty ->
+  forall m chunk b ofs cp,
+  valid_access m chunk b ofs Nonempty cp ->
   valid_block m b.
 Proof.
   intros. destruct H.
@@ -285,33 +286,38 @@ Qed.
 Local Hint Resolve valid_access_valid_block: mem.
 
 Lemma valid_access_perm:
-  forall m chunk b ofs k p,
-  valid_access m chunk b ofs p ->
+  forall m chunk b ofs k p cp,
+  valid_access m chunk b ofs p cp ->
   perm m b ofs k p.
 Proof.
   intros. destruct H. apply perm_cur. apply H. generalize (size_chunk_pos chunk). omega.
 Qed.
 
 Lemma valid_access_compat:
-  forall m chunk1 chunk2 b ofs p,
+  forall m chunk1 chunk2 b ofs p cp,
   size_chunk chunk1 = size_chunk chunk2 ->
   align_chunk chunk2 <= align_chunk chunk1 ->
-  valid_access m chunk1 b ofs p->
-  valid_access m chunk2 b ofs p.
+  valid_access m chunk1 b ofs p cp ->
+  valid_access m chunk2 b ofs p cp.
 Proof.
-  intros. inv H1. rewrite H in H2. constructor; auto.
+  intros. inv H1. rewrite H in H2. destruct H3. constructor; auto.
+  constructor; auto.
   eapply Z.divide_trans; eauto. eapply align_le_divides; eauto.
 Qed.
 
 Lemma valid_access_dec:
-  forall m chunk b ofs p,
-  {valid_access m chunk b ofs p} + {~ valid_access m chunk b ofs p}.
+  forall m chunk b ofs p cp,
+  {valid_access m chunk b ofs p cp} + {~ valid_access m chunk b ofs p cp}.
 Proof.
   intros.
   destruct (range_perm_dec m b ofs (ofs + size_chunk chunk) Cur p).
   destruct (Zdivide_dec (align_chunk chunk) ofs).
-  left; constructor; auto.
-  right; red; intro V; inv V; contradiction.
+  destruct (PTree.get b (mem_compartments m)) as [cp'|] eqn:Hcp.
+  destruct (Pos.eq_dec cp cp').
+  left; constructor; auto. constructor; auto. congruence.
+  right; red; intro V; inversion V as [V1 [V2 V3]]; congruence.
+  right; red; intro V; inversion V as [V1 [V2 V3]]; congruence.
+  right; red; intro V; inversion V as [V1 [V2 V3]]; congruence.
   right; red; intro V; inv V; contradiction.
 Defined.
 
@@ -330,14 +336,16 @@ Proof.
 Qed.
 
 Theorem valid_pointer_valid_access:
-  forall m b ofs,
-  valid_pointer m b ofs = true <-> valid_access m Mint8unsigned b ofs Nonempty.
+  forall m b ofs cp,
+    PTree.get b (mem_compartments m) = Some cp ->
+    valid_pointer m b ofs = true <-> valid_access m Mint8unsigned b ofs Nonempty cp.
 Proof.
   intros. rewrite valid_pointer_nonempty_perm.
   split; intros.
   split. simpl; red; intros. replace ofs0 with ofs by omega. auto.
+  split; auto.
   simpl. apply Z.divide_1_l.
-  destruct H. apply H. simpl. omega.
+  destruct H. apply H0. simpl. omega.
 Qed.
 
 (** C allows pointers one past the last element of an array.  These are not
@@ -490,17 +498,17 @@ Fixpoint getN (n: nat) (p: Z) (c: ZMap.t memval) {struct n}: list memval :=
   at that address.  [None] is returned if the accessed bytes
   are not readable. *)
 
-Definition load (chunk: memory_chunk) (m: mem) (b: block) (ofs: Z): option val :=
-  if valid_access_dec m chunk b ofs Readable
+Definition load (chunk: memory_chunk) (m: mem) (b: block) (ofs: Z) (cp: compartment): option val :=
+  if valid_access_dec m chunk b ofs Readable cp
   then Some(decode_val chunk (getN (size_chunk_nat chunk) ofs (m.(mem_contents)#b)))
   else None.
 
 (** [loadv chunk m addr] is similar, but the address and offset are given
   as a single value [addr], which must be a pointer value. *)
 
-Definition loadv (chunk: memory_chunk) (m: mem) (addr: val) : option val :=
+Definition loadv (chunk: memory_chunk) (m: mem) (addr: val) (cp: compartment) : option val :=
   match addr with
-  | Vptr b ofs => load chunk m b (Ptrofs.unsigned ofs)
+  | Vptr b ofs => load chunk m b (Ptrofs.unsigned ofs) cp
   | _ => None
   end.
 
