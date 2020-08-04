@@ -3735,13 +3735,35 @@ Proof.
   eapply valid_access_inj; eauto. auto.
 Qed.
 
+(* RB: NOTE: Retool/relocate. This is a temporary stopgap that makes up for the
+   lack of connection between the various kinds of validity (pointers, block
+   ownership, etc.) in memory. These connections are clearly expected to hold,
+   but the memory record needs to be extended to reflect them. Note also that
+   this result is always used in connection with [valid_pointer_valid_access],
+   which when going in the pointer-to-access direction leaves open the
+   compartment variable without any means of instantiation. *)
+Lemma valid_pointer_own_block :
+  forall m b ofs,
+  valid_pointer m b ofs = true ->
+  exists cp,
+  own_block m b cp.
+Admitted.
+
 Theorem valid_pointer_extends:
   forall m1 m2 b ofs,
   extends m1 m2 -> valid_pointer m1 b ofs = true -> valid_pointer m2 b ofs = true.
 Proof.
   intros.
-  rewrite valid_pointer_valid_access in *.
-  eapply valid_access_extends; eauto.
+
+  destruct (valid_pointer_own_block _ _ _ H0) as [cp Hown].
+  rewrite valid_pointer_valid_access in H0. 2:{ unfold own_block in Hown. eassumption. }
+  pose proof valid_access_extends _ _ _ _ _ _ _ H H0 as Hvalid.
+  rewrite valid_pointer_valid_access. eassumption.
+  destruct Hvalid as [Hperm [Hown' Halign]].
+  congruence.
+
+  (* rewrite valid_pointer_valid_access in *. *)
+  (* eapply valid_access_extends; eauto. *)
 Qed.
 
 Theorem weak_valid_pointer_extends:
@@ -3846,11 +3868,11 @@ Proof.
 Qed.
 
 Theorem valid_access_inject:
-  forall f m1 m2 chunk b1 ofs b2 delta p,
+  forall f m1 m2 chunk b1 ofs b2 delta p cp,
   f b1 = Some(b2, delta) ->
   inject f m1 m2 ->
-  valid_access m1 chunk b1 ofs p ->
-  valid_access m2 chunk b2 (ofs + delta) p.
+  valid_access m1 chunk b1 ofs p cp ->
+  valid_access m2 chunk b2 (ofs + delta) p cp.
 Proof.
   intros. eapply valid_access_inj; eauto. apply mi_inj; auto.
 Qed.
@@ -3863,9 +3885,12 @@ Theorem valid_pointer_inject:
   valid_pointer m2 b2 (ofs + delta) = true.
 Proof.
   intros.
-  rewrite valid_pointer_valid_access in H1.
+  pose proof valid_pointer_own_block _ _ _ H1 as [cp Hown].
+  unfold own_block in Hown.
+  rewrite (valid_pointer_valid_access _ _ _ _ Hown) in H1.
   rewrite valid_pointer_valid_access.
   eapply valid_access_inject; eauto.
+  inv H0. inv mi_inj0. eapply mi_own0; eauto.
 Qed.
 
 Theorem weak_valid_pointer_inject:
@@ -3899,9 +3924,9 @@ Proof.
 Qed.
 
 Lemma address_inject':
-  forall f m1 m2 chunk b1 ofs1 b2 delta,
+  forall f m1 m2 chunk b1 ofs1 cp b2 delta,
   inject f m1 m2 ->
-  valid_access m1 chunk b1 (Ptrofs.unsigned ofs1) Nonempty ->
+  valid_access m1 chunk b1 (Ptrofs.unsigned ofs1) Nonempty cp ->
   f b1 = Some (b2, delta) ->
   Ptrofs.unsigned (Ptrofs.add ofs1 (Ptrofs.repr delta)) = Ptrofs.unsigned ofs1 + delta.
 Proof.
@@ -3942,9 +3967,11 @@ Theorem valid_pointer_inject_val:
   valid_pointer m2 b' (Ptrofs.unsigned ofs') = true.
 Proof.
   intros. inv H1.
+  pose proof valid_pointer_own_block _ _ _ H0 as [cp Hown].
   erewrite address_inject'; eauto.
   eapply valid_pointer_inject; eauto.
   rewrite valid_pointer_valid_access in H0. eauto.
+  eauto.
 Qed.
 
 Theorem weak_valid_pointer_inject_val:
@@ -3990,14 +4017,18 @@ Theorem different_pointers_inject:
   Ptrofs.unsigned (Ptrofs.add ofs2 (Ptrofs.repr delta2)).
 Proof.
   intros.
+  destruct (valid_pointer_own_block _ _ _ H1) as [cp1 Hown1].
+  destruct (valid_pointer_own_block _ _ _ H2) as [cp2 Hown2].
   rewrite valid_pointer_valid_access in H1.
   rewrite valid_pointer_valid_access in H2.
-  rewrite (address_inject' _ _ _ _ _ _ _ _ H H1 H3).
-  rewrite (address_inject' _ _ _ _ _ _ _ _ H H2 H4).
+  rewrite (address_inject' _ _ _ _ _ _ cp1 _ _ H H1 H3).
+  rewrite (address_inject' _ _ _ _ _ _ cp2 _ _ H H2 H4).
   inv H1. simpl in H5. inv H2. simpl in H1.
   eapply mi_no_overlap; eauto.
   apply perm_cur_max. apply (H5 (Ptrofs.unsigned ofs1)). omega.
   apply perm_cur_max. apply (H1 (Ptrofs.unsigned ofs2)). omega.
+  congruence.
+  congruence.
 Qed.
 
 Theorem disjoint_or_equal_inject:
@@ -4030,13 +4061,14 @@ Proof.
 Qed.
 
 Theorem aligned_area_inject:
-  forall f m m' b ofs al sz b' delta,
+  forall f m m' b ofs al sz b' delta cp,
   inject f m m' ->
   al = 1 \/ al = 2 \/ al = 4 \/ al = 8 -> sz > 0 ->
   (al | sz) ->
   range_perm m b ofs (ofs + sz) Cur Nonempty ->
   (al | ofs) ->
   f b = Some(b', delta) ->
+  forall OWN : own_block m b cp,
   (al | ofs + delta).
 Proof.
   intros.
@@ -4049,30 +4081,31 @@ Proof.
     destruct H0. subst; exists Mint32; auto.
     subst; exists Mint64; auto.
   destruct R as [chunk [A B]].
-  assert (valid_access m chunk b ofs Nonempty).
-    split. red; intros; apply H3. omega. congruence.
-  exploit valid_access_inject; eauto. intros [C D].
+  assert (valid_access m chunk b ofs Nonempty cp).
+    split. red; intros; apply H3. omega.
+    split. assumption. congruence.
+  exploit valid_access_inject; eauto. intros [C [D E]].
   congruence.
 Qed.
 
 (** Preservation of loads *)
 
 Theorem load_inject:
-  forall f m1 m2 chunk b1 ofs b2 delta v1,
+  forall f m1 m2 chunk b1 ofs cp b2 delta v1,
   inject f m1 m2 ->
-  load chunk m1 b1 ofs = Some v1 ->
+  load chunk m1 b1 ofs cp = Some v1 ->
   f b1 = Some (b2, delta) ->
-  exists v2, load chunk m2 b2 (ofs + delta) = Some v2 /\ Val.inject f v1 v2.
+  exists v2, load chunk m2 b2 (ofs + delta) cp = Some v2 /\ Val.inject f v1 v2.
 Proof.
   intros. inv H. eapply load_inj; eauto.
 Qed.
 
 Theorem loadv_inject:
-  forall f m1 m2 chunk a1 a2 v1,
+  forall f m1 m2 chunk a1 cp a2 v1,
   inject f m1 m2 ->
-  loadv chunk m1 a1 = Some v1 ->
+  loadv chunk m1 a1 cp = Some v1 ->
   Val.inject f a1 a2 ->
-  exists v2, loadv chunk m2 a2 = Some v2 /\ Val.inject f v1 v2.
+  exists v2, loadv chunk m2 a2 cp = Some v2 /\ Val.inject f v1 v2.
 Proof.
   intros. inv H1; simpl in H0; try discriminate.
   exploit load_inject; eauto. intros [v2 [LOAD INJ]].
@@ -4083,11 +4116,11 @@ Proof.
 Qed.
 
 Theorem loadbytes_inject:
-  forall f m1 m2 b1 ofs len b2 delta bytes1,
+  forall f m1 m2 b1 ofs len cp b2 delta bytes1,
   inject f m1 m2 ->
-  loadbytes m1 b1 ofs len = Some bytes1 ->
+  loadbytes m1 b1 ofs len cp = Some bytes1 ->
   f b1 = Some (b2, delta) ->
-  exists bytes2, loadbytes m2 b2 (ofs + delta) len = Some bytes2
+  exists bytes2, loadbytes m2 b2 (ofs + delta) len cp = Some bytes2
               /\ list_forall2 (memval_inject f) bytes1 bytes2.
 Proof.
   intros. inv H. eapply loadbytes_inj; eauto.
@@ -4096,13 +4129,13 @@ Qed.
 (** Preservation of stores *)
 
 Theorem store_mapped_inject:
-  forall f chunk m1 b1 ofs v1 n1 m2 b2 delta v2,
+  forall f chunk m1 b1 ofs v1 cp n1 m2 b2 delta v2,
   inject f m1 m2 ->
-  store chunk m1 b1 ofs v1 = Some n1 ->
+  store chunk m1 b1 ofs v1 cp = Some n1 ->
   f b1 = Some (b2, delta) ->
   Val.inject f v1 v2 ->
   exists n2,
-    store chunk m2 b2 (ofs + delta) v2 = Some n2
+    store chunk m2 b2 (ofs + delta) v2 cp = Some n2
     /\ inject f n1 n2.
 Proof.
   intros. inversion H.
@@ -4125,9 +4158,9 @@ Proof.
 Qed.
 
 Theorem store_unmapped_inject:
-  forall f chunk m1 b1 ofs v1 n1 m2,
+  forall f chunk m1 b1 ofs v1 cp n1 m2,
   inject f m1 m2 ->
-  store chunk m1 b1 ofs v1 = Some n1 ->
+  store chunk m1 b1 ofs v1 cp = Some n1 ->
   f b1 = None ->
   inject f n1 m2.
 Proof.
@@ -4150,13 +4183,13 @@ Proof.
 Qed.
 
 Theorem store_outside_inject:
-  forall f m1 m2 chunk b ofs v m2',
+  forall f m1 m2 chunk b ofs v cp m2',
   inject f m1 m2 ->
   (forall b' delta ofs',
     f b' = Some(b, delta) ->
     perm m1 b' ofs' Cur Readable ->
     ofs <= ofs' + delta < ofs + size_chunk chunk -> False) ->
-  store chunk m2 b ofs v = Some m2' ->
+  store chunk m2 b ofs v cp = Some m2' ->
   inject f m1 m2'.
 Proof.
   intros. inversion H. constructor.
@@ -4175,13 +4208,13 @@ Proof.
 Qed.
 
 Theorem storev_mapped_inject:
-  forall f chunk m1 a1 v1 n1 m2 a2 v2,
+  forall f chunk m1 a1 v1 cp n1 m2 a2 v2,
   inject f m1 m2 ->
-  storev chunk m1 a1 v1 = Some n1 ->
+  storev chunk m1 a1 v1 cp = Some n1 ->
   Val.inject f a1 a2 ->
   Val.inject f v1 v2 ->
   exists n2,
-    storev chunk m2 a2 v2 = Some n2 /\ inject f n1 n2.
+    storev chunk m2 a2 v2 cp = Some n2 /\ inject f n1 n2.
 Proof.
   intros. inv H1; simpl in H0; try discriminate.
   unfold storev.
@@ -4192,13 +4225,13 @@ Proof.
 Qed.
 
 Theorem storebytes_mapped_inject:
-  forall f m1 b1 ofs bytes1 n1 m2 b2 delta bytes2,
+  forall f m1 b1 ofs bytes1 cp n1 m2 b2 delta bytes2,
   inject f m1 m2 ->
-  storebytes m1 b1 ofs bytes1 = Some n1 ->
+  storebytes m1 b1 ofs bytes1 cp = Some n1 ->
   f b1 = Some (b2, delta) ->
   list_forall2 (memval_inject f) bytes1 bytes2 ->
   exists n2,
-    storebytes m2 b2 (ofs + delta) bytes2 = Some n2
+    storebytes m2 b2 (ofs + delta) bytes2 cp = Some n2
     /\ inject f n1 n2.
 Proof.
   intros. inversion H.
@@ -4221,9 +4254,9 @@ Proof.
 Qed.
 
 Theorem storebytes_unmapped_inject:
-  forall f m1 b1 ofs bytes1 n1 m2,
+  forall f m1 b1 ofs bytes1 cp n1 m2,
   inject f m1 m2 ->
-  storebytes m1 b1 ofs bytes1 = Some n1 ->
+  storebytes m1 b1 ofs bytes1 cp = Some n1 ->
   f b1 = None ->
   inject f n1 m2.
 Proof.
@@ -4246,13 +4279,13 @@ Proof.
 Qed.
 
 Theorem storebytes_outside_inject:
-  forall f m1 m2 b ofs bytes2 m2',
+  forall f m1 m2 b ofs bytes2 cp m2',
   inject f m1 m2 ->
   (forall b' delta ofs',
     f b' = Some(b, delta) ->
     perm m1 b' ofs' Cur Readable ->
     ofs <= ofs' + delta < ofs + Z.of_nat (length bytes2) -> False) ->
-  storebytes m2 b ofs bytes2 = Some m2' ->
+  storebytes m2 b ofs bytes2 cp = Some m2' ->
   inject f m1 m2'.
 Proof.
   intros. inversion H. constructor.
@@ -4271,10 +4304,10 @@ Proof.
 Qed.
 
 Theorem storebytes_empty_inject:
-  forall f m1 b1 ofs1 m1' m2 b2 ofs2 m2',
+  forall f m1 b1 ofs1 cp1 m1' m2 b2 ofs2 cp2 m2',
   inject f m1 m2 ->
-  storebytes m1 b1 ofs1 nil = Some m1' ->
-  storebytes m2 b2 ofs2 nil = Some m2' ->
+  storebytes m1 b1 ofs1 nil cp1 = Some m1' ->
+  storebytes m2 b2 ofs2 nil cp2 = Some m2' ->
   inject f m1' m2'.
 Proof.
   intros. inversion H. constructor; intros.
@@ -4341,6 +4374,9 @@ Proof.
     unfold f'; intros. destruct (eq_block b0 b1). congruence. eauto.
     unfold f'; intros. destruct (eq_block b0 b1). congruence. eauto.
     unfold f'; intros. destruct (eq_block b0 b1). congruence.
+    unfold f'; intros. destruct (eq_block b0 b1). congruence.
+    eapply mi_align0; eauto.
+    unfold f'; intros. destruct (eq_block b0 b1). congruence.
     apply memval_inject_incr with f; auto.
   exists f'; split. constructor.
 (* inj *)
@@ -4378,6 +4414,7 @@ Theorem alloc_left_mapped_inject:
   inject f m1 m2 ->
   alloc m1 c lo hi = (m1', b1) ->
   valid_block m2 b2 ->
+  forall OWN : own_block m2 b2 c,
   0 <= delta <= Ptrofs.max_unsigned ->
   (forall ofs k p, perm m2 b2 ofs k p -> delta = 0 \/ 0 <= ofs < Ptrofs.max_unsigned) ->
   (forall ofs k p, lo <= ofs < hi -> perm m2 b2 (ofs + delta) k p) ->
@@ -4404,6 +4441,10 @@ Proof.
       inversion H8. subst b0 b3 delta0.
       elim (fresh_block_alloc _ _ _ _ _ _ H0). eauto with mem.
       eauto.
+    unfold f'; intros. destruct (eq_block b0 b1).
+      inversion H8. subst b0 b3 delta0.
+      apply unowned_fresh_block with (c' := cp) in H0. contradiction.
+      eapply mi_own0; eauto.
     unfold f'; intros. destruct (eq_block b0 b1).
       inversion H8. subst b0 b3 delta0.
       elim (fresh_block_alloc _ _ _ _ _ _ H0).
@@ -4481,6 +4522,7 @@ Proof.
   eapply alloc_right_inject; eauto.
   eauto.
   instantiate (1 := b2). eauto with mem.
+  eapply owned_new_block; eauto.
   instantiate (1 := 0). unfold Ptrofs.max_unsigned. generalize Ptrofs.modulus_pos; omega.
   auto.
   intros. apply perm_implies with Freeable; auto with mem.
@@ -4494,9 +4536,9 @@ Qed.
 (** Preservation of [free] operations *)
 
 Lemma free_left_inject:
-  forall f m1 m2 b lo hi m1',
+  forall f m1 m2 b lo hi cp m1',
   inject f m1 m2 ->
-  free m1 b lo hi = Some m1' ->
+  free m1 b lo hi cp = Some m1' ->
   inject f m1' m2.
 Proof.
   intros. inversion H. constructor.
@@ -4518,22 +4560,22 @@ Proof.
 Qed.
 
 Lemma free_list_left_inject:
-  forall f m2 l m1 m1',
+  forall f m2 l cp m1 m1',
   inject f m1 m2 ->
-  free_list m1 l = Some m1' ->
+  free_list m1 l cp = Some m1' ->
   inject f m1' m2.
 Proof.
   induction l; simpl; intros.
   inv H0. auto.
   destruct a as [[b lo] hi].
   destruct (free m1 b lo hi) as [m11|] eqn:E; try discriminate.
-  apply IHl with m11; auto. eapply free_left_inject; eauto.
+  apply IHl with cp m11; auto. eapply free_left_inject; eauto.
 Qed.
 
 Lemma free_right_inject:
-  forall f m1 m2 b lo hi m2',
+  forall f m1 m2 b lo hi cp m2',
   inject f m1 m2 ->
-  free m2 b lo hi = Some m2' ->
+  free m2 b lo hi cp = Some m2' ->
   (forall b1 delta ofs k p,
     f b1 = Some(b, delta) -> perm m1 b1 ofs k p ->
     lo <= ofs + delta < hi -> False) ->
@@ -4555,8 +4597,8 @@ Proof.
 Qed.
 
 Lemma perm_free_list:
-  forall l m m' b ofs k p,
-  free_list m l = Some m' ->
+  forall l m cp m' b ofs k p,
+  free_list m l cp = Some m' ->
   perm m' b ofs k p ->
   perm m b ofs k p /\
   (forall lo hi, In (b, lo, hi) l -> lo <= ofs < hi -> False).
@@ -4568,15 +4610,15 @@ Proof.
   exploit IHl; eauto. intros [A B].
   split. eauto with mem.
   intros. destruct H1. inv H1.
-  elim (perm_free_2 _ _ _ _ _ E ofs k p). auto. auto.
+  elim (perm_free_2 _ _ _ _ _ _ E ofs k p). auto. auto.
   eauto.
 Qed.
 
 Theorem free_inject:
-  forall f m1 l m1' m2 b lo hi m2',
+  forall f m1 l cp1 m1' m2 b lo hi cp2 m2',
   inject f m1 m2 ->
-  free_list m1 l = Some m1' ->
-  free m2 b lo hi = Some m2' ->
+  free_list m1 l cp1 = Some m1' ->
+  free m2 b lo hi cp2 = Some m2' ->
   (forall b1 delta ofs k p,
     f b1 = Some(b, delta) ->
     perm m1 b1 ofs k p -> lo <= ofs + delta < hi ->
@@ -4591,17 +4633,18 @@ Proof.
 Qed.
 
 Theorem free_parallel_inject:
-  forall f m1 m2 b lo hi m1' b' delta,
+  forall f m1 m2 b lo hi cp m1' b' delta,
   inject f m1 m2 ->
-  free m1 b lo hi = Some m1' ->
+  free m1 b lo hi cp = Some m1' ->
   f b = Some(b', delta) ->
   exists m2',
-     free m2 b' (lo + delta) (hi + delta) = Some m2'
+     free m2 b' (lo + delta) (hi + delta) cp = Some m2'
   /\ inject f m1' m2'.
 Proof.
   intros.
-  destruct (range_perm_free m2 b' (lo + delta) (hi + delta)) as [m2' FREE].
+  destruct (range_perm_free m2 b' (lo + delta) (hi + delta) cp) as [m2' FREE].
   eapply range_perm_inject; eauto. eapply free_range_perm; eauto.
+  inv H. inv mi_inj0. eapply mi_own0; eauto. eapply free_own_block_1; eauto.
   exists m2'; split; auto.
   eapply free_inject with (m1 := m1) (l := (b,lo,hi)::nil); eauto.
   simpl; rewrite H0; auto.
@@ -4616,9 +4659,9 @@ Proof.
   intros [A|A]. congruence. omega.
 Qed.
 
-Lemma drop_outside_inject: forall f m1 m2 b lo hi p m2',
+Lemma drop_outside_inject: forall f m1 m2 b lo hi p cp m2',
   inject f m1 m2 ->
-  drop_perm m2 b lo hi p = Some m2' ->
+  drop_perm m2 b lo hi p cp = Some m2' ->
   (forall b' delta ofs k p,
     f b' = Some(b, delta) ->
     perm m1 b' ofs k p -> lo <= ofs + delta < hi -> False) ->
@@ -4642,6 +4685,10 @@ Proof.
   destruct (f' b') as [[b'' delta''] |] eqn:?; inv H.
   replace (ofs + (delta' + delta'')) with ((ofs + delta') + delta'') by omega.
   eauto.
+  (* own *)
+  destruct (f b1) as [[b' delta'] |] eqn:?; try discriminate.
+  destruct (f' b') as [[b'' delta''] |] eqn:?; inv H.
+  eapply mi_own1; eauto.
   (* align *)
   destruct (f b1) as [[b' delta'] |] eqn:?; try discriminate.
   destruct (f' b') as [[b'' delta''] |] eqn:?; inv H.
@@ -4837,6 +4884,8 @@ Proof.
 (* perm *)
   unfold flat_inj; intros. destruct (plt b1 thr); inv H.
   replace (ofs + 0) with ofs by omega; auto.
+(* own *)
+  intros. unfold own_block in H0. rewrite PTree.gempty in H0. inv H0.
 (* align *)
   unfold flat_inj; intros. destruct (plt b1 thr); inv H. apply Z.divide_0_r.
 (* mem_contents *)
@@ -4859,11 +4908,12 @@ Proof.
   eapply perm_alloc_2; eauto. omega.
   unfold flat_inj. apply pred_dec_true.
   rewrite (alloc_result _ _ _ _ _ _ H). auto.
+  eapply owned_new_block; eauto.
 Qed.
 
 Theorem store_inject_neutral:
-  forall chunk m b ofs v m' thr,
-  store chunk m b ofs v = Some m' ->
+  forall chunk m b ofs v cp m' thr,
+  store chunk m b ofs v cp = Some m' ->
   inject_neutral thr m ->
   Plt b thr ->
   Val.inject (flat_inj thr) v v ->
@@ -4877,8 +4927,8 @@ Proof.
 Qed.
 
 Theorem drop_inject_neutral:
-  forall m b lo hi p m' thr,
-  drop_perm m b lo hi p = Some m' ->
+  forall m b lo hi p cp m' thr,
+  drop_perm m b lo hi p cp = Some m' ->
   inject_neutral thr m ->
   Plt b thr ->
   inject_neutral thr m'.
@@ -4906,13 +4956,18 @@ Record unchanged_on (m_before m_after: mem) : Prop := mk_unchanged_on {
     forall b ofs,
     P b ofs -> perm m_before b ofs Cur Readable ->
     ZMap.get ofs (PMap.get b m_after.(mem_contents)) =
-    ZMap.get ofs (PMap.get b m_before.(mem_contents))
+    ZMap.get ofs (PMap.get b m_before.(mem_contents));
+  unchanged_on_own:
+    forall b cp,
+    (* P b ofs -> *)
+    valid_block m_before b -> (* Adjust preconditions as needed. *)
+    (own_block m_before b cp <-> own_block m_after b cp)
 }.
 
 Lemma unchanged_on_refl:
   forall m, unchanged_on m m.
 Proof.
-  intros; constructor. apply Ple_refl. tauto. tauto.
+  intros; constructor. apply Ple_refl. tauto. tauto. tauto.
 Qed.
 
 Lemma valid_block_unchanged_on:
@@ -4947,76 +5002,106 @@ Proof.
   eapply valid_block_unchanged_on; eauto.
 - intros. transitivity (ZMap.get ofs (mem_contents m2)#b); apply unchanged_on_contents; auto.
   eapply perm_unchanged_on; eauto.
+- intros. transitivity (own_block m2 b cp); apply unchanged_on_own; auto.
+  eapply valid_block_unchanged_on; eauto.
 Qed.
 
 Lemma loadbytes_unchanged_on_1:
-  forall m m' b ofs n,
+  forall m m' b ofs n cp,
   unchanged_on m m' ->
   valid_block m b ->
   (forall i, ofs <= i < ofs + n -> P b i) ->
-  loadbytes m' b ofs n = loadbytes m b ofs n.
+  forall (OWN : own_block m b cp),
+  loadbytes m' b ofs n cp = loadbytes m b ofs n cp.
 Proof.
   intros.
   destruct (zle n 0).
-+ erewrite ! loadbytes_empty by assumption. auto.
-+ unfold loadbytes. destruct H.
+- erewrite ! loadbytes_empty; try easy.
+  inv H. apply unchanged_on_own0; auto.
+- unfold loadbytes. destruct H.
   destruct (range_perm_dec m b ofs (ofs + n) Cur Readable).
-  rewrite pred_dec_true. f_equal.
++ destruct (own_block_dec m b cp).
+* setoid_rewrite pred_dec_true. simpl. f_equal.
   apply getN_exten. intros. rewrite Z2Nat.id in H by omega.
   apply unchanged_on_contents0; auto.
   red; intros. apply unchanged_on_perm0; auto.
-  rewrite pred_dec_false. auto.
+  apply unchanged_on_own0; auto.
+* setoid_rewrite pred_dec_false at 2.
+  rewrite andb_comm. reflexivity.
+  intro Hcontra. apply n0.
+  apply unchanged_on_own0; auto.
++ setoid_rewrite pred_dec_false at 1. auto.
   red; intros; elim n0; red; intros. apply <- unchanged_on_perm0; auto.
 Qed.
 
+(* RB: TODO: Relocate. *)
+Lemma loadbytes_own_block_inj:
+  forall m b ofs n cp bytes,
+  loadbytes m b ofs n cp = Some bytes ->
+  own_block m b cp.
+Proof.
+  unfold loadbytes. intros.
+  destruct (range_perm_dec m b ofs (ofs + n) Cur Readable); [| inversion H].
+  destruct (own_block_dec m b cp); inv H.
+  assumption.
+Qed.
+
 Lemma loadbytes_unchanged_on:
-  forall m m' b ofs n bytes,
+  forall m m' b ofs n cp bytes,
   unchanged_on m m' ->
   (forall i, ofs <= i < ofs + n -> P b i) ->
-  loadbytes m b ofs n = Some bytes ->
-  loadbytes m' b ofs n = Some bytes.
+  loadbytes m b ofs n cp = Some bytes ->
+  loadbytes m' b ofs n cp = Some bytes.
 Proof.
   intros.
+  pose proof loadbytes_own_block_inj _ _ _ _ _ _ H1 as Hown.
   destruct (zle n 0).
-+ erewrite loadbytes_empty in * by assumption. auto.
++ erewrite loadbytes_empty in *; try assumption.
+  (* RB: NOTE: See [loadbytes_empty] discussion for possible fix. *)
+  admit.
 + rewrite <- H1. apply loadbytes_unchanged_on_1; auto.
   exploit loadbytes_range_perm; eauto. instantiate (1 := ofs). omega.
   intros. eauto with mem.
-Qed.
+(* Qed. *)
+Admitted.
 
 Lemma load_unchanged_on_1:
-  forall m m' chunk b ofs,
+  forall m m' chunk b cp ofs,
   unchanged_on m m' ->
   valid_block m b ->
   (forall i, ofs <= i < ofs + size_chunk chunk -> P b i) ->
-  load chunk m' b ofs = load chunk m b ofs.
+  load chunk m' b ofs cp = load chunk m b ofs cp.
 Proof.
-  intros. unfold load. destruct (valid_access_dec m chunk b ofs Readable).
-  destruct v. rewrite pred_dec_true. f_equal. f_equal. apply getN_exten. intros.
+  intros. unfold load. destruct (valid_access_dec m chunk b ofs Readable cp).
+- destruct v as [H2 [H' H3]]. rewrite pred_dec_true. f_equal. f_equal. apply getN_exten. intros.
   rewrite <- size_chunk_conv in H4. eapply unchanged_on_contents; eauto.
   split; auto. red; intros. eapply perm_unchanged_on; eauto.
-  rewrite pred_dec_false. auto.
-  red; intros [A B]; elim n; split; auto. red; intros; eapply perm_unchanged_on_2; eauto.
+  split; auto.
+  destruct H. eapply unchanged_on_own0; eauto.
+- rewrite pred_dec_false. auto.
+  red; intros [A [B C]]; elim n; split; auto. red; intros; eapply perm_unchanged_on_2; eauto.
+  split; auto.
+  destruct H. eapply unchanged_on_own0; eauto.
 Qed.
 
 Lemma load_unchanged_on:
-  forall m m' chunk b ofs v,
+  forall m m' chunk b ofs cp v,
   unchanged_on m m' ->
   (forall i, ofs <= i < ofs + size_chunk chunk -> P b i) ->
-  load chunk m b ofs = Some v ->
-  load chunk m' b ofs = Some v.
+  load chunk m b ofs cp = Some v ->
+  load chunk m' b ofs cp = Some v.
 Proof.
   intros. rewrite <- H1. eapply load_unchanged_on_1; eauto with mem.
 Qed.
 
 Lemma store_unchanged_on:
-  forall chunk m b ofs v m',
-  store chunk m b ofs v = Some m' ->
+  forall chunk m b ofs v cp m',
+  store chunk m b ofs v cp = Some m' ->
   (forall i, ofs <= i < ofs + size_chunk chunk -> ~ P b i) ->
   unchanged_on m m'.
 Proof.
   intros; constructor; intros.
-- rewrite (nextblock_store _ _ _ _ _ _ H). apply Ple_refl.
+- rewrite (nextblock_store _ _ _ _ _ _ _ H). apply Ple_refl.
 - split; intros; eauto with mem.
 - erewrite store_mem_contents; eauto. rewrite PMap.gsspec.
   destruct (peq b0 b); auto. subst b0. apply setN_outside.
@@ -5024,22 +5109,26 @@ Proof.
   destruct (zlt ofs0 ofs); auto.
   destruct (zlt ofs0 (ofs + size_chunk chunk)); auto.
   elim (H0 ofs0). omega. auto.
+- eapply store_own_block_inj; eauto.
 Qed.
 
 Lemma storebytes_unchanged_on:
-  forall m b ofs bytes m',
-  storebytes m b ofs bytes = Some m' ->
+  forall m b ofs bytes cp m',
+  storebytes m b ofs bytes cp = Some m' ->
   (forall i, ofs <= i < ofs + Z.of_nat (length bytes) -> ~ P b i) ->
   unchanged_on m m'.
 Proof.
   intros; constructor; intros.
-- rewrite (nextblock_storebytes _ _ _ _ _ H). apply Ple_refl.
+- rewrite (nextblock_storebytes _ _ _ _ _ _ H). apply Ple_refl.
 - split; intros. eapply perm_storebytes_1; eauto. eapply perm_storebytes_2; eauto.
 - erewrite storebytes_mem_contents; eauto. rewrite PMap.gsspec.
   destruct (peq b0 b); auto. subst b0. apply setN_outside.
   destruct (zlt ofs0 ofs); auto.
   destruct (zlt ofs0 (ofs + Z.of_nat (length bytes))); auto.
   elim (H0 ofs0). omega. auto.
+- split.
+  eapply storebytes_own_block_inj_1; eauto.
+  eapply storebytes_own_block_inj_2; eauto.
 Qed.
 
 Lemma alloc_unchanged_on:
@@ -5055,33 +5144,44 @@ Proof.
   eapply valid_not_valid_diff; eauto with mem.
 - injection H; intros A B. rewrite <- B; simpl.
   rewrite PMap.gso; auto. rewrite A.  eapply valid_not_valid_diff; eauto with mem.
+- destruct (peq b0 b).
++ subst b0. apply fresh_block_alloc in H. contradiction.
++ split.
+  eapply alloc_own_block_other_inj_1; eauto.
+  eapply alloc_own_block_other_inj_2; eauto.
 Qed.
 
 Lemma free_unchanged_on:
-  forall m b lo hi m',
-  free m b lo hi = Some m' ->
+  forall m b lo hi cp m',
+  free m b lo hi cp = Some m' ->
   (forall i, lo <= i < hi -> ~ P b i) ->
   unchanged_on m m'.
 Proof.
   intros; constructor; intros.
-- rewrite (nextblock_free _ _ _ _ _ H). apply Ple_refl.
+- rewrite (nextblock_free _ _ _ _ _ _ H). apply Ple_refl.
 - split; intros.
   eapply perm_free_1; eauto.
   destruct (eq_block b0 b); auto. destruct (zlt ofs lo); auto. destruct (zle hi ofs); auto.
   subst b0. elim (H0 ofs). omega. auto.
   eapply perm_free_3; eauto.
-- unfold free in H. destruct (range_perm_dec m b lo hi Cur Freeable); inv H.
+- unfold free in H.
+  destruct (range_perm_dec m b lo hi Cur Freeable);
+  destruct (own_block_dec m b cp);
+  inv H.
   simpl. auto.
+- split.
+  eapply free_own_block_inj_1; eauto.
+  eapply free_own_block_inj_2; eauto.
 Qed.
 
 Lemma drop_perm_unchanged_on:
-  forall m b lo hi p m',
-  drop_perm m b lo hi p = Some m' ->
+  forall m b lo hi p cp m',
+  drop_perm m b lo hi p cp = Some m' ->
   (forall i, lo <= i < hi -> ~ P b i) ->
   unchanged_on m m'.
 Proof.
   intros; constructor; intros.
-- rewrite (nextblock_drop _ _ _ _ _ _ H). apply Ple_refl.
+- rewrite (nextblock_drop _ _ _ _ _ _ _ H). apply Ple_refl.
 - split; intros. eapply perm_drop_3; eauto.
   destruct (eq_block b0 b); auto.
   subst b0.
@@ -5089,7 +5189,12 @@ Proof.
   right; omega.
   eapply perm_drop_4; eauto.
 - unfold drop_perm in H.
-  destruct (range_perm_dec m b lo hi Cur Freeable); inv H; simpl. auto.
+  destruct (range_perm_dec m b lo hi Cur Freeable);
+  destruct (own_block_dec m b cp);
+  inv H; simpl. auto.
+- split.
+  eapply own_block_drop_1; eauto.
+  eapply own_block_drop_2; eauto.
 Qed.
 
 End UNCHANGED_ON.
@@ -5105,6 +5210,7 @@ Proof.
 - apply unchanged_on_perm0; auto.
 - apply unchanged_on_contents0; auto.
   apply H0; auto. eapply perm_valid_block; eauto.
+- apply unchanged_on_own0; auto.
 Qed.
 
 End Mem.
