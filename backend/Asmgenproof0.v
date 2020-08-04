@@ -871,56 +871,54 @@ Variable fn: function.
 (*                      end)). *)
 (* Qed. *)
 
-Inductive exec_straight: stack -> code -> regset -> mem ->
-                         stack -> code -> regset -> mem -> Prop :=
+Inductive exec_straight: code -> regset -> mem ->
+                         code -> regset -> mem -> Prop :=
   | exec_straight_one:
-      forall i1 s1 c rs1 m1 s2 rs2 m2,
+      forall i1  c rs1 m1  rs2 m2,
       exec_instr ge fn i1 rs1 m1 = Next rs2 m2 ->
-      forall NEXTSTACK: next_stack i1 s1 rs1 rs2 = s2,
       rs2#PC = Val.offset_ptr rs1#PC Ptrofs.one ->
-      exec_straight s1 (i1 :: c) rs1 m1 s2 c rs2 m2
+      exec_straight  (i1 :: c) rs1 m1  c rs2 m2
   | exec_straight_step:
-      forall i s1 c rs1 m1 s2 rs2 m2 s3 c' rs3 m3,
+      forall i  c rs1 m1  rs2 m2  c' rs3 m3,
       exec_instr ge fn i rs1 m1 = Next rs2 m2 ->
-      forall NEXTSTACK: next_stack i s1 rs1 rs2 = s2,
       rs2#PC = Val.offset_ptr rs1#PC Ptrofs.one ->
-      exec_straight s2 c rs2 m2 s3 c' rs3 m3 ->
-      exec_straight s1 (i :: c) rs1 m1 s3 c' rs3 m3.
+      exec_straight  c rs2 m2  c' rs3 m3 ->
+      exec_straight  (i :: c) rs1 m1  c' rs3 m3.
 
 Lemma exec_straight_trans:
-  forall s1 c1 rs1 m1 s2 c2 rs2 m2 s3 c3 rs3 m3,
-  exec_straight s1 c1 rs1 m1 s2 c2 rs2 m2 ->
-  exec_straight s2 c2 rs2 m2 s3 c3 rs3 m3 ->
-  exec_straight s1 c1 rs1 m1 s3 c3 rs3 m3.
+  forall  c1 rs1 m1  c2 rs2 m2  c3 rs3 m3,
+  exec_straight  c1 rs1 m1  c2 rs2 m2 ->
+  exec_straight  c2 rs2 m2  c3 rs3 m3 ->
+  exec_straight  c1 rs1 m1  c3 rs3 m3.
 Proof.
   induction 1; intros.
-  apply exec_straight_step with s2 rs2 m2; auto.
-  apply exec_straight_step with s2 rs2 m2; auto.
+  apply exec_straight_step with  rs2 m2; auto.
+  apply exec_straight_step with  rs2 m2; auto.
 Qed.
 
 Lemma exec_straight_two:
-  forall i1 i2 s1 c rs1 m1 rs2 m2 rs3 m3,
+  forall i1 i2  c rs1 m1 rs2 m2 rs3 m3,
   exec_instr ge fn i1 rs1 m1 = Next rs2 m2 ->
   exec_instr ge fn i2 rs2 m2 = Next rs3 m3 ->
   rs2#PC = Val.offset_ptr rs1#PC Ptrofs.one ->
   rs3#PC = Val.offset_ptr rs2#PC Ptrofs.one ->
-  exec_straight s1 (i1 :: i2 :: c) rs1 m1 (next_stack i2 (next_stack i1 s1 rs1 rs2) rs2 rs3) c rs3 m3.
+  exec_straight  (i1 :: i2 :: c) rs1 m1 c rs3 m3.
 Proof.
-  intros. apply exec_straight_step with (next_stack i1 s1 rs1 rs2) rs2 m2; auto.
+  intros. apply exec_straight_step with rs2 m2; auto.
   apply exec_straight_one; auto.
 Qed.
 
 Lemma exec_straight_three:
-  forall i1 i2 i3 s1 c rs1 m1 rs2 m2 rs3 m3 rs4 m4,
+  forall i1 i2 i3  c rs1 m1 rs2 m2 rs3 m3 rs4 m4,
   exec_instr ge fn i1 rs1 m1 = Next rs2 m2 ->
   exec_instr ge fn i2 rs2 m2 = Next rs3 m3 ->
   exec_instr ge fn i3 rs3 m3 = Next rs4 m4 ->
   rs2#PC = Val.offset_ptr rs1#PC Ptrofs.one ->
   rs3#PC = Val.offset_ptr rs2#PC Ptrofs.one ->
   rs4#PC = Val.offset_ptr rs3#PC Ptrofs.one ->
-  exec_straight s1 (i1 :: i2 :: i3 :: c) rs1 m1 (next_stack i3 (next_stack i2 (next_stack i1 s1 rs1 rs2) rs2 rs3) rs3 rs4) c rs4 m4.
+  exec_straight  (i1 :: i2 :: i3 :: c) rs1 m1 c rs4 m4.
 Proof.
-  intros. apply exec_straight_step with (next_stack i1 s1 rs1 rs2) rs2 m2; auto.
+  intros. apply exec_straight_step with rs2 m2; auto.
   eapply exec_straight_two; eauto.
 Qed.
 
@@ -928,24 +926,31 @@ Qed.
   (predicate [exec_straight]) correspond to correct Asm executions. *)
 
 Lemma exec_straight_steps_1:
-  forall s c rs m s' c' rs' m',
-  exec_straight s c rs m s' c' rs' m' ->
+  forall s c rs m c' rs' m',
+  exec_straight c rs m c' rs' m' ->
   list_length_z (fn_code fn) <= Ptrofs.max_unsigned ->
   forall b ofs,
   rs#PC = Vptr b ofs ->
   Genv.find_funct_ptr ge b = Some (Internal fn) ->
   code_tail (Ptrofs.unsigned ofs) (fn_code fn) c ->
-  plus (step pol) ge (State s rs m) E0 (State s' rs' m').
+  plus (step pol) ge (State s rs m) E0 (State s rs' m').
 Proof.
   induction 1; intros.
   apply plus_one.
   econstructor; eauto.
   eapply find_instr_tail. eauto.
+  unfold next_stack.
+  unfold Genv.find_comp. rewrite H0. rewrite H2. simpl. rewrite H3.
+  replace (comp_of (Internal fn)) with (fn_comp fn) by reflexivity.
+  rewrite Pos.eqb_refl. reflexivity.
   rewrite H0. rewrite H2. reflexivity.
   left; auto.
   eapply plus_left'.
   econstructor; eauto.
   eapply find_instr_tail. eauto.
+  unfold next_stack. unfold Genv.find_comp. rewrite H0. rewrite H3. simpl. rewrite H4.
+  replace (comp_of (Internal fn)) with (fn_comp fn) by reflexivity.
+  rewrite Pos.eqb_refl. reflexivity.
   rewrite H0. rewrite H3. reflexivity.
   left; auto.
   apply IHexec_straight with b (Ptrofs.add ofs Ptrofs.one).
@@ -956,8 +961,8 @@ Proof.
 Qed.
 
 Lemma exec_straight_steps_2:
-  forall s c rs m s' c' rs' m',
-  exec_straight s c rs m s' c' rs' m' ->
+  forall c rs m c' rs' m',
+  exec_straight c rs m c' rs' m' ->
   list_length_z (fn_code fn) <= Ptrofs.max_unsigned ->
   forall b ofs,
   rs#PC = Vptr b ofs ->
@@ -978,38 +983,38 @@ Qed.
 
 (** A variant that supports zero steps of execution *)
 
-Inductive exec_straight_opt: stack -> code -> regset -> mem -> stack -> code -> regset -> mem -> Prop :=
-  | exec_straight_opt_refl: forall c rs m s,
-      exec_straight_opt s c rs m s c rs m
-  | exec_straight_opt_intro: forall s1 c1 rs1 m1 s2 c2 rs2 m2,
-      exec_straight s1 c1 rs1 m1 s2 c2 rs2 m2 ->
-      exec_straight_opt s1 c1 rs1 m1 s2 c2 rs2 m2.
+Inductive exec_straight_opt: code -> regset -> mem -> code -> regset -> mem -> Prop :=
+  | exec_straight_opt_refl: forall c rs m,
+      exec_straight_opt c rs m c rs m
+  | exec_straight_opt_intro: forall c1 rs1 m1 c2 rs2 m2,
+      exec_straight c1 rs1 m1 c2 rs2 m2 ->
+      exec_straight_opt c1 rs1 m1  c2 rs2 m2.
 
 Lemma exec_straight_opt_left:
-  forall s3 c3 rs3 m3 s1 c1 rs1 m1 s2 c2 rs2 m2,
-  exec_straight s1 c1 rs1 m1 s2 c2 rs2 m2 ->
-  exec_straight_opt s2 c2 rs2 m2 s3 c3 rs3 m3 ->
-  exec_straight s1 c1 rs1 m1 s3 c3 rs3 m3.
+  forall  c3 rs3 m3  c1 rs1 m1  c2 rs2 m2,
+  exec_straight  c1 rs1 m1  c2 rs2 m2 ->
+  exec_straight_opt  c2 rs2 m2  c3 rs3 m3 ->
+  exec_straight  c1 rs1 m1  c3 rs3 m3.
 Proof.
   destruct 2; intros. auto. eapply exec_straight_trans; eauto. 
 Qed
 .
 
 Lemma exec_straight_opt_right:
-  forall s3 c3 rs3 m3 s1 c1 rs1 m1 s2 c2 rs2 m2,
-  exec_straight_opt s1 c1 rs1 m1 s2 c2 rs2 m2 ->
-  exec_straight s2 c2 rs2 m2 s3 c3 rs3 m3 ->
-  exec_straight s1 c1 rs1 m1 s3 c3 rs3 m3.
+  forall  c3 rs3 m3  c1 rs1 m1  c2 rs2 m2,
+  exec_straight_opt  c1 rs1 m1  c2 rs2 m2 ->
+  exec_straight  c2 rs2 m2  c3 rs3 m3 ->
+  exec_straight  c1 rs1 m1  c3 rs3 m3.
 Proof.
   destruct 1; intros. auto. eapply exec_straight_trans; eauto. 
 Qed.
 
 Lemma exec_straight_opt_step:
-  forall i s1 c rs1 m1 rs2 m2 s3 c' rs3 m3,
+  forall i  c rs1 m1 rs2 m2  c' rs3 m3,
   exec_instr ge fn i rs1 m1 = Next rs2 m2 ->
   rs2#PC = Val.offset_ptr rs1#PC Ptrofs.one ->
-  exec_straight_opt (next_stack i s1 rs1 rs2) c rs2 m2 s3 c' rs3 m3 ->
-  exec_straight s1 (i :: c) rs1 m1 s3 c' rs3 m3.
+  exec_straight_opt c rs2 m2  c' rs3 m3 ->
+  exec_straight  (i :: c) rs1 m1  c' rs3 m3.
 Proof.
   intros. inv H1. 
 - apply exec_straight_one; auto.
@@ -1017,11 +1022,11 @@ Proof.
 Qed.
 
 Lemma exec_straight_opt_step_opt:
-  forall i s1 c rs1 m1 rs2 m2 s3 c' rs3 m3,
+  forall i  c rs1 m1 rs2 m2  c' rs3 m3,
   exec_instr ge fn i rs1 m1 = Next rs2 m2 ->
   rs2#PC = Val.offset_ptr rs1#PC Ptrofs.one ->
-  exec_straight_opt (next_stack i s1 rs1 rs2) c rs2 m2 s3 c' rs3 m3 ->
-  exec_straight_opt s1 (i :: c) rs1 m1 s3 c' rs3 m3.
+  exec_straight_opt c rs2 m2  c' rs3 m3 ->
+  exec_straight_opt  (i :: c) rs1 m1  c' rs3 m3.
 Proof.
   intros. apply exec_straight_opt_intro. eapply exec_straight_opt_step; eauto.
 Qed.
@@ -1034,24 +1039,24 @@ Section MATCH_STACK.
 
 Variable ge: Mach.genv.
 
-Inductive match_stack: list Mach.stackframe -> list stackframe -> Prop :=
+Inductive match_stack: list Mach.stackframe -> Prop :=
   | match_stack_nil:
-      match_stack nil nil
-  | match_stack_cons: forall fb sp ra c s f tf tc s',
+      match_stack nil
+  | match_stack_cons: forall fb sp ra c s f tf tc,
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
       transl_code_at_pc ge (Vptr fb ra) fb f c false tf tc ->
       sp <> Vundef ->
-      match_stack s s' ->
-      match_stack (Mach.Stackframe fb sp ra c :: s) (Stackframe fb ra sp :: s').
+      match_stack s ->
+      match_stack (Mach.Stackframe fb sp ra c :: s).
 
-Lemma parent_sp_def: forall s s', match_stack s s' -> parent_sp s <> Vundef.
+Lemma parent_sp_def: forall s, match_stack s -> parent_sp s <> Vundef.
 Proof.
   induction 1; simpl.
   unfold Vnullptr; destruct Archi.ptr64; congruence.
   auto.
 Qed.
 
-Lemma parent_ra_def: forall s s', match_stack s s' -> parent_ra s <> Vundef.
+Lemma parent_ra_def: forall s, match_stack s -> parent_ra s <> Vundef.
 Proof.
   induction 1; simpl.
   unfold Vnullptr; destruct Archi.ptr64; congruence.
@@ -1059,18 +1064,19 @@ Proof.
 Qed.
 
 Lemma lessdef_parent_sp:
-  forall s s' v,
-  match_stack s s' -> Val.lessdef (parent_sp s) v -> v = parent_sp s.
+  forall s v,
+  match_stack s -> Val.lessdef (parent_sp s) v -> v = parent_sp s.
 Proof.
   intros. inv H0. auto. exploit parent_sp_def; eauto. tauto.
 Qed.
 
 Lemma lessdef_parent_ra:
-  forall s s' v,
-  match_stack s s' -> Val.lessdef (parent_ra s) v -> v = parent_ra s.
+  forall s v,
+  match_stack s -> Val.lessdef (parent_ra s) v -> v = parent_ra s.
 Proof.
   intros. inv H0. auto. exploit parent_ra_def; eauto. tauto.
 Qed.
 
 End MATCH_STACK.
+
 

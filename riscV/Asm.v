@@ -1097,22 +1097,31 @@ Definition stack := list stackframe.
 Inductive state: Type :=
   | State: stack -> regset -> mem -> state.
 
-Definition next_stack i st rs rs' :=
+Definition next_stack i cp st rs' :=
   let pc' := rs' # PC in
   let sp' := rs' # SP in
-  match i with
-  | Pjal_s _ _ | Pjal_r _ _ =>
-                 match rs # RA with
-                 | Vptr f retaddr => Stackframe f retaddr sp' :: st
-                 | _ => st
-                 end
-  | _ =>
-    match st with
-    | nil => st
-    | Stackframe f retaddr sp :: st' =>
-      if Val.eq (Vptr f retaddr) pc' && Val.eq sp sp' then st'
-      else st
-    end
+  match Genv.find_comp ge pc' with
+  | Some cp' =>
+    if Pos.eqb cp cp' then (* We stay in the same compartment: we do not update the stack *)
+      Some st
+    else (* Change in compartments: we have to update the stack *)
+      match i with
+        (* Jals correspond to calls; we must update the stack*)
+    | Pjal_s _ _ | Pjal_r _ _ =>
+                     match rs' # RA with
+                     | Vptr f retaddr => Some (Stackframe f retaddr sp' :: st)
+                     | _ => None
+                     end
+      (* Other instructions are used to maybe perform returns *)
+      | _ =>
+        match st with
+        | nil => Some nil
+        | Stackframe f retaddr sp :: st' =>
+          if Val.eq (Vptr f retaddr) pc' && Val.eq sp sp' then Some st'
+          else Some st
+        end
+      end
+  | None => None
   end.
 
 
@@ -1123,7 +1132,7 @@ Inductive step: state -> trace -> state -> Prop :=
       Genv.find_funct_ptr ge b = Some (Internal f) ->
       find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
       exec_instr f i rs m = Next rs' m' ->
-      next_stack i st rs rs' = st' ->
+      next_stack i (fn_comp f) st rs' = Some st' ->
       forall (NEXTPC: rs' PC = Vptr b' ofs'),
       forall (NEXTFUN: Genv.find_funct_ptr ge b' = Some fd),
     forall (ALLOWED: Policy.allowed_call pol f.(fn_comp) fd),

@@ -93,7 +93,7 @@ Lemma exec_straight_exec:
   forall fb f c ep tf tc c' rs m rs' m' st,
   transl_code_at_pc ge (rs PC) fb f c ep tf tc ->
   exec_straight tge tf tc rs m c' rs' m' ->
-  exists st', plus (step tpol) tge (State st rs m) E0 (State st' rs' m').
+  plus (step tpol) tge (State st rs m) E0 (State st rs' m').
 Proof.
   intros. inv H.
   eapply exec_straight_steps_1; eauto.
@@ -494,7 +494,7 @@ Qed.
 Inductive match_states: Mach.state -> Asm.state -> Prop :=
   | match_states_intro:
       forall s s' fb sp c ep ms m m' rs f tf tc
-        (STACKS: match_stack ge s s')
+        (STACKS: match_stack ge s)
         (FIND: Genv.find_funct_ptr ge fb = Some (Internal f))
         (MEXT: Mem.extends m m')
         (AT: transl_code_at_pc ge (rs PC) fb f c ep tf tc)
@@ -504,7 +504,7 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
                    (Asm.State s' rs m')
   | match_states_call:
       forall s s' fb ms m m' rs fd cp
-        (STACKS: match_stack ge s s')
+        (STACKS: match_stack ge s)
         (MEXT: Mem.extends m m')
         (AG: agree ms (parent_sp s) rs)
         (ATPC: rs PC = Vptr fb Ptrofs.zero)
@@ -516,7 +516,7 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
                    (Asm.State s' rs m')
   | match_states_return:
       forall s s' ms m m' rs
-        (STACKS: match_stack ge s s')
+        (STACKS: match_stack ge s)
         (MEXT: Mem.extends m m')
         (AG: agree ms (parent_sp s) rs)
         (ATPC: rs PC = parent_ra s),
@@ -524,7 +524,7 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
                    (Asm.State s' rs m').
 
 Lemma exec_straight_steps:
-  forall s fb f rs1 i c ep tf tc m1' m2 m2' sp ms2,
+  forall s s' fb f rs1 i c ep tf tc m1' m2 m2' sp ms2,
   match_stack ge s ->
   Mem.extends m2 m2' ->
   Genv.find_funct_ptr ge fb = Some (Internal f) ->
@@ -535,18 +535,18 @@ Lemma exec_straight_steps:
     /\ agree ms2 sp rs2
     /\ (it1_is_parent ep i = true -> rs2#X30 = parent_sp s)) ->
   exists st',
-  plus (step tpol) tge (State rs1 m1') E0 st' /\
+  plus (step tpol) tge (State s' rs1 m1') E0 st' /\
   match_states (Mach.State s fb sp c ms2 m2) st'.
 Proof.
   intros. inversion H2. subst. monadInv H7.
   exploit H3; eauto. intros [rs2 [A [B C]]].
-  exists (State rs2 m2'); split.
+  exists (State s' rs2 m2'); split.
   eapply exec_straight_exec; eauto.
   econstructor; eauto. eapply exec_straight_at; eauto.
 Qed.
 
 Lemma exec_straight_steps_goto:
-  forall s fb f rs1 i c ep tf tc m1' m2 m2' sp ms2 lbl c',
+  forall s s' fb f rs1 i c ep tf tc m1' m2 m2' sp ms2 lbl c',
   match_stack ge s ->
   Mem.extends m2 m2' ->
   Genv.find_funct_ptr ge fb = Some (Internal f) ->
@@ -559,7 +559,7 @@ Lemma exec_straight_steps_goto:
     /\ agree ms2 sp rs2
     /\ exec_instr tge tf jmp rs2 m2' = goto_label tf lbl rs2 m2') ->
   exists st',
-  plus (step tpol) tge (State rs1 m1') E0 st' /\
+  plus (step tpol) tge (State s' rs1 m1') E0 st' /\
   match_states (Mach.State s fb sp c' ms2 m2) st'.
 Proof.
   intros. inversion H3. subst. monadInv H9.
@@ -571,12 +571,15 @@ Proof.
   exploit find_label_goto_label; eauto.
   intros [tc' [rs3 [GOTO [AT' OTH]]]].
   inversion AT'; subst.
-  exists (State rs3 m2'); split.
+  exists (State s' rs3 m2'); split.
   eapply plus_right'.
   eapply exec_straight_steps_1; eauto.
   econstructor; eauto.
   eapply find_instr_tail. eauto.
   rewrite C. eexact GOTO.
+  unfold next_stack; rewrite <- H9; simpl; rewrite FN.
+  replace (fn_comp tf) with (comp_of (Internal tf)) by reflexivity.
+  rewrite Pos.eqb_refl; reflexivity.
   left; auto.
   traceEq.
   econstructor; eauto.
@@ -585,7 +588,7 @@ Proof.
 Qed.
 
 Lemma exec_straight_opt_steps_goto:
-  forall s fb f rs1 i c ep tf tc m1' m2 m2' sp ms2 lbl c',
+  forall s s' fb f rs1 i c ep tf tc m1' m2 m2' sp ms2 lbl c',
   match_stack ge s ->
   Mem.extends m2 m2' ->
   Genv.find_funct_ptr ge fb = Some (Internal f) ->
@@ -598,7 +601,7 @@ Lemma exec_straight_opt_steps_goto:
     /\ agree ms2 sp rs2
     /\ exec_instr tge tf jmp rs2 m2' = goto_label tf lbl rs2 m2') ->
   exists st',
-  plus (step tpol) tge (State rs1 m1') E0 st' /\
+  plus (step tpol) tge (State s' rs1 m1') E0 st' /\
   match_states (Mach.State s fb sp c' ms2 m2) st'.
 Proof.
   intros. inversion H3. subst. monadInv H9.
@@ -609,10 +612,13 @@ Proof.
 - exploit find_label_goto_label; eauto.
   intros [tc' [rs3 [GOTO [AT' OTH]]]].
   inversion AT'; subst.
-  exists (State rs3 m2'); split.
+  exists (State s' rs3 m2'); split.
   apply plus_one. econstructor; eauto.
   eapply find_instr_tail. eauto.
   rewrite C. eexact GOTO.
+  unfold next_stack; rewrite <- H9; simpl; rewrite FN.
+  replace (fn_comp tf) with (comp_of (Internal tf)) by reflexivity.
+  rewrite Pos.eqb_refl; reflexivity.
   left; auto.
   econstructor; eauto.
   apply agree_exten with rs2; auto with asmgen.
@@ -622,12 +628,15 @@ Proof.
   exploit find_label_goto_label; eauto.
   intros [tc' [rs3 [GOTO [AT' OTH]]]].
   inversion AT'; subst.
-  exists (State rs3 m2'); split.
+  exists (State s' rs3 m2'); split.
   eapply plus_right'.
   eapply exec_straight_steps_1; eauto.
   econstructor; eauto.
   eapply find_instr_tail. eauto.
   rewrite C. eexact GOTO.
+  unfold next_stack; rewrite <- H11; simpl; rewrite FN.
+  replace (fn_comp tf) with (comp_of (Internal tf)) by reflexivity.
+  rewrite Pos.eqb_refl; reflexivity.
   left; auto.
   traceEq.
   econstructor; eauto.
@@ -783,36 +792,77 @@ Local Transparent destroyed_by_op.
   assert (TCA: transl_code_at_pc ge (Vptr fb (Ptrofs.add ofs Ptrofs.one)) fb f c false tf x).
     econstructor; eauto.
   exploit return_address_offset_correct; eauto. intros; subst ra.
-  left; econstructor; split.
-  apply plus_one. eapply exec_step_internal.
-  Simpl. rewrite <- H2; simpl; eauto.
-  eapply functions_transl; eauto. eapply find_instr_tail; eauto.
-  simpl. eauto. Simpl. eauto.
-  eassumption.
-  eapply TRANSPOL. eassumption. erewrite <- transf_function_comp; eassumption.
-  econstructor; eauto.
-  econstructor; eauto.
-  eapply agree_sp_def; eauto.
-  simpl. eapply agree_exten; eauto. intros. Simpl.
-  Simpl. rewrite <- H2. auto.
-  unfold call_comp; simpl. rewrite FIND. reflexivity.
+  destruct (fn_comp tf =? comp_of tf')%positive eqn:Heq.
+  * left; econstructor; split.
+    apply plus_one. eapply exec_step_internal.
+    Simpl. rewrite <- H2; simpl; eauto.
+    eapply functions_transl; eauto. eapply find_instr_tail; eauto.
+    simpl. eauto.
+    unfold next_stack; rewrite H7; simpl. unfold tge; rewrite TFIND; rewrite Heq.
+    reflexivity.
+    (* Simpl. rewrite <- H2. simpl. reflexivity. *)
+    Simpl. eauto.
+    eassumption.
+    eapply TRANSPOL. eassumption. erewrite <- transf_function_comp; eassumption.
+    econstructor; eauto.
+    econstructor; eauto.
+    eapply agree_sp_def; eauto.
+    simpl. eapply agree_exten; eauto. intros. Simpl.
+    Simpl. rewrite <- H2. auto.
+    unfold call_comp; simpl. rewrite FIND. reflexivity.
+  * left; econstructor; split.
+    apply plus_one. eapply exec_step_internal.
+    Simpl. rewrite <- H2; simpl; eauto.
+    eapply functions_transl; eauto. eapply find_instr_tail; eauto.
+    simpl. eauto.
+    unfold next_stack; rewrite H7; simpl. unfold tge; rewrite TFIND; rewrite Heq.
+    Simpl. rewrite <- H2. simpl. reflexivity.
+    Simpl. eauto.
+    eassumption.
+    eapply TRANSPOL. eassumption. erewrite <- transf_function_comp; eassumption.
+    econstructor; eauto.
+    econstructor; eauto.
+    eapply agree_sp_def; eauto.
+    simpl. eapply agree_exten; eauto. intros. Simpl.
+    Simpl. rewrite <- H2. auto.
+    unfold call_comp; simpl. rewrite FIND. reflexivity.
 + (* Direct call *)
   generalize (code_tail_next_int _ _ _ _ NOOV H6). intro CT1.
   assert (TCA: transl_code_at_pc ge (Vptr fb (Ptrofs.add ofs Ptrofs.one)) fb f c false tf x).
     econstructor; eauto.
   exploit return_address_offset_correct; eauto. intros; subst ra.
-  left; econstructor; split.
-  apply plus_one. eapply exec_step_internal. eauto.
-  eapply functions_transl; eauto. eapply find_instr_tail; eauto.
-  simpl. unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H. eauto.
-  Simpl. eassumption.
-  eapply TRANSPOL. eassumption. erewrite <- transf_function_comp; eassumption.
-  econstructor; eauto.
-  econstructor; eauto.
-  eapply agree_sp_def; eauto.
-  simpl. eapply agree_exten; eauto. intros. Simpl.
-  Simpl. rewrite <- H2. auto.
-  unfold call_comp; simpl. rewrite FIND. reflexivity.
+  destruct (fn_comp tf =? comp_of tf')%positive eqn:Heq.
+  * left; econstructor; split.
+    apply plus_one. eapply exec_step_internal. eauto.
+    eapply functions_transl; eauto. eapply find_instr_tail; eauto.
+    simpl. unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H. eauto.
+    { unfold next_stack. unfold tge. Simpl.
+      unfold Genv.find_comp. rewrite TFIND.
+      rewrite Heq. reflexivity. }
+    Simpl. eassumption.
+    eapply TRANSPOL. eassumption. erewrite <- transf_function_comp; eassumption.
+    econstructor; eauto.
+    econstructor; eauto.
+    eapply agree_sp_def; eauto.
+    simpl. eapply agree_exten; eauto. intros. Simpl.
+    Simpl. rewrite <- H2. auto.
+    unfold call_comp; simpl. rewrite FIND. reflexivity.
+  * left; econstructor; split.
+    apply plus_one. eapply exec_step_internal. eauto.
+    eapply functions_transl; eauto. eapply find_instr_tail; eauto.
+    simpl. unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H. eauto.
+    { unfold next_stack. unfold tge. Simpl.
+      unfold Genv.find_comp. rewrite TFIND.
+      rewrite Heq.
+      Simpl. rewrite <- H2. simpl. reflexivity. }
+    Simpl. eassumption.
+    eapply TRANSPOL. eassumption. erewrite <- transf_function_comp; eassumption.
+    econstructor; eauto.
+    econstructor; eauto.
+    eapply agree_sp_def; eauto.
+    simpl. eapply agree_exten; eauto. intros. Simpl.
+    Simpl. rewrite <- H2. auto.
+    unfold call_comp; simpl. rewrite FIND. reflexivity.
 
 - (* Mtailcall *)
   assert (f0 = f) by congruence.  subst f0.
@@ -835,7 +885,29 @@ Local Transparent destroyed_by_op.
   eapply plus_right'. eapply exec_straight_exec; eauto.
   econstructor. eexact P. eapply functions_transl; eauto. eapply find_instr_tail. eexact Q.
   simpl. reflexivity.
-  Simpl. admit.
+  { unfold next_stack. Simpl.
+    rewrite Z by (rewrite <- (ireg_of_eq _ _ EQ1); eauto with asmgen).
+    rewrite H9. simpl. unfold tge. rewrite TFIND.
+    replace (if (fn_comp tf =? comp_of tf')%positive
+   then Some s'
+   else
+    match s' with
+    | nil => Some nil
+    | Stackframe f0 retaddr sp :: st' => if Val.eq (Vptr f0 retaddr) (Vptr f' Ptrofs.zero) && Val.eq sp (rs1 X2) then Some st' else Some s'
+    end) with (Some (if (fn_comp tf =? comp_of tf')%positive
+   then s'
+   else
+    match s' with
+    | nil => nil
+    | Stackframe f0 retaddr sp :: st' => if Val.eq (Vptr f0 retaddr) (Vptr f' Ptrofs.zero) && Val.eq sp (rs1 X2) then st' else s'
+    end)).
+    reflexivity.
+    destruct (fn_comp tf =? comp_of tf')%positive. reflexivity.
+    destruct s' as [| []]. reflexivity.
+    destruct (Val.eq (Vptr f0 retaddr) (Vptr f' Ptrofs.zero) && Val.eq sp (rs1 X2)). reflexivity. reflexivity.
+  }
+  Simpl.
+  rewrite Z by (rewrite <- (ireg_of_eq _ _ EQ1); eauto with asmgen); eauto.
   eassumption.
   eapply TRANSPOL. eassumption. erewrite <- transf_function_comp; eassumption.
   traceEq.
@@ -853,6 +925,7 @@ Local Transparent destroyed_by_op.
   eapply plus_right'. eapply exec_straight_exec; eauto.
   econstructor. eexact P. eapply functions_transl; eauto. eapply find_instr_tail. eexact Q.
   simpl. reflexivity.
+  admit.
   Simpl. unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H. eauto.
   eassumption.
   eapply TRANSPOL. eassumption. erewrite <- transf_function_comp; eassumption.
@@ -897,11 +970,12 @@ Local Transparent destroyed_by_op.
   assert (f0 = f) by congruence. subst f0.
   inv AT. monadInv H4.
   exploit find_label_goto_label; eauto. intros [tc' [rs' [GOTO [AT2 INV]]]].
-  left. inversion AT2; subst. exists (State rs' m'); split.
+  left. inversion AT2; subst. exists (State s' rs' m'); split.
   apply plus_one. econstructor; eauto.
   eapply functions_transl; eauto.
   eapply find_instr_tail; eauto.
   simpl; eauto.
+  admit.
   eapply functions_transl; eauto.
   left; auto.
   econstructor; eauto.
@@ -948,6 +1022,7 @@ Local Transparent destroyed_by_op.
   eapply find_instr_tail; eauto.
   simpl. rewrite <- H9. unfold Mach.label in H0; unfold label; rewrite H0.
   eexact A.
+  admit.
   eexact Hptr.
   eassumption.
   constructor; auto.
@@ -969,7 +1044,7 @@ Local Transparent destroyed_by_op.
   eapply plus_right'. eapply exec_straight_exec; eauto.
   econstructor. eexact P. eapply functions_transl; eauto. eapply find_instr_tail. eexact Q.
   simpl. reflexivity.
-  admit. admit. admit.
+  admit. admit. admit. admit.
   traceEq.
   (* match states *)
   econstructor; eauto.
@@ -1013,7 +1088,7 @@ Local Transparent destroyed_by_op.
     eexact U. }
   exploit exec_straight_steps_2; eauto using functions_transl. omega. constructor.
   intros (ofs' & X & Y).
-  left; exists (State rs3 m3'); split.
+  left; exists (State _ rs3 m3'); split.
   eapply exec_straight_steps_1; eauto. omega. constructor.
   econstructor; eauto.
   rewrite X; econstructor; eauto.
