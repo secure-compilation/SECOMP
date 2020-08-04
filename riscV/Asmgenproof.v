@@ -90,10 +90,10 @@ Proof.
 Qed.
 
 Lemma exec_straight_exec:
-  forall fb f c ep tf tc c' rs m rs' m',
+  forall fb f c ep tf tc c' rs m rs' m' st,
   transl_code_at_pc ge (rs PC) fb f c ep tf tc ->
   exec_straight tge tf tc rs m c' rs' m' ->
-  plus (step tpol) tge (State rs m) E0 (State rs' m').
+  exists st', plus (step tpol) tge (State st rs m) E0 (State st' rs' m').
 Proof.
   intros. inv H.
   eapply exec_straight_steps_1; eauto.
@@ -493,18 +493,18 @@ Qed.
 
 Inductive match_states: Mach.state -> Asm.state -> Prop :=
   | match_states_intro:
-      forall s fb sp c ep ms m m' rs f tf tc
-        (STACKS: match_stack ge s)
+      forall s s' fb sp c ep ms m m' rs f tf tc
+        (STACKS: match_stack ge s s')
         (FIND: Genv.find_funct_ptr ge fb = Some (Internal f))
         (MEXT: Mem.extends m m')
         (AT: transl_code_at_pc ge (rs PC) fb f c ep tf tc)
         (AG: agree ms sp rs)
         (DXP: ep = true -> rs#X30 = parent_sp s),
       match_states (Mach.State s fb sp c ms m)
-                   (Asm.State rs m')
+                   (Asm.State s' rs m')
   | match_states_call:
-      forall s fb ms m m' rs fd cp
-        (STACKS: match_stack ge s)
+      forall s s' fb ms m m' rs fd cp
+        (STACKS: match_stack ge s s')
         (MEXT: Mem.extends m m')
         (AG: agree ms (parent_sp s) rs)
         (ATPC: rs PC = Vptr fb Ptrofs.zero)
@@ -513,15 +513,15 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
         (ALLOWED: Policy.allowed_call pol cp fd)
         (FIND: Genv.find_funct_ptr ge fb = Some fd),
       match_states (Mach.Callstate s fb ms m)
-                   (Asm.State rs m')
+                   (Asm.State s' rs m')
   | match_states_return:
-      forall s ms m m' rs
-        (STACKS: match_stack ge s)
+      forall s s' ms m m' rs
+        (STACKS: match_stack ge s s')
         (MEXT: Mem.extends m m')
         (AG: agree ms (parent_sp s) rs)
         (ATPC: rs PC = parent_ra s),
       match_states (Mach.Returnstate s ms m)
-                   (Asm.State rs m').
+                   (Asm.State s' rs m').
 
 Lemma exec_straight_steps:
   forall s fb f rs1 i c ep tf tc m1' m2 m2' sp ms2,

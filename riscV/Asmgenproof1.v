@@ -111,22 +111,41 @@ Variable fn: function.
 (** 32-bit integer constants and arithmetic *)
 
 Lemma load_hilo32_correct:
-  forall rd hi lo k rs m,
+  forall rd hi lo k rs m s,
   exists rs',
-     exec_straight ge fn (load_hilo32 rd hi lo k) rs m k rs' m
+     exec_straight ge fn s (load_hilo32 rd hi lo k) rs m (next_stack (Pluiw rd hi) s rs rs') k rs' m
   /\ rs'#rd = Vint (Int.add (Int.shl hi (Int.repr 12)) lo)
   /\ forall r, r <> PC -> r <> rd -> rs'#r = rs#r.
 Proof.
-  unfold load_hilo32; intros. 
+  unfold load_hilo32; intros.
   predSpec Int.eq Int.eq_spec lo Int.zero.
 - subst lo. econstructor; split. 
   apply exec_straight_one. simpl; eauto. auto.
+  auto.
   split. rewrite Int.add_zero. Simpl.
   intros; Simpl.
-- econstructor; split.
-  eapply exec_straight_two. simpl; eauto. simpl; eauto. auto. auto. 
-  split. Simpl. 
-  intros; Simpl.
+- assert (exists rs2, exec_instr ge fn (Pluiw rd hi) rs m = Next rs2 m) as [rs' H'].
+  { eexists; eexists; reflexivity. }
+  assert (exists rs3, exec_instr ge fn (Paddiw rd rd lo) rs' m = Next rs3 m) as [rs'' H''].
+  { eexists; eexists; reflexivity. }
+  exists rs''; split.
+  assert (next_stack (Pluiw rd hi) s rs rs'' = next_stack (Paddiw rd rd lo) (next_stack (Pluiw rd hi) s rs rs') rs' rs'').
+  {
+    simpl. destruct s as [| []]; auto.
+    inv H'. inv H''. Simpl.
+    
+    destruct (Val.eq (Vptr f retaddr) (rs' PC) && Val.eq sp (rs' X2)); simpl.
+    - destruct (Val.eq (Vptr f retaddr) (rs'' PC) && Val.eq sp (rs'' X2)).
+  }
+  admit.
+  rewrite H0.
+
+
+  eapply exec_straight_two. eauto. eauto.
+  inv H'; auto. inv H''; auto.
+  (* exact H'. simpl; eauto. simpl; eauto. auto. auto. *)
+  split. Simpl. inv H'. inv H''. Simpl.
+  intros; Simpl. inv H'. inv H''. Simpl.
 Qed.
 
 Lemma loadimm32_correct:
@@ -1349,13 +1368,13 @@ Qed.
 (** Function epilogues *)
 
 Lemma make_epilogue_correct:
-  forall ge0 f m stk soff cs m' ms rs k tm,
+  forall ge0 f m stk soff cs m' ms rs k tm cs',
   load_stack m (Vptr stk soff) Tptr f.(fn_link_ofs) = Some (parent_sp cs) ->
   load_stack m (Vptr stk soff) Tptr f.(fn_retaddr_ofs) = Some (parent_ra cs) ->
   Mem.free m stk 0 f.(fn_stacksize) = Some m' ->
   agree ms (Vptr stk soff) rs ->
   Mem.extends m tm ->
-  match_stack ge0 cs ->
+  match_stack ge0 cs cs' ->
   exists rs', exists tm',
      exec_straight ge fn (make_epilogue f k) rs tm k rs' tm'
   /\ agree ms (parent_sp cs) rs'
@@ -1364,7 +1383,7 @@ Lemma make_epilogue_correct:
   /\ rs'#SP = parent_sp cs
   /\ (forall r, r <> PC -> r <> RA -> r <> SP -> r <> X31 -> rs'#r = rs#r).
 Proof.
-  intros until tm; intros LP LRA FREE AG MEXT MCS.
+  intros until tm; intros ? LP LRA FREE AG MEXT MCS.
   exploit Mem.loadv_extends. eauto. eexact LP. auto. simpl. intros (parent' & LP' & LDP').
   exploit Mem.loadv_extends. eauto. eexact LRA. auto. simpl. intros (ra' & LRA' & LDRA').
   exploit lessdef_parent_sp; eauto. intros EQ; subst parent'; clear LDP'.
