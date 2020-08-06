@@ -88,6 +88,23 @@ Proof.
   intros. subst. f_equal; apply proof_irr.
 Qed.
 
+Lemma nextblock_compartments_pos:
+  forall m b,
+  Plt b (nextblock m) <-> exists cp, (mem_compartments m) ! b = Some cp.
+Proof.
+  intros m b. split; intro H.
+  - destruct ((mem_compartments m) ! b) as [cp |] eqn:Hcase.
+    + exists cp. reflexivity.
+    + apply nextblock_compartments in Hcase. contradiction.
+  - destruct (plt b (nextblock m)) as [Hlt | Hlt].
+    + assumption.
+    + apply PTree.get_not_none_get_some in H.
+      pose proof nextblock_compartments m b as Hcomp.
+      apply not_iff_compat in Hcomp.
+      apply Hcomp in H.
+      contradiction.
+Qed.
+
 (** * Validity of blocks and accesses *)
 
 (** A block address is valid if it was previously allocated. It remains valid
@@ -242,13 +259,10 @@ Proof.
   left; red; intros. omegaContradiction.
 Defined.
 
-(** [valid_access m chunk b ofs p cp] holds if a memory access
-    of the given chunk is possible in [m] at address [b, ofs]
-    with current permissions [p] and from compartment [cp].
-    This means:
-- The range of bytes accessed all have current permission [p].
-- The block [b] belongs to the accessing compartment [cp].
-- The offset [ofs] is aligned.
+(** [own_block m b cp] holds if a component [cp] has control over block [b] in
+    memory [m]. In the simple memory model without sharing, this simple means
+    that [cp] is the compartment associated to [b] in [m]'s map from blocks to
+    components.
 *)
 
 Definition own_block (m: mem) (b: block) (cp: compartment): Prop :=
@@ -264,6 +278,15 @@ Proof.
     + right. intro Hcontra. inv Hcontra. easy.
   - right. easy.
 Defined.
+
+(** [valid_access m chunk b ofs p cp] holds if a memory access
+    of the given chunk is possible in [m] at address [b, ofs]
+    with current permissions [p] and from compartment [cp].
+    This means:
+- The range of bytes accessed all have current permission [p].
+- The block [b] belongs to the accessing compartment [cp].
+- The offset [ofs] is aligned.
+*)
 
 Definition valid_access (m: mem) (chunk: memory_chunk) (b: block) (ofs: Z) (p: permission) (cp: compartment): Prop :=
   range_perm m b ofs (ofs + size_chunk chunk) Cur p
@@ -385,6 +408,44 @@ Lemma valid_pointer_implies:
   valid_pointer m b ofs = true -> weak_valid_pointer m b ofs = true.
 Proof.
   intros. apply weak_valid_pointer_spec. auto.
+Qed.
+
+(** Some useful facts relating the various notions of validity and access
+    permissions. *)
+
+Theorem valid_block_own_block:
+  forall m b,
+  valid_block m b ->
+  exists cp,
+  own_block m b cp.
+Proof.
+  unfold valid_block, own_block. intros m b Hvalid.
+  apply nextblock_compartments_pos in Hvalid.
+  assumption.
+Qed.
+
+Theorem own_block_valid_block:
+  forall m b cp,
+  own_block m b cp ->
+  valid_block m b.
+Proof.
+  unfold valid_block, own_block. intros m b cp Hown.
+  apply nextblock_compartments_pos. exists cp. assumption.
+Qed.
+
+Theorem valid_pointer_own_block:
+  forall m b ofs,
+  valid_pointer m b ofs = true ->
+  exists cp,
+  own_block m b cp.
+Proof.
+  unfold valid_pointer. intros m b ofs Hperm.
+  destruct (perm_dec m b ofs Cur Nonempty) as [Hperm' | Hperm'];
+    simpl in Hperm.
+  - apply perm_valid_block in Hperm'.
+    apply valid_block_own_block in Hperm'.
+    assumption.
+  - congruence.
 Qed.
 
 (** * Operations over memory stores *)
@@ -3735,35 +3796,16 @@ Proof.
   eapply valid_access_inj; eauto. auto.
 Qed.
 
-(* RB: NOTE: Retool/relocate. This is a temporary stopgap that makes up for the
-   lack of connection between the various kinds of validity (pointers, block
-   ownership, etc.) in memory. These connections are clearly expected to hold,
-   but the memory record needs to be extended to reflect them. Note also that
-   this result is always used in connection with [valid_pointer_valid_access],
-   which when going in the pointer-to-access direction leaves open the
-   compartment variable without any means of instantiation. *)
-Lemma valid_pointer_own_block :
-  forall m b ofs,
-  valid_pointer m b ofs = true ->
-  exists cp,
-  own_block m b cp.
-Admitted.
-
 Theorem valid_pointer_extends:
   forall m1 m2 b ofs,
   extends m1 m2 -> valid_pointer m1 b ofs = true -> valid_pointer m2 b ofs = true.
 Proof.
-  intros.
-
-  destruct (valid_pointer_own_block _ _ _ H0) as [cp Hown].
-  rewrite valid_pointer_valid_access in H0. 2:{ unfold own_block in Hown. eassumption. }
-  pose proof valid_access_extends _ _ _ _ _ _ _ H H0 as Hvalid.
-  rewrite valid_pointer_valid_access. eassumption.
-  destruct Hvalid as [Hperm [Hown' Halign]].
-  congruence.
-
-  (* rewrite valid_pointer_valid_access in *. *)
-  (* eapply valid_access_extends; eauto. *)
+  intros m1 m2 b ofs Hextend Hvalid.
+  destruct (valid_pointer_own_block _ _ _ Hvalid) as [cp Hown1].
+  rewrite valid_pointer_valid_access in Hvalid; [| eassumption].
+  destruct (valid_access_extends _ _ _ _ _ _ _ Hextend Hvalid) as [Hperm [Hown2 Halign]].
+  rewrite valid_pointer_valid_access; [| eassumption].
+  split; auto.
 Qed.
 
 Theorem weak_valid_pointer_extends:
@@ -5011,7 +5053,7 @@ Lemma loadbytes_unchanged_on_1:
   unchanged_on m m' ->
   valid_block m b ->
   (forall i, ofs <= i < ofs + n -> P b i) ->
-  forall (OWN : own_block m b cp),
+  forall OWN : own_block m b cp,
   loadbytes m' b ofs n cp = loadbytes m b ofs n cp.
 Proof.
   intros.
@@ -5057,13 +5099,12 @@ Proof.
   pose proof loadbytes_own_block_inj _ _ _ _ _ _ H1 as Hown.
   destruct (zle n 0).
 + erewrite loadbytes_empty in *; try assumption.
-  (* RB: NOTE: See [loadbytes_empty] discussion for possible fix. *)
-  admit.
+  inv H. eapply unchanged_on_own0; eauto.
+  eapply own_block_valid_block; eassumption.
 + rewrite <- H1. apply loadbytes_unchanged_on_1; auto.
   exploit loadbytes_range_perm; eauto. instantiate (1 := ofs). omega.
   intros. eauto with mem.
-(* Qed. *)
-Admitted.
+Qed.
 
 Lemma load_unchanged_on_1:
   forall m m' chunk b cp ofs,
