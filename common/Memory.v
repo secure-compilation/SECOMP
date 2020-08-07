@@ -294,7 +294,7 @@ Definition valid_access (m: mem) (chunk: memory_chunk) (b: block) (ofs: Z) (p: p
   /\ (align_chunk chunk | ofs).
 
 Theorem valid_access_implies:
-  forall m chunk b ofs p1 p2 cp,
+  forall m chunk b ofs p1 cp p2,
   valid_access m chunk b ofs p1 cp -> perm_order p1 p2 ->
   valid_access m chunk b ofs p2 cp.
 Proof.
@@ -376,7 +376,7 @@ Proof.
 Qed.
 
 Theorem valid_pointer_valid_access:
-  forall m b ofs cp,
+  forall m b cp ofs,
     PTree.get b (mem_compartments m) = Some cp ->
     valid_pointer m b ofs = true <-> valid_access m Mint8unsigned b ofs Nonempty cp.
 Proof.
@@ -971,7 +971,9 @@ Qed.
    resort to this result. *)
 Theorem loadbytes_empty:
   forall m b ofs n cp,
-  n <= 0 -> own_block m b cp -> loadbytes m b ofs n cp = Some nil.
+  n <= 0 ->
+  own_block m b cp ->
+  loadbytes m b ofs n cp = Some nil.
 Proof.
   intros. unfold loadbytes. rewrite andb_lazy_alt.
   setoid_rewrite pred_dec_true.
@@ -1547,7 +1549,7 @@ Proof.
 Qed.
 
 Theorem load_store_pointer_mismatch:
-  forall chunk m1 b ofs v_b v_o cp m2 cp' chunk' v,
+  forall chunk m1 b ofs v_b v_o cp m2 chunk' cp' v,
   store chunk m1 b ofs (Vptr v_b v_o) cp = Some m2 ->
   load chunk' m2 b ofs cp' = Some v ->
   ~compat_pointer_chunks chunk chunk' ->
@@ -1656,7 +1658,7 @@ Proof.
 Defined.
 
 Theorem storebytes_store:
-  forall m1 b ofs chunk v m2 cp,
+  forall m1 b ofs chunk v cp m2,
   storebytes m1 b ofs (encode_val chunk v) cp = Some m2 ->
   (align_chunk chunk | ofs) ->
   store chunk m1 b ofs v cp = Some m2.
@@ -2250,11 +2252,11 @@ Qed.
    Clearly, c' can only be c, and block ownership can be established from
    known facts. *)
 Theorem load_alloc_same':
-  forall chunk ofs c',
-  lo <= ofs -> ofs + size_chunk chunk <= hi -> own_block m2 b c' -> (align_chunk chunk | ofs) ->
-  load chunk m2 b ofs c' = Some Vundef.
+  forall chunk ofs,
+  lo <= ofs -> ofs + size_chunk chunk <= hi -> own_block m2 b c -> (align_chunk chunk | ofs) ->
+  load chunk m2 b ofs c = Some Vundef.
 Proof.
-  intros. assert (exists v, load chunk m2 b ofs c' = Some v).
+  intros. assert (exists v, load chunk m2 b ofs c = Some v).
     apply valid_access_load. constructor; auto.
     red; intros. eapply perm_implies. apply perm_alloc_2. omega. auto with mem.
   destruct H3 as [v LOAD]. rewrite LOAD. decEq.
@@ -2570,7 +2572,7 @@ Local Hint Resolve valid_block_free_1 valid_block_free_2
 (** ** Properties related to [drop_perm] *)
 
 Theorem range_perm_drop_1:
-  forall m b lo hi p m' cp, drop_perm m b lo hi p cp = Some m' -> range_perm m b lo hi Cur Freeable.
+  forall m b lo hi p cp m', drop_perm m b lo hi p cp = Some m' -> range_perm m b lo hi Cur Freeable.
 Proof.
   unfold drop_perm; intros.
   destruct (range_perm_dec m b lo hi Cur Freeable). auto. discriminate.
@@ -3278,7 +3280,7 @@ Qed.
 Definition inj_offset_aligned (delta: Z) (size: Z) : Prop :=
   forall chunk, size_chunk chunk <= size -> (align_chunk chunk | delta).
 
-(* RB: NOTE: Keep track of added assumption and its effect on proofs. *)
+(* RB: NOTE: Keep track of added assumptions and their effect on proofs. *)
 Lemma alloc_left_mapped_inj:
   forall f m1 m2 c lo hi m1' b1 b2 delta,
   mem_inj f m1 m2 ->
