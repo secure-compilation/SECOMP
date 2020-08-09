@@ -560,9 +560,10 @@ Proof.
   { symmetry. apply comp_transl. }
   TransfInstr.
 + (* call turned tailcall *)
-  assert ({ m'' | Mem.free m' sp0 0 (fn_stacksize (transf_function ce f)) = Some m''}).
+  assert ({ m'' | Mem.free m' sp0 0 (fn_stacksize (transf_function ce f)) (fn_comp f) = Some m''}).
     apply Mem.range_perm_free. rewrite stacksize_preserved. rewrite H7.
     red; intros; omegaContradiction.
+    admit. (* RB: NOTE: New own_block subgoal *)
   destruct X as [m'' FREE].
   assert (Efd: comp_of fd = f.(fn_comp)).
   { exploit find_function_intra_compartment_call; eauto. }
@@ -604,7 +605,7 @@ Proof.
   { now rewrite Ef in ALLOWED. }
   eapply linkorder_policy; eauto.
   rewrite Ef in ALLOWED'; auto.
-  rewrite stacksize_preserved; auto.
+  rewrite stacksize_preserved; eauto.
   constructor. auto.
     apply (cenv_compat_linkorder _ _ _ ORDER (compenv_program_compat _)).
   { red. now rewrite COMP, ALLOWED. }
@@ -642,7 +643,7 @@ Proof.
   exploit Mem.free_parallel_extends; eauto. intros [m'1 [FREE EXT]].
   TransfInstr.
   left. exists (Returnstate s' (regmap_optget or Vundef rs') m'1); split.
-  apply exec_Ireturn; auto. rewrite stacksize_preserved; auto.
+  eapply exec_Ireturn; eauto. rewrite stacksize_preserved; eauto.
   constructor. auto.
   destruct or; simpl. apply RLD. constructor.
   auto.
@@ -702,7 +703,8 @@ Proof.
   split. auto.
   econstructor; eauto.
   rewrite Regmap.gss. auto.
-Qed.
+(* Qed. *)
+Admitted.
 
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 ->

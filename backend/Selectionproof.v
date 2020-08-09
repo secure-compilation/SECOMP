@@ -189,6 +189,7 @@ Lemma functions_translated:
 Proof.
   intros. inv H0.
   eapply Genv.find_funct_match; eauto.
+   apply comp_match_fundef. (* RB: NOTE: Curiously this needs to be added now *)
   discriminate.
 Qed.
 
@@ -276,9 +277,9 @@ Proof.
 Qed.
 
 Lemma eval_load:
-  forall le a v chunk v',
+  forall le a v chunk cp v',
   eval_expr tpol tge sp e cp m le a v ->
-  Mem.loadv chunk m v = Some v' ->
+  Mem.loadv chunk m v cp = Some v' ->
   eval_expr tpol tge sp e cp m le (load chunk a) v'.
 Proof.
   intros. generalize H0; destruct v; simpl; intro; try discriminate.
@@ -289,10 +290,10 @@ Proof.
 Qed.
 
 Lemma eval_store:
-  forall chunk a1 a2 v1 v2 f k m',
+  forall chunk a1 a2 v1 v2 f k cp m',
   eval_expr tpol tge sp e f.(fn_comp) m nil a1 v1 ->
   eval_expr tpol tge sp e f.(fn_comp) m nil a2 v2 ->
-  Mem.storev chunk m v1 v2 = Some m' ->
+  Mem.storev chunk m v1 v2 cp = Some m' ->
   step tpol tge (State f (store chunk a1 a2) k sp e m)
         E0 (State f Sskip k sp e m').
 Proof.
@@ -802,7 +803,9 @@ Proof.
   exploit IHeval_expr; eauto. intros [vaddr' [A B]].
   exploit Mem.loadv_extends; eauto. intros [v' [C D]].
   exists v'; split; auto. eapply eval_load; eauto.
-Qed.
+  admit. (* RB: NOTE: Apparent component disconnect, recover from [A]? *)
+(* Qed. *)
+Admitted.
 
 Lemma sel_exprlist_correct:
   forall sp e cp m a v,

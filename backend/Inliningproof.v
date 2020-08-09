@@ -326,9 +326,9 @@ Proof.
 Qed.
 
 Lemma range_private_free_left:
-  forall F m m' sp base sz hi b m1,
+  forall F m m' sp base sz hi b cp m1,
   range_private F m m' sp (base + Z.max sz 0) hi ->
-  Mem.free m b 0 sz = Some m1 ->
+  Mem.free m b 0 sz cp = Some m1 ->
   F b = Some(sp, base) ->
   Mem.inject F m m' ->
   range_private F m1 m' sp base hi.
@@ -450,7 +450,7 @@ Proof.
 - exploit Mem.loadv_inject; eauto.
   instantiate (1 := Vptr sp' (Ptrofs.add ofs (Ptrofs.repr (dstk ctx)))).
   simpl. econstructor; eauto. rewrite Ptrofs.add_zero_l; auto.
-  intros (v' & A & B). exists v'; split; auto. constructor. simpl. rewrite Ptrofs.add_zero_l; auto.
+  intros (v' & A & B). exists v'; split; auto. econstructor. simpl. rewrite Ptrofs.add_zero_l; eauto.
 - econstructor; split. constructor. simpl. econstructor; eauto. rewrite ! Ptrofs.add_zero_l; auto.
 - assert (Val.inject F (Senv.symbol_address ge id ofs) (Senv.symbol_address tge id ofs)).
   { unfold Senv.symbol_address; simpl; unfold Genv.symbol_address.
@@ -713,10 +713,10 @@ Qed.
 (** Preservation by a memory store *)
 
 Lemma match_stacks_inside_store:
-  forall F m m' stk stk' f' ctx sp' rs' chunk b ofs v m1 chunk' b' ofs' v' m1',
+  forall F m m' stk stk' f' ctx sp' rs' chunk b ofs v cp m1 chunk' b' ofs' v' cp' m1',
   match_stacks_inside F m m' stk stk' f' ctx sp' rs' ->
-  Mem.store chunk m b ofs v = Some m1 ->
-  Mem.store chunk' m' b' ofs' v' = Some m1' ->
+  Mem.store chunk m b ofs v cp = Some m1 ->
+  Mem.store chunk' m' b' ofs' v' cp' = Some m1' ->
   match_stacks_inside F m1 m1' stk stk' f' ctx sp' rs'.
 Proof.
   intros.
@@ -758,9 +758,9 @@ Qed.
 (** Preservation by freeing *)
 
 Lemma match_stacks_free_left:
-  forall F m m' stk stk' sp b lo hi m1,
+  forall F m m' stk stk' sp b lo hi cp m1,
   match_stacks F m m' stk stk' sp ->
-  Mem.free m b lo hi = Some m1 ->
+  Mem.free m b lo hi cp = Some m1 ->
   match_stacks F m1 m' stk stk' sp.
 Proof.
   intros. eapply match_stacks_invariant; eauto.
@@ -768,9 +768,9 @@ Proof.
 Qed.
 
 Lemma match_stacks_free_right:
-  forall F m m' stk stk' sp lo hi m1',
+  forall F m m' stk stk' sp lo hi cp m1',
   match_stacks F m m' stk stk' sp ->
-  Mem.free m' sp lo hi = Some m1' ->
+  Mem.free m' sp lo hi cp = Some m1' ->
   match_stacks F m m1' stk stk' sp.
 Proof.
   intros. eapply match_stacks_invariant; eauto.
@@ -1066,12 +1066,13 @@ Proof.
   exploit tr_funbody_inv; eauto. intros TR; inv TR.
 + (* within the original function *)
   inv MS0; try congruence.
-  assert (X: { m1' | Mem.free m'0 sp' 0 (fn_stacksize f') = Some m1'}).
+  assert (X: { m1' | Mem.free m'0 sp' 0 (fn_stacksize f') (fn_comp f') = Some m1'}).
     apply Mem.range_perm_free. red; intros.
     destruct (zlt ofs f.(fn_stacksize)).
     replace ofs with (ofs + dstk ctx) by omega. eapply Mem.perm_inject; eauto.
     eapply Mem.free_range_perm; eauto. omega.
     inv FB. eapply range_private_perms; eauto. xomega.
+    admit. (* RB: NOTE: New own_block subgoal *)
   destruct X as [m1' FREE].
   left; econstructor; split.
   eapply plus_one. eapply exec_Itailcall; eauto.
@@ -1168,13 +1169,14 @@ Proof.
   exploit tr_funbody_inv; eauto. intros TR; inv TR.
 + (* not inlined *)
   inv MS0; try congruence.
-  assert (X: { m1' | Mem.free m'0 sp' 0 (fn_stacksize f') = Some m1'}).
+  assert (X: { m1' | Mem.free m'0 sp' 0 (fn_stacksize f') (fn_comp f') = Some m1'}).
     apply Mem.range_perm_free. red; intros.
     destruct (zlt ofs f.(fn_stacksize)).
     replace ofs with (ofs + dstk ctx) by omega. eapply Mem.perm_inject; eauto.
     eapply Mem.free_range_perm; eauto. omega.
     inv FB. eapply range_private_perms; eauto.
     generalize (Zmax_spec (fn_stacksize f) 0). destruct (zlt 0 (fn_stacksize f)); omega.
+    admit. (* RB: NOTE: New own_block subgoal *)
   destruct X as [m1' FREE].
   left; econstructor; split.
   eapply plus_one. eapply exec_Ireturn; eauto.
@@ -1250,6 +1252,7 @@ Proof.
     eauto.
     (* sp' is valid *)
     instantiate (1 := sp'). auto.
+    admit. (* RB: NOTE: New own_block subgoal *)
     (* offset is representable *)
     instantiate (1 := dstk ctx). generalize (Z.le_max_r (fn_stacksize f) 0). omega.
     (* size of target block is representable *)
@@ -1336,7 +1339,8 @@ Proof.
   left; econstructor; split.
   eapply plus_one. eapply exec_Inop; eauto.
   econstructor; eauto. subst vres. apply agree_set_reg_undef'; auto.
-Qed.
+(* Qed. *)
+Admitted.
 
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 -> exists st2, initial_state tprog st2 /\ match_states st1 st2.

@@ -177,10 +177,10 @@ Inductive eval_expr: letenv -> expr -> val -> Prop :=
       eval_exprlist le al vl ->
       eval_operation ge sp op vl m = Some v ->
       eval_expr le (Eop op al) v
-  | eval_Eload: forall le chunk addr al vl vaddr v,
+  | eval_Eload: forall le chunk addr al vl vaddr cp v,
       eval_exprlist le al vl ->
       eval_addressing ge sp addr vl = Some vaddr ->
-      Mem.loadv chunk m vaddr = Some v ->
+      Mem.loadv chunk m vaddr cp = Some v ->
       eval_expr le (Eload chunk addr al) v
   | eval_Econdition: forall le a b c va v,
       eval_condexpr le a va ->
@@ -267,13 +267,13 @@ Inductive eval_builtin_arg: builtin_arg expr -> val -> Prop :=
       eval_builtin_arg (BA_float n) (Vfloat n)
   | eval_BA_single: forall n,
       eval_builtin_arg (BA_single n) (Vsingle n)
-  | eval_BA_loadstack: forall chunk ofs v,
-      Mem.loadv chunk m (Val.offset_ptr sp ofs) = Some v ->
+  | eval_BA_loadstack: forall chunk ofs cp v,
+      Mem.loadv chunk m (Val.offset_ptr sp ofs) cp = Some v ->
       eval_builtin_arg (BA_loadstack chunk ofs) v
   | eval_BA_addrstack: forall ofs,
       eval_builtin_arg (BA_addrstack ofs) (Val.offset_ptr sp ofs)
-  | eval_BA_loadglobal: forall chunk id ofs v,
-      Mem.loadv chunk m (Genv.symbol_address ge id ofs) = Some v ->
+  | eval_BA_loadglobal: forall chunk id ofs cp v,
+      Mem.loadv chunk m (Genv.symbol_address ge id ofs) cp = Some v ->
       eval_builtin_arg (BA_loadglobal chunk id ofs) v
   | eval_BA_addrglobal: forall id ofs,
       eval_builtin_arg (BA_addrglobal id ofs) (Genv.symbol_address ge id ofs)
@@ -352,9 +352,9 @@ Inductive step: state -> trace -> state -> Prop :=
   | step_skip_block: forall f k sp e m,
       step (State f Sskip (Kblock k) sp e m)
         E0 (State f Sskip k sp e m)
-  | step_skip_call: forall f k sp e m m',
+  | step_skip_call: forall f k sp e m cp m',
       is_call_cont k ->
-      Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
+      Mem.free m sp 0 f.(fn_stackspace) cp = Some m' ->
       step (State f Sskip k (Vptr sp Ptrofs.zero) e m)
         E0 (Returnstate Vundef k m')
 
@@ -364,12 +364,12 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Sassign id a) k sp e m)
         E0 (State f Sskip k sp (PTree.set id v e) m)
 
-  | step_store: forall f cp chunk addr al b k sp e m vl v vaddr m',
+  | step_store: forall f cp chunk addr al b k sp e m vl v vaddr cp' m',
       cp = f.(fn_comp) ->
       eval_exprlist sp e cp m nil al vl ->
       eval_expr sp e cp m nil b v ->
       eval_addressing ge sp addr vl = Some vaddr ->
-      Mem.storev chunk m vaddr v = Some m' ->
+      Mem.storev chunk m vaddr v cp' = Some m' ->
       step (State f (Sstore chunk addr al b) k sp e m)
         E0 (State f Sskip k sp e m')
 
@@ -383,7 +383,7 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Scall optid sig a bl) k sp e m)
         E0 (Callstate fd vargs (Kcall optid f sp e k) m)
 
-  | step_tailcall: forall f sig a bl k sp e m vf vargs fd m',
+  | step_tailcall: forall f sig a bl k sp e m vf vargs fd cp m',
       eval_expr_or_symbol (Vptr sp Ptrofs.zero) e f.(fn_comp) m nil a vf ->
       eval_exprlist (Vptr sp Ptrofs.zero) e f.(fn_comp) m nil bl vargs ->
       Genv.find_funct ge vf = Some fd ->
@@ -391,7 +391,7 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (COMP: comp_of fd = f.(fn_comp)),
       forall (ALLOWED: needs_calling_comp f.(fn_comp) = false),
       forall (ALLOWED': Policy.allowed_call pol f.(fn_comp) fd),
-      Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
+      Mem.free m sp 0 f.(fn_stackspace) cp = Some m' ->
       step (State f (Stailcall sig a bl) k (Vptr sp Ptrofs.zero) e m)
         E0 (Callstate fd vargs (call_cont k) m')
 
@@ -436,14 +436,14 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Sswitch a) k sp e m)
         E0 (State f (Sexit n) k sp e m)
 
-  | step_return_0: forall f k sp e m m',
-      Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
+  | step_return_0: forall f k sp e m cp m',
+      Mem.free m sp 0 f.(fn_stackspace) cp = Some m' ->
       step (State f (Sreturn None) k (Vptr sp Ptrofs.zero) e m)
         E0 (Returnstate Vundef (call_cont k) m')
-  | step_return_1: forall f cp a k sp e m v m',
+  | step_return_1: forall f cp a k sp e m v cp' m',
       cp = f.(fn_comp) ->
       eval_expr (Vptr sp Ptrofs.zero) e cp m nil a v ->
-      Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
+      Mem.free m sp 0 f.(fn_stackspace) cp' = Some m' ->
       step (State f (Sreturn (Some a)) k (Vptr sp Ptrofs.zero) e m)
         E0 (Returnstate v (call_cont k) m')
 

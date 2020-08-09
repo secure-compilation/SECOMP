@@ -588,14 +588,18 @@ Qed.
 
 Lemma transl_expr_Eload_correct:
   forall (le : letenv) (chunk : memory_chunk) (addr : Op.addressing)
-         (args : exprlist) (vargs : list val) (vaddr v : val),
+         (args : exprlist) (vargs : list val) (vaddr : val)
+         (cp' : compartment) (v : val),
   eval_exprlist pol ge sp e cp m le args vargs ->
   transl_exprlist_prop le args vargs ->
   Op.eval_addressing ge sp addr vargs = Some vaddr ->
-  Mem.loadv chunk m vaddr = Some v ->
+  Mem.loadv chunk m vaddr cp' = Some v ->
   transl_expr_prop le (Eload chunk addr args) v.
 Proof.
-  intros; red; intros. inv TE.
+  intros; red; intros.
+  (* RB: TODO: [inv] now does not work because [subst] fails on the equality
+     generated on [cp]. Try to fix this. *)
+  inversion TE; subst map0 pr0 chunk0 addr0 al ns0 nd0 rd0 dst0.
   exploit H0; eauto. intros [rs1 [tm1 [EX1 [ME1 [RES1 [OTHER1 EXT1]]]]]].
   edestruct eval_addressing_lessdef as [vaddr' []]; eauto.
   edestruct Mem.loadv_extends as [v' []]; eauto.
@@ -604,7 +608,7 @@ Proof.
   split. eapply star_right. eexact EX1. eapply exec_Iload. eauto.
   instantiate (1 := vaddr'). rewrite <- H3.
   apply eval_addressing_preserved. exact symbols_preserved.
-  auto. traceEq.
+  eassumption. traceEq.
 (* Match-env *)
   split. eauto with rtlg.
 (* Result *)
@@ -891,7 +895,11 @@ Theorem transl_expr_correct:
   forall le a v,
   eval_expr pol ge sp e cp m le a v ->
   transl_expr_prop le a v.
-Proof (eval_expr_ind3 pol ge sp e cp m
+Proof.
+  (* RB: TODO: [Proof (...).] does not work with these versions. Using [exact]
+     for now. *)
+  exact
+  (eval_expr_ind3 pol ge sp e cp m
      transl_expr_prop
      transl_exprlist_prop
      transl_condexpr_prop
@@ -908,12 +916,14 @@ Proof (eval_expr_ind3 pol ge sp e cp m
      transl_condexpr_CEcond_correct
      transl_condexpr_CEcondition_correct
      transl_condexpr_CElet_correct).
+Qed.
 
 Theorem transl_exprlist_correct:
   forall le a v,
   eval_exprlist pol ge sp e cp m le a v ->
   transl_exprlist_prop le a v.
-Proof
+Proof.
+  exact
   (eval_exprlist_ind3 pol ge sp e cp m
      transl_expr_prop
      transl_exprlist_prop
@@ -931,12 +941,14 @@ Proof
      transl_condexpr_CEcond_correct
      transl_condexpr_CEcondition_correct
      transl_condexpr_CElet_correct).
+Qed.
 
 Theorem transl_condexpr_correct:
   forall le a v,
   eval_condexpr pol ge sp e cp m le a v ->
   transl_condexpr_prop le a v.
-Proof
+Proof.
+  exact
   (eval_condexpr_ind3 pol ge sp e cp m
      transl_expr_prop
      transl_exprlist_prop
@@ -954,6 +966,7 @@ Proof
      transl_condexpr_CEcond_correct
      transl_condexpr_CEcondition_correct
      transl_condexpr_CElet_correct).
+Qed.
 
 (** Exit expressions. *)
 

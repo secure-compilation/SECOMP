@@ -379,9 +379,9 @@ Inductive eval_expr: expr -> val -> Prop :=
       eval_expr a2 v2 ->
       eval_binop op v1 v2 m = Some v ->
       eval_expr (Ebinop op a1 a2) v
-  | eval_Eload: forall chunk addr vaddr v,
+  | eval_Eload: forall chunk addr vaddr cp v,
       eval_expr addr vaddr ->
-      Mem.loadv chunk m vaddr = Some v ->
+      Mem.loadv chunk m vaddr cp = Some v ->
       eval_expr (Eload chunk addr) v.
 
 Inductive eval_exprlist: list expr -> list val -> Prop :=
@@ -450,9 +450,9 @@ Inductive step: state -> trace -> state -> Prop :=
   | step_skip_block: forall f k sp e m,
       step (State f Sskip (Kblock k) sp e m)
         E0 (State f Sskip k sp e m)
-  | step_skip_call: forall f k sp e m m',
+  | step_skip_call: forall f k sp e m cp m',
       is_call_cont k ->
-      Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
+      Mem.free m sp 0 f.(fn_stackspace) cp = Some m' ->
       step (State f Sskip k (Vptr sp Ptrofs.zero) e m)
         E0 (Returnstate Vundef k m')
 
@@ -461,10 +461,10 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Sassign id a) k sp e m)
         E0 (State f Sskip k sp (PTree.set id v e) m)
 
-  | step_store: forall f chunk addr a k sp e m vaddr v m',
+  | step_store: forall f chunk addr a k sp e m vaddr v cp m',
       eval_expr sp e m addr vaddr ->
       eval_expr sp e m a v ->
-      Mem.storev chunk m vaddr v = Some m' ->
+      Mem.storev chunk m vaddr v cp = Some m' ->
       step (State f (Sstore chunk addr a) k sp e m)
         E0 (State f Sskip k sp e m')
 
@@ -477,7 +477,7 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Scall optid sig a bl) k sp e m)
         E0 (Callstate fd vargs (Kcall optid f sp e k) m)
 
-  | step_tailcall: forall f sig a bl k sp e m vf vargs fd m',
+  | step_tailcall: forall f sig a bl k sp e m vf vargs fd cp m',
       eval_expr (Vptr sp Ptrofs.zero) e m a vf ->
       eval_exprlist (Vptr sp Ptrofs.zero) e m bl vargs ->
       Genv.find_funct ge vf = Some fd ->
@@ -485,7 +485,7 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (COMP: comp_of fd = f.(fn_comp)),
       forall (ALLOWED: needs_calling_comp f.(fn_comp) = false),
       forall (ALLOWED': Policy.allowed_call pol f.(fn_comp) fd),
-      Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
+      Mem.free m sp 0 f.(fn_stackspace) cp = Some m' ->
       step (State f (Stailcall sig a bl) k (Vptr sp Ptrofs.zero) e m)
         E0 (Callstate fd vargs (call_cont k) m')
 
@@ -529,13 +529,13 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Sswitch islong a cases default) k sp e m)
         E0 (State f (Sexit (switch_target n default cases)) k sp e m)
 
-  | step_return_0: forall f k sp e m m',
-      Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
+  | step_return_0: forall f k sp e m cp m',
+      Mem.free m sp 0 f.(fn_stackspace) cp = Some m' ->
       step (State f (Sreturn None) k (Vptr sp Ptrofs.zero) e m)
         E0 (Returnstate Vundef (call_cont k) m')
-  | step_return_1: forall f a k sp e m v m',
+  | step_return_1: forall f a k sp e m v cp m',
       eval_expr (Vptr sp Ptrofs.zero) e m a v ->
-      Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
+      Mem.free m sp 0 f.(fn_stackspace) cp = Some m' ->
       step (State f (Sreturn (Some a)) k (Vptr sp Ptrofs.zero) e m)
         E0 (Returnstate v (call_cont k) m')
 
@@ -619,8 +619,12 @@ Proof.
 - congruence.
 - assert (v0 = v1) by eauto. congruence.
 - assert (v0 = v1) by eauto. assert (v3 = v2) by eauto. congruence.
-- assert (vaddr0 = vaddr) by eauto. congruence.
-Qed.
+- assert (vaddr0 = vaddr) by eauto.
+  (* congruence. *)
+  subst.
+  admit. (* RB: NOTE: Component determinism of successful [loadv]s *)
+(* Qed. *)
+Admitted.
 
 Lemma eval_exprlist_determ:
   forall ge sp e m al vl, eval_exprlist ge sp e m al vl ->
@@ -653,11 +657,16 @@ Proof.
   intros. constructor; set (ge := Genv.globalenv p); simpl; intros.
 - (* determ *)
   inv H; inv H0; Determ.
+  + admit. (* RB: NOTE: Compartment determinacy of [free] *)
+  + subst. admit. (* RB: NOTE: Compartment determinacy of [storev] *)
+  + admit. (* RB: NOTE: Compartment determinacy of [free] *)
   + subst vargs0. exploit external_call_determ. eexact H2.  eexact H13.
     intros (A & B). split; intros; auto.
     apply B in H; destruct H; congruence.
   + subst v0. assert (b0 = b) by (inv H2; inv H13; auto). subst b0; auto.
   + assert (n0 = n) by (inv H2; inv H14; auto). subst n0; auto.
+  + admit. (* RB: NOTE: Compartment determinacy of [free] *)
+  + admit. (* RB: NOTE: Compartment determinacy of [free] *)
   + exploit external_call_determ. eexact H1. eexact H7.
     intros (A & B). split; intros; auto.
     apply B in H; destruct H; congruence.
@@ -670,7 +679,8 @@ Proof.
   red; intros; red; intros. inv H; inv H0.
 - (* final states *)
   inv H; inv H0; auto.
-Qed.
+(* Qed. *)
+Admitted.
 
 (** * Alternate operational semantics (big-step) *)
 
@@ -716,10 +726,10 @@ Definition outcome_result_value
   end.
 
 Definition outcome_free_mem
-    (out: outcome) (m: mem) (sp: block) (sz: Z) (m': mem) :=
+    (out: outcome) (m: mem) (sp: block) (sz: Z) (cp: compartment) (m': mem) :=
   match out with
   | Out_tailcall_return _ => m' = m
-  | _ => Mem.free m sp 0 sz = Some m'
+  | _ => Mem.free m sp 0 sz cp = Some m'
   end.
 
 Section NATURALSEM.
@@ -738,12 +748,12 @@ Inductive eval_funcall:
         mem -> fundef -> list val -> trace ->
         mem -> val -> Prop :=
   | eval_funcall_internal:
-      forall cp m f vargs m1 sp e t e2 m2 out vres m3,
+      forall cp m f vargs m1 sp e t e2 m2 out vres cp' m3,
       Mem.alloc m f.(fn_comp) 0 f.(fn_stackspace) = (m1, sp) ->
       set_locals f.(fn_vars) (set_params vargs f.(fn_params)) = e ->
       exec_stmt f (Vptr sp Ptrofs.zero) e m1 f.(fn_body) t e2 m2 out ->
       outcome_result_value out vres ->
-      outcome_free_mem out m2 sp f.(fn_stackspace) m3 ->
+      outcome_free_mem out m2 sp f.(fn_stackspace) cp' m3 ->
       eval_funcall cp m (Internal f) vargs t m3 vres
   | eval_funcall_external:
       forall ef cp m args t res m',
@@ -770,10 +780,10 @@ with exec_stmt:
       eval_expr ge sp e m a v ->
       exec_stmt f sp e m (Sassign id a) E0 (PTree.set id v e) m Out_normal
   | exec_Sstore:
-      forall f sp e m chunk addr a vaddr v m',
+      forall f sp e m chunk addr a vaddr v cp m',
       eval_expr ge sp e m addr vaddr ->
       eval_expr ge sp e m a v ->
-      Mem.storev chunk m vaddr v = Some m' ->
+      Mem.storev chunk m vaddr v cp = Some m' ->
       exec_stmt f sp e m (Sstore chunk addr a) E0 e m' Out_normal
   | exec_Scall:
       forall f sp e m optid sig a bl vf vargs fd t m' vres e',
@@ -840,7 +850,7 @@ with exec_stmt:
       eval_expr ge sp e m a v ->
       exec_stmt f sp e m (Sreturn (Some a)) E0 e m (Out_return (Some v))
   | exec_Stailcall:
-      forall f sp e m sig a bl vf vargs fd t m' m'' vres,
+      forall f sp e m sig a bl vf vargs fd t cp m' m'' vres,
       eval_expr ge (Vptr sp Ptrofs.zero) e m a vf ->
       eval_exprlist ge (Vptr sp Ptrofs.zero) e m bl vargs ->
       Genv.find_funct ge vf = Some fd ->
@@ -848,7 +858,7 @@ with exec_stmt:
       forall (COMP: comp_of fd = f.(fn_comp)),
       forall (ALLOWED: needs_calling_comp f.(fn_comp) = false),
       forall ALLOWED': Policy.allowed_call pol f.(fn_comp) fd,
-      Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
+      Mem.free m sp 0 f.(fn_stackspace) cp = Some m' ->
       eval_funcall f.(fn_comp) m' fd vargs t m'' vres ->
       exec_stmt f (Vptr sp Ptrofs.zero) e m (Stailcall sig a bl) t e m'' (Out_tailcall_return vres).
 
@@ -918,7 +928,7 @@ with execinf_stmt:
       execinf_stmt f sp e m s t ->
       execinf_stmt f sp e m (Sblock s) t
   | execinf_Stailcall:
-      forall f sp e m sig a bl vf vargs fd m' t,
+      forall f sp e m sig a bl vf vargs fd cp m' t,
       eval_expr ge (Vptr sp Ptrofs.zero) e m a vf ->
       eval_exprlist ge (Vptr sp Ptrofs.zero) e m bl vargs ->
       Genv.find_funct ge vf = Some fd ->
@@ -926,7 +936,7 @@ with execinf_stmt:
       forall (COMP: comp_of fd = f.(fn_comp)),
       forall (ALLOWED: needs_calling_comp f.(fn_comp) = false),
       forall ALLOWED': Policy.allowed_call pol f.(fn_comp) fd,
-      Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
+      Mem.free m sp 0 f.(fn_stackspace) cp = Some m' ->
       evalinf_funcall  m' fd vargs t ->
       execinf_stmt f (Vptr sp Ptrofs.zero) e m (Stailcall sig a bl) t.
 
@@ -1030,10 +1040,10 @@ Proof.
   eapply star_trans. eexact A.
   inversion B; clear B; subst out; simpl in H3; simpl; try contradiction.
   (* Out normal *)
-  subst vres. apply star_one. apply step_skip_call; auto.
+  subst vres. apply star_one. eapply step_skip_call; eauto.
   (* Out_return None *)
   subst vres. replace k with (call_cont k') by congruence.
-  apply star_one. apply step_return_0; auto.
+  apply star_one. eapply step_return_0; eauto.
   (* Out_return Some *)
   subst vres.
   replace k with (call_cont k') by congruence.
