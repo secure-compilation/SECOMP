@@ -3218,7 +3218,7 @@ Qed.
 Lemma smatch_inv:
   forall m b p m',
   smatch m b p ->
-  (forall ofs n, n >= 0 -> Mem.loadbytes m' b ofs n = Mem.loadbytes m b ofs n) ->
+  (forall ofs n cp, n >= 0 -> Mem.loadbytes m' b ofs n cp = Mem.loadbytes m b ofs n cp) ->
   smatch m' b p.
 Proof.
   intros. eapply smatch_ext; eauto.

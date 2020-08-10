@@ -220,9 +220,9 @@ Inductive step: state -> trace -> state -> Prop :=
       rs' = Locmap.set (R res) v (undef_regs (destroyed_by_op op) rs) ->
       step (Block s f sp (Lop op args res :: bb) rs m)
         E0 (Block s f sp bb rs' m)
-  | exec_Lload: forall s f sp chunk addr args dst bb rs m a v rs',
+  | exec_Lload: forall s f sp chunk addr args dst bb rs m a cp v rs',
       eval_addressing ge sp addr (reglist rs args) = Some a ->
-      Mem.loadv chunk m a = Some v ->
+      Mem.loadv chunk m a cp = Some v ->
       rs' = Locmap.set (R dst) v (undef_regs (destroyed_by_load chunk addr) rs) ->
       step (Block s f sp (Lload chunk addr args dst :: bb) rs m)
         E0 (Block s f sp bb rs' m)
@@ -234,9 +234,9 @@ Inductive step: state -> trace -> state -> Prop :=
       rs' = Locmap.set (S sl ofs ty) (rs (R src)) (undef_regs (destroyed_by_setstack ty) rs) ->
       step (Block s f sp (Lsetstack src sl ofs ty :: bb) rs m)
         E0 (Block s f sp bb rs' m)
-  | exec_Lstore: forall s f sp chunk addr args src bb rs m a rs' m',
+  | exec_Lstore: forall s f sp chunk addr args src bb rs m a rs' cp m',
       eval_addressing ge sp addr (reglist rs args) = Some a ->
-      Mem.storev chunk m a (rs (R src)) = Some m' ->
+      Mem.storev chunk m a (rs (R src)) cp = Some m' ->
       rs' = undef_regs (destroyed_by_store chunk addr) rs ->
       step (Block s f sp (Lstore chunk addr args src :: bb) rs m)
         E0 (Block s f sp bb rs' m')
@@ -246,14 +246,14 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (ALLOWED: Policy.allowed_call pol f.(fn_comp) fd),
       step (Block s f sp (Lcall sig ros :: bb) rs m)
         E0 (Callstate (Stackframe f sp rs bb :: s) fd rs m)
-  | exec_Ltailcall: forall s f sp sig ros bb rs m fd rs' m',
+  | exec_Ltailcall: forall s f sp sig ros bb rs m fd rs' cp m',
       rs' = return_regs (parent_locset s) rs ->
       find_function ros rs' = Some fd ->
       funsig fd = sig ->
       forall COMP: comp_of fd = f.(fn_comp),
       forall ALLOWED: needs_calling_comp f.(fn_comp) = false,
       forall (ALLOWED': Policy.allowed_call pol f.(fn_comp) fd),
-      Mem.free m sp 0 f.(fn_stacksize) = Some m' ->
+      Mem.free m sp 0 f.(fn_stacksize) cp = Some m' ->
       step (Block s f (Vptr sp Ptrofs.zero) (Ltailcall sig ros :: bb) rs m)
         E0 (Callstate s fd rs' m')
   | exec_Lbuiltin: forall s f sp ef args res bb rs m vargs t vres rs' m',
@@ -277,8 +277,8 @@ Inductive step: state -> trace -> state -> Prop :=
       rs' = undef_regs (destroyed_by_jumptable) rs ->
       step (Block s f sp (Ljumptable arg tbl :: bb) rs m)
         E0 (State s f sp pc rs' m)
-  | exec_Lreturn: forall s f sp bb rs m m',
-      Mem.free m sp 0 f.(fn_stacksize) = Some m' ->
+  | exec_Lreturn: forall s f sp bb rs m cp m',
+      Mem.free m sp 0 f.(fn_stacksize) cp = Some m' ->
       step (Block s f (Vptr sp Ptrofs.zero) (Lreturn :: bb) rs m)
         E0 (Returnstate s (return_regs (parent_locset s) rs) m')
   | exec_function_internal: forall s f rs m m' sp rs',

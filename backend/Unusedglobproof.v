@@ -850,14 +850,16 @@ Proof.
 - econstructor; eauto with barg.
 - econstructor; eauto with barg.
 - simpl in H. exploit Mem.load_inject; eauto. rewrite Z.add_0_r.
-  intros (v' & A & B). exists v'; auto with barg.
+  intros (v' & A & B). exists v'; split; auto with barg.
+  econstructor. admit. (* RB: NOTE: [loadv] goal, needs a bit more work *)
 - econstructor; split; eauto with barg. simpl. econstructor; eauto. rewrite Ptrofs.add_zero; auto.
 - assert (Val.inject j (Senv.symbol_address ge id ofs) (Senv.symbol_address tge id ofs)).
   { unfold Senv.symbol_address; simpl; unfold Genv.symbol_address.
     destruct (Genv.find_symbol ge id) as [b|] eqn:FS; auto.
     exploit symbols_inject_2; eauto. intros (b' & A & B). rewrite A.
     econstructor; eauto. rewrite Ptrofs.add_zero; auto. }
-  exploit Mem.loadv_inject; eauto. intros (v' & A & B). exists v'; auto with barg.
+  exploit Mem.loadv_inject; eauto. intros (v' & A & B). exists v'; split; auto with barg.
+  econstructor. admit. (* RB: NOTE: [loadv] goal, needs a bit more work *)
 - econstructor; split; eauto with barg.
   unfold Senv.symbol_address; simpl; unfold Genv.symbol_address.
   destruct (Genv.find_symbol ge id) as [b|] eqn:FS; auto.
@@ -871,7 +873,8 @@ Proof.
   destruct IHeval_builtin_arg2 as (v2' & A2 & B2); eauto using in_or_app.
   econstructor; split; eauto with barg.
   destruct Archi.ptr64; auto using Val.add_inject, Val.addl_inject.
-Qed.
+(* Qed. *)
+Admitted.
 
 Lemma eval_builtin_args_inject:
   forall rs sp m j rs' sp' m' al vl,
@@ -1161,6 +1164,7 @@ Proof.
   apply Q1 in H0. destruct H0. subst.
   apply Mem.perm_cur. eapply Mem.perm_implies; eauto.
   apply P2. omega.
+- admit. (* RB: NOTE: new own_block subgoal *)
 - exploit init_meminj_invert; eauto. intros (A & id & B & C).
   subst delta. apply Z.divide_0_r.
 - exploit init_meminj_invert_strong; eauto. intros (A & id & gd & B & C & D & E & F).
@@ -1174,14 +1178,15 @@ Proof.
   assert (NO: gvar_volatile v = false).
   { unfold Genv.perm_globvar in H1. destruct (gvar_volatile v); auto. inv H1. }
 Local Transparent Mem.loadbytes.
-  generalize (S1 NO). unfold Mem.loadbytes. destruct Mem.range_perm_dec; intros E1; inv E1.
-  generalize (S2 NO). unfold Mem.loadbytes. destruct Mem.range_perm_dec; intros E2; inv E2.
+  generalize (S1 NO). unfold Mem.loadbytes. destruct Mem.range_perm_dec; destruct Mem.own_block_dec; intros E1; inv E1.
+  generalize (S2 NO). unfold Mem.loadbytes. destruct Mem.range_perm_dec; destruct Mem.own_block_dec; intros E2; inv E2.
   rewrite Z.add_0_r.
   apply Mem_getN_forall2 with (p := 0) (n := Z.to_nat (init_data_list_size (gvar_init v))).
   rewrite H3, H4. apply bytes_of_init_inject. auto.
   omega.
   rewrite Z2Nat.id by (apply Z.ge_le; apply init_data_list_size_pos). omega.
-Qed.
+(* Qed. *)
+Admitted.
 
 Lemma init_mem_inj_2:
   Mem.inject init_meminj m tm.

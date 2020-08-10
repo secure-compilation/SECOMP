@@ -1509,11 +1509,11 @@ Proof.
 Qed.
 
 Lemma loadv_int64_split:
-  forall m a v,
-  Mem.loadv Mint64 m a = Some v -> Archi.splitlong = true ->
+  forall m a cp v,
+  Mem.loadv Mint64 m a cp = Some v -> Archi.splitlong = true ->
   exists v1 v2,
-     Mem.loadv Mint32 m a = Some (if Archi.big_endian then v1 else v2)
-  /\ Mem.loadv Mint32 m (Val.add a (Vint (Int.repr 4))) = Some (if Archi.big_endian then v2 else v1)
+     Mem.loadv Mint32 m a cp = Some (if Archi.big_endian then v1 else v2)
+  /\ Mem.loadv Mint32 m (Val.add a (Vint (Int.repr 4))) cp = Some (if Archi.big_endian then v2 else v1)
   /\ Val.lessdef (Val.hiword v) v1
   /\ Val.lessdef (Val.loword v) v2.
 Proof.
@@ -1809,11 +1809,11 @@ Let tge := Genv.globalenv tprog.
 
 Lemma symbols_preserved:
   forall (s: ident), Genv.find_symbol tge s = Genv.find_symbol ge s.
-Proof (Genv.find_symbol_match TRANSF).
+Proof. exact (Genv.find_symbol_match TRANSF). Qed.
 
 Lemma senv_preserved:
   Senv.equiv ge tge.
-Proof (Genv.senv_match TRANSF).
+Proof. exact (Genv.senv_match TRANSF). Qed.
 
 Lemma functions_translated:
   forall (v: val) (f: RTL.fundef),
@@ -1827,7 +1827,7 @@ Lemma function_ptr_translated:
   Genv.find_funct_ptr ge b = Some f ->
   exists tf,
   Genv.find_funct_ptr tge b = Some tf /\ transf_fundef f = OK tf.
-Proof (Genv.find_funct_ptr_transf_partial TRANSF).
+Proof. exact (Genv.find_funct_ptr_transf_partial TRANSF). Qed.
 
 Lemma sig_function_translated:
   forall f tf,
@@ -2111,7 +2111,7 @@ Proof.
   eapply wt_exec_Iop; eauto.
 
 (* load regular *)
-- generalize (wt_exec_Iload _ _ _ _ _ _ _ _ _ _ _ WTI H1 WTRS). intros WTRS'.
+- generalize (wt_exec_Iload _ _ _ _ _ _ _ _ _ _ _ _ WTI H1 WTRS). intros WTRS'.
   exploit (exec_moves mv1); eauto. intros [ls1 [A1 B1]].
   exploit transfer_use_def_satisf; eauto. intros [X Y].
   exploit eval_addressing_lessdef; eauto. intros [a' [F G]].
@@ -2128,7 +2128,7 @@ Proof.
   econstructor; eauto.
 
 (* load pair *)
-- generalize (wt_exec_Iload _ _ _ _ _ _ _ _ _ _ _ WTI H1 WTRS). intros WTRS'.
+- generalize (wt_exec_Iload _ _ _ _ _ _ _ _ _ _ _ _ WTI H1 WTRS). intros WTRS'.
   exploit loadv_int64_split; eauto. intros (v1 & v2 & LOAD1 & LOAD2 & V1 & V2).
   set (v2' := if Archi.big_endian then v2 else v1) in *.
   set (v1' := if Archi.big_endian then v1 else v2) in *.
@@ -2155,7 +2155,7 @@ Proof.
   exploit eval_addressing_lessdef. eexact LD3.
   eapply eval_offset_addressing; eauto; apply Archi.splitlong_ptr32; auto.
   intros [a2' [F2 G2]].
-  assert (LOADX: exists v2'', Mem.loadv Mint32 m' a2' = Some v2'' /\ Val.lessdef v2' v2'').
+  assert (LOADX: exists v2'', Mem.loadv Mint32 m' a2' cp = Some v2'' /\ Val.lessdef v2' v2'').
   { discriminate || (eapply Mem.loadv_extends; [eauto|eexact LOAD2|eexact G2]). }
   destruct LOADX as (v2'' & LOAD2' & LD4).
   set (ls4 := Locmap.set (R dst2') v2'' (undef_regs (destroyed_by_load Mint32 addr2) ls3)).
@@ -2183,7 +2183,7 @@ Proof.
   econstructor; eauto.
 
 (* load first word of a pair *)
-- generalize (wt_exec_Iload _ _ _ _ _ _ _ _ _ _ _ WTI H1 WTRS). intros WTRS'.
+- generalize (wt_exec_Iload _ _ _ _ _ _ _ _ _ _ _ _ WTI H1 WTRS). intros WTRS'.
   exploit loadv_int64_split; eauto. intros (v1 & v2 & LOAD1 & LOAD2 & V1 & V2).
   set (v2' := if Archi.big_endian then v2 else v1) in *.
   set (v1' := if Archi.big_endian then v1 else v2) in *.
@@ -2213,7 +2213,7 @@ Proof.
   econstructor; eauto.
 
 (* load second word of a pair *)
-- generalize (wt_exec_Iload _ _ _ _ _ _ _ _ _ _ _ WTI H1 WTRS). intros WTRS'.
+- generalize (wt_exec_Iload _ _ _ _ _ _ _ _ _ _ _ _ WTI H1 WTRS). intros WTRS'.
   exploit loadv_int64_split; eauto. intros (v1 & v2 & LOAD1 & LOAD2 & V1 & V2).
   set (v2' := if Archi.big_endian then v2 else v1) in *.
   set (v1' := if Archi.big_endian then v1 else v2) in *.
@@ -2223,7 +2223,7 @@ Proof.
   exploit eval_addressing_lessdef. eexact LD1.
   eapply eval_offset_addressing; eauto; apply Archi.splitlong_ptr32; auto.
   intros [a1' [F1 G1]].
-  assert (LOADX: exists v2'', Mem.loadv Mint32 m' a1' = Some v2'' /\ Val.lessdef v2' v2'').
+  assert (LOADX: exists v2'', Mem.loadv Mint32 m' a1' cp = Some v2'' /\ Val.lessdef v2' v2'').
   { discriminate || (eapply Mem.loadv_extends; [eauto|eexact LOAD2|eexact G1]). }
   destruct LOADX as (v2'' & LOAD2' & LD2).
   set (ls2 := Locmap.set (R dst') v2'' (undef_regs (destroyed_by_load Mint32 addr2) ls1)).
@@ -2303,7 +2303,7 @@ Proof.
   assert (F2': eval_addressing tge sp addr (reglist ls3 args2') = Some a2').
     rewrite <- F2. apply eval_addressing_preserved. exact symbols_preserved.
   exploit (eval_offset_addressing tge); eauto. intros F2''.
-  assert (STOREX: exists m2', Mem.storev Mint32 m1' (Val.add a2' (Vint (Int.repr 4))) (ls3 (R src2')) = Some m2' /\ Mem.extends m' m2').
+  assert (STOREX: exists m2', Mem.storev Mint32 m1' (Val.add a2' (Vint (Int.repr 4))) (ls3 (R src2')) cp = Some m2' /\ Mem.extends m' m2').
   { try discriminate;
     (eapply Mem.storev_extends;
      [eexact EXT1 | eexact STORE2 | apply Val.add_lessdef; [eexact G2|eauto] | eauto]). }

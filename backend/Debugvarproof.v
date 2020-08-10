@@ -540,7 +540,7 @@ Proof.
   constructor; auto.
 - (* return *)
   econstructor; split.
-  apply plus_one.  constructor. inv TRF; eauto. traceEq.
+  apply plus_one.  econstructor. inv TRF; eauto. traceEq.
   rewrite (parent_locset_match _ _ STACKS). constructor; auto.
 - (* internal function *)
   monadInv H7. rename x into tf.

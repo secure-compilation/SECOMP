@@ -950,7 +950,11 @@ Theorem external_call_match:
   /\ romatch bc' m' rm
   /\ mmatch bc' m' mtop
   /\ bc_nostack bc'
-  /\ (forall b ofs n, Mem.valid_block m b -> bc b = BCinvalid -> Mem.loadbytes m' b ofs n = Mem.loadbytes m b ofs n).
+  /\ (forall b ofs n cp,
+      Mem.valid_block m b ->
+      forall OWN : Mem.own_block m b cp,
+      bc b = BCinvalid ->
+      Mem.loadbytes m' b ofs n cp = Mem.loadbytes m b ofs n cp).
 Proof.
   intros until am; intros EC GENV ARGS RO MM NOSTACK.
   (* Part 1: using ec_mem_inject *)
@@ -1138,10 +1142,10 @@ Inductive sound_state_base: state -> Prop :=
 Lemma sound_stack_ext:
   forall m' bc stk m bound,
   sound_stack bc stk m bound ->
-  (forall b ofs n bytes,
+  (forall b ofs n cp bytes,
        Plt b bound -> bc b = BCinvalid -> n >= 0 ->
-       Mem.loadbytes m' b ofs n = Some bytes ->
-       Mem.loadbytes m b ofs n = Some bytes) ->
+       Mem.loadbytes m' b ofs n cp = Some bytes ->
+       Mem.loadbytes m b ofs n cp = Some bytes) ->
   sound_stack bc stk m' bound.
 Proof.
   induction 1; intros INV.
@@ -1158,15 +1162,15 @@ Qed.
 Lemma sound_stack_inv:
   forall m' bc stk m bound,
   sound_stack bc stk m bound ->
-  (forall b ofs n, Plt b bound -> bc b = BCinvalid -> n >= 0 -> Mem.loadbytes m' b ofs n = Mem.loadbytes m b ofs n) ->
+  (forall b ofs n cp, Plt b bound -> bc b = BCinvalid -> n >= 0 -> Mem.loadbytes m' b ofs n cp = Mem.loadbytes m b ofs n cp) ->
   sound_stack bc stk m' bound.
 Proof.
   intros. eapply sound_stack_ext; eauto. intros. rewrite <- H0; auto.
 Qed.
 
 Lemma sound_stack_storev:
-  forall chunk m addr v m' bc aaddr stk bound,
-  Mem.storev chunk m addr v = Some m' ->
+  forall chunk m addr v cp m' bc aaddr stk bound,
+  Mem.storev chunk m addr v cp = Some m' ->
   vmatch bc addr aaddr ->
   sound_stack bc stk m bound ->
   sound_stack bc stk m' bound.
@@ -1180,8 +1184,8 @@ Proof.
 Qed.
 
 Lemma sound_stack_storebytes:
-  forall m b ofs bytes m' bc aaddr stk bound,
-  Mem.storebytes m b (Ptrofs.unsigned ofs) bytes = Some m' ->
+  forall m b ofs bytes cp m' bc aaddr stk bound,
+  Mem.storebytes m b (Ptrofs.unsigned ofs) bytes cp = Some m' ->
   vmatch bc (Vptr b ofs) aaddr ->
   sound_stack bc stk m bound ->
   sound_stack bc stk m' bound.
@@ -1194,8 +1198,8 @@ Proof.
 Qed.
 
 Lemma sound_stack_free:
-  forall m b lo hi m' bc stk bound,
-  Mem.free m b lo hi = Some m' ->
+  forall m b lo hi cp m' bc stk bound,
+  Mem.free m b lo hi cp = Some m' ->
   sound_stack bc stk m bound ->
   sound_stack bc stk m' bound.
 Proof.
@@ -1355,6 +1359,7 @@ Proof.
   intros. rewrite K; auto. rewrite C; auto.
   apply bmatch_inv with m. eapply mmatch_stack; eauto.
   intros. apply Q; auto.
+  admit. (* RB: NOTE: New own_block subgoal *)
   eapply external_call_nextblock; eauto.
   intros (bc3 & U & V & W & X & Y & Z & AA).
   eapply sound_succ_state with (bc := bc3); eauto. simpl; auto.
@@ -1362,6 +1367,7 @@ Proof.
   apply sound_stack_exten with bc.
   apply sound_stack_inv with m. auto.
   intros. apply Q. red. eapply Plt_trans; eauto.
+  admit. (* RB: NOTE: New own_block subgoal *)
   rewrite C; auto with ordered_type.
   exact AA.
 * (* public builtin call *)
@@ -1381,6 +1387,7 @@ Proof.
   apply sound_stack_exten with bc.
   apply sound_stack_inv with m. auto.
   intros. apply Q. red. eapply Plt_trans; eauto.
+  admit. (* RB: NOTE: New own_block subgoal *)
   rewrite C; auto with ordered_type.
   exact AA.
   }
@@ -1488,6 +1495,7 @@ Proof.
   apply sound_stack_new_bound with (Mem.nextblock m).
   apply sound_stack_exten with bc; auto.
   apply sound_stack_inv with m; auto.
+  intros. apply K; auto. admit. (* RB: NOTE: New own_block subgoal *)
   eapply external_call_nextblock; eauto.
 
 - (* return *)
@@ -1508,7 +1516,8 @@ Proof.
    eapply sound_regular_state with (bc := bc1); eauto.
    apply sound_stack_exten with bc'; auto.
    eapply ematch_ge; eauto. apply ematch_update. auto. auto.
-Qed.
+(* Qed. *)
+Admitted.
 
 End SOUNDNESS.
 
@@ -1646,8 +1655,8 @@ Proof.
 Qed.
 
 Lemma store_init_data_sound:
-  forall m b p id m' ab,
-  Genv.store_init_data ge m b p id = Some m' ->
+  forall m b p id cp m' ab,
+  Genv.store_init_data ge m b p id cp = Some m' ->
   bmatch bc m b ab ->
   bmatch bc m' b (store_init_data ab p id).
 Proof.
@@ -1664,8 +1673,8 @@ Proof.
 Qed.
 
 Lemma store_init_data_list_sound:
-  forall idl m b p m' ab,
-  Genv.store_init_data_list ge m b p idl = Some m' ->
+  forall idl m b p cp m' ab,
+  Genv.store_init_data_list ge m b p idl cp = Some m' ->
   bmatch bc m b ab ->
   bmatch bc m' b (store_init_data_list ab p idl).
 Proof.
@@ -1676,8 +1685,8 @@ Proof.
 Qed.
 
 Lemma store_init_data_other:
-  forall m b p id m' ab b',
-  Genv.store_init_data ge m b p id = Some m' ->
+  forall m b p id cp m' ab b',
+  Genv.store_init_data ge m b p id cp = Some m' ->
   b' <> b ->
   bmatch bc m b' ab ->
   bmatch bc m' b' ab.
@@ -1690,8 +1699,8 @@ Proof.
 Qed.
 
 Lemma store_init_data_list_other:
-  forall b b' ab idl m p m',
-  Genv.store_init_data_list ge m b p idl = Some m' ->
+  forall b b' ab idl cp m p m',
+  Genv.store_init_data_list ge m b p idl cp = Some m' ->
   b' <> b ->
   bmatch bc m b' ab ->
   bmatch bc m' b' ab.
@@ -1703,12 +1712,12 @@ Proof.
 Qed.
 
 Lemma store_zeros_same:
-  forall p m b pos n m',
-  store_zeros m b pos n = Some m' ->
+  forall p m b pos n cp m',
+  store_zeros m b pos n cp = Some m' ->
   smatch bc m b p ->
   smatch bc m' b p.
 Proof.
-  intros until n. functional induction (store_zeros m b pos n); intros.
+  intros until cp. functional induction (store_zeros m b pos n cp); intros.
 - inv H. auto.
 - eapply IHo; eauto. change p with (vplub (I Int.zero) p).
   eapply smatch_store; eauto. constructor.
@@ -1716,13 +1725,13 @@ Proof.
 Qed.
 
 Lemma store_zeros_other:
-  forall b' ab m b p n m',
-  store_zeros m b p n = Some m' ->
+  forall b' ab m b p n cp m',
+  store_zeros m b p n cp = Some m' ->
   b' <> b ->
   bmatch bc m b' ab ->
   bmatch bc m' b' ab.
 Proof.
-  intros until n. functional induction (store_zeros m b p n); intros.
+  intros until cp. functional induction (store_zeros m b p n cp); intros.
 - inv H. auto.
 - eapply IHo; eauto. eapply bmatch_inv; eauto.
   intros. eapply Mem.loadbytes_store_other; eauto.
@@ -1754,7 +1763,7 @@ Proof.
   assert (b <> b1) by (apply Mem.valid_not_valid_diff with m; eauto with mem).
   apply bmatch_inv with m.
   eapply H0; eauto.
-  intros. transitivity (Mem.loadbytes m1 b ofs n0).
+  intros. transitivity (Mem.loadbytes m1 b ofs n0 cp).
   eapply Mem.loadbytes_drop; eauto.
   eapply Mem.loadbytes_alloc_unchanged; eauto.
 - set (sz := init_data_list_size (gvar_init gv)) in *.

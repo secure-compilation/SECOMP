@@ -171,16 +171,16 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State s f sp (Lop op args res :: b) rs m)
         E0 (State s f sp b rs' m)
   | exec_Lload:
-      forall s f sp chunk addr args dst b rs m a v rs',
+      forall s f sp chunk addr args dst b rs m a cp v rs',
       eval_addressing ge sp addr (reglist rs args) = Some a ->
-      Mem.loadv chunk m a = Some v ->
+      Mem.loadv chunk m a cp = Some v ->
       rs' = Locmap.set (R dst) v (undef_regs (destroyed_by_load chunk addr) rs) ->
       step (State s f sp (Lload chunk addr args dst :: b) rs m)
         E0 (State s f sp b rs' m)
   | exec_Lstore:
-      forall s f sp chunk addr args src b rs m m' a rs',
+      forall s f sp chunk addr args src b rs m cp m' a rs',
       eval_addressing ge sp addr (reglist rs args) = Some a ->
-      Mem.storev chunk m a (rs (R src)) = Some m' ->
+      Mem.storev chunk m a (rs (R src)) cp = Some m' ->
       rs' = undef_regs (destroyed_by_store chunk addr) rs ->
       step (State s f sp (Lstore chunk addr args src :: b) rs m)
         E0 (State s f sp b rs' m')
@@ -192,14 +192,14 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State s f sp (Lcall sig ros :: b) rs m)
         E0 (Callstate (Stackframe f sp rs b:: s) f' rs m)
   | exec_Ltailcall:
-      forall s f stk sig ros b rs m rs' f' m',
+      forall s f stk sig ros b rs m rs' f' cp m',
       rs' = return_regs (parent_locset s) rs ->
       find_function ros rs' = Some f' ->
       sig = funsig f' ->
       forall COMP: comp_of f' = comp_of f,
       forall ALLOWED: needs_calling_comp (comp_of f) = false,
       forall (ALLOWED': Policy.allowed_call pol f.(fn_comp) f'),
-      Mem.free m stk 0 f.(fn_stacksize) = Some m' ->
+      Mem.free m stk 0 f.(fn_stacksize) cp = Some m' ->
       step (State s f (Vptr stk Ptrofs.zero) (Ltailcall sig ros :: b) rs m)
         E0 (Callstate s f' rs' m')
   | exec_Lbuiltin:
@@ -240,8 +240,8 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State s f sp (Ljumptable arg tbl :: b) rs m)
         E0 (State s f sp b' rs' m)
   | exec_Lreturn:
-      forall s f stk b rs m m',
-      Mem.free m stk 0 f.(fn_stacksize) = Some m' ->
+      forall s f stk b rs m cp m',
+      Mem.free m stk 0 f.(fn_stacksize) cp = Some m' ->
       step (State s f (Vptr stk Ptrofs.zero) (Lreturn :: b) rs m)
         E0 (Returnstate s (return_regs (parent_locset s) rs) m')
   | exec_function_internal:

@@ -300,8 +300,11 @@ Lemma rhs_eval_to_inj:
   forall valu ge sp m rh v1 v2,
   rhs_eval_to valu ge sp m rh v1 -> rhs_eval_to valu ge sp m rh v2 -> v1 = v2.
 Proof.
-  intros. inv H; inv H0; congruence.
-Qed.
+  (* intros. inv H; inv H0; congruence. *)
+  admit. (* RB: NOTE: Congruence after compartment determinacy on [loadv],
+            itself after establishing address equality by congruence. *)
+(* Qed. *)
+Admitted.
 
 Lemma add_rhs_holds:
   forall valu1 ge sp rs m n rd rh rs',
@@ -388,10 +391,10 @@ Proof.
 Qed.
 
 Lemma add_load_holds:
-  forall valu1 ge sp rs m n addr (args: list reg) a chunk v dst,
+  forall valu1 ge sp rs m n addr (args: list reg) a chunk cp v dst,
   numbering_holds valu1 ge sp rs m n ->
   eval_addressing ge sp addr rs##args = Some a ->
-  Mem.loadv chunk m a = Some v ->
+  Mem.loadv chunk m a cp= Some v ->
   exists valu2, numbering_holds valu2 ge sp (rs#dst <- v) m (add_load n dst chunk addr args).
 Proof.
   unfold add_load; intros.
@@ -399,7 +402,7 @@ Proof.
   exploit valnum_regs_holds; eauto.
   intros (valu2 & A & B & C & D & E).
   eapply add_rhs_holds; eauto.
-+ econstructor. rewrite <- B; eauto. rewrite Regmap.gss; auto.
++ econstructor. rewrite <- B; eauto. rewrite Regmap.gss; eauto.
 + intros. apply Regmap.gso; auto.
 Qed.
 
@@ -471,10 +474,10 @@ Proof.
 Qed.
 
 Lemma kill_loads_after_store_holds:
-  forall valu ge sp rs m n addr args a chunk v m' bc approx ae am,
+  forall valu ge sp rs m n addr args a chunk v cp m' bc approx ae am,
   numbering_holds valu ge (Vptr sp Ptrofs.zero) rs m n ->
   eval_addressing ge (Vptr sp Ptrofs.zero) addr rs##args = Some a ->
-  Mem.storev chunk m a v = Some m' ->
+  Mem.storev chunk m a v cp = Some m' ->
   genv_match bc ge ->
   bc sp = BCstack ->
   ematch bc rs ae ->
@@ -515,10 +518,10 @@ Proof.
 Qed.
 
 Lemma add_store_result_hold:
-  forall valu1 ge sp rs m' n addr args a chunk m src bc ae approx am,
+  forall valu1 ge sp rs cp m' n addr args a chunk m src bc ae approx am,
   numbering_holds valu1 ge sp rs m' n ->
   eval_addressing ge sp addr rs##args = Some a ->
-  Mem.storev chunk m a rs#src = Some m' ->
+  Mem.storev chunk m a rs#src cp = Some m' ->
   ematch bc rs ae ->
   approx = VA.State ae am ->
   exists valu2, numbering_holds valu2 ge sp rs m' (add_store_result approx n chunk addr args src).
@@ -536,7 +539,7 @@ Proof.
   eapply Pos.lt_le_trans; eauto.
   red; simpl; intros. auto.
 + destruct H4; eauto with cse. subst eq. apply eq_holds_lessdef with (Val.load_result chunk rs#src).
-  apply load_eval_to with a. rewrite <- Q; auto.
+  apply load_eval_to with a cp. rewrite <- Q; auto.
   destruct a; try discriminate. simpl. eapply Mem.load_store_same; eauto.
   rewrite B. rewrite R by auto. apply store_normalized_range_sound with bc.
   rewrite <- B. eapply vmatch_ge. apply vincl_ge; eauto. apply H2.
@@ -546,10 +549,10 @@ Proof.
 Qed.
 
 Lemma kill_loads_after_storebytes_holds:
-  forall valu ge sp rs m n dst b ofs bytes m' bc approx ae am sz,
+  forall valu ge sp rs m n dst b ofs bytes cp m' bc approx ae am sz,
   numbering_holds valu ge (Vptr sp Ptrofs.zero) rs m n ->
   pmatch bc b ofs dst ->
-  Mem.storebytes m b (Ptrofs.unsigned ofs) bytes = Some m' ->
+  Mem.storebytes m b (Ptrofs.unsigned ofs) bytes cp = Some m' ->
   genv_match bc ge ->
   bc sp = BCstack ->
   ematch bc rs ae ->
@@ -575,13 +578,13 @@ Proof.
 Qed.
 
 Lemma load_memcpy:
-  forall m b1 ofs1 sz bytes b2 ofs2 m' chunk i v,
-  Mem.loadbytes m b1 ofs1 sz = Some bytes ->
-  Mem.storebytes m b2 ofs2 bytes = Some m' ->
-  Mem.load chunk m b1 i = Some v ->
+  forall m b1 ofs1 sz cp1 bytes b2 ofs2 cp2 m' chunk i v,
+  Mem.loadbytes m b1 ofs1 sz cp1 = Some bytes ->
+  Mem.storebytes m b2 ofs2 bytes cp2 = Some m' ->
+  Mem.load chunk m b1 i cp1 = Some v ->
   ofs1 <= i -> i + size_chunk chunk <= ofs1 + sz ->
   (align_chunk chunk | ofs2 - ofs1) ->
-  Mem.load chunk m' b2 (i + (ofs2 - ofs1)) = Some v.
+  Mem.load chunk m' b2 (i + (ofs2 - ofs1)) cp2 = Some v.
 Proof.
   intros.
   generalize (size_chunk_pos chunk); intros SPOS.
@@ -612,13 +615,13 @@ Proof.
   assert (L2: Z.of_nat (length bytes2) = n2).
   { erewrite Mem.loadbytes_length by eauto. apply Z2Nat.id. unfold n2; omega. }
   rewrite L1 in *. rewrite L2 in *.
-  assert (LB': Mem.loadbytes m2 b2 (ofs2 + n1) n2 = Some bytes2).
+  assert (LB': Mem.loadbytes m2 b2 (ofs2 + n1) n2 cp2 = Some bytes2).
   { rewrite <- L2. eapply Mem.loadbytes_storebytes_same; eauto. }
-  assert (LB'': Mem.loadbytes m' b2 (ofs2 + n1) n2 = Some bytes2).
+  assert (LB'': Mem.loadbytes m' b2 (ofs2 + n1) n2 cp2 = Some bytes2).
   { rewrite <- LB'. eapply Mem.loadbytes_storebytes_other; eauto.
     unfold n2; omega.
     right; left; omega. }
-  exploit Mem.load_valid_access; eauto. intros [P Q].
+  exploit Mem.load_valid_access; eauto. intros [P [Q R]].
   rewrite B. apply Mem.loadbytes_load.
   replace (i + (ofs2 - ofs1)) with (ofs2 + n1) by (unfold n1; omega).
   exact LB''.
@@ -642,10 +645,10 @@ Proof with (try discriminate).
 Qed.
 
 Lemma shift_memcpy_eq_holds:
-  forall src dst sz e e' m sp bytes m' valu ge,
+  forall src dst sz cp e e' m sp bytes m' valu ge,
   shift_memcpy_eq src sz (dst - src) e = Some e' ->
-  Mem.loadbytes m sp src sz = Some bytes ->
-  Mem.storebytes m sp dst bytes = Some m' ->
+  Mem.loadbytes m sp src sz cp = Some bytes ->
+  Mem.storebytes m sp dst bytes cp = Some m' ->
   equation_holds valu ge (Vptr sp Ptrofs.zero) m e ->
   equation_holds valu ge (Vptr sp Ptrofs.zero) m' e'.
 Proof with (try discriminate).
@@ -662,8 +665,8 @@ Proof with (try discriminate).
   destruct (zle j Ptrofs.max_unsigned)...
   simpl in H; inv H.
   assert (LD: forall v,
-    Mem.loadv chunk m (Vptr sp ofs) = Some v ->
-    Mem.loadv chunk m' (Vptr sp (Ptrofs.repr j)) = Some v).
+    Mem.loadv chunk m (Vptr sp ofs) cp = Some v ->
+    Mem.loadv chunk m' (Vptr sp (Ptrofs.repr j)) cp = Some v).
   {
     simpl; intros. rewrite Ptrofs.unsigned_repr by omega.
     unfold j, delta. eapply load_memcpy; eauto.
@@ -675,12 +678,14 @@ Proof with (try discriminate).
   apply eq_holds_strict. econstructor. rewrite eval_addressing_Ainstack.
   simpl. rewrite Ptrofs.add_zero_l. eauto.
   apply LD; auto.
+  admit. (* RB: NOTE: Establish cross-operation component equality *)
 + inv H4. exploit eval_addressing_Ainstack_inv; eauto. intros [E1 E2].
   simpl in E2; rewrite Ptrofs.add_zero_l in E2. subst a.
   apply eq_holds_lessdef with v; auto.
   econstructor. rewrite eval_addressing_Ainstack. simpl. rewrite Ptrofs.add_zero_l. eauto.
   apply LD; auto.
-Qed.
+(* Qed. *)
+Admitted.
 
 Lemma add_memcpy_eqs_charact:
   forall e' src sz delta eqs2 eqs1,
@@ -696,9 +701,9 @@ Proof.
 Qed.
 
 Lemma add_memcpy_holds:
-  forall m bsrc osrc sz bytes bdst odst m' valu ge sp rs n1 n2 bc asrc adst,
-  Mem.loadbytes m bsrc (Ptrofs.unsigned osrc) sz = Some bytes ->
-  Mem.storebytes m bdst (Ptrofs.unsigned odst) bytes = Some m' ->
+  forall m bsrc osrc sz cp bytes bdst odst cp' m' valu ge sp rs n1 n2 bc asrc adst,
+  Mem.loadbytes m bsrc (Ptrofs.unsigned osrc) sz cp = Some bytes ->
+  Mem.storebytes m bdst (Ptrofs.unsigned odst) bytes cp' = Some m' ->
   numbering_holds valu ge (Vptr sp Ptrofs.zero) rs m n1 ->
   numbering_holds valu ge (Vptr sp Ptrofs.zero) rs m' n2 ->
   pmatch bc bsrc osrc asrc ->
@@ -724,7 +729,9 @@ Proof.
 - exploit add_memcpy_eqs_charact; eauto. intros [X | (e0 & X & Y)].
   eauto with cse.
   eapply shift_memcpy_eq_holds; eauto with cse.
-Qed.
+  admit. (* RB: NOTE: Establish cross-operation component equality *)
+(* Qed. *)
+Admitted.
 
 (** Correctness of operator reduction *)
 
@@ -843,7 +850,7 @@ Proof (Genv.find_symbol_match TRANSF).
 
 Lemma senv_preserved:
   Senv.equiv ge tge.
-Proof (Genv.senv_match TRANSF).
+Proof. exact (Genv.senv_match TRANSF). Qed.
 
 Lemma functions_translated:
   forall (v: val) (f: RTL.fundef),
@@ -1073,7 +1080,10 @@ Proof.
   destruct (find_rhs n1 (Load chunk addr vl)) as [r|] eqn:?.
 + (* replaced by move *)
   exploit find_rhs_sound; eauto. intros (v' & EV & LD).
-  assert (v' = v) by (inv EV; congruence). subst v'.
+  assert (v' = v)
+    by (inv EV; congruence ||
+        admit). (* RB: NOTE: Congruence requires compartment determinacy on [loadv]. *)
+  subst v'.
   econstructor; split.
   eapply exec_Iop; eauto. simpl; eauto.
   econstructor; eauto.
@@ -1252,7 +1262,8 @@ Proof.
   eapply exec_return; eauto.
   econstructor; eauto.
   apply set_reg_lessdef; auto.
-Qed.
+(* Qed. *)
+Admitted.
 
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 ->
