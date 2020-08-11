@@ -553,11 +553,11 @@ Lemma exec_straight_steps_goto:
   Mach.find_label lbl f.(Mach.fn_code) = Some c' ->
   transl_code_at_pc ge (rs1 PC) fb f (i :: c) ep tf tc ->
   it1_is_parent ep i = false ->
-  (forall k c (TR: transl_instr f i ep k = OK c),
+  (forall k c cp (TR: transl_instr f i ep k = OK c),
    exists jmp, exists k', exists rs2,
        exec_straight tge tf c rs1 m1' (jmp :: k') rs2 m2'
     /\ agree ms2 sp rs2
-    /\ exec_instr tge tf jmp rs2 m2' = goto_label tf lbl rs2 m2') ->
+    /\ exec_instr tge tf jmp rs2 m2' cp = goto_label tf lbl rs2 m2') ->
   exists st',
   plus (step tpol) tge (State rs1 m1') E0 st' /\
   match_states (Mach.State s fb sp c' ms2 m2) st'.
@@ -582,7 +582,9 @@ Proof.
   econstructor; eauto.
   apply agree_exten with rs2; auto with asmgen.
   congruence.
-Qed.
+Unshelve. all:admit. (* RB: NOTE: Connect to missing compartments *)
+(* Qed. *)
+Admitted.
 
 Lemma exec_straight_opt_steps_goto:
   forall s fb f rs1 i c ep tf tc m1' m2 m2' sp ms2 lbl c',
@@ -592,11 +594,11 @@ Lemma exec_straight_opt_steps_goto:
   Mach.find_label lbl f.(Mach.fn_code) = Some c' ->
   transl_code_at_pc ge (rs1 PC) fb f (i :: c) ep tf tc ->
   it1_is_parent ep i = false ->
-  (forall k c (TR: transl_instr f i ep k = OK c),
+  (forall k c cp (TR: transl_instr f i ep k = OK c),
    exists jmp, exists k', exists rs2,
        exec_straight_opt tge tf c rs1 m1' (jmp :: k') rs2 m2'
     /\ agree ms2 sp rs2
-    /\ exec_instr tge tf jmp rs2 m2' = goto_label tf lbl rs2 m2') ->
+    /\ exec_instr tge tf jmp rs2 m2' cp = goto_label tf lbl rs2 m2') ->
   exists st',
   plus (step tpol) tge (State rs1 m1') E0 st' /\
   match_states (Mach.State s fb sp c' ms2 m2) st'.
@@ -633,7 +635,9 @@ Proof.
   econstructor; eauto.
   apply agree_exten with rs2; auto with asmgen.
   congruence.
-Qed.
+Unshelve. all:admit. (* RB: NOTE: Connect to missing compartments *)
+(* Qed. *)
+Admitted.
 
 (** We need to show that, in the simulation diagram, we cannot
   take infinitely many Mach transitions that correspond to zero
@@ -668,7 +672,7 @@ Proof.
 
 - (* Mlabel *)
   left; eapply exec_straight_steps; eauto; intros.
-  monadInv TR. econstructor; split. apply exec_straight_one. simpl; eauto. auto.
+  monadInv TR. econstructor; split. eapply exec_straight_one. simpl; eauto. auto.
   split. apply agree_nextinstr; auto. simpl; congruence.
 
 - (* Mgetstack *)
@@ -705,7 +709,7 @@ Opaque loadind.
   destruct ep.
 (* X30 contains parent *)
   exploit loadind_correct. eexact EQ.
-  instantiate (2 := rs0). rewrite DXP; eauto. congruence.
+  instantiate (3 := rs0). rewrite DXP; eauto. congruence.
   intros [rs1 [P [Q R]]].
   exists rs1; split. eauto.
   split. eapply agree_set_mreg. eapply agree_set_mreg; eauto. congruence. auto with asmgen.
@@ -714,7 +718,7 @@ Opaque loadind.
 (* GPR11 does not contain parent *)
   rewrite chunk_of_Tptr in A. 
   exploit loadind_ptr_correct. eexact A. congruence. intros [rs1 [P [Q R]]].
-  exploit loadind_correct. eexact EQ. instantiate (2 := rs1). rewrite Q. eauto. congruence.
+  exploit loadind_correct. eexact EQ. instantiate (3 := rs1). rewrite Q. eauto. congruence.
   intros [rs2 [S [T U]]].
   exists rs2; split. eapply exec_straight_trans; eauto.
   split. eapply agree_set_mreg. eapply agree_set_mreg. eauto. eauto.
@@ -827,6 +831,7 @@ Local Transparent destroyed_by_op.
     revert H; predSpec Ptrofs.eq Ptrofs.eq_spec i Ptrofs.zero; intros; congruence.
   assert (rs0 x0 = Vptr f' Ptrofs.zero).
     exploit ireg_val; eauto. rewrite H7; intros LD; inv LD; auto.
+  assert (cp = cp') by admit; subst cp'. (* RB: NOTE: Compartment determinacy *)
   exploit make_epilogue_correct; eauto. intros (rs1 & m1 & U & V & W & X & Y & Z).
   exploit exec_straight_steps_2; eauto using functions_transl.
   intros (ofs' & P & Q).
@@ -845,6 +850,7 @@ Local Transparent destroyed_by_op.
   Simpl. rewrite Z by (rewrite <- (ireg_of_eq _ _ EQ1); eauto with asmgen). assumption.
   admit.
 + (* Direct call *)
+  assert (cp = cp') by admit; subst cp'. (* RB: NOTE: Compartment determinacy *)
   exploit make_epilogue_correct; eauto. intros (rs1 & m1 & U & V & W & X & Y & Z).
   exploit exec_straight_steps_2; eauto using functions_transl.
   intros (ofs' & P & Q).
@@ -961,6 +967,7 @@ Local Transparent destroyed_by_op.
   inversion AT; subst. simpl in H6; monadInv H6.
   assert (NOOV: list_length_z tf.(fn_code) <= Ptrofs.max_unsigned).
     eapply transf_function_no_overflow; eauto.
+  assert (cp = cp') by admit; subst cp'. (* RB: NOTE: Compartment determinacy *)
   exploit make_epilogue_correct; eauto. intros (rs1 & m1 & U & V & W & X & Y & Z).
   exploit exec_straight_steps_2; eauto using functions_transl.
   intros (ofs' & P & Q).
@@ -1004,7 +1011,7 @@ Local Transparent destroyed_by_op.
               tf.(fn_code) rs0 m'
               x0 rs3 m3').
   { change (fn_code tf) with tfbody; unfold tfbody.
-    apply exec_straight_step with rs2 m2'.
+    eapply exec_straight_step with cp rs2 m2'.
     unfold exec_instr.
     change (fn_comp tf) with (Mach.fn_comp f).
     rewrite C. fold sp.

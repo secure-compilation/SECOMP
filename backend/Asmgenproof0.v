@@ -358,7 +358,7 @@ Proof.
   exploit Mem.loadv_extends; eauto. intros [v' [A B]].
   rewrite (sp_val _ _ _ H) in A.
   exists v'; split; auto.
-  econstructor. eauto. assumption.
+  econstructor. eauto. eassumption.
 Qed.
 
 Lemma extcall_arg_pair_match:
@@ -804,13 +804,13 @@ Variable fn: function.
 Inductive exec_straight: code -> regset -> mem ->
                          code -> regset -> mem -> Prop :=
   | exec_straight_one:
-      forall i1 c rs1 m1 rs2 m2,
-      exec_instr ge fn i1 rs1 m1 = Next rs2 m2 ->
+      forall i1 c rs1 m1 cp rs2 m2,
+      exec_instr ge fn i1 rs1 m1 cp = Next rs2 m2 ->
       rs2#PC = Val.offset_ptr rs1#PC Ptrofs.one ->
       exec_straight (i1 :: c) rs1 m1 c rs2 m2
   | exec_straight_step:
-      forall i c rs1 m1 rs2 m2 c' rs3 m3,
-      exec_instr ge fn i rs1 m1 = Next rs2 m2 ->
+      forall i c rs1 m1 cp rs2 m2 c' rs3 m3,
+      exec_instr ge fn i rs1 m1 cp = Next rs2 m2 ->
       rs2#PC = Val.offset_ptr rs1#PC Ptrofs.one ->
       exec_straight c rs2 m2 c' rs3 m3 ->
       exec_straight (i :: c) rs1 m1 c' rs3 m3.
@@ -822,33 +822,33 @@ Lemma exec_straight_trans:
   exec_straight c1 rs1 m1 c3 rs3 m3.
 Proof.
   induction 1; intros.
-  apply exec_straight_step with rs2 m2; auto.
-  apply exec_straight_step with rs2 m2; auto.
+  apply exec_straight_step with cp0 rs2 m2; auto.
+  apply exec_straight_step with cp0 rs2 m2; auto.
 Qed.
 
 Lemma exec_straight_two:
-  forall i1 i2 c rs1 m1 rs2 m2 rs3 m3,
-  exec_instr ge fn i1 rs1 m1 = Next rs2 m2 ->
-  exec_instr ge fn i2 rs2 m2 = Next rs3 m3 ->
+  forall i1 i2 c rs1 m1 cp1 rs2 m2 cp2 rs3 m3,
+  exec_instr ge fn i1 rs1 m1 cp1 = Next rs2 m2 ->
+  exec_instr ge fn i2 rs2 m2 cp2 = Next rs3 m3 ->
   rs2#PC = Val.offset_ptr rs1#PC Ptrofs.one ->
   rs3#PC = Val.offset_ptr rs2#PC Ptrofs.one ->
   exec_straight (i1 :: i2 :: c) rs1 m1 c rs3 m3.
 Proof.
-  intros. apply exec_straight_step with rs2 m2; auto.
-  apply exec_straight_one; auto.
+  intros. apply exec_straight_step with cp1 rs2 m2; auto.
+  eapply exec_straight_one; eauto.
 Qed.
 
 Lemma exec_straight_three:
-  forall i1 i2 i3 c rs1 m1 rs2 m2 rs3 m3 rs4 m4,
-  exec_instr ge fn i1 rs1 m1 = Next rs2 m2 ->
-  exec_instr ge fn i2 rs2 m2 = Next rs3 m3 ->
-  exec_instr ge fn i3 rs3 m3 = Next rs4 m4 ->
+  forall i1 i2 i3 c rs1 m1 cp1 rs2 m2 cp2 rs3 m3 cp3 rs4 m4,
+  exec_instr ge fn i1 rs1 m1 cp1 = Next rs2 m2 ->
+  exec_instr ge fn i2 rs2 m2 cp2 = Next rs3 m3 ->
+  exec_instr ge fn i3 rs3 m3 cp3 = Next rs4 m4 ->
   rs2#PC = Val.offset_ptr rs1#PC Ptrofs.one ->
   rs3#PC = Val.offset_ptr rs2#PC Ptrofs.one ->
   rs4#PC = Val.offset_ptr rs3#PC Ptrofs.one ->
   exec_straight (i1 :: i2 :: i3 :: c) rs1 m1 c rs4 m4.
 Proof.
-  intros. apply exec_straight_step with rs2 m2; auto.
+  intros. apply exec_straight_step with cp1 rs2 m2; auto.
   eapply exec_straight_two; eauto.
 Qed.
 
@@ -932,20 +932,20 @@ Proof.
 Qed.
 
 Lemma exec_straight_opt_step:
-  forall i c rs1 m1 rs2 m2 c' rs3 m3,
-  exec_instr ge fn i rs1 m1 = Next rs2 m2 ->
+  forall i c rs1 m1 cp rs2 m2 c' rs3 m3,
+  exec_instr ge fn i rs1 m1 cp = Next rs2 m2 ->
   rs2#PC = Val.offset_ptr rs1#PC Ptrofs.one ->
   exec_straight_opt c rs2 m2 c' rs3 m3 ->
   exec_straight (i :: c) rs1 m1 c' rs3 m3.
 Proof.
   intros. inv H1. 
-- apply exec_straight_one; auto.
+- eapply exec_straight_one; eauto.
 - eapply exec_straight_step; eauto.
 Qed.
 
 Lemma exec_straight_opt_step_opt:
-  forall i c rs1 m1 rs2 m2 c' rs3 m3,
-  exec_instr ge fn i rs1 m1 = Next rs2 m2 ->
+  forall i c rs1 m1 cp rs2 m2 c' rs3 m3,
+  exec_instr ge fn i rs1 m1 cp = Next rs2 m2 ->
   rs2#PC = Val.offset_ptr rs1#PC Ptrofs.one ->
   exec_straight_opt c rs2 m2 c' rs3 m3 ->
   exec_straight_opt (i :: c) rs1 m1 c' rs3 m3.
