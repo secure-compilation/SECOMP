@@ -56,10 +56,10 @@ Variable ge: genv.
   a volatile access). *)
 
 Inductive deref_loc (ty: type) (m: mem) (b: block) (ofs: ptrofs) : trace -> val -> Prop :=
-  | deref_loc_value: forall chunk v,
+  | deref_loc_value: forall chunk cp v,
       access_mode ty = By_value chunk ->
       type_is_volatile ty = false ->
-      Mem.loadv chunk m (Vptr b ofs) = Some v ->
+      Mem.loadv chunk m (Vptr b ofs) cp = Some v ->
       deref_loc ty m b ofs E0 v
   | deref_loc_volatile: forall chunk t v,
       access_mode ty = By_value chunk -> type_is_volatile ty = true ->
@@ -81,24 +81,24 @@ Inductive deref_loc (ty: type) (m: mem) (b: block) (ofs: ptrofs) : trace -> val 
 
 Inductive assign_loc (ty: type) (m: mem) (b: block) (ofs: ptrofs):
                                             val -> trace -> mem -> Prop :=
-  | assign_loc_value: forall v chunk m',
+  | assign_loc_value: forall v chunk cp m',
       access_mode ty = By_value chunk ->
       type_is_volatile ty = false ->
-      Mem.storev chunk m (Vptr b ofs) v = Some m' ->
+      Mem.storev chunk m (Vptr b ofs) v cp = Some m' ->
       assign_loc ty m b ofs v E0 m'
   | assign_loc_volatile: forall v chunk t m',
       access_mode ty = By_value chunk -> type_is_volatile ty = true ->
       volatile_store ge chunk m b ofs v t m' ->
       assign_loc ty m b ofs v t m'
-  | assign_loc_copy: forall b' ofs' bytes m',
+  | assign_loc_copy: forall b' ofs' cp' bytes cp m',
       access_mode ty = By_copy ->
       (alignof_blockcopy ge ty | Ptrofs.unsigned ofs') ->
       (alignof_blockcopy ge ty | Ptrofs.unsigned ofs) ->
       b' <> b \/ Ptrofs.unsigned ofs' = Ptrofs.unsigned ofs
               \/ Ptrofs.unsigned ofs' + sizeof ge ty <= Ptrofs.unsigned ofs
               \/ Ptrofs.unsigned ofs + sizeof ge ty <= Ptrofs.unsigned ofs' ->
-      Mem.loadbytes m b' (Ptrofs.unsigned ofs') (sizeof ge ty) = Some bytes ->
-      Mem.storebytes m b (Ptrofs.unsigned ofs) bytes = Some m' ->
+      Mem.loadbytes m b' (Ptrofs.unsigned ofs') (sizeof ge ty) cp' = Some bytes ->
+      Mem.storebytes m b (Ptrofs.unsigned ofs) bytes cp = Some m' ->
       assign_loc ty m b ofs (Vptr b' ofs') E0 m'.
 
 (** Allocation of function-local variables.
@@ -753,7 +753,7 @@ Inductive sstep: state -> trace -> state -> Prop :=
          E0 (State f (Sfor Sskip a2 a3 s) k e m)
 
   | step_return_0: forall f k e m m',
-      Mem.free_list m (blocks_of_env e) = Some m' ->
+      Mem.free_list m (blocks_of_env e) f.(fn_comp) = Some m' ->
       sstep (State f (Sreturn None) k e m)
          E0 (Returnstate Vundef (call_cont k) m')
   | step_return_1: forall f x k e m,
@@ -761,12 +761,12 @@ Inductive sstep: state -> trace -> state -> Prop :=
          E0 (ExprState f x (Kreturn k) e  m)
   | step_return_2:  forall f v1 ty k e m v2 m',
       sem_cast v1 ty f.(fn_return) m = Some v2 ->
-      Mem.free_list m (blocks_of_env e) = Some m' ->
+      Mem.free_list m (blocks_of_env e) f.(fn_comp) = Some m' ->
       sstep (ExprState f (Eval v1 ty) (Kreturn k) e m)
          E0 (Returnstate v2 (call_cont k) m')
   | step_skip_call: forall f k e m m',
       is_call_cont k ->
-      Mem.free_list m (blocks_of_env e) = Some m' ->
+      Mem.free_list m (blocks_of_env e) f.(fn_comp) = Some m' ->
       sstep (State f Sskip k e m)
          E0 (Returnstate Vundef k m')
 

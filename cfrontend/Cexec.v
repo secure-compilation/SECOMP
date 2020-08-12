@@ -195,6 +195,9 @@ Qed.
 
 (** Volatile memory accesses. *)
 
+(* RB: NOTE: The following additions may eventually need to be modified so that
+   blocks are accessed not by the component that owns the block, but the
+   component that is accessing the block. *)
 Definition do_volatile_load (w: world) (chunk: memory_chunk) (m: mem) (b: block) (ofs: ptrofs)
                              : option (world * trace * val) :=
   if Genv.block_is_volatile ge b then
@@ -206,7 +209,8 @@ Definition do_volatile_load (w: world) (chunk: memory_chunk) (m: mem) (b: block)
         Some(w', Event_vload chunk id ofs res :: nil, Val.load_result chunk vres)
     end
   else
-    do v <- Mem.load chunk m b (Ptrofs.unsigned ofs);
+    do cp <- PTree.get b (Mem.mem_compartments m); (* RB: TODO: Encapsulate *)
+    do v <- Mem.load chunk m b (Ptrofs.unsigned ofs) cp;
     Some(w, E0, v).
 
 Definition do_volatile_store (w: world) (chunk: memory_chunk) (m: mem) (b: block) (ofs: ptrofs) (v: val)
@@ -217,7 +221,8 @@ Definition do_volatile_store (w: world) (chunk: memory_chunk) (m: mem) (b: block
     do w' <- nextworld_vstore w chunk id ofs ev;
     Some(w', Event_vstore chunk id ofs ev :: nil, m)
   else
-    do m' <- Mem.store chunk m b (Ptrofs.unsigned ofs) v;
+    do cp <- PTree.get b (Mem.mem_compartments m); (* RB: TODO: Encapsulate *)
+    do m' <- Mem.store chunk m b (Ptrofs.unsigned ofs) v cp;
     Some(w, E0, m').
 
 Lemma do_volatile_load_sound:
@@ -230,7 +235,7 @@ Proof.
   split. constructor; auto. apply Genv.invert_find_symbol; auto.
   apply val_of_eventval_sound; auto.
   econstructor. constructor; eauto. constructor.
-  split. constructor; auto. constructor.
+  split. econstructor; eauto. constructor.
 Qed.
 
 Lemma do_volatile_load_complete:
@@ -241,7 +246,7 @@ Proof.
   unfold do_volatile_load; intros. inv H; simpl in *.
   rewrite H1. rewrite (Genv.find_invert_symbol _ _ H2). inv H0. inv H8. inv H6. rewrite H9.
   rewrite (val_of_eventval_complete _ _ _ H3). auto.
-  rewrite H1. rewrite H2. inv H0. auto.
+  rewrite H1. rewrite OWN. rewrite H2. inv H0. auto.
 Qed.
 
 Lemma do_volatile_store_sound:
@@ -253,7 +258,7 @@ Proof.
   split. constructor; auto. apply Genv.invert_find_symbol; auto.
   apply eventval_of_val_sound; auto.
   econstructor. constructor; eauto. constructor.
-  split. constructor; auto. constructor.
+  split. econstructor; eauto. constructor.
 Qed.
 
 Lemma do_volatile_store_complete:
@@ -265,7 +270,7 @@ Proof.
   rewrite H1. rewrite (Genv.find_invert_symbol _ _ H2).
   rewrite (eventval_of_val_complete _ _ _ H3).
   inv H0. inv H8. inv H6. rewrite H9. auto.
-  rewrite H1. rewrite H2. inv H0. auto.
+  rewrite H1. rewrite OWN. rewrite H2. inv H0. auto.
 Qed.
 
 (** Accessing locations *)
@@ -274,7 +279,10 @@ Definition do_deref_loc (w: world) (ty: type) (m: mem) (b: block) (ofs: ptrofs) 
   match access_mode ty with
   | By_value chunk =>
       match type_is_volatile ty with
-      | false => do v <- Mem.loadv chunk m (Vptr b ofs); Some(w, E0, v)
+      | false =>
+        do cp <- PTree.get b (Mem.mem_compartments m); (* RB: TODO: Encapsulate *)
+        do v <- Mem.loadv chunk m (Vptr b ofs) cp;
+        Some(w, E0, v)
       | true => do_volatile_load w chunk m b ofs
       end
   | By_reference => Some(w, E0, Vptr b ofs)
@@ -315,15 +323,20 @@ Definition do_assign_loc (w: world) (ty: type) (m: mem) (b: block) (ofs: ptrofs)
   match access_mode ty with
   | By_value chunk =>
       match type_is_volatile ty with
-      | false => do m' <- Mem.storev chunk m (Vptr b ofs) v; Some(w, E0, m')
+      | false =>
+        do cp <- PTree.get b (Mem.mem_compartments m); (* RB: TODO: Encapsulate *)
+        do m' <- Mem.storev chunk m (Vptr b ofs) v cp;
+        Some(w, E0, m')
       | true => do_volatile_store w chunk m b ofs v
       end
   | By_copy =>
       match v with
       | Vptr b' ofs' =>
           if check_assign_copy ty b ofs b' ofs' then
-            do bytes <- Mem.loadbytes m b' (Ptrofs.unsigned ofs') (sizeof ge ty);
-            do m' <- Mem.storebytes m b (Ptrofs.unsigned ofs) bytes;
+            do cp <- PTree.get b (Mem.mem_compartments m); (* RB: TODO: Encapsulate *)
+            do cp' <- PTree.get b' (Mem.mem_compartments m); (* RB: TODO: Encapsulate *)
+            do bytes <- Mem.loadbytes m b' (Ptrofs.unsigned ofs') (sizeof ge ty) cp';
+            do m' <- Mem.storebytes m b (Ptrofs.unsigned ofs) bytes cp;
             Some(w, E0, m')
           else None
       | _ => None
@@ -350,11 +363,14 @@ Lemma do_deref_loc_complete:
   do_deref_loc w ty m b ofs = Some(w', t, v).
 Proof.
   unfold do_deref_loc; intros. inv H.
-  inv H0. rewrite H1; rewrite H2; rewrite H3; auto.
+  inv H0. rewrite H1; rewrite H2.
+    assert (OWN : Mem.own_block m b cp) by admit. (* RB: NOTE: [loadv] inversion lemma *)
+    rewrite OWN; rewrite H3; auto.
   rewrite H1; rewrite H2. apply do_volatile_load_complete; auto.
   inv H0. rewrite H1. auto.
   inv H0. rewrite H1. auto.
-Qed.
+(* Qed. *)
+Admitted.
 
 Lemma do_assign_loc_sound:
   forall w ty m b ofs v w' t m',
@@ -375,12 +391,18 @@ Lemma do_assign_loc_complete:
   do_assign_loc w ty m b ofs v = Some(w', t, m').
 Proof.
   unfold do_assign_loc; intros. inv H.
-  inv H0. rewrite H1; rewrite H2; rewrite H3; auto.
+  inv H0. rewrite H1; rewrite H2.
+    assert (OWN : Mem.own_block m b cp) by admit. (* RB: NOTE: [storev] inversion lemma *)
+    rewrite OWN; rewrite H3; auto.
   rewrite H1; rewrite H2. apply do_volatile_store_complete; auto.
   rewrite H1. destruct (check_assign_copy ty b ofs b' ofs').
-  inv H0. rewrite H5; rewrite H6; auto.
+  inv H0.
+    assert (OWN : Mem.own_block m b cp) by admit. (* RB: NOTE: [storebytes] inversion lemma *)
+    assert (OWN' : Mem.own_block m b' cp') by admit. (* RB: NOTE: [loadbytes] inversion lemma *)
+    rewrite OWN; rewrite OWN'; rewrite H5; rewrite H6; auto.
   elim n. red; tauto.
-Qed.
+(* Qed. *)
+Admitted.
 
 (** External calls *)
 
@@ -447,7 +469,7 @@ Definition do_ef_malloc
   | v :: nil =>
       do sz <- do_alloc_size v;
       let (m', b) := Mem.alloc m cp (- size_chunk Mptr) (Ptrofs.unsigned sz) in
-      do m'' <- Mem.store Mptr m' b (- size_chunk Mptr) v;
+      do m'' <- Mem.store Mptr m' b (- size_chunk Mptr) v cp;
       Some(w, E0, Vptr b Ptrofs.zero, m'')
   | _ => None
   end.
@@ -456,10 +478,10 @@ Definition do_ef_free
        (w: world) (cp: compartment) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
   match vargs with
   | Vptr b lo :: nil =>
-      do vsz <- Mem.load Mptr m b (Ptrofs.unsigned lo - size_chunk Mptr);
+      do vsz <- Mem.load Mptr m b (Ptrofs.unsigned lo - size_chunk Mptr) cp;
       do sz <- do_alloc_size vsz;
       check (zlt 0 (Ptrofs.unsigned sz));
-      do m' <- Mem.free m b (Ptrofs.unsigned lo - size_chunk Mptr) (Ptrofs.unsigned lo + Ptrofs.unsigned sz);
+      do m' <- Mem.free m b (Ptrofs.unsigned lo - size_chunk Mptr) (Ptrofs.unsigned lo + Ptrofs.unsigned sz) cp;
       Some(w, E0, Vundef, m')
   | Vint n :: nil =>
       if Int.eq_dec n Int.zero && negb Archi.ptr64
@@ -485,8 +507,8 @@ Definition do_ef_memcpy (sz al: Z)
   match vargs with
   | Vptr bdst odst :: Vptr bsrc osrc :: nil =>
       if decide (memcpy_args_ok sz al bdst (Ptrofs.unsigned odst) bsrc (Ptrofs.unsigned osrc)) then
-        do bytes <- Mem.loadbytes m bsrc (Ptrofs.unsigned osrc) sz;
-        do m' <- Mem.storebytes m bdst (Ptrofs.unsigned odst) bytes;
+        do bytes <- Mem.loadbytes m bsrc (Ptrofs.unsigned osrc) sz cp;
+        do m' <- Mem.storebytes m bdst (Ptrofs.unsigned odst) bytes cp;
         Some(w, E0, Vundef, m')
       else None
   | _ => None
@@ -1996,7 +2018,7 @@ Definition do_step (w: world) (s: state) : list transition :=
             else ret "step_for_false" (State f Sskip k e m)
         | Kreturn k =>
             do v' <- sem_cast v ty f.(fn_return) m;
-            do m' <- Mem.free_list m (blocks_of_env ge e);
+            do m' <- Mem.free_list m (blocks_of_env ge e) f.(fn_comp);
             ret "step_return_2" (Returnstate v' (call_cont k) m')
         | Kswitch1 sl k =>
             do n <- sem_switch_arg v ty;
@@ -2048,12 +2070,12 @@ Definition do_step (w: world) (s: state) : list transition :=
       ret "step_skip_for4" (State f (Sfor Sskip a2 a3 s) k e m)
 
   | State f (Sreturn None) k e m =>
-      do m' <- Mem.free_list m (blocks_of_env ge e);
+      do m' <- Mem.free_list m (blocks_of_env ge e) f.(fn_comp);
       ret "step_return_0" (Returnstate Vundef (call_cont k) m')
   | State f (Sreturn (Some x)) k e m =>
       ret "step_return_1" (ExprState f x (Kreturn k) e m)
   | State f Sskip ((Kstop | Kcall _ _ _ _ _) as k) e m =>
-      do m' <- Mem.free_list m (blocks_of_env ge e);
+      do m' <- Mem.free_list m (blocks_of_env ge e) f.(fn_comp);
       ret "step_skip_call" (Returnstate Vundef k m')
 
   | State f (Sswitch x sl) k e m =>

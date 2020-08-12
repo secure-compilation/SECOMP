@@ -1911,7 +1911,7 @@ with eval_funcall: compartment -> mem -> fundef -> list val -> trace -> mem -> v
       bind_parameters ge e m1 f.(fn_params) vargs m2 ->
       exec_stmt f.(fn_comp) e m2 f.(fn_body) t m3 out ->
       outcome_result_value out f.(fn_return) vres m3 ->
-      Mem.free_list m3 (blocks_of_env ge e) = Some m4 ->
+      Mem.free_list m3 (blocks_of_env ge e) f.(fn_comp) = Some m4 ->
       eval_funcall cp m (Internal f) vargs t m4 vres
   | eval_funcall_external: forall cp m ef targs tres cconv vargs t vres m',
       external_call ef ge cp vargs m t vres m' ->
@@ -2620,7 +2620,7 @@ Proof.
     destruct (fn_return f); auto || contradiction.
   destruct H8 as [P Q]. subst vres.
   rewrite <- (is_call_cont_call_cont k H6). rewrite <- H7.
-  right; apply step_return_0; auto.
+  right; eapply step_return_0; eauto.
   (* Out_return Some *)
   destruct H4. rewrite <- (is_call_cont_call_cont k H6). rewrite <- H7.
   right; eapply step_return_2; eauto.
@@ -2636,7 +2636,7 @@ Lemma eval_expression_to_steps:
    eval_expression c e m a t m' v ->
    forall f k, c = f.(fn_comp) ->
    star (step pol) ge (ExprState f a k e m) t (ExprState f (Eval v (typeof a)) k e m').
-Proof (proj1 bigstep_to_steps).
+Proof. exact (proj1 bigstep_to_steps). Qed.
 
 Lemma eval_expr_to_steps:
    forall c e m K a t m' a',
@@ -2644,7 +2644,7 @@ Lemma eval_expr_to_steps:
    forall C f k, leftcontext K RV C -> c = f.(fn_comp) ->
    simple a' = true /\ typeof a' = typeof a /\
    star (step pol) ge (ExprState f (C a) k e m) t (ExprState f (C a') k e m').
-Proof (proj1 (proj2 bigstep_to_steps)).
+Proof. exact (proj1 (proj2 bigstep_to_steps)). Qed.
 
 Lemma eval_exprlist_to_steps:
    forall c e m al t m' al',
