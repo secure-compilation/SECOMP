@@ -1105,6 +1105,8 @@ Definition loc_external_result (sg: signature) : rpair preg :=
 Inductive state: Type :=
   | State: regset -> mem -> state.
 
+(* RB: NOTE: From meeting: suggestion to always get the executing compartment
+   from the current function. *)
 Inductive step: state -> trace -> state -> Prop :=
   | exec_step_internal:
       forall b ofs f i rs cp m rs' m' b' ofs' fd,
