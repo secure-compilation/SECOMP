@@ -166,13 +166,13 @@ Inductive exec_stmt: env -> compartment -> temp_env ->
   the call. *)
 
 with eval_funcall: compartment -> mem -> fundef -> list val -> trace -> mem -> val -> Prop :=
-  | eval_funcall_internal: forall le c m f vargs t e m1 m2 m3 out vres m4,
+  | eval_funcall_internal: forall le c m f vargs t e m1 m2 m3 out vres cp m4,
       alloc_variables ge empty_env m (f.(fn_params) ++ f.(fn_vars)) e m1 ->
       list_norepet (var_names f.(fn_params) ++ var_names f.(fn_vars)) ->
       bind_parameters ge e m1 f.(fn_params) vargs m2 ->
       exec_stmt e f.(fn_comp) (create_undef_temps f.(fn_temps)) m2 f.(fn_body) t le m3 out ->
       outcome_result_value out f.(fn_return) vres m3 ->
-      Mem.free_list m3 (blocks_of_env ge e) = Some m4 ->
+      Mem.free_list m3 (blocks_of_env ge e) cp = Some m4 ->
       eval_funcall c m (Internal f) vargs t m4 vres
   | eval_funcall_external: forall c m ef targs tres cconv vargs t vres m',
       external_call ef ge c vargs m t vres m' ->
@@ -468,13 +468,13 @@ Proof.
   (* Out_normal *)
   assert (fn_return f = Tvoid /\ vres = Vundef).
     destruct (fn_return f); auto || contradiction.
-  destruct H7. subst vres. apply step_skip_call; auto.
+  destruct H7. subst vres. eapply step_skip_call; eauto.
   (* Out_return None *)
   assert (fn_return f = Tvoid /\ vres = Vundef).
     destruct (fn_return f); auto || contradiction.
   destruct H8. subst vres.
   rewrite <- (is_call_cont_call_cont k H6). rewrite <- H7.
-  apply step_return_0; auto.
+  eapply step_return_0; eauto.
   (* Out_return Some *)
   destruct H4.
   rewrite <- (is_call_cont_call_cont k H6). rewrite <- H7.

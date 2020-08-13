@@ -1212,7 +1212,8 @@ Qed.
 
 (* JT: NOTE: Same remarks as before. *)
 (* RB: NOTE: This operation seems particularly interesting in the sense that it
-   copies between two blocks, and their respective ownerships must agree. *)
+   copies between two blocks, and their respective ownerships must agree. See
+   [make_memcpy_correct] in Cshmgenproof.v. *)
 
 Inductive extcall_memcpy_sem (sz al: Z) (ge: Senv.t):
                         compartment -> list val -> mem -> trace -> val -> mem -> Prop :=

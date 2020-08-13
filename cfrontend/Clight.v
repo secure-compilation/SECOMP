@@ -206,9 +206,9 @@ Definition temp_env := PTree.t val.
   reference or by copy, the pointer [Vptr b ofs] is returned. *)
 
 Inductive deref_loc (ty: type) (m: mem) (b: block) (ofs: ptrofs) : val -> Prop :=
-  | deref_loc_value: forall chunk v,
+  | deref_loc_value: forall chunk cp v,
       access_mode ty = By_value chunk ->
-      Mem.loadv chunk m (Vptr b ofs) = Some v ->
+      Mem.loadv chunk m (Vptr b ofs) cp = Some v ->
       deref_loc ty m b ofs v
   | deref_loc_reference:
       access_mode ty = By_reference ->
@@ -225,19 +225,19 @@ Inductive deref_loc (ty: type) (m: mem) (b: block) (ofs: ptrofs) : val -> Prop :
 
 Inductive assign_loc (ce: composite_env) (ty: type) (m: mem) (b: block) (ofs: ptrofs):
                                             val -> mem -> Prop :=
-  | assign_loc_value: forall v chunk m',
+  | assign_loc_value: forall v chunk cp m',
       access_mode ty = By_value chunk ->
-      Mem.storev chunk m (Vptr b ofs) v = Some m' ->
+      Mem.storev chunk m (Vptr b ofs) v cp = Some m' ->
       assign_loc ce ty m b ofs v m'
-  | assign_loc_copy: forall b' ofs' bytes m',
+  | assign_loc_copy: forall b' ofs' cp' bytes cp m',
       access_mode ty = By_copy ->
       (sizeof ce ty > 0 -> (alignof_blockcopy ce ty | Ptrofs.unsigned ofs')) ->
       (sizeof ce ty > 0 -> (alignof_blockcopy ce ty | Ptrofs.unsigned ofs)) ->
       b' <> b \/ Ptrofs.unsigned ofs' = Ptrofs.unsigned ofs
               \/ Ptrofs.unsigned ofs' + sizeof ce ty <= Ptrofs.unsigned ofs
               \/ Ptrofs.unsigned ofs + sizeof ce ty <= Ptrofs.unsigned ofs' ->
-      Mem.loadbytes m b' (Ptrofs.unsigned ofs') (sizeof ce ty) = Some bytes ->
-      Mem.storebytes m b (Ptrofs.unsigned ofs) bytes = Some m' ->
+      Mem.loadbytes m b' (Ptrofs.unsigned ofs') (sizeof ce ty) cp' = Some bytes ->
+      Mem.storebytes m b (Ptrofs.unsigned ofs) bytes cp = Some m' ->
       assign_loc ce ty m b ofs (Vptr b' ofs') m'.
 
 Definition policy := Policy.t (F := fundef).
@@ -623,19 +623,19 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f Sbreak (Kloop2 s1 s2 k) e le m)
         E0 (State f Sskip k e le m)
 
-  | step_return_0: forall f k e le m m',
-      Mem.free_list m (blocks_of_env e) = Some m' ->
+  | step_return_0: forall f k e le m cp m',
+      Mem.free_list m (blocks_of_env e) cp = Some m' ->
       step (State f (Sreturn None) k e le m)
         E0 (Returnstate Vundef (call_cont k) m')
-  | step_return_1: forall f a k e le m v v' m',
+  | step_return_1: forall f a k e le m v v' cp m',
       eval_expr e le m a v ->
       sem_cast v (typeof a) f.(fn_return) m = Some v' ->
-      Mem.free_list m (blocks_of_env e) = Some m' ->
+      Mem.free_list m (blocks_of_env e) cp = Some m' ->
       step (State f (Sreturn (Some a)) k e le m)
         E0 (Returnstate v' (call_cont k) m')
-  | step_skip_call: forall f k e le m m',
+  | step_skip_call: forall f k e le m cp m',
       is_call_cont k ->
-      Mem.free_list m (blocks_of_env e) = Some m' ->
+      Mem.free_list m (blocks_of_env e) cp = Some m' ->
       step (State f Sskip k e le m)
         E0 (Returnstate Vundef k m')
 

@@ -105,55 +105,55 @@ Qed.
 (** * Derived properties of memory operations *)
 
 Lemma load_freelist:
-  forall fbl chunk m b ofs m',
+  forall fbl chunk m b ofs cp m',
   (forall b' lo hi, In (b', lo, hi) fbl -> b' <> b) ->
-  Mem.free_list m fbl = Some m' ->
-  Mem.load chunk m' b ofs = Mem.load chunk m b ofs.
+  Mem.free_list m fbl cp = Some m' ->
+  Mem.load chunk m' b ofs cp = Mem.load chunk m b ofs cp.
 Proof.
   induction fbl; intros.
   simpl in H0. congruence.
   destruct a as [[b' lo] hi].
-  generalize H0. simpl. case_eq (Mem.free m b' lo hi); try congruence.
+  generalize H0. simpl. case_eq (Mem.free m b' lo hi cp); try congruence.
   intros m1 FR1 FRL.
-  transitivity (Mem.load chunk m1 b ofs).
+  transitivity (Mem.load chunk m1 b ofs cp).
   eapply IHfbl; eauto. intros. eapply H. eauto with coqlib.
   eapply Mem.load_free; eauto. left. apply not_eq_sym. eapply H. auto with coqlib.
 Qed.
 
 Lemma perm_freelist:
-  forall fbl m m' b ofs k p,
-  Mem.free_list m fbl = Some m' ->
+  forall fbl m m' b ofs k cp p,
+  Mem.free_list m fbl cp = Some m' ->
   Mem.perm m' b ofs k p ->
   Mem.perm m b ofs k p.
 Proof.
   induction fbl; simpl; intros until p.
   congruence.
-  destruct a as [[b' lo] hi]. case_eq (Mem.free m b' lo hi); try congruence.
+  destruct a as [[b' lo] hi]. case_eq (Mem.free m b' lo hi cp); try congruence.
   intros. eauto with mem.
 Qed.
 
 Lemma nextblock_freelist:
-  forall fbl m m',
-  Mem.free_list m fbl = Some m' ->
+  forall fbl m cp m',
+  Mem.free_list m fbl cp = Some m' ->
   Mem.nextblock m' = Mem.nextblock m.
 Proof.
   induction fbl; intros until m'; simpl.
   congruence.
   destruct a as [[b lo] hi].
-  case_eq (Mem.free m b lo hi); intros; try congruence.
+  case_eq (Mem.free m b lo hi cp); intros; try congruence.
   transitivity (Mem.nextblock m0). eauto. eapply Mem.nextblock_free; eauto.
 Qed.
 
 Lemma free_list_freeable:
-  forall l m m',
-  Mem.free_list m l = Some m' ->
+  forall l m cp m',
+  Mem.free_list m l cp = Some m' ->
   forall b lo hi,
   In (b, lo, hi) l -> Mem.range_perm m b lo hi Cur Freeable.
 Proof.
   induction l; simpl; intros.
   contradiction.
   revert H. destruct a as [[b' lo'] hi'].
-  caseEq (Mem.free m b' lo' hi'); try congruence.
+  caseEq (Mem.free m b' lo' hi' cp); try congruence.
   intros m1 FREE1 FREE2.
   destruct H0. inv H.
   eauto with mem.
@@ -161,8 +161,8 @@ Proof.
 Qed.
 
 Lemma nextblock_storev:
-  forall chunk m addr v m',
-  Mem.storev chunk m addr v = Some m' -> Mem.nextblock m' = Mem.nextblock m.
+  forall chunk m addr v cp m',
+  Mem.storev chunk m addr v cp = Some m' -> Mem.nextblock m' = Mem.nextblock m.
 Proof.
   unfold Mem.storev; intros. destruct addr; try discriminate.
   eapply Mem.nextblock_store; eauto.
@@ -600,17 +600,17 @@ Proof.
 Qed.
 
 Lemma match_callstack_freelist:
-  forall f cenv tf e le te sp lo hi cs m m' tm,
+  forall f cenv tf e le te sp lo hi cs m cp m' tm,
   Mem.inject f m tm ->
-  Mem.free_list m (blocks_of_env e) = Some m' ->
+  Mem.free_list m (blocks_of_env e) cp = Some m' ->
   match_callstack f m tm (Frame cenv tf e le te sp lo hi :: cs) (Mem.nextblock m) (Mem.nextblock tm) ->
   exists tm',
-  Mem.free tm sp 0 tf.(fn_stackspace) = Some tm'
+  Mem.free tm sp 0 tf.(fn_stackspace) cp = Some tm'
   /\ match_callstack f m' tm' cs (Mem.nextblock m') (Mem.nextblock tm')
   /\ Mem.inject f m' tm'.
 Proof.
   intros until tm; intros INJ FREELIST MCS. inv MCS. inv MENV.
-  assert ({tm' | Mem.free tm sp 0 (fn_stackspace tf) = Some tm'}).
+  assert ({tm' | Mem.free tm sp 0 (fn_stackspace tf) cp = Some tm'}).
   apply Mem.range_perm_free.
   red; intros.
   exploit PERM; eauto. intros [A | A].
@@ -619,6 +619,7 @@ Proof.
   eapply free_list_freeable; eauto. eapply in_blocks_of_env; eauto.
   replace ofs with ((ofs - delta) + delta) by omega.
   eapply Mem.perm_inject; eauto. apply H3. omega.
+  admit. (* RB: NOTE: New own_block subgoal *)
   destruct X as  [tm' FREE].
   exploit nextblock_freelist; eauto. intro NEXT.
   exploit Mem.nextblock_free; eauto. intro NEXT'.
@@ -633,7 +634,8 @@ Proof.
   exists 0; exists sz; split.
   eapply in_blocks_of_env; eauto.
   eapply BOUND0; eauto. eapply Mem.perm_max. eauto.
-Qed.
+(* Qed. *)
+Admitted.
 
 (** Preservation of [match_callstack] by external calls. *)
 
@@ -849,6 +851,7 @@ Proof.
     eexact MINJ.
     eexact H.
     eexact VALID.
+    admit. (* RB: NOTE: New own_goal subgoal on memory injection *)
     instantiate (1 := ofs). zify. omega.
     intros. exploit STKSIZE; eauto. omega.
     intros. apply STKPERMS. zify. omega.
@@ -870,7 +873,8 @@ Proof.
     eapply match_callstack_alloc_left; eauto.
     rewrite cenv_remove_gso; auto.
     apply UNBOUND with sz; auto with coqlib.
-Qed.
+(* Qed. *)
+Admitted.
 
 Lemma match_callstack_alloc_variables:
   forall tm1 c sp tm2 m1 vars e m2 cenv f1 cs fn le te,
@@ -2012,7 +2016,7 @@ Proof.
   exploit match_is_call_cont; eauto. intros [tk' [A [B C]]].
   exploit match_callstack_freelist; eauto. intros [tm' [P [Q R]]].
   econstructor; split.
-  eapply plus_right. eexact A. apply step_skip_call. auto. eauto. traceEq.
+  eapply plus_right. eexact A. eapply step_skip_call. auto. eauto. traceEq.
   econstructor; eauto.
 
 (* set *)
@@ -2034,8 +2038,8 @@ Proof.
   apply plus_one. econstructor; eauto.
   econstructor; eauto.
   inv VINJ1; simpl in H1; try discriminate. unfold Mem.storev in STORE'.
-  rewrite (Mem.nextblock_store _ _ _ _ _ _ H1).
-  rewrite (Mem.nextblock_store _ _ _ _ _ _ STORE').
+  rewrite (Mem.nextblock_store _ _ _ _ _ _ _ H1).
+  rewrite (Mem.nextblock_store _ _ _ _ _ _ _ STORE').
   eapply match_callstack_invariant with f0 m tm; eauto.
   intros. eapply Mem.perm_store_2; eauto.
   intros. eapply Mem.perm_store_1; eauto.

@@ -2237,7 +2237,7 @@ Proof.
   inv H8.
   assert (is_call_cont tk). inv H9; simpl in *; auto.
   econstructor; split.
-  left. apply plus_one. apply step_skip_call; eauto. rewrite blocks_of_env_preserved; eauto.
+  left. apply plus_one. eapply step_skip_call; eauto. rewrite blocks_of_env_preserved; eauto.
   constructor. auto.
 
 (* switch *)

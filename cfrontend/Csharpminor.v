@@ -349,9 +349,9 @@ Inductive eval_expr: expr -> val -> Prop :=
       eval_expr a2 v2 ->
       eval_binop op v1 v2 m = Some v ->
       eval_expr (Ebinop op a1 a2) v
-  | eval_Eload: forall chunk a v1 v,
+  | eval_Eload: forall chunk a v1 cp v,
       eval_expr a v1 ->
-      Mem.loadv chunk m v1 = Some v ->
+      Mem.loadv chunk m v1 cp = Some v ->
       eval_expr (Eload chunk a) v.
 
 (** Evaluation of a list of expressions:
@@ -379,9 +379,9 @@ Inductive step: state -> trace -> state -> Prop :=
   | step_skip_block: forall f k e le m,
       step (State f Sskip (Kblock k) e le m)
         E0 (State f Sskip k e le m)
-  | step_skip_call: forall f k e le m m',
+  | step_skip_call: forall f k e le m cp m',
       is_call_cont k ->
-      Mem.free_list m (blocks_of_env e) = Some m' ->
+      Mem.free_list m (blocks_of_env e) cp = Some m' ->
       step (State f Sskip k e le m)
         E0 (Returnstate Vundef k m')
 
@@ -390,10 +390,10 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Sset id a) k e le m)
         E0 (State f Sskip k e (PTree.set id v le) m)
 
-  | step_store: forall f chunk addr a k e le m vaddr v m',
+  | step_store: forall f chunk addr a k e le m vaddr v cp m',
       eval_expr e le m addr vaddr ->
       eval_expr e le m a v ->
-      Mem.storev chunk m vaddr v = Some m' ->
+      Mem.storev chunk m vaddr v cp = Some m' ->
       step (State f (Sstore chunk addr a) k e le m)
         E0 (State f Sskip k e le m')
 
@@ -446,13 +446,13 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Sswitch islong a cases) k e le m)
         E0 (State f (seq_of_lbl_stmt (select_switch n cases)) k e le m)
 
-  | step_return_0: forall f k e le m m',
-      Mem.free_list m (blocks_of_env e) = Some m' ->
+  | step_return_0: forall f k e le m cp m',
+      Mem.free_list m (blocks_of_env e) cp = Some m' ->
       step (State f (Sreturn None) k e le m)
         E0 (Returnstate Vundef (call_cont k) m')
-  | step_return_1: forall f a k e le m v m',
+  | step_return_1: forall f a k e le m v cp m',
       eval_expr e le m a v ->
-      Mem.free_list m (blocks_of_env e) = Some m' ->
+      Mem.free_list m (blocks_of_env e) cp = Some m' ->
       step (State f (Sreturn (Some a)) k e le m)
         E0 (Returnstate v (call_cont k) m')
   | step_label: forall f lbl s k e le m,

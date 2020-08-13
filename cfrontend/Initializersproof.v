@@ -594,13 +594,13 @@ Qed.
 (** Soundness for single initializers. *)
 
 Theorem transl_init_single_steps:
-  forall ty a data f m v1 ty1 m' v chunk b ofs m'',
+  forall ty a data f m v1 ty1 m' v chunk b ofs cp m'',
   transl_init_single ge ty a = OK data ->
   star (step pol) ge (ExprState f a Kstop empty_env m) E0 (ExprState f (Eval v1 ty1) Kstop empty_env m') ->
   sem_cast v1 ty1 ty m' = Some v ->
   access_mode ty = By_value chunk ->
-  Mem.store chunk m' b ofs v = Some m'' ->
-  Genv.store_init_data ge m b ofs data = Some m''.
+  Mem.store chunk m' b ofs v cp = Some m'' ->
+  Genv.store_init_data ge m b ofs data cp = Some m''.
 Proof.
   intros. monadInv H. monadInv EQ. 
   exploit constval_steps; eauto. intros [A [B C]]. subst m' ty1.
@@ -761,12 +761,12 @@ Fixpoint fields_of_struct (fl: members) (pos: Z) : list (Z * type) :=
   end.
 
 Inductive exec_init: mem -> block -> Z -> type -> initializer -> mem -> Prop :=
-  | exec_init_single: forall m b ofs ty a v1 ty1 chunk m' v m'',
+  | exec_init_single: forall m b ofs ty a v1 ty1 chunk m' v cp m'',
       star (step pol) ge (ExprState dummy_function a Kstop empty_env m)
                 E0 (ExprState dummy_function (Eval v1 ty1) Kstop empty_env m') ->
       sem_cast v1 ty1 ty m' = Some v ->
       access_mode ty = By_value chunk ->
-      Mem.store chunk m' b ofs v = Some m'' ->
+      Mem.store chunk m' b ofs v cp = Some m'' ->
       exec_init m b ofs ty (Init_single a) m''
   | exec_init_array_: forall m b ofs ty sz a il m',
       exec_init_array m b ofs ty sz il m' ->
@@ -811,10 +811,10 @@ Proof.
 Qed.
 
 Lemma store_init_data_list_app:
-  forall data1 m b ofs m' data2 m'',
-  Genv.store_init_data_list ge m b ofs data1 = Some m' ->
-  Genv.store_init_data_list ge m' b (ofs + idlsize data1) data2 = Some m'' ->
-  Genv.store_init_data_list ge m b ofs (data1 ++ data2) = Some m''.
+  forall data1 m b ofs m' cp data2 m'',
+  Genv.store_init_data_list ge m b ofs data1 cp = Some m' ->
+  Genv.store_init_data_list ge m' b (ofs + idlsize data1) data2 cp = Some m'' ->
+  Genv.store_init_data_list ge m b ofs (data1 ++ data2) cp = Some m''.
 Proof.
   induction data1; simpl; intros.
   inv H. rewrite Z.add_0_r in H0. auto.
@@ -823,28 +823,32 @@ Proof.
 Qed.
 
 Remark store_init_data_list_padding:
-  forall frm to b ofs m,
-  Genv.store_init_data_list ge m b ofs (tr_padding frm to) = Some m.
+  forall frm to b ofs m cp,
+  Genv.store_init_data_list ge m b ofs (tr_padding frm to) cp = Some m.
 Proof.
   intros. unfold tr_padding. destruct (zlt frm to); auto.
 Qed.
 
 Lemma tr_init_sound:
   (forall m b ofs ty i m', exec_init m b ofs ty i m' ->
-   forall data, tr_init ty i data ->
-   Genv.store_init_data_list ge m b ofs data = Some m')
+   forall data cp, tr_init ty i data ->
+   forall OWN : Mem.own_block m b cp,
+   Genv.store_init_data_list ge m b ofs data cp = Some m')
 /\(forall m b ofs ty sz il m', exec_init_array m b ofs ty sz il m' ->
-   forall data, tr_init_array ty il sz data ->
-   Genv.store_init_data_list ge m b ofs data = Some m')
+   forall data cp, tr_init_array ty il sz data ->
+   forall OWN : Mem.own_block m b cp,
+   Genv.store_init_data_list ge m b ofs data cp = Some m')
 /\(forall m b ofs l il m', exec_init_list m b ofs l il m' ->
-   forall ty fl data pos,
+   forall ty fl data pos cp,
    l = fields_of_struct fl pos ->
    tr_init_struct ty fl il pos data ->
-   Genv.store_init_data_list ge m b (ofs + pos) data = Some m').
+   forall OWN : Mem.own_block m b cp,
+   Genv.store_init_data_list ge m b (ofs + pos) data cp = Some m').
 Proof.
 Local Opaque sizeof.
   apply exec_init_scheme; simpl; intros.
 - (* single *)
+  assert (cp = cp0) by admit; subst cp0. (* RB: NOTE: Component determinacy *)
   inv H3. simpl. erewrite transl_init_single_steps by eauto. auto.
 - (* array *)
   inv H1. replace (Z.max 0 sz) with sz in H7. eauto.
@@ -863,7 +867,8 @@ Local Opaque sizeof.
   inv H3.
   eapply store_init_data_list_app.
   eauto.
-  rewrite (tr_init_size _ _ _ H7). eauto.
+  rewrite (tr_init_size _ _ _ H7). eapply H2; eauto.
+  admit. (* RB: NOTE: New own_block subgoal, cf. H0, H7 *)
 
 - (* struct, empty *)
   inv H0. apply store_init_data_list_padding.
@@ -876,16 +881,19 @@ Local Opaque sizeof.
   eauto.
   rewrite (tr_init_size _ _ _ H9).
   rewrite <- Z.add_assoc. eapply H2. eauto. eauto.
+  admit. (* RB: NOTE: New own_block subgoal, cf. H0, H9 *)
   apply align_le. apply alignof_pos.
-Qed.
+(* Qed. *)
+Admitted.
 
 End SOUNDNESS.
 
 Theorem transl_init_sound:
-  forall pol p m b ty i m' data,
+  forall pol p m b ty i m' data cp,
   exec_init pol (globalenv p) m b 0 ty i m' ->
   transl_init (prog_comp_env p) ty i = OK data ->
-  Genv.store_init_data_list (globalenv p) m b 0 data = Some m'.
+  forall OWN : Mem.own_block m b cp,
+  Genv.store_init_data_list (globalenv p) m b 0 data cp = Some m'.
 Proof.
   intros.
   set (ge := globalenv p) in *.

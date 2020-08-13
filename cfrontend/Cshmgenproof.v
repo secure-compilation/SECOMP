@@ -962,7 +962,7 @@ Proof.
   unfold make_load; intros until m; intros MKLOAD EVEXP DEREF.
   inv DEREF.
   (* scalar *)
-  rewrite H in MKLOAD. inv MKLOAD. apply eval_Eload with (Vptr b ofs); auto.
+  rewrite H in MKLOAD. inv MKLOAD. apply eval_Eload with (Vptr b ofs) cp; auto.
   (* by reference *)
   rewrite H in MKLOAD. inv MKLOAD. auto.
   (* by copy *)
@@ -988,7 +988,12 @@ Proof.
   apply alignof_blockcopy_1248.
   apply sizeof_pos.
   apply sizeof_alignof_blockcopy_compat.
-Qed.
+  admit. admit. (* RB: TODO: Need to ensure that [fn_comp f] is equal to [cp]
+                   and [cp']. None of the available hypotheses, in particular
+                   [assign_loc], allow us to establish this connection at the
+                   moment. *)
+(* Qed. *)
+Admitted.
 
 Lemma make_store_correct:
   forall addr ty rhs code e le m b ofs v m' f k,
@@ -1058,13 +1063,13 @@ Proof (Genv.find_symbol_match TRANSL).
 
 Lemma senv_preserved:
   Senv.equiv ge tge.
-Proof (Genv.senv_match TRANSL).
+Proof. exact (Genv.senv_match TRANSL). Qed.
 
 Lemma function_ptr_translated:
   forall v f,
   Genv.find_funct_ptr ge v = Some f ->
   exists cu tf, Genv.find_funct_ptr tge v = Some tf /\ match_fundef cu f tf /\ linkorder cu prog.
-Proof (Genv.find_funct_ptr_match TRANSL).
+Proof. exact (Genv.find_funct_ptr_match TRANSL). Qed.
 
 Lemma functions_translated:
   forall v f,
@@ -1125,10 +1130,10 @@ Proof.
 Qed.
 
 Lemma match_env_free_blocks:
-  forall e te m m',
+  forall e te m cp m',
   match_env e te ->
-  Mem.free_list m (Clight.blocks_of_env ge e) = Some m' ->
-  Mem.free_list m (blocks_of_env te) = Some m'.
+  Mem.free_list m (Clight.blocks_of_env ge e) cp = Some m' ->
+  Mem.free_list m (blocks_of_env te) cp = Some m'.
 Proof.
   intros. rewrite (match_env_same_blocks _ _ H). auto.
 Qed.
@@ -1302,14 +1307,14 @@ Lemma transl_expr_correct:
    Clight.eval_expr ge e le m a v ->
    forall ta, transl_expr cunit.(prog_comp_env) a = OK ta ->
    Csharpminor.eval_expr tge te le m ta v.
-Proof (proj1 transl_expr_lvalue_correct).
+Proof. exact (proj1 transl_expr_lvalue_correct). Qed.
 
 Lemma transl_lvalue_correct:
    forall a b ofs,
    Clight.eval_lvalue ge e le m a b ofs ->
    forall ta, transl_lvalue cunit.(prog_comp_env) a = OK ta ->
    Csharpminor.eval_expr tge te le m ta (Vptr b ofs).
-Proof (proj2 transl_expr_lvalue_correct).
+Proof. exact (proj2 transl_expr_lvalue_correct). Qed.
 
 Lemma transl_arglist_correct:
   forall al tyl vl,
@@ -1761,7 +1766,7 @@ Proof.
 - (* return none *)
   monadInv TR. inv MTR.
   econstructor; split.
-  apply plus_one. constructor.
+  apply plus_one. econstructor.
   eapply match_env_free_blocks; eauto.
   eapply match_returnstate with (ce := prog_comp_env cu); eauto.
   eapply match_cont_call_cont. eauto.
@@ -1770,7 +1775,7 @@ Proof.
 - (* return some *)
   monadInv TR. inv MTR.
   econstructor; split.
-  apply plus_one. constructor.
+  apply plus_one. econstructor.
   eapply make_cast_correct; eauto. eapply transl_expr_correct; eauto.
   eapply match_env_free_blocks; eauto.
   eapply match_returnstate with (ce := prog_comp_env cu); eauto.
@@ -1781,7 +1786,7 @@ Proof.
   monadInv TR. inv MTR.
   exploit match_cont_is_call_cont; eauto. intros [A B].
   econstructor; split.
-  apply plus_one. apply step_skip_call. auto.
+  apply plus_one. eapply step_skip_call. auto.
   eapply match_env_free_blocks; eauto.
   eapply match_returnstate with (ce := prog_comp_env cu); eauto.
   constructor.
