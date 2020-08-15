@@ -300,11 +300,10 @@ Lemma rhs_eval_to_inj:
   forall valu ge sp m rh v1 v2,
   rhs_eval_to valu ge sp m rh v1 -> rhs_eval_to valu ge sp m rh v2 -> v1 = v2.
 Proof.
-  (* intros. inv H; inv H0; congruence. *)
-  admit. (* RB: NOTE: Congruence after compartment determinacy on [loadv],
-            itself after establishing address equality by congruence. *)
-(* Qed. *)
-Admitted.
+  intros. inv H; inv H0.
+  - congruence.
+  - rewrite H1 in H6; inv H6. eapply Mem.loadv_result_det; eassumption.
+Qed.
 
 Lemma add_rhs_holds:
   forall valu1 ge sp rs m n rd rh rs',
@@ -678,14 +677,15 @@ Proof with (try discriminate).
   apply eq_holds_strict. econstructor. rewrite eval_addressing_Ainstack.
   simpl. rewrite Ptrofs.add_zero_l. eauto.
   apply LD; auto.
-  admit. (* RB: NOTE: Establish cross-operation component equality *)
+  assert (Heq := Mem.loadbytes_loadv_compartment _ _ _ _ _ _ _ _ _ _ H0 H7); subst.
+  assumption.
 + inv H4. exploit eval_addressing_Ainstack_inv; eauto. intros [E1 E2].
   simpl in E2; rewrite Ptrofs.add_zero_l in E2. subst a.
   apply eq_holds_lessdef with v; auto.
   econstructor. rewrite eval_addressing_Ainstack. simpl. rewrite Ptrofs.add_zero_l. eauto.
+  assert (Heq := Mem.loadbytes_loadv_compartment _ _ _ _ _ _ _ _ _ _ H0 H8); subst.
   apply LD; auto.
-(* Qed. *)
-Admitted.
+Qed.
 
 Lemma add_memcpy_eqs_charact:
   forall e' src sz delta eqs2 eqs1,
@@ -729,9 +729,9 @@ Proof.
 - exploit add_memcpy_eqs_charact; eauto. intros [X | (e0 & X & Y)].
   eauto with cse.
   eapply shift_memcpy_eq_holds; eauto with cse.
-  admit. (* RB: NOTE: Establish cross-operation component equality *)
-(* Qed. *)
-Admitted.
+  assert (Heq := Mem.loadbytes_storebytes_compartment_1 _ _ _ _ _ _ H0 _ _ _ _ H); subst.
+  assumption.
+Qed.
 
 (** Correctness of operator reduction *)
 
@@ -1080,9 +1080,11 @@ Proof.
   destruct (find_rhs n1 (Load chunk addr vl)) as [r|] eqn:?.
 + (* replaced by move *)
   exploit find_rhs_sound; eauto. intros (v' & EV & LD).
-  assert (v' = v)
-    by (inv EV; congruence ||
-        admit). (* RB: NOTE: Congruence requires compartment determinacy on [loadv]. *)
+  assert (v' = v). {
+    inv EV.
+    assert (a = a0) by congruence; subst a0.
+    eapply Mem.loadv_result_det; eassumption.
+  }
   subst v'.
   econstructor; split.
   eapply exec_Iop; eauto. simpl; eauto.
@@ -1262,8 +1264,7 @@ Proof.
   eapply exec_return; eauto.
   econstructor; eauto.
   apply set_reg_lessdef; auto.
-(* Qed. *)
-Admitted.
+Qed.
 
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 ->

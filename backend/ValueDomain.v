@@ -3244,11 +3244,9 @@ Proof.
 - apply Zwf_well_founded.
 - intros sz REC ofs cp bytes LOAD IN.
   destruct (zle sz 0).
-  + rewrite (Mem.loadbytes_empty m b ofs sz cp) in LOAD; try auto;
-      [| admit]. (* RB: NOTE: New own_block subgoal, [by auto] does not work now
-                    (but think about the definition of [loadbytes] in the empty
-                    case). *)
+  + rewrite (Mem.loadbytes_empty m b ofs sz cp) in LOAD; try auto.
     inv LOAD. contradiction.
+    eapply Mem.loadbytes_own_block_inj; eassumption.
   + exploit (Mem.loadbytes_split m b ofs 1 (sz - 1) cp bytes).
     replace (1 + (sz - 1)) with sz by omega. auto.
     omega.
@@ -3263,8 +3261,7 @@ Proof.
   * exploit (REC (sz - 1)). red; omega. eexact LOAD2. auto.
     intros (ofs' & A & B).
     exists ofs'; split. omega. auto.
-(* Qed. *)
-Admitted.
+Qed.
 
 Lemma smatch_loadbytes:
   forall m b p b' ofs' q i n ofs cp bytes,
@@ -3321,9 +3318,9 @@ Proof.
 - subst b'. left.
   eapply loadbytes_provenance; eauto.
   eapply Mem.loadbytes_storebytes_same; eauto.
-  admit. (* RB: NOTE: Crossed compartment preservation *)
-(* Qed. *)
-Admitted.
+  assert (Heq := Mem.loadbytes_storebytes_compartment_2 _ _ _ _ _ _ H _ _ _ _ H0); subst.
+  eassumption.
+Qed.
 
 Lemma store_provenance:
   forall chunk m b ofs v cp m' b' ofs' cp' b'' ofs'' q i,
@@ -3573,8 +3570,9 @@ Proof.
   subst.
   assert (v' = Val.load_result chunk' v).
   { exploit Mem.load_store_similar_2; eauto.
-    (* congruence. *)
-    admit. (* RB: NOTE: Congruence on [load] fails *)
+    intros LOAD'.
+    assert (Heq := Mem.load_compartment_det _ _ _ _ _ _ _ _ _ _ LOAD LOAD'); subst.
+    congruence.
   }
   subst v'. apply vnormalize_sound; auto.
 - (* disjoint load/store *)
@@ -3582,8 +3580,7 @@ Proof.
   { rewrite <- LOAD. symmetry. eapply Mem.load_store_other; eauto.
     rewrite U. auto. }
   exploit BIN2; eauto. unfold ablock_load. rewrite P. rewrite COMPAT. auto.
-(* Qed. *)
-Admitted.
+Qed.
 
 Lemma ablock_loadbytes_sound:
   forall m b ab b' ofs' q i n ofs cp bytes,
@@ -4060,8 +4057,7 @@ Proof.
   { eapply smatch_store; eauto. eapply mmatch_nonstack; eauto. }
   assert (STK: bc b = BCstack -> smatch m' b0 (am_nonstack am)).
   { intros. apply smatch_inv with m. eapply mmatch_nonstack; eauto; congruence.
-    (* intros. eapply Mem.loadbytes_store_other; eauto. left. congruence. *)
-    admit. (* RB: NOTE: [loadbytes] equality fails *)
+    intros. eapply Mem.loadbytes_store_other; eauto. left. congruence.
   }
   inv PM; (apply DFL || apply STK; congruence).
 
@@ -4070,8 +4066,7 @@ Proof.
 
 - (* Below *)
   erewrite Mem.nextblock_store by eauto. eapply mmatch_below; eauto.
-(* Qed. *)
-Admitted.
+Qed.
 
 Theorem storev_sound:
   forall chunk m addr v cp m' am aaddr av,
@@ -4174,8 +4169,7 @@ Proof.
   { eapply smatch_storebytes; eauto. eapply mmatch_nonstack; eauto. }
   assert (STK: bc b = BCstack -> smatch m' b0 (am_nonstack am)).
   { intros. apply smatch_inv with m. eapply mmatch_nonstack; eauto; congruence.
-    (* intros. eapply Mem.loadbytes_storebytes_other; eauto. left. congruence. *)
-    admit. (* RB: NOTE: Equality on [loadbytes] fails *)
+    intros. eapply Mem.loadbytes_storebytes_other; eauto. left. congruence.
   }
   inv PM; (apply DFL || apply STK; congruence).
 
@@ -4184,8 +4178,7 @@ Proof.
 
 - (* Below *)
   erewrite Mem.nextblock_storebytes by eauto. eapply mmatch_below; eauto.
-(* Qed. *)
-Admitted.
+Qed.
 
 Lemma mmatch_ext:
   forall m am m',
@@ -4424,7 +4417,7 @@ Proof.
   intros. exploit inj_of_bc_inv; eauto. intros (A & B & C); subst.
   rewrite Z.add_0_r. auto.
 - (* own *)
-  admit. (* RB: NOTE: New own_block subgoal *)
+  intros. unfold inj_of_bc in H1. destruct (bc b1); congruence.
 - (* alignment *)
   intros. exploit inj_of_bc_inv; eauto. intros (A & B & C); subst.
   apply Z.divide_0_r.
@@ -4432,20 +4425,22 @@ Proof.
   intros. exploit inj_of_bc_inv; eauto. intros (A & B & C); subst.
   rewrite Z.add_0_r.
   set (mv := ZMap.get ofs (PMap.get b1 (Mem.mem_contents m))).
-  admit. (* RB: NOTE: Need to obtain compartment before proving assert *)
-  (* assert (Mem.loadbytes m b1 ofs 1 = Some (mv :: nil)). *)
-  (* { *)
-  (*   Local Transparent Mem.loadbytes. *)
-  (*   unfold Mem.loadbytes. rewrite pred_dec_true. reflexivity. *)
-  (*   red; intros. replace ofs0 with ofs by omega. auto. *)
-  (* } *)
-  (* destruct mv; econstructor. destruct v; econstructor. *)
-  (* apply inj_of_bc_valid. *)
-  (* assert (PM: pmatch bc b i Ptop). *)
-  (* { exploit mmatch_top; eauto. intros [P Q]. *)
-  (*   eapply pmatch_top'. eapply Q; eauto. } *)
-  (* inv PM; auto. *)
-  (* rewrite Ptrofs.add_zero; auto. *)
+  assert (Hvalid : Mem.valid_block m b1) by now apply H0 in A.
+  destruct (Mem.valid_block_own_block _ _ Hvalid) as [cp Hown].
+  assert (Mem.loadbytes m b1 ofs 1 cp = Some (mv :: nil)).
+  {
+    Local Transparent Mem.loadbytes.
+    unfold Mem.loadbytes. setoid_rewrite pred_dec_true. reflexivity.
+    red; intros. replace ofs0 with ofs by omega. auto.
+    assumption.
+  }
+  destruct mv; econstructor. destruct v; econstructor.
+  apply inj_of_bc_valid.
+  assert (PM: pmatch bc b i Ptop).
+  { exploit mmatch_top; eauto. intros [P Q].
+    eapply pmatch_top'. eapply Q; eauto. }
+  inv PM; auto.
+  rewrite Ptrofs.add_zero; auto.
 - (* free blocks *)
   intros. unfold inj_of_bc. erewrite bc_below_invalid; eauto.
 - (* mapped blocks *)
@@ -4462,8 +4457,7 @@ Proof.
 - (* perm inv *)
   intros. exploit inj_of_bc_inv; eauto. intros (A & B & C); subst.
   rewrite Z.add_0_r in H2. auto.
-(* Qed. *)
-Admitted.
+Qed.
 
 Lemma inj_of_bc_preserves_globals:
   forall bc ge, genv_match bc ge -> meminj_preserves_globals ge (inj_of_bc bc).

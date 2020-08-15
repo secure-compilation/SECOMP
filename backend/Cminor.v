@@ -621,10 +621,8 @@ Proof.
 - assert (v0 = v1) by eauto. assert (v3 = v2) by eauto. congruence.
 - assert (vaddr0 = vaddr) by eauto.
   (* congruence. *)
-  subst.
-  admit. (* RB: NOTE: Component determinism of successful [loadv]s *)
-(* Qed. *)
-Admitted.
+  subst. eapply Mem.loadv_result_det; eassumption.
+Qed.
 
 Lemma eval_exprlist_determ:
   forall ge sp e m al vl, eval_exprlist ge sp e m al vl ->
@@ -657,16 +655,22 @@ Proof.
   intros. constructor; set (ge := Genv.globalenv p); simpl; intros.
 - (* determ *)
   inv H; inv H0; Determ.
-  + admit. (* RB: NOTE: Compartment determinacy of [free] *)
-  + subst. admit. (* RB: NOTE: Compartment determinacy of [storev] *)
-  + admit. (* RB: NOTE: Compartment determinacy of [free] *)
+  + assert (Heq := Mem.free_result_det _ _ _ _ _ _ _ _ H2 H10); subst.
+    reflexivity.
+  + subst.
+    assert (Heq := Mem.storev_result_det _ _ _ _ _ _ _ _ H3 H15); subst.
+    reflexivity.
+  + assert (Heq := Mem.free_result_det _ _ _ _ _ _ _ _ H5 H18); subst.
+    congruence.
   + subst vargs0. exploit external_call_determ. eexact H2.  eexact H13.
     intros (A & B). split; intros; auto.
     apply B in H; destruct H; congruence.
   + subst v0. assert (b0 = b) by (inv H2; inv H13; auto). subst b0; auto.
   + assert (n0 = n) by (inv H2; inv H14; auto). subst n0; auto.
-  + admit. (* RB: NOTE: Compartment determinacy of [free] *)
-  + admit. (* RB: NOTE: Compartment determinacy of [free] *)
+  + assert (Heq := Mem.free_result_det _ _ _ _ _ _ _ _ H1 H8); subst.
+    reflexivity.
+  + assert (Heq := Mem.free_result_det _ _ _ _ _ _ _ _ H2 H11); subst.
+    reflexivity.
   + exploit external_call_determ. eexact H1. eexact H7.
     intros (A & B). split; intros; auto.
     apply B in H; destruct H; congruence.
@@ -679,8 +683,7 @@ Proof.
   red; intros; red; intros. inv H; inv H0.
 - (* final states *)
   inv H; inv H0; auto.
-(* Qed. *)
-Admitted.
+Qed.
 
 (** * Alternate operational semantics (big-step) *)
 
