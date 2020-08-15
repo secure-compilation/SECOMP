@@ -894,6 +894,47 @@ Proof.
   rewrite pred_dec_false; auto.
 Qed.
 
+Theorem load_compartment_det:
+  forall chunk1 chunk2 m b ofs1 ofs2 cp1 cp2 v1 v2,
+  load chunk1 m b ofs1 cp1 = Some v1 ->
+  load chunk2 m b ofs2 cp2 = Some v2 ->
+  cp1 = cp2.
+Proof.
+  unfold load. intros.
+  destruct (valid_access_dec m chunk1 b ofs1 Readable cp1)
+    as [[? [? ?]] |];
+    [| congruence].
+  destruct (valid_access_dec m chunk2 b ofs2 Readable cp2)
+    as [[? [? ?]] |];
+    [| congruence].
+  congruence.
+Qed.
+
+Theorem load_result_det:
+  forall chunk m b ofs cp1 v1 cp2 v2,
+  load chunk m b ofs cp1 = Some v1 ->
+  load chunk m b ofs cp2 = Some v2 ->
+  v1 = v2.
+Proof.
+  unfold load. intros.
+  destruct (valid_access_dec m chunk b ofs Readable cp1);
+    [| congruence].
+  destruct (valid_access_dec m chunk b ofs Readable cp2);
+    [| congruence].
+  congruence.
+Qed.
+
+Theorem load_own_block_inj:
+  forall chunk m b ofs cp v,
+    load chunk m b ofs cp = Some v ->
+    own_block m b cp.
+Proof.
+  unfold load. intros.
+  destruct (valid_access_dec m chunk b ofs Readable cp)
+    as [[? [Hown ?]] |];
+    congruence.
+Qed.
+
 (** ** Properties related to [loadbytes] *)
 
 Theorem range_perm_loadbytes:
@@ -961,6 +1002,18 @@ Proof.
     inv H;
     try congruence.
   apply getN_length.
+Qed.
+
+(* RB: TODO: Harmonize naming conventions. *)
+Lemma loadbytes_own_block_inj:
+  forall m b ofs n cp bytes,
+  loadbytes m b ofs n cp = Some bytes ->
+  own_block m b cp.
+Proof.
+  unfold loadbytes. intros.
+  destruct (range_perm_dec m b ofs (ofs + n) Cur Readable); [| inversion H].
+  destruct (own_block_dec m b cp); inv H.
+  assumption.
 Qed.
 
 (* RB: NOTE: Had to add an [own_block] hypothesis here because that check is
@@ -1135,6 +1188,45 @@ Opaque Ptrofs.repr.
   auto.
 Qed.
 
+Theorem loadv_compartment_det:
+  forall chunk1 chunk2 m a cp1 cp2 v1 v2,
+  loadv chunk1 m a cp1 = Some v1 ->
+  loadv chunk2 m a cp2 = Some v2 ->
+  cp1 = cp2.
+Proof.
+  unfold loadv. intros.
+  destruct a; try congruence.
+  eapply load_compartment_det; eassumption.
+Qed.
+
+(* RB: NOTE: If the [a]'s are pointers, only matching blocks are needed. *)
+Theorem loadv_result_det:
+  forall chunk m a cp1 cp2 v1 v2,
+  loadv chunk m a cp1 = Some v1 ->
+  loadv chunk m a cp2 = Some v2 ->
+  v1 = v2.
+Proof.
+  unfold loadv. intros.
+  destruct a; try congruence.
+  eapply load_result_det; eassumption.
+Qed.
+
+Theorem loadbytes_loadv_compartment:
+  forall chunk m b ofs lo hi cp cp' bytes v,
+  loadbytes m b lo hi cp = Some bytes ->
+  loadv chunk m (Vptr b ofs) cp' = Some v ->
+  cp = cp'.
+Proof.
+  unfold loadbytes, loadv, load.
+  intros chunk m b ofs lo hi cp cp' bytes v Hloadbytes Hloadv.
+  destruct (range_perm_dec m b lo (lo + hi) Cur Readable);
+    [destruct (own_block_dec m b cp) |];
+    simpl in Hloadbytes; try congruence.
+  destruct (valid_access_dec m chunk b (Ptrofs.unsigned ofs) Readable cp')
+    as [[? [? ?]] |];
+    congruence.
+Qed.
+
 (** ** Properties related to [store] *)
 
 Theorem valid_access_store:
@@ -1251,6 +1343,24 @@ Proof.
   destruct valid_access_dec; try easy.
   injection STORE.
   now intros <- b'.
+Qed.
+
+Theorem store_own_block_1:
+  own_block m1 b cp.
+Proof.
+  unfold store in STORE.
+  destruct (valid_access_dec m1 chunk b ofs Writable cp) as [[? [? ?]] |];
+    congruence.
+Qed.
+
+Theorem store_own_block_2:
+  own_block m2 b cp.
+Proof.
+  unfold store in STORE.
+  destruct (valid_access_dec m1 chunk b ofs Writable cp) as [[? [? ?]] |];
+    [| congruence].
+  inv STORE.
+  assumption.
 Qed.
 
 Theorem load_store_similar:
@@ -1419,6 +1529,38 @@ Local Hint Resolve perm_store_1 perm_store_2: mem.
 Local Hint Resolve store_valid_block_1 store_valid_block_2: mem.
 Local Hint Resolve store_valid_access_1 store_valid_access_2
              store_valid_access_3: mem.
+
+Theorem store_compartment_det:
+  forall chunk1 chunk2 m1 m2 m2' b ofs1 ofs2 v1 v2 cp1 cp2,
+  store chunk1 m1 b ofs1 v1 cp1 = Some m2 ->
+  store chunk2 m1 b ofs2 v2 cp2 = Some m2' ->
+  cp1 = cp2.
+Proof.
+  unfold store. intros.
+  destruct (valid_access_dec m1 chunk1 b ofs1 Writable cp1)
+    as [[? [? ?]] |];
+    [| congruence].
+  destruct (valid_access_dec m1 chunk2 b ofs2 Writable cp2)
+    as [[? [? ?]] |];
+    [| congruence].
+  congruence.
+Qed.
+
+Theorem store_result_det:
+  forall chunk m1 m2 m2' b ofs v cp1 cp2,
+  store chunk m1 b ofs v cp1 = Some m2 ->
+  store chunk m1 b ofs v cp2 = Some m2' ->
+  m2 = m2'.
+Proof.
+  unfold store. intros.
+  destruct (valid_access_dec m1 chunk b ofs Writable cp1)
+    as [[? [? ?]] |];
+    [| congruence].
+  destruct (valid_access_dec m1 chunk b ofs Writable cp2)
+    as [[? [? ?]] |];
+    [| congruence].
+  congruence.
+Qed.
 
 (* RB: NOTE: [cp] and [cp'] must be equal, but the result does not rely on
    this fact, and similarly for other related theorems. *)
@@ -1881,6 +2023,28 @@ Proof.
   destruct H0; auto. right. apply Intv.disjoint_range; auto.
 Qed.
 
+Theorem loadbytes_storebytes_compartment_1:
+  forall ofs' n cp' bytes',
+  Mem.loadbytes m1 b ofs' n cp' = Some bytes' ->
+  cp = cp'.
+Proof.
+  intros ofs' n cp' bytes' LOAD.
+  assert (Hown := storebytes_own_block_1).
+  assert (Hown' := loadbytes_own_block_inj _ _ _ _ _ _ LOAD).
+  congruence.
+Qed.
+
+Theorem loadbytes_storebytes_compartment_2:
+  forall ofs' n cp' bytes',
+  Mem.loadbytes m2 b ofs' n cp' = Some bytes' ->
+  cp = cp'.
+Proof.
+  intros ofs' n cp' bytes' LOAD.
+  assert (Hown := storebytes_own_block_2).
+  assert (Hown' := loadbytes_own_block_inj _ _ _ _ _ _ LOAD).
+  congruence.
+Qed.
+
 Theorem load_storebytes_other:
   forall chunk b' ofs' cp',
   b' <> b
@@ -2002,6 +2166,46 @@ Proof.
   unfold storev, Val.add. rewrite H0.
   rewrite addressing_int64_split; auto.
   exploit store_valid_access_3. eexact H2. intros [P [R Q]]. exact Q.
+Qed.
+
+Theorem storev_own_block_1:
+  forall chunk m1 b ofs v cp m2,
+  storev chunk m1 (Vptr b ofs) v cp = Some m2 ->
+  Mem.own_block m1 b cp.
+Proof.
+  intros. eapply store_own_block_1; eassumption.
+Qed.
+
+Theorem storev_own_block_2:
+  forall chunk m1 b ofs v cp m2,
+  storev chunk m1 (Vptr b ofs) v cp = Some m2 ->
+  Mem.own_block m2 b cp.
+Proof.
+  intros. eapply store_own_block_2; eassumption.
+Qed.
+
+(* RB: NOTE: The addresses can be independent, the only constraint is that they
+   point to the same block. *)
+Theorem storev_compartment_det:
+  forall chunk1 chunk2 m1 m2 m2' a v1 v2 cp1 cp2,
+  storev chunk1 m1 a v1 cp1 = Some m2 ->
+  storev chunk2 m1 a v2 cp2 = Some m2' ->
+  cp1 = cp2.
+Proof.
+  unfold storev. intros.
+  destruct a; try congruence.
+  eapply store_compartment_det; eassumption.
+Qed.
+
+Theorem storev_result_det:
+  forall chunk m1 m2 m2' a v cp1 cp2,
+  storev chunk m1 a v cp1 = Some m2 ->
+  storev chunk m1 a v cp2 = Some m2' ->
+  m2 = m2'.
+Proof.
+  unfold storev. intros.
+  destruct a; try congruence.
+  eapply store_result_det; eassumption.
 Qed.
 
 (** ** Properties related to [alloc]. *)
@@ -2568,6 +2772,38 @@ End FREE.
 Local Hint Resolve valid_block_free_1 valid_block_free_2
              perm_free_1 perm_free_2 perm_free_3
              valid_access_free_1 valid_access_free_inv_1: mem.
+
+Theorem free_compartment_det:
+  forall m1 m2 m2' bf lo1 lo2 hi1 hi2 cp1 cp2,
+  free m1 bf lo1 hi1 cp1 = Some m2 ->
+  free m1 bf lo2 hi2 cp2 = Some m2' ->
+  cp1 = cp2.
+Proof.
+  unfold free.
+  intros m1 m2 m2' bf lo1 lo2 hi1 hi2 cp1 cp2 H1 H2.
+  destruct (range_perm_dec m1 bf lo1 hi1 Cur Freeable);
+    destruct (own_block_dec m1 bf cp1);
+    simpl in H1; try congruence.
+  destruct (range_perm_dec m1 bf lo2 hi2 Cur Freeable);
+    destruct (own_block_dec m1 bf cp2);
+    simpl in H2; congruence.
+Qed.
+
+Theorem free_result_det:
+  forall m1 m2 m2' bf hi lo cp1 cp2,
+  free m1 bf hi lo cp1 = Some m2 ->
+  free m1 bf hi lo cp2 = Some m2' ->
+  m2 = m2'.
+Proof.
+  unfold free.
+  intros m1 m2 m2' bf lo hi cp1 cp2 H1 H2.
+  destruct (range_perm_dec m1 bf lo hi Cur Freeable);
+    destruct (own_block_dec m1 bf cp1);
+    simpl in H1; try congruence.
+  destruct (range_perm_dec m1 bf lo hi Cur Freeable);
+    destruct (own_block_dec m1 bf cp2);
+    simpl in H2; congruence.
+Qed.
 
 (** ** Properties related to [drop_perm] *)
 
@@ -5076,18 +5312,6 @@ Proof.
   apply unchanged_on_own0; auto.
 + setoid_rewrite pred_dec_false at 1. auto.
   red; intros; elim n0; red; intros. apply <- unchanged_on_perm0; auto.
-Qed.
-
-(* RB: TODO: Relocate. *)
-Lemma loadbytes_own_block_inj:
-  forall m b ofs n cp bytes,
-  loadbytes m b ofs n cp = Some bytes ->
-  own_block m b cp.
-Proof.
-  unfold loadbytes. intros.
-  destruct (range_perm_dec m b ofs (ofs + n) Cur Readable); [| inversion H].
-  destruct (own_block_dec m b cp); inv H.
-  assumption.
 Qed.
 
 Lemma loadbytes_unchanged_on:
