@@ -52,6 +52,9 @@ Record magree (m1 m2: mem) (P: locset) : Prop := mk_magree {
   ma_perm_inv:
     forall b ofs k p,
     Mem.perm m2 b ofs k p -> Mem.perm m1 b ofs k p \/ ~Mem.perm m1 b ofs Max Nonempty;
+  ma_own:
+    forall b cp,
+    Mem.own_block m1 b cp -> Mem.own_block m2 b cp;
   ma_memval:
     forall b ofs,
     Mem.perm m1 b ofs Cur Readable ->
@@ -77,6 +80,7 @@ Proof.
   intros. destruct H. destruct mext_inj. constructor; intros.
 - replace ofs with (ofs + 0) by omega. eapply mi_perm; eauto. auto.
 - eauto.
+- eapply mi_own; eauto. reflexivity.
 - exploit mi_memval; eauto. unfold inject_id; eauto.
   rewrite Z.add_0_r. auto.
 - auto.
@@ -89,11 +93,10 @@ Lemma magree_extends:
 Proof.
   intros. destruct H0. constructor; auto. constructor; unfold inject_id; intros.
 - inv H0. rewrite Z.add_0_r. eauto.
-- admit. (* RB: NOTE: New own_block subgoal *)
+- inv H0. eapply ma_own0. eauto.
 - inv H0. apply Z.divide_0_r.
 - inv H0. rewrite Z.add_0_r. eapply ma_memval0; eauto.
-(* Qed. *)
-Admitted.
+Qed.
 
 Lemma magree_loadbytes:
   forall m1 m2 P b ofs n cp bytes,
@@ -122,9 +125,8 @@ Local Transparent Mem.loadbytes.
   assert (ofs <= i < ofs + n) by xomega.
   apply ma_memval0; auto.
   red; intros; eauto.
-  admit. (* RB: NOTE: New own_block subgoal *)
-(* Qed. *)
-Admitted.
+  eapply ma_own0; eauto.
+Qed.
 
 Lemma magree_load:
   forall m1 m2 P chunk b ofs cp v,
@@ -172,7 +174,8 @@ Proof.
     eapply ma_perm; eauto.
     eapply Mem.storebytes_range_perm; eauto. }
   {
-    admit. (* RB: NOTE: New own_block subgoal *)
+    eapply ma_own; eauto.
+    eapply Mem.storebytes_own_block_1; eauto.
   }
   exists m2'; split; auto.
   constructor; intros.
@@ -180,6 +183,18 @@ Proof.
   eapply Mem.perm_storebytes_2; eauto.
 - exploit ma_perm_inv; eauto using Mem.perm_storebytes_2.
   intuition eauto using Mem.perm_storebytes_1, Mem.perm_storebytes_2.
+- (* RB: NOTE: It would be interesting to refactor this kind of goal and maybe
+     move it to Memory. *)
+Local Transparent Mem.storebytes.
+  unfold Mem.storebytes in H0, ST2.
+  destruct (Mem.range_perm_dec m1 b ofs (ofs + Z.of_nat (Datatypes.length bytes1)) Cur Writable);
+    [destruct (Mem.own_block_dec m1 b cp) |];
+    simpl in H0; try congruence.
+  destruct (Mem.range_perm_dec m2 b ofs (ofs + Z.of_nat (Datatypes.length bytes2)) Cur Writable);
+    [destruct (Mem.own_block_dec m2 b cp) |];
+    simpl in ST2; try congruence.
+  inv H0. inv ST2.
+  inv H. apply ma_own0; auto.
 - rewrite (Mem.storebytes_mem_contents _ _ _ _ _ _ H0).
   rewrite (Mem.storebytes_mem_contents _ _ _ _ _ _ ST2).
   rewrite ! PMap.gsspec. destruct (peq b0 b).
@@ -190,8 +205,7 @@ Proof.
 - rewrite (Mem.nextblock_storebytes _ _ _ _ _ _ H0).
   rewrite (Mem.nextblock_storebytes _ _ _ _ _ _ ST2).
   eapply ma_nextblock; eauto.
-(* Qed. *)
-Admitted.
+Qed.
 
 Lemma magree_store_parallel:
   forall m1 m2 (P Q: locset) chunk b ofs v1 cp m1' v2,
@@ -226,6 +240,15 @@ Proof.
 - eapply ma_perm; eauto. eapply Mem.perm_storebytes_2; eauto.
 - exploit ma_perm_inv; eauto.
   intuition eauto using Mem.perm_storebytes_1, Mem.perm_storebytes_2.
+- (* RB: NOTE: It would be interesting to refactor this kind of goal and maybe
+     move it to Memory. *)
+Local Transparent Mem.storebytes.
+  unfold Mem.storebytes in H0.
+  destruct (Mem.range_perm_dec m1 b ofs (ofs + Z.of_nat (Datatypes.length bytes1)) Cur Writable);
+    [destruct (Mem.own_block_dec m1 b cp) |];
+    simpl in H0; try congruence.
+  inv H0.
+  inv H. apply ma_own0; auto.
 - rewrite (Mem.storebytes_mem_contents _ _ _ _ _ _ H0).
   rewrite PMap.gsspec. destruct (peq b0 b).
 + subst b0. rewrite Mem.setN_outside. eapply ma_memval; eauto. eapply Mem.perm_storebytes_2; eauto.
@@ -261,7 +284,7 @@ Proof.
   intros.
   destruct (Mem.range_perm_free m2 b lo hi cp) as [m2' FREE].
   red; intros. eapply ma_perm; eauto. eapply Mem.free_range_perm; eauto.
-  admit. (* RB: NOTE: New own_block subgoal *)
+  eapply ma_own; eauto. eapply Mem.free_own_block_1; eauto.
   exists m2'; split; auto.
   constructor; intros.
 - (* permissions *)
@@ -273,6 +296,20 @@ Proof.
   eapply Mem.perm_free_inv in A; eauto. destruct A as [[A B] | A]; auto.
   subst b0; right; eapply Mem.perm_free_2; eauto.
   right; intuition eauto using Mem.perm_free_3.
+- (* ownership *)
+  (* RB: NOTE: It would be interesting to refactor this kind of goal and maybe
+     move it to Memory. *)
+Local Transparent Mem.free.
+  unfold Mem.free in H0, FREE.
+  destruct (Mem.range_perm_dec m1 b lo hi Cur Freeable);
+    [destruct (Mem.own_block_dec m1 b cp) |];
+    simpl in H0; try congruence.
+  destruct (Mem.range_perm_dec m2 b lo hi Cur Freeable);
+    [destruct (Mem.own_block_dec m2 b cp) |];
+    simpl in FREE; try congruence.
+  inv H0. inv FREE.
+  unfold Mem.unchecked_free, Mem.own_block in *. simpl in *.
+  inv H. apply ma_own0; auto.
 - (* contents *)
   rewrite (Mem.free_result _ _ _ _ _ _ H0).
   rewrite (Mem.free_result _ _ _ _ _ _ FREE).
@@ -283,8 +320,7 @@ Proof.
   rewrite (Mem.free_result _ _ _ _ _ _ H0).
   rewrite (Mem.free_result _ _ _ _ _ _ FREE).
   simpl. eapply ma_nextblock; eauto.
-(* Qed. *)
-Admitted.
+Qed.
 
 Lemma magree_valid_access:
   forall m1 m2 (P: locset) chunk b ofs p cp,
@@ -295,9 +331,8 @@ Proof.
   intros. destruct H0 as [? [? ?]]; split; auto.
   red; intros. eapply ma_perm; eauto.
   split; auto.
-  admit. (* RB: TODO: New own_block subgoal *)
-(* Qed. *)
-Admitted.
+  inv H. apply ma_own0; auto.
+Qed.
 
 (** * Properties of the need environment *)
 
@@ -756,10 +791,9 @@ Proof.
   instantiate (1 := nlive ge sp nm). auto.
   intros (tm' & P & Q).
   exists tm'; split. econstructor. econstructor; eauto.
-  admit. (* RB: NOTE: New own_block subgoal *)
+  eapply Mem.store_own_block_1; eauto.
   auto.
-(* Qed. *)
-Admitted.
+Qed.
 
 Lemma eagree_set_undef:
   forall e1 e2 ne r, eagree e1 e2 ne -> eagree (e1#r <- Vundef) e2 ne.
@@ -966,7 +1000,7 @@ Ltac UseTransfer :=
     intros. eapply nlive_add; eassumption.
     intros (tv & P & Q).
     exists tv; split; auto. econstructor; eauto.
-    admit. (* RB: NOTE: New own_block subgoal *)
+    eapply Mem.load_own_block_inj; eauto.
   }
   destruct X as (tvres & P & Q).
   econstructor; split.
@@ -1036,7 +1070,7 @@ Ltac UseTransfer :=
   constructor. eauto. constructor. eauto. constructor.
   eapply external_call_symbols_preserved. apply senv_preserved.
   simpl in B1; inv B1. simpl in B2; inv B2. econstructor; eauto.
-  admit. admit. (* RB: NOTE: New subgoals *)
+  admit. admit. (* RB: NOTE: New subgoals, [transf_function] must preserve compartments *)
   eapply match_succ_states; eauto. simpl; auto.
   apply eagree_set_res; auto.
 + (* memcpy eliminated *)
