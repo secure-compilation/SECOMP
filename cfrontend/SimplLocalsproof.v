@@ -796,11 +796,10 @@ Proof.
   destruct (peq id0 id). inv H2.
   eapply Mem.load_alloc_same'; eauto.
   omega. rewrite Z.add_0_l. eapply sizeof_by_value; eauto.
-  admit. (* RB: NOTE: New own_block subgoal *)
+  eapply Mem.owned_new_block; eassumption.
   apply Z.divide_0_r.
   eapply Mem.load_alloc_other; eauto.
-(* Qed. *)
-Admitted.
+Qed.
 
 Lemma create_undef_temps_charact:
   forall id ty vars, In (id, ty) vars -> (create_undef_temps vars)!id = Some Vundef.
@@ -1052,20 +1051,20 @@ Proof.
   assert (bytes = nil).
   { exploit (Mem.loadbytes_empty m bsrc (Ptrofs.unsigned osrc) (sizeof tge ty) cp').
     omega.
-    admit. (* RB: NOTE: New own_block subgoal *)
+    eapply Mem.loadbytes_own_block_inj; eassumption.
     congruence. }
   subst.
   destruct (Mem.range_perm_storebytes tm bdst' (Ptrofs.unsigned (Ptrofs.add odst (Ptrofs.repr delta))) nil cp)
   as [tm' SB].
   simpl. red; intros; omegaContradiction.
-  admit. (* RB: NOTE: New own_block subgoal *)
+  inv H2. inv mi_inj. eapply mi_own; eauto. eapply Mem.storebytes_own_block_1; eassumption.
   exists tm'.
   split. eapply assign_loc_copy; eauto.
   intros; omegaContradiction.
   intros; omegaContradiction.
   rewrite e; right; omega.
   apply Mem.loadbytes_empty. omega.
-  instantiate (1 := cp). admit. (* RB: NOTE: New own_block subgoal *)
+  inv H2. inv mi_inj. eapply mi_own; eauto. eapply Mem.loadbytes_own_block_inj; eassumption.
   split. eapply Mem.storebytes_empty_inject; eauto.
   intros. rewrite <- H0. eapply Mem.load_storebytes_other; eauto.
   left. congruence.
@@ -1092,19 +1091,18 @@ Proof.
   intros; eapply Mem.aligned_area_inject with (m := m); eauto.
   apply alignof_blockcopy_1248.
   apply sizeof_alignof_blockcopy_compat.
-  instantiate (1 := cp'). admit. (* RB: NOTE: New own_block subgoal *)
+  eapply Mem.loadbytes_own_block_inj; eassumption.
   intros; eapply Mem.aligned_area_inject with (m := m); eauto.
   apply alignof_blockcopy_1248.
   apply sizeof_alignof_blockcopy_compat.
-  instantiate (1 := cp). admit. (* RB: NOTE: New own_block subgoal *)
+  eapply Mem.storebytes_own_block_1; eassumption.
   eapply Mem.disjoint_or_equal_inject with (m := m); eauto.
   apply Mem.range_perm_max with Cur; auto.
   apply Mem.range_perm_max with Cur; auto.
   split. auto.
   intros. rewrite <- H0. eapply Mem.load_storebytes_other; eauto.
   left. congruence.
-(* Qed. *)
-Admitted.
+Qed.
 
 Lemma assign_loc_nextblock:
   forall ge ty m b ofs v m',
@@ -1278,9 +1276,16 @@ Proof.
   intros. red; intros. eapply Mem.perm_free_1; eauto.
   exploit H2; eauto. intros [B|B]. auto. right; omega.
   eapply H; eauto.
-  intros b' lo' hi' HIn. specialize (H1 b' lo' hi'). admit. (* RB: NOTE: New own_block subgoal *)
-(* Qed. *)
-Admitted.
+  intros b' lo' hi' HIn.
+  specialize (H1 b' lo' hi' (or_intror HIn)).
+  (* RB: NOTE: Consider making this into a lemma *)
+Local Transparent Mem.free.
+  unfold Mem.free in A.
+  destruct (Mem.range_perm_dec m b lo hi Cur Freeable);
+    [destruct (Mem.own_block_dec m b cp) |];
+    simpl in A; try congruence.
+  unfold Mem.unchecked_free in A. inv A. assumption.
+Qed.
 
 Lemma blocks_of_env_no_overlap:
   forall (ge: genv) j cenv e le m lo hi te tle tlo thi tm,
@@ -1369,7 +1374,9 @@ Local Opaque ge tge.
     apply PTree.elements_keys_norepet.
     intros. apply PTree.elements_complete; auto.
   - (* block ownership *)
-    intros b lo' hi' HIn. admit. (* RB: New own_block subgoal *)
+    intros b lo' hi' HIn.
+    (* destruct H0. *)
+    admit. (* RB: New own_block subgoal *)
   }
   destruct X as [tm' FREE].
   exists tm'; split; auto.
@@ -1499,7 +1506,8 @@ Proof.
   inv H0; try congruence.
   assert (chunk0 = chunk). simpl in H. congruence. subst chunk0.
   assert (v0 = v). unfold Mem.loadv in H2. rewrite Ptrofs.unsigned_zero in H2.
-    (* congruence. *) admit. (* RB: NOTE: Component determinacy on [load] *)
+    assert (EQ := Mem.load_compartment_det _ _ _ _ _ _ _ _ _ _ LOAD H2); subst.
+    congruence.
     subst v0.
   exists tv; split; auto. constructor; auto.
   simpl in H; congruence.
@@ -1542,8 +1550,7 @@ Proof.
   inversion B. subst.
   econstructor; econstructor; split.
   eapply eval_Efield_union; eauto. rewrite typeof_simpl_expr; eauto. auto.
-(* Qed. *)
-Admitted.
+Qed.
 
 Lemma eval_simpl_exprlist:
   forall al tyl vl,

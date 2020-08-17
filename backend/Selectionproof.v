@@ -189,7 +189,6 @@ Lemma functions_translated:
 Proof.
   intros. inv H0.
   eapply Genv.find_funct_match; eauto.
-   apply comp_match_fundef. (* RB: NOTE: Curiously this needs to be added now *)
   discriminate.
 Qed.
 

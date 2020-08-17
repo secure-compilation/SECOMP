@@ -1188,6 +1188,15 @@ Opaque Ptrofs.repr.
   auto.
 Qed.
 
+Theorem loadv_own_block_inj:
+  forall chunk m b ofs cp v,
+  loadv chunk m (Vptr b ofs) cp = Some v ->
+  own_block m b cp.
+Proof.
+  unfold loadv. intros.
+  eapply load_own_block_inj; eassumption.
+Qed.
+
 Theorem loadv_compartment_det:
   forall chunk1 chunk2 m a cp1 cp2 v1 v2,
   loadv chunk1 m a cp1 = Some v1 ->
@@ -2731,6 +2740,19 @@ Proof.
   intros. unfold load. rewrite pred_dec_true.
   rewrite (load_result _ _ _ _ _ _ H). rewrite free_result; auto.
   apply valid_access_free_inv_1. eauto with mem.
+Qed.
+
+Theorem load_free_compartment:
+  forall chunk ofs cp' m2',
+  load chunk m1 bf ofs cp' = Some m2' ->
+  cp = cp'.
+Proof.
+  unfold load. unfold free in FREE. intros.
+  destruct (range_perm_dec m1 bf lo hi Cur Freeable);
+    [destruct (own_block_dec m1 bf cp) |];
+    simpl in FREE; try congruence.
+  destruct (valid_access_dec m1 chunk bf ofs Readable cp') as [[? [? ?]] |];
+    congruence.
 Qed.
 
 Theorem loadbytes_free:

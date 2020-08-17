@@ -364,13 +364,12 @@ Lemma do_deref_loc_complete:
 Proof.
   unfold do_deref_loc; intros. inv H.
   inv H0. rewrite H1; rewrite H2.
-    assert (OWN : Mem.own_block m b cp) by admit. (* RB: NOTE: [loadv] inversion lemma *)
+    assert (OWN := Mem.loadv_own_block_inj _ _ _ _ _ _ H3).
     rewrite OWN; rewrite H3; auto.
   rewrite H1; rewrite H2. apply do_volatile_load_complete; auto.
   inv H0. rewrite H1. auto.
   inv H0. rewrite H1. auto.
-(* Qed. *)
-Admitted.
+Qed.
 
 Lemma do_assign_loc_sound:
   forall w ty m b ofs v w' t m',
@@ -392,17 +391,16 @@ Lemma do_assign_loc_complete:
 Proof.
   unfold do_assign_loc; intros. inv H.
   inv H0. rewrite H1; rewrite H2.
-    assert (OWN : Mem.own_block m b cp) by admit. (* RB: NOTE: [storev] inversion lemma *)
+    assert (OWN := Mem.storev_own_block_1 _ _ _ _ _ _ _ H3).
     rewrite OWN; rewrite H3; auto.
   rewrite H1; rewrite H2. apply do_volatile_store_complete; auto.
   rewrite H1. destruct (check_assign_copy ty b ofs b' ofs').
   inv H0.
-    assert (OWN : Mem.own_block m b cp) by admit. (* RB: NOTE: [storebytes] inversion lemma *)
-    assert (OWN' : Mem.own_block m b' cp') by admit. (* RB: NOTE: [loadbytes] inversion lemma *)
+    assert (OWN := Mem.storebytes_own_block_1 _ _ _ _ _ _ H6).
+    assert (OWN' := Mem.loadbytes_own_block_inj _ _ _ _ _ _ H5).
     rewrite OWN; rewrite OWN'; rewrite H5; rewrite H6; auto.
   elim n. red; tauto.
-(* Qed. *)
-Admitted.
+Qed.
 
 (** External calls *)
 

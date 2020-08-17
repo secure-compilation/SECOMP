@@ -851,7 +851,7 @@ Proof.
 - econstructor; eauto with barg.
 - simpl in H. exploit Mem.load_inject; eauto. rewrite Z.add_0_r.
   intros (v' & A & B). exists v'; split; auto with barg.
-  econstructor. admit. (* RB: NOTE: [loadv] goal, needs a bit more work *)
+  econstructor. simpl. eassumption.
 - econstructor; split; eauto with barg. simpl. econstructor; eauto. rewrite Ptrofs.add_zero; auto.
 - assert (Val.inject j (Senv.symbol_address ge id ofs) (Senv.symbol_address tge id ofs)).
   { unfold Senv.symbol_address; simpl; unfold Genv.symbol_address.
@@ -859,7 +859,7 @@ Proof.
     exploit symbols_inject_2; eauto. intros (b' & A & B). rewrite A.
     econstructor; eauto. rewrite Ptrofs.add_zero; auto. }
   exploit Mem.loadv_inject; eauto. intros (v' & A & B). exists v'; split; auto with barg.
-  econstructor. admit. (* RB: NOTE: [loadv] goal, needs a bit more work *)
+  econstructor. eassumption.
 - econstructor; split; eauto with barg.
   unfold Senv.symbol_address; simpl; unfold Genv.symbol_address.
   destruct (Genv.find_symbol ge id) as [b|] eqn:FS; auto.
@@ -873,8 +873,7 @@ Proof.
   destruct IHeval_builtin_arg2 as (v2' & A2 & B2); eauto using in_or_app.
   econstructor; split; eauto with barg.
   destruct Archi.ptr64; auto using Val.add_inject, Val.addl_inject.
-(* Qed. *)
-Admitted.
+Qed.
 
 Lemma eval_builtin_args_inject:
   forall rs sp m j rs' sp' m' al vl,

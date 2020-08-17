@@ -1606,7 +1606,7 @@ Proof.
   intros until cp. functional induction (store_zeros m b p n cp); intros PERM.
 - exists m; auto.
 - intros. apply IHo. red; intros. eapply Mem.perm_store_1; eauto. apply PERM. omega.
-  admit. (* RB: NOTE: New own_block subgoal *)
+  eapply Mem.store_own_block_2; eassumption.
 - destruct (Mem.valid_access_store m Mint8unsigned b p cp Vzero) as (m' & STORE).
   split. red; intros. apply Mem.perm_cur. apply PERM. simpl in H. omega.
   split. admit. (* RB: NOTE: new own_block subgoal *)
@@ -1654,9 +1654,12 @@ Proof.
   rewrite S1.
   apply IHil; eauto.
   red; intros. erewrite <- store_init_data_perm by eauto. apply H. generalize (init_data_size_pos i1); omega.
-  admit. (* RB: NOTE: New own_block subgoal. *)
-(* Qed. *)
-Admitted.
+  unfold store_init_data in S1.
+  destruct i1; try (eapply Mem.store_own_block_2; eassumption).
+  inv S1. assumption.
+  destruct (find_symbol ge i); [| congruence].
+  eapply Mem.store_own_block_2; eassumption.
+Qed.
 
 Lemma alloc_global_exists:
   forall m idg,
@@ -1672,7 +1675,7 @@ Proof.
 - destruct (Mem.alloc m _ 0 1) as [m1 b] eqn:ALLOC.
   destruct (Mem.range_perm_drop_2 m1 b 0 1 (comp_of f) Nonempty) as [m2 DROP].
   red; intros; eapply Mem.perm_alloc_2; eauto.
-  admit. (* RB: NOTE: New own_block subgoal *)
+  eapply Mem.owned_new_block; eassumption.
   exists m2; auto.
 - destruct H as [P Q].
   set (sz := init_data_list_size (gvar_init v)).
@@ -1680,7 +1683,7 @@ Proof.
   assert (P1: Mem.range_perm m1 b 0 sz Cur Freeable) by (red; intros; eapply Mem.perm_alloc_2; eauto).
   destruct (@store_zeros_exists m1 b 0 sz (gvar_comp v)) as [m2 ZEROS].
   red; intros. apply Mem.perm_implies with Freeable; auto with mem.
-  admit. (* RB: NOTE: New own_block subgoal *)
+  eapply Mem.owned_new_block; eassumption.
   rewrite ZEROS.
   assert (P2: Mem.range_perm m2 b 0 sz Cur Freeable).
   { red; intros. erewrite <- store_zeros_perm by eauto. eauto. }
@@ -1781,8 +1784,7 @@ Qed.
 Theorem find_def_match_2:
   forall b, option_rel (match_globdef match_fundef match_varinfo ctx)
                        (find_def (globalenv p) b) (find_def (globalenv tp) b).
-(* Proof (mge_defs globalenvs_match). *)
-Admitted. (* RB: NOTE: open own_block goals *)
+Proof (mge_defs globalenvs_match).
 
 Theorem find_def_match:
   forall b g,
