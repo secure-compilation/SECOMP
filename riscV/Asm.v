@@ -1143,7 +1143,10 @@ Inductive step: state -> trace -> state -> Prop :=
       Genv.find_funct_ptr ge b = Some (Internal f) ->
       find_instr (Ptrofs.unsigned ofs) f.(fn_code) = Some (Pbuiltin ef args res) ->
       eval_builtin_args ge rs (rs SP) m args vargs ->
-      forall (ALLOWED: Policy.allowed_call pol f.(fn_comp) (External ef)),
+      (* JT: For now, assume that all calls using Pbuiltin are allowed, as is already
+         the case in all languages. But maybe we should instead do the policy check at
+         every level? *)
+      (* forall (ALLOWED: Policy.allowed_call pol f.(fn_comp) (External ef)), *)
       external_call ef ge (comp_of f) vargs m t vres m' ->
       rs' = nextinstr
               (set_res res vres
@@ -1155,7 +1158,10 @@ Inductive step: state -> trace -> state -> Prop :=
       rs PC = Vptr b Ptrofs.zero ->
       Genv.find_funct_ptr ge b = Some (External ef) ->
       forall COMP: Genv.find_comp ge (rs RA) = Some cp,
-      forall (ALLOWED: Policy.allowed_call pol cp (External ef)),
+      (* JT: We think this is not needed, as the immediate previous step was to
+         go from some PC' to this PC corresponding to [ef]; this previous step
+         was an internal step, where the check is already done. *)
+      (* forall (ALLOWED: Policy.allowed_call pol cp (External ef)), *)
       external_call ef ge cp args m t res m' ->
       extcall_arguments rs m (ef_sig ef) args ->
       rs' = (set_pair (loc_external_result (ef_sig ef) ) res (undef_caller_save_regs rs))#PC <- (rs RA) ->
@@ -1220,15 +1226,15 @@ Ltac Equalities :=
   intros; constructor; simpl; intros.
 - (* determ *)
   inv H; inv H0; Equalities.
-  split. constructor. auto.
-  discriminate.
-  discriminate.
-  assert (vargs0 = vargs) by (eapply eval_builtin_args_determ; eauto). subst vargs0.
-  exploit external_call_determ. eexact H5. eexact H14.  intros [A B].
-  split. auto. intros. destruct B; auto. subst. auto.
-  assert (args0 = args) by (eapply extcall_arguments_determ; eauto). subst args0.
-  exploit external_call_determ. eexact H3. eexact H9. intros [A B].
-  split. auto. intros. destruct B; auto. subst. auto.
+  + split. constructor. auto.
+  + discriminate.
+  + discriminate.
+  + assert (vargs0 = vargs) by (eapply eval_builtin_args_determ; eauto). subst vargs0.
+    exploit external_call_determ. eexact H5. eexact H14.  intros [A B].
+    split. auto. intros. destruct B; auto. subst. auto.
+  + assert (args0 = args) by (eapply extcall_arguments_determ; eauto). subst args0.
+    exploit external_call_determ. eexact H3. eexact H9. intros [A B].
+    split. auto. intros. destruct B; auto. subst. auto.
 - (* trace length *)
   red; intros. inv H; simpl.
   omega.
