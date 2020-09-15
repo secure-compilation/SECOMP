@@ -1135,7 +1135,16 @@ Inductive step: state -> trace -> state -> Prop :=
       next_stack i (fn_comp f) st rs' = Some st' ->
       forall (NEXTPC: rs' PC = Vptr b' ofs'),
       forall (NEXTFUN: Genv.find_funct_ptr ge b' = Some fd),
-    forall (ALLOWED: Policy.allowed_call pol f.(fn_comp) fd),
+      forall (ALLOWED: Policy.allowed_call pol f.(fn_comp) fd),
+      step (State st rs m) E0 (State st' rs' m')
+  | exec_step_internal_return:
+      forall b ofs f i rs m rs' m' st st' sf,
+      rs PC = Vptr b ofs ->
+      Genv.find_funct_ptr ge b = Some (Internal f) ->
+      find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
+      exec_instr f i rs m = Next rs' m' ->
+      next_stack i (fn_comp f) st rs' = Some st' ->
+      forall (ISRETURN: st = sf :: st'),
       step (State st rs m) E0 (State st' rs' m')
   | exec_step_builtin:
       forall b ofs f ef args res rs m vargs t vres rs' m' st,
@@ -1227,6 +1236,11 @@ Ltac Equalities :=
 - (* determ *)
   inv H; inv H0; Equalities.
   + split. constructor. auto.
+  + split. constructor. auto.
+  + discriminate.
+  + split. constructor. auto.
+  + split. constructor. auto.
+  + discriminate.
   + discriminate.
   + discriminate.
   + assert (vargs0 = vargs) by (eapply eval_builtin_args_determ; eauto). subst vargs0.
@@ -1237,6 +1251,7 @@ Ltac Equalities :=
     split. auto. intros. destruct B; auto. subst. auto.
 - (* trace length *)
   red; intros. inv H; simpl.
+  omega.
   omega.
   eapply external_call_trace_length; eauto.
   eapply external_call_trace_length; eauto.
