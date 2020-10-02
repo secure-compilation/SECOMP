@@ -459,9 +459,9 @@ Proof.
 Qed.
 
 Lemma classify_call_correct:
-  forall unit sp e m a v fd,
+  forall unit sp e m cp a v fd,
   linkorder unit prog ->
-  Cminor.eval_expr ge sp e m a v ->
+  Cminor.eval_expr ge sp e m cp a v ->
   Genv.find_funct ge v = Some fd ->
   match classify_call (prog_defmap unit) a with
   | Call_default => True
@@ -769,7 +769,7 @@ Hypothesis HF: helper_functions_declared cunit hf.
 
 Lemma sel_expr_correct:
   forall sp e cp m a v,
-  Cminor.eval_expr ge sp e m a v ->
+  Cminor.eval_expr ge sp e m cp a v ->
   forall e' le m',
   env_lessdef e e' -> Mem.extends m m' ->
   exists v', eval_expr tpol tge sp e' cp m' le (sel_expr a) v' /\ Val.lessdef v v'.
@@ -802,13 +802,11 @@ Proof.
   exploit IHeval_expr; eauto. intros [vaddr' [A B]].
   exploit Mem.loadv_extends; eauto. intros [v' [C D]].
   exists v'; split; auto. eapply eval_load; eauto.
-  admit. (* RB: NOTE: Apparent component disconnect, recover from [A]? *)
-(* Qed. *)
-Admitted.
+Qed.
 
 Lemma sel_exprlist_correct:
   forall sp e cp m a v,
-  Cminor.eval_exprlist ge sp e m a v ->
+  Cminor.eval_exprlist ge sp e m cp a v ->
   forall e' le m',
   env_lessdef e e' -> Mem.extends m m' ->
   exists v', eval_exprlist tpol tge sp e' cp m' le (sel_exprlist a) v' /\ Val.lessdef_list v v'.
@@ -823,9 +821,9 @@ Qed.
 Lemma sel_select_opt_correct:
   forall ty cond a1 a2 a sp e cp m vcond v1 v2 b e' m' le,
   sel_select_opt ty cond a1 a2 = Some a ->
-  Cminor.eval_expr ge sp e m cond vcond ->
-  Cminor.eval_expr ge sp e m a1 v1 ->
-  Cminor.eval_expr ge sp e m a2 v2 ->
+  Cminor.eval_expr ge sp e m cp cond vcond ->
+  Cminor.eval_expr ge sp e m cp a1 v1 ->
+  Cminor.eval_expr ge sp e m cp a2 v2 ->
   Val.bool_of_val vcond b ->
   env_lessdef e e' -> Mem.extends m m' ->
   exists v', eval_expr tpol tge sp e' cp m' le a v' /\ Val.lessdef (Val.select (Some b) v1 v2 ty) v'.
@@ -846,7 +844,7 @@ Qed.
 Lemma sel_builtin_arg_correct:
   forall sp e e' cp m m' a v c,
   env_lessdef e e' -> Mem.extends m m' ->
-  Cminor.eval_expr ge sp e m a v ->
+  Cminor.eval_expr ge sp e m cp a v ->
   exists v',
      CminorSel.eval_builtin_arg tpol tge sp e' cp m' (sel_builtin_arg a c) v'
   /\ Val.lessdef v v'.
@@ -863,7 +861,7 @@ Lemma sel_builtin_args_correct:
   forall sp e e' cp m m',
   env_lessdef e e' -> Mem.extends m m' ->
   forall al vl,
-  Cminor.eval_exprlist ge sp e m al vl ->
+  Cminor.eval_exprlist ge sp e m cp al vl ->
   forall cl,
   exists vl',
      list_forall2 (CminorSel.eval_builtin_arg tpol tge sp e' cp m')
@@ -888,7 +886,7 @@ Qed.
 
 Lemma sel_builtin_default_correct:
   forall optid ef al sp e1 m1 vl t v m2 e1' m1' f k,
-  Cminor.eval_exprlist ge sp e1 m1 al vl ->
+  Cminor.eval_exprlist ge sp e1 m1 f.(fn_comp) al vl ->
   external_call ef ge f.(fn_comp) vl m1 t v m2 ->
   env_lessdef e1 e1' -> Mem.extends m1 m1' ->
   exists e2' m2',
@@ -907,7 +905,7 @@ Qed.
 
 Lemma sel_builtin_correct:
   forall optid ef al sp e1 m1 vl t v m2 e1' m1' f k,
-  Cminor.eval_exprlist ge sp e1 m1 al vl ->
+  Cminor.eval_exprlist ge sp e1 m1 f.(fn_comp) al vl ->
   external_call ef ge f.(fn_comp) vl m1 t v m2 ->
   env_lessdef e1 e1' -> Mem.extends m1 m1' ->
   exists e2' m2',
@@ -949,7 +947,7 @@ Qed.
 
 Lemma classify_stmt_sound_2:
   forall f sp e m a id v,
-  Cminor.eval_expr ge sp e m a v ->
+  Cminor.eval_expr ge sp e m f.(Cminor.fn_comp) a v ->
   forall s k,
   classify_stmt s = SCassign id a ->
   star (Cminor.step pol) ge (Cminor.State f s k sp e m) E0 (Cminor.State f Cminor.Sskip k sp (PTree.set id v e) m).
@@ -977,21 +975,21 @@ Proof.
 Qed.
 
 Lemma eval_select_safe_exprs:
-  forall a1 a2 f env ty e e' cp m m' sp cond vb b id s,
+  forall a1 a2 f env ty e e' m m' sp cond vb b id s,
   safe_expr (known_id f) a1 = true ->
   safe_expr (known_id f) a2 = true ->
   option_map (fun sel => Sassign id sel) (sel_select_opt ty cond a1 a2) = Some s ->
-  Cminor.eval_expr ge sp e m cond vb -> Val.bool_of_val vb b ->
+  Cminor.eval_expr ge sp e m f.(Cminor.fn_comp) cond vb -> Val.bool_of_val vb b ->
   wt_expr env a1 ty ->
   wt_expr env a2 ty ->
   def_env f e -> wt_env env e ->
-  Cminor.eval_expr ge sp e m cond vb -> Val.bool_of_val vb b ->
+  Cminor.eval_expr ge sp e m f.(Cminor.fn_comp) cond vb -> Val.bool_of_val vb b ->
   env_lessdef e e' -> Mem.extends m m' ->
   exists a' v1 v2 v',
      s = Sassign id a'
-  /\ Cminor.eval_expr ge sp e m a1 v1
-  /\ Cminor.eval_expr ge sp e m a2 v2
-  /\ eval_expr tpol tge sp e' cp m' nil a' v'
+  /\ Cminor.eval_expr ge sp e m f.(Cminor.fn_comp) a1 v1
+  /\ Cminor.eval_expr ge sp e m f.(Cminor.fn_comp) a2 v2
+  /\ eval_expr tpol tge sp e' f.(Cminor.fn_comp) m' nil a' v'
   /\ Val.lessdef (if b then v1 else v2) v'.
 Proof.
   intros.
@@ -1013,15 +1011,16 @@ Lemma if_conversion_correct:
   def_env f e -> wt_env env e ->
   wt_stmt env tyret ifso ->
   wt_stmt env tyret ifnot ->
-  Cminor.eval_expr ge sp e m cond vb -> Val.bool_of_val vb b ->
+  Cminor.eval_expr ge sp e m f.(Cminor.fn_comp) cond vb -> Val.bool_of_val vb b ->
   env_lessdef e e' -> Mem.extends m m' ->
+  forall (CPT : f.(Cminor.fn_comp) = f'.(fn_comp)),
   let s0 := if b then ifso else ifnot in
   exists e1 e1',
      step tpol tge (State f' s k' sp e' m') E0 (State f' Sskip k' sp e1' m')
   /\ star (Cminor.step pol) ge (Cminor.State f s0 k sp e m) E0 (Cminor.State f Cminor.Sskip k sp e1 m)
   /\ env_lessdef e1 e1'.
 Proof.
-  unfold if_conversion; intros until m'; intros IFC DE WTE WT1 WT2 EVC BOV ELD MEXT.
+  unfold if_conversion; intros until m'; intros IFC DE WTE WT1 WT2 EVC BOV ELD MEXT CPT.
   set (s0 := if b then ifso else ifnot). set (ki := known_id f) in *.
   destruct (classify_stmt ifso) eqn:IFSO; try discriminate;
   destruct (classify_stmt ifnot) eqn:IFNOT; try discriminate;
@@ -1128,7 +1127,7 @@ Inductive match_states: Cminor.state -> CminorSel.state -> Prop :=
         (TF: sel_function (prog_defmap cunit) hf f = OK f')
         (TYF: type_function f = OK env)
         (MC: match_cont cunit hf (known_id f) env k k')
-        (EA: Cminor.eval_exprlist ge sp e m al args)
+        (EA: Cminor.eval_exprlist ge sp e m f.(Cminor.fn_comp) al args)
         (LDE: env_lessdef e e')
         (ME: Mem.extends m m')
         (CPT: f.(Cminor.fn_comp) = f'.(fn_comp)),
@@ -1324,6 +1323,7 @@ Proof.
   exploit Mem.storev_extends; eauto. intros [m2' [P Q]].
   left; econstructor; split.
   eapply eval_store; eauto.
+  rewrite <- CPT; eauto. rewrite <- CPT; eauto.
   econstructor; eauto.
 - (* Scall *)
   exploit classify_call_correct; eauto.
@@ -1363,18 +1363,26 @@ Proof.
   left; econstructor; split.
   exploit classify_call_correct. eexact LINK. eauto. eauto.
   destruct (classify_call (prog_defmap cunit)) as [ | id | ef]; intros.
-  econstructor; eauto. econstructor; eauto. eapply sig_function_translated; eauto.
+  econstructor; eauto. econstructor; eauto.
+  rewrite <- CPT; eauto.
+  rewrite <- CPT; eauto.
+  eapply sig_function_translated; eauto.
   rewrite <- (comp_function_translated _ _ _ F), COMP. now apply (comp_transl_partial _ TF).
   rewrite <- CPT; trivial.
   eapply linkorder_policy with (cunit := cunit'); eauto.
   rewrite CPT in ALLOWED'; eauto.
   destruct H2 as [b [U V]]. subst vf. inv B.
-  econstructor; eauto. econstructor; eauto. rewrite symbols_preserved; eauto. eapply sig_function_translated; eauto.
+  econstructor; eauto. econstructor; eauto. rewrite symbols_preserved; eauto.
+  rewrite <- CPT; eauto.
+  eapply sig_function_translated; eauto.
   rewrite <- (comp_function_translated _ _ _ F), COMP. now apply (comp_transl_partial _ TF).
   rewrite <- CPT; trivial.
   eapply linkorder_policy with (cunit := cunit'); eauto.
   rewrite CPT in ALLOWED'; eauto.
-  econstructor; eauto. econstructor; eauto. eapply sig_function_translated; eauto.
+  econstructor; eauto. econstructor; eauto.
+  rewrite <- CPT; eauto.
+  rewrite <- CPT; eauto.
+  eapply sig_function_translated; eauto.
   rewrite <- (comp_function_translated _ _ _ F), COMP. now apply (comp_transl_partial _ TF).
   rewrite <- CPT; trivial.
   eapply linkorder_policy with (cunit := cunit'); eauto.
@@ -1476,7 +1484,9 @@ Proof.
   erewrite <- match_call_cont_call_comp; eauto.
   econstructor; eauto.
 - (* external call turned into a Sbuiltin *)
-  exploit sel_builtin_correct; eauto. rewrite <- CPT; eauto. intros (e2' & m2' & P & Q & R).
+  exploit sel_builtin_correct; eauto. rewrite <- CPT; eauto.
+  rewrite <- CPT; eauto.
+  intros (e2' & m2' & P & Q & R).
   left; econstructor; split. eexact P. econstructor; eauto.
 - (* return *)
   inv MC.

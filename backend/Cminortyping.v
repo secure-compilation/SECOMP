@@ -601,8 +601,8 @@ Proof.
   destruct (eq_block b b0); VHT.
 Qed.
 
-Lemma wt_eval_expr: forall env sp e m a v,
-  eval_expr ge sp e m a v ->
+Lemma wt_eval_expr: forall env sp e m cp a v,
+  eval_expr ge sp e m cp a v ->
   forall t,
   wt_expr env a t ->
   wt_env env e ->
@@ -616,8 +616,8 @@ Proof.
 - inv WT. destruct vaddr; try discriminate. eapply Mem.load_type; eauto.
 Qed.
 
-Lemma wt_eval_exprlist: forall env sp e m al vl,
-  eval_exprlist ge sp e m al vl ->
+Lemma wt_eval_exprlist: forall env sp e m cp al vl,
+  eval_exprlist ge sp e m cp al vl ->
   forall tl,
   list_forall2 (wt_expr env) al tl ->
   wt_env env e ->
@@ -779,7 +779,7 @@ Lemma eval_safe_expr:
   forall ge f sp e m a,
   def_env f e ->
   safe_expr (known_id f) a = true ->
-  exists v, eval_expr ge sp e m a v.
+  exists v, eval_expr ge sp e m f.(fn_comp) a v.
 Proof.
   induction a; simpl; intros.
   - apply known_id_sound_2 in H0.

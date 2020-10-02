@@ -1455,7 +1455,7 @@ Lemma var_addr_correct:
   match_callstack f m tm (Frame cenv tf e le te sp lo hi :: cs) (Mem.nextblock m) (Mem.nextblock tm) ->
   eval_var_addr ge e id b ->
   exists tv,
-     eval_expr tge (Vptr sp Ptrofs.zero) te tm (var_addr cenv id) tv
+     eval_expr tge (Vptr sp Ptrofs.zero) te tm tf.(fn_comp) (var_addr cenv id) tv
   /\ Val.inject f (Vptr b Ptrofs.zero) tv.
 Proof.
   unfold var_addr; intros.
@@ -1532,7 +1532,7 @@ Lemma transl_expr_correct:
   forall ta
     (TR: transl_expr cenv a = OK ta),
   exists tv,
-     eval_expr tge (Vptr sp Ptrofs.zero) te tm ta tv
+     eval_expr tge (Vptr sp Ptrofs.zero) te tm tf.(fn_comp) ta tv
   /\ Val.inject f v tv.
 Proof.
   induction 3; intros; simpl in TR; try (monadInv TR).
@@ -1556,8 +1556,11 @@ Proof.
   (* Eload *)
   exploit IHeval_expr; eauto. intros [tv1 [EVAL1 INJ1]].
   exploit Mem.loadv_inject; eauto. intros [tv [LOAD INJ]].
-  exists tv; split. econstructor; eauto. auto.
-Qed.
+  exists tv; split. econstructor; eauto.
+  admit. (* RB: Connect compartment. *)
+  auto.
+(* Qed. *)
+Admitted.
 
 Lemma transl_exprlist_correct:
   forall f m tm cenv tf e le te sp lo hi cs
@@ -1570,7 +1573,7 @@ Lemma transl_exprlist_correct:
   forall ta
     (TR: transl_exprlist cenv a = OK ta),
   exists tv,
-     eval_exprlist tge (Vptr sp Ptrofs.zero) te tm ta tv
+     eval_exprlist tge (Vptr sp Ptrofs.zero) te tm tf.(fn_comp) ta tv
   /\ Val.inject_list f v tv.
 Proof.
   induction 3; intros; monadInv TR.
