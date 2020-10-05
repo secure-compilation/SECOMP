@@ -1557,7 +1557,7 @@ Proof.
   exploit IHeval_expr; eauto. intros [tv1 [EVAL1 INJ1]].
   exploit Mem.loadv_inject; eauto. intros [tv [LOAD INJ]].
   exists tv; split. econstructor; eauto.
-  admit. (* RB: Connect compartment. *)
+  admit. (* RB: NOTE: Connect compartment. *)
   auto.
 (* Qed. *)
 Admitted.

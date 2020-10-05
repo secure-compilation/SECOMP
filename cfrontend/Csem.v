@@ -858,3 +858,22 @@ Proof.
   eapply external_call_trace_length; eauto.
   inv H; simpl; try omega. eapply external_call_trace_length; eauto.
 Qed.
+
+Definition state_mem (s : state) : option mem :=
+  match s with
+  | State _ _ _ _ m
+  | ExprState _ _ _ _ m
+  | Callstate _ _ _ m
+  | Returnstate _ _ m   => Some m
+  | Stuckstate          => None
+  end.
+
+Lemma star_own_block:
+  forall pol ge s t s',
+  star (step pol) ge s t s' ->
+  forall m m' b cp,
+  state_mem s = Some m ->
+  state_mem s' = Some m' ->
+  Mem.own_block m b cp ->
+  Mem.own_block m' b cp.
+Admitted. (* RB: NOTE: Preservation property. *)

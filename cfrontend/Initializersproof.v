@@ -829,6 +829,13 @@ Proof.
   intros. unfold tr_padding. destruct (zlt frm to); auto.
 Qed.
 
+Lemma exec_init_own_block:
+  forall m b ofs ty i m' cp,
+  exec_init m b ofs ty i m' ->
+  Mem.own_block m b cp ->
+  Mem.own_block m' b cp.
+Admitted. (* RB: NOTE: Component preservation, needs scheme adjustment. *)
+
 Lemma tr_init_sound:
   (forall m b ofs ty i m', exec_init m b ofs ty i m' ->
    forall data cp, tr_init ty i data ->
@@ -848,7 +855,12 @@ Proof.
 Local Opaque sizeof.
   apply exec_init_scheme; simpl; intros.
 - (* single *)
-  assert (cp = cp0) by admit; subst cp0. (* RB: NOTE: Component determinacy *)
+  assert (cp = cp0). {
+    assert (OWN' : Mem.own_block m' b cp0) by (eapply star_own_block; eauto; reflexivity).
+    apply Mem.store_own_block_1 in H2.
+    eapply Mem.own_block_component; eassumption.
+  }
+  subst cp0.
   inv H3. simpl. erewrite transl_init_single_steps by eauto. auto.
 - (* array *)
   inv H1. replace (Z.max 0 sz) with sz in H7. eauto.
@@ -868,7 +880,7 @@ Local Opaque sizeof.
   eapply store_init_data_list_app.
   eauto.
   rewrite (tr_init_size _ _ _ H7). eapply H2; eauto.
-  admit. (* RB: NOTE: New own_block subgoal, cf. H0, H7 *)
+  eapply exec_init_own_block; eassumption.
 
 - (* struct, empty *)
   inv H0. apply store_init_data_list_padding.
@@ -881,10 +893,9 @@ Local Opaque sizeof.
   eauto.
   rewrite (tr_init_size _ _ _ H9).
   rewrite <- Z.add_assoc. eapply H2. eauto. eauto.
-  admit. (* RB: NOTE: New own_block subgoal, cf. H0, H9 *)
+  eapply exec_init_own_block; eassumption.
   apply align_le. apply alignof_pos.
-(* Qed. *)
-Admitted.
+Qed.
 
 End SOUNDNESS.
 
