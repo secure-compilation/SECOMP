@@ -45,11 +45,13 @@ Proof.
   split; auto. apply match_transform_partial_program. rewrite EQ. destruct x; auto.
 Qed.
 
+Definition match_pol := match_pol (fun f tf => transf_fundef f = OK tf).
+
 Section PRESERVATION.
 
 Variable pol: policy.
 Variable tpol: policy.
-Hypothesis TRANSPOL: match_pol (fun f tf => transf_fundef f = OK tf) pol tpol.
+Hypothesis TRANSPOL: match_pol pol tpol.
 
 Variable prog: program.
 Variable tprog: program.
@@ -312,7 +314,11 @@ Lemma step_Sdebug_temp:
 Proof.
   intros. unfold Sdebug_temp. eapply step_builtin with (optid := None); eauto.
   econstructor. constructor. eauto. simpl. eapply cast_typeconv; eauto. constructor.
+  eapply Policy.pol_accepts_debug. simpl. reflexivity.
   simpl. constructor.
+  (* TODO: this is not satisfying at all. Missing some simplification here *)
+  Unshelve.
+  exact Tvoid. exact cc_default.
 Qed.
 
 Lemma step_Sdebug_var:
@@ -324,7 +330,11 @@ Proof.
   intros. unfold Sdebug_var. eapply step_builtin with (optid := None); eauto.
   econstructor. constructor. constructor. eauto.
   simpl. reflexivity. constructor.
+  eapply Policy.pol_accepts_debug. simpl. reflexivity.
   simpl. constructor.
+  (* TODO: this is not satisfying at all. Missing some simplification here *)
+  Unshelve.
+  exact Tvoid. exact cc_default.
 Qed.
 
 Lemma step_Sset_debug:
@@ -2092,7 +2102,10 @@ Proof.
   exploit external_call_mem_inject; eauto. apply match_globalenvs_preserves_globals; eauto with compat.
   intros [j' [tvres [tm' [P [Q [R [S [T [U V]]]]]]]]].
   econstructor; split.
-  apply plus_one. econstructor; eauto. eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  apply plus_one. econstructor; eauto.
+    replace (fn_comp tf) with (fn_comp f) by now apply comp_transl_partial.
+    eapply TRANSPOL; eauto. reflexivity.
+  eapply external_call_symbols_preserved; eauto. apply senv_preserved.
     replace (fn_comp tf) with (fn_comp f) by now apply comp_transl_partial.
     eauto.
   econstructor; eauto with compat.

@@ -366,6 +366,8 @@ Proof.
   intros. apply match_transform_partial_program; auto.
 Qed.
 
+Definition match_pol := match_pol (fun f tf => transl_fundef f = OK tf).
+
 Section CORRECTNESS.
 
 Variable prog: CminorSel.program.
@@ -374,7 +376,7 @@ Hypothesis TRANSL: match_prog prog tprog.
 
 Variable pol: CminorSel.policy.
 Variable tpol: RTL.policy.
-Hypothesis TRANSPOL: match_pol (fun f tf => transl_fundef f = OK tf) pol tpol.
+Hypothesis TRANSPOL: match_pol pol tpol.
 
 Let ge : CminorSel.genv := Genv.globalenv prog.
 Let tge : RTL.genv := Genv.globalenv tprog.
@@ -715,6 +717,7 @@ Lemma transl_expr_Ebuiltin_correct:
   eval_exprlist pol ge sp e cp m le al vl ->
   transl_exprlist_prop le al vl ->
   external_call ef ge cp vl m E0 v m ->
+  forall ALLOWED: Policy.allowed_call pol cp (External ef),
   transl_expr_prop le (Ebuiltin ef al) v.
 Proof.
   intros; red; intros. inv TE.
@@ -727,6 +730,7 @@ Proof.
   change (rs1#rd <- v') with (regmap_setres (BR rd) v' rs1).
   eapply exec_Ibuiltin; eauto.
   eapply eval_builtin_args_trivial.
+  eapply TRANSPOL; eauto. simpl; reflexivity.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   eauto.
 (* Match-env *)
@@ -1479,6 +1483,7 @@ Proof.
   left. eapply plus_right. eexact E.
   eapply exec_Ibuiltin; eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
+  rewrite <- COMP; eapply TRANSPOL; eauto. reflexivity.
   eapply external_call_symbols_preserved. apply senv_preserved. eauto.
   rewrite <- COMP. eauto.
   traceEq.

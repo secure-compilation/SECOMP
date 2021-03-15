@@ -1792,6 +1792,8 @@ Proof.
   tauto.
 Qed.
 
+Definition match_pol := match_pol (fun f tf => transf_fundef f = OK tf).
+
 (** * Semantic preservation *)
 
 Section PRESERVATION.
@@ -1802,7 +1804,7 @@ Hypothesis TRANSF: match_prog prog tprog.
 
 Variable pol: RTL.policy.
 Variable tpol: LTL.policy.
-Hypothesis TRANSPOL: match_pol (fun f tf => transf_fundef f = OK tf) pol tpol.
+Hypothesis TRANSPOL: match_pol pol tpol.
 
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
@@ -2398,6 +2400,7 @@ Proof.
   eapply star_trans. eexact A1.
   eapply star_left. econstructor.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
+  rewrite <- comp_transf_fundef; eauto. eapply TRANSPOL; eauto. reflexivity.
   eapply external_call_symbols_preserved. apply senv_preserved. rewrite comp_transf_fundef in E. eauto. eauto.
   instantiate (1 := ls2); auto.
   eapply star_right. eexact A3.

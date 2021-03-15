@@ -73,7 +73,7 @@ Proof.
   rewrite <- Genv.find_funct_ptr_iff in Q.
   econstructor; eauto. 
   simpl. red. rewrite H1. constructor; auto.
-  eapply Policy.pol_accepts_runtime_builtins; eauto.
+  eapply Policy.pol_accepts_runtime; eauto.
 Qed.
 
 
@@ -107,10 +107,12 @@ Remark eval_builtin_1:
   eval_expr pol ge sp e cp m le arg1 varg1 ->
   lookup_builtin_function id sg = Some bf ->
   builtin_function_sem bf (varg1 :: nil) = Some vres ->
+  (* forall (ALLOWED: Policy.allowed_call pol cp (External (EF_builtin id sg))), *)
   eval_expr pol ge sp e cp m le (Ebuiltin (EF_builtin id sg) (arg1 ::: Enil)) vres.
 Proof.
   intros. econstructor. econstructor. eauto. constructor.
   simpl. red. rewrite H0. constructor. auto.
+  eapply Policy.pol_accepts_builtin; eauto.
 Qed.
 
 Remark eval_builtin_2:
@@ -122,7 +124,8 @@ Remark eval_builtin_2:
   eval_expr pol ge sp e cp m le (Ebuiltin (EF_builtin id sg) (arg1 ::: arg2 ::: Enil)) vres.
 Proof.
   intros. econstructor. constructor; eauto. constructor; eauto. constructor.
-  simpl. red. rewrite H1. constructor. auto.
+  simpl. red. rewrite H1. constructor. auto. auto.
+  eapply Policy.pol_accepts_builtin; eauto.
 Qed.
 
 Definition unary_constructor_sound (cstr: expr -> expr) (sem: val -> val) : Prop :=

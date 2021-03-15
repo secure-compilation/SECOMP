@@ -384,6 +384,8 @@ Proof.
   + apply eagree_update; auto with na.
 Qed.
 
+Definition match_pol (prog: program) := Policy.match_pol (fun cu f tf => OK tf = transf_fundef (romem_for cu) f) prog.
+
 (** * Basic properties of the translation *)
 
 Section PRESERVATION.
@@ -393,7 +395,7 @@ Variable tprog: program.
 Hypothesis TRANSF: match_prog prog tprog.
 Variable pol: policy.
 Variable tpol: policy.
-Hypothesis TRANSPOL: Policy.match_pol (fun cu f tf => OK tf = transf_fundef (romem_for cu) f) prog pol tpol.
+Hypothesis TRANSPOL: match_pol prog pol tpol.
 
 Lemma linkorder_policy:
   forall cunit, linkorder cunit prog ->
@@ -954,6 +956,7 @@ Ltac UseTransfer :=
   eapply exec_Ibuiltin; eauto.
   apply eval_builtin_args_preserved with (ge1 := ge). exact symbols_preserved.
   constructor. eauto. constructor.
+  rewrite <- comp_transf_function; eauto. eapply TRANSPOL; eauto. reflexivity.
   eapply external_call_symbols_preserved. apply senv_preserved.
   constructor. simpl. eauto.
   eapply match_succ_states; eauto. simpl; auto.
@@ -975,6 +978,7 @@ Ltac UseTransfer :=
   eapply exec_Ibuiltin; eauto.
   apply eval_builtin_args_preserved with (ge1 := ge). exact symbols_preserved.
   constructor. eauto. constructor. eauto. constructor.
+  rewrite <- comp_transf_function; eauto. eapply TRANSPOL; eauto. reflexivity.
   eapply external_call_symbols_preserved. apply senv_preserved.
   simpl; eauto. rewrite <- comp_transf_function; eauto.
   eapply match_succ_states; eauto. simpl; auto.
@@ -1015,6 +1019,7 @@ Ltac UseTransfer :=
   eapply exec_Ibuiltin; eauto.
   apply eval_builtin_args_preserved with (ge1 := ge). exact symbols_preserved.
   constructor. eauto. constructor. eauto. constructor.
+  rewrite <- comp_transf_function; eauto. eapply TRANSPOL; eauto. reflexivity.
   eapply external_call_symbols_preserved. apply senv_preserved.
   simpl in B1; inv B1. simpl in B2; inv B2. econstructor; eauto.
   eapply match_succ_states; eauto. simpl; auto.
@@ -1044,6 +1049,7 @@ Ltac UseTransfer :=
   econstructor; split.
   eapply exec_Ibuiltin; eauto.
   apply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
+  rewrite <- comp_transf_function; eauto. eapply TRANSPOL; eauto. reflexivity.
   eapply external_call_symbols_preserved. apply senv_preserved.
   constructor. eapply eventval_list_match_lessdef; eauto 2 with na.
   eapply match_succ_states; eauto. simpl; auto.
@@ -1056,6 +1062,7 @@ Ltac UseTransfer :=
   econstructor; split.
   eapply exec_Ibuiltin; eauto.
   apply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
+  rewrite <- comp_transf_function; eauto. eapply TRANSPOL; eauto. reflexivity.
   eapply external_call_symbols_preserved. apply senv_preserved.
   constructor.
   eapply eventval_match_lessdef; eauto 2 with na.
@@ -1065,7 +1072,9 @@ Ltac UseTransfer :=
   inv H1.
   exploit can_eval_builtin_args; eauto. intros (vargs' & A).
   econstructor; split.
-  eapply exec_Ibuiltin; eauto. constructor.
+  eapply exec_Ibuiltin; eauto.
+  rewrite <- comp_transf_function; eauto. eapply TRANSPOL; eauto. reflexivity.
+  constructor.
   eapply match_succ_states; eauto. simpl; auto.
   apply eagree_set_res; auto.
 + (* all other builtins *)
@@ -1083,6 +1092,7 @@ Ltac UseTransfer :=
   econstructor; split.
   eapply exec_Ibuiltin; eauto.
   apply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
+  rewrite <- comp_transf_function; eauto. eapply TRANSPOL; eauto. reflexivity.
   eapply external_call_symbols_preserved. apply senv_preserved. rewrite <- comp_transf_function. eauto. eauto.
   eapply match_succ_states; eauto. simpl; auto.
   apply eagree_set_res; auto.

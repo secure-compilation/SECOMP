@@ -36,6 +36,8 @@ Proof.
   intros. eapply match_transform_partial_program; eauto.
 Qed.
 
+Definition match_pol := match_pol (fun f tf => transf_fundef f = OK tf).
+
 Section PRESERVATION.
 
 Variable prog: Mach.program.
@@ -46,7 +48,7 @@ Let tge := Genv.globalenv tprog.
 
 Variable pol: Mach.policy.
 Variable tpol: Asm.policy.
-Hypothesis TRANSPOL: match_pol (fun f tf => transf_fundef f = OK tf) pol tpol.
+Hypothesis TRANSPOL: match_pol pol tpol.
 
 Lemma symbols_preserved:
   forall (s: ident), Genv.find_symbol tge s = Genv.find_symbol ge s.
@@ -971,10 +973,12 @@ Local Transparent destroyed_by_op.
   eapply find_instr_tail; eauto.
   erewrite <- sp_val by eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
+  eapply TRANSPOL with (f := External ef); eauto. assert (f0 = f) by congruence; subst.
+  rewrite <- comp_transf_function; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   replace (comp_of tf) with (comp_of f); eauto.
   { rewrite <- comp_transf_function; eauto.
-    now replace f with (Internal f0) by congruence. }
+    now replace f with (f0) by congruence. }
   eauto.
   econstructor; eauto.
   instantiate (2 := tf); instantiate (1 := x).
@@ -1049,10 +1053,6 @@ Local Transparent destroyed_by_op.
   unfold next_stack. rewrite Hptr. simpl. rewrite FN.
   rewrite Pos.eqb_refl. reflexivity. eauto. eauto.
   left; auto.
-  (* admit. *)
-  (* eexact Hptr. *)
-  (* eassumption. *)
-  (* constructor; auto. *)
   econstructor; eauto.
   eapply agree_undef_regs; eauto.
   simpl. intros. rewrite C; auto with asmgen. Simpl.
@@ -1079,7 +1079,8 @@ Local Transparent destroyed_by_op.
   eapply plus_right'. eapply exec_straight_exec; eauto.
   econstructor. eexact P. eapply functions_transl; eauto. eapply find_instr_tail. eexact Q.
   simpl. reflexivity.
-  unfold next_stack. Simpl. admit.
+  unfold next_stack. Simpl.
+  rewrite X. admit.
   Simpl. admit.
   eapply functions_transl; eauto.
   left; auto.
@@ -1156,29 +1157,6 @@ Local Transparent destroyed_at_function_entry.
   econstructor; eauto.
   unfold loc_external_result. apply agree_set_other; auto. apply agree_set_pair; auto.
   apply agree_undef_caller_save_regs; auto. 
-(* - (* external function *) *)
-(*   exploit functions_translated; eauto. *)
-(*   intros [tf [A B]]. simpl in B. inv B. *)
-(*   exploit extcall_arguments_match; eauto. *)
-(*   intros [args' [C D]]. *)
-(*   exploit external_call_mem_extends; eauto. *)
-(*   intros [res' [m2' [P [Q [R S]]]]]. *)
-(*   left; econstructor; split. *)
-(*   apply plus_one. eapply exec_step_external; eauto. *)
-(*   pose proof Genv.find_funct_ptr_match TRANSF _ H as [_ [tf' [TFIND [TTRANSF _]]]]. *)
-(*   unfold tge. unfold Genv.find_comp. rewrite TFIND. simpl in TTRANSF. inv TTRANSF. reflexivity. *)
-(*   { unfold call_comp in COMP. *)
-(*     rewrite <- ATLR in COMP. *)
-(*     apply comp_translated; eauto. } *)
-(*   assert (FD: fd = External ef) by congruence; *)
-(*     subst. *)
-(*   (* assert (CP: cp = cp0) by congruence; *) *)
-(*   (*   subst cp0. *) *)
-(*   eapply TRANSPOL with (f := External ef); eauto. admit. *)
-(*   eapply external_call_symbols_preserved; eauto. apply senv_preserved. *)
-(*   econstructor; eauto. *)
-(*   unfold loc_external_result. apply agree_set_other; auto. apply agree_set_pair; auto. *)
-(*   apply agree_undef_caller_save_regs; auto. *)
 
 - (* return *)
   inv STACKS. simpl in *.

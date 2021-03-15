@@ -32,6 +32,9 @@ Proof.
   intros. eapply match_transform_program_contextual. auto.
 Qed.
 
+Definition match_pol (prog: program) :=
+  Policy.match_pol (fun cu f tf => tf = transf_fundef (romem_for cu) f) prog.
+
 Section PRESERVATION.
 
 Variable prog: program.
@@ -39,7 +42,7 @@ Variable tprog: program.
 Hypothesis TRANSL: match_prog prog tprog.
 Variable pol: policy.
 Variable tpol: policy.
-Hypothesis TRANSPOL: Policy.match_pol (fun cu f tf => tf = transf_fundef (romem_for cu) f) prog pol tpol.
+Hypothesis TRANSPOL: match_pol prog pol tpol.
 
 Lemma linkorder_policy:
   forall cunit, linkorder cunit prog ->
@@ -520,6 +523,7 @@ Opaque builtin_strength_reduction.
     econstructor; econstructor; split.
     eapply exec_Ibuiltin; eauto.
     eapply eval_builtin_args_preserved. eexact symbols_preserved. eauto.
+    rewrite comp_transf_function; eapply TRANSPOL; eauto. reflexivity.
     eapply external_call_symbols_preserved; eauto. apply senv_preserved.
     eapply match_states_succ; eauto.
     apply set_res_lessdef; auto.

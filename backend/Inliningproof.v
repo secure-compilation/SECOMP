@@ -37,6 +37,9 @@ Proof.
   intros. eapply match_transform_partial_program_contextual; eauto.
 Qed.
 
+Definition match_pol (prog: program) :=
+  Policy.match_pol (fun cunit f tf => transf_fundef (funenv_program cunit) f = OK tf) prog.
+
 Section INLINING.
 
 Variable prog: program.
@@ -45,7 +48,7 @@ Hypothesis TRANSF: match_prog prog tprog.
 
 Variable pol: policy.
 Variable tpol: policy.
-Hypothesis TRANSPOL: Policy.match_pol (fun cunit f tf => transf_fundef (funenv_program cunit) f = OK tf) prog pol tpol.
+Hypothesis TRANSPOL: match_pol prog pol tpol.
 
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
@@ -1131,6 +1134,7 @@ Proof.
   intros [F1 [v1 [m1' [A [B [C [D [E [J K]]]]]]]]].
   left; econstructor; split.
   eapply plus_one. eapply exec_Ibuiltin; eauto.
+    rewrite <- SAMECOMP; eapply TRANSPOL; eauto. reflexivity.
     eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   rewrite <- SAMECOMP. eauto.
   econstructor.

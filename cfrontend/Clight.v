@@ -581,8 +581,11 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Scall optid a al) k e le m)
         E0 (Callstate fd vargs (Kcall optid f e le k) m)
 
-  | step_builtin:   forall f optid ef tyargs al k e le m vargs t vres m',
+  | step_builtin:   forall f optid ef tyargs tyres cconv al k e le m vargs t vres m',
       eval_exprlist e le m al tyargs vargs ->
+      (* JT: FIXME: this is strange to use tyargs, tyres, and cconv only in the policy check *)
+      (* !!! TODO !!! this is very annoying because it introduces shelved goals!! *)
+      forall (ALLOWED: Policy.allowed_call pol f.(fn_comp) (External ef tyargs tyres cconv)),
       external_call ef ge f.(fn_comp) vargs m t vres m' ->
       step (State f (Sbuiltin optid ef tyargs al) k e le m)
          t (State f Sskip k e (set_opttemp optid vres le) m')

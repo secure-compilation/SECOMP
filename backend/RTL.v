@@ -259,6 +259,7 @@ Inductive step: state -> trace -> state -> Prop :=
       forall s f sp pc rs m ef args res pc' vargs t vres m',
       (fn_code f)!pc = Some(Ibuiltin ef args res pc') ->
       eval_builtin_args ge (fun r => rs#r) sp m args vargs ->
+      forall (ALLOWED: Policy.allowed_call pol f.(fn_comp) (External ef)),
       external_call ef ge f.(fn_comp) vargs m t vres m' ->
       step (State s f sp pc rs m)
          t (State s f sp pc' (regmap_setres res vres rs) m')

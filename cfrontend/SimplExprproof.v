@@ -41,6 +41,8 @@ Proof.
   intros. apply transl_fundef_spec; auto. 
 Qed.
 
+Definition match_pol := match_pol tr_fundef.
+
 
 
 (** ** Semantic preservation *)
@@ -49,7 +51,7 @@ Section PRESERVATION.
 
 Variable pol: Csem.policy.
 Variable tpol: Clight.policy.
-Hypothesis TRANSPOL: match_pol tr_fundef pol tpol.
+Hypothesis TRANSPOL: match_pol pol tpol.
 
 Variable prog: Csyntax.program.
 Variable tprog: Clight.program.
@@ -856,9 +858,12 @@ Proof.
   intros. change (PTree.set id v le) with (set_opttemp (Some id) v le). econstructor.
   econstructor. econstructor. eauto.
   simpl. unfold sem_cast. simpl. eauto. constructor.
+  eapply Policy.pol_accepts_vload; reflexivity.
   simpl. econstructor; eauto.
 (* nonvolatile case *)
   intros [A B]. subst t. constructor. eapply eval_Elvalue; eauto.
+  Unshelve.
+  exact Tvoid. exact (mkcallconv true true true).
 Qed.
 
 Lemma step_make_assign:
@@ -878,9 +883,12 @@ Proof.
   econstructor. constructor. eauto.
   simpl. unfold sem_cast. simpl. eauto.
   econstructor; eauto. rewrite H3; eauto. constructor.
+  eapply Policy.pol_accepts_vstore; reflexivity.
   simpl. econstructor; eauto.
 (* nonvolatile case *)
   intros [A B]. subst t. econstructor; eauto. congruence.
+  Unshelve.
+  exact Tvoid. exact (mkcallconv true true true).
 Qed.
 
 Fixpoint Kseqlist (sl: list statement) (k: cont) :=
@@ -1975,6 +1983,8 @@ Proof.
   econstructor; split.
   left. eapply plus_left. constructor.  apply star_one.
   econstructor; eauto.
+  rewrite <- COMP in ALLOWED; eauto.
+  eapply TRANSPOL. econstructor. eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   { rewrite COMP; eauto. }
   traceEq.
@@ -1986,6 +1996,8 @@ Proof.
   econstructor; split.
   left. eapply plus_left. constructor. apply star_one.
   econstructor; eauto.
+  rewrite <- COMP in ALLOWED; eauto.
+  eapply TRANSPOL. econstructor. eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   { rewrite COMP; eauto. }
   traceEq.

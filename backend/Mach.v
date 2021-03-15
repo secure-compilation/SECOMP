@@ -368,7 +368,8 @@ Inductive step: state -> trace -> state -> Prop :=
   | exec_Mbuiltin:
       forall s fb f sp rs m ef args res b vargs t vres rs' m',
       eval_builtin_args ge rs sp m args vargs ->
-      forall FUN: Genv.find_funct_ptr ge fb = Some f,
+      forall FUN: Genv.find_funct_ptr ge fb = Some (Internal f),
+      forall (ALLOWED: Policy.allowed_call pol f.(fn_comp) (External ef)),
       external_call ef ge (comp_of f) vargs m t vres m' ->
       rs' = set_res res vres (undef_regs (destroyed_by_builtin ef) rs) ->
       step (State s fb sp (Mbuiltin ef args res :: b) rs m)

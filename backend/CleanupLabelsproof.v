@@ -33,13 +33,15 @@ Proof.
   intros. eapply match_transform_program; eauto.
 Qed.
 
+Definition match_pol := match_pol (fun f tf => tf = transf_fundef f).
+
 Section CLEANUP.
 
 Variables prog tprog: program.
 Hypothesis TRANSL: match_prog prog tprog.
 Variable pol: policy.
 Variable tpol: policy.
-Hypothesis TRANSPOL: match_pol (fun f tf => tf = transf_fundef f) pol tpol.
+Hypothesis TRANSPOL: match_pol pol tpol.
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
 
@@ -298,6 +300,7 @@ Proof.
   left; econstructor; split.
   econstructor.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
+  eapply TRANSPOL; eauto. reflexivity.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   eauto.
   econstructor; eauto with coqlib.

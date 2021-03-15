@@ -817,6 +817,8 @@ Proof.
   symmetry. eapply Solver.fixpoint_entry; eauto.
 Qed.
 
+Definition match_pol (prog: program) := Policy.match_pol (fun cu f tf => OK tf = transf_fundef (romem_for cu) f) prog.
+
 (** * Semantic preservation *)
 
 Section PRESERVATION.
@@ -826,7 +828,7 @@ Variable tprog : program.
 Hypothesis TRANSF: match_prog prog tprog.
 Variable pol: policy.
 Variable tpol: policy.
-Hypothesis TRANSPOL: Policy.match_pol (fun cu f tf => OK tf = transf_fundef (romem_for cu) f) prog pol tpol.
+Hypothesis TRANSPOL: match_pol prog pol tpol.
 
 Lemma linkorder_policy:
   forall cunit, linkorder cunit prog ->
@@ -1154,6 +1156,7 @@ Proof.
   econstructor; split.
   eapply exec_Ibuiltin; eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
+  eapply linkorder_policy; eauto. reflexivity.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   econstructor; eauto.
   eapply analysis_correct_1; eauto. simpl; auto.

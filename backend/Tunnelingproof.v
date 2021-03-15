@@ -138,6 +138,8 @@ Proof.
   rewrite record_gotos_gotos'. auto.
 Qed.
 
+Definition match_pol := match_pol (fun f tf => tf = tunnel_fundef f).
+
 (** * Preservation of semantics *)
 
 Section PRESERVATION.
@@ -146,7 +148,7 @@ Variables prog tprog: program.
 Hypothesis TRANSL: match_prog prog tprog.
 Variable pol: policy.
 Variable tpol: policy.
-Hypothesis TRANSPOL: match_pol (fun f tf => tf = tunnel_fundef f) pol tpol.
+Hypothesis TRANSPOL: match_pol pol tpol.
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
 
@@ -499,6 +501,7 @@ Proof.
   left; simpl; econstructor; split.
   eapply exec_Lbuiltin; eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved. 
+  eapply TRANSPOL; eauto. simpl; eauto.
   eapply external_call_symbols_preserved. apply senv_preserved. eauto.
   econstructor; eauto using locmap_setres_lessdef, locmap_undef_regs_lessdef.
 - (* Lbranch (preserved) *)

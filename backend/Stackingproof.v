@@ -81,6 +81,9 @@ Proof.
   try contradiction; try discriminate; econstructor; eauto.
 Qed.
 
+Definition match_pol := match_pol (fun f tf => transf_fundef f = OK tf).
+
+
 Section PRESERVATION.
 
 Variable return_address_offset: Mach.function -> Mach.code -> ptrofs -> Prop.
@@ -97,7 +100,7 @@ Variable tprog: Mach.program.
 Hypothesis TRANSF: match_prog prog tprog.
 Variable pol: Linear.policy.
 Variable tpol: Mach.policy.
-Hypothesis TRANSPOL: match_pol (fun f tf => transf_fundef f = OK tf) pol tpol.
+Hypothesis TRANSPOL: match_pol pol tpol.
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
 
@@ -2019,6 +2022,8 @@ Proof.
   econstructor; split.
   apply plus_one. econstructor; eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
+  eapply TRANSPOL with (f := External ef); eauto.
+  change (fn_comp tf) with (comp_of tf). rewrite <- (comp_transl_partial _ TRANSL); auto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   change (comp_of (Internal tf)) with (comp_of tf). rewrite <- (comp_transl_partial _ TRANSL). eauto.
   eapply match_states_intro with (j := j'); eauto with coqlib.

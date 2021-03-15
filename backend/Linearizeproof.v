@@ -36,6 +36,8 @@ Proof.
   intros. eapply match_transform_partial_program; eauto.
 Qed.
 
+Definition match_pol := match_pol (fun f tf => transf_fundef f = OK tf).
+
 Section LINEARIZATION.
 
 Variable prog: LTL.program.
@@ -43,7 +45,7 @@ Variable tprog: Linear.program.
 Hypothesis TRANSF: match_prog prog tprog.
 Variable pol: LTL.policy.
 Variable tpol: Linear.policy.
-Hypothesis TRANSPOL: match_pol (fun f tf => transf_fundef f = OK tf) pol tpol.
+Hypothesis TRANSPOL: match_pol pol tpol.
 
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
@@ -682,6 +684,7 @@ Proof.
   left; econstructor; split. simpl.
   apply plus_one. eapply exec_Lbuiltin; eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
+  rewrite <- comp_transf_fundef; eauto. eapply TRANSPOL; eauto. reflexivity.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved. erewrite comp_preserved; eauto.
   econstructor; eauto.
 

@@ -123,6 +123,8 @@ Proof.
   red in H. decompose [Logic.and] H; clear H. red; auto 20.
 Qed.
 
+Definition match_pol (prog: Cminor.program) := Policy.match_pol match_fundef prog.
+
 (** * Correctness of the instruction selection functions for expressions *)
 
 Section PRESERVATION.
@@ -143,7 +145,7 @@ Inductive match_fundef_light : (Cminor.fundef) -> fundef -> Prop :=
  | match_fundef_internal : forall f f', match_functions f f' -> match_fundef_light (Internal f) (Internal f')
  | match_fundef_external : forall f, match_fundef_light (External f) (External f).
 
-Hypothesis matching_pol : Policy.match_pol match_fundef prog pol tpol.
+Hypothesis matching_pol : match_pol prog pol tpol.
 
 Lemma linkorder_policy:
   forall cunit, linkorder cunit prog ->
@@ -889,6 +891,7 @@ Lemma sel_builtin_default_correct:
   Cminor.eval_exprlist ge sp e1 m1 al vl ->
   external_call ef ge f.(fn_comp) vl m1 t v m2 ->
   env_lessdef e1 e1' -> Mem.extends m1 m1' ->
+  forall ALLOWED: Policy.allowed_call tpol f.(fn_comp) (External ef),
   exists e2' m2',
      step tpol tge (State f (sel_builtin_default optid ef al) k sp e1' m1')
             t (State f Sskip k sp e2' m2')
@@ -899,7 +902,9 @@ Proof.
   exploit sel_builtin_args_correct; eauto. intros (vl' & A & B).
   exploit external_call_mem_extends; eauto. intros (v' & m2' & D & E & F & _).
   econstructor; exists m2'; split.
-  econstructor. reflexivity. eexact A. eapply external_call_symbols_preserved. eexact senv_preserved. eexact D.
+  econstructor. reflexivity. eexact A.
+  eauto.
+  eapply external_call_symbols_preserved. eexact senv_preserved. eexact D.
   split; auto. apply sel_builtin_res_correct; auto.
 Qed. 
 
@@ -908,6 +913,7 @@ Lemma sel_builtin_correct:
   Cminor.eval_exprlist ge sp e1 m1 al vl ->
   external_call ef ge f.(fn_comp) vl m1 t v m2 ->
   env_lessdef e1 e1' -> Mem.extends m1 m1' ->
+  forall ALLOWED: Policy.allowed_call tpol f.(fn_comp) (External ef),
   exists e2' m2',
      step tpol tge (State f (sel_builtin optid ef al) k sp e1' m1')
             t (State f Sskip k sp e2' m2')
@@ -1381,6 +1387,8 @@ Proof.
   eapply call_cont_commut; eauto.
 - (* Sbuiltin *)
   exploit sel_builtin_correct; eauto; try (now erewrite <- CPT; eauto).
+  eapply linkorder_policy with (cunit := cunit) (f := External ef); eauto.
+  econstructor; split; eauto. rewrite <- CPT; eauto.
   intros (e2' & m2' & P & Q & R).
   left; econstructor; split. eexact P. econstructor; eauto.
 - (* Seq *)
@@ -1474,7 +1482,11 @@ Proof.
   erewrite <- match_call_cont_call_comp; eauto.
   econstructor; eauto.
 - (* external call turned into a Sbuiltin *)
-  exploit sel_builtin_correct; eauto. rewrite <- CPT; eauto. intros (e2' & m2' & P & Q & R).
+  exploit sel_builtin_correct; eauto. rewrite <- CPT; eauto.
+  eapply linkorder_policy with (cunit := cunit) (f := External ef); eauto.
+  econstructor; split; eauto. rewrite <- CPT; eauto.
+  admit.
+  intros (e2' & m2' & P & Q & R).
   left; econstructor; split. eexact P. econstructor; eauto.
 - (* return *)
   inv MC.
@@ -1483,7 +1495,7 @@ Proof.
   econstructor; eauto. destruct optid; simpl; auto. apply set_var_lessdef; auto.
 - (* return of an external call turned into a Sbuiltin *)
   right; left; split. simpl; omega. split. auto. econstructor; eauto.
-Qed.
+Admitted.
 
 Lemma sel_initial_states:
   forall S, Cminor.initial_state prog S ->

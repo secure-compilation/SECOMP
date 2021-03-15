@@ -258,6 +258,7 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (Callstate s fd rs' m')
   | exec_Lbuiltin: forall s f sp ef args res bb rs m vargs t vres rs' m',
       eval_builtin_args ge rs sp m args vargs ->
+      forall (ALLOWED: Policy.allowed_call pol f.(fn_comp) (External ef)),
       external_call ef ge f.(fn_comp) vargs m t vres m' ->
       rs' = Locmap.setres res vres (undef_regs (destroyed_by_builtin ef) rs) ->
       step (Block s f sp (Lbuiltin ef args res :: bb) rs m)

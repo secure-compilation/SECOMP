@@ -374,9 +374,10 @@ Inductive estep: state -> trace -> state -> Prop :=
       estep (ExprState f (C (Ecall rf rargs ty)) k e m)
          E0 (Callstate fd vargs (Kcall f e C ty k) m)
 
-  | step_builtin: forall f C ef tyargs rargs ty k e m vargs t vres m',
+  | step_builtin: forall f C ef tyargs tyres cconv rargs ty k e m vargs t vres m',
       leftcontext RV RV C ->
       eval_simple_list e m rargs tyargs vargs ->
+      forall (ALLOWED: Policy.allowed_call pol f.(fn_comp) (External ef tyargs tyres cconv)),
       external_call ef ge f.(fn_comp) vargs m t vres m' ->
       estep (ExprState f (C (Ebuiltin ef tyargs rargs ty)) k e m)
           t (ExprState f (C (Eval vres ty)) k e m').
@@ -467,7 +468,7 @@ Proof.
 Qed.
 
 Lemma rred_kind:
-  forall a cp m t a' m', rred ge cp a m t a' m' -> expr_kind a = RV.
+  forall a cp m t a' m', rred pol ge cp a m t a' m' -> expr_kind a = RV.
 Proof.
   induction 1; auto.
 Qed.
@@ -573,9 +574,10 @@ Definition invert_expr_prop (cp: compartment) (a: expr) (m: mem) : Prop :=
       /\ Policy.allowed_call pol cp fd
   | Ebuiltin ef tyargs rargs ty =>
       exprlist_all_values rargs ->
-      exists vargs, exists t, exists vres, exists m',
+      exists vargs, exists t, exists vres, exists m', exists tyres, exists cconv,
          cast_arguments m rargs tyargs vargs
       /\ external_call ef ge cp vargs m t vres m'
+      /\ Policy.allowed_call pol cp (External ef tyargs tyres cconv)
   | _ => True
   end.
 
@@ -591,7 +593,7 @@ Proof.
 Qed.
 
 Lemma rred_invert:
-  forall cp r m t r' m', rred ge cp r m t r' m' -> invert_expr_prop cp r m.
+  forall cp r m t r' m', rred pol ge cp r m t r' m' -> invert_expr_prop cp r m.
 Proof.
   induction 1; red; auto.
   split; auto; exists t; exists v; auto.
@@ -605,7 +607,7 @@ Proof.
   exists t; exists v1; auto.
   exists t; exists v1; auto.
   exists v; auto.
-  intros. exists vargs; exists t; exists vres; exists m'; auto.
+  intros. exists vargs; exists t; exists vres; exists m'; exists tyres; exists cconv; auto.
 Qed.
 
 Lemma callred_invert:
@@ -1384,7 +1386,7 @@ Proof.
   eapply safe_steps. eexact H.
   apply (eval_simple_list_steps f k e m rargs vl E C'); auto.
   simpl. intros X. exploit X. eapply rval_list_all_values.
-  intros [vargs [t [vres [m' [U V]]]]].
+  intros [vargs [t [vres [m' [tyres [cconv [U [V W]]]]]]]].
   econstructor; econstructor; eapply step_builtin; eauto.
   eapply can_eval_simple_list; eauto.
 + (* paren *)

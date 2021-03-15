@@ -935,7 +935,7 @@ Inductive imm_safe_t (cp: compartment): kind -> expr -> mem -> Prop :=
       context LV to C ->
       imm_safe_t cp to (C l) m
   | imm_safe_t_rred: forall to C r m t r' m' w',
-      rred ge cp r m t r' m' -> possible_trace w t w' ->
+      rred pol ge cp r m t r' m' -> possible_trace w t w' ->
       context RV to C ->
       imm_safe_t cp to (C r) m
   | imm_safe_t_callred: forall to C r m fd args ty,
@@ -1035,7 +1035,7 @@ Proof.
 Qed.
 
 Lemma rred_invert:
-  forall cp w' r m t r' m', rred ge cp r m t r' m' -> possible_trace w t w' -> invert_expr_prop cp r m.
+  forall cp w' r m t r' m', rred pol ge cp r m t r' m' -> possible_trace w t w' -> invert_expr_prop cp r m.
 Proof.
   induction 1; intros; red; auto.
   split; auto; exists t; exists v; exists w'; auto.
@@ -1149,7 +1149,7 @@ Local Hint Resolve context_compose contextlist_compose : core.
 Definition reduction_ok (cp: compartment) (k: kind) (a: expr) (m: mem) (rd: reduction) : Prop :=
   match k, rd with
   | LV, Lred _ l' m' => lred ge e a m l' m'
-  | RV, Rred _ r' m' t => rred ge cp a m t r' m' /\ exists w', possible_trace w t w'
+  | RV, Rred _ r' m' t => rred pol ge cp a m t r' m' /\ exists w', possible_trace w t w'
   | RV, Callred _ fd args tyres m' => callred pol ge cp a m fd args tyres /\ m' = m
   | LV, Stuckred => ~imm_safe_t cp k a m
   | RV, Stuckred => ~imm_safe_t cp k a m
@@ -1527,9 +1527,11 @@ Proof with (try (apply not_invert_ok; simpl; intro; myinv; intuition congruence;
   (* top *)
   destruct (sem_cast_arguments vtl tyargs m) as [vargs|] eqn:?...
   destruct (do_external ef w cp vargs m) as [[[[? ?] v] m'] | ] eqn:?...
+  (* destruct (Policy.allowed_call_b pol cp (External ef tyargs tyres cconv)) eqn:?... *)
   exploit do_ef_external_sound; eauto. intros [EC PT].
   apply topred_ok; auto. red. split; auto. eapply red_builtin; eauto.
   eapply sem_cast_arguments_sound; eauto.
+  admit.
   exists w0; auto.
   apply not_invert_ok; simpl; intros; myinv. specialize (H ALLVAL). myinv.
   assert (x = vargs).
@@ -1555,7 +1557,7 @@ Proof with (try (apply not_invert_ok; simpl; intro; myinv; intuition congruence;
   split; intros. tauto. simpl; congruence.
 (* cons *)
   eapply incontext2_list_ok'; eauto.
-Qed.
+Admitted.
 
 Lemma step_exprlist_val_list:
   forall cp m al, is_val_list al <> None -> step_exprlist cp al m = nil.
@@ -1590,7 +1592,7 @@ Qed.
 
 Lemma rred_topred:
   forall cp w' r1 m1 t r2 m2,
-  rred ge cp r1 m1 t r2 m2 -> possible_trace w t w' ->
+  rred pol ge cp r1 m1 t r2 m2 -> possible_trace w t w' ->
   exists rule, step_expr cp RV r1 m1 = topred (Rred rule r2 m2 t).
 Proof.
   induction 1; simpl; intros.
@@ -1856,7 +1858,7 @@ Lemma imm_safe_imm_safe_t:
   imm_safe pol ge e cp k a m ->
   imm_safe_t cp k a m \/
   exists C, exists a1, exists t, exists a1', exists m',
-    context RV k C /\ a = C a1 /\ rred ge cp a1 m t a1' m' /\ forall w', ~possible_trace w t w'.
+    context RV k C /\ a = C a1 /\ rred pol ge cp a1 m t a1' m' /\ forall w', ~possible_trace w t w'.
 Proof.
   intros. inv H.
   left. apply imm_safe_t_val.

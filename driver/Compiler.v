@@ -228,28 +228,29 @@ Qed.
 
 Local Open Scope linking_scope.
 
+Require Import Globalenvs.
 Definition CompCert's_passes :=
-      mkpass SimplExprproof.match_prog
-  ::: mkpass SimplLocalsproof.match_prog
-  ::: mkpass Cshmgenproof.match_prog
-  ::: mkpass Cminorgenproof.match_prog
-  ::: mkpass Selectionproof.match_prog
-  ::: mkpass RTLgenproof.match_prog
-  ::: mkpass (match_if Compopts.optim_tailcalls Tailcallproof.match_prog)
-  ::: mkpass Inliningproof.match_prog
-  ::: mkpass Renumberproof.match_prog
-  ::: mkpass (match_if Compopts.optim_constprop Constpropproof.match_prog)
-  ::: mkpass (match_if Compopts.optim_constprop Renumberproof.match_prog)
-  ::: mkpass (match_if Compopts.optim_CSE CSEproof.match_prog)
-  ::: mkpass (match_if Compopts.optim_redundancy Deadcodeproof.match_prog)
-  ::: mkpass Unusedglobproof.match_prog
-  ::: mkpass Allocproof.match_prog
-  ::: mkpass Tunnelingproof.match_prog
-  ::: mkpass Linearizeproof.match_prog
-  ::: mkpass CleanupLabelsproof.match_prog
-  ::: mkpass (match_if Compopts.debug Debugvarproof.match_prog)
-  ::: mkpass Stackingproof.match_prog
-  ::: mkpass Asmgenproof.match_prog
+      mkpass SimplExprproof.match_prog SimplExprproof.match_pol
+  ::: mkpass SimplLocalsproof.match_prog SimplLocalsproof.match_pol
+  ::: mkpass Cshmgenproof.match_prog Cshmgenproof.match_pol
+  ::: mkpass Cminorgenproof.match_prog Cminorgenproof.match_pol
+  ::: mkpass Selectionproof.match_prog Selectionproof.match_pol
+  ::: mkpass RTLgenproof.match_prog RTLgenproof.match_pol
+  ::: mkpass (match_if Compopts.optim_tailcalls Tailcallproof.match_prog) (match_if Compopts.optim_tailcalls Tailcallproof.match_pol)
+  ::: mkpass Inliningproof.match_prog Inliningproof.match_pol
+  ::: mkpass Renumberproof.match_prog Renumberproof.match_pol
+  ::: mkpass (match_if Compopts.optim_constprop Constpropproof.match_prog) (match_if Compopts.optim_constprop Constpropproof.match_pol)
+  ::: mkpass (match_if Compopts.optim_constprop Renumberproof.match_prog) (match_if Compopts.optim_constprop Renumberproof.match_pol)
+  ::: mkpass (match_if Compopts.optim_CSE CSEproof.match_prog) (match_if Compopts.optim_CSE CSEproof.match_pol)
+  ::: mkpass (match_if Compopts.optim_redundancy Deadcodeproof.match_prog) (match_if Compopts.optim_redundancy Deadcodeproof.match_pol)
+  ::: mkpass Unusedglobproof.match_prog Unusedglobproof.match_pol
+  ::: mkpass Allocproof.match_prog Allocproof.match_pol
+  ::: mkpass Tunnelingproof.match_prog Tunnelingproof.match_pol
+  ::: mkpass Linearizeproof.match_prog Linearizeproof.match_pol
+  ::: mkpass CleanupLabelsproof.match_prog CleanupLabelsproof.match_pol
+  ::: mkpass (match_if Compopts.debug Debugvarproof.match_prog) (match_if Compopts.debug Debugvarproof.match_pol)
+  ::: mkpass Stackingproof.match_prog Stackingproof.match_pol
+  ::: mkpass Asmgenproof.match_prog Asmgenproof.match_pol
   ::: pass_nil _.
 
 (** Composing the [match_prog] relations above, we obtain the relation
@@ -351,12 +352,12 @@ Proof.
 Qed.
 
 Theorem cstrategy_semantic_preservation:
-  forall p tp,
+  forall p tp pol tpol,
   match_prog p tp ->
-  forward_simulation (Cstrategy.semantics p) (Asm.semantics tp)
-  /\ backward_simulation (atomic (Cstrategy.semantics p)) (Asm.semantics tp).
+  forward_simulation (Cstrategy.semantics pol p) (Asm.semantics tpol tp)
+  /\ backward_simulation (atomic (Cstrategy.semantics pol p)) (Asm.semantics tpol tp).
 Proof.
-  intros p tp M. unfold match_prog, pass_match in M; simpl in M.
+  intros p tp pol tpol M. unfold match_prog, pass_match in M; simpl in M.
 Ltac DestructM :=
   match goal with
     [ H: exists p, _ /\ _ |- _ ] =>
@@ -364,20 +365,20 @@ Ltac DestructM :=
       destruct H as (p & M & MM); clear H
   end.
   repeat DestructM. subst tp.
-  assert (F: forward_simulation (Cstrategy.semantics p) (Asm.semantics p21)).
+  assert (F: forward_simulation (Cstrategy.semantics pol p) (Asm.semantics tpol p21)).
   {
   eapply compose_forward_simulations.
-    eapply SimplExprproof.transl_program_correct; eassumption.
+    eapply SimplExprproof.transl_program_correct; try eassumption. admit.
   eapply compose_forward_simulations.
-    eapply SimplLocalsproof.transf_program_correct; eassumption.
+    eapply SimplLocalsproof.transf_program_correct; try eassumption. admit.
   eapply compose_forward_simulations.
-    eapply Cshmgenproof.transl_program_correct; eassumption.
+    eapply Cshmgenproof.transl_program_correct; try eassumption. admit.
   eapply compose_forward_simulations.
-    eapply Cminorgenproof.transl_program_correct; eassumption.
+    eapply Cminorgenproof.transl_program_correct; try eassumption. admit.
   eapply compose_forward_simulations.
-    eapply Selectionproof.transf_program_correct; eassumption.
+    eapply Selectionproof.transf_program_correct; try eassumption. admit.
   eapply compose_forward_simulations.
-    eapply RTLgenproof.transf_program_correct; eassumption.
+    eapply RTLgenproof.transf_program_correct; try eassumption. admit.
   eapply compose_forward_simulations.
     eapply match_if_simulation. eassumption. exact Tailcallproof.transf_program_correct.
   eapply compose_forward_simulations.

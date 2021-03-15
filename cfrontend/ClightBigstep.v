@@ -101,9 +101,10 @@ Inductive exec_stmt: env -> compartment -> temp_env ->
       forall (ALLOWED: Policy.allowed_call pol c fd),
       exec_stmt e c le m (Scall optid a al)
                 t (set_opttemp optid vres le) m' Out_normal
-  | exec_Sbuiltin:   forall e c le m optid ef al tyargs vargs t m' vres,
+  | exec_Sbuiltin:   forall e c le m optid ef al tyargs vargs t m' vres tyres cconv,
       eval_exprlist ge e le m al tyargs vargs ->
       external_call ef ge c vargs m t vres m' ->
+      forall (ALLOWED: Policy.allowed_call pol c (External ef tyargs tyres cconv)),
       exec_stmt e c le m (Sbuiltin optid ef tyargs al)
                 t (set_opttemp optid vres le) m' Out_normal
   | exec_Sseq_1:   forall e c le m s1 s2 t1 le1 m1 t2 le2 m2 out,

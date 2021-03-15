@@ -299,8 +299,9 @@ Inductive rred: expr -> mem -> trace -> expr -> mem -> Prop :=
       sem_cast v1 ty1 ty2 m = Some v ->
       rred (Eparen (Eval v1 ty1) ty2 ty) m
         E0 (Eval v ty) m
-  | red_builtin: forall ef tyargs el ty m vargs t vres m',
+  | red_builtin: forall ef tyargs tyres cconv el ty m vargs t vres m',
       cast_arguments m el tyargs vargs ->
+      forall (ALLOWED: Policy.allowed_call pol cp (External ef tyargs tyres cconv)),
       external_call ef ge cp vargs m t vres m' ->
       rred (Ebuiltin ef tyargs el ty) m
          t (Eval vres ty) m'.
@@ -463,8 +464,11 @@ Proof.
   constructor. eauto.
   constructor. eauto.
   constructor.
+- eapply Policy.pol_accepts_builtin; eauto.
 - red. red. rewrite LK. constructor. simpl. rewrite <- EQ.
   destruct b; auto.
+Unshelve.
+exact Tvoid. exact (mkcallconv true true true).
 Qed.
 
 Lemma ctx_selection_1:

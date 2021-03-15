@@ -221,6 +221,8 @@ Proof.
   intros. apply match_transform_program_contextual; auto.
 Qed.
 
+Definition match_pol (prog: program) := Policy.match_pol (fun cunit f tf => tf = transf_fundef (compenv_program cunit) f) prog.
+
 Section PRESERVATION.
 
 Variable prog tprog: program.
@@ -228,7 +230,7 @@ Hypothesis TRANSL: match_prog prog tprog.
 
 Variable pol: policy.
 Variable tpol: policy.
-Hypothesis TRANSPOL: Policy.match_pol (fun cunit f tf => tf = transf_fundef (compenv_program cunit) f) prog pol tpol.
+Hypothesis TRANSPOL: match_pol prog pol tpol.
 
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
@@ -619,10 +621,13 @@ Proof.
   left. exists (State s' (transf_function ce f) (Vptr sp0 Ptrofs.zero) pc' (regmap_setres res v' rs') m'1); split.
   eapply exec_Ibuiltin; eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
+  eapply TRANSPOL with (f := External ef); eauto.
+  rewrite comp_transf_function; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   change (fn_comp (transf_function _ _)) with (comp_of (transf_function ce f)).
   now rewrite comp_transl.
   econstructor; eauto. apply set_res_lessdef; auto.
+
 
 - (* cond *)
   TransfInstr.

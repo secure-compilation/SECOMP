@@ -1152,10 +1152,11 @@ Inductive step: state -> trace -> state -> Prop :=
       Genv.find_funct_ptr ge b = Some (Internal f) ->
       find_instr (Ptrofs.unsigned ofs) f.(fn_code) = Some (Pbuiltin ef args res) ->
       eval_builtin_args ge rs (rs SP) m args vargs ->
+      (* JT: adding the policy check to all levels. Keeping the previous comment below. *)
       (* JT: For now, assume that all calls using Pbuiltin are allowed, as is already
          the case in all languages. But maybe we should instead do the policy check at
          every level? *)
-      (* forall (ALLOWED: Policy.allowed_call pol f.(fn_comp) (External ef)), *)
+      forall (ALLOWED: Policy.allowed_call pol f.(fn_comp) (External ef)),
       external_call ef ge (comp_of f) vargs m t vres m' ->
       rs' = nextinstr
               (set_res res vres

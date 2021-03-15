@@ -2000,16 +2000,66 @@ Record t : Type := mkpolicy {
   policy_import : compartment -> list (compartment * F); (* The list of imported functions and their compartment *)
   (* Well-formedness conditions on the interface *)
   export_in_cp: forall cp f, In f (policy_export cp) -> comp_of f = cp;
-  (* All runtime builtin functions can be called from any compartment *)
-  imports_runtime_builtins: forall cp name f sg bf,
+  (* All runtime functions can be called from any compartment *)
+  imports_builtin: forall cp name f sg bf,
+      lookup_builtin_function name sg = Some bf ->
+      simpl_fundef f = External (EF_builtin name sg) ->
+      In (default_compartment, f) (policy_import cp);
+  exports_builtin: forall name f sg bf,
+      lookup_builtin_function name sg = Some bf ->
+      simpl_fundef f = External (EF_builtin name sg) ->
+      In f (policy_export default_compartment);
+  (* All runtime functions can be called from any compartment *)
+  imports_runtime: forall cp name f sg bf,
       lookup_builtin_function name sg = Some bf ->
       simpl_fundef f = External (EF_runtime name sg) ->
       In (default_compartment, f) (policy_import cp);
-  exports_runtime_builtins: forall name f sg bf,
+  exports_runtime: forall name f sg bf,
       lookup_builtin_function name sg = Some bf ->
       simpl_fundef f = External (EF_runtime name sg) ->
+      In f (policy_export default_compartment);
+  (* Vload can be called from any compartment *)
+  imports_vload: forall cp f ch,
+      simpl_fundef f = External (EF_vload ch) ->
+      In (default_compartment, f) (policy_import cp);
+  exports_vload: forall f ch,
+      simpl_fundef f = External (EF_vload ch) ->
+      In f (policy_export default_compartment);
+  (* Vstore can be called from any compartment *)
+  imports_vstore: forall cp f ch,
+      simpl_fundef f = External (EF_vstore ch) ->
+      In (default_compartment, f) (policy_import cp);
+  exports_vstore: forall f ch,
+      simpl_fundef f = External (EF_vstore ch) ->
+      In f (policy_export default_compartment);
+  (* Malloc can be called from any compartment *)
+  imports_malloc: forall cp f,
+      simpl_fundef f = External (EF_malloc) ->
+      In (default_compartment, f) (policy_import cp);
+  exports_malloc: forall f,
+      simpl_fundef f = External (EF_malloc) ->
+      In f (policy_export default_compartment);
+  (* Free can be called from any compartment *)
+  imports_free: forall cp f,
+      simpl_fundef f = External (EF_free) ->
+      In (default_compartment, f) (policy_import cp);
+  exports_free: forall f,
+      simpl_fundef f = External (EF_free) ->
+      In f (policy_export default_compartment);
+  (* Memcpy can be called from any compartment *)
+  imports_memcpy: forall cp f v1 v2,
+      simpl_fundef f = External (EF_memcpy v1 v2) ->
+      In (default_compartment, f) (policy_import cp);
+  exports_memcpy: forall f v1 v2,
+      simpl_fundef f = External (EF_memcpy v1 v2) ->
+      In f (policy_export default_compartment);
+  (* All calls to the EF_debug must be allowed from any compartment *)
+  imports_debug: forall cp f n i l,
+      simpl_fundef f = External (EF_debug n i l) ->
+      In (default_compartment, f) (policy_import cp);
+  exports_debug: forall f n i l,
+      simpl_fundef f = External (EF_debug n i l) ->
       In f (policy_export default_compartment)
-
   }.
 
 Definition allowed_cross_call (pol: t) (cp: compartment) (f: F) :=
@@ -2019,7 +2069,8 @@ Definition allowed_cross_call (pol: t) (cp: compartment) (f: F) :=
 Definition allowed_call (pol: t) (cp: compartment) (f: F) :=
   comp_of f = cp \/ allowed_cross_call pol cp f.
 
-Lemma pol_accepts_runtime_builtins: forall pol cp name f sg bf,
+(* JT: TODO: Refactor these two definitions *)
+Lemma pol_accepts_runtime: forall pol cp name f sg bf,
     lookup_builtin_function name sg = Some bf ->
     simpl_fundef f = External (EF_runtime name sg) ->
     allowed_call pol cp f.
@@ -2028,11 +2079,82 @@ Proof.
   right; split.
   - erewrite preserves_comp.
     rewrite H2.
-    eapply imports_runtime_builtins; eauto.
+    eapply imports_runtime; eauto.
   - erewrite preserves_comp.
     rewrite H2.
-    eapply exports_runtime_builtins; eauto.
+    eapply exports_runtime; eauto.
 Qed.
+
+Lemma pol_accepts_builtin: forall pol cp name f sg bf,
+    lookup_builtin_function name sg = Some bf ->
+    simpl_fundef f = External (EF_builtin name sg) ->
+    allowed_call pol cp f.
+Proof.
+  intros pol cp name f sg bf H1 H2; subst.
+  right; split.
+  - erewrite preserves_comp.
+    rewrite H2.
+    eapply imports_builtin; eauto.
+  - erewrite preserves_comp.
+    rewrite H2.
+    eapply exports_builtin; eauto.
+Qed.
+
+Lemma pol_accepts_vload: forall pol cp f ch,
+    simpl_fundef f = External (EF_vload ch) ->
+    allowed_call pol cp f.
+Proof.
+  intros pol cp f ch H1; subst.
+  right; split.
+  - erewrite preserves_comp.
+    rewrite H1.
+    eapply imports_vload; eauto.
+  - erewrite preserves_comp.
+    rewrite H1.
+    eapply exports_vload; eauto.
+Qed.
+
+Lemma pol_accepts_vstore: forall pol cp f ch,
+    simpl_fundef f = External (EF_vstore ch) ->
+    allowed_call pol cp f.
+Proof.
+  intros pol cp f ch H1; subst.
+  right; split.
+  - erewrite preserves_comp.
+    rewrite H1.
+    eapply imports_vstore; eauto.
+  - erewrite preserves_comp.
+    rewrite H1.
+    eapply exports_vstore; eauto.
+Qed.
+
+Lemma pol_accepts_memcpy: forall pol cp f v1 v2,
+    simpl_fundef f = External (EF_memcpy v1 v2) ->
+    allowed_call pol cp f.
+Proof.
+  intros pol cp f v1 v2 H1; subst.
+  right; split.
+  - erewrite preserves_comp.
+    rewrite H1.
+    eapply imports_memcpy; eauto.
+  - erewrite preserves_comp.
+    rewrite H1.
+    eapply exports_memcpy; eauto.
+Qed.
+
+Lemma pol_accepts_debug: forall pol cp f n i l,
+    simpl_fundef f = External (EF_debug n i l) ->
+    allowed_call pol cp f.
+Proof.
+  intros pol cp f n i l H.
+  right; split.
+  - erewrite preserves_comp. rewrite H.
+    eapply imports_debug; eauto.
+  - erewrite preserves_comp. rewrite H.
+    eapply exports_debug; eauto.
+Qed.
+
+
 
 (* TODO: Write the proper definition of these *)
 Axiom allowed_call_b: t -> compartment -> F -> bool.

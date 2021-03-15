@@ -441,6 +441,9 @@ Proof.
   apply filter_globdefs_unique_names.
 Qed.
 
+Definition match_pol := match_pol (fun f tf: fundef => f = tf).
+
+
 (** * Semantic preservation *)
 
 Section SOUNDNESS.
@@ -452,7 +455,7 @@ Hypothesis USED_VALID: valid_used_set p used.
 Hypothesis TRANSF: match_prog_1 used p tp.
 Variable pol: policy.
 Variable tpol: policy.
-Hypothesis TRANSPOL: match_pol (fun f tf => f = tf) pol tpol.
+Hypothesis TRANSPOL: match_pol pol tpol.
 
 Let ge := Genv.globalenv p.
 Let tge := Genv.globalenv tp.
@@ -993,6 +996,7 @@ Proof.
   intros (j' & tv & tm' & A & B & C & D & E & F & G).
   econstructor; split.
   eapply exec_Ibuiltin; eauto.
+  eapply TRANSPOL; eauto.
   eapply match_states_regular with (j := j'); eauto.
   apply match_stacks_incr with j; auto.
   intros. exploit G; eauto. intros [U V].

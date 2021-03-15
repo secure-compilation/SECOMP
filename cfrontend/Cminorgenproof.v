@@ -48,6 +48,8 @@ Proof.
   intros. apply match_transform_partial_program; auto.
 Qed.
 
+Definition match_pol := match_pol (fun f tf => transl_fundef f = OK tf).
+
 Section TRANSLATION.
 
 Variable prog: Csharpminor.program.
@@ -58,7 +60,7 @@ Let tge: genv := Genv.globalenv tprog.
 
 Variable pol: Csharpminor.policy.
 Variable tpol: policy.
-Hypothesis TRANSPOL: match_pol (fun f tf => transl_fundef f = OK tf) pol tpol.
+Hypothesis TRANSPOL: match_pol pol tpol.
 
 Lemma symbols_preserved:
   forall (s: ident), Genv.find_symbol tge s = Genv.find_symbol ge s.
@@ -2069,6 +2071,8 @@ Proof.
   intros [f' [vres' [tm' [EC [VINJ [MINJ' [UNMAPPED [OUTOFREACH [INCR SEPARATED]]]]]]]]].
   left; econstructor; split.
   apply plus_one. econstructor. eauto.
+  change (fn_comp tfn) with (comp_of tfn). rewrite <- (comp_transl_partial _ TRF).
+  eapply TRANSPOL; eauto. reflexivity.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   change (fn_comp tfn) with (comp_of tfn). rewrite <- (comp_transl_partial _ TRF). eauto.
   assert (MCS': match_callstack f' m' tm'

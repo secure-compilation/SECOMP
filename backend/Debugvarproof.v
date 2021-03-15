@@ -289,6 +289,8 @@ Proof.
 - apply IHwf_avail0.
 Qed.
 
+Definition match_pol := match_pol (fun f tf => transf_fundef f = OK tf).
+
 (** * Semantic preservation *)
 
 Section PRESERVATION.
@@ -300,7 +302,7 @@ Hypothesis TRANSF: match_prog prog tprog.
 
 Variable pol: policy.
 Variable tpol: policy.
-Hypothesis TRANSPOL: match_pol (fun f tf => transf_fundef f = OK tf) pol tpol.
+Hypothesis TRANSPOL: match_pol pol tpol.
 
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
@@ -380,12 +382,14 @@ Proof.
   eapply star_step; eauto.
   econstructor.
   constructor. eexact E1. constructor.
+  eapply Policy.pol_accepts_debug; reflexivity.
   simpl; constructor.
   simpl; auto.
   traceEq.
 - eapply star_step; eauto.
   econstructor.
   constructor.
+  eapply Policy.pol_accepts_debug; reflexivity.
   simpl; constructor.
   simpl; auto.
   traceEq.
@@ -510,6 +514,8 @@ Proof.
   eapply plus_left.
   econstructor; eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
+  eapply TRANSPOL with (f := External ef). reflexivity.
+  inv TRF; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   inversion TRF. simpl in *. eauto.
   apply eval_add_delta_ranges. traceEq.
