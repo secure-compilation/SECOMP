@@ -817,7 +817,7 @@ Proof.
   symmetry. eapply Solver.fixpoint_entry; eauto.
 Qed.
 
-Definition match_pol (prog: program) := Policy.match_pol (fun cu f tf => OK tf = transf_fundef (romem_for cu) f) prog.
+Definition match_pol (prog: program) := match_pol_gen (fun cu f tf => OK tf = transf_fundef (romem_for cu) f) prog.
 
 (** * Semantic preservation *)
 
@@ -832,8 +832,8 @@ Hypothesis TRANSPOL: match_pol prog pol tpol.
 
 Lemma linkorder_policy:
   forall cunit, linkorder cunit prog ->
-           Policy.match_pol (fun cu f tf => OK tf = transf_fundef (romem_for cu) f) prog pol tpol ->
-           Policy.match_pol (fun cu f tf => OK tf = transf_fundef (romem_for cu) f) cunit pol tpol.
+           match_pol_gen (fun cu f tf => OK tf = transf_fundef (romem_for cu) f) prog pol tpol ->
+           match_pol_gen (fun cu f tf => OK tf = transf_fundef (romem_for cu) f) cunit pol tpol.
 Admitted.
 
 Let ge := Genv.globalenv prog.

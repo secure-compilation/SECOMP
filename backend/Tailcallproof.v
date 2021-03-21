@@ -221,7 +221,7 @@ Proof.
   intros. apply match_transform_program_contextual; auto.
 Qed.
 
-Definition match_pol (prog: program) := Policy.match_pol (fun cunit f tf => tf = transf_fundef (compenv_program cunit) f) prog.
+Definition match_pol (prog: program) := Policy.match_pol_gen (fun cunit f tf => tf = transf_fundef (compenv_program cunit) f) prog.
 
 Section PRESERVATION.
 
@@ -237,8 +237,8 @@ Let tge := Genv.globalenv tprog.
 
 Lemma linkorder_policy:
   forall cunit, linkorder cunit prog ->
-           Policy.match_pol (fun cunit f tf => tf = transf_fundef (compenv_program cunit) f) prog pol tpol ->
-           Policy.match_pol (fun cunit f tf => tf = transf_fundef (compenv_program cunit) f) cunit pol tpol.
+           Policy.match_pol_gen (fun cunit f tf => tf = transf_fundef (compenv_program cunit) f) prog pol tpol ->
+           Policy.match_pol_gen (fun cunit f tf => tf = transf_fundef (compenv_program cunit) f) cunit pol tpol.
 Proof.
 Admitted.
 

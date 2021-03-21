@@ -123,7 +123,7 @@ Proof.
   red in H. decompose [Logic.and] H; clear H. red; auto 20.
 Qed.
 
-Definition match_pol (prog: Cminor.program) := Policy.match_pol match_fundef prog.
+Definition match_pol (prog: Cminor.program) := Policy.match_pol_gen match_fundef prog.
 
 (** * Correctness of the instruction selection functions for expressions *)
 
@@ -149,8 +149,8 @@ Hypothesis matching_pol : match_pol prog pol tpol.
 
 Lemma linkorder_policy:
   forall cunit, linkorder cunit prog ->
-           Policy.match_pol match_fundef prog pol tpol ->
-           Policy.match_pol match_fundef cunit pol tpol.
+           Policy.match_pol_gen match_fundef prog pol tpol ->
+           Policy.match_pol_gen match_fundef cunit pol tpol.
 Admitted.
 
 Lemma wt_prog : wt_program prog.

@@ -58,7 +58,7 @@ Proof.
 Qed.
 
 Definition match_pol (prog: Clight.program) :=
-  Policy.match_pol match_fundef prog.
+  match_pol_gen match_fundef prog.
 
 (** * Properties of operations over types *)
 
@@ -1048,8 +1048,8 @@ Hypothesis TRANSPOL: match_pol prog pol tpol.
 
 Lemma linkorder_policy:
   forall cunit, linkorder cunit prog ->
-           Policy.match_pol match_fundef prog pol tpol ->
-           Policy.match_pol match_fundef cunit pol tpol.
+           match_pol_gen match_fundef prog pol tpol ->
+           match_pol_gen match_fundef cunit pol tpol.
 Proof.
 Admitted.
 

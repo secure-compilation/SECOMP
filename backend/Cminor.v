@@ -471,8 +471,10 @@ Inductive step: state -> trace -> state -> Prop :=
   | step_call: forall f optid sig a bl k sp e m vf vargs fd,
       eval_expr sp e m a vf ->
       eval_exprlist sp e m bl vargs ->
+      (* vf is a value that should be a pointer with the block that was allocated during the construction of the global environment*)
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
+      (* Specify allowed call not with fd but with the block identidfier that is inside vf *)
       forall ALLOWED: Policy.allowed_call pol f.(fn_comp) fd,
       step (State f (Scall optid sig a bl) k sp e m)
         E0 (Callstate fd vargs (Kcall optid f sp e k) m)

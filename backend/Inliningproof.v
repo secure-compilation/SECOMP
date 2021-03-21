@@ -38,7 +38,7 @@ Proof.
 Qed.
 
 Definition match_pol (prog: program) :=
-  Policy.match_pol (fun cunit f tf => transf_fundef (funenv_program cunit) f = OK tf) prog.
+  match_pol_gen (fun cunit f tf => transf_fundef (funenv_program cunit) f = OK tf) prog.
 
 Section INLINING.
 
@@ -55,8 +55,8 @@ Let tge := Genv.globalenv tprog.
 
 Lemma linkorder_policy:
   forall cunit, linkorder cunit prog ->
-           Policy.match_pol (fun cunit f tf => transf_fundef (funenv_program cunit) f = OK tf) prog pol tpol ->
-           Policy.match_pol (fun cunit f tf => transf_fundef (funenv_program cunit) f = OK tf) cunit pol tpol.
+           Policy.match_pol_gen (fun cunit f tf => transf_fundef (funenv_program cunit) f = OK tf) prog pol tpol ->
+           Policy.match_pol_gen (fun cunit f tf => transf_fundef (funenv_program cunit) f = OK tf) cunit pol tpol.
 Proof.
 Admitted.
 
