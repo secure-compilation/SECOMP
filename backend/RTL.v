@@ -208,6 +208,15 @@ Definition find_function
   [st1] the initial state, [st2] the final state, and [t] the trace
   of system calls performed during this transition. *)
 
+Definition find_function_ptr ros rs :=
+  match ros with
+  | inl r => Some (rs # r)
+  | inr symb => match Genv.find_symbol ge symb with
+               | Some b => Some  (Vptr b Ptrofs.zero)
+               | None => None
+               end
+  end.
+
 Inductive step: state -> trace -> state -> Prop :=
   | exec_Inop:
       forall s f sp pc rs m pc',
@@ -235,23 +244,25 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State s f sp pc rs m)
         E0 (State s f sp pc' rs m')
   | exec_Icall:
-      forall s f sp pc rs m sig ros args res pc' fd,
+      forall s f sp pc rs m sig ros args res pc' fd vf,
       (fn_code f)!pc = Some(Icall sig ros args res pc') ->
       find_function ros rs = Some fd ->
       funsig fd = sig ->
       (* TODO *)
-      (* forall (ALLOWED: allowed_call ge f.(fn_comp) vf), *)
+      forall (FUNPTR: find_function_ptr ros rs = Some vf),
+      forall (ALLOWED: allowed_call ge f.(fn_comp) vf),
       step (State s f sp pc rs m)
         E0 (Callstate (Stackframe res f sp pc' rs :: s) fd rs##args m)
   | exec_Itailcall:
-      forall s f stk pc rs m sig ros args fd m',
+      forall s f stk pc rs m sig ros args fd m' vf,
       (fn_code f)!pc = Some(Itailcall sig ros args) ->
       find_function ros rs = Some fd ->
       funsig fd = sig ->
       forall COMP: comp_of fd = f.(fn_comp),
       forall ALLOWED: needs_calling_comp f.(fn_comp) = false,
       (* TODO *)
-      (* forall (ALLOWED': Policy.allowed_call pol f.(fn_comp) fd), *)
+      forall (FUNPTR: find_function_ptr ros rs = Some vf),
+      forall (ALLOWED': allowed_call ge f.(fn_comp) vf),
       Mem.free m stk 0 f.(fn_stacksize) = Some m' ->
       step (State s f (Vptr stk Ptrofs.zero) pc rs m)
         E0 (Callstate s fd rs##args m')
