@@ -366,6 +366,24 @@ Record globvar (V: Type) : Type := mkglobvar {
 
 Instance has_comp_globvar V : has_comp (globvar V) := @gvar_comp _.
 
+(** Policies *)
+Module Policy.
+
+  Record t: Type := mkpolicy {
+    policy_export: compartment -> list ident; (* The list of exported functions *)
+    policy_import: compartment -> list (compartment * ident); (* The list of imported functions and their compartment *)
+  }.
+
+  Definition empty_pol: t := mkpolicy (fun C => nil) (fun C => nil).
+
+  Definition eqb: t -> t -> bool.
+  Admitted.
+  Lemma eq_eqb: forall pol pol', pol = pol' <-> eqb pol pol' = true.
+  Admitted.
+
+End Policy.
+
+
 (** Whole programs consist of:
 - a collection of global definitions (name and description);
 - a set of public names (the names that are visible outside
@@ -395,7 +413,8 @@ Instance has_comp_globdef F V {CF: has_comp F} : has_comp (globdef F V) :=
 Record program (F V: Type) : Type := mkprogram {
   prog_defs: list (ident * globdef F V);
   prog_public: list ident;
-  prog_main: ident
+  prog_main: ident;
+  prog_pol: Policy.t
 }.
 
 Definition prog_defs_names (F V: Type) (p: program F V) : list ident :=
@@ -465,7 +484,8 @@ Definition transform_program (p: program A V) : program B V :=
   mkprogram
     (List.map transform_program_globdef p.(prog_defs))
     p.(prog_public)
-    p.(prog_main).
+    p.(prog_main)
+    p.(prog_pol).
 
 End TRANSF_PROGRAM.
 
@@ -510,7 +530,7 @@ Fixpoint transf_globdefs (l: list (ident * globdef A V)) : res (list (ident * gl
 
 Definition transform_partial_program2 (p: program A V) : res (program B W) :=
   do gl' <- transf_globdefs p.(prog_defs);
-  OK (mkprogram gl' p.(prog_public) p.(prog_main)).
+  OK (mkprogram gl' p.(prog_public) p.(prog_main) p.(prog_pol)).
 
 End TRANSF_PROGRAM_GEN.
 

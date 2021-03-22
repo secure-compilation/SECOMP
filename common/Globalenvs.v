@@ -151,7 +151,7 @@ Record t: Type := mkgenv {
   genv_symb: PTree.t block;             (**r mapping symbol -> block *)
   genv_defs: PTree.t (globdef F V);     (**r mapping block -> definition *)
   genv_next: block;                     (**r next symbol pointer *)
-  (* genv_policy: …; *)
+  genv_policy: Policy.t;                (**r policy *)
   genv_symb_range: forall id b, PTree.get id genv_symb = Some b -> Plt b genv_next;
   genv_defs_range: forall b g, PTree.get b genv_defs = Some g -> Plt b genv_next;
   genv_vars_inj: forall id1 id2 b,
@@ -248,6 +248,7 @@ Definition block_is_volatile (ge: t) (b: block) : bool :=
   | Some gv => gv.(gvar_volatile)
   end.
 
+
 (** ** Constructing the global environment *)
 
 Program Definition add_global (ge: t) (idg: ident * globdef F V) : t :=
@@ -256,6 +257,7 @@ Program Definition add_global (ge: t) (idg: ident * globdef F V) : t :=
     (PTree.set idg#1 ge.(genv_next) ge.(genv_symb))
     (PTree.set ge.(genv_next) idg#2 ge.(genv_defs))
     (Pos.succ ge.(genv_next))
+    (genv_policy ge)
     _ _ _.
 Next Obligation.
   destruct ge; simpl in *.
@@ -288,8 +290,8 @@ Proof.
   intros. apply fold_left_app.
 Qed.
 
-Program Definition empty_genv (pub: list ident): t :=
-  @mkgenv pub (PTree.empty _) (PTree.empty _) 1%positive _ _ _.
+Program Definition empty_genv (pub: list ident) (pol: Policy.t): t :=
+  @mkgenv pub (PTree.empty _) (PTree.empty _) 1%positive pol _ _ _.
 Next Obligation.
   rewrite PTree.gempty in H. discriminate.
 Qed.
@@ -301,7 +303,7 @@ Next Obligation.
 Qed.
 
 Definition globalenv (p: program F V) :=
-  add_globals (empty_genv p.(prog_public)) p.(prog_defs).
+  add_globals (empty_genv p.(prog_public) p.(prog_pol)) p.(prog_defs).
 
 (** Proof principles *)
 
@@ -1302,7 +1304,7 @@ Lemma init_mem_genv_next: forall p m,
 Proof.
   unfold init_mem; intros.
   exploit alloc_globals_nextblock; eauto. rewrite Mem.nextblock_empty. intro.
-  generalize (genv_next_add_globals (prog_defs p) (empty_genv (prog_public p))).
+  generalize (genv_next_add_globals (prog_defs p) (empty_genv (prog_public p) (prog_pol p))).
   fold (globalenv p). simpl genv_next. intros. congruence.
 Qed.
 
@@ -1820,7 +1822,7 @@ Proof.
 - apply find_symbol_match.
 - intros. unfold public_symbol. rewrite find_symbol_match.
   rewrite ! globalenv_public.
-  destruct progmatch as (P & Q & R). rewrite R. auto.
+  destruct progmatch as (P & Q & R & S). rewrite R. auto.
 - intros. unfold block_is_volatile.
   destruct globalenvs_match as [P Q R]. specialize (R b).
   unfold find_var_info, find_def.
@@ -1989,6 +1991,27 @@ End TRANSFORM_TOTAL.
 
 End Genv.
 
-Coercion Genv.to_senv: Genv.t >-> Senv.t.
+Section POLICY.
 
-Require Export Policy.
+  Context {F V: Type}.
+  Context {CF: has_comp F}.
+
+  (* Allowed calls *)
+  Definition allowed_cross_call (ge: Genv.t F V) (cp: compartment) (vf: val) :=
+    match vf with
+    | Vptr b _ =>
+      exists i cp',
+      Genv.invert_symbol ge b = Some i /\
+      Genv.find_comp ge vf = Some cp' /\
+      In (cp', i) (Policy.policy_import ge.(Genv.genv_policy) cp) /\
+      In i (Policy.policy_export ge.(Genv.genv_policy) cp')
+    | _ => False
+    end.
+
+  Definition allowed_call (ge: Genv.t F V) (cp: compartment) (vf: val) :=
+    Some cp = Genv.find_comp ge vf \/ allowed_cross_call ge cp vf.
+
+End POLICY.
+
+
+Coercion Genv.to_senv: Genv.t >-> Senv.t.
