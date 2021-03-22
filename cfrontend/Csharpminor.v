@@ -122,7 +122,6 @@ Definition empty_temp_env : temp_env := PTree.empty val.
 
 
 (** Policies *)
-Definition policy := Policy.t (F := fundef).
 
 (** Initialization of temporary variables *)
 
@@ -301,7 +300,6 @@ Definition blocks_of_env (e: env) : list (block * Z * Z) :=
 
 Section RELSEM.
 
-Variable pol: policy.
 Variable ge: genv.
 
 (* Evaluation of the address of a variable:
@@ -402,13 +400,13 @@ Inductive step: state -> trace -> state -> Prop :=
       eval_exprlist e le m bl vargs ->
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
-      forall (ALLOWED: Policy.allowed_call pol f.(fn_comp) fd),
+      forall (ALLOWED: allowed_call ge f.(fn_comp) vf),
       step (State f (Scall optid sig a bl) k e le m)
         E0 (Callstate fd vargs (Kcall optid f e le k) m)
 
   | step_builtin: forall f optid ef bl k e le m vargs t vres m',
       eval_exprlist e le m bl vargs ->
-      forall (ALLOWED: Policy.allowed_call pol f.(fn_comp) (External ef)),
+      (* forall (ALLOWED: Policy.allowed_call pol f.(fn_comp) (External ef)), *)
       external_call ef ge f.(fn_comp) vargs m t vres m' ->
       step (State f (Sbuiltin optid ef bl) k e le m)
          t (State f Sskip k e (Cminor.set_optvar optid vres le) m')
@@ -507,5 +505,5 @@ Inductive final_state: state -> int -> Prop :=
 
 (** Wrapping up these definitions in a small-step semantics. *)
 
-Definition semantics (pol: policy) (p: program) :=
-  Semantics (step pol) (initial_state p) final_state (Genv.globalenv p).
+Definition semantics (p: program) :=
+  Semantics step (initial_state p) final_state (Genv.globalenv p).

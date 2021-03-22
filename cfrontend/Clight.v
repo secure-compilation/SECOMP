@@ -240,11 +240,9 @@ Inductive assign_loc (ce: composite_env) (ty: type) (m: mem) (b: block) (ofs: pt
       Mem.storebytes m b (Ptrofs.unsigned ofs) bytes = Some m' ->
       assign_loc ce ty m b ofs (Vptr b' ofs') m'.
 
-Definition policy := Policy.t (F := fundef).
 
 Section SEMANTICS.
 
-Variable pol: policy.
 Variable ge: genv.
 
 (** Allocation of function-local variables.
@@ -577,15 +575,14 @@ Inductive step: state -> trace -> state -> Prop :=
       eval_exprlist e le m al tyargs vargs ->
       Genv.find_funct ge vf = Some fd ->
       type_of_fundef fd = Tfunction tyargs tyres cconv ->
-      forall (ALLOWED: Policy.allowed_call pol f.(fn_comp) fd),
+      forall (ALLOWED: allowed_call ge f.(fn_comp) vf),
       step (State f (Scall optid a al) k e le m)
         E0 (Callstate fd vargs (Kcall optid f e le k) m)
 
-  | step_builtin:   forall f optid ef tyargs tyres cconv al k e le m vargs t vres m',
+  | step_builtin:   forall f optid ef tyargs al k e le m vargs t vres m',
       eval_exprlist e le m al tyargs vargs ->
-      (* JT: FIXME: this is strange to use tyargs, tyres, and cconv only in the policy check *)
-      (* !!! TODO !!! this is very annoying because it introduces shelved goals!! *)
-      forall (ALLOWED: Policy.allowed_call pol f.(fn_comp) (External ef tyargs tyres cconv)),
+      (* TODO *)
+      (* forall (ALLOWED: Policy.allowed_call pol f.(fn_comp) (External ef tyargs tyres cconv)), *)
       external_call ef ge f.(fn_comp) vargs m t vres m' ->
       step (State f (Sbuiltin optid ef tyargs al) k e le m)
          t (State f Sskip k e (set_opttemp optid vres le) m')
@@ -712,7 +709,7 @@ Inductive function_entry1 (ge: genv) (f: function) (vargs: list val) (m: mem) (e
       le = create_undef_temps f.(fn_temps) ->
       function_entry1 ge f vargs m e le m'.
 
-Definition step1 (pol: policy) (ge: genv) := step pol ge (function_entry1 ge).
+Definition step1 (ge: genv) := step ge (function_entry1 ge).
 
 (** Second, parameters as temporaries. *)
 
@@ -725,27 +722,27 @@ Inductive function_entry2 (ge: genv)  (f: function) (vargs: list val) (m: mem) (
       bind_parameter_temps f.(fn_params) vargs (create_undef_temps f.(fn_temps)) = Some le ->
       function_entry2 ge f vargs m e le m'.
 
-Definition step2 (pol: policy) (ge: genv) := step pol ge (function_entry2 ge).
+Definition step2 (ge: genv) := step ge (function_entry2 ge).
 
 (** Wrapping up these definitions in two small-step semantics. *)
 
-Definition semantics1 (pol: policy) (p: program) :=
+Definition semantics1 (p: program) :=
   let ge := globalenv p in
-  Semantics_gen (step1 pol) (initial_state p) final_state ge ge.
+  Semantics_gen step1 (initial_state p) final_state ge ge.
 
-Definition semantics2 (pol: policy) (p: program) :=
+Definition semantics2 (p: program) :=
   let ge := globalenv p in
-  Semantics_gen (step2 pol) (initial_state p) final_state ge ge.
+  Semantics_gen step2 (initial_state p) final_state ge ge.
 
 (** This semantics is receptive to changes in events. *)
 
-Lemma semantics_receptive (pol: policy):
-  forall (p: program), receptive (semantics1 pol p).
+Lemma semantics_receptive:
+  forall (p: program), receptive (semantics1 p).
 Proof.
   intros. unfold semantics1.
   set (ge := globalenv p). constructor; simpl; intros.
 (* receptiveness *)
-  assert (t1 = E0 -> exists s2, step1 pol ge s t2 s2).
+  assert (t1 = E0 -> exists s2, step1 ge s t2 s2).
     intros. subst. inv H0. exists s1; auto.
   inversion H; subst; auto.
   (* builtin *)

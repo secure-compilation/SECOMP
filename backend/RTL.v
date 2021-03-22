@@ -114,7 +114,6 @@ Definition funsig (fd: fundef) :=
 (** * Operational semantics *)
 
 Definition genv := Genv.t fundef unit.
-Definition policy := Policy.t (F := fundef).
 Definition regset := Regmap.t val.
 
 Fixpoint init_regs (vl: list val) (rl: list reg) {struct rl} : regset :=
@@ -191,7 +190,6 @@ Definition call_comp (stack: list stackframe): compartment :=
 
 Section RELSEM.
 
-Variable pol: policy.
 Variable ge: genv.
 
 Definition find_function
@@ -241,7 +239,8 @@ Inductive step: state -> trace -> state -> Prop :=
       (fn_code f)!pc = Some(Icall sig ros args res pc') ->
       find_function ros rs = Some fd ->
       funsig fd = sig ->
-      forall (ALLOWED: Policy.allowed_call pol f.(fn_comp) fd),
+      (* TODO *)
+      (* forall (ALLOWED: allowed_call ge f.(fn_comp) vf), *)
       step (State s f sp pc rs m)
         E0 (Callstate (Stackframe res f sp pc' rs :: s) fd rs##args m)
   | exec_Itailcall:
@@ -251,7 +250,8 @@ Inductive step: state -> trace -> state -> Prop :=
       funsig fd = sig ->
       forall COMP: comp_of fd = f.(fn_comp),
       forall ALLOWED: needs_calling_comp f.(fn_comp) = false,
-      forall (ALLOWED': Policy.allowed_call pol f.(fn_comp) fd),
+      (* TODO *)
+      (* forall (ALLOWED': Policy.allowed_call pol f.(fn_comp) fd), *)
       Mem.free m stk 0 f.(fn_stacksize) = Some m' ->
       step (State s f (Vptr stk Ptrofs.zero) pc rs m)
         E0 (Callstate s fd rs##args m')
@@ -259,7 +259,8 @@ Inductive step: state -> trace -> state -> Prop :=
       forall s f sp pc rs m ef args res pc' vargs t vres m',
       (fn_code f)!pc = Some(Ibuiltin ef args res pc') ->
       eval_builtin_args ge (fun r => rs#r) sp m args vargs ->
-      forall (ALLOWED: Policy.allowed_call pol f.(fn_comp) (External ef)),
+      (* TODO *)
+      (* forall (ALLOWED: Policy.allowed_call pol f.(fn_comp) (External ef)), *)
       external_call ef ge f.(fn_comp) vargs m t vres m' ->
       step (State s f sp pc rs m)
          t (State s f sp pc' (regmap_setres res vres rs) m')
@@ -350,17 +351,17 @@ Inductive final_state: state -> int -> Prop :=
 
 (** The small-step semantics for a program. *)
 
-Definition semantics (pol: policy) (p: program) :=
-  Semantics (step pol) (initial_state p) final_state (Genv.globalenv p).
+Definition semantics (p: program) :=
+  Semantics step (initial_state p) final_state (Genv.globalenv p).
 
 (** This semantics is receptive to changes in events. *)
 
-Lemma semantics_receptive (pol: policy):
-  forall (p: program), receptive (semantics pol p).
+Lemma semantics_receptive:
+  forall (p: program), receptive (semantics p).
 Proof.
   intros. constructor; simpl; intros.
 (* receptiveness *)
-  assert (t1 = E0 -> exists s2, step pol (Genv.globalenv p) s t2 s2).
+  assert (t1 = E0 -> exists s2, step (Genv.globalenv p) s t2 s2).
     intros. subst. inv H0. exists s1; auto.
   inversion H; subst; auto.
   exploit external_call_receptive; eauto. intros [vres2 [m2 EC2]].

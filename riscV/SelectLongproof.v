@@ -34,7 +34,6 @@ Section CMCONSTR.
 Variable prog: program.
 Variable hf: helper_functions.
 Hypothesis HELPERS: helper_functions_declared prog hf.
-Variable pol: policy.
 Let ge := Genv.globalenv prog.
 Variable sp: val.
 Variable e: env.
@@ -43,30 +42,30 @@ Variable m: mem.
 
 Definition unary_constructor_sound (cstr: expr -> expr) (sem: val -> val) : Prop :=
   forall le a x,
-  eval_expr pol ge sp e cp m le a x ->
-  exists v, eval_expr pol ge sp e cp m le (cstr a) v /\ Val.lessdef (sem x) v.
+  eval_expr ge sp e cp m le a x ->
+  exists v, eval_expr ge sp e cp m le (cstr a) v /\ Val.lessdef (sem x) v.
 
 Definition binary_constructor_sound (cstr: expr -> expr -> expr) (sem: val -> val -> val) : Prop :=
   forall le a x b y,
-  eval_expr pol ge sp e cp m le a x ->
-  eval_expr pol ge sp e cp m le b y ->
-  exists v, eval_expr pol ge sp e cp m le (cstr a b) v /\ Val.lessdef (sem x y) v.
+  eval_expr ge sp e cp m le a x ->
+  eval_expr ge sp e cp m le b y ->
+  exists v, eval_expr ge sp e cp m le (cstr a b) v /\ Val.lessdef (sem x y) v.
 
 Definition partial_unary_constructor_sound (cstr: expr -> expr) (sem: val -> option val) : Prop :=
   forall le a x y,
-  eval_expr pol ge sp e cp m le a x ->
+  eval_expr ge sp e cp m le a x ->
   sem x = Some y ->
-  exists v, eval_expr pol ge sp e cp m le (cstr a) v /\ Val.lessdef y v.
+  exists v, eval_expr ge sp e cp m le (cstr a) v /\ Val.lessdef y v.
 
 Definition partial_binary_constructor_sound (cstr: expr -> expr -> expr) (sem: val -> val -> option val) : Prop :=
   forall le a x b y z,
-  eval_expr pol ge sp e cp m le a x ->
-  eval_expr pol ge sp e cp m le b y ->
+  eval_expr ge sp e cp m le a x ->
+  eval_expr ge sp e cp m le b y ->
   sem x y = Some z ->
-  exists v, eval_expr pol ge sp e cp m le (cstr a b) v /\ Val.lessdef z v.
+  exists v, eval_expr ge sp e cp m le (cstr a b) v /\ Val.lessdef z v.
 
 Theorem eval_longconst:
-  forall le n, eval_expr pol ge sp e cp m le (longconst n) (Vlong n).
+  forall le n, eval_expr ge sp e cp m le (longconst n) (Vlong n).
 Proof.
   unfold longconst; intros; destruct Archi.splitlong.
   apply SplitLongproof.eval_longconst.
@@ -75,7 +74,7 @@ Qed.
 
 Lemma is_longconst_sound:
   forall v a n le,
-  is_longconst a = Some n -> eval_expr pol ge sp e cp m le a v -> v = Vlong n.
+  is_longconst a = Some n -> eval_expr ge sp e cp m le a v -> v = Vlong n.
 Proof with (try discriminate).
   intros. unfold is_longconst in *. destruct Archi.splitlong.
   eapply SplitLongproof.is_longconst_sound; eauto.
@@ -217,7 +216,7 @@ Proof.
   destruct (Int.ltu Int.zero Int64.iwordsize'); auto.
   change (Int64.shl' i Int.zero) with (Int64.shl i Int64.zero). rewrite Int64.shl_zero; auto.
   destruct (Int.ltu n Int64.iwordsize') eqn:LT; simpl.
-  assert (DEFAULT: exists v, eval_expr pol ge sp e cp m le (Eop (Oshllimm n) (a:::Enil)) v
+  assert (DEFAULT: exists v, eval_expr ge sp e cp m le (Eop (Oshllimm n) (a:::Enil)) v
                          /\  Val.lessdef (Val.shll x (Vint n)) v) by TrivialExists.
   destruct (shllimm_match a); InvEval.
 - econstructor; split. apply eval_longconst. simpl; rewrite LT; auto.
@@ -239,7 +238,7 @@ Proof.
   destruct (Int.ltu Int.zero Int64.iwordsize'); auto.
   change (Int64.shru' i Int.zero) with (Int64.shru i Int64.zero). rewrite Int64.shru_zero; auto.
   destruct (Int.ltu n Int64.iwordsize') eqn:LT; simpl.
-  assert (DEFAULT: exists v, eval_expr pol ge sp e cp m le (Eop (Oshrluimm n) (a:::Enil)) v
+  assert (DEFAULT: exists v, eval_expr ge sp e cp m le (Eop (Oshrluimm n) (a:::Enil)) v
                          /\  Val.lessdef (Val.shrlu x (Vint n)) v) by TrivialExists.
   destruct (shrluimm_match a); InvEval.
 - econstructor; split. apply eval_longconst. simpl; rewrite LT; auto.
@@ -261,7 +260,7 @@ Proof.
   destruct (Int.ltu Int.zero Int64.iwordsize'); auto.
   change (Int64.shr' i Int.zero) with (Int64.shr i Int64.zero). rewrite Int64.shr_zero; auto.
   destruct (Int.ltu n Int64.iwordsize') eqn:LT; simpl.
-  assert (DEFAULT: exists v, eval_expr pol ge sp e cp m le (Eop (Oshrlimm n) (a:::Enil)) v
+  assert (DEFAULT: exists v, eval_expr ge sp e cp m le (Eop (Oshrlimm n) (a:::Enil)) v
                          /\  Val.lessdef (Val.shrl x (Vint n)) v) by TrivialExists.
   destruct (shrlimm_match a); InvEval.
 - econstructor; split. apply eval_longconst. simpl; rewrite LT; auto.
@@ -302,7 +301,7 @@ Theorem eval_mullimm_base: forall n, unary_constructor_sound (mullimm_base n) (f
 Proof.
   intros; unfold mullimm_base. red; intros.
   assert (DEFAULT: exists v,
-                eval_expr pol ge sp e cp m le (Eop Omull (a ::: longconst n ::: Enil)) v
+                eval_expr ge sp e cp m le (Eop Omull (a ::: longconst n ::: Enil)) v
              /\ Val.lessdef (Val.mull x (Vlong n)) v).
   { econstructor; split. EvalOp. constructor. eauto. constructor. apply eval_longconst. constructor. simpl; eauto.
     auto. }
@@ -315,7 +314,7 @@ Proof.
   rewrite (Int64.one_bits'_range n) by (rewrite B; auto with coqlib).
   rewrite Int64.shl'_mul; auto.
 - set (le' := x :: le).
-  assert (A0: eval_expr pol ge sp e cp m le' (Eletvar O) x) by (constructor; reflexivity).
+  assert (A0: eval_expr ge sp e cp m le' (Eletvar O) x) by (constructor; reflexivity).
   exploit (eval_shllimm i). eexact A0. intros (v1 & A1 & B1).
   exploit (eval_shllimm j). eexact A0. intros (v2 & A2 & B2).
   exploit (eval_addl). eexact A1. eexact A2. intros (v3 & A3 & B3).
@@ -481,9 +480,9 @@ Qed.
 
 Theorem eval_shrxlimm:
   forall le a n x z,
-  eval_expr pol ge sp e cp m le a x ->
+  eval_expr ge sp e cp m le a x ->
   Val.shrxl x (Vint n) = Some z ->
-  exists v, eval_expr pol ge sp e cp m le (shrxlimm a n) v /\ Val.lessdef z v.
+  exists v, eval_expr ge sp e cp m le (shrxlimm a n) v /\ Val.lessdef z v.
 Proof.
   unfold shrxlimm; intros. destruct Archi.splitlong eqn:SL.
 + eapply SplitLongproof.eval_shrxlimm; eauto using Archi.splitlong_ptr32.
@@ -506,11 +505,11 @@ Proof.
       unfold Int.sub. change (Int.unsigned Int64.iwordsize') with 64. 
       rewrite Int.unsigned_repr. omega. 
       assert (64 < Int.max_unsigned) by reflexivity. omega. }
-    assert (X: eval_expr pol ge sp e m le
+    assert (X: eval_expr ge sp e m le
                (Eop (Oshrlimm (Int.repr (Int64.zwordsize - 1))) (a ::: Enil))
                (Vlong (Int64.shr' i (Int.repr (Int64.zwordsize - 1))))).
     { EvalOp. }
-    assert (Y: eval_expr pol ge sp e m le (shrxlimm_inner a n)
+    assert (Y: eval_expr ge sp e m le (shrxlimm_inner a n)
                (Vlong (Int64.shru' (Int64.shr' i (Int.repr (Int64.zwordsize - 1))) (Int.sub Int64.iwordsize' n)))).
     { EvalOp. simpl. rewrite LTU2. auto. }
     TrivialExists. 
@@ -522,10 +521,10 @@ Qed.
 
 Theorem eval_cmplu:
   forall c le a x b y v,
-  eval_expr pol ge sp e cp m le a x ->
-  eval_expr pol ge sp e cp m le b y ->
+  eval_expr ge sp e cp m le a x ->
+  eval_expr ge sp e cp m le b y ->
   Val.cmplu (Mem.valid_pointer m) c x y = Some v ->
-  eval_expr pol ge sp e cp m le (cmplu c a b) v.
+  eval_expr ge sp e cp m le (cmplu c a b) v.
 Proof.
   unfold cmplu; intros. destruct Archi.splitlong eqn:SL.
   eapply SplitLongproof.eval_cmplu; eauto using Archi.splitlong_ptr32.
@@ -543,10 +542,10 @@ Qed.
 
 Theorem eval_cmpl:
   forall c le a x b y v,
-  eval_expr pol ge sp e cp m le a x ->
-  eval_expr pol ge sp e cp m le b y ->
+  eval_expr ge sp e cp m le a x ->
+  eval_expr ge sp e cp m le b y ->
   Val.cmpl c x y = Some v ->
-  eval_expr pol ge sp e cp m le (cmpl c a b) v.
+  eval_expr ge sp e cp m le (cmpl c a b) v.
 Proof.
   unfold cmpl; intros. destruct Archi.splitlong eqn:SL.
   eapply SplitLongproof.eval_cmpl; eauto.

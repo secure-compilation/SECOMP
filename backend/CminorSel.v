@@ -119,7 +119,6 @@ Definition funsig (fd: fundef) :=
 
 Definition genv := Genv.t fundef unit.
 Definition letenv := list val.
-Definition policy := Policy.t (F := fundef).
 
 (** Continuations *)
 
@@ -155,7 +154,6 @@ Inductive state: Type :=
 
 Section RELSEM.
 
-Variable pol: policy.
 Variable ge: genv.
 
 (** The evaluation predicates have the same general shape as those
@@ -196,7 +194,8 @@ Inductive eval_expr: letenv -> expr -> val -> Prop :=
   | eval_Ebuiltin: forall le ef al vl v,
       eval_exprlist le al vl ->
       external_call ef ge cp vl m E0 v m ->
-      forall (ALLOWED: Policy.allowed_call pol cp (External ef)),
+      (* TODO *)
+      (* forall (ALLOWED: Policy.allowed_call pol cp (External ef)), *)
       eval_expr le (Ebuiltin ef al) v
   | eval_Eexternal: forall le id sg al b ef vl v,
       Genv.find_symbol ge id = Some b ->
@@ -204,7 +203,8 @@ Inductive eval_expr: letenv -> expr -> val -> Prop :=
       ef_sig ef = sg ->
       eval_exprlist le al vl ->
       external_call ef ge cp vl m E0 v m ->
-      forall (ALLOWED: Policy.allowed_call pol cp (External ef)),
+      (* TODO *)
+      (* forall (ALLOWED: Policy.allowed_call pol cp (External ef)), *)
       eval_expr le (Eexternal id sg al) v
 
 with eval_exprlist: letenv -> exprlist -> list val -> Prop :=
@@ -380,7 +380,7 @@ Inductive step: state -> trace -> state -> Prop :=
       eval_exprlist sp e cp m nil bl vargs ->
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
-      forall ALLOWED: Policy.allowed_call pol f.(fn_comp) fd,
+      forall ALLOWED: allowed_call ge f.(fn_comp) vf,
       step (State f (Scall optid sig a bl) k sp e m)
         E0 (Callstate fd vargs (Kcall optid f sp e k) m)
 
@@ -391,7 +391,7 @@ Inductive step: state -> trace -> state -> Prop :=
       funsig fd = sig ->
       forall (COMP: comp_of fd = f.(fn_comp)),
       forall (ALLOWED: needs_calling_comp f.(fn_comp) = false),
-      forall (ALLOWED': Policy.allowed_call pol f.(fn_comp) fd),
+      forall (ALLOWED': allowed_call ge f.(fn_comp) vf),
       Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
       step (State f (Stailcall sig a bl) k (Vptr sp Ptrofs.zero) e m)
         E0 (Callstate fd vargs (call_cont k) m')
@@ -399,7 +399,8 @@ Inductive step: state -> trace -> state -> Prop :=
   | step_builtin: forall f cp res ef al k sp e m vl t v m',
       cp = f.(fn_comp) ->
       list_forall2 (eval_builtin_arg sp e cp m) al vl ->
-      forall ALLOWED: Policy.allowed_call pol f.(fn_comp) (External ef),
+      (* TODO *)
+      (* forall ALLOWED: allowed_call ge f.(fn_comp) (External ef), *)
       external_call ef ge cp vl m t v m' ->
       step (State f (Sbuiltin res ef al) k sp e m)
          t (State f Sskip k sp (set_builtin_res res v e) m')
@@ -488,8 +489,8 @@ Inductive final_state: state -> int -> Prop :=
   | final_state_intro: forall r m,
       final_state (Returnstate (Vint r) Kstop m) r.
 
-Definition semantics (pol : policy) (p: program) :=
-  Semantics (step pol) (initial_state p) final_state (Genv.globalenv p).
+Definition semantics (p: program) :=
+  Semantics step (initial_state p) final_state (Genv.globalenv p).
 
 Hint Constructors eval_expr eval_exprlist eval_condexpr: evalexpr.
 
@@ -568,22 +569,22 @@ Proof.
 Qed.
 
 Lemma eval_lift_expr:
-  forall pol ge sp e cp m w le a v,
-  eval_expr pol ge sp e cp m le a v ->
+  forall ge sp e cp m w le a v,
+  eval_expr ge sp e cp m le a v ->
   forall p le', insert_lenv le p w le' ->
-  eval_expr pol ge sp e cp m le' (lift_expr p a) v.
+  eval_expr ge sp e cp m le' (lift_expr p a) v.
 Proof.
   intros until w.
-  apply (eval_expr_ind3 pol ge sp e cp m
+  apply (eval_expr_ind3 ge sp e cp m
     (fun le a v =>
       forall p le', insert_lenv le p w le' ->
-      eval_expr pol ge sp e cp m le' (lift_expr p a) v)
+      eval_expr ge sp e cp m le' (lift_expr p a) v)
     (fun le al vl =>
       forall p le', insert_lenv le p w le' ->
-      eval_exprlist pol ge sp e cp m le' (lift_exprlist p al) vl)
+      eval_exprlist ge sp e cp m le' (lift_exprlist p al) vl)
     (fun le a b =>
       forall p le', insert_lenv le p w le' ->
-      eval_condexpr pol ge sp e cp m le' (lift_condexpr p a) b));
+      eval_condexpr ge sp e cp m le' (lift_condexpr p a) b));
   simpl; intros; eauto with evalexpr.
 
   eapply eval_Econdition; eauto. destruct va; eauto.
@@ -599,9 +600,9 @@ Proof.
 Qed.
 
 Lemma eval_lift:
-  forall pol ge sp e cp m le a v w,
-  eval_expr pol ge sp e cp m le a v ->
-  eval_expr pol ge sp e cp m (w::le) (lift a) v.
+  forall ge sp e cp m le a v w,
+  eval_expr ge sp e cp m le a v ->
+  eval_expr ge sp e cp m (w::le) (lift a) v.
 Proof.
   intros. unfold lift. eapply eval_lift_expr.
   eexact H. apply insert_lenv_0.

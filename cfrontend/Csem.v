@@ -40,11 +40,8 @@ Definition env := PTree.t (block * type). (* map variable -> location & type *)
 
 Definition empty_env: env := (PTree.empty (block * type)).
 
-Definition policy := Policy.t (F := fundef).
-
 Section SEMANTICS.
 
-Variable pol: policy.
 Variable ge: genv.
 
 (** [deref_loc ty m b ofs t v] computes the value of a datum
@@ -299,9 +296,10 @@ Inductive rred: expr -> mem -> trace -> expr -> mem -> Prop :=
       sem_cast v1 ty1 ty2 m = Some v ->
       rred (Eparen (Eval v1 ty1) ty2 ty) m
         E0 (Eval v ty) m
-  | red_builtin: forall ef tyargs tyres cconv el ty m vargs t vres m',
+  | red_builtin: forall ef tyargs el ty m vargs t vres m',
       cast_arguments m el tyargs vargs ->
-      forall (ALLOWED: Policy.allowed_call pol cp (External ef tyargs tyres cconv)),
+      (* TODO *)
+      (* forall (ALLOWED: allowed_call pol cp (External ef tyargs tyres cconv)), *)
       external_call ef ge cp vargs m t vres m' ->
       rred (Ebuiltin ef tyargs el ty) m
          t (Eval vres ty) m'.
@@ -316,7 +314,7 @@ Inductive callred: expr -> mem -> fundef -> list val -> type -> Prop :=
       cast_arguments m el tyargs vargs ->
       type_of_fundef fd = Tfunction tyargs tyres cconv ->
       classify_fun tyf = fun_case_f tyargs tyres cconv ->
-      forall (ALLOWED: Policy.allowed_call pol cp fd),
+      forall (ALLOWED: allowed_call ge cp vf),
       callred (Ecall (Eval vf tyf) el ty) m
               fd vargs ty.
 
@@ -426,7 +424,7 @@ Inductive imm_safe: kind -> expr -> mem -> Prop :=
   | imm_safe_callred: forall to C e m fd args ty,
       callred e m fd args ty ->
       context RV to C ->
-      forall (ALLOWED: Policy.allowed_call pol cp fd),
+      (* forall (ALLOWED: allowed_call ge cp vf), *)
       imm_safe to (C e) m.
 
 Definition not_stuck (e: expr) (m: mem) : Prop :=
@@ -464,11 +462,8 @@ Proof.
   constructor. eauto.
   constructor. eauto.
   constructor.
-- eapply Policy.pol_accepts_builtin; eauto.
 - red. red. rewrite LK. constructor. simpl. rewrite <- EQ.
   destruct b; auto.
-Unshelve.
-exact Tvoid. exact (mkcallconv true true true).
 Qed.
 
 Lemma ctx_selection_1:
@@ -843,13 +838,13 @@ Inductive final_state: state -> int -> Prop :=
 
 (** Wrapping up these definitions in a small-step semantics. *)
 
-Definition semantics (pol: policy) (p: program) :=
-  Semantics_gen (step pol) (initial_state p) final_state (globalenv p) (globalenv p).
+Definition semantics (p: program) :=
+  Semantics_gen step (initial_state p) final_state (globalenv p) (globalenv p).
 
 (** This semantics has the single-event property. *)
 
-Lemma semantics_single_events (pol: policy) :
-  forall p, single_events (semantics pol p).
+Lemma semantics_single_events:
+  forall p, single_events (semantics p).
 Proof.
   unfold semantics; intros; red; simpl; intros.
   set (ge := globalenv p) in *.
