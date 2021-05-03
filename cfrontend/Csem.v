@@ -314,7 +314,7 @@ Inductive callred: expr -> mem -> fundef -> list val -> type -> Prop :=
       cast_arguments m el tyargs vargs ->
       type_of_fundef fd = Tfunction tyargs tyres cconv ->
       classify_fun tyf = fun_case_f tyargs tyres cconv ->
-      forall (ALLOWED: allowed_call ge cp vf),
+      forall (ALLOWED: Genv.allowed_call ge cp vf),
       callred (Ecall (Eval vf tyf) el ty) m
               fd vargs ty.
 

@@ -61,7 +61,6 @@ Definition funsig (fd: fundef) :=
   end.
 
 Definition genv := Genv.t fundef unit.
-Definition policy := Policy.t (F := fundef).
 Definition locset := Locmap.t.
 
 (** * Operational semantics *)
@@ -95,8 +94,17 @@ Fixpoint find_label (lbl: label) (c: code) {struct c} : option code :=
 
 Section RELSEM.
 
-Variable pol: policy.
 Variable ge: genv.
+
+Definition find_fun_ptr (ros: mreg + ident) (rs: locset) : option val :=
+  match ros with
+  | inl r => Some (rs (R r))
+  | inr symb =>
+    match Genv.find_symbol ge symb with
+    | None => None
+    | Some b => Some (Vptr b Ptrofs.zero)
+    end
+  end.
 
 Definition find_function (ros: mreg + ident) (rs: locset) : option fundef :=
   match ros with
@@ -185,27 +193,29 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State s f sp (Lstore chunk addr args src :: b) rs m)
         E0 (State s f sp b rs' m')
   | exec_Lcall:
-      forall s f sp sig ros b rs m f',
+      forall s f sp sig ros b rs m f' vf,
       find_function ros rs = Some f' ->
+      find_fun_ptr ros rs = Some vf ->
       sig = funsig f' ->
-      forall (ALLOWED: Policy.allowed_call pol f.(fn_comp) f'),
+      forall (ALLOWED: Genv.allowed_call ge f.(fn_comp) vf),
       step (State s f sp (Lcall sig ros :: b) rs m)
         E0 (Callstate (Stackframe f sp rs b:: s) f' rs m)
   | exec_Ltailcall:
-      forall s f stk sig ros b rs m rs' f' m',
+      forall s f stk sig ros b rs m rs' f' m' vf,
       rs' = return_regs (parent_locset s) rs ->
       find_function ros rs' = Some f' ->
+      find_fun_ptr ros rs = Some vf ->
       sig = funsig f' ->
       forall COMP: comp_of f' = comp_of f,
       forall ALLOWED: needs_calling_comp (comp_of f) = false,
-      forall (ALLOWED': Policy.allowed_call pol f.(fn_comp) f'),
+      forall (ALLOWED': Genv.allowed_call ge f.(fn_comp) vf),
       Mem.free m stk 0 f.(fn_stacksize) = Some m' ->
       step (State s f (Vptr stk Ptrofs.zero) (Ltailcall sig ros :: b) rs m)
         E0 (Callstate s f' rs' m')
   | exec_Lbuiltin:
       forall s f sp rs m ef args res b vargs t vres rs' m',
       eval_builtin_args ge rs sp m args vargs ->
-      forall (ALLOWED: Policy.allowed_call pol f.(fn_comp) (External ef)),
+      (* forall (ALLOWED: Policy.allowed_call pol f.(fn_comp) (External ef)), *)
       external_call ef ge f.(fn_comp) vargs m t vres m' ->
       rs' = Locmap.setres res vres (undef_regs (destroyed_by_builtin ef) rs) ->
       step (State s f sp (Lbuiltin ef args res :: b) rs m)
@@ -279,5 +289,5 @@ Inductive final_state: state -> int -> Prop :=
       Locmap.getpair (map_rpair R (loc_result signature_main)) rs = Vint retcode ->
       final_state (Returnstate nil rs m) retcode.
 
-Definition semantics (pol: policy) (p: program) :=
-  Semantics (step pol) (initial_state p) final_state (Genv.globalenv p).
+Definition semantics (p: program) :=
+  Semantics step (initial_state p) final_state (Genv.globalenv p).

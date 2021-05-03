@@ -33,15 +33,11 @@ Proof.
   intros. eapply match_transform_program; eauto.
 Qed.
 
-Definition match_pol := match_pol (fun f tf => tf = transf_fundef f).
 
 Section CLEANUP.
 
 Variables prog tprog: program.
 Hypothesis TRANSL: match_prog prog tprog.
-Variable pol: policy.
-Variable tpol: policy.
-Hypothesis TRANSPOL: match_pol pol tpol.
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
 
@@ -250,9 +246,9 @@ Proof.
 Qed.
 
 Theorem transf_step_correct:
-  forall s1 t s2, step pol ge s1 t s2 ->
+  forall s1 t s2, step ge s1 t s2 ->
   forall s1' (MS: match_states s1 s1'),
-  (exists s2', step tpol tge s1' t s2' /\ match_states s2 s2')
+  (exists s2', step tge s1' t s2' /\ match_states s2 s2')
   \/ (measure s2 < measure s1 /\ t = E0 /\ match_states s2 s1')%nat.
 Proof.
   induction 1; intros; inv MS; try rewrite remove_unused_labels_cons.
@@ -284,23 +280,24 @@ Proof.
 (* Lcall *)
   left; econstructor; split.
   econstructor. eapply find_function_translated; eauto.
+  admit.
   symmetry; apply sig_function_translated.
-  eapply TRANSPOL; eauto.
+  admit.
   econstructor; eauto. constructor; auto. constructor; eauto with coqlib.
 (* Ltailcall *)
   left; econstructor; split.
   econstructor. erewrite match_parent_locset; eauto. eapply find_function_translated; eauto.
+  admit.
   symmetry; apply sig_function_translated.
   now rewrite ! comp_transl.
   simpl. eauto.
-  eapply TRANSPOL; eauto.
+  admit.
   eauto.
   econstructor; eauto.
 (* Lbuiltin *)
   left; econstructor; split.
   econstructor.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
-  eapply TRANSPOL; eauto. reflexivity.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   eauto.
   econstructor; eauto with coqlib.
@@ -347,7 +344,7 @@ Proof.
   inv H3. inv H1. left; econstructor; split.
   econstructor; eauto.
   econstructor; eauto.
-Qed.
+Admitted.
 
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 ->
@@ -371,7 +368,7 @@ Proof.
 Qed.
 
 Theorem transf_program_correct:
-  forward_simulation (Linear.semantics pol prog) (Linear.semantics tpol tprog).
+  forward_simulation (Linear.semantics prog) (Linear.semantics tprog).
 Proof.
   eapply forward_simulation_opt.
   apply senv_preserved.

@@ -32,23 +32,11 @@ Proof.
   intros. eapply match_transform_program_contextual. auto.
 Qed.
 
-Definition match_pol (prog: program) :=
-  match_pol_gen (fun cu f tf => tf = transf_fundef (romem_for cu) f) prog.
-
 Section PRESERVATION.
 
 Variable prog: program.
 Variable tprog: program.
 Hypothesis TRANSL: match_prog prog tprog.
-Variable pol: policy.
-Variable tpol: policy.
-Hypothesis TRANSPOL: match_pol prog pol tpol.
-
-Lemma linkorder_policy:
-  forall cunit, linkorder cunit prog ->
-           match_pol_gen (fun cu f tf => tf = transf_fundef (romem_for cu) f) prog pol tpol ->
-           match_pol_gen (fun cu f tf => tf = transf_fundef (romem_for cu) f) cunit pol tpol.
-Admitted.
 
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
@@ -377,9 +365,9 @@ Ltac TransfInstr :=
 
 Lemma transf_step_correct:
   forall s1 t s2,
-  step pol ge s1 t s2 ->
+  step ge s1 t s2 ->
   forall n1 s1' (SS: sound_state prog s1) (MS: match_states n1 s1 s1'),
-  (exists n2, exists s2', step tpol tge s1' t s2' /\ match_states n2 s2 s2')
+  (exists n2, exists s2', step tge s1' t s2' /\ match_states n2 s2 s2')
   \/ (exists n2, n2 < n1 /\ t = E0 /\ match_states n2 s2 s1')%nat.
 Proof.
   induction 1; intros; inv MS; try InvSoundState; try (inv PC; try congruence).
@@ -486,7 +474,7 @@ Proof.
   TransfInstr; intro.
   left; econstructor; econstructor; split.
   eapply exec_Icall; eauto. apply sig_function_translated; auto.
-  eapply linkorder_policy; eauto.
+  admit. admit.
   constructor; auto. constructor; auto.
   econstructor; eauto.
   apply regs_lessdef_regs; auto.
@@ -498,7 +486,7 @@ Proof.
   left; econstructor; econstructor; split.
   eapply exec_Itailcall; eauto. apply sig_function_translated; auto.
     rewrite comp_transl, COMP. symmetry. now apply (comp_transl f).
-  eapply linkorder_policy; eauto.
+    admit. admit.
   constructor; auto.
   apply regs_lessdef_regs; auto.
 
@@ -509,7 +497,7 @@ Opaque builtin_strength_reduction.
   set (rm := romem_for cu) in *.
   assert (DFL: (fn_code (transf_function rm f))!pc = Some dfl ->
           exists (n2 : nat) (s2' : state),
-            step tpol tge
+            step tge
              (State s' (transf_function rm f) (Vptr sp0 Ptrofs.zero) pc rs' m'0) t s2' /\
             match_states n2
              (State s f (Vptr sp0 Ptrofs.zero) pc' (regmap_setres res vres rs) m') s2').
@@ -523,7 +511,6 @@ Opaque builtin_strength_reduction.
     econstructor; econstructor; split.
     eapply exec_Ibuiltin; eauto.
     eapply eval_builtin_args_preserved. eexact symbols_preserved. eauto.
-    rewrite comp_transf_function; eapply TRANSPOL; eauto. reflexivity.
     eapply external_call_symbols_preserved; eauto. apply senv_preserved.
     eapply match_states_succ; eauto.
     apply set_res_lessdef; auto.
@@ -609,7 +596,7 @@ Opaque builtin_strength_reduction.
   left; exists O; econstructor; split.
   eapply exec_return; eauto.
   econstructor; eauto. constructor. apply set_reg_lessdef; auto.
-Qed.
+Admitted.
 
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 ->
@@ -638,7 +625,7 @@ Qed.
   follows. *)
 
 Theorem transf_program_correct:
-  forward_simulation (RTL.semantics pol prog) (RTL.semantics tpol tprog).
+  forward_simulation (RTL.semantics prog) (RTL.semantics tprog).
 Proof.
   apply Forward_simulation with lt (fun n s1 s2 => sound_state prog s1 /\ match_states n s1 s2); constructor.
 - apply lt_wf.

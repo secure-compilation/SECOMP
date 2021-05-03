@@ -439,7 +439,6 @@ Definition program := AST.program fundef unit.
 
 Definition regset := Pregmap.t val.
 Definition genv := Genv.t fundef unit.
-Definition policy := Policy.t (F := fundef).
 
 Definition get0w (rs: regset) (r: ireg0) : val :=
   match r with
@@ -526,7 +525,6 @@ Fixpoint label_pos (lbl: label) (pos: Z) (c: code) {struct c} : option Z :=
       if is_label lbl instr then Some (pos + 1) else label_pos lbl (pos + 1) c'
   end.
 
-Variable pol: policy.
 Variable ge: genv.
 
 (** The two functions below axiomatize how the linker processes
@@ -1135,7 +1133,7 @@ Inductive step: state -> trace -> state -> Prop :=
       next_stack i (fn_comp f) st rs' = Some st' ->
       forall (NEXTPC: rs' PC = Vptr b' ofs'),
       forall (NEXTFUN: Genv.find_funct_ptr ge b' = Some fd),
-      forall (ALLOWED: Policy.allowed_call pol f.(fn_comp) fd),
+      forall (ALLOWED: Genv.allowed_call ge f.(fn_comp) (Vptr b' Ptrofs.zero)),
       step (State st rs m) E0 (State st' rs' m')
   | exec_step_internal_return:
       forall b ofs f i rs m rs' m' st st' sf,
@@ -1152,11 +1150,6 @@ Inductive step: state -> trace -> state -> Prop :=
       Genv.find_funct_ptr ge b = Some (Internal f) ->
       find_instr (Ptrofs.unsigned ofs) f.(fn_code) = Some (Pbuiltin ef args res) ->
       eval_builtin_args ge rs (rs SP) m args vargs ->
-      (* JT: adding the policy check to all levels. Keeping the previous comment below. *)
-      (* JT: For now, assume that all calls using Pbuiltin are allowed, as is already
-         the case in all languages. But maybe we should instead do the policy check at
-         every level? *)
-      forall (ALLOWED: Policy.allowed_call pol f.(fn_comp) (External ef)),
       external_call ef ge (comp_of f) vargs m t vres m' ->
       rs' = nextinstr
               (set_res res vres
@@ -1198,8 +1191,8 @@ Inductive final_state: state -> int -> Prop :=
       rs X10 = Vint r ->
       final_state (State st rs m) r.
 
-Definition semantics (pol: policy) (p: program) :=
-  Semantics (step pol) (initial_state p) final_state (Genv.globalenv p).
+Definition semantics (p: program) :=
+  Semantics step (initial_state p) final_state (Genv.globalenv p).
 
 (** Determinacy of the [Asm] semantics. *)
 
@@ -1225,7 +1218,7 @@ Proof.
   intros. eapply C; eauto.
 Qed.
 
-Lemma semantics_determinate (pol: policy): forall p, determinate (semantics pol p).
+Lemma semantics_determinate: forall p, determinate (semantics p).
 Proof.
 Ltac Equalities :=
   match goal with

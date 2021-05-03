@@ -563,9 +563,11 @@ Proof.
   { change (fn_comp _) with (comp_of (transf_function ce f)).
     now rewrite comp_transl, comp_transl. }
   { now rewrite <- E. }
+  admit.
+  admit.
   constructor. eapply match_stackframes_tail; eauto.
     apply (cenv_compat_linkorder _ _ _ ORDER (compenv_program_compat _)).
-  { red. now rewrite Efd, ALLOWED. }
+  { red. simpl. congruence. }
   apply regs_lessdef_regs; auto.
   eapply Mem.free_right_extends; eauto.
   rewrite stacksize_preserved. rewrite H7. intros. omegaContradiction.
@@ -573,6 +575,7 @@ Proof.
   left. exists (Callstate (Stackframe res (transf_function ce f) (Vptr sp0 Ptrofs.zero) pc' rs' :: s')
                           (transf_fundef (compenv_program cu) fd) (rs'##args) m'); split.
   eapply exec_Icall; eauto. apply sig_preserved.
+  admit. admit.
   constructor. constructor; auto.
     apply (cenv_compat_linkorder _ _ _ ORDER (compenv_program_compat _)).
   { easy. }
@@ -588,6 +591,7 @@ Proof.
   eapply exec_Itailcall; eauto. apply sig_preserved.
     now rewrite comp_transl, COMP.
   { now rewrite Ef in ALLOWED. }
+  admit. admit.
   rewrite stacksize_preserved; auto.
   constructor. auto.
     apply (cenv_compat_linkorder _ _ _ ORDER (compenv_program_compat _)).
@@ -686,7 +690,7 @@ Proof.
   split. auto.
   econstructor; eauto.
   rewrite Regmap.gss. auto.
-Qed.
+Admitted.
 
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 ->

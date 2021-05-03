@@ -1695,6 +1695,32 @@ Proof.
   fold ge. rewrite A1. eapply IHl; eauto.
 Qed.
 
+  (* Context {F V: Type}. *)
+  (* Context {CF: has_comp F}. *)
+
+  (* Allowed cross-compartment calls *)
+  Definition allowed_cross_call (ge: t) (cp: compartment) (vf: val) :=
+    match vf with
+    | Vptr b _ =>
+      exists i cp',
+      invert_symbol ge b = Some i /\
+      find_comp ge vf = Some cp' /\
+      In (cp', i) (Policy.policy_import ge.(genv_policy) cp) /\
+      In i (Policy.policy_export ge.(genv_policy) cp')
+    | _ => False
+    end.
+
+  (* (* Allowed builtins *) *)
+  (* Definition allowed_builtin (ge: Genv.t F V) (cp: compartment) (i: ident) a := *)
+  (*   (Genv.genv_defs ge) ! i = Some (Gfun (External a)). *)
+
+  Definition allowed_call (ge: t) (cp: compartment) (vf: val) :=
+    Some cp = find_comp ge vf \/ allowed_cross_call ge cp vf.
+
+  Definition allowed_call_b (ge: t) (cp: compartment) (vf: val): bool.
+    Admitted.
+
+
 End GENV.
 
 (** * Commutation with program transformations *)
@@ -1874,6 +1900,37 @@ Proof.
   eapply alloc_globals_match; eauto. apply progmatch.
 Qed.
 
+
+Lemma match_genvs_allowed_calls:
+  forall cp vf,
+    allowed_call (globalenv p) cp vf ->
+    allowed_call (globalenv tp) cp vf.
+Proof.
+  intros cp vf.
+  unfold allowed_call.
+  intros [H1 | H2].
+  - left. rewrite H1.
+    unfold find_comp. destruct vf; auto.
+    destruct (find_funct_ptr (globalenv p) b) eqn:EQ; auto.
+    apply find_funct_ptr_match in EQ as [? [? [? [? ?]]]].
+    rewrite H.
+    erewrite match_fundef_comp; eauto.
+    unfold find_comp in H1. rewrite EQ in H1. congruence.
+  - right.
+    unfold allowed_cross_call in *. destruct vf; eauto.
+    destruct H2 as [i0 [cp' [? [? [? ?]]]]].
+    exists i0; exists cp'; split; [| split; [| split]].
+    + admit.
+    + unfold find_comp.
+      admit.
+    + admit.
+    + admit.
+Admitted.
+
+
+
+
+
 End MATCH_PROGRAMS.
 
 (** Special case for partial transformations that do not depend on the compilation unit *)
@@ -1991,27 +2048,6 @@ End TRANSFORM_TOTAL.
 
 End Genv.
 
-Section POLICY.
-
-  Context {F V: Type}.
-  Context {CF: has_comp F}.
-
-  (* Allowed calls *)
-  Definition allowed_cross_call (ge: Genv.t F V) (cp: compartment) (vf: val) :=
-    match vf with
-    | Vptr b _ =>
-      exists i cp',
-      Genv.invert_symbol ge b = Some i /\
-      Genv.find_comp ge vf = Some cp' /\
-      In (cp', i) (Policy.policy_import ge.(Genv.genv_policy) cp) /\
-      In i (Policy.policy_export ge.(Genv.genv_policy) cp')
-    | _ => False
-    end.
-
-  Definition allowed_call (ge: Genv.t F V) (cp: compartment) (vf: val) :=
-    Some cp = Genv.find_comp ge vf \/ allowed_cross_call ge cp vf.
-
-End POLICY.
 
 
 Coercion Genv.to_senv: Genv.t >-> Senv.t.

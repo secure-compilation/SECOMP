@@ -45,13 +45,7 @@ Proof.
   split; auto. apply match_transform_partial_program. rewrite EQ. destruct x; auto.
 Qed.
 
-Definition match_pol := match_pol (fun f tf => transf_fundef f = OK tf).
-
 Section PRESERVATION.
-
-Variable pol: policy.
-Variable tpol: policy.
-Hypothesis TRANSPOL: match_pol pol tpol.
 
 Variable prog: program.
 Variable tprog: program.
@@ -309,43 +303,35 @@ Lemma step_Sdebug_temp:
   forall f id ty k e le m v,
   le!id = Some v ->
   val_casted v ty ->
-  step2 tpol tge (State f (Sdebug_temp id ty) k e le m)
+  step2 tge (State f (Sdebug_temp id ty) k e le m)
          E0 (State f Sskip k e le m).
 Proof.
   intros. unfold Sdebug_temp. eapply step_builtin with (optid := None); eauto.
   econstructor. constructor. eauto. simpl. eapply cast_typeconv; eauto. constructor.
-  eapply Policy.pol_accepts_debug. simpl. reflexivity.
   simpl. constructor.
-  (* TODO: this is not satisfying at all. Missing some simplification here *)
-  Unshelve.
-  exact Tvoid. exact cc_default.
 Qed.
 
 Lemma step_Sdebug_var:
   forall f id ty k e le m b,
   e!id = Some(b, ty) ->
-  step2 tpol tge (State f (Sdebug_var id ty) k e le m)
+  step2 tge (State f (Sdebug_var id ty) k e le m)
          E0 (State f Sskip k e le m).
 Proof.
   intros. unfold Sdebug_var. eapply step_builtin with (optid := None); eauto.
   econstructor. constructor. constructor. eauto.
   simpl. reflexivity. constructor.
-  eapply Policy.pol_accepts_debug. simpl. reflexivity.
   simpl. constructor.
-  (* TODO: this is not satisfying at all. Missing some simplification here *)
-  Unshelve.
-  exact Tvoid. exact cc_default.
 Qed.
 
 Lemma step_Sset_debug:
   forall f id ty a k e le m v v',
   eval_expr tge e le m a v ->
   sem_cast v (typeof a) ty m = Some v' ->
-  plus (step2 tpol) tge (State f (Sset_debug id ty a) k e le m)
+  plus step2 tge (State f (Sset_debug id ty a) k e le m)
               E0 (State f Sskip k e (PTree.set id v' le) m).
 Proof.
   intros; unfold Sset_debug.
-  assert (forall k, step2 tpol tge (State f (Sset id (make_cast a ty)) k e le m)
+  assert (forall k, step2 tge (State f (Sset id (make_cast a ty)) k e le m)
                            E0 (State f Sskip k e (PTree.set id v' le) m)).
   { intros. apply step_set. eapply make_cast_correct; eauto. }
   destruct (Compopts.debug tt).
@@ -361,7 +347,7 @@ Qed.
 Lemma step_add_debug_vars:
   forall f s e le m vars k,
   (forall id ty, In (id, ty) vars -> exists b, e!id = Some (b, ty)) ->
-  star (step2 tpol) tge (State f (add_debug_vars vars s) k e le m)
+  star step2 tge (State f (add_debug_vars vars s) k e le m)
               E0 (State f s k e le m).
 Proof.
   unfold add_debug_vars. destruct (Compopts.debug tt).
@@ -395,7 +381,7 @@ Lemma step_add_debug_params:
   list_norepet (var_names params) ->
   list_forall2 val_casted vl (map snd params) ->
   bind_parameter_temps params vl le1 = Some le ->
-  star (step2 tpol) tge (State f (add_debug_params params s) k e le m)
+  star step2 tge (State f (add_debug_params params s) k e le m)
               E0 (State f s k e le m).
 Proof.
   unfold add_debug_params. destruct (Compopts.debug tt).
@@ -1128,7 +1114,7 @@ Theorem store_params_correct:
   (forall id, ~In id (var_names params) -> tle2!id = tle1!id) ->
   (forall id, In id (var_names params) -> le!id = None) ->
   exists tle, exists tm',
-  star (step2 tpol) tge (State f (store_params cenv params s) k te tle tm)
+  star step2 tge (State f (store_params cenv params s) k te tle tm)
               E0 (State f s k te tle tm')
   /\ bind_parameter_temps params targs tle2 = Some tle
   /\ Mem.inject j m' tm'
@@ -2038,8 +2024,8 @@ End FIND_LABEL.
 
 
 Lemma step_simulation:
-  forall S1 t S2, step1 pol ge S1 t S2 ->
-  forall S1' (MS: match_states S1 S1'), exists S2', plus (step2 tpol) tge S1' t S2' /\ match_states S2 S2'.
+  forall S1 t S2, step1 ge S1 t S2 ->
+  forall S1' (MS: match_states S1 S1'), exists S2', plus step2 tge S1' t S2' /\ match_states S2 S2'.
 Proof.
   induction 1; simpl; intros; inv MS; simpl in *; try (monadInv TRS).
 
@@ -2093,7 +2079,7 @@ Proof.
   rewrite typeof_simpl_expr. eauto.
   eauto. eauto. eauto.
   erewrite type_of_fundef_preserved; eauto.
-  eapply TRANSPOL; eauto. rewrite <- (comp_transf_function); eauto.
+  admit.
   econstructor; eauto.
   intros. econstructor; eauto.
 
@@ -2104,7 +2090,6 @@ Proof.
   econstructor; split.
   apply plus_one. econstructor; eauto.
     replace (fn_comp tf) with (fn_comp f) by now apply comp_transl_partial.
-    eapply TRANSPOL; eauto. reflexivity.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
     replace (fn_comp tf) with (fn_comp f) by now apply comp_transl_partial.
     eauto.
@@ -2282,7 +2267,7 @@ Proof.
   apply plus_one. econstructor.
   econstructor; eauto with compat.
   eapply match_envs_set_opttemp; eauto.
-Qed.
+Admitted.
 
 Lemma initial_states_simulation:
   forall S, initial_state prog S ->
@@ -2322,7 +2307,7 @@ Proof.
 Qed.
 
 Theorem transf_program_correct:
-  forward_simulation (semantics1 pol prog) (semantics2 tpol tprog).
+  forward_simulation (semantics1 prog) (semantics2 tprog).
 Proof.
   eapply forward_simulation_plus.
   apply senv_preserved.

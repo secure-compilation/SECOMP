@@ -57,9 +57,6 @@ Proof.
 - intros; red; auto.
 Qed.
 
-Definition match_pol (prog: Clight.program) :=
-  match_pol_gen match_fundef prog.
-
 (** * Properties of operations over types *)
 
 Remark transl_params_types:
@@ -229,7 +226,6 @@ Section CONSTRUCTORS.
 
 Variables cunit prog: Clight.program.
 Hypothesis LINK: linkorder cunit prog.
-Variable pol: policy.
 Variable ge: genv.
 
 Lemma make_intconst_correct:
@@ -979,7 +975,7 @@ Lemma make_memcpy_correct:
   assign_loc prog.(prog_comp_env) ty m b ofs v m' ->
   access_mode ty = By_copy ->
   make_memcpy cunit.(prog_comp_env) dst src ty = OK s ->
-  step pol ge (State f s k e le m) E0 (State f Sskip k e le m').
+  step ge (State f s k e le m) E0 (State f Sskip k e le m').
 Proof.
   intros. inv H1; try congruence.
   monadInv H3.
@@ -987,7 +983,6 @@ Proof.
   change le with (set_optvar None Vundef le) at 2.
   econstructor.
   econstructor. eauto. econstructor. eauto. constructor.
-  eapply Policy.pol_accepts_memcpy; reflexivity.
   econstructor; eauto.
   apply alignof_blockcopy_1248.
   apply sizeof_pos.
@@ -1000,7 +995,7 @@ Lemma make_store_correct:
   eval_expr ge e le m addr (Vptr b ofs) ->
   eval_expr ge e le m rhs v ->
   assign_loc prog.(prog_comp_env) ty m b ofs v m' ->
-  step pol ge (State f code k e le m) E0 (State f Sskip k e le m').
+  step ge (State f code k e le m) E0 (State f Sskip k e le m').
 Proof.
   unfold make_store. intros until k; intros MKSTORE EV1 EV2 ASSIGN.
   inversion ASSIGN; subst.
@@ -1041,17 +1036,6 @@ Section CORRECTNESS.
 Variable prog: Clight.program.
 Variable tprog: Csharpminor.program.
 Hypothesis TRANSL: match_prog prog tprog.
-
-Variable pol: Clight.policy.
-Variable tpol: Csharpminor.policy.
-Hypothesis TRANSPOL: match_pol prog pol tpol.
-
-Lemma linkorder_policy:
-  forall cunit, linkorder cunit prog ->
-           match_pol_gen match_fundef prog pol tpol ->
-           match_pol_gen match_fundef cunit pol tpol.
-Proof.
-Admitted.
 
 Let ge := globalenv prog.
 Let tge := Genv.globalenv tprog.
@@ -1365,7 +1349,7 @@ Inductive match_transl: stmt -> cont -> stmt -> cont -> Prop :=
 Lemma match_transl_step:
   forall ts tk ts' tk' f te le m,
   match_transl (Sblock ts) tk ts' tk' ->
-  star (step tpol) tge (State f ts' tk' te le m) E0 (State f ts (Kblock tk) te le m).
+  star step tge (State f ts' tk' te le m) E0 (State f ts (Kblock tk) te le m).
 Proof.
   intros. inv H.
   apply star_one. constructor.
@@ -1599,9 +1583,9 @@ Qed.
 (** The simulation proof *)
 
 Lemma transl_step:
-  forall S1 t S2, Clight.step2 pol ge S1 t S2 ->
+  forall S1 t S2, Clight.step2 ge S1 t S2 ->
   forall T1, match_states S1 T1 ->
-  exists T2, plus (step tpol) tge T1 t T2 /\ match_states S2 T2.
+  exists T2, plus step tge T1 t T2 /\ match_states S2 T2.
 Proof.
   induction 1; intros T1 MST; inv MST.
 
@@ -1649,11 +1633,7 @@ Proof.
     apply plus_one. eapply step_call; eauto.
     eapply transl_expr_correct with (cunit := cu); eauto.
     eapply transl_arglist_correct with (cunit := cu); eauto.
-    (* eapply TRANSPOL with the correct value for the context *)
-    (* eapply TRANSPOL; eauto. *)
-    eapply linkorder_policy with (cunit := cu'); eauto.
-    change (fn_comp tf) with (comp_of tf).
-    rewrite <- (comp_transl_partial _ TRF). eauto.
+    admit.
     econstructor; eauto.
     eapply match_Kcall with (ce := prog_comp_env cu') (cu := cu); eauto.
     exact I.
@@ -1663,10 +1643,7 @@ Proof.
     eapply plus_two. apply step_seq. eapply step_call; eauto. 
     eapply transl_expr_correct with (cunit := cu); eauto.
     eapply transl_arglist_correct with (cunit := cu); eauto.
-    (* eapply TRANSPOL with the correct value for the context *)
-    eapply linkorder_policy with (cunit := cu'); eauto.
-    change (fn_comp tf) with (comp_of tf).
-    rewrite <- (comp_transl_partial _ TRF). eauto.
+    admit.
     traceEq.
     econstructor; eauto.
     eapply match_Kcall_normalize  with (ce := prog_comp_env cu') (cu := cu); eauto.
@@ -1678,7 +1655,6 @@ Proof.
   econstructor; split.
   apply plus_one. econstructor.
   eapply transl_arglist_correct; eauto.
-  admit.
   eapply external_call_symbols_preserved with (ge1 := ge). apply senv_preserved. eauto.
   change tf.(fn_comp) with (comp_of tf). now rewrite <- (comp_transl_partial _ TRF); eauto.
   eapply match_states_skip; eauto.
@@ -1906,7 +1882,7 @@ Proof.
 Qed.
 
 Theorem transl_program_correct:
-  forward_simulation (Clight.semantics2 pol prog) (Csharpminor.semantics tpol tprog).
+  forward_simulation (Clight.semantics2 prog) (Csharpminor.semantics tprog).
 Proof.
   eapply forward_simulation_plus.
   apply senv_preserved.

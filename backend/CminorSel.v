@@ -203,8 +203,7 @@ Inductive eval_expr: letenv -> expr -> val -> Prop :=
       ef_sig ef = sg ->
       eval_exprlist le al vl ->
       external_call ef ge cp vl m E0 v m ->
-      (* TODO *)
-      (* forall (ALLOWED: Policy.allowed_call pol cp (External ef)), *)
+      forall (ALLOWED: Genv.allowed_call ge cp (Vptr b Ptrofs.zero)),
       eval_expr le (Eexternal id sg al) v
 
 with eval_exprlist: letenv -> exprlist -> list val -> Prop :=
@@ -380,7 +379,7 @@ Inductive step: state -> trace -> state -> Prop :=
       eval_exprlist sp e cp m nil bl vargs ->
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
-      forall ALLOWED: allowed_call ge f.(fn_comp) vf,
+      forall ALLOWED: Genv.allowed_call ge f.(fn_comp) vf,
       step (State f (Scall optid sig a bl) k sp e m)
         E0 (Callstate fd vargs (Kcall optid f sp e k) m)
 
@@ -391,7 +390,7 @@ Inductive step: state -> trace -> state -> Prop :=
       funsig fd = sig ->
       forall (COMP: comp_of fd = f.(fn_comp)),
       forall (ALLOWED: needs_calling_comp f.(fn_comp) = false),
-      forall (ALLOWED': allowed_call ge f.(fn_comp) vf),
+      forall (ALLOWED': Genv.allowed_call ge f.(fn_comp) vf),
       Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
       step (State f (Stailcall sig a bl) k (Vptr sp Ptrofs.zero) e m)
         E0 (Callstate fd vargs (call_cont k) m')

@@ -472,7 +472,7 @@ Inductive step: state -> trace -> state -> Prop :=
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
       (* Specify allowed call not with fd but with the block identidfier that is inside vf *)
-      forall ALLOWED: allowed_call ge f.(fn_comp) vf,
+      forall ALLOWED: Genv.allowed_call ge f.(fn_comp) vf,
       step (State f (Scall optid sig a bl) k sp e m)
         E0 (Callstate fd vargs (Kcall optid f sp e k) m)
 
@@ -483,7 +483,7 @@ Inductive step: state -> trace -> state -> Prop :=
       funsig fd = sig ->
       forall (COMP: comp_of fd = f.(fn_comp)),
       forall (ALLOWED: needs_calling_comp f.(fn_comp) = false),
-      forall (ALLOWED': allowed_call ge f.(fn_comp) vf),
+      forall (ALLOWED': Genv.allowed_call ge f.(fn_comp) vf),
       Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
       step (State f (Stailcall sig a bl) k (Vptr sp Ptrofs.zero) e m)
         E0 (Callstate fd vargs (call_cont k) m')
@@ -782,7 +782,7 @@ with exec_stmt:
       funsig fd = sig ->
       eval_funcall f.(fn_comp) m fd vargs t m' vres ->
       e' = set_optvar optid vres e ->
-      forall ALLOWED: allowed_call ge f.(fn_comp) vf,
+      forall ALLOWED: Genv.allowed_call ge f.(fn_comp) vf,
       exec_stmt f sp e m (Scall optid sig a bl) t e' m' Out_normal
   | exec_Sbuiltin:
       forall f sp e m optid ef bl t m' vargs vres e',
@@ -847,7 +847,7 @@ with exec_stmt:
       funsig fd = sig ->
       forall (COMP: comp_of fd = f.(fn_comp)),
       forall (ALLOWED: needs_calling_comp f.(fn_comp) = false),
-      forall ALLOWED': allowed_call ge f.(fn_comp) vf,
+      forall ALLOWED': Genv.allowed_call ge f.(fn_comp) vf,
       Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
       eval_funcall f.(fn_comp) m' fd vargs t m'' vres ->
       exec_stmt f (Vptr sp Ptrofs.zero) e m (Stailcall sig a bl) t e m'' (Out_tailcall_return vres).
@@ -886,7 +886,7 @@ with execinf_stmt:
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
       evalinf_funcall m fd vargs t ->
-      forall ALLOWED: allowed_call ge f.(fn_comp) vf,
+      forall ALLOWED: Genv.allowed_call ge f.(fn_comp) vf,
       execinf_stmt f sp e m (Scall optid sig a bl) t
   | execinf_Sifthenelse:
       forall f sp e m a s1 s2 v b t, eval_expr ge sp e m a v ->
@@ -925,7 +925,7 @@ with execinf_stmt:
       funsig fd = sig ->
       forall (COMP: comp_of fd = f.(fn_comp)),
       forall (ALLOWED: needs_calling_comp f.(fn_comp) = false),
-      forall ALLOWED': allowed_call ge f.(fn_comp) vf,
+      forall ALLOWED': Genv.allowed_call ge f.(fn_comp) vf,
       Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
       evalinf_funcall  m' fd vargs t ->
       execinf_stmt f (Vptr sp Ptrofs.zero) e m (Stailcall sig a bl) t.

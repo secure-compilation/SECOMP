@@ -744,6 +744,7 @@ Lemma transl_expr_Eexternal_correct:
   eval_exprlist ge sp e cp m le al vl ->
   transl_exprlist_prop le al vl ->
   external_call ef ge cp vl m E0 v m ->
+  forall ALLOWED: Genv.allowed_call ge cp (Vptr b Ptrofs.zero),
   transl_expr_prop le (Eexternal id sg al) v.
 Proof.
   intros; red; intros. inv TE.
@@ -755,7 +756,8 @@ Proof.
 (* Exec *)
   split. eapply star_trans. eexact EX1.
   eapply star_left. eapply exec_Icall; eauto.
-  simpl. rewrite symbols_preserved. rewrite H. eauto. auto.
+  simpl. rewrite symbols_preserved. rewrite H. eauto. auto. simpl. rewrite symbols_preserved. rewrite H. eauto.
+  admit.
   eapply star_left. eapply exec_function_external.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   subst cp. eauto.
@@ -769,7 +771,7 @@ Proof.
   split. intros. rewrite Regmap.gso. auto. intuition congruence.
 (* Mem *)
   auto.
-Qed.
+Admitted.
 
 Lemma transl_exprlist_Enil_correct:
   forall (le : letenv),
@@ -1397,6 +1399,8 @@ Proof.
   left; eapply plus_right. eapply star_trans. eexact A. eexact E. reflexivity.
   eapply exec_Icall; eauto. simpl. rewrite J. destruct C. eauto. discriminate P. simpl; auto.
   apply sig_transl_function; auto.
+  simpl; eauto.
+  eauto. admit.
   traceEq.
   constructor; auto. econstructor; eauto.
   (* direct *)
@@ -1406,8 +1410,10 @@ Proof.
   econstructor; split.
   left; eapply plus_right. eexact E.
   eapply exec_Icall; eauto. simpl. rewrite symbols_preserved. rewrite H4.
-    rewrite Genv.find_funct_find_funct_ptr in P. eauto.
+  rewrite Genv.find_funct_find_funct_ptr in P. eauto.
   apply sig_transl_function; auto.
+  simpl. rewrite symbols_preserved. rewrite H4. eauto.
+  admit.
   traceEq.
   constructor; auto. econstructor; eauto.
 
@@ -1429,6 +1435,7 @@ Proof.
   apply sig_transl_function; auto.
     rewrite <- (comp_transl_partial fd Q), COMP. inv TF; congruence.
   rewrite <- COMP'; eauto.
+  simpl; eauto. admit.
   rewrite H; eauto.
   traceEq.
   constructor; auto.
@@ -1446,6 +1453,8 @@ Proof.
   apply sig_transl_function; auto.
   rewrite <- (comp_transl_partial _ Q), COMP. inv TF; congruence.
   rewrite <- COMP'. eauto.
+  simpl. rewrite symbols_preserved. rewrite H5. eauto.
+  admit.
   rewrite H; eauto.
   traceEq.
   constructor; auto.
@@ -1598,7 +1607,7 @@ Proof.
   left; apply plus_one; constructor.
   econstructor; eauto. constructor.
   eapply match_env_update_dest; eauto.
-Qed.
+Admitted.
 
 Lemma transl_initial_states:
   forall S, CminorSel.initial_state prog S ->

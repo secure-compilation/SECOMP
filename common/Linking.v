@@ -897,11 +897,10 @@ End LINK_LIST_MATCH.
 Set Implicit Arguments.
 
 (** A generic language is a type of programs and a linker. *)
-(** JT: and a type of policies *)
 
-Structure Language := mklang { lang_prog :> Type; lang_link: Linker lang_prog; lang_pol :> Type }.
+Structure Language := mklang { lang_prog :> Type; lang_link: Linker lang_prog }.
 
-Canonical Structure Language_gen (A: Type) (L: Linker A) (P: Type) : Language := @mklang A L P.
+Canonical Structure Language_gen (A: Type) (L: Linker A) : Language := @mklang A L.
 
 (** A compilation pass from language [S] (source) to language [T] (target)
   is a matching relation between [S] programs and [T] programs,
@@ -911,23 +910,20 @@ Canonical Structure Language_gen (A: Type) (L: Linker A) (P: Type) : Language :=
 Record Pass (S T: Language) := mkpass {
   pass_match :> lang_prog S -> lang_prog T -> Prop;
   pass_match_link: @TransfLink (lang_prog S) (lang_prog T) (lang_link S) (lang_link T) pass_match;
-  pass_match_pol :> lang_pol S -> lang_pol T -> Prop;
 }.
 
 Arguments mkpass {S} {T} (pass_match) {pass_match_link}.
 
 Program Definition pass_identity (l: Language): Pass l l :=
   {| pass_match := fun p1 p2 => p1 = p2;
-     pass_match_link := _;
-     pass_match_pol := fun pol1 pol2 => pol1 = pol2 |}.
+     pass_match_link := _; |}.
 Next Obligation.
   red; intros. subst. exists p; auto.
 Defined.
 
 Program Definition pass_compose {l1 l2 l3: Language} (pass: Pass l1 l2) (pass': Pass l2 l3) : Pass l1 l3 :=
   {| pass_match := fun p1 p3 => exists p2, pass_match pass p1 p2 /\ pass_match pass' p2 p3;
-     pass_match_link := _;
-     pass_match_pol := fun pol1 pol3 => exists pol2, pass_match_pol pass pol1 pol2 /\ pass_match_pol pass' pol2 pol3 |}.
+     pass_match_link := _; |}.
 Next Obligation.
   red; intros.
   destruct H0 as (p1' & A1 & B1).

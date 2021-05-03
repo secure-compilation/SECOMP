@@ -59,7 +59,6 @@ Variable valu1: valuation.
 Variable upto: valnum.
 Variable valu2: valuation.
 Hypothesis AGREE: valu_agree valu1 valu2 upto.
-Variable pol: policy.
 Variable ge: genv.
 Variable sp: val.
 Variable rs: regset.
@@ -733,7 +732,6 @@ Section REDUCE.
 Variable A: Type.
 Variable f: (valnum -> option rhs) -> A -> list valnum -> option (A * list valnum).
 Variable V: Type.
-Variable pol: policy.
 Variable ge: genv.
 Variable sp: val.
 Variable rs: regset.
@@ -817,7 +815,6 @@ Proof.
   symmetry. eapply Solver.fixpoint_entry; eauto.
 Qed.
 
-Definition match_pol (prog: program) := match_pol_gen (fun cu f tf => OK tf = transf_fundef (romem_for cu) f) prog.
 
 (** * Semantic preservation *)
 
@@ -826,15 +823,6 @@ Section PRESERVATION.
 Variable prog: program.
 Variable tprog : program.
 Hypothesis TRANSF: match_prog prog tprog.
-Variable pol: policy.
-Variable tpol: policy.
-Hypothesis TRANSPOL: match_pol prog pol tpol.
-
-Lemma linkorder_policy:
-  forall cunit, linkorder cunit prog ->
-           match_pol_gen (fun cu f tf => OK tf = transf_fundef (romem_for cu) f) prog pol tpol ->
-           match_pol_gen (fun cu f tf => OK tf = transf_fundef (romem_for cu) f) cunit pol tpol.
-Admitted.
 
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
@@ -1010,9 +998,9 @@ Ltac TransfInstr :=
   in the source code. *)
 
 Lemma transf_step_correct:
-  forall s1 t s2, step pol ge s1 t s2 ->
+  forall s1 t s2, step ge s1 t s2 ->
   forall s1' (MS: match_states s1 s1') (SOUND: sound_state prog s1),
-  exists s2', step tpol tge s1' t s2' /\ match_states s2 s2'.
+  exists s2', step tge s1' t s2' /\ match_states s2 s2'.
 Proof.
   induction 1; intros; inv MS; try (TransfInstr; intro C).
 
@@ -1129,7 +1117,7 @@ Proof.
   econstructor; split.
   eapply exec_Icall; eauto.
   eapply sig_preserved; eauto.
-  eapply linkorder_policy; eauto.
+  admit. admit.
   econstructor; eauto.
   eapply match_stackframes_cons with (cu := cu); eauto.
   intros. eapply analysis_correct_1; eauto. simpl; auto.
@@ -1144,7 +1132,7 @@ Proof.
   eapply exec_Itailcall; eauto.
   eapply sig_preserved; eauto.
   now rewrite <- (comp_transl_partial _ TRANSF'), COMP.
-  eapply linkorder_policy; eauto.
+  admit. admit.
   econstructor; eauto.
   apply regs_lessdef_regs; auto.
 
@@ -1156,7 +1144,6 @@ Proof.
   econstructor; split.
   eapply exec_Ibuiltin; eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
-  eapply linkorder_policy; eauto. reflexivity.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   econstructor; eauto.
   eapply analysis_correct_1; eauto. simpl; auto.
@@ -1255,7 +1242,7 @@ Proof.
   eapply exec_return; eauto.
   econstructor; eauto.
   apply set_reg_lessdef; auto.
-Qed.
+Admitted.
 
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 ->
@@ -1281,7 +1268,7 @@ Proof.
 Qed.
 
 Theorem transf_program_correct:
-  forward_simulation (RTL.semantics pol prog) (RTL.semantics tpol tprog).
+  forward_simulation (RTL.semantics prog) (RTL.semantics tprog).
 Proof.
   eapply forward_simulation_step with
     (match_states := fun s1 s2 => sound_state prog s1 /\ match_states s1 s2).
@@ -1290,7 +1277,7 @@ Proof.
   exists s2. split. auto. split. apply sound_initial; auto. auto.
 - intros. destruct H. eapply transf_final_states; eauto.
 - intros. destruct H0. exploit transf_step_correct; eauto.
-  intros [s2' [A B]]. exists s2'; split. auto. split. eapply sound_step; eauto. apply H. auto.
+  intros [s2' [A B]]. exists s2'; split. auto. split. eapply sound_step; eauto. auto.
 Qed.
 
 End PRESERVATION.

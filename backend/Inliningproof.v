@@ -37,8 +37,8 @@ Proof.
   intros. eapply match_transform_partial_program_contextual; eauto.
 Qed.
 
-Definition match_pol (prog: program) :=
-  match_pol_gen (fun cunit f tf => transf_fundef (funenv_program cunit) f = OK tf) prog.
+(* Definition match_pol (prog: program) := *)
+(*   match_pol_gen (fun cunit f tf => transf_fundef (funenv_program cunit) f = OK tf) prog. *)
 
 Section INLINING.
 
@@ -46,19 +46,12 @@ Variable prog: program.
 Variable tprog: program.
 Hypothesis TRANSF: match_prog prog tprog.
 
-Variable pol: policy.
-Variable tpol: policy.
-Hypothesis TRANSPOL: match_pol prog pol tpol.
+(* Variable pol: policy. *)
+(* Variable tpol: policy. *)
+(* Hypothesis TRANSPOL: match_pol prog pol tpol. *)
 
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
-
-Lemma linkorder_policy:
-  forall cunit, linkorder cunit prog ->
-           Policy.match_pol_gen (fun cunit f tf => transf_fundef (funenv_program cunit) f = OK tf) prog pol tpol ->
-           Policy.match_pol_gen (fun cunit f tf => transf_fundef (funenv_program cunit) f = OK tf) cunit pol tpol.
-Proof.
-Admitted.
 
 Lemma symbols_preserved:
   forall (s: ident), Genv.find_symbol tge s = Genv.find_symbol ge s.
@@ -250,7 +243,7 @@ Lemma tr_moves_init_regs:
   (forall r, In r rdsts -> Ple r ctx2.(mreg)) ->
   list_forall2 (val_reg_charact F ctx1 rs1) vl rsrcs ->
   exists rs2,
-    star (step tpol) tge (State stk f sp pc1 rs1 m)
+    star step tge (State stk f sp pc1 rs1 m)
                E0 (State stk f sp pc2 rs2 m)
   /\ agree_regs F ctx2 (init_regs vl rdsts) rs2
   /\ forall r, Plt r ctx2.(dreg) -> rs2#r = rs1#r.
@@ -967,9 +960,9 @@ Qed.
 
 Theorem step_simulation:
   forall S1 t S2,
-  step pol ge S1 t S2 ->
+  step ge S1 t S2 ->
   forall S1' (MS: match_states S1 S1'),
-  (exists S2', plus (step tpol) tge S1' t S2' /\ match_states S2 S2')
+  (exists S2', plus step tge S1' t S2' /\ match_states S2 S2')
   \/ (measure S2 < measure S1 /\ t = E0 /\ match_states S2 S1')%nat.
 Proof.
   induction 1; intros; inv MS.
@@ -1044,8 +1037,9 @@ Proof.
   left; econstructor; split.
   eapply plus_one. eapply exec_Icall; eauto.
   eapply sig_function_translated; eauto.
-  eapply linkorder_policy; eauto.
+  admit.
   rewrite <- SAMECOMP; auto.
+  admit.
   econstructor; eauto.
   eapply match_stacks_cons; eauto.
   { red; eauto. }
@@ -1081,8 +1075,9 @@ Proof.
   eapply sig_function_translated; eauto.
     now rewrite <- (comp_transl_partial _ B), COMP.
   congruence.
-  eapply linkorder_policy; eauto.
+  admit.
   rewrite <- SAMECOMP; auto.
+  admit.
   econstructor; eauto.
   eapply match_stacks_bound with (bound := sp').
   eapply match_stacks_invariant; eauto.
@@ -1101,8 +1096,9 @@ Proof.
   left; econstructor; split.
   eapply plus_one. eapply exec_Icall; eauto.
   eapply sig_function_translated; eauto.
-  eapply linkorder_policy; eauto.
+  admit.
   rewrite <- SAMECOMP; auto.
+  admit.
   econstructor; eauto.
   eapply match_stacks_untailcall; eauto.
   eapply match_stacks_inside_invariant; eauto.
@@ -1134,9 +1130,8 @@ Proof.
   intros [F1 [v1 [m1' [A [B [C [D [E [J K]]]]]]]]].
   left; econstructor; split.
   eapply plus_one. eapply exec_Ibuiltin; eauto.
-    rewrite <- SAMECOMP; eapply TRANSPOL; eauto. reflexivity.
+    rewrite <- SAMECOMP.
     eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  rewrite <- SAMECOMP. eauto.
   econstructor.
     eapply match_stacks_inside_set_res.
     eapply match_stacks_inside_extcall with (F1 := F) (F2 := F1) (m1 := m) (m1' := m'0); eauto.
@@ -1340,7 +1335,7 @@ Proof.
   left; econstructor; split.
   eapply plus_one. eapply exec_Inop; eauto.
   econstructor; eauto. subst vres. apply agree_set_reg_undef'; auto.
-Qed.
+Admitted.
 
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 -> exists st2, initial_state tprog st2 /\ match_states st1 st2.
@@ -1377,7 +1372,7 @@ Proof.
 Qed.
 
 Theorem transf_program_correct:
-  forward_simulation (semantics pol prog) (semantics tpol tprog).
+  forward_simulation (semantics prog) (semantics tprog).
 Proof.
   eapply forward_simulation_star.
   apply senv_preserved.

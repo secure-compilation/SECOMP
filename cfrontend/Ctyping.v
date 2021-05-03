@@ -936,6 +936,7 @@ Definition typecheck_program (p: program) : res program :=
   OK {| prog_defs := tp.(AST.prog_defs);
         prog_public := p.(prog_public);
         prog_main := p.(prog_main);
+        prog_pol := p.(prog_pol);
         prog_types := p.(prog_types);
         prog_comp_env := ce;
         prog_comp_env_eq := p.(prog_comp_env_eq) |}.
@@ -1751,8 +1752,8 @@ Proof.
 Qed.
 
 Lemma wt_rred:
-  forall pol ge cp tenv a m t a' m',
-  rred pol ge cp a m t a' m' -> wt_rvalue ge tenv a -> wt_rvalue ge tenv a'.
+  forall ge cp tenv a m t a' m',
+  rred ge cp a m t a' m' -> wt_rvalue ge tenv a -> wt_rvalue ge tenv a'.
 Proof.
   induction 1; intros WT; inversion WT.
 - (* valof *) simpl in *. constructor. eapply wt_deref_loc; eauto.
@@ -1817,8 +1818,8 @@ Proof.
 Qed.
 
 Lemma rred_same_type:
-  forall pol ge cp a m t a' m',
-  rred pol ge cp a m t a' m' -> typeof a' = typeof a.
+  forall ge cp a m t a' m',
+  rred ge cp a m t a' m' -> typeof a' = typeof a.
 Proof.
   induction 1; auto.
 Qed.
@@ -1930,7 +1931,6 @@ End WT_SWITCH.
 
 Section PRESERVATION.
 
-Variable pol: policy.
 Variable prog: program.
 Hypothesis WTPROG: wt_program prog.
 Let ge := globalenv prog.
@@ -2118,7 +2118,7 @@ Qed.
 End WT_FIND_LABEL.
 
 Lemma preservation_estep:
-  forall S t S', estep pol ge S t S' -> wt_state S -> wt_state S'.
+  forall S t S', estep ge S t S' -> wt_state S -> wt_state S'.
 Proof.
   induction 1; intros WT; inv WT.
 - (* lred *)
@@ -2199,7 +2199,7 @@ Proof.
 Qed.
 
 Theorem preservation:
-  forall S t S', step pol ge S t S' -> wt_state S -> wt_state S'.
+  forall S t S', step ge S t S' -> wt_state S -> wt_state S'.
 Proof.
   intros. destruct H. eapply preservation_estep; eauto. eapply preservation_sstep; eauto.
 Qed.

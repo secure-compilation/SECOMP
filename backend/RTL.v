@@ -250,7 +250,7 @@ Inductive step: state -> trace -> state -> Prop :=
       funsig fd = sig ->
       (* TODO *)
       forall (FUNPTR: find_function_ptr ros rs = Some vf),
-      forall (ALLOWED: allowed_call ge f.(fn_comp) vf),
+      forall (ALLOWED: Genv.allowed_call ge f.(fn_comp) vf),
       step (State s f sp pc rs m)
         E0 (Callstate (Stackframe res f sp pc' rs :: s) fd rs##args m)
   | exec_Itailcall:
@@ -262,7 +262,7 @@ Inductive step: state -> trace -> state -> Prop :=
       forall ALLOWED: needs_calling_comp f.(fn_comp) = false,
       (* TODO *)
       forall (FUNPTR: find_function_ptr ros rs = Some vf),
-      forall (ALLOWED': allowed_call ge f.(fn_comp) vf),
+      forall (ALLOWED': Genv.allowed_call ge f.(fn_comp) vf),
       Mem.free m stk 0 f.(fn_stacksize) = Some m' ->
       step (State s f (Vptr stk Ptrofs.zero) pc rs m)
         E0 (Callstate s fd rs##args m')

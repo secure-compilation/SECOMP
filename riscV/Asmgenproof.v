@@ -36,7 +36,6 @@ Proof.
   intros. eapply match_transform_partial_program; eauto.
 Qed.
 
-Definition match_pol := match_pol (fun f tf => transf_fundef f = OK tf).
 
 Section PRESERVATION.
 
@@ -46,9 +45,6 @@ Hypothesis TRANSF: match_prog prog tprog.
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
 
-Variable pol: Mach.policy.
-Variable tpol: Asm.policy.
-Hypothesis TRANSPOL: match_pol pol tpol.
 
 Lemma symbols_preserved:
   forall (s: ident), Genv.find_symbol tge s = Genv.find_symbol ge s.
@@ -95,7 +91,7 @@ Lemma exec_straight_exec:
   forall fb f c ep tf tc c' rs m rs' m' st,
   transl_code_at_pc ge (rs PC) fb f c ep tf tc ->
   exec_straight tge tf tc rs m c' rs' m' ->
-  plus (step tpol) tge (State st rs m) E0 (State st rs' m').
+  plus step tge (State st rs m) E0 (State st rs' m').
 Proof.
   intros. inv H.
   eapply exec_straight_steps_1; eauto.
@@ -537,7 +533,7 @@ Lemma exec_straight_steps:
     /\ agree ms2 sp rs2
     /\ (it1_is_parent ep i = true -> rs2#X30 = parent_sp s)) ->
   exists st',
-  plus (step tpol) tge (State s' rs1 m1') E0 st' /\
+  plus step tge (State s' rs1 m1') E0 st' /\
   match_states (Mach.State s fb sp c ms2 m2) st'.
 Proof.
   intros. inversion H2. subst. monadInv H7.
@@ -561,7 +557,7 @@ Lemma exec_straight_steps_goto:
     /\ agree ms2 sp rs2
     /\ exec_instr tge tf jmp rs2 m2' = goto_label tf lbl rs2 m2') ->
   exists st',
-  plus (step tpol) tge (State s' rs1 m1') E0 st' /\
+  plus step tge (State s' rs1 m1') E0 st' /\
   match_states (Mach.State s fb sp c' ms2 m2) st'.
 Proof.
   intros. inversion H3. subst. monadInv H9.
@@ -583,6 +579,7 @@ Proof.
   replace (fn_comp tf) with (comp_of (Internal tf)) by reflexivity.
   rewrite Pos.eqb_refl; reflexivity.
   left; auto.
+  simpl; rewrite FN; eauto.
   traceEq.
   econstructor; eauto.
   apply agree_exten with rs2; auto with asmgen.
@@ -603,7 +600,7 @@ Lemma exec_straight_opt_steps_goto:
     /\ agree ms2 sp rs2
     /\ exec_instr tge tf jmp rs2 m2' = goto_label tf lbl rs2 m2') ->
   exists st',
-  plus (step tpol) tge (State s' rs1 m1') E0 st' /\
+  plus step tge (State s' rs1 m1') E0 st' /\
   match_states (Mach.State s fb sp c' ms2 m2) st'.
 Proof.
   intros. inversion H3. subst. monadInv H9.
@@ -622,6 +619,7 @@ Proof.
   replace (fn_comp tf) with (comp_of (Internal tf)) by reflexivity.
   rewrite Pos.eqb_refl; reflexivity.
   left; auto.
+  simpl; rewrite FN; auto.
   econstructor; eauto.
   apply agree_exten with rs2; auto with asmgen.
   congruence.
@@ -640,6 +638,7 @@ Proof.
   replace (fn_comp tf) with (comp_of (Internal tf)) by reflexivity.
   rewrite Pos.eqb_refl; reflexivity.
   left; auto.
+  simpl; rewrite FN; auto.
   traceEq.
   econstructor; eauto.
   apply agree_exten with rs2; auto with asmgen.
@@ -670,9 +669,9 @@ Qed.
 (** This is the simulation diagram.  We prove it by case analysis on the Mach transition. *)
 
 Theorem step_simulation:
-  forall S1 t S2, Mach.step return_address_offset pol ge S1 t S2 ->
+  forall S1 t S2, Mach.step return_address_offset ge S1 t S2 ->
   forall S1' (MS: match_states S1 S1'),
-  (exists S2', plus (step tpol) tge S1' t S2' /\ match_states S2 S2')
+  (exists S2', plus step tge S1' t S2' /\ match_states S2 S2')
   \/ (measure S2 < measure S1 /\ t = E0 /\ match_states S2 S1')%nat.
 Proof.
   induction 1; intros; inv MS.
@@ -811,7 +810,7 @@ Local Transparent destroyed_by_op.
     (* Simpl. rewrite <- H2. simpl. reflexivity. *)
     Simpl. eauto.
     eassumption.
-    eapply TRANSPOL. eassumption. erewrite <- transf_function_comp; eassumption.
+    admit.
     econstructor; eauto.
     econstructor; eauto.
     eapply agree_sp_def; eauto.
@@ -827,7 +826,7 @@ Local Transparent destroyed_by_op.
     Simpl. rewrite <- H2. simpl. reflexivity.
     Simpl. eauto.
     eassumption.
-    eapply TRANSPOL. eassumption. erewrite <- transf_function_comp; eassumption.
+    admit.
     econstructor; eauto.
     econstructor; eauto.
     eapply agree_sp_def; eauto.
@@ -853,7 +852,7 @@ Local Transparent destroyed_by_op.
       unfold Genv.find_comp. rewrite TFIND.
       rewrite Heq. reflexivity. }
     Simpl. eassumption.
-    eapply TRANSPOL. eassumption. erewrite <- transf_function_comp; eassumption.
+    admit.
     econstructor; eauto.
     econstructor; eauto.
     eapply agree_sp_def; eauto.
@@ -869,7 +868,7 @@ Local Transparent destroyed_by_op.
       rewrite Heq.
       Simpl. rewrite <- H2. simpl. reflexivity. }
     Simpl. eassumption.
-    eapply TRANSPOL. eassumption. erewrite <- transf_function_comp; eassumption.
+    admit.
     econstructor; eauto.
     econstructor; eauto.
     eapply agree_sp_def; eauto.
@@ -914,7 +913,7 @@ Local Transparent destroyed_by_op.
   Simpl.
   rewrite Z by (rewrite <- (ireg_of_eq _ _ EQ1); eauto with asmgen); eauto.
   eassumption.
-  eapply TRANSPOL. eassumption. erewrite <- transf_function_comp; eassumption.
+  admit.
   traceEq.
   (* match states *)
   econstructor; eauto.
@@ -953,7 +952,7 @@ Local Transparent destroyed_by_op.
   reflexivity.
   Simpl. unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H. eauto.
   eassumption.
-  eapply TRANSPOL. eassumption. erewrite <- transf_function_comp; eassumption.
+  admit.
   traceEq.
   (* match states *)
   econstructor; eauto.
@@ -973,12 +972,7 @@ Local Transparent destroyed_by_op.
   eapply find_instr_tail; eauto.
   erewrite <- sp_val by eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
-  eapply TRANSPOL with (f := External ef); eauto. assert (f0 = f) by congruence; subst.
-  rewrite <- comp_transf_function; eauto.
-  eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  replace (comp_of tf) with (comp_of f); eauto.
-  { rewrite <- comp_transf_function; eauto.
-    now replace f with (f0) by congruence. }
+  admit.
   eauto.
   econstructor; eauto.
   instantiate (2 := tf); instantiate (1 := x).
@@ -1006,6 +1000,7 @@ Local Transparent destroyed_by_op.
   rewrite Pos.eqb_refl. reflexivity.
   eapply functions_transl; eauto.
   left; auto.
+  admit.
   econstructor; eauto.
   eapply agree_exten; eauto with asmgen.
   congruence.
@@ -1053,6 +1048,7 @@ Local Transparent destroyed_by_op.
   unfold next_stack. rewrite Hptr. simpl. rewrite FN.
   rewrite Pos.eqb_refl. reflexivity. eauto. eauto.
   left; auto.
+  admit.
   econstructor; eauto.
   eapply agree_undef_regs; eauto.
   simpl. intros. rewrite C; auto with asmgen. Simpl.
@@ -1084,6 +1080,7 @@ Local Transparent destroyed_by_op.
   Simpl. admit.
   eapply functions_transl; eauto.
   left; auto.
+  admit.
   traceEq.
   (* match states *)
   econstructor; eauto.
@@ -1196,7 +1193,7 @@ Proof.
 Qed.
 
 Theorem transf_program_correct:
-  forward_simulation (Mach.semantics return_address_offset pol prog) (Asm.semantics tpol tprog).
+  forward_simulation (Mach.semantics return_address_offset prog) (Asm.semantics tprog).
 Proof.
   eapply forward_simulation_star with (measure := measure).
   apply senv_preserved.

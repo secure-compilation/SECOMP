@@ -138,17 +138,12 @@ Proof.
   rewrite record_gotos_gotos'. auto.
 Qed.
 
-Definition match_pol := match_pol (fun f tf => tf = tunnel_fundef f).
-
 (** * Preservation of semantics *)
 
 Section PRESERVATION.
 
 Variables prog tprog: program.
 Hypothesis TRANSL: match_prog prog tprog.
-Variable pol: policy.
-Variable tpol: policy.
-Hypothesis TRANSPOL: match_pol pol tpol.
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
 
@@ -419,9 +414,9 @@ Proof.
 Qed.
 
 Lemma tunnel_step_correct:
-  forall st1 t st2, step pol ge st1 t st2 ->
+  forall st1 t st2, step ge st1 t st2 ->
   forall st1' (MS: match_states st1 st1'),
-  (exists st2', step tpol tge st1' t st2' /\ match_states st2 st2')
+  (exists st2', step tge st1' t st2' /\ match_states st2 st2')
   \/ (measure st2 < measure st1 /\ t = E0 /\ match_states st2 st1')%nat.
 Proof.
   induction 1; intros; try inv MS.
@@ -429,7 +424,7 @@ Proof.
 - (* entering a block *)
   assert (DEFAULT: branch_target f pc = pc ->
     (exists st2' : state,
-     step tpol tge (State ts (tunnel_function f) sp (branch_target f pc) tls tm) E0 st2'
+     step tge (State ts (tunnel_function f) sp (branch_target f pc) tls tm) E0 st2'
      /\ match_states (Block s f sp bb rs m) st2')).
   { intros. rewrite H0. econstructor; split.
     econstructor. simpl. rewrite PTree.gmap1. rewrite H. simpl. eauto.
@@ -481,8 +476,9 @@ Proof.
   left; simpl; econstructor; split.
   eapply exec_Lcall with (fd := tunnel_fundef fd); eauto.
   eapply find_function_translated; eauto.
+  admit.
   rewrite sig_preserved. auto.
-  eapply TRANSPOL; eauto.
+  admit.
   econstructor; eauto.
   constructor; auto.
   constructor; auto.
@@ -491,9 +487,10 @@ Proof.
   left; simpl; econstructor; split.
   eapply exec_Ltailcall with (fd := tunnel_fundef fd); eauto.
   eapply find_function_translated; eauto using return_regs_lessdef, match_parent_locset.
+  admit.
   apply sig_preserved.
   unfold tunnel_fundef. now rewrite comp_tunnel_fundef, comp_transl.
-  eapply TRANSPOL; eauto.
+  admit.
   econstructor; eauto using return_regs_lessdef, match_parent_locset.
 - (* Lbuiltin *)
   exploit eval_builtin_args_lessdef. eexact LS. eauto. eauto. intros (tvargs & EVA & LDA).
@@ -501,7 +498,6 @@ Proof.
   left; simpl; econstructor; split.
   eapply exec_Lbuiltin; eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved. 
-  eapply TRANSPOL; eauto. simpl; eauto.
   eapply external_call_symbols_preserved. apply senv_preserved. eauto.
   econstructor; eauto using locmap_setres_lessdef, locmap_undef_regs_lessdef.
 - (* Lbranch (preserved) *)
@@ -555,7 +551,7 @@ Proof.
   left; econstructor; split.
   eapply exec_return; eauto.
   constructor; auto.
-Qed.
+Admitted.
 
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 ->
@@ -583,7 +579,7 @@ Proof.
 Qed.
 
 Theorem transf_program_correct:
-  forward_simulation (LTL.semantics pol prog) (LTL.semantics tpol tprog).
+  forward_simulation (LTL.semantics prog) (LTL.semantics tprog).
 Proof.
   eapply forward_simulation_opt.
   apply senv_preserved.

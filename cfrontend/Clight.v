@@ -575,7 +575,7 @@ Inductive step: state -> trace -> state -> Prop :=
       eval_exprlist e le m al tyargs vargs ->
       Genv.find_funct ge vf = Some fd ->
       type_of_fundef fd = Tfunction tyargs tyres cconv ->
-      forall (ALLOWED: allowed_call ge f.(fn_comp) vf),
+      forall (ALLOWED: Genv.allowed_call ge f.(fn_comp) vf),
       step (State f (Scall optid a al) k e le m)
         E0 (Callstate fd vargs (Kcall optid f e le k) m)
 

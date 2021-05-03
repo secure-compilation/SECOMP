@@ -384,8 +384,6 @@ Proof.
   + apply eagree_update; auto with na.
 Qed.
 
-Definition match_pol (prog: program) := match_pol_gen (fun cu f tf => OK tf = transf_fundef (romem_for cu) f) prog.
-
 (** * Basic properties of the translation *)
 
 Section PRESERVATION.
@@ -393,15 +391,7 @@ Section PRESERVATION.
 Variable prog: program.
 Variable tprog: program.
 Hypothesis TRANSF: match_prog prog tprog.
-Variable pol: policy.
-Variable tpol: policy.
-Hypothesis TRANSPOL: match_pol prog pol tpol.
 
-Lemma linkorder_policy:
-  forall cunit, linkorder cunit prog ->
-           match_pol_gen (fun cu f tf => OK tf = transf_fundef (romem_for cu) f) prog pol tpol ->
-           match_pol_gen (fun cu f tf => OK tf = transf_fundef (romem_for cu) f) cunit pol tpol.
-Admitted.
 
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
@@ -754,9 +744,9 @@ Qed.
 (** * The simulation diagram *)
 
 Theorem step_simulation:
-  forall S1 t S2, step pol ge S1 t S2 ->
+  forall S1 t S2, step ge S1 t S2 ->
   forall S1', match_states S1 S1' -> sound_state prog S1 ->
-  exists S2', step tpol tge S1' t S2' /\ match_states S2 S2'.
+  exists S2', step tge S1' t S2' /\ match_states S2 S2'.
 Proof.
 
 Ltac TransfInstr :=
@@ -901,8 +891,8 @@ Ltac UseTransfer :=
   exploit find_function_translated; eauto 2 with na. intros (cu' & tfd & A & B & C).
   econstructor; split.
   eapply exec_Icall; eauto. eapply sig_function_translated; eauto.
-  eapply linkorder_policy; eauto.
-  change  (fn_comp tf) with (comp_of tf); now rewrite <- (comp_transl_partial _ FUN).
+  admit. admit.
+  (* change  (fn_comp tf) with (comp_of tf); now rewrite <- (comp_transl_partial _ FUN). *)
   eapply match_call_states with (cu := cu'); eauto.
   constructor; auto. eapply match_stackframes_intro with (cu := cu); eauto.
   intros.
@@ -922,8 +912,8 @@ Ltac UseTransfer :=
   eapply exec_Itailcall; eauto. eapply sig_function_translated; eauto.
   rewrite <- (comp_transl_partial _ B), COMP. now apply (comp_transl_partial _ FUN).
   change (fn_comp tf) with (comp_of tf). now rewrite <- (comp_transl_partial _ FUN).
-  eapply linkorder_policy; eauto.
-  change  (fn_comp tf) with (comp_of tf); now rewrite <- (comp_transl_partial _ FUN).
+  admit. admit.
+  (* change  (fn_comp tf) with (comp_of tf); now rewrite <- (comp_transl_partial _ FUN). *)
   erewrite stacksize_translated by eauto. eexact C.
   eapply match_call_states with (cu := cu'); eauto 2 with na.
   eapply magree_extends; eauto. apply nlive_all.
@@ -956,7 +946,7 @@ Ltac UseTransfer :=
   eapply exec_Ibuiltin; eauto.
   apply eval_builtin_args_preserved with (ge1 := ge). exact symbols_preserved.
   constructor. eauto. constructor.
-  rewrite <- comp_transf_function; eauto. eapply TRANSPOL; eauto. reflexivity.
+  rewrite <- comp_transf_function; eauto.
   eapply external_call_symbols_preserved. apply senv_preserved.
   constructor. simpl. eauto.
   eapply match_succ_states; eauto. simpl; auto.
@@ -978,9 +968,9 @@ Ltac UseTransfer :=
   eapply exec_Ibuiltin; eauto.
   apply eval_builtin_args_preserved with (ge1 := ge). exact symbols_preserved.
   constructor. eauto. constructor. eauto. constructor.
-  rewrite <- comp_transf_function; eauto. eapply TRANSPOL; eauto. reflexivity.
+  rewrite <- comp_transf_function; eauto.
   eapply external_call_symbols_preserved. apply senv_preserved.
-  simpl; eauto. rewrite <- comp_transf_function; eauto.
+  simpl; eauto.
   eapply match_succ_states; eauto. simpl; auto.
   apply eagree_set_res; auto.
 + (* memcpy *)
@@ -1019,7 +1009,7 @@ Ltac UseTransfer :=
   eapply exec_Ibuiltin; eauto.
   apply eval_builtin_args_preserved with (ge1 := ge). exact symbols_preserved.
   constructor. eauto. constructor. eauto. constructor.
-  rewrite <- comp_transf_function; eauto. eapply TRANSPOL; eauto. reflexivity.
+  rewrite <- comp_transf_function; eauto.
   eapply external_call_symbols_preserved. apply senv_preserved.
   simpl in B1; inv B1. simpl in B2; inv B2. econstructor; eauto.
   eapply match_succ_states; eauto. simpl; auto.
@@ -1049,7 +1039,7 @@ Ltac UseTransfer :=
   econstructor; split.
   eapply exec_Ibuiltin; eauto.
   apply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
-  rewrite <- comp_transf_function; eauto. eapply TRANSPOL; eauto. reflexivity.
+  rewrite <- comp_transf_function; eauto.
   eapply external_call_symbols_preserved. apply senv_preserved.
   constructor. eapply eventval_list_match_lessdef; eauto 2 with na.
   eapply match_succ_states; eauto. simpl; auto.
@@ -1062,7 +1052,7 @@ Ltac UseTransfer :=
   econstructor; split.
   eapply exec_Ibuiltin; eauto.
   apply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
-  rewrite <- comp_transf_function; eauto. eapply TRANSPOL; eauto. reflexivity.
+  rewrite <- comp_transf_function; eauto.
   eapply external_call_symbols_preserved. apply senv_preserved.
   constructor.
   eapply eventval_match_lessdef; eauto 2 with na.
@@ -1073,7 +1063,7 @@ Ltac UseTransfer :=
   exploit can_eval_builtin_args; eauto. intros (vargs' & A).
   econstructor; split.
   eapply exec_Ibuiltin; eauto.
-  rewrite <- comp_transf_function; eauto. eapply TRANSPOL; eauto. reflexivity.
+  rewrite <- comp_transf_function; eauto.
   constructor.
   eapply match_succ_states; eauto. simpl; auto.
   apply eagree_set_res; auto.
@@ -1092,7 +1082,7 @@ Ltac UseTransfer :=
   econstructor; split.
   eapply exec_Ibuiltin; eauto.
   apply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
-  rewrite <- comp_transf_function; eauto. eapply TRANSPOL; eauto. reflexivity.
+  (* rewrite <- comp_transf_function; eauto.  *)
   eapply external_call_symbols_preserved. apply senv_preserved. rewrite <- comp_transf_function. eauto. eauto.
   eapply match_succ_states; eauto. simpl; auto.
   apply eagree_set_res; auto.
@@ -1157,7 +1147,7 @@ Ltac UseTransfer :=
   econstructor; split.
   constructor.
   econstructor; eauto. apply mextends_agree; auto.
-Qed.
+Admitted.
 
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 ->
@@ -1185,7 +1175,7 @@ Qed.
 (** * Semantic preservation *)
 
 Theorem transf_program_correct:
-  forward_simulation (RTL.semantics pol prog) (RTL.semantics tpol tprog).
+  forward_simulation (RTL.semantics prog) (RTL.semantics tprog).
 Proof.
   intros.
   apply forward_simulation_step with

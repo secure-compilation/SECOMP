@@ -81,8 +81,6 @@ Proof.
   try contradiction; try discriminate; econstructor; eauto.
 Qed.
 
-Definition match_pol := match_pol (fun f tf => transf_fundef f = OK tf).
-
 
 Section PRESERVATION.
 
@@ -98,9 +96,6 @@ Let step := Mach.step return_address_offset.
 Variable prog: Linear.program.
 Variable tprog: Mach.program.
 Hypothesis TRANSF: match_prog prog tprog.
-Variable pol: Linear.policy.
-Variable tpol: Mach.policy.
-Hypothesis TRANSPOL: match_pol pol tpol.
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
 
@@ -925,7 +920,7 @@ Lemma save_callee_save_rec_correct:
   m |= range sp pos (size_callee_save_area_rec l pos) ** P ->
   agree_regs j ls rs ->
   exists rs', exists m',
-     star (step tpol) tge
+     star step tge
         (State cs fb (Vptr sp Ptrofs.zero) (save_callee_save_rec l pos k) rs m)
      E0 (State cs fb (Vptr sp Ptrofs.zero) k rs' m')
   /\ m' |= contains_callee_saves j sp pos l ls ** P
@@ -1016,7 +1011,7 @@ Lemma save_callee_save_correct:
   let ls1 := LTL.undef_regs destroyed_at_function_entry (LTL.call_regs ls) in
   let rs1 := undef_regs destroyed_at_function_entry rs in
   exists rs', exists m',
-     star (step tpol) tge
+     star step tge
         (State cs fb (Vptr sp Ptrofs.zero) (save_callee_save fe k) rs1 m)
      E0 (State cs fb (Vptr sp Ptrofs.zero) k rs' m')
   /\ m' |= contains_callee_saves j sp fe.(fe_ofs_callee_save) b.(used_callee_save) ls0 ** P
@@ -1066,7 +1061,7 @@ Lemma function_prologue_correct:
      Mem.alloc m1' tf.(fn_comp) 0 tf.(fn_stacksize) = (m2', sp')
   /\ store_stack m2' (Vptr sp' Ptrofs.zero) Tptr tf.(fn_link_ofs) parent = Some m3'
   /\ store_stack m3' (Vptr sp' Ptrofs.zero) Tptr tf.(fn_retaddr_ofs) ra = Some m4'
-  /\ star (step tpol) tge
+  /\ star step tge
          (State cs fb (Vptr sp' Ptrofs.zero) (save_callee_save fe k) rs1 m4')
       E0 (State cs fb (Vptr sp' Ptrofs.zero) k rs' m5')
   /\ agree_regs j' ls1 rs'
@@ -1187,7 +1182,7 @@ Lemma restore_callee_save_rec_correct:
   agree_unused ls0 rs ->
   (forall r, In r l -> mreg_within_bounds b r) ->
   exists rs',
-    star (step tpol) tge
+    star step tge
       (State cs fb (Vptr sp Ptrofs.zero) (restore_callee_save_rec l ofs k) rs m)
    E0 (State cs fb (Vptr sp Ptrofs.zero) k rs' m)
   /\ (forall r, In r l -> Val.inject j (ls0 (R r)) (rs' r))
@@ -1232,7 +1227,7 @@ Lemma restore_callee_save_correct:
   m |= frame_contents j sp ls ls0 pa ra ** P ->
   agree_unused j ls0 rs ->
   exists rs',
-    star (step tpol) tge
+    star step tge
        (State cs fb (Vptr sp Ptrofs.zero) (restore_callee_save fe k) rs m)
     E0 (State cs fb (Vptr sp Ptrofs.zero) k rs' m)
   /\ (forall r,
@@ -1271,7 +1266,7 @@ Lemma function_epilogue_correct:
      load_stack m' (Vptr sp' Ptrofs.zero) Tptr tf.(fn_link_ofs) = Some pa
   /\ load_stack m' (Vptr sp' Ptrofs.zero) Tptr tf.(fn_retaddr_ofs) = Some ra
   /\ Mem.free m' sp' 0 tf.(fn_stacksize) = Some m1'
-  /\ star (step tpol) tge
+  /\ star step tge
        (State cs fb (Vptr sp' Ptrofs.zero) (restore_callee_save fe k) rs m')
     E0 (State cs fb (Vptr sp' Ptrofs.zero) k rs1 m')
   /\ agree_regs j (return_regs ls0 ls) rs1
@@ -1832,9 +1827,9 @@ Inductive match_states: Linear.state -> Mach.state -> Prop :=
                   (Mach.Returnstate cs' rs m').
 
 Theorem transf_step_correct:
-  forall s1 t s2, Linear.step pol ge s1 t s2 ->
+  forall s1 t s2, Linear.step ge s1 t s2 ->
   forall (WTS: wt_state s1) s1' (MS: match_states s1 s1'),
-  exists s2', plus (step tpol) tge s1' t s2' /\ match_states s2 s2'.
+  exists s2', plus step tge s1' t s2' /\ match_states s2 s2'.
 Proof.
   induction 1; intros;
   try inv MS;
@@ -1978,8 +1973,7 @@ Proof.
   exploit return_address_offset_exists. eexact IST. intros [ra D].
   econstructor; split.
   apply plus_one. econstructor; eauto.
-  eapply TRANSPOL; eauto.
-  change (fn_comp tf) with (comp_of tf). rewrite <- (comp_transl_partial _ TRANSL); auto.
+  admit.
   econstructor; eauto.
   econstructor; eauto with coqlib.
   apply Val.Vptr_has_type.
@@ -2001,8 +1995,7 @@ Proof.
   rewrite <- (comp_transl_partial _ TRANSL).
   rewrite <- (comp_transl_partial _ C). eauto.
   rewrite <- (comp_transl_partial _ TRANSL). eauto.
-  eapply TRANSPOL; eauto.
-  change (fn_comp tf) with (comp_of tf). rewrite <- (comp_transl_partial _ TRANSL); auto.
+  admit.
   traceEq.
   econstructor; eauto.
   apply match_stacks_change_sig with (Linear.fn_sig f); auto.
@@ -2022,8 +2015,6 @@ Proof.
   econstructor; split.
   apply plus_one. econstructor; eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
-  eapply TRANSPOL with (f := External ef); eauto.
-  change (fn_comp tf) with (comp_of tf). rewrite <- (comp_transl_partial _ TRANSL); auto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   change (comp_of (Internal tf)) with (comp_of tf). rewrite <- (comp_transl_partial _ TRANSL). eauto.
   eapply match_states_intro with (j := j'); eauto with coqlib.
@@ -2140,7 +2131,7 @@ Proof.
   apply frame_contents_exten with rs0 (parent_locset s); auto.
   intros; apply Val.lessdef_same; apply AGCS; red; congruence.
   intros; rewrite (OUTU ty ofs); auto. 
-Qed.
+Admitted.
 
 Lemma transf_initial_states:
   forall st1, Linear.initial_state prog st1 ->
@@ -2196,7 +2187,7 @@ Proof.
 Qed.
 
 Theorem transf_program_correct:
-  forward_simulation (Linear.semantics pol prog) (Mach.semantics return_address_offset tpol tprog).
+  forward_simulation (Linear.semantics prog) (Mach.semantics return_address_offset tprog).
 Proof.
   set (ms := fun s s' => wt_state s /\ match_states s s').
   eapply forward_simulation_plus with (match_states := ms).
