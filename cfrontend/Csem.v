@@ -876,4 +876,5 @@ Lemma star_own_block:
   state_mem s' = Some m' ->
   Mem.own_block m b cp ->
   Mem.own_block m' b cp.
+(* Needs to be tweaked for the free case? *)
 Admitted. (* RB: NOTE: Preservation property. *)
