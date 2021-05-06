@@ -73,7 +73,9 @@ Proof (Genv.find_symbol_match (proj1 TRANSL)).
 
 Lemma senv_preserved:
   Senv.equiv ge tge.
-Proof (Genv.senv_match (proj1 TRANSL)).
+Proof. exact (Genv.senv_match (proj1 TRANSL)). Qed.
+(* TODO: JT, can you check if this works with [Proof (term)]? :-)
+   That doesn't seem to work with 8.9.1 (after changes). *)
 
 Lemma function_ptr_translated:
   forall b f,
@@ -116,9 +118,9 @@ Qed.
 (** Properties of smart constructors. *)
 
 Lemma eval_Ederef':
-  forall ge e le m a t l ofs,
-  eval_expr ge e le m a (Vptr l ofs) ->
-  eval_lvalue ge e le m (Ederef' a t) l ofs.
+  forall ge e le cp m a t l ofs,
+  eval_expr ge e le cp m a (Vptr l ofs) ->
+  eval_lvalue ge e le cp m (Ederef' a t) l ofs.
 Proof.
   intros. unfold Ederef'; destruct a; auto using eval_Ederef.
   destruct (type_eq t (typeof a)); auto using eval_Ederef.
@@ -134,9 +136,9 @@ Proof.
 Qed.
 
 Lemma eval_Eaddrof':
-  forall ge e le m a t l ofs,
-  eval_lvalue ge e le m a l ofs ->
-  eval_expr ge e le m (Eaddrof' a t) (Vptr l ofs).
+  forall ge e le cp m a t l ofs,
+  eval_lvalue ge e le cp m a l ofs ->
+  eval_expr ge e le cp m (Eaddrof' a t) (Vptr l ofs).
 Proof.
   intros. unfold Eaddrof'; destruct a; auto using eval_Eaddrof.
   destruct (type_eq t (typeof a)); auto using eval_Eaddrof.
@@ -177,7 +179,7 @@ Qed.
 Lemma tr_simple_expr_nil:
   forall le dst r sl a tmps, tr_expr le dst r sl a tmps ->
   dst = For_val \/ dst = For_effects -> simple r = true -> sl = nil.
-Proof (proj1 tr_simple_nil).
+Proof. exact (proj1 tr_simple_nil). Qed.
 
 Lemma tr_simple_exprlist_nil:
   forall le rl sl al tmps, tr_exprlist le rl sl al tmps ->
@@ -187,10 +189,10 @@ Proof (proj2 tr_simple_nil).
 (** Translation of [deref_loc] and [assign_loc] operations. *)
 
 Remark deref_loc_translated:
-  forall ty m b ofs t v,
+  forall ty cp m b ofs t v,
   Csem.deref_loc ge ty m b ofs t v ->
   match chunk_for_volatile_type ty with
-  | None => t = E0 /\ Clight.deref_loc ty m b ofs v
+  | None => t = E0 /\ Clight.deref_loc ty cp m b ofs v
   | Some chunk => volatile_load tge chunk m b ofs t v
   end.
 Proof.

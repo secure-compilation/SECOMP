@@ -230,36 +230,36 @@ Variable pol: policy.
 Variable ge: genv.
 
 Lemma make_intconst_correct:
-  forall n e le m,
-  eval_expr ge e le m (make_intconst n) (Vint n).
+  forall n e le cp m,
+  eval_expr ge e le cp m (make_intconst n) (Vint n).
 Proof.
   intros. unfold make_intconst. econstructor. reflexivity.
 Qed.
 
 Lemma make_floatconst_correct:
-  forall n e le m,
-  eval_expr ge e le m (make_floatconst n) (Vfloat n).
+  forall n e le cp m,
+  eval_expr ge e le cp m (make_floatconst n) (Vfloat n).
 Proof.
   intros. unfold make_floatconst. econstructor. reflexivity.
 Qed.
 
 Lemma make_singleconst_correct:
-  forall n e le m,
-  eval_expr ge e le m (make_singleconst n) (Vsingle n).
+  forall n e le cp m,
+  eval_expr ge e le cp m (make_singleconst n) (Vsingle n).
 Proof.
   intros. unfold make_singleconst. econstructor. reflexivity.
 Qed.
 
 Lemma make_longconst_correct:
-  forall n e le m,
-  eval_expr ge e le m (make_longconst n) (Vlong n).
+  forall n e le cp m,
+  eval_expr ge e le cp m (make_longconst n) (Vlong n).
 Proof.
   intros. unfold make_floatconst. econstructor. reflexivity.
 Qed.
 
 Lemma make_ptrofsconst_correct:
-  forall n e le m,
-  eval_expr ge e le m (make_ptrofsconst n) (Vptrofs (Ptrofs.repr n)).
+  forall n e le cp m,
+  eval_expr ge e le cp m (make_ptrofsconst n) (Vptrofs (Ptrofs.repr n)).
 Proof.
   intros. unfold Vptrofs, make_ptrofsconst. destruct Archi.ptr64 eqn:SF.
 - replace (Ptrofs.to_int64 (Ptrofs.repr n)) with (Int64.repr n).
@@ -271,25 +271,25 @@ Proof.
 Qed.
 
 Lemma make_singleoffloat_correct:
-  forall a n e le m,
-  eval_expr ge e le m a (Vfloat n) ->
-  eval_expr ge e le m (make_singleoffloat a) (Vsingle (Float.to_single n)).
+  forall a n e le cp m,
+  eval_expr ge e le cp m a (Vfloat n) ->
+  eval_expr ge e le cp m (make_singleoffloat a) (Vsingle (Float.to_single n)).
 Proof.
   intros. econstructor. eauto. auto.
 Qed.
 
 Lemma make_floatofsingle_correct:
-  forall a n e le m,
-  eval_expr ge e le m a (Vsingle n) ->
-  eval_expr ge e le m (make_floatofsingle a) (Vfloat (Float.of_single n)).
+  forall a n e le cp m,
+  eval_expr ge e le cp m a (Vsingle n) ->
+  eval_expr ge e le cp m (make_floatofsingle a) (Vfloat (Float.of_single n)).
 Proof.
   intros. econstructor. eauto. auto.
 Qed.
 
 Lemma make_floatofint_correct:
-  forall a n sg e le m,
-  eval_expr ge e le m a (Vint n) ->
-  eval_expr ge e le m (make_floatofint a sg) (Vfloat(cast_int_float sg n)).
+  forall a n sg e le cp m,
+  eval_expr ge e le cp m a (Vint n) ->
+  eval_expr ge e le cp m (make_floatofint a sg) (Vfloat(cast_int_float sg n)).
 Proof.
   intros. unfold make_floatofint, cast_int_float.
   destruct sg; econstructor; eauto.
@@ -302,13 +302,13 @@ Hint Constructors eval_expr eval_exprlist: cshm.
 Hint Extern 2 (@eq trace _ _) => traceEq: cshm.
 
 Lemma make_cmpu_ne_zero_correct:
-  forall e le m a n,
-  eval_expr ge e le m a (Vint n) ->
-  eval_expr ge e le m (make_cmpu_ne_zero a) (Vint (if Int.eq n Int.zero then Int.zero else Int.one)).
+  forall e le cp m a n,
+  eval_expr ge e le cp m a (Vint n) ->
+  eval_expr ge e le cp m (make_cmpu_ne_zero a) (Vint (if Int.eq n Int.zero then Int.zero else Int.one)).
 Proof.
   intros.
-  assert (DEFAULT: eval_expr ge e le m (Ebinop (Ocmpu Cne) a (make_intconst Int.zero))
-                                       (Vint (if Int.eq n Int.zero then Int.zero else Int.one))).
+  assert (DEFAULT: eval_expr ge e le cp m (Ebinop (Ocmpu Cne) a (make_intconst Int.zero))
+                             (Vint (if Int.eq n Int.zero then Int.zero else Int.one))).
   { econstructor; eauto with cshm. simpl. unfold Val.cmpu, Val.cmpu_bool.
     unfold Int.cmpu. destruct (Int.eq n Int.zero); auto. }
   assert (CMP: forall ob,
@@ -335,14 +335,14 @@ Proof.
 Qed.
 
 Lemma make_cmpu_ne_zero_correct_ptr:
-  forall e le m a b i,
-  eval_expr ge e le m a (Vptr b i) ->
+  forall e le cp m a b i,
+  eval_expr ge e le cp m a (Vptr b i) ->
   Archi.ptr64 = false ->
   Mem.weak_valid_pointer m b (Ptrofs.unsigned i) = true ->
-  eval_expr ge e le m (make_cmpu_ne_zero a) Vone.
+  eval_expr ge e le cp m (make_cmpu_ne_zero a) Vone.
 Proof.
   intros.
-  assert (DEFAULT: eval_expr ge e le m (Ebinop (Ocmpu Cne) a (make_intconst Int.zero)) Vone).
+  assert (DEFAULT: eval_expr ge e le cp m (Ebinop (Ocmpu Cne) a (make_intconst Int.zero)) Vone).
   { econstructor; eauto with cshm. simpl. unfold Val.cmpu, Val.cmpu_bool.
     unfold Mem.weak_valid_pointer in H1. rewrite H0, H1.
     rewrite Int.eq_true; auto. }
@@ -360,9 +360,9 @@ Proof.
 Qed.
 
 Lemma make_cast_int_correct:
-  forall e le m a n sz si,
-  eval_expr ge e le m a (Vint n) ->
-  eval_expr ge e le m (make_cast_int a sz si) (Vint (cast_int_int sz si n)).
+  forall e le cp m a n sz si,
+  eval_expr ge e le cp m a (Vint n) ->
+  eval_expr ge e le cp m (make_cast_int a sz si) (Vint (cast_int_int sz si n)).
 Proof.
   intros. unfold make_cast_int, cast_int_int.
   destruct sz.
@@ -373,9 +373,9 @@ Proof.
 Qed.
 
 Lemma make_longofint_correct:
-  forall e le m a n si,
-  eval_expr ge e le m a (Vint n) ->
-  eval_expr ge e le m (make_longofint a si) (Vlong (cast_int_long si n)).
+  forall e le cp m a n si,
+  eval_expr ge e le cp m a (Vint n) ->
+  eval_expr ge e le cp m (make_longofint a si) (Vlong (cast_int_long si n)).
 Proof.
   intros. unfold make_longofint, cast_int_long. destruct si; eauto with cshm.
 Qed.
@@ -392,11 +392,11 @@ Ltac InvEval :=
   end.
 
 Lemma make_cast_correct:
-  forall e le m a b v ty1 ty2 v',
+  forall e le cp m a b v ty1 ty2 v',
   make_cast ty1 ty2 a = OK b ->
-  eval_expr ge e le m a v ->
+  eval_expr ge e le cp m a v ->
   sem_cast v ty1 ty2 m = Some v' ->
-  eval_expr ge e le m b v'.
+  eval_expr ge e le cp m b v'.
 Proof.
   intros. unfold make_cast, sem_cast in *;
   destruct (classify_cast ty1 ty2); inv H; destruct v; InvEval; eauto with cshm.
@@ -447,11 +447,11 @@ Proof.
 Qed.
 
 Lemma make_boolean_correct:
- forall e le m a v ty b,
-  eval_expr ge e le m a v ->
+ forall e le cp m a v ty b,
+  eval_expr ge e le cp m a v ->
   bool_val v ty m = Some b ->
   exists vb,
-    eval_expr ge e le m (make_boolean a ty) vb
+    eval_expr ge e le cp m (make_boolean a ty) vb
     /\ Val.bool_of_val vb b.
 Proof.
   intros. unfold make_boolean. unfold bool_val in H0.
@@ -480,22 +480,22 @@ Proof.
 Qed.
 
 Lemma make_neg_correct:
-  forall a tya c va v e le m,
+  forall a tya c va v e le cp m,
   sem_neg va tya = Some v ->
   make_neg a tya = OK c ->
-  eval_expr ge e le m a va ->
-  eval_expr ge e le m c v.
+  eval_expr ge e le cp m a va ->
+  eval_expr ge e le cp m c v.
 Proof.
   unfold sem_neg, make_neg; intros until m; intros SEM MAKE EV1;
   destruct (classify_neg tya); inv MAKE; destruct va; inv SEM; eauto with cshm.
 Qed.
 
 Lemma make_absfloat_correct:
-  forall a tya c va v e le m,
+  forall a tya c va v e le cp m,
   sem_absfloat va tya = Some v ->
   make_absfloat a tya = OK c ->
-  eval_expr ge e le m a va ->
-  eval_expr ge e le m c v.
+  eval_expr ge e le cp m a va ->
+  eval_expr ge e le cp m c v.
 Proof.
   unfold sem_absfloat, make_absfloat; intros until m; intros SEM MAKE EV1;
   destruct (classify_neg tya); inv MAKE; destruct va; inv SEM; eauto with cshm.
@@ -505,11 +505,11 @@ Proof.
 Qed.
 
 Lemma make_notbool_correct:
-  forall a tya c va v e le m,
+  forall a tya c va v e le cp m,
   sem_notbool va tya m = Some v ->
   make_notbool a tya = OK c ->
-  eval_expr ge e le m a va ->
-  eval_expr ge e le m c v.
+  eval_expr ge e le cp m a va ->
+  eval_expr ge e le cp m c v.
 Proof.
   unfold sem_notbool, bool_val, make_notbool; intros until m; intros SEM MAKE EV1.
   destruct (classify_bool tya); inv MAKE; destruct va; simpl in SEM; InvEval.
@@ -532,11 +532,11 @@ Proof.
 Qed.
 
 Lemma make_notint_correct:
-  forall a tya c va v e le m,
+  forall a tya c va v e le cp m,
   sem_notint va tya = Some v ->
   make_notint a tya = OK c ->
-  eval_expr ge e le m a va ->
-  eval_expr ge e le m c v.
+  eval_expr ge e le cp m a va ->
+  eval_expr ge e le cp m c v.
 Proof.
   unfold sem_notint, make_notint; intros until m; intros SEM MAKE EV1;
   destruct (classify_notint tya); inv MAKE; destruct va; inv SEM; eauto with cshm.
@@ -545,22 +545,22 @@ Qed.
 Definition binary_constructor_correct
     (make: expr -> type -> expr -> type -> res expr)
     (sem: val -> type -> val -> type -> mem -> option val): Prop :=
-  forall a tya b tyb c va vb v e le m,
+  forall a tya b tyb c va vb v e le cp m,
   sem va tya vb tyb m = Some v ->
   make a tya b tyb = OK c ->
-  eval_expr ge e le m a va ->
-  eval_expr ge e le m b vb ->
-  eval_expr ge e le m c v.
+  eval_expr ge e le cp m a va ->
+  eval_expr ge e le cp m b vb ->
+  eval_expr ge e le cp m c v.
 
 Definition shift_constructor_correct
     (make: expr -> type -> expr -> type -> res expr)
     (sem: val -> type -> val -> type -> option val): Prop :=
-  forall a tya b tyb c va vb v e le m,
+  forall a tya b tyb c va vb v e le cp m,
   sem va tya vb tyb = Some v ->
   make a tya b tyb = OK c ->
-  eval_expr ge e le m a va ->
-  eval_expr ge e le m b vb ->
-  eval_expr ge e le m c v.
+  eval_expr ge e le cp m a va ->
+  eval_expr ge e le cp m b vb ->
+  eval_expr ge e le cp m c v.
 
 Section MAKE_BIN.
 
@@ -633,11 +633,11 @@ Hint Extern 2 (@eq (option val) _ _) => (simpl; reflexivity) : cshm.
 
 Lemma make_add_correct: binary_constructor_correct (make_add cunit.(prog_comp_env)) (sem_add prog.(prog_comp_env)).
 Proof.
-  assert (A: forall ty si a b c e le m va vb v,
+  assert (A: forall ty si a b c e le cp m va vb v,
              make_add_ptr_int cunit.(prog_comp_env) ty si a b = OK c ->
-             eval_expr ge e le m a va -> eval_expr ge e le m b vb ->
+             eval_expr ge e le cp m a va -> eval_expr ge e le cp m b vb ->
              sem_add_ptr_int (prog_comp_env prog) ty si va vb = Some v ->
-             eval_expr ge e le m c v).
+             eval_expr ge e le cp m c v).
   { unfold make_add_ptr_int, sem_add_ptr_int; intros until v; intros MAKE EV1 EV2 SEM; monadInv MAKE.
     destruct Archi.ptr64 eqn:SF; inv EQ0; rewrite (transl_sizeof _ _ _ _ LINK EQ).
   - destruct va; InvEval; destruct vb; inv SEM.
@@ -654,11 +654,11 @@ Proof.
     assert (Ptrofs.agree32 (ptrofs_of_int si i0) i0) by (destruct si; simpl; auto with ptrofs).
     auto with ptrofs.
   }
-  assert (B: forall ty a b c e le m va vb v,
+  assert (B: forall ty a b c e le cp m va vb v,
              make_add_ptr_long cunit.(prog_comp_env) ty a b = OK c ->
-             eval_expr ge e le m a va -> eval_expr ge e le m b vb ->
+             eval_expr ge e le cp m a va -> eval_expr ge e le cp m b vb ->
              sem_add_ptr_long (prog_comp_env prog) ty va vb = Some v ->
-             eval_expr ge e le m c v).
+             eval_expr ge e le cp m c v).
   { unfold make_add_ptr_long, sem_add_ptr_long; intros until v; intros MAKE EV1 EV2 SEM; monadInv MAKE.
     destruct Archi.ptr64 eqn:SF; inv EQ0; rewrite (transl_sizeof _ _ _ _ LINK EQ).
   - destruct va; InvEval; destruct vb; inv SEM.
@@ -854,11 +854,11 @@ Proof.
 Qed.
 
 Lemma make_cmp_ptr_correct:
-  forall cmp e le m a va b vb v,
+  forall cmp e le cp m a va b vb v,
   cmp_ptr m cmp va vb = Some v ->
-  eval_expr ge e le m a va ->
-  eval_expr ge e le m b vb ->
-  eval_expr ge e le m (make_cmp_ptr cmp a b) v.
+  eval_expr ge e le cp m a va ->
+  eval_expr ge e le cp m b vb ->
+  eval_expr ge e le cp m (make_cmp_ptr cmp a b) v.
 Proof.
   unfold cmp_ptr, make_cmp_ptr; intros.
   destruct Archi.ptr64.
@@ -868,9 +868,9 @@ Proof.
 Qed.
 
 Remark make_ptrofs_of_int_correct:
-  forall e le m a i si,
-  eval_expr ge e le m a (Vint i) ->
-  eval_expr ge e le m (if Archi.ptr64 then make_longofint a si else a) (Vptrofs (ptrofs_of_int si i)).
+  forall e le cp m a i si,
+  eval_expr ge e le cp m a (Vint i) ->
+  eval_expr ge e le cp m (if Archi.ptr64 then make_longofint a si else a) (Vptrofs (ptrofs_of_int si i)).
 Proof.
   intros. unfold Vptrofs, ptrofs_of_int. destruct Archi.ptr64 eqn:SF.
 - unfold make_longofint. destruct si.
@@ -888,9 +888,9 @@ Proof.
 Qed.
 
 Remark make_ptrofs_of_int64_correct:
-  forall e le m a i,
-  eval_expr ge e le m a (Vlong i) ->
-  eval_expr ge e le m (if Archi.ptr64 then a else Eunop Ointoflong a) (Vptrofs (Ptrofs.of_int64 i)).
+  forall e le cp m a i,
+  eval_expr ge e le cp m a (Vlong i) ->
+  eval_expr ge e le cp m (if Archi.ptr64 then a else Eunop Ointoflong a) (Vptrofs (Ptrofs.of_int64 i)).
 Proof.
   intros. unfold Vptrofs. destruct Archi.ptr64 eqn:SF.
 - replace (Ptrofs.to_int64 (Ptrofs.of_int64 i)) with i. auto.
@@ -912,11 +912,11 @@ Proof.
 Qed.
 
 Lemma transl_unop_correct:
-  forall op a tya c va v e le m,
+  forall op a tya c va v e le cp m,
   transl_unop op a tya = OK c ->
   sem_unary_operation op va tya m = Some v ->
-  eval_expr ge e le m a va ->
-  eval_expr ge e le m c v.
+  eval_expr ge e le cp m a va ->
+  eval_expr ge e le cp m c v.
 Proof.
   intros. destruct op; simpl in *.
   eapply make_notbool_correct; eauto.
@@ -926,12 +926,12 @@ Proof.
 Qed.
 
 Lemma transl_binop_correct:
-  forall op a tya b tyb c va vb v e le m,
+  forall op a tya b tyb c va vb v e le cp m,
   transl_binop cunit.(prog_comp_env) op a tya b tyb = OK c ->
   sem_binary_operation prog.(prog_comp_env) op va tya vb tyb m = Some v ->
-  eval_expr ge e le m a va ->
-  eval_expr ge e le m b vb ->
-  eval_expr ge e le m c v.
+  eval_expr ge e le cp m a va ->
+  eval_expr ge e le cp m b vb ->
+  eval_expr ge e le cp m c v.
 Proof.
   intros. destruct op; simpl in *.
   eapply make_add_correct; eauto.
@@ -953,16 +953,16 @@ Proof.
 Qed.
 
 Lemma make_load_correct:
-  forall addr ty code b ofs v e le m,
+  forall addr ty code b ofs v e le cp m,
   make_load addr ty = OK code ->
-  eval_expr ge e le m addr (Vptr b ofs) ->
+  eval_expr ge e le cp m addr (Vptr b ofs) ->
   deref_loc ty m b ofs v ->
-  eval_expr ge e le m code v.
+  eval_expr ge e le cp m code v.
 Proof.
   unfold make_load; intros until m; intros MKLOAD EVEXP DEREF.
   inv DEREF.
   (* scalar *)
-  rewrite H in MKLOAD. inv MKLOAD. apply eval_Eload with (Vptr b ofs) cp; auto.
+  rewrite H in MKLOAD. inv MKLOAD. apply eval_Eload with (Vptr b ofs); auto.
   (* by reference *)
   rewrite H in MKLOAD. inv MKLOAD. auto.
   (* by copy *)
@@ -970,13 +970,13 @@ Proof.
 Qed.
 
 Lemma make_memcpy_correct:
-  forall f dst src ty k e le m b ofs v m' s,
-  eval_expr ge e le m dst (Vptr b ofs) ->
-  eval_expr ge e le m src v ->
+  forall f dst src ty k e le cp m b ofs v m' s,
+  eval_expr ge e le cp m dst (Vptr b ofs) ->
+  eval_expr ge e le cp m src v ->
   assign_loc prog.(prog_comp_env) ty m b ofs v m' ->
   access_mode ty = By_copy ->
   make_memcpy cunit.(prog_comp_env) dst src ty = OK s ->
-  step pol ge (State f s k e le m) E0 (State f Sskip k e le m').
+  step pol ge (State f s k e le cp m) E0 (State f Sskip k e le cp m').
 Proof.
   intros. inv H1; try congruence.
   monadInv H3.
@@ -996,12 +996,12 @@ Proof.
 Admitted.
 
 Lemma make_store_correct:
-  forall addr ty rhs code e le m b ofs v m' f k,
+  forall addr ty rhs code e le cp m b ofs v m' f k,
   make_store cunit.(prog_comp_env) addr ty rhs = OK code ->
-  eval_expr ge e le m addr (Vptr b ofs) ->
-  eval_expr ge e le m rhs v ->
+  eval_expr ge e le cp m addr (Vptr b ofs) ->
+  eval_expr ge e le cp m rhs v ->
   assign_loc prog.(prog_comp_env) ty m b ofs v m' ->
-  step pol ge (State f code k e le m) E0 (State f Sskip k e le m').
+  step pol ge (State f code k e le cp m) E0 (State f Sskip k e le cp m').
 Proof.
   unfold make_store. intros until k; intros MKSTORE EV1 EV2 ASSIGN.
   inversion ASSIGN; subst.
@@ -1014,10 +1014,10 @@ Proof.
 Qed.
 
 Lemma make_normalization_correct:
-  forall e le m a v t,
-  eval_expr ge e le m a v ->
+  forall e le cp m a v t,
+  eval_expr ge e le cp m a v ->
   wt_val v t ->
-  eval_expr ge e le m (make_normalization t a) v.
+  eval_expr ge e le cp m (make_normalization t a) v.
 Proof.
   intros. destruct t; simpl; auto. inv H0.
 - destruct i; simpl in H3.
@@ -1242,13 +1242,13 @@ Hypothesis MENV: match_env e te.
 
 Lemma transl_expr_lvalue_correct:
   (forall a v,
-   Clight.eval_expr ge e le m a v ->
+   Clight.eval_expr ge e le cp m a v ->
    forall ta (TR: transl_expr cunit.(prog_comp_env) a = OK ta) ,
-   Csharpminor.eval_expr tge te le m ta v)
+   Csharpminor.eval_expr tge te le cp m ta v)
 /\(forall a b ofs,
-   Clight.eval_lvalue ge e le m a b ofs ->
+   Clight.eval_lvalue ge e le cp m a b ofs ->
    forall ta (TR: transl_lvalue cunit.(prog_comp_env) a = OK ta),
-   Csharpminor.eval_expr tge te le m ta (Vptr b ofs)).
+   Csharpminor.eval_expr tge te le cp m ta (Vptr b ofs)).
 Proof.
   apply eval_expr_lvalue_ind; intros; try (monadInv TR).
 - (* const int *)
@@ -1304,23 +1304,23 @@ Qed.
 
 Lemma transl_expr_correct:
    forall a v,
-   Clight.eval_expr ge e le m a v ->
+   Clight.eval_expr ge e le cp m a v ->
    forall ta, transl_expr cunit.(prog_comp_env) a = OK ta ->
-   Csharpminor.eval_expr tge te le m ta v.
+   Csharpminor.eval_expr tge te le cp m ta v.
 Proof. exact (proj1 transl_expr_lvalue_correct). Qed.
 
 Lemma transl_lvalue_correct:
    forall a b ofs,
-   Clight.eval_lvalue ge e le m a b ofs ->
+   Clight.eval_lvalue ge e le cp m a b ofs ->
    forall ta, transl_lvalue cunit.(prog_comp_env) a = OK ta ->
-   Csharpminor.eval_expr tge te le m ta (Vptr b ofs).
+   Csharpminor.eval_expr tge te le cp m ta (Vptr b ofs).
 Proof. exact (proj2 transl_expr_lvalue_correct). Qed.
 
 Lemma transl_arglist_correct:
   forall al tyl vl,
-  Clight.eval_exprlist ge e le m al tyl vl ->
+  Clight.eval_exprlist ge e le cp m al tyl vl ->
   forall tal, transl_arglist cunit.(prog_comp_env) al tyl = OK tal ->
-  Csharpminor.eval_exprlist tge te le m tal vl.
+  Csharpminor.eval_exprlist tge te le cp m tal vl.
 Proof.
   induction 1; intros.
   monadInv H. constructor.
@@ -1330,7 +1330,7 @@ Qed.
 
 Lemma typlist_of_arglist_eq:
   forall al tyl vl,
-  Clight.eval_exprlist ge e le m al tyl vl ->
+  Clight.eval_exprlist ge e le cp m al tyl vl ->
   typlist_of_arglist al tyl = typlist_of_typelist tyl.
 Proof.
   induction 1; simpl.
@@ -1364,9 +1364,9 @@ Inductive match_transl: stmt -> cont -> stmt -> cont -> Prop :=
       match_transl (Sblock ts) tk ts (Kblock tk).
 
 Lemma match_transl_step:
-  forall ts tk ts' tk' f te le m,
+  forall ts tk ts' tk' f te le cp m,
   match_transl (Sblock ts) tk ts' tk' ->
-  star (step tpol) tge (State f ts' tk' te le m) E0 (State f ts (Kblock tk) te le m).
+  star (step tpol) tge (State f ts' tk' te le cp m) E0 (State f ts (Kblock tk) te le cp m).
 Proof.
   intros. inv H.
   apply star_one. constructor.
@@ -1414,22 +1414,22 @@ Inductive match_cont: composite_env -> type -> nat -> nat -> Clight.cont -> Csha
       transl_function cu.(prog_comp_env) f = OK tf ->
       match_env e te ->
       match_cont cu.(prog_comp_env) (Clight.fn_return f) nbrk' ncnt' k tk ->
-      (forall v e le m, wt_val v tyret -> le!id = Some v -> eval_expr tge e le m a v) ->
+      (forall v e le cp m, wt_val v tyret -> le!id = Some v -> eval_expr tge e le cp m a v) ->
       match_cont ce tyret nbrk ncnt
                  (Clight.Kcall (Some id) f e le k)
                  (Kcall (Some id) tf te le (Kseq (Sset id a) tk)).
 
 Inductive match_states: Clight.state -> Csharpminor.state -> Prop :=
   | match_state:
-      forall f nbrk ncnt s k e le m tf ts tk te ts' tk' cu
+      forall f nbrk ncnt s k e le cp m tf ts tk te ts' tk' cu
           (LINK: linkorder cu prog)
           (TRF: transl_function cu.(prog_comp_env) f = OK tf)
           (TR: transl_statement cu.(prog_comp_env) (Clight.fn_return f) nbrk ncnt s = OK ts)
           (MTR: match_transl ts tk ts' tk')
           (MENV: match_env e te)
           (MK: match_cont cu.(prog_comp_env) (Clight.fn_return f) nbrk ncnt k tk),
-      match_states (Clight.State f s k e le m)
-                   (State tf ts' tk' te le m)
+      match_states (Clight.State f s k e le cp m)
+                   (State tf ts' tk' te le cp m)
   | match_callstate:
       forall fd args k m tfd tk targs tres cconv cu ce
           (LINK: linkorder cu prog)
@@ -1452,7 +1452,7 @@ Remark match_states_skip:
   transl_function cu.(prog_comp_env) f = OK tf ->
   match_env e te ->
   match_cont cu.(prog_comp_env) (Clight.fn_return f) nbrk ncnt k tk ->
-  match_states (Clight.State f Clight.Sskip k e le m) (State tf Sskip tk te le m).
+  match_states (Clight.State f Clight.Sskip k e le cp m) (State tf Sskip tk te le cp m).
 Proof.
   intros. econstructor; eauto. simpl; reflexivity. constructor.
 Qed.

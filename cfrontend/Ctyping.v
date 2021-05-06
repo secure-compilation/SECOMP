@@ -1657,8 +1657,8 @@ Proof.
 Qed.
 
 Lemma wt_deref_loc:
-  forall ge ty m b ofs t v,
-  deref_loc ge ty m b ofs t v ->
+  forall ge ty cp m b ofs t v,
+  deref_loc ge ty cp m b ofs t v ->
   wt_val v ty.
 Proof.
   induction 1.

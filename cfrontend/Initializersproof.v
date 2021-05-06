@@ -760,43 +760,43 @@ Fixpoint fields_of_struct (fl: members) (pos: Z) : list (Z * type) :=
       (align pos (alignof ge ty1), ty1) :: fields_of_struct fl' (align pos (alignof ge ty1) + sizeof ge ty1)
   end.
 
-Inductive exec_init: mem -> block -> Z -> type -> initializer -> mem -> Prop :=
-  | exec_init_single: forall m b ofs ty a v1 ty1 chunk m' v cp m'',
+Inductive exec_init: compartment -> mem -> block -> Z -> type -> initializer -> mem -> Prop :=
+  | exec_init_single: forall cp m b ofs ty a v1 ty1 chunk m' v m'',
       star (step pol) ge (ExprState dummy_function a Kstop empty_env m)
                 E0 (ExprState dummy_function (Eval v1 ty1) Kstop empty_env m') ->
       sem_cast v1 ty1 ty m' = Some v ->
       access_mode ty = By_value chunk ->
       Mem.store chunk m' b ofs v cp = Some m'' ->
-      exec_init m b ofs ty (Init_single a) m''
-  | exec_init_array_: forall m b ofs ty sz a il m',
-      exec_init_array m b ofs ty sz il m' ->
-      exec_init m b ofs (Tarray ty sz a) (Init_array il) m'
-  | exec_init_struct: forall m b ofs id a il co m',
+      exec_init cp m b ofs ty (Init_single a) m''
+  | exec_init_array_: forall cp m b ofs ty sz a il m',
+      exec_init_array cp m b ofs ty sz il m' ->
+      exec_init cp m b ofs (Tarray ty sz a) (Init_array il) m'
+  | exec_init_struct: forall cp m b ofs id a il co m',
       ge.(genv_cenv)!id = Some co -> co_su co = Struct ->
-      exec_init_list m b ofs (fields_of_struct (co_members co) 0) il m' ->
-      exec_init m b ofs (Tstruct id a) (Init_struct il) m'
-  | exec_init_union: forall m b ofs id a f i ty co m',
+      exec_init_list cp m b ofs (fields_of_struct (co_members co) 0) il m' ->
+      exec_init cp m b ofs (Tstruct id a) (Init_struct il) m'
+  | exec_init_union: forall cp m b ofs id a f i ty co m',
       ge.(genv_cenv)!id = Some co -> co_su co = Union ->
       field_type f (co_members co) = OK ty ->
-      exec_init m b ofs ty i m' ->
-      exec_init m b ofs (Tunion id a) (Init_union f i) m'
+      exec_init cp m b ofs ty i m' ->
+      exec_init cp m b ofs (Tunion id a) (Init_union f i) m'
 
-with exec_init_array: mem -> block -> Z -> type -> Z -> initializer_list -> mem -> Prop :=
-  | exec_init_array_nil: forall m b ofs ty sz,
+with exec_init_array: compartment -> mem -> block -> Z -> type -> Z -> initializer_list -> mem -> Prop :=
+  | exec_init_array_nil: forall cp m b ofs ty sz,
       sz >= 0 ->
-      exec_init_array m b ofs ty sz Init_nil m
-  | exec_init_array_cons: forall m b ofs ty sz i1 il m' m'',
-      exec_init m b ofs ty i1 m' ->
-      exec_init_array m' b (ofs + sizeof ge ty) ty (sz - 1) il m'' ->
-      exec_init_array m b ofs ty sz (Init_cons i1 il) m''
+      exec_init_array cp m b ofs ty sz Init_nil m
+  | exec_init_array_cons: forall cp m b ofs ty sz i1 il m' m'',
+      exec_init cp m b ofs ty i1 m' ->
+      exec_init_array cp m' b (ofs + sizeof ge ty) ty (sz - 1) il m'' ->
+      exec_init_array cp m b ofs ty sz (Init_cons i1 il) m''
 
-with exec_init_list: mem -> block -> Z -> list (Z * type) -> initializer_list -> mem -> Prop :=
-  | exec_init_list_nil: forall m b ofs,
-      exec_init_list m b ofs nil Init_nil m
-  | exec_init_list_cons: forall m b ofs pos ty l i1 il m' m'',
-      exec_init m b (ofs + pos) ty i1 m' ->
-      exec_init_list m' b ofs l il m'' ->
-      exec_init_list m b ofs ((pos, ty) :: l) (Init_cons i1 il) m''.
+with exec_init_list: compartment -> mem -> block -> Z -> list (Z * type) -> initializer_list -> mem -> Prop :=
+  | exec_init_list_nil: forall cp m b ofs,
+      exec_init_list cp m b ofs nil Init_nil m
+  | exec_init_list_cons: forall cp m b ofs pos ty l i1 il m' m'',
+      exec_init cp m b (ofs + pos) ty i1 m' ->
+      exec_init_list cp m' b ofs l il m'' ->
+      exec_init_list cp m b ofs ((pos, ty) :: l) (Init_cons i1 il) m''.
 
 Scheme exec_init_ind3 := Minimality for exec_init Sort Prop
   with exec_init_array_ind3 := Minimality for exec_init_array Sort Prop
@@ -804,8 +804,8 @@ Scheme exec_init_ind3 := Minimality for exec_init Sort Prop
 Combined Scheme exec_init_scheme from exec_init_ind3, exec_init_array_ind3, exec_init_list_ind3.
 
 Remark exec_init_array_length:
-  forall m b ofs ty sz il m',
-  exec_init_array m b ofs ty sz il m' -> sz >= 0.
+  forall cp m b ofs ty sz il m',
+  exec_init_array cp m b ofs ty sz il m' -> sz >= 0.
 Proof.
   induction 1; omega.
 Qed.
@@ -830,23 +830,23 @@ Proof.
 Qed.
 
 Lemma exec_init_own_block:
-  forall m b ofs ty i m' cp,
-  exec_init m b ofs ty i m' ->
+  forall cp m b ofs ty i m',
+  exec_init cp m b ofs ty i m' ->
   Mem.own_block m b cp ->
   Mem.own_block m' b cp.
 Admitted. (* RB: NOTE: Component preservation, needs scheme adjustment. *)
 
 Lemma tr_init_sound:
-  (forall m b ofs ty i m', exec_init m b ofs ty i m' ->
-   forall data cp, tr_init ty i data ->
+  (forall cp m b ofs ty i m', exec_init cp m b ofs ty i m' ->
+   forall data, tr_init ty i data ->
    forall OWN : Mem.own_block m b cp,
    Genv.store_init_data_list ge m b ofs data cp = Some m')
-/\(forall m b ofs ty sz il m', exec_init_array m b ofs ty sz il m' ->
-   forall data cp, tr_init_array ty il sz data ->
+/\(forall cp m b ofs ty sz il m', exec_init_array cp m b ofs ty sz il m' ->
+   forall data, tr_init_array ty il sz data ->
    forall OWN : Mem.own_block m b cp,
    Genv.store_init_data_list ge m b ofs data cp = Some m')
-/\(forall m b ofs l il m', exec_init_list m b ofs l il m' ->
-   forall ty fl data pos cp,
+/\(forall cp m b ofs l il m', exec_init_list cp m b ofs l il m' ->
+   forall ty fl data pos,
    l = fields_of_struct fl pos ->
    tr_init_struct ty fl il pos data ->
    forall OWN : Mem.own_block m b cp,
@@ -855,12 +855,12 @@ Proof.
 Local Opaque sizeof.
   apply exec_init_scheme; simpl; intros.
 - (* single *)
-  assert (cp = cp0). {
-    assert (OWN' : Mem.own_block m' b cp0) by (eapply star_own_block; eauto; reflexivity).
-    apply Mem.store_own_block_1 in H2.
-    eapply Mem.own_block_component; eassumption.
-  }
-  subst cp0.
+  (* assert (cp = cp0). { *)
+  (*   assert (OWN' : Mem.own_block m' b cp0) by (eapply star_own_block; eauto; reflexivity). *)
+  (*   apply Mem.store_own_block_1 in H2. *)
+  (*   eapply Mem.own_block_component; eassumption. *)
+  (* } *)
+  (* subst cp0. *)
   inv H3. simpl. erewrite transl_init_single_steps by eauto. auto.
 - (* array *)
   inv H1. replace (Z.max 0 sz) with sz in H7. eauto.
@@ -900,8 +900,8 @@ Qed.
 End SOUNDNESS.
 
 Theorem transl_init_sound:
-  forall pol p m b ty i m' data cp,
-  exec_init pol (globalenv p) m b 0 ty i m' ->
+  forall pol p cp m b ty i m' data,
+  exec_init pol (globalenv p) cp m b 0 ty i m' ->
   transl_init (prog_comp_env p) ty i = OK data ->
   forall OWN : Mem.own_block m b cp,
   Genv.store_init_data_list (globalenv p) m b 0 data cp = Some m'.

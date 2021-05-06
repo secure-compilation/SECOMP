@@ -84,6 +84,7 @@ Fixpoint simplelist (rl: exprlist) : bool :=
 Section SIMPLE_EXPRS.
 
 Variable e: env.
+Variable cp: compartment.
 Variable m: mem.
 
 Inductive eval_simple_lvalue: expr -> block -> ptrofs -> Prop :=
@@ -117,7 +118,7 @@ with eval_simple_rvalue: expr -> val -> Prop :=
   | esr_rvalof: forall b ofs l ty v,
       eval_simple_lvalue l b ofs ->
       ty = typeof l -> type_is_volatile ty = false ->
-      deref_loc ge ty m b ofs E0 v ->
+      deref_loc ge ty cp m b ofs E0 v ->
       eval_simple_rvalue (Evalof l ty) v
   | esr_addrof: forall b ofs l ty,
       eval_simple_lvalue l b ofs ->
@@ -234,7 +235,7 @@ Local Hint Resolve leftcontext_context : core.
 Inductive estep: state -> trace -> state -> Prop :=
 
   | step_expr: forall f r k e m v ty,
-      eval_simple_rvalue e m r v ->
+      eval_simple_rvalue e (comp_of f) m r v ->
       match r with Eval _ _ => False | _ => True end ->
       ty = typeof r ->
       estep (ExprState f r k e m)
@@ -242,63 +243,63 @@ Inductive estep: state -> trace -> state -> Prop :=
 
   | step_rvalof_volatile: forall f C l ty k e m b ofs t v,
       leftcontext RV RV C ->
-      eval_simple_lvalue e m l b ofs ->
-      deref_loc ge ty m b ofs t v ->
+      eval_simple_lvalue e (comp_of f) m l b ofs ->
+      deref_loc ge ty (comp_of f) m b ofs t v ->
       ty = typeof l -> type_is_volatile ty = true ->
       estep (ExprState f (C (Evalof l ty)) k e m)
           t (ExprState f (C (Eval v ty)) k e m)
 
   | step_seqand_true: forall f C r1 r2 ty k e m v,
       leftcontext RV RV C ->
-      eval_simple_rvalue e m r1 v ->
+      eval_simple_rvalue e (comp_of f) m r1 v ->
       bool_val v (typeof r1) m = Some true ->
       estep (ExprState f (C (Eseqand r1 r2 ty)) k e m)
          E0 (ExprState f (C (Eparen r2 type_bool ty)) k e m)
   | step_seqand_false: forall f C r1 r2 ty k e m v,
       leftcontext RV RV C ->
-      eval_simple_rvalue e m r1 v ->
+      eval_simple_rvalue e (comp_of f) m r1 v ->
       bool_val v (typeof r1) m = Some false ->
       estep (ExprState f (C (Eseqand r1 r2 ty)) k e m)
          E0 (ExprState f (C (Eval (Vint Int.zero) ty)) k e m)
 
   | step_seqor_true: forall f C r1 r2 ty k e m v,
       leftcontext RV RV C ->
-      eval_simple_rvalue e m r1 v ->
+      eval_simple_rvalue e (comp_of f) m r1 v ->
       bool_val v (typeof r1) m = Some true ->
       estep (ExprState f (C (Eseqor r1 r2 ty)) k e m)
          E0 (ExprState f (C (Eval (Vint Int.one) ty)) k e m)
   | step_seqor_false: forall f C r1 r2 ty k e m v,
       leftcontext RV RV C ->
-      eval_simple_rvalue e m r1 v ->
+      eval_simple_rvalue e (comp_of f) m r1 v ->
       bool_val v (typeof r1) m = Some false ->
       estep (ExprState f (C (Eseqor r1 r2 ty)) k e m)
          E0 (ExprState f (C (Eparen r2 type_bool ty)) k e m)
 
   | step_condition: forall f C r1 r2 r3 ty k e m v b,
       leftcontext RV RV C ->
-      eval_simple_rvalue e m r1 v ->
+      eval_simple_rvalue e (comp_of f) m r1 v ->
       bool_val v (typeof r1) m = Some b ->
       estep (ExprState f (C (Econdition r1 r2 r3 ty)) k e m)
          E0 (ExprState f (C (Eparen (if b then r2 else r3) ty ty)) k e m)
 
   | step_assign: forall f C l r ty k e m b ofs v v' t m',
       leftcontext RV RV C ->
-      eval_simple_lvalue e m l b ofs ->
-      eval_simple_rvalue e m r v ->
+      eval_simple_lvalue e (comp_of f) m l b ofs ->
+      eval_simple_rvalue e (comp_of f) m r v ->
       sem_cast v (typeof r) (typeof l) m = Some v' ->
-      assign_loc ge (typeof l) m b ofs v' t m' ->
+      assign_loc ge (typeof l) (comp_of f) m b ofs v' t m' ->
       ty = typeof l ->
       estep (ExprState f (C (Eassign l r ty)) k e m)
           t (ExprState f (C (Eval v' ty)) k e m')
 
   | step_assignop: forall f C op l r tyres ty k e m b ofs v1 v2 v3 v4 t1 t2 m' t,
       leftcontext RV RV C ->
-      eval_simple_lvalue e m l b ofs ->
-      deref_loc ge (typeof l) m b ofs t1 v1 ->
-      eval_simple_rvalue e m r v2 ->
+      eval_simple_lvalue e (comp_of f) m l b ofs ->
+      deref_loc ge (typeof l) (comp_of f) m b ofs t1 v1 ->
+      eval_simple_rvalue e (comp_of f) m r v2 ->
       sem_binary_operation ge op v1 (typeof l) v2 (typeof r) m = Some v3 ->
       sem_cast v3 tyres (typeof l) m = Some v4 ->
-      assign_loc ge (typeof l) m b ofs v4 t2 m' ->
+      assign_loc ge (typeof l) (comp_of f) m b ofs v4 t2 m' ->
       ty = typeof l ->
       t = t1 ** t2 ->
       estep (ExprState f (C (Eassignop op l r tyres ty)) k e m)
@@ -306,15 +307,15 @@ Inductive estep: state -> trace -> state -> Prop :=
 
   | step_assignop_stuck: forall f C op l r tyres ty k e m b ofs v1 v2 t,
       leftcontext RV RV C ->
-      eval_simple_lvalue e m l b ofs ->
-      deref_loc ge (typeof l) m b ofs t v1 ->
-      eval_simple_rvalue e m r v2 ->
+      eval_simple_lvalue e (comp_of f) m l b ofs ->
+      deref_loc ge (typeof l) (comp_of f) m b ofs t v1 ->
+      eval_simple_rvalue e (comp_of f) m r v2 ->
       match sem_binary_operation ge op v1 (typeof l) v2 (typeof r) m with
       | None => True
       | Some v3 =>
           match sem_cast v3 tyres (typeof l) m with
           | None => True
-          | Some v4 => forall t2 m', ~(assign_loc ge (typeof l) m b ofs v4 t2 m')
+          | Some v4 => forall t2 m', ~(assign_loc ge (typeof l) (comp_of f) m b ofs v4 t2 m')
           end
       end ->
       ty = typeof l ->
@@ -323,11 +324,11 @@ Inductive estep: state -> trace -> state -> Prop :=
 
   | step_postincr: forall f C id l ty k e m b ofs v1 v2 v3 t1 t2 m' t,
       leftcontext RV RV C ->
-      eval_simple_lvalue e m l b ofs ->
-      deref_loc ge ty m b ofs t1 v1 ->
+      eval_simple_lvalue e (comp_of f) m l b ofs ->
+      deref_loc ge ty (comp_of f) m b ofs t1 v1 ->
       sem_incrdecr ge id v1 ty m = Some v2 ->
       sem_cast v2 (incrdecr_type ty) ty m = Some v3 ->
-      assign_loc ge ty m b ofs v3 t2 m' ->
+      assign_loc ge ty (comp_of f) m b ofs v3 t2 m' ->
       ty = typeof l ->
       t = t1 ** t2 ->
       estep (ExprState f (C (Epostincr id l ty)) k e m)
@@ -335,14 +336,14 @@ Inductive estep: state -> trace -> state -> Prop :=
 
   | step_postincr_stuck: forall f C id l ty k e m b ofs v1 t,
       leftcontext RV RV C ->
-      eval_simple_lvalue e m l b ofs ->
-      deref_loc ge ty m b ofs t v1 ->
+      eval_simple_lvalue e (comp_of f) m l b ofs ->
+      deref_loc ge ty (comp_of f) m b ofs t v1 ->
       match sem_incrdecr ge id v1 ty m with
       | None => True
       | Some v2 =>
           match sem_cast v2 (incrdecr_type ty) ty m with
           | None => True
-          | Some v3 => forall t2 m', ~(assign_loc ge (typeof l) m b ofs v3 t2 m')
+          | Some v3 => forall t2 m', ~(assign_loc ge (typeof l) (comp_of f) m b ofs v3 t2 m')
           end
       end ->
       ty = typeof l ->
@@ -351,14 +352,14 @@ Inductive estep: state -> trace -> state -> Prop :=
 
   | step_comma: forall f C r1 r2 ty k e m v,
       leftcontext RV RV C ->
-      eval_simple_rvalue e m r1 v ->
+      eval_simple_rvalue e (comp_of f) m r1 v ->
       ty = typeof r2 ->
       estep (ExprState f (C (Ecomma r1 r2 ty)) k e m)
          E0 (ExprState f (C r2) k e m)
 
   | step_paren: forall f C r tycast ty k e m v1 v,
       leftcontext RV RV C ->
-      eval_simple_rvalue e m r v1 ->
+      eval_simple_rvalue e (comp_of f) m r v1 ->
       sem_cast v1 (typeof r) tycast m = Some v ->
       estep (ExprState f (C (Eparen r tycast ty)) k e m)
          E0 (ExprState f (C (Eval v ty)) k e m)
@@ -366,8 +367,8 @@ Inductive estep: state -> trace -> state -> Prop :=
   | step_call: forall f C rf rargs ty k e m targs tres cconv vf vargs fd,
       leftcontext RV RV C ->
       classify_fun (typeof rf) = fun_case_f targs tres cconv ->
-      eval_simple_rvalue e m rf vf ->
-      eval_simple_list e m rargs targs vargs ->
+      eval_simple_rvalue e (comp_of f) m rf vf ->
+      eval_simple_list e (comp_of f) m rargs targs vargs ->
       Genv.find_funct ge vf = Some fd ->
       type_of_fundef fd = Tfunction targs tres cconv ->
       forall (ALLOWED: Policy.allowed_call pol f.(fn_comp) fd),
@@ -376,7 +377,7 @@ Inductive estep: state -> trace -> state -> Prop :=
 
   | step_builtin: forall f C ef tyargs rargs ty k e m vargs t vres m',
       leftcontext RV RV C ->
-      eval_simple_list e m rargs tyargs vargs ->
+      eval_simple_list e (comp_of f) m rargs tyargs vargs ->
       external_call ef ge f.(fn_comp) vargs m t vres m' ->
       estep (ExprState f (C (Ebuiltin ef tyargs rargs ty)) k e m)
           t (ExprState f (C (Eval vres ty)) k e m').
@@ -535,7 +536,7 @@ Definition invert_expr_prop (cp: compartment) (a: expr) (m: mem) : Prop :=
       end
   | Eval v ty => False
   | Evalof (Eloc b ofs ty') ty =>
-      ty' = ty /\ exists t, exists v, deref_loc ge ty m b ofs t v
+      ty' = ty /\ exists t, exists v, deref_loc ge ty cp m b ofs t v
   | Eunop op (Eval v1 ty1) ty =>
       exists v, sem_unary_operation op v1 ty1 m = Some v
   | Ebinop op (Eval v1 ty1) (Eval v2 ty2) ty =>
@@ -550,15 +551,15 @@ Definition invert_expr_prop (cp: compartment) (a: expr) (m: mem) : Prop :=
       exists b, bool_val v1 ty1 m = Some b
   | Eassign (Eloc b ofs ty1) (Eval v2 ty2) ty =>
       exists v, exists m', exists t,
-      ty = ty1 /\ sem_cast v2 ty2 ty1 m = Some v /\ assign_loc ge ty1 m b ofs v t m'
+      ty = ty1 /\ sem_cast v2 ty2 ty1 m = Some v /\ assign_loc ge ty1 cp m b ofs v t m'
   | Eassignop op (Eloc b ofs ty1) (Eval v2 ty2) tyres ty =>
       exists t, exists v1,
       ty = ty1
-      /\ deref_loc ge ty1 m b ofs t v1
+      /\ deref_loc ge ty1 cp m b ofs t v1
   | Epostincr id (Eloc b ofs ty1) ty =>
       exists t, exists v1,
       ty = ty1
-      /\ deref_loc ge ty m b ofs t v1
+      /\ deref_loc ge ty cp m b ofs t v1
   | Ecomma (Eval v ty1) r2 ty =>
       typeof r2 = ty
   | Eparen (Eval v1 ty1) ty2 ty =>
@@ -707,11 +708,11 @@ Variable e: env.
 Variable m: mem.
 
 Lemma eval_simple_steps:
-   (forall a v, eval_simple_rvalue e m a v ->
+   (forall a v, eval_simple_rvalue e (comp_of f) m a v ->
     forall C, context RV RV C ->
     star (Csem.step pol) ge (ExprState f (C a) k e m)
                    E0 (ExprState f (C (Eval v (typeof a))) k e m))
-/\ (forall a b ofs, eval_simple_lvalue e m a b ofs ->
+/\ (forall a b ofs, eval_simple_lvalue e (comp_of f) m a b ofs ->
     forall C, context LV RV C ->
     star (Csem.step pol) ge (ExprState f (C a) k e m)
                    E0 (ExprState f (C (Eloc b ofs (typeof a))) k e m)).
@@ -755,14 +756,14 @@ Ltac FinishL := apply star_one; left; apply step_lred; eauto; simpl; try (econst
 Qed.
 
 Lemma eval_simple_rvalue_steps:
-  forall a v, eval_simple_rvalue e m a v ->
+  forall a v, eval_simple_rvalue e (comp_of f) m a v ->
   forall C, context RV RV C ->
   star (Csem.step pol) ge (ExprState f (C a) k e m)
                 E0 (ExprState f (C (Eval v (typeof a))) k e m).
 Proof (proj1 eval_simple_steps).
 
 Lemma eval_simple_lvalue_steps:
-  forall a b ofs, eval_simple_lvalue e m a b ofs ->
+  forall a b ofs, eval_simple_lvalue e (comp_of f) m a b ofs ->
   forall C, context LV RV C ->
   star (Csem.step pol) ge (ExprState f (C a) k e m)
                 E0 (ExprState f (C (Eloc b ofs (typeof a))) k e m).
@@ -770,7 +771,7 @@ Proof (proj2 eval_simple_steps).
 
 Corollary eval_simple_rvalue_safe:
   forall C a v,
-  eval_simple_rvalue e m a v ->
+  eval_simple_rvalue e (comp_of f) m a v ->
   context RV RV C -> safe (ExprState f (C a) k e m) ->
   safe (ExprState f (C (Eval v (typeof a))) k e m).
 Proof.
@@ -779,7 +780,7 @@ Qed.
 
 Corollary eval_simple_lvalue_safe:
   forall C a b ofs,
-  eval_simple_lvalue e m a b ofs ->
+  eval_simple_lvalue e (comp_of f) m a b ofs ->
   context LV RV C -> safe (ExprState f (C a) k e m) ->
   safe (ExprState f (C (Eloc b ofs (typeof a))) k e m).
 Proof.
@@ -790,8 +791,8 @@ Lemma simple_can_eval:
   forall a from C,
   simple a = true -> context from RV C -> safe (ExprState f (C a) k e m) ->
   match from with
-  | LV => exists b, exists ofs, eval_simple_lvalue e m a b ofs
-  | RV => exists v, eval_simple_rvalue e m a v
+  | LV => exists b, exists ofs, eval_simple_lvalue e (comp_of f) m a b ofs
+  | RV => exists v, eval_simple_rvalue e (comp_of f) m a v
   end.
 Proof.
 Ltac StepL REC C' a :=
@@ -861,7 +862,7 @@ Qed.
 Lemma simple_can_eval_rval:
   forall r C,
   simple r = true -> context RV RV C -> safe (ExprState f (C r) k e m) ->
-  exists v, eval_simple_rvalue e m r v
+  exists v, eval_simple_rvalue e (comp_of f) m r v
         /\ safe (ExprState f (C (Eval v (typeof r))) k e m).
 Proof.
   intros. exploit (simple_can_eval r RV); eauto. intros [v A].
@@ -871,7 +872,7 @@ Qed.
 Lemma simple_can_eval_lval:
   forall l C,
   simple l = true -> context LV RV C -> safe (ExprState f (C l) k e m) ->
-  exists b, exists ofs, eval_simple_lvalue e m l b ofs
+  exists b, exists ofs, eval_simple_lvalue e (comp_of f) m l b ofs
          /\ safe (ExprState f (C (Eloc b ofs (typeof l))) k e m).
 Proof.
   intros. exploit (simple_can_eval l LV); eauto. intros [b [ofs A]].
@@ -888,13 +889,13 @@ Inductive eval_simple_list': exprlist -> list val -> Prop :=
   | esrl'_nil:
       eval_simple_list' Enil nil
   | esrl'_cons: forall r rl v vl,
-      eval_simple_rvalue e m r v ->
+      eval_simple_rvalue e (comp_of f) m r v ->
       eval_simple_list' rl vl ->
       eval_simple_list' (Econs r rl) (v :: vl).
 
 Lemma eval_simple_list_implies:
   forall rl tyl vl,
-  eval_simple_list e m rl tyl vl ->
+  eval_simple_list e (comp_of f) m rl tyl vl ->
   exists vl', cast_arguments m (rval_list vl' rl) tyl vl /\ eval_simple_list' rl vl'.
 Proof.
   induction 1.
@@ -908,7 +909,7 @@ Lemma can_eval_simple_list:
   eval_simple_list' rl vl ->
   forall tyl vl',
   cast_arguments m (rval_list vl rl) tyl vl' ->
-  eval_simple_list e m rl tyl vl'.
+  eval_simple_list e (comp_of f) m rl tyl vl'.
 Proof.
   induction 1; simpl; intros.
   inv H. constructor.
@@ -1332,7 +1333,7 @@ Proof.
   exploit safe_inv. eexact S2. eauto. simpl. intros [t1 [v1 [A B]]].
   destruct (sem_binary_operation ge op v1 (typeof b1) v (typeof b2) m) as [v3|] eqn:?.
   destruct (sem_cast v3 tyres (typeof b1) m) as [v4|] eqn:?.
-  destruct (classic (exists t2, exists m', assign_loc ge (typeof b1) m b ofs v4 t2 m')).
+  destruct (classic (exists t2, exists m', assign_loc ge (typeof b1) (comp_of f) m b ofs v4 t2 m')).
   destruct H2 as [t2 [m' D]].
   econstructor; econstructor; eapply step_assignop; eauto.
   econstructor; econstructor; eapply step_assignop_stuck; eauto.
@@ -1347,7 +1348,7 @@ Proof.
   exploit safe_inv. eexact S1. eauto. simpl. intros [t [v1 [A B]]].
   destruct (sem_incrdecr ge id v1 ty m) as [v2|] eqn:?.
   destruct (sem_cast v2 (incrdecr_type ty) ty m) as [v3|] eqn:?.
-  destruct (classic (exists t2, exists m', assign_loc ge ty m b1 ofs v3 t2 m')).
+  destruct (classic (exists t2, exists m', assign_loc ge ty (comp_of f) m b1 ofs v3 t2 m')).
   destruct H0 as [t2 [m' D]].
   econstructor; econstructor; eapply step_postincr; eauto.
   econstructor; econstructor; eapply step_postincr_stuck; eauto.
@@ -1445,18 +1446,18 @@ Definition semantics (p: program) :=
 (** This semantics is receptive to changes in events. *)
 
 Remark deref_loc_trace:
-  forall ge ty m b ofs t v,
-  deref_loc ge ty m b ofs t v ->
+  forall ge ty cp m b ofs t v,
+  deref_loc ge ty cp m b ofs t v ->
   match t with nil => True | ev :: nil => True | _ => False end.
 Proof.
   intros. inv H; simpl; auto. inv H2; simpl; auto.
 Qed.
 
 Remark deref_loc_receptive:
-  forall ge ty m b ofs ev1 t1 v ev2,
-  deref_loc ge ty m b ofs (ev1 :: t1) v ->
+  forall ge ty cp m b ofs ev1 t1 v ev2,
+  deref_loc ge ty cp m b ofs (ev1 :: t1) v ->
   match_traces ge (ev1 :: nil) (ev2 :: nil) ->
-  t1 = nil /\ exists v', deref_loc ge ty m b ofs (ev2 :: nil) v'.
+  t1 = nil /\ exists v', deref_loc ge ty cp m b ofs (ev2 :: nil) v'.
 Proof.
   intros.
   assert (t1 = nil). exploit deref_loc_trace; eauto. destruct t1; simpl; tauto.
@@ -1465,16 +1466,16 @@ Proof.
 Qed.
 
 Remark assign_loc_trace:
-  forall ge ty m b ofs t v m',
-  assign_loc ge ty m b ofs v t m' ->
+  forall ge ty cp m b ofs t v m',
+  assign_loc ge ty cp m b ofs v t m' ->
   match t with nil => True | ev :: nil => output_event ev | _ => False end.
 Proof.
   intros. inv H; simpl; auto. inv H2; simpl; auto.
 Qed.
 
 Remark assign_loc_receptive:
-  forall ge ty m b ofs ev1 t1 v m' ev2,
-  assign_loc ge ty m b ofs v (ev1 :: t1) m' ->
+  forall ge ty cp m b ofs ev1 t1 v m' ev2,
+  assign_loc ge ty cp m b ofs v (ev1 :: t1) m' ->
   match_traces ge (ev1 :: nil) (ev2 :: nil) ->
   ev1 :: t1 = ev2 :: nil.
 Proof.
@@ -1504,7 +1505,7 @@ Proof.
   inv H10. exploit deref_loc_receptive; eauto. intros [EQ [v1' A]]. subst t0.
   destruct (sem_binary_operation ge op v1' (typeof l) v2 (typeof r) m) as [v3'|] eqn:?.
   destruct (sem_cast v3' tyres (typeof l) m) as [v4'|] eqn:?.
-  destruct (classic (exists t2', exists m'', assign_loc ge (typeof l) m b ofs v4' t2' m'')).
+  destruct (classic (exists t2', exists m'', assign_loc ge (typeof l) (comp_of f) m b ofs v4' t2' m'')).
   destruct H1 as [t2' [m'' P]].
   econstructor; econstructor. left; eapply step_assignop with (v1 := v1'); eauto. simpl; reflexivity.
   econstructor; econstructor. left; eapply step_assignop_stuck with (v1 := v1'); eauto.
@@ -1517,7 +1518,7 @@ Proof.
   exploit deref_loc_receptive; eauto. intros [EQ [v1' A]]. subst t1.
   destruct (sem_binary_operation ge op v1' (typeof l) v2 (typeof r) m) as [v3'|] eqn:?.
   destruct (sem_cast v3' tyres (typeof l) m) as [v4'|] eqn:?.
-  destruct (classic (exists t2', exists m'', assign_loc ge (typeof l) m b ofs v4' t2' m'')).
+  destruct (classic (exists t2', exists m'', assign_loc ge (typeof l) (comp_of f) m b ofs v4' t2' m'')).
   destruct H1 as [t2' [m'' P]].
   econstructor; econstructor. left; eapply step_assignop with (v1 := v1'); eauto. simpl; reflexivity.
   econstructor; econstructor. left; eapply step_assignop_stuck with (v1 := v1'); eauto.
@@ -1533,7 +1534,7 @@ Proof.
   inv H9. exploit deref_loc_receptive; eauto. intros [EQ [v1' A]]. subst t0.
   destruct (sem_incrdecr ge id v1' (typeof l) m) as [v2'|] eqn:?.
   destruct (sem_cast v2' (incrdecr_type (typeof l)) (typeof l) m) as [v3'|] eqn:?.
-  destruct (classic (exists t2', exists m'', assign_loc ge (typeof l) m b ofs v3' t2' m'')).
+  destruct (classic (exists t2', exists m'', assign_loc ge (typeof l) (comp_of f) m b ofs v3' t2' m'')).
   destruct H1 as [t2' [m'' P]].
   econstructor; econstructor. left; eapply step_postincr with (v1 := v1'); eauto. simpl; reflexivity.
   econstructor; econstructor. left; eapply step_postincr_stuck with (v1 := v1'); eauto.
@@ -1546,7 +1547,7 @@ Proof.
   exploit deref_loc_receptive; eauto. intros [EQ [v1' A]]. subst t1.
   destruct (sem_incrdecr ge id v1' (typeof l) m) as [v2'|] eqn:?.
   destruct (sem_cast v2' (incrdecr_type (typeof l)) (typeof l) m) as [v3'|] eqn:?.
-  destruct (classic (exists t2', exists m'', assign_loc ge (typeof l) m b ofs v3' t2' m'')).
+  destruct (classic (exists t2', exists m'', assign_loc ge (typeof l) (comp_of f) m b ofs v3' t2' m'')).
   destruct H1 as [t2' [m'' P]].
   econstructor; econstructor. left; eapply step_postincr with (v1 := v1'); eauto. simpl; reflexivity.
   econstructor; econstructor. left; eapply step_postincr_stuck with (v1 := v1'); eauto.
@@ -1664,7 +1665,7 @@ Definition outcome_result_value (out: outcome) (t: type) (v: val) (m: mem) : Pro
 
 Inductive eval_expression: compartment -> env -> mem -> expr -> trace -> mem -> val -> Prop :=
   | eval_expression_intro: forall c e m a t m' a' v,
-      eval_expr c e m RV a t m' a' -> eval_simple_rvalue ge e m' a' v ->
+      eval_expr c e m RV a t m' a' -> eval_simple_rvalue ge e c m' a' v ->
       eval_expression c e m a t m' v
 
 with eval_expr: compartment -> env -> mem -> kind -> expr -> trace -> mem -> expr -> Prop :=
@@ -1682,8 +1683,8 @@ with eval_expr: compartment -> env -> mem -> kind -> expr -> trace -> mem -> exp
   | eval_valof_volatile: forall c e m a t1 m' a' ty b ofs t2 v,
       type_is_volatile (typeof a) = true ->
       eval_expr c e m LV a t1 m' a' ->
-      eval_simple_lvalue ge e m' a' b ofs ->
-      deref_loc ge (typeof a) m' b ofs t2 v ->
+      eval_simple_lvalue ge e c m' a' b ofs ->
+      deref_loc ge (typeof a) c m' b ofs t2 v ->
       ty = typeof a ->
       eval_expr c e m RV (Evalof a ty) (t1 ** t2) m' (Eval v ty)
   | eval_deref: forall c e m a t m' a' ty,
@@ -1702,29 +1703,29 @@ with eval_expr: compartment -> env -> mem -> kind -> expr -> trace -> mem -> exp
       eval_expr c e m RV a t m' a' ->
       eval_expr c e m RV (Ecast a ty) t m' (Ecast a' ty)
   | eval_seqand_true: forall c e m a1 a2 ty t1 m' a1' v1 t2 m'' a2' v2 v,
-      eval_expr c e m RV a1 t1 m' a1' -> eval_simple_rvalue ge e m' a1' v1 ->
+      eval_expr c e m RV a1 t1 m' a1' -> eval_simple_rvalue ge e c m' a1' v1 ->
       bool_val v1 (typeof a1) m' = Some true ->
-      eval_expr c e m' RV a2 t2 m'' a2' -> eval_simple_rvalue ge e m'' a2' v2 ->
+      eval_expr c e m' RV a2 t2 m'' a2' -> eval_simple_rvalue ge e c m'' a2' v2 ->
       sem_cast v2 (typeof a2) type_bool m'' = Some v ->
       eval_expr c e m RV (Eseqand a1 a2 ty) (t1**t2) m'' (Eval v ty)
   | eval_seqand_false: forall c e m a1 a2 ty t1 m' a1' v1,
-      eval_expr c e m RV a1 t1 m' a1' -> eval_simple_rvalue ge e m' a1' v1 ->
+      eval_expr c e m RV a1 t1 m' a1' -> eval_simple_rvalue ge e c m' a1' v1 ->
       bool_val v1 (typeof a1) m' = Some false ->
       eval_expr c e m RV (Eseqand a1 a2 ty) t1 m' (Eval (Vint Int.zero) ty)
   | eval_seqor_false: forall c e m a1 a2 ty t1 m' a1' v1 t2 m'' a2' v2 v,
-      eval_expr c e m RV a1 t1 m' a1' -> eval_simple_rvalue ge e m' a1' v1 ->
+      eval_expr c e m RV a1 t1 m' a1' -> eval_simple_rvalue ge e c m' a1' v1 ->
       bool_val v1 (typeof a1) m' = Some false ->
-      eval_expr c e m' RV a2 t2 m'' a2' -> eval_simple_rvalue ge e m'' a2' v2 ->
+      eval_expr c e m' RV a2 t2 m'' a2' -> eval_simple_rvalue ge e c m'' a2' v2 ->
       sem_cast v2 (typeof a2) type_bool m'' = Some v ->
       eval_expr c e m RV (Eseqor a1 a2 ty) (t1**t2) m'' (Eval v ty)
   | eval_seqor_true: forall c e m a1 a2 ty t1 m' a1' v1,
-      eval_expr c e m RV a1 t1 m' a1' -> eval_simple_rvalue ge e m' a1' v1 ->
+      eval_expr c e m RV a1 t1 m' a1' -> eval_simple_rvalue ge e c m' a1' v1 ->
       bool_val v1 (typeof a1) m' = Some true ->
       eval_expr c e m RV (Eseqor a1 a2 ty) t1 m' (Eval (Vint Int.one) ty)
   | eval_condition: forall c e m a1 a2 a3 ty t1 m' a1' v1 t2 m'' a' v' b v,
-      eval_expr c e m RV a1 t1 m' a1' -> eval_simple_rvalue ge e m' a1' v1 ->
+      eval_expr c e m RV a1 t1 m' a1' -> eval_simple_rvalue ge e c m' a1' v1 ->
       bool_val v1 (typeof a1) m' = Some b ->
-      eval_expr c e m' RV (if b then a2 else a3) t2 m'' a' -> eval_simple_rvalue ge e m'' a' v' ->
+      eval_expr c e m' RV (if b then a2 else a3) t2 m'' a' -> eval_simple_rvalue ge e c m'' a' v' ->
       sem_cast v' (typeof (if b then a2 else a3)) ty m'' = Some v ->
       eval_expr c e m RV (Econdition a1 a2 a3 ty) (t1**t2) m'' (Eval v ty)
   | eval_sizeof: forall c e m ty' ty,
@@ -1733,43 +1734,43 @@ with eval_expr: compartment -> env -> mem -> kind -> expr -> trace -> mem -> exp
       eval_expr c e m RV (Ealignof ty' ty) E0 m (Ealignof ty' ty)
   | eval_assign: forall c e m l r ty t1 m1 l' t2 m2 r' b ofs v v' t3 m3,
       eval_expr c e m LV l t1 m1 l' -> eval_expr c e m1 RV r t2 m2 r' ->
-      eval_simple_lvalue ge e m2 l' b ofs ->
-      eval_simple_rvalue ge e m2 r' v ->
+      eval_simple_lvalue ge e c m2 l' b ofs ->
+      eval_simple_rvalue ge e c m2 r' v ->
       sem_cast v (typeof r) (typeof l) m2 = Some v' ->
-      assign_loc ge (typeof l) m2 b ofs v' t3 m3 ->
+      assign_loc ge (typeof l) c m2 b ofs v' t3 m3 ->
       ty = typeof l ->
       eval_expr c e m RV (Eassign l r ty) (t1**t2**t3) m3 (Eval v' ty)
   | eval_assignop: forall c e m op l r tyres ty t1 m1 l' t2 m2 r' b ofs
                           v1 v2 v3 v4 t3 t4 m3,
       eval_expr c e m LV l t1 m1 l' -> eval_expr c e m1 RV r t2 m2 r' ->
-      eval_simple_lvalue ge e m2 l' b ofs ->
-      deref_loc ge (typeof l) m2 b ofs t3 v1 ->
-      eval_simple_rvalue ge e m2 r' v2 ->
+      eval_simple_lvalue ge e c m2 l' b ofs ->
+      deref_loc ge (typeof l) c m2 b ofs t3 v1 ->
+      eval_simple_rvalue ge e c m2 r' v2 ->
       sem_binary_operation ge op v1 (typeof l) v2 (typeof r) m2 = Some v3 ->
       sem_cast v3 tyres (typeof l) m2 = Some v4 ->
-      assign_loc ge (typeof l) m2 b ofs v4 t4 m3 ->
+      assign_loc ge (typeof l) c m2 b ofs v4 t4 m3 ->
       ty = typeof l ->
       eval_expr c e m RV (Eassignop op l r tyres ty) (t1**t2**t3**t4) m3 (Eval v4 ty)
   | eval_postincr: forall c e m id l ty t1 m1 l' b ofs v1 v2 v3 m2 t2 t3,
       eval_expr c e m LV l t1 m1 l' ->
-      eval_simple_lvalue ge e m1 l' b ofs ->
-      deref_loc ge ty m1 b ofs t2 v1 ->
+      eval_simple_lvalue ge e c m1 l' b ofs ->
+      deref_loc ge ty c m1 b ofs t2 v1 ->
       sem_incrdecr ge id v1 ty m1 = Some v2 ->
       sem_cast v2 (incrdecr_type ty) ty m1 = Some v3 ->
-      assign_loc ge ty m1 b ofs v3 t3 m2 ->
+      assign_loc ge ty c m1 b ofs v3 t3 m2 ->
       ty = typeof l ->
       eval_expr c e m RV (Epostincr id l ty) (t1**t2**t3) m2 (Eval v1 ty)
   | eval_comma: forall c e m r1 r2 ty t1 m1 r1' v1 t2 m2 r2',
       eval_expr c e m RV r1 t1 m1 r1' ->
-      eval_simple_rvalue ge e m1 r1' v1 ->
+      eval_simple_rvalue ge e c m1 r1' v1 ->
       eval_expr c e m1 RV r2 t2 m2 r2' ->
       ty = typeof r2 ->
       eval_expr c e m RV (Ecomma r1 r2 ty) (t1**t2) m2 r2'
   | eval_call: forall c e m rf rargs ty t1 m1 rf' t2 m2 rargs' vf vargs
                       targs tres cconv fd t3 m3 vres,
       eval_expr c e m RV rf t1 m1 rf' -> eval_exprlist c e m1 rargs t2 m2 rargs' ->
-      eval_simple_rvalue ge e m2 rf' vf ->
-      eval_simple_list ge e m2 rargs' targs vargs ->
+      eval_simple_rvalue ge e c m2 rf' vf ->
+      eval_simple_list ge e c m2 rargs' targs vargs ->
       classify_fun (typeof rf) = fun_case_f targs tres cconv ->
       Genv.find_funct ge vf = Some fd ->
       type_of_fundef fd = Tfunction targs tres cconv ->
@@ -1960,7 +1961,7 @@ CoInductive evalinf_expr: compartment -> env -> mem -> kind -> expr -> traceinf 
       evalinf_expr c e m RV a1 t1 ->
       evalinf_expr c e m RV (Eseqand a1 a2 ty) t1
   | evalinf_seqand_2: forall c e m a1 a2 ty t1 m' a1' v1 t2,
-      eval_expr c e m RV a1 t1 m' a1' -> eval_simple_rvalue ge e m' a1' v1 ->
+      eval_expr c e m RV a1 t1 m' a1' -> eval_simple_rvalue ge e c m' a1' v1 ->
       bool_val v1 (typeof a1) m' = Some true ->
       evalinf_expr c e m' RV a2 t2 ->
       evalinf_expr c e m RV (Eseqand a1 a2 ty) (t1***t2)
@@ -1968,7 +1969,7 @@ CoInductive evalinf_expr: compartment -> env -> mem -> kind -> expr -> traceinf 
       evalinf_expr c e m RV a1 t1 ->
       evalinf_expr c e m RV (Eseqor a1 a2 ty) t1
   | evalinf_seqor_2: forall c e m a1 a2 ty t1 m' a1' v1 t2,
-      eval_expr c e m RV a1 t1 m' a1' -> eval_simple_rvalue ge e m' a1' v1 ->
+      eval_expr c e m RV a1 t1 m' a1' -> eval_simple_rvalue ge e c m' a1' v1 ->
       bool_val v1 (typeof a1) m' = Some false ->
       evalinf_expr c e m' RV a2 t2 ->
       evalinf_expr c e m RV (Eseqor a1 a2 ty) (t1***t2)
@@ -1976,7 +1977,7 @@ CoInductive evalinf_expr: compartment -> env -> mem -> kind -> expr -> traceinf 
       evalinf_expr c e m RV a1 t1 ->
       evalinf_expr c e m RV (Econdition a1 a2 a3 ty) t1
   | evalinf_condition_2: forall c e m a1 a2 a3 ty t1 m' a1' v1 t2 b,
-      eval_expr c e m RV a1 t1 m' a1' -> eval_simple_rvalue ge e m' a1' v1 ->
+      eval_expr c e m RV a1 t1 m' a1' -> eval_simple_rvalue ge e c m' a1' v1 ->
       bool_val v1 (typeof a1) m' = Some b ->
       evalinf_expr c e m' RV (if b then a2 else a3) t2 ->
       evalinf_expr c e m RV (Econdition a1 a2 a3 ty) (t1***t2)
@@ -1999,7 +2000,7 @@ CoInductive evalinf_expr: compartment -> env -> mem -> kind -> expr -> traceinf 
       evalinf_expr c e m RV a1 t1 ->
       evalinf_expr c e m RV (Ecomma a1 a2 ty) t1
   | evalinf_comma_right: forall c e m a1 t1 m1 a1' v1 a2 t2 ty,
-      eval_expr c e m RV a1 t1 m1 a1' -> eval_simple_rvalue ge e m1 a1' v1 ->
+      eval_expr c e m RV a1 t1 m1 a1' -> eval_simple_rvalue ge e c m1 a1' v1 ->
       ty = typeof a2 ->
       evalinf_expr c e m1 RV a2 t2 ->
       evalinf_expr c e m RV (Ecomma a1 a2 ty) (t1 *** t2)
@@ -2013,8 +2014,8 @@ CoInductive evalinf_expr: compartment -> env -> mem -> kind -> expr -> traceinf 
   | evalinf_call: forall c e m rf rargs ty t1 m1 rf' t2 m2 rargs' vf vargs
                       targs tres cconv fd t3,
       eval_expr c e m RV rf t1 m1 rf' -> eval_exprlist c e m1 rargs t2 m2 rargs' ->
-      eval_simple_rvalue ge e m2 rf' vf ->
-      eval_simple_list ge e m2 rargs' targs vargs ->
+      eval_simple_rvalue ge e c m2 rf' vf ->
+      eval_simple_list ge e c m2 rargs' targs vargs ->
       classify_fun (typeof rf) = fun_case_f targs tres cconv ->
       Genv.find_funct ge vf = Some fd ->
       type_of_fundef fd = Tfunction targs tres cconv ->
@@ -2232,6 +2233,7 @@ Proof.
   simpl in B. rewrite B in C. inv H1. auto.
 
 (* val *)
+(* TODO: Continue here! *)
   simpl; intuition. apply star_refl.
 (* var *)
   simpl; intuition. apply star_refl.

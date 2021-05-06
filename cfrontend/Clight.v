@@ -205,17 +205,17 @@ Definition temp_env := PTree.t val.
   memory load is performed.  If the type [ty] indicates an access by
   reference or by copy, the pointer [Vptr b ofs] is returned. *)
 
-Inductive deref_loc (ty: type) (m: mem) (b: block) (ofs: ptrofs) : val -> Prop :=
-  | deref_loc_value: forall chunk cp v,
+Inductive deref_loc (ty: type) (cp: compartment) (m: mem) (b: block) (ofs: ptrofs) : val -> Prop :=
+  | deref_loc_value: forall chunk v,
       access_mode ty = By_value chunk ->
       Mem.loadv chunk m (Vptr b ofs) cp = Some v ->
-      deref_loc ty m b ofs v
+      deref_loc ty cp m b ofs v
   | deref_loc_reference:
       access_mode ty = By_reference ->
-      deref_loc ty m b ofs (Vptr b ofs)
+      deref_loc ty cp m b ofs (Vptr b ofs)
   | deref_loc_copy:
       access_mode ty = By_copy ->
-      deref_loc ty m b ofs (Vptr b ofs).
+      deref_loc ty cp m b ofs (Vptr b ofs).
 
 (** Symmetrically, [assign_loc ty m b ofs v m'] returns the
   memory state after storing the value [v] in the datum
@@ -223,13 +223,14 @@ Inductive deref_loc (ty: type) (m: mem) (b: block) (ofs: ptrofs) : val -> Prop :
   This is allowed only if [ty] indicates an access by value or by copy.
   [m'] is the updated memory state. *)
 
-Inductive assign_loc (ce: composite_env) (ty: type) (m: mem) (b: block) (ofs: ptrofs):
+(* NOTE: Allow [loadbytes] from arbitrary [cp']? *)
+Inductive assign_loc (ce: composite_env) (ty: type) (cp: compartment) (m: mem) (b: block) (ofs: ptrofs):
                                             val -> mem -> Prop :=
-  | assign_loc_value: forall v chunk cp m',
+  | assign_loc_value: forall v chunk m',
       access_mode ty = By_value chunk ->
       Mem.storev chunk m (Vptr b ofs) v cp = Some m' ->
-      assign_loc ce ty m b ofs v m'
-  | assign_loc_copy: forall b' ofs' cp' bytes cp m',
+      assign_loc ce ty cp m b ofs v m'
+  | assign_loc_copy: forall b' ofs' cp' bytes m',
       access_mode ty = By_copy ->
       (sizeof ce ty > 0 -> (alignof_blockcopy ce ty | Ptrofs.unsigned ofs')) ->
       (sizeof ce ty > 0 -> (alignof_blockcopy ce ty | Ptrofs.unsigned ofs)) ->
@@ -238,7 +239,7 @@ Inductive assign_loc (ce: composite_env) (ty: type) (m: mem) (b: block) (ofs: pt
               \/ Ptrofs.unsigned ofs + sizeof ce ty <= Ptrofs.unsigned ofs' ->
       Mem.loadbytes m b' (Ptrofs.unsigned ofs') (sizeof ce ty) cp' = Some bytes ->
       Mem.storebytes m b (Ptrofs.unsigned ofs) bytes cp = Some m' ->
-      assign_loc ce ty m b ofs (Vptr b' ofs') m'.
+      assign_loc ce ty cp m b ofs (Vptr b' ofs') m'.
 
 Definition policy := Policy.t (F := fundef).
 
@@ -278,9 +279,9 @@ Inductive bind_parameters (e: env):
       forall m,
       bind_parameters e m nil nil m
   | bind_parameters_cons:
-      forall m id ty params v1 vl b m1 m2,
+      forall cp m id ty params v1 vl b m1 m2,
       PTree.get id e = Some(b, ty) ->
-      assign_loc ge ty m b Ptrofs.zero v1 m1 ->
+      assign_loc ge ty cp m b Ptrofs.zero v1 m1 ->
       bind_parameters e m1 params vl m2 ->
       bind_parameters e m ((id, ty) :: params) (v1 :: vl) m2.
 
@@ -355,6 +356,7 @@ Section EXPR.
 
 Variable e: env.
 Variable le: temp_env.
+Variable cp: compartment.
 Variable m: mem.
 
 (** [eval_expr ge e m a v] defines the evaluation of expression [a]
@@ -395,7 +397,7 @@ Inductive eval_expr: expr -> val -> Prop :=
       eval_expr (Ealignof ty1 ty) (Vptrofs (Ptrofs.repr (alignof ge ty1)))
   | eval_Elvalue: forall a loc ofs v,
       eval_lvalue a loc ofs ->
-      deref_loc (typeof a) m loc ofs v ->
+      deref_loc (typeof a) cp m loc ofs v ->
       eval_expr a v
 
 (** [eval_lvalue ge e m a b ofs] defines the evaluation of expression [a]
@@ -559,22 +561,22 @@ Variable function_entry: function -> list val -> mem -> env -> temp_env -> mem -
 Inductive step: state -> trace -> state -> Prop :=
 
   | step_assign:   forall f a1 a2 k e le m loc ofs v2 v m',
-      eval_lvalue e le m a1 loc ofs ->
-      eval_expr e le m a2 v2 ->
+      eval_lvalue e le (comp_of f) m a1 loc ofs ->
+      eval_expr e le (comp_of f) m a2 v2 ->
       sem_cast v2 (typeof a2) (typeof a1) m = Some v ->
-      assign_loc ge (typeof a1) m loc ofs v m' ->
+      assign_loc ge (typeof a1) (comp_of f) m loc ofs v m' ->
       step (State f (Sassign a1 a2) k e le m)
         E0 (State f Sskip k e le m')
 
   | step_set:   forall f id a k e le m v,
-      eval_expr e le m a v ->
+      eval_expr e le (comp_of f) m a v ->
       step (State f (Sset id a) k e le m)
         E0 (State f Sskip k e (PTree.set id v le) m)
 
   | step_call:   forall f optid a al k e le m tyargs tyres cconv vf vargs fd,
       classify_fun (typeof a) = fun_case_f tyargs tyres cconv ->
-      eval_expr e le m a vf ->
-      eval_exprlist e le m al tyargs vargs ->
+      eval_expr e le (comp_of f) m a vf ->
+      eval_exprlist e le (comp_of f) m al tyargs vargs ->
       Genv.find_funct ge vf = Some fd ->
       type_of_fundef fd = Tfunction tyargs tyres cconv ->
       forall (ALLOWED: Policy.allowed_call pol f.(fn_comp) fd),
@@ -582,7 +584,7 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (Callstate fd vargs (Kcall optid f e le k) m)
 
   | step_builtin:   forall f optid ef tyargs al k e le m vargs t vres m',
-      eval_exprlist e le m al tyargs vargs ->
+      eval_exprlist e le (comp_of f) m al tyargs vargs ->
       external_call ef ge f.(fn_comp) vargs m t vres m' ->
       step (State f (Sbuiltin optid ef tyargs al) k e le m)
          t (State f Sskip k e (set_opttemp optid vres le) m')
@@ -601,7 +603,7 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State f Sbreak k e le m)
 
   | step_ifthenelse:  forall f a s1 s2 k e le m v1 b,
-      eval_expr e le m a v1 ->
+      eval_expr e le (comp_of f) m a v1 ->
       bool_val v1 (typeof a) m = Some b ->
       step (State f (Sifthenelse a s1 s2) k e le m)
         E0 (State f (if b then s1 else s2) k e le m)
@@ -628,7 +630,7 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Sreturn None) k e le m)
         E0 (Returnstate Vundef (call_cont k) m')
   | step_return_1: forall f a k e le m v v' cp m',
-      eval_expr e le m a v ->
+      eval_expr e le (comp_of f) m a v ->
       sem_cast v (typeof a) f.(fn_return) m = Some v' ->
       Mem.free_list m (blocks_of_env e) cp = Some m' ->
       step (State f (Sreturn (Some a)) k e le m)
@@ -640,7 +642,7 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (Returnstate Vundef k m')
 
   | step_switch: forall f a sl k e le m v n,
-      eval_expr e le m a v ->
+      eval_expr e le (comp_of f) m a v ->
       sem_switch_arg v (typeof a) = Some n ->
       step (State f (Sswitch a sl) k e le m)
         E0 (State f (seq_of_labeled_statement (select_switch n sl)) (Kswitch k) e le m)
