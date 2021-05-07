@@ -1909,7 +1909,7 @@ with eval_funcall: compartment -> mem -> fundef -> list val -> trace -> mem -> v
   | eval_funcall_internal: forall cp m f vargs t e m1 m2 m3 out vres m4,
       list_norepet (var_names f.(fn_params) ++ var_names f.(fn_vars)) ->
       alloc_variables ge empty_env m (f.(fn_params) ++ f.(fn_vars)) e m1 ->
-      bind_parameters ge e m1 f.(fn_params) vargs m2 ->
+      bind_parameters ge e cp m1 f.(fn_params) vargs m2 ->
       exec_stmt f.(fn_comp) e m2 f.(fn_body) t m3 out ->
       outcome_result_value out f.(fn_return) vres m3 ->
       Mem.free_list m3 (blocks_of_env ge e) f.(fn_comp) = Some m4 ->
@@ -2132,7 +2132,7 @@ with evalinf_funcall: compartment -> mem -> fundef -> list val -> traceinf -> Pr
   | evalinf_funcall_internal: forall cp m f vargs t e m1 m2,
       list_norepet (var_names f.(fn_params) ++ var_names f.(fn_vars)) ->
       alloc_variables ge empty_env m (f.(fn_params) ++ f.(fn_vars)) e m1 ->
-      bind_parameters ge e m1 f.(fn_params) vargs m2 ->
+      bind_parameters ge e cp m1 f.(fn_params) vargs m2 ->
       execinf_stmt f.(fn_comp) e m2 f.(fn_body) t ->
       evalinf_funcall cp m (Internal f) vargs t.
 
@@ -2223,7 +2223,8 @@ Lemma bigstep_to_steps:
    is_call_cont k ->
    star (step pol) ge (Callstate fd args k m) t (Returnstate res k m')).
 Proof.
-  apply bigstep_induction; intros.
+  apply bigstep_induction; intros;
+    try subst c.
 (* expression, general *)
   exploit (H0 (fun x => x) f k); trivial. constructor. intros [A [B C]].
   assert (match a' with Eval _ _ => False | _ => True end ->
@@ -2233,7 +2234,6 @@ Proof.
   simpl in B. rewrite B in C. inv H1. auto.
 
 (* val *)
-(* TODO: Continue here! *)
   simpl; intuition. apply star_refl.
 (* var *)
   simpl; intuition. apply star_refl.
@@ -2365,8 +2365,7 @@ Proof.
   eapply star_trans. eexact D.
   eapply star_trans. eexact F.
   eapply star_left. left; eapply step_call; eauto. congruence.
-  rewrite <- COMP; auto.
-  eapply star_right. subst c. eapply H9; simpl; eauto.
+  eapply star_right. eapply H9; simpl; eauto.
   right; constructor.
   reflexivity. reflexivity. reflexivity. traceEq.
 (* nil *)

@@ -126,19 +126,21 @@ Inductive alloc_variables: env -> mem ->
   [bind_parameters e m1 params args m2] stores the values [args]
   in the memory blocks corresponding to the variables [params].
   [m1] is the initial memory state and [m2] the final memory state. *)
+(* TODO: Docs (compartment). *)
 
 Inductive bind_parameters (e: env):
+                           compartment ->
                            mem -> list (ident * type) -> list val ->
                            mem -> Prop :=
   | bind_parameters_nil:
-      forall m,
-      bind_parameters e m nil nil m
+      forall cp m,
+      bind_parameters e cp m nil nil m
   | bind_parameters_cons:
       forall m id ty cp params v1 vl b m1 m2,
       PTree.get id e = Some(b, ty) ->
       assign_loc ty cp m b Ptrofs.zero v1 E0 m1 ->
-      bind_parameters e m1 params vl m2 ->
-      bind_parameters e m ((id, ty) :: params) (v1 :: vl) m2.
+      bind_parameters e cp m1 params vl m2 ->
+      bind_parameters e cp m ((id, ty) :: params) (v1 :: vl) m2.
 
 (** Return the list of blocks in the codomain of [e], with low and high bounds. *)
 
@@ -799,7 +801,7 @@ Inductive sstep: state -> trace -> state -> Prop :=
   | step_internal_function: forall f vargs k m e m1 m2,
       list_norepet (var_names (fn_params f) ++ var_names (fn_vars f)) ->
       alloc_variables empty_env m (f.(fn_params) ++ f.(fn_vars)) e m1 ->
-      bind_parameters e m1 f.(fn_params) vargs m2 ->
+      bind_parameters e (comp_of f) m1 f.(fn_params) vargs m2 ->
       sstep (Callstate (Internal f) vargs k m)
          E0 (State f f.(fn_body) k e m2)
 
