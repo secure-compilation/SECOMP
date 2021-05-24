@@ -1060,6 +1060,16 @@ Lemma functions_translated:
   exists cu tf, Genv.find_funct tge v = Some tf /\ match_fundef cu f tf /\ linkorder cu prog.
 Proof (Genv.find_funct_match TRANSL).
 
+Lemma allowed_call_translated:
+  forall cp vf,
+    Genv.allowed_call ge cp vf ->
+    Genv.allowed_call tge cp vf.
+Proof.
+  intros cp vf H.
+  eapply (Genv.match_genvs_allowed_calls TRANSL). eauto.
+Qed.
+
+
 (** * Matching between environments *)
 
 (** In this section, we define a matching relation between
@@ -1633,7 +1643,10 @@ Proof.
     apply plus_one. eapply step_call; eauto.
     eapply transl_expr_correct with (cunit := cu); eauto.
     eapply transl_arglist_correct with (cunit := cu); eauto.
-    admit.
+    (* ALLOWED CALL *)
+    erewrite <- (comp_transl_partial _ TRF); eauto.
+    eapply allowed_call_translated. eauto.
+    (* END ALLOWED CALL *)
     econstructor; eauto.
     eapply match_Kcall with (ce := prog_comp_env cu') (cu := cu); eauto.
     exact I.
@@ -1643,7 +1656,10 @@ Proof.
     eapply plus_two. apply step_seq. eapply step_call; eauto. 
     eapply transl_expr_correct with (cunit := cu); eauto.
     eapply transl_arglist_correct with (cunit := cu); eauto.
-    admit.
+    (* ALLOWED CALL *)
+    erewrite <- (comp_transl_partial _ TRF); eauto.
+    eapply allowed_call_translated; eauto.
+    (* END ALLOWED CALL *)
     traceEq.
     econstructor; eauto.
     eapply match_Kcall_normalize  with (ce := prog_comp_env cu') (cu := cu); eauto.
@@ -1857,7 +1873,7 @@ Proof.
     simpl. apply H13. eauto. apply PTree.gss.
     traceEq.
     simpl. rewrite PTree.set2. econstructor; eauto. simpl; reflexivity. constructor.
-Admitted.
+Qed.
 
 Lemma transl_initial_states:
   forall S, Clight.initial_state prog S ->

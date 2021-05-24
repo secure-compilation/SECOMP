@@ -949,7 +949,7 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : out
 
 (** Pseudo-instructions *)
   | Pallocframe sz pos =>
-      let (m1, stk) := Mem.alloc m f.(fn_comp) 0 sz in
+      let (m1, stk) := Mem.alloc m (comp_of f) 0 sz in
       let sp := (Vptr stk Ptrofs.zero) in
       match Mem.storev Mptr m1 (Val.offset_ptr sp pos) rs#SP with
       | None => Stuck
@@ -1130,10 +1130,10 @@ Inductive step: state -> trace -> state -> Prop :=
       Genv.find_funct_ptr ge b = Some (Internal f) ->
       find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
       exec_instr f i rs m = Next rs' m' ->
-      next_stack i (fn_comp f) st rs' = Some st' ->
+      next_stack i (comp_of f) st rs' = Some st' ->
       forall (NEXTPC: rs' PC = Vptr b' ofs'),
       forall (NEXTFUN: Genv.find_funct_ptr ge b' = Some fd),
-      forall (ALLOWED: Genv.allowed_call ge f.(fn_comp) (Vptr b' Ptrofs.zero)),
+      forall (ALLOWED: Genv.allowed_call ge (comp_of f) (Vptr b' Ptrofs.zero)),
       step (State st rs m) E0 (State st' rs' m')
   | exec_step_internal_return:
       forall b ofs f i rs m rs' m' st st' sf,
@@ -1141,7 +1141,7 @@ Inductive step: state -> trace -> state -> Prop :=
       Genv.find_funct_ptr ge b = Some (Internal f) ->
       find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
       exec_instr f i rs m = Next rs' m' ->
-      next_stack i (fn_comp f) st rs' = Some st' ->
+      next_stack i (comp_of f) st rs' = Some st' ->
       forall (ISRETURN: st = sf :: st'),
       step (State st rs m) E0 (State st' rs' m')
   | exec_step_builtin:

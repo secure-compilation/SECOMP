@@ -479,7 +479,7 @@ Definition is_call_cont (k: cont) : Prop :=
 
 Definition call_comp (k: cont) : compartment :=
   match call_cont k with
-  | Kcall _ f _ _ _ => f.(fn_comp)
+  | Kcall _ f _ _ _ => (comp_of f)
   | _ => default_compartment
   end.
 
@@ -575,15 +575,15 @@ Inductive step: state -> trace -> state -> Prop :=
       eval_exprlist e le m al tyargs vargs ->
       Genv.find_funct ge vf = Some fd ->
       type_of_fundef fd = Tfunction tyargs tyres cconv ->
-      forall (ALLOWED: Genv.allowed_call ge f.(fn_comp) vf),
+      forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
       step (State f (Scall optid a al) k e le m)
         E0 (Callstate fd vargs (Kcall optid f e le k) m)
 
   | step_builtin:   forall f optid ef tyargs al k e le m vargs t vres m',
       eval_exprlist e le m al tyargs vargs ->
       (* TODO *)
-      (* forall (ALLOWED: Policy.allowed_call pol f.(fn_comp) (External ef tyargs tyres cconv)), *)
-      external_call ef ge f.(fn_comp) vargs m t vres m' ->
+      (* forall (ALLOWED: Policy.allowed_call pol (comp_of f) (External ef tyargs tyres cconv)), *)
+      external_call ef ge (comp_of f) vargs m t vres m' ->
       step (State f (Sbuiltin optid ef tyargs al) k e le m)
          t (State f Sskip k e (set_opttemp optid vres le) m')
 

@@ -369,15 +369,15 @@ Inductive estep: state -> trace -> state -> Prop :=
       eval_simple_list e m rargs targs vargs ->
       Genv.find_funct ge vf = Some fd ->
       type_of_fundef fd = Tfunction targs tres cconv ->
-      forall (ALLOWED: Genv.allowed_call ge f.(fn_comp) vf),
+      forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
       estep (ExprState f (C (Ecall rf rargs ty)) k e m)
          E0 (Callstate fd vargs (Kcall f e C ty k) m)
 
   | step_builtin: forall f C ef tyargs rargs ty k e m vargs t vres m',
       leftcontext RV RV C ->
       eval_simple_list e m rargs tyargs vargs ->
-      (* forall (ALLOWED: Genv.allowed_call ge f.(fn_comp) (External ef tyargs tyres cconv)), *)
-      external_call ef ge f.(fn_comp) vargs m t vres m' ->
+      (* forall (ALLOWED: Genv.allowed_call ge (comp_of f) (External ef tyargs tyres cconv)), *)
+      external_call ef ge (comp_of f) vargs m t vres m' ->
       estep (ExprState f (C (Ebuiltin ef tyargs rargs ty)) k e m)
           t (ExprState f (C (Eval vres ty)) k e m').
 
@@ -440,9 +440,9 @@ Lemma safe_imm_safe:
   forall f C a k e m K,
   safe (ExprState f (C a) k e m) ->
   context K RV C ->
-  imm_safe ge e f.(fn_comp) K a m.
+  imm_safe ge e (comp_of f) K a m.
 Proof.
-  intros. destruct (classic (imm_safe ge e f.(fn_comp) K a m)); auto.
+  intros. destruct (classic (imm_safe ge e (comp_of f) K a m)); auto.
   destruct (H Stuckstate).
   apply star_one. left. econstructor; eauto.
   destruct H2 as [r F]. inv F.
@@ -689,7 +689,7 @@ Lemma safe_inv:
   match a with
   | Eloc _ _ _ => True
   | Eval _ _ => True
-  | _ => invert_expr_prop f.(fn_comp) a m
+  | _ => invert_expr_prop (comp_of f) a m
   end.
 Proof.
   intros. eapply imm_safe_inv; eauto. eapply safe_imm_safe; eauto.
@@ -1907,7 +1907,7 @@ with eval_funcall: compartment -> mem -> fundef -> list val -> trace -> mem -> v
       list_norepet (var_names f.(fn_params) ++ var_names f.(fn_vars)) ->
       alloc_variables ge empty_env m (f.(fn_params) ++ f.(fn_vars)) e m1 ->
       bind_parameters ge e m1 f.(fn_params) vargs m2 ->
-      exec_stmt f.(fn_comp) e m2 f.(fn_body) t m3 out ->
+      exec_stmt (comp_of f) e m2 f.(fn_body) t m3 out ->
       outcome_result_value out f.(fn_return) vres m3 ->
       Mem.free_list m3 (blocks_of_env ge e) = Some m4 ->
       eval_funcall cp m (Internal f) vargs t m4 vres
@@ -2130,7 +2130,7 @@ with evalinf_funcall: compartment -> mem -> fundef -> list val -> traceinf -> Pr
       list_norepet (var_names f.(fn_params) ++ var_names f.(fn_vars)) ->
       alloc_variables ge empty_env m (f.(fn_params) ++ f.(fn_vars)) e m1 ->
       bind_parameters ge e m1 f.(fn_params) vargs m2 ->
-      execinf_stmt f.(fn_comp) e m2 f.(fn_body) t ->
+      execinf_stmt (comp_of f) e m2 f.(fn_body) t ->
       evalinf_funcall cp m (Internal f) vargs t.
 
 (** ** Implication from big-step semantics to transition semantics *)
@@ -2192,25 +2192,25 @@ Lemma bigstep_to_steps:
   (forall c e m a t m' v,
    eval_expression c e m a t m' v ->
    forall f k,
-   forall COMP: c = f.(fn_comp),
+   forall COMP: c = (comp_of f),
    star step ge (ExprState f a k e m) t (ExprState f (Eval v (typeof a)) k e m'))
 /\(forall c e m K a t m' a',
    eval_expr c e m K a t m' a' ->
    forall C f k, leftcontext K RV C ->
-   forall COMP: c = f.(fn_comp),
+   forall COMP: c = (comp_of f),
    simple a' = true /\ typeof a' = typeof a /\
    star step ge (ExprState f (C a) k e m) t (ExprState f (C a') k e m'))
 /\(forall c e m al t m' al',
    eval_exprlist c e m al t m' al' ->
    forall a1 al2 ty C f k, leftcontext RV RV C -> simple a1 = true -> simplelist al2 = true ->
-   forall COMP: c = f.(fn_comp),
+   forall COMP: c = (comp_of f),
    simplelist al' = true /\
    star step ge (ExprState f (C (Ecall a1 (exprlist_app al2 al) ty)) k e m)
               t (ExprState f (C (Ecall a1 (exprlist_app al2 al') ty)) k e m'))
 /\(forall c e m s t m' out,
    exec_stmt c e m s t m' out ->
    forall f k,
-   forall COMP: c = f.(fn_comp),
+   forall COMP: c = (comp_of f),
    exists S,
    star step ge (State f s k e m) t S /\ outcome_state_match e m' f k out S)
 /\(forall c m fd args t m' res,
@@ -2632,14 +2632,14 @@ Qed.
 Lemma eval_expression_to_steps:
    forall c e m a t m' v,
    eval_expression c e m a t m' v ->
-   forall f k, c = f.(fn_comp) ->
+   forall f k, c = (comp_of f) ->
    star step ge (ExprState f a k e m) t (ExprState f (Eval v (typeof a)) k e m').
 Proof (proj1 bigstep_to_steps).
 
 Lemma eval_expr_to_steps:
    forall c e m K a t m' a',
    eval_expr c e m K a t m' a' ->
-   forall C f k, leftcontext K RV C -> c = f.(fn_comp) ->
+   forall C f k, leftcontext K RV C -> c = (comp_of f) ->
    simple a' = true /\ typeof a' = typeof a /\
    star step ge (ExprState f (C a) k e m) t (ExprState f (C a') k e m').
 Proof (proj1 (proj2 bigstep_to_steps)).
@@ -2647,7 +2647,7 @@ Proof (proj1 (proj2 bigstep_to_steps)).
 Lemma eval_exprlist_to_steps:
    forall c e m al t m' al',
    eval_exprlist c e m al t m' al' ->
-   forall a1 al2 ty C f k, leftcontext RV RV C -> simple a1 = true -> simplelist al2 = true -> c = f.(fn_comp) ->
+   forall a1 al2 ty C f k, leftcontext RV RV C -> simple a1 = true -> simplelist al2 = true -> c = (comp_of f) ->
    simplelist al' = true /\
    star step ge (ExprState f (C (Ecall a1 (exprlist_app al2 al) ty)) k e m)
               t (ExprState f (C (Ecall a1 (exprlist_app al2 al') ty)) k e m').
@@ -2656,7 +2656,7 @@ Proof (proj1 (proj2 (proj2 bigstep_to_steps))).
 Lemma exec_stmt_to_steps:
    forall c e m s t m' out,
    exec_stmt c e m s t m' out ->
-   forall f k, c = f.(fn_comp) ->
+   forall f k, c = (comp_of f) ->
    exists S,
    star step ge (State f s k e m) t S /\ outcome_state_match e m' f k out S.
 Proof. exact (proj1 (proj2 (proj2 (proj2 bigstep_to_steps)))). Qed.
@@ -2733,14 +2733,14 @@ Proof.
   assert (COS:
     forall c e m s t f k,
     execinf_stmt c e m s t ->
-    forall COMP: c = f.(fn_comp),
+    forall COMP: c = (comp_of f),
     forever_N step lt ge O (State f s k e m) t).
   cofix COS.
 
   assert (COE:
     forall c e m K a t C f k,
     evalinf_expr c e m K a t ->
-    forall COMP: c = f.(fn_comp),
+    forall COMP: c = (comp_of f),
     leftcontext K RV C ->
     forever_N step lt ge (esize a) (ExprState f (C a) k e m) t).
   cofix COE.
@@ -2748,7 +2748,7 @@ Proof.
   assert (COEL:
     forall c e m a t C f k a1 al ty,
     evalinf_exprlist c e m a t ->
-    forall COMP: c = f.(fn_comp),
+    forall COMP: c = (comp_of f),
     leftcontext RV RV C -> simple a1 = true -> simplelist al = true ->
     forever_N step lt ge (esizelist a)
                    (ExprState f (C (Ecall a1 (exprlist_app al a) ty)) k e m) t).

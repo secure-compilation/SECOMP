@@ -916,6 +916,30 @@ Proof.
   discriminate.
 Qed.
 
+Lemma find_function_ptr_translated:
+  forall ros rs fd rs' vf,
+    find_function ge ros rs = Some fd ->
+    find_function_ptr ge ros rs = Some vf ->
+    regs_lessdef rs rs' ->
+    find_function_ptr tge ros rs' = Some vf.
+Proof.
+  unfold find_function, find_function_ptr; intros; destruct ros.
+  - specialize (H1 r). inv H1.
+    congruence.
+    rewrite <- H3 in H; discriminate.
+  - rewrite symbols_preserved. destruct (Genv.find_symbol ge i).
+    congruence. discriminate.
+Qed.
+
+Lemma allowed_call_translated:
+  forall cp vf,
+    Genv.allowed_call ge cp vf ->
+    Genv.allowed_call tge cp vf.
+Proof.
+  intros cp vf H.
+  eapply (Genv.match_genvs_allowed_calls TRANSF). eauto.
+Qed.
+
 (** The proof of semantic preservation is a simulation argument using
   diagrams of the following form:
 <<
@@ -1114,10 +1138,11 @@ Proof.
 
 - (* Icall *)
   exploit find_function_translated; eauto. intros (cu' & tf & FIND' & TRANSF' & LINK').
+  exploit find_function_ptr_translated; eauto. intros FUNPTR'.
   econstructor; split.
   eapply exec_Icall; eauto.
   eapply sig_preserved; eauto.
-  admit. admit.
+  eapply allowed_call_translated; eauto.
   econstructor; eauto.
   eapply match_stackframes_cons with (cu := cu); eauto.
   intros. eapply analysis_correct_1; eauto. simpl; auto.
@@ -1128,11 +1153,12 @@ Proof.
 - (* Itailcall *)
   exploit find_function_translated; eauto. intros (cu' & tf & FIND' & TRANSF' & LINK').
   exploit Mem.free_parallel_extends; eauto. intros [m'' [A B]].
+  exploit find_function_ptr_translated; eauto. intros FUNPTR'.
   econstructor; split.
   eapply exec_Itailcall; eauto.
   eapply sig_preserved; eauto.
   now rewrite <- (comp_transl_partial _ TRANSF'), COMP.
-  admit. admit.
+  eapply allowed_call_translated; eauto.
   econstructor; eauto.
   apply regs_lessdef_regs; auto.
 
@@ -1242,7 +1268,8 @@ Proof.
   eapply exec_return; eauto.
   econstructor; eauto.
   apply set_reg_lessdef; auto.
-Admitted.
+Qed.
+
 
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 ->

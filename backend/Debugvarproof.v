@@ -349,6 +349,26 @@ Proof.
   congruence.
 Qed.
 
+
+Lemma find_function_ptr_translated:
+  forall ros ls vf,
+  find_fun_ptr ge ros ls = Some vf ->
+  find_fun_ptr tge ros ls = Some vf.
+Proof.
+  unfold find_fun_ptr; intros; destruct ros; simpl.
+  eauto.
+  rewrite symbols_preserved; eauto.
+Qed.
+
+Lemma allowed_call_translated:
+  forall cp vf,
+    Genv.allowed_call ge cp vf ->
+    Genv.allowed_call tge cp vf.
+Proof.
+  intros cp vf H.
+  eapply (Genv.match_genvs_allowed_calls TRANSF). eauto.
+Qed.
+
 (** Evaluation of the debug annotations introduced by the transformation. *)
 
 Lemma can_eval_safe_arg:
@@ -485,8 +505,10 @@ Proof.
   exploit find_function_translated; eauto. intros (tf' & A & B).
   econstructor; split.
   apply plus_one.
-  econstructor. eexact A. admit. symmetry; apply sig_preserved; auto.
-  admit.
+  econstructor. eexact A. eapply find_function_ptr_translated; eauto.
+  symmetry; apply sig_preserved; auto.
+  inv TRF.
+  eapply allowed_call_translated; eauto.
   (* now inv TRF. *)
   constructor; auto. constructor; auto. constructor; auto.
 - (* tailcall *)
@@ -495,11 +517,11 @@ Proof.
   econstructor; split.
   apply plus_one.
   econstructor. eauto. rewrite PLS. eexact A.
-  admit.
+  eapply find_function_ptr_translated; eauto. rewrite PLS. eauto.
   symmetry; apply sig_preserved; auto.
   now rewrite <- (comp_transl_partial _ B); inv TRF.
   inv TRF; eauto.
-  admit.
+  inv TRF. eapply allowed_call_translated; eauto.
   inv TRF; eauto.
   rewrite PLS. constructor; auto.
 - (* builtin *)
@@ -558,7 +580,7 @@ Proof.
   econstructor; split.
   eapply plus_left. econstructor. apply eval_add_delta_ranges. traceEq.
   constructor; auto.
-Admitted.
+Qed.
 
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 ->

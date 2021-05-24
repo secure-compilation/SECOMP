@@ -185,7 +185,7 @@ Inductive state : Type :=
 Definition call_comp (stack: list stackframe): compartment :=
   match stack with
   | nil => default_compartment
-  | Stackframe _ f _ _ _ :: _ => f.(fn_comp)
+  | Stackframe _ f _ _ _ :: _ => (comp_of f)
   end.
 
 Section RELSEM.
@@ -203,11 +203,6 @@ Definition find_function
       end
   end.
 
-(** The transitions are presented as an inductive predicate
-  [step ge st1 t st2], where [ge] is the global environment,
-  [st1] the initial state, [st2] the final state, and [t] the trace
-  of system calls performed during this transition. *)
-
 Definition find_function_ptr ros rs :=
   match ros with
   | inl r => Some (rs # r)
@@ -216,6 +211,25 @@ Definition find_function_ptr ros rs :=
                | None => None
                end
   end.
+
+Lemma find_function_find_function_ptr:
+  forall ros rs fd,
+    find_function ros rs = Some fd ->
+    exists vf, find_function_ptr ros rs = Some vf.
+Proof.
+  intros ros rs fd.
+  unfold find_function, find_function_ptr.
+  intros H.
+  destruct ros; try now eexists; eauto.
+  destruct (Genv.find_symbol ge i).
+  - now eexists; eauto.
+  - inversion H.
+Qed.
+
+(** The transitions are presented as an inductive predicate
+  [step ge st1 t st2], where [ge] is the global environment,
+  [st1] the initial state, [st2] the final state, and [t] the trace
+  of system calls performed during this transition. *)
 
 Inductive step: state -> trace -> state -> Prop :=
   | exec_Inop:
@@ -250,7 +264,7 @@ Inductive step: state -> trace -> state -> Prop :=
       funsig fd = sig ->
       (* TODO *)
       forall (FUNPTR: find_function_ptr ros rs = Some vf),
-      forall (ALLOWED: Genv.allowed_call ge f.(fn_comp) vf),
+      forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
       step (State s f sp pc rs m)
         E0 (Callstate (Stackframe res f sp pc' rs :: s) fd rs##args m)
   | exec_Itailcall:
@@ -258,11 +272,11 @@ Inductive step: state -> trace -> state -> Prop :=
       (fn_code f)!pc = Some(Itailcall sig ros args) ->
       find_function ros rs = Some fd ->
       funsig fd = sig ->
-      forall COMP: comp_of fd = f.(fn_comp),
-      forall ALLOWED: needs_calling_comp f.(fn_comp) = false,
+      forall COMP: comp_of fd = (comp_of f),
+      forall ALLOWED: needs_calling_comp (comp_of f) = false,
       (* TODO *)
       forall (FUNPTR: find_function_ptr ros rs = Some vf),
-      forall (ALLOWED': Genv.allowed_call ge f.(fn_comp) vf),
+      forall (ALLOWED': Genv.allowed_call ge (comp_of f) vf),
       Mem.free m stk 0 f.(fn_stacksize) = Some m' ->
       step (State s f (Vptr stk Ptrofs.zero) pc rs m)
         E0 (Callstate s fd rs##args m')
@@ -271,8 +285,8 @@ Inductive step: state -> trace -> state -> Prop :=
       (fn_code f)!pc = Some(Ibuiltin ef args res pc') ->
       eval_builtin_args ge (fun r => rs#r) sp m args vargs ->
       (* TODO *)
-      (* forall (ALLOWED: Policy.allowed_call pol f.(fn_comp) (External ef)), *)
-      external_call ef ge f.(fn_comp) vargs m t vres m' ->
+      (* forall (ALLOWED: Policy.allowed_call pol (comp_of f) (External ef)), *)
+      external_call ef ge (comp_of f) vargs m t vres m' ->
       step (State s f sp pc rs m)
          t (State s f sp pc' (regmap_setres res vres rs) m')
   | exec_Icond:
@@ -297,7 +311,7 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (Returnstate s (regmap_optget or Vundef rs) m')
   | exec_function_internal:
       forall s f args m m' stk,
-      Mem.alloc m f.(fn_comp) 0 f.(fn_stacksize) = (m', stk) ->
+      Mem.alloc m (comp_of f) 0 f.(fn_stacksize) = (m', stk) ->
       step (Callstate s (Internal f) args m)
         E0 (State s
                   f
@@ -397,7 +411,7 @@ Variable transf: node -> instruction -> instruction.
 
 Definition transf_function (f: function) : function :=
   mkfunction
-    f.(fn_comp)
+    (comp_of f)
     f.(fn_sig)
     f.(fn_params)
     f.(fn_stacksize)

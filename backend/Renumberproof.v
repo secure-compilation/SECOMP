@@ -75,6 +75,25 @@ Proof.
   eapply function_ptr_translated; eauto.
 Qed.
 
+Lemma find_function_ptr_translated:
+  forall ros ls vf,
+  find_function_ptr ge ros ls = Some vf ->
+  find_function_ptr tge ros ls = Some vf.
+Proof.
+  unfold find_function_ptr; intros; destruct ros; simpl.
+  eauto.
+  rewrite symbols_preserved; eauto.
+Qed.
+
+Lemma allowed_call_translated:
+  forall cp vf,
+    Genv.allowed_call ge cp vf ->
+    Genv.allowed_call tge cp vf.
+Proof.
+  intros cp vf H.
+  eapply (Genv.match_genvs_allowed_calls TRANSL). eauto.
+Qed.
+
 (** Effect of an injective renaming of nodes on a CFG. *)
 
 Section RENUMBER.
@@ -203,8 +222,8 @@ Proof.
   eapply exec_Icall with (fd := transf_fundef fd); eauto.
     eapply find_function_translated; eauto.
     apply sig_preserved.
-  admit.
-  admit.
+    eapply find_function_ptr_translated; eauto.
+    eapply allowed_call_translated; eauto.
 
   constructor. constructor; auto. constructor. eapply reach_succ; eauto. simpl; auto.
 (* tailcall *)
@@ -213,7 +232,8 @@ Proof.
     eapply find_function_translated; eauto.
     apply sig_preserved.
     rewrite comp_transl, COMP. eauto.
-    admit. admit.
+    eapply find_function_ptr_translated; eauto.
+    eapply allowed_call_translated; eauto.
   constructor. auto.
 (* builtin *)
   econstructor; split.
@@ -252,7 +272,7 @@ Proof.
   econstructor; split.
   eapply exec_return; eauto.
   constructor; auto.
-Admitted.
+Qed.
 
 Lemma transf_initial_states:
   forall S1, RTL.initial_state prog S1 ->

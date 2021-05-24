@@ -944,7 +944,7 @@ Proof.
   rewrite Pos.eqb_refl. reflexivity.
   rewrite H0. rewrite H2. reflexivity.
   left; auto.
-  admit.
+  simpl; rewrite H3. reflexivity.
   eapply plus_left'.
   econstructor; eauto.
   eapply find_instr_tail. eauto.
@@ -953,13 +953,14 @@ Proof.
   rewrite Pos.eqb_refl. reflexivity.
   rewrite H0. rewrite H3. reflexivity.
   left; auto.
-  admit.
+  simpl; rewrite H4. reflexivity.
   apply IHexec_straight with b (Ptrofs.add ofs Ptrofs.one).
   auto. rewrite H0. rewrite H3. reflexivity.
   auto.
   apply code_tail_next_int with i; auto.
   traceEq.
-Admitted.
+Qed.
+
 
 Lemma exec_straight_steps_2:
   forall c rs m c' rs' m',

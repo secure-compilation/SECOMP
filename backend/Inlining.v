@@ -291,7 +291,7 @@ Variable rec: forall fenv', (size_fenv fenv' < size_fenv fenv)%nat -> context ->
 
 Inductive inline_decision cp (ros: reg + ident) : Type :=
   | Cannot_inline
-  | Can_inline (id: ident) (f: function) (P: ros = inr reg id) (Q: fenv!id = Some f) (R: cp = f.(fn_comp)).
+  | Can_inline (id: ident) (f: function) (P: ros = inr reg id) (Q: fenv!id = Some f) (R: cp = (comp_of f)).
 
 Program Definition can_inline (cp: compartment) (ros: reg + ident): inline_decision cp ros :=
   match ros with
@@ -299,7 +299,7 @@ Program Definition can_inline (cp: compartment) (ros: reg + ident): inline_decis
   | inr id =>
     match fenv!id with
     | Some f =>
-      if eq_compartment cp f.(fn_comp) then
+      if eq_compartment cp (comp_of f) then
         Can_inline _ _ id f _ _ _
       else Cannot_inline _ _
     | None => Cannot_inline _ _
@@ -424,7 +424,7 @@ Definition expand_instr (ctx: context) (cp: compartment) (pc: node) (i: instruct
 
 Definition expand_cfg_rec (ctx: context) (f: function): mon unit :=
   do x <- request_stack (ctx.(dstk) + ctx.(mstk));
-  ptree_mfold (expand_instr ctx f.(fn_comp)) f.(fn_code).
+  ptree_mfold (expand_instr ctx (comp_of f)) f.(fn_code).
 
 End EXPAND_CFG.
 
@@ -457,7 +457,7 @@ Local Open Scope string_scope.
 Definition transf_function (fenv: funenv) (f: function) : Errors.res function :=
   let '(R ctx s _) := expand_function fenv f initstate in
   if zlt s.(st_stksize) Ptrofs.max_unsigned then
-    OK (mkfunction f.(fn_comp)
+    OK (mkfunction (comp_of f)
                    f.(fn_sig)
                    (sregs ctx f.(fn_params))
                    s.(st_stksize)

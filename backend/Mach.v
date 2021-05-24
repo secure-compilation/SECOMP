@@ -226,6 +226,17 @@ Definition find_function_ptr
       Genv.find_symbol ge symb
   end.
 
+(* Definition find_function_ptr *)
+(*         (ge: genv) (ros: mreg + ident) (rs: regset) : option val := *)
+(*   match ros with *)
+(*   | inl r => *)
+(*       match rs r with *)
+(*       | Vptr b ofs => if Ptrofs.eq ofs Ptrofs.zero then Some (Vptr b ofs) else None *)
+(*       | _ => None *)
+(*       end *)
+(*   | inr symb => *)
+(*       Some (Genv.symbol_address ge symb Ptrofs.zero) *)
+(*   end. *)
 (** Extract the values of the arguments to an external call. *)
 
 Inductive extcall_arg (rs: regset) (m: mem) (sp: val): loc -> val -> Prop :=
@@ -346,7 +357,7 @@ Inductive step: state -> trace -> state -> Prop :=
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
       return_address_offset f c ra ->
       forall (CALLED: Genv.find_funct_ptr ge f' = Some fd),
-      forall (ALLOWED: Genv.allowed_call ge f.(fn_comp) (Vptr f' Ptrofs.zero)),
+      forall (ALLOWED: Genv.allowed_call ge (comp_of f) (Vptr f' Ptrofs.zero)),
       step (State s fb sp (Mcall sig ros :: c) rs m)
         E0 (Callstate (Stackframe fb sp ra c :: s)
                        f' rs m)
@@ -360,7 +371,7 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (CALLED: Genv.find_funct_ptr ge f' = Some fd),
       forall COMP: comp_of fd = comp_of f,
       forall ALLOWED: needs_calling_comp (comp_of f) = false,
-      forall (ALLOWED': Genv.allowed_call ge f.(fn_comp) (Vptr f' Ptrofs.zero)),
+      forall (ALLOWED': Genv.allowed_call ge (comp_of f) (Vptr f' Ptrofs.zero)),
       step (State s fb (Vptr stk soff) (Mtailcall sig ros :: c) rs m)
         E0 (Callstate s f' rs m')
   | exec_Mbuiltin:
@@ -412,7 +423,7 @@ Inductive step: state -> trace -> state -> Prop :=
   | exec_function_internal:
       forall s fb rs m f m1 m2 m3 stk rs',
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
-      Mem.alloc m f.(fn_comp) 0 f.(fn_stacksize) = (m1, stk) ->
+      Mem.alloc m (comp_of f) 0 f.(fn_stacksize) = (m1, stk) ->
       let sp := Vptr stk Ptrofs.zero in
       store_stack m1 sp Tptr f.(fn_link_ofs) (parent_sp s) = Some m2 ->
       store_stack m2 sp Tptr f.(fn_retaddr_ofs) (parent_ra s) = Some m3 ->

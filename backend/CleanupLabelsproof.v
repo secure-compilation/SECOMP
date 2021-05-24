@@ -81,14 +81,32 @@ Proof.
   congruence.
 Qed.
 
+Lemma find_function_ptr_translated:
+  forall ros ls vf,
+  find_fun_ptr ge ros ls = Some vf ->
+  find_fun_ptr tge ros ls = Some vf.
+Proof.
+  unfold find_fun_ptr; intros; destruct ros; simpl.
+  eauto.
+  rewrite symbols_preserved; eauto.
+Qed.
+
+Lemma allowed_call_translated:
+  forall cp vf,
+    Genv.allowed_call ge cp vf ->
+    Genv.allowed_call tge cp vf.
+Proof.
+  intros cp vf H.
+  eapply (Genv.match_genvs_allowed_calls TRANSL). eauto.
+Qed.
+
 (** Correctness of [labels_branched_to]. *)
 
 Definition instr_branches_to (i: instruction) (lbl: label) : Prop :=
   match i with
   | Lgoto lbl' => lbl = lbl'
   | Lcond cond args lbl' => lbl = lbl'
-  | Ljumptable arg tbl => In lbl tbl
-  | _ => False
+  | Ljumptable arg tbl => In lbl tbl | _ => False
   end.
 
 Remark add_label_branched_to_incr:
@@ -280,18 +298,17 @@ Proof.
 (* Lcall *)
   left; econstructor; split.
   econstructor. eapply find_function_translated; eauto.
-  admit.
+  eapply find_function_ptr_translated; eauto.
   symmetry; apply sig_function_translated.
-  admit.
+  eapply allowed_call_translated; eauto.
   econstructor; eauto. constructor; auto. constructor; eauto with coqlib.
 (* Ltailcall *)
   left; econstructor; split.
   econstructor. erewrite match_parent_locset; eauto. eapply find_function_translated; eauto.
-  admit.
+  eapply find_function_ptr_translated; eauto.
   symmetry; apply sig_function_translated.
-  now rewrite ! comp_transl.
-  simpl. eauto.
-  admit.
+  now rewrite ! comp_transl. simpl; eauto.
+  eapply allowed_call_translated; eauto.
   eauto.
   econstructor; eauto.
 (* Lbuiltin *)
@@ -344,7 +361,7 @@ Proof.
   inv H3. inv H1. left; econstructor; split.
   econstructor; eauto.
   econstructor; eauto.
-Admitted.
+Qed.
 
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 ->

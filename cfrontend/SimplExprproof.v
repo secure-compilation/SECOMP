@@ -109,6 +109,16 @@ Proof.
   intros. inv H; auto.
 Qed.
 
+Lemma allowed_call_translated:
+  forall cp vf,
+    Genv.allowed_call ge cp vf ->
+    Genv.allowed_call tge cp vf.
+Proof.
+  intros cp vf H.
+  destruct TRANSL.
+  eapply (Genv.match_genvs_allowed_calls H0). eauto.
+Qed.
+
 (** Properties of smart constructors. *)
 
 Lemma eval_Ederef':
@@ -1931,7 +1941,12 @@ Proof.
   left. eapply plus_left. constructor.  apply star_one.
   econstructor; eauto. rewrite <- TY1; eauto.
   exploit type_of_fundef_preserved; eauto. congruence.
-  admit.
+  (* ALLOWED CALL *)
+  assert (COMP: comp_of tf = comp_of f).
+  { now match goal with H : tr_function _ _ |- _ => inv H end. }
+  rewrite COMP.
+  eapply allowed_call_translated; eauto.
+  (* END ALLOWED CALL *)
   traceEq.
   constructor; auto. econstructor; eauto.
   intros. change sl2 with (nil ++ sl2). apply S.
@@ -1945,7 +1960,12 @@ Proof.
   left. eapply plus_left. constructor.  apply star_one.
   econstructor; eauto. rewrite <- TY1; eauto.
   exploit type_of_fundef_preserved; eauto. congruence.
-  admit.
+  (* ALLOWED CALL *)
+  assert (COMP: comp_of tf = comp_of f).
+  { now match goal with H : tr_function _ _ |- _ => inv H end. }
+  rewrite COMP.
+  eapply allowed_call_translated; eauto.
+  (* END ALLOWED CALL *)
   traceEq.
   constructor; auto. econstructor; eauto.
   intros. apply S. destruct dst'; constructor.
@@ -1956,7 +1976,7 @@ Proof.
 
 (* builtin *)
   exploit tr_top_leftcontext; eauto. clear H9.
-  assert (COMP: tf.(fn_comp) = f.(Csyntax.fn_comp)).
+  assert (COMP: comp_of tf = comp_of f).
   { now match goal with H : tr_function _ _ |- _ => inv H end. }
   intros [dst' [sl1 [sl2 [a' [tmp' [P [Q [R S]]]]]]]].
   inv P. inv H2.
@@ -1985,7 +2005,7 @@ Proof.
   apply tr_val_gen. auto. intros. constructor. rewrite H2; auto. simpl. apply PTree.gss.
   intros; simpl. apply PTree.gso. intuition congruence.
   auto.
-Admitted.
+Qed.
 
 (** Forward simulation for statements. *)
 

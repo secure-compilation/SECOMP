@@ -32,6 +32,8 @@ Record match_prog_1 (u: IS.t) (p tp: program) : Prop := {
     tp.(prog_main) = p.(prog_main);
   match_prog_public:
     tp.(prog_public) = p.(prog_public);
+  match_prog_pol:
+    tp.(prog_pol) = p.(prog_pol);
   match_prog_def:
     forall id,
        (prog_defmap tp)!id = if IS.mem id u then (prog_defmap p)!id else None;
@@ -829,6 +831,33 @@ Proof.
   auto.
 Qed.
 
+Lemma find_function_ptr_inject:
+  forall j ros rs fd trs vf,
+  meminj_preserves_globals j ->
+  find_function ge ros rs = Some fd ->
+  find_function_ptr ge ros rs = Some vf ->
+  match ros with inl r => regset_inject j rs trs | inr id => kept id end ->
+  find_function_ptr tge ros trs = Some vf.
+Proof.
+  intros. destruct ros as [r|id]; simpl in *.
+  - inv H1.
+    specialize (H2 r).
+    inv H2; eauto.
+    + admit.
+    + unfold Genv.find_funct in H0. rewrite <- H3 in H0. congruence.
+  - auto.
+
+
+
+
+Lemma allowed_call_translated:
+  forall cp vf,
+    Genv.allowed_call ge cp vf ->
+    Genv.allowed_call tge cp vf.
+Proof.
+  admit.
+Admitted.
+
 Lemma eval_builtin_arg_inject:
   forall rs sp m j rs' sp' m' a v,
   eval_builtin_arg ge (fun r => rs#r) (Vptr sp Ptrofs.zero) m a v ->
@@ -1426,12 +1455,13 @@ Proof.
   split. rewrite (match_prog_public _ _ _ B1); auto.
   split. rewrite (match_prog_public _ _ _ B2); auto.
   congruence.
-+ admit.
++ rewrite (match_prog_pol _ _ _ B1), (match_prog_pol _ _ _ B2). auto.
 - exists (IS.union used1 used2); split.
 + eapply link_valid_used_set; eauto.
 + rewrite W. constructor; simpl; intros.
 * eapply match_prog_main; eauto.
 * rewrite (match_prog_public _ _ _ B1), (match_prog_public _ _ _ B2). auto.
+* rewrite (match_prog_pol _ _ _ B1). auto.
 * rewrite ! prog_defmap_elements, !PTree.gcombine by auto.
   rewrite (match_prog_def _ _ _ B1 id), (match_prog_def _ _ _ B2 id).
   rewrite ISF.union_b.
@@ -1457,6 +1487,6 @@ Proof.
   destruct (IS.mem id used1), (IS.mem id used2); auto.
 }
 * intros. apply PTree.elements_keys_norepet.
-Admitted.
+Qed.
 
 Instance TransfSelectionLink : TransfLink match_prog := link_match_program.

@@ -150,7 +150,7 @@ Inductive state: Type :=
 Definition call_comp (stack: list stackframe): compartment :=
   match stack with
   | nil => default_compartment
-  | Stackframe f _ _ _ :: _ => f.(fn_comp)
+  | Stackframe f _ _ _ :: _ => comp_of f
   end.
 
 (** [parent_locset cs] returns the mapping of values for locations
@@ -197,18 +197,18 @@ Inductive step: state -> trace -> state -> Prop :=
       find_function ros rs = Some f' ->
       find_fun_ptr ros rs = Some vf ->
       sig = funsig f' ->
-      forall (ALLOWED: Genv.allowed_call ge f.(fn_comp) vf),
+      forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
       step (State s f sp (Lcall sig ros :: b) rs m)
         E0 (Callstate (Stackframe f sp rs b:: s) f' rs m)
   | exec_Ltailcall:
       forall s f stk sig ros b rs m rs' f' m' vf,
       rs' = return_regs (parent_locset s) rs ->
       find_function ros rs' = Some f' ->
-      find_fun_ptr ros rs = Some vf ->
+      find_fun_ptr ros rs' = Some vf ->
       sig = funsig f' ->
       forall COMP: comp_of f' = comp_of f,
       forall ALLOWED: needs_calling_comp (comp_of f) = false,
-      forall (ALLOWED': Genv.allowed_call ge f.(fn_comp) vf),
+      forall (ALLOWED': Genv.allowed_call ge (comp_of f) vf),
       Mem.free m stk 0 f.(fn_stacksize) = Some m' ->
       step (State s f (Vptr stk Ptrofs.zero) (Ltailcall sig ros :: b) rs m)
         E0 (Callstate s f' rs' m')
@@ -216,7 +216,7 @@ Inductive step: state -> trace -> state -> Prop :=
       forall s f sp rs m ef args res b vargs t vres rs' m',
       eval_builtin_args ge rs sp m args vargs ->
       (* forall (ALLOWED: Policy.allowed_call pol f.(fn_comp) (External ef)), *)
-      external_call ef ge f.(fn_comp) vargs m t vres m' ->
+      external_call ef ge (comp_of f) vargs m t vres m' ->
       rs' = Locmap.setres res vres (undef_regs (destroyed_by_builtin ef) rs) ->
       step (State s f sp (Lbuiltin ef args res :: b) rs m)
          t (State s f sp b rs' m')
@@ -257,7 +257,7 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (Returnstate s (return_regs (parent_locset s) rs) m')
   | exec_function_internal:
       forall s f rs m rs' m' stk,
-      Mem.alloc m f.(fn_comp) 0 f.(fn_stacksize) = (m', stk) ->
+      Mem.alloc m (comp_of f) 0 f.(fn_stacksize) = (m', stk) ->
       rs' = undef_regs destroyed_at_function_entry (call_regs rs) ->
       step (Callstate s (Internal f) rs m)
         E0 (State s f (Vptr stk Ptrofs.zero) f.(fn_code) rs' m')

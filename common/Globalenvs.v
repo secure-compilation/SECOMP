@@ -621,6 +621,15 @@ Proof.
   rewrite IHgl; auto.
 Qed.
 
+Remark genv_pol_add_globals:
+  forall gl ge,
+  genv_policy (add_globals ge gl) = genv_policy ge.
+Proof.
+  induction gl; simpl; intros.
+  auto.
+  rewrite IHgl; auto.
+Qed.
+
 Theorem globalenv_public:
   forall p, genv_public (globalenv p) = prog_public p.
 Proof.
@@ -1720,6 +1729,11 @@ Qed.
   Definition allowed_call_b (ge: t) (cp: compartment) (vf: val): bool.
     Admitted.
 
+  Lemma allowed_call_reflect: forall ge cp vf,
+      allowed_call ge cp vf <-> allowed_call_b ge cp vf = true.
+  Proof.
+
+  Admitted.
 
 End GENV.
 
@@ -1920,15 +1934,34 @@ Proof.
     unfold allowed_cross_call in *. destruct vf; eauto.
     destruct H2 as [i0 [cp' [? [? [? ?]]]]].
     exists i0; exists cp'; split; [| split; [| split]].
-    + admit.
-    + unfold find_comp.
-      admit.
-    + admit.
-    + admit.
-Admitted.
+    + apply find_invert_symbol. apply invert_find_symbol in H.
+      rewrite find_symbol_match; eauto.
+    + unfold find_comp in H0. unfold find_comp.
+      destruct (find_funct_ptr (globalenv p) b) eqn:EQ; auto.
+      apply find_funct_ptr_match in EQ as [? [? [? [? ?]]]].
+      rewrite H3.
+      inversion H0; subst.
+      rewrite match_fundef_comp. eauto. eauto.
+      congruence.
+    + destruct progmatch as [? [? [? EQPOL]]].
+      destruct p, tp; simpl in *; subst.
+      unfold globalenv. unfold globalenv in H1.
+      simpl.
+      simpl in H1. clear -H1.
 
+      rewrite genv_pol_add_globals.
+      rewrite genv_pol_add_globals in H1.
+      now auto.
+    + destruct progmatch as [? [? [? EQPOL]]].
+      destruct p, tp; simpl in *; subst.
+      unfold globalenv. unfold globalenv in H2.
+      simpl.
+      simpl in H2. clear -H2.
 
-
+      rewrite genv_pol_add_globals.
+      rewrite genv_pol_add_globals in H2.
+      now auto.
+Qed.
 
 
 End MATCH_PROGRAMS.
@@ -1995,6 +2028,13 @@ Proof.
   eapply (init_mem_match progmatch).
 Qed.
 
+Theorem allowed_call_transf_partial:
+  forall cp vf,
+    allowed_call (globalenv p) cp vf -> allowed_call (globalenv tp) cp vf.
+Proof.
+  eapply (match_genvs_allowed_calls progmatch).
+Qed.
+
 End TRANSFORM_PARTIAL.
 
 (** Special case for total transformations that do not depend on the compilation unit *)
@@ -2044,6 +2084,12 @@ Proof.
   eapply (init_mem_match progmatch).
 Qed.
 
+Theorem allowed_call_transf:
+  forall cp vf,
+    allowed_call (globalenv p) cp vf -> allowed_call (globalenv tp) cp vf.
+Proof.
+  eapply (match_genvs_allowed_calls progmatch).
+Qed.
 End TRANSFORM_TOTAL.
 
 End Genv.

@@ -73,6 +73,15 @@ Lemma function_ptr_translated:
   exists cu f', Genv.find_funct_ptr tge b = Some f' /\ transf_fundef (funenv_program cu) f = OK f' /\ linkorder cu prog.
 Proof (Genv.find_funct_ptr_match TRANSF).
 
+Lemma allowed_call_translated:
+  forall cp vf,
+    Genv.allowed_call ge cp vf ->
+    Genv.allowed_call tge cp vf.
+Proof.
+  intros cp vf H.
+  eapply (Genv.match_genvs_allowed_calls TRANSF). eauto.
+Qed.
+
 Lemma sig_function_translated:
   forall cu f f', transf_fundef (funenv_program cu) f = OK f' -> funsig f' = funsig f.
 Proof.
@@ -409,6 +418,28 @@ Proof.
   eapply function_ptr_translated; eauto.
 Qed.
 
+Lemma find_function_ptr_translated:
+  forall ros rs fd F ctx rs' bound vf,
+  find_function ge ros rs = Some fd ->
+  agree_regs F ctx rs rs' ->
+  match_globalenvs F bound ->
+  find_function_ptr ge ros rs = Some vf ->
+  find_function_ptr tge (sros ctx ros) rs' = Some vf.
+Proof.
+  unfold find_function, find_function_ptr; intros; destruct ros; simpl.
+- (* register *)
+  assert (EQ: rs'#(sreg ctx r) = rs#r).
+  { exploit Genv.find_funct_inv; eauto. intros [b EQ].
+    assert (A: Val.inject F rs#r rs'#(sreg ctx r)). eapply agree_val_reg; eauto.
+    rewrite EQ in A; inv A.
+    inv H1. rewrite DOMAIN in H6. inv H6. auto.
+    apply FUNCTIONS with fd.
+    rewrite EQ in H; rewrite Genv.find_funct_find_funct_ptr in H. auto.
+  }
+  rewrite EQ. congruence.
+- rewrite symbols_preserved; eauto.
+Qed.
+
 Lemma find_inlined_function:
   forall fenv id rs fd f,
   fenv_compat prog fenv ->
@@ -495,7 +526,7 @@ Inductive match_stacks (F: meminj) (m m': mem):
       match_stacks F m m' nil nil bound
   | match_stacks_cons: forall res f sp pc rs stk f' sp' rs' stk' bound fenv ctx
         (MS: match_stacks_inside F m m' stk stk' f' ctx sp' rs')
-        (SAMECOMP: f.(fn_comp) = f'.(fn_comp))
+        (SAMECOMP: (comp_of f) = comp_of f')
         (COMPAT: fenv_compat prog fenv)
         (FB: tr_funbody fenv f'.(fn_stacksize) ctx f f'.(fn_code))
         (AG: agree_regs F ctx rs rs')
@@ -530,7 +561,7 @@ with match_stacks_inside (F: meminj) (m m': mem):
       match_stacks_inside F m m' stk stk' f' ctx sp' rs'
   | match_stacks_inside_inlined: forall res f sp pc rs stk stk' f' fenv ctx sp' rs' ctx'
         (MS: match_stacks_inside F m m' stk stk' f' ctx' sp' rs')
-        (SAMECOMP: f.(fn_comp) = f'.(fn_comp))
+        (SAMECOMP: (comp_of f) = comp_of f')
         (COMPAT: fenv_compat prog fenv)
         (FB: tr_funbody fenv f'.(fn_stacksize) ctx' f f'.(fn_code))
         (AG: agree_regs F ctx' rs rs')
@@ -886,7 +917,7 @@ Qed.
 Inductive match_states: RTL.state -> RTL.state -> Prop :=
   | match_regular_states: forall stk f sp pc rs m stk' f' sp' rs' m' F fenv ctx
         (MS: match_stacks_inside F m m' stk stk' f' ctx sp' rs')
-        (SAMECOMP: f.(fn_comp) = f'.(fn_comp))
+        (SAMECOMP: (comp_of f) = comp_of f')
         (COMPAT: fenv_compat prog fenv)
         (FB: tr_funbody fenv f'.(fn_stacksize) ctx f f'.(fn_code))
         (AG: agree_regs F ctx rs rs')
@@ -909,7 +940,7 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
                    (Callstate stk' fd' args' m')
   | match_call_regular_states: forall stk f vargs m stk' f' sp' rs' m' F fenv ctx ctx' pc' pc1' rargs
         (MS: match_stacks_inside F m m' stk stk' f' ctx sp' rs')
-        (SAMECOMP: f.(fn_comp) = f'.(fn_comp))
+        (SAMECOMP: (comp_of f) = comp_of f')
         (COMPAT: fenv_compat prog fenv)
         (FB: tr_funbody fenv f'.(fn_stacksize) ctx f f'.(fn_code))
         (BELOW: context_below ctx' ctx)
@@ -953,7 +984,7 @@ Definition measure (S: RTL.state) : nat :=
 
 Lemma tr_funbody_inv:
   forall fenv sz cts f c pc i,
-  tr_funbody fenv sz cts f c -> f.(fn_code)!pc = Some i -> tr_instr fenv sz cts f.(fn_comp) pc i c.
+  tr_funbody fenv sz cts f c -> f.(fn_code)!pc = Some i -> tr_instr fenv sz cts (comp_of f) pc i c.
 Proof.
   intros. inv H. eauto.
 Qed.
@@ -1037,9 +1068,8 @@ Proof.
   left; econstructor; split.
   eapply plus_one. eapply exec_Icall; eauto.
   eapply sig_function_translated; eauto.
-  admit.
-  rewrite <- SAMECOMP; auto.
-  admit.
+  eapply find_function_ptr_translated; eauto.
+  rewrite <- SAMECOMP. eapply allowed_call_translated; eauto.
   econstructor; eauto.
   eapply match_stacks_cons; eauto.
   { red; eauto. }
@@ -1075,9 +1105,8 @@ Proof.
   eapply sig_function_translated; eauto.
     now rewrite <- (comp_transl_partial _ B), COMP.
   congruence.
-  admit.
-  rewrite <- SAMECOMP; auto.
-  admit.
+  eapply find_function_ptr_translated; eauto.
+  rewrite <- SAMECOMP. eapply allowed_call_translated; eauto.
   econstructor; eauto.
   eapply match_stacks_bound with (bound := sp').
   eapply match_stacks_invariant; eauto.
@@ -1096,9 +1125,8 @@ Proof.
   left; econstructor; split.
   eapply plus_one. eapply exec_Icall; eauto.
   eapply sig_function_translated; eauto.
-  admit.
-  rewrite <- SAMECOMP; auto.
-  admit.
+  eapply find_function_ptr_translated; eauto.
+  rewrite <- SAMECOMP. eapply allowed_call_translated; eauto.
   econstructor; eauto.
   eapply match_stacks_untailcall; eauto.
   eapply match_stacks_inside_invariant; eauto.
@@ -1335,7 +1363,7 @@ Proof.
   left; econstructor; split.
   eapply plus_one. eapply exec_Inop; eauto.
   econstructor; eauto. subst vres. apply agree_set_reg_undef'; auto.
-Admitted.
+Qed.
 
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 -> exists st2, initial_state tprog st2 /\ match_states st1 st2.

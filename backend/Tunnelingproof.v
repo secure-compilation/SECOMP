@@ -164,6 +164,15 @@ Lemma symbols_preserved:
   Genv.find_symbol tge id = Genv.find_symbol ge id.
 Proof (Genv.find_symbol_transf TRANSL).
 
+Lemma allowed_call_translated:
+  forall cp vf,
+    Genv.allowed_call ge cp vf ->
+    Genv.allowed_call tge cp vf.
+Proof.
+  intros cp vf H.
+  eapply (Genv.match_genvs_allowed_calls TRANSL). eauto.
+Qed.
+
 Lemma senv_preserved:
   Senv.equiv ge tge.
 Proof (Genv.senv_transf TRANSL).
@@ -205,6 +214,21 @@ Definition tunneled_code (f: function) :=
 
 Definition locmap_lessdef (ls1 ls2: locset) : Prop :=
   forall l, Val.lessdef (ls1 l) (ls2 l).
+
+Lemma find_function_ptr_translated:
+  forall ros ls1 ls2 f vf,
+  locmap_lessdef ls1 ls2 ->
+  find_function ge ros ls1 = Some f ->
+  find_fun_ptr ge ros ls1 = Some vf ->
+  find_fun_ptr tge ros ls2 = Some vf.
+Proof.
+  unfold find_function, find_fun_ptr; intros; destruct ros; simpl.
+  - specialize (H (R m)).
+    inv H. congruence.
+    rewrite <- H3 in H0. discriminate.
+  - rewrite symbols_preserved; eauto.
+Qed.
+
 
 Inductive match_stackframes: stackframe -> stackframe -> Prop :=
   | match_stackframes_intro:
@@ -476,9 +500,9 @@ Proof.
   left; simpl; econstructor; split.
   eapply exec_Lcall with (fd := tunnel_fundef fd); eauto.
   eapply find_function_translated; eauto.
-  admit.
+  eapply find_function_ptr_translated; eauto.
   rewrite sig_preserved. auto.
-  admit.
+  eapply allowed_call_translated; eauto.
   econstructor; eauto.
   constructor; auto.
   constructor; auto.
@@ -487,10 +511,10 @@ Proof.
   left; simpl; econstructor; split.
   eapply exec_Ltailcall with (fd := tunnel_fundef fd); eauto.
   eapply find_function_translated; eauto using return_regs_lessdef, match_parent_locset.
-  admit.
+  eapply find_function_ptr_translated; eauto using return_regs_lessdef, match_parent_locset.
   apply sig_preserved.
   unfold tunnel_fundef. now rewrite comp_tunnel_fundef, comp_transl.
-  admit.
+  eapply allowed_call_translated; eauto.
   econstructor; eauto using return_regs_lessdef, match_parent_locset.
 - (* Lbuiltin *)
   exploit eval_builtin_args_lessdef. eexact LS. eauto. eauto. intros (tvargs & EVA & LDA).

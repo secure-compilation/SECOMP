@@ -64,6 +64,7 @@ Lemma senv_preserved:
   Senv.equiv ge tge.
 Proof (Genv.senv_transf_partial TRANSL).
 
+
 Lemma function_ptr_translated:
   forall (b: block) (f: Csharpminor.fundef),
   Genv.find_funct_ptr ge b = Some f ->
@@ -2049,7 +2050,11 @@ Proof.
   left; econstructor; split.
   apply plus_one. eapply step_call; eauto.
   apply sig_preserved; eauto.
-  admit.
+  (* ALLOWED CALL *)
+  replace (fn_comp tfn) with (comp_of tfn) by reflexivity.
+  erewrite <- comp_transl_partial.
+  eapply Genv.allowed_call_transf_partial in ALLOWED. eauto. exact TRANSL. eauto.
+  (* END ALLOWED CALL *)
   econstructor; eauto.
   eapply match_Kcall with (cenv' := cenv); eauto.
   red; auto.

@@ -25,7 +25,7 @@ Require Import Allocation.
 Definition match_prog (p: RTL.program) (tp: LTL.program) :=
   match_program (fun _ f tf => transf_fundef f = OK tf) eq p tp.
 
-Instance comp_transf_fundef: has_comp_transl_partial transf_function.
+Instance comp_transf_function: has_comp_transl_partial transf_function.
 Proof.
   unfold transf_function, check_function.
   intros f ? H.
@@ -35,6 +35,21 @@ Proof.
   destruct eq_compartment as [e|?]; try easy.
   monadInv H.
   exact e.
+Qed.
+
+
+Instance comp_transf_fundef: has_comp_transl_partial transf_fundef.
+Proof.
+  unfold transf_fundef, transf_partial_fundef, transf_function, check_function.
+  intros f ? H.
+  destruct f.
+  - destruct type_function; try easy.
+    destruct regalloc; try easy.
+    destruct analyze; try easy.
+    destruct eq_compartment as [e|?]; try easy.
+    monadInv H. monadInv EQ.
+    exact e.
+  - now inv H.
 Qed.
 
 Lemma transf_program_match:
@@ -1508,6 +1523,17 @@ Proof.
   unfold return_regs. destruct (is_callee_save r). discriminate. auto.
 Qed.
 
+
+Lemma find_function_ptr_tailcall:
+  forall tge ros ls1 ls2,
+  ros_compatible_tailcall ros = true ->
+  find_fun_ptr tge ros (return_regs ls1 ls2) = find_fun_ptr tge ros ls2.
+Proof.
+  unfold ros_compatible_tailcall, find_fun_ptr; intros.
+  destruct ros as [r|id]; auto.
+  unfold return_regs. destruct (is_callee_save r). discriminate. auto.
+Qed.
+
 Lemma loadv_int64_split:
   forall m a v,
   Mem.loadv Mint64 m a = Some v -> Archi.splitlong = true ->
@@ -1738,7 +1764,7 @@ Qed.
 Inductive transf_function_spec (f: RTL.function) (tf: LTL.function) : Prop :=
   | transf_function_spec_intro:
       forall env an mv k e1 e2,
-      forall (COMP: RTL.fn_comp f = LTL.fn_comp tf),
+      forall (COMP: comp_of f = comp_of tf),
       wt_function f env ->
       analyze f env (pair_codes f tf) = Some an ->
       (LTL.fn_code tf)!(LTL.fn_entrypoint tf) = Some(expand_moves mv (Lbranch (RTL.fn_entrypoint f) :: k)) ->
@@ -1853,6 +1879,35 @@ Proof.
   (* two symbols *)
   rewrite symbols_preserved. rewrite Heqo.
   eapply function_ptr_translated; eauto.
+Qed.
+
+(* TODO: rename LTL.fin_fun_ptr into LTL.find_function_ptr *)
+Lemma find_function_ptr_translated:
+  forall ros rs fd ros' e e' ls vf,
+    RTL.find_function ge ros rs = Some fd ->
+    RTL.find_function_ptr ge ros rs = Some vf ->
+    add_equation_ros ros ros' e = Some e' ->
+    satisf rs ls e' ->
+    LTL.find_fun_ptr tge ros' ls = Some vf.
+Proof.
+  unfold RTL.find_function, RTL.find_function_ptr, LTL.find_fun_ptr; intros.
+  destruct ros as [r|id]; destruct ros' as [r'|id']; simpl in H1; MonadInv.
+  (* two regs *)
+  exploit add_equation_lessdef; eauto. intros LD. inv LD.
+  reflexivity.
+  rewrite <- H1 in H. simpl in H. congruence.
+  (* two symbols *)
+  rewrite symbols_preserved. rewrite Heqo.
+  reflexivity.
+Qed.
+
+Lemma allowed_call_translated:
+  forall cp vf,
+    Genv.allowed_call ge cp vf ->
+    Genv.allowed_call tge cp vf.
+Proof.
+  intros cp vf H.
+  eapply (Genv.match_genvs_allowed_calls TRANSF). eauto.
 Qed.
 
 Lemma exec_moves:
@@ -2328,10 +2383,15 @@ Proof.
   exploit find_function_translated. eauto. eauto. eapply add_equations_args_satisf; eauto.
   intros [tfd [E F]].
   assert (SIG: funsig tfd = sg). eapply sig_function_translated; eauto.
+  exploit find_function_ptr_translated. eauto. eauto. eauto. eapply add_equations_args_satisf; eauto.
+  intros G.
+  (* intros [tvf G]. *)
+  (* exploit find_function_ptr_translated; eauto. *)
   econstructor; split.
   eapply plus_left. econstructor; eauto.
   eapply star_right. eexact A1. econstructor; eauto.
-  admit. admit.
+  rewrite <- comp_transf_function; eauto.
+  eapply allowed_call_translated; eauto.
   traceEq. traceEq.
   exploit analyze_successors; eauto. simpl. left; eauto. intros [enext [U V]].
   econstructor; eauto.
@@ -2360,11 +2420,18 @@ Proof.
   exploit find_function_translated. eauto. eauto. eapply add_equations_args_satisf; eauto.
   intros [tfd [E F]].
   assert (SIG: funsig tfd = sg). eapply sig_function_translated; eauto.
+  exploit find_function_ptr_translated. eauto. eauto. eauto. eapply add_equations_args_satisf; eauto.
+  intros G.
   econstructor; split.
   eapply plus_left. econstructor; eauto.
   eapply star_right. eexact A1. econstructor; eauto.
   rewrite <- E. apply find_function_tailcall; auto.
-  admit. admit. admit. admit.
+  rewrite find_function_ptr_tailcall; eauto.
+  rewrite <- comp_transf_fundef; eauto.
+  rewrite <- comp_transf_function; eauto.
+  rewrite <- comp_transf_function; eauto.
+  rewrite <- comp_transf_function; eauto.
+  eapply allowed_call_translated; eauto.
   replace (fn_stacksize tf) with (RTL.fn_stacksize f); eauto.
   destruct (transf_function_inv _ _ FUN); auto.
   eauto. traceEq.
@@ -2391,7 +2458,7 @@ Proof.
   eapply star_trans. eexact A1.
   eapply star_left. econstructor.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
-  eapply external_call_symbols_preserved. apply senv_preserved. rewrite comp_transf_fundef in E. eauto. eauto.
+  eapply external_call_symbols_preserved. apply senv_preserved. rewrite comp_transf_function in E. eauto. eauto.
   instantiate (1 := ls2); auto.
   eapply star_right. eexact A3.
   econstructor.
@@ -2509,7 +2576,7 @@ Proof.
   eapply plus_left. constructor. eexact A. traceEq.
   econstructor; eauto.
   apply wt_regset_assign; auto. rewrite WTRES0; auto.
-Admitted.
+Qed.
 
 Lemma initial_states_simulation:
   forall st1, RTL.initial_state prog st1 ->

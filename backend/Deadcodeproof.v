@@ -422,6 +422,15 @@ Lemma function_ptr_translated:
   linkorder cu prog.
 Proof (Genv.find_funct_ptr_match TRANSF).
 
+Lemma allowed_call_translated:
+  forall cp vf,
+    Genv.allowed_call ge cp vf ->
+    Genv.allowed_call tge cp vf.
+Proof.
+  intros cp vf H.
+  eapply (Genv.match_genvs_allowed_calls TRANSF). eauto.
+Qed.
+
 Lemma sig_function_translated:
   forall rm f tf,
   transf_fundef rm f = OK tf ->
@@ -491,6 +500,21 @@ Proof.
 - rewrite symbols_preserved. destruct (Genv.find_symbol ge id); try discriminate.
   apply function_ptr_translated; auto.
 Qed.
+
+Lemma find_function_ptr_translated:
+  forall ros rs te ne fd vf,
+    eagree rs te (add_ros_need_all ros ne) ->
+    find_function ge ros rs = Some fd ->
+    find_function_ptr ge ros rs = Some vf ->
+    find_function_ptr tge ros te = Some vf.
+Proof.
+  intros. destruct ros as [r|id]; simpl in *.
+  - assert (LD: Val.lessdef rs#r te#r) by eauto with na. inv LD.
+    congruence.
+    rewrite <- H3 in H0; discriminate.
+  - rewrite symbols_preserved. eauto.
+Qed.
+
 
 (** * Semantic invariant *)
 
@@ -889,9 +913,11 @@ Ltac UseTransfer :=
 - (* call *)
   TransfInstr; UseTransfer.
   exploit find_function_translated; eauto 2 with na. intros (cu' & tfd & A & B & C).
+  exploit find_function_ptr_translated; eauto 2 with na. intros D.
   econstructor; split.
   eapply exec_Icall; eauto. eapply sig_function_translated; eauto.
-  admit. admit.
+  rewrite <- comp_transf_function; eauto.
+  eapply allowed_call_translated; eauto.
   (* change  (fn_comp tf) with (comp_of tf); now rewrite <- (comp_transl_partial _ FUN). *)
   eapply match_call_states with (cu := cu'); eauto.
   constructor; auto. eapply match_stackframes_intro with (cu := cu); eauto.
@@ -908,12 +934,13 @@ Ltac UseTransfer :=
   exploit magree_free. eauto. eauto. instantiate (1 := nlive ge stk nmem_all).
   intros; eapply nlive_dead_stack; eauto.
   intros (tm' & C & D).
+  exploit find_function_ptr_translated; eauto 2 with na. intros E.
   econstructor; split.
   eapply exec_Itailcall; eauto. eapply sig_function_translated; eauto.
   rewrite <- (comp_transl_partial _ B), COMP. now apply (comp_transl_partial _ FUN).
   change (fn_comp tf) with (comp_of tf). now rewrite <- (comp_transl_partial _ FUN).
-  admit. admit.
-  (* change  (fn_comp tf) with (comp_of tf); now rewrite <- (comp_transl_partial _ FUN). *)
+  rewrite <- comp_transf_function; eauto.
+  eapply allowed_call_translated; eauto.
   erewrite stacksize_translated by eauto. eexact C.
   eapply match_call_states with (cu := cu'); eauto 2 with na.
   eapply magree_extends; eauto. apply nlive_all.
@@ -1147,7 +1174,7 @@ Ltac UseTransfer :=
   econstructor; split.
   constructor.
   econstructor; eauto. apply mextends_agree; auto.
-Admitted.
+Qed.
 
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 ->

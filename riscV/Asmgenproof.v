@@ -799,7 +799,7 @@ Local Transparent destroyed_by_op.
   (* econstructor; eauto. *)
   (* eapply agree_sp_def; eauto. *)
   (* simpl.  *)
-  destruct (fn_comp tf =? comp_of tf')%positive eqn:Heq.
+  destruct (comp_of tf =? comp_of tf')%positive eqn:Heq.
   * left; econstructor; split.
     apply plus_one. eapply exec_step_internal.
     Simpl. rewrite <- H2; simpl; eauto.
@@ -843,7 +843,7 @@ Local Transparent destroyed_by_op.
   (* econstructor; eauto. *)
   (* econstructor; eauto. *)
   (* eapply agree_sp_def; eauto.  *)
-  destruct (fn_comp tf =? comp_of tf')%positive eqn:Heq.
+  destruct (comp_of tf =? comp_of tf')%positive eqn:Heq.
   * left; econstructor; split.
     apply plus_one. eapply exec_step_internal. eauto.
     eapply functions_transl; eauto. eapply find_instr_tail; eauto.
@@ -902,7 +902,7 @@ Local Transparent destroyed_by_op.
   { rewrite Z by (rewrite <- (ireg_of_eq _ _ EQ1); eauto with asmgen). eauto. }
   rewrite RS1X0. unfold Genv.find_comp, tge. rewrite TFIND.
   (* TODO: Clean this proof *)
-  assert (COMP': fn_comp tf = comp_of tf').
+  assert (COMP': comp_of tf = comp_of tf').
   { rewrite <- transf_function_comp with (f := f); auto.
     unfold comp_of. unfold transf_fundef in TTRANSF. unfold transf_partial_fundef in TTRANSF.
     destruct fd.
@@ -1117,7 +1117,7 @@ Local Transparent destroyed_by_op.
   { change (fn_code tf) with tfbody; unfold tfbody.
     apply exec_straight_step with rs2 m2'.
     unfold exec_instr.
-    change (fn_comp tf) with (Mach.fn_comp f).
+    change (comp_of tf) with (comp_of f).
     rewrite C. fold sp.
     rewrite <- (sp_val _ _ _ AG). rewrite chunk_of_Tptr in F. rewrite F. reflexivity.
     reflexivity.

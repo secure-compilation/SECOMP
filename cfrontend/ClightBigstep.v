@@ -169,7 +169,7 @@ with eval_funcall: compartment -> mem -> fundef -> list val -> trace -> mem -> v
       alloc_variables ge empty_env m (f.(fn_params) ++ f.(fn_vars)) e m1 ->
       list_norepet (var_names f.(fn_params) ++ var_names f.(fn_vars)) ->
       bind_parameters ge e m1 f.(fn_params) vargs m2 ->
-      exec_stmt e f.(fn_comp) (create_undef_temps f.(fn_temps)) m2 f.(fn_body) t le m3 out ->
+      exec_stmt e (comp_of f) (create_undef_temps f.(fn_temps)) m2 f.(fn_body) t le m3 out ->
       outcome_result_value out f.(fn_return) vres m3 ->
       Mem.free_list m3 (blocks_of_env ge e) = Some m4 ->
       eval_funcall c m (Internal f) vargs t m4 vres
@@ -238,7 +238,7 @@ with evalinf_funcall: mem -> fundef -> list val -> traceinf -> Prop :=
       alloc_variables ge empty_env m (f.(fn_params) ++ f.(fn_vars)) e m1 ->
       list_norepet (var_names f.(fn_params) ++ var_names f.(fn_vars)) ->
       bind_parameters ge e m1 f.(fn_params) vargs m2 ->
-      execinf_stmt e f.(fn_comp) (create_undef_temps f.(fn_temps)) m2 f.(fn_body) t ->
+      execinf_stmt e (comp_of f) (create_undef_temps f.(fn_temps)) m2 f.(fn_body) t ->
       evalinf_funcall m (Internal f) vargs t.
 
 End BIGSTEP.
@@ -303,7 +303,7 @@ Qed.
 Lemma exec_stmt_eval_funcall_steps:
   (forall e c le m s t le' m' out,
    exec_stmt ge e c le m s t le' m' out ->
-   forall f k, c = f.(fn_comp) ->
+   forall f k, c = (comp_of f) ->
    exists S,
    star step1 ge (State f s k e le m) t S
    /\ outcome_state_match e le' m' f k out S)
@@ -487,7 +487,7 @@ Qed.
 Lemma exec_stmt_steps:
    forall e c le m s t le' m' out,
    exec_stmt ge e c le m s t le' m' out ->
-   forall f k, c = f.(fn_comp) -> exists S,
+   forall f k, c = (comp_of f) -> exists S,
    star step1 ge (State f s k e le m) t S
    /\ outcome_state_match e le' m' f k out S.
 Proof.
@@ -513,7 +513,7 @@ Lemma evalinf_funcall_forever:
 Proof.
   cofix CIH_FUN.
   assert (forall e c le m s T f k,
-          c = f.(fn_comp) ->
+          c = (comp_of f) ->
           execinf_stmt ge e c le m s T ->
           forever_N step1 order ge tt (State f s k e le m) T).
   cofix CIH_STMT.
