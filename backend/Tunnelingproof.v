@@ -575,7 +575,7 @@ Proof.
   left; econstructor; split.
   eapply exec_return; eauto.
   constructor; auto.
-Admitted.
+Qed.
 
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 ->

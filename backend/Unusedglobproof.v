@@ -832,23 +832,41 @@ Proof.
 Qed.
 
 Lemma find_function_ptr_inject:
-  forall j ros rs fd trs vf,
+  forall j ros rs fd trs vf cp,
   meminj_preserves_globals j ->
   find_function ge ros rs = Some fd ->
   find_function_ptr ge ros rs = Some vf ->
+  Genv.allowed_call ge cp vf ->
   match ros with inl r => regset_inject j rs trs | inr id => kept id end ->
-  find_function_ptr tge ros trs = Some vf.
+  exists tvf,
+    find_function_ptr tge ros trs = Some tvf /\
+    Genv.allowed_call tge cp tvf.
 Proof.
   intros. destruct ros as [r|id]; simpl in *.
-  - inv H1.
-    specialize (H2 r).
-    inv H2; eauto.
-    + admit.
-    + unfold Genv.find_funct in H0. rewrite <- H3 in H0. congruence.
+  - exploit Genv.find_funct_inv; eauto. intros (b & R). rewrite R in H0.
+    rewrite Genv.find_funct_find_funct_ptr in H0.
+    specialize (H3 r). rewrite R in H3. inv H3.
+    rewrite Genv.find_funct_ptr_iff in H0.
+    exploit defs_inject; eauto. intros (A & B & C).
+    rewrite <- Genv.find_funct_ptr_iff in A.
+    eexists; split; eauto.
+    unfold Genv.allowed_call in *.
+    exploit Genv.find_funct_ptr_inversion. exact A. intros (id & D).
+    admit.
+    (* destruct H2. *)
+    (* + left. *)
+
+    (* inv H1. *)
+    (* specialize (H3 r). *)
+    (* inv H3; eauto. *)
+    (* + admit. *)
+    (* + admit. *)
+    (* + admit. *)
+    (* + admit. *)
+    (* + eexists; split; eauto. *)
+    (* + unfold Genv.find_funct in H0. rewrite <- H3 in H0. congruence. *)
   - auto.
-
-
-
+Admitted.
 
 Lemma allowed_call_translated:
   forall cp vf,
@@ -986,7 +1004,22 @@ Proof.
   destruct ros as [r|id]. eauto. apply KEPT. red. econstructor; econstructor; split; eauto. simpl; auto.
   intros (A & B).
   econstructor; split. eapply exec_Icall; eauto.
+  unfold find_function, find_function_ptr in *.
+  instantiate (1 := match ros with | inl r => trs # r
+                              | inr symb => match Genv.find_symbol tge symb with
+                                           | Some b => (Vptr b Ptrofs.zero)
+                                           | None => Vundef end end).
+  destruct ros. reflexivity. destruct (Genv.find_symbol tge i). reflexivity. discriminate.
+  destruct ros. (* unfold Genv.allowed_call. unfold Genv.allowed_cross_call. *)
+  unfold find_function, find_function_ptr, Genv.find_funct in *.
+  specialize (REGINJ r).
+  destruct (trs # r) eqn:?;
+           inv REGINJ; try discriminate.
+  rewrite <- H1 in H0.
+  destruct (Ptrofs.eq_dec ofs1 Ptrofs.zero); try discriminate.
+  unfold Genv.find_funct_ptr in H0.
   admit. admit.
+  admit.
   econstructor; eauto.
   econstructor; eauto.
   change (Mem.valid_block m sp0). eapply Mem.valid_block_inject_1; eauto.

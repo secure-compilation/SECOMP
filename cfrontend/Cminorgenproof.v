@@ -2052,8 +2052,8 @@ Proof.
   apply sig_preserved; eauto.
   (* ALLOWED CALL *)
   replace (fn_comp tfn) with (comp_of tfn) by reflexivity.
-  erewrite <- comp_transl_partial.
-  eapply Genv.allowed_call_transf_partial in ALLOWED. eauto. exact TRANSL. eauto.
+  erewrite <- (comp_transl_partial _ TRF).
+  eapply (Genv.allowed_call_transf_partial TRANSL) in ALLOWED. eauto.
   (* END ALLOWED CALL *)
   econstructor; eauto.
   eapply match_Kcall with (cenv' := cenv); eauto.
@@ -2242,7 +2242,7 @@ Opaque PTree.set.
   apply plus_one. econstructor; eauto.
   unfold set_optvar. destruct optid; simpl; econstructor; eauto.
   eapply match_callstack_set_temp; eauto.
-Admitted.
+Qed.
 
 Lemma match_globalenvs_init:
   forall m,
