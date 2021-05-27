@@ -1077,27 +1077,18 @@ Local Transparent destroyed_by_op.
     eapply transf_function_no_overflow; eauto.
   exploit make_epilogue_correct; eauto. intros (rs1 & m1 & U & V & W & X & Y & Z).
   exploit exec_straight_steps_2; eauto using functions_transl.
-  exploit functions_transl; eauto. intro FN.
   intros (ofs' & P & Q).
-  (* assert (exists cp, Genv.find_comp tge (parent_ra s) = Some cp) as [cp CPRA]. *)
-  (* { destruct s as [| []]. *)
-  (*   - exists default_compartment. simpl; unfold Vnullptr. *)
-  (*     destruct Archi.ptr64; eauto. *)
-  (*   - eexists. simpl. inversion STACKS; subst. erewrite functions_transl; eauto. *)
-  (*     admit. *)
-  (* } *)
   left; econstructor; split.
   (* execution *)
-  (* destruct (fn_comp tf =? cp)%positive eqn:CPFNRA. *)
   eapply plus_right'. eapply exec_straight_exec; eauto.
   econstructor. eexact P. eapply functions_transl; eauto. eapply find_instr_tail. eexact Q.
   simpl. reflexivity.
   unfold next_stack. Simpl.
-  rewrite X. admit.
-  Simpl. admit.
+  rewrite X; admit.
+  Simpl; admit.
   eapply functions_transl; eauto.
   right; left; auto.
-  simpl. rewrite FN. reflexivity.
+  simpl. rewrite functions_transl with (f := f) (tf := tf); eauto.
   traceEq.
   (* match states *)
   econstructor; eauto.
