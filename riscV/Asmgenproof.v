@@ -987,9 +987,9 @@ Local Transparent destroyed_by_op.
   eapply find_instr_tail; eauto.
   erewrite <- sp_val by eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
+  rewrite FUN in FIND; inv FIND.
   rewrite <- (comp_transl_partial _ H3).
-  admit.
-  eauto.
+  eapply external_call_symbols_preserved; eauto. apply senv_preserved. eauto.
   econstructor; eauto.
   instantiate (2 := tf); instantiate (1 := x).
   unfold nextinstr. rewrite Pregmap.gss.
@@ -1006,17 +1006,16 @@ Local Transparent destroyed_by_op.
   assert (f0 = f) by congruence. subst f0.
   inv AT. monadInv H4.
   exploit find_label_goto_label; eauto. intros [tc' [rs' [GOTO [AT2 INV]]]].
+  exploit functions_transl; eauto. intro FN.
   left. inversion AT2; subst. exists (State s' rs' m'); split.
   apply plus_one. econstructor; eauto.
-  eapply functions_transl; eauto.
   eapply find_instr_tail; eauto.
   simpl; eauto.
   unfold next_stack. unfold Genv.find_comp. rewrite <- H4.
   eapply functions_transl in H6; eauto. rewrite H6.
   rewrite Pos.eqb_refl. reflexivity.
-  eapply functions_transl; eauto.
-  left; auto.
-  admit.
+  right; left; auto.
+  simpl. rewrite FN. reflexivity.
   econstructor; eauto.
   eapply agree_exten; eauto with asmgen.
   congruence.
@@ -1078,6 +1077,7 @@ Local Transparent destroyed_by_op.
     eapply transf_function_no_overflow; eauto.
   exploit make_epilogue_correct; eauto. intros (rs1 & m1 & U & V & W & X & Y & Z).
   exploit exec_straight_steps_2; eauto using functions_transl.
+  exploit functions_transl; eauto. intro FN.
   intros (ofs' & P & Q).
   (* assert (exists cp, Genv.find_comp tge (parent_ra s) = Some cp) as [cp CPRA]. *)
   (* { destruct s as [| []]. *)
@@ -1096,8 +1096,8 @@ Local Transparent destroyed_by_op.
   rewrite X. admit.
   Simpl. admit.
   eapply functions_transl; eauto.
-  left; auto.
-  admit.
+  right; left; auto.
+  simpl. rewrite FN. reflexivity.
   traceEq.
   (* match states *)
   econstructor; eauto.
