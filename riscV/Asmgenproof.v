@@ -77,6 +77,17 @@ Proof.
   monadInv B. rewrite H0 in EQ; inv EQ; auto.
 Qed.
 
+Lemma allowed_call_translated:
+  forall cp vf,
+    Genv.allowed_call ge cp vf ->
+    Genv.allowed_call tge cp vf.
+Proof.
+  intros cp vf H.
+  eapply (Genv.match_genvs_allowed_calls TRANSF). eauto.
+Qed.
+
+
+
 (** * Properties of control flow *)
 
 Lemma transf_function_no_overflow:
@@ -810,7 +821,8 @@ Local Transparent destroyed_by_op.
     (* Simpl. rewrite <- H2. simpl. reflexivity. *)
     Simpl. eauto.
     eassumption.
-    admit.
+    rewrite <- (comp_transl_partial _ H4).
+    eapply allowed_call_translated; eauto.
     econstructor; eauto.
     econstructor; eauto.
     eapply agree_sp_def; eauto.
@@ -826,13 +838,13 @@ Local Transparent destroyed_by_op.
     Simpl. rewrite <- H2. simpl. reflexivity.
     Simpl. eauto.
     eassumption.
-    admit.
+    rewrite <- (comp_transl_partial _ H4).
+    eapply allowed_call_translated; eauto.
     econstructor; eauto.
     econstructor; eauto.
     eapply agree_sp_def; eauto.
     simpl. eapply agree_exten; eauto. intros. Simpl.
     Simpl. rewrite <- H2. auto.
-    (* unfold call_comp; simpl. rewrite FIND. reflexivity. *)
 + (* Direct call *)
   generalize (code_tail_next_int _ _ _ _ NOOV H6). intro CT1.
   assert (TCA: transl_code_at_pc ge (Vptr fb (Ptrofs.add ofs Ptrofs.one)) fb f c false tf x).
@@ -852,7 +864,8 @@ Local Transparent destroyed_by_op.
       unfold Genv.find_comp. rewrite TFIND.
       rewrite Heq. reflexivity. }
     Simpl. eassumption.
-    admit.
+    rewrite <- (comp_transl_partial _ H4).
+    eapply allowed_call_translated; eauto.
     econstructor; eauto.
     econstructor; eauto.
     eapply agree_sp_def; eauto.
@@ -868,13 +881,13 @@ Local Transparent destroyed_by_op.
       rewrite Heq.
       Simpl. rewrite <- H2. simpl. reflexivity. }
     Simpl. eassumption.
-    admit.
+    rewrite <- (comp_transl_partial _ H4).
+    eapply allowed_call_translated; eauto.
     econstructor; eauto.
     econstructor; eauto.
     eapply agree_sp_def; eauto.
     simpl. eapply agree_exten; eauto. intros. Simpl.
     Simpl. rewrite <- H2. auto.
-    (* unfold call_comp; simpl. rewrite FIND. reflexivity. *)
 
 - (* Mtailcall *)
   assert (f0 = f) by congruence.  subst f0.
@@ -913,7 +926,8 @@ Local Transparent destroyed_by_op.
   Simpl.
   rewrite Z by (rewrite <- (ireg_of_eq _ _ EQ1); eauto with asmgen); eauto.
   eassumption.
-  admit.
+  rewrite <- (comp_transl_partial _ H6).
+  eapply allowed_call_translated; eauto.
   traceEq.
   (* match states *)
   econstructor; eauto.
@@ -952,7 +966,8 @@ Local Transparent destroyed_by_op.
   reflexivity.
   Simpl. unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H. eauto.
   eassumption.
-  admit.
+  rewrite <- (comp_transl_partial _ H6).
+  eapply allowed_call_translated; eauto.
   traceEq.
   (* match states *)
   econstructor; eauto.
@@ -972,6 +987,7 @@ Local Transparent destroyed_by_op.
   eapply find_instr_tail; eauto.
   erewrite <- sp_val by eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
+  rewrite <- (comp_transl_partial _ H3).
   admit.
   eauto.
   econstructor; eauto.
@@ -1047,8 +1063,9 @@ Local Transparent destroyed_by_op.
   eexact A.
   unfold next_stack. rewrite Hptr. simpl. rewrite FN.
   rewrite Pos.eqb_refl. reflexivity. eauto. eauto.
-  left; auto.
-  admit.
+  right; left; auto.
+  simpl. rewrite FN. reflexivity.
+
   econstructor; eauto.
   eapply agree_undef_regs; eauto.
   simpl. intros. rewrite C; auto with asmgen. Simpl.
