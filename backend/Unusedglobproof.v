@@ -849,32 +849,37 @@ Proof.
     rewrite Genv.find_funct_ptr_iff in H0.
     exploit defs_inject; eauto. intros (A & B & C).
     rewrite <- Genv.find_funct_ptr_iff in A.
-    eexists; split; eauto.
-    unfold Genv.allowed_call in *.
-    exploit Genv.find_funct_ptr_inversion. exact A. intros (id & D).
-    admit.
-    (* destruct H2. *)
-    (* + left. *)
-
-    (* inv H1. *)
-    (* specialize (H3 r). *)
-    (* inv H3; eauto. *)
-    (* + admit. *)
-    (* + admit. *)
-    (* + admit. *)
-    (* + admit. *)
-    (* + eexists; split; eauto. *)
-    (* + unfold Genv.find_funct in H0. rewrite <- H3 in H0. congruence. *)
+    rewrite <- Genv.find_funct_ptr_iff in H0.
+    inv H1.
+    exists (Vptr b2 (Ptrofs.add Ptrofs.zero (Ptrofs.repr 0))).
+    split; eauto.
+    rewrite R in H2.
+    destruct H2 as [H2 | [H2 | H2]].
+    + left. rewrite H2.
+      simpl. rewrite A. rewrite H0. reflexivity.
+    + right; left. rewrite H2.
+      simpl. rewrite A. rewrite H0. reflexivity.
+    + right; right.
+      unfold Genv.allowed_cross_call in *.
+      destruct H2 as [i [cp' [H21 [H22 [H23 H24]]]]].
+      exists i. exists cp'.
+      repeat split.
+      * admit.
+      * rewrite <- H22.
+        simpl. rewrite A. rewrite H0. reflexivity.
+      * admit. (* easy: can prove the policy is the same using TRANSF *)
+      * admit. (* easy: can prove the policy is the same using TRANSF *)
   - auto.
+    admit.
 Admitted.
 
-Lemma allowed_call_translated:
-  forall cp vf,
-    Genv.allowed_call ge cp vf ->
-    Genv.allowed_call tge cp vf.
-Proof.
-  admit.
-Admitted.
+(* Lemma allowed_call_translated: *)
+(*   forall cp vf, *)
+(*     Genv.allowed_call ge cp vf -> *)
+(*     Genv.allowed_call tge cp vf. *)
+(* Proof. *)
+(*   admit. *)
+(* Admitted. *)
 
 Lemma eval_builtin_arg_inject:
   forall rs sp m j rs' sp' m' a v,
@@ -1003,23 +1008,11 @@ Proof.
   eapply match_stacks_preserves_globals; eauto. eauto.
   destruct ros as [r|id]. eauto. apply KEPT. red. econstructor; econstructor; split; eauto. simpl; auto.
   intros (A & B).
+  exploit find_function_ptr_inject.
+  eapply match_stacks_preserves_globals; eauto. eauto. apply FUNPTR. eapply ALLOWED.
+  destruct ros as [r|id]. eauto. apply KEPT. red. econstructor; econstructor; split; eauto. simpl; auto.
+  intros (tvf & C & D).
   econstructor; split. eapply exec_Icall; eauto.
-  unfold find_function, find_function_ptr in *.
-  instantiate (1 := match ros with | inl r => trs # r
-                              | inr symb => match Genv.find_symbol tge symb with
-                                           | Some b => (Vptr b Ptrofs.zero)
-                                           | None => Vundef end end).
-  destruct ros. reflexivity. destruct (Genv.find_symbol tge i). reflexivity. discriminate.
-  destruct ros. (* unfold Genv.allowed_call. unfold Genv.allowed_cross_call. *)
-  unfold find_function, find_function_ptr, Genv.find_funct in *.
-  specialize (REGINJ r).
-  destruct (trs # r) eqn:?;
-           inv REGINJ; try discriminate.
-  rewrite <- H1 in H0.
-  destruct (Ptrofs.eq_dec ofs1 Ptrofs.zero); try discriminate.
-  unfold Genv.find_funct_ptr in H0.
-  admit. admit.
-  admit.
   econstructor; eauto.
   econstructor; eauto.
   change (Mem.valid_block m sp0). eapply Mem.valid_block_inject_1; eauto.
@@ -1032,9 +1025,12 @@ Proof.
   destruct ros as [r|id]. eauto. apply KEPT. red. econstructor; econstructor; split; eauto. simpl; auto.
   intros (A & B).
   exploit Mem.free_parallel_inject; eauto. rewrite ! Z.add_0_r. intros (tm' & C & D).
+  exploit find_function_ptr_inject.
+  eapply match_stacks_preserves_globals; eauto. eauto. apply FUNPTR. eapply ALLOWED'.
+  destruct ros as [r|id]. eauto. apply KEPT. red. econstructor; econstructor; split; eauto. simpl; auto.
+  intros (tvf & E & F).
   econstructor; split.
   eapply exec_Itailcall; eauto.
-  admit. admit.
   econstructor; eauto.
   apply match_stacks_bound with stk tsp; auto.
   apply Plt_Ple.
@@ -1121,7 +1117,7 @@ Proof.
   inv STACKS. econstructor; split.
   eapply exec_return.
   econstructor; eauto. apply set_reg_inject; auto.
-Admitted.
+Qed.
 
 (** Relating initial memory states *)
 
