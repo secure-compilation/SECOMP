@@ -578,7 +578,7 @@ Proof.
   unfold next_stack; rewrite <- H9; simpl; rewrite FN.
   replace (fn_comp tf) with (comp_of (Internal tf)) by reflexivity.
   rewrite Pos.eqb_refl; reflexivity.
-  left; auto.
+  right; left; auto.
   simpl; rewrite FN; eauto.
   traceEq.
   econstructor; eauto.
@@ -618,7 +618,7 @@ Proof.
   unfold next_stack; rewrite <- H9; simpl; rewrite FN.
   replace (fn_comp tf) with (comp_of (Internal tf)) by reflexivity.
   rewrite Pos.eqb_refl; reflexivity.
-  left; auto.
+  right; left; auto.
   simpl; rewrite FN; auto.
   econstructor; eauto.
   apply agree_exten with rs2; auto with asmgen.
@@ -637,7 +637,7 @@ Proof.
   unfold next_stack; rewrite <- H11; simpl; rewrite FN.
   replace (fn_comp tf) with (comp_of (Internal tf)) by reflexivity.
   rewrite Pos.eqb_refl; reflexivity.
-  left; auto.
+  right; left; auto.
   simpl; rewrite FN; auto.
   traceEq.
   econstructor; eauto.

@@ -1724,7 +1724,9 @@ Qed.
   (*   (Genv.genv_defs ge) ! i = Some (Gfun (External a)). *)
 
   Definition allowed_call (ge: t) (cp: compartment) (vf: val) :=
-    Some cp = find_comp ge vf \/ allowed_cross_call ge cp vf.
+    Some default_compartment = find_comp ge vf \/
+    Some cp = find_comp ge vf \/
+    allowed_cross_call ge cp vf.
 
   Definition allowed_call_b (ge: t) (cp: compartment) (vf: val): bool.
     Admitted.
@@ -1732,7 +1734,6 @@ Qed.
   Lemma allowed_call_reflect: forall ge cp vf,
       allowed_call ge cp vf <-> allowed_call_b ge cp vf = true.
   Proof.
-
   Admitted.
 
 End GENV.
@@ -1922,7 +1923,7 @@ Lemma match_genvs_allowed_calls:
 Proof.
   intros cp vf.
   unfold allowed_call.
-  intros [H1 | H2].
+  intros [H1 | [H1 | H1]].
   - left. rewrite H1.
     unfold find_comp. destruct vf; auto.
     destruct (find_funct_ptr (globalenv p) b) eqn:EQ; auto.
@@ -1930,9 +1931,16 @@ Proof.
     rewrite H.
     erewrite match_fundef_comp; eauto.
     unfold find_comp in H1. rewrite EQ in H1. congruence.
-  - right.
+  - right; left. rewrite H1.
+    unfold find_comp. destruct vf; auto.
+    destruct (find_funct_ptr (globalenv p) b) eqn:EQ; auto.
+    apply find_funct_ptr_match in EQ as [? [? [? [? ?]]]].
+    rewrite H.
+    erewrite match_fundef_comp; eauto.
+    unfold find_comp in H1. rewrite EQ in H1. congruence.
+  - right; right.
     unfold allowed_cross_call in *. destruct vf; eauto.
-    destruct H2 as [i0 [cp' [? [? [? ?]]]]].
+    destruct H1 as [i0 [cp' [? [? [? ?]]]]].
     exists i0; exists cp'; split; [| split; [| split]].
     + apply find_invert_symbol. apply invert_find_symbol in H.
       rewrite find_symbol_match; eauto.

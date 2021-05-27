@@ -72,9 +72,11 @@ Proof.
   rewrite <- Genv.find_funct_ptr_iff in Q.
   econstructor; eauto. 
   simpl. red. rewrite H1. constructor; auto.
-  admit.
-Admitted.
-
+  unfold Genv.allowed_call. left.
+  simpl. unfold ge. setoid_rewrite Q.
+  unfold comp_of. unfold has_comp_fundef. unfold comp_of.
+  reflexivity.
+Qed.
 
 Corollary eval_helper_1:
   forall bf le id name sg arg1 varg1 vres,

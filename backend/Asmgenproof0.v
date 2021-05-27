@@ -943,7 +943,7 @@ Proof.
   replace (comp_of (Internal fn)) with (fn_comp fn) by reflexivity.
   rewrite Pos.eqb_refl. reflexivity.
   rewrite H0. rewrite H2. reflexivity.
-  left; auto.
+  right; left; auto.
   simpl; rewrite H3. reflexivity.
   eapply plus_left'.
   econstructor; eauto.
@@ -952,7 +952,7 @@ Proof.
   replace (comp_of (Internal fn)) with (fn_comp fn) by reflexivity.
   rewrite Pos.eqb_refl. reflexivity.
   rewrite H0. rewrite H3. reflexivity.
-  left; auto.
+  right; left; auto.
   simpl; rewrite H4. reflexivity.
   apply IHexec_straight with b (Ptrofs.add ofs Ptrofs.one).
   auto. rewrite H0. rewrite H3. reflexivity.
