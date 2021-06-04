@@ -1960,7 +1960,7 @@ end.
 
 Lemma sem_bind_parameters_sound : forall w e c m l lv m',
   sem_bind_parameters w e c m l lv = Some m' ->
-  bind_parameters ge e m l lv m'.
+  bind_parameters ge e c m l lv m'.
 Proof.
    intros; functional induction (sem_bind_parameters w e c m l lv); try discriminate.
    inversion H; constructor; auto.
@@ -1968,7 +1968,7 @@ Proof.
 Qed.
 
 Lemma sem_bind_parameters_complete : forall w e c m l lv m',
-  bind_parameters ge e m l lv m' ->
+  bind_parameters ge e c m l lv m' ->
   sem_bind_parameters w e c m l lv = Some m'.
 Proof.
    induction 1; simpl; auto.
@@ -2099,7 +2099,7 @@ Definition do_step (w: world) (s: state) : list transition :=
   | Callstate (Internal f) vargs k m =>
       check (list_norepet_dec ident_eq (var_names (fn_params f) ++ var_names (fn_vars f)));
       let (e,m1) := do_alloc_variables empty_env m (f.(fn_params) ++ f.(fn_vars)) in
-      do m2 <- sem_bind_parameters w e m1 f.(fn_params) vargs;
+      do m2 <- sem_bind_parameters w e (comp_of f) m1 f.(fn_params) vargs;
       ret "step_internal_function" (State f f.(fn_body) k e m2)
   | Callstate (External ef _ _ _) vargs k m =>
       match do_external ef w (call_comp k) vargs m with
@@ -2265,7 +2265,7 @@ Proof with (unfold ret; eauto with coqlib).
 
   (* Call step *)
   rewrite pred_dec_true; auto. rewrite (do_alloc_variables_complete _ _ _ _ _ H1).
-  rewrite (sem_bind_parameters_complete _ _ _ _ _ _ H2)...
+  rewrite (sem_bind_parameters_complete _ _ _ _ _ _ _ H2)...
   exploit do_ef_external_complete; eauto. intro EQ; rewrite EQ. auto with coqlib.
 Qed.
 

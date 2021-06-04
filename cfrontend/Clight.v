@@ -255,35 +255,35 @@ Variable ge: genv.
   and memory state.  [e2] and [m2] are the final local environment
   and memory state. *)
 
-Inductive alloc_variables: env -> mem ->
+Inductive alloc_variables: env -> compartment -> mem ->
                            list (ident * type) ->
                            env -> mem -> Prop :=
   | alloc_variables_nil:
-      forall e m,
-      alloc_variables e m nil e m
+      forall e cp m,
+      alloc_variables e cp m nil e m
   | alloc_variables_cons:
-      forall e m id ty vars m1 b1 m2 e2,
-      Mem.alloc m default_compartment 0 (sizeof ge ty) = (m1, b1) ->
-      alloc_variables (PTree.set id (b1, ty) e) m1 vars e2 m2 ->
-      alloc_variables e m ((id, ty) :: vars) e2 m2.
+      forall e cp m id ty vars m1 b1 m2 e2,
+      Mem.alloc m cp 0 (sizeof ge ty) = (m1, b1) ->
+      alloc_variables (PTree.set id (b1, ty) e) cp m1 vars e2 m2 ->
+      alloc_variables e cp m ((id, ty) :: vars) e2 m2.
 
 (** Initialization of local variables that are parameters to a function.
   [bind_parameters e m1 params args m2] stores the values [args]
   in the memory blocks corresponding to the variables [params].
   [m1] is the initial memory state and [m2] the final memory state. *)
 
-Inductive bind_parameters (e: env):
+Inductive bind_parameters (e: env) (cp: compartment):
                            mem -> list (ident * type) -> list val ->
                            mem -> Prop :=
   | bind_parameters_nil:
       forall m,
-      bind_parameters e m nil nil m
+      bind_parameters e cp m nil nil m
   | bind_parameters_cons:
-      forall cp m id ty params v1 vl b m1 m2,
+      forall m id ty params v1 vl b m1 m2,
       PTree.get id e = Some(b, ty) ->
       assign_loc ge ty cp m b Ptrofs.zero v1 m1 ->
-      bind_parameters e m1 params vl m2 ->
-      bind_parameters e m ((id, ty) :: params) (v1 :: vl) m2.
+      bind_parameters e cp m1 params vl m2 ->
+      bind_parameters e cp m ((id, ty) :: params) (v1 :: vl) m2.
 
 (** Initialization of temporary variables *)
 
@@ -706,8 +706,8 @@ End SEMANTICS.
 Inductive function_entry1 (ge: genv) (f: function) (vargs: list val) (m: mem) (e: env) (le: temp_env) (m': mem) : Prop :=
   | function_entry1_intro: forall m1,
       list_norepet (var_names f.(fn_params) ++ var_names f.(fn_vars)) ->
-      alloc_variables ge empty_env m (f.(fn_params) ++ f.(fn_vars)) e m1 ->
-      bind_parameters ge e m1 f.(fn_params) vargs m' ->
+      alloc_variables ge empty_env (comp_of f) m (f.(fn_params) ++ f.(fn_vars)) e m1 ->
+      bind_parameters ge e (comp_of f) m1 f.(fn_params) vargs m' ->
       le = create_undef_temps f.(fn_temps) ->
       function_entry1 ge f vargs m e le m'.
 
@@ -720,7 +720,7 @@ Inductive function_entry2 (ge: genv)  (f: function) (vargs: list val) (m: mem) (
       list_norepet (var_names f.(fn_vars)) ->
       list_norepet (var_names f.(fn_params)) ->
       list_disjoint (var_names f.(fn_params)) (var_names f.(fn_temps)) ->
-      alloc_variables ge empty_env m f.(fn_vars) e m' ->
+      alloc_variables ge empty_env (comp_of f) m f.(fn_vars) e m' ->
       bind_parameter_temps f.(fn_params) vargs (create_undef_temps f.(fn_temps)) = Some le ->
       function_entry2 ge f vargs m e le m'.
 

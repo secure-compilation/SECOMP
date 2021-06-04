@@ -64,6 +64,7 @@ Fixpoint simple (a: expr) : Prop :=
 Section SIMPLE_EXPRS.
 
 Variable e: env.
+Variable cp: compartment.
 Variable m: mem.
 
 Inductive eval_simple_lvalue: expr -> block -> ptrofs -> Prop :=
@@ -94,7 +95,7 @@ with eval_simple_rvalue: expr -> val -> Prop :=
   | esr_rvalof: forall b ofs l ty v,
       eval_simple_lvalue l b ofs ->
       ty = typeof l ->
-      deref_loc ge ty m b ofs E0 v ->
+      deref_loc ge ty cp m b ofs E0 v ->
       eval_simple_rvalue (Evalof l ty) v
   | esr_addrof: forall b ofs l ty,
       eval_simple_lvalue l b ofs ->
@@ -151,11 +152,11 @@ End SIMPLE_EXPRS.
   some value (with the transition semantics from module [Csem]),
   then it evaluates to this value (with the big-step semantics above). *)
 
-Definition compat_eval (k: kind) (e: env) (a a': expr) (m: mem) : Prop :=
+Definition compat_eval (k: kind) (e: env) (cp: compartment) (a a': expr) (m: mem) : Prop :=
   typeof a = typeof a' /\
   match k with
-  | LV => forall b ofs, eval_simple_lvalue e m a' b ofs -> eval_simple_lvalue e m a b ofs
-  | RV => forall v, eval_simple_rvalue e m a' v -> eval_simple_rvalue e m a v
+  | LV => forall b ofs, eval_simple_lvalue e cp m a' b ofs -> eval_simple_lvalue e cp m a b ofs
+  | RV => forall v, eval_simple_rvalue e cp m a' v -> eval_simple_rvalue e cp m a v
   end.
 
 Lemma lred_simple:
@@ -165,8 +166,8 @@ Proof.
 Qed.
 
 Lemma lred_compat:
-  forall e l m l' m', lred ge e l m l' m' ->
-  m = m' /\ compat_eval LV e l l' m.
+  forall e cp l m l' m', lred ge e l m l' m' ->
+  m = m' /\ compat_eval LV e cp l l' m.
 Proof.
   induction 1; simpl; split; auto; split; auto; intros bx ofsx EV; inv EV.
   apply esl_var_local; auto.
@@ -185,7 +186,7 @@ Qed.
 Lemma rred_compat:
   forall e cp r m r' m', rred ge cp r m E0 r' m' ->
   simple r ->
-  m = m' /\ compat_eval RV e r r' m.
+  m = m' /\ compat_eval RV e cp r r' m.
 Proof.
   intros until m'; intros RED SIMP. inv RED; simpl in SIMP; try contradiction; split; auto; split; auto; intros vx EV.
   inv EV. econstructor. constructor. auto. auto.
@@ -205,10 +206,10 @@ Proof.
 Qed.
 
 Lemma compat_eval_context:
-  forall e a a' m from to C,
+  forall e cp a a' m from to C,
   context from to C ->
-  compat_eval from e a a' m ->
-  compat_eval to e (C a) (C a') m.
+  compat_eval from e cp a a' m ->
+  compat_eval to e cp (C a) (C a') m.
 Proof.
   induction 1; intros CE; auto;
   try (generalize (IHcontext CE); intros [TY EV]; red; split; simpl; auto; intros).
@@ -259,7 +260,7 @@ Lemma compat_eval_steps_aux f r e m r' m' s2 :
   estep pol ge (ExprState f r Kstop e m) nil s2 ->
   exists r1,
     s2 = ExprState f r1 Kstop e m /\
-    compat_eval RV e r r1 m /\ simple r1.
+    compat_eval RV e (comp_of f) r r1 m /\ simple r1.
 Proof.
   intros.
   inv H1.
@@ -286,7 +287,7 @@ Lemma compat_eval_steps:
   forall f r e m  r' m',
   star (step pol) ge (ExprState f r Kstop e m) E0 (ExprState f r' Kstop e m') ->
   simple r ->
-  m' = m /\ compat_eval RV e r r' m.
+  m' = m /\ compat_eval RV e (comp_of f) r r' m.
 Proof.
   intros.
   remember (ExprState f r Kstop e m) as S1.
@@ -311,7 +312,7 @@ Theorem eval_simple_steps:
   forall f r e m v ty m',
   star (step pol) ge (ExprState f r Kstop e m) E0 (ExprState f (Eval v ty) Kstop e m') ->
   simple r ->
-  m' = m /\ ty = typeof r /\ eval_simple_rvalue e m r v.
+  m' = m /\ ty = typeof r /\ eval_simple_rvalue e (comp_of f) m r v.
 Proof.
   intros. exploit compat_eval_steps; eauto. intros [A [B C]].
   intuition. apply C. constructor.
@@ -369,14 +370,14 @@ Qed.
 (** Soundness of [constval] with respect to the big-step semantics *)
 
 Lemma constval_rvalue:
-  forall m a v,
-  eval_simple_rvalue empty_env m a v ->
+  forall cp m a v,
+  eval_simple_rvalue empty_env cp m a v ->
   forall v',
   constval ge a = OK v' ->
   Val.inject inj v' v
 with constval_lvalue:
-  forall m a b ofs,
-  eval_simple_lvalue empty_env m a b ofs ->
+  forall cp m a b ofs,
+  eval_simple_lvalue empty_env cp m a b ofs ->
   forall v',
   constval ge a = OK v' ->
   Val.inject inj v' (Vptr b ofs).
