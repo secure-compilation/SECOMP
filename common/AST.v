@@ -369,17 +369,139 @@ Instance has_comp_globvar V : has_comp (globvar V) := @gvar_comp _.
 (** Policies *)
 Module Policy.
 
+  (* Record t: Type := mkpolicy { *)
+  (*   policy_export: compartment -> list ident; (* The list of exported functions *) *)
+  (*   policy_import: compartment -> list (compartment * ident); (* The list of imported functions and their compartment *) *)
+  (* }. *)
+
   Record t: Type := mkpolicy {
-    policy_export: compartment -> list ident; (* The list of exported functions *)
-    policy_import: compartment -> list (compartment * ident); (* The list of imported functions and their compartment *)
+    policy_export: PTree.t (list ident);
+    policy_import: PTree.t (list (compartment * ident))
   }.
 
-  Definition empty_pol: t := mkpolicy (fun C => nil) (fun C => nil).
 
-  Definition eqb: t -> t -> bool.
-  Admitted.
-  Lemma eq_eqb: forall pol pol', pol = pol' <-> eqb pol pol' = true.
-  Admitted.
+  Definition empty_pol: t := mkpolicy (PTree.empty (list ident)) (PTree.empty (list (compartment * ident))).
+  (* (fun C => nil) (fun C => nil). *)
+
+  Definition list_id_eq: forall (x y: list ident),
+      {x = y} + {x <> y}.
+  Proof.
+    intros x y.
+    decide equality.
+    apply Pos.eq_dec.
+  Qed.
+
+
+  Definition list_cpt_id_eq: forall (x y: list (compartment * ident)),
+      {x = y} + {x <> y}.
+  Proof.
+    intros x y.
+    decide equality.
+    decide equality.
+    apply Pos.eq_dec.
+    apply Pos.eq_dec.
+  Qed.
+
+  Definition eqb (t1 t2: t): bool :=
+    PTree.beq list_id_eq t1.(policy_export) t2.(policy_export) &&
+    PTree.beq list_cpt_id_eq t1.(policy_import) t2.(policy_import).
+
+  Lemma eqb_refl: forall pol, eqb pol pol = true.
+  Proof.
+    intros pol.
+    unfold eqb.
+    assert (PTree.beq (fun x y : list ident => list_id_eq x y) (policy_export pol) (policy_export pol) = true).
+    rewrite PTree.beq_correct.
+    intros x. destruct ((policy_export pol) ! x); auto.
+    destruct (list_id_eq l l); auto.
+    rewrite H. simpl.
+    rewrite PTree.beq_correct.
+    intros x. destruct ((policy_import pol) ! x); auto.
+    destruct (list_cpt_id_eq l l); auto.
+  Qed.
+
+  Lemma eqb_comm: forall pol pol', eqb pol pol' = true -> eqb pol' pol = true.
+  Proof.
+    intros pol pol' H.
+    unfold eqb in *.
+    apply andb_prop in H as [H1 H2].
+    assert (H1': PTree.beq (fun x y : list ident => list_id_eq x y) (policy_export pol') (policy_export pol) = true).
+    rewrite PTree.beq_correct. rewrite PTree.beq_correct in H1.
+    intros x. specialize (H1 x). destruct ((policy_export pol') ! x); auto.
+    destruct ((policy_export pol) ! x); auto.
+    destruct (list_id_eq l0 l); subst.
+    destruct (list_id_eq l l); auto.
+    destruct (list_id_eq l l0); auto.
+    assert (H2': PTree.beq (fun x y => list_cpt_id_eq x y) (policy_import pol') (policy_import pol) = true).
+    rewrite PTree.beq_correct. rewrite PTree.beq_correct in H2.
+    intros x. specialize (H2 x). destruct ((policy_import pol') ! x); auto.
+    destruct ((policy_import pol) ! x); auto.
+    destruct (list_cpt_id_eq l0 l); subst.
+    destruct (list_cpt_id_eq l l); auto.
+    destruct (list_cpt_id_eq l l0); auto.
+    rewrite H1', H2'. auto.
+  Qed.
+
+  Lemma eqb_trans: forall pol pol' pol'', eqb pol pol' = true -> eqb pol' pol'' = true -> eqb pol pol'' = true.
+  Proof.
+    intros pol pol' pol'' H1 H2.
+    unfold eqb in *.
+    apply andb_prop in H1 as [H1 H1'].
+    apply andb_prop in H2 as [H2 H2'].
+    assert (H3: PTree.beq (fun x y : list ident => list_id_eq x y) (policy_export pol) (policy_export pol'') = true).
+    { clear -H1 H2.
+      rewrite PTree.beq_correct in H1, H2.
+      rewrite PTree.beq_correct.
+      intros x. specialize (H1 x); specialize (H2 x).
+      destruct ((policy_export pol) ! x);
+        destruct ((policy_export pol') ! x);
+        destruct ((policy_export pol'') ! x); auto.
+      destruct (list_id_eq l l0);
+        destruct (list_id_eq l0 l1);
+        destruct (list_id_eq l l1); auto.
+      now subst.
+    }
+    assert (H3': PTree.beq (fun x y => list_cpt_id_eq x y) (policy_import pol) (policy_import pol'') = true).
+    { clear -H1' H2'.
+      rewrite PTree.beq_correct in H1', H2'.
+      rewrite PTree.beq_correct.
+      intros x. specialize (H1' x); specialize (H2' x).
+      destruct ((policy_import pol) ! x);
+        destruct ((policy_import pol') ! x);
+        destruct ((policy_import pol'') ! x); auto.
+      destruct (list_cpt_id_eq l l0);
+        destruct (list_cpt_id_eq l0 l1);
+        destruct (list_cpt_id_eq l l1); auto.
+      now subst.
+    }
+    rewrite H3, H3'. auto.
+  Qed.
+
+  (* Lemma eq_eqb: forall pol pol', pol = pol'  eqb pol pol' = true. *)
+  (* Proof. *)
+  (*   intros pol pol'. split. *)
+  (*   - intros H. subst. *)
+  (*     unfold eqb. *)
+  (*     assert (PTree.beq (fun x y : list ident => list_id_eq x y) (policy_export pol') (policy_export pol') = true). *)
+  (*     rewrite PTree.beq_correct. *)
+  (*     intros x. destruct ((policy_export pol') ! x); auto. *)
+  (*     destruct (list_id_eq l l); auto. *)
+  (*     rewrite H. simpl. *)
+  (*     rewrite PTree.beq_correct. *)
+  (*     intros x. destruct ((policy_import pol') ! x); auto. *)
+  (*     destruct (list_cpt_id_eq l l); auto. *)
+  (*   - intros H. unfold eqb in H. *)
+  (*     destruct (PTree.beq (fun x y : list ident => list_id_eq x y) (policy_export pol) (policy_export pol')) eqn:?; try discriminate. *)
+  (*     simpl in H. *)
+  (*     rewrite PTree.beq_correct in H. *)
+  (*     destruct pol, pol'; simpl in *. *)
+
+
+
+
+
+
+  (* Admitted. *)
 
 End Policy.
 

@@ -313,7 +313,7 @@ Lemma link_prog_inv:
    /\ (forall id gd1 gd2,
          dm1!id = Some gd1 -> dm2!id = Some gd2 ->
          In id p1.(prog_public) /\ In id p2.(prog_public) /\ exists gd, link gd1 gd2 = Some gd)
-   /\ p1.(prog_pol) = p2.(prog_pol)
+   /\ Policy.eqb p1.(prog_pol) p2.(prog_pol) = true
    /\ p = {| prog_main := p1.(prog_main);
             prog_public := p1.(prog_public) ++ p2.(prog_public);
             prog_defs := PTree.elements (PTree.combine link_prog_merge dm1 dm2);
@@ -331,7 +331,7 @@ Proof.
   destruct (in_dec peq id (prog_public p2)); try discriminate.
   destruct (link gd1 gd2) eqn:L; try discriminate.
   intuition auto. exists g; auto.
-  split; auto. apply Policy.eq_eqb; auto.
+  (* split; auto. apply Policy.eq_eqb; auto. *)
 Qed.
 
 Lemma link_prog_succeeds:
@@ -339,7 +339,7 @@ Lemma link_prog_succeeds:
   (forall id gd1 gd2,
       dm1!id = Some gd1 -> dm2!id = Some gd2 ->
       In id p1.(prog_public) /\ In id p2.(prog_public) /\ link gd1 gd2 <> None) ->
-  p1.(prog_pol) = p2.(prog_pol) ->
+  Policy.eqb p1.(prog_pol) p2.(prog_pol) = true ->
   link_prog =
     Some {| prog_main := p1.(prog_main);
             prog_public := p1.(prog_public) ++ p2.(prog_public);
@@ -348,7 +348,7 @@ Lemma link_prog_succeeds:
 Proof.
   intros. unfold link_prog. unfold proj_sumbool. rewrite H, dec_eq_true. simpl.
   replace (PTree_Properties.for_all dm1 link_prog_check) with true; auto.
-  apply Policy.eq_eqb in H1; rewrite H1; auto.
+  rewrite H1; auto.
   symmetry. apply PTree_Properties.for_all_correct; intros. rename a into gd1.
   unfold link_prog_check. destruct dm2!x as [gd2|] eqn:G2; auto.
   exploit H0; eauto. intros (P & Q & R). unfold proj_sumbool; rewrite ! pred_dec_true by auto.
@@ -457,7 +457,7 @@ Definition match_program_gen (ctx: C) (p1: program F1 V1) (p2: program F2 V2) : 
   list_forall2 (match_ident_globdef ctx) p1.(prog_defs) p2.(prog_defs)
   /\ p2.(prog_main) = p1.(prog_main)
   /\ p2.(prog_public) = p1.(prog_public)
-  /\ p2.(prog_pol) = p1.(prog_pol).
+  /\ Policy.eqb p2.(prog_pol) p1.(prog_pol) = true.
 
 Theorem match_program_defmap:
   forall ctx p1 p2, match_program_gen ctx p1 p2 ->
@@ -544,6 +544,7 @@ Proof.
 + destruct (transf_globvar transf_var i v) as [tv|?] eqn:TV; monadInv EQ.
   constructor; auto. split; simpl; auto. constructor.
   monadInv TV. destruct v; simpl; constructor. eauto.
+- split; auto. split; auto. apply Policy.eqb_refl.
 Qed.
 
 Theorem match_transform_partial_program_contextual:
@@ -694,7 +695,7 @@ Proof.
   exploit Q; eauto. intros (X & Y & gd & Z).
   exploit link_match_globdef. eexact H2. eexact H3. eauto. eauto. eauto.
   intros (tg & TL & _). intuition congruence.
-+ congruence.
++ eauto using Policy.eqb_comm, Policy.eqb_trans. (* JT: NOTE: could this automation be risky, since it uses transitivity? *)
 - split; [|split].
 + rewrite R. apply PTree.elements_canonical_order'. intros id.
   rewrite ! PTree.gcombine by auto.
@@ -991,4 +992,3 @@ Proof.
   exploit IHpasses; eauto. intros (tgt_prog & X & Y).
   exists tgt_prog; split; auto. exists interm_prog; auto.
 Qed.
-
