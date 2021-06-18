@@ -298,7 +298,7 @@ Definition link_prog_merge (o1 o2: option (globdef F V)) :=
 Definition link_prog :=
   if ident_eq p1.(prog_main) p2.(prog_main)
      && PTree_Properties.for_all dm1 link_prog_check
-     && Policy.eqb p1.(prog_pol) p2.(prog_pol) then
+     && Policy.eqb p1.(prog_pol) p2.(prog_pol) then (* The policies of the two linked programs must be equal *)
     Some {| prog_main := p1.(prog_main);
             prog_public := p1.(prog_public) ++ p2.(prog_public);
             prog_defs := PTree.elements (PTree.combine link_prog_merge dm1 dm2);
@@ -313,7 +313,7 @@ Lemma link_prog_inv:
    /\ (forall id gd1 gd2,
          dm1!id = Some gd1 -> dm2!id = Some gd2 ->
          In id p1.(prog_public) /\ In id p2.(prog_public) /\ exists gd, link gd1 gd2 = Some gd)
-   /\ Policy.eqb p1.(prog_pol) p2.(prog_pol) = true
+   /\ Policy.eqb p1.(prog_pol) p2.(prog_pol) = true (* If one can link two programs, then their policies where the same *)
    /\ p = {| prog_main := p1.(prog_main);
             prog_public := p1.(prog_public) ++ p2.(prog_public);
             prog_defs := PTree.elements (PTree.combine link_prog_merge dm1 dm2);
@@ -331,7 +331,6 @@ Proof.
   destruct (in_dec peq id (prog_public p2)); try discriminate.
   destruct (link gd1 gd2) eqn:L; try discriminate.
   intuition auto. exists g; auto.
-  (* split; auto. apply Policy.eq_eqb; auto. *)
 Qed.
 
 Lemma link_prog_succeeds:

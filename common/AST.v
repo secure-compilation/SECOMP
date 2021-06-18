@@ -366,23 +366,27 @@ Record globvar (V: Type) : Type := mkglobvar {
 
 Instance has_comp_globvar V : has_comp (globvar V) := @gvar_comp _.
 
-(** Policies *)
-Module Policy.
+(** Policies are used to decide whether a given call is allowed or not.
 
-  (* Record t: Type := mkpolicy { *)
-  (*   policy_export: compartment -> list ident; (* The list of exported functions *) *)
-  (*   policy_import: compartment -> list (compartment * ident); (* The list of imported functions and their compartment *) *)
-  (* }. *)
+    For each compartment, a policy defines a list of exported procedures
+    and a list of procedures imported from other compartments. Procedures are
+    refered to by their public identifier.
+
+    This module doesn't define what it means for a call to be allowed or rejected;
+    instead, this is defined in common/Globalenv.v
+ *)
+Module Policy.
 
   Record t: Type := mkpolicy {
     policy_export: PTree.t (list ident);
     policy_import: PTree.t (list (compartment * ident))
   }.
 
-
+  (* The empty policy is the policy where there is no imported procedure and no exported procedure for all compartments *)
   Definition empty_pol: t := mkpolicy (PTree.empty (list ident)) (PTree.empty (list (compartment * ident))).
-  (* (fun C => nil) (fun C => nil). *)
 
+
+  (* Decidable equality for the elements contained in the policies *)
   Definition list_id_eq: forall (x y: list ident),
       {x = y} + {x <> y}.
   Proof.
@@ -390,7 +394,6 @@ Module Policy.
     decide equality.
     apply Pos.eq_dec.
   Qed.
-
 
   Definition list_cpt_id_eq: forall (x y: list (compartment * ident)),
       {x = y} + {x <> y}.
@@ -402,10 +405,13 @@ Module Policy.
     apply Pos.eq_dec.
   Qed.
 
+  (* Defines an equivalence between two policies: two policies are equivalent iff for each compartment,
+     they define the same exported and imported procedures *)
   Definition eqb (t1 t2: t): bool :=
     PTree.beq list_id_eq t1.(policy_export) t2.(policy_export) &&
     PTree.beq list_cpt_id_eq t1.(policy_import) t2.(policy_import).
 
+  (* Properties of an equivalence relation: reflexivity, commutativity, transitivity *)
   Lemma eqb_refl: forall pol, eqb pol pol = true.
   Proof.
     intros pol.
@@ -477,32 +483,6 @@ Module Policy.
     rewrite H3, H3'. auto.
   Qed.
 
-  (* Lemma eq_eqb: forall pol pol', pol = pol'  eqb pol pol' = true. *)
-  (* Proof. *)
-  (*   intros pol pol'. split. *)
-  (*   - intros H. subst. *)
-  (*     unfold eqb. *)
-  (*     assert (PTree.beq (fun x y : list ident => list_id_eq x y) (policy_export pol') (policy_export pol') = true). *)
-  (*     rewrite PTree.beq_correct. *)
-  (*     intros x. destruct ((policy_export pol') ! x); auto. *)
-  (*     destruct (list_id_eq l l); auto. *)
-  (*     rewrite H. simpl. *)
-  (*     rewrite PTree.beq_correct. *)
-  (*     intros x. destruct ((policy_import pol') ! x); auto. *)
-  (*     destruct (list_cpt_id_eq l l); auto. *)
-  (*   - intros H. unfold eqb in H. *)
-  (*     destruct (PTree.beq (fun x y : list ident => list_id_eq x y) (policy_export pol) (policy_export pol')) eqn:?; try discriminate. *)
-  (*     simpl in H. *)
-  (*     rewrite PTree.beq_correct in H. *)
-  (*     destruct pol, pol'; simpl in *. *)
-
-
-
-
-
-
-  (* Admitted. *)
-
 End Policy.
 
 
@@ -511,6 +491,7 @@ End Policy.
 - a set of public names (the names that are visible outside
   this compilation unit);
 - the name of the ``main'' function that serves as entry point in the program.
+- a policy that governs which calls are allowed
 
 A global definition is either a global function or a global variable.
 The type of function descriptions and that of additional information
@@ -821,18 +802,6 @@ Instance has_comp_fundef F {CF: has_comp F} : has_comp (fundef F) :=
     | Internal f => comp_of f
     | External ef => comp_of ef
     end.
-
-Class is_fundef (FD: Type) {CFD: has_comp FD} := {
-  F : Type;
-  has_comp_F: has_comp F;
-  simpl_fundef: FD -> fundef F;
-  preserves_comp: forall f, comp_of f = comp_of (simpl_fundef f) }.
-
-Instance is_fundef_fundef F {CF: has_comp F}: @is_fundef (fundef F) _ := {
-  F := F;
-  has_comp_F := CF;
-  simpl_fundef := id;
-  preserves_comp := fun f => eq_refl; }.
 
 Section TRANSF_FUNDEF.
 
