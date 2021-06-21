@@ -500,10 +500,65 @@ Qed.
 - Mach register values and Asm register values agree.
 *)
 
+(* Definition stack_internal_call cp f := *)
+(*   match f with *)
+(*   | Mach.Stackframe b v _ _ => Some cp = Genv.find_comp ge (Vptr b Ptrofs.zero) *)
+(*   end. *)
+
+(* Definition stack_external_call cp f := *)
+(*   match f with *)
+(*   | Mach.Stackframe b v _ _ => Some cp <> Genv.find_comp ge (Vptr b Ptrofs.zero) *)
+(*   end. *)
+
+Inductive match_stackframe: Mach.stackframe -> stackframe -> Prop :=
+| match_sf: forall b ofs v c,
+    match_stackframe (Mach.Stackframe b v ofs c) (Stackframe b ofs v)
+.
+
+(* TODO: write this as a function *)
+(* Inductive match_stacks: compartment -> list Mach.stackframe -> stack -> Prop := *)
+(* | match_stacks_nil: match_stacks default_compartment nil nil *)
+(* | match_stacks_internal: forall cp f s s', *)
+(*     match_stacks cp s s' -> *)
+(*     stack_internal_call cp f -> *)
+(*     match_stacks cp (f :: s) s' *)
+(* | match_stacks_cross_compartment: forall cp f f' s s', *)
+(*     match_stacks cp s s' -> *)
+(*     stack_external_call cp f -> *)
+(*     match_stackframe f f' -> *)
+(*     match_stacks cp (f :: s) (f' :: s') *)
+(* . *)
+
+Definition stack_internal_call (s: list Mach.stackframe) (f: Mach.stackframe) :=
+  match s, f with
+  | nil, Mach.Stackframe b' _ _ _ =>
+    Some default_compartment = Genv.find_comp ge (Vptr b' Ptrofs.zero)
+  | Mach.Stackframe b _ _ _ :: s', Mach.Stackframe b' _ _ _ =>
+    Genv.find_comp ge (Vptr b Ptrofs.zero) = Genv.find_comp ge (Vptr b' Ptrofs.zero)
+  end.
+
+Definition stack_external_call s f :=
+  not (stack_internal_call s f).
+
+Inductive match_stacks: list Mach.stackframe -> stack -> Prop :=
+| match_stacks_nil: match_stacks nil nil
+| match_stacks_internal: forall f s s',
+    match_stacks s s' ->
+    stack_internal_call s f ->
+    match_stacks (f :: s) s'
+| match_stacks_cross_compartment: forall f f' s s',
+    match_stacks s s' ->
+    stack_external_call s f ->
+    match_stackframe f f' ->
+    match_stacks (f :: s) (f' :: s')
+.
+
+
 Inductive match_states: Mach.state -> Asm.state -> Prop :=
   | match_states_intro:
       forall s s' fb sp c ep ms m m' rs f tf tc
         (STACKS: match_stack ge s)
+        (STACKS': match_stacks s s')
         (FIND: Genv.find_funct_ptr ge fb = Some (Internal f))
         (MEXT: Mem.extends m m')
         (AT: transl_code_at_pc ge (rs PC) fb f c ep tf tc)
@@ -514,17 +569,19 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
   | match_states_call:
       forall s s' fb ms m m' rs
         (STACKS: match_stack ge s)
+        (STACKS': match_stacks s s')
         (MEXT: Mem.extends m m')
         (AG: agree ms (parent_sp s) rs)
         (ATPC: rs PC = Vptr fb Ptrofs.zero)
         (ATLR: rs RA = parent_ra s),
-        (* (COMP: (* s <> nil ->  *)call_comp ge s = Some cp) *)
+        (* forall (COMP: (* s <> nil ->  *)call_comp ge s = Some cp), *)
         (* (ALLOWED: (* s <> nil ->  *) Genv.allowed_call ge cp (Vptr fb Ptrofs.zero)), *)
       match_states (Mach.Callstate s fb ms m)
                    (Asm.State s' rs m')
   | match_states_return:
       forall s s' ms m m' rs
         (STACKS: match_stack ge s)
+        (STACKS': match_stacks s s')
         (MEXT: Mem.extends m m')
         (AG: agree ms (parent_sp s) rs)
         (ATPC: rs PC = parent_ra s),
@@ -537,6 +594,7 @@ Lemma exec_straight_steps:
   Mem.extends m2 m2' ->
   Genv.find_funct_ptr ge fb = Some (Internal f) ->
   transl_code_at_pc ge (rs1 PC) fb f (i :: c) ep tf tc ->
+  forall (STACKS: match_stacks s s'),
   (forall k c (TR: transl_instr f i ep k = OK c),
    exists rs2,
        exec_straight tge tf c rs1 m1' k rs2 m2'
@@ -561,6 +619,7 @@ Lemma exec_straight_steps_goto:
   Mach.find_label lbl f.(Mach.fn_code) = Some c' ->
   transl_code_at_pc ge (rs1 PC) fb f (i :: c) ep tf tc ->
   it1_is_parent ep i = false ->
+  forall (STACKS: match_stacks s s'),
   (forall k c (TR: transl_instr f i ep k = OK c),
    exists jmp, exists k', exists rs2,
        exec_straight tge tf c rs1 m1' (jmp :: k') rs2 m2'
@@ -604,6 +663,7 @@ Lemma exec_straight_opt_steps_goto:
   Mach.find_label lbl f.(Mach.fn_code) = Some c' ->
   transl_code_at_pc ge (rs1 PC) fb f (i :: c) ep tf tc ->
   it1_is_parent ep i = false ->
+  forall (STACKS: match_stacks s s'),
   (forall k c (TR: transl_instr f i ep k = OK c),
    exists jmp, exists k', exists rs2,
        exec_straight_opt tge tf c rs1 m1' (jmp :: k') rs2 m2'
@@ -825,6 +885,7 @@ Local Transparent destroyed_by_op.
     econstructor; eauto.
     econstructor; eauto.
     eapply agree_sp_def; eauto.
+    admit.
     simpl. eapply agree_exten; eauto. intros. Simpl.
     Simpl. rewrite <- H2. auto.
   * left; econstructor; split.
@@ -841,6 +902,7 @@ Local Transparent destroyed_by_op.
     econstructor; eauto.
     econstructor; eauto.
     eapply agree_sp_def; eauto.
+    admit.
     simpl. eapply agree_exten; eauto. intros. Simpl.
     Simpl. rewrite <- H2. auto.
 + (* Direct call *)
@@ -867,6 +929,7 @@ Local Transparent destroyed_by_op.
     econstructor; eauto.
     econstructor; eauto.
     eapply agree_sp_def; eauto.
+    admit.
     simpl. eapply agree_exten; eauto. intros. Simpl.
     Simpl. rewrite <- H2. auto.
   * left; econstructor; split.
@@ -883,6 +946,7 @@ Local Transparent destroyed_by_op.
     econstructor; eauto.
     econstructor; eauto.
     eapply agree_sp_def; eauto.
+    admit.
     simpl. eapply agree_exten; eauto. intros. Simpl.
     Simpl. rewrite <- H2. auto.
 
@@ -968,9 +1032,9 @@ Local Transparent destroyed_by_op.
   traceEq.
   (* match states *)
   econstructor; eauto.
+  admit.
   apply agree_set_other; auto with asmgen.
   Simpl. unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H. auto.
-  (* unfold call_comp; simpl. *)
 
 - (* Mbuiltin *)
   inv AT. monadInv H4.
@@ -1080,13 +1144,7 @@ Local Transparent destroyed_by_op.
   eapply plus_right'. eapply exec_straight_exec; eauto.
   econstructor. eexact P. eapply functions_transl; eauto. eapply find_instr_tail. eexact Q.
   simpl. reflexivity.
-  unfold next_stack. Simpl.
-  { inv STACKS.
-  + admit.
-  + simpl in *. rewrite X; simpl.
-    apply functions_translated in H6 as [tf0' [? ?]]. rewrite H6. simpl.
-    admit.
-  }
+  unfold next_stack. Simpl. admit.
   Simpl. rewrite X. admit.
   eapply functions_transl; eauto.
   right; left; auto.
@@ -1169,7 +1227,7 @@ Local Transparent destroyed_at_function_entry.
   inv STACKS. simpl in *.
   right. split. omega. split. auto.
   rewrite <- ATPC in H5.
-  econstructor; eauto. congruence.
+  econstructor; eauto. admit. congruence.
 Admitted.
 
 Lemma transf_initial_states:
@@ -1183,7 +1241,7 @@ Proof.
   replace (Genv.symbol_address (Genv.globalenv tprog) (prog_main tprog) Ptrofs.zero)
      with (Vptr fb Ptrofs.zero).
   econstructor; eauto.
-  constructor.
+  constructor. constructor.
   apply Mem.extends_refl.
   split. auto. simpl. unfold Vnullptr; destruct Archi.ptr64; congruence.
   intros. rewrite Regmap.gi. auto.
