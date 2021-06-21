@@ -1144,19 +1144,6 @@ Global Instance has_comp_fundef {CF: has_comp F} : has_comp fundef :=
     | External ef _ _ _ => comp_of ef
     end.
 
-Definition simpl_fundef (fd: fundef) :=
-  match fd with
-  | Internal f => AST.Internal f
-  | External ef _ _ _ => AST.External ef
-  end.
-
-Global Instance is_fundef_fundef {CF: has_comp F} : @is_fundef (fundef) _ :=
-  { F := F;
-    has_comp_F := CF;
-    simpl_fundef := simpl_fundef;
-    preserves_comp f := match f with | Internal f => eq_refl | External ef _ _ _ => eq_refl end
-  }.
-
 (** A program, or compilation unit, is composed of:
 - a list of definitions of functions and global variables;
 - the names of functions and global variables that are public (not static);

@@ -507,7 +507,7 @@ Definition order (x y: unit) := False.
 
 Lemma evalinf_funcall_forever:
   forall cp m fd args T k,
-  forall KCOMP: cp = call_comp k,
+  forall (KCOMP: cp = call_comp k),
   evalinf_funcall ge m fd args T ->
   forever_N step1 order ge tt (Callstate fd args k m) T.
 Proof.

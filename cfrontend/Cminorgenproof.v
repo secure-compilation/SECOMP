@@ -1961,6 +1961,19 @@ Proof.
   instantiate (1 := lbl). rewrite H1. auto.
 Qed.
 
+
+Lemma allowed_call_transl: forall cenv f vf sz tfn,
+  Genv.allowed_call ge (comp_of f) vf ->
+  transl_funbody cenv sz f = OK tfn ->
+  Genv.allowed_call tge (comp_of tfn) vf.
+Proof.
+  intros cenv f vf sz tfn ALLOWED TRF.
+  erewrite <- (comp_transl_partial _ TRF).
+  eapply (Genv.allowed_call_transf_partial TRANSL) in ALLOWED. eauto.
+Qed.
+
+
+
 (** The simulation diagram. *)
 
 Fixpoint seq_left_depth (s: Csharpminor.stmt) : nat :=
@@ -2050,11 +2063,7 @@ Proof.
   left; econstructor; split.
   apply plus_one. eapply step_call; eauto.
   apply sig_preserved; eauto.
-  (* ALLOWED CALL *)
-  replace (fn_comp tfn) with (comp_of tfn) by reflexivity.
-  erewrite <- (comp_transl_partial _ TRF).
-  eapply (Genv.allowed_call_transf_partial TRANSL) in ALLOWED. eauto.
-  (* END ALLOWED CALL *)
+  eapply allowed_call_transl; eauto.
   econstructor; eauto.
   eapply match_Kcall with (cenv' := cenv); eauto.
   red; auto.
@@ -2069,9 +2078,8 @@ Proof.
   intros [f' [vres' [tm' [EC [VINJ [MINJ' [UNMAPPED [OUTOFREACH [INCR SEPARATED]]]]]]]]].
   left; econstructor; split.
   apply plus_one. econstructor. eauto.
-  change (fn_comp tfn) with (comp_of tfn). rewrite <- (comp_transl_partial _ TRF).
+  rewrite <- (comp_transl_partial _ TRF).
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  change (fn_comp tfn) with (comp_of tfn). (* rewrite <- (comp_transl_partial _ TRF). *) eauto.
   assert (MCS': match_callstack f' m' tm'
                  (Frame cenv tfn e le te sp lo hi :: cs)
                  (Mem.nextblock m') (Mem.nextblock tm')).

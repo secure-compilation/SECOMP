@@ -581,8 +581,6 @@ Inductive step: state -> trace -> state -> Prop :=
 
   | step_builtin:   forall f optid ef tyargs al k e le m vargs t vres m',
       eval_exprlist e le m al tyargs vargs ->
-      (* TODO *)
-      (* forall (ALLOWED: Policy.allowed_call pol (comp_of f) (External ef tyargs tyres cconv)), *)
       external_call ef ge (comp_of f) vargs m t vres m' ->
       step (State f (Sbuiltin optid ef tyargs al) k e le m)
          t (State f Sskip k e (set_opttemp optid vres le) m')

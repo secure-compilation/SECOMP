@@ -1061,11 +1061,13 @@ Lemma functions_translated:
 Proof (Genv.find_funct_match TRANSL).
 
 Lemma allowed_call_translated:
-  forall cp vf,
-    Genv.allowed_call ge cp vf ->
-    Genv.allowed_call tge cp vf.
+  forall vf f (cu: Clight.program) tf,
+    Genv.allowed_call ge (comp_of f) vf ->
+    transl_function (prog_comp_env cu) f = OK tf ->
+    Genv.allowed_call tge (comp_of tf) vf.
 Proof.
-  intros cp vf H.
+  intros vf f ce tf H TRF.
+  erewrite <- (comp_transl_partial _ TRF).
   eapply (Genv.match_genvs_allowed_calls TRANSL). eauto.
 Qed.
 
@@ -1643,10 +1645,7 @@ Proof.
     apply plus_one. eapply step_call; eauto.
     eapply transl_expr_correct with (cunit := cu); eauto.
     eapply transl_arglist_correct with (cunit := cu); eauto.
-    (* ALLOWED CALL *)
-    erewrite <- (comp_transl_partial _ TRF); eauto.
-    eapply allowed_call_translated. eauto.
-    (* END ALLOWED CALL *)
+    eapply allowed_call_translated; eauto.
     econstructor; eauto.
     eapply match_Kcall with (ce := prog_comp_env cu') (cu := cu); eauto.
     exact I.
@@ -1656,10 +1655,7 @@ Proof.
     eapply plus_two. apply step_seq. eapply step_call; eauto. 
     eapply transl_expr_correct with (cunit := cu); eauto.
     eapply transl_arglist_correct with (cunit := cu); eauto.
-    (* ALLOWED CALL *)
-    erewrite <- (comp_transl_partial _ TRF); eauto.
     eapply allowed_call_translated; eauto.
-    (* END ALLOWED CALL *)
     traceEq.
     econstructor; eauto.
     eapply match_Kcall_normalize  with (ce := prog_comp_env cu') (cu := cu); eauto.

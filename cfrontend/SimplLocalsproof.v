@@ -88,11 +88,13 @@ Proof.
 Qed.
 
 Lemma allowed_call_translated:
-  forall cp vf,
-    Genv.allowed_call ge cp vf ->
-    Genv.allowed_call tge cp vf.
+  forall f tf vf,
+    Genv.allowed_call ge (comp_of f) vf ->
+    transf_function f = OK tf ->
+    Genv.allowed_call tge (comp_of tf) vf.
 Proof.
-  intros cp vf H.
+  intros f tf vf H TRF.
+  erewrite <- (comp_transl_partial _ TRF).
   destruct TRANSF.
   eapply (Genv.match_genvs_allowed_calls H0). eauto.
 Qed.
@@ -2108,8 +2110,6 @@ Proof.
   rewrite typeof_simpl_expr. eauto.
   eauto. eauto. eauto.
   erewrite type_of_fundef_preserved; eauto.
-  (* ALLOWED CALL *)
-  erewrite <- (comp_transl_partial _ TRF); eauto.
   eapply allowed_call_translated; eauto.
   econstructor; eauto.
   intros. econstructor; eauto.
@@ -2129,7 +2129,9 @@ Proof.
   eapply match_cont_extcall; eauto.
   inv MENV; xomega. inv MENV; xomega.
   eapply Ple_trans; eauto. eapply external_call_nextblock; eauto.
-  eapply Ple_trans; eauto. eapply external_call_nextblock; eauto. (* sequence *)
+  eapply Ple_trans; eauto. eapply external_call_nextblock; eauto.
+
+(* sequence *)
   econstructor; split. apply plus_one. econstructor.
   econstructor; eauto with compat. econstructor; eauto with compat.
 

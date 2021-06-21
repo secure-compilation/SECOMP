@@ -376,7 +376,6 @@ Inductive estep: state -> trace -> state -> Prop :=
   | step_builtin: forall f C ef tyargs rargs ty k e m vargs t vres m',
       leftcontext RV RV C ->
       eval_simple_list e m rargs tyargs vargs ->
-      (* forall (ALLOWED: Genv.allowed_call ge (comp_of f) (External ef tyargs tyres cconv)), *)
       external_call ef ge (comp_of f) vargs m t vres m' ->
       estep (ExprState f (C (Ebuiltin ef tyargs rargs ty)) k e m)
           t (ExprState f (C (Eval vres ty)) k e m').
@@ -430,7 +429,7 @@ Qed.
 
 Lemma plus_safe:
   forall s1 s2 t s3,
-  safe s1 -> star Csem.step  ge s1 E0 s2 -> (safe s2 -> plus Csem.step  ge s2 t s3) ->
+  safe s1 -> star Csem.step ge s1 E0 s2 -> (safe s2 -> plus Csem.step  ge s2 t s3) ->
   plus Csem.step ge s1 t s3.
 Proof.
   intros. eapply star_plus_trans; eauto. apply H1. eapply safe_steps; eauto. auto.
@@ -1433,8 +1432,6 @@ Qed.
 
 End STRATEGY.
 
-Section WithPolicy.
-
 (** The semantics that follows the strategy. *)
 
 Definition semantics (p: program) :=
@@ -1613,8 +1610,6 @@ Proof.
 (* simulation *)
   intros. subst s1. exists s2'; split; auto. apply step_simulation; auto.
 Qed.
-
-End WithPolicy.
 
 (** * A big-step semantics for CompCert C implementing the reduction strategy. *)
 
@@ -2192,25 +2187,25 @@ Lemma bigstep_to_steps:
   (forall c e m a t m' v,
    eval_expression c e m a t m' v ->
    forall f k,
-   forall COMP: c = (comp_of f),
+   forall (COMP: c = comp_of f),
    star step ge (ExprState f a k e m) t (ExprState f (Eval v (typeof a)) k e m'))
 /\(forall c e m K a t m' a',
    eval_expr c e m K a t m' a' ->
    forall C f k, leftcontext K RV C ->
-   forall COMP: c = (comp_of f),
+   forall (COMP: c = comp_of f),
    simple a' = true /\ typeof a' = typeof a /\
    star step ge (ExprState f (C a) k e m) t (ExprState f (C a') k e m'))
 /\(forall c e m al t m' al',
    eval_exprlist c e m al t m' al' ->
    forall a1 al2 ty C f k, leftcontext RV RV C -> simple a1 = true -> simplelist al2 = true ->
-   forall COMP: c = (comp_of f),
+   forall (COMP: c = comp_of f),
    simplelist al' = true /\
    star step ge (ExprState f (C (Ecall a1 (exprlist_app al2 al) ty)) k e m)
               t (ExprState f (C (Ecall a1 (exprlist_app al2 al') ty)) k e m'))
 /\(forall c e m s t m' out,
    exec_stmt c e m s t m' out ->
    forall f k,
-   forall COMP: c = (comp_of f),
+   forall (COMP: c = comp_of f),
    exists S,
    star step ge (State f s k e m) t S /\ outcome_state_match e m' f k out S)
 /\(forall c m fd args t m' res,
@@ -2733,14 +2728,14 @@ Proof.
   assert (COS:
     forall c e m s t f k,
     execinf_stmt c e m s t ->
-    forall COMP: c = (comp_of f),
+    forall (COMP: c = comp_of f),
     forever_N step lt ge O (State f s k e m) t).
   cofix COS.
 
   assert (COE:
     forall c e m K a t C f k,
     evalinf_expr c e m K a t ->
-    forall COMP: c = (comp_of f),
+    forall (COMP: c = comp_of f),
     leftcontext K RV C ->
     forever_N step lt ge (esize a) (ExprState f (C a) k e m) t).
   cofix COE.
@@ -2748,7 +2743,7 @@ Proof.
   assert (COEL:
     forall c e m a t C f k a1 al ty,
     evalinf_exprlist c e m a t ->
-    forall COMP: c = (comp_of f),
+    forall (COMP: c = comp_of f),
     leftcontext RV RV C -> simple a1 = true -> simplelist al = true ->
     forever_N step lt ge (esizelist a)
                    (ExprState f (C (Ecall a1 (exprlist_app al a) ty)) k e m) t).
@@ -3040,7 +3035,6 @@ Qed.
 
 End BIGSTEP.
 
-Section WithPolicy.
 (** ** Whole-program behaviors, big-step style. *)
 
 Inductive bigstep_program_terminates (p: program): trace -> int -> Prop :=
@@ -3082,5 +3076,3 @@ Proof.
   apply lt_wf.
   eapply evalinf_funcall_steps; eauto.
 Qed.
-
-End WithPolicy.

@@ -120,9 +120,6 @@ Definition temp_env := PTree.t val.
 Definition empty_env : env := PTree.empty (block * Z).
 Definition empty_temp_env : temp_env := PTree.empty val.
 
-
-(** Policies *)
-
 (** Initialization of temporary variables *)
 
 Fixpoint create_undef_temps (temps: list ident) : temp_env :=

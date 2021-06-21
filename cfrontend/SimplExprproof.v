@@ -865,7 +865,6 @@ Proof.
   simpl. econstructor; eauto.
 (* nonvolatile case *)
   intros [A B]. subst t. constructor. eapply eval_Elvalue; eauto.
-  Unshelve.
 Qed.
 
 Lemma step_make_assign:
@@ -1941,12 +1940,10 @@ Proof.
   left. eapply plus_left. constructor.  apply star_one.
   econstructor; eauto. rewrite <- TY1; eauto.
   exploit type_of_fundef_preserved; eauto. congruence.
-  (* ALLOWED CALL *)
-  assert (COMP: comp_of tf = comp_of f).
-  { now match goal with H : tr_function _ _ |- _ => inv H end. }
-  rewrite COMP.
+  assert (COMP: comp_of tf = comp_of f)
+    by (now match goal with H : tr_function _ _ |- _ => inv H end);
+    rewrite COMP.
   eapply allowed_call_translated; eauto.
-  (* END ALLOWED CALL *)
   traceEq.
   constructor; auto. econstructor; eauto.
   intros. change sl2 with (nil ++ sl2). apply S.
@@ -1960,12 +1957,10 @@ Proof.
   left. eapply plus_left. constructor.  apply star_one.
   econstructor; eauto. rewrite <- TY1; eauto.
   exploit type_of_fundef_preserved; eauto. congruence.
-  (* ALLOWED CALL *)
-  assert (COMP: comp_of tf = comp_of f).
-  { now match goal with H : tr_function _ _ |- _ => inv H end. }
-  rewrite COMP.
+  assert (COMP: comp_of tf = comp_of f)
+    by (now match goal with H : tr_function _ _ |- _ => inv H end);
+    rewrite COMP.
   eapply allowed_call_translated; eauto.
-  (* END ALLOWED CALL *)
   traceEq.
   constructor; auto. econstructor; eauto.
   intros. apply S. destruct dst'; constructor.
@@ -1976,8 +1971,8 @@ Proof.
 
 (* builtin *)
   exploit tr_top_leftcontext; eauto. clear H9.
-  assert (COMP: comp_of tf = comp_of f).
-  { now match goal with H : tr_function _ _ |- _ => inv H end. }
+  assert (COMP: comp_of tf = comp_of f)
+    by (now match goal with H : tr_function _ _ |- _ => inv H end);
   intros [dst' [sl1 [sl2 [a' [tmp' [P [Q [R S]]]]]]]].
   inv P. inv H2.
   (* for effects *)

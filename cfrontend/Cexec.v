@@ -1528,7 +1528,6 @@ Proof with (try (apply not_invert_ok; simpl; intro; myinv; intuition congruence;
   (* top *)
   destruct (sem_cast_arguments vtl tyargs m) as [vargs|] eqn:?...
   destruct (do_external ef w cp vargs m) as [[[[? ?] v] m'] | ] eqn:?...
-  (* destruct (Policy.allowed_call_b pol cp (External ef tyargs tyres cconv)) eqn:?... *)
   exploit do_ef_external_sound; eauto. intros [EC PT].
   apply topred_ok; auto. red. split; auto. eapply red_builtin; eauto.
   eapply sem_cast_arguments_sound; eauto.
@@ -1646,7 +1645,6 @@ Proof.
   induction 1; simpl.
   rewrite H2. exploit sem_cast_arguments_complete; eauto. intros [vtl [A B]].
   rewrite A; rewrite H; rewrite B; rewrite H1; rewrite dec_eq_true.
-  (* Use ALLOWED *)
   eapply Genv.allowed_call_reflect in ALLOWED.
   rewrite ALLOWED.
   econstructor; eauto.
