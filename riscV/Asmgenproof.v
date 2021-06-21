@@ -519,8 +519,7 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
         (ATPC: rs PC = Vptr fb Ptrofs.zero)
         (ATLR: rs RA = parent_ra s),
         (* (COMP: (* s <> nil ->  *)call_comp ge s = Some cp) *)
-        (* (ALLOWED: (* s <> nil ->  *)Policy.allowed_call pol cp fd) *)
-        (* (FIND: Genv.find_funct_ptr ge fb = Some fd), *)
+        (* (ALLOWED: (* s <> nil ->  *) Genv.allowed_call ge cp (Vptr fb Ptrofs.zero)), *)
       match_states (Mach.Callstate s fb ms m)
                    (Asm.State s' rs m')
   | match_states_return:
@@ -828,7 +827,6 @@ Local Transparent destroyed_by_op.
     eapply agree_sp_def; eauto.
     simpl. eapply agree_exten; eauto. intros. Simpl.
     Simpl. rewrite <- H2. auto.
-    (* unfold call_comp; simpl. rewrite FIND. reflexivity. *)
   * left; econstructor; split.
     apply plus_one. eapply exec_step_internal.
     Simpl. rewrite <- H2; simpl; eauto.
@@ -871,7 +869,6 @@ Local Transparent destroyed_by_op.
     eapply agree_sp_def; eauto.
     simpl. eapply agree_exten; eauto. intros. Simpl.
     Simpl. rewrite <- H2. auto.
-    (* unfold call_comp; simpl. rewrite FIND. reflexivity. *)
   * left; econstructor; split.
     apply plus_one. eapply exec_step_internal. eauto.
     eapply functions_transl; eauto. eapply find_instr_tail; eauto.
@@ -1084,8 +1081,13 @@ Local Transparent destroyed_by_op.
   econstructor. eexact P. eapply functions_transl; eauto. eapply find_instr_tail. eexact Q.
   simpl. reflexivity.
   unfold next_stack. Simpl.
-  rewrite X; admit.
-  Simpl; admit.
+  { inv STACKS.
+  + admit.
+  + simpl in *. rewrite X; simpl.
+    apply functions_translated in H6 as [tf0' [? ?]]. rewrite H6. simpl.
+    admit.
+  }
+  Simpl. rewrite X. admit.
   eapply functions_transl; eauto.
   right; left; auto.
   simpl. rewrite functions_transl with (f := f) (tf := tf); eauto.

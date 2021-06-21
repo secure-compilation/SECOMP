@@ -194,8 +194,6 @@ Inductive eval_expr: letenv -> expr -> val -> Prop :=
   | eval_Ebuiltin: forall le ef al vl v,
       eval_exprlist le al vl ->
       external_call ef ge cp vl m E0 v m ->
-      (* TODO *)
-      (* forall (ALLOWED: Policy.allowed_call pol cp (External ef)), *)
       eval_expr le (Ebuiltin ef al) v
   | eval_Eexternal: forall le id sg al b ef vl v,
       Genv.find_symbol ge id = Some b ->
@@ -379,7 +377,7 @@ Inductive step: state -> trace -> state -> Prop :=
       eval_exprlist sp e cp m nil bl vargs ->
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
-      forall ALLOWED: Genv.allowed_call ge (comp_of f) vf,
+      forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
       step (State f (Scall optid sig a bl) k sp e m)
         E0 (Callstate fd vargs (Kcall optid f sp e k) m)
 
@@ -398,8 +396,6 @@ Inductive step: state -> trace -> state -> Prop :=
   | step_builtin: forall f cp res ef al k sp e m vl t v m',
       cp = (comp_of f) ->
       list_forall2 (eval_builtin_arg sp e cp m) al vl ->
-      (* TODO *)
-      (* forall ALLOWED: allowed_call ge (comp_of f) (External ef), *)
       external_call ef ge cp vl m t v m' ->
       step (State f (Sbuiltin res ef al) k sp e m)
          t (State f Sskip k sp (set_builtin_res res v e) m')
@@ -458,10 +454,9 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Sgoto lbl) k sp e m)
         E0 (State f s' k' sp e m)
 
-  | step_internal_function: forall cp f vargs k m m' sp e,
+  | step_internal_function: forall f vargs k m m' sp e,
       Mem.alloc m (comp_of f) 0 f.(fn_stackspace) = (m', sp) ->
       set_locals f.(fn_vars) (set_params vargs f.(fn_params)) = e ->
-      cp = call_comp k ->
       step (Callstate (Internal f) vargs k m)
         E0 (State f f.(fn_body) k (Vptr sp Ptrofs.zero) e m')
   | step_external_function: forall ef vargs k m t vres m',
