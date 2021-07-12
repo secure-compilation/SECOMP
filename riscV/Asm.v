@@ -213,9 +213,9 @@ Inductive instruction : Type :=
   (* Unconditional jumps.  Links are always to X1/RA. *)
   | Pj_l    (l: label)                              (**r jump to label *)
   | Pj_s    (symb: ident) (sg: signature)           (**r jump to symbol *)
-  | Pj_r    (r: ireg)     (sg: signature)           (**r jump register *)
-  | Pjal_s  (symb: ident) (sg: signature)           (**r jump-and-link symbol *)
-  | Pjal_r  (r: ireg)     (sg: signature)           (**r jump-and-link register *)
+  | Pj_r    (r: ireg)     (sg: signature) (iscl: bool) (**r jump register *)
+  | Pjal_s  (symb: ident) (sg: signature) (iscl: bool) (**r jump-and-link symbol *)
+  | Pjal_r  (r: ireg)     (sg: signature) (iscl: bool) (**r jump-and-link register *)
 
   (* Conditional branches, 32-bit comparisons *)
   | Pbeqw   (rs1 rs2: ireg0) (l: label)             (**r branch-if-equal *)
@@ -751,9 +751,9 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : out
       goto_label f l rs m
   | Pj_s s sg =>
       Next (rs#PC <- (Genv.symbol_address ge s Ptrofs.zero)) m
-  | Pj_r r sg =>
+  | Pj_r r sg _ =>
       Next (rs#PC <- (rs#r)) m
-  | Pjal_s s sg =>
+  | Pjal_s s sg _ =>
     Next (rs#PC <- (Genv.symbol_address ge s Ptrofs.zero)
             #RA <- (Val.offset_ptr rs#PC Ptrofs.one)
          ) m
@@ -771,7 +771,7 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : out
     (*   end *)
     (* | _, _ => Stuck *)
     (* end *)
-  | Pjal_r r sg =>
+  | Pjal_r r sg _ =>
       Next (rs#PC <- (rs#r)
               #RA <- (Val.offset_ptr rs#PC Ptrofs.one)
            ) m
@@ -1086,8 +1086,8 @@ Definition loc_external_result (sg: signature) : rpair preg :=
 Inductive stackframe: Type :=
 | Stackframe:
     forall (f: block)       (**r pointer to calling function *)
-      (retaddr: ptrofs) (**r Asm return address in calling function *)
-      (sp: val),         (**r stack pointer in calling function *)
+      (sp: val)         (**r stack pointer in calling function *)
+      (retaddr: ptrofs), (**r Asm return address in calling function *)
       stackframe.
 
 Definition stack := list stackframe.
@@ -1095,54 +1095,130 @@ Definition stack := list stackframe.
 Inductive state: Type :=
   | State: stack -> regset -> mem -> state.
 
-Definition next_stack i cp st rs' :=
+Definition is_call i :=
+  match i with
+  | Pjal_s _ _ true | Pjal_r _ _ true => true
+  | _ => false
+  end.
+
+Definition is_return i :=
+  match i with
+  | Pj_r _ _ true => true
+  | _ => false
+  end.
+
+(* These two definitions shouldn't really do any real enforcement. Instead,
+   they should just be used to keep track of the stack and use it in the
+   invariants *)
+Definition update_stack_call (st: stack) (cp: compartment) rs' :=
   let pc' := rs' # PC in
   let sp' := rs' # SP in
   match Genv.find_comp ge pc' with
   | Some cp' =>
-    if Pos.eqb cp cp' then (* We stay in the same compartment: we do not update the stack *)
+    if Pos.eqb cp cp' then
       Some st
-    else (* Change in compartments: we have to update the stack *)
-      match i with
-        (* Jals correspond to calls; we must update the stack*)
-    | Pjal_s _ _ | Pjal_r _ _ =>
-                     match rs' # RA with
-                     | Vptr f retaddr => Some (Stackframe f retaddr sp' :: st)
-                     | _ => None
-                     end
-      (* Other instructions are used to maybe perform returns *)
-      | _ =>
-        match st with
-        | nil => Some nil
-        | Stackframe f retaddr sp :: st' =>
-          if Val.eq (Vptr f retaddr) pc' && Val.eq sp sp' then Some st'
-          else Some st
-        end
+    else
+      match rs' # RA with
+      | Vptr f retaddr => Some (Stackframe f sp' retaddr :: st)
+      | _ => None
       end
-  | None => None
+  | _ => None
   end.
 
+Definition update_stack_return (st: stack) (cp: compartment) rs' :=
+  let pc' := rs' # PC in
+  let sp' := rs' # SP in
+  match Genv.find_comp ge pc' with
+  | Some cp' =>
+    if Pos.eqb cp cp' then
+      Some st
+    else
+      match st with
+      | nil => None
+      | _ :: st' => Some st'
+      end
+  | _ => None
+  end.
+
+(* Definition next_stack i cp st rs' := *)
+(*   let pc' := rs' # PC in *)
+(*   let sp' := rs' # SP in *)
+(*   match Genv.find_comp ge pc' with *)
+(*   | Some cp' => *)
+(*     if Pos.eqb cp cp' then (* We stay in the same compartment: we do not update the stack *) *)
+(*       Some st *)
+(*     else (* Change in compartments: we have to update the stack *) *)
+(*       match i with *)
+(*         (* Jals correspond to calls; we must update the stack*) *)
+(*     | Pjal_s _ _ | Pjal_r _ _ => *)
+(*                      match rs' # RA with *)
+(*                      | Vptr f retaddr => Some (Stackframe f retaddr sp' :: st) *)
+(*                      | _ => None *)
+(*                      end *)
+(*       (* Other instructions are used to maybe perform returns *) *)
+(*       | _ => *)
+(*         match st with *)
+(*         | nil => Some nil *)
+(*         | Stackframe f retaddr sp :: st' => *)
+(*           if Val.eq (Vptr f retaddr) pc' && Val.eq sp sp' then Some st' *)
+(*           else Some st *)
+(*         end *)
+(*       end *)
+(*   | None => None *)
+(*   end. *)
 
 Inductive step: state -> trace -> state -> Prop :=
   | exec_step_internal:
-      forall b ofs f i rs m rs' m' b' ofs' fd st st',
+      forall b ofs f i rs m rs' m' b' ofs' (* fd *) st,
       rs PC = Vptr b ofs ->
       Genv.find_funct_ptr ge b = Some (Internal f) ->
       find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
       exec_instr f i rs m = Next rs' m' ->
-      next_stack i (comp_of f) st rs' = Some st' ->
+      is_call i = false ->
+      is_return i = false ->
       forall (NEXTPC: rs' PC = Vptr b' ofs'),
-      forall (NEXTFUN: Genv.find_funct_ptr ge b' = Some fd),
-      forall (ALLOWED: Genv.allowed_call ge (comp_of f) (Vptr b' Ptrofs.zero)),
+      forall (ALLOWED: Genv.allowed_call ge (comp_of f) (Vptr b' ofs')),
+      (* next_stack i (comp_of f) st rs' = Some st' -> *)
+      (* forall (NEXTPC: rs' PC = Vptr b' ofs'), *)
+      (* forall (NEXTFUN: Genv.find_funct_ptr ge b' = Some fd), *)
+      step (State st rs m) E0 (State st rs' m')
+  | exec_step_internal_call:
+      forall b ofs f i rs m rs' m' b' ofs' (* fd *) cp st st',
+      rs PC = Vptr b ofs ->
+      Genv.find_funct_ptr ge b = Some (Internal f) ->
+      find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
+      exec_instr f i rs m = Next rs' m' ->
+      is_call i = true ->
+      forall (NEXTPC: rs' PC = Vptr b' ofs'),
+      forall (ALLOWED: Genv.allowed_call ge (comp_of f) (Vptr b' ofs')),
+      forall (CURCOMP: Genv.find_comp ge (Vptr b Ptrofs.zero) = Some cp),
+      forall (STUPD: update_stack_call st cp rs' = Some st'),
+      (* next_stack i (comp_of f) st rs' = Some st' -> *)
+      (* forall (NEXTPC: rs' PC = Vptr b' ofs'), *)
+      (* forall (NEXTFUN: Genv.find_funct_ptr ge b' = Some fd), *)
       step (State st rs m) E0 (State st' rs' m')
   | exec_step_internal_return:
-      forall b ofs f i rs m rs' m' st st' sf,
+      forall b ofs f i rs m rs' m' b' ofs' (* fd *) cp cp' st st',
       rs PC = Vptr b ofs ->
       Genv.find_funct_ptr ge b = Some (Internal f) ->
       find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
       exec_instr f i rs m = Next rs' m' ->
-      next_stack i (comp_of f) st rs' = Some st' ->
-      forall (ISRETURN: st = sf :: st'),
+      is_return i = true ->
+      forall (NEXTPC: rs' PC = Vptr b' ofs'),
+      (* This is a return, so we should check the policy in reverse order *)
+      (* Could this change affect security?
+         => if the call C1 -> C2.P2() is allowed, but C2 is not allowed to call C1.P1(),
+            then C2 could use a jump instruction that looks like a return to perform the
+            call *)
+      (* Proposed solution: be very careful to only allow returns that "respect" the stack. *)
+      (* forall (ALLOWED: Genv.allowed_call ge (comp_of f) (Vptr b' ofs')), *)
+      forall (CURCOMP: Genv.find_comp ge (Vptr b ofs') = Some cp),
+      forall (NEXTCOMP: Genv.find_comp ge (Vptr b' ofs) = Some cp'),
+      forall (ALLOWED: Genv.allowed_call ge cp' (Vptr b Ptrofs.zero)),
+      forall (STUPD: update_stack_return st cp rs' = Some st'),
+      (* next_stack i (comp_of f) st rs' = Some st' -> *)
+      (* forall (NEXTPC: rs' PC = Vptr b' ofs'), *)
+      (* forall (NEXTFUN: Genv.find_funct_ptr ge b' = Some fd), *)
       step (State st rs m) E0 (State st' rs' m')
   | exec_step_builtin:
       forall b ofs f ef args res rs m vargs t vres rs' m' st,
@@ -1186,10 +1262,10 @@ Inductive initial_state (p: program): state -> Prop :=
       initial_state p (State nil rs0 m0).
 
 Inductive final_state: state -> int -> Prop :=
-  | final_state_intro: forall rs m r st,
+  | final_state_intro: forall rs m r,
       rs PC = Vnullptr ->
       rs X10 = Vint r ->
-      final_state (State st rs m) r.
+      final_state (State nil rs m) r.
 
 Definition semantics (p: program) :=
   Semantics step (initial_state p) final_state (Genv.globalenv p).
@@ -1228,15 +1304,13 @@ Ltac Equalities :=
   end.
   intros; constructor; simpl; intros.
 - (* determ *)
-  inv H; inv H0; Equalities.
+  inv H; inv H0; Equalities; try now discriminate.
   + split. constructor. auto.
   + split. constructor. auto.
-  + discriminate.
+  + now destruct i0.
+  + now destruct i0.
   + split. constructor. auto.
-  + split. constructor. auto.
-  + discriminate.
-  + discriminate.
-  + discriminate.
+
   + assert (vargs0 = vargs) by (eapply eval_builtin_args_determ; eauto). subst vargs0.
     exploit external_call_determ. eexact H5. eexact H14.  intros [A B].
     split. auto. intros. destruct B; auto. subst. auto.
@@ -1245,6 +1319,7 @@ Ltac Equalities :=
     split. auto. intros. destruct B; auto. subst. auto.
 - (* trace length *)
   red; intros. inv H; simpl.
+  omega.
   omega.
   omega.
   eapply external_call_trace_length; eauto.

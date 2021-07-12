@@ -936,24 +936,58 @@ Lemma exec_straight_steps_1:
 Proof.
   induction 1; intros.
   apply plus_one.
-  econstructor; eauto.
-  eapply find_instr_tail. eauto.
-  unfold next_stack.
-  unfold Genv.find_comp. rewrite H0. rewrite H2. simpl. rewrite H3.
-  replace (comp_of (Internal fn)) with (fn_comp fn) by reflexivity.
-  rewrite Pos.eqb_refl. reflexivity.
-  rewrite H0. rewrite H2. reflexivity.
-  right; left; auto.
-  simpl; rewrite H3. reflexivity.
+  { destruct (is_call i1) eqn:ISCALL;
+      destruct (is_return i1) eqn:ISRET;
+      try now destruct i1.
+    - eapply exec_step_internal_call; eauto.
+      eapply find_instr_tail. eauto.
+      now rewrite H0, H2.
+      right; left; simpl. now rewrite H3.
+      simpl; now rewrite H3.
+      unfold update_stack_call.
+      rewrite H0, H2; simpl; rewrite H3.
+      now rewrite Pos.eqb_refl.
+    - eapply exec_step_internal_return; eauto.
+      eapply find_instr_tail. eauto.
+      now rewrite H0, H2.
+      simpl; now rewrite H3.
+      simpl; now rewrite H3.
+      right; left; simpl. now rewrite H3.
+      unfold update_stack_return.
+      rewrite H0, H2; simpl; rewrite H3.
+      now rewrite Pos.eqb_refl.
+    - econstructor; eauto.
+      eapply find_instr_tail. eauto.
+      now rewrite H0, H2.
+      right; left; simpl. now rewrite H3.
+  }
+
   eapply plus_left'.
-  econstructor; eauto.
-  eapply find_instr_tail. eauto.
-  unfold next_stack. unfold Genv.find_comp. rewrite H0. rewrite H3. simpl. rewrite H4.
-  replace (comp_of (Internal fn)) with (fn_comp fn) by reflexivity.
-  rewrite Pos.eqb_refl. reflexivity.
-  rewrite H0. rewrite H3. reflexivity.
-  right; left; auto.
-  simpl; rewrite H4. reflexivity.
+  { destruct (is_call i) eqn:ISCALL;
+      destruct (is_return i) eqn:ISRET;
+      try now destruct i.
+    - eapply exec_step_internal_call; eauto.
+      eapply find_instr_tail. eauto.
+      now rewrite H0, H3.
+      right; left; simpl. now rewrite H4.
+      simpl; now rewrite H4.
+      unfold update_stack_call.
+      rewrite H0, H3; simpl; rewrite H4.
+      now rewrite Pos.eqb_refl.
+    - eapply exec_step_internal_return; eauto.
+      eapply find_instr_tail. eauto.
+      now rewrite H0, H3.
+      simpl; now rewrite H4.
+      simpl; now rewrite H4.
+      right; left; simpl. now rewrite H4.
+      unfold update_stack_return.
+      rewrite H0, H3; simpl; rewrite H4.
+      now rewrite Pos.eqb_refl.
+    - econstructor; eauto.
+      eapply find_instr_tail. eauto.
+      now rewrite H0, H3.
+      right; left; simpl. now rewrite H4.
+  }
   apply IHexec_straight with b (Ptrofs.add ofs Ptrofs.one).
   auto. rewrite H0. rewrite H3. reflexivity.
   auto.
