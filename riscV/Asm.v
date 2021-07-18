@@ -1090,7 +1090,66 @@ Inductive stackframe: Type :=
       (retaddr: ptrofs), (**r Asm return address in calling function *)
       stackframe.
 
-Definition stack := list stackframe.
+Record stack := { ra: val; (* return address of the last cross-compartment call *)
+                  sp: val; (* stack pointer to restore from the last cross-compartment call *)
+                  st: list stackframe (* rest of the stack *)
+                }.
+
+(* The state of the stack when we start the execution *)
+Definition initial_stack :=
+  {| ra := Vundef;
+     sp := Vundef;
+     st := nil |}.
+
+(* Updates to the stack *)
+(* These two definitions shouldn't really do any real enforcement. Instead,
+   they should just be used to keep track of the stack and use it in the
+   invariants *)
+(* The two definitions only update the stack when a cross-compartment change
+   is detected *)
+Definition update_stack_call (s: stack) (cp: compartment) rs' :=
+  let pc' := rs' # PC in
+  match Genv.find_comp ge pc' with
+  | Some cp' =>
+    if Pos.eqb cp cp' then
+      (* If we are in the same compartment as previously recorded, we
+         don't update the stack *)
+      Some s
+    else
+      (* Otherwise, we update the stack by creating a new frame containing
+         the old RA and old SP, pushing it on the stack, and recording the new RA
+         and SP *)
+      match ra s with
+      | Vptr f retaddr =>
+        Some {| ra := rs' # RA;
+                sp := rs' # SP;
+                st := Stackframe f (sp s) retaddr :: (st s) |}
+      | _ => None
+      end
+  | _ => None
+  end.
+
+Definition update_stack_return (s: stack) (cp: compartment) rs' :=
+  let pc' := rs' # PC in
+  match Genv.find_comp ge pc' with
+  | Some cp' =>
+    if Pos.eqb cp cp' then
+      (* If we are in the same compartment as previously recorded, we
+         don't update the stack *)
+      Some s
+    else
+      (* Otherwise, we pop the stop stackframe of the stack. *)
+      (* Q: in the new stack, should we set the new RA/SP to what's
+         stored in the registers, or what was stored in the stackframe
+         we just popped? *)
+      match st s with
+      | nil => None
+      | _ :: st' => Some {| ra := rs' # RA;
+                          sp := rs' # SP;
+                           st := st' |}
+      end
+  | _ => None
+  end.
 
 Inductive state: Type :=
   | State: stack -> regset -> mem -> state.
@@ -1105,39 +1164,6 @@ Definition is_return i :=
   match i with
   | Pj_r _ _ true => true
   | _ => false
-  end.
-
-(* These two definitions shouldn't really do any real enforcement. Instead,
-   they should just be used to keep track of the stack and use it in the
-   invariants *)
-Definition update_stack_call (st: stack) (cp: compartment) rs' :=
-  let pc' := rs' # PC in
-  let sp' := rs' # SP in
-  match Genv.find_comp ge pc' with
-  | Some cp' =>
-    if Pos.eqb cp cp' then
-      Some st
-    else
-      match rs' # RA with
-      | Vptr f retaddr => Some (Stackframe f sp' retaddr :: st)
-      | _ => None
-      end
-  | _ => None
-  end.
-
-Definition update_stack_return (st: stack) (cp: compartment) rs' :=
-  let pc' := rs' # PC in
-  let sp' := rs' # SP in
-  match Genv.find_comp ge pc' with
-  | Some cp' =>
-    if Pos.eqb cp cp' then
-      Some st
-    else
-      match st with
-      | nil => None
-      | _ :: st' => Some st'
-      end
-  | _ => None
   end.
 
 (* Definition next_stack i cp st rs' := *)
@@ -1178,9 +1204,6 @@ Inductive step: state -> trace -> state -> Prop :=
       is_return i = false ->
       forall (NEXTPC: rs' PC = Vptr b' ofs'),
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) (Vptr b' ofs')),
-      (* next_stack i (comp_of f) st rs' = Some st' -> *)
-      (* forall (NEXTPC: rs' PC = Vptr b' ofs'), *)
-      (* forall (NEXTFUN: Genv.find_funct_ptr ge b' = Some fd), *)
       step (State st rs m) E0 (State st rs' m')
   | exec_step_internal_call:
       forall b ofs f i rs m rs' m' b' ofs' (* fd *) cp st st',
@@ -1192,33 +1215,26 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (NEXTPC: rs' PC = Vptr b' ofs'),
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) (Vptr b' ofs')),
       forall (CURCOMP: Genv.find_comp ge (Vptr b Ptrofs.zero) = Some cp),
+      (* Is a call, we update the stack *)
       forall (STUPD: update_stack_call st cp rs' = Some st'),
-      (* next_stack i (comp_of f) st rs' = Some st' -> *)
-      (* forall (NEXTPC: rs' PC = Vptr b' ofs'), *)
-      (* forall (NEXTFUN: Genv.find_funct_ptr ge b' = Some fd), *)
       step (State st rs m) E0 (State st' rs' m')
   | exec_step_internal_return:
-      forall b ofs f i rs m rs' m' b' ofs' (* fd *) cp cp' st st',
+      forall b ofs f i rs m rs' m' (* fd *) cp cp' st st',
       rs PC = Vptr b ofs ->
       Genv.find_funct_ptr ge b = Some (Internal f) ->
       find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
       exec_instr f i rs m = Next rs' m' ->
       is_return i = true ->
-      forall (NEXTPC: rs' PC = Vptr b' ofs'),
-      (* This is a return, so we should check the policy in reverse order *)
-      (* Could this change affect security?
-         => if the call C1 -> C2.P2() is allowed, but C2 is not allowed to call C1.P1(),
-            then C2 could use a jump instruction that looks like a return to perform the
-            call *)
-      (* Proposed solution: be very careful to only allow returns that "respect" the stack. *)
-      (* forall (ALLOWED: Genv.allowed_call ge (comp_of f) (Vptr b' ofs')), *)
-      forall (CURCOMP: Genv.find_comp ge (Vptr b ofs') = Some cp),
-      forall (NEXTCOMP: Genv.find_comp ge (Vptr b' ofs) = Some cp'),
-      forall (ALLOWED: Genv.allowed_call ge cp' (Vptr b Ptrofs.zero)),
-      forall (STUPD: update_stack_return st cp rs' = Some st'),
-      (* next_stack i (comp_of f) st rs' = Some st' -> *)
       (* forall (NEXTPC: rs' PC = Vptr b' ofs'), *)
-      (* forall (NEXTFUN: Genv.find_funct_ptr ge b' = Some fd), *)
+      forall (CURCOMP: Genv.find_comp ge (rs' PC) = Some cp),
+      forall (NEXTCOMP: Genv.find_comp ge (rs' PC) = Some cp'),
+      (* We only impose conditions on when returns can be executed for cross-compartment
+         returns. These conditions are that we restore the previous RA and SP *)
+      forall (PC_RA: cp <> cp' -> rs' PC = ra st),
+      forall (RESTORE_SP: cp <> cp' -> rs' SP = sp st),
+      (* Note that in the same manner, this definition only updates the stack when doing
+         cross-compartment returns *)
+      forall (STUPD: update_stack_return st cp rs' = Some st'),
       step (State st rs m) E0 (State st' rs' m')
   | exec_step_builtin:
       forall b ofs f ef args res rs m vargs t vres rs' m' st,
@@ -1237,10 +1253,6 @@ Inductive step: state -> trace -> state -> Prop :=
       rs PC = Vptr b Ptrofs.zero ->
       Genv.find_funct_ptr ge b = Some (External ef) ->
       forall COMP: Genv.find_comp ge (rs RA) = Some cp,
-      (* JT: We think this is not needed, as the immediate previous step was to
-         go from some PC' to this PC corresponding to [ef]; this previous step
-         was an internal step, where the check is already done. *)
-      (* forall (ALLOWED: Policy.allowed_call pol cp (External ef)), *)
       external_call ef ge cp args m t res m' ->
       extcall_arguments rs m (ef_sig ef) args ->
       rs' = (set_pair (loc_external_result (ef_sig ef) ) res (undef_caller_save_regs rs))#PC <- (rs RA) ->
@@ -1259,13 +1271,13 @@ Inductive initial_state (p: program): state -> Prop :=
         # SP <- Vnullptr
         # RA <- Vnullptr in
       Genv.init_mem p = Some m0 ->
-      initial_state p (State nil rs0 m0).
+      initial_state p (State initial_stack rs0 m0).
 
 Inductive final_state: state -> int -> Prop :=
   | final_state_intro: forall rs m r,
       rs PC = Vnullptr ->
       rs X10 = Vint r ->
-      final_state (State nil rs m) r.
+      final_state (State initial_stack rs m) r.
 
 Definition semantics (p: program) :=
   Semantics step (initial_state p) final_state (Genv.globalenv p).
@@ -1309,7 +1321,7 @@ Ltac Equalities :=
   + split. constructor. auto.
   + now destruct i0.
   + now destruct i0.
-  + split. constructor. auto.
+  + split. constructor. congruence.
 
   + assert (vargs0 = vargs) by (eapply eval_builtin_args_determ; eauto). subst vargs0.
     exploit external_call_determ. eexact H5. eexact H14.  intros [A B].
