@@ -560,34 +560,35 @@ Definition stackframe_of_val v sp: option stackframe :=
  *)
 
 (* How are the source and target stack related? *)
-(* [match_stacks pc ra sp s s'] holds when *)
-Inductive match_stacks: val -> val -> val -> list Mach.stackframe -> stack -> Prop :=
+(* There is no reason to inspect the current RA or SP in the source, because they
+   can be modified. *)
+Inductive match_stacks: val -> list Mach.stackframe -> stack -> Prop :=
 | match_stacks_nil:
-    forall pc ra sp,
-    match_stacks pc ra sp nil initial_stack
-| match_stacks_internal_step:
-    (* Allow intra-compartment steps to modify the PC, the RA, and the SP as needed *)
-    forall newpc newra newsp pc ra sp s s',
-    match_stacks pc ra sp s s' ->
+    forall pc,
+    match_stacks pc nil nil
+| match_stacks_same_compartment:
+    (* Allows for changing the PC arbitrarily as long as we stay in the same
+       compartment *)
+    forall newpc pc s s',
+    match_stacks pc s s' ->
     Genv.find_comp ge pc = Genv.find_comp ge newpc ->
-    match_stacks newpc newra newsp s s'
+    match_stacks newpc s s'
 | match_stacks_intra_compartment:
     (* Intra-compartment calls create a new frame in the source, not the target *)
-    forall newpc newra newsp pc ra sp c s s' f,
-    match_stacks pc ra sp s s' ->
+    forall newpc pc s s' f,
+    match_stacks pc s s' ->
     Genv.find_comp ge pc = Genv.find_comp ge newpc ->
-    mach_stackframe_of_val ra sp c = Some f ->
-    match_stacks newpc newra newsp (f :: s) s'
+    (* no condition on the frame *)
+    match_stacks newpc (f :: s) s'
 | match_stacks_cross_compartment:
     (* Cross-compartment calls create a new frame in both the source and the target *)
-    forall newpc newra newsp pc ra sp c s s' f f' cp,
-    match_stacks pc ra sp s s' ->
+    forall newpc pc s s' f f' cp,
+    match_stacks pc s s' ->
     Genv.find_comp ge pc <> Genv.find_comp ge newpc ->
     Genv.find_comp ge pc = Some cp ->
     Genv.allowed_call ge cp newpc ->
-    mach_stackframe_of_val ra sp c = Some f ->
-    stackframe_of_val ra sp = Some f' ->
-    match_stacks newpc newra newsp (f :: s) {| ra := newra; sp := newsp; st := f' :: (st s') |}
+    match_stackframe f f' ->
+    match_stacks newpc (f :: s) (f' :: s')
 .
 
 Definition block_of (v: val): option block :=
@@ -600,7 +601,7 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
   | match_states_intro:
       forall s s' fb sp c ep ms m m' rs f tf tc
         (STACKS: match_stack ge s)
-        (STACKS': match_stacks (rs PC) (rs RA) (rs SP) s s')
+        (STACKS': match_stacks (rs PC) s s')
         (FIND: Genv.find_funct_ptr ge fb = Some (Internal f))
         (MEXT: Mem.extends m m')
         (AT: transl_code_at_pc ge (rs PC) fb f c ep tf tc)
@@ -611,8 +612,7 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
   | match_states_call:
       forall s s' fb ms m m' rs
         (STACKS: match_stack ge s)
-        (* (STACKS': exists newra newsp, match_stacks (rs PC) newra newsp s s') *)
-        (STACKS': match_stacks (rs PC) (rs RA) (rs SP) s s')
+        (STACKS': match_stacks (rs PC) s s')
         (MEXT: Mem.extends m m')
         (AG: agree ms (parent_sp s) rs)
         (ATPC: rs PC = Vptr fb Ptrofs.zero)
@@ -622,7 +622,7 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
   | match_states_return:
       forall s s' ms m m' rs
         (STACKS: match_stack ge s)
-        (STACKS': match_stacks (rs PC) (rs RA) (rs SP) s s')
+        (STACKS': match_stacks (rs PC) s s')
         (MEXT: Mem.extends m m')
         (AG: agree ms (parent_sp s) rs)
         (ATPC: rs PC = parent_ra s),
@@ -635,7 +635,7 @@ Lemma exec_straight_steps:
   Mem.extends m2 m2' ->
   Genv.find_funct_ptr ge fb = Some (Internal f) ->
   transl_code_at_pc ge (rs1 PC) fb f (i :: c) ep tf tc ->
-  forall (STACKS: match_stacks (rs1 PC) (rs1 RA) (rs1 SP) s s'),
+  forall (STACKS: match_stacks (rs1 PC) s s'),
   (* forall (ALWSTK: stack_allowed fb s'), *)
   (forall k c (TR: transl_instr f i ep k = OK c),
    exists rs2,
@@ -653,9 +653,11 @@ Proof.
   econstructor; eauto.
   { clear -A STACKS.
     induction A.
-    - rewrite H0. econstructor. eauto.
+    - rewrite H0.
+      econstructor; eauto.
       now destruct (rs1 PC).
-    - eapply IHA. rewrite H0. econstructor. eauto.
+    - eapply IHA. rewrite H0.
+      econstructor; eauto.
       now destruct (rs1 PC).
   }
   eapply exec_straight_at; eauto.
@@ -669,7 +671,7 @@ Lemma exec_straight_steps_goto:
   Mach.find_label lbl f.(Mach.fn_code) = Some c' ->
   transl_code_at_pc ge (rs1 PC) fb f (i :: c) ep tf tc ->
   it1_is_parent ep i = false ->
-  forall (STACKS: match_stacks (rs1 PC) (rs1 RA) (rs1 SP) s s'),
+  forall (STACKS: match_stacks (rs1 PC) s s'),
   (* forall (ALWSTK: stack_allowed fb s'), *)
   (forall k c (TR: transl_instr f i ep k = OK c),
    exists jmp, exists k', exists rs2,
@@ -705,7 +707,7 @@ Proof.
     - eapply exec_step_internal_return; eauto.
       eapply find_instr_tail. eauto.
       rewrite C. eexact GOTO.
-      rewrite <- H9; simpl; now rewrite FN.
+      rewrite PC2; simpl; now rewrite FN.
       rewrite <- H9; simpl; now rewrite FN.
       congruence. congruence.
       unfold update_stack_return.
@@ -717,8 +719,8 @@ Proof.
   }
   traceEq.
   econstructor; eauto.
-  { rewrite <- H9.
-    econstructor. eauto. rewrite <- H6. auto. }
+  { rewrite <- H9. rewrite <- H6 in STACKS.
+    econstructor; eauto. }
   apply agree_exten with rs2; auto with asmgen.
   congruence.
 Qed.
@@ -731,7 +733,7 @@ Lemma exec_straight_opt_steps_goto:
   Mach.find_label lbl f.(Mach.fn_code) = Some c' ->
   transl_code_at_pc ge (rs1 PC) fb f (i :: c) ep tf tc ->
   it1_is_parent ep i = false ->
-  forall (STACKS: match_stacks (rs1 PC) (rs1 RA) (rs1 SP) s s'),
+  forall (STACKS: match_stacks (rs1 PC) s s'),
   (* forall (ALWSTK: stack_allowed fb s'), *)
   (forall k c (TR: transl_instr f i ep k = OK c),
    exists jmp, exists k', exists rs2,
@@ -765,7 +767,7 @@ Proof.
     - eapply exec_step_internal_return; eauto.
       eapply find_instr_tail. eauto.
       rewrite C. eexact GOTO.
-      rewrite <- H9; simpl; now rewrite FN.
+      rewrite <- H6; simpl; now rewrite FN.
       rewrite <- H9; simpl; now rewrite FN.
       congruence. congruence.
       unfold update_stack_return.
@@ -776,8 +778,8 @@ Proof.
       right; left; simpl. now rewrite FN.
   }
   econstructor; eauto.
-  { rewrite <- H9.
-    econstructor. eauto. rewrite <- H6. eauto. }
+  { rewrite <- H9. rewrite <- H6 in STACKS.
+    econstructor; eauto. }
   apply agree_exten with rs2; auto with asmgen.
   congruence.
 - exploit exec_straight_steps_2; eauto.
@@ -801,7 +803,7 @@ Proof.
     - eapply exec_step_internal_return; eauto.
       eapply find_instr_tail. eauto.
       rewrite C. eexact GOTO.
-      rewrite <- H11; simpl; now rewrite FN.
+      rewrite PC2; simpl; now rewrite FN.
       rewrite <- H11; simpl; now rewrite FN.
       congruence. congruence.
       unfold update_stack_return.
@@ -813,8 +815,8 @@ Proof.
   }
   traceEq.
   econstructor; eauto.
-  { rewrite <- H11.
-    econstructor. eauto. rewrite <- H6. eauto. }
+  { rewrite <- H11. rewrite <- H6 in STACKS.
+    econstructor; eauto. }
   apply agree_exten with rs2; auto with asmgen.
   congruence.
 Qed.
@@ -993,18 +995,13 @@ Local Transparent destroyed_by_op.
     econstructor; eauto.
     eapply agree_sp_def; eauto.
     { Simpl.
-      rewrite H7. rewrite <- H2 in STACKS'. rewrite <- H2.
-      erewrite agree_sp; eauto.
-      eapply match_stacks_intra_compartment. eapply match_stacks_internal_step.
-      exact STACKS'.
-      simpl. rewrite FIND. instantiate (1 := (Vptr f' Ptrofs.zero)). simpl. rewrite CALLED.
+      rewrite H7. rewrite <- H2 in *.
+      eapply match_stacks_intra_compartment. exact STACKS'.
+      simpl. rewrite FIND, CALLED.
       rewrite (comp_transl_partial _ TTRANSF).
       unfold comp_of in *; simpl in *.
       rewrite (comp_transf_function _ _ H4).
       apply Peqb_true_eq in Heq. now rewrite Heq.
-      reflexivity.
-      unfold mach_stackframe_of_val. instantiate (3 := (Vptr fb ofs)). simpl.
-      reflexivity.
     }
     simpl. eapply agree_exten; eauto. intros. Simpl.
     Simpl. rewrite <- H2. auto.
@@ -1023,27 +1020,21 @@ Local Transparent destroyed_by_op.
     rewrite H7; simpl. unfold tge; rewrite TFIND.
     rewrite <- H2. simpl.
     unfold comp_of in *; simpl in *. rewrite Heq.
-    admit.
+    reflexivity.
     econstructor; eauto.
     econstructor; eauto.
     eapply agree_sp_def; eauto.
     { Simpl.
-      rewrite H7. rewrite <- H2 in STACKS'. rewrite <- H2.
-      erewrite agree_sp; eauto.
-      eapply match_stacks_cross_compartment. eapply match_stacks_internal_step.
-      exact STACKS'.
-      simpl. rewrite FIND.
-      instantiate (1 := (Vptr fb Ptrofs.zero)). simpl. rewrite FIND. reflexivity.
-      simpl. rewrite FIND. rewrite CALLED.
+      rewrite H7. rewrite <- H2 in *.
+      eapply match_stacks_cross_compartment. exact STACKS'.
+      simpl. rewrite FIND, CALLED.
       rewrite (comp_transl_partial _ TTRANSF).
       unfold comp_of in *; simpl in *.
       rewrite (comp_transf_function _ _ H4).
       apply Pos.eqb_neq in Heq. congruence.
       unfold Genv.find_comp. rewrite FIND; auto.
       eauto.
-      unfold mach_stackframe_of_val.
-      instantiate (3 := Vptr fb ofs). reflexivity.
-      reflexivity.
+      erewrite agree_sp; eauto. constructor.
     }
     simpl. eapply agree_exten; eauto. intros. Simpl.
     Simpl. rewrite <- H2. auto.
@@ -1073,20 +1064,15 @@ Local Transparent destroyed_by_op.
     econstructor; eauto.
     eapply agree_sp_def; eauto.
     { Simpl.
-      rewrite <- H2 in STACKS'. rewrite <- H2.
-      erewrite agree_sp; eauto.
-      eapply match_stacks_intra_compartment. eapply match_stacks_internal_step.
-      exact STACKS'.
-      simpl. rewrite FIND. instantiate (1 := (Vptr f' Ptrofs.zero)). simpl. rewrite CALLED.
+      rewrite <- H2 in *.
+      eapply match_stacks_intra_compartment. exact STACKS'.
+      simpl. unfold Genv.symbol_address.
+      rewrite FIND, symbols_preserved, H.
+      unfold Genv.find_comp. rewrite CALLED.
       rewrite (comp_transl_partial _ TTRANSF).
       unfold comp_of in *; simpl in *.
       rewrite (comp_transf_function _ _ H4).
       apply Peqb_true_eq in Heq. now rewrite Heq.
-      simpl. unfold Genv.symbol_address.
-      rewrite symbols_preserved. rewrite H.
-      reflexivity.
-      unfold mach_stackframe_of_val. instantiate (3 := (Vptr fb ofs)). simpl.
-      reflexivity.
     }
     simpl. eapply agree_exten; eauto. intros. Simpl.
     Simpl. unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H. eauto.
@@ -1108,28 +1094,23 @@ Local Transparent destroyed_by_op.
     simpl; unfold tge; rewrite TFIND.
     rewrite <- H2; simpl.
     unfold comp_of in *; simpl in *. rewrite Heq.
-    admit.
+    reflexivity.
     econstructor; eauto.
     econstructor; eauto.
     eapply agree_sp_def; eauto.
     { Simpl.
-      rewrite <- H2 in STACKS'. rewrite <- H2.
-      erewrite agree_sp; eauto.
-      eapply match_stacks_cross_compartment. eapply match_stacks_internal_step.
-      exact STACKS'.
-      simpl. rewrite FIND.
-      instantiate (1 := (Vptr fb Ptrofs.zero)). simpl. rewrite FIND. reflexivity.
-      simpl. rewrite FIND. unfold Genv.symbol_address. rewrite symbols_preserved, H.
-      simpl. rewrite CALLED.
+      rewrite <- H2 in *.
+      eapply match_stacks_cross_compartment. exact STACKS'.
+      simpl. unfold Genv.symbol_address.
+      rewrite FIND, symbols_preserved, H.
+      unfold Genv.find_comp. rewrite CALLED.
       rewrite (comp_transl_partial _ TTRANSF).
       unfold comp_of in *; simpl in *.
       rewrite (comp_transf_function _ _ H4).
       apply Pos.eqb_neq in Heq. congruence.
       unfold Genv.find_comp. rewrite FIND; auto.
-      eauto. unfold Genv.symbol_address. rewrite symbols_preserved, H. simpl. eauto.
-      unfold mach_stackframe_of_val.
-      instantiate (3 := Vptr fb ofs). reflexivity.
-      reflexivity.
+      unfold Genv.symbol_address. rewrite symbols_preserved, H. eauto.
+      erewrite agree_sp; eauto. constructor.
     }
     simpl. eapply agree_exten; eauto. intros. Simpl.
     Simpl. unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H. eauto.
@@ -1164,10 +1145,10 @@ Local Transparent destroyed_by_op.
   (* match states *)
   econstructor; eauto.
   { Simpl. rewrite Z by (rewrite <- (ireg_of_eq _ _ EQ1); eauto with asmgen).
-    rewrite H9. rewrite <- H4 in STACKS'.
-    econstructor. eauto. simpl.
-    rewrite FIND, CALLED, COMP. reflexivity.
-  }
+    rewrite H9. rewrite <- H4 in *.
+    econstructor; eauto.
+    unfold Genv.find_comp.
+    rewrite FIND, CALLED, COMP. reflexivity. }
   apply agree_set_other; auto with asmgen.
   Simpl. rewrite Z by (rewrite <- (ireg_of_eq _ _ EQ1); eauto with asmgen). assumption.
 + (* Direct call *)
@@ -1190,8 +1171,7 @@ Local Transparent destroyed_by_op.
     rewrite <- H4 in STACKS'.
     econstructor. eauto. simpl.
     rewrite FIND. unfold Genv.symbol_address. rewrite symbols_preserved.
-    rewrite H. simpl. rewrite CALLED, COMP. reflexivity.
-  }
+    rewrite H. simpl. rewrite CALLED, COMP. reflexivity. }
   apply agree_set_other; auto with asmgen.
   Simpl. unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H. auto.
 
@@ -1213,9 +1193,20 @@ Local Transparent destroyed_by_op.
   econstructor; eauto.
   { Simpl.
     rewrite <- H1 in STACKS'.
-    econstructor. eauto. simpl.
-    rewrite FIND. unfold Genv.find_comp.
-    admit.
+    econstructor; eauto.
+    unfold Genv.find_comp.
+    rewrite FIND. (* PC should simply be incremented by one *)
+    rewrite set_res_other; eauto.
+    rewrite undef_regs_other; eauto.
+    Simpl. rewrite <- H1; simpl.
+    now rewrite FIND.
+    intros r' H4. clear -H4.
+    remember (destroyed_by_builtin ef) as l; clear Heql.
+    rename H4 into H.
+    induction l.
+    - inv H.
+    - inv H. intros Hn. eapply preg_of_not_PC. rewrite Hn; eauto.
+      eapply IHl. eauto.
   }
   unfold nextinstr. rewrite Pregmap.gss.
   rewrite set_res_other. rewrite undef_regs_other_2. rewrite Pregmap.gso by congruence. 
@@ -1290,7 +1281,9 @@ Local Transparent destroyed_by_op.
   simpl. rewrite FN. reflexivity.
 
   econstructor; eauto.
-  admit.
+  { econstructor. eauto.
+    admit.
+  }
   eapply agree_undef_regs; eauto.
   simpl. intros. rewrite C; auto with asmgen. Simpl.
   congruence.
@@ -1312,8 +1305,8 @@ Local Transparent destroyed_by_op.
      we need to justify that the return being performed is allowed, i.e. that it's a return
      corresponding to a previous call. *)
   simpl. reflexivity. eauto.
-  Simpl. admit.
-  Simpl. admit.
+  Simpl. rewrite P. eapply comp_translated. unfold Genv.find_comp; rewrite FIND. eauto.
+  Simpl. rewrite X. (* need to do case analysis, but otherwise ok *) admit.
   admit. admit.
   (* rewrite (functions_transl _ _ _ H4 H5). reflexivity. *)
   (* simpl. rewrite (functions_transl _ _ _ H4 H5). reflexivity. *)
@@ -1368,7 +1361,7 @@ Local Transparent destroyed_by_op.
   left; eexists; split.
   eapply exec_straight_steps_1; eauto. omega. constructor.
   econstructor; eauto.
-  admit.
+  rewrite X. rewrite ATPC in STACKS'. econstructor; eauto.
   rewrite X; econstructor; eauto.
   apply agree_exten with rs2; eauto with asmgen.
   unfold rs2.
@@ -1394,7 +1387,7 @@ Local Transparent destroyed_at_function_entry.
     apply comp_translated; eauto. }
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   econstructor; eauto.
-  admit.
+  Simpl. rewrite ATLR. admit.
   unfold loc_external_result. apply agree_set_other; auto. apply agree_set_pair; auto.
   apply agree_undef_caller_save_regs; auto.
 

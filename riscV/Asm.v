@@ -1090,16 +1090,15 @@ Inductive stackframe: Type :=
       (retaddr: ptrofs), (**r Asm return address in calling function *)
       stackframe.
 
-Record stack := { ra: val; (* return address of the last cross-compartment call *)
-                  sp: val; (* stack pointer to restore from the last cross-compartment call *)
-                  st: list stackframe (* rest of the stack *)
-                }.
+(* Record stack := { cp: compartment; (* current compartment *) *)
+(*                   ra: val; (* return address of the last cross-compartment call *) *)
+(*                   sp: val; (* stack pointer to restore from the last cross-compartment call *) *)
+(*                   st: list stackframe (* rest of the stack *) *)
+(*                 }. *)
+Definition stack := list stackframe.
 
 (* The state of the stack when we start the execution *)
-Definition initial_stack :=
-  {| ra := Vundef;
-     sp := Vundef;
-     st := nil |}.
+Definition initial_stack: stack := nil.
 
 (* Updates to the stack *)
 (* These two definitions shouldn't really do any real enforcement. Instead,
@@ -1109,6 +1108,8 @@ Definition initial_stack :=
    is detected *)
 Definition update_stack_call (s: stack) (cp: compartment) rs' :=
   let pc' := rs' # PC in
+  let ra' := rs' # RA in
+  let sp' := rs' # SP in
   match Genv.find_comp ge pc' with
   | Some cp' =>
     if Pos.eqb cp cp' then
@@ -1116,14 +1117,10 @@ Definition update_stack_call (s: stack) (cp: compartment) rs' :=
          don't update the stack *)
       Some s
     else
-      (* Otherwise, we update the stack by creating a new frame containing
-         the old RA and old SP, pushing it on the stack, and recording the new RA
-         and SP *)
-      match ra s with
+      (* Otherwise, we simply push a new frame on the stack *)
+      match ra' with
       | Vptr f retaddr =>
-        Some {| ra := rs' # RA;
-                sp := rs' # SP;
-                st := Stackframe f (sp s) retaddr :: (st s) |}
+        Some (Stackframe f sp' retaddr :: s)
       | _ => None
       end
   | _ => None
@@ -1138,15 +1135,10 @@ Definition update_stack_return (s: stack) (cp: compartment) rs' :=
          don't update the stack *)
       Some s
     else
-      (* Otherwise, we pop the stop stackframe of the stack. *)
-      (* Q: in the new stack, should we set the new RA/SP to what's
-         stored in the registers, or what was stored in the stackframe
-         we just popped? *)
-      match st s with
+      (* Otherwise we just pop the top stackframe *)
+      match s with
       | nil => None
-      | _ :: st' => Some {| ra := rs' # RA;
-                          sp := rs' # SP;
-                           st := st' |}
+      | _ :: st' => Some st'
       end
   | _ => None
   end.
@@ -1193,6 +1185,18 @@ Definition is_return i :=
 (*   | None => None *)
 (*   end. *)
 
+Definition asm_parent_ra s :=
+  match s with
+  | nil => Vnullptr
+  | Stackframe b sp retaddr :: _ => Vptr b retaddr
+  end.
+
+Definition asm_parent_sp s :=
+  match s with
+  | nil => Vnullptr
+  | Stackframe b sp retaddr :: _ => sp
+  end.
+
 Inductive step: state -> trace -> state -> Prop :=
   | exec_step_internal:
       forall b ofs f i rs m rs' m' b' ofs' (* fd *) st,
@@ -1226,12 +1230,12 @@ Inductive step: state -> trace -> state -> Prop :=
       exec_instr f i rs m = Next rs' m' ->
       is_return i = true ->
       (* forall (NEXTPC: rs' PC = Vptr b' ofs'), *)
-      forall (CURCOMP: Genv.find_comp ge (rs' PC) = Some cp),
+      forall (CURCOMP: Genv.find_comp ge (rs PC) = Some cp),
       forall (NEXTCOMP: Genv.find_comp ge (rs' PC) = Some cp'),
       (* We only impose conditions on when returns can be executed for cross-compartment
          returns. These conditions are that we restore the previous RA and SP *)
-      forall (PC_RA: cp <> cp' -> rs' PC = ra st),
-      forall (RESTORE_SP: cp <> cp' -> rs' SP = sp st),
+      forall (PC_RA: cp <> cp' -> rs' PC = asm_parent_ra st),
+      forall (RESTORE_SP: cp <> cp' -> rs' SP = asm_parent_sp st),
       (* Note that in the same manner, this definition only updates the stack when doing
          cross-compartment returns *)
       forall (STUPD: update_stack_return st cp rs' = Some st'),

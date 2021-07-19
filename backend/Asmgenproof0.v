@@ -949,7 +949,7 @@ Proof.
       now rewrite Pos.eqb_refl.
     - eapply exec_step_internal_return; eauto.
       eapply find_instr_tail. eauto.
-      now rewrite H0, H2; simpl; rewrite H3.
+      now rewrite H2; simpl; rewrite H3.
       now rewrite H0, H2; simpl; rewrite H3.
       congruence. congruence.
       unfold update_stack_return.
@@ -975,7 +975,7 @@ Proof.
       now rewrite Pos.eqb_refl.
     - eapply exec_step_internal_return; eauto.
       eapply find_instr_tail. eauto.
-      now rewrite H0, H3; simpl; rewrite H4.
+      now rewrite H3; simpl; rewrite H4.
       now rewrite H0, H3; simpl; rewrite H4.
       congruence. congruence.
       unfold update_stack_return.
