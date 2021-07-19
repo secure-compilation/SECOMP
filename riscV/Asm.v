@@ -1253,14 +1253,24 @@ Inductive step: state -> trace -> state -> Prop :=
                    (rs#X31 <- Vundef))) ->
       step (State st rs m) t (State st rs' m')
   | exec_step_external:
-      forall b ef args res rs m t rs' m' cp st,
+      forall b ef args res rs m t rs' m' cp cp' cp'' st st',
       rs PC = Vptr b Ptrofs.zero ->
       Genv.find_funct_ptr ge b = Some (External ef) ->
       forall COMP: Genv.find_comp ge (rs RA) = Some cp,
       external_call ef ge cp args m t res m' ->
       extcall_arguments rs m (ef_sig ef) args ->
       rs' = (set_pair (loc_external_result (ef_sig ef) ) res (undef_caller_save_regs rs))#PC <- (rs RA) ->
-      step (State st rs m) t (State st rs' m').
+      (* These steps behave like returns. So we must update the stack *)
+      forall (CURCOMP: Genv.find_comp ge (rs PC) = Some cp'),
+      forall (NEXTCOMP: Genv.find_comp ge (rs' PC) = Some cp''),
+      (* We only impose conditions on when returns can be executed for cross-compartment
+         returns. These conditions are that we restore the previous RA and SP *)
+      forall (PC_RA: cp' <> cp'' -> rs' PC = asm_parent_ra st),
+      forall (RESTORE_SP: cp' <> cp'' -> rs' SP = asm_parent_sp st),
+      (* Note that in the same manner, this definition only updates the stack when doing
+         cross-compartment returns *)
+      forall (STUPD: update_stack_return st cp rs' = Some st'),
+      step (State st rs m) t (State st' rs' m').
 
 End RELSEM.
 
@@ -1332,7 +1342,7 @@ Ltac Equalities :=
     split. auto. intros. destruct B; auto. subst. auto.
   + assert (args0 = args) by (eapply extcall_arguments_determ; eauto). subst args0.
     exploit external_call_determ. eexact H3. eexact H9. intros [A B].
-    split. auto. intros. destruct B; auto. subst. auto.
+    split. auto. intros. destruct B; auto. subst. congruence.
 - (* trace length *)
   red; intros. inv H; simpl.
   omega.
