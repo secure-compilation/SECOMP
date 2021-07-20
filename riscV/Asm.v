@@ -1135,9 +1135,9 @@ Definition update_stack_return (s: stack) (cp: compartment) rs' :=
          don't update the stack *)
       Some s
     else
-      (* Otherwise we just pop the top stackframe *)
+      (* Otherwise we just pop the top stackframe, if it exists *)
       match s with
-      | nil => None
+      | nil => Some nil
       | _ :: st' => Some st'
       end
   | _ => None
@@ -1157,33 +1157,6 @@ Definition is_return i :=
   | Pj_r _ _ true => true
   | _ => false
   end.
-
-(* Definition next_stack i cp st rs' := *)
-(*   let pc' := rs' # PC in *)
-(*   let sp' := rs' # SP in *)
-(*   match Genv.find_comp ge pc' with *)
-(*   | Some cp' => *)
-(*     if Pos.eqb cp cp' then (* We stay in the same compartment: we do not update the stack *) *)
-(*       Some st *)
-(*     else (* Change in compartments: we have to update the stack *) *)
-(*       match i with *)
-(*         (* Jals correspond to calls; we must update the stack*) *)
-(*     | Pjal_s _ _ | Pjal_r _ _ => *)
-(*                      match rs' # RA with *)
-(*                      | Vptr f retaddr => Some (Stackframe f retaddr sp' :: st) *)
-(*                      | _ => None *)
-(*                      end *)
-(*       (* Other instructions are used to maybe perform returns *) *)
-(*       | _ => *)
-(*         match st with *)
-(*         | nil => Some nil *)
-(*         | Stackframe f retaddr sp :: st' => *)
-(*           if Val.eq (Vptr f retaddr) pc' && Val.eq sp sp' then Some st' *)
-(*           else Some st *)
-(*         end *)
-(*       end *)
-(*   | None => None *)
-(*   end. *)
 
 Definition asm_parent_ra s :=
   match s with
@@ -1269,7 +1242,7 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (RESTORE_SP: cp' <> cp'' -> rs' SP = asm_parent_sp st),
       (* Note that in the same manner, this definition only updates the stack when doing
          cross-compartment returns *)
-      forall (STUPD: update_stack_return st cp rs' = Some st'),
+      forall (STUPD: update_stack_return st cp' rs' = Some st'),
       step (State st rs m) t (State st' rs' m').
 
 End RELSEM.
