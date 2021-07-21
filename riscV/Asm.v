@@ -1148,13 +1148,13 @@ Inductive state: Type :=
 
 Definition is_call i :=
   match i with
-  | Pjal_s _ _ true | Pjal_r _ _ true => true
+  | Pjal_s _ _ flag | Pjal_r _ _ flag => flag
   | _ => false
   end.
 
 Definition is_return i :=
   match i with
-  | Pj_r _ _ true => true
+  | Pj_r _ _ flag => flag
   | _ => false
   end.
 
@@ -1172,7 +1172,7 @@ Definition asm_parent_sp s :=
 
 Inductive step: state -> trace -> state -> Prop :=
   | exec_step_internal:
-      forall b ofs f i rs m rs' m' b' ofs' (* fd *) st,
+      forall b ofs f i rs m rs' m' b' ofs' st,
       rs PC = Vptr b ofs ->
       Genv.find_funct_ptr ge b = Some (Internal f) ->
       find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
@@ -1183,7 +1183,7 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) (Vptr b' ofs')),
       step (State st rs m) E0 (State st rs' m')
   | exec_step_internal_call:
-      forall b ofs f i rs m rs' m' b' ofs' (* fd *) cp st st',
+      forall b ofs f i rs m rs' m' b' ofs' cp st st',
       rs PC = Vptr b ofs ->
       Genv.find_funct_ptr ge b = Some (Internal f) ->
       find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
@@ -1196,7 +1196,7 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (STUPD: update_stack_call st cp rs' = Some st'),
       step (State st rs m) E0 (State st' rs' m')
   | exec_step_internal_return:
-      forall b ofs f i rs m rs' m' (* fd *) cp cp' st st',
+      forall b ofs f i rs m rs' m' cp cp' st st',
       rs PC = Vptr b ofs ->
       Genv.find_funct_ptr ge b = Some (Internal f) ->
       find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
