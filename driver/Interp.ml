@@ -598,7 +598,8 @@ let change_main_function p old_main old_main_ty =
       fn_return = type_int32s; fn_callconv = cc_default;
       fn_params = []; fn_vars = []; fn_body = body } in
   let new_main_id = intern_string "___main" in
-  { prog_main = new_main_id;
+  { prog_pol = AST.Policy.empty_pol; (* FIXME *)
+    prog_main = new_main_id;
     Ctypes.prog_defs = (new_main_id, Gfun(Ctypes.Internal new_main_fn)) :: p.Ctypes.prog_defs;
     Ctypes.prog_public = p.Ctypes.prog_public;
     prog_types = p.prog_types;
