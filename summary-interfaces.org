@@ -225,6 +225,134 @@ Lemma find_function_find_function_ptr: forall ros rs fd,
 During the inlining and tailcall optimization phases in the backend, there are inserted
 checks to only inline and tailcall functions that belong to the same compartment.
 
+** Case of the Risc-V backend
+The Risc-V backend assembly language's syntax and semantics are the most
+important modification.
+
+At this level, we need to check at every step of execution that we are not
+changing compartment without respecting the policy. To do so, we modify the
+syntax and the semantics.
+
+As a first step, we need to modify the rule
+#+begin_src coq
+exec_step_internal:
+  forall b ofs f i rs m rs' m',
+  rs PC = Vptr b ofs ->
+  Genv.find_funct_ptr ge b = Some (Internal f) ->
+  find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
+  exec_instr f i rs m = Next rs' m' ->
+  step (State rs m) E0 (State rs' m')
+#+end_src
+which handles stepping in the code.
+We add the check ~(ALLOWED: Genv.allowed_call ge (comp_of f) (Vptr b' ofs'))~
+where ~f~ is the currently executing function and ~Vptr b' ofs'~ is the new PC.
+Adding this condition prevents all unwanted compartment changes.
+
+However, this doesn't allow all returns: for instance, consider the case where a
+procedure ~P_1~ of a compartment ~C_1~ calls a procedure ~P_2~ of ~C_2~. When
+~C_2~ tries to return to ~P_1~, it is not necessary the case that this is
+allowed by the policy (it does not have to be symmetric, and indeed it shouldn't
+be in general. ~C_2~ could be an untrusted compartment that is not allowed to call
+anything from ~C_1~).
+
+We tried first one solution that doesn't work: when jumping to the return address ~RA~,
+the semantics could have a special case that do allow the return, on the condition
+that the call from the compartment of ~RA~ to the PC from which we are returning
+is allowed (i.e. check the policy in reverse).
+
+However, this is not sufficent. Consider the following example:
+~P_1~ from ~C_1~ calls ~P_2~ from ~C_2~, which then do a tailcall to
+~P_2'~ (still from ~C_2~). Then, when ~P_2'~ returns, it tries to return
+to ~P_1~, but the call from ~C_1~ to ~P_2'~ was not necessarily allowed!
+(for instance, if ~P_2'~ is private to ~C_2~).
+
+We settled on the following solution: the risc-V backend makes use of a virtual
+cross-compartment stack that stores return addresses and stack pointers of cross-compartment
+calls.
+When doing cross-compartment calls, we add a frame to this cross-compartment stack.
+When doing cross-compartment returns, we check that the new PC points to the return address
+stored on the stack, and also that the new SP points to the address stored on the stack.
+This should prevent an attacker to bypass the policy by disguising calls into returns.
+
+While we could do these checks at every step, this is not efficient and would be difficult
+to implement on a micro-policy backend. Instead, we now tag some of the Risc-V instructions
+as calls or returns. Instructions ~Pjal_s~ and ~Pjal_r~ can be tagged as calls, and
+instruction ~Pj_r~ (jump to content of register) can be tagged as a return. No other
+instruction is tagged. These tags are set by the =Mach= to =Asm= compiler when it
+compiles calls and returns.
+
+The previous rule becomes the following three:
+#+begin_src coq
+  | exec_step_internal:
+      forall b ofs f i rs m rs' m' b' ofs' st,
+      rs PC = Vptr b ofs ->
+      Genv.find_funct_ptr ge b = Some (Internal f) ->
+      find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
+      exec_instr f i rs m = Next rs' m' ->
+      is_call i = false ->
+      is_return i = false ->
+      forall (NEXTPC: rs' PC = Vptr b' ofs'),
+      forall (ALLOWED: Genv.allowed_call ge (comp_of f) (Vptr b' ofs')),
+      step (State st rs m) E0 (State st rs' m')
+  | exec_step_internal_call:
+      forall b ofs f i rs m rs' m' b' ofs' cp st st',
+      rs PC = Vptr b ofs ->
+      Genv.find_funct_ptr ge b = Some (Internal f) ->
+      find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
+      exec_instr f i rs m = Next rs' m' ->
+      is_call i = true ->
+      forall (NEXTPC: rs' PC = Vptr b' ofs'),
+      forall (ALLOWED: Genv.allowed_call ge (comp_of f) (Vptr b' ofs')),
+      forall (CURCOMP: Genv.find_comp ge (Vptr b Ptrofs.zero) = Some cp),
+      (* Is a call, we update the stack *)
+      forall (STUPD: update_stack_call st cp rs' = Some st'),
+      step (State st rs m) E0 (State st' rs' m')
+  | exec_step_internal_return:
+      forall b ofs f i rs m rs' m' cp cp' st st',
+      rs PC = Vptr b ofs ->
+      Genv.find_funct_ptr ge b = Some (Internal f) ->
+      find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
+      exec_instr f i rs m = Next rs' m' ->
+      is_return i = true ->
+      forall (CURCOMP: Genv.find_comp ge (rs PC) = Some cp),
+      forall (NEXTCOMP: Genv.find_comp ge (rs' PC) = Some cp'),
+      (* We only impose conditions on when returns can be executed for cross-compartment
+         returns. These conditions are that we restore the previous RA and SP *)
+      forall (PC_RA: cp <> cp' -> rs' PC = asm_parent_ra st),
+      forall (RESTORE_SP: cp <> cp' -> rs' SP = asm_parent_sp st),
+      (* Note that in the same manner, this definition only updates the stack when doing
+         cross-compartment returns *)
+      forall (STUPD: update_stack_return st cp rs' = Some st'),
+      step (State st rs m) E0 (State st' rs' m')
+#+end_src
+
+- Rule ~exec_step_internal~ is used for every step that is not a call or a
+  return. It still does a policy check. (TODO: can we get rid of this policy
+  check and instead simply check that we do not change compartment?)
+- Rule ~exec_step_internal_call~ is used when the instruction is tagged as a
+  call. It checks that the call is allowed, and update the stack (function
+  ~update_stack_call~). Note that ~update_stack_call~ does not modify the stack
+  if the call is intra-compartment.
+- Rule ~exec_step_interal_return~ is used when the instruction is tagged as a
+  return. It checks that the return is allowed, in the sense that it restores
+  the return address and the stack pointer stored on the cross-compartment
+  stack. Again, the stack is only modified by ~update_stack_return~ when the
+  return is cross-compartment.
+
+In terms of compilation: calls and returns are compiled to instructions tagged
+as calls or returns:
+#+begin_src coq
+  | Mcall sig (inl r) =>
+      do r1 <- ireg_of r; OK (Pjal_r r1 sig true :: k)
+  | Mcall sig (inr symb) =>
+      OK (Pjal_s symb sig true :: k)
+  (* … *)
+  | Mreturn => |
+      OK (make_epilogue f (Pj_r RA f.(Mach.fn_sig) true :: k))
+#+end_src coq
+Note that tailcalls are never compiled to instructions tagged as calls, because
+they can only occur intra-compartment.
+
 * Simulation proofs
 
 To show that the simulation lemmas still hold, we need to show that if a call is allowed in the source, then it is allowed in the target
@@ -268,3 +396,46 @@ the source and target global environment instead of the generic one.
 As a result one has to prove again some results that were proven for
 the generic  ~match_genvs~ relation. However, nothing is particularly
 surprising in these proofs.
+
+** TODO Compilation from =Mach= to =Asm=
+
+Because of the new stack, we need to make a few modifications to the
+simulation proof.
+
+We introduce a new simulation invariant:
+#+begin_src coq
+Inductive match_stacks: val -> list Mach.stackframe -> stack -> Prop :=
+| match_stacks_nil:
+    forall pc,
+    match_stacks pc nil nil
+| match_stacks_intra_compartment:
+    (* Intra-compartment calls create a new frame in the source, not the target *)
+    forall newpc pc s s' f,
+    match_stacks pc s s' ->
+    Genv.find_comp ge (val_of_stackframe f) = Genv.find_comp ge pc ->
+    Genv.find_comp ge (val_of_stackframe f) = Genv.find_comp ge newpc ->
+    (* no condition on the frame *)
+    match_stacks newpc (f :: s) s'
+| match_stacks_cross_compartment:
+    (* Cross-compartment calls create a new frame in both the source and the target *)
+    forall newpc pc s s' f f',
+    match_stacks pc s s' ->
+    Genv.find_comp ge (val_of_stackframe f) = Genv.find_comp ge pc ->
+    Genv.find_comp ge (val_of_stackframe f) <> Genv.find_comp ge newpc ->
+    match_stackframe f f' ->
+    match_stacks newpc (f :: s) (f' :: s')
+.
+#+end_src
+This invariant relate source (=Mach=) stack and target (=Asm=) cross-compartment stack,
+as well as the current PC.
+- Empty stacks are always related
+- When the =Mach= program does an intra-compartment call, then a new frame is created
+  in =Mach=, but not in =Asm= (rule ~match_stacks_intra_compartment~).
+- When the =Mach= program does a cross-compartment call, then the =Asm= program also
+  does a cross-compartment call as well. A new frame is added in both stacks
+  (rule ~match_stacks_cross_compartment~).
+
+We can prove (~match_stacks_same_compartment~) that one can change the PC arbitrarily
+as long as it stays in the same compartment.
+
+TODO: explain the proof.

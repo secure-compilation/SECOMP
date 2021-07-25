@@ -505,43 +505,6 @@ Inductive match_stackframe: Mach.stackframe -> stackframe -> Prop :=
     match_stackframe (Mach.Stackframe b v ofs c) (Stackframe b v ofs)
 .
 
-Definition stack_internal_call (s: list Mach.stackframe) (f: Mach.stackframe) :=
-  match s with
-  | nil => Some default_compartment
-  | Mach.Stackframe b _ _ _ :: _ => Genv.find_comp ge (Vptr b Ptrofs.zero)
-  end =
-  match f with
-  | Mach.Stackframe b' _ _ _ => Genv.find_comp ge (Vptr b' Ptrofs.zero)
-  end.
-
-Definition stack_external_call s f :=
-  not (stack_internal_call s f).
-
-Definition mach_stackframe_of_val v sp c: option Mach.stackframe :=
-  match v with
-  | Vptr b ofs => Some (Mach.Stackframe b sp (Ptrofs.add ofs Ptrofs.one) c)
-  | _ => None
-  end.
-
-Definition stackframe_of_val v sp: option stackframe :=
-  match v with
-  | Vptr b ofs => Some (Stackframe b sp (Ptrofs.add ofs Ptrofs.one))
-  | _ => None
-  end.
-
-(* Problem: this invariant doesn't hold! *)
-(* For instance, consider the case where:
-   - the call [C1 -> C2.P2()] is allowed
-   - the call [C1 -> C2.P2'()] is *not* allowed
-   - We first do the call [C1 -> C2.P2()], then
-     [C2.P2() tailcall C2.P2'()].
-   In the resulting state, we cannot prove any of the
-   case: the stack isn't empty; the compartment of the
-   current PC (which points at [C2.P2']) isn't the same
-   as the compartment of what's stored on the stack (which
-   points at [C1.P1]); the call from [C1 -> C2.P2'()] isn't allowed
- *)
-
 Definition val_of_stackframe (f: Mach.stackframe) :=
   match f with
   | Mach.Stackframe b _ ofs _ => Vptr b ofs
@@ -554,13 +517,6 @@ Inductive match_stacks: val -> list Mach.stackframe -> stack -> Prop :=
 | match_stacks_nil:
     forall pc,
     match_stacks pc nil nil
-(* | match_stacks_same_compartment: *)
-(*     (* Allows for changing the PC arbitrarily as long as we stay in the same *)
-(*        compartment *) *)
-(*     forall newpc pc s s', *)
-(*     match_stacks pc s s' -> *)
-(*     Genv.find_comp ge pc = Genv.find_comp ge newpc -> *)
-(*     match_stacks newpc s s' *)
 | match_stacks_intra_compartment:
     (* Intra-compartment calls create a new frame in the source, not the target *)
     forall newpc pc s s' f,
@@ -595,12 +551,6 @@ Proof.
     eapply match_stacks_cross_compartment; auto.
     congruence.
 Qed.
-
-Definition block_of (v: val): option block :=
-  match v with
-  | Vptr b _ => Some b
-  | _ => None
-  end.
 
 Inductive match_states: Mach.state -> Asm.state -> Prop :=
   | match_states_intro:
@@ -737,7 +687,6 @@ Lemma exec_straight_opt_steps_goto:
   transl_code_at_pc ge (rs1 PC) fb f (i :: c) ep tf tc ->
   it1_is_parent ep i = false ->
   forall (STACKS: match_stacks (rs1 PC) s s'),
-  (* forall (ALWSTK: stack_allowed fb s'), *)
   (forall k c (TR: transl_instr f i ep k = OK c),
    exists jmp, exists k', exists rs2,
        exec_straight_opt tge tf c rs1 m1' (jmp :: k') rs2 m2'
@@ -972,13 +921,6 @@ Local Transparent destroyed_by_op.
   assert (TCA: transl_code_at_pc ge (Vptr fb (Ptrofs.add ofs Ptrofs.one)) fb f c false tf x).
     econstructor; eauto.
   exploit return_address_offset_correct; eauto. intros; subst ra.
-  (* right. split; auto. *)
-  (* split; traceEq. *)
-  (* econstructor; eauto. *)
-  (* econstructor; eauto. *)
-  (* eapply agree_sp_def; eauto. *)
-  (* simpl.  *)
-  (* destruct (comp_of tf =? comp_of tf')%positive eqn:Heq. *)
   destruct ((comp_of (Internal tf) =? comp_of tf')%positive) eqn:Heq.
   * left; econstructor; split.
     apply plus_one. eapply exec_step_internal_call.
@@ -1279,8 +1221,6 @@ Local Transparent destroyed_by_op.
   eapply find_instr_tail; eauto.
   simpl. rewrite <- H9. unfold Mach.label in H0; unfold label; rewrite H0.
   eexact A. eauto. eauto. eauto.
-  (* unfold next_stack. rewrite Hptr. simpl. rewrite FN. *)
-  (* rewrite Pos.eqb_refl. reflexivity. eauto. eauto. *)
   right; left; auto.
   simpl. rewrite FN. reflexivity.
 
@@ -1307,10 +1247,6 @@ Local Transparent destroyed_by_op.
     - eexists. simpl. rewrite Genv.find_comp_null. reflexivity.
     - simpl. inv STACKS.
       rewrite H11. eexists; reflexivity. }
-      (* rewrite H6. *)
-      (* exploit functions_translated; eauto. *)
-      (* intros [tf1 [? ?]]. *)
-      (* eexists. rewrite H6. reflexivity. } *)
   assert (exists s'', update_stack_return tge s' (comp_of (Internal f)) rs1 # PC <- (rs1 X1) = Some s''
                  /\ match_stacks (parent_ra s) s s'') as [s'' [Hs''1 Hs''2]].
   { unfold update_stack_return. rewrite X. Simpl.
@@ -1330,8 +1266,6 @@ Local Transparent destroyed_by_op.
       destruct f0; simpl in *.
       destruct (Genv.find_funct_ptr ge f0) eqn:PTR; try congruence.
       inv Hra.
-      (* eapply functions_translated in PTR as [? [PTR' ?]]. *)
-      (* rewrite PTR' in Hra. inv Hra. *)
       destruct ((comp_of (Internal f) =? comp_of f1)%positive) eqn:COMP'.
       + eexists; split; eauto.
         eapply match_stacks_intra_compartment; eauto.
@@ -1344,7 +1278,6 @@ Local Transparent destroyed_by_op.
       destruct f0; simpl in *.
       destruct (Genv.find_funct_ptr ge f0) eqn:PTR; try congruence.
       inv Hra.
-      (* eapply functions_translated in PTR as [? [PTR' ?]]. *)
       destruct ((comp_of (Internal f) =? comp_of f1)%positive) eqn:COMP'.
       + rewrite COMP in H0. exfalso. apply H0.
         apply Pos.eqb_eq in COMP'. inv H1. congruence.
@@ -1358,7 +1291,6 @@ Local Transparent destroyed_by_op.
   eapply plus_right'. eapply exec_straight_exec; eauto.
   eapply exec_step_internal_return.
   eexact P. eapply functions_transl; eauto. eapply find_instr_tail. eexact Q.
-  (* HERE: *)
   simpl. reflexivity. eauto.
   Simpl. rewrite P. eapply comp_translated. unfold Genv.find_comp; rewrite FIND. eauto.
   Simpl. rewrite X. eapply comp_translated. eauto.
@@ -1371,16 +1303,12 @@ Local Transparent destroyed_by_op.
     revert COMP.
     induction STACKS'.
     - intros. reflexivity.
-    (* - intros. *)
-    (*   eapply IHSTACKS'; eauto. congruence. *)
     - clear IHSTACKS'.
       intros. rewrite COMP in H0.
       destruct f0; simpl in *.
       destruct (Genv.find_funct_ptr ge f0) eqn:PTR; try congruence.
-      (* eapply functions_translated in PTR as [? [PTR' ?]]. *)
       exfalso. apply H1. inv Hra.
       inv H0.
-      (* eapply comp_transl_partial in H1. *)
       rewrite H3. auto.
     - intros.
       simpl. now inv H1.
@@ -1394,8 +1322,6 @@ Local Transparent destroyed_by_op.
     revert COMP.
     induction STACKS'.
     - intros. reflexivity.
-    (* - intros. *)
-    (*   eapply IHSTACKS'; eauto. congruence. *)
     - clear IHSTACKS'.
       intros. rewrite COMP in H0.
       destruct f0; simpl in *.
@@ -1499,8 +1425,6 @@ Local Transparent destroyed_at_function_entry.
       destruct f; simpl in *.
       destruct (Genv.find_funct_ptr ge f) eqn:PTR; try congruence.
       inv Hra.
-      (* eapply functions_translated in PTR as [? [PTR' ?]]. *)
-      (* rewrite PTR' in Hra. inv Hra. *)
       destruct ((comp_of (External ef) =? comp_of f0)%positive) eqn:COMP''.
       + eexists; split; eauto.
         eapply match_stacks_intra_compartment; eauto.
@@ -1513,7 +1437,6 @@ Local Transparent destroyed_at_function_entry.
       destruct f; simpl in *.
       destruct (Genv.find_funct_ptr ge f) eqn:PTR; try congruence.
       inv Hra.
-      (* eapply functions_translated in PTR as [? [PTR' ?]]. *)
       destruct ((comp_of (External ef) =? comp_of f0)%positive) eqn:COMP''.
       + rewrite COMP' in H0. exfalso. apply H0.
         apply Pos.eqb_eq in COMP''. inv H1. congruence.
@@ -1599,9 +1522,7 @@ Proof.
      with (Vptr fb Ptrofs.zero).
   econstructor; eauto.
   constructor. constructor.
-  (* Might need to change the definition of matching stacks, since it seems we can't always prove main has the default compartment *)
   eauto.
-  (* constructor. eauto. *)
   apply Mem.extends_refl.
   split. auto. simpl. unfold Vnullptr; destruct Archi.ptr64; congruence.
   intros. rewrite Regmap.gi. auto.

@@ -757,37 +757,10 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : out
     Next (rs#PC <- (Genv.symbol_address ge s Ptrofs.zero)
             #RA <- (Val.offset_ptr rs#PC Ptrofs.one)
          ) m
-    (* let v := Genv.symbol_address ge s Ptrofs.zero in *)
-    (* match v, rs#PC with *)
-    (* | Vptr b ofs, Vptr b' ofs' =>  *)
-    (*   match Genv.find_funct_ptr ge b, Genv.find_funct_ptr ge b' with *)
-    (*   | Some fd, Some fd' => *)
-    (*     if Policy.allowed_call_b pol (comp_of fd') fd then *)
-    (*       Next (rs#PC <- v *)
-    (*               #RA <- (Val.offset_ptr rs#PC Ptrofs.one) *)
-    (*            ) m *)
-    (*     else Stuck *)
-    (*   | _, _ => Stuck *)
-    (*   end *)
-    (* | _, _ => Stuck *)
-    (* end *)
   | Pjal_r r sg _ =>
       Next (rs#PC <- (rs#r)
               #RA <- (Val.offset_ptr rs#PC Ptrofs.one)
            ) m
-    (* match rs#r, rs#PC with *)
-    (* | Vptr b ofs, Vptr b' ofs' => *)
-    (*   match Genv.find_funct_ptr ge b, Genv.find_funct_ptr ge b' with *)
-    (*   | Some fd, Some fd' => *)
-    (*     if Policy.allowed_call_b pol (comp_of fd') fd then *)
-    (*       Next (rs#PC <- (rs#r) *)
-    (*               #RA <- (Val.offset_ptr rs#PC Ptrofs.one) *)
-    (*            ) m *)
-    (*     else Stuck *)
-    (*   | _, _ => Stuck *)
-    (*   end *)
-    (* | _, _ => Stuck *)
-    (* end *)
 (** Conditional branches, 32-bit comparisons *)
   | Pbeqw s1 s2 l =>
       eval_branch f l rs m (Val.cmpu_bool (Mem.valid_pointer m) Ceq rs##s1 rs##s2)
@@ -1090,11 +1063,6 @@ Inductive stackframe: Type :=
       (retaddr: ptrofs), (**r Asm return address in calling function *)
       stackframe.
 
-(* Record stack := { cp: compartment; (* current compartment *) *)
-(*                   ra: val; (* return address of the last cross-compartment call *) *)
-(*                   sp: val; (* stack pointer to restore from the last cross-compartment call *) *)
-(*                   st: list stackframe (* rest of the stack *) *)
-(*                 }. *)
 Definition stack := list stackframe.
 
 (* The state of the stack when we start the execution *)
@@ -1202,7 +1170,6 @@ Inductive step: state -> trace -> state -> Prop :=
       find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
       exec_instr f i rs m = Next rs' m' ->
       is_return i = true ->
-      (* forall (NEXTPC: rs' PC = Vptr b' ofs'), *)
       forall (CURCOMP: Genv.find_comp ge (rs PC) = Some cp),
       forall (NEXTCOMP: Genv.find_comp ge (rs' PC) = Some cp'),
       (* We only impose conditions on when returns can be executed for cross-compartment
