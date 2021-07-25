@@ -1527,9 +1527,9 @@ Qed.
 Lemma find_function_ptr_tailcall:
   forall tge ros ls1 ls2,
   ros_compatible_tailcall ros = true ->
-  find_fun_ptr tge ros (return_regs ls1 ls2) = find_fun_ptr tge ros ls2.
+  find_function_ptr tge ros (return_regs ls1 ls2) = find_function_ptr tge ros ls2.
 Proof.
-  unfold ros_compatible_tailcall, find_fun_ptr; intros.
+  unfold ros_compatible_tailcall, find_function_ptr; intros.
   destruct ros as [r|id]; auto.
   unfold return_regs. destruct (is_callee_save r). discriminate. auto.
 Qed.
@@ -1881,16 +1881,15 @@ Proof.
   eapply function_ptr_translated; eauto.
 Qed.
 
-(* TODO: rename LTL.fin_fun_ptr into LTL.find_function_ptr *)
 Lemma find_function_ptr_translated:
   forall ros rs fd ros' e e' ls vf,
     RTL.find_function ge ros rs = Some fd ->
     RTL.find_function_ptr ge ros rs = Some vf ->
     add_equation_ros ros ros' e = Some e' ->
     satisf rs ls e' ->
-    LTL.find_fun_ptr tge ros' ls = Some vf.
+    LTL.find_function_ptr tge ros' ls = Some vf.
 Proof.
-  unfold RTL.find_function, RTL.find_function_ptr, LTL.find_fun_ptr; intros.
+  unfold RTL.find_function, RTL.find_function_ptr, LTL.find_function_ptr; intros.
   destruct ros as [r|id]; destruct ros' as [r'|id']; simpl in H1; MonadInv.
   (* two regs *)
   exploit add_equation_lessdef; eauto. intros LD. inv LD.
@@ -2385,8 +2384,6 @@ Proof.
   assert (SIG: funsig tfd = sg). eapply sig_function_translated; eauto.
   exploit find_function_ptr_translated. eauto. eauto. eauto. eapply add_equations_args_satisf; eauto.
   intros G.
-  (* intros [tvf G]. *)
-  (* exploit find_function_ptr_translated; eauto. *)
   econstructor; split.
   eapply plus_left. econstructor; eauto.
   eapply star_right. eexact A1. econstructor; eauto.
@@ -2427,11 +2424,9 @@ Proof.
   eapply star_right. eexact A1. econstructor; eauto.
   rewrite <- E. apply find_function_tailcall; auto.
   rewrite find_function_ptr_tailcall; eauto.
-  rewrite <- comp_transf_fundef; eauto.
+  rewrite <- comp_transf_fundef; eauto. rewrite <- comp_transf_function; eauto.
   rewrite <- comp_transf_function; eauto.
-  rewrite <- comp_transf_function; eauto.
-  rewrite <- comp_transf_function; eauto.
-  eapply allowed_call_translated; eauto.
+  rewrite <- comp_transf_function; eauto. eapply allowed_call_translated; eauto.
   replace (fn_stacksize tf) with (RTL.fn_stacksize f); eauto.
   destruct (transf_function_inv _ _ FUN); auto.
   eauto. traceEq.

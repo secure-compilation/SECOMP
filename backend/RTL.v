@@ -262,7 +262,6 @@ Inductive step: state -> trace -> state -> Prop :=
       (fn_code f)!pc = Some(Icall sig ros args res pc') ->
       find_function ros rs = Some fd ->
       funsig fd = sig ->
-      (* TODO *)
       forall (FUNPTR: find_function_ptr ros rs = Some vf),
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
       step (State s f sp pc rs m)
@@ -274,7 +273,6 @@ Inductive step: state -> trace -> state -> Prop :=
       funsig fd = sig ->
       forall COMP: comp_of fd = (comp_of f),
       forall ALLOWED: needs_calling_comp (comp_of f) = false,
-      (* TODO *)
       forall (FUNPTR: find_function_ptr ros rs = Some vf),
       forall (ALLOWED': Genv.allowed_call ge (comp_of f) vf),
       Mem.free m stk 0 f.(fn_stacksize) = Some m' ->
@@ -284,8 +282,6 @@ Inductive step: state -> trace -> state -> Prop :=
       forall s f sp pc rs m ef args res pc' vargs t vres m',
       (fn_code f)!pc = Some(Ibuiltin ef args res pc') ->
       eval_builtin_args ge (fun r => rs#r) sp m args vargs ->
-      (* TODO *)
-      (* forall (ALLOWED: Policy.allowed_call pol (comp_of f) (External ef)), *)
       external_call ef ge (comp_of f) vargs m t vres m' ->
       step (State s f sp pc rs m)
          t (State s f sp pc' (regmap_setres res vres rs) m')

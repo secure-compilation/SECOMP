@@ -768,7 +768,7 @@ Lemma transl_expr_Eexternal_correct:
   eval_exprlist ge sp e cp m le al vl ->
   transl_exprlist_prop le al vl ->
   external_call ef ge cp vl m E0 v m ->
-  forall ALLOWED: Genv.allowed_call ge cp (Vptr b Ptrofs.zero),
+  forall (ALLOWED: Genv.allowed_call ge cp (Vptr b Ptrofs.zero)),
   transl_expr_prop le (Eexternal id sg al) v.
 Proof.
   intros; red; intros. inv TE.

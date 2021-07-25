@@ -189,7 +189,7 @@ Definition destroyed_by_getstack (s: slot): list mreg :=
   | _        => nil
   end.
 
-Definition find_fun_ptr (ros: mreg + ident) (rs: locset) : option val :=
+Definition find_function_ptr (ros: mreg + ident) (rs: locset) : option val :=
   match ros with
   | inl r => Some (rs (R r))
   | inr symb =>
@@ -205,25 +205,22 @@ Definition find_function (ros: mreg + ident) (rs: locset) : option fundef :=
   | inr symb =>
       match Genv.find_symbol ge symb with
       | None => None
-
-| Some b => Genv.find_funct_ptr ge b
+      | Some b => Genv.find_funct_ptr ge b
       end
   end.
 
-Lemma find_function_find_fun_ptr: forall ros rs fd,
+Lemma find_function_find_function_ptr: forall ros rs fd,
     find_function ros rs = Some fd ->
-    exists vf, find_fun_ptr ros rs = Some vf.
+    exists vf, find_function_ptr ros rs = Some vf.
 Proof.
   intros ros rs fd.
-  unfold find_function, find_fun_ptr.
+  unfold find_function, find_function_ptr.
   destruct ros.
   - eexists; eauto.
   - destruct (Genv.find_symbol ge i).
     + eexists; eauto.
     + intros H; inversion H.
 Qed.
-
-
 
 (** [parent_locset cs] returns the mapping of values for locations
   of the caller function. *)
@@ -266,7 +263,7 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (Block s f sp bb rs' m')
   | exec_Lcall: forall s f sp sig ros bb rs m fd vf,
       find_function ros rs = Some fd ->
-      find_fun_ptr ros rs = Some vf ->
+      find_function_ptr ros rs = Some vf ->
       funsig fd = sig ->
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
       step (Block s f sp (Lcall sig ros :: bb) rs m)
@@ -274,17 +271,16 @@ Inductive step: state -> trace -> state -> Prop :=
   | exec_Ltailcall: forall s f sp sig ros bb rs m fd rs' m' vf,
       rs' = return_regs (parent_locset s) rs ->
       find_function ros rs' = Some fd ->
-      find_fun_ptr ros rs' = Some vf ->
+      find_function_ptr ros rs' = Some vf ->
       funsig fd = sig ->
-      forall COMP: comp_of fd = (comp_of f),
-      forall ALLOWED: needs_calling_comp (comp_of f) = false,
+      forall (COMP: comp_of fd = (comp_of f)),
+      forall (ALLOWED: needs_calling_comp (comp_of f) = false),
       forall (ALLOWED': Genv.allowed_call ge (comp_of f) vf),
       Mem.free m sp 0 f.(fn_stacksize) = Some m' ->
       step (Block s f (Vptr sp Ptrofs.zero) (Ltailcall sig ros :: bb) rs m)
         E0 (Callstate s fd rs' m')
   | exec_Lbuiltin: forall s f sp ef args res bb rs m vargs t vres rs' m',
       eval_builtin_args ge rs sp m args vargs ->
-      (* forall (ALLOWED: Policy.allowed_call pol (comp_of f) (External ef)), *)
       external_call ef ge (comp_of f) vargs m t vres m' ->
       rs' = Locmap.setres res vres (undef_regs (destroyed_by_builtin ef) rs) ->
       step (Block s f sp (Lbuiltin ef args res :: bb) rs m)

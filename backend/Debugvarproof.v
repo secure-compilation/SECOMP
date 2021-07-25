@@ -352,10 +352,10 @@ Qed.
 
 Lemma find_function_ptr_translated:
   forall ros ls vf,
-  find_fun_ptr ge ros ls = Some vf ->
-  find_fun_ptr tge ros ls = Some vf.
+  find_function_ptr ge ros ls = Some vf ->
+  find_function_ptr tge ros ls = Some vf.
 Proof.
-  unfold find_fun_ptr; intros; destruct ros; simpl.
+  unfold find_function_ptr; intros; destruct ros; simpl.
   eauto.
   rewrite symbols_preserved; eauto.
 Qed.
@@ -509,20 +509,20 @@ Proof.
   symmetry; apply sig_preserved; auto.
   inv TRF.
   eapply allowed_call_translated; eauto.
-  (* now inv TRF. *)
   constructor; auto. constructor; auto. constructor; auto.
 - (* tailcall *)
   exploit find_function_translated; eauto. intros (tf' & A & B).
   exploit parent_locset_match; eauto. intros PLS.
   econstructor; split.
   apply plus_one.
+  inv TRF.
   econstructor. eauto. rewrite PLS. eexact A.
   eapply find_function_ptr_translated; eauto. rewrite PLS. eauto.
   symmetry; apply sig_preserved; auto.
-  now rewrite <- (comp_transl_partial _ B); inv TRF.
-  inv TRF; eauto.
-  inv TRF. eapply allowed_call_translated; eauto.
-  inv TRF; eauto.
+  now rewrite <- (comp_transl_partial _ B).
+  auto.
+  eapply allowed_call_translated; eauto.
+  eauto.
   rewrite PLS. constructor; auto.
 - (* builtin *)
   econstructor; split.

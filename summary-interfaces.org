@@ -180,11 +180,52 @@ The semantics of most languages are modified in the following way:
 Some languages have big-step semantics or executable versions of the semantics,
 these are updated in the same way.
 
+Some particular cases:
+** Languages that don't use function pointers directly to perform calls
+This is not a particular interesting change, but there might be an opportunity to
+factorize some code here.
+
+Some languages don't use function pointers directly in the semantics to perform
+calls (it is instead hidden under another condition). For instance, in =LTL.v=,
+the function definition is accessed not by following a function pointer ~vf~ but
+instead by using ~find_function: (mreg + ident) -> locset -> option fundef~. To
+perform the policy checks, we define a function ~find_function_ptr: (mreg +
+ident) -> locset -> option val~ that returns the function pointer corresponding
+to the callee. Usually this is not difficult, because ~find_function~ already
+look the function pointer up before obtaining a ~fundef~. For instance, in
+=LTL.v=:
+
+#+begin_src coq
+Definition find_function_ptr (ros: mreg + ident) (rs: locset) : option val :=
+  match ros with
+  | inl r => Some (rs (R r))
+  | inr symb =>
+    match Genv.find_symbol ge symb with
+    | Some b => Some (Vptr b Ptrofs.zero)
+    | None => None
+    end
+  end.
+
+Definition find_function (ros: mreg + ident) (rs: locset) : option fundef :=
+  match ros with
+  | inl r => Genv.find_funct ge (rs (R r))
+  | inr symb =>
+      match Genv.find_symbol ge symb with
+      | None => None
+      | Some b => Genv.find_funct_ptr ge b
+      end
+  end.
+
+Lemma find_function_find_function_ptr: forall ros rs fd,
+    find_function ros rs = Some fd ->
+    exists vf, find_function_ptr ros rs = Some vf.
+#+end_src
+
+** Case of inlining and tailcall optimization
+During the inlining and tailcall optimization phases in the backend, there are inserted
+checks to only inline and tailcall functions that belong to the same compartment.
+
 * Simulation proofs
-
-# comp_transl_partial
-
-
 
 To show that the simulation lemmas still hold, we need to show that if a call is allowed in the source, then it is allowed in the target
 
@@ -219,3 +260,11 @@ we stop a bit earlier.
 
 Some goals also require proving equality of compartment between source and target. We use
 lemmas such as ~comp_transl~ or ~comp_transl_partial~ to do so.
+
+Particular cases:
+** Case of Unusedglob (Elimination of unreferenced static definitions)
+This proof is a bit special, as it relies on a custom relation between
+the source and target global environment instead of the generic one.
+As a result one has to prove again some results that were proven for
+the generic  ~match_genvs~ relation. However, nothing is particularly
+surprising in these proofs.

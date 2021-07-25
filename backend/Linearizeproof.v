@@ -113,10 +113,10 @@ Qed.
 
 Lemma find_function_ptr_translated:
   forall ros rs vf,
-    LTL.find_fun_ptr ge ros rs = Some vf ->
-    find_fun_ptr tge ros rs = Some vf.
+    LTL.find_function_ptr ge ros rs = Some vf ->
+    find_function_ptr tge ros rs = Some vf.
 Proof.
-  unfold LTL.find_fun_ptr, find_fun_ptr; intros; destruct ros; simpl.
+  unfold LTL.find_function_ptr, find_function_ptr; intros; destruct ros; simpl.
   eauto.
   rewrite symbols_preserved; eauto.
 Qed.

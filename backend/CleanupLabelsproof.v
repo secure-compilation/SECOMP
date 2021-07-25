@@ -83,10 +83,10 @@ Qed.
 
 Lemma find_function_ptr_translated:
   forall ros ls vf,
-  find_fun_ptr ge ros ls = Some vf ->
-  find_fun_ptr tge ros ls = Some vf.
+  find_function_ptr ge ros ls = Some vf ->
+  find_function_ptr tge ros ls = Some vf.
 Proof.
-  unfold find_fun_ptr; intros; destruct ros; simpl.
+  unfold find_function_ptr; intros; destruct ros; simpl.
   eauto.
   rewrite symbols_preserved; eauto.
 Qed.
@@ -106,7 +106,8 @@ Definition instr_branches_to (i: instruction) (lbl: label) : Prop :=
   match i with
   | Lgoto lbl' => lbl = lbl'
   | Lcond cond args lbl' => lbl = lbl'
-  | Ljumptable arg tbl => In lbl tbl | _ => False
+  | Ljumptable arg tbl => In lbl tbl
+  | _ => False
   end.
 
 Remark add_label_branched_to_incr:

@@ -134,15 +134,6 @@ Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
 Hypothesis TRANSF: match_prog prog tprog.
 
-(* Added for interfaces *)
-Definition match_functions (F : Cminor.function) (F' : function) :=
-    Cminor.fn_comp F = F'.(fn_comp)
- /\ Cminor.fn_sig F = F'.(fn_sig).
-Inductive match_fundef_light : (Cminor.fundef) -> fundef -> Prop :=
- | match_fundef_internal : forall f f', match_functions f f' -> match_fundef_light (Internal f) (Internal f')
- | match_fundef_external : forall f, match_fundef_light (External f) (External f).
-
-
 Lemma wt_prog : wt_program prog.
 Proof.
   red; intros. destruct TRANSF as [A _].
@@ -183,15 +174,6 @@ Proof.
   eapply Genv.find_funct_match; eauto.
   discriminate.
 Qed.
-
-(* Lemma find_fun_ptr_translated: *)
-(*   forall (v v': val) (f: Cminor.fundef), *)
-(*   Genv.find_funct ge v = Some f -> *)
-(*   Val.lessdef v v' -> *)
-(*   exists cu tf, *)
-(*   Genv.find_funct tge v' = Some tf /\ *)
-(*   match_fundef cu f tf /\ *)
-(*   linkorder cu prog. *)
 
 Lemma comp_function_translated:
   forall cu f tf, match_fundef cu f tf -> comp_of f = comp_of tf.
@@ -903,7 +885,6 @@ Lemma sel_builtin_default_correct:
   Cminor.eval_exprlist ge sp e1 m1 al vl ->
   external_call ef ge (comp_of f) vl m1 t v m2 ->
   env_lessdef e1 e1' -> Mem.extends m1 m1' ->
-  (* forall ALLOWED: Policy.allowed_call (comp_of f) (External ef), *)
   exists e2' m2',
      step tge (State f (sel_builtin_default optid ef al) k sp e1' m1')
             t (State f Sskip k sp e2' m2')

@@ -219,10 +219,10 @@ Lemma find_function_ptr_translated:
   forall ros ls1 ls2 f vf,
   locmap_lessdef ls1 ls2 ->
   find_function ge ros ls1 = Some f ->
-  find_fun_ptr ge ros ls1 = Some vf ->
-  find_fun_ptr tge ros ls2 = Some vf.
+  find_function_ptr ge ros ls1 = Some vf ->
+  find_function_ptr tge ros ls2 = Some vf.
 Proof.
-  unfold find_function, find_fun_ptr; intros; destruct ros; simpl.
+  unfold find_function, find_function_ptr; intros; destruct ros; simpl.
   - specialize (H (R m)).
     inv H. congruence.
     rewrite <- H3 in H0. discriminate.

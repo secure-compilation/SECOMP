@@ -96,7 +96,7 @@ Section RELSEM.
 
 Variable ge: genv.
 
-Definition find_fun_ptr (ros: mreg + ident) (rs: locset) : option val :=
+Definition find_function_ptr (ros: mreg + ident) (rs: locset) : option val :=
   match ros with
   | inl r => Some (rs (R r))
   | inr symb =>
@@ -195,7 +195,7 @@ Inductive step: state -> trace -> state -> Prop :=
   | exec_Lcall:
       forall s f sp sig ros b rs m f' vf,
       find_function ros rs = Some f' ->
-      find_fun_ptr ros rs = Some vf ->
+      find_function_ptr ros rs = Some vf ->
       sig = funsig f' ->
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
       step (State s f sp (Lcall sig ros :: b) rs m)
@@ -204,7 +204,7 @@ Inductive step: state -> trace -> state -> Prop :=
       forall s f stk sig ros b rs m rs' f' m' vf,
       rs' = return_regs (parent_locset s) rs ->
       find_function ros rs' = Some f' ->
-      find_fun_ptr ros rs' = Some vf ->
+      find_function_ptr ros rs' = Some vf ->
       sig = funsig f' ->
       forall COMP: comp_of f' = comp_of f,
       forall ALLOWED: needs_calling_comp (comp_of f) = false,
@@ -215,7 +215,6 @@ Inductive step: state -> trace -> state -> Prop :=
   | exec_Lbuiltin:
       forall s f sp rs m ef args res b vargs t vres rs' m',
       eval_builtin_args ge rs sp m args vargs ->
-      (* forall (ALLOWED: Policy.allowed_call pol f.(fn_comp) (External ef)), *)
       external_call ef ge (comp_of f) vargs m t vres m' ->
       rs' = Locmap.setres res vres (undef_regs (destroyed_by_builtin ef) rs) ->
       step (State s f sp (Lbuiltin ef args res :: b) rs m)

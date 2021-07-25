@@ -195,7 +195,8 @@ Definition env := PTree.t val.
   function entry, binding parameters to the provided arguments and
   initializing local variables to [Vundef]. *)
 
-Fixpoint set_params (vl: list val) (il: list ident) {struct il} : env := match il, vl with
+Fixpoint set_params (vl: list val) (il: list ident) {struct il} : env :=
+  match il, vl with
   | i1 :: is, v1 :: vs => PTree.set i1 v1 (set_params vs is)
   | i1 :: is, nil => PTree.set i1 Vundef (set_params nil is)
   | _, _ => PTree.empty val
@@ -885,7 +886,8 @@ with execinf_stmt:
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
       execinf_stmt f sp e m (Scall optid sig a bl) t
   | execinf_Sifthenelse:
-      forall f sp e m a s1 s2 v b t, eval_expr ge sp e m a v ->
+      forall f sp e m a s1 s2 v b t,
+      eval_expr ge sp e m a v ->
       Val.bool_of_val v b ->
       execinf_stmt f sp e m (if b then s1 else s2) t ->
       execinf_stmt f sp e m (Sifthenelse a s1 s2) t

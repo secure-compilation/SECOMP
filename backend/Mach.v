@@ -226,17 +226,6 @@ Definition find_function_ptr
       Genv.find_symbol ge symb
   end.
 
-(* Definition find_function_ptr *)
-(*         (ge: genv) (ros: mreg + ident) (rs: regset) : option val := *)
-(*   match ros with *)
-(*   | inl r => *)
-(*       match rs r with *)
-(*       | Vptr b ofs => if Ptrofs.eq ofs Ptrofs.zero then Some (Vptr b ofs) else None *)
-(*       | _ => None *)
-(*       end *)
-(*   | inr symb => *)
-(*       Some (Genv.symbol_address ge symb Ptrofs.zero) *)
-(*   end. *)
 (** Extract the values of the arguments to an external call. *)
 
 Inductive extcall_arg (rs: regset) (m: mem) (sp: val): loc -> val -> Prop :=
@@ -369,8 +358,8 @@ Inductive step: state -> trace -> state -> Prop :=
       load_stack m (Vptr stk soff) Tptr f.(fn_retaddr_ofs) = Some (parent_ra s) ->
       Mem.free m stk 0 f.(fn_stacksize) = Some m' ->
       forall (CALLED: Genv.find_funct_ptr ge f' = Some fd),
-      forall COMP: comp_of fd = comp_of f,
-      forall ALLOWED: needs_calling_comp (comp_of f) = false,
+      forall (COMP: comp_of fd = comp_of f),
+      forall (ALLOWED: needs_calling_comp (comp_of f) = false),
       forall (ALLOWED': Genv.allowed_call ge (comp_of f) (Vptr f' Ptrofs.zero)),
       step (State s fb (Vptr stk soff) (Mtailcall sig ros :: c) rs m)
         E0 (Callstate s f' rs m')
@@ -378,7 +367,6 @@ Inductive step: state -> trace -> state -> Prop :=
       forall s fb f sp rs m ef args res b vargs t vres rs' m',
       eval_builtin_args ge rs sp m args vargs ->
       forall FUN: Genv.find_funct_ptr ge fb = Some (Internal f),
-      (* forall (ALLOWED: Genv.allowed_call pol f.(fn_comp) (External ef)), *)
       external_call ef ge (comp_of f) vargs m t vres m' ->
       rs' = set_res res vres (undef_regs (destroyed_by_builtin ef) rs) ->
       step (State s fb sp (Mbuiltin ef args res :: b) rs m)

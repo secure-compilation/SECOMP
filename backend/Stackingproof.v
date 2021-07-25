@@ -1580,7 +1580,7 @@ Lemma find_function_translated:
   agree_regs j ls rs ->
   m |= globalenv_inject ge j ->
   Linear.find_function ge ros ls = Some f ->
-  Linear.find_fun_ptr ge ros ls = Some vf ->
+  Linear.find_function_ptr ge ros ls = Some vf ->
   Genv.allowed_call ge cp vf ->
   exists bf, exists tf,
      find_function_ptr tge ros rs = Some bf
@@ -1599,9 +1599,8 @@ Proof.
   rewrite DOMAIN in H4. inv H4. simpl. auto. eapply FUNCTIONS; eauto.
   split; auto.
   split; auto.
-  (* unfold Genv.allowed_call. unfold Genv.allowed_call in H0. *)
   assert (vf = Vptr b Ptrofs.zero).
-  { unfold find_fun_ptr in H.
+  { unfold find_function_ptr in H.
     inv H. rewrite EQ. eauto. }
   rewrite <- H1.
   now eapply (Genv.match_genvs_allowed_calls TRANSF).
@@ -1614,49 +1613,11 @@ Proof.
   split; auto.
   split; auto.
   assert (vf = Vptr b Ptrofs.zero).
-  { unfold find_fun_ptr in H.
+  { unfold Linear.find_function_ptr in H.
     rewrite Heqo in H. inv H. eauto. }
   rewrite <- H1.
   now eapply (Genv.match_genvs_allowed_calls TRANSF).
 Qed.
-
-(* Lemma find_function_ptr_translated: *)
-(*   forall j ls rs m ros f b ofs, *)
-(*   agree_regs j ls rs -> *)
-(*   m |= globalenv_inject ge j -> *)
-(*   Linear.find_function ge ros ls = Some f -> *)
-(*   Linear.find_fun_ptr ge ros ls = Some (Vptr b ofs) -> *)
-(*   find_function_ptr tge ros rs = Some b. *)
-(* Proof. *)
-(*   intros until ofs; intros AG [bound [_ [?????]]] FF. *)
-(*   destruct ros; simpl in FF. *)
-(* - exploit Genv.find_funct_inv; eauto. intros [b' EQ]. rewrite EQ in FF. *)
-(*   rewrite Genv.find_funct_find_funct_ptr in FF. *)
-(*   exploit function_ptr_translated; eauto. intros [tf [A B]]. *)
-(*   (* exists b; exists tf; split; auto. simpl. *) *)
-(*   simpl. intros C. inv C. *)
-(*   generalize (AG m0). rewrite EQ. intro INJ. inv INJ. *)
-(*   rewrite DOMAIN in H3. inv H3. *)
-(*   unfold Ptrofs.zero. rewrite Ptrofs.add_zero. rewrite Ptrofs.eq_true. congruence. *)
-(*   eapply FUNCTIONS; eauto. *)
-
-(* - destruct (Genv.find_symbol ge i) as [b'|] eqn:?; try discriminate. *)
-(*   exploit function_ptr_translated; eauto. intros [tf [A B]]. *)
-(*   (* exists b; exists tf; split; auto. simpl. *) *)
-(*   simpl. *)
-(*   rewrite symbols_preserved. rewrite Heqo. *)
-(*   intros C. now inv C. *)
-(* Qed. *)
-
-(* Lemma allowed_call_translated: *)
-(*   forall cp vf, *)
-(*     Genv.allowed_call ge cp vf -> *)
-(*     Genv.allowed_call tge cp vf. *)
-(* Proof. *)
-(*   intros cp vf H. *)
-(*   eapply (Genv.match_genvs_allowed_calls TRANSF). eauto. *)
-(* Qed. *)
-
 
 (** Preservation of the arguments to an external call. *)
 
@@ -2027,9 +1988,6 @@ Proof.
   exploit find_function_translated; eauto.
     eapply sep_proj2. eapply sep_proj2. eapply sep_proj2. eexact SEP.
   intros [bf [tf' [A [B [C D]]]]].
-  (* exploit find_function_ptr_translated; eauto. *)
-  (*   eapply sep_proj2. eapply sep_proj2. eapply sep_proj2. eexact SEP. *)
-  (* intros D. *)
   exploit is_tail_transf_function; eauto. intros IST.
   rewrite transl_code_eq in IST. simpl in IST.
   exploit return_address_offset_exists. eexact IST. intros [ra E].

@@ -918,7 +918,6 @@ Ltac UseTransfer :=
   eapply exec_Icall; eauto. eapply sig_function_translated; eauto.
   rewrite <- comp_transf_function; eauto.
   eapply allowed_call_translated; eauto.
-  (* change  (fn_comp tf) with (comp_of tf); now rewrite <- (comp_transl_partial _ FUN). *)
   eapply match_call_states with (cu := cu'); eauto.
   constructor; auto. eapply match_stackframes_intro with (cu := cu); eauto.
   intros.
@@ -1109,7 +1108,6 @@ Ltac UseTransfer :=
   econstructor; split.
   eapply exec_Ibuiltin; eauto.
   apply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
-  (* rewrite <- comp_transf_function; eauto.  *)
   eapply external_call_symbols_preserved. apply senv_preserved. rewrite <- comp_transf_function. eauto. eauto.
   eapply match_succ_states; eauto. simpl; auto.
   apply eagree_set_res; auto.

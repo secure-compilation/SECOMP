@@ -418,8 +418,8 @@ Inductive match_stackframes: list stackframe -> list stackframe -> Prop :=
       match_stackframes nil nil
   | match_stackframes_normal: forall stk stk' res sp pc rs rs' ce f,
       match_stackframes stk stk' ->
-      forall COMPAT: cenv_compat prog ce,
-      forall UPD: uptodate_caller (comp_of f) (call_comp stk) (call_comp stk'),
+      forall (COMPAT: cenv_compat prog ce),
+      forall (UPD: uptodate_caller (comp_of f) (call_comp stk) (call_comp stk')),
       regs_lessdef rs rs' ->
       match_stackframes
         (Stackframe res f (Vptr sp Ptrofs.zero) pc rs :: stk)
@@ -450,8 +450,8 @@ Inductive match_states: state -> state -> Prop :=
   | match_states_call:
       forall s ce f args m s' args' m',
       match_stackframes s s' ->
-      forall COMPAT: cenv_compat prog ce,
-      forall UPD: uptodate_caller (comp_of f) (call_comp s) (call_comp s'),
+      forall (COMPAT: cenv_compat prog ce),
+      forall (UPD: uptodate_caller (comp_of f) (call_comp s) (call_comp s')),
       Val.lessdef_list args args' ->
       Mem.extends m m' ->
       match_states (Callstate s f args m)

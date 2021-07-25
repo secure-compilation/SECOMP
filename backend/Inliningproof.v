@@ -37,18 +37,11 @@ Proof.
   intros. eapply match_transform_partial_program_contextual; eauto.
 Qed.
 
-(* Definition match_pol (prog: program) := *)
-(*   match_pol_gen (fun cunit f tf => transf_fundef (funenv_program cunit) f = OK tf) prog. *)
-
 Section INLINING.
 
 Variable prog: program.
 Variable tprog: program.
 Hypothesis TRANSF: match_prog prog tprog.
-
-(* Variable pol: policy. *)
-(* Variable tpol: policy. *)
-(* Hypothesis TRANSPOL: match_pol prog pol tpol. *)
 
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.

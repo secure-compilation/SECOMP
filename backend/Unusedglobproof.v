@@ -839,7 +839,6 @@ Lemma find_function_ptr_inject:
   find_function_ptr ge ros rs = Some vf ->
   Genv.allowed_call ge cp vf ->
   match ros with inl r => regset_inject j rs trs | inr id => kept id end ->
-  (* (match vf with | Vptr b _ => forall i, Genv.invert_symbol ge b = Some i -> kept i | _ => True end) -> *)
   exists tvf,
     find_function_ptr tge ros trs = Some tvf /\
     Genv.allowed_call tge cp tvf.
@@ -868,18 +867,10 @@ Proof.
       repeat split.
       * apply Genv.find_invert_symbol.
         apply Genv.invert_find_symbol in H21.
-        (* pose proof (symbol_address_inject) as D. *)
         pose proof (globals_symbols_inject) as E.
         specialize (E j H). unfold symbols_inject in E.
         destruct E as [E1 [E2 [E3 E4]]].
         specialize (E2 i _ _ _ H6). simpl in E2. specialize (E2 H21). destruct E2. auto.
-        (* pose proof (symbols_inject) *)
-        (* specialize (D _ _ Ptrofs.zero H H1). *)
-        (* unfold Genv.symbol_address in D. *)
-        (* rewrite H21 in D. *)
-        (* destruct (Genv.find_symbol tge i) eqn:?; try now inv D. *)
-        (* inv D. *)
-        (* rewrite H6 in H7. inv H7. auto. *)
       * rewrite <- H22.
         simpl. rewrite A. rewrite H0. reflexivity.
       * apply match_prog_pol in TRANSF.
@@ -911,18 +902,10 @@ Proof.
       repeat split.
       * apply Genv.find_invert_symbol.
         apply Genv.invert_find_symbol in H21.
-        (* pose proof (symbol_address_inject) as D. *)
         pose proof (globals_symbols_inject) as E.
         specialize (E j H). unfold symbols_inject in E.
         destruct E as [E1 [E2 [E3 E4]]].
         specialize (E2 i _ _ _ Q). simpl in E2. specialize (E2 H21). destruct E2. auto.
-        (* pose proof (symbols_inject) *)
-        (* specialize (D _ _ Ptrofs.zero H H1). *)
-        (* unfold Genv.symbol_address in D. *)
-        (* rewrite H21 in D. *)
-        (* destruct (Genv.find_symbol tge i) eqn:?; try now inv D. *)
-        (* inv D. *)
-        (* rewrite H6 in H7. inv H7. auto. *)
       * rewrite <- H22.
         simpl. rewrite A. rewrite H0. reflexivity.
       * apply match_prog_pol in TRANSF.
