@@ -25,7 +25,7 @@ Require Import Allocation.
 Definition match_prog (p: RTL.program) (tp: LTL.program) :=
   match_program (fun _ f tf => transf_fundef f = OK tf) eq p tp.
 
-Instance comp_transf_fundef: has_comp_transl_partial transf_function.
+Instance comp_transf_function: has_comp_transl_partial transf_function.
 Proof.
   unfold transf_function, check_function.
   intros f ? H.
@@ -35,6 +35,21 @@ Proof.
   destruct eq_compartment as [e|?]; try easy.
   monadInv H.
   exact e.
+Qed.
+
+
+Instance comp_transf_fundef: has_comp_transl_partial transf_fundef.
+Proof.
+  unfold transf_fundef, transf_partial_fundef, transf_function, check_function.
+  intros f ? H.
+  destruct f.
+  - destruct type_function; try easy.
+    destruct regalloc; try easy.
+    destruct analyze; try easy.
+    destruct eq_compartment as [e|?]; try easy.
+    monadInv H. monadInv EQ.
+    exact e.
+  - now inv H.
 Qed.
 
 Lemma transf_program_match:
@@ -1508,6 +1523,17 @@ Proof.
   unfold return_regs. destruct (is_callee_save r). discriminate. auto.
 Qed.
 
+
+Lemma find_function_ptr_tailcall:
+  forall tge ros ls1 ls2,
+  ros_compatible_tailcall ros = true ->
+  find_function_ptr tge ros (return_regs ls1 ls2) = find_function_ptr tge ros ls2.
+Proof.
+  unfold ros_compatible_tailcall, find_function_ptr; intros.
+  destruct ros as [r|id]; auto.
+  unfold return_regs. destruct (is_callee_save r). discriminate. auto.
+Qed.
+
 Lemma loadv_int64_split:
   forall m a cp v,
   Mem.loadv Mint64 m a cp = Some v -> Archi.splitlong = true ->
@@ -1738,7 +1764,7 @@ Qed.
 Inductive transf_function_spec (f: RTL.function) (tf: LTL.function) : Prop :=
   | transf_function_spec_intro:
       forall env an mv k e1 e2,
-      forall (COMP: RTL.fn_comp f = LTL.fn_comp tf),
+      forall (COMP: comp_of f = comp_of tf),
       wt_function f env ->
       analyze f env (pair_codes f tf) = Some an ->
       (LTL.fn_code tf)!(LTL.fn_entrypoint tf) = Some(expand_moves mv (Lbranch (RTL.fn_entrypoint f) :: k)) ->
@@ -1792,6 +1818,7 @@ Proof.
   tauto.
 Qed.
 
+
 (** * Semantic preservation *)
 
 Section PRESERVATION.
@@ -1799,10 +1826,6 @@ Section PRESERVATION.
 Variable prog: RTL.program.
 Variable tprog: LTL.program.
 Hypothesis TRANSF: match_prog prog tprog.
-
-Variable pol: RTL.policy.
-Variable tpol: LTL.policy.
-Hypothesis TRANSPOL: match_pol (fun f tf => transf_fundef f = OK tf) pol tpol.
 
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
@@ -1858,6 +1881,34 @@ Proof.
   eapply function_ptr_translated; eauto.
 Qed.
 
+Lemma find_function_ptr_translated:
+  forall ros rs fd ros' e e' ls vf,
+    RTL.find_function ge ros rs = Some fd ->
+    RTL.find_function_ptr ge ros rs = Some vf ->
+    add_equation_ros ros ros' e = Some e' ->
+    satisf rs ls e' ->
+    LTL.find_function_ptr tge ros' ls = Some vf.
+Proof.
+  unfold RTL.find_function, RTL.find_function_ptr, LTL.find_function_ptr; intros.
+  destruct ros as [r|id]; destruct ros' as [r'|id']; simpl in H1; MonadInv.
+  (* two regs *)
+  exploit add_equation_lessdef; eauto. intros LD. inv LD.
+  reflexivity.
+  rewrite <- H1 in H. simpl in H. congruence.
+  (* two symbols *)
+  rewrite symbols_preserved. rewrite Heqo.
+  reflexivity.
+Qed.
+
+Lemma allowed_call_translated:
+  forall cp vf,
+    Genv.allowed_call ge cp vf ->
+    Genv.allowed_call tge cp vf.
+Proof.
+  intros cp vf H.
+  eapply (Genv.match_genvs_allowed_calls TRANSF). eauto.
+Qed.
+
 Lemma exec_moves:
   forall mv env rs s f sp bb m e e' ls,
   track_moves env mv e = Some e' ->
@@ -1865,7 +1916,7 @@ Lemma exec_moves:
   satisf rs ls e' ->
   wt_regset env rs ->
   exists ls',
-    star (step tpol) tge (Block s f sp (expand_moves mv bb) ls m)
+    star step tge (Block s f sp (expand_moves mv bb) ls m)
                E0 (Block s f sp bb ls' m)
   /\ satisf rs ls' e.
 Proof.
@@ -1926,7 +1977,7 @@ Inductive match_stackframes: list RTL.stackframe -> list LTL.stackframe -> signa
            Val.has_type v (env res) ->
            agree_callee_save ls ls1 ->
            exists ls2,
-           star (LTL.step tpol) tge (Block ts tf sp bb ls1 m)
+           star LTL.step tge (Block ts tf sp bb ls1 m)
                           E0 (State ts tf sp pc ls2 m)
            /\ satisf (rs#res <- v) ls2 e),
       match_stackframes
@@ -2016,9 +2067,9 @@ Qed.
     "plus" kind. *)
 
 Lemma step_simulation:
-  forall S1 t S2, RTL.step pol ge S1 t S2 -> wt_state S1 ->
+  forall S1 t S2, RTL.step ge S1 t S2 -> wt_state S1 ->
   forall S1', match_states S1 S1' ->
-  exists S2', plus (LTL.step tpol) tge S1' t S2' /\ match_states S2 S2'.
+  exists S2', plus LTL.step tge S1' t S2' /\ match_states S2 S2'.
 Proof.
   induction 1; intros WT S1' MS; inv MS; try UseShape.
 
@@ -2121,7 +2172,9 @@ Proof.
   eapply plus_left. econstructor; eauto.
   eapply star_trans. eexact A1.
   eapply star_left. econstructor. instantiate (1 := a'). rewrite <- F.
-  apply eval_addressing_preserved. exact symbols_preserved. eauto. eauto.
+  apply eval_addressing_preserved. exact symbols_preserved.
+  rewrite <- comp_transf_function; eauto.
+  eauto.
   eapply star_right. eexact A2. constructor.
   eauto. eauto. eauto. traceEq.
   exploit satisf_successors; eauto. simpl; eauto. intros [enext [U V]].
@@ -2155,7 +2208,7 @@ Proof.
   exploit eval_addressing_lessdef. eexact LD3.
   eapply eval_offset_addressing; eauto; apply Archi.splitlong_ptr32; auto.
   intros [a2' [F2 G2]].
-  assert (LOADX: exists v2'', Mem.loadv Mint32 m' a2' cp = Some v2'' /\ Val.lessdef v2' v2'').
+  assert (LOADX: exists v2'', Mem.loadv Mint32 m' a2' (comp_of f) = Some v2'' /\ Val.lessdef v2' v2'').
   { discriminate || (eapply Mem.loadv_extends; [eauto|eexact LOAD2|eexact G2]). }
   destruct LOADX as (v2'' & LOAD2' & LD4).
   set (ls4 := Locmap.set (R dst2') v2'' (undef_regs (destroyed_by_load Mint32 addr2) ls3)).
@@ -2171,11 +2224,13 @@ Proof.
   eapply star_trans. eexact A1.
   eapply star_left. econstructor.
   instantiate (1 := a1'). rewrite <- F1. apply eval_addressing_preserved. exact symbols_preserved.
-  eexact LOAD1'. instantiate (1 := ls2); auto.
+  rewrite <- comp_transf_function; eauto.
+  eauto.
   eapply star_trans. eexact A3.
   eapply star_left. econstructor.
   instantiate (1 := a2'). rewrite <- F2. apply eval_addressing_preserved. exact symbols_preserved.
-  eexact LOAD2'. instantiate (1 := ls4); auto.
+  rewrite <- comp_transf_function; eauto.
+  eauto.
   eapply star_right. eexact A5.
   constructor.
   eauto. eauto. eauto. eauto. eauto. traceEq.
@@ -2205,7 +2260,8 @@ Proof.
   eapply star_trans. eexact A1.
   eapply star_left. econstructor.
   instantiate (1 := a1'). rewrite <- F1. apply eval_addressing_preserved. exact symbols_preserved.
-  eexact LOAD1'. instantiate (1 := ls2); auto.
+  rewrite <- comp_transf_function; eauto.
+  eauto.
   eapply star_right. eexact A3.
   constructor.
   eauto. eauto. eauto. traceEq.
@@ -2223,7 +2279,7 @@ Proof.
   exploit eval_addressing_lessdef. eexact LD1.
   eapply eval_offset_addressing; eauto; apply Archi.splitlong_ptr32; auto.
   intros [a1' [F1 G1]].
-  assert (LOADX: exists v2'', Mem.loadv Mint32 m' a1' cp = Some v2'' /\ Val.lessdef v2' v2'').
+  assert (LOADX: exists v2'', Mem.loadv Mint32 m' a1' (comp_of f) = Some v2'' /\ Val.lessdef v2' v2'').
   { discriminate || (eapply Mem.loadv_extends; [eauto|eexact LOAD2|eexact G1]). }
   destruct LOADX as (v2'' & LOAD2' & LD2).
   set (ls2 := Locmap.set (R dst') v2'' (undef_regs (destroyed_by_load Mint32 addr2) ls1)).
@@ -2238,7 +2294,8 @@ Proof.
   eapply star_trans. eexact A1.
   eapply star_left. econstructor.
   instantiate (1 := a1'). rewrite <- F1. apply eval_addressing_preserved. exact symbols_preserved.
-  eexact LOAD2'. instantiate (1 := ls2); auto.
+  rewrite <- comp_transf_function; eauto.
+  eauto.
   eapply star_right. eexact A3.
   constructor.
   eauto. eauto. eauto. traceEq.
@@ -2266,7 +2323,9 @@ Proof.
   eapply plus_left. econstructor; eauto.
   eapply star_trans. eexact X.
   eapply star_two. econstructor. instantiate (1 := a'). rewrite <- F.
-  apply eval_addressing_preserved. exact symbols_preserved. eauto. eauto.
+  apply eval_addressing_preserved. exact symbols_preserved.
+  rewrite <- comp_transf_function; eauto.
+  eauto.
   constructor. eauto. eauto. traceEq.
   exploit satisf_successors; eauto. simpl; eauto.
   eapply can_undef_satisf; eauto. eapply add_equations_satisf; eauto. intros [enext [U V]].
@@ -2303,7 +2362,7 @@ Proof.
   assert (F2': eval_addressing tge sp addr (reglist ls3 args2') = Some a2').
     rewrite <- F2. apply eval_addressing_preserved. exact symbols_preserved.
   exploit (eval_offset_addressing tge); eauto. intros F2''.
-  assert (STOREX: exists m2', Mem.storev Mint32 m1' (Val.add a2' (Vint (Int.repr 4))) (ls3 (R src2')) cp = Some m2' /\ Mem.extends m' m2').
+  assert (STOREX: exists m2', Mem.storev Mint32 m1' (Val.add a2' (Vint (Int.repr 4))) (ls3 (R src2')) (comp_of f) = Some m2' /\ Mem.extends m' m2').
   { try discriminate;
     (eapply Mem.storev_extends;
      [eexact EXT1 | eexact STORE2 | apply Val.add_lessdef; [eexact G2|eauto] | eauto]). }
@@ -2312,10 +2371,14 @@ Proof.
   eapply plus_left. econstructor; eauto.
   eapply star_trans. eexact X.
   eapply star_left.
-  econstructor. eexact F1'. eexact STORE1'. instantiate (1 := ls2). auto.
+  econstructor. eexact F1'.
+  rewrite <- comp_transf_function; eauto.
+  eauto.
   eapply star_trans. eexact U.
   eapply star_two.
-  eapply exec_Lstore with (m' := m2'). eexact F2''. discriminate||exact STORE2'. eauto.
+  eapply exec_Lstore with (m' := m2'). eexact F2''.
+  discriminate||(rewrite <- comp_transf_function; eauto).
+  eauto.
   constructor. eauto. eauto. eauto. eauto. traceEq.
   exploit satisf_successors; eauto. simpl; eauto.
   eapply can_undef_satisf. eauto.
@@ -2331,12 +2394,14 @@ Proof.
   exploit find_function_translated. eauto. eauto. eapply add_equations_args_satisf; eauto.
   intros [tfd [E F]].
   assert (SIG: funsig tfd = sg). eapply sig_function_translated; eauto.
+  exploit find_function_ptr_translated. eauto. eauto. eauto. eapply add_equations_args_satisf; eauto.
+  intros G.
   econstructor; split.
   eapply plus_left. econstructor; eauto.
   eapply star_right. eexact A1. econstructor; eauto.
-  eapply TRANSPOL; eauto.
-  change tf.(fn_comp) with (comp_of tf). rewrite <- (comp_transl_partial _ FUN). eauto.
-  eauto. traceEq.
+  rewrite <- comp_transf_function; eauto.
+  eapply allowed_call_translated; eauto.
+  traceEq. traceEq.
   exploit analyze_successors; eauto. simpl. left; eauto. intros [enext [U V]].
   econstructor; eauto.
   econstructor; eauto.
@@ -2364,15 +2429,18 @@ Proof.
   exploit find_function_translated. eauto. eauto. eapply add_equations_args_satisf; eauto.
   intros [tfd [E F]].
   assert (SIG: funsig tfd = sg). eapply sig_function_translated; eauto.
+  exploit find_function_ptr_translated. eauto. eauto. eauto. eapply add_equations_args_satisf; eauto.
+  intros G.
   econstructor; split.
   eapply plus_left. econstructor; eauto.
   eapply star_right. eexact A1. econstructor; eauto.
   rewrite <- E. apply find_function_tailcall; auto.
-  rewrite <- (comp_transl_partial _ F), COMP. now apply (comp_transl_partial _ FUN).
-  change tf.(fn_comp) with (comp_of tf). rewrite <- (comp_transl_partial _ FUN). eauto.
-  eapply TRANSPOL; eauto.
-  change tf.(fn_comp) with (comp_of tf). rewrite <- (comp_transl_partial _ FUN). eauto.
+  rewrite find_function_ptr_tailcall; eauto.
+  rewrite <- comp_transf_fundef; eauto. rewrite <- comp_transf_function; eauto.
+  rewrite <- comp_transf_function; eauto.
+  rewrite <- comp_transf_function; eauto. eapply allowed_call_translated; eauto.
   replace (fn_stacksize tf) with (RTL.fn_stacksize f); eauto.
+  rewrite <- comp_transf_function; eauto.
   destruct (transf_function_inv _ _ FUN); auto.
   eauto. traceEq.
   econstructor; eauto.
@@ -2398,7 +2466,7 @@ Proof.
   eapply star_trans. eexact A1.
   eapply star_left. econstructor.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
-  eapply external_call_symbols_preserved. apply senv_preserved. rewrite comp_transf_fundef in E. eauto. eauto.
+  eapply external_call_symbols_preserved. apply senv_preserved. rewrite comp_transf_function in E. eauto. eauto.
   instantiate (1 := ls2); auto.
   eapply star_right. eexact A3.
   econstructor.
@@ -2444,7 +2512,8 @@ Proof.
   econstructor; split.
   eapply plus_left. econstructor; eauto.
   eapply star_right. eexact A1.
-  econstructor. eauto. eauto. traceEq.
+  econstructor.
+  rewrite <- comp_transf_function; eauto. eauto. traceEq.
   simpl. econstructor; eauto.
   apply return_regs_agree_callee_save.
   constructor.
@@ -2453,7 +2522,8 @@ Proof.
   econstructor; split.
   eapply plus_left. econstructor; eauto.
   eapply star_right. eexact A1.
-  econstructor. eauto. eauto. traceEq.
+  econstructor.
+  rewrite <- comp_transf_function; eauto. eauto. traceEq.
   simpl. econstructor; eauto. rewrite <- H11.
   replace (Locmap.getpair (map_rpair R (loc_result (RTL.fn_sig f)))
                           (return_regs (parent_locset ts) ls1))
@@ -2562,7 +2632,7 @@ Proof.
 Qed.
 
 Theorem transf_program_correct:
-  forward_simulation (RTL.semantics pol prog) (LTL.semantics tpol tprog).
+  forward_simulation (RTL.semantics prog) (LTL.semantics tprog).
 Proof.
   set (ms := fun s s' => wt_state s /\ match_states s s').
   eapply forward_simulation_plus with (match_states := ms).

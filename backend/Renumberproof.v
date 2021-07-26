@@ -33,9 +33,6 @@ Section PRESERVATION.
 
 Variables prog tprog: program.
 Hypothesis TRANSL: match_prog prog tprog.
-Variable pol: policy.
-Variable tpol: policy.
-Hypothesis TRANSPOL: match_pol (fun f tf => tf = transf_fundef f) pol tpol.
 
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
@@ -76,6 +73,25 @@ Proof.
   eapply functions_translated; eauto.
   rewrite symbols_preserved. destruct (Genv.find_symbol ge id); try congruence.
   eapply function_ptr_translated; eauto.
+Qed.
+
+Lemma find_function_ptr_translated:
+  forall ros ls vf,
+  find_function_ptr ge ros ls = Some vf ->
+  find_function_ptr tge ros ls = Some vf.
+Proof.
+  unfold find_function_ptr; intros; destruct ros; simpl.
+  eauto.
+  rewrite symbols_preserved; eauto.
+Qed.
+
+Lemma allowed_call_translated:
+  forall cp vf,
+    Genv.allowed_call ge cp vf ->
+    Genv.allowed_call tge cp vf.
+Proof.
+  intros cp vf H.
+  eapply (Genv.match_genvs_allowed_calls TRANSL). eauto.
 Qed.
 
 (** Effect of an injective renaming of nodes on a CFG. *)
@@ -176,9 +192,9 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
                    (Returnstate stk' v m).
 
 Lemma step_simulation:
-  forall S1 t S2, RTL.step pol ge S1 t S2 ->
+  forall S1 t S2, RTL.step ge S1 t S2 ->
   forall S1', match_states S1 S1' ->
-  exists S2', RTL.step tpol tge S1' t S2' /\ match_states S2 S2'.
+  exists S2', RTL.step tge S1' t S2' /\ match_states S2 S2'.
 Proof.
   induction 1; intros S1' MS; inv MS; try TR_AT.
 (* nop *)
@@ -206,7 +222,9 @@ Proof.
   eapply exec_Icall with (fd := transf_fundef fd); eauto.
     eapply find_function_translated; eauto.
     apply sig_preserved.
-  eapply TRANSPOL; eauto.
+    eapply find_function_ptr_translated; eauto.
+    eapply allowed_call_translated; eauto.
+
   constructor. constructor; auto. constructor. eapply reach_succ; eauto. simpl; auto.
 (* tailcall *)
   econstructor; split.
@@ -214,7 +232,8 @@ Proof.
     eapply find_function_translated; eauto.
     apply sig_preserved.
     rewrite comp_transl, COMP. eauto.
-  eapply TRANSPOL; eauto.
+    eapply find_function_ptr_translated; eauto.
+    eapply allowed_call_translated; eauto.
   constructor. auto.
 (* builtin *)
   econstructor; split.
@@ -275,7 +294,7 @@ Proof.
 Qed.
 
 Theorem transf_program_correct:
-  forward_simulation (RTL.semantics pol prog) (RTL.semantics tpol tprog).
+  forward_simulation (RTL.semantics prog) (RTL.semantics tprog).
 Proof.
   eapply forward_simulation_step.
   apply senv_preserved.

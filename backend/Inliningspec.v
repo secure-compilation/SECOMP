@@ -284,7 +284,7 @@ Inductive tr_instr: context -> compartment -> node -> instruction -> code -> Pro
       c!(spc ctx pc) = Some (Icall sg (sros ctx ros) (sregs ctx args) (sreg ctx res) (spc ctx s)) ->
       tr_instr ctx cp pc (Icall sg ros args res s) c
   | tr_call_inlined:forall ctx cp pc sg id args res s c f pc1 ctx',
-      forall SAMECOMP: cp = f.(fn_comp),
+      forall (SAMECOMP: cp = comp_of f),
       Ple res ctx.(mreg) ->
       fenv!id = Some f ->
       c!(spc ctx pc) = Some(Inop pc1) ->
@@ -303,7 +303,7 @@ Inductive tr_instr: context -> compartment -> node -> instruction -> code -> Pro
       ctx.(retinfo) = Some(s, res) ->
       tr_instr ctx cp pc (Itailcall sg ros args) c
   | tr_tailcall_inlined: forall ctx cp pc sg id args c f pc1 ctx',
-      forall SAMECOMP: cp = f.(fn_comp),
+      forall (SAMECOMP: cp = comp_of f),
       fenv!id = Some f ->
       c!(spc ctx pc) = Some(Inop pc1) ->
       tr_moves c pc1 (sregs ctx args) (sregs ctx' f.(fn_params)) (spc ctx' f.(fn_entrypoint)) ->
@@ -334,7 +334,7 @@ Inductive tr_instr: context -> compartment -> node -> instruction -> code -> Pro
 with tr_funbody: context -> function -> code -> Prop :=
   | tr_funbody_intro: forall ctx f c,
       (forall r, In r f.(fn_params) -> Ple r ctx.(mreg)) ->
-      (forall pc i, f.(fn_code)!pc = Some i -> tr_instr ctx f.(fn_comp) pc i c) ->
+      (forall pc i, f.(fn_code)!pc = Some i -> tr_instr ctx (comp_of f) pc i c) ->
       ctx.(mstk) = Z.max f.(fn_stacksize) 0 ->
       (min_alignment f.(fn_stacksize) | ctx.(dstk)) ->
       ctx.(dstk) >= 0 -> ctx.(dstk) + ctx.(mstk) <= stacksize ->
@@ -694,7 +694,7 @@ Inductive tr_function: program -> function -> function -> Prop :=
       tr_funbody fenv f'.(fn_stacksize) ctx f f'.(fn_code) ->
       ctx.(dstk) = 0 ->
       ctx.(retinfo) = None ->
-      f'.(fn_comp) = f.(fn_comp) ->
+      comp_of f' = (comp_of f) ->
       f'.(fn_sig) = f.(fn_sig) ->
       f'.(fn_params) = sregs ctx f.(fn_params) ->
       f'.(fn_entrypoint) = spc ctx f.(fn_entrypoint) ->

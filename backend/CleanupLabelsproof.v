@@ -33,13 +33,11 @@ Proof.
   intros. eapply match_transform_program; eauto.
 Qed.
 
+
 Section CLEANUP.
 
 Variables prog tprog: program.
 Hypothesis TRANSL: match_prog prog tprog.
-Variable pol: policy.
-Variable tpol: policy.
-Hypothesis TRANSPOL: match_pol (fun f tf => tf = transf_fundef f) pol tpol.
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
 
@@ -81,6 +79,25 @@ Proof.
   rewrite symbols_preserved. destruct (Genv.find_symbol ge i).
   apply function_ptr_translated; auto.
   congruence.
+Qed.
+
+Lemma find_function_ptr_translated:
+  forall ros ls vf,
+  find_function_ptr ge ros ls = Some vf ->
+  find_function_ptr tge ros ls = Some vf.
+Proof.
+  unfold find_function_ptr; intros; destruct ros; simpl.
+  eauto.
+  rewrite symbols_preserved; eauto.
+Qed.
+
+Lemma allowed_call_translated:
+  forall cp vf,
+    Genv.allowed_call ge cp vf ->
+    Genv.allowed_call tge cp vf.
+Proof.
+  intros cp vf H.
+  eapply (Genv.match_genvs_allowed_calls TRANSL). eauto.
 Qed.
 
 (** Correctness of [labels_branched_to]. *)
@@ -248,9 +265,9 @@ Proof.
 Qed.
 
 Theorem transf_step_correct:
-  forall s1 t s2, step pol ge s1 t s2 ->
+  forall s1 t s2, step ge s1 t s2 ->
   forall s1' (MS: match_states s1 s1'),
-  (exists s2', step tpol tge s1' t s2' /\ match_states s2 s2')
+  (exists s2', step tge s1' t s2' /\ match_states s2 s2')
   \/ (measure s2 < measure s1 /\ t = E0 /\ match_states s2 s1')%nat.
 Proof.
   induction 1; intros; inv MS; try rewrite remove_unused_labels_cons.
@@ -282,16 +299,17 @@ Proof.
 (* Lcall *)
   left; econstructor; split.
   econstructor. eapply find_function_translated; eauto.
+  eapply find_function_ptr_translated; eauto.
   symmetry; apply sig_function_translated.
-  eapply TRANSPOL; eauto.
+  eapply allowed_call_translated; eauto.
   econstructor; eauto. constructor; auto. constructor; eauto with coqlib.
 (* Ltailcall *)
   left; econstructor; split.
   econstructor. erewrite match_parent_locset; eauto. eapply find_function_translated; eauto.
+  eapply find_function_ptr_translated; eauto.
   symmetry; apply sig_function_translated.
-  now rewrite ! comp_transl.
-  simpl. eauto.
-  eapply TRANSPOL; eauto.
+  now rewrite ! comp_transl. simpl; eauto.
+  eapply allowed_call_translated; eauto.
   eauto.
   econstructor; eauto.
 (* Lbuiltin *)
@@ -368,7 +386,7 @@ Proof.
 Qed.
 
 Theorem transf_program_correct:
-  forward_simulation (Linear.semantics pol prog) (Linear.semantics tpol tprog).
+  forward_simulation (Linear.semantics prog) (Linear.semantics tprog).
 Proof.
   eapply forward_simulation_opt.
   apply senv_preserved.

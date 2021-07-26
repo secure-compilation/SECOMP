@@ -36,7 +36,7 @@
 Require Import Recdef.
 Require Import Zwf.
 Require Import Axioms Coqlib Errors Maps AST Linking.
-Require Import Integers Floats Values Memory Builtins.
+Require Import Integers Floats Values Memory.
 
 Notation "s #1" := (fst s) (at level 9, format "s '#1'") : pair_scope.
 Notation "s #2" := (snd s) (at level 9, format "s '#2'") : pair_scope.
@@ -151,6 +151,7 @@ Record t: Type := mkgenv {
   genv_symb: PTree.t block;             (**r mapping symbol -> block *)
   genv_defs: PTree.t (globdef F V);     (**r mapping block -> definition *)
   genv_next: block;                     (**r next symbol pointer *)
+  genv_policy: Policy.t;                (**r policy *)
   genv_symb_range: forall id b, PTree.get id genv_symb = Some b -> Plt b genv_next;
   genv_defs_range: forall b g, PTree.get b genv_defs = Some g -> Plt b genv_next;
   genv_vars_inj: forall id1 id2 b,
@@ -255,6 +256,7 @@ Program Definition add_global (ge: t) (idg: ident * globdef F V) : t :=
     (PTree.set idg#1 ge.(genv_next) ge.(genv_symb))
     (PTree.set ge.(genv_next) idg#2 ge.(genv_defs))
     (Pos.succ ge.(genv_next))
+    (genv_policy ge)
     _ _ _.
 Next Obligation.
   destruct ge; simpl in *.
@@ -287,8 +289,8 @@ Proof.
   intros. apply fold_left_app.
 Qed.
 
-Program Definition empty_genv (pub: list ident): t :=
-  @mkgenv pub (PTree.empty _) (PTree.empty _) 1%positive _ _ _.
+Program Definition empty_genv (pub: list ident) (pol: Policy.t): t :=
+  @mkgenv pub (PTree.empty _) (PTree.empty _) 1%positive pol _ _ _.
 Next Obligation.
   rewrite PTree.gempty in H. discriminate.
 Qed.
@@ -300,7 +302,7 @@ Next Obligation.
 Qed.
 
 Definition globalenv (p: program F V) :=
-  add_globals (empty_genv p.(prog_public)) p.(prog_defs).
+  add_globals (empty_genv p.(prog_public) p.(prog_pol)) p.(prog_defs).
 
 (** Proof principles *)
 
@@ -612,6 +614,15 @@ Qed.
 Remark genv_public_add_globals:
   forall gl ge,
   genv_public (add_globals ge gl) = genv_public ge.
+Proof.
+  induction gl; simpl; intros.
+  auto.
+  rewrite IHgl; auto.
+Qed.
+
+Remark genv_pol_add_globals:
+  forall gl ge,
+  genv_policy (add_globals ge gl) = genv_policy ge.
 Proof.
   induction gl; simpl; intros.
   auto.
@@ -1310,7 +1321,7 @@ Lemma init_mem_genv_next: forall p m,
 Proof.
   unfold init_mem; intros.
   exploit alloc_globals_nextblock; eauto. rewrite Mem.nextblock_empty. intro.
-  generalize (genv_next_add_globals (prog_defs p) (empty_genv (prog_public p))).
+  generalize (genv_next_add_globals (prog_defs p) (empty_genv (prog_public p) (prog_pol p))).
   fold (globalenv p). simpl genv_next. intros. congruence.
 Qed.
 
@@ -1714,6 +1725,115 @@ Proof.
   fold ge. rewrite A1. eapply IHl; eauto.
 Qed.
 
+(* Allowed cross-compartment calls *)
+Definition allowed_cross_call (ge: t) (cp: compartment) (vf: val) :=
+  match vf with
+  | Vptr b _ =>
+    exists i cp',
+    invert_symbol ge b = Some i /\
+    find_comp ge vf = Some cp' /\
+    match (Policy.policy_import ge.(genv_policy)) ! cp with
+    | Some l => In (cp', i) l
+    | None => False
+    end /\
+    match (Policy.policy_export ge.(genv_policy)) ! cp' with
+    | Some l => In i l
+    | None => False
+    end
+  | _ => False
+  end.
+
+(* A call is allowed if any of these 3 cases holds:
+(1) the procedure being called belongs to the default compartment
+(2) the procedure being called belongs to the same compartment as the caller
+(3) the call is an inter-compartment call and is allowed by the policy
+*)
+Definition allowed_call (ge: t) (cp: compartment) (vf: val) :=
+  Some default_compartment = find_comp ge vf \/
+  Some cp = find_comp ge vf \/
+  allowed_cross_call ge cp vf.
+
+Lemma comp_ident_eq_dec: forall (x y: compartment * ident),
+    {x = y} + {x <> y}.
+Proof.
+  intros x y.
+  decide equality.
+  eapply Pos.eq_dec.
+  eapply Pos.eq_dec.
+Qed.
+
+Definition allowed_call_b (ge: t) (cp: compartment) (vf: val): bool :=
+  match find_comp ge vf with
+  | Some c => Pos.eqb c default_compartment
+             || Pos.eqb c cp
+             || match vf with
+               | Vptr b _ => match invert_symbol ge b with
+                            | Some i =>
+                              match (Policy.policy_import ge.(genv_policy)) ! cp with
+                              | Some imps =>
+                                match (Policy.policy_export ge.(genv_policy)) ! c with
+                                | Some exps =>
+                                  in_dec comp_ident_eq_dec (c, i) imps &&
+                                  in_dec Pos.eq_dec i exps
+                                | None => false
+                                end
+                              | None => false
+                              end
+                            | None => false
+                            end
+               | _ => false
+               end
+  | None => false
+  end.
+
+Lemma allowed_call_reflect: forall ge cp vf,
+    allowed_call ge cp vf <-> allowed_call_b ge cp vf = true.
+Proof.
+  intros ge cp vf.
+  unfold allowed_call, allowed_call_b, allowed_cross_call.
+  destruct vf eqn:VF; try (firstorder; discriminate).
+  destruct (find_comp ge (Vptr b i)) eqn:COMP; try (firstorder; discriminate).
+  - destruct (Pos.eq_dec default_compartment c); subst.
+    + simpl. split; auto.
+    + simpl.
+      destruct (Pos.eq_dec c cp); subst.
+      * rewrite Pos.eqb_refl. rewrite orb_true_r. simpl. split; auto.
+      * split; auto.
+        -- intros H. destruct H as [? | [? | ?]]; try congruence.
+           destruct H as [i' [cp' [H1 [H2 [H3 H4]]]]].
+           rewrite H1. inv H2.
+           destruct ((Policy.policy_import (genv_policy ge)) ! cp) as [imps |]; auto.
+           destruct ((Policy.policy_export (genv_policy ge)) ! cp') as [exps |]; auto.
+           destruct (in_dec comp_ident_eq_dec (cp', i') imps);
+             destruct (in_dec Pos.eq_dec i' exps); simpl; auto.
+           now rewrite orb_true_r.
+        -- intros H.
+           right; right.
+           destruct c; try (now unfold default_compartment in n).
+           ++ simpl in H. apply Pos.eqb_neq in n0. rewrite n0 in H. simpl in H.
+              destruct (invert_symbol ge b); try discriminate.
+              exists i0. exists (c~1)%positive. split; auto. split; auto. simpl.
+              destruct ((Policy.policy_import (genv_policy ge)) ! cp) as [imps |]; try discriminate.
+              destruct (Policy.policy_export (genv_policy ge)); try discriminate.
+              destruct (t0_2 ! c); try discriminate.
+              apply andb_prop in H.
+              destruct H as [H1 H2].
+              apply proj_sumbool_true in H1.
+              apply proj_sumbool_true in H2.
+              auto.
+           ++ simpl in H. apply Pos.eqb_neq in n0. rewrite n0 in H. simpl in H.
+              destruct (invert_symbol ge b); try discriminate.
+              exists i0. exists (c~0)%positive. split; auto. split; auto. simpl.
+              destruct ((Policy.policy_import (genv_policy ge)) ! cp) as [imps |]; try discriminate.
+              destruct (Policy.policy_export (genv_policy ge)); try discriminate.
+              destruct (t0_1 ! c); try discriminate.
+              apply andb_prop in H.
+              destruct H as [H1 H2].
+              apply proj_sumbool_true in H1.
+              apply proj_sumbool_true in H2.
+              auto.
+Qed.
+
 End GENV.
 
 (** * Commutation with program transformations *)
@@ -1842,7 +1962,7 @@ Proof.
 - apply find_symbol_match.
 - intros. unfold public_symbol. rewrite find_symbol_match.
   rewrite ! globalenv_public.
-  destruct progmatch as (P & Q & R). rewrite R. auto.
+  destruct progmatch as (P & Q & R & S). rewrite R. auto.
 - intros. unfold block_is_volatile.
   destruct globalenvs_match as [P Q R]. specialize (R b).
   unfold find_var_info, find_def.
@@ -1894,6 +2014,75 @@ Proof.
   unfold init_mem; intros.
   eapply alloc_globals_match; eauto. apply progmatch.
 Qed.
+
+
+Lemma match_genvs_allowed_calls:
+  forall cp vf,
+    allowed_call (globalenv p) cp vf ->
+    allowed_call (globalenv tp) cp vf.
+Proof.
+  intros cp vf.
+  unfold allowed_call.
+  intros [H1 | [H1 | H1]].
+  - left. rewrite H1.
+    unfold find_comp. destruct vf; auto.
+    destruct (find_funct_ptr (globalenv p) b) eqn:EQ; auto.
+    apply find_funct_ptr_match in EQ as [? [? [? [? ?]]]].
+    rewrite H.
+    erewrite match_fundef_comp; eauto.
+    unfold find_comp in H1. rewrite EQ in H1. congruence.
+  - right; left. rewrite H1.
+    unfold find_comp. destruct vf; auto.
+    destruct (find_funct_ptr (globalenv p) b) eqn:EQ; auto.
+    apply find_funct_ptr_match in EQ as [? [? [? [? ?]]]].
+    rewrite H.
+    erewrite match_fundef_comp; eauto.
+    unfold find_comp in H1. rewrite EQ in H1. congruence.
+  - right; right.
+    unfold allowed_cross_call in *. destruct vf; eauto.
+    destruct H1 as [i0 [cp' [? [? [? ?]]]]].
+    exists i0; exists cp'; split; [| split; [| split]].
+    + apply find_invert_symbol. apply invert_find_symbol in H.
+      rewrite find_symbol_match; eauto.
+    + unfold find_comp in H0. unfold find_comp.
+      destruct (find_funct_ptr (globalenv p) b) eqn:EQ; auto.
+      apply find_funct_ptr_match in EQ as [? [? [? [? ?]]]].
+      rewrite H3.
+      inversion H0; subst.
+      rewrite match_fundef_comp. eauto. eauto.
+      congruence.
+    + destruct progmatch as [? [? [? EQPOL]]].
+      destruct p, tp; simpl in *; subst.
+      unfold globalenv. unfold globalenv in H1.
+      simpl.
+      simpl in H1. clear -H1 EQPOL.
+
+      rewrite genv_pol_add_globals.
+      rewrite genv_pol_add_globals in H1.
+      unfold Policy.eqb in EQPOL. apply andb_prop in EQPOL.
+      destruct EQPOL as [EQPOL1 EQPOL2].
+      simpl in *.
+      rewrite PTree.beq_correct in EQPOL2. specialize (EQPOL2 cp).
+      destruct ((Policy.policy_import prog_pol0) ! cp);
+        destruct ((Policy.policy_import prog_pol) ! cp); auto.
+      destruct (Policy.list_cpt_id_eq l l0); subst; simpl in *; auto; try discriminate. contradiction.
+    + destruct progmatch as [? [? [? EQPOL]]].
+      destruct p, tp; simpl in *; subst.
+      unfold globalenv. unfold globalenv in H2.
+      simpl.
+      simpl in H2. clear -H2 EQPOL.
+
+      rewrite genv_pol_add_globals.
+      rewrite genv_pol_add_globals in H2.
+      unfold Policy.eqb in EQPOL. apply andb_prop in EQPOL.
+      destruct EQPOL as [EQPOL1 EQPOL2].
+      simpl in *.
+      rewrite PTree.beq_correct in EQPOL1. specialize (EQPOL1 cp').
+      destruct ((Policy.policy_export prog_pol0) ! cp');
+        destruct ((Policy.policy_export prog_pol) ! cp'); auto.
+      destruct (Policy.list_id_eq l l0); subst; simpl in *; auto; try discriminate. contradiction.
+Qed.
+
 
 End MATCH_PROGRAMS.
 
@@ -1959,6 +2148,13 @@ Proof.
   eapply (init_mem_match progmatch).
 Qed.
 
+Theorem allowed_call_transf_partial:
+  forall cp vf,
+    allowed_call (globalenv p) cp vf -> allowed_call (globalenv tp) cp vf.
+Proof.
+  eapply (match_genvs_allowed_calls progmatch).
+Qed.
+
 End TRANSFORM_PARTIAL.
 
 (** Special case for total transformations that do not depend on the compilation unit *)
@@ -2008,98 +2204,14 @@ Proof.
   eapply (init_mem_match progmatch).
 Qed.
 
+Theorem allowed_call_transf:
+  forall cp vf,
+    allowed_call (globalenv p) cp vf -> allowed_call (globalenv tp) cp vf.
+Proof.
+  eapply (match_genvs_allowed_calls progmatch).
+Qed.
 End TRANSFORM_TOTAL.
 
 End Genv.
 
-Module Policy.
-Section POLICY.
-
-
-Variable F: Type.  (**r The type of function descriptions *)
-Context {CF: has_comp F} {FD: @is_fundef F CF}.
-
-Record t : Type := mkpolicy {
-  policy_export : compartment -> list F; (* The list of exported functions *)
-  policy_import : compartment -> list (compartment * F); (* The list of imported functions and their compartment *)
-  (* Well-formedness conditions on the interface *)
-  export_in_cp: forall cp f, In f (policy_export cp) -> comp_of f = cp;
-  (* All runtime builtin functions can be called from any compartment *)
-  imports_runtime_builtins: forall cp name f sg bf,
-      lookup_builtin_function name sg = Some bf ->
-      simpl_fundef f = External (EF_runtime name sg) ->
-      In (default_compartment, f) (policy_import cp);
-  exports_runtime_builtins: forall name f sg bf,
-      lookup_builtin_function name sg = Some bf ->
-      simpl_fundef f = External (EF_runtime name sg) ->
-      In f (policy_export default_compartment)
-
-  }.
-
-Definition allowed_cross_call (pol: t) (cp: compartment) (f: F) :=
-  In (comp_of f, f) (policy_import pol cp) /\
-  In f (policy_export pol (comp_of f)).
-
-Definition allowed_call (pol: t) (cp: compartment) (f: F) :=
-  comp_of f = cp \/ allowed_cross_call pol cp f.
-
-Lemma pol_accepts_runtime_builtins: forall pol cp name f sg bf,
-    lookup_builtin_function name sg = Some bf ->
-    simpl_fundef f = External (EF_runtime name sg) ->
-    allowed_call pol cp f.
-Proof.
-  intros pol cp name f sg bf H1 H2; subst.
-  right; split.
-  - erewrite preserves_comp.
-    rewrite H2.
-    eapply imports_runtime_builtins; eauto.
-  - erewrite preserves_comp.
-    rewrite H2.
-    eapply exports_runtime_builtins; eauto.
-Qed.
-
-(* TODO: Write the proper definition of these *)
-Axiom allowed_call_b: t -> compartment -> F -> bool.
-Axiom allowed_call_reflect : forall pol cp f,
-    allowed_call pol cp f <-> allowed_call_b pol cp f = true.
-
-(* Definition allowed_cross_call_p (pol: t) (cp: compartment) (f: F) := *)
-(*   if in_dec _ (comp_of f, f) (policy_import pol cp) then *)
-(*     if (in_dec _ f (policy_export pol (comp_of f))) then *)
-(*       true *)
-(*     else false *)
-(*   else false. *)
-
-(* Definition allowed_call_b (pol: t) (cp: compartment) (f: F) := *)
-(*   if peq (comp_of f) cp then *)
-(*     true *)
-(*   else allowed_cross_call_b pol cp f. *)
-
-End POLICY.
-
-Section MATCH_POLICIES.
-
-Context {C F1 F2: Type} {LC: Linker C} {LF1: Linker F1} {LF2: Linker F2}.
-Context {CF1: has_comp F1} {CF2: has_comp F2}.
-Context {FD1: @is_fundef F1 _} {FD2: @is_fundef F2 _}.
-Variable match_fundef: C -> F1 -> F2 -> Prop.
-Context {match_fundef_comp: has_comp_match (fun ctx f1 f2 => match_fundef ctx f1 f2)}.
-
-(* The definition of matching policies between languages must depend on how the function names are
- compiled *)
-Definition match_pol (ctx: C) (pol: t (F := F1)) (tpol: t (F := F2)) :=
-  forall f tf,
-    match_fundef ctx f tf ->
-    forall cp,
-      allowed_call pol cp f <-> allowed_call tpol cp tf.
-
-End MATCH_POLICIES.
-End Policy.
-
 Coercion Genv.to_senv: Genv.t >-> Senv.t.
-
-(* A definition that ignores the context *)
-Definition match_pol {F1 F2: Type} {CF1: has_comp F1} {CF2: has_comp F2} {FD1: @is_fundef F1 _} {FD2: @is_fundef F2 _}
-           (match_fundef: F1 -> F2 -> Prop)
-           (f1: Policy.t (F := F1)) (f2: Policy.t (F := F2)) : Prop :=
-  Policy.match_pol (fun _: unit => match_fundef) tt f1 f2.

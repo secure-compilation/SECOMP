@@ -120,10 +120,6 @@ Definition temp_env := PTree.t val.
 Definition empty_env : env := PTree.empty (block * Z).
 Definition empty_temp_env : temp_env := PTree.empty val.
 
-
-(** Policies *)
-Definition policy := Policy.t (F := fundef).
-
 (** Initialization of temporary variables *)
 
 Fixpoint create_undef_temps (temps: list ident) : temp_env :=
@@ -301,7 +297,6 @@ Definition blocks_of_env (e: env) : list (block * Z * Z) :=
 
 Section RELSEM.
 
-Variable pol: policy.
 Variable ge: genv.
 
 (* Evaluation of the address of a variable:
@@ -326,9 +321,9 @@ Inductive eval_var_addr: env -> ident -> block -> Prop :=
 Section EVAL_EXPR.
 
 Variable e: env.
+Variable cp: compartment.
 Variable le: temp_env.
 Variable m: mem.
-(* JT: TODO: Might probably need to add a compartment variable to this section *)
 
 Inductive eval_expr: expr -> val -> Prop :=
   | eval_Evar: forall id v,
@@ -351,7 +346,7 @@ Inductive eval_expr: expr -> val -> Prop :=
       eval_expr (Ebinop op a1 a2) v
   | eval_Eload: forall chunk a v1 v,
       eval_expr a v1 ->
-      Mem.loadv chunk m v1 = Some v ->
+      Mem.loadv chunk m v1 cp = Some v ->
       eval_expr (Eload chunk a) v.
 
 (** Evaluation of a list of expressions:
@@ -381,34 +376,34 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State f Sskip k e le m)
   | step_skip_call: forall f k e le m m',
       is_call_cont k ->
-      Mem.free_list m (blocks_of_env e) = Some m' ->
+      Mem.free_list m (blocks_of_env e) (comp_of f) = Some m' ->
       step (State f Sskip k e le m)
         E0 (Returnstate Vundef k m')
 
   | step_set: forall f id a k e le m v,
-      eval_expr e le m a v ->
+      eval_expr e (comp_of f) le m a v ->
       step (State f (Sset id a) k e le m)
         E0 (State f Sskip k e (PTree.set id v le) m)
 
   | step_store: forall f chunk addr a k e le m vaddr v m',
-      eval_expr e le m addr vaddr ->
-      eval_expr e le m a v ->
-      Mem.storev chunk m vaddr v = Some m' ->
+      eval_expr e (comp_of f) le m addr vaddr ->
+      eval_expr e (comp_of f) le m a v ->
+      Mem.storev chunk m vaddr v (comp_of f) = Some m' ->
       step (State f (Sstore chunk addr a) k e le m)
         E0 (State f Sskip k e le m')
 
   | step_call: forall f optid sig a bl k e le m vf vargs fd,
-      eval_expr e le m a vf ->
-      eval_exprlist e le m bl vargs ->
+      eval_expr e (comp_of f) le m a vf ->
+      eval_exprlist e (comp_of f) le m bl vargs ->
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
-      forall (ALLOWED: Policy.allowed_call pol f.(fn_comp) fd),
+      forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
       step (State f (Scall optid sig a bl) k e le m)
         E0 (Callstate fd vargs (Kcall optid f e le k) m)
 
   | step_builtin: forall f optid ef bl k e le m vargs t vres m',
-      eval_exprlist e le m bl vargs ->
-      external_call ef ge f.(fn_comp) vargs m t vres m' ->
+      eval_exprlist e (comp_of f) le m bl vargs ->
+      external_call ef ge (comp_of f) vargs m t vres m' ->
       step (State f (Sbuiltin optid ef bl) k e le m)
          t (State f Sskip k e (Cminor.set_optvar optid vres le) m')
 
@@ -417,7 +412,7 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State f s1 (Kseq s2 k) e le m)
 
   | step_ifthenelse: forall f a s1 s2 k e le m v b,
-      eval_expr e le m a v ->
+      eval_expr e (comp_of f) le m a v ->
       Val.bool_of_val v b ->
       step (State f (Sifthenelse a s1 s2) k e le m)
         E0 (State f (if b then s1 else s2) k e le m)
@@ -441,18 +436,18 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State f (Sexit n) k e le m)
 
   | step_switch: forall f islong a cases k e le m v n,
-      eval_expr e le m a v ->
+      eval_expr e (comp_of f) le m a v ->
       switch_argument islong v n ->
       step (State f (Sswitch islong a cases) k e le m)
         E0 (State f (seq_of_lbl_stmt (select_switch n cases)) k e le m)
 
   | step_return_0: forall f k e le m m',
-      Mem.free_list m (blocks_of_env e) = Some m' ->
+      Mem.free_list m (blocks_of_env e) (comp_of f) = Some m' ->
       step (State f (Sreturn None) k e le m)
         E0 (Returnstate Vundef (call_cont k) m')
   | step_return_1: forall f a k e le m v m',
-      eval_expr e le m a v ->
-      Mem.free_list m (blocks_of_env e) = Some m' ->
+      eval_expr e (comp_of f) le m a v ->
+      Mem.free_list m (blocks_of_env e) (comp_of f) = Some m' ->
       step (State f (Sreturn (Some a)) k e le m)
         E0 (Returnstate v (call_cont k) m')
   | step_label: forall f lbl s k e le m,
@@ -506,5 +501,5 @@ Inductive final_state: state -> int -> Prop :=
 
 (** Wrapping up these definitions in a small-step semantics. *)
 
-Definition semantics (pol: policy) (p: program) :=
-  Semantics (step pol) (initial_state p) final_state (Genv.globalenv p).
+Definition semantics (p: program) :=
+  Semantics step (initial_state p) final_state (Genv.globalenv p).

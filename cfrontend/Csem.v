@@ -40,11 +40,8 @@ Definition env := PTree.t (block * type). (* map variable -> location & type *)
 
 Definition empty_env: env := (PTree.empty (block * type)).
 
-Definition policy := Policy.t (F := fundef).
-
 Section SEMANTICS.
 
-Variable pol: policy.
 Variable ge: genv.
 
 (** [deref_loc ty m b ofs t v] computes the value of a datum
@@ -55,22 +52,22 @@ Variable ge: genv.
   returned, and [t] the trace of observables (nonempty if this is
   a volatile access). *)
 
-Inductive deref_loc (ty: type) (m: mem) (b: block) (ofs: ptrofs) : trace -> val -> Prop :=
+Inductive deref_loc (cp: compartment) (ty: type) (m: mem) (b: block) (ofs: ptrofs) : trace -> val -> Prop :=
   | deref_loc_value: forall chunk v,
       access_mode ty = By_value chunk ->
       type_is_volatile ty = false ->
-      Mem.loadv chunk m (Vptr b ofs) = Some v ->
-      deref_loc ty m b ofs E0 v
+      Mem.loadv chunk m (Vptr b ofs) cp = Some v ->
+      deref_loc cp ty m b ofs E0 v
   | deref_loc_volatile: forall chunk t v,
       access_mode ty = By_value chunk -> type_is_volatile ty = true ->
       volatile_load ge chunk m b ofs t v ->
-      deref_loc ty m b ofs t v
+      deref_loc cp ty m b ofs t v
   | deref_loc_reference:
       access_mode ty = By_reference ->
-      deref_loc ty m b ofs E0 (Vptr b ofs)
+      deref_loc cp ty m b ofs E0 (Vptr b ofs)
   | deref_loc_copy:
       access_mode ty = By_copy ->
-      deref_loc ty m b ofs E0 (Vptr b ofs).
+      deref_loc cp ty m b ofs E0 (Vptr b ofs).
 
 (** Symmetrically, [assign_loc ty m b ofs v t m'] returns the
   memory state after storing the value [v] in the datum
@@ -79,17 +76,17 @@ Inductive deref_loc (ty: type) (m: mem) (b: block) (ofs: ptrofs) : trace -> val 
   [m'] is the updated memory state and [t] the trace of observables
   (nonempty if this is a volatile store). *)
 
-Inductive assign_loc (ty: type) (m: mem) (b: block) (ofs: ptrofs):
+Inductive assign_loc (cp: compartment) (ty: type) (m: mem) (b: block) (ofs: ptrofs):
                                             val -> trace -> mem -> Prop :=
   | assign_loc_value: forall v chunk m',
       access_mode ty = By_value chunk ->
       type_is_volatile ty = false ->
-      Mem.storev chunk m (Vptr b ofs) v = Some m' ->
-      assign_loc ty m b ofs v E0 m'
+      Mem.storev chunk m (Vptr b ofs) v cp = Some m' ->
+      assign_loc cp ty m b ofs v E0 m'
   | assign_loc_volatile: forall v chunk t m',
       access_mode ty = By_value chunk -> type_is_volatile ty = true ->
       volatile_store ge chunk m b ofs v t m' ->
-      assign_loc ty m b ofs v t m'
+      assign_loc cp ty m b ofs v t m'
   | assign_loc_copy: forall b' ofs' bytes m',
       access_mode ty = By_copy ->
       (alignof_blockcopy ge ty | Ptrofs.unsigned ofs') ->
@@ -97,9 +94,9 @@ Inductive assign_loc (ty: type) (m: mem) (b: block) (ofs: ptrofs):
       b' <> b \/ Ptrofs.unsigned ofs' = Ptrofs.unsigned ofs
               \/ Ptrofs.unsigned ofs' + sizeof ge ty <= Ptrofs.unsigned ofs
               \/ Ptrofs.unsigned ofs + sizeof ge ty <= Ptrofs.unsigned ofs' ->
-      Mem.loadbytes m b' (Ptrofs.unsigned ofs') (sizeof ge ty) = Some bytes ->
-      Mem.storebytes m b (Ptrofs.unsigned ofs) bytes = Some m' ->
-      assign_loc ty m b ofs (Vptr b' ofs') E0 m'.
+      Mem.loadbytes m b' (Ptrofs.unsigned ofs') (sizeof ge ty) cp = Some bytes ->
+      Mem.storebytes m b (Ptrofs.unsigned ofs) bytes cp = Some m' ->
+      assign_loc cp ty m b ofs (Vptr b' ofs') E0 m'.
 
 (** Allocation of function-local variables.
   [alloc_variables e1 m1 vars e2 m2] allocates one memory block
@@ -108,35 +105,35 @@ Inductive assign_loc (ty: type) (m: mem) (b: block) (ofs: ptrofs):
   and memory state.  [e2] and [m2] are the final local environment
   and memory state. *)
 
-Inductive alloc_variables: env -> mem ->
+Inductive alloc_variables (cp: compartment): env -> mem ->
                            list (ident * type) ->
                            env -> mem -> Prop :=
   | alloc_variables_nil:
       forall e m,
-      alloc_variables e m nil e m
+      alloc_variables cp e m nil e m
   | alloc_variables_cons:
       forall e m id ty vars m1 b1 m2 e2,
-      Mem.alloc m default_compartment 0 (sizeof ge ty) = (m1, b1) ->
-      alloc_variables (PTree.set id (b1, ty) e) m1 vars e2 m2 ->
-      alloc_variables e m ((id, ty) :: vars) e2 m2.
+      Mem.alloc m cp 0 (sizeof ge ty) = (m1, b1) ->
+      alloc_variables cp (PTree.set id (b1, ty) e) m1 vars e2 m2 ->
+      alloc_variables cp e m ((id, ty) :: vars) e2 m2.
 
 (** Initialization of local variables that are parameters to a function.
   [bind_parameters e m1 params args m2] stores the values [args]
   in the memory blocks corresponding to the variables [params].
   [m1] is the initial memory state and [m2] the final memory state. *)
 
-Inductive bind_parameters (e: env):
+Inductive bind_parameters (cp: compartment) (e: env):
                            mem -> list (ident * type) -> list val ->
                            mem -> Prop :=
   | bind_parameters_nil:
       forall m,
-      bind_parameters e m nil nil m
+      bind_parameters cp e m nil nil m
   | bind_parameters_cons:
       forall m id ty params v1 vl b m1 m2,
       PTree.get id e = Some(b, ty) ->
-      assign_loc ty m b Ptrofs.zero v1 E0 m1 ->
-      bind_parameters e m1 params vl m2 ->
-      bind_parameters e m ((id, ty) :: params) (v1 :: vl) m2.
+      assign_loc cp ty m b Ptrofs.zero v1 E0 m1 ->
+      bind_parameters cp e m1 params vl m2 ->
+      bind_parameters cp e m ((id, ty) :: params) (v1 :: vl) m2.
 
 (** Return the list of blocks in the codomain of [e], with low and high bounds. *)
 
@@ -227,7 +224,7 @@ Inductive lred: expr -> mem -> expr -> mem -> Prop :=
 
 Inductive rred: expr -> mem -> trace -> expr -> mem -> Prop :=
   | red_rvalof: forall b ofs ty m t v,
-      deref_loc ty m b ofs t v ->
+      deref_loc cp ty m b ofs t v ->
       rred (Evalof (Eloc b ofs ty) ty) m
          t (Eval v ty) m
   | red_addrof: forall b ofs ty1 ty m,
@@ -273,16 +270,16 @@ Inductive rred: expr -> mem -> trace -> expr -> mem -> Prop :=
         E0 (Eval (Vptrofs (Ptrofs.repr (alignof ge ty1))) ty) m
   | red_assign: forall b ofs ty1 v2 ty2 m v t m',
       sem_cast v2 ty2 ty1 m = Some v ->
-      assign_loc ty1 m b ofs v t m' ->
+      assign_loc cp ty1 m b ofs v t m' ->
       rred (Eassign (Eloc b ofs ty1) (Eval v2 ty2) ty1) m
          t (Eval v ty1) m'
   | red_assignop: forall op b ofs ty1 v2 ty2 tyres m t v1,
-      deref_loc ty1 m b ofs t v1 ->
+      deref_loc cp ty1 m b ofs t v1 ->
       rred (Eassignop op (Eloc b ofs ty1) (Eval v2 ty2) tyres ty1) m
          t (Eassign (Eloc b ofs ty1)
                     (Ebinop op (Eval v1 ty1) (Eval v2 ty2) tyres) ty1) m
   | red_postincr: forall id b ofs ty m t v1 op,
-      deref_loc ty m b ofs t v1 ->
+      deref_loc cp ty m b ofs t v1 ->
       op = match id with Incr => Oadd | Decr => Osub end ->
       rred (Epostincr id (Eloc b ofs ty) ty) m
          t (Ecomma (Eassign (Eloc b ofs ty)
@@ -315,7 +312,7 @@ Inductive callred: expr -> mem -> fundef -> list val -> type -> Prop :=
       cast_arguments m el tyargs vargs ->
       type_of_fundef fd = Tfunction tyargs tyres cconv ->
       classify_fun tyf = fun_case_f tyargs tyres cconv ->
-      forall (ALLOWED: Policy.allowed_call pol cp fd),
+      forall (ALLOWED: Genv.allowed_call ge cp vf),
       callred (Ecall (Eval vf tyf) el ty) m
               fd vargs ty.
 
@@ -425,7 +422,6 @@ Inductive imm_safe: kind -> expr -> mem -> Prop :=
   | imm_safe_callred: forall to C e m fd args ty,
       callred e m fd args ty ->
       context RV to C ->
-      forall (ALLOWED: Policy.allowed_call pol cp fd),
       imm_safe to (C e) m.
 
 Definition not_stuck (e: expr) (m: mem) : Prop :=
@@ -544,7 +540,7 @@ Definition is_call_cont (k: cont) : Prop :=
 
 Definition call_comp (k: cont) : compartment :=
   match call_cont k with
-  | Kcall f _ _ _ _ => f.(fn_comp)
+  | Kcall f _ _ _ _ => (comp_of f)
   | _ => default_compartment
   end.
 
@@ -642,19 +638,19 @@ Inductive estep: state -> trace -> state -> Prop :=
          E0 (ExprState f (C a') k e m')
 
   | step_rred: forall C f a k e m t a' m',
-      rred f.(fn_comp) a m t a' m' ->
+      rred (comp_of f) a m t a' m' ->
       context RV RV C ->
       estep (ExprState f (C a) k e m)
           t (ExprState f (C a') k e m')
 
   | step_call: forall C f a k e m fd vargs ty,
-      callred f.(fn_comp) a m fd vargs ty ->
+      callred (comp_of f) a m fd vargs ty ->
       context RV RV C ->
       estep (ExprState f (C a) k e m)
          E0 (Callstate fd vargs (Kcall f e C ty k) m)
 
   | step_stuck: forall C f a k e m K,
-      context K RV C -> ~(imm_safe e f.(fn_comp) K a m) ->
+      context K RV C -> ~(imm_safe e (comp_of f) K a m) ->
       estep (ExprState f (C a) k e m)
          E0 Stuckstate.
 
@@ -753,7 +749,7 @@ Inductive sstep: state -> trace -> state -> Prop :=
          E0 (State f (Sfor Sskip a2 a3 s) k e m)
 
   | step_return_0: forall f k e m m',
-      Mem.free_list m (blocks_of_env e) = Some m' ->
+      Mem.free_list m (blocks_of_env e) (comp_of f) = Some m' ->
       sstep (State f (Sreturn None) k e m)
          E0 (Returnstate Vundef (call_cont k) m')
   | step_return_1: forall f x k e m,
@@ -761,12 +757,12 @@ Inductive sstep: state -> trace -> state -> Prop :=
          E0 (ExprState f x (Kreturn k) e  m)
   | step_return_2:  forall f v1 ty k e m v2 m',
       sem_cast v1 ty f.(fn_return) m = Some v2 ->
-      Mem.free_list m (blocks_of_env e) = Some m' ->
+      Mem.free_list m (blocks_of_env e) (comp_of f) = Some m' ->
       sstep (ExprState f (Eval v1 ty) (Kreturn k) e m)
          E0 (Returnstate v2 (call_cont k) m')
   | step_skip_call: forall f k e m m',
       is_call_cont k ->
-      Mem.free_list m (blocks_of_env e) = Some m' ->
+      Mem.free_list m (blocks_of_env e) (comp_of f) = Some m' ->
       sstep (State f Sskip k e m)
          E0 (Returnstate Vundef k m')
 
@@ -796,8 +792,8 @@ Inductive sstep: state -> trace -> state -> Prop :=
 
   | step_internal_function: forall f vargs k m e m1 m2,
       list_norepet (var_names (fn_params f) ++ var_names (fn_vars f)) ->
-      alloc_variables empty_env m (f.(fn_params) ++ f.(fn_vars)) e m1 ->
-      bind_parameters e m1 f.(fn_params) vargs m2 ->
+      alloc_variables (comp_of f) empty_env m (f.(fn_params) ++ f.(fn_vars)) e m1 ->
+      bind_parameters (comp_of f) e m1 f.(fn_params) vargs m2 ->
       sstep (Callstate (Internal f) vargs k m)
          E0 (State f f.(fn_body) k e m2)
 
@@ -839,19 +835,19 @@ Inductive final_state: state -> int -> Prop :=
 
 (** Wrapping up these definitions in a small-step semantics. *)
 
-Definition semantics (pol: policy) (p: program) :=
-  Semantics_gen (step pol) (initial_state p) final_state (globalenv p) (globalenv p).
+Definition semantics (p: program) :=
+  Semantics_gen step (initial_state p) final_state (globalenv p) (globalenv p).
 
 (** This semantics has the single-event property. *)
 
-Lemma semantics_single_events (pol: policy) :
-  forall p, single_events (semantics pol p).
+Lemma semantics_single_events:
+  forall p, single_events (semantics p).
 Proof.
   unfold semantics; intros; red; simpl; intros.
   set (ge := globalenv p) in *.
-  assert (DEREF: forall chunk m b ofs t v, deref_loc ge chunk m b ofs t v -> (length t <= 1)%nat).
+  assert (DEREF: forall cp chunk m b ofs t v, deref_loc ge cp chunk m b ofs t v -> (length t <= 1)%nat).
     intros. inv H0; simpl; try omega. inv H3; simpl; try omega.
-  assert (ASSIGN: forall chunk m b ofs t v m', assign_loc ge chunk m b ofs v t m' -> (length t <= 1)%nat).
+  assert (ASSIGN: forall cp chunk m b ofs t v m', assign_loc ge cp chunk m b ofs v t m' -> (length t <= 1)%nat).
     intros. inv H0; simpl; try omega. inv H3; simpl; try omega.
   destruct H.
   inv H; simpl; try omega. inv H0; eauto; simpl; try omega.

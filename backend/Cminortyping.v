@@ -551,7 +551,6 @@ Variable p: program.
 Hypothesis wt_p: wt_program p.
 
 Let ge := Genv.globalenv p.
-Variable pol: policy.
 
 Ltac VHT :=
   match goal with
@@ -635,7 +634,7 @@ Proof.
 Qed.
 
 Lemma subject_reduction:
-  forall st1 t st2, step pol ge st1 t st2 ->
+  forall st1 t st2, step ge st1 t st2 ->
   forall (WT: wt_state st1), wt_state st2.
 Proof.
   destruct 1; intros; inv WT.
@@ -688,7 +687,7 @@ Proof.
 Qed.
 
 Lemma subject_reduction_star:
-  forall st1 t st2, star (step pol) ge st1 t st2 ->
+  forall st1 t st2, star step ge st1 t st2 ->
   forall (WT: wt_state st1), wt_state st2.
 Proof.
   induction 1; eauto using subject_reduction.

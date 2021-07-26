@@ -21,7 +21,6 @@ Open Scope error_monad_scope.
 
 Section SOUNDNESS.
 
-Variable pol: policy.
 Variable ge: genv.
 
 (** * Simple expressions and their big-step semantics *)
@@ -255,8 +254,8 @@ Qed.
 
 Lemma compat_eval_steps_aux f r e m r' m' s2 :
   simple r ->
-  star (step pol) ge s2 nil (ExprState f r' Kstop e m') ->
-  estep pol ge (ExprState f r Kstop e m) nil s2 ->
+  star step ge s2 nil (ExprState f r' Kstop e m') ->
+  estep ge (ExprState f r Kstop e m) nil s2 ->
   exists r1,
     s2 = ExprState f r1 Kstop e m /\
     compat_eval RV e r r1 m /\ simple r1.
@@ -284,7 +283,7 @@ Qed.
 
 Lemma compat_eval_steps:
   forall f r e m  r' m',
-  star (step pol) ge (ExprState f r Kstop e m) E0 (ExprState f r' Kstop e m') ->
+  star step ge (ExprState f r Kstop e m) E0 (ExprState f r' Kstop e m') ->
   simple r ->
   m' = m /\ compat_eval RV e r r' m.
 Proof.
@@ -309,7 +308,7 @@ Qed.
 
 Theorem eval_simple_steps:
   forall f r e m v ty m',
-  star (step pol) ge (ExprState f r Kstop e m) E0 (ExprState f (Eval v ty) Kstop e m') ->
+  star step ge (ExprState f r Kstop e m) E0 (ExprState f (Eval v ty) Kstop e m') ->
   simple r ->
   m' = m /\ ty = typeof r /\ eval_simple_rvalue e m r v.
 Proof.
@@ -469,7 +468,7 @@ Qed.
 
 Theorem constval_steps:
   forall f r m v v' ty m',
-  star (step pol) ge (ExprState f r Kstop empty_env m) E0 (ExprState f (Eval v' ty) Kstop empty_env m') ->
+  star step ge (ExprState f r Kstop empty_env m) E0 (ExprState f (Eval v' ty) Kstop empty_env m') ->
   constval ge r = OK v ->
   m' = m /\ ty = typeof r /\ Val.inject inj v v'.
 Proof.
@@ -596,7 +595,7 @@ Qed.
 Theorem transl_init_single_steps:
   forall ty a data f m v1 ty1 m' v chunk b ofs m'',
   transl_init_single ge ty a = OK data ->
-  star (step pol) ge (ExprState f a Kstop empty_env m) E0 (ExprState f (Eval v1 ty1) Kstop empty_env m') ->
+  star step ge (ExprState f a Kstop empty_env m) E0 (ExprState f (Eval v1 ty1) Kstop empty_env m') ->
   sem_cast v1 ty1 ty m' = Some v ->
   access_mode ty = By_value chunk ->
   Mem.store chunk m' b ofs v = Some m'' ->
@@ -762,7 +761,7 @@ Fixpoint fields_of_struct (fl: members) (pos: Z) : list (Z * type) :=
 
 Inductive exec_init: mem -> block -> Z -> type -> initializer -> mem -> Prop :=
   | exec_init_single: forall m b ofs ty a v1 ty1 chunk m' v m'',
-      star (step pol) ge (ExprState dummy_function a Kstop empty_env m)
+      star step ge (ExprState dummy_function a Kstop empty_env m)
                 E0 (ExprState dummy_function (Eval v1 ty1) Kstop empty_env m') ->
       sem_cast v1 ty1 ty m' = Some v ->
       access_mode ty = By_value chunk ->
@@ -882,15 +881,15 @@ Qed.
 End SOUNDNESS.
 
 Theorem transl_init_sound:
-  forall pol p m b ty i m' data,
-  exec_init pol (globalenv p) m b 0 ty i m' ->
+  forall p m b ty i m' data,
+  exec_init (globalenv p) m b 0 ty i m' ->
   transl_init (prog_comp_env p) ty i = OK data ->
   Genv.store_init_data_list (globalenv p) m b 0 data = Some m'.
 Proof.
   intros.
   set (ge := globalenv p) in *.
   change (prog_comp_env p) with (genv_cenv ge) in H0.
-  destruct (tr_init_sound pol ge) as (A & B & C).
+  destruct (tr_init_sound ge) as (A & B & C).
   eapply build_composite_env_consistent. apply prog_comp_env_eq.
   eapply A; eauto. apply transl_init_spec; auto.
 Qed.

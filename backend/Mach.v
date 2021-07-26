@@ -90,7 +90,6 @@ Definition funsig (fd: fundef) :=
   end.
 
 Definition genv := Genv.t fundef unit.
-Definition policy := Policy.t (F := fundef).
 
 (** * Operational semantics *)
 
@@ -213,7 +212,6 @@ Section RELSEM.
 
 Variable return_address_offset: function -> code -> ptrofs -> Prop.
 
-Variable pol: policy.
 Variable ge: genv.
 
 Definition find_function_ptr
@@ -348,7 +346,7 @@ Inductive step: state -> trace -> state -> Prop :=
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
       return_address_offset f c ra ->
       forall (CALLED: Genv.find_funct_ptr ge f' = Some fd),
-      forall (ALLOWED: Policy.allowed_call pol f.(fn_comp) fd),
+      forall (ALLOWED: Genv.allowed_call ge (comp_of f) (Vptr f' Ptrofs.zero)),
       step (State s fb sp (Mcall sig ros :: c) rs m)
         E0 (Callstate (Stackframe fb sp ra c :: s)
                        f' rs m)
@@ -360,15 +358,15 @@ Inductive step: state -> trace -> state -> Prop :=
       load_stack m (Vptr stk soff) Tptr f.(fn_retaddr_ofs) cp = Some (parent_ra s) ->
       Mem.free m stk 0 f.(fn_stacksize) cp' = Some m' ->
       forall (CALLED: Genv.find_funct_ptr ge f' = Some fd),
-      forall COMP: comp_of fd = comp_of f,
-      forall ALLOWED: needs_calling_comp (comp_of f) = false,
-      forall (ALLOWED': Policy.allowed_call pol f.(fn_comp) fd),
+      forall (COMP: comp_of fd = comp_of f),
+      forall (ALLOWED: needs_calling_comp (comp_of f) = false),
+      forall (ALLOWED': Genv.allowed_call ge (comp_of f) (Vptr f' Ptrofs.zero)),
       step (State s fb (Vptr stk soff) (Mtailcall sig ros :: c) rs m)
         E0 (Callstate s f' rs m')
   | exec_Mbuiltin:
       forall s fb f sp rs m ef args res b vargs t vres rs' m',
       eval_builtin_args ge rs sp m args vargs ->
-      forall FUN: Genv.find_funct_ptr ge fb = Some f,
+      forall FUN: Genv.find_funct_ptr ge fb = Some (Internal f),
       external_call ef ge (comp_of f) vargs m t vres m' ->
       rs' = set_res res vres (undef_regs (destroyed_by_builtin ef) rs) ->
       step (State s fb sp (Mbuiltin ef args res :: b) rs m)
@@ -414,7 +412,7 @@ Inductive step: state -> trace -> state -> Prop :=
   | exec_function_internal:
       forall s fb rs m f m1 cp m2 m3 stk rs',
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
-      Mem.alloc m f.(fn_comp) 0 f.(fn_stacksize) = (m1, stk) ->
+      Mem.alloc m (comp_of f) 0 f.(fn_stacksize) = (m1, stk) ->
       let sp := Vptr stk Ptrofs.zero in
       store_stack m1 sp Tptr f.(fn_link_ofs) (parent_sp s) cp = Some m2 ->
       store_stack m2 sp Tptr f.(fn_retaddr_ofs) (parent_ra s) cp = Some m3 ->
@@ -450,8 +448,8 @@ Inductive final_state: state -> int -> Prop :=
       rs r = Vint retcode ->
       final_state (Returnstate nil rs m) retcode.
 
-Definition semantics (rao: function -> code -> ptrofs -> Prop) (pol: policy) (p: program) :=
-  Semantics (step rao pol) (initial_state p) final_state (Genv.globalenv p).
+Definition semantics (rao: function -> code -> ptrofs -> Prop) (p: program) :=
+  Semantics (step rao) (initial_state p) final_state (Genv.globalenv p).
 
 (** * Leaf functions *)
 
@@ -469,7 +467,6 @@ Section WF_STATES.
 
 Variable rao: function -> code -> ptrofs -> Prop.
 
-Variable pol: policy.
 Variable ge: genv.
 
 Inductive wf_frame: stackframe -> Prop :=
@@ -493,7 +490,7 @@ Inductive wf_state: state -> Prop :=
       wf_state (Returnstate s rs m).
 
 Lemma wf_step:
-  forall S1 t S2, step rao pol ge S1 t S2 -> wf_state S1 -> wf_state S2.
+  forall S1 t S2, step rao ge S1 t S2 -> wf_state S1 -> wf_state S2.
 Proof.
   induction 1; intros WF; inv WF; try (econstructor; now eauto with coqlib).
 - (* call *)

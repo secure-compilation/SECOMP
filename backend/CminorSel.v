@@ -119,7 +119,6 @@ Definition funsig (fd: fundef) :=
 
 Definition genv := Genv.t fundef unit.
 Definition letenv := list val.
-Definition policy := Policy.t (F := fundef).
 
 (** Continuations *)
 
@@ -155,7 +154,6 @@ Inductive state: Type :=
 
 Section RELSEM.
 
-Variable pol: policy.
 Variable ge: genv.
 
 (** The evaluation predicates have the same general shape as those
@@ -177,7 +175,7 @@ Inductive eval_expr: letenv -> expr -> val -> Prop :=
       eval_exprlist le al vl ->
       eval_operation ge sp op vl m = Some v ->
       eval_expr le (Eop op al) v
-  | eval_Eload: forall le chunk addr al vl vaddr cp v,
+  | eval_Eload: forall le chunk addr al vl vaddr v,
       eval_exprlist le al vl ->
       eval_addressing ge sp addr vl = Some vaddr ->
       Mem.loadv chunk m vaddr cp = Some v ->
@@ -203,7 +201,7 @@ Inductive eval_expr: letenv -> expr -> val -> Prop :=
       ef_sig ef = sg ->
       eval_exprlist le al vl ->
       external_call ef ge cp vl m E0 v m ->
-      forall (ALLOWED: Policy.allowed_call pol cp (External ef)),
+      forall (ALLOWED: Genv.allowed_call ge cp (Vptr b Ptrofs.zero)),
       eval_expr le (Eexternal id sg al) v
 
 with eval_exprlist: letenv -> exprlist -> list val -> Prop :=
@@ -313,7 +311,7 @@ Definition is_call_cont (k: cont) : Prop :=
 
 Definition call_comp (k: cont) : compartment :=
   match call_cont k with
-  | Kcall _ f _ _ _ => f.(fn_comp)
+  | Kcall _ f _ _ _ => (comp_of f)
   | _ => default_compartment
   end.
 
@@ -352,51 +350,51 @@ Inductive step: state -> trace -> state -> Prop :=
   | step_skip_block: forall f k sp e m,
       step (State f Sskip (Kblock k) sp e m)
         E0 (State f Sskip k sp e m)
-  | step_skip_call: forall f k sp e m cp m',
+  | step_skip_call: forall f k sp e m m',
       is_call_cont k ->
-      Mem.free m sp 0 f.(fn_stackspace) cp = Some m' ->
+      Mem.free m sp 0 f.(fn_stackspace) (comp_of f) = Some m' ->
       step (State f Sskip k (Vptr sp Ptrofs.zero) e m)
         E0 (Returnstate Vundef k m')
 
   | step_assign: forall f cp id a k sp e m v,
-      cp = f.(fn_comp) ->
+      cp = (comp_of f) ->
       eval_expr sp e cp m nil a v ->
       step (State f (Sassign id a) k sp e m)
         E0 (State f Sskip k sp (PTree.set id v e) m)
 
-  | step_store: forall f cp chunk addr al b k sp e m vl v vaddr cp' m',
-      cp = f.(fn_comp) ->
+  | step_store: forall f cp chunk addr al b k sp e m vl v vaddr m',
+      cp = (comp_of f) ->
       eval_exprlist sp e cp m nil al vl ->
       eval_expr sp e cp m nil b v ->
       eval_addressing ge sp addr vl = Some vaddr ->
-      Mem.storev chunk m vaddr v cp' = Some m' ->
+      Mem.storev chunk m vaddr v cp = Some m' ->
       step (State f (Sstore chunk addr al b) k sp e m)
         E0 (State f Sskip k sp e m')
 
   | step_call: forall f cp optid sig a bl k sp e m vf vargs fd,
-      cp = f.(fn_comp) ->
+      cp = (comp_of f) ->
       eval_expr_or_symbol sp e cp m nil a vf ->
       eval_exprlist sp e cp m nil bl vargs ->
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
-      forall ALLOWED: Policy.allowed_call pol f.(fn_comp) fd,
+      forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
       step (State f (Scall optid sig a bl) k sp e m)
         E0 (Callstate fd vargs (Kcall optid f sp e k) m)
 
-  | step_tailcall: forall f sig a bl k sp e m vf vargs fd cp m',
-      eval_expr_or_symbol (Vptr sp Ptrofs.zero) e f.(fn_comp) m nil a vf ->
-      eval_exprlist (Vptr sp Ptrofs.zero) e f.(fn_comp) m nil bl vargs ->
+  | step_tailcall: forall f sig a bl k sp e m vf vargs fd m',
+      eval_expr_or_symbol (Vptr sp Ptrofs.zero) e (comp_of f) m nil a vf ->
+      eval_exprlist (Vptr sp Ptrofs.zero) e (comp_of f) m nil bl vargs ->
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
-      forall (COMP: comp_of fd = f.(fn_comp)),
-      forall (ALLOWED: needs_calling_comp f.(fn_comp) = false),
-      forall (ALLOWED': Policy.allowed_call pol f.(fn_comp) fd),
-      Mem.free m sp 0 f.(fn_stackspace) cp = Some m' ->
+      forall (COMP: comp_of fd = (comp_of f)),
+      forall (ALLOWED: needs_calling_comp (comp_of f) = false),
+      forall (ALLOWED': Genv.allowed_call ge (comp_of f) vf),
+      Mem.free m sp 0 f.(fn_stackspace) (comp_of f) = Some m' ->
       step (State f (Stailcall sig a bl) k (Vptr sp Ptrofs.zero) e m)
         E0 (Callstate fd vargs (call_cont k) m')
 
   | step_builtin: forall f cp res ef al k sp e m vl t v m',
-      cp = f.(fn_comp) ->
+      cp = (comp_of f) ->
       list_forall2 (eval_builtin_arg sp e cp m) al vl ->
       external_call ef ge cp vl m t v m' ->
       step (State f (Sbuiltin res ef al) k sp e m)
@@ -407,7 +405,7 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State f s1 (Kseq s2 k) sp e m)
 
   | step_ifthenelse: forall f cp c s1 s2 k sp e m b,
-      cp = f.(fn_comp) ->
+      cp = (comp_of f) ->
       eval_condexpr sp e cp m nil c b ->
       step (State f (Sifthenelse c s1 s2) k sp e m)
         E0 (State f (if b then s1 else s2) k sp e m)
@@ -431,19 +429,20 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State f (Sexit n) k sp e m)
 
   | step_switch: forall f cp a k sp e m n,
-      cp = f.(fn_comp) ->
+      cp = (comp_of f) ->
       eval_exitexpr sp e cp m nil a n ->
       step (State f (Sswitch a) k sp e m)
         E0 (State f (Sexit n) k sp e m)
 
   | step_return_0: forall f k sp e m cp m',
+      cp = comp_of f ->
       Mem.free m sp 0 f.(fn_stackspace) cp = Some m' ->
       step (State f (Sreturn None) k (Vptr sp Ptrofs.zero) e m)
         E0 (Returnstate Vundef (call_cont k) m')
-  | step_return_1: forall f cp a k sp e m v cp' m',
-      cp = f.(fn_comp) ->
+  | step_return_1: forall f cp a k sp e m v m',
+      cp = comp_of f ->
       eval_expr (Vptr sp Ptrofs.zero) e cp m nil a v ->
-      Mem.free m sp 0 f.(fn_stackspace) cp' = Some m' ->
+      Mem.free m sp 0 f.(fn_stackspace) cp = Some m' ->
       step (State f (Sreturn (Some a)) k (Vptr sp Ptrofs.zero) e m)
         E0 (Returnstate v (call_cont k) m')
 
@@ -456,10 +455,9 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Sgoto lbl) k sp e m)
         E0 (State f s' k' sp e m)
 
-  | step_internal_function: forall cp f vargs k m m' sp e,
-      Mem.alloc m f.(fn_comp) 0 f.(fn_stackspace) = (m', sp) ->
+  | step_internal_function: forall f vargs k m m' sp e,
+      Mem.alloc m (comp_of f) 0 f.(fn_stackspace) = (m', sp) ->
       set_locals f.(fn_vars) (set_params vargs f.(fn_params)) = e ->
-      cp = call_comp k ->
       step (Callstate (Internal f) vargs k m)
         E0 (State f f.(fn_body) k (Vptr sp Ptrofs.zero) e m')
   | step_external_function: forall ef vargs k m t vres m',
@@ -486,8 +484,8 @@ Inductive final_state: state -> int -> Prop :=
   | final_state_intro: forall r m,
       final_state (Returnstate (Vint r) Kstop m) r.
 
-Definition semantics (pol : policy) (p: program) :=
-  Semantics (step pol) (initial_state p) final_state (Genv.globalenv p).
+Definition semantics (p: program) :=
+  Semantics step (initial_state p) final_state (Genv.globalenv p).
 
 Hint Constructors eval_expr eval_exprlist eval_condexpr: evalexpr.
 
@@ -566,22 +564,22 @@ Proof.
 Qed.
 
 Lemma eval_lift_expr:
-  forall pol ge sp e cp m w le a v,
-  eval_expr pol ge sp e cp m le a v ->
+  forall ge sp e cp m w le a v,
+  eval_expr ge sp e cp m le a v ->
   forall p le', insert_lenv le p w le' ->
-  eval_expr pol ge sp e cp m le' (lift_expr p a) v.
+  eval_expr ge sp e cp m le' (lift_expr p a) v.
 Proof.
   intros until w.
-  apply (eval_expr_ind3 pol ge sp e cp m
+  apply (eval_expr_ind3 ge sp e cp m
     (fun le a v =>
       forall p le', insert_lenv le p w le' ->
-      eval_expr pol ge sp e cp m le' (lift_expr p a) v)
+      eval_expr ge sp e cp m le' (lift_expr p a) v)
     (fun le al vl =>
       forall p le', insert_lenv le p w le' ->
-      eval_exprlist pol ge sp e cp m le' (lift_exprlist p al) vl)
+      eval_exprlist ge sp e cp m le' (lift_exprlist p al) vl)
     (fun le a b =>
       forall p le', insert_lenv le p w le' ->
-      eval_condexpr pol ge sp e cp m le' (lift_condexpr p a) b));
+      eval_condexpr ge sp e cp m le' (lift_condexpr p a) b));
   simpl; intros; eauto with evalexpr.
 
   eapply eval_Econdition; eauto. destruct va; eauto.
@@ -597,9 +595,9 @@ Proof.
 Qed.
 
 Lemma eval_lift:
-  forall pol ge sp e cp m le a v w,
-  eval_expr pol ge sp e cp m le a v ->
-  eval_expr pol ge sp e cp m (w::le) (lift a) v.
+  forall ge sp e cp m le a v w,
+  eval_expr ge sp e cp m le a v ->
+  eval_expr ge sp e cp m (w::le) (lift a) v.
 Proof.
   intros. unfold lift. eapply eval_lift_expr.
   eexact H. apply insert_lenv_0.

@@ -1144,19 +1144,6 @@ Global Instance has_comp_fundef {CF: has_comp F} : has_comp fundef :=
     | External ef _ _ _ => comp_of ef
     end.
 
-Definition simpl_fundef (fd: fundef) :=
-  match fd with
-  | Internal f => AST.Internal f
-  | External ef _ _ _ => AST.External ef
-  end.
-
-Global Instance is_fundef_fundef {CF: has_comp F} : @is_fundef (fundef) _ :=
-  { F := F;
-    has_comp_F := CF;
-    simpl_fundef := simpl_fundef;
-    preserves_comp f := match f with | Internal f => eq_refl | External ef _ _ _ => eq_refl end
-  }.
-
 (** A program, or compilation unit, is composed of:
 - a list of definitions of functions and global variables;
 - the names of functions and global variables that are public (not static);
@@ -1169,6 +1156,7 @@ Record program : Type := {
   prog_defs: list (ident * globdef fundef type);
   prog_public: list ident;
   prog_main: ident;
+  prog_pol: Policy.t;
   prog_types: list composite_definition;
   prog_comp_env: composite_env;
   prog_comp_env_eq: build_composite_env prog_types = OK prog_comp_env
@@ -1177,20 +1165,22 @@ Record program : Type := {
 Definition program_of_program (p: program) : AST.program fundef type :=
   {| AST.prog_defs := p.(prog_defs);
      AST.prog_public := p.(prog_public);
-     AST.prog_main := p.(prog_main) |}.
+     AST.prog_main := p.(prog_main);
+     AST.prog_pol := p.(prog_pol) |}.
 
 Coercion program_of_program: program >-> AST.program.
 
 Program Definition make_program (types: list composite_definition)
                                 (defs: list (ident * globdef fundef type))
                                 (public: list ident)
-                                (main: ident) : res program :=
+                                (main: ident) (pol: Policy.t) : res program :=
   match build_composite_env types with
   | Error e => Error e
   | OK ce =>
       OK {| prog_defs := defs;
             prog_public := public;
             prog_main := main;
+            prog_pol := pol;
             prog_types := types;
             prog_comp_env := ce;
             prog_comp_env_eq := _ |}
@@ -1513,6 +1503,7 @@ Definition link_program {F:Type} {CF: has_comp F} (p1 p2: program F): option (pr
               Some {| prog_defs := p.(AST.prog_defs);
                       prog_public := p.(AST.prog_public);
                       prog_main := p.(AST.prog_main);
+                      prog_pol := p.(AST.prog_pol);
                       prog_types := typs;
                       prog_comp_env := env;
                       prog_comp_env_eq := P |}

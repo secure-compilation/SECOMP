@@ -289,6 +289,7 @@ Proof.
 - apply IHwf_avail0.
 Qed.
 
+
 (** * Semantic preservation *)
 
 Section PRESERVATION.
@@ -297,10 +298,6 @@ Variable prog: program.
 Variable tprog: program.
 
 Hypothesis TRANSF: match_prog prog tprog.
-
-Variable pol: policy.
-Variable tpol: policy.
-Hypothesis TRANSPOL: match_pol (fun f tf => transf_fundef f = OK tf) pol tpol.
 
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
@@ -352,6 +349,26 @@ Proof.
   congruence.
 Qed.
 
+
+Lemma find_function_ptr_translated:
+  forall ros ls vf,
+  find_function_ptr ge ros ls = Some vf ->
+  find_function_ptr tge ros ls = Some vf.
+Proof.
+  unfold find_function_ptr; intros; destruct ros; simpl.
+  eauto.
+  rewrite symbols_preserved; eauto.
+Qed.
+
+Lemma allowed_call_translated:
+  forall cp vf,
+    Genv.allowed_call ge cp vf ->
+    Genv.allowed_call tge cp vf.
+Proof.
+  intros cp vf H.
+  eapply (Genv.match_genvs_allowed_calls TRANSF). eauto.
+Qed.
+
 (** Evaluation of the debug annotations introduced by the transformation. *)
 
 Lemma can_eval_safe_arg:
@@ -367,7 +384,7 @@ Qed.
 
 Lemma eval_add_delta_ranges:
   forall s f sp c rs m before after,
-  star (step tpol) tge (State s f sp (add_delta_ranges before after c) rs m)
+  star step tge (State s f sp (add_delta_ranges before after c) rs m)
              E0 (State s f sp c rs m).
 Proof.
   intros. unfold add_delta_ranges.
@@ -380,7 +397,7 @@ Proof.
   eapply star_step; eauto.
   econstructor.
   constructor. eexact E1. constructor.
-  simpl; constructor.
+  simpl; econstructor.
   simpl; auto.
   traceEq.
 - eapply star_step; eauto.
@@ -448,9 +465,9 @@ Qed.
 (** The simulation diagram. *)
 
 Theorem transf_step_correct:
-  forall s1 t s2, step pol ge s1 t s2 ->
+  forall s1 t s2, step ge s1 t s2 ->
   forall ts1 (MS: match_states s1 ts1),
-  exists ts2, plus (step tpol) tge ts1 t ts2 /\ match_states s2 ts2.
+  exists ts2, plus step tge ts1 t ts2 /\ match_states s2 ts2.
 Proof.
   induction 1; intros ts1 MS; inv MS; try (inv TRC).
 - (* getstack *)
@@ -473,7 +490,7 @@ Proof.
   eapply plus_left.
   eapply exec_Lload with (a := a).
   rewrite <- H; apply eval_addressing_preserved; exact symbols_preserved.
-  eauto. eauto.
+  inv TRF; eauto. eauto.
   apply eval_add_delta_ranges. traceEq.
   constructor; auto.
 - (* store *)
@@ -481,35 +498,38 @@ Proof.
   eapply plus_left.
   eapply exec_Lstore with (a := a).
   rewrite <- H; apply eval_addressing_preserved; exact symbols_preserved.
-  eauto. eauto.
+  inv TRF; eauto. eauto.
   apply eval_add_delta_ranges. traceEq.
   constructor; auto.
 - (* call *)
   exploit find_function_translated; eauto. intros (tf' & A & B).
   econstructor; split.
   apply plus_one.
-  econstructor. eexact A. symmetry; apply sig_preserved; auto.
-  eapply TRANSPOL; eauto. 
-  now inv TRF.
+  econstructor. eexact A. eapply find_function_ptr_translated; eauto.
+  symmetry; apply sig_preserved; auto.
+  inv TRF.
+  eapply allowed_call_translated; eauto.
   constructor; auto. constructor; auto. constructor; auto.
 - (* tailcall *)
   exploit find_function_translated; eauto. intros (tf' & A & B).
   exploit parent_locset_match; eauto. intros PLS.
   econstructor; split.
   apply plus_one.
+  inv TRF.
   econstructor. eauto. rewrite PLS. eexact A.
+  eapply find_function_ptr_translated; eauto. rewrite PLS. eauto.
   symmetry; apply sig_preserved; auto.
-  now rewrite <- (comp_transl_partial _ B); inv TRF.
-  inv TRF; eauto.
-  eapply TRANSPOL; eauto. 
-  now inv TRF.
-  inv TRF; eauto.
+  now rewrite <- (comp_transl_partial _ B).
+  auto.
+  eapply allowed_call_translated; eauto.
+  eauto.
   rewrite PLS. constructor; auto.
 - (* builtin *)
   econstructor; split.
   eapply plus_left.
   econstructor; eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
+  inv TRF; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   inversion TRF. simpl in *. eauto.
   apply eval_add_delta_ranges. traceEq.
@@ -583,7 +603,7 @@ Proof.
 Qed.
 
 Theorem transf_program_correct:
-  forward_simulation (semantics pol prog) (semantics tpol tprog).
+  forward_simulation (semantics prog) (semantics tprog).
 Proof.
   eapply forward_simulation_plus.
   apply senv_preserved.

@@ -317,15 +317,17 @@ module Target : TARGET =
       (* Unconditional jumps.  Links are always to X1/RA. *)
       (* TODO: fix up arguments for calls to variadics, to move *)
       (* floating point arguments to integer registers.  How? *)
+      (* TODO: Do something about the call flags, which are currently being
+         ignored *)
       | Pj_l(l) ->
          fprintf oc "	j	%a\n" print_label l
       | Pj_s(s, sg) ->
          fprintf oc "	j	%a\n" symbol s
-      | Pj_r(r, sg) ->
+      | Pj_r(r, sg, _) ->
          fprintf oc "	jr	%a\n" ireg r
-      | Pjal_s(s, sg) ->
+      | Pjal_s(s, sg, _) ->
          fprintf oc "	call	%a\n" symbol s
-      | Pjal_r(r, sg) ->
+      | Pjal_r(r, sg, _) ->
          fprintf oc "	jalr	%a\n" ireg r
 
       (* Conditional branches, 32-bit comparisons *)

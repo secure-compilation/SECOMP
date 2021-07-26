@@ -47,10 +47,6 @@ Qed.
 
 Section PRESERVATION.
 
-Variable pol: policy.
-Variable tpol: policy.
-Hypothesis TRANSPOL: match_pol (fun f tf => transf_fundef f = OK tf) pol tpol.
-
 Variable prog: program.
 Variable tprog: program.
 Hypothesis TRANSF: match_prog prog tprog.
@@ -89,6 +85,18 @@ Lemma type_of_fundef_preserved:
 Proof.
   intros. destruct fd; monadInv H; auto.
   monadInv EQ. simpl; unfold type_of_function; simpl. auto.
+Qed.
+
+Lemma allowed_call_translated:
+  forall f tf vf,
+    Genv.allowed_call ge (comp_of f) vf ->
+    transf_function f = OK tf ->
+    Genv.allowed_call tge (comp_of tf) vf.
+Proof.
+  intros f tf vf H TRF.
+  erewrite <- (comp_transl_partial _ TRF).
+  destruct TRANSF.
+  eapply (Genv.match_genvs_allowed_calls H0). eauto.
 Qed.
 
 (** Matching between environments before and after *)
@@ -307,7 +315,7 @@ Lemma step_Sdebug_temp:
   forall f id ty k e le m v,
   le!id = Some v ->
   val_casted v ty ->
-  step2 tpol tge (State f (Sdebug_temp id ty) k e le m)
+  step2 tge (State f (Sdebug_temp id ty) k e le m)
          E0 (State f Sskip k e le m).
 Proof.
   intros. unfold Sdebug_temp. eapply step_builtin with (optid := None); eauto.
@@ -318,7 +326,7 @@ Qed.
 Lemma step_Sdebug_var:
   forall f id ty k e le m b,
   e!id = Some(b, ty) ->
-  step2 tpol tge (State f (Sdebug_var id ty) k e le m)
+  step2 tge (State f (Sdebug_var id ty) k e le m)
          E0 (State f Sskip k e le m).
 Proof.
   intros. unfold Sdebug_var. eapply step_builtin with (optid := None); eauto.
@@ -331,11 +339,11 @@ Lemma step_Sset_debug:
   forall f id ty a k e le m v v',
   eval_expr tge e le m a v ->
   sem_cast v (typeof a) ty m = Some v' ->
-  plus (step2 tpol) tge (State f (Sset_debug id ty a) k e le m)
+  plus step2 tge (State f (Sset_debug id ty a) k e le m)
               E0 (State f Sskip k e (PTree.set id v' le) m).
 Proof.
   intros; unfold Sset_debug.
-  assert (forall k, step2 tpol tge (State f (Sset id (make_cast a ty)) k e le m)
+  assert (forall k, step2 tge (State f (Sset id (make_cast a ty)) k e le m)
                            E0 (State f Sskip k e (PTree.set id v' le) m)).
   { intros. apply step_set. eapply make_cast_correct; eauto. }
   destruct (Compopts.debug tt).
@@ -351,7 +359,7 @@ Qed.
 Lemma step_add_debug_vars:
   forall f s e le m vars k,
   (forall id ty, In (id, ty) vars -> exists b, e!id = Some (b, ty)) ->
-  star (step2 tpol) tge (State f (add_debug_vars vars s) k e le m)
+  star step2 tge (State f (add_debug_vars vars s) k e le m)
               E0 (State f s k e le m).
 Proof.
   unfold add_debug_vars. destruct (Compopts.debug tt).
@@ -385,7 +393,7 @@ Lemma step_add_debug_params:
   list_norepet (var_names params) ->
   list_forall2 val_casted vl (map snd params) ->
   bind_parameter_temps params vl le1 = Some le ->
-  star (step2 tpol) tge (State f (add_debug_params params s) k e le m)
+  star step2 tge (State f (add_debug_params params s) k e le m)
               E0 (State f s k e le m).
 Proof.
   unfold add_debug_params. destruct (Compopts.debug tt).
@@ -1118,7 +1126,7 @@ Theorem store_params_correct:
   (forall id, ~In id (var_names params) -> tle2!id = tle1!id) ->
   (forall id, In id (var_names params) -> le!id = None) ->
   exists tle, exists tm',
-  star (step2 tpol) tge (State f (store_params cenv params s) k te tle tm)
+  star step2 tge (State f (store_params cenv params s) k te tle tm)
               E0 (State f s k te tle tm')
   /\ bind_parameter_temps params targs tle2 = Some tle
   /\ Mem.inject j m' tm'
@@ -1769,6 +1777,24 @@ Proof.
   rewrite Ptrofs.add_zero. simpl. rewrite dec_eq_true. apply function_ptr_translated; auto.
 Qed.
 
+
+Lemma match_cont_find_funct_eq:
+  forall f cenv k tk m bound tbound vf fd tvf,
+  match_cont f cenv k tk m bound tbound ->
+  Genv.find_funct ge vf = Some fd ->
+  Val.inject f vf tvf ->
+  vf = tvf.
+Proof.
+  intros. exploit match_cont_globalenv; eauto. intros [bound1 MG]. destruct MG.
+  inv H1; simpl in H0; try discriminate. destruct (Ptrofs.eq_dec ofs1 Ptrofs.zero); try discriminate.
+  subst ofs1.
+  assert (f b1 = Some(b1, 0)).
+  apply DOMAIN. eapply FUNCTIONS; eauto.
+  rewrite H1 in H2. inv H2.
+  reflexivity.
+Qed.
+
+
 (** Relating execution states *)
 
 Inductive match_states: state -> state -> Prop :=
@@ -2028,8 +2054,8 @@ End FIND_LABEL.
 
 
 Lemma step_simulation:
-  forall S1 t S2, step1 pol ge S1 t S2 ->
-  forall S1' (MS: match_states S1 S1'), exists S2', plus (step2 tpol) tge S1' t S2' /\ match_states S2 S2'.
+  forall S1 t S2, step1 ge S1 t S2 ->
+  forall S1' (MS: match_states S1 S1'), exists S2', plus step2 tge S1' t S2' /\ match_states S2 S2'.
 Proof.
   induction 1; simpl; intros; inv MS; simpl in *; try (monadInv TRS).
 
@@ -2076,6 +2102,7 @@ Proof.
 
 (* call *)
   exploit eval_simpl_expr; eauto with compat. intros [tvf [A B]].
+  assert (vf = tvf). eapply match_cont_find_funct_eq; eauto. subst tvf.
   exploit eval_simpl_exprlist; eauto with compat. intros [CASTED [tvargs [C D]]].
   exploit match_cont_find_funct; eauto. intros [tfd [P Q]].
   econstructor; split.
@@ -2083,7 +2110,7 @@ Proof.
   rewrite typeof_simpl_expr. eauto.
   eauto. eauto. eauto.
   erewrite type_of_fundef_preserved; eauto.
-  eapply TRANSPOL; eauto. rewrite <- (comp_transf_function); eauto.
+  eapply allowed_call_translated; eauto.
   econstructor; eauto.
   intros. econstructor; eauto.
 
@@ -2092,9 +2119,10 @@ Proof.
   exploit external_call_mem_inject; eauto. apply match_globalenvs_preserves_globals; eauto with compat.
   intros [j' [tvres [tm' [P [Q [R [S [T [U V]]]]]]]]].
   econstructor; split.
-  apply plus_one. econstructor; eauto. eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-    replace (fn_comp tf) with (fn_comp f) by now apply comp_transl_partial.
-    eauto.
+  apply plus_one. econstructor; eauto.
+
+  eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  erewrite <- (comp_transl_partial _ TRF); eauto.
   econstructor; eauto with compat.
   eapply match_envs_set_opttemp; eauto.
   eapply match_envs_extcall; eauto.
@@ -2309,7 +2337,7 @@ Proof.
 Qed.
 
 Theorem transf_program_correct:
-  forward_simulation (semantics1 pol prog) (semantics2 tpol tprog).
+  forward_simulation (semantics1 prog) (semantics2 tprog).
 Proof.
   eapply forward_simulation_plus.
   apply senv_preserved.

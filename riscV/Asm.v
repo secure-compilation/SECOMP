@@ -213,9 +213,9 @@ Inductive instruction : Type :=
   (* Unconditional jumps.  Links are always to X1/RA. *)
   | Pj_l    (l: label)                              (**r jump to label *)
   | Pj_s    (symb: ident) (sg: signature)           (**r jump to symbol *)
-  | Pj_r    (r: ireg)     (sg: signature)           (**r jump register *)
-  | Pjal_s  (symb: ident) (sg: signature)           (**r jump-and-link symbol *)
-  | Pjal_r  (r: ireg)     (sg: signature)           (**r jump-and-link register *)
+  | Pj_r    (r: ireg)     (sg: signature) (iscl: bool) (**r jump register *)
+  | Pjal_s  (symb: ident) (sg: signature) (iscl: bool) (**r jump-and-link symbol *)
+  | Pjal_r  (r: ireg)     (sg: signature) (iscl: bool) (**r jump-and-link register *)
 
   (* Conditional branches, 32-bit comparisons *)
   | Pbeqw   (rs1 rs2: ireg0) (l: label)             (**r branch-if-equal *)
@@ -439,7 +439,6 @@ Definition program := AST.program fundef unit.
 
 Definition regset := Pregmap.t val.
 Definition genv := Genv.t fundef unit.
-Definition policy := Policy.t (F := fundef).
 
 Definition get0w (rs: regset) (r: ireg0) : val :=
   match r with
@@ -526,7 +525,6 @@ Fixpoint label_pos (lbl: label) (pos: Z) (c: code) {struct c} : option Z :=
       if is_label lbl instr then Some (pos + 1) else label_pos lbl (pos + 1) c'
   end.
 
-Variable pol: policy.
 Variable ge: genv.
 
 (** The two functions below axiomatize how the linker processes
@@ -753,43 +751,16 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) (cp: 
       goto_label f l rs m
   | Pj_s s sg =>
       Next (rs#PC <- (Genv.symbol_address ge s Ptrofs.zero)) m
-  | Pj_r r sg =>
+  | Pj_r r sg _ =>
       Next (rs#PC <- (rs#r)) m
-  | Pjal_s s sg =>
+  | Pjal_s s sg _ =>
     Next (rs#PC <- (Genv.symbol_address ge s Ptrofs.zero)
             #RA <- (Val.offset_ptr rs#PC Ptrofs.one)
          ) m
-    (* let v := Genv.symbol_address ge s Ptrofs.zero in *)
-    (* match v, rs#PC with *)
-    (* | Vptr b ofs, Vptr b' ofs' =>  *)
-    (*   match Genv.find_funct_ptr ge b, Genv.find_funct_ptr ge b' with *)
-    (*   | Some fd, Some fd' => *)
-    (*     if Policy.allowed_call_b pol (comp_of fd') fd then *)
-    (*       Next (rs#PC <- v *)
-    (*               #RA <- (Val.offset_ptr rs#PC Ptrofs.one) *)
-    (*            ) m *)
-    (*     else Stuck *)
-    (*   | _, _ => Stuck *)
-    (*   end *)
-    (* | _, _ => Stuck *)
-    (* end *)
-  | Pjal_r r sg =>
+  | Pjal_r r sg _ =>
       Next (rs#PC <- (rs#r)
               #RA <- (Val.offset_ptr rs#PC Ptrofs.one)
            ) m
-    (* match rs#r, rs#PC with *)
-    (* | Vptr b ofs, Vptr b' ofs' => *)
-    (*   match Genv.find_funct_ptr ge b, Genv.find_funct_ptr ge b' with *)
-    (*   | Some fd, Some fd' => *)
-    (*     if Policy.allowed_call_b pol (comp_of fd') fd then *)
-    (*       Next (rs#PC <- (rs#r) *)
-    (*               #RA <- (Val.offset_ptr rs#PC Ptrofs.one) *)
-    (*            ) m *)
-    (*     else Stuck *)
-    (*   | _, _ => Stuck *)
-    (*   end *)
-    (* | _, _ => Stuck *)
-    (* end *)
 (** Conditional branches, 32-bit comparisons *)
   | Pbeqw s1 s2 l =>
       eval_branch f l rs m (Val.cmpu_bool (Mem.valid_pointer m) Ceq rs##s1 rs##s2)
@@ -951,7 +922,7 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) (cp: 
 
 (** Pseudo-instructions *)
   | Pallocframe sz pos =>
-      let (m1, stk) := Mem.alloc m f.(fn_comp) 0 sz in
+      let (m1, stk) := Mem.alloc m (comp_of f) 0 sz in
       let sp := (Vptr stk Ptrofs.zero) in
       match Mem.storev Mptr m1 (Val.offset_ptr sp pos) rs#SP cp with
       | None => Stuck
@@ -1102,43 +1073,162 @@ Definition loc_external_result (sg: signature) : rpair preg :=
 
 (** Execution of the instruction at [rs PC]. *)
 
+Inductive stackframe: Type :=
+| Stackframe:
+    forall (f: block)       (**r pointer to calling function *)
+      (sp: val)         (**r stack pointer in calling function *)
+      (retaddr: ptrofs), (**r Asm return address in calling function *)
+      stackframe.
+
+Definition stack := list stackframe.
+
+(* The state of the stack when we start the execution *)
+Definition initial_stack: stack := nil.
+
+(* Updates to the stack *)
+(* These two definitions shouldn't really do any real enforcement. Instead,
+   they should just be used to keep track of the stack and use it in the
+   invariants *)
+(* The two definitions only update the stack when a cross-compartment change
+   is detected *)
+Definition update_stack_call (s: stack) (cp: compartment) rs' :=
+  let pc' := rs' # PC in
+  let ra' := rs' # RA in
+  let sp' := rs' # SP in
+  match Genv.find_comp ge pc' with
+  | Some cp' =>
+    if Pos.eqb cp cp' then
+      (* If we are in the same compartment as previously recorded, we
+         don't update the stack *)
+      Some s
+    else
+      (* Otherwise, we simply push a new frame on the stack *)
+      match ra' with
+      | Vptr f retaddr =>
+        Some (Stackframe f sp' retaddr :: s)
+      | _ => None
+      end
+  | _ => None
+  end.
+
+Definition update_stack_return (s: stack) (cp: compartment) rs' :=
+  let pc' := rs' # PC in
+  match Genv.find_comp ge pc' with
+  | Some cp' =>
+    if Pos.eqb cp cp' then
+      (* If we are in the same compartment as previously recorded, we
+         don't update the stack *)
+      Some s
+    else
+      (* Otherwise we just pop the top stackframe, if it exists *)
+      match s with
+      | nil => Some nil
+      | _ :: st' => Some st'
+      end
+  | _ => None
+  end.
+
 Inductive state: Type :=
-  | State: regset -> mem -> state.
+  | State: stack -> regset -> mem -> state.
+
+Definition is_call i :=
+  match i with
+  | Pjal_s _ _ flag | Pjal_r _ _ flag => flag
+  | _ => false
+  end.
+
+Definition is_return i :=
+  match i with
+  | Pj_r _ _ flag => flag
+  | _ => false
+  end.
+
+Definition asm_parent_ra s :=
+  match s with
+  | nil => Vnullptr
+  | Stackframe b sp retaddr :: _ => Vptr b retaddr
+  end.
+
+Definition asm_parent_sp s :=
+  match s with
+  | nil => Vnullptr
+  | Stackframe b sp retaddr :: _ => sp
+  end.
 
 Inductive step: state -> trace -> state -> Prop :=
   | exec_step_internal:
-      forall b ofs f i rs cp m rs' m' b' ofs' fd,
+      forall b ofs f i rs m rs' m' b' ofs' st cp,
+      rs PC = Vptr b ofs ->
+      Genv.find_funct_ptr ge b = Some (Internal f) ->
+      find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
+      forall (COMP: Genv.find_comp ge (rs PC) = Some cp),
+      exec_instr f i rs m cp = Next rs' m' ->
+      is_call i = false ->
+      is_return i = false ->
+      forall (NEXTPC: rs' PC = Vptr b' ofs'),
+      forall (ALLOWED: Genv.allowed_call ge (comp_of f) (Vptr b' ofs')),
+      step (State st rs m) E0 (State st rs' m')
+  | exec_step_internal_call:
+      forall b ofs f i rs m rs' m' b' ofs' cp st st',
       rs PC = Vptr b ofs ->
       Genv.find_funct_ptr ge b = Some (Internal f) ->
       find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
       exec_instr f i rs m cp = Next rs' m' ->
+      is_call i = true ->
       forall (NEXTPC: rs' PC = Vptr b' ofs'),
-      forall (NEXTFUN: Genv.find_funct_ptr ge b' = Some fd),
-    forall (ALLOWED: Policy.allowed_call pol f.(fn_comp) fd),
-      step (State rs m) E0 (State rs' m')
+      forall (ALLOWED: Genv.allowed_call ge (comp_of f) (Vptr b' ofs')),
+      forall (CURCOMP: Genv.find_comp ge (Vptr b Ptrofs.zero) = Some cp),
+      (* Is a call, we update the stack *)
+      forall (STUPD: update_stack_call st cp rs' = Some st'),
+      step (State st rs m) E0 (State st' rs' m')
+  | exec_step_internal_return:
+      forall b ofs f i rs m rs' m' cp cp' st st',
+      rs PC = Vptr b ofs ->
+      Genv.find_funct_ptr ge b = Some (Internal f) ->
+      find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
+      exec_instr f i rs m cp = Next rs' m' ->
+      is_return i = true ->
+      forall (CURCOMP: Genv.find_comp ge (rs PC) = Some cp),
+      forall (NEXTCOMP: Genv.find_comp ge (rs' PC) = Some cp'),
+      (* We only impose conditions on when returns can be executed for cross-compartment
+         returns. These conditions are that we restore the previous RA and SP *)
+      forall (PC_RA: cp <> cp' -> rs' PC = asm_parent_ra st),
+      forall (RESTORE_SP: cp <> cp' -> rs' SP = asm_parent_sp st),
+      (* Note that in the same manner, this definition only updates the stack when doing
+         cross-compartment returns *)
+      forall (STUPD: update_stack_return st cp rs' = Some st'),
+      step (State st rs m) E0 (State st' rs' m')
   | exec_step_builtin:
-      forall b ofs f ef args res rs m vargs t vres rs' m',
+      forall b ofs f ef args res rs m vargs t vres rs' m' st,
       rs PC = Vptr b ofs ->
       Genv.find_funct_ptr ge b = Some (Internal f) ->
       find_instr (Ptrofs.unsigned ofs) f.(fn_code) = Some (Pbuiltin ef args res) ->
       eval_builtin_args ge rs (rs SP) m args vargs ->
-      forall (ALLOWED: Policy.allowed_call pol f.(fn_comp) (External ef)),
       external_call ef ge (comp_of f) vargs m t vres m' ->
       rs' = nextinstr
               (set_res res vres
                 (undef_regs (map preg_of (destroyed_by_builtin ef))
                    (rs#X31 <- Vundef))) ->
-      step (State rs m) t (State rs' m')
+      step (State st rs m) t (State st rs' m')
   | exec_step_external:
-      forall b ef args res rs m t rs' m' cp,
+      forall b ef args res rs m t rs' m' cp cp' cp'' st st',
       rs PC = Vptr b Ptrofs.zero ->
       Genv.find_funct_ptr ge b = Some (External ef) ->
       forall COMP: Genv.find_comp ge (rs RA) = Some cp,
-      forall (ALLOWED: Policy.allowed_call pol cp (External ef)),
       external_call ef ge cp args m t res m' ->
       extcall_arguments rs m (ef_sig ef) args ->
       rs' = (set_pair (loc_external_result (ef_sig ef) ) res (undef_caller_save_regs rs))#PC <- (rs RA) ->
-      step (State rs m) t (State rs' m').
+      (* These steps behave like returns. So we must update the stack *)
+      forall (CURCOMP: Genv.find_comp ge (rs PC) = Some cp'),
+      forall (NEXTCOMP: Genv.find_comp ge (rs' PC) = Some cp''),
+      (* We only impose conditions on when returns can be executed for cross-compartment
+         returns. These conditions are that we restore the previous RA and SP *)
+      forall (PC_RA: cp' <> cp'' -> rs' PC = asm_parent_ra st),
+      forall (RESTORE_SP: cp' <> cp'' -> rs' SP = asm_parent_sp st),
+      (* Note that in the same manner, this definition only updates the stack when doing
+         cross-compartment returns *)
+      forall (STUPD: update_stack_return st cp' rs' = Some st'),
+      step (State st rs m) t (State st' rs' m').
 
 End RELSEM.
 
@@ -1153,16 +1243,16 @@ Inductive initial_state (p: program): state -> Prop :=
         # SP <- Vnullptr
         # RA <- Vnullptr in
       Genv.init_mem p = Some m0 ->
-      initial_state p (State rs0 m0).
+      initial_state p (State initial_stack rs0 m0).
 
 Inductive final_state: state -> int -> Prop :=
   | final_state_intro: forall rs m r,
       rs PC = Vnullptr ->
       rs X10 = Vint r ->
-      final_state (State rs m) r.
+      final_state (State initial_stack rs m) r.
 
-Definition semantics (pol: policy) (p: program) :=
-  Semantics (step pol) (initial_state p) final_state (Genv.globalenv p).
+Definition semantics (p: program) :=
+  Semantics step (initial_state p) final_state (Genv.globalenv p).
 
 (** Determinacy of the [Asm] semantics. *)
 
@@ -1202,7 +1292,7 @@ Admitted.
 (*     destruct ((Mem.mem_compartments M) ! B) *)
 (*   end. *)
 
-Lemma semantics_determinate (pol: policy): forall p, determinate (semantics pol p).
+Lemma semantics_determinate: forall p, determinate (semantics p).
 Proof.
 Ltac Equalities :=
   match goal with
@@ -1212,19 +1302,23 @@ Ltac Equalities :=
   end.
   intros; constructor; simpl; intros.
 - (* determ *)
-  inv H; inv H0; Equalities.
-  assert (cp = cp0) by admit; subst cp0. (* RB: NOTE: Compartment determinacy on exec_instr *)
-  split. constructor. congruence.
-  discriminate.
-  discriminate.
-  assert (vargs0 = vargs) by (eapply eval_builtin_args_determ; eauto). subst vargs0.
-  exploit external_call_determ. eexact H5. eexact H11. intros [A B].
-  split. auto. intros. destruct B; auto. subst. auto.
-  assert (args0 = args) by (eapply extcall_arguments_determ; eauto). subst args0.
-  exploit external_call_determ. eexact H3. eexact H8. intros [A B].
-  split. auto. intros. destruct B; auto. subst. auto.
+  inv H; inv H0; Equalities; try now discriminate.
+  + split. constructor. auto.
+  + split. constructor. auto.
+  + now destruct i0.
+  + now destruct i0.
+  + split. constructor. congruence.
+
+  + assert (vargs0 = vargs) by (eapply eval_builtin_args_determ; eauto). subst vargs0.
+    exploit external_call_determ. eexact H5. eexact H14.  intros [A B].
+    split. auto. intros. destruct B; auto. subst. auto.
+  + assert (args0 = args) by (eapply extcall_arguments_determ; eauto). subst args0.
+    exploit external_call_determ. eexact H3. eexact H9. intros [A B].
+    split. auto. intros. destruct B; auto. subst. congruence.
 - (* trace length *)
   red; intros. inv H; simpl.
+  omega.
+  omega.
   omega.
   eapply external_call_trace_length; eauto.
   eapply external_call_trace_length; eauto.
@@ -1237,8 +1331,7 @@ Ltac Equalities :=
   inv H; rewrite H0 in *; eelim NOTNULL; eauto.
 - (* final states *)
   inv H; inv H0. congruence.
-(* Qed. *)
-Admitted.
+Qed.
 
 (** Classification functions for processor registers (used in Asmgenproof). *)
 

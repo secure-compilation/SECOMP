@@ -1076,7 +1076,7 @@ Qed.
 
 Inductive tr_function: Csyntax.function -> Clight.function -> Prop :=
   | tr_function_intro: forall f tf,
-      fn_comp tf = Csyntax.fn_comp f ->
+      comp_of tf = comp_of f ->
       tr_stmt f.(Csyntax.fn_body) tf.(fn_body) ->
       fn_return tf = Csyntax.fn_return f ->
       fn_callconv tf = Csyntax.fn_callconv f ->

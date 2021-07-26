@@ -853,12 +853,12 @@ Definition transl_instr (f: Mach.function) (i: Mach.instruction)
   | Mstore chunk addr args src =>
       transl_store chunk addr args src k
   | Mcall sig (inl r) =>
-      do r1 <- ireg_of r; OK (Pjal_r r1 sig :: k)
+      do r1 <- ireg_of r; OK (Pjal_r r1 sig true :: k)
   | Mcall sig (inr symb) =>
-      OK (Pjal_s symb sig :: k)
+      OK (Pjal_s symb sig true :: k)
   | Mtailcall sig (inl r) =>
       do r1 <- ireg_of r;
-      OK (make_epilogue f (Pj_r r1 sig :: k))
+      OK (make_epilogue f (Pj_r r1 sig false :: k))
   | Mtailcall sig (inr symb) =>
       OK (make_epilogue f (Pj_s symb sig :: k))
   | Mbuiltin ef args res =>
@@ -873,7 +873,7 @@ Definition transl_instr (f: Mach.function) (i: Mach.instruction)
       do r <- ireg_of arg;
       OK (Pbtbl r tbl :: k)
   | Mreturn =>
-      OK (make_epilogue f (Pj_r RA f.(Mach.fn_sig) :: k))
+      OK (make_epilogue f (Pj_r RA f.(Mach.fn_sig) true :: k))
   end.
 
 (** Translation of a code sequence *)

@@ -1074,8 +1074,6 @@ Section SOUNDNESS.
 
 Variable prog: program.
 Variable ge: genv.
-Variable pol: policy.
-
 Let rm := romem_for prog.
 
 Inductive sound_stack: block_classification -> list stackframe -> mem -> block -> Prop :=
@@ -1258,7 +1256,7 @@ Proof.
 Qed.
 
 Theorem sound_step_base:
-  forall st t st', RTL.step pol ge st t st' -> sound_state_base st -> sound_state_base st'.
+  forall st t st', RTL.step ge st t st' -> sound_state_base st -> sound_state_base st'.
 Proof.
   induction 1; intros SOUND; inv SOUND.
 
@@ -1531,8 +1529,6 @@ Section LINKING.
 
 Variable prog: program.
 
-Variable pol: policy.
-
 Let ge := Genv.globalenv prog.
 
 Inductive sound_state: state -> Prop :=
@@ -1541,7 +1537,7 @@ Inductive sound_state: state -> Prop :=
       sound_state st.
 
 Theorem sound_step:
-  forall st t st', RTL.step pol ge st t st' -> sound_state st -> sound_state st'.
+  forall st t st', RTL.step ge st t st' -> sound_state st -> sound_state st'.
 Proof.
   intros. inv H0. constructor; intros. eapply sound_step_base; eauto.
 Qed.

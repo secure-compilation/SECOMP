@@ -366,11 +366,132 @@ Record globvar (V: Type) : Type := mkglobvar {
 
 Instance has_comp_globvar V : has_comp (globvar V) := @gvar_comp _.
 
+(** Policies are used to decide whether a given call is allowed or not.
+
+    For each compartment, a policy defines a list of exported procedures
+    and a list of procedures imported from other compartments. Procedures are
+    refered to by their public identifier.
+
+    This module doesn't define what it means for a call to be allowed or rejected;
+    instead, this is defined in common/Globalenv.v
+ *)
+Module Policy.
+
+  Record t: Type := mkpolicy {
+    policy_export: PTree.t (list ident);
+    policy_import: PTree.t (list (compartment * ident))
+  }.
+
+  (* The empty policy is the policy where there is no imported procedure and no exported procedure for all compartments *)
+  Definition empty_pol: t := mkpolicy (PTree.empty (list ident)) (PTree.empty (list (compartment * ident))).
+
+
+  (* Decidable equality for the elements contained in the policies *)
+  Definition list_id_eq: forall (x y: list ident),
+      {x = y} + {x <> y}.
+  Proof.
+    intros x y.
+    decide equality.
+    apply Pos.eq_dec.
+  Qed.
+
+  Definition list_cpt_id_eq: forall (x y: list (compartment * ident)),
+      {x = y} + {x <> y}.
+  Proof.
+    intros x y.
+    decide equality.
+    decide equality.
+    apply Pos.eq_dec.
+    apply Pos.eq_dec.
+  Qed.
+
+  (* Defines an equivalence between two policies: two policies are equivalent iff for each compartment,
+     they define the same exported and imported procedures *)
+  Definition eqb (t1 t2: t): bool :=
+    PTree.beq list_id_eq t1.(policy_export) t2.(policy_export) &&
+    PTree.beq list_cpt_id_eq t1.(policy_import) t2.(policy_import).
+
+  (* Properties of an equivalence relation: reflexivity, commutativity, transitivity *)
+  Lemma eqb_refl: forall pol, eqb pol pol = true.
+  Proof.
+    intros pol.
+    unfold eqb.
+    assert (PTree.beq (fun x y : list ident => list_id_eq x y) (policy_export pol) (policy_export pol) = true).
+    rewrite PTree.beq_correct.
+    intros x. destruct ((policy_export pol) ! x); auto.
+    destruct (list_id_eq l l); auto.
+    rewrite H. simpl.
+    rewrite PTree.beq_correct.
+    intros x. destruct ((policy_import pol) ! x); auto.
+    destruct (list_cpt_id_eq l l); auto.
+  Qed.
+
+  Lemma eqb_comm: forall pol pol', eqb pol pol' = true -> eqb pol' pol = true.
+  Proof.
+    intros pol pol' H.
+    unfold eqb in *.
+    apply andb_prop in H as [H1 H2].
+    assert (H1': PTree.beq (fun x y : list ident => list_id_eq x y) (policy_export pol') (policy_export pol) = true).
+    rewrite PTree.beq_correct. rewrite PTree.beq_correct in H1.
+    intros x. specialize (H1 x). destruct ((policy_export pol') ! x); auto.
+    destruct ((policy_export pol) ! x); auto.
+    destruct (list_id_eq l0 l); subst.
+    destruct (list_id_eq l l); auto.
+    destruct (list_id_eq l l0); auto.
+    assert (H2': PTree.beq (fun x y => list_cpt_id_eq x y) (policy_import pol') (policy_import pol) = true).
+    rewrite PTree.beq_correct. rewrite PTree.beq_correct in H2.
+    intros x. specialize (H2 x). destruct ((policy_import pol') ! x); auto.
+    destruct ((policy_import pol) ! x); auto.
+    destruct (list_cpt_id_eq l0 l); subst.
+    destruct (list_cpt_id_eq l l); auto.
+    destruct (list_cpt_id_eq l l0); auto.
+    rewrite H1', H2'. auto.
+  Qed.
+
+  Lemma eqb_trans: forall pol pol' pol'', eqb pol pol' = true -> eqb pol' pol'' = true -> eqb pol pol'' = true.
+  Proof.
+    intros pol pol' pol'' H1 H2.
+    unfold eqb in *.
+    apply andb_prop in H1 as [H1 H1'].
+    apply andb_prop in H2 as [H2 H2'].
+    assert (H3: PTree.beq (fun x y : list ident => list_id_eq x y) (policy_export pol) (policy_export pol'') = true).
+    { clear -H1 H2.
+      rewrite PTree.beq_correct in H1, H2.
+      rewrite PTree.beq_correct.
+      intros x. specialize (H1 x); specialize (H2 x).
+      destruct ((policy_export pol) ! x);
+        destruct ((policy_export pol') ! x);
+        destruct ((policy_export pol'') ! x); auto.
+      destruct (list_id_eq l l0);
+        destruct (list_id_eq l0 l1);
+        destruct (list_id_eq l l1); auto.
+      now subst.
+    }
+    assert (H3': PTree.beq (fun x y => list_cpt_id_eq x y) (policy_import pol) (policy_import pol'') = true).
+    { clear -H1' H2'.
+      rewrite PTree.beq_correct in H1', H2'.
+      rewrite PTree.beq_correct.
+      intros x. specialize (H1' x); specialize (H2' x).
+      destruct ((policy_import pol) ! x);
+        destruct ((policy_import pol') ! x);
+        destruct ((policy_import pol'') ! x); auto.
+      destruct (list_cpt_id_eq l l0);
+        destruct (list_cpt_id_eq l0 l1);
+        destruct (list_cpt_id_eq l l1); auto.
+      now subst.
+    }
+    rewrite H3, H3'. auto.
+  Qed.
+
+End Policy.
+
+
 (** Whole programs consist of:
 - a collection of global definitions (name and description);
 - a set of public names (the names that are visible outside
   this compilation unit);
 - the name of the ``main'' function that serves as entry point in the program.
+- a policy that governs which calls are allowed
 
 A global definition is either a global function or a global variable.
 The type of function descriptions and that of additional information
@@ -395,7 +516,8 @@ Instance has_comp_globdef F V {CF: has_comp F} : has_comp (globdef F V) :=
 Record program (F V: Type) : Type := mkprogram {
   prog_defs: list (ident * globdef F V);
   prog_public: list ident;
-  prog_main: ident
+  prog_main: ident;
+  prog_pol: Policy.t
 }.
 
 Definition prog_defs_names (F V: Type) (p: program F V) : list ident :=
@@ -465,7 +587,8 @@ Definition transform_program (p: program A V) : program B V :=
   mkprogram
     (List.map transform_program_globdef p.(prog_defs))
     p.(prog_public)
-    p.(prog_main).
+    p.(prog_main)
+    p.(prog_pol).
 
 End TRANSF_PROGRAM.
 
@@ -510,7 +633,7 @@ Fixpoint transf_globdefs (l: list (ident * globdef A V)) : res (list (ident * gl
 
 Definition transform_partial_program2 (p: program A V) : res (program B W) :=
   do gl' <- transf_globdefs p.(prog_defs);
-  OK (mkprogram gl' p.(prog_public) p.(prog_main)).
+  OK (mkprogram gl' p.(prog_public) p.(prog_main) p.(prog_pol)).
 
 End TRANSF_PROGRAM_GEN.
 
@@ -679,18 +802,6 @@ Instance has_comp_fundef F {CF: has_comp F} : has_comp (fundef F) :=
     | Internal f => comp_of f
     | External ef => comp_of ef
     end.
-
-Class is_fundef (FD: Type) {CFD: has_comp FD} := {
-  F : Type;
-  has_comp_F: has_comp F;
-  simpl_fundef: FD -> fundef F;
-  preserves_comp: forall f, comp_of f = comp_of (simpl_fundef f) }.
-
-Instance is_fundef_fundef F {CF: has_comp F}: @is_fundef (fundef F) _ := {
-  F := F;
-  has_comp_F := CF;
-  simpl_fundef := id;
-  preserves_comp := fun f => eq_refl; }.
 
 Section TRANSF_FUNDEF.
 

@@ -144,9 +144,6 @@ Section PRESERVATION.
 
 Variables prog tprog: program.
 Hypothesis TRANSL: match_prog prog tprog.
-Variable pol: policy.
-Variable tpol: policy.
-Hypothesis TRANSPOL: match_pol (fun f tf => tf = tunnel_fundef f) pol tpol.
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
 
@@ -166,6 +163,15 @@ Lemma symbols_preserved:
   forall id,
   Genv.find_symbol tge id = Genv.find_symbol ge id.
 Proof (Genv.find_symbol_transf TRANSL).
+
+Lemma allowed_call_translated:
+  forall cp vf,
+    Genv.allowed_call ge cp vf ->
+    Genv.allowed_call tge cp vf.
+Proof.
+  intros cp vf H.
+  eapply (Genv.match_genvs_allowed_calls TRANSL). eauto.
+Qed.
 
 Lemma senv_preserved:
   Senv.equiv ge tge.
@@ -208,6 +214,21 @@ Definition tunneled_code (f: function) :=
 
 Definition locmap_lessdef (ls1 ls2: locset) : Prop :=
   forall l, Val.lessdef (ls1 l) (ls2 l).
+
+Lemma find_function_ptr_translated:
+  forall ros ls1 ls2 f vf,
+  locmap_lessdef ls1 ls2 ->
+  find_function ge ros ls1 = Some f ->
+  find_function_ptr ge ros ls1 = Some vf ->
+  find_function_ptr tge ros ls2 = Some vf.
+Proof.
+  unfold find_function, find_function_ptr; intros; destruct ros; simpl.
+  - specialize (H (R m)).
+    inv H. congruence.
+    rewrite <- H3 in H0. discriminate.
+  - rewrite symbols_preserved; eauto.
+Qed.
+
 
 Inductive match_stackframes: stackframe -> stackframe -> Prop :=
   | match_stackframes_intro:
@@ -417,9 +438,9 @@ Proof.
 Qed.
 
 Lemma tunnel_step_correct:
-  forall st1 t st2, step pol ge st1 t st2 ->
+  forall st1 t st2, step ge st1 t st2 ->
   forall st1' (MS: match_states st1 st1'),
-  (exists st2', step tpol tge st1' t st2' /\ match_states st2 st2')
+  (exists st2', step tge st1' t st2' /\ match_states st2 st2')
   \/ (measure st2 < measure st1 /\ t = E0 /\ match_states st2 st1')%nat.
 Proof.
   induction 1; intros; try inv MS.
@@ -427,7 +448,7 @@ Proof.
 - (* entering a block *)
   assert (DEFAULT: branch_target f pc = pc ->
     (exists st2' : state,
-     step tpol tge (State ts (tunnel_function f) sp (branch_target f pc) tls tm) E0 st2'
+     step tge (State ts (tunnel_function f) sp (branch_target f pc) tls tm) E0 st2'
      /\ match_states (Block s f sp bb rs m) st2')).
   { intros. rewrite H0. econstructor; split.
     econstructor. simpl. rewrite PTree.gmap1. rewrite H. simpl. eauto.
@@ -479,8 +500,9 @@ Proof.
   left; simpl; econstructor; split.
   eapply exec_Lcall with (fd := tunnel_fundef fd); eauto.
   eapply find_function_translated; eauto.
+  eapply find_function_ptr_translated; eauto.
   rewrite sig_preserved. auto.
-  eapply TRANSPOL; eauto.
+  eapply allowed_call_translated; eauto.
   econstructor; eauto.
   constructor; auto.
   constructor; auto.
@@ -489,9 +511,10 @@ Proof.
   left; simpl; econstructor; split.
   eapply exec_Ltailcall with (fd := tunnel_fundef fd); eauto.
   eapply find_function_translated; eauto using return_regs_lessdef, match_parent_locset.
+  eapply find_function_ptr_translated; eauto using return_regs_lessdef, match_parent_locset.
   apply sig_preserved.
   unfold tunnel_fundef. now rewrite comp_tunnel_fundef, comp_transl.
-  eapply TRANSPOL; eauto.
+  eapply allowed_call_translated; eauto.
   econstructor; eauto using return_regs_lessdef, match_parent_locset.
 - (* Lbuiltin *)
   exploit eval_builtin_args_lessdef. eexact LS. eauto. eauto. intros (tvargs & EVA & LDA).
@@ -580,7 +603,7 @@ Proof.
 Qed.
 
 Theorem transf_program_correct:
-  forward_simulation (LTL.semantics pol prog) (LTL.semantics tpol tprog).
+  forward_simulation (LTL.semantics prog) (LTL.semantics tprog).
 Proof.
   eapply forward_simulation_opt.
   apply senv_preserved.

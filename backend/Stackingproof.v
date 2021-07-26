@@ -81,6 +81,7 @@ Proof.
   try contradiction; try discriminate; econstructor; eauto.
 Qed.
 
+
 Section PRESERVATION.
 
 Variable return_address_offset: Mach.function -> Mach.code -> ptrofs -> Prop.
@@ -95,9 +96,6 @@ Let step := Mach.step return_address_offset.
 Variable prog: Linear.program.
 Variable tprog: Mach.program.
 Hypothesis TRANSF: match_prog prog tprog.
-Variable pol: Linear.policy.
-Variable tpol: Mach.policy.
-Hypothesis TRANSPOL: match_pol (fun f tf => transf_fundef f = OK tf) pol tpol.
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
 
@@ -416,6 +414,7 @@ Definition frame_contents_1 (j: meminj) (sp: block) (ls ls0: locset) (parent ret
  ** hasvalue Mptr sp fe.(fe_ofs_retaddr) cp retaddr
  ** contains_callee_saves j sp fe.(fe_ofs_callee_save) b.(used_callee_save) ls0 cp.
 
+(* TODO: can we modify [frame_contents] to not take [cp] as argument but instead use [comp_of f]? *)
 Definition frame_contents (j: meminj) (sp: block) (ls ls0: locset) (parent retaddr: val) (cp: compartment) :=
   (* let cp := default_compartment in *)
   mconj (frame_contents_1 j sp ls ls0 parent retaddr cp)
@@ -954,7 +953,7 @@ Lemma save_callee_save_rec_correct:
   forall OWN : Mem.own_block m sp cp,
   agree_regs j ls rs ->
   exists rs', exists m',
-     star (step tpol) tge
+     star step tge
         (State cs fb (Vptr sp Ptrofs.zero) (save_callee_save_rec l pos k) rs m)
      E0 (State cs fb (Vptr sp Ptrofs.zero) k rs' m')
   /\ m' |= contains_callee_saves j sp pos l ls cp ** P
@@ -1051,7 +1050,7 @@ Lemma save_callee_save_correct:
   let ls1 := LTL.undef_regs destroyed_at_function_entry (LTL.call_regs ls) in
   let rs1 := undef_regs destroyed_at_function_entry rs in
   exists rs', exists m',
-     star (step tpol) tge
+     star step tge
         (State cs fb (Vptr sp Ptrofs.zero) (save_callee_save fe k) rs1 m)
      E0 (State cs fb (Vptr sp Ptrofs.zero) k rs' m')
   /\ m' |= contains_callee_saves j sp fe.(fe_ofs_callee_save) b.(used_callee_save) ls0 cp ** P
@@ -1112,10 +1111,10 @@ Lemma function_prologue_correct:
   Val.has_type parent Tptr -> Val.has_type ra Tptr ->
   m1' |= minjection j m1 ** globalenv_inject ge j ** P ->
   exists j', exists rs', exists m2', exists sp', exists m3', exists m4', exists m5',
-     Mem.alloc m1' tf.(fn_comp) 0 tf.(fn_stacksize) = (m2', sp')
-  /\ store_stack m2' (Vptr sp' Ptrofs.zero) Tptr tf.(fn_link_ofs) parent tf.(fn_comp) = Some m3'
-  /\ store_stack m3' (Vptr sp' Ptrofs.zero) Tptr tf.(fn_retaddr_ofs) ra tf.(fn_comp) = Some m4'
-  /\ star (step tpol) tge
+     Mem.alloc m1' (comp_of tf) 0 tf.(fn_stacksize) = (m2', sp')
+  /\ store_stack m2' (Vptr sp' Ptrofs.zero) Tptr tf.(fn_link_ofs) parent (comp_of tf) = Some m3'
+  /\ store_stack m3' (Vptr sp' Ptrofs.zero) Tptr tf.(fn_retaddr_ofs) ra (comp_of tf) = Some m4'
+  /\ star step tge
          (State cs fb (Vptr sp' Ptrofs.zero) (save_callee_save fe k) rs1 m4')
       E0 (State cs fb (Vptr sp' Ptrofs.zero) k rs' m5')
   /\ agree_regs j' ls1 rs'
@@ -1240,7 +1239,7 @@ Lemma restore_callee_save_rec_correct:
   agree_unused ls0 rs ->
   (forall r, In r l -> mreg_within_bounds b r) ->
   exists rs',
-    star (step tpol) tge
+    star step tge
       (State cs fb (Vptr sp Ptrofs.zero) (restore_callee_save_rec l ofs k) rs m)
    E0 (State cs fb (Vptr sp Ptrofs.zero) k rs' m)
   /\ (forall r, In r l -> Val.inject j (ls0 (R r)) (rs' r))
@@ -1285,7 +1284,7 @@ Lemma restore_callee_save_correct:
   m |= frame_contents j sp ls ls0 pa ra cp ** P ->
   agree_unused j ls0 rs ->
   exists rs',
-    star (step tpol) tge
+    star step tge
        (State cs fb (Vptr sp Ptrofs.zero) (restore_callee_save fe k) rs m)
     E0 (State cs fb (Vptr sp Ptrofs.zero) k rs' m)
   /\ (forall r,
@@ -1314,17 +1313,17 @@ Qed.
   of the frame). *)
 
 Lemma function_epilogue_correct:
-  forall m' j sp' cp' ls ls0 pa ra P m rs sp cp m1 k cs fb,
-    m' |= frame_contents j sp' ls ls0 pa ra cp' ** minjection j m ** P ->
+  forall m' j sp' ls ls0 pa ra P m rs sp m1 k cs fb,
+    m' |= frame_contents j sp' ls ls0 pa ra (comp_of f) ** minjection j m ** P ->
   agree_regs j ls rs ->
   agree_locs ls ls0 ->
   j sp = Some(sp', fe.(fe_stack_data)) ->
-  Mem.free m sp 0 f.(Linear.fn_stacksize) cp = Some m1 ->
+  Mem.free m sp 0 f.(Linear.fn_stacksize) (comp_of f) = Some m1 ->
   exists rs1, exists m1',
-     load_stack m' (Vptr sp' Ptrofs.zero) Tptr tf.(fn_link_ofs) cp' = Some pa
-  /\ load_stack m' (Vptr sp' Ptrofs.zero) Tptr tf.(fn_retaddr_ofs) cp' = Some ra
-  /\ Mem.free m' sp' 0 tf.(fn_stacksize) cp' = Some m1'
-  /\ star (step tpol) tge
+     load_stack m' (Vptr sp' Ptrofs.zero) Tptr tf.(fn_link_ofs) (comp_of tf) = Some pa
+  /\ load_stack m' (Vptr sp' Ptrofs.zero) Tptr tf.(fn_retaddr_ofs) (comp_of tf) = Some ra
+  /\ Mem.free m' sp' 0 tf.(fn_stacksize) (comp_of tf) = Some m1'
+  /\ star step tge
        (State cs fb (Vptr sp' Ptrofs.zero) (restore_callee_save fe k) rs m')
     E0 (State cs fb (Vptr sp' Ptrofs.zero) k rs1 m')
   /\ agree_regs j (return_regs ls0 ls) rs1
@@ -1356,7 +1355,7 @@ Proof.
   exists rs', m1'.
   split. assumption.
   split. assumption.
-  split. (*assumption.*) admit. (* RB: NOTE: Cross-operation component determinacy *)
+  split. assumption.
   split. eassumption.
   split. red; unfold return_regs; intros.
     destruct (is_callee_save r) eqn:C.
@@ -1365,8 +1364,7 @@ Proof.
   split. red; unfold return_regs; intros.
     destruct l. rewrite H; auto. destruct sl; auto; contradiction. 
   assumption.
-(* Qed. *)
-Admitted.
+Qed.
 
 End FRAME_PROPERTIES.
 
@@ -1375,12 +1373,12 @@ End FRAME_PROPERTIES.
 (** This is the memory assertion that captures the contents of the stack frames
   mentioned in the call stacks. *)
 
-Fixpoint stack_contents (j: meminj) (cs: list Linear.stackframe) (cs': list Mach.stackframe) (cp: compartment) : massert :=
+Fixpoint stack_contents (j: meminj) (cs: list Linear.stackframe) (cs': list Mach.stackframe): massert :=
   match cs, cs' with
   | nil, nil => pure True
   | Linear.Stackframe f _ ls c :: cs, Mach.Stackframe fb (Vptr sp' _) ra c' :: cs' =>
-      frame_contents f j sp' ls (parent_locset cs) (parent_sp cs') (parent_ra cs') cp
-      ** stack_contents j cs cs' cp
+      frame_contents f j sp' ls (parent_locset cs) (parent_sp cs') (parent_ra cs') (comp_of f)
+                     ** stack_contents j cs cs'
   | _, _ => pure False
   end.
 
@@ -1414,9 +1412,9 @@ Inductive match_stacks (j: meminj):
 
 Lemma stack_contents_change_meminj:
   forall m j j', inject_incr j j' ->
-  forall cs cs' cp P,
-  m |= stack_contents j cs cs' cp ** P ->
-  m |= stack_contents j' cs cs' cp ** P.
+  forall cs cs' P,
+  m |= stack_contents j cs cs' ** P ->
+  m |= stack_contents j' cs cs' ** P.
 Proof.
 Local Opaque sepconj.
   induction cs as [ | [] cs]; destruct cs' as [ | [] cs']; simpl; intros; auto.
@@ -1635,27 +1633,47 @@ Proof.
 Qed.
 
 Lemma find_function_translated:
-  forall j ls rs m ros f,
+  forall j ls rs m ros f cp vf,
   agree_regs j ls rs ->
   m |= globalenv_inject ge j ->
   Linear.find_function ge ros ls = Some f ->
+  Linear.find_function_ptr ge ros ls = Some vf ->
+  Genv.allowed_call ge cp vf ->
   exists bf, exists tf,
      find_function_ptr tge ros rs = Some bf
   /\ Genv.find_funct_ptr tge bf = Some tf
-  /\ transf_fundef f = OK tf.
+  /\ transf_fundef f = OK tf
+  /\ Genv.allowed_call tge cp (Vptr bf Ptrofs.zero).
 Proof.
-  intros until f; intros AG [bound [_ [?????]]] FF.
+  intros until vf; intros AG [bound [_ [?????]]] FF.
   destruct ros; simpl in FF.
 - exploit Genv.find_funct_inv; eauto. intros [b EQ]. rewrite EQ in FF.
   rewrite Genv.find_funct_find_funct_ptr in FF.
-  exploit function_ptr_translated; eauto. intros [tf [A B]].
+  exploit function_ptr_translated; eauto.
+  intros [tf [A B]].
   exists b; exists tf; split; auto. simpl.
   generalize (AG m0). rewrite EQ. intro INJ. inv INJ.
-  rewrite DOMAIN in H2. inv H2. simpl. auto. eapply FUNCTIONS; eauto.
+  rewrite DOMAIN in H4. inv H4. simpl. auto. eapply FUNCTIONS; eauto.
+  split; auto.
+  split; auto.
+  assert (vf = Vptr b Ptrofs.zero).
+  { unfold find_function_ptr in H.
+    inv H. rewrite EQ. eauto. }
+  rewrite <- H1.
+  now eapply (Genv.match_genvs_allowed_calls TRANSF).
+
 - destruct (Genv.find_symbol ge i) as [b|] eqn:?; try discriminate.
-  exploit function_ptr_translated; eauto. intros [tf [A B]].
+  exploit function_ptr_translated; eauto.
+  intros [tf [A B]].
   exists b; exists tf; split; auto. simpl.
   rewrite symbols_preserved. auto.
+  split; auto.
+  split; auto.
+  assert (vf = Vptr b Ptrofs.zero).
+  { unfold Linear.find_function_ptr in H.
+    rewrite Heqo in H. inv H. eauto. }
+  rewrite <- H1.
+  now eapply (Genv.match_genvs_allowed_calls TRANSF).
 Qed.
 
 (** Preservation of the arguments to an external call. *)
@@ -1674,8 +1692,7 @@ Hypothesis AGR: agree_regs j ls rs.
 Hypothesis AGCS: agree_callee_save ls (parent_locset cs).
 Hypothesis AGARGS: agree_outgoing_arguments sg ls (parent_locset cs).
 Variable m': mem.
-Variable cp: compartment.
-Hypothesis SEP: m' |= stack_contents j cs cs' cp.
+Hypothesis SEP: m' |= stack_contents j cs cs'.
 
 Lemma transl_external_argument:
   forall l,
@@ -1757,8 +1774,7 @@ Variables sp sp': block.
 Variables parent retaddr: val.
 Hypothesis INJ: j sp = Some(sp', fe.(fe_stack_data)).
 Hypothesis AGR: agree_regs j ls rs.
-Variable cp: compartment.
-Hypothesis SEP: m' |= frame_contents f j sp' ls ls0 parent retaddr cp ** minjection j m ** globalenv_inject ge j.
+Hypothesis SEP: m' |= frame_contents f j sp' ls ls0 parent retaddr (comp_of f) ** minjection j m ** globalenv_inject ge j.
 
 Lemma transl_builtin_arg_correct:
   forall a v,
@@ -1852,7 +1868,7 @@ End BUILTIN_ARGUMENTS.
 
 Inductive match_states: Linear.state -> Mach.state -> Prop :=
   | match_states_intro:
-      forall cs f sp c ls m cs' fb sp' rs m' j tf cp
+      forall cs f sp c ls m cs' fb sp' rs m' j tf
         (STACKS: match_stacks j cs cs' f.(Linear.fn_sig))
         (TRANSL: transf_function f = OK tf)
         (FIND: Genv.find_funct_ptr tge fb = Some (Internal tf))
@@ -1860,37 +1876,37 @@ Inductive match_states: Linear.state -> Mach.state -> Prop :=
         (AGLOCS: agree_locs f ls (parent_locset cs))
         (INJSP: j sp = Some(sp', fe_stack_data (make_env (function_bounds f))))
         (TAIL: is_tail c (Linear.fn_code f))
-        (SEP: m' |= frame_contents f j sp' ls (parent_locset cs) (parent_sp cs') (parent_ra cs') cp
-                 ** stack_contents j cs cs' cp
+        (SEP: m' |= frame_contents f j sp' ls (parent_locset cs) (parent_sp cs') (parent_ra cs') (comp_of f)
+                 ** stack_contents j cs cs'
                  ** minjection j m
                  ** globalenv_inject ge j),
       match_states (Linear.State cs f (Vptr sp Ptrofs.zero) c ls m)
                    (Mach.State cs' fb (Vptr sp' Ptrofs.zero) (transl_code (make_env (function_bounds f)) c) rs m')
   | match_states_call:
-      forall cs f ls m cs' fb rs m' j tf cp
+      forall cs f ls m cs' fb rs m' j tf
         (STACKS: match_stacks j cs cs' (Linear.funsig f))
         (TRANSL: transf_fundef f = OK tf)
         (FIND: Genv.find_funct_ptr tge fb = Some (tf))
         (AGREGS: agree_regs j ls rs)
-        (SEP: m' |= stack_contents j cs cs' cp
+        (SEP: m' |= stack_contents j cs cs'
                  ** minjection j m
                  ** globalenv_inject ge j),
       match_states (Linear.Callstate cs f ls m)
                    (Mach.Callstate cs' fb rs m')
   | match_states_return:
-      forall cs ls m cs' rs m' j sg cp
+      forall cs ls m cs' rs m' j sg
         (STACKS: match_stacks j cs cs' sg)
         (AGREGS: agree_regs j ls rs)
-        (SEP: m' |= stack_contents j cs cs' cp
+        (SEP: m' |= stack_contents j cs cs'
                  ** minjection j m
                  ** globalenv_inject ge j),
       match_states (Linear.Returnstate cs ls m)
                   (Mach.Returnstate cs' rs m').
 
 Theorem transf_step_correct:
-  forall s1 t s2, Linear.step pol ge s1 t s2 ->
+  forall s1 t s2, Linear.step ge s1 t s2 ->
   forall (WTS: wt_state s1) s1' (MS: match_states s1 s1'),
-  exists s2', plus (step tpol) tge s1' t s2' /\ match_states s2 s2'.
+  exists s2', plus step tge s1' t s2' /\ match_states s2 s2'.
 Proof.
   induction 1; intros;
   try inv MS;
@@ -1910,7 +1926,6 @@ Proof.
   econstructor; eauto with coqlib.
   apply agree_regs_set_reg; auto.
   apply agree_locs_set_reg; auto.
-  instantiate (1 := cp); auto.
 + (* Lgetstack, incoming *)
   unfold slot_valid in SV. InvBooleans.
   exploit incoming_slot_in_parameters; eauto. intros IN_ARGS.
@@ -1930,7 +1945,6 @@ Proof.
   apply agree_regs_set_reg. apply agree_regs_set_reg. auto. auto.
   erewrite agree_incoming by eauto. exact B.
   apply agree_locs_set_reg; auto. apply agree_locs_undef_locs; auto.
-  instantiate (1 := cp); auto.
 + (* Lgetstack, outgoing *)
   exploit frame_get_outgoing; eauto. intros (v & A & B).
   econstructor; split.
@@ -1938,7 +1952,6 @@ Proof.
   econstructor; eauto with coqlib.
   apply agree_regs_set_reg; auto.
   apply agree_locs_set_reg; auto.
-  instantiate (1 := cp); auto.
 
 - (* Lsetstack *)
   exploit wt_state_setstack; eauto. intros (SV & SW).
@@ -1949,11 +1962,11 @@ Proof.
                end).
   eapply frame_undef_regs with (rl := destroyed_by_setstack ty) in SEP.
   assert (A: exists m'',
-              store_stack m' (Vptr sp' Ptrofs.zero) ty (Ptrofs.repr ofs') (rs0 src) cp = Some m''
+              store_stack m' (Vptr sp' Ptrofs.zero) ty (Ptrofs.repr ofs') (rs0 src) (comp_of f) = Some m''
            /\ m'' |= frame_contents f j sp' (Locmap.set (S sl ofs ty) (rs (R src))
                                                (LTL.undef_regs (destroyed_by_setstack ty) rs))
-                                            (parent_locset s) (parent_sp cs') (parent_ra cs') cp
-                  ** stack_contents j s cs' cp ** minjection j m ** globalenv_inject ge j).
+                                            (parent_locset s) (parent_sp cs') (parent_ra cs') (comp_of f)
+                  ** stack_contents j s cs' ** minjection j m ** globalenv_inject ge j).
   { unfold ofs'; destruct sl; try discriminate.
     eapply frame_set_local; eauto.
     eapply frame_set_outgoing; eauto. }
@@ -2005,7 +2018,6 @@ Proof.
   econstructor; eauto with coqlib.
   apply agree_regs_set_reg. rewrite transl_destroyed_by_load. apply agree_regs_undef_regs; auto. auto.
   apply agree_locs_set_reg. apply agree_locs_undef_locs. auto. apply destroyed_by_load_caller_save. auto.
-  instantiate (1 := cp0); auto.
 
 - (* Lstore *)
   assert (exists a',
@@ -2032,14 +2044,13 @@ Proof.
 - (* Lcall *)
   exploit find_function_translated; eauto.
     eapply sep_proj2. eapply sep_proj2. eapply sep_proj2. eexact SEP.
-  intros [bf [tf' [A [B C]]]].
+  intros [bf [tf' [A [B [C D]]]]].
   exploit is_tail_transf_function; eauto. intros IST.
   rewrite transl_code_eq in IST. simpl in IST.
-  exploit return_address_offset_exists. eexact IST. intros [ra D].
+  exploit return_address_offset_exists. eexact IST. intros [ra E].
   econstructor; split.
   apply plus_one. econstructor; eauto.
-  eapply TRANSPOL; eauto.
-  change (fn_comp tf) with (comp_of tf). rewrite <- (comp_transl_partial _ TRANSL); auto.
+  rewrite <- comp_transf_function; eauto.
   econstructor; eauto.
   econstructor; eauto with coqlib.
   apply Val.Vptr_has_type.
@@ -2049,20 +2060,19 @@ Proof.
   simpl. rewrite sep_assoc. exact SEP.
 
 - (* Ltailcall *)
-  rewrite (sep_swap (stack_contents j s cs' cp0)) in SEP.
+  rewrite (sep_swap (stack_contents j s cs')) in SEP.
   exploit function_epilogue_correct; eauto.
   clear SEP. intros (rs1 & m1' & P & Q & R & S & T & U & SEP).
   rewrite sep_swap in SEP.
   exploit find_function_translated; eauto.
     eapply sep_proj2. eapply sep_proj2. eexact SEP.
-  intros [bf [tf' [A [B C]]]].
+  intros [bf [tf' [A [B [C D]]]]].
   econstructor; split.
   eapply plus_right. eexact S. econstructor; eauto.
   rewrite <- (comp_transl_partial _ TRANSL).
   rewrite <- (comp_transl_partial _ C). eauto.
   rewrite <- (comp_transl_partial _ TRANSL). eauto.
-  eapply TRANSPOL; eauto.
-  change (fn_comp tf) with (comp_of tf). rewrite <- (comp_transl_partial _ TRANSL); auto.
+  rewrite <- (comp_transf_function); eauto.
   traceEq.
   econstructor; eauto.
   apply match_stacks_change_sig with (Linear.fn_sig f); auto.
@@ -2115,7 +2125,6 @@ Proof.
   auto.
   eapply find_label_tail; eauto.
   apply frame_undef_regs; auto.
-  instantiate (1 := cp); auto.
 
 - (* Lcond, false *)
   econstructor; split.
@@ -2126,7 +2135,6 @@ Proof.
   apply agree_locs_undef_locs. auto. apply destroyed_by_cond_caller_save.
   auto. eauto with coqlib.
   apply frame_undef_regs; auto.
-  instantiate (1 := cp); auto.
 
 - (* Ljumptable *)
   assert (rs0 arg = Vint n).
@@ -2139,10 +2147,9 @@ Proof.
   apply agree_locs_undef_locs. auto. apply destroyed_by_jumptable_caller_save.
   auto. eapply find_label_tail; eauto.
   apply frame_undef_regs; auto.
-  instantiate (1 := cp); auto.
 
 - (* Lreturn *)
-  rewrite (sep_swap (stack_contents j s cs' cp0)) in SEP.
+  rewrite (sep_swap (stack_contents j s cs')) in SEP.
   exploit function_epilogue_correct; eauto.
   intros (rs' & m1' & A & B & C & D & E & F & G).
   econstructor; split.
@@ -2171,7 +2178,7 @@ Proof.
   eapply match_states_intro with (j := j'); eauto with coqlib.
   eapply match_stacks_change_meminj; eauto.
   rewrite sep_swap in SEP. rewrite sep_swap. eapply stack_contents_change_meminj; eauto.
-  admit. (* RB: NOTE: Need to connect [cp] and [(fn_comp tfn)] *)
+  rewrite comp_transf_function; eauto.
 
 - (* external function *)
   simpl in TRANSL. inversion TRANSL; subst tf.
@@ -2191,7 +2198,6 @@ Proof.
   auto.
   apply stack_contents_change_meminj with j; auto.
   rewrite sep_comm, sep_assoc; auto.
-  instantiate (1 := cp); auto.
 
 - (* return *)
   inv STACKS. exploit wt_returnstate_agree; eauto. intros [AGCS OUTU].
@@ -2203,9 +2209,7 @@ Proof.
   apply frame_contents_exten with rs0 (parent_locset s); auto.
   intros; apply Val.lessdef_same; apply AGCS; red; congruence.
   intros; rewrite (OUTU ty ofs); auto. 
-  instantiate (1 := cp); auto.
-(* Qed. *)
-Admitted.
+Qed.
 
 Lemma transf_initial_states:
   forall st1, Linear.initial_state prog st1 ->
@@ -2232,9 +2236,8 @@ Proof.
     change (Mem.valid_block m0 b0). eapply Genv.find_funct_ptr_not_fresh; eauto.
     change (Mem.valid_block m0 b0). eapply Genv.find_var_info_not_fresh; eauto.
   red; simpl; tauto.
-  Unshelve. (* exact default_compartment.*) admit. (* RB: NOTE: Address disconnected compartment. *)
-(* Qed. *)
-Admitted.
+Qed.
+
 
 Lemma transf_final_states:
   forall st1 st2 r,
@@ -2263,7 +2266,7 @@ Proof.
 Qed.
 
 Theorem transf_program_correct:
-  forward_simulation (Linear.semantics pol prog) (Mach.semantics return_address_offset tpol tprog).
+  forward_simulation (Linear.semantics prog) (Mach.semantics return_address_offset tprog).
 Proof.
   set (ms := fun s s' => wt_state s /\ match_states s s').
   eapply forward_simulation_plus with (match_states := ms).

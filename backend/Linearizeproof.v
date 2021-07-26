@@ -41,9 +41,6 @@ Section LINEARIZATION.
 Variable prog: LTL.program.
 Variable tprog: Linear.program.
 Hypothesis TRANSF: match_prog prog tprog.
-Variable pol: LTL.policy.
-Variable tpol: Linear.policy.
-Hypothesis TRANSPOL: match_pol (fun f tf => transf_fundef f = OK tf) pol tpol.
 
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
@@ -76,7 +73,7 @@ Proof. exact (Genv.senv_transf_partial TRANSF). Qed.
 Lemma comp_preserved:
   forall f tf,
   transf_function f = OK tf ->
-  Linear.fn_comp tf = LTL.fn_comp f.
+  comp_of tf = comp_of f.
 Proof.
   unfold transf_fundef, transf_partial_fundef; intros.
   destruct f. monadInv H. monadInv EQ. reflexivity.
@@ -112,6 +109,25 @@ Proof.
   rewrite symbols_preserved. destruct (Genv.find_symbol ge i).
   apply function_ptr_translated; auto.
   congruence.
+Qed.
+
+Lemma find_function_ptr_translated:
+  forall ros rs vf,
+    LTL.find_function_ptr ge ros rs = Some vf ->
+    find_function_ptr tge ros rs = Some vf.
+Proof.
+  unfold LTL.find_function_ptr, find_function_ptr; intros; destruct ros; simpl.
+  eauto.
+  rewrite symbols_preserved; eauto.
+Qed.
+
+Lemma allowed_call_translated:
+  forall cp vf,
+    Genv.allowed_call ge cp vf ->
+    Genv.allowed_call tge cp vf.
+Proof.
+  intros cp vf H.
+  eapply (Genv.match_genvs_allowed_calls TRANSF). eauto.
 Qed.
 
 (** * Correctness of reachability analysis *)
@@ -272,7 +288,7 @@ Lemma starts_with_correct:
   unique_labels c2 ->
   starts_with lbl c1 = true ->
   find_label lbl c2 = Some c3 ->
-  plus (step tpol) tge (State s f sp c1 ls m)
+  plus step tge (State s f sp c1 ls m)
              E0 (State s f sp c3 ls m).
 Proof.
   induction c1.
@@ -476,7 +492,7 @@ Lemma add_branch_correct:
   transf_function f = OK tf ->
   is_tail k tf.(fn_code) ->
   find_label lbl tf.(fn_code) = Some c ->
-  plus (step tpol) tge (State s tf sp (add_branch lbl k) ls m)
+  plus step tge (State s tf sp (add_branch lbl k) ls m)
              E0 (State s tf sp c ls m).
 Proof.
   intros. unfold add_branch.
@@ -591,9 +607,9 @@ Proof.
 Qed.
 
 Theorem transf_step_correct:
-  forall s1 t s2, LTL.step pol ge s1 t s2 ->
+  forall s1 t s2, LTL.step ge s1 t s2 ->
   forall s1' (MS: match_states s1 s1'),
-  (exists s2', plus (Linear.step tpol) tge s1' t s2' /\ match_states s2 s2')
+  (exists s2', plus Linear.step tge s1' t s2' /\ match_states s2 s2')
   \/ (measure s2 < measure s1 /\ t = E0 /\ match_states s2 s1')%nat.
 Proof.
   induction 1; intros; try (inv MS).
@@ -633,7 +649,8 @@ Proof.
   left; econstructor; split. simpl.
   apply plus_one. econstructor.
   instantiate (1 := a). rewrite <- H; apply eval_addressing_preserved.
-  exact symbols_preserved. eauto. eauto.
+  exact symbols_preserved.
+  erewrite comp_preserved; eauto. eauto.
   econstructor; eauto.
 
   (* Lgetstack *)
@@ -650,31 +667,34 @@ Proof.
   left; econstructor; split. simpl.
   apply plus_one. econstructor.
   instantiate (1 := a). rewrite <- H; apply eval_addressing_preserved.
-  exact symbols_preserved. eauto. eauto.
+  exact symbols_preserved.
+  erewrite comp_preserved; eauto. eauto.
   econstructor; eauto.
 
   (* Lcall *)
   exploit find_function_translated; eauto. intros [tfd [A B]].
+  exploit find_function_ptr_translated; eauto. intros C.
   left; econstructor; split. simpl.
   apply plus_one. econstructor; eauto.
   symmetry; eapply sig_preserved; eauto.
-  eapply TRANSPOL; eauto.
-  change (fn_comp tf) with (comp_of tf).
-  rewrite <- (comp_transl_partial _ TRF); auto.
+  rewrite <- comp_transf_fundef; eauto.
+  eapply allowed_call_translated; eauto.
   econstructor; eauto. constructor; auto. econstructor; eauto.
 
   (* Ltailcall *)
   exploit find_function_translated; eauto. intros [tfd [A B]].
+  exploit find_function_ptr_translated; eauto. intros C.
   left; econstructor; split. simpl.
   apply plus_one. econstructor; eauto.
+  rewrite (match_parent_locset _ _ STACKS). eauto.
   rewrite (match_parent_locset _ _ STACKS). eauto.
   symmetry; eapply sig_preserved; eauto.
   now rewrite <- (comp_transl_partial _ B), <- (comp_transl_partial _ TRF).
   now rewrite <- (comp_transl_partial _ TRF).
-  eapply TRANSPOL; eauto.
-  change (fn_comp tf) with (comp_of tf).
-  rewrite <- (comp_transl_partial _ TRF); auto.
+  rewrite <- comp_transf_fundef; eauto.
+  eapply allowed_call_translated; eauto.
   rewrite (stacksize_preserved _ _ TRF); eauto.
+  rewrite <- comp_transf_fundef; eauto.
   rewrite (match_parent_locset _ _ STACKS).
   econstructor; eauto.
 
@@ -682,7 +702,8 @@ Proof.
   left; econstructor; split. simpl.
   apply plus_one. eapply exec_Lbuiltin; eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
-  eapply external_call_symbols_preserved; eauto. apply senv_preserved. erewrite comp_preserved; eauto.
+  rewrite <- comp_transf_fundef; eauto.
+  eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   econstructor; eauto.
 
   (* Lbranch *)
@@ -723,7 +744,7 @@ Proof.
   (* Lreturn *)
   left; econstructor; split.
   simpl. apply plus_one. econstructor; eauto.
-  rewrite (stacksize_preserved _ _ TRF). eauto.
+  rewrite (stacksize_preserved _ _ TRF). erewrite comp_preserved; eauto.
   rewrite (match_parent_locset _ _ STACKS). econstructor; eauto.
 
   (* internal functions *)
@@ -773,7 +794,7 @@ Proof.
 Qed.
 
 Theorem transf_program_correct:
-  forward_simulation (LTL.semantics pol prog) (Linear.semantics tpol tprog).
+  forward_simulation (LTL.semantics prog) (Linear.semantics tprog).
 Proof.
   eapply forward_simulation_star.
   apply senv_preserved.

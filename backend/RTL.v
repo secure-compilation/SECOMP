@@ -114,7 +114,6 @@ Definition funsig (fd: fundef) :=
 (** * Operational semantics *)
 
 Definition genv := Genv.t fundef unit.
-Definition policy := Policy.t (F := fundef).
 Definition regset := Regmap.t val.
 
 Fixpoint init_regs (vl: list val) (rl: list reg) {struct rl} : regset :=
@@ -186,12 +185,11 @@ Inductive state : Type :=
 Definition call_comp (stack: list stackframe): compartment :=
   match stack with
   | nil => default_compartment
-  | Stackframe _ f _ _ _ :: _ => f.(fn_comp)
+  | Stackframe _ f _ _ _ :: _ => (comp_of f)
   end.
 
 Section RELSEM.
 
-Variable pol: policy.
 Variable ge: genv.
 
 Definition find_function
@@ -204,6 +202,29 @@ Definition find_function
       | Some b => Genv.find_funct_ptr ge b
       end
   end.
+
+Definition find_function_ptr ros rs :=
+  match ros with
+  | inl r => Some (rs # r)
+  | inr symb => match Genv.find_symbol ge symb with
+               | Some b => Some  (Vptr b Ptrofs.zero)
+               | None => None
+               end
+  end.
+
+Lemma find_function_find_function_ptr:
+  forall ros rs fd,
+    find_function ros rs = Some fd ->
+    exists vf, find_function_ptr ros rs = Some vf.
+Proof.
+  intros ros rs fd.
+  unfold find_function, find_function_ptr.
+  intros H.
+  destruct ros; try now eexists; eauto.
+  destruct (Genv.find_symbol ge i).
+  - now eexists; eauto.
+  - inversion H.
+Qed.
 
 (** The transitions are presented as an inductive predicate
   [step ge st1 t st2], where [ge] is the global environment,
@@ -223,43 +244,45 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State s f sp pc rs m)
         E0 (State s f sp pc' (rs#res <- v) m)
   | exec_Iload:
-      forall s f sp pc rs m chunk addr args dst pc' a cp v,
+      forall s f sp pc rs m chunk addr args dst pc' a v,
       (fn_code f)!pc = Some(Iload chunk addr args dst pc') ->
       eval_addressing ge sp addr rs##args = Some a ->
-      Mem.loadv chunk m a cp = Some v ->
+      Mem.loadv chunk m a (comp_of f) = Some v ->
       step (State s f sp pc rs m)
         E0 (State s f sp pc' (rs#dst <- v) m)
   | exec_Istore:
-      forall s f sp pc rs m chunk addr args src pc' a cp m',
+      forall s f sp pc rs m chunk addr args src pc' a m',
       (fn_code f)!pc = Some(Istore chunk addr args src pc') ->
       eval_addressing ge sp addr rs##args = Some a ->
-      Mem.storev chunk m a rs#src cp = Some m' ->
+      Mem.storev chunk m a rs#src (comp_of f) = Some m' ->
       step (State s f sp pc rs m)
         E0 (State s f sp pc' rs m')
   | exec_Icall:
-      forall s f sp pc rs m sig ros args res pc' fd,
+      forall s f sp pc rs m sig ros args res pc' fd vf,
       (fn_code f)!pc = Some(Icall sig ros args res pc') ->
       find_function ros rs = Some fd ->
       funsig fd = sig ->
-      forall (ALLOWED: Policy.allowed_call pol f.(fn_comp) fd),
+      forall (FUNPTR: find_function_ptr ros rs = Some vf),
+      forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
       step (State s f sp pc rs m)
         E0 (Callstate (Stackframe res f sp pc' rs :: s) fd rs##args m)
   | exec_Itailcall:
-      forall s f stk pc rs m sig ros args fd cp m',
+      forall s f stk pc rs m sig ros args fd m' vf,
       (fn_code f)!pc = Some(Itailcall sig ros args) ->
       find_function ros rs = Some fd ->
       funsig fd = sig ->
-      forall COMP: comp_of fd = f.(fn_comp),
-      forall ALLOWED: needs_calling_comp f.(fn_comp) = false,
-      forall (ALLOWED': Policy.allowed_call pol f.(fn_comp) fd),
-      Mem.free m stk 0 f.(fn_stacksize) cp = Some m' ->
+      forall COMP: comp_of fd = (comp_of f),
+      forall ALLOWED: needs_calling_comp (comp_of f) = false,
+      forall (FUNPTR: find_function_ptr ros rs = Some vf),
+      forall (ALLOWED': Genv.allowed_call ge (comp_of f) vf),
+      Mem.free m stk 0 f.(fn_stacksize) (comp_of f) = Some m' ->
       step (State s f (Vptr stk Ptrofs.zero) pc rs m)
         E0 (Callstate s fd rs##args m')
   | exec_Ibuiltin:
       forall s f sp pc rs m ef args res pc' vargs t vres m',
       (fn_code f)!pc = Some(Ibuiltin ef args res pc') ->
       eval_builtin_args ge (fun r => rs#r) sp m args vargs ->
-      external_call ef ge f.(fn_comp) vargs m t vres m' ->
+      external_call ef ge (comp_of f) vargs m t vres m' ->
       step (State s f sp pc rs m)
          t (State s f sp pc' (regmap_setres res vres rs) m')
   | exec_Icond:
@@ -277,14 +300,14 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State s f sp pc rs m)
         E0 (State s f sp pc' rs m)
   | exec_Ireturn:
-      forall s f stk pc rs m or cp m',
+      forall s f stk pc rs m or m',
       (fn_code f)!pc = Some(Ireturn or) ->
-      Mem.free m stk 0 f.(fn_stacksize) cp = Some m' ->
+      Mem.free m stk 0 f.(fn_stacksize) (comp_of f) = Some m' ->
       step (State s f (Vptr stk Ptrofs.zero) pc rs m)
         E0 (Returnstate s (regmap_optget or Vundef rs) m')
   | exec_function_internal:
       forall s f args m m' stk,
-      Mem.alloc m f.(fn_comp) 0 f.(fn_stacksize) = (m', stk) ->
+      Mem.alloc m (comp_of f) 0 f.(fn_stacksize) = (m', stk) ->
       step (Callstate s (Internal f) args m)
         E0 (State s
                   f
@@ -314,10 +337,10 @@ Proof.
 Qed.
 
 Lemma exec_Iload':
-  forall s f sp pc rs m chunk addr args dst pc' rs' a cp v,
+  forall s f sp pc rs m chunk addr args dst pc' rs' a v,
   (fn_code f)!pc = Some(Iload chunk addr args dst pc') ->
   eval_addressing ge sp addr rs##args = Some a ->
-  Mem.loadv chunk m a cp = Some v ->
+  Mem.loadv chunk m a (comp_of f) = Some v ->
   rs' = (rs#dst <- v) ->
   step (State s f sp pc rs m)
     E0 (State s f sp pc' rs' m).
@@ -349,17 +372,17 @@ Inductive final_state: state -> int -> Prop :=
 
 (** The small-step semantics for a program. *)
 
-Definition semantics (pol: policy) (p: program) :=
-  Semantics (step pol) (initial_state p) final_state (Genv.globalenv p).
+Definition semantics (p: program) :=
+  Semantics step (initial_state p) final_state (Genv.globalenv p).
 
 (** This semantics is receptive to changes in events. *)
 
-Lemma semantics_receptive (pol: policy):
-  forall (p: program), receptive (semantics pol p).
+Lemma semantics_receptive:
+  forall (p: program), receptive (semantics p).
 Proof.
   intros. constructor; simpl; intros.
 (* receptiveness *)
-  assert (t1 = E0 -> exists s2, step pol (Genv.globalenv p) s t2 s2).
+  assert (t1 = E0 -> exists s2, step (Genv.globalenv p) s t2 s2).
     intros. subst. inv H0. exists s1; auto.
   inversion H; subst; auto.
   exploit external_call_receptive; eauto. intros [vres2 [m2 EC2]].
@@ -384,7 +407,7 @@ Variable transf: node -> instruction -> instruction.
 
 Definition transf_function (f: function) : function :=
   mkfunction
-    f.(fn_comp)
+    (comp_of f)
     f.(fn_sig)
     f.(fn_params)
     f.(fn_stacksize)

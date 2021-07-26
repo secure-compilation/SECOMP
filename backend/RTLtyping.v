@@ -919,7 +919,6 @@ Variable p: program.
 
 Hypothesis wt_p: wt_program p.
 
-Variable pol: policy.
 Let ge := Genv.globalenv p.
 
 Ltac apply_wt_instrs :=
@@ -930,7 +929,7 @@ Ltac apply_wt_instrs :=
   end.
 
 Lemma subject_reduction:
-  forall st1 t st2, step pol ge st1 t st2 ->
+  forall st1 t st2, step ge st1 t st2 ->
   forall (WT: wt_state st1), wt_state st2.
 Proof.
   induction 1; intros; inv WT;

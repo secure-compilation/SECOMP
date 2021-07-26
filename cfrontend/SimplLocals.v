@@ -291,6 +291,7 @@ Definition transf_program (p: program) : res program :=
   OK {| prog_defs := AST.prog_defs p1;
         prog_public := AST.prog_public p1;
         prog_main := AST.prog_main p1;
+        prog_pol := AST.prog_pol p1;
         prog_types := prog_types p;
         prog_comp_env := prog_comp_env p;
         prog_comp_env_eq := prog_comp_env_eq p |}.

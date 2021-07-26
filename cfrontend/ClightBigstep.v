@@ -31,7 +31,6 @@ Require Import Clight.
 
 Section BIGSTEP.
 
-Variable pol: policy.
 Variable ge: genv.
 
 (** ** Big-step semantics for terminating statements and functions *)
@@ -98,7 +97,7 @@ Inductive exec_stmt: env -> compartment -> temp_env ->
       Genv.find_funct ge vf = Some fd ->
       type_of_fundef fd = Tfunction tyargs tyres cconv ->
       eval_funcall c m fd vargs t m' vres ->
-      forall (ALLOWED: Policy.allowed_call pol c fd),
+      forall (ALLOWED: Genv.allowed_call ge c vf),
       exec_stmt e c le m (Scall optid a al)
                 t (set_opttemp optid vres le) m' Out_normal
   | exec_Sbuiltin:   forall e c le m optid ef al tyargs vargs t m' vres,
@@ -170,7 +169,7 @@ with eval_funcall: compartment -> mem -> fundef -> list val -> trace -> mem -> v
       alloc_variables ge empty_env m (f.(fn_params) ++ f.(fn_vars)) e m1 ->
       list_norepet (var_names f.(fn_params) ++ var_names f.(fn_vars)) ->
       bind_parameters ge e m1 f.(fn_params) vargs m2 ->
-      exec_stmt e f.(fn_comp) (create_undef_temps f.(fn_temps)) m2 f.(fn_body) t le m3 out ->
+      exec_stmt e (comp_of f) (create_undef_temps f.(fn_temps)) m2 f.(fn_body) t le m3 out ->
       outcome_result_value out f.(fn_return) vres m3 ->
       Mem.free_list m3 (blocks_of_env ge e) = Some m4 ->
       eval_funcall c m (Internal f) vargs t m4 vres
@@ -197,7 +196,7 @@ CoInductive execinf_stmt: env -> compartment -> temp_env -> mem -> statement -> 
       Genv.find_funct ge vf = Some f ->
       type_of_fundef f = Tfunction tyargs tyres cconv ->
       evalinf_funcall m f vargs t ->
-      forall (ALLOWED: Policy.allowed_call pol c f),
+      forall (ALLOWED: Genv.allowed_call ge c vf),
       execinf_stmt e c le m (Scall optid a al) t
   | execinf_Sseq_1:   forall e c le m s1 s2 t,
       execinf_stmt e c le m s1 t ->
@@ -239,42 +238,41 @@ with evalinf_funcall: mem -> fundef -> list val -> traceinf -> Prop :=
       alloc_variables ge empty_env m (f.(fn_params) ++ f.(fn_vars)) e m1 ->
       list_norepet (var_names f.(fn_params) ++ var_names f.(fn_vars)) ->
       bind_parameters ge e m1 f.(fn_params) vargs m2 ->
-      execinf_stmt e f.(fn_comp) (create_undef_temps f.(fn_temps)) m2 f.(fn_body) t ->
+      execinf_stmt e (comp_of f) (create_undef_temps f.(fn_temps)) m2 f.(fn_body) t ->
       evalinf_funcall m (Internal f) vargs t.
 
 End BIGSTEP.
 
 (** Big-step execution of a whole program.  *)
 
-Inductive bigstep_program_terminates (pol: policy) (p: program) (c: compartment): trace -> int -> Prop :=
+Inductive bigstep_program_terminates (p: program) (c: compartment): trace -> int -> Prop :=
   | bigstep_program_terminates_intro: forall b f m0 m1 t r,
       let ge := globalenv p in
       Genv.init_mem p = Some m0 ->
       Genv.find_symbol ge p.(prog_main) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
       type_of_fundef f = Tfunction Tnil type_int32s cc_default ->
-      eval_funcall pol ge c m0 f nil t m1 (Vint r) ->
-      bigstep_program_terminates pol p c t r.
+      eval_funcall ge c m0 f nil t m1 (Vint r) ->
+      bigstep_program_terminates p c t r.
 
-Inductive bigstep_program_diverges (pol: policy) (p: program): traceinf -> Prop :=
+Inductive bigstep_program_diverges (p: program): traceinf -> Prop :=
   | bigstep_program_diverges_intro: forall b f m0 t,
       let ge := globalenv p in
       Genv.init_mem p = Some m0 ->
       Genv.find_symbol ge p.(prog_main) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
       type_of_fundef f = Tfunction Tnil type_int32s cc_default ->
-      evalinf_funcall pol ge m0 f nil t ->
-      bigstep_program_diverges pol p t.
+      evalinf_funcall ge m0 f nil t ->
+      bigstep_program_diverges p t.
 
-Definition bigstep_semantics (pol: policy) (p: program) :=
-  Bigstep_semantics (bigstep_program_terminates pol p default_compartment)
-                    (bigstep_program_diverges pol p).
+Definition bigstep_semantics (p: program) :=
+  Bigstep_semantics (bigstep_program_terminates p default_compartment)
+                    (bigstep_program_diverges p).
 
 (** * Implication from big-step semantics to transition semantics *)
 
 Section BIGSTEP_TO_TRANSITIONS.
 
-Variable pol: policy.
 Variable prog: program.
 Let ge : genv := globalenv prog.
 
@@ -304,18 +302,18 @@ Qed.
 
 Lemma exec_stmt_eval_funcall_steps:
   (forall e c le m s t le' m' out,
-   exec_stmt pol ge e c le m s t le' m' out ->
-   forall f k, c = f.(fn_comp) ->
+   exec_stmt ge e c le m s t le' m' out ->
+   forall f k, c = (comp_of f) ->
    exists S,
-   star (step1 pol) ge (State f s k e le m) t S
+   star step1 ge (State f s k e le m) t S
    /\ outcome_state_match e le' m' f k out S)
 /\
   (forall c m fd args t m' res,
-   eval_funcall pol ge c m fd args t m' res ->
+   eval_funcall ge c m fd args t m' res ->
    forall k,
    forall COMP: c = call_comp k,
    is_call_cont k ->
-   star (step1 pol) ge (Callstate fd args k m) t (Returnstate res k m')).
+   star step1 ge (Callstate fd args k m) t (Returnstate res k m')).
 Proof.
   apply exec_stmt_funcall_ind; intros.
 
@@ -488,9 +486,9 @@ Qed.
 
 Lemma exec_stmt_steps:
    forall e c le m s t le' m' out,
-   exec_stmt pol ge e c le m s t le' m' out ->
-   forall f k, c = f.(fn_comp) -> exists S,
-   star (step1 pol) ge (State f s k e le m) t S
+   exec_stmt ge e c le m s t le' m' out ->
+   forall f k, c = (comp_of f) -> exists S,
+   star step1 ge (State f s k e le m) t S
    /\ outcome_state_match e le' m' f k out S.
 Proof.
   exact (proj1 exec_stmt_eval_funcall_steps).
@@ -498,26 +496,26 @@ Qed.
 
 Lemma eval_funcall_steps:
    forall cp m fd args t m' res,
-   eval_funcall pol ge cp m fd args t m' res ->
+   eval_funcall ge cp m fd args t m' res ->
    forall k,
    forall COMP: cp = call_comp k,
    is_call_cont k ->
-   star (step1 pol) ge (Callstate fd args k m) t (Returnstate res k m').
+   star step1 ge (Callstate fd args k m) t (Returnstate res k m').
 Proof (proj2 exec_stmt_eval_funcall_steps).
 
 Definition order (x y: unit) := False.
 
 Lemma evalinf_funcall_forever:
   forall cp m fd args T k,
-  forall KCOMP: cp = call_comp k,
-  evalinf_funcall pol ge m fd args T ->
-  forever_N (step1 pol) order ge tt (Callstate fd args k m) T.
+  forall (KCOMP: cp = call_comp k),
+  evalinf_funcall ge m fd args T ->
+  forever_N step1 order ge tt (Callstate fd args k m) T.
 Proof.
   cofix CIH_FUN.
   assert (forall e c le m s T f k,
-          c = f.(fn_comp) ->
-          execinf_stmt pol ge e c le m s T ->
-          forever_N (step1 pol) order ge tt (State f s k e le m) T).
+          c = (comp_of f) ->
+          execinf_stmt ge e c le m s T ->
+          forever_N step1 order ge tt (State f s k e le m) T).
   cofix CIH_STMT.
   intros. inv H0.
 
@@ -582,7 +580,7 @@ Proof.
 Qed.
 
 Theorem bigstep_semantics_sound:
-  bigstep_sound (bigstep_semantics pol prog) (semantics1 pol prog).
+  bigstep_sound (bigstep_semantics prog) (semantics1 prog).
 Proof.
   constructor; simpl; intros.
 (* termination *)

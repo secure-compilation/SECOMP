@@ -68,7 +68,6 @@ Definition funsig (fd: fundef) :=
 (** * Operational semantics *)
 
 Definition genv := Genv.t fundef unit.
-Definition policy := Policy.t (F := fundef).
 Definition locset := Locmap.t.
 
 (** Calling conventions are reflected at the level of location sets
@@ -167,13 +166,12 @@ Inductive state : Type :=
 Definition call_comp (stack: list stackframe) : compartment :=
   match stack with
   | nil => default_compartment
-  | Stackframe f _ _ _ :: _ => f.(fn_comp)
+  | Stackframe f _ _ _ :: _ => (comp_of f)
   end.
 
 
 Section RELSEM.
 
-Variable pol: policy.
 Variable ge: genv.
 
 Definition reglist (rs: locset) (rl: list mreg) : list val :=
@@ -191,6 +189,16 @@ Definition destroyed_by_getstack (s: slot): list mreg :=
   | _        => nil
   end.
 
+Definition find_function_ptr (ros: mreg + ident) (rs: locset) : option val :=
+  match ros with
+  | inl r => Some (rs (R r))
+  | inr symb =>
+    match Genv.find_symbol ge symb with
+    | Some b => Some (Vptr b Ptrofs.zero)
+    | None => None
+    end
+  end.
+
 Definition find_function (ros: mreg + ident) (rs: locset) : option fundef :=
   match ros with
   | inl r => Genv.find_funct ge (rs (R r))
@@ -200,6 +208,19 @@ Definition find_function (ros: mreg + ident) (rs: locset) : option fundef :=
       | Some b => Genv.find_funct_ptr ge b
       end
   end.
+
+Lemma find_function_find_function_ptr: forall ros rs fd,
+    find_function ros rs = Some fd ->
+    exists vf, find_function_ptr ros rs = Some vf.
+Proof.
+  intros ros rs fd.
+  unfold find_function, find_function_ptr.
+  destruct ros.
+  - eexists; eauto.
+  - destruct (Genv.find_symbol ge i).
+    + eexists; eauto.
+    + intros H; inversion H.
+Qed.
 
 (** [parent_locset cs] returns the mapping of values for locations
   of the caller function. *)
@@ -220,9 +241,9 @@ Inductive step: state -> trace -> state -> Prop :=
       rs' = Locmap.set (R res) v (undef_regs (destroyed_by_op op) rs) ->
       step (Block s f sp (Lop op args res :: bb) rs m)
         E0 (Block s f sp bb rs' m)
-  | exec_Lload: forall s f sp chunk addr args dst bb rs m a cp v rs',
+  | exec_Lload: forall s f sp chunk addr args dst bb rs m a v rs',
       eval_addressing ge sp addr (reglist rs args) = Some a ->
-      Mem.loadv chunk m a cp = Some v ->
+      Mem.loadv chunk m a (comp_of f) = Some v ->
       rs' = Locmap.set (R dst) v (undef_regs (destroyed_by_load chunk addr) rs) ->
       step (Block s f sp (Lload chunk addr args dst :: bb) rs m)
         E0 (Block s f sp bb rs' m)
@@ -234,31 +255,33 @@ Inductive step: state -> trace -> state -> Prop :=
       rs' = Locmap.set (S sl ofs ty) (rs (R src)) (undef_regs (destroyed_by_setstack ty) rs) ->
       step (Block s f sp (Lsetstack src sl ofs ty :: bb) rs m)
         E0 (Block s f sp bb rs' m)
-  | exec_Lstore: forall s f sp chunk addr args src bb rs m a rs' cp m',
+  | exec_Lstore: forall s f sp chunk addr args src bb rs m a rs' m',
       eval_addressing ge sp addr (reglist rs args) = Some a ->
-      Mem.storev chunk m a (rs (R src)) cp = Some m' ->
+      Mem.storev chunk m a (rs (R src)) (comp_of f) = Some m' ->
       rs' = undef_regs (destroyed_by_store chunk addr) rs ->
       step (Block s f sp (Lstore chunk addr args src :: bb) rs m)
         E0 (Block s f sp bb rs' m')
-  | exec_Lcall: forall s f sp sig ros bb rs m fd,
+  | exec_Lcall: forall s f sp sig ros bb rs m fd vf,
       find_function ros rs = Some fd ->
+      find_function_ptr ros rs = Some vf ->
       funsig fd = sig ->
-      forall (ALLOWED: Policy.allowed_call pol f.(fn_comp) fd),
+      forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
       step (Block s f sp (Lcall sig ros :: bb) rs m)
         E0 (Callstate (Stackframe f sp rs bb :: s) fd rs m)
-  | exec_Ltailcall: forall s f sp sig ros bb rs m fd rs' cp m',
+  | exec_Ltailcall: forall s f sp sig ros bb rs m fd rs' m' vf,
       rs' = return_regs (parent_locset s) rs ->
       find_function ros rs' = Some fd ->
+      find_function_ptr ros rs' = Some vf ->
       funsig fd = sig ->
-      forall COMP: comp_of fd = f.(fn_comp),
-      forall ALLOWED: needs_calling_comp f.(fn_comp) = false,
-      forall (ALLOWED': Policy.allowed_call pol f.(fn_comp) fd),
-      Mem.free m sp 0 f.(fn_stacksize) cp = Some m' ->
+      forall (COMP: comp_of fd = (comp_of f)),
+      forall (ALLOWED: needs_calling_comp (comp_of f) = false),
+      forall (ALLOWED': Genv.allowed_call ge (comp_of f) vf),
+      Mem.free m sp 0 f.(fn_stacksize) (comp_of f) = Some m' ->
       step (Block s f (Vptr sp Ptrofs.zero) (Ltailcall sig ros :: bb) rs m)
         E0 (Callstate s fd rs' m')
   | exec_Lbuiltin: forall s f sp ef args res bb rs m vargs t vres rs' m',
       eval_builtin_args ge rs sp m args vargs ->
-      external_call ef ge f.(fn_comp) vargs m t vres m' ->
+      external_call ef ge (comp_of f) vargs m t vres m' ->
       rs' = Locmap.setres res vres (undef_regs (destroyed_by_builtin ef) rs) ->
       step (Block s f sp (Lbuiltin ef args res :: bb) rs m)
          t (Block s f sp bb rs' m')
@@ -277,12 +300,12 @@ Inductive step: state -> trace -> state -> Prop :=
       rs' = undef_regs (destroyed_by_jumptable) rs ->
       step (Block s f sp (Ljumptable arg tbl :: bb) rs m)
         E0 (State s f sp pc rs' m)
-  | exec_Lreturn: forall s f sp bb rs m cp m',
-      Mem.free m sp 0 f.(fn_stacksize) cp = Some m' ->
+  | exec_Lreturn: forall s f sp bb rs m m',
+      Mem.free m sp 0 f.(fn_stacksize) (comp_of f) = Some m' ->
       step (Block s f (Vptr sp Ptrofs.zero) (Lreturn :: bb) rs m)
         E0 (Returnstate s (return_regs (parent_locset s) rs) m')
   | exec_function_internal: forall s f rs m m' sp rs',
-      Mem.alloc m f.(fn_comp) 0 f.(fn_stacksize) = (m', sp) ->
+      Mem.alloc m (comp_of f) 0 f.(fn_stacksize) = (m', sp) ->
       rs' = undef_regs destroyed_at_function_entry (call_regs rs) ->
       step (Callstate s (Internal f) rs m)
         E0 (State s f (Vptr sp Ptrofs.zero) f.(fn_entrypoint) rs' m')
@@ -317,8 +340,8 @@ Inductive final_state: state -> int -> Prop :=
       Locmap.getpair (map_rpair R (loc_result signature_main)) rs = Vint retcode ->
       final_state (Returnstate nil rs m) retcode.
 
-Definition semantics (pol: policy) (p: program) :=
-  Semantics (step pol) (initial_state p) final_state (Genv.globalenv p).
+Definition semantics (p: program) :=
+  Semantics step (initial_state p) final_state (Genv.globalenv p).
 
 (** * Operations over LTL *)
 
