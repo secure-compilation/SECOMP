@@ -999,7 +999,7 @@ Local Opaque mreg_type.
   admit. (* RB: NOTE: New own_block subgoal *)
   intros (rs2 & m2 & A & B & C & D).
   exists rs2, m2.
-  split. eapply star_left; eauto. econstructor. exact STORE. auto. traceEq.
+  split. eapply star_left; eauto. econstructor. unfold find_comp_ptr. admit. exact STORE. auto. traceEq.
   split. rewrite sep_assoc, sep_swap. exact B.
   split. intros. apply C. unfold store_stack in STORE; simpl in STORE. eapply Mem.perm_store_1; eauto.
   auto.
@@ -1267,7 +1267,7 @@ Local Opaque mreg_type.
   intros (rs' & A & B & C & D).
   exists rs'.
   split. eapply star_step; eauto.
-    econstructor. exact LOAD. traceEq.
+    econstructor. admit. exact LOAD. traceEq.
   split. intros.
     destruct (In_dec mreg_eq r0 l). auto.
     assert (r = r0) by tauto. subst r0.
@@ -1275,7 +1275,7 @@ Local Opaque mreg_type.
   split. intros.
     rewrite C by tauto. apply Regmap.gso. intuition auto.
   exact D.
-Qed.
+Admitted.
 
 End RESTORE_CALLEE_SAVE.
 
@@ -1922,7 +1922,7 @@ Proof.
 + (* Lgetstack, local *)
   exploit frame_get_local; eauto. intros (v & A & B).
   econstructor; split.
-  apply plus_one. eapply exec_Mgetstack. exact A.
+  apply plus_one. eapply exec_Mgetstack. admit. exact A.
   econstructor; eauto with coqlib.
   apply agree_regs_set_reg; auto.
   apply agree_locs_set_reg; auto.
@@ -1939,6 +1939,7 @@ Proof.
   intros (v & A & B).
   econstructor; split.
   apply plus_one. eapply exec_Mgetparam; eauto.
+  admit.
   rewrite (unfold_transf_function _ _ TRANSL). unfold fn_link_ofs.
   eapply frame_get_parent. eexact SEP.
   econstructor; eauto with coqlib. econstructor; eauto.
@@ -1948,7 +1949,7 @@ Proof.
 + (* Lgetstack, outgoing *)
   exploit frame_get_outgoing; eauto. intros (v & A & B).
   econstructor; split.
-  apply plus_one. eapply exec_Mgetstack. exact A.
+  apply plus_one. eapply exec_Mgetstack. admit. exact A.
   econstructor; eauto with coqlib.
   apply agree_regs_set_reg; auto.
   apply agree_locs_set_reg; auto.
@@ -1973,8 +1974,8 @@ Proof.
   clear SEP; destruct A as (m'' & STORE & SEP).
   econstructor; split.
   apply plus_one. destruct sl; try discriminate.
-    econstructor. eexact STORE. eauto.
-    econstructor. eexact STORE. eauto.
+    econstructor. admit. eexact STORE. eauto.
+    econstructor. admit. eexact STORE. eauto.
   econstructor. eauto. eauto. eauto.
   apply agree_regs_set_slot. apply agree_regs_undef_regs. auto.
   apply agree_locs_set_slot. apply agree_locs_undef_locs. auto. apply destroyed_by_setstack_caller_save. auto.
@@ -2012,7 +2013,7 @@ Proof.
   eauto. eauto.
   intros [v' [C D]].
   econstructor; split.
-  apply plus_one. econstructor.
+  apply plus_one. econstructor. admit.
   instantiate (1 := a'). rewrite <- A. apply eval_addressing_preserved. exact symbols_preserved.
   eexact C. eauto.
   econstructor; eauto with coqlib.
@@ -2032,7 +2033,7 @@ Proof.
   clear SEP; intros (m1' & C & SEP).
   rewrite sep_swap3 in SEP.
   econstructor; split.
-  apply plus_one. econstructor.
+  apply plus_one. econstructor. admit.
   instantiate (1 := a'). rewrite <- A. apply eval_addressing_preserved. exact symbols_preserved.
   eexact C. eauto.
   econstructor. eauto. eauto. eauto.
@@ -2050,7 +2051,7 @@ Proof.
   exploit return_address_offset_exists. eexact IST. intros [ra E].
   econstructor; split.
   apply plus_one. econstructor; eauto.
-  rewrite <- comp_transf_function; eauto.
+  now rewrite <- (comp_transl_partial _ TRANSL).
   econstructor; eauto.
   econstructor; eauto with coqlib.
   apply Val.Vptr_has_type.
@@ -2069,6 +2070,7 @@ Proof.
   intros [bf [tf' [A [B [C D]]]]].
   econstructor; split.
   eapply plus_right. eexact S. econstructor; eauto.
+  unfold find_comp_ptr. now rewrite FIND.
   rewrite <- (comp_transl_partial _ TRANSL).
   rewrite <- (comp_transl_partial _ C). eauto.
   rewrite <- (comp_transl_partial _ TRANSL). eauto.
@@ -2091,9 +2093,10 @@ Proof.
   rewrite <- sep_assoc, sep_comm, sep_assoc in SEP.
   econstructor; split.
   apply plus_one. econstructor; eauto.
+  unfold find_comp_ptr; rewrite FIND. reflexivity.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  change (comp_of (Internal tf)) with (comp_of tf). rewrite <- (comp_transl_partial _ TRANSL). eauto.
+  unfold comp_of; simpl. rewrite <- (comp_transf_function _ _ TRANSL); eauto.
   eapply match_states_intro with (j := j'); eauto with coqlib.
   eapply match_stacks_change_meminj; eauto.
   apply agree_regs_set_res; auto. apply agree_regs_undef_regs; auto. eapply agree_regs_inject_incr; eauto.
@@ -2153,7 +2156,7 @@ Proof.
   exploit function_epilogue_correct; eauto.
   intros (rs' & m1' & A & B & C & D & E & F & G).
   econstructor; split.
-  eapply plus_right. eexact D. econstructor; eauto. traceEq.
+  eapply plus_right. eexact D. econstructor; eauto. admit. traceEq.
   econstructor; eauto.
   rewrite sep_swap; exact G.
 
@@ -2172,7 +2175,7 @@ Proof.
   rewrite (sep_comm (globalenv_inject ge j')) in SEP.
   rewrite (sep_swap (minjection j' m')) in SEP.
   econstructor; split.
-  eapply plus_left. econstructor; eauto.
+  eapply plus_left. econstructor; eauto. admit.
   rewrite (unfold_transf_function _ _ TRANSL). unfold fn_code. unfold transl_body.
   eexact D. traceEq.
   eapply match_states_intro with (j := j'); eauto with coqlib.
@@ -2209,7 +2212,7 @@ Proof.
   apply frame_contents_exten with rs0 (parent_locset s); auto.
   intros; apply Val.lessdef_same; apply AGCS; red; congruence.
   intros; rewrite (OUTU ty ofs); auto. 
-Qed.
+Admitted.
 
 Lemma transf_initial_states:
   forall st1, Linear.initial_state prog st1 ->

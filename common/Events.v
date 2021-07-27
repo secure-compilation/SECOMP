@@ -567,35 +567,35 @@ Fixpoint output_trace (t: trace) : Prop :=
  instance in [volatile_load_sem] *)
 (* RB: NOTE: For now, adding components to non-volatile versions as a bare
    minimum. *)
-Inductive volatile_load (ge: Senv.t):
+Inductive volatile_load (ge: Senv.t) (cp: compartment):
                    memory_chunk -> mem -> block -> ptrofs -> trace -> val -> Prop :=
   | volatile_load_vol: forall chunk m b ofs id ev v,
       Senv.block_is_volatile ge b = true ->
       Senv.find_symbol ge id = Some b ->
       eventval_match ge ev (type_of_chunk chunk) v ->
-      volatile_load ge chunk m b ofs
+      volatile_load ge cp chunk m b ofs
                       (Event_vload chunk id ofs ev :: nil)
                       (Val.load_result chunk v)
-  | volatile_load_nonvol: forall chunk m b ofs cp v,
+  | volatile_load_nonvol: forall chunk m b ofs v,
       Senv.block_is_volatile ge b = false ->
       forall OWN : Mem.own_block m b cp,
       Mem.load chunk m b (Ptrofs.unsigned ofs) cp = Some v ->
-      volatile_load ge chunk m b ofs E0 v.
+      volatile_load ge cp chunk m b ofs E0 v.
 
-Inductive volatile_store (ge: Senv.t):
+Inductive volatile_store (ge: Senv.t) (cp: compartment):
                   memory_chunk -> mem -> block -> ptrofs -> val -> trace -> mem -> Prop :=
   | volatile_store_vol: forall chunk m b ofs id ev v,
       Senv.block_is_volatile ge b = true ->
       Senv.find_symbol ge id = Some b ->
       eventval_match ge ev (type_of_chunk chunk) (Val.load_result chunk v) ->
-      volatile_store ge chunk m b ofs v
+      volatile_store ge cp chunk m b ofs v
                       (Event_vstore chunk id ofs ev :: nil)
                       m
-  | volatile_store_nonvol: forall chunk m b ofs v cp m',
+  | volatile_store_nonvol: forall chunk m b ofs v m',
       Senv.block_is_volatile ge b = false ->
       forall OWN : Mem.own_block m b cp,
       Mem.store chunk m b (Ptrofs.unsigned ofs) v cp = Some m' ->
-      volatile_store ge chunk m b ofs v E0 m'.
+      volatile_store ge cp chunk m b ofs v E0 m'.
 
 (** * Semantics of external functions *)
 
@@ -738,17 +738,17 @@ Record extcall_properties (sem: extcall_sem) (sg: signature) : Prop :=
 
 (** ** Semantics of volatile loads *)
 
-Inductive volatile_load_sem (chunk: memory_chunk) (ge: Senv.t):
-              compartment -> list val -> mem -> trace -> val -> mem -> Prop :=
-  | volatile_load_sem_intro: forall c b ofs m t v,
-      volatile_load ge chunk m b ofs t v ->
-      volatile_load_sem chunk ge c (Vptr b ofs :: nil) m t v m.
+Inductive volatile_load_sem (chunk: memory_chunk) (ge: Senv.t) (cp: compartment):
+              list val -> mem -> trace -> val -> mem -> Prop :=
+  | volatile_load_sem_intro: forall b ofs m t v,
+      volatile_load ge cp chunk m b ofs t v ->
+      volatile_load_sem chunk ge cp (Vptr b ofs :: nil) m t v m.
 
 Lemma volatile_load_preserved:
-  forall ge1 ge2 chunk m b ofs t v,
+  forall ge1 ge2 cp chunk m b ofs t v,
   Senv.equiv ge1 ge2 ->
-  volatile_load ge1 chunk m b ofs t v ->
-  volatile_load ge2 chunk m b ofs t v.
+  volatile_load ge1 cp chunk m b ofs t v ->
+  volatile_load ge2 cp chunk m b ofs t v.
 Proof.
   intros. destruct H as (A & B & C). inv H0; econstructor; eauto.
   rewrite A; auto.
@@ -756,25 +756,26 @@ Proof.
 Qed.
 
 Lemma volatile_load_extends:
-  forall ge chunk m b ofs t v m',
-  volatile_load ge chunk m b ofs t v ->
+  forall ge cp chunk m b ofs t v m',
+  volatile_load ge cp chunk m b ofs t v ->
   Mem.extends m m' ->
-  exists v', volatile_load ge chunk m' b ofs t v' /\ Val.lessdef v v'.
+  exists v', volatile_load ge cp chunk m' b ofs t v' /\ Val.lessdef v v'.
 Proof.
   intros. inv H.
   econstructor; split; eauto. econstructor; eauto.
   exploit Mem.load_extends; eauto. intros [v' [A B]]. exists v'; split; auto. econstructor; eauto.
-  admit. (* RB: NOTE: New own_block subgoal *)
-(* Qed. *)
-Admitted.
+  Local Transparent Mem.load.
+  unfold Mem.load in A. destruct (Mem.valid_access_dec m' chunk b (Ptrofs.unsigned ofs) Readable cp); try discriminate.
+  inv v0. intuition.
+Qed.
 
 Lemma volatile_load_inject:
-  forall ge1 ge2 f chunk m b ofs t v b' ofs' m',
+  forall ge1 ge2 cp f chunk m b ofs t v b' ofs' m',
   symbols_inject f ge1 ge2 ->
-  volatile_load ge1 chunk m b ofs t v ->
+  volatile_load ge1 cp chunk m b ofs t v ->
   Val.inject f (Vptr b ofs) (Vptr b' ofs') ->
   Mem.inject f m m' ->
-  exists v', volatile_load ge2 chunk m' b' ofs' t v' /\ Val.inject f v v'.
+  exists v', volatile_load ge2 cp chunk m' b' ofs' t v' /\ Val.inject f v v'.
 Proof.
   intros until m'; intros SI VL VI MI. generalize SI; intros (A & B & C & D).
   inv VL.
@@ -790,14 +791,15 @@ Proof.
   exists v2; split; auto.
   econstructor; eauto.
   inv VI. erewrite D; eauto.
-  admit. (* RB: NOTE: New own_block subgoal *)
-(* Qed. *)
-Admitted.
+  Local Transparent Mem.load.
+  unfold Mem.load in X. destruct (Mem.valid_access_dec m' chunk b' (Ptrofs.unsigned ofs') Readable cp); try discriminate.
+  inv v0. intuition.
+Qed.
 
 Lemma volatile_load_receptive:
-  forall ge chunk m b ofs t1 t2 v1,
-  volatile_load ge chunk m b ofs t1 v1 -> match_traces ge t1 t2 ->
-  exists v2, volatile_load ge chunk m b ofs t2 v2.
+  forall ge cp chunk m b ofs t1 t2 v1,
+  volatile_load ge cp chunk m b ofs t1 v1 -> match_traces ge t1 t2 ->
+  exists v2, volatile_load ge cp chunk m b ofs t2 v2.
 Proof.
   intros. inv H; inv H0.
   exploit eventval_match_receptive; eauto. intros [v' EM].
@@ -837,7 +839,7 @@ Proof.
 - inv H. exploit volatile_load_receptive; eauto. intros [v2 A].
   exists v2; exists m1; constructor; auto.
 (* determ *)
-- inv H; inv H0. inv H1; inv H8; try congruence.
+- inv H; inv H0. inv H1; inv H7; try congruence.
   assert (id = id0) by (eapply Senv.find_symbol_injective; eauto). subst id0.
   split. constructor.
   eapply eventval_match_valid; eauto.

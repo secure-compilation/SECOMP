@@ -192,6 +192,10 @@ Proof.
 - simpl in *. rewrite H, H0. rewrite dec_eq_true. auto.  
 Qed.
 
+Section MEMACCESS.
+
+Variable cp: compartment.
+
 (** Volatile memory accesses. *)
 
 Definition do_volatile_load (w: world) (chunk: memory_chunk) (m: mem) (b: block) (ofs: ptrofs)
@@ -205,7 +209,7 @@ Definition do_volatile_load (w: world) (chunk: memory_chunk) (m: mem) (b: block)
         Some(w', Event_vload chunk id ofs res :: nil, Val.load_result chunk vres)
     end
   else
-    do v <- Mem.load chunk m b (Ptrofs.unsigned ofs);
+    do v <- Mem.load chunk m b (Ptrofs.unsigned ofs) cp;
     Some(w, E0, v).
 
 Definition do_volatile_store (w: world) (chunk: memory_chunk) (m: mem) (b: block) (ofs: ptrofs) (v: val)
@@ -216,7 +220,7 @@ Definition do_volatile_store (w: world) (chunk: memory_chunk) (m: mem) (b: block
     do w' <- nextworld_vstore w chunk id ofs ev;
     Some(w', Event_vstore chunk id ofs ev :: nil, m)
   else
-    do m' <- Mem.store chunk m b (Ptrofs.unsigned ofs) v;
+    do m' <- Mem.store chunk m b (Ptrofs.unsigned ofs) v cp;
     Some(w, E0, m').
 
 Lemma do_volatile_load_sound:
@@ -229,7 +233,11 @@ Proof.
   split. constructor; auto. apply Genv.invert_find_symbol; auto.
   apply val_of_eventval_sound; auto.
   econstructor. constructor; eauto. constructor.
-  split. constructor; auto. constructor.
+  split. econstructor; eauto.
+  Local Transparent Mem.load.
+  unfold Mem.load in Heqo.
+  revert Heqo; mydestr; inv v0; inv H0; auto.
+  constructor.
 Qed.
 
 Lemma do_volatile_load_complete:
