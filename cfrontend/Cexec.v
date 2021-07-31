@@ -226,7 +226,7 @@ Definition do_volatile_store (w: world) (chunk: memory_chunk) (m: mem) (b: block
 Lemma do_volatile_load_sound:
   forall w chunk m b ofs w' t v,
   do_volatile_load w chunk m b ofs = Some(w', t, v) ->
-  volatile_load ge chunk m b ofs t v /\ possible_trace w t w'.
+  volatile_load ge cp chunk m b ofs t v /\ possible_trace w t w'.
 Proof.
   intros until v. unfold do_volatile_load. mydestr.
   destruct p as [ev w'']. mydestr.
@@ -242,7 +242,7 @@ Qed.
 
 Lemma do_volatile_load_complete:
   forall w chunk m b ofs w' t v,
-  volatile_load ge chunk m b ofs t v -> possible_trace w t w' ->
+  volatile_load ge cp chunk m b ofs t v -> possible_trace w t w' ->
   do_volatile_load w chunk m b ofs = Some(w', t, v).
 Proof.
   unfold do_volatile_load; intros. inv H; simpl in *.
@@ -254,7 +254,7 @@ Qed.
 Lemma do_volatile_store_sound:
   forall w chunk m b ofs v w' t m',
   do_volatile_store w chunk m b ofs v = Some(w', t, m') ->
-  volatile_store ge chunk m b ofs v t m' /\ possible_trace w t w'.
+  volatile_store ge cp chunk m b ofs v t m' /\ possible_trace w t w'.
 Proof.
   intros until m'. unfold do_volatile_store. mydestr.
   split. constructor; auto. apply Genv.invert_find_symbol; auto.

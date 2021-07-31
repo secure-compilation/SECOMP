@@ -855,17 +855,17 @@ Qed.
 
 (* JT: Note: Same remarks as for volatile loads *)
 
-Inductive volatile_store_sem (chunk: memory_chunk) (ge: Senv.t):
-              compartment -> list val -> mem -> trace -> val -> mem -> Prop :=
-  | volatile_store_sem_intro: forall b c ofs m1 v t m2,
-      volatile_store ge chunk m1 b ofs v t m2 ->
-      volatile_store_sem chunk ge c (Vptr b ofs :: v :: nil) m1 t Vundef m2.
+Inductive volatile_store_sem (chunk: memory_chunk) (ge: Senv.t) (cp: compartment):
+              list val -> mem -> trace -> val -> mem -> Prop :=
+  | volatile_store_sem_intro: forall b ofs m1 v t m2,
+      volatile_store ge cp chunk m1 b ofs v t m2 ->
+      volatile_store_sem chunk ge cp (Vptr b ofs :: v :: nil) m1 t Vundef m2.
 
 Lemma volatile_store_preserved:
-  forall ge1 ge2 chunk m1 b ofs v t m2,
+  forall ge1 ge2 cp chunk m1 b ofs v t m2,
   Senv.equiv ge1 ge2 ->
-  volatile_store ge1 chunk m1 b ofs v t m2 ->
-  volatile_store ge2 chunk m1 b ofs v t m2.
+  volatile_store ge1 cp chunk m1 b ofs v t m2 ->
+  volatile_store ge2 cp chunk m1 b ofs v t m2.
 Proof.
   intros. destruct H as (A & B & C). inv H0; econstructor; eauto.
   rewrite A; auto.
@@ -888,8 +888,8 @@ Proof.
 Admitted.
 
 Lemma volatile_store_readonly:
-  forall ge chunk1 m1 b1 ofs1 v t m2,
-  volatile_store ge chunk1 m1 b1 ofs1 v t m2 ->
+  forall ge cp chunk1 m1 b1 ofs1 v t m2,
+  volatile_store ge cp chunk1 m1 b1 ofs1 v t m2 ->
   Mem.unchanged_on (loc_not_writable m1) m1 m2.
 Proof.
   intros. inv H.
@@ -901,12 +901,12 @@ Proof.
 Qed.
 
 Lemma volatile_store_extends:
-  forall ge chunk m1 b ofs v t m2 m1' v',
-  volatile_store ge chunk m1 b ofs v t m2 ->
+  forall ge cp chunk m1 b ofs v t m2 m1' v',
+  volatile_store ge cp chunk m1 b ofs v t m2 ->
   Mem.extends m1 m1' ->
   Val.lessdef v v' ->
   exists m2',
-     volatile_store ge chunk m1' b ofs v' t m2'
+     volatile_store ge cp chunk m1' b ofs v' t m2'
   /\ Mem.extends m2 m2'
   /\ Mem.unchanged_on (loc_out_of_bounds m1) m1' m2'.
 Proof.
@@ -928,14 +928,14 @@ Proof.
 Admitted.
 
 Lemma volatile_store_inject:
-  forall ge1 ge2 f chunk m1 b ofs v t m2 m1' b' ofs' v',
+  forall ge1 ge2 cp f chunk m1 b ofs v t m2 m1' b' ofs' v',
   symbols_inject f ge1 ge2 ->
-  volatile_store ge1 chunk m1 b ofs v t m2 ->
+  volatile_store ge1 cp chunk m1 b ofs v t m2 ->
   Val.inject f (Vptr b ofs) (Vptr b' ofs') ->
   Val.inject f v v' ->
   Mem.inject f m1 m1' ->
   exists m2',
-       volatile_store ge2 chunk m1' b' ofs' v' t m2'
+       volatile_store ge2 cp chunk m1' b' ofs' v' t m2'
     /\ Mem.inject f m2 m2'
     /\ Mem.unchanged_on (loc_unmapped f) m1 m2
     /\ Mem.unchanged_on (loc_out_of_reach f m1) m1' m2'.
@@ -973,8 +973,8 @@ Proof.
 Admitted.
 
 Lemma volatile_store_receptive:
-  forall ge chunk m b ofs v t1 m1 t2,
-  volatile_store ge chunk m b ofs v t1 m1 -> match_traces ge t1 t2 -> t1 = t2.
+  forall ge cp chunk m b ofs v t1 m1 t2,
+  volatile_store ge cp chunk m b ofs v t1 m1 -> match_traces ge t1 t2 -> t1 = t2.
 Proof.
   intros. inv H; inv H0; auto.
 Qed.
@@ -1009,7 +1009,7 @@ Proof.
 - assert (t1 = t2). inv H. eapply volatile_store_receptive; eauto.
   subst t2; exists vres1; exists m1; auto.
 (* determ *)
-- inv H; inv H0. inv H1; inv H9; try congruence.
+- inv H; inv H0. inv H1; inv H8; try congruence.
   assert (id = id0) by (eapply Senv.find_symbol_injective; eauto). subst id0.
   assert (ev = ev0) by (eapply eventval_match_determ_2; eauto). subst ev0.
   split. constructor. auto.
@@ -1630,6 +1630,20 @@ Proof.
   destruct ef; simpl; try easy;
   eauto with caller_independent;
   try solve [external_call_caller_independent].
+  {
+  intros ge cp1 cp2 args m t v m'.
+  unfold uptodate_caller, needs_calling_comp, needs_calling_comp_map. simpl.
+  rewrite PMap.gsspec, PMap.gi.
+  destruct (peq (comp_of (EF_vload chunk)) privileged_compartment) as [|neq]; try easy.
+  intros E. rewrite E; trivial.
+  }
+  {
+  intros ge cp1 cp2 args m t v m'.
+  unfold uptodate_caller, needs_calling_comp, needs_calling_comp_map. simpl.
+  rewrite PMap.gsspec, PMap.gi.
+  destruct (peq (comp_of (EF_vstore chunk)) privileged_compartment) as [|neq]; try easy.
+  intros E. rewrite E; trivial.
+  }
   intros ge cp1 cp2 args m t v m'.
   unfold uptodate_caller, needs_calling_comp, needs_calling_comp_map. simpl.
   rewrite PMap.gsspec, PMap.gi.

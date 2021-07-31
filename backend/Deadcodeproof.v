@@ -763,7 +763,7 @@ Lemma transf_volatile_store:
            /\ magree m' tm' (nlive ge sp nm).
 Proof.
   intros. inv H. split; auto.
-  inv H0. inv H10.
+  inv H0. inv H9.
 - (* volatile *)
   exists tm; split; auto. econstructor. econstructor; eauto.
   eapply eventval_match_lessdef; eauto. apply store_argument_load_result; auto.
@@ -976,9 +976,9 @@ Ltac UseTransfer :=
   InvSoundState. exploit transfer_builtin_arg_sound; eauto.
   intros (tv1 & A & B & C & D).
   inv H1. simpl in B. inv B.
-  assert (X: exists tvres, volatile_load ge chunk tm b ofs t tvres /\ Val.lessdef vres tvres).
+  assert (X: exists tvres, volatile_load ge (comp_of f) chunk tm b ofs t tvres /\ Val.lessdef vres tvres).
   {
-    inv H3.
+    inv H2.
   * exists (Val.load_result chunk v); split; auto. constructor; auto.
   * exploit magree_load; eauto.
     exploit aaddr_arg_sound_1; eauto. rewrite <- AN. intros.

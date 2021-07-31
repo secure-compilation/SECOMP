@@ -60,7 +60,7 @@ Inductive deref_loc (cp: compartment) (ty: type) (m: mem) (b: block) (ofs: ptrof
       deref_loc cp ty m b ofs E0 v
   | deref_loc_volatile: forall chunk t v,
       access_mode ty = By_value chunk -> type_is_volatile ty = true ->
-      volatile_load ge chunk m b ofs t v ->
+      volatile_load ge cp chunk m b ofs t v ->
       deref_loc cp ty m b ofs t v
   | deref_loc_reference:
       access_mode ty = By_reference ->
@@ -85,7 +85,7 @@ Inductive assign_loc (cp: compartment) (ty: type) (m: mem) (b: block) (ofs: ptro
       assign_loc cp ty m b ofs v E0 m'
   | assign_loc_volatile: forall v chunk t m',
       access_mode ty = By_value chunk -> type_is_volatile ty = true ->
-      volatile_store ge chunk m b ofs v t m' ->
+      volatile_store ge cp chunk m b ofs v t m' ->
       assign_loc cp ty m b ofs v t m'
   | assign_loc_copy: forall b' ofs' bytes m',
       access_mode ty = By_copy ->
