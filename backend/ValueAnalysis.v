@@ -1070,7 +1070,6 @@ Section SOUNDNESS.
 
 Variable prog: program.
 Variable ge: genv.
-
 Let rm := romem_for prog.
 
 Inductive sound_stack: block_classification -> list stackframe -> mem -> block -> Prop :=
@@ -1520,6 +1519,7 @@ End SOUNDNESS.
 Section LINKING.
 
 Variable prog: program.
+
 Let ge := Genv.globalenv prog.
 
 Inductive sound_state: state -> Prop :=

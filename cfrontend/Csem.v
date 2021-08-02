@@ -40,7 +40,6 @@ Definition env := PTree.t (block * type). (* map variable -> location & type *)
 
 Definition empty_env: env := (PTree.empty (block * type)).
 
-
 Section SEMANTICS.
 
 Variable ge: genv.
@@ -313,6 +312,7 @@ Inductive callred: expr -> mem -> fundef -> list val -> type -> Prop :=
       cast_arguments m el tyargs vargs ->
       type_of_fundef fd = Tfunction tyargs tyres cconv ->
       classify_fun tyf = fun_case_f tyargs tyres cconv ->
+      forall (ALLOWED: Genv.allowed_call ge cp vf),
       callred (Ecall (Eval vf tyf) el ty) m
               fd vargs ty.
 
@@ -540,7 +540,7 @@ Definition is_call_cont (k: cont) : Prop :=
 
 Definition call_comp (k: cont) : compartment :=
   match call_cont k with
-  | Kcall f _ _ _ _ => f.(fn_comp)
+  | Kcall f _ _ _ _ => (comp_of f)
   | _ => default_compartment
   end.
 
@@ -638,19 +638,19 @@ Inductive estep: state -> trace -> state -> Prop :=
          E0 (ExprState f (C a') k e m')
 
   | step_rred: forall C f a k e m t a' m',
-      rred f.(fn_comp) a m t a' m' ->
+      rred (comp_of f) a m t a' m' ->
       context RV RV C ->
       estep (ExprState f (C a) k e m)
           t (ExprState f (C a') k e m')
 
   | step_call: forall C f a k e m fd vargs ty,
-      callred a m fd vargs ty ->
+      callred (comp_of f) a m fd vargs ty ->
       context RV RV C ->
       estep (ExprState f (C a) k e m)
          E0 (Callstate fd vargs (Kcall f e C ty k) m)
 
   | step_stuck: forall C f a k e m K,
-      context K RV C -> ~(imm_safe e f.(fn_comp) K a m) ->
+      context K RV C -> ~(imm_safe e (comp_of f) K a m) ->
       estep (ExprState f (C a) k e m)
          E0 Stuckstate.
 

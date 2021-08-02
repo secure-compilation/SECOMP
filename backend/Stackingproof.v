@@ -81,6 +81,7 @@ Proof.
   try contradiction; try discriminate; econstructor; eauto.
 Qed.
 
+
 Section PRESERVATION.
 
 Variable return_address_offset: Mach.function -> Mach.code -> ptrofs -> Prop.
@@ -1575,28 +1576,87 @@ Proof.
 Qed.
 
 Lemma find_function_translated:
-  forall j ls rs m ros f,
+  forall j ls rs m ros f cp vf,
   agree_regs j ls rs ->
   m |= globalenv_inject ge j ->
   Linear.find_function ge ros ls = Some f ->
+  Linear.find_fun_ptr ge ros ls = Some vf ->
+  Genv.allowed_call ge cp vf ->
   exists bf, exists tf,
      find_function_ptr tge ros rs = Some bf
   /\ Genv.find_funct_ptr tge bf = Some tf
-  /\ transf_fundef f = OK tf.
+  /\ transf_fundef f = OK tf
+  /\ Genv.allowed_call tge cp (Vptr bf Ptrofs.zero).
 Proof.
-  intros until f; intros AG [bound [_ [?????]]] FF.
+  intros until vf; intros AG [bound [_ [?????]]] FF.
   destruct ros; simpl in FF.
 - exploit Genv.find_funct_inv; eauto. intros [b EQ]. rewrite EQ in FF.
   rewrite Genv.find_funct_find_funct_ptr in FF.
-  exploit function_ptr_translated; eauto. intros [tf [A B]].
+  exploit function_ptr_translated; eauto.
+  intros [tf [A B]].
   exists b; exists tf; split; auto. simpl.
   generalize (AG m0). rewrite EQ. intro INJ. inv INJ.
-  rewrite DOMAIN in H2. inv H2. simpl. auto. eapply FUNCTIONS; eauto.
+  rewrite DOMAIN in H4. inv H4. simpl. auto. eapply FUNCTIONS; eauto.
+  split; auto.
+  split; auto.
+  (* unfold Genv.allowed_call. unfold Genv.allowed_call in H0. *)
+  assert (vf = Vptr b Ptrofs.zero).
+  { unfold find_fun_ptr in H.
+    inv H. rewrite EQ. eauto. }
+  rewrite <- H1.
+  now eapply (Genv.match_genvs_allowed_calls TRANSF).
+
 - destruct (Genv.find_symbol ge i) as [b|] eqn:?; try discriminate.
-  exploit function_ptr_translated; eauto. intros [tf [A B]].
+  exploit function_ptr_translated; eauto.
+  intros [tf [A B]].
   exists b; exists tf; split; auto. simpl.
   rewrite symbols_preserved. auto.
+  split; auto.
+  split; auto.
+  assert (vf = Vptr b Ptrofs.zero).
+  { unfold find_fun_ptr in H.
+    rewrite Heqo in H. inv H. eauto. }
+  rewrite <- H1.
+  now eapply (Genv.match_genvs_allowed_calls TRANSF).
 Qed.
+
+(* Lemma find_function_ptr_translated: *)
+(*   forall j ls rs m ros f b ofs, *)
+(*   agree_regs j ls rs -> *)
+(*   m |= globalenv_inject ge j -> *)
+(*   Linear.find_function ge ros ls = Some f -> *)
+(*   Linear.find_fun_ptr ge ros ls = Some (Vptr b ofs) -> *)
+(*   find_function_ptr tge ros rs = Some b. *)
+(* Proof. *)
+(*   intros until ofs; intros AG [bound [_ [?????]]] FF. *)
+(*   destruct ros; simpl in FF. *)
+(* - exploit Genv.find_funct_inv; eauto. intros [b' EQ]. rewrite EQ in FF. *)
+(*   rewrite Genv.find_funct_find_funct_ptr in FF. *)
+(*   exploit function_ptr_translated; eauto. intros [tf [A B]]. *)
+(*   (* exists b; exists tf; split; auto. simpl. *) *)
+(*   simpl. intros C. inv C. *)
+(*   generalize (AG m0). rewrite EQ. intro INJ. inv INJ. *)
+(*   rewrite DOMAIN in H3. inv H3. *)
+(*   unfold Ptrofs.zero. rewrite Ptrofs.add_zero. rewrite Ptrofs.eq_true. congruence. *)
+(*   eapply FUNCTIONS; eauto. *)
+
+(* - destruct (Genv.find_symbol ge i) as [b'|] eqn:?; try discriminate. *)
+(*   exploit function_ptr_translated; eauto. intros [tf [A B]]. *)
+(*   (* exists b; exists tf; split; auto. simpl. *) *)
+(*   simpl. *)
+(*   rewrite symbols_preserved. rewrite Heqo. *)
+(*   intros C. now inv C. *)
+(* Qed. *)
+
+(* Lemma allowed_call_translated: *)
+(*   forall cp vf, *)
+(*     Genv.allowed_call ge cp vf -> *)
+(*     Genv.allowed_call tge cp vf. *)
+(* Proof. *)
+(*   intros cp vf H. *)
+(*   eapply (Genv.match_genvs_allowed_calls TRANSF). eauto. *)
+(* Qed. *)
+
 
 (** Preservation of the arguments to an external call. *)
 
@@ -1966,12 +2026,16 @@ Proof.
 - (* Lcall *)
   exploit find_function_translated; eauto.
     eapply sep_proj2. eapply sep_proj2. eapply sep_proj2. eexact SEP.
-  intros [bf [tf' [A [B C]]]].
+  intros [bf [tf' [A [B [C D]]]]].
+  (* exploit find_function_ptr_translated; eauto. *)
+  (*   eapply sep_proj2. eapply sep_proj2. eapply sep_proj2. eexact SEP. *)
+  (* intros D. *)
   exploit is_tail_transf_function; eauto. intros IST.
   rewrite transl_code_eq in IST. simpl in IST.
-  exploit return_address_offset_exists. eexact IST. intros [ra D].
+  exploit return_address_offset_exists. eexact IST. intros [ra E].
   econstructor; split.
   apply plus_one. econstructor; eauto.
+  rewrite <- comp_transf_function; eauto.
   econstructor; eauto.
   econstructor; eauto with coqlib.
   apply Val.Vptr_has_type.
@@ -1987,9 +2051,14 @@ Proof.
   rewrite sep_swap in SEP.
   exploit find_function_translated; eauto.
     eapply sep_proj2. eapply sep_proj2. eexact SEP.
-  intros [bf [tf' [A [B C]]]].
+  intros [bf [tf' [A [B [C D]]]]].
   econstructor; split.
-  eapply plus_right. eexact S. econstructor; eauto. traceEq.
+  eapply plus_right. eexact S. econstructor; eauto.
+  rewrite <- (comp_transl_partial _ TRANSL).
+  rewrite <- (comp_transl_partial _ C). eauto.
+  rewrite <- (comp_transl_partial _ TRANSL). eauto.
+  rewrite <- (comp_transf_function); eauto.
+  traceEq.
   econstructor; eauto.
   apply match_stacks_change_sig with (Linear.fn_sig f); auto.
   apply zero_size_arguments_tailcall_possible. eapply wt_state_tailcall; eauto.
@@ -2192,7 +2261,7 @@ Proof.
 - intros. destruct H0.
   exploit transf_step_correct; eauto. intros [s2' [A B]].
   exists s2'; split. exact A. split.
-  eapply step_type_preservation; eauto. eexact wt_prog. eexact H.
+  eapply step_type_preservation; eauto. eexact wt_prog. apply H.
   auto.
 Qed.
 

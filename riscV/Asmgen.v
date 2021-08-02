@@ -853,12 +853,12 @@ Definition transl_instr (f: Mach.function) (i: Mach.instruction)
   | Mstore chunk addr args src =>
       transl_store chunk addr args src k
   | Mcall sig (inl r) =>
-      do r1 <- ireg_of r; OK (Pjal_r r1 sig :: k)
+      do r1 <- ireg_of r; OK (Pjal_r r1 sig true :: k)
   | Mcall sig (inr symb) =>
-      OK (Pjal_s symb sig :: k)
+      OK (Pjal_s symb sig true :: k)
   | Mtailcall sig (inl r) =>
       do r1 <- ireg_of r;
-      OK (make_epilogue f (Pj_r r1 sig :: k))
+      OK (make_epilogue f (Pj_r r1 sig false :: k))
   | Mtailcall sig (inr symb) =>
       OK (make_epilogue f (Pj_s symb sig :: k))
   | Mbuiltin ef args res =>
@@ -873,7 +873,7 @@ Definition transl_instr (f: Mach.function) (i: Mach.instruction)
       do r <- ireg_of arg;
       OK (Pbtbl r tbl :: k)
   | Mreturn =>
-      OK (make_epilogue f (Pj_r RA f.(Mach.fn_sig) :: k))
+      OK (make_epilogue f (Pj_r RA f.(Mach.fn_sig) true :: k))
   end.
 
 (** Translation of a code sequence *)
@@ -934,3 +934,18 @@ Definition transf_fundef (f: Mach.fundef) : res Asm.fundef :=
 
 Definition transf_program (p: Mach.program) : res Asm.program :=
   transform_partial_program transf_fundef p.
+
+Lemma transf_function_comp :
+  forall f tf, transf_function f = OK tf -> Mach.fn_comp f = fn_comp tf.
+Proof.
+  intros f tf Htransl.
+  unfold transf_function in Htransl.
+  apply bind_inversion in Htransl as [f' [Htransl Hsize]].
+  destruct (zlt Ptrofs.max_unsigned (list_length_z (fn_code f'))) as [Hlst | Hgeq];
+    [now inv Hlst |].
+  inv Hsize.
+  unfold transl_function in Htransl.
+  apply bind_inversion in Htransl as [c [Htransl Hf']].
+  inv Hf'.
+  reflexivity.
+Qed.

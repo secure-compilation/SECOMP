@@ -134,7 +134,8 @@ Definition transform_program (p: program) : res program :=
       if IS.for_all (global_defined p pm) used then
         OK {| prog_defs := filter_globdefs used nil (List.rev p.(prog_defs));
               prog_public := p.(prog_public);
-              prog_main := p.(prog_main) |}
+              prog_main := p.(prog_main);
+              prog_pol := p.(prog_pol) |}
       else
         Error (msg "Unusedglob: reference to undefined global")
   end.

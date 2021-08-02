@@ -397,6 +397,7 @@ Inductive step: state -> trace -> state -> Prop :=
       eval_exprlist e le m bl vargs ->
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
+      forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
       step (State f (Scall optid sig a bl) k e le m)
         E0 (Callstate fd vargs (Kcall optid f e le k) m)
 

@@ -1060,6 +1060,18 @@ Lemma functions_translated:
   exists cu tf, Genv.find_funct tge v = Some tf /\ match_fundef cu f tf /\ linkorder cu prog.
 Proof (Genv.find_funct_match TRANSL).
 
+Lemma allowed_call_translated:
+  forall vf f (cu: Clight.program) tf,
+    Genv.allowed_call ge (comp_of f) vf ->
+    transl_function (prog_comp_env cu) f = OK tf ->
+    Genv.allowed_call tge (comp_of tf) vf.
+Proof.
+  intros vf f ce tf H TRF.
+  erewrite <- (comp_transl_partial _ TRF).
+  eapply (Genv.match_genvs_allowed_calls TRANSL). eauto.
+Qed.
+
+
 (** * Matching between environments *)
 
 (** In this section, we define a matching relation between
@@ -1633,6 +1645,7 @@ Proof.
     apply plus_one. eapply step_call; eauto.
     eapply transl_expr_correct with (cunit := cu); eauto.
     eapply transl_arglist_correct with (cunit := cu); eauto.
+    eapply allowed_call_translated; eauto.
     econstructor; eauto.
     eapply match_Kcall with (ce := prog_comp_env cu') (cu := cu); eauto.
     exact I.
@@ -1642,6 +1655,7 @@ Proof.
     eapply plus_two. apply step_seq. eapply step_call; eauto. 
     eapply transl_expr_correct with (cunit := cu); eauto.
     eapply transl_arglist_correct with (cunit := cu); eauto.
+    eapply allowed_call_translated; eauto.
     traceEq.
     econstructor; eauto.
     eapply match_Kcall_normalize  with (ce := prog_comp_env cu') (cu := cu); eauto.

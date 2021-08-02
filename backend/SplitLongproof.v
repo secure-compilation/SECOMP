@@ -64,6 +64,7 @@ Lemma eval_helper:
   helper_declared prog id name sg  ->
   lookup_builtin_function name sg = Some bf ->
   builtin_function_sem bf vargs = Some vres ->
+  (* forall (ALLOWED: allowed_call ge cp vf), *)
   eval_expr ge sp e cp m le (Eexternal id sg args) vres.
 Proof.
   intros.
@@ -71,6 +72,10 @@ Proof.
   rewrite <- Genv.find_funct_ptr_iff in Q.
   econstructor; eauto. 
   simpl. red. rewrite H1. constructor; auto.
+  unfold Genv.allowed_call. left.
+  simpl. unfold ge. setoid_rewrite Q.
+  unfold comp_of. unfold has_comp_fundef. unfold comp_of.
+  reflexivity.
 Qed.
 
 Corollary eval_helper_1:
@@ -79,6 +84,7 @@ Corollary eval_helper_1:
   helper_declared prog id name sg  ->
   lookup_builtin_function name sg = Some bf ->
   builtin_function_sem bf (varg1 :: nil) = Some vres ->
+  (* forall (ALLOWED: Policy.allowed_call cp (External (EF_runtime name sg))), *)
   eval_expr ge sp e cp m le (Eexternal id sg (arg1 ::: Enil)) vres.
 Proof.
   intros. eapply eval_helper; eauto. constructor; auto. constructor.
@@ -91,6 +97,7 @@ Corollary eval_helper_2:
   helper_declared prog id name sg  ->
   lookup_builtin_function name sg = Some bf ->
   builtin_function_sem bf (varg1 :: varg2 :: nil) = Some vres ->
+  (* forall (ALLOWED: Policy.allowed_call cp (External (EF_runtime name sg))), *)
   eval_expr ge sp e cp m le (Eexternal id sg (arg1 ::: arg2 ::: Enil)) vres.
 Proof.
   intros. eapply eval_helper; eauto. constructor; auto. constructor; auto. constructor.
@@ -101,6 +108,7 @@ Remark eval_builtin_1:
   eval_expr ge sp e cp m le arg1 varg1 ->
   lookup_builtin_function id sg = Some bf ->
   builtin_function_sem bf (varg1 :: nil) = Some vres ->
+  (* forall (ALLOWED: Policy.allowed_call cp (External (EF_builtin id sg))), *)
   eval_expr ge sp e cp m le (Ebuiltin (EF_builtin id sg) (arg1 ::: Enil)) vres.
 Proof.
   intros. econstructor. econstructor. eauto. constructor.
@@ -1109,4 +1117,3 @@ Proof.
 Qed.
 
 End CMCONSTR.
-

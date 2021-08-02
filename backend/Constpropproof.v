@@ -37,6 +37,7 @@ Section PRESERVATION.
 Variable prog: program.
 Variable tprog: program.
 Hypothesis TRANSL: match_prog prog tprog.
+
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
 
@@ -76,6 +77,16 @@ Lemma sig_function_translated:
   funsig (transf_fundef rm f) = funsig f.
 Proof.
   intros. destruct f; reflexivity.
+Qed.
+
+
+Lemma allowed_call_translated:
+  forall cp vf,
+    Genv.allowed_call ge cp vf ->
+    Genv.allowed_call tge cp vf.
+Proof.
+  intros cp vf H.
+  eapply (Genv.match_genvs_allowed_calls TRANSL). eauto.
 Qed.
 
 Lemma init_regs_lessdef:
@@ -122,6 +133,40 @@ Proof.
   rewrite symbols_preserved.
   destruct (Genv.find_symbol ge i) as [b|]; try discriminate.
   apply function_ptr_translated; auto.
+Qed.
+
+Lemma transf_ros_correct_ptr:
+  forall bc rs ae ros f vf rs',
+  genv_match bc ge ->
+  ematch bc rs ae ->
+  find_function ge ros rs = Some f ->
+  find_function_ptr ge ros rs = Some vf ->
+  regs_lessdef rs rs' ->
+  find_function_ptr tge (transf_ros ae ros) rs' = Some vf.
+Proof.
+  intros until rs'; intros GE EM FF FF' RLD. destruct ros; simpl in *.
+- (* function pointer *)
+  generalize (EM r); fold (areg ae r); intro VM. generalize (RLD r); intro LD.
+  assert (DEFAULT:
+       find_function_ptr tge (inl _ r) rs' = Some vf).
+  {
+    simpl. inv LD. subst; eauto.
+    rewrite <- H0 in FF. discriminate.
+  }
+  destruct (areg ae r); auto. destruct p; auto.
+  predSpec Ptrofs.eq Ptrofs.eq_spec ofs Ptrofs.zero; intros; auto.
+  subst ofs. exploit vmatch_ptr_gl; eauto. intros LD'. inv LD'; try discriminate.
+  + rewrite H1 in FF'. unfold Genv.symbol_address in FF'.
+    rewrite H1 in FF. unfold Genv.symbol_address in FF.
+    simpl. rewrite symbols_preserved.
+    destruct (Genv.find_symbol ge id) as [b|]; try discriminate.
+    simpl in FF. rewrite dec_eq_true in FF.
+    congruence.
+  + rewrite <- H0 in FF; discriminate.
+- (* function symbol *)
+  rewrite symbols_preserved.
+  destruct (Genv.find_symbol ge i) as [b|]; try discriminate.
+  eauto.
 Qed.
 
 Lemma const_for_result_correct:
@@ -471,8 +516,11 @@ Proof.
   rename pc'0 into pc.
   exploit transf_ros_correct; eauto. intros (cu' & FIND & LINK').
   TransfInstr; intro.
+  exploit transf_ros_correct_ptr; eauto. intros FUNPTR'.
   left; econstructor; econstructor; split.
   eapply exec_Icall; eauto. apply sig_function_translated; auto.
+  rewrite comp_transf_function.
+  eapply allowed_call_translated; eauto.
   constructor; auto. constructor; auto.
   econstructor; eauto.
   apply regs_lessdef_regs; auto.
@@ -481,9 +529,12 @@ Proof.
   exploit Mem.free_parallel_extends; eauto. intros [m2' [A B]].
   exploit transf_ros_correct; eauto. intros (cu' & FIND & LINK').
   TransfInstr; intro.
+  exploit transf_ros_correct_ptr; eauto. intros FUNPTR'.
   left; econstructor; econstructor; split.
   eapply exec_Itailcall; eauto. apply sig_function_translated; auto.
     rewrite comp_transl, COMP. symmetry. now apply (comp_transl f).
+  rewrite comp_transf_function.
+  eapply allowed_call_translated; eauto.
   constructor; auto.
   apply regs_lessdef_regs; auto.
 

@@ -90,13 +90,14 @@ Inductive exec_stmt: env -> compartment -> temp_env ->
       eval_expr ge e le m a v ->
       exec_stmt e c le m (Sset id a)
                E0 (PTree.set id v le) m Out_normal
-  | exec_Scall:   forall e le m optid a al tyargs tyres cconv vf vargs c f t m' vres,
+  | exec_Scall:   forall e le m optid a al tyargs tyres cconv vf vargs c fd t m' vres,
       classify_fun (typeof a) = fun_case_f tyargs tyres cconv ->
       eval_expr ge e le m a vf ->
       eval_exprlist ge e le m al tyargs vargs ->
-      Genv.find_funct ge vf = Some f ->
-      type_of_fundef f = Tfunction tyargs tyres cconv ->
-      eval_funcall c m f vargs t m' vres ->
+      Genv.find_funct ge vf = Some fd ->
+      type_of_fundef fd = Tfunction tyargs tyres cconv ->
+      eval_funcall c m fd vargs t m' vres ->
+      forall (ALLOWED: Genv.allowed_call ge c vf),
       exec_stmt e c le m (Scall optid a al)
                 t (set_opttemp optid vres le) m' Out_normal
   | exec_Sbuiltin:   forall e c le m optid ef al tyargs vargs t m' vres,
@@ -168,7 +169,7 @@ with eval_funcall: compartment -> mem -> fundef -> list val -> trace -> mem -> v
       alloc_variables ge empty_env m (f.(fn_params) ++ f.(fn_vars)) e m1 ->
       list_norepet (var_names f.(fn_params) ++ var_names f.(fn_vars)) ->
       bind_parameters ge e m1 f.(fn_params) vargs m2 ->
-      exec_stmt e f.(fn_comp) (create_undef_temps f.(fn_temps)) m2 f.(fn_body) t le m3 out ->
+      exec_stmt e (comp_of f) (create_undef_temps f.(fn_temps)) m2 f.(fn_body) t le m3 out ->
       outcome_result_value out f.(fn_return) vres m3 ->
       Mem.free_list m3 (blocks_of_env ge e) = Some m4 ->
       eval_funcall c m (Internal f) vargs t m4 vres
@@ -195,6 +196,7 @@ CoInductive execinf_stmt: env -> compartment -> temp_env -> mem -> statement -> 
       Genv.find_funct ge vf = Some f ->
       type_of_fundef f = Tfunction tyargs tyres cconv ->
       evalinf_funcall m f vargs t ->
+      forall (ALLOWED: Genv.allowed_call ge c vf),
       execinf_stmt e c le m (Scall optid a al) t
   | execinf_Sseq_1:   forall e c le m s1 s2 t,
       execinf_stmt e c le m s1 t ->
@@ -236,7 +238,7 @@ with evalinf_funcall: mem -> fundef -> list val -> traceinf -> Prop :=
       alloc_variables ge empty_env m (f.(fn_params) ++ f.(fn_vars)) e m1 ->
       list_norepet (var_names f.(fn_params) ++ var_names f.(fn_vars)) ->
       bind_parameters ge e m1 f.(fn_params) vargs m2 ->
-      execinf_stmt e f.(fn_comp) (create_undef_temps f.(fn_temps)) m2 f.(fn_body) t ->
+      execinf_stmt e (comp_of f) (create_undef_temps f.(fn_temps)) m2 f.(fn_body) t ->
       evalinf_funcall m (Internal f) vargs t.
 
 End BIGSTEP.
@@ -264,7 +266,8 @@ Inductive bigstep_program_diverges (p: program): traceinf -> Prop :=
       bigstep_program_diverges p t.
 
 Definition bigstep_semantics (p: program) :=
-  Bigstep_semantics (bigstep_program_terminates p default_compartment) (bigstep_program_diverges p).
+  Bigstep_semantics (bigstep_program_terminates p default_compartment)
+                    (bigstep_program_diverges p).
 
 (** * Implication from big-step semantics to transition semantics *)
 
@@ -300,7 +303,7 @@ Qed.
 Lemma exec_stmt_eval_funcall_steps:
   (forall e c le m s t le' m' out,
    exec_stmt ge e c le m s t le' m' out ->
-   forall f k, c = f.(fn_comp) ->
+   forall f k, c = (comp_of f) ->
    exists S,
    star step1 ge (State f s k e le m) t S
    /\ outcome_state_match e le' m' f k out S)
@@ -326,6 +329,7 @@ Proof.
 (* call *)
   econstructor; split.
   eapply star_left. econstructor; eauto.
+  rewrite <- H6; auto.
   eapply star_right. apply H5; eauto. simpl; auto. econstructor. reflexivity. traceEq.
   constructor.
 
@@ -483,7 +487,7 @@ Qed.
 Lemma exec_stmt_steps:
    forall e c le m s t le' m' out,
    exec_stmt ge e c le m s t le' m' out ->
-   forall f k, c = f.(fn_comp) -> exists S,
+   forall f k, c = (comp_of f) -> exists S,
    star step1 ge (State f s k e le m) t S
    /\ outcome_state_match e le' m' f k out S.
 Proof.
@@ -502,13 +506,14 @@ Proof (proj2 exec_stmt_eval_funcall_steps).
 Definition order (x y: unit) := False.
 
 Lemma evalinf_funcall_forever:
-  forall m fd args T k,
+  forall cp m fd args T k,
+  forall (KCOMP: cp = call_comp k),
   evalinf_funcall ge m fd args T ->
   forever_N step1 order ge tt (Callstate fd args k m) T.
 Proof.
   cofix CIH_FUN.
   assert (forall e c le m s T f k,
-          c = f.(fn_comp) ->
+          c = (comp_of f) ->
           execinf_stmt ge e c le m s T ->
           forever_N step1 order ge tt (State f s k e le m) T).
   cofix CIH_STMT.
@@ -517,7 +522,7 @@ Proof.
 (* call  *)
   eapply forever_N_plus.
   apply plus_one. eapply step_call; eauto.
-  eapply CIH_FUN. eauto. traceEq.
+  eapply CIH_FUN; eauto. traceEq.
 
 (* seq 1 *)
   eapply forever_N_plus.

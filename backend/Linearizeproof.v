@@ -40,7 +40,6 @@ Section LINEARIZATION.
 
 Variable prog: LTL.program.
 Variable tprog: Linear.program.
-
 Hypothesis TRANSF: match_prog prog tprog.
 
 Let ge := Genv.globalenv prog.
@@ -74,7 +73,7 @@ Proof. exact (Genv.senv_transf_partial TRANSF). Qed.
 Lemma comp_preserved:
   forall f tf,
   transf_function f = OK tf ->
-  Linear.fn_comp tf = LTL.fn_comp f.
+  comp_of tf = comp_of f.
 Proof.
   unfold transf_fundef, transf_partial_fundef; intros.
   destruct f. monadInv H. monadInv EQ. reflexivity.
@@ -110,6 +109,25 @@ Proof.
   rewrite symbols_preserved. destruct (Genv.find_symbol ge i).
   apply function_ptr_translated; auto.
   congruence.
+Qed.
+
+Lemma find_function_ptr_translated:
+  forall ros rs vf,
+    LTL.find_fun_ptr ge ros rs = Some vf ->
+    find_fun_ptr tge ros rs = Some vf.
+Proof.
+  unfold LTL.find_fun_ptr, find_fun_ptr; intros; destruct ros; simpl.
+  eauto.
+  rewrite symbols_preserved; eauto.
+Qed.
+
+Lemma allowed_call_translated:
+  forall cp vf,
+    Genv.allowed_call ge cp vf ->
+    Genv.allowed_call tge cp vf.
+Proof.
+  intros cp vf H.
+  eapply (Genv.match_genvs_allowed_calls TRANSF). eauto.
 Qed.
 
 (** * Correctness of reachability analysis *)
@@ -653,19 +671,26 @@ Proof.
 
   (* Lcall *)
   exploit find_function_translated; eauto. intros [tfd [A B]].
+  exploit find_function_ptr_translated; eauto. intros C.
   left; econstructor; split. simpl.
   apply plus_one. econstructor; eauto.
   symmetry; eapply sig_preserved; eauto.
+  rewrite <- comp_transf_fundef; eauto.
+  eapply allowed_call_translated; eauto.
   econstructor; eauto. constructor; auto. econstructor; eauto.
 
   (* Ltailcall *)
   exploit find_function_translated; eauto. intros [tfd [A B]].
+  exploit find_function_ptr_translated; eauto. intros C.
   left; econstructor; split. simpl.
   apply plus_one. econstructor; eauto.
+  rewrite (match_parent_locset _ _ STACKS). eauto.
   rewrite (match_parent_locset _ _ STACKS). eauto.
   symmetry; eapply sig_preserved; eauto.
   now rewrite <- (comp_transl_partial _ B), <- (comp_transl_partial _ TRF).
   now rewrite <- (comp_transl_partial _ TRF).
+  rewrite <- comp_transf_fundef; eauto.
+  eapply allowed_call_translated; eauto.
   rewrite (stacksize_preserved _ _ TRF); eauto.
   rewrite (match_parent_locset _ _ STACKS).
   econstructor; eauto.
@@ -674,7 +699,8 @@ Proof.
   left; econstructor; split. simpl.
   apply plus_one. eapply exec_Lbuiltin; eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
-  eapply external_call_symbols_preserved; eauto. apply senv_preserved. erewrite comp_preserved; eauto.
+  rewrite <- comp_transf_fundef; eauto.
+  eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   econstructor; eauto.
 
   (* Lbranch *)

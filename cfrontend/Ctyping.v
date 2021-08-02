@@ -936,6 +936,7 @@ Definition typecheck_program (p: program) : res program :=
   OK {| prog_defs := tp.(AST.prog_defs);
         prog_public := p.(prog_public);
         prog_main := p.(prog_main);
+        prog_pol := p.(prog_pol);
         prog_types := p.(prog_types);
         prog_comp_env := ce;
         prog_comp_env_eq := p.(prog_comp_env_eq) |}.

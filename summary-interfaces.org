@@ -1,0 +1,221 @@
+* common/AST.v
+** Module Policy
+Policies are used to decide whether a given call is allowed or not.
+They are defined in module ~Policy~.
+
+For each compartment, a policy defines a list of exported procedures
+and a list of procedures imported from other compartments. Procedures are
+refered to by their public identifier.
+
+Policies can be seen as records with two fields:
+- ~policy_export : compartment → list ident~, a partial map that associates a list of exported procedures
+  to each compartment
+- ~policy_import : compartment → list (compartment * ident)~, a partial map that associates a list
+  of imported procedures from particular compartments to each compartment
+(these are in fact ~PTrees~, the efficient implementation of finite maps provided by CompCert)
+
+The function ~Policy.eqb~ defines an equivalence between two policies: two
+policies are equivalent iff for each compartment, they define the same exported
+and imported procedures
+
+The actual definition of whether a call is allowed or not is provided in common/Globalenv.v.
+
+** Programs contain a policy
+We modify the definition of programs so that they include a policy, which will govern which
+calls are allowed.
+
+#+begin_src coq
+  Record program (F V: Type) : Type := mkprogram {
+    prog_defs: list (ident * globdef F V);
+    prog_public: list ident;
+    prog_main: ident;
+    prog_pol: Policy.t
+  }.
+#+end_src
+
+** Program transformations do not use or modify the policy
+A program transformation always leaves the policy unchanged.
+Similarly, policies are not used inside the transformations, so it's not possible to
+use the information of these policies to perform optimizations.
+
+* common/Linking.v
+Linking two programs ~p1~ and ~p2~ now requires that the policies ~pol1~ ~pol2~
+defined by the two programs agree, i.e. that ~Policy.eqb pol1 pol2~, or in
+words, that they defined the same exported and imported procedures for each
+compartment.
+
+#+begin_src coq
+  Definition link_prog :=
+    if ident_eq p1.(prog_main) p2.(prog_main)
+       && PTree_Properties.for_all dm1 link_prog_check
+       && Policy.eqb p1.(prog_pol) p2.(prog_pol) then (* HERE *)
+      Some {| … |}
+    else
+      None.
+#+end_src
+
+* common/Globalenvs.v
+The global environments are modified so they now contain a policy
+#+begin_src coq
+  Record Genv.t: Type := mkgenv {
+    …
+    genv_policy: Policy.t;
+    …
+  }
+#+end_src
+
+The global environment's policy comes from the program:
+#+begin_src coq
+Program Definition empty_genv (pub: list ident) (pol: Policy.t): t :=
+  @mkgenv pub (PTree.empty _) (PTree.empty _) 1%positive pol _ _ _.
+
+Definition globalenv (p: program F V) :=
+  add_globals (empty_genv p.(prog_public) p.(prog_pol)) p.(prog_defs).
+#+end_src
+
+The definition of what calls are allowed is given by ~Genv.allowed_call~.
+#+begin_src coq
+Definition allowed_call (ge: t) (cp: compartment) (vf: val) :=
+  Some default_compartment = find_comp ge vf \/ (* 1 *)
+  Some cp = find_comp ge vf \/                  (* 2 *)
+  allowed_cross_call ge cp vf.                 (* 3 *)
+#+end_src
+
+To determine whether a call is or isn't allowed, we look at two pieces of
+information: the calling compartment, ~cp: compartment~, and a value ~vf: val~,
+which should be a function pointer to the callee. The reason we use a function
+pointer is that it allows us to use this definition even at the lowest levels,
+where jumps could be used to circumvent a protection purely based on checking
+identifiers.
+
+A call is allowed if any of these 3 cases holds:
+(1) the procedure being called belongs to the default compartment
+(2) the procedure being called belongs to the same compartment as the caller
+(3) the call is an inter-compartment call and is allowed by the policy
+
+Case (1) treats the default compartment as a public compartment that can be called
+anytime. This is useful to assign the same compartments to all builtin procedures
+that are eventually simplified or transformed into proper calls.
+
+Case (3) makes use of the policy, and is more interesting. The definition of
+~allowed_cross_call~ is:
+#+begin_src coq
+Definition allowed_cross_call (ge: t) (cp: compartment) (vf: val) :=
+  match vf with
+  | Vptr b _ =>
+    exists i cp',
+    invert_symbol ge b = Some i /\
+    find_comp ge vf = Some cp' /\
+    match (Policy.policy_import ge.(genv_policy)) ! cp with
+    | Some l => In (cp', i) l
+    | None => False
+    end /\
+    match (Policy.policy_export ge.(genv_policy)) ! cp' with
+    | Some l => In i l
+    | None => False
+    end
+  | _ => False
+  end.
+#+end_src
+
+This definition does the following:
+- it checks that the callee is indeed a pointer to block ~b~
+- it checks that this block corresponds to a identifier ~i~
+- it obtains the compartment ~cp'~ of this block
+- it checks that the pair ~(cp', i)~ is indeed imported by ~cp~
+- it checks that the identifier ~i~ is indeed exported by ~cp'~
+
+An executable version with boolean value is given (~allowed_call_b~) and it is
+proven equivalent to the version in Prop (lemma ~allowed_call_reflect~).
+
+Given two "matching" programs ~p~ and ~tp~, the following lemma
+can be used to show that any allowed call for ~p~ is also allowed
+for ~tp~.
+#+begin_src coq
+  (* … *)
+  Variable match_fundef: C -> F1 -> F2 -> Prop.
+  Variable match_varinfo: V1 -> V2 -> Prop.
+  Variable ctx: C.
+  Hypothesis progmatch: match_program_gen match_fundef match_varinfo ctx p tp.
+
+  Lemma match_genvs_allowed_calls:
+    forall cp vf,
+      allowed_call (globalenv p) cp vf ->
+      allowed_call (globalenv tp) cp vf.
+#+end_src
+
+There are also special cases of this lemma for transformations
+that do not depend on the compilation unit:
+#+begin_src coq
+  Theorem allowed_call_transf_partial:
+    forall cp vf,
+      allowed_call (globalenv p) cp vf -> allowed_call (globalenv tp) cp vf.
+
+  Theorem allowed_call_transf:
+    forall cp vf,
+      allowed_call (globalenv p) cp vf -> allowed_call (globalenv tp) cp vf.
+#+end_src
+
+
+* Languages
+The syntax of all languages isn't changed.
+
+The semantics of most languages are modified in the following way:
+- when the small-step semantics already used function pointers to
+  perform calls (for instance, in the case of Cminor), we add
+  a condition ~Genv.allowed_call ge (comp_of f) vf~ to
+  the ~step_call~ rule that checks that the call to ~vf~ is allowed
+  according to the policy of the global environment
+- similarly, we add the same condition to the ~step_tailcall~ rule.
+  In the case of ~step_tailcall~, we additionally require that the
+  tail call is internal (~comp_of fd = (comp_of f)~ where ~fd~ is
+  the procedure being called and ~f~ is the current procedure), and
+  that ~needs_calling_comp (comp_of f) = false~ (not sure what this one is about)
+  We require that the tail call is internal to avoid problems when
+  the tail call will be optimized to a jump in the later phases.
+- we always allow calls using the special "call to built-ins" instructions,
+  as we assume these are only used to call built-ins.
+  This is something for which we should add a syntactic check.
+
+Some languages have big-step semantics or executable versions of the semantics,
+these are updated in the same way.
+
+* Simulation proofs
+
+# comp_transl_partial
+
+
+
+To show that the simulation lemmas still hold, we need to show that if a call is allowed in the source, then it is allowed in the target
+
+For instance, in =Cminorgenproof.v=, we use the lemma ~allowed_call_transl~:
+#+begin_src coq
+Lemma allowed_call_transl: forall cenv f vf sz tfn,
+  Genv.allowed_call ge (comp_of f) vf ->
+  transl_funbody cenv sz f = OK tfn ->
+  Genv.allowed_call tge (comp_of tfn) vf.
+#+end_src
+In this case, the lemma is easy to prove, as the function pointer is trivially
+the same in both the source and target.
+
+Sometimes, we also need to prove the equality of function pointers between the source
+and target. For instance, in =SimplLocalsproof.v=, we prove the following lemma:
+#+begin_src coq
+Lemma match_cont_find_funct_eq:
+  forall f cenv k tk m bound tbound vf fd tvf,
+  match_cont f cenv k tk m bound tbound ->
+  Genv.find_funct ge vf = Some fd ->
+  Val.inject f vf tvf ->
+  vf = tvf.
+#+end_src
+This kind of lemma is usually easy to prove. Most of the time, there is already a lemma
+that has the same premises, and that proves something like:
+#+begin_src coq
+  exists tfd, Genv.find_funct tge tvf = Some tfd /\ transf_fundef fd = OK tfd
+#+end_src
+That is that by following the target function pointer, we find the translation of the source
+procedure. To prove the ~match_cont_find_funct_eq~ we follow the same proof structure, except
+we stop a bit earlier.
+
+Some goals also require proving equality of compartment between source and target. We use
+lemmas such as ~comp_transl~ or ~comp_transl_partial~ to do so.

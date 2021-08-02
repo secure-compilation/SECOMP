@@ -228,6 +228,7 @@ Qed.
 
 Local Open Scope linking_scope.
 
+Require Import Globalenvs.
 Definition CompCert's_passes :=
       mkpass SimplExprproof.match_prog
   ::: mkpass SimplLocalsproof.match_prog
@@ -367,17 +368,17 @@ Ltac DestructM :=
   assert (F: forward_simulation (Cstrategy.semantics p) (Asm.semantics p21)).
   {
   eapply compose_forward_simulations.
-    eapply SimplExprproof.transl_program_correct; eassumption.
+    eapply SimplExprproof.transl_program_correct; try eassumption.
   eapply compose_forward_simulations.
-    eapply SimplLocalsproof.transf_program_correct; eassumption.
+    eapply SimplLocalsproof.transf_program_correct; try eassumption.
   eapply compose_forward_simulations.
-    eapply Cshmgenproof.transl_program_correct; eassumption.
+    eapply Cshmgenproof.transl_program_correct; try eassumption.
   eapply compose_forward_simulations.
-    eapply Cminorgenproof.transl_program_correct; eassumption.
+    eapply Cminorgenproof.transl_program_correct; try eassumption.
   eapply compose_forward_simulations.
-    eapply Selectionproof.transf_program_correct; eassumption.
+    eapply Selectionproof.transf_program_correct; try eassumption.
   eapply compose_forward_simulations.
-    eapply RTLgenproof.transf_program_correct; eassumption.
+    eapply RTLgenproof.transf_program_correct; try eassumption.
   eapply compose_forward_simulations.
     eapply match_if_simulation. eassumption. exact Tailcallproof.transf_program_correct.
   eapply compose_forward_simulations.

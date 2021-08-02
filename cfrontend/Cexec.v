@@ -889,6 +889,7 @@ Fixpoint step_expr (cp: compartment) (k: kind) (a: expr) (m: mem): reducts expr 
           match classify_fun tyf with
           | fun_case_f tyargs tyres cconv =>
               do fd <- Genv.find_funct ge vf;
+              check (Genv.allowed_call_b ge cp vf);
               do vargs <- sem_cast_arguments vtl tyargs m;
               check type_eq (type_of_fundef fd) (Tfunction tyargs tyres cconv);
               topred (Callred "red_call" fd vargs ty m)
@@ -937,7 +938,7 @@ Inductive imm_safe_t (cp: compartment): kind -> expr -> mem -> Prop :=
       context RV to C ->
       imm_safe_t cp to (C r) m
   | imm_safe_t_callred: forall to C r m fd args ty,
-      callred ge r m fd args ty ->
+      callred ge cp r m fd args ty ->
       context RV to C ->
       imm_safe_t cp to (C r) m.
 
@@ -1010,6 +1011,7 @@ Definition invert_expr_prop (cp: compartment) (a: expr) (m: mem) : Prop :=
       /\ Genv.find_funct ge vf = Some fd
       /\ cast_arguments m rargs tyargs vl
       /\ type_of_fundef fd = Tfunction tyargs tyres cconv
+      /\ Genv.allowed_call ge cp vf
   | Ebuiltin ef tyargs rargs ty =>
       exprlist_all_values rargs ->
       exists vargs t vres m' w',
@@ -1050,7 +1052,7 @@ Qed.
 
 Lemma callred_invert:
   forall cp r fd args ty m,
-  callred ge r m fd args ty ->
+  callred ge cp r m fd args ty ->
   invert_expr_prop cp r m.
 Proof.
   intros. inv H. simpl.
@@ -1146,7 +1148,7 @@ Definition reduction_ok (cp: compartment) (k: kind) (a: expr) (m: mem) (rd: redu
   match k, rd with
   | LV, Lred _ l' m' => lred ge e a m l' m'
   | RV, Rred _ r' m' t => rred ge cp a m t r' m' /\ exists w', possible_trace w t w'
-  | RV, Callred _ fd args tyres m' => callred ge a m fd args tyres /\ m' = m
+  | RV, Callred _ fd args tyres m' => callred ge cp a m fd args tyres /\ m' = m
   | LV, Stuckred => ~imm_safe_t cp k a m
   | RV, Stuckred => ~imm_safe_t cp k a m
   | _, _ => False
@@ -1500,13 +1502,21 @@ Proof with (try (apply not_invert_ok; simpl; intro; myinv; intuition congruence;
   (* top *)
   destruct (classify_fun tyf) as [tyargs tyres cconv|] eqn:?...
   destruct (Genv.find_funct ge vf) as [fd|] eqn:?...
+  destruct (Genv.allowed_call_b ge cp vf) eqn:ALLOWED...
   destruct (sem_cast_arguments vtl tyargs m) as [vargs|] eqn:?...
   destruct (type_eq (type_of_fundef fd) (Tfunction tyargs tyres cconv))...
   apply topred_ok; auto. red. split; auto. eapply red_call; eauto.
   eapply sem_cast_arguments_sound; eauto.
+  (* Use Heqb *)
+  eapply Genv.allowed_call_reflect; eauto.
   apply not_invert_ok; simpl; intros; myinv. specialize (H ALLVAL). myinv. congruence.
   apply not_invert_ok; simpl; intros; myinv. specialize (H ALLVAL). myinv.
   exploit sem_cast_arguments_complete; eauto. intros [vtl' [P Q]]. congruence.
+  apply not_invert_ok; simpl; intros; myinv. specialize (H ALLVAL). myinv.
+  (* Use Heqb *)
+  match goal with
+  | H: Genv.allowed_call _ _ _ |- _ => rewrite Genv.allowed_call_reflect in H; congruence
+  end.
   apply not_invert_ok; simpl; intros; myinv. specialize (H ALLVAL). myinv. congruence.
   apply not_invert_ok; simpl; intros; myinv. specialize (H ALLVAL). myinv. congruence.
   (* depth *)
@@ -1629,13 +1639,17 @@ Qed.
 
 Lemma callred_topred:
   forall cp a fd args ty m,
-  callred ge a m fd args ty ->
+  callred ge cp a m fd args ty ->
   exists rule, step_expr cp RV a m = topred (Callred rule fd args ty m).
 Proof.
   induction 1; simpl.
   rewrite H2. exploit sem_cast_arguments_complete; eauto. intros [vtl [A B]].
-  rewrite A; rewrite H; rewrite B; rewrite H1; rewrite dec_eq_true. econstructor; eauto.
+  rewrite A; rewrite H; rewrite B; rewrite H1; rewrite dec_eq_true.
+  eapply Genv.allowed_call_reflect in ALLOWED.
+  rewrite ALLOWED.
+  econstructor; eauto.
 Qed.
+
 
 Definition reducts_incl {A B: Type} (C: A -> B) (res1: reducts A) (res2: reducts B) : Prop :=
   forall C1 rd, In (C1, rd) res1 -> In ((fun x => C(C1 x)), rd) res2.
@@ -1866,10 +1880,10 @@ Definition can_crash_world (w: world) (S: state) : Prop :=
 Theorem not_imm_safe_t:
   forall K C a m f k,
   context K RV C ->
-  ~imm_safe_t f.(fn_comp) K a m ->
+  ~imm_safe_t (comp_of f) K a m ->
   Csem.step ge (ExprState f (C a) k e m) E0 Stuckstate \/ can_crash_world w (ExprState f (C a) k e m).
 Proof.
-  intros. destruct (classic (imm_safe ge e f.(fn_comp) K a m)).
+  intros. destruct (classic (imm_safe ge e (comp_of f) K a m)).
   exploit imm_safe_imm_safe_t; eauto.
   intros [A | [C1 [a1 [t [a1' [m' [A [B [D E]]]]]]]]]. contradiction.
   right. red. exists t; econstructor; split; auto.
@@ -1994,7 +2008,7 @@ Definition do_step (w: world) (s: state) : list transition :=
         end
 
       | None =>
-          map (expr_final_state f k e) (step_expr e w f.(fn_comp) RV a m)
+          map (expr_final_state f k e) (step_expr e w (comp_of f) RV a m)
       end
 
   | State f (Sdo x) k e m =>
@@ -2118,7 +2132,7 @@ Proof with try (left; right; econstructor; eauto; fail).
   destruct k; myinv...
   (* expression reduces *)
   intros. exploit list_in_map_inv; eauto. intros [[C rd] [A B]].
-  generalize (step_expr_sound e w f.(fn_comp) r RV m). unfold reducts_ok. intros [P Q].
+  generalize (step_expr_sound e w (comp_of f) r RV m). unfold reducts_ok. intros [P Q].
   exploit P; eauto. intros [a' [k' [CTX [EQ RD]]]].
   unfold expr_final_state in A. simpl in A.
   destruct k'; destruct rd; inv A; simpl in RD; try contradiction.
@@ -2171,10 +2185,10 @@ Proof with (unfold ret; eauto with coqlib).
   inversion H; subst; exploit estep_not_val; eauto; intro NOTVAL.
 (* lred *)
   unfold do_step; rewrite NOTVAL.
-  exploit lred_topred; eauto. instantiate (1 := f.(fn_comp)). instantiate (1 := w). intros (rule & STEP).
+  exploit lred_topred; eauto. instantiate (1 := (comp_of f)). instantiate (1 := w). intros (rule & STEP).
   exists rule. change (TR rule E0 (ExprState f (C a') k e m')) with (expr_final_state f k e (C, Lred rule a' m')).
   apply in_map.
-  generalize (step_expr_context e w _ _ _ H1 f.(fn_comp) a m). unfold reducts_incl.
+  generalize (step_expr_context e w _ _ _ H1 (comp_of f) a m). unfold reducts_incl.
   intro. replace C with (fun x => C x). apply H2.
   rewrite STEP. unfold topred; auto with coqlib.
   apply extensionality; auto.
@@ -2184,17 +2198,18 @@ Proof with (unfold ret; eauto with coqlib).
   exists rule.
   change (TR rule t (ExprState f (C a') k e m')) with (expr_final_state f k e (C, Rred rule a' m' t)).
   apply in_map.
-  generalize (step_expr_context e w _ _ _ H1 f.(fn_comp) a m). unfold reducts_incl.
+  generalize (step_expr_context e w _ _ _ H1 (comp_of f) a m). unfold reducts_incl.
   intro. replace C with (fun x => C x). apply H2.
   rewrite STEP; unfold topred; auto with coqlib.
   apply extensionality; auto.
 (* callred *)
   unfold do_step; rewrite NOTVAL.
-  exploit callred_topred; eauto. instantiate (1 := f.(fn_comp)). instantiate (1 := w). instantiate (1 := e).
+  exploit callred_topred; eauto.
+  instantiate (1 := w). instantiate (1 := e).
   intros (rule & STEP). exists rule.
   change (TR rule E0 (Callstate fd vargs (Kcall f e C ty k) m)) with (expr_final_state f k e (C, Callred rule fd vargs ty m)).
   apply in_map.
-  generalize (step_expr_context e w _ _ _ H1 f.(fn_comp) a m). unfold reducts_incl.
+  generalize (step_expr_context e w _ _ _ H1 (comp_of f) a m). unfold reducts_incl.
   intro. replace C with (fun x => C x). apply H2.
   rewrite STEP; unfold topred; auto with coqlib.
   apply extensionality; auto.

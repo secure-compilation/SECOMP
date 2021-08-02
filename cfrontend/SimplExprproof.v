@@ -41,6 +41,8 @@ Proof.
   intros. apply transl_fundef_spec; auto. 
 Qed.
 
+
+
 (** ** Semantic preservation *)
 
 Section PRESERVATION.
@@ -105,6 +107,16 @@ Lemma function_return_preserved:
   fn_return tf = Csyntax.fn_return f.
 Proof.
   intros. inv H; auto.
+Qed.
+
+Lemma allowed_call_translated:
+  forall cp vf,
+    Genv.allowed_call ge cp vf ->
+    Genv.allowed_call tge cp vf.
+Proof.
+  intros cp vf H.
+  destruct TRANSL.
+  eapply (Genv.match_genvs_allowed_calls H0). eauto.
 Qed.
 
 (** Properties of smart constructors. *)
@@ -1928,6 +1940,10 @@ Proof.
   left. eapply plus_left. constructor.  apply star_one.
   econstructor; eauto. rewrite <- TY1; eauto.
   exploit type_of_fundef_preserved; eauto. congruence.
+  assert (COMP: comp_of tf = comp_of f)
+    by (now match goal with H : tr_function _ _ |- _ => inv H end);
+    rewrite COMP.
+  eapply allowed_call_translated; eauto.
   traceEq.
   constructor; auto. econstructor; eauto.
   intros. change sl2 with (nil ++ sl2). apply S.
@@ -1941,10 +1957,13 @@ Proof.
   left. eapply plus_left. constructor.  apply star_one.
   econstructor; eauto. rewrite <- TY1; eauto.
   exploit type_of_fundef_preserved; eauto. congruence.
+  assert (COMP: comp_of tf = comp_of f)
+    by (now match goal with H : tr_function _ _ |- _ => inv H end);
+    rewrite COMP.
+  eapply allowed_call_translated; eauto.
   traceEq.
   constructor; auto. econstructor; eauto.
-  intros. apply S.
-  destruct dst'; constructor.
+  intros. apply S. destruct dst'; constructor.
   auto. intros. constructor. rewrite H5; auto. apply PTree.gss.
   auto. intros. constructor. rewrite H5; auto. apply PTree.gss.
   intros. apply PTree.gso. intuition congruence.
@@ -1952,8 +1971,8 @@ Proof.
 
 (* builtin *)
   exploit tr_top_leftcontext; eauto. clear H9.
-  assert (COMP: tf.(fn_comp) = f.(Csyntax.fn_comp)).
-  { now match goal with H : tr_function _ _ |- _ => inv H end. }
+  assert (COMP: comp_of tf = comp_of f)
+    by (now match goal with H : tr_function _ _ |- _ => inv H end);
   intros [dst' [sl1 [sl2 [a' [tmp' [P [Q [R S]]]]]]]].
   inv P. inv H2.
   (* for effects *)

@@ -540,11 +540,12 @@ let expand_instruction instr =
       assert Archi.ptr64
       (* no-operation because the 32-bit integer was kept sign extended already *)
 
-  | Pjal_r(r, sg) ->
+  (* FIXME: These opeartions currently ignore the call flags of jump instructions *)
+  | Pjal_r(r, sg, _) ->
       fixup_call sg; emit instr
-  | Pjal_s(symb, sg) ->
+  | Pjal_s(symb, sg, _) ->
       fixup_call sg; emit instr
-  | Pj_r(r, sg) when r <> X1 ->
+  | Pj_r(r, sg, _) when r <> X1 ->
       fixup_call sg; emit instr
   | Pj_s(symb, sg) ->
       fixup_call sg; emit instr

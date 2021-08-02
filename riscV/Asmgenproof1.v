@@ -117,7 +117,7 @@ Lemma load_hilo32_correct:
   /\ rs'#rd = Vint (Int.add (Int.shl hi (Int.repr 12)) lo)
   /\ forall r, r <> PC -> r <> rd -> rs'#r = rs#r.
 Proof.
-  unfold load_hilo32; intros. 
+  unfold load_hilo32; intros.
   predSpec Int.eq Int.eq_spec lo Int.zero.
 - subst lo. econstructor; split. 
   apply exec_straight_one. simpl; eauto. auto.
@@ -1390,6 +1390,3 @@ Proof.
 Qed.
 
 End CONSTRUCTORS.
-
-
- 

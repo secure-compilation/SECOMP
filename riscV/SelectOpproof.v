@@ -137,14 +137,14 @@ Proof.
   - subst n. intros. exists x; split; auto.
     destruct x; simpl; auto.
     rewrite Int.add_zero; auto.
-    destruct Archi.ptr64; auto. rewrite Ptrofs.add_zero; auto. 
+    destruct Archi.ptr64; auto. rewrite Ptrofs.add_zero; auto.
   - case (addimm_match a); intros; InvEval; simpl.
     + TrivialExists; simpl. rewrite Int.add_commut. auto.
-    + econstructor; split. EvalOp. simpl; eauto. 
+    + econstructor; split. EvalOp. simpl; eauto.
       unfold Genv.symbol_address. destruct (Genv.find_symbol ge s); simpl; auto.
       destruct Archi.ptr64; auto. rewrite Ptrofs.add_commut; auto.
-    + econstructor; split. EvalOp. simpl; eauto. 
-      destruct sp; simpl; auto. destruct Archi.ptr64; auto. 
+    + econstructor; split. EvalOp. simpl; eauto.
+      destruct sp; simpl; auto. destruct Archi.ptr64; auto.
       rewrite Ptrofs.add_assoc. rewrite (Ptrofs.add_commut m0). auto.
     + TrivialExists; simpl. subst x. rewrite Val.add_assoc. rewrite Int.add_commut. auto.
     + TrivialExists.

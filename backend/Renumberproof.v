@@ -33,6 +33,7 @@ Section PRESERVATION.
 
 Variables prog tprog: program.
 Hypothesis TRANSL: match_prog prog tprog.
+
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
 
@@ -72,6 +73,25 @@ Proof.
   eapply functions_translated; eauto.
   rewrite symbols_preserved. destruct (Genv.find_symbol ge id); try congruence.
   eapply function_ptr_translated; eauto.
+Qed.
+
+Lemma find_function_ptr_translated:
+  forall ros ls vf,
+  find_function_ptr ge ros ls = Some vf ->
+  find_function_ptr tge ros ls = Some vf.
+Proof.
+  unfold find_function_ptr; intros; destruct ros; simpl.
+  eauto.
+  rewrite symbols_preserved; eauto.
+Qed.
+
+Lemma allowed_call_translated:
+  forall cp vf,
+    Genv.allowed_call ge cp vf ->
+    Genv.allowed_call tge cp vf.
+Proof.
+  intros cp vf H.
+  eapply (Genv.match_genvs_allowed_calls TRANSL). eauto.
 Qed.
 
 (** Effect of an injective renaming of nodes on a CFG. *)
@@ -202,6 +222,9 @@ Proof.
   eapply exec_Icall with (fd := transf_fundef fd); eauto.
     eapply find_function_translated; eauto.
     apply sig_preserved.
+    eapply find_function_ptr_translated; eauto.
+    eapply allowed_call_translated; eauto.
+
   constructor. constructor; auto. constructor. eapply reach_succ; eauto. simpl; auto.
 (* tailcall *)
   econstructor; split.
@@ -209,6 +232,8 @@ Proof.
     eapply find_function_translated; eauto.
     apply sig_preserved.
     rewrite comp_transl, COMP. eauto.
+    eapply find_function_ptr_translated; eauto.
+    eapply allowed_call_translated; eauto.
   constructor. auto.
 (* builtin *)
   econstructor; split.

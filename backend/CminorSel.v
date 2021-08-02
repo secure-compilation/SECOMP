@@ -201,6 +201,7 @@ Inductive eval_expr: letenv -> expr -> val -> Prop :=
       ef_sig ef = sg ->
       eval_exprlist le al vl ->
       external_call ef ge cp vl m E0 v m ->
+      forall (ALLOWED: Genv.allowed_call ge cp (Vptr b Ptrofs.zero)),
       eval_expr le (Eexternal id sg al) v
 
 with eval_exprlist: letenv -> exprlist -> list val -> Prop :=
@@ -310,7 +311,7 @@ Definition is_call_cont (k: cont) : Prop :=
 
 Definition call_comp (k: cont) : compartment :=
   match call_cont k with
-  | Kcall _ f _ _ _ => f.(fn_comp)
+  | Kcall _ f _ _ _ => (comp_of f)
   | _ => default_compartment
   end.
 
@@ -356,13 +357,13 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (Returnstate Vundef k m')
 
   | step_assign: forall f cp id a k sp e m v,
-      cp = f.(fn_comp) ->
+      cp = (comp_of f) ->
       eval_expr sp e cp m nil a v ->
       step (State f (Sassign id a) k sp e m)
         E0 (State f Sskip k sp (PTree.set id v e) m)
 
   | step_store: forall f cp chunk addr al b k sp e m vl v vaddr m',
-      cp = f.(fn_comp) ->
+      cp = (comp_of f) ->
       eval_exprlist sp e cp m nil al vl ->
       eval_expr sp e cp m nil b v ->
       eval_addressing ge sp addr vl = Some vaddr ->
@@ -371,27 +372,29 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State f Sskip k sp e m')
 
   | step_call: forall f cp optid sig a bl k sp e m vf vargs fd,
-      cp = f.(fn_comp) ->
+      cp = (comp_of f) ->
       eval_expr_or_symbol sp e cp m nil a vf ->
       eval_exprlist sp e cp m nil bl vargs ->
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
+      forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
       step (State f (Scall optid sig a bl) k sp e m)
         E0 (Callstate fd vargs (Kcall optid f sp e k) m)
 
   | step_tailcall: forall f sig a bl k sp e m vf vargs fd m',
-      eval_expr_or_symbol (Vptr sp Ptrofs.zero) e f.(fn_comp) m nil a vf ->
-      eval_exprlist (Vptr sp Ptrofs.zero) e f.(fn_comp) m nil bl vargs ->
+      eval_expr_or_symbol (Vptr sp Ptrofs.zero) e (comp_of f) m nil a vf ->
+      eval_exprlist (Vptr sp Ptrofs.zero) e (comp_of f) m nil bl vargs ->
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
-      forall COMP: comp_of fd = f.(fn_comp),
-      forall ALLOWED: needs_calling_comp f.(fn_comp) = false,
+      forall (COMP: comp_of fd = (comp_of f)),
+      forall (ALLOWED: needs_calling_comp (comp_of f) = false),
+      forall (ALLOWED': Genv.allowed_call ge (comp_of f) vf),
       Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
       step (State f (Stailcall sig a bl) k (Vptr sp Ptrofs.zero) e m)
         E0 (Callstate fd vargs (call_cont k) m')
 
   | step_builtin: forall f cp res ef al k sp e m vl t v m',
-      cp = f.(fn_comp) ->
+      cp = (comp_of f) ->
       list_forall2 (eval_builtin_arg sp e cp m) al vl ->
       external_call ef ge cp vl m t v m' ->
       step (State f (Sbuiltin res ef al) k sp e m)
@@ -402,7 +405,7 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State f s1 (Kseq s2 k) sp e m)
 
   | step_ifthenelse: forall f cp c s1 s2 k sp e m b,
-      cp = f.(fn_comp) ->
+      cp = (comp_of f) ->
       eval_condexpr sp e cp m nil c b ->
       step (State f (Sifthenelse c s1 s2) k sp e m)
         E0 (State f (if b then s1 else s2) k sp e m)
@@ -426,7 +429,7 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State f (Sexit n) k sp e m)
 
   | step_switch: forall f cp a k sp e m n,
-      cp = f.(fn_comp) ->
+      cp = (comp_of f) ->
       eval_exitexpr sp e cp m nil a n ->
       step (State f (Sswitch a) k sp e m)
         E0 (State f (Sexit n) k sp e m)
@@ -436,7 +439,7 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Sreturn None) k (Vptr sp Ptrofs.zero) e m)
         E0 (Returnstate Vundef (call_cont k) m')
   | step_return_1: forall f cp a k sp e m v m',
-      cp = f.(fn_comp) ->
+      cp = (comp_of f) ->
       eval_expr (Vptr sp Ptrofs.zero) e cp m nil a v ->
       Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
       step (State f (Sreturn (Some a)) k (Vptr sp Ptrofs.zero) e m)
@@ -452,7 +455,7 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State f s' k' sp e m)
 
   | step_internal_function: forall f vargs k m m' sp e,
-      Mem.alloc m f.(fn_comp) 0 f.(fn_stackspace) = (m', sp) ->
+      Mem.alloc m (comp_of f) 0 f.(fn_stackspace) = (m', sp) ->
       set_locals f.(fn_vars) (set_params vargs f.(fn_params)) = e ->
       step (Callstate (Internal f) vargs k m)
         E0 (State f f.(fn_body) k (Vptr sp Ptrofs.zero) e m')

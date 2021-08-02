@@ -226,6 +226,17 @@ Definition find_function_ptr
       Genv.find_symbol ge symb
   end.
 
+(* Definition find_function_ptr *)
+(*         (ge: genv) (ros: mreg + ident) (rs: regset) : option val := *)
+(*   match ros with *)
+(*   | inl r => *)
+(*       match rs r with *)
+(*       | Vptr b ofs => if Ptrofs.eq ofs Ptrofs.zero then Some (Vptr b ofs) else None *)
+(*       | _ => None *)
+(*       end *)
+(*   | inr symb => *)
+(*       Some (Genv.symbol_address ge symb Ptrofs.zero) *)
+(*   end. *)
 (** Extract the values of the arguments to an external call. *)
 
 Inductive extcall_arg (rs: regset) (m: mem) (sp: val): loc -> val -> Prop :=
@@ -341,26 +352,33 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State s f sp (Mstore chunk addr args src :: c) rs m)
         E0 (State s f sp c rs' m')
   | exec_Mcall:
-      forall s fb sp sig ros c rs m f f' ra,
+      forall s fb sp sig ros c rs m f f' ra fd,
       find_function_ptr ge ros rs = Some f' ->
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
       return_address_offset f c ra ->
+      forall (CALLED: Genv.find_funct_ptr ge f' = Some fd),
+      forall (ALLOWED: Genv.allowed_call ge (comp_of f) (Vptr f' Ptrofs.zero)),
       step (State s fb sp (Mcall sig ros :: c) rs m)
         E0 (Callstate (Stackframe fb sp ra c :: s)
                        f' rs m)
   | exec_Mtailcall:
-      forall s fb stk soff sig ros c rs m f f' m',
+      forall s fb stk soff sig ros c rs m f f' m' fd,
       find_function_ptr ge ros rs = Some f' ->
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
       load_stack m (Vptr stk soff) Tptr f.(fn_link_ofs) = Some (parent_sp s) ->
       load_stack m (Vptr stk soff) Tptr f.(fn_retaddr_ofs) = Some (parent_ra s) ->
       Mem.free m stk 0 f.(fn_stacksize) = Some m' ->
+      forall (CALLED: Genv.find_funct_ptr ge f' = Some fd),
+      forall COMP: comp_of fd = comp_of f,
+      forall ALLOWED: needs_calling_comp (comp_of f) = false,
+      forall (ALLOWED': Genv.allowed_call ge (comp_of f) (Vptr f' Ptrofs.zero)),
       step (State s fb (Vptr stk soff) (Mtailcall sig ros :: c) rs m)
         E0 (Callstate s f' rs m')
   | exec_Mbuiltin:
       forall s fb f sp rs m ef args res b vargs t vres rs' m',
       eval_builtin_args ge rs sp m args vargs ->
-      forall FUN: Genv.find_funct_ptr ge fb = Some f,
+      forall FUN: Genv.find_funct_ptr ge fb = Some (Internal f),
+      (* forall (ALLOWED: Genv.allowed_call pol f.(fn_comp) (External ef)), *)
       external_call ef ge (comp_of f) vargs m t vres m' ->
       rs' = set_res res vres (undef_regs (destroyed_by_builtin ef) rs) ->
       step (State s fb sp (Mbuiltin ef args res :: b) rs m)
@@ -405,7 +423,7 @@ Inductive step: state -> trace -> state -> Prop :=
   | exec_function_internal:
       forall s fb rs m f m1 m2 m3 stk rs',
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
-      Mem.alloc m f.(fn_comp) 0 f.(fn_stacksize) = (m1, stk) ->
+      Mem.alloc m (comp_of f) 0 f.(fn_stacksize) = (m1, stk) ->
       let sp := Vptr stk Ptrofs.zero in
       store_stack m1 sp Tptr f.(fn_link_ofs) (parent_sp s) = Some m2 ->
       store_stack m2 sp Tptr f.(fn_retaddr_ofs) (parent_ra s) = Some m3 ->
@@ -488,13 +506,14 @@ Proof.
   induction 1; intros WF; inv WF; try (econstructor; now eauto with coqlib).
 - (* call *)
   assert (f0 = f) by congruence. subst f0.
-  constructor.
+  econstructor.
   constructor; auto. econstructor; eauto with coqlib.
   destruct (is_leaf_function f) eqn:E; auto.
   unfold is_leaf_function in E; rewrite forallb_forall in E. 
   symmetry. apply (E (Mcall sig ros)). eapply is_tail_in; eauto.
 - (* goto *)
-  assert (f0 = f) by congruence. subst f0. econstructor; eauto using find_label_tail.  
+  assert (f0 = f) by congruence. subst f0.
+  econstructor; eauto using find_label_tail.
 - (* cond *)
   assert (f0 = f) by congruence. subst f0. econstructor; eauto using find_label_tail.  
 - (* jumptable *)

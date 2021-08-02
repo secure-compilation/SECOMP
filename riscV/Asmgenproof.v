@@ -36,6 +36,7 @@ Proof.
   intros. eapply match_transform_partial_program; eauto.
 Qed.
 
+
 Section PRESERVATION.
 
 Variable prog: Mach.program.
@@ -43,6 +44,7 @@ Variable tprog: Asm.program.
 Hypothesis TRANSF: match_prog prog tprog.
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
+
 
 Lemma symbols_preserved:
   forall (s: ident), Genv.find_symbol tge s = Genv.find_symbol ge s.
@@ -75,6 +77,17 @@ Proof.
   monadInv B. rewrite H0 in EQ; inv EQ; auto.
 Qed.
 
+Lemma allowed_call_translated:
+  forall cp vf,
+    Genv.allowed_call ge cp vf ->
+    Genv.allowed_call tge cp vf.
+Proof.
+  intros cp vf H.
+  eapply (Genv.match_genvs_allowed_calls TRANSF). eauto.
+Qed.
+
+
+
 (** * Properties of control flow *)
 
 Lemma transf_function_no_overflow:
@@ -86,10 +99,10 @@ Proof.
 Qed.
 
 Lemma exec_straight_exec:
-  forall fb f c ep tf tc c' rs m rs' m',
+  forall fb f c ep tf tc c' rs m rs' m' st,
   transl_code_at_pc ge (rs PC) fb f c ep tf tc ->
   exec_straight tge tf tc rs m c' rs' m' ->
-  plus step tge (State rs m) E0 (State rs' m').
+  plus step tge (State st rs m) E0 (State st rs' m').
 Proof.
   intros. inv H.
   eapply exec_straight_steps_1; eauto.
@@ -487,72 +500,189 @@ Qed.
 - Mach register values and Asm register values agree.
 *)
 
+Inductive match_stackframe: Mach.stackframe -> stackframe -> Prop :=
+| match_sf: forall b ofs v c,
+    match_stackframe (Mach.Stackframe b v ofs c) (Stackframe b v ofs)
+.
+
+Definition stack_internal_call (s: list Mach.stackframe) (f: Mach.stackframe) :=
+  match s with
+  | nil => Some default_compartment
+  | Mach.Stackframe b _ _ _ :: _ => Genv.find_comp ge (Vptr b Ptrofs.zero)
+  end =
+  match f with
+  | Mach.Stackframe b' _ _ _ => Genv.find_comp ge (Vptr b' Ptrofs.zero)
+  end.
+
+Definition stack_external_call s f :=
+  not (stack_internal_call s f).
+
+Definition mach_stackframe_of_val v sp c: option Mach.stackframe :=
+  match v with
+  | Vptr b ofs => Some (Mach.Stackframe b sp (Ptrofs.add ofs Ptrofs.one) c)
+  | _ => None
+  end.
+
+Definition stackframe_of_val v sp: option stackframe :=
+  match v with
+  | Vptr b ofs => Some (Stackframe b sp (Ptrofs.add ofs Ptrofs.one))
+  | _ => None
+  end.
+
+(* Problem: this invariant doesn't hold! *)
+(* For instance, consider the case where:
+   - the call [C1 -> C2.P2()] is allowed
+   - the call [C1 -> C2.P2'()] is *not* allowed
+   - We first do the call [C1 -> C2.P2()], then
+     [C2.P2() tailcall C2.P2'()].
+   In the resulting state, we cannot prove any of the
+   case: the stack isn't empty; the compartment of the
+   current PC (which points at [C2.P2']) isn't the same
+   as the compartment of what's stored on the stack (which
+   points at [C1.P1]); the call from [C1 -> C2.P2'()] isn't allowed
+ *)
+
+Definition val_of_stackframe (f: Mach.stackframe) :=
+  match f with
+  | Mach.Stackframe b _ ofs _ => Vptr b ofs
+  end.
+
+(* How are the source and target stack related? *)
+(* There is no reason to inspect the current RA or SP in the source, because they
+   can be modified. *)
+Inductive match_stacks: val -> list Mach.stackframe -> stack -> Prop :=
+| match_stacks_nil:
+    forall pc,
+    match_stacks pc nil nil
+(* | match_stacks_same_compartment: *)
+(*     (* Allows for changing the PC arbitrarily as long as we stay in the same *)
+(*        compartment *) *)
+(*     forall newpc pc s s', *)
+(*     match_stacks pc s s' -> *)
+(*     Genv.find_comp ge pc = Genv.find_comp ge newpc -> *)
+(*     match_stacks newpc s s' *)
+| match_stacks_intra_compartment:
+    (* Intra-compartment calls create a new frame in the source, not the target *)
+    forall newpc pc s s' f,
+    match_stacks pc s s' ->
+    Genv.find_comp ge (val_of_stackframe f) = Genv.find_comp ge pc ->
+    Genv.find_comp ge (val_of_stackframe f) = Genv.find_comp ge newpc ->
+    (* no condition on the frame *)
+    match_stacks newpc (f :: s) s'
+| match_stacks_cross_compartment:
+    (* Cross-compartment calls create a new frame in both the source and the target *)
+    forall newpc pc s s' f f',
+    match_stacks pc s s' ->
+    Genv.find_comp ge (val_of_stackframe f) = Genv.find_comp ge pc ->
+    Genv.find_comp ge (val_of_stackframe f) <> Genv.find_comp ge newpc ->
+    match_stackframe f f' ->
+    match_stacks newpc (f :: s) (f' :: s')
+.
+
+Lemma match_stacks_same_compartment:
+  forall newpc pc s s',
+  match_stacks pc s s' ->
+  Genv.find_comp ge pc = Genv.find_comp ge newpc ->
+  match_stacks newpc s s'.
+Proof.
+  intros newpc pc s s' H; revert newpc.
+  induction H.
+  - intros. constructor.
+  - intros.
+    eapply match_stacks_intra_compartment; auto.
+    congruence.
+  - intros.
+    eapply match_stacks_cross_compartment; auto.
+    congruence.
+Qed.
+
+Definition block_of (v: val): option block :=
+  match v with
+  | Vptr b _ => Some b
+  | _ => None
+  end.
+
 Inductive match_states: Mach.state -> Asm.state -> Prop :=
   | match_states_intro:
-      forall s fb sp c ep ms m m' rs f tf tc
+      forall s s' fb sp c ep ms m m' rs f tf tc
         (STACKS: match_stack ge s)
+        (STACKS': match_stacks (rs PC) s s')
         (FIND: Genv.find_funct_ptr ge fb = Some (Internal f))
         (MEXT: Mem.extends m m')
         (AT: transl_code_at_pc ge (rs PC) fb f c ep tf tc)
         (AG: agree ms sp rs)
         (DXP: ep = true -> rs#X30 = parent_sp s),
       match_states (Mach.State s fb sp c ms m)
-                   (Asm.State rs m')
+                   (Asm.State s' rs m')
   | match_states_call:
-      forall s fb ms m m' rs
+      forall s s' fb ms m m' rs
         (STACKS: match_stack ge s)
+        (STACKS': match_stacks (rs PC) s s')
         (MEXT: Mem.extends m m')
         (AG: agree ms (parent_sp s) rs)
         (ATPC: rs PC = Vptr fb Ptrofs.zero)
         (ATLR: rs RA = parent_ra s),
       match_states (Mach.Callstate s fb ms m)
-                   (Asm.State rs m')
+                   (Asm.State s' rs m')
   | match_states_return:
-      forall s ms m m' rs
+      forall s s' ms m m' rs
         (STACKS: match_stack ge s)
+        (STACKS': match_stacks (rs PC) s s')
         (MEXT: Mem.extends m m')
         (AG: agree ms (parent_sp s) rs)
         (ATPC: rs PC = parent_ra s),
       match_states (Mach.Returnstate s ms m)
-                   (Asm.State rs m').
+                   (Asm.State s' rs m').
 
 Lemma exec_straight_steps:
-  forall s fb f rs1 i c ep tf tc m1' m2 m2' sp ms2,
+  forall s s' fb f rs1 i c ep tf tc m1' m2 m2' sp ms2,
   match_stack ge s ->
   Mem.extends m2 m2' ->
   Genv.find_funct_ptr ge fb = Some (Internal f) ->
   transl_code_at_pc ge (rs1 PC) fb f (i :: c) ep tf tc ->
+  forall (STACKS: match_stacks (rs1 PC) s s'),
   (forall k c (TR: transl_instr f i ep k = OK c),
    exists rs2,
        exec_straight tge tf c rs1 m1' k rs2 m2'
     /\ agree ms2 sp rs2
     /\ (it1_is_parent ep i = true -> rs2#X30 = parent_sp s)) ->
   exists st',
-  plus step tge (State rs1 m1') E0 st' /\
+  plus step tge (State s' rs1 m1') E0 st' /\
   match_states (Mach.State s fb sp c ms2 m2) st'.
 Proof.
   intros. inversion H2. subst. monadInv H7.
   exploit H3; eauto. intros [rs2 [A [B C]]].
-  exists (State rs2 m2'); split.
+  exists (State s' rs2 m2'); split.
   eapply exec_straight_exec; eauto.
-  econstructor; eauto. eapply exec_straight_at; eauto.
+  econstructor; eauto.
+  { clear -A STACKS.
+    induction A.
+    - rewrite H0.
+      eapply match_stacks_same_compartment; eauto.
+      now destruct (rs1 PC).
+    - eapply IHA. rewrite H0.
+      eapply match_stacks_same_compartment; eauto.
+      now destruct (rs1 PC).
+  }
+  eapply exec_straight_at; eauto.
 Qed.
 
 Lemma exec_straight_steps_goto:
-  forall s fb f rs1 i c ep tf tc m1' m2 m2' sp ms2 lbl c',
+  forall s s' fb f rs1 i c ep tf tc m1' m2 m2' sp ms2 lbl c',
   match_stack ge s ->
   Mem.extends m2 m2' ->
   Genv.find_funct_ptr ge fb = Some (Internal f) ->
   Mach.find_label lbl f.(Mach.fn_code) = Some c' ->
   transl_code_at_pc ge (rs1 PC) fb f (i :: c) ep tf tc ->
   it1_is_parent ep i = false ->
+  forall (STACKS: match_stacks (rs1 PC) s s'),
   (forall k c (TR: transl_instr f i ep k = OK c),
    exists jmp, exists k', exists rs2,
        exec_straight tge tf c rs1 m1' (jmp :: k') rs2 m2'
     /\ agree ms2 sp rs2
     /\ exec_instr tge tf jmp rs2 m2' = goto_label tf lbl rs2 m2') ->
   exists st',
-  plus step tge (State rs1 m1') E0 st' /\
+  plus step tge (State s' rs1 m1') E0 st' /\
   match_states (Mach.State s fb sp c' ms2 m2) st'.
 Proof.
   intros. inversion H3. subst. monadInv H9.
@@ -563,33 +693,58 @@ Proof.
   intros [ofs' [PC2 CT2]].
   exploit find_label_goto_label; eauto.
   intros [tc' [rs3 [GOTO [AT' OTH]]]].
-  exists (State rs3 m2'); split.
+  inversion AT'; subst.
+  exists (State s' rs3 m2'); split.
   eapply plus_right'.
   eapply exec_straight_steps_1; eauto.
-  econstructor; eauto.
-  eapply find_instr_tail. eauto.
-  rewrite C. eexact GOTO.
+  { destruct (is_call jmp) eqn:ISCALL;
+      destruct (is_return jmp) eqn:ISRET;
+      try now destruct jmp.
+    - eapply exec_step_internal_call; eauto.
+      eapply find_instr_tail. eauto.
+      rewrite C. eexact GOTO.
+      right; left; simpl. now rewrite FN.
+      simpl; now rewrite FN.
+      unfold update_stack_call.
+      rewrite <- H9; simpl; rewrite FN. now rewrite Pos.eqb_refl.
+    - eapply exec_step_internal_return; eauto.
+      eapply find_instr_tail. eauto.
+      rewrite C. eexact GOTO.
+      rewrite PC2; simpl; now rewrite FN.
+      rewrite <- H9; simpl; now rewrite FN.
+      congruence. congruence.
+      unfold update_stack_return.
+      rewrite <- H9; simpl; rewrite FN. now rewrite Pos.eqb_refl.
+    - econstructor; eauto.
+      eapply find_instr_tail. eauto.
+      rewrite C. eexact GOTO.
+      right; left; simpl. now rewrite FN.
+  }
   traceEq.
   econstructor; eauto.
+  { rewrite <- H9. rewrite <- H6 in STACKS.
+    eapply match_stacks_same_compartment; eauto. }
   apply agree_exten with rs2; auto with asmgen.
   congruence.
 Qed.
 
 Lemma exec_straight_opt_steps_goto:
-  forall s fb f rs1 i c ep tf tc m1' m2 m2' sp ms2 lbl c',
+  forall s s' fb f rs1 i c ep tf tc m1' m2 m2' sp ms2 lbl c',
   match_stack ge s ->
   Mem.extends m2 m2' ->
   Genv.find_funct_ptr ge fb = Some (Internal f) ->
   Mach.find_label lbl f.(Mach.fn_code) = Some c' ->
   transl_code_at_pc ge (rs1 PC) fb f (i :: c) ep tf tc ->
   it1_is_parent ep i = false ->
+  forall (STACKS: match_stacks (rs1 PC) s s'),
+  (* forall (ALWSTK: stack_allowed fb s'), *)
   (forall k c (TR: transl_instr f i ep k = OK c),
    exists jmp, exists k', exists rs2,
        exec_straight_opt tge tf c rs1 m1' (jmp :: k') rs2 m2'
     /\ agree ms2 sp rs2
     /\ exec_instr tge tf jmp rs2 m2' = goto_label tf lbl rs2 m2') ->
   exists st',
-  plus step tge (State rs1 m1') E0 st' /\
+  plus step tge (State s' rs1 m1') E0 st' /\
   match_states (Mach.State s fb sp c' ms2 m2) st'.
 Proof.
   intros. inversion H3. subst. monadInv H9.
@@ -599,25 +754,72 @@ Proof.
   inv A.
 - exploit find_label_goto_label; eauto.
   intros [tc' [rs3 [GOTO [AT' OTH]]]].
-  exists (State rs3 m2'); split.
-  apply plus_one. econstructor; eauto.
-  eapply find_instr_tail. eauto.
-  rewrite C. eexact GOTO.
+  inversion AT'; subst.
+  exists (State s' rs3 m2'); split.
+  apply plus_one.
+  { destruct (is_call jmp) eqn:ISCALL;
+      destruct (is_return jmp) eqn:ISRET;
+      try now destruct jmp.
+    - eapply exec_step_internal_call; eauto.
+      eapply find_instr_tail. eauto.
+      rewrite C. eexact GOTO.
+      right; left; simpl. now rewrite FN.
+      simpl; now rewrite FN.
+      unfold update_stack_call.
+      rewrite <- H9; simpl; rewrite FN. now rewrite Pos.eqb_refl.
+    - eapply exec_step_internal_return; eauto.
+      eapply find_instr_tail. eauto.
+      rewrite C. eexact GOTO.
+      rewrite <- H6; simpl; now rewrite FN.
+      rewrite <- H9; simpl; now rewrite FN.
+      congruence. congruence.
+      unfold update_stack_return.
+      rewrite <- H9; simpl; rewrite FN. now rewrite Pos.eqb_refl.
+    - econstructor; eauto.
+      eapply find_instr_tail. eauto.
+      rewrite C. eexact GOTO.
+      right; left; simpl. now rewrite FN.
+  }
   econstructor; eauto.
+  { rewrite <- H9. rewrite <- H6 in STACKS.
+    eapply match_stacks_same_compartment; eauto. }
   apply agree_exten with rs2; auto with asmgen.
   congruence.
 - exploit exec_straight_steps_2; eauto.
   intros [ofs' [PC2 CT2]].
   exploit find_label_goto_label; eauto.
   intros [tc' [rs3 [GOTO [AT' OTH]]]].
-  exists (State rs3 m2'); split.
+  inversion AT'; subst.
+  exists (State s' rs3 m2'); split.
   eapply plus_right'.
   eapply exec_straight_steps_1; eauto.
-  econstructor; eauto.
-  eapply find_instr_tail. eauto.
-  rewrite C. eexact GOTO.
+  { destruct (is_call jmp) eqn:ISCALL;
+      destruct (is_return jmp) eqn:ISRET;
+      try now destruct jmp.
+    - eapply exec_step_internal_call; eauto.
+      eapply find_instr_tail. eauto.
+      rewrite C. eexact GOTO.
+      right; left; simpl. now rewrite FN.
+      simpl; now rewrite FN.
+      unfold update_stack_call.
+      rewrite <- H11; simpl; rewrite FN. now rewrite Pos.eqb_refl.
+    - eapply exec_step_internal_return; eauto.
+      eapply find_instr_tail. eauto.
+      rewrite C. eexact GOTO.
+      rewrite PC2; simpl; now rewrite FN.
+      rewrite <- H11; simpl; now rewrite FN.
+      congruence. congruence.
+      unfold update_stack_return.
+      rewrite <- H11; simpl; rewrite FN. now rewrite Pos.eqb_refl.
+    - econstructor; eauto.
+      eapply find_instr_tail. eauto.
+      rewrite C. eexact GOTO.
+      right; left; simpl. now rewrite FN.
+  }
   traceEq.
   econstructor; eauto.
+  { rewrite <- H11. rewrite <- H6 in STACKS.
+    eapply match_stacks_same_compartment; eauto. }
   apply agree_exten with rs2; auto with asmgen.
   congruence.
 Qed.
@@ -632,9 +834,9 @@ Qed.
 
 Definition measure (s: Mach.state) : nat :=
   match s with
-  | Mach.State _ _ _ _ _ _ => 0%nat
+  | Mach.State _ _ _ _ _ _ => 1%nat
   | Mach.Callstate _ _ _ _ => 0%nat
-  | Mach.Returnstate _ _ _ => 1%nat
+  | Mach.Returnstate _ _ _ => 2%nat
   end.
 
 Remark preg_of_not_X30: forall r, negb (mreg_eq r R30) = true -> IR X30 <> preg_of r.
@@ -758,6 +960,7 @@ Local Transparent destroyed_by_op.
   inv AT.
   assert (NOOV: list_length_z tf.(fn_code) <= Ptrofs.max_unsigned).
     eapply transf_function_no_overflow; eauto.
+  pose proof Genv.find_funct_ptr_match TRANSF _ CALLED as [_ [tf' [TFIND [TTRANSF _]]]].
   destruct ros as [rf|fid]; simpl in H; monadInv H5.
 + (* Indirect call *)
   assert (rs rf = Vptr f' Ptrofs.zero).
@@ -769,35 +972,159 @@ Local Transparent destroyed_by_op.
   assert (TCA: transl_code_at_pc ge (Vptr fb (Ptrofs.add ofs Ptrofs.one)) fb f c false tf x).
     econstructor; eauto.
   exploit return_address_offset_correct; eauto. intros; subst ra.
-  left; econstructor; split.
-  apply plus_one. eapply exec_step_internal. Simpl. rewrite <- H2; simpl; eauto.
-  eapply functions_transl; eauto. eapply find_instr_tail; eauto.
-  simpl. eauto.
-  econstructor; eauto.
-  econstructor; eauto.
-  eapply agree_sp_def; eauto.
-  simpl. eapply agree_exten; eauto. intros. Simpl.
-  Simpl. rewrite <- H2. auto.
+  (* right. split; auto. *)
+  (* split; traceEq. *)
+  (* econstructor; eauto. *)
+  (* econstructor; eauto. *)
+  (* eapply agree_sp_def; eauto. *)
+  (* simpl.  *)
+  (* destruct (comp_of tf =? comp_of tf')%positive eqn:Heq. *)
+  destruct ((comp_of (Internal tf) =? comp_of tf')%positive) eqn:Heq.
+  * left; econstructor; split.
+    apply plus_one. eapply exec_step_internal_call.
+    rewrite <- H2; simpl; eauto.
+    eapply functions_transl; eauto.
+    eapply find_instr_tail; eauto.
+    simpl; eauto.
+    simpl; eauto.
+    Simpl; eauto.
+    rewrite <- (comp_transl_partial _ H4).
+    eapply allowed_call_translated; eauto.
+    simpl. rewrite (functions_transl _ _ _ FIND H4). reflexivity.
+    unfold update_stack_call. Simpl.
+    rewrite H7; simpl. unfold tge; rewrite TFIND.
+    unfold comp_of in *; simpl in *. now rewrite Heq.
+    econstructor; eauto.
+    econstructor; eauto.
+    eapply agree_sp_def; eauto.
+    { Simpl.
+      rewrite H7. rewrite <- H2 in *.
+      eapply match_stacks_intra_compartment. exact STACKS'.
+      simpl. reflexivity.
+      simpl. rewrite FIND, CALLED.
+      rewrite (comp_transl_partial _ TTRANSF).
+      unfold comp_of in *; simpl in *.
+      rewrite (comp_transf_function _ _ H4).
+      apply Peqb_true_eq in Heq. now rewrite Heq.
+    }
+    simpl. eapply agree_exten; eauto. intros. Simpl.
+    Simpl. rewrite <- H2. auto.
+  * left; econstructor; split.
+    apply plus_one. eapply exec_step_internal_call.
+    rewrite <- H2; simpl; eauto.
+    eapply functions_transl; eauto.
+    eapply find_instr_tail; eauto.
+    simpl; eauto.
+    simpl; eauto.
+    Simpl; eauto.
+    rewrite <- (comp_transl_partial _ H4).
+    eapply allowed_call_translated; eauto.
+    simpl. rewrite (functions_transl _ _ _ FIND H4). reflexivity.
+    unfold update_stack_call. Simpl.
+    rewrite H7; simpl. unfold tge; rewrite TFIND.
+    rewrite <- H2. simpl.
+    unfold comp_of in *; simpl in *. rewrite Heq.
+    reflexivity.
+    econstructor; eauto.
+    econstructor; eauto.
+    eapply agree_sp_def; eauto.
+    { Simpl.
+      rewrite H7. rewrite <- H2 in *.
+      eapply match_stacks_cross_compartment. exact STACKS'.
+      simpl. reflexivity.
+      simpl. rewrite FIND, CALLED.
+      rewrite (comp_transl_partial _ TTRANSF).
+      unfold comp_of in *; simpl in *.
+      rewrite (comp_transf_function _ _ H4).
+      apply Pos.eqb_neq in Heq. congruence.
+      erewrite agree_sp; eauto. constructor.
+    }
+    simpl. eapply agree_exten; eauto. intros. Simpl.
+    Simpl. rewrite <- H2. auto.
 + (* Direct call *)
   generalize (code_tail_next_int _ _ _ _ NOOV H6). intro CT1.
   assert (TCA: transl_code_at_pc ge (Vptr fb (Ptrofs.add ofs Ptrofs.one)) fb f c false tf x).
     econstructor; eauto.
   exploit return_address_offset_correct; eauto. intros; subst ra.
-  left; econstructor; split.
-  apply plus_one. eapply exec_step_internal. eauto.
-  eapply functions_transl; eauto. eapply find_instr_tail; eauto.
-  simpl. unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H. eauto.
-  econstructor; eauto.
-  econstructor; eauto.
-  eapply agree_sp_def; eauto.
-  simpl. eapply agree_exten; eauto. intros. Simpl.
-  Simpl. rewrite <- H2. auto.
+  destruct (comp_of (Internal tf) =? comp_of tf')%positive eqn:Heq.
+  * left; econstructor; split.
+    apply plus_one. eapply exec_step_internal_call.
+    rewrite <- H2; simpl; eauto.
+    eapply functions_transl; eauto.
+    eapply find_instr_tail; eauto.
+    simpl; eauto.
+    simpl; eauto.
+    Simpl; eauto.
+    unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H. eauto.
+    rewrite <- (comp_transl_partial _ H4).
+    eapply allowed_call_translated; eauto.
+    simpl. rewrite (functions_transl _ _ _ FIND H4). reflexivity.
+    unfold update_stack_call. Simpl.
+    unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H.
+    simpl; unfold tge; rewrite TFIND.
+    unfold comp_of in *; simpl in *. now rewrite Heq.
+    econstructor; eauto.
+    econstructor; eauto.
+    eapply agree_sp_def; eauto.
+    { Simpl.
+      rewrite <- H2 in *.
+      eapply match_stacks_intra_compartment. exact STACKS'.
+      simpl. reflexivity.
+      simpl. unfold Genv.symbol_address.
+      rewrite FIND, symbols_preserved, H.
+      unfold Genv.find_comp. rewrite CALLED.
+      rewrite (comp_transl_partial _ TTRANSF).
+      unfold comp_of in *; simpl in *.
+      rewrite (comp_transf_function _ _ H4).
+      apply Peqb_true_eq in Heq. now rewrite Heq.
+    }
+    simpl. eapply agree_exten; eauto. intros. Simpl.
+    Simpl. unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H. eauto.
+    Simpl. rewrite <- H2. auto.
+  * left; econstructor; split.
+    apply plus_one. eapply exec_step_internal_call.
+    rewrite <- H2; simpl; eauto.
+    eapply functions_transl; eauto.
+    eapply find_instr_tail; eauto.
+    simpl; eauto.
+    simpl; eauto.
+    Simpl; eauto.
+    unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H. eauto.
+    rewrite <- (comp_transl_partial _ H4).
+    eapply allowed_call_translated; eauto.
+    simpl. rewrite (functions_transl _ _ _ FIND H4). reflexivity.
+    unfold update_stack_call. Simpl.
+    unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H.
+    simpl; unfold tge; rewrite TFIND.
+    rewrite <- H2; simpl.
+    unfold comp_of in *; simpl in *. rewrite Heq.
+    reflexivity.
+    econstructor; eauto.
+    econstructor; eauto.
+    eapply agree_sp_def; eauto.
+    { Simpl.
+      rewrite <- H2 in *.
+      eapply match_stacks_cross_compartment. exact STACKS'.
+      simpl. reflexivity.
+      simpl. unfold Genv.symbol_address.
+      rewrite FIND, symbols_preserved, H.
+      unfold Genv.find_comp. rewrite CALLED.
+      rewrite (comp_transl_partial _ TTRANSF).
+      unfold comp_of in *; simpl in *.
+      rewrite (comp_transf_function _ _ H4).
+      apply Pos.eqb_neq in Heq. congruence.
+      erewrite agree_sp; eauto. constructor.
+    }
+    simpl. eapply agree_exten; eauto. intros. Simpl.
+    Simpl. unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H. eauto.
+    Simpl. rewrite <- H2. auto.
 
 - (* Mtailcall *)
   assert (f0 = f) by congruence.  subst f0.
   inversion AT; subst.
   assert (NOOV: list_length_z tf.(fn_code) <= Ptrofs.max_unsigned).
     eapply transf_function_no_overflow; eauto.  exploit Mem.loadv_extends. eauto. eexact H1. auto. simpl. intros [parent' [A B]].
+  pose proof Genv.find_funct_ptr_match TRANSF _ CALLED as [_ [tf' [TFIND [TTRANSF _]]]].
   destruct ros as [rf|fid]; simpl in H; monadInv H7.
 + (* Indirect call *)
   assert (rs rf = Vptr f' Ptrofs.zero).
@@ -805,31 +1132,49 @@ Local Transparent destroyed_by_op.
     revert H; predSpec Ptrofs.eq Ptrofs.eq_spec i Ptrofs.zero; intros; congruence.
   assert (rs0 x0 = Vptr f' Ptrofs.zero).
     exploit ireg_val; eauto. rewrite H7; intros LD; inv LD; auto.
-  exploit make_epilogue_correct; eauto. intros (rs1 & m1 & U & V & W & X & Y & Z). 
-  exploit exec_straight_steps_2; eauto using functions_transl.                      
+  exploit make_epilogue_correct; eauto. intros (rs1 & m1 & U & V & W & X & Y & Z).
+  exploit exec_straight_steps_2; eauto using functions_transl.
   intros (ofs' & P & Q).
   left; econstructor; split.
   (* execution *)
   eapply plus_right'. eapply exec_straight_exec; eauto.
   econstructor. eexact P. eapply functions_transl; eauto. eapply find_instr_tail. eexact Q.
-  simpl. reflexivity.
+  simpl. reflexivity. eauto. eauto.
+  Simpl; eauto.
+  rewrite Z by (rewrite <- (ireg_of_eq _ _ EQ1); eauto with asmgen). eauto.
+  rewrite <- (comp_transl_partial _ H6).
+  eapply allowed_call_translated; eauto.
   traceEq.
   (* match states *)
   econstructor; eauto.
+  { Simpl. rewrite Z by (rewrite <- (ireg_of_eq _ _ EQ1); eauto with asmgen).
+    rewrite H9. rewrite <- H4 in *.
+    eapply match_stacks_same_compartment; eauto.
+    unfold Genv.find_comp.
+    rewrite FIND, CALLED, COMP. reflexivity. }
   apply agree_set_other; auto with asmgen.
-  Simpl. rewrite Z by (rewrite <- (ireg_of_eq _ _ EQ1); eauto with asmgen). assumption. 
+  Simpl. rewrite Z by (rewrite <- (ireg_of_eq _ _ EQ1); eauto with asmgen). assumption.
 + (* Direct call *)
-  exploit make_epilogue_correct; eauto. intros (rs1 & m1 & U & V & W & X & Y & Z). 
-  exploit exec_straight_steps_2; eauto using functions_transl.                      
+  exploit make_epilogue_correct; eauto. intros (rs1 & m1 & U & V & W & X & Y & Z).
+  exploit exec_straight_steps_2; eauto using functions_transl.
   intros (ofs' & P & Q).
   left; econstructor; split.
   (* execution *)
   eapply plus_right'. eapply exec_straight_exec; eauto.
   econstructor. eexact P. eapply functions_transl; eauto. eapply find_instr_tail. eexact Q.
-  simpl. reflexivity.
+  simpl. reflexivity. eauto. eauto.
+  Simpl; eauto.
+  unfold Genv.symbol_address. now rewrite symbols_preserved, H.
+  rewrite <- (comp_transl_partial _ H6).
+  eapply allowed_call_translated; eauto.
   traceEq.
   (* match states *)
   econstructor; eauto.
+  { Simpl.
+    rewrite <- H4 in STACKS'.
+    eapply match_stacks_same_compartment; eauto.
+    simpl. rewrite FIND. unfold Genv.symbol_address. rewrite symbols_preserved.
+    rewrite H. simpl. rewrite CALLED, COMP. reflexivity. }
   apply agree_set_other; auto with asmgen.
   Simpl. unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H. auto.
 
@@ -845,16 +1190,31 @@ Local Transparent destroyed_by_op.
   eapply find_instr_tail; eauto.
   erewrite <- sp_val by eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
-  eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  replace (comp_of tf) with (comp_of f); eauto.
-  { rewrite <- comp_transf_function; eauto.
-    now replace f with (Internal f0) by congruence. }
-  eauto.
+  rewrite FUN in FIND; inv FIND.
+  rewrite <- (comp_transl_partial _ H3).
+  eapply external_call_symbols_preserved; eauto. apply senv_preserved. eauto.
   econstructor; eauto.
-  instantiate (2 := tf); instantiate (1 := x).
+  { Simpl.
+    rewrite <- H1 in STACKS'.
+    eapply match_stacks_same_compartment; eauto.
+    unfold Genv.find_comp.
+    rewrite FIND. (* PC should simply be incremented by one *)
+    rewrite set_res_other; eauto.
+    rewrite undef_regs_other; eauto.
+    Simpl. rewrite <- H1; simpl.
+    now rewrite FIND.
+    intros r' H4. clear -H4.
+    remember (destroyed_by_builtin ef) as l; clear Heql.
+    rename H4 into H.
+    induction l.
+    - inv H.
+    - inv H. intros Hn. eapply preg_of_not_PC. rewrite Hn; eauto.
+      eapply IHl. eauto.
+  }
   unfold nextinstr. rewrite Pregmap.gss.
   rewrite set_res_other. rewrite undef_regs_other_2. rewrite Pregmap.gso by congruence. 
-  rewrite <- H1. simpl. econstructor; eauto.
+  rewrite <- H1. simpl.
+  econstructor; eauto.
   eapply code_tail_next_int; eauto.
   rewrite preg_notin_charact. intros. auto with asmgen.
   auto with asmgen.
@@ -866,12 +1226,16 @@ Local Transparent destroyed_by_op.
   assert (f0 = f) by congruence. subst f0.
   inv AT. monadInv H4.
   exploit find_label_goto_label; eauto. intros [tc' [rs' [GOTO [AT2 INV]]]].
-  left; exists (State rs' m'); split.
+  exploit functions_transl; eauto. intro FN.
+  left. inversion AT2; subst. exists (State s' rs' m'); split.
   apply plus_one. econstructor; eauto.
-  eapply functions_transl; eauto.
   eapply find_instr_tail; eauto.
-  simpl; eauto.
+  simpl; eauto. eauto. eauto.
+  right; left; auto.
+  simpl. rewrite FN. reflexivity.
   econstructor; eauto.
+  eapply match_stacks_same_compartment; eauto.
+  rewrite <- H1, <- H4; eauto.
   eapply agree_exten; eauto with asmgen.
   congruence.
 
@@ -907,10 +1271,26 @@ Local Transparent destroyed_by_op.
   intros [tc' [rs' [A [B C]]]].
   exploit ireg_val; eauto. rewrite H. intros LD; inv LD.
   left; econstructor; split.
-  apply plus_one. econstructor; eauto.
+  assert (exists ofs, rs' PC = Vptr fb ofs) as [ofs' Hptr]. {
+    destruct (rs' PC); inversion B.
+    eauto.
+  }
+  apply plus_one. econstructor. eauto. eauto.
   eapply find_instr_tail; eauto.
-  simpl. rewrite <- H9. unfold Mach.label in H0; unfold label; rewrite H0. eexact A.
+  simpl. rewrite <- H9. unfold Mach.label in H0; unfold label; rewrite H0.
+  eexact A. eauto. eauto. eauto.
+  (* unfold next_stack. rewrite Hptr. simpl. rewrite FN. *)
+  (* rewrite Pos.eqb_refl. reflexivity. eauto. eauto. *)
+  right; left; auto.
+  simpl. rewrite FN. reflexivity.
+
+  assert (exists ofs, rs' PC = Vptr fb ofs) as [ofs' Hptr]. {
+    destruct (rs' PC); inversion B.
+    eauto.
+  }
   econstructor; eauto.
+  { eapply match_stacks_same_compartment; eauto.
+    rewrite <- H3, Hptr. reflexivity. }
   eapply agree_undef_regs; eauto.
   simpl. intros. rewrite C; auto with asmgen. Simpl.
   congruence.
@@ -921,19 +1301,120 @@ Local Transparent destroyed_by_op.
   assert (NOOV: list_length_z tf.(fn_code) <= Ptrofs.max_unsigned).
     eapply transf_function_no_overflow; eauto.
   exploit make_epilogue_correct; eauto. intros (rs1 & m1 & U & V & W & X & Y & Z).
-  exploit exec_straight_steps_2; eauto using functions_transl.                      
+  exploit exec_straight_steps_2; eauto using functions_transl.
+  assert (exists cp, Genv.find_comp ge (parent_ra s) = Some cp) as [cp Hra].
+  { destruct s as [| [] ?].
+    - eexists. simpl. rewrite Genv.find_comp_null. reflexivity.
+    - simpl. inv STACKS.
+      rewrite H11. eexists; reflexivity. }
+      (* rewrite H6. *)
+      (* exploit functions_translated; eauto. *)
+      (* intros [tf1 [? ?]]. *)
+      (* eexists. rewrite H6. reflexivity. } *)
+  assert (exists s'', update_stack_return tge s' (comp_of (Internal f)) rs1 # PC <- (rs1 X1) = Some s''
+                 /\ match_stacks (parent_ra s) s s'') as [s'' [Hs''1 Hs''2]].
+  { unfold update_stack_return. rewrite X. Simpl.
+    rewrite (comp_translated _ _ Hra).
+    rewrite <- H3 in STACKS'.
+    remember (Vptr fb ofs) as pc.
+    assert (COMP: Genv.find_comp ge pc = Some (comp_of (Internal f))).
+    { rewrite Heqpc. simpl. rewrite FIND. reflexivity. }
+    revert Hra.
+    clear -STACKS' TRANSF COMP.
+    induction STACKS'.
+    - intros.
+      destruct ((comp_of (Internal f) =? cp)%positive); eexists.
+      + split; [eauto | econstructor].
+      + split; [eauto | econstructor].
+    - intros.
+      destruct f0; simpl in *.
+      destruct (Genv.find_funct_ptr ge f0) eqn:PTR; try congruence.
+      inv Hra.
+      (* eapply functions_translated in PTR as [? [PTR' ?]]. *)
+      (* rewrite PTR' in Hra. inv Hra. *)
+      destruct ((comp_of (Internal f) =? comp_of f1)%positive) eqn:COMP'.
+      + eexists; split; eauto.
+        eapply match_stacks_intra_compartment; eauto.
+        simpl. rewrite PTR. eauto.
+      + rewrite COMP in H0. inv H0.
+        exfalso.
+        apply Pos.eqb_neq in COMP'.
+        congruence.
+    - intros.
+      destruct f0; simpl in *.
+      destruct (Genv.find_funct_ptr ge f0) eqn:PTR; try congruence.
+      inv Hra.
+      (* eapply functions_translated in PTR as [? [PTR' ?]]. *)
+      destruct ((comp_of (Internal f) =? comp_of f1)%positive) eqn:COMP'.
+      + rewrite COMP in H0. exfalso. apply H0.
+        apply Pos.eqb_eq in COMP'. inv H1. congruence.
+      + eexists; split; eauto.
+        eapply match_stacks_intra_compartment; eauto.
+        simpl. rewrite PTR. auto.
+  }
   intros (ofs' & P & Q).
   left; econstructor; split.
   (* execution *)
   eapply plus_right'. eapply exec_straight_exec; eauto.
-  econstructor. eexact P. eapply functions_transl; eauto. eapply find_instr_tail. eexact Q.
-  simpl. reflexivity.
+  eapply exec_step_internal_return.
+  eexact P. eapply functions_transl; eauto. eapply find_instr_tail. eexact Q.
+  (* HERE: *)
+  simpl. reflexivity. eauto.
+  Simpl. rewrite P. eapply comp_translated. unfold Genv.find_comp; rewrite FIND. eauto.
+  Simpl. rewrite X. eapply comp_translated. eauto.
+  { Simpl. rewrite X.
+    revert Hra. rewrite <- H3 in STACKS'.
+    remember (Vptr fb ofs) as pc.
+    assert (COMP: Genv.find_comp ge pc = Some (comp_of (Internal f))).
+    { rewrite Heqpc. simpl. rewrite FIND. reflexivity. }
+    clear -STACKS' COMP TRANSF.
+    revert COMP.
+    induction STACKS'.
+    - intros. reflexivity.
+    (* - intros. *)
+    (*   eapply IHSTACKS'; eauto. congruence. *)
+    - clear IHSTACKS'.
+      intros. rewrite COMP in H0.
+      destruct f0; simpl in *.
+      destruct (Genv.find_funct_ptr ge f0) eqn:PTR; try congruence.
+      (* eapply functions_translated in PTR as [? [PTR' ?]]. *)
+      exfalso. apply H1. inv Hra.
+      inv H0.
+      (* eapply comp_transl_partial in H1. *)
+      rewrite H3. auto.
+    - intros.
+      simpl. now inv H1.
+  }
+  { Simpl. rewrite Y.
+    revert Hra. rewrite <- H3 in STACKS'.
+    remember (Vptr fb ofs) as pc.
+    assert (COMP: Genv.find_comp ge pc = Some (comp_of (Internal f))).
+    { rewrite Heqpc. simpl. rewrite FIND. reflexivity. }
+    clear -STACKS' COMP TRANSF.
+    revert COMP.
+    induction STACKS'.
+    - intros. reflexivity.
+    (* - intros. *)
+    (*   eapply IHSTACKS'; eauto. congruence. *)
+    - clear IHSTACKS'.
+      intros. rewrite COMP in H0.
+      destruct f0; simpl in *.
+      destruct (Genv.find_funct_ptr ge f0) eqn:PTR; try congruence.
+      exfalso. apply H1. inv Hra.
+      inv H0.
+      rewrite H3. auto.
+    - intros.
+      now inv H1.
+  }
+  eauto.
   traceEq.
   (* match states *)
   econstructor; eauto.
+  Simpl. rewrite X. eauto.
   apply agree_set_other; auto with asmgen.
 
 - (* internal function *)
+  inv H.
   exploit functions_translated; eauto. intros [tf [A B]]. monadInv B.
   generalize EQ; intros EQ'. monadInv EQ'.
   destruct (zlt Ptrofs.max_unsigned (list_length_z x0.(fn_code))); inversion EQ1. clear EQ1. subst x0.
@@ -952,8 +1433,8 @@ Local Transparent destroyed_by_op.
   set (tf := {| fn_sig := Mach.fn_sig f; fn_code := tfbody |}) in *.
   set (rs2 := nextinstr (rs0#X30 <- (parent_sp s) #SP <- sp #X31 <- Vundef)).
   exploit (storeind_ptr_correct tge tf SP (fn_retaddr_ofs f) RA x0 rs2 m2').
-    rewrite chunk_of_Tptr in P. change (rs2 X1) with (rs0 X1). rewrite ATLR. 
-    change (rs2 X2) with sp. eexact P. 
+    rewrite chunk_of_Tptr in P. change (rs2 X1) with (rs0 X1). rewrite ATLR.
+    change (rs2 X2) with sp. eexact P.
     congruence. congruence.
   intros (rs3 & U & V).
   assert (EXEC_PROLOGUE:
@@ -963,21 +1444,22 @@ Local Transparent destroyed_by_op.
   { change (fn_code tf) with tfbody; unfold tfbody.
     apply exec_straight_step with rs2 m2'.
     unfold exec_instr.
-    change (fn_comp tf) with (Mach.fn_comp f).
+    change (comp_of tf) with (comp_of f).
     rewrite C. fold sp.
     rewrite <- (sp_val _ _ _ AG). rewrite chunk_of_Tptr in F. rewrite F. reflexivity.
-    reflexivity. 
+    reflexivity.
     eexact U. }
   exploit exec_straight_steps_2; eauto using functions_transl. omega. constructor.
-  intros (ofs' & X & Y).                    
-  left; exists (State rs3 m3'); split.
+  intros (ofs' & X & Y).
+  left; eexists; split.
   eapply exec_straight_steps_1; eauto. omega. constructor.
   econstructor; eauto.
-  rewrite X; econstructor; eauto. 
+  rewrite X. rewrite ATPC in STACKS'. eapply match_stacks_same_compartment; eauto.
+  rewrite X; econstructor; eauto.
   apply agree_exten with rs2; eauto with asmgen.
-  unfold rs2. 
+  unfold rs2.
   apply agree_nextinstr. apply agree_set_other; auto with asmgen.
-  apply agree_change_sp with (parent_sp s). 
+  apply agree_change_sp with (parent_sp s).
   apply agree_undef_regs with rs0. auto.
 Local Transparent destroyed_at_function_entry.
   simpl; intros; Simpl.
@@ -991,22 +1473,119 @@ Local Transparent destroyed_at_function_entry.
   intros [args' [C D]].
   exploit external_call_mem_extends; eauto.
   intros [res' [m2' [P [Q [R S]]]]].
+  assert (Genv.find_comp ge (parent_ra s) = Some cp) as Hra.
+  { clear -COMP TRANSF.
+    unfold call_comp in COMP.
+    unfold Genv.find_comp in *.
+    destruct (parent_ra s); eauto.
+  }
+  assert (exists s'',
+           update_stack_return tge s' (comp_of (@External function ef)) (set_pair (loc_external_result (ef_sig ef)) res' (undef_caller_save_regs rs0)) # PC <- (rs0 X1) = Some s''
+           /\ match_stacks (parent_ra s) s s'') as [s'' [Hs''1 Hs''2]].
+  { unfold update_stack_return. rewrite ATLR. Simpl.
+    rewrite (comp_translated _ _ Hra).
+    rewrite ATPC in STACKS'.
+    remember (Vptr fb Ptrofs.zero) as pc.
+    assert (COMP': Genv.find_comp ge pc = Some (comp_of (@External function ef))).
+    { rewrite Heqpc. simpl. rewrite H. reflexivity. }
+    revert Hra.
+    clear -STACKS' TRANSF COMP'.
+    induction STACKS'.
+    - intros.
+      destruct ((comp_of (External ef) =? cp)%positive); eexists.
+      + split; [eauto | econstructor].
+      + split; [eauto | econstructor].
+    - intros.
+      destruct f; simpl in *.
+      destruct (Genv.find_funct_ptr ge f) eqn:PTR; try congruence.
+      inv Hra.
+      (* eapply functions_translated in PTR as [? [PTR' ?]]. *)
+      (* rewrite PTR' in Hra. inv Hra. *)
+      destruct ((comp_of (External ef) =? comp_of f0)%positive) eqn:COMP''.
+      + eexists; split; eauto.
+        eapply match_stacks_intra_compartment; eauto.
+        simpl. rewrite PTR. eauto.
+      + rewrite COMP' in H0. inv H0.
+        exfalso.
+        apply Pos.eqb_neq in COMP''.
+        congruence.
+    - intros.
+      destruct f; simpl in *.
+      destruct (Genv.find_funct_ptr ge f) eqn:PTR; try congruence.
+      inv Hra.
+      (* eapply functions_translated in PTR as [? [PTR' ?]]. *)
+      destruct ((comp_of (External ef) =? comp_of f0)%positive) eqn:COMP''.
+      + rewrite COMP' in H0. exfalso. apply H0.
+        apply Pos.eqb_eq in COMP''. inv H1. congruence.
+      + eexists; split; eauto.
+        eapply match_stacks_intra_compartment; eauto.
+        simpl. rewrite PTR. auto.
+  }
   left; econstructor; split.
   apply plus_one. eapply exec_step_external; eauto.
   { unfold call_comp in COMP.
     rewrite <- ATLR in COMP.
     apply comp_translated; eauto. }
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  rewrite ATPC. simpl. rewrite A. reflexivity.
+  Simpl. rewrite ATLR. eapply comp_translated; eauto.
+  { Simpl. rewrite ATLR.
+    revert Hra. rewrite ATPC in STACKS'.
+    remember (Vptr fb Ptrofs.zero) as pc.
+    assert (COMP': Genv.find_comp ge pc = Some (comp_of (@External function ef))).
+    { rewrite Heqpc. simpl. rewrite H. reflexivity. }
+    clear -STACKS' COMP' TRANSF.
+    revert COMP'.
+    induction STACKS'.
+    - intros. reflexivity.
+    - clear IHSTACKS'.
+      intros. rewrite COMP' in H0.
+      destruct f; simpl in *.
+      destruct (Genv.find_funct_ptr ge f) eqn:PTR; try congruence.
+    - intros Hra H3.
+      now inv H1.
+  }
+  { Simpl.
+    erewrite agree_sp;
+      try now (eapply agree_set_pair; eauto; eapply agree_undef_caller_save_regs; eauto).
+    revert Hra. rewrite ATPC in STACKS'.
+    remember (Vptr fb Ptrofs.zero) as pc.
+    assert (COMP': Genv.find_comp ge pc = Some (comp_of (@External function ef))).
+    { rewrite Heqpc. simpl. rewrite H. reflexivity. }
+    clear -STACKS' COMP' TRANSF.
+    revert COMP'.
+    induction STACKS'.
+    - intros. reflexivity.
+    - clear IHSTACKS'.
+      intros. rewrite COMP' in H0.
+      destruct f; simpl in *.
+      destruct (Genv.find_funct_ptr ge f) eqn:PTR; try congruence.
+    - intros Hra H3.
+      now inv H1.
+  }
   econstructor; eauto.
+  Simpl. rewrite ATLR. eauto.
   unfold loc_external_result. apply agree_set_other; auto. apply agree_set_pair; auto.
-  apply agree_undef_caller_save_regs; auto. 
+  apply agree_undef_caller_save_regs; auto.
 
 - (* return *)
   inv STACKS. simpl in *.
+  (* inv STACKS'; simpl in *. *)
   right. split. omega. split. auto.
   rewrite <- ATPC in H5.
-  econstructor; eauto. congruence.
+  econstructor; eauto; try congruence.
+  rewrite ATPC in STACKS'.
+  inv STACKS'; eauto.
+  + simpl in *.
+    rewrite H3 in H9.
+    rewrite H3 in H4.
+    eapply match_stacks_same_compartment; eauto. rewrite <- H4.
+    rewrite ATPC. unfold Genv.find_comp. rewrite H3. auto.
+  + simpl in *.
+    rewrite H3 in H8.
+    rewrite H3 in H2. congruence.
 Qed.
+
 
 Lemma transf_initial_states:
   forall st1, Mach.initial_state prog st1 ->
@@ -1019,7 +1598,10 @@ Proof.
   replace (Genv.symbol_address (Genv.globalenv tprog) (prog_main tprog) Ptrofs.zero)
      with (Vptr fb Ptrofs.zero).
   econstructor; eauto.
-  constructor.
+  constructor. constructor.
+  (* Might need to change the definition of matching stacks, since it seems we can't always prove main has the default compartment *)
+  eauto.
+  (* constructor. eauto. *)
   apply Mem.extends_refl.
   split. auto. simpl. unfold Vnullptr; destruct Archi.ptr64; congruence.
   intros. rewrite Regmap.gi. auto.
@@ -1029,14 +1611,17 @@ Proof.
   unfold ge; rewrite H1. auto.
 Qed.
 
+
 Lemma transf_final_states:
   forall st1 st2 r,
   match_states st1 st2 -> Mach.final_state st1 r -> Asm.final_state st2 r.
 Proof.
-  intros. inv H0. inv H. constructor. assumption.
+  intros. inv H0. inv H. inv STACKS'.
+  constructor. assumption.
   compute in H1. inv H1.
   generalize (preg_val _ _ _ R10 AG). rewrite H2. intros LD; inv LD. auto.
 Qed.
+
 
 Theorem transf_program_correct:
   forward_simulation (Mach.semantics return_address_offset prog) (Asm.semantics tprog).

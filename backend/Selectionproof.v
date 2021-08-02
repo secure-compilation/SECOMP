@@ -123,6 +123,7 @@ Proof.
   red in H. decompose [Logic.and] H; clear H. red; auto 20.
 Qed.
 
+
 (** * Correctness of the instruction selection functions for expressions *)
 
 Section PRESERVATION.
@@ -132,6 +133,15 @@ Variable tprog: CminorSel.program.
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
 Hypothesis TRANSF: match_prog prog tprog.
+
+(* Added for interfaces *)
+Definition match_functions (F : Cminor.function) (F' : function) :=
+    Cminor.fn_comp F = F'.(fn_comp)
+ /\ Cminor.fn_sig F = F'.(fn_sig).
+Inductive match_fundef_light : (Cminor.fundef) -> fundef -> Prop :=
+ | match_fundef_internal : forall f f', match_functions f f' -> match_fundef_light (Internal f) (Internal f')
+ | match_fundef_external : forall f, match_fundef_light (External f) (External f).
+
 
 Lemma wt_prog : wt_program prog.
 Proof.
@@ -174,6 +184,15 @@ Proof.
   discriminate.
 Qed.
 
+(* Lemma find_fun_ptr_translated: *)
+(*   forall (v v': val) (f: Cminor.fundef), *)
+(*   Genv.find_funct ge v = Some f -> *)
+(*   Val.lessdef v v' -> *)
+(*   exists cu tf, *)
+(*   Genv.find_funct tge v' = Some tf /\ *)
+(*   match_fundef cu f tf /\ *)
+(*   linkorder cu prog. *)
+
 Lemma comp_function_translated:
   forall cu f tf, match_fundef cu f tf -> comp_of f = comp_of tf.
 Proof.
@@ -203,6 +222,19 @@ Proof.
     unfold Cminor.fundef; rewrite H; intros R; inv R. inv H2.
     destruct H4 as (cu & A & B). monadInv B. auto. }
   unfold helper_functions_declared; intros. decompose [Logic.and] H; clear H. auto 20.
+Qed.
+
+Lemma allowed_call_translated:
+  forall cp vf vf' fd,
+    Val.lessdef vf vf' ->
+    Genv.find_funct ge vf = Some fd ->
+    Genv.allowed_call ge cp vf ->
+    Genv.allowed_call tge cp vf'.
+Proof.
+  intros cp vf vf' fd' LESSDEF FIND H.
+  inv LESSDEF.
+  - eapply (Genv.match_genvs_allowed_calls TRANSF). eauto.
+  - inv FIND.
 Qed.
 
 Section CMCONSTR.
@@ -272,8 +304,8 @@ Qed.
 
 Lemma eval_store:
   forall chunk a1 a2 v1 v2 f k m',
-  eval_expr tge sp e f.(fn_comp) m nil a1 v1 ->
-  eval_expr tge sp e f.(fn_comp) m nil a2 v2 ->
+  eval_expr tge sp e (comp_of f) m nil a1 v1 ->
+  eval_expr tge sp e (comp_of f) m nil a2 v2 ->
   Mem.storev chunk m v1 v2 = Some m' ->
   step tge (State f (store chunk a1 a2) k sp e m)
         E0 (State f Sskip k sp e m').
@@ -869,8 +901,9 @@ Qed.
 Lemma sel_builtin_default_correct:
   forall optid ef al sp e1 m1 vl t v m2 e1' m1' f k,
   Cminor.eval_exprlist ge sp e1 m1 al vl ->
-  external_call ef ge f.(fn_comp) vl m1 t v m2 ->
+  external_call ef ge (comp_of f) vl m1 t v m2 ->
   env_lessdef e1 e1' -> Mem.extends m1 m1' ->
+  (* forall ALLOWED: Policy.allowed_call (comp_of f) (External ef), *)
   exists e2' m2',
      step tge (State f (sel_builtin_default optid ef al) k sp e1' m1')
             t (State f Sskip k sp e2' m2')
@@ -881,15 +914,18 @@ Proof.
   exploit sel_builtin_args_correct; eauto. intros (vl' & A & B).
   exploit external_call_mem_extends; eauto. intros (v' & m2' & D & E & F & _).
   econstructor; exists m2'; split.
-  econstructor. reflexivity. eexact A. eapply external_call_symbols_preserved. eexact senv_preserved. eexact D.
+  econstructor. reflexivity. eexact A.
+  eauto.
+  eapply external_call_symbols_preserved. eexact senv_preserved. eexact D.
   split; auto. apply sel_builtin_res_correct; auto.
 Qed. 
 
 Lemma sel_builtin_correct:
   forall optid ef al sp e1 m1 vl t v m2 e1' m1' f k,
   Cminor.eval_exprlist ge sp e1 m1 al vl ->
-  external_call ef ge f.(fn_comp) vl m1 t v m2 ->
+  external_call ef ge (comp_of f) vl m1 t v m2 ->
   env_lessdef e1 e1' -> Mem.extends m1 m1' ->
+  (* forall ALLOWED: Policy.allowed_call (comp_of f) (External ef), *)
   exists e2' m2',
      step tge (State f (sel_builtin optid ef al) k sp e1' m1')
             t (State f Sskip k sp e2' m2')
@@ -1082,7 +1118,7 @@ Inductive match_states: Cminor.state -> CminorSel.state -> Prop :=
         (MC: match_cont cunit hf (known_id f) env k k')
         (LD: env_lessdef e e')
         (ME: Mem.extends m m')
-        (CPT: f.(Cminor.fn_comp) = f'.(fn_comp)),
+        (CPT: comp_of f = comp_of f'),
       match_states
         (Cminor.State f s k sp e m)
         (State f' s' k' sp e' m')
@@ -1111,7 +1147,7 @@ Inductive match_states: Cminor.state -> CminorSel.state -> Prop :=
         (EA: Cminor.eval_exprlist ge sp e m al args)
         (LDE: env_lessdef e e')
         (ME: Mem.extends m m')
-        (CPT: f.(Cminor.fn_comp) = f'.(fn_comp)),
+        (CPT: comp_of f = comp_of f'),
       match_states
         (Cminor.Callstate (External ef) args (Cminor.Kcall optid f sp e k) m)
         (State f' (sel_builtin optid ef al) k' sp e' m')
@@ -1124,7 +1160,7 @@ Inductive match_states: Cminor.state -> CminorSel.state -> Prop :=
         (LDV: Val.lessdef v v')
         (LDE: env_lessdef (set_optvar optid v e) e')
         (ME: Mem.extends m m')
-        (CPT: f.(Cminor.fn_comp) = f'.(fn_comp)),
+        (CPT: comp_of f = comp_of f'),
       match_states
         (Cminor.Returnstate v (Cminor.Kcall optid f sp e k) m)
         (State f' Sskip k' sp e' m').
@@ -1315,6 +1351,8 @@ Proof.
   left; econstructor; split.
   econstructor; eauto. econstructor; eauto.
   eapply sig_function_translated; eauto.
+  rewrite CPT in ALLOWED; eauto.
+  eapply allowed_call_translated; eauto.
   eapply match_callstate with (cunit := cunit'); eauto.
   eapply match_cont_call with (cunit := cunit) (hf := hf); eauto.
 + (* direct *)
@@ -1325,6 +1363,8 @@ Proof.
   econstructor; eauto.
   subst vf. econstructor; eauto. rewrite symbols_preserved; eauto.
   eapply sig_function_translated; eauto.
+  rewrite CPT in ALLOWED; eauto.
+  eapply allowed_call_translated. eapply Val.lessdef_refl. eauto. eauto.
   eapply match_callstate with (cunit := cunit'); eauto.
   eapply match_cont_call with (cunit := cunit) (hf := hf); eauto.
 + (* turned into Sbuiltin *)
@@ -1342,13 +1382,19 @@ Proof.
   econstructor; eauto. econstructor; eauto. eapply sig_function_translated; eauto.
   rewrite <- (comp_function_translated _ _ _ F), COMP. now apply (comp_transl_partial _ TF).
   rewrite <- CPT; trivial.
+  rewrite CPT in ALLOWED'; eauto.
+  eapply allowed_call_translated; eauto.
   destruct H2 as [b [U V]]. subst vf. inv B.
   econstructor; eauto. econstructor; eauto. rewrite symbols_preserved; eauto. eapply sig_function_translated; eauto.
   rewrite <- (comp_function_translated _ _ _ F), COMP. now apply (comp_transl_partial _ TF).
   rewrite <- CPT; trivial.
+  rewrite CPT in ALLOWED'; eauto.
+  eapply allowed_call_translated. eapply Val.lessdef_refl. eauto. eauto.
   econstructor; eauto. econstructor; eauto. eapply sig_function_translated; eauto.
   rewrite <- (comp_function_translated _ _ _ F), COMP. now apply (comp_transl_partial _ TF).
   rewrite <- CPT; trivial.
+  rewrite CPT in ALLOWED'; eauto.
+  eapply allowed_call_translated; eauto.
   eapply match_callstate with (cunit := cunit'); eauto.
   eapply call_cont_commut; eauto.
 - (* Sbuiltin *)
@@ -1446,7 +1492,8 @@ Proof.
   erewrite <- match_call_cont_call_comp; eauto.
   econstructor; eauto.
 - (* external call turned into a Sbuiltin *)
-  exploit sel_builtin_correct; eauto. rewrite <- CPT; eauto. intros (e2' & m2' & P & Q & R).
+  exploit sel_builtin_correct; eauto. rewrite <- CPT; eauto.
+  intros (e2' & m2' & P & Q & R).
   left; econstructor; split. eexact P. econstructor; eauto.
 - (* return *)
   inv MC.
@@ -1490,13 +1537,13 @@ Proof.
   exists T; split; auto; split; auto. eapply wt_initial_state. eexact wt_prog. auto. 
 - intros. destruct H. eapply sel_final_states; eauto.
 - intros S1 t S2 A T1 [B C].
-  assert (wt_state S2) by (eapply subject_reduction; eauto using wt_prog).
+  assert (wt_state S2) by (eapply subject_reduction; eauto using wt_prog; eapply A).
   unfold MS.
   exploit sel_step_correct; eauto.
   intros [(T2 & D & E) | [(D & E & F) | (S3 & T2 & D & E & F)]].
 + exists S2, T2. intuition auto using star_refl, plus_one.
 + subst t. exists S2, T1. intuition auto using star_refl.
-+ assert (wt_state S3) by (eapply subject_reduction_star; eauto using wt_prog).
++ assert (wt_state S3) by (eapply subject_reduction_star; eauto using wt_prog; simpl in D; eapply D).
   exists S3, T2. intuition auto using plus_one.
 Qed.
 

@@ -87,6 +87,18 @@ Proof.
   monadInv EQ. simpl; unfold type_of_function; simpl. auto.
 Qed.
 
+Lemma allowed_call_translated:
+  forall f tf vf,
+    Genv.allowed_call ge (comp_of f) vf ->
+    transf_function f = OK tf ->
+    Genv.allowed_call tge (comp_of tf) vf.
+Proof.
+  intros f tf vf H TRF.
+  erewrite <- (comp_transl_partial _ TRF).
+  destruct TRANSF.
+  eapply (Genv.match_genvs_allowed_calls H0). eauto.
+Qed.
+
 (** Matching between environments before and after *)
 
 Inductive match_var (f: meminj) (cenv: compilenv) (e: env) (m: mem) (te: env) (tle: temp_env) (id: ident) : Prop :=
@@ -1765,6 +1777,24 @@ Proof.
   rewrite Ptrofs.add_zero. simpl. rewrite dec_eq_true. apply function_ptr_translated; auto.
 Qed.
 
+
+Lemma match_cont_find_funct_eq:
+  forall f cenv k tk m bound tbound vf fd tvf,
+  match_cont f cenv k tk m bound tbound ->
+  Genv.find_funct ge vf = Some fd ->
+  Val.inject f vf tvf ->
+  vf = tvf.
+Proof.
+  intros. exploit match_cont_globalenv; eauto. intros [bound1 MG]. destruct MG.
+  inv H1; simpl in H0; try discriminate. destruct (Ptrofs.eq_dec ofs1 Ptrofs.zero); try discriminate.
+  subst ofs1.
+  assert (f b1 = Some(b1, 0)).
+  apply DOMAIN. eapply FUNCTIONS; eauto.
+  rewrite H1 in H2. inv H2.
+  reflexivity.
+Qed.
+
+
 (** Relating execution states *)
 
 Inductive match_states: state -> state -> Prop :=
@@ -2072,6 +2102,7 @@ Proof.
 
 (* call *)
   exploit eval_simpl_expr; eauto with compat. intros [tvf [A B]].
+  assert (vf = tvf). eapply match_cont_find_funct_eq; eauto. subst tvf.
   exploit eval_simpl_exprlist; eauto with compat. intros [CASTED [tvargs [C D]]].
   exploit match_cont_find_funct; eauto. intros [tfd [P Q]].
   econstructor; split.
@@ -2079,6 +2110,7 @@ Proof.
   rewrite typeof_simpl_expr. eauto.
   eauto. eauto. eauto.
   erewrite type_of_fundef_preserved; eauto.
+  eapply allowed_call_translated; eauto.
   econstructor; eauto.
   intros. econstructor; eauto.
 
@@ -2087,9 +2119,10 @@ Proof.
   exploit external_call_mem_inject; eauto. apply match_globalenvs_preserves_globals; eauto with compat.
   intros [j' [tvres [tm' [P [Q [R [S [T [U V]]]]]]]]].
   econstructor; split.
-  apply plus_one. econstructor; eauto. eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-    replace (fn_comp tf) with (fn_comp f) by now apply comp_transl_partial.
-    eauto.
+  apply plus_one. econstructor; eauto.
+
+  eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  erewrite <- (comp_transl_partial _ TRF); eauto.
   econstructor; eauto with compat.
   eapply match_envs_set_opttemp; eauto.
   eapply match_envs_extcall; eauto.
