@@ -1343,6 +1343,15 @@ Proof.
      inv STORE; now auto).
 Qed.
 
+Remark store_own_block :
+  own_block m1 b cp.
+Proof.
+  unfold store in STORE.
+  destruct (valid_access_dec m1 chunk b ofs Writable cp)
+    as [[_ [OWN _]] |];
+    easy.
+Qed.
+
 (* RB: NOTE: Split in _1 and _2 directions? *)
 Remark store_own_block_inj :
   forall b' cp',

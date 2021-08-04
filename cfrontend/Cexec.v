@@ -192,13 +192,11 @@ Proof.
 - simpl in *. rewrite H, H0. rewrite dec_eq_true. auto.  
 Qed.
 
-Section MEMACCESS.
-
-Variable cp: compartment.
+(* Section MEMACCESS. *)
 
 (** Volatile memory accesses. *)
 
-Definition do_volatile_load (w: world) (chunk: memory_chunk) (m: mem) (b: block) (ofs: ptrofs)
+Definition do_volatile_load (w: world) (chunk: memory_chunk) (cp: compartment) (m: mem) (b: block) (ofs: ptrofs)
                              : option (world * trace * val) :=
   if Genv.block_is_volatile ge b then
     do id <- Genv.invert_symbol ge b;
@@ -212,7 +210,7 @@ Definition do_volatile_load (w: world) (chunk: memory_chunk) (m: mem) (b: block)
     do v <- Mem.load chunk m b (Ptrofs.unsigned ofs) cp;
     Some(w, E0, v).
 
-Definition do_volatile_store (w: world) (chunk: memory_chunk) (m: mem) (b: block) (ofs: ptrofs) (v: val)
+Definition do_volatile_store (w: world) (chunk: memory_chunk) (cp: compartment) (m: mem) (b: block) (ofs: ptrofs) (v: val)
                              : option (world * trace * mem) :=
   if Genv.block_is_volatile ge b then
     do id <- Genv.invert_symbol ge b;
@@ -224,8 +222,8 @@ Definition do_volatile_store (w: world) (chunk: memory_chunk) (m: mem) (b: block
     Some(w, E0, m').
 
 Lemma do_volatile_load_sound:
-  forall w chunk m b ofs w' t v,
-  do_volatile_load w chunk m b ofs = Some(w', t, v) ->
+  forall w chunk cp m b ofs w' t v,
+  do_volatile_load w chunk cp m b ofs = Some(w', t, v) ->
   volatile_load ge cp chunk m b ofs t v /\ possible_trace w t w'.
 Proof.
   intros until v. unfold do_volatile_load. mydestr.
@@ -241,9 +239,9 @@ Proof.
 Qed.
 
 Lemma do_volatile_load_complete:
-  forall w chunk m b ofs w' t v,
+  forall w chunk cp m b ofs w' t v,
   volatile_load ge cp chunk m b ofs t v -> possible_trace w t w' ->
-  do_volatile_load w chunk m b ofs = Some(w', t, v).
+  do_volatile_load w chunk cp m b ofs = Some(w', t, v).
 Proof.
   unfold do_volatile_load; intros. inv H; simpl in *.
   rewrite H1. rewrite (Genv.find_invert_symbol _ _ H2). inv H0. inv H8. inv H6. rewrite H9.
@@ -252,21 +250,23 @@ Proof.
 Qed.
 
 Lemma do_volatile_store_sound:
-  forall w chunk m b ofs v w' t m',
-  do_volatile_store w chunk m b ofs v = Some(w', t, m') ->
+  forall w chunk cp m b ofs v w' t m',
+  do_volatile_store w chunk cp m b ofs v = Some(w', t, m') ->
   volatile_store ge cp chunk m b ofs v t m' /\ possible_trace w t w'.
 Proof.
   intros until m'. unfold do_volatile_store. mydestr.
   split. constructor; auto. apply Genv.invert_find_symbol; auto.
   apply eventval_of_val_sound; auto.
   econstructor. constructor; eauto. constructor.
-  split. constructor; auto. constructor.
+  split.
+  constructor; auto. eapply Mem.store_own_block; eauto.
+  constructor.
 Qed.
 
 Lemma do_volatile_store_complete:
-  forall w chunk m b ofs v w' t m',
-  volatile_store ge chunk m b ofs v t m' -> possible_trace w t w' ->
-  do_volatile_store w chunk m b ofs v = Some(w', t, m').
+  forall w chunk cp m b ofs v w' t m',
+  volatile_store ge cp chunk m b ofs v t m' -> possible_trace w t w' ->
+  do_volatile_store w chunk cp m b ofs v = Some(w', t, m').
 Proof.
   unfold do_volatile_store; intros. inv H; simpl in *.
   rewrite H1. rewrite (Genv.find_invert_symbol _ _ H2).
@@ -277,12 +277,12 @@ Qed.
 
 (** Accessing locations *)
 
-Definition do_deref_loc (w: world) (ty: type) (m: mem) (b: block) (ofs: ptrofs) : option (world * trace * val) :=
+Definition do_deref_loc (w: world) (ty: type) (m: mem) (b: block) (ofs: ptrofs) (cp: compartment) : option (world * trace * val) :=
   match access_mode ty with
   | By_value chunk =>
       match type_is_volatile ty with
-      | false => do v <- Mem.loadv chunk m (Vptr b ofs); Some(w, E0, v)
-      | true => do_volatile_load w chunk m b ofs
+      | false => do v <- Mem.loadv chunk m (Vptr b ofs) cp; Some(w, E0, v)
+      | true => do_volatile_load w chunk cp m b ofs
       end
   | By_reference => Some(w, E0, Vptr b ofs)
   | By_copy => Some(w, E0, Vptr b ofs)
@@ -318,19 +318,19 @@ Proof with try (right; intuition omega).
   destruct Y... left; intuition omega.
 Defined.
 
-Definition do_assign_loc (w: world) (ty: type) (m: mem) (b: block) (ofs: ptrofs) (v: val): option (world * trace * mem) :=
+Definition do_assign_loc (w: world) (ty: type) (m: mem) (b: block) (ofs: ptrofs) (v: val) (cp: compartment): option (world * trace * mem) :=
   match access_mode ty with
   | By_value chunk =>
       match type_is_volatile ty with
-      | false => do m' <- Mem.storev chunk m (Vptr b ofs) v; Some(w, E0, m')
-      | true => do_volatile_store w chunk m b ofs v
+      | false => do m' <- Mem.storev chunk m (Vptr b ofs) v cp; Some(w, E0, m')
+      | true => do_volatile_store w chunk cp m b ofs v
       end
   | By_copy =>
       match v with
       | Vptr b' ofs' =>
           if check_assign_copy ty b ofs b' ofs' then
-            do bytes <- Mem.loadbytes m b' (Ptrofs.unsigned ofs') (sizeof ge ty);
-            do m' <- Mem.storebytes m b (Ptrofs.unsigned ofs) bytes;
+            do bytes <- Mem.loadbytes m b' (Ptrofs.unsigned ofs') (sizeof ge ty) cp;
+            do m' <- Mem.storebytes m b (Ptrofs.unsigned ofs) bytes cp;
             Some(w, E0, m')
           else None
       | _ => None
@@ -339,9 +339,9 @@ Definition do_assign_loc (w: world) (ty: type) (m: mem) (b: block) (ofs: ptrofs)
   end.
 
 Lemma do_deref_loc_sound:
-  forall w ty m b ofs w' t v,
-  do_deref_loc w ty m b ofs = Some(w', t, v) ->
-  deref_loc ge ty m b ofs t v /\ possible_trace w t w'.
+  forall w ty m b ofs cp w' t v,
+  do_deref_loc w ty m b ofs cp = Some(w', t, v) ->
+  deref_loc ge cp ty m b ofs t v /\ possible_trace w t w'.
 Proof.
   unfold do_deref_loc; intros until v.
   destruct (access_mode ty) eqn:?; mydestr.
@@ -352,9 +352,9 @@ Proof.
 Qed.
 
 Lemma do_deref_loc_complete:
-  forall w ty m b ofs w' t v,
-  deref_loc ge ty m b ofs t v -> possible_trace w t w' ->
-  do_deref_loc w ty m b ofs = Some(w', t, v).
+  forall w ty m b ofs cp w' t v,
+  deref_loc ge cp ty m b ofs t v -> possible_trace w t w' ->
+  do_deref_loc w ty m b ofs cp = Some(w', t, v).
 Proof.
   unfold do_deref_loc; intros. inv H.
   inv H0. rewrite H1; rewrite H2; rewrite H3; auto.
@@ -364,9 +364,9 @@ Proof.
 Qed.
 
 Lemma do_assign_loc_sound:
-  forall w ty m b ofs v w' t m',
-  do_assign_loc w ty m b ofs v = Some(w', t, m') ->
-  assign_loc ge ty m b ofs v t m' /\ possible_trace w t w'.
+  forall w ty m b ofs v cp w' t m',
+  do_assign_loc w ty m b ofs v cp = Some(w', t, m') ->
+  assign_loc ge cp ty m b ofs v t m' /\ possible_trace w t w'.
 Proof.
   unfold do_assign_loc; intros until m'.
   destruct (access_mode ty) eqn:?; mydestr.
@@ -377,9 +377,9 @@ Proof.
 Qed.
 
 Lemma do_assign_loc_complete:
-  forall w ty m b ofs v w' t m',
-  assign_loc ge ty m b ofs v t m' -> possible_trace w t w' ->
-  do_assign_loc w ty m b ofs v = Some(w', t, m').
+  forall w ty m b ofs v cp w' t m',
+  assign_loc ge cp ty m b ofs v t m' -> possible_trace w t w' ->
+  do_assign_loc w ty m b ofs v cp = Some(w', t, m').
 Proof.
   unfold do_assign_loc; intros. inv H.
   inv H0. rewrite H1; rewrite H2; rewrite H3; auto.
@@ -422,14 +422,14 @@ Hypothesis do_inline_assembly_complete:
 Definition do_ef_volatile_load (chunk: memory_chunk)
        (w: world) (cp: compartment) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
   match vargs with
-  | Vptr b ofs :: nil => do w',t,v <- do_volatile_load w chunk m b ofs; Some(w',t,v,m)
+  | Vptr b ofs :: nil => do w',t,v <- do_volatile_load w chunk cp m b ofs; Some(w',t,v,m)
   | _ => None
   end.
 
 Definition do_ef_volatile_store (chunk: memory_chunk)
        (w: world) (cp: compartment) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
   match vargs with
-  | Vptr b ofs :: v :: nil => do w',t,m' <- do_volatile_store w chunk m b ofs v; Some(w',t,Vundef,m')
+  | Vptr b ofs :: v :: nil => do w',t,m' <- do_volatile_store w chunk cp m b ofs v; Some(w',t,Vundef,m')
   | _ => None
   end.
 
@@ -454,7 +454,7 @@ Definition do_ef_malloc
   | v :: nil =>
       do sz <- do_alloc_size v;
       let (m', b) := Mem.alloc m cp (- size_chunk Mptr) (Ptrofs.unsigned sz) in
-      do m'' <- Mem.store Mptr m' b (- size_chunk Mptr) v;
+      do m'' <- Mem.store Mptr m' b (- size_chunk Mptr) v cp;
       Some(w, E0, Vptr b Ptrofs.zero, m'')
   | _ => None
   end.
@@ -463,10 +463,10 @@ Definition do_ef_free
        (w: world) (cp: compartment) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
   match vargs with
   | Vptr b lo :: nil =>
-      do vsz <- Mem.load Mptr m b (Ptrofs.unsigned lo - size_chunk Mptr);
+      do vsz <- Mem.load Mptr m b (Ptrofs.unsigned lo - size_chunk Mptr) cp;
       do sz <- do_alloc_size vsz;
       check (zlt 0 (Ptrofs.unsigned sz));
-      do m' <- Mem.free m b (Ptrofs.unsigned lo - size_chunk Mptr) (Ptrofs.unsigned lo + Ptrofs.unsigned sz);
+      do m' <- Mem.free m b (Ptrofs.unsigned lo - size_chunk Mptr) (Ptrofs.unsigned lo + Ptrofs.unsigned sz) cp;
       Some(w, E0, Vundef, m')
   | Vint n :: nil =>
       if Int.eq_dec n Int.zero && negb Archi.ptr64
@@ -492,8 +492,8 @@ Definition do_ef_memcpy (sz al: Z)
   match vargs with
   | Vptr bdst odst :: Vptr bsrc osrc :: nil =>
       if decide (memcpy_args_ok sz al bdst (Ptrofs.unsigned odst) bsrc (Ptrofs.unsigned osrc)) then
-        do bytes <- Mem.loadbytes m bsrc (Ptrofs.unsigned osrc) sz;
-        do m' <- Mem.storebytes m bdst (Ptrofs.unsigned odst) bytes;
+        do bytes <- Mem.loadbytes m bsrc (Ptrofs.unsigned osrc) sz cp;
+        do m' <- Mem.storebytes m bdst (Ptrofs.unsigned odst) bytes cp;
         Some(w, E0, Vundef, m')
       else None
   | _ => None
@@ -550,7 +550,7 @@ Proof with try congruence.
   assert (SIZE: forall v sz, do_alloc_size v = Some sz -> v = Vptrofs sz).
   { intros until sz; unfold Vptrofs; destruct v; simpl; destruct Archi.ptr64 eqn:SF; 
     intros EQ; inv EQ; f_equal; symmetry; eauto with ptrofs. }
-  assert (BF_EX: forall name sg,
+  assert (BF_EX: forall name sg cp,
     do_builtin_or_external name sg w cp vargs m = Some (w', t, vres, m') ->
     builtin_or_external_sem name sg ge cp vargs m t vres m' /\ possible_trace w t w').
   { unfold do_builtin_or_external, builtin_or_external_sem; intros. 
@@ -772,7 +772,7 @@ Fixpoint step_expr (cp: compartment) (k: kind) (a: expr) (m: mem): reducts expr 
       match is_loc l with
       | Some(b, ofs, ty') =>
           check type_eq ty ty';
-          do w',t,v <- do_deref_loc w ty m b ofs;
+          do w',t,v <- do_deref_loc w ty m b ofs cp;
           topred (Rred "red_rvalof" (Eval v ty) m t)
       | None =>
           incontext (fun x => Evalof x ty) (step_expr cp LV l m)
@@ -842,7 +842,7 @@ Fixpoint step_expr (cp: compartment) (k: kind) (a: expr) (m: mem): reducts expr 
       | Some(b, ofs, ty1), Some(v2, ty2) =>
           check type_eq ty1 ty;
           do v <- sem_cast v2 ty2 ty1 m;
-          do w',t,m' <- do_assign_loc w ty1 m b ofs v;
+          do w',t,m' <- do_assign_loc w ty1 m b ofs v cp;
           topred (Rred "red_assign" (Eval v ty) m' t)
       | _, _ =>
          incontext2 (fun x => Eassign x r2 ty) (step_expr cp LV l1 m)
@@ -852,7 +852,7 @@ Fixpoint step_expr (cp: compartment) (k: kind) (a: expr) (m: mem): reducts expr 
       match is_loc l1, is_val r2 with
       | Some(b, ofs, ty1), Some(v2, ty2) =>
           check type_eq ty1 ty;
-          do w',t,v1 <- do_deref_loc w ty1 m b ofs;
+          do w',t,v1 <- do_deref_loc w ty1 m b ofs cp;
           let r' := Eassign (Eloc b ofs ty1)
                            (Ebinop op (Eval v1 ty1) (Eval v2 ty2) tyres) ty1 in
           topred (Rred "red_assignop" r' m t)
@@ -864,7 +864,7 @@ Fixpoint step_expr (cp: compartment) (k: kind) (a: expr) (m: mem): reducts expr 
       match is_loc l with
       | Some(b, ofs, ty1) =>
           check type_eq ty1 ty;
-          do w',t, v1 <- do_deref_loc w ty m b ofs;
+          do w',t, v1 <- do_deref_loc w ty m b ofs cp;
           let op := match id with Incr => Oadd | Decr => Osub end in
           let r' :=
             Ecomma (Eassign (Eloc b ofs ty)
@@ -986,7 +986,7 @@ Definition invert_expr_prop (cp: compartment) (a: expr) (m: mem) : Prop :=
       end
   | Eval v ty => False
   | Evalof (Eloc b ofs ty') ty =>
-      ty' = ty /\ exists t, exists v, exists w', deref_loc ge ty m b ofs t v /\ possible_trace w t w'
+      ty' = ty /\ exists t, exists v, exists w', deref_loc ge cp ty m b ofs t v /\ possible_trace w t w'
   | Eunop op (Eval v1 ty1) ty =>
       exists v, sem_unary_operation op v1 ty1 m = Some v
   | Ebinop op (Eval v1 ty1) (Eval v2 ty2) ty =>
@@ -1001,13 +1001,13 @@ Definition invert_expr_prop (cp: compartment) (a: expr) (m: mem) : Prop :=
       exists b, bool_val v1 ty1 m = Some b
   | Eassign (Eloc b ofs ty1) (Eval v2 ty2) ty =>
       exists v, exists m', exists t, exists w',
-      ty = ty1 /\ sem_cast v2 ty2 ty1 m = Some v /\ assign_loc ge ty1 m b ofs v t m' /\ possible_trace w t w'
+      ty = ty1 /\ sem_cast v2 ty2 ty1 m = Some v /\ assign_loc ge cp ty1 m b ofs v t m' /\ possible_trace w t w'
   | Eassignop op (Eloc b ofs ty1) (Eval v2 ty2) tyres ty =>
       exists t, exists v1, exists w',
-      ty = ty1 /\ deref_loc ge ty1 m b ofs t v1 /\ possible_trace w t w'
+      ty = ty1 /\ deref_loc ge cp ty1 m b ofs t v1 /\ possible_trace w t w'
   | Epostincr id (Eloc b ofs ty1) ty =>
       exists t, exists v1, exists w',
-      ty = ty1 /\ deref_loc ge ty m b ofs t v1 /\ possible_trace w t w'
+      ty = ty1 /\ deref_loc ge cp ty m b ofs t v1 /\ possible_trace w t w'
   | Ecomma (Eval v ty1) r2 ty =>
       typeof r2 = ty
   | Eparen (Eval v1 ty1) tycast ty =>
@@ -1605,7 +1605,7 @@ Proof.
   induction 1; simpl; intros.
 (* valof *)
   rewrite dec_eq_true.
-  rewrite (do_deref_loc_complete _ _ _ _ _ _ _ _ H H0). econstructor; eauto.
+  rewrite (do_deref_loc_complete _ _ _ _ _ _ _ _ _ H H0). econstructor; eauto.
 (* addrof *)
   inv H. econstructor; eauto.
 (* unop *)
@@ -1627,13 +1627,13 @@ Proof.
 (* alignof *)
   inv H. econstructor; eauto.
 (* assign *)
-  rewrite dec_eq_true. rewrite H. rewrite (do_assign_loc_complete _ _ _ _ _ _ _ _ _ H0 H1).
+  rewrite dec_eq_true. rewrite H. rewrite (do_assign_loc_complete _ _ _ _ _ _ _ _ _ _ H0 H1).
   econstructor; eauto.
 (* assignop *)
-  rewrite dec_eq_true. rewrite (do_deref_loc_complete _ _ _ _ _ _ _ _ H H0).
+  rewrite dec_eq_true. rewrite (do_deref_loc_complete _ _ _ _ _ _ _ _ _ H H0).
   econstructor; eauto.
 (* postincr *)
-  rewrite dec_eq_true. subst. rewrite (do_deref_loc_complete _ _ _ _ _ _ _ _ H H1).
+  rewrite dec_eq_true. subst. rewrite (do_deref_loc_complete _ _ _ _ _ _ _ _ _ H H1).
   econstructor; eauto.
 (* comma *)
   inv H0. rewrite dec_eq_true. econstructor; eauto.
@@ -1903,33 +1903,34 @@ End EXPRS.
 
 (** * Transitions over states. *)
 
-Fixpoint do_alloc_variables (e: env) (m: mem) (l: list (ident * type)) {struct l} : env * mem :=
+(* NOTE: default compartment previously *)
+Fixpoint do_alloc_variables (e: env) (m: mem) (cp: compartment) (l: list (ident * type)) {struct l} : env * mem :=
   match l with
   | nil => (e,m)
   | (id, ty) :: l' =>
-      let (m1,b1) := Mem.alloc m default_compartment 0 (sizeof ge ty) in
-      do_alloc_variables (PTree.set id (b1, ty) e) m1 l'
+      let (m1,b1) := Mem.alloc m cp 0 (sizeof ge ty) in
+      do_alloc_variables (PTree.set id (b1, ty) e) m1 cp l'
 end.
 
 Lemma do_alloc_variables_sound:
-  forall l e m, alloc_variables ge e m l (fst (do_alloc_variables e m l)) (snd (do_alloc_variables e m l)).
+  forall l e m cp, alloc_variables ge cp e m l (fst (do_alloc_variables e m cp l)) (snd (do_alloc_variables e m cp l)).
 Proof.
   induction l; intros; simpl.
   constructor.
-  destruct a as [id ty]. destruct (Mem.alloc m default_compartment 0 (sizeof ge ty)) as [m1 b1] eqn:?; simpl.
+  destruct a as [id ty]. destruct (Mem.alloc m cp 0 (sizeof ge ty)) as [m1 b1] eqn:?; simpl.
   econstructor; eauto.
 Qed.
 
 Lemma do_alloc_variables_complete:
-  forall e1 m1 l e2 m2, alloc_variables ge e1 m1 l e2 m2 ->
-  do_alloc_variables e1 m1 l = (e2, m2).
+  forall e1 m1 l e2 m2 cp, alloc_variables ge cp e1 m1 l e2 m2 ->
+  do_alloc_variables e1 m1 cp l = (e2, m2).
 Proof.
   induction 1; simpl.
   auto.
   rewrite H; rewrite IHalloc_variables; auto.
 Qed.
 
-Function sem_bind_parameters (w: world) (e: env) (m: mem) (l: list (ident * type)) (lv: list val)
+Function sem_bind_parameters (w: world) (e: env) (m: mem) (l: list (ident * type)) (lv: list val) (cp: compartment)
                           {struct l} : option mem :=
   match l, lv  with
   | nil, nil => Some m
@@ -1937,30 +1938,30 @@ Function sem_bind_parameters (w: world) (e: env) (m: mem) (l: list (ident * type
       match PTree.get id e with
          | Some (b, ty') =>
              check (type_eq ty ty');
-             do w', t, m1 <- do_assign_loc w ty m b Ptrofs.zero v1;
-             match t with nil => sem_bind_parameters w e m1 params lv | _ => None end
+             do w', t, m1 <- do_assign_loc w ty m b Ptrofs.zero v1 cp;
+             match t with nil => sem_bind_parameters w e m1 params lv cp | _ => None end
         | None => None
       end
    | _, _ => None
 end.
 
-Lemma sem_bind_parameters_sound : forall w e m l lv m',
-  sem_bind_parameters w e m l lv = Some m' ->
-  bind_parameters ge e m l lv m'.
+Lemma sem_bind_parameters_sound : forall w e m l lv cp m',
+  sem_bind_parameters w e m l lv cp = Some m' ->
+  bind_parameters ge cp e m l lv m'.
 Proof.
-   intros; functional induction (sem_bind_parameters w e m l lv); try discriminate.
+   intros; functional induction (sem_bind_parameters w e m l lv cp); try discriminate.
    inversion H; constructor; auto.
    exploit do_assign_loc_sound; eauto. intros [A B]. econstructor; eauto.
 Qed.
 
-Lemma sem_bind_parameters_complete : forall w e m l lv m',
-  bind_parameters ge e m l lv m' ->
-  sem_bind_parameters w e m l lv = Some m'.
+Lemma sem_bind_parameters_complete : forall w cp e m l lv m',
+  bind_parameters ge cp e m l lv m' ->
+  sem_bind_parameters w e m l lv cp = Some m'.
 Proof.
    induction 1; simpl; auto.
    rewrite H. rewrite dec_eq_true.
    assert (possible_trace w E0 w) by constructor.
-   rewrite (do_assign_loc_complete _ _ _ _ _ _ _ _ _ H0 H2).
+   rewrite (do_assign_loc_complete _ _ _ _ _ _ _ _ _ _ H0 H2).
    simpl. auto.
 Qed.
 
@@ -2007,7 +2008,7 @@ Definition do_step (w: world) (s: state) : list transition :=
             else ret "step_for_false" (State f Sskip k e m)
         | Kreturn k =>
             do v' <- sem_cast v ty f.(fn_return) m;
-            do m' <- Mem.free_list m (blocks_of_env ge e);
+            do m' <- Mem.free_list m (blocks_of_env ge e) (fn_comp f);
             ret "step_return_2" (Returnstate v' (call_cont k) m')
         | Kswitch1 sl k =>
             do n <- sem_switch_arg v ty;
@@ -2059,12 +2060,12 @@ Definition do_step (w: world) (s: state) : list transition :=
       ret "step_skip_for4" (State f (Sfor Sskip a2 a3 s) k e m)
 
   | State f (Sreturn None) k e m =>
-      do m' <- Mem.free_list m (blocks_of_env ge e);
+      do m' <- Mem.free_list m (blocks_of_env ge e) (fn_comp f);
       ret "step_return_0" (Returnstate Vundef (call_cont k) m')
   | State f (Sreturn (Some x)) k e m =>
       ret "step_return_1" (ExprState f x (Kreturn k) e m)
   | State f Sskip ((Kstop | Kcall _ _ _ _ _) as k) e m =>
-      do m' <- Mem.free_list m (blocks_of_env ge e);
+      do m' <- Mem.free_list m (blocks_of_env ge e) (fn_comp f);
       ret "step_skip_call" (Returnstate Vundef k m')
 
   | State f (Sswitch x sl) k e m =>
@@ -2084,8 +2085,8 @@ Definition do_step (w: world) (s: state) : list transition :=
 
   | Callstate (Internal f) vargs k m =>
       check (list_norepet_dec ident_eq (var_names (fn_params f) ++ var_names (fn_vars f)));
-      let (e,m1) := do_alloc_variables empty_env m (f.(fn_params) ++ f.(fn_vars)) in
-      do m2 <- sem_bind_parameters w e m1 f.(fn_params) vargs;
+      let (e,m1) := do_alloc_variables empty_env m (fn_comp f) (f.(fn_params) ++ f.(fn_vars)) in
+      do m2 <- sem_bind_parameters w e m1 f.(fn_params) vargs (fn_comp f);
       ret "step_internal_function" (State f f.(fn_body) k e m2)
   | Callstate (External ef _ _ _) vargs k m =>
       match do_external ef w (call_comp k) vargs m with
@@ -2157,7 +2158,7 @@ Proof with try (left; right; econstructor; eauto; fail).
 (* callstate *)
   destruct fd; myinv.
   (* internal *)
-  destruct (do_alloc_variables empty_env m (fn_params f ++ fn_vars f)) as [e m1] eqn:?.
+  destruct (do_alloc_variables empty_env m (fn_comp f) (fn_params f ++ fn_vars f)) as [e m1] eqn:?.
   myinv. left; right; apply step_internal_function with m1. auto.
   change e with (fst (e,m1)). change m1 with (snd (e,m1)) at 2. rewrite <- Heqp.
   apply do_alloc_variables_sound. eapply sem_bind_parameters_sound; eauto.
@@ -2242,16 +2243,25 @@ Proof with (unfold ret; eauto with coqlib).
   rewrite H0...
   rewrite H0...
   destruct H0; subst x...
+  (* NOTE: Parts of this proof change somewhat *)
+  setoid_rewrite H0...
+  rewrite H0; setoid_rewrite H1...
+  (* rewrite H1. red in H0. destruct k; try contradiction... *)
+  red in H0. destruct k; try setoid_rewrite H0; try contradiction...
+  setoid_rewrite H1...
+  setoid_rewrite H1...
   rewrite H0...
-  rewrite H0; rewrite H1...
-  rewrite H1. red in H0. destruct k; try contradiction...
+  destruct x; destruct H0; try discriminate; (left; reflexivity).
   rewrite H0...
-  destruct H0; subst x...
-  rewrite H0...
+  destruct H0...
 
   (* Call step *)
-  rewrite pred_dec_true; auto. rewrite (do_alloc_variables_complete _ _ _ _ _ H1).
-  rewrite (sem_bind_parameters_complete _ _ _ _ _ _ H2)...
+  rewrite pred_dec_true; auto. setoid_rewrite (do_alloc_variables_complete _ _ _ _ _ _ H1).
+  rewrite (sem_bind_parameters_complete _ _ _ _ _ _ _ H2)...
+  constructor.
+  rewrite pred_dec_true; auto. setoid_rewrite (do_alloc_variables_complete _ _ _ _ _ _ H1).
+  rewrite (sem_bind_parameters_complete _ _ _ _ _ _ _ H2)...
+  constructor; auto.
   exploit do_ef_external_complete; eauto. intro EQ; rewrite EQ. auto with coqlib.
 Qed.
 
