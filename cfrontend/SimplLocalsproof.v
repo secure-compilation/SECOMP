@@ -102,13 +102,13 @@ Qed.
 (** Matching between environments before and after *)
 
 Inductive match_var (f: meminj) (cenv: compilenv) (e: env) (m: mem) (te: env) (tle: temp_env) (id: ident) : Prop :=
-  | match_var_lifted: forall b ty chunk v tv
+  | match_var_lifted: forall c b ty chunk v tv
       (ENV: e!id = Some(b, ty))
       (TENV: te!id = None)
       (LIFTED: VSet.mem id cenv = true)
       (MAPPED: f b = None)
       (MODE: access_mode ty = By_value chunk)
-      (LOAD: Mem.load chunk m b 0 = Some v)
+      (LOAD: Mem.load chunk m b 0 c = Some v)
       (TLENV: tle!(id) = Some tv)
       (VINJ: Val.inject f v tv),
       match_var f cenv e m te tle id
@@ -158,8 +158,8 @@ Record match_envs (f: meminj) (cenv: compilenv)
 Lemma match_envs_invariant:
   forall f cenv e le m lo hi te tle tlo thi f' m',
   match_envs f cenv e le m lo hi te tle tlo thi ->
-  (forall b chunk v,
-    f b = None -> Ple lo b /\ Plt b hi -> Mem.load chunk m b 0 = Some v -> Mem.load chunk m' b 0 = Some v) ->
+  (forall c b chunk v,
+    f b = None -> Ple lo b /\ Plt b hi -> Mem.load chunk m b 0 c = Some v -> Mem.load chunk m' b 0 c = Some v) ->
   inject_incr f f' ->
   (forall b, Ple lo b /\ Plt b hi -> f' b = f b) ->
   (forall b b' delta, f' b = Some(b', delta) -> Ple tlo b' /\ Plt b' thi -> f' b = f b) ->
@@ -267,13 +267,13 @@ Qed.
 (** Correctness of [make_cast] *)
 
 Lemma make_cast_correct:
-  forall e le m a v1 tto v2,
-  eval_expr tge e le m a v1 ->
+  forall e c le m a v1 tto v2,
+  eval_expr tge e c le m a v1 ->
   sem_cast v1 (typeof a) tto m = Some v2 ->
-  eval_expr tge e le m (make_cast a tto) v2.
+  eval_expr tge e c le m (make_cast a tto) v2.
 Proof.
   intros.
-  assert (DFL: eval_expr tge e le m (Ecast a tto) v2).
+  assert (DFL: eval_expr tge e c le m (Ecast a tto) v2).
     econstructor; eauto.
   unfold sem_cast, make_cast in *.
   destruct (classify_cast (typeof a) tto); auto.
@@ -337,7 +337,7 @@ Qed.
 
 Lemma step_Sset_debug:
   forall f id ty a k e le m v v',
-  eval_expr tge e le m a v ->
+  eval_expr tge e (comp_of f) le m a v ->
   sem_cast v (typeof a) ty m = Some v' ->
   plus step2 tge (State f (Sset_debug id ty a) k e le m)
               E0 (State f Sskip k e (PTree.set id v' le) m).
@@ -411,12 +411,12 @@ Qed.
 (** Preservation by assignment to lifted variable. *)
 
 Lemma match_envs_assign_lifted:
-  forall f cenv e le m lo hi te tle tlo thi b ty v m' id tv,
+  forall f cenv e c le m lo hi te tle tlo thi b ty v m' id tv,
   match_envs f cenv e le m lo hi te tle tlo thi ->
   e!id = Some(b, ty) ->
   val_casted v ty ->
   Val.inject f v tv ->
-  assign_loc ge ty m b Ptrofs.zero v m' ->
+  assign_loc ge c ty m b Ptrofs.zero v m' ->
   VSet.mem id cenv = true ->
   match_envs f cenv e le m' lo hi te (PTree.set id tv tle) tlo thi.
 Proof.
@@ -610,8 +610,8 @@ Hint Resolve compat_cenv_union_l compat_cenv_union_r compat_cenv_empty: compat.
 (** Allocation and initialization of parameters *)
 
 Lemma alloc_variables_nextblock:
-  forall ge e m vars e' m',
-  alloc_variables ge e m vars e' m' -> Ple (Mem.nextblock m) (Mem.nextblock m').
+  forall ge c e m vars e' m',
+  alloc_variables ge c e m vars e' m' -> Ple (Mem.nextblock m) (Mem.nextblock m').
 Proof.
   induction 1.
   apply Ple_refl.
@@ -619,8 +619,8 @@ Proof.
 Qed.
 
 Lemma alloc_variables_range:
-  forall ge id b ty e m vars e' m',
-  alloc_variables ge e m vars e' m' ->
+  forall ge id b ty c e m vars e' m',
+  alloc_variables ge c e m vars e' m' ->
   e'!id = Some(b, ty) -> e!id = Some(b, ty) \/ Ple (Mem.nextblock m) b /\ Plt b (Mem.nextblock m').
 Proof.
   induction 1; intros.
@@ -628,15 +628,15 @@ Proof.
   exploit IHalloc_variables; eauto. rewrite PTree.gsspec. intros [A|A].
   destruct (peq id id0). inv A.
   right. exploit Mem.alloc_result; eauto. exploit Mem.nextblock_alloc; eauto.
-  generalize (alloc_variables_nextblock _ _ _ _ _ _ H0). intros A B C.
+  generalize (alloc_variables_nextblock _ _ _ _ _ _ _ H0). intros A B C.
   subst b. split. apply Ple_refl. eapply Pos.lt_le_trans; eauto. rewrite B. apply Plt_succ.
   auto.
   right. exploit Mem.nextblock_alloc; eauto. intros B. rewrite B in A. xomega.
 Qed.
 
 Lemma alloc_variables_injective:
-  forall ge id1 b1 ty1 id2 b2 ty2 e m vars e' m',
-  alloc_variables ge e m vars e' m' ->
+  forall ge id1 b1 ty1 id2 b2 ty2 c e m vars e' m',
+  alloc_variables ge c e m vars e' m' ->
   (e!id1 = Some(b1, ty1) -> e!id2 = Some(b2, ty2) -> id1 <> id2 -> b1 <> b2) ->
   (forall id b ty, e!id = Some(b, ty) -> Plt b (Mem.nextblock m)) ->
   (e'!id1 = Some(b1, ty1) -> e'!id2 = Some(b2, ty2) -> id1 <> id2 -> b1 <> b2).
@@ -656,13 +656,13 @@ Proof.
 Qed.
 
 Lemma match_alloc_variables:
-  forall cenv e m vars e' m',
-  alloc_variables ge e m vars e' m' ->
+  forall cenv c e m vars e' m',
+  alloc_variables ge c e m vars e' m' ->
   forall j tm te,
   list_norepet (var_names vars) ->
   Mem.inject j m tm ->
   exists j', exists te', exists tm',
-      alloc_variables tge te tm (remove_lifted cenv vars) te' tm'
+      alloc_variables tge c te tm (remove_lifted cenv vars) te' tm'
   /\ Mem.inject j' m' tm'
   /\ inject_incr j j'
   /\ (forall b, Mem.valid_block m b -> j' b = j b)
@@ -764,11 +764,11 @@ Proof.
 Qed.
 
 Lemma alloc_variables_load:
-  forall e m vars e' m',
-  alloc_variables ge e m vars e' m' ->
-  forall chunk b ofs v,
-  Mem.load chunk m b ofs = Some v ->
-  Mem.load chunk m' b ofs = Some v.
+  forall c e m vars e' m',
+  alloc_variables ge c e m vars e' m' ->
+  forall c' chunk b ofs v,
+  Mem.load chunk m b ofs c' = Some v ->
+  Mem.load chunk m' b ofs c' = Some v.
 Proof.
   induction 1; intros.
   auto.
@@ -788,15 +788,15 @@ Proof.
   omega.
 Qed.
 
-Definition env_initial_value (e: env) (m: mem) :=
+Definition env_initial_value (c: compartment) (e: env) (m: mem) :=
   forall id b ty chunk,
-  e!id = Some(b, ty) -> access_mode ty = By_value chunk -> Mem.load chunk m b 0 = Some Vundef.
+  e!id = Some(b, ty) -> access_mode ty = By_value chunk -> Mem.load chunk m b 0 c = Some Vundef.
 
 Lemma alloc_variables_initial_value:
-  forall e m vars e' m',
-  alloc_variables ge e m vars e' m' ->
-  env_initial_value e m ->
-  env_initial_value e' m'.
+  forall c e m vars e' m',
+  alloc_variables ge c e m vars e' m' ->
+  env_initial_value c e m ->
+  env_initial_value c e' m'.
 Proof.
   induction 1; intros.
   auto.
@@ -804,6 +804,7 @@ Proof.
   destruct (peq id0 id). inv H2.
   eapply Mem.load_alloc_same'; eauto.
   omega. rewrite Z.add_0_l. eapply sizeof_by_value; eauto.
+  eapply Mem.owned_new_block; eauto.
   apply Z.divide_0_r.
   eapply Mem.load_alloc_other; eauto.
 Qed.
@@ -928,15 +929,15 @@ Proof.
 Qed.
 
 Theorem match_envs_alloc_variables:
-  forall cenv m vars e m' temps j tm,
-  alloc_variables ge empty_env m vars e m' ->
+  forall cenv c m vars e m' temps j tm,
+  alloc_variables ge c empty_env m vars e m' ->
   list_norepet (var_names vars) ->
   Mem.inject j m tm ->
   (forall id ty, In (id, ty) vars -> VSet.mem id cenv = true ->
                      exists chunk, access_mode ty = By_value chunk) ->
   (forall id, VSet.mem id cenv = true -> In id (var_names vars)) ->
   exists j', exists te, exists tm',
-     alloc_variables tge empty_env tm (remove_lifted cenv vars) te tm'
+     alloc_variables tge c empty_env tm (remove_lifted cenv vars) te tm'
   /\ match_envs j' cenv e (create_undef_temps temps) m' (Mem.nextblock m) (Mem.nextblock m')
                         te (create_undef_temps (add_lifted cenv vars temps)) (Mem.nextblock tm) (Mem.nextblock tm')
   /\ Mem.inject j' m' tm'
@@ -1029,16 +1030,16 @@ Proof.
 Qed.
 
 Lemma assign_loc_inject:
-  forall f ty m loc ofs v m' tm loc' ofs' v',
-  assign_loc ge ty m loc ofs v m' ->
+  forall c f ty m loc ofs v m' tm loc' ofs' v',
+  assign_loc ge c ty m loc ofs v m' ->
   Val.inject f (Vptr loc ofs) (Vptr loc' ofs') ->
   Val.inject f v v' ->
   Mem.inject f m tm ->
   exists tm',
-     assign_loc tge ty tm loc' ofs' v' tm'
+     assign_loc tge c ty tm loc' ofs' v' tm'
   /\ Mem.inject f m' tm'
-  /\ (forall b chunk v,
-      f b = None -> Mem.load chunk m b 0 = Some v -> Mem.load chunk m' b 0 = Some v).
+  /\ (forall c' b chunk v,
+      f b = None -> Mem.load chunk m b 0 c' = Some v -> Mem.load chunk m' b 0 c' = Some v).
 Proof.
   intros. inv H.
 - (* by value *)
@@ -1057,11 +1058,11 @@ Proof.
 + (* special case size = 0 *)
   assert (bytes = nil).
   { exploit (Mem.loadbytes_empty m bsrc (Ptrofs.unsigned osrc) (sizeof tge ty)).
-    omega. congruence. }
+    omega. eapply Mem.loadbytes_own_block_inj; eauto. congruence. }
   subst.
-  destruct (Mem.range_perm_storebytes tm bdst' (Ptrofs.unsigned (Ptrofs.add odst (Ptrofs.repr delta))) nil)
+  destruct (Mem.range_perm_storebytes tm bdst' (Ptrofs.unsigned (Ptrofs.add odst (Ptrofs.repr delta))) nil c)
   as [tm' SB].
-  simpl. red; intros; omegaContradiction.
+  simpl. red; intros; omegaContradiction. admit.
   exists tm'.
   split. eapply assign_loc_copy; eauto.
   intros; omegaContradiction.
