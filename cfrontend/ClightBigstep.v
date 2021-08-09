@@ -165,13 +165,13 @@ Inductive exec_stmt: env -> compartment -> temp_env ->
   the call. *)
 
 with eval_funcall: compartment -> mem -> fundef -> list val -> trace -> mem -> val -> Prop :=
-  | eval_funcall_internal: forall le c m f vargs t e m1 m2 m3 out vres m4,
-      alloc_variables ge c empty_env m (f.(fn_params) ++ f.(fn_vars)) e m1 ->
+  | eval_funcall_internal: forall c le m f vargs t e m1 m2 m3 out vres m4,
+      alloc_variables ge (comp_of f) empty_env m (f.(fn_params) ++ f.(fn_vars)) e m1 ->
       list_norepet (var_names f.(fn_params) ++ var_names f.(fn_vars)) ->
-      bind_parameters ge c e m1 f.(fn_params) vargs m2 ->
+      bind_parameters ge (comp_of f) e m1 f.(fn_params) vargs m2 ->
       exec_stmt e (comp_of f) (create_undef_temps f.(fn_temps)) m2 f.(fn_body) t le m3 out ->
       outcome_result_value out f.(fn_return) vres m3 ->
-      Mem.free_list m3 (blocks_of_env ge e) c = Some m4 ->
+      Mem.free_list m3 (blocks_of_env ge e) (comp_of f) = Some m4 ->
       eval_funcall c m (Internal f) vargs t m4 vres
   | eval_funcall_external: forall c m ef targs tres cconv vargs t vres m',
       external_call ef ge c vargs m t vres m' ->
@@ -458,7 +458,7 @@ Proof.
 
 (* call internal *)
   destruct (H3 f k) as [S1 [A1 B1]]. reflexivity.
-  eapply star_left. eapply step_internal_function; eauto. econstructor; eauto. admit. admit.
+  eapply star_left. eapply step_internal_function; eauto. econstructor; eauto.
   eapply star_right. eexact A1.
    inv B1; simpl in H4; try contradiction.
   (* Out_normal *)
@@ -479,7 +479,6 @@ Proof.
 
 (* call external *)
   apply star_one. apply step_external_function; auto.
-  congruence.
 Qed.
 
 Lemma exec_stmt_steps:
