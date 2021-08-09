@@ -80,20 +80,20 @@ Inductive exec_stmt: env -> compartment -> temp_env ->
       exec_stmt e c le m Sskip
                E0 le m Out_normal
   | exec_Sassign:   forall e c le m a1 a2 loc ofs v2 v m',
-      eval_lvalue ge e le m a1 loc ofs ->
-      eval_expr ge e le m a2 v2 ->
+      eval_lvalue ge e c le m a1 loc ofs ->
+      eval_expr ge e c le m a2 v2 ->
       sem_cast v2 (typeof a2) (typeof a1) m = Some v ->
-      assign_loc ge (typeof a1) m loc ofs v m' ->
+      assign_loc ge c (typeof a1) m loc ofs v m' ->
       exec_stmt e c le m (Sassign a1 a2)
                E0 le m' Out_normal
   | exec_Sset:     forall e c le m id a v,
-      eval_expr ge e le m a v ->
+      eval_expr ge e c le m a v ->
       exec_stmt e c le m (Sset id a)
                E0 (PTree.set id v le) m Out_normal
   | exec_Scall:   forall e le m optid a al tyargs tyres cconv vf vargs c fd t m' vres,
       classify_fun (typeof a) = fun_case_f tyargs tyres cconv ->
-      eval_expr ge e le m a vf ->
-      eval_exprlist ge e le m al tyargs vargs ->
+      eval_expr ge e c le m a vf ->
+      eval_exprlist ge e c le m al tyargs vargs ->
       Genv.find_funct ge vf = Some fd ->
       type_of_fundef fd = Tfunction tyargs tyres cconv ->
       eval_funcall c m fd vargs t m' vres ->
@@ -101,7 +101,7 @@ Inductive exec_stmt: env -> compartment -> temp_env ->
       exec_stmt e c le m (Scall optid a al)
                 t (set_opttemp optid vres le) m' Out_normal
   | exec_Sbuiltin:   forall e c le m optid ef al tyargs vargs t m' vres,
-      eval_exprlist ge e le m al tyargs vargs ->
+      eval_exprlist ge e c le m al tyargs vargs ->
       external_call ef ge c vargs m t vres m' ->
       exec_stmt e c le m (Sbuiltin optid ef tyargs al)
                 t (set_opttemp optid vres le) m' Out_normal
@@ -116,7 +116,7 @@ Inductive exec_stmt: env -> compartment -> temp_env ->
       exec_stmt e c le m (Ssequence s1 s2)
                 t1 le1 m1 out
   | exec_Sifthenelse: forall e c le m a s1 s2 v1 b t le' m' out,
-      eval_expr ge e le m a v1 ->
+      eval_expr ge e c le m a v1 ->
       bool_val v1 (typeof a) m = Some b ->
       exec_stmt e c le m (if b then s1 else s2) t le' m' out ->
       exec_stmt e c le m (Sifthenelse a s1 s2)
@@ -125,7 +125,7 @@ Inductive exec_stmt: env -> compartment -> temp_env ->
       exec_stmt e c le m (Sreturn None)
                E0 le m (Out_return None)
   | exec_Sreturn_some: forall e c le m a v,
-      eval_expr ge e le m a v ->
+      eval_expr ge e c le m a v ->
       exec_stmt e c le m (Sreturn (Some a))
                 E0 le m (Out_return (Some (v, typeof a)))
   | exec_Sbreak:   forall e c le m,
@@ -154,7 +154,7 @@ Inductive exec_stmt: env -> compartment -> temp_env ->
       exec_stmt e c le m (Sloop s1 s2)
                 (t1**t2**t3) le3 m3 out
   | exec_Sswitch:   forall e c le m a t v n sl le1 m1 out,
-      eval_expr ge e le m a v ->
+      eval_expr ge e c le m a v ->
       sem_switch_arg v (typeof a) = Some n ->
       exec_stmt e c le m (seq_of_labeled_statement (select_switch n sl)) t le1 m1 out ->
       exec_stmt e c le m (Sswitch a sl)
@@ -166,12 +166,12 @@ Inductive exec_stmt: env -> compartment -> temp_env ->
 
 with eval_funcall: compartment -> mem -> fundef -> list val -> trace -> mem -> val -> Prop :=
   | eval_funcall_internal: forall le c m f vargs t e m1 m2 m3 out vres m4,
-      alloc_variables ge empty_env m (f.(fn_params) ++ f.(fn_vars)) e m1 ->
+      alloc_variables ge c empty_env m (f.(fn_params) ++ f.(fn_vars)) e m1 ->
       list_norepet (var_names f.(fn_params) ++ var_names f.(fn_vars)) ->
-      bind_parameters ge e m1 f.(fn_params) vargs m2 ->
+      bind_parameters ge c e m1 f.(fn_params) vargs m2 ->
       exec_stmt e (comp_of f) (create_undef_temps f.(fn_temps)) m2 f.(fn_body) t le m3 out ->
       outcome_result_value out f.(fn_return) vres m3 ->
-      Mem.free_list m3 (blocks_of_env ge e) = Some m4 ->
+      Mem.free_list m3 (blocks_of_env ge e) c = Some m4 ->
       eval_funcall c m (Internal f) vargs t m4 vres
   | eval_funcall_external: forall c m ef targs tres cconv vargs t vres m',
       external_call ef ge c vargs m t vres m' ->
@@ -191,8 +191,8 @@ Combined Scheme exec_stmt_funcall_ind from exec_stmt_ind2, eval_funcall_ind2.
 CoInductive execinf_stmt: env -> compartment -> temp_env -> mem -> statement -> traceinf -> Prop :=
   | execinf_Scall:   forall e le m optid a al vf tyargs tyres cconv vargs c f t,
       classify_fun (typeof a) = fun_case_f tyargs tyres cconv ->
-      eval_expr ge e le m a vf ->
-      eval_exprlist ge e le m al tyargs vargs ->
+      eval_expr ge e c le m a vf ->
+      eval_exprlist ge e c le m al tyargs vargs ->
       Genv.find_funct ge vf = Some f ->
       type_of_fundef f = Tfunction tyargs tyres cconv ->
       evalinf_funcall m f vargs t ->
@@ -206,7 +206,7 @@ CoInductive execinf_stmt: env -> compartment -> temp_env -> mem -> statement -> 
       execinf_stmt e c le1 m1 s2 t2 ->
       execinf_stmt e c le m (Ssequence s1 s2) (t1 *** t2)
   | execinf_Sifthenelse: forall e c le m a s1 s2 v1 b t,
-      eval_expr ge e le m a v1 ->
+      eval_expr ge e c le m a v1 ->
       bool_val v1 (typeof a) m = Some b ->
       execinf_stmt e c le m (if b then s1 else s2) t ->
       execinf_stmt e c le m (Sifthenelse a s1 s2) t
@@ -225,7 +225,7 @@ CoInductive execinf_stmt: env -> compartment -> temp_env -> mem -> statement -> 
       execinf_stmt e c le2 m2 (Sloop s1 s2) t3 ->
       execinf_stmt e c le m (Sloop s1 s2) (t1***t2***t3)
   | execinf_Sswitch:   forall e c le m a t v n sl,
-      eval_expr ge e le m a v ->
+      eval_expr ge e c le m a v ->
       sem_switch_arg v (typeof a) = Some n ->
       execinf_stmt e c le m (seq_of_labeled_statement (select_switch n sl)) t ->
       execinf_stmt e c le m (Sswitch a sl) t
@@ -235,9 +235,9 @@ CoInductive execinf_stmt: env -> compartment -> temp_env -> mem -> statement -> 
 
 with evalinf_funcall: mem -> fundef -> list val -> traceinf -> Prop :=
   | evalinf_funcall_internal: forall m f vargs t e m1 m2,
-      alloc_variables ge empty_env m (f.(fn_params) ++ f.(fn_vars)) e m1 ->
+      alloc_variables ge (comp_of f) empty_env m (f.(fn_params) ++ f.(fn_vars)) e m1 ->
       list_norepet (var_names f.(fn_params) ++ var_names f.(fn_vars)) ->
-      bind_parameters ge e m1 f.(fn_params) vargs m2 ->
+      bind_parameters ge (comp_of f) e m1 f.(fn_params) vargs m2 ->
       execinf_stmt e (comp_of f) (create_undef_temps f.(fn_temps)) m2 f.(fn_body) t ->
       evalinf_funcall m (Internal f) vargs t.
 
@@ -290,7 +290,7 @@ Inductive outcome_state_match
         (Out_return None) (State f (Sreturn None) k' e le m)
   | osm_return_some: forall a v k',
       call_cont k' = call_cont k ->
-      eval_expr ge e le m a v ->
+      eval_expr ge e (comp_of f) le m a v ->
       outcome_state_match e le m f k
         (Out_return (Some (v,typeof a))) (State f (Sreturn (Some a)) k' e le m).
 
@@ -315,7 +315,7 @@ Lemma exec_stmt_eval_funcall_steps:
    is_call_cont k ->
    star step1 ge (Callstate fd args k m) t (Returnstate res k m')).
 Proof.
-  apply exec_stmt_funcall_ind; intros.
+  apply exec_stmt_funcall_ind; intros; subst c.
 
 (* skip *)
   econstructor; split. apply star_refl. constructor.
@@ -329,17 +329,15 @@ Proof.
 (* call *)
   econstructor; split.
   eapply star_left. econstructor; eauto.
-  rewrite <- H6; auto.
   eapply star_right. apply H5; eauto. simpl; auto. econstructor. reflexivity. traceEq.
   constructor.
 
 (* builtin *)
-  subst c.
   econstructor; split. apply star_one; econstructor; eauto.
   econstructor.
 
 (* sequence 2 *)
-  destruct (H0 f (Kseq s2 k)) as [S1 [A1 B1]]. assumption. inv B1.
+  destruct (H0 f (Kseq s2 k)) as [S1 [A1 B1]]. reflexivity. inv B1.
   destruct (H2 f k) as [S2 [A2 B2]]. reflexivity.
   econstructor; split.
   eapply star_left. econstructor.
@@ -349,7 +347,7 @@ Proof.
   auto.
 
 (* sequence 1 *)
-  destruct (H0 f (Kseq s2 k)) as [S1 [A1 B1]]. assumption.
+  destruct (H0 f (Kseq s2 k)) as [S1 [A1 B1]]. reflexivity.
   set (S2 :=
     match out with
     | Out_break => State f Sbreak k e le1 m1
@@ -369,7 +367,7 @@ Proof.
   unfold S2; inv B1; congruence || econstructor; eauto.
 
 (* ifthenelse *)
-  destruct (H2 f k) as [S1 [A1 B1]]. assumption.
+  destruct (H2 f k) as [S1 [A1 B1]]. reflexivity.
   exists S1; split.
   eapply star_left. 2: eexact A1. eapply step_ifthenelse; eauto. traceEq.
   auto.
@@ -387,7 +385,7 @@ Proof.
   econstructor; split. apply star_refl. constructor.
 
 (* loop stop 1 *)
-  destruct (H0 f (Kloop1 s1 s2 k)) as [S1 [A1 B1]]. assumption.
+  destruct (H0 f (Kloop1 s1 s2 k)) as [S1 [A1 B1]]. reflexivity.
   set (S2 :=
     match out' with
     | Out_break => State f Sskip k e le' m'
@@ -403,8 +401,8 @@ Proof.
   unfold S2. inversion H1; subst. constructor. inv B1; econstructor; eauto.
 
 (* loop stop 2 *)
-  destruct (H0 f (Kloop1 s1 s2 k)) as [S1 [A1 B1]]. assumption.
-  destruct (H3 f (Kloop2 s1 s2 k)) as [S2 [A2 B2]]. assumption.
+  destruct (H0 f (Kloop1 s1 s2 k)) as [S1 [A1 B1]]. reflexivity.
+  destruct (H3 f (Kloop2 s1 s2 k)) as [S2 [A2 B2]]. reflexivity.
   set (S3 :=
     match out2 with
     | Out_break => State f Sskip k e le2 m2
@@ -422,9 +420,9 @@ Proof.
   unfold S3. inversion H4; subst. constructor. inv B2; econstructor; eauto.
 
 (* loop loop *)
-  destruct (H0 f (Kloop1 s1 s2 k)) as [S1 [A1 B1]]. assumption.
-  destruct (H3 f (Kloop2 s1 s2 k)) as [S2 [A2 B2]]. assumption.
-  destruct (H5 f k) as [S3 [A3 B3]]. assumption.
+  destruct (H0 f (Kloop1 s1 s2 k)) as [S1 [A1 B1]]. reflexivity.
+  destruct (H3 f (Kloop2 s1 s2 k)) as [S2 [A2 B2]]. reflexivity.
+  destruct (H5 f k) as [S3 [A3 B3]]. reflexivity.
   exists S3; split.
   eapply star_left. eapply step_loop.
   eapply star_trans. eexact A1.
@@ -438,7 +436,7 @@ Proof.
   auto.
 
 (* switch *)
-  destruct (H2 f (Kswitch k)) as [S1 [A1 B1]]. assumption.
+  destruct (H2 f (Kswitch k)) as [S1 [A1 B1]]. reflexivity.
   set (S2 :=
     match out with
     | Out_normal => State f Sskip k e le1 m1
@@ -460,7 +458,7 @@ Proof.
 
 (* call internal *)
   destruct (H3 f k) as [S1 [A1 B1]]. reflexivity.
-  eapply star_left. eapply step_internal_function; eauto. econstructor; eauto.
+  eapply star_left. eapply step_internal_function; eauto. econstructor; eauto. admit. admit.
   eapply star_right. eexact A1.
    inv B1; simpl in H4; try contradiction.
   (* Out_normal *)
