@@ -275,17 +275,17 @@ Definition eval_binop := Cminor.eval_binop.
 (** Allocation of local variables at function entry.  Each variable is
   bound to the reference to a fresh block of the appropriate size. *)
 
-Inductive alloc_variables: env -> mem ->
+Inductive alloc_variables (cp: compartment): env -> mem ->
                            list (ident * Z) ->
                            env -> mem -> Prop :=
   | alloc_variables_nil:
       forall e m,
-      alloc_variables e m nil e m
+      alloc_variables cp e m nil e m
   | alloc_variables_cons:
       forall e m id sz vars m1 b1 m2 e2,
-      Mem.alloc m default_compartment 0 sz = (m1, b1) ->
-      alloc_variables (PTree.set id (b1, sz) e) m1 vars e2 m2 ->
-      alloc_variables e m ((id, sz) :: vars) e2 m2.
+      Mem.alloc m cp 0 sz = (m1, b1) ->
+      alloc_variables cp (PTree.set id (b1, sz) e) m1 vars e2 m2 ->
+      alloc_variables cp e m ((id, sz) :: vars) e2 m2.
 
 (** List of blocks mentioned in an environment, with low and high bounds *)
 
@@ -463,7 +463,7 @@ Inductive step: state -> trace -> state -> Prop :=
       list_norepet (map fst f.(fn_vars)) ->
       list_norepet f.(fn_params) ->
       list_disjoint f.(fn_params) f.(fn_temps) ->
-      alloc_variables empty_env m (fn_vars f) e m1 ->
+      alloc_variables (comp_of f) empty_env m (fn_vars f) e m1 ->
       bind_parameters f.(fn_params) vargs (create_undef_temps f.(fn_temps)) = Some le ->
       step (Callstate (Internal f) vargs k m)
         E0 (State f f.(fn_body) k e le m1)
