@@ -1939,9 +1939,10 @@ Proof.
   intros (v & A & B).
   econstructor; split.
   apply plus_one. eapply exec_Mgetparam; eauto.
-  admit.
+  unfold find_comp_ptr. rewrite FIND. reflexivity.
   rewrite (unfold_transf_function _ _ TRANSL). unfold fn_link_ofs.
-  eapply frame_get_parent. eexact SEP.
+  eapply frame_get_parent. eexact SEP. unfold call_comp. simpl. rewrite FINDF.
+  rewrite (comp_transl_partial _ TRF). reflexivity.
   econstructor; eauto with coqlib. econstructor; eauto.
   apply agree_regs_set_reg. apply agree_regs_set_reg. auto. auto.
   erewrite agree_incoming by eauto. exact B.
@@ -1949,7 +1950,9 @@ Proof.
 + (* Lgetstack, outgoing *)
   exploit frame_get_outgoing; eauto. intros (v & A & B).
   econstructor; split.
-  apply plus_one. eapply exec_Mgetstack. admit. exact A.
+  apply plus_one. eapply exec_Mgetstack.
+  unfold find_comp_ptr. rewrite FIND. reflexivity.
+  rewrite (comp_transl_partial _ TRANSL) in A. exact A.
   econstructor; eauto with coqlib.
   apply agree_regs_set_reg; auto.
   apply agree_locs_set_reg; auto.
@@ -1974,8 +1977,10 @@ Proof.
   clear SEP; destruct A as (m'' & STORE & SEP).
   econstructor; split.
   apply plus_one. destruct sl; try discriminate.
-    econstructor. admit. eexact STORE. eauto.
-    econstructor. admit. eexact STORE. eauto.
+    econstructor. unfold find_comp_ptr; rewrite FIND; reflexivity.
+    rewrite (comp_transl_partial _ TRANSL) in STORE. eexact STORE. eauto.
+    econstructor. unfold find_comp_ptr; rewrite FIND; reflexivity.
+    rewrite (comp_transl_partial _ TRANSL) in STORE. eexact STORE. eauto.
   econstructor. eauto. eauto. eauto.
   apply agree_regs_set_slot. apply agree_regs_undef_regs. auto.
   apply agree_locs_set_slot. apply agree_locs_undef_locs. auto. apply destroyed_by_setstack_caller_save. auto.
@@ -2013,8 +2018,9 @@ Proof.
   eauto. eauto.
   intros [v' [C D]].
   econstructor; split.
-  apply plus_one. econstructor. admit.
+  apply plus_one. econstructor. unfold find_comp_ptr; rewrite FIND; reflexivity.
   instantiate (1 := a'). rewrite <- A. apply eval_addressing_preserved. exact symbols_preserved.
+  rewrite (comp_transl_partial _ TRANSL) in C.
   eexact C. eauto.
   econstructor; eauto with coqlib.
   apply agree_regs_set_reg. rewrite transl_destroyed_by_load. apply agree_regs_undef_regs; auto. auto.
@@ -2033,8 +2039,9 @@ Proof.
   clear SEP; intros (m1' & C & SEP).
   rewrite sep_swap3 in SEP.
   econstructor; split.
-  apply plus_one. econstructor. admit.
+  apply plus_one. econstructor. unfold find_comp_ptr; rewrite FIND; reflexivity.
   instantiate (1 := a'). rewrite <- A. apply eval_addressing_preserved. exact symbols_preserved.
+  rewrite (comp_transl_partial _ TRANSL) in C.
   eexact C. eauto.
   econstructor. eauto. eauto. eauto.
   rewrite transl_destroyed_by_store. apply agree_regs_undef_regs; auto.

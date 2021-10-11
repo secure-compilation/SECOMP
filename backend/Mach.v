@@ -325,8 +325,8 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (CURCOMP: find_comp_ptr fb = Some cp),
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
       load_stack m sp Tptr f.(fn_link_ofs) cp = Some (parent_sp s) ->
-      (* forall (COMPSP: find_comp_ptr (parent_sp s) = Some cp'), *)
-      load_stack m (parent_sp s) ty ofs cp' = Some v ->
+      (* forall (COMPSP: call_comp s = Some cp'), *)
+      load_stack_privileged m (parent_sp s) ty ofs = Some v ->
       rs' = (rs # temp_for_parent_frame <- Vundef # dst <- v) ->
       step (State s fb sp (Mgetparam ofs ty dst :: c) rs m)
         E0 (State s fb sp c rs' m)
