@@ -113,7 +113,7 @@ Parameter free: forall (m: mem) (b: block) (lo hi: Z) (cp: compartment), option 
   addresses [b, ofs] to [b, ofs + size_chunk chunk - 1] belonging to
   compartment [cp] in memory state [m].  Returns the value read, or
   [None] if the accessed addresses are not readable. *)
-Parameter load: forall (chunk: memory_chunk) (m: mem) (b: block) (ofs: Z) (cp: compartment), option val.
+Parameter load: forall (chunk: memory_chunk) (m: mem) (b: block) (ofs: Z) (cp: option compartment), option val.
 
 (** [store chunk m b ofs v cp] writes value [v] as memory quantity [chunk]
   from addresses [b, ofs] to [b, ofs + size_chunk chunk - 1] in memory state
@@ -125,7 +125,7 @@ Parameter store: forall (chunk: memory_chunk) (m: mem) (b: block) (ofs: Z) (v: v
 (** [loadv] and [storev] are variants of [load] and [store] where
   the address being accessed is passed as a value (of the [Vptr] kind). *)
 
-Definition loadv (chunk: memory_chunk) (m: mem) (addr: val) (cp: compartment) : option val :=
+Definition loadv (chunk: memory_chunk) (m: mem) (addr: val) (cp: option compartment) : option val :=
   match addr with
   | Vptr b ofs => load chunk m b (Ptrofs.unsigned ofs) cp
   | _ => None
@@ -143,7 +143,7 @@ Definition storev (chunk: memory_chunk) (m: mem) (addr v: val) (cp: compartment)
   [None] is returned if the accessed addresses are not readable,
   which includes the case where the reading compartment [cp] does not
   own block [b]. *)
-Parameter loadbytes: forall (m: mem) (b: block) (ofs n: Z) (cp: compartment), option (list memval).
+Parameter loadbytes: forall (m: mem) (b: block) (ofs n: Z) (cp: option compartment), option (list memval).
 
 (** [storebytes m b ofs bytes cp] stores the given list of bytes [bytes]
   starting at location [(b, ofs)].  Returns updated memory state

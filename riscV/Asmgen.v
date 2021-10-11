@@ -843,7 +843,7 @@ Definition transl_instr (f: Mach.function) (i: Mach.instruction)
       storeind src SP ofs ty k
   | Mgetparam ofs ty dst =>
       (* load via the frame pointer if it is valid *)
-      do c <- loadind X30 ofs ty dst k;
+      do c <- loadind_privileged X30 ofs ty dst k;
       OK (if ep then c
                 else loadind_ptr SP f.(fn_link_ofs) X30 c)
   | Mop op args res =>

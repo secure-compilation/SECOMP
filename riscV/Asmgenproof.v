@@ -869,7 +869,8 @@ Opaque loadind.
   destruct ep.
 (* X30 contains parent *)
   exploit loadind_correct. eexact EQ.
-  instantiate (3 := rs0). rewrite DXP; eauto. admit. congruence.
+  instantiate (3 := rs0). rewrite DXP; eauto.
+  admit. congruence.
   intros [rs1 [P [Q R]]].
   exists rs1; split. eauto.
   split. eapply agree_set_mreg. eapply agree_set_mreg; eauto. admit. (* congruence. *) auto with asmgen.

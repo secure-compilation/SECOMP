@@ -234,14 +234,15 @@ Inductive instruction : Type :=
   | Pbgeul  (rs1 rs2: ireg0) (l: label)             (**r branch-if-greater-or-equal unsigned *)
 
   (* Loads and stores *)
-  | Plb     (rd: ireg) (ra: ireg) (ofs: offset)     (**r load signed int8 *)
-  | Plbu    (rd: ireg) (ra: ireg) (ofs: offset)     (**r load unsigned int8 *)
-  | Plh     (rd: ireg) (ra: ireg) (ofs: offset)     (**r load signed int16 *)
-  | Plhu    (rd: ireg) (ra: ireg) (ofs: offset)     (**r load unsigned int16 *)
-  | Plw     (rd: ireg) (ra: ireg) (ofs: offset)     (**r load int32 *)
-  | Plw_a   (rd: ireg) (ra: ireg) (ofs: offset)     (**r load any32 *)
-  | Pld     (rd: ireg) (ra: ireg) (ofs: offset)     (**r load int64 *)
-  | Pld_a   (rd: ireg) (ra: ireg) (ofs: offset)     (**r load any64 *)
+  | Plb     (rd: ireg) (ra: ireg) (ofs: offset) (priv: bool)     (**r load signed int8 *)
+  | Plbu    (rd: ireg) (ra: ireg) (ofs: offset) (priv: bool)    (**r load unsigned int8 *)
+  | Plh     (rd: ireg) (ra: ireg) (ofs: offset) (priv: bool)    (**r load signed int16 *)
+  | Plhu    (rd: ireg) (ra: ireg) (ofs: offset) (priv: bool)    (**r load unsigned int16 *)
+  | Plw     (rd: ireg) (ra: ireg) (ofs: offset) (priv: bool)   (**r load int32 *)
+  | Plw_a   (rd: ireg) (ra: ireg) (ofs: offset) (priv: bool)    (**r load any32 *)
+  | Pld     (rd: ireg) (ra: ireg) (ofs: offset) (priv: bool)    (**r load int64 *)
+  | Pld_a   (rd: ireg) (ra: ireg) (ofs: offset) (priv: bool)    (**r load any64 *)
+
 
   | Psb     (rs: ireg) (ra: ireg) (ofs: offset)     (**r store int8 *)
   | Psh     (rs: ireg) (ra: ireg) (ofs: offset)     (**r store int16 *)
@@ -249,6 +250,9 @@ Inductive instruction : Type :=
   | Psw_a   (rs: ireg) (ra: ireg) (ofs: offset)     (**r store any32 *)
   | Psd     (rs: ireg) (ra: ireg) (ofs: offset)     (**r store int64 *)
   | Psd_a   (rs: ireg) (ra: ireg) (ofs: offset)     (**r store any64 *)
+
+            (* Probably doesn't need privilged stores because can't write directly to parameters. Instead
+             writing to a parameter writes to a /copy/ of the parameter *)
 
   (* Synchronization *)
   | Pfence                                          (**r fence *)
@@ -578,11 +582,13 @@ Definition eval_offset (ofs: offset) : ptrofs :=
   end.
 
 Definition exec_load (chunk: memory_chunk) (rs: regset) (m: mem)
-                     (d: preg) (a: ireg) (ofs: offset) (cp: compartment) :=
-  match Mem.loadv chunk m (Val.offset_ptr (rs a) (eval_offset ofs)) cp with
-  | None => Stuck
-  | Some v => Next (nextinstr (rs#d <- v)) m
-  end.
+                     (d: preg) (a: ireg) (ofs: offset) (cp: compartment) (priv: bool) :=
+  match Mem.loadv chunk m (Val.offset_ptr (rs a) (eval_offset ofs))
+                  (if priv then None else Some cp) with
+    | None => Stuck
+    | Some v => Next (nextinstr (rs#d <- v)) m
+    end.
+
 
 Definition exec_store (chunk: memory_chunk) (rs: regset) (m: mem)
                       (s: preg) (a: ireg) (ofs: offset) (cp: compartment) :=
@@ -790,22 +796,22 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) (cp: 
       eval_branch f l rs m (Val.cmplu_bool (Mem.valid_pointer m) Cge rs###s1 rs###s2)
 
 (** Loads and stores *)
-  | Plb d a ofs =>
-      exec_load Mint8signed rs m d a ofs cp
-  | Plbu d a ofs =>
-      exec_load Mint8unsigned rs m d a ofs cp
-  | Plh d a ofs =>
-      exec_load Mint16signed rs m d a ofs cp
-  | Plhu d a ofs =>
-      exec_load Mint16unsigned rs m d a ofs cp
-  | Plw d a ofs =>
-      exec_load Mint32 rs m d a ofs cp
-  | Plw_a d a ofs =>
-      exec_load Many32 rs m d a ofs cp
-  | Pld d a ofs =>
-      exec_load Mint64 rs m d a ofs cp
-  | Pld_a d a ofs =>
-      exec_load Many64 rs m d a ofs cp
+  | Plb d a ofs priv =>
+      exec_load Mint8signed rs m d a ofs cp priv
+  | Plbu d a ofs priv =>
+      exec_load Mint8unsigned rs m d a ofs cp priv
+  | Plh d a ofs priv =>
+      exec_load Mint16signed rs m d a ofs cp priv
+  | Plhu d a ofs priv =>
+      exec_load Mint16unsigned rs m d a ofs cp priv
+  | Plw d a ofs priv =>
+      exec_load Mint32 rs m d a ofs cp priv
+  | Plw_a d a ofs priv =>
+      exec_load Many32 rs m d a ofs cp priv
+  | Pld d a ofs priv =>
+      exec_load Mint64 rs m d a ofs cp priv
+  | Pld_a d a ofs priv =>
+      exec_load Many64 rs m d a ofs cp priv
   | Psb s a ofs =>
       exec_store Mint8unsigned rs m s a ofs cp
   | Psh s a ofs =>
