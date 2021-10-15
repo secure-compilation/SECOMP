@@ -416,20 +416,21 @@ Qed.
 Program Definition contains (chunk: memory_chunk) (b: block) (ofs: Z) (cp: compartment) (spec: val -> Prop) : massert := {|
   m_pred := fun m =>
        0 <= ofs <= Ptrofs.max_unsigned
-    /\ Mem.valid_access m chunk b ofs Freeable cp
-    /\ exists v, Mem.load chunk m b ofs cp = Some v /\ spec v;
+    /\ Mem.valid_access m chunk b ofs Freeable (Some cp)
+    /\ exists v, Mem.load chunk m b ofs (Some cp) = Some v /\ spec v;
   m_footprint := fun b' ofs' => b' = b /\ ofs <= ofs' < ofs + size_chunk chunk
 |}.
 Next Obligation.
   rename H2 into v. split;[|split].
 - auto.
 - destruct H1; split; auto. red; intros; eapply Mem.perm_unchanged_on; eauto. simpl; auto.
+  destruct H2.
   split.
-  admit. (* RB: NOTE: New own_block subgoal *)
+  eapply (Mem.unchanged_on_own _ _ _ H0); eauto.
+  eapply @Mem.can_access_block_valid_block; eauto.
   easy.
 - exists v. split; auto. eapply Mem.load_unchanged_on; eauto. simpl; auto.
-(* Qed. *)
-Admitted.
+Qed.
 Next Obligation.
   eauto with mem.
 Qed.
@@ -445,7 +446,7 @@ Qed.
 Lemma load_rule:
   forall spec m chunk b cp ofs,
   m |= contains chunk b ofs cp spec ->
-  exists v, Mem.load chunk m b ofs cp = Some v /\ spec v.
+  exists v, Mem.load chunk m b ofs (Some cp) = Some v /\ spec v.
 Proof.
   intros. destruct H as (D & E & v & F & G).
   exists v; auto.
@@ -454,7 +455,7 @@ Qed.
 Lemma loadv_rule:
   forall spec m chunk b ofs cp,
   m |= contains chunk b ofs cp spec ->
-  exists v, Mem.loadv chunk m (Vptr b (Ptrofs.repr ofs)) cp = Some v /\ spec v.
+  exists v, Mem.loadv chunk m (Vptr b (Ptrofs.repr ofs)) (Some cp) = Some v /\ spec v.
 Proof.
   intros. exploit load_rule; eauto. intros (v & A & B). exists v; split; auto.
   simpl. rewrite Ptrofs.unsigned_repr; auto. eapply contains_no_overflow; eauto.
@@ -468,7 +469,7 @@ Lemma store_rule:
   Mem.store chunk m b ofs v cp = Some m' /\ m' |= contains chunk b ofs cp spec ** P.
 Proof.
   intros. destruct H as (A & B & C). destruct A as (D & E & v0 & F & G).
-  assert (H: Mem.valid_access m chunk b ofs Writable cp) by eauto with mem.
+  assert (H: Mem.valid_access m chunk b ofs Writable (Some cp)) by eauto with mem.
   destruct (Mem.valid_access_store _ _ _ _ _ v H) as [m' STORE].
   exists m'; split; auto. simpl. intuition auto.
 - eapply Mem.store_valid_access_1; eauto.
@@ -493,16 +494,16 @@ Lemma range_contains:
   forall chunk b ofs cp P m,
   m |= range b ofs (ofs + size_chunk chunk) ** P ->
   (align_chunk chunk | ofs) ->
-  forall OWN : Mem.own_block m b cp,
+  forall OWN : Mem.can_access_block m b (Some cp),
   m |= contains chunk b ofs cp (fun v => True) ** P.
 Proof.
   intros. destruct H as (A & B & C). destruct A as (D & E & F).
   split; [|split].
-- assert (Mem.valid_access m chunk b ofs Freeable cp).
+- assert (Mem.valid_access m chunk b ofs Freeable (Some cp)).
   { split; auto. red; auto. }
   split. generalize (size_chunk_pos chunk). unfold Ptrofs.max_unsigned. omega.
   split. auto.
-+ destruct (Mem.valid_access_load m chunk b ofs cp) as [v LOAD].
++ destruct (Mem.valid_access_load m chunk b ofs (Some cp)) as [v LOAD].
   eauto with mem.
   exists v; auto.
 - auto.
@@ -665,7 +666,7 @@ Proof.
   intros. destruct H as (A & B & C). simpl in A.
   exploit Mem.storev_mapped_inject; eauto. intros (m2' & STORE & INJ).
   inv H1; simpl in STORE; try discriminate.
-  assert (VALID: Mem.valid_access m1 chunk b1 (Ptrofs.unsigned ofs1) Writable cp)
+  assert (VALID: Mem.valid_access m1 chunk b1 (Ptrofs.unsigned ofs1) Writable (Some cp))
     by eauto with mem.
   assert (EQ: Ptrofs.unsigned (Ptrofs.add ofs1 (Ptrofs.repr delta)) = Ptrofs.unsigned ofs1 + delta).
   { eapply Mem.address_inject'; eauto with mem. }
