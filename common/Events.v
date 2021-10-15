@@ -578,8 +578,8 @@ Inductive volatile_load (ge: Senv.t) (cp: compartment):
                       (Val.load_result chunk v)
   | volatile_load_nonvol: forall chunk m b ofs v,
       Senv.block_is_volatile ge b = false ->
-      forall OWN : Mem.own_block m b cp,
-      Mem.load chunk m b (Ptrofs.unsigned ofs) cp = Some v ->
+      forall OWN : Mem.can_access_block m b (Some cp),
+      Mem.load chunk m b (Ptrofs.unsigned ofs) (Some cp) = Some v ->
       volatile_load ge cp chunk m b ofs E0 v.
 
 Inductive volatile_store (ge: Senv.t) (cp: compartment):
@@ -593,7 +593,7 @@ Inductive volatile_store (ge: Senv.t) (cp: compartment):
                       m
   | volatile_store_nonvol: forall chunk m b ofs v m',
       Senv.block_is_volatile ge b = false ->
-      forall OWN : Mem.own_block m b cp,
+      forall OWN : Mem.can_access_block m b (Some cp),
       Mem.store chunk m b (Ptrofs.unsigned ofs) v cp = Some m' ->
       volatile_store ge cp chunk m b ofs v E0 m'.
 
@@ -765,7 +765,7 @@ Proof.
   econstructor; split; eauto. econstructor; eauto.
   exploit Mem.load_extends; eauto. intros [v' [A B]]. exists v'; split; auto. econstructor; eauto.
   Local Transparent Mem.load.
-  unfold Mem.load in A. destruct (Mem.valid_access_dec m' chunk b (Ptrofs.unsigned ofs) Readable cp); try discriminate.
+  unfold Mem.load in A. destruct (Mem.valid_access_dec m' chunk b (Ptrofs.unsigned ofs) Readable (Some cp)); try discriminate.
   inv v0. intuition.
 Qed.
 
@@ -792,7 +792,7 @@ Proof.
   econstructor; eauto.
   inv VI. erewrite D; eauto.
   Local Transparent Mem.load.
-  unfold Mem.load in X. destruct (Mem.valid_access_dec m' chunk b' (Ptrofs.unsigned ofs') Readable cp); try discriminate.
+  unfold Mem.load in X. destruct (Mem.valid_access_dec m' chunk b' (Ptrofs.unsigned ofs') Readable (Some cp)); try discriminate.
   inv v0. intuition.
 Qed.
 
@@ -1110,7 +1110,7 @@ Qed.
 Inductive extcall_free_sem (ge: Senv.t):
               compartment -> list val -> mem -> trace -> val -> mem -> Prop :=
   | extcall_free_sem_ptr: forall c b lo sz m m',
-      Mem.load Mptr m b (Ptrofs.unsigned lo - size_chunk Mptr) c = Some (Vptrofs sz) ->
+      Mem.load Mptr m b (Ptrofs.unsigned lo - size_chunk Mptr) (Some c) = Some (Vptrofs sz) ->
       Ptrofs.unsigned sz > 0 ->
       Mem.free m b (Ptrofs.unsigned lo - size_chunk Mptr) (Ptrofs.unsigned lo + Ptrofs.unsigned sz) c = Some m' ->
       extcall_free_sem ge c (Vptr b lo :: nil) m E0 Vundef m'
@@ -1225,7 +1225,7 @@ Inductive extcall_memcpy_sem (sz al: Z) (ge: Senv.t):
       bsrc <> bdst \/ Ptrofs.unsigned osrc = Ptrofs.unsigned odst
                    \/ Ptrofs.unsigned osrc + sz <= Ptrofs.unsigned odst
                    \/ Ptrofs.unsigned odst + sz <= Ptrofs.unsigned osrc ->
-      Mem.loadbytes m bsrc (Ptrofs.unsigned osrc) sz c = Some bytes ->
+      Mem.loadbytes m bsrc (Ptrofs.unsigned osrc) sz (Some c) = Some bytes ->
       Mem.storebytes m bdst (Ptrofs.unsigned odst) bytes c = Some m' ->
       extcall_memcpy_sem sz al ge c (Vptr bdst odst :: Vptr bsrc osrc :: nil) m E0 Vundef m'.
 
@@ -1269,8 +1269,8 @@ Proof.
   destruct (zeq sz 0).
 + (* special case sz = 0 *)
   assert (bytes = nil).
-  { exploit (Mem.loadbytes_empty m1 bsrc (Ptrofs.unsigned osrc) sz c). omega.
-    admit. (* RB: NOTE: New own_block subgoal *)
+  { exploit (Mem.loadbytes_empty m1 bsrc (Ptrofs.unsigned osrc) sz (Some c)). omega.
+    eapply Mem.loadbytes_can_access_block_inj; eauto.
     congruence. }
   subst.
   destruct (Mem.range_perm_storebytes m1' b0 (Ptrofs.unsigned (Ptrofs.add odst (Ptrofs.repr delta0))) nil c)
@@ -1311,9 +1311,9 @@ Proof.
   exists f; exists Vundef; exists m2'.
   split. econstructor; try rewrite EQ1; try rewrite EQ2; eauto.
   intros; eapply Mem.aligned_area_inject with (m := m1); eauto.
-  admit. (* RB: NOTE: New own_block subgoal *)
+  eapply Mem.loadbytes_can_access_block_inj; eauto.
   intros; eapply Mem.aligned_area_inject with (m := m1); eauto.
-  admit. (* RB: NOTE: New own_block subgoal *)
+  eapply Mem.storebytes_can_access_block_1; eauto.
   eapply Mem.disjoint_or_equal_inject with (m := m1); eauto.
   apply Mem.range_perm_max with Cur; auto.
   apply Mem.range_perm_max with Cur; auto. omega.
@@ -1910,4 +1910,3 @@ Proof.
 Qed.
 
 End EVAL_BUILTIN_ARG_LESSDEF.
-

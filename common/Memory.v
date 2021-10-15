@@ -1275,7 +1275,17 @@ Proof.
   congruence.
 Qed.
 
-Local Hint Resolve store_valid_access_1 store_valid_access_2 store_valid_access_3: mem.
+Theorem store_valid_access_4:
+  valid_access m1 chunk b ofs Writable None.
+Proof.
+  unfold store in STORE.
+  destruct (valid_access_dec m1 chunk b ofs Writable (Some cp)) as [[? [? ?]] |].
+  split; [| split]; now simpl.
+  congruence.
+Qed.
+
+Local Hint Resolve store_valid_access_1 store_valid_access_2
+      store_valid_access_3 store_valid_access_4: mem.
 
 Theorem store_block_compartment:
   forall b',
@@ -1295,7 +1305,8 @@ Theorem load_store_similar:
 Proof.
   intros.
   exploit (valid_access_load m2 chunk').
-    eapply valid_access_compat. symmetry; eauto. auto. eauto with mem.
+  eapply valid_access_compat. symmetry; eauto. auto.
+    instantiate (1 := Some cp). eauto with mem.
   intros [v' LOAD].
   exists v'; split; auto.
   exploit load_result; eauto. intros B.
@@ -1350,6 +1361,24 @@ Proof.
   intros.
   assert (valid_access m2 chunk b ofs Readable (Some cp)) by eauto with mem.
   destruct (can_access_block_dec m2 b (Some cp));
+    [ | inversion H as [_ [Hcontra _]]; contradiction].
+  unfold loadbytes.
+  rewrite andb_lazy_alt. setoid_rewrite pred_dec_true. setoid_rewrite pred_dec_true.
+  rewrite store_mem_contents; simpl.
+  rewrite PMap.gss.
+  replace (Z.to_nat (size_chunk chunk)) with (length (encode_val chunk v)).
+  rewrite getN_setN_same. auto.
+  rewrite encode_val_length. auto.
+  auto.
+  apply H.
+Qed.
+
+Theorem loadbytes_store_same_priv:
+  loadbytes m2 b ofs (size_chunk chunk) None = Some(encode_val chunk v).
+Proof.
+  intros.
+  assert (valid_access m2 chunk b ofs Readable None) by (eauto with mem).
+  destruct (can_access_block_dec m2 b None);
     [ | inversion H as [_ [Hcontra _]]; contradiction].
   unfold loadbytes.
   rewrite andb_lazy_alt. setoid_rewrite pred_dec_true. setoid_rewrite pred_dec_true.

@@ -942,7 +942,7 @@ Proof.
   intros until cp.
   functional induction (store_zeros m b p n cp); red; intros.
 - destruct n0. simpl. apply Mem.loadbytes_empty. omega.
-  admit. (* RB: NOTE own_block assumption from loadbytes_empty *)
+  admit.
   rewrite Nat2Z.inj_succ in H1. omegaContradiction.
 - destruct (zeq p0 p).
   + subst p0. destruct n0. simpl. apply Mem.loadbytes_empty. omega.
@@ -957,11 +957,13 @@ Proof.
     intros; omega.
     replace (Byte Byte.zero :: nil) with (encode_val Mint8unsigned Vzero).
     change 1 with (size_chunk Mint8unsigned).
-    eapply Mem.loadbytes_store_same; eauto.
+    destruct cp0; [eapply Mem.loadbytes_store_same; eauto | eapply Mem.loadbytes_store_same_priv; eauto].
     admit. (* RB: NOTE: Seeming disagreement between assumption quantifiers  *)
     unfold encode_val; unfold encode_int; unfold rev_if_be; destruct Archi.big_endian; reflexivity.
-    eapply IHo; eauto. omega. omega. omega. omega.
-  + eapply IHo; eauto. omega. omega.
+    eapply IHo; eauto.
+    omega. omega. omega. omega.
+  + eapply IHo; eauto.
+    omega. omega.
 - discriminate.
 (* Qed. *)
 Admitted.
@@ -992,7 +994,7 @@ Lemma store_init_data_loadbytes:
   forall m b p i cp m',
   store_init_data m b p i cp = Some m' ->
   readbytes_as_zero m b p (init_data_size i) ->
-  Mem.loadbytes m' b p (init_data_size i) cp = Some (bytes_of_init_data i).
+  Mem.loadbytes m' b p (init_data_size i) (Some cp) = Some (bytes_of_init_data i).
 Proof.
   intros; destruct i; simpl in H; try apply (Mem.loadbytes_store_same _ _ _ _ _ _ _ H).
 - inv H. simpl.
@@ -1015,7 +1017,7 @@ Lemma store_init_data_list_loadbytes:
   forall b il m p cp m',
   store_init_data_list m b p il cp = Some m' ->
   readbytes_as_zero m b p (init_data_list_size il) ->
-  Mem.loadbytes m' b p (init_data_list_size il) cp = Some (bytes_of_init_data_list il).
+  Mem.loadbytes m' b p (init_data_list_size il) (Some cp) = Some (bytes_of_init_data_list il).
 Proof.
   induction il as [ | i1 il]; simpl; intros.
 - apply Mem.loadbytes_empty. omega.
@@ -1082,25 +1084,25 @@ Fixpoint load_store_init_data (m: mem) (b: block) (p: Z) (il: list init_data) (c
   match il with
   | nil => True
   | Init_int8 n :: il' =>
-      Mem.load Mint8unsigned m b p cp = Some(Vint(Int.zero_ext 8 n))
+      Mem.load Mint8unsigned m b p (Some cp) = Some(Vint(Int.zero_ext 8 n))
       /\ load_store_init_data m b (p + 1) il' cp
   | Init_int16 n :: il' =>
-      Mem.load Mint16unsigned m b p cp = Some(Vint(Int.zero_ext 16 n))
+      Mem.load Mint16unsigned m b p (Some cp) = Some(Vint(Int.zero_ext 16 n))
       /\ load_store_init_data m b (p + 2) il' cp
   | Init_int32 n :: il' =>
-      Mem.load Mint32 m b p cp = Some(Vint n)
+      Mem.load Mint32 m b p (Some cp) = Some(Vint n)
       /\ load_store_init_data m b (p + 4) il' cp
   | Init_int64 n :: il' =>
-      Mem.load Mint64 m b p cp = Some(Vlong n)
+      Mem.load Mint64 m b p (Some cp) = Some(Vlong n)
       /\ load_store_init_data m b (p + 8) il' cp
   | Init_float32 n :: il' =>
-      Mem.load Mfloat32 m b p cp = Some(Vsingle n)
+      Mem.load Mfloat32 m b p (Some cp) = Some(Vsingle n)
       /\ load_store_init_data m b (p + 4) il' cp
   | Init_float64 n :: il' =>
-      Mem.load Mfloat64 m b p cp = Some(Vfloat n)
+      Mem.load Mfloat64 m b p (Some cp) = Some(Vfloat n)
       /\ load_store_init_data m b (p + 8) il' cp
   | Init_addrof symb ofs :: il' =>
-      (exists b', find_symbol ge symb = Some b' /\ Mem.load Mptr m b p cp = Some(Vptr b' ofs))
+      (exists b', find_symbol ge symb = Some b' /\ Mem.load Mptr m b p (Some cp) = Some(Vptr b' ofs))
       /\ load_store_init_data m b (p + size_chunk Mptr) il' cp
   | Init_space n :: il' =>
       read_as_zero m b p n cp
@@ -1116,7 +1118,7 @@ Proof.
   assert (A: forall chunk v m b p m1 il cp m',
     Mem.store chunk m b p v cp = Some m1 ->
     store_init_data_list m1 b (p + size_chunk chunk) il cp = Some m' ->
-    Mem.load chunk m' b p cp = Some(Val.load_result chunk v)).
+    Mem.load chunk m' b p (Some cp) = Some(Val.load_result chunk v)).
   {
     intros.
     eapply Mem.load_unchanged_on with (P := fun b' ofs' => ofs' < p + size_chunk chunk).
@@ -1227,7 +1229,7 @@ Definition globals_initialized (g: t) (m: mem) :=
       /\ (forall ofs k p, Mem.perm m b ofs k p ->
             0 <= ofs < init_data_list_size v.(gvar_init) /\ perm_order (perm_globvar v) p)
       /\ (v.(gvar_volatile) = false -> load_store_init_data m b 0 v.(gvar_init) v.(gvar_comp))
-      /\ (v.(gvar_volatile) = false -> Mem.loadbytes m b 0 (init_data_list_size v.(gvar_init))v.(gvar_comp) = Some (bytes_of_init_data_list v.(gvar_init)))
+      /\ (v.(gvar_volatile) = false -> Mem.loadbytes m b 0 (init_data_list_size v.(gvar_init)) (Some v.(gvar_comp)) = Some (bytes_of_init_data_list v.(gvar_init)))
   end.
 
 Lemma alloc_global_initialized:
@@ -1274,7 +1276,7 @@ Proof.
   eapply store_init_data_list_charact; eauto.
   eapply store_zeros_read_as_zero; eauto.
   intros NOTVOL.
-  transitivity (Mem.loadbytes m3 b 0 sz v.(gvar_comp)).
+  transitivity (Mem.loadbytes m3 b 0 sz (Some v.(gvar_comp))).
   eapply Mem.loadbytes_drop; eauto. right; right; right.
   unfold perm_globvar. rewrite NOTVOL. destruct (gvar_readonly v); auto with mem.
   eapply store_init_data_list_loadbytes; eauto.
@@ -1380,7 +1382,7 @@ Theorem init_mem_characterization:
   /\ (gv.(gvar_volatile) = false ->
       load_store_init_data (globalenv p) m b 0 gv.(gvar_init) gv.(gvar_comp))
   /\ (gv.(gvar_volatile) = false ->
-      Mem.loadbytes m b 0 (init_data_list_size gv.(gvar_init)) gv.(gvar_comp) = Some (bytes_of_init_data_list (globalenv p) gv.(gvar_init))).
+      Mem.loadbytes m b 0 (init_data_list_size gv.(gvar_init)) (Some gv.(gvar_comp)) = Some (bytes_of_init_data_list (globalenv p) gv.(gvar_init))).
 Proof.
   intros. rewrite find_var_info_iff in H.
   exploit init_mem_characterization_gen; eauto.
@@ -1611,16 +1613,17 @@ Variable ge: t.
 Lemma store_zeros_exists:
   forall m b p n cp,
     Mem.range_perm m b p (p + n) Cur Writable ->
-    Mem.own_block m b cp ->
+    Mem.can_access_block m b (Some cp) ->
   exists m', store_zeros m b p n cp = Some m'.
 Proof.
   intros until cp. functional induction (store_zeros m b p n cp); intros PERM.
 - exists m; auto.
 - intros. apply IHo. red; intros. eapply Mem.perm_store_1; eauto. apply PERM. omega.
-  admit. (* RB: NOTE: New own_block subgoal *)
+  eapply (Mem.store_can_access_block_inj _ _ _ _ _ _ _ e0). eauto.
 - destruct (Mem.valid_access_store m Mint8unsigned b p cp Vzero) as (m' & STORE).
   split. red; intros. apply Mem.perm_cur. apply PERM. simpl in H. omega.
-  split. admit. (* RB: NOTE: new own_block subgoal *)
+  split.
+  admit. (* RB: NOTE: new own_block subgoal *)
   simpl. apply Z.divide_1_l.
   congruence.
 (* Qed. *)
@@ -1629,7 +1632,7 @@ Admitted.
 Lemma store_init_data_exists:
   forall m b p i cp,
   Mem.range_perm m b p (p + init_data_size i) Cur Writable ->
-  forall OWN : Mem.own_block m b cp,
+  forall OWN : Mem.can_access_block m b (Some cp),
   (init_data_alignment i | p) ->
   (forall id ofs, i = Init_addrof id ofs -> exists b, find_symbol ge id = Some b) ->
   exists m', store_init_data ge m b p i cp = Some m'.
@@ -1652,7 +1655,7 @@ Qed.
 Lemma store_init_data_list_exists:
   forall b il m p cp,
   Mem.range_perm m b p (p + init_data_list_size il) Cur Writable ->
-  forall OWN : Mem.own_block m b cp,
+  forall OWN : Mem.can_access_block m b (Some cp),
   init_data_list_aligned p il ->
   (forall id ofs, In (Init_addrof id ofs) il -> exists b, find_symbol ge id = Some b) ->
   exists m', store_init_data_list ge m b p il cp = Some m'.
@@ -1665,9 +1668,13 @@ Proof.
   rewrite S1.
   apply IHil; eauto.
   red; intros. erewrite <- store_init_data_perm by eauto. apply H. generalize (init_data_size_pos i1); omega.
-  admit. (* RB: NOTE: New own_block subgoal. *)
-(* Qed. *)
-Admitted.
+
+  destruct i1; inv S1;
+    try eapply (Mem.store_can_access_block_inj _ _ _ _ _ _ _ H4); eauto.
+  destruct (find_symbol ge i); try discriminate.
+  eapply (Mem.store_can_access_block_inj _ _ _ _ _ _ _ H4). eauto.
+Qed.
+
 
 Lemma alloc_global_exists:
   forall m idg,
