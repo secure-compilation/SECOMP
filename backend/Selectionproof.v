@@ -275,7 +275,7 @@ Qed.
 Lemma eval_load:
   forall le a v chunk v',
   eval_expr tge sp e cp m le a v ->
-  Mem.loadv chunk m v cp = Some v' ->
+  Mem.loadv chunk m v (Some cp) = Some v' ->
   eval_expr tge sp e cp m le (load chunk a) v'.
 Proof.
   intros. generalize H0; destruct v; simpl; intro; try discriminate.

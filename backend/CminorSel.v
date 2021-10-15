@@ -178,7 +178,7 @@ Inductive eval_expr: letenv -> expr -> val -> Prop :=
   | eval_Eload: forall le chunk addr al vl vaddr v,
       eval_exprlist le al vl ->
       eval_addressing ge sp addr vl = Some vaddr ->
-      Mem.loadv chunk m vaddr cp = Some v ->
+      Mem.loadv chunk m vaddr (Some cp) = Some v ->
       eval_expr le (Eload chunk addr al) v
   | eval_Econdition: forall le a b c va v,
       eval_condexpr le a va ->
