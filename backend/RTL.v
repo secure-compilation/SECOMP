@@ -247,7 +247,7 @@ Inductive step: state -> trace -> state -> Prop :=
       forall s f sp pc rs m chunk addr args dst pc' a v,
       (fn_code f)!pc = Some(Iload chunk addr args dst pc') ->
       eval_addressing ge sp addr rs##args = Some a ->
-      Mem.loadv chunk m a (comp_of f) = Some v ->
+      Mem.loadv chunk m a (Some (comp_of f)) = Some v ->
       step (State s f sp pc rs m)
         E0 (State s f sp pc' (rs#dst <- v) m)
   | exec_Istore:
@@ -340,7 +340,7 @@ Lemma exec_Iload':
   forall s f sp pc rs m chunk addr args dst pc' rs' a v,
   (fn_code f)!pc = Some(Iload chunk addr args dst pc') ->
   eval_addressing ge sp addr rs##args = Some a ->
-  Mem.loadv chunk m a (comp_of f) = Some v ->
+  Mem.loadv chunk m a (Some (comp_of f)) = Some v ->
   rs' = (rs#dst <- v) ->
   step (State s f sp pc rs m)
     E0 (State s f sp pc' rs' m).

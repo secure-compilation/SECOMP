@@ -209,7 +209,7 @@ Definition temp_env := PTree.t val.
 Inductive deref_loc (cp: compartment) (ty: type) (m: mem) (b: block) (ofs: ptrofs) : val -> Prop :=
   | deref_loc_value: forall chunk v,
       access_mode ty = By_value chunk ->
-      Mem.loadv chunk m (Vptr b ofs) cp = Some v ->
+      Mem.loadv chunk m (Vptr b ofs) (Some cp) = Some v ->
       deref_loc cp ty m b ofs v
   | deref_loc_reference:
       access_mode ty = By_reference ->
@@ -237,10 +237,9 @@ Inductive assign_loc (ce: composite_env) (cp: compartment) (ty: type) (m: mem) (
       b' <> b \/ Ptrofs.unsigned ofs' = Ptrofs.unsigned ofs
               \/ Ptrofs.unsigned ofs' + sizeof ce ty <= Ptrofs.unsigned ofs
               \/ Ptrofs.unsigned ofs + sizeof ce ty <= Ptrofs.unsigned ofs' ->
-      Mem.loadbytes m b' (Ptrofs.unsigned ofs') (sizeof ce ty) cp = Some bytes ->
+      Mem.loadbytes m b' (Ptrofs.unsigned ofs') (sizeof ce ty) (Some cp) = Some bytes ->
       Mem.storebytes m b (Ptrofs.unsigned ofs) bytes cp = Some m' ->
       assign_loc ce cp ty m b ofs (Vptr b' ofs') m'.
-
 
 Section SEMANTICS.
 

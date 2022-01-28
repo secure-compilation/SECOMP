@@ -346,7 +346,7 @@ Inductive eval_expr: expr -> val -> Prop :=
       eval_expr (Ebinop op a1 a2) v
   | eval_Eload: forall chunk a v1 v,
       eval_expr a v1 ->
-      Mem.loadv chunk m v1 cp = Some v ->
+      Mem.loadv chunk m v1 (Some cp) = Some v ->
       eval_expr (Eload chunk a) v.
 
 (** Evaluation of a list of expressions:

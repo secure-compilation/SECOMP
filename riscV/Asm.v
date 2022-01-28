@@ -831,7 +831,7 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) (cp: 
 
 (** 32-bit (single-precision) floating point *)
   | Pfls d a ofs =>
-      exec_load Mfloat32 rs m d a ofs cp
+      exec_load Mfloat32 rs m d a ofs cp false
   | Pfss s a ofs =>
       exec_store Mfloat32 rs m s a ofs cp
 
@@ -875,9 +875,9 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) (cp: 
 
 (** 64-bit (double-precision) floating point *)
   | Pfld d a ofs =>
-      exec_load Mfloat64 rs m d a ofs cp
+      exec_load Mfloat64 rs m d a ofs cp false
   | Pfld_a d a ofs =>
-      exec_load Many64 rs m d a ofs cp
+      exec_load Many64 rs m d a ofs cp false
   | Pfsd s a ofs =>
       exec_store Mfloat64 rs m s a ofs cp
   | Pfsd_a s a ofs =>
@@ -935,7 +935,7 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) (cp: 
       | Some m2 => Next (nextinstr (rs #X30 <- (rs SP) #SP <- sp #X31 <- Vundef)) m2
       end
   | Pfreeframe sz pos =>
-      match Mem.loadv Mptr m (Val.offset_ptr rs#SP pos) cp with
+      match Mem.loadv Mptr m (Val.offset_ptr rs#SP pos) (Some cp) with
       | None => Stuck
       | Some v =>
           match rs SP with

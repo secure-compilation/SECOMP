@@ -115,14 +115,14 @@ Proof.
 Local Transparent Mem.loadbytes.
   unfold Mem.loadbytes; intros. destruct H.
   destruct (Mem.range_perm_dec m1 b ofs (ofs + n) Cur Readable);
-    destruct (Mem.own_block_dec m1 b cp);
+    destruct (Mem.can_access_block_dec m1 b cp);
     inv H0.
   setoid_rewrite pred_dec_true. simpl. econstructor; split; eauto.
   apply GETN. intros. rewrite Z_to_nat_max in H.
   assert (ofs <= i < ofs + n) by xomega.
   apply ma_memval0; auto.
   red; intros; eauto.
-  admit. (* RB: NOTE: New own_block subgoal *)
+  admit. (* Comes from agreement of the memories. *)
 (* Qed. *)
 Admitted.
 

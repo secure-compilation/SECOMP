@@ -108,7 +108,7 @@ Inductive match_var (f: meminj) (cenv: compilenv) (e: env) (m: mem) (te: env) (t
       (LIFTED: VSet.mem id cenv = true)
       (MAPPED: f b = None)
       (MODE: access_mode ty = By_value chunk)
-      (LOAD: Mem.load chunk m b 0 c = Some v)
+      (LOAD: Mem.load chunk m b 0 (Some c) = Some v)
       (TLENV: tle!(id) = Some tv)
       (VINJ: Val.inject f v tv),
       match_var f cenv e m te tle id
@@ -790,7 +790,7 @@ Qed.
 
 Definition env_initial_value (c: compartment) (e: env) (m: mem) :=
   forall id b ty chunk,
-  e!id = Some(b, ty) -> access_mode ty = By_value chunk -> Mem.load chunk m b 0 c = Some Vundef.
+  e!id = Some(b, ty) -> access_mode ty = By_value chunk -> Mem.load chunk m b 0 (Some c) = Some Vundef.
 
 Lemma alloc_variables_initial_value:
   forall c e m vars e' m',
@@ -1058,19 +1058,19 @@ Proof.
 + (* special case size = 0 *)
   assert (bytes = nil).
   { exploit (Mem.loadbytes_empty m bsrc (Ptrofs.unsigned osrc) (sizeof tge ty)).
-    omega. eapply Mem.loadbytes_own_block_inj; eauto. congruence. }
+    omega. eapply Mem.loadbytes_can_access_block_inj; eauto. congruence. }
   subst.
   destruct (Mem.range_perm_storebytes tm bdst' (Ptrofs.unsigned (Ptrofs.add odst (Ptrofs.repr delta))) nil c)
   as [tm' SB].
   simpl. red; intros; omegaContradiction.
-  eapply (Mem.mi_own _ _ _ (Mem.mi_inj _ _ _ H2)); eauto using Mem.storebytes_own_block_1.
+  eapply (Mem.mi_own _ _ _ (Mem.mi_inj _ _ _ H2)); eauto using Mem.storebytes_can_access_block_1.
   exists tm'.
   split. eapply assign_loc_copy; eauto.
   intros; omegaContradiction.
   intros; omegaContradiction.
   rewrite e; right; omega.
   apply Mem.loadbytes_empty. omega.
-  eapply (Mem.mi_own _ _ _ (Mem.mi_inj _ _ _ H2)); eauto using Mem.loadbytes_own_block_inj.
+  eapply (Mem.mi_own _ _ _ (Mem.mi_inj _ _ _ H2)); eauto using Mem.loadbytes_can_access_block_inj.
   split. eapply Mem.storebytes_empty_inject; eauto.
   intros. rewrite <- H0. eapply Mem.load_storebytes_other; eauto.
   left. congruence.
@@ -1097,11 +1097,11 @@ Proof.
   intros; eapply Mem.aligned_area_inject with (m := m); eauto.
   apply alignof_blockcopy_1248.
   apply sizeof_alignof_blockcopy_compat.
-  eapply Mem.loadbytes_own_block_inj; eauto.
+  eapply Mem.loadbytes_can_access_block_inj; eauto.
   intros; eapply Mem.aligned_area_inject with (m := m); eauto.
   apply alignof_blockcopy_1248.
   apply sizeof_alignof_blockcopy_compat.
-  eapply Mem.storebytes_own_block_1; eauto.
+  eapply Mem.storebytes_can_access_block_1; eauto.
   eapply Mem.disjoint_or_equal_inject with (m := m); eauto.
   apply Mem.range_perm_max with Cur; auto.
   apply Mem.range_perm_max with Cur; auto.
@@ -1265,7 +1265,7 @@ Fixpoint freelist_no_overlap (l: list (block * Z * Z)) : Prop :=
 Lemma can_free_list:
   forall l m c,
   (forall b lo hi, In (b, lo, hi) l -> Mem.range_perm m b lo hi Cur Freeable) ->
-  forall (OWN_BLOCKS: (forall b lo hi, In (b, lo, hi) l -> Mem.own_block m b c)),
+  forall (OWN_BLOCKS: (forall b lo hi, In (b, lo, hi) l -> Mem.can_access_block m b (Some c))),
   freelist_no_overlap l ->
   exists m', Mem.free_list m l c = Some m'.
 Proof.
@@ -1278,8 +1278,8 @@ Proof.
   intros. red; intros. eapply Mem.perm_free_1; eauto.
   exploit H1; eauto. intros [B|B]. auto. right; omega.
   eapply H; eauto.
-  intros. eapply Mem.free_own_block_inj_1; eauto.
-Qed.
+  intros. eapply Mem.free_can_access_block_inj_1; eauto. admit.
+Admitted.
 
 Lemma blocks_of_env_no_overlap:
   forall (ge: genv) j cenv e le m lo hi te tle tlo thi tm,
@@ -1385,10 +1385,10 @@ Local Opaque ge tge.
     + destruct IN' as [EQ | IN].
       * subst. simpl in H1.
         destruct (Mem.free m b lo' hi' c) eqn:FREE; try discriminate.
-        eapply Mem.free_own_block_1; eauto.
+        eapply Mem.free_can_access_block_1; eauto.
       * simpl in H1. destruct a as [[b' lo] hi].
         destruct (Mem.free m b' lo hi c) eqn:FREE; try discriminate.
-        eapply Mem.free_own_block_inj_2. eauto.
+        eapply Mem.free_can_access_block_inj_2. eauto.
         eapply IHl. eauto. eauto.
   - (* no overlap *)
     unfold blocks_of_env; eapply blocks_of_env_no_overlap; eauto.
@@ -1530,10 +1530,10 @@ Proof.
   { clear -LOAD H2.
     Local Transparent Mem.load.
     unfold Mem.load in *.
-    destruct (Mem.valid_access_dec m chunk loc 0 Readable c0) eqn:?;
-             destruct (Mem.valid_access_dec m chunk loc 0 Readable c) eqn:?;
+    destruct (Mem.valid_access_dec m chunk loc 0 Readable (Some c0)) eqn:?;
+             destruct (Mem.valid_access_dec m chunk loc 0 Readable (Some c)) eqn:?;
              try discriminate. destruct v1 as [? [? ?]]. destruct v2 as [? [? ?]].
-    simpl in *. clear -o o0. eapply Mem.own_block_component; eauto. }
+    simpl in *. eapply Mem.can_access_block_component; eauto. }
   congruence. subst v0.
   exists tv; split; auto. constructor; auto.
   simpl in H; congruence.

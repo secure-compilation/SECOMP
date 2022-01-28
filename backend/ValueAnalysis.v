@@ -952,7 +952,7 @@ Theorem external_call_match:
   /\ bc_nostack bc'
   /\ (forall b ofs n cp,
       Mem.valid_block m b ->
-      forall OWN : Mem.own_block m b cp,
+      forall OWN : Mem.can_access_block m b cp,
       bc b = BCinvalid ->
       Mem.loadbytes m' b ofs n cp = Mem.loadbytes m b ofs n cp).
 Proof.

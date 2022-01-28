@@ -538,7 +538,7 @@ Proof.
   eapply Pos.lt_le_trans; eauto.
   red; simpl; intros. auto.
 + destruct H4; eauto with cse. subst eq. apply eq_holds_lessdef with (Val.load_result chunk rs#src).
-  apply load_eval_to with a cp. rewrite <- Q; auto.
+  apply load_eval_to with a (Some cp). rewrite <- Q; auto.
   destruct a; try discriminate. simpl. eapply Mem.load_store_same; eauto.
   rewrite B. rewrite R by auto. apply store_normalized_range_sound with bc.
   rewrite <- B. eapply vmatch_ge. apply vincl_ge; eauto. apply H2.
@@ -583,7 +583,7 @@ Lemma load_memcpy:
   Mem.load chunk m b1 i cp1 = Some v ->
   ofs1 <= i -> i + size_chunk chunk <= ofs1 + sz ->
   (align_chunk chunk | ofs2 - ofs1) ->
-  Mem.load chunk m' b2 (i + (ofs2 - ofs1)) cp2 = Some v.
+  Mem.load chunk m' b2 (i + (ofs2 - ofs1)) (Some cp2) = Some v.
 Proof.
   intros.
   generalize (size_chunk_pos chunk); intros SPOS.
@@ -614,9 +614,9 @@ Proof.
   assert (L2: Z.of_nat (length bytes2) = n2).
   { erewrite Mem.loadbytes_length by eauto. apply Z2Nat.id. unfold n2; omega. }
   rewrite L1 in *. rewrite L2 in *.
-  assert (LB': Mem.loadbytes m2 b2 (ofs2 + n1) n2 cp2 = Some bytes2).
+  assert (LB': Mem.loadbytes m2 b2 (ofs2 + n1) n2 (Some cp2) = Some bytes2).
   { rewrite <- L2. eapply Mem.loadbytes_storebytes_same; eauto. }
-  assert (LB'': Mem.loadbytes m' b2 (ofs2 + n1) n2 cp2 = Some bytes2).
+  assert (LB'': Mem.loadbytes m' b2 (ofs2 + n1) n2 (Some cp2) = Some bytes2).
   { rewrite <- LB'. eapply Mem.loadbytes_storebytes_other; eauto.
     unfold n2; omega.
     right; left; omega. }
@@ -646,7 +646,7 @@ Qed.
 Lemma shift_memcpy_eq_holds:
   forall src dst sz cp e e' m sp bytes m' valu ge,
   shift_memcpy_eq src sz (dst - src) e = Some e' ->
-  Mem.loadbytes m sp src sz cp = Some bytes ->
+  Mem.loadbytes m sp src sz (Some cp) = Some bytes ->
   Mem.storebytes m sp dst bytes cp = Some m' ->
   equation_holds valu ge (Vptr sp Ptrofs.zero) m e ->
   equation_holds valu ge (Vptr sp Ptrofs.zero) m' e'.
@@ -664,8 +664,8 @@ Proof with (try discriminate).
   destruct (zle j Ptrofs.max_unsigned)...
   simpl in H; inv H.
   assert (LD: forall v,
-    Mem.loadv chunk m (Vptr sp ofs) cp = Some v ->
-    Mem.loadv chunk m' (Vptr sp (Ptrofs.repr j)) cp = Some v).
+    Mem.loadv chunk m (Vptr sp ofs) (Some cp) = Some v ->
+    Mem.loadv chunk m' (Vptr sp (Ptrofs.repr j)) (Some cp) = Some v).
   {
     simpl; intros. rewrite Ptrofs.unsigned_repr by omega.
     unfold j, delta. eapply load_memcpy; eauto.
@@ -683,6 +683,7 @@ Proof with (try discriminate).
   apply eq_holds_lessdef with v; auto.
   econstructor. rewrite eval_addressing_Ainstack. simpl. rewrite Ptrofs.add_zero_l. eauto.
   apply LD; auto.
+  admit.
 (* Qed. *)
 Admitted.
 

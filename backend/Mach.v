@@ -310,7 +310,7 @@ Inductive step: state -> trace -> state -> Prop :=
   | exec_Mgetstack:
       forall s f sp ofs ty dst c rs m v cp,
       forall (CURCOMP: find_comp_ptr f = Some cp),
-      load_stack m sp ty ofs cp = Some v ->
+      load_stack m sp ty ofs (Some cp) = Some v ->
       step (State s f sp (Mgetstack ofs ty dst :: c) rs m)
         E0 (State s f sp c (rs#dst <- v) m)
   | exec_Msetstack:
@@ -321,12 +321,12 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State s f sp (Msetstack src ofs ty :: c) rs m)
         E0 (State s f sp c rs' m')
   | exec_Mgetparam:
-      forall s fb f sp ofs ty dst c rs m cp' v rs' cp,
+      forall s fb f sp ofs ty dst c rs m (* cp' *) v rs' cp,
       forall (CURCOMP: find_comp_ptr fb = Some cp),
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
-      load_stack m sp Tptr f.(fn_link_ofs) cp = Some (parent_sp s) ->
+      load_stack m sp Tptr f.(fn_link_ofs) (Some cp) = Some (parent_sp s) ->
       (* forall (COMPSP: call_comp s = Some cp'), *)
-      load_stack_privileged m (parent_sp s) ty ofs = Some v ->
+      load_stack m (parent_sp s) ty ofs None = Some v -> (* /!\ Privileged!! *)
       rs' = (rs # temp_for_parent_frame <- Vundef # dst <- v) ->
       step (State s fb sp (Mgetparam ofs ty dst :: c) rs m)
         E0 (State s fb sp c rs' m)
@@ -340,7 +340,7 @@ Inductive step: state -> trace -> state -> Prop :=
       forall s f sp chunk addr args dst c rs m a v rs' cp,
       forall (CURCOMP: find_comp_ptr f = Some cp),
       eval_addressing ge sp addr rs##args = Some a ->
-      Mem.loadv chunk m a cp = Some v ->
+      Mem.loadv chunk m a (Some cp) = Some v ->
       rs' = ((undef_regs (destroyed_by_load chunk addr) rs)#dst <- v) ->
       step (State s f sp (Mload chunk addr args dst :: c) rs m)
         E0 (State s f sp c rs' m)
@@ -367,8 +367,8 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (CURCOMP: find_comp_ptr fb = Some cp),
       find_function_ptr ge ros rs = Some f' ->
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
-      load_stack m (Vptr stk soff) Tptr f.(fn_link_ofs) cp = Some (parent_sp s) ->
-      load_stack m (Vptr stk soff) Tptr f.(fn_retaddr_ofs) cp = Some (parent_ra s) ->
+      load_stack m (Vptr stk soff) Tptr f.(fn_link_ofs) (Some cp) = Some (parent_sp s) ->
+      load_stack m (Vptr stk soff) Tptr f.(fn_retaddr_ofs) (Some cp) = Some (parent_ra s) ->
       Mem.free m stk 0 f.(fn_stacksize) cp = Some m' ->
       forall (CALLED: Genv.find_funct_ptr ge f' = Some fd),
       forall (COMP: comp_of fd = comp_of f),
@@ -419,8 +419,8 @@ Inductive step: state -> trace -> state -> Prop :=
       forall s fb stk soff c rs m f m' cp,
       forall (CURCOMP: find_comp_ptr fb = Some cp),
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
-      load_stack m (Vptr stk soff) Tptr f.(fn_link_ofs) cp = Some (parent_sp s) ->
-      load_stack m (Vptr stk soff) Tptr f.(fn_retaddr_ofs) cp = Some (parent_ra s) ->
+      load_stack m (Vptr stk soff) Tptr f.(fn_link_ofs) (Some cp) = Some (parent_sp s) ->
+      load_stack m (Vptr stk soff) Tptr f.(fn_retaddr_ofs) (Some cp) = Some (parent_ra s) ->
       Mem.free m stk 0 f.(fn_stacksize) cp = Some m' ->
       step (State s fb (Vptr stk soff) (Mreturn :: c) rs m)
         E0 (Returnstate s rs m')

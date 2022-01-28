@@ -3320,8 +3320,10 @@ Proof.
 - right. rewrite <- H0. symmetry. eapply Mem.loadbytes_storebytes_other; eauto. omega.
 - subst b'. left.
   eapply loadbytes_provenance; eauto.
-  eapply Mem.loadbytes_storebytes_same; eauto.
-  admit. (* RB: NOTE: Crossed compartment preservation *)
+  destruct cp' as [cp' |].
+  + eapply Mem.loadbytes_storebytes_same; eauto.
+    admit. (* Distinguish between [cp = cp'] and [cp <> cp']. In the latter case, use a new lemma *)
+  + admit. (* Also need new lemma here *)
 (* Qed. *)
 Admitted.
 

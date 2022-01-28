@@ -2208,7 +2208,7 @@ Proof.
   exploit eval_addressing_lessdef. eexact LD3.
   eapply eval_offset_addressing; eauto; apply Archi.splitlong_ptr32; auto.
   intros [a2' [F2 G2]].
-  assert (LOADX: exists v2'', Mem.loadv Mint32 m' a2' (comp_of f) = Some v2'' /\ Val.lessdef v2' v2'').
+  assert (LOADX: exists v2'', Mem.loadv Mint32 m' a2' (Some (comp_of f)) = Some v2'' /\ Val.lessdef v2' v2'').
   { discriminate || (eapply Mem.loadv_extends; [eauto|eexact LOAD2|eexact G2]). }
   destruct LOADX as (v2'' & LOAD2' & LD4).
   set (ls4 := Locmap.set (R dst2') v2'' (undef_regs (destroyed_by_load Mint32 addr2) ls3)).
@@ -2279,7 +2279,7 @@ Proof.
   exploit eval_addressing_lessdef. eexact LD1.
   eapply eval_offset_addressing; eauto; apply Archi.splitlong_ptr32; auto.
   intros [a1' [F1 G1]].
-  assert (LOADX: exists v2'', Mem.loadv Mint32 m' a1' (comp_of f) = Some v2'' /\ Val.lessdef v2' v2'').
+  assert (LOADX: exists v2'', Mem.loadv Mint32 m' a1' (Some (comp_of f)) = Some v2'' /\ Val.lessdef v2' v2'').
   { discriminate || (eapply Mem.loadv_extends; [eauto|eexact LOAD2|eexact G1]). }
   destruct LOADX as (v2'' & LOAD2' & LD2).
   set (ls2 := Locmap.set (R dst') v2'' (undef_regs (destroyed_by_load Mint32 addr2) ls1)).

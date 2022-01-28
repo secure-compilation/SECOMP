@@ -104,6 +104,77 @@ Section FRAME_PROPERTIES.
 Variable f: Linear.function.
 Let b := function_bounds f.
 Let fe := make_env b.
+
+(** [contains_locations j sp pos bound sl ls] is a separation logic assertion
+  that holds if the memory area at block [sp], offset [pos], size [4 * bound],
+  reflects the values of the stack locations of kind [sl] given by the
+  location map [ls], up to the memory injection [j].
+
+  Two such [contains_locations] assertions will be used later, one to
+  reason about the values of [Local] slots, the other about the values of
+  [Outgoing] slots. *)
+
+(* RB: NOTE: Adding compartment parameter here with corresponding
+   [Mem.own_block] conjunct to link premise and conclusion, where the
+   compartment is strictly needed.
+
+   It might be interesting to derive [Mem.own_block] from other permissions,
+   however for now exposing the new dependencies as parameters seems enough.
+
+   Unfortunately, the added conjunct modifies automatically generated names of
+   related hypotheses in proofs below, and there is no clear way to avoid this.
+
+   There is a new proof obligation that we need to solve to avoid unnecessary
+   section when we use the assertion later.
+
+   The documentation above (and for related assertions) needs to be amended. *)
+Program Definition contains_locations (j: meminj) (sp: block) (pos bound: Z) (sl: slot) (ls: locset) (cp: compartment) : massert := {|
+  m_pred := fun m =>
+    (8 | pos) /\ 0 <= pos /\ pos + 4 * bound <= Ptrofs.modulus /\
+    Mem.range_perm m sp pos (pos + 4 * bound) Cur Freeable /\
+    Mem.can_access_block m sp (Some cp) /\
+    forall ofs ty, 0 <= ofs -> ofs + typesize ty <= bound -> (typealign ty | ofs) ->
+    exists v, Mem.load (chunk_of_type ty) m sp (pos + 4 * ofs) (Some cp) = Some v
+           /\ Val.inject j (ls (S sl ofs ty)) v;
+  m_footprint := fun b ofs =>
+    b = sp /\ pos <= ofs < pos + 4 * bound
+|}.
+Next Obligation.
+  intuition auto.
+- red; intros. eapply Mem.perm_unchanged_on; eauto. simpl; auto.
+- destruct (Maps.PTree.get sp (Mem.mem_compartments m')) eqn:eq1;
+    destruct (Maps.PTree.get sp (Mem.mem_compartments m)) eqn:eq2.
+  + eapply Mem.unchanged_on_own with (b := sp) (cp := Some c) in H0. simpl in H0.
+    eapply H0 in eq1. now rewrite eq1 in eq2.
+    admit.
+  + eapply Mem.unchanged_on_own with (b := sp) (cp := Some c) in H0. simpl in H0.
+    eapply H0 in eq1. now rewrite eq1 in eq2.
+    admit.
+  + eapply Mem.unchanged_on_own with (b := sp) (cp := Some c) in H0. simpl in H0.
+    eapply H0 in eq2. now rewrite eq1 in eq2.
+    admit.
+  + reflexivity.
+- exploit H5; eauto. intros (v & A & B). exists v; split; auto.
+  eapply Mem.load_unchanged_on; eauto.
+  simpl; intros. rewrite size_type_chunk, typesize_typesize in H8.
+  split; auto. admit. Local Transparent Mem.load. unfold Mem.load in A. unfold Mem.load.
+  destruct (Mem.valid_access_dec m (chunk_of_type ty) sp (pos + 4 * ofs) Readable (Some cp)) eqn:eq; try discriminate.
+  assert (G: Mem.valid_access m (chunk_of_type ty) sp (pos + 4 * ofs) Readable (Maps.PTree.get sp (Mem.mem_compartments m))).
+  { destruct ((Maps.PTree.get sp (Mem.mem_compartments m))) eqn:eq_get.
+    - pose proof (proj1 (Mem.valid_pointer_valid_access_nonpriv _ _ _ (pos + 4 * ofs) eq_get)) as G.
+      admit.
+    - admit.
+  }
+  destruct (Mem.valid_access_dec m (chunk_of_type ty) sp (pos + 4 * ofs) Readable (Maps.PTree.get sp (Mem.mem_compartments m))) eqn:eq';
+    try contradiction.
+  admit.
+Admitted.
+Next Obligation.
+  eauto with mem.
+Qed.
+
+Section FIXME.
+
 Variable tf: Mach.function.
 Hypothesis TRANSF_F: transf_function f = OK tf.
 
@@ -156,7 +227,7 @@ Local Opaque Z.add Z.mul Z.divide.
 Lemma contains_get_stack:
   forall spec m ty sp ofs cp,
   m |= contains (chunk_of_type ty) sp ofs cp spec ->
-  exists v, load_stack m (Vptr sp Ptrofs.zero) ty (Ptrofs.repr ofs) cp = Some v /\ spec v.
+  exists v, load_stack m (Vptr sp Ptrofs.zero) ty (Ptrofs.repr ofs) (Some cp) = Some v /\ spec v.
 Proof.
   intros. unfold load_stack.
   replace (Val.offset_ptr (Vptr sp Ptrofs.zero) (Ptrofs.repr ofs)) with (Vptr sp (Ptrofs.repr ofs)).
@@ -167,7 +238,7 @@ Qed.
 Lemma hasvalue_get_stack:
   forall ty m sp ofs cp v,
   m |= hasvalue (chunk_of_type ty) sp ofs cp v ->
-  load_stack m (Vptr sp Ptrofs.zero) ty (Ptrofs.repr ofs) cp = Some v.
+  load_stack m (Vptr sp Ptrofs.zero) ty (Ptrofs.repr ofs) (Some cp) = Some v.
 Proof.
   intros. exploit contains_get_stack; eauto. intros (v' & A & B). congruence.
 Qed.
@@ -186,60 +257,12 @@ Proof.
   simpl. rewrite Ptrofs.add_zero_l; auto.
 Qed.
 
-(** [contains_locations j sp pos bound sl ls] is a separation logic assertion
-  that holds if the memory area at block [sp], offset [pos], size [4 * bound],
-  reflects the values of the stack locations of kind [sl] given by the
-  location map [ls], up to the memory injection [j].
-
-  Two such [contains_locations] assertions will be used later, one to
-  reason about the values of [Local] slots, the other about the values of
-  [Outgoing] slots. *)
-
-(* RB: NOTE: Adding compartment parameter here with corresponding
-   [Mem.own_block] conjunct to link premise and conclusion, where the
-   compartment is strictly needed.
-
-   It might be interesting to derive [Mem.own_block] from other permissions,
-   however for now exposing the new dependencies as parameters seems enough.
-
-   Unfortunately, the added conjunct modifies automatically generated names of
-   related hypotheses in proofs below, and there is no clear way to avoid this.
-
-   There is a new proof obligation that we need to solve to avoid unnecessary
-   section when we use the assertion later.
-
-   The documentation above (and for related assertions) needs to be amended. *)
-Program Definition contains_locations (j: meminj) (sp: block) (pos bound: Z) (sl: slot) (ls: locset) (cp: compartment) : massert := {|
-  m_pred := fun m =>
-    (8 | pos) /\ 0 <= pos /\ pos + 4 * bound <= Ptrofs.modulus /\
-    Mem.range_perm m sp pos (pos + 4 * bound) Cur Freeable /\
-    Mem.own_block m sp cp /\
-    forall ofs ty, 0 <= ofs -> ofs + typesize ty <= bound -> (typealign ty | ofs) ->
-    exists v, Mem.load (chunk_of_type ty) m sp (pos + 4 * ofs) cp = Some v
-           /\ Val.inject j (ls (S sl ofs ty)) v;
-  m_footprint := fun b ofs =>
-    b = sp /\ pos <= ofs < pos + 4 * bound
-|}.
-Next Obligation.
-  intuition auto.
-- red; intros. eapply Mem.perm_unchanged_on; eauto. simpl; auto.
-- apply (Mem.unchanged_on_own _ _ _ H0).
-  + eapply Mem.own_block_valid_block; now eauto.
-  + assumption.
-- exploit H5; eauto. intros (v & A & B). exists v; split; auto.
-  eapply Mem.load_unchanged_on; eauto.
-  simpl; intros. rewrite size_type_chunk, typesize_typesize in H9.
-  split; auto. omega.
-Qed.
-Next Obligation.
-  eauto with mem.
-Qed.
 
 Remark valid_access_location:
   forall m sp pos bound cp ofs ty p,
   (8 | pos) ->
   Mem.range_perm m sp pos (pos + 4 * bound) Cur Freeable ->
-  Mem.own_block m sp cp ->
+  Mem.can_access_block m sp cp ->
   0 <= ofs -> ofs + typesize ty <= bound -> (typealign ty | ofs) ->
   Mem.valid_access m (chunk_of_type ty) sp (pos + 4 * ofs) p cp.
 Proof.
@@ -259,7 +282,7 @@ Lemma get_location:
   m |= contains_locations j sp pos bound sl ls cp ->
   0 <= ofs -> ofs + typesize ty <= bound -> (typealign ty | ofs) ->
   exists v,
-     load_stack m (Vptr sp Ptrofs.zero) ty (Ptrofs.repr (pos + 4 * ofs)) cp = Some v
+     load_stack m (Vptr sp Ptrofs.zero) ty (Ptrofs.repr (pos + 4 * ofs)) (Some cp) = Some v
   /\ Val.inject j (ls (S sl ofs ty)) v.
 Proof.
   intros. destruct H as (D & E & F & G & [H' H]).
@@ -299,7 +322,7 @@ Proof.
   rewrite <- X; eapply Mem.load_store_other; eauto.
   destruct d. congruence. right. rewrite ! size_type_chunk, ! typesize_typesize. omega.
 * (* overlapping locations *)
-  destruct (Mem.valid_access_load m' (chunk_of_type ty0) sp (pos + 4 * ofs0) cp) as [v'' LOAD].
+  destruct (Mem.valid_access_load m' (chunk_of_type ty0) sp (pos + 4 * ofs0) (Some cp)) as [v'' LOAD].
   apply Mem.valid_access_implies with Writable; auto with mem.
   eapply valid_access_location; eauto.
   admit. (* RB: NOTE: New own_block subgoal *)
@@ -321,7 +344,7 @@ Proof.
   intros. destruct H as (A & B & C). destruct A as (D & E & F). split.
 - simpl; intuition auto. red; intros; eauto with mem.
   admit. (* RB: NOTE: New own_block subgoal *)
-  destruct (Mem.valid_access_load m (chunk_of_type ty) sp (pos + 4 * ofs) cp) as [v LOAD].
+  destruct (Mem.valid_access_load m (chunk_of_type ty) sp (pos + 4 * ofs) (Some cp)) as [v LOAD].
   admit. (* RB: NOTE: This subgoal needs fixing *)
   (* eapply valid_access_location; eauto. *)
   (* red; intros; eauto with mem. *)
@@ -428,7 +451,7 @@ Lemma frame_get_local:
   m |= frame_contents j sp ls ls0 parent retaddr cp ** P ->
   slot_within_bounds b Local ofs ty -> slot_valid f Local ofs ty = true ->
   exists v,
-     load_stack m (Vptr sp Ptrofs.zero) ty (Ptrofs.repr (offset_local fe ofs)) cp = Some v
+     load_stack m (Vptr sp Ptrofs.zero) ty (Ptrofs.repr (offset_local fe ofs)) (Some cp) = Some v
   /\ Val.inject j (ls (S Local ofs ty)) v.
 Proof.
   unfold frame_contents, frame_contents_1; intros. unfold slot_valid in H1; InvBooleans.
@@ -441,7 +464,7 @@ Lemma frame_get_outgoing:
   m |= frame_contents j sp ls ls0 parent retaddr cp ** P ->
   slot_within_bounds b Outgoing ofs ty -> slot_valid f Outgoing ofs ty = true ->
   exists v,
-     load_stack m (Vptr sp Ptrofs.zero) ty (Ptrofs.repr (offset_arg ofs)) cp = Some v
+     load_stack m (Vptr sp Ptrofs.zero) ty (Ptrofs.repr (offset_arg ofs)) (Some cp) = Some v
   /\ Val.inject j (ls (S Outgoing ofs ty)) v.
 Proof.
   unfold frame_contents, frame_contents_1; intros. unfold slot_valid in H1; InvBooleans.
@@ -452,7 +475,7 @@ Qed.
 Lemma frame_get_parent:
   forall j sp ls ls0 parent retaddr cp m P,
   m |= frame_contents j sp ls ls0 parent retaddr cp ** P ->
-  load_stack m (Vptr sp Ptrofs.zero) Tptr (Ptrofs.repr fe.(fe_ofs_link)) cp = Some parent.
+  load_stack m (Vptr sp Ptrofs.zero) Tptr (Ptrofs.repr fe.(fe_ofs_link)) (Some cp) = Some parent.
 Proof.
   unfold frame_contents, frame_contents_1; intros.
   apply mconj_proj1 in H. apply sep_proj1 in H. apply sep_pick3 in H. rewrite <- chunk_of_Tptr in H.
@@ -462,7 +485,7 @@ Qed.
 Lemma frame_get_retaddr:
   forall j sp ls ls0 parent retaddr cp m P,
   m |= frame_contents j sp ls ls0 parent retaddr cp ** P ->
-  load_stack m (Vptr sp Ptrofs.zero) Tptr (Ptrofs.repr fe.(fe_ofs_retaddr)) cp = Some retaddr.
+  load_stack m (Vptr sp Ptrofs.zero) Tptr (Ptrofs.repr fe.(fe_ofs_retaddr)) (Some cp) = Some retaddr.
 Proof.
   unfold frame_contents, frame_contents_1; intros.
   apply mconj_proj1 in H. apply sep_proj1 in H. apply sep_pick4 in H. rewrite <- chunk_of_Tptr in H.
@@ -950,7 +973,7 @@ Lemma save_callee_save_rec_correct:
   forall k l pos cp rs m P,
   (forall r, In r l -> is_callee_save r = true) ->
   m |= range sp pos (size_callee_save_area_rec l pos) ** P ->
-  forall OWN : Mem.own_block m sp cp,
+  forall OWN : Mem.can_access_block m sp (Some cp),
   agree_regs j ls rs ->
   exists rs', exists m',
      star step tge
@@ -1320,8 +1343,8 @@ Lemma function_epilogue_correct:
   j sp = Some(sp', fe.(fe_stack_data)) ->
   Mem.free m sp 0 f.(Linear.fn_stacksize) (comp_of f) = Some m1 ->
   exists rs1, exists m1',
-     load_stack m' (Vptr sp' Ptrofs.zero) Tptr tf.(fn_link_ofs) (comp_of tf) = Some pa
-  /\ load_stack m' (Vptr sp' Ptrofs.zero) Tptr tf.(fn_retaddr_ofs) (comp_of tf) = Some ra
+     load_stack m' (Vptr sp' Ptrofs.zero) Tptr tf.(fn_link_ofs) (Some (comp_of tf)) = Some pa
+  /\ load_stack m' (Vptr sp' Ptrofs.zero) Tptr tf.(fn_retaddr_ofs) (Some (comp_of tf)) = Some ra
   /\ Mem.free m' sp' 0 tf.(fn_stacksize) (comp_of tf) = Some m1'
   /\ star step tge
        (State cs fb (Vptr sp' Ptrofs.zero) (restore_callee_save fe k) rs m')
@@ -1366,6 +1389,7 @@ Proof.
   assumption.
 Qed.
 
+End FIXME.
 End FRAME_PROPERTIES.
 
 (** * Call stack invariants *)
@@ -1941,8 +1965,11 @@ Proof.
   apply plus_one. eapply exec_Mgetparam; eauto.
   unfold find_comp_ptr. rewrite FIND. reflexivity.
   rewrite (unfold_transf_function _ _ TRANSL). unfold fn_link_ofs.
-  eapply frame_get_parent. eexact SEP. unfold call_comp. simpl. rewrite FINDF.
-  rewrite (comp_transl_partial _ TRF). reflexivity.
+  eapply frame_get_parent. eexact SEP. unfold call_comp. simpl.
+  unfold load_stack in *. (* Need lemma: load with Some -> load with None *)
+  admit.
+  (* rewrite FINDF. *)
+  (* rewrite (comp_transl_partial _ TRF). reflexivity. *)
   econstructor; eauto with coqlib. econstructor; eauto.
   apply agree_regs_set_reg. apply agree_regs_set_reg. auto. auto.
   erewrite agree_incoming by eauto. exact B.

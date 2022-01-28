@@ -181,7 +181,7 @@ Inductive step: state -> trace -> state -> Prop :=
   | exec_Lload:
       forall s f sp chunk addr args dst b rs m a v rs',
       eval_addressing ge sp addr (reglist rs args) = Some a ->
-      Mem.loadv chunk m a (comp_of f) = Some v ->
+      Mem.loadv chunk m a (Some (comp_of f)) = Some v ->
       rs' = Locmap.set (R dst) v (undef_regs (destroyed_by_load chunk addr) rs) ->
       step (State s f sp (Lload chunk addr args dst :: b) rs m)
         E0 (State s f sp b rs' m)

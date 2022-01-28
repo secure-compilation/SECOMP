@@ -56,7 +56,7 @@ Inductive deref_loc (cp: compartment) (ty: type) (m: mem) (b: block) (ofs: ptrof
   | deref_loc_value: forall chunk v,
       access_mode ty = By_value chunk ->
       type_is_volatile ty = false ->
-      Mem.loadv chunk m (Vptr b ofs) cp = Some v ->
+      Mem.loadv chunk m (Vptr b ofs) (Some cp) = Some v ->
       deref_loc cp ty m b ofs E0 v
   | deref_loc_volatile: forall chunk t v,
       access_mode ty = By_value chunk -> type_is_volatile ty = true ->
@@ -94,7 +94,7 @@ Inductive assign_loc (cp: compartment) (ty: type) (m: mem) (b: block) (ofs: ptro
       b' <> b \/ Ptrofs.unsigned ofs' = Ptrofs.unsigned ofs
               \/ Ptrofs.unsigned ofs' + sizeof ge ty <= Ptrofs.unsigned ofs
               \/ Ptrofs.unsigned ofs + sizeof ge ty <= Ptrofs.unsigned ofs' ->
-      Mem.loadbytes m b' (Ptrofs.unsigned ofs') (sizeof ge ty) cp = Some bytes ->
+      Mem.loadbytes m b' (Ptrofs.unsigned ofs') (sizeof ge ty) (Some cp) = Some bytes ->
       Mem.storebytes m b (Ptrofs.unsigned ofs) bytes cp = Some m' ->
       assign_loc cp ty m b ofs (Vptr b' ofs') E0 m'.
 

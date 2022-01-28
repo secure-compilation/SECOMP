@@ -725,12 +725,12 @@ Definition indexed_memory_access
 
 Definition loadind (base: ireg) (ofs: ptrofs) (ty: typ) (dst: mreg) (k: code) :=
   match ty, preg_of dst with
-  | Tint,    IR rd => OK (indexed_memory_access (Plw rd) base ofs k)
-  | Tlong,   IR rd => OK (indexed_memory_access (Pld rd) base ofs k)
+  | Tint,    IR rd => OK (indexed_memory_access (fun i o => Plw rd i o false) base ofs k)
+  | Tlong,   IR rd => OK (indexed_memory_access (fun i o => Pld rd i o false) base ofs k)
   | Tsingle, FR rd => OK (indexed_memory_access (Pfls rd) base ofs k)
   | Tfloat,  FR rd => OK (indexed_memory_access (Pfld rd) base ofs k)
-  | Tany32,  IR rd => OK (indexed_memory_access (Plw_a rd) base ofs k)
-  | Tany64,  IR rd => OK (indexed_memory_access (Pld_a rd) base ofs k)
+  | Tany32,  IR rd => OK (indexed_memory_access (fun i o => Plw_a rd i o false) base ofs k)
+  | Tany64,  IR rd => OK (indexed_memory_access (fun i o => Pld_a rd i o false) base ofs k)
   | Tany64,  FR rd => OK (indexed_memory_access (Pfld_a rd) base ofs k)
   | _, _           => Error (msg "Asmgen.loadind")
   end.
@@ -748,7 +748,7 @@ Definition storeind (src: mreg) (base: ireg) (ofs: ptrofs) (ty: typ) (k: code) :
   end.
 
 Definition loadind_ptr (base: ireg) (ofs: ptrofs) (dst: ireg) (k: code) :=
-  indexed_memory_access (if Archi.ptr64 then Pld dst else Plw dst) base ofs k.
+  indexed_memory_access (if Archi.ptr64 then fun i o => Pld dst i o false else fun i o => Plw dst i o false) base ofs k.
 
 Definition storeind_ptr (src: ireg) (base: ireg) (ofs: ptrofs) (k: code) :=
   indexed_memory_access (if Archi.ptr64 then Psd src else Psw src) base ofs k.
@@ -775,22 +775,22 @@ Definition transl_load (chunk: memory_chunk) (addr: addressing)
   match chunk with
   | Mint8signed =>
       do r <- ireg_of dst;
-      transl_memory_access (Plb r)  addr args k
+      transl_memory_access (fun i o => Plb r i o false)  addr args k
   | Mint8unsigned =>
       do r <- ireg_of dst;
-      transl_memory_access (Plbu r) addr args k
+      transl_memory_access (fun i o => Plbu r i o false) addr args k
   | Mint16signed =>
       do r <- ireg_of dst;
-      transl_memory_access (Plh r)  addr args k
+      transl_memory_access (fun i o => Plh r i o false)  addr args k
   | Mint16unsigned =>
       do r <- ireg_of dst;
-      transl_memory_access (Plhu r) addr args k
+      transl_memory_access (fun i o => Plhu r i o false) addr args k
   | Mint32 =>
       do r <- ireg_of dst;
-      transl_memory_access (Plw r)  addr args k
+      transl_memory_access (fun i o => Plw r i o false)  addr args k
   | Mint64 =>
       do r <- ireg_of dst;
-      transl_memory_access (Pld r)  addr args k
+      transl_memory_access (fun i o => Pld r i o false)  addr args k
   | Mfloat32 =>
       do r <- freg_of dst;
       transl_memory_access (Pfls r) addr args k
@@ -843,7 +843,7 @@ Definition transl_instr (f: Mach.function) (i: Mach.instruction)
       storeind src SP ofs ty k
   | Mgetparam ofs ty dst =>
       (* load via the frame pointer if it is valid *)
-      do c <- loadind_privileged X30 ofs ty dst k;
+      do c <- loadind X30 ofs ty dst k;
       OK (if ep then c
                 else loadind_ptr SP f.(fn_link_ofs) X30 c)
   | Mop op args res =>

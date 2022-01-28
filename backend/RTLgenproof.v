@@ -614,7 +614,7 @@ Lemma transl_expr_Eload_correct:
   eval_exprlist ge sp e cp m le args vargs ->
   transl_exprlist_prop le args vargs ->
   Op.eval_addressing ge sp addr vargs = Some vaddr ->
-  Mem.loadv chunk m vaddr cp = Some v ->
+  Mem.loadv chunk m vaddr (Some cp) = Some v ->
   transl_expr_prop le (Eload chunk addr args) v.
 Proof.
   intros; red; intros.

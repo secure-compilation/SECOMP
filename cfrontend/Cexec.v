@@ -207,7 +207,7 @@ Definition do_volatile_load (w: world) (chunk: memory_chunk) (cp: compartment) (
         Some(w', Event_vload chunk id ofs res :: nil, Val.load_result chunk vres)
     end
   else
-    do v <- Mem.load chunk m b (Ptrofs.unsigned ofs) cp;
+    do v <- Mem.load chunk m b (Ptrofs.unsigned ofs) (Some cp);
     Some(w, E0, v).
 
 Definition do_volatile_store (w: world) (chunk: memory_chunk) (cp: compartment) (m: mem) (b: block) (ofs: ptrofs) (v: val)
@@ -259,7 +259,7 @@ Proof.
   apply eventval_of_val_sound; auto.
   econstructor. constructor; eauto. constructor.
   split.
-  constructor; auto. eapply Mem.store_own_block; eauto.
+  constructor; auto. eapply Mem.store_can_access_block; eauto.
   constructor.
 Qed.
 
@@ -281,7 +281,7 @@ Definition do_deref_loc (w: world) (ty: type) (m: mem) (b: block) (ofs: ptrofs) 
   match access_mode ty with
   | By_value chunk =>
       match type_is_volatile ty with
-      | false => do v <- Mem.loadv chunk m (Vptr b ofs) cp; Some(w, E0, v)
+      | false => do v <- Mem.loadv chunk m (Vptr b ofs) (Some cp); Some(w, E0, v)
       | true => do_volatile_load w chunk cp m b ofs
       end
   | By_reference => Some(w, E0, Vptr b ofs)
@@ -329,7 +329,7 @@ Definition do_assign_loc (w: world) (ty: type) (m: mem) (b: block) (ofs: ptrofs)
       match v with
       | Vptr b' ofs' =>
           if check_assign_copy ty b ofs b' ofs' then
-            do bytes <- Mem.loadbytes m b' (Ptrofs.unsigned ofs') (sizeof ge ty) cp;
+            do bytes <- Mem.loadbytes m b' (Ptrofs.unsigned ofs') (sizeof ge ty) (Some cp);
             do m' <- Mem.storebytes m b (Ptrofs.unsigned ofs) bytes cp;
             Some(w, E0, m')
           else None
@@ -463,7 +463,7 @@ Definition do_ef_free
        (w: world) (cp: compartment) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
   match vargs with
   | Vptr b lo :: nil =>
-      do vsz <- Mem.load Mptr m b (Ptrofs.unsigned lo - size_chunk Mptr) cp;
+      do vsz <- Mem.load Mptr m b (Ptrofs.unsigned lo - size_chunk Mptr) (Some cp);
       do sz <- do_alloc_size vsz;
       check (zlt 0 (Ptrofs.unsigned sz));
       do m' <- Mem.free m b (Ptrofs.unsigned lo - size_chunk Mptr) (Ptrofs.unsigned lo + Ptrofs.unsigned sz) cp;
@@ -492,7 +492,7 @@ Definition do_ef_memcpy (sz al: Z)
   match vargs with
   | Vptr bdst odst :: Vptr bsrc osrc :: nil =>
       if decide (memcpy_args_ok sz al bdst (Ptrofs.unsigned odst) bsrc (Ptrofs.unsigned osrc)) then
-        do bytes <- Mem.loadbytes m bsrc (Ptrofs.unsigned osrc) sz cp;
+        do bytes <- Mem.loadbytes m bsrc (Ptrofs.unsigned osrc) sz (Some cp);
         do m' <- Mem.storebytes m bdst (Ptrofs.unsigned odst) bytes cp;
         Some(w, E0, Vundef, m')
       else None
