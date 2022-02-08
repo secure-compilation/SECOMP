@@ -500,6 +500,8 @@ Inductive match_callstack (f: meminj) (m: mem) (tm: mem):
         (MTMP: match_temps f le te)
         (MENV: match_env f cenv e sp lo hi)
         (BOUND: match_bounds e m)
+        (COMP: Mem.can_access_block tm sp (Some (comp_of tf)))
+        (* (COMP: Mem.block_compartment tm sp = Some (comp_of tf)) *)
         (PERM: padding_freeable f e tm sp tf.(fn_stackspace))
         (MCS: match_callstack f m tm cs lo sp),
       match_callstack f m tm (Frame cenv tf e le te sp lo hi :: cs) bound tbound.

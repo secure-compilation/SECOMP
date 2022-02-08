@@ -259,7 +259,7 @@ Proof.
   left; red; intros. omegaContradiction.
 Defined.
 
-(** [own_block m b cp] holds if a component [cp] has control over block [b] in
+(** [can_access_block m b cp] holds if a component [cp] has control over block [b] in
     memory [m]. In the simple memory model without sharing, this simple means
     that [cp] is the compartment associated to [b] in [m]'s map from blocks to
     components.
