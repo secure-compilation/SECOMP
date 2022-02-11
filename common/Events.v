@@ -671,6 +671,15 @@ Record extcall_properties (sem: extcall_sem) (sg: signature) : Prop :=
     sem ge c vargs m1 t vres m2 ->
     Mem.valid_block m1 b -> Mem.valid_block m2 b;
 
+(** External calls cannot change the ownership of memory blocks.
+  JT: lacks in generality, but if we start allowing sharing then the
+      notion of [can_access_block] must be completely changed anyway
+ *)
+  ec_can_access_block:
+    forall ge c vargs m1 t vres m2 b cp,
+    sem ge c vargs m1 t vres m2 ->
+    Mem.can_access_block m1 b cp -> Mem.can_access_block m2 b cp;
+
 (** External calls cannot increase the max permissions of a valid block.
     They can decrease the max permissions, e.g. by freeing. *)
   ec_max_perm:
@@ -819,6 +828,8 @@ Proof.
 (* symbols *)
 - inv H0. constructor. eapply volatile_load_preserved; eauto.
 (* valid blocks *)
+- inv H; auto.
+(* accessiblity *)
 - inv H; auto.
 (* max perms *)
 - inv H; auto.
@@ -991,6 +1002,8 @@ Proof.
 - inv H0. constructor. eapply volatile_store_preserved; eauto.
 (* valid block *)
 - inv H. inv H1. auto. eauto with mem.
+(* accessibility block *)
+- inv H. inv H1. auto. eapply Mem.store_can_access_block_inj in H2. eapply H2. eauto.
 (* perms *)
 - inv H. inv H2. auto. eauto with mem.
 (* readonly *)
@@ -1051,6 +1064,9 @@ Proof.
 - inv H0; econstructor; eauto.
 (* valid block *)
 - inv H. eauto with mem.
+(* accessibility *)
+- inv H. eapply Mem.store_can_access_block_inj in H2; eapply H2.
+  eapply Mem.alloc_can_access_block_other_inj_1; eauto.
 (* perms *)
 - inv H. exploit Mem.perm_alloc_inv. eauto. eapply Mem.perm_store_2; eauto.
   rewrite dec_eq_false. auto.
@@ -1128,6 +1144,8 @@ Proof.
 - inv H0; econstructor; eauto.
 (* valid block *)
 - inv H; eauto with mem.
+(* accessibility *)
+- inv H; eauto. eapply Mem.free_can_access_block_inj_1; eauto.
 (* perms *)
 - inv H; eauto using Mem.perm_free_3.
 (* readonly *)
@@ -1241,6 +1259,8 @@ Proof.
   intros. inv H0. econstructor; eauto.
 - (* valid blocks *)
   intros. inv H. eauto with mem.
+- (* accessibility *)
+  intros. inv H. eapply Mem.storebytes_can_access_block_inj_1; eauto.
 - (* perms *)
   intros. inv H. eapply Mem.perm_storebytes_2; eauto.
 - (* readonly *)
@@ -1363,6 +1383,8 @@ Proof.
   eapply eventval_list_match_preserved; eauto.
 (* valid blocks *)
 - inv H; auto.
+(* accessibility *)
+- inv H; auto.
 (* perms *)
 - inv H; auto.
 (* readonly *)
@@ -1408,6 +1430,8 @@ Proof.
   eapply eventval_match_preserved; eauto.
 (* valid blocks *)
 - inv H; auto.
+(* accessibility *)
+- inv H; auto.
 (* perms *)
 - inv H; auto.
 (* readonly *)
@@ -1450,6 +1474,8 @@ Proof.
 (* symbols *)
 - inv H0. econstructor; eauto.
 (* valid blocks *)
+- inv H; auto.
+(* accessibility *)
 - inv H; auto.
 (* perms *)
 - inv H; auto.
@@ -1501,6 +1527,8 @@ Proof.
 (* symbols *)
 - inv H0. econstructor; eauto.
 (* valid blocks *)
+- inv H; auto.
+(* accessibility *)
 - inv H; auto.
 (* perms *)
 - inv H; auto.
@@ -1684,6 +1712,7 @@ Qed.
 Definition external_call_well_typed_gen ef := ec_well_typed (external_call_spec ef).
 Definition external_call_symbols_preserved ef := ec_symbols_preserved (external_call_spec ef).
 Definition external_call_valid_block ef := ec_valid_block (external_call_spec ef).
+Definition external_call_can_access_block ef := ec_can_access_block (external_call_spec ef).
 Definition external_call_max_perm ef := ec_max_perm (external_call_spec ef).
 Definition external_call_readonly ef := ec_readonly (external_call_spec ef).
 Definition external_call_mem_extends ef := ec_mem_extends (external_call_spec ef).

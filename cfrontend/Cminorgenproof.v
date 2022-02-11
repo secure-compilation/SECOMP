@@ -2109,8 +2109,7 @@ Proof.
   { apply match_callstack_incr_bound with (Mem.nextblock m) (Mem.nextblock tm).
     eapply match_callstack_external_call; eauto.
     intros. eapply external_call_max_perm; eauto.
-    (* Maybe we need a specification of external calls that they don't change the accessiblity of existing blocks *)
-    admit.
+    intros. eapply external_call_can_access_block; eauto.
     xomega. xomega.
     eapply external_call_nextblock; eauto.
     eapply external_call_nextblock; eauto. }
@@ -2269,8 +2268,7 @@ Opaque PTree.set.
   apply match_callstack_incr_bound with (Mem.nextblock m) (Mem.nextblock tm).
   eapply match_callstack_external_call; eauto.
   intros. eapply external_call_max_perm; eauto.
-  (* Maybe we need a specification of external calls that they don't change the accessiblity of existing blocks *)
-  admit.
+  intros. eapply external_call_can_access_block; eauto.
   xomega. xomega.
   eapply external_call_nextblock; eauto.
   eapply external_call_nextblock; eauto.
@@ -2281,7 +2279,7 @@ Opaque PTree.set.
   apply plus_one. econstructor; eauto.
   unfold set_optvar. destruct optid; simpl; econstructor; eauto.
   eapply match_callstack_set_temp; eauto.
-Admitted.
+Qed.
 
 Lemma match_globalenvs_init:
   forall m,
