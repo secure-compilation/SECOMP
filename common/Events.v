@@ -894,9 +894,10 @@ Proof.
   intros.
   rewrite <- H1. symmetry.
   apply Mem.loadbytes_unchanged_on_1 with (P := loc_not_writable m1); auto.
-  admit. (* RB: NOTE: New own_block subgoal. *)
-(* Qed. *)
-Admitted.
+  eapply Mem.unchanged_on_own; eauto.
+  eapply Mem.loadbytes_can_access_block_inj ; eauto.
+Qed.
+
 
 Lemma volatile_store_readonly:
   forall ge cp chunk1 m1 b1 ofs1 v t m2,
@@ -927,16 +928,16 @@ Proof.
   auto with mem.
 - exploit Mem.store_within_extends; eauto. intros [m2' [A B]].
   exists m2'; intuition.
-+ econstructor; eauto.
-  admit. (* RB: NOTE: New own_block subgoal *)
+  + econstructor; eauto.
+    eapply Mem.mext_inj in H0. eapply Mem.mi_own in H0; eauto.
+    unfold inject_id. reflexivity.
 + eapply Mem.store_unchanged_on; eauto.
   unfold loc_out_of_bounds; intros.
   assert (Mem.perm m1 b i Max Nonempty).
   { apply Mem.perm_cur_max. apply Mem.perm_implies with Writable; auto with mem.
     exploit Mem.store_valid_access_3. eexact H3. intros [P Q]. eauto. }
   tauto.
-(* Qed. *)
-Admitted.
+Qed.
 
 Lemma volatile_store_inject:
   forall ge1 ge2 cp f chunk m1 b ofs v t m2 m1' b' ofs' v',
@@ -965,9 +966,8 @@ Proof.
   assert (Mem.storev chunk m1 (Vptr b ofs) v cp = Some m2). simpl; auto.
   exploit Mem.storev_mapped_inject; eauto. intros [m2' [A B]].
   exists m2'; intuition auto.
-+ econstructor; eauto.
-  (* erewrite S; eauto. *)
-  admit. (* RB: NOTE: New own_block subgoal *)
+  + econstructor; eauto.
+    eapply Mem.mi_own; eauto. eapply Mem.mi_inj; eauto.
 + eapply Mem.store_unchanged_on; eauto.
   unfold loc_unmapped; intros. inv AI; congruence.
 + eapply Mem.store_unchanged_on; eauto.
@@ -980,8 +980,7 @@ Proof.
   intros.
   apply Mem.perm_cur_max. apply Mem.perm_implies with Writable; auto with mem.
   apply X. omega.
-(* Qed. *)
-Admitted.
+Qed.
 
 Lemma volatile_store_receptive:
   forall ge cp chunk m b ofs v t1 m1 t2,
@@ -1296,14 +1295,16 @@ Proof.
   destruct (Mem.range_perm_storebytes m1' b0 (Ptrofs.unsigned (Ptrofs.add odst (Ptrofs.repr delta0))) nil c)
   as [m2' SB].
   simpl. red; intros; omegaContradiction.
-  admit. (* RB: NOTE: New own_block subgoal *)
+  eapply Mem.mi_own; eauto. eapply Mem.mi_inj; eauto.
+  eapply Mem.storebytes_can_access_block_1; eauto.
   exists f, Vundef, m2'.
   split. econstructor; eauto.
   intros; omegaContradiction.
   intros; omegaContradiction.
   right; omega.
   apply Mem.loadbytes_empty. omega.
-  admit. (* RB: NOTE: New own_block subgoal *)
+  eapply Mem.mi_own; eauto. eapply Mem.mi_inj; eauto.
+  eapply Mem.loadbytes_can_access_block_inj; eauto.
   split. auto.
   split. eapply Mem.storebytes_empty_inject; eauto.
   split. eapply Mem.storebytes_unchanged_on; eauto. unfold loc_unmapped; intros.
@@ -1357,8 +1358,8 @@ Proof.
   exists vres1; exists m1; auto.
 - (* determ *)
   intros; inv H; inv H0. split. constructor. intros; split; congruence.
-(* Qed. *)
-Admitted.
+Qed.
+
 
 (** ** Semantics of annotations. *)
 
@@ -1686,7 +1687,12 @@ Proof.
   intros E. rewrite E; trivial.
   (* RB: NOTE: The last goal, on EF_memcpy, cannot be solved by means of this
      strategy, and needs a closer look. *)
-  admit. (* RB: NOTE: Semantics of [memcpy] *)
+  intros ge cp1 cp2 args m t v m'.
+  unfold uptodate_caller, needs_calling_comp, needs_calling_comp_map. simpl.
+  rewrite PMap.gsspec, PMap.gi.
+  destruct (peq (comp_of (EF_memcpy sz al)) privileged_compartment) as [|neq]; try easy.
+  intros _. intros. admit.
+  (* RB: NOTE: Semantics of [memcpy] *)
 (* Qed. *)
 Admitted.
 
@@ -1844,12 +1850,17 @@ Lemma eval_builtin_arg_determ:
   forall a v, eval_builtin_arg a v -> forall v', eval_builtin_arg a v' -> v' = v.
 Proof.
   induction 1; intros v' EV; inv EV; try congruence.
-  admit. (* RB: NOTE: New subgoal on compartment determinacy of [loadv] *)
-  admit. (* RB: NOTE: New subgoal on compartment determinacy of [loadv] *)
+  { unfold Mem.loadv in H, H3.
+    destruct (Val.offset_ptr sp ofs) eqn:E; try discriminate.
+    apply Mem.load_result in H.
+    apply Mem.load_result in H3. now subst. }
+  { unfold Mem.loadv in H, H4.
+    destruct (Senv.symbol_address ge id ofs) eqn:E; try discriminate.
+    apply Mem.load_result in H.
+    apply Mem.load_result in H4. now subst. }
   f_equal; eauto.
   apply IHeval_builtin_arg1 in H3. apply IHeval_builtin_arg2 in H5. subst; auto.
-(* Qed. *)
-Admitted.
+Qed.
 
 Lemma eval_builtin_args_determ:
   forall al vl, eval_builtin_args al vl -> forall vl', eval_builtin_args al vl' -> vl' = vl.
