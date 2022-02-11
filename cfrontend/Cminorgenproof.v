@@ -525,6 +525,7 @@ Lemma match_callstack_invariant:
   (forall b ofs p, Plt b bound -> Mem.perm m2 b ofs Max p -> Mem.perm m1 b ofs Max p) ->
   (forall sp ofs, Plt sp tbound -> Mem.perm tm1 sp ofs Cur Freeable -> Mem.perm tm2 sp ofs Cur Freeable) ->
   (forall b, Plt b bound -> f2 b = f1 b) ->
+  (forall sp cp, Plt sp tbound -> Mem.can_access_block tm1 sp cp -> Mem.can_access_block tm2 sp cp) ->
   (forall b b' delta, f2 b = Some(b', delta) -> Plt b' tbound -> f1 b = Some(b', delta)) ->
   match_callstack f2 m2 tm2 cs bound tbound.
 Proof.
@@ -532,7 +533,7 @@ Proof.
   (* base case *)
   econstructor; eauto.
   inv H. constructor; intros; eauto.
-  eapply IMAGE; eauto. eapply H6; eauto. xomega.
+  eapply IMAGE; eauto. eapply H7; eauto. xomega.
   (* inductive case *)
   assert (Ple lo hi) by (eapply me_low_high; eauto).
   econstructor; eauto.
@@ -549,6 +550,7 @@ Proof.
     intros. eapply H2; eauto. xomega.
     intros. eapply H3; eauto. xomega.
     intros. eapply H4; eauto. xomega.
+    intros. eapply H5; eauto. xomega.
 Qed.
 
 Lemma match_callstack_incr_bound:
@@ -618,7 +620,7 @@ Proof.
   eapply free_list_freeable; eauto. eapply in_blocks_of_env; eauto.
   replace ofs with ((ofs - delta) + delta) by omega.
   eapply Mem.perm_inject; eauto. apply H3. omega.
-  admit.
+  assumption.
   destruct X as  [tm' FREE].
   exploit nextblock_freelist; eauto. intro NEXT.
   exploit Mem.nextblock_free; eauto. intro NEXT'.
@@ -627,13 +629,16 @@ Proof.
   apply match_callstack_incr_bound with lo sp; try omega.
   apply match_callstack_invariant with f m tm; auto.
   intros. eapply perm_freelist; eauto.
-  intros. eapply Mem.perm_free_1; eauto. left; unfold block; xomega. xomega. xomega.
+  intros. eapply Mem.perm_free_1; eauto. left; unfold block; xomega.
+  intros. eapply Mem.free_can_access_block_inj_1; eauto.
+  xomega. xomega.
   eapply Mem.free_inject; eauto.
   intros. exploit me_inv0; eauto. intros [id [sz A]].
   exists 0; exists sz; split.
   eapply in_blocks_of_env; eauto.
   eapply BOUND0; eauto. eapply Mem.perm_max. eauto.
-Admitted.
+Qed.
+
 
 (** Preservation of [match_callstack] by external calls. *)
 
@@ -644,13 +649,14 @@ Lemma match_callstack_external_call:
   inject_incr f1 f2 ->
   inject_separated f1 f2 m1 m1' ->
   (forall b ofs p, Mem.valid_block m1 b -> Mem.perm m2 b ofs Max p -> Mem.perm m1 b ofs Max p) ->
+  (forall sp cp, Mem.can_access_block m1' sp cp -> Mem.can_access_block m2' sp cp) ->
   forall cs bound tbound,
   match_callstack f1 m1 m1' cs bound tbound ->
   Ple bound (Mem.nextblock m1) -> Ple tbound (Mem.nextblock m1') ->
   match_callstack f2 m2 m2' cs bound tbound.
 Proof.
   intros until m2'.
-  intros UNMAPPED OUTOFREACH INCR SEPARATED MAXPERMS.
+  intros UNMAPPED OUTOFREACH INCR SEPARATED MAXPERMS COMP.
   induction 1; intros.
 (* base case *)
   apply mcs_nil with hi; auto.
@@ -672,6 +678,7 @@ Proof.
   exploit SEPARATED; eauto. intros [A B]. elim A. red. xomega.
   eapply match_bounds_invariant; eauto.
   intros. eapply MAXPERMS; eauto. red. exploit me_bounded; eauto. xomega.
+  eapply COMP. eauto.
   (* padding-freeable *)
   red; intros.
   destruct (is_reachable_from_env_dec f1 e sp ofs).
@@ -690,9 +697,9 @@ Qed.
 (** [match_callstack] and allocations *)
 
 Lemma match_callstack_alloc_right:
-  forall f m tm c cs tf tm' sp le te cenv,
+  forall f m tm cs tf tm' sp le te cenv,
   match_callstack f m tm cs (Mem.nextblock m) (Mem.nextblock tm) ->
-  Mem.alloc tm c 0 tf.(fn_stackspace) = (tm', sp) ->
+  Mem.alloc tm (comp_of tf) 0 tf.(fn_stackspace) = (tm', sp) ->
   Mem.inject f m tm ->
   match_temps f le te ->
   (forall id, cenv!id = None) ->
@@ -714,10 +721,13 @@ Proof.
     eelim Mem.fresh_block_alloc; eauto. eapply Mem.valid_block_inject_2; eauto.
     rewrite RES. change (Mem.valid_block tm tb). eapply Mem.valid_block_inject_2; eauto.
   red; intros. rewrite PTree.gempty in H4. discriminate.
+  subst. eapply Mem.owned_new_block. eauto.
   red; intros. left. eapply Mem.perm_alloc_2; eauto.
   eapply match_callstack_invariant with (tm1 := tm); eauto.
   rewrite RES; auto.
   intros. eapply Mem.perm_alloc_1; eauto.
+  subst. intros.
+  eapply Mem.alloc_can_access_block_other_inj_1; eauto.
 Qed.
 
 Lemma match_callstack_alloc_left:
@@ -748,6 +758,7 @@ Proof.
   inversion H. subst b0 sz0 id0. eapply Mem.perm_alloc_3; eauto.
   eapply BOUND0; eauto. eapply Mem.perm_alloc_4; eauto.
   exploit me_bounded; eauto. unfold block in *; xomega.
+  assumption.
   red; intros. exploit PERM; eauto. intros [A|A]. auto. right.
   inv A. apply is_reachable_intro with id0 b0 sz0 delta; auto.
   rewrite PTree.gso. auto. congruence.
@@ -813,13 +824,13 @@ Definition cenv_mem_separated (cenv: compilenv) (vars: list (ident * Z)) (f: mem
   ofs <= ofs' + delta < sz + ofs -> False.
 
 Lemma match_callstack_alloc_variables_rec:
-  forall cp tm sp tf cenv le te lo cs,
+  forall tm sp tf cenv le te lo cs,
   Mem.valid_block tm sp ->
   fn_stackspace tf <= Ptrofs.max_unsigned ->
   (forall ofs k p, Mem.perm tm sp ofs k p -> 0 <= ofs < fn_stackspace tf) ->
   (forall ofs k p, 0 <= ofs < fn_stackspace tf -> Mem.perm tm sp ofs k p) ->
   forall e1 m1 vars e2 m2,
-  alloc_variables cp e1 m1 vars e2 m2 ->
+  alloc_variables (comp_of tf) e1 m1 vars e2 m2 ->
   forall f1,
   list_norepet (map fst vars) ->
   cenv_compat cenv vars (fn_stackspace tf) ->
@@ -849,7 +860,7 @@ Proof.
     eexact MINJ.
     eexact H.
     eexact VALID.
-    admit.
+    inversion MCS; eauto.
     instantiate (1 := ofs). zify. omega.
     intros. exploit STKSIZE; eauto. omega.
     intros. apply STKPERMS. zify. omega.
@@ -871,13 +882,13 @@ Proof.
     eapply match_callstack_alloc_left; eauto.
     rewrite cenv_remove_gso; auto.
     apply UNBOUND with sz; auto with coqlib.
-Admitted.
+Qed.
 
 Lemma match_callstack_alloc_variables:
-  forall tm1 c sp tm2 m1 vars e m2 cenv f1 cs fn le te,
-  Mem.alloc tm1 c 0 (fn_stackspace fn) = (tm2, sp) ->
+  forall tm1 sp tm2 m1 vars e m2 cenv f1 cs fn le te,
+  Mem.alloc tm1 (comp_of fn) 0 (fn_stackspace fn) = (tm2, sp) ->
   fn_stackspace fn <= Ptrofs.max_unsigned ->
-  alloc_variables c empty_env m1 vars e m2 ->
+  alloc_variables (comp_of fn) empty_env m1 vars e m2 ->
   list_norepet (map fst vars) ->
   cenv_compat cenv vars (fn_stackspace fn) ->
   cenv_separated cenv vars ->
@@ -1246,6 +1257,7 @@ Qed.
 
 Theorem match_callstack_function_entry:
   forall fn cenv tf m e m' tm tm' sp f cs args targs le,
+  comp_of fn = comp_of tf ->
   build_compilenv fn = (cenv, tf.(fn_stackspace)) ->
   tf.(fn_stackspace) <= Ptrofs.max_unsigned ->
   list_norepet (map fst (Csharpminor.fn_vars fn)) ->
@@ -1267,6 +1279,8 @@ Proof.
   intros.
   exploit build_compilenv_sound; eauto. intros [C1 C2].
   eapply match_callstack_alloc_variables; eauto.
+  rewrite <- H; auto.
+  rewrite <- H; auto.
   intros. eapply build_compilenv_domain; eauto.
   eapply bind_parameters_agree; eauto.
 Qed.
@@ -2057,6 +2071,7 @@ Proof.
   eapply match_callstack_invariant with f0 m tm; eauto.
   intros. eapply Mem.perm_store_2; eauto.
   intros. eapply Mem.perm_store_1; eauto.
+  intros. eapply Mem.store_can_access_block_inj in STORE'. eapply STORE'. eauto.
 
 (* call *)
   simpl in H1. exploit functions_translated; eauto. intros [tfd [FIND TRANS]].
@@ -2094,6 +2109,8 @@ Proof.
   { apply match_callstack_incr_bound with (Mem.nextblock m) (Mem.nextblock tm).
     eapply match_callstack_external_call; eauto.
     intros. eapply external_call_max_perm; eauto.
+    (* Maybe we need a specification of external calls that they don't change the accessiblity of existing blocks *)
+    admit.
     xomega. xomega.
     eapply external_call_nextblock; eauto.
     eapply external_call_nextblock; eauto. }
@@ -2231,7 +2248,7 @@ Opaque PTree.set.
                         sz
                         x0) in *.
   caseEq (Mem.alloc tm (fn_comp tf) 0 (fn_stackspace tf)). intros tm' sp ALLOC'.
-  exploit match_callstack_function_entry; eauto. simpl; eauto. simpl; auto.
+  exploit match_callstack_function_entry; eauto. simpl; eauto. simpl; eauto. simpl; auto.
   intros [f2 [MCS2 MINJ2]].
   left; econstructor; split.
   apply plus_one. econstructor; simpl; eauto.
@@ -2252,6 +2269,8 @@ Opaque PTree.set.
   apply match_callstack_incr_bound with (Mem.nextblock m) (Mem.nextblock tm).
   eapply match_callstack_external_call; eauto.
   intros. eapply external_call_max_perm; eauto.
+  (* Maybe we need a specification of external calls that they don't change the accessiblity of existing blocks *)
+  admit.
   xomega. xomega.
   eapply external_call_nextblock; eauto.
   eapply external_call_nextblock; eauto.
@@ -2262,7 +2281,7 @@ Opaque PTree.set.
   apply plus_one. econstructor; eauto.
   unfold set_optvar. destruct optid; simpl; econstructor; eauto.
   eapply match_callstack_set_temp; eauto.
-Qed.
+Admitted.
 
 Lemma match_globalenvs_init:
   forall m,
