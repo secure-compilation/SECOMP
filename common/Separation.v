@@ -629,7 +629,7 @@ Next Obligation.
   destruct H. constructor.
 - destruct mi_inj. constructor; intros.
 + eapply Mem.perm_unchanged_on; eauto.
-+ admit. (* RB: NOTE: New own_block subgoal. *)
++ eapply (Mem.unchanged_on_own _ _ _ H0); eauto.
 + eauto.
 + rewrite (Mem.unchanged_on_contents _ _ _ H0); eauto.
 - assumption.
@@ -639,8 +639,7 @@ Next Obligation.
 - intros. destruct (Mem.perm_dec m0 b1 ofs Max Nonempty); auto.
   eapply mi_perm_inv; eauto.
   eapply Mem.perm_unchanged_on_2; eauto.
-(* Qed. *)
-Admitted.
+Qed.
 Next Obligation.
   eapply Mem.valid_block_inject_2; eauto.
 Qed.
@@ -708,7 +707,7 @@ Proof.
 - eapply Mem.alloc_right_inject; eauto.
 - eexact ALLOC1.
 - instantiate (1 := b2). eauto with mem.
-- admit. (* RB: NOTE: New own_block subgoal *)
+- eapply Mem.owned_new_block; eauto.
 - instantiate (1 := delta). xomega.
 - intros. assert (0 <= ofs < sz2) by (eapply Mem.perm_alloc_3; eauto). omega.
 - intros. apply Mem.perm_implies with Freeable; auto with mem.
@@ -744,8 +743,7 @@ Proof.
   destruct (eq_block b0 b1).
   subst b0. rewrite J2 in A. inversion A; clear A; subst b delta0. contradiction.
   rewrite J3 in A by auto. exists b0, delta0; auto.
-(* Qed. *)
-Admitted.
+Qed.
 
 Lemma free_parallel_rule:
   forall j m1 b1 sz1 cp m1' m2 b2 sz2 lo hi delta P,
@@ -772,7 +770,8 @@ Proof.
     eapply Mem.free_range_perm; eauto. xomega.
   }
   destruct (Mem.range_perm_free _ _ _ _ cp PERM) as [m2' FREE].
-  admit. (* RB: NOTE: New own_block subgoal *)
+  eapply Mem.mi_own; [eapply Mem.mi_inj; eauto| |]; eauto.
+  eapply Mem.free_can_access_block_1; eauto.
   exists m2'; split; auto. split; [|split].
 - simpl. eapply Mem.free_right_inject; eauto. eapply Mem.free_left_inject; eauto.
   intros. apply (F b2 (ofs + delta0)).
@@ -805,8 +804,7 @@ Proof.
   simpl. right. destruct H as (b0 & delta0 & U & V).
   exists b0, delta0; split; auto.
   eapply Mem.perm_free_3; eauto.
-(* Qed. *)
-Admitted.
+Qed.
 
 (** Preservation of a global environment by a memory injection *)
 

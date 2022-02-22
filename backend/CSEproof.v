@@ -299,11 +299,14 @@ Lemma rhs_eval_to_inj:
   forall valu ge sp m rh v1 v2,
   rhs_eval_to valu ge sp m rh v1 -> rhs_eval_to valu ge sp m rh v2 -> v1 = v2.
 Proof.
-  (* intros. inv H; inv H0; congruence. *)
-  admit. (* RB: NOTE: Congruence after compartment determinacy on [loadv],
-            itself after establishing address equality by congruence. *)
-(* Qed. *)
-Admitted.
+(* TODO: clean ugly proof script*)
+  intros.
+  inv H; inv H0. congruence.
+  rewrite H6 in H1; inv H1.
+  destruct a; try discriminate. simpl in *.
+  eapply Mem.load_result in H2.
+  eapply Mem.load_result in H7. congruence.
+Qed.
 
 Lemma add_rhs_holds:
   forall valu1 ge sp rs m n rd rh rs',
@@ -1095,9 +1098,11 @@ Proof.
   destruct (find_rhs n1 (Load chunk addr vl)) as [r|] eqn:?.
 + (* replaced by move *)
   exploit find_rhs_sound; eauto. intros (v' & EV & LD).
-  assert (v' = v)
-    by (inv EV; congruence ||
-        admit). (* RB: NOTE: Congruence requires compartment determinacy on [loadv]. *)
+  assert (v' = v).
+  { inv EV. rewrite EQ, H6 in H0; inv H0.
+    destruct a; try discriminate.
+    simpl in H1, H7. eapply Mem.load_result in H1. eapply Mem.load_result in H7.
+    now subst. }
   subst v'.
   econstructor; split.
   eapply exec_Iop; eauto. simpl; eauto.
@@ -1279,9 +1284,7 @@ Proof.
   eapply exec_return; eauto.
   econstructor; eauto.
   apply set_reg_lessdef; auto.
-(* Qed. *)
-Admitted.
-
+Qed.
 
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 ->
