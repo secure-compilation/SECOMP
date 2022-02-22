@@ -2881,6 +2881,7 @@ Record mem_inj (f: meminj) (m1 m2: mem) : Prop :=
       f b1 = Some(b2, delta) ->
       perm m1 b1 ofs k p ->
       perm m2 b2 (ofs + delta) k p;
+      (* TODO: rename [mi_own] into [mi_access] *)
     mi_own:
       forall b1 b2 delta cp,
       f b1 = Some(b2, delta) ->
@@ -3593,6 +3594,9 @@ Qed.
 Record extends' (m1 m2: mem) : Prop :=
   mk_extends {
     mext_next: nextblock m1 = nextblock m2;
+      (* This should not be necessary. It's a consequence of the field [mext_inj] *)
+    (* mext_access: forall b cp, *)
+    (*   Mem.can_access_block m1 b cp -> Mem.can_access_block m2 b cp; *)
     mext_inj:  mem_inj inject_id m1 m2;
     mext_perm_inv: forall b ofs k p,
       perm m2 b ofs k p ->
@@ -3604,7 +3608,7 @@ Definition extends := extends'.
 Theorem extends_refl:
   forall m, extends m m.
 Proof.
-  intros. constructor. auto. constructor.
+  intros. constructor. auto. auto. constructor.
   intros. unfold inject_id in H; inv H. replace (ofs + 0) with ofs by omega. auto.
   intros. unfold inject_id in H; inv H. assumption.
   intros. unfold inject_id in H; inv H. apply Z.divide_0_r.

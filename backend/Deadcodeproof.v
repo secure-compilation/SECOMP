@@ -48,7 +48,10 @@ Definition locset := block -> Z -> Prop.
 Record magree (m1 m2: mem) (P: locset) : Prop := mk_magree {
   ma_perm:
     forall b ofs k p,
-    Mem.perm m1 b ofs k p -> Mem.perm m2 b ofs k p;
+      Mem.perm m1 b ofs k p -> Mem.perm m2 b ofs k p;
+  ma_access:
+    forall b cp,
+      Mem.can_access_block m1 b cp -> Mem.can_access_block m2 b cp;
   ma_perm_inv:
     forall b ofs k p,
     Mem.perm m2 b ofs k p -> Mem.perm m1 b ofs k p \/ ~Mem.perm m1 b ofs Max Nonempty;
@@ -76,6 +79,7 @@ Lemma mextends_agree:
 Proof.
   intros. destruct H. destruct mext_inj. constructor; intros.
 - replace ofs with (ofs + 0) by omega. eapply mi_perm; eauto. auto.
+- eapply mi_own; eauto. unfold inject_id; reflexivity.
 - eauto.
 - exploit mi_memval; eauto. unfold inject_id; eauto.
   rewrite Z.add_0_r. auto.
@@ -89,11 +93,10 @@ Lemma magree_extends:
 Proof.
   intros. destruct H0. constructor; auto. constructor; unfold inject_id; intros.
 - inv H0. rewrite Z.add_0_r. eauto.
-- admit. (* RB: NOTE: New own_block subgoal *)
+- inv H0. eapply ma_access0; eauto.
 - inv H0. apply Z.divide_0_r.
 - inv H0. rewrite Z.add_0_r. eapply ma_memval0; eauto.
-(* Qed. *)
-Admitted.
+Qed.
 
 Lemma magree_loadbytes:
   forall m1 m2 P b ofs n cp bytes,
@@ -122,9 +125,8 @@ Local Transparent Mem.loadbytes.
   assert (ofs <= i < ofs + n) by xomega.
   apply ma_memval0; auto.
   red; intros; eauto.
-  admit. (* Comes from agreement of the memories. *)
-(* Qed. *)
-Admitted.
+  eapply ma_access0; eauto.
+Qed.
 
 Lemma magree_load:
   forall m1 m2 P chunk b ofs cp v,
@@ -171,13 +173,14 @@ Proof.
   { erewrite <- list_forall2_length by eauto. red; intros.
     eapply ma_perm; eauto.
     eapply Mem.storebytes_range_perm; eauto. }
-  {
-    admit. (* RB: NOTE: New own_block subgoal *)
-  }
+  { eapply ma_access; eauto.
+    eapply Mem.storebytes_can_access_block_1; eauto. }
   exists m2'; split; auto.
   constructor; intros.
 - eapply Mem.perm_storebytes_1; eauto. eapply ma_perm; eauto.
   eapply Mem.perm_storebytes_2; eauto.
+- eapply Mem.storebytes_can_access_block_inj_1; eauto. eapply ma_access; eauto.
+  eapply Mem.storebytes_can_access_block_inj_2; eauto.
 - exploit ma_perm_inv; eauto using Mem.perm_storebytes_2.
   intuition eauto using Mem.perm_storebytes_1, Mem.perm_storebytes_2.
 - rewrite (Mem.storebytes_mem_contents _ _ _ _ _ _ H0).
@@ -190,8 +193,7 @@ Proof.
 - rewrite (Mem.nextblock_storebytes _ _ _ _ _ _ H0).
   rewrite (Mem.nextblock_storebytes _ _ _ _ _ _ ST2).
   eapply ma_nextblock; eauto.
-(* Qed. *)
-Admitted.
+Qed.
 
 Lemma magree_store_parallel:
   forall m1 m2 (P Q: locset) chunk b ofs v1 cp m1' v2,
@@ -224,6 +226,7 @@ Lemma magree_storebytes_left:
 Proof.
   intros. constructor; intros.
 - eapply ma_perm; eauto. eapply Mem.perm_storebytes_2; eauto.
+- eapply ma_access; eauto. eapply Mem.storebytes_can_access_block_inj_2; eauto.
 - exploit ma_perm_inv; eauto.
   intuition eauto using Mem.perm_storebytes_1, Mem.perm_storebytes_2.
 - rewrite (Mem.storebytes_mem_contents _ _ _ _ _ _ H0).
@@ -261,13 +264,16 @@ Proof.
   intros.
   destruct (Mem.range_perm_free m2 b lo hi cp) as [m2' FREE].
   red; intros. eapply ma_perm; eauto. eapply Mem.free_range_perm; eauto.
-  admit. (* RB: NOTE: New own_block subgoal *)
+  eapply ma_access; eauto. eapply Mem.free_can_access_block_1; eauto.
   exists m2'; split; auto.
   constructor; intros.
 - (* permissions *)
   assert (Mem.perm m2 b0 ofs k p). { eapply ma_perm; eauto. eapply Mem.perm_free_3; eauto. }
   exploit Mem.perm_free_inv; eauto. intros [[A B] | A]; auto.
   subst b0. eelim Mem.perm_free_2. eexact H0. eauto. eauto.
+- (* access *)
+  eapply Mem.free_can_access_block_inj_1; eauto. eapply ma_access; eauto.
+  eapply Mem.free_can_access_block_inj_2; eauto.
 - (* inverse permissions *)
   exploit ma_perm_inv; eauto using Mem.perm_free_3. intros [A|A].
   eapply Mem.perm_free_inv in A; eauto. destruct A as [[A B] | A]; auto.
@@ -283,8 +289,7 @@ Proof.
   rewrite (Mem.free_result _ _ _ _ _ _ H0).
   rewrite (Mem.free_result _ _ _ _ _ _ FREE).
   simpl. eapply ma_nextblock; eauto.
-(* Qed. *)
-Admitted.
+Qed.
 
 Lemma magree_valid_access:
   forall m1 m2 (P: locset) chunk b ofs p cp,
@@ -295,9 +300,8 @@ Proof.
   intros. destruct H0 as [? [? ?]]; split; auto.
   red; intros. eapply ma_perm; eauto.
   split; auto.
-  admit. (* RB: TODO: New own_block subgoal *)
-(* Qed. *)
-Admitted.
+  eapply ma_access; eauto.
+Qed.
 
 (** * Properties of the need environment *)
 
@@ -772,10 +776,9 @@ Proof.
   instantiate (1 := nlive ge sp nm). auto.
   intros (tm' & P & Q).
   exists tm'; split. econstructor. econstructor; eauto.
-  admit. (* RB: NOTE: New own_block subgoal *)
+  eapply ma_access; eauto.
   auto.
-(* Qed. *)
-Admitted.
+Qed.
 
 Lemma eagree_set_undef:
   forall e1 e2 ne r, eagree e1 e2 ne -> eagree (e1#r <- Vundef) e2 ne.
@@ -985,7 +988,7 @@ Ltac UseTransfer :=
     intros. eapply nlive_add; eassumption.
     intros (tv & P & Q).
     exists tv; split; auto. econstructor; eauto.
-    admit. (* RB: NOTE: New own_block subgoal *)
+    eapply ma_access; eauto.
   }
   destruct X as (tvres & P & Q).
   econstructor; split.
@@ -1058,7 +1061,6 @@ Ltac UseTransfer :=
   rewrite <- comp_transf_function; eauto.
   eapply external_call_symbols_preserved. apply senv_preserved.
   simpl in B1; inv B1. simpl in B2; inv B2. econstructor; eauto.
-  (* admit. admit. (* RB: NOTE: New subgoals *) *)
   eapply match_succ_states; eauto. simpl; auto.
   apply eagree_set_res; auto.
 + (* memcpy eliminated *)
@@ -1195,7 +1197,7 @@ Ltac UseTransfer :=
   constructor.
   econstructor; eauto. apply mextends_agree; auto.
 (* Qed. *)
-Admitted.
+Qed.
 
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 ->
