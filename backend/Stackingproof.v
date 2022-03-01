@@ -970,6 +970,8 @@ Hypothesis ls_temp_undef:
 
 Hypothesis wt_ls: forall r, Val.has_type (ls (R r)) (mreg_type r).
 
+(* JT: I think the solution here is to specialize the lemma so that
+       it talks about the compartment [cp = comp_of fb]. *)
 Lemma save_callee_save_rec_correct:
   forall k l pos cp rs m P,
   (forall r, In r l -> is_callee_save r = true) ->
@@ -985,7 +987,7 @@ Lemma save_callee_save_rec_correct:
   /\ agree_regs j ls rs'.
 Proof.
 Local Opaque mreg_type.
-  induction l as [ | r l]; simpl; intros until P; intros CS SEP AG.
+  induction l as [ | r l]; simpl; intros until P; intros CS SEP ACC AG.
 - exists rs, m.
   split. apply star_refl.
   split. rewrite sep_pure; split; auto. eapply sep_drop; eauto.
@@ -1007,23 +1009,23 @@ Local Opaque mreg_type.
   eapply range_contains in SEP; eauto.
   exploit (contains_set_stack (fun v' => Val.inject j (ls (R r)) v') (rs r)).
   eexact SEP.
-  admit. (* RB: NOTE: [Val.inject] on [load_result] (now) fails *)
-  (* eapply load_result_inject; eauto. apply wt_ls. *)
+  apply load_result_inject; auto. apply wt_ls.
   clear SEP; intros (m1 & STORE & SEP).
   set (rs1 := undef_regs (destroyed_by_setstack ty) rs).
   assert (AG1: agree_regs j ls rs1).
   { red; intros. unfold rs1. destruct (In_dec mreg_eq r0 (destroyed_by_setstack ty)).
     erewrite ls_temp_undef by eauto. auto.
     rewrite undef_regs_other by auto.
-    admit. (* RB: NOTE: [Val.inject] (now) fails *)
-    (* apply AG. *)
+    apply AG.
   }
   rewrite sep_swap in SEP.
   exploit (IHl (pos1 + sz) cp rs1 m1); eauto.
-  admit. (* RB: NOTE: New own_block subgoal *)
+  unfold store_stack in STORE. simpl in STORE.
+  eapply Mem.store_can_access_block_inj in STORE. eapply STORE; eauto.
   intros (rs2 & m2 & A & B & C & D).
   exists rs2, m2.
-  split. eapply star_left; eauto. econstructor. unfold find_comp_ptr. admit. exact STORE. auto. traceEq.
+  split. eapply star_left; eauto. econstructor. unfold find_comp_ptr.
+  admit. exact STORE. auto. traceEq.
   split. rewrite sep_assoc, sep_swap. exact B.
   split. intros. apply C. unfold store_stack in STORE; simpl in STORE. eapply Mem.perm_store_1; eauto.
   auto.
