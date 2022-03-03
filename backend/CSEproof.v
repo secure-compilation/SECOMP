@@ -680,15 +680,54 @@ Proof with (try discriminate).
   apply eq_holds_strict. econstructor. rewrite eval_addressing_Ainstack.
   simpl. rewrite Ptrofs.add_zero_l. eauto.
   apply LD; auto.
-  admit. (* RB: NOTE: Establish cross-operation component equality *)
+  (* TODO: Make a lemma for this! *)
+  simpl. simpl in H7.
+  Local Transparent Mem.load. Local Transparent Mem.loadbytes.
+  unfold Mem.load. unfold Mem.load in H7.  unfold Mem.loadbytes in H0.
+  destruct (Mem.valid_access_dec m chunk sp (Ptrofs.unsigned ofs) Readable (Some cp)).
+  * destruct v as [v1 [v2 v3]].
+    destruct (Mem.valid_access_dec m chunk sp (Ptrofs.unsigned ofs) Readable cp0);
+      try discriminate.
+    eauto.
+  * unfold Mem.valid_access in n.
+    apply Classical_Prop.not_and_or in n as [n | n].
+    -- destruct (Mem.valid_access_dec m chunk sp (Ptrofs.unsigned ofs) Readable cp0);
+         try discriminate.
+       destruct v as [v1 [v2 v3]]; contradiction.
+    -- apply Classical_Prop.not_and_or in n as [n | n].
+       ++ destruct (Mem.can_access_block_dec m sp (Some cp)); try contradiction.
+          simpl in H0. rewrite andb_false_r in H0. discriminate.
+       ++ destruct (Mem.valid_access_dec m chunk sp (Ptrofs.unsigned ofs) Readable cp0);
+            try discriminate.
+          destruct v as [v1 [v2 v3]]; contradiction.
+          Local Opaque Mem.load. Local Opaque Mem.loadbytes.
 + inv H4. exploit eval_addressing_Ainstack_inv; eauto. intros [E1 E2].
   simpl in E2; rewrite Ptrofs.add_zero_l in E2. subst a.
   apply eq_holds_lessdef with v; auto.
   econstructor. rewrite eval_addressing_Ainstack. simpl. rewrite Ptrofs.add_zero_l. eauto.
   apply LD; auto.
-  admit.
-(* Qed. *)
-Admitted.
+  (* TODO: Write this as a lemma! *)
+  simpl. simpl in H8.
+  Local Transparent Mem.load. Local Transparent Mem.loadbytes.
+  unfold Mem.load. unfold Mem.load in H8.  unfold Mem.loadbytes in H0.
+  destruct (Mem.valid_access_dec m chunk sp (Ptrofs.unsigned ofs) Readable (Some cp)).
+  * destruct v0 as [v1 [v2 v3]].
+    destruct (Mem.valid_access_dec m chunk sp (Ptrofs.unsigned ofs) Readable cp0);
+      try discriminate.
+    eauto.
+  * unfold Mem.valid_access in n.
+    apply Classical_Prop.not_and_or in n as [n | n].
+    -- destruct (Mem.valid_access_dec m chunk sp (Ptrofs.unsigned ofs) Readable cp0);
+         try discriminate.
+       destruct v0 as [v1 [v2 v3]]; contradiction.
+    -- apply Classical_Prop.not_and_or in n as [n | n].
+       ++ destruct (Mem.can_access_block_dec m sp (Some cp)); try contradiction.
+          simpl in H0. rewrite andb_false_r in H0. discriminate.
+       ++ destruct (Mem.valid_access_dec m chunk sp (Ptrofs.unsigned ofs) Readable cp0);
+            try discriminate.
+          destruct v0 as [v1 [v2 v3]]; contradiction.
+          Local Opaque Mem.load. Local Opaque Mem.loadbytes.
+Qed.
 
 Lemma add_memcpy_eqs_charact:
   forall e' src sz delta eqs2 eqs1,
