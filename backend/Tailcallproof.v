@@ -413,22 +413,23 @@ We first define the simulation invariant between call stacks.
 The first two cases are standard, but the third case corresponds
 to a frame that was eliminated by the transformation. *)
 
-Inductive match_stackframes: list stackframe -> list stackframe -> Prop :=
+Inductive match_stackframes (m: mem): list stackframe -> list stackframe -> Prop :=
   | match_stackframes_nil:
-      match_stackframes nil nil
+      match_stackframes m nil nil
   | match_stackframes_normal: forall stk stk' res sp pc rs rs' ce f,
-      match_stackframes stk stk' ->
+      match_stackframes m stk stk' ->
       forall (COMPAT: cenv_compat prog ce),
       forall (UPD: uptodate_caller (comp_of f) (call_comp stk) (call_comp stk')),
+      forall (ACC: Mem.can_access_block m sp (Some (comp_of f))),
       regs_lessdef rs rs' ->
-      match_stackframes
+      match_stackframes m
         (Stackframe res f (Vptr sp Ptrofs.zero) pc rs :: stk)
         (Stackframe res (transf_function ce f) (Vptr sp Ptrofs.zero) pc rs' :: stk')
   | match_stackframes_tail: forall stk stk' res sp pc rs f,
-      match_stackframes stk stk' ->
+      match_stackframes m stk stk' ->
       is_return_spec f pc res ->
       f.(fn_stacksize) = 0 ->
-      match_stackframes
+      match_stackframes m
         (Stackframe res f (Vptr sp Ptrofs.zero) pc rs :: stk)
         stk'.
 
@@ -440,16 +441,17 @@ Inductive match_stackframes: list stackframe -> list stackframe -> Prop :=
 Inductive match_states: state -> state -> Prop :=
   | match_states_normal:
       forall s sp pc rs m s' rs' m' ce f
-             (STACKS: match_stackframes s s')
+             (STACKS: match_stackframes m' s s')
              (COMPAT: cenv_compat prog ce)
              (RLD: regs_lessdef rs rs')
              (MLD: Mem.extends m m')
-             (UPD: uptodate_caller (comp_of f) (call_comp s) (call_comp s')),
+             (UPD: uptodate_caller (comp_of f) (call_comp s) (call_comp s'))
+             (ACC: Mem.can_access_block m' sp (Some (comp_of f))),
       match_states (State s f (Vptr sp Ptrofs.zero) pc rs m)
                    (State s' (transf_function ce f) (Vptr sp Ptrofs.zero) pc rs' m')
   | match_states_call:
       forall s ce f args m s' args' m',
-      match_stackframes s s' ->
+      match_stackframes m' s s' ->
       forall (COMPAT: cenv_compat prog ce),
       forall (UPD: uptodate_caller (comp_of f) (call_comp s) (call_comp s')),
       Val.lessdef_list args args' ->
@@ -458,14 +460,14 @@ Inductive match_states: state -> state -> Prop :=
                    (Callstate s' (transf_fundef ce f) args' m')
   | match_states_return:
       forall s v m s' v' m',
-      match_stackframes s s' ->
+      match_stackframes m' s s' ->
       Val.lessdef v v' ->
       Mem.extends m m' ->
       match_states (Returnstate s v m)
                    (Returnstate s' v' m')
   | match_states_interm:
       forall s sp pc rs m s' m' f r v'
-             (STACKS: match_stackframes s s')
+             (STACKS: match_stackframes m' s s')
              (MLD: Mem.extends m m'),
       is_return_spec f pc r ->
       f.(fn_stacksize) = 0 ->
@@ -569,6 +571,8 @@ Proof.
   rewrite comp_transl. eauto.
   destruct a; simpl in H1; try discriminate.
   econstructor; eauto.
+  admit.
+  inv ALD; simpl in STORE'. eapply Mem.store_can_access_block_inj in STORE'; eapply STORE'. eauto.
 
 - (* call *)
   exploit find_function_translated; eauto.
@@ -580,7 +584,7 @@ Proof.
   assert ({ m'' | Mem.free m' sp0 0 (fn_stacksize (transf_function ce f)) (fn_comp f) = Some m''}).
     apply Mem.range_perm_free. rewrite stacksize_preserved. rewrite H7.
     red; intros; omegaContradiction.
-    admit. (* RB: NOTE: New own_block subgoal *)
+    eauto.
   destruct X as [m'' FREE].
   assert (Efd: comp_of fd = (comp_of f)).
   { exploit find_function_intra_compartment_call; eauto. }
@@ -593,7 +597,7 @@ Proof.
   eapply find_function_ptr_translated; eauto.
   rewrite comp_transl. eapply allowed_call_translated; eauto.
   rewrite comp_transl; eauto.
-  constructor. eapply match_stackframes_tail; eauto.
+  constructor. eapply match_stackframes_tail; eauto. admit.
     apply (cenv_compat_linkorder _ _ _ ORDER (compenv_program_compat _)).
   { red. simpl. congruence. }
   apply regs_lessdef_regs; auto.
@@ -624,7 +628,7 @@ Proof.
   rewrite comp_transl. eapply allowed_call_translated; eauto.
   rewrite stacksize_preserved; auto.
   rewrite comp_transl; eauto.
-  constructor. auto.
+  constructor. admit. auto.
     apply (cenv_compat_linkorder _ _ _ ORDER (compenv_program_compat _)).
   { red. now rewrite COMP, ALLOWED. }
   apply regs_lessdef_regs; auto. auto.
@@ -640,7 +644,7 @@ Proof.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
   rewrite comp_transf_function; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  econstructor; eauto. apply set_res_lessdef; auto.
+  econstructor; eauto. admit. apply set_res_lessdef; auto. admit.
 
 
 - (* cond *)
@@ -663,7 +667,7 @@ Proof.
   left. exists (Returnstate s' (regmap_optget or Vundef rs') m'1); split.
   eapply exec_Ireturn; eauto.
   rewrite stacksize_preserved, comp_transl; eauto.
-  constructor. auto.
+  constructor. admit. auto.
   destruct or; simpl. apply RLD. constructor.
   auto.
 
@@ -694,8 +698,8 @@ Proof.
   destruct H0 as [EQ1 [EQ2 [EQ3 EQ4]]].
   left. econstructor; split.
   simpl. eapply exec_function_internal; eauto. rewrite EQ1, EQ4; eauto.
-  rewrite EQ2. rewrite EQ3. constructor; auto.
-  apply regs_lessdef_init_regs. auto.
+  rewrite EQ2. rewrite EQ3. constructor; auto. admit.
+  apply regs_lessdef_init_regs. auto. admit.
 
 - (* external call *)
   exploit external_call_mem_extends; eauto.
@@ -706,7 +710,7 @@ Proof.
   destruct (needs_calling_comp (comp_of ef)) eqn:ALLOWED.
   { now rewrite <- (UPD ALLOWED). }
   exploit external_call_caller_independent; eauto.
-  constructor; auto.
+  constructor; auto. admit.
 
 - (* returnstate *)
   inv H2.
