@@ -1467,7 +1467,7 @@ Lemma var_addr_correct:
   match_callstack f m tm (Frame cenv tf e le te sp lo hi :: cs) (Mem.nextblock m) (Mem.nextblock tm) ->
   eval_var_addr ge e id b ->
   exists tv,
-     eval_expr tge (Vptr sp Ptrofs.zero) te tm (var_addr cenv id) tv
+     eval_expr tge (Vptr sp Ptrofs.zero) te tm (comp_of tf) (var_addr cenv id) tv
   /\ Val.inject f (Vptr b Ptrofs.zero) tv.
 Proof.
   unfold var_addr; intros.
@@ -1534,17 +1534,17 @@ Proof.
 Qed.
 
 Lemma transl_expr_correct:
-  forall cp f m tm cenv tf e le te sp lo hi cs
+  forall f m tm cenv tf e le te sp lo hi cs
     (MINJ: Mem.inject f m tm)
     (MATCH: match_callstack f m tm
              (Frame cenv tf e le te sp lo hi :: cs)
              (Mem.nextblock m) (Mem.nextblock tm)),
   forall a v,
-  Csharpminor.eval_expr ge e cp le m a v ->
+  Csharpminor.eval_expr ge e (comp_of tf) le m a v ->
   forall ta
     (TR: transl_expr cenv a = OK ta),
   exists tv,
-     eval_expr tge (Vptr sp Ptrofs.zero) te tm ta tv
+     eval_expr tge (Vptr sp Ptrofs.zero) te tm (comp_of tf) ta tv
   /\ Val.inject f v tv.
 Proof.
   induction 3; intros; simpl in TR; try (monadInv TR).
@@ -1572,17 +1572,17 @@ Proof.
 Qed.
 
 Lemma transl_exprlist_correct:
-  forall cp f m tm cenv tf e le te sp lo hi cs
+  forall f m tm cenv tf e le te sp lo hi cs
     (MINJ: Mem.inject f m tm)
     (MATCH: match_callstack f m tm
              (Frame cenv tf e le te sp lo hi :: cs)
              (Mem.nextblock m) (Mem.nextblock tm)),
   forall a v,
-  Csharpminor.eval_exprlist ge e cp le m a v ->
+  Csharpminor.eval_exprlist ge e (comp_of tf) le m a v ->
   forall ta
     (TR: transl_exprlist cenv a = OK ta),
   exists tv,
-     eval_exprlist tge (Vptr sp Ptrofs.zero) te tm ta tv
+     eval_exprlist tge (Vptr sp Ptrofs.zero) te tm (comp_of tf) ta tv
   /\ Val.inject_list f v tv.
 Proof.
   induction 3; intros; monadInv TR.
@@ -2048,7 +2048,8 @@ Proof.
 
 (* set *)
   monadInv TR.
-  exploit transl_expr_correct; eauto. intros [tv [EVAL VINJ]].
+  exploit transl_expr_correct; eauto. monadInv TRF; eauto.
+  intros [tv [EVAL VINJ]].
   left; econstructor; split.
   apply plus_one. econstructor; eauto.
   econstructor; eauto.
@@ -2056,9 +2057,9 @@ Proof.
 
 (* store *)
   monadInv TR.
-  exploit transl_expr_correct. eauto. eauto. eexact H. eauto.
+  exploit transl_expr_correct. eauto. eauto. monadInv TRF; eexact H. eauto.
   intros [tv1 [EVAL1 VINJ1]].
-  exploit transl_expr_correct. eauto. eauto. eexact H0. eauto.
+  exploit transl_expr_correct. eauto. eauto. monadInv TRF; eexact H0. eauto.
   intros [tv2 [EVAL2 VINJ2]].
   exploit Mem.storev_mapped_inject; eauto. intros [tm' [STORE' MINJ']].
   left; econstructor; split.
@@ -2076,12 +2077,12 @@ Proof.
 (* call *)
   simpl in H1. exploit functions_translated; eauto. intros [tfd [FIND TRANS]].
   monadInv TR.
-  exploit transl_expr_correct; eauto. intros [tvf [EVAL1 VINJ1]].
+  exploit transl_expr_correct; eauto. monadInv TRF; eauto. intros [tvf [EVAL1 VINJ1]].
   assert (tvf = vf).
     exploit match_callstack_match_globalenvs; eauto. intros [bnd MG].
     eapply val_inject_function_pointer; eauto.
   subst tvf.
-  exploit transl_exprlist_correct; eauto.
+  exploit transl_exprlist_correct; eauto. monadInv TRF; eauto.
   intros [tvargs [EVAL2 VINJ2]].
   left; econstructor; split.
   apply plus_one. eapply step_call; eauto.
@@ -2093,7 +2094,7 @@ Proof.
 
 (* builtin *)
   monadInv TR.
-  exploit transl_exprlist_correct; eauto.
+  exploit transl_exprlist_correct; eauto. monadInv TRF; eauto.
   intros [tvargs [EVAL2 VINJ2]].
   exploit match_callstack_match_globalenvs; eauto. intros [hi' MG].
   exploit external_call_mem_inject; eauto.
@@ -2130,7 +2131,8 @@ Opaque PTree.set.
 
 (* ifthenelse *)
   monadInv TR.
-  exploit transl_expr_correct; eauto. intros [tv [EVAL VINJ]].
+  exploit transl_expr_correct; eauto. monadInv TRF; eauto.
+  intros [tv [EVAL VINJ]].
   left; exists (State tfn (if b then x0 else x1) tk (Vptr sp Ptrofs.zero) te tm); split.
   apply plus_one. eapply step_ifthenelse; eauto. eapply bool_of_val_inject; eauto.
   econstructor; eauto. destruct b; auto.
@@ -2183,7 +2185,8 @@ Opaque PTree.set.
 
 (* switch *)
   simpl in TR. destruct (switch_table cases O) as [tbl dfl] eqn:STBL. monadInv TR.
-  exploit transl_expr_correct; eauto. intros [tv [EVAL VINJ]].
+  exploit transl_expr_correct; eauto. monadInv TRF; eauto.
+  intros [tv [EVAL VINJ]].
   assert (SA: switch_argument islong tv n).
   { inv H0; inv VINJ; constructor. }
   exploit switch_descent; eauto. intros [k1 [A B]].
@@ -2212,7 +2215,8 @@ Opaque PTree.set.
 
 (* return some *)
   monadInv TR. left.
-  exploit transl_expr_correct; eauto. intros [tv [EVAL VINJ]].
+  exploit transl_expr_correct; eauto. monadInv TRF; eauto.
+  intros [tv [EVAL VINJ]].
   exploit match_callstack_freelist; eauto.
   rewrite <- (comp_transl_partial _ TRF); eauto.
   intros [tm' [A [B C]]].
