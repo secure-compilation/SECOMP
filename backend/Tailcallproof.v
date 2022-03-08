@@ -571,7 +571,13 @@ Proof.
   rewrite comp_transl. eauto.
   destruct a; simpl in H1; try discriminate.
   econstructor; eauto.
-  admit.
+  (* TODO: Should be a lemma? *)
+  { clear -ALD STORE' STACKS.
+    inv ALD; simpl in STORE'.
+    induction STACKS.
+    - constructor.
+    - constructor; eauto. eapply Mem.store_can_access_block_inj in STORE'. eapply STORE'; eauto.
+    - constructor; eauto. }
   inv ALD; simpl in STORE'. eapply Mem.store_can_access_block_inj in STORE'; eapply STORE'. eauto.
 
 - (* call *)
@@ -597,7 +603,13 @@ Proof.
   eapply find_function_ptr_translated; eauto.
   rewrite comp_transl. eapply allowed_call_translated; eauto.
   rewrite comp_transl; eauto.
-  constructor. eapply match_stackframes_tail; eauto. admit.
+  constructor. eapply match_stackframes_tail; eauto.
+  (* TODO: Should be a lemma? *)
+  { clear -FREE STACKS.
+    induction STACKS.
+    - constructor.
+    - constructor; auto. eapply Mem.free_can_access_block_inj_1; eauto.
+    - constructor; auto. }
     apply (cenv_compat_linkorder _ _ _ ORDER (compenv_program_compat _)).
   { red. simpl. congruence. }
   apply regs_lessdef_regs; auto.
@@ -628,7 +640,14 @@ Proof.
   rewrite comp_transl. eapply allowed_call_translated; eauto.
   rewrite stacksize_preserved; auto.
   rewrite comp_transl; eauto.
-  constructor. admit. auto.
+  constructor.
+  (* TODO: Should be a lemma? *)
+  { clear -FREE STACKS.
+    induction STACKS.
+    - constructor.
+    - constructor; auto. eapply Mem.free_can_access_block_inj_1; eauto.
+    - constructor; auto. }
+  auto.
     apply (cenv_compat_linkorder _ _ _ ORDER (compenv_program_compat _)).
   { red. now rewrite COMP, ALLOWED. }
   apply regs_lessdef_regs; auto. auto.
@@ -644,8 +663,15 @@ Proof.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
   rewrite comp_transf_function; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  econstructor; eauto. admit. apply set_res_lessdef; auto. admit.
-
+  econstructor; eauto.
+  (* TODO: Should be a lemma? *)
+  { clear -A STACKS.
+    induction STACKS.
+    - constructor.
+    - constructor; auto. eapply external_call_can_access_block; eauto.
+    - constructor; auto. }
+  apply set_res_lessdef; auto.
+  eapply external_call_can_access_block; eauto.
 
 - (* cond *)
   TransfInstr.
@@ -667,7 +693,13 @@ Proof.
   left. exists (Returnstate s' (regmap_optget or Vundef rs') m'1); split.
   eapply exec_Ireturn; eauto.
   rewrite stacksize_preserved, comp_transl; eauto.
-  constructor. admit. auto.
+  constructor.
+  (* TODO: Should be a lemma? *)
+  { clear -FREE STACKS.
+    induction STACKS.
+    - constructor.
+    - constructor; auto. eapply Mem.free_can_access_block_inj_1; eauto.
+    - constructor; auto. }
   destruct or; simpl. apply RLD. constructor.
   auto.
 
@@ -698,8 +730,16 @@ Proof.
   destruct H0 as [EQ1 [EQ2 [EQ3 EQ4]]].
   left. econstructor; split.
   simpl. eapply exec_function_internal; eauto. rewrite EQ1, EQ4; eauto.
-  rewrite EQ2. rewrite EQ3. constructor; auto. admit.
-  apply regs_lessdef_init_regs. auto. admit.
+  rewrite EQ2. rewrite EQ3. constructor; auto.
+  (* TODO: Should be a lemma? *)
+  { clear -ALLOC H5.
+    induction H5.
+    - constructor.
+    - constructor; auto.
+      eapply Mem.alloc_can_access_block_other_inj_1; eauto.
+    - constructor; auto. }
+  apply regs_lessdef_init_regs. auto.
+  eapply Mem.owned_new_block; eauto.
 
 - (* external call *)
   exploit external_call_mem_extends; eauto.
@@ -710,7 +750,14 @@ Proof.
   destruct (needs_calling_comp (comp_of ef)) eqn:ALLOWED.
   { now rewrite <- (UPD ALLOWED). }
   exploit external_call_caller_independent; eauto.
-  constructor; auto. admit.
+  constructor; auto.
+  (* TODO: Should be a lemma? *)
+  { clear -A H5.
+    remember (call_comp s) as cp. clear Heqcp.
+    induction H5.
+    - constructor.
+    - constructor; auto. eapply external_call_can_access_block; eauto.
+    - constructor; auto. }
 
 - (* returnstate *)
   inv H2.
@@ -726,8 +773,7 @@ Proof.
   split. auto.
   econstructor; eauto.
   rewrite Regmap.gss. auto.
-(* Qed. *)
-Admitted.
+Qed.
 
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 ->
