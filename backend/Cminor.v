@@ -619,10 +619,10 @@ Proof.
 - assert (v0 = v1) by eauto. assert (v3 = v2) by eauto. congruence.
 - assert (vaddr0 = vaddr) by eauto.
   (* congruence. *)
-  subst.
-  admit. (* RB: NOTE: Component determinism of successful [loadv]s *)
-(* Qed. *)
-Admitted.
+  subst vaddr0.
+  destruct vaddr; try discriminate. simpl in *.
+  apply Mem.load_result in H0. apply Mem.load_result in H5. now subst.
+Qed.
 
 Lemma eval_exprlist_determ:
   forall ge sp e m al vl, eval_exprlist ge sp e m al vl ->
