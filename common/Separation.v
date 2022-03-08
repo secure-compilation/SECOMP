@@ -443,6 +443,14 @@ Proof.
   intros. simpl in H. tauto.
 Qed.
 
+Lemma contains_valid_access: forall spec m chunk b ofs cp,
+    m |= contains chunk b ofs cp spec ->
+    Mem.valid_access m chunk b ofs Freeable (Some cp).
+Proof.
+  intros. destruct H as (D & E & v & F & G).
+  assumption.
+Qed.
+
 Lemma load_rule:
   forall spec m chunk b cp ofs,
   m |= contains chunk b ofs cp spec ->

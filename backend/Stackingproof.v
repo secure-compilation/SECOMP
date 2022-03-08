@@ -1186,21 +1186,9 @@ Local Opaque b fe.
   rewrite sep_swap3 in SEP.
   (* Store of return address *)
   rewrite sep_swap4 in SEP.
-  assert (LEMMA: forall chunk m1 b ofs v cp m2,
-             Mem.store chunk m1 b ofs v cp = Some m2 -> Mem.can_access_block m2 b (Some cp)).
-  { clear.
-    intros.
-    Local Transparent Mem.store.
-    unfold Mem.store in H.
-    Local Opaque Mem.store.
-    destruct (Mem.valid_access_dec m1 chunk b ofs Writable (Some cp))
-      as [[_ [OWN _]] |]; try discriminate.
-    inv H.
-    simpl. eapply OWN.
-  }
   eapply (range_contains Mptr) in SEP; [|tauto|].
   2: { unfold store_stack in STORE_PARENT. simpl in STORE_PARENT.
-       eapply LEMMA in STORE_PARENT. eapply STORE_PARENT. }
+       eapply Mem.store_can_access_block_2 in STORE_PARENT. eapply STORE_PARENT. }
   exploit (contains_set_stack (fun v' => v' = ra) ra (fun _ => True) m3' Tptr).
   rewrite chunk_of_Tptr; eexact SEP. apply Val.load_result_same; auto.
   clear SEP; intros (m4' & STORE_RETADDR & SEP).
@@ -1209,7 +1197,7 @@ Local Opaque b fe.
   rewrite sep_swap5 in SEP.
   exploit (save_callee_save_correct j' ls ls0 rs sp' cs fb); eauto.
   { unfold store_stack in STORE_RETADDR. simpl in STORE_RETADDR.
-    eapply LEMMA in STORE_RETADDR. eapply STORE_RETADDR. }
+    eapply Mem.store_can_access_block_2 in STORE_RETADDR. eapply STORE_RETADDR. }
   { unfold find_comp_ptr. rewrite FUNPTR. eauto.
     rewrite transf_function_comp. reflexivity. }
   apply agree_regs_inject_incr with j; auto.
@@ -1218,14 +1206,9 @@ Local Opaque b fe.
   clear SEP; intros (rs2 & m5' & SAVE_CS & SEP & PERMS & AGREGS').
   rewrite sep_swap5 in SEP.
   (* Materializing the Local and Outgoing locations *)
-  assert (LEMMA': forall m chunk b ofs cp P,
-             m |= contains chunk b ofs cp P ->
-             Mem.valid_access m chunk b ofs Freeable (Some cp)).
-  { intros. destruct H as (D & E & v & F & G).
-    assumption. }
   assert (ACC: Mem.can_access_block m5' sp' (Some (Linear.fn_comp f))).
   { eapply sep_proj2 in SEP. eapply sep_proj2 in SEP. eapply sep_proj1 in SEP.
-    apply LEMMA' in SEP as [? [? ?]]. eassumption. }
+    apply contains_valid_access in SEP as [? [? ?]]. eassumption. }
   exploit (initial_locations j'). eexact SEP. eexact ACC.
   tauto.
   instantiate (1 := Local). instantiate (1 := ls1).
@@ -2012,25 +1995,8 @@ Proof.
   eapply frame_get_parent. eexact SEP. unfold call_comp. simpl.
   unfold load_stack in *.
   simpl. simpl in A.
-  assert (LEMMA: forall chunk m sp ofs cp v, Mem.load chunk m sp ofs cp = Some v ->
-                                        Mem.load chunk m sp ofs None = Some v).
-  { clear.
-    intros. destruct cp as [cp |]; [|auto].
-    Local Transparent Mem.load.
-    unfold Mem.load in *.
-    Local Opaque Mem.load.
-    destruct (Mem.valid_access_dec m chunk sp ofs Readable (Some cp)); try discriminate.
-    inv H.
-    destruct v0 as [? [? ?]].
-    destruct (Mem.valid_access_dec m chunk sp ofs Readable None).
-    reflexivity.
-    apply Classical_Prop.not_and_or in n as [? | n]; try contradiction.
-    apply Classical_Prop.not_and_or in n as [? | ?]; try contradiction.
-    simpl in H2. contradiction.
-  }
 
-  (* Need lemma: load with Some -> load with None *)
-  eapply LEMMA. eauto.
+  eapply Mem.load_Some_None. eauto.
   econstructor; eauto with coqlib. econstructor; eauto.
   apply agree_regs_set_reg. apply agree_regs_set_reg. auto. auto.
   erewrite agree_incoming by eauto. exact B.

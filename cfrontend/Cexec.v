@@ -259,7 +259,7 @@ Proof.
   apply eventval_of_val_sound; auto.
   econstructor. constructor; eauto. constructor.
   split.
-  constructor; auto. eapply Mem.store_can_access_block; eauto.
+  constructor; auto. eapply Mem.store_can_access_block_1; eauto.
   constructor.
 Qed.
 

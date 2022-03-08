@@ -864,6 +864,23 @@ Proof.
   congruence.
 Qed.
 
+Lemma load_Some_None:
+  forall chunk m sp ofs cp v,
+    Mem.load chunk m sp ofs cp = Some v ->
+    Mem.load chunk m sp ofs None = Some v.
+Proof.
+    intros. destruct cp as [cp |]; [|auto].
+    unfold load in *.
+    destruct (Mem.valid_access_dec m chunk sp ofs Readable (Some cp)); try discriminate.
+    inv H.
+    destruct v0 as [? [? ?]].
+    destruct (Mem.valid_access_dec m chunk sp ofs Readable None).
+    reflexivity.
+    apply Classical_Prop.not_and_or in n as [? | n]; try contradiction.
+    apply Classical_Prop.not_and_or in n as [? | ?]; try contradiction.
+    simpl in H2. contradiction.
+Qed.
+
 Local Hint Resolve load_valid_access valid_access_load: mem.
 
 Theorem load_type:
@@ -1406,7 +1423,7 @@ Proof.
      inv STORE; now auto).
 Qed.
 
-Remark store_can_access_block :
+Remark store_can_access_block_1 :
   can_access_block m1 b (Some cp).
 Proof.
   unfold store in STORE.
@@ -1415,7 +1432,15 @@ Proof.
     easy.
 Qed.
 
-(* RB: NOTE: Split in _1 and _2 directions? *)
+Remark store_can_access_block_2 :
+  can_access_block m2 b (Some cp).
+Proof.
+  unfold store in STORE.
+  destruct (Mem.valid_access_dec m1 chunk b ofs Writable (Some cp))
+    as [[_ [OWN _]] |]; try discriminate.
+  inv STORE. easy.
+Qed.
+
 Remark store_can_access_block_inj :
   forall b' cp',
   can_access_block m1 b' cp' <-> can_access_block m2 b' cp'.
