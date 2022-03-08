@@ -743,9 +743,9 @@ Proof.
 Qed.
 
 Lemma add_memcpy_holds:
-  forall m bsrc osrc sz cp bytes bdst odst cp' m' valu ge sp rs n1 n2 bc asrc adst,
-  Mem.loadbytes m bsrc (Ptrofs.unsigned osrc) sz cp = Some bytes ->
-  Mem.storebytes m bdst (Ptrofs.unsigned odst) bytes cp' = Some m' ->
+  forall m bsrc osrc sz cp bytes bdst odst (* cp' *) m' valu ge sp rs n1 n2 bc asrc adst,
+  Mem.loadbytes m bsrc (Ptrofs.unsigned osrc) sz (Some cp) = Some bytes ->
+  Mem.storebytes m bdst (Ptrofs.unsigned odst) bytes cp = Some m' ->
   numbering_holds valu ge (Vptr sp Ptrofs.zero) rs m n1 ->
   numbering_holds valu ge (Vptr sp Ptrofs.zero) rs m' n2 ->
   pmatch bc bsrc osrc asrc ->
@@ -771,9 +771,7 @@ Proof.
 - exploit add_memcpy_eqs_charact; eauto. intros [X | (e0 & X & Y)].
   eauto with cse.
   eapply shift_memcpy_eq_holds; eauto with cse.
-  admit. (* RB: NOTE: Establish cross-operation component equality *)
-(* Qed. *)
-Admitted.
+Qed.
 
 (** Correctness of operator reduction *)
 
