@@ -3245,9 +3245,7 @@ Proof.
 - intros sz REC ofs cp bytes LOAD IN.
   destruct (zle sz 0).
   + rewrite (Mem.loadbytes_empty m b ofs sz cp) in LOAD; try auto;
-      [| admit]. (* RB: NOTE: New own_block subgoal, [by auto] does not work now
-                    (but think about the definition of [loadbytes] in the empty
-                    case). *)
+      [| eapply Mem.loadbytes_can_access_block_inj; eauto].
     inv LOAD. contradiction.
   + exploit (Mem.loadbytes_split m b ofs 1 (sz - 1) cp bytes).
     replace (1 + (sz - 1)) with sz by omega. auto.
@@ -3263,8 +3261,7 @@ Proof.
   * exploit (REC (sz - 1)). red; omega. eexact LOAD2. auto.
     intros (ofs' & A & B).
     exists ofs'; split. omega. auto.
-(* Qed. *)
-Admitted.
+Qed.
 
 Lemma smatch_loadbytes:
   forall m b p b' ofs' q i n ofs cp bytes,
