@@ -88,23 +88,6 @@ Proof.
   intros. subst. f_equal; apply proof_irr.
 Qed.
 
-Lemma nextblock_compartments_pos:
-  forall m b,
-  Plt b (nextblock m) <-> exists cp, (mem_compartments m) ! b = Some cp.
-Proof.
-  intros m b. split; intro H.
-  - destruct ((mem_compartments m) ! b) as [cp |] eqn:Hcase.
-    + exists cp. reflexivity.
-    + apply nextblock_compartments in Hcase. contradiction.
-  - destruct (plt b (nextblock m)) as [Hlt | Hlt].
-    + assumption.
-    + apply PTree.get_not_none_get_some in H.
-      pose proof nextblock_compartments m b as Hcomp.
-      apply not_iff_compat in Hcomp.
-      apply Hcomp in H.
-      contradiction.
-Qed.
-
 (** * Validity of blocks and accesses *)
 
 (** A block address is valid if it was previously allocated. It remains valid
@@ -139,6 +122,23 @@ Definition val_compartment (m: mem) (v: val): option compartment :=
   | Vptr b _ => block_compartment m b
   | _ => None
   end.
+
+Lemma nextblock_compartments_pos:
+  forall m b,
+  Plt b (nextblock m) <-> exists cp, block_compartment m b = Some cp.
+Proof.
+  unfold block_compartment. intros m b. split; intro H.
+  - destruct ((mem_compartments m) ! b) as [cp |] eqn:Hcase.
+    + exists cp. reflexivity.
+    + apply nextblock_compartments in Hcase. contradiction.
+  - destruct (plt b (nextblock m)) as [Hlt | Hlt].
+    + assumption.
+    + apply PTree.get_not_none_get_some in H.
+      pose proof nextblock_compartments m b as Hcomp.
+      apply not_iff_compat in Hcomp.
+      apply Hcomp in H.
+      contradiction.
+Qed.
 
 (** Permissions *)
 
@@ -268,7 +268,7 @@ Defined.
 Definition can_access_block (m: mem) (b: block) (cp: option compartment): Prop :=
   match cp with
   | None => True
-  | Some cp => PTree.get b (mem_compartments m) = Some cp
+  | Some cp => block_compartment m b = Some cp
   end.
 
 Remark can_access_block_dec:
@@ -276,7 +276,7 @@ Remark can_access_block_dec:
 Proof.
   unfold can_access_block.
   intros m b [cp |]; [| left; trivial].
-  destruct ((mem_compartments m) ! b) as [cp' |] eqn:Heq.
+  destruct (block_compartment m b) as [cp' |] eqn:Heq.
   - destruct (Pos.eq_dec cp cp').
     + left. subst. reflexivity.
     + right. intro Hcontra. inv Hcontra. easy.
@@ -379,7 +379,7 @@ Qed.
 
 Theorem valid_pointer_valid_access_nonpriv:
   forall m b cp ofs,
-    PTree.get b (mem_compartments m) = Some cp ->
+    block_compartment m b = Some cp ->
     valid_pointer m b ofs = true <-> valid_access m Mint8unsigned b ofs Nonempty (Some cp).
 Proof.
   intros. rewrite valid_pointer_nonempty_perm.
@@ -404,10 +404,7 @@ Qed.
 
 Theorem valid_pointer_valid_access:
   forall m b ocp ofs,
-    match ocp with
-    | Some cp => PTree.get b (mem_compartments m) = Some cp
-    | None => True
-    end ->
+    can_access_block m b ocp ->
     valid_pointer m b ofs = true <-> valid_access m Mint8unsigned b ofs Nonempty ocp.
 Proof.
   intros.
@@ -2102,6 +2099,14 @@ Proof.
   exploit store_valid_access_3. eexact H2. intros [P [R Q]]. exact Q.
 Qed.
 
+(* RB: NOTE: Maybe add these new lemmas to hint databases. *)
+Lemma block_compartment_nextblock m:
+  block_compartment m (nextblock m) = None.
+Proof.
+  destruct m. simpl in *.
+  apply nextblock_compartments0. apply Plt_strict.
+Qed.
+
 (** ** Properties related to [alloc]. *)
 
 Section ALLOC.
@@ -2144,22 +2149,13 @@ Proof.
   unfold valid_block. rewrite alloc_result. rewrite nextblock_alloc. apply Plt_succ.
 Qed.
 
-(* RB: NOTE: Maybe add these new lemmas to hint databases. *)
-Lemma alloc_mem_compartments_nextblock :
-  (mem_compartments m1) ! (nextblock m1) = None.
-Proof.
-  unfold alloc in ALLOC. destruct m1. inv ALLOC. simpl in *.
-  apply nextblock_compartments0. apply Plt_strict.
-Qed.
-
 Theorem unowned_fresh_block:
   forall c', ~can_access_block m1 b (Some c').
 Proof.
-  unfold can_access_block. intros c' Hcontra.
-  unfold alloc in ALLOC. destruct m1. inv ALLOC. simpl in *.
-  rewrite (proj1 (nextblock_compartments0 b)) in Hcontra.
-  - inversion Hcontra.
-  - apply Plt_strict.
+  unfold can_access_block. intros c'.
+  injection ALLOC as _ <-.
+  rewrite block_compartment_nextblock.
+  congruence.
 Qed.
 
 Theorem owned_new_block:
@@ -2229,37 +2225,39 @@ Qed.
 
 Local Hint Resolve perm_alloc_1 perm_alloc_2 perm_alloc_3 perm_alloc_4: mem.
 
+Theorem alloc_block_compartment:
+  forall b', block_compartment m2 b' =
+  if eq_block b' b then Some c else block_compartment m1 b'.
+Proof.
+intros b'. injection ALLOC as <- <-. unfold block_compartment. simpl.
+destruct eq_block as [->|neq].
+- now rewrite PTree.gss.
+- now rewrite PTree.gso.
+Qed.
+
 Lemma alloc_can_access_block_inj :
   forall b' c', can_access_block m1 b' (Some c') -> b <> b'.
 Proof.
   intros b' c' Hown Heq; subst b'.
   unfold can_access_block in Hown.
-  unfold alloc in ALLOC. destruct m1. inv ALLOC. simpl in *.
-  rewrite (proj1 (nextblock_compartments0 b)) in Hown.
-  - inversion Hown.
-  - apply Plt_strict.
+  now rewrite alloc_result, block_compartment_nextblock in Hown.
 Qed.
 
 Lemma alloc_can_access_block_other_inj_1 :
   forall b' c', can_access_block m1 b' c' -> can_access_block m2 b' c'.
 Proof.
   unfold can_access_block. intros b' [c' |] Hown; [| trivial].
-  pose proof alloc_mem_compartments_nextblock as Hnone. (* Pose to avoid silly error below. *)
-  inversion ALLOC; subst.
-  simpl in *.
-  destruct (can_access_block_dec m1 (nextblock m1) (Some c')) as [o | o].
-  - unfold can_access_block in o.
-    rewrite Hnone in o. (* Could not rewrite without having added this to the context. *)
-    inv o.
-  - rewrite <- Hown. apply PTree.gso. congruence.
+  rewrite alloc_block_compartment.
+  destruct eq_block as [->|neq]; trivial.
+  now rewrite alloc_result, block_compartment_nextblock in Hown.
 Qed.
 
 Lemma alloc_can_access_block_other_inj_2 :
   forall b' c', b' <> b -> can_access_block m2 b' c' -> can_access_block m1 b' c'.
 Proof.
   unfold can_access_block. intros b' [c' |] Hneq Hown; [| trivial].
-  inversion ALLOC; subst. simpl in *.
-  rewrite <- Hown. symmetry. apply PTree.gso. assumption.
+  rewrite alloc_block_compartment in Hown.
+  destruct eq_block; congruence.
 Qed.
 
 Theorem valid_access_alloc_other:
@@ -2719,6 +2717,15 @@ Theorem drop_perm_valid_block_2:
   forall b', valid_block m' b' -> valid_block m b'.
 Proof.
   unfold valid_block; rewrite nextblock_drop; auto.
+Qed.
+
+Theorem drop_block_compartment:
+  forall b', block_compartment m' b' = block_compartment m b'.
+Proof.
+unfold drop_perm in *.
+destruct range_perm_dec; try discriminate.
+destruct can_access_block_dec; try discriminate.
+injection DROP as <-. intros b'. reflexivity.
 Qed.
 
 Theorem perm_drop_1:
@@ -5032,7 +5039,8 @@ Proof.
   replace (ofs + 0) with ofs by omega; auto.
 (* own *)
   intros. destruct cp as [cp| ]; [| trivial].
-  unfold can_access_block in H0. rewrite PTree.gempty in H0. inv H0.
+  unfold can_access_block, block_compartment in H0.
+  now rewrite PTree.gempty in H0.
 (* align *)
   unfold flat_inj; intros. destruct (plt b1 thr); inv H. apply Z.divide_0_r.
 (* mem_contents *)

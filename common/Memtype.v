@@ -691,6 +691,13 @@ Axiom perm_alloc_inv:
   perm m2 b' ofs k p ->
   if eq_block b' b then lo <= ofs < hi else perm m1 b' ofs k p.
 
+(** Effect of [alloc] on compartments. *)
+
+Axiom alloc_block_compartment:
+  forall m1 c lo hi m2 b, alloc m1 c lo hi = (m2, b) ->
+  forall b', block_compartment m2 b' =
+  if eq_block b' b then Some c else block_compartment m1 b'.
+
 (** Effect of [alloc] on access validity. *)
 
 Axiom valid_access_alloc_other:
@@ -821,6 +828,10 @@ Axiom drop_perm_valid_block_1:
 Axiom drop_perm_valid_block_2:
   forall m b lo hi p cp m', drop_perm m b lo hi p cp = Some m' ->
   forall b', valid_block m' b' -> valid_block m b'.
+
+Axiom drop_block_compartment:
+  forall m b lo hi p cp m', drop_perm m b lo hi p cp = Some m' ->
+  forall b', block_compartment m' b' = block_compartment m b'.
 
 Axiom range_perm_drop_1:
   forall m b lo hi p cp m', drop_perm m b lo hi p cp = Some m' ->

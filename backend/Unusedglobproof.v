@@ -1258,7 +1258,20 @@ Proof.
   apply Mem.perm_cur. eapply Mem.perm_implies; eauto.
   apply P2. omega.
 - exploit init_meminj_invert; eauto. intros (A & id & B & C).
-  subst delta. admit.
+  subst delta.
+  destruct cp as [cp|]; simpl in *; trivial.
+  destruct (Genv.find_symbol_find_def_inversion _ _ B) as [g B'].
+  assert ((prog_defmap p) ! id = Some g) as DEF1.
+  { apply Genv.find_def_symbol. eauto. }
+  destruct (Genv.find_symbol_find_def_inversion _ _ C) as [g' C'].
+  assert ((prog_defmap tp) ! id = Some g') as DEF2.
+  { apply Genv.find_def_symbol. eauto. }
+  pose proof (match_prog_def _ _ _ TRANSF id) as DEF2'.
+  destruct (IS.mem id used); try congruence.
+  rewrite DEF1, DEF2 in DEF2'.
+  injection DEF2' as ->.
+  rewrite (Genv.init_mem_find_def _ _ IM B') in *.
+  now rewrite (Genv.init_mem_find_def _ _ TIM C') in *.
 - exploit init_meminj_invert; eauto. intros (A & id & B & C).
   subst delta. apply Z.divide_0_r.
 - exploit init_meminj_invert_strong; eauto. intros (A & id & gd & B & C & D & E & F).
@@ -1279,8 +1292,7 @@ Local Transparent Mem.loadbytes.
   rewrite H3, H4. apply bytes_of_init_inject. auto.
   omega.
   rewrite Z2Nat.id by (apply Z.ge_le; apply init_data_list_size_pos). omega.
-(* Qed. *)
-Admitted.
+Qed.
 
 Lemma init_mem_inj_2:
   Mem.inject init_meminj m tm.

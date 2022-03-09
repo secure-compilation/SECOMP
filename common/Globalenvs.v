@@ -505,6 +505,24 @@ Proof.
   unfold find_symbol; simpl; intros. rewrite PTree.gempty in H. discriminate.
 Qed.
 
+Theorem find_symbol_find_def_inversion : forall p x b,
+  find_symbol (globalenv p) x = Some b ->
+  exists g, find_def (globalenv p) b = Some g.
+Proof.
+  intros until b. unfold globalenv. eapply add_globals_preserves.
+  - unfold find_symbol, find_def, add_global. simpl.
+    intros ge id g IH IN SYMBOL.
+    destruct (Pos.eq_dec id x) as [->|neq].
+    + rewrite PTree.gss in SYMBOL. injection SYMBOL as <-.
+      rewrite PTree.gss. eauto.
+    + rewrite PTree.gso in SYMBOL; eauto.
+      destruct IH as [g' IH]; eauto.
+      pose proof (genv_defs_range _ _ IH) as FRESH.
+      rewrite PTree.gso; eauto.
+      now apply Plt_ne.
+  - unfold find_symbol. simpl. now rewrite PTree.gempty.
+Qed.
+
 Theorem find_def_inversion:
   forall p b g,
   find_def (globalenv p) b = Some g ->
@@ -795,6 +813,94 @@ Proof.
   congruence.
   destruct (alloc_global m a) as [m1|] eqn:?; try discriminate.
   erewrite IHgl; eauto. erewrite alloc_global_nextblock; eauto.
+Qed.
+
+(** Block compartments *)
+
+Remark store_zeros_block_compartment:
+  forall m b p n cp m', store_zeros m b p n cp = Some m' ->
+  forall b', Mem.block_compartment m' b' = Mem.block_compartment m b'.
+Proof.
+  intros m b p n cp.
+  functional induction (store_zeros m b p n cp)
+    as [|m b p n cp ? ? m' STORE IH|]; try congruence.
+  intros m'' STOREZEROS b'.
+  rewrite (IH _ STOREZEROS).
+  erewrite Mem.store_block_compartment; eauto.
+Qed.
+
+Remark store_init_data_block_compartment:
+  forall m b p id cp m',
+  store_init_data m b p id cp = Some m' ->
+  forall b', Mem.block_compartment m' b' = Mem.block_compartment m b'.
+Proof.
+  intros m b p id cp m'.
+  destruct id as [?|?|?|?|?|?|?|id off]; simpl;
+  try apply Mem.store_block_compartment.
+  - congruence.
+  - destruct find_symbol; try congruence.
+    apply Mem.store_block_compartment.
+Qed.
+
+Remark store_init_data_list_block_compartment:
+  forall m b p idl cp m',
+  store_init_data_list m b p idl cp = Some m' ->
+  forall b', Mem.block_compartment m' b' = Mem.block_compartment m b'.
+Proof.
+  intros m b p idl cp. revert m p.
+  induction idl as [|id idl IH]; intros m p; simpl.
+  - congruence.
+  - intros m'.
+    destruct store_init_data as [m''|] eqn:INITDATA; try congruence.
+    intros INITDATALIST b'. rewrite (IH _ _ _ INITDATALIST).
+    eapply store_init_data_block_compartment; eauto.
+Qed.
+
+Remark alloc_global_block_compartment:
+  forall m idg m' b,
+  alloc_global m idg = Some m' ->
+  Mem.block_compartment m' b =
+  if eq_block b (Mem.nextblock m) then Some (comp_of idg#2)
+  else Mem.block_compartment m b.
+Proof.
+intros m [id [v|f]] m' b ALLOCGLOB; simpl in *.
+- destruct (Mem.alloc _ _ _ _) as [m'' b'] eqn:ALLOC.
+  erewrite Mem.drop_block_compartment; eauto.
+  erewrite Mem.alloc_block_compartment; eauto.
+  erewrite <- Mem.alloc_result; eauto.
+- destruct (Mem.alloc _ _ _ _) as [m0 b0] eqn:ALLOC.
+  destruct store_zeros as [m1|] eqn:STOREZEROS; try congruence.
+  destruct store_init_data_list as [m2|] eqn:INITDATALIST; try congruence.
+  erewrite Mem.drop_block_compartment; eauto.
+  erewrite store_init_data_list_block_compartment; eauto.
+  erewrite store_zeros_block_compartment; eauto.
+  erewrite Mem.alloc_block_compartment; eauto.
+  erewrite <- Mem.alloc_result; eauto.
+Qed.
+
+Fixpoint alloc_globals_block_compartment_spec
+         dflt b0 (gl : list (ident * globdef F V)) b : option block :=
+  match gl with
+  | nil => dflt
+  | g :: gl =>
+    let dflt' := if eq_block b b0 then Some (comp_of g#2)
+                 else dflt in
+    alloc_globals_block_compartment_spec dflt' (Pos.succ b0) gl b
+  end.
+
+Remark alloc_globals_block_compartment:
+  forall m gl m',
+  alloc_globals m gl = Some m' ->
+  forall b, Mem.block_compartment m' b =
+  alloc_globals_block_compartment_spec
+    (Mem.block_compartment m b) (Mem.nextblock m) gl b.
+Proof.
+intros m gl m' ALLOC b. revert m m' ALLOC.
+induction gl as [|g gl IH]; simpl; try congruence.
+intros m1 m3 ALLOCGLOBALS.
+destruct alloc_global as [m2|] eqn:ALLOC; try congruence.
+rewrite (IH _ _ ALLOCGLOBALS), (alloc_global_block_compartment _ _ _ ALLOC).
+erewrite <- alloc_global_nextblock; eauto.
 Qed.
 
 (** Permissions *)
@@ -1327,6 +1433,37 @@ End INITMEM.
 
 Definition init_mem (p: program F V) :=
   alloc_globals (globalenv p) Mem.empty p.(prog_defs).
+
+Lemma init_mem_find_def:
+  forall p m b g,
+  init_mem p = Some m ->
+  find_def (globalenv p) b = Some g ->
+  Mem.block_compartment m b = Some (comp_of g).
+Proof.
+  intros p m b g.
+  unfold init_mem, find_def.
+  intros ALLOC.
+  rewrite (alloc_globals_block_compartment _ _ _ ALLOC). clear ALLOC.
+  unfold globalenv.
+  assert (Mem.block_compartment Mem.empty b = None) as ->.
+  { rewrite <- Mem.block_compartment_valid_block.
+    unfold Mem.valid_block. rewrite Mem.nextblock_empty.
+    now destruct b. }
+  simpl.
+  set (ge := empty_genv _ _).
+  change 1%positive with (genv_next ge).
+  assert (forall g', (genv_defs ge) ! b = Some g' ->
+                     None = Some (comp_of g')) as INV.
+  { intros g'. unfold ge. simpl. now rewrite PTree.gempty. }
+  generalize ge (@None compartment) INV. clear ge INV.
+  generalize (prog_defs p). clear p. intros idgl.
+  induction idgl as [|idg idgl IH]; simpl.
+  - eauto.
+  - intros ge o INV. apply IH. clear IH g.
+    intros g. simpl. destruct eq_block as [->|neq].
+    + rewrite PTree.gss. intros H. now injection H as <-.
+    + rewrite PTree.gso; trivial. apply INV.
+Qed.
 
 Lemma init_mem_genv_next: forall p m,
   init_mem p = Some m ->
