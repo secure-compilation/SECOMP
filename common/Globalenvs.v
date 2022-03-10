@@ -1850,15 +1850,17 @@ Proof.
   { red; intros. erewrite <- store_zeros_perm by eauto. eauto. }
   destruct (@store_init_data_list_exists b (gvar_init v) m2 0 (gvar_comp v)) as [m3 STORE]; auto.
   red; intros. apply Mem.perm_implies with Freeable; auto with mem.
-  admit.
+  eapply store_zeros_block_compartment with (b' := b) in ZEROS.
+  unfold Mem.can_access_block.  rewrite ZEROS. eapply Mem.owned_new_block. eauto.
   rewrite STORE.
   assert (P3: Mem.range_perm m3 b 0 sz Cur Freeable).
   { red; intros. erewrite <- store_init_data_list_perm by eauto. eauto. }
   destruct (Mem.range_perm_drop_2 m3 b 0 sz (gvar_comp v) (perm_globvar v)) as [m4 DROP]; auto.
-  admit. (* RB: NOTE: New own_block subgoal *)
+  eapply store_init_data_list_block_compartment with (b' := b) in STORE.
+  eapply store_zeros_block_compartment with (b' := b) in ZEROS.
+  unfold Mem.can_access_block.  rewrite STORE, ZEROS. eapply Mem.owned_new_block. eauto.
   exists m4; auto.
-(* Qed. *)
-Admitted.
+Qed.
 
 End INITMEM_EXISTS.
 
