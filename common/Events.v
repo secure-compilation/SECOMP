@@ -1691,10 +1691,8 @@ Proof.
   unfold uptodate_caller, needs_calling_comp, needs_calling_comp_map. simpl.
   rewrite PMap.gsspec, PMap.gi.
   destruct (peq (comp_of (EF_memcpy sz al)) privileged_compartment) as [|neq]; try easy.
-  intros _. intros. admit.
-  (* RB: NOTE: Semantics of [memcpy] *)
-(* Qed. *)
-Admitted.
+  intros E. rewrite E; trivial.
+Qed.
 
 Theorem external_call_spec:
   forall ef,
