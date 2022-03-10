@@ -1278,8 +1278,8 @@ Proof.
   intros. red; intros. eapply Mem.perm_free_1; eauto.
   exploit H1; eauto. intros [B|B]. auto. right; omega.
   eapply H; eauto.
-  intros. eapply Mem.free_can_access_block_inj_1; eauto. admit.
-Admitted.
+  intros. eapply Mem.free_can_access_block_inj_1; eauto. eapply OWN_BLOCKS. eauto.
+Qed.
 
 Lemma blocks_of_env_no_overlap:
   forall (ge: genv) j cenv e le m lo hi te tle tlo thi tm,
