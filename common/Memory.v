@@ -1938,6 +1938,20 @@ Proof.
   apply storebytes_can_access_block_inj_1; eassumption.
 Qed.
 
+Theorem loadbytes_storebytes_same_None:
+  loadbytes m2 b ofs (Z.of_nat (length bytes)) None = Some bytes.
+Proof.
+  intros. assert (STORE2:=STORE). unfold storebytes in STORE2. unfold loadbytes.
+  destruct (range_perm_dec m1 b ofs (ofs + Z.of_nat (length bytes)) Cur Writable);
+  destruct (can_access_block_dec m1 b (Some cp));
+  try discriminate.
+  setoid_rewrite pred_dec_true. simpl.
+  decEq. inv STORE2; simpl. rewrite PMap.gss. rewrite Nat2Z.id.
+  apply getN_setN_same.
+  red; eauto with mem.
+  reflexivity.
+Qed.
+
 Theorem loadbytes_storebytes_disjoint:
   forall b' ofs' len cp',
   len >= 0 ->
