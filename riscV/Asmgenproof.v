@@ -335,8 +335,8 @@ Proof.
 Qed.
 
 Remark loadind_label:
-  forall base ofs ty dst k c,
-  loadind base ofs ty dst k = OK c -> tail_nolabel k c.
+  forall base ofs ty dst k c b,
+  loadind base ofs ty dst k b = OK c -> tail_nolabel k c.
 Proof.
   unfold loadind; intros.
   destruct ty, (preg_of dst); inv H; apply indexed_memory_access_label; intros; exact I.
@@ -351,7 +351,7 @@ Proof.
 Qed.
 
 Remark loadind_ptr_label:
-  forall base ofs dst k, tail_nolabel k (loadind_ptr base ofs dst k).
+  forall base ofs dst k b, tail_nolabel k (loadind_ptr base ofs dst k b).
 Proof.
   intros. apply indexed_memory_access_label. intros; destruct Archi.ptr64; exact I.
 Qed.
@@ -868,12 +868,12 @@ Opaque loadind.
   left; eapply exec_straight_steps; eauto; intros. monadInv TR. 
   destruct ep.
 (* X30 contains parent *)
-  exploit loadind_correct. eexact EQ.
-  instantiate (3 := rs0). rewrite DXP; eauto.
-  admit. congruence.
+  exploit loadind_priv_correct. eexact EQ.
+  instantiate (2 := rs0). rewrite DXP; eauto.
+  congruence.
   intros [rs1 [P [Q R]]].
   exists rs1; split. eauto.
-  split. eapply agree_set_mreg. eapply agree_set_mreg; eauto. admit. (* congruence. *) auto with asmgen.
+  split. eapply agree_set_mreg. eapply agree_set_mreg; eauto. congruence. auto with asmgen.
   simpl; intros. rewrite R; auto with asmgen.
   apply preg_of_not_X30; auto.
 (* GPR11 does not contain parent *)
@@ -882,13 +882,13 @@ Opaque loadind.
   unfold find_comp_ptr in CURCOMP. rewrite FIND in CURCOMP. inv CURCOMP.
   unfold comp_of in A; simpl in A. erewrite (comp_transf_function) in A; eauto.
   exploit loadind_ptr_correct. eexact A. congruence. intros [rs1 [P [Q R]]].
-  exploit loadind_correct. eexact EQ. instantiate (3 := rs1). rewrite Q. admit. (* eauto. *) congruence.
+  exploit loadind_priv_correct. eexact EQ. instantiate (2 := rs1). rewrite Q. eauto. congruence.
   intros [rs2 [S [T U]]].
   exists rs2; split. eapply exec_straight_trans; eauto.
   split. eapply agree_set_mreg. eapply agree_set_mreg. eauto. eauto.
   instantiate (1 := rs1#X30 <- (rs2#X30)). intros.
   rewrite Pregmap.gso; auto with asmgen.
-  admit. (* congruence. *)
+  congruence.
   intros. unfold Pregmap.set. destruct (PregEq.eq r' X30). congruence. auto with asmgen.
   simpl; intros. rewrite U; auto with asmgen.
   apply preg_of_not_X30; auto.
@@ -1293,7 +1293,6 @@ Local Transparent destroyed_by_op.
   inversion AT; subst. simpl in H6; monadInv H6.
   assert (NOOV: list_length_z tf.(fn_code) <= Ptrofs.max_unsigned).
     eapply transf_function_no_overflow; eauto.
-  (* assert (cp = cp') by admit; subst cp'. (* RB: NOTE: Compartment determinacy *) *)
   exploit make_epilogue_correct; eauto using (comp_transf_function _ _ H5).
   intros (rs1 & m1 & U & V & W & X & Y & Z).
   exploit exec_straight_steps_2; eauto using functions_transl.
@@ -1565,7 +1564,7 @@ Local Transparent destroyed_at_function_entry.
   + simpl in *.
     rewrite H3 in H8.
     rewrite H3 in H2. congruence.
-Admitted.
+Qed.
 
 
 Lemma transf_initial_states:

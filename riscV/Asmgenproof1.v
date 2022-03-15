@@ -610,9 +610,7 @@ Proof.
   eapply exec_straight_two. simpl; eauto. simpl; eauto. auto. auto. 
   split; intros; Simpl. unfold Val.cmpl. rewrite (Val.negate_cmpl_bool Clt). 
   destruct (Val.cmpl_bool Clt rs###r1 rs###r2) as [[]|]; eauto.
-Unshelve. all:admit. (* RB: NOTE: Connect to missing compartments *)
-(* Qed. *)
-Admitted.
+Qed.
 
 Lemma transl_cond_int64u_correct:
   forall cmp rd r1 r2 k rs m,
@@ -639,9 +637,7 @@ Proof.
   eapply exec_straight_two. simpl; eauto. simpl; eauto. auto. auto. 
   split; intros; Simpl. unfold Val.cmplu. rewrite (Val.negate_cmplu_bool (Mem.valid_pointer m) Clt). 
   destruct (Val.cmplu_bool (Mem.valid_pointer m) Clt rs###r1 rs###r2) as [[]|]; eauto.
-Unshelve. all:admit. (* RB: NOTE: Connect to missing compartments *)
-(* Qed. *)
-Admitted.
+Qed.
 
 Lemma transl_condimm_int32s_correct:
   forall cmp rd r1 n k rs m,
@@ -930,9 +926,7 @@ Proof.
 * econstructor; split.
   eapply exec_straight_one. eapply transl_cond_single_correct with (v := Val.notbool v); eauto. auto.
   split; intros; Simpl.
-Unshelve. all:admit. (* RB: NOTE: Connect to missing compartments *)
-(* Qed. *)
-Admitted.
+Qed.
 
 (** Some arithmetic properties. *)
 
@@ -1139,13 +1133,13 @@ Proof.
   symmetry; auto with ptrofs.
 Qed.
 
-
-Lemma indexed_load_access_correct:
+Lemma indexed_load_priv_access_correct:
   forall chunk (mk_instr: ireg -> offset -> instruction) rd m,
   (forall base ofs rs,
-     exec_instr ge fn (mk_instr base ofs) rs m (comp_of fn) = exec_load ge chunk rs m rd base ofs (comp_of fn) false) ->
+      exec_instr ge fn (mk_instr base ofs) rs m (comp_of fn) =
+        exec_load ge chunk rs m rd base ofs (comp_of fn) true) ->
   forall (base: ireg) ofs k (rs: regset) v,
-  Mem.loadv chunk m (Val.offset_ptr rs#base ofs) (Some (comp_of fn)) = Some v ->
+  Mem.loadv chunk m (Val.offset_ptr rs#base ofs) None = Some v ->
   base <> X31 -> rd <> PC ->
   exists rs',
      exec_straight ge fn (indexed_memory_access mk_instr base ofs k) rs m k rs' m
@@ -1157,7 +1151,35 @@ Proof.
   intros (base' & ofs' & rs' & A & B & C).
   econstructor; split.
   eapply exec_straight_opt_right. eexact A. eapply exec_straight_one. rewrite EXEC.
-  unfold exec_load. rewrite B, LOAD. eauto. Simpl.
+  unfold exec_load.
+  rewrite B, LOAD; eauto.
+  Simpl.
+  split; intros; Simpl.
+Qed.
+
+Lemma indexed_load_access_correct:
+  forall chunk (mk_instr: ireg -> offset -> instruction) rd m b,
+  (forall base ofs rs,
+     exec_instr ge fn (mk_instr base ofs) rs m (comp_of fn) = exec_load ge chunk rs m rd base ofs (comp_of fn) b) ->
+  forall (base: ireg) ofs k (rs: regset) v,
+  Mem.loadv chunk m (Val.offset_ptr rs#base ofs) (Some (comp_of fn)) = Some v ->
+  base <> X31 -> rd <> PC ->
+  exists rs',
+     exec_straight ge fn (indexed_memory_access mk_instr base ofs k) rs m k rs' m
+  /\ rs'#rd = v
+  /\ forall r, r <> PC -> r <> X31 -> r <> rd -> rs'#r = rs#r.
+Proof.
+  intros until b; intros EXEC; intros until v; intros LOAD NOT31 NOTPC.
+  exploit indexed_memory_access_correct; eauto.
+  intros (base' & ofs' & rs' & A & B & C).
+  econstructor; split.
+  eapply exec_straight_opt_right. eexact A. eapply exec_straight_one. rewrite EXEC.
+  unfold exec_load.
+  assert (LOAD': Mem.loadv chunk m (Val.offset_ptr (rs base) ofs) None = Some v).
+  { destruct (Val.offset_ptr (rs base) ofs); try discriminate; simpl in *;
+    eapply Mem.load_Some_None; eauto. }
+  destruct b; rewrite B; [rewrite LOAD' | rewrite LOAD]; eauto.
+  Simpl.
   split; intros; Simpl.
 Qed.
 
@@ -1181,9 +1203,30 @@ Proof.
   intros; Simpl.
 Qed.
 
-Lemma loadind_correct:
+Lemma loadind_priv_correct:
   forall (base: ireg) ofs ty dst k c (rs: regset) m v,
-  loadind base ofs ty dst k = OK c ->
+  loadind base ofs ty dst k true = OK c ->
+  Mem.loadv (chunk_of_type ty) m (Val.offset_ptr rs#base ofs) None = Some v ->
+  base <> X31 ->
+  exists rs',
+     exec_straight ge fn c rs m k rs' m
+  /\ rs'#(preg_of dst) = v
+  /\ forall r, r <> PC -> r <> X31 -> r <> preg_of dst -> rs'#r = rs#r.
+Proof.
+  intros until v; intros TR LOAD NOT31.
+  assert (A: exists mk_instr,
+                c = indexed_memory_access mk_instr base ofs k
+             /\ forall base' ofs' rs',
+                   exec_instr ge fn (mk_instr base' ofs') rs' m (comp_of fn) =
+                   exec_load ge (chunk_of_type ty) rs' m (preg_of dst) base' ofs' (comp_of fn) true).
+  { unfold loadind in TR. destruct ty, (preg_of dst); inv TR; econstructor; split; eauto. }
+  destruct A as (mk_instr & B & C). subst c.
+  eapply indexed_load_priv_access_correct; eauto with asmgen.
+Qed.
+
+Lemma loadind_correct:
+  forall (base: ireg) ofs ty dst k c (rs: regset) m v b,
+  loadind base ofs ty dst k b = OK c ->
   Mem.loadv (chunk_of_type ty) m (Val.offset_ptr rs#base ofs) (Some (comp_of fn)) = Some v ->
   base <> X31 ->
   exists rs',
@@ -1191,12 +1234,12 @@ Lemma loadind_correct:
   /\ rs'#(preg_of dst) = v
   /\ forall r, r <> PC -> r <> X31 -> r <> preg_of dst -> rs'#r = rs#r.
 Proof.
-  intros until v; intros TR LOAD NOT31. 
+  intros until b; intros TR LOAD NOT31.
   assert (A: exists mk_instr,
                 c = indexed_memory_access mk_instr base ofs k
              /\ forall base' ofs' rs',
                    exec_instr ge fn (mk_instr base' ofs') rs' m (comp_of fn) =
-                   exec_load ge (chunk_of_type ty) rs' m (preg_of dst) base' ofs' (comp_of fn) false).
+                   exec_load ge (chunk_of_type ty) rs' m (preg_of dst) base' ofs' (comp_of fn) b).
   { unfold loadind in TR. destruct ty, (preg_of dst); inv TR; econstructor; split; eauto. }
   destruct A as (mk_instr & B & C). subst c. 
   eapply indexed_load_access_correct; eauto with asmgen.
@@ -1222,17 +1265,30 @@ Proof.
   eapply indexed_store_access_correct; eauto with asmgen. 
 Qed.
 
-Lemma loadind_ptr_correct:
+Lemma loadind_priv_ptr_correct:
   forall (base: ireg) ofs (dst: ireg) k (rs: regset) m v,
+  Mem.loadv Mptr m (Val.offset_ptr rs#base ofs) None = Some v ->
+  base <> X31 ->
+  exists rs',
+     exec_straight ge fn (loadind_ptr base ofs dst k true) rs m k rs' m
+  /\ rs'#dst = v
+  /\ forall r, r <> PC -> r <> X31 -> r <> dst -> rs'#r = rs#r.
+Proof.
+  intros. eapply indexed_load_priv_access_correct; eauto with asmgen.
+  intros. unfold Mptr. destruct Archi.ptr64; simpl; eauto.
+Qed.
+
+Lemma loadind_ptr_correct:
+  forall (base: ireg) ofs (dst: ireg) k (rs: regset) m v b,
   Mem.loadv Mptr m (Val.offset_ptr rs#base ofs) (Some (comp_of fn)) = Some v ->
   base <> X31 ->
   exists rs',
-     exec_straight ge fn (loadind_ptr base ofs dst k) rs m k rs' m
+     exec_straight ge fn (loadind_ptr base ofs dst k b) rs m k rs' m
   /\ rs'#dst = v
   /\ forall r, r <> PC -> r <> X31 -> r <> dst -> rs'#r = rs#r.
 Proof.
   intros. eapply indexed_load_access_correct; eauto with asmgen.
-  intros. unfold Mptr. destruct Archi.ptr64; auto. 
+  intros. unfold Mptr. destruct Archi.ptr64; simpl; eauto.
 Qed.
 
 Lemma storeind_ptr_correct:

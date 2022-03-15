@@ -263,7 +263,7 @@ Inductive instruction : Type :=
   | Pfmvxd   (rd: ireg) (rs: freg)                  (**r move FP double to integer register *)
 
   (* 32-bit (single-precision) floating point *)
-  | Pfls     (rd: freg) (ra: ireg) (ofs: offset)    (**r load float *)
+  | Pfls     (rd: freg) (ra: ireg) (ofs: offset) (priv: bool)    (**r load float *)
   | Pfss     (rs: freg) (ra: ireg) (ofs: offset)    (**r store float *)
 
   | Pfnegs   (rd: freg) (rs: freg)                  (**r negation *)
@@ -298,8 +298,8 @@ Inductive instruction : Type :=
   | Pfcvtslu (rd: freg) (rs: ireg0)                 (**r unsigned int 64-> float32 conversion *)
 
   (* 64-bit (double-precision) floating point *)
-  | Pfld     (rd: freg) (ra: ireg) (ofs: offset)    (**r load 64-bit float *)
-  | Pfld_a   (rd: freg) (ra: ireg) (ofs: offset)    (**r load any64 *)
+  | Pfld     (rd: freg) (ra: ireg) (ofs: offset) (priv: bool)    (**r load 64-bit float *)
+  | Pfld_a   (rd: freg) (ra: ireg) (ofs: offset) (priv: bool)   (**r load any64 *)
   | Pfsd     (rd: freg) (ra: ireg) (ofs: offset)    (**r store 64-bit float *)
   | Pfsd_a   (rd: freg) (ra: ireg) (ofs: offset)    (**r store any64 *)
 
@@ -830,8 +830,8 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) (cp: 
       Next (nextinstr (rs#d <- (rs#s))) m
 
 (** 32-bit (single-precision) floating point *)
-  | Pfls d a ofs =>
-      exec_load Mfloat32 rs m d a ofs cp false
+  | Pfls d a ofs b =>
+      exec_load Mfloat32 rs m d a ofs cp b
   | Pfss s a ofs =>
       exec_store Mfloat32 rs m s a ofs cp
 
@@ -874,10 +874,10 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) (cp: 
       Next (nextinstr (rs#d <- (Val.maketotal (Val.singleoflongu rs###s)))) m
 
 (** 64-bit (double-precision) floating point *)
-  | Pfld d a ofs =>
-      exec_load Mfloat64 rs m d a ofs cp false
-  | Pfld_a d a ofs =>
-      exec_load Many64 rs m d a ofs cp false
+  | Pfld d a ofs b =>
+      exec_load Mfloat64 rs m d a ofs cp b
+  | Pfld_a d a ofs b =>
+      exec_load Many64 rs m d a ofs cp b
   | Pfsd s a ofs =>
       exec_store Mfloat64 rs m s a ofs cp
   | Pfsd_a s a ofs =>
@@ -1270,7 +1270,10 @@ Proof.
   assert (A: forall l v1 v2,
              extcall_arg rs m l v1 -> extcall_arg rs m l v2 -> v1 = v2).
   { intros. inv H; inv H0. congruence.
-    admit. (* RB: NOTE: Compartment determinacy on [loadv] *) }
+    destruct (rs X2); try discriminate.
+    simpl in H2, H5.
+    apply Mem.load_result in H2.
+    apply Mem.load_result in H5. congruence. }
   assert (B: forall p v1 v2,
              extcall_arg_pair rs m p v1 -> extcall_arg_pair rs m p v2 -> v1 = v2).
   { intros. inv H; inv H0. 
@@ -1283,8 +1286,7 @@ Proof.
     auto.
     f_equal; eauto. }
   intros. eapply C; eauto.
-(* Qed. *)
-Admitted.
+Qed.
 
 (* RB: NOTE: In the next proof, the wrapped [exec_instr] would require extra
    processing, such as this. *)
