@@ -844,9 +844,9 @@ Proof.
 Qed.
 
 Lemma wt_exec_Iload:
-  forall env f chunk addr args dst s m a v rs,
+  forall env f chunk addr args dst s m a cp v rs,
   wt_instr f env (Iload chunk addr args dst s) ->
-  Mem.loadv chunk m a = Some v ->
+  Mem.loadv chunk m a cp = Some v ->
   wt_regset env rs ->
   wt_regset env (rs#dst <- v).
 Proof.

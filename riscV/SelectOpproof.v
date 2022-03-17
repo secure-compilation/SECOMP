@@ -916,7 +916,7 @@ Proof.
 - InvEval. constructor.
 - InvEval. simpl in H5. inv H5. constructor.
 - InvEval. subst v. constructor; auto.
-- inv H. InvEval. simpl in H6; inv H6. constructor; auto.
+- inv H. InvEval. simpl in H6; inv H6. econstructor; eauto.
 - destruct Archi.ptr64 eqn:SF.
 + constructor; auto.
 + InvEval. replace v with (if Archi.ptr64 then Val.addl v1 (Vint n) else Val.add v1 (Vint n)).

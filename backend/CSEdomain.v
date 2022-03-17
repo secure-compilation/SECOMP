@@ -106,9 +106,9 @@ Inductive rhs_eval_to (valu: valuation) (ge: genv) (sp: val) (m: mem):
   | op_eval_to: forall op vl v,
       eval_operation ge sp op (map valu vl) m = Some v ->
       rhs_eval_to valu ge sp m (Op op vl) v
-  | load_eval_to: forall chunk addr vl a v,
+  | load_eval_to: forall chunk addr vl a cp v,
       eval_addressing ge sp addr (map valu vl) = Some a ->
-      Mem.loadv chunk m a = Some v ->
+      Mem.loadv chunk m a cp = Some v ->
       rhs_eval_to valu ge sp m (Load chunk addr vl) v.
 
 Inductive equation_holds (valu: valuation) (ge: genv) (sp: val) (m: mem):

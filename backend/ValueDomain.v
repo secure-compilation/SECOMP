@@ -2969,8 +2969,8 @@ Proof.
 Qed.
 
 Lemma vnormalize_cast:
-  forall chunk m b ofs v p,
-  Mem.load chunk m b ofs = Some v ->
+  forall chunk m b ofs cp v p,
+  Mem.load chunk m b ofs cp = Some v ->
   vmatch v (Ifptr p) ->
   vmatch v (vnormalize chunk (Ifptr p)).
 Proof.
@@ -3191,23 +3191,23 @@ Definition ablock_storebytes_anywhere (ab: ablock) (p: aptr) :=
   ablock_init (plub p ab.(ab_summary)).
 
 Definition smatch (m: mem) (b: block) (p: aptr) : Prop :=
-  (forall chunk ofs v, Mem.load chunk m b ofs = Some v -> vmatch v (Ifptr p))
-/\(forall ofs b' ofs' q i, Mem.loadbytes m b ofs 1 = Some (Fragment (Vptr b' ofs') q i :: nil) -> pmatch b' ofs' p).
+  (forall chunk ofs cp v, Mem.load chunk m b ofs cp = Some v -> vmatch v (Ifptr p))
+/\(forall ofs cp b' ofs' q i, Mem.loadbytes m b ofs 1 cp = Some (Fragment (Vptr b' ofs') q i :: nil) -> pmatch b' ofs' p).
 
 Remark loadbytes_load_ext:
   forall b m m',
-  (forall ofs n bytes, Mem.loadbytes m' b ofs n = Some bytes -> n >= 0 -> Mem.loadbytes m b ofs n = Some bytes) ->
-  forall chunk ofs v, Mem.load chunk m' b ofs = Some v -> Mem.load chunk m b ofs = Some v.
+  (forall ofs n cp bytes, Mem.loadbytes m' b ofs n cp = Some bytes -> n >= 0 -> Mem.loadbytes m b ofs n cp = Some bytes) ->
+  forall chunk ofs cp v, Mem.load chunk m' b ofs cp = Some v -> Mem.load chunk m b ofs cp = Some v.
 Proof.
   intros. exploit Mem.load_loadbytes; eauto. intros [bytes [A B]].
-  exploit Mem.load_valid_access; eauto. intros [C D].
+  exploit Mem.load_valid_access; eauto. intros [C [D E]].
   subst v. apply Mem.loadbytes_load; auto. apply H; auto. generalize (size_chunk_pos chunk); omega.
 Qed.
 
 Lemma smatch_ext:
   forall m b p m',
   smatch m b p ->
-  (forall ofs n bytes, Mem.loadbytes m' b ofs n = Some bytes -> n >= 0 -> Mem.loadbytes m b ofs n = Some bytes) ->
+  (forall ofs n cp bytes, Mem.loadbytes m' b ofs n cp = Some bytes -> n >= 0 -> Mem.loadbytes m b ofs n cp = Some bytes) ->
   smatch m' b p.
 Proof.
   intros. destruct H. split; intros.
@@ -3218,7 +3218,7 @@ Qed.
 Lemma smatch_inv:
   forall m b p m',
   smatch m b p ->
-  (forall ofs n, n >= 0 -> Mem.loadbytes m' b ofs n = Mem.loadbytes m b ofs n) ->
+  (forall ofs n cp, n >= 0 -> Mem.loadbytes m' b ofs n cp = Mem.loadbytes m b ofs n cp) ->
   smatch m' b p.
 Proof.
   intros. eapply smatch_ext; eauto.
@@ -3234,19 +3234,20 @@ Proof.
 Qed.
 
 Lemma In_loadbytes:
-  forall m b byte n ofs bytes,
-  Mem.loadbytes m b ofs n = Some bytes ->
+  forall m b byte n ofs cp bytes,
+  Mem.loadbytes m b ofs n cp = Some bytes ->
   In byte bytes ->
-  exists ofs', ofs <= ofs' < ofs + n /\ Mem.loadbytes m b ofs' 1 = Some(byte :: nil).
+  exists ofs', ofs <= ofs' < ofs + n /\ Mem.loadbytes m b ofs' 1 cp = Some(byte :: nil).
 Proof.
   intros until n. pattern n.
   apply well_founded_ind with (R := Zwf 0).
 - apply Zwf_well_founded.
-- intros sz REC ofs bytes LOAD IN.
+- intros sz REC ofs cp bytes LOAD IN.
   destruct (zle sz 0).
-  + rewrite (Mem.loadbytes_empty m b ofs sz) in LOAD by auto.
+  + rewrite (Mem.loadbytes_empty m b ofs sz cp) in LOAD; try auto;
+      [| eapply Mem.loadbytes_can_access_block_inj; eauto].
     inv LOAD. contradiction.
-  + exploit (Mem.loadbytes_split m b ofs 1 (sz - 1) bytes).
+  + exploit (Mem.loadbytes_split m b ofs 1 (sz - 1) cp bytes).
     replace (1 + (sz - 1)) with sz by omega. auto.
     omega.
     omega.
@@ -3263,8 +3264,8 @@ Proof.
 Qed.
 
 Lemma smatch_loadbytes:
-  forall m b p b' ofs' q i n ofs bytes,
-  Mem.loadbytes m b ofs n = Some bytes ->
+  forall m b p b' ofs' q i n ofs cp bytes,
+  Mem.loadbytes m b ofs n cp = Some bytes ->
   smatch m b p ->
   In (Fragment (Vptr b' ofs') q i) bytes ->
   pmatch b' ofs' p.
@@ -3273,18 +3274,19 @@ Proof.
   eapply H0; eauto.
 Qed.
 
+(* RB: NOTE: Could use separate compartment variables. *)
 Lemma loadbytes_provenance:
-  forall m b ofs' byte n ofs bytes,
-  Mem.loadbytes m b ofs n = Some bytes ->
-  Mem.loadbytes m b ofs' 1 = Some (byte :: nil) ->
+  forall m b ofs' byte n ofs cp bytes,
+  Mem.loadbytes m b ofs n cp = Some bytes ->
+  Mem.loadbytes m b ofs' 1 cp = Some (byte :: nil) ->
   ofs <= ofs' < ofs + n ->
   In byte bytes.
 Proof.
   intros until n. pattern n.
   apply well_founded_ind with (R := Zwf 0).
 - apply Zwf_well_founded.
-- intros sz REC ofs bytes LOAD LOAD1 IN.
-  exploit (Mem.loadbytes_split m b ofs 1 (sz - 1) bytes).
+- intros sz REC ofs cp bytes LOAD LOAD1 IN.
+  exploit (Mem.loadbytes_split m b ofs 1 (sz - 1) cp bytes).
   replace (1 + (sz - 1)) with sz by omega. auto.
   omega.
   omega.
@@ -3295,11 +3297,11 @@ Proof.
 Qed.
 
 Lemma storebytes_provenance:
-  forall m b ofs bytes m' b' ofs' b'' ofs'' q i,
-  Mem.storebytes m b ofs bytes = Some m' ->
-  Mem.loadbytes m' b' ofs' 1 = Some (Fragment (Vptr b'' ofs'') q i :: nil) ->
+  forall m b ofs bytes cp m' b' ofs' cp' b'' ofs'' q i,
+  Mem.storebytes m b ofs bytes cp = Some m' ->
+  Mem.loadbytes m' b' ofs' 1 cp' = Some (Fragment (Vptr b'' ofs'') q i :: nil) ->
   In (Fragment (Vptr b'' ofs'') q i) bytes
-  \/ Mem.loadbytes m b' ofs' 1 = Some (Fragment (Vptr b'' ofs'') q i :: nil).
+  \/ Mem.loadbytes m b' ofs' 1 cp' = Some (Fragment (Vptr b'' ofs'') q i :: nil).
 Proof.
   intros.
   assert (EITHER:
@@ -3315,15 +3317,30 @@ Proof.
 - right. rewrite <- H0. symmetry. eapply Mem.loadbytes_storebytes_other; eauto. omega.
 - subst b'. left.
   eapply loadbytes_provenance; eauto.
-  eapply Mem.loadbytes_storebytes_same; eauto.
+  destruct cp' as [cp' |].
+  + assert (cp = cp').
+    { Local Transparent Mem.storebytes Mem.loadbytes.
+      unfold Mem.storebytes, Mem.loadbytes in *.
+      destruct (Mem.range_perm_dec m b ofs (ofs + Z.of_nat (Datatypes.length bytes)) Cur Writable);
+        try discriminate.
+      destruct (Mem.can_access_block_dec m b (Some cp)) as [ACC | ACC]; try discriminate.
+      destruct (Mem.range_perm_dec m' b ofs' (ofs' + 1) Cur Readable);
+        try discriminate.
+      destruct (Mem.can_access_block_dec m' b (Some cp')) as [ACC' | ACC']; try discriminate.
+      simpl in *. inv H. unfold Mem.block_compartment in ACC'. simpl in ACC'.
+      unfold Mem.block_compartment in ACC. congruence.
+      Local Opaque Mem.storebytes Mem.loadbytes. }
+    subst.
+    eapply Mem.loadbytes_storebytes_same; eauto.
+  + eapply Mem.loadbytes_storebytes_same_None; eauto.
 Qed.
 
 Lemma store_provenance:
-  forall chunk m b ofs v m' b' ofs' b'' ofs'' q i,
-  Mem.store chunk m b ofs v = Some m' ->
-  Mem.loadbytes m' b' ofs' 1 = Some (Fragment (Vptr b'' ofs'') q i :: nil) ->
+  forall chunk m b ofs v cp m' b' ofs' cp' b'' ofs'' q i,
+  Mem.store chunk m b ofs v cp = Some m' ->
+  Mem.loadbytes m' b' ofs' 1 cp' = Some (Fragment (Vptr b'' ofs'') q i :: nil) ->
   v = Vptr b'' ofs'' /\ (chunk = Mint32 \/ chunk = Many32 \/ chunk = Mint64 \/ chunk = Many64)
-  \/ Mem.loadbytes m b' ofs' 1 = Some (Fragment (Vptr b'' ofs'') q i :: nil).
+  \/ Mem.loadbytes m b' ofs' 1 cp' = Some (Fragment (Vptr b'' ofs'') q i :: nil).
 Proof.
   intros. exploit storebytes_provenance; eauto. eapply Mem.store_storebytes; eauto.
   intros [A|A]; auto. left.
@@ -3340,18 +3357,18 @@ Proof.
 Qed.
 
 Lemma smatch_store:
-  forall chunk m b ofs v m' b' p av,
-  Mem.store chunk m b ofs v = Some m' ->
+  forall chunk m b ofs v cp m' b' p av,
+  Mem.store chunk m b ofs v cp = Some m' ->
   smatch m b' p ->
   vmatch v av ->
   smatch m' b' (vplub av p).
 Proof.
   intros. destruct H0 as [A B]. split.
-- intros chunk' ofs' v' LOAD. destruct v'; auto with va.
+- intros chunk' ofs' cp' v' LOAD. destruct v'; auto with va.
   exploit Mem.load_pointer_store; eauto.
   intros [(P & Q & R & S) | DISJ].
 + subst. apply vmatch_vplub_l. auto.
-+ apply vmatch_vplub_r. apply A with (chunk := chunk') (ofs := ofs').
++ apply vmatch_vplub_r. apply A with (chunk := chunk') (ofs := ofs') (cp := cp').
   rewrite <- LOAD. symmetry. eapply Mem.load_store_other; eauto.
 - intros. exploit store_provenance; eauto. intros [[P Q] | P].
 + subst.
@@ -3364,8 +3381,8 @@ Proof.
 Qed.
 
 Lemma smatch_storebytes:
-  forall m b ofs bytes m' b' p p',
-  Mem.storebytes m b ofs bytes = Some m' ->
+  forall m b ofs bytes cp m' b' p p',
+  Mem.storebytes m b ofs bytes cp = Some m' ->
   smatch m b' p ->
   (forall b' ofs' q i, In (Fragment (Vptr b' ofs') q i) bytes -> pmatch b' ofs' p') ->
   smatch m' b' (plub p' p).
@@ -3392,12 +3409,12 @@ Qed.
 
 Definition bmatch (m: mem) (b: block) (ab: ablock) : Prop :=
   smatch m b ab.(ab_summary) /\
-  forall chunk ofs v, Mem.load chunk m b ofs = Some v -> vmatch v (ablock_load chunk ab ofs).
+  forall chunk ofs cp v, Mem.load chunk m b ofs cp = Some v -> vmatch v (ablock_load chunk ab ofs).
 
 Lemma bmatch_ext:
   forall m b ab m',
   bmatch m b ab ->
-  (forall ofs n bytes, Mem.loadbytes m' b ofs n = Some bytes -> n >= 0 -> Mem.loadbytes m b ofs n = Some bytes) ->
+  (forall ofs n cp bytes, Mem.loadbytes m' b ofs n cp = Some bytes -> n >= 0 -> Mem.loadbytes m b ofs n cp = Some bytes) ->
   bmatch m' b ab.
 Proof.
   intros. destruct H as [A B]. split; intros.
@@ -3408,7 +3425,7 @@ Qed.
 Lemma bmatch_inv:
   forall m b ab m',
   bmatch m b ab ->
-  (forall ofs n, n >= 0 -> Mem.loadbytes m' b ofs n = Mem.loadbytes m b ofs n) ->
+  (forall ofs n cp, n >= 0 -> Mem.loadbytes m' b ofs n cp = Mem.loadbytes m b ofs n cp) ->
   bmatch m' b ab.
 Proof.
   intros. eapply bmatch_ext; eauto.
@@ -3416,8 +3433,8 @@ Proof.
 Qed.
 
 Lemma ablock_load_sound:
-  forall chunk m b ofs v ab,
-  Mem.load chunk m b ofs = Some v ->
+  forall chunk m b ofs cp v ab,
+  Mem.load chunk m b ofs cp = Some v ->
   bmatch m b ab ->
   vmatch v (ablock_load chunk ab ofs).
 Proof.
@@ -3425,8 +3442,8 @@ Proof.
 Qed.
 
 Lemma ablock_load_anywhere_sound:
-  forall chunk m b ofs v ab,
-  Mem.load chunk m b ofs = Some v ->
+  forall chunk m b ofs cp v ab,
+  Mem.load chunk m b ofs cp = Some v ->
   bmatch m b ab ->
   vmatch v (ablock_load_anywhere chunk ab).
 Proof.
@@ -3443,8 +3460,8 @@ Proof.
 Qed.
 
 Lemma ablock_store_anywhere_sound:
-  forall chunk m b ofs v m' b' ab av,
-  Mem.store chunk m b ofs v = Some m' ->
+  forall chunk m b ofs v cp m' b' ab av,
+  Mem.store chunk m b ofs v cp = Some m' ->
   bmatch m b' ab ->
   vmatch v av ->
   bmatch m' b' (ablock_store_anywhere chunk ab av).
@@ -3546,15 +3563,15 @@ Proof.
 Qed.
 
 Lemma ablock_store_sound:
-  forall chunk m b ofs v m' ab av,
-  Mem.store chunk m b ofs v = Some m' ->
+  forall chunk m b ofs v cp m' ab av,
+  Mem.store chunk m b ofs v cp = Some m' ->
   bmatch m b ab ->
   vmatch v av ->
   bmatch m' b (ablock_store chunk ab ofs av).
 Proof.
   intros until av; intros STORE BIN VIN. destruct BIN as [BIN1 BIN2]. split.
   eapply smatch_store; eauto.
-  intros chunk' ofs' v' LOAD.
+  intros chunk' ofs' cp' v' LOAD.
   assert (SUMMARY: vmatch v' (vnormalize chunk' (Ifptr (vplub av ab.(ab_summary))))).
   { exploit smatch_store; eauto. intros [A B]. eapply vnormalize_cast; eauto. }
   unfold ablock_load.
@@ -3565,18 +3582,20 @@ Proof.
 - (* same offset and compatible chunks *)
   subst.
   assert (v' = Val.load_result chunk' v).
-  { exploit Mem.load_store_similar_2; eauto. congruence. }
+  { exploit Mem.load_store_similar_2; eauto.
+    intros LOAD'.
+    apply Mem.load_result in LOAD. apply Mem.load_result in LOAD'. congruence. }
   subst v'. apply vnormalize_sound; auto.
 - (* disjoint load/store *)
-  assert (Mem.load chunk' m b ofs' = Some v').
+  assert (Mem.load chunk' m b ofs' cp' = Some v').
   { rewrite <- LOAD. symmetry. eapply Mem.load_store_other; eauto.
     rewrite U. auto. }
   exploit BIN2; eauto. unfold ablock_load. rewrite P. rewrite COMPAT. auto.
 Qed.
 
 Lemma ablock_loadbytes_sound:
-  forall m b ab b' ofs' q i n ofs bytes,
-  Mem.loadbytes m b ofs n = Some bytes ->
+  forall m b ab b' ofs' q i n ofs cp bytes,
+  Mem.loadbytes m b ofs n cp = Some bytes ->
   bmatch m b ab ->
   In (Fragment (Vptr b' ofs') q i) bytes ->
   pmatch b' ofs' (ablock_loadbytes ab).
@@ -3585,8 +3604,8 @@ Proof.
 Qed.
 
 Lemma ablock_storebytes_anywhere_sound:
-  forall m b ofs bytes p m' b' ab,
-  Mem.storebytes m b ofs bytes = Some m' ->
+  forall m b ofs bytes cp p m' b' ab,
+  Mem.storebytes m b ofs bytes cp = Some m' ->
   (forall b' ofs' q i, In (Fragment (Vptr b' ofs') q i) bytes -> pmatch b' ofs' p) ->
   bmatch m b' ab ->
   bmatch m' b' (ablock_storebytes_anywhere ab p).
@@ -3608,8 +3627,8 @@ Proof.
 Qed.
 
 Lemma ablock_storebytes_sound:
-  forall m b ofs bytes m' p ab sz,
-  Mem.storebytes m b ofs bytes = Some m' ->
+  forall m b ofs bytes cp m' p ab sz,
+  Mem.storebytes m b ofs bytes cp = Some m' ->
   length bytes = Z.to_nat sz ->
   (forall b' ofs' q i, In (Fragment (Vptr b' ofs') q i) bytes -> pmatch b' ofs' p) ->
   bmatch m b ab ->
@@ -3617,7 +3636,7 @@ Lemma ablock_storebytes_sound:
 Proof.
   intros until sz; intros STORE LENGTH CONTENTS BM. destruct BM as [BM1 BM2]. split.
   eapply smatch_storebytes; eauto.
-  intros chunk' ofs' v' LOAD'.
+  intros chunk' ofs' cp' v' LOAD'.
   assert (SUMMARY: vmatch v' (vnormalize chunk' (Ifptr (plub p ab.(ab_summary))))).
   { exploit smatch_storebytes; eauto. intros [A B]. eapply vnormalize_cast; eauto. }
   unfold ablock_load.
@@ -3625,7 +3644,7 @@ Proof.
   destruct (chunk_compat chunk' chunk) eqn:COMPAT; auto.
   exploit chunk_compat_true; eauto. intros (U & V & W).
   exploit ablock_storebytes_contents; eauto. intros [A B].
-  assert (Mem.load chunk' m b ofs' = Some v').
+  assert (Mem.load chunk' m b ofs' cp' = Some v').
   { rewrite <- LOAD'; symmetry. eapply Mem.load_storebytes_other; eauto.
     rewrite U. rewrite LENGTH. rewrite Z_to_nat_max. right; omega. }
   exploit BM2; eauto. unfold ablock_load. rewrite A. rewrite COMPAT. auto.
@@ -3745,8 +3764,8 @@ Definition romatch  (m: mem) (rm: romem) : Prop :=
   /\ forall ofs, ~Mem.perm m b ofs Max Writable.
 
 Lemma romatch_store:
-  forall chunk m b ofs v m' rm,
-  Mem.store chunk m b ofs v = Some m' ->
+  forall chunk m b ofs v cp m' rm,
+  Mem.store chunk m b ofs v cp = Some m' ->
   romatch m rm ->
   romatch m' rm.
 Proof.
@@ -3760,8 +3779,8 @@ Proof.
 Qed.
 
 Lemma romatch_storebytes:
-  forall m b ofs bytes m' rm,
-  Mem.storebytes m b ofs bytes = Some m' ->
+  forall m b ofs bytes cp m' rm,
+  Mem.storebytes m b ofs bytes cp = Some m' ->
   romatch m rm ->
   romatch m' rm.
 Proof.
@@ -3776,7 +3795,7 @@ Qed.
 Lemma romatch_ext:
   forall m rm m',
   romatch m rm ->
-  (forall b id ofs n bytes, bc b = BCglob id -> Mem.loadbytes m' b ofs n = Some bytes -> Mem.loadbytes m b ofs n = Some bytes) ->
+  (forall b id ofs n cp bytes, bc b = BCglob id -> Mem.loadbytes m' b ofs n cp = Some bytes -> Mem.loadbytes m b ofs n cp = Some bytes) ->
   (forall b id ofs p, bc b = BCglob id -> Mem.perm m' b ofs Max p -> Mem.perm m b ofs Max p) ->
   romatch m' rm.
 Proof.
@@ -3787,8 +3806,8 @@ Proof.
 Qed.
 
 Lemma romatch_free:
-  forall m b lo hi m' rm,
-  Mem.free m b lo hi = Some m' ->
+  forall m b lo hi cp m' rm,
+  Mem.free m b lo hi cp = Some m' ->
   romatch m rm ->
   romatch m' rm.
 Proof.
@@ -3950,8 +3969,8 @@ Definition storebytes (m: amem) (dst: aptr) (sz: Z) (p: aptr) : amem :=
   |}.
 
 Theorem load_sound:
-  forall chunk m b ofs v rm am p,
-  Mem.load chunk m b (Ptrofs.unsigned ofs) = Some v ->
+  forall chunk m b ofs cp v rm am p,
+  Mem.load chunk m b (Ptrofs.unsigned ofs) cp = Some v ->
   romatch m rm ->
   mmatch m am ->
   pmatch b ofs p ->
@@ -3983,8 +4002,8 @@ Proof.
 Qed.
 
 Theorem loadv_sound:
-  forall chunk m addr v rm am aaddr,
-  Mem.loadv chunk m addr = Some v ->
+  forall chunk m addr v rm am aaddr cp,
+  Mem.loadv chunk m addr cp = Some v ->
   romatch m rm ->
   mmatch m am ->
   vmatch addr aaddr ->
@@ -3995,8 +4014,8 @@ Proof.
 Qed.
 
 Theorem store_sound:
-  forall chunk m b ofs v m' am p av,
-  Mem.store chunk m b (Ptrofs.unsigned ofs) v = Some m' ->
+  forall chunk m b ofs v cp m' am p av,
+  Mem.store chunk m b (Ptrofs.unsigned ofs) v cp = Some m' ->
   mmatch m am ->
   pmatch b ofs p ->
   vmatch v av ->
@@ -4049,8 +4068,7 @@ Proof.
   { eapply smatch_store; eauto. eapply mmatch_nonstack; eauto. }
   assert (STK: bc b = BCstack -> smatch m' b0 (am_nonstack am)).
   { intros. apply smatch_inv with m. eapply mmatch_nonstack; eauto; congruence.
-    intros. eapply Mem.loadbytes_store_other; eauto. left. congruence.
-  }
+    intros. eapply Mem.loadbytes_store_other; eauto. left. congruence. }
   inv PM; (apply DFL || apply STK; congruence).
 
 - (* Top *)
@@ -4061,8 +4079,8 @@ Proof.
 Qed.
 
 Theorem storev_sound:
-  forall chunk m addr v m' am aaddr av,
-  Mem.storev chunk m addr v = Some m' ->
+  forall chunk m addr v cp m' am aaddr av,
+  Mem.storev chunk m addr v cp = Some m' ->
   mmatch m am ->
   vmatch addr aaddr ->
   vmatch v av ->
@@ -4073,8 +4091,8 @@ Proof.
 Qed.
 
 Theorem loadbytes_sound:
-  forall m b ofs sz bytes am rm p,
-  Mem.loadbytes m b (Ptrofs.unsigned ofs) sz = Some bytes ->
+  forall m b ofs sz cp bytes am rm p,
+  Mem.loadbytes m b (Ptrofs.unsigned ofs) sz cp = Some bytes ->
   romatch m rm ->
   mmatch m am ->
   pmatch b ofs p ->
@@ -4106,8 +4124,8 @@ Proof.
 Qed.
 
 Theorem storebytes_sound:
-  forall m b ofs bytes m' am p sz q,
-  Mem.storebytes m b (Ptrofs.unsigned ofs) bytes = Some m' ->
+  forall m b ofs bytes cp m' am p sz q,
+  Mem.storebytes m b (Ptrofs.unsigned ofs) bytes cp = Some m' ->
   mmatch m am ->
   pmatch b ofs p ->
   length bytes = Z.to_nat sz ->
@@ -4161,8 +4179,7 @@ Proof.
   { eapply smatch_storebytes; eauto. eapply mmatch_nonstack; eauto. }
   assert (STK: bc b = BCstack -> smatch m' b0 (am_nonstack am)).
   { intros. apply smatch_inv with m. eapply mmatch_nonstack; eauto; congruence.
-    intros. eapply Mem.loadbytes_storebytes_other; eauto. left. congruence.
-  }
+    intros. eapply Mem.loadbytes_storebytes_other; eauto. left. congruence. }
   inv PM; (apply DFL || apply STK; congruence).
 
 - (* Top *)
@@ -4175,7 +4192,7 @@ Qed.
 Lemma mmatch_ext:
   forall m am m',
   mmatch m am ->
-  (forall b ofs n bytes, bc b <> BCinvalid -> n >= 0 -> Mem.loadbytes m' b ofs n = Some bytes -> Mem.loadbytes m b ofs n = Some bytes) ->
+  (forall b ofs n cp bytes, bc b <> BCinvalid -> n >= 0 -> Mem.loadbytes m' b ofs n cp = Some bytes -> Mem.loadbytes m b ofs n cp = Some bytes) ->
   Ple (Mem.nextblock m) (Mem.nextblock m') ->
   mmatch m' am.
 Proof.
@@ -4188,8 +4205,8 @@ Proof.
 Qed.
 
 Lemma mmatch_free:
-  forall m b lo hi m' am,
-  Mem.free m b lo hi = Some m' ->
+  forall m b lo hi cp m' am,
+  Mem.free m b lo hi cp = Some m' ->
   mmatch m am ->
   mmatch m' am.
 Proof.
@@ -4408,6 +4425,10 @@ Proof.
 - (* perms *)
   intros. exploit inj_of_bc_inv; eauto. intros (A & B & C); subst.
   rewrite Z.add_0_r. auto.
+- (* own *)
+  intros.
+  unfold inj_of_bc in H1.
+  destruct (bc b1); inv H1; try auto.
 - (* alignment *)
   intros. exploit inj_of_bc_inv; eauto. intros (A & B & C); subst.
   apply Z.divide_0_r.
@@ -4415,10 +4436,12 @@ Proof.
   intros. exploit inj_of_bc_inv; eauto. intros (A & B & C); subst.
   rewrite Z.add_0_r.
   set (mv := ZMap.get ofs (PMap.get b1 (Mem.mem_contents m))).
-  assert (Mem.loadbytes m b1 ofs 1 = Some (mv :: nil)).
+  assert (Mem.loadbytes m b1 ofs 1 None = Some (mv :: nil)).
   {
     Local Transparent Mem.loadbytes.
-    unfold Mem.loadbytes. rewrite pred_dec_true. reflexivity.
+    unfold Mem.loadbytes. simpl. rewrite andb_true_r.
+    destruct ((Mem.range_perm_dec m b1 ofs (ofs + 1) Cur Readable)); try reflexivity.
+    exfalso; apply n.
     red; intros. replace ofs0 with ofs by omega. auto.
   }
   destruct mv; econstructor. destruct v; econstructor.

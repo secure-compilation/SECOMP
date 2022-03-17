@@ -195,7 +195,8 @@ Definition env := PTree.t val.
   function entry, binding parameters to the provided arguments and
   initializing local variables to [Vundef]. *)
 
-Fixpoint set_params (vl: list val) (il: list ident) {struct il} : env := match il, vl with
+Fixpoint set_params (vl: list val) (il: list ident) {struct il} : env :=
+  match il, vl with
   | i1 :: is, v1 :: vs => PTree.set i1 v1 (set_params vs is)
   | i1 :: is, nil => PTree.set i1 Vundef (set_params nil is)
   | _, _ => PTree.empty val
@@ -359,6 +360,7 @@ Section EVAL_EXPR.
 Variable sp: val.
 Variable e: env.
 Variable m: mem.
+Variable cp: compartment.
 
 Inductive eval_expr: expr -> val -> Prop :=
   | eval_Evar: forall id v,
@@ -378,7 +380,7 @@ Inductive eval_expr: expr -> val -> Prop :=
       eval_expr (Ebinop op a1 a2) v
   | eval_Eload: forall chunk addr vaddr v,
       eval_expr addr vaddr ->
-      Mem.loadv chunk m vaddr = Some v ->
+      Mem.loadv chunk m vaddr (Some cp) = Some v ->
       eval_expr (Eload chunk addr) v.
 
 Inductive eval_exprlist: list expr -> list val -> Prop :=
@@ -449,25 +451,25 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State f Sskip k sp e m)
   | step_skip_call: forall f k sp e m m',
       is_call_cont k ->
-      Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
+      Mem.free m sp 0 f.(fn_stackspace) (comp_of f) = Some m' ->
       step (State f Sskip k (Vptr sp Ptrofs.zero) e m)
         E0 (Returnstate Vundef k m')
 
   | step_assign: forall f id a k sp e m v,
-      eval_expr sp e m a v ->
+      eval_expr sp e m (comp_of f) a v ->
       step (State f (Sassign id a) k sp e m)
         E0 (State f Sskip k sp (PTree.set id v e) m)
 
   | step_store: forall f chunk addr a k sp e m vaddr v m',
-      eval_expr sp e m addr vaddr ->
-      eval_expr sp e m a v ->
-      Mem.storev chunk m vaddr v = Some m' ->
+      eval_expr sp e m (comp_of f) addr vaddr ->
+      eval_expr sp e m (comp_of f) a v ->
+      Mem.storev chunk m vaddr v (comp_of f) = Some m' ->
       step (State f (Sstore chunk addr a) k sp e m)
         E0 (State f Sskip k sp e m')
 
   | step_call: forall f optid sig a bl k sp e m vf vargs fd,
-      eval_expr sp e m a vf ->
-      eval_exprlist sp e m bl vargs ->
+      eval_expr sp e m (comp_of f) a vf ->
+      eval_exprlist sp e m (comp_of f) bl vargs ->
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
       (* Check that the call to the function pointer is allowed *)
@@ -476,19 +478,19 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (Callstate fd vargs (Kcall optid f sp e k) m)
 
   | step_tailcall: forall f sig a bl k sp e m vf vargs fd m',
-      eval_expr (Vptr sp Ptrofs.zero) e m a vf ->
-      eval_exprlist (Vptr sp Ptrofs.zero) e m bl vargs ->
+      eval_expr (Vptr sp Ptrofs.zero) e m (comp_of f) a vf ->
+      eval_exprlist (Vptr sp Ptrofs.zero) e m (comp_of f) bl vargs ->
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
       forall (COMP: comp_of fd = (comp_of f)),
       forall (ALLOWED: needs_calling_comp (comp_of f) = false),
       forall (ALLOWED': Genv.allowed_call ge (comp_of f) vf),
-      Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
+      Mem.free m sp 0 f.(fn_stackspace) (comp_of f) = Some m' ->
       step (State f (Stailcall sig a bl) k (Vptr sp Ptrofs.zero) e m)
         E0 (Callstate fd vargs (call_cont k) m')
 
   | step_builtin: forall f optid ef bl k sp e m vargs t vres m',
-      eval_exprlist sp e m bl vargs ->
+      eval_exprlist sp e m (comp_of f) bl vargs ->
       external_call ef ge (comp_of f) vargs m t vres m' ->
       step (State f (Sbuiltin optid ef bl) k sp e m)
          t (State f Sskip k sp (set_optvar optid vres e) m')
@@ -498,7 +500,7 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State f s1 (Kseq s2 k) sp e m)
 
   | step_ifthenelse: forall f a s1 s2 k sp e m v b,
-      eval_expr sp e m a v ->
+      eval_expr sp e m (comp_of f) a v ->
       Val.bool_of_val v b ->
       step (State f (Sifthenelse a s1 s2) k sp e m)
         E0 (State f (if b then s1 else s2) k sp e m)
@@ -522,18 +524,18 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State f (Sexit n) k sp e m)
 
   | step_switch: forall f islong a cases default k sp e m v n,
-      eval_expr sp e m a v ->
+      eval_expr sp e m (comp_of f) a v ->
       switch_argument islong v n ->
       step (State f (Sswitch islong a cases default) k sp e m)
         E0 (State f (Sexit (switch_target n default cases)) k sp e m)
 
   | step_return_0: forall f k sp e m m',
-      Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
+      Mem.free m sp 0 f.(fn_stackspace) (comp_of f) = Some m' ->
       step (State f (Sreturn None) k (Vptr sp Ptrofs.zero) e m)
         E0 (Returnstate Vundef (call_cont k) m')
   | step_return_1: forall f a k sp e m v m',
-      eval_expr (Vptr sp Ptrofs.zero) e m a v ->
-      Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
+      eval_expr (Vptr sp Ptrofs.zero) e m (comp_of f) a v ->
+      Mem.free m sp 0 f.(fn_stackspace) (comp_of f) = Some m' ->
       step (State f (Sreturn (Some a)) k (Vptr sp Ptrofs.zero) e m)
         E0 (Returnstate v (call_cont k) m')
 
@@ -608,20 +610,24 @@ Qed.
 (** This semantics is determinate. *)
 
 Lemma eval_expr_determ:
-  forall ge sp e m a v, eval_expr ge sp e m a v ->
-  forall v', eval_expr ge sp e m a v' -> v' = v.
+  forall ge sp e m cp a v, eval_expr ge sp e m cp a v ->
+  forall v', eval_expr ge sp e m cp a v' -> v' = v.
 Proof.
   induction 1; intros v' E'; inv E'.
 - congruence.
 - congruence.
 - assert (v0 = v1) by eauto. congruence.
 - assert (v0 = v1) by eauto. assert (v3 = v2) by eauto. congruence.
-- assert (vaddr0 = vaddr) by eauto. congruence.
+- assert (vaddr0 = vaddr) by eauto.
+  (* congruence. *)
+  subst vaddr0.
+  destruct vaddr; try discriminate. simpl in *.
+  apply Mem.load_result in H0. apply Mem.load_result in H5. now subst.
 Qed.
 
 Lemma eval_exprlist_determ:
-  forall ge sp e m al vl, eval_exprlist ge sp e m al vl ->
-  forall vl', eval_exprlist ge sp e m al vl' -> vl' = vl.
+  forall ge sp e m cp al vl, eval_exprlist ge sp e m cp al vl ->
+  forall vl', eval_exprlist ge sp e m cp al vl' -> vl' = vl.
 Proof.
   induction 1; intros vl' E'; inv E'.
   - auto.
@@ -635,10 +641,10 @@ Ltac Determ :=
           split; [constructor|intros _; Determ]
   | [ H: is_call_cont ?k |- _ ] =>
           contradiction || (clear H; Determ)
-  | [ H1: eval_expr _ _ _ _ ?a ?v1, H2: eval_expr _ _ _ _ ?a ?v2 |- _ ] =>
+  | [ H1: eval_expr _ _ _ _ _ ?a ?v1, H2: eval_expr _ _ _ _ _ ?a ?v2 |- _ ] =>
           assert (v1 = v2) by (eapply eval_expr_determ; eauto);
           clear H1 H2; Determ
-  | [ H1: eval_exprlist _ _ _ _ ?a ?v1, H2: eval_exprlist _ _ _ _ ?a ?v2 |- _ ] =>
+  | [ H1: eval_exprlist _ _ _ _ _ ?a ?v1, H2: eval_exprlist _ _ _ _ _ ?a ?v2 |- _ ] =>
           assert (v1 = v2) by (eapply eval_exprlist_determ; eauto);
           clear H1 H2; Determ
   | _ => idtac
@@ -653,8 +659,8 @@ Proof.
   + subst vargs0. exploit external_call_determ. eexact H2.  eexact H13.
     intros (A & B). split; intros; auto.
     apply B in H; destruct H; congruence.
-  + subst v0. assert (b0 = b) by (inv H2; inv H13; auto). subst b0; auto.
-  + assert (n0 = n) by (inv H2; inv H14; auto). subst n0; auto.
+  + subst. inv H2; inv H13; auto.
+  + subst. inv H2; inv H14; reflexivity.
   + exploit external_call_determ. eexact H1. eexact H7.
     intros (A & B). split; intros; auto.
     apply B in H; destruct H; congruence.
@@ -713,10 +719,10 @@ Definition outcome_result_value
   end.
 
 Definition outcome_free_mem
-    (out: outcome) (m: mem) (sp: block) (sz: Z) (m': mem) :=
+    (out: outcome) (m: mem) (sp: block) (sz: Z) (cp: compartment) (m': mem) :=
   match out with
   | Out_tailcall_return _ => m' = m
-  | _ => Mem.free m sp 0 sz = Some m'
+  | _ => Mem.free m sp 0 sz cp = Some m'
   end.
 
 Section NATURALSEM.
@@ -739,7 +745,7 @@ Inductive eval_funcall:
       set_locals f.(fn_vars) (set_params vargs f.(fn_params)) = e ->
       exec_stmt f (Vptr sp Ptrofs.zero) e m1 f.(fn_body) t e2 m2 out ->
       outcome_result_value out vres ->
-      outcome_free_mem out m2 sp f.(fn_stackspace) m3 ->
+      outcome_free_mem out m2 sp f.(fn_stackspace) (comp_of f) m3 ->
       eval_funcall cp m (Internal f) vargs t m3 vres
   | eval_funcall_external:
       forall ef cp m args t res m',
@@ -763,18 +769,18 @@ with exec_stmt:
       exec_stmt f sp e m Sskip E0 e m Out_normal
   | exec_Sassign:
       forall f sp e m id a v,
-      eval_expr ge sp e m a v ->
+      eval_expr ge sp e m (comp_of f) a v ->
       exec_stmt f sp e m (Sassign id a) E0 (PTree.set id v e) m Out_normal
   | exec_Sstore:
       forall f sp e m chunk addr a vaddr v m',
-      eval_expr ge sp e m addr vaddr ->
-      eval_expr ge sp e m a v ->
-      Mem.storev chunk m vaddr v = Some m' ->
+      eval_expr ge sp e m (comp_of f) addr vaddr ->
+      eval_expr ge sp e m (comp_of f) a v ->
+      Mem.storev chunk m vaddr v (comp_of f) = Some m' ->
       exec_stmt f sp e m (Sstore chunk addr a) E0 e m' Out_normal
   | exec_Scall:
       forall f sp e m optid sig a bl vf vargs fd t m' vres e',
-      eval_expr ge sp e m a vf ->
-      eval_exprlist ge sp e m bl vargs ->
+      eval_expr ge sp e m (comp_of f) a vf ->
+      eval_exprlist ge sp e m (comp_of f) bl vargs ->
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
       eval_funcall (comp_of f) m fd vargs t m' vres ->
@@ -783,13 +789,13 @@ with exec_stmt:
       exec_stmt f sp e m (Scall optid sig a bl) t e' m' Out_normal
   | exec_Sbuiltin:
       forall f sp e m optid ef bl t m' vargs vres e',
-      eval_exprlist ge sp e m bl vargs ->
+      eval_exprlist ge sp e m (comp_of f) bl vargs ->
       external_call ef ge (comp_of f) vargs m t vres m' ->
       e' = set_optvar optid vres e ->
       exec_stmt f sp e m (Sbuiltin optid ef bl) t e' m' Out_normal
   | exec_Sifthenelse:
       forall f sp e m a s1 s2 v b t e' m' out,
-      eval_expr ge sp e m a v ->
+      eval_expr ge sp e m (comp_of f) a v ->
       Val.bool_of_val v b ->
       exec_stmt f sp e m (if b then s1 else s2) t e' m' out ->
       exec_stmt f sp e m (Sifthenelse a s1 s2) t e' m' out
@@ -824,7 +830,7 @@ with exec_stmt:
       exec_stmt f sp e m (Sexit n) E0 e m (Out_exit n)
   | exec_Sswitch:
       forall f sp e m islong a cases default v n,
-      eval_expr ge sp e m a v ->
+      eval_expr ge sp e m (comp_of f) a v ->
       switch_argument islong v n ->
       exec_stmt f sp e m (Sswitch islong a cases default)
                 E0 e m (Out_exit (switch_target n default cases))
@@ -833,18 +839,18 @@ with exec_stmt:
       exec_stmt f sp e m (Sreturn None) E0 e m (Out_return None)
   | exec_Sreturn_some:
       forall f sp e m a v,
-      eval_expr ge sp e m a v ->
+      eval_expr ge sp e m (comp_of f) a v ->
       exec_stmt f sp e m (Sreturn (Some a)) E0 e m (Out_return (Some v))
   | exec_Stailcall:
       forall f sp e m sig a bl vf vargs fd t m' m'' vres,
-      eval_expr ge (Vptr sp Ptrofs.zero) e m a vf ->
-      eval_exprlist ge (Vptr sp Ptrofs.zero) e m bl vargs ->
+      eval_expr ge (Vptr sp Ptrofs.zero) e m (comp_of f) a vf ->
+      eval_exprlist ge (Vptr sp Ptrofs.zero) e m (comp_of f) bl vargs ->
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
       forall (COMP: comp_of fd = (comp_of f)),
       forall (ALLOWED: needs_calling_comp (comp_of f) = false),
       forall (ALLOWED': Genv.allowed_call ge (comp_of f) vf),
-      Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
+      Mem.free m sp 0 f.(fn_stackspace) (comp_of f) = Some m' ->
       eval_funcall (comp_of f) m' fd vargs t m'' vres ->
       exec_stmt f (Vptr sp Ptrofs.zero) e m (Stailcall sig a bl) t e m'' (Out_tailcall_return vres).
 
@@ -877,15 +883,16 @@ with execinf_stmt:
          function -> val -> env -> mem -> stmt -> traceinf -> Prop :=
   | execinf_Scall:
       forall f sp e m optid sig a bl vf vargs fd t,
-      eval_expr ge sp e m a vf ->
-      eval_exprlist ge sp e m bl vargs ->
+      eval_expr ge sp e m (comp_of f) a vf ->
+      eval_exprlist ge sp e m (comp_of f) bl vargs ->
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
       evalinf_funcall m fd vargs t ->
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
       execinf_stmt f sp e m (Scall optid sig a bl) t
   | execinf_Sifthenelse:
-      forall f sp e m a s1 s2 v b t, eval_expr ge sp e m a v ->
+      forall f sp e m a s1 s2 v b t,
+      eval_expr ge sp e m (comp_of f) a v ->
       Val.bool_of_val v b ->
       execinf_stmt f sp e m (if b then s1 else s2) t ->
       execinf_stmt f sp e m (Sifthenelse a s1 s2) t
@@ -915,14 +922,14 @@ with execinf_stmt:
       execinf_stmt f sp e m (Sblock s) t
   | execinf_Stailcall:
       forall f sp e m sig a bl vf vargs fd m' t,
-      eval_expr ge (Vptr sp Ptrofs.zero) e m a vf ->
-      eval_exprlist ge (Vptr sp Ptrofs.zero) e m bl vargs ->
+      eval_expr ge (Vptr sp Ptrofs.zero) e m (comp_of f) a vf ->
+      eval_exprlist ge (Vptr sp Ptrofs.zero) e m (comp_of f) bl vargs ->
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
       forall (COMP: comp_of fd = (comp_of f)),
       forall (ALLOWED: needs_calling_comp (comp_of f) = false),
       forall (ALLOWED': Genv.allowed_call ge (comp_of f) vf),
-      Mem.free m sp 0 f.(fn_stackspace) = Some m' ->
+      Mem.free m sp 0 f.(fn_stackspace) (comp_of f) = Some m' ->
       evalinf_funcall  m' fd vargs t ->
       execinf_stmt f (Vptr sp Ptrofs.zero) e m (Stailcall sig a bl) t.
 
@@ -980,7 +987,7 @@ Inductive outcome_state_match
                           (State f (Sreturn None) k' sp e m)
   | osm_return_some: forall k' a v,
       call_cont k' = call_cont k ->
-      eval_expr ge sp e m a v ->
+      eval_expr ge sp e m (comp_of f) a v ->
       outcome_state_match sp e m f k
                           (Out_return (Some v))
                           (State f (Sreturn (Some a)) k' sp e m)
@@ -1025,10 +1032,10 @@ Proof.
   eapply star_trans. eexact A.
   inversion B; clear B; subst out; simpl in H3; simpl; try contradiction.
   (* Out normal *)
-  subst vres. apply star_one. apply step_skip_call; auto.
+  subst vres. apply star_one. eapply step_skip_call; eauto.
   (* Out_return None *)
   subst vres. replace k with (call_cont k') by congruence.
-  apply star_one. apply step_return_0; auto.
+  apply star_one. eapply step_return_0; eauto.
   (* Out_return Some *)
   subst vres.
   replace k with (call_cont k') by congruence.

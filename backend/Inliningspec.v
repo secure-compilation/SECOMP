@@ -284,7 +284,7 @@ Inductive tr_instr: context -> compartment -> node -> instruction -> code -> Pro
       c!(spc ctx pc) = Some (Icall sg (sros ctx ros) (sregs ctx args) (sreg ctx res) (spc ctx s)) ->
       tr_instr ctx cp pc (Icall sg ros args res s) c
   | tr_call_inlined:forall ctx cp pc sg id args res s c f pc1 ctx',
-      forall SAMECOMP: cp = (comp_of f),
+      forall (SAMECOMP: cp = comp_of f),
       Ple res ctx.(mreg) ->
       fenv!id = Some f ->
       c!(spc ctx pc) = Some(Inop pc1) ->
@@ -303,7 +303,7 @@ Inductive tr_instr: context -> compartment -> node -> instruction -> code -> Pro
       ctx.(retinfo) = Some(s, res) ->
       tr_instr ctx cp pc (Itailcall sg ros args) c
   | tr_tailcall_inlined: forall ctx cp pc sg id args c f pc1 ctx',
-      forall SAMECOMP: cp = (comp_of f),
+      forall (SAMECOMP: cp = comp_of f),
       fenv!id = Some f ->
       c!(spc ctx pc) = Some(Inop pc1) ->
       tr_moves c pc1 (sregs ctx args) (sregs ctx' f.(fn_params)) (spc ctx' f.(fn_entrypoint)) ->

@@ -64,6 +64,7 @@ Section SIMPLE_EXPRS.
 
 Variable e: env.
 Variable m: mem.
+(* Variable cp: compartment. *)
 
 Inductive eval_simple_lvalue: expr -> block -> ptrofs -> Prop :=
   | esl_loc: forall b ofs ty,
@@ -90,10 +91,10 @@ Inductive eval_simple_lvalue: expr -> block -> ptrofs -> Prop :=
 with eval_simple_rvalue: expr -> val -> Prop :=
   | esr_val: forall v ty,
       eval_simple_rvalue (Eval v ty) v
-  | esr_rvalof: forall b ofs l ty v,
+  | esr_rvalof: forall b ofs cp l ty v,
       eval_simple_lvalue l b ofs ->
       ty = typeof l ->
-      deref_loc ge ty m b ofs E0 v ->
+      deref_loc ge cp ty m b ofs E0 v ->
       eval_simple_rvalue (Evalof l ty) v
   | esr_addrof: forall b ofs l ty,
       eval_simple_lvalue l b ofs ->
@@ -187,7 +188,7 @@ Lemma rred_compat:
   m = m' /\ compat_eval RV e r r' m.
 Proof.
   intros until m'; intros RED SIMP. inv RED; simpl in SIMP; try contradiction; split; auto; split; auto; intros vx EV.
-  inv EV. econstructor. constructor. auto. auto.
+  inv EV. econstructor. constructor. auto. eauto.
   inv EV. econstructor. constructor.
   inv EV. econstructor; eauto. constructor.
   inv EV. econstructor; eauto. constructor. constructor.
@@ -215,7 +216,7 @@ Proof.
   inv H0.
     eapply esl_field_struct; eauto. rewrite TY; eauto.
     eapply esl_field_union; eauto. rewrite TY; eauto.
-  inv H0. econstructor. eauto. auto. auto.
+  inv H0. econstructor. eauto. auto. eauto.
   inv H0. econstructor; eauto.
   inv H0. econstructor; eauto. congruence.
   inv H0. econstructor; eauto. congruence.
@@ -593,13 +594,13 @@ Qed.
 (** Soundness for single initializers. *)
 
 Theorem transl_init_single_steps:
-  forall ty a data f m v1 ty1 m' v chunk b ofs m'',
+  forall ty a data f m v1 ty1 m' v cp chunk b ofs m'',
   transl_init_single ge ty a = OK data ->
   star step ge (ExprState f a Kstop empty_env m) E0 (ExprState f (Eval v1 ty1) Kstop empty_env m') ->
   sem_cast v1 ty1 ty m' = Some v ->
   access_mode ty = By_value chunk ->
-  Mem.store chunk m' b ofs v = Some m'' ->
-  Genv.store_init_data ge m b ofs data = Some m''.
+  Mem.store chunk m' b ofs v cp = Some m'' ->
+  Genv.store_init_data ge m b ofs data cp = Some m''.
 Proof.
   intros. monadInv H. monadInv EQ. 
   exploit constval_steps; eauto. intros [A [B C]]. subst m' ty1.
@@ -759,43 +760,43 @@ Fixpoint fields_of_struct (fl: members) (pos: Z) : list (Z * type) :=
       (align pos (alignof ge ty1), ty1) :: fields_of_struct fl' (align pos (alignof ge ty1) + sizeof ge ty1)
   end.
 
-Inductive exec_init: mem -> block -> Z -> type -> initializer -> mem -> Prop :=
-  | exec_init_single: forall m b ofs ty a v1 ty1 chunk m' v m'',
+Inductive exec_init: mem -> block -> Z -> type -> initializer -> compartment -> mem -> Prop :=
+  | exec_init_single: forall m b ofs ty a v1 ty1 chunk m' v cp m'',
       star step ge (ExprState dummy_function a Kstop empty_env m)
                 E0 (ExprState dummy_function (Eval v1 ty1) Kstop empty_env m') ->
       sem_cast v1 ty1 ty m' = Some v ->
       access_mode ty = By_value chunk ->
-      Mem.store chunk m' b ofs v = Some m'' ->
-      exec_init m b ofs ty (Init_single a) m''
-  | exec_init_array_: forall m b ofs ty sz a il m',
-      exec_init_array m b ofs ty sz il m' ->
-      exec_init m b ofs (Tarray ty sz a) (Init_array il) m'
-  | exec_init_struct: forall m b ofs id a il co m',
+      Mem.store chunk m' b ofs v cp = Some m'' ->
+      exec_init m b ofs ty (Init_single a) cp m''
+  | exec_init_array_: forall m b ofs ty sz a il cp m',
+      exec_init_array m b ofs ty sz il cp m' ->
+      exec_init m b ofs (Tarray ty sz a) (Init_array il) cp m'
+  | exec_init_struct: forall m b ofs id a il co cp m',
       ge.(genv_cenv)!id = Some co -> co_su co = Struct ->
-      exec_init_list m b ofs (fields_of_struct (co_members co) 0) il m' ->
-      exec_init m b ofs (Tstruct id a) (Init_struct il) m'
-  | exec_init_union: forall m b ofs id a f i ty co m',
+      exec_init_list m b ofs (fields_of_struct (co_members co) 0) il cp m' ->
+      exec_init m b ofs (Tstruct id a) (Init_struct il) cp m'
+  | exec_init_union: forall m b ofs id a f i ty co cp m',
       ge.(genv_cenv)!id = Some co -> co_su co = Union ->
       field_type f (co_members co) = OK ty ->
-      exec_init m b ofs ty i m' ->
-      exec_init m b ofs (Tunion id a) (Init_union f i) m'
+      exec_init m b ofs ty i cp m' ->
+      exec_init m b ofs (Tunion id a) (Init_union f i) cp m'
 
-with exec_init_array: mem -> block -> Z -> type -> Z -> initializer_list -> mem -> Prop :=
-  | exec_init_array_nil: forall m b ofs ty sz,
+with exec_init_array: mem -> block -> Z -> type -> Z -> initializer_list -> compartment -> mem -> Prop :=
+  | exec_init_array_nil: forall m cp b ofs ty sz,
       sz >= 0 ->
-      exec_init_array m b ofs ty sz Init_nil m
-  | exec_init_array_cons: forall m b ofs ty sz i1 il m' m'',
-      exec_init m b ofs ty i1 m' ->
-      exec_init_array m' b (ofs + sizeof ge ty) ty (sz - 1) il m'' ->
-      exec_init_array m b ofs ty sz (Init_cons i1 il) m''
+      exec_init_array m b ofs ty sz Init_nil cp m
+  | exec_init_array_cons: forall m cp b ofs ty sz i1 il m' m'',
+      exec_init m b ofs ty i1 cp m' ->
+      exec_init_array m' b (ofs + sizeof ge ty) ty (sz - 1) il cp m'' ->
+      exec_init_array m b ofs ty sz (Init_cons i1 il) cp m''
 
-with exec_init_list: mem -> block -> Z -> list (Z * type) -> initializer_list -> mem -> Prop :=
-  | exec_init_list_nil: forall m b ofs,
-      exec_init_list m b ofs nil Init_nil m
-  | exec_init_list_cons: forall m b ofs pos ty l i1 il m' m'',
-      exec_init m b (ofs + pos) ty i1 m' ->
-      exec_init_list m' b ofs l il m'' ->
-      exec_init_list m b ofs ((pos, ty) :: l) (Init_cons i1 il) m''.
+with exec_init_list: mem -> block -> Z -> list (Z * type) -> initializer_list -> compartment -> mem -> Prop :=
+  | exec_init_list_nil: forall m cp b ofs,
+      exec_init_list m b ofs nil Init_nil cp m
+  | exec_init_list_cons: forall m cp b ofs pos ty l i1 il m' m'',
+      exec_init m b (ofs + pos) ty i1 cp m' ->
+      exec_init_list m' b ofs l il cp m'' ->
+      exec_init_list m b ofs ((pos, ty) :: l) (Init_cons i1 il) cp m''.
 
 Scheme exec_init_ind3 := Minimality for exec_init Sort Prop
   with exec_init_array_ind3 := Minimality for exec_init_array Sort Prop
@@ -803,17 +804,17 @@ Scheme exec_init_ind3 := Minimality for exec_init Sort Prop
 Combined Scheme exec_init_scheme from exec_init_ind3, exec_init_array_ind3, exec_init_list_ind3.
 
 Remark exec_init_array_length:
-  forall m b ofs ty sz il m',
-  exec_init_array m b ofs ty sz il m' -> sz >= 0.
+  forall m b ofs ty sz il cp m',
+  exec_init_array m b ofs ty sz il cp m' -> sz >= 0.
 Proof.
   induction 1; omega.
 Qed.
 
 Lemma store_init_data_list_app:
-  forall data1 m b ofs m' data2 m'',
-  Genv.store_init_data_list ge m b ofs data1 = Some m' ->
-  Genv.store_init_data_list ge m' b (ofs + idlsize data1) data2 = Some m'' ->
-  Genv.store_init_data_list ge m b ofs (data1 ++ data2) = Some m''.
+  forall data1 m b ofs cp m' data2 m'',
+  Genv.store_init_data_list ge m b ofs data1 cp = Some m' ->
+  Genv.store_init_data_list ge m' b (ofs + idlsize data1) data2 cp = Some m'' ->
+  Genv.store_init_data_list ge m b ofs (data1 ++ data2) cp = Some m''.
 Proof.
   induction data1; simpl; intros.
   inv H. rewrite Z.add_0_r in H0. auto.
@@ -822,24 +823,24 @@ Proof.
 Qed.
 
 Remark store_init_data_list_padding:
-  forall frm to b ofs m,
-  Genv.store_init_data_list ge m b ofs (tr_padding frm to) = Some m.
+  forall frm to b ofs cp m,
+  Genv.store_init_data_list ge m b ofs (tr_padding frm to) cp = Some m.
 Proof.
   intros. unfold tr_padding. destruct (zlt frm to); auto.
 Qed.
 
 Lemma tr_init_sound:
-  (forall m b ofs ty i m', exec_init m b ofs ty i m' ->
+  (forall m b ofs ty i cp m', exec_init m b ofs ty i cp m' ->
    forall data, tr_init ty i data ->
-   Genv.store_init_data_list ge m b ofs data = Some m')
-/\(forall m b ofs ty sz il m', exec_init_array m b ofs ty sz il m' ->
+   Genv.store_init_data_list ge m b ofs data cp = Some m')
+/\(forall m b ofs ty sz il cp m', exec_init_array m b ofs ty sz il cp m' ->
    forall data, tr_init_array ty il sz data ->
-   Genv.store_init_data_list ge m b ofs data = Some m')
-/\(forall m b ofs l il m', exec_init_list m b ofs l il m' ->
+   Genv.store_init_data_list ge m b ofs data cp = Some m')
+/\(forall m b ofs l il cp m', exec_init_list m b ofs l il cp m' ->
    forall ty fl data pos,
    l = fields_of_struct fl pos ->
    tr_init_struct ty fl il pos data ->
-   Genv.store_init_data_list ge m b (ofs + pos) data = Some m').
+   Genv.store_init_data_list ge m b (ofs + pos) data cp = Some m').
 Proof.
 Local Opaque sizeof.
   apply exec_init_scheme; simpl; intros.
@@ -881,10 +882,10 @@ Qed.
 End SOUNDNESS.
 
 Theorem transl_init_sound:
-  forall p m b ty i m' data,
-  exec_init (globalenv p) m b 0 ty i m' ->
+  forall p m b ty i cp m' data,
+  exec_init (globalenv p) m b 0 ty i cp m' ->
   transl_init (prog_comp_env p) ty i = OK data ->
-  Genv.store_init_data_list (globalenv p) m b 0 data = Some m'.
+  Genv.store_init_data_list (globalenv p) m b 0 data cp = Some m'.
 Proof.
   intros.
   set (ge := globalenv p) in *.

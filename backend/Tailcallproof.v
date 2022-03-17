@@ -413,22 +413,23 @@ We first define the simulation invariant between call stacks.
 The first two cases are standard, but the third case corresponds
 to a frame that was eliminated by the transformation. *)
 
-Inductive match_stackframes: list stackframe -> list stackframe -> Prop :=
+Inductive match_stackframes (m: mem): list stackframe -> list stackframe -> Prop :=
   | match_stackframes_nil:
-      match_stackframes nil nil
+      match_stackframes m nil nil
   | match_stackframes_normal: forall stk stk' res sp pc rs rs' ce f,
-      match_stackframes stk stk' ->
-      forall COMPAT: cenv_compat prog ce,
-      forall UPD: uptodate_caller (comp_of f) (call_comp stk) (call_comp stk'),
+      match_stackframes m stk stk' ->
+      forall (COMPAT: cenv_compat prog ce),
+      forall (UPD: uptodate_caller (comp_of f) (call_comp stk) (call_comp stk')),
+      forall (ACC: Mem.can_access_block m sp (Some (comp_of f))),
       regs_lessdef rs rs' ->
-      match_stackframes
+      match_stackframes m
         (Stackframe res f (Vptr sp Ptrofs.zero) pc rs :: stk)
         (Stackframe res (transf_function ce f) (Vptr sp Ptrofs.zero) pc rs' :: stk')
   | match_stackframes_tail: forall stk stk' res sp pc rs f,
-      match_stackframes stk stk' ->
+      match_stackframes m stk stk' ->
       is_return_spec f pc res ->
       f.(fn_stacksize) = 0 ->
-      match_stackframes
+      match_stackframes m
         (Stackframe res f (Vptr sp Ptrofs.zero) pc rs :: stk)
         stk'.
 
@@ -440,32 +441,33 @@ Inductive match_stackframes: list stackframe -> list stackframe -> Prop :=
 Inductive match_states: state -> state -> Prop :=
   | match_states_normal:
       forall s sp pc rs m s' rs' m' ce f
-             (STACKS: match_stackframes s s')
+             (STACKS: match_stackframes m' s s')
              (COMPAT: cenv_compat prog ce)
              (RLD: regs_lessdef rs rs')
              (MLD: Mem.extends m m')
-             (UPD: uptodate_caller (comp_of f) (call_comp s) (call_comp s')),
+             (UPD: uptodate_caller (comp_of f) (call_comp s) (call_comp s'))
+             (ACC: Mem.can_access_block m' sp (Some (comp_of f))),
       match_states (State s f (Vptr sp Ptrofs.zero) pc rs m)
                    (State s' (transf_function ce f) (Vptr sp Ptrofs.zero) pc rs' m')
   | match_states_call:
       forall s ce f args m s' args' m',
-      match_stackframes s s' ->
-      forall COMPAT: cenv_compat prog ce,
-      forall UPD: uptodate_caller (comp_of f) (call_comp s) (call_comp s'),
+      match_stackframes m' s s' ->
+      forall (COMPAT: cenv_compat prog ce),
+      forall (UPD: uptodate_caller (comp_of f) (call_comp s) (call_comp s')),
       Val.lessdef_list args args' ->
       Mem.extends m m' ->
       match_states (Callstate s f args m)
                    (Callstate s' (transf_fundef ce f) args' m')
   | match_states_return:
       forall s v m s' v' m',
-      match_stackframes s s' ->
+      match_stackframes m' s s' ->
       Val.lessdef v v' ->
       Mem.extends m m' ->
       match_states (Returnstate s v m)
                    (Returnstate s' v' m')
   | match_states_interm:
       forall s sp pc rs m s' m' f r v'
-             (STACKS: match_stackframes s s')
+             (STACKS: match_stackframes m' s s')
              (MLD: Mem.extends m m'),
       is_return_spec f pc r ->
       f.(fn_stacksize) = 0 ->
@@ -552,7 +554,8 @@ Proof.
   intros [v' [LOAD' VLD]].
   left. exists (State s' (transf_function ce f) (Vptr sp0 Ptrofs.zero) pc' (rs'#dst <- v') m'); split.
   eapply exec_Iload with (a := a'). eauto.  rewrite <- ADDR'.
-  apply eval_addressing_preserved. exact symbols_preserved. eauto.
+  apply eval_addressing_preserved. exact symbols_preserved.
+  rewrite comp_transl. eauto.
   econstructor; eauto. apply set_reg_lessdef; auto.
 
 - (* store *)
@@ -564,9 +567,18 @@ Proof.
   intros [m'1 [STORE' MLD']].
   left. exists (State s' (transf_function ce f) (Vptr sp0 Ptrofs.zero) pc' rs' m'1); split.
   eapply exec_Istore with (a := a'). eauto.  rewrite <- ADDR'.
-  apply eval_addressing_preserved. exact symbols_preserved. eauto.
+  apply eval_addressing_preserved. exact symbols_preserved.
+  rewrite comp_transl. eauto.
   destruct a; simpl in H1; try discriminate.
   econstructor; eauto.
+  (* TODO: Should be a lemma? *)
+  { clear -ALD STORE' STACKS.
+    inv ALD; simpl in STORE'.
+    induction STACKS.
+    - constructor.
+    - constructor; eauto. eapply Mem.store_can_access_block_inj in STORE'. eapply STORE'; eauto.
+    - constructor; eauto. }
+  inv ALD; simpl in STORE'. eapply Mem.store_can_access_block_inj in STORE'; eapply STORE'. eauto.
 
 - (* call *)
   exploit find_function_translated; eauto.
@@ -575,9 +587,10 @@ Proof.
   { symmetry. apply comp_transl. }
   TransfInstr.
 + (* call turned tailcall *)
-  assert ({ m'' | Mem.free m' sp0 0 (fn_stacksize (transf_function ce f)) = Some m''}).
+  assert ({ m'' | Mem.free m' sp0 0 (fn_stacksize (transf_function ce f)) (fn_comp f) = Some m''}).
     apply Mem.range_perm_free. rewrite stacksize_preserved. rewrite H7.
     red; intros; omegaContradiction.
+    eauto.
   destruct X as [m'' FREE].
   assert (Efd: comp_of fd = (comp_of f)).
   { exploit find_function_intra_compartment_call; eauto. }
@@ -589,7 +602,14 @@ Proof.
   { now rewrite <- E. }
   eapply find_function_ptr_translated; eauto.
   rewrite comp_transl. eapply allowed_call_translated; eauto.
+  rewrite comp_transl; eauto.
   constructor. eapply match_stackframes_tail; eauto.
+  (* TODO: Should be a lemma? *)
+  { clear -FREE STACKS.
+    induction STACKS.
+    - constructor.
+    - constructor; auto. eapply Mem.free_can_access_block_inj_1; eauto.
+    - constructor; auto. }
     apply (cenv_compat_linkorder _ _ _ ORDER (compenv_program_compat _)).
   { red. simpl. congruence. }
   apply regs_lessdef_regs; auto.
@@ -619,7 +639,15 @@ Proof.
   eapply find_function_ptr_translated; eauto.
   rewrite comp_transl. eapply allowed_call_translated; eauto.
   rewrite stacksize_preserved; auto.
-  constructor. auto.
+  rewrite comp_transl; eauto.
+  constructor.
+  (* TODO: Should be a lemma? *)
+  { clear -FREE STACKS.
+    induction STACKS.
+    - constructor.
+    - constructor; auto. eapply Mem.free_can_access_block_inj_1; eauto.
+    - constructor; auto. }
+  auto.
     apply (cenv_compat_linkorder _ _ _ ORDER (compenv_program_compat _)).
   { red. now rewrite COMP, ALLOWED. }
   apply regs_lessdef_regs; auto. auto.
@@ -635,8 +663,15 @@ Proof.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
   rewrite comp_transf_function; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  econstructor; eauto. apply set_res_lessdef; auto.
-
+  econstructor; eauto.
+  (* TODO: Should be a lemma? *)
+  { clear -A STACKS.
+    induction STACKS.
+    - constructor.
+    - constructor; auto. eapply external_call_can_access_block; eauto.
+    - constructor; auto. }
+  apply set_res_lessdef; auto.
+  eapply external_call_can_access_block; eauto.
 
 - (* cond *)
   TransfInstr.
@@ -656,8 +691,15 @@ Proof.
   exploit Mem.free_parallel_extends; eauto. intros [m'1 [FREE EXT]].
   TransfInstr.
   left. exists (Returnstate s' (regmap_optget or Vundef rs') m'1); split.
-  apply exec_Ireturn; auto. rewrite stacksize_preserved; auto.
-  constructor. auto.
+  eapply exec_Ireturn; eauto.
+  rewrite stacksize_preserved, comp_transl; eauto.
+  constructor.
+  (* TODO: Should be a lemma? *)
+  { clear -FREE STACKS.
+    induction STACKS.
+    - constructor.
+    - constructor; auto. eapply Mem.free_can_access_block_inj_1; eauto.
+    - constructor; auto. }
   destruct or; simpl. apply RLD. constructor.
   auto.
 
@@ -689,7 +731,15 @@ Proof.
   left. econstructor; split.
   simpl. eapply exec_function_internal; eauto. rewrite EQ1, EQ4; eauto.
   rewrite EQ2. rewrite EQ3. constructor; auto.
+  (* TODO: Should be a lemma? *)
+  { clear -ALLOC H5.
+    induction H5.
+    - constructor.
+    - constructor; auto.
+      eapply Mem.alloc_can_access_block_other_inj_1; eauto.
+    - constructor; auto. }
   apply regs_lessdef_init_regs. auto.
+  eapply Mem.owned_new_block; eauto.
 
 - (* external call *)
   exploit external_call_mem_extends; eauto.
@@ -701,6 +751,13 @@ Proof.
   { now rewrite <- (UPD ALLOWED). }
   exploit external_call_caller_independent; eauto.
   constructor; auto.
+  (* TODO: Should be a lemma? *)
+  { clear -A H5.
+    remember (call_comp s) as cp. clear Heqcp.
+    induction H5.
+    - constructor.
+    - constructor; auto. eapply external_call_can_access_block; eauto.
+    - constructor; auto. }
 
 - (* returnstate *)
   inv H2.

@@ -358,7 +358,7 @@ Proof.
   exploit Mem.loadv_extends; eauto. intros [v' [A B]].
   rewrite (sp_val _ _ _ H) in A.
   exists v'; split; auto.
-  econstructor. eauto. assumption.
+  econstructor. eauto. eassumption.
 Qed.
 
 Lemma extcall_arg_pair_match:
@@ -790,7 +790,6 @@ Qed.
 Section STRAIGHTLINE.
 
 Variable ge: genv.
-Variable cp: compartment.
 Variable fn: function.
 
 (** Straight-line code is composed of processor instructions that execute
@@ -800,122 +799,52 @@ Variable fn: function.
   Instructions are taken from the first list instead of being fetched
   from memory. *)
 
-
-(* JT: At first, I wanted to only allow straight execution that do not modify the stack,
-   so I wrote the following function and lemma to capture the fact that some instructions
-   simply increase the PC and cannot jump arbitrarily.
-
-   However, this is mostly useless here, because one can indeed perform a return in a
-   straight-line execution: for instance, in a state where the RA stored on the stack is
-   PC+1, and where the instruction to be executed is SP <- oldSP. 
- *)
-
-(* Leaving these commented for now*)
-(* Definition straight_instr (i: instruction) := *)
-(*   match i with *)
-(*   (* Unconditional jumps.  Links are always to X1/RA. *) *)
-(*   | Pj_l    _                              (**r jump to label *) *)
-(*   | Pj_s    _ _           (**r jump to symbol *) *)
-(*   | Pj_r    _     _           (**r jump register *) *)
-(*   | Pjal_s  _ _           (**r jump-and-link symbol *) *)
-(*   | Pjal_r  _     _           (**r jump-and-link register *) *)
-
-(*   (* Conditional branches, 32-bit comparisons *) *)
-(*   | Pbeqw   _ _ _            (**r branch-if-equal *) *)
-(*   | Pbnew   _ _ _            (**r branch-if-not-equal signed *) *)
-(*   | Pbltw   _ _ _            (**r branch-if-less signed *) *)
-(*   | Pbltuw  _ _ _            (**r branch-if-less unsigned *) *)
-(*   | Pbgew   _ _ _            (**r branch-if-greater-or-equal signed *) *)
-(*   | Pbgeuw  _ _ _            (**r branch-if-greater-or-equal unsigned *) *)
-(*   (* Conditional branches, 64-bit comparisons *) *)
-(*   | Pbeql   _ _ _            (**r branch-if-equal *) *)
-(*   | Pbnel   _ _ _            (**r branch-if-not-equal signed *) *)
-(*   | Pbltl   _ _ _            (**r branch-if-less signed *) *)
-(*   | Pbltul  _ _ _            (**r branch-if-less unsigned *) *)
-(*   | Pbgel   _ _ _            (**r branch-if-greater-or-equal signed *) *)
-(*   | Pbgeul  _ _ _            (**r branch-if-greater-or-equal unsigned *) *)
-(*   | Pbtbl _ _ *)
-(*     => false *)
-(*   | _ => true *)
-(*   end. *)
-
-(* Lemma straight_instr_increment_pc : *)
-(*   forall i rs1 m1 rs2 m2, *)
-(*     straight_instr i = true -> *)
-(*     exec_instr ge fn i rs1 m1 = Next rs2 m2 -> *)
-(*     rs2#PC = Val.offset_ptr rs1#PC Ptrofs.one. *)
-(* Proof. *)
-(*   intros i rs1 m1 rs2 m2 H0 H1. *)
-(*   destruct i; inv H0; inv H1; simpl; *)
-(*     try (now rewrite nextinstr_pc); *)
-(*     try (now match goal with *)
-(*             | H : exec_load ?ge ?ch ?rs ?m (?rd) ?a ?ofs = Next _ _ |- _ => *)
-(*               unfold exec_load in H; *)
-(*                 destruct (Mem.loadv ch m (Val.offset_ptr (rs a) (eval_offset ge ofs))); *)
-(*                 [inv H; now rewrite nextinstr_pc | congruence] *)
-(*             | H: exec_store ?ge ?ch ?rs ?m ?s ?a ?ofs = Next _ _ |- _ => *)
-(*               unfold exec_store in H; *)
-(*               destruct (Mem.storev ch m (Val.offset_ptr (rs a) (eval_offset ge ofs)) (rs s)); *)
-(*               [inv H; now rewrite nextinstr_pc | congruence] *)
-(*              end); *)
-(*     try now (repeat (match goal with *)
-(*                      | H: (let (m, stk) := ?expr in _) = Next _ _ |- _ => *)
-(*                        destruct expr *)
-(*                      | H: match ?expr with | Some _ => _ | None => _ end = Next _ _ |- _ => *)
-(*                        destruct expr *)
-(*                      | H: Next _ _ = Next _ _ |- _ => inv H; now rewrite nextinstr_pc *)
-(*                      | H: Stuck = Next _ _ |- _ => congruence *)
-(*                      | H: match ?expr with | Vptr _ _ => _ | _ => _ end = _ |- _ => *)
-(*                        destruct expr *)
-(*                      end)). *)
-(* Qed. *)
-
 Inductive exec_straight: code -> regset -> mem ->
                          code -> regset -> mem -> Prop :=
   | exec_straight_one:
-      forall i1  c rs1 m1  rs2 m2,
-      exec_instr ge fn i1 rs1 m1 = Next rs2 m2 ->
+      forall i1 c rs1 m1 rs2 m2,
+      exec_instr ge fn i1 rs1 m1 (comp_of fn) = Next rs2 m2 ->
       rs2#PC = Val.offset_ptr rs1#PC Ptrofs.one ->
-      exec_straight  (i1 :: c) rs1 m1  c rs2 m2
+      exec_straight (i1 :: c) rs1 m1 c rs2 m2
   | exec_straight_step:
-      forall i  c rs1 m1  rs2 m2  c' rs3 m3,
-      exec_instr ge fn i rs1 m1 = Next rs2 m2 ->
+      forall i c rs1 m1 rs2 m2 c' rs3 m3,
+      exec_instr ge fn i rs1 m1 (comp_of fn) = Next rs2 m2 ->
       rs2#PC = Val.offset_ptr rs1#PC Ptrofs.one ->
-      exec_straight  c rs2 m2  c' rs3 m3 ->
-      exec_straight  (i :: c) rs1 m1  c' rs3 m3.
+      exec_straight c rs2 m2 c' rs3 m3 ->
+      exec_straight (i :: c) rs1 m1 c' rs3 m3.
 
 Lemma exec_straight_trans:
-  forall  c1 rs1 m1  c2 rs2 m2  c3 rs3 m3,
-  exec_straight  c1 rs1 m1  c2 rs2 m2 ->
-  exec_straight  c2 rs2 m2  c3 rs3 m3 ->
-  exec_straight  c1 rs1 m1  c3 rs3 m3.
+  forall c1 rs1 m1 c2 rs2 m2 c3 rs3 m3,
+  exec_straight c1 rs1 m1 c2 rs2 m2 ->
+  exec_straight c2 rs2 m2 c3 rs3 m3 ->
+  exec_straight c1 rs1 m1 c3 rs3 m3.
 Proof.
   induction 1; intros.
-  apply exec_straight_step with  rs2 m2; auto.
-  apply exec_straight_step with  rs2 m2; auto.
+  apply exec_straight_step with rs2 m2; auto.
+  apply exec_straight_step with rs2 m2; auto.
 Qed.
 
 Lemma exec_straight_two:
-  forall i1 i2  c rs1 m1 rs2 m2 rs3 m3,
-  exec_instr ge fn i1 rs1 m1 = Next rs2 m2 ->
-  exec_instr ge fn i2 rs2 m2 = Next rs3 m3 ->
+  forall i1 i2 c rs1 m1 rs2 m2 rs3 m3,
+  exec_instr ge fn i1 rs1 m1 (comp_of fn) = Next rs2 m2 ->
+  exec_instr ge fn i2 rs2 m2 (comp_of fn) = Next rs3 m3 ->
   rs2#PC = Val.offset_ptr rs1#PC Ptrofs.one ->
   rs3#PC = Val.offset_ptr rs2#PC Ptrofs.one ->
-  exec_straight  (i1 :: i2 :: c) rs1 m1 c rs3 m3.
+  exec_straight (i1 :: i2 :: c) rs1 m1 c rs3 m3.
 Proof.
   intros. apply exec_straight_step with rs2 m2; auto.
-  apply exec_straight_one; auto.
+  eapply exec_straight_one; eauto.
 Qed.
 
 Lemma exec_straight_three:
-  forall i1 i2 i3  c rs1 m1 rs2 m2 rs3 m3 rs4 m4,
-  exec_instr ge fn i1 rs1 m1 = Next rs2 m2 ->
-  exec_instr ge fn i2 rs2 m2 = Next rs3 m3 ->
-  exec_instr ge fn i3 rs3 m3 = Next rs4 m4 ->
+  forall i1 i2 i3 c rs1 m1 rs2 m2 rs3 m3 rs4 m4,
+  exec_instr ge fn i1 rs1 m1 (comp_of fn) = Next rs2 m2 ->
+  exec_instr ge fn i2 rs2 m2 (comp_of fn) = Next rs3 m3 ->
+  exec_instr ge fn i3 rs3 m3 (comp_of fn) = Next rs4 m4 ->
   rs2#PC = Val.offset_ptr rs1#PC Ptrofs.one ->
   rs3#PC = Val.offset_ptr rs2#PC Ptrofs.one ->
   rs4#PC = Val.offset_ptr rs3#PC Ptrofs.one ->
-  exec_straight  (i1 :: i2 :: i3 :: c) rs1 m1 c rs4 m4.
+  exec_straight (i1 :: i2 :: i3 :: c) rs1 m1 c rs4 m4.
 Proof.
   intros. apply exec_straight_step with rs2 m2; auto.
   eapply exec_straight_two; eauto.
@@ -931,6 +860,7 @@ Lemma exec_straight_steps_1:
   forall b ofs,
   rs#PC = Vptr b ofs ->
   Genv.find_funct_ptr ge b = Some (Internal fn) ->
+  Genv.find_comp ge (Vptr b Ptrofs.zero) = Some (comp_of fn) ->
   code_tail (Ptrofs.unsigned ofs) (fn_code fn) c ->
   plus step ge (State s rs m) E0 (State s rs' m').
 Proof.
@@ -943,21 +873,27 @@ Proof.
       eapply find_instr_tail. eauto.
       now rewrite H0, H2.
       right; left; simpl. now rewrite H3.
-      simpl; now rewrite H3.
+      (* simpl; now rewrite H3. *)
       unfold update_stack_call.
       rewrite H0, H2; simpl; rewrite H3.
+      simpl in H4; rewrite H3 in H4; inv H4.
       now rewrite Pos.eqb_refl.
-    - eapply exec_step_internal_return; eauto.
+    - simpl in H4; rewrite H3 in H4; inv H4.
+      eapply exec_step_internal_return; eauto.
       eapply find_instr_tail. eauto.
       now rewrite H2; simpl; rewrite H3.
       now rewrite H0, H2; simpl; rewrite H3.
-      congruence. congruence.
+      (* TODO: ugly!! *)
+      unfold comp_of; simpl; unfold comp_of; congruence.
+      unfold comp_of; simpl; unfold comp_of; congruence.
       unfold update_stack_return.
       rewrite H0, H2; simpl; rewrite H3.
       now rewrite Pos.eqb_refl.
     - econstructor; eauto.
       eapply find_instr_tail. eauto.
+      now rewrite H2.
       now rewrite H0, H2.
+      simpl in H4; rewrite H3 in H4; inv H4.
       right; left; simpl. now rewrite H3.
   }
 
@@ -969,25 +905,31 @@ Proof.
       eapply find_instr_tail. eauto.
       now rewrite H0, H3.
       right; left; simpl. now rewrite H4.
-      simpl; now rewrite H4.
+      simpl in H5; rewrite H4 in H5; inv H5.
       unfold update_stack_call.
       rewrite H0, H3; simpl; rewrite H4.
       now rewrite Pos.eqb_refl.
-    - eapply exec_step_internal_return; eauto.
+    - simpl in H5; rewrite H4 in H5; inv H5.
+      eapply exec_step_internal_return; eauto.
       eapply find_instr_tail. eauto.
       now rewrite H3; simpl; rewrite H4.
       now rewrite H0, H3; simpl; rewrite H4.
-      congruence. congruence.
+      (* TODO: ugly!! *)
+      unfold comp_of; simpl; unfold comp_of; congruence.
+      unfold comp_of; simpl; unfold comp_of; congruence.
       unfold update_stack_return.
       rewrite H0, H3; simpl; rewrite H4.
       now rewrite Pos.eqb_refl.
     - econstructor; eauto.
       eapply find_instr_tail. eauto.
+      now rewrite H3.
       now rewrite H0, H3.
+      simpl in H5; rewrite H4 in H5; inv H5.
       right; left; simpl. now rewrite H4.
   }
   apply IHexec_straight with b (Ptrofs.add ofs Ptrofs.one).
   auto. rewrite H0. rewrite H3. reflexivity.
+  auto.
   auto.
   apply code_tail_next_int with i; auto.
   traceEq.
@@ -1022,45 +964,45 @@ Inductive exec_straight_opt: code -> regset -> mem -> code -> regset -> mem -> P
       exec_straight_opt c rs m c rs m
   | exec_straight_opt_intro: forall c1 rs1 m1 c2 rs2 m2,
       exec_straight c1 rs1 m1 c2 rs2 m2 ->
-      exec_straight_opt c1 rs1 m1  c2 rs2 m2.
+      exec_straight_opt c1 rs1 m1 c2 rs2 m2.
 
 Lemma exec_straight_opt_left:
-  forall  c3 rs3 m3  c1 rs1 m1  c2 rs2 m2,
-  exec_straight  c1 rs1 m1  c2 rs2 m2 ->
-  exec_straight_opt  c2 rs2 m2  c3 rs3 m3 ->
-  exec_straight  c1 rs1 m1  c3 rs3 m3.
+  forall c3 rs3 m3 c1 rs1 m1 c2 rs2 m2,
+  exec_straight c1 rs1 m1 c2 rs2 m2 ->
+  exec_straight_opt c2 rs2 m2 c3 rs3 m3 ->
+  exec_straight c1 rs1 m1 c3 rs3 m3.
 Proof.
   destruct 2; intros. auto. eapply exec_straight_trans; eauto. 
 Qed
 .
 
 Lemma exec_straight_opt_right:
-  forall  c3 rs3 m3  c1 rs1 m1  c2 rs2 m2,
-  exec_straight_opt  c1 rs1 m1  c2 rs2 m2 ->
-  exec_straight  c2 rs2 m2  c3 rs3 m3 ->
-  exec_straight  c1 rs1 m1  c3 rs3 m3.
+  forall c3 rs3 m3 c1 rs1 m1 c2 rs2 m2,
+  exec_straight_opt c1 rs1 m1 c2 rs2 m2 ->
+  exec_straight c2 rs2 m2 c3 rs3 m3 ->
+  exec_straight c1 rs1 m1 c3 rs3 m3.
 Proof.
   destruct 1; intros. auto. eapply exec_straight_trans; eauto. 
 Qed.
 
 Lemma exec_straight_opt_step:
-  forall i  c rs1 m1 rs2 m2  c' rs3 m3,
-  exec_instr ge fn i rs1 m1 = Next rs2 m2 ->
+  forall i  c rs1 m1 rs2 m2 c' rs3 m3,
+  exec_instr ge fn i rs1 m1 (comp_of fn) = Next rs2 m2 ->
   rs2#PC = Val.offset_ptr rs1#PC Ptrofs.one ->
-  exec_straight_opt c rs2 m2  c' rs3 m3 ->
-  exec_straight  (i :: c) rs1 m1  c' rs3 m3.
+  exec_straight_opt c rs2 m2 c' rs3 m3 ->
+  exec_straight (i :: c) rs1 m1 c' rs3 m3.
 Proof.
   intros. inv H1. 
-- apply exec_straight_one; auto.
+- eapply exec_straight_one; eauto.
 - eapply exec_straight_step; eauto.
 Qed.
 
 Lemma exec_straight_opt_step_opt:
-  forall i  c rs1 m1 rs2 m2  c' rs3 m3,
-  exec_instr ge fn i rs1 m1 = Next rs2 m2 ->
+  forall i  c rs1 m1 rs2 m2 c' rs3 m3,
+  exec_instr ge fn i rs1 m1 (comp_of fn) = Next rs2 m2 ->
   rs2#PC = Val.offset_ptr rs1#PC Ptrofs.one ->
-  exec_straight_opt c rs2 m2  c' rs3 m3 ->
-  exec_straight_opt  (i :: c) rs1 m1  c' rs3 m3.
+  exec_straight_opt c rs2 m2 c' rs3 m3 ->
+  exec_straight_opt (i :: c) rs1 m1 c' rs3 m3.
 Proof.
   intros. apply exec_straight_opt_intro. eapply exec_straight_opt_step; eauto.
 Qed.

@@ -93,7 +93,8 @@ Parameter mem: Type.
 (** [empty] is the initial memory state. *)
 Parameter empty: mem.
 
-(** [alloc m lo hi] allocates a fresh block of size [hi - lo] bytes.
+(** [alloc m cp lo hi] allocates a fresh block of size [hi - lo] bytes,
+  and assigns its ownership to compartment [cp].
   Valid offsets in this block are between [lo] included and [hi] excluded.
   These offsets are writable in the returned memory state.
   This block is not initialized: its contents are initially undefined.
@@ -102,66 +103,73 @@ Parameter empty: mem.
   Note that [alloc] never fails: we are modeling an infinite memory. *)
 Parameter alloc: forall (m: mem) (c: compartment) (lo hi: Z), mem * block.
 
-(** [free m b lo hi] frees (deallocates) the range of offsets from [lo]
-  included to [hi] excluded in block [b].  Returns the updated memory
-  state, or [None] if the freed addresses are not freeable. *)
-Parameter free: forall (m: mem) (b: block) (lo hi: Z), option mem.
+(** [free m b lo hi cp] frees (deallocates) the range of offsets from [lo]
+  included to [hi] excluded in block [b], which must be owned by
+  compartment [cp].  Returns the updated memory state, or [None] if the
+  freed addresses are not freeable. *)
+Parameter free: forall (m: mem) (b: block) (lo hi: Z) (cp: compartment), option mem.
 
-(** [load chunk m b ofs] reads a memory quantity [chunk] from
-  addresses [b, ofs] to [b, ofs + size_chunk chunk - 1] in memory state
-  [m].  Returns the value read, or [None] if the accessed addresses
-  are not readable. *)
-Parameter load: forall (chunk: memory_chunk) (m: mem) (b: block) (ofs: Z), option val.
+(** [load chunk m b ofs cp] reads a memory quantity [chunk] from
+  addresses [b, ofs] to [b, ofs + size_chunk chunk - 1] belonging to
+  compartment [cp] in memory state [m].  Returns the value read, or
+  [None] if the accessed addresses are not readable. *)
+Parameter load: forall (chunk: memory_chunk) (m: mem) (b: block) (ofs: Z) (cp: option compartment), option val.
 
-(** [store chunk m b ofs v] writes value [v] as memory quantity [chunk]
+(** [store chunk m b ofs v cp] writes value [v] as memory quantity [chunk]
   from addresses [b, ofs] to [b, ofs + size_chunk chunk - 1] in memory state
   [m].  Returns the updated memory state, or [None] if the accessed addresses
-  are not writable. *)
-Parameter store: forall (chunk: memory_chunk) (m: mem) (b: block) (ofs: Z) (v: val), option mem.
+  are not writable, which includes the case where principal compartment [cp]
+  does not own block [b]. *)
+Parameter store: forall (chunk: memory_chunk) (m: mem) (b: block) (ofs: Z) (v: val) (cp: compartment), option mem.
 
 (** [loadv] and [storev] are variants of [load] and [store] where
   the address being accessed is passed as a value (of the [Vptr] kind). *)
 
-Definition loadv (chunk: memory_chunk) (m: mem) (addr: val) : option val :=
+Definition loadv (chunk: memory_chunk) (m: mem) (addr: val) (cp: option compartment) : option val :=
   match addr with
-  | Vptr b ofs => load chunk m b (Ptrofs.unsigned ofs)
+  | Vptr b ofs => load chunk m b (Ptrofs.unsigned ofs) cp
   | _ => None
   end.
 
-Definition storev (chunk: memory_chunk) (m: mem) (addr v: val) : option mem :=
+Definition storev (chunk: memory_chunk) (m: mem) (addr v: val) (cp: compartment) : option mem :=
   match addr with
-  | Vptr b ofs => store chunk m b (Ptrofs.unsigned ofs) v
+  | Vptr b ofs => store chunk m b (Ptrofs.unsigned ofs) v cp
   | _ => None
   end.
 
-(** [loadbytes m b ofs n] reads and returns the byte-level representation of
+(** [loadbytes m b ofs n cp] reads and returns the byte-level representation of
   the values contained at offsets [ofs] to [ofs + n - 1] within block [b]
   in memory state [m].
-  [None] is returned if the accessed addresses are not readable. *)
-Parameter loadbytes: forall (m: mem) (b: block) (ofs n: Z), option (list memval).
+  [None] is returned if the accessed addresses are not readable,
+  which includes the case where the reading compartment [cp] does not
+  own block [b]. *)
+Parameter loadbytes: forall (m: mem) (b: block) (ofs n: Z) (cp: option compartment), option (list memval).
 
-(** [storebytes m b ofs bytes] stores the given list of bytes [bytes]
+(** [storebytes m b ofs bytes cp] stores the given list of bytes [bytes]
   starting at location [(b, ofs)].  Returns updated memory state
-  or [None] if the accessed locations are not writable. *)
-Parameter storebytes: forall (m: mem) (b: block) (ofs: Z) (bytes: list memval), option mem.
+  or [None] if the accessed locations are not writable, which includes
+  the case where the reading compartment [cp] does not own block [b]. *)
+Parameter storebytes: forall (m: mem) (b: block) (ofs: Z) (bytes: list memval) (cp: compartment), option mem.
 
 (** [free_list] frees all the given (block, lo, hi) triples. *)
-Fixpoint free_list (m: mem) (l: list (block * Z * Z)) {struct l}: option mem :=
+Fixpoint free_list (m: mem) (l: list (block * Z * Z)) (cp: compartment) {struct l}: option mem :=
   match l with
   | nil => Some m
   | (b, lo, hi) :: l' =>
-      match free m b lo hi with
+      match free m b lo hi cp with
       | None => None
-      | Some m' => free_list m' l'
+      | Some m' => free_list m' l' cp
       end
   end.
 
-(** [drop_perm m b lo hi p] sets the permissions of the byte range
+(** [drop_perm m b lo hi p cp] sets the permissions of the byte range
     [(b, lo) ... (b, hi - 1)] to [p].  These bytes must have [Freeable] permissions
     in the initial memory state [m].
-    Returns updated memory state, or [None] if insufficient permissions. *)
+    Returns updated memory state, or [None] if insufficient permissions,
+    including the case where the principal compartment [cp] does not own
+    block [b]. *)
 
-Parameter drop_perm: forall (m: mem) (b: block) (lo hi: Z) (p: permission), option mem.
+Parameter drop_perm: forall (m: mem) (b: block) (lo hi: Z) (p: permission) (cp: compartment), option mem.
 
 (** * Permissions, block validity, access validity, compartments, and bounds *)
 
@@ -237,26 +245,37 @@ Axiom range_perm_implies:
   forall m b lo hi k p1 p2,
   range_perm m b lo hi k p1 -> perm_order p1 p2 -> range_perm m b lo hi k p2.
 
+(** [can_access_block m b (Some cp)] holds if block [b] is mapped to compartment [cp]
+    in memory [m]. *)
+Definition can_access_block (m: mem) (b: block) (cp: option compartment): Prop :=
+  match cp with
+  | None => True
+  | Some cp => block_compartment m b = Some cp
+  end.
+
 (** An access to a memory quantity [chunk] at address [b, ofs] with
   permission [p] is valid in [m] if the accessed addresses all have
-  current permission [p] and moreover the offset is properly aligned. *)
-Definition valid_access (m: mem) (chunk: memory_chunk) (b: block) (ofs: Z) (p: permission): Prop :=
+  current permission [p] and moreover the offset is properly aligned
+  and the block, [b], belongs to compartment [cp]. *)
+Definition valid_access (m: mem) (chunk: memory_chunk) (b: block) (ofs: Z)
+           (p: permission) (cp: option compartment): Prop :=
   range_perm m b ofs (ofs + size_chunk chunk) Cur p
+  /\ can_access_block m b cp
   /\ (align_chunk chunk | ofs).
 
 Axiom valid_access_implies:
-  forall m chunk b ofs p1 p2,
-  valid_access m chunk b ofs p1 -> perm_order p1 p2 ->
-  valid_access m chunk b ofs p2.
+  forall m chunk b ofs p1 cp p2,
+  valid_access m chunk b ofs p1 cp -> perm_order p1 p2 ->
+  valid_access m chunk b ofs p2 cp.
 
 Axiom valid_access_valid_block:
-  forall m chunk b ofs,
-  valid_access m chunk b ofs Nonempty ->
+  forall m chunk b ofs cp,
+  valid_access m chunk b ofs Nonempty cp ->
   valid_block m b.
 
 Axiom valid_access_perm:
-  forall m chunk b ofs k p,
-  valid_access m chunk b ofs p ->
+  forall m chunk b ofs k p cp,
+  valid_access m chunk b ofs p cp ->
   perm m b ofs k p.
 
 (** [valid_pointer m b ofs] returns [true] if the address [b, ofs]
@@ -268,8 +287,9 @@ Axiom valid_pointer_nonempty_perm:
   forall m b ofs,
   valid_pointer m b ofs = true <-> perm m b ofs Cur Nonempty.
 Axiom valid_pointer_valid_access:
-  forall m b ofs,
-  valid_pointer m b ofs = true <-> valid_access m Mint8unsigned b ofs Nonempty.
+  forall m b cp ofs,
+  can_access_block m b cp ->
+  valid_pointer m b ofs = true <-> valid_access m Mint8unsigned b ofs Nonempty cp.
 
 (** C allows pointers one past the last element of an array.  These are not
   valid according to the previously defined [valid_pointer]. The property
@@ -294,38 +314,38 @@ Axiom valid_pointer_implies:
 Axiom nextblock_empty: nextblock empty = 1%positive.
 Axiom perm_empty: forall b ofs k p, ~perm empty b ofs k p.
 Axiom valid_access_empty:
-  forall chunk b ofs p, ~valid_access empty chunk b ofs p.
+  forall chunk b ofs p cp, ~valid_access empty chunk b ofs p cp.
 
 (** ** Properties of [load]. *)
 
 (** A load succeeds if and only if the access is valid for reading *)
 Axiom valid_access_load:
-  forall m chunk b ofs,
-  valid_access m chunk b ofs Readable ->
-  exists v, load chunk m b ofs = Some v.
+  forall m chunk b ofs cp,
+  valid_access m chunk b ofs Readable cp ->
+  exists v, load chunk m b ofs cp  = Some v.
 Axiom load_valid_access:
-  forall m chunk b ofs v,
-  load chunk m b ofs = Some v ->
-  valid_access m chunk b ofs Readable.
+  forall m chunk b ofs cp v,
+  load chunk m b ofs cp = Some v ->
+  valid_access m chunk b ofs Readable cp.
 
 (** The value returned by [load] belongs to the type of the memory quantity
   accessed: [Vundef], [Vint] or [Vptr] for an integer quantity,
   [Vundef] or [Vfloat] for a float quantity. *)
 Axiom load_type:
-  forall m chunk b ofs v,
-  load chunk m b ofs = Some v ->
+  forall m chunk b ofs cp v,
+  load chunk m b ofs cp = Some v ->
   Val.has_type v (type_of_chunk chunk).
 
 Axiom load_rettype:
-  forall m chunk b ofs v,
-  load chunk m b ofs = Some v ->
+  forall m chunk b ofs cp v,
+  load chunk m b ofs cp = Some v ->
   Val.has_rettype v (rettype_of_chunk chunk).
 
 (** For a small integer or float type, the value returned by [load]
   is invariant under the corresponding cast. *)
 Axiom load_cast:
-  forall m chunk b ofs v,
-  load chunk m b ofs = Some v ->
+  forall m chunk b ofs cp v,
+  load chunk m b ofs cp = Some v ->
   match chunk with
   | Mint8signed => v = Val.sign_ext 8 v
   | Mint8unsigned => v = Val.zero_ext 8 v
@@ -335,12 +355,12 @@ Axiom load_cast:
   end.
 
 Axiom load_int8_signed_unsigned:
-  forall m b ofs,
-  load Mint8signed m b ofs = option_map (Val.sign_ext 8) (load Mint8unsigned m b ofs).
+  forall m b ofs cp,
+  load Mint8signed m b ofs cp = option_map (Val.sign_ext 8) (load Mint8unsigned m b ofs cp).
 
 Axiom load_int16_signed_unsigned:
-  forall m b ofs,
-  load Mint16signed m b ofs = option_map (Val.sign_ext 16) (load Mint16unsigned m b ofs).
+  forall m b ofs cp,
+  load Mint16signed m b ofs cp = option_map (Val.sign_ext 16) (load Mint16unsigned m b ofs cp).
 
 
 (** ** Properties of [loadbytes]. *)
@@ -349,56 +369,59 @@ Axiom load_int16_signed_unsigned:
     memory area. *)
 
 Axiom range_perm_loadbytes:
-  forall m b ofs len,
+  forall m b ofs len cp,
   range_perm m b ofs (ofs + len) Cur Readable ->
-  exists bytes, loadbytes m b ofs len = Some bytes.
+  can_access_block m b cp ->
+  exists bytes, loadbytes m b ofs len cp = Some bytes.
 Axiom loadbytes_range_perm:
-  forall m b ofs len bytes,
-  loadbytes m b ofs len = Some bytes ->
+  forall m b ofs len cp bytes,
+  loadbytes m b ofs len cp = Some bytes ->
   range_perm m b ofs (ofs + len) Cur Readable.
 
 (** If [loadbytes] succeeds, the corresponding [load] succeeds and
   returns a value that is determined by the
   bytes read by [loadbytes]. *)
 Axiom loadbytes_load:
-  forall chunk m b ofs bytes,
-  loadbytes m b ofs (size_chunk chunk) = Some bytes ->
+  forall chunk m b ofs cp bytes,
+  loadbytes m b ofs (size_chunk chunk) cp = Some bytes ->
   (align_chunk chunk | ofs) ->
-  load chunk m b ofs = Some(decode_val chunk bytes).
+  load chunk m b ofs cp = Some(decode_val chunk bytes).
 
 (** Conversely, if [load] returns a value, the corresponding
   [loadbytes] succeeds and returns a list of bytes which decodes into the
   result of [load]. *)
 Axiom load_loadbytes:
-  forall chunk m b ofs v,
-  load chunk m b ofs = Some v ->
-  exists bytes, loadbytes m b ofs (size_chunk chunk) = Some bytes
+  forall chunk m b ofs cp v,
+  load chunk m b ofs cp = Some v ->
+  exists bytes, loadbytes m b ofs (size_chunk chunk) cp = Some bytes
              /\ v = decode_val chunk bytes.
 
 (** [loadbytes] returns a list of length [n] (the number of bytes read). *)
 Axiom loadbytes_length:
-  forall m b ofs n bytes,
-  loadbytes m b ofs n = Some bytes ->
+  forall m b ofs n cp bytes,
+  loadbytes m b ofs n cp = Some bytes ->
   length bytes = Z.to_nat n.
 
 Axiom loadbytes_empty:
-  forall m b ofs n,
-  n <= 0 -> loadbytes m b ofs n = Some nil.
+  forall m b ofs n cp,
+  n <= 0 ->
+  can_access_block m b cp ->
+  loadbytes m b ofs n cp = Some nil.
 
 (** Composing or decomposing [loadbytes] operations at adjacent addresses. *)
 Axiom loadbytes_concat:
-  forall m b ofs n1 n2 bytes1 bytes2,
-  loadbytes m b ofs n1 = Some bytes1 ->
-  loadbytes m b (ofs + n1) n2 = Some bytes2 ->
+  forall m b ofs n1 n2 cp bytes1 bytes2,
+  loadbytes m b ofs n1 cp = Some bytes1 ->
+  loadbytes m b (ofs + n1) n2 cp = Some bytes2 ->
   n1 >= 0 -> n2 >= 0 ->
-  loadbytes m b ofs (n1 + n2) = Some(bytes1 ++ bytes2).
+  loadbytes m b ofs (n1 + n2) cp = Some(bytes1 ++ bytes2).
 Axiom loadbytes_split:
-  forall m b ofs n1 n2 bytes,
-  loadbytes m b ofs (n1 + n2) = Some bytes ->
+  forall m b ofs n1 n2 cp bytes,
+  loadbytes m b ofs (n1 + n2) cp = Some bytes ->
   n1 >= 0 -> n2 >= 0 ->
   exists bytes1, exists bytes2,
-     loadbytes m b ofs n1 = Some bytes1
-  /\ loadbytes m b (ofs + n1) n2 = Some bytes2
+     loadbytes m b ofs n1 cp = Some bytes1
+  /\ loadbytes m b (ofs + n1) n2 cp = Some bytes2
   /\ bytes = bytes1 ++ bytes2.
 
 (** ** Properties of [store]. *)
@@ -408,63 +431,63 @@ Axiom loadbytes_split:
   corresponding access is valid for writing. *)
 
 Axiom nextblock_store:
-  forall chunk m1 b ofs v m2, store chunk m1 b ofs v = Some m2 ->
+  forall chunk m1 b ofs v cp m2, store chunk m1 b ofs v cp = Some m2 ->
   nextblock m2 = nextblock m1.
 Axiom store_valid_block_1:
-  forall chunk m1 b ofs v m2, store chunk m1 b ofs v = Some m2 ->
+  forall chunk m1 b ofs v cp m2, store chunk m1 b ofs v cp = Some m2 ->
   forall b', valid_block m1 b' -> valid_block m2 b'.
 Axiom store_valid_block_2:
-  forall chunk m1 b ofs v m2, store chunk m1 b ofs v = Some m2 ->
+  forall chunk m1 b ofs v cp m2, store chunk m1 b ofs v cp = Some m2 ->
   forall b', valid_block m2 b' -> valid_block m1 b'.
 
 Axiom perm_store_1:
-  forall chunk m1 b ofs v m2, store chunk m1 b ofs v = Some m2 ->
+  forall chunk m1 b ofs v cp m2, store chunk m1 b ofs v cp = Some m2 ->
   forall b' ofs' k p, perm m1 b' ofs' k p -> perm m2 b' ofs' k p.
 Axiom perm_store_2:
-  forall chunk m1 b ofs v m2, store chunk m1 b ofs v = Some m2 ->
+  forall chunk m1 b ofs v cp m2, store chunk m1 b ofs v cp = Some m2 ->
   forall b' ofs' k p, perm m2 b' ofs' k p -> perm m1 b' ofs' k p.
 
 Axiom valid_access_store:
-  forall m1 chunk b ofs v,
-  valid_access m1 chunk b ofs Writable ->
-  { m2: mem | store chunk m1 b ofs v = Some m2 }.
+  forall m1 chunk b ofs cp v,
+  valid_access m1 chunk b ofs Writable (Some cp) ->
+  { m2: mem | store chunk m1 b ofs v cp = Some m2 }.
 Axiom store_valid_access_1:
-  forall chunk m1 b ofs v m2, store chunk m1 b ofs v = Some m2 ->
-  forall chunk' b' ofs' p,
-  valid_access m1 chunk' b' ofs' p -> valid_access m2 chunk' b' ofs' p.
+  forall chunk m1 b ofs v cp m2, store chunk m1 b ofs v cp = Some m2 ->
+  forall chunk' b' ofs' p cp',
+  valid_access m1 chunk' b' ofs' p cp' -> valid_access m2 chunk' b' ofs' p cp'.
 Axiom store_valid_access_2:
-  forall chunk m1 b ofs v m2, store chunk m1 b ofs v = Some m2 ->
-  forall chunk' b' ofs' p,
-  valid_access m2 chunk' b' ofs' p -> valid_access m1 chunk' b' ofs' p.
+  forall chunk m1 b ofs v cp m2, store chunk m1 b ofs v cp = Some m2 ->
+  forall chunk' b' ofs' p cp',
+  valid_access m2 chunk' b' ofs' p cp' -> valid_access m1 chunk' b' ofs' p cp'.
 Axiom store_valid_access_3:
-  forall chunk m1 b ofs v m2, store chunk m1 b ofs v = Some m2 ->
-  valid_access m1 chunk b ofs Writable.
+  forall chunk m1 b ofs v cp m2, store chunk m1 b ofs v cp = Some m2 ->
+  valid_access m1 chunk b ofs Writable (Some cp).
 
 Axiom store_block_compartment:
-  forall chunk m1 b ofs v m2, store chunk m1 b ofs v = Some m2 ->
+  forall chunk m1 b ofs v cp m2, store chunk m1 b ofs v cp = Some m2 ->
   forall b',
   block_compartment m2 b' = block_compartment m1 b'.
 
 (** Load-store properties. *)
 
 Axiom load_store_similar:
-  forall chunk m1 b ofs v m2, store chunk m1 b ofs v = Some m2 ->
+  forall chunk m1 b ofs v cp m2, store chunk m1 b ofs v cp = Some m2 ->
   forall chunk',
   size_chunk chunk' = size_chunk chunk ->
   align_chunk chunk' <= align_chunk chunk ->
-  exists v', load chunk' m2 b ofs = Some v' /\ decode_encode_val v chunk chunk' v'.
+  exists v', load chunk' m2 b ofs (Some cp) = Some v' /\ decode_encode_val v chunk chunk' v'.
 
 Axiom load_store_same:
-  forall chunk m1 b ofs v m2, store chunk m1 b ofs v = Some m2 ->
-  load chunk m2 b ofs = Some (Val.load_result chunk v).
+  forall chunk m1 b ofs v cp m2, store chunk m1 b ofs v cp = Some m2 ->
+  load chunk m2 b ofs (Some cp) = Some (Val.load_result chunk v).
 
 Axiom load_store_other:
-  forall chunk m1 b ofs v m2, store chunk m1 b ofs v = Some m2 ->
-  forall chunk' b' ofs',
+  forall chunk m1 b ofs v cp m2, store chunk m1 b ofs v cp = Some m2 ->
+  forall chunk' b' ofs' cp',
   b' <> b
   \/ ofs' + size_chunk chunk' <= ofs
   \/ ofs + size_chunk chunk <= ofs' ->
-  load chunk' m2 b' ofs' = load chunk' m1 b' ofs'.
+  load chunk' m2 b' ofs' cp' = load chunk' m1 b' ofs' cp'.
 
 (** Integrity of pointer values. *)
 
@@ -476,62 +499,62 @@ Definition compat_pointer_chunks (chunk1 chunk2: memory_chunk) : Prop :=
   end.
 
 Axiom load_store_pointer_overlap:
-  forall chunk m1 b ofs v_b v_o m2 chunk' ofs' v,
-  store chunk m1 b ofs (Vptr v_b v_o) = Some m2 ->
-  load chunk' m2 b ofs' = Some v ->
+  forall chunk m1 b ofs v_b v_o cp m2 chunk' ofs' cp' v,
+  store chunk m1 b ofs (Vptr v_b v_o) cp = Some m2 ->
+  load chunk' m2 b ofs' cp' = Some v ->
   ofs' <> ofs ->
   ofs' + size_chunk chunk' > ofs ->
   ofs + size_chunk chunk > ofs' ->
   v = Vundef.
 Axiom load_store_pointer_mismatch:
-  forall chunk m1 b ofs v_b v_o m2 chunk' v,
-  store chunk m1 b ofs (Vptr v_b v_o) = Some m2 ->
-  load chunk' m2 b ofs = Some v ->
+  forall chunk m1 b ofs v_b v_o cp m2 chunk' cp' v,
+  store chunk m1 b ofs (Vptr v_b v_o) cp = Some m2 ->
+  load chunk' m2 b ofs cp' = Some v ->
   ~compat_pointer_chunks chunk chunk' ->
   v = Vundef.
 Axiom load_pointer_store:
-  forall chunk m1 b ofs v m2 chunk' b' ofs' v_b v_o,
-  store chunk m1 b ofs v = Some m2 ->
-  load chunk' m2 b' ofs' = Some(Vptr v_b v_o) ->
+  forall chunk m1 b ofs v cp m2 chunk' b' ofs' cp' v_b v_o,
+  store chunk m1 b ofs v cp = Some m2 ->
+  load chunk' m2 b' ofs' cp' = Some(Vptr v_b v_o) ->
   (v = Vptr v_b v_o /\ compat_pointer_chunks chunk chunk' /\ b' = b /\ ofs' = ofs)
   \/ (b' <> b \/ ofs' + size_chunk chunk' <= ofs \/ ofs + size_chunk chunk <= ofs').
 
 (** Load-store properties for [loadbytes]. *)
 
 Axiom loadbytes_store_same:
-  forall chunk m1 b ofs v m2, store chunk m1 b ofs v = Some m2 ->
-  loadbytes m2 b ofs (size_chunk chunk) = Some(encode_val chunk v).
+  forall chunk m1 b ofs v cp m2, store chunk m1 b ofs v cp = Some m2 ->
+  loadbytes m2 b ofs (size_chunk chunk) (Some cp) = Some(encode_val chunk v).
 Axiom loadbytes_store_other:
-  forall chunk m1 b ofs v m2, store chunk m1 b ofs v = Some m2 ->
-  forall b' ofs' n,
+  forall chunk m1 b ofs v cp m2, store chunk m1 b ofs v cp = Some m2 ->
+  forall b' ofs' n cp',
   b' <> b \/ n <= 0 \/ ofs' + n <= ofs \/ ofs + size_chunk chunk <= ofs' ->
-  loadbytes m2 b' ofs' n = loadbytes m1 b' ofs' n.
+  loadbytes m2 b' ofs' n cp' = loadbytes m1 b' ofs' n cp'.
 
 (** [store] is insensitive to the signedness or the high bits of
   small integer quantities. *)
 
 Axiom store_signed_unsigned_8:
-  forall m b ofs v,
-  store Mint8signed m b ofs v = store Mint8unsigned m b ofs v.
+  forall m b ofs v cp,
+  store Mint8signed m b ofs v cp = store Mint8unsigned m b ofs v cp.
 Axiom store_signed_unsigned_16:
-  forall m b ofs v,
-  store Mint16signed m b ofs v = store Mint16unsigned m b ofs v.
+  forall m b ofs v cp,
+  store Mint16signed m b ofs v cp = store Mint16unsigned m b ofs v cp.
 Axiom store_int8_zero_ext:
-  forall m b ofs n,
-  store Mint8unsigned m b ofs (Vint (Int.zero_ext 8 n)) =
-  store Mint8unsigned m b ofs (Vint n).
+  forall m b ofs n cp,
+  store Mint8unsigned m b ofs (Vint (Int.zero_ext 8 n)) cp =
+  store Mint8unsigned m b ofs (Vint n) cp.
 Axiom store_int8_sign_ext:
-  forall m b ofs n,
-  store Mint8signed m b ofs (Vint (Int.sign_ext 8 n)) =
-  store Mint8signed m b ofs (Vint n).
+  forall m b ofs n cp,
+  store Mint8signed m b ofs (Vint (Int.sign_ext 8 n)) cp =
+  store Mint8signed m b ofs (Vint n) cp.
 Axiom store_int16_zero_ext:
-  forall m b ofs n,
-  store Mint16unsigned m b ofs (Vint (Int.zero_ext 16 n)) =
-  store Mint16unsigned m b ofs (Vint n).
+  forall m b ofs n cp,
+  store Mint16unsigned m b ofs (Vint (Int.zero_ext 16 n)) cp =
+  store Mint16unsigned m b ofs (Vint n) cp.
 Axiom store_int16_sign_ext:
-  forall m b ofs n,
-  store Mint16signed m b ofs (Vint (Int.sign_ext 16 n)) =
-  store Mint16signed m b ofs (Vint n).
+  forall m b ofs n cp,
+  store Mint16signed m b ofs (Vint (Int.sign_ext 16 n)) cp =
+  store Mint16signed m b ofs (Vint n) cp.
 
 (** ** Properties of [storebytes]. *)
 
@@ -539,84 +562,86 @@ Axiom store_int16_sign_ext:
   Moreover, a [storebytes] succeeds if and only if we have write permissions
   on the addressed memory area. *)
 
+(* Now I see for example _valid_access_1 actually has two cp and the conclusion picks one, arbitrarily ... *)
 Axiom range_perm_storebytes:
-  forall m1 b ofs bytes,
+  forall m1 b ofs bytes cp,
   range_perm m1 b ofs (ofs + Z.of_nat (length bytes)) Cur Writable ->
-  { m2 : mem | storebytes m1 b ofs bytes = Some m2 }.
+  can_access_block m1 b (Some cp) ->
+  { m2 : mem | storebytes m1 b ofs bytes cp = Some m2 }.
 Axiom storebytes_range_perm:
-  forall m1 b ofs bytes m2, storebytes m1 b ofs bytes = Some m2 ->
+  forall m1 b ofs bytes cp m2, storebytes m1 b ofs bytes cp = Some m2 ->
   range_perm m1 b ofs (ofs + Z.of_nat (length bytes)) Cur Writable.
 Axiom perm_storebytes_1:
-  forall m1 b ofs bytes m2, storebytes m1 b ofs bytes = Some m2 ->
+  forall m1 b ofs bytes cp m2, storebytes m1 b ofs bytes cp = Some m2 ->
   forall b' ofs' k p, perm m1 b' ofs' k p -> perm m2 b' ofs' k p.
 Axiom perm_storebytes_2:
-  forall m1 b ofs bytes m2, storebytes m1 b ofs bytes = Some m2 ->
+  forall m1 b ofs bytes cp m2, storebytes m1 b ofs bytes cp = Some m2 ->
   forall b' ofs' k p, perm m2 b' ofs' k p -> perm m1 b' ofs' k p.
 Axiom storebytes_valid_access_1:
-  forall m1 b ofs bytes m2, storebytes m1 b ofs bytes = Some m2 ->
-  forall chunk' b' ofs' p,
-  valid_access m1 chunk' b' ofs' p -> valid_access m2 chunk' b' ofs' p.
+  forall m1 b ofs bytes cp m2, storebytes m1 b ofs bytes cp = Some m2 ->
+  forall chunk' b' ofs' p cp',
+  valid_access m1 chunk' b' ofs' p cp' -> valid_access m2 chunk' b' ofs' p cp'.
 Axiom storebytes_valid_access_2:
-  forall m1 b ofs bytes m2, storebytes m1 b ofs bytes = Some m2 ->
-  forall chunk' b' ofs' p,
-  valid_access m2 chunk' b' ofs' p -> valid_access m1 chunk' b' ofs' p.
+  forall m1 b ofs bytes cp m2, storebytes m1 b ofs bytes cp = Some m2 ->
+  forall chunk' b' ofs' p cp',
+  valid_access m2 chunk' b' ofs' p cp' -> valid_access m1 chunk' b' ofs' p cp'.
 Axiom nextblock_storebytes:
-  forall m1 b ofs bytes m2, storebytes m1 b ofs bytes = Some m2 ->
+  forall m1 b ofs bytes cp m2, storebytes m1 b ofs bytes cp = Some m2 ->
   nextblock m2 = nextblock m1.
 Axiom storebytes_valid_block_1:
-  forall m1 b ofs bytes m2, storebytes m1 b ofs bytes = Some m2 ->
+  forall m1 b ofs bytes cp m2, storebytes m1 b ofs bytes cp = Some m2 ->
   forall b', valid_block m1 b' -> valid_block m2 b'.
 Axiom storebytes_valid_block_2:
-  forall m1 b ofs bytes m2, storebytes m1 b ofs bytes = Some m2 ->
+  forall m1 b ofs bytes cp m2, storebytes m1 b ofs bytes cp = Some m2 ->
   forall b', valid_block m2 b' -> valid_block m1 b'.
 
 (** Connections between [store] and [storebytes]. *)
 
 Axiom storebytes_store:
-  forall m1 b ofs chunk v m2,
-  storebytes m1 b ofs (encode_val chunk v) = Some m2 ->
+  forall m1 b ofs chunk v cp m2,
+  storebytes m1 b ofs (encode_val chunk v) cp = Some m2 ->
   (align_chunk chunk | ofs) ->
-  store chunk m1 b ofs v = Some m2.
+  store chunk m1 b ofs v cp = Some m2.
 
 Axiom store_storebytes:
-  forall m1 b ofs chunk v m2,
-  store chunk m1 b ofs v = Some m2 ->
-  storebytes m1 b ofs (encode_val chunk v) = Some m2.
+  forall m1 b ofs chunk v cp m2,
+  store chunk m1 b ofs v cp = Some m2 ->
+  storebytes m1 b ofs (encode_val chunk v) cp = Some m2.
 
 (** Load-store properties. *)
 
 Axiom loadbytes_storebytes_same:
-  forall m1 b ofs bytes m2, storebytes m1 b ofs bytes = Some m2 ->
-  loadbytes m2 b ofs (Z.of_nat (length bytes)) = Some bytes.
+  forall m1 b ofs bytes cp m2, storebytes m1 b ofs bytes cp = Some m2 ->
+  loadbytes m2 b ofs (Z.of_nat (length bytes)) (Some cp) = Some bytes.
 Axiom loadbytes_storebytes_other:
-  forall m1 b ofs bytes m2, storebytes m1 b ofs bytes = Some m2 ->
-  forall b' ofs' len,
+  forall m1 b ofs bytes cp m2, storebytes m1 b ofs bytes cp = Some m2 ->
+  forall b' ofs' len cp',
   len >= 0 ->
   b' <> b
   \/ ofs' + len <= ofs
   \/ ofs + Z.of_nat (length bytes) <= ofs' ->
-  loadbytes m2 b' ofs' len = loadbytes m1 b' ofs' len.
+  loadbytes m2 b' ofs' len cp' = loadbytes m1 b' ofs' len cp'.
 Axiom load_storebytes_other:
-  forall m1 b ofs bytes m2, storebytes m1 b ofs bytes = Some m2 ->
-  forall chunk b' ofs',
+  forall m1 b ofs bytes cp m2, storebytes m1 b ofs bytes cp = Some m2 ->
+  forall chunk b' ofs' cp',
   b' <> b
   \/ ofs' + size_chunk chunk <= ofs
   \/ ofs + Z.of_nat (length bytes) <= ofs' ->
-  load chunk m2 b' ofs' = load chunk m1 b' ofs'.
+  load chunk m2 b' ofs' cp' = load chunk m1 b' ofs' cp'.
 
 (** Composing or decomposing [storebytes] operations at adjacent addresses. *)
 
 Axiom storebytes_concat:
-  forall m b ofs bytes1 m1 bytes2 m2,
-  storebytes m b ofs bytes1 = Some m1 ->
-  storebytes m1 b (ofs + Z.of_nat(length bytes1)) bytes2 = Some m2 ->
-  storebytes m b ofs (bytes1 ++ bytes2) = Some m2.
+  forall m b ofs bytes1 cp m1 bytes2 m2,
+  storebytes m b ofs bytes1 cp = Some m1 ->
+  storebytes m1 b (ofs + Z.of_nat(length bytes1)) bytes2 cp = Some m2 ->
+  storebytes m b ofs (bytes1 ++ bytes2) cp = Some m2.
 Axiom storebytes_split:
-  forall m b ofs bytes1 bytes2 m2,
-  storebytes m b ofs (bytes1 ++ bytes2) = Some m2 ->
+  forall m b ofs bytes1 bytes2 cp m2,
+  storebytes m b ofs (bytes1 ++ bytes2) cp = Some m2 ->
   exists m1,
-     storebytes m b ofs bytes1 = Some m1
-  /\ storebytes m1 b (ofs + Z.of_nat(length bytes1)) bytes2 = Some m2.
+     storebytes m b ofs bytes1 cp = Some m1
+  /\ storebytes m1 b (ofs + Z.of_nat(length bytes1)) bytes2 cp = Some m2.
 
 (** ** Properties of [alloc]. *)
 
@@ -666,48 +691,57 @@ Axiom perm_alloc_inv:
   perm m2 b' ofs k p ->
   if eq_block b' b then lo <= ofs < hi else perm m1 b' ofs k p.
 
+(** Effect of [alloc] on compartments. *)
+
+Axiom alloc_block_compartment:
+  forall m1 c lo hi m2 b, alloc m1 c lo hi = (m2, b) ->
+  forall b', block_compartment m2 b' =
+  if eq_block b' b then Some c else block_compartment m1 b'.
+
 (** Effect of [alloc] on access validity. *)
 
 Axiom valid_access_alloc_other:
   forall m1 c lo hi m2 b, alloc m1 c lo hi = (m2, b) ->
-  forall chunk b' ofs p,
-  valid_access m1 chunk b' ofs p ->
-  valid_access m2 chunk b' ofs p.
+  forall chunk b' ofs p cp',
+  valid_access m1 chunk b' ofs p cp' ->
+  valid_access m2 chunk b' ofs p cp'.
 Axiom valid_access_alloc_same:
   forall m1 c lo hi m2 b, alloc m1 c lo hi = (m2, b) ->
   forall chunk ofs,
   lo <= ofs -> ofs + size_chunk chunk <= hi -> (align_chunk chunk | ofs) ->
-  valid_access m2 chunk b ofs Freeable.
+  valid_access m2 chunk b ofs Freeable (Some c).
 Axiom valid_access_alloc_inv:
   forall m1 c lo hi m2 b, alloc m1 c lo hi = (m2, b) ->
-  forall chunk b' ofs p,
-  valid_access m2 chunk b' ofs p ->
+  forall chunk b' ofs p c',
+  valid_access m2 chunk b' ofs p c' ->
   if eq_block b' b
   then lo <= ofs /\ ofs + size_chunk chunk <= hi /\ (align_chunk chunk | ofs)
-  else valid_access m1 chunk b' ofs p.
+  else valid_access m1 chunk b' ofs p c'.
 
 (** Load-alloc properties. *)
 
 Axiom load_alloc_unchanged:
   forall m1 c lo hi m2 b, alloc m1 c lo hi = (m2, b) ->
-  forall chunk b' ofs,
+  forall chunk b' ofs c',
   valid_block m1 b' ->
-  load chunk m2 b' ofs = load chunk m1 b' ofs.
+  load chunk m2 b' ofs c' = load chunk m1 b' ofs c'.
 Axiom load_alloc_other:
   forall m1 c lo hi m2 b, alloc m1 c lo hi = (m2, b) ->
-  forall chunk b' ofs v,
-  load chunk m1 b' ofs = Some v ->
-  load chunk m2 b' ofs = Some v.
+  forall chunk b' ofs c' v,
+  load chunk m1 b' ofs c' = Some v ->
+  load chunk m2 b' ofs c' = Some v.
 Axiom load_alloc_same:
   forall m1 c lo hi m2 b, alloc m1 c lo hi = (m2, b) ->
-  forall chunk ofs v,
-  load chunk m2 b ofs = Some v ->
+  forall chunk ofs c' v,
+  load chunk m2 b ofs c' = Some v ->
   v = Vundef.
 Axiom load_alloc_same':
   forall m1 c lo hi m2 b, alloc m1 c lo hi = (m2, b) ->
   forall chunk ofs,
-  lo <= ofs -> ofs + size_chunk chunk <= hi -> (align_chunk chunk | ofs) ->
-  load chunk m2 b ofs = Some Vundef.
+  lo <= ofs -> ofs + size_chunk chunk <= hi ->
+  can_access_block m2 b (Some c) ->
+  (align_chunk chunk | ofs) ->
+  load chunk m2 b ofs (Some c) = Some Vundef.
 
 (** ** Properties of [free]. *)
 
@@ -715,110 +749,117 @@ Axiom load_alloc_same':
   has [Freeable] current permission. *)
 
 Axiom range_perm_free:
-  forall m1 b lo hi,
+  forall m1 b lo hi cp,
   range_perm m1 b lo hi Cur Freeable ->
-  { m2: mem | free m1 b lo hi = Some m2 }.
+  can_access_block m1 b (Some cp) ->
+  { m2: mem | free m1 b lo hi cp = Some m2 }.
 Axiom free_range_perm:
-  forall m1 bf lo hi m2, free m1 bf lo hi = Some m2 ->
+  forall m1 bf lo hi cp m2, free m1 bf lo hi cp = Some m2 ->
   range_perm m1 bf lo hi Cur Freeable.
 
 (** Block validity is preserved by [free]. *)
 
 Axiom nextblock_free:
-  forall m1 bf lo hi m2, free m1 bf lo hi = Some m2 ->
+  forall m1 bf lo hi cp m2, free m1 bf lo hi cp = Some m2 ->
   nextblock m2 = nextblock m1.
 Axiom valid_block_free_1:
-  forall m1 bf lo hi m2, free m1 bf lo hi = Some m2 ->
+  forall m1 bf lo hi cp m2, free m1 bf lo hi cp = Some m2 ->
   forall b, valid_block m1 b -> valid_block m2 b.
 Axiom valid_block_free_2:
-  forall m1 bf lo hi m2, free m1 bf lo hi = Some m2 ->
+  forall m1 bf lo hi cp m2, free m1 bf lo hi cp = Some m2 ->
   forall b, valid_block m2 b -> valid_block m1 b.
 
 (** Effect of [free] on permissions. *)
 
 Axiom perm_free_1:
-  forall m1 bf lo hi m2, free m1 bf lo hi = Some m2 ->
+  forall m1 bf lo hi cp m2, free m1 bf lo hi cp = Some m2 ->
   forall b ofs k p,
   b <> bf \/ ofs < lo \/ hi <= ofs ->
   perm m1 b ofs k p ->
   perm m2 b ofs k p.
 Axiom perm_free_2:
-  forall m1 bf lo hi m2, free m1 bf lo hi = Some m2 ->
+  forall m1 bf lo hi cp m2, free m1 bf lo hi cp = Some m2 ->
   forall ofs k p, lo <= ofs < hi -> ~ perm m2 bf ofs k p.
 Axiom perm_free_3:
-  forall m1 bf lo hi m2, free m1 bf lo hi = Some m2 ->
+  forall m1 bf lo hi cp m2, free m1 bf lo hi cp = Some m2 ->
   forall b ofs k p,
   perm m2 b ofs k p -> perm m1 b ofs k p.
 
 (** Effect of [free] on access validity. *)
 
 Axiom valid_access_free_1:
-  forall m1 bf lo hi m2, free m1 bf lo hi = Some m2 ->
-  forall chunk b ofs p,
-  valid_access m1 chunk b ofs p ->
+  forall m1 bf lo hi cp m2, free m1 bf lo hi cp = Some m2 ->
+  forall chunk b ofs p cp',
+  valid_access m1 chunk b ofs p cp' ->
   b <> bf \/ lo >= hi \/ ofs + size_chunk chunk <= lo \/ hi <= ofs ->
-  valid_access m2 chunk b ofs p.
+  valid_access m2 chunk b ofs p cp'.
 Axiom valid_access_free_2:
-  forall m1 bf lo hi m2, free m1 bf lo hi = Some m2 ->
-  forall chunk ofs p,
+  forall m1 bf lo hi cp m2, free m1 bf lo hi cp = Some m2 ->
+  forall chunk ofs p cp',
   lo < hi -> ofs + size_chunk chunk > lo -> ofs < hi ->
-  ~(valid_access m2 chunk bf ofs p).
+  ~(valid_access m2 chunk bf ofs p cp').
 Axiom valid_access_free_inv_1:
-  forall m1 bf lo hi m2, free m1 bf lo hi = Some m2 ->
-  forall chunk b ofs p,
-  valid_access m2 chunk b ofs p ->
-  valid_access m1 chunk b ofs p.
+  forall m1 bf lo hi cp m2, free m1 bf lo hi cp = Some m2 ->
+  forall chunk b ofs p cp',
+  valid_access m2 chunk b ofs p cp' ->
+  valid_access m1 chunk b ofs p cp'.
 Axiom valid_access_free_inv_2:
-  forall m1 bf lo hi m2, free m1 bf lo hi = Some m2 ->
-  forall chunk ofs p,
-  valid_access m2 chunk bf ofs p ->
+  forall m1 bf lo hi cp m2, free m1 bf lo hi cp = Some m2 ->
+  forall chunk ofs p cp',
+  valid_access m2 chunk bf ofs p cp' ->
   lo >= hi \/ ofs + size_chunk chunk <= lo \/ hi <= ofs.
 
 (** Load-free properties *)
 
 Axiom load_free:
-  forall m1 bf lo hi m2, free m1 bf lo hi = Some m2 ->
-  forall chunk b ofs,
+  forall m1 bf lo hi cp m2, free m1 bf lo hi cp = Some m2 ->
+  forall chunk b ofs cp',
   b <> bf \/ lo >= hi \/ ofs + size_chunk chunk <= lo \/ hi <= ofs ->
-  load chunk m2 b ofs = load chunk m1 b ofs.
+  load chunk m2 b ofs cp' = load chunk m1 b ofs cp'.
 
 (** ** Properties of [drop_perm]. *)
 
 Axiom nextblock_drop:
-  forall m b lo hi p m', drop_perm m b lo hi p = Some m' ->
+  forall m b lo hi p cp m', drop_perm m b lo hi p cp = Some m' ->
   nextblock m' = nextblock m.
 Axiom drop_perm_valid_block_1:
-  forall m b lo hi p m', drop_perm m b lo hi p = Some m' ->
+  forall m b lo hi p cp m', drop_perm m b lo hi p cp = Some m' ->
   forall b', valid_block m b' -> valid_block m' b'.
 Axiom drop_perm_valid_block_2:
-  forall m b lo hi p m', drop_perm m b lo hi p = Some m' ->
+  forall m b lo hi p cp m', drop_perm m b lo hi p cp = Some m' ->
   forall b', valid_block m' b' -> valid_block m b'.
 
+Axiom drop_block_compartment:
+  forall m b lo hi p cp m', drop_perm m b lo hi p cp = Some m' ->
+  forall b', block_compartment m' b' = block_compartment m b'.
+
 Axiom range_perm_drop_1:
-  forall m b lo hi p m', drop_perm m b lo hi p = Some m' ->
+  forall m b lo hi p cp m', drop_perm m b lo hi p cp = Some m' ->
   range_perm m b lo hi Cur Freeable.
 Axiom range_perm_drop_2:
-  forall m b lo hi p,
-  range_perm m b lo hi Cur Freeable -> { m' | drop_perm m b lo hi p = Some m' }.
+  forall m b lo hi cp p,
+  range_perm m b lo hi Cur Freeable ->
+  can_access_block m b (Some cp) ->
+  { m' | drop_perm m b lo hi p cp = Some m' }.
 
 Axiom perm_drop_1:
-  forall m b lo hi p m', drop_perm m b lo hi p = Some m' ->
+  forall m b lo hi p cp m', drop_perm m b lo hi p cp = Some m' ->
   forall ofs k, lo <= ofs < hi -> perm m' b ofs k p.
 Axiom perm_drop_2:
-  forall m b lo hi p m', drop_perm m b lo hi p = Some m' ->
+  forall m b lo hi p cp m', drop_perm m b lo hi p cp = Some m' ->
   forall ofs k p', lo <= ofs < hi -> perm m' b ofs k p' -> perm_order p p'.
 Axiom perm_drop_3:
-  forall m b lo hi p m', drop_perm m b lo hi p = Some m' ->
+  forall m b lo hi p cp m', drop_perm m b lo hi p cp = Some m' ->
   forall b' ofs k p', b' <> b \/ ofs < lo \/ hi <= ofs -> perm m b' ofs k p' -> perm m' b' ofs k p'.
 Axiom perm_drop_4:
-  forall m b lo hi p m', drop_perm m b lo hi p = Some m' ->
+  forall m b lo hi p cp m', drop_perm m b lo hi p cp = Some m' ->
   forall b' ofs k p', perm m' b' ofs k p' -> perm m b' ofs k p'.
 
 Axiom load_drop:
-  forall m b lo hi p m', drop_perm m b lo hi p = Some m' ->
-  forall chunk b' ofs,
+  forall m b lo hi p cp m', drop_perm m b lo hi p cp = Some m' ->
+  forall chunk b' ofs cp',
   b' <> b \/ ofs + size_chunk chunk <= lo \/ hi <= ofs \/ perm_order p Readable ->
-  load chunk m' b' ofs = load chunk m b' ofs.
+  load chunk m' b' ofs cp' = load chunk m b' ofs cp'.
 
 (** * Relating two memory states. *)
 
@@ -835,64 +876,64 @@ Axiom extends_refl:
   forall m, extends m m.
 
 Axiom load_extends:
-  forall chunk m1 m2 b ofs v1,
+  forall chunk m1 m2 b ofs cp v1,
   extends m1 m2 ->
-  load chunk m1 b ofs = Some v1 ->
-  exists v2, load chunk m2 b ofs = Some v2 /\ Val.lessdef v1 v2.
+  load chunk m1 b ofs cp = Some v1 ->
+  exists v2, load chunk m2 b ofs cp = Some v2 /\ Val.lessdef v1 v2.
 
 Axiom loadv_extends:
-  forall chunk m1 m2 addr1 addr2 v1,
+  forall chunk m1 m2 addr1 cp addr2 v1,
   extends m1 m2 ->
-  loadv chunk m1 addr1 = Some v1 ->
+  loadv chunk m1 addr1 cp = Some v1 ->
   Val.lessdef addr1 addr2 ->
-  exists v2, loadv chunk m2 addr2 = Some v2 /\ Val.lessdef v1 v2.
+  exists v2, loadv chunk m2 addr2 cp = Some v2 /\ Val.lessdef v1 v2.
 
 Axiom loadbytes_extends:
-  forall m1 m2 b ofs len bytes1,
+  forall m1 m2 b ofs len cp bytes1,
   extends m1 m2 ->
-  loadbytes m1 b ofs len = Some bytes1 ->
-  exists bytes2, loadbytes m2 b ofs len = Some bytes2
+  loadbytes m1 b ofs len cp = Some bytes1 ->
+  exists bytes2, loadbytes m2 b ofs len cp = Some bytes2
               /\ list_forall2 memval_lessdef bytes1 bytes2.
 
 Axiom store_within_extends:
-  forall chunk m1 m2 b ofs v1 m1' v2,
+  forall chunk m1 m2 b ofs v1 cp m1' v2,
   extends m1 m2 ->
-  store chunk m1 b ofs v1 = Some m1' ->
+  store chunk m1 b ofs v1 cp = Some m1' ->
   Val.lessdef v1 v2 ->
   exists m2',
-     store chunk m2 b ofs v2 = Some m2'
+     store chunk m2 b ofs v2 cp = Some m2'
   /\ extends m1' m2'.
 
 Axiom store_outside_extends:
-  forall chunk m1 m2 b ofs v m2',
+  forall chunk m1 m2 b ofs v cp m2',
   extends m1 m2 ->
-  store chunk m2 b ofs v = Some m2' ->
+  store chunk m2 b ofs v cp = Some m2' ->
   (forall ofs', perm m1 b ofs' Cur Readable -> ofs <= ofs' < ofs + size_chunk chunk -> False) ->
   extends m1 m2'.
 
 Axiom storev_extends:
-  forall chunk m1 m2 addr1 v1 m1' addr2 v2,
+  forall chunk m1 m2 addr1 v1 cp m1' addr2 v2,
   extends m1 m2 ->
-  storev chunk m1 addr1 v1 = Some m1' ->
+  storev chunk m1 addr1 v1 cp = Some m1' ->
   Val.lessdef addr1 addr2 ->
   Val.lessdef v1 v2 ->
   exists m2',
-     storev chunk m2 addr2 v2 = Some m2'
+     storev chunk m2 addr2 v2 cp = Some m2'
   /\ extends m1' m2'.
 
 Axiom storebytes_within_extends:
-  forall m1 m2 b ofs bytes1 m1' bytes2,
+  forall m1 m2 b ofs bytes1 cp m1' bytes2,
   extends m1 m2 ->
-  storebytes m1 b ofs bytes1 = Some m1' ->
+  storebytes m1 b ofs bytes1 cp = Some m1' ->
   list_forall2 memval_lessdef bytes1 bytes2 ->
   exists m2',
-     storebytes m2 b ofs bytes2 = Some m2'
+     storebytes m2 b ofs bytes2 cp = Some m2'
   /\ extends m1' m2'.
 
 Axiom storebytes_outside_extends:
-  forall m1 m2 b ofs bytes2 m2',
+  forall m1 m2 b ofs bytes2 cp m2',
   extends m1 m2 ->
-  storebytes m2 b ofs bytes2 = Some m2' ->
+  storebytes m2 b ofs bytes2 cp = Some m2' ->
   (forall ofs', perm m1 b ofs' Cur Readable -> ofs <= ofs' < ofs + Z.of_nat (length bytes2) -> False) ->
   extends m1 m2'.
 
@@ -906,24 +947,24 @@ Axiom alloc_extends:
   /\ extends m1' m2'.
 
 Axiom free_left_extends:
-  forall m1 m2 b lo hi m1',
+  forall m1 m2 b lo hi cp m1',
   extends m1 m2 ->
-  free m1 b lo hi = Some m1' ->
+  free m1 b lo hi cp = Some m1' ->
   extends m1' m2.
 
 Axiom free_right_extends:
-  forall m1 m2 b lo hi m2',
+  forall m1 m2 b lo hi cp m2',
   extends m1 m2 ->
-  free m2 b lo hi = Some m2' ->
+  free m2 b lo hi cp = Some m2' ->
   (forall ofs k p, perm m1 b ofs k p -> lo <= ofs < hi -> False) ->
   extends m1 m2'.
 
 Axiom free_parallel_extends:
-  forall m1 m2 b lo hi m1',
+  forall m1 m2 b lo hi cp m1',
   extends m1 m2 ->
-  free m1 b lo hi = Some m1' ->
+  free m1 b lo hi cp = Some m1' ->
   exists m2',
-     free m2 b lo hi = Some m2'
+     free m2 b lo hi cp = Some m2'
   /\ extends m1' m2'.
 
 Axiom valid_block_extends:
@@ -934,8 +975,8 @@ Axiom perm_extends:
   forall m1 m2 b ofs k p,
   extends m1 m2 -> perm m1 b ofs k p -> perm m2 b ofs k p.
 Axiom valid_access_extends:
-  forall m1 m2 chunk b ofs p,
-  extends m1 m2 -> valid_access m1 chunk b ofs p -> valid_access m2 chunk b ofs p.
+  forall m1 m2 chunk b ofs p cp,
+  extends m1 m2 -> valid_access m1 chunk b ofs p cp -> valid_access m2 chunk b ofs p cp.
 Axiom valid_pointer_extends:
   forall m1 m2 b ofs,
   extends m1 m2 -> valid_pointer m1 b ofs = true -> valid_pointer m2 b ofs = true.
@@ -981,11 +1022,11 @@ Axiom perm_inject:
   perm m1 b1 ofs k p -> perm m2 b2 (ofs + delta) k p.
 
 Axiom valid_access_inject:
-  forall f m1 m2 chunk b1 ofs b2 delta p,
+  forall f m1 m2 chunk b1 ofs b2 delta p cp,
   f b1 = Some(b2, delta) ->
   inject f m1 m2 ->
-  valid_access m1 chunk b1 ofs p ->
-  valid_access m2 chunk b2 (ofs + delta) p.
+  valid_access m1 chunk b1 ofs p cp ->
+  valid_access m2 chunk b2 (ofs + delta) p cp.
 
 Axiom valid_pointer_inject:
   forall f m1 m2 b1 ofs b2 delta,
@@ -1059,88 +1100,88 @@ Axiom different_pointers_inject:
   Ptrofs.unsigned (Ptrofs.add ofs2 (Ptrofs.repr delta2)).
 
 Axiom load_inject:
-  forall f m1 m2 chunk b1 ofs b2 delta v1,
+  forall f m1 m2 chunk b1 ofs cp b2 delta v1,
   inject f m1 m2 ->
-  load chunk m1 b1 ofs = Some v1 ->
+  load chunk m1 b1 ofs cp = Some v1 ->
   f b1 = Some (b2, delta) ->
-  exists v2, load chunk m2 b2 (ofs + delta) = Some v2 /\ Val.inject f v1 v2.
+  exists v2, load chunk m2 b2 (ofs + delta) cp = Some v2 /\ Val.inject f v1 v2.
 
 Axiom loadv_inject:
-  forall f m1 m2 chunk a1 a2 v1,
+  forall f m1 m2 chunk a1 cp a2 v1,
   inject f m1 m2 ->
-  loadv chunk m1 a1 = Some v1 ->
+  loadv chunk m1 a1 cp = Some v1 ->
   Val.inject f a1 a2 ->
-  exists v2, loadv chunk m2 a2 = Some v2 /\ Val.inject f v1 v2.
+  exists v2, loadv chunk m2 a2 cp = Some v2 /\ Val.inject f v1 v2.
 
 Axiom loadbytes_inject:
-  forall f m1 m2 b1 ofs len b2 delta bytes1,
+  forall f m1 m2 b1 ofs len cp b2 delta bytes1,
   inject f m1 m2 ->
-  loadbytes m1 b1 ofs len = Some bytes1 ->
+  loadbytes m1 b1 ofs len cp = Some bytes1 ->
   f b1 = Some (b2, delta) ->
-  exists bytes2, loadbytes m2 b2 (ofs + delta) len = Some bytes2
+  exists bytes2, loadbytes m2 b2 (ofs + delta) len cp = Some bytes2
               /\ list_forall2 (memval_inject f) bytes1 bytes2.
 
 Axiom store_mapped_inject:
-  forall f chunk m1 b1 ofs v1 n1 m2 b2 delta v2,
+  forall f chunk m1 b1 ofs v1 cp n1 m2 b2 delta v2,
   inject f m1 m2 ->
-  store chunk m1 b1 ofs v1 = Some n1 ->
+  store chunk m1 b1 ofs v1 cp = Some n1 ->
   f b1 = Some (b2, delta) ->
   Val.inject f v1 v2 ->
   exists n2,
-    store chunk m2 b2 (ofs + delta) v2 = Some n2
+    store chunk m2 b2 (ofs + delta) v2 cp = Some n2
     /\ inject f n1 n2.
 
 Axiom store_unmapped_inject:
-  forall f chunk m1 b1 ofs v1 n1 m2,
+  forall f chunk m1 b1 ofs v1 cp n1 m2,
   inject f m1 m2 ->
-  store chunk m1 b1 ofs v1 = Some n1 ->
+  store chunk m1 b1 ofs v1 cp = Some n1 ->
   f b1 = None ->
   inject f n1 m2.
 
 Axiom store_outside_inject:
-  forall f m1 m2 chunk b ofs v m2',
+  forall f m1 m2 chunk b ofs v cp m2',
   inject f m1 m2 ->
   (forall b' delta ofs',
     f b' = Some(b, delta) ->
     perm m1 b' ofs' Cur Readable ->
     ofs <= ofs' + delta < ofs + size_chunk chunk -> False) ->
-  store chunk m2 b ofs v = Some m2' ->
+  store chunk m2 b ofs v cp = Some m2' ->
   inject f m1 m2'.
 
 Axiom storev_mapped_inject:
-  forall f chunk m1 a1 v1 n1 m2 a2 v2,
+  forall f chunk m1 a1 v1 cp n1 m2 a2 v2,
   inject f m1 m2 ->
-  storev chunk m1 a1 v1 = Some n1 ->
+  storev chunk m1 a1 v1 cp = Some n1 ->
   Val.inject f a1 a2 ->
   Val.inject f v1 v2 ->
   exists n2,
-    storev chunk m2 a2 v2 = Some n2 /\ inject f n1 n2.
+    storev chunk m2 a2 v2 cp = Some n2 /\ inject f n1 n2.
 
 Axiom storebytes_mapped_inject:
-  forall f m1 b1 ofs bytes1 n1 m2 b2 delta bytes2,
+  forall f m1 b1 ofs bytes1 cp n1 m2 b2 delta bytes2,
   inject f m1 m2 ->
-  storebytes m1 b1 ofs bytes1 = Some n1 ->
+  storebytes m1 b1 ofs bytes1 cp = Some n1 ->
   f b1 = Some (b2, delta) ->
   list_forall2 (memval_inject f) bytes1 bytes2 ->
   exists n2,
-    storebytes m2 b2 (ofs + delta) bytes2 = Some n2
+    storebytes m2 b2 (ofs + delta) bytes2 cp = Some n2
     /\ inject f n1 n2.
 
 Axiom storebytes_unmapped_inject:
-  forall f m1 b1 ofs bytes1 n1 m2,
+  forall f m1 b1 ofs bytes1 cp n1 m2,
   inject f m1 m2 ->
-  storebytes m1 b1 ofs bytes1 = Some n1 ->
+  storebytes m1 b1 ofs bytes1 cp = Some n1 ->
   f b1 = None ->
   inject f n1 m2.
 
 Axiom storebytes_outside_inject:
-  forall f m1 m2 b ofs bytes2 m2',
+  forall f m1 m2 b ofs bytes2 cp m2',
   inject f m1 m2 ->
   (forall b' delta ofs',
     f b' = Some(b, delta) ->
     perm m1 b' ofs' Cur Readable ->
     ofs <= ofs' + delta < ofs + Z.of_nat (length bytes2) -> False) ->
-  storebytes m2 b ofs bytes2 = Some m2' ->
+  storebytes m2 b ofs bytes2 cp = Some m2' ->
   inject f m1 m2'.
 
 Axiom alloc_right_inject:
@@ -1167,6 +1208,7 @@ Axiom alloc_left_mapped_inject:
   inject f m1 m2 ->
   alloc m1 c lo hi = (m1', b1) ->
   valid_block m2 b2 ->
+  can_access_block m2 b2 (Some c) ->
   0 <= delta <= Ptrofs.max_unsigned ->
   (forall ofs k p, perm m2 b2 ofs k p -> delta = 0 \/ 0 <= ofs < Ptrofs.max_unsigned) ->
   (forall ofs k p, lo <= ofs < hi -> perm m2 b2 (ofs + delta) k p) ->
@@ -1194,28 +1236,28 @@ Axiom alloc_parallel_inject:
   /\ (forall b, b <> b1 -> f' b = f b).
 
 Axiom free_inject:
-  forall f m1 l m1' m2 b lo hi m2',
+  forall f m1 l cp1 m1' m2 b lo hi cp2 m2',
   inject f m1 m2 ->
-  free_list m1 l = Some m1' ->
-  free m2 b lo hi = Some m2' ->
+  free_list m1 l cp1 = Some m1' ->
+  free m2 b lo hi cp2 = Some m2' ->
   (forall b1 delta ofs k p,
     f b1 = Some(b, delta) -> perm m1 b1 ofs k p -> lo <= ofs + delta < hi ->
     exists lo1, exists hi1, In (b1, lo1, hi1) l /\ lo1 <= ofs < hi1) ->
   inject f m1' m2'.
 
 Axiom free_parallel_inject:
-  forall f m1 m2 b lo hi m1' b' delta,
+  forall f m1 m2 b lo hi cp m1' b' delta,
   inject f m1 m2 ->
-  free m1 b lo hi = Some m1' ->
+  free m1 b lo hi cp = Some m1' ->
   f b = Some(b', delta) ->
   exists m2',
-     free m2 b' (lo + delta) (hi + delta) = Some m2'
+     free m2 b' (lo + delta) (hi + delta) cp = Some m2'
   /\ inject f m1' m2'.
 
 Axiom drop_outside_inject:
-  forall f m1 m2 b lo hi p m2',
+  forall f m1 m2 b lo hi p cp m2',
   inject f m1 m2 ->
-  drop_perm m2 b lo hi p = Some m2' ->
+  drop_perm m2 b lo hi p cp = Some m2' ->
   (forall b' delta ofs k p,
     f b' = Some(b, delta) ->
     perm m1 b' ofs k p -> lo <= ofs + delta < hi -> False) ->
@@ -1243,16 +1285,16 @@ Axiom alloc_inject_neutral:
   inject_neutral thr m'.
 
 Axiom store_inject_neutral:
-  forall chunk m b ofs v m' thr,
-  store chunk m b ofs v = Some m' ->
+  forall chunk m b ofs v cp m' thr,
+  store chunk m b ofs v cp = Some m' ->
   inject_neutral thr m ->
   Plt b thr ->
   Val.inject (flat_inj thr) v v ->
   inject_neutral thr m'.
 
 Axiom drop_inject_neutral:
-  forall m b lo hi p m' thr,
-  drop_perm m b lo hi p = Some m' ->
+  forall m b lo hi p cp m' thr,
+  drop_perm m b lo hi p cp = Some m' ->
   inject_neutral thr m ->
   Plt b thr ->
   inject_neutral thr m'.

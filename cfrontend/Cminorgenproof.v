@@ -102,55 +102,55 @@ Qed.
 (** * Derived properties of memory operations *)
 
 Lemma load_freelist:
-  forall fbl chunk m b ofs m',
+  forall fbl chunk m b ofs m' cp cp',
   (forall b' lo hi, In (b', lo, hi) fbl -> b' <> b) ->
-  Mem.free_list m fbl = Some m' ->
-  Mem.load chunk m' b ofs = Mem.load chunk m b ofs.
+  Mem.free_list m fbl cp = Some m' ->
+  Mem.load chunk m' b ofs cp' = Mem.load chunk m b ofs cp'.
 Proof.
   induction fbl; intros.
   simpl in H0. congruence.
   destruct a as [[b' lo] hi].
-  generalize H0. simpl. case_eq (Mem.free m b' lo hi); try congruence.
+  generalize H0. simpl. case_eq (Mem.free m b' lo hi cp); try congruence.
   intros m1 FR1 FRL.
-  transitivity (Mem.load chunk m1 b ofs).
+  transitivity (Mem.load chunk m1 b ofs cp').
   eapply IHfbl; eauto. intros. eapply H. eauto with coqlib.
   eapply Mem.load_free; eauto. left. apply not_eq_sym. eapply H. auto with coqlib.
 Qed.
 
 Lemma perm_freelist:
-  forall fbl m m' b ofs k p,
-  Mem.free_list m fbl = Some m' ->
+  forall fbl m m' b ofs k cp p,
+  Mem.free_list m fbl cp = Some m' ->
   Mem.perm m' b ofs k p ->
   Mem.perm m b ofs k p.
 Proof.
   induction fbl; simpl; intros until p.
   congruence.
-  destruct a as [[b' lo] hi]. case_eq (Mem.free m b' lo hi); try congruence.
+  destruct a as [[b' lo] hi]. case_eq (Mem.free m b' lo hi cp); try congruence.
   intros. eauto with mem.
 Qed.
 
 Lemma nextblock_freelist:
-  forall fbl m m',
-  Mem.free_list m fbl = Some m' ->
+  forall cp fbl m m',
+  Mem.free_list m fbl cp = Some m' ->
   Mem.nextblock m' = Mem.nextblock m.
 Proof.
   induction fbl; intros until m'; simpl.
   congruence.
   destruct a as [[b lo] hi].
-  case_eq (Mem.free m b lo hi); intros; try congruence.
+  case_eq (Mem.free m b lo hi cp); intros; try congruence.
   transitivity (Mem.nextblock m0). eauto. eapply Mem.nextblock_free; eauto.
 Qed.
 
 Lemma free_list_freeable:
-  forall l m m',
-  Mem.free_list m l = Some m' ->
+  forall cp l m m',
+  Mem.free_list m l cp = Some m' ->
   forall b lo hi,
   In (b, lo, hi) l -> Mem.range_perm m b lo hi Cur Freeable.
 Proof.
   induction l; simpl; intros.
   contradiction.
   revert H. destruct a as [[b' lo'] hi'].
-  caseEq (Mem.free m b' lo' hi'); try congruence.
+  caseEq (Mem.free m b' lo' hi' cp); try congruence.
   intros m1 FREE1 FREE2.
   destruct H0. inv H.
   eauto with mem.
@@ -158,8 +158,8 @@ Proof.
 Qed.
 
 Lemma nextblock_storev:
-  forall chunk m addr v m',
-  Mem.storev chunk m addr v = Some m' -> Mem.nextblock m' = Mem.nextblock m.
+  forall cp chunk m addr v m',
+  Mem.storev chunk m addr v cp = Some m' -> Mem.nextblock m' = Mem.nextblock m.
 Proof.
   unfold Mem.storev; intros. destruct addr; try discriminate.
   eapply Mem.nextblock_store; eauto.
@@ -500,6 +500,8 @@ Inductive match_callstack (f: meminj) (m: mem) (tm: mem):
         (MTMP: match_temps f le te)
         (MENV: match_env f cenv e sp lo hi)
         (BOUND: match_bounds e m)
+        (COMP: Mem.can_access_block tm sp (Some (comp_of tf)))
+        (* (COMP: Mem.block_compartment tm sp = Some (comp_of tf)) *)
         (PERM: padding_freeable f e tm sp tf.(fn_stackspace))
         (MCS: match_callstack f m tm cs lo sp),
       match_callstack f m tm (Frame cenv tf e le te sp lo hi :: cs) bound tbound.
@@ -523,6 +525,7 @@ Lemma match_callstack_invariant:
   (forall b ofs p, Plt b bound -> Mem.perm m2 b ofs Max p -> Mem.perm m1 b ofs Max p) ->
   (forall sp ofs, Plt sp tbound -> Mem.perm tm1 sp ofs Cur Freeable -> Mem.perm tm2 sp ofs Cur Freeable) ->
   (forall b, Plt b bound -> f2 b = f1 b) ->
+  (forall sp cp, Plt sp tbound -> Mem.can_access_block tm1 sp cp -> Mem.can_access_block tm2 sp cp) ->
   (forall b b' delta, f2 b = Some(b', delta) -> Plt b' tbound -> f1 b = Some(b', delta)) ->
   match_callstack f2 m2 tm2 cs bound tbound.
 Proof.
@@ -530,7 +533,7 @@ Proof.
   (* base case *)
   econstructor; eauto.
   inv H. constructor; intros; eauto.
-  eapply IMAGE; eauto. eapply H6; eauto. xomega.
+  eapply IMAGE; eauto. eapply H7; eauto. xomega.
   (* inductive case *)
   assert (Ple lo hi) by (eapply me_low_high; eauto).
   econstructor; eauto.
@@ -547,6 +550,7 @@ Proof.
     intros. eapply H2; eauto. xomega.
     intros. eapply H3; eauto. xomega.
     intros. eapply H4; eauto. xomega.
+    intros. eapply H5; eauto. xomega.
 Qed.
 
 Lemma match_callstack_incr_bound:
@@ -599,15 +603,15 @@ Qed.
 Lemma match_callstack_freelist:
   forall f cenv tf e le te sp lo hi cs m m' tm,
   Mem.inject f m tm ->
-  Mem.free_list m (blocks_of_env e) = Some m' ->
+  Mem.free_list m (blocks_of_env e) (comp_of tf) = Some m' ->
   match_callstack f m tm (Frame cenv tf e le te sp lo hi :: cs) (Mem.nextblock m) (Mem.nextblock tm) ->
   exists tm',
-  Mem.free tm sp 0 tf.(fn_stackspace) = Some tm'
+  Mem.free tm sp 0 tf.(fn_stackspace) (comp_of tf) = Some tm'
   /\ match_callstack f m' tm' cs (Mem.nextblock m') (Mem.nextblock tm')
   /\ Mem.inject f m' tm'.
 Proof.
   intros until tm; intros INJ FREELIST MCS. inv MCS. inv MENV.
-  assert ({tm' | Mem.free tm sp 0 (fn_stackspace tf) = Some tm'}).
+  assert ({tm' | Mem.free tm sp 0 (fn_stackspace tf) (comp_of tf) = Some tm'}).
   apply Mem.range_perm_free.
   red; intros.
   exploit PERM; eauto. intros [A | A].
@@ -616,6 +620,7 @@ Proof.
   eapply free_list_freeable; eauto. eapply in_blocks_of_env; eauto.
   replace ofs with ((ofs - delta) + delta) by omega.
   eapply Mem.perm_inject; eauto. apply H3. omega.
+  assumption.
   destruct X as  [tm' FREE].
   exploit nextblock_freelist; eauto. intro NEXT.
   exploit Mem.nextblock_free; eauto. intro NEXT'.
@@ -624,13 +629,16 @@ Proof.
   apply match_callstack_incr_bound with lo sp; try omega.
   apply match_callstack_invariant with f m tm; auto.
   intros. eapply perm_freelist; eauto.
-  intros. eapply Mem.perm_free_1; eauto. left; unfold block; xomega. xomega. xomega.
+  intros. eapply Mem.perm_free_1; eauto. left; unfold block; xomega.
+  intros. eapply Mem.free_can_access_block_inj_1; eauto.
+  xomega. xomega.
   eapply Mem.free_inject; eauto.
   intros. exploit me_inv0; eauto. intros [id [sz A]].
   exists 0; exists sz; split.
   eapply in_blocks_of_env; eauto.
   eapply BOUND0; eauto. eapply Mem.perm_max. eauto.
 Qed.
+
 
 (** Preservation of [match_callstack] by external calls. *)
 
@@ -641,13 +649,14 @@ Lemma match_callstack_external_call:
   inject_incr f1 f2 ->
   inject_separated f1 f2 m1 m1' ->
   (forall b ofs p, Mem.valid_block m1 b -> Mem.perm m2 b ofs Max p -> Mem.perm m1 b ofs Max p) ->
+  (forall sp cp, Mem.can_access_block m1' sp cp -> Mem.can_access_block m2' sp cp) ->
   forall cs bound tbound,
   match_callstack f1 m1 m1' cs bound tbound ->
   Ple bound (Mem.nextblock m1) -> Ple tbound (Mem.nextblock m1') ->
   match_callstack f2 m2 m2' cs bound tbound.
 Proof.
   intros until m2'.
-  intros UNMAPPED OUTOFREACH INCR SEPARATED MAXPERMS.
+  intros UNMAPPED OUTOFREACH INCR SEPARATED MAXPERMS COMP.
   induction 1; intros.
 (* base case *)
   apply mcs_nil with hi; auto.
@@ -669,6 +678,7 @@ Proof.
   exploit SEPARATED; eauto. intros [A B]. elim A. red. xomega.
   eapply match_bounds_invariant; eauto.
   intros. eapply MAXPERMS; eauto. red. exploit me_bounded; eauto. xomega.
+  eapply COMP. eauto.
   (* padding-freeable *)
   red; intros.
   destruct (is_reachable_from_env_dec f1 e sp ofs).
@@ -687,9 +697,9 @@ Qed.
 (** [match_callstack] and allocations *)
 
 Lemma match_callstack_alloc_right:
-  forall f m tm c cs tf tm' sp le te cenv,
+  forall f m tm cs tf tm' sp le te cenv,
   match_callstack f m tm cs (Mem.nextblock m) (Mem.nextblock tm) ->
-  Mem.alloc tm c 0 tf.(fn_stackspace) = (tm', sp) ->
+  Mem.alloc tm (comp_of tf) 0 tf.(fn_stackspace) = (tm', sp) ->
   Mem.inject f m tm ->
   match_temps f le te ->
   (forall id, cenv!id = None) ->
@@ -711,10 +721,13 @@ Proof.
     eelim Mem.fresh_block_alloc; eauto. eapply Mem.valid_block_inject_2; eauto.
     rewrite RES. change (Mem.valid_block tm tb). eapply Mem.valid_block_inject_2; eauto.
   red; intros. rewrite PTree.gempty in H4. discriminate.
+  subst. eapply Mem.owned_new_block. eauto.
   red; intros. left. eapply Mem.perm_alloc_2; eauto.
   eapply match_callstack_invariant with (tm1 := tm); eauto.
   rewrite RES; auto.
   intros. eapply Mem.perm_alloc_1; eauto.
+  subst. intros.
+  eapply Mem.alloc_can_access_block_other_inj_1; eauto.
 Qed.
 
 Lemma match_callstack_alloc_left:
@@ -745,6 +758,7 @@ Proof.
   inversion H. subst b0 sz0 id0. eapply Mem.perm_alloc_3; eauto.
   eapply BOUND0; eauto. eapply Mem.perm_alloc_4; eauto.
   exploit me_bounded; eauto. unfold block in *; xomega.
+  assumption.
   red; intros. exploit PERM; eauto. intros [A|A]. auto. right.
   inv A. apply is_reachable_intro with id0 b0 sz0 delta; auto.
   rewrite PTree.gso. auto. congruence.
@@ -816,7 +830,7 @@ Lemma match_callstack_alloc_variables_rec:
   (forall ofs k p, Mem.perm tm sp ofs k p -> 0 <= ofs < fn_stackspace tf) ->
   (forall ofs k p, 0 <= ofs < fn_stackspace tf -> Mem.perm tm sp ofs k p) ->
   forall e1 m1 vars e2 m2,
-  alloc_variables e1 m1 vars e2 m2 ->
+  alloc_variables (comp_of tf) e1 m1 vars e2 m2 ->
   forall f1,
   list_norepet (map fst vars) ->
   cenv_compat cenv vars (fn_stackspace tf) ->
@@ -846,6 +860,7 @@ Proof.
     eexact MINJ.
     eexact H.
     eexact VALID.
+    inversion MCS; eauto.
     instantiate (1 := ofs). zify. omega.
     intros. exploit STKSIZE; eauto. omega.
     intros. apply STKPERMS. zify. omega.
@@ -870,10 +885,10 @@ Proof.
 Qed.
 
 Lemma match_callstack_alloc_variables:
-  forall tm1 c sp tm2 m1 vars e m2 cenv f1 cs fn le te,
-  Mem.alloc tm1 c 0 (fn_stackspace fn) = (tm2, sp) ->
+  forall tm1 sp tm2 m1 vars e m2 cenv f1 cs fn le te,
+  Mem.alloc tm1 (comp_of fn) 0 (fn_stackspace fn) = (tm2, sp) ->
   fn_stackspace fn <= Ptrofs.max_unsigned ->
-  alloc_variables empty_env m1 vars e m2 ->
+  alloc_variables (comp_of fn) empty_env m1 vars e m2 ->
   list_norepet (map fst vars) ->
   cenv_compat cenv vars (fn_stackspace fn) ->
   cenv_separated cenv vars ->
@@ -1241,16 +1256,17 @@ Qed.
 (** The main result in this section. *)
 
 Theorem match_callstack_function_entry:
-  forall fn cenv tf m e m' tm c tm' sp f cs args targs le,
+  forall fn cenv tf m e m' tm tm' sp f cs args targs le,
+  comp_of fn = comp_of tf ->
   build_compilenv fn = (cenv, tf.(fn_stackspace)) ->
   tf.(fn_stackspace) <= Ptrofs.max_unsigned ->
   list_norepet (map fst (Csharpminor.fn_vars fn)) ->
   list_norepet (Csharpminor.fn_params fn) ->
   list_disjoint (Csharpminor.fn_params fn) (Csharpminor.fn_temps fn) ->
-  alloc_variables Csharpminor.empty_env m (Csharpminor.fn_vars fn) e m' ->
+  alloc_variables (comp_of fn) Csharpminor.empty_env m (Csharpminor.fn_vars fn) e m' ->
   bind_parameters (Csharpminor.fn_params fn) args (create_undef_temps fn.(fn_temps)) = Some le ->
   Val.inject_list f args targs ->
-  Mem.alloc tm c 0 tf.(fn_stackspace) = (tm', sp) ->
+  Mem.alloc tm (comp_of fn) 0 tf.(fn_stackspace) = (tm', sp) ->
   match_callstack f m tm cs (Mem.nextblock m) (Mem.nextblock tm) ->
   Mem.inject f m tm ->
   let te := set_locals (Csharpminor.fn_temps fn) (set_params targs (Csharpminor.fn_params fn)) in
@@ -1263,6 +1279,8 @@ Proof.
   intros.
   exploit build_compilenv_sound; eauto. intros [C1 C2].
   eapply match_callstack_alloc_variables; eauto.
+  rewrite <- H; auto.
+  rewrite <- H; auto.
   intros. eapply build_compilenv_domain; eauto.
   eapply bind_parameters_agree; eauto.
 Qed.
@@ -1292,7 +1310,8 @@ Ltac TrivialExists :=
   | [ |- exists y, _ /\ Val.inject _ (Vlong ?x) _ ] =>
       exists (Vlong x); split; [eauto with evalexpr | constructor]
   | _ => idtac
-  end.
+  end
+.
 
 (** Compatibility of [eval_unop] with respect to [Val.inject]. *)
 
@@ -1448,7 +1467,7 @@ Lemma var_addr_correct:
   match_callstack f m tm (Frame cenv tf e le te sp lo hi :: cs) (Mem.nextblock m) (Mem.nextblock tm) ->
   eval_var_addr ge e id b ->
   exists tv,
-     eval_expr tge (Vptr sp Ptrofs.zero) te tm (var_addr cenv id) tv
+     eval_expr tge (Vptr sp Ptrofs.zero) te tm (comp_of tf) (var_addr cenv id) tv
   /\ Val.inject f (Vptr b Ptrofs.zero) tv.
 Proof.
   unfold var_addr; intros.
@@ -1521,11 +1540,11 @@ Lemma transl_expr_correct:
              (Frame cenv tf e le te sp lo hi :: cs)
              (Mem.nextblock m) (Mem.nextblock tm)),
   forall a v,
-  Csharpminor.eval_expr ge e le m a v ->
+  Csharpminor.eval_expr ge e (comp_of tf) le m a v ->
   forall ta
     (TR: transl_expr cenv a = OK ta),
   exists tv,
-     eval_expr tge (Vptr sp Ptrofs.zero) te tm ta tv
+     eval_expr tge (Vptr sp Ptrofs.zero) te tm (comp_of tf) ta tv
   /\ Val.inject f v tv.
 Proof.
   induction 3; intros; simpl in TR; try (monadInv TR).
@@ -1559,11 +1578,11 @@ Lemma transl_exprlist_correct:
              (Frame cenv tf e le te sp lo hi :: cs)
              (Mem.nextblock m) (Mem.nextblock tm)),
   forall a v,
-  Csharpminor.eval_exprlist ge e le m a v ->
+  Csharpminor.eval_exprlist ge e (comp_of tf) le m a v ->
   forall ta
     (TR: transl_exprlist cenv a = OK ta),
   exists tv,
-     eval_exprlist tge (Vptr sp Ptrofs.zero) te tm ta tv
+     eval_exprlist tge (Vptr sp Ptrofs.zero) te tm (comp_of tf) ta tv
   /\ Val.inject_list f v tv.
 Proof.
   induction 3; intros; monadInv TR.
@@ -2020,14 +2039,17 @@ Proof.
 (* skip call *)
   monadInv TR. left.
   exploit match_is_call_cont; eauto. intros [tk' [A [B C]]].
-  exploit match_callstack_freelist; eauto. intros [tm' [P [Q R]]].
+  exploit match_callstack_freelist; eauto.
+  rewrite <- (comp_transl_partial _ TRF); eauto.
+  intros [tm' [P [Q R]]].
   econstructor; split.
   eapply plus_right. eexact A. apply step_skip_call. auto. eauto. traceEq.
   econstructor; eauto.
 
 (* set *)
   monadInv TR.
-  exploit transl_expr_correct; eauto. intros [tv [EVAL VINJ]].
+  exploit transl_expr_correct; eauto. monadInv TRF; eauto.
+  intros [tv [EVAL VINJ]].
   left; econstructor; split.
   apply plus_one. econstructor; eauto.
   econstructor; eauto.
@@ -2035,30 +2057,32 @@ Proof.
 
 (* store *)
   monadInv TR.
-  exploit transl_expr_correct. eauto. eauto. eexact H. eauto.
+  exploit transl_expr_correct. eauto. eauto. monadInv TRF; eexact H. eauto.
   intros [tv1 [EVAL1 VINJ1]].
-  exploit transl_expr_correct. eauto. eauto. eexact H0. eauto.
+  exploit transl_expr_correct. eauto. eauto. monadInv TRF; eexact H0. eauto.
   intros [tv2 [EVAL2 VINJ2]].
   exploit Mem.storev_mapped_inject; eauto. intros [tm' [STORE' MINJ']].
   left; econstructor; split.
   apply plus_one. econstructor; eauto.
+  rewrite <- (comp_transl_partial _ TRF); eauto.
   econstructor; eauto.
   inv VINJ1; simpl in H1; try discriminate. unfold Mem.storev in STORE'.
-  rewrite (Mem.nextblock_store _ _ _ _ _ _ H1).
-  rewrite (Mem.nextblock_store _ _ _ _ _ _ STORE').
+  rewrite (Mem.nextblock_store _ _ _ _ _ _ _ H1).
+  rewrite (Mem.nextblock_store _ _ _ _ _ _ _ STORE').
   eapply match_callstack_invariant with f0 m tm; eauto.
   intros. eapply Mem.perm_store_2; eauto.
   intros. eapply Mem.perm_store_1; eauto.
+  intros. eapply Mem.store_can_access_block_inj in STORE'. eapply STORE'. eauto.
 
 (* call *)
   simpl in H1. exploit functions_translated; eauto. intros [tfd [FIND TRANS]].
   monadInv TR.
-  exploit transl_expr_correct; eauto. intros [tvf [EVAL1 VINJ1]].
+  exploit transl_expr_correct; eauto. monadInv TRF; eauto. intros [tvf [EVAL1 VINJ1]].
   assert (tvf = vf).
     exploit match_callstack_match_globalenvs; eauto. intros [bnd MG].
     eapply val_inject_function_pointer; eauto.
   subst tvf.
-  exploit transl_exprlist_correct; eauto.
+  exploit transl_exprlist_correct; eauto. monadInv TRF; eauto.
   intros [tvargs [EVAL2 VINJ2]].
   left; econstructor; split.
   apply plus_one. eapply step_call; eauto.
@@ -2070,7 +2094,7 @@ Proof.
 
 (* builtin *)
   monadInv TR.
-  exploit transl_exprlist_correct; eauto.
+  exploit transl_exprlist_correct; eauto. monadInv TRF; eauto.
   intros [tvargs [EVAL2 VINJ2]].
   exploit match_callstack_match_globalenvs; eauto. intros [hi' MG].
   exploit external_call_mem_inject; eauto.
@@ -2086,6 +2110,7 @@ Proof.
   { apply match_callstack_incr_bound with (Mem.nextblock m) (Mem.nextblock tm).
     eapply match_callstack_external_call; eauto.
     intros. eapply external_call_max_perm; eauto.
+    intros. eapply external_call_can_access_block; eauto.
     xomega. xomega.
     eapply external_call_nextblock; eauto.
     eapply external_call_nextblock; eauto. }
@@ -2106,7 +2131,8 @@ Opaque PTree.set.
 
 (* ifthenelse *)
   monadInv TR.
-  exploit transl_expr_correct; eauto. intros [tv [EVAL VINJ]].
+  exploit transl_expr_correct; eauto. monadInv TRF; eauto.
+  intros [tv [EVAL VINJ]].
   left; exists (State tfn (if b then x0 else x1) tk (Vptr sp Ptrofs.zero) te tm); split.
   apply plus_one. eapply step_ifthenelse; eauto. eapply bool_of_val_inject; eauto.
   econstructor; eauto. destruct b; auto.
@@ -2159,7 +2185,8 @@ Opaque PTree.set.
 
 (* switch *)
   simpl in TR. destruct (switch_table cases O) as [tbl dfl] eqn:STBL. monadInv TR.
-  exploit transl_expr_correct; eauto. intros [tv [EVAL VINJ]].
+  exploit transl_expr_correct; eauto. monadInv TRF; eauto.
+  intros [tv [EVAL VINJ]].
   assert (SA: switch_argument islong tv n).
   { inv H0; inv VINJ; constructor. }
   exploit switch_descent; eauto. intros [k1 [A B]].
@@ -2178,7 +2205,9 @@ Opaque PTree.set.
 
 (* return none *)
   monadInv TR. left.
-  exploit match_callstack_freelist; eauto. intros [tm' [A [B C]]].
+  exploit match_callstack_freelist; eauto.
+  rewrite <- (comp_transl_partial _ TRF); eauto.
+  intros [tm' [A [B C]]].
   econstructor; split.
   apply plus_one. eapply step_return_0. eauto.
   econstructor; eauto. eapply match_call_cont; eauto.
@@ -2186,8 +2215,11 @@ Opaque PTree.set.
 
 (* return some *)
   monadInv TR. left.
-  exploit transl_expr_correct; eauto. intros [tv [EVAL VINJ]].
-  exploit match_callstack_freelist; eauto. intros [tm' [A [B C]]].
+  exploit transl_expr_correct; eauto. monadInv TRF; eauto.
+  intros [tv [EVAL VINJ]].
+  exploit match_callstack_freelist; eauto.
+  rewrite <- (comp_transl_partial _ TRF); eauto.
+  intros [tm' [A [B C]]].
   econstructor; split.
   apply plus_one. eapply step_return_1. eauto. eauto.
   econstructor; eauto. eapply match_call_cont; eauto.
@@ -2219,7 +2251,7 @@ Opaque PTree.set.
                         sz
                         x0) in *.
   caseEq (Mem.alloc tm (fn_comp tf) 0 (fn_stackspace tf)). intros tm' sp ALLOC'.
-  exploit match_callstack_function_entry; eauto. simpl; eauto. simpl; auto.
+  exploit match_callstack_function_entry; eauto. simpl; eauto. simpl; eauto. simpl; auto.
   intros [f2 [MCS2 MINJ2]].
   left; econstructor; split.
   apply plus_one. econstructor; simpl; eauto.
@@ -2240,6 +2272,7 @@ Opaque PTree.set.
   apply match_callstack_incr_bound with (Mem.nextblock m) (Mem.nextblock tm).
   eapply match_callstack_external_call; eauto.
   intros. eapply external_call_max_perm; eauto.
+  intros. eapply external_call_can_access_block; eauto.
   xomega. xomega.
   eapply external_call_nextblock; eauto.
   eapply external_call_nextblock; eauto.

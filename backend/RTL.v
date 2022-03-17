@@ -247,14 +247,14 @@ Inductive step: state -> trace -> state -> Prop :=
       forall s f sp pc rs m chunk addr args dst pc' a v,
       (fn_code f)!pc = Some(Iload chunk addr args dst pc') ->
       eval_addressing ge sp addr rs##args = Some a ->
-      Mem.loadv chunk m a = Some v ->
+      Mem.loadv chunk m a (Some (comp_of f)) = Some v ->
       step (State s f sp pc rs m)
         E0 (State s f sp pc' (rs#dst <- v) m)
   | exec_Istore:
       forall s f sp pc rs m chunk addr args src pc' a m',
       (fn_code f)!pc = Some(Istore chunk addr args src pc') ->
       eval_addressing ge sp addr rs##args = Some a ->
-      Mem.storev chunk m a rs#src = Some m' ->
+      Mem.storev chunk m a rs#src (comp_of f) = Some m' ->
       step (State s f sp pc rs m)
         E0 (State s f sp pc' rs m')
   | exec_Icall:
@@ -262,7 +262,6 @@ Inductive step: state -> trace -> state -> Prop :=
       (fn_code f)!pc = Some(Icall sig ros args res pc') ->
       find_function ros rs = Some fd ->
       funsig fd = sig ->
-      (* TODO *)
       forall (FUNPTR: find_function_ptr ros rs = Some vf),
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
       step (State s f sp pc rs m)
@@ -274,18 +273,15 @@ Inductive step: state -> trace -> state -> Prop :=
       funsig fd = sig ->
       forall COMP: comp_of fd = (comp_of f),
       forall ALLOWED: needs_calling_comp (comp_of f) = false,
-      (* TODO *)
       forall (FUNPTR: find_function_ptr ros rs = Some vf),
       forall (ALLOWED': Genv.allowed_call ge (comp_of f) vf),
-      Mem.free m stk 0 f.(fn_stacksize) = Some m' ->
+      Mem.free m stk 0 f.(fn_stacksize) (comp_of f) = Some m' ->
       step (State s f (Vptr stk Ptrofs.zero) pc rs m)
         E0 (Callstate s fd rs##args m')
   | exec_Ibuiltin:
       forall s f sp pc rs m ef args res pc' vargs t vres m',
       (fn_code f)!pc = Some(Ibuiltin ef args res pc') ->
       eval_builtin_args ge (fun r => rs#r) sp m args vargs ->
-      (* TODO *)
-      (* forall (ALLOWED: Policy.allowed_call pol (comp_of f) (External ef)), *)
       external_call ef ge (comp_of f) vargs m t vres m' ->
       step (State s f sp pc rs m)
          t (State s f sp pc' (regmap_setres res vres rs) m')
@@ -306,7 +302,7 @@ Inductive step: state -> trace -> state -> Prop :=
   | exec_Ireturn:
       forall s f stk pc rs m or m',
       (fn_code f)!pc = Some(Ireturn or) ->
-      Mem.free m stk 0 f.(fn_stacksize) = Some m' ->
+      Mem.free m stk 0 f.(fn_stacksize) (comp_of f) = Some m' ->
       step (State s f (Vptr stk Ptrofs.zero) pc rs m)
         E0 (Returnstate s (regmap_optget or Vundef rs) m')
   | exec_function_internal:
@@ -344,7 +340,7 @@ Lemma exec_Iload':
   forall s f sp pc rs m chunk addr args dst pc' rs' a v,
   (fn_code f)!pc = Some(Iload chunk addr args dst pc') ->
   eval_addressing ge sp addr rs##args = Some a ->
-  Mem.loadv chunk m a = Some v ->
+  Mem.loadv chunk m a (Some (comp_of f)) = Some v ->
   rs' = (rs#dst <- v) ->
   step (State s f sp pc rs m)
     E0 (State s f sp pc' rs' m).

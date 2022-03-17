@@ -234,14 +234,15 @@ Inductive instruction : Type :=
   | Pbgeul  (rs1 rs2: ireg0) (l: label)             (**r branch-if-greater-or-equal unsigned *)
 
   (* Loads and stores *)
-  | Plb     (rd: ireg) (ra: ireg) (ofs: offset)     (**r load signed int8 *)
-  | Plbu    (rd: ireg) (ra: ireg) (ofs: offset)     (**r load unsigned int8 *)
-  | Plh     (rd: ireg) (ra: ireg) (ofs: offset)     (**r load signed int16 *)
-  | Plhu    (rd: ireg) (ra: ireg) (ofs: offset)     (**r load unsigned int16 *)
-  | Plw     (rd: ireg) (ra: ireg) (ofs: offset)     (**r load int32 *)
-  | Plw_a   (rd: ireg) (ra: ireg) (ofs: offset)     (**r load any32 *)
-  | Pld     (rd: ireg) (ra: ireg) (ofs: offset)     (**r load int64 *)
-  | Pld_a   (rd: ireg) (ra: ireg) (ofs: offset)     (**r load any64 *)
+  | Plb     (rd: ireg) (ra: ireg) (ofs: offset) (priv: bool)     (**r load signed int8 *)
+  | Plbu    (rd: ireg) (ra: ireg) (ofs: offset) (priv: bool)    (**r load unsigned int8 *)
+  | Plh     (rd: ireg) (ra: ireg) (ofs: offset) (priv: bool)    (**r load signed int16 *)
+  | Plhu    (rd: ireg) (ra: ireg) (ofs: offset) (priv: bool)    (**r load unsigned int16 *)
+  | Plw     (rd: ireg) (ra: ireg) (ofs: offset) (priv: bool)   (**r load int32 *)
+  | Plw_a   (rd: ireg) (ra: ireg) (ofs: offset) (priv: bool)    (**r load any32 *)
+  | Pld     (rd: ireg) (ra: ireg) (ofs: offset) (priv: bool)    (**r load int64 *)
+  | Pld_a   (rd: ireg) (ra: ireg) (ofs: offset) (priv: bool)    (**r load any64 *)
+
 
   | Psb     (rs: ireg) (ra: ireg) (ofs: offset)     (**r store int8 *)
   | Psh     (rs: ireg) (ra: ireg) (ofs: offset)     (**r store int16 *)
@@ -249,6 +250,9 @@ Inductive instruction : Type :=
   | Psw_a   (rs: ireg) (ra: ireg) (ofs: offset)     (**r store any32 *)
   | Psd     (rs: ireg) (ra: ireg) (ofs: offset)     (**r store int64 *)
   | Psd_a   (rs: ireg) (ra: ireg) (ofs: offset)     (**r store any64 *)
+
+            (* Probably doesn't need privilged stores because can't write directly to parameters. Instead
+             writing to a parameter writes to a /copy/ of the parameter *)
 
   (* Synchronization *)
   | Pfence                                          (**r fence *)
@@ -259,7 +263,7 @@ Inductive instruction : Type :=
   | Pfmvxd   (rd: ireg) (rs: freg)                  (**r move FP double to integer register *)
 
   (* 32-bit (single-precision) floating point *)
-  | Pfls     (rd: freg) (ra: ireg) (ofs: offset)    (**r load float *)
+  | Pfls     (rd: freg) (ra: ireg) (ofs: offset) (priv: bool)    (**r load float *)
   | Pfss     (rs: freg) (ra: ireg) (ofs: offset)    (**r store float *)
 
   | Pfnegs   (rd: freg) (rs: freg)                  (**r negation *)
@@ -294,8 +298,8 @@ Inductive instruction : Type :=
   | Pfcvtslu (rd: freg) (rs: ireg0)                 (**r unsigned int 64-> float32 conversion *)
 
   (* 64-bit (double-precision) floating point *)
-  | Pfld     (rd: freg) (ra: ireg) (ofs: offset)    (**r load 64-bit float *)
-  | Pfld_a   (rd: freg) (ra: ireg) (ofs: offset)    (**r load any64 *)
+  | Pfld     (rd: freg) (ra: ireg) (ofs: offset) (priv: bool)    (**r load 64-bit float *)
+  | Pfld_a   (rd: freg) (ra: ireg) (ofs: offset) (priv: bool)   (**r load any64 *)
   | Pfsd     (rd: freg) (ra: ireg) (ofs: offset)    (**r store 64-bit float *)
   | Pfsd_a   (rd: freg) (ra: ireg) (ofs: offset)    (**r store any64 *)
 
@@ -578,15 +582,17 @@ Definition eval_offset (ofs: offset) : ptrofs :=
   end.
 
 Definition exec_load (chunk: memory_chunk) (rs: regset) (m: mem)
-                     (d: preg) (a: ireg) (ofs: offset) :=
-  match Mem.loadv chunk m (Val.offset_ptr (rs a) (eval_offset ofs)) with
-  | None => Stuck
-  | Some v => Next (nextinstr (rs#d <- v)) m
-  end.
+                     (d: preg) (a: ireg) (ofs: offset) (cp: compartment) (priv: bool) :=
+  match Mem.loadv chunk m (Val.offset_ptr (rs a) (eval_offset ofs))
+                  (if priv then None else Some cp) with
+    | None => Stuck
+    | Some v => Next (nextinstr (rs#d <- v)) m
+    end.
+
 
 Definition exec_store (chunk: memory_chunk) (rs: regset) (m: mem)
-                      (s: preg) (a: ireg) (ofs: offset) :=
-  match Mem.storev chunk m (Val.offset_ptr (rs a) (eval_offset ofs)) (rs s) with
+                      (s: preg) (a: ireg) (ofs: offset) (cp: compartment) :=
+  match Mem.storev chunk m (Val.offset_ptr (rs a) (eval_offset ofs)) (rs s) cp with
   | None => Stuck
   | Some m' => Next (nextinstr rs) m'
   end.
@@ -612,7 +618,7 @@ Definition eval_branch (f: function) (l: label) (rs: regset) (m: mem) (res: opti
     we generate cannot use those registers to hold values that must
     survive the execution of the pseudo-instruction. *)
 
-Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : outcome :=
+Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) (cp: compartment) : outcome :=
   match i with
   | Pmv d s =>
       Next (nextinstr (rs#d <- (rs#s))) m
@@ -757,37 +763,10 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : out
     Next (rs#PC <- (Genv.symbol_address ge s Ptrofs.zero)
             #RA <- (Val.offset_ptr rs#PC Ptrofs.one)
          ) m
-    (* let v := Genv.symbol_address ge s Ptrofs.zero in *)
-    (* match v, rs#PC with *)
-    (* | Vptr b ofs, Vptr b' ofs' =>  *)
-    (*   match Genv.find_funct_ptr ge b, Genv.find_funct_ptr ge b' with *)
-    (*   | Some fd, Some fd' => *)
-    (*     if Policy.allowed_call_b pol (comp_of fd') fd then *)
-    (*       Next (rs#PC <- v *)
-    (*               #RA <- (Val.offset_ptr rs#PC Ptrofs.one) *)
-    (*            ) m *)
-    (*     else Stuck *)
-    (*   | _, _ => Stuck *)
-    (*   end *)
-    (* | _, _ => Stuck *)
-    (* end *)
   | Pjal_r r sg _ =>
       Next (rs#PC <- (rs#r)
               #RA <- (Val.offset_ptr rs#PC Ptrofs.one)
            ) m
-    (* match rs#r, rs#PC with *)
-    (* | Vptr b ofs, Vptr b' ofs' => *)
-    (*   match Genv.find_funct_ptr ge b, Genv.find_funct_ptr ge b' with *)
-    (*   | Some fd, Some fd' => *)
-    (*     if Policy.allowed_call_b pol (comp_of fd') fd then *)
-    (*       Next (rs#PC <- (rs#r) *)
-    (*               #RA <- (Val.offset_ptr rs#PC Ptrofs.one) *)
-    (*            ) m *)
-    (*     else Stuck *)
-    (*   | _, _ => Stuck *)
-    (*   end *)
-    (* | _, _ => Stuck *)
-    (* end *)
 (** Conditional branches, 32-bit comparisons *)
   | Pbeqw s1 s2 l =>
       eval_branch f l rs m (Val.cmpu_bool (Mem.valid_pointer m) Ceq rs##s1 rs##s2)
@@ -817,44 +796,44 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : out
       eval_branch f l rs m (Val.cmplu_bool (Mem.valid_pointer m) Cge rs###s1 rs###s2)
 
 (** Loads and stores *)
-  | Plb d a ofs =>
-      exec_load Mint8signed rs m d a ofs
-  | Plbu d a ofs =>
-      exec_load Mint8unsigned rs m d a ofs
-  | Plh d a ofs =>
-      exec_load Mint16signed rs m d a ofs
-  | Plhu d a ofs =>
-      exec_load Mint16unsigned rs m d a ofs
-  | Plw d a ofs =>
-      exec_load Mint32 rs m d a ofs
-  | Plw_a d a ofs =>
-      exec_load Many32 rs m d a ofs
-  | Pld d a ofs =>
-      exec_load Mint64 rs m d a ofs
-  | Pld_a d a ofs =>
-      exec_load Many64 rs m d a ofs
+  | Plb d a ofs priv =>
+      exec_load Mint8signed rs m d a ofs cp priv
+  | Plbu d a ofs priv =>
+      exec_load Mint8unsigned rs m d a ofs cp priv
+  | Plh d a ofs priv =>
+      exec_load Mint16signed rs m d a ofs cp priv
+  | Plhu d a ofs priv =>
+      exec_load Mint16unsigned rs m d a ofs cp priv
+  | Plw d a ofs priv =>
+      exec_load Mint32 rs m d a ofs cp priv
+  | Plw_a d a ofs priv =>
+      exec_load Many32 rs m d a ofs cp priv
+  | Pld d a ofs priv =>
+      exec_load Mint64 rs m d a ofs cp priv
+  | Pld_a d a ofs priv =>
+      exec_load Many64 rs m d a ofs cp priv
   | Psb s a ofs =>
-      exec_store Mint8unsigned rs m s a ofs
+      exec_store Mint8unsigned rs m s a ofs cp
   | Psh s a ofs =>
-      exec_store Mint16unsigned rs m s a ofs
+      exec_store Mint16unsigned rs m s a ofs cp
   | Psw s a ofs =>
-      exec_store Mint32 rs m s a ofs
+      exec_store Mint32 rs m s a ofs cp
   | Psw_a s a ofs =>
-      exec_store Many32 rs m s a ofs
+      exec_store Many32 rs m s a ofs cp
   | Psd s a ofs =>
-      exec_store Mint64 rs m s a ofs
+      exec_store Mint64 rs m s a ofs cp
   | Psd_a s a ofs =>
-      exec_store Many64 rs m s a ofs
+      exec_store Many64 rs m s a ofs cp
 
 (** Floating point register move *)
   | Pfmv d s =>
       Next (nextinstr (rs#d <- (rs#s))) m
 
 (** 32-bit (single-precision) floating point *)
-  | Pfls d a ofs =>
-      exec_load Mfloat32 rs m d a ofs
+  | Pfls d a ofs b =>
+      exec_load Mfloat32 rs m d a ofs cp b
   | Pfss s a ofs =>
-      exec_store Mfloat32 rs m s a ofs
+      exec_store Mfloat32 rs m s a ofs cp
 
   | Pfnegs d s =>
       Next (nextinstr (rs#d <- (Val.negfs rs#s))) m
@@ -895,14 +874,14 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : out
       Next (nextinstr (rs#d <- (Val.maketotal (Val.singleoflongu rs###s)))) m
 
 (** 64-bit (double-precision) floating point *)
-  | Pfld d a ofs =>
-      exec_load Mfloat64 rs m d a ofs
-  | Pfld_a d a ofs =>
-      exec_load Many64 rs m d a ofs
+  | Pfld d a ofs b =>
+      exec_load Mfloat64 rs m d a ofs cp b
+  | Pfld_a d a ofs b =>
+      exec_load Many64 rs m d a ofs cp b
   | Pfsd s a ofs =>
-      exec_store Mfloat64 rs m s a ofs
+      exec_store Mfloat64 rs m s a ofs cp
   | Pfsd_a s a ofs =>
-      exec_store Many64 rs m s a ofs
+      exec_store Many64 rs m s a ofs cp
 
   | Pfnegd d s =>
       Next (nextinstr (rs#d <- (Val.negf rs#s))) m
@@ -951,17 +930,17 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : out
   | Pallocframe sz pos =>
       let (m1, stk) := Mem.alloc m (comp_of f) 0 sz in
       let sp := (Vptr stk Ptrofs.zero) in
-      match Mem.storev Mptr m1 (Val.offset_ptr sp pos) rs#SP with
+      match Mem.storev Mptr m1 (Val.offset_ptr sp pos) rs#SP cp with
       | None => Stuck
       | Some m2 => Next (nextinstr (rs #X30 <- (rs SP) #SP <- sp #X31 <- Vundef)) m2
       end
   | Pfreeframe sz pos =>
-      match Mem.loadv Mptr m (Val.offset_ptr rs#SP pos) with
+      match Mem.loadv Mptr m (Val.offset_ptr rs#SP pos) (Some cp) with
       | None => Stuck
       | Some v =>
           match rs SP with
           | Vptr stk ofs =>
-              match Mem.free m stk 0 sz with
+              match Mem.free m stk 0 sz cp with
               | None => Stuck
               | Some m' => Next (nextinstr (rs#SP <- v #X31 <- Vundef)) m'
               end
@@ -1018,6 +997,23 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : out
     => Stuck
   end.
 
+(* RB: NOTE: Where should we expose compartments to the execution of Asm
+   instructions? A possibility is to encapsulate them in [exec_instr], wrapping
+   the original definition as follows. At some level, this requires fewer
+   modifications to the proofs that immediately follow, but other proofs where
+   the wrapped [exec_instr] appears in the conclusion may not be solved without
+   additional assumptions. *)
+
+(* Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : outcome := *)
+(*   match rs#PC with *)
+(*   | Vptr b _ => *)
+(*     match PTree.get b (Mem.mem_compartments m) with (* RB: NOTE Encapsulate? *) *)
+(*     | Some cp => exec_instr' f i rs m cp *)
+(*     | _ => Stuck *)
+(*     end *)
+(*   | _ => Stuck *)
+(*   end. *)
+
 (** Translation of the LTL/Linear/Mach view of machine registers to
   the RISC-V view.  Note that no LTL register maps to [X31].  This
   register is reserved as temporary, to be used by the generated RV32G
@@ -1059,10 +1055,10 @@ Definition undef_caller_save_regs (rs: regset) : regset :=
 Inductive extcall_arg (rs: regset) (m: mem): loc -> val -> Prop :=
   | extcall_arg_reg: forall r,
       extcall_arg rs m (R r) (rs (preg_of r))
-  | extcall_arg_stack: forall ofs ty bofs v,
+  | extcall_arg_stack: forall ofs ty bofs cp v,
       bofs = Stacklayout.fe_ofs_arg + 4 * ofs ->
       Mem.loadv (chunk_of_type ty) m
-                (Val.offset_ptr rs#SP (Ptrofs.repr bofs)) = Some v ->
+                (Val.offset_ptr rs#SP (Ptrofs.repr bofs)) cp = Some v ->
       extcall_arg rs m (S Outgoing ofs ty) v.
 
 Inductive extcall_arg_pair (rs: regset) (m: mem): rpair loc -> val -> Prop :=
@@ -1090,11 +1086,6 @@ Inductive stackframe: Type :=
       (retaddr: ptrofs), (**r Asm return address in calling function *)
       stackframe.
 
-(* Record stack := { cp: compartment; (* current compartment *) *)
-(*                   ra: val; (* return address of the last cross-compartment call *) *)
-(*                   sp: val; (* stack pointer to restore from the last cross-compartment call *) *)
-(*                   st: list stackframe (* rest of the stack *) *)
-(*                 }. *)
 Definition stack := list stackframe.
 
 (* The state of the stack when we start the execution *)
@@ -1172,11 +1163,12 @@ Definition asm_parent_sp s :=
 
 Inductive step: state -> trace -> state -> Prop :=
   | exec_step_internal:
-      forall b ofs f i rs m rs' m' b' ofs' st,
+      forall b ofs f i rs m rs' m' b' ofs' st cp,
       rs PC = Vptr b ofs ->
       Genv.find_funct_ptr ge b = Some (Internal f) ->
       find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
-      exec_instr f i rs m = Next rs' m' ->
+      forall (COMP: Genv.find_comp ge (rs PC) = Some cp),
+      exec_instr f i rs m cp = Next rs' m' ->
       is_call i = false ->
       is_return i = false ->
       forall (NEXTPC: rs' PC = Vptr b' ofs'),
@@ -1187,7 +1179,7 @@ Inductive step: state -> trace -> state -> Prop :=
       rs PC = Vptr b ofs ->
       Genv.find_funct_ptr ge b = Some (Internal f) ->
       find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
-      exec_instr f i rs m = Next rs' m' ->
+      exec_instr f i rs m cp = Next rs' m' ->
       is_call i = true ->
       forall (NEXTPC: rs' PC = Vptr b' ofs'),
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) (Vptr b' ofs')),
@@ -1200,9 +1192,8 @@ Inductive step: state -> trace -> state -> Prop :=
       rs PC = Vptr b ofs ->
       Genv.find_funct_ptr ge b = Some (Internal f) ->
       find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
-      exec_instr f i rs m = Next rs' m' ->
+      exec_instr f i rs m cp = Next rs' m' ->
       is_return i = true ->
-      (* forall (NEXTPC: rs' PC = Vptr b' ofs'), *)
       forall (CURCOMP: Genv.find_comp ge (rs PC) = Some cp),
       forall (NEXTCOMP: Genv.find_comp ge (rs' PC) = Some cp'),
       (* We only impose conditions on when returns can be executed for cross-compartment
@@ -1278,7 +1269,11 @@ Proof.
   intros until m.
   assert (A: forall l v1 v2,
              extcall_arg rs m l v1 -> extcall_arg rs m l v2 -> v1 = v2).
-  { intros. inv H; inv H0; congruence. }
+  { intros. inv H; inv H0. congruence.
+    destruct (rs X2); try discriminate.
+    simpl in H2, H5.
+    apply Mem.load_result in H2.
+    apply Mem.load_result in H5. congruence. }
   assert (B: forall p v1 v2,
              extcall_arg_pair rs m p v1 -> extcall_arg_pair rs m p v2 -> v1 = v2).
   { intros. inv H; inv H0. 
@@ -1292,6 +1287,18 @@ Proof.
     f_equal; eauto. }
   intros. eapply C; eauto.
 Qed.
+
+(* RB: NOTE: In the next proof, the wrapped [exec_instr] would require extra
+   processing, such as this. *)
+(* Ltac peel_exec_instr := *)
+(*   match goal with *)
+(*   | Hexec : exec_instr _ _ _ ?RS ?M = _, *)
+(*     Hpc : ?RS PC = Vptr ?B _ |- _ *)
+(*     => *)
+(*     unfold exec_instr in Hexec; *)
+(*     rewrite Hpc in Hexec; *)
+(*     destruct ((Mem.mem_compartments M) ! B) *)
+(*   end. *)
 
 Lemma semantics_determinate: forall p, determinate (semantics p).
 Proof.

@@ -958,6 +958,17 @@ Module PTree <: TREE.
     intros. apply fold1_xelements with (l := @nil (positive * A)).
   Qed.
 
+  Theorem get_not_none_get_some :
+    forall (A : Type) (t : t A) (i : positive),
+    get i t <> None <-> exists v, get i t = Some v.
+  Proof.
+    intros A t i. split; intros H.
+    - destruct (get i t) as [v |] eqn:Hcase.
+      + exists v. reflexivity.
+      + contradiction.
+    - destruct H as [v H]. congruence.
+  Qed.
+
 End PTree.
 
 (** * An implementation of maps over type [positive] *)

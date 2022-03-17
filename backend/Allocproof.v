@@ -1527,19 +1527,19 @@ Qed.
 Lemma find_function_ptr_tailcall:
   forall tge ros ls1 ls2,
   ros_compatible_tailcall ros = true ->
-  find_fun_ptr tge ros (return_regs ls1 ls2) = find_fun_ptr tge ros ls2.
+  find_function_ptr tge ros (return_regs ls1 ls2) = find_function_ptr tge ros ls2.
 Proof.
-  unfold ros_compatible_tailcall, find_fun_ptr; intros.
+  unfold ros_compatible_tailcall, find_function_ptr; intros.
   destruct ros as [r|id]; auto.
   unfold return_regs. destruct (is_callee_save r). discriminate. auto.
 Qed.
 
 Lemma loadv_int64_split:
-  forall m a v,
-  Mem.loadv Mint64 m a = Some v -> Archi.splitlong = true ->
+  forall m a cp v,
+  Mem.loadv Mint64 m a cp = Some v -> Archi.splitlong = true ->
   exists v1 v2,
-     Mem.loadv Mint32 m a = Some (if Archi.big_endian then v1 else v2)
-  /\ Mem.loadv Mint32 m (Val.add a (Vint (Int.repr 4))) = Some (if Archi.big_endian then v2 else v1)
+     Mem.loadv Mint32 m a cp = Some (if Archi.big_endian then v1 else v2)
+  /\ Mem.loadv Mint32 m (Val.add a (Vint (Int.repr 4))) cp = Some (if Archi.big_endian then v2 else v1)
   /\ Val.lessdef (Val.hiword v) v1
   /\ Val.lessdef (Val.loword v) v2.
 Proof.
@@ -1832,11 +1832,11 @@ Let tge := Genv.globalenv tprog.
 
 Lemma symbols_preserved:
   forall (s: ident), Genv.find_symbol tge s = Genv.find_symbol ge s.
-Proof (Genv.find_symbol_match TRANSF).
+Proof. exact (Genv.find_symbol_match TRANSF). Qed.
 
 Lemma senv_preserved:
   Senv.equiv ge tge.
-Proof (Genv.senv_match TRANSF).
+Proof. exact (Genv.senv_match TRANSF). Qed.
 
 Lemma functions_translated:
   forall (v: val) (f: RTL.fundef),
@@ -1850,7 +1850,7 @@ Lemma function_ptr_translated:
   Genv.find_funct_ptr ge b = Some f ->
   exists tf,
   Genv.find_funct_ptr tge b = Some tf /\ transf_fundef f = OK tf.
-Proof (Genv.find_funct_ptr_transf_partial TRANSF).
+Proof. exact (Genv.find_funct_ptr_transf_partial TRANSF). Qed.
 
 Lemma sig_function_translated:
   forall f tf,
@@ -1881,16 +1881,15 @@ Proof.
   eapply function_ptr_translated; eauto.
 Qed.
 
-(* TODO: rename LTL.fin_fun_ptr into LTL.find_function_ptr *)
 Lemma find_function_ptr_translated:
   forall ros rs fd ros' e e' ls vf,
     RTL.find_function ge ros rs = Some fd ->
     RTL.find_function_ptr ge ros rs = Some vf ->
     add_equation_ros ros ros' e = Some e' ->
     satisf rs ls e' ->
-    LTL.find_fun_ptr tge ros' ls = Some vf.
+    LTL.find_function_ptr tge ros' ls = Some vf.
 Proof.
-  unfold RTL.find_function, RTL.find_function_ptr, LTL.find_fun_ptr; intros.
+  unfold RTL.find_function, RTL.find_function_ptr, LTL.find_function_ptr; intros.
   destruct ros as [r|id]; destruct ros' as [r'|id']; simpl in H1; MonadInv.
   (* two regs *)
   exploit add_equation_lessdef; eauto. intros LD. inv LD.
@@ -2163,7 +2162,7 @@ Proof.
   eapply wt_exec_Iop; eauto.
 
 (* load regular *)
-- generalize (wt_exec_Iload _ _ _ _ _ _ _ _ _ _ _ WTI H1 WTRS). intros WTRS'.
+- generalize (wt_exec_Iload _ _ _ _ _ _ _ _ _ _ _ _ WTI H1 WTRS). intros WTRS'.
   exploit (exec_moves mv1); eauto. intros [ls1 [A1 B1]].
   exploit transfer_use_def_satisf; eauto. intros [X Y].
   exploit eval_addressing_lessdef; eauto. intros [a' [F G]].
@@ -2173,14 +2172,16 @@ Proof.
   eapply plus_left. econstructor; eauto.
   eapply star_trans. eexact A1.
   eapply star_left. econstructor. instantiate (1 := a'). rewrite <- F.
-  apply eval_addressing_preserved. exact symbols_preserved. eauto. eauto.
+  apply eval_addressing_preserved. exact symbols_preserved.
+  rewrite <- comp_transf_function; eauto.
+  eauto.
   eapply star_right. eexact A2. constructor.
   eauto. eauto. eauto. traceEq.
   exploit satisf_successors; eauto. simpl; eauto. intros [enext [U V]].
   econstructor; eauto.
 
 (* load pair *)
-- generalize (wt_exec_Iload _ _ _ _ _ _ _ _ _ _ _ WTI H1 WTRS). intros WTRS'.
+- generalize (wt_exec_Iload _ _ _ _ _ _ _ _ _ _ _ _ WTI H1 WTRS). intros WTRS'.
   exploit loadv_int64_split; eauto. intros (v1 & v2 & LOAD1 & LOAD2 & V1 & V2).
   set (v2' := if Archi.big_endian then v2 else v1) in *.
   set (v1' := if Archi.big_endian then v1 else v2) in *.
@@ -2207,7 +2208,7 @@ Proof.
   exploit eval_addressing_lessdef. eexact LD3.
   eapply eval_offset_addressing; eauto; apply Archi.splitlong_ptr32; auto.
   intros [a2' [F2 G2]].
-  assert (LOADX: exists v2'', Mem.loadv Mint32 m' a2' = Some v2'' /\ Val.lessdef v2' v2'').
+  assert (LOADX: exists v2'', Mem.loadv Mint32 m' a2' (Some (comp_of f)) = Some v2'' /\ Val.lessdef v2' v2'').
   { discriminate || (eapply Mem.loadv_extends; [eauto|eexact LOAD2|eexact G2]). }
   destruct LOADX as (v2'' & LOAD2' & LD4).
   set (ls4 := Locmap.set (R dst2') v2'' (undef_regs (destroyed_by_load Mint32 addr2) ls3)).
@@ -2223,11 +2224,13 @@ Proof.
   eapply star_trans. eexact A1.
   eapply star_left. econstructor.
   instantiate (1 := a1'). rewrite <- F1. apply eval_addressing_preserved. exact symbols_preserved.
-  eexact LOAD1'. instantiate (1 := ls2); auto.
+  rewrite <- comp_transf_function; eauto.
+  eauto.
   eapply star_trans. eexact A3.
   eapply star_left. econstructor.
   instantiate (1 := a2'). rewrite <- F2. apply eval_addressing_preserved. exact symbols_preserved.
-  eexact LOAD2'. instantiate (1 := ls4); auto.
+  rewrite <- comp_transf_function; eauto.
+  eauto.
   eapply star_right. eexact A5.
   constructor.
   eauto. eauto. eauto. eauto. eauto. traceEq.
@@ -2235,7 +2238,7 @@ Proof.
   econstructor; eauto.
 
 (* load first word of a pair *)
-- generalize (wt_exec_Iload _ _ _ _ _ _ _ _ _ _ _ WTI H1 WTRS). intros WTRS'.
+- generalize (wt_exec_Iload _ _ _ _ _ _ _ _ _ _ _ _ WTI H1 WTRS). intros WTRS'.
   exploit loadv_int64_split; eauto. intros (v1 & v2 & LOAD1 & LOAD2 & V1 & V2).
   set (v2' := if Archi.big_endian then v2 else v1) in *.
   set (v1' := if Archi.big_endian then v1 else v2) in *.
@@ -2257,7 +2260,8 @@ Proof.
   eapply star_trans. eexact A1.
   eapply star_left. econstructor.
   instantiate (1 := a1'). rewrite <- F1. apply eval_addressing_preserved. exact symbols_preserved.
-  eexact LOAD1'. instantiate (1 := ls2); auto.
+  rewrite <- comp_transf_function; eauto.
+  eauto.
   eapply star_right. eexact A3.
   constructor.
   eauto. eauto. eauto. traceEq.
@@ -2265,7 +2269,7 @@ Proof.
   econstructor; eauto.
 
 (* load second word of a pair *)
-- generalize (wt_exec_Iload _ _ _ _ _ _ _ _ _ _ _ WTI H1 WTRS). intros WTRS'.
+- generalize (wt_exec_Iload _ _ _ _ _ _ _ _ _ _ _ _ WTI H1 WTRS). intros WTRS'.
   exploit loadv_int64_split; eauto. intros (v1 & v2 & LOAD1 & LOAD2 & V1 & V2).
   set (v2' := if Archi.big_endian then v2 else v1) in *.
   set (v1' := if Archi.big_endian then v1 else v2) in *.
@@ -2275,7 +2279,7 @@ Proof.
   exploit eval_addressing_lessdef. eexact LD1.
   eapply eval_offset_addressing; eauto; apply Archi.splitlong_ptr32; auto.
   intros [a1' [F1 G1]].
-  assert (LOADX: exists v2'', Mem.loadv Mint32 m' a1' = Some v2'' /\ Val.lessdef v2' v2'').
+  assert (LOADX: exists v2'', Mem.loadv Mint32 m' a1' (Some (comp_of f)) = Some v2'' /\ Val.lessdef v2' v2'').
   { discriminate || (eapply Mem.loadv_extends; [eauto|eexact LOAD2|eexact G1]). }
   destruct LOADX as (v2'' & LOAD2' & LD2).
   set (ls2 := Locmap.set (R dst') v2'' (undef_regs (destroyed_by_load Mint32 addr2) ls1)).
@@ -2290,7 +2294,8 @@ Proof.
   eapply star_trans. eexact A1.
   eapply star_left. econstructor.
   instantiate (1 := a1'). rewrite <- F1. apply eval_addressing_preserved. exact symbols_preserved.
-  eexact LOAD2'. instantiate (1 := ls2); auto.
+  rewrite <- comp_transf_function; eauto.
+  eauto.
   eapply star_right. eexact A3.
   constructor.
   eauto. eauto. eauto. traceEq.
@@ -2318,7 +2323,9 @@ Proof.
   eapply plus_left. econstructor; eauto.
   eapply star_trans. eexact X.
   eapply star_two. econstructor. instantiate (1 := a'). rewrite <- F.
-  apply eval_addressing_preserved. exact symbols_preserved. eauto. eauto.
+  apply eval_addressing_preserved. exact symbols_preserved.
+  rewrite <- comp_transf_function; eauto.
+  eauto.
   constructor. eauto. eauto. traceEq.
   exploit satisf_successors; eauto. simpl; eauto.
   eapply can_undef_satisf; eauto. eapply add_equations_satisf; eauto. intros [enext [U V]].
@@ -2355,7 +2362,7 @@ Proof.
   assert (F2': eval_addressing tge sp addr (reglist ls3 args2') = Some a2').
     rewrite <- F2. apply eval_addressing_preserved. exact symbols_preserved.
   exploit (eval_offset_addressing tge); eauto. intros F2''.
-  assert (STOREX: exists m2', Mem.storev Mint32 m1' (Val.add a2' (Vint (Int.repr 4))) (ls3 (R src2')) = Some m2' /\ Mem.extends m' m2').
+  assert (STOREX: exists m2', Mem.storev Mint32 m1' (Val.add a2' (Vint (Int.repr 4))) (ls3 (R src2')) (comp_of f) = Some m2' /\ Mem.extends m' m2').
   { try discriminate;
     (eapply Mem.storev_extends;
      [eexact EXT1 | eexact STORE2 | apply Val.add_lessdef; [eexact G2|eauto] | eauto]). }
@@ -2364,10 +2371,14 @@ Proof.
   eapply plus_left. econstructor; eauto.
   eapply star_trans. eexact X.
   eapply star_left.
-  econstructor. eexact F1'. eexact STORE1'. instantiate (1 := ls2). auto.
+  econstructor. eexact F1'.
+  rewrite <- comp_transf_function; eauto.
+  eauto.
   eapply star_trans. eexact U.
   eapply star_two.
-  eapply exec_Lstore with (m' := m2'). eexact F2''. discriminate||exact STORE2'. eauto.
+  eapply exec_Lstore with (m' := m2'). eexact F2''.
+  discriminate||(rewrite <- comp_transf_function; eauto).
+  eauto.
   constructor. eauto. eauto. eauto. eauto. traceEq.
   exploit satisf_successors; eauto. simpl; eauto.
   eapply can_undef_satisf. eauto.
@@ -2385,8 +2396,6 @@ Proof.
   assert (SIG: funsig tfd = sg). eapply sig_function_translated; eauto.
   exploit find_function_ptr_translated. eauto. eauto. eauto. eapply add_equations_args_satisf; eauto.
   intros G.
-  (* intros [tvf G]. *)
-  (* exploit find_function_ptr_translated; eauto. *)
   econstructor; split.
   eapply plus_left. econstructor; eauto.
   eapply star_right. eexact A1. econstructor; eauto.
@@ -2427,12 +2436,11 @@ Proof.
   eapply star_right. eexact A1. econstructor; eauto.
   rewrite <- E. apply find_function_tailcall; auto.
   rewrite find_function_ptr_tailcall; eauto.
-  rewrite <- comp_transf_fundef; eauto.
+  rewrite <- comp_transf_fundef; eauto. rewrite <- comp_transf_function; eauto.
   rewrite <- comp_transf_function; eauto.
-  rewrite <- comp_transf_function; eauto.
-  rewrite <- comp_transf_function; eauto.
-  eapply allowed_call_translated; eauto.
+  rewrite <- comp_transf_function; eauto. eapply allowed_call_translated; eauto.
   replace (fn_stacksize tf) with (RTL.fn_stacksize f); eauto.
+  rewrite <- comp_transf_function; eauto.
   destruct (transf_function_inv _ _ FUN); auto.
   eauto. traceEq.
   econstructor; eauto.
@@ -2504,7 +2512,8 @@ Proof.
   econstructor; split.
   eapply plus_left. econstructor; eauto.
   eapply star_right. eexact A1.
-  econstructor. eauto. eauto. traceEq.
+  econstructor.
+  rewrite <- comp_transf_function; eauto. eauto. traceEq.
   simpl. econstructor; eauto.
   apply return_regs_agree_callee_save.
   constructor.
@@ -2513,7 +2522,8 @@ Proof.
   econstructor; split.
   eapply plus_left. econstructor; eauto.
   eapply star_right. eexact A1.
-  econstructor. eauto. eauto. traceEq.
+  econstructor.
+  rewrite <- comp_transf_function; eauto. eauto. traceEq.
   simpl. econstructor; eauto. rewrite <- H11.
   replace (Locmap.getpair (map_rpair R (loc_result (RTL.fn_sig f)))
                           (return_regs (parent_locset ts) ls1))

@@ -839,7 +839,6 @@ Lemma find_function_ptr_inject:
   find_function_ptr ge ros rs = Some vf ->
   Genv.allowed_call ge cp vf ->
   match ros with inl r => regset_inject j rs trs | inr id => kept id end ->
-  (* (match vf with | Vptr b _ => forall i, Genv.invert_symbol ge b = Some i -> kept i | _ => True end) -> *)
   exists tvf,
     find_function_ptr tge ros trs = Some tvf /\
     Genv.allowed_call tge cp tvf.
@@ -868,18 +867,10 @@ Proof.
       repeat split.
       * apply Genv.find_invert_symbol.
         apply Genv.invert_find_symbol in H21.
-        (* pose proof (symbol_address_inject) as D. *)
         pose proof (globals_symbols_inject) as E.
         specialize (E j H). unfold symbols_inject in E.
         destruct E as [E1 [E2 [E3 E4]]].
         specialize (E2 i _ _ _ H6). simpl in E2. specialize (E2 H21). destruct E2. auto.
-        (* pose proof (symbols_inject) *)
-        (* specialize (D _ _ Ptrofs.zero H H1). *)
-        (* unfold Genv.symbol_address in D. *)
-        (* rewrite H21 in D. *)
-        (* destruct (Genv.find_symbol tge i) eqn:?; try now inv D. *)
-        (* inv D. *)
-        (* rewrite H6 in H7. inv H7. auto. *)
       * rewrite <- H22.
         simpl. rewrite A. rewrite H0. reflexivity.
       * apply match_prog_pol in TRANSF.
@@ -911,18 +902,10 @@ Proof.
       repeat split.
       * apply Genv.find_invert_symbol.
         apply Genv.invert_find_symbol in H21.
-        (* pose proof (symbol_address_inject) as D. *)
         pose proof (globals_symbols_inject) as E.
         specialize (E j H). unfold symbols_inject in E.
         destruct E as [E1 [E2 [E3 E4]]].
         specialize (E2 i _ _ _ Q). simpl in E2. specialize (E2 H21). destruct E2. auto.
-        (* pose proof (symbols_inject) *)
-        (* specialize (D _ _ Ptrofs.zero H H1). *)
-        (* unfold Genv.symbol_address in D. *)
-        (* rewrite H21 in D. *)
-        (* destruct (Genv.find_symbol tge i) eqn:?; try now inv D. *)
-        (* inv D. *)
-        (* rewrite H6 in H7. inv H7. auto. *)
       * rewrite <- H22.
         simpl. rewrite A. rewrite H0. reflexivity.
       * apply match_prog_pol in TRANSF.
@@ -954,14 +937,16 @@ Proof.
 - econstructor; eauto with barg.
 - econstructor; eauto with barg.
 - simpl in H. exploit Mem.load_inject; eauto. rewrite Z.add_0_r.
-  intros (v' & A & B). exists v'; auto with barg.
+  intros (v' & A & B). exists v'; split; auto with barg.
+  econstructor. simpl; eauto.
 - econstructor; split; eauto with barg. simpl. econstructor; eauto. rewrite Ptrofs.add_zero; auto.
 - assert (Val.inject j (Senv.symbol_address ge id ofs) (Senv.symbol_address tge id ofs)).
   { unfold Senv.symbol_address; simpl; unfold Genv.symbol_address.
     destruct (Genv.find_symbol ge id) as [b|] eqn:FS; auto.
     exploit symbols_inject_2; eauto. intros (b' & A & B). rewrite A.
     econstructor; eauto. rewrite Ptrofs.add_zero; auto. }
-  exploit Mem.loadv_inject; eauto. intros (v' & A & B). exists v'; auto with barg.
+  exploit Mem.loadv_inject; eauto. intros (v' & A & B). exists v'; split; auto with barg.
+  econstructor. simpl; eauto.
 - econstructor; split; eauto with barg.
   unfold Senv.symbol_address; simpl; unfold Genv.symbol_address.
   destruct (Genv.find_symbol ge id) as [b|] eqn:FS; auto.
@@ -1273,6 +1258,21 @@ Proof.
   apply Mem.perm_cur. eapply Mem.perm_implies; eauto.
   apply P2. omega.
 - exploit init_meminj_invert; eauto. intros (A & id & B & C).
+  subst delta.
+  destruct cp as [cp|]; simpl in *; trivial.
+  destruct (Genv.find_symbol_find_def_inversion _ _ B) as [g B'].
+  assert ((prog_defmap p) ! id = Some g) as DEF1.
+  { apply Genv.find_def_symbol. eauto. }
+  destruct (Genv.find_symbol_find_def_inversion _ _ C) as [g' C'].
+  assert ((prog_defmap tp) ! id = Some g') as DEF2.
+  { apply Genv.find_def_symbol. eauto. }
+  pose proof (match_prog_def _ _ _ TRANSF id) as DEF2'.
+  destruct (IS.mem id used); try congruence.
+  rewrite DEF1, DEF2 in DEF2'.
+  injection DEF2' as ->.
+  rewrite (Genv.init_mem_find_def _ _ IM B') in *.
+  now rewrite (Genv.init_mem_find_def _ _ TIM C') in *.
+- exploit init_meminj_invert; eauto. intros (A & id & B & C).
   subst delta. apply Z.divide_0_r.
 - exploit init_meminj_invert_strong; eauto. intros (A & id & gd & B & C & D & E & F).
   exploit (Genv.init_mem_characterization_gen p); eauto.
@@ -1285,8 +1285,8 @@ Proof.
   assert (NO: gvar_volatile v = false).
   { unfold Genv.perm_globvar in H1. destruct (gvar_volatile v); auto. inv H1. }
 Local Transparent Mem.loadbytes.
-  generalize (S1 NO). unfold Mem.loadbytes. destruct Mem.range_perm_dec; intros E1; inv E1.
-  generalize (S2 NO). unfold Mem.loadbytes. destruct Mem.range_perm_dec; intros E2; inv E2.
+  generalize (S1 NO). unfold Mem.loadbytes. destruct Mem.range_perm_dec; destruct Mem.can_access_block_dec; intros E1; inv E1.
+  generalize (S2 NO). unfold Mem.loadbytes. destruct Mem.range_perm_dec; destruct Mem.can_access_block_dec; intros E2; inv E2.
   rewrite Z.add_0_r.
   apply Mem_getN_forall2 with (p := 0) (n := Z.to_nat (init_data_list_size (gvar_init v))).
   rewrite H3, H4. apply bytes_of_init_inject. auto.

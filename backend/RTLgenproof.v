@@ -503,7 +503,7 @@ Variable m: mem.
 Definition transl_expr_prop
      (le: letenv) (a: expr) (v: val) : Prop :=
   forall tm cs f map pr ns nd rd rs dst
-    (COMP: cp = f.(fn_comp))
+    (COMP: cp = (comp_of f))
     (MWF: map_wf map)
     (TE: tr_expr f.(fn_code) map pr a ns nd rd dst)
     (ME: match_env map e le rs)
@@ -518,7 +518,7 @@ Definition transl_expr_prop
 Definition transl_exprlist_prop
      (le: letenv) (al: exprlist) (vl: list val) : Prop :=
   forall tm cs f map pr ns nd rl rs
-    (COMP: cp = f.(fn_comp))
+    (COMP: cp = (comp_of f))
     (MWF: map_wf map)
     (TE: tr_exprlist f.(fn_code) map pr al ns nd rl)
     (ME: match_env map e le rs)
@@ -533,7 +533,7 @@ Definition transl_exprlist_prop
 Definition transl_condexpr_prop
      (le: letenv) (a: condexpr) (v: bool) : Prop :=
   forall tm cs f map pr ns ntrue nfalse rs
-    (COMP: cp = f.(fn_comp))
+    (COMP: cp = (comp_of f))
     (MWF: map_wf map)
     (TE: tr_condition f.(fn_code) map pr a ns ntrue nfalse)
     (ME: match_env map e le rs)
@@ -609,14 +609,18 @@ Qed.
 
 Lemma transl_expr_Eload_correct:
   forall (le : letenv) (chunk : memory_chunk) (addr : Op.addressing)
-         (args : exprlist) (vargs : list val) (vaddr v : val),
+         (args : exprlist) (vargs : list val) (vaddr : val)
+         (v : val),
   eval_exprlist ge sp e cp m le args vargs ->
   transl_exprlist_prop le args vargs ->
   Op.eval_addressing ge sp addr vargs = Some vaddr ->
-  Mem.loadv chunk m vaddr = Some v ->
+  Mem.loadv chunk m vaddr (Some cp) = Some v ->
   transl_expr_prop le (Eload chunk addr args) v.
 Proof.
-  intros; red; intros. inv TE.
+  intros; red; intros.
+  (* RB: TODO: [inv] now does not work because [subst] fails on the equality
+     generated on [cp]. Try to fix this. *)
+  inversion TE; subst map0 pr0 chunk0 addr0 al ns0 nd0 rd0 dst0.
   exploit H0; eauto. intros [rs1 [tm1 [EX1 [ME1 [RES1 [OTHER1 EXT1]]]]]].
   edestruct eval_addressing_lessdef as [vaddr' []]; eauto.
   edestruct Mem.loadv_extends as [v' []]; eauto.
@@ -624,8 +628,8 @@ Proof.
 (* Exec *)
   split. eapply star_right. eexact EX1. eapply exec_Iload. eauto.
   instantiate (1 := vaddr'). rewrite <- H3.
-  apply eval_addressing_preserved. exact symbols_preserved.
-  auto. traceEq.
+  apply eval_addressing_preserved. exact symbols_preserved. rewrite <- COMP.
+  eassumption. traceEq.
 (* Match-env *)
   split. eauto with rtlg.
 (* Result *)
@@ -768,7 +772,7 @@ Lemma transl_expr_Eexternal_correct:
   eval_exprlist ge sp e cp m le al vl ->
   transl_exprlist_prop le al vl ->
   external_call ef ge cp vl m E0 v m ->
-  forall ALLOWED: Genv.allowed_call ge cp (Vptr b Ptrofs.zero),
+  forall (ALLOWED: Genv.allowed_call ge cp (Vptr b Ptrofs.zero)),
   transl_expr_prop le (Eexternal id sg al) v.
 Proof.
   intros; red; intros. inv TE.
@@ -1380,12 +1384,12 @@ Proof.
   edestruct Mem.free_parallel_extends as [tm' []]; eauto.
   econstructor; split.
   left; apply plus_one. eapply exec_Ireturn. eauto.
-  rewrite H3. eauto.
+  inv TF. rewrite H3, COMP; eauto.
   constructor; auto.
 
   (* assign *)
   inv TS.
-  assert (COMP: f.(CminorSel.fn_comp) = tf.(fn_comp)) by now inv TF.
+  assert (COMP: comp_of tf = comp_of f) by now inv TF.
   exploit transl_expr_correct; eauto.
   intros [rs' [tm' [A [B [C [D E]]]]]].
   econstructor; split.
@@ -1394,7 +1398,7 @@ Proof.
 
   (* store *)
   inv TS.
-  assert (COMP: f.(CminorSel.fn_comp) = tf.(fn_comp)) by now inv TF.
+  assert (COMP: comp_of f = comp_of tf) by now inv TF.
   exploit transl_exprlist_correct; eauto.
   intros [rs' [tm' [A [B [C [D E]]]]]].
   exploit transl_expr_correct; eauto.
@@ -1408,7 +1412,7 @@ Proof.
   left; eapply plus_right. eapply star_trans. eexact A. eexact F. reflexivity.
   eapply exec_Istore with (a := vaddr'). eauto.
   rewrite <- H4. apply eval_addressing_preserved. exact symbols_preserved.
-  eauto. traceEq.
+  rewrite <- COMP; eauto. traceEq.
   econstructor; eauto. constructor.
 
   (* call *)
@@ -1465,7 +1469,7 @@ Proof.
   simpl; eauto.
   rewrite (J rf (or_introl eq_refl)).
   eapply allowed_call_translated; eauto. now rewrite <- COMP'.
-  rewrite H; eauto.
+  rewrite H, <- COMP'; eauto.
   traceEq.
   constructor; auto.
   (* direct *)
@@ -1484,7 +1488,7 @@ Proof.
   rewrite <- COMP'. eauto.
   simpl. rewrite symbols_preserved. rewrite H5. eauto.
   rewrite <- COMP'. eapply allowed_call_translated_same; eauto.
-  rewrite H; eauto.
+  rewrite H, <- COMP'; eauto.
   traceEq.
   constructor; auto.
 
@@ -1557,7 +1561,7 @@ Proof.
   econstructor; eauto. econstructor; eauto.
 
   (* switch *)
-  assert (COMP: f.(CminorSel.fn_comp) = tf.(fn_comp)) by now inv TF.
+  assert (COMP: comp_of f = comp_of tf) by now inv TF.
   inv TS.
   exploit transl_exitexpr_correct; eauto.
   intros (nd & rs' & tm' & A & B & C & D).
@@ -1566,18 +1570,18 @@ Proof.
   econstructor; eauto. constructor; auto.
 
   (* return none *)
-  assert (COMP: f.(CminorSel.fn_comp) = tf.(fn_comp)) by now inv TF.
+  assert (COMP: comp_of f = comp_of tf) by now inv TF.
   inv TS.
   exploit match_stacks_call_cont; eauto. intros [U V].
   inversion TF.
   edestruct Mem.free_parallel_extends as [tm' []]; eauto.
   econstructor; split.
   left; apply plus_one. eapply exec_Ireturn; eauto.
-  rewrite H2; eauto.
+  rewrite H2, <- COMP; eauto.
   constructor; auto.
 
   (* return some *)
-  assert (COMP: f.(CminorSel.fn_comp) = tf.(fn_comp)) by now inv TF.
+  assert (COMP: comp_of f = comp_of tf) by now inv TF.
   inv TS.
   exploit transl_expr_correct; eauto.
   intros [rs' [tm' [A [B [C [D E]]]]]].
@@ -1586,7 +1590,7 @@ Proof.
   edestruct Mem.free_parallel_extends as [tm'' []]; eauto.
   econstructor; split.
   left; eapply plus_right. eexact A. eapply exec_Ireturn; eauto.
-  rewrite H4; eauto. traceEq.
+  rewrite H4, <- COMP; eauto. traceEq.
   simpl. constructor; auto.
 
   (* label *)

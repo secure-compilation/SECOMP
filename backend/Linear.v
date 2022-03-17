@@ -96,7 +96,7 @@ Section RELSEM.
 
 Variable ge: genv.
 
-Definition find_fun_ptr (ros: mreg + ident) (rs: locset) : option val :=
+Definition find_function_ptr (ros: mreg + ident) (rs: locset) : option val :=
   match ros with
   | inl r => Some (rs (R r))
   | inr symb =>
@@ -181,21 +181,21 @@ Inductive step: state -> trace -> state -> Prop :=
   | exec_Lload:
       forall s f sp chunk addr args dst b rs m a v rs',
       eval_addressing ge sp addr (reglist rs args) = Some a ->
-      Mem.loadv chunk m a = Some v ->
+      Mem.loadv chunk m a (Some (comp_of f)) = Some v ->
       rs' = Locmap.set (R dst) v (undef_regs (destroyed_by_load chunk addr) rs) ->
       step (State s f sp (Lload chunk addr args dst :: b) rs m)
         E0 (State s f sp b rs' m)
   | exec_Lstore:
       forall s f sp chunk addr args src b rs m m' a rs',
       eval_addressing ge sp addr (reglist rs args) = Some a ->
-      Mem.storev chunk m a (rs (R src)) = Some m' ->
+      Mem.storev chunk m a (rs (R src)) (comp_of f) = Some m' ->
       rs' = undef_regs (destroyed_by_store chunk addr) rs ->
       step (State s f sp (Lstore chunk addr args src :: b) rs m)
         E0 (State s f sp b rs' m')
   | exec_Lcall:
       forall s f sp sig ros b rs m f' vf,
       find_function ros rs = Some f' ->
-      find_fun_ptr ros rs = Some vf ->
+      find_function_ptr ros rs = Some vf ->
       sig = funsig f' ->
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
       step (State s f sp (Lcall sig ros :: b) rs m)
@@ -204,18 +204,17 @@ Inductive step: state -> trace -> state -> Prop :=
       forall s f stk sig ros b rs m rs' f' m' vf,
       rs' = return_regs (parent_locset s) rs ->
       find_function ros rs' = Some f' ->
-      find_fun_ptr ros rs' = Some vf ->
+      find_function_ptr ros rs' = Some vf ->
       sig = funsig f' ->
       forall COMP: comp_of f' = comp_of f,
       forall ALLOWED: needs_calling_comp (comp_of f) = false,
       forall (ALLOWED': Genv.allowed_call ge (comp_of f) vf),
-      Mem.free m stk 0 f.(fn_stacksize) = Some m' ->
+      Mem.free m stk 0 f.(fn_stacksize) (comp_of f) = Some m' ->
       step (State s f (Vptr stk Ptrofs.zero) (Ltailcall sig ros :: b) rs m)
         E0 (Callstate s f' rs' m')
   | exec_Lbuiltin:
       forall s f sp rs m ef args res b vargs t vres rs' m',
       eval_builtin_args ge rs sp m args vargs ->
-      (* forall (ALLOWED: Policy.allowed_call pol f.(fn_comp) (External ef)), *)
       external_call ef ge (comp_of f) vargs m t vres m' ->
       rs' = Locmap.setres res vres (undef_regs (destroyed_by_builtin ef) rs) ->
       step (State s f sp (Lbuiltin ef args res :: b) rs m)
@@ -252,7 +251,7 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State s f sp b' rs' m)
   | exec_Lreturn:
       forall s f stk b rs m m',
-      Mem.free m stk 0 f.(fn_stacksize) = Some m' ->
+      Mem.free m stk 0 f.(fn_stacksize) (comp_of f) = Some m' ->
       step (State s f (Vptr stk Ptrofs.zero) (Lreturn :: b) rs m)
         E0 (Returnstate s (return_regs (parent_locset s) rs) m')
   | exec_function_internal:
