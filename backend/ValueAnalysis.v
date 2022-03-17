@@ -952,7 +952,7 @@ Theorem external_call_match:
   /\ bc_nostack bc'
   /\ (forall b ofs n cp,
       Mem.valid_block m b ->
-      forall OWN : Mem.can_access_block m b cp,
+      (* forall OWN : Mem.can_access_block m b cp, *)
       bc b = BCinvalid ->
       Mem.loadbytes m' b ofs n cp = Mem.loadbytes m b ofs n cp).
 Proof.
@@ -1064,8 +1064,15 @@ Proof.
   apply NOSTACK; auto.
   destruct (j' b); congruence.
 - (* unmapped blocks are invariant *)
-  intros. eapply Mem.loadbytes_unchanged_on_1; auto.
+  intros.
+  destruct (Mem.can_access_block_dec m b cp0) eqn:e.
+  eapply Mem.loadbytes_unchanged_on_1; auto.
   apply UNCH1; auto. intros; red. unfold inj_of_bc; rewrite H0; auto.
+  destruct (Mem.can_access_block_dec m' b cp0) eqn:e'.
+  eapply Mem.unchanged_on_own in UNCH1; eauto. clear e'. eapply (proj2 UNCH1) in c. contradiction.
+  Local Transparent Mem.loadbytes. unfold Mem.loadbytes.
+  rewrite e, e'. simpl. rewrite 2!andb_false_r. reflexivity.
+  Local Opaque Mem.loadbytes.
 Qed.
 
 (** ** Semantic invariant *)
@@ -1116,7 +1123,8 @@ Inductive sound_state_base: state -> Prop :=
         (RO: romatch bc m rm)
         (MM: mmatch bc m am)
         (GE: genv_match bc ge)
-        (SP: bc sp = BCstack),
+        (SP: bc sp = BCstack)
+        (ACC: Mem.can_access_block m sp (Some (comp_of f))),
       sound_state_base (State s f (Vptr sp Ptrofs.zero) pc e m)
   | sound_call_state:
       forall s fd args m bc
@@ -1264,6 +1272,7 @@ Lemma sound_succ_state:
   genv_match bc ge ->
   bc sp = BCstack ->
   sound_stack bc s m' sp ->
+  Mem.can_access_block m' sp (Some (comp_of f)) ->
   sound_state_base (State s f (Vptr sp Ptrofs.zero) pc' e' m').
 Proof.
   intros. exploit analyze_succ; eauto. intros (ae'' & am'' & AN & EM & MM).
@@ -1297,6 +1306,8 @@ Proof.
   eapply storev_sound; eauto.
   destruct a; simpl in H1; try discriminate. eapply romatch_store; eauto.
   eapply sound_stack_storev; eauto.
+  destruct a; try discriminate. simpl in H1.
+  eapply Mem.store_can_access_block_inj in H1; eapply H1; eauto.
 
 - (* call *)
   assert (TR: transfer f rm pc ae am = transfer_call ae am args res).
@@ -1312,7 +1323,7 @@ Proof.
   apply sound_call_state with bc'; auto.
   * eapply sound_stack_private_call with (bound' := Mem.nextblock m) (bc' := bc); eauto.
     apply Ple_refl.
-    eapply mmatch_below; eauto. admit.
+    eapply mmatch_below; eauto.
     eapply mmatch_stack; eauto.
   * intros. exploit list_in_map_inv; eauto. intros (r & P & Q). subst v.
     apply D with (areg ae r).
@@ -1325,7 +1336,7 @@ Proof.
   apply sound_call_state with bc'; auto.
   * eapply sound_stack_public_call with (bound' := Mem.nextblock m) (bc' := bc); eauto.
     apply Ple_refl.
-    eapply mmatch_below; eauto. admit.
+    eapply mmatch_below; eauto.
   * intros. exploit list_in_map_inv; eauto. intros (r & P & Q). subst v.
     apply D with (areg ae r). auto with va.
 
@@ -1372,7 +1383,6 @@ Proof.
   intros. rewrite K; auto. rewrite C; auto.
   apply bmatch_inv with m. eapply mmatch_stack; eauto.
   intros. apply Q; auto.
-  admit. (* RB: NOTE: New own_block subgoal *)
   eapply external_call_nextblock; eauto.
   intros (bc3 & U & V & W & X & Y & Z & AA).
   eapply sound_succ_state with (bc := bc3); eauto. simpl; auto.
@@ -1380,10 +1390,10 @@ Proof.
   apply sound_stack_exten with bc.
   apply sound_stack_inv with m. auto.
   intros. apply Q. red. eapply Plt_trans; eauto.
-  admit. (* RB: NOTE: New own_block subgoal *)
   rewrite C; auto with ordered_type.
   intros. eapply external_call_can_access_block; eauto.
   exact AA.
+  eapply external_call_can_access_block; eauto.
 * (* public builtin call *)
   exploit anonymize_stack; eauto.
   intros (bc1 & A & B & C & D & E & F & G).
@@ -1401,10 +1411,10 @@ Proof.
   apply sound_stack_exten with bc.
   apply sound_stack_inv with m. auto.
   intros. apply Q. red. eapply Plt_trans; eauto.
-  admit. (* RB: NOTE: New own_block subgoal *)
   rewrite C; auto with ordered_type.
   intros. eapply external_call_can_access_block; eauto.
   exact AA.
+  eapply external_call_can_access_block; eauto.
   }
   unfold transfer_builtin in TR.
   destruct ef; auto.
@@ -1447,6 +1457,7 @@ Proof.
     eauto.
     eapply romatch_store ; eauto.
     eapply sound_stack_storev with (addr := Vptr b ofs); simpl; eauto.
+    eapply Mem.store_can_access_block_inj in H1; eapply H1; eauto.
 + (* memcpy *)
   inv H0; auto. inv H3; auto. inv H4; auto. inv H1.
   exploit abuiltin_arg_sound. eauto. eauto. eauto. eauto. eauto. eexact H0. intros VM1.
@@ -1459,6 +1470,7 @@ Proof.
   intros. eapply loadbytes_sound; eauto. apply match_aptr_of_aval; auto.
   eapply romatch_storebytes; eauto.
   eapply sound_stack_storebytes; eauto.
+  eapply Mem.storebytes_can_access_block_inj_1; eauto.
 + (* annot *)
   inv H1. eapply sound_succ_state; eauto. simpl; auto. apply set_builtin_res_sound; auto. constructor.
 + (* annot val *)
@@ -1501,8 +1513,9 @@ Proof.
   apply sound_stack_exten with bc; auto.
   apply sound_stack_inv with m; auto.
   intros. eapply Mem.loadbytes_alloc_unchanged; eauto.
-  admit. (* easy?*)
+  intros. eapply Mem.alloc_can_access_block_other_inj_1; eauto.
   intros. apply F. erewrite Mem.alloc_result by eauto. auto.
+  eapply Mem.owned_new_block; eauto.
 
 - (* external function *)
   exploit external_call_match; eauto with va.
@@ -1511,7 +1524,6 @@ Proof.
   apply sound_stack_new_bound with (Mem.nextblock m).
   apply sound_stack_exten with bc; auto.
   apply sound_stack_inv with m; auto.
-  intros. apply K; auto. admit. (* RB: NOTE: New own_block subgoal *)
   intros. eapply external_call_can_access_block; eauto.
   eapply external_call_nextblock; eauto.
 
@@ -1533,8 +1545,7 @@ Proof.
    eapply sound_regular_state with (bc := bc1); eauto.
    apply sound_stack_exten with bc'; auto.
    eapply ematch_ge; eauto. apply ematch_update. auto. auto.
-(* Qed. *)
-Admitted.
+Qed.
 
 End SOUNDNESS.
 
