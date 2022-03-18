@@ -359,17 +359,17 @@ module Target : TARGET =
          fprintf oc "	bgeu	%a, %a, %a\n" ireg0 rs1 ireg0 rs2 print_label l
 
       (* Loads and stores *)
-      | Plb(rd, ra, ofs) ->
+      | Plb(rd, ra, ofs, priv) ->
          fprintf oc "	lb	%a, %a(%a)\n" ireg rd offset ofs ireg ra
-      | Plbu(rd, ra, ofs) ->
+      | Plbu(rd, ra, ofs, priv) ->
          fprintf oc "	lbu	%a, %a(%a)\n" ireg rd offset ofs ireg ra
-      | Plh(rd, ra, ofs) ->
+      | Plh(rd, ra, ofs, priv) ->
          fprintf oc "	lh	%a, %a(%a)\n" ireg rd offset ofs ireg ra
-      | Plhu(rd, ra, ofs) ->
+      | Plhu(rd, ra, ofs, priv) ->
          fprintf oc "	lhu	%a, %a(%a)\n" ireg rd offset ofs ireg ra
-      | Plw(rd, ra, ofs) | Plw_a(rd, ra, ofs) ->
+      | Plw(rd, ra, ofs, priv) | Plw_a(rd, ra, ofs, priv) ->
          fprintf oc "	lw	%a, %a(%a)\n" ireg rd offset ofs ireg ra
-      | Pld(rd, ra, ofs) | Pld_a(rd, ra, ofs) -> assert Archi.ptr64;
+      | Pld(rd, ra, ofs, priv) | Pld_a(rd, ra, ofs, priv) -> assert Archi.ptr64;
          fprintf oc "	ld	%a, %a(%a)\n" ireg rd offset ofs ireg ra
 
       | Psb(rd, ra, ofs) ->
@@ -398,7 +398,7 @@ module Target : TARGET =
          fprintf oc "	fmv.x.d	%a, %a\n"     ireg rd freg fs
 
       (* 32-bit (single-precision) floating point *)
-      | Pfls (fd, ra, ofs) ->
+      | Pfls (fd, ra, ofs, priv) ->
          fprintf oc "	flw	%a, %a(%a)\n" freg fd offset ofs ireg ra
       | Pfss (fs, ra, ofs) ->
          fprintf oc "	fsw	%a, %a(%a)\n" freg fs offset ofs ireg ra
@@ -459,7 +459,7 @@ module Target : TARGET =
          fprintf oc "	fcvt.s.lu	%a, %a\n" freg fd ireg0 rs
 
       (* 64-bit (double-precision) floating point *)
-      | Pfld (fd, ra, ofs) | Pfld_a (fd, ra, ofs) ->
+      | Pfld (fd, ra, ofs, priv) | Pfld_a (fd, ra, ofs, priv) ->
          fprintf oc "	fld	%a, %a(%a)\n" freg fd offset ofs ireg ra
       | Pfsd (fs, ra, ofs) | Pfsd_a (fs, ra, ofs) ->
          fprintf oc "	fsd	%a, %a(%a)\n" freg fs offset ofs ireg ra

@@ -264,7 +264,7 @@ module StateMap =
 let extract_string m blk ofs =
   let b = Buffer.create 80 in
   let rec extract blk ofs =
-    match Mem.load Mint8unsigned m blk ofs with
+    match Mem.load Mint8unsigned m blk ofs None with
     | Some(Vint n) ->
         let c = Char.chr (Z.to_int n) in
         if c = '\000' then begin
@@ -408,14 +408,15 @@ and world_io ge m id args =
 
 and world_vload ge m chunk id ofs =
   Genv.find_symbol ge.genv_genv id >>= fun b ->
-  Mem.load chunk m b ofs >>= fun v ->
+  Mem.load chunk m b ofs None >>= fun v ->
   Cexec.eventval_of_val ge v (type_of_chunk chunk) >>= fun ev ->
   Some(ev, world ge m)
 
 and world_vstore ge m chunk id ofs ev =
   Genv.find_symbol ge.genv_genv id >>= fun b ->
   Cexec.val_of_eventval ge ev (type_of_chunk chunk) >>= fun v ->
-  Mem.store chunk m b ofs v >>= fun m' ->
+  Mem.block_compartment m b >>= fun cp ->
+  Mem.store chunk m b ofs v cp >>= fun m' ->
   Some(world ge m')
 
 let do_event p ge time w ev =

@@ -92,8 +92,8 @@ let rec fixup_variadic_call ri rf tyl =
             and rd2 = int_param_regs.(ri + 1) in
             emit (Paddiw(X2, X X2, Integers.Int.neg _16));
             emit (Pfsd(rs, X2, Ofsimm _0));
-            emit (Plw(rd1, X2, Ofsimm _0));
-            emit (Plw(rd2, X2, Ofsimm _4));
+            emit (Plw(rd1, X2, Ofsimm _0, false));
+            emit (Plw(rd2, X2, Ofsimm _4, false));
             emit (Paddiw(X2, X X2, _16));
             fixup_variadic_call (ri + 2) (rf + 1) tyl
           end
@@ -141,25 +141,25 @@ let expand_builtin_memcpy_small sz al src dst =
   let rec copy osrc odst sz =
     if sz >= 8 && al >= 8 then
       begin
-        emit (Pfld (F0, rsrc, Ofsimm osrc));
+        emit (Pfld (F0, rsrc, Ofsimm osrc, false));
         emit (Pfsd (F0, rdst, Ofsimm odst));
         copy (Ptrofs.add osrc _8) (Ptrofs.add odst _8) (sz - 8)
       end
     else if sz >= 4 && al >= 4 then
       begin
-        emit (Plw (X31, rsrc, Ofsimm osrc));
+        emit (Plw (X31, rsrc, Ofsimm osrc, false));
         emit (Psw (X31, rdst, Ofsimm odst));
         copy (Ptrofs.add osrc _4) (Ptrofs.add odst _4) (sz - 4)
       end
     else if sz >= 2 && al >= 2 then
       begin
-        emit (Plh (X31, rsrc, Ofsimm osrc));
+        emit (Plh (X31, rsrc, Ofsimm osrc, false));
         emit (Psh (X31, rdst, Ofsimm odst));
         copy (Ptrofs.add osrc _2) (Ptrofs.add odst _2) (sz - 2)
       end
     else if sz >= 1 then
       begin
-        emit (Plb (X31, rsrc, Ofsimm osrc));
+        emit (Plb (X31, rsrc, Ofsimm osrc, false));
         emit (Psb (X31, rdst, Ofsimm odst));
         copy (Ptrofs.add osrc _1) (Ptrofs.add odst _1) (sz - 1)
       end
@@ -183,13 +183,13 @@ let expand_builtin_memcpy_big sz al src dst =
   (* Use X7 as loop count, X1 and F0 as ld/st temporaries. *)
   let (load, store, chunksize) =
     if al >= 8 then
-      (Pfld (F0, s, Ofsimm _0), Pfsd (F0, d, Ofsimm _0), 8)
+      (Pfld (F0, s, Ofsimm _0, false), Pfsd (F0, d, Ofsimm _0), 8)
     else if al >= 4 then
-      (Plw (X31, s, Ofsimm _0), Psw (X31, d, Ofsimm _0), 4)
+      (Plw (X31, s, Ofsimm _0, false), Psw (X31, d, Ofsimm _0), 4)
     else if al = 2 then
-      (Plh (X31, s, Ofsimm _0), Psh (X31, d, Ofsimm _0), 2)
+      (Plh (X31, s, Ofsimm _0, false), Psh (X31, d, Ofsimm _0), 2)
     else
-      (Plb (X31, s, Ofsimm _0), Psb (X31, d, Ofsimm _0), 1) in
+      (Plb (X31, s, Ofsimm _0, false), Psb (X31, d, Ofsimm _0), 1) in
   expand_loadimm32 X7 (Z.of_uint (sz / chunksize));
   let delta = Z.of_uint chunksize in
   let lbl = new_label () in
@@ -213,30 +213,30 @@ let expand_builtin_memcpy  sz al args =
 let expand_builtin_vload_common chunk base ofs res =
   match chunk, res with
   | Mint8unsigned, BR(IR res) ->
-     emit (Plbu (res, base, Ofsimm ofs))
+     emit (Plbu (res, base, Ofsimm ofs, false))
   | Mint8signed, BR(IR res) ->
-     emit (Plb  (res, base, Ofsimm ofs))
+     emit (Plb  (res, base, Ofsimm ofs, false))
   | Mint16unsigned, BR(IR res) ->
-     emit (Plhu (res, base, Ofsimm ofs))
+     emit (Plhu (res, base, Ofsimm ofs, false))
   | Mint16signed, BR(IR res) ->
-     emit (Plh  (res, base, Ofsimm ofs))
+     emit (Plh  (res, base, Ofsimm ofs, false))
   | Mint32, BR(IR res) ->
-     emit (Plw  (res, base, Ofsimm ofs))
+     emit (Plw  (res, base, Ofsimm ofs, false))
   | Mint64, BR(IR res) ->
-     emit (Pld  (res, base, Ofsimm ofs))
+     emit (Pld  (res, base, Ofsimm ofs, false))
   | Mint64, BR_splitlong(BR(IR res1), BR(IR res2)) ->
      let ofs' = Ptrofs.add ofs _4 in
      if base <> res2 then begin
-         emit (Plw (res2, base, Ofsimm ofs));
-         emit (Plw (res1, base, Ofsimm ofs'))
+         emit (Plw (res2, base, Ofsimm ofs, false));
+         emit (Plw (res1, base, Ofsimm ofs', false))
        end else begin
-         emit (Plw (res1, base, Ofsimm ofs'));
-         emit (Plw (res2, base, Ofsimm ofs))
+         emit (Plw (res1, base, Ofsimm ofs', false));
+         emit (Plw (res2, base, Ofsimm ofs, false))
        end
   | Mfloat32, BR(FR res) ->
-     emit (Pfls (res, base, Ofsimm ofs))
+     emit (Pfls (res, base, Ofsimm ofs, false))
   | Mfloat64, BR(FR res) ->
-     emit (Pfld (res, base, Ofsimm ofs))
+     emit (Pfld (res, base, Ofsimm ofs, false))
   | _ ->
      assert false
 
