@@ -202,6 +202,7 @@ Inductive eval_expr: letenv -> expr -> val -> Prop :=
       eval_exprlist le al vl ->
       external_call ef ge cp vl m E0 v m ->
       forall (ALLOWED: Genv.allowed_call ge cp (Vptr b Ptrofs.zero)),
+      forall (NO_CROSS_PTR: Genv.type_of_call ge cp (Vptr b Ptrofs.zero) = Genv.CrossCompartmentCall -> Forall not_ptr vl),
       eval_expr le (Eexternal id sg al) v
 
 with eval_exprlist: letenv -> exprlist -> list val -> Prop :=
@@ -378,6 +379,7 @@ Inductive step: state -> trace -> state -> Prop :=
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
+      forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) vf = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
       step (State f (Scall optid sig a bl) k sp e m)
         E0 (Callstate fd vargs (Kcall optid f sp e k) m)
 

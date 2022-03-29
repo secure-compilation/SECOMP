@@ -900,6 +900,9 @@ Fixpoint step_expr (cp: compartment) (k: kind) (a: expr) (m: mem): reducts expr 
               check (Genv.allowed_call_b ge cp vf);
               do vargs <- sem_cast_arguments vtl tyargs m;
               check type_eq (type_of_fundef fd) (Tfunction tyargs tyres cconv);
+              check (match Genv.type_of_call ge cp vf with
+                     | Genv.CrossCompartmentCall => forallb not_ptr_b vargs
+                     | _ => true end);
               topred (Callred "red_call" fd vargs ty m)
           | _ => stuck
           end
@@ -1020,6 +1023,7 @@ Definition invert_expr_prop (cp: compartment) (a: expr) (m: mem) : Prop :=
       /\ cast_arguments m rargs tyargs vl
       /\ type_of_fundef fd = Tfunction tyargs tyres cconv
       /\ Genv.allowed_call ge cp vf
+      /\ (Genv.type_of_call ge cp vf = Genv.CrossCompartmentCall -> Forall not_ptr vl)
   | Ebuiltin ef tyargs rargs ty =>
       exprlist_all_values rargs ->
       exists vargs t vres m' w',
@@ -1065,6 +1069,7 @@ Lemma callred_invert:
 Proof.
   intros. inv H. simpl.
   intros. exists tyargs, tyres, cconv, fd, args; auto.
+  repeat split; auto.
 Qed.
 
 Scheme context_ind2 := Minimality for context Sort Prop
@@ -1513,11 +1518,31 @@ Proof with (try (apply not_invert_ok; simpl; intro; myinv; intuition congruence;
   destruct (Genv.allowed_call_b ge cp vf) eqn:ALLOWED...
   destruct (sem_cast_arguments vtl tyargs m) as [vargs|] eqn:?...
   destruct (type_eq (type_of_fundef fd) (Tfunction tyargs tyres cconv))...
+  destruct (Genv.type_of_call ge cp vf) eqn:?...
   apply topred_ok; auto. red. split; auto. eapply red_call; eauto.
   eapply sem_cast_arguments_sound; eauto.
   (* Use Heqb *)
+  eapply Genv.allowed_call_reflect; eauto. congruence.
+  destruct (forallb not_ptr_b vargs) eqn:?...
+  apply topred_ok; auto. red. split; auto. eapply red_call; eauto.
+  eapply sem_cast_arguments_sound; eauto.
   eapply Genv.allowed_call_reflect; eauto.
+  intros. pose proof (proj1 (forallb_forall _ _) Heqb). eapply Forall_forall. intros; eapply not_ptr_reflect; eauto.
+  apply not_invert_ok; simpl; intros; myinv. specialize (H ALLVAL). myinv.
+  (* apply Genv.cross_call_reflect in Heqb. *) specialize (H4 Heqc0).
+  rewrite Heqc in H; inv H.
+  rewrite Heqo1 in H0; inv H0.
+  exploit sem_cast_arguments_complete; eauto. intros [vtl' [P Q]]. rewrite Heqo0 in P. inv P.
+  rewrite Heqo2 in Q; inv Q.
+  pose proof (proj1 (Forall_forall _ _) H4).
+  eapply eq_true_false_abs with (b := forallb not_ptr_b x3); [| auto].
+  eapply forallb_forall. intros. eapply not_ptr_reflect; eauto.
+  apply topred_ok; auto. red. split; auto. eapply red_call; eauto.
+  eapply sem_cast_arguments_sound; eauto.
+  eapply Genv.allowed_call_reflect; eauto. congruence.
   apply not_invert_ok; simpl; intros; myinv. specialize (H ALLVAL). myinv. congruence.
+  (* intros. apply Genv.cross_call_reflect in H; congruence. *)
+
   apply not_invert_ok; simpl; intros; myinv. specialize (H ALLVAL). myinv.
   exploit sem_cast_arguments_complete; eauto. intros [vtl' [P Q]]. congruence.
   apply not_invert_ok; simpl; intros; myinv. specialize (H ALLVAL). myinv.
@@ -1656,6 +1681,13 @@ Proof.
   eapply Genv.allowed_call_reflect in ALLOWED.
   rewrite ALLOWED.
   econstructor; eauto.
+  destruct (Genv.type_of_call ge cp vf) eqn:?; try reflexivity.
+  specialize (NO_CROSS_PTR eq_refl).
+  pose proof (proj1 (Forall_forall _ _) NO_CROSS_PTR) as G.
+  assert (forallb not_ptr_b vargs = true) as G'.
+  { eapply forallb_forall.
+    intros. eapply not_ptr_reflect. eauto. }
+  rewrite G'. reflexivity.
 Qed.
 
 

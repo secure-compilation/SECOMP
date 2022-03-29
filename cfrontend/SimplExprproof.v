@@ -119,6 +119,16 @@ Proof.
   eapply (Genv.match_genvs_allowed_calls H0). eauto.
 Qed.
 
+Lemma type_of_call_translated:
+  forall cp vf,
+    Genv.allowed_call ge cp vf ->
+    Genv.type_of_call ge cp vf = Genv.type_of_call tge cp vf.
+Proof.
+  intros cp vf H.
+  destruct TRANSL.
+  eapply (Genv.match_genvs_type_of_call H0). eauto.
+Qed.
+
 (** Properties of smart constructors. *)
 
 Lemma eval_Ederef':
@@ -1976,10 +1986,11 @@ Proof.
   exploit functions_translated; eauto. intros [tfd [J K]].
   econstructor; split.
   left. eapply plus_left. constructor.  apply star_one.
-  econstructor; eauto. rewrite <- TY1; eauto. rewrite CO; eauto. rewrite CO; eauto.
+  econstructor. rewrite <- TY1; eauto. rewrite CO; eauto. rewrite CO; eauto. eauto.
   exploit type_of_fundef_preserved; eauto. congruence.
   rewrite CO; eauto.
   eapply allowed_call_translated; eauto.
+  erewrite CO, <- type_of_call_translated; eauto.
   traceEq.
   constructor; auto. econstructor; eauto.
   intros. change sl2 with (nil ++ sl2). apply S.
@@ -1991,11 +2002,12 @@ Proof.
   exploit functions_translated; eauto. intros [tfd [J K]].
   econstructor; split.
   left. eapply plus_left. constructor.  apply star_one.
-  econstructor; eauto. rewrite <- TY1; eauto.
+  econstructor. rewrite <- TY1; eauto.
   rewrite CO; eauto.
-  rewrite CO; eauto.
+  rewrite CO; eauto. eauto.
   exploit type_of_fundef_preserved; eauto. congruence.
   eapply allowed_call_translated; eauto. rewrite CO; eauto.
+  erewrite CO, <- type_of_call_translated; eauto.
   traceEq.
   constructor; auto. econstructor; eauto.
   intros. apply S. destruct dst'; constructor.

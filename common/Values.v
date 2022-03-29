@@ -41,6 +41,29 @@ Inductive val: Type :=
   | Vsingle: float32 -> val
   | Vptr: block -> ptrofs -> val.
 
+(* not_ptr means more accurately "never a pointer", i.e. it's a value that is
+   never refined into a pointer *)
+Definition not_ptr (v: val) :=
+  match v with
+  | Vptr _ _ | Vundef => False
+  | _ => True
+  end.
+
+Definition not_ptr_b (v: val) :=
+  match v with
+  | Vptr _ _ | Vundef => false
+  | _ => true
+  end.
+
+Lemma not_ptr_reflect: forall v,
+    not_ptr v <-> not_ptr_b v = true.
+Proof.
+  intros; unfold not_ptr, not_ptr_b;
+    destruct v; split; auto.
+  discriminate.
+  discriminate.
+Qed.
+
 Definition Vzero: val := Vint Int.zero.
 Definition Vone: val := Vint Int.one.
 Definition Vmone: val := Vint Int.mone.
@@ -2002,6 +2025,20 @@ Inductive lessdef_list: list val -> list val -> Prop :=
 
 Hint Resolve lessdef_refl lessdef_undef lessdef_list_nil lessdef_list_cons : core.
 
+
+Lemma lessdef_list_not_ptr: forall vl vl',
+    lessdef_list vl vl' ->
+    Forall not_ptr vl ->
+    Forall not_ptr vl'.
+Proof.
+  induction vl; intros.
+  - inv H. eauto.
+  - inv H. inv H0.
+    constructor.
+    + inv H3; auto. inv H2.
+    + eauto.
+Qed.
+
 Lemma lessdef_list_inv:
   forall vl1 vl2, lessdef_list vl1 vl2 -> vl1 = vl2 \/ In Vundef vl1.
 Proof.
@@ -2235,6 +2272,22 @@ Inductive inject_list (mi: meminj): list val -> list val-> Prop:=
       inject_list mi (v :: vl) (v' :: vl').
 
 Hint Resolve inject_list_nil inject_list_cons : core.
+
+
+Lemma inject_list_not_ptr (mi: meminj):
+  forall vl vl',
+    inject_list mi vl vl' ->
+    Forall not_ptr vl ->
+    Forall not_ptr vl'.
+Proof.
+  intros vl. induction vl.
+  - intros. inv H. eauto.
+  - intros. inv H. inv H0.
+    constructor.
+    + inv H3; auto. inv H2.
+    + eauto.
+Qed.
+
 
 Lemma inject_ptrofs:
   forall mi i, inject mi (Vptrofs i) (Vptrofs i).

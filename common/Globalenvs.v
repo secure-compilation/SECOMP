@@ -1898,6 +1898,52 @@ Definition allowed_cross_call (ge: t) (cp: compartment) (vf: val) :=
   | _ => False
   end.
 
+Variant call_type :=
+  | InternalCall
+  | CrossCompartmentCall
+  | DefaultCompartmentCall
+.
+
+Definition type_of_call (ge: t) (cp: compartment) (vf: val): call_type :=
+  match find_comp ge vf with
+  | None => InternalCall (* a failed call is internal, by definition *)
+  | Some cp' =>
+      if Pos.eqb cp cp' then InternalCall
+      else if Pos.eqb cp' default_compartment then DefaultCompartmentCall
+           else CrossCompartmentCall
+  end.
+
+(* (* A call is cross-compartment if the following definition holds: *) *)
+(* Definition cross_call (ge: t) (cp: compartment) (vf: val) := *)
+(*   match find_comp ge vf with *)
+(*   | Some cp' => cp <> cp' /\ *)
+(*                  cp' <> default_compartment (* the default compartment is really privileged, *)
+(*                                             as this is where all the builtin functions live *) *)
+(*   | None => False *)
+(*   end. *)
+
+(* Definition cross_call_b (ge: t) (cp: compartment) (vf: val): bool := *)
+(*   match find_comp ge vf with *)
+(*   | Some cp' => negb (Pos.eqb cp cp') && negb (Pos.eqb cp' default_compartment) *)
+(*   | None => false *)
+(*   end. *)
+
+(* Lemma cross_call_reflect: forall ge cp vf, *)
+(*     cross_call ge cp vf <-> cross_call_b ge cp vf = true. *)
+(* Proof. *)
+(*   intros. *)
+(*   unfold cross_call, cross_call_b. *)
+(*   destruct (find_comp ge vf) eqn:COMP. *)
+(*   - split. *)
+(*     + intros [cp_neq cp_neq']. *)
+(*       apply Pos.eqb_neq in cp_neq. apply Pos.eqb_neq in cp_neq'. *)
+(*       rewrite cp_neq, cp_neq'. reflexivity. *)
+(*     + intros cp_neq. apply andb_true_iff in cp_neq as [cp_neq cp_neq']. *)
+(*       apply negb_true_iff in cp_neq. apply negb_true_iff in cp_neq'. *)
+(*       split; apply Pos.eqb_neq; assumption. *)
+(*   - split; [auto | discriminate]. *)
+(* Qed. *)
+
 (* A call is allowed if any of these 3 cases holds:
 (1) the procedure being called belongs to the default compartment
 (2) the procedure being called belongs to the same compartment as the caller
@@ -2237,6 +2283,28 @@ Proof.
       destruct (Policy.list_id_eq l l0); subst; simpl in *; auto; try discriminate. contradiction.
 Qed.
 
+Lemma match_genvs_type_of_call:
+  forall cp vf,
+    (* TODO: adding the [allowed_call] assumption simplifies this proof, and AFAIK everytime we might want
+     to use this lemma we have access to an [allowed_call] assumption. Still, doesn't it mean that there's
+     something we may want to factor out? *)
+    allowed_call (globalenv p) cp vf ->
+    type_of_call (globalenv p) cp vf = type_of_call (globalenv tp) cp vf.
+Proof.
+  intros.
+  unfold allowed_call, type_of_call, find_comp.
+  destruct vf; auto.
+  destruct (find_funct_ptr (globalenv p) b) eqn:EQ; auto.
+  - apply find_funct_ptr_match in EQ as [? [? [G [? ?]]]].
+    rewrite G.
+    erewrite 2!match_fundef_comp; eauto.
+  - unfold allowed_call in H.
+    destruct H as [H | [H | H]].
+    + simpl in H. rewrite EQ in H. congruence.
+    + simpl in H. rewrite EQ in H. congruence.
+    + simpl in H. rewrite EQ in H.
+      destruct H as [? [? [? [? ?]]]]; congruence.
+Qed.
 
 End MATCH_PROGRAMS.
 
@@ -2309,6 +2377,14 @@ Proof.
   eapply (match_genvs_allowed_calls progmatch).
 Qed.
 
+Theorem type_of_call_transf_partial:
+  forall cp vf,
+    allowed_call (globalenv p) cp vf ->
+    type_of_call (globalenv p) cp vf = type_of_call (globalenv tp) cp vf.
+Proof.
+  eapply (match_genvs_type_of_call progmatch).
+Qed.
+
 End TRANSFORM_PARTIAL.
 
 (** Special case for total transformations that do not depend on the compilation unit *)
@@ -2364,6 +2440,15 @@ Theorem allowed_call_transf:
 Proof.
   eapply (match_genvs_allowed_calls progmatch).
 Qed.
+
+Theorem type_of_call_transf:
+  forall cp vf,
+    allowed_call (globalenv p) cp vf ->
+    type_of_call (globalenv p) cp vf = type_of_call (globalenv tp) cp vf.
+Proof.
+  eapply (match_genvs_type_of_call progmatch).
+Qed.
+
 End TRANSFORM_TOTAL.
 
 End Genv.

@@ -1991,7 +1991,15 @@ Proof.
   eapply (Genv.allowed_call_transf_partial TRANSL) in ALLOWED. eauto.
 Qed.
 
-
+Lemma type_of_call_transl: forall cenv f vf sz tfn,
+  Genv.allowed_call ge (comp_of f) vf ->
+  transl_funbody cenv sz f = OK tfn ->
+  Genv.type_of_call ge (comp_of f) vf = Genv.type_of_call tge (comp_of tfn) vf.
+Proof.
+  intros cenv f vf sz tfn ALLOWED TRF.
+  erewrite <- (comp_transl_partial _ TRF).
+  eapply (Genv.type_of_call_transf_partial TRANSL) in ALLOWED. eauto.
+Qed.
 
 (** The simulation diagram. *)
 
@@ -2088,6 +2096,8 @@ Proof.
   apply plus_one. eapply step_call; eauto.
   apply sig_preserved; eauto.
   eapply allowed_call_transl; eauto.
+  erewrite <- type_of_call_transl; eauto.
+  intros CROSS. eapply Val.inject_list_not_ptr; eauto.
   econstructor; eauto.
   eapply match_Kcall with (cenv' := cenv); eauto.
   red; auto.

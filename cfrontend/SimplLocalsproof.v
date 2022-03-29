@@ -99,6 +99,18 @@ Proof.
   eapply (Genv.match_genvs_allowed_calls H0). eauto.
 Qed.
 
+Lemma type_of_call_translated:
+  forall f tf vf,
+    Genv.allowed_call ge (comp_of f) vf ->
+    transf_function f = OK tf ->
+    Genv.type_of_call ge (comp_of f) vf = Genv.type_of_call tge (comp_of tf) vf.
+Proof.
+  intros f tf vf H TRF.
+  erewrite <- (comp_transl_partial _ TRF).
+  destruct TRANSF.
+  eapply (Genv.match_genvs_type_of_call H0). eauto.
+Qed.
+
 (** Matching between environments before and after *)
 
 Inductive match_var (f: meminj) (cenv: compilenv) (e: env) (m: mem) (te: env) (tle: temp_env) (id: ident) : Prop :=
@@ -2169,6 +2181,8 @@ Proof.
   eauto.
   erewrite type_of_fundef_preserved; eauto.
   eapply allowed_call_translated; eauto.
+  erewrite <- type_of_call_translated; eauto.
+  intros. eapply Val.inject_list_not_ptr; eauto.
   econstructor; eauto.
   intros. econstructor; eauto.
 

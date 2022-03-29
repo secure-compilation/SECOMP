@@ -219,6 +219,19 @@ Proof.
   - inv FIND.
 Qed.
 
+Lemma type_of_call_translated:
+  forall cp vf vf' fd,
+    Val.lessdef vf vf' ->
+    Genv.find_funct ge vf = Some fd ->
+    Genv.allowed_call ge cp vf ->
+    Genv.type_of_call ge cp vf = Genv.type_of_call tge cp vf'.
+Proof.
+  intros cp vf vf' fd' LESSDEF FIND H.
+  inv LESSDEF.
+  - eapply (Genv.match_genvs_type_of_call TRANSF). eauto.
+  - inv FIND.
+Qed.
+
 Section CMCONSTR.
 
 Variable cunit: Cminor.program.
@@ -1338,6 +1351,11 @@ Proof.
   eapply sig_function_translated; eauto.
   rewrite CPT in ALLOWED; eauto.
   eapply allowed_call_translated; eauto.
+  rewrite CPT in NO_CROSS_PTR; eauto.
+  intros CROSS.
+  eapply Val.lessdef_list_not_ptr; eauto.
+  eapply NO_CROSS_PTR.
+  erewrite type_of_call_translated; eauto. rewrite <- CPT; eauto.
   eapply match_callstate with (cunit := cunit'); eauto.
   eapply match_cont_call with (cunit := cunit) (hf := hf); eauto.
 + (* direct *)
@@ -1350,6 +1368,11 @@ Proof.
   eapply sig_function_translated; eauto.
   rewrite CPT in ALLOWED; eauto.
   eapply allowed_call_translated. eapply Val.lessdef_refl. eauto. eauto.
+  rewrite CPT in NO_CROSS_PTR; eauto.
+  intros CROSS.
+  eapply Val.lessdef_list_not_ptr; eauto.
+  eapply NO_CROSS_PTR.
+  erewrite type_of_call_translated; eauto. rewrite <- CPT; eauto.
   eapply match_callstate with (cunit := cunit'); eauto.
   eapply match_cont_call with (cunit := cunit) (hf := hf); eauto.
 + (* turned into Sbuiltin *)

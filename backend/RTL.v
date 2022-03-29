@@ -264,6 +264,7 @@ Inductive step: state -> trace -> state -> Prop :=
       funsig fd = sig ->
       forall (FUNPTR: find_function_ptr ros rs = Some vf),
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
+      forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) vf = Genv.CrossCompartmentCall -> Forall not_ptr (rs##args)),
       step (State s f sp pc rs m)
         E0 (Callstate (Stackframe res f sp pc' rs :: s) fd rs##args m)
   | exec_Itailcall:
@@ -275,6 +276,7 @@ Inductive step: state -> trace -> state -> Prop :=
       forall ALLOWED: needs_calling_comp (comp_of f) = false,
       forall (FUNPTR: find_function_ptr ros rs = Some vf),
       forall (ALLOWED': Genv.allowed_call ge (comp_of f) vf),
+      (* forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) vf = Genv.CrossCompartmentCall -> Forall not_ptr (rs##args)), *)
       Mem.free m stk 0 f.(fn_stacksize) (comp_of f) = Some m' ->
       step (State s f (Vptr stk Ptrofs.zero) pc rs m)
         E0 (Callstate s fd rs##args m')

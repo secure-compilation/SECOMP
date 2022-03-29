@@ -75,6 +75,17 @@ Proof.
   eapply (Genv.match_genvs_allowed_calls TRANSF). eauto.
 Qed.
 
+Lemma type_of_call_translated:
+  forall cp vf,
+    (* Val.lessdef vf vf' -> *)
+    (* Genv.find_funct ge vf = Some fd -> *)
+    Genv.allowed_call ge cp vf ->
+    Genv.type_of_call ge cp vf = Genv.type_of_call tge cp vf.
+Proof.
+  intros cp vf H.
+  eapply (Genv.match_genvs_type_of_call TRANSF). eauto.
+Qed.
+
 Lemma sig_function_translated:
   forall cu f f', transf_fundef (funenv_program cu) f = OK f' -> funsig f' = funsig f.
 Proof.
@@ -1093,6 +1104,28 @@ Proof.
   eapply sig_function_translated; eauto.
   eapply find_function_ptr_translated; eauto.
   rewrite <- SAMECOMP. eapply allowed_call_translated; eauto.
+  (* TODO: write lemma for that *)
+  assert (forall F ctx rs rs', agree_regs F ctx rs rs' ->
+                          (* tr_funbody fenv (fn_stacksize f') ctx f (fn_code f') -> *)
+                          forall args,
+                            Forall not_ptr rs ## args ->
+                            Forall not_ptr rs' ## (sregs ctx args)).
+  { clear. intros F ctx rs rs' AG (* FB *).
+    induction args; intros.
+    - eauto.
+    - inv H.
+      constructor.
+      + destruct AG as [AG1 AG2].
+        destruct (Plt_Ple_dec (mreg ctx) a).
+        * specialize (AG2 _ p); rewrite AG2 in H2; contradiction.
+        * specialize (AG1 _ p).
+          inv AG1; simpl in *; auto.
+          rewrite <- H in H2; simpl in H2; contradiction.
+          rewrite <- H0 in H2; simpl in H2; contradiction.
+      + eauto.
+  }
+  intros CROSS. eapply H1; eauto.
+  eapply NO_CROSS_PTR; eauto. erewrite SAMECOMP, type_of_call_translated; eauto. erewrite <- SAMECOMP; eauto.
   econstructor; eauto.
   eapply match_stacks_cons; eauto.
   { red; eauto. }
@@ -1154,6 +1187,10 @@ Proof.
   eapply sig_function_translated; eauto.
   eapply find_function_ptr_translated; eauto.
   rewrite <- SAMECOMP. eapply allowed_call_translated; eauto.
+  (* This is a tailcall, so the type of call is InternalCall *)
+  assert (Genv.type_of_call tge (comp_of f') vf = Genv.InternalCall).
+  { admit. }
+  rewrite H1. congruence.
   econstructor; eauto.
   eapply match_stacks_untailcall; eauto.
   eapply match_stacks_inside_invariant; eauto.
@@ -1406,7 +1443,7 @@ Proof.
   left; econstructor; split.
   eapply plus_one. eapply exec_Inop; eauto.
   econstructor; eauto. subst vres. apply agree_set_reg_undef'; auto.
-Qed.
+Admitted.
 
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 -> exists st2, initial_state tprog st2 /\ match_states st1 st2.

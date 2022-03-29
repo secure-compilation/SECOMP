@@ -89,6 +89,15 @@ Proof.
   eapply (Genv.match_genvs_allowed_calls TRANSL). eauto.
 Qed.
 
+Lemma type_of_call_translated:
+  forall cp vf,
+    Genv.allowed_call ge cp vf ->
+    Genv.type_of_call ge cp vf = Genv.type_of_call tge cp vf.
+Proof.
+  intros cp vf H.
+  eapply (Genv.match_genvs_type_of_call TRANSL). eauto.
+Qed.
+
 Lemma init_regs_lessdef:
   forall rl vl1 vl2,
   Val.lessdef_list vl1 vl2 ->
@@ -521,6 +530,25 @@ Proof.
   eapply exec_Icall; eauto. apply sig_function_translated; auto.
   rewrite comp_transf_function.
   eapply allowed_call_translated; eauto.
+
+  rewrite comp_transf_function. intros CROSS.
+  (* TODO: write a lemma for this. There's the exact same assert in another file *)
+  assert (forall rs rs',
+             regs_lessdef rs rs' ->
+             forall l,
+               Forall not_ptr rs ## l ->
+               Forall not_ptr rs' ## l).
+  { clear. intros rs rs' LESSDEF.
+    induction l; intros.
+    - eauto.
+    - inv H.
+      constructor.
+      + specialize (LESSDEF a). inv LESSDEF; eauto.
+        rewrite <- H0 in H2; now simpl in H2.
+      + eauto. }
+  eapply H2; eauto.
+  eapply NO_CROSS_PTR.
+  erewrite type_of_call_translated; eauto.
   constructor; auto. constructor; auto.
   econstructor; eauto.
   apply regs_lessdef_regs; auto.

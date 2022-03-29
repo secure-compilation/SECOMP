@@ -198,6 +198,9 @@ Inductive step: state -> trace -> state -> Prop :=
       find_function_ptr ros rs = Some vf ->
       sig = funsig f' ->
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
+      (* Need to state what NO_CROSS_PTR should look like at this level *)
+      (* forall (NO_CROSS_PTR: Genv.cross_call ge (comp_of f) vf -> Forall not_ptr (rs##args)), *)
+      forall (NO_CROSS_PTR: False),
       step (State s f sp (Lcall sig ros :: b) rs m)
         E0 (Callstate (Stackframe f sp rs b:: s) f' rs m)
   | exec_Ltailcall:

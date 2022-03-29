@@ -94,6 +94,17 @@ Proof.
   eapply (Genv.match_genvs_allowed_calls TRANSL). eauto.
 Qed.
 
+Lemma type_of_call_translated:
+  forall cp vf,
+    (* Val.lessdef vf vf' -> *)
+    (* Genv.find_funct ge vf = Some fd -> *)
+    Genv.allowed_call ge cp vf ->
+    Genv.type_of_call ge cp vf = Genv.type_of_call tge cp vf.
+Proof.
+  intros cp vf H.
+  eapply (Genv.match_genvs_type_of_call TRANSL). eauto.
+Qed.
+
 (** Effect of an injective renaming of nodes on a CFG. *)
 
 Section RENUMBER.
@@ -224,6 +235,8 @@ Proof.
     apply sig_preserved.
     eapply find_function_ptr_translated; eauto.
     eapply allowed_call_translated; eauto.
+    intros CROSS. eapply NO_CROSS_PTR.
+    erewrite type_of_call_translated; eauto.
 
   constructor. constructor; auto. constructor. eapply reach_succ; eauto. simpl; auto.
 (* tailcall *)

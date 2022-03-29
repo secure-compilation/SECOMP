@@ -313,6 +313,8 @@ Inductive callred: expr -> mem -> fundef -> list val -> type -> Prop :=
       type_of_fundef fd = Tfunction tyargs tyres cconv ->
       classify_fun tyf = fun_case_f tyargs tyres cconv ->
       forall (ALLOWED: Genv.allowed_call ge cp vf),
+      forall (NO_CROSS_PTR: Genv.type_of_call ge cp vf = Genv.CrossCompartmentCall ->
+                       Forall not_ptr vargs),
       callred (Ecall (Eval vf tyf) el ty) m
               fd vargs ty.
 

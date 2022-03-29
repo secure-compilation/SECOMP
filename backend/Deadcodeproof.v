@@ -939,6 +939,7 @@ Ltac UseTransfer :=
   eapply exec_Icall; eauto. eapply sig_function_translated; eauto.
   rewrite <- comp_transf_function; eauto.
   eapply allowed_call_translated; eauto.
+  admit.
   eapply match_call_states with (cu := cu'); eauto.
   constructor; auto. eapply match_stackframes_intro with (cu := cu); eauto.
   intros.
@@ -1197,7 +1198,7 @@ Ltac UseTransfer :=
   constructor.
   econstructor; eauto. apply mextends_agree; auto.
 (* Qed. *)
-Qed.
+Admitted.
 
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 ->

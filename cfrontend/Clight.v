@@ -577,6 +577,7 @@ Inductive step: state -> trace -> state -> Prop :=
       Genv.find_funct ge vf = Some fd ->
       type_of_fundef fd = Tfunction tyargs tyres cconv ->
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
+      forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) vf = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
       step (State f (Scall optid a al) k e le m)
         E0 (Callstate fd vargs (Kcall optid f e le k) m)
 

@@ -474,6 +474,7 @@ Inductive step: state -> trace -> state -> Prop :=
       funsig fd = sig ->
       (* Check that the call to the function pointer is allowed *)
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
+      forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) vf = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
       step (State f (Scall optid sig a bl) k sp e m)
         E0 (Callstate fd vargs (Kcall optid f sp e k) m)
 
@@ -786,6 +787,7 @@ with exec_stmt:
       eval_funcall (comp_of f) m fd vargs t m' vres ->
       e' = set_optvar optid vres e ->
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
+      forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) vf = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
       exec_stmt f sp e m (Scall optid sig a bl) t e' m' Out_normal
   | exec_Sbuiltin:
       forall f sp e m optid ef bl t m' vargs vres e',
@@ -889,6 +891,7 @@ with execinf_stmt:
       funsig fd = sig ->
       evalinf_funcall m fd vargs t ->
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
+      forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) vf = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
       execinf_stmt f sp e m (Scall optid sig a bl) t
   | execinf_Sifthenelse:
       forall f sp e m a s1 s2 v b t,

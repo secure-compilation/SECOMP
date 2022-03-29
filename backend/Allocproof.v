@@ -2400,7 +2400,7 @@ Proof.
   eapply plus_left. econstructor; eauto.
   eapply star_right. eexact A1. econstructor; eauto.
   rewrite <- comp_transf_function; eauto.
-  eapply allowed_call_translated; eauto.
+  eapply allowed_call_translated; eauto. admit.
   traceEq. traceEq.
   exploit analyze_successors; eauto. simpl. left; eauto. intros [enext [U V]].
   econstructor; eauto.
@@ -2586,7 +2586,7 @@ Proof.
   eapply plus_left. constructor. eexact A. traceEq.
   econstructor; eauto.
   apply wt_regset_assign; auto. rewrite WTRES0; auto.
-Qed.
+Admitted.
 
 Lemma initial_states_simulation:
   forall st1, RTL.initial_state prog st1 ->

@@ -98,6 +98,7 @@ Inductive exec_stmt: env -> compartment -> temp_env ->
       type_of_fundef fd = Tfunction tyargs tyres cconv ->
       eval_funcall c m fd vargs t m' vres ->
       forall (ALLOWED: Genv.allowed_call ge c vf),
+      forall (NO_CROSS_PTR: Genv.type_of_call ge c vf = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
       exec_stmt e c le m (Scall optid a al)
                 t (set_opttemp optid vres le) m' Out_normal
   | exec_Sbuiltin:   forall e c le m optid ef al tyargs vargs t m' vres,
@@ -197,6 +198,7 @@ CoInductive execinf_stmt: env -> compartment -> temp_env -> mem -> statement -> 
       type_of_fundef f = Tfunction tyargs tyres cconv ->
       evalinf_funcall m f vargs t ->
       forall (ALLOWED: Genv.allowed_call ge c vf),
+      forall (NO_CROSS_PTR: Genv.type_of_call ge c vf = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
       execinf_stmt e c le m (Scall optid a al) t
   | execinf_Sseq_1:   forall e c le m s1 s2 t,
       execinf_stmt e c le m s1 t ->

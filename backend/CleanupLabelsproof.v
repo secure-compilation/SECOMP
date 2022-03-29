@@ -301,7 +301,7 @@ Proof.
   econstructor. eapply find_function_translated; eauto.
   eapply find_function_ptr_translated; eauto.
   symmetry; apply sig_function_translated.
-  eapply allowed_call_translated; eauto.
+  eapply allowed_call_translated; eauto. admit. (* this is solved by auto, but simpply because the definitions are incomplete *)
   econstructor; eauto. constructor; auto. constructor; eauto with coqlib.
 (* Ltailcall *)
   left; econstructor; split.
@@ -362,7 +362,7 @@ Proof.
   inv H3. inv H1. left; econstructor; split.
   econstructor; eauto.
   econstructor; eauto.
-Qed.
+Admitted.
 
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 ->

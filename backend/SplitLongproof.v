@@ -76,6 +76,9 @@ Proof.
   simpl. unfold ge. setoid_rewrite Q.
   unfold comp_of. unfold has_comp_fundef. unfold comp_of.
   reflexivity.
+  unfold Genv.type_of_call. simpl. unfold ge. setoid_rewrite Q.
+  unfold comp_of. unfold has_comp_fundef. unfold comp_of. simpl.
+  destruct cp; simpl; discriminate.
 Qed.
 
 Corollary eval_helper_1:
@@ -398,7 +401,8 @@ Theorem eval_longoffloat:
   exists v, eval_expr ge sp e cp m le (longoffloat a) v /\ Val.lessdef y v.
 Proof.
   intros; unfold longoffloat. econstructor; split.
-  eapply (eval_helper_1 (BI_standard BI_i64_dtos)); eauto. DeclHelper. auto. auto.
+  eapply (eval_helper_1 (BI_standard BI_i64_dtos)); eauto. DeclHelper. auto.
+  auto.
 Qed.
 
 Theorem eval_longuoffloat:

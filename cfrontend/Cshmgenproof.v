@@ -1077,6 +1077,16 @@ Proof.
   eapply (Genv.match_genvs_allowed_calls TRANSL). eauto.
 Qed.
 
+Lemma type_of_call_translated:
+  forall vf f (cu: Clight.program) tf,
+    Genv.allowed_call ge (comp_of f) vf ->
+    transl_function (prog_comp_env cu) f = OK tf ->
+    Genv.type_of_call ge (comp_of f) vf = Genv.type_of_call tge (comp_of tf) vf.
+Proof.
+  intros vf f ce tf H TRF.
+  erewrite <- (comp_transl_partial _ TRF).
+  eapply (Genv.match_genvs_type_of_call TRANSL). eauto.
+Qed.
 
 (** * Matching between environments *)
 
@@ -1654,24 +1664,28 @@ Proof.
   destruct EITHER as [(EK & ES) | (id & EI & EK & ES)]; rewrite EK, ES.
   + (* without normalization of return value *)
     econstructor; split.
-    apply plus_one. eapply step_call; eauto.
+    apply plus_one. eapply step_call.
     eapply transl_expr_correct with (cunit := cu); eauto.
     rewrite <- (comp_transl_function _ _ _ TRF). eauto.
     eapply transl_arglist_correct with (cunit := cu); eauto.
     rewrite <- (comp_transl_function _ _ _ TRF). eauto.
+    eauto. eauto.
     eapply allowed_call_translated; eauto.
+    erewrite <- type_of_call_translated; eauto.
     econstructor; eauto.
     eapply match_Kcall with (ce := prog_comp_env cu') (cu := cu); eauto.
     exact I.
   + (* with normalization of return value *)
     subst optid.
     econstructor; split.
-    eapply plus_two. apply step_seq. eapply step_call; eauto. 
+    eapply plus_two. apply step_seq. eapply step_call.
     eapply transl_expr_correct with (cunit := cu); eauto.
     rewrite <- (comp_transl_function _ _ _ TRF). eauto.
     eapply transl_arglist_correct with (cunit := cu); eauto.
     rewrite <- (comp_transl_function _ _ _ TRF). eauto.
+    eauto. eauto.
     eapply allowed_call_translated; eauto.
+    erewrite <- type_of_call_translated; eauto.
     traceEq.
     econstructor; eauto.
     eapply match_Kcall_normalize  with (ce := prog_comp_env cu') (cu := cu); eauto.

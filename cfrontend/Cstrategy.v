@@ -371,6 +371,7 @@ Inductive estep: state -> trace -> state -> Prop :=
       Genv.find_funct ge vf = Some fd ->
       type_of_fundef fd = Tfunction targs tres cconv ->
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
+      forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) vf = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
       estep (ExprState f (C (Ecall rf rargs ty)) k e m)
          E0 (Callstate fd vargs (Kcall f e C ty k) m)
 
@@ -517,6 +518,13 @@ Fixpoint exprlist_all_values (rl: exprlist) : Prop :=
   | Econs _ _ => False
   end.
 
+Fixpoint exprlist_no_ptr (rl: exprlist): Prop :=
+  match rl with
+  | Enil => True
+  | Econs (Eval v ty) rl' => not_ptr v /\ exprlist_no_ptr rl'
+  | Econs _ _ => False
+  end.
+
 Definition invert_expr_prop (cp: compartment) (a: expr) (m: mem) : Prop :=
   match a with
   | Eloc b ofs ty => False
@@ -571,6 +579,7 @@ Definition invert_expr_prop (cp: compartment) (a: expr) (m: mem) : Prop :=
       /\ cast_arguments m rargs tyargs vl
       /\ type_of_fundef fd = Tfunction tyargs tyres cconv
       /\ Genv.allowed_call ge cp vf
+      /\ (Genv.type_of_call ge cp vf = Genv.CrossCompartmentCall -> Forall not_ptr vl)
   | Ebuiltin ef tyargs rargs ty =>
       exprlist_all_values rargs ->
       exists vargs, exists t, exists vres, exists m',
@@ -615,6 +624,7 @@ Lemma callred_invert:
 Proof.
   intros. inv H. simpl.
   intros. exists tyargs, tyres, cconv, fd, args; auto.
+  repeat split; auto.
 Qed.
 
 Scheme context_ind2 := Minimality for context Sort Prop
@@ -1268,6 +1278,7 @@ Proof.
   eapply eval_simple_list_steps with (C := fun x => C(Ecall (Eval vf (typeof rf)) x ty)); eauto.
   eapply contextlist'_call with (rl0 := Enil); auto.
   left; apply Csem.step_call; eauto. econstructor; eauto.
+
   traceEq. auto.
 (* builtin *)
   exploit eval_simple_list_implies; eauto. intros [vl' [A B]].
@@ -1373,8 +1384,8 @@ Proof.
   eapply safe_steps. eexact S1.
   apply (eval_simple_list_steps f k e m rargs vl E2 C'); auto.
   simpl. intros X. exploit X. eapply rval_list_all_values.
-  intros [tyargs [tyres [cconv [fd [vargs [P [Q [U [V W]]]]]]]]].
-  econstructor; econstructor; eapply step_call; eauto. eapply can_eval_simple_list; eauto.
+  intros [tyargs [tyres [cconv [fd [vargs [P [Q [U [V [W Y]]]]]]]]]].
+  econstructor; econstructor; eapply step_call with (vargs := vargs); eauto. eapply can_eval_simple_list; eauto.
 + (* builtin *)
   pose (C' := fun x => C(Ebuiltin ef tyargs x ty)).
   assert (contextlist' C'). unfold C'; eapply contextlist'_builtin with (rl0 := Enil); auto.
@@ -1769,6 +1780,7 @@ with eval_expr: compartment -> env -> mem -> kind -> expr -> trace -> mem -> exp
       type_of_fundef fd = Tfunction targs tres cconv ->
       eval_funcall c m2 fd vargs t3 m3 vres ->
       forall (ALLOWED: Genv.allowed_call ge c vf),
+      forall (NO_CROSS_PTR: Genv.type_of_call ge c vf = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
       eval_expr c e m RV (Ecall rf rargs ty) (t1**t2**t3) m3 (Eval vres ty)
 
 with eval_exprlist: compartment -> env -> mem -> exprlist -> trace -> mem -> exprlist -> Prop :=
@@ -2014,6 +2026,7 @@ CoInductive evalinf_expr: compartment -> env -> mem -> kind -> expr -> traceinf 
       type_of_fundef fd = Tfunction targs tres cconv ->
       evalinf_funcall c m2 fd vargs t3 ->
       forall (ALLOWED: Genv.allowed_call ge c vf),
+      forall (NO_CROSS_PTR: Genv.type_of_call ge c vf = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
       evalinf_expr c e m RV (Ecall rf rargs ty) (t1***t2***t3)
 
 with evalinf_exprlist: compartment -> env -> mem -> exprlist -> traceinf -> Prop :=
