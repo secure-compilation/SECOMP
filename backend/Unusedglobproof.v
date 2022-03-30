@@ -841,7 +841,8 @@ Lemma find_function_ptr_inject:
   match ros with inl r => regset_inject j rs trs | inr id => kept id end ->
   exists tvf,
     find_function_ptr tge ros trs = Some tvf /\
-    Genv.allowed_call tge cp tvf.
+    Genv.allowed_call tge cp tvf /\
+    Genv.type_of_call ge cp vf = Genv.type_of_call tge cp tvf.
 Proof.
   intros. destruct ros as [r|id]; simpl in *.
   - inv H1.
@@ -853,69 +854,74 @@ Proof.
     rewrite <- Genv.find_funct_ptr_iff in A.
     rewrite <- Genv.find_funct_ptr_iff in H0.
     exists (Vptr b2 (Ptrofs.add Ptrofs.zero (Ptrofs.repr delta))).
-    split; auto.
-    rewrite R in H2.
-    destruct H2 as [H2 | [H2 | H2]].
-    + left. rewrite H2.
-      simpl. rewrite A. rewrite H0. reflexivity.
-    + right; left. rewrite H2.
-      simpl. rewrite A. rewrite H0. reflexivity.
-    + right; right.
-      unfold Genv.allowed_cross_call in *.
-      destruct H2 as [i [cp' [H21 [H22 [H23 H24]]]]].
-      exists i. exists cp'.
-      repeat split.
-      * apply Genv.find_invert_symbol.
-        apply Genv.invert_find_symbol in H21.
-        pose proof (globals_symbols_inject) as E.
-        specialize (E j H). unfold symbols_inject in E.
-        destruct E as [E1 [E2 [E3 E4]]].
-        specialize (E2 i _ _ _ H6). simpl in E2. specialize (E2 H21). destruct E2. auto.
-      * rewrite <- H22.
+    split; [| split]; auto.
+    { rewrite R in H2.
+      destruct H2 as [H2 | [H2 | H2]].
+      + left. rewrite H2.
         simpl. rewrite A. rewrite H0. reflexivity.
-      * apply match_prog_pol in TRANSF.
-        unfold tge, Genv.globalenv. rewrite TRANSF.
-        rewrite Genv.genv_pol_add_globals. simpl.
-        unfold ge, Genv.globalenv in H23. now rewrite Genv.genv_pol_add_globals in H23.
-      * apply match_prog_pol in TRANSF.
-        unfold tge, Genv.globalenv. rewrite TRANSF.
-        rewrite Genv.genv_pol_add_globals. simpl.
-        unfold ge, Genv.globalenv in H24. now rewrite Genv.genv_pol_add_globals in H24.
+      + right; left. rewrite H2.
+        simpl. rewrite A. rewrite H0. reflexivity.
+      + right; right.
+        unfold Genv.allowed_cross_call in *.
+        destruct H2 as [i [cp' [H21 [H22 [H23 H24]]]]].
+        exists i. exists cp'.
+        repeat split.
+        * apply Genv.find_invert_symbol.
+          apply Genv.invert_find_symbol in H21.
+          pose proof (globals_symbols_inject) as E.
+          specialize (E j H). unfold symbols_inject in E.
+          destruct E as [E1 [E2 [E3 E4]]].
+          specialize (E2 i _ _ _ H6). simpl in E2. specialize (E2 H21). destruct E2. auto.
+        * rewrite <- H22.
+          simpl. rewrite A. rewrite H0. reflexivity.
+        * apply match_prog_pol in TRANSF.
+          unfold tge, Genv.globalenv. rewrite TRANSF.
+          rewrite Genv.genv_pol_add_globals. simpl.
+          unfold ge, Genv.globalenv in H23. now rewrite Genv.genv_pol_add_globals in H23.
+        * apply match_prog_pol in TRANSF.
+          unfold tge, Genv.globalenv. rewrite TRANSF.
+          rewrite Genv.genv_pol_add_globals. simpl.
+          unfold ge, Genv.globalenv in H24. now rewrite Genv.genv_pol_add_globals in H24. }
+    { unfold Genv.type_of_call. unfold Genv.find_comp.
+      rewrite R, H0, A. reflexivity. }
   - destruct (Genv.find_symbol ge id) as [b|] eqn:FS; try discriminate.
     exploit symbols_inject_2; eauto. intros (tb & P & Q). rewrite P.
     rewrite Genv.find_funct_ptr_iff in H0.
     exploit defs_inject; eauto. intros (A & B & C).
     rewrite <- Genv.find_funct_ptr_iff in A.
     inv H1.
-    eexists; split; eauto.
-    rewrite <- Genv.find_funct_ptr_iff in H0.
-    rewrite <- H0 in A.
-    destruct H2 as [H2 | [H2 | H2]].
-    + left. rewrite H2.
-      simpl. rewrite A. rewrite H0. reflexivity.
-    + right; left. rewrite H2.
-      simpl. rewrite A. rewrite H0. reflexivity.
-    + right; right.
-      unfold Genv.allowed_cross_call in *.
-      destruct H2 as [i [cp' [H21 [H22 [H23 H24]]]]].
-      exists i. exists cp'.
-      repeat split.
-      * apply Genv.find_invert_symbol.
-        apply Genv.invert_find_symbol in H21.
-        pose proof (globals_symbols_inject) as E.
-        specialize (E j H). unfold symbols_inject in E.
-        destruct E as [E1 [E2 [E3 E4]]].
-        specialize (E2 i _ _ _ Q). simpl in E2. specialize (E2 H21). destruct E2. auto.
-      * rewrite <- H22.
+    eexists; split; [| split]; eauto.
+    { rewrite <- Genv.find_funct_ptr_iff in H0.
+      rewrite <- H0 in A.
+      destruct H2 as [H2 | [H2 | H2]].
+      + left. rewrite H2.
         simpl. rewrite A. rewrite H0. reflexivity.
-      * apply match_prog_pol in TRANSF.
-        unfold tge, Genv.globalenv. rewrite TRANSF.
-        rewrite Genv.genv_pol_add_globals. simpl.
-        unfold ge, Genv.globalenv in H23. now rewrite Genv.genv_pol_add_globals in H23.
-      * apply match_prog_pol in TRANSF.
-        unfold tge, Genv.globalenv. rewrite TRANSF.
-        rewrite Genv.genv_pol_add_globals. simpl.
-        unfold ge, Genv.globalenv in H24. now rewrite Genv.genv_pol_add_globals in H24.
+      + right; left. rewrite H2.
+        simpl. rewrite A. rewrite H0. reflexivity.
+      + right; right.
+        unfold Genv.allowed_cross_call in *.
+        destruct H2 as [i [cp' [H21 [H22 [H23 H24]]]]].
+        exists i. exists cp'.
+        repeat split.
+        * apply Genv.find_invert_symbol.
+          apply Genv.invert_find_symbol in H21.
+          pose proof (globals_symbols_inject) as E.
+          specialize (E j H). unfold symbols_inject in E.
+          destruct E as [E1 [E2 [E3 E4]]].
+          specialize (E2 i _ _ _ Q). simpl in E2. specialize (E2 H21). destruct E2. auto.
+        * rewrite <- H22.
+          simpl. rewrite A. rewrite H0. reflexivity.
+        * apply match_prog_pol in TRANSF.
+          unfold tge, Genv.globalenv. rewrite TRANSF.
+          rewrite Genv.genv_pol_add_globals. simpl.
+          unfold ge, Genv.globalenv in H23. now rewrite Genv.genv_pol_add_globals in H23.
+        * apply match_prog_pol in TRANSF.
+          unfold tge, Genv.globalenv. rewrite TRANSF.
+          rewrite Genv.genv_pol_add_globals. simpl.
+          unfold ge, Genv.globalenv in H24. now rewrite Genv.genv_pol_add_globals in H24. }
+    { unfold Genv.type_of_call. unfold Genv.find_comp.
+      rewrite <- Genv.find_funct_ptr_iff in H0.
+      rewrite H0, A. reflexivity. }
 Qed.
 
 Lemma eval_builtin_arg_inject:
@@ -1051,9 +1057,26 @@ Proof.
   eapply match_stacks_preserves_globals; eauto. eauto. apply FUNPTR. eapply ALLOWED.
   destruct ros as [r|id]. eauto. apply KEPT. red. econstructor; econstructor; split; eauto. simpl; auto.
 
-  intros (tvf & C & D).
+  intros (tvf & C & D & E).
   econstructor; split. eapply exec_Icall; eauto.
-  admit.
+  intros CROSS.
+  (* TODO: write a lemma *)
+  assert (regset_inject j rs trs ->
+          Forall not_ptr rs ## args ->
+          Forall not_ptr trs ## args).
+  { clear.
+    induction args.
+    - eauto.
+    - intros INJ H.
+      inv H.
+      constructor.
+      + specialize (INJ a). inv INJ; simpl; eauto.
+        rewrite <- H in H2; inv H2.
+        rewrite <- H0 in H2; inv H2.
+      + eauto. }
+  eapply H1; eauto.
+  eapply NO_CROSS_PTR; eauto.
+  rewrite E; eauto.
   econstructor; eauto.
   econstructor; eauto.
   change (Mem.valid_block m sp0). eapply Mem.valid_block_inject_1; eauto.
@@ -1069,7 +1092,7 @@ Proof.
   exploit find_function_ptr_inject.
   eapply match_stacks_preserves_globals; eauto. eauto. apply FUNPTR. eapply ALLOWED'.
   destruct ros as [r|id]. eauto. apply KEPT. red. econstructor; econstructor; split; eauto. simpl; auto.
-  intros (tvf & E & F).
+  intros (tvf & E & F & G).
   econstructor; split.
   eapply exec_Itailcall; eauto.
   econstructor; eauto.
@@ -1158,7 +1181,7 @@ Proof.
   inv STACKS. econstructor; split.
   eapply exec_return.
   econstructor; eauto. apply set_reg_inject; auto.
-Admitted.
+Qed.
 
 (** Relating initial memory states *)
 

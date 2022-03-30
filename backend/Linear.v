@@ -199,8 +199,14 @@ Inductive step: state -> trace -> state -> Prop :=
       sig = funsig f' ->
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
       (* Need to state what NO_CROSS_PTR should look like at this level *)
-      (* forall (NO_CROSS_PTR: Genv.cross_call ge (comp_of f) vf -> Forall not_ptr (rs##args)), *)
-      forall (NO_CROSS_PTR: False),
+      (* Attempt 1: *)
+      forall (NO_CROSS_PTR:
+          Genv.type_of_call ge (comp_of f) vf = Genv.CrossCompartmentCall ->
+          forall rs',
+            (* This [rs'] is what is used in [exec_function_internal] and seems to be
+                  what the callee can access *)
+            rs' = undef_regs destroyed_at_function_entry (call_regs rs) ->
+            forall l, not_ptr (rs' l)),
       step (State s f sp (Lcall sig ros :: b) rs m)
         E0 (Callstate (Stackframe f sp rs b:: s) f' rs m)
   | exec_Ltailcall:

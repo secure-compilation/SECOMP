@@ -988,6 +988,15 @@ Proof.
   eapply (Genv.match_genvs_allowed_calls TRANSF). eauto.
 Qed.
 
+Lemma type_of_call_translated:
+  forall cp vf,
+    Genv.allowed_call ge cp vf ->
+    Genv.type_of_call ge cp vf = Genv.type_of_call tge cp vf.
+Proof.
+  intros cp vf H.
+  eapply (Genv.match_genvs_type_of_call TRANSF). eauto.
+Qed.
+
 (** The proof of semantic preservation is a simulation argument using
   diagrams of the following form:
 <<
@@ -1196,7 +1205,22 @@ Proof.
   eapply exec_Icall; eauto.
   eapply sig_preserved; eauto.
   eapply allowed_call_translated; eauto.
-  admit.
+  (* TODO: write a lemma for this. There's the exact same assert in another file *)
+  assert (forall rs rs',
+             regs_lessdef rs rs' ->
+             forall l,
+               Forall not_ptr rs ## l ->
+               Forall not_ptr rs' ## l).
+  { clear. intros rs rs' LESSDEF.
+    induction l; intros.
+    - eauto.
+    - inv H.
+      constructor.
+      + specialize (LESSDEF a). inv LESSDEF; eauto.
+        rewrite <- H0 in H2; now simpl in H2.
+      + eauto. }
+  intros CROSS. eapply H1; eauto.
+  eapply NO_CROSS_PTR. erewrite type_of_call_translated; eauto.
   econstructor; eauto.
   eapply match_stackframes_cons with (cu := cu); eauto.
   intros. eapply analysis_correct_1; eauto. simpl; auto.
@@ -1322,7 +1346,7 @@ Proof.
   eapply exec_return; eauto.
   econstructor; eauto.
   apply set_reg_lessdef; auto.
-Admitted.
+Qed.
 
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 ->

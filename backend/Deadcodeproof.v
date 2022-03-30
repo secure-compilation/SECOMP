@@ -450,6 +450,15 @@ Proof.
   eapply (Genv.match_genvs_allowed_calls TRANSF). eauto.
 Qed.
 
+Lemma type_of_call_translated:
+  forall cp vf,
+    Genv.allowed_call ge cp vf ->
+    Genv.type_of_call ge cp vf = Genv.type_of_call tge cp vf.
+Proof.
+  intros cp vf H.
+  eapply (Genv.match_genvs_type_of_call TRANSF). eauto.
+Qed.
+
 Lemma sig_function_translated:
   forall rm f tf,
   transf_fundef rm f = OK tf ->
@@ -939,7 +948,23 @@ Ltac UseTransfer :=
   eapply exec_Icall; eauto. eapply sig_function_translated; eauto.
   rewrite <- comp_transf_function; eauto.
   eapply allowed_call_translated; eauto.
-  admit.
+  intros CROSS.
+  (* TODO: write a lemma *)
+  assert (eagree rs te (add_needs_all args (add_ros_need_all ros (kill res ne))) ->
+          Forall not_ptr rs ## args ->
+          Forall not_ptr te ## args).
+  { clear. induction args.
+    - eauto.
+    - intros AG H.
+      simpl in AG.
+      inv H.
+      constructor.
+      + eapply add_need_all_lessdef in AG. inv AG; eauto.
+        rewrite <- H0 in H2; inv H2.
+      + eapply add_need_all_eagree in AG. eauto. }
+  eapply H1; eauto. eapply NO_CROSS_PTR.
+  erewrite type_of_call_translated; eauto.
+  rewrite comp_transf_function; eauto.
   eapply match_call_states with (cu := cu'); eauto.
   constructor; auto. eapply match_stackframes_intro with (cu := cu); eauto.
   intros.
@@ -1197,8 +1222,7 @@ Ltac UseTransfer :=
   econstructor; split.
   constructor.
   econstructor; eauto. apply mextends_agree; auto.
-(* Qed. *)
-Admitted.
+Qed.
 
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 ->
