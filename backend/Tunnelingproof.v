@@ -173,6 +173,15 @@ Proof.
   eapply (Genv.match_genvs_allowed_calls TRANSL). eauto.
 Qed.
 
+Lemma type_of_call_translated:
+  forall cp vf,
+    Genv.allowed_call ge cp vf ->
+    Genv.type_of_call ge cp vf = Genv.type_of_call tge cp vf.
+Proof.
+  intros cp vf H.
+  eapply (Genv.match_genvs_type_of_call TRANSL). eauto.
+Qed.
+
 Lemma senv_preserved:
   Senv.equiv ge tge.
 Proof (Genv.senv_transf TRANSL).
@@ -503,7 +512,15 @@ Proof.
   eapply find_function_ptr_translated; eauto.
   rewrite sig_preserved. auto.
   eapply allowed_call_translated; eauto.
-  { admit. }
+  { intros. subst.
+    assert (X: Genv.type_of_call ge (comp_of f) vf = Genv.CrossCompartmentCall).
+    { erewrite type_of_call_translated; eauto. }
+    specialize (NO_CROSS_PTR X _ eq_refl l).
+    assert (Val.lessdef (undef_regs destroyed_at_function_entry (call_regs rs) l)
+                        (undef_regs destroyed_at_function_entry (call_regs tls) l)).
+    apply locmap_undef_regs_lessdef; eauto. eapply call_regs_lessdef; eauto.
+    inv H2; eauto. rewrite <- H4 in NO_CROSS_PTR; inv NO_CROSS_PTR.
+  }
   econstructor; eauto.
   constructor; auto.
   constructor; auto.
@@ -576,7 +593,7 @@ Proof.
   left; econstructor; split.
   eapply exec_return; eauto.
   constructor; auto.
-Admitted.
+Qed.
 
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 ->
