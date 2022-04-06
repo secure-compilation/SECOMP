@@ -2409,7 +2409,16 @@ Proof.
   eapply plus_left. econstructor; eauto.
   eapply star_right. eexact A1. econstructor; eauto.
   rewrite <- comp_transf_function; eauto.
-  eapply allowed_call_translated; eauto. admit.
+  eapply allowed_call_translated; eauto.
+  { intros. subst.
+    assert (X: Genv.type_of_call ge (comp_of f) vf = Genv.CrossCompartmentCall).
+    { erewrite type_of_call_translated; eauto. rewrite comp_transf_function; eauto. }
+    specialize (NO_CROSS_PTR X).
+    (* Seems we could try to conclude using the following assumptions? *)
+    clear -B1 NO_CROSS_PTR (* Heqo1 Heqo2 *).
+    (* eapply add_equations_args_satisf in B1; eauto. *)
+    (* eapply add_equation_ros_satisf in B1; eauto. *)
+    admit. }
   traceEq. traceEq.
   exploit analyze_successors; eauto. simpl. left; eauto. intros [enext [U V]].
   econstructor; eauto.

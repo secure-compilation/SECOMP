@@ -517,7 +517,13 @@ Proof.
   econstructor. eexact A. eapply find_function_ptr_translated; eauto.
   symmetry; apply sig_preserved; auto.
   inv TRF.
-  eapply allowed_call_translated; eauto. admit.
+  eapply allowed_call_translated; eauto.
+  { intros. subst.
+    assert (X: Genv.type_of_call ge (comp_of f) vf = Genv.CrossCompartmentCall).
+    { erewrite type_of_call_translated; eauto.
+      inv TRF. eauto. }
+    specialize (NO_CROSS_PTR X _ eq_refl l). eauto.
+  }
   constructor; auto. constructor; auto. constructor; auto.
 - (* tailcall *)
   exploit find_function_translated; eauto. intros (tf' & A & B).
@@ -589,7 +595,7 @@ Proof.
   econstructor; split.
   eapply plus_left. econstructor. apply eval_add_delta_ranges. traceEq.
   constructor; auto.
-Admitted.
+Qed.
 
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 ->

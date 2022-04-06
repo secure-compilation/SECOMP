@@ -663,6 +663,8 @@ Proof.
 
       rewrite (comp_transl_partial _ H12); eauto.
       now rewrite Pos.eqb_refl.
+      unfold Genv.type_of_call. simpl in *; rewrite FN. rewrite Pos.eqb_refl. congruence.
+      unfold Genv.type_of_call. simpl in *; rewrite FN. rewrite Pos.eqb_refl. congruence.
     - eapply exec_step_internal_return; eauto.
       eapply find_instr_tail. eauto.
       rewrite C. eexact GOTO.
@@ -726,6 +728,8 @@ Proof.
       simpl; now rewrite FN.
       unfold update_stack_call.
       rewrite <- H9; simpl; rewrite FN. now rewrite Pos.eqb_refl.
+      unfold Genv.type_of_call. simpl in *; rewrite FN. rewrite Pos.eqb_refl. congruence.
+      unfold Genv.type_of_call. simpl in *; rewrite FN. rewrite Pos.eqb_refl. congruence.
     - eapply exec_step_internal_return; eauto.
       eapply find_instr_tail. eauto.
       rewrite C. eexact GOTO.
@@ -766,6 +770,8 @@ Proof.
       simpl; now rewrite FN.
       unfold update_stack_call.
       rewrite <- H11; simpl; rewrite FN. now rewrite Pos.eqb_refl.
+      unfold Genv.type_of_call. simpl in *; rewrite FN. rewrite Pos.eqb_refl. congruence.
+      unfold Genv.type_of_call. simpl in *; rewrite FN. rewrite Pos.eqb_refl. congruence.
     - eapply exec_step_internal_return; eauto.
       eapply find_instr_tail. eauto.
       rewrite C. eexact GOTO.
@@ -972,6 +978,13 @@ Local Transparent destroyed_by_op.
     unfold update_stack_call. Simpl.
     rewrite H7; simpl. unfold tge; rewrite TFIND.
     unfold comp_of in *; simpl in *. now rewrite Heq.
+    (* Not a cross-compartment call *)
+    { unfold Genv.type_of_call; simpl in *.
+      unfold tge. rewrite TFIND. unfold comp_of in Heq. simpl in Heq.
+      unfold comp_of. unfold comp_of in Heq. now rewrite Heq. }
+    { unfold Genv.type_of_call; simpl in *.
+      unfold tge. rewrite TFIND. unfold comp_of in Heq. simpl in Heq.
+      unfold comp_of. unfold comp_of in Heq. now rewrite Heq. }
     econstructor; eauto.
     econstructor; eauto.
     eapply agree_sp_def; eauto.
@@ -1003,6 +1016,7 @@ Local Transparent destroyed_by_op.
     rewrite <- H2. simpl.
     unfold comp_of in *; simpl in *. rewrite Heq.
     reflexivity.
+    admit. admit.
     econstructor; eauto.
     econstructor; eauto.
     eapply agree_sp_def; eauto.
@@ -1041,6 +1055,13 @@ Local Transparent destroyed_by_op.
     unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H.
     simpl; unfold tge; rewrite TFIND.
     unfold comp_of in *; simpl in *. now rewrite Heq.
+    (* Not a cross-compartment call *)
+    { unfold Genv.type_of_call; simpl in *.
+      unfold tge. rewrite TFIND. unfold comp_of in Heq. simpl in Heq.
+      unfold comp_of. unfold comp_of in Heq. now rewrite Heq. }
+    { unfold Genv.type_of_call; simpl in *.
+      unfold tge. rewrite TFIND. unfold comp_of in Heq. simpl in Heq.
+      unfold comp_of. unfold comp_of in Heq. now rewrite Heq. }
     econstructor; eauto.
     econstructor; eauto.
     eapply agree_sp_def; eauto.
@@ -1077,6 +1098,7 @@ Local Transparent destroyed_by_op.
     rewrite <- H2; simpl.
     unfold comp_of in *; simpl in *. rewrite Heq.
     reflexivity.
+    admit. admit.
     econstructor; eauto.
     econstructor; eauto.
     eapply agree_sp_def; eauto.
@@ -1564,7 +1586,7 @@ Local Transparent destroyed_at_function_entry.
   + simpl in *.
     rewrite H3 in H8.
     rewrite H3 in H2. congruence.
-Qed.
+Admitted.
 
 
 Lemma transf_initial_states:

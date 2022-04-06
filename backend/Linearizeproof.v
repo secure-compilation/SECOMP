@@ -130,6 +130,15 @@ Proof.
   eapply (Genv.match_genvs_allowed_calls TRANSF). eauto.
 Qed.
 
+Lemma type_of_call_translated:
+  forall cp vf,
+    Genv.allowed_call ge cp vf ->
+    Genv.type_of_call ge cp vf = Genv.type_of_call tge cp vf.
+Proof.
+  intros cp vf H.
+  eapply (Genv.match_genvs_type_of_call TRANSF). eauto.
+Qed.
+
 (** * Correctness of reachability analysis *)
 
 (** The entry point of the function is reachable. *)
@@ -678,7 +687,13 @@ Proof.
   apply plus_one. econstructor; eauto.
   symmetry; eapply sig_preserved; eauto.
   rewrite <- comp_transf_fundef; eauto.
-  eapply allowed_call_translated; eauto. admit.
+  eapply allowed_call_translated; eauto.
+  { intros. subst.
+    assert (X: Genv.type_of_call ge (comp_of f) vf = Genv.CrossCompartmentCall).
+    { erewrite type_of_call_translated; eauto. rewrite comp_transf_fundef; eauto. }
+    specialize (NO_CROSS_PTR X _ eq_refl l).
+    eauto.
+  }
   econstructor; eauto. constructor; auto. econstructor; eauto.
 
   (* Ltailcall *)
@@ -770,7 +785,7 @@ Proof.
   left; econstructor; split.
   apply plus_one. econstructor.
   econstructor; eauto.
-Admitted.
+Qed.
 
 Lemma transf_initial_states:
   forall st1, LTL.initial_state prog st1 ->

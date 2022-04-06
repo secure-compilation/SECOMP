@@ -1186,6 +1186,17 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (CURCOMP: Genv.find_comp ge (Vptr b Ptrofs.zero) = Some cp),
       (* Is a call, we update the stack *)
       forall (STUPD: update_stack_call st cp rs' = Some st'),
+      (* Is a call, we check whether we are allowed to pass pointers *)
+      forall (NO_CROSS_PTR_REGS:
+          Genv.type_of_call ge (comp_of f) (Vptr b' ofs') = Genv.CrossCompartmentCall ->
+          forall l, not_ptr (rs l)),
+      forall (NO_CROSS_PTR_STACK:
+          (* TODO: fix this definition *)
+          Genv.type_of_call ge (comp_of f) (Vptr b' ofs') = Genv.CrossCompartmentCall ->
+          (* forall ofs v ty, *)
+          (*   load_stack m (parent_sp s) ty ofs None = Some v -> *)
+          (*   not_ptr v), *)
+            False),
       step (State st rs m) E0 (State st' rs' m')
   | exec_step_internal_return:
       forall b ofs f i rs m rs' m' cp cp' st st',

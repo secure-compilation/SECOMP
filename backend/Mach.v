@@ -359,6 +359,18 @@ Inductive step: state -> trace -> state -> Prop :=
       return_address_offset f c ra ->
       forall (CALLED: Genv.find_funct_ptr ge f' = Some fd),
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) (Vptr f' Ptrofs.zero)),
+      forall (NO_CROSS_PTR_REGS:
+          Genv.type_of_call ge (comp_of f) (Vptr f' Ptrofs.zero) = Genv.CrossCompartmentCall ->
+          forall rs',
+            (* This [rs'] is what is used in [exec_function_internal] and seems to be
+                  what the callee can access *)
+            rs' = undef_regs destroyed_at_function_entry rs ->
+            forall l, not_ptr (rs' l)),
+      forall (NO_CROSS_PTR_STACK:
+          Genv.type_of_call ge (comp_of f) (Vptr f' Ptrofs.zero) = Genv.CrossCompartmentCall ->
+          forall ofs v ty,
+            load_stack m (parent_sp s) ty ofs None = Some v ->
+            not_ptr v),
       step (State s fb sp (Mcall sig ros :: c) rs m)
         E0 (Callstate (Stackframe fb sp ra c :: s)
                        f' rs m)
@@ -514,7 +526,7 @@ Proof.
   econstructor.
   constructor; auto. econstructor; eauto with coqlib.
   destruct (is_leaf_function f) eqn:E; auto.
-  unfold is_leaf_function in E; rewrite forallb_forall in E. 
+  unfold is_leaf_function in E; rewrite forallb_forall in E.
   symmetry. apply (E (Mcall sig ros)). eapply is_tail_in; eauto.
 - (* goto *)
   assert (f0 = f) by congruence. subst f0.

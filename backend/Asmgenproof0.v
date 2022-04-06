@@ -878,6 +878,8 @@ Proof.
       rewrite H0, H2; simpl; rewrite H3.
       simpl in H4; rewrite H3 in H4; inv H4.
       now rewrite Pos.eqb_refl.
+      unfold Genv.type_of_call. simpl in *; rewrite H4. rewrite Pos.eqb_refl. congruence.
+      unfold Genv.type_of_call. simpl in *; rewrite H4. rewrite Pos.eqb_refl. congruence.
     - simpl in H4; rewrite H3 in H4; inv H4.
       eapply exec_step_internal_return; eauto.
       eapply find_instr_tail. eauto.
@@ -909,6 +911,8 @@ Proof.
       unfold update_stack_call.
       rewrite H0, H3; simpl; rewrite H4.
       now rewrite Pos.eqb_refl.
+      unfold Genv.type_of_call. simpl in *; rewrite H4. rewrite Pos.eqb_refl. congruence.
+      unfold Genv.type_of_call. simpl in *; rewrite H4. rewrite Pos.eqb_refl. congruence.
     - simpl in H5; rewrite H4 in H5; inv H5.
       eapply exec_step_internal_return; eauto.
       eapply find_instr_tail. eauto.

@@ -1189,7 +1189,19 @@ Proof.
   rewrite <- SAMECOMP. eapply allowed_call_translated; eauto.
   (* This is a tailcall, so the type of call is InternalCall *)
   assert (Genv.type_of_call tge (comp_of f') vf = Genv.InternalCall).
-  { admit. }
+  { erewrite <- type_of_call_translated; [| now rewrite <- SAMECOMP].
+    clear -H0 FUNPTR COMP SAMECOMP TRANSF.
+    unfold find_function in H0. unfold find_function_ptr in FUNPTR.
+    unfold Genv.type_of_call. unfold Genv.find_comp.
+    destruct ros; simpl in *.
+    - inv FUNPTR.
+      destruct (rs # r); try discriminate. simpl in *.
+      destruct (Ptrofs.eq_dec i Ptrofs.zero); try discriminate.
+      rewrite H0. rewrite COMP, SAMECOMP, Pos.eqb_refl. reflexivity.
+    - destruct (Genv.find_symbol ge i); try discriminate.
+      inv FUNPTR.
+      rewrite H0. rewrite COMP, SAMECOMP, Pos.eqb_refl. reflexivity.
+  }
   rewrite H1. congruence.
   econstructor; eauto.
   eapply match_stacks_untailcall; eauto.
@@ -1443,7 +1455,7 @@ Proof.
   left; econstructor; split.
   eapply plus_one. eapply exec_Inop; eauto.
   econstructor; eauto. subst vres. apply agree_set_reg_undef'; auto.
-Admitted.
+Qed.
 
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 -> exists st2, initial_state tprog st2 /\ match_states st1 st2.
