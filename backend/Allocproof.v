@@ -2410,15 +2410,34 @@ Proof.
   eapply star_right. eexact A1. econstructor; eauto.
   rewrite <- comp_transf_function; eauto.
   eapply allowed_call_translated; eauto.
-  { intros. subst.
+  { intros ? rs' ? l Hl. subst.
     assert (X: Genv.type_of_call ge (comp_of f) vf = Genv.CrossCompartmentCall).
     { erewrite type_of_call_translated; eauto. rewrite comp_transf_function; eauto. }
     specialize (NO_CROSS_PTR X).
     (* Seems we could try to conclude using the following assumptions? *)
-    clear -B1 NO_CROSS_PTR (* Heqo1 Heqo2 *).
-    (* eapply add_equations_args_satisf in B1; eauto. *)
-    (* eapply add_equation_ros_satisf in B1; eauto. *)
-    admit. }
+    (* clear -B1 NO_CROSS_PTR Heqo1 Heqo2. *)
+
+    clear -Heqo2 Hl B1 NO_CROSS_PTR.
+    eapply add_equations_args_lessdef with (rs := rs) in Heqo2; eauto.
+    unfold args' in Heqo2.
+    rewrite <- call_regs_param_values in Heqo2.
+    destruct sg. unfold loc_parameters in *. unfold loc_arguments in *.
+    induction sig_args.
+    - simpl in *. contradiction.
+    - simpl in *. destruct a; admit.
+      (* + simpl in *. destruct Hl as [Hl | Hl]. *)
+      (*   * subst. simpl. *)
+      (*     unfold undef_regs. Local Transparent destroyed_at_function_entry. *)
+      (*     unfold destroyed_at_function_entry. *)
+      (*     Local Opaque destroyed_at_function_entry. *)
+      (*     unfold call_regs. *)
+      (*     rewrite Locmap.gso; try congruence. *)
+      (*     inv Heqo2. inv H2. rewrite <- H in NO_CROSS_PTR. inv NO_CROSS_PTR. eauto. *)
+      (*     rewrite <- H in NO_CROSS_PTR. inv NO_CROSS_PTR. inv H2. *)
+      (*   * admit. *)
+      (* + unfold regs_of_rpairs in Hl. *)
+      (*   admit. *)
+    - admit. }
   traceEq. traceEq.
   exploit analyze_successors; eauto. simpl. left; eauto. intros [enext [U V]].
   econstructor; eauto.

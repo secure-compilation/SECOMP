@@ -519,7 +519,8 @@ Proof.
     assert (Val.lessdef (undef_regs destroyed_at_function_entry (call_regs rs) l)
                         (undef_regs destroyed_at_function_entry (call_regs tls) l)).
     apply locmap_undef_regs_lessdef; eauto. eapply call_regs_lessdef; eauto.
-    inv H2; eauto. rewrite <- H4 in NO_CROSS_PTR; inv NO_CROSS_PTR.
+    inv H2; eauto. specialize (NO_CROSS_PTR H3).
+    rewrite <- H5 in NO_CROSS_PTR; inv NO_CROSS_PTR.
   }
   econstructor; eauto.
   constructor; auto.

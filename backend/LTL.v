@@ -274,7 +274,9 @@ Inductive step: state -> trace -> state -> Prop :=
             (* This [rs'] is what is used in [exec_function_internal] and seems to be
                   what the callee can access *)
             rs' = undef_regs destroyed_at_function_entry (call_regs rs) ->
-            forall l, not_ptr (rs' l)),
+            forall l,
+              List.In l (regs_of_rpairs (loc_arguments sig)) ->
+              not_ptr (rs' l)),
       (* forall (NO_CROSS_PTR: False), *)
       step (Block s f sp (Lcall sig ros :: bb) rs m)
         E0 (Callstate (Stackframe f sp rs bb :: s) fd rs m)
