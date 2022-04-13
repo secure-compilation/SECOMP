@@ -1691,7 +1691,8 @@ Lemma find_function_translated:
      find_function_ptr tge ros rs = Some bf
   /\ Genv.find_funct_ptr tge bf = Some tf
   /\ transf_fundef f = OK tf
-  /\ Genv.allowed_call tge cp (Vptr bf Ptrofs.zero).
+  /\ Genv.allowed_call tge cp (Vptr bf Ptrofs.zero)
+  /\ Genv.type_of_call tge cp (Vptr bf Ptrofs.zero) = Genv.type_of_call ge cp vf.
 Proof.
   intros until vf; intros AG [bound [_ [?????]]] FF.
   destruct ros; simpl in FF.
@@ -1707,8 +1708,9 @@ Proof.
   assert (vf = Vptr b Ptrofs.zero).
   { unfold find_function_ptr in H.
     inv H. rewrite EQ. eauto. }
-  rewrite <- H1.
+  rewrite <- H1. split; auto.
   now eapply (Genv.match_genvs_allowed_calls TRANSF).
+  now rewrite (Genv.match_genvs_type_of_call TRANSF); eauto.
 
 - destruct (Genv.find_symbol ge i) as [b|] eqn:?; try discriminate.
   exploit function_ptr_translated; eauto.
@@ -1720,8 +1722,9 @@ Proof.
   assert (vf = Vptr b Ptrofs.zero).
   { unfold Linear.find_function_ptr in H.
     rewrite Heqo in H. inv H. eauto. }
-  rewrite <- H1.
+  rewrite <- H1. split; auto.
   now eapply (Genv.match_genvs_allowed_calls TRANSF).
+  now rewrite (Genv.match_genvs_type_of_call TRANSF); eauto.
 Qed.
 
 (** Preservation of the arguments to an external call. *)
@@ -2106,13 +2109,20 @@ Proof.
 - (* Lcall *)
   exploit find_function_translated; eauto.
     eapply sep_proj2. eapply sep_proj2. eapply sep_proj2. eexact SEP.
-  intros [bf [tf' [A [B [C D]]]]].
+  intros [bf [tf' [A [B [C [D E]]]]]].
   exploit is_tail_transf_function; eauto. intros IST.
   rewrite transl_code_eq in IST. simpl in IST.
-  exploit return_address_offset_exists. eexact IST. intros [ra E].
+  exploit return_address_offset_exists. eexact IST. intros [ra F].
   econstructor; split.
   apply plus_one. econstructor; eauto.
   now rewrite <- (comp_transl_partial _ TRANSL).
+  { intros. subst.
+    apply agree_regs_call_regs in AGREGS.
+    apply agree_regs_undef_regs with (rl := destroyed_at_function_entry) in AGREGS.
+    rewrite <- (comp_transl_partial _ TRANSL) in H1. rewrite E in H1.
+    specialize (NO_CROSS_PTR H1 _ eq_refl).
+
+  }
   admit. admit.
   econstructor; eauto.
   econstructor; eauto with coqlib.

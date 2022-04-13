@@ -275,7 +275,7 @@ Inductive step: state -> trace -> state -> Prop :=
                   what the callee can access *)
             rs' = undef_regs destroyed_at_function_entry (call_regs rs) ->
             forall l,
-              List.In l (regs_of_rpairs (loc_arguments sig)) ->
+              List.In l (regs_of_rpairs (loc_parameters sig)) ->
               not_ptr (rs' l)),
       (* forall (NO_CROSS_PTR: False), *)
       step (Block s f sp (Lcall sig ros :: bb) rs m)

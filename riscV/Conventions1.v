@@ -32,7 +32,8 @@ Require Import AST Machregs Locations.
   of callee- and caller-save registers.
 *)
 
-Definition is_callee_save (r: mreg) : bool :=
+Definition is_callee_save (* (is_cross_compartment: bool) *) (r: mreg) : bool := (* false *)
+  (* is_cross_compartment || *)
   match r with
   | R5 | R6 | R7 => false
   | R8 | R9 => true
@@ -293,18 +294,33 @@ Definition loc_argument_acceptable (l: loc) : Prop :=
   | _ => False
   end.
 
-Lemma loc_arguments_rec_charact:
+Definition loc_argument_acceptable_stronger (l: loc) : Prop :=
+  match l with
+  | R r => is_callee_save r = false /\ r <> R30
+  | S Outgoing ofs ty => ofs >= 0 /\ (typealign ty | ofs)
+  | _ => False
+  end.
+
+Lemma loc_argument_acceptable_stronger_loc_argument_acceptable:
+  forall (l: loc),
+    loc_argument_acceptable_stronger l ->
+    loc_argument_acceptable l.
+Proof.
+  destruct l; simpl; intuition.
+Qed.
+
+Lemma loc_arguments_rec_charact_stronger:
   forall va tyl ri rf ofs p,
   ofs >= 0 ->
-  In p (loc_arguments_rec va tyl ri rf ofs) -> forall_rpair loc_argument_acceptable p.
+  In p (loc_arguments_rec va tyl ri rf ofs) -> forall_rpair loc_argument_acceptable_stronger p.
 Proof.
   set (OK := fun (l: list (rpair loc)) =>
-             forall p, In p l -> forall_rpair loc_argument_acceptable p).
+             forall p, In p l -> forall_rpair loc_argument_acceptable_stronger p).
   set (OKF := fun (f: Z -> Z -> Z -> list (rpair loc)) =>
               forall ri rf ofs, ofs >= 0 -> OK (f ri rf ofs)).
-  assert (CSI: forall r, In r int_param_regs -> is_callee_save r = false).
+  assert (CSI: forall r, In r int_param_regs -> is_callee_save r = false /\ r <> R30).
   { decide_goal. }
-  assert (CSF: forall r, In r float_param_regs -> is_callee_save r = false).
+  assert (CSF: forall r, In r float_param_regs -> is_callee_save r = false /\ r <> R30).
   { decide_goal. }
   assert (AL: forall ofs ty, ofs >= 0 -> align ofs (typesize ty) >= 0).
   { intros. 
@@ -377,12 +393,29 @@ Proof.
 + (* any64 *) apply B; auto.
 Qed.
 
+Lemma loc_arguments_rec_charact:
+  forall va tyl ri rf ofs p,
+  ofs >= 0 ->
+  In p (loc_arguments_rec va tyl ri rf ofs) -> forall_rpair loc_argument_acceptable p.
+Proof.
+  intros. eapply loc_arguments_rec_charact_stronger in H0; auto.
+  destruct p; simpl in *; intuition; auto using loc_argument_acceptable_stronger_loc_argument_acceptable.
+Qed.
+
+Lemma loc_arguments_acceptable_stronger:
+  forall (s: signature) (p: rpair loc),
+  In p (loc_arguments s) -> forall_rpair loc_argument_acceptable_stronger p.
+Proof.
+  unfold loc_arguments; intros. eapply loc_arguments_rec_charact_stronger; eauto. omega.
+Qed.
+
 Lemma loc_arguments_acceptable:
   forall (s: signature) (p: rpair loc),
   In p (loc_arguments s) -> forall_rpair loc_argument_acceptable p.
 Proof.
   unfold loc_arguments; intros. eapply loc_arguments_rec_charact; eauto. omega.
 Qed.
+
 
 Lemma loc_arguments_main:
   loc_arguments signature_main = nil.
