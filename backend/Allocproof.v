@@ -2440,7 +2440,7 @@ Proof.
     unfold destroyed_at_function_entry. simpl.
     assert (Loc.diff (R R30) l).
     { unfold loc_parameters in H1.
-      pose proof (loc_arguments_acceptable) as Haccept.
+      pose proof (loc_arguments_acceptable_stronger) as Haccept.
       eapply in_map_iff in H1 as [x [? H1]]. subst p.
       eapply Haccept in H1.
       destruct x.

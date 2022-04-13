@@ -2120,10 +2120,12 @@ Proof.
     apply agree_regs_call_regs in AGREGS.
     apply agree_regs_undef_regs with (rl := destroyed_at_function_entry) in AGREGS.
     rewrite <- (comp_transl_partial _ TRANSL) in H1. rewrite E in H1.
-    specialize (NO_CROSS_PTR H1 _ eq_refl).
+    specialize (NO_CROSS_PTR H1 _ eq_refl). admit.
 
   }
-  admit. admit.
+  { admit.
+
+  }
   econstructor; eauto.
   econstructor; eauto with coqlib.
   apply Val.Vptr_has_type.
@@ -2139,7 +2141,7 @@ Proof.
   rewrite sep_swap in SEP.
   exploit find_function_translated; eauto.
     eapply sep_proj2. eapply sep_proj2. eexact SEP.
-  intros [bf [tf' [A [B [C D]]]]].
+  intros [bf [tf' [A [B [C [D E]]]]]].
   econstructor; split.
   eapply plus_right. eexact S. econstructor; eauto.
   unfold find_comp_ptr. now rewrite FIND.
