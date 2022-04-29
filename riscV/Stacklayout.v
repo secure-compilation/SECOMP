@@ -31,6 +31,8 @@ The stack pointer is kept 16-aligned.
 *)
 
 Definition fe_ofs_arg := 0.
+(* Originally in Stacking.v *)
+Definition offset_arg (x: Z) := fe_ofs_arg + 4 * x.
 
 Definition make_env (b: bounds) : frame_env :=
   let w := if Archi.ptr64 then 8 else 4 in

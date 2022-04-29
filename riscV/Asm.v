@@ -31,6 +31,8 @@ Require Import Locations.
 Require Stacklayout.
 Require Import Conventions.
 
+Notation offset_arg := Stacklayout.offset_arg.
+
 (** * Abstract syntax *)
 
 (** Integer registers.  X0 is treated specially because it always reads 
@@ -1137,12 +1139,20 @@ Definition update_stack_return (s: stack) (cp: compartment) rs' :=
 Inductive state: Type :=
   | State: stack -> regset -> mem -> state.
 
-Definition is_call i :=
+(* Definition is_call i := *)
+(*   match i with *)
+(*   | Pjal_s _ _ flag | Pjal_r _ _ flag => flag *)
+(*   | _ => false *)
+(*   end. *)
+
+Definition sig_call i :=
   match i with
-  | Pjal_s _ _ flag | Pjal_r _ _ flag => flag
-  | _ => false
+  | Pjal_s _ sig flag | Pjal_r _ sig flag =>
+                          if flag then Some sig else None
+  | _ => None
   end.
 
+(* Probably need to do the same thing and to define a [sig_return] function *)
 Definition is_return i :=
   match i with
   | Pj_r _ _ flag => flag
@@ -1169,18 +1179,18 @@ Inductive step: state -> trace -> state -> Prop :=
       find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
       forall (COMP: Genv.find_comp ge (rs PC) = Some cp),
       exec_instr f i rs m cp = Next rs' m' ->
-      is_call i = false ->
+      sig_call i = None ->
       is_return i = false ->
       forall (NEXTPC: rs' PC = Vptr b' ofs'),
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) (Vptr b' ofs')),
       step (State st rs m) E0 (State st rs' m')
   | exec_step_internal_call:
-      forall b ofs f i rs m rs' m' b' ofs' cp st st',
+      forall b ofs f i sig rs m rs' m' b' ofs' cp st st',
       rs PC = Vptr b ofs ->
       Genv.find_funct_ptr ge b = Some (Internal f) ->
       find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
       exec_instr f i rs m cp = Next rs' m' ->
-      is_call i = true ->
+      sig_call i = Some sig ->
       forall (NEXTPC: rs' PC = Vptr b' ofs'),
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) (Vptr b' ofs')),
       forall (CURCOMP: Genv.find_comp ge (Vptr b Ptrofs.zero) = Some cp),
@@ -1189,14 +1199,18 @@ Inductive step: state -> trace -> state -> Prop :=
       (* Is a call, we check whether we are allowed to pass pointers *)
       forall (NO_CROSS_PTR_REGS:
           Genv.type_of_call ge (comp_of f) (Vptr b' ofs') = Genv.CrossCompartmentCall ->
-          forall l, not_ptr (rs l)),
+          forall r, List.In (R r) (regs_of_rpairs (loc_parameters sig)) ->
+               not_ptr (rs' (preg_of r))),
       forall (NO_CROSS_PTR_STACK:
-          (* TODO: fix this definition *)
           Genv.type_of_call ge (comp_of f) (Vptr b' ofs') = Genv.CrossCompartmentCall ->
-          (* forall ofs v ty, *)
-          (*   load_stack m (parent_sp s) ty ofs None = Some v -> *)
-          (*   not_ptr v), *)
-            False),
+          forall ofs v ty,
+            List.In (S Incoming ofs ty) (regs_of_rpairs (loc_parameters sig)) ->
+            Mem.loadv (chunk_of_type ty) m
+              (Val.offset_ptr (rs' SP) (* this is the stack pointer *)
+                 (Ptrofs.repr (offset_arg ofs))) None
+                      = Some v ->
+            (* load_stack m sp ty (Ptrofs.repr (offset_arg ofs)) None = Some v -> *)
+            not_ptr v),
       step (State st rs m) E0 (State st' rs' m')
   | exec_step_internal_return:
       forall b ofs f i rs m rs' m' cp cp' st st',

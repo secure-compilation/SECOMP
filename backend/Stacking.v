@@ -26,8 +26,6 @@ Require Import Bounds Conventions Stacklayout Lineartyping.
 
 Definition offset_local (fe: frame_env) (x: Z) := fe.(fe_ofs_local) + 4 * x.
 
-Definition offset_arg (x: Z) := fe_ofs_arg + 4 * x.
-
 (** [save_callee_save rl ofs k] adds before [k] the instructions that
   store in the frame the values of callee-save registers [rl],
   starting at offset [ofs]. *)

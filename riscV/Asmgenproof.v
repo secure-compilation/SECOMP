@@ -649,7 +649,7 @@ Proof.
   eapply plus_right'.
   eapply exec_straight_steps_1; eauto.
   simpl; erewrite functions_transl; eauto. reflexivity.
-  { destruct (is_call jmp) eqn:ISCALL;
+  { destruct (sig_call jmp) eqn:ISCALL;
       destruct (is_return jmp) eqn:ISRET;
       try now destruct jmp.
     - eapply exec_step_internal_call; eauto.
@@ -718,7 +718,7 @@ Proof.
   inversion AT'; subst.
   exists (State s' rs3 m2'); split.
   apply plus_one.
-  { destruct (is_call jmp) eqn:ISCALL;
+  { destruct (sig_call jmp) eqn:ISCALL;
       destruct (is_return jmp) eqn:ISRET;
       try now destruct jmp.
     - eapply exec_step_internal_call; eauto.
@@ -760,7 +760,7 @@ Proof.
   eapply plus_right'.
   eapply exec_straight_steps_1; eauto.
   simpl. rewrite FN. reflexivity.
-  { destruct (is_call jmp) eqn:ISCALL;
+  { destruct (sig_call jmp) eqn:ISCALL;
       destruct (is_return jmp) eqn:ISRET;
       try now destruct jmp.
     - eapply exec_step_internal_call; eauto.
@@ -1016,7 +1016,8 @@ Local Transparent destroyed_by_op.
     rewrite <- H2. simpl.
     unfold comp_of in *; simpl in *. rewrite Heq.
     reflexivity.
-    admit. admit.
+    { intros. Simpl. admit. }
+    { intros. Simpl. admit. }
     econstructor; eauto.
     econstructor; eauto.
     eapply agree_sp_def; eauto.

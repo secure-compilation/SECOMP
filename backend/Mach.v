@@ -127,6 +127,8 @@ Definition load_stack (m: mem) (sp: val) (ty: typ) (ofs: ptrofs) :=
 Definition store_stack (m: mem) (sp: val) (ty: typ) (ofs: ptrofs) (v: val) :=
   Mem.storev (chunk_of_type ty) m (Val.offset_ptr sp ofs) v.
 
+Notation offset_arg := Stacklayout.offset_arg.
+
 Module RegEq.
   Definition t := mreg.
   Definition eq := mreg_eq.
@@ -365,12 +367,27 @@ Inductive step: state -> trace -> state -> Prop :=
             (* This [rs'] is what is used in [exec_function_internal] and seems to be
                   what the callee can access *)
             rs' = undef_regs destroyed_at_function_entry rs ->
-            forall l, not_ptr (rs' l)),
+            forall r, List.In (R r) (regs_of_rpairs (loc_parameters sig)) ->
+                 not_ptr (rs' r)),
+        (* 1) what are the registers that contain arguments and what are the
+              registers that contain trash
+              -> [r] stores an argument iff
+                 [List.In (R r) (regs_of_rpairs (loc_parameters sig))]
+           TODO:
+           2) identify these registers that don't contain arguments
+              -> the other ones
+           3) identify what registers cannot be invalidated
+              (return address? stack pointer?)
+              -> ??
+           4) invalidate the remaining ones
+         *)
       forall (NO_CROSS_PTR_STACK:
           Genv.type_of_call ge (comp_of f) (Vptr f' Ptrofs.zero) = Genv.CrossCompartmentCall ->
           forall ofs v ty,
-            load_stack m (parent_sp s) ty ofs None = Some v ->
+            List.In (S Incoming ofs ty) (regs_of_rpairs (loc_parameters sig)) ->
+            load_stack m sp ty (Ptrofs.repr (offset_arg ofs)) None = Some v ->
             not_ptr v),
+          (* 1) what offsets contain parameters in the stack? *)
       step (State s fb sp (Mcall sig ros :: c) rs m)
         E0 (Callstate (Stackframe fb sp ra c :: s)
                        f' rs m)

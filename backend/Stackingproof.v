@@ -2120,11 +2120,46 @@ Proof.
     apply agree_regs_call_regs in AGREGS.
     apply agree_regs_undef_regs with (rl := destroyed_at_function_entry) in AGREGS.
     rewrite <- (comp_transl_partial _ TRANSL) in H1. rewrite E in H1.
-    specialize (NO_CROSS_PTR H1 _ eq_refl). admit.
-
+    specialize (NO_CROSS_PTR H1 _ eq_refl _ H3).
+    clear -AGREGS NO_CROSS_PTR.
+    specialize (AGREGS r).
+    (* TODO: write a lemma about that *)
+    inv AGREGS; simpl; auto.
+    rewrite <- H in NO_CROSS_PTR; now simpl in NO_CROSS_PTR.
+    rewrite <- H0 in NO_CROSS_PTR; now simpl in NO_CROSS_PTR.
   }
-  { admit.
+  { intros. subst.
+    assert (ARGS: forall (ofs : Z) (ty : typ),
+               In (S Outgoing ofs ty) (regs_of_rpairs (loc_arguments (Linear.funsig f'))) ->
+               slot_within_bounds (function_bounds f) Outgoing ofs ty).
+    { intros; red.
+      apply Z.le_trans with (size_arguments (Linear.funsig f')); auto.
+      apply loc_arguments_bounded; auto. }
 
+    assert (slot_valid f Outgoing ofs ty = true).
+    { apply incoming_slot_in_parameters in H2.
+      eapply slot_outgoing_argument_valid. eauto. }
+    assert (H2' := H2).
+    apply incoming_slot_in_parameters in H2'.
+    pose proof (frame_get_outgoing _ _ _ _ _ _ _ _ _ _ _ _ SEP (ARGS _ _ H2') H4)
+               as [v' [Hload Hagree]].
+    unfold load_stack in H3, Hload. simpl in H3, Hload.
+    apply Mem.load_Some_None in Hload.
+    rewrite H3 in Hload. inv Hload.
+    rewrite <- (comp_transl_partial _ TRANSL) in H1. rewrite E in H1.
+    specialize (NO_CROSS_PTR H1 _ eq_refl).
+    specialize (NO_CROSS_PTR (S Incoming ofs ty) H2).
+    assert (NO_CROSS_PTR': not_ptr (rs (S Outgoing ofs ty))).
+    { clear -NO_CROSS_PTR. revert NO_CROSS_PTR.
+      Local Transparent destroyed_at_function_entry. simpl.
+      unfold call_regs.
+      rewrite Locmap.gso. auto.
+      reflexivity.
+      Local Opaque destroyed_at_function_entry.
+    }
+    inv Hagree; simpl; auto.
+    rewrite <- H5 in NO_CROSS_PTR'; now simpl in NO_CROSS_PTR'.
+    rewrite <- H6 in NO_CROSS_PTR'; now simpl in NO_CROSS_PTR'.
   }
   econstructor; eauto.
   econstructor; eauto with coqlib.
@@ -2291,7 +2326,7 @@ Proof.
   apply frame_contents_exten with rs0 (parent_locset s); auto.
   intros; apply Val.lessdef_same; apply AGCS; red; congruence.
   intros; rewrite (OUTU ty ofs); auto. 
-Admitted.
+Qed.
 
 Lemma transf_initial_states:
   forall st1, Linear.initial_state prog st1 ->

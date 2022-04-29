@@ -866,7 +866,7 @@ Lemma exec_straight_steps_1:
 Proof.
   induction 1; intros.
   apply plus_one.
-  { destruct (is_call i1) eqn:ISCALL;
+  { destruct (sig_call i1) eqn:ISCALL;
       destruct (is_return i1) eqn:ISRET;
       try now destruct i1.
     - eapply exec_step_internal_call; eauto.
@@ -900,7 +900,7 @@ Proof.
   }
 
   eapply plus_left'.
-  { destruct (is_call i) eqn:ISCALL;
+  { destruct (sig_call i) eqn:ISCALL;
       destruct (is_return i) eqn:ISRET;
       try now destruct i.
     - eapply exec_step_internal_call; eauto.
