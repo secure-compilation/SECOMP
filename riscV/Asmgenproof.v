@@ -86,6 +86,14 @@ Proof.
   eapply (Genv.match_genvs_allowed_calls TRANSF). eauto.
 Qed.
 
+Lemma type_of_call_translated:
+  forall cp vf,
+    Genv.allowed_call ge cp vf ->
+    Genv.type_of_call ge cp vf = Genv.type_of_call tge cp vf.
+Proof.
+  intros cp vf H.
+  eapply (Genv.match_genvs_type_of_call TRANSF). eauto.
+Qed.
 
 
 (** * Properties of control flow *)
@@ -1016,8 +1024,29 @@ Local Transparent destroyed_by_op.
     rewrite <- H2. simpl.
     unfold comp_of in *; simpl in *. rewrite Heq.
     reflexivity.
-    { intros. Simpl. admit. }
-    { intros. Simpl. admit. }
+    { intros. Simpl.
+      apply agree_mregs with (r := r) in AG.
+      rewrite <- (comp_transl_partial _ H4) in H8.
+      rewrite <- type_of_call_translated in H8; eauto.
+      specialize (NO_CROSS_PTR_REGS H8 _ eq_refl r H9).
+      Local Transparent destroyed_at_function_entry.
+      simpl in NO_CROSS_PTR_REGS.
+      Local Opaque destroyed_at_function_entry.
+      destruct (mreg_eq r R30); [now subst r|].
+      rewrite Regmap.gso in NO_CROSS_PTR_REGS; eauto.
+      inv AG; eauto.
+      now rewrite <- H11 in NO_CROSS_PTR_REGS.
+    }
+    { Simpl. intros.
+      rewrite <- (comp_transl_partial _ H4) in H8.
+      rewrite <- type_of_call_translated in H8; eauto.
+      unfold load_stack in NO_CROSS_PTR_STACK.
+      specialize (NO_CROSS_PTR_STACK H8 _ v _ H9).
+      erewrite agree_sp in H10; eauto.
+      (* Cannot instantiate the hypothesis in [NO_CROSS_PTR_STACK]? *)
+
+
+      admit. }
     econstructor; eauto.
     econstructor; eauto.
     eapply agree_sp_def; eauto.
@@ -1099,7 +1128,20 @@ Local Transparent destroyed_by_op.
     rewrite <- H2; simpl.
     unfold comp_of in *; simpl in *. rewrite Heq.
     reflexivity.
-    admit. admit.
+    { intros. Simpl.
+      apply agree_mregs with (r := r) in AG.
+      rewrite <- (comp_transl_partial _ H4) in H5.
+      rewrite <- type_of_call_translated in H5; eauto.
+      specialize (NO_CROSS_PTR_REGS H5 _ eq_refl r H7).
+      Local Transparent destroyed_at_function_entry.
+      simpl in NO_CROSS_PTR_REGS.
+      Local Opaque destroyed_at_function_entry.
+      destruct (mreg_eq r R30); [now subst r|].
+      rewrite Regmap.gso in NO_CROSS_PTR_REGS; eauto.
+      inv AG; eauto.
+      now rewrite <- H9 in NO_CROSS_PTR_REGS.
+    }
+    admit.
     econstructor; eauto.
     econstructor; eauto.
     eapply agree_sp_def; eauto.
