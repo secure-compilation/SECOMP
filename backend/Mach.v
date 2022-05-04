@@ -383,9 +383,10 @@ Inductive step: state -> trace -> state -> Prop :=
          *)
       forall (NO_CROSS_PTR_STACK:
           Genv.type_of_call ge (comp_of f) (Vptr f' Ptrofs.zero) = Genv.CrossCompartmentCall ->
-          forall ofs v ty,
+          forall ofs ty,
             List.In (S Incoming ofs ty) (regs_of_rpairs (loc_parameters sig)) ->
-            load_stack m sp ty (Ptrofs.repr (offset_arg ofs)) None = Some v ->
+            exists v,
+            load_stack m sp ty (Ptrofs.repr (offset_arg ofs)) None = Some v /\
             not_ptr v),
           (* 1) what offsets contain parameters in the stack? *)
       step (State s fb sp (Mcall sig ros :: c) rs m)

@@ -2141,11 +2141,13 @@ Proof.
       eapply slot_outgoing_argument_valid. eauto. }
     assert (H2' := H2).
     apply incoming_slot_in_parameters in H2'.
-    pose proof (frame_get_outgoing _ _ _ _ _ _ _ _ _ _ _ _ SEP (ARGS _ _ H2') H4)
+    pose proof (frame_get_outgoing _ _ _ _ _ _ _ _ _ _ _ _ SEP (ARGS _ _ H2') H3)
                as [v' [Hload Hagree]].
+    exists v'.
     unfold load_stack in H3, Hload. simpl in H3, Hload.
     apply Mem.load_Some_None in Hload.
-    rewrite H3 in Hload. inv Hload.
+    split; auto.
+    (* rewrite H3 in Hload. inv Hload. *)
     rewrite <- (comp_transl_partial _ TRANSL) in H1. rewrite E in H1.
     specialize (NO_CROSS_PTR H1 _ eq_refl).
     specialize (NO_CROSS_PTR (S Incoming ofs ty) H2).
@@ -2158,8 +2160,8 @@ Proof.
       Local Opaque destroyed_at_function_entry.
     }
     inv Hagree; simpl; auto.
+    rewrite <- H4 in NO_CROSS_PTR'; now simpl in NO_CROSS_PTR'.
     rewrite <- H5 in NO_CROSS_PTR'; now simpl in NO_CROSS_PTR'.
-    rewrite <- H6 in NO_CROSS_PTR'; now simpl in NO_CROSS_PTR'.
   }
   econstructor; eauto.
   econstructor; eauto with coqlib.

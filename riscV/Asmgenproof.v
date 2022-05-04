@@ -1041,12 +1041,12 @@ Local Transparent destroyed_by_op.
       rewrite <- (comp_transl_partial _ H4) in H8.
       rewrite <- type_of_call_translated in H8; eauto.
       unfold load_stack in NO_CROSS_PTR_STACK.
-      specialize (NO_CROSS_PTR_STACK H8 _ v _ H9).
+      specialize (NO_CROSS_PTR_STACK H8 _ _ H9) as [v' [Hload Hnot_ptr]].
       erewrite agree_sp in H10; eauto.
-      (* Cannot instantiate the hypothesis in [NO_CROSS_PTR_STACK]? *)
-
-
-      admit. }
+      eapply Mem.loadv_extends in Hload as [v'' [Hload Hlessdef]]; eauto.
+      rewrite H10 in Hload. inv Hload.
+      inv Hlessdef; simpl in Hnot_ptr; now eauto.
+    }
     econstructor; eauto.
     econstructor; eauto.
     eapply agree_sp_def; eauto.
@@ -1141,7 +1141,16 @@ Local Transparent destroyed_by_op.
       inv AG; eauto.
       now rewrite <- H9 in NO_CROSS_PTR_REGS.
     }
-    admit.
+    { Simpl. intros.
+      rewrite <- (comp_transl_partial _ H4) in H5.
+      rewrite <- type_of_call_translated in H5; eauto.
+      unfold load_stack in NO_CROSS_PTR_STACK.
+      specialize (NO_CROSS_PTR_STACK H5 _ _ H7) as [v' [Hload Hnot_ptr]].
+      erewrite agree_sp in H8; eauto.
+      eapply Mem.loadv_extends in Hload as [v'' [Hload Hlessdef]]; eauto.
+      rewrite H8 in Hload. inv Hload.
+      inv Hlessdef; simpl in Hnot_ptr; now eauto.
+    }
     econstructor; eauto.
     econstructor; eauto.
     eapply agree_sp_def; eauto.
@@ -1629,7 +1638,7 @@ Local Transparent destroyed_at_function_entry.
   + simpl in *.
     rewrite H3 in H8.
     rewrite H3 in H2. congruence.
-Admitted.
+Qed.
 
 
 Lemma transf_initial_states:
