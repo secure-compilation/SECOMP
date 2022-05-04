@@ -667,7 +667,7 @@ Qed.
 Inductive reduction: Type :=
   | Lred (rule: string) (l': expr) (m': mem)
   | Rred (rule: string) (r': expr) (m': mem) (t: trace)
-  | Callred (rule: string) (fd: fundef) (args: list val) (tyres: type) (m': mem)
+  | Callred (rule: string) (fd: fundef) (args: list val) (tyres: type) (vf: val) (m': mem)
   | Stuckred.
 
 Section EXPRS.
@@ -903,7 +903,7 @@ Fixpoint step_expr (cp: compartment) (k: kind) (a: expr) (m: mem): reducts expr 
               check (match Genv.type_of_call ge cp vf with
                      | Genv.CrossCompartmentCall => forallb not_ptr_b vargs
                      | _ => true end);
-              topred (Callred "red_call" fd vargs ty m)
+              topred (Callred "red_call" fd vargs ty vf m)
           | _ => stuck
           end
       | _, _ =>
@@ -948,8 +948,8 @@ Inductive imm_safe_t (cp: compartment): kind -> expr -> mem -> Prop :=
       rred ge cp r m t r' m' -> possible_trace w t w' ->
       context RV to C ->
       imm_safe_t cp to (C r) m
-  | imm_safe_t_callred: forall to C r m fd args ty,
-      callred ge cp r m fd args ty ->
+  | imm_safe_t_callred: forall to C r m fd args ty vf,
+      callred ge cp r m fd args ty vf ->
       context RV to C ->
       imm_safe_t cp to (C r) m.
 
@@ -1063,8 +1063,8 @@ Proof.
 Qed.
 
 Lemma callred_invert:
-  forall cp r fd args ty m,
-  callred ge cp r m fd args ty ->
+  forall cp r fd args ty vf m,
+  callred ge cp r m fd args ty vf ->
   invert_expr_prop cp r m.
 Proof.
   intros. inv H. simpl.
@@ -1161,7 +1161,7 @@ Definition reduction_ok (cp: compartment) (k: kind) (a: expr) (m: mem) (rd: redu
   match k, rd with
   | LV, Lred _ l' m' => lred ge e a m l' m'
   | RV, Rred _ r' m' t => rred ge cp a m t r' m' /\ exists w', possible_trace w t w'
-  | RV, Callred _ fd args tyres m' => callred ge cp a m fd args tyres /\ m' = m
+  | RV, Callred _ fd args tyres vf m' => callred ge cp a m fd args tyres vf /\ m' = m
   | LV, Stuckred => ~imm_safe_t cp k a m
   | RV, Stuckred => ~imm_safe_t cp k a m
   | _, _ => False
@@ -1671,9 +1671,9 @@ Proof.
 Qed.
 
 Lemma callred_topred:
-  forall cp a fd args ty m,
-  callred ge cp a m fd args ty ->
-  exists rule, step_expr cp RV a m = topred (Callred rule fd args ty m).
+  forall cp a fd args ty vf m,
+  callred ge cp a m fd args ty vf ->
+  exists rule, step_expr cp RV a m = topred (Callred rule fd args ty vf m).
 Proof.
   induction 1; simpl.
   rewrite H2. exploit sem_cast_arguments_complete; eauto. intros [vtl [A B]].
@@ -2003,7 +2003,7 @@ Definition expr_final_state (f: function) (k: cont) (e: env) (C_rd: (expr -> exp
   match snd C_rd with
   | Lred rule a m => TR rule E0 (ExprState f (fst C_rd a) k e m)
   | Rred rule a m t => TR rule t (ExprState f (fst C_rd a) k e m)
-  | Callred rule fd vargs ty m => TR rule E0 (Callstate fd vargs (Kcall f e (fst C_rd) ty k) m)
+  | Callred rule fd vargs ty vf m => TR rule E0 (Callstate fd vargs (Kcall f e (fst C_rd) ty vf k) m)
   | Stuckred => TR "step_stuck" E0 Stuckstate
   end.
 
@@ -2096,7 +2096,7 @@ Definition do_step (w: world) (s: state) : list transition :=
       ret "step_return_0" (Returnstate Vundef (call_cont k) m')
   | State f (Sreturn (Some x)) k e m =>
       ret "step_return_1" (ExprState f x (Kreturn k) e m)
-  | State f Sskip ((Kstop | Kcall _ _ _ _ _) as k) e m =>
+  | State f Sskip ((Kstop | Kcall _ _ _ _ _ _) as k) e m =>
       do m' <- Mem.free_list m (blocks_of_env ge e) (fn_comp f);
       ret "step_skip_call" (Returnstate Vundef k m')
 
@@ -2126,7 +2126,10 @@ Definition do_step (w: world) (s: state) : list transition :=
       | Some(w',t,v,m') => TR "step_external_function" t (Returnstate v k m') :: nil
       end
 
-  | Returnstate v (Kcall f e C ty k) m =>
+  | Returnstate v (Kcall f e C ty vf k) m =>
+      check (match Genv.type_of_call ge (comp_of f) vf with
+             | Genv.CrossCompartmentCall => not_ptr_b v
+             | _ => true end);
       ret "step_returnstate" (ExprState f (C (Eval v ty)) k e m)
 
   | _ => nil
@@ -2198,7 +2201,8 @@ Proof with try (left; right; econstructor; eauto; fail).
   destruct p as [[[w' tr] v] m']. myinv. left; right; constructor.
   eapply do_ef_external_sound; eauto.
 (* returnstate *)
-  destruct k; myinv...
+  destruct k; myinv... left; right; constructor.
+  intros REWR; rewrite REWR in Heqb. now apply not_ptr_reflect.
 (* stuckstate *)
   contradiction.
 Qed.
@@ -2248,7 +2252,7 @@ Proof with (unfold ret; eauto with coqlib).
   exploit callred_topred; eauto.
   instantiate (1 := w). instantiate (1 := e).
   intros (rule & STEP). exists rule.
-  change (TR rule E0 (Callstate fd vargs (Kcall f e C ty k) m)) with (expr_final_state f k e (C, Callred rule fd vargs ty m)).
+  change (TR rule E0 (Callstate fd vargs (Kcall f e C ty vf k) m)) with (expr_final_state f k e (C, Callred rule fd vargs ty vf m)).
   apply in_map.
   generalize (step_expr_context e w _ _ _ H1 (comp_of f) a m). unfold reducts_incl.
   intro. replace C with (fun x => C x). apply H2.
@@ -2295,6 +2299,14 @@ Proof with (unfold ret; eauto with coqlib).
   rewrite (sem_bind_parameters_complete _ _ _ _ _ _ _ H2)...
   constructor; auto.
   exploit do_ef_external_complete; eauto. intro EQ; rewrite EQ. auto with coqlib.
+  assert (match Genv.type_of_call ge (comp_of f) vf with
+           | Genv.CrossCompartmentCall => not_ptr_b v
+           | _ => true
+           end = true).
+  { destruct (Genv.type_of_call ge (comp_of f) vf) eqn:eq_type_of_call;
+      [reflexivity | | reflexivity].
+    apply not_ptr_reflect; auto. }
+  rewrite H; constructor; auto.
 Qed.
 
 End EXEC.

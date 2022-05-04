@@ -373,7 +373,7 @@ Inductive estep: state -> trace -> state -> Prop :=
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
       forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) vf = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
       estep (ExprState f (C (Ecall rf rargs ty)) k e m)
-         E0 (Callstate fd vargs (Kcall f e C ty k) m)
+         E0 (Callstate fd vargs (Kcall f e C ty vf k) m)
 
   | step_builtin: forall f C ef tyargs rargs ty k e m vargs t vres m',
       leftcontext RV RV C ->
@@ -474,7 +474,7 @@ Proof.
 Qed.
 
 Lemma callred_kind:
-  forall cp a m fd args ty, callred ge cp a m fd args ty -> expr_kind a = RV.
+  forall cp a m fd args ty vf, callred ge cp a m fd args ty vf -> expr_kind a = RV.
 Proof.
   induction 1; auto.
 Qed.
@@ -618,8 +618,8 @@ Proof.
 Qed.
 
 Lemma callred_invert:
-  forall cp r fd args ty m,
-  callred ge cp r m fd args ty ->
+  forall cp r fd args ty vf m,
+  callred ge cp r m fd args ty vf ->
   invert_expr_prop cp r m.
 Proof.
   intros. inv H. simpl.
@@ -1780,7 +1780,10 @@ with eval_expr: compartment -> env -> mem -> kind -> expr -> trace -> mem -> exp
       type_of_fundef fd = Tfunction targs tres cconv ->
       eval_funcall c m2 fd vargs t3 m3 vres ->
       forall (ALLOWED: Genv.allowed_call ge c vf),
-      forall (NO_CROSS_PTR: Genv.type_of_call ge c vf = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
+      forall (NO_CROSS_PTR_CALL: Genv.type_of_call ge c vf = Genv.CrossCompartmentCall ->
+                       Forall not_ptr vargs),
+      forall (NO_CROSS_PTR_RETURN: Genv.type_of_call ge c vf = Genv.CrossCompartmentCall ->
+                       not_ptr vres),
       eval_expr c e m RV (Ecall rf rargs ty) (t1**t2**t3) m3 (Eval vres ty)
 
 with eval_exprlist: compartment -> env -> mem -> exprlist -> trace -> mem -> exprlist -> Prop :=
@@ -2372,6 +2375,7 @@ Proof.
   eapply star_left. left; eapply step_call; eauto. congruence.
   eapply star_right. eapply H9; simpl; eauto.
   right; constructor.
+  eapply NO_CROSS_PTR_RETURN.
   reflexivity. reflexivity. reflexivity. traceEq.
 (* nil *)
   simpl; intuition. apply star_refl.

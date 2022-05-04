@@ -1993,19 +1993,19 @@ with wt_stmt_cont: typenv -> function -> cont -> Prop :=
       wt_stmt_cont te f (Kswitch2 k)
   | wt_Kstop': forall te f,
       wt_stmt_cont te f Kstop
-  | wt_Kcall': forall te f f' e C ty k,
-      wt_call_cont (Kcall f' e C ty k) ty ->
+  | wt_Kcall': forall te f f' e C ty vf k,
+      wt_call_cont (Kcall f' e C ty vf k) ty ->
       ty = f.(fn_return) ->
-      wt_stmt_cont te f (Kcall f' e C ty k)
+      wt_stmt_cont te f (Kcall f' e C ty vf k)
 
 with wt_call_cont: cont -> type -> Prop :=
   | wt_Kstop: forall ty,
       wt_call_cont Kstop ty
-  | wt_Kcall: forall te f e C ty k,
+  | wt_Kcall: forall te f e C ty vf k,
       wt_expr_cont te f k ->
       wt_stmt ge te f.(fn_return) f.(fn_body) ->
       (forall v, wt_val v ty -> wt_rvalue ge te (C (Eval v ty))) ->
-      wt_call_cont (Kcall f e C ty k) ty.
+      wt_call_cont (Kcall f e C ty vf k) ty.
 
 Lemma is_wt_call_cont:
   forall te f k,
