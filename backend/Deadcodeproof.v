@@ -450,13 +450,20 @@ Proof.
   eapply (Genv.match_genvs_allowed_calls TRANSF). eauto.
 Qed.
 
-Lemma type_of_call_translated:
-  forall cp vf,
-    Genv.allowed_call ge cp vf ->
-    Genv.type_of_call ge cp vf = Genv.type_of_call tge cp vf.
+Lemma find_comp_translated:
+  forall vf,
+    Genv.find_comp ge vf = Genv.find_comp tge vf.
 Proof.
-  intros cp vf H.
-  eapply (Genv.match_genvs_type_of_call TRANSF). eauto.
+  intros vf.
+  eapply (Genv.match_genvs_find_comp TRANSF).
+Qed.
+
+Lemma type_of_call_translated:
+  forall cp cp',
+    Genv.type_of_call ge cp cp' = Genv.type_of_call tge cp cp'.
+Proof.
+  intros cp cp'.
+  eapply Genv.match_genvs_type_of_call.
 Qed.
 
 Lemma sig_function_translated:
@@ -963,7 +970,7 @@ Ltac UseTransfer :=
         rewrite <- H0 in H2; inv H2.
       + eapply add_need_all_eagree in AG. eauto. }
   eapply H1; eauto. eapply NO_CROSS_PTR.
-  erewrite type_of_call_translated; eauto.
+  erewrite find_comp_translated, type_of_call_translated; eauto.
   rewrite comp_transf_function; eauto.
   eapply match_call_states with (cu := cu'); eauto.
   constructor; auto. eapply match_stackframes_intro with (cu := cu); eauto.

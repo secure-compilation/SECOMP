@@ -75,15 +75,21 @@ Proof.
   eapply (Genv.match_genvs_allowed_calls TRANSF). eauto.
 Qed.
 
-Lemma type_of_call_translated:
-  forall cp vf,
-    (* Val.lessdef vf vf' -> *)
-    (* Genv.find_funct ge vf = Some fd -> *)
-    Genv.allowed_call ge cp vf ->
-    Genv.type_of_call ge cp vf = Genv.type_of_call tge cp vf.
+Lemma find_comp_translated:
+  forall vf,
+    Genv.find_comp ge vf = Genv.find_comp tge vf.
 Proof.
-  intros cp vf H.
-  eapply (Genv.match_genvs_type_of_call TRANSF). eauto.
+  intros vf.
+  eapply (Genv.match_genvs_find_comp TRANSF).
+Qed.
+
+Lemma type_of_call_translated:
+  forall cp cp',
+    Genv.type_of_call ge cp cp' =
+      Genv.type_of_call tge cp cp'.
+Proof.
+  intros cp cp'.
+  eapply (Genv.match_genvs_type_of_call).
 Qed.
 
 Lemma sig_function_translated:
@@ -1125,7 +1131,7 @@ Proof.
       + eauto.
   }
   intros CROSS. eapply H1; eauto.
-  eapply NO_CROSS_PTR; eauto. erewrite SAMECOMP, type_of_call_translated; eauto. erewrite <- SAMECOMP; eauto.
+  eapply NO_CROSS_PTR; eauto. erewrite SAMECOMP, find_comp_translated, type_of_call_translated; eauto.
   econstructor; eauto.
   eapply match_stacks_cons; eauto.
   { red; eauto. }
@@ -1188,8 +1194,8 @@ Proof.
   eapply find_function_ptr_translated; eauto.
   rewrite <- SAMECOMP. eapply allowed_call_translated; eauto.
   (* This is a tailcall, so the type of call is InternalCall *)
-  assert (Genv.type_of_call tge (comp_of f') vf = Genv.InternalCall).
-  { erewrite <- type_of_call_translated; [| now rewrite <- SAMECOMP].
+  assert (Genv.type_of_call tge (comp_of f') (Genv.find_comp tge vf) = Genv.InternalCall).
+  { erewrite <- find_comp_translated, <- type_of_call_translated.
     clear -H0 FUNPTR COMP SAMECOMP TRANSF.
     unfold find_function in H0. unfold find_function_ptr in FUNPTR.
     unfold Genv.type_of_call. unfold Genv.find_comp.

@@ -119,14 +119,20 @@ Proof.
   eapply (Genv.match_genvs_allowed_calls H0). eauto.
 Qed.
 
-Lemma type_of_call_translated:
-  forall cp vf,
-    Genv.allowed_call ge cp vf ->
-    Genv.type_of_call ge cp vf = Genv.type_of_call tge cp vf.
+Lemma find_comp_translated:
+  forall vf,
+    Genv.find_comp ge vf = Genv.find_comp tge vf.
 Proof.
-  intros cp vf H.
   destruct TRANSL.
-  eapply (Genv.match_genvs_type_of_call H0). eauto.
+  eapply (Genv.match_genvs_find_comp H).
+Qed.
+
+Lemma type_of_call_translated:
+  forall cp cp',
+    Genv.type_of_call ge cp cp' = Genv.type_of_call tge cp cp'.
+Proof.
+  intros cp cp'.
+  eapply (Genv.match_genvs_type_of_call).
 Qed.
 
 (** Properties of smart constructors. *)
@@ -989,13 +995,13 @@ Inductive match_cont : Csem.cont -> cont -> Prop :=
   | match_Kswitch2: forall k tk,
       match_cont k tk ->
       match_cont (Csem.Kswitch2 k) (Kswitch tk)
-  | match_Kcall: forall f e C ty k optid tf le sl tk a dest tmps,
+  | match_Kcall: forall f e C ty cp k optid tf le sl tk a dest tmps,
       tr_function f tf ->
       leftcontext RV RV C ->
       (forall v m, tr_top tge e (set_opttemp optid v le) m (comp_of f) dest (C (Csyntax.Eval v ty)) sl a tmps) ->
       match_cont_exp dest a k tk ->
-      match_cont (Csem.Kcall f e C ty k)
-                 (Kcall optid tf e le (Kseqlist sl tk))
+      match_cont (Csem.Kcall f e C ty cp k)
+                 (Kcall optid tf e le cp (Kseqlist sl tk))
 (*
   | match_Kcall_some: forall f e C ty k dst tf le sl tk a dest tmps,
       transl_function f = Errors.OK tf ->
@@ -1990,9 +1996,10 @@ Proof.
   exploit type_of_fundef_preserved; eauto. congruence.
   rewrite CO; eauto.
   eapply allowed_call_translated; eauto.
-  erewrite CO, <- type_of_call_translated; eauto.
+  erewrite CO, <- find_comp_translated, <- type_of_call_translated; eauto.
   traceEq.
-  constructor; auto. econstructor; eauto.
+  constructor; auto. rewrite <- find_comp_translated.
+  econstructor; eauto.
   intros. change sl2 with (nil ++ sl2). apply S.
   constructor. auto. auto.
   (* for value *)
@@ -2007,9 +2014,9 @@ Proof.
   rewrite CO; eauto. eauto.
   exploit type_of_fundef_preserved; eauto. congruence.
   eapply allowed_call_translated; eauto. rewrite CO; eauto.
-  erewrite CO, <- type_of_call_translated; eauto.
+  erewrite CO, <- find_comp_translated, <- type_of_call_translated; eauto.
   traceEq.
-  constructor; auto. econstructor; eauto.
+  constructor; auto. rewrite <- find_comp_translated. econstructor; eauto.
   intros. apply S. destruct dst'; constructor.
   auto. intros. constructor. rewrite H5; auto. apply PTree.gss.
   auto. intros. constructor. rewrite H5; auto. apply PTree.gss.
@@ -2372,6 +2379,8 @@ Proof.
   inv H3.
   econstructor; split.
   left; apply plus_one. constructor.
+  assert (CO : comp_of tf = comp_of f) by (inv H7; assumption). (* NOTE: Intros/tactics? *)
+  rewrite CO. now rewrite type_of_call_translated in NO_CROSS_PTR.
   econstructor; eauto.
 Qed.
 

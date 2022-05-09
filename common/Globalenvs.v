@@ -206,21 +206,18 @@ Definition find_funct (ge: t) (v: val) : option F :=
 (** [find_comp ge v] finds the compartment associated with the pointer [v] as it
     is recorded in [ge]. *)
 
-Definition find_comp (ge: t) (v: val) : option compartment :=
+Definition find_comp (ge: t) (v: val) : compartment :=
   match v with
   | Vptr b _ =>
     match find_funct_ptr ge b with
-    | Some f => Some (comp_of f)
-    | None   => None
+    | Some f => (comp_of f)
+    | None   => default_compartment
     end
-  | _ => Some default_compartment
-  (* FIXME: Should this be a None? It would probably require changing the
-     [call_comp] functions to be optional as well, returning [None] on an empty
-     call stack. *)
+  | _ => default_compartment
   end.
 
 Lemma find_comp_null:
-  forall ge, find_comp ge Vnullptr = Some default_compartment.
+  forall ge, find_comp ge Vnullptr = default_compartment.
 Proof.
   unfold find_comp, Vnullptr.
   now destruct Archi.ptr64.
@@ -1886,7 +1883,7 @@ Definition allowed_cross_call (ge: t) (cp: compartment) (vf: val) :=
   | Vptr b _ =>
     exists i cp',
     invert_symbol ge b = Some i /\
-    find_comp ge vf = Some cp' /\
+    find_comp ge vf = cp' /\
     match (Policy.policy_import ge.(genv_policy)) ! cp with
     | Some l => In (cp', i) l
     | None => False
@@ -1904,14 +1901,19 @@ Variant call_type :=
   | DefaultCompartmentCall
 .
 
-Definition type_of_call (ge: t) (cp: compartment) (vf: val): call_type :=
-  match find_comp ge vf with
-  | None => InternalCall (* a failed call is internal, by definition *)
-  | Some cp' =>
-      if Pos.eqb cp cp' then InternalCall
-      else if Pos.eqb cp' default_compartment then DefaultCompartmentCall
-           else CrossCompartmentCall
-  end.
+Definition type_of_call (ge: t) (cp: compartment) (cp': compartment): call_type :=
+  if Pos.eqb cp cp' then InternalCall
+  else if Pos.eqb cp' default_compartment then DefaultCompartmentCall
+       else CrossCompartmentCall.
+
+(* Definition type_of_call (ge: t) (cp: compartment) (vf: val): call_type := *)
+(*   match find_comp ge vf with *)
+(*   | None => InternalCall (* a failed call is internal, by definition *) *)
+(*   | Some cp' => type_of_call ge cp cp' *)
+(*       (* if Pos.eqb cp cp' then InternalCall *) *)
+(*       (* else if Pos.eqb cp' default_compartment then DefaultCompartmentCall *) *)
+(*       (*      else CrossCompartmentCall *) *)
+(*   end. *)
 
 (* (* A call is cross-compartment if the following definition holds: *) *)
 (* Definition cross_call (ge: t) (cp: compartment) (vf: val) := *)
@@ -1950,8 +1952,8 @@ Definition type_of_call (ge: t) (cp: compartment) (vf: val): call_type :=
 (3) the call is an inter-compartment call and is allowed by the policy
 *)
 Definition allowed_call (ge: t) (cp: compartment) (vf: val) :=
-  Some default_compartment = find_comp ge vf \/
-  Some cp = find_comp ge vf \/
+  default_compartment = find_comp ge vf \/
+  cp = find_comp ge vf \/
   allowed_cross_call ge cp vf.
 
 Lemma comp_ident_eq_dec: forall (x y: compartment * ident),
@@ -1965,7 +1967,7 @@ Qed.
 
 Definition allowed_call_b (ge: t) (cp: compartment) (vf: val): bool :=
   match find_comp ge vf with
-  | Some c => Pos.eqb c default_compartment
+  | c => Pos.eqb c default_compartment
              || Pos.eqb c cp
              || match vf with
                | Vptr b _ => match invert_symbol ge b with
@@ -1984,7 +1986,6 @@ Definition allowed_call_b (ge: t) (cp: compartment) (vf: val): bool :=
                             end
                | _ => false
                end
-  | None => false
   end.
 
 Lemma allowed_call_reflect: forall ge cp vf,
@@ -1993,46 +1994,47 @@ Proof.
   intros ge cp vf.
   unfold allowed_call, allowed_call_b, allowed_cross_call.
   destruct vf eqn:VF; try (firstorder; discriminate).
-  destruct (find_comp ge (Vptr b i)) eqn:COMP; try (firstorder; discriminate).
-  - destruct (Pos.eq_dec default_compartment c); subst.
-    + simpl. split; auto.
-    + simpl.
-      destruct (Pos.eq_dec c cp); subst.
-      * rewrite Pos.eqb_refl. rewrite orb_true_r. simpl. split; auto.
-      * split; auto.
-        -- intros H. destruct H as [? | [? | ?]]; try congruence.
-           destruct H as [i' [cp' [H1 [H2 [H3 H4]]]]].
-           rewrite H1. inv H2.
-           destruct ((Policy.policy_import (genv_policy ge)) ! cp) as [imps |]; auto.
-           destruct ((Policy.policy_export (genv_policy ge)) ! cp') as [exps |]; auto.
-           destruct (in_dec comp_ident_eq_dec (cp', i') imps);
-             destruct (in_dec Pos.eq_dec i' exps); simpl; auto.
-           now rewrite orb_true_r.
-        -- intros H.
-           right; right.
-           destruct c; try (now unfold default_compartment in n).
-           ++ simpl in H. apply Pos.eqb_neq in n0. rewrite n0 in H. simpl in H.
-              destruct (invert_symbol ge b); try discriminate.
-              exists i0. exists (c~1)%positive. split; auto. split; auto. simpl.
-              destruct ((Policy.policy_import (genv_policy ge)) ! cp) as [imps |]; try discriminate.
-              destruct (Policy.policy_export (genv_policy ge)); try discriminate.
-              destruct (t0_2 ! c); try discriminate.
-              apply andb_prop in H.
-              destruct H as [H1 H2].
-              apply proj_sumbool_true in H1.
-              apply proj_sumbool_true in H2.
-              auto.
-           ++ simpl in H. apply Pos.eqb_neq in n0. rewrite n0 in H. simpl in H.
-              destruct (invert_symbol ge b); try discriminate.
-              exists i0. exists (c~0)%positive. split; auto. split; auto. simpl.
-              destruct ((Policy.policy_import (genv_policy ge)) ! cp) as [imps |]; try discriminate.
-              destruct (Policy.policy_export (genv_policy ge)); try discriminate.
-              destruct (t0_1 ! c); try discriminate.
-              apply andb_prop in H.
-              destruct H as [H1 H2].
-              apply proj_sumbool_true in H1.
-              apply proj_sumbool_true in H2.
-              auto.
+  (* destruct (find_comp ge (Vptr b i)) eqn:COMP; try (firstorder; discriminate). *)
+  remember (find_comp ge (Vptr b i)) as c.
+  destruct (Pos.eq_dec default_compartment c); subst.
+  - rewrite <- e. split; auto.
+  - destruct (Pos.eq_dec (find_comp ge (Vptr b i)) cp); subst.
+    (* destruct (Pos.eq_dec c cp); subst. *)
+    + rewrite Pos.eqb_refl. rewrite orb_true_r. simpl. split; auto.
+    + split; auto.
+      * intros H. destruct H as [? | [? | ?]]; try congruence.
+        destruct H as [i' [cp' [H1 [H2 [H3 H4]]]]].
+        rewrite H1. inv H2.
+        destruct ((Policy.policy_import (genv_policy ge)) ! cp) as [imps |]; auto.
+        destruct ((Policy.policy_export (genv_policy ge)) ! (find_comp ge (Vptr b i))) as [exps |]; auto.
+        destruct (in_dec comp_ident_eq_dec ((find_comp ge (Vptr b i)), i') imps);
+          destruct (in_dec Pos.eq_dec i' exps); simpl; auto.
+        now rewrite orb_true_r.
+      * intros H.
+        right; right.
+        destruct (find_comp ge (Vptr b i)); try (now unfold default_compartment in n).
+        -- simpl in H. apply Pos.eqb_neq in n0. rewrite n0 in H. simpl in H.
+           destruct (invert_symbol ge b); try discriminate.
+           exists i0. exists (c~1)%positive. split; auto. split; auto. simpl.
+           destruct ((Policy.policy_import (genv_policy ge)) ! cp) as [imps |]; try discriminate.
+           destruct (Policy.policy_export (genv_policy ge)); try discriminate.
+           destruct (t0_2 ! c); try discriminate.
+           apply andb_prop in H.
+           destruct H as [H1 H2].
+           apply proj_sumbool_true in H1.
+           apply proj_sumbool_true in H2.
+           auto.
+        -- simpl in H. apply Pos.eqb_neq in n0. rewrite n0 in H. simpl in H.
+           destruct (invert_symbol ge b); try discriminate.
+           exists i0. exists (c~0)%positive. split; auto. split; auto. simpl.
+           destruct ((Policy.policy_import (genv_policy ge)) ! cp) as [imps |]; try discriminate.
+           destruct (Policy.policy_export (genv_policy ge)); try discriminate.
+           destruct (t0_1 ! c); try discriminate.
+           apply andb_prop in H.
+           destruct H as [H1 H2].
+           apply proj_sumbool_true in H1.
+           apply proj_sumbool_true in H2.
+           auto.
 Qed.
 
 End GENV.
@@ -2114,6 +2116,16 @@ Proof.
   exists y; auto.
 Qed.
 
+Theorem find_def_match_conv:
+  forall b tg,
+  find_def (globalenv tp) b = Some tg ->
+  exists g,
+  find_def (globalenv p) b = Some g /\ match_globdef match_fundef match_varinfo ctx g tg.
+Proof.
+  intros. generalize (find_def_match_2 b). rewrite H; intros R; inv R.
+  exists x; auto.
+Qed.
+
 Theorem find_funct_ptr_match:
   forall b f,
   find_funct_ptr (globalenv p) b = Some f ->
@@ -2123,6 +2135,17 @@ Proof.
   intros. rewrite find_funct_ptr_iff in *. apply find_def_match in H.
   destruct H as (tg & P & Q). inv Q.
   exists ctx', f2; intuition auto. apply find_funct_ptr_iff; auto.
+Qed.
+
+Theorem find_funct_ptr_match_conv:
+  forall b tf,
+  find_funct_ptr (globalenv tp) b = Some tf ->
+  exists cunit f,
+  find_funct_ptr (globalenv p) b = Some f /\ match_fundef cunit f tf /\ linkorder cunit ctx.
+Proof.
+  intros. rewrite find_funct_ptr_iff in *. apply find_def_match_conv in H.
+  destruct H as (tg & P & Q). inv Q.
+  exists ctx', f1; intuition auto. apply find_funct_ptr_iff; auto.
 Qed.
 
 Theorem find_funct_match:
@@ -2215,6 +2238,20 @@ Proof.
   eapply alloc_globals_match; eauto. apply progmatch.
 Qed.
 
+Lemma match_genvs_find_comp:
+  forall vf,
+    find_comp (globalenv p) vf = find_comp (globalenv tp) vf.
+Proof.
+  intros vf.
+  unfold find_comp.
+  destruct vf; auto.
+  destruct (find_funct_ptr (globalenv p) b) eqn:EQ.
+  - apply find_funct_ptr_match in EQ as [? [? [H [? ?]]]]. rewrite H.
+    rewrite match_fundef_comp; eauto.
+  - destruct (find_funct_ptr (globalenv tp) b) eqn:EQ'.
+    + apply find_funct_ptr_match_conv in EQ' as [? [? [H [? ?]]]]. congruence.
+    + reflexivity.
+Qed.
 
 Lemma match_genvs_allowed_calls:
   forall cp vf,
@@ -2225,19 +2262,23 @@ Proof.
   unfold allowed_call.
   intros [H1 | [H1 | H1]].
   - left. rewrite H1.
-    unfold find_comp. destruct vf; auto.
+    unfold find_comp in *. destruct vf; auto.
     destruct (find_funct_ptr (globalenv p) b) eqn:EQ; auto.
     apply find_funct_ptr_match in EQ as [? [? [? [? ?]]]].
     rewrite H.
     erewrite match_fundef_comp; eauto.
-    unfold find_comp in H1. rewrite EQ in H1. congruence.
+    destruct (find_funct_ptr (globalenv tp) b) eqn:EQ'; auto.
+    apply find_funct_ptr_match_conv in EQ' as [? [? [? [? ?]]]].
+    congruence.
   - right; left. rewrite H1.
     unfold find_comp. destruct vf; auto.
     destruct (find_funct_ptr (globalenv p) b) eqn:EQ; auto.
     apply find_funct_ptr_match in EQ as [? [? [? [? ?]]]].
     rewrite H.
     erewrite match_fundef_comp; eauto.
-    unfold find_comp in H1. rewrite EQ in H1. congruence.
+    destruct (find_funct_ptr (globalenv tp) b) eqn:EQ'; auto.
+    apply find_funct_ptr_match_conv in EQ' as [? [? [? [? ?]]]].
+    congruence.
   - right; right.
     unfold allowed_cross_call in *. destruct vf; eauto.
     destruct H1 as [i0 [cp' [? [? [? ?]]]]].
@@ -2250,6 +2291,8 @@ Proof.
       rewrite H3.
       inversion H0; subst.
       rewrite match_fundef_comp. eauto. eauto.
+      destruct (find_funct_ptr (globalenv tp) b) eqn:EQ'; auto.
+      apply find_funct_ptr_match_conv in EQ' as [? [? [? [? ?]]]].
       congruence.
     + destruct progmatch as [? [? [? EQPOL]]].
       destruct p, tp; simpl in *; subst.
@@ -2277,33 +2320,24 @@ Proof.
       unfold Policy.eqb in EQPOL. apply andb_prop in EQPOL.
       destruct EQPOL as [EQPOL1 EQPOL2].
       simpl in *.
-      rewrite PTree.beq_correct in EQPOL1. specialize (EQPOL1 cp').
+      rewrite PTree.beq_correct in EQPOL1.
+      remember (match find_funct_ptr (add_globals (empty_genv F1 V1 prog_public prog_pol) prog_defs) b with
+      | Some f => comp_of f
+      | None => default_compartment
+      end) as cp'.
+      (* destruct (find_funct_ptr (add_globals (empty_genv F1 V1 prog_public prog_pol) prog_defs) b) *)
+      specialize (EQPOL1 cp').
       destruct ((Policy.policy_export prog_pol0) ! cp');
-        destruct ((Policy.policy_export prog_pol) ! cp'); auto.
-      destruct (Policy.list_id_eq l l0); subst; simpl in *; auto; try discriminate. contradiction.
+        destruct ((Policy.policy_export prog_pol) ! cp'); subst cp'; auto; try contradiction.
+      destruct (Policy.list_id_eq l l0); subst; simpl in *; auto; try discriminate.
 Qed.
 
 Lemma match_genvs_type_of_call:
-  forall cp vf,
-    (* TODO: adding the [allowed_call] assumption simplifies this proof, and AFAIK everytime we might want
-     to use this lemma we have access to an [allowed_call] assumption. Still, doesn't it mean that there's
-     something we may want to factor out? *)
-    allowed_call (globalenv p) cp vf ->
-    type_of_call (globalenv p) cp vf = type_of_call (globalenv tp) cp vf.
+  forall cp cp',
+    type_of_call (globalenv p) cp cp' (* (find_comp (globalenv p) vf) *) =
+      type_of_call (globalenv tp) cp cp' (* (find_comp (globalenv tp) vf) *).
 Proof.
-  intros.
-  unfold allowed_call, type_of_call, find_comp.
-  destruct vf; auto.
-  destruct (find_funct_ptr (globalenv p) b) eqn:EQ; auto.
-  - apply find_funct_ptr_match in EQ as [? [? [G [? ?]]]].
-    rewrite G.
-    erewrite 2!match_fundef_comp; eauto.
-  - unfold allowed_call in H.
-    destruct H as [H | [H | H]].
-    + simpl in H. rewrite EQ in H. congruence.
-    + simpl in H. rewrite EQ in H. congruence.
-    + simpl in H. rewrite EQ in H.
-      destruct H as [? [? [? [? ?]]]]; congruence.
+  intros. reflexivity.
 Qed.
 
 End MATCH_PROGRAMS.
@@ -2328,17 +2362,29 @@ Proof.
   intros (cu & tf & P & Q & R); exists tf; auto.
 Qed.
 
-Lemma find_comp_transf_partial:
-  forall v cp,
-  find_comp (globalenv p)  v = Some cp ->
-  find_comp (globalenv tp) v = Some cp.
+Theorem find_funct_ptr_transf_partial_conv:
+  forall b tf,
+  find_funct_ptr (globalenv tp) b = Some tf ->
+  exists f,
+  find_funct_ptr (globalenv p) b = Some f /\ transf f = OK tf.
 Proof.
-  unfold find_comp. intros v cp.
+  intros. exploit (find_funct_ptr_match_conv progmatch); eauto.
+  intros (cu & f & P & Q & R); exists f; auto.
+Qed.
+
+Lemma find_comp_transf_partial:
+  forall v,
+  find_comp (globalenv p) v = find_comp (globalenv tp) v.
+Proof.
+  unfold find_comp. intros v.
   destruct v as [| | | | |b ofs]; trivial.
   destruct (find_funct_ptr (globalenv p) b) as [f|] eqn:Ef; try easy.
-  intros Ecp.
+  (* intros Ecp. *)
   destruct (find_funct_ptr_transf_partial _ Ef) as (tf & H1 & H2).
   now rewrite H1, <- (comp_transl_partial _ H2).
+  destruct (find_funct_ptr (globalenv tp) b) eqn:Etf; auto.
+  destruct (find_funct_ptr_transf_partial_conv _ Etf) as (f & H1 & H2).
+  congruence.
 Qed.
 
 Theorem find_funct_transf_partial:
@@ -2378,11 +2424,11 @@ Proof.
 Qed.
 
 Theorem type_of_call_transf_partial:
-  forall cp vf,
-    allowed_call (globalenv p) cp vf ->
-    type_of_call (globalenv p) cp vf = type_of_call (globalenv tp) cp vf.
+  forall cp cp',
+    type_of_call (globalenv p) cp cp' =
+      type_of_call (globalenv tp) cp cp'.
 Proof.
-  eapply (match_genvs_type_of_call progmatch).
+  eapply (match_genvs_type_of_call).
 Qed.
 
 End TRANSFORM_PARTIAL.
@@ -2441,12 +2487,27 @@ Proof.
   eapply (match_genvs_allowed_calls progmatch).
 Qed.
 
-Theorem type_of_call_transf:
-  forall cp vf,
-    allowed_call (globalenv p) cp vf ->
-    type_of_call (globalenv p) cp vf = type_of_call (globalenv tp) cp vf.
+Lemma find_comp_transf:
+  forall v,
+  find_comp (globalenv p) v = find_comp (globalenv tp) v.
 Proof.
-  eapply (match_genvs_type_of_call progmatch).
+  unfold find_comp. intros v.
+  destruct v as [| | | | |b ofs]; trivial.
+  destruct (find_funct_ptr (globalenv p) b) as [f|] eqn:Ef; try easy.
+  (* intros Ecp. *)
+  rewrite (find_funct_ptr_transf _ Ef).
+  now rewrite comp_transl.
+  destruct (find_funct_ptr (globalenv tp) b) eqn:Etf; auto.
+  eapply (find_funct_ptr_match_conv progmatch) in Etf as [? [? [? [? ?]]]].
+  congruence.
+Qed.
+
+Theorem type_of_call_transf:
+  forall cp cp',
+    type_of_call (globalenv p) cp cp' =
+      type_of_call (globalenv tp) cp cp'.
+Proof.
+  eapply (match_genvs_type_of_call).
 Qed.
 
 End TRANSFORM_TOTAL.

@@ -371,9 +371,9 @@ Inductive estep: state -> trace -> state -> Prop :=
       Genv.find_funct ge vf = Some fd ->
       type_of_fundef fd = Tfunction targs tres cconv ->
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
-      forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) vf = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
+      forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
       estep (ExprState f (C (Ecall rf rargs ty)) k e m)
-         E0 (Callstate fd vargs (Kcall f e C ty vf k) m)
+         E0 (Callstate fd vargs (Kcall f e C ty (Genv.find_comp ge vf) k) m)
 
   | step_builtin: forall f C ef tyargs rargs ty k e m vargs t vres m',
       leftcontext RV RV C ->
@@ -579,7 +579,7 @@ Definition invert_expr_prop (cp: compartment) (a: expr) (m: mem) : Prop :=
       /\ cast_arguments m rargs tyargs vl
       /\ type_of_fundef fd = Tfunction tyargs tyres cconv
       /\ Genv.allowed_call ge cp vf
-      /\ (Genv.type_of_call ge cp vf = Genv.CrossCompartmentCall -> Forall not_ptr vl)
+      /\ (Genv.type_of_call ge cp (Genv.find_comp ge vf) = Genv.CrossCompartmentCall -> Forall not_ptr vl)
   | Ebuiltin ef tyargs rargs ty =>
       exprlist_all_values rargs ->
       exists vargs, exists t, exists vres, exists m',
@@ -1780,9 +1780,9 @@ with eval_expr: compartment -> env -> mem -> kind -> expr -> trace -> mem -> exp
       type_of_fundef fd = Tfunction targs tres cconv ->
       eval_funcall c m2 fd vargs t3 m3 vres ->
       forall (ALLOWED: Genv.allowed_call ge c vf),
-      forall (NO_CROSS_PTR_CALL: Genv.type_of_call ge c vf = Genv.CrossCompartmentCall ->
+      forall (NO_CROSS_PTR_CALL: Genv.type_of_call ge c (Genv.find_comp ge vf) = Genv.CrossCompartmentCall ->
                        Forall not_ptr vargs),
-      forall (NO_CROSS_PTR_RETURN: Genv.type_of_call ge c vf = Genv.CrossCompartmentCall ->
+      forall (NO_CROSS_PTR_RETURN: Genv.type_of_call ge c (Genv.find_comp ge vf) = Genv.CrossCompartmentCall ->
                        not_ptr vres),
       eval_expr c e m RV (Ecall rf rargs ty) (t1**t2**t3) m3 (Eval vres ty)
 
@@ -2029,7 +2029,7 @@ CoInductive evalinf_expr: compartment -> env -> mem -> kind -> expr -> traceinf 
       type_of_fundef fd = Tfunction targs tres cconv ->
       evalinf_funcall c m2 fd vargs t3 ->
       forall (ALLOWED: Genv.allowed_call ge c vf),
-      forall (NO_CROSS_PTR: Genv.type_of_call ge c vf = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
+      forall (NO_CROSS_PTR: Genv.type_of_call ge c (Genv.find_comp ge vf) = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
       evalinf_expr c e m RV (Ecall rf rargs ty) (t1***t2***t3)
 
 with evalinf_exprlist: compartment -> env -> mem -> exprlist -> traceinf -> Prop :=

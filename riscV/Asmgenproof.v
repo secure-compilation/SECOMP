@@ -61,11 +61,12 @@ Lemma functions_translated:
   Genv.find_funct_ptr tge b = Some tf /\ transf_fundef f = OK tf.
 Proof (Genv.find_funct_ptr_transf_partial TRANSF).
 
-Lemma comp_translated:
-  forall v cp,
-  Genv.find_comp ge  v = Some cp ->
-  Genv.find_comp tge v = Some cp.
-Proof (Genv.find_comp_transf_partial TRANSF).
+Lemma find_comp_translated:
+  forall vf,
+    Genv.find_comp ge vf = Genv.find_comp tge vf.
+Proof.
+  eapply (Genv.find_comp_transf_partial TRANSF).
+Qed.
 
 Lemma functions_transl:
   forall fb f tf,
@@ -87,12 +88,11 @@ Proof.
 Qed.
 
 Lemma type_of_call_translated:
-  forall cp vf,
-    Genv.allowed_call ge cp vf ->
-    Genv.type_of_call ge cp vf = Genv.type_of_call tge cp vf.
+  forall cp cp',
+    Genv.type_of_call ge cp cp' = Genv.type_of_call tge cp cp'.
 Proof.
-  intros cp vf H.
-  eapply (Genv.match_genvs_type_of_call TRANSF). eauto.
+  intros cp cp'.
+  eapply Genv.match_genvs_type_of_call.
 Qed.
 
 

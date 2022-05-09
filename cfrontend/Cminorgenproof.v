@@ -1612,11 +1612,11 @@ Inductive match_cont: Csharpminor.cont -> Cminor.cont -> compilenv -> exit_env -
   | match_Kblock2: forall k tk cenv xenv cs,
       match_cont k tk cenv xenv cs ->
       match_cont k (Kblock tk) cenv (false :: xenv) cs
-  | match_Kcall: forall optid fn e le k tfn sp te tk cenv xenv lo hi cs sz cenv',
+  | match_Kcall: forall optid fn e le vf k tfn sp te tk cenv xenv lo hi cs sz cenv',
       transl_funbody cenv sz fn = OK tfn ->
       match_cont k tk cenv xenv cs ->
-      match_cont (Csharpminor.Kcall optid fn e le k)
-                 (Kcall optid tfn (Vptr sp Ptrofs.zero) te tk)
+      match_cont (Csharpminor.Kcall optid fn e le (Genv.find_comp ge vf) k)
+                 (Kcall optid tfn (Vptr sp Ptrofs.zero) te (Genv.find_comp tge vf) tk)
                  cenv' nil
                  (Frame cenv tfn e le te sp lo hi :: cs).
 
@@ -1991,14 +1991,19 @@ Proof.
   eapply (Genv.allowed_call_transf_partial TRANSL) in ALLOWED. eauto.
 Qed.
 
-Lemma type_of_call_transl: forall cenv f vf sz tfn,
-  Genv.allowed_call ge (comp_of f) vf ->
-  transl_funbody cenv sz f = OK tfn ->
-  Genv.type_of_call ge (comp_of f) vf = Genv.type_of_call tge (comp_of tfn) vf.
+Lemma find_comp_transl: forall vf,
+    Genv.find_comp ge vf = Genv.find_comp tge vf.
 Proof.
-  intros cenv f vf sz tfn ALLOWED TRF.
+  apply (Genv.find_comp_transf_partial TRANSL).
+Qed.
+
+Lemma type_of_call_transl: forall cenv f cp sz tfn,
+  transl_funbody cenv sz f = OK tfn ->
+  Genv.type_of_call ge (comp_of f) cp = Genv.type_of_call tge (comp_of tfn) cp.
+Proof.
+  intros cenv f vf sz tfn TRF.
   erewrite <- (comp_transl_partial _ TRF).
-  eapply (Genv.type_of_call_transf_partial TRANSL) in ALLOWED. eauto.
+  eapply (Genv.type_of_call_transf_partial).
 Qed.
 
 (** The simulation diagram. *)
@@ -2097,7 +2102,8 @@ Proof.
   apply sig_preserved; eauto.
   eapply allowed_call_transl; eauto.
   erewrite <- type_of_call_transl; eauto.
-  intros CROSS. eapply Val.inject_list_not_ptr; eauto.
+  intros CROSS. eapply Val.inject_list_not_ptr; eauto. eapply NO_CROSS_PTR.
+  now rewrite find_comp_transl.
   econstructor; eauto.
   eapply match_Kcall with (cenv' := cenv); eauto.
   red; auto.
@@ -2291,6 +2297,9 @@ Opaque PTree.set.
   inv MK. simpl.
   left; econstructor; split.
   apply plus_one. econstructor; eauto.
+  rewrite <- find_comp_transl.
+  rewrite <- type_of_call_transl with (f := f) (sz := sz) (cenv := cenv0).
+  intros H. specialize (NO_CROSS_PTR H). inv RESINJ; auto; inv NO_CROSS_PTR. auto.
   unfold set_optvar. destruct optid; simpl; econstructor; eauto.
   eapply match_callstack_set_temp; eauto.
 Qed.

@@ -1517,7 +1517,7 @@ Qed.
 Lemma match_stacks_call_comp:
   forall j cs cs' sg,
   match_stacks j cs cs' sg ->
-  call_comp tge cs' = Some (Linear.call_comp cs).
+  call_comp tge cs' = (Linear.call_comp cs).
 Proof.
   unfold call_comp.
   intros j cs cs' sg H.
@@ -1692,7 +1692,7 @@ Lemma find_function_translated:
   /\ Genv.find_funct_ptr tge bf = Some tf
   /\ transf_fundef f = OK tf
   /\ Genv.allowed_call tge cp (Vptr bf Ptrofs.zero)
-  /\ Genv.type_of_call tge cp (Vptr bf Ptrofs.zero) = Genv.type_of_call ge cp vf.
+  /\ Genv.type_of_call tge cp (Genv.find_comp tge (Vptr bf Ptrofs.zero)) = Genv.type_of_call ge cp (Genv.find_comp ge vf).
 Proof.
   intros until vf; intros AG [bound [_ [?????]]] FF.
   destruct ros; simpl in FF.
@@ -1710,7 +1710,8 @@ Proof.
     inv H. rewrite EQ. eauto. }
   rewrite <- H1. split; auto.
   now eapply (Genv.match_genvs_allowed_calls TRANSF).
-  now rewrite (Genv.match_genvs_type_of_call TRANSF); eauto.
+  rewrite (Genv.match_genvs_find_comp TRANSF).
+  now apply Genv.match_genvs_type_of_call.
 
 - destruct (Genv.find_symbol ge i) as [b|] eqn:?; try discriminate.
   exploit function_ptr_translated; eauto.
@@ -1724,7 +1725,8 @@ Proof.
     rewrite Heqo in H. inv H. eauto. }
   rewrite <- H1. split; auto.
   now eapply (Genv.match_genvs_allowed_calls TRANSF).
-  now rewrite (Genv.match_genvs_type_of_call TRANSF); eauto.
+  rewrite (Genv.match_genvs_find_comp TRANSF).
+  now apply Genv.match_genvs_type_of_call.
 Qed.
 
 (** Preservation of the arguments to an external call. *)
@@ -2308,8 +2310,8 @@ Proof.
   intros (j' & res' & m1' & A & B & C & D & E).
   econstructor; split.
   apply plus_one. eapply exec_function_external; eauto.
-  { erewrite (match_stacks_call_comp); eauto. }
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  { erewrite (match_stacks_call_comp); eauto. }
   eapply match_states_return with (j := j').
   eapply match_stacks_change_meminj; eauto.
   apply agree_regs_set_pair. apply agree_regs_undef_caller_save_regs. 

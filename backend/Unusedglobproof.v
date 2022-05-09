@@ -842,7 +842,7 @@ Lemma find_function_ptr_inject:
   exists tvf,
     find_function_ptr tge ros trs = Some tvf /\
     Genv.allowed_call tge cp tvf /\
-    Genv.type_of_call ge cp vf = Genv.type_of_call tge cp tvf.
+    Genv.type_of_call ge cp (Genv.find_comp ge vf) = Genv.type_of_call tge cp (Genv.find_comp tge tvf).
 Proof.
   intros. destruct ros as [r|id]; simpl in *.
   - inv H1.

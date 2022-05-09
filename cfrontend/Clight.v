@@ -458,6 +458,7 @@ Inductive cont: Type :=
            function ->                      (**r calling function *)
            env ->                           (**r local env of calling function *)
            temp_env ->                      (**r temporary env of calling function *)
+           compartment ->
            cont -> cont.
 
 (** Pop continuation until a call or stop *)
@@ -474,13 +475,13 @@ Fixpoint call_cont (k: cont) : cont :=
 Definition is_call_cont (k: cont) : Prop :=
   match k with
   | Kstop => True
-  | Kcall _ _ _ _ _ => True
+  | Kcall _ _ _ _ _ _ => True
   | _ => False
   end.
 
 Definition call_comp (k: cont) : compartment :=
   match call_cont k with
-  | Kcall _ f _ _ _ => (comp_of f)
+  | Kcall _ f _ _ _ _ => (comp_of f)
   | _ => default_compartment
   end.
 
@@ -577,9 +578,9 @@ Inductive step: state -> trace -> state -> Prop :=
       Genv.find_funct ge vf = Some fd ->
       type_of_fundef fd = Tfunction tyargs tyres cconv ->
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
-      forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) vf = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
+      forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
       step (State f (Scall optid a al) k e le m)
-        E0 (Callstate fd vargs (Kcall optid f e le k) m)
+        E0 (Callstate fd vargs (Kcall optid f e le (Genv.find_comp ge vf) k) m)
 
   | step_builtin:   forall f optid ef tyargs al k e le m vargs t vres m',
       eval_exprlist e (comp_of f) le m al tyargs vargs ->
@@ -671,8 +672,10 @@ Inductive step: state -> trace -> state -> Prop :=
       step (Callstate (External ef targs tres cconv) vargs k m)
          t (Returnstate vres k m')
 
-  | step_returnstate: forall v optid f e le k m,
-      step (Returnstate v (Kcall optid f e le k) m)
+  | step_returnstate: forall v optid f e le cp k m,
+      forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) cp = Genv.CrossCompartmentCall ->
+                       not_ptr v),
+      step (Returnstate v (Kcall optid f e le cp k) m)
         E0 (State f Sskip k e (set_opttemp optid v le) m).
 
 (** ** Whole-program semantics *)

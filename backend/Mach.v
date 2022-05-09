@@ -295,7 +295,7 @@ Definition parent_ra (s: list stackframe) : val :=
   | Stackframe f sp ra c :: s' => Vptr f ra
   end.
 
-Definition call_comp (s: list stackframe): option compartment :=
+Definition call_comp (s: list stackframe): compartment :=
   Genv.find_comp ge (parent_ra s).
 
 Definition find_comp_ptr (b: block) :=
@@ -362,7 +362,7 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (CALLED: Genv.find_funct_ptr ge f' = Some fd),
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) (Vptr f' Ptrofs.zero)),
       forall (NO_CROSS_PTR_REGS:
-          Genv.type_of_call ge (comp_of f) (Vptr f' Ptrofs.zero) = Genv.CrossCompartmentCall ->
+          Genv.type_of_call ge (comp_of f) (Genv.find_comp ge (Vptr f' Ptrofs.zero)) = Genv.CrossCompartmentCall ->
           forall rs',
             (* This [rs'] is what is used in [exec_function_internal] and seems to be
                   what the callee can access *)
@@ -382,7 +382,7 @@ Inductive step: state -> trace -> state -> Prop :=
            4) invalidate the remaining ones
          *)
       forall (NO_CROSS_PTR_STACK:
-          Genv.type_of_call ge (comp_of f) (Vptr f' Ptrofs.zero) = Genv.CrossCompartmentCall ->
+          Genv.type_of_call ge (comp_of f) (Genv.find_comp ge (Vptr f' Ptrofs.zero)) = Genv.CrossCompartmentCall ->
           forall ofs ty,
             List.In (S Incoming ofs ty) (regs_of_rpairs (loc_parameters sig)) ->
             exists v,
@@ -469,7 +469,7 @@ Inductive step: state -> trace -> state -> Prop :=
       forall s fb rs m t rs' ef args res m' cp,
       Genv.find_funct_ptr ge fb = Some (External ef) ->
       extcall_arguments rs m (parent_sp s) (ef_sig ef) args ->
-      forall (COMP: call_comp s = Some cp),
+      forall (COMP: call_comp s = cp),
       external_call ef ge cp args m t res m' ->
       rs' = set_pair (loc_result (ef_sig ef)) res (undef_caller_save_regs rs) ->
       step (Callstate s fb rs m)

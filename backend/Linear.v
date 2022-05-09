@@ -201,7 +201,7 @@ Inductive step: state -> trace -> state -> Prop :=
       (* Need to state what NO_CROSS_PTR should look like at this level *)
       (* Attempt 1: *)
       forall (NO_CROSS_PTR:
-          Genv.type_of_call ge (comp_of f) vf = Genv.CrossCompartmentCall ->
+          Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall ->
           forall rs',
             (* This [rs'] is what is used in [exec_function_internal] and seems to be
                   what the callee can access *)

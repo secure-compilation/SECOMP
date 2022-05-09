@@ -220,7 +220,7 @@ Inductive cont: Type :=
   | Kstop: cont                         (**r stop program execution *)
   | Kseq: stmt -> cont -> cont          (**r execute stmt, then cont *)
   | Kblock: cont -> cont                (**r exit a block, then do cont *)
-  | Kcall: option ident -> function -> val -> env -> cont -> cont.
+  | Kcall: option ident -> function -> val -> env -> compartment -> cont -> cont.
                                         (**r return to caller *)
 
 (** States *)
@@ -404,13 +404,13 @@ Fixpoint call_cont (k: cont) : cont :=
 Definition is_call_cont (k: cont) : Prop :=
   match k with
   | Kstop => True
-  | Kcall _ _ _ _ _ => True
+  | Kcall _ _ _ _ _ _ => True
   | _ => False
   end.
 
 Definition call_comp (k: cont) : compartment :=
   match call_cont k with
-  | Kcall _ f _ _ _ => (comp_of f)
+  | Kcall _ f _ _ _ _ => (comp_of f)
   | _ => default_compartment
   end.
 
@@ -474,9 +474,9 @@ Inductive step: state -> trace -> state -> Prop :=
       funsig fd = sig ->
       (* Check that the call to the function pointer is allowed *)
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
-      forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) vf = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
+      forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
       step (State f (Scall optid sig a bl) k sp e m)
-        E0 (Callstate fd vargs (Kcall optid f sp e k) m)
+        E0 (Callstate fd vargs (Kcall optid f sp e (Genv.find_comp ge vf) k) m)
 
   | step_tailcall: forall f sig a bl k sp e m vf vargs fd m',
       eval_expr (Vptr sp Ptrofs.zero) e m (comp_of f) a vf ->
@@ -559,8 +559,9 @@ Inductive step: state -> trace -> state -> Prop :=
       step (Callstate (External ef) vargs k m)
          t (Returnstate vres k m')
 
-  | step_return: forall v optid f sp e k m,
-      step (Returnstate v (Kcall optid f sp e k) m)
+  | step_return: forall v optid f sp e vf k m,
+      forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall -> not_ptr v),
+      step (Returnstate v (Kcall optid f sp e (Genv.find_comp ge vf) k) m)
         E0 (State f Sskip k sp (set_optvar optid v e) m).
 
 End RELSEM.
@@ -787,7 +788,8 @@ with exec_stmt:
       eval_funcall (comp_of f) m fd vargs t m' vres ->
       e' = set_optvar optid vres e ->
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
-      forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) vf = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
+      forall (NO_CROSS_PTR_CALL: Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
+      forall (NO_CROSS_PTR_RETURN: Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall -> not_ptr vres),
       exec_stmt f sp e m (Scall optid sig a bl) t e' m' Out_normal
   | exec_Sbuiltin:
       forall f sp e m optid ef bl t m' vargs vres e',
@@ -891,7 +893,7 @@ with execinf_stmt:
       funsig fd = sig ->
       evalinf_funcall m fd vargs t ->
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
-      forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) vf = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
+      forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
       execinf_stmt f sp e m (Scall optid sig a bl) t
   | execinf_Sifthenelse:
       forall f sp e m a s1 s2 v b t,
@@ -1072,7 +1074,7 @@ Proof.
   eapply star_left. econstructor; eauto.
   eapply star_right. apply H4; simpl; eauto.
   easy.
-  constructor. reflexivity. traceEq.
+  constructor. auto. reflexivity. traceEq.
   subst e'. constructor.
 
 (* builtin *)

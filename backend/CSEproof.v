@@ -988,13 +988,20 @@ Proof.
   eapply (Genv.match_genvs_allowed_calls TRANSF). eauto.
 Qed.
 
-Lemma type_of_call_translated:
-  forall cp vf,
-    Genv.allowed_call ge cp vf ->
-    Genv.type_of_call ge cp vf = Genv.type_of_call tge cp vf.
+Lemma find_comp_translated:
+  forall vf,
+    Genv.find_comp ge vf = Genv.find_comp tge vf.
 Proof.
-  intros cp vf H.
-  eapply (Genv.match_genvs_type_of_call TRANSF). eauto.
+  intros vf.
+  eapply (Genv.match_genvs_find_comp TRANSF).
+Qed.
+
+Lemma type_of_call_translated:
+  forall cp cp',
+    Genv.type_of_call ge cp cp' = Genv.type_of_call tge cp cp'.
+Proof.
+  intros cp cp'.
+  eapply Genv.match_genvs_type_of_call.
 Qed.
 
 (** The proof of semantic preservation is a simulation argument using
@@ -1220,7 +1227,7 @@ Proof.
         rewrite <- H0 in H2; now simpl in H2.
       + eauto. }
   intros CROSS. eapply H1; eauto.
-  eapply NO_CROSS_PTR. erewrite type_of_call_translated; eauto.
+  eapply NO_CROSS_PTR. erewrite find_comp_translated, type_of_call_translated; eauto.
   econstructor; eauto.
   eapply match_stackframes_cons with (cu := cu); eauto.
   intros. eapply analysis_correct_1; eauto. simpl; auto.

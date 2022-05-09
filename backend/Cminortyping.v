@@ -421,13 +421,13 @@ Definition def_env (f: function) (e: Cminor.env) : Prop :=
 Inductive wt_cont_call: cont -> rettype -> Prop :=
   | wt_cont_Kstop:
       wt_cont_call Kstop Tint
-  | wt_cont_Kcall: forall optid f sp e k tret env
+  | wt_cont_Kcall: forall optid f sp e vf k tret env
         (WT_FN: wt_function env f)
         (WT_CONT: wt_cont env f.(fn_sig).(sig_res) k)
         (WT_ENV: wt_env env e)
         (DEF_ENV: def_env f e)
         (WT_DEST: wt_opt_assign env optid tret),
-      wt_cont_call (Kcall optid f sp e k) tret
+      wt_cont_call (Kcall optid f sp e vf k) tret
 
 with wt_cont: typenv -> rettype -> cont -> Prop :=
   | wt_cont_Kseq: forall env tret s k,

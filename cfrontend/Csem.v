@@ -306,17 +306,17 @@ Inductive rred: expr -> mem -> trace -> expr -> mem -> Prop :=
 (** Head reduction for function calls.
     (More exactly, identification of function calls that can reduce.) *)
 
-Inductive callred: expr -> mem -> fundef -> list val -> type -> val -> Prop :=
+Inductive callred: expr -> mem -> fundef -> list val -> type -> compartment -> Prop :=
   | red_call: forall vf tyf m tyargs tyres cconv el ty fd vargs,
       Genv.find_funct ge vf = Some fd ->
       cast_arguments m el tyargs vargs ->
       type_of_fundef fd = Tfunction tyargs tyres cconv ->
       classify_fun tyf = fun_case_f tyargs tyres cconv ->
       forall (ALLOWED: Genv.allowed_call ge cp vf),
-      forall (NO_CROSS_PTR: Genv.type_of_call ge cp vf = Genv.CrossCompartmentCall ->
+      forall (NO_CROSS_PTR: Genv.type_of_call ge cp (Genv.find_comp ge vf) = Genv.CrossCompartmentCall ->
                        Forall not_ptr vargs),
       callred (Ecall (Eval vf tyf) el ty) m
-              fd vargs ty vf.
+              fd vargs ty (Genv.find_comp ge vf).
 
 (** Reduction contexts.  In accordance with C's nondeterministic semantics,
   we allow reduction both to the left and to the right of a binary operator.
@@ -510,7 +510,7 @@ Inductive cont: Type :=
            env ->                (**r local env of calling function *)
            (expr -> expr) ->     (**r context of the call *)
            type ->               (**r type of call expression *)
-           val ->                (**r pointer to callee *)
+           compartment ->        (**r compartment of callee *)
            cont -> cont.
 
 (** Pop continuation until a call or stop *)
@@ -646,11 +646,11 @@ Inductive estep: state -> trace -> state -> Prop :=
       estep (ExprState f (C a) k e m)
           t (ExprState f (C a') k e m')
 
-  | step_call: forall C f a k e m fd vargs ty vf,
-      callred (comp_of f) a m fd vargs ty vf ->
+  | step_call: forall C f a k e m fd vargs ty cp,
+      callred (comp_of f) a m fd vargs ty cp ->
       context RV RV C ->
       estep (ExprState f (C a) k e m)
-         E0 (Callstate fd vargs (Kcall f e C ty vf k) m)
+         E0 (Callstate fd vargs (Kcall f e C ty cp k) m)
 
   | step_stuck: forall C f a k e m K,
       context K RV C -> ~(imm_safe e (comp_of f) K a m) ->
@@ -805,10 +805,10 @@ Inductive sstep: state -> trace -> state -> Prop :=
       sstep (Callstate (External ef targs tres cc) vargs k m)
           t (Returnstate vres k m')
 
-  | step_returnstate: forall v f e C ty k m vf,
-      forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) vf = Genv.CrossCompartmentCall ->
+  | step_returnstate: forall v f e C ty k m cp,
+      forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) cp = Genv.CrossCompartmentCall ->
                        not_ptr v),
-      sstep (Returnstate v (Kcall f e C ty vf k) m)
+      sstep (Returnstate v (Kcall f e C ty cp k) m)
          E0 (ExprState f (C (Eval v ty)) k e m).
 
 Definition step (S: state) (t: trace) (S': state) : Prop :=

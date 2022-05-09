@@ -1909,13 +1909,19 @@ Proof.
   eapply (Genv.match_genvs_allowed_calls TRANSF). eauto.
 Qed.
 
-Lemma type_of_call_translated:
-  forall cp vf,
-    Genv.allowed_call ge cp vf ->
-    Genv.type_of_call ge cp vf = Genv.type_of_call tge cp vf.
+Lemma find_comp_translated:
+  forall vf,
+    Genv.find_comp ge vf = Genv.find_comp tge vf.
 Proof.
-  intros cp vf H.
-  eapply (Genv.match_genvs_type_of_call TRANSF). eauto.
+  eapply (Genv.match_genvs_find_comp TRANSF).
+Qed.
+
+Lemma type_of_call_translated:
+  forall cp cp',
+    Genv.type_of_call ge cp cp' = Genv.type_of_call tge cp cp'.
+Proof.
+  intros cp cp'.
+  eapply Genv.match_genvs_type_of_call.
 Qed.
 
 Lemma exec_moves:
@@ -2411,8 +2417,8 @@ Proof.
   rewrite <- comp_transf_function; eauto.
   eapply allowed_call_translated; eauto.
   { intros ? rs' ? l Hl. subst.
-    assert (X: Genv.type_of_call ge (comp_of f) vf = Genv.CrossCompartmentCall).
-    { erewrite type_of_call_translated; eauto. rewrite comp_transf_function; eauto. }
+    assert (X: Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall).
+    { erewrite find_comp_translated, type_of_call_translated; eauto. rewrite comp_transf_function; eauto. }
     specialize (NO_CROSS_PTR X).
     (* Seems we could try to conclude using the following assumptions? *)
     (* clear -B1 NO_CROSS_PTR Heqo1 Heqo2. *)

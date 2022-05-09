@@ -369,13 +369,20 @@ Proof.
   eapply (Genv.match_genvs_allowed_calls TRANSF). eauto.
 Qed.
 
-Lemma type_of_call_translated:
-  forall cp vf,
-    Genv.allowed_call ge cp vf ->
-    Genv.type_of_call ge cp vf = Genv.type_of_call tge cp vf.
+Lemma find_comp_translated:
+  forall vf,
+    Genv.find_comp ge vf = Genv.find_comp tge vf.
 Proof.
-  intros cp vf H.
-  eapply (Genv.match_genvs_type_of_call TRANSF). eauto.
+  intros vf.
+  eapply (Genv.match_genvs_find_comp TRANSF).
+Qed.
+
+Lemma type_of_call_translated:
+  forall cp cp',
+    Genv.type_of_call ge cp cp' = Genv.type_of_call tge cp cp'.
+Proof.
+  intros cp cp'.
+  eapply Genv.match_genvs_type_of_call.
 Qed.
 
 (** Evaluation of the debug annotations introduced by the transformation. *)
@@ -519,8 +526,8 @@ Proof.
   inv TRF.
   eapply allowed_call_translated; eauto.
   { intros. subst.
-    assert (X: Genv.type_of_call ge (comp_of f) vf = Genv.CrossCompartmentCall).
-    { erewrite type_of_call_translated; eauto.
+    assert (X: Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall).
+    { erewrite find_comp_translated, type_of_call_translated; eauto.
       inv TRF. eauto. }
     specialize (NO_CROSS_PTR X _ eq_refl l). eauto.
   }

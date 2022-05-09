@@ -99,16 +99,23 @@ Proof.
   eapply (Genv.match_genvs_allowed_calls H0). eauto.
 Qed.
 
-Lemma type_of_call_translated:
-  forall f tf vf,
-    Genv.allowed_call ge (comp_of f) vf ->
-    transf_function f = OK tf ->
-    Genv.type_of_call ge (comp_of f) vf = Genv.type_of_call tge (comp_of tf) vf.
+Lemma find_comp_translated:
+  forall vf,
+    Genv.find_comp ge vf = Genv.find_comp tge vf.
 Proof.
-  intros f tf vf H TRF.
-  erewrite <- (comp_transl_partial _ TRF).
   destruct TRANSF.
-  eapply (Genv.match_genvs_type_of_call H0). eauto.
+  eapply (Genv.match_genvs_find_comp H).
+Qed.
+
+Lemma type_of_call_translated:
+  forall f tf cp,
+    transf_function f = OK tf ->
+    Genv.type_of_call ge (comp_of f) cp =
+      Genv.type_of_call tge (comp_of tf) cp.
+Proof.
+  intros f tf cp TRF.
+  erewrite <- (comp_transl_partial _ TRF).
+  eapply (Genv.match_genvs_type_of_call).
 Qed.
 
 (** Matching between environments before and after *)
@@ -1638,14 +1645,14 @@ Inductive match_cont (f: meminj): compilenv -> cont -> cont -> mem -> block -> b
   | match_Kswitch: forall cenv k tk m bound tbound,
       match_cont f cenv k tk m bound tbound ->
       match_cont f cenv (Kswitch k) (Kswitch tk) m bound tbound
-  | match_Kcall: forall cenv optid fn e le k tfn te tle tk m hi thi lo tlo bound tbound x,
+  | match_Kcall: forall cenv optid fn e le vf k tfn te tle tk m hi thi lo tlo bound tbound x,
       transf_function fn = OK tfn ->
       match_envs f (cenv_for fn) e le m lo hi te tle tlo thi ->
       match_cont f (cenv_for fn) k tk m lo tlo ->
       check_opttemp (cenv_for fn) optid = OK x ->
       Ple hi bound -> Ple thi tbound ->
-      match_cont f cenv (Kcall optid fn e le k)
-                        (Kcall optid tfn te tle tk) m bound tbound.
+      match_cont f cenv (Kcall optid fn e le vf k)
+                        (Kcall optid tfn te tle vf tk) m bound tbound.
 
 (** Invariance property by change of memory and injection *)
 
@@ -2182,9 +2189,11 @@ Proof.
   erewrite type_of_fundef_preserved; eauto.
   eapply allowed_call_translated; eauto.
   erewrite <- type_of_call_translated; eauto.
-  intros. eapply Val.inject_list_not_ptr; eauto.
+  intros. eapply Val.inject_list_not_ptr; eauto. eapply NO_CROSS_PTR.
+  rewrite find_comp_translated; auto.
   econstructor; eauto.
-  intros. econstructor; eauto.
+  intros. rewrite find_comp_translated.
+  econstructor; eauto.
 
 (* builtin *)
   exploit eval_simpl_exprlist; eauto with compat. intros [CASTED [tvargs [C D]]].
@@ -2376,6 +2385,11 @@ Proof.
   specialize (MCONT (cenv_for f)). inv MCONT.
   econstructor; split.
   apply plus_one. econstructor.
+  intros H.
+
+  rewrite <- type_of_call_translated with (f := f) in H.
+  specialize (NO_CROSS_PTR H). inv RINJ; simpl in NO_CROSS_PTR; eauto; contradiction.
+  eauto.
   econstructor; eauto with compat.
   eapply match_envs_set_opttemp; eauto.
 Qed.

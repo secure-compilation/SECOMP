@@ -219,17 +219,24 @@ Proof.
   - inv FIND.
 Qed.
 
-Lemma type_of_call_translated:
-  forall cp vf vf' fd,
+Lemma find_comp_translated:
+  forall vf vf' fd,
     Val.lessdef vf vf' ->
     Genv.find_funct ge vf = Some fd ->
-    Genv.allowed_call ge cp vf ->
-    Genv.type_of_call ge cp vf = Genv.type_of_call tge cp vf'.
+    Genv.find_comp ge vf = Genv.find_comp tge vf'.
 Proof.
-  intros cp vf vf' fd' LESSDEF FIND H.
+  intros vf vf' fd' LESSDEF FIND.
   inv LESSDEF.
-  - eapply (Genv.match_genvs_type_of_call TRANSF). eauto.
+  - eapply (Genv.match_genvs_find_comp TRANSF).
   - inv FIND.
+Qed.
+
+Lemma type_of_call_translated:
+  forall cp cp',
+    Genv.type_of_call ge cp cp' = Genv.type_of_call tge cp cp'.
+Proof.
+  intros cp cp'.
+  eapply Genv.match_genvs_type_of_call.
 Qed.
 
 Section CMCONSTR.
@@ -1093,7 +1100,7 @@ Inductive match_cont: Cminor.program -> helper_functions -> known_idents -> type
 with match_call_cont: Cminor.cont -> CminorSel.cont -> Prop :=
   | match_cont_stop:
       match_call_cont Cminor.Kstop Kstop
-  | match_cont_call: forall cunit hf env id f sp e k f' e' k',
+  | match_cont_call: forall cunit hf env id f sp e cp k f' e' k',
       linkorder cunit prog ->
       helper_functions_declared cunit hf ->
       sel_function (prog_defmap cunit) hf f = OK f' ->
@@ -1101,7 +1108,7 @@ with match_call_cont: Cminor.cont -> CminorSel.cont -> Prop :=
       match_cont cunit hf (known_id f) env k k' ->
       env_lessdef e e' ->
       f.(Cminor.fn_comp) = f'.(fn_comp) ->
-      match_call_cont (Cminor.Kcall id f sp e k) (Kcall id f' sp e' k').
+      match_call_cont (Cminor.Kcall id f sp e cp k) (Kcall id f' sp e' cp k').
 
 Inductive match_states: Cminor.state -> CminorSel.state -> Prop :=
   | match_state: forall cunit hf f f' s k s' k' sp e m e' m' env
@@ -1144,9 +1151,9 @@ Inductive match_states: Cminor.state -> CminorSel.state -> Prop :=
         (ME: Mem.extends m m')
         (CPT: comp_of f = comp_of f'),
       match_states
-        (Cminor.Callstate (External ef) args (Cminor.Kcall optid f sp e k) m)
+        (Cminor.Callstate (External ef) args (Cminor.Kcall optid f sp e (comp_of ef) k) m)
         (State f' (sel_builtin optid ef al) k' sp e' m')
-  | match_builtin_2: forall cunit hf v v' optid f sp e k m f' e' m' k' env
+  | match_builtin_2: forall cunit hf v v' optid f sp e cp k m f' e' m' k' env
         (LINK: linkorder cunit prog)
         (HF: helper_functions_declared cunit hf)
         (TF: sel_function (prog_defmap cunit) hf f = OK f')
@@ -1157,7 +1164,7 @@ Inductive match_states: Cminor.state -> CminorSel.state -> Prop :=
         (ME: Mem.extends m m')
         (CPT: comp_of f = comp_of f'),
       match_states
-        (Cminor.Returnstate v (Cminor.Kcall optid f sp e k) m)
+        (Cminor.Returnstate v (Cminor.Kcall optid f sp e cp k) m)
         (State f' Sskip k' sp e' m').
 
 Remark call_cont_commut:
@@ -1355,8 +1362,9 @@ Proof.
   intros CROSS.
   eapply Val.lessdef_list_not_ptr; eauto.
   eapply NO_CROSS_PTR.
-  erewrite type_of_call_translated; eauto. rewrite <- CPT; eauto.
+  erewrite find_comp_translated, type_of_call_translated; eauto.
   eapply match_callstate with (cunit := cunit'); eauto.
+  erewrite find_comp_translated; eauto.
   eapply match_cont_call with (cunit := cunit) (hf := hf); eauto.
 + (* direct *)
   intros [b [U V]].
@@ -1372,12 +1380,19 @@ Proof.
   intros CROSS.
   eapply Val.lessdef_list_not_ptr; eauto.
   eapply NO_CROSS_PTR.
-  erewrite type_of_call_translated; eauto. rewrite <- CPT; eauto.
+  erewrite find_comp_translated, type_of_call_translated; eauto.
   eapply match_callstate with (cunit := cunit'); eauto.
+  erewrite find_comp_translated; eauto.
   eapply match_cont_call with (cunit := cunit) (hf := hf); eauto.
 + (* turned into Sbuiltin *)
   intros EQ. subst fd.
-  right; left; split. simpl; omega. split; auto. econstructor; eauto.
+  right; left; split. simpl; omega. split; auto.
+  assert (R: Genv.find_comp ge vf = comp_of ef).
+  { unfold Genv.find_comp. destruct vf; try discriminate.
+    simpl in H1; destruct (Ptrofs.eq_dec i Ptrofs.zero); try discriminate.
+    rewrite H1. reflexivity. }
+  rewrite R.
+  econstructor; eauto.
 - (* Stailcall *)
   exploit Mem.free_parallel_extends; eauto. intros [m2' [P Q]].
   erewrite <- stackspace_function_translated in P by eauto.
@@ -1515,11 +1530,17 @@ Proof.
   exploit sel_builtin_correct; eauto. rewrite <- CPT; eauto.
   rewrite <- CPT; eauto.
   intros (e2' & m2' & P & Q & R).
-  left; econstructor; split. eexact P. econstructor; eauto.
+  left; econstructor; split. eexact P.
+  econstructor; eauto.
 - (* return *)
   inv MC.
   left; econstructor; split.
   econstructor.
+  assert (CPT: comp_of f' = comp_of f).
+  { unfold comp_of, has_comp_function, Cminor.has_comp_function.
+    congruence. }
+  rewrite CPT; intros G; specialize (NO_CROSS_PTR G).
+  inv LD; simpl in NO_CROSS_PTR; auto; contradiction.
   econstructor; eauto. destruct optid; simpl; auto. apply set_var_lessdef; auto.
 - (* return of an external call turned into a Sbuiltin *)
   right; left; split. simpl; omega. split. auto. econstructor; eauto.

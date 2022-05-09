@@ -860,7 +860,7 @@ Lemma exec_straight_steps_1:
   forall b ofs,
   rs#PC = Vptr b ofs ->
   Genv.find_funct_ptr ge b = Some (Internal fn) ->
-  Genv.find_comp ge (Vptr b Ptrofs.zero) = Some (comp_of fn) ->
+  Genv.find_comp ge (Vptr b Ptrofs.zero) = (comp_of fn) ->
   code_tail (Ptrofs.unsigned ofs) (fn_code fn) c ->
   plus step ge (State s rs m) E0 (State s rs' m').
 Proof.
@@ -886,14 +886,13 @@ Proof.
       now rewrite H2; simpl; rewrite H3.
       now rewrite H0, H2; simpl; rewrite H3.
       (* TODO: ugly!! *)
-      unfold comp_of; simpl; unfold comp_of; congruence.
-      unfold comp_of; simpl; unfold comp_of; congruence.
+      rewrite H0, H2; simpl; rewrite H3. unfold comp_of; simpl; unfold comp_of; congruence.
       unfold update_stack_return.
       rewrite H0, H2; simpl; rewrite H3.
       now rewrite Pos.eqb_refl.
     - econstructor; eauto.
       eapply find_instr_tail. eauto.
-      now rewrite H2.
+      now rewrite H2; simpl; rewrite H3.
       now rewrite H0, H2.
       simpl in H4; rewrite H3 in H4; inv H4.
       right; left; simpl. now rewrite H3.
@@ -919,14 +918,14 @@ Proof.
       now rewrite H3; simpl; rewrite H4.
       now rewrite H0, H3; simpl; rewrite H4.
       (* TODO: ugly!! *)
-      unfold comp_of; simpl; unfold comp_of; congruence.
+      rewrite H0, H3; simpl; rewrite H4.
       unfold comp_of; simpl; unfold comp_of; congruence.
       unfold update_stack_return.
       rewrite H0, H3; simpl; rewrite H4.
       now rewrite Pos.eqb_refl.
     - econstructor; eauto.
       eapply find_instr_tail. eauto.
-      now rewrite H3.
+      now rewrite H3; simpl; rewrite H4.
       now rewrite H0, H3.
       simpl in H5; rewrite H4 in H5; inv H5.
       right; left; simpl. now rewrite H4.

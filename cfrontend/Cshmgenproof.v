@@ -1077,15 +1077,22 @@ Proof.
   eapply (Genv.match_genvs_allowed_calls TRANSL). eauto.
 Qed.
 
-Lemma type_of_call_translated:
-  forall vf f (cu: Clight.program) tf,
-    Genv.allowed_call ge (comp_of f) vf ->
-    transl_function (prog_comp_env cu) f = OK tf ->
-    Genv.type_of_call ge (comp_of f) vf = Genv.type_of_call tge (comp_of tf) vf.
+Lemma find_comp_translated:
+  forall vf,
+    Genv.find_comp ge vf = Genv.find_comp tge vf.
 Proof.
-  intros vf f ce tf H TRF.
+  eapply (Genv.match_genvs_find_comp TRANSL).
+Qed.
+
+Lemma type_of_call_translated:
+  forall cp f (cu: Clight.program) tf,
+    transl_function (prog_comp_env cu) f = OK tf ->
+    Genv.type_of_call ge (comp_of f) cp =
+      Genv.type_of_call tge (comp_of tf) cp.
+Proof.
+  intros cp f ce tf TRF.
   erewrite <- (comp_transl_partial _ TRF).
-  eapply (Genv.match_genvs_type_of_call TRANSL). eauto.
+  eapply Genv.match_genvs_type_of_call.
 Qed.
 
 (** * Matching between environments *)
@@ -1413,23 +1420,23 @@ Inductive match_cont: composite_env -> type -> nat -> nat -> Clight.cont -> Csha
       match_cont ce tyret 0%nat (S ncnt)
                  (Clight.Kswitch k)
                  (Kblock tk)
-  | match_Kcall: forall ce tyret nbrk ncnt nbrk' ncnt' f e k id tf te le tk cu,
+  | match_Kcall: forall ce tyret nbrk ncnt nbrk' ncnt' f e k id tf te le cp tk cu,
       linkorder cu prog ->
       transl_function cu.(prog_comp_env) f = OK tf ->
       match_env e te ->
       match_cont cu.(prog_comp_env) (Clight.fn_return f) nbrk' ncnt' k tk ->
       match_cont ce tyret nbrk ncnt
-                 (Clight.Kcall id f e le k)
-                 (Kcall id tf te le tk)
-  | match_Kcall_normalize: forall ce tyret nbrk ncnt nbrk' ncnt' f e k id a tf te le tk cu,
+                 (Clight.Kcall id f e le cp k)
+                 (Kcall id tf te le cp tk)
+  | match_Kcall_normalize: forall ce tyret nbrk ncnt nbrk' ncnt' f e k id a tf te le vf tk cu,
       linkorder cu prog ->
       transl_function cu.(prog_comp_env) f = OK tf ->
       match_env e te ->
       match_cont cu.(prog_comp_env) (Clight.fn_return f) nbrk' ncnt' k tk ->
       (forall v e le m, wt_val v tyret -> le!id = Some v -> eval_expr tge e (comp_of f) le m a v) ->
       match_cont ce tyret nbrk ncnt
-                 (Clight.Kcall (Some id) f e le k)
-                 (Kcall (Some id) tf te le (Kseq (Sset id a) tk)).
+                 (Clight.Kcall (Some id) f e le vf k)
+                 (Kcall (Some id) tf te le vf (Kseq (Sset id a) tk)).
 
 Inductive match_states: Clight.state -> Csharpminor.state -> Prop :=
   | match_state:
@@ -1671,8 +1678,9 @@ Proof.
     rewrite <- (comp_transl_function _ _ _ TRF). eauto.
     eauto. eauto.
     eapply allowed_call_translated; eauto.
-    erewrite <- type_of_call_translated; eauto.
+    erewrite <- find_comp_translated, <- type_of_call_translated; eauto.
     econstructor; eauto.
+    rewrite (Genv.match_genvs_find_comp TRANSL).
     eapply match_Kcall with (ce := prog_comp_env cu') (cu := cu); eauto.
     exact I.
   + (* with normalization of return value *)
@@ -1685,9 +1693,10 @@ Proof.
     rewrite <- (comp_transl_function _ _ _ TRF). eauto.
     eauto. eauto.
     eapply allowed_call_translated; eauto.
-    erewrite <- type_of_call_translated; eauto.
+    erewrite <- find_comp_translated, <- type_of_call_translated; eauto.
     traceEq.
     econstructor; eauto.
+    rewrite (Genv.match_genvs_find_comp TRANSL).
     eapply match_Kcall_normalize  with (ce := prog_comp_env cu') (cu := cu); eauto.
     intros. eapply make_normalization_correct; eauto. constructor; eauto.
     exact I.
@@ -1899,12 +1908,15 @@ Proof.
   + (* without normalization *)
     econstructor; split.
     apply plus_one. constructor.
+    rewrite <- type_of_call_translated with (f := f) (cu := cu); auto.
     econstructor; eauto. simpl; reflexivity. constructor.
   + (* with normalization *)
     econstructor; split.
-    eapply plus_three. econstructor. econstructor. constructor.
+    eapply plus_three. econstructor.
+    rewrite <- type_of_call_translated with (f := f) (cu := cu); auto.
+    econstructor. constructor.
     simpl.
-    rewrite <- (comp_transl_function _ _ _ H10). apply H13. eauto. apply PTree.gss.
+    rewrite <- (comp_transl_function _ _ _ H11). apply H14. eauto. apply PTree.gss.
     traceEq.
     simpl. rewrite PTree.set2. econstructor; eauto. simpl; reflexivity. constructor.
 Qed.
