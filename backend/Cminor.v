@@ -559,9 +559,9 @@ Inductive step: state -> trace -> state -> Prop :=
       step (Callstate (External ef) vargs k m)
          t (Returnstate vres k m')
 
-  | step_return: forall v optid f sp e vf k m,
-      forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall -> not_ptr v),
-      step (Returnstate v (Kcall optid f sp e (Genv.find_comp ge vf) k) m)
+  | step_return: forall v optid f sp e cp k m,
+      forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) cp = Genv.CrossCompartmentCall -> not_ptr v),
+      step (Returnstate v (Kcall optid f sp e cp k) m)
         E0 (State f Sskip k sp (set_optvar optid v e) m).
 
 End RELSEM.

@@ -474,12 +474,12 @@ Inductive match_states: state -> state -> Prop :=
       match_states (Callstate s f args m)
                    (Callstate s' (transf_fundef ce f) args' m')
   | match_states_return:
-      forall s v m s' v' m',
+      forall s v m s' v' m' cp,
       match_stackframes m' s s' ->
       Val.lessdef v v' ->
       Mem.extends m m' ->
-      match_states (Returnstate s v m)
-                   (Returnstate s' v' m')
+      match_states (Returnstate s v m cp)
+                   (Returnstate s' v' m' cp)
   | match_states_interm:
       forall s sp pc rs m s' m' f r v'
              (STACKS: match_stackframes m' s s')
@@ -488,7 +488,7 @@ Inductive match_states: state -> state -> Prop :=
       f.(fn_stacksize) = 0 ->
       Val.lessdef (rs#r) v' ->
       match_states (State s f (Vptr sp Ptrofs.zero) pc rs m)
-                   (Returnstate s' v' m').
+                   (Returnstate s' v' m' (comp_of f)).
 
 (** The last case of [match_states] corresponds to the execution
   of a move/nop/return sequence in the original code that was
@@ -511,7 +511,7 @@ Definition measure (st: state) : nat :=
   match st with
   | State s f sp pc rs m => (List.length s * (niter + 2) + return_measure f.(fn_code) pc + 1)%nat
   | Callstate s f args m => 0%nat
-  | Returnstate s v m => (List.length s * (niter + 2))%nat
+  | Returnstate s v m cp => (List.length s * (niter + 2))%nat
   end.
 
 Ltac TransfInstr :=
@@ -723,10 +723,10 @@ Proof.
 - (* return *)
   exploit Mem.free_parallel_extends; eauto. intros [m'1 [FREE EXT]].
   TransfInstr.
-  left. exists (Returnstate s' (regmap_optget or Vundef rs') m'1); split.
+  left. exists (Returnstate s' (regmap_optget or Vundef rs') m'1 (comp_of (transf_function ce f))); split.
   eapply exec_Ireturn; eauto.
   rewrite stacksize_preserved, comp_transl; eauto.
-  constructor.
+  rewrite comp_transf_function. constructor.
   (* TODO: Should be a lemma? *)
   { clear -FREE STACKS.
     induction STACKS.
@@ -777,7 +777,7 @@ Proof.
 - (* external call *)
   exploit external_call_mem_extends; eauto.
   intros [res' [m2' [A [B [C D]]]]].
-  left. exists (Returnstate s' res' m2'); split.
+  left. exists (Returnstate s' res' m2' (comp_of ef)); split.
   simpl. econstructor; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   destruct (needs_calling_comp (comp_of ef)) eqn:ALLOWED.
@@ -793,10 +793,13 @@ Proof.
     - constructor; auto. }
 
 - (* returnstate *)
-  inv H2.
+  inv H4.
 + (* synchronous return in both programs *)
   left. econstructor; split.
   apply exec_return.
+  rewrite comp_transf_function, <- type_of_call_translated.
+  { intros G. specialize (NO_CROSS_PTR G).
+    inv H5; auto; contradiction. }
   constructor; auto. apply set_reg_lessdef; auto.
 + (* return instr in source program, eliminated because of tailcall *)
   right. split. unfold measure. simpl length.

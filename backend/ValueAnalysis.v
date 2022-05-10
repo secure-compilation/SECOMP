@@ -1136,14 +1136,14 @@ Inductive sound_state_base: state -> Prop :=
         (NOSTK: bc_nostack bc),
       sound_state_base (Callstate s fd args m)
   | sound_return_state:
-      forall s v m bc
+      forall s v m bc cp
         (STK: sound_stack bc s m (Mem.nextblock m))
         (RES: vmatch bc v Vtop)
         (RO: romatch bc m rm)
         (MM: mmatch bc m mtop)
         (GE: genv_match bc ge)
         (NOSTK: bc_nostack bc),
-      sound_state_base (Returnstate s v m).
+      sound_state_base (Returnstate s v m cp).
 
 (** Properties of the [sound_stack] invariant on call stacks. *)
 

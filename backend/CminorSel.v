@@ -202,7 +202,10 @@ Inductive eval_expr: letenv -> expr -> val -> Prop :=
       eval_exprlist le al vl ->
       external_call ef ge cp vl m E0 v m ->
       forall (ALLOWED: Genv.allowed_call ge cp (Vptr b Ptrofs.zero)),
-      forall (NO_CROSS_PTR: Genv.type_of_call ge cp (Genv.find_comp ge (Vptr b Ptrofs.zero)) = Genv.CrossCompartmentCall -> Forall not_ptr vl),
+      forall (NO_CROSS_PTR_CALL: Genv.type_of_call ge cp (Genv.find_comp ge (Vptr b Ptrofs.zero)) = Genv.CrossCompartmentCall ->
+                       Forall not_ptr vl),
+      forall (NO_CROSS_PTR_RETURN: Genv.type_of_call ge cp (Genv.find_comp ge (Vptr b Ptrofs.zero)) = Genv.CrossCompartmentCall ->
+                       not_ptr v),
       eval_expr le (Eexternal id sg al) v
 
 with eval_exprlist: letenv -> exprlist -> list val -> Prop :=

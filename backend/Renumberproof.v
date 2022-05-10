@@ -202,10 +202,10 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
         (STACKS: list_forall2 match_frames stk stk'),
       match_states (Callstate stk f args m)
                    (Callstate stk' (transf_fundef f) args m)
-  | match_returnstates: forall stk v m stk'
+  | match_returnstates: forall stk v m stk' cp
         (STACKS: list_forall2 match_frames stk stk'),
-      match_states (Returnstate stk v m)
-                   (Returnstate stk' v m).
+      match_states (Returnstate stk v m cp)
+                   (Returnstate stk' v m cp).
 
 Lemma step_simulation:
   forall S1 t S2, RTL.step ge S1 t S2 ->

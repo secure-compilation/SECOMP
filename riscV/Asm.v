@@ -1224,6 +1224,10 @@ Inductive step: state -> trace -> state -> Prop :=
       (* Note that in the same manner, this definition only updates the stack when doing
          cross-compartment returns *)
       forall (STUPD: update_stack_return st cp rs' = Some st'),
+      (* (* No cross-compartment pointer return *) *)
+      (* forall (NO_CROSS_PTR_REGS: *)
+      (*     Genv.type_of_call ge cp' cp = Genv.CrossCompartmentCall -> *)
+      (*     False), *)
       step (State st rs m) E0 (State st' rs' m')
   | exec_step_builtin:
       forall b ofs f ef args res rs m vargs t vres rs' m' st,

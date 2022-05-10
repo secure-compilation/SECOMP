@@ -792,8 +792,10 @@ Lemma transl_expr_Eexternal_correct:
   transl_exprlist_prop le al vl ->
   external_call ef ge cp vl m E0 v m ->
   forall (ALLOWED: Genv.allowed_call ge cp (Vptr b Ptrofs.zero)),
-  forall (NO_CROSS_PTR: Genv.type_of_call ge cp (Genv.find_comp ge (Vptr b Ptrofs.zero)) =
+  forall (NO_CROSS_PTR_CALL: Genv.type_of_call ge cp (Genv.find_comp ge (Vptr b Ptrofs.zero)) =
                      Genv.CrossCompartmentCall -> Forall not_ptr vl),
+  forall (NO_CROSS_PTR_RETURN: Genv.type_of_call ge cp (Genv.find_comp ge (Vptr b Ptrofs.zero)) =
+                     Genv.CrossCompartmentCall -> not_ptr v),
   transl_expr_prop le (Eexternal id sg al) v.
 Proof.
   intros; red; intros. inv TE.
@@ -809,12 +811,14 @@ Proof.
   eapply allowed_call_translated_same; eauto.
   intros CROSS.
   eapply Val.lessdef_list_not_ptr; eauto.
-  eapply NO_CROSS_PTR.
+  eapply NO_CROSS_PTR_CALL.
   erewrite find_comp_translated, type_of_call_translated; eauto.
   eapply star_left. eapply exec_function_external.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   subst cp. eauto.
   apply star_one. apply exec_return.
+  simpl in NO_CROSS_PTR_RETURN; rewrite H0 in NO_CROSS_PTR_RETURN. rewrite <- type_of_call_translated.
+  intros G; specialize (NO_CROSS_PTR_RETURN G). inversion B; subst v v'; auto; contradiction.
   reflexivity. reflexivity. reflexivity.
 (* Match-env *)
   split. eauto with rtlg.
