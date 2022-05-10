@@ -1581,9 +1581,9 @@ Local Transparent destroyed_at_function_entry.
   (*   rewrite <- ATLR in COMP. *)
   (*   apply comp_translated; eauto. } *)
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  (* rewrite ATPC. simpl. rewrite A. *)
-  (* Simpl. rewrite ATLR. rewrite <- find_comp_translated; eauto. eapply comp_translated; eauto. *)
-  { Simpl. rewrite ATLR, ATPC.
+  rewrite ATPC. simpl. rewrite A.
+  Simpl. rewrite ATLR. rewrite <- find_comp_translated; eauto.
+  { Simpl.
     rewrite ATPC in STACKS'.
     remember (Vptr fb Ptrofs.zero) as pc.
     assert (COMP': Genv.find_comp ge pc = (comp_of (@External function ef))).
@@ -1595,16 +1595,18 @@ Local Transparent destroyed_at_function_entry.
     - clear IHSTACKS'.
       intros. rewrite COMP' in H0.
       destruct f; simpl in *.
-      destruct (Genv.find_funct_ptr ge f) eqn:PTR; try congruence.
+      exfalso. apply H1. auto.
     - intros Hra H3.
       now inv H1.
   }
+  rewrite ATPC. simpl. rewrite A.
+  Simpl. rewrite ATLR. rewrite <- find_comp_translated; eauto.
   { Simpl.
     erewrite agree_sp;
       try now (eapply agree_set_pair; eauto; eapply agree_undef_caller_save_regs; eauto).
-    revert Hra. rewrite ATPC in STACKS'.
+    rewrite ATPC in STACKS'.
     remember (Vptr fb Ptrofs.zero) as pc.
-    assert (COMP': Genv.find_comp ge pc = Some (comp_of (@External function ef))).
+    assert (COMP': Genv.find_comp ge pc = (comp_of (@External function ef))).
     { rewrite Heqpc. simpl. rewrite H. reflexivity. }
     clear -STACKS' COMP' TRANSF.
     revert COMP'.
@@ -1613,10 +1615,12 @@ Local Transparent destroyed_at_function_entry.
     - clear IHSTACKS'.
       intros. rewrite COMP' in H0.
       destruct f; simpl in *.
-      destruct (Genv.find_funct_ptr ge f) eqn:PTR; try congruence.
+      exfalso. apply H1. auto.
     - intros Hra H3.
       now inv H1.
   }
+  rewrite ATPC; simpl; rewrite A.
+  Simpl. eauto.
   econstructor; eauto.
   Simpl. rewrite ATLR. eauto.
   unfold loc_external_result. apply agree_set_other; auto. apply agree_set_pair; auto.
