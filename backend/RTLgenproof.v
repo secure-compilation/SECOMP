@@ -1276,21 +1276,21 @@ Inductive tr_cont: RTL.code -> mapping ->
       c!nret = Some(Ireturn rret) ->
       match_stacks Kstop cs ->
       tr_cont c map Kstop nret nil ngoto nret rret cs
-  | tr_Kcall: forall c map optid f sp e vf k ngoto nret rret cs,
+  | tr_Kcall: forall c map optid f sp e k ngoto nret rret cs,
       c!nret = Some(Ireturn rret) ->
-      match_stacks (Kcall optid f sp e vf k) cs ->
-      tr_cont c map (Kcall optid f sp e vf k) nret nil ngoto nret rret cs
+      match_stacks (Kcall optid f sp e k) cs ->
+      tr_cont c map (Kcall optid f sp e k) nret nil ngoto nret rret cs
 
 with match_stacks: CminorSel.cont -> list RTL.stackframe -> Prop :=
   | match_stacks_stop:
       match_stacks Kstop nil
-  | match_stacks_call: forall optid f sp e vf k r tf n rs cs map nexits ngoto nret rret,
+  | match_stacks_call: forall optid f sp e k r tf n rs cs map nexits ngoto nret rret,
       map_wf map ->
       tr_fun tf map f ngoto nret rret ->
       match_env map e nil rs ->
       reg_map_ok map r optid ->
       tr_cont tf.(fn_code) map k n nexits ngoto nret rret cs ->
-      match_stacks (Kcall optid f sp e vf k) (Stackframe r tf sp n rs :: cs).
+      match_stacks (Kcall optid f sp e k) (Stackframe r tf sp n rs :: cs).
 
 Lemma match_stacks_call_comp:
   forall k stk,
@@ -1325,12 +1325,12 @@ Inductive match_states: CminorSel.state -> RTL.state -> Prop :=
       match_states (CminorSel.Callstate f args k m)
                    (RTL.Callstate cs tf targs tm)
   | match_returnstate:
-      forall v tv k m tm cs
+      forall v tv k m tm cs cp
         (MS: match_stacks k cs)
         (LD: Val.lessdef v tv)
         (MEXT: Mem.extends m tm),
-      match_states (CminorSel.Returnstate v k m)
-                   (RTL.Returnstate cs tv tm (CminorSel.call_comp k)).
+      match_states (CminorSel.Returnstate v k m cp)
+                   (RTL.Returnstate cs tv tm cp).
 
 Lemma match_stacks_call_cont:
   forall c map k ncont nexits ngoto nret rret cs,
@@ -1414,6 +1414,7 @@ Proof.
   econstructor; split.
   left; apply plus_one. eapply exec_Ireturn. eauto.
   inv TF. rewrite H3, COMP; eauto.
+  inv TF. rewrite COMP; eauto.
   constructor; auto.
 
   (* assign *)
@@ -1616,6 +1617,7 @@ Proof.
   econstructor; split.
   left; apply plus_one. eapply exec_Ireturn; eauto.
   rewrite H2, <- COMP; eauto.
+  rewrite <- COMP.
   constructor; auto.
 
   (* return some *)
@@ -1629,7 +1631,7 @@ Proof.
   econstructor; split.
   left; eapply plus_right. eexact A. eapply exec_Ireturn; eauto.
   rewrite H4, <- COMP; eauto. traceEq.
-  simpl. constructor; auto.
+  simpl. rewrite <- COMP. constructor; auto.
 
   (* label *)
   inv TS.
@@ -1676,6 +1678,8 @@ Proof.
   inv MS.
   econstructor; split.
   left; apply plus_one; constructor.
+  inv H6. rewrite COMP, <- type_of_call_translated.
+  intros G. specialize (NO_CROSS_PTR G). inv LD; auto; contradiction.
   econstructor; eauto. constructor.
   eapply match_env_update_dest; eauto.
 Qed.

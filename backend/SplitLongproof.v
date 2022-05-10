@@ -76,9 +76,11 @@ Proof.
   simpl. unfold ge. setoid_rewrite Q.
   unfold comp_of. unfold has_comp_fundef. unfold comp_of.
   reflexivity.
-  unfold Genv.type_of_call. simpl. unfold ge. setoid_rewrite Q.
+  simpl. unfold ge. setoid_rewrite Q.
   unfold comp_of. unfold has_comp_fundef. unfold comp_of. simpl.
-  setoid_rewrite Q.
+  destruct cp; simpl; discriminate.
+  simpl. unfold ge. setoid_rewrite Q.
+  unfold comp_of. unfold has_comp_fundef. unfold comp_of. simpl.
   destruct cp; simpl; discriminate.
 Qed.
 

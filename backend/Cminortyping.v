@@ -421,13 +421,13 @@ Definition def_env (f: function) (e: Cminor.env) : Prop :=
 Inductive wt_cont_call: cont -> rettype -> Prop :=
   | wt_cont_Kstop:
       wt_cont_call Kstop Tint
-  | wt_cont_Kcall: forall optid f sp e vf k tret env
+  | wt_cont_Kcall: forall optid f sp e k tret env
         (WT_FN: wt_function env f)
         (WT_CONT: wt_cont env f.(fn_sig).(sig_res) k)
         (WT_ENV: wt_env env e)
         (DEF_ENV: def_env f e)
         (WT_DEST: wt_opt_assign env optid tret),
-      wt_cont_call (Kcall optid f sp e vf k) tret
+      wt_cont_call (Kcall optid f sp e k) tret
 
 with wt_cont: typenv -> rettype -> cont -> Prop :=
   | wt_cont_Kseq: forall env tret s k,
@@ -454,10 +454,10 @@ Inductive wt_state: state -> Prop :=
         (WT_ARGS: Val.has_type_list args (funsig f).(sig_args))
         (WT_CONT: wt_cont_call k (funsig f).(sig_res)),
       wt_state (Callstate f args k m)
-  | wt_return_state: forall v k m tret
+  | wt_return_state: forall v k m cp tret
         (WT_RES: Val.has_type v (proj_rettype tret))
         (WT_CONT: wt_cont_call k tret),
-      wt_state (Returnstate v k m).
+      wt_state (Returnstate v k m cp).
 
 Lemma wt_is_call_cont:
   forall env tret k, wt_cont env tret k -> is_call_cont k -> wt_cont_call k tret.
