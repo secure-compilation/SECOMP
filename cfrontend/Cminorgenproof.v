@@ -1612,11 +1612,11 @@ Inductive match_cont: Csharpminor.cont -> Cminor.cont -> compilenv -> exit_env -
   | match_Kblock2: forall k tk cenv xenv cs,
       match_cont k tk cenv xenv cs ->
       match_cont k (Kblock tk) cenv (false :: xenv) cs
-  | match_Kcall: forall optid fn e le vf k tfn sp te tk cenv xenv lo hi cs sz cenv',
+  | match_Kcall: forall optid fn e le k tfn sp te tk cenv xenv lo hi cs sz cenv',
       transl_funbody cenv sz fn = OK tfn ->
       match_cont k tk cenv xenv cs ->
-      match_cont (Csharpminor.Kcall optid fn e le (Genv.find_comp ge vf) k)
-                 (Kcall optid tfn (Vptr sp Ptrofs.zero) te (Genv.find_comp tge vf) tk)
+      match_cont (Csharpminor.Kcall optid fn e le k)
+                 (Kcall optid tfn (Vptr sp Ptrofs.zero) te tk)
                  cenv' nil
                  (Frame cenv tfn e le te sp lo hi :: cs).
 
@@ -1654,13 +1654,13 @@ Inductive match_states: Csharpminor.state -> Cminor.state -> Prop :=
       match_states (Csharpminor.Callstate fd args k m)
                    (Callstate tfd targs tk tm)
   | match_returnstate:
-      forall v k m tv tk tm f cs cenv
+      forall v k m tv tk tm cp f cs cenv
       (MINJ: Mem.inject f m tm)
       (MCS: match_callstack f m tm cs (Mem.nextblock m) (Mem.nextblock tm))
       (MK: match_cont k tk cenv nil cs)
       (RESINJ: Val.inject f v tv),
-      match_states (Csharpminor.Returnstate v k m)
-                   (Returnstate tv tk tm).
+      match_states (Csharpminor.Returnstate v k m cp)
+                   (Returnstate tv tk tm cp).
 
 Remark val_inject_function_pointer:
   forall bound v fd f tv,
@@ -2057,6 +2057,7 @@ Proof.
   intros [tm' [P [Q R]]].
   econstructor; split.
   eapply plus_right. eexact A. apply step_skip_call. auto. eauto. traceEq.
+  rewrite <- (comp_transl_partial _ TRF).
   econstructor; eauto.
 
 (* set *)
@@ -2226,6 +2227,7 @@ Opaque PTree.set.
   intros [tm' [A [B C]]].
   econstructor; split.
   apply plus_one. eapply step_return_0. eauto.
+  rewrite <- (comp_transl_partial _ TRF).
   econstructor; eauto. eapply match_call_cont; eauto.
   simpl; auto.
 
@@ -2238,6 +2240,7 @@ Opaque PTree.set.
   intros [tm' [A [B C]]].
   econstructor; split.
   apply plus_one. eapply step_return_1. eauto. eauto.
+  rewrite <- (comp_transl_partial _ TRF).
   econstructor; eauto. eapply match_call_cont; eauto.
 
 (* label *)
@@ -2297,7 +2300,6 @@ Opaque PTree.set.
   inv MK. simpl.
   left; econstructor; split.
   apply plus_one. econstructor; eauto.
-  rewrite <- find_comp_transl.
   rewrite <- type_of_call_transl with (f := f) (sz := sz) (cenv := cenv0).
   intros H. specialize (NO_CROSS_PTR H). inv RESINJ; auto; inv NO_CROSS_PTR. auto.
   unfold set_optvar. destruct optid; simpl; econstructor; eauto.
