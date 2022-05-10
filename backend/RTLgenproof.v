@@ -1330,7 +1330,7 @@ Inductive match_states: CminorSel.state -> RTL.state -> Prop :=
         (LD: Val.lessdef v tv)
         (MEXT: Mem.extends m tm),
       match_states (CminorSel.Returnstate v k m)
-                   (RTL.Returnstate cs tv tm).
+                   (RTL.Returnstate cs tv tm (CminorSel.call_comp k)).
 
 Lemma match_stacks_call_cont:
   forall c map k ncont nexits ngoto nret rret cs,

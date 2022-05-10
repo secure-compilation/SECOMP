@@ -458,7 +458,6 @@ Inductive cont: Type :=
            function ->                      (**r calling function *)
            env ->                           (**r local env of calling function *)
            temp_env ->                      (**r temporary env of calling function *)
-           compartment ->
            cont -> cont.
 
 (** Pop continuation until a call or stop *)
@@ -475,13 +474,13 @@ Fixpoint call_cont (k: cont) : cont :=
 Definition is_call_cont (k: cont) : Prop :=
   match k with
   | Kstop => True
-  | Kcall _ _ _ _ _ _ => True
+  | Kcall _ _ _ _ _ => True
   | _ => False
   end.
 
 Definition call_comp (k: cont) : compartment :=
   match call_cont k with
-  | Kcall _ f _ _ _ _ => (comp_of f)
+  | Kcall _ f _ _ _ => (comp_of f)
   | _ => default_compartment
   end.
 
@@ -503,7 +502,8 @@ Inductive state: Type :=
   | Returnstate
       (res: val)
       (k: cont)
-      (m: mem) : state.
+      (m: mem)
+      (cp: compartment): state.
 
 (** Find the statement and manufacture the continuation
   corresponding to a label *)
@@ -580,7 +580,7 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
       forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
       step (State f (Scall optid a al) k e le m)
-        E0 (Callstate fd vargs (Kcall optid f e le (Genv.find_comp ge vf) k) m)
+        E0 (Callstate fd vargs (Kcall optid f e le k) m)
 
   | step_builtin:   forall f optid ef tyargs al k e le m vargs t vres m',
       eval_exprlist e (comp_of f) le m al tyargs vargs ->
@@ -627,18 +627,18 @@ Inductive step: state -> trace -> state -> Prop :=
   | step_return_0: forall f k e le m m',
       Mem.free_list m (blocks_of_env e) (comp_of f) = Some m' ->
       step (State f (Sreturn None) k e le m)
-        E0 (Returnstate Vundef (call_cont k) m')
+        E0 (Returnstate Vundef (call_cont k) m' (comp_of f))
   | step_return_1: forall f a k e le m v v' m',
       eval_expr e (comp_of f) le m a v ->
       sem_cast v (typeof a) f.(fn_return) m = Some v' ->
       Mem.free_list m (blocks_of_env e) (comp_of f) = Some m' ->
       step (State f (Sreturn (Some a)) k e le m)
-        E0 (Returnstate v' (call_cont k) m')
+        E0 (Returnstate v' (call_cont k) m' (comp_of f))
   | step_skip_call: forall f k e le m m',
       is_call_cont k ->
       Mem.free_list m (blocks_of_env e) (comp_of f) = Some m' ->
       step (State f Sskip k e le m)
-        E0 (Returnstate Vundef k m')
+        E0 (Returnstate Vundef k m' (comp_of f))
 
   | step_switch: forall f a sl k e le m v n,
       eval_expr e (comp_of f) le m a v ->
@@ -670,12 +670,12 @@ Inductive step: state -> trace -> state -> Prop :=
   | step_external_function: forall ef targs tres cconv vargs k m vres t m',
       external_call ef ge (call_comp k) vargs m t vres m' ->
       step (Callstate (External ef targs tres cconv) vargs k m)
-         t (Returnstate vres k m')
+         t (Returnstate vres k m' (comp_of ef))
 
   | step_returnstate: forall v optid f e le cp k m,
       forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) cp = Genv.CrossCompartmentCall ->
                        not_ptr v),
-      step (Returnstate v (Kcall optid f e le cp k) m)
+      step (Returnstate v (Kcall optid f e le k) m cp)
         E0 (State f Sskip k e (set_opttemp optid v le) m).
 
 (** ** Whole-program semantics *)
@@ -697,8 +697,8 @@ Inductive initial_state (p: program): state -> Prop :=
 (** A final state is a [Returnstate] with an empty continuation. *)
 
 Inductive final_state: state -> int -> Prop :=
-  | final_state_intro: forall r m,
-      final_state (Returnstate (Vint r) Kstop m) r.
+  | final_state_intro: forall r m cp,
+      final_state (Returnstate (Vint r) Kstop m cp) r.
 
 End SEMANTICS.
 
@@ -753,7 +753,7 @@ Proof.
   econstructor; econstructor; eauto.
   (* external *)
   exploit external_call_receptive; eauto. intros [vres2 [m2 EC2]].
-  exists (Returnstate vres2 k m2). econstructor; eauto.
+  exists (Returnstate vres2 k m2 (comp_of ef)). econstructor; eauto.
 (* trace length *)
   red; simpl; intros. inv H; simpl; try omega.
   eapply external_call_trace_length; eauto.

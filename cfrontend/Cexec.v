@@ -667,7 +667,7 @@ Qed.
 Inductive reduction: Type :=
   | Lred (rule: string) (l': expr) (m': mem)
   | Rred (rule: string) (r': expr) (m': mem) (t: trace)
-  | Callred (rule: string) (fd: fundef) (args: list val) (tyres: type) (cp: compartment) (m': mem)
+  | Callred (rule: string) (fd: fundef) (args: list val) (tyres: type) (m': mem)
   | Stuckred.
 
 Section EXPRS.
@@ -903,7 +903,7 @@ Fixpoint step_expr (cp: compartment) (k: kind) (a: expr) (m: mem): reducts expr 
               check (match Genv.type_of_call ge cp (Genv.find_comp ge vf) with
                      | Genv.CrossCompartmentCall => forallb not_ptr_b vargs
                      | _ => true end);
-              topred (Callred "red_call" fd vargs ty (Genv.find_comp ge vf) m)
+              topred (Callred "red_call" fd vargs ty m)
           | _ => stuck
           end
       | _, _ =>
@@ -948,8 +948,8 @@ Inductive imm_safe_t (cp: compartment): kind -> expr -> mem -> Prop :=
       rred ge cp r m t r' m' -> possible_trace w t w' ->
       context RV to C ->
       imm_safe_t cp to (C r) m
-  | imm_safe_t_callred: forall to C r m fd args ty vf,
-      callred ge cp r m fd args ty vf ->
+  | imm_safe_t_callred: forall to C r m fd args ty,
+      callred ge cp r m fd args ty ->
       context RV to C ->
       imm_safe_t cp to (C r) m.
 
@@ -1063,8 +1063,8 @@ Proof.
 Qed.
 
 Lemma callred_invert:
-  forall cp r fd args ty vf m,
-  callred ge cp r m fd args ty vf ->
+  forall cp r fd args ty m,
+  callred ge cp r m fd args ty ->
   invert_expr_prop cp r m.
 Proof.
   intros. inv H. simpl.
@@ -1161,7 +1161,7 @@ Definition reduction_ok (cp: compartment) (k: kind) (a: expr) (m: mem) (rd: redu
   match k, rd with
   | LV, Lred _ l' m' => lred ge e a m l' m'
   | RV, Rred _ r' m' t => rred ge cp a m t r' m' /\ exists w', possible_trace w t w'
-  | RV, Callred _ fd args tyres cp' m' => callred ge cp a m fd args tyres cp' /\ m' = m
+  | RV, Callred _ fd args tyres m' => callred ge cp a m fd args tyres /\ m' = m
   | LV, Stuckred => ~imm_safe_t cp k a m
   | RV, Stuckred => ~imm_safe_t cp k a m
   | _, _ => False
@@ -1671,9 +1671,9 @@ Proof.
 Qed.
 
 Lemma callred_topred:
-  forall cp a fd args ty vf m,
-  callred ge cp a m fd args ty vf ->
-  exists rule, step_expr cp RV a m = topred (Callred rule fd args ty vf m).
+  forall cp a fd args ty m,
+  callred ge cp a m fd args ty ->
+  exists rule, step_expr cp RV a m = topred (Callred rule fd args ty m).
 Proof.
   induction 1; simpl.
   rewrite H2. exploit sem_cast_arguments_complete; eauto. intros [vtl [A B]].
@@ -2003,7 +2003,7 @@ Definition expr_final_state (f: function) (k: cont) (e: env) (C_rd: (expr -> exp
   match snd C_rd with
   | Lred rule a m => TR rule E0 (ExprState f (fst C_rd a) k e m)
   | Rred rule a m t => TR rule t (ExprState f (fst C_rd a) k e m)
-  | Callred rule fd vargs ty cp m => TR rule E0 (Callstate fd vargs (Kcall f e (fst C_rd) ty cp k) m)
+  | Callred rule fd vargs ty m => TR rule E0 (Callstate fd vargs (Kcall f e (fst C_rd) ty k) m)
   | Stuckred => TR "step_stuck" E0 Stuckstate
   end.
 
@@ -2040,8 +2040,8 @@ Definition do_step (w: world) (s: state) : list transition :=
             else ret "step_for_false" (State f Sskip k e m)
         | Kreturn k =>
             do v' <- sem_cast v ty f.(fn_return) m;
-            do m' <- Mem.free_list m (blocks_of_env ge e) (fn_comp f);
-            ret "step_return_2" (Returnstate v' (call_cont k) m')
+            do m' <- Mem.free_list m (blocks_of_env ge e) (comp_of f);
+            ret "step_return_2" (Returnstate v' (call_cont k) m' (comp_of f))
         | Kswitch1 sl k =>
             do n <- sem_switch_arg v ty;
             ret "step_expr_switch" (State f (seq_of_labeled_statement (select_switch n sl)) (Kswitch2 k) e m)
@@ -2092,13 +2092,13 @@ Definition do_step (w: world) (s: state) : list transition :=
       ret "step_skip_for4" (State f (Sfor Sskip a2 a3 s) k e m)
 
   | State f (Sreturn None) k e m =>
-      do m' <- Mem.free_list m (blocks_of_env ge e) (fn_comp f);
-      ret "step_return_0" (Returnstate Vundef (call_cont k) m')
+      do m' <- Mem.free_list m (blocks_of_env ge e) (comp_of f);
+      ret "step_return_0" (Returnstate Vundef (call_cont k) m' (comp_of f))
   | State f (Sreturn (Some x)) k e m =>
       ret "step_return_1" (ExprState f x (Kreturn k) e m)
-  | State f Sskip ((Kstop | Kcall _ _ _ _ _ _) as k) e m =>
-      do m' <- Mem.free_list m (blocks_of_env ge e) (fn_comp f);
-      ret "step_skip_call" (Returnstate Vundef k m')
+  | State f Sskip ((Kstop | Kcall _ _ _ _ _) as k) e m =>
+      do m' <- Mem.free_list m (blocks_of_env ge e) (comp_of f);
+      ret "step_skip_call" (Returnstate Vundef k m' (comp_of f))
 
   | State f (Sswitch x sl) k e m =>
       ret "step_switch" (ExprState f x (Kswitch1 sl k) e m)
@@ -2123,10 +2123,10 @@ Definition do_step (w: world) (s: state) : list transition :=
   | Callstate (External ef _ _ _) vargs k m =>
       match do_external ef w (call_comp k) vargs m with
       | None => nil
-      | Some(w',t,v,m') => TR "step_external_function" t (Returnstate v k m') :: nil
+      | Some(w',t,v,m') => TR "step_external_function" t (Returnstate v k m' (comp_of ef)) :: nil
       end
 
-  | Returnstate v (Kcall f e C ty cp k) m =>
+  | Returnstate v (Kcall f e C ty k) m cp =>
       check (match Genv.type_of_call ge (comp_of f) cp with
              | Genv.CrossCompartmentCall => not_ptr_b v
              | _ => true end);
@@ -2252,8 +2252,8 @@ Proof with (unfold ret; eauto with coqlib).
   exploit callred_topred; eauto.
   instantiate (1 := w). instantiate (1 := e).
   intros (rule & STEP). exists rule.
-  change (TR rule E0 (Callstate fd vargs (Kcall f e C ty cp k) m))
-    with (expr_final_state f k e (C, Callred rule fd vargs ty cp m)).
+  change (TR rule E0 (Callstate fd vargs (Kcall f e C ty k) m))
+    with (expr_final_state f k e (C, Callred rule fd vargs ty m)).
   apply in_map.
   generalize (step_expr_context e w _ _ _ H1 (comp_of f) a m). unfold reducts_incl.
   intro. replace C with (fun x => C x). apply H2.
@@ -2324,6 +2324,6 @@ Definition do_initial_state (p: program): option (genv * state) :=
 
 Definition at_final_state (S: state): option int :=
   match S with
-  | Returnstate (Vint r) Kstop m => Some r
+  | Returnstate (Vint r) Kstop m cp => Some r
   | _ => None
   end.

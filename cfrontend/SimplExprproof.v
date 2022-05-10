@@ -995,13 +995,13 @@ Inductive match_cont : Csem.cont -> cont -> Prop :=
   | match_Kswitch2: forall k tk,
       match_cont k tk ->
       match_cont (Csem.Kswitch2 k) (Kswitch tk)
-  | match_Kcall: forall f e C ty cp k optid tf le sl tk a dest tmps,
+  | match_Kcall: forall f e C ty k optid tf le sl tk a dest tmps,
       tr_function f tf ->
       leftcontext RV RV C ->
       (forall v m, tr_top tge e (set_opttemp optid v le) m (comp_of f) dest (C (Csyntax.Eval v ty)) sl a tmps) ->
       match_cont_exp dest a k tk ->
-      match_cont (Csem.Kcall f e C ty cp k)
-                 (Kcall optid tf e le cp (Kseqlist sl tk))
+      match_cont (Csem.Kcall f e C ty k)
+                 (Kcall optid tf e le (Kseqlist sl tk))
 (*
   | match_Kcall_some: forall f e C ty k dst tf le sl tk a dest tmps,
       transl_function f = Errors.OK tf ->
@@ -1095,10 +1095,10 @@ Inductive match_states: Csem.state -> state -> Prop :=
       match_cont k tk ->
       match_states (Csem.Callstate fd args k m)
                    (Callstate tfd args tk m)
-  | match_returnstates: forall res k m tk,
+  | match_returnstates: forall res k m cp tk,
       match_cont k tk ->
-      match_states (Csem.Returnstate res k m)
-                   (Returnstate res tk m)
+      match_states (Csem.Returnstate res k m cp)
+                   (Returnstate res tk m cp)
   | match_stuckstate: forall S,
       match_states Csem.Stuckstate S.
 
@@ -1998,7 +1998,8 @@ Proof.
   eapply allowed_call_translated; eauto.
   erewrite CO, <- find_comp_translated, <- type_of_call_translated; eauto.
   traceEq.
-  constructor; auto. rewrite <- find_comp_translated.
+  constructor; auto.
+  (* rewrite <- find_comp_translated. *)
   econstructor; eauto.
   intros. change sl2 with (nil ++ sl2). apply S.
   constructor. auto. auto.
@@ -2016,7 +2017,9 @@ Proof.
   eapply allowed_call_translated; eauto. rewrite CO; eauto.
   erewrite CO, <- find_comp_translated, <- type_of_call_translated; eauto.
   traceEq.
-  constructor; auto. rewrite <- find_comp_translated. econstructor; eauto.
+  constructor; auto.
+  (* rewrite <- find_comp_translated. *)
+  econstructor; eauto.
   intros. apply S. destruct dst'; constructor.
   auto. intros. constructor. rewrite H5; auto. apply PTree.gss.
   auto. intros. constructor. rewrite H5; auto. apply PTree.gss.
@@ -2292,7 +2295,8 @@ Proof.
   assert (CO : comp_of tf = comp_of f) by (inv H6; assumption). (* NOTE: Intros/tactics? *)
   inv H7. econstructor; split.
   left. apply plus_one. econstructor; eauto. rewrite blocks_of_env_preserved; eauto. rewrite CO; eauto.
-  constructor. apply match_cont_call; auto.
+  rewrite CO; constructor.
+  apply match_cont_call; auto.
 (* return some 1 *)
   inv H6. inv H0. econstructor; split.
   left; eapply plus_left. constructor. apply push_seq. traceEq.
@@ -2304,7 +2308,7 @@ Proof.
   left. eapply plus_two. constructor. econstructor. eauto. rewrite CO; eauto.
   erewrite function_return_preserved; eauto. rewrite CO; eauto. rewrite blocks_of_env_preserved; eauto.
   eauto. traceEq.
-  constructor. apply match_cont_call; auto.
+  rewrite CO; constructor. apply match_cont_call; auto.
 (* skip return *)
   assert (CO : comp_of tf = comp_of f) by (inv H7; assumption). (* NOTE: Intros/tactics? *)
   inv H8.
@@ -2312,7 +2316,7 @@ Proof.
   econstructor; split.
   left. apply plus_one. apply step_skip_call; eauto. rewrite blocks_of_env_preserved; eauto.
   rewrite CO; eauto.
-  constructor. auto.
+  rewrite CO; constructor. auto.
 
 (* switch *)
   inv H6. inv H1.
@@ -2376,10 +2380,10 @@ Proof.
   constructor; auto.
 
 (* return *)
-  inv H3.
+  inv H4.
   econstructor; split.
   left; apply plus_one. constructor.
-  assert (CO : comp_of tf = comp_of f) by (inv H7; assumption). (* NOTE: Intros/tactics? *)
+  assert (CO : comp_of tf = comp_of f) by (inv H6; assumption). (* NOTE: Intros/tactics? *)
   rewrite CO. now rewrite type_of_call_translated in NO_CROSS_PTR.
   econstructor; eauto.
 Qed.
@@ -2421,7 +2425,7 @@ Lemma transl_final_states:
   forall S S' r,
   match_states S S' -> Csem.final_state S r -> Clight.final_state S' r.
 Proof.
-  intros. inv H0. inv H. inv H4. constructor.
+  intros. inv H0. inv H. inv H5. constructor.
 Qed.
 
 Theorem transl_program_correct:

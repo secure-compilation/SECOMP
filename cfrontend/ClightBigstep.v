@@ -316,7 +316,7 @@ Lemma exec_stmt_eval_funcall_steps:
    forall k,
    forall COMP: c = call_comp k,
    is_call_cont k ->
-   star step1 ge (Callstate fd args k m) t (Returnstate res k m')).
+   star step1 ge (Callstate fd args k m) t (Returnstate res k m' (comp_of fd))).
 Proof.
   apply exec_stmt_funcall_ind; intros; subst c.
 
@@ -332,7 +332,18 @@ Proof.
 (* call *)
   econstructor; split.
   eapply star_left. econstructor; eauto.
-  eapply star_right. apply H5; eauto. simpl; auto. econstructor. eauto. reflexivity. traceEq.
+  eapply star_right. apply H5; eauto. simpl; auto. econstructor.
+  (* TODO: Move lemma to Globalenvs.v and also find other usages of the same lemma *)
+  assert (Lemma: forall vf fd,
+             Genv.find_funct ge vf = Some fd ->
+             Genv.find_comp ge vf = comp_of fd).
+  { clear.
+    intros.
+    destruct vf; simpl in *; try congruence.
+    destruct (Ptrofs.eq_dec i Ptrofs.zero); simpl in *; try congruence.
+    now rewrite H. }
+  erewrite Lemma in NO_CROSS_PTR_RETURN; eauto.
+  reflexivity. traceEq.
   constructor.
 
 (* builtin *)
@@ -500,7 +511,7 @@ Lemma eval_funcall_steps:
    forall k,
    forall COMP: cp = call_comp k,
    is_call_cont k ->
-   star step1 ge (Callstate fd args k m) t (Returnstate res k m').
+   star step1 ge (Callstate fd args k m) t (Returnstate res k m' (comp_of fd)).
 Proof (proj2 exec_stmt_eval_funcall_steps).
 
 Definition order (x y: unit) := False.

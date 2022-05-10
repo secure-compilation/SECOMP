@@ -1645,14 +1645,14 @@ Inductive match_cont (f: meminj): compilenv -> cont -> cont -> mem -> block -> b
   | match_Kswitch: forall cenv k tk m bound tbound,
       match_cont f cenv k tk m bound tbound ->
       match_cont f cenv (Kswitch k) (Kswitch tk) m bound tbound
-  | match_Kcall: forall cenv optid fn e le vf k tfn te tle tk m hi thi lo tlo bound tbound x,
+  | match_Kcall: forall cenv optid fn e le k tfn te tle tk m hi thi lo tlo bound tbound x,
       transf_function fn = OK tfn ->
       match_envs f (cenv_for fn) e le m lo hi te tle tlo thi ->
       match_cont f (cenv_for fn) k tk m lo tlo ->
       check_opttemp (cenv_for fn) optid = OK x ->
       Ple hi bound -> Ple thi tbound ->
-      match_cont f cenv (Kcall optid fn e le vf k)
-                        (Kcall optid tfn te tle vf tk) m bound tbound.
+      match_cont f cenv (Kcall optid fn e le k)
+                        (Kcall optid tfn te tle tk) m bound tbound.
 
 (** Invariance property by change of memory and injection *)
 
@@ -1888,12 +1888,12 @@ Inductive match_states: state -> state -> Prop :=
       match_states (Callstate fd vargs k m)
                    (Callstate tfd tvargs tk tm)
   | match_return_state:
-      forall v k m tv tk tm j
+      forall v k m tv tk tm cp j
         (MCONT: forall cenv, match_cont j cenv k tk m (Mem.nextblock m) (Mem.nextblock tm))
         (MINJ: Mem.inject j m tm)
         (RINJ: Val.inject j v tv),
-      match_states (Returnstate v k m)
-                   (Returnstate tv tk tm).
+      match_states (Returnstate v k m cp)
+                   (Returnstate tv tk tm cp).
 
 (** The simulation diagrams *)
 
@@ -2192,7 +2192,8 @@ Proof.
   intros. eapply Val.inject_list_not_ptr; eauto. eapply NO_CROSS_PTR.
   rewrite find_comp_translated; auto.
   econstructor; eauto.
-  intros. rewrite find_comp_translated.
+  intros.
+  (* rewrite find_comp_translated. *)
   econstructor; eauto.
 
 (* builtin *)
@@ -2258,6 +2259,7 @@ Proof.
   exploit match_envs_free_blocks; eauto. intros [tm' [P Q]].
   econstructor; split. apply plus_one. econstructor; eauto.
   rewrite <- (comp_transl_partial _ TRF). eauto.
+  rewrite <- (comp_transl_partial _ TRF).
   econstructor; eauto.
   intros. eapply match_cont_call_cont. eapply match_cont_free_env; eauto.
 
@@ -2269,6 +2271,7 @@ Proof.
   rewrite <- (comp_transl_partial _ TRF). eauto.
   rewrite typeof_simpl_expr. monadInv TRF; simpl. eauto.
   rewrite <- (comp_transl_partial _ TRF). eauto.
+  rewrite <- (comp_transl_partial _ TRF).
   econstructor; eauto.
   intros. eapply match_cont_call_cont. eapply match_cont_free_env; eauto.
 

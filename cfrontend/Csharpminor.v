@@ -144,7 +144,7 @@ Inductive cont: Type :=
   | Kstop: cont                         (**r stop program execution *)
   | Kseq: stmt -> cont -> cont          (**r execute stmt, then cont *)
   | Kblock: cont -> cont                (**r exit a block, then do cont *)
-  | Kcall: option ident -> function -> env -> temp_env -> compartment -> cont -> cont.
+  | Kcall: option ident -> function -> env -> temp_env -> cont -> cont.
                                         (**r return to caller *)
 
 (** States *)
@@ -167,8 +167,9 @@ Inductive state: Type :=
   | Returnstate:                (**r Return from a function *)
       forall (v: val)                   (**r Return value *)
              (k: cont)                  (**r what to do next *)
-             (m: mem),                  (**r memory state *)
-      state.
+             (m: mem)          (**r memory state *)
+             (cp: compartment),
+        state.
 
 (** Pop continuation until a call or stop *)
 
@@ -182,13 +183,13 @@ Fixpoint call_cont (k: cont) : cont :=
 Definition is_call_cont (k: cont) : Prop :=
   match k with
   | Kstop => True
-  | Kcall _ _ _ _ _ _ => True
+  | Kcall _ _ _ _ _ => True
   | _ => False
   end.
 
 Definition call_comp (k: cont) : compartment :=
   match call_cont k with
-  | Kcall _ f _ _ _ _ => f.(fn_comp)
+  | Kcall _ f _ _ _ => f.(fn_comp)
   | _ => default_compartment
   end.
 
@@ -378,7 +379,7 @@ Inductive step: state -> trace -> state -> Prop :=
       is_call_cont k ->
       Mem.free_list m (blocks_of_env e) (comp_of f) = Some m' ->
       step (State f Sskip k e le m)
-        E0 (Returnstate Vundef k m')
+        E0 (Returnstate Vundef k m' (comp_of f))
 
   | step_set: forall f id a k e le m v,
       eval_expr e (comp_of f) le m a v ->
@@ -400,7 +401,7 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
       forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
       step (State f (Scall optid sig a bl) k e le m)
-        E0 (Callstate fd vargs (Kcall optid f e le (Genv.find_comp ge vf) k) m)
+        E0 (Callstate fd vargs (Kcall optid f e le k) m)
 
   | step_builtin: forall f optid ef bl k e le m vargs t vres m',
       eval_exprlist e (comp_of f) le m bl vargs ->
@@ -445,12 +446,12 @@ Inductive step: state -> trace -> state -> Prop :=
   | step_return_0: forall f k e le m m',
       Mem.free_list m (blocks_of_env e) (comp_of f) = Some m' ->
       step (State f (Sreturn None) k e le m)
-        E0 (Returnstate Vundef (call_cont k) m')
+        E0 (Returnstate Vundef (call_cont k) m' (comp_of f))
   | step_return_1: forall f a k e le m v m',
       eval_expr e (comp_of f) le m a v ->
       Mem.free_list m (blocks_of_env e) (comp_of f) = Some m' ->
       step (State f (Sreturn (Some a)) k e le m)
-        E0 (Returnstate v (call_cont k) m')
+        E0 (Returnstate v (call_cont k) m' (comp_of f))
   | step_label: forall f lbl s k e le m,
       step (State f (Slabel lbl s) k e le m)
         E0 (State f s k e le m)
@@ -472,11 +473,11 @@ Inductive step: state -> trace -> state -> Prop :=
   | step_external_function: forall ef vargs k m t vres m',
       external_call ef ge (call_comp k) vargs m t vres m' ->
       step (Callstate (External ef) vargs k m)
-         t (Returnstate vres k m')
+         t (Returnstate vres k m' (comp_of ef))
 
   | step_return: forall v optid f e le cp k m,
       forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) cp = Genv.CrossCompartmentCall -> not_ptr v),
-      step (Returnstate v (Kcall optid f e le cp k) m)
+      step (Returnstate v (Kcall optid f e le k) m cp)
         E0 (State f Sskip k e (Cminor.set_optvar optid v le) m).
 
 End RELSEM.
@@ -498,8 +499,8 @@ Inductive initial_state (p: program): state -> Prop :=
 (** A final state is a [Returnstate] with an empty continuation. *)
 
 Inductive final_state: state -> int -> Prop :=
-  | final_state_intro: forall r m,
-      final_state (Returnstate (Vint r) Kstop m) r.
+  | final_state_intro: forall r m cp,
+      final_state (Returnstate (Vint r) Kstop m cp) r.
 
 (** Wrapping up these definitions in a small-step semantics. *)
 

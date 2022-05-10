@@ -306,7 +306,7 @@ Inductive rred: expr -> mem -> trace -> expr -> mem -> Prop :=
 (** Head reduction for function calls.
     (More exactly, identification of function calls that can reduce.) *)
 
-Inductive callred: expr -> mem -> fundef -> list val -> type -> compartment -> Prop :=
+Inductive callred: expr -> mem -> fundef -> list val -> type -> Prop :=
   | red_call: forall vf tyf m tyargs tyres cconv el ty fd vargs,
       Genv.find_funct ge vf = Some fd ->
       cast_arguments m el tyargs vargs ->
@@ -316,7 +316,7 @@ Inductive callred: expr -> mem -> fundef -> list val -> type -> compartment -> P
       forall (NO_CROSS_PTR: Genv.type_of_call ge cp (Genv.find_comp ge vf) = Genv.CrossCompartmentCall ->
                        Forall not_ptr vargs),
       callred (Ecall (Eval vf tyf) el ty) m
-              fd vargs ty (Genv.find_comp ge vf).
+              fd vargs ty.
 
 (** Reduction contexts.  In accordance with C's nondeterministic semantics,
   we allow reduction both to the left and to the right of a binary operator.
@@ -421,8 +421,8 @@ Inductive imm_safe: kind -> expr -> mem -> Prop :=
       rred e m t e' m' ->
       context RV to C ->
       imm_safe to (C e) m
-  | imm_safe_callred: forall to C e m fd args ty vf,
-      callred e m fd args ty vf ->
+  | imm_safe_callred: forall to C e m fd args ty,
+      callred e m fd args ty ->
       context RV to C ->
       imm_safe to (C e) m.
 
@@ -510,7 +510,6 @@ Inductive cont: Type :=
            env ->                (**r local env of calling function *)
            (expr -> expr) ->     (**r context of the call *)
            type ->               (**r type of call expression *)
-           compartment ->        (**r compartment of callee *)
            cont -> cont.
 
 (** Pop continuation until a call or stop *)
@@ -531,19 +530,19 @@ Fixpoint call_cont (k: cont) : cont :=
   | Kswitch1 ls k => call_cont k
   | Kswitch2 k => call_cont k
   | Kreturn k => call_cont k
-  | Kcall _ _ _ _ _ _ => k
+  | Kcall _ _ _ _ _ => k
   end.
 
 Definition is_call_cont (k: cont) : Prop :=
   match k with
   | Kstop => True
-  | Kcall _ _ _ _ _ _ => True
+  | Kcall _ _ _ _ _ => True
   | _ => False
   end.
 
 Definition call_comp (k: cont) : compartment :=
   match call_cont k with
-  | Kcall f _ _ _ _ _ => (comp_of f)
+  | Kcall f _ _ _ _ => (comp_of f)
   | _ => default_compartment
   end.
 
@@ -575,7 +574,8 @@ Inductive state: Type :=
   | Returnstate                         (**r returning from a function *)
       (res: val)
       (k: cont)
-      (m: mem) : state
+      (m: mem)
+      (cp: compartment): state
   | Stuckstate.                         (**r undefined behavior occurred *)
 
 (** Find the statement and manufacture the continuation
@@ -646,11 +646,11 @@ Inductive estep: state -> trace -> state -> Prop :=
       estep (ExprState f (C a) k e m)
           t (ExprState f (C a') k e m')
 
-  | step_call: forall C f a k e m fd vargs ty cp,
-      callred (comp_of f) a m fd vargs ty cp ->
+  | step_call: forall C f a k e m fd vargs ty,
+      callred (comp_of f) a m fd vargs ty ->
       context RV RV C ->
       estep (ExprState f (C a) k e m)
-         E0 (Callstate fd vargs (Kcall f e C ty cp k) m)
+         E0 (Callstate fd vargs (Kcall f e C ty k) m)
 
   | step_stuck: forall C f a k e m K,
       context K RV C -> ~(imm_safe e (comp_of f) K a m) ->
@@ -754,7 +754,7 @@ Inductive sstep: state -> trace -> state -> Prop :=
   | step_return_0: forall f k e m m',
       Mem.free_list m (blocks_of_env e) (comp_of f) = Some m' ->
       sstep (State f (Sreturn None) k e m)
-         E0 (Returnstate Vundef (call_cont k) m')
+         E0 (Returnstate Vundef (call_cont k) m' (comp_of f))
   | step_return_1: forall f x k e m,
       sstep (State f (Sreturn (Some x)) k e m)
          E0 (ExprState f x (Kreturn k) e  m)
@@ -762,12 +762,12 @@ Inductive sstep: state -> trace -> state -> Prop :=
       sem_cast v1 ty f.(fn_return) m = Some v2 ->
       Mem.free_list m (blocks_of_env e) (comp_of f) = Some m' ->
       sstep (ExprState f (Eval v1 ty) (Kreturn k) e m)
-         E0 (Returnstate v2 (call_cont k) m')
+         E0 (Returnstate v2 (call_cont k) m' (comp_of f))
   | step_skip_call: forall f k e m m',
       is_call_cont k ->
       Mem.free_list m (blocks_of_env e) (comp_of f) = Some m' ->
       sstep (State f Sskip k e m)
-         E0 (Returnstate Vundef k m')
+         E0 (Returnstate Vundef k m' (comp_of f))
 
   | step_switch: forall f x sl k e m,
       sstep (State f (Sswitch x sl) k e m)
@@ -803,12 +803,12 @@ Inductive sstep: state -> trace -> state -> Prop :=
   | step_external_function: forall ef targs tres cc vargs k m vres t m',
       external_call ef ge (call_comp k) vargs m t vres m' ->
       sstep (Callstate (External ef targs tres cc) vargs k m)
-          t (Returnstate vres k m')
+          t (Returnstate vres k m' (comp_of ef))
 
   | step_returnstate: forall v f e C ty k m cp,
       forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) cp = Genv.CrossCompartmentCall ->
                        not_ptr v),
-      sstep (Returnstate v (Kcall f e C ty cp k) m)
+      sstep (Returnstate v (Kcall f e C ty k) m cp)
          E0 (ExprState f (C (Eval v ty)) k e m).
 
 Definition step (S: state) (t: trace) (S': state) : Prop :=
@@ -835,8 +835,8 @@ Inductive initial_state (p: program): state -> Prop :=
 (** A final state is a [Returnstate] with an empty continuation. *)
 
 Inductive final_state: state -> int -> Prop :=
-  | final_state_intro: forall r m,
-      final_state (Returnstate (Vint r) Kstop m) r.
+  | final_state_intro: forall r m cp,
+      final_state (Returnstate (Vint r) Kstop m cp) r.
 
 (** Wrapping up these definitions in a small-step semantics. *)
 

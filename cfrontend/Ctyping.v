@@ -1993,19 +1993,19 @@ with wt_stmt_cont: typenv -> function -> cont -> Prop :=
       wt_stmt_cont te f (Kswitch2 k)
   | wt_Kstop': forall te f,
       wt_stmt_cont te f Kstop
-  | wt_Kcall': forall te f f' e C ty vf k,
-      wt_call_cont (Kcall f' e C ty vf k) ty ->
+  | wt_Kcall': forall te f f' e C ty k,
+      wt_call_cont (Kcall f' e C ty k) ty ->
       ty = f.(fn_return) ->
-      wt_stmt_cont te f (Kcall f' e C ty vf k)
+      wt_stmt_cont te f (Kcall f' e C ty k)
 
 with wt_call_cont: cont -> type -> Prop :=
   | wt_Kstop: forall ty,
       wt_call_cont Kstop ty
-  | wt_Kcall: forall te f e C ty vf k,
+  | wt_Kcall: forall te f e C ty k,
       wt_expr_cont te f k ->
       wt_stmt ge te f.(fn_return) f.(fn_body) ->
       (forall v, wt_val v ty -> wt_rvalue ge te (C (Eval v ty))) ->
-      wt_call_cont (Kcall f e C ty vf k) ty.
+      wt_call_cont (Kcall f e C ty k) ty.
 
 Lemma is_wt_call_cont:
   forall te f k,
@@ -2063,10 +2063,10 @@ Inductive wt_state: state -> Prop :=
         (WTFD: wt_fundef ge gtenv fd)
         (FIND: Genv.find_funct ge b = Some fd),
       wt_state (Callstate fd vargs k m)
-  | wt_return_state: forall v k m ty
+  | wt_return_state: forall v k m cp ty
         (WTK: wt_call_cont k ty)
         (VAL: wt_val v ty),
-      wt_state (Returnstate v k m)
+      wt_state (Returnstate v k m cp)
   | wt_stuck_state:
       wt_state Stuckstate.
 

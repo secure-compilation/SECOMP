@@ -319,6 +319,12 @@ Definition call_comp (k: cont) : compartment :=
   | _ => default_compartment
   end.
 
+Definition callee_comp (k: cont) : compartment :=
+  match call_cont k with
+  | Kcall _ _ _ _ cp _ => cp
+  | _ => default_compartment (* should never be reached *)
+  end.
+
 (** Find the statement and manufacture the continuation
   corresponding to a label *)
 

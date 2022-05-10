@@ -373,7 +373,7 @@ Inductive estep: state -> trace -> state -> Prop :=
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
       forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
       estep (ExprState f (C (Ecall rf rargs ty)) k e m)
-         E0 (Callstate fd vargs (Kcall f e C ty (Genv.find_comp ge vf) k) m)
+         E0 (Callstate fd vargs (Kcall f e C ty k) m)
 
   | step_builtin: forall f C ef tyargs rargs ty k e m vargs t vres m',
       leftcontext RV RV C ->
@@ -474,7 +474,7 @@ Proof.
 Qed.
 
 Lemma callred_kind:
-  forall cp a m fd args ty vf, callred ge cp a m fd args ty vf -> expr_kind a = RV.
+  forall cp a m fd args ty, callred ge cp a m fd args ty -> expr_kind a = RV.
 Proof.
   induction 1; auto.
 Qed.
@@ -618,8 +618,8 @@ Proof.
 Qed.
 
 Lemma callred_invert:
-  forall cp r fd args ty vf m,
-  callred ge cp r m fd args ty vf ->
+  forall cp r fd args ty m,
+  callred ge cp r m fd args ty ->
   invert_expr_prop cp r m.
 Proof.
   intros. inv H. simpl.
@@ -1572,7 +1572,7 @@ Proof.
   inv H1.
   exploit external_call_trace_length; eauto. destruct t1; simpl; intros.
   exploit external_call_receptive; eauto. intros [vres2 [m2 EC2]].
-  exists (Returnstate vres2 k m2); exists E0; right; econstructor; eauto.
+  exists (Returnstate vres2 k m2 (comp_of ef)); exists E0; right; econstructor; eauto.
   omegaContradiction.
 (* well-behaved traces *)
   red; intros. inv H; inv H0; simpl; auto.
@@ -2230,7 +2230,7 @@ Lemma bigstep_to_steps:
    forall k,
    forall COMP: c = call_comp k,
    is_call_cont k ->
-   star step ge (Callstate fd args k m) t (Returnstate res k m')).
+   star step ge (Callstate fd args k m) t (Returnstate res k m' (comp_of fd))).
 Proof.
   apply bigstep_induction; intros; try subst c.
 (* expression, general *)
@@ -2375,6 +2375,12 @@ Proof.
   eapply star_left. left; eapply step_call; eauto. congruence.
   eapply star_right. eapply H9; simpl; eauto.
   right; constructor.
+  assert (R: Genv.find_comp ge vf = comp_of fd).
+  { clear -H6.
+    destruct vf; simpl in *; try congruence.
+    destruct (Ptrofs.eq_dec i Ptrofs.zero); simpl in *; try congruence.
+    rewrite H6. reflexivity. }
+  rewrite R in NO_CROSS_PTR_RETURN.
   eapply NO_CROSS_PTR_RETURN.
   reflexivity. reflexivity. reflexivity. traceEq.
 (* nil *)
@@ -2679,7 +2685,7 @@ Lemma eval_funcall_to_steps:
   forall k,
   forall COMP: c = call_comp k,
   is_call_cont k ->
-  star step ge (Callstate fd args k m) t (Returnstate res k m').
+  star step ge (Callstate fd args k m) t (Returnstate res k m' (comp_of fd)).
 Proof (proj2 (proj2 (proj2 (proj2 bigstep_to_steps)))).
 
 Fixpoint esize (a: expr) : nat :=
