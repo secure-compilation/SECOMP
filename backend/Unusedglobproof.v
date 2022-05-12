@@ -783,12 +783,12 @@ Inductive match_states: state -> state -> Prop :=
          (MEMINJ: Mem.inject j m tm),
       match_states (Callstate s fd args m)
                    (Callstate ts fd targs tm)
-  | match_states_return: forall s res m ts tres tm j
+  | match_states_return: forall s res m ts tres tm cp j
          (STACKS: match_stacks j s ts (Mem.nextblock m) (Mem.nextblock tm))
          (RESINJ: Val.inject j res tres)
          (MEMINJ: Mem.inject j m tm),
-      match_states (Returnstate s res m)
-                   (Returnstate ts tres tm).
+      match_states (Returnstate s res m cp)
+                   (Returnstate ts tres tm cp).
 
 Lemma external_call_inject:
   forall cp ef vargs m1 t vres m2 f m1' vargs',
@@ -1180,6 +1180,7 @@ Proof.
 - (* return *)
   inv STACKS. econstructor; split.
   eapply exec_return.
+  intros G; specialize (NO_CROSS_PTR G); inv RESINJ; auto; contradiction.
   econstructor; eauto. apply set_reg_inject; auto.
 Qed.
 

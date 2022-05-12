@@ -1225,9 +1225,10 @@ Inductive step: state -> trace -> state -> Prop :=
          cross-compartment returns *)
       forall (STUPD: update_stack_return st cp rs' = Some st'),
       (* (* No cross-compartment pointer return *) *)
-      (* forall (NO_CROSS_PTR_REGS: *)
-      (*     Genv.type_of_call ge cp' cp = Genv.CrossCompartmentCall -> *)
-      (*     False), *)
+      forall (NO_CROSS_PTR:
+          Genv.type_of_call ge cp' cp = Genv.CrossCompartmentCall ->
+          forall r, List.In r (regs_of_rpair (loc_result (fn_sig f))) ->
+              not_ptr (rs' (preg_of r))),
       step (State st rs m) E0 (State st' rs' m')
   | exec_step_builtin:
       forall b ofs f ef args res rs m vargs t vres rs' m' st,

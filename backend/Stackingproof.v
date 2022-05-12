@@ -1947,14 +1947,14 @@ Inductive match_states: Linear.state -> Mach.state -> Prop :=
       match_states (Linear.Callstate cs f ls m)
                    (Mach.Callstate cs' fb rs m')
   | match_states_return:
-      forall cs ls m cs' rs m' j sg
+      forall cs ls m cs' rs m' j sg cp
         (STACKS: match_stacks j cs cs' sg)
         (AGREGS: agree_regs j ls rs)
         (SEP: m' |= stack_contents j cs cs'
                  ** minjection j m
                  ** globalenv_inject ge j),
-      match_states (Linear.Returnstate cs ls m)
-                  (Mach.Returnstate cs' rs m').
+      match_states (Linear.Returnstate cs ls m sg cp)
+                  (Mach.Returnstate cs' rs m' sg cp).
 
 Theorem transf_step_correct:
   forall s1 t s2, Linear.step ge s1 t s2 ->
@@ -2273,6 +2273,8 @@ Proof.
   unfold find_comp_ptr. rewrite FIND. unfold comp_of; simpl. unfold comp_of, has_comp_function.
   erewrite <- transf_function_comp; eauto.
   traceEq.
+  replace (fn_sig tf) with (funsig (Internal tf)) by reflexivity.
+  rewrite comp_transf_function, sig_preserved with (f := Internal f); try (simpl; rewrite TRANSL); eauto.
   econstructor; eauto.
   rewrite sep_swap; exact G.
 
@@ -2325,6 +2327,19 @@ Proof.
   simpl in AGCS. simpl in SEP. rewrite sep_assoc in SEP.
   econstructor; split.
   apply plus_one. apply exec_return.
+  { intros.
+    (* apply agree_regs_call_regs in AGREGS. *)
+    (* apply agree_regs_undef_regs with (rl := destroyed_at_function_entry) in AGREGS. *)
+    simpl in H; rewrite FINDF in H. unfold comp_of in H; simpl in H.
+    rewrite <- (comp_transl_partial _ TRF) in H.
+    specialize (NO_CROSS_PTR H _ H0).
+    clear -AGREGS NO_CROSS_PTR.
+    specialize (AGREGS l).
+    (* TODO: write a lemma about that *)
+    inv AGREGS; simpl; auto.
+    rewrite <- H in NO_CROSS_PTR; now simpl in NO_CROSS_PTR.
+    rewrite <- H0 in NO_CROSS_PTR; now simpl in NO_CROSS_PTR.
+  }
   econstructor; eauto.
   apply agree_locs_return with rs0; auto.
   apply frame_contents_exten with rs0 (parent_locset s); auto.

@@ -1066,12 +1066,12 @@ Inductive match_states: state -> state -> Prop :=
       match_states (Callstate s f args m)
                    (Callstate s' tf args' m')
   | match_states_return:
-      forall s s' v v' m m'
+      forall s s' v v' m m' cp
              (STACK: match_stackframes s s')
              (RES: Val.lessdef v v')
              (MEXT: Mem.extends m m'),
-      match_states (Returnstate s v m)
-                   (Returnstate s' v' m').
+      match_states (Returnstate s v m cp)
+                   (Returnstate s' v' m' cp).
 
 Ltac TransfInstr :=
   match goal with
@@ -1351,6 +1351,9 @@ Proof.
   inv STACK.
   econstructor; split.
   eapply exec_return; eauto.
+  replace (comp_of (transf_function' f approx)) with (comp_of f) by reflexivity.
+  rewrite <- type_of_call_translated.
+  intros G; specialize (NO_CROSS_PTR G); inv RES; auto; contradiction.
   econstructor; eauto.
   apply set_reg_lessdef; auto.
 Qed.

@@ -2024,14 +2024,14 @@ Inductive match_states: RTL.state -> LTL.state -> Prop :=
       match_states (RTL.Callstate s f args m)
                    (LTL.Callstate ts tf ls m')
   | match_states_return:
-      forall s res m ts ls m' sg
+      forall s res m ts ls m' sg cp
         (STACKS: match_stackframes s ts sg)
         (RES: Val.lessdef res (Locmap.getpair (map_rpair R (loc_result sg)) ls))
         (AG: agree_callee_save (parent_locset ts) ls)
         (MEM: Mem.extends m m')
         (WTRES: Val.has_type res (proj_sig_res sg)),
-      match_states (RTL.Returnstate s res m)
-                   (LTL.Returnstate ts ls m').
+      match_states (RTL.Returnstate s res m cp)
+                   (LTL.Returnstate ts ls m' sg cp).
 
 Lemma match_stackframes_change_sig:
   forall s ts sg sg',
@@ -2587,7 +2587,7 @@ Proof.
   eapply star_right. eexact A1.
   econstructor.
   rewrite <- comp_transf_function; eauto. eauto. traceEq.
-  simpl. econstructor; eauto.
+  simpl. rewrite <- COMP. econstructor; eauto.
   apply return_regs_agree_callee_save.
   constructor.
 + (* with an argument *)
@@ -2597,7 +2597,7 @@ Proof.
   eapply star_right. eexact A1.
   econstructor.
   rewrite <- comp_transf_function; eauto. eauto. traceEq.
-  simpl. econstructor; eauto. rewrite <- H11.
+  simpl. rewrite <- COMP. econstructor; eauto. rewrite <- H11.
   replace (Locmap.getpair (map_rpair R (loc_result (RTL.fn_sig f)))
                           (return_regs (parent_locset ts) ls1))
   with (Locmap.getpair (map_rpair R (loc_result (RTL.fn_sig f))) ls1).
@@ -2656,10 +2656,15 @@ Proof.
 - inv STACKS.
   exploit STEPS; eauto. rewrite WTRES0; auto. intros [ls2 [A B]].
   econstructor; split.
-  eapply plus_left. constructor. eexact A. traceEq.
+  eapply plus_left. constructor.
+  destruct (transf_function_inv _ _ FUN).
+  rewrite <- COMP. rewrite <- type_of_call_translated.
+  intros G. specialize (NO_CROSS_PTR G).
+  unfold loc_result. admit. (* this doesn't seem too impossible :) *)
+  eexact A. traceEq.
   econstructor; eauto.
   apply wt_regset_assign; auto. rewrite WTRES0; auto.
-Qed.
+Admitted.
 
 Lemma initial_states_simulation:
   forall st1, RTL.initial_state prog st1 ->

@@ -284,12 +284,12 @@ Inductive match_states: state -> state -> Prop :=
       match_states (Callstate s f ls m)
                    (Callstate ts (tunnel_fundef f) tls tm)
   | match_states_return:
-      forall s ls m ts tls tm
+      forall s ls m ts tls tm sg cp
         (STK: list_forall2 match_stackframes s ts)
         (LS: locmap_lessdef ls tls)
         (MEM: Mem.extends m tm),
-      match_states (Returnstate s ls m)
-                   (Returnstate ts tls tm).
+      match_states (Returnstate s ls m sg cp)
+                   (Returnstate ts tls tm sg cp).
 
 (** Properties of [locmap_lessdef] *)
 
@@ -430,7 +430,7 @@ Definition measure (st: state) : nat :=
   | Block s f sp (Lbranch pc :: _) ls m => (count_gotos f pc * 2 + 1)%nat
   | Block s f sp bb ls m => 0%nat
   | Callstate s f ls m => 0%nat
-  | Returnstate s ls m => 0%nat
+  | Returnstate s ls m sg cp => 0%nat
   end.
 
 Lemma match_parent_locset:
@@ -600,6 +600,9 @@ Proof.
   inv STK. inv H1.
   left; econstructor; split.
   eapply exec_return; eauto.
+  rewrite comp_tunnel_fundef, <- type_of_call_translated.
+  intros G l IN; specialize (NO_CROSS_PTR G l IN).
+  specialize (LS (R l)). inv LS; auto. rewrite <- H0 in NO_CROSS_PTR; contradiction.
   constructor; auto.
 Qed.
 

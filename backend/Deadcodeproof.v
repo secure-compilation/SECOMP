@@ -601,12 +601,12 @@ Inductive match_states: state -> state -> Prop :=
       match_states (Callstate s f args m)
                    (Callstate ts tf targs tm)
   | match_return_states:
-      forall s v m ts tv tm
+      forall s v m ts tv tm cp
         (STACKS: list_forall2 match_stackframes s ts)
         (RES: Val.lessdef v tv)
         (MEM: Mem.extends m tm),
-      match_states (Returnstate s v m)
-                   (Returnstate ts tv tm).
+      match_states (Returnstate s v m cp)
+                   (Returnstate ts tv tm cp).
 
 (** [match_states] and CFG successors *)
 
@@ -1199,6 +1199,7 @@ Ltac UseTransfer :=
   eapply exec_Ireturn; eauto.
   erewrite stacksize_translated by eauto.
   rewrite <- comp_transf_function; eauto.
+  rewrite comp_transf_function; eauto.
   constructor; auto.
   destruct or; simpl; eauto 2 with na.
   eapply magree_extends; eauto. apply nlive_all.
@@ -1228,6 +1229,9 @@ Ltac UseTransfer :=
   inv STACKS. inv H1.
   econstructor; split.
   constructor.
+  rewrite <- comp_transf_function; eauto.
+  rewrite <- type_of_call_translated.
+  intros G; specialize (NO_CROSS_PTR G); inv RES; auto; contradiction.
   econstructor; eauto. apply mextends_agree; auto.
 Qed.
 

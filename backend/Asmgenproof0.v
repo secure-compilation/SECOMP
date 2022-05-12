@@ -890,6 +890,9 @@ Proof.
       unfold update_stack_return.
       rewrite H0, H2; simpl; rewrite H3.
       now rewrite Pos.eqb_refl.
+      rewrite H0, H2; simpl; rewrite H3.
+      unfold comp_of; simpl; unfold comp_of; unfold Genv.type_of_call.
+      now rewrite Pos.eqb_refl.
     - econstructor; eauto.
       eapply find_instr_tail. eauto.
       now rewrite H2; simpl; rewrite H3.
@@ -922,6 +925,9 @@ Proof.
       unfold comp_of; simpl; unfold comp_of; congruence.
       unfold update_stack_return.
       rewrite H0, H3; simpl; rewrite H4.
+      now rewrite Pos.eqb_refl.
+      rewrite H0, H3; simpl; rewrite H4.
+      unfold comp_of; simpl; unfold comp_of; unfold Genv.type_of_call.
       now rewrite Pos.eqb_refl.
     - econstructor; eauto.
       eapply find_instr_tail. eauto.

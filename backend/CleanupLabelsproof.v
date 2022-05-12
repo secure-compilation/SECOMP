@@ -249,10 +249,10 @@ Inductive match_states: state -> state -> Prop :=
       match_states (Callstate s f ls m)
                    (Callstate ts (transf_fundef f) ls m)
   | match_states_return:
-      forall s ls m ts,
+      forall s ls m sg cp ts,
       list_forall2 match_stackframes s ts ->
-      match_states (Returnstate s ls m)
-                   (Returnstate ts ls m).
+      match_states (Returnstate s ls m sg cp)
+                   (Returnstate ts ls m sg cp).
 
 Definition measure (st: state) : nat :=
   match st with
@@ -380,7 +380,7 @@ Proof.
   erewrite <- match_stacks_call_comp; eauto.
   econstructor; eauto with coqlib.
 (* return *)
-  inv H3. inv H1. left; econstructor; split.
+  inv H5. inv H1. left; econstructor; split.
   econstructor; eauto.
   econstructor; eauto.
 Qed.
@@ -403,7 +403,7 @@ Lemma transf_final_states:
   forall st1 st2 r,
   match_states st1 st2 -> final_state st1 r -> final_state st2 r.
 Proof.
-  intros. inv H0. inv H. inv H5. econstructor; eauto.
+  intros. inv H0. inv H. inv H7. econstructor; eauto.
 Qed.
 
 Theorem transf_program_correct:

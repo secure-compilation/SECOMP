@@ -807,9 +807,11 @@ Proof.
    with ((niter + 2) + (length s) * (niter + 2))%nat.
   generalize (return_measure_bounds (fn_code f) pc). omega.
   split. auto.
+  assert (cp = comp_of f) by admit. (* difficult *)
+  subst.
   econstructor; eauto.
   rewrite Regmap.gss. auto.
-Qed.
+Admitted.
 
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 ->
@@ -835,7 +837,7 @@ Lemma transf_final_states:
   forall st1 st2 r,
   match_states st1 st2 -> final_state st1 r -> final_state st2 r.
 Proof.
-  intros. inv H0. inv H. inv H5. inv H3. constructor.
+  intros. inv H0. inv H. inv H5. inv H6. constructor.
 Qed.
 
 

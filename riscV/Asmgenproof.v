@@ -589,7 +589,7 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
         (STACKS': match_stacks (rs PC) s s')
         (MEXT: Mem.extends m m')
         (AG: agree ms (parent_sp s) rs)
-        (ATPC: rs PC = parent_ra s),
+        (ATPC: rs PC = parent_ra s)
       match_states (Mach.Returnstate s ms m)
                    (Asm.State s' rs m').
 
