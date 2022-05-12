@@ -589,7 +589,11 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
         (STACKS': match_stacks (rs PC) s s')
         (MEXT: Mem.extends m m')
         (AG: agree ms (parent_sp s) rs)
-        (ATPC: rs PC = parent_ra s)
+        (ATPC: rs PC = parent_ra s),
+      (* forall (NO_CROSS_PTR: *)
+      (*     Genv.type_of_call ge (Genv.find_comp ge (rs PC)) cp = Genv.CrossCompartmentCall -> *)
+      (*     forall r, List.In r (regs_of_rpair (loc_result sg)) -> *)
+      (*         not_ptr (rs (preg_of r))), *)
       match_states (Mach.Returnstate s ms m)
                    (Asm.State s' rs m').
 
@@ -681,6 +685,8 @@ Proof.
       unfold update_stack_return.
       rewrite <- H9, PC2; simpl; rewrite FN, Pos.eqb_refl.
       reflexivity.
+      unfold Genv.type_of_call.
+      now rewrite <- H9, PC2; simpl; rewrite FN, Pos.eqb_refl.
     - econstructor; eauto.
       eapply find_instr_tail. eauto.
       rewrite <- find_comp_translated, PC2; simpl; rewrite H11.
@@ -748,6 +754,8 @@ Proof.
       unfold update_stack_return.
       rewrite <- H6, <- H9; simpl; rewrite FN, Pos.eqb_refl.
       reflexivity.
+      unfold Genv.type_of_call.
+      now rewrite <- H6, <- H9; simpl; rewrite FN, Pos.eqb_refl.
     - econstructor; eauto.
       eapply find_instr_tail. eauto.
       rewrite <- H6; simpl; rewrite FN.
@@ -764,7 +772,8 @@ Proof.
   intros [ofs' [PC2 CT2]].
   exploit find_label_goto_label; eauto.
   intros [tc' [rs3 [GOTO [AT' OTH]]]].
-  inversion AT'; subst.
+
+inversion AT'; subst.
   exists (State s' rs3 m2'); split.
   eapply plus_right'.
   eapply exec_straight_steps_1; eauto.
@@ -793,6 +802,8 @@ Proof.
       unfold update_stack_return.
       rewrite PC2, <- H11; simpl; rewrite FN, Pos.eqb_refl.
       reflexivity.
+      unfold Genv.type_of_call.
+      now rewrite PC2, <- H11; simpl; rewrite FN, Pos.eqb_refl.
     - econstructor; eauto.
       eapply find_instr_tail. eauto.
       rewrite PC2; simpl; rewrite FN.
@@ -1461,6 +1472,19 @@ Local Transparent destroyed_by_op.
       now inv H1.
   }
   eauto.
+  { intros. Simpl.
+    (* apply agree_mregs with (r := r) in AG. *)
+    (* rewrite <- (comp_transl_partial _ H5) in H6. *)
+    rewrite <- find_comp_translated, <- type_of_call_translated, X in H6; eauto.
+    unfold call_comp in NO_CROSS_PTR.
+    replace (fn_sig tf) with (Mach.fn_sig f) in H8.
+    specialize (NO_CROSS_PTR H6 _ H8).
+    inv V; eauto.
+    specialize (agree_mregs r).
+    inv agree_mregs; auto. now rewrite <- H10 in NO_CROSS_PTR.
+    monadInv H5. destruct (zlt Ptrofs.max_unsigned (list_length_z (fn_code x0))); try congruence.
+    inv EQ1. monadInv EQ0. reflexivity.
+    }
   traceEq.
   (* match states *)
   econstructor; eauto.

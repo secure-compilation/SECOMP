@@ -2660,11 +2660,21 @@ Proof.
   destruct (transf_function_inv _ _ FUN).
   rewrite <- COMP. rewrite <- type_of_call_translated.
   intros G. specialize (NO_CROSS_PTR G).
-  unfold loc_result. admit. (* this doesn't seem too impossible :) *)
+  intros l Hl. clear -NO_CROSS_PTR Hl RES.
+  destruct (loc_result sg) eqn:eq_sg; simpl in *.
+  destruct Hl; [subst | contradiction].
+  inv RES; auto; contradiction.
+  destruct Hl as [|[]]; subst; try contradiction.
+  assert (is_not_ptr: not_ptr (Val.longofwords (ls (R l)) (ls (R rlo)))).
+  { inv RES; auto; contradiction. }
+  destruct (ls (R l)); simpl; auto.
+  assert (is_not_ptr: not_ptr (Val.longofwords (ls (R rhi)) (ls (R l)))).
+  { inv RES; auto; contradiction. }
+  destruct (ls (R l)), (ls (R rhi)); simpl; auto.
   eexact A. traceEq.
   econstructor; eauto.
   apply wt_regset_assign; auto. rewrite WTRES0; auto.
-Admitted.
+Qed.
 
 Lemma initial_states_simulation:
   forall st1, RTL.initial_state prog st1 ->
