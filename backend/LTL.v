@@ -329,12 +329,12 @@ Inductive step: state -> trace -> state -> Prop :=
       rs' = Locmap.setpair (loc_result (ef_sig ef)) res (undef_caller_save_regs rs) ->
       step (Callstate s (External ef) rs m)
          t (Returnstate s rs' m' (ef_sig ef) (comp_of ef))
-  | exec_return: forall f sp rs1 bb s rs m sig cp,
+  | exec_return: forall f sp rs1 bb s rs m sg cp,
       forall (NO_CROSS_PTR:
           Genv.type_of_call ge (comp_of f) cp = Genv.CrossCompartmentCall ->
-          forall l, List.In l (regs_of_rpair (loc_result sig)) ->
+          forall l, List.In l (regs_of_rpair (loc_result sg)) ->
               not_ptr (rs (R l))),
-      step (Returnstate (Stackframe f sp rs1 bb :: s) rs m sig cp)
+      step (Returnstate (Stackframe f sp rs1 bb :: s) rs m sg cp)
         E0 (Block s f sp bb rs m).
 
 End RELSEM.

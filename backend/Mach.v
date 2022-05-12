@@ -280,9 +280,7 @@ Inductive state: Type :=
   | Returnstate:
       forall (stack: list stackframe)  (**r call stack *)
              (rs: regset)              (**r register state *)
-             (m: mem)                  (**r memory state *)
-             (sg: signature)           (**r callee's signature *)
-             (cp: compartment),        (**r callee's compartment *)
+             (m: mem),                 (**r memory state *)
       state.
 
 Definition parent_sp (s: list stackframe) : val :=
@@ -454,8 +452,12 @@ Inductive step: state -> trace -> state -> Prop :=
       load_stack m (Vptr stk soff) Tptr f.(fn_link_ofs) (Some cp) = Some (parent_sp s) ->
       load_stack m (Vptr stk soff) Tptr f.(fn_retaddr_ofs) (Some cp) = Some (parent_ra s) ->
       Mem.free m stk 0 f.(fn_stacksize) cp = Some m' ->
+      forall (NO_CROSS_PTR:
+          Genv.type_of_call ge (call_comp s) cp = Genv.CrossCompartmentCall ->
+          forall l, List.In l (regs_of_rpair (loc_result (fn_sig f))) ->
+              not_ptr (rs l)),
       step (State s fb (Vptr stk soff) (Mreturn :: c) rs m)
-        E0 (Returnstate s rs m' (fn_sig f) (comp_of f))
+        E0 (Returnstate s rs m')
   | exec_function_internal:
       forall s fb rs m f m1 m2 m3 stk rs' cp,
       forall (CURCOMP: find_comp_ptr fb = Some cp),
@@ -474,15 +476,15 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (COMP: call_comp s = cp),
       external_call ef ge cp args m t res m' ->
       rs' = set_pair (loc_result (ef_sig ef)) res (undef_caller_save_regs rs) ->
-      step (Callstate s fb rs m)
-         t (Returnstate s rs' m' (ef_sig ef) (comp_of ef))
-  | exec_return:
-      forall s f sp ra c rs m sg cp,
       forall (NO_CROSS_PTR:
-          Genv.type_of_call ge (Genv.find_comp ge (Vptr f Ptrofs.zero)) cp = Genv.CrossCompartmentCall ->
-          forall l, List.In l (regs_of_rpair (loc_result sg)) ->
+          Genv.type_of_call ge cp (comp_of ef) = Genv.CrossCompartmentCall ->
+          forall l, List.In l (regs_of_rpair (loc_result (ef_sig ef))) ->
               not_ptr (rs l)),
-      step (Returnstate (Stackframe f sp ra c :: s) rs m sg cp)
+      step (Callstate s fb rs m)
+         t (Returnstate s rs' m')
+  | exec_return:
+      forall s f sp ra c rs m,
+      step (Returnstate (Stackframe f sp ra c :: s) rs m)
         E0 (State s f sp c rs m).
 
 End RELSEM.
@@ -495,10 +497,10 @@ Inductive initial_state (p: program): state -> Prop :=
       initial_state p (Callstate nil fb (Regmap.init Vundef) m0).
 
 Inductive final_state: state -> int -> Prop :=
-  | final_state_intro: forall rs m sg cp r retcode,
+  | final_state_intro: forall rs m r retcode,
       loc_result signature_main = One r ->
       rs r = Vint retcode ->
-      final_state (Returnstate nil rs m sg cp) retcode.
+      final_state (Returnstate nil rs m) retcode.
 
 Definition semantics (rao: function -> code -> ptrofs -> Prop) (p: program) :=
   Semantics (step rao) (initial_state p) final_state (Genv.globalenv p).
@@ -537,9 +539,9 @@ Inductive wf_state: state -> Prop :=
   | wf_call_state: forall s fb rs m
         (STACK: Forall wf_frame s),
       wf_state (Callstate s fb rs m)
-  | wf_return_state: forall s rs m sg cp
+  | wf_return_state: forall s rs m
         (STACK: Forall wf_frame s),
-      wf_state (Returnstate s rs m sg cp).
+      wf_state (Returnstate s rs m).
 
 Lemma wf_step:
   forall S1 t S2, step rao ge S1 t S2 -> wf_state S1 -> wf_state S2.
