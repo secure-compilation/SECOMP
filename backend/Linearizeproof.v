@@ -586,10 +586,10 @@ Inductive match_states: LTL.state -> Linear.state -> Prop :=
       match_states (LTL.Callstate s f ls m)
                    (Linear.Callstate ts tf ls m)
   | match_states_return:
-      forall s ls m ts sg cp,
+      forall s ls m ts,
       list_forall2 match_stackframes s ts ->
-      match_states (LTL.Returnstate s ls m sg cp)
-                   (Linear.Returnstate ts ls m sg cp).
+      match_states (LTL.Returnstate s ls m)
+                   (Linear.Returnstate ts ls m).
 
 Definition measure (S: LTL.state) : nat :=
   match S with
@@ -768,7 +768,8 @@ Proof.
   rewrite (stacksize_preserved _ _ TRF). erewrite comp_preserved; eauto.
   rewrite (match_parent_locset _ _ STACKS).
   replace (fn_sig tf) with (funsig (Internal tf)) by reflexivity.
-  rewrite comp_transf_fundef, sig_preserved with (f := Internal f); try (simpl; rewrite TRF); eauto.
+  erewrite <- match_stacks_call_comp, <- comp_transf_fundef, sig_preserved with (f := Internal f); try (simpl; rewrite TRF); eauto.
+  rewrite (match_parent_locset _ _ STACKS).
   econstructor; eauto.
 
   (* internal functions *)
@@ -787,13 +788,13 @@ Proof.
   apply plus_one. eapply exec_function_external; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   erewrite <- match_stacks_call_comp; eauto.
+  erewrite <- match_stacks_call_comp; eauto.
   econstructor; eauto.
 
   (* return *)
-  inv H5. inv H1.
+  inv H3. inv H1.
   left; econstructor; split.
   apply plus_one. econstructor.
-  erewrite comp_preserved; eauto.
   econstructor; eauto.
 Qed.
 
@@ -815,7 +816,7 @@ Lemma transf_final_states:
   forall st1 st2 r,
   match_states st1 st2 -> LTL.final_state st1 r -> Linear.final_state st2 r.
 Proof.
-  intros. inv H0. inv H. inv H7. econstructor; eauto.
+  intros. inv H0. inv H. inv H5. econstructor; eauto.
 Qed.
 
 Theorem transf_program_correct:

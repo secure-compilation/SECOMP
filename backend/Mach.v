@@ -479,7 +479,7 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (NO_CROSS_PTR:
           Genv.type_of_call ge cp (comp_of ef) = Genv.CrossCompartmentCall ->
           forall l, List.In l (regs_of_rpair (loc_result (ef_sig ef))) ->
-              not_ptr (rs l)),
+              not_ptr (rs' l)),
       step (Callstate s fb rs m)
          t (Returnstate s rs' m')
   | exec_return:
