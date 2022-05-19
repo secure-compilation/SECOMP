@@ -428,10 +428,10 @@ We first define the simulation invariant between call stacks.
 The first two cases are standard, but the third case corresponds
 to a frame that was eliminated by the transformation. *)
 
-Inductive match_stackframes (m: mem) (cp: compartment): list stackframe -> list stackframe -> Prop :=
-  | match_stackframes_nil:
+Inductive match_stackframes (m: mem): compartment -> list stackframe -> list stackframe -> Prop :=
+  | match_stackframes_nil: forall cp,
       match_stackframes m cp nil nil
-  | match_stackframes_normal: forall stk stk' res sp pc rs rs' ce f,
+  | match_stackframes_normal: forall stk stk' res sp pc rs rs' ce f cp,
       match_stackframes m (comp_of f) stk stk' ->
       forall (COMPAT: cenv_compat prog ce),
       forall (UPD: uptodate_caller (comp_of f) (call_comp stk) (call_comp stk')),
@@ -441,13 +441,24 @@ Inductive match_stackframes (m: mem) (cp: compartment): list stackframe -> list 
         (Stackframe res f (Vptr sp Ptrofs.zero) pc rs :: stk)
         (Stackframe res (transf_function ce f) (Vptr sp Ptrofs.zero) pc rs' :: stk')
   | match_stackframes_tail: forall stk stk' res sp pc rs f,
-      match_stackframes m cp stk stk' ->
+      match_stackframes m (comp_of f) stk stk' ->
       is_return_spec f pc res ->
       f.(fn_stacksize) = 0 ->
-      cp = comp_of f ->
-      match_stackframes m cp
+      (* comp_of f = call_comp stk -> *)
+      match_stackframes m (comp_of f)
         (Stackframe res f (Vptr sp Ptrofs.zero) pc rs :: stk)
         stk'.
+
+(* Lemma match_stackframes_call_comp: forall m cp stk stk', *)
+(*     match_stackframes m cp stk stk' -> *)
+(*     call_comp stk = call_comp stk'. *)
+(* Proof. *)
+(*   induction 1. *)
+(*   - reflexivity. *)
+(*   - simpl; rewrite comp_transf_function; reflexivity. *)
+(*   - simpl. congruence. *)
+(* Qed. *)
+
 
 (** Here is the invariant relating two states.  The first three
   cases are standard.  Note the ``less defined than'' conditions
@@ -479,8 +490,8 @@ Inductive match_states: state -> state -> Prop :=
       match_stackframes m' cp s s' ->
       Val.lessdef v v' ->
       Mem.extends m m' ->
-      match_states (Returnstate s v m cp)
-                   (Returnstate s' v' m' cp)
+      match_states (Returnstate s v m)
+                   (Returnstate s' v' m')
   | match_states_interm:
       forall s sp pc rs m s' m' f r v'
              (STACKS: match_stackframes m' (comp_of f) s s')
@@ -489,7 +500,7 @@ Inductive match_states: state -> state -> Prop :=
       f.(fn_stacksize) = 0 ->
       Val.lessdef (rs#r) v' ->
       match_states (State s f (Vptr sp Ptrofs.zero) pc rs m)
-                   (Returnstate s' v' m' (comp_of f)).
+                   (Returnstate s' v' m').
 
 (** The last case of [match_states] corresponds to the execution
   of a move/nop/return sequence in the original code that was
@@ -512,7 +523,7 @@ Definition measure (st: state) : nat :=
   match st with
   | State s f sp pc rs m => (List.length s * (niter + 2) + return_measure f.(fn_code) pc + 1)%nat
   | Callstate s f args m => 0%nat
-  | Returnstate s v m cp => (List.length s * (niter + 2))%nat
+  | Returnstate s v m => (List.length s * (niter + 2))%nat
   end.
 
 Ltac TransfInstr :=
@@ -623,9 +634,10 @@ Proof.
   eapply find_function_ptr_translated; eauto.
   rewrite comp_transl. eapply allowed_call_translated; eauto.
   rewrite comp_transl; eauto.
-  constructor. eapply match_stackframes_tail; eauto.
+  constructor.
+  rewrite Efd. eapply match_stackframes_tail; eauto.
   (* TODO: Should be a lemma? *)
-  { rewrite Efd.
+  { (* rewrite Efd. *)
     clear -FREE STACKS.
     revert STACKS. generalize (comp_of f). intros cp STACKS.
     induction STACKS.
@@ -732,31 +744,34 @@ Proof.
 - (* return *)
   exploit Mem.free_parallel_extends; eauto. intros [m'1 [FREE EXT]].
   TransfInstr.
-  left. exists (Returnstate s' (regmap_optget or Vundef rs') m'1 (comp_of (transf_function ce f))); split.
+  left. exists (Returnstate s' (regmap_optget or Vundef rs') m'1); split.
   eapply exec_Ireturn; eauto.
   rewrite stacksize_preserved, comp_transl; eauto.
-  rewrite comp_transf_function. constructor.
+  rewrite comp_transf_function. admit.
+  econstructor.
+  (* (* rewrite comp_transf_function. *) constructor. *)
   (* TODO: Should be a lemma? *)
-  { clear -FREE STACKS.
-    revert STACKS. generalize (comp_of f). intros cp STACKS.
-    induction STACKS.
-    - constructor.
-    - constructor; auto. eapply Mem.free_can_access_block_inj_1; eauto.
-    - constructor; auto. }
+  { admit. }
+    (* clear -FREE STACKS. *)
+    (* revert STACKS. generalize (comp_of f). intros cp STACKS. *)
+    (* induction STACKS. *)
+    (* - constructor. *)
+    (* - constructor; eauto. eapply Mem.free_can_access_block_inj_1; eauto. *)
+    (* - constructor; auto. } *)
   destruct or; simpl. apply RLD. constructor.
   auto.
 
 - (* eliminated return None *)
   assert (or = None) by congruence. subst or.
   right. split. simpl. omega. split. auto.
-  constructor. auto.
+  econstructor. eauto.
   simpl. constructor.
   eapply Mem.free_left_extends; eauto.
 
 - (* eliminated return Some *)
   assert (or = Some r) by congruence. subst or.
   right. split. simpl. omega. split. auto.
-  constructor. auto.
+  econstructor. eauto.
   simpl. auto.
   eapply Mem.free_left_extends; eauto.
 
@@ -788,23 +803,25 @@ Proof.
 - (* external call *)
   exploit external_call_mem_extends; eauto.
   intros [res' [m2' [A [B [C D]]]]].
-  left. exists (Returnstate s' res' m2' (comp_of ef)); split.
+  left. exists (Returnstate s' res' m2'); split.
   simpl. econstructor; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   destruct (needs_calling_comp (comp_of ef)) eqn:ALLOWED.
   { now rewrite <- (UPD ALLOWED). }
   exploit external_call_caller_independent; eauto.
-  constructor; auto.
+  admit.
+  econstructor; eauto.
   (* TODO: Should be a lemma? *)
-  { clear -A H5.
-    remember (call_comp s) as cp. clear Heqcp. unfold comp_of in H5; simpl in H5.
-    induction H5.
-    - constructor.
-    - constructor; auto. eapply external_call_can_access_block; eauto.
-    - constructor; auto. }
+  { admit. }
+  (* { clear -A H5. *)
+  (*   remember (call_comp s) as cp. clear Heqcp. unfold comp_of in H5; simpl in H5. *)
+  (*   induction H5. *)
+  (*   - constructor. *)
+  (*   - constructor; auto. eapply external_call_can_access_block; eauto. *)
+  (*   - constructor; auto. } *)
 
 - (* returnstate *)
-  inv H4.
+  inv H2.
 + (* synchronous return in both programs *)
   left. econstructor; split.
   apply exec_return.

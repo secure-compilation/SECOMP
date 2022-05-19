@@ -899,10 +899,10 @@ Inductive wt_state: state -> Prop :=
       Val.has_type_list args (sig_args (funsig f)) ->
       wt_state (Callstate s f args m)
   | wt_state_return:
-      forall s v m cp sg,
+      forall s v m sg,
       wt_stackframes s sg ->
       Val.has_type v (proj_sig_res sg) ->
-      wt_state (Returnstate s v m cp).
+      wt_state (Returnstate s v m).
 
 Remark wt_stackframes_change_sig:
   forall s sg1 sg2,
