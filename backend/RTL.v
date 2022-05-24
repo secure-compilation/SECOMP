@@ -180,7 +180,8 @@ Inductive state : Type :=
       forall (stack: list stackframe) (**r call stack *)
              (v: val)                 (**r return value for the call *)
              (m: mem),                 (**r memory state *)
-      state.
+      state
+  | Failstate: state.
 
 Definition call_comp (stack: list stackframe): compartment :=
   match stack with
@@ -309,6 +310,14 @@ Inductive step: state -> trace -> state -> Prop :=
                        not_ptr (regmap_optget or Vundef rs)),
       step (State s f (Vptr stk Ptrofs.zero) pc rs m)
         E0 (Returnstate s (regmap_optget or Vundef rs) m')
+  | exec_Ireturn_fail:
+      forall s f stk pc rs m or m',
+      (fn_code f)!pc = Some(Ireturn or) ->
+      Mem.free m stk 0 f.(fn_stacksize) (comp_of f) = Some m' ->
+      forall (IS_CROSS: Genv.type_of_call ge (call_comp s) (comp_of f) = Genv.CrossCompartmentCall),
+      forall (RET_PTR: not_ptr (regmap_optget or Vundef rs) -> False),
+      step (State s f (Vptr stk Ptrofs.zero) pc rs m)
+        E0 Failstate
   | exec_function_internal:
       forall s f args m m' stk,
       Mem.alloc m (comp_of f) 0 f.(fn_stacksize) = (m', stk) ->
@@ -326,6 +335,13 @@ Inductive step: state -> trace -> state -> Prop :=
                        not_ptr res),
       step (Callstate s (External ef) args m)
          t (Returnstate s res m')
+  | exec_function_external_fail:
+      forall s ef args res t m m',
+      external_call ef ge (call_comp s) args m t res m' ->
+      forall (IS_CROSS: Genv.type_of_call ge (call_comp s) (comp_of ef) = Genv.CrossCompartmentCall),
+      forall (RET_PTR: not_ptr res -> False),
+      step (Callstate s (External ef) args m)
+         t Failstate
   | exec_return:
       forall res f sp pc rs s vres m,
       step (Returnstate (Stackframe res f sp pc rs :: s) vres m)
@@ -396,6 +412,7 @@ Proof.
   exploit external_call_receptive; eauto. intros [vres2 [m2 EC2]].
   exists (Returnstate s0 vres2 m2). econstructor; eauto.
   admit. (* Needs some more information about return values from external calls *)
+  admit.
 
 (* trace length *)
   red; intros; inv H; simpl; try omega.
