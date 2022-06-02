@@ -502,17 +502,26 @@ Inductive match_states: state -> state -> Prop :=
       Val.lessdef (rs#r) v' ->
       match_states (State s f (Vptr sp Ptrofs.zero) pc rs m)
                    (Returnstate s' v' m')
-  | match_states_state_fail: forall s f sp pc rs m r,
+  | match_states_state_fail: forall s s' f sp pc rs m r v',
+      match_stackframes m s s' ->
       is_return_spec f pc r ->
       f.(fn_stacksize) = 0 ->
+      (* Val.lessdef (rs # r) v -> *)
+      Genv.type_of_call ge (call_comp s') (comp_of f) = Genv.CrossCompartmentCall ->
+      not (not_ptr v') ->
       match_states (State s f (Vptr sp Ptrofs.zero) pc rs m)
-                   (Failstate)
-  | match_states_return_fail: forall s v m,
+                   (Failstate s' v')
+      (* match_states (State s f sp pc rs m) *)
+      (*              (Failstate) *)
+  | match_states_return_fail: forall s f s' v v' m,
+      match_stackframes cp m s s' ->
+      (* Val.lessdef v v' -> *)
+      Genv.type_of_call ge (call_comp s') (comp_of f) = Genv.CrossCompartmentCall ->
+      not (not_ptr v') ->
       match_states (Returnstate s v m)
-                   (Failstate)
-  | match_states_fail: forall s,
-      match_states Failstate s.
-
+                   (Failstate cp s' v')
+  | match_states_fail: forall s v s',
+      match_states (Failstate s v) s'.
 
 
 (** The last case of [match_states] corresponds to the execution
@@ -537,7 +546,7 @@ Definition measure (st: state) : nat :=
   | State s f sp pc rs m => (List.length s * (niter + 2) + return_measure f.(fn_code) pc + 1)%nat
   | Callstate s f args m => 0%nat
   | Returnstate s v m => (List.length s * (niter + 2))%nat
-  | Failstate => 0%nat
+  | Failstate _ _ => 0%nat
   end.
 
 Ltac TransfInstr :=
@@ -593,6 +602,7 @@ Proof.
   rewrite H1 in H. clear H1. inv H.
   right. split. simpl. omega. split. auto.
   econstructor; eauto.
+  (* rewrite Regmap.gss. simpl in H0; congruence. *)
 
 - (* load *)
   TransfInstr.
@@ -788,11 +798,14 @@ Proof.
   auto.
 + exploit Mem.free_parallel_extends; eauto. intros [m'1 [FREE EXT]].
   TransfInstr.
-  left. exists Failstate. split.
+  left. exists (Failstate s' (regmap_optget or Vundef rs')). split.
   econstructor; eauto.
   rewrite stacksize_preserved, comp_transl; eauto.
   rewrite comp_transf_function. tauto.
   constructor.
+  admit.
+  (* ??? *) admit.
+  admit.
 
 - (* eliminated return None success *)
   assert (or = None) by congruence. subst or.
@@ -811,12 +824,16 @@ Proof.
 - (* eliminated return None fail *)
   assert (or = None) by congruence. subst or.
   right. split. simpl. omega. split. auto.
-  econstructor.
+  econstructor. admit.
+  (* ??? *) admit.
+  auto.
 
 - (* eliminated return Some fail *)
   assert (or = Some r) by congruence. subst or.
   right. split. simpl. omega. split. auto.
-  econstructor.
+  econstructor. admit.
+  (* ??? *) admit.
+  auto.
 
 - right. split. simpl. omega.
   split. reflexivity.
@@ -882,7 +899,7 @@ Proof.
     - constructor.
     - constructor; auto. eapply external_call_can_access_block; eauto.
     - constructor; auto. }
-+ left. exists Failstate. split.
++ left. exists (Failstate s' res'). split.
   econstructor; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   (* destruct (needs_calling_comp (comp_of ef)) eqn:ALLOWED. *)
@@ -890,8 +907,28 @@ Proof.
   exploit external_call_caller_independent; eauto.
   tauto.
   constructor.
+  admit.
+  (* ??? *) admit.
+  auto.
 
-- admit.
+- exploit external_call_mem_extends; eauto.
+  intros [res' [m2' [A [B [C D]]]]].
+  destruct (classic (Genv.type_of_call tge (call_comp s') (comp_of ef) = Genv.CrossCompartmentCall ->
+                     not_ptr res')).
+  + left. exists (Returnstate s' res' m2'); split.
+    simpl. econstructor; eauto.
+    eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+    destruct (needs_calling_comp (comp_of ef)) eqn:ALLOWED.
+    { now rewrite <- (UPD ALLOWED). }
+    exploit external_call_caller_independent; eauto.
+    econstructor; eauto.
+  + left. exists (Failstate s' res'). split.
+    econstructor.
+    eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+    exploit external_call_caller_independent; eauto.
+    tauto.
+    auto.
+    constructor.
 
 - (* returnstate *)
   inv H2.
@@ -908,7 +945,14 @@ Proof.
   econstructor; eauto.
   rewrite Regmap.gss. auto.
 
-- admit.
+- right. simpl. split.
+  generalize (return_measure_bounds (fn_code f) pc). unfold niter.
+  omega.
+  split. reflexivity.
+  inv H2.
+  + simpl in H4. rewrite comp_transf_function in H4.
+    unfold Genv.type_of_call in H4. rewrite Pos.eqb_refl in H4; congruence.
+  + econstructor; eauto.
 Admitted.
 
 Lemma transf_initial_states:
