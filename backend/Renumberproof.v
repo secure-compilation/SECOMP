@@ -202,10 +202,13 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
         (STACKS: list_forall2 match_frames stk stk'),
       match_states (Callstate stk f args m)
                    (Callstate stk' (transf_fundef f) args m)
-  | match_returnstates: forall stk v m stk' cp
+  | match_returnstates: forall stk v m stk'
         (STACKS: list_forall2 match_frames stk stk'),
-      match_states (Returnstate stk v m cp)
-                   (Returnstate stk' v m cp).
+      match_states (Returnstate stk v m)
+                   (Returnstate stk' v m)
+  | match_failstate: forall stk stk' v v',
+      match_states (Failstate stk v)
+                   (Failstate stk' v').
 
 Lemma step_simulation:
   forall S1 t S2, RTL.step ge S1 t S2 ->
@@ -272,7 +275,11 @@ Proof.
   constructor; auto. eapply reach_succ; eauto. simpl. eapply list_nth_z_in; eauto.
 (* return *)
   econstructor; split.
-  eapply exec_Ireturn; eauto.
+  eapply exec_Ireturn; eauto. admit.
+  constructor; auto.
+(* return failstate *)
+  econstructor; split.
+  eapply exec_Ireturn_fail; eauto. admit.
   constructor; auto.
 (* internal function *)
   simpl. econstructor; split.
@@ -284,6 +291,15 @@ Proof.
     eapply external_call_symbols_preserved; eauto.
      apply senv_preserved.
     rewrite <- (match_stacks_call_comp _ _ STACKS); eauto.
+    admit.
+  constructor; auto.
+(* external function fail *)
+  econstructor; split.
+  eapply exec_function_external_fail; eauto.
+    eapply external_call_symbols_preserved; eauto.
+     apply senv_preserved.
+    rewrite <- (match_stacks_call_comp _ _ STACKS); eauto.
+    admit.
   constructor; auto.
 (* return *)
   inv STACKS. inv H1.
