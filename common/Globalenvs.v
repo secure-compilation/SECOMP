@@ -1952,7 +1952,7 @@ Definition type_of_call (ge: t) (cp: compartment) (cp': compartment): call_type 
 (3) the call is an inter-compartment call and is allowed by the policy
 *)
 Definition allowed_call (ge: t) (cp: compartment) (vf: val) :=
-  default_compartment = find_comp ge vf \/
+  default_compartment = find_comp ge vf \/ (* TODO: does this mean we allow all compartment to perform IO calls? *)
   cp = find_comp ge vf \/
   allowed_cross_call ge cp vf.
 

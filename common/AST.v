@@ -730,7 +730,7 @@ Instance has_comp_external_function : has_comp external_function :=
   fun ef =>
     match ef with
     | EF_external _ cp _ => cp
-    | EF_malloc | EF_free | EF_vload _ | EF_vstore _ | EF_memcpy _ _ => privileged_compartment
+    | EF_malloc | EF_free | EF_vload _ | EF_vstore _ | EF_memcpy _ _ => privileged_compartment (* default_compartment *)
     | _ => default_compartment
     end.
 
