@@ -1249,7 +1249,7 @@ Inductive step: state -> trace -> state -> Prop :=
       forall COMP: Genv.find_comp ge (rs RA) = cp,
       external_call ef ge cp args m t res m' ->
       extcall_arguments rs m (ef_sig ef) args ->
-      rs' = (set_pair (loc_external_result (ef_sig ef) ) res (undef_caller_save_regs rs))#PC <- (rs RA) ->
+      rs' = (set_pair (loc_external_result (ef_sig ef)) res (undef_caller_save_regs rs))#PC <- (rs RA) ->
       (* These steps behave like returns. So we must update the stack *)
       forall (CURCOMP: Genv.find_comp ge (rs PC) = cp'),
       forall (NEXTCOMP: Genv.find_comp ge (rs' PC) = cp''),
@@ -1260,6 +1260,10 @@ Inductive step: state -> trace -> state -> Prop :=
       (* Note that in the same manner, this definition only updates the stack when doing
          cross-compartment returns *)
       forall (STUPD: update_stack_return st cp' rs' = Some st'),
+      forall (NO_CROSS_PTR:
+          Genv.type_of_call ge cp'' cp' = Genv.CrossCompartmentCall ->
+          forall r, List.In r (regs_of_rpair (loc_result (ef_sig ef))) ->
+              not_ptr (rs' (preg_of r))),
       step (State st rs m) t (State st' rs' m').
 
 End RELSEM.

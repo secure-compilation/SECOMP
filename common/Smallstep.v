@@ -1041,16 +1041,16 @@ Variable measure: state L1 -> nat.
 Hypothesis simulation:
   forall s1 t s1', Step L1 s1 t s1' ->
   forall s2, match_states s1 s2 ->
-  exists s1'' s2',
-      Star L1 s1' E0 s1''
-   /\ ((Plus L2 s2 t s2' /\ match_states s1'' s2')
-      \/ (Star L2 s2 t s2' /\ measure s1'' < measure s1 /\ match_states s1'' s2'))%nat.
+  exists s1'',
+      (Star L1 s1' E0 s1''
+   /\ ((exists s2', Plus L2 s2 t s2' /\ match_states s1'' s2')
+      \/ (exists s2', Star L2 s2 t s2' /\ measure s1'' < measure s1 /\ match_states s1'' s2')))%nat.
 
 Lemma forward_simulation_determ_star': forward_simulation L1 L2.
 Proof.
   apply forward_simulation_determ_star with measure.
   intros. exploit simulation; eauto.
-  intros [s1'' [s2' [A [[B C]| [B [C D]]]]]].
+  intros [s1'' [A [[s2' [B C]] | [s2' [B [C D]]]]]].
   - eexists; eexists; intuition eauto.
   - eexists; eexists; intuition eauto.
 Qed.

@@ -889,10 +889,10 @@ Qed.
 Theorem step_simulation:
   forall S1 t S2, Mach.step return_address_offset ge S1 t S2 ->
   forall S1' (MS: match_states S1 S1'),
-  exists S3 S2',
+  exists S3,
       star (Mach.step return_address_offset) ge S2 E0 S3
-   /\ ((plus step tge S1' t S2' /\ match_states S3 S2')
-      \/ (star step tge S1' t S2' /\ measure S3 < measure S1 /\ match_states S3 S2'))%nat.
+   /\ ((exists S2', plus step tge S1' t S2' /\ match_states S3 S2')
+      \/ (exists S2', star step tge S1' t S2' /\ measure S3 < measure S1 /\ match_states S3 S2'))%nat.
 
   (* forall S1 t S2, Mach.step return_address_offset ge S1 t S2 -> *)
   (* forall S1' (MS: match_states S1 S1'), *)
@@ -914,12 +914,13 @@ Proof.
   induction 1; intros; inv MS.
 
 - (* Mlabel *)
-  eexists; eexists.
+  eexists; split; [eapply star_refl |].
   left; eapply exec_straight_steps; eauto; intros.
   monadInv TR. econstructor; split. eapply exec_straight_one. simpl; eauto. auto.
   split. apply agree_nextinstr; auto. simpl; congruence.
 
 - (* Mgetstack *)
+  eexists; split; [eapply star_refl |].
   unfold load_stack in H.
   exploit Mem.loadv_extends; eauto. intros [v' [A B]].
   rewrite (sp_val _ _ _ AG) in A.
@@ -933,6 +934,7 @@ Proof.
   simpl; congruence.
 
 - (* Msetstack *)
+  eexists; split; [eapply star_refl |].
   unfold store_stack in H.
   assert (Val.lessdef (rs src) (rs0 (preg_of src))). eapply preg_val; eauto.
   exploit Mem.storev_extends; eauto. intros [m2' [A B]].
@@ -947,6 +949,7 @@ Proof.
   simpl; intros. rewrite Q; auto with asmgen.
 
 - (* Mgetparam *)
+  eexists; split; [eapply star_refl |].
   assert (f0 = f) by congruence; subst f0.
   assert (cp = comp_of f).
   unfold find_comp_ptr in CURCOMP. rewrite FIND in CURCOMP. inv CURCOMP.
@@ -987,6 +990,7 @@ Opaque loadind.
   apply preg_of_not_X30; auto.
 
 - (* Mop *)
+  eexists; split; [eapply star_refl |].
   assert (eval_operation tge sp op (map rs args) m = Some v).
     rewrite <- H. apply eval_operation_preserved. exact symbols_preserved.
   exploit eval_operation_lessdef. eapply preg_vals; eauto. eauto. eexact H0.
@@ -1002,6 +1006,7 @@ Local Transparent destroyed_by_op.
   destruct op; simpl; auto; congruence.
 
 - (* Mload *)
+  eexists; split; [eapply star_refl |].
   assert (eval_addressing tge sp addr (map rs args) = Some a).
     rewrite <- H. apply eval_addressing_preserved. exact symbols_preserved.
   exploit eval_addressing_lessdef. eapply preg_vals; eauto. eexact H1.
@@ -1018,6 +1023,7 @@ Local Transparent destroyed_by_op.
   simpl; congruence.
 
 - (* Mstore *)
+  eexists; split; [eapply star_refl |].
   assert (eval_addressing tge sp addr (map rs args) = Some a).
     rewrite <- H. apply eval_addressing_preserved. exact symbols_preserved.
   exploit eval_addressing_lessdef. eapply preg_vals; eauto. eexact H1.
@@ -1034,6 +1040,7 @@ Local Transparent destroyed_by_op.
   simpl; congruence.
 
 - (* Mcall *)
+  eexists; split; [eapply star_refl |].
   assert (f0 = f) by congruence.  subst f0.
   inv AT.
   assert (NOOV: list_length_z tf.(fn_code) <= Ptrofs.max_unsigned).
@@ -1251,6 +1258,7 @@ Local Transparent destroyed_by_op.
     Simpl. rewrite <- H2. auto.
 
 - (* Mtailcall *)
+  eexists; split; [eapply star_refl |].
   assert (f0 = f) by congruence.  subst f0.
   assert (cp = comp_of f).
   inv AT.
@@ -1318,6 +1326,7 @@ Local Transparent destroyed_by_op.
   Simpl. unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H. auto.
 
 - (* Mbuiltin *)
+  eexists; split; [eapply star_refl |].
   assert (cp = comp_of f).
   unfold find_comp_ptr in CURCOMP. rewrite FUN in CURCOMP. inv CURCOMP.
   reflexivity. subst.
@@ -1365,6 +1374,7 @@ Local Transparent destroyed_by_op.
   congruence.
 
 - (* Mgoto *)
+  eexists; split; [eapply star_refl |].
   assert (f0 = f) by congruence. subst f0.
   inv AT. monadInv H4.
   exploit find_label_goto_label; eauto. intros [tc' [rs' [GOTO [AT2 INV]]]].
@@ -1384,6 +1394,7 @@ Local Transparent destroyed_by_op.
   congruence.
 
 - (* Mcond true *)
+  eexists; split; [eapply star_refl |].
   assert (f0 = f) by congruence. subst f0.
   exploit eval_condition_lessdef. eapply preg_vals; eauto. eauto. eauto. intros EC.
   left; eapply exec_straight_opt_steps_goto; eauto.
@@ -1395,6 +1406,7 @@ Local Transparent destroyed_by_op.
   exact B. 
 
 - (* Mcond false *)
+  eexists; split; [eapply star_refl |].
   exploit eval_condition_lessdef. eapply preg_vals; eauto. eauto. eauto. intros EC.
   left; eapply exec_straight_steps; eauto. intros. simpl in TR.
   exploit transl_cbranch_correct_false; eauto. intros (rs' & A & B).
@@ -1404,6 +1416,7 @@ Local Transparent destroyed_by_op.
   simpl. congruence.
 
 - (* Mjumptable *)
+  eexists; split; [eapply star_refl |].
   assert (f0 = f) by congruence. subst f0.
   inv AT. monadInv H6.
   exploit functions_transl; eauto. intro FN.
@@ -1443,6 +1456,7 @@ Local Transparent destroyed_by_op.
   (* assert (f0 = f) by congruence. subst f0. *)
   (* econstructor; eauto. *)
   (* eapply Mem.free_left_extends; eauto. *)
+  eexists; split; [eapply star_refl |].
   assert (f0 = f) by congruence. subst f0.
   assert (cp = comp_of f).
   inv AT.
@@ -1499,6 +1513,7 @@ Local Transparent destroyed_by_op.
   eapply match_stacks_same_compartment; eauto. rewrite P, <- H3. simpl. reflexivity.
 
 - (* internal function *)
+  eexists; split; [eapply star_refl |].
   assert (cp = comp_of f).
   unfold find_comp_ptr in CURCOMP. rewrite H in CURCOMP. inv CURCOMP.
   reflexivity. subst.
@@ -1561,23 +1576,15 @@ Local Transparent destroyed_at_function_entry.
   intros [args' [C D]].
   exploit external_call_mem_extends; eauto.
   intros [res' [m2' [P [Q [R S]]]]].
-  (* assert (Genv.find_comp ge (parent_ra s) = Some cp) as Hra. *)
-  (* { clear -COMP TRANSF. *)
-  (*   unfold call_comp in COMP. *)
-  (*   unfold Genv.find_comp in *. *)
-  (*   destruct (parent_ra s); eauto. *)
-  (* } *)
   assert (exists s'',
            update_stack_return tge s' (comp_of (@External function ef)) (set_pair (loc_external_result (ef_sig ef)) res' (undef_caller_save_regs rs0)) # PC <- (rs0 X1) = Some s''
            /\ match_stacks (parent_ra s) s s'') as [s'' [Hs''1 Hs''2]].
   { unfold update_stack_return. rewrite ATLR. Simpl.
     rewrite <- find_comp_translated.
-    (* rewrite (comp_translated _ _ Hra). *)
     rewrite ATPC in STACKS'.
     remember (Vptr fb Ptrofs.zero) as pc.
     assert (COMP': Genv.find_comp ge pc = (comp_of (@External function ef))).
     { rewrite Heqpc. simpl. rewrite H. reflexivity. }
-    (* revert Hra. *)
     clear -STACKS' TRANSF COMP'.
     induction STACKS'.
     - intros.
@@ -1586,11 +1593,9 @@ Local Transparent destroyed_at_function_entry.
       + split; [eauto | econstructor].
     - intros.
       destruct f.
-      (* destruct (Genv.find_funct_ptr ge f) eqn:PTR; try congruence. *)
       destruct ((comp_of (External ef) =? Genv.find_comp ge (parent_ra (Mach.Stackframe f sp retaddr c :: s)))%positive) eqn:COMP''.
       + eexists; split; eauto.
         eapply match_stacks_intra_compartment; eauto.
-        (* simpl. rewrite PTR. eauto. *)
       + rewrite COMP' in H0. inv H0.
         exfalso.
         apply Pos.eqb_neq in COMP''.
@@ -1604,14 +1609,25 @@ Local Transparent destroyed_at_function_entry.
       + eexists; split; eauto.
         eapply match_stacks_intra_compartment; eauto.
   }
+  Require Import Coq.Logic.Classical.
+  destruct (classic (Genv.type_of_call ge (Genv.find_comp)))
 
+
+  (* Need to do case analysis on this:
+  Genv.type_of_call tge (Genv.find_comp tge (rs0 PC)) (Genv.find_comp tge (rs0 X1)) =
+  Genv.CrossCompartmentCall ->
+  forall r : mreg,
+  In r (regs_of_rpair (loc_result (ef_sig ef))) ->
+  not_ptr
+    ((set_pair (loc_external_result (ef_sig ef)) res' (undef_caller_save_regs rs0)) # PC <- (rs0 X1)
+       (preg_of r))
+   *)
+
+  eexists; split; [eapply star_refl |].
   left; econstructor; split.
   apply plus_one. eapply exec_step_external; eauto.
   rewrite <- find_comp_translated.
   rewrite ATLR.
-  (* { unfold call_comp in COMP. *)
-  (*   rewrite <- ATLR in COMP. *)
-  (*   apply comp_translated; eauto. } *)
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   rewrite ATPC. simpl. rewrite A.
   Simpl. rewrite ATLR. rewrite <- find_comp_translated; eauto.
@@ -1655,7 +1671,8 @@ Local Transparent destroyed_at_function_entry.
   Simpl. eauto.
   eapply match_states_return_external; eauto.
 
-- destruct Hs'' as [s'' [Hs''1 Hs''2]].
+- eexists; split; [eapply star_refl |].
+  destruct Hs'' as [s'' [Hs''1 Hs''2]].
   left. eexists. split.
   econstructor.
   eapply exec_step_internal_return; eauto.
