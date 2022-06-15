@@ -403,6 +403,43 @@ Proof.
   eapply external_call_trace_length; eauto.
 Admitted.
 
+Ltac Equalities :=
+  match goal with
+  | [ H1: ?a = ?b, H2: ?a = ?c |- _ ] =>
+      rewrite H1 in H2; inv H2; Equalities
+  | _ => idtac
+  end.
+Lemma semantics_determinate:
+  forall (p: program), determinate (semantics p).
+Proof.
+  intros. constructor; simpl; intros.
+  - inv H; inv H0; Equalities; try discriminate;
+      try intuition auto using match_traces_E0.
+    + assert (vargs0 = vargs) by (eapply eval_builtin_args_determ; eauto). subst vargs0.
+      exploit external_call_determ. eexact H3. eexact H13.  intros [A B].
+      auto.
+    + assert (vargs0 = vargs) by (eapply eval_builtin_args_determ; eauto). subst vargs0.
+      exploit external_call_determ. eexact H3. eexact H13.  intros [A B].
+      destruct (B H) as [C D]; subst; auto.
+    + exploit external_call_determ. eexact H1. eexact H7. intros [A B]. auto.
+    + exploit external_call_determ. eexact H1. eexact H7. intros [A B].
+      destruct (B H) as [C D]; subst; auto.
+  - (* trace length *)
+    red; intros. inv H; simpl; try omega.
+    eapply external_call_trace_length; eauto.
+    eapply external_call_trace_length; eauto.
+  - (* initial states *)
+    inv H; inv H0. f_equal.
+    + subst ge0. subst ge. congruence.
+    + congruence.
+  - (* final no step *)
+    inv H. red; intros; red; intros.
+    inv H.
+  - (* final states *)
+    now inv H; inv H0.
+Qed.
+
+
 (** * Operations on RTL abstract syntax *)
 
 (** Transformation of a RTL function instruction by instruction.

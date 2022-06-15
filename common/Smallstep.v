@@ -1066,6 +1066,29 @@ Qed.
 
 End SIMU_DETERM_ONE.
 
+Section SIMU_DETERM_ONE'.
+
+
+Variable measure: state L1 -> nat.
+
+Hypothesis simulation:
+  forall s1 t s1', Step L1 s1 t s1' ->
+  forall s2, match_states s1 s2 ->
+  exists s1'', Star L1 s1' E0 s1'' /\
+          ((exists s2', Step L2 s2 t s2' /\ match_states s1'' s2')
+           \/ (measure s1'' < measure s1 /\ t = E0 /\ match_states s1'' s2))%nat.
+
+Lemma forward_simulation_determ_one': forward_simulation L1 L2.
+Proof.
+  apply forward_simulation_determ_star with measure.
+  intros. exploit simulation; eauto.
+  intros [s1'' [A [[s2' [B C]] | [B [C D]]]]].
+  eexists; eexists; intuition eauto using plus_one.
+  eexists; eexists; subst; intuition eauto. right; intuition auto using star_refl.
+Qed.
+
+End SIMU_DETERM_ONE'.
+
 End FORWARD_SIMU_DETERM_DIAGRAMS.
 
 (** * Backward simulations between two transition semantics. *)

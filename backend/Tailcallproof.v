@@ -545,20 +545,28 @@ Ltac EliminatedInstr :=
 Lemma transf_step_correct:
   forall s1 t s2, step ge s1 t s2 ->
   forall s1' (MS: match_states s1 s1'),
-  (exists s2', step tge s1' t s2' /\ match_states s2 s2')
-  \/ (measure s2 < measure s1 /\ t = E0 /\ match_states s2 s1')%nat.
+  exists s3, star step ge s2 E0 s3 /\
+        ((exists s2', step tge s1' t s2' /\ match_states s3 s2')
+      \/ (measure s3 < measure s1 /\ t = E0 /\ match_states s3 s1'))%nat.
+  (* forall s1 t s2, step ge s1 t s2 -> *)
+  (* forall s1' (MS: match_states s1 s1'), *)
+  (* (exists s2', step tge s1' t s2' /\ match_states s2 s2') *)
+  (* \/ (measure s2 < measure s1 /\ t = E0 /\ match_states s2 s1')%nat. *)
 Proof.
   induction 1; intros; inv MS; EliminatedInstr.
 
 - (* nop *)
+  eexists; split; [now apply star_refl |].
   TransfInstr. left. econstructor; split.
   eapply exec_Inop; eauto. constructor; auto.
 - (* eliminated nop *)
+  eexists; split; [now apply star_refl |].
   assert (s0 = pc') by congruence. subst s0.
   right. split. simpl. omega. split. auto.
   econstructor; eauto.
 
 - (* op *)
+  eexists; split; [now apply star_refl |].
   TransfInstr.
   assert (Val.lessdef_list (rs##args) (rs'##args)). apply regs_lessdef_regs; auto.
   exploit eval_operation_lessdef; eauto.
@@ -568,11 +576,13 @@ Proof.
   apply eval_operation_preserved. exact symbols_preserved.
   econstructor; eauto. apply set_reg_lessdef; auto.
 - (* eliminated move *)
+  eexists; split; [now apply star_refl |].
   rewrite H1 in H. clear H1. inv H.
   right. split. simpl. omega. split. auto.
   econstructor; eauto. simpl in H0. rewrite PMap.gss. congruence.
 
 - (* load *)
+  eexists; split; [now apply star_refl |].
   TransfInstr.
   assert (Val.lessdef_list (rs##args) (rs'##args)). apply regs_lessdef_regs; auto.
   exploit eval_addressing_lessdef; eauto.
@@ -586,6 +596,7 @@ Proof.
   econstructor; eauto. apply set_reg_lessdef; auto.
 
 - (* store *)
+  eexists; split; [now apply star_refl |].
   TransfInstr.
   assert (Val.lessdef_list (rs##args) (rs'##args)). apply regs_lessdef_regs; auto.
   exploit eval_addressing_lessdef; eauto.
@@ -612,6 +623,7 @@ Proof.
   inv ALD; simpl in STORE'. eapply Mem.store_can_access_block_inj in STORE'; eapply STORE'. eauto.
 
 - (* call *)
+  eexists; split; [now apply star_refl |].
   exploit find_function_translated; eauto.
   intros (cu & tf & FIND' & Etf & ORDER). subst tf.
   assert (E : (comp_of f) = comp_of (transf_function ce f)).
@@ -679,6 +691,7 @@ Proof.
   apply regs_lessdef_regs; auto. auto.
 
 - (* tailcall *)
+  eexists; split; [now apply star_refl |].
   exploit find_function_translated; eauto.
   intros (cu & tf & FIND' & Etf & ORDER). subst tf.
   exploit Mem.free_parallel_extends; eauto. intros [m'1 [FREE EXT]].
@@ -706,6 +719,7 @@ Proof.
   apply regs_lessdef_regs; auto. auto.
 
 - (* builtin *)
+  eexists; split; [now apply star_refl |].
   TransfInstr.
   exploit (@eval_builtin_args_lessdef _ ge (fun r => rs#r) (fun r => rs'#r)); eauto.
   intros (vargs' & P & Q).
@@ -728,6 +742,7 @@ Proof.
   eapply external_call_can_access_block; eauto.
 
 - (* cond *)
+  eexists; split; [now apply star_refl |].
   TransfInstr.
   left. exists (State s' (transf_function ce f) (Vptr sp0 Ptrofs.zero) (if b then ifso else ifnot) rs' m'); split.
   eapply exec_Icond; eauto.
@@ -735,6 +750,7 @@ Proof.
   constructor; auto.
 
 - (* jumptable *)
+  eexists; split; [now apply star_refl |].
   TransfInstr.
   left. exists (State s' (transf_function ce f) (Vptr sp0 Ptrofs.zero) pc' rs' m'); split.
   eapply exec_Ijumptable; eauto.
@@ -742,6 +758,37 @@ Proof.
   constructor; auto.
 
 - (* return *)
+  (* Need to write an intermediate result, that proves we can unfold the source stack until
+     reaching a point where we have different compartments *)
+  assert (forall m cp s s',
+             match_stackframes m cp s s' ->
+             forall rs or,
+               (Genv.type_of_call ge (call_comp s) cp = Genv.CrossCompartmentCall ->
+                not_ptr (regmap_optget or Vundef rs)) ->
+             exists s'', star step ge (Returnstate s (regmap_optget or Vundef rs) m) E0
+                      (Returnstate s'' (regmap_optget or Vundef rs) m) /\
+                      call_comp s'' = call_comp s').
+  { clear.
+    induction 1; intros.
+    - exists nil; auto using star_refl.
+    - exists (Stackframe res f (Vptr sp Ptrofs.zero) pc rs :: stk); split;
+        [auto using star_refl | simpl; now rewrite comp_transf_function].
+    - induction H0; intros.
+      + eexists; split.
+        * eapply star_step. econstructor.
+          eapply star_step. eapply exec_Ireturn; eauto.
+          rewrite H1. simpl. Local Transparent Mem.free. unfold Mem.free. simpl.
+          admit.
+          admit.
+          admit.
+          admit.
+          admit.
+        * admit.
+      + admit.
+      + admit.
+      + admit.
+  }
+  eexists; split; [now apply star_refl |]. (* TODO: change this *)
   exploit Mem.free_parallel_extends; eauto. intros [m'1 [FREE EXT]].
   TransfInstr.
   left. exists (Returnstate s' (regmap_optget or Vundef rs') m'1); split.
@@ -762,6 +809,7 @@ Proof.
   auto.
 
 - (* eliminated return None *)
+  eexists; split; [now apply star_refl |].
   assert (or = None) by congruence. subst or.
   right. split. simpl. omega. split. auto.
   econstructor. eauto.
@@ -769,6 +817,7 @@ Proof.
   eapply Mem.free_left_extends; eauto.
 
 - (* eliminated return Some *)
+  eexists; split; [now apply star_refl |].
   assert (or = Some r) by congruence. subst or.
   right. split. simpl. omega. split. auto.
   econstructor. eauto.
@@ -776,6 +825,7 @@ Proof.
   eapply Mem.free_left_extends; eauto.
 
 - (* internal call *)
+  eexists; split; [now apply star_refl |].
   exploit Mem.alloc_extends; eauto.
     instantiate (1 := 0). omega.
     instantiate (1 := fn_stacksize f). omega.
@@ -801,6 +851,7 @@ Proof.
   eapply Mem.owned_new_block; eauto.
 
 - (* external call *)
+  eexists; split; [now apply star_refl |].
   exploit external_call_mem_extends; eauto.
   intros [res' [m2' [A [B [C D]]]]].
   left. exists (Returnstate s' res' m2'); split.
@@ -821,13 +872,14 @@ Proof.
   (*   - constructor; auto. } *)
 
 - (* returnstate *)
+  eexists; split; [now apply star_refl |].
   inv H2.
 + (* synchronous return in both programs *)
   left. econstructor; split.
   apply exec_return.
-  rewrite comp_transf_function, <- type_of_call_translated.
-  { intros G. specialize (NO_CROSS_PTR G).
-    inv H5; auto; contradiction. }
+  (* rewrite comp_transf_function, <- type_of_call_translated. *)
+  (* { intros G. specialize (NO_CROSS_PTR G). *)
+  (*   inv H5; auto; contradiction. } *)
   constructor; auto. apply set_reg_lessdef; auto.
 + (* return instr in source program, eliminated because of tailcall *)
   right. split. unfold measure. simpl length.
@@ -837,7 +889,7 @@ Proof.
   split. auto.
   econstructor; eauto.
   rewrite Regmap.gss. auto.
-Qed.
+Admitted.
 
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 ->
@@ -863,7 +915,7 @@ Lemma transf_final_states:
   forall st1 st2 r,
   match_states st1 st2 -> final_state st1 r -> final_state st2 r.
 Proof.
-  intros. inv H0. inv H. inv H5. inv H6. constructor.
+  intros. inv H0. inv H. inv H5. inv H3. constructor.
 Qed.
 
 
@@ -873,7 +925,8 @@ Qed.
 Theorem transf_program_correct:
   forward_simulation (RTL.semantics prog) (RTL.semantics tprog).
 Proof.
-  eapply forward_simulation_opt with (measure := measure); eauto.
+  eapply forward_simulation_determ_one' with (measure := measure); eauto.
+  eapply semantics_determinate.
   apply senv_preserved.
   eexact transf_initial_states.
   eexact transf_final_states.
