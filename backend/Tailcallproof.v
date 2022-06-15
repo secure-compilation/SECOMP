@@ -444,6 +444,7 @@ Inductive match_stackframes (m: mem): (* compartment -> *) list stackframe -> li
       match_stackframes m (* (comp_of f) *) stk stk' ->
       is_return_spec f pc res ->
       f.(fn_stacksize) = 0 ->
+      forall (ACC: Mem.can_access_block m sp (Some (comp_of f))),
       (* comp_of f = call_comp stk -> *)
       match_stackframes m (* (comp_of f) *)
         (Stackframe res f (Vptr sp Ptrofs.zero) pc rs :: stk)
@@ -619,7 +620,9 @@ Proof.
     - constructor.
     - constructor; eauto.
       eapply Mem.store_can_access_block_inj in STORE'. eapply STORE'; eauto.
-    - constructor; eauto. }
+    - constructor; eauto.
+      eapply Mem.store_can_access_block_inj in STORE'. now eapply STORE'.
+  }
   inv ALD; simpl in STORE'. eapply Mem.store_can_access_block_inj in STORE'; eapply STORE'. eauto.
 
 - (* call *)
@@ -655,7 +658,10 @@ Proof.
     induction STACKS.
     - constructor.
     - constructor; auto. eapply Mem.free_can_access_block_inj_1; eauto.
-    - constructor; auto. }
+    - constructor; auto.
+      eapply Mem.free_can_access_block_inj_1; eauto.
+  }
+  eapply Mem.free_can_access_block_inj_1; eauto.
     apply (cenv_compat_linkorder _ _ _ ORDER (compenv_program_compat _)).
   { red. simpl. congruence. }
   apply regs_lessdef_regs; auto.
@@ -712,7 +718,8 @@ Proof.
     induction STACKS.
     - constructor.
     - constructor; auto. eapply Mem.free_can_access_block_inj_1; eauto.
-    - constructor; auto. }
+    - constructor; auto.
+      eapply Mem.free_can_access_block_inj_1; eauto. }
   auto.
     apply (cenv_compat_linkorder _ _ _ ORDER (compenv_program_compat _)).
   { red. now rewrite COMP, ALLOWED. }
@@ -737,7 +744,7 @@ Proof.
     induction STACKS.
     - constructor.
     - constructor; auto. eapply external_call_can_access_block; eauto.
-    - constructor; auto. }
+    - constructor; auto. eapply external_call_can_access_block; eauto. }
   apply set_res_lessdef; auto.
   eapply external_call_can_access_block; eauto.
 
@@ -760,31 +767,64 @@ Proof.
 - (* return *)
   (* Need to write an intermediate result, that proves we can unfold the source stack until
      reaching a point where we have different compartments *)
-  assert (forall m s s',
-             match_stackframes m s s' ->
-             forall rs or cp,
+  assert (forall m'0 s s',
+             match_stackframes m'0 s s' ->
+             forall m rs or cp,
+               Mem.extends m m'0 ->
                (Genv.type_of_call ge (call_comp s) cp = Genv.CrossCompartmentCall ->
                 not_ptr (regmap_optget or Vundef rs)) ->
-             exists s'', star step ge (Returnstate s (regmap_optget or Vundef rs) m) E0
-                      (Returnstate s'' (regmap_optget or Vundef rs) m) /\
+             exists s'' m', star step ge (Returnstate s (regmap_optget or Vundef rs) m) E0
+                      (Returnstate s'' (regmap_optget or Vundef rs) m') /\
+                      match_stackframes m'0 s'' s' /\
+                      Mem.extends m' m'0 /\
                       call_comp s'' = call_comp s').
   { clear.
     induction 1; intros.
-    - exists nil; auto using star_refl.
-    - exists (Stackframe res f (Vptr sp Ptrofs.zero) pc rs :: stk); split;
-        [auto using star_refl | simpl; now rewrite comp_transf_function].
-    - induction H0; intros.
-      + eexists; split.
-        * eapply star_step. econstructor.
-          eapply star_step. eapply exec_Ireturn; eauto.
-          admit.
-          admit.
-          admit.
-          admit.
-          admit.
-        * admit.
+    - exists nil, m; auto using star_refl, match_stackframes_nil.
+    - exists (Stackframe res f (Vptr sp Ptrofs.zero) pc rs :: stk), m; split; [| split; [| split]];
+        [auto using star_refl | now econstructor | auto | simpl; now rewrite comp_transf_function].
+    - assert (Star1: star step ge
+                (Returnstate (Stackframe res f (Vptr sp Ptrofs.zero) pc rs::stk) (regmap_optget or Vundef rs0) m)
+                E0
+                (State stk f (Vptr sp Ptrofs.zero) pc rs # res <- (regmap_optget or Vundef rs0) m)).
+      { eapply star_one. econstructor. }
+      simpl in H3.
+      assert (Star2:
+               exists m',
+                 star step ge
+                   (State stk f (Vptr sp Ptrofs.zero) pc rs # res <- (regmap_optget or Vundef rs0) m)
+                   E0
+                   (Returnstate stk (regmap_optget or Vundef rs0) m')
+                 /\ Mem.extends m' m'0).
+      { generalize dependent rs.
+        induction H0.
+        - intros. eexists; split.
+          + eapply star_step. eapply exec_Ireturn; eauto.
+            rewrite H1. Local Transparent Mem.free.
+            unfold Mem.free. admit.
+
+
+      }
+      eexists; eexists; split.
+      eapply star_step. econstructor.
+      induction H0; intros.
       + admit.
+      (* + eexists; eexists; split. *)
+      (*   * eapply star_step. econstructor. *)
+      (*     eapply star_step. eapply exec_Ireturn; eauto. *)
+      (*     admit. *)
+      (*     admit. *)
+      (*     admit. *)
+      (*     admit. *)
+      (*     admit. *)
+      (*   * admit. *)
       + admit.
+      + specialize (IHis_return_spec H3).
+        eapply star_step. eapply exec_Inop; eauto.
+        exact IHis_return_spec. traceEq.
+      + specialize (IHis_return_spec H3).
+        eapply star_step. eapply exec_Iop; eauto. reflexivity.
+        simpl. exact IHis_return_spec. traceEq.
       + admit.
   }
   eexists; split; [now apply star_refl |]. (* TODO: change this *)
