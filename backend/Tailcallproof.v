@@ -428,24 +428,24 @@ We first define the simulation invariant between call stacks.
 The first two cases are standard, but the third case corresponds
 to a frame that was eliminated by the transformation. *)
 
-Inductive match_stackframes (m: mem): compartment -> list stackframe -> list stackframe -> Prop :=
-  | match_stackframes_nil: forall cp,
-      match_stackframes m cp nil nil
-  | match_stackframes_normal: forall stk stk' res sp pc rs rs' ce f cp,
-      match_stackframes m (comp_of f) stk stk' ->
+Inductive match_stackframes (m: mem): (* compartment -> *) list stackframe -> list stackframe -> Prop :=
+  | match_stackframes_nil:
+    match_stackframes m nil nil
+  | match_stackframes_normal: forall stk stk' res sp pc rs rs' ce f (* cp *),
+      match_stackframes m (* (comp_of f) *) stk stk' ->
       forall (COMPAT: cenv_compat prog ce),
       forall (UPD: uptodate_caller (comp_of f) (call_comp stk) (call_comp stk')),
       forall (ACC: Mem.can_access_block m sp (Some (comp_of f))),
       regs_lessdef rs rs' ->
-      match_stackframes m cp
+      match_stackframes m (* cp *)
         (Stackframe res f (Vptr sp Ptrofs.zero) pc rs :: stk)
         (Stackframe res (transf_function ce f) (Vptr sp Ptrofs.zero) pc rs' :: stk')
   | match_stackframes_tail: forall stk stk' res sp pc rs f,
-      match_stackframes m (comp_of f) stk stk' ->
+      match_stackframes m (* (comp_of f) *) stk stk' ->
       is_return_spec f pc res ->
       f.(fn_stacksize) = 0 ->
       (* comp_of f = call_comp stk -> *)
-      match_stackframes m (comp_of f)
+      match_stackframes m (* (comp_of f) *)
         (Stackframe res f (Vptr sp Ptrofs.zero) pc rs :: stk)
         stk'.
 
@@ -468,7 +468,7 @@ Inductive match_stackframes (m: mem): compartment -> list stackframe -> list sta
 Inductive match_states: state -> state -> Prop :=
   | match_states_normal:
       forall s sp pc rs m s' rs' m' ce f
-             (STACKS: match_stackframes m' (comp_of f) s s')
+             (STACKS: match_stackframes m' (* (comp_of f) *) s s')
              (COMPAT: cenv_compat prog ce)
              (RLD: regs_lessdef rs rs')
              (MLD: Mem.extends m m')
@@ -478,7 +478,7 @@ Inductive match_states: state -> state -> Prop :=
                    (State s' (transf_function ce f) (Vptr sp Ptrofs.zero) pc rs' m')
   | match_states_call:
       forall s ce f args m s' args' m',
-      match_stackframes m' (comp_of f) s s' ->
+      match_stackframes m' (* (comp_of f) *) s s' ->
       forall (COMPAT: cenv_compat prog ce),
       forall (UPD: uptodate_caller (comp_of f) (call_comp s) (call_comp s')),
       Val.lessdef_list args args' ->
@@ -486,15 +486,15 @@ Inductive match_states: state -> state -> Prop :=
       match_states (Callstate s f args m)
                    (Callstate s' (transf_fundef ce f) args' m')
   | match_states_return:
-      forall s v m s' v' m' cp,
-      match_stackframes m' cp s s' ->
+      forall s v m s' v' m' (* cp *),
+      match_stackframes m' (* cp *) s s' ->
       Val.lessdef v v' ->
       Mem.extends m m' ->
       match_states (Returnstate s v m)
                    (Returnstate s' v' m')
   | match_states_interm:
       forall s sp pc rs m s' m' f r v'
-             (STACKS: match_stackframes m' (comp_of f) s s')
+             (STACKS: match_stackframes m' (* (comp_of f) *) s s')
              (MLD: Mem.extends m m'),
       is_return_spec f pc r ->
       f.(fn_stacksize) = 0 ->
@@ -647,7 +647,7 @@ Proof.
   rewrite comp_transl. eapply allowed_call_translated; eauto.
   rewrite comp_transl; eauto.
   constructor.
-  rewrite Efd. eapply match_stackframes_tail; eauto.
+  (* rewrite Efd. *) eapply match_stackframes_tail; eauto.
   (* TODO: Should be a lemma? *)
   { (* rewrite Efd. *)
     clear -FREE STACKS.
@@ -707,7 +707,7 @@ Proof.
   rewrite comp_transl; eauto.
   constructor.
   (* TODO: Should be a lemma? *)
-  { rewrite COMP. clear -FREE STACKS.
+  { (* rewrite COMP. *) clear -FREE STACKS.
     revert STACKS. generalize (comp_of f). intros cp STACKS.
     induction STACKS.
     - constructor.
@@ -760,9 +760,9 @@ Proof.
 - (* return *)
   (* Need to write an intermediate result, that proves we can unfold the source stack until
      reaching a point where we have different compartments *)
-  assert (forall m cp s s',
-             match_stackframes m cp s s' ->
-             forall rs or,
+  assert (forall m s s',
+             match_stackframes m s s' ->
+             forall rs or cp,
                (Genv.type_of_call ge (call_comp s) cp = Genv.CrossCompartmentCall ->
                 not_ptr (regmap_optget or Vundef rs)) ->
              exists s'', star step ge (Returnstate s (regmap_optget or Vundef rs) m) E0
@@ -777,7 +777,6 @@ Proof.
       + eexists; split.
         * eapply star_step. econstructor.
           eapply star_step. eapply exec_Ireturn; eauto.
-          rewrite H1. simpl. Local Transparent Mem.free. unfold Mem.free. simpl.
           admit.
           admit.
           admit.
