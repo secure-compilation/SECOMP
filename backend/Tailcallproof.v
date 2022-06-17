@@ -428,25 +428,25 @@ We first define the simulation invariant between call stacks.
 The first two cases are standard, but the third case corresponds
 to a frame that was eliminated by the transformation. *)
 
-Inductive match_stackframes (m: mem): (* compartment -> *) list stackframe -> list stackframe -> Prop :=
-  | match_stackframes_nil:
-    match_stackframes m nil nil
-  | match_stackframes_normal: forall stk stk' res sp pc rs rs' ce f (* cp *),
-      match_stackframes m (* (comp_of f) *) stk stk' ->
+Inductive match_stackframes (m: mem): compartment -> list stackframe -> list stackframe -> Prop :=
+  | match_stackframes_nil: forall cp,
+    match_stackframes m cp nil nil
+  | match_stackframes_normal: forall stk stk' res sp pc rs rs' ce f cp,
+      match_stackframes m (comp_of f) stk stk' ->
       forall (COMPAT: cenv_compat prog ce),
       forall (UPD: uptodate_caller (comp_of f) (call_comp stk) (call_comp stk')),
       forall (ACC: Mem.can_access_block m sp (Some (comp_of f))),
       regs_lessdef rs rs' ->
-      match_stackframes m (* cp *)
+      match_stackframes m cp
         (Stackframe res f (Vptr sp Ptrofs.zero) pc rs :: stk)
         (Stackframe res (transf_function ce f) (Vptr sp Ptrofs.zero) pc rs' :: stk')
   | match_stackframes_tail: forall stk stk' res sp pc rs f,
-      match_stackframes m (* (comp_of f) *) stk stk' ->
+      match_stackframes m (comp_of f) stk stk' ->
       is_return_spec f pc res ->
       f.(fn_stacksize) = 0 ->
       forall (ACC: Mem.can_access_block m sp (Some (comp_of f))),
-      (* comp_of f = call_comp stk -> *)
-      match_stackframes m (* (comp_of f) *)
+      (* comp_of f = call_comp stk' -> (* this is actually the correct invariant, I believe! *) *)
+      match_stackframes m (comp_of f)
         (Stackframe res f (Vptr sp Ptrofs.zero) pc rs :: stk)
         stk'.
 
@@ -469,7 +469,7 @@ Inductive match_stackframes (m: mem): (* compartment -> *) list stackframe -> li
 Inductive match_states: state -> state -> Prop :=
   | match_states_normal:
       forall s sp pc rs m s' rs' m' ce f
-             (STACKS: match_stackframes m' (* (comp_of f) *) s s')
+             (STACKS: match_stackframes m' (comp_of f) s s')
              (COMPAT: cenv_compat prog ce)
              (RLD: regs_lessdef rs rs')
              (MLD: Mem.extends m m')
@@ -479,7 +479,7 @@ Inductive match_states: state -> state -> Prop :=
                    (State s' (transf_function ce f) (Vptr sp Ptrofs.zero) pc rs' m')
   | match_states_call:
       forall s ce f args m s' args' m',
-      match_stackframes m' (* (comp_of f) *) s s' ->
+      match_stackframes m' (comp_of f) s s' ->
       forall (COMPAT: cenv_compat prog ce),
       forall (UPD: uptodate_caller (comp_of f) (call_comp s) (call_comp s')),
       Val.lessdef_list args args' ->
@@ -487,21 +487,34 @@ Inductive match_states: state -> state -> Prop :=
       match_states (Callstate s f args m)
                    (Callstate s' (transf_fundef ce f) args' m')
   | match_states_return:
-      forall s v m s' v' m' (* cp *),
-      match_stackframes m' (* cp *) s s' ->
+      forall s v m s' v' m' cp,
+      match_stackframes m' cp s s' ->
       Val.lessdef v v' ->
       Mem.extends m m' ->
       match_states (Returnstate s v m)
                    (Returnstate s' v' m')
   | match_states_interm:
       forall s sp pc rs m s' m' f r v'
-             (STACKS: match_stackframes m' (* (comp_of f) *) s s')
+             (STACKS: match_stackframes m' (comp_of f) s s')
              (MLD: Mem.extends m m'),
       is_return_spec f pc r ->
       f.(fn_stacksize) = 0 ->
       Val.lessdef (rs#r) v' ->
       match_states (State s f (Vptr sp Ptrofs.zero) pc rs m)
-                   (Returnstate s' v' m').
+                   (Returnstate s' v' m')
+(* | match_states_fail: forall s f sp pc rs m or S, *)
+(*   forall (CODE : (fn_code f) ! pc = Some (Ireturn or)) *)
+(*     (FAIL : ~ (Genv.type_of_call ge (call_comp s) (comp_of f) = Genv.CrossCompartmentCall -> *)
+(*                    not_ptr (regmap_optget or Vundef rs))), *)
+(*     match_states (State s f (Vptr sp Ptrofs.zero) pc rs m) *)
+(*                  S *)
+| match_states_fail: forall s f sp pc rs m or S,
+  forall (CODE : (fn_code f) ! pc = Some (Ireturn or))
+    (FAIL : ~ (Genv.type_of_call ge (call_comp s) (comp_of f) = Genv.CrossCompartmentCall ->
+                   not_ptr (regmap_optget or Vundef rs))),
+    match_states S
+      (State s f (Vptr sp Ptrofs.zero) pc rs m)
+.
 
 (** The last case of [match_states] corresponds to the execution
   of a move/nop/return sequence in the original code that was
@@ -554,7 +567,7 @@ Lemma transf_step_correct:
   (* (exists s2', step tge s1' t s2' /\ match_states s2 s2') *)
   (* \/ (measure s2 < measure s1 /\ t = E0 /\ match_states s2 s1')%nat. *)
 Proof.
-  induction 1; intros; inv MS; EliminatedInstr.
+  induction 1; intros; inv MS; EliminatedInstr; try congruence.
 
 - (* nop *)
   eexists; split; [now apply star_refl |].
@@ -650,7 +663,7 @@ Proof.
   rewrite comp_transl. eapply allowed_call_translated; eauto.
   rewrite comp_transl; eauto.
   constructor.
-  (* rewrite Efd. *) eapply match_stackframes_tail; eauto.
+  rewrite Efd. eapply match_stackframes_tail; eauto.
   (* TODO: Should be a lemma? *)
   { (* rewrite Efd. *)
     clear -FREE STACKS.
@@ -713,7 +726,7 @@ Proof.
   rewrite comp_transl; eauto.
   constructor.
   (* TODO: Should be a lemma? *)
-  { (* rewrite COMP. *) clear -FREE STACKS.
+  { rewrite COMP. clear -FREE STACKS.
     revert STACKS. generalize (comp_of f). intros cp STACKS.
     induction STACKS.
     - constructor.
@@ -767,85 +780,212 @@ Proof.
 - (* return *)
   (* Need to write an intermediate result, that proves we can unfold the source stack until
      reaching a point where we have different compartments *)
-  assert (forall m'0 s s',
-             match_stackframes m'0 s s' ->
-             forall m rs or cp,
-               Mem.extends m m'0 ->
-               (Genv.type_of_call ge (call_comp s) cp = Genv.CrossCompartmentCall ->
-                not_ptr (regmap_optget or Vundef rs)) ->
-             exists s'' m', star step ge (Returnstate s (regmap_optget or Vundef rs) m) E0
-                      (Returnstate s'' (regmap_optget or Vundef rs) m') /\
-                      match_stackframes m'0 s'' s' /\
-                      Mem.extends m' m'0 /\
-                      call_comp s'' = call_comp s').
-  { clear.
-    induction 1; intros.
-    - exists nil, m; auto using star_refl, match_stackframes_nil.
-    - exists (Stackframe res f (Vptr sp Ptrofs.zero) pc rs :: stk), m; split; [| split; [| split]];
-        [auto using star_refl | now econstructor | auto | simpl; now rewrite comp_transf_function].
-    - assert (Star1: star step ge
-                (Returnstate (Stackframe res f (Vptr sp Ptrofs.zero) pc rs::stk) (regmap_optget or Vundef rs0) m)
-                E0
-                (State stk f (Vptr sp Ptrofs.zero) pc rs # res <- (regmap_optget or Vundef rs0) m)).
-      { eapply star_one. econstructor. }
-      simpl in H3.
-      assert (Star2:
-               exists m',
-                 star step ge
-                   (State stk f (Vptr sp Ptrofs.zero) pc rs # res <- (regmap_optget or Vundef rs0) m)
-                   E0
-                   (Returnstate stk (regmap_optget or Vundef rs0) m')
-                 /\ Mem.extends m' m'0).
-      { generalize dependent rs.
-        induction H0.
-        - intros. eexists; split.
-          + eapply star_step. eapply exec_Ireturn; eauto.
-            rewrite H1. Local Transparent Mem.free.
-            unfold Mem.free. admit.
-
-
-      }
-      eexists; eexists; split.
-      eapply star_step. econstructor.
-      induction H0; intros.
-      + admit.
-      (* + eexists; eexists; split. *)
-      (*   * eapply star_step. econstructor. *)
-      (*     eapply star_step. eapply exec_Ireturn; eauto. *)
-      (*     admit. *)
-      (*     admit. *)
-      (*     admit. *)
-      (*     admit. *)
-      (*     admit. *)
-      (*   * admit. *)
-      + admit.
-      + specialize (IHis_return_spec H3).
-        eapply star_step. eapply exec_Inop; eauto.
-        exact IHis_return_spec. traceEq.
-      + specialize (IHis_return_spec H3).
-        eapply star_step. eapply exec_Iop; eauto. reflexivity.
-        simpl. exact IHis_return_spec. traceEq.
-      + admit.
-  }
-  eexists; split; [now apply star_refl |]. (* TODO: change this *)
-  exploit Mem.free_parallel_extends; eauto. intros [m'1 [FREE EXT]].
-  TransfInstr.
-  left. exists (Returnstate s' (regmap_optget or Vundef rs') m'1); split.
-  eapply exec_Ireturn; eauto.
-  rewrite stacksize_preserved, comp_transl; eauto.
-  rewrite comp_transf_function. admit.
-  econstructor.
+  Require Import Coq.Logic.Classical.
+  destruct (classic (call_comp s = call_comp s'))
+    as [SAMECOMP | DIFFCOMP].
+  { eexists; split; [now apply star_refl |].
+    exploit Mem.free_parallel_extends; eauto. intros [m'1 [FREE EXT]].
+    TransfInstr.
+    left. exists (Returnstate s' (regmap_optget or Vundef rs') m'1); split.
+    eapply exec_Ireturn; eauto.
+    rewrite stacksize_preserved, comp_transl; eauto.
+    rewrite comp_transf_function, <- SAMECOMP.
+    intros G; specialize (NO_CROSS_PTR G).
+    destruct or; simpl in *; auto.
+    specialize (RLD r). inv RLD; auto.
+    now rewrite <- H2 in NO_CROSS_PTR.
+    econstructor. instantiate (1 := comp_of f).
   (* (* rewrite comp_transf_function. *) constructor. *)
   (* TODO: Should be a lemma? *)
-  { admit. }
-    (* clear -FREE STACKS. *)
-    (* revert STACKS. generalize (comp_of f). intros cp STACKS. *)
-    (* induction STACKS. *)
-    (* - constructor. *)
-    (* - constructor; eauto. eapply Mem.free_can_access_block_inj_1; eauto. *)
-    (* - constructor; auto. } *)
-  destruct or; simpl. apply RLD. constructor.
-  auto.
+    { clear -FREE STACKS.
+    revert STACKS. generalize (comp_of f). intros cp STACKS.
+    induction STACKS.
+    - constructor.
+    - constructor; auto. eapply Mem.free_can_access_block_inj_1; eauto.
+    - constructor; auto. eapply Mem.free_can_access_block_inj_1; eauto. }
+    destruct or; simpl. apply RLD. constructor.
+    auto.
+  }
+  assert (EXT': Mem.extends m' m'0).
+  { eapply Mem.free_left_extends; eauto. }
+
+  exploit Mem.free_parallel_extends.
+  exact MLD. eauto. intros [m'1 [FREE' EXT]].
+
+  assert (Star1: exists m'' m''' s'' f' sp pc' or' rs'',
+             star step ge (Returnstate s (regmap_optget or Vundef rs) m')
+                  E0
+                  (State s'' f' (Vptr sp Ptrofs.zero) pc' rs'' m'')
+             /\ (length s'' < length s)%nat
+             /\ match_stackframes m'' (comp_of f) s'' s'
+             /\ uptodate_caller (comp_of f) (call_comp s'') (call_comp s')
+             /\ Mem.can_access_block m'' sp (Some (comp_of f))
+             /\ comp_of f = comp_of f'
+             /\ call_comp s'' = call_comp s'
+             /\ (fn_code f') ! pc' = Some (Ireturn or')
+             /\ Mem.free m'' sp 0 (fn_stacksize f') (comp_of f') = Some m'''
+             /\ Mem.extends m'' m'1
+             /\ regmap_optget or Vundef rs = regmap_optget or' Vundef rs'').
+  {
+    destruct STACKS;
+      [congruence | simpl in DIFFCOMP;
+                    rewrite comp_transf_function in DIFFCOMP;
+                    congruence |].
+    simpl in DIFFCOMP. clear DIFFCOMP.
+    assert (Star1:
+             star step ge (Returnstate (Stackframe res f0 (Vptr sp Ptrofs.zero) pc0 rs0 :: stk0) (regmap_optget or Vundef rs) m')
+                  E0
+                  (State stk0 f0 (Vptr sp Ptrofs.zero) pc0 (rs0 # res <- (regmap_optget or Vundef rs)) m')).
+    { eapply star_one. constructor. }
+    assert (Star2:
+             exists m' or,
+             star step ge (State stk0 f0 (Vptr sp Ptrofs.zero) pc0 (rs0 # res <- (regmap_optget or Vundef rs)) m')
+                     E0
+                     (Returnstate stk0 (regmap_optget or Vundef (rs0 # res <- (regmap_optget or Vundef rs))) m')).
+    { clear -H1 H2 ACC0.
+      induction H1.
+      - eexists; eexists.
+        eapply star_one. eapply exec_Ireturn.
+        eauto. rewrite H2. admit.
+        simpl.
+    }
+    assert (Star2: exists m'' s'' f' sp pc' rs'',
+             star step ge (State stk0 f0 (Vptr sp Ptrofs.zero) pc0 (rs0 # res <- (regmap_optget or Vundef rs)) m')
+                  E0
+                  (State s'' f' (Vptr sp Ptrofs.zero) pc' rs'' m'')).
+    {
+      do 6 eexists.
+    }
+    assert ()
+
+    do 8 eexists. split.
+    eapply star_step. econstructor.
+    (* Assert: something stating we can do a star using H1, to reach
+     a State *)
+    (* From *)
+
+
+  }
+  destruct Star1 as (m'' & m''' & s'' & f' & sp & pc' & or' & rs''
+                     & Star1 & LENGTH & STACKS' & UPD' & ACC' & COMPEQ & COMPEQ' & CODE & FREE & EXT'' & REGEQ).
+  destruct (classic
+              (Genv.type_of_call ge (call_comp s'') (comp_of f') = Genv.CrossCompartmentCall ->
+               not_ptr (regmap_optget or' Vundef rs''))) as [OKPTR | NOTOKPTR].
+  + eexists; split.
+    eapply star_trans; eauto.
+    eapply star_one. eapply exec_Ireturn; eauto.
+    traceEq.
+
+    clear CODE.
+    TransfInstr.
+    left. exists (Returnstate s' (regmap_optget or Vundef rs') m'1); split.
+    eapply exec_Ireturn; eauto.
+    rewrite stacksize_preserved, comp_transl; eauto.
+    rewrite comp_transf_function, <- COMPEQ', COMPEQ.
+    { intros G. specialize (OKPTR G).
+      rewrite <- REGEQ in OKPTR.
+      destruct or; simpl in *; auto.
+      specialize (RLD r). inv RLD; auto.
+      now rewrite <- H2 in OKPTR. }
+    econstructor; eauto.
+    { instantiate (1 := comp_of f).
+      clear -EXT'' STACKS'.
+      revert STACKS'. generalize (comp_of f). intros cp STACKS.
+    induction STACKS.
+      - constructor.
+      - constructor; auto. admit.
+      - constructor; auto. admit. }
+    rewrite <- REGEQ.
+    destruct or. eapply RLD. eauto.
+    eapply Mem.free_left_extends; eauto.
+  + eexists; split.
+    eauto. right; split; [| split].
+    { simpl. clear -LENGTH.
+      pose proof (return_measure_bounds (fn_code f') pc') as H.
+      pose proof (return_measure_bounds (fn_code f) pc) as H'.
+      unfold niter in *. omega. }
+    traceEq.
+    econstructor; eauto.
+
+  (* assert (forall m'0 cp s s', *)
+  (*            match_stackframes m'0 cp s s' -> *)
+  (*            forall m rs or, *)
+  (*              Mem.extends m m'0 -> *)
+  (*              (Genv.type_of_call ge (call_comp s) cp = Genv.CrossCompartmentCall -> *)
+  (*               not_ptr (regmap_optget or Vundef rs)) -> *)
+  (*            exists s'' m', star step ge (Returnstate s (regmap_optget or Vundef rs) m) E0 *)
+  (*                     (Returnstate s'' (regmap_optget or Vundef rs) m') /\ *)
+  (*                     match_stackframes m'0 cp s'' s' /\ *)
+  (*                     Mem.extends m' m'0 /\ *)
+  (*                     call_comp s'' = call_comp s'). *)
+  (* { clear. *)
+  (*   induction 1; intros. *)
+  (*   - exists nil, m; auto using star_refl, match_stackframes_nil. *)
+  (*   - exists (Stackframe res f (Vptr sp Ptrofs.zero) pc rs :: stk), m; split; [| split; [| split]]; *)
+  (*       [auto using star_refl | now econstructor | auto | simpl; now rewrite comp_transf_function]. *)
+  (*   - assert (Star1: star step ge *)
+  (*               (Returnstate (Stackframe res f (Vptr sp Ptrofs.zero) pc rs::stk) (regmap_optget or Vundef rs0) m) *)
+  (*               E0 *)
+  (*               (State stk f (Vptr sp Ptrofs.zero) pc rs # res <- (regmap_optget or Vundef rs0) m)). *)
+  (*     { eapply star_one. econstructor. } *)
+  (*     simpl in H3. *)
+  (*     assert (Star2: *)
+  (*              exists m', *)
+  (*                star step ge *)
+  (*                  (State stk f (Vptr sp Ptrofs.zero) pc rs # res <- (regmap_optget or Vundef rs0) m) *)
+  (*                  E0 *)
+  (*                  (Returnstate stk (regmap_optget or Vundef rs0) m') *)
+  (*                /\ Mem.extends m' m'0). *)
+  (*     { generalize dependent rs. *)
+  (*       induction H0. *)
+  (*       - intros. eexists; split. *)
+  (*         + eapply star_step. eapply exec_Ireturn; eauto. *)
+  (*           rewrite H1. Local Transparent Mem.free. *)
+  (*           unfold Mem.free. admit. *)
+
+
+  (*     } *)
+  (*     eexists; eexists; split. *)
+  (*     eapply star_step. econstructor. *)
+  (*     induction H0; intros. *)
+  (*     + admit. *)
+  (*     (* + eexists; eexists; split. *) *)
+  (*     (*   * eapply star_step. econstructor. *) *)
+  (*     (*     eapply star_step. eapply exec_Ireturn; eauto. *) *)
+  (*     (*     admit. *) *)
+  (*     (*     admit. *) *)
+  (*     (*     admit. *) *)
+  (*     (*     admit. *) *)
+  (*     (*     admit. *) *)
+  (*     (*   * admit. *) *)
+  (*     + admit. *)
+  (*     + specialize (IHis_return_spec H3). *)
+  (*       eapply star_step. eapply exec_Inop; eauto. *)
+  (*       exact IHis_return_spec. traceEq. *)
+  (*     + specialize (IHis_return_spec H3). *)
+  (*       eapply star_step. eapply exec_Iop; eauto. reflexivity. *)
+  (*       simpl. exact IHis_return_spec. traceEq. *)
+  (*     + admit. *)
+  (* } *)
+  (* eexists; split; [now apply star_refl |]. (* TODO: change this *) *)
+  (* exploit Mem.free_parallel_extends; eauto. intros [m'1 [FREE EXT]]. *)
+  (* TransfInstr. *)
+  (* left. exists (Returnstate s' (regmap_optget or Vundef rs') m'1); split. *)
+  (* eapply exec_Ireturn; eauto. *)
+  (* rewrite stacksize_preserved, comp_transl; eauto. *)
+  (* rewrite comp_transf_function. admit. *)
+  (* econstructor. *)
+  (* (* (* rewrite comp_transf_function. *) constructor. *) *)
+  (* (* TODO: Should be a lemma? *) *)
+  (* { admit. } *)
+  (*   (* clear -FREE STACKS. *) *)
+  (*   (* revert STACKS. generalize (comp_of f). intros cp STACKS. *) *)
+  (*   (* induction STACKS. *) *)
+  (*   (* - constructor. *) *)
+  (*   (* - constructor; eauto. eapply Mem.free_can_access_block_inj_1; eauto. *) *)
+  (*   (* - constructor; auto. } *) *)
+  (* destruct or; simpl. apply RLD. constructor. *)
+  (* auto. *)
 
 - (* eliminated return None *)
   eexists; split; [now apply star_refl |].
@@ -885,7 +1025,9 @@ Proof.
     - constructor.
     - constructor; auto.
       eapply Mem.alloc_can_access_block_other_inj_1; eauto.
-    - constructor; auto. }
+    - constructor; auto.
+      eapply Mem.alloc_can_access_block_other_inj_1; eauto.
+  }
   apply regs_lessdef_init_regs. auto.
   eapply Mem.owned_new_block; eauto.
 
