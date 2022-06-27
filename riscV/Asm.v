@@ -1133,7 +1133,8 @@ Definition update_stack_return (s: stack) (cp: compartment) rs' :=
   .
 
 Inductive state: Type :=
-  | State: stack -> regset -> mem -> state.
+  | State: stack -> regset -> mem -> state
+  | EnforcementState: stack -> regset -> mem -> signature -> compartment -> state.
 
 (* Definition is_call i := *)
 (*   match i with *)
@@ -1260,11 +1261,15 @@ Inductive step: state -> trace -> state -> Prop :=
       (* Note that in the same manner, this definition only updates the stack when doing
          cross-compartment returns *)
       forall (STUPD: update_stack_return st cp' rs' = Some st'),
+      step (State st rs m) t (EnforcementState st' rs' m' (ef_sig ef) cp')
+  | exec_step_return_external: forall st rs m sg cp cp',
+      forall (NEXTCOMP: Genv.find_comp ge (rs PC) = cp'),
       forall (NO_CROSS_PTR:
-          Genv.type_of_call ge cp'' cp' = Genv.CrossCompartmentCall ->
-          forall r, List.In r (regs_of_rpair (loc_result (ef_sig ef))) ->
-              not_ptr (rs' (preg_of r))),
-      step (State st rs m) t (State st' rs' m').
+          Genv.type_of_call ge cp' cp = Genv.CrossCompartmentCall ->
+          forall r, List.In r (regs_of_rpair (loc_result sg)) ->
+              not_ptr (rs (preg_of r))),
+      step (EnforcementState st rs m sg cp) E0 (State st rs m)
+.
 
 End RELSEM.
 
@@ -1353,6 +1358,7 @@ Ltac Equalities :=
   + assert (args0 = args) by (eapply extcall_arguments_determ; eauto). subst args0.
     exploit external_call_determ. eexact H3. eexact H9. intros [A B].
     split. auto. intros. destruct B; auto. subst. congruence.
+  + split. constructor. reflexivity.
 - (* trace length *)
   red; intros. inv H; simpl.
   omega.
@@ -1360,6 +1366,7 @@ Ltac Equalities :=
   omega.
   eapply external_call_trace_length; eauto.
   eapply external_call_trace_length; eauto.
+  omega.
 - (* initial states *)
   inv H; inv H0. f_equal. congruence.
 - (* final no step *)

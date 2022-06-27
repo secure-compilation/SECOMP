@@ -584,14 +584,14 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
       match_states (Mach.Callstate s fb ms m)
                    (Asm.State s' rs m')
   | match_states_return:
-      forall s s' fb sp tc ms m m' rs f tf sg cp ofs
+      forall s s' fb tc ms m m' rs f tf sg cp ofs
         (STACKS: match_stack ge s)
         (STACKS': match_stacks (rs PC) s s')
         (FIND: Genv.find_funct_ptr ge fb = Some (Internal f))
         (TRANSF: transf_function f = OK tf)
         (MEXT: Mem.extends m m')
         (ATPC: rs PC = Vptr fb ofs)
-        (AG: agree ms sp rs)
+        (AG: agree ms (parent_sp s) rs)
         (COMP: cp = comp_of f)
         (SIG: sg = Mach.fn_sig f)
         (CODE: code_tail (Ptrofs.unsigned ofs) (fn_code tf) (Pj_r X1 (Mach.fn_sig f) true :: tc))
@@ -601,50 +601,25 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
         (Y: rs X2 = parent_sp s),
       match_states (Mach.Returnstate s ms m sg cp)
                    (Asm.State s' rs m')
+  (* | match_states_return: *)
+  (*   forall s s' ms m m' rs sg cp *)
+  (*     (STACKS: match_stack ge s) *)
+  (*     (STACKS': match_stacks (rs PC) s s') *)
+  (*     (MEXT: Mem.extends m m') *)
+  (*     (AG: agree ms (parent_sp s) rs), *)
+  (*     (* (ATPC: rs PC = parent_ra s), *) *)
+  (*     match_states (Mach.Returnstate s ms m sg cp) *)
+  (*                  (Asm.State s' rs m') *)
   | match_states_return_external:
-    forall s s' fb ef sp ms rs m m' ofs sg cp res res' s''
+    forall s s' ms m m' rs sg cp
       (STACKS: match_stack ge s)
       (STACKS': match_stacks (rs PC) s s')
-      (FIND: Genv.find_funct_ptr ge fb = Some (External ef))
       (MEXT: Mem.extends m m')
-      (ATPC: rs PC = Vptr fb ofs)
-      (AG: agree ms sp rs)
-      (COMP: cp = comp_of ef)
-      (SIG: sg = ef_sig ef)
-      (LD: Val.lessdef res res')
-      (Hs''1: update_stack_return tge s' cp
-                      (set_pair (loc_external_result sg) res' (undef_caller_save_regs rs)) # PC <-
-                      (rs X1) = Some s'')
-      (Hs''2: match_stacks (parent_ra s) s s''),
-      match_states
-        (Returnstate s (Mach.set_pair (loc_result (ef_sig ef)) res (Mach.undef_caller_save_regs ms)) m
-           sg cp)
-        (State s''
-           (set_pair (loc_external_result (ef_sig ef)) res' (undef_caller_save_regs rs)) # PC <-
-           (rs X1) m').
+      (AG: agree ms (parent_sp s) rs)
+      (ATPC: rs PC = parent_ra s),
+      match_states (Mach.Returnstate s ms m sg cp)
+                   (Asm.EnforcementState s' rs m' sg cp).
 
-
-                   (*
-  MEXT : Mem.extends m m0
-  AG : agree ms (parent_sp s) rs
-  ATLR : rs X1 = parent_ra s
-  A : Genv.find_funct_ptr tge fb = Some (External ef)
-  args' : list val
-  C : extcall_arguments rs m0 (ef_sig ef) args'
-  D : Val.lessdef_list args args'
-  res' : val
-  m' : mem
-  P : external_call ef ge (call_comp ge s) args' m0 t res' m'
-  Q : Val.lessdef res res'
-  S : Mem.unchanged_on (loc_out_of_bounds m) m0 m'
-  ============================
-  match_states
-    (Returnstate s (Mach.set_pair (loc_result (ef_sig ef)) res (Mach.undef_caller_save_regs ms)) m
-       (ef_sig ef) (comp_of ef))
-    (State s''
-       (set_pair (loc_external_result (ef_sig ef)) res' (undef_caller_save_regs rs)) # PC <- (rs X1)
-       m')
-                    *)
 Lemma exec_straight_steps:
   forall s s' fb f rs1 i c ep tf tc m1' m2 m2' sp ms2,
   match_stack ge s ->
@@ -887,12 +862,12 @@ Qed.
 (** This is the simulation diagram.  We prove it by case analysis on the Mach transition. *)
 
 Theorem step_simulation:
-  forall S1 t S2, Mach.step return_address_offset ge S1 t S2 ->
-  forall S1' (MS: match_states S1 S1'),
-  exists S3,
-      star (Mach.step return_address_offset) ge S2 E0 S3
-   /\ ((exists S2', plus step tge S1' t S2' /\ match_states S3 S2')
-      \/ (exists S2', star step tge S1' t S2' /\ measure S3 < measure S1 /\ match_states S3 S2'))%nat.
+  (* forall S1 t S2, Mach.step return_address_offset ge S1 t S2 -> *)
+  (* forall S1' (MS: match_states S1 S1'), *)
+  (* exists S3, *)
+  (*     star (Mach.step return_address_offset) ge S2 E0 S3 *)
+  (*  /\ ((exists S2', plus step tge S1' t S2' /\ match_states S3 S2') *)
+  (*     \/ (exists S2', star step tge S1' t S2' /\ measure S3 < measure S1 /\ match_states S3 S2'))%nat. *)
 
   (* forall S1 t S2, Mach.step return_address_offset ge S1 t S2 -> *)
   (* forall S1' (MS: match_states S1 S1'), *)
@@ -901,10 +876,10 @@ Theorem step_simulation:
   (*  /\ (plus step tge S1' t S2' \/ (star step tge S1' t S2' /\ measure S3 < measure S1))%nat *)
   (*  /\ match_states S3 S2'. *)
 
-  (* forall S1 t S2, Mach.step return_address_offset ge S1 t S2 -> *)
-  (* forall S1' (MS: match_states S1 S1'), *)
-  (* (exists S2', plus step tge S1' t S2' /\ match_states S2 S2') *)
-  (* \/ (measure S2 < measure S1 /\ t = E0 /\ match_states S2 S1')%nat. *)
+  forall S1 t S2, Mach.step return_address_offset ge S1 t S2 ->
+  forall S1' (MS: match_states S1 S1'),
+  (exists S2', plus step tge S1' t S2' /\ match_states S2 S2')
+  \/ (measure S2 < measure S1 /\ t = E0 /\ match_states S2 S1')%nat.
 
   (* forall s1 t s1', Step L1 s1 t s1' -> *)
   (* forall s2, match_states s1 s2 -> *)
@@ -914,13 +889,11 @@ Proof.
   induction 1; intros; inv MS.
 
 - (* Mlabel *)
-  eexists; split; [eapply star_refl |].
   left; eapply exec_straight_steps; eauto; intros.
   monadInv TR. econstructor; split. eapply exec_straight_one. simpl; eauto. auto.
   split. apply agree_nextinstr; auto. simpl; congruence.
 
 - (* Mgetstack *)
-  eexists; split; [eapply star_refl |].
   unfold load_stack in H.
   exploit Mem.loadv_extends; eauto. intros [v' [A B]].
   rewrite (sp_val _ _ _ AG) in A.
@@ -934,7 +907,6 @@ Proof.
   simpl; congruence.
 
 - (* Msetstack *)
-  eexists; split; [eapply star_refl |].
   unfold store_stack in H.
   assert (Val.lessdef (rs src) (rs0 (preg_of src))). eapply preg_val; eauto.
   exploit Mem.storev_extends; eauto. intros [m2' [A B]].
@@ -949,7 +921,6 @@ Proof.
   simpl; intros. rewrite Q; auto with asmgen.
 
 - (* Mgetparam *)
-  eexists; split; [eapply star_refl |].
   assert (f0 = f) by congruence; subst f0.
   assert (cp = comp_of f).
   unfold find_comp_ptr in CURCOMP. rewrite FIND in CURCOMP. inv CURCOMP.
@@ -990,7 +961,6 @@ Opaque loadind.
   apply preg_of_not_X30; auto.
 
 - (* Mop *)
-  eexists; split; [eapply star_refl |].
   assert (eval_operation tge sp op (map rs args) m = Some v).
     rewrite <- H. apply eval_operation_preserved. exact symbols_preserved.
   exploit eval_operation_lessdef. eapply preg_vals; eauto. eauto. eexact H0.
@@ -1006,7 +976,6 @@ Local Transparent destroyed_by_op.
   destruct op; simpl; auto; congruence.
 
 - (* Mload *)
-  eexists; split; [eapply star_refl |].
   assert (eval_addressing tge sp addr (map rs args) = Some a).
     rewrite <- H. apply eval_addressing_preserved. exact symbols_preserved.
   exploit eval_addressing_lessdef. eapply preg_vals; eauto. eexact H1.
@@ -1023,7 +992,6 @@ Local Transparent destroyed_by_op.
   simpl; congruence.
 
 - (* Mstore *)
-  eexists; split; [eapply star_refl |].
   assert (eval_addressing tge sp addr (map rs args) = Some a).
     rewrite <- H. apply eval_addressing_preserved. exact symbols_preserved.
   exploit eval_addressing_lessdef. eapply preg_vals; eauto. eexact H1.
@@ -1040,7 +1008,6 @@ Local Transparent destroyed_by_op.
   simpl; congruence.
 
 - (* Mcall *)
-  eexists; split; [eapply star_refl |].
   assert (f0 = f) by congruence.  subst f0.
   inv AT.
   assert (NOOV: list_length_z tf.(fn_code) <= Ptrofs.max_unsigned).
@@ -1258,7 +1225,6 @@ Local Transparent destroyed_by_op.
     Simpl. rewrite <- H2. auto.
 
 - (* Mtailcall *)
-  eexists; split; [eapply star_refl |].
   assert (f0 = f) by congruence.  subst f0.
   assert (cp = comp_of f).
   inv AT.
@@ -1326,7 +1292,6 @@ Local Transparent destroyed_by_op.
   Simpl. unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H. auto.
 
 - (* Mbuiltin *)
-  eexists; split; [eapply star_refl |].
   assert (cp = comp_of f).
   unfold find_comp_ptr in CURCOMP. rewrite FUN in CURCOMP. inv CURCOMP.
   reflexivity. subst.
@@ -1374,7 +1339,6 @@ Local Transparent destroyed_by_op.
   congruence.
 
 - (* Mgoto *)
-  eexists; split; [eapply star_refl |].
   assert (f0 = f) by congruence. subst f0.
   inv AT. monadInv H4.
   exploit find_label_goto_label; eauto. intros [tc' [rs' [GOTO [AT2 INV]]]].
@@ -1394,7 +1358,6 @@ Local Transparent destroyed_by_op.
   congruence.
 
 - (* Mcond true *)
-  eexists; split; [eapply star_refl |].
   assert (f0 = f) by congruence. subst f0.
   exploit eval_condition_lessdef. eapply preg_vals; eauto. eauto. eauto. intros EC.
   left; eapply exec_straight_opt_steps_goto; eauto.
@@ -1406,7 +1369,6 @@ Local Transparent destroyed_by_op.
   exact B. 
 
 - (* Mcond false *)
-  eexists; split; [eapply star_refl |].
   exploit eval_condition_lessdef. eapply preg_vals; eauto. eauto. eauto. intros EC.
   left; eapply exec_straight_steps; eauto. intros. simpl in TR.
   exploit transl_cbranch_correct_false; eauto. intros (rs' & A & B).
@@ -1416,7 +1378,6 @@ Local Transparent destroyed_by_op.
   simpl. congruence.
 
 - (* Mjumptable *)
-  eexists; split; [eapply star_refl |].
   assert (f0 = f) by congruence. subst f0.
   inv AT. monadInv H6.
   exploit functions_transl; eauto. intro FN.
@@ -1456,7 +1417,6 @@ Local Transparent destroyed_by_op.
   (* assert (f0 = f) by congruence. subst f0. *)
   (* econstructor; eauto. *)
   (* eapply Mem.free_left_extends; eauto. *)
-  eexists; split; [eapply star_refl |].
   assert (f0 = f) by congruence. subst f0.
   assert (cp = comp_of f).
   inv AT.
@@ -1470,10 +1430,6 @@ Local Transparent destroyed_by_op.
   exploit exec_straight_steps_2; eauto using functions_transl.
   assert (exists cp, Genv.find_comp ge (parent_ra s) = cp) as [cp Hra].
   { eexists; reflexivity. }
-  (* { destruct s as [| [] ?]. *)
-  (*   - eexists. simpl. rewrite Genv.find_comp_null. reflexivity. *)
-  (*   - simpl. inv STACKS. *)
-  (*     rewrite H11. eexists; reflexivity. } *)
   assert (exists s'', update_stack_return tge s' (comp_of (Internal f)) rs1 # PC <- (rs1 X1) = Some s''
                  /\ match_stacks (parent_ra s) s s'') as [s'' [Hs''1 Hs''2]].
   { unfold update_stack_return. rewrite X. Simpl.
@@ -1512,8 +1468,8 @@ Local Transparent destroyed_by_op.
   econstructor; eauto.
   eapply match_stacks_same_compartment; eauto. rewrite P, <- H3. simpl. reflexivity.
 
+
 - (* internal function *)
-  eexists; split; [eapply star_refl |].
   assert (cp = comp_of f).
   unfold find_comp_ptr in CURCOMP. rewrite H in CURCOMP. inv CURCOMP.
   reflexivity. subst.
@@ -1609,21 +1565,6 @@ Local Transparent destroyed_at_function_entry.
       + eexists; split; eauto.
         eapply match_stacks_intra_compartment; eauto.
   }
-  Require Import Coq.Logic.Classical.
-  destruct (classic (Genv.type_of_call ge (Genv.find_comp)))
-
-
-  (* Need to do case analysis on this:
-  Genv.type_of_call tge (Genv.find_comp tge (rs0 PC)) (Genv.find_comp tge (rs0 X1)) =
-  Genv.CrossCompartmentCall ->
-  forall r : mreg,
-  In r (regs_of_rpair (loc_result (ef_sig ef))) ->
-  not_ptr
-    ((set_pair (loc_external_result (ef_sig ef)) res' (undef_caller_save_regs rs0)) # PC <- (rs0 X1)
-       (preg_of r))
-   *)
-
-  eexists; split; [eapply star_refl |].
   left; econstructor; split.
   apply plus_one. eapply exec_step_external; eauto.
   rewrite <- find_comp_translated.
@@ -1669,10 +1610,14 @@ Local Transparent destroyed_at_function_entry.
   }
   rewrite ATPC; simpl; rewrite A.
   Simpl. eauto.
+  rewrite ATPC. simpl. rewrite A.
   eapply match_states_return_external; eauto.
+  Simpl. rewrite ATLR. eauto.
+  eapply agree_set_other; eauto.
+  eapply agree_set_pair; eauto. eapply agree_undef_caller_save_regs; eauto.
 
-- eexists; split; [eapply star_refl |].
-  destruct Hs'' as [s'' [Hs''1 Hs''2]].
+
+- destruct Hs'' as [s'' [Hs''1 Hs''2]].
   left. eexists. split.
   econstructor.
   eapply exec_step_internal_return; eauto.
@@ -1751,16 +1696,24 @@ Local Transparent destroyed_at_function_entry.
   simpl in H8. congruence.
   Simpl. rewrite X. eauto.
   apply agree_set_other; auto with asmgen.
-  constructor. eauto. eauto. eapply agree_mregs; eauto.
+  (* constructor. eauto. eauto. eapply agree_mregs; eauto. *)
   congruence.
 
-- left. eexists. split.
-  econstructor. admit.
+- inv STACKS.
+  left. eexists. split.
+  econstructor. econstructor; eauto.
+  rewrite ATPC. rewrite <- find_comp_translated. simpl in *.
+  intros G1 r G2.
+  specialize (NO_CROSS_PTR G1 r G2).
+  apply agree_mregs with (r := r) in AG. inv AG; auto. now rewrite <- H0 in NO_CROSS_PTR.
   econstructor. traceEq.
-  admit.
-Admitted.
-
-
+  econstructor; eauto.
+  rewrite ATPC in STACKS'. rewrite ATPC.
+  inv STACKS'. eapply match_stacks_same_compartment; eauto.
+  simpl in *; congruence.
+  rewrite ATPC; eauto.
+  congruence.
+Qed.
 
 Lemma transf_initial_states:
   forall st1, Mach.initial_state prog st1 ->
@@ -1790,10 +1743,16 @@ Lemma transf_final_states:
   match_states st1 st2 -> Mach.final_state st1 r -> Asm.final_state st2 r.
 Proof.
   intros. inv H0. inv H. inv STACKS'.
-  constructor. assumption.
-  compute in H1. inv H1.
-  generalize (preg_val _ _ _ R10 AG). rewrite H2. intros LD; inv LD. auto.
-Qed.
+  - constructor. admit.
+    compute in H1. inv H1.
+    generalize (preg_val _ _ _ R10 AG). rewrite H2. intros LD; inv LD. auto.
+  - compute in H1. inv H1.
+    generalize (preg_val _ _ _ R10 AG). rewrite H2. intros LD; inv LD. auto.
+    admit.
+  (*   assumption. *)
+  (* compute in H1. inv H1. *)
+  (* generalize (preg_val _ _ _ R10 AG). rewrite H2. intros LD; inv LD. auto. *)
+Admitted.
 
 
 Theorem transf_program_correct:
