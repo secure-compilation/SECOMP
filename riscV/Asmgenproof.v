@@ -1484,40 +1484,92 @@ Local Transparent destroyed_by_op.
     left; econstructor; split.
     eapply plus_star_trans.
     eapply exec_straight_exec; eauto.
-    eapply star_one. eapply exec_step_internal_return; eauto.
+    eapply star_one. eapply exec_step_internal_return. eauto.
     eapply functions_transl; eauto. eapply find_instr_tail. eexact Q.
-    admit.
     simpl. reflexivity.
-    econstructor; eauto. econstructor. simpl.
+    simpl. reflexivity.
+    eauto. eauto.
+    rewrite P, X; reflexivity.
+    rewrite P, X; eauto.
+    (* congruence. *)
+    unfold update_stack_return. Simpl.
+    destruct (Genv.find_comp tge (rs1 PC) =? Genv.find_comp tge (rs1 X1))%positive; reflexivity.
     admit.
+    traceEq.
+    econstructor; eauto. econstructor.
+      apply agree_set_other; auto with asmgen.
   + (* s non empty *)
-    (* Do more source steps *)
-    eexists; split.
-    eapply star_one. econstructor.
-    admit.
-    left; econstructor; split.
-    eapply plus_star_trans.
-    eapply exec_straight_exec; eauto.
-    eapply star_step. eapply exec_step_internal_return; eauto.
-    eapply functions_transl; eauto. eapply find_instr_tail. eexact Q.
-    simpl. reflexivity. eauto.
-    (* Simpl. rewrite PC. rewrite <- find_comp_translated. unfold Genv.find_comp; rewrite FIND, X; simpl. eauto. *)
-    (* Simpl. *)
-    (* TODO: I don't understand what's happening there, but I think there's a simplification to find *)
-    { admit. }
-    { admit. }
-    rewrite P. rewrite <- find_comp_translated; simpl; rewrite FIND. eassumption.
-    { admit. }
-    econstructor. traceEq. traceEq.
-    inv STACKS.
-    econstructor; eauto.
-    rewrite X; simpl; Simpl. simpl in Hs''2.
-    inv Hs''2; eauto.
-    eapply match_stacks_same_compartment.  eauto. eauto.
-    simpl in *. congruence.
-    Simpl. rewrite X. eauto.
-    apply agree_set_other; auto with asmgen.
-    congruence.
+    Require Import Coq.Logic.Classical.
+    destruct (classic (Genv.type_of_call ge (Genv.find_comp ge (Vptr f0 Ptrofs.zero)) (comp_of f) = Genv.CrossCompartmentCall ->
+                       forall l : mreg, In l (regs_of_rpair (loc_result (Mach.fn_sig f))) -> not_ptr (rs l))).
+    * (* Do more source steps *)
+      eexists; split.
+      eapply star_one. econstructor.
+      eauto.
+      left; econstructor; split.
+      eapply plus_star_trans.
+      eapply exec_straight_exec; eauto.
+      eapply star_step. eapply exec_step_internal_return; eauto.
+      eapply functions_transl; eauto. eapply find_instr_tail. eexact Q.
+      simpl. reflexivity. eauto.
+      Simpl.
+      { rewrite P, X, <- 2!find_comp_translated.
+        rewrite <- H3 in STACKS'.
+        remember (Vptr fb ofs) as pc.
+        assert (COMP: Genv.find_comp ge pc = (comp_of (Internal f))).
+        { rewrite Heqpc. simpl. rewrite FIND. reflexivity. }
+        assert (R: Genv.find_comp ge (Vptr fb ofs') = Genv.find_comp ge pc).
+        { rewrite Heqpc. simpl. reflexivity. }
+        clear -STACKS' COMP R.
+        rewrite R. clear R.
+        revert COMP.
+        induction STACKS'; intros.
+        - reflexivity.
+        - rewrite COMP in H0.
+          destruct f1; simpl in *.
+          exfalso. apply H1. rewrite H0.
+          auto.
+        - now inv H1. }
+      { Simpl. rewrite P, X, Y, <- 2!find_comp_translated.
+        rewrite <- H3 in STACKS'.
+        remember (Vptr fb ofs) as pc.
+        assert (COMP: Genv.find_comp ge pc = (comp_of (Internal f))).
+        { rewrite Heqpc. simpl. rewrite FIND. reflexivity. }
+        assert (R: Genv.find_comp ge (Vptr fb ofs') = Genv.find_comp ge pc).
+        { rewrite Heqpc. simpl. reflexivity. }
+        clear -STACKS' COMP R.
+        rewrite R. clear R.
+        revert COMP.
+        induction STACKS'; intros.
+        - reflexivity.
+        - rewrite COMP in H0.
+          destruct f1; simpl in *.
+          exfalso. apply H1. rewrite H0.
+          auto.
+        - now inv H1. }
+      rewrite P. rewrite <- find_comp_translated; simpl; rewrite FIND. eassumption.
+      { Simpl. rewrite P, X, <- 2!find_comp_translated. simpl; rewrite FIND; simpl.
+        simpl in H6.
+        intros G. specialize (H6 G).
+        intros r r_sig.
+        monadInv H5. monadInv EQ0. simpl in *.
+        destruct (zlt Ptrofs.max_unsigned
+            (list_length_z (Pallocframe (fn_stacksize f) (fn_link_ofs f) :: storeind_ptr X1 X2 (fn_retaddr_ofs f) x1))); try discriminate.
+        inv EQ1. simpl in r_sig. specialize (H6 r r_sig).
+        Simpl. apply agree_mregs with (r := r) in V.
+        inv V; auto. rewrite <- H8 in H6; contradiction.
+      }
+      econstructor. traceEq. traceEq.
+      inv STACKS.
+      econstructor; eauto.
+      rewrite X; simpl; Simpl. simpl in Hs''2.
+      inv Hs''2; eauto.
+      eapply match_stacks_same_compartment.  eauto. eauto.
+      simpl in *. congruence.
+      Simpl. rewrite X. eauto.
+      apply agree_set_other; auto with asmgen.
+      congruence.
+    *
 
 - (* internal function *)
   assert (cp = comp_of f).
