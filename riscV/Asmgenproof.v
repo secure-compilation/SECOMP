@@ -1892,22 +1892,19 @@ Lemma transf_final_states:
 Proof.
   intros. inv H0. inv H.
   - inv STACKS'.
-    constructor. admit.
+    constructor. auto.
     compute in H1. inv H1.
     generalize (preg_val _ _ _ R10 AG). rewrite H2. intros LD; inv LD. auto.
-  - compute in H1. inv H1.
-    generalize (preg_val _ _ _ R10 AG). rewrite H2. intros LD; inv LD. auto.
+  - admit.
+  - inv STACKS'. (* should this be a contradiction? *)
     admit.
-  (*   assumption. *)
-  (* compute in H1. inv H1. *)
-  (* generalize (preg_val _ _ _ R10 AG). rewrite H2. intros LD; inv LD. auto. *)
 Admitted.
 
 
 Theorem transf_program_correct:
   forward_simulation (Mach.semantics return_address_offset prog) (Asm.semantics tprog).
 Proof.
-  eapply forward_simulation_star with (measure := measure).
+  eapply forward_simulation_determ_star' with (measure := measure).
   apply senv_preserved.
   eexact transf_initial_states.
   eexact transf_final_states.
