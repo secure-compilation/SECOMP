@@ -1290,6 +1290,12 @@ Inductive final_state: state -> int -> Prop :=
   | final_state_intro: forall rs m r,
       rs PC = Vnullptr ->
       rs X10 = Vint r ->
+      final_state (State initial_stack rs m) r
+  | final_state_fail: forall (rs: preg -> val) m r sg cp (ge: Genv.t fundef unit),
+      rs X10 = Vint r ->
+      forall (FAIL: ~ (Genv.type_of_call ge default_compartment cp = Genv.CrossCompartmentCall ->
+                  forall l: mreg,
+                    In l (regs_of_rpair (loc_result sg)) -> not_ptr (rs (preg_of l)))),
       final_state (State initial_stack rs m) r.
 
 Definition semantics (p: program) :=

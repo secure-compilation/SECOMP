@@ -583,24 +583,6 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
         (ATLR: rs RA = parent_ra s),
       match_states (Mach.Callstate s fb ms m)
                    (Asm.State s' rs m')
-  (* | match_states_return: *)
-  (*     forall s s' fb tc ms m m' rs f tf sg cp ofs *)
-  (*       (STACKS: match_stack ge s) *)
-  (*       (STACKS': match_stacks (rs PC) s s') *)
-  (*       (FIND: Genv.find_funct_ptr ge fb = Some (Internal f)) *)
-  (*       (TRANSF: transf_function f = OK tf) *)
-  (*       (MEXT: Mem.extends m m') *)
-  (*       (ATPC: rs PC = Vptr fb ofs) *)
-  (*       (AG: agree ms (parent_sp s) rs) *)
-  (*       (COMP: cp = comp_of f) *)
-  (*       (SIG: sg = Mach.fn_sig f) *)
-  (*       (CODE: code_tail (Ptrofs.unsigned ofs) (fn_code tf) (Pj_r X1 (Mach.fn_sig f) true :: tc)) *)
-  (*       (Hs'' : exists s'', update_stack_return tge s' (comp_of (Internal f)) rs # PC <- (rs X1) = Some s'' /\ *)
-  (*                      match_stacks (parent_ra s) s s'') *)
-  (*       (X: rs X1 = parent_ra s) *)
-  (*       (Y: rs X2 = parent_sp s), *)
-  (*     match_states (Mach.Returnstate s ms m sg cp) *)
-  (*                  (Asm.State s' rs m') *)
   | match_states_return:
     forall s' ms m m' rs sg cp
       (STACKS: match_stack ge nil)
@@ -612,11 +594,10 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
                    (Asm.State s' rs m')
   | match_states_return_fail:
     forall s s' ms m m' rs sg cp
-      (* (STACKS: match_stack ge s) *)
-      (* (STACKS': match_stacks (rs PC) s s') *)
-      (* (MEXT: Mem.extends m m') *)
-      (* (AG: agree ms (parent_sp s) rs) *)
-      (* (ATPC: rs PC = parent_ra s) *)
+      (STACKS: match_stack ge s)
+      (STACKS': match_stacks (rs PC) s s')
+      (MEXT: Mem.extends m m')
+      (AG: agree ms (parent_sp s) rs)
       (FAIL: not (Genv.type_of_call ge (Genv.find_comp ge (parent_ra s)) cp = Genv.CrossCompartmentCall ->
                        forall l : mreg,
                          In l (regs_of_rpair (loc_result sg)) -> not_ptr (ms l))),
@@ -1516,6 +1497,7 @@ Local Transparent destroyed_by_op.
     * left; econstructor; split.
       eapply exec_straight_exec; eauto.
       eapply match_states_return_fail; eauto.
+      econstructor.
       revert H6. rewrite X, P. Simpl. rewrite <- 2!find_comp_translated.
       simpl; rewrite FIND.
       assert (R: Mach.fn_sig f = fn_sig tf). {
@@ -1538,7 +1520,6 @@ Local Transparent destroyed_by_op.
       apply agree_mregs with (r := r) in V. inv V; auto.
       rewrite <- H1 in G; contradiction.
   + (* s non empty *)
-    Require Import Coq.Logic.Classical.
     destruct (classic (Genv.type_of_call ge (Genv.find_comp ge (Vptr f0 Ptrofs.zero)) (comp_of f) = Genv.CrossCompartmentCall ->
                        forall l : mreg, In l (regs_of_rpair (loc_result (Mach.fn_sig f))) -> not_ptr (rs l))).
     * (* Do more source steps *)
@@ -1612,6 +1593,7 @@ Local Transparent destroyed_by_op.
       left; econstructor; split.
       eapply exec_straight_exec; eauto.
       eapply match_states_return_fail; eauto.
+      eapply match_stacks_same_compartment. eauto. rewrite P, <- H3. auto.
 
 - (* internal function *)
   assert (cp = comp_of f).
@@ -1895,7 +1877,15 @@ Proof.
     constructor. auto.
     compute in H1. inv H1.
     generalize (preg_val _ _ _ R10 AG). rewrite H2. intros LD; inv LD. auto.
-  - admit.
+  - assert (s' = nil) by (inv STACKS'; auto). subst s'.
+    constructor. admit.
+    compute in H1. inv H1.
+    generalize (preg_val _ _ _ R10 AG). rewrite H2. intros LD; inv LD. auto.
+    exfalso. apply FAIL. intros.
+    unfold Genv.find_comp in H. simpl in H. unfold Vnullptr in H. destruct (Archi.ptr64).
+    unfold Genv.type_of_call in H.
+    simpl in H0. unfold loc_result in H1. simpl in H1. inv H1.
+    destruct H0; subst; try easy. rewrite H2. reflexivity.
   - inv STACKS'. (* should this be a contradiction? *)
     admit.
 Admitted.
