@@ -610,6 +610,18 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
       (ATPC: rs PC = parent_ra nil),
       match_states (Mach.Returnstate nil ms m sg cp)
                    (Asm.State s' rs m')
+  | match_states_return_fail:
+    forall s s' ms m m' rs sg cp
+      (* (STACKS: match_stack ge s) *)
+      (* (STACKS': match_stacks (rs PC) s s') *)
+      (* (MEXT: Mem.extends m m') *)
+      (* (AG: agree ms (parent_sp s) rs) *)
+      (* (ATPC: rs PC = parent_ra s) *)
+      (FAIL: not (Genv.type_of_call ge (Genv.find_comp ge (parent_ra s)) cp = Genv.CrossCompartmentCall ->
+                       forall l : mreg,
+                         In l (regs_of_rpair (loc_result sg)) -> not_ptr (ms l))),
+      match_states (Mach.Returnstate s ms m sg cp)
+                   (Asm.State s' rs m')
   | match_states_return_external:
     forall s s' ms m m' rs sg cp
       (STACKS: match_stack ge s)
@@ -1479,25 +1491,52 @@ Local Transparent destroyed_by_op.
   intros (ofs' & P & Q).
   destruct s as [| [] ?].
   + (* s empty, stop *)
+    Require Import Coq.Logic.Classical.
     assert (s' = nil) by now inversion STACKS'. subst.
     eexists; split; [eapply star_refl |].
-    left; econstructor; split.
-    eapply plus_star_trans.
-    eapply exec_straight_exec; eauto.
-    eapply star_one. eapply exec_step_internal_return. eauto.
-    eapply functions_transl; eauto. eapply find_instr_tail. eexact Q.
-    simpl. reflexivity.
-    simpl. reflexivity.
-    eauto. eauto.
-    rewrite P, X; reflexivity.
-    rewrite P, X; eauto.
+    destruct (classic (Genv.type_of_call tge (Genv.find_comp tge (rs1 # PC <- (rs1 X1) PC)) (Genv.find_comp tge (rs1 PC)) = Genv.CrossCompartmentCall ->
+                       forall r : mreg, In r (regs_of_rpair (loc_result (fn_sig tf))) -> not_ptr (rs1 # PC <- (rs1 X1) (preg_of r)))).
+    * left; econstructor; split.
+      eapply plus_star_trans.
+      eapply exec_straight_exec; eauto.
+      eapply star_one. eapply exec_step_internal_return. eauto.
+      eapply functions_transl; eauto. eapply find_instr_tail. eexact Q.
+      simpl. reflexivity.
+      simpl. reflexivity.
+      eauto. eauto.
+      rewrite P, X; reflexivity.
+      rewrite P, X; eauto.
     (* congruence. *)
-    unfold update_stack_return. Simpl.
-    destruct (Genv.find_comp tge (rs1 PC) =? Genv.find_comp tge (rs1 X1))%positive; reflexivity.
-    admit.
-    traceEq.
-    econstructor; eauto. econstructor.
+      unfold update_stack_return. Simpl.
+      destruct (Genv.find_comp tge (rs1 PC) =? Genv.find_comp tge (rs1 X1))%positive; reflexivity.
+      assumption.
+      traceEq.
+      econstructor; eauto. econstructor.
       apply agree_set_other; auto with asmgen.
+    * left; econstructor; split.
+      eapply exec_straight_exec; eauto.
+      eapply match_states_return_fail; eauto.
+      revert H6. rewrite X, P. Simpl. rewrite <- 2!find_comp_translated.
+      simpl; rewrite FIND.
+      assert (R: Mach.fn_sig f = fn_sig tf). {
+        monadInv H5. monadInv EQ0.
+        destruct (zlt Ptrofs.max_unsigned
+                    (list_length_z
+                       (fn_code
+                          {|
+                            fn_comp := Mach.fn_comp f;
+                            fn_sig := Mach.fn_sig f;
+                            fn_code := Pallocframe (fn_stacksize f) (fn_link_ofs f) :: storeind_ptr X1 X2 (fn_retaddr_ofs f) x1 |})));
+          try discriminate.
+        inv EQ1. reflexivity. }
+      rewrite R.
+      clear -V.
+      intros H G.
+      apply H. intros F r E.
+      specialize (G F r E).
+      Simpl.
+      apply agree_mregs with (r := r) in V. inv V; auto.
+      rewrite <- H1 in G; contradiction.
   + (* s non empty *)
     Require Import Coq.Logic.Classical.
     destruct (classic (Genv.type_of_call ge (Genv.find_comp ge (Vptr f0 Ptrofs.zero)) (comp_of f) = Genv.CrossCompartmentCall ->
@@ -1569,7 +1608,10 @@ Local Transparent destroyed_by_op.
       Simpl. rewrite X. eauto.
       apply agree_set_other; auto with asmgen.
       congruence.
-    *
+    * eexists; split; [eapply star_refl |].
+      left; econstructor; split.
+      eapply exec_straight_exec; eauto.
+      eapply match_states_return_fail; eauto.
 
 - (* internal function *)
   assert (cp = comp_of f).
@@ -1802,6 +1844,8 @@ Local Transparent destroyed_at_function_entry.
 (*   (* constructor. eauto. eauto. eapply agree_mregs; eauto. *) *)
 (*   congruence. *)
 
+- contradiction.
+
 - inv STACKS.
   eexists; split; [eapply star_refl |].
   left. eexists. split.
@@ -1817,7 +1861,7 @@ Local Transparent destroyed_at_function_entry.
   simpl in *; congruence.
   rewrite ATPC; eauto.
   congruence.
-Admitted.
+Qed.
 
 Lemma transf_initial_states:
   forall st1, Mach.initial_state prog st1 ->
