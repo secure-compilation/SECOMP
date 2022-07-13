@@ -1133,8 +1133,8 @@ Definition update_stack_return (s: stack) (cp: compartment) rs' :=
   .
 
 Inductive state: Type :=
-  | State: stack -> regset -> mem -> state
-  | EnforcementState: stack -> regset -> mem -> signature -> compartment -> state.
+  | State: stack -> regset -> mem -> bool -> state.
+  (* | EnforcementState: stack -> regset -> mem -> signature -> compartment -> state. *)
 
 (* Definition is_call i := *)
 (*   match i with *)
@@ -1180,7 +1180,7 @@ Inductive step: state -> trace -> state -> Prop :=
       is_return i = false ->
       forall (NEXTPC: rs' PC = Vptr b' ofs'),
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) (Vptr b' ofs')),
-      step (State st rs m) E0 (State st rs' m')
+      step (State st rs m true) E0 (State st rs' m' true)
   | exec_step_internal_call:
       forall b ofs f i sig rs m rs' m' b' ofs' cp st st',
       rs PC = Vptr b ofs ->
@@ -1208,9 +1208,9 @@ Inductive step: state -> trace -> state -> Prop :=
                       = Some v ->
             (* load_stack m sp ty (Ptrofs.repr (offset_arg ofs)) None = Some v -> *)
             not_ptr v),
-      step (State st rs m) E0 (State st' rs' m')
+      step (State st rs m true) E0 (State st' rs' m' true)
   | exec_step_internal_return:
-      forall b ofs f i rs m rs' m' cp cp' st st',
+      forall b ofs f i rs m rs' m' cp cp' st st' allowed,
       rs PC = Vptr b ofs ->
       Genv.find_funct_ptr ge b = Some (Internal f) ->
       find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
@@ -1227,10 +1227,10 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (STUPD: update_stack_return st cp rs' = Some st'),
       (* (* No cross-compartment pointer return *) *)
       forall (NO_CROSS_PTR:
-          Genv.type_of_call ge cp' cp = Genv.CrossCompartmentCall ->
+          (Genv.type_of_call ge cp' cp = Genv.CrossCompartmentCall ->
           forall r, List.In r (regs_of_rpair (loc_result (fn_sig f))) ->
-              not_ptr (rs' (preg_of r))),
-      step (State st rs m) E0 (State st' rs' m')
+              not_ptr (rs' (preg_of r))) <-> allowed = true),
+      step (State st rs m true) E0 (State st' rs' m' allowed)
   | exec_step_builtin:
       forall b ofs f ef args res rs m vargs t vres rs' m' st,
       rs PC = Vptr b ofs ->
@@ -1242,9 +1242,9 @@ Inductive step: state -> trace -> state -> Prop :=
               (set_res res vres
                 (undef_regs (map preg_of (destroyed_by_builtin ef))
                    (rs#X31 <- Vundef))) ->
-      step (State st rs m) t (State st rs' m')
+      step (State st rs m true) t (State st rs' m' true)
   | exec_step_external:
-      forall b ef args res rs m t rs' m' cp cp' cp'' st st',
+      forall b ef args res rs m t rs' m' cp cp' cp'' st st' allowed,
       rs PC = Vptr b Ptrofs.zero ->
       Genv.find_funct_ptr ge b = Some (External ef) ->
       forall COMP: Genv.find_comp ge (rs RA) = cp,
@@ -1261,15 +1261,20 @@ Inductive step: state -> trace -> state -> Prop :=
       (* Note that in the same manner, this definition only updates the stack when doing
          cross-compartment returns *)
       forall (STUPD: update_stack_return st cp' rs' = Some st'),
-      step (State st rs m) t (EnforcementState st' rs' m' (ef_sig ef) cp')
-  | exec_step_return_external: forall st rs m sg cp cp',
-      forall (NEXTCOMP: Genv.find_comp ge (rs PC) = cp'),
+      (* (* No cross-compartment pointer return *) *)
       forall (NO_CROSS_PTR:
-          Genv.type_of_call ge cp' cp = Genv.CrossCompartmentCall ->
-          forall r, List.In r (regs_of_rpair (loc_result sg)) ->
-              not_ptr (rs (preg_of r))),
-      step (EnforcementState st rs m sg cp) E0 (State st rs m)
-.
+          (Genv.type_of_call ge cp'' cp' = Genv.CrossCompartmentCall ->
+          forall r, List.In r (regs_of_rpair (loc_result (ef_sig ef))) ->
+              not_ptr (rs' (preg_of r))) <-> allowed = true),
+      step (State st rs m true) t (State st' rs' m' allowed).
+  (* | exec_step_return_external: forall st rs m sg cp cp', *)
+  (*     forall (NEXTCOMP: Genv.find_comp ge (rs PC) = cp'), *)
+  (*     forall (NO_CROSS_PTR: *)
+  (*         Genv.type_of_call ge cp' cp = Genv.CrossCompartmentCall -> *)
+  (*         forall r, List.In r (regs_of_rpair (loc_result sg)) -> *)
+  (*             not_ptr (rs (preg_of r))), *)
+  (* step (EnforcementState st rs m sg cp) E0 (State st rs m) *)
+  (* . *)
 
 End RELSEM.
 
@@ -1284,22 +1289,30 @@ Inductive initial_state (p: program): state -> Prop :=
         # SP <- Vnullptr
         # RA <- Vnullptr in
       Genv.init_mem p = Some m0 ->
-      initial_state p (State initial_stack rs0 m0).
+      initial_state p (State initial_stack rs0 m0 true).
 
-Inductive final_state: state -> int -> Prop :=
-  | final_state_intro: forall rs m r,
+Inductive final_state (p: program): state -> int -> Prop :=
+  | final_state_intro: forall rs m r b,
       rs PC = Vnullptr ->
       rs X10 = Vint r ->
-      final_state (State initial_stack rs m) r
-  | final_state_fail: forall (rs: preg -> val) m r sg cp (ge: Genv.t fundef unit),
-      rs X10 = Vint r ->
-      forall (FAIL: ~ (Genv.type_of_call ge default_compartment cp = Genv.CrossCompartmentCall ->
-                  forall l: mreg,
-                    In l (regs_of_rpair (loc_result sg)) -> not_ptr (rs (preg_of l)))),
-      final_state (State initial_stack rs m) r.
+      final_state p (State initial_stack rs m b) r
+  (* | final_state_fail: forall (rs: preg -> val) rs' m m' r b ofs f i, *)
+  (*     rs X10 = Vint r -> *)
+  (*     rs PC = Vptr b ofs -> *)
+  (*     (Genv.find_funct_ptr (Genv.globalenv p) b = Some (Internal f)) -> *)
+  (*     (find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i) -> *)
+  (*     exec_instr (Genv.globalenv p) f i rs m (Genv.find_comp (Genv.globalenv p) (rs PC)) = *)
+  (*       Next rs' m' -> *)
+  (*     is_return i = true -> *)
+  (*     forall (FAIL: ~ (Genv.type_of_call (Genv.globalenv p) (Genv.find_comp (Genv.globalenv p) (rs' PC)) *)
+  (*                   (Genv.find_comp (Genv.globalenv p) (rs PC)) = Genv.CrossCompartmentCall -> *)
+  (*                 forall l: mreg, *)
+  (*                   In l (regs_of_rpair (loc_result (fn_sig f))) -> not_ptr (rs' (preg_of l)))), *)
+  (*     final_state p (State initial_stack rs m) r. *)
+.
 
 Definition semantics (p: program) :=
-  Semantics step (initial_state p) final_state (Genv.globalenv p).
+  Semantics step (initial_state p) (final_state p) (Genv.globalenv p).
 
 (** Determinacy of the [Asm] semantics. *)
 
@@ -1356,15 +1369,25 @@ Ltac Equalities :=
   + split. constructor. auto.
   + now destruct i0.
   + now destruct i0.
-  + split. constructor. congruence.
-
+  + split. constructor.
+    assert (allowed = allowed0).
+    { eapply iff_sym in NO_CROSS_PTR0.
+      assert (allowed0 = true <-> allowed = true). eapply iff_trans; eauto.
+      clear -H.
+      destruct allowed, allowed0; intuition. }
+    congruence.
   + assert (vargs0 = vargs) by (eapply eval_builtin_args_determ; eauto). subst vargs0.
     exploit external_call_determ. eexact H5. eexact H14.  intros [A B].
     split. auto. intros. destruct B; auto. subst. auto.
   + assert (args0 = args) by (eapply extcall_arguments_determ; eauto). subst args0.
     exploit external_call_determ. eexact H3. eexact H9. intros [A B].
-    split. auto. intros. destruct B; auto. subst. congruence.
-  + split. constructor. reflexivity.
+    split. auto. intros. destruct B; auto. subst.
+    assert (allowed = allowed0).
+    { eapply iff_sym in NO_CROSS_PTR0.
+      assert (allowed0 = true <-> allowed = true). eapply iff_trans; eauto.
+      clear -H.
+      destruct allowed, allowed0; intuition. }
+    congruence.
 - (* trace length *)
   red; intros. inv H; simpl.
   omega.
@@ -1372,16 +1395,16 @@ Ltac Equalities :=
   omega.
   eapply external_call_trace_length; eauto.
   eapply external_call_trace_length; eauto.
-  omega.
 - (* initial states *)
   inv H; inv H0. f_equal. congruence.
 - (* final no step *)
   assert (NOTNULL: forall b ofs, Vnullptr <> Vptr b ofs).
   { intros; unfold Vnullptr; destruct Archi.ptr64; congruence. }
-  inv H. unfold Vzero in H0. red; intros; red; intros.
+  inv H.
+  unfold Vzero in H0. red; intros; red; intros.
   inv H; rewrite H0 in *; eelim NOTNULL; eauto.
 - (* final states *)
-  inv H; inv H0. congruence.
+  inv H; inv H0; congruence.
 Qed.
 
 (** Classification functions for processor registers (used in Asmgenproof). *)
