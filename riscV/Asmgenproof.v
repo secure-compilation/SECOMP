@@ -1524,7 +1524,6 @@ Local Transparent destroyed_by_op.
   (*     rewrite R'. *)
   (*     eapply match_states_return_fail; eauto. *)
   (*     econstructor. *)
-  (*     admit. admit. admit. admit. admit. *)
   (*     revert H6. rewrite X, P. Simpl. rewrite <- 2!find_comp_translated. *)
   (*     simpl; rewrite FIND. *)
   (*     clear -V. *)

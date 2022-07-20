@@ -2660,11 +2660,32 @@ Proof.
   destruct (transf_function_inv _ _ FUN).
   rewrite <- COMP. rewrite <- type_of_call_translated.
   intros G. specialize (NO_CROSS_PTR G).
-  unfold loc_result. admit. (* this doesn't seem too impossible :) *)
+  unfold loc_result.
+  { intros l Hl.
+    (* assert (Htype_list: Val.has_type_list rs ## args (sig_args sg)). *)
+    (* { inv WTI. rewrite <- H10. *)
+    (*   clear -WTRS. eapply wt_regset_list. eauto. } *)
+    clear -RES NO_CROSS_PTR Hl.
+    unfold loc_result in RES.
+    destruct (proj_sig_res sg) eqn:Hsg;
+      subst; simpl in *; try intuition; subst.
+    inv RES; auto; try contradiction.
+    inv RES; auto; try contradiction.
+    destruct (Archi.ptr64); simpl in *; try intuition; subst.
+    inv RES; auto; try contradiction.
+    inv RES; auto; try contradiction.
+    destruct (ls (R R11)); simpl in *; auto.
+    inv RES; auto; try contradiction.
+    destruct (ls (R R11)); simpl in *; try contradiction.
+    destruct (ls (R R10)); simpl in *; auto; try contradiction.
+    inv RES; auto; try contradiction.
+    inv RES; auto; try contradiction.
+    inv RES; auto; try contradiction.
+  }
   eexact A. traceEq.
   econstructor; eauto.
   apply wt_regset_assign; auto. rewrite WTRES0; auto.
-Admitted.
+Qed.
 
 Lemma initial_states_simulation:
   forall st1, RTL.initial_state prog st1 ->
