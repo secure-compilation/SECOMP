@@ -67,7 +67,9 @@ Inductive event: Type :=
   | Event_syscall: string -> list eventval -> eventval -> event
   | Event_vload: memory_chunk -> ident -> ptrofs -> eventval -> event
   | Event_vstore: memory_chunk -> ident -> ptrofs -> eventval -> event
-  | Event_annot: string -> list eventval -> event.
+  | Event_annot: string -> list eventval -> event
+  | Event_call: compartment -> compartment -> ident -> list eventval -> event
+  | Event_return: compartment -> compartment -> eventval -> event.
 
 (** The dynamic semantics for programs collect traces of events.
   Traces are of two kinds: finite (type [trace]) or infinite (type [traceinf]). *)
@@ -515,7 +517,11 @@ Inductive match_traces: trace -> trace -> Prop :=
   | match_traces_vstore: forall chunk id ofs arg,
       match_traces (Event_vstore chunk id ofs arg :: nil) (Event_vstore chunk id ofs arg :: nil)
   | match_traces_annot: forall id args,
-      match_traces (Event_annot id args :: nil) (Event_annot id args :: nil).
+      match_traces (Event_annot id args :: nil) (Event_annot id args :: nil)
+  | match_traces_call: forall cp cp' id args,
+      match_traces (Event_call cp cp' id args :: nil) (Event_call cp cp' id args :: nil)
+  | match_traces_return: forall cp cp' res,
+      match_traces (Event_return cp cp' res :: nil) (Event_return cp cp' res :: nil).
 
 End MATCH_TRACES.
 
@@ -545,6 +551,8 @@ Definition output_event (ev: event) : Prop :=
   | Event_vload _ _ _ _ => False
   | Event_vstore _ _ _ _ => True
   | Event_annot _ _ => True
+  | Event_call _ _ _ _ => True
+  | Event_return _ _ _ => True
   end.
 
 Fixpoint output_trace (t: trace) : Prop :=

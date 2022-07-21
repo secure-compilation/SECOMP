@@ -119,6 +119,8 @@ Proof.
   inv H7; inv H6. inv H9; inv H10. split; congruence.
   inv H4; inv H3. inv H6; inv H7. split; congruence.
   inv H4; inv H3. inv H7; inv H6. auto.
+  inv H4; inv H3.
+  inv H4; inv H3.
 Qed.
 
 CoInductive possible_traceinf: world -> traceinf -> Prop :=
