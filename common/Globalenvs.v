@@ -1906,46 +1906,6 @@ Definition type_of_call (ge: t) (cp: compartment) (cp': compartment): call_type 
   else if Pos.eqb cp' default_compartment then DefaultCompartmentCall
        else CrossCompartmentCall.
 
-(* Definition type_of_call (ge: t) (cp: compartment) (vf: val): call_type := *)
-(*   match find_comp ge vf with *)
-(*   | None => InternalCall (* a failed call is internal, by definition *) *)
-(*   | Some cp' => type_of_call ge cp cp' *)
-(*       (* if Pos.eqb cp cp' then InternalCall *) *)
-(*       (* else if Pos.eqb cp' default_compartment then DefaultCompartmentCall *) *)
-(*       (*      else CrossCompartmentCall *) *)
-(*   end. *)
-
-(* (* A call is cross-compartment if the following definition holds: *) *)
-(* Definition cross_call (ge: t) (cp: compartment) (vf: val) := *)
-(*   match find_comp ge vf with *)
-(*   | Some cp' => cp <> cp' /\ *)
-(*                  cp' <> default_compartment (* the default compartment is really privileged, *)
-(*                                             as this is where all the builtin functions live *) *)
-(*   | None => False *)
-(*   end. *)
-
-(* Definition cross_call_b (ge: t) (cp: compartment) (vf: val): bool := *)
-(*   match find_comp ge vf with *)
-(*   | Some cp' => negb (Pos.eqb cp cp') && negb (Pos.eqb cp' default_compartment) *)
-(*   | None => false *)
-(*   end. *)
-
-(* Lemma cross_call_reflect: forall ge cp vf, *)
-(*     cross_call ge cp vf <-> cross_call_b ge cp vf = true. *)
-(* Proof. *)
-(*   intros. *)
-(*   unfold cross_call, cross_call_b. *)
-(*   destruct (find_comp ge vf) eqn:COMP. *)
-(*   - split. *)
-(*     + intros [cp_neq cp_neq']. *)
-(*       apply Pos.eqb_neq in cp_neq. apply Pos.eqb_neq in cp_neq'. *)
-(*       rewrite cp_neq, cp_neq'. reflexivity. *)
-(*     + intros cp_neq. apply andb_true_iff in cp_neq as [cp_neq cp_neq']. *)
-(*       apply negb_true_iff in cp_neq. apply negb_true_iff in cp_neq'. *)
-(*       split; apply Pos.eqb_neq; assumption. *)
-(*   - split; [auto | discriminate]. *)
-(* Qed. *)
-
 (* A call is allowed if any of these 3 cases holds:
 (1) the procedure being called belongs to the default compartment
 (2) the procedure being called belongs to the same compartment as the caller
