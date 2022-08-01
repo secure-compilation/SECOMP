@@ -306,8 +306,8 @@ Inductive rred: expr -> mem -> trace -> expr -> mem -> Prop :=
 (** Head reduction for function calls.
     (More exactly, identification of function calls that can reduce.) *)
 
-Inductive callred: expr -> mem -> fundef -> list val -> type -> Prop :=
-  | red_call: forall vf tyf m tyargs tyres cconv el ty fd vargs,
+Inductive callred: expr -> mem -> fundef -> list val -> type -> trace -> Prop :=
+  | red_call: forall vf tyf m tyargs tyres cconv el ty fd vargs t,
       Genv.find_funct ge vf = Some fd ->
       cast_arguments m el tyargs vargs ->
       type_of_fundef fd = Tfunction tyargs tyres cconv ->
@@ -315,8 +315,9 @@ Inductive callred: expr -> mem -> fundef -> list val -> type -> Prop :=
       forall (ALLOWED: Genv.allowed_call ge cp vf),
       forall (NO_CROSS_PTR: Genv.type_of_call ge cp (Genv.find_comp ge vf) = Genv.CrossCompartmentCall ->
                        Forall not_ptr vargs),
+      forall (EV: call_trace ge cp (Genv.find_comp ge vf) vf vargs (typlist_of_typelist tyargs) t),
       callred (Ecall (Eval vf tyf) el ty) m
-              fd vargs ty.
+              fd vargs ty t.
 
 (** Reduction contexts.  In accordance with C's nondeterministic semantics,
   we allow reduction both to the left and to the right of a binary operator.
@@ -421,8 +422,8 @@ Inductive imm_safe: kind -> expr -> mem -> Prop :=
       rred e m t e' m' ->
       context RV to C ->
       imm_safe to (C e) m
-  | imm_safe_callred: forall to C e m fd args ty,
-      callred e m fd args ty ->
+  | imm_safe_callred: forall to C e m fd args ty t,
+      callred e m fd args ty t ->
       context RV to C ->
       imm_safe to (C e) m.
 
@@ -646,11 +647,11 @@ Inductive estep: state -> trace -> state -> Prop :=
       estep (ExprState f (C a) k e m)
           t (ExprState f (C a') k e m')
 
-  | step_call: forall C f a k e m fd vargs ty,
-      callred (comp_of f) a m fd vargs ty ->
+  | step_call: forall C f a k e m fd vargs ty t,
+      callred (comp_of f) a m fd vargs ty t ->
       context RV RV C ->
       estep (ExprState f (C a) k e m)
-         E0 (Callstate fd vargs (Kcall f e C ty k) m)
+         t (Callstate fd vargs (Kcall f e C ty k) m)
 
   | step_stuck: forall C f a k e m K,
       context K RV C -> ~(imm_safe e (comp_of f) K a m) ->
@@ -857,5 +858,6 @@ Proof.
   destruct H.
   inv H; simpl; try omega. inv H0; eauto; simpl; try omega.
   eapply external_call_trace_length; eauto.
+  inv H0; inv EV; simpl; try omega.
   inv H; simpl; try omega. eapply external_call_trace_length; eauto.
 Qed.

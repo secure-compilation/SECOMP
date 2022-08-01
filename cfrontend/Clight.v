@@ -571,7 +571,7 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Sset id a) k e le m)
         E0 (State f Sskip k e (PTree.set id v le) m)
 
-  | step_call:   forall f optid a al k e le m tyargs tyres cconv vf vargs fd,
+  | step_call:   forall f optid a al k e le m tyargs tyres cconv vf vargs fd t,
       classify_fun (typeof a) = fun_case_f tyargs tyres cconv ->
       eval_expr e (comp_of f) le m a vf ->
       eval_exprlist e (comp_of f) le m al tyargs vargs ->
@@ -579,8 +579,9 @@ Inductive step: state -> trace -> state -> Prop :=
       type_of_fundef fd = Tfunction tyargs tyres cconv ->
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
       forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
+      forall (EV: call_trace ge (comp_of f) (Genv.find_comp ge vf) vf vargs (typlist_of_typelist tyargs) t),
       step (State f (Scall optid a al) k e le m)
-        E0 (Callstate fd vargs (Kcall optid f e le k) m)
+        t (Callstate fd vargs (Kcall optid f e le k) m)
 
   | step_builtin:   forall f optid ef tyargs al k e le m vargs t vres m',
       eval_exprlist e (comp_of f) le m al tyargs vargs ->
@@ -748,6 +749,8 @@ Proof.
   assert (t1 = E0 -> exists s2, step1 ge s t2 s2).
     intros. subst. inv H0. exists s1; auto.
   inversion H; subst; auto.
+  (* call *)
+  inv EV; inv H0; eauto.
   (* builtin *)
   exploit external_call_receptive; eauto. intros [vres2 [m2 EC2]].
   econstructor; econstructor; eauto.
@@ -756,6 +759,8 @@ Proof.
   exists (Returnstate vres2 k m2 (comp_of ef)). econstructor; eauto.
 (* trace length *)
   red; simpl; intros. inv H; simpl; try omega.
+  (* call *)
+  inv EV; auto.
   eapply external_call_trace_length; eauto.
   eapply external_call_trace_length; eauto.
 Qed.

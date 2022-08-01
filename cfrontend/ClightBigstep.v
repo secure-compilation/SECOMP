@@ -90,7 +90,7 @@ Inductive exec_stmt: env -> compartment -> temp_env ->
       eval_expr ge e c le m a v ->
       exec_stmt e c le m (Sset id a)
                E0 (PTree.set id v le) m Out_normal
-  | exec_Scall:   forall e le m optid a al tyargs tyres cconv vf vargs c fd t m' vres,
+  | exec_Scall:   forall e le m optid a al tyargs tyres cconv vf vargs c fd t m' vres t',
       classify_fun (typeof a) = fun_case_f tyargs tyres cconv ->
       eval_expr ge e c le m a vf ->
       eval_exprlist ge e c le m al tyargs vargs ->
@@ -100,8 +100,9 @@ Inductive exec_stmt: env -> compartment -> temp_env ->
       forall (ALLOWED: Genv.allowed_call ge c vf),
       forall (NO_CROSS_PTR_CALL: Genv.type_of_call ge c (Genv.find_comp ge vf) = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
       forall (NO_CROSS_PTR_RETURN: Genv.type_of_call ge c (Genv.find_comp ge vf) = Genv.CrossCompartmentCall -> not_ptr vres),
+      forall (EV: call_trace ge c (Genv.find_comp ge vf) vf vargs (typlist_of_typelist tyargs) t'),
       exec_stmt e c le m (Scall optid a al)
-                t (set_opttemp optid vres le) m' Out_normal
+                (t' ** t) (set_opttemp optid vres le) m' Out_normal
   | exec_Sbuiltin:   forall e c le m optid ef al tyargs vargs t m' vres,
       eval_exprlist ge e c le m al tyargs vargs ->
       external_call ef ge c vargs m t vres m' ->
@@ -191,7 +192,7 @@ Combined Scheme exec_stmt_funcall_ind from exec_stmt_ind2, eval_funcall_ind2.
   trace of observable events performed during the execution. *)
 
 CoInductive execinf_stmt: env -> compartment -> temp_env -> mem -> statement -> traceinf -> Prop :=
-  | execinf_Scall:   forall e le m optid a al vf tyargs tyres cconv vargs c f t,
+  | execinf_Scall:   forall e le m optid a al vf tyargs tyres cconv vargs c f t t',
       classify_fun (typeof a) = fun_case_f tyargs tyres cconv ->
       eval_expr ge e c le m a vf ->
       eval_exprlist ge e c le m al tyargs vargs ->
@@ -200,7 +201,8 @@ CoInductive execinf_stmt: env -> compartment -> temp_env -> mem -> statement -> 
       evalinf_funcall m f vargs t ->
       forall (ALLOWED: Genv.allowed_call ge c vf),
       forall (NO_CROSS_PTR: Genv.type_of_call ge c (Genv.find_comp ge vf) = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
-      execinf_stmt e c le m (Scall optid a al) t
+      forall (EV: call_trace ge c (Genv.find_comp ge vf) vf vargs (typlist_of_typelist tyargs) t'),
+      execinf_stmt e c le m (Scall optid a al) (t' *** t)
   | execinf_Sseq_1:   forall e c le m s1 s2 t,
       execinf_stmt e c le m s1 t ->
       execinf_stmt e c le m (Ssequence s1 s2) t

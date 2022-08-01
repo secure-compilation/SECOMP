@@ -135,6 +135,21 @@ Proof.
   eapply (Genv.match_genvs_type_of_call).
 Qed.
 
+Lemma call_trace_translated:
+  forall cp cp' vf vargs tyargs t,
+    call_trace ge cp cp' vf vargs tyargs t ->
+    call_trace tge cp cp' vf vargs tyargs t.
+Proof.
+  intros cp cp' vf vargs tyargs t H.
+  inv H. constructor; eauto.
+  econstructor; eauto. apply Genv.find_invert_symbol.
+  rewrite symbols_preserved.
+  apply Genv.invert_find_symbol; eauto.
+  eapply eventval_list_match_preserved; [| | eassumption].
+  eapply senv_preserved.
+  eapply senv_preserved.
+Qed.
+
 (** Properties of smart constructors. *)
 
 Lemma eval_Ederef':
@@ -1997,6 +2012,7 @@ Proof.
   rewrite CO; eauto.
   eapply allowed_call_translated; eauto.
   erewrite CO, <- find_comp_translated, <- type_of_call_translated; eauto.
+  erewrite CO, <- find_comp_translated; eapply call_trace_translated; eauto.
   traceEq.
   constructor; auto.
   (* rewrite <- find_comp_translated. *)
@@ -2016,6 +2032,7 @@ Proof.
   exploit type_of_fundef_preserved; eauto. congruence.
   eapply allowed_call_translated; eauto. rewrite CO; eauto.
   erewrite CO, <- find_comp_translated, <- type_of_call_translated; eauto.
+  erewrite CO, <- find_comp_translated; eapply call_trace_translated; eauto.
   traceEq.
   constructor; auto.
   (* rewrite <- find_comp_translated. *)

@@ -1095,6 +1095,22 @@ Proof.
   eapply Genv.match_genvs_type_of_call.
 Qed.
 
+Lemma call_trace_translated:
+  forall cp cp' vf vargs tyargs t,
+    call_trace ge cp cp' vf vargs tyargs t ->
+    call_trace tge cp cp' vf vargs tyargs t.
+Proof.
+  intros cp cp' vf vargs tyargs t H.
+  inv H. constructor; eauto.
+  econstructor; eauto. apply Genv.find_invert_symbol.
+  rewrite symbols_preserved.
+  apply Genv.invert_find_symbol; eauto.
+  eapply eventval_list_match_preserved; [| | eassumption].
+  eapply senv_preserved.
+  eapply senv_preserved.
+Qed.
+
+
 (** * Matching between environments *)
 
 (** In this section, we define a matching relation between
@@ -1679,6 +1695,9 @@ Proof.
     eauto. eauto.
     eapply allowed_call_translated; eauto.
     erewrite <- find_comp_translated, <- type_of_call_translated; eauto.
+    unfold sg; simpl. erewrite typlist_of_arglist_eq; eauto.
+    rewrite <- (comp_transl_function _ _ _ TRF), <- find_comp_translated; eauto.
+    eapply call_trace_translated; eauto.
     econstructor; eauto.
     eapply match_Kcall with (ce := prog_comp_env cu') (cu := cu); eauto.
     exact I.
@@ -1693,6 +1712,9 @@ Proof.
     eauto. eauto.
     eapply allowed_call_translated; eauto.
     erewrite <- find_comp_translated, <- type_of_call_translated; eauto.
+    unfold sg; simpl. erewrite typlist_of_arglist_eq; eauto.
+    rewrite <- (comp_transl_function _ _ _ TRF), <- find_comp_translated; eauto.
+    eapply call_trace_translated; eauto.
     traceEq.
     econstructor; eauto.
     eapply match_Kcall_normalize  with (ce := prog_comp_env cu') (cu := cu); eauto.

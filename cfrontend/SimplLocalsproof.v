@@ -118,6 +118,30 @@ Proof.
   eapply (Genv.match_genvs_type_of_call).
 Qed.
 
+Lemma call_trace_translated:
+  forall j cp cp' vf vargs tvargs tyargs t,
+    Val.inject_list j vargs tvargs ->
+    (Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr vargs) ->
+    call_trace ge cp cp' vf vargs tyargs t ->
+    call_trace tge cp cp' vf tvargs tyargs t.
+Proof.
+  intros j cp cp' vf vargs tvargs tyargs t Hinj Hnoptr H.
+  inv H.
+  - constructor; eauto.
+  - specialize (Hnoptr H0).
+    econstructor; eauto. apply Genv.find_invert_symbol.
+    rewrite symbols_preserved.
+    apply Genv.invert_find_symbol; eauto.
+    clear -vargs tvargs Hinj Hnoptr H3.
+    revert tvargs tyargs vl Hinj Hnoptr H3.
+    induction vargs; intros tvargs tyargs vl Hinj Hnoptr Hmatch.
+    + inv Hinj; inv Hmatch; constructor.
+    + inv Hinj; inv Hnoptr; inv Hmatch.
+      constructor; eauto.
+      inv H1; try contradiction;
+        inv H7; econstructor; eauto.
+Qed.
+
 (** Matching between environments before and after *)
 
 Inductive match_var (f: meminj) (cenv: compilenv) (e: env) (m: mem) (te: env) (tle: temp_env) (id: ident) : Prop :=
@@ -2191,6 +2215,8 @@ Proof.
   erewrite <- type_of_call_translated; eauto.
   intros. eapply Val.inject_list_not_ptr; eauto. eapply NO_CROSS_PTR.
   rewrite find_comp_translated; auto.
+  rewrite <- (comp_transl_partial _ TRF), <- find_comp_translated.
+  eapply call_trace_translated; eauto.
   econstructor; eauto.
   intros.
   (* rewrite find_comp_translated. *)

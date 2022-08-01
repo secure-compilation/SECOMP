@@ -363,7 +363,7 @@ Inductive estep: state -> trace -> state -> Prop :=
       estep (ExprState f (C (Eparen r tycast ty)) k e m)
          E0 (ExprState f (C (Eval v ty)) k e m)
 
-  | step_call: forall f C rf rargs ty k e m targs tres cconv vf vargs fd,
+  | step_call: forall f C rf rargs ty k e m targs tres cconv vf vargs fd t,
       leftcontext RV RV C ->
       classify_fun (typeof rf) = fun_case_f targs tres cconv ->
       eval_simple_rvalue e (comp_of f) m rf vf ->
@@ -372,8 +372,9 @@ Inductive estep: state -> trace -> state -> Prop :=
       type_of_fundef fd = Tfunction targs tres cconv ->
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
       forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
+      forall (EV: call_trace ge (comp_of f) (Genv.find_comp ge vf) vf vargs (typlist_of_typelist targs) t),
       estep (ExprState f (C (Ecall rf rargs ty)) k e m)
-         E0 (Callstate fd vargs (Kcall f e C ty k) m)
+          t (Callstate fd vargs (Kcall f e C ty k) m)
 
   | step_builtin: forall f C ef tyargs rargs ty k e m vargs t vres m',
       leftcontext RV RV C ->
@@ -474,7 +475,7 @@ Proof.
 Qed.
 
 Lemma callred_kind:
-  forall cp a m fd args ty, callred ge cp a m fd args ty -> expr_kind a = RV.
+  forall cp a m fd args ty t, callred ge cp a m fd args ty t -> expr_kind a = RV.
 Proof.
   induction 1; auto.
 Qed.
@@ -573,13 +574,14 @@ Definition invert_expr_prop (cp: compartment) (a: expr) (m: mem) : Prop :=
       exists v, sem_cast v1 ty1 ty2 m = Some v
   | Ecall (Eval vf tyf) rargs ty =>
       exprlist_all_values rargs ->
-      exists tyargs tyres cconv fd vl,
+      exists tyargs tyres cconv fd vl t,
          classify_fun tyf = fun_case_f tyargs tyres cconv
       /\ Genv.find_funct ge vf = Some fd
       /\ cast_arguments m rargs tyargs vl
       /\ type_of_fundef fd = Tfunction tyargs tyres cconv
       /\ Genv.allowed_call ge cp vf
       /\ (Genv.type_of_call ge cp (Genv.find_comp ge vf) = Genv.CrossCompartmentCall -> Forall not_ptr vl)
+      /\ call_trace ge cp (Genv.find_comp ge vf) vf vl (typlist_of_typelist tyargs) t
   | Ebuiltin ef tyargs rargs ty =>
       exprlist_all_values rargs ->
       exists vargs, exists t, exists vres, exists m',
@@ -618,12 +620,12 @@ Proof.
 Qed.
 
 Lemma callred_invert:
-  forall cp r fd args ty m,
-  callred ge cp r m fd args ty ->
+  forall cp r fd args ty t m,
+  callred ge cp r m fd args ty t ->
   invert_expr_prop cp r m.
 Proof.
   intros. inv H. simpl.
-  intros. exists tyargs, tyres, cconv, fd, args; auto.
+  intros. exists tyargs, tyres, cconv, fd, args, t; auto.
   repeat split; auto.
 Qed.
 
@@ -1384,7 +1386,7 @@ Proof.
   eapply safe_steps. eexact S1.
   apply (eval_simple_list_steps f k e m rargs vl E2 C'); auto.
   simpl. intros X. exploit X. eapply rval_list_all_values.
-  intros [tyargs [tyres [cconv [fd [vargs [P [Q [U [V [W Y]]]]]]]]]].
+  intros [tyargs [tyres [cconv [fd [vargs [t [P [Q [U [V [W [Y Z]]]]]]]]]]]].
   econstructor; econstructor; eapply step_call with (vargs := vargs); eauto. eapply can_eval_simple_list; eauto.
 + (* builtin *)
   pose (C' := fun x => C(Ebuiltin ef tyargs x ty)).
@@ -1563,6 +1565,8 @@ Proof.
   rewrite Heqo; rewrite Heqo0; auto.
   econstructor; econstructor. left; eapply step_postincr_stuck with (v1 := v1'); eauto.
   rewrite Heqo; auto.
+  (* call *)
+  inv EV; inv H0; eauto.
   (* builtin *)
   exploit external_call_trace_length; eauto. destruct t1; simpl; intros.
   exploit external_call_receptive; eauto. intros [vres2 [m2 EC2]].
@@ -1594,6 +1598,8 @@ Proof.
   tauto.
   (* postincr stuck *)
   exploit deref_loc_trace; eauto. destruct t; auto. destruct t; tauto.
+  (* call *)
+  inv EV; try reflexivity.
   (* builtins *)
   exploit external_call_trace_length; eauto.
   destruct t; simpl; auto. destruct t; simpl; auto. intros; omegaContradiction.
@@ -1771,7 +1777,7 @@ with eval_expr: compartment -> env -> mem -> kind -> expr -> trace -> mem -> exp
       ty = typeof r2 ->
       eval_expr c e m RV (Ecomma r1 r2 ty) (t1**t2) m2 r2'
   | eval_call: forall c e m rf rargs ty t1 m1 rf' t2 m2 rargs' vf vargs
-                      targs tres cconv fd t3 m3 vres,
+                      targs tres cconv fd t3 m3 vres t,
       eval_expr c e m RV rf t1 m1 rf' -> eval_exprlist c e m1 rargs t2 m2 rargs' ->
       eval_simple_rvalue ge e c m2 rf' vf ->
       eval_simple_list ge e c m2 rargs' targs vargs ->
@@ -1784,7 +1790,8 @@ with eval_expr: compartment -> env -> mem -> kind -> expr -> trace -> mem -> exp
                        Forall not_ptr vargs),
       forall (NO_CROSS_PTR_RETURN: Genv.type_of_call ge c (Genv.find_comp ge vf) = Genv.CrossCompartmentCall ->
                        not_ptr vres),
-      eval_expr c e m RV (Ecall rf rargs ty) (t1**t2**t3) m3 (Eval vres ty)
+      forall (EV: call_trace ge c (Genv.find_comp ge vf) vf vargs (typlist_of_typelist targs) t),
+      eval_expr c e m RV (Ecall rf rargs ty) (t1**t2**t**t3) m3 (Eval vres ty)
 
 with eval_exprlist: compartment -> env -> mem -> exprlist -> trace -> mem -> exprlist -> Prop :=
   | eval_nil: forall c e m,
@@ -2020,7 +2027,7 @@ CoInductive evalinf_expr: compartment -> env -> mem -> kind -> expr -> traceinf 
       evalinf_exprlist c e m1 a2 t2 ->
       evalinf_expr c e m RV (Ecall a1 a2 ty) (t1 *** t2)
   | evalinf_call: forall c e m rf rargs ty t1 m1 rf' t2 m2 rargs' vf vargs
-                      targs tres cconv fd t3,
+                      targs tres cconv fd t3 t,
       eval_expr c e m RV rf t1 m1 rf' -> eval_exprlist c e m1 rargs t2 m2 rargs' ->
       eval_simple_rvalue ge e c m2 rf' vf ->
       eval_simple_list ge e c m2 rargs' targs vargs ->
@@ -2030,7 +2037,8 @@ CoInductive evalinf_expr: compartment -> env -> mem -> kind -> expr -> traceinf 
       evalinf_funcall c m2 fd vargs t3 ->
       forall (ALLOWED: Genv.allowed_call ge c vf),
       forall (NO_CROSS_PTR: Genv.type_of_call ge c (Genv.find_comp ge vf) = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
-      evalinf_expr c e m RV (Ecall rf rargs ty) (t1***t2***t3)
+      forall (EV: call_trace ge c (Genv.find_comp ge vf) vf vargs (typlist_of_typelist targs) t),
+      evalinf_expr c e m RV (Ecall rf rargs ty) (t1***t2***t***t3)
 
 with evalinf_exprlist: compartment -> env -> mem -> exprlist -> traceinf -> Prop :=
   | evalinf_cons_left: forall c e m a1 al t1,

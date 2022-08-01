@@ -1956,3 +1956,21 @@ Proof.
 Qed.
 
 End EVAL_BUILTIN_ARG_LESSDEF.
+
+Section INFORM_TRACES.
+
+Variable F V: Type.
+Variable ge: Genv.t F V.
+
+Inductive call_trace: compartment -> compartment -> val -> list val -> list typ -> trace -> Prop :=
+  | call_trace_intra: forall cp cp' vf vargs ty,
+    Genv.type_of_call ge cp cp' <> Genv.CrossCompartmentCall ->
+    call_trace cp cp' vf vargs ty E0
+  | call_trace_cross: forall cp cp' vf vargs vl ty b ofs i,
+      Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall ->
+      vf = Vptr b ofs ->
+      Genv.invert_symbol ge b = Some i ->
+      eventval_list_match ge vl ty vargs ->
+      call_trace cp cp' vf vargs ty (Event_call cp cp' i vl :: nil).
+
+End INFORM_TRACES.

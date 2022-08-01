@@ -79,6 +79,30 @@ Lemma functions_translated:
   Genv.find_funct tge v = Some tf /\ transl_fundef f = OK tf.
 Proof (Genv.find_funct_transf_partial TRANSL).
 
+Lemma call_trace_translated:
+  forall j cp cp' vf vargs tvargs tyargs t,
+    Val.inject_list j vargs tvargs ->
+    (Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr vargs) ->
+    call_trace ge cp cp' vf vargs tyargs t ->
+    call_trace tge cp cp' vf tvargs tyargs t.
+Proof.
+  intros j cp cp' vf vargs tvargs tyargs t Hinj Hnoptr H.
+  inv H.
+  - constructor; eauto.
+  - specialize (Hnoptr H0).
+    econstructor; eauto. apply Genv.find_invert_symbol.
+    rewrite symbols_preserved.
+    apply Genv.invert_find_symbol; eauto.
+    clear -vargs tvargs Hinj Hnoptr H3.
+    revert tvargs tyargs vl Hinj Hnoptr H3.
+    induction vargs; intros tvargs tyargs vl Hinj Hnoptr Hmatch.
+    + inv Hinj; inv Hmatch; constructor.
+    + inv Hinj; inv Hnoptr; inv Hmatch.
+      constructor; eauto.
+      inv H1; try contradiction;
+        inv H7; econstructor; eauto.
+Qed.
+
 Lemma sig_preserved_body:
   forall f tf cenv size,
   transl_funbody cenv size f = OK tf ->
@@ -2105,6 +2129,8 @@ Proof.
   erewrite <- type_of_call_transl; eauto.
   intros CROSS. eapply Val.inject_list_not_ptr; eauto. eapply NO_CROSS_PTR.
   now rewrite find_comp_transl.
+  rewrite <- find_comp_transl. monadInv TRF; unfold comp_of; simpl.
+  eapply call_trace_translated; eauto.
   econstructor; eauto.
   eapply match_Kcall with (cenv' := cenv); eauto.
   red; auto.
