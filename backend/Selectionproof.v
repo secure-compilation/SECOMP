@@ -239,6 +239,33 @@ Proof.
   eapply Genv.match_genvs_type_of_call.
 Qed.
 
+Lemma call_trace_translated:
+  forall cp cp' vf vf' vargs tvargs tyargs t,
+    Val.lessdef_list vargs tvargs ->
+    Val.lessdef vf vf' ->
+    (Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr vargs) ->
+    call_trace ge cp cp' vf vargs tyargs t ->
+    call_trace tge cp cp' vf' tvargs tyargs t.
+Proof.
+  intros cp cp' vf vf' vargs tvargs tyargs t Hinj Hlessdef Hnoptr H.
+  inv H.
+  - constructor; eauto.
+  - specialize (Hnoptr H0).
+    econstructor; eauto. inv Hlessdef; eauto.
+    apply Genv.find_invert_symbol.
+    rewrite symbols_preserved.
+    apply Genv.invert_find_symbol; eauto.
+    clear -vargs tvargs Hinj Hnoptr H3.
+    revert tvargs tyargs vl Hinj Hnoptr H3.
+    induction vargs; intros tvargs tyargs vl Hinj Hnoptr Hmatch.
+    + inv Hinj; inv Hmatch; constructor.
+    + inv Hinj; inv Hnoptr; inv Hmatch.
+      constructor; eauto.
+      inv H1; try contradiction;
+        inv H7; econstructor; eauto.
+      contradiction.
+Qed.
+
 Section CMCONSTR.
 
 Variable cunit: Cminor.program.
@@ -1364,6 +1391,8 @@ Proof.
   eapply Val.lessdef_list_not_ptr; eauto.
   eapply NO_CROSS_PTR.
   erewrite find_comp_translated, type_of_call_translated; eauto.
+  erewrite <- CPT, <- find_comp_translated; eauto.
+  eapply call_trace_translated; eauto.
   eapply match_callstate with (cunit := cunit'); eauto.
   eapply match_cont_call with (cunit := cunit) (hf := hf); eauto.
 + (* direct *)
@@ -1381,6 +1410,8 @@ Proof.
   eapply Val.lessdef_list_not_ptr; eauto.
   eapply NO_CROSS_PTR.
   erewrite find_comp_translated, type_of_call_translated; eauto.
+  erewrite <- CPT, <- (find_comp_translated _ _ _ _ H1).
+  eapply call_trace_translated with (vf := vf); eauto.
   eapply match_callstate with (cunit := cunit'); eauto.
   eapply match_cont_call with (cunit := cunit) (hf := hf); eauto.
 + (* turned into Sbuiltin *)

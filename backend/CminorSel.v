@@ -376,7 +376,7 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Sstore chunk addr al b) k sp e m)
         E0 (State f Sskip k sp e m')
 
-  | step_call: forall f cp optid sig a bl k sp e m vf vargs fd,
+  | step_call: forall f cp optid sig a bl k sp e m vf vargs fd t,
       cp = (comp_of f) ->
       eval_expr_or_symbol sp e cp m nil a vf ->
       eval_exprlist sp e cp m nil bl vargs ->
@@ -384,10 +384,11 @@ Inductive step: state -> trace -> state -> Prop :=
       funsig fd = sig ->
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
       forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
+      forall (EV: call_trace ge (comp_of f) (Genv.find_comp ge vf) vf vargs (sig_args sig) t),
       step (State f (Scall optid sig a bl) k sp e m)
-        E0 (Callstate fd vargs (Kcall optid f sp e k) m)
+        t (Callstate fd vargs (Kcall optid f sp e k) m)
 
-  | step_tailcall: forall f sig a bl k sp e m vf vargs fd m',
+  | step_tailcall: forall f sig a bl k sp e m vf vargs fd m' t,
       eval_expr_or_symbol (Vptr sp Ptrofs.zero) e (comp_of f) m nil a vf ->
       eval_exprlist (Vptr sp Ptrofs.zero) e (comp_of f) m nil bl vargs ->
       Genv.find_funct ge vf = Some fd ->
@@ -395,9 +396,10 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (COMP: comp_of fd = (comp_of f)),
       forall (ALLOWED: needs_calling_comp (comp_of f) = false),
       forall (ALLOWED': Genv.allowed_call ge (comp_of f) vf),
+      forall (EV: call_trace ge (comp_of f) (Genv.find_comp ge vf) vf vargs (sig_args sig) t),
       Mem.free m sp 0 f.(fn_stackspace) (comp_of f) = Some m' ->
       step (State f (Stailcall sig a bl) k (Vptr sp Ptrofs.zero) e m)
-        E0 (Callstate fd vargs (call_cont k) m')
+        t (Callstate fd vargs (call_cont k) m')
 
   | step_builtin: forall f cp res ef al k sp e m vl t v m',
       cp = (comp_of f) ->
