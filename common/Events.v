@@ -1973,4 +1973,13 @@ Inductive call_trace: compartment -> compartment -> val -> list val -> list typ 
       eventval_list_match ge vl ty vargs ->
       call_trace cp cp' vf vargs ty (Event_call cp cp' i vl :: nil).
 
+Lemma call_trace_same_cp:
+  forall cp vf vargs tyargs t,
+    call_trace cp cp vf vargs tyargs t ->
+    t = E0.
+Proof.
+  intros. inv H; auto.
+  now apply Genv.type_of_call_same_cp in H0.
+Qed.
+
 End INFORM_TRACES.

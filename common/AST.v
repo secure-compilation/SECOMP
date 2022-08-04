@@ -35,8 +35,8 @@ Definition ident_eq := peq.
   from each other during execution. *)
 
 Definition compartment : Type := positive.
-Definition default_compartment : compartment := 1%positive.
-Definition privileged_compartment : compartment := 2%positive.
+Definition privileged_compartment : compartment := 1%positive.
+Notation default_compartment := privileged_compartment. (* TODO: fix this *)
 Definition eq_compartment (c1 c2: compartment) :=
   peq c1 c2.
 
@@ -730,7 +730,7 @@ Instance has_comp_external_function : has_comp external_function :=
   fun ef =>
     match ef with
     | EF_external _ cp _ => cp
-    | EF_malloc | EF_free | EF_vload _ | EF_vstore _ | EF_memcpy _ _ => privileged_compartment
+    | EF_malloc | EF_free | EF_vload _ | EF_vstore _ | EF_memcpy _ _ => default_compartment
     | _ => default_compartment
     end.
 

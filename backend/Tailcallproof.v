@@ -326,6 +326,35 @@ Proof.
   intros cp cp'.
   eapply Genv.match_genvs_type_of_call.
 Qed.
+
+Lemma call_trace_translated:
+  forall cp cp' vf rs rs' args tyargs t,
+    regs_lessdef rs rs' ->
+    (Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr (rs##args)) ->
+    call_trace ge cp cp' vf (rs##args) tyargs t ->
+    call_trace tge cp cp' vf (rs'##args) tyargs t.
+Proof.
+  intros cp cp' vf rs rs' args tyargs t Hregs Hnoptr H.
+  inv H.
+  - constructor; eauto.
+  - specialize (Hnoptr H0).
+    econstructor; eauto.
+    apply Genv.find_invert_symbol.
+    rewrite symbols_preserved.
+    apply Genv.invert_find_symbol; eauto.
+    eapply regs_lessdef_regs with  (rl := args) in Hregs.
+    remember (rs ## args) as vargs.
+    remember (rs' ## args) as vargs'.
+    clear -vargs vargs' Hregs Hnoptr H3.
+    revert vargs' tyargs vl Hregs Hnoptr H3.
+    induction vargs; intros tvargs tyargs vl Hinj Hnoptr Hmatch.
+    + inv Hinj; inv Hmatch; constructor.
+    + inv Hinj; inv Hnoptr; inv Hmatch.
+      constructor; eauto.
+      inv H1; try contradiction;
+        inv H7; econstructor; eauto.
+      contradiction.
+Qed.
 (* This part has been adapted from Inliningproof.v; perhaps everything can be
 generalized and unified. *)
 
@@ -616,12 +645,30 @@ Proof.
   { exploit find_function_intra_compartment_call; eauto. }
   left.
   exists (Callstate s' (transf_fundef (compenv_program cu) fd) (rs'##args) m''); split.
+  assert (t = E0).
+  { clear -EV FUNPTR H0 Efd.
+    unfold Genv.find_comp in *.
+    unfold find_function_ptr in *.
+    unfold find_function in *.
+    destruct ros; try discriminate.
+    - inv FUNPTR. unfold Genv.find_funct in *.
+      destruct (rs # r); try discriminate.
+      destruct (Ptrofs.eq_dec i Ptrofs.zero); try discriminate.
+      subst. rewrite H0 in EV. rewrite Efd in EV.
+      admit. (* Lemma from Selectionproof.v *)
+    - destruct (Genv.find_symbol ge i); try discriminate.
+      inv FUNPTR. rewrite H0 in EV. rewrite Efd in EV.
+      admit.
+  }
+  subst t.
   eapply exec_Itailcall; eauto.
   { apply sig_preserved. }
   { now rewrite comp_transl, comp_transl. }
   { now rewrite <- E. }
   eapply find_function_ptr_translated; eauto.
   rewrite comp_transl. eapply allowed_call_translated; eauto.
+  (* rewrite comp_transl, <- find_comp_translated; eauto. *)
+  (* eapply call_trace_translated; eauto. *)
   rewrite comp_transl; eauto.
   constructor. eapply match_stackframes_tail; eauto.
   (* TODO: Should be a lemma? *)
@@ -661,6 +708,8 @@ Proof.
   eapply H1; eauto.
   eapply NO_CROSS_PTR; eauto.
   erewrite find_comp_translated, type_of_call_translated; eauto.
+  rewrite comp_transl, <- find_comp_translated; eauto.
+  eapply call_trace_translated; eauto.
   constructor. constructor; auto.
     apply (cenv_compat_linkorder _ _ _ ORDER (compenv_program_compat _)).
   { easy. }
@@ -820,7 +869,7 @@ Proof.
   split. auto.
   econstructor; eauto.
   rewrite Regmap.gss. auto.
-Qed.
+Admitted.
 
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 ->

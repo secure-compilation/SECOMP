@@ -550,6 +550,34 @@ Proof.
   - rewrite symbols_preserved. eauto.
 Qed.
 
+Lemma call_trace_translated:
+  forall cp cp' vf ros res ne rs te args tyargs t,
+    eagree rs te (add_needs_all args (add_ros_need_all ros (kill res ne))) ->
+    (Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr (rs##args)) ->
+    call_trace ge cp cp' vf (rs##args) tyargs t ->
+    call_trace tge cp cp' vf (te##args) tyargs t.
+Proof.
+  intros cp cp' vf ros res ne rs te args tyargs t Hregs Hnoptr H.
+  inv H.
+  - constructor; eauto.
+  - specialize (Hnoptr H0).
+    econstructor; eauto.
+    apply Genv.find_invert_symbol.
+    rewrite symbols_preserved.
+    apply Genv.invert_find_symbol; eauto.
+    apply add_needs_all_lessdef with (rl := args) in Hregs.
+    remember (rs ## args) as vargs.
+    remember (te ## args) as vargs'.
+    clear -vargs vargs' Hregs Hnoptr H3.
+    revert vargs' tyargs vl Hregs Hnoptr H3.
+    induction vargs; intros tvargs tyargs vl Hinj Hnoptr Hmatch.
+    + inv Hinj; inv Hmatch; constructor.
+    + inv Hinj; inv Hnoptr; inv Hmatch.
+      constructor; eauto.
+      inv H1; try contradiction;
+        inv H7; econstructor; eauto.
+      contradiction.
+Qed.
 
 (** * Semantic invariant *)
 
@@ -972,6 +1000,8 @@ Ltac UseTransfer :=
   eapply H1; eauto. eapply NO_CROSS_PTR.
   erewrite find_comp_translated, type_of_call_translated; eauto.
   rewrite comp_transf_function; eauto.
+  rewrite <- find_comp_translated, <- comp_transf_function; eauto.
+  eapply call_trace_translated; eauto.
   eapply match_call_states with (cu := cu'); eauto.
   constructor; auto. eapply match_stackframes_intro with (cu := cu); eauto.
   intros.

@@ -259,15 +259,16 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State s f sp pc rs m)
         E0 (State s f sp pc' rs m')
   | exec_Icall:
-      forall s f sp pc rs m sig ros args res pc' fd vf,
+      forall s f sp pc rs m sig ros args res pc' fd vf t,
       (fn_code f)!pc = Some(Icall sig ros args res pc') ->
       find_function ros rs = Some fd ->
       funsig fd = sig ->
       forall (FUNPTR: find_function_ptr ros rs = Some vf),
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
       forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall -> Forall not_ptr (rs##args)),
+      forall (EV: call_trace ge (comp_of f) (Genv.find_comp ge vf) vf (rs##args) (sig_args sig) t),
       step (State s f sp pc rs m)
-        E0 (Callstate (Stackframe res f sp pc' rs :: s) fd rs##args m)
+        t (Callstate (Stackframe res f sp pc' rs :: s) fd rs##args m)
   | exec_Itailcall:
       forall s f stk pc rs m sig ros args fd m' vf,
       (fn_code f)!pc = Some(Itailcall sig ros args) ->
@@ -277,6 +278,7 @@ Inductive step: state -> trace -> state -> Prop :=
       forall ALLOWED: needs_calling_comp (comp_of f) = false,
       forall (FUNPTR: find_function_ptr ros rs = Some vf),
       forall (ALLOWED': Genv.allowed_call ge (comp_of f) vf),
+      (* forall (EV: call_trace ge (comp_of f) (Genv.find_comp ge vf) vf (rs##args) (sig_args sig) t), *)
       (* forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) vf = Genv.CrossCompartmentCall -> Forall not_ptr (rs##args)), *)
       Mem.free m stk 0 f.(fn_stacksize) (comp_of f) = Some m' ->
       step (State s f (Vptr stk Ptrofs.zero) pc rs m)
@@ -390,12 +392,14 @@ Proof.
   assert (t1 = E0 -> exists s2, step (Genv.globalenv p) s t2 s2).
     intros. subst. inv H0. exists s1; auto.
   inversion H; subst; auto.
+  inv EV; inv H0; eauto.
   exploit external_call_receptive; eauto. intros [vres2 [m2 EC2]].
   exists (State s0 f sp pc' (regmap_setres res vres2 rs) m2). eapply exec_Ibuiltin; eauto.
   exploit external_call_receptive; eauto. intros [vres2 [m2 EC2]].
   exists (Returnstate s0 vres2 m2 (comp_of ef)). econstructor; eauto.
 (* trace length *)
   red; intros; inv H; simpl; try omega.
+  inv EV; auto.
   eapply external_call_trace_length; eauto.
   eapply external_call_trace_length; eauto.
 Qed.

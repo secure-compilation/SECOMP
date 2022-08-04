@@ -388,7 +388,7 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Scall optid sig a bl) k sp e m)
         t (Callstate fd vargs (Kcall optid f sp e k) m)
 
-  | step_tailcall: forall f sig a bl k sp e m vf vargs fd m' t,
+  | step_tailcall: forall f sig a bl k sp e m vf vargs fd m',
       eval_expr_or_symbol (Vptr sp Ptrofs.zero) e (comp_of f) m nil a vf ->
       eval_exprlist (Vptr sp Ptrofs.zero) e (comp_of f) m nil bl vargs ->
       Genv.find_funct ge vf = Some fd ->
@@ -396,10 +396,10 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (COMP: comp_of fd = (comp_of f)),
       forall (ALLOWED: needs_calling_comp (comp_of f) = false),
       forall (ALLOWED': Genv.allowed_call ge (comp_of f) vf),
-      forall (EV: call_trace ge (comp_of f) (Genv.find_comp ge vf) vf vargs (sig_args sig) t),
+      (* forall (EV: call_trace ge (comp_of f) (Genv.find_comp ge vf) vf vargs (sig_args sig) t), *)
       Mem.free m sp 0 f.(fn_stackspace) (comp_of f) = Some m' ->
       step (State f (Stailcall sig a bl) k (Vptr sp Ptrofs.zero) e m)
-        t (Callstate fd vargs (call_cont k) m')
+        E0 (Callstate fd vargs (call_cont k) m')
 
   | step_builtin: forall f cp res ef al k sp e m vl t v m',
       cp = (comp_of f) ->

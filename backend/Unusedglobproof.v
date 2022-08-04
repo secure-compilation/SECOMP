@@ -842,7 +842,9 @@ Lemma find_function_ptr_inject:
   exists tvf,
     find_function_ptr tge ros trs = Some tvf /\
     Genv.allowed_call tge cp tvf /\
-    Genv.type_of_call ge cp (Genv.find_comp ge vf) = Genv.type_of_call tge cp (Genv.find_comp tge tvf).
+    Genv.type_of_call ge cp (Genv.find_comp ge vf) = Genv.type_of_call tge cp (Genv.find_comp tge tvf) /\
+    Genv.find_comp ge vf = Genv.find_comp tge tvf /\
+    Val.inject j vf tvf.
 Proof.
   intros. destruct ros as [r|id]; simpl in *.
   - inv H1.
@@ -854,7 +856,7 @@ Proof.
     rewrite <- Genv.find_funct_ptr_iff in A.
     rewrite <- Genv.find_funct_ptr_iff in H0.
     exists (Vptr b2 (Ptrofs.add Ptrofs.zero (Ptrofs.repr delta))).
-    split; [| split]; auto.
+    split; [| split; [| split; [| split]]]; auto.
     { rewrite R in H2.
       destruct H2 as [H2 | [H2 | H2]].
       + left. rewrite H2.
@@ -884,13 +886,15 @@ Proof.
           unfold ge, Genv.globalenv in H24. now rewrite Genv.genv_pol_add_globals in H24. }
     { unfold Genv.type_of_call. unfold Genv.find_comp.
       rewrite R, H0, A. reflexivity. }
+    { unfold Genv.find_comp. rewrite R, H0, A. reflexivity. }
+    { rewrite R. eapply Val.inject_ptr; eauto. }
   - destruct (Genv.find_symbol ge id) as [b|] eqn:FS; try discriminate.
     exploit symbols_inject_2; eauto. intros (tb & P & Q). rewrite P.
     rewrite Genv.find_funct_ptr_iff in H0.
     exploit defs_inject; eauto. intros (A & B & C).
     rewrite <- Genv.find_funct_ptr_iff in A.
     inv H1.
-    eexists; split; [| split]; eauto.
+    eexists; split; [| split; [| split; [| split]]]; eauto.
     { rewrite <- Genv.find_funct_ptr_iff in H0.
       rewrite <- H0 in A.
       destruct H2 as [H2 | [H2 | H2]].
@@ -920,6 +924,9 @@ Proof.
           rewrite Genv.genv_pol_add_globals. simpl.
           unfold ge, Genv.globalenv in H24. now rewrite Genv.genv_pol_add_globals in H24. }
     { unfold Genv.type_of_call. unfold Genv.find_comp.
+      rewrite <- Genv.find_funct_ptr_iff in H0.
+      rewrite H0, A. reflexivity. }
+    { unfold Genv.find_comp.
       rewrite <- Genv.find_funct_ptr_iff in H0.
       rewrite H0, A. reflexivity. }
 Qed.
@@ -986,6 +993,39 @@ Proof.
   exploit eval_builtin_arg_inject; eauto using in_or_app. intros (v1' & A & B).
   destruct IHlist_forall2 as (vl' & C & D); eauto using in_or_app.
   exists (v1' :: vl'); split; constructor; auto.
+Qed.
+
+
+Lemma call_trace_translated:
+  forall j cp cp' vf tvf rs trs args tyargs t,
+    regset_inject j rs trs ->
+    Val.inject j vf tvf ->
+    meminj_preserves_globals j ->
+    (Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr (rs##args)) ->
+    (Genv.find_comp ge vf = Genv.find_comp tge tvf) ->
+    call_trace ge cp cp' vf (rs##args) tyargs t ->
+    call_trace tge cp cp' tvf (trs##args) tyargs t.
+Proof.
+  intros j cp cp' vf tvf rs trs args tyargs t Hregs Hvf Hinj Hnoptr Hcomp H.
+  inv H.
+  - constructor; eauto.
+  - inv Hvf.
+    specialize (Hnoptr H0).
+    econstructor; eauto.
+    apply Genv.find_invert_symbol.
+    apply Genv.invert_find_symbol in H2.
+    eapply symbols_inject_1 in Hinj as [? ?]; eauto.
+    apply regs_inject with (l := args) in Hregs.
+    remember (rs ## args) as vargs.
+    remember (trs ## args) as vargs'.
+    clear -vargs vargs' Hregs Hnoptr H3.
+    revert vargs' tyargs vl Hregs Hnoptr H3.
+    induction vargs; intros tvargs tyargs vl Hinj Hnoptr Hmatch.
+    + inv Hinj; inv Hmatch; constructor.
+    + inv Hinj; inv Hnoptr; inv Hmatch.
+      constructor; eauto.
+      inv H1; try contradiction;
+        inv H7; econstructor; eauto.
 Qed.
 
 Theorem step_simulation:
@@ -1057,7 +1097,7 @@ Proof.
   eapply match_stacks_preserves_globals; eauto. eauto. apply FUNPTR. eapply ALLOWED.
   destruct ros as [r|id]. eauto. apply KEPT. red. econstructor; econstructor; split; eauto. simpl; auto.
 
-  intros (tvf & C & D & E).
+  intros (tvf & C & D & E & F & G).
   econstructor; split. eapply exec_Icall; eauto.
   intros CROSS.
   (* TODO: write a lemma *)
@@ -1077,6 +1117,9 @@ Proof.
   eapply H1; eauto.
   eapply NO_CROSS_PTR; eauto.
   rewrite E; eauto.
+  rewrite <- F.
+eapply call_trace_translated; eauto.
+  eapply match_stacks_preserves_globals; eauto.
   econstructor; eauto.
   econstructor; eauto.
   change (Mem.valid_block m sp0). eapply Mem.valid_block_inject_1; eauto.

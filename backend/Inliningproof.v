@@ -284,6 +284,34 @@ Proof.
   destruct H2; discriminate.
 Qed.
 
+Lemma call_trace_translated:
+  forall cp cp' vf F ctx rs rs' args tyargs t,
+    agree_regs F ctx rs rs' ->
+    (Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr (rs##args)) ->
+    call_trace ge cp cp' vf (rs##args) tyargs t ->
+    call_trace tge cp cp' vf (rs'##(sregs ctx args)) tyargs t.
+Proof.
+  intros cp cp' vf F ctx rs rs' args tyargs t Hregs Hnoptr H.
+  inv H.
+  - constructor; eauto.
+  - specialize (Hnoptr H0).
+    econstructor; eauto.
+    apply Genv.find_invert_symbol.
+    rewrite symbols_preserved.
+    apply Genv.invert_find_symbol; eauto.
+    apply agree_val_regs with (rl := args) in Hregs.
+    remember (rs ## args) as vargs.
+    remember (rs' ## (sregs ctx args)) as vargs'.
+    clear -vargs vargs' Hregs Hnoptr H3.
+    revert vargs' tyargs vl Hregs Hnoptr H3.
+    induction vargs; intros tvargs tyargs vl Hinj Hnoptr Hmatch.
+    + inv Hinj; inv Hmatch; constructor.
+    + inv Hinj; inv Hnoptr; inv Hmatch.
+      constructor; eauto.
+      inv H1; try contradiction;
+        inv H7; econstructor; eauto.
+Qed.
+
 (** ** Memory invariants *)
 
 (** A stack location is private if it is not the image of a valid
@@ -1132,6 +1160,8 @@ Proof.
   }
   intros CROSS. eapply H1; eauto.
   eapply NO_CROSS_PTR; eauto. erewrite SAMECOMP, find_comp_translated, type_of_call_translated; eauto.
+  rewrite <- find_comp_translated, <- SAMECOMP.
+  eapply call_trace_translated; eauto.
   econstructor; eauto.
   eapply match_stacks_cons; eauto.
   { red; eauto. }
@@ -1139,7 +1169,15 @@ Proof.
 + (* inlined *)
   assert (EQ: fd = Internal f0) by (eapply find_inlined_function; eauto).
   subst fd.
-  right; split. simpl; omega. split. auto.
+  right; split. simpl; omega. split.
+  assert (R: comp_of f = Genv.find_comp ge vf).
+  { rewrite SAMECOMP0.
+    clear -H0 FUNPTR.
+    unfold find_function_ptr in FUNPTR. unfold find_function in H0.
+    unfold Genv.find_comp.
+    destruct (Genv.find_symbol ge id); try discriminate. inv FUNPTR.
+    now rewrite H0. }
+  rewrite R in EV. eapply call_trace_same_cp; eauto.
   econstructor; eauto.
   eapply match_stacks_inside_inlined; eauto.
   red; intros. apply PRIV. inv H14. destruct H17. xomega.
@@ -1209,6 +1247,19 @@ Proof.
       rewrite H0. rewrite COMP, SAMECOMP, Pos.eqb_refl. reflexivity.
   }
   rewrite H1. congruence.
+  econstructor; eauto.
+  assert (R: comp_of f' = Genv.find_comp ge vf).
+  { rewrite <-SAMECOMP, <- COMP. clear -H0 FUNPTR.
+    unfold find_function_ptr in FUNPTR. unfold find_function in H0.
+    unfold Genv.find_comp.
+    destruct ros; try discriminate. inv FUNPTR.
+    unfold Genv.find_funct in H0.
+    destruct (rs # r); try discriminate.
+    destruct (Ptrofs.eq_dec i Ptrofs.zero); try discriminate.
+    now rewrite H0.
+    destruct (Genv.find_symbol ge i); try discriminate.
+    inv FUNPTR. now rewrite H0. }
+  rewrite R, <- find_comp_translated. eapply Genv.type_of_call_same_cp.
   econstructor; eauto.
   eapply match_stacks_untailcall; eauto.
   eapply match_stacks_inside_invariant; eauto.

@@ -1906,6 +1906,21 @@ Definition type_of_call (ge: t) (cp: compartment) (cp': compartment): call_type 
   else if Pos.eqb cp' default_compartment then DefaultCompartmentCall
        else CrossCompartmentCall.
 
+Lemma type_of_call_cp_default:
+  forall ge cp, type_of_call ge cp default_compartment <> CrossCompartmentCall.
+Proof.
+  intros ge cp; unfold type_of_call.
+  destruct (cp =? default_compartment)%positive; [congruence |].
+  rewrite Pos.eqb_refl; congruence.
+Qed.
+
+Lemma type_of_call_same_cp:
+  forall ge cp, type_of_call ge cp cp <> CrossCompartmentCall.
+Proof.
+  intros; unfold type_of_call.
+  now rewrite Pos.eqb_refl.
+Qed.
+
 (* A call is allowed if any of these 3 cases holds:
 (1) the procedure being called belongs to the default compartment
 (2) the procedure being called belongs to the same compartment as the caller

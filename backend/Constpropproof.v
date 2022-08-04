@@ -105,6 +105,35 @@ Proof.
   eapply Genv.match_genvs_type_of_call.
 Qed.
 
+Lemma call_trace_translated:
+  forall cp cp' vf rs rs' args tyargs t,
+    regs_lessdef rs rs' ->
+    (Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr (rs##args)) ->
+    call_trace ge cp cp' vf (rs##args) tyargs t ->
+    call_trace tge cp cp' vf (rs'##args) tyargs t.
+Proof.
+  intros cp cp' vf rs rs' args tyargs t Hregs Hnoptr H.
+  inv H.
+  - constructor; eauto.
+  - specialize (Hnoptr H0).
+    econstructor; eauto.
+    apply Genv.find_invert_symbol.
+    rewrite symbols_preserved.
+    apply Genv.invert_find_symbol; eauto.
+    eapply regs_lessdef_regs with  (rl := args) in Hregs.
+    remember (rs ## args) as vargs.
+    remember (rs' ## args) as vargs'.
+    clear -vargs vargs' Hregs Hnoptr H3.
+    revert vargs' tyargs vl Hregs Hnoptr H3.
+    induction vargs; intros tvargs tyargs vl Hinj Hnoptr Hmatch.
+    + inv Hinj; inv Hmatch; constructor.
+    + inv Hinj; inv Hnoptr; inv Hmatch.
+      constructor; eauto.
+      inv H1; try contradiction;
+        inv H7; econstructor; eauto.
+      contradiction.
+Qed.
+
 Lemma init_regs_lessdef:
   forall rl vl1 vl2,
   Val.lessdef_list vl1 vl2 ->
@@ -556,6 +585,8 @@ Proof.
   eapply H2; eauto.
   eapply NO_CROSS_PTR.
   erewrite find_comp_translated, type_of_call_translated; eauto.
+  rewrite <- find_comp_translated, comp_transf_function.
+  eapply call_trace_translated; eauto.
   constructor; auto. constructor; auto.
   econstructor; eauto.
   apply regs_lessdef_regs; auto.

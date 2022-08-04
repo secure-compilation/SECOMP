@@ -110,6 +110,21 @@ Proof.
   eapply Genv.match_genvs_type_of_call.
 Qed.
 
+Lemma call_trace_translated:
+  forall cp cp' vf vargs tyargs t,
+    call_trace ge cp cp' vf vargs tyargs t ->
+    call_trace tge cp cp' vf vargs tyargs t.
+Proof.
+  intros cp cp' vf vargs tyargs t H.
+  inv H. constructor; eauto.
+  econstructor; eauto. apply Genv.find_invert_symbol.
+  rewrite symbols_preserved.
+  apply Genv.invert_find_symbol; eauto.
+  eapply eventval_list_match_preserved; [| | eassumption].
+  eapply senv_preserved.
+  eapply senv_preserved.
+Qed.
+
 (** Effect of an injective renaming of nodes on a CFG. *)
 
 Section RENUMBER.
@@ -242,6 +257,8 @@ Proof.
     eapply allowed_call_translated; eauto.
     intros CROSS. eapply NO_CROSS_PTR.
     erewrite type_of_call_translated, find_comp_translated; eauto.
+    rewrite <- find_comp_translated, comp_transf_function.
+    eapply call_trace_translated; eauto.
 
   constructor. constructor; auto. constructor. eapply reach_succ; eauto. simpl; auto.
 (* tailcall *)

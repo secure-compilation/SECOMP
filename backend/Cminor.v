@@ -480,7 +480,7 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Scall optid sig a bl) k sp e m)
         t (Callstate fd vargs (Kcall optid f sp e k) m)
 
-  | step_tailcall: forall f sig a bl k sp e m vf vargs fd m' t,
+  | step_tailcall: forall f sig a bl k sp e m vf vargs fd m',
       eval_expr (Vptr sp Ptrofs.zero) e m (comp_of f) a vf ->
       eval_exprlist (Vptr sp Ptrofs.zero) e m (comp_of f) bl vargs ->
       Genv.find_funct ge vf = Some fd ->
@@ -489,9 +489,9 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (ALLOWED: needs_calling_comp (comp_of f) = false),
       forall (ALLOWED': Genv.allowed_call ge (comp_of f) vf),
       Mem.free m sp 0 f.(fn_stackspace) (comp_of f) = Some m' ->
-      forall (EV: call_trace ge (comp_of f) (Genv.find_comp ge vf) vf vargs (sig_args sig) t),
+      (* forall (EV: call_trace ge (comp_of f) (Genv.find_comp ge vf) vf vargs (sig_args sig) t), *)
       step (State f (Stailcall sig a bl) k (Vptr sp Ptrofs.zero) e m)
-        t (Callstate fd vargs (call_cont k) m')
+        E0 (Callstate fd vargs (call_cont k) m')
 
   | step_builtin: forall f optid ef bl k sp e m vargs t vres m',
       eval_exprlist sp e m (comp_of f) bl vargs ->
@@ -605,14 +605,12 @@ Proof.
     intros. subst. inv H0. exists s1; auto.
   inversion H; subst; auto.
   inv EV; inv H0; eexists; eauto.
-  inv EV; inv H0; eexists; eauto.
   exploit external_call_receptive; eauto. intros [vres2 [m2 EC2]].
   exists (State f Sskip k sp (set_optvar optid vres2 e) m2). econstructor; eauto.
   exploit external_call_receptive; eauto. intros [vres2 [m2 EC2]].
   exists (Returnstate vres2 k m2 (comp_of ef)). econstructor; eauto.
 (* trace length *)
   red; intros; inv H; simpl; try omega; try now eapply external_call_trace_length; eauto.
-  inv EV; auto.
   inv EV; auto.
 Qed.
 
@@ -672,15 +670,6 @@ Proof.
     assert (i0 = i) by congruence; subst.
     assert (vl0 = vl) by now eapply eventval_list_match_determ_2; eauto. subst.
     split; [constructor | auto].
-  + subst.
-    rewrite H16 in H3; inv H3.
-    rewrite H18 in H5; inv H5.
-    inv EV; inv EV0; try congruence.
-    split; [constructor | auto].
-    inv H3; auto.
-    assert (i0 = i) by congruence; subst.
-    assert (vl0 = vl) by now eapply eventval_list_match_determ_2; eauto. subst.
-    split; [constructor | auto].
   + subst vargs0. exploit external_call_determ. eexact H2.  eexact H13.
     intros (A & B). split; intros; auto.
     apply B in H; destruct H; congruence.
@@ -692,7 +681,7 @@ Proof.
 - (* single event *)
   red; simpl. destruct 1; simpl; try omega;
   try now eapply external_call_trace_length; eauto.
-  inv EV; auto. inv EV; auto.
+  inv EV; auto.
 - (* initial states *)
   inv H; inv H0. unfold ge0, ge1 in *. congruence.
 - (* nostep final state *)
@@ -871,7 +860,7 @@ with exec_stmt:
       eval_expr ge sp e m (comp_of f) a v ->
       exec_stmt f sp e m (Sreturn (Some a)) E0 e m (Out_return (Some v))
   | exec_Stailcall:
-      forall f sp e m sig a bl vf vargs fd t m' m'' vres t',
+      forall f sp e m sig a bl vf vargs fd t m' m'' vres,
       eval_expr ge (Vptr sp Ptrofs.zero) e m (comp_of f) a vf ->
       eval_exprlist ge (Vptr sp Ptrofs.zero) e m (comp_of f) bl vargs ->
       Genv.find_funct ge vf = Some fd ->
@@ -881,8 +870,8 @@ with exec_stmt:
       forall (ALLOWED': Genv.allowed_call ge (comp_of f) vf),
       Mem.free m sp 0 f.(fn_stackspace) (comp_of f) = Some m' ->
       eval_funcall (comp_of f) m' fd vargs t m'' vres ->
-      forall (EV: call_trace ge (comp_of f) (Genv.find_comp ge vf) vf vargs (sig_args sig) t'),
-      exec_stmt f (Vptr sp Ptrofs.zero) e m (Stailcall sig a bl) (t' ** t) e m'' (Out_tailcall_return vres).
+      (* forall (EV: call_trace ge (comp_of f) (Genv.find_comp ge vf) vf vargs (sig_args sig) t'), *)
+      exec_stmt f (Vptr sp Ptrofs.zero) e m (Stailcall sig a bl) t e m'' (Out_tailcall_return vres).
 
 Scheme eval_funcall_ind2 := Minimality for eval_funcall Sort Prop
   with exec_stmt_ind2 := Minimality for exec_stmt Sort Prop.
@@ -953,7 +942,7 @@ with execinf_stmt:
       execinf_stmt f sp e m s t ->
       execinf_stmt f sp e m (Sblock s) t
   | execinf_Stailcall:
-      forall f sp e m sig a bl vf vargs fd m' t t',
+      forall f sp e m sig a bl vf vargs fd m' t,
       eval_expr ge (Vptr sp Ptrofs.zero) e m (comp_of f) a vf ->
       eval_exprlist ge (Vptr sp Ptrofs.zero) e m (comp_of f) bl vargs ->
       Genv.find_funct ge vf = Some fd ->
@@ -963,8 +952,8 @@ with execinf_stmt:
       forall (ALLOWED': Genv.allowed_call ge (comp_of f) vf),
       Mem.free m sp 0 f.(fn_stackspace) (comp_of f) = Some m' ->
       evalinf_funcall  m' fd vargs t ->
-      forall (EV: call_trace ge (comp_of f) (Genv.find_comp ge vf) vf vargs (sig_args sig) t'),
-      execinf_stmt f (Vptr sp Ptrofs.zero) e m (Stailcall sig a bl) (t' *** t).
+      (* forall (EV: call_trace ge (comp_of f) (Genv.find_comp ge vf) vf vargs (sig_args sig) t'), *)
+      execinf_stmt f (Vptr sp Ptrofs.zero) e m (Stailcall sig a bl) t.
 
 End NATURALSEM.
 

@@ -2474,6 +2474,19 @@ Proof.
           destruct (call_regs ls1 rlo);
           simpl in *; auto.
   }
+  intros; subst.
+  assert (Htype_list: Val.has_type_list rs ## args (sig_args sg)).
+  { inv WTI. rewrite <- H7.
+    clear -WTRS. eapply wt_regset_list. eauto. }
+  assert (Val.lessdef_list (rs##args) (map (fun l : loc => undef_regs destroyed_at_function_entry (call_regs ls1) l)
+       (regs_of_rpairs (loc_parameters sg)))).
+  { clear -Heqo2 B1 Htype_list.
+    eapply add_equations_args_lessdef with (rs := rs) in Heqo2; eauto.
+    unfold args' in Heqo2.
+    rewrite <- call_regs_param_values in Heqo2. simpl.
+    admit.
+  }
+  admit.
   traceEq. traceEq.
   exploit analyze_successors; eauto. simpl. left; eauto. intros [enext [U V]].
   econstructor; eauto.
@@ -2685,7 +2698,7 @@ Proof.
   eexact A. traceEq.
   econstructor; eauto.
   apply wt_regset_assign; auto. rewrite WTRES0; auto.
-Qed.
+Admitted.
 
 Lemma initial_states_simulation:
   forall st1, RTL.initial_state prog st1 ->

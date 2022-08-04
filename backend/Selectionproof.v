@@ -509,7 +509,7 @@ Lemma classify_call_correct:
   match classify_call (prog_defmap unit) a with
   | Call_default => True
   | Call_imm id => exists b, Genv.find_symbol ge id = Some b /\ v = Vptr b Ptrofs.zero
-  | Call_builtin ef => fd = External ef
+  | Call_builtin ef => fd = External ef /\ comp_of fd = default_compartment
   end.
 Proof.
   unfold classify_call; intros.
@@ -524,7 +524,9 @@ Proof.
   destruct (prog_defmap_linkorder _ _ _ _ H G) as (gd & P & Q).
   inv Q. inv H2.
 - apply Genv.find_def_symbol in P. destruct P as (b' & X & Y). fold ge in X, Y.
-  rewrite <- Genv.find_funct_ptr_iff in Y. congruence.
+  rewrite <- Genv.find_funct_ptr_iff in Y. assert (fd = External ef) by congruence; subst.
+  split; [auto|].
+  destruct ef; simpl in *; try discriminate; auto.
 - simpl in INLINE. discriminate.
 Qed.
 
@@ -1410,13 +1412,18 @@ Proof.
   eapply Val.lessdef_list_not_ptr; eauto.
   eapply NO_CROSS_PTR.
   erewrite find_comp_translated, type_of_call_translated; eauto.
-  erewrite <- CPT, <- (find_comp_translated _ _ _ _ H1).
-  eapply call_trace_translated with (vf := vf); eauto.
+  subst vf.
+  rewrite <- CPT, <- (find_comp_translated _ _ _ (Val.lessdef_refl _) H1).
+  apply call_trace_translated with (vf := Vptr b Ptrofs.zero) (vargs := vargs); auto.
   eapply match_callstate with (cunit := cunit'); eauto.
   eapply match_cont_call with (cunit := cunit) (hf := hf); eauto.
 + (* turned into Sbuiltin *)
-  intros EQ. subst fd.
+  intros [EQ EQ']. subst fd.
   right; left; split. simpl; omega. split; auto.
+  inv EV. auto.
+  simpl in *. unfold Genv.find_funct in H1. destruct (Ptrofs.eq_dec ofs Ptrofs.zero); try congruence.
+  rewrite H1 in H2. rewrite EQ' in H2.
+  eapply Genv.type_of_call_cp_default in H2; contradiction.
   econstructor; eauto.
 - (* Stailcall *)
   exploit Mem.free_parallel_extends; eauto. intros [m2' [P Q]].
