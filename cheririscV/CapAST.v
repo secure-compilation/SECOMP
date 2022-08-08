@@ -45,6 +45,7 @@ Definition list_captyp_eq: forall (l1 l2: list captyp), {l1=l2} + {l1<>l2}
                      := list_eq_dec captyp_eq.
 
 Definition CTcap : captyp := if Archi.ptr64 then CTcap128 else CTcap64.
+Definition CTanycap : captyp := if Archi.ptr64 then CTany128 else CTany64.
 Definition CTptr : captyp := if Archi.ptr64 then CTlong else CTint.
 
 Definition typesize (ty: captyp) : Z :=

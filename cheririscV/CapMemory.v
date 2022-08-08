@@ -64,127 +64,53 @@ Definition perm_order'' (po1 po2: option permission) :=
 Record mem' : Type :=
   mkmem
 {
-  mem_contents: PMap.t (ZMap.t memval);  (**r [block -> offset -> memval] *)
-  mem_access: PMap.t (Z -> perm_kind -> option permission);
-                                         (**r [block -> offset -> kind -> option permission] *)
-  mem_compartments: PTree.t compartment; (**r [block -> compartment] *)
-  nextblock: block;
+  mem_contents: (ZMap.t memval);  (**r [offset -> memval] linear memory *)
+  mem_access: (Z -> perm_kind -> option permission);
+                                         (**r [offset -> kind -> option permission] *)
+  mem_compartments: PMap.t (list occap); (**r [compartment -> list occap] *)
   access_max:
-    forall b ofs, perm_order'' (mem_access#b ofs Max) (mem_access#b ofs Cur);
-  nextblock_noaccess:
-    forall b ofs k, ~(Plt b nextblock) -> mem_access#b ofs k = None;
-  contents_default:
-    forall b, fst mem_contents#b = Undef;
-  nextblock_compartments:
-    forall b, ~Plt b nextblock <-> mem_compartments!b = None;
+    forall ofs, perm_order'' (mem_access ofs Max) (mem_access ofs Cur);
+  contents_default: fst mem_contents = Undef;
 
-  stack_contents: PMap.t (ZMap.t memval);
-  stack_access: PMap.t (Z -> perm_kind -> option permission);
-  nextframe: sf;
-  stack_access_max:
-    forall f ofs, perm_order'' (stack_access#f ofs Max) (stack_access#f ofs Cur);
-  nextframe_noaccess:
-    forall f ofs k, ~(Plt f nextframe) -> stack_access#f ofs k = None;
-  stack_contents_default:
-    forall f, fst stack_contents#f = Byte Byte.zero; (**r TODO: discuss the default
-    content: here it is put as 1 byte 0s since in practice there should
-    never be any uninitialized reads *)
 }.
 
 Definition mem := mem'.
 
 Lemma mkmem_ext:
-  forall cont1 cont2 acc1 acc2 comp1 comp2 next1 next2,
-  forall a1 a2 b1 b2 c1 c2 d1 d2,
-  forall stkcont1 stkacc1 stknext1 stka1 stkb1 stkc1,
-  forall stkcont2 stkacc2 stknext2 stka2 stkb2 stkc2,
-    cont1=cont2 -> acc1=acc2 -> comp1=comp2 -> next1=next2 ->
-    stkcont1=stkcont2 -> stkacc1=stkacc2 -> stknext1=stknext2 ->
-  mkmem cont1 acc1 comp1 next1 a1 b1 c1 d1 stkcont1 stkacc1 stknext1 stka1 stkb1 stkc1 =
-  mkmem cont2 acc2 comp2 next2 a2 b2 c2 d2 stkcont2 stkacc2 stknext2 stka2 stkb2 stkc2.
+  forall cont1 cont2 acc1 acc2 comp1 comp2,
+  forall a1 a2 b1 b2,
+    cont1=cont2 -> acc1=acc2 -> comp1=comp2 ->
+  mkmem cont1 acc1 comp1 a1 b1 =
+  mkmem cont2 acc2 comp2 a2 b2.
 Proof.
   intros. subst. f_equal; apply proof_irr.
 Qed.
 
 (** * Validity of blocks and accesses *)
 
-(** A block address is valid if it was previously allocated. It remains valid
-  even after being freed. *)
+(** [block_compartment m c] returns the list of capabilities
+    associated to compartment [c] *)
 
-Definition valid_block (m: mem) (b: mem_block) :=
-  match b with
-  | heap_block b => Plt b (nextblock m)
-  | stack_block b => Plt b (nextframe m) end.
-
-Theorem valid_not_valid_diff:
-  forall m b b', valid_block m b -> ~(valid_block m b') -> b <> b'.
-Proof.
-  intros; red; intros. subst b'. contradiction.
-Qed.
-
-Local Hint Resolve valid_not_valid_diff: mem.
-
-(** [block_compartment m b] returns the compartment associated with the block
-  [b] in the memory [m], or [None] if [b] is not allocated in [m]. *)
-
-Definition block_compartment (m: mem) (b: block) :=
-  m.(mem_compartments)!b.
-
-Theorem block_compartment_valid_block:
-  forall (m: mem) (b: block),
-  ~valid_block m (heap_block b) <->
-  block_compartment m b = None.
-Proof.
-  apply nextblock_compartments.
-Qed.
-
-Definition val_compartment (m: mem) (v: ocval): option compartment :=
-  match v with
-  | OCVptr b _ => block_compartment m b
-  | _ => None
-  end.
-
-Lemma nextblock_compartments_pos:
-  forall m b,
-  Plt b (nextblock m) <-> exists cp, block_compartment m b = Some cp.
-Proof.
-  unfold block_compartment. intros m b. split; intro H.
-  - destruct ((mem_compartments m) ! b) as [cp |] eqn:Hcase.
-    + exists cp. reflexivity.
-    + apply nextblock_compartments in Hcase. contradiction.
-  - destruct (plt b (nextblock m)) as [Hlt | Hlt].
-    + assumption.
-    + apply PTree.get_not_none_get_some in H.
-      pose proof nextblock_compartments m b as Hcomp.
-      apply not_iff_compat in Hcomp.
-      apply Hcomp in H.
-      contradiction.
-Qed.
+Definition block_compartment (m: mem) (c: compartment) :=
+  m.(mem_compartments)!!c.
 
 (** Permissions *)
 
-Definition perm (mk: mem_kind) (m: mem) (b: mem_block) (ofs: Z) (k: perm_kind) (p: permission) : Prop :=
-  match mk,b with
-  | HEAP, heap_block b => perm_order' (m.(mem_access)#b ofs k) p
-  | STACK, stack_block f => perm_order' (m.(stack_access)#f ofs k) p
-  | _,_ => False
-  end.
+Definition perm (m: mem) (ofs: Z) (k: perm_kind) (p: permission): Prop :=
+  perm_order' (m.(mem_access) ofs k) p.
 
 Theorem perm_implies:
-  forall mk m b ofs k p1 p2, perm mk m b ofs k p1 -> perm_order p1 p2 -> perm mk m b ofs k p2.
+  forall m ofs k p1 p2, perm m ofs k p1 -> perm_order p1 p2 -> perm m ofs k p2.
 Proof.
   unfold perm, perm_order'; intros.
-  destruct mk.
-  - destruct b;[|auto]. destruct (m.(mem_access)#b ofs k); auto.
-    eapply perm_order_trans; eauto.
-  - destruct b;[auto|]. destruct (m.(stack_access)#s ofs k); auto.
-    eapply perm_order_trans; eauto.
+  destruct (m.(mem_access) ofs k); auto.
+  eapply perm_order_trans; eauto.
 Qed.
 
 Local Hint Resolve perm_implies: mem.
 
 Theorem perm_cur_max:
-  forall mk m b ofs p, perm mk m b ofs Cur p -> perm mk m b ofs Max p.
+  forall m ofs p, perm m ofs Cur p -> perm m ofs Max p.
 Proof.
   assert (forall po1 po2 p,
           perm_order' po2 p -> perm_order'' po1 po2 -> perm_order' po1 p).
@@ -193,47 +119,22 @@ Proof.
   destruct po1; try contradiction.
   eapply perm_order_trans; eauto.
   unfold perm; intros.
-  destruct mk,b;auto.
-  - generalize (access_max m b ofs). eauto.
-  - generalize (stack_access_max m s ofs). eauto.
+  generalize (access_max m ofs). eauto.
 Qed.
 
 Theorem perm_cur:
-  forall mk m b ofs k p, perm mk m b ofs Cur p -> perm mk m b ofs k p.
+  forall m ofs k p, perm m ofs Cur p -> perm m ofs k p.
 Proof.
   intros. destruct k; auto. apply perm_cur_max. auto.
 Qed.
 
 Theorem perm_max:
-  forall mk m b ofs k p, perm mk m b ofs k p -> perm mk m b ofs Max p.
+  forall m ofs k p, perm m ofs k p -> perm m ofs Max p.
 Proof.
   intros. destruct k; auto. apply perm_cur_max. auto.
 Qed.
 
 Local Hint Resolve perm_cur perm_max: mem.
-
-Theorem perm_valid_block:
-  forall mk m b ofs k p, perm mk m b ofs k p -> valid_block m b.
-Proof.
-  unfold perm; intros.
-  destruct mk.
-  - destruct b;[|exfalso;auto].
-    destruct (plt b m.(nextblock)).
-    auto.
-    assert (m.(mem_access)#b ofs k = None).
-    eapply nextblock_noaccess; eauto.
-    rewrite H0 in H.
-    contradiction.
-  - destruct b;[exfalso;auto|].
-    destruct (plt s m.(nextframe)).
-    auto.
-    assert (m.(stack_access)#s ofs k = None).
-    eapply nextframe_noaccess; eauto.
-    rewrite H0 in H.
-    contradiction.
-Qed.
-
-Local Hint Resolve perm_valid_block: mem.
 
 Remark perm_order_dec:
   forall p1 p2, {perm_order p1 p2} + {~perm_order p1 p2}.
@@ -250,35 +151,34 @@ Proof.
 Defined.
 
 Theorem perm_dec:
-  forall mk m b ofs k p, {perm mk m b ofs k p} + {~ perm mk m b ofs k p}.
+  forall m ofs k p, {perm m ofs k p} + {~ perm m ofs k p}.
 Proof.
   unfold perm; intros.
-  destruct mk,b;auto;
-    apply perm_order'_dec.
+  apply perm_order'_dec.
 Defined.
 
 (* NOTE: RB: Keeping this limited to range checks instead of building in
    ownership checks as well. *)
-Definition range_perm (mk: mem_kind) (m: mem) (b: mem_block) (lo hi: Z) (k: perm_kind) (p: permission) : Prop :=
-  forall ofs, lo <= ofs < hi -> perm mk m b ofs k p.
+Definition range_perm (m: mem) (lo hi: Z) (k: perm_kind) (p: permission) : Prop :=
+  forall ofs, lo <= ofs < hi -> perm m ofs k p.
 
 Theorem range_perm_implies:
-  forall mk m b lo hi k p1 p2,
-    range_perm mk m b lo hi k p1 -> perm_order p1 p2 -> range_perm mk m b lo hi k p2.
+  forall m lo hi k p1 p2,
+    range_perm m lo hi k p1 -> perm_order p1 p2 -> range_perm m lo hi k p2.
 Proof.
   unfold range_perm; intros; eauto with mem.
 Qed.
 
 Theorem range_perm_cur:
-  forall mk m b lo hi k p,
-  range_perm mk m b lo hi Cur p -> range_perm mk m b lo hi k p.
+  forall m lo hi k p,
+  range_perm m lo hi Cur p -> range_perm m lo hi k p.
 Proof.
   unfold range_perm; intros; eauto with mem.
 Qed.
 
 Theorem range_perm_max:
-  forall mk m b lo hi k p,
-  range_perm mk m b lo hi k p -> range_perm mk m b lo hi Max p.
+  forall m lo hi k p,
+  range_perm m lo hi k p -> range_perm m lo hi Max p.
 Proof.
   unfold range_perm; intros; eauto with mem.
 Qed.
@@ -286,12 +186,12 @@ Qed.
 Local Hint Resolve range_perm_implies range_perm_cur range_perm_max: mem.
 
 Lemma range_perm_dec:
-  forall mk m b lo hi k p, {range_perm mk m b lo hi k p} + {~ range_perm mk m b lo hi k p}.
+  forall m lo hi k p, {range_perm m lo hi k p} + {~ range_perm m lo hi k p}.
 Proof.
   intros.
   induction lo using (well_founded_induction_type (Zwf_up_well_founded hi)).
   destruct (zlt lo hi).
-  destruct (perm_dec mk m b lo k p).
+  destruct (perm_dec m lo k p).
   destruct (H (lo + 1)). red. omega.
   left; red; intros. destruct (zeq lo ofs). congruence. apply r. omega.
   right; red; intros. elim n. red; intros; apply H0; omega.
@@ -299,16 +199,32 @@ Proof.
   left; red; intros. omegaContradiction.
 Defined.
 
-(** [can_access_block m b cp] holds if a component [cp] has control over block [b] in
-    memory [m]. In the simple memory model without sharing, this simple means
-    that [cp] is the compartment associated to [b] in [m]'s map from blocks to
-    components.
-*)
+(** [can_access_block m c cp] holds if a component [cp] has control
+    over cap [c] in memory [m]. In the capability memory model without
+    sharing, this means that [c] is derived from a capability owned by
+    [cp] in the map from components to capabilities. *)
 
-Definition can_access_block (m: mem) (b: block) (cp: option compartment): Prop :=
+(** [can_access_block m c (Some cp)] holds if capability [c] is owned
+    by compartment [cp] in memory [m]. *)
+Definition derived_cap (c c': occap): Prop :=
+  Ptrofs.unsigned (get_hi c') <= Ptrofs.unsigned (get_hi c)
+  /\ Ptrofs.unsigned (get_lo c) <= Ptrofs.unsigned (get_lo c')
+  /\ locFlowsCap c' c
+  /\ permFlowsCap c' c.
+Definition disjoint_cap (c c': occap): Prop :=
+  Ptrofs.unsigned (get_hi c) <= Ptrofs.unsigned (get_lo c')
+  \/ Ptrofs.unsigned (get_lo c) <= Ptrofs.unsigned (get_hi c').
+
+Lemma derived_cap_dec: forall c c', {derived_cap c c'} + {~ derived_cap c c'}.
+Proof. Admitted.
+
+Lemma disjoint_cap_dec: forall c c', {disjoint_cap c c'} + {~ disjoint_cap c c'}.
+Proof. Admitted.
+
+Definition can_access_block (m: mem) (c: occap) (cp: option compartment): Prop :=
   match cp with
   | None => True
-  | Some cp => block_compartment m b = Some cp
+  | Some cp => Exists (fun c' => derived_cap c' c) (block_compartment m cp)
   end.
 
 Remark can_access_block_dec:
@@ -316,267 +232,185 @@ Remark can_access_block_dec:
 Proof.
   unfold can_access_block.
   intros m b [cp |]; [| left; trivial].
-  destruct (block_compartment m b) as [cp' |] eqn:Heq.
-  - destruct (Pos.eq_dec cp cp').
-    + left. subst. reflexivity.
-    + right. intro Hcontra. inv Hcontra. easy.
+  induction (block_compartment m cp).
   - right. easy.
+  - induction (derived_cap_dec a b).
+    + left. apply Exists_cons_hd. auto.
+    + destruct IHl.
+      * left. apply Exists_cons_tl. auto.
+      * right. intros Hcontr.
+        apply Exists_cons in Hcontr as [Hcontr|Hcontr];auto.
 Defined.
 
-
-(** [can_store_val v] holds if [v] can be stored in the heap: if it is
-    either an immediate, a seal or a return code capability *)
-Definition can_store_val (v: option ocval): Prop :=
-  match v with
-  | Some val =>
-      match val with
-      | OCVundef | OCVint _ | OCVlong _ | OCVfloat _ | OCVsingle _ | OCVptr _ _ => True
-      | OCVcap c =>
-          match c with
-          | OCsealable σ | OCsealed _ σ =>
-                             match σ with
-                             | OCVseal _ _ _ | OCVretcode _ _ _ => True
-                             | _ => False
-                             end
-          end
-      end
-  | None => True
+(** [derive_offset a c ofs] derives the physical address from the
+    capability [c] at offset [ofs], by applying the action kind [a] *)
+Definition derive_offset (a: act_kind) (c: occap) (ofs: Z) : Z :=
+  match a with
+  | DIR => Ptrofs.unsigned (get_addr c)
+  | UNINIT => Ptrofs.unsigned (get_addr c) + ofs
+  | DEFAULT => Ptrofs.unsigned (get_lo c) + ofs
   end.
 
-(** [max_read_auth c] derives the maximal read authority of a stack
-    derived capability: the current address of an uninitialized
-    capability, the upper bound of a non uninitialized capability or a
-    sealed capability. In other words, it returns the maxmimum stack
-    address a capability may potentially give access to, or None if
-    there is no such address *)
-Definition max_read_auth (c: ocval): option ptrofs :=
+(** [max_read_auth c] derives the maximal read authority of a
+    capability: the current address of an uninitialized capability,
+    the upper bound of a non uninitialized capability or a sealed
+    capability. In other words, it returns the maxmimum stack address
+    a capability may potentially give access to, or None if there is
+    no such address *)
+Definition max_read_auth (c: occap): option ptrofs :=
   match c with
-  | OCVundef | OCVint _ | OCVlong _ | OCVfloat _ | OCVsingle _ | OCVptr _ _ => None
+  | OCsealable c'
+  | OCsealed _ c' =>
+      match c' with
+      | OCVmem perm l lo hi a => if isU perm then Some a else Some hi
+      | _ => None
+      end
+  end.
+
+(** [in_bounds k c ofs] checks that the accessed addressed is within
+    the bounds of capability [c] *)
+Definition in_bounds (k: act_kind) (c: occap) (ofs: Z) (len: nat): Prop :=
+  match c with
+  | OCsealable (OCVmem perm l lo hi a) => Ptrofs.unsigned lo <= derive_offset k c ofs
+                                         /\ derive_offset k c ofs + Z.of_nat len < Ptrofs.unsigned hi
+  | _ => False
+  end.
+
+(** [is_directed_store k c ofs v] checks that the maximum read
+    authority of [v] is at most equal to the address [v] is stored at *)
+Definition is_directed_store (k: act_kind) (c: occap) (ofs: Z) (v: ocval): Prop :=
+  match v with
   | OCVcap c =>
-      match c with
-      | OCsealed _ _ => None
-      | OCsealable σ =>
-          match σ with
-          | OCVretcode _ _ _ | OCVseal _ _ _ => None
-          | OCVretdata lo hi => Some hi
-          | OCVstk sf perm lo hi a => if isU perm then Some a else Some hi
-          end
+      match max_read_auth c with
+      | Some a' => Ptrofs.unsigned a' <= derive_offset k c ofs
+      | None => True
       end
+  | _ => True
   end.
 
-(** [can_load_val_stk c] holds if [c] has sufficient authority to load
-    the address of [c] *)
-Definition can_load_val_stk (c: occap) (len:nat): Prop :=
+Definition offset_le_cap (ofs: Z) (c: occap): Prop :=
   match c with
-  | OCsealed _ _ => False
-  | OCsealable σ =>
-      match σ with
-      | OCVretdata _ _ | OCVretcode _ _ _ | OCVseal _ _ _ => False
-      | OCVstk sf perm lo hi a => readAllowed perm = true
-                                 /\ Ptrofs.unsigned lo <= Ptrofs.unsigned a /\ Ptrofs.unsigned a + Z.of_nat len < Ptrofs.unsigned hi
-      end
+  | OCsealable (OCVmem perm l b e a) => ofs <= Ptrofs.unsigned a
+  | _ => False
   end.
 
-(** [can_loadU_val_stk c] holds if [c] has sufficient authority to
-    load [c.addr + ofs] *)
-Definition can_loadU_val_stk (c: occap) (len:nat) (ofs: Z): Prop :=
+Definition offset_lt_cap (ofs: Z) (c: occap): Prop :=
   match c with
-  | OCsealed _ _ => False
-  | OCsealable σ =>
-      match σ with
-      | OCVretdata _ _ | OCVretcode _ _ _ | OCVseal _ _ _ => False
-      | OCVstk sf perm lo hi a => isU perm = true
-                                 /\ Ptrofs.unsigned lo <= Ptrofs.unsigned a + ofs
-                                 /\ Ptrofs.unsigned a + ofs + Z.of_nat len < Ptrofs.unsigned hi
-                                 /\ ofs + Z.of_nat len < 0 (* [ofs] is strictly negative: [a] can't be read from *)
-      end
+  | OCsealable (OCVmem perm l b e a) => ofs < Ptrofs.unsigned a
+  | _ => False
   end.
 
-(** [can_store_val_stk c v] holds if [c] has sufficient authority to
-    store [v] at [c.addr]. Note that [v] might be a stack capability:
-    to uphold the directed property, the maximal read authority of v
-    must be at most equal to the address it is stored into. *)
-Definition can_store_val_stk (c: occap) (len:nat) (v: ocval): Prop :=
-  match c with
-  | OCsealed _ _ => False
-  | OCsealable σ =>
-      match σ with
-      | OCVretdata _ _ | OCVretcode _ _ _ | OCVseal _ _ _ => False
-      | OCVstk sf perm lo hi a => writeAllowed perm = true
-                                 /\ Ptrofs.unsigned lo <= Ptrofs.unsigned a /\ Ptrofs.unsigned a + Z.of_nat len < Ptrofs.unsigned hi
-                                 /\ match max_read_auth v with | None => True | Some a' => Ptrofs.unsigned a' <= Ptrofs.unsigned a + Z.of_nat len end
-      end
-  end.
+(** [can_store_val k c ofs len v] holds if [v] can be stored via
+    capability [c] at the derived address based on [c] and [ofs] *)
+Definition can_store_val (k: act_kind) (c: occap) (ofs: Z) (len: nat) (v: ocval): Prop :=
+  in_bounds k c ofs len
+  /\ (if isUCap c then offset_le_cap (derive_offset k c ofs) c else writeAllowedCap c = true)
+  /\ (if (is_global_or_imm v)
+    then True
+    else (pwlUCap c = true \/ pwlCap c = true) /\ is_directed_store k c ofs v).
 
-(** [can_storeU_val_stk c ofs v] does the same as above, but for an
-    uninitialized stack capability *)
-Definition can_storeU_val_stk (c: occap) (ofs: Z) (v: ocval) (len: nat) (c': occap): Prop :=
-  match c with
-  | OCsealed _ _ => False
-  | OCsealable σ =>
-      match σ with
-      | OCVretdata _ _ | OCVretcode _ _ _ | OCVseal _ _ _ => False
-      | OCVstk sf perm lo hi a => isU perm = true
-                                 /\ Ptrofs.unsigned lo <= Ptrofs.unsigned a + ofs
-                                 /\ Ptrofs.unsigned a + ofs + Z.of_nat len < Ptrofs.unsigned hi
-                                 /\ ofs <= 0 (* [ofs] is less than or equal to 0: a can be written to *)
-                                 /\ match max_read_auth v with | None => True | Some a' => Ptrofs.unsigned a' <= Ptrofs.unsigned a + Z.of_nat len end
-                                 /\ if ofs =? 0 then c' = OCsealable (OCVstk sf perm lo hi (Ptrofs.add a (Ptrofs.repr (Z.of_nat len)))) else c = c'
-      end
-  end.
+(** [can_load_val k c ofs len] holfs if [c] can load bytes of length
+    [len] at the derived offset from [c] and [ofs] *)
+Definition can_load_val (k: act_kind) (c: occap) (ofs: Z) (len: nat): Prop :=
+  in_bounds k c ofs len
+  /\ (if isUCap c then offset_lt_cap (derive_offset k c ofs + Z.of_nat len) c else readAllowedCap c = true).
 
 
-Theorem can_store_implies_can_load c l v :
-  can_store_val_stk c l v -> can_load_val_stk c l.
+
+Theorem can_store_implies_can_load :
+  forall k c ofs l v, (isUCap c = true -> offset_lt_cap (derive_offset k c ofs + Z.of_nat l) c)
+                 -> can_store_val k c ofs l v
+                 -> can_load_val k c ofs l.
 Proof.
-  intro K. destruct c,o;simpl in K;auto.
-  destruct K as [K [B1 [B2 _]]].
-  split;auto. apply writeA_implies_readA;auto.
-Qed.
-Theorem can_storeU_implies_can_loadU c v c' ofs len :
-  can_storeU_val_stk c ofs v len c' ->
-  ofs + (Z.of_nat len) < 0 ->
-  can_loadU_val_stk c len ofs.
-Proof.
-  intros K Hne. destruct c,o;simpl in K;auto.
-  destruct K as [? [? [? [? [? Hofs]]]]].
-  repeat split;auto;try omega.
-Qed.
+  intros until v.
+  Admitted.
   
-(** [valid_access_heap m chunk b ofs p cp v] holds if a memory access
-    of the given chunk is possible in [m] at address [b, ofs]
-    with current permissions [p] and from compartment [cp].
-    This means:
-- The range of bytes accessed all have current permission [p].
-- The block [b] belongs to the accessing compartment [cp].
-- If [v] is specified, it is not a stack derived capability
-- The offset [ofs] is aligned.
-*)
-
-Definition valid_access_heap (m: mem) (chunk: cap_memory_chunk) (b: block) (ofs: Z)
-           (p: permission) (cp: option compartment) (v: option ocval): Prop :=
-  range_perm HEAP m (heap_block b) ofs (ofs + size_chunk chunk) Cur p
-  /\ can_access_block m b cp
-  /\ can_store_val v
-  /\ (align_chunk chunk | ofs).
-
-
-(** Dynamic checks of the capability machine during a stack access *)
-Definition dynamic_access_stack (c: occap) (len:nat) (v: option ocval): Prop :=
+Definition dynamic_access (k: act_kind) (c: occap) (ofs: Z) (l: nat) (v: option ocval) :=
   match v with
-  | None => can_load_val_stk c len
-  | Some v' => can_store_val_stk c len v' end.
-Definition dynamic_access_stackU (c: occap) (ofs: Z) (v: option ocval) (len: nat) (c': occap): Prop :=
+  | None => can_load_val k c ofs l
+  | Some v => can_store_val k c ofs l v
+  end.
+           
+
+Definition storeU_increase_authority (v: option ocval) (c: occap) (ofs: Z) (len: nat) (c': option occap) :=
   match v with
-  | None => can_loadU_val_stk c len ofs
-  | Some v' => can_storeU_val_stk c ofs v' len c' end.
-
-(** [valid_access_stack m chunk c p cp v (c')] holds if a memory
-    access of the given chunk is possible in [m] at address of
-    capability c with current permissions [p].  
-    This means:
-- The range of bytes accessed all have current permission [p].
-- The capability has sufficient authority to do a load/store
-  (respectively if [v] is specified)
-- The offset [ofs] is aligned.
-- In the case of an uninitialized store at offset 0 from [c], [c] has
-  its authority increased to include the now initialized location
-*)
-Definition valid_access_stack (m: mem) (chunk: cap_memory_chunk) (c: occap)
-           (p: permission) (v: option ocval): Prop :=
-  match c with
-  | OCsealable (OCVstk f' perm lo hi a) =>
-      range_perm STACK m (stack_block f') (Ptrofs.unsigned a) ((Ptrofs.unsigned a) + size_chunk chunk) Cur p
-      /\ dynamic_access_stack c (size_chunk_nat chunk) v
-      /\ (align_chunk chunk | (Ptrofs.unsigned a))
-  | _ => False
-  end.
-Definition valid_access_stackU (m: mem) (chunk: cap_memory_chunk) (c: occap) (ofs: Z)
-           (p: permission) (v: option ocval) (c': occap): Prop :=
-  match c with
-  | OCsealable (OCVstk f' perm lo hi a) =>
-      range_perm STACK m (stack_block f') (Ptrofs.unsigned a) ((Ptrofs.unsigned a) + size_chunk chunk) Cur p
-      /\ dynamic_access_stackU c ofs v (size_chunk_nat chunk) c'
-      /\ (align_chunk chunk | (Ptrofs.unsigned a))
-  | _ => False
+  | Some _ =>
+      if (ofs =? 0) && isUCap c
+      then c' = Val.offset_cap c (Ptrofs.repr (Z.of_nat len))
+      else True
+  | _ => True
   end.
 
-(** [valid_access m chunk ptr p cp v ptr'] applies the relevant access
-  policy depending on the pointer type of [ptr] *)
-Definition valid_access (m: mem) (chunk: cap_memory_chunk) (ptr: pointer)
-           (p: permission) (cp: option compartment) (v: option ocval) (ptr': pointer): Prop :=
-  match ptr,ptr' with
-  | int_ptr b ofs,_ => ptr = ptr' /\ valid_access_heap m chunk b ofs p cp v
-  | cap_ptr c,_ => ptr = ptr' /\ valid_access_stack m chunk c p v
-  | Ucap_ptr c ofs,Ucap_ptr c' ofs' => ofs = ofs' /\ valid_access_stackU m chunk c ofs p v c'
-  | _,_ => False
-  end.
-
-Definition get_mem_block (p: pointer) : option mem_block :=
-  match p with
-  | int_ptr b _ => Some (heap_block b)
-  | cap_ptr c => option_map (fun v => stack_block v) (get_stack_frame c)
-  | Ucap_ptr c _ => option_map (fun v => stack_block v) (get_stack_frame c)
-  end.
-
-Definition infer_mem_kind (ptr: pointer): mem_kind :=
-  match ptr with
-  | int_ptr _ _ => HEAP
-  | cap_ptr _ => STACK
-  | Ucap_ptr _ _ => STACK
-  end.
-
-Definition infer_ofs (ptr: pointer): option Z :=
-  match ptr with
-  | int_ptr _ ofs => Some ofs
-  | cap_ptr c => option_map (fun a => Ptrofs.unsigned a) (get_addr c)
-  | Ucap_ptr c ofs => option_map (fun a => Ptrofs.unsigned a + ofs) (get_addr c)
-  end.
+(** An access to a memory quantity [chunk] at address [c, ofs] with
+  permission [p] is valid in [m] if the accessed addresses all have
+  current permission [p] and moreover the offset is properly aligned, 
+  if [v] is specified, [c] has sufficient authority to store it,
+  and [c] belongs to compartment [cp]. *)
+Definition valid_access (k: act_kind) (m: mem) (chunk: cap_memory_chunk) (c: occap) (ofs: Z)
+           (p: permission) (cp: option compartment) (v: option ocval) (c': option occap): Prop :=
+  range_perm m (derive_offset k c ofs) (derive_offset k c ofs + size_chunk chunk) Cur p
+  /\ can_access_block m c cp
+  /\ dynamic_access k c ofs (size_chunk_nat chunk) v
+  /\ (align_chunk chunk | (derive_offset k c ofs))
+  /\ storeU_increase_authority v c ofs (size_chunk_nat chunk) c'.
 
 Theorem valid_access_implies:
-  forall m chunk b p1 cp p2 o ptr' ,
-  valid_access m chunk b p1 cp o ptr' -> perm_order p1 p2 ->
-  valid_access m chunk b p2 cp o ptr'.
+  forall k m chunk c ofs p1 p2 cp v c',
+  valid_access k m chunk c ofs p1 cp v c' -> perm_order p1 p2 ->
+  valid_access k m chunk c ofs p2 cp v c'.
 Proof.
-  intros. destruct b; simpl in *; try destruct H as [? ?].
-  - inv H1. constructor; eauto with mem. constructor;auto.
-    eapply range_perm_implies;eauto.
-  - inv H. constructor;auto. destruct o0,o0;simpl in *;auto.
-    inv H1. constructor;auto.
-    eapply range_perm_implies;eauto.
-  - destruct ptr';auto. inv H. constructor;auto. destruct o0,o0;simpl in *;auto.
-    inv H2. constructor;auto.
-    eapply range_perm_implies;eauto.
-Qed.
+(*   intros. destruct b; simpl in *; try destruct H as [? ?]. *)
+(*   - inv H1. constructor; eauto with mem. constructor;auto. *)
+(*     eapply range_perm_implies;eauto. *)
+(*   - inv H. constructor;auto. destruct o0,o0;simpl in *;auto. *)
+(*     inv H1. constructor;auto. *)
+(*     eapply range_perm_implies;eauto. *)
+(*   - destruct ptr';auto. inv H. constructor;auto. destruct o0,o0;simpl in *;auto. *)
+(*     inv H2. constructor;auto. *)
+(*     eapply range_perm_implies;eauto. *)
+  (* Qed. *)
+Admitted.
 
-Theorem valid_access_get_mem_block:
-  forall m chunk ptr p cp v ptr',
-    valid_access m chunk ptr p cp v ptr' ->
-    exists b, get_mem_block ptr = Some b.
-Proof.
-  intros. destruct ptr;simpl in *;eauto;
-  destruct o,o,ptr';simpl in *;try destruct H as [? ?];eauto;exfalso;auto.
-Qed.
-
-Theorem valid_access_infer_ofs:
-  forall m chunk ptr p cp v p',
-    valid_access m chunk ptr p cp v p' ->
-    exists ofs, infer_ofs ptr = Some ofs.
-Proof.
-  intros. destruct ptr;simpl in *;eauto;
-  destruct o,o,p';simpl in *;try destruct H as [? ?];eauto;exfalso;auto.
-Qed.
+Theorem valid_access_perm:
+  forall a k m chunk c ofs p cp v c',
+    valid_access a m chunk c ofs p cp v c' ->
+    perm m (derive_offset a c ofs) k p.
+Proof. Admitted.
 
 Theorem valid_access_freeable_any:
-  forall m chunk ptr p cp v ptr',
-  valid_access m chunk ptr Freeable cp v ptr' ->
-  valid_access m chunk ptr p cp v ptr'.
+  forall k m chunk ptr ofs p cp v ptr',
+  valid_access k m chunk ptr ofs Freeable cp v ptr' ->
+  valid_access k m chunk ptr ofs p cp v ptr'.
 Proof.
   intros.
   eapply valid_access_implies; eauto. constructor.
 Qed.
 
 Local Hint Resolve valid_access_implies: mem.
+
+Definition dynamic_conditions (m: mem) (k: act_kind) (c: occap) (ofs: Z) (len: Z)
+           (v: option ocval) (cp: option compartment) (c': option occap) : Prop :=
+  dynamic_access k c ofs (Z.to_nat len) v
+  /\ can_access_block m c cp
+  /\ storeU_increase_authority v c ofs (Z.to_nat len) c'.
+
+Theorem dynamic_conditions_in_bounds:
+  forall m ptr cp o len ptr' ofs,
+    dynamic_conditions m ptr cp o len ptr' ->
+    infer_ofs ptr = Some ofs ->
+    get_lo_pointer ptr <= ofs < get_hi_pointer ptr.
+Proof.
+  intros until ofs. intros D Hofs.
+  destruct ptr.
+  - inversion D. simpl. inv Hofs. omega.
+  - destruct D as [Heq D].
+    destruct o0,o0,o;try easy; destruct D as [D1 [D2 D3]];inv Hofs.
+    all: simpl in *; omega.
+  - destruct ptr';[easy..|].
+    destruct D as [Heq D].
+    destruct o0,o0,o;try easy; destruct D as [D1 [D2 D3]];inv Hofs.
+    all: simpl in *; omega.
+Qed.
 
 Theorem valid_access_valid_block:
   forall m chunk p cp o b p',
@@ -592,75 +426,330 @@ Proof.
   - destruct H. destruct o0,o0;[|(exfalso;auto)..].
     inv H. destruct H0.
     assert (perm STACK m (stack_block s) (Ptrofs.unsigned i1) Cur Nonempty).
-    apply H. generalize (size_chunk_pos chunk). omega.
+    apply H. apply dynamic_conditions_in_bounds in H0.  generalize (size_chunk_pos chunk). omega.
     destruct b;[simpl in *;congruence|]. inv H2.
     eauto with mem.
   - destruct p';[exfalso;auto..|].
     destruct H. destruct o0,o0;[|(exfalso;auto)..].
-    inv H. destruct H0.
-    assert (perm STACK m (stack_block s) (Ptrofs.unsigned i1) Cur Nonempty).
-    apply H. generalize (size_chunk_pos chunk). omega.
+    inv H0.
+    assert (perm STACK m (stack_block s) (Ptrofs.unsigned i1 + z) Cur Nonempty).
+    apply H1. generalize (size_chunk_pos chunk). omega.
     destruct b;[simpl in *;congruence|]. inv H2.
     eauto with mem.
 Qed.
 
 Local Hint Resolve valid_access_valid_block: mem.
 
-Lemma valid_access_perm:
-  forall m chunk b ofs k p cp,
-  valid_access m chunk b ofs p cp ->
-  perm m b ofs k p.
+Lemma dynamic_access_stackU_le :
+  forall c ofs v len c',
+    dynamic_access_stackU c ofs v len c' ->
+    ofs <= 0.
 Proof.
-  intros. destruct H. apply perm_cur. apply H. generalize (size_chunk_pos chunk). omega.
+  intros. destruct v.
+  - destruct c,o0; try easy. destruct H,H0,H1,H2. auto.
+  - destruct c,o; try easy. destruct H,H0,H1. omega.
+Qed.
+
+Lemma valid_access_perm:
+  forall m chunk ptr p cp v b k ofs ptr',
+    valid_access m chunk ptr p cp v ptr' ->
+    get_mem_block ptr = Some b ->
+    infer_ofs ptr = Some ofs ->
+    perm (infer_mem_kind ptr) m b ofs k p.
+Proof.
+  intros. destruct ptr.
+  all: inv H1. all: inv H0.
+  - destruct H,H0. apply perm_cur.
+    apply H0. generalize (size_chunk_pos chunk). omega.
+  - destruct o,o,H;[|exfalso;auto..].
+    destruct H0. apply perm_cur.
+    inv H3. inv H2. apply H0. generalize (size_chunk_pos chunk). omega.
+  - destruct ptr'; try easy. destruct o,o,H;try easy.
+    destruct H0. apply perm_cur.
+    inv H3. inv H2. apply H0.
+    destruct H1. apply dynamic_access_stackU_le in H1 as Hle.
+    generalize (size_chunk_pos chunk). omega.
+Qed.
+
+Lemma size_chunk_nat_eq:
+  forall chunk1 chunk2,
+    size_chunk chunk1 = size_chunk chunk2 ->
+    size_chunk_nat chunk1 = size_chunk_nat chunk2.
+Proof.
+  intros. destruct chunk1,chunk2;easy.
 Qed.
 
 Lemma valid_access_compat:
-  forall m chunk1 chunk2 b ofs p cp,
+  forall m chunk1 chunk2 ptr p cp v ptr',
   size_chunk chunk1 = size_chunk chunk2 ->
   align_chunk chunk2 <= align_chunk chunk1 ->
-  valid_access m chunk1 b ofs p cp ->
-  valid_access m chunk2 b ofs p cp.
+  valid_access m chunk1 ptr p cp v ptr' ->
+  valid_access m chunk2 ptr p cp v ptr'.
 Proof.
-  intros. inv H1. rewrite H in H2. destruct H3. constructor; auto.
-  constructor; auto.
-  eapply Z.divide_trans; eauto. eapply align_le_divides; eauto.
+  intros. destruct ptr. 1,2: inv H1.
+  - inv H3. rewrite H in H1. 
+    destruct H2,H3. repeat constructor;auto.
+    eapply Z.divide_trans; eauto. eapply align_le_divides; eauto.
+  - destruct o,o;try easy. destruct H3,H2. rewrite H in H1.
+    repeat constructor;auto. erewrite size_chunk_nat_eq;eauto.
+    eapply Z.divide_trans; eauto. eapply align_le_divides; eauto.
+  - destruct ptr';try easy. inv H1. destruct o,o;try easy. destruct v; try easy.
+    all: destruct H3,H3; rewrite H in H1,H2.
+    all: erewrite size_chunk_nat_eq in H3;eauto.
+    all: constructor;auto;constructor;auto;split;auto.
+    all: eapply Z.divide_trans; eauto; eapply align_le_divides; eauto.
 Qed.
 
-Lemma valid_access_dec:
-  forall m chunk b ofs p cp,
-  {valid_access m chunk b ofs p cp} + {~ valid_access m chunk b ofs p cp}.
+Lemma can_store_val_dec:
+  forall v, {can_store_val v} + {~can_store_val v}.
+Proof.
+  intros. destruct v; simpl;auto.
+  destruct o;simpl;auto.
+  destruct o,o;simpl;auto.
+Defined.
+  
+Lemma valid_access_heap_dec:
+  forall m chunk b ofs p cp v,
+    {valid_access_heap m chunk b ofs p cp v} + {~ valid_access_heap m chunk b ofs p cp v}.
 Proof.
   intros.
-  destruct (range_perm_dec m b ofs (ofs + size_chunk chunk) Cur p).
+  destruct (range_perm_dec HEAP m (heap_block b) ofs (ofs + size_chunk chunk) Cur p).
   destruct (Zdivide_dec (align_chunk chunk) ofs).
   destruct (can_access_block_dec m b cp).
-  left; constructor; auto.
-  right; red; intro V; inversion V as [V1 [V2 V3]]; congruence.
-  right; red; intro V; inversion V as [V1 [V2 V3]]; congruence.
-  right; red; intro V; inversion V as [V1 [V2 V3]]; congruence.
+  destruct (can_store_val_dec v).
+  left; constructor; auto. 
+  all: right; red; intro V; inversion V as [V1 [V2 [V3 V4]]]; congruence.
 Defined.
 
-(** [valid_pointer m b ofs] returns [true] if the address [b, ofs]
+Lemma can_store_val_stk_dec:
+  forall c len v, {can_store_val_stk c len v} + {~ can_store_val_stk c len v}.
+Proof.
+  intros. destruct c,o;auto. unfold can_store_val_stk.
+  destruct (writeAllowed p).
+  destruct (Z_le_dec (Ptrofs.unsigned i) (Ptrofs.unsigned i1)).
+  destruct (Z_lt_dec (Ptrofs.unsigned i1 + Z.of_nat len) (Ptrofs.unsigned i0)).
+  destruct (max_read_auth v) eqn:Hmax.
+  destruct (Z_le_dec (Ptrofs.unsigned i2) (Ptrofs.unsigned i1 + Z.of_nat len)).
+  left. repeat constructor;auto.
+  all: try (right; red; intro V; destruct V as [V1 [V2 [V3 V4]]]; try congruence;omega).
+  left. repeat constructor;auto.
+Defined.
+
+Lemma can_load_val_stk_dec:
+  forall c len, {can_load_val_stk c len} + {~ can_load_val_stk c len}.
+Proof.
+  intros. destruct c,o;auto. unfold can_load_val_stk.
+  destruct (readAllowed p).
+  destruct (Z_le_dec (Ptrofs.unsigned i) (Ptrofs.unsigned i1)).
+  destruct (Z_lt_dec (Ptrofs.unsigned i1 + Z.of_nat len) (Ptrofs.unsigned i0)).
+  left. repeat constructor;auto.
+  all: right; red; intro V; destruct V as [V1 [V2 V3]]; try congruence. omega.
+Defined.
+
+Lemma dynamic_access_stack_dec:
+  forall c len v, {dynamic_access_stack c len v} + {~ dynamic_access_stack c len v}.
+Proof.
+  intros. destruct v. apply can_store_val_stk_dec. apply can_load_val_stk_dec.
+Defined.
+
+Lemma valid_access_stack_dec:
+  forall m chunk c p v, {valid_access_stack m chunk c p v} + {~ valid_access_stack m chunk c p v}.
+Proof.
+  intros.
+  unfold valid_access_stack.
+  destruct c,o;auto.
+  destruct (range_perm_dec STACK m (stack_block s) (Ptrofs.unsigned i1)
+                           (Ptrofs.unsigned i1 + size_chunk chunk) Cur p).
+  destruct (dynamic_access_stack_dec (OCsealable (OCVstk s p0 i i0 i1)) (size_chunk_nat chunk) v).
+  destruct (Zdivide_dec (align_chunk chunk) (Ptrofs.unsigned i1)).
+  left; constructor; auto.
+  all: right; red; intro V; destruct V as [V1 [V2 V3]]; congruence.
+Defined.
+
+Lemma can_storeU_val_stk_dec:
+  forall c ofs v len c', {can_storeU_val_stk c ofs v len c'} + {~ can_storeU_val_stk c ofs v len c'}.
+Proof.
+  intros. destruct c,o;auto. unfold can_storeU_val_stk.
+  destruct (isU p).
+  destruct (Z_le_dec (Ptrofs.unsigned i) (Ptrofs.unsigned i1 + ofs)).
+  destruct (Z_lt_dec (Ptrofs.unsigned i1 + ofs + Z.of_nat len) (Ptrofs.unsigned i0)).
+  destruct (Z_le_dec ofs 0).
+  destruct (max_read_auth v) eqn:Hmax;[destruct (Z_le_dec (Ptrofs.unsigned i2) (Ptrofs.unsigned i1 + Z.of_nat len))|];
+  (destruct (ofs =? 0);[destruct (occap_dec c' (OCsealable (OCVstk s p i i0 (Ptrofs.add i1 (Ptrofs.repr (Z.of_nat len))))))|
+                        destruct (occap_dec (OCsealable (OCVstk s p i i0 i1)) c')]).
+  all: try (right; red; intro V; destruct V as [V1 [V2 [V3 [V4 [V5 V6]]]]]; (congruence || omega)).
+  all: left;repeat constructor;auto.
+Defined.
+
+Lemma can_loadU_val_stk_dec:
+  forall c len ofs, {can_loadU_val_stk c len ofs} + {~ can_loadU_val_stk c len ofs}.
+Proof.
+  intros. destruct c,o;auto. unfold can_loadU_val_stk.
+  destruct (isU p).
+  destruct (Z_le_dec (Ptrofs.unsigned i) (Ptrofs.unsigned i1 + ofs)).
+  destruct (Z_lt_dec (Ptrofs.unsigned i1 + ofs + Z.of_nat len) (Ptrofs.unsigned i0)).
+  destruct (Z_lt_dec (ofs + Z.of_nat len) 0).
+  left. repeat constructor;auto.
+  all: right; red; intro V; destruct V as [V1 [V2 [V3 V4]]]; try congruence. omega.
+Defined.
+
+Lemma dynamic_access_stackU_dec:
+  forall c ofs v len c', {dynamic_access_stackU c ofs v len c'} + {~ dynamic_access_stackU c ofs v len c'}.
+Proof.
+  intros. destruct v. simpl. apply can_storeU_val_stk_dec. apply can_loadU_val_stk_dec.
+Defined.
+
+Lemma valid_access_stackU_dec:
+  forall m chunk c ofs p v c', {valid_access_stackU m chunk c ofs p v c'} + {~ valid_access_stackU m chunk c ofs p v c'}.
+Proof.
+  intros.
+  unfold valid_access_stackU.
+  destruct c,o;auto.
+  destruct (range_perm_dec STACK m (stack_block s) (Ptrofs.unsigned i1 + ofs)
+                           (Ptrofs.unsigned i1 + ofs + size_chunk chunk) Cur p).
+  destruct (dynamic_access_stackU_dec (OCsealable (OCVstk s p0 i i0 i1)) ofs v (size_chunk_nat chunk) c').
+  destruct (Zdivide_dec (align_chunk chunk) (Ptrofs.unsigned i1 + ofs)).
+  left; constructor; auto.
+  all: right; red; intro V; destruct V as [V1 [V2 V3]]; congruence.
+Defined.
+  
+Lemma valid_access_dec:
+  forall m chunk ptr p cp v ptr',
+  {valid_access m chunk ptr p cp v ptr'} + {~ valid_access m chunk ptr p cp v ptr'}.
+Proof.
+  intros. destruct ptr;simpl.
+  - destruct (eq_pointer (int_ptr b z) ptr').
+    pose proof (valid_access_heap_dec m chunk b z p cp v) as [?|?]; auto.
+    all: right; red; intro V; inversion V; congruence.
+  - destruct (eq_pointer (cap_ptr o) ptr').
+    destruct (valid_access_stack_dec m chunk o p v).
+    left; constructor; auto.
+    all: right; intros V; destruct V as [V1 V2]; congruence.
+  - destruct ptr';auto.
+    destruct (valid_access_stackU_dec m chunk o z p v o0).
+    destruct (z =? 0);[destruct (Z.eq_dec z0 (- size_chunk chunk))|destruct (Z.eq_dec z z0)].
+    all: try (right; intro V; destruct V as [V1 V2]; congruence).
+    all: left; constructor; auto.
+Defined.
+
+(** [valid_heap_pointer m b ofs] returns [true] if the address [b, ofs]
   is nonempty in [m] and [false] if it is empty. *)
-Definition valid_pointer (m: mem) (b: block) (ofs: Z): bool :=
-  perm_dec m b ofs Cur Nonempty.
+Definition valid_heap_pointer (m: mem) (b: block) (ofs: Z): bool :=
+  perm_dec HEAP m (heap_block b) ofs Cur Nonempty.
+
+Definition valid_capability (m: mem) (c: occap): bool :=
+  match c with
+  | OCsealable (OCVstk f p b e a) | OCsealed _ (OCVstk f p b e a) =>
+      range_perm_dec STACK m (stack_block f)
+                      (Ptrofs.unsigned b) (Ptrofs.unsigned e) Cur Nonempty
+  | _ => false
+  end.
+
+Definition valid_pointer (m: mem) (ptr: pointer) : bool :=
+  match ptr with
+  | int_ptr b ofs => valid_heap_pointer m b ofs
+  | cap_ptr c => valid_capability m c
+  | Ucap_ptr c _ => valid_capability m c
+  end.
 
 Theorem valid_pointer_nonempty_perm:
-  forall m b ofs,
-  valid_pointer m b ofs = true <-> perm m b ofs Cur Nonempty.
+  forall m ptr b,
+    get_mem_block ptr = Some b ->
+    valid_pointer m ptr = true <-> (forall ofs, (get_lo_pointer ptr) <= ofs < (get_hi_pointer ptr)
+                                         -> perm (infer_mem_kind ptr) m b ofs Cur Nonempty).
 Proof.
-  intros. unfold valid_pointer.
-  destruct (perm_dec m b ofs Cur Nonempty); simpl;
-  intuition congruence.
+  intros. destruct ptr.
+  - inv H. unfold valid_pointer,valid_heap_pointer. split;intros.
+    + simpl in H0. assert (ofs = z);[omega|];subst.
+      destruct (perm_dec HEAP m (heap_block b0) z Cur Nonempty) eqn:Hn;auto;intuition.
+    + destruct (perm_dec HEAP m (heap_block b0) z Cur Nonempty);auto.
+      exfalso. apply n. apply H. simpl. omega.
+  - inv H. unfold valid_pointer, valid_capability.
+    split;intros.
+    + destruct o,o;inv H1. rename s into s0.
+      all: destruct (range_perm_dec STACK m (stack_block s0) (Ptrofs.unsigned i)
+                               (Ptrofs.unsigned i0) Cur Nonempty);intuition.
+    + destruct o,o; inv H1. rename s into s0.
+      all: destruct (range_perm_dec STACK m (stack_block s0) (Ptrofs.unsigned i)
+                               (Ptrofs.unsigned i0) Cur Nonempty);intuition.
+  - inv H. unfold valid_pointer, valid_capability.
+    split;intros.
+    + destruct o,o;inv H1. rename s into s0.
+      all: destruct (range_perm_dec STACK m (stack_block s0) (Ptrofs.unsigned i)
+                               (Ptrofs.unsigned i0) Cur Nonempty);intuition.
+    + destruct o,o; inv H1. rename s into s0.
+      all: destruct (range_perm_dec STACK m (stack_block s0) (Ptrofs.unsigned i)
+                               (Ptrofs.unsigned i0) Cur Nonempty);intuition.
 Qed.
 
-Theorem valid_pointer_valid_access_nonpriv:
-  forall m b cp ofs,
-    block_compartment m b = Some cp ->
-    valid_pointer m b ofs = true <-> valid_access m Mint8unsigned b ofs Nonempty (Some cp).
+Theorem valid_access_stack_comp:
+  forall m chunk c p cp cp' o ptr',
+    valid_access m chunk (cap_ptr c) p cp o ptr' ->
+    valid_access m chunk (cap_ptr c) p cp' o ptr'.
+Proof. intros. inv H. constructor;auto. Qed.
+
+Theorem valid_access_stackU_comp:
+  forall m chunk ofs c p cp cp' o ptr',
+    valid_access m chunk (Ucap_ptr ofs c) p cp o ptr' ->
+    valid_access m chunk (Ucap_ptr ofs c) p cp' o ptr'.
+Proof. intros. destruct ptr';easy. Qed.
+
+(*Theorem valid_access_perm_range:
+  forall m chunk ptr p cp v b k ofs ptr',
+    valid_access m chunk ptr p cp v ptr' ->
+    get_mem_block ptr = Some b ->
+    get_lo_pointer ptr <= ofs < get_hi_pointer ptr ->
+    perm (infer_mem_kind ptr) m b ofs k p.
 Proof.
-  intros. rewrite valid_pointer_nonempty_perm.
+  intros until ptr'. intros H H0 Hbounds. destruct ptr.
+  all: inv H0; simpl in Hbounds.
+  - destruct H,H0. apply perm_cur.
+    inv H1. apply H0. simpl in H2,H3. generalize (size_chunk_pos chunk). omega.
+  - destruct o,o,H;[|exfalso;auto..].
+    destruct H0. apply perm_cur. simpl in Hbounds.
+    inv H1. inv H2. apply H0. generalize (size_chunk_pos chunk). omega.
+  - destruct ptr'; try easy. destruct o,o,H;try easy.
+    destruct H0. apply perm_cur.
+    inv H3. inv H2. apply H0.
+    destruct H1. apply dynamic_access_stackU_le in H1 as Hle.
+    generalize (size_chunk_pos chunk). omega.
+Qed.*)
+
+Theorem valid_pointer_valid_access_nonpriv:
+  forall m ptr cp o ptr',
+    dynamic_conditions m ptr (Some cp) o 1 ptr' ->
+    valid_pointer m ptr = true <-> valid_access m CMint8unsigned ptr Nonempty (Some cp) o ptr'.
+Proof.
+  intros. apply dynamic_conditions_get_mem_block in H as Hb.
+  destruct Hb as [b Hb]. rewrite valid_pointer_nonempty_perm;eauto.
   split; intros.
+  - destruct ptr.
+    + inv H; inv H2; inv Hb. repeat constructor;auto;simpl;apply Z.divide_1_l.
+    + inv H. destruct o0,o0,o;inv H2.
+      * inv H1; inv H3. inv Hb. repeat constructor;auto;[|apply Z.divide_1_l].
+        intros z [Hz1 Hz2]. apply H0. simpl in *. omega.
+      * inv H1. inv Hb. repeat constructor;auto;[|apply Z.divide_1_l].
+        intros z [Hz1 Hz2]. apply H0. simpl in *. omega.
+    + destruct ptr';[easy..|]. inv H.
+      destruct o0,o0,o;try easy.
+      * inv Hb. rename H2 into Hd.
+        repeat destruct Hd as [? Hd]. repeat constructor;eauto;[|apply Z.divide_1_l].
+        intros x Hx. apply H0. simpl in *. omega.
+      * inv Hb. rename H2 into Hd. destruct Hd as [Hd1 [Hd2 [Hd3 Hd4]]].
+        repeat constructor;eauto;[|apply Z.divide_1_l].
+        intros x Hx. apply H0. simpl in *. omega.
+  - eapply valid_access_perm;eauto.
+      
+
+      repeat constructor;auto. simpl in *. ;simpl;apply Z.divide_1_l.
+      
+      constructor;auto.
+      unfold valid_access_heap.
+    
+    apply valid_pointer_nonempty_perm in H0. 
+    eapply valid_access_stack_comp;eauto.
+
+    unfold valid_access.
   split. simpl; red; intros. replace ofs0 with ofs by omega. auto.
   split; auto.
   simpl. apply Z.divide_1_l.
@@ -680,9 +769,9 @@ Proof.
 Qed.
 
 Theorem valid_pointer_valid_access:
-  forall m b ocp ofs,
-    can_access_block m b ocp ->
-    valid_pointer m b ofs = true <-> valid_access m Mint8unsigned b ofs Nonempty ocp.
+  forall m ptr cp o chunk ptr',
+    dynamic_conditions m ptr cp o chunk ptr' ->
+    valid_pointer m ptr = true <-> valid_access m CMint8unsigned ptr Nonempty cp o ptr'.
 Proof.
   intros.
   destruct ocp; auto using valid_pointer_valid_access_nonpriv, valid_pointer_valid_access_priv.
