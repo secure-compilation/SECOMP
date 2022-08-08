@@ -387,9 +387,9 @@ Definition encode_val (chunk: cap_memory_chunk) (v: ocval) : list memval :=
   | OCVint n, (CMint8signed | CMint8unsigned) => inj_bytes (encode_int 1%nat (Int.unsigned n))
   | OCVint n, (CMint16signed | CMint16unsigned) => inj_bytes (encode_int 2%nat (Int.unsigned n))
   | OCVint n, CMint32 => inj_bytes (encode_int 4%nat (Int.unsigned n))
-  | OCVptr b ofs, CMint32 => if Archi.ptr64 then list_repeat 4%nat Undef else inj_value Q32 v
+  | OCVptr ofs, CMint32 => if Archi.ptr64 then list_repeat 4%nat Undef else inj_value Q32 v
   | OCVlong n, CMint64 => inj_bytes (encode_int 8%nat (Int64.unsigned n))
-  | OCVptr b ofs, CMint64 => if Archi.ptr64 then inj_value Q64 v else list_repeat 8%nat Undef
+  | OCVptr ofs, CMint64 => if Archi.ptr64 then inj_value Q64 v else list_repeat 8%nat Undef
   | OCVsingle n, CMfloat32 => inj_bytes (encode_int 4%nat (Int.unsigned (Float32.to_bits n)))
   | OCVfloat n, CMfloat64 => inj_bytes (encode_int 8%nat (Int64.unsigned (Float.to_bits n)))
   | OCVcap c, CMcap64 => if Archi.ptr64 then list_repeat 8%nat Undef else inj_value Q64 v
@@ -499,12 +499,12 @@ Definition decode_encode_val (v1: ocval) (chunk1 chunk2: cap_memory_chunk) (v2: 
   | OCVint n, (CMint64 | CMfloat32 | CMfloat64 | CMany64 | CMcap64 | CMcap128), _ => v2 = OCVundef
   | OCVint n, _, _ => True (**r nothing meaningful to say about v2 *)
                        
-  | OCVptr b ofs, (CMint32 | CMany32), (CMint32 | CMany32) => v2 = if Archi.ptr64 then OCVundef else OCVptr b ofs
-  | OCVptr b ofs, CMint64, (CMint64 | CMany64) => v2 = if Archi.ptr64 then OCVptr b ofs else OCVundef
-  | OCVptr b ofs, CMany64, CMany64 => v2 = OCVptr b ofs
-  | OCVptr b ofs, CMany64, CMint64 => v2 = if Archi.ptr64 then OCVptr b ofs else OCVundef
-  | OCVptr b ofs, CMany128, CMany128 => v2 = OCVptr b ofs
-  | OCVptr b ofs, _, _ => v2 = OCVundef
+  | OCVptr ofs, (CMint32 | CMany32), (CMint32 | CMany32) => v2 = if Archi.ptr64 then OCVundef else OCVptr ofs
+  | OCVptr ofs, CMint64, (CMint64 | CMany64) => v2 = if Archi.ptr64 then OCVptr ofs else OCVundef
+  | OCVptr ofs, CMany64, CMany64 => v2 = OCVptr ofs
+  | OCVptr ofs, CMany64, CMint64 => v2 = if Archi.ptr64 then OCVptr ofs else OCVundef
+  | OCVptr ofs, CMany128, CMany128 => v2 = OCVptr ofs
+  | OCVptr ofs, _, _ => v2 = OCVundef
 
   | OCVcap c, (CMcap64 | CMany64), (CMcap64 | CMany64) => v2 = if Archi.ptr64 then OCVundef else OCVcap c
   | OCVcap c, CMcap128, (CMcap128 | CMany128) => v2 = if Archi.ptr64 then OCVcap c else OCVundef
@@ -1043,6 +1043,12 @@ Proof.
   destruct (proj_bytes l1); auto. destruct (proj_bytes l2); auto.
 Qed.
 
+Lemma long_of_words_is_not_cap_b:
+  forall v1 v2, is_cap_b (Val.longofwords v1 v2) = false.
+Proof.
+  destruct v1,v2;auto.
+Qed.
+
 Lemma decode_val_int64:
   forall l1 l2,
   length l1 = 4%nat -> length l2 = 4%nat -> Archi.ptr64 = false ->
@@ -1073,6 +1079,9 @@ Proof.
   + unfold Val.longofwords. f_equal. rewrite Int64.ofwords_add. f_equal.
     rewrite !UR by auto. rewrite int_of_bytes_append.
     rewrite L1. change (Z.of_nat 4 * 8) with 32. ring.
+  + apply Val.lessdef_is_not_cap. apply long_of_words_is_not_cap_b.
+  + apply Val.lessdef_is_not_cap. apply long_of_words_is_not_cap_b.
+  + apply Val.lessdef_is_not_cap. apply long_of_words_is_not_cap_b.
 Qed.
 
 Lemma bytes_of_int_append:

@@ -21,9 +21,6 @@ Require Import CapAST.
 Require Import Integers.
 Require Import Floats.
 
-Definition block : Type := positive.
-Definition sf : Type := positive.
-Definition eq_block := peq.
 Definition seal := ptrofs.
 
 (** A value is either:
@@ -56,6 +53,42 @@ Inductive permission: Type :=
 Definition perm_dec (x y: permission): {x=y} + {x<>y}.
 Proof. decide equality. Defined.
 Global Opaque perm_dec.
+
+Inductive locality: Type :=
+| Global
+| Local
+| Directed.
+
+Definition loc_dec (x y: locality): {x=y} + {x<>y}.
+Proof. decide equality. Defined.
+
+Definition locFlowsTo (l1 l2: locality): bool :=
+  match l1 with
+  | Directed => true
+  | Local => match l2 with
+            | Directed => false
+            | _ => true
+            end
+  | Global => match l2 with
+             | Global => true
+             | _ => false
+             end
+  end.
+
+Definition locFlows : locality -> locality -> Prop :=
+  fun p1 p2 => locFlowsTo p1 p2 = true.
+
+Lemma locFlowsTransitive:
+  forall p1 p2 p3, locFlows p1 p2 -> locFlows p2 p3 -> locFlows p1 p3.
+Proof.
+  red; intros; destruct p1; destruct p2; destruct p3; try congruence; auto.
+Qed.
+
+Lemma locFlowsReflexive:
+  forall p, locFlows p p.
+Proof.
+  intros; unfold locFlows; destruct p; simpl; auto.
+Qed.
 
 Definition permFlowsTo (p1 p2: permission): bool :=
   match p1 with
@@ -141,6 +174,12 @@ Definition pwlU p : bool :=
   | _ => false
   end.
 
+Definition isGlobal l: bool :=
+  match l with
+  | Global => true
+  | _ => false
+  end.
+
 (* Uninitialized capabilities are neither read nor write allowed *)
 Definition readAllowed (p: permission): bool :=
   match p with
@@ -168,9 +207,7 @@ Lemma writeA_implies_readA p :
 Proof. destruct p; auto. Qed.
 
 Inductive ocsealable: Type :=
-| OCVstk: sf -> permission -> ptrofs -> ptrofs -> ptrofs -> ocsealable
-| OCVretdata: ptrofs -> ptrofs -> ocsealable
-| OCVretcode: ptrofs -> ptrofs -> ptrofs -> ocsealable
+| OCVmem: permission -> locality -> ptrofs -> ptrofs -> ptrofs -> ocsealable
 | OCVseal: seal -> seal -> seal -> ocsealable.
 
 Definition sealable_dec (x y: ocsealable): {x=y} + {x<>y}.
@@ -190,35 +227,63 @@ Proof.
 Defined.
 Global Opaque occap_dec.
 
+Definition permFlowsCap (c c': occap): Prop :=
+  match c,c' with
+  | OCsealable (OCVmem perm l b e a),OCsealable (OCVmem perm' l' b' e' a') => permFlows perm perm'
+  | _,_ => False
+  end.
+
+Definition locFlowsCap (c c': occap): Prop :=
+  match c,c' with
+  | OCsealable (OCVmem perm l b e a),OCsealable (OCVmem perm' l' b' e' a') => locFlows l l'
+  | _,_ => False
+  end.
+
 Definition promote_cap (c: occap): option occap :=
   match c with
-  | OCsealable (OCVstk f perm b e a) => Some (OCsealable (OCVstk f (promote_perm perm) b e a))
+  | OCsealable (OCVmem perm l b e a) => Some (OCsealable (OCVmem (promote_perm perm) l b e a))
   | _ => None
   end.
 
 Definition readAllowedCap (c: occap) : bool :=
   match c with
-  | OCsealable (OCVstk _ perm _ _ _) => readAllowed perm
+  | OCsealable (OCVmem perm _ _ _ _) => readAllowed perm
   | _ => false
   end.
 
 Definition writeAllowedCap (c: occap) : bool :=
   match c with
-  | OCsealable (OCVstk _ perm _ _ _) => writeAllowed perm
+  | OCsealable (OCVmem perm _ _ _ _) => writeAllowed perm
   | _ => false
+  end.
+
+Definition isGlobalCap (c: occap) : bool :=
+  match c with
+  | OCsealable (OCVmem _ l _ _ _) => isGlobal l
+  | _ => true
   end.
 
 Definition isUCap (c: occap) : bool :=
   match c with
-  | OCsealable (OCVstk _ perm _ _ _) => isU perm
+  | OCsealable (OCVmem perm _ _ _ _) => isU perm
+  | _ => false
+  end.
+
+Definition pwlCap (c: occap) : bool :=
+  match c with
+  | OCsealable (OCVmem perm _ _ _ _) => pwl perm
+  | _ => false
+  end.
+
+Definition pwlUCap (c: occap) : bool :=
+  match c with
+  | OCsealable (OCVmem perm _ _ _ _) => pwlU perm
   | _ => false
   end.
 
 Definition get_lo_seal (σ : ocsealable) : ptrofs :=
   match σ with
-  | OCVstk sf perm lo hi a => lo
-  | OCVretdata lo hi => lo
-  | OCVretcode lo hi a => lo
+  | OCVmem sf perm lo hi a => lo
   | OCVseal σlo σhi σa => σlo
   end.
 Definition get_lo (v : occap) : ptrofs :=
@@ -229,9 +294,7 @@ Definition get_lo (v : occap) : ptrofs :=
 
 Definition get_hi_seal (σ : ocsealable) : ptrofs :=
   match σ with
-  | OCVstk sf perm lo hi a => hi
-  | OCVretdata lo hi => hi
-  | OCVretcode lo hi a => hi
+  | OCVmem sf perm lo hi a => hi
   | OCVseal σlo σhi σa => σhi
   end.
 Definition get_hi (v : occap) : ptrofs :=
@@ -240,35 +303,31 @@ Definition get_hi (v : occap) : ptrofs :=
   | OCsealed _ σ => get_hi_seal σ
   end.
 
-Definition get_addr_seal (σ : ocsealable) : option ptrofs :=
+Definition get_addr_seal (σ : ocsealable) : ptrofs :=
   match σ with
-  | OCVstk sf perm lo hi a => Some a
-  | OCVretdata lo hi => None
-  | OCVretcode lo hi a => Some a
-  | OCVseal σlo σhi σa => Some σa
+  | OCVmem perm l lo hi a => a
+  | OCVseal σlo σhi σa => σa
   end.
-Definition get_addr (v : occap) : option ptrofs :=
+Definition get_addr (v : occap) : ptrofs :=
   match v with
   | OCsealable σ => get_addr_seal σ
   | OCsealed _ σ => get_addr_seal σ
   end.
 
-Definition get_stack_frame_seal (σ: ocsealable) : option sf :=
+Definition get_locality_seal (σ: ocsealable) : option locality :=
   match σ with
-  | OCVstk sf perm lo hi a => Some sf
-  | OCVretdata lo hi => None
-  | OCVretcode lo hi a => None
+  | OCVmem perm l lo hi a => Some l
   | OCVseal σlo σhi σa => None
   end.
-Definition get_stack_frame (v: occap): option sf :=
+Definition get_locality (v: occap): option locality :=
   match v with
-  | OCsealable σ | OCsealed _ σ => get_stack_frame_seal σ
+  | OCsealable σ | OCsealed _ σ => get_locality_seal σ
   end.
 
 Definition stack_derived_seal (σ: ocsealable): Prop :=
   match σ with
-  | OCVretcode _ _ _ | OCVseal _ _ _ => False
-  | OCVretdata _ _ | OCVstk _ _ _ _ _ => True
+  | OCVmem _ Directed _ _ _ => True
+  | _ => False
   end.
 Definition stack_derived (v: occap): Prop :=
   match v with
@@ -277,11 +336,19 @@ Definition stack_derived (v: occap): Prop :=
 
 Definition incr_addr_stk (v: occap) (ofs: ptrofs) : option occap :=
   match v with
-  | OCsealable (OCVstk sf perm lo hi a) => Some (OCsealable (OCVstk sf perm lo hi (Ptrofs.add a ofs)))
+  | OCsealable (OCVmem perm l lo hi a) => Some (OCsealable (OCVmem perm l lo hi (Ptrofs.add a ofs)))
   | _ => None
   end.
-      
 
+Inductive pointer: Type :=
+| heap_ptr: ptrofs -> pointer
+| stack_ptr: ptrofs -> pointer.
+
+Definition pointer_ofs (ptr: pointer): ptrofs :=
+  match ptr with
+  | heap_ptr ofs | stack_ptr ofs => ofs
+  end.
+      
 Inductive ocval: Type :=
 | OCVundef: ocval
 | OCVint: int -> ocval
@@ -289,19 +356,19 @@ Inductive ocval: Type :=
 | OCVfloat: float -> ocval
 | OCVsingle: float32 -> ocval
 | OCVcap: occap -> ocval
-| OCVptr: block -> ptrofs -> ocval.
+| OCVptr: pointer -> ocval.
 
 (* not_ptr means more accurately "never a pointer", i.e. it's a value that is
    never refined into a pointer *)
 Definition not_ptr (v: ocval) :=
   match v with
-  | OCVptr _ _ | OCVundef => False
+  | OCVptr _ | OCVundef => False
   | _ => True
   end.
 
 Definition not_ptr_b (v: ocval) :=
   match v with
-  | OCVptr _ _ | OCVundef => false
+  | OCVptr _ | OCVundef => false
   | _ => true
   end.
 
@@ -314,8 +381,34 @@ Proof.
   discriminate.
 Qed.
 
-Definition OCVsp sf p base e a : ocval :=
-  OCVcap (OCsealable (OCVstk sf p base e a)).
+Definition is_cap (v: ocval) :=
+  match v with
+  | OCVcap _ => True
+  | _ => False
+  end.
+
+Definition is_cap_b (v: ocval) :=
+  match v with
+  | OCVcap _ => true
+  | _ => false
+  end.
+
+Lemma is_cap_reflect: forall v,
+    is_cap v <-> is_cap_b v = true.
+Proof.
+  intros;unfold is_cap, is_cap_b;
+    destruct v;split;auto.
+  all:discriminate.
+Qed.
+
+Definition is_global_or_imm (v: ocval) :=
+  match v with
+  | OCVcap c => isGlobalCap c
+  | _ => true
+  end.
+
+Definition OCVsp p l base e a : ocval :=
+  OCVcap (OCsealable (OCVmem p l base e a)).
 
 Definition OCVzero: ocval := OCVint Int.zero.
 Definition OCVone: ocval := OCVint Int.one.
@@ -329,7 +422,7 @@ Definition OCVfalse: ocval := OCVint Int.zero.
     value in a capability register. Here we represent the NULL pointer
     (stack) capability with the tag bit set on (alternatively, one
     would have to use a 128 bit integer for NULL on 64 bit arch ) *)
-Definition OCVnullstackcap b := OCVsp b O Ptrofs.zero Ptrofs.zero Ptrofs.zero.
+Definition OCVnullstackcap := OCVsp O Global Ptrofs.zero Ptrofs.zero Ptrofs.zero.
 
 (** A null pointer *)
 Definition Vnullptr :=
@@ -354,8 +447,8 @@ Proof.
   apply Float.eq_dec.
   apply Float32.eq_dec.
   apply occap_dec.
+  decide equality;
   apply Ptrofs.eq_dec.
-  apply eq_block.
 Defined.
 Global Opaque eq.
 
@@ -366,13 +459,13 @@ Definition has_type (v: ocval) (t: captyp) : Prop :=
   | OCVlong _, CTlong => True
   | OCVfloat _, CTfloat => True
   | OCVsingle _, CTsingle => True
-  | OCVptr _ _, CTint => Archi.ptr64 = false
-  | OCVptr _ _, CTlong => Archi.ptr64 = true 
+  | OCVptr _, CTint => Archi.ptr64 = false
+  | OCVptr _, CTlong => Archi.ptr64 = true 
   | OCVcap _, CTcap64 => Archi.ptr64 = false
   | OCVcap _, CTcap128 => Archi.ptr64 = true                    
   | (OCVint _ | OCVsingle _), CTany32 => True
-  | (OCVint _ | OCVlong _ | OCVsingle _ | OCVptr _ _ | OCVfloat _), CTany64 => True
-  | OCVptr _ _, CTany32 => Archi.ptr64 = false
+  | (OCVint _ | OCVlong _ | OCVsingle _ | OCVptr _ | OCVfloat _), CTany64 => True
+  | OCVptr _, CTany32 => Archi.ptr64 = false
   | OCVcap _, CTany64 => Archi.ptr64 = false
   | _, CTany128 => True
   | _, _ => False
@@ -392,7 +485,7 @@ Definition has_opttype (v: ocval) (ot: option captyp) : Prop :=
   end.
 
 Lemma Vptr_has_type:
-  forall b ofs, has_type (OCVptr b ofs) CTptr.
+  forall ptr, has_type (OCVptr ptr) CTptr.
 Proof.
   intros. unfold CTptr, has_type; destruct Archi.ptr64; reflexivity.
 Qed.
@@ -567,14 +660,14 @@ Definition of_bool (b: bool): ocval := if b then OCVtrue else OCVfalse.
 Definition boolocval (v: ocval) : ocval :=
   match v with
   | OCVint n => of_bool (negb (Int.eq n Int.zero))
-  | OCVptr b ofs => OCVtrue
+  | OCVptr ptr => OCVtrue
   | _ => OCVundef
   end.
 
 Definition notbool (v: ocval) : ocval :=
   match v with
   | OCVint n => of_bool (Int.eq n Int.zero)
-  | OCVptr b ofs => OCVfalse
+  | OCVptr ptr => OCVfalse
   | _ => OCVundef
   end.
 
@@ -602,21 +695,30 @@ Definition floatofsingle (v: ocval) : ocval :=
   | _ => OCVundef
   end.
 
+Definition pointer_arith (f: ptrofs -> ptrofs -> ptrofs) (ptr1: pointer) (ofs: ptrofs): pointer :=
+  match ptr1 with
+  | heap_ptr ofs1 => heap_ptr (f ofs1 ofs)
+  | stack_ptr ofs1 => stack_ptr (f ofs1 ofs)
+  end.
+
 Definition add (v1 v2: ocval): ocval :=
   match v1, v2 with
   | OCVint n1, OCVint n2 => OCVint(Int.add n1 n2)
-  | OCVptr b1 ofs1, OCVint n2 => if Archi.ptr64 then OCVundef else OCVptr b1 (Ptrofs.add ofs1 (Ptrofs.of_int n2))
-  | OCVint n1, OCVptr b2 ofs2 => if Archi.ptr64 then OCVundef else OCVptr b2 (Ptrofs.add ofs2 (Ptrofs.of_int n1))
+  | OCVptr ptr1, OCVint n2 => if Archi.ptr64 then OCVundef else OCVptr (pointer_arith Ptrofs.add ptr1 (Ptrofs.of_int n2))
+  | OCVint n1, OCVptr ptr2 => if Archi.ptr64 then OCVundef else OCVptr (pointer_arith Ptrofs.add ptr2 (Ptrofs.of_int n1))
   | _, _ => OCVundef
   end.
 
 Definition sub (v1 v2: ocval): ocval :=
   match v1, v2 with
   | OCVint n1, OCVint n2 => OCVint(Int.sub n1 n2)
-  | OCVptr b1 ofs1, OCVint n2 => if Archi.ptr64 then OCVundef else OCVptr b1 (Ptrofs.sub ofs1 (Ptrofs.of_int n2))
-  | OCVptr b1 ofs1, OCVptr b2 ofs2 =>
+  | OCVptr ptr1, OCVint n2 => if Archi.ptr64 then OCVundef else OCVptr (pointer_arith Ptrofs.sub ptr1 (Ptrofs.of_int n2))
+  | OCVptr (heap_ptr ofs1), OCVptr (heap_ptr ofs2) =>
       if Archi.ptr64 then OCVundef else
-      if eq_block b1 b2 then OCVint(Ptrofs.to_int (Ptrofs.sub ofs1 ofs2)) else OCVundef
+        OCVint(Ptrofs.to_int (Ptrofs.sub ofs1 ofs2))
+  | OCVptr (stack_ptr ofs1), OCVptr (stack_ptr ofs2) =>
+      if Archi.ptr64 then OCVundef else
+        OCVint(Ptrofs.to_int (Ptrofs.sub ofs1 ofs2))
   | _, _ => OCVundef
   end.
 
@@ -920,19 +1022,20 @@ Definition singleoflongu (v: ocval) : option ocval :=
 Definition addl (v1 v2: ocval): ocval :=
   match v1, v2 with
   | OCVlong n1, OCVlong n2 => OCVlong(Int64.add n1 n2)
-  | OCVptr b1 ofs1, OCVlong n2 => if Archi.ptr64 then OCVptr b1 (Ptrofs.add ofs1 (Ptrofs.of_int64 n2)) else OCVundef
-  | OCVlong n1, OCVptr b2 ofs2 => if Archi.ptr64 then OCVptr b2 (Ptrofs.add ofs2 (Ptrofs.of_int64 n1)) else OCVundef
+  | OCVptr ptr1, OCVlong n2 => if Archi.ptr64 then OCVptr (pointer_arith Ptrofs.add ptr1 (Ptrofs.of_int64 n2)) else OCVundef
+  | OCVlong n1, OCVptr ptr2 => if Archi.ptr64 then OCVptr (pointer_arith Ptrofs.add ptr2 (Ptrofs.of_int64 n1)) else OCVundef
   | _, _ => OCVundef
   end.
 
 Definition subl (v1 v2: ocval): ocval :=
   match v1, v2 with
   | OCVlong n1, OCVlong n2 => OCVlong(Int64.sub n1 n2)
-  | OCVptr b1 ofs1, OCVlong n2 =>
-      if Archi.ptr64 then OCVptr b1 (Ptrofs.sub ofs1 (Ptrofs.of_int64 n2)) else OCVundef
-  | OCVptr b1 ofs1, OCVptr b2 ofs2 =>
-      if negb Archi.ptr64 then OCVundef else
-      if eq_block b1 b2 then OCVlong(Ptrofs.to_int64 (Ptrofs.sub ofs1 ofs2)) else OCVundef
+  | OCVptr ofs1, OCVlong n2 =>
+      if Archi.ptr64 then OCVptr (pointer_arith Ptrofs.sub ofs1 (Ptrofs.of_int64 n2)) else OCVundef
+  | OCVptr (heap_ptr ofs1), OCVptr (heap_ptr ofs2) =>
+      if negb Archi.ptr64 then OCVundef else OCVlong(Ptrofs.to_int64 (Ptrofs.sub ofs1 ofs2))
+  | OCVptr (stack_ptr ofs1), OCVptr (stack_ptr ofs2) =>
+      if negb Archi.ptr64 then OCVundef else OCVlong(Ptrofs.to_int64 (Ptrofs.sub ofs1 ofs2))
   | _, _ => OCVundef
   end.
 
@@ -1109,8 +1212,8 @@ Definition sign_ext_l (nbits: Z) (v: ocval) : ocval :=
 
 Section COMPARISONS.
 
-Variable valid_ptr: block -> Z -> bool.
-Let weak_valid_ptr (b: block) (ofs: Z) := valid_ptr b ofs || valid_ptr b (ofs - 1).
+Variable valid_ptr: Z -> bool.
+Let weak_valid_ptr (ofs: Z) := valid_ptr ofs || valid_ptr (ofs - 1).
 
 Definition cmp_bool (c: comparison) (v1 v2: ocval): option bool :=
   match v1, v2 with
@@ -1129,26 +1232,20 @@ Definition cmpu_bool (c: comparison) (v1 v2: ocval): option bool :=
   match v1, v2 with
   | OCVint n1, OCVint n2 =>
       Some (Int.cmpu c n1 n2)
-  | OCVint n1, OCVptr b2 ofs2 =>
+  | OCVint n1, OCVptr ofs2 =>
       if Archi.ptr64 then None else
-      if Int.eq n1 Int.zero && weak_valid_ptr b2 (Ptrofs.unsigned ofs2)
+      if Int.eq n1 Int.zero && weak_valid_ptr (Ptrofs.unsigned (pointer_ofs ofs2))
       then cmp_different_blocks c
       else None
-  | OCVptr b1 ofs1, OCVptr b2 ofs2 =>
+  | OCVptr (stack_ptr ofs1), OCVptr (stack_ptr ofs2) | OCVptr (heap_ptr ofs1), OCVptr (heap_ptr ofs2) =>
       if Archi.ptr64 then None else
-      if eq_block b1 b2 then
-        if weak_valid_ptr b1 (Ptrofs.unsigned ofs1)
-           && weak_valid_ptr b2 (Ptrofs.unsigned ofs2)
-        then Some (Ptrofs.cmpu c ofs1 ofs2)
+        if weak_valid_ptr (Ptrofs.unsigned (ofs1))
+           && weak_valid_ptr (Ptrofs.unsigned (ofs2))
+        then Some (Ptrofs.cmpu c (ofs1) (ofs2))
         else None
-      else
-        if valid_ptr b1 (Ptrofs.unsigned ofs1)
-           && valid_ptr b2 (Ptrofs.unsigned ofs2)
-        then cmp_different_blocks c
-        else None
-  | OCVptr b1 ofs1, OCVint n2 =>
+  | OCVptr ofs1, OCVint n2 =>
       if Archi.ptr64 then None else
-      if Int.eq n2 Int.zero && weak_valid_ptr b1 (Ptrofs.unsigned ofs1)
+      if Int.eq n2 Int.zero && weak_valid_ptr (Ptrofs.unsigned (pointer_ofs ofs1))
       then cmp_different_blocks c
       else None
   | _, _ => None
@@ -1175,26 +1272,20 @@ Definition cmpl_bool (c: comparison) (v1 v2: ocval): option bool :=
 Definition cmplu_bool (c: comparison) (v1 v2: ocval): option bool :=
   match v1, v2 with
   | OCVlong n1, OCVlong n2 => Some (Int64.cmpu c n1 n2)
-  | OCVlong n1, OCVptr b2 ofs2 =>
+  | OCVlong n1, OCVptr ofs2 =>
       if negb Archi.ptr64 then None else
-      if Int64.eq n1 Int64.zero && weak_valid_ptr b2 (Ptrofs.unsigned ofs2)
+      if Int64.eq n1 Int64.zero && weak_valid_ptr (Ptrofs.unsigned (pointer_ofs ofs2))
       then cmp_different_blocks c
       else None
-  | OCVptr b1 ofs1, OCVptr b2 ofs2 =>
+  | OCVptr (stack_ptr ofs1), OCVptr (stack_ptr ofs2) | OCVptr (heap_ptr ofs1), OCVptr (heap_ptr ofs2) =>
       if negb Archi.ptr64 then None else
-      if eq_block b1 b2 then
-        if weak_valid_ptr b1 (Ptrofs.unsigned ofs1)
-           && weak_valid_ptr b2 (Ptrofs.unsigned ofs2)
-        then Some (Ptrofs.cmpu c ofs1 ofs2)
+        if weak_valid_ptr (Ptrofs.unsigned (ofs1))
+           && weak_valid_ptr (Ptrofs.unsigned (ofs2))
+        then Some (Ptrofs.cmpu c (ofs1) (ofs2))
         else None
-      else
-        if valid_ptr b1 (Ptrofs.unsigned ofs1)
-           && valid_ptr b2 (Ptrofs.unsigned ofs2)
-        then cmp_different_blocks c
-        else None
-  | OCVptr b1 ofs1, OCVlong n2 =>
+  | OCVptr ofs1, OCVlong n2 =>
       if negb Archi.ptr64 then None else
-      if Int64.eq n2 Int64.zero && weak_valid_ptr b1 (Ptrofs.unsigned ofs1)
+      if Int64.eq n2 Int64.zero && weak_valid_ptr (Ptrofs.unsigned (pointer_ofs ofs1))
       then cmp_different_blocks c
       else None
   | _, _ => None
@@ -1229,12 +1320,23 @@ Definition maskzero_bool (v: ocval) (mask: int): option bool :=
 
 End COMPARISONS.
 
-(** Add the given offset to the given pointer. *)
-
-Definition offset_ptr (v: ocval) (delta: ptrofs) : ocval :=
+(** Add the given offset to the given pointer or capability. *)
+(** The following definition is partial and fails if the capability is
+    sealed *)
+Definition offset_cap (c: occap) (delta: ptrofs) : option occap :=
+  match c with
+  | (OCsealable (OCVmem p l b e a)) => Some (OCsealable (OCVmem p l b e (Ptrofs.add a delta)))
+  | (OCsealable (OCVseal b e a)) => Some (OCsealable (OCVseal b e (Ptrofs.add a delta)))
+  | (OCsealed _ _) => None
+  end.
+  
+Definition offset_ptr (v: ocval) (delta: ptrofs) : option ocval :=
   match v with
-  | OCVptr b ofs => OCVptr b (Ptrofs.add ofs delta)
-  | _ => OCVundef
+  | OCVptr ofs => Some (OCVptr (pointer_arith Ptrofs.add ofs delta))
+  | OCVcap (OCsealable (OCVmem p l b e a)) => Some (OCVcap (OCsealable (OCVmem p l b e (Ptrofs.add a delta))))
+  | OCVcap (OCsealable (OCVseal b e a)) => Some (OCVcap (OCsealable (OCVseal b e (Ptrofs.add a delta))))
+  | OCVcap (OCsealed _ _) => None
+  | _ => Some OCVundef
   end.
 
 (** Normalize a value to the given type, turning it into Vundef if it does not
@@ -1247,10 +1349,10 @@ Definition normalize (v: ocval) (ty: captyp) : ocval :=
   | OCVlong _, CTlong => v
   | OCVfloat _, CTfloat => v
   | OCVsingle _, CTsingle => v
-  | OCVptr _ _, (CTint | CTany32) => if Archi.ptr64 then OCVundef else v
-  | OCVptr _ _, CTlong => if Archi.ptr64 then v else OCVundef
+  | OCVptr _, (CTint | CTany32) => if Archi.ptr64 then OCVundef else v
+  | OCVptr _, CTlong => if Archi.ptr64 then v else OCVundef
   | (OCVint _ | OCVsingle _), CTany32 => v
-  | (OCVint _ | OCVsingle _ | OCVlong _ | OCVfloat _ | OCVptr _ _), CTany64 => v
+  | (OCVint _ | OCVsingle _ | OCVlong _ | OCVfloat _ | OCVptr _), CTany64 => v
   | OCVcap _, CTcap64 => if Archi.ptr64 then OCVundef else v
   | OCVcap _, CTcap128 => if Archi.ptr64 then v else OCVundef
   | OCVcap _, CTany64 => if Archi.ptr64 then OCVundef else v
@@ -1309,14 +1411,14 @@ Definition load_result (chunk: cap_memory_chunk) (v: ocval) :=
   | CMint16signed, OCVint n => OCVint (Int.sign_ext 16 n)
   | CMint16unsigned, OCVint n => OCVint (Int.zero_ext 16 n)
   | CMint32, OCVint n => OCVint n
-  | CMint32, OCVptr b ofs => if Archi.ptr64 then OCVundef else OCVptr b ofs
+  | CMint32, OCVptr ofs => if Archi.ptr64 then OCVundef else OCVptr ofs
   | CMint64, OCVlong n => OCVlong n
-  | CMint64, OCVptr b ofs => if Archi.ptr64 then OCVptr b ofs else OCVundef
+  | CMint64, OCVptr ofs => if Archi.ptr64 then OCVptr ofs else OCVundef
   | CMfloat32, OCVsingle f => OCVsingle f
   | CMfloat64, OCVfloat f => OCVfloat f
   | CMany32, (OCVint _ | OCVsingle _) => v
-  | CMany32, OCVptr _ _ => if Archi.ptr64 then OCVundef else v
-  | CMany64, (OCVint _ | OCVsingle _ | OCVlong _ | OCVfloat _ | OCVptr _ _) => v
+  | CMany32, OCVptr _ => if Archi.ptr64 then OCVundef else v
+  | CMany64, (OCVint _ | OCVsingle _ | OCVlong _ | OCVfloat _ | OCVptr _) => v
   | CMcap64, OCVcap _ => if Archi.ptr64 then OCVundef else v
   | CMcap128, OCVcap _ => if Archi.ptr64 then v else OCVundef
   | CMany64, OCVcap _ => if Archi.ptr64 then OCVundef else v
@@ -1432,12 +1534,12 @@ Proof.
   unfold add; intros; destruct Archi.ptr64 eqn:SF, x, y, z; simpl; auto.
 - rewrite Int.add_assoc; auto.
 - rewrite Int.add_assoc; auto.
-- rewrite ! Ptrofs.add_assoc. f_equal. f_equal.
-  rewrite Ptrofs.add_commut. auto with ptrofs.
-- rewrite ! Ptrofs.add_assoc. f_equal. f_equal.
-  apply Ptrofs.add_commut.
-- rewrite ! Ptrofs.add_assoc. f_equal. f_equal.
-  symmetry. auto with ptrofs.
+- destruct p; simpl; rewrite ! Ptrofs.add_assoc; f_equal; f_equal; f_equal.
+  all: rewrite Ptrofs.add_commut; auto with ptrofs.
+- destruct p; simpl; rewrite ! Ptrofs.add_assoc; f_equal; f_equal; f_equal.
+  all: rewrite Ptrofs.add_commut; auto with ptrofs.
+- destruct p; simpl; rewrite ! Ptrofs.add_assoc; f_equal; f_equal; f_equal.
+  all: symmetry; auto with ptrofs.
 Qed.
 
 Theorem add_permut: forall x y z, add x (add y z) = add y (add x z).
@@ -1472,8 +1574,10 @@ Theorem sub_add_opp: forall x y, sub x (OCVint y) = add x (OCVint (Int.neg y)).
 Proof.
   unfold sub, add; intros; destruct Archi.ptr64 eqn:SF, x; auto.
 - rewrite Int.sub_add_opp; auto.
-- rewrite Int.sub_add_opp; auto.
-- rewrite Ptrofs.sub_add_opp. f_equal. f_equal. symmetry. auto with ptrofs.
+- destruct p; auto.
+- simpl; rewrite Int.sub_add_opp; auto.
+- destruct p; simpl; rewrite Ptrofs.sub_add_opp; f_equal; f_equal; f_equal.
+  all: symmetry; auto with ptrofs.
 Qed.
 
 Theorem sub_opp_add: forall x y, sub x (OCVint (Int.neg y)) = add x (OCVint y).
@@ -1484,26 +1588,33 @@ Qed.
 Theorem sub_add_l:
   forall v1 v2 i, sub (add v1 (OCVint i)) v2 = add (sub v1 v2) (OCVint i).
 Proof.
-  unfold sub, add; intros; destruct Archi.ptr64 eqn:SF, v1, v2; auto.
+  unfold sub, add; intros; destruct Archi.ptr64 eqn:SF, v1, v2; auto;
+    try (destruct p;simpl;auto); try (destruct p0;simpl;auto).
 - rewrite Int.sub_add_l; auto.
 - rewrite Int.sub_add_l; auto.
 - rewrite Ptrofs.sub_add_l; auto.
-- destruct (eq_block b b0); auto.
-  f_equal. rewrite Ptrofs.sub_add_l. auto with ptrofs.
+- f_equal. rewrite Ptrofs.sub_add_l. auto with ptrofs.
+- f_equal. rewrite Ptrofs.sub_add_l. auto with ptrofs.
+- f_equal. rewrite Ptrofs.sub_add_l. auto with ptrofs.
 Qed.
 
 Theorem sub_add_r:
   forall v1 v2 i, sub v1 (add v2 (OCVint i)) = add (sub v1 v2) (OCVint (Int.neg i)).
 Proof.
-  unfold sub, add; intros; destruct Archi.ptr64 eqn:SF, v1, v2; auto.
+  unfold sub, add; intros; destruct Archi.ptr64 eqn:SF, v1, v2; auto;
+    try (destruct p;simpl;auto); try (destruct p0;simpl;auto).
 - rewrite Int.add_commut. rewrite Int.sub_add_r. auto.
 - rewrite Int.add_commut. rewrite Int.sub_add_r. auto.
-- f_equal. replace (Ptrofs.of_int (Int.add i1 i)) with (Ptrofs.add (Ptrofs.of_int i) (Ptrofs.of_int i1)).
+- f_equal. f_equal. replace (Ptrofs.of_int (Int.add i0 i)) with (Ptrofs.add (Ptrofs.of_int i) (Ptrofs.of_int i0)).
   rewrite Ptrofs.sub_add_r. f_equal.
   symmetry. auto with ptrofs.
   symmetry. rewrite Int.add_commut. auto with ptrofs.
-- destruct (eq_block b b0); auto.
-  f_equal. rewrite Ptrofs.add_commut. rewrite Ptrofs.sub_add_r. auto with ptrofs.
+- f_equal. f_equal. replace (Ptrofs.of_int (Int.add i0 i)) with (Ptrofs.add (Ptrofs.of_int i) (Ptrofs.of_int i0)).
+  rewrite Ptrofs.sub_add_r. f_equal.
+  symmetry. auto with ptrofs.
+  symmetry. rewrite Int.add_commut. auto with ptrofs.
+- f_equal. f_equal. rewrite Ptrofs.add_commut. rewrite Ptrofs.sub_add_r. auto with ptrofs.
+- f_equal. f_equal. rewrite Ptrofs.add_commut. rewrite Ptrofs.sub_add_r. auto with ptrofs.
 Qed.
 
 Theorem mul_commut: forall x y, mul x y = mul y x.
@@ -1811,13 +1922,20 @@ Qed.
 
 Theorem addl_assoc: forall x y z, addl (addl x y) z = addl x (addl y z).
 Proof.
-  unfold addl; intros; destruct Archi.ptr64 eqn:SF, x, y, z; simpl; auto.
+  unfold addl; intros; destruct Archi.ptr64 eqn:SF, x, y, z; simpl; auto;
+    try (destruct p;simpl;auto); try (destruct p0;simpl;auto).
 - rewrite Int64.add_assoc; auto.
-- rewrite ! Ptrofs.add_assoc. f_equal. f_equal.
+- rewrite ! Ptrofs.add_assoc. f_equal. f_equal. f_equal.
   rewrite Ptrofs.add_commut. auto with ptrofs.
-- rewrite ! Ptrofs.add_assoc. f_equal. f_equal.
+- rewrite ! Ptrofs.add_assoc. f_equal. f_equal. f_equal.
+  rewrite Ptrofs.add_commut. auto with ptrofs.
+- rewrite ! Ptrofs.add_assoc. f_equal. f_equal. f_equal.
   apply Ptrofs.add_commut.
-- rewrite ! Ptrofs.add_assoc. f_equal. f_equal.
+- rewrite ! Ptrofs.add_assoc. f_equal. f_equal. f_equal.
+  rewrite Ptrofs.add_commut. auto with ptrofs.
+- rewrite ! Ptrofs.add_assoc. f_equal. f_equal. f_equal.
+  symmetry. auto with ptrofs.
+- rewrite ! Ptrofs.add_assoc. f_equal. f_equal. f_equal.
   symmetry. auto with ptrofs.
 - rewrite Int64.add_assoc; auto.
 Qed.
@@ -1842,9 +1960,11 @@ Qed.
 
 Theorem subl_addl_opp: forall x y, subl x (OCVlong y) = addl x (OCVlong (Int64.neg y)).
 Proof.
-  unfold subl, addl; intros; destruct Archi.ptr64 eqn:SF, x; auto.
+  unfold subl, addl; intros; destruct Archi.ptr64 eqn:SF, x; auto;
+    try (destruct p;simpl;auto); try (destruct p0;simpl;auto).
 - rewrite Int64.sub_add_opp; auto.
-- rewrite Ptrofs.sub_add_opp. f_equal. f_equal. symmetry. auto with ptrofs.
+- rewrite Ptrofs.sub_add_opp. f_equal. f_equal. f_equal. symmetry. auto with ptrofs.
+- rewrite Ptrofs.sub_add_opp. f_equal. f_equal. f_equal. symmetry. auto with ptrofs.
 - rewrite Int64.sub_add_opp; auto.
 Qed.
 
@@ -1856,25 +1976,32 @@ Qed.
 Theorem subl_addl_l:
   forall v1 v2 i, subl (addl v1 (OCVlong i)) v2 = addl (subl v1 v2) (OCVlong i).
 Proof.
-  unfold subl, addl; intros; destruct Archi.ptr64 eqn:SF, v1, v2; auto.
+  unfold subl, addl; intros; destruct Archi.ptr64 eqn:SF, v1, v2; auto;
+    try (destruct p;simpl;auto); try (destruct p0;simpl;auto).
 - rewrite Int64.sub_add_l; auto.
 - rewrite Ptrofs.sub_add_l; auto.
-- destruct (eq_block b b0); auto.
-  simpl. f_equal. rewrite Ptrofs.sub_add_l. auto with ptrofs.
+- rewrite Ptrofs.sub_add_l; auto.
+- simpl. f_equal. rewrite Ptrofs.sub_add_l. auto with ptrofs.
+- simpl. f_equal. rewrite Ptrofs.sub_add_l. auto with ptrofs.
 - rewrite Int64.sub_add_l; auto.
 Qed.
 
 Theorem subl_addl_r:
   forall v1 v2 i, subl v1 (addl v2 (OCVlong i)) = addl (subl v1 v2) (OCVlong (Int64.neg i)).
 Proof.
-  unfold subl, addl; intros; destruct Archi.ptr64 eqn:SF, v1, v2; auto.
+  unfold subl, addl; intros; destruct Archi.ptr64 eqn:SF, v1, v2; auto;
+    try (destruct p;simpl;auto); try (destruct p0;simpl;auto).
 - rewrite Int64.add_commut. rewrite Int64.sub_add_r. auto.
-- f_equal. replace (Ptrofs.of_int64 (Int64.add i1 i)) with (Ptrofs.add (Ptrofs.of_int64 i) (Ptrofs.of_int64 i1)).
-  rewrite Ptrofs.sub_add_r. f_equal.
+- f_equal. replace (Ptrofs.of_int64 (Int64.add i0 i)) with (Ptrofs.add (Ptrofs.of_int64 i) (Ptrofs.of_int64 i0)).
+  rewrite Ptrofs.sub_add_r. f_equal. f_equal.
   symmetry. auto with ptrofs.
   symmetry. rewrite Int64.add_commut. auto with ptrofs.
-- destruct (eq_block b b0); auto.
-  simpl; f_equal. rewrite Ptrofs.add_commut. rewrite Ptrofs.sub_add_r. auto with ptrofs.
+- f_equal. replace (Ptrofs.of_int64 (Int64.add i0 i)) with (Ptrofs.add (Ptrofs.of_int64 i) (Ptrofs.of_int64 i0)).
+  rewrite Ptrofs.sub_add_r. f_equal. f_equal.
+  symmetry. auto with ptrofs.
+  symmetry. rewrite Int64.add_commut. auto with ptrofs.
+- simpl; f_equal. f_equal. rewrite Ptrofs.add_commut. rewrite Ptrofs.sub_add_r. auto with ptrofs.
+- simpl; f_equal. f_equal. rewrite Ptrofs.add_commut. rewrite Ptrofs.sub_add_r. auto with ptrofs.
 - rewrite Int64.add_commut. rewrite Int64.sub_add_r. auto.
 Qed.
 
@@ -2024,7 +2151,7 @@ Proof.
   exploit Int.ltu_inv; eauto. change (Int.unsigned (Int.repr 63)) with 63; intros LT'.
   predSpec Int.eq Int.eq_spec n Int.zero.
 - subst n. rewrite Int64.shrx'_zero. auto.
-- simpl. change (Int.ltu (Int.repr 63) Int64.iwordsize') with true. simpl.
+- simpl. change (Int.ltu (Int.repr 63) Int64.iwordsize') with true.  simpl.
   replace (Int.ltu (Int.sub (Int.repr 64) n) Int64.iwordsize') with true. simpl.
   replace (Int.ltu n Int64.iwordsize') with true.
   f_equal; apply Int64.shrx'_shr_2; assumption.
@@ -2049,17 +2176,22 @@ Proof.
   assert (forall c,
     cmp_different_blocks (negate_comparison c) = option_map negb (cmp_different_blocks c)).
   { destruct c; auto. }
-  unfold cmpu_bool; intros; destruct Archi.ptr64 eqn:SF, x, y; auto.
-- rewrite Int.negate_cmpu. auto.
-- rewrite Int.negate_cmpu. auto.
-- destruct (Int.eq i Int.zero && (valid_ptr b (Ptrofs.unsigned i0) || valid_ptr b (Ptrofs.unsigned i0 - 1))); auto.
-- destruct (Int.eq i0 Int.zero && (valid_ptr b (Ptrofs.unsigned i) || valid_ptr b (Ptrofs.unsigned i - 1))); auto.
-- destruct (eq_block b b0).
-  destruct ((valid_ptr b (Ptrofs.unsigned i) || valid_ptr b (Ptrofs.unsigned i - 1)) &&
-            (valid_ptr b0 (Ptrofs.unsigned i0) || valid_ptr b0 (Ptrofs.unsigned i0 - 1))).
+  unfold cmpu_bool; intros; destruct Archi.ptr64 eqn:SF, x, y; auto;
+    try (destruct p;simpl;auto); try (destruct p0;simpl;auto).
+- rewrite Int.negate_cmpu;auto.
+- rewrite Int.negate_cmpu;auto.
+- destruct (Int.eq i Int.zero && (valid_ptr (Ptrofs.unsigned i0) || valid_ptr (Ptrofs.unsigned i0 - 1))); auto.
+- destruct (Int.eq i Int.zero && (valid_ptr (Ptrofs.unsigned i0) || valid_ptr (Ptrofs.unsigned i0 - 1))); auto.
+- destruct (Int.eq i Int.zero && (valid_ptr (Ptrofs.unsigned i0) || valid_ptr (Ptrofs.unsigned i0 - 1))); auto.
+- destruct (Int.eq i Int.zero && (valid_ptr (Ptrofs.unsigned i0) || valid_ptr (Ptrofs.unsigned i0 - 1))); auto.
+- destruct ((valid_ptr (Ptrofs.unsigned i) || valid_ptr (Ptrofs.unsigned i - 1)) &&
+            (valid_ptr (Ptrofs.unsigned i0) || valid_ptr (Ptrofs.unsigned i0 - 1))).
   rewrite Ptrofs.negate_cmpu. auto.
-  auto.
-  destruct (valid_ptr b (Ptrofs.unsigned i) && valid_ptr b0 (Ptrofs.unsigned i0)); auto.
+  destruct (valid_ptr (Ptrofs.unsigned i) && valid_ptr (Ptrofs.unsigned i0)); auto.
+- destruct ((valid_ptr (Ptrofs.unsigned i) || valid_ptr (Ptrofs.unsigned i - 1)) &&
+            (valid_ptr (Ptrofs.unsigned i0) || valid_ptr (Ptrofs.unsigned i0 - 1))).
+  rewrite Ptrofs.negate_cmpu. auto.
+  destruct (valid_ptr (Ptrofs.unsigned i) && valid_ptr (Ptrofs.unsigned i0)); auto.
 Qed.
 
 Theorem negate_cmpl_bool:
@@ -2075,16 +2207,20 @@ Proof.
   assert (forall c,
     cmp_different_blocks (negate_comparison c) = option_map negb (cmp_different_blocks c)).
   { destruct c; auto. }
-  unfold cmplu_bool; intros; destruct Archi.ptr64 eqn:SF, x, y; auto.
+  unfold cmplu_bool; intros; destruct Archi.ptr64 eqn:SF, x, y; auto;
+    try (destruct p;simpl;auto); try (destruct p0;simpl;auto).
+  all: try (simpl; destruct (Int64.eq i Int64.zero && (valid_ptr (Ptrofs.unsigned i0) || valid_ptr (Ptrofs.unsigned i0 - 1))); auto).
 - rewrite Int64.negate_cmpu. auto.
-- simpl. destruct (Int64.eq i Int64.zero && (valid_ptr b (Ptrofs.unsigned i0) || valid_ptr b (Ptrofs.unsigned i0 - 1))); auto.
-- simpl. destruct (Int64.eq i0 Int64.zero && (valid_ptr b (Ptrofs.unsigned i) || valid_ptr b (Ptrofs.unsigned i - 1))); auto.
-- simpl. destruct (eq_block b b0).
-  destruct ((valid_ptr b (Ptrofs.unsigned i) || valid_ptr b (Ptrofs.unsigned i - 1)) &&
-            (valid_ptr b0 (Ptrofs.unsigned i0) || valid_ptr b0 (Ptrofs.unsigned i0 - 1))).
+- simpl.
+  destruct ((valid_ptr (Ptrofs.unsigned i) || valid_ptr (Ptrofs.unsigned i - 1)) &&
+            (valid_ptr (Ptrofs.unsigned i0) || valid_ptr (Ptrofs.unsigned i0 - 1))).
   rewrite Ptrofs.negate_cmpu. auto.
-  auto.
-  destruct (valid_ptr b (Ptrofs.unsigned i) && valid_ptr b0 (Ptrofs.unsigned i0)); auto.
+  destruct (valid_ptr (Ptrofs.unsigned i) && valid_ptr (Ptrofs.unsigned i0)); auto.
+- simpl.
+  destruct ((valid_ptr (Ptrofs.unsigned i) || valid_ptr (Ptrofs.unsigned i - 1)) &&
+            (valid_ptr (Ptrofs.unsigned i0) || valid_ptr (Ptrofs.unsigned i0 - 1))).
+  rewrite Ptrofs.negate_cmpu. auto.
+  destruct (valid_ptr (Ptrofs.unsigned i) && valid_ptr (Ptrofs.unsigned i0)); auto.
 - rewrite Int64.negate_cmpu. auto.
 Qed.
 
@@ -2123,18 +2259,15 @@ Theorem swap_cmpu_bool:
 Proof.
   assert (E: forall c, cmp_different_blocks (swap_comparison c) = cmp_different_blocks c).
   { destruct c; auto. }
-  intros; unfold cmpu_bool. rewrite ! E. destruct Archi.ptr64 eqn:SF, x, y; auto.
-- rewrite Int.swap_cmpu. auto.
-- rewrite Int.swap_cmpu. auto.
-- destruct (eq_block b b0); subst.
-  rewrite dec_eq_true.
-  destruct (valid_ptr b0 (Ptrofs.unsigned i) || valid_ptr b0 (Ptrofs.unsigned i - 1));
-  destruct (valid_ptr b0 (Ptrofs.unsigned i0) || valid_ptr b0 (Ptrofs.unsigned i0 - 1));
+  intros; unfold cmpu_bool. rewrite ! E. destruct Archi.ptr64 eqn:SF, x, y; auto;
+  try (destruct p;simpl;auto); try (destruct p0;simpl;auto); try (rewrite Int.swap_cmpu;auto).
+  all: subst.
+  all: destruct (valid_ptr (Ptrofs.unsigned i) || valid_ptr (Ptrofs.unsigned i - 1));
+  destruct (valid_ptr (Ptrofs.unsigned i0) || valid_ptr (Ptrofs.unsigned i0 - 1));
   simpl; auto.
-  rewrite Ptrofs.swap_cmpu. auto.
-  rewrite dec_eq_false by auto.
-  destruct (valid_ptr b (Ptrofs.unsigned i));
-    destruct (valid_ptr b0 (Ptrofs.unsigned i0)); simpl; auto.
+  all: try rewrite Ptrofs.swap_cmpu; auto.
+  all:destruct (valid_ptr (Ptrofs.unsigned i));
+    destruct (valid_ptr (Ptrofs.unsigned i0)); simpl; auto.
 Qed.
 
 Theorem swap_cmpl_bool:
@@ -2150,18 +2283,15 @@ Theorem swap_cmplu_bool:
 Proof.
   assert (E: forall c, cmp_different_blocks (swap_comparison c) = cmp_different_blocks c).
   { destruct c; auto. }
-  intros; unfold cmplu_bool. rewrite ! E. destruct Archi.ptr64 eqn:SF, x, y; auto.
-- rewrite Int64.swap_cmpu. auto.
-- destruct (eq_block b b0); subst.
-  rewrite dec_eq_true.
-  destruct (valid_ptr b0 (Ptrofs.unsigned i) || valid_ptr b0 (Ptrofs.unsigned i - 1));
-  destruct (valid_ptr b0 (Ptrofs.unsigned i0) || valid_ptr b0 (Ptrofs.unsigned i0 - 1));
+  intros; unfold cmplu_bool. rewrite ! E. destruct Archi.ptr64 eqn:SF, x, y; auto;
+  try (destruct p;simpl;auto);try (destruct p0;simpl;auto).
+all: try rewrite Int64.swap_cmpu; auto.
+all: destruct (valid_ptr (Ptrofs.unsigned i) || valid_ptr (Ptrofs.unsigned i - 1));
+  destruct (valid_ptr (Ptrofs.unsigned i0) || valid_ptr (Ptrofs.unsigned i0 - 1));
   simpl; auto.
-  rewrite Ptrofs.swap_cmpu. auto.
-  rewrite dec_eq_false by auto.
-  destruct (valid_ptr b (Ptrofs.unsigned i));
-    destruct (valid_ptr b0 (Ptrofs.unsigned i0)); simpl; auto.
-- rewrite Int64.swap_cmpu. auto.
+all: try rewrite Ptrofs.swap_cmpu; auto.
+all: destruct (valid_ptr (Ptrofs.unsigned i));
+    destruct (valid_ptr (Ptrofs.unsigned i0)); simpl; auto.
 Qed.
 
 Theorem negate_cmpf_eq:
@@ -2285,8 +2415,12 @@ Qed.
 
 (*TODO: disallow capabilities from beinf lessdef*)
 Inductive lessdef: ocval -> ocval -> Prop :=
-  | lessdef_refl: forall v, lessdef v v
-  | lessdef_undef: forall v, lessdef OCVundef v.
+| lessdef_refl: forall v, lessdef v v
+| lessdef_undef_int: forall v, lessdef OCVundef (OCVint v)
+| lessdef_undef_long: forall v, lessdef OCVundef (OCVlong v)
+| lessdef_undef_float: forall v, lessdef OCVundef (OCVfloat v)
+| lessdef_undef_single: forall v, lessdef OCVundef (OCVsingle v)
+| lessdef_undef_ptr: forall v, lessdef OCVundef (OCVptr v).
 
 Lemma lessdef_same:
   forall v1 v2, v1 = v2 -> lessdef v1 v2.
@@ -2297,7 +2431,7 @@ Qed.
 Lemma lessdef_trans:
   forall v1 v2 v3, lessdef v1 v2 -> lessdef v2 v3 -> lessdef v1 v3.
 Proof.
-  intros. inv H. auto. constructor.
+  intros. inv H; inv H0; auto; constructor.
 Qed.
 
 Inductive lessdef_list: list ocval -> list ocval -> Prop :=
@@ -2308,7 +2442,14 @@ Inductive lessdef_list: list ocval -> list ocval -> Prop :=
       lessdef v1 v2 -> lessdef_list vl1 vl2 ->
       lessdef_list (v1 :: vl1) (v2 :: vl2).
 
-Hint Resolve lessdef_refl lessdef_undef lessdef_list_nil lessdef_list_cons : core.
+Hint Resolve lessdef_refl
+     lessdef_undef_int
+     lessdef_undef_long
+     lessdef_undef_float
+     lessdef_undef_single
+     lessdef_undef_ptr
+     lessdef_list_nil
+     lessdef_list_cons : core.
 
 
 Lemma lessdef_list_not_ptr: forall vl vl',
@@ -2320,7 +2461,7 @@ Proof.
   - inv H. eauto.
   - inv H. inv H0.
     constructor.
-    + inv H3; auto. inv H2.
+    + inv H3; auto; inv H2.
     + eauto.
 Qed.
 
@@ -2329,8 +2470,9 @@ Lemma lessdef_list_inv:
 Proof.
   induction 1; simpl.
   tauto.
-  inv H. destruct IHlessdef_list.
-  left; congruence. tauto. tauto.
+  inv H; destruct IHlessdef_list.
+  left; congruence.
+  all: tauto.
 Qed.
 
 Lemma lessdef_list_trans:
@@ -2345,7 +2487,8 @@ Lemma load_result_lessdef:
   forall chunk v1 v2,
   lessdef v1 v2 -> lessdef (load_result chunk v1) (load_result chunk v2).
 Proof.
-  intros. inv H. auto. destruct chunk; simpl; auto.
+  intros. inv H; auto;  destruct chunk; simpl; auto.
+  all: destruct Archi.ptr64;auto.
 Qed.
 
 Lemma zero_ext_lessdef:
@@ -2370,78 +2513,99 @@ Lemma add_lessdef:
   forall v1 v1' v2 v2',
   lessdef v1 v1' -> lessdef v2 v2' -> lessdef (add v1 v2) (add v1' v2').
 Proof.
-  intros. inv H. inv H0. auto. destruct v1'; simpl; auto. simpl; auto.
+  intros. inv H; inv H0; auto.
+  all: try destruct v1'; simpl; auto.
+  all: destruct Archi.ptr64; simpl;auto.
+  all: destruct v2';auto.
 Qed.
 
 Lemma addl_lessdef:
   forall v1 v1' v2 v2',
   lessdef v1 v1' -> lessdef v2 v2' -> lessdef (addl v1 v2) (addl v1' v2').
 Proof.
-  intros. inv H. inv H0. auto. destruct v1'; simpl; auto. simpl; auto.
+  intros. inv H; inv H0; auto.
+  all: try destruct v1'; simpl; auto.
+  all: destruct Archi.ptr64; simpl;auto.
+  all: destruct v2';auto.
 Qed.
 
 Lemma cmpu_bool_lessdef:
   forall valid_ptr valid_ptr' c v1 v1' v2 v2' b,
-  (forall b ofs, valid_ptr b ofs = true -> valid_ptr' b ofs = true) ->
+  (forall ofs, valid_ptr ofs = true -> valid_ptr' ofs = true) ->
   lessdef v1 v1' -> lessdef v2 v2' ->
   cmpu_bool valid_ptr c v1 v2 = Some b ->
   cmpu_bool valid_ptr' c v1' v2' = Some b.
 Proof.
   intros.
-  assert (X: forall b ofs,
-             valid_ptr b ofs || valid_ptr b (ofs - 1) = true ->
-             valid_ptr' b ofs || valid_ptr' b (ofs - 1) = true).
+  assert (X: forall ofs,
+             valid_ptr ofs || valid_ptr (ofs - 1) = true ->
+             valid_ptr' ofs || valid_ptr' (ofs - 1) = true).
   { intros. apply orb_true_intro. destruct (orb_prop _ _ H3).
-    rewrite (H b0 ofs); auto.
-    rewrite (H b0 (ofs - 1)); auto. }
-  inv H0; [ | discriminate].
-  inv H1; [ | destruct v1'; discriminate ].
-  unfold cmpu_bool in *. remember Archi.ptr64 as ptr64.
-  destruct v1'; auto; destruct v2'; auto; destruct ptr64; auto.
-- destruct (Int.eq i Int.zero); auto.
-  destruct (valid_ptr b0 (Ptrofs.unsigned i0) || valid_ptr b0 (Ptrofs.unsigned i0 - 1)) eqn:A; inv H2.
-  rewrite X; auto.
-- destruct (Int.eq i0 Int.zero); auto.
-  destruct (valid_ptr b0 (Ptrofs.unsigned i) || valid_ptr b0 (Ptrofs.unsigned i - 1)) eqn:A; inv H2.
-  rewrite X; auto.
-- destruct (eq_block b0 b1).
-+ destruct (valid_ptr b0 (Ptrofs.unsigned i) || valid_ptr b0 (Ptrofs.unsigned i - 1)) eqn:A; inv H2.
-  destruct (valid_ptr b1 (Ptrofs.unsigned i0) || valid_ptr b1 (Ptrofs.unsigned i0 - 1)) eqn:B; inv H1.
-  rewrite ! X; auto.
-+ destruct (valid_ptr b0 (Ptrofs.unsigned i) && valid_ptr b1 (Ptrofs.unsigned i0)) eqn:A; inv H2.
-  InvBooleans. rewrite ! H; auto.
+    rewrite (H ofs); auto.
+    rewrite (H (ofs - 1)); auto. }
+  inv H0; [ | discriminate..].
+  inv H1;auto.
+  2,3: destruct v1'; try destruct p; discriminate.
+  unfold cmpu_bool in *; remember Archi.ptr64 as ptr64;
+  destruct v1'; auto; destruct v2'; auto; destruct ptr64; auto;
+  try (destruct p;simpl;auto); try (destruct p0;simpl;auto).
+  - destruct (Int.eq i Int.zero); auto. simpl in *.
+    destruct (valid_ptr (Ptrofs.unsigned i0) || valid_ptr (Ptrofs.unsigned i0 - 1)) eqn:A; inv H2.
+    rewrite X; simpl; auto.
+  - destruct (Int.eq i Int.zero); auto. simpl in *.
+    destruct (valid_ptr (Ptrofs.unsigned i0) || valid_ptr (Ptrofs.unsigned i0 - 1)) eqn:A; inv H2.
+    rewrite X; simpl; auto.
+  - destruct (Int.eq i Int.zero); auto. simpl in *.
+    destruct (valid_ptr (Ptrofs.unsigned i0) || valid_ptr (Ptrofs.unsigned i0 - 1)) eqn:A; inv H2.
+    rewrite X; simpl; auto.
+  - destruct (Int.eq i Int.zero); auto. simpl in *.
+    destruct (valid_ptr (Ptrofs.unsigned i0) || valid_ptr (Ptrofs.unsigned i0 - 1)) eqn:A; inv H2.
+    rewrite X; simpl; auto.
+  - destruct (valid_ptr (Ptrofs.unsigned i) || valid_ptr (Ptrofs.unsigned i - 1)) eqn:A; inv H2.
+    destruct (valid_ptr (Ptrofs.unsigned i0) || valid_ptr (Ptrofs.unsigned i0 - 1)) eqn:B; inv H1.
+    rewrite ! X;simpl;auto.
+  - destruct (valid_ptr (Ptrofs.unsigned i) || valid_ptr (Ptrofs.unsigned i - 1)) eqn:A; inv H2.
+    destruct (valid_ptr (Ptrofs.unsigned i0) || valid_ptr (Ptrofs.unsigned i0 - 1)) eqn:B; inv H1.
+    rewrite ! X;simpl;auto.
 Qed.
 
 Lemma cmplu_bool_lessdef:
   forall valid_ptr valid_ptr' c v1 v1' v2 v2' b,
-  (forall b ofs, valid_ptr b ofs = true -> valid_ptr' b ofs = true) ->
+  (forall ofs, valid_ptr ofs = true -> valid_ptr' ofs = true) ->
   lessdef v1 v1' -> lessdef v2 v2' ->
   cmplu_bool valid_ptr c v1 v2 = Some b ->
   cmplu_bool valid_ptr' c v1' v2' = Some b.
 Proof.
   intros.
-  assert (X: forall b ofs,
-             valid_ptr b ofs || valid_ptr b (ofs - 1) = true ->
-             valid_ptr' b ofs || valid_ptr' b (ofs - 1) = true).
+  assert (X: forall ofs,
+             valid_ptr ofs || valid_ptr (ofs - 1) = true ->
+             valid_ptr' ofs || valid_ptr' (ofs - 1) = true).
   { intros. apply orb_true_intro. destruct (orb_prop _ _ H3).
-    rewrite (H b0 ofs); auto.
-    rewrite (H b0 (ofs - 1)); auto. }
-  inv H0; [ | discriminate].
-  inv H1; [ | destruct v1'; discriminate ].
+    rewrite (H ofs); auto.
+    rewrite (H (ofs - 1)); auto. }
+  inv H0; [ | discriminate..].
+  inv H1;auto; [ | destruct v1'; try destruct p; discriminate .. ].
   unfold cmplu_bool in *. remember Archi.ptr64 as ptr64.
-  destruct v1'; auto; destruct v2'; auto; destruct ptr64; auto.
+  destruct v1'; auto; destruct v2'; auto; destruct ptr64; auto;
+    try (destruct p;auto); try destruct p0;auto; simpl in *.
 - destruct (Int64.eq i Int64.zero); auto.
-  destruct (valid_ptr b0 (Ptrofs.unsigned i0) || valid_ptr b0 (Ptrofs.unsigned i0 - 1)) eqn:A; inv H2.
+  destruct (valid_ptr (Ptrofs.unsigned i0) || valid_ptr (Ptrofs.unsigned i0 - 1)) eqn:A; inv H2.
   rewrite X; auto.
-- destruct (Int64.eq i0 Int64.zero); auto.
-  destruct (valid_ptr b0 (Ptrofs.unsigned i) || valid_ptr b0 (Ptrofs.unsigned i - 1)) eqn:A; inv H2.
+- destruct (Int64.eq i Int64.zero); auto.
+  destruct (valid_ptr (Ptrofs.unsigned i0) || valid_ptr (Ptrofs.unsigned i0 - 1)) eqn:A; inv H2.
   rewrite X; auto.
-- destruct (eq_block b0 b1).
-+ destruct (valid_ptr b0 (Ptrofs.unsigned i) || valid_ptr b0 (Ptrofs.unsigned i - 1)) eqn:A; inv H2.
-  destruct (valid_ptr b1 (Ptrofs.unsigned i0) || valid_ptr b1 (Ptrofs.unsigned i0 - 1)) eqn:B; inv H1.
+- destruct (Int64.eq i Int64.zero); auto.
+  destruct (valid_ptr (Ptrofs.unsigned i0) || valid_ptr (Ptrofs.unsigned i0 - 1)) eqn:A; inv H2.
+  rewrite X; auto.
+- destruct (Int64.eq i Int64.zero); auto.
+  destruct (valid_ptr (Ptrofs.unsigned i0) || valid_ptr (Ptrofs.unsigned i0 - 1)) eqn:A; inv H2.
+  rewrite X; auto.
+- destruct (valid_ptr (Ptrofs.unsigned i) || valid_ptr (Ptrofs.unsigned i - 1)) eqn:A; inv H2.
+  destruct (valid_ptr (Ptrofs.unsigned i0) || valid_ptr (Ptrofs.unsigned i0 - 1)) eqn:B; inv H1.
   rewrite ! X; auto.
-+ destruct (valid_ptr b0 (Ptrofs.unsigned i) && valid_ptr b1 (Ptrofs.unsigned i0)) eqn:A; inv H2.
-  InvBooleans. rewrite ! H; auto.
+- destruct (valid_ptr (Ptrofs.unsigned i) || valid_ptr (Ptrofs.unsigned i - 1)) eqn:A; inv H2.
+  destruct (valid_ptr (Ptrofs.unsigned i0) || valid_ptr (Ptrofs.unsigned i0 - 1)) eqn:B; inv H1.
+  rewrite ! X; auto.
 Qed.
 
 Lemma of_optbool_lessdef:
@@ -2450,6 +2614,7 @@ Lemma of_optbool_lessdef:
   lessdef (of_optbool ob) (of_optbool ob').
 Proof.
   intros. destruct ob; simpl; auto. rewrite (H b); auto.
+  destruct ob'; auto; destruct b; simpl; [unfold OCVtrue|unfold OCVfalse];auto.
 Qed.
 
 Lemma longofwords_lessdef:
@@ -2457,59 +2622,84 @@ Lemma longofwords_lessdef:
   lessdef v1 v1' -> lessdef v2 v2' -> lessdef (longofwords v1 v2) (longofwords v1' v2').
 Proof.
   intros. unfold longofwords. inv H; auto. inv H0; auto. destruct v1'; auto.
+  destruct v2';auto.
 Qed.
 
 Lemma loword_lessdef:
   forall v v', lessdef v v' -> lessdef (loword v) (loword v').
 Proof.
-  intros. inv H; auto.
+  intros. inv H; auto. constructor.
 Qed.
 
 Lemma hiword_lessdef:
   forall v v', lessdef v v' -> lessdef (hiword v) (hiword v').
 Proof.
-  intros. inv H; auto.
+  intros. inv H; auto. constructor.
 Qed.
 
 Lemma offset_ptr_zero:
-  forall v, lessdef (offset_ptr v Ptrofs.zero) v.
+  forall v v', offset_ptr v Ptrofs.zero = Some v' ->
+          lessdef v' v.
 Proof.
-  intros. destruct v; simpl; auto. rewrite Ptrofs.add_zero; auto.
+  intros. destruct v,v'; simpl; auto; inv H.
+  all: try (destruct o,o;inv H1).
+  3: destruct p;simpl.
+  all: rewrite Ptrofs.add_zero; auto.
 Qed.
 
 Lemma offset_ptr_assoc:
-  forall v d1 d2, offset_ptr (offset_ptr v d1) d2 = offset_ptr v (Ptrofs.add d1 d2).
+  forall v d1 d2 v1 v2 v3,
+    offset_ptr v d1 = Some v1 ->
+    offset_ptr v1 d2 = Some v3 ->
+    offset_ptr v (Ptrofs.add d1 d2) = Some v2 ->
+    v2 = v3.
 Proof.
-  intros. destruct v; simpl; auto. f_equal. apply Ptrofs.add_assoc.
+  intros. destruct v; simpl; auto; inv H; inv H1; inv H0;auto.
+  destruct o,o;inv H2; inv H3; inv H1.
+  3: destruct p;simpl.
+  all: f_equal ; f_equal. 1,2: f_equal.
+  all: rewrite Ptrofs.add_assoc;auto.  
 Qed.
 
 Lemma lessdef_normalize:
-  forall v ty, lessdef (normalize v ty) v.
+  forall v ty, (is_cap v -> ty = CTcap \/ ty = CTanycap) -> lessdef (normalize v ty) v.
 Proof.
-  intros. destruct v; simpl.
+  intros v ty H. destruct v; simpl.
   - auto.
   - destruct ty; auto.
   - destruct ty; auto.
   - destruct ty; auto.
   - destruct ty; auto.
-  - destruct ty, Archi.ptr64; auto.
-  - destruct ty, Archi.ptr64; auto.
+  - destruct H as [-> | ->];[easy|..].
+    unfold CTcap. 2: unfold CTanycap.
+    all: destruct Archi.ptr64; constructor.
+  - destruct ty, Archi.ptr64;auto.
 Qed.
 
 Lemma normalize_lessdef:
   forall v v' ty, lessdef v v' -> lessdef (normalize v ty) (normalize v' ty).
 Proof.
-  intros. inv H; auto.
+  intros. inv H; auto; simpl.
+  all: destruct ty,Archi.ptr64; auto.
+Qed.
+
+Lemma lessdef_is_not_cap:
+  forall v, is_cap_b v = false -> lessdef OCVundef v.
+Proof.
+  intros. destruct v; try constructor.
+  discriminate.
 Qed.
 
 Lemma select_lessdef:
   forall ob ob' v1 v1' v2 v2' ty,
-  ob = None \/ ob = ob' ->
+  ob = None /\ (is_cap_b (select ob' v1' v2' ty) = false) \/ ob = ob' ->
   lessdef v1 v1' -> lessdef v2 v2' ->
   lessdef (select ob v1 v2 ty) (select ob' v1' v2' ty).
 Proof.
-  intros; unfold select. destruct H.
-- subst ob; auto.
+intros; unfold select. destruct H.
+- destruct H. subst ob; auto. destruct ob';auto.
+  apply lessdef_is_not_cap.
+  auto.
 - subst ob'; destruct ob as [b|]; auto.
   apply normalize_lessdef. destruct b; auto.
 Qed.
