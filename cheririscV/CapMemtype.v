@@ -92,17 +92,8 @@ Inductive perm_kind: Type :=
 
 (* TODO:placeholder *)
 Inductive error_kind: Type :=
-| CompErr: error_kind
 | CapErr: error_kind
-| PermErr: error_kind
 | PtrErr: error_kind.
-
-(** High level representation of the offset and capability pair
-necessary for all loads and stores at the machine level. Note that it
-does not represent the compiler representation of a heap or stack
-pointer, but rather the machine prerequisits for a load and store
-operation *)
-Definition mem_pointer: Type := occap * Z.
 
 (** There are three hardware memory accesses:
     - DIR is a direct access to the address of the capability, does
@@ -120,11 +111,6 @@ Definition eq_error_kind (x y: error_kind): {x = y} + {x <> y}.
 Proof. decide equality. Defined.
 Global Opaque eq_error_kind.
 
-Definition eq_pointer (x y: mem_pointer): {x = y} + {x <> y}.
-Proof.
-  decide equality. apply Z.eq_dec. apply occap_dec.
-Defined.
-Global Opaque eq_pointer.
 
 Module Type MEM.
 
@@ -144,7 +130,7 @@ Parameter empty: mem.
   pair [(m', b)] of the updated memory state [m'] and the identifier
   [b] of the newly-allocated block.  Note that [alloc] never fails: we
   are modeling an infinite memory. Alloc only allocates heap memory *)
-Parameter alloc: forall (m: mem) (c: compartment) (len: Z), occap * mem.
+Parameter alloc: forall (m: mem) (c: compartment) (len: nat), occap * mem.
 
 (** [free m b lo hi cp] frees (deallocates) the range of offsets from [lo]
   included to [hi] excluded in block [b], which must be owned by
@@ -156,7 +142,7 @@ Parameter free: forall (m: mem) (c: occap) (cp: compartment), mem + error_kind.
   addresses [b, ofs] to [b, ofs + size_chunk chunk - 1] belonging to
   compartment [cp] in memory state [m].  Returns the value read, or
   [err] if the accessed addresses are not readable. *)
-Parameter load: forall (a: act_kind) (chunk: cap_memory_chunk) (m: mem) (ptr: mem_pointer) (cp: option compartment), ocval + error_kind.
+Parameter load: forall (a: act_kind) (chunk: cap_memory_chunk) (m: mem) (ptr: occap) (ofs: Z) (cp: option compartment), ocval + error_kind.
 
 (** [store chunk m b ofs v cp] writes value [v] as memory quantity
   [chunk] from addresses [b, ofs] to [b, ofs + size_chunk chunk - 1]
@@ -164,22 +150,22 @@ Parameter load: forall (a: act_kind) (chunk: cap_memory_chunk) (m: mem) (ptr: me
   the accessed addresses are not writable, which includes the case
   where principal compartment [cp] does not own block [b], as well as
   the case where the stored value is a stack capability. *)
-Parameter store: forall (a: act_kind) (chunk: cap_memory_chunk) (m: mem) (ptr: mem_pointer) (v: ocval) (cp: compartment), (occap * mem) + error_kind.
+Parameter store: forall (a: act_kind) (chunk: cap_memory_chunk) (m: mem) (ptr: occap) (ofs: Z) (v: ocval) (cp: compartment), (occap * mem) + error_kind.
 
 (** [loadv] and [storev] are variants of [load] and [store] where
   the address being accessed is passed as a value (of the [Vptr] kind). *)
 
 Definition loadv (a: act_kind) (chunk: cap_memory_chunk) (m: mem) (c: occap) (addr: ocval) (cp: option compartment) : ocval + error_kind :=
   match addr with
-  | OCVptr (heap_ptr ofs) => load a chunk m (c, Ptrofs.unsigned ofs) cp
-  | OCVptr (stack_ptr ofs) => load a chunk m (c, Ptrofs.unsigned ofs) cp
+  | OCVptr (heap_ptr ofs) => load a chunk m c (Ptrofs.unsigned ofs) cp
+  | OCVptr (stack_ptr ofs) => load a chunk m c (Ptrofs.unsigned ofs) cp
   | _ => inr PtrErr
   end.
 
 Definition storev (a: act_kind) (chunk: cap_memory_chunk) (m: mem) (c: occap) (addr v: ocval) (cp: compartment) : (occap * mem) + error_kind :=
   match addr with
-  | OCVptr (heap_ptr ofs) => store a chunk m (c, Ptrofs.unsigned ofs) v cp
-  | OCVptr (stack_ptr ofs) => store a chunk m (c, Ptrofs.unsigned ofs) v cp
+  | OCVptr (heap_ptr ofs) => store a chunk m c (Ptrofs.unsigned ofs) v cp
+  | OCVptr (stack_ptr ofs) => store a chunk m c (Ptrofs.unsigned ofs) v cp
   | _ => inr PtrErr
   end.
 
@@ -189,13 +175,15 @@ Definition storev (a: act_kind) (chunk: cap_memory_chunk) (m: mem) (c: occap) (a
   [err] is returned if the accessed addresses are not readable,
   which includes the case where the reading compartment [cp] does not
   own block [b]. *)
-Parameter loadbytes: forall (a: act_kind) (m: mem) (ptr: mem_pointer) (n: Z) (cp: option compartment), (list memval) + error_kind.
+Parameter loadbytes: forall (a: act_kind) (m: mem) (ptr: occap) (ofs: Z) (n: Z) (cp: option compartment), (list memval) + error_kind.
 
 (** [storebytes m b ofs bytes cp] stores the given list of bytes [bytes]
   starting at location [(b, ofs)].  Returns updated memory state
   or [err] if the accessed locations are not writable, which includes
-  the case where the reading compartment [cp] does not own block [b]. *)
-Parameter storebytes: forall (a: act_kind) (m: mem) (ptr: mem_pointer) (bytes: list memval) (cp: compartment), (occap * mem) + error_kind.
+  the case where the reading compartment [cp] does not own block [b]. 
+  because the stored bytes might cause the store to fail, we need its chunk type
+*)
+Parameter storebytes: forall (a: act_kind) (m: mem) (ptr: occap) (ofs: Z) (bytes: list memval) (chunk: cap_memory_chunk) (cp: compartment), (occap * mem) + error_kind.
 
 (** [free_list] frees all the given (block, lo, hi) triples. *)
 Fixpoint free_list (m: mem) (l: list (occap)) (cp: compartment) {struct l}: mem + error_kind :=
@@ -215,7 +203,7 @@ Fixpoint free_list (m: mem) (l: list (occap)) (cp: compartment) {struct l}: mem 
     including the case where the principal compartment [cp] does not own
     block [b]. Only the heap can have its permission dropped *)
 
-Parameter drop_perm: forall (m: mem) (lo hi: Z) (p: permission) (cp: compartment), mem + error_kind.
+Parameter drop_perm: forall (m: mem) (c: occap) (p: permission) (cp: compartment), mem + error_kind.
 
 (** * Permissions, block validity, access validity, compartments, and bounds *)
 
@@ -397,13 +385,12 @@ Axiom valid_access_perm:
 (** [valid_capability m c] - where c is an unsealed capability -
      checks that it does not point to an empty region *)
 
-Parameter valid_capability: forall (m: mem) (c: occap), bool.
+Parameter valid_capability: forall (m: mem) (k: act_kind) (c: occap) (ofs: Z), bool.
 
 Axiom valid_pointer_nonempty_perm:
-  forall m c,
-    valid_capability m c = true <-> (forall ofs, Ptrofs.unsigned (get_lo c) <= ofs < Ptrofs.unsigned (get_hi c)
-                                          -> perm m ofs Cur Nonempty).
-
+  forall m k c ofs,
+    is_mem_cap c ->
+    valid_capability m k c ofs = true <-> perm m (derive_offset k c ofs) Cur Nonempty.
 
 (** [dynamic_conditions ptr] defines the dynamic conditions not
     captured by [valid_pointer] *)
@@ -417,7 +404,7 @@ Definition dynamic_conditions (m: mem) (k: act_kind) (c: occap) (ofs: Z) (len: Z
 Axiom valid_pointer_valid_access:
   forall m k c ofs l v cp c',
     dynamic_conditions m k c ofs l v cp c' ->
-    valid_capability m c = true <-> valid_access k m CMint8unsigned c ofs Nonempty cp v c'.
+    valid_capability m k c ofs = true <-> valid_access k m CMint8unsigned c ofs Nonempty cp v c'.
 
 
 (* TODO: discuss weak valid pointers in the presence of
@@ -444,9 +431,10 @@ the stack pointer *)
 (** ** Properties of the initial memory state. *)
 
 (** Heap *)
-Axiom perm_empty: forall ofs k p, ~perm empty ofs k p.
+(* The starting memory is no longer empty, as it comes with a non empty stack region *)
+(*Axiom perm_empty: forall ofs k p, ~perm empty ofs k p.
 Axiom valid_access_empty:
-  forall k chunk c ofs p cp v c', ~valid_access k empty chunk c ofs p cp v c'.
+  forall k chunk c ofs p cp v c', ~valid_access k empty chunk c ofs p cp v c'.*)
 
 (** ** Properties of [load]. *)
 
@@ -454,38 +442,31 @@ Axiom valid_access_empty:
 Axiom valid_access_load:
   forall m chunk ptr ofs cp k,
   valid_access k m chunk ptr ofs Readable cp None None ->
-  exists v, load k chunk m (ptr,ofs) cp = inl v.
+  exists v, load k chunk m ptr ofs cp = inl v.
 Axiom load_valid_access:
   forall m chunk ptr ofs cp v k,
-  load k chunk m (ptr,ofs) cp = inl v ->
+  load k chunk m ptr ofs cp = inl v ->
   valid_access k m chunk ptr ofs Readable cp None None.
-
-(** If a stack load fails but the capability is valid, the error must be a load error *)
-Axiom valid_capability_stkload_error:
-  forall k m c ofs err,
-    load k CMint8unsigned m (c,ofs) None = inr err ->
-    valid_capability m c = true ->
-    err = CapErr.
 
 (** The value returned by [load] belongs to the type of the memory
   quantity accessed: [Vundef], [Vint] or [Vptr] for an integer
   quantity, [Vundef] or [Vfloat] for a float quantity, [Vundef] or
   [Vcap] for a capability quantity. *)
 Axiom load_type:
-  forall m chunk ptr cp v k,
-  load k chunk m ptr cp = inl v ->
+  forall m chunk ptr ofs cp v k,
+  load k chunk m ptr ofs cp = inl v ->
   Val.has_type v (type_of_chunk chunk).
 
 Axiom load_rettype:
-  forall m chunk ptr cp v k,
-  load k chunk m ptr cp = inl v ->
+  forall m chunk ptr ofs cp v k,
+  load k chunk m ptr ofs cp = inl v ->
   Val.has_rettype v (rettype_of_chunk chunk).
 
 (** For a small integer or float type, the value returned by [load]
   is invariant under the corresponding cast. *)
 Axiom load_cast:
-  forall m chunk ptr cp v k,
-  load k chunk m ptr cp = inl v ->
+  forall m chunk ptr ofs cp v k,
+  load k chunk m ptr ofs cp = inl v ->
   match chunk with
   | CMint8signed => v = Val.sign_ext 8 v
   | CMint8unsigned => v = Val.zero_ext 8 v
@@ -495,12 +476,12 @@ Axiom load_cast:
   end.
 
 Axiom load_int8_signed_unsigned:
-  forall m ptr cp k,
-  load k CMint8signed m ptr cp = sum_left_map (Val.sign_ext 8) (load k CMint8unsigned m ptr cp).
+  forall m ptr ofs cp k,
+  load k CMint8signed m ptr ofs cp = sum_left_map (Val.sign_ext 8) (load k CMint8unsigned m ptr ofs cp).
 
 Axiom load_int16_signed_unsigned:
-  forall m ptr cp k,
-  load k CMint16signed m ptr cp = sum_left_map (Val.sign_ext 16) (load k CMint16unsigned m ptr cp).
+  forall m ptr ofs cp k,
+  load k CMint16signed m ptr ofs cp = sum_left_map (Val.sign_ext 16) (load k CMint16unsigned m ptr ofs cp).
 
 
 (** ** Properties of [loadbytes]. *)
@@ -512,10 +493,10 @@ Axiom range_perm_loadbytes:
   forall k m ptr ofs len cp,
     range_perm m (derive_offset k ptr ofs) (derive_offset k ptr ofs + len) Cur Readable ->
     dynamic_conditions m k ptr ofs len None cp None ->
-    exists bytes, loadbytes k m (ptr,ofs) len cp = inl bytes.
+    exists bytes, loadbytes k m ptr ofs len cp = inl bytes.
 Axiom loadbytes_range_perm:
   forall k m ptr ofs len cp bytes,
-    loadbytes k m (ptr,ofs) len cp = inl bytes ->
+    loadbytes k m ptr ofs len cp = inl bytes ->
     range_perm m (derive_offset k ptr ofs) (derive_offset k ptr ofs + len) Cur Readable.
 
 
@@ -524,54 +505,54 @@ Axiom loadbytes_range_perm:
   bytes read by [loadbytes]. *)
 Axiom loadbytes_load:
   forall k chunk m ptr ofs cp bytes,
-    loadbytes k m (ptr,ofs) (size_chunk chunk) cp = inl bytes ->
+    loadbytes k m ptr ofs (size_chunk chunk) cp = inl bytes ->
     (align_chunk chunk | derive_offset k ptr ofs) ->
-    load k chunk m (ptr,ofs) cp = inl (decode_val chunk bytes).
+    load k chunk m ptr ofs cp = inl (decode_val chunk bytes).
 
 (** Conversely, if [load] returns a value, the corresponding
   [loadbytes] succeeds and returns a list of bytes which decodes into the
   result of [load]. *)
 Axiom load_loadbytes:
   forall k chunk m ptr cp v ofs,
-    load k chunk m (ptr,ofs) cp = inl v ->
-    exists bytes, loadbytes k m (ptr,ofs) (size_chunk chunk) cp = inl bytes
+    load k chunk m ptr ofs cp = inl v ->
+    exists bytes, loadbytes k m ptr ofs (size_chunk chunk) cp = inl bytes
              /\ v = decode_val chunk bytes.
 
 (** [loadbytes] returns a list of length [n] (the number of bytes read). *)
 Axiom loadbytes_length:
-  forall k m ptr n cp bytes,
-  loadbytes k m ptr n cp = inl bytes ->
+  forall k m ptr ofs n cp bytes,
+  loadbytes k m ptr ofs n cp = inl bytes ->
   length bytes = Z.to_nat n.
 
 Axiom loadbytes_empty:
   forall m k ptr ofs len cp,
   len <= 0 ->
   dynamic_conditions m k ptr ofs len None cp None ->
-  loadbytes k m (ptr,ofs) len cp = inl nil.
+  loadbytes k m ptr ofs len cp = inl nil.
 
 (** Composing or decomposing [loadbytes] operations at adjacent addresses. *)
-Definition incr_pointer (a: act_kind) (ptr:mem_pointer) (n: Z) : option mem_pointer  :=
-  match a,ptr with
-  | DIR, (c,ofs) => option_map (fun c => (c,ofs)) (incr_addr_stk c (Ptrofs.repr n))
-  | UNINIT, (c,ofs) => Some (c,ofs + n)
-  | DEFAULT, (c,ofs) => Some (c,ofs + n)
+Definition incr_pointer (a: act_kind) (ptr: occap) (ofs: Z) (n: Z) : option (occap * Z) :=
+  match a with
+  | DIR => option_map (fun c => (c,ofs)) (incr_addr_stk ptr (Ptrofs.repr n))
+  | UNINIT => Some (ptr,ofs + n)
+  | DEFAULT => Some (ptr,ofs + n)
   end.
 
 Axiom loadbytes_concat:
-  forall k m ptr1 ptr2 n1 n2 cp bytes1 bytes2,
-    incr_pointer k ptr1 n1 = Some ptr2 ->
-    loadbytes k m ptr1 n1 cp = inl bytes1 ->
-    loadbytes k m ptr2 n2 cp = inl bytes2 ->
+  forall k m ptr1 ofs1 ptr2 ofs2 n1 n2 cp bytes1 bytes2,
+    incr_pointer k ptr1 ofs1 n1 = Some (ptr2,ofs2) ->
+    loadbytes k m ptr1 ofs1 n1 cp = inl bytes1 ->
+    loadbytes k m ptr2 ofs2 n2 cp = inl bytes2 ->
     n1 >= 0 -> n2 >= 0 ->
-    loadbytes k m ptr1 (n1 + n2) cp = inl(bytes1 ++ bytes2).
+    loadbytes k m ptr1 ofs1 (n1 + n2) cp = inl(bytes1 ++ bytes2).
 Axiom loadbytes_split:
-  forall k m ptr n1 n2 cp bytes,
-  loadbytes k m ptr (n1 + n2) cp = inl bytes ->
+  forall k m ptr ofs n1 n2 cp bytes,
+  loadbytes k m ptr ofs (n1 + n2) cp = inl bytes ->
   n1 >= 0 -> n2 >= 0 ->
-  exists bytes1, exists bytes2, exists ptr2,
-    incr_pointer k ptr n1 = Some ptr2
-    /\ loadbytes k m ptr n1 cp = inl bytes1
-    /\ loadbytes k m ptr2 n2 cp = inl bytes2
+  exists bytes1, exists bytes2, exists ptr2, exists ofs2,
+    incr_pointer k ptr ofs n1 = Some (ptr2, ofs2)
+    /\ loadbytes k m ptr ofs n1 cp = inl bytes1
+    /\ loadbytes k m ptr2 ofs2 n2 cp = inl bytes2
     /\ bytes = bytes1 ++ bytes2.
 
 
@@ -582,55 +563,55 @@ Axiom loadbytes_split:
   corresponding access is valid for writing. *)
 
 Axiom perm_store_1:
-  forall mk chunk m1 ptr v cp m2 ptr',
-    store mk chunk m1 ptr v cp = inl (ptr',m2) ->
+  forall mk chunk m1 ptr ofs v cp m2 ptr',
+    store mk chunk m1 ptr ofs v cp = inl (ptr',m2) ->
     forall ofs' k p, perm m1 ofs' k p -> perm m2 ofs' k p.
 Axiom perm_store_2:
-  forall mk chunk m1 ptr v cp m2 ptr',
-    store mk chunk m1 ptr v cp = inl (ptr',m2) ->
+  forall mk chunk m1 ptr ofs v cp m2 ptr',
+    store mk chunk m1 ptr ofs v cp = inl (ptr',m2) ->
   forall ofs' k p, perm m2 ofs' k p -> perm m1 ofs' k p.
 
 
 Axiom valid_access_store:
   forall a m1 chunk ptr ofs cp v k ptr',
   valid_access a m1 chunk ptr ofs Writable (Some cp) (Some v) (Some ptr') ->
-  { m2: mem | store k chunk m1 (ptr,ofs) v cp = inl (ptr',m2) }.
+  { m2: mem | store k chunk m1 ptr ofs v cp = inl (ptr',m2) }.
 Axiom store_valid_access_1:
-  forall k chunk m1 ptr v cp m2 ptr', store k chunk m1 ptr v cp = inl (ptr',m2) ->
+  forall k chunk m1 ptr ofs v cp m2 ptr', store k chunk m1 ptr ofs v cp = inl (ptr',m2) ->
   forall chunk' p ofs perm cp' v' p',
   valid_access k m1 chunk' p ofs perm cp' v' p' -> valid_access k m2 chunk' p ofs perm cp' v' p'.
 Axiom store_valid_access_2:
-  forall k chunk m1 ptr v cp m2 ptr', store k chunk m1 ptr v cp = inl (ptr',m2) ->
+  forall k chunk m1 ptr ofs v cp m2 ptr', store k chunk m1 ptr ofs v cp = inl (ptr',m2) ->
   forall chunk' p p' ofs perm cp' v',
   valid_access k m2 chunk' p ofs perm cp' v' p' -> valid_access k m1 chunk' p ofs perm cp' v' p'.
 Axiom store_valid_access_3:
-  forall k chunk m1 ptr ofs v cp m2 ptr', store k chunk m1 (ptr,ofs) v cp = inl (ptr',m2) ->
+  forall k chunk m1 ptr ofs v cp m2 ptr', store k chunk m1 ptr ofs v cp = inl (ptr',m2) ->
   valid_access k m1 chunk ptr ofs Writable (Some cp) (Some v) (Some ptr').
 
 Axiom store_block_compartment:
-  forall k chunk m1 ptr v cp m2 ptr', store k chunk m1 ptr v cp = inl (ptr',m2) ->
+  forall k chunk m1 ptr ofs v cp m2 ptr', store k chunk m1 ptr ofs v cp = inl (ptr',m2) ->
   forall b',
   block_compartment m2 b' = block_compartment m1 b'.
 
 (** Load-store properties. *)
 
 Axiom load_store_similar:
-  forall k chunk m1 ptr v cp m2 ptr', store k chunk m1 ptr v cp = inl (ptr',m2) ->
+  forall k chunk m1 ptr ofs v cp m2 ptr', store k chunk m1 ptr ofs v cp = inl (ptr',m2) ->
   forall chunk',
   size_chunk chunk' = size_chunk chunk ->
   align_chunk chunk' <= align_chunk chunk ->
-  exists v', load k chunk' m2 ptr (Some cp) = inl v' /\ decode_encode_val v chunk chunk' v'.
+  exists v', load k chunk' m2 ptr ofs (Some cp) = inl v' /\ decode_encode_val v chunk chunk' v'.
 
 (* TODO: find good way to formulate following *) (*
 Axiom load_store_same:
   forall k chunk m1 ptr ofs v cp m2 ptr' ofs',
-    store k chunk m1 (ptr,ofs) v cp = inl (ptr',m2) ->
+    store k chunk m1 ptr ofs v cp = inl (ptr',m2) ->
     load k chunk m2 (ptr',ofs) (Some cp) = inl (Val.load_result chunk v). *)
 
 (*
 Axiom load_store_other:
   forall k chunk m1 ptr v cp m2 ofs ptr2,
-    store k chunk m1 (ptr,ofs) v cp = inl (ptr2,m2) ->
+    store k chunk m1 ptr ofs v cp = inl (ptr2,m2) ->
     forall chunk' ptr' cp' ofs',
       ofs' + size_chunk chunk' <= ofs
       \/ ofs + size_chunk chunk <= ofs' ->
@@ -656,8 +637,8 @@ Definition is_pointer (v: ocval) : bool :=
 Axiom load_store_pointer_overlap:
   forall k chunk m1 ofs v1 v2 storev cp m2 chunk' ofs' cp' v ptr2,
   is_pointer storev = true ->
-  store k chunk m1 (v1,ofs) storev cp = inl (ptr2,m2) ->
-  load k chunk' m2 (v2,ofs') cp' = inl v ->
+  store k chunk m1 v1 ofs storev cp = inl (ptr2,m2) ->
+  load k chunk' m2 v2 ofs' cp' = inl v ->
   ofs' <> ofs ->
   ofs' + size_chunk chunk' > ofs ->
   ofs + size_chunk chunk > ofs' ->
@@ -665,25 +646,25 @@ Axiom load_store_pointer_overlap:
 Axiom load_store_pointer_mismatch:
   forall k chunk m1 ptr storev cp m2 chunk' cp' v ptr' ofs ofs',
   is_pointer storev = true ->
-  store k chunk m1 (ptr,ofs) storev cp = inl (ptr',m2) ->
-  load k chunk' m2 (ptr',ofs') cp' = inl v ->
+  store k chunk m1 ptr ofs storev cp = inl (ptr',m2) ->
+  load k chunk' m2 ptr' ofs' cp' = inl v ->
   ~compat_pointer_chunks chunk chunk' storev ->
   v = OCVundef.
 Axiom load_pointer_store:
   forall k chunk m1 ptr ofs v cp m2 chunk' ptr' ofs' cp' v' ptr2,
   is_pointer v = true ->
-  store k chunk m1 (ptr,ofs) v cp = inl (ptr2,m2) ->
-  load k chunk' m2 (ptr',ofs') cp' = inl v' ->
+  store k chunk m1 ptr ofs v cp = inl (ptr2,m2) ->
+  load k chunk' m2 ptr' ofs' cp' = inl v' ->
   (v = v' /\ compat_pointer_chunks chunk chunk' v /\ ofs = ofs')
   \/ (ofs' + size_chunk chunk' <= ofs \/ ofs + size_chunk chunk <= ofs').
 
 (** Load-store properties for [loadbytes]. *)
 
 Axiom loadbytes_store_same:
-  forall k chunk m1 ptr ofs v cp ptr' ofs' m2, store k chunk m1 (ptr,ofs) v cp = inl (ptr',m2) ->
-  loadbytes k m2 (ptr',ofs') (size_chunk chunk) (Some cp) = inl(encode_val chunk v).
+  forall k chunk m1 ptr ofs v cp ptr' ofs' m2, store k chunk m1 ptr ofs v cp = inl (ptr',m2) ->
+  loadbytes k m2 ptr' ofs' (size_chunk chunk) (Some cp) = inl(encode_val chunk v).
 Axiom loadbytes_store_other:
-  forall k chunk m1 p v cp m2 ptr2, store k chunk m1 p v cp = inl (ptr2,m2) ->
+  forall k chunk m1 p ofs v cp m2 ptr2, store k chunk m1 p ofs v cp = inl (ptr2,m2) ->
   forall k p' ofs' ofs n cp',
     n <= 0 \/ ofs' + n <= ofs \/ ofs + size_chunk chunk <= ofs' ->
     loadbytes k m2 p' n cp' = loadbytes k m1 p' n cp'.
@@ -698,21 +679,21 @@ Axiom store_signed_unsigned_16:
   forall k m ptr v cp,
   store k CMint16signed m ptr v cp = store k CMint16unsigned m ptr v cp.
 Axiom store_int8_zero_ext:
-  forall k m ptr n cp,
-  store k CMint8unsigned m ptr (OCVint (Int.zero_ext 8 n)) cp =
-  store k CMint8unsigned m ptr (OCVint n) cp.
+  forall k m ptr ofs n cp,
+  store k CMint8unsigned m ptr ofs (OCVint (Int.zero_ext 8 n)) cp =
+  store k CMint8unsigned m ptr ofs (OCVint n) cp.
 Axiom store_int8_sign_ext:
-  forall k m ptr n cp,
-  store k CMint8signed m ptr (OCVint (Int.sign_ext 8 n)) cp =
-  store k CMint8signed m ptr (OCVint n) cp.
+  forall k m ptr ofs n cp,
+  store k CMint8signed m ptr ofs (OCVint (Int.sign_ext 8 n)) cp =
+  store k CMint8signed m ptr ofs (OCVint n) cp.
 Axiom store_int16_zero_ext:
-  forall k m ptr n cp,
-  store k CMint16unsigned m ptr (OCVint (Int.zero_ext 16 n)) cp =
-  store k CMint16unsigned m ptr (OCVint n) cp.
+  forall k m ptr ofs n cp,
+  store k CMint16unsigned m ptr ofs (OCVint (Int.zero_ext 16 n)) cp =
+  store k CMint16unsigned m ptr ofs (OCVint n) cp.
 Axiom store_int16_sign_ext:
-  forall k m ptr n cp,
-  store k CMint16signed m ptr (OCVint (Int.sign_ext 16 n)) cp =
-  store k CMint16signed m ptr (OCVint n) cp.
+  forall k m ptr ofs n cp,
+  store k CMint16signed m ptr ofs (OCVint (Int.sign_ext 16 n)) cp =
+  store k CMint16signed m ptr ofs (OCVint n) cp.
 
 (** ** Properties of [storebytes]. *)
 
@@ -726,23 +707,23 @@ Axiom range_perm_storebytes:
     range_perm m1 (derive_offset k ptr ofs) ((derive_offset k ptr ofs) + Z.of_nat (length bytes)) Cur Writable ->
     length bytes = size_chunk_nat chunk ->
     dynamic_conditions m1 k ptr ofs (size_chunk chunk) (Some (decode_val chunk bytes)) (Some cp) (Some ptr') ->
-    { m2 : mem | storebytes k m1 (ptr,ofs) bytes cp = inl (ptr',m2) }.
+    { m2 : mem | storebytes k m1 ptr ofs bytes chunk cp = inl (ptr',m2) }.
 Axiom storebytes_range_perm:
-  forall k m1 ptr bytes cp ptr2 m2 ofs,
-    storebytes k m1 (ptr,ofs) bytes cp = inl (ptr2,m2) ->
+  forall k m1 ptr bytes chunk cp ptr2 m2 ofs,
+    storebytes k m1 ptr ofs bytes chunk cp = inl (ptr2,m2) ->
     range_perm m1 (derive_offset k ptr ofs) ((derive_offset k ptr ofs) + Z.of_nat (length bytes)) Cur Writable.
 Axiom perm_storebytes_1:
-  forall k m1 ptr bytes cp ptr2 m2, storebytes k m1 ptr bytes cp = inl (ptr2,m2) ->
+  forall k m1 ptr ofs bytes chunk cp ptr2 m2, storebytes k m1 ptr ofs bytes chunk cp = inl (ptr2,m2) ->
   forall ofs' k p, perm m1 ofs' k p -> perm m2 ofs' k p.
 Axiom perm_storebytes_2:
-  forall k m1 ptr bytes cp ptr2 m2, storebytes k m1 ptr bytes cp = inl (ptr2,m2) ->
+  forall k m1 ptr ofs bytes chunk cp ptr2 m2, storebytes k m1 ptr ofs bytes chunk cp = inl (ptr2,m2) ->
   forall ofs' k p, perm m2 ofs' k p -> perm m1 ofs' k p.
 Axiom storebytes_valid_access_1:
-  forall k m1 ptr bytes cp ptr2 m2, storebytes k m1 ptr bytes cp = inl (ptr2,m2) ->
+  forall k m1 ptr ofs bytes chunk cp ptr2 m2, storebytes k m1 ptr ofs bytes chunk cp = inl (ptr2,m2) ->
   forall k' chunk' ptr' ofs' p cp' o ptr'',
   valid_access k' m1 chunk' ptr' ofs' p cp' (Some o) ptr'' -> valid_access k' m2 chunk' ptr' ofs' p cp' (Some o) ptr''.
 Axiom storebytes_valid_access_2:
-  forall k m1 ptr bytes cp ptr2 m2, storebytes k m1 ptr bytes cp = inl (ptr2,m2) ->
+  forall k m1 ptr ofs bytes chunk cp ptr2 m2, storebytes k m1 ptr ofs bytes chunk cp = inl (ptr2,m2) ->
   forall k' chunk' ptr' ofs' p cp' o ptr'',
   valid_access k' m2 chunk' ptr' ofs' p cp' (Some o) ptr'' -> valid_access k' m1 chunk' ptr' ofs' p cp' (Some o) ptr''.
 
@@ -750,51 +731,53 @@ Axiom storebytes_valid_access_2:
 
 Axiom storebytes_store:
   forall k m1 ptr chunk v cp ptr2 m2 ofs,
-  storebytes k m1 (ptr,ofs) (encode_val chunk v) cp = inl (ptr2,m2) ->
+  storebytes k m1 ptr ofs (encode_val chunk v) chunk cp = inl (ptr2,m2) ->
   (align_chunk chunk | derive_offset k ptr ofs) ->
-  store k chunk m1 (ptr,ofs) v cp = inl (ptr2,m2).
+  store k chunk m1 ptr ofs v cp = inl (ptr2,m2).
 
 Axiom store_storebytes:
-  forall k m1 ptr chunk v cp ptr2 m2,
-  store k chunk m1 ptr v cp = inl (ptr2,m2) ->
-  storebytes k m1 ptr (encode_val chunk v) cp = inl (ptr2,m2).
+  forall k m1 ptr ofs chunk v cp ptr2 m2,
+  store k chunk m1 ptr ofs v cp = inl (ptr2,m2) ->
+  storebytes k m1 ptr ofs (encode_val chunk v) chunk cp = inl (ptr2,m2).
 
 (** Load-store properties. *)
 
 Axiom loadbytes_storebytes_same:
-  forall k m1 ptr ofs bytes cp m2, storebytes k m1 (ptr,ofs) bytes cp = inl (ptr,m2) ->
-  loadbytes k m2 (ptr,ofs) (Z.of_nat (length bytes)) (Some cp) = inl bytes.
+  forall k m1 ptr ofs bytes chunk cp m2, storebytes k m1 ptr ofs bytes chunk cp = inl (ptr,m2) ->
+  loadbytes k m2 ptr ofs (Z.of_nat (length bytes)) (Some cp) = inl bytes.
 Axiom loadbytes_storebytes_other:
-  forall k m1 ptr ptr2 bytes cp m2 ofs,
-    storebytes k m1 (ptr,ofs) bytes cp = inl (ptr2,m2) ->
+  forall k m1 ptr ptr2 bytes chunk cp m2 ofs,
+    storebytes k m1 ptr ofs bytes chunk cp = inl (ptr2,m2) ->
   forall k' ptr' ofs' len cp',
   len >= 0 ->
   derive_offset k ptr' ofs' + len <= derive_offset k ptr ofs
   \/ derive_offset k ptr ofs + Z.of_nat (length bytes) <= derive_offset k ptr' ofs' ->
-  loadbytes k' m2 (ptr',ofs') len cp' = loadbytes k' m1 (ptr',ofs') len cp'.
+  loadbytes k' m2 ptr' ofs' len cp' = loadbytes k' m1 ptr' ofs' len cp'.
 Axiom load_storebytes_other:
-  forall k m1 ptr bytes cp ptr2 m2 ofs,
-    storebytes k m1 (ptr,ofs) bytes cp = inl (ptr2,m2) ->
+  forall k m1 ptr bytes chunk cp ptr2 m2 ofs,
+    storebytes k m1 ptr ofs bytes chunk cp = inl (ptr2,m2) ->
   forall k' chunk ptr' ofs' cp',
   (derive_offset k ptr' ofs') + size_chunk chunk <= derive_offset k ptr ofs
   \/ derive_offset k ptr ofs + Z.of_nat (length bytes) <= derive_offset k ptr' ofs' ->
-  load k' chunk m2 (ptr',ofs') cp' = load k' chunk m1 (ptr',ofs') cp'.
+  load k' chunk m2 ptr' ofs' cp' = load k' chunk m1 ptr' ofs' cp'.
 
 (** Composing or decomposing [storebytes] operations at adjacent addresses. *)
 
+(* it is no longer possible to decompose stores: the first store might fail before the second store can be attempted *)
+(*
 Axiom storebytes_concat:
-  forall k m ptr bytes1 cp ptr1 m1 bytes2 ptr2 m2 ptr',
-  incr_pointer k ptr (Z.of_nat(length bytes1)) = Some ptr' ->
-  storebytes k m ptr bytes1 cp = inl (ptr1,m1) ->
-  storebytes k m1 ptr' bytes2 cp = inl (ptr2,m2) ->
-  storebytes k m ptr (bytes1 ++ bytes2) cp = inl (ptr2,m2).
-Axiom storebytes_split:
-  forall k m ptr bytes1 bytes2 cp ptr2 m2,
-  storebytes k m ptr (bytes1 ++ bytes2) cp = inl (ptr2,m2) ->
-  exists ptr' ptr1 m1,
-    storebytes k m ptr bytes1 cp = inl (ptr1,m1)
-    /\ incr_pointer k ptr (Z.of_nat(length bytes1)) = Some ptr'
-    /\ storebytes k m1 ptr' bytes2 cp = inl (ptr2,m2).
+  forall k m ptr ofs bytes1 chunk1 cp ptr1 m1 bytes2 chunk2 ptr2 m2 ptr' ofs',
+  incr_pointer k ptr ofs (Z.of_nat(length bytes1)) = Some (ptr',ofs') ->
+  storebytes k m ptr ofs bytes1 chunk1 cp = inl (ptr1,m1) ->
+  storebytes k m1 ptr' ofs' bytes2 chunk2 cp = inl (ptr2,m2) ->
+  storebytes k m ptr ofs (bytes1 ++ bytes2) XXX cp = inl (ptr2,m2).*)
+(* Axiom storebytes_split: *)
+(*   forall k m ptr ofs bytes1 bytes2 cp ptr2 m2, *)
+(*   storebytes k m ptr ofs (bytes1 ++ bytes2) cp = inl (ptr2,m2) -> *)
+(*   exists ptr' ofs' ptr1 m1, *)
+(*     storebytes k m ptr ofs bytes1 cp = inl (ptr1,m1) *)
+(*     /\ incr_pointer k ptr ofs (Z.of_nat(length bytes1)) = Some (ptr',ofs') *)
+(*     /\ storebytes k m1 ptr' ofs' bytes2 cp = inl (ptr2,m2). *)
 
 (** ** Properties of [alloc]. *)
 
@@ -853,12 +836,12 @@ Axiom load_alloc_unchanged:
     alloc m1 c l = (ptr,m2) ->
     forall k chunk ptr' ofs' c' ,
       disjoint_cap ptr ptr' ->
-      load k chunk m2 (ptr',ofs') c' = load k chunk m1 (ptr',ofs') c'.
+      load k chunk m2 ptr' ofs' c' = load k chunk m1 ptr' ofs' c'.
 Axiom load_alloc_same:
   forall m1 c l m2 ptr,
     alloc m1 c l = (ptr,m2) ->
     forall k chunk ofs c' v,
-      load k chunk m2 (ptr,ofs) c' = inl v ->
+      load k chunk m2 ptr ofs c' = inl v ->
       v = OCVundef.
 Axiom load_alloc_same':
   forall m1 c l m2 ptr,
@@ -867,7 +850,7 @@ Axiom load_alloc_same':
       derived_cap ptr ptr' ->
       dynamic_conditions m2 k ptr' ofs (size_chunk chunk) None (Some c) None ->
       (align_chunk chunk | derive_offset k ptr' ofs) ->
-      load k chunk m2 (ptr',ofs) (Some c) = inl OCVundef.
+      load k chunk m2 ptr' ofs (Some c) = inl OCVundef.
 
 (** ** Properties of [free]. *)
 
@@ -933,41 +916,41 @@ Axiom load_free:
     free m1 ptr cp = inl m2 ->
     forall k chunk ptr' ofs cp',
       disjoint_cap ptr ptr' ->
-      load k chunk m2 (ptr',ofs) cp' = load k chunk m1 (ptr',ofs) cp'.
+      load k chunk m2 ptr' ofs cp' = load k chunk m1 ptr' ofs cp'.
 
 (** ** Properties of [drop_perm]. *)
 
 Axiom drop_block_compartment:
-  forall m lo hi p cp m', drop_perm m lo hi p cp = inl m' ->
+  forall m c p cp m', drop_perm m c p cp = inl m' ->
   forall b', block_compartment m' b' = block_compartment m b'.
 
 Axiom range_perm_drop_1:
-  forall m lo hi p cp m', drop_perm m lo hi p cp = inl m' ->
-  range_perm m lo hi Cur Freeable.
+  forall m c p cp m', drop_perm m c p cp = inl m' ->
+  range_perm m (Ptrofs.unsigned (get_lo c)) (Ptrofs.unsigned (get_hi c)) Cur Freeable.
 Axiom range_perm_drop_2_heap:
   forall m cp p ptr,
   range_perm m (Ptrofs.unsigned (get_lo ptr)) (Ptrofs.unsigned (get_hi ptr)) Cur Freeable ->
   can_access_block m ptr (Some cp) ->
-  { m' | drop_perm m (Ptrofs.unsigned (get_lo ptr)) (Ptrofs.unsigned (get_hi ptr)) p cp = inl m' }.
+  { m' | drop_perm m ptr p cp = inl m' }.
 
 Axiom perm_drop_1:
-  forall m lo hi p cp m', drop_perm m lo hi p cp = inl m' ->
-  forall ofs k, lo <= ofs < hi -> perm m' ofs k p.
+  forall m c p cp m', drop_perm m c p cp = inl m' ->
+  forall ofs k, (Ptrofs.unsigned (get_lo c)) <= ofs < (Ptrofs.unsigned (get_hi c)) -> perm m' ofs k p.
 Axiom perm_drop_2:
-  forall m lo hi p cp m', drop_perm m lo hi p cp = inl m' ->
-  forall ofs k p', lo <= ofs < hi -> perm m' ofs k p' -> perm_order p p'.
+  forall m c p cp m', drop_perm m c p cp = inl m' ->
+  forall ofs k p', (Ptrofs.unsigned (get_lo c)) <= ofs < (Ptrofs.unsigned (get_hi c)) -> perm m' ofs k p' -> perm_order p p'.
 Axiom perm_drop_3:
-  forall m lo hi p cp m', drop_perm m lo hi p cp = inl m' ->
-  forall ofs k p', ofs < lo \/ hi <= ofs -> perm m ofs k p' -> perm m' ofs k p'.
+  forall m c p cp m', drop_perm m c p cp = inl m' ->
+  forall ofs k p', ofs < (Ptrofs.unsigned (get_lo c)) \/ (Ptrofs.unsigned (get_hi c)) <= ofs -> perm m ofs k p' -> perm m' ofs k p'.
 Axiom perm_drop_4:
-  forall m lo hi p cp m', drop_perm m lo hi p cp = inl m' ->
+  forall m c p cp m', drop_perm m c p cp = inl m' ->
   forall ofs k p', perm m' ofs k p' -> perm m ofs k p'.
 
 Axiom load_drop:
-  forall m lo hi p cp m', drop_perm m lo hi p cp = inl m' ->
+  forall m c p cp m', drop_perm m c p cp = inl m' ->
   forall k chunk ptr ofs cp',
-  derive_offset k ptr ofs + size_chunk chunk <= lo \/ hi <= derive_offset k ptr ofs \/ perm_order p Readable ->
-  load k chunk m' (ptr,ofs) cp' = load k chunk m (ptr,ofs) cp'.
+  derive_offset k ptr ofs + size_chunk chunk <= (Ptrofs.unsigned (get_lo c)) \/ (Ptrofs.unsigned (get_hi c)) <= derive_offset k ptr ofs \/ perm_order p Readable ->
+  load k chunk m' ptr ofs cp' = load k chunk m ptr ofs cp'.
 
 
 End MEM.

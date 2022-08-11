@@ -381,6 +381,25 @@ Proof.
   discriminate.
 Qed.
 
+Inductive is_mem_cap : occap -> Prop :=
+| is_mem_cap_base p l b e a: is_mem_cap (OCsealable (OCVmem p l b e a)).
+
+Definition is_mem_cap_b (v: occap) :=
+  match v with
+  | OCsealable (OCVmem _ _ _ _ _) => true
+  | _ => false
+  end.
+
+Lemma is_mem_cap_reflect: forall v,
+    is_mem_cap v <-> is_mem_cap_b v = true.
+Proof.
+  intros;unfold is_mem_cap_b;
+    destruct v,o;split;auto.
+  all:try discriminate.
+  intros;constructor.
+  all: intros H;inv H.
+Qed.
+
 Definition is_cap (v: ocval) :=
   match v with
   | OCVcap _ => True
