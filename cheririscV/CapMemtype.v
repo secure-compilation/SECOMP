@@ -75,6 +75,30 @@ Proof.
   intros. inv H; inv H0; constructor.
 Qed.
 
+
+Inductive derived_cap' : occap -> occap -> Prop :=
+| derived_cap_base p l b e a p' l' b' e' a' :
+  Ptrofs.unsigned e' <= Ptrofs.unsigned e ->
+  Ptrofs.unsigned b <= Ptrofs.unsigned b' ->
+  locFlows l' l ->
+  permFlows p' p ->
+  derived_cap' (OCsealable (OCVmem p l b e a)) (OCsealable (OCVmem p' l' b' e' a'))
+| derived_cap_sealed c c' σ :
+  derived_cap' c (OCsealable c') ->
+  derived_cap' c (OCsealed σ c').
+Definition derived_cap := derived_cap'.
+Definition disjoint_cap (c c': occap): Prop :=
+  Ptrofs.unsigned (get_hi c) <= Ptrofs.unsigned (get_lo c')
+  \/ Ptrofs.unsigned (get_lo c) >= Ptrofs.unsigned (get_hi c').
+Inductive no_auth : occap -> Prop :=
+| no_auth_mem p l b e a :
+  Ptrofs.unsigned e <= Ptrofs.unsigned b -> no_auth (OCsealable (OCVmem p l b e a))
+| no_auth_seal b e a :
+  no_auth (OCsealable (OCVseal b e a))
+| no_auth_sealable σ c :
+  no_auth (OCsealable c) ->
+  no_auth (OCsealed σ c).
+
 (** Each address has not one, but two permissions associated
   with it.  The first is the current permission.  It governs whether
   operations (load, store, free, etc) over this address succeed or
@@ -120,7 +144,7 @@ Parameter mem: Type.
 (** * Operations on memory states *)
 
 (** [empty] is the initial memory state. *)
-Parameter empty: mem.
+Parameter empty: Z -> mem.
 
 (** [alloc m cp lo hi] allocates a fresh block of size [hi - lo]
   bytes, and assigns its ownership to compartment [cp].  Valid offsets
@@ -254,14 +278,6 @@ Parameter derive_offset: forall (a: act_kind) (c: occap) (ofs: Z), Z.
 
 (** [can_access_block m c (Some cp)] holds if capability [c] is owned
     by compartment [cp] in memory [m]. *)
-Definition derived_cap (c c': occap): Prop :=
-  Ptrofs.unsigned (get_hi c') <= Ptrofs.unsigned (get_hi c)
-  /\ Ptrofs.unsigned (get_lo c) <= Ptrofs.unsigned (get_lo c')
-  /\ locFlowsCap c' c
-  /\ permFlowsCap c' c.
-Definition disjoint_cap (c c': occap): Prop :=
-  Ptrofs.unsigned (get_hi c) <= Ptrofs.unsigned (get_lo c')
-  \/ Ptrofs.unsigned (get_lo c) <= Ptrofs.unsigned (get_hi c').
 
 Axiom derived_cap_dec: forall c c', {derived_cap c c'} + {~ derived_cap c c'}.
 Axiom disjoint_cap_dec: forall c c', {disjoint_cap c c'} + {~ disjoint_cap c c'}.
@@ -348,14 +364,23 @@ Definition dynamic_access (k: act_kind) (c: occap) (ofs: Z) (l: nat) (v: option 
   | Some v => can_store_val k c ofs l v
   end.
            
-
+Definition storeU_increase_derive (v: option ocval) (c: occap) (ofs: Z) (len: nat) : occap :=
+  if (ofs =? 0) && isUCap c then
+    match incr_addr_stk c (Z.of_nat len) with
+    | Some c' => c'
+    | _ => c
+    end
+  else c.
 Definition storeU_increase_authority (v: option ocval) (c: occap) (ofs: Z) (len: nat) (c': option occap) :=
   match v with
   | Some _ =>
       if (ofs =? 0) && isUCap c
-      then c' = Val.offset_cap c (Ptrofs.repr (Z.of_nat len))
-      else True
-  | _ => True
+      then c' = match incr_addr_stk c (Z.of_nat len) with
+                | Some c' => Some c'
+                | _ => Some c
+                end
+      else c' = Some c
+  | _ => c' = None
   end.
 
 (** An access to a memory quantity [chunk] at address [c, ofs] with
@@ -363,13 +388,20 @@ Definition storeU_increase_authority (v: option ocval) (c: occap) (ofs: Z) (len:
   current permission [p] and moreover the offset is properly aligned, 
   if [v] is specified, [c] has sufficient authority to store it,
   and [c] belongs to compartment [cp]. *)
-Definition valid_access (k: act_kind) (m: mem) (chunk: cap_memory_chunk) (c: occap) (ofs: Z)
-           (p: permission) (cp: option compartment) (v: option ocval) (c': option occap): Prop :=
+Definition valid_access_cap (k: act_kind) (chunk: cap_memory_chunk) (c: occap) (ofs: Z)
+           (v: option ocval) (c': option occap): Prop :=
+  dynamic_access k c ofs (size_chunk_nat chunk) v
+  /\ storeU_increase_authority v c ofs (size_chunk_nat chunk) c'.
+Definition valid_access_ptr (k: act_kind) (m: mem) (chunk: cap_memory_chunk) (c: occap) (ofs: Z)
+           (p: permission) (cp: option compartment) : Prop :=
   range_perm m (derive_offset k c ofs) (derive_offset k c ofs + size_chunk chunk) Cur p
   /\ can_access_block m c cp
-  /\ dynamic_access k c ofs (size_chunk_nat chunk) v
-  /\ (align_chunk chunk | (derive_offset k c ofs))
-  /\ storeU_increase_authority v c ofs (size_chunk_nat chunk) c'.
+  /\ (align_chunk chunk | (derive_offset k c ofs)).
+  
+Definition valid_access (k: act_kind) (m: mem) (chunk: cap_memory_chunk) (c: occap) (ofs: Z)
+           (p: permission) (cp: option compartment) (v: option ocval) (c': option occap): Prop :=
+  valid_access_cap k chunk c ofs v c'
+  /\ valid_access_ptr k m chunk c ofs p cp.
 
 
 Axiom valid_access_implies:
@@ -395,15 +427,20 @@ Axiom valid_pointer_nonempty_perm:
 (** [dynamic_conditions ptr] defines the dynamic conditions not
     captured by [valid_pointer] *)
 
+Definition dynamic_conditions_ptr (m: mem) (c: occap) (cp: option compartment) : Prop :=
+  can_access_block m c cp.
+Definition dynamic_conditions_cap (k: act_kind) (c: occap) (ofs: Z) (len: Z)
+           (v: option ocval) (c': option occap) : Prop :=
+  dynamic_access k c ofs (Z.to_nat len) v
+  /\ storeU_increase_authority v c ofs (Z.to_nat len) c'.             
 Definition dynamic_conditions (m: mem) (k: act_kind) (c: occap) (ofs: Z) (len: Z)
            (v: option ocval) (cp: option compartment) (c': option occap) : Prop :=
-  dynamic_access k c ofs (Z.to_nat len) v
-  /\ can_access_block m c cp
-  /\ storeU_increase_authority v c ofs (Z.to_nat len) c'.
+  dynamic_conditions_ptr m c cp
+  /\ dynamic_conditions_cap k c ofs len v c'.
 
 Axiom valid_pointer_valid_access:
-  forall m k c ofs l v cp c',
-    dynamic_conditions m k c ofs l v cp c' ->
+  forall m k c ofs cp v c',
+    dynamic_conditions m k c ofs 1 v cp c' ->
     valid_capability m k c ofs = true <-> valid_access k m CMint8unsigned c ofs Nonempty cp v c'.
 
 
@@ -533,7 +570,7 @@ Axiom loadbytes_empty:
 (** Composing or decomposing [loadbytes] operations at adjacent addresses. *)
 Definition incr_pointer (a: act_kind) (ptr: occap) (ofs: Z) (n: Z) : option (occap * Z) :=
   match a with
-  | DIR => option_map (fun c => (c,ofs)) (incr_addr_stk ptr (Ptrofs.repr n))
+  | DIR => option_map (fun c => (c,ofs)) (incr_addr_stk ptr n)
   | UNINIT => Some (ptr,ofs + n)
   | DEFAULT => Some (ptr,ofs + n)
   end.
@@ -543,12 +580,12 @@ Axiom loadbytes_concat:
     incr_pointer k ptr1 ofs1 n1 = Some (ptr2,ofs2) ->
     loadbytes k m ptr1 ofs1 n1 cp = inl bytes1 ->
     loadbytes k m ptr2 ofs2 n2 cp = inl bytes2 ->
-    n1 >= 0 -> n2 >= 0 ->
+    n1 >= 0 -> n2 >= 0 -> derive_offset k ptr1 ofs1 + n1 < Ptrofs.modulus ->
     loadbytes k m ptr1 ofs1 (n1 + n2) cp = inl(bytes1 ++ bytes2).
 Axiom loadbytes_split:
   forall k m ptr ofs n1 n2 cp bytes,
   loadbytes k m ptr ofs (n1 + n2) cp = inl bytes ->
-  n1 >= 0 -> n2 >= 0 ->
+  n1 >= 0 -> n2 >= 0 -> derive_offset k ptr ofs + n1 < Ptrofs.modulus ->
   exists bytes1, exists bytes2, exists ptr2, exists ofs2,
     incr_pointer k ptr ofs n1 = Some (ptr2, ofs2)
     /\ loadbytes k m ptr ofs n1 cp = inl bytes1
@@ -573,8 +610,8 @@ Axiom perm_store_2:
 
 
 Axiom valid_access_store:
-  forall a m1 chunk ptr ofs cp v k ptr',
-  valid_access a m1 chunk ptr ofs Writable (Some cp) (Some v) (Some ptr') ->
+  forall m1 chunk ptr ofs cp v k ptr',
+  valid_access k m1 chunk ptr ofs Writable (Some cp) (Some v) (Some ptr') ->
   { m2: mem | store k chunk m1 ptr ofs v cp = inl (ptr',m2) }.
 Axiom store_valid_access_1:
   forall k chunk m1 ptr ofs v cp m2 ptr', store k chunk m1 ptr ofs v cp = inl (ptr',m2) ->
@@ -661,8 +698,8 @@ Axiom load_pointer_store:
 (** Load-store properties for [loadbytes]. *)
 
 Axiom loadbytes_store_same:
-  forall k chunk m1 ptr ofs v cp ptr' ofs' m2, store k chunk m1 ptr ofs v cp = inl (ptr',m2) ->
-  loadbytes k m2 ptr' ofs' (size_chunk chunk) (Some cp) = inl(encode_val chunk v).
+  forall k chunk m1 ptr ofs v cp m2 ptr', store k chunk m1 ptr ofs v cp = inl (ptr',m2) ->
+  loadbytes k m2 ptr' ofs (size_chunk chunk) (Some cp) = inl(encode_val chunk v).
 Axiom loadbytes_store_other:
   forall k chunk m1 p ofs v cp m2 ptr2, store k chunk m1 p ofs v cp = inl (ptr2,m2) ->
   forall k p' ofs' ofs n cp',
@@ -673,11 +710,11 @@ Axiom loadbytes_store_other:
   small integer quantities. *)
 
 Axiom store_signed_unsigned_8:
-  forall k m ptr v cp,
-  store k CMint8signed m ptr v cp = store k CMint8unsigned m ptr v cp.
+  forall k m ptr ofs v cp,
+  store k CMint8signed m ptr ofs v cp = store k CMint8unsigned m ptr ofs v cp.
 Axiom store_signed_unsigned_16:
-  forall k m ptr v cp,
-  store k CMint16signed m ptr v cp = store k CMint16unsigned m ptr v cp.
+  forall k m ptr ofs v cp,
+  store k CMint16signed m ptr ofs v cp = store k CMint16unsigned m ptr ofs v cp.
 Axiom store_int8_zero_ext:
   forall k m ptr ofs n cp,
   store k CMint8unsigned m ptr ofs (OCVint (Int.zero_ext 8 n)) cp =
@@ -709,7 +746,7 @@ Axiom range_perm_storebytes:
     dynamic_conditions m1 k ptr ofs (size_chunk chunk) (Some (decode_val chunk bytes)) (Some cp) (Some ptr') ->
     { m2 : mem | storebytes k m1 ptr ofs bytes chunk cp = inl (ptr',m2) }.
 Axiom storebytes_range_perm:
-  forall k m1 ptr bytes chunk cp ptr2 m2 ofs,
+  forall k m1 ptr ofs bytes chunk cp ptr2 m2,
     storebytes k m1 ptr ofs bytes chunk cp = inl (ptr2,m2) ->
     range_perm m1 (derive_offset k ptr ofs) ((derive_offset k ptr ofs) + Z.of_nat (length bytes)) Cur Writable.
 Axiom perm_storebytes_1:
@@ -746,19 +783,19 @@ Axiom loadbytes_storebytes_same:
   forall k m1 ptr ofs bytes chunk cp m2, storebytes k m1 ptr ofs bytes chunk cp = inl (ptr,m2) ->
   loadbytes k m2 ptr ofs (Z.of_nat (length bytes)) (Some cp) = inl bytes.
 Axiom loadbytes_storebytes_other:
-  forall k m1 ptr ptr2 bytes chunk cp m2 ofs,
+  forall k m1 ptr ofs bytes chunk cp ptr2 m2,
     storebytes k m1 ptr ofs bytes chunk cp = inl (ptr2,m2) ->
   forall k' ptr' ofs' len cp',
   len >= 0 ->
-  derive_offset k ptr' ofs' + len <= derive_offset k ptr ofs
-  \/ derive_offset k ptr ofs + Z.of_nat (length bytes) <= derive_offset k ptr' ofs' ->
+  derive_offset k' ptr' ofs' + len <= derive_offset k ptr ofs
+  \/ derive_offset k ptr ofs + Z.of_nat (length bytes) <= derive_offset k' ptr' ofs' ->
   loadbytes k' m2 ptr' ofs' len cp' = loadbytes k' m1 ptr' ofs' len cp'.
 Axiom load_storebytes_other:
-  forall k m1 ptr bytes chunk cp ptr2 m2 ofs,
+  forall k m1 ptr ofs bytes chunk cp ptr2 m2,
     storebytes k m1 ptr ofs bytes chunk cp = inl (ptr2,m2) ->
   forall k' chunk ptr' ofs' cp',
-  (derive_offset k ptr' ofs') + size_chunk chunk <= derive_offset k ptr ofs
-  \/ derive_offset k ptr ofs + Z.of_nat (length bytes) <= derive_offset k ptr' ofs' ->
+  (derive_offset k' ptr' ofs') + size_chunk chunk <= derive_offset k ptr ofs
+  \/ derive_offset k ptr ofs + Z.of_nat (length bytes) <= derive_offset k' ptr' ofs' ->
   load k' chunk m2 ptr' ofs' cp' = load k' chunk m1 ptr' ofs' cp'.
 
 (** Composing or decomposing [storebytes] operations at adjacent addresses. *)
@@ -812,12 +849,10 @@ Axiom valid_access_alloc_other:
 Axiom valid_access_alloc_same:
   forall m1 c l m2 ptr,
     alloc m1 c l = (ptr,m2) ->
-    forall k chunk ptr' ofs o ptr'',
-      dynamic_conditions m2 k ptr' ofs (size_chunk chunk) o (Some c) ptr'' ->
-      Ptrofs.unsigned (get_lo ptr) <= derive_offset k ptr' ofs ->
-      derive_offset k ptr' ofs + size_chunk chunk <= Ptrofs.unsigned (get_hi ptr) ->
-      (align_chunk chunk | derive_offset k ptr' ofs) ->
-      valid_access k m2 chunk ptr' ofs Freeable (Some c) o ptr''.
+    forall k chunk ofs o ptr'',
+      dynamic_conditions m2 k ptr ofs (size_chunk chunk) o (Some c) ptr'' ->
+      (align_chunk chunk | derive_offset k ptr ofs) ->
+      valid_access k m2 chunk ptr ofs Freeable (Some c) o ptr''.
 Axiom valid_access_alloc_inv:
   forall m1 c l m2 ptr,
     alloc m1 c l = (ptr,m2) ->
@@ -858,13 +893,14 @@ Axiom load_alloc_same':
   has [Freeable] current permission. *)
 
 Axiom range_perm_free:
-  forall m1 b ptr cp,
-  range_perm m1 (Ptrofs.unsigned (get_hi ptr)) (Ptrofs.unsigned (get_lo ptr)) Cur Freeable ->
-  can_access_block m1 b (Some cp) ->
+  forall m1 ptr cp,
+  range_perm m1 (Ptrofs.unsigned (get_lo ptr)) (Ptrofs.unsigned (get_hi ptr)) Cur Freeable ->
+  can_access_block m1 ptr (Some cp) ->
+  is_mem_cap ptr ->
   { m2: mem | free m1 ptr cp = inl m2 }.
 Axiom free_range_perm:
   forall m1 ptr cp m2, free m1 ptr cp = inl m2 ->
-  range_perm m1 (Ptrofs.unsigned (get_hi ptr)) (Ptrofs.unsigned (get_lo ptr)) Cur Freeable.
+  range_perm m1 (Ptrofs.unsigned (get_lo ptr)) (Ptrofs.unsigned (get_hi ptr)) Cur Freeable.
 
 (** Effect of [free] on permissions. *)
 
@@ -907,7 +943,7 @@ Axiom valid_access_free_inv_2:
     free m1 ptr cp = inl m2 ->
     forall k chunk ptr' ofs p cp' o ptr'',
       valid_access k m2 chunk ptr' ofs p cp' o ptr'' ->
-      disjoint_cap ptr ptr'.
+      disjoint_cap ptr ptr' \/ no_auth ptr.
 
 (** Load-free properties *)
 
@@ -949,7 +985,7 @@ Axiom perm_drop_4:
 Axiom load_drop:
   forall m c p cp m', drop_perm m c p cp = inl m' ->
   forall k chunk ptr ofs cp',
-  derive_offset k ptr ofs + size_chunk chunk <= (Ptrofs.unsigned (get_lo c)) \/ (Ptrofs.unsigned (get_hi c)) <= derive_offset k ptr ofs \/ perm_order p Readable ->
+  derive_offset k ptr ofs + size_chunk chunk <= (Ptrofs.unsigned (get_lo ptr)) \/ (Ptrofs.unsigned (get_hi ptr)) <= derive_offset k ptr ofs \/ perm_order p Readable ->
   load k chunk m' ptr ofs cp' = load k chunk m ptr ofs cp'.
 
 
