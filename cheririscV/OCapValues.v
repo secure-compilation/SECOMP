@@ -260,7 +260,7 @@ Definition writeAllowedCap (c: occap) : bool :=
 Definition isGlobalCap (c: occap) : bool :=
   match c with
   | OCsealable (OCVmem _ l _ _ _) => isGlobal l
-  | _ => true
+  | _ => false
   end.
 
 Definition isUCap (c: occap) : bool :=
@@ -334,9 +334,10 @@ Definition stack_derived (v: occap): Prop :=
   | OCsealable σ | OCsealed _ σ => stack_derived_seal σ
   end.
 
-Definition incr_addr_stk (v: occap) (ofs: ptrofs) : option occap :=
+Definition incr_addr_stk (v: occap) (ofs: Z) : option occap :=
   match v with
-  | OCsealable (OCVmem perm l lo hi a) => Some (OCsealable (OCVmem perm l lo hi (Ptrofs.add a ofs)))
+  | OCsealable (OCVmem perm l lo hi a) =>
+      Some (OCsealable (OCVmem perm l lo hi (Ptrofs.repr ((Ptrofs.unsigned a) + ofs))))
   | _ => None
   end.
 
