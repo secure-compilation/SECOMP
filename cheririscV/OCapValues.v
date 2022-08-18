@@ -303,6 +303,11 @@ Definition get_hi (v : occap) : ptrofs :=
   | OCsealed _ σ => get_hi_seal σ
   end.
 
+Definition get_region_size (c: occap) : Z :=
+  Ptrofs.unsigned (get_hi c) - Ptrofs.unsigned (get_lo c).
+Definition get_region_size_nat (c: occap) : nat :=
+  Z.to_nat (get_region_size c).
+
 Definition get_addr_seal (σ : ocsealable) : ptrofs :=
   match σ with
   | OCVmem perm l lo hi a => a
@@ -427,7 +432,7 @@ Definition is_global_or_imm (v: ocval) :=
   | _ => true
   end.
 
-Definition OCVsp p l base e a : ocval :=
+Definition OCVcapptr p l base e a : ocval :=
   OCVcap (OCsealable (OCVmem p l base e a)).
 
 Definition OCVzero: ocval := OCVint Int.zero.
@@ -442,7 +447,7 @@ Definition OCVfalse: ocval := OCVint Int.zero.
     value in a capability register. Here we represent the NULL pointer
     (stack) capability with the tag bit set on (alternatively, one
     would have to use a 128 bit integer for NULL on 64 bit arch ) *)
-Definition OCVnullstackcap := OCVsp O Global Ptrofs.zero Ptrofs.zero Ptrofs.zero.
+Definition OCVnullcap := OCVcapptr O Global Ptrofs.zero Ptrofs.zero Ptrofs.zero.
 
 (** A null pointer *)
 Definition Vnullptr :=
