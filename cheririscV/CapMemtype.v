@@ -36,6 +36,7 @@ Require Import Integers.
 Require Import Floats.
 Require Import OCapValues.
 Require Import CapMemdata.
+Require Import Maps.
 
 (** Memory states are accessed by addresses [b, ofs]: pairs of a block
   identifier [b] and a byte offset [ofs] within that block.
@@ -144,7 +145,10 @@ Parameter mem: Type.
 (** * Operations on memory states *)
 
 (** [empty] is the initial memory state. *)
-Parameter empty: Z -> mem.
+(* ALG: the initial memory state comes with some initialisation by
+linker and preprocessing, and has dependencies beyond the memory model
+interface *)
+(* Parameter empty: ptrofs -> ptrofs -> PMap.t occap -> mem. *)
 
 (** [alloc m cp lo hi] allocates a fresh block of size [hi - lo]
   bytes, and assigns its ownership to compartment [cp].  Valid offsets
@@ -154,7 +158,7 @@ Parameter empty: Z -> mem.
   pair [(m', b)] of the updated memory state [m'] and the identifier
   [b] of the newly-allocated block.  Note that [alloc] never fails: we
   are modeling an infinite memory. Alloc only allocates heap memory *)
-Parameter alloc: forall (m: mem) (c: compartment) (len: nat), occap * mem.
+Parameter alloc: forall (m: mem) (c: compartment) (len: nat), pointer * mem + error_kind.
 
 (** [free m b lo hi cp] frees (deallocates) the range of offsets from [lo]
   included to [hi] excluded in block [b], which must be owned by
@@ -234,7 +238,7 @@ Parameter drop_perm: forall (m: mem) (c: occap) (p: permission) (cp: compartment
 (** [block_compartment m c] returns the list of heap capabilities internal to
     compartment [c] *)
 
-Parameter block_compartment: forall (m: mem) (c: compartment), list occap.
+Parameter block_compartment: forall (m: mem) (c: compartment), occap.
 
 (** [perm m b ofs k p] holds if the address [b, ofs] in memory state [m]
   has permission [p]: one of freeable, writable, readable, and nonempty.
@@ -285,7 +289,7 @@ Axiom disjoint_cap_dec: forall c c', {disjoint_cap c c'} + {~ disjoint_cap c c'}
 Definition can_access_block (m: mem) (c: occap) (cp: option compartment): Prop :=
   match cp with
   | None => True
-  | Some cp => Exists (fun c' => derived_cap c' c) (block_compartment m cp)
+  | Some cp => derived_cap (block_compartment m cp) c
   end.
 
 (** [max_read_auth c] derives the maximal read authority of a
@@ -821,44 +825,53 @@ Axiom storebytes_concat:
 (** Effect of [alloc] on permissions. *)
 
 Axiom perm_alloc_1:
-  forall m1 c len m2 ptr, alloc m1 c len = (ptr,m2) ->
+  forall m1 c len m2 ptr, alloc m1 c len = inl (ptr,m2) ->
   forall ofs k p, perm m1 ofs k p -> perm m2 ofs k p.
 Axiom perm_alloc_2:
-  forall m1 c l m2 ptr, alloc m1 c l = (ptr,m2) ->
-  forall ofs k, Ptrofs.unsigned (get_lo ptr) <= ofs < Ptrofs.unsigned (get_hi ptr) -> perm m2 ofs k Freeable.
+  forall m1 c l m2 ptr, alloc m1 c l = inl (ptr,m2) ->
+  let lo_ofs := Ptrofs.unsigned (get_lo (block_compartment m2 c)) in
+  let ptr_ofs := Ptrofs.unsigned (pointer_ofs ptr) in
+  forall ofs k, lo_ofs + ptr_ofs <= ofs < lo_ofs + ptr_ofs + Z.of_nat l ->
+           perm m2 ofs k Freeable.
 Axiom perm_alloc_inv:
-  forall m1 c l m2 ptr, alloc m1 c l = (ptr,m2) ->
+  forall m1 c l m2 ptr, alloc m1 c l = inl (ptr,m2) ->
   forall ofs k p,
   perm m2 ofs k p ->
-  Ptrofs.unsigned (get_lo ptr) <= ofs < Ptrofs.unsigned (get_hi ptr) \/ perm m1 ofs k p.
+  Ptrofs.unsigned (pointer_ofs ptr) <= ofs < (Ptrofs.unsigned (pointer_ofs ptr) + Z.of_nat l) \/ perm m1 ofs k p.
 
 (** Effect of [alloc] on compartments. *)
 
 Axiom alloc_block_compartment:
   forall m1 c l m2 ptr,
-    alloc m1 c l = (ptr,m2) ->
-    In ptr (block_compartment m2 c).
+    alloc m1 c l = inl (ptr,m2) ->
+    Ptrofs.unsigned (get_lo (block_compartment m2 c))
+    <= Ptrofs.unsigned (Ptrofs.add (get_lo (block_compartment m2 c)) (pointer_ofs ptr))
+    < Ptrofs.unsigned (get_hi (block_compartment m2 c)).
 
 (** Effect of [alloc] on access validity. *)
 
 Axiom valid_access_alloc_other:
-  forall m1 c l m2 ptr, alloc m1 c l = (ptr,m2) ->
+  forall m1 c l m2 ptr, alloc m1 c l = inl (ptr,m2) ->
   forall k' chunk ptr' ofs' p cp' o ptr'',
   valid_access k' m1 chunk ptr' ofs' p cp' o ptr'' ->
   valid_access k' m2 chunk ptr' ofs' p cp' o ptr''.
 Axiom valid_access_alloc_same:
   forall m1 c l m2 ptr,
-    alloc m1 c l = (ptr,m2) ->
-    forall k chunk ofs o ptr'',
-      dynamic_conditions m2 k ptr ofs (size_chunk chunk) o (Some c) ptr'' ->
-      (align_chunk chunk | derive_offset k ptr ofs) ->
-      valid_access k m2 chunk ptr ofs Freeable (Some c) o ptr''.
+    alloc m1 c l = inl (ptr,m2) ->
+   let cap := block_compartment m2 c in
+   let ofs := Ptrofs.unsigned (pointer_ofs ptr) in
+   let ptr'' := Some cap in
+   forall chunk o,
+    size_chunk chunk = Z.of_nat l ->
+    dynamic_conditions m2 DEFAULT cap ofs (size_chunk chunk) o (Some c) ptr'' ->
+    (align_chunk chunk | derive_offset DEFAULT cap ofs) ->
+    valid_access DEFAULT m2 chunk cap ofs Freeable (Some c) o ptr''.
 Axiom valid_access_alloc_inv:
   forall m1 c l m2 ptr,
-    alloc m1 c l = (ptr,m2) ->
+    alloc m1 c l = inl (ptr,m2) ->
     forall k chunk ptr' p c' o ptr'' ofs,
       valid_access k m2 chunk ptr' ofs p c' o ptr'' ->
-      if derived_cap_dec ptr ptr'
+      if derived_cap_dec (block_compartment m2 c) ptr'
       then in_bounds k ptr' ofs (size_chunk_nat chunk)
            /\ (align_chunk chunk | (derive_offset k ptr' ofs))
            /\ dynamic_conditions m2 k ptr' ofs (size_chunk chunk) o (Some c) ptr''
@@ -868,24 +881,31 @@ Axiom valid_access_alloc_inv:
 
 Axiom load_alloc_unchanged:
   forall m1 c l m2 ptr,
-    alloc m1 c l = (ptr,m2) ->
+    alloc m1 c l = inl (ptr,m2) ->
     forall k chunk ptr' ofs' c' ,
-      disjoint_cap ptr ptr' ->
+      disjoint_cap (block_compartment m2 c) ptr' ->
       load k chunk m2 ptr' ofs' c' = load k chunk m1 ptr' ofs' c'.
 Axiom load_alloc_same:
   forall m1 c l m2 ptr,
-    alloc m1 c l = (ptr,m2) ->
-    forall k chunk ofs c' v,
-      load k chunk m2 ptr ofs c' = inl v ->
+    alloc m1 c l = inl (ptr,m2) ->
+    forall chunk v,
+      load DEFAULT chunk m2 (block_compartment m2 c) (Ptrofs.unsigned (pointer_ofs ptr)) (Some c) = inl v ->
       v = OCVundef.
-Axiom load_alloc_same':
+(* Axiom load_alloc_same': *)
+(*   forall m1 c l m2 ptr, *)
+(*     alloc m1 c l = (ptr,m2) -> *)
+(*     forall k ptr' chunk ofs, *)
+(*       derived_cap ptr ptr' -> *)
+(*       dynamic_conditions m2 k ptr' ofs (size_chunk chunk) None (Some c) None -> *)
+(*       (align_chunk chunk | derive_offset k ptr' ofs) -> *)
+(*       load k chunk m2 ptr' ofs (Some c) = inl OCVundef. *)
+
+Axiom load_alloc_other:
   forall m1 c l m2 ptr,
-    alloc m1 c l = (ptr,m2) ->
-    forall k ptr' chunk ofs,
-      derived_cap ptr ptr' ->
-      dynamic_conditions m2 k ptr' ofs (size_chunk chunk) None (Some c) None ->
-      (align_chunk chunk | derive_offset k ptr' ofs) ->
-      load k chunk m2 ptr' ofs (Some c) = inl OCVundef.
+    alloc m1 c l = inl (ptr,m2) ->
+    forall k chunk ptr' ofs c' v,
+  load k chunk m1 ptr' ofs c' = inl v ->
+  load k chunk m2 ptr' ofs c' = inl v.
 
 (** ** Properties of [free]. *)
 
