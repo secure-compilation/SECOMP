@@ -1924,6 +1924,32 @@ Proof.
   eapply Genv.match_genvs_type_of_call.
 Qed.
 
+Lemma call_trace_translated:
+  forall cp cp' vf ls ls' tyargs t,
+    Val.lessdef_list ls ls' ->
+    (Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr ls) ->
+    call_trace ge cp cp' vf ls tyargs t ->
+    call_trace tge cp cp' vf ls' tyargs t.
+Proof.
+  intros cp cp' vf ls ls' tyargs t Hregs Hnoptr H.
+  inv H.
+  - constructor; eauto.
+  - specialize (Hnoptr H0).
+    econstructor; eauto.
+    apply Genv.find_invert_symbol.
+    rewrite symbols_preserved.
+    apply Genv.invert_find_symbol; eauto.
+    clear -ls ls' Hregs Hnoptr H3.
+    revert ls' tyargs vl Hregs Hnoptr H3.
+    induction ls; intros tls tyargs vl Hinj Hnoptr Hmatch.
+    + inv Hinj; inv Hmatch; constructor.
+    + inv Hinj; inv Hnoptr; inv Hmatch.
+      constructor; eauto.
+      inv H1; try contradiction;
+        inv H7; econstructor; eauto.
+      contradiction.
+Qed.
+
 Lemma exec_moves:
   forall mv env rs s f sp bb m e e' ls,
   track_moves env mv e = Some e' ->
@@ -2478,15 +2504,52 @@ Proof.
   assert (Htype_list: Val.has_type_list rs ## args (sig_args sg)).
   { inv WTI. rewrite <- H7.
     clear -WTRS. eapply wt_regset_list. eauto. }
-  assert (Val.lessdef_list (rs##args) (map (fun l : loc => undef_regs destroyed_at_function_entry (call_regs ls1) l)
-       (regs_of_rpairs (loc_parameters sg)))).
+  assert (Val.lessdef_list (rs##args)
+            (map (fun p : rpair loc => Locmap.getpair p (undef_regs destroyed_at_function_entry (call_regs ls1)))
+            (loc_parameters sg))).
   { clear -Heqo2 B1 Htype_list.
     eapply add_equations_args_lessdef with (rs := rs) in Heqo2; eauto.
     unfold args' in Heqo2.
     rewrite <- call_regs_param_values in Heqo2. simpl.
-    admit.
+    eapply Val.lessdef_list_trans; eauto.
+    pose proof (loc_arguments_acceptable_stronger sg).
+    apply Forall_forall in H.
+    unfold loc_parameters in *. clear Heqo2.
+    induction H.
+    - auto.
+    - simpl. constructor.
+      + clear -H.
+        unfold forall_rpair in H.
+        destruct x; simpl in *.
+        * unfold loc_argument_acceptable_stronger in H.
+          destruct r; auto.
+          -- destruct H.
+             simpl. rewrite Locmap.gso. auto.
+             unfold Loc.diff. congruence.
+          -- rewrite Locmap.gso. auto.
+             simpl. destruct sl; auto.
+        * unfold loc_argument_acceptable_stronger in H.
+          destruct rhi, rlo; auto.
+          -- destruct H as [[] []].
+             simpl. rewrite 2!Locmap.gso. auto.
+             unfold Loc.diff. congruence.
+             unfold Loc.diff. congruence.
+          -- destruct H as [[] ].
+             simpl. rewrite 2!Locmap.gso. auto.
+             unfold Loc.diff. destruct sl; auto.
+             unfold Loc.diff. congruence.
+          -- destruct H as [?  []].
+             simpl. rewrite 2!Locmap.gso. auto.
+             unfold Loc.diff. congruence.
+             unfold Loc.diff. destruct sl; auto.
+          -- destruct H as [].
+             simpl. rewrite 2!Locmap.gso. auto.
+             unfold Loc.diff. destruct sl0; auto.
+             unfold Loc.diff. destruct sl; auto.
+      + apply IHForall.
   }
-  admit.
+  rewrite <- find_comp_translated. rewrite <- comp_transf_function; eauto.
+  eapply call_trace_translated; eauto.
   traceEq. traceEq.
   exploit analyze_successors; eauto. simpl. left; eauto. intros [enext [U V]].
   econstructor; eauto.
@@ -2698,7 +2761,7 @@ Proof.
   eexact A. traceEq.
   econstructor; eauto.
   apply wt_regset_assign; auto. rewrite WTRES0; auto.
-Admitted.
+Qed.
 
 Lemma initial_states_simulation:
   forall st1, RTL.initial_state prog st1 ->

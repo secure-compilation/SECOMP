@@ -195,7 +195,7 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State s f sp (Lstore chunk addr args src :: b) rs m)
         E0 (State s f sp b rs' m')
   | exec_Lcall:
-      forall s f sp sig ros b rs m f' vf,
+      forall s f sp sig ros b rs m f' vf t,
       find_function ros rs = Some f' ->
       find_function_ptr ros rs = Some vf ->
       sig = funsig f' ->
@@ -211,8 +211,14 @@ Inductive step: state -> trace -> state -> Prop :=
             forall l,
               List.In l (regs_of_rpairs (loc_parameters sig)) ->
               not_ptr (rs' l)),
+      forall (EV: forall rs',
+            rs' = undef_regs destroyed_at_function_entry (call_regs rs) ->
+            call_trace ge (comp_of f) (Genv.find_comp ge vf) vf
+               (map (fun p => Locmap.getpair p rs')
+                  (loc_parameters sig))
+               (sig_args sig) t),
       step (State s f sp (Lcall sig ros :: b) rs m)
-        E0 (Callstate (Stackframe f sp rs b:: s) f' rs m)
+        t (Callstate (Stackframe f sp rs b:: s) f' rs m)
   | exec_Ltailcall:
       forall s f stk sig ros b rs m rs' f' m' vf,
       rs' = return_regs (parent_locset s) rs ->

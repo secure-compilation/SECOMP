@@ -282,9 +282,9 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (EV: forall rs',
             rs' = undef_regs destroyed_at_function_entry (call_regs rs) ->
             call_trace ge (comp_of f) (Genv.find_comp ge vf) vf
-               (map (fun l => rs' l) (regs_of_rpairs (loc_parameters sig)))
+               (map (fun p => Locmap.getpair p rs')
+                  (loc_parameters sig))
                (sig_args sig) t),
-      (* forall (NO_CROSS_PTR: False), *)
       step (Block s f sp (Lcall sig ros :: bb) rs m)
         t (Callstate (Stackframe f sp rs bb :: s) fd rs m)
   | exec_Ltailcall: forall s f sp sig ros bb rs m fd rs' m' vf,

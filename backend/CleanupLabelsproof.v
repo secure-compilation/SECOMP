@@ -323,6 +323,25 @@ Proof.
     { erewrite find_comp_translated, type_of_call_translated; eauto. }
     specialize (NO_CROSS_PTR X _ eq_refl l).
     eauto. }
+  { rewrite <- find_comp_translated, comp_match_prog.
+    Set Nested Proofs Allowed.
+    Lemma call_trace_translated:
+      forall cp cp' vf ls tyargs t,
+        call_trace ge cp cp' vf ls tyargs t ->
+        call_trace tge cp cp' vf ls tyargs t.
+    Proof.
+      intros.
+      inv H.
+      - econstructor; eauto.
+      - econstructor; eauto.
+        apply Genv.find_invert_symbol.
+        rewrite symbols_preserved.
+        apply Genv.invert_find_symbol; eauto.
+        admit.
+    Admitted.
+    intros; subst.
+    eapply call_trace_translated; eauto.
+  }
   econstructor; eauto. constructor; auto. constructor; eauto with coqlib.
 (* Ltailcall *)
   left; econstructor; split.

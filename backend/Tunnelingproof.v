@@ -529,6 +529,54 @@ Proof.
     inv H2; eauto. specialize (NO_CROSS_PTR H3).
     rewrite <- H5 in NO_CROSS_PTR; inv NO_CROSS_PTR.
   }
+  intros rs' ?; subst.
+  specialize (EV _ eq_refl).
+  Set Nested Proofs Allowed.
+Lemma call_trace_translated:
+  forall cp cp' vf rs tls args tyargs t,
+    locmap_lessdef rs tls ->
+    (Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall ->
+     forall rs' : locset,
+       rs' = undef_regs destroyed_at_function_entry (call_regs rs) ->
+       forall l : loc, In l (regs_of_rpairs args) -> not_ptr (rs' l)) ->
+    (call_trace ge cp cp' vf
+       (map (fun p : rpair loc => Locmap.getpair p (undef_regs destroyed_at_function_entry (call_regs rs)))
+          args) tyargs t) ->
+    call_trace tge cp cp' vf
+      (map (fun p : rpair loc => Locmap.getpair p (undef_regs destroyed_at_function_entry (call_regs tls)))
+         args) tyargs t.
+Proof.
+  intros cp cp' vf rs tls  args tyargs t Hregs Hnoptr H.
+  inv H.
+  - constructor; eauto.
+  - specialize (Hnoptr H0).
+    econstructor; eauto.
+    apply Genv.find_invert_symbol.
+    rewrite symbols_preserved.
+    apply Genv.invert_find_symbol; eauto.
+    eapply call_regs_lessdef in Hregs.
+    eapply locmap_undef_regs_lessdef with (rl := destroyed_at_function_entry) in Hregs.
+    eapply locmap_getpairs_lessdef with (pl := args) in Hregs.
+    specialize (Hnoptr _ eq_refl).
+    assert (Hnoptr':
+             Forall not_ptr (map (fun p : rpair loc => Locmap.getpair p (undef_regs destroyed_at_function_entry (call_regs rs))) args)).
+    { clear -Hnoptr.
+      apply Forall_forall in Hnoptr.
+      admit. }
+    remember (map (fun p : rpair loc => Locmap.getpair p (undef_regs destroyed_at_function_entry (call_regs rs))) args) as vargs.
+    remember (map (fun p : rpair loc => Locmap.getpair p (undef_regs destroyed_at_function_entry (call_regs tls))) args) as vargs'.
+    clear -vargs vargs' Hregs Hnoptr' H3.
+    revert vargs' tyargs vl Hregs Hnoptr' H3.
+    induction vargs; intros tvargs tyargs vl Hinj Hnoptr Hmatch.
+    + inv Hinj; inv Hmatch; constructor.
+    + inv Hinj; inv Hnoptr; inv Hmatch.
+      constructor; eauto.
+      inv H1; try contradiction;
+        inv H7; econstructor; eauto.
+      contradiction.
+Admitted.
+  { rewrite <- find_comp_translated, comp_tunnel_fundef.
+    eapply call_trace_translated; eauto. }
   econstructor; eauto.
   constructor; auto.
   constructor; auto.
