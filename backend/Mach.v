@@ -357,7 +357,7 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State s f sp (Mstore chunk addr args src :: c) rs m)
         E0 (State s f sp c rs' m')
   | exec_Mcall:
-      forall s fb sp sig ros c rs m f f' ra fd,
+      forall s fb sp sig ros c rs m f f' ra fd t,
       find_function_ptr ge ros rs = Some f' ->
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
       return_address_offset f c ra ->
@@ -390,9 +390,25 @@ Inductive step: state -> trace -> state -> Prop :=
             exists v,
             load_stack m sp ty (Ptrofs.repr (offset_arg ofs)) None = Some v /\
             not_ptr v),
+      forall (EV: forall ls rs',
+            rs' = undef_regs destroyed_at_function_entry rs ->
+            (* TODO: define this outside*)
+            ls = (concat (map (fun r => match r with
+                                     | R r => (rs' r) :: nil
+                                     | S Incoming ofs ty =>
+                                         match load_stack m sp ty (Ptrofs.repr (offset_arg ofs)) None with
+                                         | Some v => v :: nil
+                                         | _ => nil
+                                         end
+                                     | S _ _ _ => nil
+                                     end)
+                            (regs_of_rpairs (loc_parameters sig)))) ->
+            call_trace ge (comp_of f) (Genv.find_comp ge (Vptr f' Ptrofs.zero)) (Vptr f' Ptrofs.zero)
+              ls
+              (sig_args sig) t),
           (* 1) what offsets contain parameters in the stack? *)
       step (State s fb sp (Mcall sig ros :: c) rs m)
-        E0 (Callstate (Stackframe fb sp ra c :: s)
+        t (Callstate (Stackframe fb sp ra c :: s)
                        f' rs m)
   | exec_Mtailcall:
       forall s fb stk soff sig ros c rs m f f' m' fd cp,

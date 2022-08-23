@@ -463,16 +463,18 @@ Proof.
 Qed.
 
 Lemma call_trace_translated:
-  forall cp cp' vf ls ls' tyargs t,
+  forall cp cp' vf vf' ls ls' tyargs t,
+    Val.lessdef vf vf' ->
     Val.lessdef_list ls ls' ->
     (Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr ls) ->
     call_trace ge cp cp' vf ls tyargs t ->
-    call_trace tge cp cp' vf ls' tyargs t.
+    call_trace tge cp cp' vf' ls' tyargs t.
 Proof.
-  intros cp cp' vf ls ls' tyargs t Hregs Hnoptr H.
+  intros cp cp' vf vf' ls ls' tyargs t Hlessdef Hregs Hnoptr H.
   inv H.
   - constructor; eauto.
-  - specialize (Hnoptr H0).
+  - inv Hlessdef.
+    specialize (Hnoptr H0).
     econstructor; eauto.
     apply Genv.find_invert_symbol.
     rewrite symbols_preserved.
@@ -810,20 +812,21 @@ Proof.
 Qed.
 
 Lemma transl_expr_Eexternal_correct:
-  forall le id sg al b ef vl v t,
+  forall le id sg al b ef vl v,
   Genv.find_symbol ge id = Some b ->
   Genv.find_funct_ptr ge b = Some (External ef) ->
   ef_sig ef = sg ->
   eval_exprlist ge sp e cp m le al vl ->
   transl_exprlist_prop le al vl ->
   external_call ef ge cp vl m E0 v m ->
-  forall (ALLOWED: Genv.allowed_call ge cp (Vptr b Ptrofs.zero)),
-  forall (NO_CROSS_PTR_CALL: Genv.type_of_call ge cp (Genv.find_comp ge (Vptr b Ptrofs.zero)) =
-                     Genv.CrossCompartmentCall -> Forall not_ptr vl),
-  forall (NO_CROSS_PTR_RETURN: Genv.type_of_call ge cp (Genv.find_comp ge (Vptr b Ptrofs.zero)) =
-                     Genv.CrossCompartmentCall -> not_ptr v),
-  forall (EV: call_trace ge cp (Genv.find_comp ge (Vptr b Ptrofs.zero))
-           (Vptr b Ptrofs.zero) vl (sig_args (ef_sig ef)) t),
+  (* forall (ALLOWED: Genv.allowed_call ge cp (Vptr b Ptrofs.zero)), *)
+  (* forall (NO_CROSS_PTR_CALL: Genv.type_of_call ge cp (Genv.find_comp ge (Vptr b Ptrofs.zero)) = *)
+  (*                    Genv.CrossCompartmentCall -> Forall not_ptr vl), *)
+  (* forall (NO_CROSS_PTR_RETURN: Genv.type_of_call ge cp (Genv.find_comp ge (Vptr b Ptrofs.zero)) = *)
+  (*                    Genv.CrossCompartmentCall -> not_ptr v), *)
+  forall (INTRA: Genv.type_of_call ge cp (Genv.find_comp ge (Vptr b Ptrofs.zero)) <> Genv.CrossCompartmentCall),
+  (* forall (EV: call_trace ge cp (Genv.find_comp ge (Vptr b Ptrofs.zero)) *)
+  (*          (Vptr b Ptrofs.zero) vl (sig_args (ef_sig ef)) E0), *)
   transl_expr_prop le (Eexternal id sg al) v.
 Proof.
   intros; red; intros. inv TE.
@@ -836,20 +839,25 @@ Proof.
   split. eapply star_trans. eexact EX1.
   eapply star_left. eapply exec_Icall; eauto.
   simpl. rewrite symbols_preserved. rewrite H. eauto. auto. simpl. rewrite symbols_preserved. rewrite H. eauto.
-  eapply allowed_call_translated_same; eauto.
-  intros CROSS.
-  eapply Val.lessdef_list_not_ptr; eauto.
-  eapply NO_CROSS_PTR_CALL.
-  erewrite find_comp_translated, type_of_call_translated; eauto.
-  erewrite find_comp_translated in EV; eauto.
-  eapply call_trace_translated; eauto.
-  erewrite find_comp_translated, type_of_call_translated in NO_CROSS_PTR_CALL; eauto.
+  admit.
+  intros CROSS. erewrite <- find_comp_translated with (vf := Vptr b Ptrofs.zero) in CROSS; eauto.
+  unfold Genv.type_of_call in *; congruence. (* TODO: remove the unfold *)
+  instantiate (1 := E0).
+  admit.
+  (* erewrite find_comp_translated in EV; eauto. *)
+  (* eapply call_trace_translated; eauto. *)
+  (* intros CROSS. erewrite <- find_comp_translated with (vf := Vptr b Ptrofs.zero) in CROSS; eauto. *)
+  (* unfold Genv.type_of_call in *; congruence. (* TODO: remove the unfold + remove the duplication *) *)
+  (* erewrite find_comp_translated, type_of_call_translated in NO_CROSS_PTR_CALL; eauto. *)
   eapply star_left. eapply exec_function_external.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   subst cp. eauto.
   apply star_one. apply exec_return.
-  simpl in NO_CROSS_PTR_RETURN; rewrite H0 in NO_CROSS_PTR_RETURN. rewrite <- type_of_call_translated.
-  intros G; specialize (NO_CROSS_PTR_RETURN G). inversion B; subst v v'; auto; contradiction.
+  admit.
+  (* intros CROSS.  *)
+  (* unfold Genv.type_of_call in *; congruence. (* TODO: remove the unfold + remove the duplication *) *)
+  (* simpl in NO_CROSS_PTR_RETURN; rewrite H0 in NO_CROSS_PTR_RETURN. rewrite <- type_of_call_translated. *)
+  (* intros G; specialize (NO_CROSS_PTR_RETURN G). inversion B; subst v v'; auto; contradiction. *)
   reflexivity. reflexivity. reflexivity.
 (* Match-env *)
   split. eauto with rtlg.
@@ -859,7 +867,7 @@ Proof.
   split. intros. rewrite Regmap.gso. auto. intuition congruence.
 (* Mem *)
   auto.
-Qed.
+Admitted.
 
 
 Lemma transl_exprlist_Enil_correct:
@@ -1498,6 +1506,10 @@ Proof.
   eapply NO_CROSS_PTR.
   erewrite find_comp_translated, type_of_call_translated; eauto. rewrite <- J, COMP; eauto.
   now left.
+  { erewrite <- find_comp_translated with (vf := vf), <- COMP; eauto.
+    eapply call_trace_translated with (vf := vf); eauto.
+    rewrite J; eauto. now left.
+    rewrite J; eauto. now left. }
   traceEq.
   constructor; auto. econstructor; eauto.
   (* direct *)
@@ -1515,6 +1527,8 @@ Proof.
   eapply Val.lessdef_list_not_ptr; eauto.
   eapply NO_CROSS_PTR.
   erewrite find_comp_translated, type_of_call_translated; eauto. rewrite COMP; eauto.
+  { erewrite <- find_comp_translated with (vf := (Vptr b Ptrofs.zero)), <- COMP; eauto.
+    eapply call_trace_translated with (vf := (Vptr b Ptrofs.zero)); eauto. }
   traceEq.
   constructor; auto. econstructor; eauto.
 

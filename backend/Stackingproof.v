@@ -2165,6 +2165,54 @@ Proof.
     rewrite <- H4 in NO_CROSS_PTR'; now simpl in NO_CROSS_PTR'.
     rewrite <- H5 in NO_CROSS_PTR'; now simpl in NO_CROSS_PTR'.
   }
+  { eapply agree_regs_call_regs in AGREGS.
+    eapply agree_regs_undef_regs with (rl := destroyed_at_function_entry) in AGREGS.
+    intros ls rs' ? ?; subst.
+    specialize (EV _ eq_refl).
+    assert (Val.lessdef_list
+              ((fun p : rpair loc => Locmap.getpair p (LTL.undef_regs destroyed_at_function_entry (call_regs rs)))
+                 ## (loc_parameters (Linear.funsig f')))
+              (concat
+       (fun r : loc =>
+        match r with
+        | R r0 => undef_regs destroyed_at_function_entry rs0 r0 :: nil
+        | S Incoming ofs ty =>
+            match load_stack m' (Vptr sp' Ptrofs.zero) ty (Ptrofs.repr (Mach.offset_arg ofs)) None with
+            | Some v => v :: nil
+            | None => nil
+            end
+        | _ => nil
+        end) ## (regs_of_rpairs (loc_parameters (Linear.funsig f'))))).
+    { rewrite <- flat_map_concat_map.
+      assert (R: (regs_of_rpairs (loc_parameters (Linear.funsig f')))
+             = flat_map (@regs_of_rpair loc) (loc_parameters (Linear.funsig f'))).
+      admit.
+      rewrite R. clear R.
+      rewrite 2!flat_map_concat_map. rewrite concat_map.
+      rewrite map_map.
+      set (g := (fun x : rpair loc => _ ## _)).
+      set (x := (fun r : loc => _)).
+        match r with
+        | R r0 => undef_regs destroyed_at_function_entry rs0 r0 :: nil
+        | S Incoming ofs ty =>
+            match load_stack m' (Vptr sp' Ptrofs.zero) ty (Ptrofs.repr (Mach.offset_arg ofs)) None with
+            | Some v => v :: nil
+            | None => nil
+            end
+        | _ => nil
+        end)
+      rewrite <- concat_map.
+
+
+
+      (@regs_of_rpairs loc) with (flat_map (@regs_of_rpair loc)).
+      admit.
+      unfold flat_map. unfold regs_of_rpairs. reflexivity.
+      rewrite concat_map.
+
+    }
+
+  }
   econstructor; eauto.
   econstructor; eauto with coqlib.
   apply Val.Vptr_has_type.

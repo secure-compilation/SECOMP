@@ -72,16 +72,18 @@ Proof.
   rewrite <- Genv.find_funct_ptr_iff in Q.
   econstructor; eauto. 
   simpl. red. rewrite H1. constructor; auto.
-  unfold Genv.allowed_call. left.
-  simpl. unfold ge. setoid_rewrite Q.
-  unfold comp_of. unfold has_comp_fundef. unfold comp_of.
-  reflexivity.
-  simpl. unfold ge. setoid_rewrite Q.
-  unfold comp_of. unfold has_comp_fundef. unfold comp_of. simpl.
-  destruct cp; simpl; discriminate.
-  simpl. unfold ge. setoid_rewrite Q.
-  unfold comp_of. unfold has_comp_fundef. unfold comp_of. simpl.
-  destruct cp; simpl; discriminate.
+  unfold Genv.type_of_call. simpl. unfold ge.
+  do 2 setoid_rewrite Q. simpl. destruct cp; congruence.
+  (* unfold Genv.allowed_call. left. *)
+  (* simpl. unfold ge. setoid_rewrite Q. *)
+  (* unfold comp_of. unfold has_comp_fundef. unfold comp_of. *)
+  (* reflexivity. *)
+  (* simpl. unfold ge. setoid_rewrite Q. *)
+  (* unfold comp_of. unfold has_comp_fundef. unfold comp_of. simpl. *)
+  (* destruct cp; simpl; discriminate. *)
+  (* simpl. unfold ge. setoid_rewrite Q. *)
+  (* unfold comp_of. unfold has_comp_fundef. unfold comp_of. simpl. *)
+  (* destruct cp; simpl; discriminate. *)
 Qed.
 
 Corollary eval_helper_1:
