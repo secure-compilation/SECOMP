@@ -707,6 +707,8 @@ Proof.
       now rewrite Pos.eqb_refl.
       unfold Genv.type_of_call. simpl in *; rewrite FN. rewrite Pos.eqb_refl. congruence.
       unfold Genv.type_of_call. simpl in *; rewrite FN. rewrite Pos.eqb_refl. congruence.
+      intros; subst. constructor.
+      unfold Genv.type_of_call. simpl in *; rewrite FN. rewrite Pos.eqb_refl. congruence.
     - eapply exec_step_internal_return; eauto.
       eapply find_instr_tail. eauto.
       rewrite <- find_comp_translated, PC2; simpl; rewrite H7.
@@ -775,6 +777,8 @@ Proof.
       now rewrite Pos.eqb_refl.
       unfold Genv.type_of_call. simpl in *; rewrite FN. rewrite Pos.eqb_refl. congruence.
       unfold Genv.type_of_call. simpl in *; rewrite FN. rewrite Pos.eqb_refl. congruence.
+      intros; subst. constructor.
+      unfold Genv.type_of_call. simpl in *; rewrite FN. rewrite Pos.eqb_refl. congruence.
     - eapply exec_step_internal_return; eauto.
       eapply find_instr_tail. eauto.
       rewrite <- H6; simpl; rewrite FN.
@@ -820,6 +824,8 @@ Proof.
       rewrite <- H11; simpl; rewrite FN.
       now rewrite Pos.eqb_refl.
       unfold Genv.type_of_call. simpl in *; rewrite FN. rewrite Pos.eqb_refl. congruence.
+      unfold Genv.type_of_call. simpl in *; rewrite FN. rewrite Pos.eqb_refl. congruence.
+      intros; subst. constructor.
       unfold Genv.type_of_call. simpl in *; rewrite FN. rewrite Pos.eqb_refl. congruence.
     - eapply exec_step_internal_return; eauto.
       eapply find_instr_tail. eauto.
@@ -1055,6 +1061,7 @@ Local Transparent destroyed_by_op.
     { unfold Genv.type_of_call; simpl in *.
       unfold tge. rewrite TFIND. unfold comp_of in Heq. simpl in Heq.
       unfold comp_of. unfold comp_of in Heq. now rewrite Heq. }
+    { admit. }
     econstructor; eauto.
     econstructor; eauto.
     eapply agree_sp_def; eauto.
@@ -1109,6 +1116,7 @@ Local Transparent destroyed_by_op.
       rewrite H10 in Hload. inv Hload.
       inv Hlessdef; simpl in Hnot_ptr; now eauto.
     }
+    { admit. }
     econstructor; eauto.
     econstructor; eauto.
     eapply agree_sp_def; eauto.
@@ -1154,6 +1162,7 @@ Local Transparent destroyed_by_op.
     { unfold Genv.type_of_call; simpl in *.
       unfold tge. rewrite TFIND. unfold comp_of in Heq. simpl in Heq.
       unfold comp_of. unfold comp_of in Heq. now rewrite Heq. }
+    { admit. }
     econstructor; eauto.
     econstructor; eauto.
     eapply agree_sp_def; eauto.
@@ -1213,6 +1222,7 @@ Local Transparent destroyed_by_op.
       rewrite H8 in Hload. inv Hload.
       inv Hlessdef; simpl in Hnot_ptr; now eauto.
     }
+    { admit. }
     econstructor; eauto.
     econstructor; eauto.
     eapply agree_sp_def; eauto.
@@ -2007,7 +2017,7 @@ Local Transparent destroyed_at_function_entry.
   simpl in *; congruence.
   rewrite ATPC. inv H10. rewrite ATPC in H8. simpl in *. congruence.
   congruence.
-Qed.
+Admitted.
 
 Lemma transf_initial_states:
   forall st1, Mach.initial_state prog st1 ->

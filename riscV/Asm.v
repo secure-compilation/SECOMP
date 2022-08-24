@@ -1182,7 +1182,7 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) (Vptr b' ofs')),
       step (State st rs m true) E0 (State st rs' m' true)
   | exec_step_internal_call:
-      forall b ofs f i sig rs m rs' m' b' ofs' cp st st',
+      forall b ofs f i sig rs m rs' m' b' ofs' cp st st' t,
       rs PC = Vptr b ofs ->
       Genv.find_funct_ptr ge b = Some (Internal f) ->
       find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
@@ -1208,7 +1208,23 @@ Inductive step: state -> trace -> state -> Prop :=
                       = Some v ->
             (* load_stack m sp ty (Ptrofs.repr (offset_arg ofs)) None = Some v -> *)
             not_ptr v),
-      step (State st rs m true) E0 (State st' rs' m' true)
+      forall (EV: forall ls,
+            (* TODO: define this outside*)
+            ls = (concat (map (fun r => match r with
+                                     | R r => (rs' (preg_of r)) :: nil
+                                     | S Incoming ofs ty =>
+                                         match Mem.loadv (chunk_of_type ty) m
+                                                 (Val.offset_ptr (rs' SP) (Ptrofs.repr (offset_arg ofs))) None with
+                                         | Some v => v :: nil
+                                         | _ => nil
+                                         end
+                                     | S _ _ _ => nil
+                                     end)
+                            (regs_of_rpairs (loc_parameters sig)))) ->
+            call_trace ge (comp_of f) (Genv.find_comp ge (Vptr b' ofs')) (Vptr b' ofs')
+              ls
+              (sig_args sig) t),
+      step (State st rs m true) t (State st' rs' m' true)
   | exec_step_internal_return:
       forall b ofs f i rs m rs' m' cp cp' st st' allowed,
       rs PC = Vptr b ofs ->
@@ -1366,7 +1382,15 @@ Ltac Equalities :=
 - (* determ *)
   inv H; inv H0; Equalities; try now discriminate.
   + split. constructor. auto.
-  + split. constructor. auto.
+  + specialize (EV _ eq_refl).
+    specialize (EV0 _ eq_refl).
+    inv EV0; inv EV.
+    * split. constructor. auto.
+    * congruence.
+    * congruence.
+    * split. assert (i1 = i) by congruence. subst.
+      assert (vl0 = vl) by (eapply eventval_list_match_determ_2; eauto). subst.
+      constructor. auto.
   + now destruct i0.
   + now destruct i0.
   + split. constructor.
@@ -1391,7 +1415,7 @@ Ltac Equalities :=
 - (* trace length *)
   red; intros. inv H; simpl.
   omega.
-  omega.
+  specialize (EV _ eq_refl); inv EV; simpl; omega.
   omega.
   eapply external_call_trace_length; eauto.
   eapply external_call_trace_length; eauto.

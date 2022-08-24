@@ -2191,27 +2191,9 @@ Proof.
       rewrite 2!flat_map_concat_map. rewrite concat_map.
       rewrite map_map.
       set (g := (fun x : rpair loc => _ ## _)).
-      set (x := (fun r : loc => _)).
-        match r with
-        | R r0 => undef_regs destroyed_at_function_entry rs0 r0 :: nil
-        | S Incoming ofs ty =>
-            match load_stack m' (Vptr sp' Ptrofs.zero) ty (Ptrofs.repr (Mach.offset_arg ofs)) None with
-            | Some v => v :: nil
-            | None => nil
-            end
-        | _ => nil
-        end)
-      rewrite <- concat_map.
-
-
-
-      (@regs_of_rpairs loc) with (flat_map (@regs_of_rpair loc)).
       admit.
-      unfold flat_map. unfold regs_of_rpairs. reflexivity.
-      rewrite concat_map.
-
     }
-
+    admit.
   }
   econstructor; eauto.
   econstructor; eauto with coqlib.
@@ -2393,7 +2375,7 @@ Proof.
   apply frame_contents_exten with rs0 (parent_locset s); auto.
   intros; apply Val.lessdef_same; apply AGCS; red; congruence.
   intros; rewrite (OUTU ty ofs); auto. 
-Qed.
+Admitted.
 
 Lemma transf_initial_states:
   forall st1, Linear.initial_state prog st1 ->
