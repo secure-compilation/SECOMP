@@ -432,6 +432,8 @@ Definition is_global_or_imm (v: ocval) :=
   | _ => true
   end.
 
+Definition OCVmemcap p l base e a : occap :=
+  OCsealable (OCVmem p l base e a).
 Definition OCVcapptr p l base e a : ocval :=
   OCVcap (OCsealable (OCVmem p l base e a)).
 
@@ -447,6 +449,7 @@ Definition OCVfalse: ocval := OCVint Int.zero.
     value in a capability register. Here we represent the NULL pointer
     (stack) capability with the tag bit set on (alternatively, one
     would have to use a 128 bit integer for NULL on 64 bit arch ) *)
+Definition OCVnullmemcap := OCVmemcap O Global Ptrofs.zero Ptrofs.zero Ptrofs.zero.
 Definition OCVnullcap := OCVcapptr O Global Ptrofs.zero Ptrofs.zero Ptrofs.zero.
 
 (** A null pointer *)

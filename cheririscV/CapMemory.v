@@ -67,26 +67,26 @@ Record mem' : Type :=
   mem_contents: (ZMap.t memval);         (**r [offset -> memval] flattened memory *)
   mem_access: (Z -> perm_kind -> option permission);
                                          (**r [offset -> kind -> option permission] *)
-  mem_compartments: PMap.t occap;        (**r [compartment -> occap] *)
+  mem_compartments: PMap.t (list occap);        (**r [compartment -> list occap] *)
   mem_compartments_next: PMap.t ptrofs;  (**r [compartment -> the next address to be allocated as an offset within its heap] *)
-  stack_min: ptrofs;                     (**r the lower bound to the stack *)
-  stack_max: ptrofs;                     (**r the upper bound of the stack *)
+  (* stack_min: ptrofs;                     (**r the lower bound to the stack *) *)
+  (* stack_max: ptrofs;                     (**r the upper bound of the stack *) *)
   access_max:
     forall ofs, perm_order'' (mem_access ofs Max) (mem_access ofs Cur);
   contents_default: fst mem_contents = Undef;
-  stack_nonempty: Ptrofs.lt stack_min stack_max = true;
-  mem_compartments_global:
-    forall c cap, mem_compartments !! c = cap -> isGlobalCap cap && writeAllowedCap cap = true;
+  (* stack_nonempty: Ptrofs.lt stack_min stack_max = true; *)
+  (* mem_compartments_global: *)
+  (*   forall c caplist, mem_compartments !! c = caplist -> Forall (fun cap => isGlobalCap cap && writeAllowedCap cap = true) caplist; *)
 }.
 
 Definition mem := mem'.
 
 Lemma mkmem_ext:
   forall cont1 cont2 acc1 acc2 comp1 comp2,
-  forall a1 a2 b1 b2 c1 c2 d1 d2 e1 e2 f1 f2 g1 g2,
-    cont1=cont2 -> acc1=acc2 -> comp1=comp2 -> a1 = a2 -> b1 = b2 -> c1 = c2 ->
-  mkmem cont1 acc1 comp1 a1 b1 c1 d1 e1 f1 g1 =
-  mkmem cont2 acc2 comp2 a2 b2 c2 d2 e2 f2 g2.
+  forall a1 a2 b1 b2 c1 c2,
+    cont1=cont2 -> acc1=acc2 -> comp1=comp2 -> a1 = a2 ->
+  mkmem cont1 acc1 comp1 a1 b1 c1 =
+  mkmem cont2 acc2 comp2 a2 b2 c2.
 Proof.
   intros. subst. f_equal; apply proof_irr.
 Qed.
@@ -245,7 +245,7 @@ Qed.
 Definition can_access_block (m: mem) (c: occap) (cp: option compartment): Prop :=
   match cp with
   | None => True
-  | Some cp => derived_cap (block_compartment m cp) c
+  | Some cp => Exists (fun cap => derived_cap cap c) (block_compartment m cp)
   end.
 
 Remark can_access_block_dec:
@@ -253,6 +253,7 @@ Remark can_access_block_dec:
 Proof.
   unfold can_access_block.
   intros m b [cp |]; [| left; trivial].
+  apply Exists_dec. intros.
   apply derived_cap_dec.
 Defined.
 
@@ -750,35 +751,29 @@ Qed.
 (** * Operations over memory stores *)
 
 (** The initial store: created after linking and preprocessing *)
-(** The compiler has allocated a heap for each relevant component, and
-a stack, all disjoint *)
+(** The linker has allocated a heap for each relevant component *)
 
-Program Definition empty (stack_min stack_max:ptrofs) (comp_heaps: PMap.t occap)
-        {stack_wf: Ptrofs.lt stack_min stack_max = true}
-        {comp_heaps_wf: forall c, isGlobalCap comp_heaps # c && writeAllowedCap comp_heaps # c = true} : mem :=
+Program Definition empty: mem :=
   mkmem (ZMap.init Undef)
-        (fun ofs k => if (Ptrofs.unsigned stack_min <=? ofs) && (ofs <? Ptrofs.unsigned stack_max) then Some Writable else None)
-        comp_heaps
+        (fun ofs k => None)
+        (PMap.init nil)
         (PMap.init Ptrofs.zero)
-        stack_min
-        stack_max
-        _ _ _ _.
-Next Obligation.
-  destruct Z.leb, Z.ltb;simpl;auto. constructor.
-Qed.
-  
-(** Allocation of a fresh block with the given length.  Return an
-  updated memory state and the capability of the fresh region, which
-  initially contains undefined cells.  Note that unlike at the lowest
-  level, allocation can fail: capabilities can access a finite memory
-  space. *)
+        _ _.
 
-Program Definition alloc (m: mem) (c: compartment) (len: nat) : pointer * mem + error_kind :=
+(** Allocation of a fresh heap region with the given length.  Return
+  an updated memory state and the heap pointer of the fresh region,
+  which initially contains undefined cells.  Note that unlike at the
+  lowest level, allocation can fail: capabilities can access a finite
+  memory space. Note also that this version of allocation does not
+  increase authority, but rather moves the next pointer in the
+  relevant component's heap *)
+
+Program Definition alloc (m: mem) (cap: occap) (c: compartment) (len: nat) : pointer * mem + error_kind :=
   (* let cap := OCsealable (OCVmem RWX Global (Ptrofs.repr m.(mem_next)) *)
   (*                               (Ptrofs.repr (m.(mem_next) + Z.of_nat len)) *)
   (*                               (Ptrofs.repr (m.(mem_next) + Z.of_nat len))) in *)
-  let lo := get_lo (m.(mem_compartments) !! c) in
-  let hi := get_hi (m.(mem_compartments) !! c) in
+  let lo := get_lo cap in
+  let hi := get_hi cap in
   let next := m.(mem_compartments_next) !! c in
   let new := Ptrofs.add next (Ptrofs.repr (Z.of_nat len)) in
   let next_ofs := Ptrofs.unsigned lo + Ptrofs.unsigned next in
@@ -792,9 +787,7 @@ Program Definition alloc (m: mem) (c: compartment) (len: nat) : pointer * mem + 
                     (fun ofs k => if (zle next_ofs ofs) && (zlt ofs new_ofs) then Some Freeable else m.(mem_access) ofs k)
                     (m.(mem_compartments))
                     (PMap.set c new m.(mem_compartments_next))
-                    (m.(stack_min))
-                    (m.(stack_max))
-                    _ _ _ _
+                    _ _
             )
       else inr CapErr
     else inr PtrErr.
@@ -805,15 +798,9 @@ Qed.
 Next Obligation.
   apply contents_default.
 Qed.
-Next Obligation.
-  apply stack_nonempty.
-Qed.
-Next Obligation.
-  eapply mem_compartments_global;eauto.
-Qed.
 
 (** Freeing a block between the given bounds.
-  Return the updated memory state where the given range of the given block
+  Return the updated memory state where the given range
   has been invalidated: future reads and writes to this
   range will fail.  Requires freeable permission on the given range. *)
 
@@ -822,19 +809,70 @@ Program Definition unchecked_free (m: mem) (lo hi: Z): mem :=
         (fun ofs k => if zle lo ofs && zlt ofs hi then None else m.(mem_access) ofs k)
         m.(mem_compartments)
         m.(mem_compartments_next)
-        m.(stack_min) m.(stack_max) _ _ _ _.
+        _ _.
 Next Obligation.
   destruct (zle lo ofs && zlt ofs hi). red; auto. apply access_max.
 Qed.
 Next Obligation.
   apply contents_default.
 Qed.
+
+(** Initializing a capability in the memory model.  Returns the updated
+  memory state where the given range has been initialized to a
+  Freeable permission. Initialization is applied in the preprocessing
+  phase when initializing globals *)
+Definition add_compartment_fresh (cs: PMap.t (list occap)) (c: compartment) (cap: occap): PMap.t (list occap) :=
+  if In_dec occap_dec cap (cs # c) then cs
+  else PMap.set c (cap :: (cs # c)) cs.
+
+Program Definition unchecked_init (m: mem) (c: compartment) (cap: occap): mem :=
+  let lo := Ptrofs.unsigned (get_lo cap) in
+  let hi := Ptrofs.unsigned (get_hi cap) in
+  mkmem m.(mem_contents)
+        (fun ofs k => if zle lo ofs && zlt ofs hi then Some Freeable else m.(mem_access) ofs k)
+        (add_compartment_fresh m.(mem_compartments) c cap)
+        m.(mem_compartments_next)
+        _ _.
 Next Obligation.
-  apply stack_nonempty.
+  destruct (zle (Ptrofs.unsigned (get_lo cap)) ofs &&
+      zlt ofs (Ptrofs.unsigned (get_hi cap))). red; auto. constructor.
+  apply access_max.
 Qed.
 Next Obligation.
-  eapply mem_compartments_global;eauto.
+  apply contents_default.
 Qed.
+
+Program Definition init_stack (m: mem) (cap: occap): mem :=
+  let lo := Ptrofs.unsigned (get_lo cap) in
+  let hi := Ptrofs.unsigned (get_hi cap) in
+  mkmem m.(mem_contents)
+        (fun ofs k => if zle lo ofs && zlt ofs hi then Some Writable else m.(mem_access) ofs k)
+        m.(mem_compartments)
+        m.(mem_compartments_next)
+        _ _.
+Next Obligation.
+  destruct (zle (Ptrofs.unsigned (get_lo cap)) ofs &&
+      zlt ofs (Ptrofs.unsigned (get_hi cap))). red; auto. constructor.
+  apply access_max.
+Qed.
+Next Obligation.
+  apply contents_default.
+Qed.
+
+(* ALG: note that the heap does not have a freeable permission yet,
+init just adds the capability to the list of owned capabilities of
+compartment c, and sets the next allocatable address to 0 *)
+Program Definition init_heap (m: mem) (c: compartment) (cap: occap): mem :=
+  let lo := Ptrofs.unsigned (get_lo cap) in
+  let hi := Ptrofs.unsigned (get_hi cap) in
+  mkmem m.(mem_contents)
+            (* (fun ofs k => if zle lo ofs && zlt ofs hi then Some Freeable else m.(mem_access) ofs k) *)
+        m.(mem_access)
+        (add_compartment_fresh m.(mem_compartments) c cap)
+        (PMap.set c Ptrofs.zero m.(mem_compartments_next))
+        _ _.
+Next Obligation. apply access_max. Defined.
+Next Obligation. apply contents_default. Defined.
 
 Definition is_pointer (v: ocval) : bool :=
   match v with
@@ -847,9 +885,9 @@ Definition free (m: mem) (c: occap) (cp: compartment): mem + error_kind :=
   let hi := Ptrofs.unsigned (get_hi c) in
   if range_perm_dec m lo hi Cur Freeable &&
      can_access_block_dec m c (Some cp) &&
-     is_mem_cap_b c (* no freeing of sealed regions, or from a sealked capability *)
+     is_mem_cap_b c (* no freeing of sealed regions, or from a sealed capability *)
   then inl (unchecked_free m lo hi)
-  else inr CapErr.
+  else inr PtrErr.
 
 (* RB: NOTE: Add compartments to each item in the list? *)
 Fixpoint free_list (m: mem) (l: list (occap)) (cp: compartment) {struct l}: mem + error_kind :=
@@ -861,6 +899,10 @@ Fixpoint free_list (m: mem) (l: list (occap)) (cp: compartment) {struct l}: mem 
       | inl m' => free_list m' l' cp
       end
   end.
+
+(* ALG: add checks? *)
+Definition init (m: mem) (cp: compartment) (c: occap): mem :=
+  (unchecked_init m cp c).
 
 (** Memory reads. *)
 
@@ -998,20 +1040,13 @@ Program Definition store (a: act_kind) (chunk: cap_memory_chunk) (m: mem) (ptr: 
                 m.(mem_access)
                 m.(mem_compartments)
                 m.(mem_compartments_next)
-                m.(stack_min) m.(stack_max)
-                _ _ _ _)
+                _ _)
        else
          inr PtrErr
   else inr CapErr.
 Next Obligation. apply access_max. Qed.
 Next Obligation.
   rewrite setN_default. apply contents_default.
-Qed.
-Next Obligation.
-  apply stack_nonempty.
-Qed.
-Next Obligation.
-  eapply mem_compartments_global;eauto.
 Qed.
 
 (** [storev chunk m addr v cp] is similar, but the address and offset are given
@@ -1042,18 +1077,13 @@ Program Definition storebytes (a: act_kind) (m: mem) (ptr: occap) (ofs: Z) (byte
              (setN bytes (derive_offset a ptr ofs) (m.(mem_contents)))
              m.(mem_access)
              m.(mem_compartments)
-             m.(mem_compartments_next)         
-             m.(stack_min) m.(stack_max)
-             _ _ _ _)
+             m.(mem_compartments_next)  
+             _ _)
     else inr PtrErr
   else inr CapErr.
 Next Obligation. apply access_max. Qed.
 Next Obligation.
   rewrite setN_default. apply contents_default.
-Qed.
-Next Obligation. apply stack_nonempty. Qed.
-Next Obligation.
-  eapply mem_compartments_global;eauto.
 Qed.
 
 (** [drop_perm m b lo hi p cp] sets the max permissions of the byte range
@@ -1072,7 +1102,7 @@ Program Definition drop_perm (m: mem) (ptr: occap) (p: permission) (cp: compartm
       inl (mkmem m.(mem_contents)
                     (fun ofs k => if zle lo ofs && zlt ofs hi then Some p else m.(mem_access) ofs k)
                     m.(mem_compartments)
-                    m.(mem_compartments_next) (m.(stack_min)) (m.(stack_max)) _ _ _ _)
+                    m.(mem_compartments_next) _ _)
     else inr PtrErr
   else inr PtrErr.
 Next Obligation.
@@ -1081,10 +1111,6 @@ Next Obligation.
 Qed.
 Next Obligation.
   apply contents_default.
-Qed.
-Next Obligation. apply stack_nonempty. Qed.
-Next Obligation.
-  eapply mem_compartments_global;eauto.
 Qed.
 
 (** * Properties of the memory operations *)
@@ -2569,11 +2595,12 @@ Qed.*)
 Section ALLOC.
 
 Variable m1: mem.
+Variable cap: occap.  
 Variable c: compartment.
 Variables l: nat.
 Variable m2: mem.
 Variable ptr: pointer.
-Hypothesis ALLOC: alloc m1 c l = inl (ptr, m2).
+Hypothesis ALLOC: alloc m1 cap c l = inl (ptr, m2).
 
 (* ALG: with heap capabilities preallocated, capability ownership does not change accross allocation *)
 (* Theorem unowned_fresh_block: *)
@@ -2609,7 +2636,7 @@ Qed.
 
 (* ALG: TODO: add more overflow checks to allocation to prove the following *)
 Theorem perm_alloc_2:
-  let lo_ofs := Ptrofs.unsigned (get_lo (block_compartment m2 c)) in
+  let lo_ofs := Ptrofs.unsigned (get_lo cap) in
   let ptr_ofs := Ptrofs.unsigned (pointer_ofs ptr) in
   forall ofs k, lo_ofs + ptr_ofs <= ofs < lo_ofs + ptr_ofs + Z.of_nat l ->
            perm m2 ofs k Freeable.
@@ -2658,9 +2685,9 @@ Admitted.
 Local Hint Resolve perm_alloc_1 perm_alloc_2: mem.
 
 Theorem alloc_block_compartment:
-  Ptrofs.unsigned (get_lo (block_compartment m2 c))
-  <= Ptrofs.unsigned (Ptrofs.add (get_lo (block_compartment m2 c)) (pointer_ofs ptr))
-  < Ptrofs.unsigned (get_hi (block_compartment m2 c)).
+  Ptrofs.unsigned (get_lo cap)
+  <= Ptrofs.unsigned (Ptrofs.add (get_lo cap) (pointer_ofs ptr))
+  < Ptrofs.unsigned (get_hi cap).
 Proof.
   unfold alloc in ALLOC.
   destruct zlt;[|inv ALLOC].
@@ -2713,7 +2740,6 @@ Proof.
 Qed.
 
 Theorem valid_access_alloc_same:
-  let cap := block_compartment m2 c in
   let ofs := Ptrofs.unsigned (pointer_ofs ptr) in
   let ptr'' := Some cap in
   forall chunk o,
@@ -2730,7 +2756,6 @@ Proof.
   red;auto with mem.
   red;intros.
   apply perm_alloc_2. unfold in_bounds in Hb.
-  remember (block_compartment m2 c) as cap.
   destruct cap,o0;[|easy..]. simpl in *. destruct Hb as [? ?].
   simpl. destruct H3.
   pose proof (size_chunk_pos chunk).
@@ -2745,7 +2770,7 @@ Local Hint Resolve valid_access_alloc_other valid_access_alloc_same: mem.
 Theorem valid_access_alloc_inv:
   forall k chunk ptr' p c' o ptr'' ofs,
       valid_access k m2 chunk ptr' ofs p c' o ptr'' ->
-      if derived_cap_dec (block_compartment m2 c) ptr'
+      if derived_cap_dec cap ptr'
       then in_bounds k ptr' ofs (size_chunk_nat chunk)
            /\ (align_chunk chunk | (derive_offset k ptr' ofs))
            /\ dynamic_conditions m2 k ptr' ofs (size_chunk chunk) o (Some c) ptr''
@@ -2783,7 +2808,7 @@ Qed.
 
 Theorem load_alloc_unchanged:
   forall k chunk ptr' ofs' c' ,
-      disjoint_cap (block_compartment m2 c) ptr' ->
+      disjoint_cap cap ptr' ->
       load k chunk m2 ptr' ofs' c' = load k chunk m1 ptr' ofs' c'.
 Proof.
   intros. unfold load.
@@ -2823,7 +2848,7 @@ memory model that uninitializes data upon free, and that states that
 each heap have uninitialized regions above "next" *)
 Theorem load_alloc_same:
   forall chunk v,
-      load DEFAULT chunk m2 (block_compartment m2 c) (Ptrofs.unsigned (pointer_ofs ptr)) (Some c) = inl v ->
+      load DEFAULT chunk m2 cap (Ptrofs.unsigned (pointer_ofs ptr)) (Some c) = inl v ->
       v = OCVundef.
 Proof.
   intros. exploit load_result; eauto. intro. rewrite H0.

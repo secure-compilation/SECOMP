@@ -413,4 +413,37 @@ Qed.
 
 End TRANSF_PARTIAL_FUNDEF.
 
+(** Initialization data for global variables in a capability machine,
+  where pointers are replaced by capabilities *)
+
+Definition cap_init_data_size (i: init_data) : Z :=
+  match i with
+  | Init_int8 _ => 1
+  | Init_int16 _ => 2
+  | Init_int32 _ => 4
+  | Init_int64 _ => 8
+  | Init_float32 _ => 4
+  | Init_float64 _ => 8
+  | Init_addrof _ _ => if Archi.ptr64 then 16 else 8
+  | Init_space n => Z.max n 0
+  end.
+
+Fixpoint cap_init_data_list_size (il: list init_data) {struct il} : Z :=
+  match il with
+  | nil => 0
+  | i :: il' => cap_init_data_size i + cap_init_data_list_size il'
+  end.
+
+Lemma cap_init_data_size_pos:
+  forall i, cap_init_data_size i >= 0.
+Proof.
+  destruct i; simpl; try xomega. destruct Archi.ptr64; omega.
+Qed.
+
+Lemma cap_init_data_list_size_pos:
+  forall il, cap_init_data_list_size il >= 0.
+Proof.
+  induction il; simpl. omega. generalize (cap_init_data_size_pos a); omega.
+Qed.
+
 Set Contextual Implicit.
