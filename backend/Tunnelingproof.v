@@ -539,6 +539,10 @@ Lemma call_trace_translated:
      forall rs' : locset,
        rs' = undef_regs destroyed_at_function_entry (call_regs rs) ->
        forall l : loc, In l (regs_of_rpairs args) -> not_ptr (rs' l)) ->
+    (Genv.type_of_call tge cp cp' = Genv.CrossCompartmentCall ->
+     forall rs' : locset,
+       rs' = undef_regs destroyed_at_function_entry (call_regs tls) ->
+       forall l : loc, In l (regs_of_rpairs args) -> not_ptr (rs' l)) ->
     (call_trace ge cp cp' vf
        (map (fun p : rpair loc => Locmap.getpair p (undef_regs destroyed_at_function_entry (call_regs rs)))
           args) tyargs t) ->
@@ -546,7 +550,7 @@ Lemma call_trace_translated:
       (map (fun p : rpair loc => Locmap.getpair p (undef_regs destroyed_at_function_entry (call_regs tls)))
          args) tyargs t.
 Proof.
-  intros cp cp' vf rs tls  args tyargs t Hregs Hnoptr H.
+  intros cp cp' vf rs tls  args tyargs t Hregs Hnoptr Hnoptr' H.
   inv H.
   - constructor; eauto.
   - specialize (Hnoptr H0).
@@ -558,9 +562,27 @@ Proof.
     eapply locmap_undef_regs_lessdef with (rl := destroyed_at_function_entry) in Hregs.
     eapply locmap_getpairs_lessdef with (pl := args) in Hregs.
     specialize (Hnoptr _ eq_refl).
+    specialize (Hnoptr' H0 _ eq_refl).
     assert (Hnoptr':
              Forall not_ptr (map (fun p : rpair loc => Locmap.getpair p (undef_regs destroyed_at_function_entry (call_regs rs))) args)).
     { clear -Hnoptr.
+      (* lemma 1: forall_rpair P r <-> Forall P (regs_of_rpair r) *)
+      (* =>: forall_rpair not_ptr r <-> Forall not_ptr (regs_of_rpair r) *)
+      (* =>: forall_rpair (fun l => not_ptr (r l)) ls –> not_ptr (Locmap.getpair ls r)*)
+      apply Forall_forall.
+      intros. apply in_map_iff in H.
+      destruct H as [[l | h l] [H1 H2]].
+      - subst. apply Hnoptr.
+        apply in_regs_of_rpairs with (p := One l); [now left | auto].
+      - subst.
+        assert (not_ptr ((undef_regs destroyed_at_function_entry (call_regs rs)) h) ->
+                not_ptr ((undef_regs destroyed_at_function_entry (call_regs rs)) l) ->
+                not_ptr (Locmap.getpair (Twolong h l) (undef_regs destroyed_at_function_entry (call_regs rs)))).
+        admit.
+        (* forall_rpair *)
+
+        apply Hnoptr.
+        apply in_regs_of_rpairs with (p := One l); [now left | auto].
       apply Forall_forall in Hnoptr.
       admit. }
     remember (map (fun p : rpair loc => Locmap.getpair p (undef_regs destroyed_at_function_entry (call_regs rs))) args) as vargs.

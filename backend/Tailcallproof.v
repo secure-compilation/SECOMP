@@ -655,10 +655,10 @@ Proof.
       destruct (rs # r); try discriminate.
       destruct (Ptrofs.eq_dec i Ptrofs.zero); try discriminate.
       subst. rewrite H0 in EV. rewrite Efd in EV.
-      admit. (* Lemma from Selectionproof.v *)
+      now eapply call_trace_same_cp; eauto.
     - destruct (Genv.find_symbol ge i); try discriminate.
       inv FUNPTR. rewrite H0 in EV. rewrite Efd in EV.
-      admit.
+      now eapply call_trace_same_cp; eauto.
   }
   subst t.
   eapply exec_Itailcall; eauto.
@@ -869,7 +869,7 @@ Proof.
   split. auto.
   econstructor; eauto.
   rewrite Regmap.gss. auto.
-Admitted.
+Qed.
 
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 ->
