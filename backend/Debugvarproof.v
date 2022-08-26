@@ -450,10 +450,10 @@ Inductive match_states: Linear.state ->  Linear.state -> Prop :=
       match_states (Callstate s f rs m)
                    (Callstate ts tf rs m)
   | match_states_return:
-      forall s rs m ts,
+      forall s rs m ts sg cp,
       list_forall2 match_stackframes s ts ->
-      match_states (Returnstate s rs m)
-                   (Returnstate ts rs m).
+      match_states (Returnstate s rs m sg cp)
+                   (Returnstate ts rs m sg cp).
 
 Lemma parent_locset_match:
   forall s ts,
@@ -582,10 +582,7 @@ Proof.
   constructor; auto.
 - (* return *)
   econstructor; split.
-  apply plus_one. econstructor. inv TRF; eauto.
-  erewrite <- match_stacks_call_comp; eauto.
-  inv TRF.
-  rewrite (parent_locset_match _ _ STACKS). eauto.
+  apply plus_one.  econstructor. inv TRF; eauto. traceEq.
   rewrite (parent_locset_match _ _ STACKS).
   inv TRF; constructor; auto.
 - (* internal function *)
@@ -600,10 +597,9 @@ Proof.
   apply plus_one. econstructor; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   erewrite <- match_stacks_call_comp; eauto.
-  erewrite <- match_stacks_call_comp; eauto.
   constructor; auto.
 - (* return *)
-  inv H3. inv H1.
+  inv H5. inv H1.
   econstructor; split.
   eapply plus_left. econstructor.
   inv H6; auto.
@@ -628,7 +624,7 @@ Lemma transf_final_states:
   forall st1 st2 r,
   match_states st1 st2 -> final_state st1 r -> final_state st2 r.
 Proof.
-  intros. inv H0. inv H. inv H5. econstructor; eauto.
+  intros. inv H0. inv H. inv H7. econstructor; eauto.
 Qed.
 
 Theorem transf_program_correct:

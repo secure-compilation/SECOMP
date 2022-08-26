@@ -1947,14 +1947,14 @@ Inductive match_states: Linear.state -> Mach.state -> Prop :=
       match_states (Linear.Callstate cs f ls m)
                    (Mach.Callstate cs' fb rs m')
   | match_states_return:
-      forall cs ls m cs' rs m' j sg
+      forall cs ls m cs' rs m' j sg cp
         (STACKS: match_stacks j cs cs' sg)
         (AGREGS: agree_regs j ls rs)
         (SEP: m' |= stack_contents j cs cs'
                  ** minjection j m
                  ** globalenv_inject ge j),
-      match_states (Linear.Returnstate cs ls m)
-                  (Mach.Returnstate cs' rs m').
+      match_states (Linear.Returnstate cs ls m sg cp)
+                  (Mach.Returnstate cs' rs m' sg cp).
 
 Theorem transf_step_correct:
   forall s1 t s2, Linear.step ge s1 t s2 ->
@@ -2272,21 +2272,9 @@ Proof.
   eapply plus_right. eexact D. econstructor; eauto.
   unfold find_comp_ptr. rewrite FIND. unfold comp_of; simpl. unfold comp_of, has_comp_function.
   erewrite <- transf_function_comp; eauto.
-  { intros X l Y.
-    rewrite <- (comp_transl_partial _ TRANSL) in X.
-    erewrite match_stacks_call_comp in X; eauto.
-    specialize (NO_CROSS_PTR X l).
-    replace (fn_sig tf) with (funsig (Internal tf)) in Y by reflexivity;
-      rewrite sig_preserved with (f := Internal f) in Y; [| simpl; now rewrite TRANSL].
-    specialize (NO_CROSS_PTR Y).
-    clear -E NO_CROSS_PTR.
-    specialize (E l).
-    (* TODO: write a lemma about that *)
-    inv E; simpl; auto.
-    unfold return_regs in NO_CROSS_PTR; rewrite <- H in NO_CROSS_PTR; now simpl in NO_CROSS_PTR.
-    unfold return_regs in NO_CROSS_PTR; rewrite <- H0 in NO_CROSS_PTR; now simpl in NO_CROSS_PTR.
-  }
   traceEq.
+  replace (fn_sig tf) with (funsig (Internal tf)) by reflexivity.
+  rewrite comp_transf_function, sig_preserved with (f := Internal f); try (simpl; rewrite TRANSL); eauto.
   econstructor; eauto.
   rewrite sep_swap; exact G.
 
@@ -2326,50 +2314,6 @@ Proof.
   apply plus_one. eapply exec_function_external; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   { erewrite (match_stacks_call_comp); eauto. }
-  { intros X l Y.
-    (* rewrite <- (comp_transl_partial _ TRANSL) in X. *)
-    erewrite match_stacks_call_comp in X; eauto.
-    specialize (NO_CROSS_PTR X l).
-    (* replace (fn_sig tf) with (funsig (Internal tf)) in Y by reflexivity; *)
-    (*   rewrite sig_preserved with (f := Internal f) in Y; [| simpl; now rewrite TRANSL]. *)
-    specialize (NO_CROSS_PTR Y).
-    clear -AGREGS B NO_CROSS_PTR.
-    specialize (AGREGS l).
-    (* TODO: write a lemma about that *)
-    { unfold Locmap.setpair, set_pair in *.
-      destruct (loc_result (ef_sig ef)).
-      - unfold LTL.undef_caller_save_regs, undef_caller_save_regs in *.
-        unfold Locmap.set in *.
-        destruct (Loc.eq (R r) (R l)).
-        + inv e. rewrite Regmap.gss.
-          inv B; auto; contradiction.
-        + assert (e: r <> l) by congruence.
-          destruct (Loc.diff_dec (R r) (R l)); [| contradiction].
-          rewrite Regmap.gso; auto.
-          destruct (is_callee_save l); [| contradiction].
-          inv AGREGS; simpl; auto.
-          rewrite <- H in NO_CROSS_PTR; contradiction.
-          rewrite <- H0 in NO_CROSS_PTR; contradiction.
-      - unfold LTL.undef_caller_save_regs, undef_caller_save_regs in *.
-        unfold Locmap.set in *.
-        destruct (Loc.eq (R rlo) (R l)).
-        + inv e. rewrite Regmap.gss.
-          inv B; auto; contradiction.
-        + assert (e: rlo <> l) by congruence.
-          destruct (Loc.diff_dec (R rlo) (R l)); [| contradiction].
-          rewrite Regmap.gso; auto.
-          destruct (Loc.eq (R rhi) (R l)).
-          * inv e0. rewrite Regmap.gss.
-            inv B; auto; contradiction.
-          * assert (e0: rhi <> l) by congruence.
-            destruct (Loc.diff_dec (R rhi) (R l)); [| contradiction].
-            rewrite Regmap.gso; auto.
-            destruct (is_callee_save l); [| contradiction].
-            inv AGREGS; simpl; auto.
-            rewrite <- H in NO_CROSS_PTR; contradiction.
-            rewrite <- H0 in NO_CROSS_PTR; contradiction.
-    }
-  }
   eapply match_states_return with (j := j').
   eapply match_stacks_change_meminj; eauto.
   apply agree_regs_set_pair. apply agree_regs_undef_caller_save_regs. 
@@ -2383,6 +2327,19 @@ Proof.
   simpl in AGCS. simpl in SEP. rewrite sep_assoc in SEP.
   econstructor; split.
   apply plus_one. apply exec_return.
+  { intros.
+    (* apply agree_regs_call_regs in AGREGS. *)
+    (* apply agree_regs_undef_regs with (rl := destroyed_at_function_entry) in AGREGS. *)
+    simpl in H; rewrite FINDF in H. unfold comp_of in H; simpl in H.
+    rewrite <- (comp_transl_partial _ TRF) in H.
+    specialize (NO_CROSS_PTR H _ H0).
+    clear -AGREGS NO_CROSS_PTR.
+    specialize (AGREGS l).
+    (* TODO: write a lemma about that *)
+    inv AGREGS; simpl; auto.
+    rewrite <- H in NO_CROSS_PTR; now simpl in NO_CROSS_PTR.
+    rewrite <- H0 in NO_CROSS_PTR; now simpl in NO_CROSS_PTR.
+  }
   econstructor; eauto.
   apply agree_locs_return with rs0; auto.
   apply frame_contents_exten with rs0 (parent_locset s); auto.

@@ -284,12 +284,12 @@ Inductive match_states: state -> state -> Prop :=
       match_states (Callstate s f ls m)
                    (Callstate ts (tunnel_fundef f) tls tm)
   | match_states_return:
-      forall s ls m ts tls tm
+      forall s ls m ts tls tm sg cp
         (STK: list_forall2 match_stackframes s ts)
         (LS: locmap_lessdef ls tls)
         (MEM: Mem.extends m tm),
-      match_states (Returnstate s ls m)
-                   (Returnstate ts tls tm).
+      match_states (Returnstate s ls m sg cp)
+                   (Returnstate ts tls tm sg cp).
 
 (** Properties of [locmap_lessdef] *)
 
@@ -430,7 +430,7 @@ Definition measure (st: state) : nat :=
   | Block s f sp (Lbranch pc :: _) ls m => (count_gotos f pc * 2 + 1)%nat
   | Block s f sp bb ls m => 0%nat
   | Callstate s f ls m => 0%nat
-  | Returnstate s ls m => 0%nat
+  | Returnstate s ls m sg cp => 0%nat
   end.
 
 Lemma match_parent_locset:
@@ -581,16 +581,6 @@ Proof.
   exploit Mem.free_parallel_extends. eauto. eauto. intros (tm' & FREE & MEM'). 
   left; simpl; econstructor; split.
   eapply exec_Lreturn; eauto.
-  { rewrite comp_tunnel_fundef. erewrite <- match_stackframes_call_comp; eauto.
-    intros G l l_in.
-    specialize (NO_CROSS_PTR G l l_in).
-    apply match_parent_locset in STK.
-    eapply return_regs_lessdef in LS; [|exact STK].
-    specialize (LS (R l)).
-    inv LS; auto.
-    now unfold return_regs in NO_CROSS_PTR; rewrite H2 in NO_CROSS_PTR.
-    now unfold return_regs in NO_CROSS_PTR; rewrite <- H1 in NO_CROSS_PTR.
-  }
   constructor; eauto using return_regs_lessdef, match_parent_locset.
 - (* internal function *)
   exploit Mem.alloc_extends. eauto. eauto. apply Z.le_refl. apply Z.le_refl.
@@ -605,20 +595,14 @@ Proof.
   eapply exec_function_external; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   rewrite <- (match_stackframes_call_comp _ _ STK); eauto.
-  { erewrite <- match_stackframes_call_comp; eauto.
-    intros G l l_in.
-    specialize (NO_CROSS_PTR G l l_in).
-    apply locmap_undef_caller_save_regs_lessdef in LS.
-    eapply locmap_setpair_lessdef with (p := (Conventions1.loc_result (ef_sig ef))) (v1 := res) (v2 := tvres) in LS; eauto.
-    specialize (LS (R l)). clear -NO_CROSS_PTR LS.
-    inv LS; auto.
-    now unfold return_regs in NO_CROSS_PTR; rewrite <- H0 in NO_CROSS_PTR.
-  }
-  econstructor; eauto using locmap_setpair_lessdef, locmap_undef_caller_save_regs_lessdef.
+  simpl. econstructor; eauto using locmap_setpair_lessdef, locmap_undef_caller_save_regs_lessdef.
 - (* return *)
   inv STK. inv H1.
   left; econstructor; split.
   eapply exec_return; eauto.
+  rewrite comp_tunnel_fundef, <- type_of_call_translated.
+  intros G l IN; specialize (NO_CROSS_PTR G l IN).
+  specialize (LS (R l)). inv LS; auto. rewrite <- H0 in NO_CROSS_PTR; contradiction.
   constructor; auto.
 Qed.
 

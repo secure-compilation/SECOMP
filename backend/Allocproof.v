@@ -2660,17 +2660,28 @@ Proof.
   destruct (transf_function_inv _ _ FUN).
   rewrite <- COMP. rewrite <- type_of_call_translated.
   intros G. specialize (NO_CROSS_PTR G).
-  intros l Hl. clear -NO_CROSS_PTR Hl RES.
-  destruct (loc_result sg) eqn:eq_sg; simpl in *.
-  destruct Hl; [subst | contradiction].
-  inv RES; auto; contradiction.
-  destruct Hl as [|[]]; subst; try contradiction.
-  assert (is_not_ptr: not_ptr (Val.longofwords (ls (R l)) (ls (R rlo)))).
-  { inv RES; auto; contradiction. }
-  destruct (ls (R l)); simpl; auto.
-  assert (is_not_ptr: not_ptr (Val.longofwords (ls (R rhi)) (ls (R l)))).
-  { inv RES; auto; contradiction. }
-  destruct (ls (R l)), (ls (R rhi)); simpl; auto.
+  unfold loc_result.
+  { intros l Hl.
+    (* assert (Htype_list: Val.has_type_list rs ## args (sig_args sg)). *)
+    (* { inv WTI. rewrite <- H10. *)
+    (*   clear -WTRS. eapply wt_regset_list. eauto. } *)
+    clear -RES NO_CROSS_PTR Hl.
+    unfold loc_result in RES.
+    destruct (proj_sig_res sg) eqn:Hsg;
+      subst; simpl in *; try intuition; subst.
+    inv RES; auto; try contradiction.
+    inv RES; auto; try contradiction.
+    destruct (Archi.ptr64); simpl in *; try intuition; subst.
+    inv RES; auto; try contradiction.
+    inv RES; auto; try contradiction.
+    destruct (ls (R R11)); simpl in *; auto.
+    inv RES; auto; try contradiction.
+    destruct (ls (R R11)); simpl in *; try contradiction.
+    destruct (ls (R R10)); simpl in *; auto; try contradiction.
+    inv RES; auto; try contradiction.
+    inv RES; auto; try contradiction.
+    inv RES; auto; try contradiction.
+  }
   eexact A. traceEq.
   econstructor; eauto.
   apply wt_regset_assign; auto. rewrite WTRES0; auto.

@@ -144,7 +144,9 @@ Inductive state: Type :=
   | Returnstate:
       forall (stack: list stackframe) (**r call stack *)
              (rs: locset)             (**r location state at point of return *)
-             (m: mem),                (**r memory state *)
+             (m: mem)                (**r memory state *)
+             (sg: signature)          (**r callee signature *)
+             (cp: compartment),       (**r callee compartment*)
       state.
 
 Definition call_comp (stack: list stackframe): compartment :=
@@ -263,12 +265,8 @@ Inductive step: state -> trace -> state -> Prop :=
   | exec_Lreturn:
       forall s f stk b rs m m',
       Mem.free m stk 0 f.(fn_stacksize) (comp_of f) = Some m' ->
-      forall (NO_CROSS_PTR:
-          Genv.type_of_call ge (call_comp s) (comp_of f) = Genv.CrossCompartmentCall ->
-          forall l, List.In l (regs_of_rpair (loc_result (fn_sig f))) ->
-              not_ptr (return_regs (parent_locset s) rs (R l))),
       step (State s f (Vptr stk Ptrofs.zero) (Lreturn :: b) rs m)
-        E0 (Returnstate s (return_regs (parent_locset s) rs) m')
+        E0 (Returnstate s (return_regs (parent_locset s) rs) m' (fn_sig f) (comp_of f))
   | exec_function_internal:
       forall s f rs m rs' m' stk,
       Mem.alloc m (comp_of f) 0 f.(fn_stacksize) = (m', stk) ->
@@ -280,15 +278,15 @@ Inductive step: state -> trace -> state -> Prop :=
       args = map (fun p => Locmap.getpair p rs1) (loc_arguments (ef_sig ef)) ->
       external_call ef ge (call_comp s) args m t res m' ->
       rs2 = Locmap.setpair (loc_result (ef_sig ef)) res (undef_caller_save_regs rs1) ->
-      forall (NO_CROSS_PTR:
-          Genv.type_of_call ge (call_comp s) (comp_of ef) = Genv.CrossCompartmentCall ->
-          forall l, List.In l (regs_of_rpair (loc_result (ef_sig ef))) ->
-              not_ptr (rs2 (R l))),
       step (Callstate s (External ef) rs1 m)
-         t (Returnstate s rs2 m')
+         t (Returnstate s rs2 m' (ef_sig ef) (comp_of ef))
   | exec_return:
-      forall s f sp rs0 c rs m,
-      step (Returnstate (Stackframe f sp rs0 c :: s) rs m)
+      forall s f sp rs0 c rs m sg cp,
+      forall (NO_CROSS_PTR:
+          Genv.type_of_call ge (comp_of f) cp = Genv.CrossCompartmentCall ->
+          forall l, List.In l (regs_of_rpair (loc_result sg)) ->
+              not_ptr (rs (R l))),
+      step (Returnstate (Stackframe f sp rs0 c :: s) rs m sg cp)
         E0 (State s f sp c rs m).
 
 End RELSEM.
@@ -303,9 +301,9 @@ Inductive initial_state (p: program): state -> Prop :=
       initial_state p (Callstate nil f (Locmap.init Vundef) m0).
 
 Inductive final_state: state -> int -> Prop :=
-  | final_state_intro: forall rs m retcode,
+  | final_state_intro: forall rs m sg cp retcode,
       Locmap.getpair (map_rpair R (loc_result signature_main)) rs = Vint retcode ->
-      final_state (Returnstate nil rs m) retcode.
+      final_state (Returnstate nil rs m sg cp) retcode.
 
 Definition semantics (p: program) :=
   Semantics step (initial_state p) final_state (Genv.globalenv p).
