@@ -275,10 +275,28 @@ Definition extcall_arguments
 (* Definition call_arguments (rs: regset) (m: mem) (sp: val) (sg: signature): list (option val) := *)
 (*   List.map (call_arg_pair rs m sp) (loc_arguments sg). *)
 
+
+(** Extract the values of the arguments to a call. *)
 (* Note the difference: [loc_parameters] vs [loc_arguments] *)
+Inductive call_arg (rs: regset) (m: mem) (sp: val): loc -> val -> Prop :=
+  | call_arg_reg: forall r,
+      call_arg rs m sp (R r) (rs r)
+  | call_arg_stack: forall ofs ty cp v, (** TODO: should this [cp] be [None]? *)
+      load_stack m sp ty (Ptrofs.repr (Stacklayout.fe_ofs_arg + 4 * ofs)) cp = Some v ->
+      call_arg rs m sp (S Incoming ofs ty) v.
+
+Inductive call_arg_pair (rs: regset) (m: mem) (sp: val): rpair loc -> val -> Prop :=
+  | call_arg_one: forall l v,
+      call_arg rs m sp l v ->
+      call_arg_pair rs m sp (One l) v
+  | call_arg_twolong: forall hi lo vhi vlo,
+      call_arg rs m sp hi vhi ->
+      call_arg rs m sp lo vlo ->
+      call_arg_pair rs m sp (Twolong hi lo) (Val.longofwords vhi vlo).
+
 Definition call_arguments
     (rs: regset) (m: mem) (sp: val) (sg: signature) (args: list val) : Prop :=
-  list_forall2 (extcall_arg_pair rs m sp) (loc_parameters sg) args.
+  list_forall2 (call_arg_pair rs m sp) (loc_parameters sg) args.
 
 (** Mach execution states. *)
 
