@@ -317,11 +317,11 @@ Proof.
   econstructor. eapply find_function_translated; eauto.
   eapply find_function_ptr_translated; eauto.
   symmetry; apply sig_function_translated.
-  eapply allowed_call_translated; eauto.
+  eapply allowed_call_translated; eauto. reflexivity.
   { intros. subst.
     assert (X: Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall).
     { erewrite find_comp_translated, type_of_call_translated; eauto. }
-    specialize (NO_CROSS_PTR X _ eq_refl l).
+    specialize (NO_CROSS_PTR X).
     eauto. }
   econstructor; eauto. constructor; auto. constructor; eauto with coqlib.
 (* Ltailcall *)

@@ -522,12 +522,19 @@ Proof.
   { intros. subst.
     assert (X: Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall).
     { erewrite find_comp_translated, type_of_call_translated; eauto. }
-    specialize (NO_CROSS_PTR X _ eq_refl l).
-    assert (Val.lessdef (undef_regs destroyed_at_function_entry (call_regs rs) l)
-                        (undef_regs destroyed_at_function_entry (call_regs tls) l)).
-    apply locmap_undef_regs_lessdef; eauto. eapply call_regs_lessdef; eauto.
-    inv H2; eauto. specialize (NO_CROSS_PTR H3).
-    rewrite <- H5 in NO_CROSS_PTR; inv NO_CROSS_PTR.
+    specialize (NO_CROSS_PTR X).
+    apply Forall_forall. rewrite Forall_forall in NO_CROSS_PTR.
+    intros v Hin. apply in_map_iff in Hin as [v' [Heq Hin]].
+    apply in_map with (f := (fun p : rpair loc => Locmap.getpair p (undef_regs destroyed_at_function_entry (call_regs rs))))
+                         in Hin.
+    specialize (NO_CROSS_PTR _ Hin).
+    assert (Val.lessdef (Locmap.getpair v' (undef_regs destroyed_at_function_entry (call_regs rs))) v).
+    { subst.
+      apply locmap_getpair_lessdef; auto.
+      apply locmap_undef_regs_lessdef; auto.
+      apply call_regs_lessdef; auto. }
+    inv H2; eauto.
+    rewrite <- H4 in NO_CROSS_PTR; inv NO_CROSS_PTR.
   }
   econstructor; eauto.
   constructor; auto.

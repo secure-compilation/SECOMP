@@ -697,7 +697,7 @@ Proof.
   { intros. subst.
     assert (X: Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall).
     { erewrite find_comp_translated, type_of_call_translated; eauto. rewrite comp_transf_fundef; eauto. }
-    specialize (NO_CROSS_PTR X _ eq_refl l).
+    specialize (NO_CROSS_PTR X).
     eauto.
   }
   econstructor; eauto. constructor; auto. econstructor; eauto.

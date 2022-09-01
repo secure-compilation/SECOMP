@@ -263,22 +263,28 @@ Inductive step: state -> trace -> state -> Prop :=
       rs' = undef_regs (destroyed_by_store chunk addr) rs ->
       step (Block s f sp (Lstore chunk addr args src :: bb) rs m)
         E0 (Block s f sp bb rs' m')
-  | exec_Lcall: forall s f sp sig ros bb rs m fd vf,
+  | exec_Lcall: forall s f sp sig ros bb rs m fd vf args,
       find_function ros rs = Some fd ->
       find_function_ptr ros rs = Some vf ->
       funsig fd = sig ->
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
-      (* Need to state what NO_CROSS_PTR should look like at this level *)
-      (* forall (NO_CROSS_PTR: Genv.cross_call ge (comp_of f) vf -> Forall not_ptr (rs##args)), *)
+      forall (ARGS: args = map (fun p => Locmap.getpair p
+                                   (undef_regs destroyed_at_function_entry (call_regs rs)))
+                        (loc_parameters sig)),
       forall (NO_CROSS_PTR:
           Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall ->
-          forall rs',
-            (* This [rs'] is what is used in [exec_function_internal] and seems to be
-                  what the callee can access *)
-            rs' = undef_regs destroyed_at_function_entry (call_regs rs) ->
-            forall l,
-              List.In l (regs_of_rpairs (loc_parameters sig)) ->
-              not_ptr (rs' l)),
+          List.Forall not_ptr args),
+      (* (* Need to state what NO_CROSS_PTR should look like at this level *) *)
+      (* (* forall (NO_CROSS_PTR: Genv.cross_call ge (comp_of f) vf -> Forall not_ptr (rs##args)), *) *)
+      (* forall (NO_CROSS_PTR: *)
+      (*     Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall -> *)
+      (*     forall rs', *)
+      (*       (* This [rs'] is what is used in [exec_function_internal] and seems to be *)
+      (*             what the callee can access *) *)
+      (*       rs' = undef_regs destroyed_at_function_entry (call_regs rs) -> *)
+      (*       forall l, *)
+      (*         List.In l (loc_parameters sig) -> *)
+      (*         not_ptr (Locmap.getpair l rs')), *)
       (* forall (NO_CROSS_PTR: False), *)
       step (Block s f sp (Lcall sig ros :: bb) rs m)
         E0 (Callstate (Stackframe f sp rs bb :: s) fd rs m)

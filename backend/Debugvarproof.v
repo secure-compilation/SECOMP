@@ -525,11 +525,12 @@ Proof.
   symmetry; apply sig_preserved; auto.
   inv TRF.
   eapply allowed_call_translated; eauto.
+  reflexivity.
   { intros. subst.
     assert (X: Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall).
     { erewrite find_comp_translated, type_of_call_translated; eauto.
       inv TRF. eauto. }
-    specialize (NO_CROSS_PTR X _ eq_refl l). eauto.
+    specialize (NO_CROSS_PTR X). eauto.
   }
   constructor; auto. constructor; auto. constructor; auto.
 - (* tailcall *)
