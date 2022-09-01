@@ -706,7 +706,7 @@ Proof.
       rewrite <- H9; simpl; rewrite FN.
       now rewrite Pos.eqb_refl.
       unfold Genv.type_of_call. simpl in *; rewrite FN. rewrite Pos.eqb_refl. congruence.
-      unfold Genv.type_of_call. simpl in *; rewrite FN. rewrite Pos.eqb_refl. congruence.
+      (* unfold Genv.type_of_call. simpl in *; rewrite FN. rewrite Pos.eqb_refl. congruence. *)
     - eapply exec_step_internal_return; eauto.
       eapply find_instr_tail. eauto.
       rewrite <- find_comp_translated, PC2; simpl; rewrite H7.
@@ -718,12 +718,14 @@ Proof.
       rewrite <- H9, PC2; simpl; rewrite FN, Pos.eqb_refl.
       reflexivity.
       now rewrite <- H9, PC2; simpl; unfold Genv.type_of_call; rewrite FN, Pos.eqb_refl.
-    - econstructor; eauto.
+    - econstructor. eauto. eauto.
       eapply find_instr_tail. eauto.
-      rewrite <- find_comp_translated, PC2; simpl; rewrite H11.
-      unfold comp_of; simpl.
+      reflexivity.
+      rewrite <- comp_transf_function; eauto.
+      (* rewrite <- find_comp_translated, PC2; simpl; rewrite H11. *)
+      (* unfold comp_of; simpl. *)
       rewrite C. eexact GOTO.
-      right; left; simpl. now rewrite FN.
+      eauto. eauto. eauto. simpl. now rewrite FN.
   }
   traceEq.
   econstructor; eauto.
@@ -774,7 +776,7 @@ Proof.
       rewrite <- H9; simpl; rewrite FN.
       now rewrite Pos.eqb_refl.
       unfold Genv.type_of_call. simpl in *; rewrite FN. rewrite Pos.eqb_refl. congruence.
-      unfold Genv.type_of_call. simpl in *; rewrite FN. rewrite Pos.eqb_refl. congruence.
+      (* unfold Genv.type_of_call. simpl in *; rewrite FN. rewrite Pos.eqb_refl. congruence. *)
     - eapply exec_step_internal_return; eauto.
       eapply find_instr_tail. eauto.
       rewrite <- H6; simpl; rewrite FN.
@@ -786,12 +788,13 @@ Proof.
       rewrite <- H6, <- H9; simpl; rewrite FN, Pos.eqb_refl.
       reflexivity.
       now rewrite <- H6, <- H9; simpl; unfold Genv.type_of_call; rewrite FN, Pos.eqb_refl.
-    - econstructor; eauto.
+    - econstructor. eauto. eauto.
       eapply find_instr_tail. eauto.
-      rewrite <- H6; simpl; rewrite FN.
-      unfold comp_of; simpl.
+      reflexivity.
+      (* rewrite <- find_comp_translated, PC2; simpl; rewrite H11. *)
+      (* unfold comp_of; simpl. *)
       rewrite C. eexact GOTO.
-      right; left; simpl. now rewrite FN.
+      eauto. eauto. eauto. simpl. now rewrite FN.
   }
   econstructor; eauto.
   { rewrite <- H9. rewrite <- H6 in STACKS.
@@ -820,7 +823,7 @@ Proof.
       rewrite <- H11; simpl; rewrite FN.
       now rewrite Pos.eqb_refl.
       unfold Genv.type_of_call. simpl in *; rewrite FN. rewrite Pos.eqb_refl. congruence.
-      unfold Genv.type_of_call. simpl in *; rewrite FN. rewrite Pos.eqb_refl. congruence.
+      (* unfold Genv.type_of_call. simpl in *; rewrite FN. rewrite Pos.eqb_refl. congruence. *)
     - eapply exec_step_internal_return; eauto.
       eapply find_instr_tail. eauto.
       rewrite PC2; simpl; rewrite FN.
@@ -832,12 +835,19 @@ Proof.
       rewrite PC2, <- H11; simpl; rewrite FN, Pos.eqb_refl.
       reflexivity.
       now rewrite PC2, <- H11; simpl; unfold Genv.type_of_call; rewrite FN, Pos.eqb_refl.
-    - econstructor; eauto.
+    - econstructor. eauto. eauto.
       eapply find_instr_tail. eauto.
-      rewrite PC2; simpl; rewrite FN.
-      unfold comp_of; simpl.
+      reflexivity.
+      (* rewrite <- find_comp_translated, PC2; simpl; rewrite H11. *)
+      (* unfold comp_of; simpl. *)
       rewrite C. eexact GOTO.
-      right; left; simpl. now rewrite FN.
+      eauto. eauto. eauto. simpl. now rewrite FN.
+    (* - econstructor; eauto. *)
+    (*   eapply find_instr_tail. eauto. *)
+    (*   rewrite PC2; simpl; rewrite FN. *)
+    (*   unfold comp_of; simpl. *)
+    (*   rewrite C. eexact GOTO. *)
+    (*   right; left; simpl. now rewrite FN. *)
   }
   traceEq.
   econstructor; eauto.

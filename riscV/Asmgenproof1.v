@@ -120,11 +120,11 @@ Proof.
   unfold load_hilo32; intros.
   predSpec Int.eq Int.eq_spec lo Int.zero.
 - subst lo. econstructor; split.
-  eapply exec_straight_one. unfold exec_instr. simpl; eauto. auto.
+  eapply exec_straight_one. unfold exec_instr. simpl; eauto. auto. auto. auto.
   split. rewrite Int.add_zero. Simpl.
   intros; Simpl.
 - econstructor; split.
-  eapply exec_straight_two. simpl; eauto. simpl; eauto. auto. auto. 
+  eapply exec_straight_two. simpl; eauto. simpl; eauto. auto. auto. auto. auto. auto. auto.
   split. Simpl. 
   intros; Simpl.
 Qed.
@@ -140,7 +140,7 @@ Proof.
   unfold loadimm32; intros. generalize (make_immed32_sound n); intros E.
   destruct (make_immed32 n). 
 - subst imm. econstructor; split. 
-  eapply exec_straight_one. simpl; eauto. auto.
+  eapply exec_straight_one. simpl; eauto. auto. auto. auto.
   split. rewrite Int.add_zero_l; Simpl. 
   intros; Simpl.
 - rewrite E. apply load_hilo32_correct.
@@ -164,13 +164,13 @@ Proof.
   intros. unfold opimm32. generalize (make_immed32_sound n); intros E.
   destruct (make_immed32 n). 
 - subst imm. econstructor; split. 
-  eapply exec_straight_one. rewrite H0. simpl; eauto. auto.
+  eapply exec_straight_one. rewrite H0. simpl; eauto. auto. auto. auto.
   split. Simpl. intros; Simpl.
 - destruct (load_hilo32_correct X31 hi lo (op rd r1 X31 :: k) rs m)
   as (rs' & A & B & C).
   econstructor; split.
   eapply exec_straight_trans. eexact A. eapply exec_straight_one.
-  rewrite H; eauto. auto.
+  rewrite H; eauto. auto. auto. auto.
   split. Simpl. simpl. rewrite B, C, E. auto. congruence. congruence.
   intros; Simpl. 
 Qed.

@@ -1828,9 +1828,6 @@ Hypothesis MS: match_stacks j cs cs' sg.
 Variable ls: locset.
 Variable rs: regset.
 Hypothesis AGR: agree_regs j ls rs.
-(* Hypothesis AGCS: agree_callee_save ls (parent_locset cs). *)
-(* Hypothesis AGLOCS: agree_locs f ls (parent_locset cs). *)
-(* Hypothesis AGARGS: agree_outgoing_arguments sg ls (parent_locset cs). *)
 Hypothesis AGARGS: agree_incoming_arguments sg ls (parent_locset cs).
 Variable m': mem.
 Hypothesis SEP: m' |= stack_contents j cs cs'.

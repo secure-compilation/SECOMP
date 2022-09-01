@@ -398,6 +398,61 @@ Proof.
   eapply extcall_args_match; eauto.
 Qed.
 
+(** Connection between Mach and Asm calling conventions for
+    functions. *)
+
+Lemma call_arg_match:
+  forall ms sp rs m m' l v,
+  agree ms sp rs ->
+  Mem.extends m m' ->
+  Mach.call_arg ms m sp l v ->
+  exists v', Asm.call_arg rs m' l v' /\ Val.lessdef v v'.
+Proof.
+  intros. inv H1.
+  exists (rs#(preg_of r)); split. constructor. eapply preg_val; eauto.
+  unfold load_stack in H2.
+  exploit Mem.loadv_extends; eauto. intros [v' [A B]].
+  rewrite (sp_val _ _ _ H) in A.
+  exists v'; split; auto.
+  econstructor. eauto. eassumption.
+Qed.
+
+Lemma call_arg_pair_match:
+  forall ms sp rs m m' p v,
+  agree ms sp rs ->
+  Mem.extends m m' ->
+  Mach.call_arg_pair ms m sp p v ->
+  exists v', Asm.call_arg_pair rs m' p v' /\ Val.lessdef v v'.
+Proof.
+  intros. inv H1.
+- exploit call_arg_match; eauto. intros (v' & A & B). exists v'; split; auto. constructor; auto.
+- exploit call_arg_match. eauto. eauto. eexact H2. intros (v1 & A1 & B1).
+  exploit call_arg_match. eauto. eauto. eexact H3. intros (v2 & A2 & B2).
+  exists (Val.longofwords v1 v2); split. constructor; auto. apply Val.longofwords_lessdef; auto.
+Qed.
+
+Lemma call_args_match:
+  forall ms sp rs m m', agree ms sp rs -> Mem.extends m m' ->
+  forall ll vl,
+  list_forall2 (Mach.call_arg_pair ms m sp) ll vl ->
+  exists vl', list_forall2 (Asm.call_arg_pair rs m') ll vl' /\ Val.lessdef_list vl vl'.
+Proof.
+  induction 3; intros.
+  exists (@nil val); split. constructor. constructor.
+  exploit call_arg_pair_match; eauto. intros [v1' [A B]].
+  destruct IHlist_forall2 as [vl' [C D]].
+  exists (v1' :: vl'); split; constructor; auto.
+Qed.
+
+Lemma call_arguments_match:
+  forall ms m m' sp rs sg args,
+  agree ms sp rs -> Mem.extends m m' ->
+  Mach.call_arguments ms m sp sg args ->
+  exists args', Asm.call_arguments rs m' sg args' /\ Val.lessdef_list args args'.
+Proof.
+  unfold Mach.call_arguments, Asm.call_arguments; intros.
+  eapply call_args_match; eauto.
+Qed.
 (** Translation of arguments and results to builtins. *)
 
 Remark builtin_arg_match:
@@ -804,11 +859,15 @@ Inductive exec_straight: code -> regset -> mem ->
   | exec_straight_one:
       forall i1 c rs1 m1 rs2 m2,
       exec_instr ge fn i1 rs1 m1 (comp_of fn) = Next rs2 m2 ->
+      sig_call i1 = None ->
+      is_return i1 = false ->
       rs2#PC = Val.offset_ptr rs1#PC Ptrofs.one ->
       exec_straight (i1 :: c) rs1 m1 c rs2 m2
   | exec_straight_step:
       forall i c rs1 m1 rs2 m2 c' rs3 m3,
       exec_instr ge fn i rs1 m1 (comp_of fn) = Next rs2 m2 ->
+      sig_call i = None ->
+      is_return i = false ->
       rs2#PC = Val.offset_ptr rs1#PC Ptrofs.one ->
       exec_straight c rs2 m2 c' rs3 m3 ->
       exec_straight (i :: c) rs1 m1 c' rs3 m3.
@@ -830,6 +889,10 @@ Lemma exec_straight_two:
   exec_instr ge fn i2 rs2 m2 (comp_of fn) = Next rs3 m3 ->
   rs2#PC = Val.offset_ptr rs1#PC Ptrofs.one ->
   rs3#PC = Val.offset_ptr rs2#PC Ptrofs.one ->
+  sig_call i1 = None ->
+  is_return i1 = false ->
+  sig_call i2 = None ->
+  is_return i2 = false ->
   exec_straight (i1 :: i2 :: c) rs1 m1 c rs3 m3.
 Proof.
   intros. apply exec_straight_step with rs2 m2; auto.
@@ -844,6 +907,12 @@ Lemma exec_straight_three:
   rs2#PC = Val.offset_ptr rs1#PC Ptrofs.one ->
   rs3#PC = Val.offset_ptr rs2#PC Ptrofs.one ->
   rs4#PC = Val.offset_ptr rs3#PC Ptrofs.one ->
+  sig_call i1 = None ->
+  is_return i1 = false ->
+  sig_call i2 = None ->
+  is_return i2 = false ->
+  sig_call i3 = None ->
+  is_return i3 = false ->
   exec_straight (i1 :: i2 :: i3 :: c) rs1 m1 c rs4 m4.
 Proof.
   intros. apply exec_straight_step with rs2 m2; auto.
@@ -866,78 +935,82 @@ Lemma exec_straight_steps_1:
 Proof.
   induction 1; intros.
   apply plus_one.
-  { destruct (sig_call i1) eqn:ISCALL;
-      destruct (is_return i1) eqn:ISRET;
-      try now destruct i1.
-    - eapply exec_step_internal_call; eauto.
+  {
+    (* destruct (sig_call i1) eqn:ISCALL; *)
+    (*   destruct (is_return i1) eqn:ISRET; *)
+    (*   try now destruct i1. *)
+    (* - eapply exec_step_internal_call; eauto. *)
+    (*   eapply find_instr_tail. eauto. *)
+    (*   now rewrite H0, H2. *)
+    (*   right; left; simpl. now rewrite H3. *)
+    (*   (* simpl; now rewrite H3. *) *)
+    (*   unfold update_stack_call. *)
+    (*   rewrite H0, H2; simpl; rewrite H3. *)
+    (*   simpl in H4; rewrite H3 in H4; inv H4. *)
+    (*   now rewrite Pos.eqb_refl. *)
+    (*   unfold Genv.type_of_call. simpl in *; rewrite H4. rewrite Pos.eqb_refl. congruence. *)
+    (*   (* unfold Genv.type_of_call. simpl in *; rewrite H4. rewrite Pos.eqb_refl. congruence. *) *)
+    (* - simpl in H4; rewrite H3 in H4; inv H4. *)
+    (*   eapply exec_step_internal_return; eauto. *)
+    (*   eapply find_instr_tail. eauto. *)
+    (*   now rewrite H2; simpl; rewrite H3. *)
+    (*   now rewrite H0, H2; simpl; rewrite H3. *)
+    (*   (* TODO: ugly!! *) *)
+    (*   rewrite H0, H2; simpl; rewrite H3. unfold comp_of; simpl; unfold comp_of; congruence. *)
+    (*   unfold update_stack_return. *)
+    (*   rewrite H0, H2; simpl; rewrite H3. *)
+    (*   now rewrite Pos.eqb_refl. *)
+    (*   rewrite H0, H2; simpl; rewrite H3. *)
+    (*   unfold comp_of; simpl; unfold comp_of; unfold Genv.type_of_call. *)
+    (*   now rewrite Pos.eqb_refl. *)
+    - econstructor. eauto. eauto.
       eapply find_instr_tail. eauto.
-      now rewrite H0, H2.
-      right; left; simpl. now rewrite H3.
-      (* simpl; now rewrite H3. *)
-      unfold update_stack_call.
-      rewrite H0, H2; simpl; rewrite H3.
-      simpl in H4; rewrite H3 in H4; inv H4.
-      now rewrite Pos.eqb_refl.
-      unfold Genv.type_of_call. simpl in *; rewrite H4. rewrite Pos.eqb_refl. congruence.
-      unfold Genv.type_of_call. simpl in *; rewrite H4. rewrite Pos.eqb_refl. congruence.
-    - simpl in H4; rewrite H3 in H4; inv H4.
-      eapply exec_step_internal_return; eauto.
-      eapply find_instr_tail. eauto.
-      now rewrite H2; simpl; rewrite H3.
-      now rewrite H0, H2; simpl; rewrite H3.
-      (* TODO: ugly!! *)
-      rewrite H0, H2; simpl; rewrite H3. unfold comp_of; simpl; unfold comp_of; congruence.
-      unfold update_stack_return.
-      rewrite H0, H2; simpl; rewrite H3.
-      now rewrite Pos.eqb_refl.
-      rewrite H0, H2; simpl; rewrite H3.
-      unfold comp_of; simpl; unfold comp_of; unfold Genv.type_of_call.
-      now rewrite Pos.eqb_refl.
-    - econstructor; eauto.
-      eapply find_instr_tail. eauto.
-      now rewrite H2; simpl; rewrite H3.
-      now rewrite H0, H2.
-      simpl in H4; rewrite H3 in H4; inv H4.
-      right; left; simpl. now rewrite H3.
+      reflexivity. eauto. eauto. eauto.
+      (* now rewrite H2; simpl; rewrite H3. *)
+      now rewrite H2, H4.
+      simpl in H6; rewrite H5 in H6; inv H6.
+      simpl. now rewrite H5.
   }
 
   eapply plus_left'.
-  { destruct (sig_call i) eqn:ISCALL;
-      destruct (is_return i) eqn:ISRET;
-      try now destruct i.
-    - eapply exec_step_internal_call; eauto.
+  {
+    (* destruct (sig_call i) eqn:ISCALL; *)
+    (*   destruct (is_return i) eqn:ISRET; *)
+    (*   try now destruct i. *)
+    (* - eapply exec_step_internal_call; eauto. *)
+    (*   eapply find_instr_tail. eauto. *)
+    (*   now rewrite H0, H3. *)
+    (*   right; left; simpl. now rewrite H4. *)
+    (*   simpl in H5; rewrite H4 in H5; inv H5. *)
+    (*   unfold update_stack_call. *)
+    (*   rewrite H0, H3; simpl; rewrite H4. *)
+    (*   now rewrite Pos.eqb_refl. *)
+    (*   unfold Genv.type_of_call. simpl in *; rewrite H4. rewrite Pos.eqb_refl. congruence. *)
+    (*   (* unfold Genv.type_of_call. simpl in *; rewrite H4. rewrite Pos.eqb_refl. congruence. *) *)
+    (* - simpl in H5; rewrite H4 in H5; inv H5. *)
+    (*   eapply exec_step_internal_return; eauto. *)
+    (*   eapply find_instr_tail. eauto. *)
+    (*   now rewrite H3; simpl; rewrite H4. *)
+    (*   now rewrite H0, H3; simpl; rewrite H4. *)
+    (*   (* TODO: ugly!! *) *)
+    (*   rewrite H0, H3; simpl; rewrite H4. *)
+    (*   unfold comp_of; simpl; unfold comp_of; congruence. *)
+    (*   unfold update_stack_return. *)
+    (*   rewrite H0, H3; simpl; rewrite H4. *)
+    (*   now rewrite Pos.eqb_refl. *)
+    (*   rewrite H0, H3; simpl; rewrite H4. *)
+    (*   unfold comp_of; simpl; unfold comp_of; unfold Genv.type_of_call. *)
+    (*   now rewrite Pos.eqb_refl. *)
+    - econstructor. eauto. eauto.
       eapply find_instr_tail. eauto.
-      now rewrite H0, H3.
-      right; left; simpl. now rewrite H4.
-      simpl in H5; rewrite H4 in H5; inv H5.
-      unfold update_stack_call.
-      rewrite H0, H3; simpl; rewrite H4.
-      now rewrite Pos.eqb_refl.
-      unfold Genv.type_of_call. simpl in *; rewrite H4. rewrite Pos.eqb_refl. congruence.
-      unfold Genv.type_of_call. simpl in *; rewrite H4. rewrite Pos.eqb_refl. congruence.
-    - simpl in H5; rewrite H4 in H5; inv H5.
-      eapply exec_step_internal_return; eauto.
-      eapply find_instr_tail. eauto.
-      now rewrite H3; simpl; rewrite H4.
-      now rewrite H0, H3; simpl; rewrite H4.
-      (* TODO: ugly!! *)
-      rewrite H0, H3; simpl; rewrite H4.
-      unfold comp_of; simpl; unfold comp_of; congruence.
-      unfold update_stack_return.
-      rewrite H0, H3; simpl; rewrite H4.
-      now rewrite Pos.eqb_refl.
-      rewrite H0, H3; simpl; rewrite H4.
-      unfold comp_of; simpl; unfold comp_of; unfold Genv.type_of_call.
-      now rewrite Pos.eqb_refl.
-    - econstructor; eauto.
-      eapply find_instr_tail. eauto.
-      now rewrite H3; simpl; rewrite H4.
-      now rewrite H0, H3.
-      simpl in H5; rewrite H4 in H5; inv H5.
-      right; left; simpl. now rewrite H4.
+      reflexivity. eauto. eauto. eauto.
+      (* now rewrite H3; simpl; rewrite H4. *)
+      now rewrite H2, H5.
+      (* simpl in H5; rewrite H4 in H5; inv H5. *)
+      (* right; left; simpl. *) simpl. now rewrite H6.
   }
   apply IHexec_straight with b (Ptrofs.add ofs Ptrofs.one).
-  auto. rewrite H0. rewrite H3. reflexivity.
+  auto. rewrite H2. rewrite H5. reflexivity.
   auto.
   auto.
   apply code_tail_next_int with i; auto.
@@ -959,10 +1032,10 @@ Lemma exec_straight_steps_2:
 Proof.
   induction 1; intros.
   exists (Ptrofs.add ofs Ptrofs.one). split.
-  rewrite H0. rewrite H2. auto.
+  rewrite H2. rewrite H4. auto.
   apply code_tail_next_int with i1; auto.
   apply IHexec_straight with (Ptrofs.add ofs Ptrofs.one).
-  auto. rewrite H0. rewrite H3. reflexivity. auto.
+  auto. rewrite H2. rewrite H5. reflexivity. auto.
   apply code_tail_next_int with i; auto.
 Qed.
 
@@ -999,6 +1072,8 @@ Lemma exec_straight_opt_step:
   exec_instr ge fn i rs1 m1 (comp_of fn) = Next rs2 m2 ->
   rs2#PC = Val.offset_ptr rs1#PC Ptrofs.one ->
   exec_straight_opt c rs2 m2 c' rs3 m3 ->
+  sig_call i = None ->
+  is_return i = false ->
   exec_straight (i :: c) rs1 m1 c' rs3 m3.
 Proof.
   intros. inv H1. 
@@ -1011,6 +1086,8 @@ Lemma exec_straight_opt_step_opt:
   exec_instr ge fn i rs1 m1 (comp_of fn) = Next rs2 m2 ->
   rs2#PC = Val.offset_ptr rs1#PC Ptrofs.one ->
   exec_straight_opt c rs2 m2 c' rs3 m3 ->
+  sig_call i = None ->
+  is_return i = false ->
   exec_straight_opt (i :: c) rs1 m1 c' rs3 m3.
 Proof.
   intros. apply exec_straight_opt_intro. eapply exec_straight_opt_step; eauto.

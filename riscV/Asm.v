@@ -1076,6 +1076,30 @@ Definition extcall_arguments
     (rs: regset) (m: mem) (sg: signature) (args: list val) : Prop :=
   list_forall2 (extcall_arg_pair rs m) (loc_arguments sg) args.
 
+(** Extract the values of the arguments to a call. *)
+(* Note the difference: [loc_parameters] vs [loc_arguments] *)
+Inductive call_arg (rs: regset) (m: mem): loc -> val -> Prop :=
+  | call_arg_reg: forall r,
+      call_arg rs m (R r) (rs (preg_of r))
+  | call_arg_stack: forall ofs ty bofs cp v,
+      bofs = Stacklayout.fe_ofs_arg + 4 * ofs ->
+      Mem.loadv (chunk_of_type ty) m
+                (Val.offset_ptr rs#SP (Ptrofs.repr bofs)) cp = Some v ->
+      call_arg rs m (S Incoming ofs ty) v.
+
+Inductive call_arg_pair (rs: regset) (m: mem): rpair loc -> val -> Prop :=
+  | call_arg_one: forall l v,
+      call_arg rs m l v ->
+      call_arg_pair rs m (One l) v
+  | call_arg_twolong: forall hi lo vhi vlo,
+      call_arg rs m hi vhi ->
+      call_arg rs m lo vlo ->
+      call_arg_pair rs m (Twolong hi lo) (Val.longofwords vhi vlo).
+
+Definition call_arguments
+    (rs: regset) (m: mem) (sg: signature) (args: list val) : Prop :=
+  list_forall2 (call_arg_pair rs m) (loc_parameters sg) args.
+
 Definition loc_external_result (sg: signature) : rpair preg :=
   map_rpair preg_of (loc_result sg).
 
@@ -1174,15 +1198,16 @@ Inductive step: state -> trace -> state -> Prop :=
       rs PC = Vptr b ofs ->
       Genv.find_funct_ptr ge b = Some (Internal f) ->
       find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
-      forall (COMP: Genv.find_comp ge (rs PC) = cp),
+      forall (COMP: comp_of f = cp),
       exec_instr f i rs m cp = Next rs' m' ->
       sig_call i = None ->
       is_return i = false ->
       forall (NEXTPC: rs' PC = Vptr b' ofs'),
-      forall (ALLOWED: Genv.allowed_call ge (comp_of f) (Vptr b' ofs')),
+      forall (ALLOWED: cp = Genv.find_comp ge (Vptr b' ofs')),
+        (* Genv.allowed_call ge cp (Vptr b' ofs')), *)
       step (State st rs m true) E0 (State st rs' m' true)
   | exec_step_internal_call:
-      forall b ofs f i sig rs m rs' m' b' ofs' cp st st',
+      forall b ofs f i sig rs m rs' m' b' ofs' cp st st' args,
       rs PC = Vptr b ofs ->
       Genv.find_funct_ptr ge b = Some (Internal f) ->
       find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
@@ -1194,20 +1219,26 @@ Inductive step: state -> trace -> state -> Prop :=
       (* Is a call, we update the stack *)
       forall (STUPD: update_stack_call st cp rs' = Some st'),
       (* Is a call, we check whether we are allowed to pass pointers *)
-      forall (NO_CROSS_PTR_REGS:
+      forall (ARGS:
+         (* Genv.type_of_call ge (comp_of f) (Genv.find_comp ge (Vptr b' ofs')) = Genv.CrossCompartmentCall -> *)
+         call_arguments rs' m' sig args),
+      forall (NO_CROSS_PTR:
           Genv.type_of_call ge (comp_of f) (Genv.find_comp ge (Vptr b' ofs')) = Genv.CrossCompartmentCall ->
-          forall r, List.In (R r) (regs_of_rpairs (loc_parameters sig)) ->
-               not_ptr (rs' (preg_of r))),
-      forall (NO_CROSS_PTR_STACK:
-          Genv.type_of_call ge (comp_of f) (Genv.find_comp ge (Vptr b' ofs')) = Genv.CrossCompartmentCall ->
-          forall ofs v ty,
-            List.In (S Incoming ofs ty) (regs_of_rpairs (loc_parameters sig)) ->
-            Mem.loadv (chunk_of_type ty) m
-              (Val.offset_ptr (rs' SP) (* this is the stack pointer *)
-                 (Ptrofs.repr (offset_arg ofs))) None
-                      = Some v ->
+          List.Forall not_ptr args),
+      (* forall (NO_CROSS_PTR_REGS: *)
+      (*     Genv.type_of_call ge (comp_of f) (Genv.find_comp ge (Vptr b' ofs')) = Genv.CrossCompartmentCall -> *)
+      (*     forall r, List.In (R r) (regs_of_rpairs (loc_parameters sig)) -> *)
+      (*          not_ptr (rs' (preg_of r))), *)
+      (* forall (NO_CROSS_PTR_STACK: *)
+      (*     Genv.type_of_call ge (comp_of f) (Genv.find_comp ge (Vptr b' ofs')) = Genv.CrossCompartmentCall -> *)
+      (*     forall ofs v ty, *)
+      (*       List.In (S Incoming ofs ty) (regs_of_rpairs (loc_parameters sig)) -> *)
+      (*       Mem.loadv (chunk_of_type ty) m *)
+      (*         (Val.offset_ptr (rs' SP) (* this is the stack pointer *) *)
+      (*            (Ptrofs.repr (offset_arg ofs))) None *)
+      (*                 = Some v -> *)
             (* load_stack m sp ty (Ptrofs.repr (offset_arg ofs)) None = Some v -> *)
-            not_ptr v),
+            (* not_ptr v), *)
       step (State st rs m true) E0 (State st' rs' m' true)
   | exec_step_internal_return:
       forall b ofs f i rs m rs' m' cp cp' st st' allowed,
