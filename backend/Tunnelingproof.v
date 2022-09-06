@@ -608,8 +608,9 @@ Proof.
   left; econstructor; split.
   eapply exec_return; eauto.
   rewrite comp_tunnel_fundef, <- type_of_call_translated.
-  intros G l IN; specialize (NO_CROSS_PTR G l IN).
-  specialize (LS (R l)). inv LS; auto. rewrite <- H0 in NO_CROSS_PTR; contradiction.
+  intros G; specialize (NO_CROSS_PTR G).
+  apply locmap_getpair_lessdef with (p := map_rpair R (Conventions1.loc_result sig)) in LS.
+  inv LS; auto. now rewrite <- H0 in NO_CROSS_PTR.
   constructor; auto.
 Qed.
 

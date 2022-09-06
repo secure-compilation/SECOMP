@@ -1103,6 +1103,11 @@ Definition call_arguments
 Definition loc_external_result (sg: signature) : rpair preg :=
   map_rpair preg_of (loc_result sg).
 
+Definition return_value (rs: regset) (sg: signature) :=
+  match loc_result sg with
+  | One l => rs (preg_of l)
+  | Twolong l1 l2 => Val.longofwords (rs (preg_of l1)) (rs (preg_of l2))
+  end.
 (** Execution of the instruction at [rs PC]. *)
 
 Inductive stackframe: Type :=
@@ -1259,8 +1264,7 @@ Inductive step: state -> trace -> state -> Prop :=
       (* (* No cross-compartment pointer return *) *)
       forall (NO_CROSS_PTR:
           (Genv.type_of_call ge cp' cp = Genv.CrossCompartmentCall ->
-          forall r, List.In r (regs_of_rpair (loc_result (fn_sig f))) ->
-              not_ptr (rs' (preg_of r))) <-> allowed = true),
+           not_ptr (return_value rs' (fn_sig f))) <-> allowed = true),
       step (State st rs m true) E0 (State st' rs' m' allowed)
   | exec_step_builtin:
       forall b ofs f ef args res rs m vargs t vres rs' m' st,
@@ -1295,8 +1299,9 @@ Inductive step: state -> trace -> state -> Prop :=
       (* (* No cross-compartment pointer return *) *)
       forall (NO_CROSS_PTR:
           (Genv.type_of_call ge cp'' cp' = Genv.CrossCompartmentCall ->
-          forall r, List.In r (regs_of_rpair (loc_result (ef_sig ef))) ->
-              not_ptr (rs' (preg_of r))) <-> allowed = true),
+           not_ptr (return_value rs' (ef_sig ef))) <-> allowed = true),
+          (* forall r, List.In r (regs_of_rpair (loc_result (ef_sig ef))) -> *)
+          (*     not_ptr (rs' (preg_of r))) <-> allowed = true), *)
       step (State st rs m true) t (State st' rs' m' allowed).
   (* | exec_step_return_external: forall st rs m sg cp cp', *)
   (*     forall (NEXTCOMP: Genv.find_comp ge (rs PC) = cp'), *)

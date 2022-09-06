@@ -590,10 +590,13 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
       (MEXT: Mem.extends m m')
       (AG: agree ms (parent_sp s) rs)
       (ATPC: rs PC = parent_ra s)
+      (* (ALLOWED: *)
+      (*   (Genv.type_of_call ge (Genv.find_comp ge (parent_ra s)) cp = Genv.CrossCompartmentCall -> *)
+      (*                  forall l : mreg, *)
+      (*                    In l (regs_of_rpair (loc_result sg)) -> not_ptr (ms l)) -> allowed = true), *)
       (ALLOWED:
         (Genv.type_of_call ge (Genv.find_comp ge (parent_ra s)) cp = Genv.CrossCompartmentCall ->
-                       forall l : mreg,
-                         In l (regs_of_rpair (loc_result sg)) -> not_ptr (ms l)) -> allowed = true),
+         not_ptr (Mach.return_value ms sg)) -> allowed = true),
       match_states (Mach.Returnstate s ms m sg cp)
                    (Asm.State s' rs m' allowed).
   (* | match_states_return_fail: *)
@@ -1557,8 +1560,9 @@ Local Transparent destroyed_by_op.
   (*                    forall l : mreg, In l (regs_of_rpair (loc_result (Mach.fn_sig f))) -> not_ptr (rs l))). *)
   destruct (classic (Genv.type_of_call tge (Genv.find_comp ge (parent_ra s)) (comp_of (Internal f)) =
                        Genv.CrossCompartmentCall ->
-                     forall r : mreg,
-                       In r (regs_of_rpair (loc_result (fn_sig tf))) -> not_ptr (rs1 # PC <- (parent_ra s) (preg_of r)))).
+                     not_ptr (return_value (rs1 # PC <- (parent_ra s)) (fn_sig tf)))).
+                     (* forall r : mreg, *)
+                     (*   In r (regs_of_rpair (loc_result (fn_sig tf))) -> not_ptr (rs1 # PC <- (parent_ra s) (preg_of r)))). *)
   + (* Do more source steps *)
     (* eexists; split. *)
     (* eapply star_one. econstructor. *)
@@ -1691,15 +1695,29 @@ Local Transparent destroyed_by_op.
       apply agree_set_other; auto with asmgen.
       intros. exfalso. eapply H6.
       intros.
-      replace (fn_sig tf) with (Mach.fn_sig f) in H10.
-      specialize (H8 H9 r H10). Simpl.
-      eapply agree_mregs with (r := r) in V. inv V; auto.
-      now rewrite <- H12 in H8.
-      { monadInv H5. monadInv EQ0. simpl in *.
+      unfold Mach.return_value, return_value in *.
+      replace (fn_sig tf) with (Mach.fn_sig f) in H9.
+      replace (fn_sig tf) with (Mach.fn_sig f).
+      specialize (H8 H9). Simpl.
+      clear -V H8.
+      destruct (loc_result (Mach.fn_sig f)); Simpl.
+      * eapply agree_mregs with (r := r) in V.
+        inv V; auto. now rewrite <- H0 in H8.
+      * assert (V' := V).
+        eapply agree_mregs with (r := rhi) in V.
+        eapply agree_mregs with (r := rlo) in V'.
+        inv V; simpl; auto;
+          try (now (rewrite <- H0 in H8; simpl in H8)).
+        inv V'; simpl; auto;
+          try (now (destruct (rs rhi); rewrite <- H0 in H8; simpl in H8)).
+      * monadInv H5. monadInv EQ0. simpl in *.
         destruct (zlt Ptrofs.max_unsigned
-            (list_length_z (Pallocframe (fn_stacksize f) (fn_link_ofs f) :: storeind_ptr X1 X2 (fn_retaddr_ofs f) x1))); try discriminate.
+                    (list_length_z (Pallocframe (fn_stacksize f) (fn_link_ofs f) :: storeind_ptr X1 X2 (fn_retaddr_ofs f) x1))); try discriminate.
         inv EQ1. reflexivity.
-      }
+      * monadInv H5. monadInv EQ0. simpl in *.
+        destruct (zlt Ptrofs.max_unsigned
+                    (list_length_z (Pallocframe (fn_stacksize f) (fn_link_ofs f) :: storeind_ptr X1 X2 (fn_retaddr_ofs f) x1))); try discriminate.
+        inv EQ1. reflexivity.
 
 - (* internal function *)
   assert (cp = comp_of f).
@@ -1801,11 +1819,12 @@ Local Transparent destroyed_at_function_entry.
     (Genv.find_comp tge
        ((set_pair (loc_external_result (ef_sig ef)) res' (undef_caller_save_regs rs0)) # PC <- (rs0 X1)
           PC)) (comp_of ef) = Genv.CrossCompartmentCall ->
-  forall r : mreg,
-  In r (regs_of_rpair (loc_result (ef_sig ef))) ->
-  not_ptr
-    ((set_pair (loc_external_result (ef_sig ef)) res' (undef_caller_save_regs rs0)) # PC <- (rs0 X1)
-       (preg_of r)))).
+                     not_ptr (return_value
+  (* forall r : mreg, *)
+  (* In r (regs_of_rpair (loc_result (ef_sig ef))) -> *)
+  (* not_ptr *)
+    ((set_pair (loc_external_result (ef_sig ef)) res' (undef_caller_save_regs rs0)) # PC <- (rs0 X1)) (ef_sig ef)))).
+       (* (preg_of r)))). *)
   (* destruct (classic (Genv.type_of_call tge (Genv.find_comp tge *)
   (*                         ((set_pair (loc_external_result (ef_sig ef)) res' (undef_caller_save_regs rs0)) # PC <- (rs0 X1) PC)) (comp_of ef) = Genv.CrossCompartmentCall -> *)
   (*                    forall r : mreg, In r (regs_of_rpair (loc_result (ef_sig ef))) -> not_ptr (rs0 (preg_of r)))). *)
@@ -1916,12 +1935,22 @@ Local Transparent destroyed_at_function_entry.
     intros. exfalso. eapply H2.
     Simpl. intros.
     rewrite ATLR, <- find_comp_translated in H4.
-    specialize (H3 H4 r H5). Simpl.
+    specialize (H3 H4). Simpl.
     eapply agree_undef_caller_save_regs in AG.
-    eapply agree_set_pair in AG; eauto.
     unfold loc_external_result.
-    eapply agree_mregs with (r := r) in AG. inv AG. rewrite <- H8. eauto.
-    now rewrite <- H7 in H3.
+    eapply agree_set_pair with (p := (loc_result (ef_sig ef))) (v := res) (v' := res') in AG.
+    unfold Mach.return_value, return_value in *.
+    clear -AG H3.
+    destruct (loc_result (ef_sig ef)); Simpl; simpl in *.
+      * eapply agree_mregs with (r := r) in AG.
+        inv AG; auto. now rewrite <- H0 in H3.
+      * assert (AG' := AG).
+        eapply agree_mregs with (r := rhi) in AG.
+        eapply agree_mregs with (r := rlo) in AG'.
+        pose proof (Val.longofwords_lessdef _ _ _ _ AG AG').
+        inv H; auto.
+        now rewrite <- H1 in H3.
+      * auto.
 
 (* - destruct Hs'' as [s'' [Hs''1 Hs''2]]. *)
 (*   left. eexists. split. *)

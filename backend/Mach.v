@@ -298,6 +298,16 @@ Definition call_arguments
     (rs: regset) (m: mem) (sp: val) (sg: signature) (args: list val) : Prop :=
   list_forall2 (call_arg_pair rs m sp) (loc_parameters sg) args.
 
+Definition return_value (rs: regset) (sg: signature) :=
+  match loc_result sg with
+  | One l => rs l
+  | Twolong l1 l2 => Val.longofwords (rs l1) (rs l2)
+  end.
+
+      (* forall (NO_CROSS_PTR: *)
+      (*     Genv.type_of_call ge (Genv.find_comp ge (Vptr f Ptrofs.zero)) cp = Genv.CrossCompartmentCall -> *)
+      (*     forall l, List.In l (regs_of_rpair (loc_result sg)) -> *)
+      (*         not_ptr (rs l)), *)
 (** Mach execution states. *)
 
 Inductive stackframe: Type :=
@@ -530,8 +540,7 @@ Inductive step: state -> trace -> state -> Prop :=
       forall s f sp ra c rs m sg cp,
       forall (NO_CROSS_PTR:
           Genv.type_of_call ge (Genv.find_comp ge (Vptr f Ptrofs.zero)) cp = Genv.CrossCompartmentCall ->
-          forall l, List.In l (regs_of_rpair (loc_result sg)) ->
-              not_ptr (rs l)),
+          not_ptr (return_value rs sg)),
       step (Returnstate (Stackframe f sp ra c :: s) rs m sg cp)
         E0 (State s f sp c rs m).
 

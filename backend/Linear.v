@@ -289,8 +289,7 @@ Inductive step: state -> trace -> state -> Prop :=
       forall s f sp rs0 c rs m sg cp,
       forall (NO_CROSS_PTR:
           Genv.type_of_call ge (comp_of f) cp = Genv.CrossCompartmentCall ->
-          forall l, List.In l (regs_of_rpair (loc_result sg)) ->
-              not_ptr (rs (R l))),
+          not_ptr (Locmap.getpair (map_rpair R (loc_result sg)) rs)),
       step (Returnstate (Stackframe f sp rs0 c :: s) rs m sg cp)
         E0 (State s f sp c rs m).
 

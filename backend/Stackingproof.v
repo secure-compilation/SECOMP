@@ -2438,13 +2438,20 @@ Proof.
     (* apply agree_regs_undef_regs with (rl := destroyed_at_function_entry) in AGREGS. *)
     simpl in H; rewrite FINDF in H. unfold comp_of in H; simpl in H.
     rewrite <- (comp_transl_partial _ TRF) in H.
-    specialize (NO_CROSS_PTR H _ H0).
+    specialize (NO_CROSS_PTR H).
     clear -AGREGS NO_CROSS_PTR.
-    specialize (AGREGS l).
+    unfold return_value.
+    destruct (loc_result sg); simpl in *.
+    - specialize (AGREGS r). inv AGREGS; simpl; auto.
+      rewrite <- H in NO_CROSS_PTR; now simpl in NO_CROSS_PTR.
+      rewrite <- H0 in NO_CROSS_PTR; now simpl in NO_CROSS_PTR.
+    - assert (AGREGS' := AGREGS).
+      specialize (AGREGS rhi). specialize (AGREGS' rlo).
+      pose proof (Val.longofwords_inject _ _ _ _ _ AGREGS AGREGS').
+      inv H; simpl; auto.
+      now rewrite <- H0 in NO_CROSS_PTR.
+      now rewrite <- H1 in NO_CROSS_PTR.
     (* TODO: write a lemma about that *)
-    inv AGREGS; simpl; auto.
-    rewrite <- H in NO_CROSS_PTR; now simpl in NO_CROSS_PTR.
-    rewrite <- H0 in NO_CROSS_PTR; now simpl in NO_CROSS_PTR.
   }
   econstructor; eauto.
   apply agree_locs_return with rs0; auto.
