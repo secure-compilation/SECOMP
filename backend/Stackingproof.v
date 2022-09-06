@@ -1810,6 +1810,91 @@ Qed.
 
 End EXTERNAL_ARGUMENTS.
 
+(** Preservation of the arguments to a call. *)
+
+Definition agree_incoming_arguments (sg: signature) (ls pls: locset) : Prop :=
+  forall ty ofs,
+  In (S Outgoing ofs ty) (regs_of_rpairs (loc_arguments sg)) ->
+  ls (S Incoming ofs ty) = pls (S Outgoing ofs ty).
+
+Section ARGUMENTS.
+
+Variable j: meminj.
+Variable cs: list Linear.stackframe.
+Variable cs': list stackframe.
+Variable sg: signature.
+Variables bound bound': block.
+Hypothesis MS: match_stacks j cs cs' sg.
+Variable ls: locset.
+Variable rs: regset.
+Hypothesis AGR: agree_regs j ls rs.
+Hypothesis AGARGS: agree_incoming_arguments sg ls (parent_locset cs).
+Variable m': mem.
+Hypothesis SEP: m' |= stack_contents j cs cs'.
+
+Lemma transl_argument:
+  forall l,
+  In l (regs_of_rpairs (loc_arguments sg)) ->
+  exists v, call_arg rs m' (parent_sp cs') (parameter_of_argument l) v /\ Val.inject j (ls (parameter_of_argument l)) v.
+Proof.
+  intros.
+  assert (loc_argument_acceptable l) by (apply loc_arguments_acceptable_2 with sg; auto).
+  destruct l.
+- exists (rs r); simpl; split. constructor. auto.
+- destruct sl; try contradiction.
+  inv MS.
++ elim (H1 _ H).
++ simpl in SEP. unfold parent_sp. simpl.
+  assert (slot_valid f Outgoing pos ty = true).
+  { destruct H0. unfold slot_valid, proj_sumbool.
+    rewrite zle_true by omega. rewrite pred_dec_true by auto. reflexivity. }
+  assert (slot_within_bounds (function_bounds f) Outgoing pos ty) by eauto.
+  exploit frame_get_outgoing; eauto. intros (v & A & B).
+  exists v; split.
+  econstructor. exact A.
+  rewrite AGARGS by auto. exact B.
+Qed.
+
+Lemma transl_argument_2:
+  forall p,
+  In p (loc_arguments sg) ->
+  exists v, call_arg_pair rs m' (parent_sp cs') (map_rpair parameter_of_argument p) v /\ Val.inject j (Locmap.getpair (map_rpair parameter_of_argument p) ls) v.
+Proof.
+  intros. destruct p as [l | l1 l2].
+- destruct (transl_argument l) as (v & A & B). eapply in_regs_of_rpairs; eauto; simpl; auto.
+  exists v; split; auto. constructor; auto.
+- destruct (transl_argument l1) as (v1 & A1 & B1). eapply in_regs_of_rpairs; eauto; simpl; auto.
+  destruct (transl_argument l2) as (v2 & A2 & B2). eapply in_regs_of_rpairs; eauto; simpl; auto.
+  exists (Val.longofwords v1 v2); split.
+  constructor; auto.
+  apply Val.longofwords_inject; auto.
+Qed.
+
+Lemma transl_arguments_rec:
+  forall locs,
+  incl locs (loc_arguments sg) ->
+  exists vl,
+      list_forall2 (call_arg_pair rs m' (parent_sp cs')) ((map_rpair parameter_of_argument) ## locs) vl
+   /\ Val.inject_list j (map (fun p => Locmap.getpair (map_rpair parameter_of_argument p) ls) locs) vl.
+Proof.
+  induction locs; simpl; intros.
+  exists (@nil val); split. constructor. constructor.
+  exploit transl_argument_2; eauto with coqlib. intros [v [A B]].
+  exploit IHlocs; eauto with coqlib. intros [vl [C D]].
+  exists (v :: vl); split; constructor; auto.
+Qed.
+
+Lemma transl_arguments:
+  exists vl,
+      call_arguments rs m' (parent_sp cs') sg vl
+   /\ Val.inject_list j (map (fun p => Locmap.getpair (map_rpair parameter_of_argument p) ls) (loc_arguments sg)) vl.
+Proof.
+  unfold call_arguments.
+  apply transl_arguments_rec.
+  auto with coqlib.
+Qed.
+
+End ARGUMENTS.
 (** Preservation of the arguments to a builtin. *)
 
 Section BUILTIN_ARGUMENTS.
@@ -2116,85 +2201,30 @@ Proof.
   rewrite transl_code_eq in IST. simpl in IST.
   exploit return_address_offset_exists. eexact IST. intros [ra F].
   econstructor; split.
-  apply plus_one. econstructor; eauto.
+  apply plus_one.
+  (* assert (H1: agree_callee_save rs (parent_locset (Linear.Stackframe f (Vptr sp0 Ptrofs.zero) rs b :: s))). *)
+  (* { red; simpl; auto. } *)
+  assert (H1: agree_incoming_arguments (Linear.funsig f') (LTL.undef_regs destroyed_at_function_entry (call_regs rs))
+                (parent_locset (Linear.Stackframe f (Vptr sp0 Ptrofs.zero) rs b :: s))).
+  { red; simpl; auto. }
+  eapply match_stacks_cons with (ra := ra) in STACKS; eauto.
+  apply agree_regs_call_regs in AGREGS.
+  apply agree_regs_undef_regs with (rl := destroyed_at_function_entry) in AGREGS.
+  exploit transl_arguments; eauto. simpl. simpl. apply sep_assoc in SEP. apply sep_proj1 in SEP; eauto. intros [vl [ARGS VINJ]].
+  eapply exec_Mcall with (args := vl); eauto.
   now rewrite <- (comp_transl_partial _ TRANSL).
-  { intros. subst.
-    apply agree_regs_call_regs in AGREGS.
-    apply agree_regs_undef_regs with (rl := destroyed_at_function_entry) in AGREGS.
-    rewrite <- (comp_transl_partial _ TRANSL) in H1. rewrite E in H1.
-    specialize (NO_CROSS_PTR H1 _ eq_refl _ H3).
-    clear -AGREGS NO_CROSS_PTR.
-    specialize (AGREGS r).
-    (* TODO: write a lemma about that *)
-    inv AGREGS; simpl; auto.
-    rewrite <- H in NO_CROSS_PTR; now simpl in NO_CROSS_PTR.
-    rewrite <- H0 in NO_CROSS_PTR; now simpl in NO_CROSS_PTR.
-  }
-  { intros. subst.
-    assert (ARGS: forall (ofs : Z) (ty : typ),
-               In (S Outgoing ofs ty) (regs_of_rpairs (loc_arguments (Linear.funsig f'))) ->
-               slot_within_bounds (function_bounds f) Outgoing ofs ty).
-    { intros; red.
+  { simpl in ARGS.
+    rewrite <- (comp_transl_partial _ TRANSL), E.
+    intros G. specialize (NO_CROSS_PTR G).
+    eapply Val.inject_list_not_ptr; eauto.
+     clear -NO_CROSS_PTR.
+     unfold loc_parameters in NO_CROSS_PTR.
+     now rewrite map_map in NO_CROSS_PTR. }
+  admit.
+  { apply Val.Vptr_has_type. }
+  { intros; red.
       apply Z.le_trans with (size_arguments (Linear.funsig f')); auto.
       apply loc_arguments_bounded; auto. }
-
-    assert (slot_valid f Outgoing ofs ty = true).
-    { apply incoming_slot_in_parameters in H2.
-      eapply slot_outgoing_argument_valid. eauto. }
-    assert (H2' := H2).
-    apply incoming_slot_in_parameters in H2'.
-    pose proof (frame_get_outgoing _ _ _ _ _ _ _ _ _ _ _ _ SEP (ARGS _ _ H2') H3)
-               as [v' [Hload Hagree]].
-    exists v'.
-    unfold load_stack in H3, Hload. simpl in H3, Hload.
-    apply Mem.load_Some_None in Hload.
-    split; auto.
-    (* rewrite H3 in Hload. inv Hload. *)
-    rewrite <- (comp_transl_partial _ TRANSL) in H1. rewrite E in H1.
-    specialize (NO_CROSS_PTR H1 _ eq_refl).
-    specialize (NO_CROSS_PTR (S Incoming ofs ty) H2).
-    assert (NO_CROSS_PTR': not_ptr (rs (S Outgoing ofs ty))).
-    { clear -NO_CROSS_PTR. revert NO_CROSS_PTR.
-      Local Transparent destroyed_at_function_entry. simpl.
-      unfold call_regs.
-      rewrite Locmap.gso. auto.
-      reflexivity.
-      Local Opaque destroyed_at_function_entry.
-    }
-    inv Hagree; simpl; auto.
-    rewrite <- H4 in NO_CROSS_PTR'; now simpl in NO_CROSS_PTR'.
-    rewrite <- H5 in NO_CROSS_PTR'; now simpl in NO_CROSS_PTR'.
-  }
-  { eapply agree_regs_call_regs in AGREGS.
-    eapply agree_regs_undef_regs with (rl := destroyed_at_function_entry) in AGREGS.
-    intros ls rs' ? ?; subst.
-    specialize (EV _ eq_refl).
-    assert (Val.lessdef_list
-              ((fun p : rpair loc => Locmap.getpair p (LTL.undef_regs destroyed_at_function_entry (call_regs rs)))
-                 ## (loc_parameters (Linear.funsig f')))
-              (concat
-       (fun r : loc =>
-        match r with
-        | R r0 => undef_regs destroyed_at_function_entry rs0 r0 :: nil
-        | S Incoming ofs ty =>
-            match load_stack m' (Vptr sp' Ptrofs.zero) ty (Ptrofs.repr (Mach.offset_arg ofs)) None with
-            | Some v => v :: nil
-            | None => nil
-            end
-        | _ => nil
-        end) ## (regs_of_rpairs (loc_parameters (Linear.funsig f'))))).
-    { rewrite <- flat_map_concat_map.
-      assert (R: (regs_of_rpairs (loc_parameters (Linear.funsig f')))
-             = flat_map (@regs_of_rpair loc) (loc_parameters (Linear.funsig f'))).
-      admit.
-      rewrite R. clear R.
-      rewrite 2!flat_map_concat_map. rewrite concat_map.
-      rewrite map_map.
-      set (g := (fun x : rpair loc => _ ## _)).
-      admit.
-    }
-    admit.
-  }
   econstructor; eauto.
   econstructor; eauto with coqlib.
   apply Val.Vptr_has_type.
@@ -2362,19 +2392,26 @@ Proof.
     (* apply agree_regs_undef_regs with (rl := destroyed_at_function_entry) in AGREGS. *)
     simpl in H; rewrite FINDF in H. unfold comp_of in H; simpl in H.
     rewrite <- (comp_transl_partial _ TRF) in H.
-    specialize (NO_CROSS_PTR H _ H0).
+    specialize (NO_CROSS_PTR H).
     clear -AGREGS NO_CROSS_PTR.
-    specialize (AGREGS l).
+    unfold return_value.
+    destruct (loc_result sg); simpl in *.
+    - specialize (AGREGS r). inv AGREGS; simpl; auto.
+      rewrite <- H in NO_CROSS_PTR; now simpl in NO_CROSS_PTR.
+      rewrite <- H0 in NO_CROSS_PTR; now simpl in NO_CROSS_PTR.
+    - assert (AGREGS' := AGREGS).
+      specialize (AGREGS rhi). specialize (AGREGS' rlo).
+      pose proof (Val.longofwords_inject _ _ _ _ _ AGREGS AGREGS').
+      inv H; simpl; auto.
+      now rewrite <- H0 in NO_CROSS_PTR.
+      now rewrite <- H1 in NO_CROSS_PTR.
     (* TODO: write a lemma about that *)
-    inv AGREGS; simpl; auto.
-    rewrite <- H in NO_CROSS_PTR; now simpl in NO_CROSS_PTR.
-    rewrite <- H0 in NO_CROSS_PTR; now simpl in NO_CROSS_PTR.
   }
   econstructor; eauto.
   apply agree_locs_return with rs0; auto.
   apply frame_contents_exten with rs0 (parent_locset s); auto.
   intros; apply Val.lessdef_same; apply AGCS; red; congruence.
-  intros; rewrite (OUTU ty ofs); auto. 
+  intros; rewrite (OUTU ty ofs); auto.
 Admitted.
 
 Lemma transf_initial_states:

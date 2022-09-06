@@ -19,11 +19,11 @@
 
 Require Import Coqlib.
 Require Import Maps.
-Require Import AST.
+Require Import CapAST.
 Require Import Integers.
 Require Import Floats.
-Require Import Values.
-Require Import Memory.
+Require Import OCapValues.
+Require Import CapMemory.
 Require Import Events.
 Require Import Globalenvs.
 Require Import Smallstep.
@@ -37,6 +37,9 @@ Notation offset_arg := Stacklayout.offset_arg.
 
 (** Integer registers.  X0 is treated specially because it always reads 
   as zero and is never used as a destination of an instruction. *)
+
+(** We model a merged integer register machine, in which integer
+    registers can hold integers and capabilities *)
 
 Inductive ireg: Type :=
   | X1:  ireg | X2:  ireg | X3:  ireg | X4:  ireg | X5:  ireg
@@ -75,10 +78,21 @@ Proof. decide equality. Defined.
   
 (** We model the following registers of the RISC-V architecture. *)
 
+(** In particular, we model the following special capability registers
+
+   - PCC : extends the existing PC to be a full capability, imposing
+     validity, permission, bounds checks on instruction fetch
+
+   - DDC : indirects non-capability loads and stores, controlling and
+     relocating data accesses to memory
+
+ *)
+
 Inductive preg: Type :=
   | IR: ireg -> preg                    (**r integer registers *)
   | FR: freg -> preg                    (**r double-precision float registers *)
-  | PC: preg.                           (**r program counter *)
+  | PCC: preg                          (**r program counter capability *)
+  | DDC: preg.                         (**r default data capability *) 
 
 Coercion IR: ireg >-> preg.
 Coercion FR: freg >-> preg.
@@ -93,10 +107,15 @@ End PregEq.
 
 Module Pregmap := EMap(PregEq).
 
-(** Conventional names for stack pointer ([SP]) and return address ([RA]). *)
+(** Conventional names for stack pointer ([SPC]) and return address code and data ([RAC] & [RAD]). *)
 
-Notation "'SP'" := X2 (only parsing) : asm.
-Notation "'RA'" := X1 (only parsing) : asm.
+(** Each with hold capabilities: an uninitialized directed capability
+    in SPC and a sealed return & data capability pair in RAC and RAD
+*)
+
+Notation "'SPC'" := X3 (only parsing) : asm.
+Notation "'RAC'" := X1 (only parsing) : asm.
+Notation "'RAD'" := X2 (only parsing) : asm.
 
 (** Offsets for load and store instructions.  An offset is either an
   immediate integer or the low part of a symbol. *)
@@ -129,6 +148,59 @@ Inductive offset : Type :=
     ADDW becomes ADD, ADDL is an error, ANDW becomes AND, ANDL is an error.
   - In 64-bit mode:
     ADDW becomes ADDW, ADDL becomes ADD, ANDW and ANDL both become AND.
+ *)
+
+(** CHERI RISC-V extends both 32-bit and 64-bit integers with 64-bit
+    and 128-bit capabilities respectively.
+
+    CLEN refers to the capability length, XLEN to the architecture
+    address space length. CLEN equals twice the XLEN.
+
+    Both a merged and split integer and capability register files are
+    supported, we choose here to model a merged register file. Thus,
+    "64I" and "128I" can hold both integers and capabilities.
+    non-capability instructions ignore the upper XLEN bits of the
+    register. e.g., an i32 bit instruction ignores the upper 32 bits
+    in the (merged) integer/capability register.
+
+    CHERI RISC-V adheres to a strong type safety property for all
+    capability-aware instructions: all instructions explicitly encode
+    whether an integer or capability operand is being used, and
+    attempts to use untagged values where tagged ones are expected
+    will lead to an exception.
+
+    We choose to similarly trap whenever tagged values are used when
+    untagged ones are expected
+
+
+    CHERI RISC-V supports legacy load/store immediate operations by
+    using the default data capability. A core design choice of CHERI
+    is to maintain instruction intentionality. To that end, multiple
+    approaches have been investigated to maintain intentionality while
+    conserving opcode space
+
+    1) introduce a full set of new load/store instructions to
+    distinguish between direct and indirect capability use
+
+    2) introduce a limited aset of load/store instructions
+
+    3) introduce a new capability encoding mode in which existing
+    load/store opcode space is reused for capability-relative
+    accesses, allowing rich set of load-store instructions
+
+    
+    We will here model option (1), but note that it is possible to map
+    this approach to one with an encoding mode bit.
+
+    There are three kinds of added instructions: instructions that use
+    capabilities to load/store from and to memory and to jump,
+    instructions that manipulate capabilities, and instructions that
+    loads capability fields
+
+    The instruction set architecture is an extension of the existing
+    CompCert model of RISC-V, with the exception of stack related
+    pseudo instructions.
+
 *)
 
 Definition label := positive.
@@ -212,13 +284,19 @@ Inductive instruction : Type :=
   | Pcvtl2w (rd: ireg) (rs: ireg0)                   (**r int64->int32 (pseudo) *)
   | Pcvtw2l (r: ireg)                                (**r int32 signed -> int64 (pseudo) *)
 
+  (* Branches to a register will expect a capability, potentially
+     sealed as a sentry capability. 
+     Branches to labels or symbols indirectly use the PCC. *)
+            
   (* Unconditional jumps.  Links are always to X1/RA. *)
   | Pj_l    (l: label)                              (**r jump to label *)
   | Pj_s    (symb: ident) (sg: signature)           (**r jump to symbol *)
   | Pj_r    (r: ireg)     (sg: signature) (iscl: bool) (**r jump register *)
   | Pjal_s  (symb: ident) (sg: signature) (iscl: bool) (**r jump-and-link symbol *)
   | Pjal_r  (r: ireg)     (sg: signature) (iscl: bool) (**r jump-and-link register *)
-
+  | PCjal_r (rs1 rs2: ireg) (sg: signature) (iscl: bool) (**r jump-and-link capability
+                                                         jumps to rs2, seals the next PCC as in rs1 *)
+            
   (* Conditional branches, 32-bit comparisons *)
   | Pbeqw   (rs1 rs2: ireg0) (l: label)             (**r branch-if-equal *)
   | Pbnew   (rs1 rs2: ireg0) (l: label)             (**r branch-if-not-equal signed *)
@@ -235,17 +313,22 @@ Inductive instruction : Type :=
   | Pbgel   (rs1 rs2: ireg0) (l: label)             (**r branch-if-greater-or-equal signed *)
   | Pbgeul  (rs1 rs2: ireg0) (l: label)             (**r branch-if-greater-or-equal unsigned *)
 
-  (* Loads and stores *)
-  | Plb     (rd: ireg) (ra: ireg) (ofs: offset) (priv: bool)     (**r load signed int8 *)
+  (* Sealed capability invocation *)
+  | PCinvoke (rs1 rs2: ireg0)                        (**r unseal and jump to rs2 while unsealing rs1 *)
+
+  (* Legacy loads and stores: semantics use the DDC *)
+  | Plb     (rd: ireg) (ra: ireg) (ofs: offset) (priv: bool)    (**r load signed int8 *)
   | Plbu    (rd: ireg) (ra: ireg) (ofs: offset) (priv: bool)    (**r load unsigned int8 *)
   | Plh     (rd: ireg) (ra: ireg) (ofs: offset) (priv: bool)    (**r load signed int16 *)
   | Plhu    (rd: ireg) (ra: ireg) (ofs: offset) (priv: bool)    (**r load unsigned int16 *)
-  | Plw     (rd: ireg) (ra: ireg) (ofs: offset) (priv: bool)   (**r load int32 *)
+  | Plw     (rd: ireg) (ra: ireg) (ofs: offset) (priv: bool)    (**r load int32 *)
   | Plw_a   (rd: ireg) (ra: ireg) (ofs: offset) (priv: bool)    (**r load any32 *)
   | Pld     (rd: ireg) (ra: ireg) (ofs: offset) (priv: bool)    (**r load int64 *)
   | Pld_a   (rd: ireg) (ra: ireg) (ofs: offset) (priv: bool)    (**r load any64 *)
-
-
+  | Plcw    (rd: ireg) (ra: ireg) (ofs: offset) (priv: bool)    (**r load cap64 *)
+  | Plcd    (rd: ireg) (ra: ireg) (ofs: offset) (priv: bool)    (**r load cap128 *)
+  | Plcd_a  (rd: ireg) (ra: ireg) (ofs: offset) (priv: bool)    (**r load any128 *)
+            
   | Psb     (rs: ireg) (ra: ireg) (ofs: offset)     (**r store int8 *)
   | Psh     (rs: ireg) (ra: ireg) (ofs: offset)     (**r store int16 *)
   | Psw     (rs: ireg) (ra: ireg) (ofs: offset)     (**r store int32 *)
@@ -253,8 +336,68 @@ Inductive instruction : Type :=
   | Psd     (rs: ireg) (ra: ireg) (ofs: offset)     (**r store int64 *)
   | Psd_a   (rs: ireg) (ra: ireg) (ofs: offset)     (**r store any64 *)
 
-            (* Probably doesn't need privilged stores because can't write directly to parameters. Instead
-             writing to a parameter writes to a /copy/ of the parameter *)
+  (* Capability load and stores: ra is expected to hold an unsealed capability *)
+  | PClb    (rd: ireg) (ra: ireg) (ofs: offset) (priv: bool)    (**r load signed int8 *)
+  | PClbu   (rd: ireg) (ra: ireg) (ofs: offset) (priv: bool)    (**r load unsigned int8 *)
+  | PClh    (rd: ireg) (ra: ireg) (ofs: offset) (priv: bool)    (**r load signed int16 *)
+  | PClhu   (rd: ireg) (ra: ireg) (ofs: offset) (priv: bool)    (**r load unsigned int16 *)
+  | PClw    (rd: ireg) (ra: ireg) (ofs: offset) (priv: bool)    (**r load int32 *)
+  | PClw_a  (rd: ireg) (ra: ireg) (ofs: offset) (priv: bool)    (**r load any32 *)
+  | PCld    (rd: ireg) (ra: ireg) (ofs: offset) (priv: bool)    (**r load int64 *)
+  | PCld_a  (rd: ireg) (ra: ireg) (ofs: offset) (priv: bool)    (**r load any64 *)
+  | PClwc   (rd: ireg) (ra: ireg) (ofs: offset) (priv: bool)    (**r load cap64 *)
+  | PClcd   (rd: ireg) (ra: ireg) (ofs: offset) (priv: bool)    (**r load cap128 *)
+  | PClcd_a (rd: ireg) (ra: ireg) (ofs: offset) (priv: bool)    (**r load any128 *)
+            
+  | PCsb    (rs: ireg) (ra: ireg) (ofs: offset)     (**r store int8 *)
+  | PCsh    (rs: ireg) (ra: ireg) (ofs: offset)     (**r store int16 *)
+  | PCsw    (rs: ireg) (ra: ireg) (ofs: offset)     (**r store int32 *)
+  | PCsw_a  (rs: ireg) (ra: ireg) (ofs: offset)     (**r store any32 *)
+  | PCsd    (rs: ireg) (ra: ireg) (ofs: offset)     (**r store int64 *)
+  | PCsd_a  (rs: ireg) (ra: ireg) (ofs: offset)     (**r store any64 *)
+  | PCscw   (rs: ireg) (ra: ireg) (ofs: offset)     (**r store cap64 *)
+  | PCscd   (rs: ireg) (ra: ireg) (ofs: offset)     (**r store cap128 *)
+  | PCscd_a (rs: ireg) (ra: ireg) (ofs: offset)     (**r store any128 *)
+
+  (* Capability-inspection instructions *)
+  | PCgp    (rd: ireg) (ra: ireg)                   (**r get permission *)
+  | PCgt    (rd: ireg) (ra: ireg)                   (**r get object type *)
+  | PCgb    (rd: ireg) (ra: ireg)                   (**r get base *)    
+  | PCge    (rd: ireg) (ra: ireg)                   (**r get end *)    
+  | PCgg    (rd: ireg) (ra: ireg)                   (**r get tag *)    
+  | PCgs    (rd: ireg) (ra: ireg)                   (**r get sealed status *)
+  | PCga    (rd: ireg) (ra: ireg)                   (**r get address offset *)
+
+  (* Capability-modification instructions *)          
+  | PCseal      (rd: ireg) (rs1 rs2: ireg)             (**r sealing *)
+  | PCunseal    (rd: ireg) (rs1 rs2: ireg)             (**r unsealing *)
+  | PCpermand   (rd: ireg) (rs1 rs2: ireg)             (**r bitwise and of permissions *)
+  | PCsaddr     (rd: ireg) (rs1 rs2: ireg)             (**r sets address of rs1 to rs2 *)
+  | PCiaddr     (rd: ireg) (rs1 rs2: ireg)             (**r increments address of rs1 by rs2 *)
+  | PCiaddr_il  (rd: ireg) (rs1 : ireg) (imm: int64)   (**r increments address of rs1 by imm *)
+  | PCsbase     (rd: ireg) (rs1 rs2: ireg)             (**r sets base to current address with length rs2 *)
+  | PCsbase_il  (rd: ireg) (rs1 : ireg) (imm: int64)   (**r sets base to current address with length imm *)
+  | PCcleart    (rd: ireg) (rs: ireg)                  (**r clears tag of capability in rs *)
+  | PCbuild     (rd: ireg) (rs1 rs2: ireg)             (**r derive capability from rs1 with fields from rs2 *)
+  | PCCseal     (rd: ireg) (rs1 rs2: ireg)             (**r conditional sealing *)
+  | PCseal_e    (rd: ireg) (rs : ireg)                 (**r seals to a sentry capability (E permission) *)
+
+  (* Capability pointer arithmetic instructions *)
+  | PCtoPtr  (rd: ireg) (rs1 rs2: ireg)             (**r rd is set to rs1.address - rs2.base *)
+  | PCsub    (rd: ireg) (rs1 rs2: ireg)             (**r rd is set to rs1.address - rs2.address *)
+  | PCmov    (rd: ireg) (rs: ireg)                  (**r rd is set to rs *)
+
+  (* Capability pointer comparison instructions *)
+  | PCsubset (rd: ireg) (rs1 rs2: ireg)             (**r rd is set to 1 if rs2 was derived from rs1 *)
+  | PCeex    (rd: ireg) (rs1 rs2: ireg)             (**r rd is set to 1 if the in memory representations of rs1 and rs2 are equal *)
+
+  (* fast register clearing instructions *)
+  | PCCclear  (imm: int)                            (**r i'th iregister is cleared if bit i in imm is 1, 0'th bit refers to DDC *)
+  | PCCclearf (imm: int)                            (**r i'th fregister is cleared if bit i in imm is 1 *)
+(* TODO: can i32 be represented as a bit vector? *)
+
+(* Probably doesn't need privilged stores because can't write directly to parameters. Instead
+   writing to a parameter writes to a /copy/ of the parameter *)
 
   (* Synchronization *)
   | Pfence                                          (**r fence *)
@@ -340,8 +483,8 @@ Inductive instruction : Type :=
   | Pfcvtsd  (rd: freg) (rs: freg)                  (**r float   -> float32 *)
 
   (* Pseudo-instructions *)
-  | Pallocframe (sz: Z) (pos: ptrofs)               (**r allocate new stack frame *)
-  | Pfreeframe  (sz: Z) (pos: ptrofs)               (**r deallocate stack frame and restore previous frame *)
+  (* | Pallocframe (sz: Z) (pos: ptrofs)               (**r allocate new stack frame *) *)
+  (* | Pfreeframe  (sz: Z) (pos: ptrofs)               (**r deallocate stack frame and restore previous frame *) *)
   | Plabel  (lbl: label)                            (**r define a code label *)
   | Ploadsymbol (rd: ireg) (id: ident) (ofs: ptrofs) (**r load the address of a symbol *)
   | Ploadsymbol_high (rd: ireg) (id: ident) (ofs: ptrofs) (**r load the high part of the address of a symbol *)
@@ -427,7 +570,10 @@ table:  .long   table[0], table[1], ...
         xor     rd, rs1, rs2
         sltu    rd, x0, rd
 >>
-*)
+ *)
+
+(** The capability machine backend is modelled in a flat memory model,
+    thus we do not need the stack related pseudo instructions *)
 
 Definition code := list instruction.
 Record function : Type := mkfunction { fn_comp: compartment; fn_sig: signature; fn_code: code }.
@@ -443,18 +589,18 @@ Definition program := AST.program fundef unit.
   type [Tint] or [Tlong] (in 64 bit mode),
   and float registers to values of type [Tsingle] or [Tfloat]. *)
 
-Definition regset := Pregmap.t val.
+Definition regset := Pregmap.t ocval.
 Definition genv := Genv.t fundef unit.
 
-Definition get0w (rs: regset) (r: ireg0) : val :=
+Definition get0w (rs: regset) (r: ireg0) : ocval :=
   match r with
-  | X0 => Vint Int.zero
+  | X0 => OCVint Int.zero
   | X r => rs r
   end.
 
-Definition get0l (rs: regset) (r: ireg0) : val :=
+Definition get0l (rs: regset) (r: ireg0) : ocval :=
   match r with
-  | X0 => Vlong Int64.zero
+  | X0 => OCVlong Int64.zero
   | X r => rs r
   end.
 
@@ -470,12 +616,12 @@ Open Scope asm.
 Fixpoint undef_regs (l: list preg) (rs: regset) : regset :=
   match l with
   | nil => rs
-  | r :: l' => undef_regs l' (rs#r <- Vundef)
+  | r :: l' => undef_regs l' (rs#r <- OCVundef)
   end.
 
 (** Assigning a register pair *)
 
-Definition set_pair (p: rpair preg) (v: val) (rs: regset) : regset :=
+Definition set_pair (p: rpair preg) (v: ocval) (rs: regset) : regset :=
   match p with
   | One r => rs#r <- v
   | Twolong rhi rlo => rs#rhi <- (Val.hiword v) #rlo <- (Val.loword v)
@@ -483,7 +629,7 @@ Definition set_pair (p: rpair preg) (v: val) (rs: regset) : regset :=
 
 (** Assigning multiple registers *)
 
-Fixpoint set_regs (rl: list preg) (vl: list val) (rs: regset) : regset :=
+Fixpoint set_regs (rl: list preg) (vl: list ocval) (rs: regset) : regset :=
   match rl, vl with
   | r1 :: rl', v1 :: vl' => set_regs rl' vl' (rs#r1 <- v1)
   | _, _ => rs
@@ -491,7 +637,7 @@ Fixpoint set_regs (rl: list preg) (vl: list val) (rs: regset) : regset :=
 
 (** Assigning the result of a builtin *)
 
-Fixpoint set_res (res: builtin_res preg) (v: val) (rs: regset) : regset :=
+Fixpoint set_res (res: builtin_res preg) (v: ocval) (rs: regset) : regset :=
   match res with
   | BR r => rs#r <- v
   | BR_none => rs
@@ -539,7 +685,7 @@ Variable ge: genv.
   a 12-bit low part [%lo(symbol + offset)]. *)
 
 Parameter low_half: genv -> ident -> ptrofs -> ptrofs.
-Parameter high_half: genv -> ident -> ptrofs -> val.
+Parameter high_half: genv -> ident -> ptrofs -> ocval.
 
 (** The fundamental property of these operations is that, when applied
   to the address of a symbol, their results can be recombined by
@@ -547,7 +693,7 @@ Parameter high_half: genv -> ident -> ptrofs -> val.
 
 Axiom low_high_half:
   forall id ofs,
-  Val.offset_ptr (high_half ge id ofs) (low_half ge id ofs) = Genv.symbol_address ge id ofs.
+  Val.offset_ptr (high_half ge id ofs) (low_half ge id ofs) = Some (Genv.symbol_address ge id ofs).
 
 (** The semantics is purely small-step and defined as a function
   from the current state (a register set + a memory state)
@@ -1076,38 +1222,9 @@ Definition extcall_arguments
     (rs: regset) (m: mem) (sg: signature) (args: list val) : Prop :=
   list_forall2 (extcall_arg_pair rs m) (loc_arguments sg) args.
 
-(** Extract the values of the arguments to a call. *)
-(* Note the difference: [loc_parameters] vs [loc_arguments] *)
-Inductive call_arg (rs: regset) (m: mem): loc -> val -> Prop :=
-  | call_arg_reg: forall r,
-      call_arg rs m (R r) (rs (preg_of r))
-  | call_arg_stack: forall ofs ty bofs cp v,
-      bofs = Stacklayout.fe_ofs_arg + 4 * ofs ->
-      Mem.loadv (chunk_of_type ty) m
-                (Val.offset_ptr rs#SP (Ptrofs.repr bofs)) cp = Some v ->
-      call_arg rs m (S Incoming ofs ty) v.
-
-Inductive call_arg_pair (rs: regset) (m: mem): rpair loc -> val -> Prop :=
-  | call_arg_one: forall l v,
-      call_arg rs m l v ->
-      call_arg_pair rs m (One l) v
-  | call_arg_twolong: forall hi lo vhi vlo,
-      call_arg rs m hi vhi ->
-      call_arg rs m lo vlo ->
-      call_arg_pair rs m (Twolong hi lo) (Val.longofwords vhi vlo).
-
-Definition call_arguments
-    (rs: regset) (m: mem) (sg: signature) (args: list val) : Prop :=
-  list_forall2 (call_arg_pair rs m) (loc_parameters sg) args.
-
 Definition loc_external_result (sg: signature) : rpair preg :=
   map_rpair preg_of (loc_result sg).
 
-Definition return_value (rs: regset) (sg: signature) :=
-  match loc_result sg with
-  | One l => rs (preg_of l)
-  | Twolong l1 l2 => Val.longofwords (rs (preg_of l1)) (rs (preg_of l2))
-  end.
 (** Execution of the instruction at [rs PC]. *)
 
 Inductive stackframe: Type :=
@@ -1162,8 +1279,7 @@ Definition update_stack_return (s: stack) (cp: compartment) rs' :=
   .
 
 Inductive state: Type :=
-  | State: stack -> regset -> mem -> bool -> state.
-  (* | EnforcementState: stack -> regset -> mem -> signature -> compartment -> state. *)
+  | State: stack -> regset -> mem -> state.
 
 (* Definition is_call i := *)
 (*   match i with *)
@@ -1203,15 +1319,15 @@ Inductive step: state -> trace -> state -> Prop :=
       rs PC = Vptr b ofs ->
       Genv.find_funct_ptr ge b = Some (Internal f) ->
       find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
-      forall (COMP: comp_of f = cp),
+      forall (COMP: Genv.find_comp ge (rs PC) = cp),
       exec_instr f i rs m cp = Next rs' m' ->
       sig_call i = None ->
       is_return i = false ->
       forall (NEXTPC: rs' PC = Vptr b' ofs'),
-      forall (ALLOWED: cp = Genv.find_comp ge (Vptr b' ofs')),
-      step (State st rs m true) E0 (State st rs' m' true)
+      forall (ALLOWED: Genv.allowed_call ge (comp_of f) (Vptr b' ofs')),
+      step (State st rs m) E0 (State st rs' m')
   | exec_step_internal_call:
-      forall b ofs f i sig rs m rs' m' b' ofs' cp st st' args t,
+      forall b ofs f i sig rs m rs' m' b' ofs' cp st st',
       rs PC = Vptr b ofs ->
       Genv.find_funct_ptr ge b = Some (Internal f) ->
       find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
@@ -1222,16 +1338,24 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (CURCOMP: Genv.find_comp ge (Vptr b Ptrofs.zero) = cp),
       (* Is a call, we update the stack *)
       forall (STUPD: update_stack_call st cp rs' = Some st'),
-      forall (ARGS: call_arguments rs' m' sig args),
       (* Is a call, we check whether we are allowed to pass pointers *)
-      forall (NO_CROSS_PTR:
+      forall (NO_CROSS_PTR_REGS:
           Genv.type_of_call ge (comp_of f) (Genv.find_comp ge (Vptr b' ofs')) = Genv.CrossCompartmentCall ->
-          List.Forall not_ptr args),
-      forall (EV: call_trace ge (comp_of f) (Genv.find_comp ge (Vptr b' ofs')) (Vptr b' ofs')
-              args (sig_args sig) t),
-      step (State st rs m true) t (State st' rs' m' true)
+          forall r, List.In (R r) (regs_of_rpairs (loc_parameters sig)) ->
+               not_ptr (rs' (preg_of r))),
+      forall (NO_CROSS_PTR_STACK:
+          Genv.type_of_call ge (comp_of f) (Genv.find_comp ge (Vptr b' ofs')) = Genv.CrossCompartmentCall ->
+          forall ofs v ty,
+            List.In (S Incoming ofs ty) (regs_of_rpairs (loc_parameters sig)) ->
+            Mem.loadv (chunk_of_type ty) m
+              (Val.offset_ptr (rs' SP) (* this is the stack pointer *)
+                 (Ptrofs.repr (offset_arg ofs))) None
+                      = Some v ->
+            (* load_stack m sp ty (Ptrofs.repr (offset_arg ofs)) None = Some v -> *)
+            not_ptr v),
+      step (State st rs m) E0 (State st' rs' m')
   | exec_step_internal_return:
-      forall b ofs f i rs m rs' m' cp cp' st st' allowed,
+      forall b ofs f i rs m rs' m' cp cp' st st',
       rs PC = Vptr b ofs ->
       Genv.find_funct_ptr ge b = Some (Internal f) ->
       find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
@@ -1246,11 +1370,12 @@ Inductive step: state -> trace -> state -> Prop :=
       (* Note that in the same manner, this definition only updates the stack when doing
          cross-compartment returns *)
       forall (STUPD: update_stack_return st cp rs' = Some st'),
-      (* No cross-compartment pointer return *)
+      (* (* No cross-compartment pointer return *) *)
       forall (NO_CROSS_PTR:
-          (Genv.type_of_call ge cp' cp = Genv.CrossCompartmentCall ->
-           not_ptr (return_value rs' (fn_sig f))) <-> allowed = true),
-      step (State st rs m true) E0 (State st' rs' m' allowed)
+          Genv.type_of_call ge cp' cp = Genv.CrossCompartmentCall ->
+          forall r, List.In r (regs_of_rpair (loc_result (fn_sig f))) ->
+              not_ptr (rs' (preg_of r))),
+      step (State st rs m) E0 (State st' rs' m')
   | exec_step_builtin:
       forall b ofs f ef args res rs m vargs t vres rs' m' st,
       rs PC = Vptr b ofs ->
@@ -1262,15 +1387,15 @@ Inductive step: state -> trace -> state -> Prop :=
               (set_res res vres
                 (undef_regs (map preg_of (destroyed_by_builtin ef))
                    (rs#X31 <- Vundef))) ->
-      step (State st rs m true) t (State st rs' m' true)
+      step (State st rs m) t (State st rs' m')
   | exec_step_external:
-      forall b ef args res rs m t rs' m' cp cp' cp'' st st' allowed,
+      forall b ef args res rs m t rs' m' cp cp' cp'' st st',
       rs PC = Vptr b Ptrofs.zero ->
       Genv.find_funct_ptr ge b = Some (External ef) ->
       forall COMP: Genv.find_comp ge (rs RA) = cp,
       external_call ef ge cp args m t res m' ->
       extcall_arguments rs m (ef_sig ef) args ->
-      rs' = (set_pair (loc_external_result (ef_sig ef)) res (undef_caller_save_regs rs))#PC <- (rs RA) ->
+      rs' = (set_pair (loc_external_result (ef_sig ef) ) res (undef_caller_save_regs rs))#PC <- (rs RA) ->
       (* These steps behave like returns. So we must update the stack *)
       forall (CURCOMP: Genv.find_comp ge (rs PC) = cp'),
       forall (NEXTCOMP: Genv.find_comp ge (rs' PC) = cp''),
@@ -1281,11 +1406,7 @@ Inductive step: state -> trace -> state -> Prop :=
       (* Note that in the same manner, this definition only updates the stack when doing
          cross-compartment returns *)
       forall (STUPD: update_stack_return st cp' rs' = Some st'),
-      (* No cross-compartment pointer return *)
-      forall (NO_CROSS_PTR:
-          (Genv.type_of_call ge cp'' cp' = Genv.CrossCompartmentCall ->
-           not_ptr (return_value rs' (ef_sig ef))) <-> allowed = true),
-      step (State st rs m true) t (State st' rs' m' allowed).
+      step (State st rs m) t (State st' rs' m').
 
 End RELSEM.
 
@@ -1300,17 +1421,16 @@ Inductive initial_state (p: program): state -> Prop :=
         # SP <- Vnullptr
         # RA <- Vnullptr in
       Genv.init_mem p = Some m0 ->
-      initial_state p (State initial_stack rs0 m0 true).
+      initial_state p (State initial_stack rs0 m0).
 
-Inductive final_state (p: program): state -> int -> Prop :=
-  | final_state_intro: forall rs m r b,
+Inductive final_state: state -> int -> Prop :=
+  | final_state_intro: forall rs m r,
       rs PC = Vnullptr ->
       rs X10 = Vint r ->
-      final_state p (State initial_stack rs m b) r
-.
+      final_state (State initial_stack rs m) r.
 
 Definition semantics (p: program) :=
-  Semantics step (initial_state p) (final_state p) (Genv.globalenv p).
+  Semantics step (initial_state p) final_state (Genv.globalenv p).
 
 (** Determinacy of the [Asm] semantics. *)
 
@@ -1333,32 +1453,6 @@ Proof.
     f_equal; eapply A; eauto. }
   assert (C: forall ll vl1, list_forall2 (extcall_arg_pair rs m) ll vl1 ->
              forall vl2, list_forall2 (extcall_arg_pair rs m) ll vl2 -> vl1 = vl2).
-  {
-    induction 1; intros vl2 EA; inv EA.
-    auto.
-    f_equal; eauto. }
-  intros. eapply C; eauto.
-Qed.
-
-Remark call_arguments_determ:
-  forall rs m sg args1 args2,
-  call_arguments rs m sg args1 -> call_arguments rs m sg args2 -> args1 = args2.
-Proof.
-  intros until m.
-  assert (A: forall l v1 v2,
-             call_arg rs m l v1 -> call_arg rs m l v2 -> v1 = v2).
-  { intros. inv H; inv H0. congruence.
-    destruct (rs X2); try discriminate.
-    simpl in H2, H5.
-    apply Mem.load_result in H2.
-    apply Mem.load_result in H5. congruence. }
-  assert (B: forall p v1 v2,
-             call_arg_pair rs m p v1 -> call_arg_pair rs m p v2 -> v1 = v2).
-  { intros. inv H; inv H0.
-    eapply A; eauto.
-    f_equal; eapply A; eauto. }
-  assert (C: forall ll vl1, list_forall2 (call_arg_pair rs m) ll vl1 ->
-             forall vl2, list_forall2 (call_arg_pair rs m) ll vl2 -> vl1 = vl2).
   {
     induction 1; intros vl2 EA; inv EA.
     auto.
@@ -1390,39 +1484,21 @@ Ltac Equalities :=
 - (* determ *)
   inv H; inv H0; Equalities; try now discriminate.
   + split. constructor. auto.
-  + inv EV0; inv EV.
-    * split. constructor. auto.
-    * congruence.
-    * congruence.
-    * split. assert (i1 = i) by congruence. subst.
-      assert (args0 = args) by (eapply call_arguments_determ; eauto). subst.
-      assert (vl0 = vl) by (eapply eventval_list_match_determ_2; eauto). subst.
-      constructor. auto.
+  + split. constructor. auto.
   + now destruct i0.
   + now destruct i0.
-  + split. constructor.
-    assert (allowed = allowed0).
-    { eapply iff_sym in NO_CROSS_PTR0.
-      assert (allowed0 = true <-> allowed = true). eapply iff_trans; eauto.
-      clear -H.
-      destruct allowed, allowed0; intuition. }
-    congruence.
+  + split. constructor. congruence.
+
   + assert (vargs0 = vargs) by (eapply eval_builtin_args_determ; eauto). subst vargs0.
     exploit external_call_determ. eexact H5. eexact H14.  intros [A B].
     split. auto. intros. destruct B; auto. subst. auto.
   + assert (args0 = args) by (eapply extcall_arguments_determ; eauto). subst args0.
     exploit external_call_determ. eexact H3. eexact H9. intros [A B].
-    split. auto. intros. destruct B; auto. subst.
-    assert (allowed = allowed0).
-    { eapply iff_sym in NO_CROSS_PTR0.
-      assert (allowed0 = true <-> allowed = true). eapply iff_trans; eauto.
-      clear -H.
-      destruct allowed, allowed0; intuition. }
-    congruence.
+    split. auto. intros. destruct B; auto. subst. congruence.
 - (* trace length *)
   red; intros. inv H; simpl.
   omega.
-  inv EV; simpl; omega.
+  omega.
   omega.
   eapply external_call_trace_length; eauto.
   eapply external_call_trace_length; eauto.
@@ -1431,11 +1507,10 @@ Ltac Equalities :=
 - (* final no step *)
   assert (NOTNULL: forall b ofs, Vnullptr <> Vptr b ofs).
   { intros; unfold Vnullptr; destruct Archi.ptr64; congruence. }
-  inv H.
-  unfold Vzero in H0. red; intros; red; intros.
+  inv H. unfold Vzero in H0. red; intros; red; intros.
   inv H; rewrite H0 in *; eelim NOTNULL; eauto.
 - (* final states *)
-  inv H; inv H0; congruence.
+  inv H; inv H0. congruence.
 Qed.
 
 (** Classification functions for processor registers (used in Asmgenproof). *)

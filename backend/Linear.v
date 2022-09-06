@@ -195,28 +195,18 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State s f sp (Lstore chunk addr args src :: b) rs m)
         E0 (State s f sp b rs' m')
   | exec_Lcall:
-      forall s f sp sig ros b rs m f' vf t,
+      forall s f sp sig ros b rs m f' vf args t,
       find_function ros rs = Some f' ->
       find_function_ptr ros rs = Some vf ->
       sig = funsig f' ->
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
-      (* Need to state what NO_CROSS_PTR should look like at this level *)
-      (* Attempt 1: *)
+      forall (ARGS: args = map (fun p => Locmap.getpair p
+                                   (undef_regs destroyed_at_function_entry (call_regs rs)))
+                        (loc_parameters sig)),
       forall (NO_CROSS_PTR:
           Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall ->
-          forall rs',
-            (* This [rs'] is what is used in [exec_function_internal] and seems to be
-                  what the callee can access *)
-            rs' = undef_regs destroyed_at_function_entry (call_regs rs) ->
-            forall l,
-              List.In l (regs_of_rpairs (loc_parameters sig)) ->
-              not_ptr (rs' l)),
-      forall (EV: forall rs',
-            rs' = undef_regs destroyed_at_function_entry (call_regs rs) ->
-            call_trace ge (comp_of f) (Genv.find_comp ge vf) vf
-               (map (fun p => Locmap.getpair p rs')
-                  (loc_parameters sig))
-               (sig_args sig) t),
+          List.Forall not_ptr args),
+      forall (EV: call_trace ge (comp_of f) (Genv.find_comp ge vf) vf args (sig_args sig) t),
       step (State s f sp (Lcall sig ros :: b) rs m)
         t (Callstate (Stackframe f sp rs b:: s) f' rs m)
   | exec_Ltailcall:
@@ -290,8 +280,7 @@ Inductive step: state -> trace -> state -> Prop :=
       forall s f sp rs0 c rs m sg cp,
       forall (NO_CROSS_PTR:
           Genv.type_of_call ge (comp_of f) cp = Genv.CrossCompartmentCall ->
-          forall l, List.In l (regs_of_rpair (loc_result sg)) ->
-              not_ptr (rs (R l))),
+          not_ptr (Locmap.getpair (map_rpair R (loc_result sg)) rs)),
       step (Returnstate (Stackframe f sp rs0 c :: s) rs m sg cp)
         E0 (State s f sp c rs m).
 

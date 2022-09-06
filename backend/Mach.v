@@ -233,7 +233,7 @@ Definition find_function_ptr
 Inductive extcall_arg (rs: regset) (m: mem) (sp: val): loc -> val -> Prop :=
   | extcall_arg_reg: forall r,
       extcall_arg rs m sp (R r) (rs r)
-  | extcall_arg_stack: forall ofs ty cp v,
+  | extcall_arg_stack: forall ofs ty cp v, (** TODO: should this [cp] be [None]? *)
       load_stack m sp ty (Ptrofs.repr (Stacklayout.fe_ofs_arg + 4 * ofs)) cp = Some v ->
       extcall_arg rs m sp (S Outgoing ofs ty) v.
 
@@ -250,8 +250,64 @@ Definition extcall_arguments
     (rs: regset) (m: mem) (sp: val) (sg: signature) (args: list val) : Prop :=
   list_forall2 (extcall_arg_pair rs m sp) (loc_arguments sg) args.
 
-(** Mach execution states. *)
+(* NOTE: the option type will make these functions difficult to use, so lets stick to
+  the previous definition*)
+(* (** Functional equivalent to the previous definition, to be used to extract *)
+(*     call arguments *) *)
 
+(* Definition call_arg (rs: regset) (m: mem) (sp: val) (l: loc): option val := *)
+(*   match l with *)
+(*   | R r => Some (rs r) *)
+(*   | S Outgoing ofs ty => load_stack m sp ty (Ptrofs.repr (Stacklayout.fe_ofs_arg + 4 * ofs)) None *)
+(*   | _ => None *)
+(*   end. *)
+
+(* Definition call_arg_pair (rs: regset) (m: mem) (sp: val) (l: rpair loc): option val := *)
+(*   match l with *)
+(* | One r => call_arg rs m sp r *)
+(* | Twolong r1 r2 => *)
+(*     match call_arg rs m sp r1, call_arg rs m sp r2 with *)
+(*     | Some rhi, Some rlo => Some (Val.longofwords rhi rlo) *)
+(*     | _, _ => None *)
+(*     end *)
+(* end. *)
+
+(* Definition call_arguments (rs: regset) (m: mem) (sp: val) (sg: signature): list (option val) := *)
+(*   List.map (call_arg_pair rs m sp) (loc_arguments sg). *)
+
+
+(** Extract the values of the arguments to a call. *)
+(* Note the difference: [loc_parameters] vs [loc_arguments] *)
+Inductive call_arg (rs: regset) (m: mem) (sp: val): loc -> val -> Prop :=
+  | call_arg_reg: forall r,
+      call_arg rs m sp (R r) (rs r)
+  | call_arg_stack: forall ofs ty cp v, (** TODO: should this [cp] be [None]? *)
+      load_stack m sp ty (Ptrofs.repr (Stacklayout.fe_ofs_arg + 4 * ofs)) cp = Some v ->
+      call_arg rs m sp (S Incoming ofs ty) v.
+
+Inductive call_arg_pair (rs: regset) (m: mem) (sp: val): rpair loc -> val -> Prop :=
+  | call_arg_one: forall l v,
+      call_arg rs m sp l v ->
+      call_arg_pair rs m sp (One l) v
+  | call_arg_twolong: forall hi lo vhi vlo,
+      call_arg rs m sp hi vhi ->
+      call_arg rs m sp lo vlo ->
+      call_arg_pair rs m sp (Twolong hi lo) (Val.longofwords vhi vlo).
+
+Definition call_arguments
+    (rs: regset) (m: mem) (sp: val) (sg: signature) (args: list val) : Prop :=
+  list_forall2 (call_arg_pair rs m sp) (loc_parameters sg) args.
+
+Definition return_value (rs: regset) (sg: signature) :=
+  match loc_result sg with
+  | One l => rs l
+  | Twolong l1 l2 => Val.longofwords (rs l1) (rs l2)
+  end.
+
+      (* forall (NO_CROSS_PTR: *)
+      (*     Genv.type_of_call ge (Genv.find_comp ge (Vptr f Ptrofs.zero)) cp = Genv.CrossCompartmentCall -> *)
+      (*     forall l, List.In l (regs_of_rpair (loc_result sg)) -> *)
+      (*         not_ptr (rs l)), *)
 (** Mach execution states. *)
 
 Inductive stackframe: Type :=
@@ -357,56 +413,18 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State s f sp (Mstore chunk addr args src :: c) rs m)
         E0 (State s f sp c rs' m')
   | exec_Mcall:
-      forall s fb sp sig ros c rs m f f' ra fd t,
+      forall s fb sp sig ros c rs m f f' ra fd args t,
       find_function_ptr ge ros rs = Some f' ->
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
       return_address_offset f c ra ->
       forall (CALLED: Genv.find_funct_ptr ge f' = Some fd),
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) (Vptr f' Ptrofs.zero)),
-      forall (NO_CROSS_PTR_REGS:
+      forall (ARGS: call_arguments (undef_regs destroyed_at_function_entry rs) m sp sig args),
+      forall (NO_CROSS_PTR:
           Genv.type_of_call ge (comp_of f) (Genv.find_comp ge (Vptr f' Ptrofs.zero)) = Genv.CrossCompartmentCall ->
-          forall rs',
-            (* This [rs'] is what is used in [exec_function_internal] and seems to be
-                  what the callee can access *)
-            rs' = undef_regs destroyed_at_function_entry rs ->
-            forall r, List.In (R r) (regs_of_rpairs (loc_parameters sig)) ->
-                 not_ptr (rs' r)),
-        (* 1) what are the registers that contain arguments and what are the
-              registers that contain trash
-              -> [r] stores an argument iff
-                 [List.In (R r) (regs_of_rpairs (loc_parameters sig))]
-           TODO:
-           2) identify these registers that don't contain arguments
-              -> the other ones
-           3) identify what registers cannot be invalidated
-              (return address? stack pointer?)
-              -> ??
-           4) invalidate the remaining ones
-         *)
-      forall (NO_CROSS_PTR_STACK:
-          Genv.type_of_call ge (comp_of f) (Genv.find_comp ge (Vptr f' Ptrofs.zero)) = Genv.CrossCompartmentCall ->
-          forall ofs ty,
-            List.In (S Incoming ofs ty) (regs_of_rpairs (loc_parameters sig)) ->
-            exists v,
-            load_stack m sp ty (Ptrofs.repr (offset_arg ofs)) None = Some v /\
-            not_ptr v),
-      forall (EV: forall ls rs',
-            rs' = undef_regs destroyed_at_function_entry rs ->
-            (* TODO: define this outside*)
-            ls = (concat (map (fun r => match r with
-                                     | R r => (rs' r) :: nil
-                                     | S Incoming ofs ty =>
-                                         match load_stack m sp ty (Ptrofs.repr (offset_arg ofs)) None with
-                                         | Some v => v :: nil
-                                         | _ => nil
-                                         end
-                                     | S _ _ _ => nil
-                                     end)
-                            (regs_of_rpairs (loc_parameters sig)))) ->
-            call_trace ge (comp_of f) (Genv.find_comp ge (Vptr f' Ptrofs.zero)) (Vptr f' Ptrofs.zero)
-              ls
-              (sig_args sig) t),
-          (* 1) what offsets contain parameters in the stack? *)
+          List.Forall not_ptr args),
+      forall (EV: call_trace ge (comp_of f) (Genv.find_comp ge (Vptr f' Ptrofs.zero)) (Vptr f' Ptrofs.zero)
+               args (sig_args sig) t),
       step (State s fb sp (Mcall sig ros :: c) rs m)
         t (Callstate (Stackframe fb sp ra c :: s)
                        f' rs m)
@@ -496,8 +514,7 @@ Inductive step: state -> trace -> state -> Prop :=
       forall s f sp ra c rs m sg cp,
       forall (NO_CROSS_PTR:
           Genv.type_of_call ge (Genv.find_comp ge (Vptr f Ptrofs.zero)) cp = Genv.CrossCompartmentCall ->
-          forall l, List.In l (regs_of_rpair (loc_result sg)) ->
-              not_ptr (rs l)),
+          not_ptr (return_value rs sg)),
       step (Returnstate (Stackframe f sp ra c :: s) rs m sg cp)
         E0 (State s f sp c rs m).
 

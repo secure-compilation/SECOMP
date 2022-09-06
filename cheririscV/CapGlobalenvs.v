@@ -33,10 +33,13 @@
   place during program linking and program loading in a real operating
   system. *)
 
+(** This file consists of the altered definition of globalenvs for the
+capability machine backend, where symbols are now matched to capabilities *)
+
 Require Import Recdef.
 Require Import Zwf.
-Require Import Axioms Coqlib Errors Maps AST Linking.
-Require Import Integers Floats Values Memory.
+Require Import Axioms Coqlib Errors Maps CapAST Linking.
+Require Import Integers Floats OCapValues CapMemory.
 
 Notation "s #1" := (fst s) (at level 9, format "s '#1'") : pair_scope.
 Notation "s #2" := (snd s) (at level 9, format "s '#2'") : pair_scope.
@@ -46,13 +49,54 @@ Local Open Scope error_monad_scope.
 
 Set Implicit Arguments.
 
+Arguments Some [A] _.
+Arguments None [A].
+
+(** standard maybe monad for option types *)
+Definition ret {A : Type} (x : A) := Some x.
+Definition bind {A B : Type} (a : option A) (f : A -> option B) : option B :=
+  match a with
+    | Some x => f x
+    | None => None
+  end.
+
+Notation "A >>= F" := (bind A F) (at level 42, left associativity).
+Notation "'do' X <- A ; B" := (bind A (fun X => B)) (at level 200, X ident, A at level 100, B at level 200).
+
+Lemma mon_left_id : forall (A B : Type) (a : A) (f : A -> option B),
+  ret a >>= f = f a.
+intros.
+reflexivity.
+Qed.
+ 
+Lemma mon_right_id : forall (A : Type) (a : option A),
+  a >>= ret = a.
+intros.
+induction a; repeat reflexivity.
+Qed.
+ 
+Lemma mon_assoc :
+  forall (A B C : Type) (a : option A) (f : A -> option B) (g : B -> option C),
+    (a >>= f) >>= g = a >>= (fun x => f x >>= g).
+intros.
+induction a; repeat reflexivity.
+Qed.
+
+(** Lifting a unary relation to an option type. *)
+
+Inductive option_urel (A: Type) (R: A -> Prop) : option A -> Prop :=
+  | option_urel_none: option_urel R None
+  | option_urel_some: forall x, R x -> option_urel R (Some x).
+
 (** Auxiliary function for initialization of global variables. *)
 
-Function store_zeros (m: mem) (b: block) (p: Z) (n: Z) (cp: compartment) {wf (Zwf 0) n}: option mem :=
-  if zle n 0 then Some m else
-    match Mem.store Mint8unsigned m b p Vzero cp with
-    | Some m' => store_zeros m' b (p + 1) (n - 1) cp
-    | None => None
+(** The following version assumes an init capability *)
+Function store_zeros (m: mem) (ptr: occap) (n: Z) (cp: compartment) {wf (Zwf 0) n}: occap * mem + error_kind :=
+  if zle n 0 then inl (ptr,m) else
+    match Mem.store DIR CMint8unsigned m ptr 0 OCVzero cp, incr_addr_stk ptr 1 with
+    | inl (_,m'),Some ptr' => store_zeros m' ptr' (n - 1) cp
+    | inr err,_ => inr err
+    | inl _, None => inr CapErr
     end.
 Proof.
   intros. red. omega.
@@ -73,11 +117,13 @@ Module Senv.
 
 Record t: Type := mksenv {
   (** Operations *)
-  find_symbol: ident -> option block;
+  find_symbol: ident -> option occap;
   public_symbol: ident -> bool;
-  invert_symbol: block -> option ident;
-  block_is_volatile: block -> bool;
-  nextblock: block;
+  invert_symbol: occap -> option ident;
+  block_is_volatile: occap -> bool;
+  snext: ptrofs;
+  sstart: ptrofs;
+  send: ptrofs;
   (** Properties *)
   find_symbol_injective:
     forall id1 id2 b, find_symbol id1 = Some b -> find_symbol id2 = Some b -> id1 = id2;
@@ -87,44 +133,47 @@ Record t: Type := mksenv {
     forall id b, find_symbol id = Some b -> invert_symbol b = Some id;
   public_symbol_exists:
     forall id, public_symbol id = true -> exists b, find_symbol id = Some b;
-  find_symbol_below:
-    forall id b, find_symbol id = Some b -> Plt b nextblock;
-  block_is_volatile_below:
-    forall b, block_is_volatile b = true -> Plt b nextblock
 }.
 
-Definition symbol_address (ge: t) (id: ident) (ofs: ptrofs) : val :=
+Definition symbol_address (ge: t) (id: ident) (ofs: ptrofs) : ocval :=
   match find_symbol ge id with
-  | Some b => Vptr b ofs
-  | None => Vundef
+  | Some c =>
+      if Ptrofs.unsigned ofs =? 0 then
+        OCVcap c
+      else 
+        match Val.offset_cap c ofs with
+        | None => OCVundef
+        | Some c' => OCVcap c'
+        end
+  | None => OCVundef
   end.
 
-Theorem shift_symbol_address:
-  forall ge id ofs delta,
-  symbol_address ge id (Ptrofs.add ofs delta) = Val.offset_ptr (symbol_address ge id ofs) delta.
-Proof.
-  intros. unfold symbol_address, Val.offset_ptr. destruct (find_symbol ge id); auto.
-Qed.
+(* Theorem shift_symbol_address: *)
+(*   forall ge id ofs delta, *)
+(*   symbol_address ge id (Ptrofs.add ofs delta) = Val.offset_ptr (symbol_address ge id ofs) delta. *)
+(* Proof. *)
+(*   intros. unfold symbol_address, Val.offset_ptr. destruct (find_symbol ge id); auto. *)
+(* Qed. *)
 
-Theorem shift_symbol_address_32:
-  forall ge id ofs n,
-  Archi.ptr64 = false ->
-  symbol_address ge id (Ptrofs.add ofs (Ptrofs.of_int n)) = Val.add (symbol_address ge id ofs) (Vint n).
-Proof.
-  intros. unfold symbol_address. destruct (find_symbol ge id).
-- unfold Val.add. rewrite H. auto.
-- auto.
-Qed.
+(* Theorem shift_symbol_address_32: *)
+(*   forall ge id ofs n, *)
+(*   Archi.ptr64 = false -> *)
+(*   symbol_address ge id (Ptrofs.add ofs (Ptrofs.of_int n)) = Val.add (symbol_address ge id ofs) (Vint n). *)
+(* Proof. *)
+(*   intros. unfold symbol_address. destruct (find_symbol ge id). *)
+(* - unfold Val.add. rewrite H. auto. *)
+(* - auto. *)
+(* Qed. *)
 
-Theorem shift_symbol_address_64:
-  forall ge id ofs n,
-  Archi.ptr64 = true ->
-  symbol_address ge id (Ptrofs.add ofs (Ptrofs.of_int64 n)) = Val.addl (symbol_address ge id ofs) (Vlong n).
-Proof.
-  intros. unfold symbol_address. destruct (find_symbol ge id).
-- unfold Val.addl. rewrite H. auto.
-- auto.
-Qed.
+(* Theorem shift_symbol_address_64: *)
+(*   forall ge id ofs n, *)
+(*   Archi.ptr64 = true -> *)
+(*   symbol_address ge id (Ptrofs.add ofs (Ptrofs.of_int64 n)) = Val.addl (symbol_address ge id ofs) (Vlong n). *)
+(* Proof. *)
+(*   intros. unfold symbol_address. destruct (find_symbol ge id). *)
+(* - unfold Val.addl. rewrite H. auto. *)
+(* - auto. *)
+(* Qed. *)
 
 Definition equiv (se1 se2: t) : Prop :=
      (forall id, find_symbol se2 id = find_symbol se1 id)
@@ -140,39 +189,146 @@ Module Genv.
 Section GENV.
 
 Variable F: Type.  (**r The type of function descriptions *)
-Variable V: Type.  (**r The type of information attached to variables *)
+Variable V: Type.  (**r The type of information attached to variables *) 
+
+(** function that calculates the region size of a global def *)
+(* AINA: might need to change the size of a function to be the number
+  of instructions + wrapper size. No need to actually store
+  instructions in memory, but since size is observation, the compiler
+  will only be FA if the function pointer points to a region of the
+  appropriate size *)
+Definition globdef_size: (globdef F V) -> Z :=
+  fun g => match g with
+        | Gfun _ => 1
+        | Gvar g => Z.max 1 (cap_init_data_list_size (gvar_init g)) (* want to avoid empty region *)
+        end.
+
+(** function that derives a capability of the correct size given a
+  starting address and a global def *)
+Variable build_capability: ptrofs -> (globdef F V) -> occap.
+
+(** function that derives the stack capability given a start and a
+  size *)
+Variable stack_size: Z.
+Variable build_stack_capability: ptrofs -> occap.
+
+(** function that derives the heap capability of a given a starting
+  address. Each heap has a fixed predetermined size *)
+Variable heap_size: Z.
+Variable build_heap_capability: ptrofs -> occap.
+
+Definition isFunctionCap (c: occap): bool :=
+  match c with
+  | OCsealable (OCVmem RX Global _ _ _) => true
+  | _ => false
+  end.
+
+Definition isVarCap (c: occap): bool :=
+  match c with
+  | OCsealable (OCVmem RW Global _ _ _) => true
+  | _ => false
+  end.
+
+Definition isEntryCap (c: occap): bool :=
+  match c with
+  | OCsealed _ (OCVmem RX Global _ _ _) => true
+  | _ => false
+  end.
+
+Definition isStackCap (c: occap): bool :=
+  match c with
+  | OCsealable (OCVmem URWL Directed _ _ _) => true
+  | _ => false
+  end.
+
+Definition globdef_capability_spec : ptrofs -> globdef F V -> occap -> Prop :=
+  fun base glob c =>
+    Ptrofs.eq (get_lo c) base = true
+    /\ Ptrofs.eq (get_lo c) (get_addr c) = true
+    /\ get_region_size c = globdef_size glob
+    /\ is_mem_cap c
+    /\ match glob with
+      | Gfun _ => isEntryCap c = true
+      | Gvar g => isVarCap c = true
+      end.
+
+Definition stack_capability_spec : ptrofs -> occap -> Prop :=
+  fun base c =>
+    Ptrofs.eq (get_lo c) base = true
+    /\ Ptrofs.unsigned (get_lo c) <= Ptrofs.unsigned (get_hi c)
+    /\ get_region_size c = stack_size mod Ptrofs.modulus
+    /\ isStackCap c = true.
+
+Definition heap_capability_spec : ptrofs -> occap -> Prop :=
+  fun base c =>
+    Ptrofs.eq (get_lo c) base = true
+    /\ Ptrofs.unsigned (get_lo c) <= Ptrofs.unsigned (get_hi c)
+    /\ get_region_size c = heap_size mod Ptrofs.modulus
+    /\ isVarCap c = true.
+
+Variable build_capability_inv:
+  forall base glob, globdef_capability_spec base glob (build_capability base glob).
+
+Variable build_stack_capability_inv:
+  forall base, stack_capability_spec base (build_stack_capability base).
+
+Variable build_heap_capability_inv:
+  forall base, heap_capability_spec base (build_heap_capability base).
+
+Lemma globdef_size_pos:
+  forall glob, (globdef_size glob > 0).
+Proof.
+  intros. destruct glob;simpl;try omega.
+  rewrite Zmax_spec.
+  destruct zlt;omega.
+Qed.
 
 Context {CF: has_comp F}.
 
 (** The type of global environments. *)
 
+Definition cap_to_Z_lo (ptr: occap) : Z :=
+  (Ptrofs.unsigned (get_lo ptr)).
+
 Record t: Type := mkgenv {
   genv_public: list ident;              (**r which symbol names are public *)
-  genv_symb: PTree.t block;             (**r mapping symbol -> block *)
-  genv_defs: PTree.t (globdef F V);     (**r mapping block -> definition *)
-  genv_next: block;                     (**r next symbol pointer *)
+  genv_symb: PTree.t occap;             (**r mapping symbol -> capability *)
+  genv_defs: PTree.t (globdef F V);     (**r mapping the lower bound of cap -> definition *)
+  genv_heaps: PTree.t occap;            (**r mapping from compartments to heap capabilities *)
+  genv_stack: option occap;             (**r stack capability *)
+  genv_next: ptrofs;                    (**r next symbol pointer *)
+  genv_start: ptrofs;                   (**r the bottom range of the globals environment *)
+  genv_end: ptrofs;                     (**r the top limit of the globals environment *)
   genv_policy: Policy.t;                (**r policy *)
-  genv_symb_range: forall id b, PTree.get id genv_symb = Some b -> Plt b genv_next;
-  genv_defs_range: forall b g, PTree.get b genv_defs = Some g -> Plt b genv_next;
+  genv_symb_range: forall id c, PTree.get id genv_symb = Some c -> Ptrofs.unsigned (get_lo c) < Ptrofs.unsigned genv_next;
+  genv_defs_range: forall ptr g, ZTree.get (cap_to_Z_lo ptr) genv_defs = Some g -> Ptrofs.unsigned (get_lo ptr) < Ptrofs.unsigned genv_next;
   genv_vars_inj: forall id1 id2 b,
-    PTree.get id1 genv_symb = Some b -> PTree.get id2 genv_symb = Some b -> id1 = id2
+   PTree.get id1 genv_symb = Some b -> PTree.get id2 genv_symb = Some b -> id1 = id2;
+  genv_next_in_bounds: Ptrofs.unsigned genv_start <= Ptrofs.unsigned genv_next < Ptrofs.unsigned genv_end                  
 }.
 
 (** ** Lookup functions *)
 
 (** [find_symbol ge id] returns the block associated with the given name, if any *)
 
-Definition find_symbol (ge: t) (id: ident) : option block :=
+Definition find_symbol (ge: t) (id: ident) : option occap :=
   PTree.get id ge.(genv_symb).
 
 (** [symbol_address ge id ofs] returns a pointer into the block associated
   with [id], at byte offset [ofs].  [Vundef] is returned if no block is associated
-  to [id]. *)
+  to [id], or if there is an attempt at altering a sealed capability *)
 
-Definition symbol_address (ge: t) (id: ident) (ofs: ptrofs) : val :=
+Definition symbol_address (ge: t) (id: ident) (ofs: ptrofs) : ocval :=
   match find_symbol ge id with
-  | Some b => Vptr b ofs
-  | None => Vundef
+  | Some c =>
+      if Ptrofs.unsigned ofs =? 0 then
+        OCVcap c
+      else 
+        match Val.offset_cap c ofs with
+        | None => OCVundef
+        | Some c' => OCVcap c'
+        end
+  | None => OCVundef
   end.
 
 (** [public_symbol ge id] says whether the name [id] is public and defined. *)
@@ -183,33 +339,40 @@ Definition public_symbol (ge: t) (id: ident) : bool :=
   | Some _ => In_dec ident_eq id ge.(genv_public)
   end.
 
-(** [find_def ge b] returns the global definition associated with the given address. *)
+(** [find_def ge b] returns the global definition associated with the given capability. *)
 
-Definition find_def (ge: t) (b: block) : option (globdef F V) :=
-  PTree.get b ge.(genv_defs).
+Definition find_def (ge: t) (ptr: occap) : option (globdef F V) :=
+  ZTree.get (cap_to_Z_lo ptr) ge.(genv_defs).
 
 (** [find_funct_ptr ge b] returns the function description associated with
     the given address. *)
 
-Definition find_funct_ptr (ge: t) (b: block) : option F :=
-  match find_def ge b with Some (Gfun f) => Some f | _ => None end.
+Definition find_funct_ptr (ge: t) (ptr: occap) : option F :=
+  match find_def ge ptr with Some (Gfun f) => Some f | _ => None end.
 
-(** [find_funct] is similar to [find_funct_ptr], but the function address
-    is given as a value, which must be a pointer with offset 0. *)
+Definition find_funct_size (ge: t) (lo: positive) : Z :=
+  match  PTree.get lo ge.(genv_defs) with Some f => globdef_size f | None => 0 end.
+  
+(** [find_funct] is similar to [find_funct_ptr], but the function
+    address is given as a value, which must be a memory capability
+    with address pointing to the base. *)
 
-Definition find_funct (ge: t) (v: val) : option F :=
+Definition find_funct (ge: t) (v: ocval) : option F :=
   match v with
-  | Vptr b ofs => if Ptrofs.eq_dec ofs Ptrofs.zero then find_funct_ptr ge b else None
+  | OCVcap c =>
+      if Ptrofs.eq_dec (get_lo c) (get_addr c) && is_mem_cap_b c
+      then find_funct_ptr ge c
+      else None
   | _ => None
   end.
 
 (** [find_comp ge v] finds the compartment associated with the pointer [v] as it
     is recorded in [ge]. *)
 
-Definition find_comp (ge: t) (v: val) : compartment :=
+Definition find_comp (ge: t) (v: ocval) : compartment :=
   match v with
-  | Vptr b _ =>
-    match find_funct_ptr ge b with
+  | OCVcap c =>
+    match find_funct_ptr ge c with
     | Some f => (comp_of f)
     | None   => default_compartment
     end
@@ -225,81 +388,309 @@ Qed.
 
 (** [invert_symbol ge b] returns the name associated with the given block, if any *)
 
-Definition invert_symbol (ge: t) (b: block) : option ident :=
+Definition invert_symbol (ge: t) (c: occap) : option ident :=
   PTree.fold
-    (fun res id b' => if eq_block b b' then Some id else res)
+    (fun res id c' => if occap_dec c c' then Some id else res)
     ge.(genv_symb) None.
 
 (** [find_var_info ge b] returns the information attached to the variable
    at address [b]. *)
 
-Definition find_var_info (ge: t) (b: block) : option (globvar V) :=
-  match find_def ge b with Some (Gvar v) => Some v | _ => None end.
+Definition find_var_info (ge: t) (c: occap) : option (globvar V) :=
+  match find_def ge c with Some (Gvar v) => Some v | _ => None end.
 
 (** [block_is_volatile ge b] returns [true] if [b] points to a global variable
   of volatile type, [false] otherwise. *)
 
-Definition block_is_volatile (ge: t) (b: block) : bool :=
-  match find_var_info ge b with
+Definition block_is_volatile (ge: t) (c: occap) : bool :=
+  match find_var_info ge c with
   | None => false
   | Some gv => gv.(gvar_volatile)
   end.
 
 (** ** Constructing the global environment *)
 
-Program Definition add_global (ge: t) (idg: ident * globdef F V) : t :=
-  @mkgenv
-    ge.(genv_public)
-    (PTree.set idg#1 ge.(genv_next) ge.(genv_symb))
-    (PTree.set ge.(genv_next) idg#2 ge.(genv_defs))
-    (Pos.succ ge.(genv_next))
-    (genv_policy ge)
-    _ _ _.
+Lemma build_capability_inv_lt:
+  forall base genv c, c = build_capability base genv ->
+                 Ptrofs.unsigned (get_lo c) <= Ptrofs.unsigned (get_hi c).
+Proof.
+  intros until c. intros Heqc.
+  pose proof (build_capability_inv base genv) as [S [B [Size [C G]]]].
+  rewrite <- Heqc in *.
+  destruct c,o;[|easy..].
+  apply Ptrofs.same_if_eq in S.
+  apply Ptrofs.same_if_eq in B. subst.
+  unfold get_region_size_nat,get_region_size in Size. simpl in *.
+  pose proof (Ptrofs.unsigned_range i) as [? _].
+  pose proof (Ptrofs.unsigned_range i0) as [? _].
+  (* rewrite Z2Nat.inj_sub in Size;auto. *)
+  pose proof (globdef_size_pos genv).
+  omega.
+Qed.  
+  
+Program Definition add_global (idg: ident * globdef F V) (ge: t): option t :=
+  let cap := build_capability ge.(genv_next) idg#2 in
+  if zlt (Ptrofs.unsigned (get_hi cap)) (Ptrofs.unsigned ge.(genv_end)) then
+    Some (@mkgenv
+      ge.(genv_public)
+      (PTree.set idg#1 cap ge.(genv_symb))
+      (ZTree.set (cap_to_Z_lo cap) idg#2 ge.(genv_defs))
+      ge.(genv_heaps)
+      ge.(genv_stack)
+      (get_hi cap)
+      ge.(genv_start)
+      ge.(genv_end)
+      (genv_policy ge)
+      _ _ _ _)
+  else None.
 Next Obligation.
   destruct ge; simpl in *.
-  rewrite PTree.gsspec in H. destruct (peq id i). inv H. apply Plt_succ.
-  apply Plt_trans_succ; eauto.
+  rewrite PTree.gsspec in H0.
+  inv H0. pose proof (build_capability_inv genv_next0 g).
+  destruct H0 as [B [S [Size [C G]]]].
+  remember (build_capability genv_next0 g) as cap.
+  destruct cap,o;[|easy..].
+  pose proof (build_capability_inv_lt Heqcap) as LT. simpl in *.
+  destruct (peq id i).
+  - unfold get_region_size_nat,get_region_size in Size.
+    pose proof (Ptrofs.unsigned_range i0) as [? _].
+    pose proof (globdef_size_pos g).
+    subst. inv H2. simpl in *. omega.
+  - apply genv_symb_range0 in H2.
+    apply Ptrofs.same_if_eq in B. subst.  
+    omega.
 Qed.
 Next Obligation.
   destruct ge; simpl in *.
-  rewrite PTree.gsspec in H. destruct (peq b genv_next0).
-  inv H. apply Plt_succ.
-  apply Plt_trans_succ; eauto.
+  pose proof (build_capability_inv genv_next0 g0) as [B [S [Size [C G]]]].
+  rewrite ZTree.gsspec in H0.
+  remember (build_capability genv_next0 g0) as c.
+  apply build_capability_inv_lt in Heqc as LT.
+  destruct c,o;[|easy..]. simpl in *.
+  destruct ZTree.elt_eq;inv H0.
+  - unfold cap_to_Z_lo in e.
+    unfold get_region_size_nat,get_region_size in Size.
+    simpl in *. rewrite e.
+    pose proof (globdef_size_pos g).
+    omega.
+  - apply genv_defs_range0 in H2.
+    apply Ptrofs.same_if_eq in B.
+    apply Ptrofs.same_if_eq in S;subst.
+    omega.
 Qed.
 Next Obligation.
   destruct ge; simpl in *.
-  rewrite PTree.gsspec in H. rewrite PTree.gsspec in H0.
+  rewrite PTree.gsspec in H0. rewrite PTree.gsspec in H1.
+  pose proof (build_capability_inv genv_next0 g) as [B [S [Size [C G]]]].
+  remember (build_capability genv_next0 g) as c.
+  apply build_capability_inv_lt in Heqc as LT.
+  apply Ptrofs.same_if_eq in S.
+  apply Ptrofs.same_if_eq in B.
   destruct (peq id1 i); destruct (peq id2 i).
-  congruence.
-  inv H. eelim Plt_strict. eapply genv_symb_range0; eauto.
-  inv H0. eelim Plt_strict. eapply genv_symb_range0; eauto.
-  eauto.
+  - congruence.
+  - inversion H0. subst c. apply genv_symb_range0 in H1 as ?.
+    rewrite S in *. rewrite B in *. rewrite H3 in *.
+    rewrite S in H2. omega.
+  - inversion H1. subst c. apply genv_symb_range0 in H0 as ?.
+    rewrite <- B, H3 in H2. omega.
+  - eauto.
+Qed.
+Next Obligation.
+  destruct ge;simpl in *.
+  pose proof (build_capability_inv genv_next0 g) as [B [S [Size [C G]]]].
+  remember (build_capability genv_next0 g) as c.
+  apply build_capability_inv_lt in Heqc as LT.
+  destruct c,o;[|easy..]. simpl in *.
+  apply Ptrofs.same_if_eq in B.
+  apply Ptrofs.same_if_eq in S;subst.
+  omega.
 Qed.
 
-Definition add_globals (ge: t) (gl: list (ident * globdef F V)) : t :=
-  List.fold_left add_global gl ge.
+Definition add_globals (ge: option t) (gl: list (ident * globdef F V)) : option t :=
+  List.fold_left (fun ge gl => (ge >>= add_global gl)) gl ge.
 
 Lemma add_globals_app:
   forall gl2 gl1 ge,
-  add_globals ge (gl1 ++ gl2) = add_globals (add_globals ge gl1) gl2.
+    add_globals ge (gl1 ++ gl2) = do X <- (add_globals ge gl1); add_globals (Some X) gl2.
 Proof.
-  intros. apply fold_left_app.
+  intros. unfold add_globals.
+  generalize dependent ge.
+  induction gl1;intros.
+  - destruct ge;simpl;auto.
+    induction gl2;auto.
+  - simpl. apply IHgl1.
 Qed.
 
-Program Definition empty_genv (pub: list ident) (pol: Policy.t): t :=
-  @mkgenv pub (PTree.empty _) (PTree.empty _) 1%positive pol _ _ _.
-Next Obligation.
-  rewrite PTree.gempty in H. discriminate.
-Qed.
-Next Obligation.
-  rewrite PTree.gempty in H. discriminate.
-Qed.
-Next Obligation.
-  rewrite PTree.gempty in H. discriminate.
+Lemma add_globals_nil:
+  forall go, add_globals go nil = go.
+Proof.
+  unfold add_globals. simpl. auto.
 Qed.
 
-Definition globalenv (p: program F V) :=
-  add_globals (empty_genv p.(prog_public) p.(prog_pol)) p.(prog_defs).
+Lemma add_globals_none:
+  forall gls, add_globals None gls = None.
+Proof.
+  induction 0;auto.
+Qed.
+
+Program Definition add_stack (ge: t): option t :=
+  let cap := build_stack_capability ge.(genv_next) in
+  if zlt (Ptrofs.unsigned (get_hi cap)) (Ptrofs.unsigned ge.(genv_end)) then
+    Some (@mkgenv
+      ge.(genv_public)
+      ge.(genv_symb)
+      ge.(genv_defs)
+      ge.(genv_heaps)
+      (Some cap)
+      (get_hi cap)
+      ge.(genv_start)
+      ge.(genv_end)
+      ge.(genv_policy)
+      _ _ _ _)
+  else None.
+Next Obligation.
+  remember (build_stack_capability (genv_next ge)) as cap.
+  pose proof (build_stack_capability_inv (genv_next ge)) as [B [LE [Size S]]].
+  rewrite <- Heqcap in *.
+  destruct cap,o;[clear S|easy..].
+  unfold get_region_size in Size. simpl in *.
+  apply (ge.(genv_symb_range)) in H0.
+  apply Ptrofs.same_if_eq in B. subst.
+  omega.
+Defined.
+Next Obligation.
+  remember (build_stack_capability (genv_next ge)) as cap.
+  pose proof (build_stack_capability_inv (genv_next ge)) as [B [LE [Size S]]].
+  rewrite <- Heqcap in *.
+  destruct cap,o;[clear S|easy..].
+  unfold get_region_size in Size. simpl in *.
+  apply (ge.(genv_defs_range)) in H0.
+  apply Ptrofs.same_if_eq in B. subst.
+  omega.
+Defined.
+Next Obligation.
+  remember (build_stack_capability (genv_next ge)) as cap.
+  pose proof (build_stack_capability_inv (genv_next ge)) as [B [LE [Size S]]].
+  rewrite <- Heqcap in *.
+  destruct cap,o;[clear S|easy..].
+  unfold get_region_size in Size. simpl in *.
+  eapply (ge.(genv_vars_inj)) in H0;[|apply H1].
+  auto.
+Defined.
+Next Obligation.
+  split;auto.
+  remember (build_stack_capability (genv_next ge)) as cap.
+  pose proof (build_stack_capability_inv (genv_next ge)) as [B [LE [Size S]]].
+  rewrite <- Heqcap in *.
+  destruct cap,o;[clear S|easy..].
+  unfold get_region_size in Size. simpl in *.
+  pose proof (ge.(genv_next_in_bounds)) as LE'. 
+  apply Ptrofs.same_if_eq in B. subst. omega.
+Defined.
+
+Program Definition add_heap (c: compartment) (ge: t): option t :=
+  let cap := build_heap_capability ge.(genv_next) in
+  if zlt (Ptrofs.unsigned (get_hi cap)) (Ptrofs.unsigned ge.(genv_end)) then
+    Some (@mkgenv
+      ge.(genv_public)
+      ge.(genv_symb)
+      ge.(genv_defs)
+      (PTree.set c cap ge.(genv_heaps))
+      ge.(genv_stack)
+      (get_hi cap)
+      ge.(genv_start)
+      ge.(genv_end)
+      ge.(genv_policy)
+      _ _ _ _)
+  else None.
+Next Obligation.
+  remember (build_heap_capability (genv_next ge)) as cap.
+  pose proof (build_heap_capability_inv (genv_next ge)) as [B [LE [Size S]]].
+  rewrite <- Heqcap in *.
+  destruct cap,o;[clear S|easy..].
+  unfold get_region_size in Size. simpl in *.
+  apply (ge.(genv_symb_range)) in H0.
+  apply Ptrofs.same_if_eq in B. subst.
+  omega.
+Defined.
+Next Obligation.
+  remember (build_heap_capability (genv_next ge)) as cap.
+  pose proof (build_heap_capability_inv (genv_next ge)) as [B [LE [Size S]]].
+  rewrite <- Heqcap in *.
+  destruct cap,o;[clear S|easy..].
+  unfold get_region_size in Size. simpl in *.
+  apply (ge.(genv_defs_range)) in H0.
+  apply Ptrofs.same_if_eq in B. subst.
+  omega.
+Defined.
+Next Obligation.
+  remember (build_heap_capability (genv_next ge)) as cap.
+  pose proof (build_heap_capability_inv (genv_next ge)) as [B [LE [Size S]]].
+  rewrite <- Heqcap in *.
+  destruct cap,o;[clear S|easy..].
+  unfold get_region_size in Size. simpl in *.
+  eapply (ge.(genv_vars_inj)) in H0;[|apply H1].
+  auto.
+Defined.
+Next Obligation.
+  split;auto.
+  remember (build_heap_capability (genv_next ge)) as cap.
+  pose proof (build_heap_capability_inv (genv_next ge)) as [B [LE [Size S]]].
+  rewrite <- Heqcap in *.
+  destruct cap,o;[clear S|easy..].
+  unfold get_region_size in Size. simpl in *.
+  pose proof (ge.(genv_next_in_bounds)) as LE'. 
+  apply Ptrofs.same_if_eq in B. subst. omega.
+Defined.
+
+Definition comp_has_heap (ge: t) (c: compartment) : Prop :=
+  match PTree.get c ge.(genv_heaps) with
+  | Some h => True
+  | None => False
+  end.
+Lemma comp_has_heap_dec: forall ge c, {comp_has_heap ge c} + {~ comp_has_heap ge c}.
+Proof.
+  intros. unfold comp_has_heap.
+  destruct (PTree.get c ge.(genv_heaps));auto.
+Defined.
+
+Definition comp_of_gl (gl: globdef F V) : compartment :=
+  match gl with
+  | Gfun f => comp_of f
+  | Gvar g => gvar_comp g
+  end.
+
+Fixpoint add_heaps (ge: option t) (gl: list (ident * globdef F V)) : option t :=
+  List.fold_left (fun ge gl => (do X <- ge; if comp_has_heap_dec X (comp_of gl#2) then Some X else add_heap (comp_of gl#2) X)) gl ge.
+
+Program Definition empty_genv (pub: list ident) (pol: Policy.t) (gstart gend: ptrofs) {region_wf: Ptrofs.unsigned gstart < Ptrofs.unsigned gend}: t :=
+  @mkgenv pub
+          (PTree.empty _)
+          (PTree.empty _)
+          (PTree.empty _)
+          None
+          gstart
+          gstart
+          gend
+          pol
+          _ _ _ _.
+Next Obligation.
+  rewrite PTree.gempty in H. discriminate.
+Qed.
+Next Obligation.
+  rewrite ZTree.gempty in H. discriminate.
+Qed.
+Next Obligation.
+  rewrite PTree.gempty in H. discriminate.
+Qed.
+Next Obligation.
+  omega.
+Qed.
+
+Program Definition globalenv (p: program F V) (gstart gend: ptrofs) :=
+  if zlt (Ptrofs.unsigned gstart) (Ptrofs.unsigned gend) then 
+    add_globals (Some (@empty_genv p.(prog_public) p.(prog_pol) gstart gend _)) p.(prog_defs)
+  else None.
 
 (** Proof principles *)
 
@@ -309,43 +700,61 @@ Variable P: t -> Prop.
 
 Lemma add_globals_preserves:
   forall gl ge,
-  (forall ge id g, P ge -> In (id, g) gl -> P (add_global ge (id, g))) ->
-  P ge -> P (add_globals ge gl).
+  (forall ge id g, P ge -> In (id, g) gl -> option_urel P (add_global (id, g) ge)) ->
+  option_urel P ge -> option_urel P (add_globals ge gl).
 Proof.
-  induction gl; simpl; intros.
-  auto.
-  destruct a. apply IHgl; auto.
+  generalize dependent ge.
+  induction gl; simpl; intros;auto.
+  destruct a. inv H0.
+  - simpl. rewrite add_globals_none.
+    constructor.
+  - simpl.
+    assert (option_urel P (add_global (i, g) x)) as P';auto.
 Qed.
 
 Lemma add_globals_ensures:
   forall id g gl ge,
-  (forall ge id g, P ge -> In (id, g) gl -> P (add_global ge (id, g))) ->
-  (forall ge, P (add_global ge (id, g))) ->
-  In (id, g) gl -> P (add_globals ge gl).
+  (forall ge id g, P ge -> In (id, g) gl -> option_urel P (add_global (id, g) ge)) ->
+  (forall ge, option_urel P (add_global (id, g) ge)) ->
+  In (id, g) gl -> option_urel P (add_globals ge gl).
 Proof.
   induction gl; simpl; intros.
   contradiction.
-  destruct H1. subst a. apply add_globals_preserves; auto.
-  apply IHgl; auto.
+  destruct H1.
+  - subst a. apply add_globals_preserves; auto.
+    destruct ge;simpl;[|constructor].
+    auto.
+  - apply IHgl; auto.
 Qed.
 
 Lemma add_globals_unique_preserves:
   forall id gl ge,
-  (forall ge id1 g, P ge -> In (id1, g) gl -> id1 <> id -> P (add_global ge (id1, g))) ->
-  ~In id (map fst gl) -> P ge -> P (add_globals ge gl).
+  (forall ge id1 g, P ge -> In (id1, g) gl -> id1 <> id -> option_urel P (add_global (id1, g) ge)) ->
+  ~In id (map fst gl) -> option_urel P ge -> option_urel P (add_globals ge gl).
 Proof.
   induction gl; simpl; intros.
   auto.
   destruct a. apply IHgl; auto.
+  inv H1;simpl;auto. constructor.
 Qed.
 
 Lemma add_globals_unique_ensures:
   forall gl1 id g gl2 ge,
-  (forall ge id1 g1, P ge -> In (id1, g1) gl2 -> id1 <> id -> P (add_global ge (id1, g1))) ->
-  (forall ge, P (add_global ge (id, g))) ->
-  ~In id (map fst gl2) -> P (add_globals ge (gl1 ++ (id, g) :: gl2)).
+  (forall ge id1 g1, P ge -> In (id1, g1) gl2 -> id1 <> id -> option_urel P (add_global (id1, g1) ge)) ->
+  (forall ge, option_urel P (add_global (id, g) ge)) ->
+  ~In id (map fst gl2) -> option_urel P (add_globals ge (gl1 ++ (id, g) :: gl2)).
 Proof.
-  intros. rewrite add_globals_app. simpl. apply add_globals_unique_preserves with id; auto.
+  intros. rewrite add_globals_app.
+  simpl. remember (add_globals ge gl1) as x1.
+  destruct x1;simpl;[|constructor].
+  specialize H0 with t0.
+  inv H0.
+  - rewrite add_globals_none. constructor.
+  - apply add_globals_preserves;auto.
+    + intros. apply H;auto.
+      intros Hcontr. subst.
+      apply H1. apply in_map_iff. exists (id,g0);auto.
+    + constructor;auto.
 Qed.
 
 Remark in_norepet_unique:
@@ -363,9 +772,9 @@ Qed.
 
 Lemma add_globals_norepet_ensures:
   forall id g gl ge,
-  (forall ge id1 g1, P ge -> In (id1, g1) gl -> id1 <> id -> P (add_global ge (id1, g1))) ->
-  (forall ge, P (add_global ge (id, g))) ->
-  In (id, g) gl -> list_norepet (map fst gl) -> P (add_globals ge gl).
+  (forall ge id1 g1, P ge -> In (id1, g1) gl -> id1 <> id -> option_urel P (add_global (id1, g1) ge)) ->
+  (forall ge, option_urel P (add_global (id, g) ge)) ->
+  In (id, g) gl -> list_norepet (map fst gl) -> option_urel P (add_globals ge gl).
 Proof.
   intros. exploit in_norepet_unique; eauto. intros (gl1 & gl2 & X & Y).
   subst gl. apply add_globals_unique_ensures; auto. intros. eapply H; eauto.
@@ -384,48 +793,53 @@ Proof.
   discriminate.
 Qed.
 
-Theorem shift_symbol_address:
-  forall ge id ofs delta,
-  symbol_address ge id (Ptrofs.add ofs delta) = Val.offset_ptr (symbol_address ge id ofs) delta.
-Proof.
-  intros. unfold symbol_address, Val.offset_ptr. destruct (find_symbol ge id); auto.
-Qed.
+(* ALG: do the following still hold? Not sure, address manipulation on capabilities is partial *)
+(* Theorem shift_symbol_address: *)
+(*   forall ge id ofs delta, *)
+(*   symbol_address ge id (Ptrofs.add ofs delta) = Val.offset_ptr (symbol_address ge id ofs) delta. *)
+(* Proof. *)
+(*   intros. unfold symbol_address, Val.offset_ptr. destruct (find_symbol ge id); auto. *)
+(* Qed. *)
 
-Theorem shift_symbol_address_32:
-  forall ge id ofs n,
-  Archi.ptr64 = false ->
-  symbol_address ge id (Ptrofs.add ofs (Ptrofs.of_int n)) = Val.add (symbol_address ge id ofs) (Vint n).
-Proof.
-  intros. unfold symbol_address. destruct (find_symbol ge id).
-- unfold Val.add. rewrite H. auto.
-- auto.
-Qed.
+(* Theorem shift_symbol_address_32: *)
+(*   forall ge id ofs n, *)
+(*   Archi.ptr64 = false -> *)
+(*   symbol_address ge id (Ptrofs.add ofs (Ptrofs.of_int n)) = Val.add (symbol_address ge id ofs) (Vint n). *)
+(* Proof. *)
+(*   intros. unfold symbol_address. destruct (find_symbol ge id). *)
+(* - unfold Val.add. rewrite H. auto. *)
+(* - auto. *)
+(* Qed. *)
 
-Theorem shift_symbol_address_64:
-  forall ge id ofs n,
-  Archi.ptr64 = true ->
-  symbol_address ge id (Ptrofs.add ofs (Ptrofs.of_int64 n)) = Val.addl (symbol_address ge id ofs) (Vlong n).
-Proof.
-  intros. unfold symbol_address. destruct (find_symbol ge id).
-- unfold Val.addl. rewrite H. auto.
-- auto.
-Qed.
+(* Theorem shift_symbol_address_64: *)
+(*   forall ge id ofs n, *)
+(*   Archi.ptr64 = true -> *)
+(*   symbol_address ge id (Ptrofs.add ofs (Ptrofs.of_int64 n)) = Val.addl (symbol_address ge id ofs) (Vlong n). *)
+(* Proof. *)
+(*   intros. unfold symbol_address. destruct (find_symbol ge id). *)
+(* - unfold Val.addl. rewrite H. auto. *)
+(* - auto. *)
+(* Qed. *)
 
 Theorem find_funct_inv:
   forall ge v f,
-  find_funct ge v = Some f -> exists b, v = Vptr b Ptrofs.zero.
+  find_funct ge v = Some f -> exists p l b e a, v = OCVcap (OCsealable (OCVmem p l b e a)).
 Proof.
   intros until f; unfold find_funct.
   destruct v; try congruence.
-  destruct (Ptrofs.eq_dec i Ptrofs.zero); try congruence.
-  intros. exists b; congruence.
+  destruct Ptrofs.eq_dec,is_mem_cap_b eqn:Hb;simpl;try congruence.
+  destruct o,o;try easy.
+  intros. exists p, l, i, i0, i1. auto.
 Qed.
 
 Theorem find_funct_find_funct_ptr:
-  forall ge b,
-  find_funct ge (Vptr b Ptrofs.zero) = find_funct_ptr ge b.
+  forall ge p l b e,
+  find_funct ge (OCVcap (OCsealable (OCVmem p l b e b))) = find_funct_ptr ge (OCsealable (OCVmem p l b e b)).
 Proof.
-  intros; simpl. apply dec_eq_true.
+  intros; simpl.
+  rewrite andb_true_r. simpl.
+  unfold proj_sumbool.
+  rewrite pred_dec_true;auto.
 Qed.
 
 Theorem find_funct_ptr_iff:
@@ -447,79 +861,145 @@ Proof.
 Qed.
 
 Theorem find_def_symbol:
-  forall p id g,
-  (prog_defmap p)!id = Some g <-> exists b, find_symbol (globalenv p) id = Some b /\ find_def (globalenv p) b = Some g.
+  forall p gstart gend id g,
+    (prog_defmap p)!id = Some g <-> exists b, option_urel (fun x => find_symbol x id = Some b) (globalenv p gstart gend) /\
+                                       option_urel (fun x => find_def x b = Some g) (globalenv p gstart gend).
 Proof.
-  intros.
-  set (P := fun m ge => m!id = Some g <-> exists b, find_symbol ge id = Some b /\ find_def ge b = Some g).
-  assert (REC: forall l m ge,
-            P m ge ->
-            P (fold_left (fun m idg => PTree.set idg#1 idg#2 m) l m)
-              (add_globals ge l)).
-  { induction l as [ | [id1 g1] l]; intros; simpl.
-  - auto.
-  - apply IHl. unfold P, add_global, find_symbol, find_def; simpl.
-    rewrite ! PTree.gsspec. destruct (peq id id1).
-    + subst id1. split; intros.
-      inv H0. exists (genv_next ge); split; auto. apply PTree.gss.
-      destruct H0 as (b & A & B). inv A. rewrite PTree.gss in B. auto.
-    + red in H; rewrite H. split.
-      intros (b & A & B). exists b; split; auto. rewrite PTree.gso; auto.
-      apply Plt_ne. eapply genv_symb_range; eauto.
-      intros (b & A & B). rewrite PTree.gso in B. exists b; auto.
-      apply Plt_ne. eapply genv_symb_range; eauto.
-  }
-  apply REC. unfold P, find_symbol, find_def; simpl.
-  rewrite ! PTree.gempty. split.
-  congruence.
-  intros (b & A & B); congruence.
+  (* intros. *)
+(*   set (P := fun m ge => m!id = Some g <-> exists b, find_symbol ge id = Some b /\ find_def ge b = Some g). *)
+(*   assert (REC: forall l m ge, *)
+(*             P m ge -> *)
+(*             P (fold_left (fun m idg => PTree.set idg#1 idg#2 m) l m) *)
+(*               (add_globals ge l)). *)
+(*   { induction l as [ | [id1 g1] l]; intros; simpl. *)
+(*   - auto. *)
+(*   - apply IHl. unfold P, add_global, find_symbol, find_def; simpl. *)
+(*     rewrite ! PTree.gsspec. destruct (peq id id1). *)
+(*     + subst id1. split; intros. *)
+(*       inv H0. exists (genv_next ge); split; auto. apply PTree.gss. *)
+(*       destruct H0 as (b & A & B). inv A. rewrite PTree.gss in B. auto. *)
+(*     + red in H; rewrite H. split. *)
+(*       intros (b & A & B). exists b; split; auto. rewrite PTree.gso; auto. *)
+(*       apply Plt_ne. eapply genv_symb_range; eauto. *)
+(*       intros (b & A & B). rewrite PTree.gso in B. exists b; auto. *)
+(*       apply Plt_ne. eapply genv_symb_range; eauto. *)
+(*   } *)
+(*   apply REC. unfold P, find_symbol, find_def; simpl. *)
+(*   rewrite ! PTree.gempty. split. *)
+(*   congruence. *)
+(*   intros (b & A & B); congruence. *)
+  (* Qed. *)
+Admitted.
+
+Theorem find_symbol_add_global_ne:
+  forall ge id b i c, find_symbol ge id = Some b ->
+                 i <> id ->
+                option_urel (fun x => find_symbol x id = Some b) (add_global (i,c) ge).
+Proof.
+  intros until c.
+  intros S n.
+  destruct (add_global (i,c) ge) eqn:Hg;[|constructor].
+  constructor. unfold find_symbol in *.
+  unfold add_global in Hg.
+  destruct zlt;inv Hg.
+  simpl in *.
+  rewrite PTree.gso;auto.
 Qed.
+
+Theorem find_symbol_add_globals_ne:
+  forall ge id b gls, find_symbol ge id = Some b ->
+                 ~ In id (map fst gls) ->
+                 option_urel (fun x => find_symbol x id = Some b) (add_globals (Some ge) gls).
+Proof.
+  intros until gls.
+  intros S n.
+  generalize dependent ge.
+  generalize dependent b.
+  induction gls;simpl;intros.
+  - constructor. auto.
+  - destruct a. apply not_in_cons in n as [ne n].
+    apply find_symbol_add_global_ne with (i:=i) (c:=g) in S;auto.
+    inv S.
+    + rewrite add_globals_none. constructor.
+    + eapply IHgls in n;eauto.
+Qed.
+
+Theorem find_symbol_add_global:
+  forall ge i c, option_urel (fun x => find_symbol x i = Some (build_capability (genv_next ge) c)) (add_global (i,c) ge).
+Proof.
+  intros until c.
+  destruct (add_global (i,c) ge) eqn:Hg;[|constructor].
+  constructor. unfold find_symbol in *.
+  unfold add_global in Hg.
+  destruct zlt;inv Hg.
+  simpl in *.
+  rewrite PTree.gss;auto.
+Qed.
+
 
 Theorem find_symbol_exists:
-  forall p id g,
+  forall p id g gend gstart,
   In (id, g) (prog_defs p) ->
-  exists b, find_symbol (globalenv p) id = Some b.
+  exists b, option_urel (fun x => find_symbol x id = Some b) (globalenv p gstart gend).
 Proof.
-  intros. unfold globalenv. eapply add_globals_ensures; eauto.
-(* preserves *)
-  intros. unfold find_symbol; simpl. rewrite PTree.gsspec. destruct (peq id id0).
-  econstructor; eauto.
-  auto.
-(* ensures *)
-  intros. unfold find_symbol; simpl. rewrite PTree.gss. econstructor; eauto.
-Qed.
+  intros. unfold globalenv.
+  destruct zlt;[|exists OCVnullmemcap;constructor].
+  remember (add_globals (Some (empty_genv (prog_public p) (prog_pol p) gstart gend)) (prog_defs p)).
+  destruct o;[|exists OCVnullmemcap;constructor].
+  destruct p;simpl in *.
+  generalize dependent t0.
+  induction prog_defs using rev_ind;try easy;simpl in *;intros.
+  apply in_app_or in H.
+  destruct H as [Hin | [Heq | HH]];[..|inv HH].
+  - destruct (add_globals (Some (empty_genv prog_public prog_pol gstart gend)) prog_defs) eqn:Heq.
+    + rewrite add_globals_app in Heqo. rewrite Heq in Heqo.
+      simpl in Heqo. 
+      eapply IHprog_defs with t1 in Hin as [b Hb];eauto.
+      exists b. constructor. admit.
+    + rewrite add_globals_app in Heqo. rewrite Heq in Heqo.
+      simpl in Heqo. congruence.
+  - admit.
+Admitted.
 
-Theorem find_symbol_inversion : forall p x b,
-  find_symbol (globalenv p) x = Some b ->
-  In x (prog_defs_names p).
+Theorem find_symbol_inversion : forall p gstart gend x b t0,
+    globalenv p gstart gend = Some t0 ->
+    find_symbol t0 x = Some b ->
+    In x (prog_defs_names p).
 Proof.
-  intros until b; unfold globalenv. eapply add_globals_preserves.
-(* preserves *)
-  unfold find_symbol; simpl; intros. rewrite PTree.gsspec in H1.
-  destruct (peq x id). subst x. change id with (fst (id, g)). apply List.in_map; auto.
-  auto.
-(* base *)
-  unfold find_symbol; simpl; intros. rewrite PTree.gempty in H. discriminate.
-Qed.
+  intros until t0; unfold globalenv. intros Heq.
+  destruct zlt;[|easy].
+(*   eapply add_globals_preserves. *)
+(* (* preserves *) *)
+(*   unfold find_symbol; simpl; intros. rewrite PTree.gsspec in H1. *)
+(*   destruct (peq x id). subst x. change id with (fst (id, g)). apply List.in_map; auto. *)
+(*   auto. *)
+(* (* base *) *)
+(*   unfold find_symbol; simpl; intros. rewrite PTree.gempty in H. discriminate. *)
+  (* Qed. *)
+Admitted.
 
-Theorem find_symbol_find_def_inversion : forall p x b,
-  find_symbol (globalenv p) x = Some b ->
-  exists g, find_def (globalenv p) b = Some g.
+Theorem find_symbol_find_def_inversion : forall p gstart gend x b t0,
+    globalenv p gstart gend = Some t0 ->
+    find_symbol t0 x = Some b ->
+    exists g, find_def t0 b = Some g.
 Proof.
-  intros until b. unfold globalenv. eapply add_globals_preserves.
-  - unfold find_symbol, find_def, add_global. simpl.
-    intros ge id g IH IN SYMBOL.
-    destruct (Pos.eq_dec id x) as [->|neq].
-    + rewrite PTree.gss in SYMBOL. injection SYMBOL as <-.
-      rewrite PTree.gss. eauto.
-    + rewrite PTree.gso in SYMBOL; eauto.
-      destruct IH as [g' IH]; eauto.
-      pose proof (genv_defs_range _ _ IH) as FRESH.
-      rewrite PTree.gso; eauto.
-      now apply Plt_ne.
-  - unfold find_symbol. simpl. now rewrite PTree.gempty.
-Qed.
+  intros until b. unfold globalenv. (* eapply add_globals_preserves. *)
+(*   - unfold find_symbol, find_def, add_global. simpl. *)
+(*     intros ge id g IH IN SYMBOL. *)
+(*     destruct (Pos.eq_dec id x) as [->|neq]. *)
+(*     + rewrite PTree.gss in SYMBOL. injection SYMBOL as <-. *)
+(*       rewrite PTree.gss. eauto. *)
+(*     + rewrite PTree.gso in SYMBOL; eauto. *)
+(*       destruct IH as [g' IH]; eauto. *)
+(*       pose proof (genv_defs_range _ _ IH) as FRESH. *)
+(*       rewrite PTree.gso; eauto. *)
+(*       now apply Plt_ne. *)
+(*   - unfold find_symbol. simpl. now rewrite PTree.gempty. *)
+  (* Qed. *)
+Admitted.
 
+(* TODO: state following missing theorems *)
+(*
 Theorem find_def_inversion:
   forall p b g,
   find_def (globalenv p) b = Some g ->
@@ -580,6 +1060,7 @@ Theorem global_addresses_distinct:
 Proof.
   intros. red; intros; subst. elim H. destruct ge. eauto.
 Qed.
+*)
 
 Theorem invert_find_symbol:
   forall ge id b,
@@ -589,10 +1070,11 @@ Proof.
   apply PTree_Properties.fold_rec.
   intros. rewrite H in H0; auto.
   congruence.
-  intros. destruct (eq_block b v). inv H2. apply PTree.gss.
-  rewrite PTree.gsspec. destruct (peq id k).
-  subst. assert (m!k = Some b) by auto. congruence.
-  auto.
+  intros. destruct occap_dec.
+  - inv H2. apply PTree.gss.
+  - subst. assert (m!id = Some b);auto.
+    rewrite PTree.gso;[|intros;subst;congruence].
+    auto.
 Qed.
 
 Theorem find_invert_symbol:
@@ -605,7 +1087,7 @@ Proof.
   apply PTree_Properties.fold_rec.
   intros. rewrite H in H0; auto.
   rewrite PTree.gempty; congruence.
-  intros. destruct (eq_block b v). exists k; auto.
+  intros. destruct (occap_dec b v). exists k; auto.
   rewrite PTree.gsspec in H2. destruct (peq id k).
   inv H2. congruence. auto.
 
@@ -614,6 +1096,7 @@ Proof.
   congruence.
 Qed.
 
+(*
 Definition advance_next (gl: list (ident * globdef F V)) (x: positive) :=
   List.fold_left (fun n g => Pos.succ n) gl x.
 
@@ -657,22 +1140,22 @@ Proof.
   rewrite find_var_info_iff in FV. eapply genv_defs_range; eauto.
   discriminate.
 Qed.
-
+*)
 (** ** Coercing a global environment into a symbol environment *)
 
-Definition to_senv (ge: t) : Senv.t :=
+Program Definition to_senv (ge: t) : Senv.t :=
  @Senv.mksenv
     (find_symbol ge)
     (public_symbol ge)
     (invert_symbol ge)
     (block_is_volatile ge)
     ge.(genv_next)
+    ge.(genv_start)
+    ge.(genv_end)
     ge.(genv_vars_inj)
     (invert_find_symbol ge)
     (find_invert_symbol ge)
-    (public_symbol_exists ge)
-    ge.(genv_symb_range)
-    (block_is_volatile_below ge).
+    (public_symbol_exists ge).
 
 (** * Construction of the initial memory state *)
 
@@ -680,31 +1163,39 @@ Section INITMEM.
 
 Variable ge: t.
 
-Definition store_init_data (m: mem) (b: block) (p: Z) (id: init_data) (cp: compartment) : option mem :=
+(** * Construction of the globals *)
+
+Definition store_init_data (m: mem) (c: occap) (p: Z) (id: init_data) (cp: compartment) : occap * mem + error_kind :=
   match id with
-  | Init_int8 n => Mem.store Mint8unsigned m b p (Vint n) cp
-  | Init_int16 n => Mem.store Mint16unsigned m b p (Vint n) cp
-  | Init_int32 n => Mem.store Mint32 m b p (Vint n) cp
-  | Init_int64 n => Mem.store Mint64 m b p (Vlong n) cp
-  | Init_float32 n => Mem.store Mfloat32 m b p (Vsingle n) cp
-  | Init_float64 n => Mem.store Mfloat64 m b p (Vfloat n) cp
+  | Init_int8 n => Mem.store DEFAULT CMint8unsigned m c p (OCVint n) cp
+  | Init_int16 n => Mem.store DEFAULT CMint16unsigned m c p (OCVint n) cp
+  | Init_int32 n => Mem.store DEFAULT CMint32 m c p (OCVint n) cp
+  | Init_int64 n => Mem.store DEFAULT CMint64 m c p (OCVlong n) cp
+  | Init_float32 n => Mem.store DEFAULT CMfloat32 m c p (OCVsingle n) cp
+  | Init_float64 n => Mem.store DEFAULT CMfloat64 m c p (OCVfloat n) cp
   | Init_addrof symb ofs =>
       match find_symbol ge symb with
-      | None => None
-      | Some b' => Mem.store Mptr m b p (Vptr b' ofs) cp
+      | None => inr PtrErr
+      | Some c' => if Ptrofs.unsigned ofs =? 0 then
+                    Mem.store DEFAULT CMcap m c p (OCVcap c') cp
+                  else
+                    match Val.offset_cap c' ofs with
+                    | None => inr CapErr (* the capability is sealed and cannot have altered address *)
+                    | Some c'' => Mem.store DEFAULT CMcap m c p (OCVcap c'') cp
+                    end
       end
-  | Init_space n => Some m
+  | Init_space n => inl (c,m)
   end.
 
-Fixpoint store_init_data_list (m: mem) (b: block) (p: Z) (idl: list init_data)
+Fixpoint store_init_data_list (m: mem) (c: occap) (p: Z) (idl: list init_data)
                               (cp : compartment)
-                              {struct idl}: option mem :=
+                              {struct idl}: mem + error_kind :=
   match idl with
-  | nil => Some m
+  | nil => inl m
   | id :: idl' =>
-      match store_init_data m b p id cp with
-      | None => None
-      | Some m' => store_init_data_list m' b (p + init_data_size id) idl' cp
+      match store_init_data m c p id cp with
+      | inr err => inr err
+      | inl (_,m') => store_init_data_list m' c (p + cap_init_data_size id) idl' cp
       end
   end.
 
@@ -716,19 +1207,33 @@ Definition perm_globvar (gv: globvar V) : permission :=
 Definition alloc_global (m: mem) (idg: ident * globdef F V): option mem :=
   match idg with
   | (id, Gfun f) =>
-      let (m1, b) := Mem.alloc m (comp_of f) 0 1 in
-      Mem.drop_perm m1 b 0 1 Nonempty (comp_of f)
+      match find_symbol ge id with
+      | None => None
+      | Some cap =>
+          let m1 := Mem.init m (comp_of f) cap in
+          match Mem.drop_perm m1 cap Nonempty (comp_of f) with
+          | inl m2 => Some m2
+          | inr _ => None
+          end
+      end
   | (id, Gvar v) =>
       let init := v.(gvar_init) in
       let comp := v.(gvar_comp) in
-      let sz := init_data_list_size init in
-      let (m1, b) := Mem.alloc m comp 0 sz in
-      match store_zeros m1 b 0 sz comp with
+      (* let cap  := lib.(genv_symb) ! id in *)
+      match find_symbol ge id with
       | None => None
-      | Some m2 =>
-          match store_init_data_list m2 b 0 init comp with
-          | None => None
-          | Some m3 => Mem.drop_perm m3 b 0 sz (perm_globvar v) comp
+      | Some cap =>
+          let m1 := Mem.init m comp cap in
+          match store_zeros m1 cap 0 comp with
+          | inr err => None
+          | inl (_,m2) =>
+              match store_init_data_list m2 cap 0 init comp with
+              | inr err => None
+              | inl m3 => match Mem.drop_perm m3 cap (perm_globvar v) comp with
+                         | inr _ => None
+                         | inl m2 => Some m2
+                         end
+              end
           end
       end
   end.
@@ -755,7 +1260,8 @@ Qed.
 
 (** Next-block properties *)
 
-Remark store_zeros_nextblock:
+(* ALG: TODO *)
+(*Remark store_zeros_nextblock:
   forall m b p n cp m', store_zeros m b p n cp = Some m' -> Mem.nextblock m' = Mem.nextblock m.
 Proof.
   intros until cp. functional induction (store_zeros m b p n cp); intros.
@@ -810,11 +1316,12 @@ Proof.
   congruence.
   destruct (alloc_global m a) as [m1|] eqn:?; try discriminate.
   erewrite IHgl; eauto. erewrite alloc_global_nextblock; eauto.
-Qed.
+Qed.*)
 
 (** Block compartments *)
 
-Remark store_zeros_block_compartment:
+(* ALG: TODO *)
+(*Remark store_zeros_block_compartment:
   forall m b p n cp m', store_zeros m b p n cp = Some m' ->
   forall b', Mem.block_compartment m' b' = Mem.block_compartment m b'.
 Proof.
@@ -898,11 +1405,12 @@ intros m1 m3 ALLOCGLOBALS.
 destruct alloc_global as [m2|] eqn:ALLOC; try congruence.
 rewrite (IH _ _ ALLOCGLOBALS), (alloc_global_block_compartment _ _ _ ALLOC).
 erewrite <- alloc_global_nextblock; eauto.
-Qed.
+Qed.*)
 
 (** Permissions *)
 
-Remark store_zeros_perm:
+(* ALG: TODO *)
+(*Remark store_zeros_perm:
   forall k prm b' q m b p n cp m',
   store_zeros m b p n cp = Some m' ->
   (Mem.perm m b' q k prm <-> Mem.perm m' b' q k prm).
@@ -984,11 +1492,12 @@ Proof.
   erewrite alloc_global_perm; eauto. eapply IHgl; eauto.
   unfold Mem.valid_block in *. erewrite alloc_global_nextblock; eauto.
   apply Plt_trans_succ; auto.
-Qed.
+Qed. *)
 
 (** Data preservation properties *)
 
-Remark store_zeros_unchanged:
+(* ALG: TODO *)
+(*Remark store_zeros_unchanged:
   forall (P: block -> Z -> Prop) m b p n cp m',
   store_zeros m b p n cp = Some m' ->
   (forall i, p <= i < p + n -> ~ P b i) ->
@@ -1028,16 +1537,17 @@ Proof.
   apply Mem.unchanged_on_trans with m1.
   eapply store_init_data_unchanged; eauto. intros; apply H0; tauto.
   eapply IHil; eauto. intros; apply H0. generalize (init_data_size_pos a); omega.
-Qed.
+Qed.*)
 
 (** Properties related to [loadbytes] *)
 
-Definition readbytes_as_zero (m: mem) (b: block) (ofs len: Z) (cp: option compartment) : Prop :=
+Definition readbytes_as_zero (m: mem) (cap: occap) (ofs len: Z) (cp: option compartment) : Prop :=
   forall p n,
   ofs <= p -> p + Z.of_nat n <= ofs + len ->
-  Mem.loadbytes m b p (Z.of_nat n) cp = Some (list_repeat n (Byte Byte.zero)).
+  Mem.loadbytes DEFAULT m cap p (Z.of_nat n) cp = inl (list_repeat n (Byte Byte.zero)).
 
-Lemma store_zeros_loadbytes:
+(* ALG: TODO *)
+(* Lemma store_zeros_loadbytes:
   forall m b p n cp m',
     Mem.can_access_block m b (Some cp) ->
   store_zeros m b p n cp = Some m' ->
@@ -1076,7 +1586,7 @@ Proof.
   + eapply IHo; eauto.
     eapply Mem.store_can_access_block_2; eauto.
 - discriminate.
-Qed.
+Qed. *)
 
 Definition bytes_of_init_data (i: init_data): list memval :=
   match i with
@@ -1089,18 +1599,19 @@ Definition bytes_of_init_data (i: init_data): list memval :=
   | Init_space n => list_repeat (Z.to_nat n) (Byte Byte.zero)
   | Init_addrof id ofs =>
       match find_symbol ge id with
-      | Some b => inj_value (if Archi.ptr64 then Q64 else Q32) (Vptr b ofs)
-      | None   => list_repeat (if Archi.ptr64 then 8%nat else 4%nat) Undef
+      | Some c => inj_value (if Archi.ptr64 then Q128 else Q64) (OCVcap c)
+      | None   => list_repeat (if Archi.ptr64 then 16%nat else 8%nat) Undef
       end
   end.
 
-Remark init_data_size_addrof:
-  forall id ofs, init_data_size (Init_addrof id ofs) = size_chunk Mptr.
+Remark cap_init_data_size_addrof:
+  forall id ofs, cap_init_data_size (Init_addrof id ofs) = size_chunk CMcap.
 Proof.
-  intros. unfold Mptr. simpl. destruct Archi.ptr64; auto.
+  intros. unfold CMcap. simpl. destruct Archi.ptr64; auto.
 Qed.
 
-Lemma store_init_data_loadbytes:
+(* ALG: TODO *)
+(*Lemma store_init_data_loadbytes:
   forall m b p i cp m',
   store_init_data m b p i cp = Some m' ->
   readbytes_as_zero m b p (init_data_size i) (Some cp) ->
@@ -1115,7 +1626,7 @@ Proof.
   destruct (find_symbol ge i) as [b'|]; try discriminate.
   rewrite (Mem.loadbytes_store_same _ _ _ _ _ _ _ H).
   unfold encode_val, Mptr; destruct Archi.ptr64; reflexivity.
-Qed.
+Qed.*)
 
 Fixpoint bytes_of_init_data_list (il: list init_data): list memval :=
   match il with
@@ -1123,7 +1634,8 @@ Fixpoint bytes_of_init_data_list (il: list init_data): list memval :=
   | i :: il => bytes_of_init_data i ++ bytes_of_init_data_list il
   end.
 
-Lemma store_init_data_list_loadbytes:
+(* ALG: TODO *)
+(* Lemma store_init_data_list_loadbytes:
   forall b il m p cp m',
     Mem.can_access_block m b (Some cp) ->
   store_init_data_list m b p il cp = Some m' ->
@@ -1152,24 +1664,25 @@ Proof.
   intros; omega.
   apply H1. omega. omega.
   auto. auto.
-Qed.
+Qed. *)
 
 (** Properties related to [load] *)
 
-Definition read_as_zero (m: mem) (b: block) (ofs len: Z) (cp: option compartment) : Prop :=
+Definition read_as_zero (m: mem) (c: occap) (ofs len: Z) (cp: option compartment) : Prop :=
   forall chunk p,
   ofs <= p -> p + size_chunk chunk <= ofs + len ->
   (align_chunk chunk | p) ->
-  Mem.load chunk m b p cp =
-  Some (match chunk with
-        | Mint8unsigned | Mint8signed | Mint16unsigned | Mint16signed | Mint32 => Vint Int.zero
-        | Mint64 => Vlong Int64.zero
-        | Mfloat32 => Vsingle Float32.zero
-        | Mfloat64 => Vfloat Float.zero
-        | Many32 | Many64 => Vundef
+  Mem.load DEFAULT chunk m c p cp =
+  inl (match chunk with
+        | CMint8unsigned | CMint8signed | CMint16unsigned | CMint16signed | CMint32 => OCVint Int.zero
+        | CMint64 => OCVlong Int64.zero
+        | CMfloat32 => OCVsingle Float32.zero
+        | CMfloat64 => OCVfloat Float.zero
+        | CMany32 | CMany64 | CMany128 | CMcap64 | CMcap128 => OCVundef
         end).
 
-Remark read_as_zero_unchanged:
+(* ALG: TODO *)
+(* Remark read_as_zero_unchanged:
   forall (P: block -> Z -> Prop) m b ofs len cp m',
   read_as_zero m b ofs len cp ->
   Mem.unchanged_on P m m' ->
@@ -1191,38 +1704,39 @@ Proof.
   apply Mem.loadbytes_load; auto. rewrite size_chunk_conv.
   eapply store_zeros_loadbytes; eauto. rewrite <- size_chunk_conv; auto.
   f_equal. destruct chunk; unfold decode_val; unfold decode_int; unfold rev_if_be; destruct Archi.big_endian; reflexivity.
-Qed.
+Qed. *)
 
-Fixpoint load_store_init_data (m: mem) (b: block) (p: Z) (il: list init_data) (cp: option compartment) {struct il} : Prop :=
+Fixpoint load_store_init_data (m: mem) (c: occap) (p: Z) (il: list init_data) (cp: option compartment) {struct il} : Prop :=
   match il with
   | nil => True
   | Init_int8 n :: il' =>
-      Mem.load Mint8unsigned m b p cp = Some(Vint(Int.zero_ext 8 n))
-      /\ load_store_init_data m b (p + 1) il' cp
+      Mem.load DEFAULT CMint8unsigned m c p cp = inl (OCVint(Int.zero_ext 8 n))
+      /\ load_store_init_data m c (p + 1) il' cp
   | Init_int16 n :: il' =>
-      Mem.load Mint16unsigned m b p cp = Some(Vint(Int.zero_ext 16 n))
-      /\ load_store_init_data m b (p + 2) il' cp
+      Mem.load DEFAULT CMint16unsigned m c p cp = inl(OCVint(Int.zero_ext 16 n))
+      /\ load_store_init_data m c (p + 2) il' cp
   | Init_int32 n :: il' =>
-      Mem.load Mint32 m b p cp = Some(Vint n)
-      /\ load_store_init_data m b (p + 4) il' cp
+      Mem.load DEFAULT CMint32 m c p cp = inl(OCVint n)
+      /\ load_store_init_data m c (p + 4) il' cp
   | Init_int64 n :: il' =>
-      Mem.load Mint64 m b p cp = Some(Vlong n)
-      /\ load_store_init_data m b (p + 8) il' cp
+      Mem.load DEFAULT CMint64 m c p cp = inl(OCVlong n)
+      /\ load_store_init_data m c (p + 8) il' cp
   | Init_float32 n :: il' =>
-      Mem.load Mfloat32 m b p cp = Some(Vsingle n)
-      /\ load_store_init_data m b (p + 4) il' cp
+      Mem.load DEFAULT CMfloat32 m c p cp = inl(OCVsingle n)
+      /\ load_store_init_data m c (p + 4) il' cp
   | Init_float64 n :: il' =>
-      Mem.load Mfloat64 m b p cp = Some(Vfloat n)
-      /\ load_store_init_data m b (p + 8) il' cp
+      Mem.load DEFAULT CMfloat64 m c p cp = inl(OCVfloat n)
+      /\ load_store_init_data m c (p + 8) il' cp
   | Init_addrof symb ofs :: il' =>
-      (exists b', find_symbol ge symb = Some b' /\ Mem.load Mptr m b p cp = Some(Vptr b' ofs))
-      /\ load_store_init_data m b (p + size_chunk Mptr) il' cp
+      (exists b', find_symbol ge symb = Some b' /\ Mem.load DEFAULT CMptr m c p cp = inl(OCVcap b'))
+      /\ load_store_init_data m c (p + size_chunk CMcap) il' cp
   | Init_space n :: il' =>
-      read_as_zero m b p n cp
-      /\ load_store_init_data m b (p + Z.max n 0) il' cp
+      read_as_zero m c p n cp
+      /\ load_store_init_data m c (p + Z.max n 0) il' cp
   end.
 
-Lemma store_init_data_list_charact:
+(* ALG: TODO *)
+(* Lemma store_init_data_list_charact:
   forall b il m p cp m',
   store_init_data_list m b p il cp = Some m' ->
   read_as_zero m b p (init_data_list_size il) (Some cp) ->
@@ -1328,24 +1842,26 @@ Proof.
   induction il; intro p; simpl.
   auto.
   intros. rewrite ! H. destruct a; intuition. red; intros; rewrite H; auto.
-Qed.
+Qed. *)
 
+(* ALD: TODO: add something about the permission/sealed status/other tags of the capability? *)
 Definition globals_initialized (g: t) (m: mem) :=
   forall b gd,
   find_def g b = Some gd ->
   match gd with
   | Gfun f =>
-    Mem.perm m b 0 Cur Nonempty
-      /\ (forall ofs k p, Mem.perm m b ofs k p -> ofs = 0 /\ p = Nonempty)
+    Mem.perm m (Mem.derive_offset DEFAULT b 0) Cur Nonempty
+      /\ (forall ofs k p, Mem.perm m (Mem.derive_offset DEFAULT b ofs) k p -> ofs = 0 /\ p = Nonempty)
   | Gvar v =>
-         Mem.range_perm m b 0 (init_data_list_size v.(gvar_init)) Cur (perm_globvar v)
-      /\ (forall ofs k p, Mem.perm m b ofs k p ->
+         Mem.range_perm m (Mem.derive_offset DEFAULT b 0) (Mem.derive_offset DEFAULT b (init_data_list_size v.(gvar_init))) Cur (perm_globvar v)
+      /\ (forall ofs k p, Mem.perm m (Mem.derive_offset DEFAULT b ofs) k p ->
             0 <= ofs < init_data_list_size v.(gvar_init) /\ perm_order (perm_globvar v) p)
       /\ (v.(gvar_volatile) = false -> load_store_init_data m b 0 v.(gvar_init) (Some v.(gvar_comp)))
-      /\ (v.(gvar_volatile) = false -> Mem.loadbytes m b 0 (init_data_list_size v.(gvar_init)) (Some v.(gvar_comp)) = Some (bytes_of_init_data_list v.(gvar_init)))
+      /\ (v.(gvar_volatile) = false -> Mem.loadbytes DEFAULT m b 0 (init_data_list_size v.(gvar_init)) (Some v.(gvar_comp)) = inl (bytes_of_init_data_list v.(gvar_init)))
   end.
 
-Lemma alloc_global_initialized:
+(* ALG: TODO *)
+(* Lemma alloc_global_initialized:
   forall g m id gd m',
   genv_next g = Mem.nextblock m ->
   alloc_global m (id, gd) = Some m' ->
@@ -1424,12 +1940,49 @@ Proof.
 - destruct a as [id g]. destruct (alloc_global m (id, g)) as [m1|] eqn:?; try discriminate.
   exploit alloc_global_initialized; eauto. intros [P Q].
   eapply IHgl; eauto.
-Qed.
+Qed. *)
+
+(** * Construction of the stack *)
+
+(** A stack region is initialized to NonEmpty *)
+(** Note that since it starts out uninitialized, it does not need to
+  be 0'd out *)
+
+Definition alloc_stack (m: mem): option mem :=
+  match ge.(genv_stack) with
+  | Some cap => Some (Mem.init_stack m cap)
+  | None => None
+end.
+
+(** * Construction of the per component heaps *)
+
+Definition alloc_heap (m: mem) (idg: ident * globdef F V) : option mem :=
+  let (id, g) := idg in
+  let comp := comp_of_gl g in
+  match PTree.get comp (genv_heaps ge) with
+  | Some cap =>
+      let m1 := Mem.init_heap m comp cap in
+      Some m1
+  | None => None
+  end.
+
+Fixpoint alloc_heaps (m: mem) (gl: list (ident * globdef F V)) {struct gl} : option mem :=
+  match gl with
+  | nil => Some m
+  | g :: gl' =>
+      match alloc_heap m g with
+      | Some m' => alloc_heaps m' gl'
+      | None => None
+      end
+  end.
 
 End INITMEM.
 
-Definition init_mem (p: program F V) :=
-  alloc_globals (globalenv p) Mem.empty p.(prog_defs).
+Definition init_mem (ge: t) (p: program F V) (gstart gend: ptrofs) :=
+  do GL <- (globalenv p gstart gend);
+  do M1 <- alloc_globals GL Mem.empty p.(prog_defs);
+  do M2 <- alloc_stack GL M1;
+  alloc_heaps GL M2 p.(prog_defs).
 
 Lemma init_mem_find_def:
   forall p m b g,
@@ -1906,20 +2459,45 @@ Definition type_of_call (ge: t) (cp: compartment) (cp': compartment): call_type 
   else if Pos.eqb cp' default_compartment then DefaultCompartmentCall
        else CrossCompartmentCall.
 
-Lemma type_of_call_cp_default:
-  forall ge cp, type_of_call ge cp default_compartment <> CrossCompartmentCall.
-Proof.
-  intros ge cp; unfold type_of_call.
-  destruct (cp =? default_compartment)%positive; [congruence |].
-  rewrite Pos.eqb_refl; congruence.
-Qed.
+(* Definition type_of_call (ge: t) (cp: compartment) (vf: val): call_type := *)
+(*   match find_comp ge vf with *)
+(*   | None => InternalCall (* a failed call is internal, by definition *) *)
+(*   | Some cp' => type_of_call ge cp cp' *)
+(*       (* if Pos.eqb cp cp' then InternalCall *) *)
+(*       (* else if Pos.eqb cp' default_compartment then DefaultCompartmentCall *) *)
+(*       (*      else CrossCompartmentCall *) *)
+(*   end. *)
 
-Lemma type_of_call_same_cp:
-  forall ge cp, type_of_call ge cp cp <> CrossCompartmentCall.
-Proof.
-  intros; unfold type_of_call.
-  now rewrite Pos.eqb_refl.
-Qed.
+(* (* A call is cross-compartment if the following definition holds: *) *)
+(* Definition cross_call (ge: t) (cp: compartment) (vf: val) := *)
+(*   match find_comp ge vf with *)
+(*   | Some cp' => cp <> cp' /\ *)
+(*                  cp' <> default_compartment (* the default compartment is really privileged, *)
+(*                                             as this is where all the builtin functions live *) *)
+(*   | None => False *)
+(*   end. *)
+
+(* Definition cross_call_b (ge: t) (cp: compartment) (vf: val): bool := *)
+(*   match find_comp ge vf with *)
+(*   | Some cp' => negb (Pos.eqb cp cp') && negb (Pos.eqb cp' default_compartment) *)
+(*   | None => false *)
+(*   end. *)
+
+(* Lemma cross_call_reflect: forall ge cp vf, *)
+(*     cross_call ge cp vf <-> cross_call_b ge cp vf = true. *)
+(* Proof. *)
+(*   intros. *)
+(*   unfold cross_call, cross_call_b. *)
+(*   destruct (find_comp ge vf) eqn:COMP. *)
+(*   - split. *)
+(*     + intros [cp_neq cp_neq']. *)
+(*       apply Pos.eqb_neq in cp_neq. apply Pos.eqb_neq in cp_neq'. *)
+(*       rewrite cp_neq, cp_neq'. reflexivity. *)
+(*     + intros cp_neq. apply andb_true_iff in cp_neq as [cp_neq cp_neq']. *)
+(*       apply negb_true_iff in cp_neq. apply negb_true_iff in cp_neq'. *)
+(*       split; apply Pos.eqb_neq; assumption. *)
+(*   - split; [auto | discriminate]. *)
+(* Qed. *)
 
 (* A call is allowed if any of these 3 cases holds:
 (1) the procedure being called belongs to the default compartment

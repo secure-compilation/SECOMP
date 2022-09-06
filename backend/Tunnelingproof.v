@@ -522,35 +522,41 @@ Proof.
   { intros. subst.
     assert (X: Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall).
     { erewrite find_comp_translated, type_of_call_translated; eauto. }
-    specialize (NO_CROSS_PTR X _ eq_refl l).
-    assert (Val.lessdef (undef_regs destroyed_at_function_entry (call_regs rs) l)
-                        (undef_regs destroyed_at_function_entry (call_regs tls) l)).
-    apply locmap_undef_regs_lessdef; eauto. eapply call_regs_lessdef; eauto.
-    inv H2; eauto. specialize (NO_CROSS_PTR H3).
-    rewrite <- H5 in NO_CROSS_PTR; inv NO_CROSS_PTR.
+    specialize (NO_CROSS_PTR X).
+    apply Forall_forall. rewrite Forall_forall in NO_CROSS_PTR.
+    intros v Hin. apply in_map_iff in Hin as [v' [Heq Hin]].
+    apply in_map with (f := (fun p : rpair loc => Locmap.getpair p (undef_regs destroyed_at_function_entry (call_regs rs))))
+                         in Hin.
+    specialize (NO_CROSS_PTR _ Hin).
+    assert (Val.lessdef (Locmap.getpair v' (undef_regs destroyed_at_function_entry (call_regs rs))) v).
+    { subst.
+      apply locmap_getpair_lessdef; auto.
+      apply locmap_undef_regs_lessdef; auto.
+      apply call_regs_lessdef; auto. }
+    inv H2; eauto.
+    rewrite <- H4 in NO_CROSS_PTR; inv NO_CROSS_PTR.
   }
-  intros rs' ?; subst.
-  specialize (EV _ eq_refl).
+  assert (LD: Val.lessdef_list
+        (map
+            (fun p : rpair loc =>
+             Locmap.getpair p (undef_regs destroyed_at_function_entry (call_regs rs)))
+            (Conventions.loc_parameters (funsig fd)))
+        (map
+       (fun p : rpair loc => Locmap.getpair p (undef_regs destroyed_at_function_entry (call_regs tls)))
+       (Conventions.loc_parameters (funsig fd)))).
+  { apply locmap_getpairs_lessdef.
+    apply locmap_undef_regs_lessdef.
+    apply call_regs_lessdef. auto. }
   Set Nested Proofs Allowed.
+  (* TODO: move this lemma to a common file *)
 Lemma call_trace_translated:
-  forall cp cp' vf rs tls args tyargs t,
-    locmap_lessdef rs tls ->
-    (Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall ->
-     forall rs' : locset,
-       rs' = undef_regs destroyed_at_function_entry (call_regs rs) ->
-       forall l : loc, In l (regs_of_rpairs args) -> not_ptr (rs' l)) ->
-    (Genv.type_of_call tge cp cp' = Genv.CrossCompartmentCall ->
-     forall rs' : locset,
-       rs' = undef_regs destroyed_at_function_entry (call_regs tls) ->
-       forall l : loc, In l (regs_of_rpairs args) -> not_ptr (rs' l)) ->
-    (call_trace ge cp cp' vf
-       (map (fun p : rpair loc => Locmap.getpair p (undef_regs destroyed_at_function_entry (call_regs rs)))
-          args) tyargs t) ->
-    call_trace tge cp cp' vf
-      (map (fun p : rpair loc => Locmap.getpair p (undef_regs destroyed_at_function_entry (call_regs tls)))
-         args) tyargs t.
+  forall cp cp' vf ls ls' tyargs t,
+    Val.lessdef_list ls ls' ->
+    (Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr ls) ->
+    call_trace ge cp cp' vf ls tyargs t ->
+    call_trace tge cp cp' vf ls' tyargs t.
 Proof.
-  intros cp cp' vf rs tls  args tyargs t Hregs Hnoptr Hnoptr' H.
+  intros cp cp' vf ls ls' tyargs t Hregs Hnoptr H.
   inv H.
   - constructor; eauto.
   - specialize (Hnoptr H0).
@@ -558,47 +564,18 @@ Proof.
     apply Genv.find_invert_symbol.
     rewrite symbols_preserved.
     apply Genv.invert_find_symbol; eauto.
-    eapply call_regs_lessdef in Hregs.
-    eapply locmap_undef_regs_lessdef with (rl := destroyed_at_function_entry) in Hregs.
-    eapply locmap_getpairs_lessdef with (pl := args) in Hregs.
-    specialize (Hnoptr _ eq_refl).
-    specialize (Hnoptr' H0 _ eq_refl).
-    assert (Hnoptr':
-             Forall not_ptr (map (fun p : rpair loc => Locmap.getpair p (undef_regs destroyed_at_function_entry (call_regs rs))) args)).
-    { clear -Hnoptr.
-      (* lemma 1: forall_rpair P r <-> Forall P (regs_of_rpair r) *)
-      (* =>: forall_rpair not_ptr r <-> Forall not_ptr (regs_of_rpair r) *)
-      (* =>: forall_rpair (fun l => not_ptr (r l)) ls –> not_ptr (Locmap.getpair ls r)*)
-      apply Forall_forall.
-      intros. apply in_map_iff in H.
-      destruct H as [[l | h l] [H1 H2]].
-      - subst. apply Hnoptr.
-        apply in_regs_of_rpairs with (p := One l); [now left | auto].
-      - subst.
-        assert (not_ptr ((undef_regs destroyed_at_function_entry (call_regs rs)) h) ->
-                not_ptr ((undef_regs destroyed_at_function_entry (call_regs rs)) l) ->
-                not_ptr (Locmap.getpair (Twolong h l) (undef_regs destroyed_at_function_entry (call_regs rs)))).
-        admit.
-        (* forall_rpair *)
-
-        apply Hnoptr.
-        apply in_regs_of_rpairs with (p := One l); [now left | auto].
-      apply Forall_forall in Hnoptr.
-      admit. }
-    remember (map (fun p : rpair loc => Locmap.getpair p (undef_regs destroyed_at_function_entry (call_regs rs))) args) as vargs.
-    remember (map (fun p : rpair loc => Locmap.getpair p (undef_regs destroyed_at_function_entry (call_regs tls))) args) as vargs'.
-    clear -vargs vargs' Hregs Hnoptr' H3.
-    revert vargs' tyargs vl Hregs Hnoptr' H3.
-    induction vargs; intros tvargs tyargs vl Hinj Hnoptr Hmatch.
+    clear -ls ls' Hregs Hnoptr H3.
+    revert ls' tyargs vl Hregs Hnoptr H3.
+    induction ls; intros tls tyargs vl Hinj Hnoptr Hmatch.
     + inv Hinj; inv Hmatch; constructor.
     + inv Hinj; inv Hnoptr; inv Hmatch.
       constructor; eauto.
       inv H1; try contradiction;
         inv H7; econstructor; eauto.
       contradiction.
-Admitted.
-  { rewrite <- find_comp_translated, comp_tunnel_fundef.
-    eapply call_trace_translated; eauto. }
+Qed.
+  rewrite <- find_comp_translated, comp_tunnel_fundef.
+  now eapply call_trace_translated; eauto.
   econstructor; eauto.
   constructor; auto.
   constructor; auto.
@@ -671,8 +648,9 @@ Admitted.
   left; econstructor; split.
   eapply exec_return; eauto.
   rewrite comp_tunnel_fundef, <- type_of_call_translated.
-  intros G l IN; specialize (NO_CROSS_PTR G l IN).
-  specialize (LS (R l)). inv LS; auto. rewrite <- H0 in NO_CROSS_PTR; contradiction.
+  intros G; specialize (NO_CROSS_PTR G).
+  apply locmap_getpair_lessdef with (p := map_rpair R (Conventions1.loc_result sig)) in LS.
+  inv LS; auto. now rewrite <- H0 in NO_CROSS_PTR.
   constructor; auto.
 Qed.
 
