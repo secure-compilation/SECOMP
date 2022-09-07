@@ -714,8 +714,16 @@ Proof.
         apply Genv.find_invert_symbol.
         rewrite symbols_preserved.
         apply Genv.invert_find_symbol; eauto.
-        admit.
-    Admitted.
+        eauto. eapply eventval_list_match_preserved with (ge1 := ge) (ge2 := tge).
+        Set Printing Coercions.
+
+        intros; simpl.
+        unfold Genv.public_symbol. rewrite symbols_preserved.
+        unfold ge, tge. rewrite 2!Genv.globalenv_public. inv TRANSF; intuition.
+        rewrite H1. auto.
+        apply symbols_preserved.
+        auto.
+    Qed.
     intros; subst.
     eapply call_trace_translated; eauto.
   }

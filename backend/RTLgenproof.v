@@ -839,23 +839,29 @@ Proof.
   split. eapply star_trans. eexact EX1.
   eapply star_left. eapply exec_Icall; eauto.
   simpl. rewrite symbols_preserved. rewrite H. eauto. auto. simpl. rewrite symbols_preserved. rewrite H. eauto.
-  admit.
+  (* clear -INTRA. *)
+  unfold Genv.type_of_call in INTRA.
+  unfold Genv.allowed_call.
+  destruct (Pos.eqb_spec (comp_of f) (Genv.find_comp ge (Vptr b Ptrofs.zero))).
+  rewrite e0. erewrite <- find_comp_translated; eauto.
+  destruct (Pos.eqb_spec (Genv.find_comp ge (Vptr b Ptrofs.zero)) default_compartment).
+  rewrite <- e0. erewrite find_comp_translated; eauto.
+  congruence.
   intros CROSS. erewrite <- find_comp_translated with (vf := Vptr b Ptrofs.zero) in CROSS; eauto.
-  unfold Genv.type_of_call in *; congruence. (* TODO: remove the unfold *)
+  rewrite <- CROSS in INTRA. unfold Genv.type_of_call in *. congruence.
   instantiate (1 := E0).
-  admit.
-  (* erewrite find_comp_translated in EV; eauto. *)
-  (* eapply call_trace_translated; eauto. *)
-  (* intros CROSS. erewrite <- find_comp_translated with (vf := Vptr b Ptrofs.zero) in CROSS; eauto. *)
-  (* unfold Genv.type_of_call in *; congruence. (* TODO: remove the unfold + remove the duplication *) *)
-  (* erewrite find_comp_translated, type_of_call_translated in NO_CROSS_PTR_CALL; eauto. *)
+  econstructor.
+  erewrite <- find_comp_translated with (vf := Vptr b Ptrofs.zero); eauto.
   eapply star_left. eapply exec_function_external.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   subst cp. eauto.
   apply star_one. apply exec_return.
-  admit.
-  (* intros CROSS.  *)
-  (* unfold Genv.type_of_call in *; congruence. (* TODO: remove the unfold + remove the duplication *) *)
+  intros CROSS. unfold Genv.find_comp in INTRA.
+  rewrite H0 in INTRA.
+  rewrite <- CROSS in INTRA.
+  unfold comp_of in INTRA; simpl in INTRA.
+  unfold comp_of in INTRA; simpl in INTRA.
+  unfold Genv.type_of_call in *; congruence. (* TODO: remove the unfold + remove the duplication *)
   (* simpl in NO_CROSS_PTR_RETURN; rewrite H0 in NO_CROSS_PTR_RETURN. rewrite <- type_of_call_translated. *)
   (* intros G; specialize (NO_CROSS_PTR_RETURN G). inversion B; subst v v'; auto; contradiction. *)
   reflexivity. reflexivity. reflexivity.
@@ -867,7 +873,7 @@ Proof.
   split. intros. rewrite Regmap.gso. auto. intuition congruence.
 (* Mem *)
   auto.
-Admitted.
+Qed.
 
 
 Lemma transl_exprlist_Enil_correct:

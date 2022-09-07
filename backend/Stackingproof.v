@@ -1680,6 +1680,14 @@ Proof.
   auto.
 Qed.
 
+Lemma find_comp_translated:
+  forall vf,
+    Genv.find_comp ge vf = Genv.find_comp tge vf.
+Proof.
+  intros vf.
+  eapply (Genv.match_genvs_find_comp TRANSF).
+Qed.
+
 Lemma find_function_translated:
   forall j ls rs m ros f cp vf,
   agree_regs j ls rs ->
@@ -1692,7 +1700,8 @@ Lemma find_function_translated:
   /\ Genv.find_funct_ptr tge bf = Some tf
   /\ transf_fundef f = OK tf
   /\ Genv.allowed_call tge cp (Vptr bf Ptrofs.zero)
-  /\ Genv.type_of_call tge cp (Genv.find_comp tge (Vptr bf Ptrofs.zero)) = Genv.type_of_call ge cp (Genv.find_comp ge vf).
+  /\ Genv.type_of_call tge cp (Genv.find_comp tge (Vptr bf Ptrofs.zero)) = Genv.type_of_call ge cp (Genv.find_comp ge vf)
+  /\ vf = Vptr bf Ptrofs.zero. (* TODO: adding this conjunct is not the cleanest way to go, maybe try to find a cleaner solution? *)
 Proof.
   intros until vf; intros AG [bound [_ [?????]]] FF.
   destruct ros; simpl in FF.
@@ -1710,6 +1719,7 @@ Proof.
     inv H. rewrite EQ. eauto. }
   rewrite <- H1. split; auto.
   now eapply (Genv.match_genvs_allowed_calls TRANSF).
+  split; auto.
   rewrite (Genv.match_genvs_find_comp TRANSF).
   now apply Genv.match_genvs_type_of_call.
 
@@ -1725,6 +1735,7 @@ Proof.
     rewrite Heqo in H. inv H. eauto. }
   rewrite <- H1. split; auto.
   now eapply (Genv.match_genvs_allowed_calls TRANSF).
+  split; auto.
   rewrite (Genv.match_genvs_find_comp TRANSF).
   now apply Genv.match_genvs_type_of_call.
 Qed.
@@ -2196,7 +2207,7 @@ Proof.
 - (* Lcall *)
   exploit find_function_translated; eauto.
     eapply sep_proj2. eapply sep_proj2. eapply sep_proj2. eexact SEP.
-  intros [bf [tf' [A [B [C [D E]]]]]].
+  intros [bf [tf' [A [B [C [D [E F]]]]]]]. subst vf.
   exploit is_tail_transf_function; eauto. intros IST.
   rewrite transl_code_eq in IST. simpl in IST.
   exploit return_address_offset_exists. eexact IST. intros [ra F].
@@ -2208,9 +2219,10 @@ Proof.
                 (parent_locset (Linear.Stackframe f (Vptr sp0 Ptrofs.zero) rs b :: s))).
   { red; simpl; auto. }
   eapply match_stacks_cons with (ra := ra) in STACKS; eauto.
+  assert (AGREGS' := AGREGS).
   apply agree_regs_call_regs in AGREGS.
   apply agree_regs_undef_regs with (rl := destroyed_at_function_entry) in AGREGS.
-  exploit transl_arguments; eauto. simpl. simpl. apply sep_assoc in SEP. apply sep_proj1 in SEP; eauto. intros [vl [ARGS VINJ]].
+  exploit (fun x2 x3 x4 x5 => transl_arguments _ x2 x3 x4 x5 _ _ AGREGS); eauto. simpl. simpl. apply sep_assoc in SEP. apply sep_proj1 in SEP; eauto. intros [vl [ARGS VINJ]].
   eapply exec_Mcall with (args := vl); eauto.
   now rewrite <- (comp_transl_partial _ TRANSL).
   { simpl in ARGS.
@@ -2220,7 +2232,49 @@ Proof.
      clear -NO_CROSS_PTR.
      unfold loc_parameters in NO_CROSS_PTR.
      now rewrite map_map in NO_CROSS_PTR. }
-  admit.
+  { Set Nested Proofs Allowed.
+    (* TODO: same lemma in Cminorgenproof.v, SimplLocalsproof.v *)
+Lemma call_trace_translated:
+  forall j cp cp' vf vargs tvargs tyargs t,
+    Val.inject_list j vargs tvargs ->
+    (Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr vargs) ->
+    call_trace ge cp cp' vf vargs tyargs t ->
+    call_trace tge cp cp' vf tvargs tyargs t.
+Proof.
+  intros j cp cp' vf vargs tvargs tyargs t Hinj Hnoptr H.
+  inv H.
+  - constructor; eauto.
+  - specialize (Hnoptr H0).
+    econstructor; eauto. apply Genv.find_invert_symbol.
+    rewrite symbols_preserved.
+    apply Genv.invert_find_symbol; eauto.
+    clear -vargs tvargs Hinj Hnoptr H3.
+    revert tvargs tyargs vl Hinj Hnoptr H3.
+    induction vargs; intros tvargs tyargs vl Hinj Hnoptr Hmatch.
+    + inv Hinj; inv Hmatch; constructor.
+    + inv Hinj; inv Hnoptr; inv Hmatch.
+      constructor; eauto.
+      inv H1; try contradiction;
+        inv H7; econstructor; eauto.
+Qed.
+  rewrite <- comp_transf_function, <- find_comp_translated; eauto.
+  eapply call_trace_translated. exact VINJ.
+  clear -H0 A NO_CROSS_PTR AGREGS'.
+  unfold loc_parameters in NO_CROSS_PTR.
+  rewrite map_map in NO_CROSS_PTR.
+  unfold Linear.find_function_ptr in H0; unfold find_function_ptr in A.
+  destruct ros; [inv H0 |].
+  destruct (rs0 m) eqn:eq_rs0; inv A.
+  destruct (Ptrofs.eq i Ptrofs.zero) eqn:i0; inv H0.
+  specialize (AGREGS' m). apply Ptrofs.same_if_eq in i0; subst.
+  rewrite eq_rs0 in AGREGS'. inv AGREGS'.
+  assert (b1 = bf) by congruence. subst b1.
+  assert (ofs1 = Ptrofs.zero) by congruence. subst ofs1.
+  auto.
+  congruence.
+  auto.
+  unfold loc_parameters in EV. rewrite map_map in EV. auto.
+  }
   { apply Val.Vptr_has_type. }
   { intros; red.
       apply Z.le_trans with (size_arguments (Linear.funsig f')); auto.
@@ -2412,7 +2466,7 @@ Proof.
   apply frame_contents_exten with rs0 (parent_locset s); auto.
   intros; apply Val.lessdef_same; apply AGCS; red; congruence.
   intros; rewrite (OUTU ty ofs); auto.
-Admitted.
+Qed.
 
 Lemma transf_initial_states:
   forall st1, Linear.initial_state prog st1 ->
