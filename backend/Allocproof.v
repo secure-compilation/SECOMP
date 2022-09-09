@@ -2447,55 +2447,112 @@ Proof.
     assert (X: Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall).
     { erewrite find_comp_translated, type_of_call_translated; eauto. rewrite comp_transf_function; eauto. }
     specialize (NO_CROSS_PTR X).
-    (* Seems we could try to conclude using the following assumptions? *)
-    (* clear -B1 NO_CROSS_PTR Heqo1 Heqo2. *)
-    (* Val.has_type_list rs ## args (sig_args sg) *)
     assert (Htype_list: Val.has_type_list rs ## args (sig_args sg)).
     { inv WTI. rewrite <- H7.
       clear -WTRS. eapply wt_regset_list. eauto. }
     clear -Heqo2 B1 NO_CROSS_PTR Htype_list.
-    apply Forall_forall.
-    intros v Hin.
-    assert (Hin' := Hin).
-    apply in_map_iff in Hin as [v' [Heq Hin]].
-    assert (R: Locmap.getpair v' (undef_regs destroyed_at_function_entry (call_regs ls1)) =
-              Locmap.getpair v' (call_regs ls1)).
-    { destruct v'; simpl.
-      - rewrite undef_regs_outside; auto.
-        pose proof (loc_arguments_acceptable_stronger) as Haccept.
-        eapply in_map_iff in Hin as [x [? Hl]].
-        eapply Haccept in Hl.
-        destruct x; inv H.
-        Local Transparent destroyed_at_function_entry.
-        unfold destroyed_at_function_entry; simpl in *.
-        destruct r0 as [ [] | [] ]; simpl in *; intuition.
-      - rewrite 2!undef_regs_outside; auto.
-        + pose proof (loc_arguments_acceptable_stronger) as Haccept.
-          eapply in_map_iff in Hin as [x [? Hl]].
-          eapply Haccept in Hl.
-          destruct x; inv H.
-          Local Transparent destroyed_at_function_entry.
-          unfold destroyed_at_function_entry; simpl in *.
-          destruct rlo0 as [ [] | [] ]; simpl in *; intuition.
-        + pose proof (loc_arguments_acceptable_stronger) as Haccept.
-          eapply in_map_iff in Hin as [x [? Hl]].
-          eapply Haccept in Hl.
-          destruct x; inv H.
-          Local Transparent destroyed_at_function_entry.
-          unfold destroyed_at_function_entry; simpl in *.
-          destruct rhi0 as [ [] | [] ]; simpl in *; intuition.
-    }
-    rewrite R in Heq. clear R.
     eapply add_equations_args_lessdef with (rs := rs) in Heqo2; eauto.
     unfold args' in Heqo2.
     rewrite <- call_regs_param_values in Heqo2.
-    pose proof (Val.lessdef_list_not_ptr _ _ Heqo2 NO_CROSS_PTR) as H. clear Heqo2.
-    assert (H': In (Locmap.getpair v' (call_regs ls1)) (map (fun p => Locmap.getpair p (call_regs ls1)) (loc_parameters sg))).
-    { apply in_map with (f := (fun p => Locmap.getpair p (call_regs ls1))). exact Hin. }
-    subst.
-    rewrite Forall_forall in H. eauto.
-    }
-    { admit. }
+    pose proof (Val.lessdef_list_not_ptr _ _ Heqo2 NO_CROSS_PTR) as H.
+    assert (R: map (fun p : rpair loc => Locmap.getpair p (undef_regs destroyed_at_function_entry (call_regs ls1))) (loc_parameters sg) =
+            map (fun p : rpair loc => Locmap.getpair p (call_regs ls1)) (loc_parameters sg)).
+    { (* TODO: try using [Locmap.getpair_exten] *)
+      assert (G: forall l rhi rlo, In l (loc_parameters sg) -> l <> One (R R30) /\ l <> Twolong (R R30) rlo /\ l <> Twolong rhi (R R30)).
+      { clear.
+        unfold loc_parameters.
+        destruct l as [[] |]; try congruence.
+        - pose proof (loc_arguments_acceptable_stronger sg) as G.
+          intros rhi rlo IN.
+          eapply in_map_iff in IN as [x [Hx' Hx]].
+          eapply G in Hx.
+          destruct x; inv Hx'.
+          destruct r0 as [| []]; simpl; try congruence.
+          simpl in Hx. destruct Hx. inv H0. split; [| split]; congruence.
+          contradiction.
+          contradiction.
+          split; [| split]; congruence.
+        - intros.
+          split; [| split]; congruence.
+        - pose proof (loc_arguments_acceptable_stronger sg) as G.
+          intros rhi' rlo' IN.
+          eapply in_map_iff in IN as [x [Hx' Hx]].
+          eapply G in Hx.
+          destruct x; inv Hx'.
+          destruct rhi0 as [| []]; destruct rlo0 as [| []];
+            destruct Hx as [[] []]; simpl; (split; [| split]); try congruence. }
+      clear -G. revert G.
+      generalize (loc_parameters sg).
+      induction l; intros.
+      - auto.
+      - Local Transparent destroyed_at_function_entry.
+        simpl in *. rewrite IHl; auto.
+        destruct a; simpl.
+        + rewrite Locmap.gso; auto. destruct r as [[] |]; try now simpl.
+          now specialize (G (One (R R30)) (R R30) (R R30) (or_introl eq_refl)).
+        + rewrite Locmap.gso; auto. rewrite Locmap.gso; auto.
+          destruct rlo as [[] |]; try now simpl.
+          specialize (G (Twolong rhi (R R30)) (rhi) (R R30) (or_introl eq_refl)) as [? [? ?]]. congruence.
+          specialize (G (Twolong rhi rlo) (rhi) (rlo) (or_introl eq_refl)) as [? [? ?]].
+          now destruct rhi; try congruence. }
+    rewrite R.
+    now eapply Val.lessdef_list_not_ptr; eauto. }
+  { (* assert (X: Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall). *)
+    (* { erewrite find_comp_translated, type_of_call_translated; eauto. rewrite comp_transf_function; eauto. } *)
+    (* specialize (NO_CROSS_PTR X). *)
+    instantiate (1 := t).
+    assert (Htype_list: Val.has_type_list rs ## args (sig_args sg)).
+    { inv WTI. rewrite <- H7.
+      clear -WTRS. eapply wt_regset_list. eauto. }
+    rewrite <- comp_transf_function; eauto.
+    clear -TRANSF NO_CROSS_PTR Heqo2 B1 EV Htype_list.
+    eapply add_equations_args_lessdef with (rs := rs) in Heqo2; eauto.
+    unfold args' in Heqo2.
+    rewrite <- call_regs_param_values in Heqo2.
+    (* pose proof (Val.lessdef_list_not_ptr _ _ Heqo2 NO_CROSS_PTR) as H. *)
+    assert (R: map (fun p : rpair loc => Locmap.getpair p (undef_regs destroyed_at_function_entry (call_regs ls1))) (loc_parameters sg) =
+            map (fun p : rpair loc => Locmap.getpair p (call_regs ls1)) (loc_parameters sg)).
+    { (* TODO: try using [Locmap.getpair_exten]
+         TODO: remove the code duplication *)
+      assert (G: forall l rhi rlo, In l (loc_parameters sg) -> l <> One (R R30) /\ l <> Twolong (R R30) rlo /\ l <> Twolong rhi (R R30)).
+      { clear.
+        unfold loc_parameters.
+        destruct l as [[] |]; try congruence.
+        - pose proof (loc_arguments_acceptable_stronger sg) as G.
+          intros rhi rlo IN.
+          eapply in_map_iff in IN as [x [Hx' Hx]].
+          eapply G in Hx.
+          destruct x; inv Hx'.
+          destruct r0 as [| []]; simpl; try congruence.
+          simpl in Hx. destruct Hx. inv H0. split; [| split]; congruence.
+          contradiction.
+          contradiction.
+          split; [| split]; congruence.
+        - intros.
+          split; [| split]; congruence.
+        - pose proof (loc_arguments_acceptable_stronger sg) as G.
+          intros rhi' rlo' IN.
+          eapply in_map_iff in IN as [x [Hx' Hx]].
+          eapply G in Hx.
+          destruct x; inv Hx'.
+          destruct rhi0 as [| []]; destruct rlo0 as [| []];
+            destruct Hx as [[] []]; simpl; (split; [| split]); try congruence. }
+      clear -G. revert G.
+      generalize (loc_parameters sg).
+      induction l; intros.
+      - auto.
+      - Local Transparent destroyed_at_function_entry.
+        simpl in *. rewrite IHl; auto.
+        destruct a; simpl.
+        + rewrite Locmap.gso; auto. destruct r as [[] |]; try now simpl.
+          now specialize (G (One (R R30)) (R R30) (R R30) (or_introl eq_refl)).
+        + rewrite Locmap.gso; auto. rewrite Locmap.gso; auto.
+          destruct rlo as [[] |]; try now simpl.
+          specialize (G (Twolong rhi (R R30)) (rhi) (R R30) (or_introl eq_refl)) as [? [? ?]]. congruence.
+          specialize (G (Twolong rhi rlo) (rhi) (rlo) (or_introl eq_refl)) as [? [? ?]].
+          now destruct rhi; try congruence. }
+    rewrite R. rewrite <- find_comp_translated.
+    eapply call_trace_translated; eauto. }
   traceEq. traceEq.
   exploit analyze_successors; eauto. simpl. left; eauto. intros [enext [U V]].
   econstructor; eauto.
@@ -2686,7 +2743,7 @@ Proof.
   eexact A. traceEq.
   econstructor; eauto.
   apply wt_regset_assign; auto. rewrite WTRES0; auto.
-Admitted.
+Qed.
 
 Lemma initial_states_simulation:
   forall st1, RTL.initial_state prog st1 ->
