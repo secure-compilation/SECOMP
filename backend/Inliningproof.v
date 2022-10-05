@@ -1018,12 +1018,12 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
         (SSZ2: forall ofs, Mem.perm m' sp' ofs Max Nonempty -> 0 <= ofs <= f'.(fn_stacksize)),
       match_states (Callstate stk (Internal f) vargs m)
                    (State stk' f' (Vptr sp' Ptrofs.zero) pc' rs' m')
-  | match_return_states: forall stk v m stk' v' m' F cp
+  | match_return_states: forall stk v m stk' v' m' F sg cp
         (MS: match_stacks F m m' stk stk' (Mem.nextblock m'))
         (VINJ: Val.inject F v v')
         (MINJ: Mem.inject F m m'),
-      match_states (Returnstate stk v m cp)
-                   (Returnstate stk' v' m' cp)
+      match_states (Returnstate stk v m sg cp)
+                   (Returnstate stk' v' m' sg cp)
   | match_return_regular_states: forall stk v m stk' f' sp' rs' m' F ctx pc' or rinfo
         (MS: match_stacks_inside F m m' stk stk' f' ctx sp' rs')
         (RET: ctx.(retinfo) = Some rinfo)
@@ -1035,7 +1035,7 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
         (PRIV: range_private F m m' sp' ctx.(dstk) f'.(fn_stacksize))
         (SSZ1: 0 <= f'.(fn_stacksize) < Ptrofs.max_unsigned)
         (SSZ2: forall ofs, Mem.perm m' sp' ofs Max Nonempty -> 0 <= ofs <= f'.(fn_stacksize)),
-      match_states (Returnstate stk v m (comp_of f'))
+      match_states (Returnstate stk v m (sig_res (fn_sig f')) (comp_of f'))
                    (State stk' f' (Vptr sp' Ptrofs.zero) pc' rs' m').
 
 (** ** Forward simulation *)
@@ -1044,7 +1044,7 @@ Definition measure (S: RTL.state) : nat :=
   match S with
   | State _ _ _ _ _ _ => 1%nat
   | Callstate _ _ _ _ => 0%nat
-  | Returnstate _ _ _ _ => 0%nat
+  | Returnstate _ _ _ _ _ => 0%nat
   end.
 
 Lemma tr_funbody_inv:
@@ -1205,6 +1205,7 @@ Proof.
   eapply plus_one. eapply exec_Itailcall; eauto.
   eapply sig_function_translated; eauto.
     now rewrite <- (comp_transl_partial _ B), COMP.
+    admit.
   congruence.
   eapply find_function_ptr_translated; eauto.
   rewrite <- SAMECOMP. eapply allowed_call_translated; eauto.
@@ -1343,7 +1344,8 @@ Proof.
   destruct X as [m1' FREE].
   left; econstructor; split.
   eapply plus_one. eapply exec_Ireturn; eauto.
-  rewrite <- SAMECOMP. econstructor; eauto.
+  rewrite <- SAMECOMP. replace (sig_res (fn_sig f)) with (sig_res (fn_sig f')) by admit.
+  econstructor; eauto.
   eapply match_stacks_bound with (bound := sp').
   eapply match_stacks_invariant; eauto.
     intros. eapply Mem.perm_free_3; eauto.
@@ -1365,7 +1367,8 @@ Proof.
 
 + (* inlined *)
   right. split. simpl. omega. split. auto.
-  rewrite SAMECOMP. econstructor; eauto.
+  rewrite SAMECOMP. replace (sig_res (fn_sig f)) with (sig_res (fn_sig f')) by admit.
+  econstructor; eauto.
   eapply match_stacks_inside_invariant; eauto.
     intros. eapply Mem.perm_free_3; eauto.
     reflexivity.
@@ -1484,6 +1487,7 @@ Proof.
   eapply plus_one. eapply exec_return.
   rewrite <- SAMECOMP, <- type_of_call_translated.
   intros G. specialize (NO_CROSS_PTR G). inv VINJ; auto; contradiction.
+  admit.
   econstructor; eauto.
   apply match_stacks_inside_set_reg; auto.
   apply agree_set_reg; auto.
@@ -1494,6 +1498,7 @@ Proof.
   eapply plus_one. eapply exec_return.
   rewrite <- SAMECOMP, <- type_of_call_translated.
   intros G. specialize (NO_CROSS_PTR G). inv VINJ; auto; contradiction.
+  admit.
   eapply match_regular_states.
   eapply match_stacks_inside_set_reg; eauto.
   eauto. eauto. auto.
@@ -1507,16 +1512,18 @@ Proof.
   unfold inline_return in AT.
   assert (PRIV': range_private F m m' sp' (dstk ctx' + mstk ctx') f'.(fn_stacksize)).
     red; intros. destruct (zlt ofs (dstk ctx)). apply PAD. omega. apply PRIV. omega.
+  assert (t = E0) by admit. subst t.
   destruct or.
 + (* with a result *)
   left; econstructor; split.
-  eapply plus_one. eapply exec_Iop; eauto. simpl. reflexivity.
+  eapply plus_one.
+  eapply exec_Iop; eauto. simpl. reflexivity.
   econstructor; eauto. apply match_stacks_inside_set_reg; auto. apply agree_set_reg; auto.
 + (* without a result *)
   left; econstructor; split.
   eapply plus_one. eapply exec_Inop; eauto.
   econstructor; eauto. subst vres. apply agree_set_reg_undef'; auto.
-Qed.
+Admitted.
 
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 -> exists st2, initial_state tprog st2 /\ match_states st1 st2.

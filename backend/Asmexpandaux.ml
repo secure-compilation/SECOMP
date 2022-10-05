@@ -26,7 +26,7 @@ let emit i = current_code := i :: !current_code
 
 (* Generation of fresh labels *)
 
-let dummy_function = { fn_comp = default_compartment; fn_code = []; fn_sig = signature_main }
+let dummy_function = { fn_comp = privileged_compartment; fn_code = []; fn_sig = signature_main }
 let current_function = ref dummy_function
 let next_label = ref (None: label option)
 

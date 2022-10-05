@@ -73,6 +73,10 @@ let print_event p = function
       fprintf p "annotation \"%s\" %a"
                 (camlstring_of_coqstring text)
                 print_eventval_list args
+  | Event_call(_, _, _, _) ->
+      fprintf p "Call"
+  | Event_return(_, _, _) ->
+      fprintf p "Return"
 
 (* Printing states *)
 
@@ -133,7 +137,7 @@ let print_state p (prog, ge, s) =
       fprintf p "calling@ @[<hov 2>%s(%a)@]"
               (name_of_fundef prog fd)
               print_val_list args
-  | Returnstate(res, k, m) ->
+  | Returnstate(res, k, m, _, _) ->
       PrintCsyntax.print_pointer_hook := print_pointer ge.genv_genv Maps.PTree.empty;
       fprintf p "returning@ %a"
               print_val res
@@ -223,7 +227,7 @@ let mem_state = function
   | State(f, s, k, e, m) -> m
   | ExprState(f, r, k, e, m) -> m
   | Callstate(fd, args, k, m) -> m
-  | Returnstate(res, k, m) -> m
+  | Returnstate(res, k, m, _, _) -> m
   | Stuckstate -> assert false
 
 let compare_state s1 s2 =
@@ -243,7 +247,7 @@ let compare_state s1 s2 =
       let c = compare (fd1,args1) (fd2,args2) in if c <> 0 then c else
       let c = compare_cont k1 k2 in if c <> 0 then c else
       compare_mem m1 m2
-  | Returnstate(res1,k1,m1), Returnstate(res2,k2,m2) ->
+  | Returnstate(res1,k1,m1, _, _), Returnstate(res2,k2,m2, _, _) ->
       let c = compare res1 res2 in if c <> 0 then c else
       let c = compare_cont k1 k2 in if c <> 0 then c else
       compare_mem m1 m2
@@ -595,7 +599,7 @@ let change_main_function p old_main old_main_ty =
   let body =
     Sreturn(Some(Ecall(old_main, Econs(arg1, Econs(arg2, Enil)), type_int32s))) in
   let new_main_fn =
-    { fn_comp = AST.default_compartment;
+    { fn_comp = AST.privileged_compartment;
       fn_return = type_int32s; fn_callconv = cc_default;
       fn_params = []; fn_vars = []; fn_body = body } in
   let new_main_id = intern_string "___main" in
