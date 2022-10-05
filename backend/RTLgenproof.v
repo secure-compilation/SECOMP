@@ -26,8 +26,7 @@ Require Import RTLgen RTLgenspec.
   distinct pseudo-registers.
 *)
 
-Record map_wf (m: mapping) : Prop :=
-  mk_map_wf {
+Record map_wf (m: mapping) : Prop := mk_map_wf {
     map_wf_inj:
       (forall id1 id2 r,
          m.(map_vars)!id1 = Some r -> m.(map_vars)!id2 = Some r -> id1 = id2);
@@ -864,6 +863,7 @@ Proof.
   unfold Genv.type_of_call in *; congruence. (* TODO: remove the unfold + remove the duplication *)
   (* simpl in NO_CROSS_PTR_RETURN; rewrite H0 in NO_CROSS_PTR_RETURN. rewrite <- type_of_call_translated. *)
   (* intros G; specialize (NO_CROSS_PTR_RETURN G). inversion B; subst v v'; auto; contradiction. *)
+  econstructor. simpl in INTRA. rewrite H0 in INTRA. auto.
   reflexivity. reflexivity. reflexivity.
 (* Match-env *)
   split. eauto with rtlg.
@@ -1305,6 +1305,7 @@ Inductive tr_fun (tf: function) (map: mapping) (f: CminorSel.function)
       tr_stmt tf.(fn_code) map f.(fn_body) nentry nret nil ngoto nret rret ->
       tf.(fn_stacksize) = f.(fn_stackspace) ->
       forall COMP: comp_of tf = comp_of f,
+      forall SIG: fn_sig tf = CminorSel.fn_sig f,
       tr_fun tf map f ngoto nret rret.
 
 Inductive tr_cont: RTL.code -> mapping ->
@@ -1370,12 +1371,12 @@ Inductive match_states: CminorSel.state -> RTL.state -> Prop :=
       match_states (CminorSel.Callstate f args k m)
                    (RTL.Callstate cs tf targs tm)
   | match_returnstate:
-      forall v tv k m tm cs cp
+      forall v tv k m tm cs sg cp
         (MS: match_stacks k cs)
         (LD: Val.lessdef v tv)
         (MEXT: Mem.extends m tm),
-      match_states (CminorSel.Returnstate v k m cp)
-                   (RTL.Returnstate cs tv tm cp).
+      match_states (CminorSel.Returnstate v k m sg cp)
+                   (RTL.Returnstate cs tv tm sg cp).
 
 Lemma match_stacks_call_cont:
   forall c map k ncont nexits ngoto nret rret cs,
@@ -1459,7 +1460,7 @@ Proof.
   econstructor; split.
   left; apply plus_one. eapply exec_Ireturn. eauto.
   inv TF. rewrite H3, COMP; eauto.
-  inv TF. rewrite COMP; eauto.
+  inv TF. rewrite COMP, SIG.
   constructor; auto.
 
   (* assign *)
@@ -1555,6 +1556,7 @@ Proof.
   eapply exec_Itailcall; eauto. simpl. rewrite J. destruct C. eauto. discriminate P. simpl; auto.
   apply sig_transl_function; auto.
     rewrite <- (comp_transl_partial fd Q), COMP. inv TF; congruence.
+    apply sig_transl_function in Q. rewrite <- Q. inv TF; congruence.
   rewrite <- COMP'; eauto.
   simpl; eauto.
   rewrite (J rf (or_introl eq_refl)).
@@ -1575,6 +1577,7 @@ Proof.
   rewrite Genv.find_funct_find_funct_ptr in P. eauto.
   apply sig_transl_function; auto.
   rewrite <- (comp_transl_partial _ Q), COMP. inv TF; congruence.
+    apply sig_transl_function in Q. rewrite <- Q. inv TF; congruence.
   rewrite <- COMP'. eauto.
   simpl. rewrite symbols_preserved. rewrite H5. eauto.
   rewrite <- COMP'. eapply allowed_call_translated_same; eauto.
@@ -1668,7 +1671,7 @@ Proof.
   econstructor; split.
   left; apply plus_one. eapply exec_Ireturn; eauto.
   rewrite H2, <- COMP; eauto.
-  rewrite <- COMP.
+  rewrite <- COMP, SIG.
   constructor; auto.
 
   (* return some *)
@@ -1682,7 +1685,7 @@ Proof.
   econstructor; split.
   left; eapply plus_right. eexact A. eapply exec_Ireturn; eauto.
   rewrite H4, <- COMP; eauto. traceEq.
-  simpl. rewrite <- COMP. constructor; auto.
+  simpl. rewrite <- COMP, SIG. constructor; auto.
 
   (* label *)
   inv TS.
@@ -1731,6 +1734,8 @@ Proof.
   left; apply plus_one; constructor.
   inv H6. rewrite COMP, <- type_of_call_translated.
   intros G. specialize (NO_CROSS_PTR G). inv LD; auto; contradiction.
+  inv H6. rewrite COMP.
+  eapply return_trace_lessdef; eauto using senv_preserved.
   econstructor; eauto. constructor.
   eapply match_env_update_dest; eauto.
 Qed.

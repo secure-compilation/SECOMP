@@ -503,6 +503,7 @@ Inductive state: Type :=
       (res: val)
       (k: cont)
       (m: mem)
+      (ty: rettype)
       (cp: compartment): state.
 
 (** Find the statement and manufacture the continuation
@@ -628,18 +629,18 @@ Inductive step: state -> trace -> state -> Prop :=
   | step_return_0: forall f k e le m m',
       Mem.free_list m (blocks_of_env e) (comp_of f) = Some m' ->
       step (State f (Sreturn None) k e le m)
-        E0 (Returnstate Vundef (call_cont k) m' (comp_of f))
+        E0 (Returnstate Vundef (call_cont k) m' (rettype_of_type (fn_return f)) (comp_of f))
   | step_return_1: forall f a k e le m v v' m',
       eval_expr e (comp_of f) le m a v ->
       sem_cast v (typeof a) f.(fn_return) m = Some v' ->
       Mem.free_list m (blocks_of_env e) (comp_of f) = Some m' ->
       step (State f (Sreturn (Some a)) k e le m)
-        E0 (Returnstate v' (call_cont k) m' (comp_of f))
+        E0 (Returnstate v' (call_cont k) m' (rettype_of_type (fn_return f)) (comp_of f))
   | step_skip_call: forall f k e le m m',
       is_call_cont k ->
       Mem.free_list m (blocks_of_env e) (comp_of f) = Some m' ->
       step (State f Sskip k e le m)
-        E0 (Returnstate Vundef k m' (comp_of f))
+        E0 (Returnstate Vundef k m' (rettype_of_type (fn_return f)) (comp_of f))
 
   | step_switch: forall f a sl k e le m v n,
       eval_expr e (comp_of f) le m a v ->
@@ -671,13 +672,14 @@ Inductive step: state -> trace -> state -> Prop :=
   | step_external_function: forall ef targs tres cconv vargs k m vres t m',
       external_call ef ge (call_comp k) vargs m t vres m' ->
       step (Callstate (External ef targs tres cconv) vargs k m)
-         t (Returnstate vres k m' (comp_of ef))
+         t (Returnstate vres k m' (rettype_of_type tres) (comp_of ef))
 
-  | step_returnstate: forall v optid f e le cp k m,
+  | step_returnstate: forall v optid f e le ty cp k m t,
       forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) cp = Genv.CrossCompartmentCall ->
                        not_ptr v),
-      step (Returnstate v (Kcall optid f e le k) m cp)
-        E0 (State f Sskip k e (set_opttemp optid v le) m).
+      forall (EV: return_trace ge (comp_of f) cp v ty t),
+      step (Returnstate v (Kcall optid f e le k) m ty cp)
+        t (State f Sskip k e (set_opttemp optid v le) m).
 
 (** ** Whole-program semantics *)
 
@@ -698,8 +700,8 @@ Inductive initial_state (p: program): state -> Prop :=
 (** A final state is a [Returnstate] with an empty continuation. *)
 
 Inductive final_state: state -> int -> Prop :=
-  | final_state_intro: forall r m cp,
-      final_state (Returnstate (Vint r) Kstop m cp) r.
+  | final_state_intro: forall r m cp ty,
+      final_state (Returnstate (Vint r) Kstop m ty cp) r.
 
 End SEMANTICS.
 
@@ -756,11 +758,15 @@ Proof.
   econstructor; econstructor; eauto.
   (* external *)
   exploit external_call_receptive; eauto. intros [vres2 [m2 EC2]].
-  exists (Returnstate vres2 k m2 (comp_of ef)). econstructor; eauto.
+  eexists (Returnstate vres2 k m2 _ (comp_of ef)). econstructor; eauto.
+  (* return *)
+  inv EV; inv H0; eauto.
 (* trace length *)
   red; simpl; intros. inv H; simpl; try omega.
   (* call *)
   inv EV; auto.
   eapply external_call_trace_length; eauto.
   eapply external_call_trace_length; eauto.
+  (* return *)
+  inv EV; auto.
 Qed.

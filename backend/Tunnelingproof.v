@@ -651,6 +651,9 @@ Qed.
   intros G; specialize (NO_CROSS_PTR G).
   apply locmap_getpair_lessdef with (p := map_rpair R (Conventions1.loc_result sig)) in LS.
   inv LS; auto. now rewrite <- H0 in NO_CROSS_PTR.
+  apply locmap_getpair_lessdef with (p := map_rpair R (Conventions1.loc_result sig)) in LS.
+  rewrite comp_tunnel_fundef.
+  eapply return_trace_lessdef; eauto using senv_preserved.
   constructor; auto.
 Qed.
 

@@ -454,10 +454,10 @@ Inductive wt_state: state -> Prop :=
         (WT_ARGS: Val.has_type_list args (funsig f).(sig_args))
         (WT_CONT: wt_cont_call k (funsig f).(sig_res)),
       wt_state (Callstate f args k m)
-  | wt_return_state: forall v k m cp tret
+  | wt_return_state: forall v k m cp tret sg
         (WT_RES: Val.has_type v (proj_rettype tret))
         (WT_CONT: wt_cont_call k tret),
-      wt_state (Returnstate v k m cp).
+      wt_state (Returnstate v k m sg cp).
 
 Lemma wt_is_call_cont:
   forall env tret k, wt_cont env tret k -> is_call_cont k -> wt_cont_call k tret.

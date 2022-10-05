@@ -576,6 +576,7 @@ Inductive state: Type :=
       (res: val)
       (k: cont)
       (m: mem)
+      (ty: rettype)
       (cp: compartment): state
   | Stuckstate.                         (**r undefined behavior occurred *)
 
@@ -755,7 +756,7 @@ Inductive sstep: state -> trace -> state -> Prop :=
   | step_return_0: forall f k e m m',
       Mem.free_list m (blocks_of_env e) (comp_of f) = Some m' ->
       sstep (State f (Sreturn None) k e m)
-         E0 (Returnstate Vundef (call_cont k) m' (comp_of f))
+         E0 (Returnstate Vundef (call_cont k) m' (rettype_of_type (fn_return f)) (comp_of f))
   | step_return_1: forall f x k e m,
       sstep (State f (Sreturn (Some x)) k e m)
          E0 (ExprState f x (Kreturn k) e  m)
@@ -763,12 +764,12 @@ Inductive sstep: state -> trace -> state -> Prop :=
       sem_cast v1 ty f.(fn_return) m = Some v2 ->
       Mem.free_list m (blocks_of_env e) (comp_of f) = Some m' ->
       sstep (ExprState f (Eval v1 ty) (Kreturn k) e m)
-         E0 (Returnstate v2 (call_cont k) m' (comp_of f))
+         E0 (Returnstate v2 (call_cont k) m' (rettype_of_type (fn_return f)) (comp_of f))
   | step_skip_call: forall f k e m m',
       is_call_cont k ->
       Mem.free_list m (blocks_of_env e) (comp_of f) = Some m' ->
       sstep (State f Sskip k e m)
-         E0 (Returnstate Vundef k m' (comp_of f))
+         E0 (Returnstate Vundef k m' (rettype_of_type (fn_return f)) (comp_of f))
 
   | step_switch: forall f x sl k e m,
       sstep (State f (Sswitch x sl) k e m)
@@ -804,13 +805,16 @@ Inductive sstep: state -> trace -> state -> Prop :=
   | step_external_function: forall ef targs tres cc vargs k m vres t m',
       external_call ef ge (call_comp k) vargs m t vres m' ->
       sstep (Callstate (External ef targs tres cc) vargs k m)
-          t (Returnstate vres k m' (comp_of ef))
+          t (Returnstate vres k m' (rettype_of_type tres) (comp_of ef))
+          (* sig_res (ef_sig ef) *)
 
-  | step_returnstate: forall v f e C ty k m cp,
+  | step_returnstate: forall v f e C ty ty' k m cp t,
       forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) cp = Genv.CrossCompartmentCall ->
                        not_ptr v),
-      sstep (Returnstate v (Kcall f e C ty k) m cp)
-         E0 (ExprState f (C (Eval v ty)) k e m).
+      forall (EV: return_trace ge (comp_of f) cp v ty' t),
+        (* TODO: figure out whether this should be the same [ty] or not *)
+      sstep (Returnstate v (Kcall f e C ty k) m ty' cp)
+         t (ExprState f (C (Eval v ty)) k e m).
 
 Definition step (S: state) (t: trace) (S': state) : Prop :=
   estep S t S' \/ sstep S t S'.
@@ -836,8 +840,8 @@ Inductive initial_state (p: program): state -> Prop :=
 (** A final state is a [Returnstate] with an empty continuation. *)
 
 Inductive final_state: state -> int -> Prop :=
-  | final_state_intro: forall r m cp,
-      final_state (Returnstate (Vint r) Kstop m cp) r.
+  | final_state_intro: forall r m ty cp,
+      final_state (Returnstate (Vint r) Kstop m ty cp) r.
 
 (** Wrapping up these definitions in a small-step semantics. *)
 
@@ -860,4 +864,5 @@ Proof.
   eapply external_call_trace_length; eauto.
   inv H0; inv EV; simpl; try omega.
   inv H; simpl; try omega. eapply external_call_trace_length; eauto.
+  inv EV; simpl; try omega.
 Qed.

@@ -180,6 +180,7 @@ Inductive state : Type :=
       forall (stack: list stackframe) (**r call stack *)
              (v: val)                 (**r return value for the call *)
              (m: mem)                 (**r memory state *)
+             (ty: rettype)
              (cp: compartment),  (**r previous compartment *)
       state.
 
@@ -275,6 +276,7 @@ Inductive step: state -> trace -> state -> Prop :=
       find_function ros rs = Some fd ->
       funsig fd = sig ->
       forall COMP: comp_of fd = (comp_of f),
+      forall SIG: sig_res (fn_sig f) = sig_res sig,
       forall ALLOWED: needs_calling_comp (comp_of f) = false,
       forall (FUNPTR: find_function_ptr ros rs = Some vf),
       forall (ALLOWED': Genv.allowed_call ge (comp_of f) vf),
@@ -309,7 +311,7 @@ Inductive step: state -> trace -> state -> Prop :=
       (fn_code f)!pc = Some(Ireturn or) ->
       Mem.free m stk 0 f.(fn_stacksize) (comp_of f) = Some m' ->
       step (State s f (Vptr stk Ptrofs.zero) pc rs m)
-        E0 (Returnstate s (regmap_optget or Vundef rs) m' (comp_of f))
+        E0 (Returnstate s (regmap_optget or Vundef rs) m' (sig_res (fn_sig f)) (comp_of f))
   | exec_function_internal:
       forall s f args m m' stk,
       Mem.alloc m (comp_of f) 0 f.(fn_stacksize) = (m', stk) ->
@@ -324,13 +326,14 @@ Inductive step: state -> trace -> state -> Prop :=
       forall s ef args res t m m',
       external_call ef ge (call_comp s) args m t res m' ->
       step (Callstate s (External ef) args m)
-         t (Returnstate s res m' (comp_of ef))
+         t (Returnstate s res m' (sig_res (ef_sig ef)) (comp_of ef))
   | exec_return:
-      forall res f cp sp pc rs s vres m,
+      forall res f cp sp pc rs s vres m ty t,
       forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) cp = Genv.CrossCompartmentCall ->
                        not_ptr vres),
-      step (Returnstate (Stackframe res f sp pc rs :: s) vres m cp)
-        E0 (State s f sp pc (rs#res <- vres) m).
+      forall (EV: return_trace ge (comp_of f) cp vres ty t),
+      step (Returnstate (Stackframe res f sp pc rs :: s) vres m ty cp)
+        t (State s f sp pc (rs#res <- vres) m).
 
 Lemma exec_Iop':
   forall s f sp pc rs m op args res pc' rs' v,
@@ -374,8 +377,8 @@ Inductive initial_state (p: program): state -> Prop :=
 (** A final state is a [Returnstate] with an empty call stack. *)
 
 Inductive final_state: state -> int -> Prop :=
-  | final_state_intro: forall r m cp,
-      final_state (Returnstate nil (Vint r) m cp) r.
+  | final_state_intro: forall r m sg cp,
+      final_state (Returnstate nil (Vint r) m sg cp) r.
 
 (** The small-step semantics for a program. *)
 
@@ -396,12 +399,14 @@ Proof.
   exploit external_call_receptive; eauto. intros [vres2 [m2 EC2]].
   exists (State s0 f sp pc' (regmap_setres res vres2 rs) m2). eapply exec_Ibuiltin; eauto.
   exploit external_call_receptive; eauto. intros [vres2 [m2 EC2]].
-  exists (Returnstate s0 vres2 m2 (comp_of ef)). econstructor; eauto.
+  exists (Returnstate s0 vres2 m2 (sig_res (ef_sig ef)) (comp_of ef)). econstructor; eauto.
+  inv EV; inv H0; eauto.
 (* trace length *)
   red; intros; inv H; simpl; try omega.
   inv EV; auto.
   eapply external_call_trace_length; eauto.
   eapply external_call_trace_length; eauto.
+  inv EV; auto.
 Qed.
 
 (** * Operations on RTL abstract syntax *)

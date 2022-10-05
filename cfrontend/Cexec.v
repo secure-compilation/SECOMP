@@ -229,6 +229,36 @@ Proof.
     eapply list_eventval_of_val_sound; eauto.
 Qed.
 
+Definition get_return_trace (cp cp': compartment) (vres: val) (ty: rettype): option trace :=
+  match Genv.type_of_call ge cp cp' with
+  | Genv.CrossCompartmentCall =>
+      match eventval_of_val vres (proj_rettype ty) with
+      | Some v => Some (Event_return cp cp' v :: E0)
+      | None => None
+      end
+  | _ => Some E0
+  end.
+
+Lemma get_return_trace_eq:
+  forall cp cp' vres ty t,
+    return_trace ge cp cp' vres ty t <->
+      get_return_trace cp cp' vres ty = Some t.
+Proof.
+  intros. split.
+  - intros H. unfold get_return_trace.
+    inv H; simpl. destruct (Genv.type_of_call ge cp cp'); try congruence.
+    rewrite H0. rewrite (eventval_of_val_complete res); auto.
+  - unfold get_return_trace.
+    intros H.
+    destruct (Genv.type_of_call ge cp cp') eqn:TOC;
+      inv H; [constructor; auto; congruence | | constructor; auto; congruence].
+    destruct (eventval_of_val vres (proj_rettype ty)) eqn:LEOV; [| congruence].
+    inv H1. unfold E0. econstructor; eauto.
+    eapply eventval_of_val_sound; eauto.
+Qed.
+
+Print Coercions.
+
 (* Section MEMACCESS. *)
 
 (** Volatile memory accesses. *)
@@ -2106,7 +2136,7 @@ Definition do_step (w: world) (s: state) : list transition :=
         | Kreturn k =>
             do v' <- sem_cast v ty f.(fn_return) m;
             do m' <- Mem.free_list m (blocks_of_env ge e) (comp_of f);
-            ret "step_return_2" (Returnstate v' (call_cont k) m' (comp_of f))
+            ret "step_return_2" (Returnstate v' (call_cont k) m' (rettype_of_type f.(fn_return)) (comp_of f))
         | Kswitch1 sl k =>
             do n <- sem_switch_arg v ty;
             ret "step_expr_switch" (State f (seq_of_labeled_statement (select_switch n sl)) (Kswitch2 k) e m)
@@ -2158,12 +2188,12 @@ Definition do_step (w: world) (s: state) : list transition :=
 
   | State f (Sreturn None) k e m =>
       do m' <- Mem.free_list m (blocks_of_env ge e) (comp_of f);
-      ret "step_return_0" (Returnstate Vundef (call_cont k) m' (comp_of f))
+      ret "step_return_0" (Returnstate Vundef (call_cont k) m' (rettype_of_type f.(fn_return)) (comp_of f))
   | State f (Sreturn (Some x)) k e m =>
       ret "step_return_1" (ExprState f x (Kreturn k) e m)
   | State f Sskip ((Kstop | Kcall _ _ _ _ _) as k) e m =>
       do m' <- Mem.free_list m (blocks_of_env ge e) (comp_of f);
-      ret "step_skip_call" (Returnstate Vundef k m' (comp_of f))
+      ret "step_skip_call" (Returnstate Vundef k m' (rettype_of_type f.(fn_return)) (comp_of f))
 
   | State f (Sswitch x sl) k e m =>
       ret "step_switch" (ExprState f x (Kswitch1 sl k) e m)
@@ -2185,17 +2215,18 @@ Definition do_step (w: world) (s: state) : list transition :=
       let (e,m1) := do_alloc_variables empty_env m (fn_comp f) (f.(fn_params) ++ f.(fn_vars)) in
       do m2 <- sem_bind_parameters w e m1 f.(fn_params) vargs (fn_comp f);
       ret "step_internal_function" (State f f.(fn_body) k e m2)
-  | Callstate (External ef _ _ _) vargs k m =>
+  | Callstate (External ef _ tres _) vargs k m =>
       match do_external ef w (call_comp k) vargs m with
       | None => nil
-      | Some(w',t,v,m') => TR "step_external_function" t (Returnstate v k m' (comp_of ef)) :: nil
+      | Some(w',t,v,m') => TR "step_external_function" t (Returnstate v k m' (rettype_of_type tres) (comp_of ef)) :: nil
       end
 
-  | Returnstate v (Kcall f e C ty k) m cp =>
+  | Returnstate v (Kcall f e C ty k) m ty' cp =>
       check (match Genv.type_of_call ge (comp_of f) cp with
              | Genv.CrossCompartmentCall => not_ptr_b v
              | _ => true end);
-      ret "step_returnstate" (ExprState f (C (Eval v ty)) k e m)
+      do t <- get_return_trace (comp_of f) cp v ty';
+      TR "step_returnstate" t (ExprState f (C (Eval v ty)) k e m) :: nil
 
   | _ => nil
   end.
@@ -2268,6 +2299,7 @@ Proof with try (left; right; econstructor; eauto; fail).
 (* returnstate *)
   destruct k; myinv... left; right; constructor.
   intros REWR; rewrite REWR in Heqb. now apply not_ptr_reflect.
+  now apply get_return_trace_eq in Heqo.
 (* stuckstate *)
   contradiction.
 Qed.
@@ -2372,7 +2404,8 @@ Proof with (unfold ret; eauto with coqlib).
   { destruct (Genv.type_of_call ge (comp_of f) cp) eqn:eq_type_of_call;
       [reflexivity | | reflexivity].
     apply not_ptr_reflect; auto. }
-  rewrite H; constructor; auto.
+  rewrite H. apply get_return_trace_eq in EV; rewrite EV. simpl.
+  left; reflexivity.
 Qed.
 
 End EXEC.
@@ -2389,6 +2422,6 @@ Definition do_initial_state (p: program): option (genv * state) :=
 
 Definition at_final_state (S: state): option int :=
   match S with
-  | Returnstate (Vint r) Kstop m cp => Some r
+  | Returnstate (Vint r) Kstop m ty cp => Some r
   | _ => None
   end.

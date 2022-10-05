@@ -821,6 +821,8 @@ Proof.
   left; econstructor; split.
   apply plus_one. econstructor.
   erewrite comp_preserved; eauto.
+  erewrite comp_preserved; eauto.
+  eapply return_trace_eq; eauto using senv_preserved.
   econstructor; eauto.
 Qed.
 

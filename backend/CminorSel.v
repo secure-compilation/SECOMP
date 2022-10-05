@@ -150,6 +150,7 @@ Inductive state: Type :=
       forall (v: val)                   (**r return value *)
              (k: cont)                  (**r what to do next *)
              (m: mem)                   (**r memory state *)
+             (ty: rettype)
              (cp: compartment),
       state.
 
@@ -360,7 +361,7 @@ Inductive step: state -> trace -> state -> Prop :=
       is_call_cont k ->
       Mem.free m sp 0 f.(fn_stackspace) (comp_of f) = Some m' ->
       step (State f Sskip k (Vptr sp Ptrofs.zero) e m)
-        E0 (Returnstate Vundef k m' (comp_of f))
+        E0 (Returnstate Vundef k m' (sig_res (fn_sig f)) (comp_of f))
 
   | step_assign: forall f cp id a k sp e m v,
       cp = (comp_of f) ->
@@ -395,6 +396,7 @@ Inductive step: state -> trace -> state -> Prop :=
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
       forall (COMP: comp_of fd = (comp_of f)),
+      forall (SIG: sig_res (fn_sig f) = sig_res sig),
       forall (ALLOWED: needs_calling_comp (comp_of f) = false),
       forall (ALLOWED': Genv.allowed_call ge (comp_of f) vf),
       (* forall (EV: call_trace ge (comp_of f) (Genv.find_comp ge vf) vf vargs (sig_args sig) t), *)
@@ -447,13 +449,13 @@ Inductive step: state -> trace -> state -> Prop :=
       cp = comp_of f ->
       Mem.free m sp 0 f.(fn_stackspace) cp = Some m' ->
       step (State f (Sreturn None) k (Vptr sp Ptrofs.zero) e m)
-        E0 (Returnstate Vundef (call_cont k) m' (comp_of f))
+        E0 (Returnstate Vundef (call_cont k) m' (sig_res (fn_sig f)) (comp_of f))
   | step_return_1: forall f cp a k sp e m v m',
       cp = comp_of f ->
       eval_expr (Vptr sp Ptrofs.zero) e cp m nil a v ->
       Mem.free m sp 0 f.(fn_stackspace) cp = Some m' ->
       step (State f (Sreturn (Some a)) k (Vptr sp Ptrofs.zero) e m)
-        E0 (Returnstate v (call_cont k) m' cp)
+        E0 (Returnstate v (call_cont k) m' (sig_res (fn_sig f)) cp)
 
   | step_label: forall f lbl s k sp e m,
       step (State f (Slabel lbl s) k sp e m)
@@ -472,12 +474,13 @@ Inductive step: state -> trace -> state -> Prop :=
   | step_external_function: forall ef vargs k m t vres m',
       external_call ef ge (call_comp k) vargs m t vres m' ->
       step (Callstate (External ef) vargs k m)
-         t (Returnstate vres k m' (comp_of ef))
+         t (Returnstate vres k m' (sig_res (ef_sig ef)) (comp_of ef))
 
-  | step_return: forall v optid f sp e cp k m,
+  | step_return: forall v optid f sp e cp k m ty t,
       forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) cp = Genv.CrossCompartmentCall -> not_ptr v),
-      step (Returnstate v (Kcall optid f sp e k) m cp)
-        E0 (State f Sskip k sp (set_optvar optid v e) m).
+      forall (EV: return_trace ge (comp_of f) cp v ty t),
+      step (Returnstate v (Kcall optid f sp e k) m ty cp)
+        t (State f Sskip k sp (set_optvar optid v e) m).
 
 End RELSEM.
 
@@ -491,8 +494,8 @@ Inductive initial_state (p: program): state -> Prop :=
       initial_state p (Callstate f nil Kstop m0).
 
 Inductive final_state: state -> int -> Prop :=
-  | final_state_intro: forall r m cp,
-      final_state (Returnstate (Vint r) Kstop m cp) r.
+  | final_state_intro: forall r m sg cp,
+      final_state (Returnstate (Vint r) Kstop m sg cp) r.
 
 Definition semantics (p: program) :=
   Semantics step (initial_state p) final_state (Genv.globalenv p).

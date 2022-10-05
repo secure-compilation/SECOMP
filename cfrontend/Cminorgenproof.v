@@ -1678,13 +1678,13 @@ Inductive match_states: Csharpminor.state -> Cminor.state -> Prop :=
       match_states (Csharpminor.Callstate fd args k m)
                    (Callstate tfd targs tk tm)
   | match_returnstate:
-      forall v k m tv tk tm cp f cs cenv
+      forall v k m tv tk tm cp f cs cenv sg
       (MINJ: Mem.inject f m tm)
       (MCS: match_callstack f m tm cs (Mem.nextblock m) (Mem.nextblock tm))
       (MK: match_cont k tk cenv nil cs)
       (RESINJ: Val.inject f v tv),
-      match_states (Csharpminor.Returnstate v k m cp)
-                   (Returnstate tv tk tm cp).
+      match_states (Csharpminor.Returnstate v k m sg cp)
+                   (Returnstate tv tk tm sg cp).
 
 Remark val_inject_function_pointer:
   forall bound v fd f tv,
@@ -2081,7 +2081,7 @@ Proof.
   intros [tm' [P [Q R]]].
   econstructor; split.
   eapply plus_right. eexact A. apply step_skip_call. auto. eauto. traceEq.
-  rewrite <- (comp_transl_partial _ TRF).
+  rewrite <- (comp_transl_partial _ TRF). erewrite sig_preserved_body; eauto.
   econstructor; eauto.
 
 (* set *)
@@ -2253,7 +2253,7 @@ Opaque PTree.set.
   intros [tm' [A [B C]]].
   econstructor; split.
   apply plus_one. eapply step_return_0. eauto.
-  rewrite <- (comp_transl_partial _ TRF).
+  rewrite <- (comp_transl_partial _ TRF). erewrite sig_preserved_body; eauto.
   econstructor; eauto. eapply match_call_cont; eauto.
   simpl; auto.
 
@@ -2266,7 +2266,7 @@ Opaque PTree.set.
   intros [tm' [A [B C]]].
   econstructor; split.
   apply plus_one. eapply step_return_1. eauto. eauto.
-  rewrite <- (comp_transl_partial _ TRF).
+  rewrite <- (comp_transl_partial _ TRF). erewrite sig_preserved_body; eauto.
   econstructor; eauto. eapply match_call_cont; eauto.
 
 (* label *)
@@ -2328,6 +2328,8 @@ Opaque PTree.set.
   apply plus_one. econstructor; eauto.
   rewrite <- type_of_call_transl with (f := f) (sz := sz) (cenv := cenv0).
   intros H. specialize (NO_CROSS_PTR H). inv RESINJ; auto; inv NO_CROSS_PTR. auto.
+  rewrite <- comp_transl_funbody; eauto.
+  eapply return_trace_inj; eauto.
   unfold set_optvar. destruct optid; simpl; econstructor; eauto.
   eapply match_callstack_set_temp; eauto.
 Qed.

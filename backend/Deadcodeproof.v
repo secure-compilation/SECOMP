@@ -629,12 +629,12 @@ Inductive match_states: state -> state -> Prop :=
       match_states (Callstate s f args m)
                    (Callstate ts tf targs tm)
   | match_return_states:
-      forall s v m ts tv tm cp
+      forall s v m ts tv tm cp sg
         (STACKS: list_forall2 match_stackframes s ts)
         (RES: Val.lessdef v tv)
         (MEM: Mem.extends m tm),
-      match_states (Returnstate s v m cp)
-                   (Returnstate ts tv tm cp).
+      match_states (Returnstate s v m sg cp)
+                   (Returnstate ts tv tm sg cp).
 
 (** [match_states] and CFG successors *)
 
@@ -1021,6 +1021,7 @@ Ltac UseTransfer :=
   econstructor; split.
   eapply exec_Itailcall; eauto. eapply sig_function_translated; eauto.
   rewrite <- (comp_transl_partial _ B), COMP. now apply (comp_transl_partial _ FUN).
+  rewrite <- SIG. unfold transf_function in FUN. destruct analyze; inv FUN; auto.
   change (fn_comp tf) with (comp_of tf). now rewrite <- (comp_transl_partial _ FUN).
   rewrite <- comp_transf_function; eauto.
   eapply allowed_call_translated; eauto.
@@ -1230,6 +1231,7 @@ Ltac UseTransfer :=
   erewrite stacksize_translated by eauto.
   rewrite <- comp_transf_function; eauto.
   rewrite comp_transf_function; eauto.
+  unfold transf_function in FUN. destruct (analyze (ValueAnalysis.analyze (romem_for cu) f) f); inv FUN.
   constructor; auto.
   destruct or; simpl; eauto 2 with na.
   eapply magree_extends; eauto. apply nlive_all.
@@ -1262,6 +1264,8 @@ Ltac UseTransfer :=
   rewrite <- comp_transf_function; eauto.
   rewrite <- type_of_call_translated.
   intros G; specialize (NO_CROSS_PTR G); inv RES; auto; contradiction.
+  rewrite <- comp_transf_function; eauto.
+  now eapply return_trace_lessdef; eauto using senv_preserved.
   econstructor; eauto. apply mextends_agree; auto.
 Qed.
 

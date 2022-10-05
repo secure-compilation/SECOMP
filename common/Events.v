@@ -783,6 +783,7 @@ Proof.
   exploit Mem.load_extends; eauto. intros [v' [A B]]. exists v'; split; auto. econstructor; eauto.
   Local Transparent Mem.load.
   unfold Mem.load in A. destruct (Mem.valid_access_dec m' chunk b (Ptrofs.unsigned ofs) Readable (Some cp)); try discriminate.
+  Local Opaque Mem.load.
   inv v0. intuition.
 Qed.
 
@@ -810,6 +811,7 @@ Proof.
   inv VI. erewrite D; eauto.
   Local Transparent Mem.load.
   unfold Mem.load in X. destruct (Mem.valid_access_dec m' chunk b' (Ptrofs.unsigned ofs') Readable (Some cp)); try discriminate.
+  Local Opaque Mem.load.
   inv v0. intuition.
 Qed.
 
@@ -1982,4 +1984,104 @@ Proof.
   now apply Genv.type_of_call_same_cp in H0.
 Qed.
 
+Inductive return_trace: compartment -> compartment -> val -> rettype -> trace -> Prop :=
+| return_trace_intra: forall cp cp' v ty,
+    Genv.type_of_call ge cp cp' <> Genv.CrossCompartmentCall ->
+    return_trace cp cp' v ty E0
+| return_trace_cross: forall cp cp' res v ty,
+    Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall ->
+    eventval_match ge res (proj_rettype ty) v ->
+    return_trace cp cp' v ty (Event_return cp cp' res :: nil)
+.
+
 End INFORM_TRACES.
+
+Section INFORM_TRACES_INJECT.
+  Variable F V: Type.
+  Variable F' V': Type.
+  Variable ge: Genv.t F V.
+  Variable ge': Genv.t F' V'.
+
+  Variable j: meminj.
+
+  (* Variable symbols_preserved: forall (s: ident), Genv.find_symbol ge' s = Genv.find_symbol ge s. *)
+
+  Lemma return_trace_inj:
+    forall cp cp' v v' ty t,
+      Val.inject j v v' ->
+      (Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall -> not_ptr v) ->
+      return_trace ge cp cp' v ty t ->
+      return_trace ge' cp cp' v' ty t.
+  Proof.
+    intros cp cp' v v' ty t LD NPTR EV.
+    inv EV.
+    - constructor; auto.
+    - constructor; auto.
+      specialize (NPTR H).
+      inv LD; inv H0; try econstructor; eauto.
+      inv NPTR.
+  Qed.
+
+End INFORM_TRACES_INJECT.
+
+Section INFORM_TRACES_PRESERVED.
+  Variable F V: Type.
+  Variable F' V': Type.
+  Variable ge: Genv.t F V.
+  Variable ge': Genv.t F' V'.
+
+  Variable symbols_preserved: forall (s: ident), Genv.find_symbol ge' s = Genv.find_symbol ge s.
+  Variable senv_preserved: Senv.equiv ge ge'.
+
+  Lemma call_trace_lessdef:
+    forall cp cp' vf vs vs' tys t,
+      Val.lessdef_list vs vs' ->
+      call_trace ge cp cp' vf vs tys t ->
+      call_trace ge' cp cp' vf vs' tys t.
+  Proof.
+    intros cp cp' vf vs vs' tys t LD EV.
+    inv EV.
+    - constructor; auto.
+    - econstructor; eauto.
+      apply Genv.invert_find_symbol in H1.
+      apply Genv.find_invert_symbol.
+      now rewrite symbols_preserved.
+      eapply eventval_list_match_lessdef; eauto.
+      eapply eventval_list_match_preserved with (ge1 := ge); try eapply senv_preserved; eauto.
+  Qed.
+
+  Lemma call_trace_eq:
+    forall cp cp' vf vs tys t,
+      call_trace ge cp cp' vf vs tys t ->
+      call_trace ge' cp cp' vf vs tys t.
+    Proof.
+      intros.
+      eapply call_trace_lessdef; eauto.
+      clear.
+      induction vs; eauto.
+    Qed.
+
+  Lemma return_trace_lessdef:
+    forall cp cp' v v' ty t,
+      Val.lessdef v v' ->
+      return_trace ge cp cp' v ty t ->
+      return_trace ge' cp cp' v' ty t.
+  Proof.
+    intros cp cp' v v' ty t LD EV.
+    inv EV.
+    - constructor; auto.
+    - constructor; auto.
+      eapply eventval_match_lessdef; eauto.
+      eapply eventval_match_preserved with (ge1 := ge); try eapply senv_preserved; eauto.
+  Qed.
+
+  Lemma return_trace_eq:
+    forall cp cp' v ty t,
+      return_trace ge cp cp' v ty t ->
+      return_trace ge' cp cp' v ty t.
+  Proof.
+    intros.
+    eapply return_trace_lessdef; eauto using Val.lessdef_refl.
+  Qed.
+
+End INFORM_TRACES_PRESERVED.

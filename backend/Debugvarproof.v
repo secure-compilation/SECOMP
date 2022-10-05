@@ -633,6 +633,7 @@ Proof.
   econstructor; split.
   eapply plus_left. econstructor.
   inv H6; auto.
+  inv H6. eapply return_trace_eq; eauto using senv_preserved.
   apply eval_add_delta_ranges. traceEq.
   constructor; auto.
 Qed.

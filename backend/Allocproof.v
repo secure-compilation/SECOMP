@@ -1924,33 +1924,6 @@ Proof.
   eapply Genv.match_genvs_type_of_call.
 Qed.
 
-(* TODO: remove this lemma, use the one from common/Events.v *)
-Lemma call_trace_translated:
-  forall cp cp' vf ls ls' tyargs t,
-    Val.lessdef_list ls ls' ->
-    (Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr ls) ->
-    call_trace ge cp cp' vf ls tyargs t ->
-    call_trace tge cp cp' vf ls' tyargs t.
-Proof.
-  intros cp cp' vf ls ls' tyargs t Hregs Hnoptr H.
-  inv H.
-  - constructor; eauto.
-  - specialize (Hnoptr H0).
-    econstructor; eauto.
-    apply Genv.find_invert_symbol.
-    rewrite symbols_preserved.
-    apply Genv.invert_find_symbol; eauto.
-    clear -ls ls' Hregs Hnoptr H3.
-    revert ls' tyargs vl Hregs Hnoptr H3.
-    induction ls; intros tls tyargs vl Hinj Hnoptr Hmatch.
-    + inv Hinj; inv Hmatch; constructor.
-    + inv Hinj; inv Hnoptr; inv Hmatch.
-      constructor; eauto.
-      inv H1; try contradiction;
-        inv H7; econstructor; eauto.
-      contradiction.
-Qed.
-
 Lemma exec_moves:
   forall mv env rs s f sp bb m e e' ls,
   track_moves env mv e = Some e' ->
@@ -2057,7 +2030,7 @@ Inductive match_states: RTL.state -> LTL.state -> Prop :=
         (AG: agree_callee_save (parent_locset ts) ls)
         (MEM: Mem.extends m m')
         (WTRES: Val.has_type res (proj_sig_res sg)),
-      match_states (RTL.Returnstate s res m cp)
+      match_states (RTL.Returnstate s res m (sig_res sg) cp)
                    (LTL.Returnstate ts ls m' sg cp).
 
 Lemma match_stackframes_change_sig:
@@ -2552,7 +2525,7 @@ Proof.
           specialize (G (Twolong rhi rlo) (rhi) (rlo) (or_introl eq_refl)) as [? [? ?]].
           now destruct rhi; try congruence. }
     rewrite R. rewrite <- find_comp_translated.
-    eapply call_trace_translated; eauto. }
+    eapply call_trace_lessdef with (ge := ge); eauto using senv_preserved, symbols_preserved. }
   traceEq. traceEq.
   exploit analyze_successors; eauto. simpl. left; eauto. intros [enext [U V]].
   econstructor; eauto.
@@ -2580,7 +2553,7 @@ Proof.
   exploit (exec_moves mv); eauto. intros [ls1 [A1 B1]].
   exploit find_function_translated. eauto. eauto. eapply add_equations_args_satisf; eauto.
   intros [tfd [E F]].
-  assert (SIG: funsig tfd = sg). eapply sig_function_translated; eauto.
+  assert (SIG': funsig tfd = sg). eapply sig_function_translated; eauto.
   exploit find_function_ptr_translated. eauto. eauto. eauto. eapply add_equations_args_satisf; eauto.
   intros G.
   econstructor; split.
@@ -2596,12 +2569,12 @@ Proof.
   destruct (transf_function_inv _ _ FUN); auto.
   eauto. traceEq.
   econstructor; eauto.
-  eapply match_stackframes_change_sig; eauto. rewrite SIG. rewrite e0. decEq.
+  eapply match_stackframes_change_sig; eauto. rewrite SIG'. rewrite e0. decEq.
   destruct (transf_function_inv _ _ FUN); auto.
-  rewrite SIG. rewrite return_regs_arg_values; auto. eapply add_equations_args_lessdef; eauto.
+  rewrite SIG'. rewrite return_regs_arg_values; auto. eapply add_equations_args_lessdef; eauto.
   inv WTI. rewrite <- H6. apply wt_regset_list; auto.
   apply return_regs_agree_callee_save.
-  rewrite SIG. inv WTI. rewrite <- H6. apply wt_regset_list; auto.
+  rewrite SIG'. inv WTI. rewrite <- H6. apply wt_regset_list; auto.
 
 (* builtin *)
 - exploit (exec_moves mv1); eauto. intros [ls1 [A1 B1]].
@@ -2666,7 +2639,8 @@ Proof.
   eapply star_right. eexact A1.
   econstructor.
   rewrite <- comp_transf_function; eauto. eauto. traceEq.
-  simpl. rewrite <- COMP. econstructor; eauto.
+  simpl. rewrite <- COMP. rewrite H11.
+  econstructor; eauto.
   apply return_regs_agree_callee_save.
   constructor.
 + (* with an argument *)
@@ -2676,7 +2650,7 @@ Proof.
   eapply star_right. eexact A1.
   econstructor.
   rewrite <- comp_transf_function; eauto. eauto. traceEq.
-  simpl. rewrite <- COMP. econstructor; eauto. rewrite <- H11.
+  simpl. rewrite <- COMP. rewrite H11. econstructor; eauto. rewrite <- H11.
   replace (Locmap.getpair (map_rpair R (loc_result (RTL.fn_sig f)))
                           (return_regs (parent_locset ts) ls1))
   with (Locmap.getpair (map_rpair R (loc_result (RTL.fn_sig f))) ls1).
@@ -2740,6 +2714,8 @@ Proof.
   rewrite <- COMP. rewrite <- type_of_call_translated.
   intros G. specialize (NO_CROSS_PTR G). clear -RES NO_CROSS_PTR.
   now inv RES.
+  destruct (transf_function_inv _ _ FUN).
+  rewrite <- COMP. eapply return_trace_lessdef; eauto using senv_preserved.
   eexact A. traceEq.
   econstructor; eauto.
   apply wt_regset_assign; auto. rewrite WTRES0; auto.
@@ -2771,7 +2747,7 @@ Lemma final_states_simulation:
   match_states st1 st2 -> RTL.final_state st1 r -> LTL.final_state st2 r.
 Proof.
   intros. inv H0. inv H. inv STACKS.
-  econstructor. rewrite <- (loc_result_exten sg). inv RES; auto.
+  econstructor. rewrite <- (loc_result_exten sg0). inv RES; auto.
   rewrite H; auto.
 Qed.
 

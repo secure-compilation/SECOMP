@@ -1475,11 +1475,11 @@ Inductive match_states: Clight.state -> Csharpminor.state -> Prop :=
       match_states (Clight.Callstate fd args k m)
                    (Callstate tfd args tk m)
   | match_returnstate:
-      forall res tres k m tk ce cp
+      forall res tres k m tk ce ty cp
           (MK: match_cont ce tres 0%nat 0%nat k tk)
           (WT: wt_val res tres),
-      match_states (Clight.Returnstate res k m cp)
-                   (Returnstate res tk m cp).
+      match_states (Clight.Returnstate res k m ty (* (rettype_of_type tres) *) cp)
+                   (Returnstate res tk m ty (* (rettype_of_type tres) *) cp).
 
 Remark match_states_skip:
   forall f e le te nbrk ncnt k tf tk m cu,
@@ -1819,6 +1819,7 @@ Proof.
   eapply match_env_free_blocks; eauto.
   rewrite <- (comp_transl_function _ _ _ TRF). eauto.
   rewrite <- (comp_transl_function _ _ _ TRF).
+  replace (rettype_of_type (fn_return f)) with (sig_res (fn_sig tf)) by now monadInv TRF.
   eapply match_returnstate with (ce := prog_comp_env cu); eauto.
   eapply match_cont_call_cont. eauto.
   constructor.
@@ -1832,6 +1833,7 @@ Proof.
   eapply match_env_free_blocks; eauto.
   rewrite <- (comp_transl_function _ _ _ TRF). eauto.
   rewrite <- (comp_transl_function _ _ _ TRF).
+  replace (rettype_of_type (fn_return f)) with (sig_res (fn_sig tf)) by now monadInv TRF.
   eapply match_returnstate with (ce := prog_comp_env cu); eauto.
   eapply match_cont_call_cont. eauto.
   apply wt_val_casted. eapply cast_val_is_casted; eauto.
@@ -1844,6 +1846,7 @@ Proof.
   eapply match_env_free_blocks; eauto.
   rewrite <- (comp_transl_function _ _ _ TRF). eauto.
   rewrite <- (comp_transl_function _ _ _ TRF).
+  replace (rettype_of_type (fn_return f)) with (sig_res (fn_sig tf)) by now monadInv TRF.
   eapply match_returnstate with (ce := prog_comp_env cu); eauto.
   constructor.
 
@@ -1920,6 +1923,7 @@ Proof.
   apply plus_one. constructor.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   erewrite <- match_cont_call_comp; eauto.
+  replace (rettype_of_type tres) with (sig_res (ef_sig ef)) by now rewrite H5.
   eapply match_returnstate with (ce := ce); eauto.
   apply has_rettype_wt_val. 
   replace (rettype_of_type tres0) with (sig_res (ef_sig ef)).
@@ -1932,11 +1936,15 @@ Proof.
     econstructor; split.
     apply plus_one. constructor.
     rewrite <- type_of_call_translated with (f := f) (cu := cu); auto.
+    rewrite <- (comp_transl_function); eauto.
+    eapply return_trace_eq; eauto using senv_preserved.
     econstructor; eauto. simpl; reflexivity. constructor.
   + (* with normalization *)
     econstructor; split.
     eapply plus_three. econstructor.
     rewrite <- type_of_call_translated with (f := f) (cu := cu); auto.
+    rewrite <- (comp_transl_function); eauto.
+    eapply return_trace_eq; eauto using senv_preserved.
     econstructor. constructor.
     simpl.
     rewrite <- (comp_transl_function _ _ _ H10). apply H13. eauto. apply PTree.gss.

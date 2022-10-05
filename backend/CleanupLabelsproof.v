@@ -324,31 +324,8 @@ Proof.
     specialize (NO_CROSS_PTR X).
     eauto. }
   { rewrite <- find_comp_translated, comp_match_prog.
-    Set Nested Proofs Allowed.
-    Lemma call_trace_translated:
-      forall cp cp' vf ls tyargs t,
-        call_trace ge cp cp' vf ls tyargs t ->
-        call_trace tge cp cp' vf ls tyargs t.
-    Proof.
-      intros.
-      inv H.
-      - econstructor; eauto.
-      - econstructor; eauto.
-        apply Genv.find_invert_symbol.
-        rewrite symbols_preserved.
-        apply Genv.invert_find_symbol; eauto.
-        eauto. eapply eventval_list_match_preserved with (ge1 := ge) (ge2 := tge).
-        Set Printing Coercions.
-
-        intros; simpl.
-        unfold Genv.public_symbol. rewrite symbols_preserved.
-        unfold ge, tge. rewrite 2!Genv.globalenv_public. inv TRANSL; intuition.
-        rewrite H1. auto.
-        apply symbols_preserved.
-        auto.
-    Qed.
     intros; subst.
-    eapply call_trace_translated; eauto.
+    eapply call_trace_eq; eauto using senv_preserved, symbols_preserved.
   }
   econstructor; eauto. constructor; auto. constructor; eauto with coqlib.
 (* Ltailcall *)
@@ -409,6 +386,8 @@ Proof.
 (* return *)
   inv H5. inv H1. left; econstructor; split.
   econstructor; eauto.
+  rewrite comp_match_prog.
+  eapply return_trace_eq; eauto using senv_preserved.
   econstructor; eauto.
 Qed.
 

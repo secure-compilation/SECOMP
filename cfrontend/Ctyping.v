@@ -2066,7 +2066,7 @@ Inductive wt_state: state -> Prop :=
   | wt_return_state: forall v k m cp ty
         (WTK: wt_call_cont k ty)
         (VAL: wt_val v ty),
-      wt_state (Returnstate v k m cp)
+      wt_state (Returnstate v k m (rettype_of_type ty) cp)
   | wt_stuck_state:
       wt_state Stuckstate.
 

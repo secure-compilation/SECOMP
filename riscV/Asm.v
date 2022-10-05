@@ -1162,8 +1162,8 @@ Definition update_stack_return (s: stack) (cp: compartment) rs' :=
   .
 
 Inductive state: Type :=
-  | State: stack -> regset -> mem -> bool -> state.
-  (* | EnforcementState: stack -> regset -> mem -> signature -> compartment -> state. *)
+  | State: stack -> regset -> mem -> state
+  | ReturnState: stack -> regset -> mem -> signature -> compartment -> state.
 
 (* Definition is_call i := *)
 (*   match i with *)
@@ -1178,7 +1178,7 @@ Definition sig_call i :=
   | _ => None
   end.
 
-(* Probably need to do the same thing and to define a [sig_return] function *)
+(* Probably need to do the same thing and to define a [sig_return] function *)
 Definition is_return i :=
   match i with
   | Pj_r _ _ flag => flag
@@ -1209,7 +1209,7 @@ Inductive step: state -> trace -> state -> Prop :=
       is_return i = false ->
       forall (NEXTPC: rs' PC = Vptr b' ofs'),
       forall (ALLOWED: cp = Genv.find_comp ge (Vptr b' ofs')),
-      step (State st rs m true) E0 (State st rs' m' true)
+      step (State st rs m) E0 (State st rs' m')
   | exec_step_internal_call:
       forall b ofs f i sig rs m rs' m' b' ofs' cp st st' args t,
       rs PC = Vptr b ofs ->
@@ -1229,9 +1229,9 @@ Inductive step: state -> trace -> state -> Prop :=
           List.Forall not_ptr args),
       forall (EV: call_trace ge (comp_of f) (Genv.find_comp ge (Vptr b' ofs')) (Vptr b' ofs')
               args (sig_args sig) t),
-      step (State st rs m true) t (State st' rs' m' true)
+      step (State st rs m) t (State st' rs' m')
   | exec_step_internal_return:
-      forall b ofs f i rs m rs' m' cp cp' st st' allowed,
+      forall b ofs f i rs m rs' m' cp cp' st st',
       rs PC = Vptr b ofs ->
       Genv.find_funct_ptr ge b = Some (Internal f) ->
       find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
@@ -1247,10 +1247,19 @@ Inductive step: state -> trace -> state -> Prop :=
          cross-compartment returns *)
       forall (STUPD: update_stack_return st cp rs' = Some st'),
       (* No cross-compartment pointer return *)
+      (* forall (NO_CROSS_PTR: *)
+      (*     (Genv.type_of_call ge cp' cp = Genv.CrossCompartmentCall -> *)
+      (*      not_ptr (return_value rs' (fn_sig f))) <-> allowed = true), *)
+      (* forall (EV: return_trace ge cp' cp (return_value rs' (fn_sig f)) (sig_res (fn_sig f)) t), *)
+      step (State st rs m) E0 (ReturnState st' rs' m' (fn_sig f) (comp_of f))
+  | exec_step_return:
+      forall st rs m sg cp t,
+        rs PC <> Vnullptr -> (* this condition is there to stop the execution 1 step earlier, to make the proof easier *)
       forall (NO_CROSS_PTR:
-          (Genv.type_of_call ge cp' cp = Genv.CrossCompartmentCall ->
-           not_ptr (return_value rs' (fn_sig f))) <-> allowed = true),
-      step (State st rs m true) E0 (State st' rs' m' allowed)
+          (Genv.type_of_call ge (Genv.find_comp ge (rs PC)) cp = Genv.CrossCompartmentCall ->
+           not_ptr (return_value rs sg))),
+      forall (EV: return_trace ge (Genv.find_comp ge (rs PC)) cp (return_value rs sg) (sig_res sg) t),
+        step (ReturnState st rs m sg cp) t (State st rs m)
   | exec_step_builtin:
       forall b ofs f ef args res rs m vargs t vres rs' m' st,
       rs PC = Vptr b ofs ->
@@ -1262,9 +1271,9 @@ Inductive step: state -> trace -> state -> Prop :=
               (set_res res vres
                 (undef_regs (map preg_of (destroyed_by_builtin ef))
                    (rs#X31 <- Vundef))) ->
-      step (State st rs m true) t (State st rs' m' true)
+      step (State st rs m) t (State st rs' m')
   | exec_step_external:
-      forall b ef args res rs m t rs' m' cp cp' cp'' st st' allowed,
+      forall b ef args res rs m t rs' m' cp cp' cp'' st st',
       rs PC = Vptr b Ptrofs.zero ->
       Genv.find_funct_ptr ge b = Some (External ef) ->
       forall COMP: Genv.find_comp ge (rs RA) = cp,
@@ -1281,11 +1290,12 @@ Inductive step: state -> trace -> state -> Prop :=
       (* Note that in the same manner, this definition only updates the stack when doing
          cross-compartment returns *)
       forall (STUPD: update_stack_return st cp' rs' = Some st'),
-      (* No cross-compartment pointer return *)
-      forall (NO_CROSS_PTR:
-          (Genv.type_of_call ge cp'' cp' = Genv.CrossCompartmentCall ->
-           not_ptr (return_value rs' (ef_sig ef))) <-> allowed = true),
-      step (State st rs m true) t (State st' rs' m' allowed).
+      (* (* No cross-compartment pointer return *) *)
+      (* forall (NO_CROSS_PTR: *)
+      (*     (Genv.type_of_call ge cp'' cp' = Genv.CrossCompartmentCall -> *)
+      (*      not_ptr (return_value rs' (ef_sig ef))) <-> allowed = true), *)
+      (* forall (EV: return_trace ge cp'' cp' (return_value rs' (ef_sig ef)) (sig_res (ef_sig ef)) t'), *)
+      step (State st rs m) t (ReturnState st' rs' m' (ef_sig ef) (comp_of ef)).
 
 End RELSEM.
 
@@ -1300,13 +1310,13 @@ Inductive initial_state (p: program): state -> Prop :=
         # SP <- Vnullptr
         # RA <- Vnullptr in
       Genv.init_mem p = Some m0 ->
-      initial_state p (State initial_stack rs0 m0 true).
+      initial_state p (State initial_stack rs0 m0).
 
 Inductive final_state (p: program): state -> int -> Prop :=
-  | final_state_intro: forall rs m r b,
+  | final_state_intro: forall rs m r sg cp,
       rs PC = Vnullptr ->
       rs X10 = Vint r ->
-      final_state p (State initial_stack rs m b) r
+      final_state p (ReturnState initial_stack rs m sg cp) r
 .
 
 Definition semantics (p: program) :=
@@ -1386,56 +1396,54 @@ Ltac Equalities :=
       rewrite H1 in H2; inv H2; Equalities
   | _ => idtac
   end.
-  intros; constructor; simpl; intros.
+intros; constructor; simpl; intros.
 - (* determ *)
-  inv H; inv H0; Equalities; try now discriminate.
+  inv H; inv H0; Equalities.
   + split. constructor. auto.
-  + inv EV0; inv EV.
-    * split. constructor. auto.
-    * congruence.
-    * congruence.
-    * split. assert (i1 = i) by congruence. subst.
-      assert (args0 = args) by (eapply call_arguments_determ; eauto). subst.
-      assert (vl0 = vl) by (eapply eventval_list_match_determ_2; eauto). subst.
-      constructor. auto.
+  + discriminate.
+  + inv EV; inv EV0; try congruence.
+    split. constructor. auto.
+    assert (i1 = i) by congruence. subst.
+    assert (args0 = args) by (eapply call_arguments_determ; eauto). subst.
+    assert (vl0 = vl) by (eapply eventval_list_match_determ_2; eauto). subst.
+    split. constructor. auto.
   + now destruct i0.
+  + discriminate.
   + now destruct i0.
-  + split. constructor.
-    assert (allowed = allowed0).
-    { eapply iff_sym in NO_CROSS_PTR0.
-      assert (allowed0 = true <-> allowed = true). eapply iff_trans; eauto.
-      clear -H.
-      destruct allowed, allowed0; intuition. }
-    congruence.
+  + split. constructor. auto.
+  + discriminate.
+  + inv EV; inv EV0; try congruence.
+    split. constructor. auto.
+    assert (res = res0) by (eapply eventval_match_determ_2; eauto). subst.
+    split. constructor. auto.
+  + discriminate.
+  + discriminate.
+  + discriminate.
   + assert (vargs0 = vargs) by (eapply eval_builtin_args_determ; eauto). subst vargs0.
-    exploit external_call_determ. eexact H5. eexact H14.  intros [A B].
+    exploit external_call_determ. eexact H5. eexact H14. intros [A B].
     split. auto. intros. destruct B; auto. subst. auto.
   + assert (args0 = args) by (eapply extcall_arguments_determ; eauto). subst args0.
     exploit external_call_determ. eexact H3. eexact H9. intros [A B].
-    split. auto. intros. destruct B; auto. subst.
-    assert (allowed = allowed0).
-    { eapply iff_sym in NO_CROSS_PTR0.
-      assert (allowed0 = true <-> allowed = true). eapply iff_trans; eauto.
-      clear -H.
-      destruct allowed, allowed0; intuition. }
-    congruence.
+    split. auto. intros. destruct B; auto. subst. congruence.
 - (* trace length *)
   red; intros. inv H; simpl.
   omega.
-  inv EV; simpl; omega.
+  inv EV; auto.
   omega.
+  inv EV; auto.
   eapply external_call_trace_length; eauto.
   eapply external_call_trace_length; eauto.
 - (* initial states *)
   inv H; inv H0. f_equal. congruence.
 - (* final no step *)
-  assert (NOTNULL: forall b ofs, Vnullptr <> Vptr b ofs).
-  { intros; unfold Vnullptr; destruct Archi.ptr64; congruence. }
-  inv H.
-  unfold Vzero in H0. red; intros; red; intros.
-  inv H; rewrite H0 in *; eelim NOTNULL; eauto.
+  (* assert (NOTNULL: forall b ofs, Vnullptr <> Vptr b ofs). *)
+  (* { intros; unfold Vnullptr; destruct Archi.ptr64; congruence. } *)
+  inv H. (* unfold Vzero in H0. *)
+  red; intros; red; intros.
+  inv H. congruence.
+  (* inv H; rewrite H0 in *; eelim NOTNULL; eauto. *)
 - (* final states *)
-  inv H; inv H0; congruence.
+  inv H; inv H0. congruence.
 Qed.
 
 (** Classification functions for processor registers (used in Asmgenproof). *)

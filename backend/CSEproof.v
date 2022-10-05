@@ -1004,35 +1004,6 @@ Proof.
   eapply Genv.match_genvs_type_of_call.
 Qed.
 
-Lemma call_trace_translated:
-  forall cp cp' vf rs rs' args tyargs t,
-    regs_lessdef rs rs' ->
-    (Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr (rs##args)) ->
-    call_trace ge cp cp' vf (rs##args) tyargs t ->
-    call_trace tge cp cp' vf (rs'##args) tyargs t.
-Proof.
-  intros cp cp' vf rs rs' args tyargs t Hregs Hnoptr H.
-  inv H.
-  - constructor; eauto.
-  - specialize (Hnoptr H0).
-    econstructor; eauto.
-    apply Genv.find_invert_symbol.
-    rewrite symbols_preserved.
-    apply Genv.invert_find_symbol; eauto.
-    eapply regs_lessdef_regs with  (rl := args) in Hregs.
-    remember (rs ## args) as vargs.
-    remember (rs' ## args) as vargs'.
-    clear -vargs vargs' Hregs Hnoptr H3.
-    revert vargs' tyargs vl Hregs Hnoptr H3.
-    induction vargs; intros tvargs tyargs vl Hinj Hnoptr Hmatch.
-    + inv Hinj; inv Hmatch; constructor.
-    + inv Hinj; inv Hnoptr; inv Hmatch.
-      constructor; eauto.
-      inv H1; try contradiction;
-        inv H7; econstructor; eauto.
-      contradiction.
-Qed.
-
 (** The proof of semantic preservation is a simulation argument using
   diagrams of the following form:
 <<
@@ -1095,12 +1066,12 @@ Inductive match_states: state -> state -> Prop :=
       match_states (Callstate s f args m)
                    (Callstate s' tf args' m')
   | match_states_return:
-      forall s s' v v' m m' cp
+      forall s s' v v' m m' cp sg
              (STACK: match_stackframes s s')
              (RES: Val.lessdef v v')
              (MEXT: Mem.extends m m'),
-      match_states (Returnstate s v m cp)
-                   (Returnstate s' v' m' cp).
+      match_states (Returnstate s v m sg cp)
+                   (Returnstate s' v' m' sg cp).
 
 Ltac TransfInstr :=
   match goal with
@@ -1258,7 +1229,8 @@ Proof.
   intros CROSS. eapply H1; eauto.
   eapply NO_CROSS_PTR. erewrite find_comp_translated, type_of_call_translated; eauto.
   rewrite <- find_comp_translated, <- comp_transf_function.
-  eapply call_trace_translated; eauto.
+  eapply call_trace_lessdef; eauto using senv_preserved, symbols_preserved.
+  apply regs_lessdef_regs; auto.
   unfold transf_function. unfold analyze in ANALYZE. rewrite ANALYZE. reflexivity.
   econstructor; eauto.
   eapply match_stackframes_cons with (cu := cu); eauto.
@@ -1386,6 +1358,8 @@ Proof.
   replace (comp_of (transf_function' f approx)) with (comp_of f) by reflexivity.
   rewrite <- type_of_call_translated.
   intros G; specialize (NO_CROSS_PTR G); inv RES; auto; contradiction.
+  replace (comp_of (transf_function' f approx)) with (comp_of f) by reflexivity.
+  now eapply return_trace_lessdef; eauto using senv_preserved.
   econstructor; eauto.
   apply set_reg_lessdef; auto.
 Qed.

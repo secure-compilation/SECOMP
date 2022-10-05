@@ -1162,13 +1162,13 @@ Inductive match_states: Cminor.state -> CminorSel.state -> Prop :=
       match_states
         (Cminor.Callstate f args k m)
         (Callstate f' args' k' m')
-  | match_returnstate: forall v v' k k' m m' cp
+  | match_returnstate: forall v v' k k' m m' ty cp
         (MC: match_call_cont k k')
         (LD: Val.lessdef v v')
         (ME: Mem.extends m m'),
       match_states
-        (Cminor.Returnstate v k m cp)
-        (Returnstate v' k' m' cp)
+        (Cminor.Returnstate v k m ty cp)
+        (Returnstate v' k' m' ty cp)
   | match_builtin_1: forall cunit hf ef args optid f sp e k m al f' e' k' m' env
         (LINK: linkorder cunit prog)
         (HF: helper_functions_declared cunit hf)
@@ -1178,11 +1178,12 @@ Inductive match_states: Cminor.state -> CminorSel.state -> Prop :=
         (EA: Cminor.eval_exprlist ge sp e m (comp_of f) al args)
         (LDE: env_lessdef e e')
         (ME: Mem.extends m m')
-        (CPT: comp_of f = comp_of f'),
+        (CPT: comp_of f = comp_of f')
+        (CP_DEF: comp_of ef = default_compartment),
       match_states
         (Cminor.Callstate (External ef) args (Cminor.Kcall optid f sp e k) m)
         (State f' (sel_builtin optid ef al) k' sp e' m')
-  | match_builtin_2: forall cunit hf v v' optid f sp e k m f' e' m' k' env cp
+  | match_builtin_2: forall cunit hf v v' optid f sp e k m f' e' m' k' env ty cp
         (LINK: linkorder cunit prog)
         (HF: helper_functions_declared cunit hf)
         (TF: sel_function (prog_defmap cunit) hf f = OK f')
@@ -1191,9 +1192,10 @@ Inductive match_states: Cminor.state -> CminorSel.state -> Prop :=
         (LDV: Val.lessdef v v')
         (LDE: env_lessdef (set_optvar optid v e) e')
         (ME: Mem.extends m m')
-        (CPT: comp_of f = comp_of f'),
+        (CPT: comp_of f = comp_of f')
+        (CP_DEF: cp = default_compartment),
       match_states
-        (Cminor.Returnstate v (Cminor.Kcall optid f sp e k) m cp)
+        (Cminor.Returnstate v (Cminor.Kcall optid f sp e k) m ty cp)
         (State f' Sskip k' sp e' m').
 
 Remark call_cont_commut:
@@ -1337,7 +1339,7 @@ Definition measure (s: Cminor.state) : nat :=
   match s with
   | Cminor.Callstate _ _ _ _ => 0%nat
   | Cminor.State _ _ _ _ _ _ => 1%nat
-  | Cminor.Returnstate _ _ _ _ => 2%nat
+  | Cminor.Returnstate _ _ _ _ _ => 2%nat
   end.
 
 Lemma sel_step_correct:
@@ -1359,7 +1361,7 @@ Proof.
   left; econstructor; split.
   econstructor. eapply match_is_call_cont; eauto.
   erewrite stackspace_function_translated, <- CPT; eauto.
-  rewrite <- CPT.
+  rewrite <- CPT. monadInv TF.
   econstructor; eauto. eapply match_is_call_cont; eauto.
 - (* assign *)
   exploit sel_expr_correct; eauto. intros [v' [A B]].
@@ -1439,6 +1441,7 @@ Proof.
   rewrite <- CPT; eauto.
   eapply sig_function_translated; eauto.
   rewrite <- (comp_function_translated _ _ _ F), COMP. now apply (comp_transl_partial _ TF).
+  rewrite <- SIG. monadInv TF. reflexivity.
   rewrite <- CPT; trivial.
   rewrite CPT in ALLOWED'; eauto.
   eapply allowed_call_translated; eauto.
@@ -1448,6 +1451,7 @@ Proof.
   rewrite <- CPT; eauto.
   eapply sig_function_translated; eauto.
   rewrite <- (comp_function_translated _ _ _ F), COMP. now apply (comp_transl_partial _ TF).
+  rewrite <- SIG. monadInv TF. reflexivity.
   rewrite <- CPT; trivial.
   rewrite CPT in ALLOWED'; eauto.
   eapply allowed_call_translated. eapply Val.lessdef_refl. eauto. eauto.
@@ -1457,6 +1461,7 @@ Proof.
   rewrite <- CPT; eauto.
   eapply sig_function_translated; eauto.
   rewrite <- (comp_function_translated _ _ _ F), COMP. now apply (comp_transl_partial _ TF).
+  rewrite <- SIG. monadInv TF. reflexivity.
   rewrite <- CPT; trivial.
   rewrite CPT in ALLOWED'; eauto.
   eapply allowed_call_translated; eauto.
@@ -1517,14 +1522,14 @@ Proof.
   left; econstructor; split.
   econstructor. simpl; eauto.
   eauto.
-  rewrite <- CPT.
+  rewrite <- CPT. monadInv TF.
   econstructor; eauto. eapply call_cont_commut; eauto.
 - (* Sreturn Some *)
   exploit Mem.free_parallel_extends; eauto. intros [m2' [P Q]].
   erewrite <- stackspace_function_translated in P by eauto.
   exploit sel_expr_correct; eauto. intros [v' [A B]].
   left; econstructor; split.
-  econstructor; eauto.
+  econstructor; eauto. monadInv TF.
   econstructor; eauto. eapply call_cont_commut; eauto.
 - (* Slabel *)
   left; econstructor; split. constructor. econstructor; eauto.
@@ -1568,15 +1573,24 @@ Proof.
 - (* return *)
   inv MC.
   left; econstructor; split.
-  econstructor.
   assert (CPT: comp_of f' = comp_of f).
   { unfold comp_of, has_comp_function, Cminor.has_comp_function.
     congruence. }
+  econstructor.
   rewrite CPT; intros G; specialize (NO_CROSS_PTR G).
   inv LD; simpl in NO_CROSS_PTR; auto; contradiction.
+  rewrite CPT.
+  now eapply return_trace_lessdef; eauto using senv_preserved.
   econstructor; eauto. destruct optid; simpl; auto. apply set_var_lessdef; auto.
 - (* return of an external call turned into a Sbuiltin *)
-  right; left; split. simpl; omega. split. auto. econstructor; eauto.
+  right; left; split. simpl; omega. split.
+  { inv EV; auto.
+    exfalso.
+    unfold Genv.type_of_call in H.
+    destruct (comp_of f =? default_compartment)%positive; try congruence.
+    rewrite Pos.eqb_refl in H; congruence.
+  }
+  econstructor; eauto.
 Qed.
 
 Lemma sel_initial_states:

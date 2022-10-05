@@ -2461,6 +2461,15 @@ Qed.
       now rewrite <- H1 in NO_CROSS_PTR.
     (* TODO: write a lemma about that *)
   }
+  { simpl. rewrite FINDF. unfold comp_of; simpl.
+    rewrite <- (comp_transl_partial _ TRF).
+    eapply return_trace_inj with (j := j) (v := (Locmap.getpair (map_rpair R (loc_result sg)) rs)); eauto.
+    unfold return_value.
+    destruct (loc_result sg); simpl in *.
+    - specialize (AGREGS r); eauto.
+    - assert (AGREGS' := AGREGS).
+      specialize (AGREGS rhi). specialize (AGREGS' rlo).
+      eapply (Val.longofwords_inject _ _ _ _ _ AGREGS AGREGS'). }
   econstructor; eauto.
   apply agree_locs_return with rs0; auto.
   apply frame_contents_exten with rs0 (parent_locset s); auto.

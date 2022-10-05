@@ -217,10 +217,10 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
         (STACKS: list_forall2 match_frames stk stk'),
       match_states (Callstate stk f args m)
                    (Callstate stk' (transf_fundef f) args m)
-  | match_returnstates: forall stk v m stk' cp
+  | match_returnstates: forall stk v m stk' cp sg
         (STACKS: list_forall2 match_frames stk stk'),
-      match_states (Returnstate stk v m cp)
-                   (Returnstate stk' v m cp).
+      match_states (Returnstate stk v m sg cp)
+                   (Returnstate stk' v m sg cp).
 
 Lemma step_simulation:
   forall S1 t S2, RTL.step ge S1 t S2 ->
@@ -306,6 +306,8 @@ Proof.
   inv STACKS. inv H1.
   econstructor; split.
   eapply exec_return; eauto.
+  rewrite comp_transf_function.
+  now eapply return_trace_eq; eauto using senv_preserved.
   constructor; auto.
 Qed.
 

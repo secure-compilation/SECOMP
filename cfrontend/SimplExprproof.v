@@ -1091,6 +1091,13 @@ Proof.
 Qed.
 
 (** Matching between states *)
+Inductive call_cont_ty : Csem.cont -> type -> Prop :=
+| match_call_cont_ty: forall f e te ty k,
+    call_cont_ty (Csem.Kcall f e te ty k) ty
+.
+(* | match_not_call_cont_ty: forall k ty, *)
+(*     (forall f e te ty' k', k <> Csem.Kcall f e te ty' k') -> *)
+(*     call_cont_ty k ty. *)
 
 Inductive match_states: Csem.state -> state -> Prop :=
   | match_exprstates: forall f r k e m tf sl tk le dest a tmps,
@@ -1110,10 +1117,11 @@ Inductive match_states: Csem.state -> state -> Prop :=
       match_cont k tk ->
       match_states (Csem.Callstate fd args k m)
                    (Callstate tfd args tk m)
-  | match_returnstates: forall res k m cp tk,
+  | match_returnstates: forall res k m cp tk ty,
       match_cont k tk ->
-      match_states (Csem.Returnstate res k m cp)
-                   (Returnstate res tk m cp)
+      (* call_cont_ty (Csem.call_cont k) ty -> *)
+      match_states (Csem.Returnstate res k m ty cp)
+                   (Returnstate res tk m ty cp)
   | match_stuckstate: forall S,
       match_states Csem.Stuckstate S.
 
@@ -2312,7 +2320,7 @@ Proof.
   assert (CO : comp_of tf = comp_of f) by (inv H6; assumption). (* NOTE: Intros/tactics? *)
   inv H7. econstructor; split.
   left. apply plus_one. econstructor; eauto. rewrite blocks_of_env_preserved; eauto. rewrite CO; eauto.
-  rewrite CO; constructor.
+  rewrite CO. erewrite function_return_preserved; eauto. constructor.
   apply match_cont_call; auto.
 (* return some 1 *)
   inv H6. inv H0. econstructor; split.
@@ -2324,8 +2332,9 @@ Proof.
   econstructor; split.
   left. eapply plus_two. constructor. econstructor. eauto. rewrite CO; eauto.
   erewrite function_return_preserved; eauto. rewrite CO; eauto. rewrite blocks_of_env_preserved; eauto.
-  eauto. traceEq.
-  rewrite CO; constructor. apply match_cont_call; auto.
+  traceEq.
+  rewrite CO. erewrite function_return_preserved; eauto. constructor.
+   apply match_cont_call; auto.
 (* skip return *)
   assert (CO : comp_of tf = comp_of f) by (inv H7; assumption). (* NOTE: Intros/tactics? *)
   inv H8.
@@ -2333,7 +2342,7 @@ Proof.
   econstructor; split.
   left. apply plus_one. apply step_skip_call; eauto. rewrite blocks_of_env_preserved; eauto.
   rewrite CO; eauto.
-  rewrite CO; constructor. auto.
+  rewrite CO. erewrite function_return_preserved; eauto. constructor. auto.
 
 (* switch *)
   inv H6. inv H1.
@@ -2394,14 +2403,15 @@ Proof.
   left; apply plus_one. econstructor; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   erewrite <- match_cont_call_comp; eauto.
-  constructor; auto.
+  apply match_returnstates. auto.
 
 (* return *)
-  inv H4.
+  inv H5.
   econstructor; split.
-  left; apply plus_one. constructor.
   assert (CO : comp_of tf = comp_of f) by (inv H6; assumption). (* NOTE: Intros/tactics? *)
+  left; apply plus_one. constructor.
   rewrite CO. now rewrite type_of_call_translated in NO_CROSS_PTR.
+  rewrite CO. eapply return_trace_eq; eauto using senv_preserved.
   econstructor; eauto.
 Qed.
 
@@ -2442,7 +2452,7 @@ Lemma transl_final_states:
   forall S S' r,
   match_states S S' -> Csem.final_state S r -> Clight.final_state S' r.
 Proof.
-  intros. inv H0. inv H. inv H5. constructor.
+  intros. inv H0. inv H. inv H6. constructor.
 Qed.
 
 Theorem transl_program_correct:

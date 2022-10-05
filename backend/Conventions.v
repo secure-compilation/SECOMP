@@ -140,9 +140,6 @@ Qed.
 (** A tail-call is possible for a signature if the corresponding
     arguments are all passed in registers. *)
 
-(** A tail-call is possible for a signature if the corresponding
-    arguments are all passed in registers. *)
-
 Definition tailcall_possible (s: signature) : Prop :=
   forall l, In l (regs_of_rpairs (loc_arguments s)) ->
   match l with R _ => True | S _ _ _ => False end.

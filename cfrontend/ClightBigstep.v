@@ -90,7 +90,7 @@ Inductive exec_stmt: env -> compartment -> temp_env ->
       eval_expr ge e c le m a v ->
       exec_stmt e c le m (Sset id a)
                E0 (PTree.set id v le) m Out_normal
-  | exec_Scall:   forall e le m optid a al tyargs tyres cconv vf vargs c fd t m' vres t',
+  | exec_Scall:   forall e le m optid a al tyargs tyres cconv vf vargs c fd t m' vres t' t'',
       classify_fun (typeof a) = fun_case_f tyargs tyres cconv ->
       eval_expr ge e c le m a vf ->
       eval_exprlist ge e c le m al tyargs vargs ->
@@ -101,8 +101,9 @@ Inductive exec_stmt: env -> compartment -> temp_env ->
       forall (NO_CROSS_PTR_CALL: Genv.type_of_call ge c (Genv.find_comp ge vf) = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
       forall (NO_CROSS_PTR_RETURN: Genv.type_of_call ge c (Genv.find_comp ge vf) = Genv.CrossCompartmentCall -> not_ptr vres),
       forall (EV: call_trace ge c (Genv.find_comp ge vf) vf vargs (typlist_of_typelist tyargs) t'),
+      forall (EV': return_trace ge c (Genv.find_comp ge vf) vres (rettype_of_type tyres) t''),
       exec_stmt e c le m (Scall optid a al)
-                (t' ** t) (set_opttemp optid vres le) m' Out_normal
+                (t' ** t ** t'') (set_opttemp optid vres le) m' Out_normal
   | exec_Sbuiltin:   forall e c le m optid ef al tyargs vargs t m' vres,
       eval_exprlist ge e c le m al tyargs vargs ->
       external_call ef ge c vargs m t vres m' ->
@@ -315,10 +316,11 @@ Lemma exec_stmt_eval_funcall_steps:
 /\
   (forall c m fd args t m' res,
    eval_funcall ge c m fd args t m' res ->
-   forall k,
+   forall k tyargs tyres cconv,
    forall COMP: c = call_comp k,
+   forall RETTYPE: type_of_fundef fd = Tfunction tyargs tyres cconv,
    is_call_cont k ->
-   star step1 ge (Callstate fd args k m) t (Returnstate res k m' (comp_of fd))).
+   star step1 ge (Callstate fd args k m) t (Returnstate res k m' (rettype_of_type tyres) (comp_of fd))).
 Proof.
   apply exec_stmt_funcall_ind; intros; subst c.
 
@@ -334,7 +336,7 @@ Proof.
 (* call *)
   econstructor; split.
   eapply star_left. econstructor; eauto.
-  eapply star_right. apply H5; eauto. simpl; auto. econstructor.
+  eapply star_right. eapply H5; eauto. simpl; auto. econstructor.
   (* TODO: Move lemma to Globalenvs.v and also find other usages of the same lemma *)
   assert (Lemma: forall vf fd,
              Genv.find_funct ge vf = Some fd ->
@@ -345,6 +347,17 @@ Proof.
     destruct (Ptrofs.eq_dec i Ptrofs.zero); simpl in *; try congruence.
     now rewrite H. }
   erewrite Lemma in NO_CROSS_PTR_RETURN; eauto.
+  (* TODO: Move lemma to Globalenvs.v and also find other usages of the same lemma *)
+  assert (Lemma: forall vf fd,
+             Genv.find_funct ge vf = Some fd ->
+             Genv.find_comp ge vf = comp_of fd).
+  { clear.
+    intros.
+    destruct vf; simpl in *; try congruence.
+    destruct (Ptrofs.eq_dec i Ptrofs.zero); simpl in *; try congruence.
+    now rewrite H. }
+  erewrite Lemma in EV'; eauto.
+
   reflexivity. traceEq.
   constructor.
 
@@ -480,21 +493,26 @@ Proof.
   (* Out_normal *)
   assert (fn_return f = Tvoid /\ vres = Vundef).
     destruct (fn_return f); auto || contradiction.
+    simpl in RETTYPE. unfold type_of_function in RETTYPE. inv RETTYPE.
   destruct H7. subst vres. apply step_skip_call; auto.
   (* Out_return None *)
   assert (fn_return f = Tvoid /\ vres = Vundef).
     destruct (fn_return f); auto || contradiction.
+    simpl in RETTYPE. unfold type_of_function in RETTYPE. inv RETTYPE.
   destruct H8. subst vres.
   rewrite <- (is_call_cont_call_cont k H6). rewrite <- H7.
   apply step_return_0; auto.
   (* Out_return Some *)
   destruct H4.
   rewrite <- (is_call_cont_call_cont k H6). rewrite <- H7.
+    simpl in RETTYPE. unfold type_of_function in RETTYPE. inv RETTYPE.
   eapply step_return_1; eauto.
   reflexivity. traceEq.
 
 (* call external *)
-  apply star_one. apply step_external_function; auto.
+  apply star_one.
+    simpl in RETTYPE. inv RETTYPE.
+  apply step_external_function; auto.
 Qed.
 
 Lemma exec_stmt_steps:
@@ -510,10 +528,11 @@ Qed.
 Lemma eval_funcall_steps:
    forall cp m fd args t m' res,
    eval_funcall ge cp m fd args t m' res ->
-   forall k,
+   forall k tyargs tyres cconv,
    forall COMP: cp = call_comp k,
+   forall RETTYPE: type_of_fundef fd = Tfunction tyargs tyres cconv,
    is_call_cont k ->
-   star step1 ge (Callstate fd args k m) t (Returnstate res k m' (comp_of fd)).
+   star step1 ge (Callstate fd args k m) t (Returnstate res k m' (rettype_of_type tyres) (comp_of fd)).
 Proof (proj2 exec_stmt_eval_funcall_steps).
 
 Definition order (x y: unit) := False.
@@ -599,7 +618,7 @@ Proof.
 (* termination *)
   inv H. econstructor; econstructor.
   split. econstructor; eauto.
-  split. eapply eval_funcall_steps. eauto. eauto. red; auto.
+  split. eapply eval_funcall_steps. eauto. eauto. eauto. red; auto.
   econstructor.
 (* divergence *)
   inv H. econstructor.

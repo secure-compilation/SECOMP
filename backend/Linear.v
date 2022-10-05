@@ -277,12 +277,13 @@ Inductive step: state -> trace -> state -> Prop :=
       step (Callstate s (External ef) rs1 m)
          t (Returnstate s rs2 m' (ef_sig ef) (comp_of ef))
   | exec_return:
-      forall s f sp rs0 c rs m sg cp,
+      forall s f sp rs0 c rs m sg cp t,
       forall (NO_CROSS_PTR:
           Genv.type_of_call ge (comp_of f) cp = Genv.CrossCompartmentCall ->
           not_ptr (Locmap.getpair (map_rpair R (loc_result sg)) rs)),
+      forall (EV: return_trace ge (comp_of f) cp (Locmap.getpair (map_rpair R (loc_result sg)) rs) (sig_res sg) t),
       step (Returnstate (Stackframe f sp rs0 c :: s) rs m sg cp)
-        E0 (State s f sp c rs m).
+        t (State s f sp c rs m).
 
 End RELSEM.
 

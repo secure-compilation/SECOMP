@@ -931,83 +931,23 @@ Lemma exec_straight_steps_1:
   Genv.find_funct_ptr ge b = Some (Internal fn) ->
   Genv.find_comp ge (Vptr b Ptrofs.zero) = (comp_of fn) ->
   code_tail (Ptrofs.unsigned ofs) (fn_code fn) c ->
-  plus step ge (State s rs m true) E0 (State s rs' m' true).
+  plus step ge (State s rs m) E0 (State s rs' m').
 Proof.
   induction 1; intros.
   apply plus_one.
-  {
-    (* destruct (sig_call i1) eqn:ISCALL; *)
-    (*   destruct (is_return i1) eqn:ISRET; *)
-    (*   try now destruct i1. *)
-    (* - eapply exec_step_internal_call; eauto. *)
-    (*   eapply find_instr_tail. eauto. *)
-    (*   now rewrite H0, H2. *)
-    (*   right; left; simpl. now rewrite H3. *)
-    (*   (* simpl; now rewrite H3. *) *)
-    (*   unfold update_stack_call. *)
-    (*   rewrite H0, H2; simpl; rewrite H3. *)
-    (*   simpl in H4; rewrite H3 in H4; inv H4. *)
-    (*   now rewrite Pos.eqb_refl. *)
-    (*   unfold Genv.type_of_call. simpl in *; rewrite H4. rewrite Pos.eqb_refl. congruence. *)
-    (*   (* unfold Genv.type_of_call. simpl in *; rewrite H4. rewrite Pos.eqb_refl. congruence. *) *)
-    (* - simpl in H4; rewrite H3 in H4; inv H4. *)
-    (*   eapply exec_step_internal_return; eauto. *)
-    (*   eapply find_instr_tail. eauto. *)
-    (*   now rewrite H2; simpl; rewrite H3. *)
-    (*   now rewrite H0, H2; simpl; rewrite H3. *)
-    (*   (* TODO: ugly!! *) *)
-    (*   rewrite H0, H2; simpl; rewrite H3. unfold comp_of; simpl; unfold comp_of; congruence. *)
-    (*   unfold update_stack_return. *)
-    (*   rewrite H0, H2; simpl; rewrite H3. *)
-    (*   now rewrite Pos.eqb_refl. *)
-    (*   rewrite H0, H2; simpl; rewrite H3. *)
-    (*   unfold comp_of; simpl; unfold comp_of; unfold Genv.type_of_call. *)
-    (*   now rewrite Pos.eqb_refl. *)
-    - econstructor. eauto. eauto.
-      eapply find_instr_tail. eauto.
-      reflexivity. eauto. eauto. eauto.
-      (* now rewrite H2; simpl; rewrite H3. *)
-      now rewrite H2, H4.
-      simpl in H6; rewrite H5 in H6; inv H6.
-      simpl. now rewrite H5.
-  }
-
+  { econstructor. eauto. eauto.
+    eapply find_instr_tail. eauto.
+    reflexivity. eauto. eauto. eauto.
+    (* now rewrite H2; simpl; rewrite H3. *)
+    now rewrite H2, H4.
+    simpl in H6; rewrite H5 in H6; inv H6.
+    simpl. now rewrite H5. }
   eapply plus_left'.
-  {
-    (* destruct (sig_call i) eqn:ISCALL; *)
-    (*   destruct (is_return i) eqn:ISRET; *)
-    (*   try now destruct i. *)
-    (* - eapply exec_step_internal_call; eauto. *)
-    (*   eapply find_instr_tail. eauto. *)
-    (*   now rewrite H0, H3. *)
-    (*   right; left; simpl. now rewrite H4. *)
-    (*   simpl in H5; rewrite H4 in H5; inv H5. *)
-    (*   unfold update_stack_call. *)
-    (*   rewrite H0, H3; simpl; rewrite H4. *)
-    (*   now rewrite Pos.eqb_refl. *)
-    (*   unfold Genv.type_of_call. simpl in *; rewrite H4. rewrite Pos.eqb_refl. congruence. *)
-    (*   (* unfold Genv.type_of_call. simpl in *; rewrite H4. rewrite Pos.eqb_refl. congruence. *) *)
-    (* - simpl in H5; rewrite H4 in H5; inv H5. *)
-    (*   eapply exec_step_internal_return; eauto. *)
-    (*   eapply find_instr_tail. eauto. *)
-    (*   now rewrite H3; simpl; rewrite H4. *)
-    (*   now rewrite H0, H3; simpl; rewrite H4. *)
-    (*   (* TODO: ugly!! *) *)
-    (*   rewrite H0, H3; simpl; rewrite H4. *)
-    (*   unfold comp_of; simpl; unfold comp_of; congruence. *)
-    (*   unfold update_stack_return. *)
-    (*   rewrite H0, H3; simpl; rewrite H4. *)
-    (*   now rewrite Pos.eqb_refl. *)
-    (*   rewrite H0, H3; simpl; rewrite H4. *)
-    (*   unfold comp_of; simpl; unfold comp_of; unfold Genv.type_of_call. *)
-    (*   now rewrite Pos.eqb_refl. *)
-    - econstructor. eauto. eauto.
-      eapply find_instr_tail. eauto.
-     reflexivity. eauto. eauto. eauto.
-      (* now rewrite H3; simpl; rewrite H4. *)
-      now rewrite H2, H5.
-      (* simpl in H5; rewrite H4 in H5; inv H5. *)
-      (* right; left; simpl. *) simpl. now rewrite H6.
+  { econstructor. eauto. eauto.
+    eapply find_instr_tail. eauto.
+    reflexivity. eauto. eauto. eauto.
+    now rewrite H2, H5.
+    simpl. now rewrite H6.
   }
   apply IHexec_straight with b (Ptrofs.add ofs Ptrofs.one).
   auto. rewrite H2. rewrite H5. reflexivity.

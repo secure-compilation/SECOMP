@@ -1912,12 +1912,12 @@ Inductive match_states: state -> state -> Prop :=
       match_states (Callstate fd vargs k m)
                    (Callstate tfd tvargs tk tm)
   | match_return_state:
-      forall v k m tv tk tm cp j
+      forall v k m tv tk tm ty cp j
         (MCONT: forall cenv, match_cont j cenv k tk m (Mem.nextblock m) (Mem.nextblock tm))
         (MINJ: Mem.inject j m tm)
         (RINJ: Val.inject j v tv),
-      match_states (Returnstate v k m cp)
-                   (Returnstate tv tk tm cp).
+      match_states (Returnstate v k m ty cp)
+                   (Returnstate tv tk tm ty cp).
 
 (** The simulation diagrams *)
 
@@ -2285,7 +2285,8 @@ Proof.
   exploit match_envs_free_blocks; eauto. intros [tm' [P Q]].
   econstructor; split. apply plus_one. econstructor; eauto.
   rewrite <- (comp_transl_partial _ TRF). eauto.
-  rewrite <- (comp_transl_partial _ TRF).
+  assert (R: fn_return tf = fn_return f) by now monadInv TRF.
+  rewrite <- (comp_transl_partial _ TRF), R.
   econstructor; eauto.
   intros. eapply match_cont_call_cont. eapply match_cont_free_env; eauto.
 
@@ -2297,7 +2298,8 @@ Proof.
   rewrite <- (comp_transl_partial _ TRF). eauto.
   rewrite typeof_simpl_expr. monadInv TRF; simpl. eauto.
   rewrite <- (comp_transl_partial _ TRF). eauto.
-  rewrite <- (comp_transl_partial _ TRF).
+  assert (R: fn_return tf = fn_return f) by now monadInv TRF.
+  rewrite <- (comp_transl_partial _ TRF), R.
   econstructor; eauto.
   intros. eapply match_cont_call_cont. eapply match_cont_free_env; eauto.
 
@@ -2419,6 +2421,24 @@ Proof.
   rewrite <- type_of_call_translated with (f := f) in H.
   specialize (NO_CROSS_PTR H). inv RINJ; simpl in NO_CROSS_PTR; eauto; contradiction.
   eauto.
+  monadInv H4; simpl. unfold comp_of. simpl.
+  Set Nested Proofs Allowed.
+  Lemma return_trace_translated: forall j cp cp' v tv ty t,
+      Val.inject j v tv ->
+      (Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall -> not_ptr v) ->
+      return_trace ge cp cp' v ty t ->
+      return_trace tge cp cp' tv ty t.
+  Proof.
+    intros j cp cp' v tv ty t INJ NOT_PTR EV.
+    inv EV.
+    - now constructor.
+    - constructor. eauto.
+      specialize (NOT_PTR H).
+      inv H0; inv INJ; try contradiction;
+        econstructor; eauto.
+  Qed.
+
+  eapply return_trace_translated; eauto.
   econstructor; eauto with compat.
   eapply match_envs_set_opttemp; eauto.
 Qed.

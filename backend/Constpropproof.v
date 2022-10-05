@@ -11,7 +11,6 @@
 (* *********************************************************************)
 
 (** Correctness proof for constant propagation. *)
-
 Require Import Coqlib Maps Integers Floats Lattice Kildall.
 Require Import AST Linking.
 Require Import Values Builtins Events Memory Globalenvs Smallstep.
@@ -103,35 +102,6 @@ Lemma type_of_call_translated:
 Proof.
   intros cp cp'.
   eapply Genv.match_genvs_type_of_call.
-Qed.
-
-Lemma call_trace_translated:
-  forall cp cp' vf rs rs' args tyargs t,
-    regs_lessdef rs rs' ->
-    (Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr (rs##args)) ->
-    call_trace ge cp cp' vf (rs##args) tyargs t ->
-    call_trace tge cp cp' vf (rs'##args) tyargs t.
-Proof.
-  intros cp cp' vf rs rs' args tyargs t Hregs Hnoptr H.
-  inv H.
-  - constructor; eauto.
-  - specialize (Hnoptr H0).
-    econstructor; eauto.
-    apply Genv.find_invert_symbol.
-    rewrite symbols_preserved.
-    apply Genv.invert_find_symbol; eauto.
-    eapply regs_lessdef_regs with  (rl := args) in Hregs.
-    remember (rs ## args) as vargs.
-    remember (rs' ## args) as vargs'.
-    clear -vargs vargs' Hregs Hnoptr H3.
-    revert vargs' tyargs vl Hregs Hnoptr H3.
-    induction vargs; intros tvargs tyargs vl Hinj Hnoptr Hmatch.
-    + inv Hinj; inv Hmatch; constructor.
-    + inv Hinj; inv Hnoptr; inv Hmatch.
-      constructor; eauto.
-      inv H1; try contradiction;
-        inv H7; econstructor; eauto.
-      contradiction.
 Qed.
 
 Lemma init_regs_lessdef:
@@ -402,13 +372,13 @@ Inductive match_states: nat -> state -> state -> Prop :=
       match_states O (Callstate s f args m)
                      (Callstate s' (transf_fundef (romem_for cu) f) args' m')
   | match_states_return:
-      forall s v m s' v' m' cp
+      forall s v m s' v' m' ty cp
            (STACKS: list_forall2 match_stackframes s s')
            (RES: Val.lessdef v v')
            (MEM: Mem.extends m m'),
       list_forall2 match_stackframes s s' ->
-      match_states O (Returnstate s v m cp)
-                     (Returnstate s' v' m' cp).
+      match_states O (Returnstate s v m ty cp)
+                     (Returnstate s' v' m' ty cp).
 
 Lemma match_states_succ:
   forall s f sp pc rs m s' rs' m' cu,
@@ -586,7 +556,8 @@ Proof.
   eapply NO_CROSS_PTR.
   erewrite find_comp_translated, type_of_call_translated; eauto.
   rewrite <- find_comp_translated, comp_transf_function.
-  eapply call_trace_translated; eauto.
+  eapply call_trace_lessdef; eauto using senv_preserved, symbols_preserved.
+  apply regs_lessdef_regs; auto.
   constructor; auto. constructor; auto.
   econstructor; eauto.
   apply regs_lessdef_regs; auto.
@@ -681,7 +652,7 @@ Opaque builtin_strength_reduction.
 
 - (* Ireturn *)
   exploit Mem.free_parallel_extends; eauto. intros [m2' [A B]].
-  left; exists O; exists (Returnstate s' (regmap_optget or Vundef rs') m2' (comp_of (transf_function (romem_for cu) f))); split.
+  left; exists O; exists (Returnstate s' (regmap_optget or Vundef rs') m2' (sig_res (fn_sig (transf_function (romem_for cu) f))) (comp_of (transf_function (romem_for cu) f))); split.
   eapply exec_Ireturn; eauto. TransfInstr; auto.
   constructor; auto.
   destruct or; simpl; auto.
@@ -706,11 +677,13 @@ Opaque builtin_strength_reduction.
   constructor; auto.
 
 - (* return *)
-  inv H5. inv H1.
+  inv H6. inv H1.
   left; exists O; econstructor; split.
   eapply exec_return; eauto.
   rewrite comp_transf_function. intros G. specialize (NO_CROSS_PTR G).
   inv RES; auto; contradiction.
+  rewrite comp_transf_function.
+  now eapply return_trace_lessdef; eauto using senv_preserved.
   econstructor; eauto. constructor. apply set_reg_lessdef; auto.
 Qed.
 

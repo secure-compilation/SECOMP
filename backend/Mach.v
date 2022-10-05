@@ -511,12 +511,13 @@ Inductive step: state -> trace -> state -> Prop :=
       step (Callstate s fb rs m)
          t (Returnstate s rs' m' (ef_sig ef) (comp_of ef))
   | exec_return:
-      forall s f sp ra c rs m sg cp,
+      forall s f sp ra c rs m sg cp t,
       forall (NO_CROSS_PTR:
           Genv.type_of_call ge (Genv.find_comp ge (Vptr f Ptrofs.zero)) cp = Genv.CrossCompartmentCall ->
           not_ptr (return_value rs sg)),
+      forall (EV: return_trace ge (Genv.find_comp ge (Vptr f Ptrofs.zero)) cp (return_value rs sg) (sig_res sg) t),
       step (Returnstate (Stackframe f sp ra c :: s) rs m sg cp)
-        E0 (State s f sp c rs m).
+        t (State s f sp c rs m).
 
 End RELSEM.
 
