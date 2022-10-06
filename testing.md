@@ -8,7 +8,7 @@ cross-compiler `riscv64-linux-gnu-gcc` and the emulator `tinyemu`.
 
 For the emulator, I downloaded the image `RISC-V boot loader, Linux kernel and
 filesystem with busybox (riscv32 and riscv64 targets):
-diskimage-linux-riscv-2018-09-23.tar.gz. ` from [Fabrice Bellard's
+diskimage-linux-riscv-2018-09-23.tar.gz.` from [Fabrice Bellard's
 website](https://bellard.org/tinyemu/). I extracted it, and added the line
 `kernel: "kernel-riscv64.bin",` to the file `root_9p-riscv64.cfg`.
 
