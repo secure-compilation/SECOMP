@@ -119,25 +119,59 @@ Inductive typ : Type :=
   | Tlong               (**r 64-bit integers *)
   | Tsingle             (**r 32-bit single-precision floats *)
   | Tany32              (**r any 32-bit value *)
-  | Tany64.             (**r any 64-bit value, i.e. any value *)
+  | Tany64.             (**r any 64-bit value *)  
 
+Inductive captyp : Type :=
+  | CTint                (**r 32-bit integers or pointers *)
+  | CTfloat              (**r 64-bit double-precision floats *)
+  | CTlong               (**r 64-bit integers *)
+  | CTsingle             (**r 32-bit single-precision floats *)
+  | CTcap64              (**r 64-bit capability for 32-bit arch *)
+  | CTcap128             (**r 128-bit capability for 64-bit arch *)
+  | CTany32              (**r any 32-bit value *)
+  | CTany64              (**r any 64-bit value *)
+  | CTany128.            (**r any 128-bit value, i.e. any value *)
+
+Definition typ_to_captyp (t: typ) : captyp :=
+  match t with
+  | Tint => CTint
+  | Tfloat => CTfloat
+  | Tlong => CTlong
+  | Tsingle => CTsingle
+  | Tany32 => CTany32
+  | Tany64 => CTany64
+  end.
+
+Coercion typ_to_captyp: typ >-> captyp.
+      
 Lemma typ_eq: forall (t1 t2: typ), {t1=t2} + {t1<>t2}.
 Proof. decide equality. Defined.
 Global Opaque typ_eq.
 
 Definition list_typ_eq: forall (l1 l2: list typ), {l1=l2} + {l1<>l2}
-                     := list_eq_dec typ_eq.
+  := list_eq_dec typ_eq.
+
+Lemma captyp_eq: forall (t1 t2: captyp), {t1=t2} + {t1<>t2}.
+Proof. decide equality. Defined.
+Global Opaque captyp_eq.
+
+Definition list_captyp_eq: forall (l1 l2: list captyp), {l1=l2} + {l1<>l2}
+                     := list_eq_dec captyp_eq.
 
 Definition Tptr : typ := if Archi.ptr64 then Tlong else Tint.
+Definition Tcap : captyp := if Archi.ptr64 then CTcap128 else CTcap64.
 
-Definition typesize (ty: typ) : Z :=
+Definition typesize (ty: captyp) : Z :=
   match ty with
-  | Tint => 4
-  | Tfloat => 8
-  | Tlong => 8
-  | Tsingle => 4
-  | Tany32 => 4
-  | Tany64 => 8
+  | CTint => 4
+  | CTfloat => 8
+  | CTlong => 8
+  | CTsingle => 4
+  | CTcap64 => 8
+  | CTcap128 => 16
+  | CTany32 => 4
+  | CTany64 => 8
+  | CTany128 => 16
   end.
 
 Lemma typesize_pos: forall ty, typesize ty > 0.
@@ -150,18 +184,21 @@ Proof. unfold Tptr; destruct Archi.ptr64; auto. Qed.
   are of type [Tany64].  This corresponds to the following subtyping
   relation over types. *)
 
-Definition subtype (ty1 ty2: typ) : bool :=
+Definition subtype (ty1 ty2: captyp) : bool :=
   match ty1, ty2 with
-  | Tint, Tint => true
-  | Tlong, Tlong => true
-  | Tfloat, Tfloat => true
-  | Tsingle, Tsingle => true
-  | (Tint | Tsingle | Tany32), Tany32 => true
-  | _, Tany64 => true
+  | CTint, CTint => true
+  | CTlong, CTlong => true
+  | CTfloat, CTfloat => true
+  | CTsingle, CTsingle => true
+  | CTcap64, CTcap64 => true
+  | CTcap128, CTcap128 => true
+  | (CTint | CTsingle | CTany32), CTany32 => true
+  | (CTint | CTsingle | CTany32 | CTlong | CTfloat | CTany64 | CTcap64), CTany64 => true
+  | _, CTany128 => true
   | _, _ => false
   end.
 
-Fixpoint subtype_list (tyl1 tyl2: list typ) : bool :=
+Fixpoint subtype_list (tyl1 tyl2: list captyp) : bool :=
   match tyl1, tyl2 with
   | nil, nil => true
   | ty1::tys1, ty2::tys2 => subtype ty1 ty2 && subtype_list tys1 tys2
@@ -179,13 +216,44 @@ Inductive rettype : Type :=
   | Tint16unsigned                      (**r 16-bit unsigned integer *)
   | Tvoid.                              (**r no value returned *)
 
-Coercion Tret: typ >-> rettype.
+Inductive retcaptype : Type :=
+  | CTret (t: captyp)                    (**r like captype [t] *)
+  | CTint8signed                         (**r 8-bit signed integer *)
+  | CTint8unsigned                       (**r 8-bit unsigned integer *)
+  | CTint16signed                        (**r 16-bit signed integer *)
+  | CTint16unsigned                      (**r 16-bit unsigned integer *)
+  | CTvoid.                              (**r no value returned *)
 
+Coercion Tret: typ >-> rettype.
+Coercion CTret: captyp >-> retcaptype.
+
+Definition rettype_to_retcaptype (r: rettype) : retcaptype :=
+  match r with
+  | Tret t => CTret t
+  | Tint8signed => CTint8signed
+  | Tint8unsigned => CTint8unsigned
+  | Tint16signed => CTint16signed
+  | Tint16unsigned => CTint16unsigned
+  | Tvoid => CTvoid
+  end.
+
+Coercion rettype_to_retcaptype: rettype >-> retcaptype.
+
+Lemma retcaptype_eq: forall (t1 t2: retcaptype), {t1=t2} + {t1<>t2}.
+Proof. generalize captyp_eq; decide equality. Defined.
+Global Opaque retcaptype_eq.
 Lemma rettype_eq: forall (t1 t2: rettype), {t1=t2} + {t1<>t2}.
 Proof. generalize typ_eq; decide equality. Defined.
 Global Opaque rettype_eq.
 
-Fixpoint proj_rettype (r: rettype) : typ :=
+Definition proj_retcaptype (r: retcaptype) : captyp :=
+  match r with
+  | CTret t => t
+  | CTint8signed | CTint8unsigned | CTint16signed | CTint16unsigned => CTint
+  | CTvoid => CTint
+  end.
+
+Definition proj_rettype (r: rettype) : typ :=
   match r with
   | Tret t => t
   | Tint8signed | Tint8unsigned | Tint16signed | Tint16unsigned => Tint
@@ -218,7 +286,7 @@ Global Opaque calling_convention_eq.
 
 Record signature : Type := mksignature {
   sig_args: list typ;
-  sig_res: rettype;
+  sig_res: rettype; (* REVIEW: ALG: subtype -> no capabilities allowed in signature *)
   sig_cc: calling_convention
 }.
 
@@ -249,11 +317,47 @@ Inductive memory_chunk : Type :=
   | Many32          (**r any value that fits in 32 bits *)
   | Many64.         (**r any value *)
 
+Inductive cap_memory_chunk : Type :=
+  | CMint8signed     (**r 8-bit signed integer *)
+  | CMint8unsigned   (**r 8-bit unsigned integer *)
+  | CMint16signed    (**r 16-bit signed integer *)
+  | CMint16unsigned  (**r 16-bit unsigned integer *)
+  | CMint32          (**r 32-bit integer, or pointer *)
+  | CMint64          (**r 64-bit integer *)
+  | CMfloat32        (**r 32-bit single-precision float *)
+  | CMfloat64        (**r 64-bit double-precision float *)
+  | CMcap64          (**r 64-bit capability for 32-bit arch *)
+  | CMcap128         (**r 64-bit capability for 64-bit arch *)
+  | CMany32          (**r any value that fits in 32 bits *)
+  | CMany64          (**r any value that fits in 64 bits *)
+  | CMany128.        (**r any value *)
+
+Definition memory_chunk_to_cap_memory_chunk (m: memory_chunk) : cap_memory_chunk :=
+  match m with
+  | Mint8signed => CMint8signed
+  | Mint8unsigned => CMint8unsigned 
+  | Mint16signed => CMint16signed
+  | Mint16unsigned => CMint16unsigned
+  | Mint32 => CMint32
+  | Mint64 => CMint64
+  | Mfloat32 => CMfloat32
+  | Mfloat64 => CMfloat64
+  | Many32 => CMany32
+  | Many64 => CMany64
+  end.
+
+Coercion memory_chunk_to_cap_memory_chunk : memory_chunk >-> cap_memory_chunk.
+
 Definition chunk_eq: forall (c1 c2: memory_chunk), {c1=c2} + {c1<>c2}.
 Proof. decide equality. Defined.
 Global Opaque chunk_eq.
 
+Definition cap_chunk_eq: forall (c1 c2: cap_memory_chunk), {c1=c2} + {c1<>c2}.
+Proof. decide equality. Defined.
+Global Opaque cap_chunk_eq.
+
 Definition Mptr : memory_chunk := if Archi.ptr64 then Mint64 else Mint32.
+Definition Mcap : cap_memory_chunk := if Archi.ptr64 then CMcap128 else CMcap64.
 
 (** The type (integer/pointer or float) of a chunk. *)
 
@@ -271,8 +375,28 @@ Definition type_of_chunk (c: memory_chunk) : typ :=
   | Many64 => Tany64
   end.
 
+Definition type_of_cap_chunk (c: cap_memory_chunk) : captyp :=
+  match c with
+  | CMint8signed => CTint
+  | CMint8unsigned => CTint
+  | CMint16signed => CTint
+  | CMint16unsigned => CTint
+  | CMint32 => CTint
+  | CMint64 => CTlong
+  | CMfloat32 => CTsingle
+  | CMfloat64 => CTfloat
+  | CMany32 => CTany32
+  | CMany64 => CTany64
+  | CMcap64 => CTcap64
+  | CMcap128 => CTcap128
+  | CMany128 => CTany128
+  end.
+
 Lemma type_of_Mptr: type_of_chunk Mptr = Tptr.
 Proof. unfold Mptr, Tptr; destruct Archi.ptr64; auto. Qed.
+
+Lemma type_of_Mcap: type_of_cap_chunk Mcap = Tcap.
+Proof. unfold Mcap, Tcap; destruct Archi.ptr64; auto. Qed.
 
 (** Same, as a return type. *)
 
@@ -290,8 +414,31 @@ Definition rettype_of_chunk (c: memory_chunk) : rettype :=
   | Many64 => Tany64
   end.
 
+Definition retcaptype_of_chunk (c: cap_memory_chunk) : retcaptype :=
+  match c with
+  | CMint8signed => CTint8signed
+  | CMint8unsigned => CTint8unsigned
+  | CMint16signed => CTint16signed
+  | CMint16unsigned => CTint16unsigned
+  | CMint32 => CTint
+  | CMint64 => CTlong
+  | CMfloat32 => CTsingle
+  | CMfloat64 => CTfloat
+  | CMany32 => CTany32
+  | CMany64 => CTany64
+  | CMcap64 => CTcap64
+  | CMcap128 => CTcap128
+  | CMany128 => CTany128
+  end.
+
 Lemma proj_rettype_of_chunk:
-  forall chunk, proj_rettype (rettype_of_chunk chunk) = type_of_chunk chunk.
+  forall (chunk : memory_chunk), type_of_chunk chunk = proj_rettype (rettype_of_chunk chunk).
+Proof.
+  destruct chunk; auto.
+Qed.
+
+Lemma proj_retcaptype_of_chunk:
+  forall (chunk : cap_memory_chunk), type_of_cap_chunk chunk = proj_retcaptype (retcaptype_of_chunk chunk).
 Proof.
   destruct chunk; auto.
 Qed.
@@ -299,7 +446,7 @@ Qed.
 (** The chunk that is appropriate to store and reload a value of
   the given type, without losing information. *)
 
-Definition chunk_of_type (ty: typ) :=
+Definition chunk_of_type (ty: typ) : memory_chunk :=
   match ty with
   | Tint => Mint32
   | Tfloat => Mfloat64
@@ -309,8 +456,24 @@ Definition chunk_of_type (ty: typ) :=
   | Tany64 => Many64
   end.
 
+Definition chunk_of_captype (ty: captyp) : cap_memory_chunk :=
+  match ty with
+  | CTint => CMint32
+  | CTfloat => CMfloat64
+  | CTlong => CMint64
+  | CTsingle => CMfloat32
+  | CTany32 => CMany32
+  | CTany64 => CMany64
+  | CTcap64 => CMcap64
+  | CTcap128 => CMcap128
+  | CTany128 => CMany128
+  end.
+
 Lemma chunk_of_Tptr: chunk_of_type Tptr = Mptr.
 Proof. unfold Mptr, Tptr; destruct Archi.ptr64; auto. Qed.
+
+Lemma chunk_of_Tcap: chunk_of_captype Tcap = Mcap.
+Proof. unfold Mcap, Tcap; destruct Archi.ptr64; auto. Qed.
 
 (** Initialization data for global variables. *)
 
