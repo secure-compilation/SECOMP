@@ -555,6 +555,11 @@ Proof.
 Qed.
 
 (** ** Relating stacks *)
+Definition call_ty (stk: list stackframe) :=
+  match stk with
+  | nil => Tret Tint
+  | Stackframe _ ty _ _ _ _ :: _ => ty
+  end.
 
 Inductive match_stacks (F: meminj) (m m': mem):
              list stackframe -> list stackframe -> block -> Prop :=
@@ -562,7 +567,7 @@ Inductive match_stacks (F: meminj) (m m': mem):
         (MG: match_globalenvs F bound1)
         (BELOW: Ple bound1 bound),
       match_stacks F m m' nil nil bound
-  | match_stacks_cons: forall res f sp pc rs stk f' sp' rs' stk' bound fenv ctx
+  | match_stacks_cons: forall res f sp pc rs stk f' sp' rs' stk' bound fenv ctx ty
         (MS: match_stacks_inside F m m' stk stk' f' ctx sp' rs')
         (SAMECOMP: (comp_of f) = comp_of f')
         (COMPAT: fenv_compat prog fenv)
@@ -576,22 +581,28 @@ Inductive match_stacks (F: meminj) (m m': mem):
         (BELOW: Plt sp' bound)
         (ACCESS: Mem.can_access_block m' sp' (Some (comp_of f'))),
       match_stacks F m m'
-                   (Stackframe res f (Vptr sp Ptrofs.zero) pc rs :: stk)
-                   (Stackframe (sreg ctx res) f' (Vptr sp' Ptrofs.zero) (spc ctx pc) rs' :: stk')
+                   (Stackframe res ty f (Vptr sp Ptrofs.zero) pc rs :: stk)
+                   (Stackframe (sreg ctx res) ty f' (Vptr sp' Ptrofs.zero) (spc ctx pc) rs' :: stk')
                    bound
-  | match_stacks_untailcall: forall stk res f' sp' rpc rs' stk' bound ctx
+  | match_stacks_untailcall: forall stk res f' sp' rpc rs' stk' bound ctx ty
         (MS: match_stacks_inside F m m' stk stk' f' ctx sp' rs')
         (PRIV: range_private F m m' sp' ctx.(dstk) f'.(fn_stacksize))
         (SSZ1: 0 <= f'.(fn_stacksize) < Ptrofs.max_unsigned)
         (SSZ2: forall ofs, Mem.perm m' sp' ofs Max Nonempty -> 0 <= ofs <= f'.(fn_stacksize))
         (RET: ctx.(retinfo) = Some (rpc, res))
         (BELOW: Plt sp' bound)
+        (* (SAMECOMP: call_comp stk' = comp_of f') *) (* doesn't solve the issue *)
+        (* (RETTYPE: call_ty stk = ty) *)
         (ACCESS: Mem.can_access_block m' sp' (Some (comp_of f'))),
       match_stacks F m m'
                    stk
-                   (Stackframe res f' (Vptr sp' Ptrofs.zero) rpc rs' :: stk')
+                   (Stackframe res ty f' (Vptr sp' Ptrofs.zero) rpc rs' :: stk')
                    bound
 
+                   (* SOLUTION: add a type parameter to match_stacks_inside. Together, function, content, block, regset
+                      represent the top/current stackframe.
+                      /!\ this doesn't work :((((
+                    *)
 with match_stacks_inside (F: meminj) (m m': mem):
         list stackframe -> list stackframe -> function -> context -> block -> regset -> Prop :=
   | match_stacks_inside_base: forall stk stk' f' ctx sp' rs'
@@ -599,7 +610,7 @@ with match_stacks_inside (F: meminj) (m m': mem):
         (RET: ctx.(retinfo) = None)
         (DSTK: ctx.(dstk) = 0),
       match_stacks_inside F m m' stk stk' f' ctx sp' rs'
-  | match_stacks_inside_inlined: forall res f sp pc rs stk stk' f' fenv ctx sp' rs' ctx'
+  | match_stacks_inside_inlined: forall res f sp pc rs stk stk' f' fenv ctx sp' rs' ctx' ty
         (MS: match_stacks_inside F m m' stk stk' f' ctx' sp' rs')
         (SAMECOMP: (comp_of f) = comp_of f')
         (COMPAT: fenv_compat prog fenv)
@@ -612,8 +623,31 @@ with match_stacks_inside (F: meminj) (m m': mem):
         (BELOW: context_below ctx' ctx)
         (SBELOW: context_stack_call ctx' ctx)
         (ACCESS: Mem.can_access_block m' sp' (Some (comp_of f'))),
-      match_stacks_inside F m m' (Stackframe res f (Vptr sp Ptrofs.zero) pc rs :: stk)
+      match_stacks_inside F m m' (Stackframe res ty f (Vptr sp Ptrofs.zero) pc rs :: stk)
                                  stk' f' ctx sp' rs'.
+
+(* Inductive match_stacks: list stackframe -> list stackframe -> Prop := *)
+(*   | match_stacks_nil: match_stacks nil nil *)
+(*   | match_stacks_cons: forall stk stk', *)
+(*       match_stacks_inside stk stk' f' -> *)
+(*       (* opening an inlining block for f'. *) *)
+(*       match_stacks (Stackframe _ ty f _ _ _ :: stk) (Stackframe _ ty f' _ _ _ :: stk') *)
+(*   | match_stacks_untailcall: forall stk stk' f', *)
+(*       match_stacks_inside stk stk' f' -> *)
+(*       match_stacks stk (Stackframe _ ty f' _ _ _ :: stk') *)
+
+(* with match_stacks_inside: list stackframe -> list stackframe -> function -> Prop := *)
+(*   | match_stacks_inside_base: forall stk stk' f', *)
+(*       match_stacks stk stk' -> *)
+(*       match_stacks_inside stk stk' f' *)
+(*   | match_stacks_inside_inlined: forall stk stk' f', *)
+(*       match_stacks_inside stk stk' f' -> *)
+(*       (* Relation: ty can be arbitrary because it comes from calling a function that is inlined *) *)
+(*       (* relation between f and f' comes from inductive case *) *)
+(*       match_stacks_inside (Stackframe _ ty f _ _ _ :: stk) stk' f'. *)
+
+(* More generally: when match_stacks_inside stk stk' f', we're going to return something of type sig_res (fn_sig f')
+                   when we return in sync; and that should also be the types in the stackframes *)
 
 (** Properties of match_stacks *)
 
@@ -621,6 +655,24 @@ Section MATCH_STACKS.
 
 Variable F: meminj.
 Variables m m': mem.
+
+
+(* Lemma match_stacks_sig: *)
+(*   forall stk stk' bound, *)
+(*     match_stacks F m m' stk stk' bound -> *)
+(*     call_ty stk = call_ty stk' *)
+(* with match_stacks_inside_sig: *)
+(*   forall stk stk' f ctx sp rs', *)
+(*     match_stacks_inside F m m' stk stk' f ctx sp rs' -> call_ty stk' = sig_res (fn_sig f). *)
+(* Proof. *)
+(*   { induction 1. *)
+(*     - eauto. *)
+(*     - eauto. *)
+(*     - eauto. } *)
+(*   { induction 1. *)
+(*     - specialize (match_stacks_sig _ _ _ MS). *)
+(*     - eauto. } *)
+(* Qed. *)
 
 Lemma match_stacks_globalenvs:
   forall stk stk' bound,
@@ -707,7 +759,7 @@ Proof.
   intros. apply IMAGE with delta. eapply INJ; eauto. eapply Pos.lt_le_trans; eauto.
   auto. auto.
   (* cons *)
-  apply match_stacks_cons with (fenv := fenv) (ctx := ctx); auto.
+  eapply match_stacks_cons with (fenv := fenv) (ctx := ctx); eauto.
   eapply match_stacks_inside_invariant; eauto.
   intros; eapply INJ; eauto; xomega.
   intros; eapply PERM1; eauto; xomega.
@@ -718,7 +770,7 @@ Proof.
   eapply range_private_invariant; eauto.
   eapply PERM4; eauto; xomega.
   (* untailcall *)
-  apply match_stacks_untailcall with (ctx := ctx); auto.
+  eapply match_stacks_untailcall with (ctx := ctx); eauto.
   eapply match_stacks_inside_invariant; eauto.
   intros; eapply INJ; eauto; xomega.
   intros; eapply PERM1; eauto; xomega.
@@ -738,7 +790,7 @@ Proof.
   intros; eapply PERM3; eauto; xomega.
   intros; eapply PERM4; eauto; xomega.
   (* inlined *)
-  apply match_stacks_inside_inlined with (fenv := fenv) (ctx' := ctx'); auto.
+  eapply match_stacks_inside_inlined with (fenv := fenv) (ctx' := ctx'); auto.
   apply IHmatch_stacks_inside; auto.
   intros. apply RS. red in BELOW. xomega.
   apply agree_regs_incr with F; auto.
@@ -977,9 +1029,11 @@ Qed.
 (** ** Relating states *)
 
 Inductive match_states: RTL.state -> RTL.state -> Prop :=
-  | match_regular_states: forall stk f sp pc rs m stk' f' sp' rs' m' F fenv ctx
+  | match_regular_states: forall stk stk' f sp pc rs m f' sp' rs' m' F fenv ctx
         (MS: match_stacks_inside F m m' stk stk' f' ctx sp' rs')
         (SAMECOMP: (comp_of f) = comp_of f')
+        (* (SIGRES: retinfo ctx = None -> *)
+        (*          sig_res (fn_sig f) = sig_res (fn_sig f')) *)
         (COMPAT: fenv_compat prog fenv)
         (FB: tr_funbody fenv f'.(fn_stacksize) ctx f f'.(fn_code))
         (AG: agree_regs F ctx rs rs')
@@ -1018,12 +1072,12 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
         (SSZ2: forall ofs, Mem.perm m' sp' ofs Max Nonempty -> 0 <= ofs <= f'.(fn_stacksize)),
       match_states (Callstate stk (Internal f) vargs m)
                    (State stk' f' (Vptr sp' Ptrofs.zero) pc' rs' m')
-  | match_return_states: forall stk v m stk' v' m' F sg cp
+  | match_return_states: forall stk v m stk' v' m' F cp
         (MS: match_stacks F m m' stk stk' (Mem.nextblock m'))
         (VINJ: Val.inject F v v')
         (MINJ: Mem.inject F m m'),
-      match_states (Returnstate stk v m sg cp)
-                   (Returnstate stk' v' m' sg cp)
+      match_states (Returnstate stk v m cp)
+                   (Returnstate stk' v' m' cp)
   | match_return_regular_states: forall stk v m stk' f' sp' rs' m' F ctx pc' or rinfo
         (MS: match_stacks_inside F m m' stk stk' f' ctx sp' rs')
         (RET: ctx.(retinfo) = Some rinfo)
@@ -1035,7 +1089,7 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
         (PRIV: range_private F m m' sp' ctx.(dstk) f'.(fn_stacksize))
         (SSZ1: 0 <= f'.(fn_stacksize) < Ptrofs.max_unsigned)
         (SSZ2: forall ofs, Mem.perm m' sp' ofs Max Nonempty -> 0 <= ofs <= f'.(fn_stacksize)),
-      match_states (Returnstate stk v m (sig_res (fn_sig f')) (comp_of f'))
+      match_states (Returnstate stk v m (comp_of f'))
                    (State stk' f' (Vptr sp' Ptrofs.zero) pc' rs' m').
 
 (** ** Forward simulation *)
@@ -1044,7 +1098,7 @@ Definition measure (S: RTL.state) : nat :=
   match S with
   | State _ _ _ _ _ _ => 1%nat
   | Callstate _ _ _ _ => 0%nat
-  | Returnstate _ _ _ _ _ => 0%nat
+  | Returnstate _ _ _ _ => 0%nat
   end.
 
 Lemma tr_funbody_inv:
@@ -1081,7 +1135,7 @@ Proof.
   eapply plus_one. eapply exec_Iop; eauto. erewrite eval_operation_preserved; eauto.
   exact symbols_preserved.
   econstructor; eauto.
-  apply match_stacks_inside_set_reg; auto.
+  apply match_stacks_inside_set_reg; eauto.
   apply agree_set_reg; auto.
 
 - (* load *)
@@ -1099,7 +1153,7 @@ Proof.
   eapply plus_one. eapply exec_Iload; eauto.
   rewrite <- SAMECOMP; eauto.
   econstructor; eauto.
-  apply match_stacks_inside_set_reg; auto.
+  apply match_stacks_inside_set_reg; eauto.
   apply agree_set_reg; auto.
 
 - (* store *)
@@ -1179,6 +1233,7 @@ Proof.
     now rewrite H0. }
   rewrite R in EV. eapply call_trace_same_cp; eauto.
   econstructor; eauto.
+
   eapply match_stacks_inside_inlined; eauto.
   red; intros. apply PRIV. inv H14. destruct H17. xomega.
   congruence.
@@ -1205,7 +1260,7 @@ Proof.
   eapply plus_one. eapply exec_Itailcall; eauto.
   eapply sig_function_translated; eauto.
     now rewrite <- (comp_transl_partial _ B), COMP.
-    admit.
+    (* rewrite <- SIG. symmetry. apply SIGRES; auto. *)
   congruence.
   eapply find_function_ptr_translated; eauto.
   rewrite <- SAMECOMP. eapply allowed_call_translated; eauto.
@@ -1266,6 +1321,7 @@ Proof.
   eapply match_stacks_inside_invariant; eauto.
     intros. eapply Mem.perm_free_3; eauto.
   { reflexivity. }
+  { admit. }
   { unfold uptodate_caller. rewrite COMP, ALLOWED. easy. }
   eapply agree_val_regs; eauto.
   eapply Mem.free_left_inject; eauto.
@@ -1302,7 +1358,7 @@ Proof.
     intros; eapply external_call_max_perm; eauto.
     intros; eapply external_call_max_perm; eauto.
     intros; eapply external_call_can_access_block; eauto.
-  auto. eauto. auto.
+  auto. eauto. eauto. auto.
   destruct res; simpl; [apply agree_set_reg;auto|idtac|idtac]; eapply agree_regs_incr; eauto.
   auto. auto.
   eapply external_call_valid_block; eauto.
@@ -1344,7 +1400,7 @@ Proof.
   destruct X as [m1' FREE].
   left; econstructor; split.
   eapply plus_one. eapply exec_Ireturn; eauto.
-  rewrite <- SAMECOMP. replace (sig_res (fn_sig f)) with (sig_res (fn_sig f')) by admit.
+  rewrite <- SAMECOMP.
   econstructor; eauto.
   eapply match_stacks_bound with (bound := sp').
   eapply match_stacks_invariant; eauto.
@@ -1367,12 +1423,12 @@ Proof.
 
 + (* inlined *)
   right. split. simpl. omega. split. auto.
-  rewrite SAMECOMP. replace (sig_res (fn_sig f)) with (sig_res (fn_sig f')) by admit.
+  rewrite SAMECOMP.
   econstructor; eauto.
   eapply match_stacks_inside_invariant; eauto.
     intros. eapply Mem.perm_free_3; eauto.
     reflexivity.
-  destruct or; simpl. apply agree_val_reg; auto. auto.
+  destruct or; simpl. apply agree_val_reg; eauto. eauto.
   eapply Mem.free_left_inject; eauto.
   inv FB. rewrite H4 in PRIV. eapply range_private_free_left; eauto.
 
@@ -1487,17 +1543,18 @@ Proof.
   eapply plus_one. eapply exec_return.
   rewrite <- SAMECOMP, <- type_of_call_translated.
   intros G. specialize (NO_CROSS_PTR G). inv VINJ; auto; contradiction.
-  admit.
+  rewrite <- SAMECOMP. eapply return_trace_inj; eauto.
   econstructor; eauto.
-  apply match_stacks_inside_set_reg; auto.
+  eapply match_stacks_inside_set_reg; eauto.
   apply agree_set_reg; auto.
 + (* untailcall case *)
   inv MS; try congruence.
   rewrite RET in RET0; inv RET0.
   left; econstructor; split.
   eapply plus_one. eapply exec_return.
-  rewrite <- SAMECOMP, <- type_of_call_translated.
+  rewrite <- SAMECOMP0, <- type_of_call_translated.
   intros G. specialize (NO_CROSS_PTR G). inv VINJ; auto; contradiction.
+  rewrite <- SAMECOMP0. eapply return_trace_inj; eauto.
   admit.
   eapply match_regular_states.
   eapply match_stacks_inside_set_reg; eauto.
@@ -1512,13 +1569,18 @@ Proof.
   unfold inline_return in AT.
   assert (PRIV': range_private F m m' sp' (dstk ctx' + mstk ctx') f'.(fn_stacksize)).
     red; intros. destruct (zlt ofs (dstk ctx)). apply PAD. omega. apply PRIV. omega.
-  assert (t = E0) by admit. subst t.
+  assert (t = E0). { rewrite SAMECOMP in EV. pose proof return_trace_intra as G.
+                     assert  (Genv.type_of_call ge (comp_of f') (comp_of f') <> Genv.CrossCompartmentCall) by
+                       (unfold Genv.type_of_call; now rewrite Pos.eqb_refl).
+                     specialize (G _ _ _ (comp_of f') (comp_of f') vres ty H).
+                     now inv EV; inv G. }
+  subst t.
   destruct or.
 + (* with a result *)
   left; econstructor; split.
   eapply plus_one.
   eapply exec_Iop; eauto. simpl. reflexivity.
-  econstructor; eauto. apply match_stacks_inside_set_reg; auto. apply agree_set_reg; auto.
+  econstructor; eauto. eapply match_stacks_inside_set_reg; eauto. apply agree_set_reg; auto.
 + (* without a result *)
   left; econstructor; split.
   eapply plus_one. eapply exec_Inop; eauto.

@@ -257,8 +257,6 @@ Proof.
     eapply eventval_of_val_sound; eauto.
 Qed.
 
-Print Coercions.
-
 (* Section MEMACCESS. *)
 
 (** Volatile memory accesses. *)
