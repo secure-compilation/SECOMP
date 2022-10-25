@@ -1423,8 +1423,10 @@ Proof.
   intros [EQ EQ']. subst fd.
   right; left; split. simpl; omega. split; auto.
   inv EV. auto.
-  simpl in *. unfold Genv.find_funct in H1. destruct (Ptrofs.eq_dec ofs Ptrofs.zero); try congruence.
-  rewrite H1 in H2. rewrite EQ' in H2.
+  simpl in *.
+  unfold Genv.find_comp, Genv.find_funct in *.
+  destruct (Ptrofs.eq_dec ofs Ptrofs.zero); try congruence.
+  rewrite H1. rewrite H1 in H2. rewrite EQ' in H2.
   eapply Genv.type_of_call_cp_default in H2; contradiction.
   econstructor; eauto.
 - (* Stailcall *)

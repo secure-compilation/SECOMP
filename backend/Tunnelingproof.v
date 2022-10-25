@@ -393,6 +393,7 @@ Lemma find_function_translated:
   find_function ge ros ls = Some fd ->
   find_function tge ros tls = Some (tunnel_fundef fd).
 Proof.
+  unfold find_function.
   intros. destruct ros; simpl in *.
 - assert (E: tls (R m) = ls (R m)).
   { exploit Genv.find_funct_inv; eauto. intros (b & EQ). 

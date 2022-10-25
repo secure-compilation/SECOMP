@@ -956,10 +956,10 @@ Lemma find_function_translated:
               /\ linkorder cu prog.
 Proof.
   unfold find_function; intros; destruct ros.
-- specialize (H0 r). inv H0.
-  apply functions_translated; auto.
+- specialize (H0 r). inv H0; simpl in *.
+  apply functions_translated; auto. congruence.
   rewrite <- H2 in H; discriminate.
-- rewrite symbols_preserved. destruct (Genv.find_symbol ge i).
+- simpl in *. rewrite symbols_preserved. destruct (Genv.find_symbol ge i).
   apply funct_ptr_translated; auto.
   discriminate.
 Qed.
@@ -1027,15 +1027,15 @@ Inductive match_stackframes: list stackframe -> list stackframe -> Prop :=
   | match_stackframes_nil:
       match_stackframes nil nil
   | match_stackframes_cons:
-      forall res sp pc rs f s rs' s' cu approx
+      forall res sp pc rs ty cp f s rs' s' cu approx
            (LINK: linkorder cu prog)
            (ANALYZE: analyze cu f = Some approx)
            (SAT: forall v m, exists valu, numbering_holds valu ge sp (rs#res <- v) m approx!!pc)
            (RLD: regs_lessdef rs rs')
            (STACKS: match_stackframes s s'),
     match_stackframes
-      (Stackframe res f sp pc rs :: s)
-      (Stackframe res (transf_function' f approx) sp pc rs' :: s').
+      (Stackframe res ty cp f sp pc rs :: s)
+      (Stackframe res ty cp (transf_function' f approx) sp pc rs' :: s').
 
 Lemma match_stackframes_call_comp:
   forall s s',
@@ -1066,12 +1066,12 @@ Inductive match_states: state -> state -> Prop :=
       match_states (Callstate s f args m)
                    (Callstate s' tf args' m')
   | match_states_return:
-      forall s s' v v' m m' cp sg
+      forall s s' v v' m m'
              (STACK: match_stackframes s s')
              (RES: Val.lessdef v v')
              (MEXT: Mem.extends m m'),
-      match_states (Returnstate s v m sg cp)
-                   (Returnstate s' v' m' sg cp).
+      match_states (Returnstate s v m)
+                   (Returnstate s' v' m').
 
 Ltac TransfInstr :=
   match goal with
@@ -1233,7 +1233,7 @@ Proof.
   apply regs_lessdef_regs; auto.
   unfold transf_function. unfold analyze in ANALYZE. rewrite ANALYZE. reflexivity.
   econstructor; eauto.
-  eapply match_stackframes_cons with (cu := cu); eauto.
+  rewrite <- find_comp_translated. eapply match_stackframes_cons with (cu := cu); eauto.
   intros. eapply analysis_correct_1; eauto. simpl; auto.
   unfold transfer; rewrite H.
   exists (fun _ => Vundef); apply empty_numbering_holds.

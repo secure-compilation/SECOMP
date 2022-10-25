@@ -353,13 +353,16 @@ Definition parent_ra (s: list stackframe) : val :=
   | Stackframe f sp ra c :: s' => Vptr f ra
   end.
 
-Definition call_comp (s: list stackframe): compartment :=
-  Genv.find_comp ge (parent_ra s).
-
 Definition find_comp_ptr (b: block) :=
   match Genv.find_funct_ptr ge b with
   | Some f => Some (comp_of f)
   | None => None
+  end.
+
+Definition call_comp (s: list stackframe): compartment :=
+  match parent_ra s with
+  | Vptr b _ => Genv.find_comp ge (Vptr b Ptrofs.zero)
+  | _ => default_compartment
   end.
 
 Inductive step: state -> trace -> state -> Prop :=

@@ -336,20 +336,6 @@ Proof.
   inv H. reflexivity.
 Qed.
 
-Lemma find_function_translated:
-  forall ros ls f,
-  find_function ge ros ls = Some f ->
-  exists tf,
-  find_function tge ros ls = Some tf /\ transf_fundef f = OK tf.
-Proof.
-  unfold find_function; intros; destruct ros; simpl.
-  apply functions_translated; auto.
-  rewrite symbols_preserved. destruct (Genv.find_symbol ge i).
-  apply function_ptr_translated; auto.
-  congruence.
-Qed.
-
-
 Lemma find_function_ptr_translated:
   forall ros ls vf,
   find_function_ptr ge ros ls = Some vf ->
@@ -358,6 +344,18 @@ Proof.
   unfold find_function_ptr; intros; destruct ros; simpl.
   eauto.
   rewrite symbols_preserved; eauto.
+Qed.
+
+Lemma find_function_translated:
+  forall ros ls f,
+  find_function ge ros ls = Some f ->
+  exists tf,
+  find_function tge ros ls = Some tf /\ transf_fundef f = OK tf.
+Proof.
+  unfold find_function; intros.
+  destruct (find_function_ptr ge ros ls) eqn:EQ; try congruence.
+  apply find_function_ptr_translated in EQ; rewrite EQ.
+  apply functions_translated; auto.
 Qed.
 
 Lemma allowed_call_translated:

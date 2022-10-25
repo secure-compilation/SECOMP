@@ -2389,9 +2389,7 @@ Proof.
   eapply star_right. eapply H9; simpl; eauto.
   assert (R: Genv.find_comp ge vf = comp_of fd).
   { clear -H6.
-    destruct vf; simpl in *; try congruence.
-    destruct (Ptrofs.eq_dec i Ptrofs.zero); simpl in *; try congruence.
-    rewrite H6. reflexivity. }
+    unfold Genv.find_comp. now rewrite H6. }
   right; constructor.
   rewrite R in NO_CROSS_PTR_RETURN.
   eapply NO_CROSS_PTR_RETURN.

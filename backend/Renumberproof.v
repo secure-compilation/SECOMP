@@ -64,17 +64,6 @@ Proof.
   destruct f; reflexivity.
 Qed.
 
-Lemma find_function_translated:
-  forall ros rs fd,
-  find_function ge ros rs = Some fd ->
-  find_function tge ros rs = Some (transf_fundef fd).
-Proof.
-  unfold find_function; intros. destruct ros as [r|id].
-  eapply functions_translated; eauto.
-  rewrite symbols_preserved. destruct (Genv.find_symbol ge id); try congruence.
-  eapply function_ptr_translated; eauto.
-Qed.
-
 Lemma find_function_ptr_translated:
   forall ros ls vf,
   find_function_ptr ge ros ls = Some vf ->
@@ -83,6 +72,18 @@ Proof.
   unfold find_function_ptr; intros; destruct ros; simpl.
   eauto.
   rewrite symbols_preserved; eauto.
+Qed.
+
+Lemma find_function_translated:
+  forall ros rs fd,
+  find_function ge ros rs = Some fd ->
+  find_function tge ros rs = Some (transf_fundef fd).
+Proof.
+  unfold find_function. intros.
+  destruct (find_function_ptr ge ros rs) eqn:EQ; try discriminate.
+  apply find_function_ptr_translated in EQ.
+  rewrite EQ.
+  eapply functions_translated; eauto.
 Qed.
 
 Lemma allowed_call_translated:
@@ -189,10 +190,10 @@ Proof.
 Qed.
 
 Inductive match_frames: RTL.stackframe -> RTL.stackframe -> Prop :=
-  | match_frames_intro: forall res f sp pc rs
+  | match_frames_intro: forall res ty cp f sp pc rs
         (REACH: reach f pc),
-      match_frames (Stackframe res f sp pc rs)
-                   (Stackframe res (transf_function f) sp (renum_pc (pnum f) pc) rs).
+      match_frames (Stackframe res ty cp f sp pc rs)
+                   (Stackframe res ty cp (transf_function f) sp (renum_pc (pnum f) pc) rs).
 
 Lemma match_stacks_call_comp:
   forall stk1 stk2,
@@ -217,10 +218,10 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
         (STACKS: list_forall2 match_frames stk stk'),
       match_states (Callstate stk f args m)
                    (Callstate stk' (transf_fundef f) args m)
-  | match_returnstates: forall stk v m stk' cp sg
+  | match_returnstates: forall stk v m stk'
         (STACKS: list_forall2 match_frames stk stk'),
-      match_states (Returnstate stk v m sg cp)
-                   (Returnstate stk' v m sg cp).
+      match_states (Returnstate stk v m)
+                   (Returnstate stk' v m).
 
 Lemma step_simulation:
   forall S1 t S2, RTL.step ge S1 t S2 ->
@@ -260,7 +261,8 @@ Proof.
     rewrite <- find_comp_translated, comp_transf_function.
     eapply call_trace_translated; eauto.
 
-  constructor. constructor; auto. constructor. eapply reach_succ; eauto. simpl; auto.
+  constructor. constructor; auto.
+  rewrite <- find_comp_translated. constructor. eapply reach_succ; eauto. simpl; auto.
 (* tailcall *)
   econstructor; split.
   eapply exec_Itailcall with (fd := transf_fundef fd); eauto.

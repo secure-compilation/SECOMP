@@ -837,6 +837,7 @@ Proof.
 (* Exec *)
   split. eapply star_trans. eexact EX1.
   eapply star_left. eapply exec_Icall; eauto.
+  unfold find_function.
   simpl. rewrite symbols_preserved. rewrite H. eauto. auto. simpl. rewrite symbols_preserved. rewrite H. eauto.
   (* clear -INTRA. *)
   unfold Genv.type_of_call in INTRA.
@@ -855,15 +856,9 @@ Proof.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   subst cp. eauto.
   apply star_one. apply exec_return.
-  intros CROSS. unfold Genv.find_comp in INTRA.
-  rewrite H0 in INTRA.
-  rewrite <- CROSS in INTRA.
-  unfold comp_of in INTRA; simpl in INTRA.
-  unfold comp_of in INTRA; simpl in INTRA.
-  unfold Genv.type_of_call in *; congruence. (* TODO: remove the unfold + remove the duplication *)
-  (* simpl in NO_CROSS_PTR_RETURN; rewrite H0 in NO_CROSS_PTR_RETURN. rewrite <- type_of_call_translated. *)
-  (* intros G; specialize (NO_CROSS_PTR_RETURN G). inversion B; subst v v'; auto; contradiction. *)
-  econstructor. simpl in INTRA. rewrite H0 in INTRA. auto.
+  erewrite find_comp_translated in INTRA; eauto. contradiction.
+  econstructor.
+  erewrite find_comp_translated in INTRA; eauto.
   reflexivity. reflexivity. reflexivity.
 (* Match-env *)
   split. eauto with rtlg.
@@ -874,7 +869,6 @@ Proof.
 (* Mem *)
   auto.
 Qed.
-
 
 Lemma transl_exprlist_Enil_correct:
   forall (le : letenv),
@@ -1308,42 +1302,45 @@ Inductive tr_fun (tf: function) (map: mapping) (f: CminorSel.function)
       forall SIG: fn_sig tf = CminorSel.fn_sig f,
       tr_fun tf map f ngoto nret rret.
 
-Inductive tr_cont: RTL.code -> mapping ->
-                   CminorSel.cont -> node -> list node -> labelmap -> node -> option reg ->
-                   list RTL.stackframe -> Prop :=
-  | tr_Kseq: forall c map s k nd nexits ngoto nret rret cs n,
+Inductive tr_cont:
+  compartment -> rettype ->
+  RTL.code -> mapping ->
+  CminorSel.cont -> node -> list node -> labelmap -> node -> option reg ->
+  list RTL.stackframe -> Prop :=
+  | tr_Kseq: forall cp ty c map s k nd nexits ngoto nret rret cs n,
       tr_stmt c map s nd n nexits ngoto nret rret ->
-      tr_cont c map k n nexits ngoto nret rret cs ->
-      tr_cont c map (Kseq s k) nd nexits ngoto nret rret cs
-  | tr_Kblock: forall c map k nd nexits ngoto nret rret cs,
-      tr_cont c map k nd nexits ngoto nret rret cs ->
-      tr_cont c map (Kblock k) nd (nd :: nexits) ngoto nret rret cs
-  | tr_Kstop: forall c map ngoto nret rret cs,
+      tr_cont cp ty c map k n nexits ngoto nret rret cs ->
+      tr_cont cp ty c map (Kseq s k) nd nexits ngoto nret rret cs
+  | tr_Kblock: forall cp ty c map k nd nexits ngoto nret rret cs,
+      tr_cont cp ty c map k nd nexits ngoto nret rret cs ->
+      tr_cont cp ty c map (Kblock k) nd (nd :: nexits) ngoto nret rret cs
+  | tr_Kstop: forall cp ty c map ngoto nret rret cs,
       c!nret = Some(Ireturn rret) ->
-      match_stacks Kstop cs ->
-      tr_cont c map Kstop nret nil ngoto nret rret cs
-  | tr_Kcall: forall c map optid f sp e k ngoto nret rret cs,
+      match_stacks cp ty Kstop cs ->
+      tr_cont cp ty c map Kstop nret nil ngoto nret rret cs
+  | tr_Kcall: forall cp ty c map optid f sp e k ngoto nret rret cs,
       c!nret = Some(Ireturn rret) ->
-      match_stacks (Kcall optid f sp e k) cs ->
-      tr_cont c map (Kcall optid f sp e k) nret nil ngoto nret rret cs
+      match_stacks cp ty (Kcall optid f sp e k) cs ->
+      tr_cont cp ty c map (Kcall optid f sp e k) nret nil ngoto nret rret cs
 
-with match_stacks: CminorSel.cont -> list RTL.stackframe -> Prop :=
-  | match_stacks_stop:
-      match_stacks Kstop nil
-  | match_stacks_call: forall optid f sp e k r tf n rs cs map nexits ngoto nret rret,
+with match_stacks: compartment -> rettype -> CminorSel.cont -> list RTL.stackframe -> Prop :=
+  | match_stacks_stop: forall cp ty,
+      match_stacks cp ty Kstop nil
+  | match_stacks_call: forall cp ty optid f sp e k r tf n rs cs map nexits ngoto nret rret,
       map_wf map ->
       tr_fun tf map f ngoto nret rret ->
       match_env map e nil rs ->
       reg_map_ok map r optid ->
-      tr_cont tf.(fn_code) map k n nexits ngoto nret rret cs ->
-      match_stacks (Kcall optid f sp e k) (Stackframe r tf sp n rs :: cs).
+      tr_cont (comp_of f) (sig_res (CminorSel.fn_sig f)) tf.(fn_code) map k n nexits ngoto nret rret cs ->
+      (* cond on ty, cond on cp *)
+      match_stacks cp ty (Kcall optid f sp e k) (Stackframe r ty cp tf sp n rs :: cs).
 
 Lemma match_stacks_call_comp:
-  forall k stk,
-  match_stacks k stk ->
+  forall cp ty k stk,
+  match_stacks cp ty k stk ->
   CminorSel.call_comp k = call_comp stk.
 Proof.
-  intros k stk H.
+  intros cp ty k stk H.
   destruct H; trivial; simpl.
   match goal with
   | TF : tr_fun _ _ _ _ _ _ |- _ =>
@@ -1357,7 +1354,7 @@ Inductive match_states: CminorSel.state -> RTL.state -> Prop :=
         (MWF: map_wf map)
         (TS: tr_stmt tf.(fn_code) map s ns ncont nexits ngoto nret rret)
         (TF: tr_fun tf map f ngoto nret rret)
-        (TK: tr_cont tf.(fn_code) map k ncont nexits ngoto nret rret cs)
+        (TK: tr_cont (comp_of f) (sig_res (CminorSel.fn_sig f)) tf.(fn_code) map k ncont nexits ngoto nret rret cs)
         (ME: match_env map e nil rs)
         (MEXT: Mem.extends m tm),
       match_states (CminorSel.State f s k sp e m)
@@ -1365,46 +1362,46 @@ Inductive match_states: CminorSel.state -> RTL.state -> Prop :=
   | match_callstate:
       forall f args targs k m tm cs tf
         (TF: transl_fundef f = OK tf)
-        (MS: match_stacks k cs)
+        (MS: match_stacks (comp_of f) (sig_res (CminorSel.funsig f)) k cs)
         (LD: Val.lessdef_list args targs)
         (MEXT: Mem.extends m tm),
       match_states (CminorSel.Callstate f args k m)
                    (RTL.Callstate cs tf targs tm)
   | match_returnstate:
-      forall v tv k m tm cs sg cp
-        (MS: match_stacks k cs)
+      forall v tv k m tm cs ty cp
+        (MS: match_stacks cp ty k cs)
         (LD: Val.lessdef v tv)
         (MEXT: Mem.extends m tm),
-      match_states (CminorSel.Returnstate v k m sg cp)
-                   (RTL.Returnstate cs tv tm sg cp).
+      match_states (CminorSel.Returnstate v k m ty cp)
+                   (RTL.Returnstate cs tv tm).
 
 Lemma match_stacks_call_cont:
-  forall c map k ncont nexits ngoto nret rret cs,
-  tr_cont c map k ncont nexits ngoto nret rret cs ->
-  match_stacks (call_cont k) cs /\ c!nret = Some(Ireturn rret).
+  forall cp ty c map k ncont nexits ngoto nret rret cs,
+  tr_cont cp ty c map k ncont nexits ngoto nret rret cs ->
+  match_stacks cp ty (call_cont k) cs /\ c!nret = Some(Ireturn rret).
 Proof.
   induction 1; simpl; auto.
 Qed.
 
 Lemma tr_cont_call_cont:
-  forall c map k ncont nexits ngoto nret rret cs,
-  tr_cont c map k ncont nexits ngoto nret rret cs ->
-  tr_cont c map (call_cont k) nret nil ngoto nret rret cs.
+  forall cp ty c map k ncont nexits ngoto nret rret cs,
+  tr_cont cp ty c map k ncont nexits ngoto nret rret cs ->
+  tr_cont cp ty c map (call_cont k) nret nil ngoto nret rret cs.
 Proof.
   induction 1; simpl; auto; econstructor; eauto.
 Qed.
 
 Lemma tr_find_label:
-  forall c map lbl n (ngoto: labelmap) nret rret s' k' cs,
+  forall cp ty c map lbl n (ngoto: labelmap) nret rret s' k' cs,
   ngoto!lbl = Some n ->
   forall s k ns1 nd1 nexits1,
   find_label lbl s k = Some (s', k') ->
   tr_stmt c map s ns1 nd1 nexits1 ngoto nret rret ->
-  tr_cont c map k nd1 nexits1 ngoto nret rret cs ->
+  tr_cont cp ty c map k nd1 nexits1 ngoto nret rret cs ->
   exists ns2, exists nd2, exists nexits2,
      c!n = Some(Inop ns2)
   /\ tr_stmt c map s' ns2 nd2 nexits2 ngoto nret rret
-  /\ tr_cont c map k' nd2 nexits2 ngoto nret rret cs.
+  /\ tr_cont cp ty c map k' nd2 nexits2 ngoto nret rret cs.
 Proof.
   induction s; intros until nexits1; simpl; try congruence.
   (* seq *)
@@ -1451,7 +1448,7 @@ Proof.
   (* skip return *)
   inv TS.
   assert ((fn_code tf)!ncont = Some(Ireturn rret)
-          /\ match_stacks k cs).
+          /\ match_stacks (comp_of f) (sig_res (CminorSel.fn_sig f)) k cs).
     inv TK; simpl in H; try contradiction; auto.
   destruct H1.
   assert (fn_stacksize tf = fn_stackspace f).
@@ -1460,7 +1457,7 @@ Proof.
   econstructor; split.
   left; apply plus_one. eapply exec_Ireturn. eauto.
   inv TF. rewrite H3, COMP; eauto.
-  inv TF. rewrite COMP, SIG.
+  inv TF.
   constructor; auto.
 
   (* assign *)
@@ -1502,7 +1499,7 @@ Proof.
   exploit functions_translated; eauto. intros [tf' [P Q]].
   econstructor; split.
   left; eapply plus_right. eapply star_trans. eexact A. eexact E. reflexivity.
-  eapply exec_Icall; eauto. simpl. rewrite J. destruct C. eauto. discriminate P. simpl; auto.
+  eapply exec_Icall; eauto. unfold find_function. simpl. rewrite J. destruct C. eauto. discriminate P. simpl; auto.
   apply sig_transl_function; auto.
   simpl; eauto.
   rewrite (J _ (or_introl eq_refl)).
@@ -1518,14 +1515,17 @@ Proof.
     rewrite J; eauto. now left.
     rewrite J; eauto. now left. }
   traceEq.
-  constructor; auto. econstructor; eauto.
+  constructor; auto.
+  erewrite <- find_comp_translated with (vf := vf); eauto. unfold Genv.find_comp; rewrite H2.
+  econstructor; eauto.
+  rewrite J; eauto. now left.
   (* direct *)
   exploit transl_exprlist_correct; eauto.
   intros [rs'' [tm'' [E [F [G [J Y]]]]]].
   exploit functions_translated; eauto. intros [tf' [P Q]].
   econstructor; split.
   left; eapply plus_right. eexact E.
-  eapply exec_Icall; eauto. simpl. rewrite symbols_preserved. rewrite H4.
+  eapply exec_Icall; eauto. unfold find_function. simpl. rewrite symbols_preserved. rewrite H4.
   rewrite Genv.find_funct_find_funct_ptr in P. eauto.
   apply sig_transl_function; auto.
   simpl. rewrite symbols_preserved. rewrite H4. eauto.
@@ -1537,7 +1537,9 @@ Proof.
   { erewrite <- find_comp_translated with (vf := (Vptr b Ptrofs.zero)), <- COMP; eauto.
     eapply call_trace_translated with (vf := (Vptr b Ptrofs.zero)); eauto. }
   traceEq.
-  constructor; auto. econstructor; eauto.
+  constructor; auto.
+  erewrite <- find_comp_translated with (vf := (Vptr b Ptrofs.zero)); eauto. unfold Genv.find_comp; rewrite H2.
+  econstructor; eauto.
 
   (* tailcall *)
   assert (COMP': comp_of f = comp_of tf) by now inv TF.
@@ -1553,17 +1555,17 @@ Proof.
   edestruct Mem.free_parallel_extends as [tm''' []]; eauto.
   econstructor; split.
   left; eapply plus_right. eapply star_trans. eexact A. eexact E. reflexivity.
-  eapply exec_Itailcall; eauto. simpl. rewrite J. destruct C. eauto. discriminate P. simpl; auto.
+  eapply exec_Itailcall; eauto. unfold find_function. simpl. rewrite J. destruct C. eauto. discriminate P. simpl; auto.
   apply sig_transl_function; auto.
     rewrite <- (comp_transl_partial fd Q), COMP. inv TF; congruence.
-    apply sig_transl_function in Q. rewrite <- Q. inv TF; congruence.
+    (* apply sig_transl_function in Q. rewrite <- Q. inv TF; congruence. *)
   rewrite <- COMP'; eauto.
   simpl; eauto.
   rewrite (J rf (or_introl eq_refl)).
   eapply allowed_call_translated; eauto. now rewrite <- COMP'.
   rewrite H, <- COMP'; eauto.
   traceEq.
-  constructor; auto.
+  constructor; auto. rewrite <- COMP, SIG in U. auto.
   (* direct *)
   exploit transl_exprlist_correct; eauto.
   intros [rs'' [tm'' [E [F [G [J Y]]]]]].
@@ -1573,17 +1575,17 @@ Proof.
   edestruct Mem.free_parallel_extends as [tm''' []]; eauto.
   econstructor; split.
   left; eapply plus_right. eexact E.
-  eapply exec_Itailcall; eauto. simpl. rewrite symbols_preserved. rewrite H5.
+  eapply exec_Itailcall; eauto. unfold find_function. simpl. rewrite symbols_preserved. rewrite H5.
   rewrite Genv.find_funct_find_funct_ptr in P. eauto.
   apply sig_transl_function; auto.
   rewrite <- (comp_transl_partial _ Q), COMP. inv TF; congruence.
-    apply sig_transl_function in Q. rewrite <- Q. inv TF; congruence.
+    (* apply sig_transl_function in Q. rewrite <- Q. inv TF; congruence. *)
   rewrite <- COMP'. eauto.
   simpl. rewrite symbols_preserved. rewrite H5. eauto.
   rewrite <- COMP'. eapply allowed_call_translated_same; eauto.
   rewrite H, <- COMP'; eauto.
   traceEq.
-  constructor; auto.
+  constructor; auto. rewrite <- COMP, SIG in U. auto.
 
   (* builtin *)
   assert (COMP: comp_of f = comp_of tf) by now inv TF.
@@ -1671,7 +1673,7 @@ Proof.
   econstructor; split.
   left; apply plus_one. eapply exec_Ireturn; eauto.
   rewrite H2, <- COMP; eauto.
-  rewrite <- COMP, SIG.
+  (* rewrite <- COMP, SIG. *)
   constructor; auto.
 
   (* return some *)
@@ -1685,7 +1687,7 @@ Proof.
   econstructor; split.
   left; eapply plus_right. eexact A. eapply exec_Ireturn; eauto.
   rewrite H4, <- COMP; eauto. traceEq.
-  simpl. rewrite <- COMP, SIG. constructor; auto.
+  simpl. (* rewrite <- COMP, SIG. *) constructor; auto.
 
   (* label *)
   inv TS.
@@ -1725,16 +1727,16 @@ Proof.
   econstructor; split.
   left; apply plus_one. eapply exec_function_external; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  rewrite <- (match_stacks_call_comp _ _ MS); eauto.
+  rewrite <- (match_stacks_call_comp _ _ _ _ MS); eauto.
   constructor; auto.
 
   (* return *)
   inv MS.
   econstructor; split.
   left; apply plus_one; constructor.
-  inv H6. rewrite COMP, <- type_of_call_translated.
+  inv H8. rewrite COMP, <- type_of_call_translated.
   intros G. specialize (NO_CROSS_PTR G). inv LD; auto; contradiction.
-  inv H6. rewrite COMP.
+  inv H8. rewrite COMP.
   eapply return_trace_lessdef; eauto using senv_preserved.
   econstructor; eauto. constructor.
   eapply match_env_update_dest; eauto.

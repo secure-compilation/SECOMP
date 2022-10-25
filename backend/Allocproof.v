@@ -1518,7 +1518,7 @@ Lemma find_function_tailcall:
   ros_compatible_tailcall ros = true ->
   find_function tge ros (return_regs ls1 ls2) = find_function tge ros ls2.
 Proof.
-  unfold ros_compatible_tailcall, find_function; intros.
+  unfold ros_compatible_tailcall, find_function, find_function_ptr; intros.
   destruct ros as [r|id]; auto.
   unfold return_regs. destruct (is_callee_save r). discriminate. auto.
 Qed.
@@ -1870,14 +1870,14 @@ Lemma find_function_translated:
   exists tfd,
   LTL.find_function tge ros' ls = Some tfd /\ transf_fundef fd = OK tfd.
 Proof.
-  unfold RTL.find_function, LTL.find_function; intros.
+  unfold RTL.find_function, LTL.find_function, RTL.find_function_ptr, LTL.find_function_ptr; intros.
   destruct ros as [r|id]; destruct ros' as [r'|id']; simpl in H0; MonadInv.
   (* two regs *)
   exploit add_equation_lessdef; eauto. intros LD. inv LD.
   eapply functions_translated; eauto.
   rewrite <- H2 in H. simpl in H. congruence.
   (* two symbols *)
-  rewrite symbols_preserved. rewrite Heqo.
+  rewrite symbols_preserved. rewrite Heqo0.
   eapply function_ptr_translated; eauto.
 Qed.
 
@@ -1974,13 +1974,13 @@ Qed.
 
 (** The simulation relation *)
 
-Inductive match_stackframes: list RTL.stackframe -> list LTL.stackframe -> signature -> Prop :=
-  | match_stackframes_nil: forall sg,
+Inductive match_stackframes: list RTL.stackframe -> list LTL.stackframe -> compartment -> signature -> Prop :=
+  | match_stackframes_nil: forall cp sg,
       sg.(sig_res) = Tint ->
-      match_stackframes nil nil sg
+      match_stackframes nil nil cp sg
   | match_stackframes_cons:
-      forall res f sp pc rs s tf bb ls ts sg an e env
-        (STACKS: match_stackframes s ts (fn_sig tf))
+      forall res cp f sp pc rs s tf bb ls ts sg an e env
+        (STACKS: match_stackframes s ts (comp_of tf) (fn_sig tf))
         (FUN: transf_function f = OK tf)
         (ANL: analyze f env (pair_codes f tf) = Some an)
         (EQ: transfer f env (pair_codes f tf) pc an!!pc = OK e)
@@ -1996,14 +1996,28 @@ Inductive match_stackframes: list RTL.stackframe -> list LTL.stackframe -> signa
                           E0 (State ts tf sp pc ls2 m)
            /\ satisf (rs#res <- v) ls2 e),
       match_stackframes
-        (RTL.Stackframe res f sp pc rs :: s)
+        (RTL.Stackframe res (sig_res sg) cp f sp pc rs :: s)
         (LTL.Stackframe tf sp ls bb :: ts)
-        sg.
+        cp sg.
+
+Definition ty_of_stack (stk: list RTL.stackframe) :=
+  match stk with
+  | RTL.Stackframe _ ty _ _ _ _ _ :: _ => ty
+  | _ => Tret Tint
+  end.
+
+Definition cp_of_stack (stk: list RTL.stackframe) :=
+  match stk with
+  | RTL.Stackframe _ _ cp _ _ _ _ :: _ => cp
+  | _ => default_compartment
+  end.
 
 Inductive match_states: RTL.state -> LTL.state -> Prop :=
   | match_states_intro:
       forall s f sp pc rs m ts tf ls m' an e env
-        (STACKS: match_stackframes s ts (fn_sig tf))
+        (STACKS: match_stackframes s ts (comp_of tf) (fn_sig tf))
+        (* (TY: ty_of_stack s = sig_res (fn_sig tf)) *)
+        (* (CP: cp_of_stack s = comp_of tf) *)
         (FUN: transf_function f = OK tf)
         (ANL: analyze f env (pair_codes f tf) = Some an)
         (EQ: transfer f env (pair_codes f tf) pc an!!pc = OK e)
@@ -2015,7 +2029,7 @@ Inductive match_states: RTL.state -> LTL.state -> Prop :=
                    (LTL.State ts tf sp pc ls m')
   | match_states_call:
       forall s f args m ts tf ls m'
-        (STACKS: match_stackframes s ts (funsig tf))
+        (STACKS: match_stackframes s ts (comp_of tf) (funsig tf))
         (FUN: transf_fundef f = OK tf)
         (ARGS: Val.lessdef_list args (map (fun p => Locmap.getpair p ls) (loc_arguments (funsig tf))))
         (AG: agree_callee_save (parent_locset ts) ls)
@@ -2025,33 +2039,36 @@ Inductive match_states: RTL.state -> LTL.state -> Prop :=
                    (LTL.Callstate ts tf ls m')
   | match_states_return:
       forall s res m ts ls m' sg cp
-        (STACKS: match_stackframes s ts sg)
+        (STACKS: match_stackframes s ts cp sg)
+        (* (TY: ty_of_stack s = sig_res sg) *)
+        (* (CP: cp_of_stack s = cp) *)
         (RES: Val.lessdef res (Locmap.getpair (map_rpair R (loc_result sg)) ls))
         (AG: agree_callee_save (parent_locset ts) ls)
         (MEM: Mem.extends m m')
         (WTRES: Val.has_type res (proj_sig_res sg)),
-      match_states (RTL.Returnstate s res m (sig_res sg) cp)
+      match_states (RTL.Returnstate s res m)
                    (LTL.Returnstate ts ls m' sg cp).
 
 Lemma match_stackframes_change_sig:
-  forall s ts sg sg',
-  match_stackframes s ts sg ->
+  forall s ts cp sg sg',
+  match_stackframes s ts cp sg ->
   sg'.(sig_res) = sg.(sig_res) ->
-  match_stackframes s ts sg'.
+  match_stackframes s ts cp sg'.
 Proof.
   intros. inv H.
   constructor. congruence.
+  rewrite <- H0.
   econstructor; eauto.
   unfold proj_sig_res in *. rewrite H0; auto.
   intros. rewrite (loc_result_exten sg' sg) in H by auto. eauto.
 Qed.
 
 Lemma match_stackframes_call_comp:
-  forall s ts sg,
-  match_stackframes s ts sg ->
+  forall s ts cp sg,
+  match_stackframes s ts cp sg ->
   RTL.call_comp s = call_comp ts.
 Proof.
-  intros s ts sg H.
+  intros s ts cp sg H.
   destruct H; trivial; simpl.
   now apply (comp_transl_partial _ FUN).
 Qed.
@@ -2529,13 +2546,19 @@ Proof.
   traceEq. traceEq.
   exploit analyze_successors; eauto. simpl. left; eauto. intros [enext [U V]].
   econstructor; eauto.
+  assert (R: comp_of tfd = Genv.find_comp ge vf).
+  { clear -H0 FUNPTR F.
+    unfold RTL.find_function in H0. rewrite FUNPTR in H0.
+    unfold Genv.find_comp.
+    rewrite H0. now rewrite comp_transf_fundef. }
+  rewrite <- R, SIG.
   econstructor; eauto.
   inv WTI. congruence.
   intros. exploit (exec_moves mv2). eauto. eauto.
   eapply function_return_satisf with (v := v) (ls_before := ls1) (ls_after := ls0); eauto.
   eapply add_equation_ros_satisf; eauto.
   eapply add_equations_args_satisf; eauto.
-  congruence.
+  (* congruence. *)
   apply wt_regset_assign; auto.
   intros [ls2 [A2 B2]].
   exists ls2; split.
@@ -2569,6 +2592,7 @@ Proof.
   destruct (transf_function_inv _ _ FUN); auto.
   eauto. traceEq.
   econstructor; eauto.
+  rewrite <- comp_transf_fundef; eauto. rewrite COMP. rewrite comp_transf_function; eauto.
   eapply match_stackframes_change_sig; eauto. rewrite SIG'. rewrite e0. decEq.
   destruct (transf_function_inv _ _ FUN); auto.
   rewrite SIG'. rewrite return_regs_arg_values; auto. eapply add_equations_args_lessdef; eauto.
@@ -2639,7 +2663,7 @@ Proof.
   eapply star_right. eexact A1.
   econstructor.
   rewrite <- comp_transf_function; eauto. eauto. traceEq.
-  simpl. rewrite <- COMP. rewrite H11.
+  simpl.
   econstructor; eauto.
   apply return_regs_agree_callee_save.
   constructor.
@@ -2650,7 +2674,7 @@ Proof.
   eapply star_right. eexact A1.
   econstructor.
   rewrite <- comp_transf_function; eauto. eauto. traceEq.
-  simpl. rewrite <- COMP. rewrite H11. econstructor; eauto. rewrite <- H11.
+  simpl. econstructor; eauto. rewrite <- H11.
   replace (Locmap.getpair (map_rpair R (loc_result (RTL.fn_sig f)))
                           (return_regs (parent_locset ts) ls1))
   with (Locmap.getpair (map_rpair R (loc_result (RTL.fn_sig f))) ls1).
@@ -2747,7 +2771,7 @@ Lemma final_states_simulation:
   match_states st1 st2 -> RTL.final_state st1 r -> LTL.final_state st2 r.
 Proof.
   intros. inv H0. inv H. inv STACKS.
-  econstructor. rewrite <- (loc_result_exten sg0). inv RES; auto.
+  econstructor. rewrite <- (loc_result_exten sg). inv RES; auto.
   rewrite H; auto.
 Qed.
 

@@ -1522,8 +1522,10 @@ Proof.
   unfold call_comp.
   intros j cs cs' sg H.
   destruct H; simpl.
-- now rewrite Genv.find_comp_null.
-- rewrite FINDF. symmetry. f_equal.
+- unfold Vnullptr; destruct Archi.ptr64; reflexivity.
+- unfold Genv.find_comp, Genv.find_funct.
+  destruct Ptrofs.eq_dec; try congruence.
+  rewrite FINDF. symmetry.
   apply (comp_transl_partial _ TRF).
 Qed.
 
@@ -1703,6 +1705,7 @@ Lemma find_function_translated:
   /\ Genv.type_of_call tge cp (Genv.find_comp tge (Vptr bf Ptrofs.zero)) = Genv.type_of_call ge cp (Genv.find_comp ge vf)
   /\ vf = Vptr bf Ptrofs.zero. (* TODO: adding this conjunct is not the cleanest way to go, maybe try to find a cleaner solution? *)
 Proof.
+  unfold find_function.
   intros until vf; intros AG [bound [_ [?????]]] FF.
   destruct ros; simpl in FF.
 - exploit Genv.find_funct_inv; eauto. intros [b EQ]. rewrite EQ in FF.
@@ -1724,6 +1727,7 @@ Proof.
   now apply Genv.match_genvs_type_of_call.
 
 - destruct (Genv.find_symbol ge i) as [b|] eqn:?; try discriminate.
+  unfold Genv.find_funct in FF; destruct Ptrofs.eq_dec; try congruence.
   exploit function_ptr_translated; eauto.
   intros [tf [A B]].
   exists b; exists tf; split; auto. simpl.
@@ -2441,7 +2445,8 @@ Qed.
   simpl in AGCS. simpl in SEP. rewrite sep_assoc in SEP.
   econstructor; split.
   apply plus_one. apply exec_return.
-  { intros.
+  { intros. unfold Genv.find_comp in H.
+    simpl in H; destruct Ptrofs.eq_dec; try congruence.
     (* apply agree_regs_call_regs in AGREGS. *)
     (* apply agree_regs_undef_regs with (rl := destroyed_at_function_entry) in AGREGS. *)
     simpl in H; rewrite FINDF in H. unfold comp_of in H; simpl in H.
@@ -2461,7 +2466,8 @@ Qed.
       now rewrite <- H1 in NO_CROSS_PTR.
     (* TODO: write a lemma about that *)
   }
-  { simpl. rewrite FINDF. unfold comp_of; simpl.
+  { unfold Genv.find_comp. simpl. destruct Ptrofs.eq_dec; try congruence.
+    simpl. rewrite FINDF. unfold comp_of; simpl.
     rewrite <- (comp_transl_partial _ TRF).
     eapply return_trace_inj with (j := j) (v := (Locmap.getpair (map_rpair R (loc_result sg)) rs)); eauto.
     unfold return_value.

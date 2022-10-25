@@ -97,20 +97,6 @@ Proof.
   intros. monadInv H. auto.
 Qed.
 
-Lemma find_function_translated:
-  forall ros ls f,
-  LTL.find_function ge ros ls = Some f ->
-  exists tf,
-  find_function tge ros ls = Some tf /\
-  transf_fundef f = OK tf.
-Proof.
-  unfold LTL.find_function; intros; destruct ros; simpl.
-  apply functions_translated; auto.
-  rewrite symbols_preserved. destruct (Genv.find_symbol ge i).
-  apply function_ptr_translated; auto.
-  congruence.
-Qed.
-
 Lemma find_function_ptr_translated:
   forall ros rs vf,
     LTL.find_function_ptr ge ros rs = Some vf ->
@@ -119,6 +105,19 @@ Proof.
   unfold LTL.find_function_ptr, find_function_ptr; intros; destruct ros; simpl.
   eauto.
   rewrite symbols_preserved; eauto.
+Qed.
+
+Lemma find_function_translated:
+  forall ros ls f,
+  LTL.find_function ge ros ls = Some f ->
+  exists tf,
+  find_function tge ros ls = Some tf /\
+  transf_fundef f = OK tf.
+Proof.
+  unfold LTL.find_function, find_function.
+  intros. destruct (LTL.find_function_ptr ge ros ls) eqn:EQ; try congruence.
+  eapply find_function_ptr_translated in EQ. rewrite EQ.
+  apply functions_translated; auto.
 Qed.
 
 Lemma allowed_call_translated:

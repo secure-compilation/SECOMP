@@ -528,6 +528,7 @@ Lemma find_function_translated:
   /\ transf_fundef (romem_for cu) fd = OK tfd
   /\ linkorder cu prog.
 Proof.
+  unfold find_function.
   intros. destruct ros as [r|id]; simpl in *.
 - assert (LD: Val.lessdef rs#r trs#r) by eauto with na. inv LD.
   apply functions_translated; auto.
@@ -543,6 +544,7 @@ Lemma find_function_ptr_translated:
     find_function_ptr ge ros rs = Some vf ->
     find_function_ptr tge ros te = Some vf.
 Proof.
+  unfold find_function.
   intros. destruct ros as [r|id]; simpl in *.
   - assert (LD: Val.lessdef rs#r te#r) by eauto with na. inv LD.
     congruence.
@@ -583,7 +585,7 @@ Qed.
 
 Inductive match_stackframes: stackframe -> stackframe -> Prop :=
   | match_stackframes_intro:
-      forall res f sp pc e tf te cu an
+      forall res ty cp f sp pc e tf te cu an
         (LINK: linkorder cu prog)
         (FUN: transf_function (romem_for cu) f = OK tf)
         (ANL: analyze (vanalyze cu f) f = Some an)
@@ -591,8 +593,8 @@ Inductive match_stackframes: stackframe -> stackframe -> Prop :=
               Val.lessdef v tv ->
               eagree (e#res <- v) (te#res<- tv)
                      (fst (transfer f (vanalyze cu f) pc an!!pc))),
-      match_stackframes (Stackframe res f (Vptr sp Ptrofs.zero) pc e)
-                        (Stackframe res tf (Vptr sp Ptrofs.zero) pc te).
+      match_stackframes (Stackframe res ty cp f (Vptr sp Ptrofs.zero) pc e)
+                        (Stackframe res ty cp tf (Vptr sp Ptrofs.zero) pc te).
 
 Lemma match_stacks_call_comp:
   forall s s',
@@ -629,12 +631,12 @@ Inductive match_states: state -> state -> Prop :=
       match_states (Callstate s f args m)
                    (Callstate ts tf targs tm)
   | match_return_states:
-      forall s v m ts tv tm cp sg
+      forall s v m ts tv tm
         (STACKS: list_forall2 match_stackframes s ts)
         (RES: Val.lessdef v tv)
         (MEM: Mem.extends m tm),
-      match_states (Returnstate s v m sg cp)
-                   (Returnstate ts tv tm sg cp).
+      match_states (Returnstate s v m)
+                   (Returnstate ts tv tm).
 
 (** [match_states] and CFG successors *)
 
@@ -1003,7 +1005,7 @@ Ltac UseTransfer :=
   rewrite <- find_comp_translated, <- comp_transf_function; eauto.
   eapply call_trace_translated; eauto.
   eapply match_call_states with (cu := cu'); eauto.
-  constructor; auto. eapply match_stackframes_intro with (cu := cu); eauto.
+  constructor; auto. rewrite <- find_comp_translated. eapply match_stackframes_intro with (cu := cu); eauto.
   intros.
   edestruct analyze_successors; eauto. simpl; eauto.
   eapply eagree_ge; eauto. rewrite ANPC. simpl.
@@ -1021,8 +1023,7 @@ Ltac UseTransfer :=
   econstructor; split.
   eapply exec_Itailcall; eauto. eapply sig_function_translated; eauto.
   rewrite <- (comp_transl_partial _ B), COMP. now apply (comp_transl_partial _ FUN).
-  rewrite <- SIG. unfold transf_function in FUN. destruct analyze; inv FUN; auto.
-  change (fn_comp tf) with (comp_of tf). now rewrite <- (comp_transl_partial _ FUN).
+  unfold transf_function in FUN. destruct analyze; inv FUN; auto.
   rewrite <- comp_transf_function; eauto.
   eapply allowed_call_translated; eauto.
   erewrite stacksize_translated by eauto.
@@ -1230,7 +1231,6 @@ Ltac UseTransfer :=
   eapply exec_Ireturn; eauto.
   erewrite stacksize_translated by eauto.
   rewrite <- comp_transf_function; eauto.
-  rewrite comp_transf_function; eauto.
   unfold transf_function in FUN. destruct (analyze (ValueAnalysis.analyze (romem_for cu) f) f); inv FUN.
   constructor; auto.
   destruct or; simpl; eauto 2 with na.

@@ -286,6 +286,7 @@ Hypothesis wt_prog:
 Lemma wt_find_function:
   forall ros rs f, find_function ge ros rs = Some f -> wt_fundef f.
 Proof.
+  unfold find_function.
   intros.
   assert (X: exists i, In (i, Gfun f) prog.(prog_defs)).
   {
@@ -293,6 +294,7 @@ Proof.
     eapply Genv.find_funct_inversion; eauto.
     destruct (Genv.find_symbol ge s) as [b|]; try discriminate.
     eapply Genv.find_funct_ptr_inversion; eauto.
+    unfold Genv.find_funct in H. destruct Ptrofs.eq_dec; try congruence; eauto.
   }
   destruct X as [i IN]. eapply wt_prog; eauto.
 Qed.

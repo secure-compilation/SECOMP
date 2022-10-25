@@ -440,7 +440,7 @@ Lemma find_function_agree:
   transf_fundef (funenv_program cu) fd = OK fd' /\
   linkorder cu prog.
 Proof.
-  intros. destruct ros as [r | id]; simpl in *.
+  intros. unfold find_function in *. destruct ros as [r | id]; simpl in *.
 - (* register *)
   assert (EQ: rs'#(sreg ctx r) = rs#r).
   { exploit Genv.find_funct_inv; eauto. intros [b EQ].
@@ -485,12 +485,12 @@ Lemma find_inlined_function:
   fenv!id = Some f ->
   fd = Internal f.
 Proof.
-  intros.
+  unfold find_function. intros.
   apply H in H1.
   apply Genv.find_def_symbol in H1. destruct H1 as (b & A & B).
-  simpl in H0. unfold ge, fundef in H0. rewrite A in H0.
+  simpl in H0. unfold ge, fundef, Genv.find_funct in H0. rewrite A in H0.
   rewrite <- Genv.find_funct_ptr_iff in B.
-  congruence.
+  destruct Ptrofs.eq_dec; congruence.
 Qed.
 
 (** Translation of builtin arguments. *)
@@ -1228,20 +1228,16 @@ Proof.
   right; split. simpl; omega. split.
   assert (R: comp_of f = Genv.find_comp ge vf).
   { rewrite SAMECOMP0.
-    clear -H0 FUNPTR.
-    unfold find_function_ptr in FUNPTR. unfold find_function in H0.
+    clear -H0 FUNPTR. unfold find_function in H0; rewrite FUNPTR in H0.
     unfold Genv.find_comp.
-    destruct (Genv.find_symbol ge id); try discriminate. inv FUNPTR.
     now rewrite H0. }
   rewrite R in EV. eapply call_trace_same_cp; eauto.
   econstructor; eauto.
 
   eapply match_stacks_inside_inlined; eauto.
   { clear -FUNPTR H0 SAMECOMP0.
-    unfold Genv.find_comp, find_function_ptr, find_function in *.
-    destruct (Genv.find_symbol ge id); try discriminate.
-    inv FUNPTR.
-    now rewrite H0. }
+    unfold Genv.find_comp, find_function in *.
+    rewrite FUNPTR in H0; rewrite H0. now rewrite SAMECOMP0. }
   red; intros. apply PRIV. inv H14. destruct H17. xomega.
   congruence.
   apply agree_val_regs_gen; auto.
@@ -1313,15 +1309,8 @@ Proof.
   econstructor; eauto.
   assert (R: comp_of f' = Genv.find_comp ge vf).
   { rewrite <-SAMECOMP, <- COMP. clear -H0 FUNPTR.
-    unfold find_function_ptr in FUNPTR. unfold find_function in H0.
-    unfold Genv.find_comp.
-    destruct ros; try discriminate. inv FUNPTR.
-    unfold Genv.find_funct in H0.
-    destruct (rs # r); try discriminate.
-    destruct (Ptrofs.eq_dec i Ptrofs.zero); try discriminate.
-    now rewrite H0.
-    destruct (Genv.find_symbol ge i); try discriminate.
-    inv FUNPTR. now rewrite H0. }
+    unfold find_function in H0; rewrite FUNPTR in H0.
+    unfold Genv.find_comp. now rewrite H0. }
   rewrite R, <- find_comp_translated. eapply Genv.type_of_call_same_cp.
   econstructor; eauto.
   eapply match_stacks_untailcall; eauto.
@@ -1330,14 +1319,8 @@ Proof.
   { reflexivity. }
   { rewrite <- find_comp_translated.
     clear -FUNPTR H0 COMP SAMECOMP.
-    unfold Genv.find_comp, find_function_ptr, find_function in *.
-    destruct ros.
-    - inv FUNPTR. destruct (rs # r); simpl in *; try discriminate.
-      destruct (Ptrofs.eq_dec i Ptrofs.zero); try discriminate.
-      rewrite H0; congruence.
-    - destruct (Genv.find_symbol ge i); try discriminate.
-      inv FUNPTR.
-      rewrite H0; congruence. }
+    unfold Genv.find_comp, find_function in *.
+    rewrite FUNPTR in H0; rewrite H0; congruence. }
   { unfold uptodate_caller. rewrite COMP, ALLOWED. easy. }
   eapply agree_val_regs; eauto.
   eapply Mem.free_left_inject; eauto.

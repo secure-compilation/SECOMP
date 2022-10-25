@@ -1108,20 +1108,14 @@ Proof.
   assert (Lemma: forall vf fd,
              Genv.find_funct ge vf = Some fd ->
              Genv.find_comp ge vf = comp_of fd).
-  { clear.
-    intros.
-    destruct vf; simpl in *; try congruence.
-    destruct (Ptrofs.eq_dec i Ptrofs.zero); simpl in *; try congruence.
-    now rewrite H. }
+  { clear. unfold Genv.find_comp.
+    intros. now rewrite H. }
   erewrite Lemma in NO_CROSS_PTR_RETURN; eauto.
   assert (Lemma: forall vf fd,
              Genv.find_funct ge vf = Some fd ->
              Genv.find_comp ge vf = comp_of fd).
-  { clear.
-    intros.
-    destruct vf; simpl in *; try congruence.
-    destruct (Ptrofs.eq_dec i Ptrofs.zero); simpl in *; try congruence.
-    now rewrite H. }
+  { clear. unfold Genv.find_comp.
+    intros. now rewrite H. }
   subst sig; erewrite Lemma in EV'; eauto.
   reflexivity. traceEq.
   subst e'. constructor.

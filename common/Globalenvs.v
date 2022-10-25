@@ -207,6 +207,14 @@ Definition find_funct (ge: t) (v: val) : option F :=
     is recorded in [ge]. *)
 
 Definition find_comp (ge: t) (v: val) : compartment :=
+  (* match v with *)
+  (* | Vptr b _ => match find_funct_ptr ge find_funct_ptr ge b *)
+  (* match find_funct ge v with *)
+  (* | Some f => comp_of f *)
+  (* | None => default_compartment *)
+  (* end. *)
+
+(* Previous version: *)
   match v with
   | Vptr b _ =>
     match find_funct_ptr ge b with
@@ -2135,6 +2143,17 @@ Proof.
   apply find_funct_ptr_match. auto.
 Qed.
 
+Theorem find_funct_match_conv:
+  forall v tf,
+  find_funct (globalenv tp) v = Some tf ->
+  exists cunit f,
+  find_funct (globalenv p) v = Some f /\ match_fundef cunit f tf /\ linkorder cunit ctx.
+Proof.
+  intros. assert (G := H). apply find_funct_inv in H as [b EQ]; subst v.
+  rewrite find_funct_find_funct_ptr in *.
+  now apply find_funct_ptr_match_conv.
+Qed.
+
 Theorem find_var_info_match:
   forall b v,
   find_var_info (globalenv p) b = Some v ->
@@ -2217,14 +2236,13 @@ Lemma match_genvs_find_comp:
   forall vf,
     find_comp (globalenv p) vf = find_comp (globalenv tp) vf.
 Proof.
-  intros vf.
+  intros []; auto.
   unfold find_comp.
-  destruct vf; auto.
-  destruct (find_funct_ptr (globalenv p) b) eqn:EQ.
-  - apply find_funct_ptr_match in EQ as [? [? [H [? ?]]]]. rewrite H.
-    rewrite match_fundef_comp; eauto.
-  - destruct (find_funct_ptr (globalenv tp) b) eqn:EQ'.
-    + apply find_funct_ptr_match_conv in EQ' as [? [? [H [? ?]]]]. congruence.
+  destruct (find_funct_ptr (globalenv p) b) eqn:EQ; auto.
+  - apply find_funct_ptr_match in EQ as [? [? [H [? ?]]]].
+    rewrite H, match_fundef_comp; eauto.
+  - destruct (find_funct (globalenv tp) vf) eqn:EQ'.
+    + apply find_funct_match_conv in EQ' as [? [? [H [? ?]]]]; congruence.
     + reflexivity.
 Qed.
 
@@ -2235,76 +2253,47 @@ Lemma match_genvs_allowed_calls:
 Proof.
   intros cp vf.
   unfold allowed_call.
-  intros [H1 | [H1 | H1]].
-  - left. rewrite H1.
-    unfold find_comp in *. destruct vf; auto.
-    destruct (find_funct_ptr (globalenv p) b) eqn:EQ; auto.
-    apply find_funct_ptr_match in EQ as [? [? [? [? ?]]]].
-    rewrite H.
-    erewrite match_fundef_comp; eauto.
-    destruct (find_funct_ptr (globalenv tp) b) eqn:EQ'; auto.
-    apply find_funct_ptr_match_conv in EQ' as [? [? [? [? ?]]]].
-    congruence.
-  - right; left. rewrite H1.
-    unfold find_comp. destruct vf; auto.
-    destruct (find_funct_ptr (globalenv p) b) eqn:EQ; auto.
-    apply find_funct_ptr_match in EQ as [? [? [? [? ?]]]].
-    rewrite H.
-    erewrite match_fundef_comp; eauto.
-    destruct (find_funct_ptr (globalenv tp) b) eqn:EQ'; auto.
-    apply find_funct_ptr_match_conv in EQ' as [? [? [? [? ?]]]].
-    congruence.
-  - right; right.
-    unfold allowed_cross_call in *. destruct vf; eauto.
-    destruct H1 as [i0 [cp' [? [? [? ?]]]]].
-    exists i0; exists cp'; split; [| split; [| split]].
-    + apply find_invert_symbol. apply invert_find_symbol in H.
-      rewrite find_symbol_match; eauto.
-    + unfold find_comp in H0. unfold find_comp.
-      destruct (find_funct_ptr (globalenv p) b) eqn:EQ; auto.
-      apply find_funct_ptr_match in EQ as [? [? [? [? ?]]]].
-      rewrite H3.
-      inversion H0; subst.
-      rewrite match_fundef_comp. eauto. eauto.
-      destruct (find_funct_ptr (globalenv tp) b) eqn:EQ'; auto.
-      apply find_funct_ptr_match_conv in EQ' as [? [? [? [? ?]]]].
-      congruence.
-    + destruct progmatch as [? [? [? EQPOL]]].
-      destruct p, tp; simpl in *; subst.
-      unfold globalenv. unfold globalenv in H1.
-      simpl.
-      simpl in H1. clear -H1 EQPOL.
-
-      rewrite genv_pol_add_globals.
-      rewrite genv_pol_add_globals in H1.
-      unfold Policy.eqb in EQPOL. apply andb_prop in EQPOL.
-      destruct EQPOL as [EQPOL1 EQPOL2].
-      simpl in *.
-      rewrite PTree.beq_correct in EQPOL2. specialize (EQPOL2 cp).
-      destruct ((Policy.policy_import prog_pol0) ! cp);
-        destruct ((Policy.policy_import prog_pol) ! cp); auto.
-      destruct (Policy.list_cpt_id_eq l l0); subst; simpl in *; auto; try discriminate. contradiction.
-    + destruct progmatch as [? [? [? EQPOL]]].
-      destruct p, tp; simpl in *; subst.
-      unfold globalenv. unfold globalenv in H2.
-      simpl.
-      simpl in H2. clear -H2 EQPOL.
-
-      rewrite genv_pol_add_globals.
-      rewrite genv_pol_add_globals in H2.
-      unfold Policy.eqb in EQPOL. apply andb_prop in EQPOL.
-      destruct EQPOL as [EQPOL1 EQPOL2].
-      simpl in *.
-      rewrite PTree.beq_correct in EQPOL1.
-      remember (match find_funct_ptr (add_globals (empty_genv F1 V1 prog_public prog_pol) prog_defs) b with
-      | Some f => comp_of f
-      | None => default_compartment
-      end) as cp'.
-      (* destruct (find_funct_ptr (add_globals (empty_genv F1 V1 prog_public prog_pol) prog_defs) b) *)
-      specialize (EQPOL1 cp').
-      destruct ((Policy.policy_export prog_pol0) ! cp');
-        destruct ((Policy.policy_export prog_pol) ! cp'); subst cp'; auto; try contradiction.
-      destruct (Policy.list_id_eq l l0); subst; simpl in *; auto; try discriminate.
+  rewrite !match_genvs_find_comp.
+  intros [H1 | [H1 | H1]]; auto.
+  right; right.
+  unfold allowed_cross_call in *.
+  rewrite match_genvs_find_comp in H1.
+  destruct vf; auto.
+  destruct H1 as [i0 [cp' [? [? [? ?]]]]].
+  exists i0; exists cp'; split; [| split; [| split]].
+  - apply find_invert_symbol. apply invert_find_symbol in H.
+    rewrite find_symbol_match; eauto.
+  - now auto.
+  - destruct progmatch as [? [? [? EQPOL]]].
+    destruct p, tp; simpl in *; subst.
+    unfold globalenv. unfold globalenv in H1.
+    simpl in *.
+    clear -H1 EQPOL.
+    rewrite genv_pol_add_globals.
+    rewrite genv_pol_add_globals in H1.
+    unfold Policy.eqb in EQPOL. apply andb_prop in EQPOL.
+    destruct EQPOL as [EQPOL1 EQPOL2].
+    simpl in *.
+    rewrite PTree.beq_correct in EQPOL2. specialize (EQPOL2 cp).
+    destruct ((Policy.policy_import prog_pol0) ! cp);
+      destruct ((Policy.policy_import prog_pol) ! cp); auto.
+    destruct (Policy.list_cpt_id_eq l l0); subst; simpl in *; auto; try discriminate. contradiction.
+  - destruct progmatch as [? [? [? EQPOL]]].
+    rewrite <- match_genvs_find_comp in H0.
+    destruct p, tp; simpl in *; subst.
+    unfold globalenv. unfold globalenv in H2.
+    simpl in *. clear -H2 EQPOL CF2.
+    rewrite genv_pol_add_globals.
+    rewrite genv_pol_add_globals in H2.
+    unfold Policy.eqb in EQPOL. apply andb_prop in EQPOL.
+    destruct EQPOL as [EQPOL1 EQPOL2].
+    simpl in *.
+    rewrite PTree.beq_correct in EQPOL1.
+    remember (find_comp (add_globals (empty_genv F1 V1 prog_public prog_pol) prog_defs) (Vptr b i)) as cp'.
+    specialize (EQPOL1 cp').
+    destruct ((Policy.policy_export prog_pol0) ! cp');
+      destruct ((Policy.policy_export prog_pol) ! cp'); subst cp'; auto; try contradiction.
+    destruct (Policy.list_id_eq l l0); subst; simpl in *; auto; try discriminate.
 Qed.
 
 Lemma match_genvs_type_of_call:
@@ -2347,21 +2336,6 @@ Proof.
   intros (cu & f & P & Q & R); exists f; auto.
 Qed.
 
-Lemma find_comp_transf_partial:
-  forall v,
-  find_comp (globalenv p) v = find_comp (globalenv tp) v.
-Proof.
-  unfold find_comp. intros v.
-  destruct v as [| | | | |b ofs]; trivial.
-  destruct (find_funct_ptr (globalenv p) b) as [f|] eqn:Ef; try easy.
-  (* intros Ecp. *)
-  destruct (find_funct_ptr_transf_partial _ Ef) as (tf & H1 & H2).
-  now rewrite H1, <- (comp_transl_partial _ H2).
-  destruct (find_funct_ptr (globalenv tp) b) eqn:Etf; auto.
-  destruct (find_funct_ptr_transf_partial_conv _ Etf) as (f & H1 & H2).
-  congruence.
-Qed.
-
 Theorem find_funct_transf_partial:
   forall v f,
   find_funct (globalenv p) v = Some f ->
@@ -2370,6 +2344,29 @@ Theorem find_funct_transf_partial:
 Proof.
   intros. exploit (find_funct_match progmatch); eauto.
   intros (cu & tf & P & Q & R); exists tf; auto.
+Qed.
+
+Theorem find_funct_transf_partial_conv:
+  forall v tf,
+  find_funct (globalenv tp) v = Some tf ->
+  exists f,
+  find_funct (globalenv p) v = Some f /\ transf f = OK tf.
+Proof.
+  intros. exploit (find_funct_match_conv progmatch); eauto.
+  intros (cu & f & P & Q & R); exists f; auto.
+Qed.
+
+Lemma find_comp_transf_partial:
+  forall v,
+  find_comp (globalenv p) v = find_comp (globalenv tp) v.
+Proof.
+  unfold find_comp. intros v.
+  destruct (find_funct (globalenv p) v) as [f|] eqn:Ef; try easy.
+  - destruct (find_funct_transf_partial _ Ef) as (tf & H1 & H2).
+    rewrite H1; now auto.
+  - destruct (find_funct (globalenv tp) v) eqn:Etf; auto.
+    destruct (find_funct_transf_partial_conv _ Etf) as (f & H1 & H2).
+    congruence.
 Qed.
 
 Theorem find_symbol_transf_partial:
@@ -2467,13 +2464,12 @@ Lemma find_comp_transf:
   find_comp (globalenv p) v = find_comp (globalenv tp) v.
 Proof.
   unfold find_comp. intros v.
-  destruct v as [| | | | |b ofs]; trivial.
-  destruct (find_funct_ptr (globalenv p) b) as [f|] eqn:Ef; try easy.
+  destruct (find_funct (globalenv p) v) as [f|] eqn:Ef; try easy.
   (* intros Ecp. *)
-  rewrite (find_funct_ptr_transf _ Ef).
+  rewrite (find_funct_transf _ Ef).
   now rewrite comp_transl.
-  destruct (find_funct_ptr (globalenv tp) b) eqn:Etf; auto.
-  eapply (find_funct_ptr_match_conv progmatch) in Etf as [? [? [? [? ?]]]].
+  destruct (find_funct (globalenv tp) v) eqn:Etf; auto.
+  eapply (find_funct_match_conv progmatch) in Etf as [? [? [? [? ?]]]].
   congruence.
 Qed.
 

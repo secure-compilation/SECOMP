@@ -107,13 +107,9 @@ Definition find_function_ptr (ros: mreg + ident) (rs: locset) : option val :=
   end.
 
 Definition find_function (ros: mreg + ident) (rs: locset) : option fundef :=
-  match ros with
-  | inl r => Genv.find_funct ge (rs (R r))
-  | inr symb =>
-      match Genv.find_symbol ge symb with
-      | None => None
-      | Some b => Genv.find_funct_ptr ge b
-      end
+  match find_function_ptr ros rs with
+  | Some v => Genv.find_funct ge v
+  | None => None
   end.
 
 (** Linear execution states. *)

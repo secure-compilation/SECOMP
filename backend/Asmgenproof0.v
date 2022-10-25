@@ -940,7 +940,9 @@ Proof.
     reflexivity. eauto. eauto. eauto.
     (* now rewrite H2; simpl; rewrite H3. *)
     now rewrite H2, H4.
-    simpl in H6; rewrite H5 in H6; inv H6.
+    unfold Genv.find_comp in H6.
+    simpl in H6; rewrite H5 in H6.
+    destruct Ptrofs.eq_dec; try congruence. inv H6.
     simpl. now rewrite H5. }
   eapply plus_left'.
   { econstructor. eauto. eauto.

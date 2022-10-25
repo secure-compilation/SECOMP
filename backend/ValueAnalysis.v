@@ -1087,7 +1087,7 @@ Inductive sound_stack: block_classification -> list stackframe -> mem -> block -
   | sound_stack_nil: forall bc m bound,
       sound_stack bc nil m bound
   | sound_stack_public_call:
-      forall (bc: block_classification) res f sp pc e stk m bound bc' bound' ae
+      forall (bc: block_classification) res ty cp f sp pc e stk m bound bc' bound' ae
         (STK: sound_stack bc' stk m sp)
         (INCR: Ple bound' bound)
         (BELOW: bc_below bc' bound')
@@ -1098,9 +1098,9 @@ Inductive sound_stack: block_classification -> list stackframe -> mem -> block -
         (AN: VA.ge (analyze rm f)!!pc (VA.State (AE.set res Vtop ae) mafter_public_call))
         (EM: ematch bc' e ae)
         (ACC: Mem.can_access_block m sp (Some (comp_of f))),
-      sound_stack bc (Stackframe res f (Vptr sp Ptrofs.zero) pc e :: stk) m bound
+      sound_stack bc (Stackframe res ty cp f (Vptr sp Ptrofs.zero) pc e :: stk) m bound
   | sound_stack_private_call:
-     forall (bc: block_classification) res f sp pc e stk m bound bc' bound' ae am
+     forall (bc: block_classification) res ty cp f sp pc e stk m bound bc' bound' ae am
         (STK: sound_stack bc' stk m sp)
         (INCR: Ple bound' bound)
         (BELOW: bc_below bc' bound')
@@ -1112,7 +1112,7 @@ Inductive sound_stack: block_classification -> list stackframe -> mem -> block -
         (EM: ematch bc' e ae)
         (ACC: Mem.can_access_block m sp (Some (comp_of f)))
         (CONTENTS: bmatch bc' m sp am.(am_stack)),
-      sound_stack bc (Stackframe res f (Vptr sp Ptrofs.zero) pc e :: stk) m bound.
+      sound_stack bc (Stackframe res ty cp f (Vptr sp Ptrofs.zero) pc e :: stk) m bound.
 
 Inductive sound_state_base: state -> Prop :=
   | sound_regular_state:
@@ -1136,14 +1136,14 @@ Inductive sound_state_base: state -> Prop :=
         (NOSTK: bc_nostack bc),
       sound_state_base (Callstate s fd args m)
   | sound_return_state:
-      forall s v m bc cp sg
+      forall s v m bc
         (STK: sound_stack bc s m (Mem.nextblock m))
         (RES: vmatch bc v Vtop)
         (RO: romatch bc m rm)
         (MM: mmatch bc m mtop)
         (GE: genv_match bc ge)
         (NOSTK: bc_nostack bc),
-      sound_state_base (Returnstate s v m sg cp).
+      sound_state_base (Returnstate s v m).
 
 (** Properties of the [sound_stack] invariant on call stacks. *)
 

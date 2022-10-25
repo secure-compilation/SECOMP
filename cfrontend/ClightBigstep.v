@@ -342,20 +342,14 @@ Proof.
              Genv.find_funct ge vf = Some fd ->
              Genv.find_comp ge vf = comp_of fd).
   { clear.
-    intros.
-    destruct vf; simpl in *; try congruence.
-    destruct (Ptrofs.eq_dec i Ptrofs.zero); simpl in *; try congruence.
-    now rewrite H. }
+    intros. unfold Genv.find_comp; now rewrite H. }
   erewrite Lemma in NO_CROSS_PTR_RETURN; eauto.
   (* TODO: Move lemma to Globalenvs.v and also find other usages of the same lemma *)
   assert (Lemma: forall vf fd,
              Genv.find_funct ge vf = Some fd ->
              Genv.find_comp ge vf = comp_of fd).
   { clear.
-    intros.
-    destruct vf; simpl in *; try congruence.
-    destruct (Ptrofs.eq_dec i Ptrofs.zero); simpl in *; try congruence.
-    now rewrite H. }
+    intros. unfold Genv.find_comp; now rewrite H. }
   erewrite Lemma in EV'; eauto.
 
   reflexivity. traceEq.
