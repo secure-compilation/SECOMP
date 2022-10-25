@@ -555,11 +555,11 @@ Proof.
 Qed.
 
 (** ** Relating stacks *)
-Definition call_ty (stk: list stackframe) :=
-  match stk with
-  | nil => Tret Tint
-  | Stackframe _ ty _ _ _ _ :: _ => ty
-  end.
+(* Definition call_ty (stk: list stackframe) := *)
+(*   match stk with *)
+(*   | nil => Tret Tint *)
+(*   | Stackframe _ ty _ _ _ _ :: _ => ty *)
+(*   end. *)
 
 Inductive match_stacks (F: meminj) (m m': mem):
              list stackframe -> list stackframe -> block -> Prop :=
@@ -567,7 +567,7 @@ Inductive match_stacks (F: meminj) (m m': mem):
         (MG: match_globalenvs F bound1)
         (BELOW: Ple bound1 bound),
       match_stacks F m m' nil nil bound
-  | match_stacks_cons: forall res f sp pc rs stk f' sp' rs' stk' bound fenv ctx ty
+  | match_stacks_cons: forall res f sp pc rs stk f' sp' rs' stk' bound fenv ctx ty cp
         (MS: match_stacks_inside F m m' stk stk' f' ctx sp' rs')
         (SAMECOMP: (comp_of f) = comp_of f')
         (COMPAT: fenv_compat prog fenv)
@@ -581,22 +581,23 @@ Inductive match_stacks (F: meminj) (m m': mem):
         (BELOW: Plt sp' bound)
         (ACCESS: Mem.can_access_block m' sp' (Some (comp_of f'))),
       match_stacks F m m'
-                   (Stackframe res ty f (Vptr sp Ptrofs.zero) pc rs :: stk)
-                   (Stackframe (sreg ctx res) ty f' (Vptr sp' Ptrofs.zero) (spc ctx pc) rs' :: stk')
+                   (Stackframe res ty cp f (Vptr sp Ptrofs.zero) pc rs :: stk)
+                   (Stackframe (sreg ctx res) ty cp f' (Vptr sp' Ptrofs.zero) (spc ctx pc) rs' :: stk')
                    bound
-  | match_stacks_untailcall: forall stk res f' sp' rpc rs' stk' bound ctx ty
+  | match_stacks_untailcall: forall stk res f' sp' rpc rs' stk' bound ctx ty cp
         (MS: match_stacks_inside F m m' stk stk' f' ctx sp' rs')
         (PRIV: range_private F m m' sp' ctx.(dstk) f'.(fn_stacksize))
         (SSZ1: 0 <= f'.(fn_stacksize) < Ptrofs.max_unsigned)
         (SSZ2: forall ofs, Mem.perm m' sp' ofs Max Nonempty -> 0 <= ofs <= f'.(fn_stacksize))
         (RET: ctx.(retinfo) = Some (rpc, res))
         (BELOW: Plt sp' bound)
+        (COMP: cp = comp_of f')
         (* (SAMECOMP: call_comp stk' = comp_of f') *) (* doesn't solve the issue *)
         (* (RETTYPE: call_ty stk = ty) *)
         (ACCESS: Mem.can_access_block m' sp' (Some (comp_of f'))),
       match_stacks F m m'
                    stk
-                   (Stackframe res ty f' (Vptr sp' Ptrofs.zero) rpc rs' :: stk')
+                   (Stackframe res ty cp f' (Vptr sp' Ptrofs.zero) rpc rs' :: stk')
                    bound
 
                    (* SOLUTION: add a type parameter to match_stacks_inside. Together, function, content, block, regset
@@ -610,9 +611,10 @@ with match_stacks_inside (F: meminj) (m m': mem):
         (RET: ctx.(retinfo) = None)
         (DSTK: ctx.(dstk) = 0),
       match_stacks_inside F m m' stk stk' f' ctx sp' rs'
-  | match_stacks_inside_inlined: forall res f sp pc rs stk stk' f' fenv ctx sp' rs' ctx' ty
+  | match_stacks_inside_inlined: forall res f sp pc rs stk stk' f' fenv ctx sp' rs' ctx' ty cp
         (MS: match_stacks_inside F m m' stk stk' f' ctx' sp' rs')
-        (SAMECOMP: (comp_of f) = comp_of f')
+        (SAMECOMP: comp_of f = comp_of f')
+        (COMP: cp = comp_of f)
         (COMPAT: fenv_compat prog fenv)
         (FB: tr_funbody fenv f'.(fn_stacksize) ctx' f f'.(fn_code))
         (AG: agree_regs F ctx' rs rs')
@@ -623,7 +625,7 @@ with match_stacks_inside (F: meminj) (m m': mem):
         (BELOW: context_below ctx' ctx)
         (SBELOW: context_stack_call ctx' ctx)
         (ACCESS: Mem.can_access_block m' sp' (Some (comp_of f'))),
-      match_stacks_inside F m m' (Stackframe res ty f (Vptr sp Ptrofs.zero) pc rs :: stk)
+      match_stacks_inside F m m' (Stackframe res ty cp f (Vptr sp Ptrofs.zero) pc rs :: stk)
                                  stk' f' ctx sp' rs'.
 
 (* Inductive match_stacks: list stackframe -> list stackframe -> Prop := *)
@@ -1072,12 +1074,12 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
         (SSZ2: forall ofs, Mem.perm m' sp' ofs Max Nonempty -> 0 <= ofs <= f'.(fn_stacksize)),
       match_states (Callstate stk (Internal f) vargs m)
                    (State stk' f' (Vptr sp' Ptrofs.zero) pc' rs' m')
-  | match_return_states: forall stk v m stk' v' m' F cp
+  | match_return_states: forall stk v m stk' v' m' F
         (MS: match_stacks F m m' stk stk' (Mem.nextblock m'))
         (VINJ: Val.inject F v v')
         (MINJ: Mem.inject F m m'),
-      match_states (Returnstate stk v m cp)
-                   (Returnstate stk' v' m' cp)
+      match_states (Returnstate stk v m)
+                   (Returnstate stk' v' m')
   | match_return_regular_states: forall stk v m stk' f' sp' rs' m' F ctx pc' or rinfo
         (MS: match_stacks_inside F m m' stk stk' f' ctx sp' rs')
         (RET: ctx.(retinfo) = Some rinfo)
@@ -1089,7 +1091,7 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
         (PRIV: range_private F m m' sp' ctx.(dstk) f'.(fn_stacksize))
         (SSZ1: 0 <= f'.(fn_stacksize) < Ptrofs.max_unsigned)
         (SSZ2: forall ofs, Mem.perm m' sp' ofs Max Nonempty -> 0 <= ofs <= f'.(fn_stacksize)),
-      match_states (Returnstate stk v m (comp_of f'))
+      match_states (Returnstate stk v m)
                    (State stk' f' (Vptr sp' Ptrofs.zero) pc' rs' m').
 
 (** ** Forward simulation *)
@@ -1098,7 +1100,7 @@ Definition measure (S: RTL.state) : nat :=
   match S with
   | State _ _ _ _ _ _ => 1%nat
   | Callstate _ _ _ _ => 0%nat
-  | Returnstate _ _ _ _ => 0%nat
+  | Returnstate _ _ _ => 0%nat
   end.
 
 Lemma tr_funbody_inv:
@@ -1217,7 +1219,7 @@ Proof.
   rewrite <- find_comp_translated, <- SAMECOMP.
   eapply call_trace_translated; eauto.
   econstructor; eauto.
-  eapply match_stacks_cons; eauto.
+  rewrite find_comp_translated; eapply match_stacks_cons; eauto.
   { red; eauto. }
   eapply agree_val_regs; eauto.
 + (* inlined *)
@@ -1235,6 +1237,11 @@ Proof.
   econstructor; eauto.
 
   eapply match_stacks_inside_inlined; eauto.
+  { clear -FUNPTR H0 SAMECOMP0.
+    unfold Genv.find_comp, find_function_ptr, find_function in *.
+    destruct (Genv.find_symbol ge id); try discriminate.
+    inv FUNPTR.
+    now rewrite H0. }
   red; intros. apply PRIV. inv H14. destruct H17. xomega.
   congruence.
   apply agree_val_regs_gen; auto.
@@ -1321,7 +1328,16 @@ Proof.
   eapply match_stacks_inside_invariant; eauto.
     intros. eapply Mem.perm_free_3; eauto.
   { reflexivity. }
-  { admit. }
+  { rewrite <- find_comp_translated.
+    clear -FUNPTR H0 COMP SAMECOMP.
+    unfold Genv.find_comp, find_function_ptr, find_function in *.
+    destruct ros.
+    - inv FUNPTR. destruct (rs # r); simpl in *; try discriminate.
+      destruct (Ptrofs.eq_dec i Ptrofs.zero); try discriminate.
+      rewrite H0; congruence.
+    - destruct (Genv.find_symbol ge i); try discriminate.
+      inv FUNPTR.
+      rewrite H0; congruence. }
   { unfold uptodate_caller. rewrite COMP, ALLOWED. easy. }
   eapply agree_val_regs; eauto.
   eapply Mem.free_left_inject; eauto.
@@ -1400,7 +1416,7 @@ Proof.
   destruct X as [m1' FREE].
   left; econstructor; split.
   eapply plus_one. eapply exec_Ireturn; eauto.
-  rewrite <- SAMECOMP.
+  (* rewrite <- SAMECOMP. *)
   econstructor; eauto.
   eapply match_stacks_bound with (bound := sp').
   eapply match_stacks_invariant; eauto.
@@ -1423,7 +1439,7 @@ Proof.
 
 + (* inlined *)
   right. split. simpl. omega. split. auto.
-  rewrite SAMECOMP.
+  (* rewrite SAMECOMP. *)
   econstructor; eauto.
   eapply match_stacks_inside_invariant; eauto.
     intros. eapply Mem.perm_free_3; eauto.
@@ -1552,10 +1568,11 @@ Proof.
   rewrite RET in RET0; inv RET0.
   left; econstructor; split.
   eapply plus_one. eapply exec_return.
-  rewrite <- SAMECOMP0, <- type_of_call_translated.
-  intros G. specialize (NO_CROSS_PTR G). inv VINJ; auto; contradiction.
-  rewrite <- SAMECOMP0. eapply return_trace_inj; eauto.
-  admit.
+  intros G. exfalso. eapply Genv.type_of_call_same_cp; eauto.
+  assert (t = E0).
+  { clear -EV. inv EV; auto.
+    exfalso. eapply Genv.type_of_call_same_cp; eauto. }
+  subst; constructor; eauto using Genv.type_of_call_same_cp.
   eapply match_regular_states.
   eapply match_stacks_inside_set_reg; eauto.
   eauto. eauto. auto.
@@ -1585,7 +1602,7 @@ Proof.
   left; econstructor; split.
   eapply plus_one. eapply exec_Inop; eauto.
   econstructor; eauto. subst vres. apply agree_set_reg_undef'; auto.
-Admitted.
+Qed.
 
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 -> exists st2, initial_state tprog st2 /\ match_states st1 st2.
