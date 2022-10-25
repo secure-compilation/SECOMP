@@ -940,16 +940,14 @@ Proof.
     reflexivity. eauto. eauto. eauto.
     (* now rewrite H2; simpl; rewrite H3. *)
     now rewrite H2, H4.
-    unfold Genv.find_comp in H6.
-    simpl in H6; rewrite H5 in H6.
-    destruct Ptrofs.eq_dec; try congruence. inv H6.
-    simpl. now rewrite H5. }
+    unfold Genv.find_comp_ignore_offset.
+    now rewrite H6. }
   eapply plus_left'.
   { econstructor. eauto. eauto.
     eapply find_instr_tail. eauto.
     reflexivity. eauto. eauto. eauto.
     now rewrite H2, H5.
-    simpl. now rewrite H6.
+    simpl. now rewrite H7.
   }
   apply IHexec_straight with b (Ptrofs.add ofs Ptrofs.one).
   auto. rewrite H2. rewrite H5. reflexivity.

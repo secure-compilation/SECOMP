@@ -207,22 +207,27 @@ Definition find_funct (ge: t) (v: val) : option F :=
     is recorded in [ge]. *)
 
 Definition find_comp (ge: t) (v: val) : compartment :=
-  (* match v with *)
-  (* | Vptr b _ => match find_funct_ptr ge find_funct_ptr ge b *)
-  (* match find_funct ge v with *)
-  (* | Some f => comp_of f *)
-  (* | None => default_compartment *)
-  (* end. *)
+  match find_funct ge v with
+  | Some f => comp_of f
+  | None => default_compartment
+  end.
 
-(* Previous version: *)
+(* This version of [find_comp] ignores offsets *)
+Definition find_comp_ignore_offset (ge: t) (v: val) : compartment :=
   match v with
-  | Vptr b _ =>
-    match find_funct_ptr ge b with
-    | Some f => (comp_of f)
-    | None   => default_compartment
-    end
+  | Vptr b _ => find_comp ge (Vptr b Ptrofs.zero)
   | _ => default_compartment
   end.
+
+(* (* Previous version: *) *)
+(*   match v with *)
+(*   | Vptr b _ => *)
+(*     match find_funct_ptr ge b with *)
+(*     | Some f => (comp_of f) *)
+(*     | None   => default_compartment *)
+(*     end *)
+(*   | _ => default_compartment *)
+(*   end. *)
 
 Lemma find_comp_null:
   forall ge, find_comp ge Vnullptr = default_compartment.
@@ -2236,10 +2241,10 @@ Lemma match_genvs_find_comp:
   forall vf,
     find_comp (globalenv p) vf = find_comp (globalenv tp) vf.
 Proof.
-  intros []; auto.
+  intros vf.
   unfold find_comp.
-  destruct (find_funct_ptr (globalenv p) b) eqn:EQ; auto.
-  - apply find_funct_ptr_match in EQ as [? [? [H [? ?]]]].
+  destruct (find_funct (globalenv p) vf) eqn:EQ; auto.
+  - apply find_funct_match in EQ as [? [? [H [? ?]]]].
     rewrite H, match_fundef_comp; eauto.
   - destruct (find_funct (globalenv tp) vf) eqn:EQ'.
     + apply find_funct_match_conv in EQ' as [? [? [H [? ?]]]]; congruence.

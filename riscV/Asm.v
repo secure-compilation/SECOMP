@@ -1132,9 +1132,9 @@ Definition update_stack_call (s: stack) (cp: compartment) rs' :=
   let pc' := rs' # PC in
   let ra' := rs' # RA in
   let sp' := rs' # SP in
-  (* match Genv.find_comp ge pc' with *)
+  (* match Genv.find_comp_ignore_offset ge pc' with *)
   (* | Some cp' => *)
-  if Pos.eqb cp (Genv.find_comp ge pc') then
+  if Pos.eqb cp (Genv.find_comp_ignore_offset ge pc') then
     (* If we are in the same compartment as previously recorded, we
          don't update the stack *)
     Some s
@@ -1149,7 +1149,7 @@ Definition update_stack_call (s: stack) (cp: compartment) rs' :=
 
 Definition update_stack_return (s: stack) (cp: compartment) rs' :=
   let pc' := rs' # PC in
-  if Pos.eqb cp (Genv.find_comp ge pc') then
+  if Pos.eqb cp (Genv.find_comp_ignore_offset ge pc') then
     (* If we are in the same compartment as previously recorded, we
          don't update the stack *)
     Some s
@@ -1208,7 +1208,7 @@ Inductive step: state -> trace -> state -> Prop :=
       sig_call i = None ->
       is_return i = false ->
       forall (NEXTPC: rs' PC = Vptr b' ofs'),
-      forall (ALLOWED: cp = Genv.find_comp ge (Vptr b' ofs')),
+      forall (ALLOWED: cp = Genv.find_comp_ignore_offset ge (Vptr b' ofs')),
       step (State st rs m) E0 (State st rs' m')
   | exec_step_internal_call:
       forall b ofs f i sig rs m rs' m' b' ofs' cp st st' args t,
@@ -1219,15 +1219,15 @@ Inductive step: state -> trace -> state -> Prop :=
       sig_call i = Some sig ->
       forall (NEXTPC: rs' PC = Vptr b' ofs'),
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) (Vptr b' ofs')),
-      forall (CURCOMP: Genv.find_comp ge (Vptr b Ptrofs.zero) = cp),
+      forall (CURCOMP: Genv.find_comp_ignore_offset ge (Vptr b Ptrofs.zero) = cp),
       (* Is a call, we update the stack *)
       forall (STUPD: update_stack_call st cp rs' = Some st'),
       forall (ARGS: call_arguments rs' m' sig args),
       (* Is a call, we check whether we are allowed to pass pointers *)
       forall (NO_CROSS_PTR:
-          Genv.type_of_call ge (comp_of f) (Genv.find_comp ge (Vptr b' ofs')) = Genv.CrossCompartmentCall ->
+          Genv.type_of_call ge (comp_of f) (Genv.find_comp_ignore_offset ge (Vptr b' ofs')) = Genv.CrossCompartmentCall ->
           List.Forall not_ptr args),
-      forall (EV: call_trace ge (comp_of f) (Genv.find_comp ge (Vptr b' ofs')) (Vptr b' ofs')
+      forall (EV: call_trace ge (comp_of f) (Genv.find_comp_ignore_offset ge (Vptr b' ofs')) (Vptr b' ofs')
               args (sig_args sig) t),
       step (State st rs m) t (State st' rs' m')
   | exec_step_internal_return:
@@ -1237,8 +1237,8 @@ Inductive step: state -> trace -> state -> Prop :=
       find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
       exec_instr f i rs m cp = Next rs' m' ->
       is_return i = true ->
-      forall (CURCOMP: Genv.find_comp ge (rs PC) = cp),
-      forall (NEXTCOMP: Genv.find_comp ge (rs' PC) = cp'),
+      forall (CURCOMP: Genv.find_comp_ignore_offset ge (rs PC) = cp),
+      forall (NEXTCOMP: Genv.find_comp_ignore_offset ge (rs' PC) = cp'),
       (* We only impose conditions on when returns can be executed for cross-compartment
          returns. These conditions are that we restore the previous RA and SP *)
       forall (PC_RA: cp <> cp' -> rs' PC = asm_parent_ra st),
@@ -1256,9 +1256,9 @@ Inductive step: state -> trace -> state -> Prop :=
       forall st rs m sg cp t,
         rs PC <> Vnullptr -> (* this condition is there to stop the execution 1 step earlier, to make the proof easier *)
       forall (NO_CROSS_PTR:
-          (Genv.type_of_call ge (Genv.find_comp ge (rs PC)) cp = Genv.CrossCompartmentCall ->
+          (Genv.type_of_call ge (Genv.find_comp_ignore_offset ge (rs PC)) cp = Genv.CrossCompartmentCall ->
            not_ptr (return_value rs sg))),
-      forall (EV: return_trace ge (Genv.find_comp ge (rs PC)) cp (return_value rs sg) (sig_res sg) t),
+      forall (EV: return_trace ge (Genv.find_comp_ignore_offset ge (rs PC)) cp (return_value rs sg) (sig_res sg) t),
         step (ReturnState st rs m sg cp) t (State st rs m)
   | exec_step_builtin:
       forall b ofs f ef args res rs m vargs t vres rs' m' st,
@@ -1276,13 +1276,13 @@ Inductive step: state -> trace -> state -> Prop :=
       forall b ef args res rs m t rs' m' cp cp' cp'' st st',
       rs PC = Vptr b Ptrofs.zero ->
       Genv.find_funct_ptr ge b = Some (External ef) ->
-      forall COMP: Genv.find_comp ge (rs RA) = cp,
+      forall COMP: Genv.find_comp_ignore_offset ge (rs RA) = cp,
       external_call ef ge cp args m t res m' ->
       extcall_arguments rs m (ef_sig ef) args ->
       rs' = (set_pair (loc_external_result (ef_sig ef)) res (undef_caller_save_regs rs))#PC <- (rs RA) ->
       (* These steps behave like returns. So we must update the stack *)
-      forall (CURCOMP: Genv.find_comp ge (rs PC) = cp'),
-      forall (NEXTCOMP: Genv.find_comp ge (rs' PC) = cp''),
+      forall (CURCOMP: Genv.find_comp_ignore_offset ge (rs PC) = cp'),
+      forall (NEXTCOMP: Genv.find_comp_ignore_offset ge (rs' PC) = cp''),
       (* We only impose conditions on when returns can be executed for cross-compartment
          returns. These conditions are that we restore the previous RA and SP *)
       forall (PC_RA: cp' <> cp'' -> rs' PC = asm_parent_ra st),
