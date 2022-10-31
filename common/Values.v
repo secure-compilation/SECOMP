@@ -20,9 +20,338 @@ Require Import Coqlib.
 Require Import AST.
 Require Import Integers.
 Require Import Floats.
+Require Import ValType.
 
 Definition block : Type := positive.
 Definition eq_block := peq.
+
+Module Ptr : VAL.
+
+Definition pointer : Type := block * ptrofs.
+
+Theorem eq_dec_pointer: forall (p1 p2: pointer), {p1 = p2} + {~ p1 = p2}.
+Proof.
+  decide equality.
+  - now apply Ptrofs.eq_dec.
+  - now apply eq_block.
+Qed.
+
+Definition pointer_add (ptr: pointer) (n2: ptrofs) : option pointer :=
+  let '(b1, ofs1) := ptr in
+  if Archi.ptr64 then None else Some (b1, (Ptrofs.add ofs1 n2)).
+
+Definition pointer_sub (ptr: pointer) (n2: ptrofs) : option pointer :=
+  let '(b1, ofs1) := ptr in
+  if Archi.ptr64 then None else Some (b1, (Ptrofs.sub ofs1 n2)).
+
+Definition pointer_pointer_sub (ptr1 ptr2: pointer) : option ptrofs :=
+  let '(b1, ofs1) := ptr1 in
+  let '(b2, ofs2) := ptr2 in
+  if Archi.ptr64 then None
+  else if eq_block b1 b2 then Some (Ptrofs.sub ofs1 ofs2) else None.
+
+(** Comparisons *)
+
+Section COMPARISONS.
+
+(* Variable valid_ptr: block -> Z -> bool. *)
+(* TODO Check interface *)
+Definition valid_ptr : block -> Z -> bool := fun _ _ => true.
+Let weak_valid_ptr (b: block) (ofs: Z) := valid_ptr b ofs || valid_ptr b (ofs - 1).
+
+Definition pointer_pointer_cmpu (diff_blocks: option bool) (c: comparison) (ptr1 ptr2: pointer) : option bool :=
+  let '(b1, ofs1) := ptr1 in
+  let '(b2, ofs2) := ptr2 in
+  if Archi.ptr64 then None else
+  if eq_block b1 b2 then
+    if weak_valid_ptr b1 (Ptrofs.unsigned ofs1)
+       && weak_valid_ptr b2 (Ptrofs.unsigned ofs2)
+    then Some (Ptrofs.cmpu c ofs1 ofs2)
+    else None
+  else
+    if valid_ptr b1 (Ptrofs.unsigned ofs1)
+       && valid_ptr b2 (Ptrofs.unsigned ofs2)
+    then diff_blocks
+    else None.
+
+End COMPARISONS.
+
+Theorem pointer_add_assoc_int:
+  forall ptr i1 i2,
+    Archi.ptr64 = false ->
+    pointer_add ptr (Ptrofs.of_int (Int.add i1 i2)) =
+      match pointer_add ptr (Ptrofs.of_int i1) with
+      | Some ptr' => pointer_add ptr' (Ptrofs.of_int i2)
+      | None => None
+      end.
+Proof.
+  intros [b ofs] i1 i2 ARCHI.
+  unfold pointer_add.
+  rewrite ARCHI.
+  rewrite Ptrofs.add_assoc.
+  f_equal. f_equal. f_equal.
+  erewrite Ptrofs.agree32_of_int_eq; [reflexivity |].
+  apply Ptrofs.agree32_add;
+    [assumption | |];
+    now apply Ptrofs.agree32_of_int.
+Qed.
+
+Theorem pointer_add_assoc_long:
+  forall ptr i1 i2,
+    Archi.ptr64 = true ->
+    pointer_add ptr (Ptrofs.of_int64 (Int64.add i1 i2)) =
+      match pointer_add ptr (Ptrofs.of_int64 i1) with
+      | Some ptr' => pointer_add ptr' (Ptrofs.of_int64 i2)
+      | None => None
+      end.
+Proof.
+  intros [b ofs] i1 i2 ARCHI.
+  unfold pointer_add.
+  rewrite ARCHI.
+  reflexivity.
+Qed.
+
+Theorem pointer_add_commut:
+  forall ptr i1 i2,
+    match pointer_add ptr i1 with
+    | Some ptr' => pointer_add ptr' i2
+    | None => None
+    end =
+    match pointer_add ptr i2 with
+    | Some ptr' => pointer_add ptr' i1
+    | None => None
+    end.
+Proof.
+  intros [b ofs] i1 i2.
+  unfold pointer_add.
+  destruct Archi.ptr64 eqn:ARCHI; [reflexivity |].
+  f_equal. f_equal.
+  rewrite !Ptrofs.add_assoc.
+  now rewrite (Ptrofs.add_commut i2 i1).
+Qed.
+
+Theorem pointer_add_sub_l:
+  forall ptr i1 i2,
+    match pointer_add ptr i1 with
+    | Some ptr' => pointer_sub ptr' i2
+    | None => None
+    end =
+    match pointer_sub ptr i2 with
+    | Some ptr' => pointer_add ptr' i1
+    | None => None
+    end.
+  intros [b ofs] i1 i2.
+  unfold pointer_add, pointer_sub.
+  destruct Archi.ptr64 eqn:ARCHI; [reflexivity |].
+  f_equal. f_equal.
+  now rewrite Ptrofs.sub_add_l.
+Qed.
+
+Theorem pointer_pointer_add_sub_l:
+  forall ptr i1 i2,
+    match pointer_add ptr i1 with
+    | Some ptr' => pointer_pointer_sub ptr' i2
+    | None => None
+    end =
+    match pointer_pointer_sub ptr i2 with
+    | Some ptrofs => Some (Ptrofs.add i1 ptrofs)
+    | None => None
+    end.
+Proof.
+  intros [b1 ofs1] i1 [b2 ofs2].
+  unfold pointer_add, pointer_pointer_sub.
+  destruct Archi.ptr64 eqn:ARCHI; [reflexivity |].
+  destruct (eq_block b1 b2); [| reflexivity].
+  subst b2. f_equal.
+  rewrite Ptrofs.sub_add_l.
+  now rewrite Ptrofs.add_commut.
+Qed.
+
+Theorem pointer_add_sub_neg_int:
+  forall p y,
+    pointer_sub p (Ptrofs.of_int y) = pointer_add p (Ptrofs.of_int (Int.neg y)).
+Proof.
+  intros [b ofs] y.
+  unfold pointer_sub, pointer_add.
+  destruct Archi.ptr64 eqn:ARCHI; [reflexivity |].
+  f_equal. f_equal.
+  erewrite (Ptrofs.agree32_of_int_eq _ (Int.neg y)).
+  - now rewrite Ptrofs.sub_add_opp.
+  - apply Ptrofs.agree32_neg; [assumption |].
+    now apply Ptrofs.agree32_of_int.
+Qed.
+
+Theorem pointer_add_sub_neg_long:
+  forall p y,
+    pointer_sub p (Ptrofs.of_int64 y) = pointer_add p (Ptrofs.of_int64 (Int64.neg y)).
+Proof.
+  intros [b ofs] y.
+  unfold pointer_sub, pointer_add.
+  destruct Archi.ptr64 eqn:ARCHI; [reflexivity |].
+  f_equal. f_equal.
+  (* this one's a bit trickier *)
+Admitted.
+
+Definition offset_pointer (ptr: pointer) (delta: ptrofs) : option pointer :=
+  let '(b, ofs) := ptr in
+  Some (b, Ptrofs.add ofs delta).
+
+Theorem offset_pointer_zero:
+  forall p, offset_pointer p (Ptrofs.zero) = Some p.
+Proof.
+  intros [b ofs].
+  unfold offset_pointer.
+  now rewrite Ptrofs.add_zero.
+Qed.
+
+(* TODO *)
+Definition normalize_pointer (p: pointer) (t: captyp) : bool :=
+  let '(b, ofs) := p in
+  match t with
+  | CTint | CTany32 => negb Archi.ptr64
+  | CTlong => Archi.ptr64 (* add CTany64? *)
+  | _ => false (* "new" fallback *)
+  end.
+
+(* TODO *)
+Definition pointer_load_result (chunk: cap_memory_chunk) (p: pointer) : bool :=
+  let '(b, ofs) := p in
+  match chunk with
+  | CMint32 => negb Archi.ptr64
+  | CMint64 => Archi.ptr64
+  | CMany32 => negb Archi.ptr64
+  (* add CMany64? *)
+  | _ => false (* "new" fallback *)
+  end.
+
+(* TODO *)
+Definition has_type_pointer (_: pointer) (t: captyp) : Prop := (* remove parameter? *)
+  match t with
+  | CTint => Archi.ptr64 = false
+  | CTlong => Archi.ptr64 = true
+  | CTany32 => Archi.ptr64 = false
+  (* add CTany64? *)
+  | _ => False (* "new" fallback *)
+  end.
+
+Theorem has_type_pointer_dec:
+  forall p t, {has_type_pointer p t} + {~ has_type_pointer p t}.
+Proof.
+  unfold has_type_pointer.
+  intros _ []; auto; decide equality.
+Qed.
+
+Theorem has_subtype_pointer:
+  forall ty1 ty2 v,
+    subtype ty1 ty2 = true -> has_type_pointer v ty1 -> has_type_pointer v ty2.
+Proof.
+  intros [] [] v SUB PTR;
+    try assumption; try discriminate.
+  (* doesn't work yet *)
+Abort.
+
+Theorem has_type_pointer_int:
+  forall p, has_type_pointer p CTint -> Archi.ptr64 = false.
+Proof.
+  simpl. now auto.
+Qed.
+
+Theorem has_type_pointer_long:
+  forall p, has_type_pointer p CTlong -> Archi.ptr64 = true.
+Proof.
+  simpl. now auto.
+Qed.
+
+Theorem has_type_pointer_cap64:
+  forall p, has_type_pointer p CTcap64 -> Archi.ptr64 = false.
+Proof.
+  simpl. now auto.
+Qed.
+
+Theorem has_type_pointer_cap128:
+  forall p, has_type_pointer p CTcap128 -> Archi.ptr64 = true.
+Proof.
+  simpl. now auto.
+Qed.
+
+Theorem has_type_pointer_cases:
+  forall p ty,
+    has_type_pointer p ty ->
+    ty = CTint \/ ty = CTlong \/ ty = CTcap64 \/ ty = CTcap128.
+Proof.
+  intros ptr []; try now auto.
+  (* doesn't work *)
+Abort.
+
+Theorem has_type_pointer_load_result:
+  forall p chunk,
+    pointer_load_result chunk p = true ->
+    has_type_pointer p (type_of_cap_chunk chunk).
+Proof.
+  intros [b ofs] []; try easy.
+  - simpl. now apply negb_true_iff.
+  - simpl. now apply negb_true_iff.
+Qed.
+
+Theorem load_result_has_type_pointer:
+  forall p ty,
+    has_type_pointer p ty ->
+    pointer_load_result (chunk_of_captype ty) p = true.
+Proof.
+  intros [b ofs] []; try easy.
+  - simpl. now apply negb_true_iff.
+  - simpl. now apply negb_true_iff.
+Qed.
+
+Theorem normalize_has_type_pointer:
+  forall p ty,
+    normalize_pointer p ty = true ->
+    has_type_pointer p ty.
+Proof.
+  intros [b ofs] []; try easy.
+  - simpl. now apply negb_true_iff.
+  - simpl. now apply negb_true_iff.
+Qed.
+
+Theorem has_type_pointer_normalize:
+  forall p ty,
+    has_type_pointer p ty ->
+    normalize_pointer p ty = true.
+Proof.
+  intros [b ofs] []; try easy.
+  - simpl. now apply negb_true_iff.
+  - simpl. now apply negb_true_iff.
+Qed.
+
+Theorem normalize_any:
+  forall p, normalize_pointer p CTany128 = true.
+Proof.
+  intros [b ofs]. simpl.
+  (* doesn't hold *)
+Abort.
+
+Inductive val: Type :=
+| Vundef: val
+| Vint: int -> val
+| Vlong: int64 -> val
+| Vfloat: float -> val
+| Vsingle: float32 -> val
+| Vptr: pointer -> val.
+
+Definition Vzero: val := Vint Int.zero.
+Definition Vone: val := Vint Int.one.
+Definition Vmone: val := Vint Int.mone.
+
+Definition Vtrue: val := Vint Int.one.
+Definition Vfalse: val := Vint Int.zero.
+
+Definition Vnullptr :=
+  if Archi.ptr64 then Vlong Int64.zero else Vint Int.zero.
+
+Definition Vptrofs (n: ptrofs) :=
+  if Archi.ptr64 then Vlong (Ptrofs.to_int64 n) else Vint (Ptrofs.to_int n).
+
+End Ptr.
 
 (** A value is either:
 - a machine integer;
