@@ -129,6 +129,8 @@ Definition undef_caller_save_regs (ls: locset) : locset :=
 Inductive stackframe : Type :=
   | Stackframe:
       forall (f: function)      (**r calling function *)
+        (cp: compartment)       (**r callee compartment *)
+        (sig: signature)        (**r signature of the callee, used to know the location of the return value *)
              (sp: val)          (**r stack pointer in calling function *)
              (ls: locset)       (**r location state in calling function *)
              (bb: bblock),      (**r continuation in calling function *)
@@ -160,15 +162,13 @@ Inductive state : Type :=
   | Returnstate:
       forall (stack: list stackframe) (**r call stack *)
              (ls: locset)             (**r location state of callee *)
-             (m: mem)                 (**r memory state *)
-             (sig: signature)         (**r signature of the callee, used to know the location of the return value *)
-             (cp: compartment),       (**r previous compartment *)
+             (m: mem),                 (**r memory state *)
       state.
 
 Definition call_comp (stack: list stackframe) : compartment :=
   match stack with
   | nil => default_compartment
-  | Stackframe f _ _ _ :: _ => (comp_of f)
+  | Stackframe f _ _ _ _ _ :: _ => (comp_of f)
   end.
 
 
@@ -236,7 +236,7 @@ Qed.
 Definition parent_locset (stack: list stackframe) : locset :=
   match stack with
   | nil => Locmap.init Vundef
-  | Stackframe f sp ls bb :: stack' => ls
+  | Stackframe f _ _ sp ls bb :: stack' => ls
   end.
 
 Inductive step: state -> trace -> state -> Prop :=
@@ -282,7 +282,7 @@ Inductive step: state -> trace -> state -> Prop :=
           List.Forall not_ptr args),
       forall (EV: call_trace ge (comp_of f) (Genv.find_comp ge vf) vf args (sig_args sig) t),
       step (Block s f sp (Lcall sig ros :: bb) rs m)
-        t (Callstate (Stackframe f sp rs bb :: s) fd rs m)
+        t (Callstate (Stackframe f (Genv.find_comp ge vf) sig sp rs bb :: s) fd rs m)
   | exec_Ltailcall: forall s f sp sig ros bb rs m fd rs' m' vf,
       rs' = return_regs (parent_locset s) rs ->
       find_function ros rs' = Some fd ->
@@ -318,7 +318,7 @@ Inductive step: state -> trace -> state -> Prop :=
   | exec_Lreturn: forall s f sp bb rs m m',
       Mem.free m sp 0 f.(fn_stacksize) (comp_of f) = Some m' ->
       step (Block s f (Vptr sp Ptrofs.zero) (Lreturn :: bb) rs m)
-        E0 (Returnstate s (return_regs (parent_locset s) rs) m' (fn_sig f) (comp_of f))
+        E0 (Returnstate s (return_regs (parent_locset s) rs) m')
   | exec_function_internal: forall s f rs m m' sp rs',
       Mem.alloc m (comp_of f) 0 f.(fn_stacksize) = (m', sp) ->
       rs' = undef_regs destroyed_at_function_entry (call_regs rs) ->
@@ -329,13 +329,13 @@ Inductive step: state -> trace -> state -> Prop :=
       external_call ef ge (call_comp s) args m t res m' ->
       rs' = Locmap.setpair (loc_result (ef_sig ef)) res (undef_caller_save_regs rs) ->
       step (Callstate s (External ef) rs m)
-         t (Returnstate s rs' m' (ef_sig ef) (comp_of ef))
-  | exec_return: forall f sp rs1 bb s rs m sig cp t,
+         t (Returnstate s rs' m')
+  | exec_return: forall f sp rs1 bb s rs m cp sig t,
       forall (NO_CROSS_PTR:
           Genv.type_of_call ge (comp_of f) cp = Genv.CrossCompartmentCall ->
           not_ptr (Locmap.getpair (map_rpair R (loc_result sig)) rs)),
       forall (EV: return_trace ge (comp_of f) cp (Locmap.getpair (map_rpair R (loc_result sig)) rs) (sig_res sig) t),
-      step (Returnstate (Stackframe f sp rs1 bb :: s) rs m sig cp)
+      step (Returnstate (Stackframe f cp sig sp rs1 bb :: s) rs m)
         t (Block s f sp bb rs m).
 
 End RELSEM.
@@ -355,9 +355,9 @@ Inductive initial_state (p: program): state -> Prop :=
       initial_state p (Callstate nil f (Locmap.init Vundef) m0).
 
 Inductive final_state: state -> int -> Prop :=
-  | final_state_intro: forall rs m sig cp retcode,
+  | final_state_intro: forall rs m retcode,
       Locmap.getpair (map_rpair R (loc_result signature_main)) rs = Vint retcode ->
-      final_state (Returnstate nil rs m sig cp) retcode.
+      final_state (Returnstate nil rs m) retcode.
 
 Definition semantics (p: program) :=
   Semantics step (initial_state p) final_state (Genv.globalenv p).

@@ -2004,7 +2004,29 @@ Section INFORM_TRACES_INJECT.
 
   Variable j: meminj.
 
-  (* Variable symbols_preserved: forall (s: ident), Genv.find_symbol ge' s = Genv.find_symbol ge s. *)
+  (* I couldn't find a way to prove that with using [symbols_preserved]. *)
+  Lemma call_trace_inj (symbols_preserved: forall (s: ident), Genv.find_symbol ge' s = Genv.find_symbol ge s):
+    forall cp cp' vf vs vs' tys t,
+      Val.inject_list j vs vs' ->
+      (Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr vs) ->
+      call_trace ge cp cp' vf vs tys t ->
+      call_trace ge' cp cp' vf vs' tys t.
+  Proof.
+    intros cp cp' vf vs vs' tys t LD NPTR EV.
+    inv EV.
+    - constructor; auto.
+    - specialize (NPTR H).
+      econstructor; eauto. apply Genv.find_invert_symbol.
+      rewrite symbols_preserved.
+      eapply Genv.invert_find_symbol; eauto.
+      clear -LD NPTR H2.
+      revert vs vs' tys vl LD NPTR H2.
+      induction vs; intros vs' tys vl LD NPTR Hmatch.
+      + inv LD; inv Hmatch; constructor.
+      + inv LD; inv Hmatch; inv NPTR.
+        constructor; eauto.
+        inv H1; inv H5; try contradiction; econstructor; eauto.
+  Qed.
 
   Lemma return_trace_inj:
     forall cp cp' v v' ty t,

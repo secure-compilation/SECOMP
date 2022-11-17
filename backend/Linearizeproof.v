@@ -536,13 +536,13 @@ Qed.
 
 Inductive match_stackframes: LTL.stackframe -> Linear.stackframe -> Prop :=
   | match_stackframe_intro:
-      forall f sp bb ls tf c,
+      forall f cp sg sp bb ls tf c,
       transf_function f = OK tf ->
       (forall pc, In pc (successors_block bb) -> (reachable f)!!pc = true) ->
       is_tail c tf.(fn_code) ->
       match_stackframes
-        (LTL.Stackframe f sp ls bb)
-        (Linear.Stackframe tf sp ls (linearize_block bb c)).
+        (LTL.Stackframe f cp sg sp ls bb)
+        (Linear.Stackframe tf cp sg sp ls (linearize_block bb c)).
 
 Inductive match_states: LTL.state -> Linear.state -> Prop :=
   | match_states_add_branch:
@@ -585,10 +585,10 @@ Inductive match_states: LTL.state -> Linear.state -> Prop :=
       match_states (LTL.Callstate s f ls m)
                    (Linear.Callstate ts tf ls m)
   | match_states_return:
-      forall s ls m ts sg cp,
+      forall s ls m ts,
       list_forall2 match_stackframes s ts ->
-      match_states (LTL.Returnstate s ls m sg cp)
-                   (Linear.Returnstate ts ls m sg cp).
+      match_states (LTL.Returnstate s ls m)
+                   (Linear.Returnstate ts ls m).
 
 Definition measure (S: LTL.state) : nat :=
   match S with
@@ -700,33 +700,10 @@ Proof.
     eauto.
   }
   { erewrite <- find_comp_translated, <- comp_transf_fundef; eauto.
-    Set Nested Proofs Allowed.
-    Lemma call_trace_translated:
-      forall cp cp' vf ls tyargs t,
-        call_trace ge cp cp' vf ls tyargs t ->
-        call_trace tge cp cp' vf ls tyargs t.
-    Proof.
-      intros.
-      inv H.
-      - econstructor; eauto.
-      - econstructor; eauto.
-        apply Genv.find_invert_symbol.
-        rewrite symbols_preserved.
-        apply Genv.invert_find_symbol; eauto.
-        eauto. eapply eventval_list_match_preserved with (ge1 := ge) (ge2 := tge).
-        Set Printing Coercions.
-
-        intros; simpl.
-        unfold Genv.public_symbol. rewrite symbols_preserved.
-        unfold ge, tge. rewrite 2!Genv.globalenv_public. inv TRANSF; intuition.
-        rewrite H1. auto.
-        apply symbols_preserved.
-        auto.
-    Qed.
-    intros; subst.
-    eapply call_trace_translated; eauto.
-  }
-  econstructor; eauto. constructor; auto. econstructor; eauto.
+    eapply call_trace_eq; eauto using symbols_preserved, senv_preserved. }
+  econstructor; eauto. constructor; auto.
+  rewrite find_comp_translated.
+  econstructor; eauto.
 
   (* Ltailcall *)
   exploit find_function_translated; eauto. intros [tfd [A B]].
@@ -793,8 +770,6 @@ Proof.
   simpl. apply plus_one. econstructor; eauto.
   rewrite (stacksize_preserved _ _ TRF). erewrite comp_preserved; eauto.
   rewrite (match_parent_locset _ _ STACKS).
-  replace (fn_sig tf) with (funsig (Internal tf)) by reflexivity.
-  rewrite comp_transf_fundef, sig_preserved with (f := Internal f); try (simpl; rewrite TRF); eauto.
   econstructor; eauto.
 
   (* internal functions *)
@@ -816,7 +791,7 @@ Proof.
   econstructor; eauto.
 
   (* return *)
-  inv H5. inv H1.
+  inv H3. inv H1.
   left; econstructor; split.
   apply plus_one. econstructor.
   erewrite comp_preserved; eauto.
@@ -843,7 +818,7 @@ Lemma transf_final_states:
   forall st1 st2 r,
   match_states st1 st2 -> LTL.final_state st1 r -> Linear.final_state st2 r.
 Proof.
-  intros. inv H0. inv H. inv H7. econstructor; eauto.
+  intros. inv H0. inv H. inv H5. econstructor; eauto.
 Qed.
 
 Theorem transf_program_correct:

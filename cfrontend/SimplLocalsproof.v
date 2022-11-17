@@ -2422,23 +2422,7 @@ Proof.
   specialize (NO_CROSS_PTR H). inv RINJ; simpl in NO_CROSS_PTR; eauto; contradiction.
   eauto.
   monadInv H4; simpl. unfold comp_of. simpl.
-  Set Nested Proofs Allowed.
-  Lemma return_trace_translated: forall j cp cp' v tv ty t,
-      Val.inject j v tv ->
-      (Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall -> not_ptr v) ->
-      return_trace ge cp cp' v ty t ->
-      return_trace tge cp cp' tv ty t.
-  Proof.
-    intros j cp cp' v tv ty t INJ NOT_PTR EV.
-    inv EV.
-    - now constructor.
-    - constructor. eauto.
-      specialize (NOT_PTR H).
-      inv H0; inv INJ; try contradiction;
-        econstructor; eauto.
-  Qed.
-
-  eapply return_trace_translated; eauto.
+  eapply return_trace_inj; eauto.
   econstructor; eauto with compat.
   eapply match_envs_set_opttemp; eauto.
 Qed.

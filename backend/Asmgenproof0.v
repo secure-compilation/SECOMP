@@ -844,6 +844,7 @@ Qed.
 
 Section STRAIGHTLINE.
 
+Variable comp_of_main: compartment.
 Variable ge: genv.
 Variable fn: function.
 
@@ -931,7 +932,7 @@ Lemma exec_straight_steps_1:
   Genv.find_funct_ptr ge b = Some (Internal fn) ->
   Genv.find_comp ge (Vptr b Ptrofs.zero) = (comp_of fn) ->
   code_tail (Ptrofs.unsigned ofs) (fn_code fn) c ->
-  plus step ge (State s rs m) E0 (State s rs' m').
+  plus (step comp_of_main) ge (State s rs m) E0 (State s rs' m').
 Proof.
   induction 1; intros.
   apply plus_one.
@@ -1044,12 +1045,12 @@ Variable ge: Mach.genv.
 Inductive match_stack: list Mach.stackframe -> Prop :=
   | match_stack_nil:
       match_stack nil
-  | match_stack_cons: forall fb sp ra c s f tf tc,
+  | match_stack_cons: forall fb cp sg sp ra c s f tf tc,
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
       transl_code_at_pc ge (Vptr fb ra) fb f c false tf tc ->
       sp <> Vundef ->
       match_stack s ->
-      match_stack (Mach.Stackframe fb sp ra c :: s).
+      match_stack (Mach.Stackframe fb cp sg sp ra c :: s).
 
 Lemma parent_sp_def: forall s, match_stack s -> parent_sp s <> Vundef.
 Proof.
