@@ -531,6 +531,7 @@ Fixpoint label_pos (lbl: label) (pos: Z) (c: code) {struct c} : option Z :=
       if is_label lbl instr then Some (pos + 1) else label_pos lbl (pos + 1) c'
   end.
 
+Variable comp_of_main: compartment.
 Variable ge: genv.
 
 (** The two functions below axiomatize how the linker processes
@@ -1113,11 +1114,25 @@ Definition return_value (rs: regset) (sg: signature) :=
 Inductive stackframe: Type :=
 | Stackframe:
     forall (f: block)       (**r pointer to calling function *)
+      (cp: compartment) (**r compartment of the callee *)
+      (sg: signature)   (**r signature of the callee *)
       (sp: val)         (**r stack pointer in calling function *)
       (retaddr: ptrofs), (**r Asm return address in calling function *)
       stackframe.
 
 Definition stack := list stackframe.
+
+Definition call_comp (s: stack) :=
+  match s with
+  | nil => default_compartment
+  | Stackframe f _ _ _ _ :: _ => Genv.find_comp ge (Vptr f Ptrofs.zero)
+  end.
+
+Definition callee_comp (s: stack) :=
+  match s with
+  | nil => comp_of_main
+  | Stackframe _ cp _ _ _ :: _ => cp
+  end.
 
 (* The state of the stack when we start the execution *)
 Definition initial_stack: stack := nil.
@@ -1128,7 +1143,7 @@ Definition initial_stack: stack := nil.
    invariants *)
 (* The two definitions only update the stack when a cross-compartment change
    is detected *)
-Definition update_stack_call (s: stack) (cp: compartment) rs' :=
+Definition update_stack_call (s: stack) (sg: signature) (cp: compartment) rs' :=
   let pc' := rs' # PC in
   let ra' := rs' # RA in
   let sp' := rs' # SP in
@@ -1142,7 +1157,7 @@ Definition update_stack_call (s: stack) (cp: compartment) rs' :=
     (* Otherwise, we simply push a new frame on the stack *)
     match ra' with
     | Vptr f retaddr =>
-        Some (Stackframe f sp' retaddr :: s)
+        Some (Stackframe f (Genv.find_comp_ignore_offset ge pc') sg sp' retaddr :: s)
     | _ => None
     end
   .
@@ -1163,7 +1178,7 @@ Definition update_stack_return (s: stack) (cp: compartment) rs' :=
 
 Inductive state: Type :=
   | State: stack -> regset -> mem -> state
-  | ReturnState: stack -> regset -> mem -> signature -> compartment -> state.
+  | ReturnState: stack -> regset -> mem -> state.
 
 (* Definition is_call i := *)
 (*   match i with *)
@@ -1188,13 +1203,19 @@ Definition is_return i :=
 Definition asm_parent_ra s :=
   match s with
   | nil => Vnullptr
-  | Stackframe b sp retaddr :: _ => Vptr b retaddr
+  | Stackframe b _ _ sp retaddr :: _ => Vptr b retaddr
   end.
 
 Definition asm_parent_sp s :=
   match s with
   | nil => Vnullptr
-  | Stackframe b sp retaddr :: _ => sp
+  | Stackframe b _ _ sp retaddr :: _ => sp
+  end.
+
+Definition sig_of_call s :=
+  match s with
+  | Stackframe _ _ sg _ _ :: _ => sg
+  | _ => signature_main
   end.
 
 Inductive step: state -> trace -> state -> Prop :=
@@ -1221,7 +1242,7 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) (Vptr b' ofs')),
       forall (CURCOMP: Genv.find_comp_ignore_offset ge (Vptr b Ptrofs.zero) = cp),
       (* Is a call, we update the stack *)
-      forall (STUPD: update_stack_call st cp rs' = Some st'),
+      forall (STUPD: update_stack_call st sig cp rs' = Some st'),
       forall (ARGS: call_arguments rs' m' sig args),
       (* Is a call, we check whether we are allowed to pass pointers *)
       forall (NO_CROSS_PTR:
@@ -1231,35 +1252,40 @@ Inductive step: state -> trace -> state -> Prop :=
               args (sig_args sig) t),
       step (State st rs m) t (State st' rs' m')
   | exec_step_internal_return:
-      forall b ofs f i rs m rs' m' cp cp' st st',
+      forall b ofs f i rs m rs' cp m' st,
       rs PC = Vptr b ofs ->
       Genv.find_funct_ptr ge b = Some (Internal f) ->
       find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
       exec_instr f i rs m cp = Next rs' m' ->
       is_return i = true ->
       forall (CURCOMP: Genv.find_comp_ignore_offset ge (rs PC) = cp),
-      forall (NEXTCOMP: Genv.find_comp_ignore_offset ge (rs' PC) = cp'),
-      (* We only impose conditions on when returns can be executed for cross-compartment
-         returns. These conditions are that we restore the previous RA and SP *)
-      forall (PC_RA: cp <> cp' -> rs' PC = asm_parent_ra st),
-      forall (RESTORE_SP: cp <> cp' -> rs' SP = asm_parent_sp st),
-      (* Note that in the same manner, this definition only updates the stack when doing
-         cross-compartment returns *)
-      forall (STUPD: update_stack_return st cp rs' = Some st'),
-      (* No cross-compartment pointer return *)
-      (* forall (NO_CROSS_PTR: *)
-      (*     (Genv.type_of_call ge cp' cp = Genv.CrossCompartmentCall -> *)
-      (*      not_ptr (return_value rs' (fn_sig f))) <-> allowed = true), *)
-      (* forall (EV: return_trace ge cp' cp (return_value rs' (fn_sig f)) (sig_res (fn_sig f)) t), *)
-      step (State st rs m) E0 (ReturnState st' rs' m' (fn_sig f) (comp_of f))
+      (* We attempt a return, so we go to a ReturnState*)
+      (* The only condition is the following: we are currently in the compartment stored in the callee compartment field
+       of the top stack frame*)
+      forall (REC_CURCOMP: Genv.find_comp_ignore_offset ge (rs PC) = callee_comp st),
+      (* forall (NEXTCOMP: Genv.find_comp_ignore_offset ge (rs' PC) = cp'), *)
+      step (State st rs m) E0 (ReturnState st rs' m')
   | exec_step_return:
-      forall st rs m sg cp t,
+      forall st st' rs m sg t rec_cp rec_cp' cp',
         rs PC <> Vnullptr -> (* this condition is there to stop the execution 1 step earlier, to make the proof easier *)
-      forall (NO_CROSS_PTR:
-          (Genv.type_of_call ge (Genv.find_comp_ignore_offset ge (rs PC)) cp = Genv.CrossCompartmentCall ->
-           not_ptr (return_value rs sg))),
-      forall (EV: return_trace ge (Genv.find_comp_ignore_offset ge (rs PC)) cp (return_value rs sg) (sig_res sg) t),
-        step (ReturnState st rs m sg cp) t (State st rs m)
+        forall (REC_CURCOMP: callee_comp st = rec_cp),
+        forall (REC_NEXTCOMP: call_comp st = rec_cp'),
+        forall (NEXTCOMP: Genv.find_comp_ignore_offset ge (rs PC) = cp'),
+        (* We only impose conditions on when returns can be executed for cross-compartment
+           returns. These conditions are that we restore the previous RA and SP *)
+        forall (PC_RA: rec_cp <> cp' -> rs PC = asm_parent_ra st),
+        forall (RESTORE_SP: rec_cp <> cp' -> rs SP = asm_parent_sp st),
+        (* forall (RETURN_FROM_CP: cp <> cp' -> cp = callee_comp st), *)
+        (* Note that in the same manner, this definition only updates the stack when doing
+         cross-compartment returns *)
+        forall (STUPD: update_stack_return st rec_cp rs = Some st'),
+        (* We do not return a pointer *)
+        forall (SIG_STACK: sig_of_call st = sg),
+        forall (NO_CROSS_PTR:
+            (Genv.type_of_call ge cp' rec_cp = Genv.CrossCompartmentCall ->
+             not_ptr (return_value rs sg))),
+        forall (EV: return_trace ge cp' rec_cp (return_value rs sg) (sig_res sg) t),
+          step (ReturnState st rs m) t (State st' rs m)
   | exec_step_builtin:
       forall b ofs f ef args res rs m vargs t vres rs' m' st,
       rs PC = Vptr b ofs ->
@@ -1273,29 +1299,16 @@ Inductive step: state -> trace -> state -> Prop :=
                    (rs#X31 <- Vundef))) ->
       step (State st rs m) t (State st rs' m')
   | exec_step_external:
-      forall b ef args res rs m t rs' m' cp cp' cp'' st st',
+      forall b ef args res rs m t rs' m' cp st,
       rs PC = Vptr b Ptrofs.zero ->
       Genv.find_funct_ptr ge b = Some (External ef) ->
-      forall COMP: Genv.find_comp_ignore_offset ge (rs RA) = cp,
+      forall COMP: Genv.find_comp_ignore_offset ge (rs RA) = cp, (* compartment that is calling the external function *)
       external_call ef ge cp args m t res m' ->
       extcall_arguments rs m (ef_sig ef) args ->
       rs' = (set_pair (loc_external_result (ef_sig ef)) res (undef_caller_save_regs rs))#PC <- (rs RA) ->
-      (* These steps behave like returns. So we must update the stack *)
-      forall (CURCOMP: Genv.find_comp_ignore_offset ge (rs PC) = cp'),
-      forall (NEXTCOMP: Genv.find_comp_ignore_offset ge (rs' PC) = cp''),
-      (* We only impose conditions on when returns can be executed for cross-compartment
-         returns. These conditions are that we restore the previous RA and SP *)
-      forall (PC_RA: cp' <> cp'' -> rs' PC = asm_parent_ra st),
-      forall (RESTORE_SP: cp' <> cp'' -> rs' SP = asm_parent_sp st),
-      (* Note that in the same manner, this definition only updates the stack when doing
-         cross-compartment returns *)
-      forall (STUPD: update_stack_return st cp' rs' = Some st'),
-      (* (* No cross-compartment pointer return *) *)
-      (* forall (NO_CROSS_PTR: *)
-      (*     (Genv.type_of_call ge cp'' cp' = Genv.CrossCompartmentCall -> *)
-      (*      not_ptr (return_value rs' (ef_sig ef))) <-> allowed = true), *)
-      (* forall (EV: return_trace ge cp'' cp' (return_value rs' (ef_sig ef)) (sig_res (ef_sig ef)) t'), *)
-      step (State st rs m) t (ReturnState st' rs' m' (ef_sig ef) (comp_of ef)).
+      (* These steps behave like returns. So we do the same as in the [exec_step_internal_return] case. *)
+      forall (REC_CURCOMP: Genv.find_comp_ignore_offset ge (rs PC) = callee_comp st),
+      step (State st rs m) t (ReturnState st rs' m').
 
 End RELSEM.
 
@@ -1313,14 +1326,21 @@ Inductive initial_state (p: program): state -> Prop :=
       initial_state p (State initial_stack rs0 m0).
 
 Inductive final_state (p: program): state -> int -> Prop :=
-  | final_state_intro: forall rs m r sg cp,
+  | final_state_intro: forall rs m r,
       rs PC = Vnullptr ->
       rs X10 = Vint r ->
-      final_state p (ReturnState initial_stack rs m sg cp) r
+      final_state p (ReturnState initial_stack rs m) r
 .
 
+Definition comp_of_main (p: program) :=
+  let ge := Genv.globalenv p in
+  match Genv.find_symbol ge (prog_main p) with
+  | Some fb => Genv.find_comp ge (Vptr fb Ptrofs.zero)
+  | _ => default_compartment
+  end.
+
 Definition semantics (p: program) :=
-  Semantics step (initial_state p) (final_state p) (Genv.globalenv p).
+  Semantics (step (comp_of_main p)) (initial_state p) (final_state p) (Genv.globalenv p).
 
 (** Determinacy of the [Asm] semantics. *)
 

@@ -237,12 +237,12 @@ Definition wt_fundef (fd: fundef) :=
 Inductive wt_callstack: list stackframe -> Prop :=
   | wt_callstack_nil:
       wt_callstack nil
-  | wt_callstack_cons: forall f sp rs c s
+  | wt_callstack_cons: forall f cp sg sp rs c s
         (WTSTK: wt_callstack s)
         (WTF: wt_function f = true)
         (WTC: wt_code f c = true)
         (WTRS: wt_locset rs),
-      wt_callstack (Stackframe f sp rs c :: s).
+      wt_callstack (Stackframe f cp sg sp rs c :: s).
 
 Lemma wt_parent_locset:
   forall s, wt_callstack s -> wt_locset (parent_locset s).
@@ -266,12 +266,12 @@ Inductive wt_state: state -> Prop :=
         (AGCS: agree_callee_save rs (parent_locset s))
         (AGARGS: agree_outgoing_arguments (funsig fd) rs (parent_locset s)),
       wt_state (Callstate s fd rs m)
-  | wt_return_state: forall s rs m sg cp
+  | wt_return_state: forall s rs m
         (WTSTK: wt_callstack s)
         (WTRS: wt_locset rs)
         (AGCS: agree_callee_save rs (parent_locset s))
         (UOUT: outgoing_undef rs),
-      wt_state (Returnstate s rs m sg cp).
+      wt_state (Returnstate s rs m).
 
 (** Preservation of state typing by transitions *)
 
@@ -455,8 +455,8 @@ Proof.
 Qed.
 
 Lemma wt_returnstate_agree:
-  forall s rs m sg cp,
-  wt_state (Returnstate s rs m sg cp) ->
+  forall s rs m,
+  wt_state (Returnstate s rs m) ->
   agree_callee_save rs (parent_locset s) /\ outgoing_undef rs.
 Proof.
   intros. inv H; auto.

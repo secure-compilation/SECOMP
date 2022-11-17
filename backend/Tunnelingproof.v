@@ -248,11 +248,11 @@ Qed.
 
 Inductive match_stackframes: stackframe -> stackframe -> Prop :=
   | match_stackframes_intro:
-      forall f sp ls0 bb tls0,
+      forall f cp sig sp ls0 bb tls0,
       locmap_lessdef ls0 tls0 ->
       match_stackframes
-         (Stackframe f sp ls0 bb)
-         (Stackframe (tunnel_function f) sp tls0 (tunneled_block f bb)).
+         (Stackframe f cp sig sp ls0 bb)
+         (Stackframe (tunnel_function f) cp sig sp tls0 (tunneled_block f bb)).
 
 Inductive match_states: state -> state -> Prop :=
   | match_states_intro:
@@ -284,12 +284,12 @@ Inductive match_states: state -> state -> Prop :=
       match_states (Callstate s f ls m)
                    (Callstate ts (tunnel_fundef f) tls tm)
   | match_states_return:
-      forall s ls m ts tls tm sg cp
+      forall s ls m ts tls tm
         (STK: list_forall2 match_stackframes s ts)
         (LS: locmap_lessdef ls tls)
         (MEM: Mem.extends m tm),
-      match_states (Returnstate s ls m sg cp)
-                   (Returnstate ts tls tm sg cp).
+      match_states (Returnstate s ls m)
+                   (Returnstate ts tls tm).
 
 (** Properties of [locmap_lessdef] *)
 
@@ -431,7 +431,7 @@ Definition measure (st: state) : nat :=
   | Block s f sp (Lbranch pc :: _) ls m => (count_gotos f pc * 2 + 1)%nat
   | Block s f sp bb ls m => 0%nat
   | Callstate s f ls m => 0%nat
-  | Returnstate s ls m sg cp => 0%nat
+  | Returnstate s ls m => 0%nat
   end.
 
 Lemma match_parent_locset:
@@ -579,6 +579,7 @@ Qed.
   now eapply call_trace_translated; eauto.
   econstructor; eauto.
   constructor; auto.
+  rewrite find_comp_translated.
   constructor; auto.
 - (* Ltailcall *)
   exploit Mem.free_parallel_extends. eauto. eauto. intros (tm' & FREE & MEM'). 

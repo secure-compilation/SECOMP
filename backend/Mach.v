@@ -214,6 +214,7 @@ Section RELSEM.
 
 Variable return_address_offset: function -> code -> ptrofs -> Prop.
 
+Variable comp_of_main: compartment.
 Variable ge: genv.
 
 Definition find_function_ptr
@@ -312,11 +313,24 @@ Definition return_value (rs: regset) (sg: signature) :=
 
 Inductive stackframe: Type :=
   | Stackframe:
-      forall (f: block)       (**r pointer to calling function *)
+      forall (f: block)        (**r pointer to calling function *)
+        (cp: compartment) (**r compartment of the callee *)
+        (sg: signature)   (**r callee's signature *)
              (sp: val)         (**r stack pointer in calling function *)
              (retaddr: ptrofs) (**r Asm return address in calling function *)
              (c: code),        (**r program point in calling function *)
       stackframe.
+
+Definition callee_comp (s: list stackframe) :=
+  match s with
+  | nil => comp_of_main
+  | Stackframe _ cp _ _ _ _ :: _ => cp
+  end.
+
+Definition callee_comp_stackframe (f: stackframe) :=
+  match f with
+    Stackframe _ cp _ _ _ _ => cp
+  end.
 
 Inductive state: Type :=
   | State:
@@ -336,27 +350,19 @@ Inductive state: Type :=
   | Returnstate:
       forall (stack: list stackframe)  (**r call stack *)
              (rs: regset)              (**r register state *)
-             (m: mem)                  (**r memory state *)
-             (sg: signature)           (**r callee's signature *)
-             (cp: compartment),        (**r callee's compartment *)
+             (m: mem),                  (**r memory state *)
       state.
 
 Definition parent_sp (s: list stackframe) : val :=
   match s with
   | nil => Vnullptr
-  | Stackframe f sp ra c :: s' => sp
+  | Stackframe f _ _ sp ra c :: s' => sp
   end.
 
 Definition parent_ra (s: list stackframe) : val :=
   match s with
   | nil => Vnullptr
-  | Stackframe f sp ra c :: s' => Vptr f ra
-  end.
-
-Definition find_comp_ptr (b: block) :=
-  match Genv.find_funct_ptr ge b with
-  | Some f => Some (comp_of f)
-  | None => None
+  | Stackframe f _ _ sp ra c :: s' => Vptr f ra
   end.
 
 Definition call_comp (s: list stackframe): compartment :=
@@ -372,20 +378,20 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State s f sp c rs m)
   | exec_Mgetstack:
       forall s f sp ofs ty dst c rs m v cp,
-      forall (CURCOMP: find_comp_ptr f = Some cp),
+      forall (CURCOMP: Genv.find_comp ge (Vptr f Ptrofs.zero) = cp),
       load_stack m sp ty ofs (Some cp) = Some v ->
       step (State s f sp (Mgetstack ofs ty dst :: c) rs m)
         E0 (State s f sp c (rs#dst <- v) m)
   | exec_Msetstack:
       forall s f sp src ofs ty c rs m m' rs' cp,
-      forall (CURCOMP: find_comp_ptr f = Some cp),
+      forall (CURCOMP: Genv.find_comp ge (Vptr f Ptrofs.zero) = cp),
       store_stack m sp ty ofs (rs src) cp = Some m' ->
       rs' = undef_regs (destroyed_by_setstack ty) rs ->
       step (State s f sp (Msetstack src ofs ty :: c) rs m)
         E0 (State s f sp c rs' m')
   | exec_Mgetparam:
       forall s fb f sp ofs ty dst c rs m (* cp' *) v rs' cp,
-      forall (CURCOMP: find_comp_ptr fb = Some cp),
+      forall (CURCOMP: Genv.find_comp ge (Vptr fb Ptrofs.zero) = cp),
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
       load_stack m sp Tptr f.(fn_link_ofs) (Some cp) = Some (parent_sp s) ->
       (* forall (COMPSP: call_comp s = Some cp'), *)
@@ -401,7 +407,7 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State s f sp c rs' m)
   | exec_Mload:
       forall s f sp chunk addr args dst c rs m a v rs' cp,
-      forall (CURCOMP: find_comp_ptr f = Some cp),
+      forall (CURCOMP: Genv.find_comp ge (Vptr f Ptrofs.zero) = cp),
       eval_addressing ge sp addr rs##args = Some a ->
       Mem.loadv chunk m a (Some cp) = Some v ->
       rs' = ((undef_regs (destroyed_by_load chunk addr) rs)#dst <- v) ->
@@ -409,7 +415,7 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State s f sp c rs' m)
   | exec_Mstore:
       forall s f sp chunk addr args src c rs m m' a rs' cp,
-      forall (CURCOMP: find_comp_ptr f = Some cp),
+      forall (CURCOMP: Genv.find_comp ge (Vptr f Ptrofs.zero) = cp),
       eval_addressing ge sp addr rs##args = Some a ->
       Mem.storev chunk m a (rs src) cp = Some m' ->
       rs' = undef_regs (destroyed_by_store chunk addr) rs ->
@@ -429,11 +435,11 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (EV: call_trace ge (comp_of f) (Genv.find_comp ge (Vptr f' Ptrofs.zero)) (Vptr f' Ptrofs.zero)
                args (sig_args sig) t),
       step (State s fb sp (Mcall sig ros :: c) rs m)
-        t (Callstate (Stackframe fb sp ra c :: s)
+        t (Callstate (Stackframe fb (Genv.find_comp ge (Vptr f' Ptrofs.zero)) sig sp ra c :: s)
                        f' rs m)
   | exec_Mtailcall:
       forall s fb stk soff sig ros c rs m f f' m' fd cp,
-      forall (CURCOMP: find_comp_ptr fb = Some cp),
+      forall (CURCOMP: Genv.find_comp ge (Vptr fb Ptrofs.zero) = cp),
       find_function_ptr ge ros rs = Some f' ->
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
       load_stack m (Vptr stk soff) Tptr f.(fn_link_ofs) (Some cp) = Some (parent_sp s) ->
@@ -447,7 +453,7 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (Callstate s f' rs m')
   | exec_Mbuiltin:
       forall s fb f sp rs m ef args res b vargs t vres rs' m' cp,
-      forall (CURCOMP: find_comp_ptr fb = Some cp),
+      forall (CURCOMP: Genv.find_comp ge (Vptr fb Ptrofs.zero) = cp),
       eval_builtin_args ge rs sp m args vargs ->
       forall (FUN: Genv.find_funct_ptr ge fb = Some (Internal f)),
       external_call ef ge cp vargs m t vres m' ->
@@ -486,16 +492,16 @@ Inductive step: state -> trace -> state -> Prop :=
   | exec_Mreturn:
       (* RB: NOTE: Think about compartment variables, here and in a similar case. *)
       forall s fb stk soff c rs m f m' cp,
-      forall (CURCOMP: find_comp_ptr fb = Some cp),
+      forall (CURCOMP: Genv.find_comp ge (Vptr fb Ptrofs.zero) = cp),
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
       load_stack m (Vptr stk soff) Tptr f.(fn_link_ofs) (Some cp) = Some (parent_sp s) ->
       load_stack m (Vptr stk soff) Tptr f.(fn_retaddr_ofs) (Some cp) = Some (parent_ra s) ->
       Mem.free m stk 0 f.(fn_stacksize) cp = Some m' ->
       step (State s fb (Vptr stk soff) (Mreturn :: c) rs m)
-        E0 (Returnstate s rs m' (fn_sig f) (comp_of f))
+        E0 (Returnstate s rs m')
   | exec_function_internal:
       forall s fb rs m f m1 m2 m3 stk rs' cp,
-      forall (CURCOMP: find_comp_ptr fb = Some cp),
+      forall (CURCOMP: Genv.find_comp ge (Vptr fb Ptrofs.zero) = cp),
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
       Mem.alloc m cp 0 f.(fn_stacksize) = (m1, stk) ->
       let sp := Vptr stk Ptrofs.zero in
@@ -512,14 +518,14 @@ Inductive step: state -> trace -> state -> Prop :=
       external_call ef ge cp args m t res m' ->
       rs' = set_pair (loc_result (ef_sig ef)) res (undef_caller_save_regs rs) ->
       step (Callstate s fb rs m)
-         t (Returnstate s rs' m' (ef_sig ef) (comp_of ef))
+         t (Returnstate s rs' m')
   | exec_return:
       forall s f sp ra c rs m sg cp t,
       forall (NO_CROSS_PTR:
           Genv.type_of_call ge (Genv.find_comp ge (Vptr f Ptrofs.zero)) cp = Genv.CrossCompartmentCall ->
           not_ptr (return_value rs sg)),
       forall (EV: return_trace ge (Genv.find_comp ge (Vptr f Ptrofs.zero)) cp (return_value rs sg) (sig_res sg) t),
-      step (Returnstate (Stackframe f sp ra c :: s) rs m sg cp)
+      step (Returnstate (Stackframe f cp sg sp ra c :: s) rs m)
         t (State s f sp c rs m).
 
 End RELSEM.
@@ -532,10 +538,10 @@ Inductive initial_state (p: program): state -> Prop :=
       initial_state p (Callstate nil fb (Regmap.init Vundef) m0).
 
 Inductive final_state: state -> int -> Prop :=
-  | final_state_intro: forall rs m sg cp r retcode,
+  | final_state_intro: forall rs m r retcode,
       loc_result signature_main = One r ->
       rs r = Vint retcode ->
-      final_state (Returnstate nil rs m sg cp) retcode.
+      final_state (Returnstate nil rs m) retcode.
 
 Definition semantics (rao: function -> code -> ptrofs -> Prop) (p: program) :=
   Semantics (step rao) (initial_state p) final_state (Genv.globalenv p).
@@ -559,11 +565,11 @@ Variable rao: function -> code -> ptrofs -> Prop.
 Variable ge: genv.
 
 Inductive wf_frame: stackframe -> Prop :=
-  | wf_stackframe_intro: forall fb sp ra c f
+  | wf_stackframe_intro: forall fb sg cp sp ra c f
         (CODE: Genv.find_funct_ptr ge fb = Some (Internal f))
         (LEAF: is_leaf_function f = false)
         (TAIL: is_tail c f.(fn_code)),
-      wf_frame (Stackframe fb sp ra c).
+      wf_frame (Stackframe fb cp sg sp ra c).
 
 Inductive wf_state: state -> Prop :=
   | wf_normal_state: forall s fb sp c rs m f
@@ -574,9 +580,9 @@ Inductive wf_state: state -> Prop :=
   | wf_call_state: forall s fb rs m
         (STACK: Forall wf_frame s),
       wf_state (Callstate s fb rs m)
-  | wf_return_state: forall s rs m sg cp
+  | wf_return_state: forall s rs m
         (STACK: Forall wf_frame s),
-      wf_state (Returnstate s rs m sg cp).
+      wf_state (Returnstate s rs m).
 
 Lemma wf_step:
   forall S1 t S2, step rao ge S1 t S2 -> wf_state S1 -> wf_state S2.

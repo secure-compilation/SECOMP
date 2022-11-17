@@ -182,7 +182,6 @@ Inductive state : Type :=
       forall (stack: list stackframe) (**r call stack *)
              (v: val)                 (**r return value for the call *)
              (m: mem),                 (**r memory state *)
-             (* (cp: compartment),  (**r previous compartment *) *)
       state.
 
 Definition call_comp (stack: list stackframe): compartment :=

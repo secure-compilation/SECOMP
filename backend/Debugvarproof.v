@@ -426,12 +426,12 @@ Qed.
 
 Inductive match_stackframes: Linear.stackframe -> Linear.stackframe -> Prop :=
   | match_stackframe_intro:
-      forall f sp rs c tf tc before after,
+      forall f cp sg sp rs c tf tc before after,
       match_function f tf ->
       match_code c tc ->
       match_stackframes
-        (Stackframe f sp rs c)
-        (Stackframe tf sp rs (add_delta_ranges before after tc)).
+        (Stackframe f cp sg sp rs c)
+        (Stackframe tf cp sg sp rs (add_delta_ranges before after tc)).
 
 Inductive match_states: Linear.state ->  Linear.state -> Prop :=
   | match_states_instr:
@@ -448,10 +448,10 @@ Inductive match_states: Linear.state ->  Linear.state -> Prop :=
       match_states (Callstate s f rs m)
                    (Callstate ts tf rs m)
   | match_states_return:
-      forall s rs m ts sg cp,
+      forall s rs m ts,
       list_forall2 match_stackframes s ts ->
-      match_states (Returnstate s rs m sg cp)
-                   (Returnstate ts rs m sg cp).
+      match_states (Returnstate s rs m)
+                   (Returnstate ts rs m).
 
 Lemma parent_locset_match:
   forall s ts,
@@ -559,7 +559,8 @@ Proof.
     intros; subst.
     eapply call_trace_translated; eauto.
   }
-  constructor; auto. constructor; auto. constructor; auto.
+  constructor; auto. constructor; auto.
+  rewrite find_comp_translated; constructor; auto.
 - (* tailcall *)
   exploit find_function_translated; eauto. intros (tf' & A & B).
   exploit parent_locset_match; eauto. intros PLS.
@@ -627,11 +628,11 @@ Proof.
   erewrite <- match_stacks_call_comp; eauto.
   constructor; auto.
 - (* return *)
-  inv H5. inv H1.
+  inv H3. inv H1.
   econstructor; split.
   eapply plus_left. econstructor.
-  inv H6; auto.
-  inv H6. eapply return_trace_eq; eauto using senv_preserved.
+  inv H8; auto.
+  inv H8. eapply return_trace_eq; eauto using senv_preserved.
   apply eval_add_delta_ranges. traceEq.
   constructor; auto.
 Qed.
@@ -653,7 +654,7 @@ Lemma transf_final_states:
   forall st1 st2 r,
   match_states st1 st2 -> final_state st1 r -> final_state st2 r.
 Proof.
-  intros. inv H0. inv H. inv H7. econstructor; eauto.
+  intros. inv H0. inv H. inv H5. econstructor; eauto.
 Qed.
 
 Theorem transf_program_correct:
