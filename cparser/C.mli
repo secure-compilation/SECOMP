@@ -226,11 +226,13 @@ and slabel =
 (** Declarations *)
 
 and decl =
-  storage * ident * typ * init option
+  storage * ident * typ * init option * string
+  (* last [string]: compartment *)
 
 (** Function definitions *)
 
 type fundef = {
+    fd_comp: string;
     fd_storage: storage;
     fd_inline: bool;
     fd_name: ident;
@@ -263,7 +265,10 @@ and globdecl_desc =
                                         (* enum definition *)
   | Gpragma of string                   (* #pragma directive *)
 
-type program = globdecl list
+type import =
+  | Import of ident * ident * ident
+
+type program = (globdecl list * import list)
 
 (** Builtin types and functions *)
 

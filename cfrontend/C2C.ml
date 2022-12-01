@@ -1213,7 +1213,7 @@ let convertFundef loc env fd =
       fd.fd_params in
   let vars =
     List.map
-      (fun (sto, id, ty, init) ->
+      (fun (sto, id, ty, init, cp) ->
         if sto = Storage_extern || sto = Storage_static then
           unsupported "'static' or 'extern' local variable";
         if init <> None then
@@ -1231,6 +1231,8 @@ let convertFundef loc env fd =
       Inline
     else
       No_specifier in
+  let cp =
+    intern_string fd.fd_comp in
   Debug.atom_global fd.fd_name id';
   Hashtbl.add decl_atom id'
     { a_storage = fd.fd_storage;
@@ -1241,7 +1243,7 @@ let convertFundef loc env fd =
       a_inline = inline;
       a_loc = loc };
   (id',  AST.Gfun(Ctypes.Internal
-                    {fn_comp = AST.privileged_compartment;
+                    {fn_comp = cp;
                      fn_return = ret;
                      fn_callconv = convertCallconv fd.fd_vararg false fd.fd_attrib;
                      fn_params = params;
@@ -1253,7 +1255,7 @@ let convertFundef loc env fd =
 let re_builtin = Str.regexp "__builtin_"
 let re_runtime = Str.regexp "__compcert_i64_"
 
-let convertFundecl env (sto, id, ty, optinit) =
+let convertFundecl env (sto, id, ty, optinit, comp) =
   let (args, res, cconv) =
     match convertTyp env ty with
     | Tfunction(args, res, cconv) -> (args, res, cconv)
@@ -1261,6 +1263,9 @@ let convertFundecl env (sto, id, ty, optinit) =
   let id' = intern_string id.name in
   let id'' = coqstring_of_camlstring id.name in
   let sg = signature_of_type args res cconv in
+  (* TODO: should we check that the [comp] we have is indeed the compartment of the predefined *)
+  (* functions such as [EF_malloc] or [EF_free]? *)
+  let cp = intern_string comp in
   let ef =
     if id.name = "malloc" then AST.EF_malloc else
     if id.name = "free" then AST.EF_free else
@@ -1268,7 +1273,7 @@ let convertFundecl env (sto, id, ty, optinit) =
     if Str.string_match re_builtin id.name 0
     && List.mem_assoc id.name builtins.builtin_functions
     then AST.EF_builtin(id'', sg)
-    else AST.EF_external(id'', AST.privileged_compartment, sg) in
+    else AST.EF_external(id'', cp, sg) in
   (id',  AST.Gfun(Ctypes.External(ef, args, res, cconv)))
 
 (** Initializers *)
@@ -1300,8 +1305,9 @@ let convertInitializer env ty i =
 
 (** Global variable *)
 
-let convertGlobvar loc env (sto, id, ty, optinit) =
+let convertGlobvar loc env (sto, id, ty, optinit, comp) =
   let id' = intern_string id.name in
+  let cp = intern_string comp in
   Debug.atom_global id id';
   let ty' = convertTyp env ty in
   let sz = Ctypes.sizeof !comp_env ty' in
@@ -1330,7 +1336,7 @@ let convertGlobvar loc env (sto, id, ty, optinit) =
       a_loc = loc };
   let volatile = List.mem C.AVolatile attr in
   let readonly = List.mem C.AConst attr && not volatile in
-  (id',  AST.Gvar { AST.gvar_comp = AST.privileged_compartment;
+  (id',  AST.Gvar { AST.gvar_comp = cp;
                     AST.gvar_info = ty'; gvar_init = init';
                      gvar_readonly = readonly; gvar_volatile = volatile})
 
@@ -1344,7 +1350,7 @@ let rec convertGlobdecls env res gl =
   | g :: gl' ->
       updateLoc g.gloc;
       match g.gdesc with
-      | C.Gdecl((sto, id, ty, optinit) as d) ->
+      | C.Gdecl((sto, id, ty, optinit, cp) as d) ->
           (* Functions become external declarations.
              Other types become variable declarations. *)
           begin match Cutil.unroll env ty with
@@ -1418,13 +1424,13 @@ let cleanupGlobals p =
         if IdentSet.mem fd.fd_name !strong then
           error "multiple definitions of %s" fd.fd_name.name;
         strong := IdentSet.add fd.fd_name !strong
-    | C.Gdecl(Storage_extern, id, ty, init) ->
+    | C.Gdecl(Storage_extern, id, ty, init, cp) ->
         extern := IdentSet.add id !extern
-    | C.Gdecl(sto, id, ty, Some i) ->
+    | C.Gdecl(sto, id, ty, Some i, cp) ->
         if IdentSet.mem id !strong then
           error "multiple definitions of %s" id.name;
         strong := IdentSet.add id !strong
-    | C.Gdecl(sto, id, ty, None) ->
+    | C.Gdecl(sto, id, ty, None, cp) ->
         weak := IdentSet.add id !weak
     | _ -> () in
   List.iter classify_def p;
@@ -1435,7 +1441,7 @@ let cleanupGlobals p =
     | g :: gl ->
         updateLoc g.gloc;
         match g.gdesc with
-        | C.Gdecl(sto, id, ty, init) ->
+        | C.Gdecl(sto, id, ty, init, cp) ->
             let better_def_exists =
               if sto = Storage_extern then
                 IdentSet.mem id !strong || IdentSet.mem id !weak
@@ -1461,7 +1467,7 @@ let public_globals gl =
 
 (** Convert a [C.program] into a [Csyntax.program] *)
 
-let convertProgram p =
+let convertProgram (p, imports) =
   Diagnostics.reset();
   stringNum := 0;
   Hashtbl.clear decl_atom;

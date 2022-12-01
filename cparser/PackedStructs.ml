@@ -359,11 +359,13 @@ let transf_init loc env i =
 
 (* Declarations *)
 
-let transf_decl loc env (sto, id, ty, init_opt) =
+let transf_decl loc env (sto, id, ty, init_opt, cp) =
   (sto, id, ty,
-   match init_opt with
+   begin match init_opt with
    | None -> None
-   | Some i -> Some (transf_init loc env i))
+   | Some i -> Some (transf_init loc env i)
+   end,
+   cp)
 
 (* Global declarations *)
 
@@ -371,7 +373,7 @@ let rec transf_globdecls env accu = function
   | [] -> List.rev accu
   | g :: gl ->
       match g.gdesc with
-      | Gdecl((sto, id, ty, init) as d) ->
+      | Gdecl((sto, id, ty, init, cp) as d) ->
           transf_globdecls
             (Env.add_ident env id sto ty)
             ({g with gdesc = Gdecl(transf_decl g.gloc env d)} :: accu)
@@ -411,11 +413,11 @@ let rec transf_globdecls env accu = function
 
 (* Program *)
 
-let program p =
+let program (defs, imports) =
   use_reversed :=
     begin match !Machine.config.Machine.name with
     | "powerpc" -> true
     | _ -> false
     end;
   Hashtbl.clear byteswapped_fields;
-  transf_globdecls (Env.initial()) [] p
+  (transf_globdecls (Env.initial()) [] defs, imports)

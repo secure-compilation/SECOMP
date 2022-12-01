@@ -35,4 +35,5 @@ val globdecl : Format.formatter -> C.globdecl -> unit
 val program : Format.formatter -> C.program -> unit
 
 val destination : string option ref
+val destination' : string option ref
 val print_if : C.program -> unit

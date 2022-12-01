@@ -13,10 +13,11 @@
 (*                                                                     *)
 (* *********************************************************************)
 
-val elab_file : Cabs.definition list -> C.program
+val elab_file : (Cabs.definition list * Cabs.import list) -> C.program
   (* This is the main entry point.  It transforms a list of toplevel
      definitions as produced by the parser into a program in C abstract
      syntax. *)
+                                                               (* TODO: document *)
 
 val elab_int_constant : Cabs.loc -> string -> int64 * C.ikind
 val elab_float_constant : Cabs.floatInfo -> C.float_cst * C.fkind

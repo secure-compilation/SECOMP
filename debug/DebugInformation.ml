@@ -320,7 +320,7 @@ let insert_global_declaration env dec =
     Hashtbl.add stamp_to_definition stamp id
   in
   match dec.gdesc with
-  | Gdecl (sto,id,ty,init) ->
+  | Gdecl (sto,id,ty,init,cp) ->
       if  not (is_function_type env ty) then begin
         if not (Hashtbl.mem stamp_to_definition id.stamp)  then begin
           let at_decl,ext = (match sto with

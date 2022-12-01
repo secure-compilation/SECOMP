@@ -44,6 +44,7 @@ let compile_c_file sourcename ifile ofile =
     dst := if !opt then Some (output_filename sourcename ".c" ext)
       else None in
   set_dest Cprint.destination option_dparse ".parsed.c";
+  set_dest Cprint.destination' option_dparse ".parsed.imports";
   set_dest PrintCsyntax.destination option_dcmedium ".compcert.c";
   set_dest PrintClight.destination option_dclight ".light.c";
   set_dest PrintCminor.destination option_dcminor ".cm";

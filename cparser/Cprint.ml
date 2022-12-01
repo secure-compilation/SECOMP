@@ -364,7 +364,7 @@ let storage pp = function
   | Storage_auto -> ()   (* used only in blocks, where it can be omitted *)
   | Storage_register -> fprintf pp "register "
 
-let full_decl pp (sto, id, ty, int) =
+let full_decl pp (sto, id, ty, int, cp) =
   fprintf pp "@[<hov 2>%a" storage sto;
   dcl pp ty (fun pp -> fprintf pp " %a" ident id);
   begin match int with
@@ -552,17 +552,41 @@ let globdecl pp g =
   | Gpragma s ->
        fprintf pp "#pragma %s@ @ " s
 
-let program pp prog =
+let imp pp g =
+  match g with
+  | Import(id1, id2, id3) ->
+      fprintf pp "%a imports %a from %a"
+        ident id1
+        ident id3
+        ident id2
+
+
+let program pp (defs, imports) =
   fprintf pp "@[<v 0>";
-  List.iter (globdecl pp) prog;
+  List.iter (globdecl pp) defs;
   fprintf pp "@]@."
 
+let program' pp (defs, imports) =
+  fprintf pp "@[<v 0>";
+  List.iter (imp pp) imports;
+  fprintf pp "@]@."
+
+
 let destination : string option ref = ref None
+let destination': string option ref = ref None
 
 let print_if prog =
-  match !destination with
+  begin match !destination with
   | None -> ()
   | Some f ->
     let oc = open_out f in
     program (formatter_of_out_channel oc) prog;
     close_out oc
+  end;
+  begin match !destination' with
+  | None -> ()
+  | Some f ->
+    let oc = open_out f in
+    program' (formatter_of_out_channel oc) prog;
+    close_out oc
+  end

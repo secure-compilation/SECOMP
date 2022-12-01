@@ -143,12 +143,13 @@ let optexp env = function
   | None -> None
   | Some a -> Some (exp env a)
 
-let decl env (sto, id, ty, int) =
+let decl env (sto, id, ty, int, cp) =
   let (id', env') = rename env id in
   ((sto,
     id',
     typ env' ty,
-    match int with None -> None | Some i -> Some(init env' i)),
+    begin match int with None -> None | Some i -> Some(init env' i) end,
+   cp),
    env')
 
 let asm_operand env (lbl, cstr, e) = (lbl, cstr, exp env e)
@@ -195,7 +196,8 @@ let fundef env f =
   let (name', env0) = rename env f.fd_name in
   let (params', env1) = mmap param env0 f.fd_params in
   let (locals', env2) = mmap decl env1 f.fd_locals in
-  ( { fd_storage = f.fd_storage;
+  ( { fd_comp = f.fd_comp;
+      fd_storage = f.fd_storage;
       fd_inline = f.fd_inline;
       fd_name = name';
       fd_attrib = f.fd_attrib;
@@ -255,7 +257,7 @@ let rec reserve_public env = function
   | dcl :: rem ->
       let env' =
         match dcl.gdesc with
-        | Gdecl(sto, id, _, _) ->
+        | Gdecl(sto, id, _, _, _) ->
             begin match sto with
             | Storage_default | Storage_extern -> enter_public env id
             | Storage_static -> env
@@ -272,7 +274,8 @@ let rec reserve_public env = function
 
 (* Rename the program *)
 
-let program p =
-  globdecls
-    (reserve_public (reserve_builtins()) p)
-    [] p
+let program (defs, imports) =
+  (globdecls
+    (reserve_public (reserve_builtins()) defs)
+    [] defs,
+   imports)

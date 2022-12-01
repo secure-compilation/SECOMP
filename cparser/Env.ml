@@ -301,7 +301,8 @@ let add_function (s, (res, args, va)) =
   env := env';
   idents := id :: !idents;
   decls :=
-    {gdesc = Gdecl(Storage_extern, id, ty, None); gloc = no_loc} :: !decls
+    {gdesc = Gdecl(Storage_extern, id, ty, None, "0"); gloc = no_loc} :: !decls
+      (* We use [0], because all of the built-ins belong to this compartment *)
 
 end
 

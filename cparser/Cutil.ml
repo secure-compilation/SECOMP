@@ -1309,9 +1309,10 @@ and subst_init phi = function
   | Init_union(name, f, i) ->
       Init_union(name, f, subst_init phi i)
 
-let subst_decl phi (sto, name, ty, optinit) =
+let subst_decl phi (sto, name, ty, optinit, cp) =
   (sto, name, ty,
-   match optinit with None -> None | Some i -> Some (subst_init phi i))
+   begin match optinit with None -> None | Some i -> Some (subst_init phi i) end,
+  cp)
 
 let rec subst_stmt phi s =
   { s with sdesc =

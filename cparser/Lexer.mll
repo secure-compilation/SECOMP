@@ -330,6 +330,8 @@ rule initial = parse
   | "}"|"%>"                      { RBRACE(currentLoc lexbuf) }
   | "["|"<:"                      { LBRACK(currentLoc lexbuf) }
   | "]"|":>"                      { RBRACK(currentLoc lexbuf) }
+  | "§"                           { SECTION(currentLoc lexbuf) }
+  | "«"                           { IMPORTS(currentLoc lexbuf) }
   | "("                           { LPAREN(currentLoc lexbuf) }
   | ")"                           { RPAREN(currentLoc lexbuf) }
   | ";"                           { SEMICOLON(currentLoc lexbuf) }
@@ -570,6 +572,8 @@ and singleline_comment = parse
       | Pre_parser.RIGHT loc -> loop (Parser.RIGHT loc)
       | Pre_parser.RIGHT_ASSIGN loc -> loop (Parser.RIGHT_ASSIGN loc)
       | Pre_parser.RPAREN loc -> loop (Parser.RPAREN loc)
+      | Pre_parser.SECTION loc -> loop (Parser.SECTION loc)
+      | Pre_parser.IMPORTS loc -> loop (Parser.IMPORTS loc)
       | Pre_parser.SEMICOLON loc -> loop (Parser.SEMICOLON loc)
       | Pre_parser.SHORT loc -> loop (Parser.SHORT loc)
       | Pre_parser.SIGNED loc -> loop (Parser.SIGNED loc)
@@ -598,11 +602,14 @@ and singleline_comment = parse
       | Pre_parser.TILDE loc -> loop (Parser.TILDE loc)
       | Pre_parser.TYPEDEF loc -> loop (Parser.TYPEDEF loc)
       | Pre_parser.TYPEDEF_NAME (id, typ, loc)
-      | Pre_parser.VAR_NAME (id, typ, loc) ->
+      | Pre_parser.VAR_NAME (id, typ, loc)
+      | Pre_parser.OTHER_NAME (id, typ, loc)
+      | Pre_parser.COMPARTMENT_NAME (id, typ, loc) ->
           begin match !typ with
           | VarId -> loop (Parser.VAR_NAME (id, loc))
           | TypedefId -> loop (Parser.TYPEDEF_NAME (id, loc))
           | OtherId -> loop (Parser.OTHER_NAME (id, loc))
+          | CompartmentId -> loop (Parser.COMPARTMENT_NAME (id, loc))
           end
       | Pre_parser.UNION loc -> loop (Parser.UNION loc)
       | Pre_parser.UNSIGNED loc -> loop (Parser.UNSIGNED loc)
