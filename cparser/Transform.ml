@@ -33,8 +33,9 @@ let get_temps () =
 
 let new_temp_var ?(name = "t") ty =
   let id = Env.fresh_ident name in
-  temporaries := (Storage_default, id, ty, None) :: !temporaries;
+  temporaries := (Storage_default, id, ty, None, "0") :: !temporaries;
   id
+  (* TODO: Is the default compartment ["0"] the right one here? Since they are temporaries I'm assuming it's fine *)
 
 let new_temp ?(name = "t") ty =
   let id = new_temp_var ~name ty in
@@ -197,14 +198,14 @@ let program
     ?(typedef = fun env id ty -> ty)
     ?(enum = fun env id attr members -> (attr, members))
     ?(pragma = fun env s -> s)
-    p =
+    (defs, imports) =
 
   let rec transf_globdecls env accu = function
   | [] -> List.rev accu
   | g :: gl ->
       let (desc', env') =
         match g.gdesc with
-        | Gdecl((sto, id, ty, init) as d) ->
+        | Gdecl((sto, id, ty, init, cp) as d) ->
            (Gdecl(decl env d), Env.add_ident env id sto ty)
         | Gfundef f ->
            (Gfundef(fundef env f),
@@ -227,4 +228,4 @@ let program
       in
         transf_globdecls env' ({g with gdesc = desc'} :: accu) gl
 
-  in transf_globdecls (Env.initial()) [] p
+  in (transf_globdecls (Env.initial()) [] defs, imports)

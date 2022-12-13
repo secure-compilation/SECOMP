@@ -57,7 +57,7 @@ let preprocessed_file transfs name sourcefile =
   let p =
       let t = parse_transformations transfs in
       let log_fuel = Camlcoq.Nat.of_int 50 in
-      let ast : Cabs.definition list =
+      let ast : Cabs.definition list * Cabs.import list =
           (match Timing.time "Parsing"
               (* The call to Lexer.tokens_stream results in the pre
                  parsing of the entire file. This is non-negligeabe,
@@ -70,9 +70,10 @@ let preprocessed_file transfs name sourcefile =
                     between grammars. *)
               Diagnostics.fatal_error Diagnostics.no_loc "internal error while parsing"
            | Parser.MenhirLibParser.Inter.Timeout_pr -> assert false
-           | Parser.MenhirLibParser.Inter.Parsed_pr (ast, _ ) -> ast) in
+           | Parser.MenhirLibParser.Inter.Parsed_pr (ast, _) -> ast) in
       let p1 = Timing.time "Elaboration" Elab.elab_file ast in
       Diagnostics.check_errors ();
       Timing.time2 "Emulations" transform_program t p1 name in
   Diagnostics.check_errors();
   p
+  (* Interface.add_imports p imports *)

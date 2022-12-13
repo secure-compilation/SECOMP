@@ -705,6 +705,8 @@ Record extcall_properties (sem: extcall_sem) (sg: signature) : Prop :=
     (forall i, ofs <= i < ofs + n -> ~Mem.perm m1 b i Max Writable) ->
     Mem.loadbytes m1 b ofs n cp = Some bytes;
 
+      (** TODO: External call should not be able to modify other compartment's memory *)
+
 (** External calls must commute with memory extensions, in the
   following sense. *)
   ec_mem_extends:

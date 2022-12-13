@@ -73,6 +73,7 @@ with spec_elem :=
   | SpecStorage : storage -> spec_elem
   | SpecFunction: funspec -> spec_elem
   | SpecType : typeSpecifier -> spec_elem
+  | SpecCompartment : string -> spec_elem
 
 (* Declarator type. They modify the base type given in the specifier. Keep
  * them in the order as they are printed (this means that the top level
@@ -224,3 +225,8 @@ with statement :=
 with for_clause :=
  | FC_EXP : expression -> for_clause
  | FC_DECL : definition -> for_clause.
+
+Variant import :=
+  | Import : (* importing compartment *) string ->
+             (* compartment imported from *) string ->
+             (* imported function name *) string -> import.

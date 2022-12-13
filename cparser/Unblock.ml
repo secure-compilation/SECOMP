@@ -82,18 +82,20 @@ let remove_const env ty = remove_attributes_type env [AConst] ty
    by the fresh variable.
    Within a function, it gives rise to a local variable
    and an explicit initialization at the nearest sequence point. *)
+(* TODO: we now pass a compartment to this function, to be able to assign the correct *)
+(* compartment to the new global variable *)
 
-let process_compound_literal islocal env ty init =
+let process_compound_literal islocal env ty init cp =
   let id = Env.fresh_ident "__compound" in
   if islocal then begin
     let ty' = remove_const env ty in
     let e = {edesc = EVar id; etyp = ty'} in
     local_variables :=
-      (Storage_default, id, ty', None) :: !local_variables;
+      (Storage_default, id, ty', None, cp) :: !local_variables;
     (local_initializer env e init [], e)
   end else begin
     global_variables :=
-      (Storage_static, id, ty, Some init) :: !global_variables;
+      (Storage_static, id, ty, Some init, cp) :: !global_variables;
     ([], {edesc = EVar id; etyp = ty})
   end
 
@@ -104,7 +106,7 @@ let process_compound_literal islocal env ty init =
    the expression and after sequence points in the expression.
    Use only if [e] is a r-value. *)
 
-let rec expand_expr islocal env e =
+let rec expand_expr islocal env e cp =
   let inits = ref [] in   (* accumulator for initializing assignments *)
   let rec expand e =
     match e.edesc with
@@ -115,7 +117,7 @@ let rec expand_expr islocal env e =
         let e1' = expand e1 in
         let e2' =
           match op with
-          | Ocomma | Ologand | Ologor -> expand_expr islocal env e2
+          | Ocomma | Ologand | Ologor -> expand_expr islocal env e2 cp
               (* Make sure the initializers of [e2] are performed in
                  sequential order, i.e. just before [e2] but after [e1]. *)
           | _ -> expand e2 in
@@ -124,14 +126,14 @@ let rec expand_expr islocal env e =
         (* Same remark as above: initializers of [e2] and [e3] must
            be performed after the conditional is resolved. *)
         {edesc = EConditional(expand e1,
-                              expand_expr islocal env e2,
-                              expand_expr islocal env e3);
+                              expand_expr islocal env e2 cp,
+                              expand_expr islocal env e3 cp);
          etyp = e.etyp}
     | ECast(ty, e1) ->
         {edesc = ECast(ty, expand e1); etyp = e.etyp}
     | ECompound(ty, ie) ->
-        let ie' = expand_init islocal env ie in
-        let (l, e') = process_compound_literal islocal env ty ie' in
+        let ie' = expand_init islocal env ie cp in
+        let (l, e') = process_compound_literal islocal env ty ie' cp in
         inits := l @ !inits;
         e'
     | ECall(e1, el) ->
@@ -141,7 +143,7 @@ let rec expand_expr islocal env e =
 
 (* Elimination of compound literals within an initializer. *)
 
-and expand_init islocal env i =
+and expand_init islocal env i cp =
   let rec expand i =
     match i with
     (* The following "flattening" is not C99.  GCC documents it; whether
@@ -155,7 +157,7 @@ and expand_init islocal env i =
     | Init_single {edesc = ECompound(_, ((Init_struct _ | Init_union _) as i))} ->
         expand i
     | Init_single e ->
-        Init_single (expand_expr islocal env e)
+        Init_single (expand_expr islocal env e cp)
     | Init_array il ->
         Init_array (List.rev (List.rev_map expand il))
     | Init_struct(id, flds) ->
@@ -241,69 +243,69 @@ let new_scope_id () =
    The initializer, if any, is converted into assignments and
    prepended to [k]. *)
 
-let process_decl loc env ctx (sto, id, ty, optinit) k =
+let process_decl loc env ctx (sto, id, ty, optinit, cp) k =
   let ty' = remove_const env ty in
-  local_variables := (sto, id, ty', None) :: !local_variables;
+  local_variables := (sto, id, ty', None, cp) :: !local_variables;
   debug_var_decl ctx id;
   (* TODO: register the fact that id is declared in scope ctx *)
   match optinit with
   | None ->
       k
   | Some init ->
-      let init' = expand_init true env init in
+      let init' = expand_init true env init cp in
       let l = local_initializer env { edesc = EVar id; etyp = ty' } init' [] in
       add_inits_stmt loc l k
 
 (* Simplification of blocks within a statement *)
 
-let rec unblock_stmt env ctx ploc s =
+let rec unblock_stmt env ctx ploc s cp =
   match s.sdesc with
   | Sskip -> s
   | Sdo e ->
       add_lineno ctx ploc s.sloc
-        {s with sdesc = Sdo(expand_expr true env e)}
+        {s with sdesc = Sdo(expand_expr true env e cp)}
   | Sseq(s1, s2) ->
-      {s with sdesc = Sseq(unblock_stmt env ctx ploc s1,
-                           unblock_stmt env ctx s1.sloc s2)}
+      {s with sdesc = Sseq(unblock_stmt env ctx ploc s1 cp,
+                           unblock_stmt env ctx s1.sloc s2 cp)}
   | Sif(e, s1, s2) ->
       add_lineno ctx ploc s.sloc
-        {s with sdesc = Sif(expand_expr true env e,
-                            unblock_stmt env ctx s.sloc s1,
-                            unblock_stmt env ctx s.sloc s2)}
+        {s with sdesc = Sif(expand_expr true env e cp,
+                            unblock_stmt env ctx s.sloc s1 cp,
+                            unblock_stmt env ctx s.sloc s2 cp)}
   | Swhile(e, s1) ->
       add_lineno ctx ploc s.sloc
-        {s with sdesc = Swhile(expand_expr true env e,
-                               unblock_stmt env ctx s.sloc s1)}
+        {s with sdesc = Swhile(expand_expr true env e cp,
+                               unblock_stmt env ctx s.sloc s1 cp)}
   | Sdowhile(s1, e) ->
       add_lineno ctx ploc s.sloc
-        {s with sdesc = Sdowhile(unblock_stmt env ctx s.sloc s1,
-                                 expand_expr true env e)}
+        {s with sdesc = Sdowhile(unblock_stmt env ctx s.sloc s1 cp,
+                                 expand_expr true env e cp)}
   | Sfor(s1, e, s2, s3) ->
       add_lineno ctx ploc s.sloc
-        {s with sdesc = Sfor(unblock_stmt env ctx s.sloc s1,
-                             expand_expr true env e,
-                             unblock_stmt env ctx s.sloc s2,
-                             unblock_stmt env ctx s.sloc s3)}
+        {s with sdesc = Sfor(unblock_stmt env ctx s.sloc s1 cp,
+                             expand_expr true env e cp,
+                             unblock_stmt env ctx s.sloc s2 cp,
+                             unblock_stmt env ctx s.sloc s3 cp)}
   | Sbreak -> s
   | Scontinue -> s
   | Sswitch(e, s1) ->
       add_lineno ctx ploc s.sloc
-        {s with sdesc = Sswitch(expand_expr true env e,
-                                unblock_stmt env ctx s.sloc s1)}
+        {s with sdesc = Sswitch(expand_expr true env e cp,
+                                unblock_stmt env ctx s.sloc s1 cp)}
   | Slabeled(lbl, s1) ->
     let loc,label = if s.sloc <> s1.sloc then
         s.sloc,false (* Label and code are on different lines *)
       else
         ploc,true in
     add_lineno ~label:label ctx ploc s.sloc
-        {s with sdesc = Slabeled(lbl, unblock_stmt env ctx loc s1)}
+        {s with sdesc = Slabeled(lbl, unblock_stmt env ctx loc s1 cp)}
   | Sgoto lbl ->
       add_lineno ctx ploc s.sloc s
   | Sreturn None ->
       add_lineno ctx ploc s.sloc s
   | Sreturn (Some e) ->
       add_lineno ctx ploc s.sloc
-        {s with sdesc = Sreturn(Some (expand_expr true env e))}
+        {s with sdesc = Sreturn(Some (expand_expr true env e cp))}
   | Sblock sl ->
       let ctx' =
         if block_contains_decl sl
@@ -314,27 +316,27 @@ let rec unblock_stmt env ctx ploc s =
           | a::_ -> Debug.enter_scope !curr_fun_id a id);
           id:: ctx
         else ctx in
-      unblock_block env ctx' ploc sl
+      unblock_block env ctx' ploc cp sl
   | Sdecl d ->
       assert false
   | Sasm(attr, template, outputs, inputs, clob) ->
       let expand_asm_operand (lbl, cstr, e) =
-        (lbl, cstr, expand_expr true env e) in
+        (lbl, cstr, expand_expr true env e cp) in
       add_lineno ctx ploc s.sloc
         {s with sdesc = Sasm(attr, template,
                              List.map expand_asm_operand outputs,
                              List.map expand_asm_operand inputs, clob)}
 
 
-and unblock_block env ctx ploc = function
+and unblock_block env ctx ploc cp = function
   | [] -> sskip
   | {sdesc = Sdecl d; sloc = loc} :: sl ->
       add_lineno ctx ploc loc
         (process_decl loc env ctx d
-           (unblock_block env ctx loc sl))
+           (unblock_block env ctx loc cp sl))
   | s :: sl ->
-      sseq s.sloc (unblock_stmt env ctx ploc s)
-                  (unblock_block env ctx s.sloc sl)
+      sseq s.sloc (unblock_stmt env ctx ploc s cp)
+                  (unblock_block env ctx s.sloc cp sl)
 
 (* Simplification of blocks and compound literals within a function *)
 
@@ -342,22 +344,22 @@ let unblock_fundef env f =
   local_variables := [];
   curr_fun_id:= f.fd_name.stamp;
   (* TODO: register the parameters as being declared in function scope *)
-  let body = unblock_stmt env [] no_loc f.fd_body in
+  let body = unblock_stmt env [] no_loc f.fd_body f.fd_comp in
   let decls = !local_variables in
   local_variables := [];
   { f with fd_locals = f.fd_locals @ decls; fd_body = body }
 
 (* Simplification of compound literals within a top-level declaration *)
 
-let unblock_decl env ((sto, id, ty, optinit) as d) =
+let unblock_decl env ((sto, id, ty, optinit, cp) as d) =
   match optinit with
   | None -> [d]
   | Some init ->
       global_variables := [];
-      let init' = expand_init false env init in
+      let init' = expand_init false env init cp in
       let decls = !global_variables in
       global_variables := [];
-      decls @ [(sto, id, ty, Some init')]
+      decls @ [(sto, id, ty, Some init', cp)]
 
 (* Unblocking and simplification for whole files.
    The environment is used for typedefs and composites only,
@@ -396,7 +398,8 @@ let rec unblock_glob env accu = function
 
 (* Entry point *)
 
-let program p =
+let program (defs, imports) =
   next_scope_id := 0;
-  {gloc = no_loc; gdesc = Gdecl(Storage_extern, debug_id, debug_ty, None)} ::
-  unblock_glob (Env.initial()) [] p
+  ({gloc = no_loc; gdesc = Gdecl(Storage_extern, debug_id, debug_ty, None, "0")} ::
+  unblock_glob (Env.initial()) [] defs, imports)
+    (* TODO: Is the default compartment ["0"] above the right one? *)

@@ -74,7 +74,7 @@ and add_init = function
   | Init_struct(id, il) -> addref id; List.iter (fun (_, i) -> add_init i) il
   | Init_union(id, _, i) -> addref id; add_init i
 
-let add_decl (sto, id, ty, init) =
+let add_decl (sto, id, ty, init, cp) =
   add_typ ty;
   match init with None -> () | Some i -> add_init i
 
@@ -125,7 +125,7 @@ let add_enum e =
    - Declaration of variables with default storage.
 *)
 
-let visible_decl (sto, id, ty, init) =
+let visible_decl (sto, id, ty, init, cp) =
   sto = Storage_default &&
   match ty with TFun _ -> false | _ -> true
 
@@ -155,7 +155,7 @@ let rec add_needed_globdecls accu = function
   | [] -> accu
   | g :: rem ->
       match g.gdesc with
-      | Gdecl((sto, id, ty, init) as decl) ->
+      | Gdecl((sto, id, ty, init, cp) as decl) ->
           if needed id
           then (add_decl decl; add_needed_globdecls accu rem)
           else add_needed_globdecls (g :: accu) rem
@@ -190,7 +190,7 @@ let saturate p =
 (* Remove unreferenced definitions *)
 
 let remove_unused_debug =  function
-  | Gdecl (_,id,_,_) ->  Debug.remove_unused id
+  | Gdecl (_,id,_,_,_) ->  Debug.remove_unused id
   | Gfundef f -> Debug.remove_unused_function f.fd_name
   | _ -> ()
 
@@ -199,7 +199,7 @@ let rec simpl_globdecls accu = function
   | g :: rem ->
       let need =
         match g.gdesc with
-        | Gdecl((sto, id, ty, init) as decl) -> visible_decl decl || needed id
+        | Gdecl((sto, id, ty, init, cp) as decl) -> visible_decl decl || needed id
         | Gfundef f -> visible_fundef f || needed f.fd_name
         | Gcompositedecl(_, id, _) -> needed id
         | Gcompositedef(_, id, _, flds) -> needed id
@@ -211,9 +211,9 @@ let rec simpl_globdecls accu = function
       then simpl_globdecls (g :: accu) rem
       else begin remove_unused_debug g.gdesc; simpl_globdecls accu rem end
 
-let program p =
+let program (defs, imports) =
   referenced := IdentSet.empty;
-  saturate p;
-  let p' = simpl_globdecls [] p in
+  saturate defs;
+  let defs' = simpl_globdecls [] defs in
   referenced := IdentSet.empty;
-  p'
+  (defs', imports)

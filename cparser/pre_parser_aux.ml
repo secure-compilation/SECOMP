@@ -16,6 +16,7 @@
 type identifier_type =
   | VarId
   | TypedefId
+  | CompartmentId
   | OtherId
 
 let save_context:(unit -> (unit -> unit)) ref = ref (fun _ -> assert false)

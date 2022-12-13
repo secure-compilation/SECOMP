@@ -424,9 +424,10 @@ and transf_init env = function
 
 (* Declarations *)
 
-let transf_decl env (sto, id, ty, init) =
+let transf_decl env (sto, id, ty, init, cp) =
   (sto, id, transf_type env ty,
-   match init with None -> None | Some i -> Some (transf_init env i))
+   begin match init with None -> None | Some i -> Some (transf_init env i) end,
+   cp)
 
 (* Transformation of statements and function bodies *)
 

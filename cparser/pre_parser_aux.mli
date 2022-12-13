@@ -16,6 +16,7 @@
 type identifier_type =
   | VarId
   | TypedefId
+  | CompartmentId
   | OtherId
 
 (* Applying once this functions saves the current context, and

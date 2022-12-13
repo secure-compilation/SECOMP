@@ -44,7 +44,7 @@
 
 %token<string> PRE_NAME
 %token<string * Pre_parser_aux.identifier_type ref * Cabs.loc>
-  VAR_NAME TYPEDEF_NAME
+  VAR_NAME TYPEDEF_NAME COMPARTMENT_NAME OTHER_NAME
 %token<Cabs.constant * Cabs.loc> CONSTANT
 %token<bool * int64 list * Cabs.loc> STRING_LITERAL
 %token<string * Cabs.loc> PRAGMA
@@ -53,7 +53,7 @@
   ANDAND BARBAR PLUS MINUS STAR TILDE BANG SLASH PERCENT HAT BAR QUESTION
   COLON AND MUL_ASSIGN DIV_ASSIGN MOD_ASSIGN ADD_ASSIGN SUB_ASSIGN LEFT_ASSIGN
   RIGHT_ASSIGN AND_ASSIGN XOR_ASSIGN OR_ASSIGN LPAREN RPAREN LBRACK RBRACK
-  LBRACE RBRACE DOT COMMA SEMICOLON ELLIPSIS TYPEDEF EXTERN STATIC RESTRICT
+  LBRACE RBRACE SECTION IMPORTS DOT COMMA SEMICOLON ELLIPSIS TYPEDEF EXTERN STATIC RESTRICT
   AUTO REGISTER INLINE NORETURN CHAR SHORT INT LONG SIGNED UNSIGNED FLOAT DOUBLE
   UNDERSCORE_BOOL CONST VOLATILE VOID STRUCT UNION ENUM CASE DEFAULT IF ELSE
   SWITCH WHILE DO FOR GOTO CONTINUE BREAK RETURN BUILTIN_VA_ARG ALIGNOF
@@ -179,6 +179,11 @@ rlist(X):
 | X           {}
 | X rlist(X)  {}
 
+(* compartment *)
+compartment:
+| SECTION compartment_identifier SECTION
+  {}
+
 (* The kind of an identifier should not be determined when looking
    ahead, because the context may not be up to date. For this reason,
    when reading an identifier, the lexer emits two tokens: the first
@@ -197,19 +202,33 @@ typedef_name:
 | PRE_NAME i = VAR_NAME
     { i }
 
+other_name:
+| PRE_NAME i = OTHER_NAME
+    { i }
+
+compartment_name:
+| PRE_NAME i = COMPARTMENT_NAME
+    { i }
+
 general_identifier:
 | i = typedef_name
 | i = var_name
+| i = other_name
+| i = compartment_name
     { i }
 
 (* [other_identifier] is equivalent to [general_identifier], but adds
-   an instruction that re-classifies this identifier as an [OtherId].
+   an instruction that re-classifies this identifier as an [OtherIa].
    Because this definition is marked %inline, the function call takes
    place when the host production is reduced. *)
 
 %inline other_identifier:
   i = general_identifier
     { set_id_type i OtherId }
+
+%inline compartment_identifier:
+  i = general_identifier
+    { set_id_type i CompartmentId }
 
 string_literals_list:
 | STRING_LITERAL
@@ -439,6 +458,7 @@ storage_class_specifier_no_typedef:
 | type_qualifier_noattr
 | function_specifier
 | attribute_specifier
+| compartment_specifier
     {}
 
 (* [declaration_specifier_no_typedef_name] matches declaration
@@ -450,6 +470,7 @@ declaration_specifier_no_typedef_name:
 | type_qualifier
 | function_specifier
 | type_specifier_no_typedef_name
+| compartment_specifier
     {}
 
 (* [declaration_specifiers] makes sure one type specifier is given, and,
@@ -611,6 +632,10 @@ function_specifier:
 | INLINE
 | NORETURN
     {}
+
+compartment_specifier:
+| compartment
+  {}
 
 (* We add this non-terminal here to force the resolution of the
    conflict at the point of shifting the TYPEDEF_NAME. If we had
@@ -881,6 +906,7 @@ translation_unit_file:
 
 translation_item:
 | external_declaration
+| import
 | SEMICOLON
     {}
 
@@ -888,6 +914,10 @@ translation_item:
 | function_definition
 | declaration(external_declaration)
 | PRAGMA
+    {}
+
+%inline import:
+| compartment IMPORTS compartment LBRACK var_name RBRACK
     {}
 
 identifier_list:

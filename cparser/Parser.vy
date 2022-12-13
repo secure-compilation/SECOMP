@@ -20,7 +20,7 @@ Require Cabs.
 
 %}
 
-%token<Cabs.string * Cabs.loc> VAR_NAME TYPEDEF_NAME OTHER_NAME
+%token<Cabs.string * Cabs.loc> VAR_NAME TYPEDEF_NAME COMPARTMENT_NAME OTHER_NAME
 %token<Cabs.string * Cabs.loc> PRAGMA
 %token<bool * list Cabs.char_code * Cabs.loc> STRING_LITERAL
 %token<Cabs.constant * Cabs.loc> CONSTANT
@@ -31,7 +31,7 @@ Require Cabs.
 %token<Cabs.loc> MUL_ASSIGN DIV_ASSIGN MOD_ASSIGN ADD_ASSIGN SUB_ASSIGN
   LEFT_ASSIGN RIGHT_ASSIGN AND_ASSIGN XOR_ASSIGN OR_ASSIGN
 
-%token<Cabs.loc> LPAREN RPAREN LBRACK RBRACK LBRACE RBRACE DOT COMMA
+%token<Cabs.loc> LPAREN RPAREN LBRACK RBRACK LBRACE RBRACE SECTION IMPORTS DOT COMMA
   SEMICOLON ELLIPSIS TYPEDEF EXTERN STATIC RESTRICT AUTO REGISTER INLINE
   NORETURN CHAR SHORT INT LONG SIGNED UNSIGNED FLOAT DOUBLE CONST VOLATILE VOID
   STRUCT UNION ENUM UNDERSCORE_BOOL PACKED ALIGNAS ATTRIBUTE ASM
@@ -91,7 +91,7 @@ Require Cabs.
 %type<list Cabs.statement (* Reverse order *)> block_item_list
 %type<Cabs.statement> block_item expression_statement selection_statement_dangerous
   selection_statement_safe jump_statement asm_statement
-%type<list Cabs.definition (* Reverse order *)> translation_unit
+%type<list Cabs.definition (* Reverse order *) * list Cabs.import (* Reverse order *)> translation_unit
 %type<Cabs.definition> external_declaration function_definition
 %type<list Cabs.definition> declaration_list
 %type<Cabs.attribute * Cabs.loc> attribute_specifier
@@ -106,8 +106,11 @@ Require Cabs.
 %type<list Cabs.asm_operand> asm_operands asm_operands_ne
 %type<list Cabs.asm_operand * list Cabs.asm_operand * list Cabs.asm_flag> asm_arguments
 %type<list Cabs.cvspec> asm_attributes
+(* Added for compartments *)
+%type<Cabs.string * Cabs.loc> compartment
+%type<Cabs.import> import
 
-%start<list Cabs.definition> translation_unit_file
+%start<list Cabs.definition * list Cabs.import> translation_unit_file
 %%
 
 (* Actual grammar *)
@@ -337,11 +340,16 @@ constant_expression:
 | expr = conditional_expression
     { expr }
 
+(* Compartment specification *)
+compartment:
+| SECTION cp = COMPARTMENT_NAME SECTION
+    { cp }
+
 (* 6.7 *)
 declaration:
-| decspec = declaration_specifiers decls = init_declarator_list SEMICOLON
+|  decspec = declaration_specifiers decls = init_declarator_list SEMICOLON
     { Cabs.DECDEF (fst decspec, rev' decls) (snd decspec) }
-| decspec = declaration_specifiers SEMICOLON
+|  decspec = declaration_specifiers SEMICOLON
     { Cabs.DECDEF (fst decspec, []) (snd decspec) }
 
 declaration_specifiers_typespec_opt:
@@ -372,6 +380,8 @@ declaration_specifiers:
     { (Cabs.SpecCV (Cabs.CV_ATTR (fst attr))::fst rest, snd attr) }
 | func = function_specifier rest = declaration_specifiers
     { (Cabs.SpecFunction (fst func)::fst rest, snd func) }
+| comp = compartment rest = declaration_specifiers
+    { (Cabs.SpecCompartment (fst comp)::fst rest, snd comp) }
 
 init_declarator_list:
 | init = init_declarator
@@ -929,21 +939,23 @@ asm_flags:
 (* 6.9 *)
 translation_unit_file:
 | lst = translation_unit EOF
-    { rev' lst }
+    { (rev' (fst lst), rev' (snd lst)) }
 (* Non-standard *)
 | EOF
-    { [] }
+    { ([], []) }
 
 translation_unit:
 | def = external_declaration
-    { [def] }
+    { ([def], []) }
 | defq = translation_unit deft = external_declaration
-    { deft::defq }
+    { (deft :: fst defq, snd defq) }
+| defq = translation_unit imp = import
+    { (fst defq, imp :: snd defq) }
 (* Non-standard : empty declaration *)
 | tu = translation_unit SEMICOLON
     { tu }
 | SEMICOLON
-    { [] }
+    { ([], []) }
 
 external_declaration:
 | def = function_definition
@@ -952,6 +964,10 @@ external_declaration:
 (* Non-standard *)
 | p = PRAGMA
     { Cabs.PRAGMA (fst p) (snd p) }
+
+import:
+| cp_importing = compartment IMPORTS cp_imported = compartment LBRACK fname = VAR_NAME RBRACK
+    { Cabs.Import (fst cp_importing) (fst cp_imported) (fst fname) }
 
 
 (* 6.9.1 *)
@@ -964,7 +980,7 @@ function_definition:
 | specs = declaration_specifiers
   decl = declarator
   stmt = compound_statement
-    { Cabs.FUNDEF (fst specs) decl [] stmt (snd specs) }
+    { Cabs.FUNDEF (fst specs) decl [] stmt (snd specs)}
 
 declaration_list:
 | d = declaration

@@ -550,9 +550,10 @@ and transf_init env i =
 
 (* Declarations *)
 
-let transf_decl env (sto, id, ty, init_opt) =
+let transf_decl env (sto, id, ty, init_opt, cp) =
   (sto, id, ty,
-   match init_opt with None -> None | Some i -> Some(transf_init env i))
+   begin match init_opt with None -> None | Some i -> Some(transf_init env i) end,
+   cp)
 
 (* Statements *)
 
