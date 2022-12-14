@@ -46,6 +46,7 @@
    Genv.find_funct_ptr vs Genv.find_function_ptr, Genv.find_comp_ignore_offset, etc. 
    This seems *very* bad and worth fixing, as it makes the proof particulary redundant and ugly
 [] In general: clean the proofs :(
+[] Make the other backends compile. In these backends, ignore compartments completely.
 [] Try to merge current CompCert into our branch. That way we can identify the biggest changes we made
    and document them. 
    /!\ If someone does that it's really important to use this opportunity to identify parts that could
@@ -53,8 +54,10 @@
    /!\ And also to write documentation
 
 [] (Rob) Understand how callee/caller-saved works in CompCert. Can we make everything except arguments
-   caller-saved? (arguments do not need to be saved anyway)
-   Implement that in CompCert.
+   caller-saved (only for cross-compartment calls?)? (arguments do not need to be saved anyway)
+   Implement that in CompCert. Two options:
+   - everything caller-saved, always: performance issues
+   - caller-saved only for cross-compartment calls, might be non-trivial modification
 [] (Rob) Invalidation of registers: invalidate registers properly before a call or a return, so that 
    compartments cannot communicate via non-arguments/return-value registers.
    -> Should this invalidation be done with VUndef or a default value like (VInt 0)?
