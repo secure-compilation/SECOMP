@@ -6,10 +6,11 @@
 (*                                                                     *)
 (*  Copyright Institut National de Recherche en Informatique et en     *)
 (*  Automatique.  All rights reserved.  This file is distributed       *)
-(*  under the terms of the GNU General Public License as published by  *)
-(*  the Free Software Foundation, either version 2 of the License, or  *)
-(*  (at your option) any later version.  This file is also distributed *)
-(*  under the terms of the INRIA Non-Commercial License Agreement.     *)
+(*  under the terms of the GNU Lesser General Public License as        *)
+(*  published by the Free Software Foundation, either version 2.1 of   *)
+(*  the License, or  (at your option) any later version.               *)
+(*  This file is also distributed under the terms of the               *)
+(*  INRIA Non-Commercial License Agreement.                            *)
 (*                                                                     *)
 (* *********************************************************************)
 
@@ -29,6 +30,13 @@ Record floatInfo := {
   exponent_FI:option string;
   suffix_FI:option string
 }.
+
+Inductive encoding :=
+  | EncNone                             (* no prefix *)
+  | EncWide                             (* 'L' prefix *)
+  | EncU16                              (* 'u' prefix *)
+  | EncU32                              (* 'U' prefix *)
+  | EncUTF8.                            (* 'u8' prefix (strings only) *)
 
 Inductive structOrUnion :=
   | STRUCT | UNION.
@@ -93,6 +101,7 @@ with parameter :=
 (* The optional expression is the bitfield *)
 with field_group :=
   | Field_group : list spec_elem -> list (option name * option expression) -> loc -> field_group
+  | Field_group_static_assert : expression -> loc -> constant -> loc -> loc -> field_group
 
 (* The decl_type is in the order in which they are printed. Only the name of
  * the declared identifier is pulled out. *)
@@ -140,8 +149,10 @@ with expression :=
   | MEMBEROF : expression -> string -> expression
   | MEMBEROFPTR : expression -> string -> expression
 
-    (* Non-standard *)
+    (* C11 *)
   | ALIGNOF : (list spec_elem * decl_type) -> expression
+  | GENERIC : expression -> list (option (list spec_elem * decl_type) * expression) -> expression
+    (* Non-standard *)
   | BUILTIN_OFFSETOF : (list spec_elem * decl_type) -> list initwhat -> expression
 
 with constant :=
@@ -149,8 +160,8 @@ with constant :=
      the source code. *)
   | CONST_INT : string -> constant
   | CONST_FLOAT : floatInfo -> constant
-  | CONST_CHAR : bool -> list char_code -> constant
-  | CONST_STRING : bool -> list char_code -> constant
+  | CONST_CHAR : encoding -> list char_code -> constant
+  | CONST_STRING : encoding -> list char_code -> constant
 
 with init_expression :=
   | NO_INIT
@@ -185,11 +196,15 @@ Definition init_name_group := (list spec_elem * list init_name)%type.
 (* e.g.: int x, y; *)
 Definition name_group := (list spec_elem * list name)%type.
 
+(* Useful type abbreviations *)
+Definition type_name := (list spec_elem * decl_type)%type.
+Definition generic_assoc := (option type_name * expression)%type.
+
 (* GCC extended asm *)
 Inductive asm_operand :=
-| ASMOPERAND: option string -> bool -> list char_code -> expression -> asm_operand.
+| ASMOPERAND: option string -> encoding -> list char_code -> expression -> asm_operand.
 
-Definition asm_flag := (bool * list char_code)%type.
+Definition asm_flag := (encoding * list char_code)%type.
 
 (*
 ** Declaration definition (at toplevel)
@@ -198,6 +213,7 @@ Inductive definition :=
  | FUNDEF : list spec_elem -> name -> list definition -> statement -> loc -> definition
  | DECDEF : init_name_group -> loc -> definition  (* global variable(s), or function prototype *)
  | PRAGMA : string -> loc -> definition
+ | STATIC_ASSERT : expression -> loc -> constant -> loc -> loc -> definition
 
 (*
 ** statements
@@ -219,7 +235,7 @@ with statement :=
  | DEFAULT : statement -> loc -> statement
  | LABEL : string -> statement -> loc -> statement
  | GOTO : string -> loc -> statement
- | ASM : list cvspec -> bool -> list char_code -> list asm_operand -> list asm_operand -> list asm_flag -> loc -> statement
+ | ASM : list cvspec -> encoding -> list char_code -> list asm_operand -> list asm_operand -> list asm_flag -> loc -> statement
  | DEFINITION : definition -> statement (*definition or declaration of a variable or type*)
 
 with for_clause :=

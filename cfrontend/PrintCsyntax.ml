@@ -6,10 +6,11 @@
 (*                                                                     *)
 (*  Copyright Institut National de Recherche en Informatique et en     *)
 (*  Automatique.  All rights reserved.  This file is distributed       *)
-(*  under the terms of the GNU General Public License as published by  *)
-(*  the Free Software Foundation, either version 2 of the License, or  *)
-(*  (at your option) any later version.  This file is also distributed *)
-(*  under the terms of the INRIA Non-Commercial License Agreement.     *)
+(*  under the terms of the GNU Lesser General Public License as        *)
+(*  published by the Free Software Foundation, either version 2.1 of   *)
+(*  the License, or  (at your option) any later version.               *)
+(*  This file is also distributed under the terms of the               *)
+(*  INRIA Non-Commercial License Agreement.                            *)
 (*                                                                     *)
 (* *********************************************************************)
 
@@ -111,8 +112,8 @@ let rec name_cdecl id ty =
       | Tnil ->
           if first then
             Buffer.add_string b
-               (if cconv.cc_vararg then "..." else "void")
-          else if cconv.cc_vararg then
+               (if cconv.cc_vararg <> None then "..." else "void")
+          else if cconv.cc_vararg <> None then
             Buffer.add_string b ", ..."
           else
             ()
@@ -203,7 +204,7 @@ let rec expr p (prec, e) =
   then fprintf p "@[<hov 2>("
   else fprintf p "@[<hov 2>";
   begin match e with
-  | Eloc(b, ofs, _) ->
+  | Eloc(b, ofs, _, _) ->
       fprintf p "<loc%a>" !print_pointer_hook (b, ofs)
   | Evar(id, _) ->
       fprintf p "%s" (extern_atom id)
@@ -268,6 +269,9 @@ let rec expr p (prec, e) =
   | Ebuiltin(EF_debug(kind,txt,_),_,args,_) ->
       fprintf p "__builtin_debug@[<hov 1>(%d,%S%a)@]"
         (P.to_int kind) (extern_atom txt) exprlist (false,args)
+  | Ebuiltin(EF_builtin(name, _), _, args, _) ->
+      fprintf p "%s@[<hov 1>(%a)@]"
+                (camlstring_of_coqstring name) exprlist (true, args)
   | Ebuiltin(_, _, args, _) ->
       fprintf p "<unknown builtin>@[<hov 1>(%a)@]" exprlist (true, args)
   | Eparen(a1, tycast, ty) ->
@@ -397,11 +401,11 @@ let name_function_parameters name_param fun_name params cconv =
   Buffer.add_char b '(';
   begin match params with
   | [] ->
-      Buffer.add_string b (if cconv.cc_vararg then "..." else "void")
+      Buffer.add_string b (if cconv.cc_vararg <> None then "..." else "void")
   | _ ->
       let rec add_params first = function
       | [] ->
-          if cconv.cc_vararg then Buffer.add_string b ",..."
+          if cconv.cc_vararg <> None then Buffer.add_string b ",..."
       | (id, ty) :: rem ->
           if not first then Buffer.add_string b ", ";
           Buffer.add_string b (name_cdecl (name_param id) ty);
@@ -530,13 +534,18 @@ let struct_or_union = function Struct -> "struct" | Union -> "union"
 let declare_composite p (Composite(id, su, m, a)) =
   fprintf p "%s %s;@ " (struct_or_union su) (extern_atom id)
 
+let print_member p = function
+  | Member_plain(id, ty) ->
+      fprintf p "@ %s;" (name_cdecl (extern_atom id) ty)
+  | Member_bitfield(id, sz, sg, attr, w, _is_padding) ->
+      fprintf p "@ %s : %s;"
+              (name_cdecl (extern_atom id) (Tint(sz, sg, attr)))
+              (Z.to_string w)
+
 let define_composite p (Composite(id, su, m, a)) =
   fprintf p "@[<v 2>%s %s%s {"
           (struct_or_union su) (extern_atom id) (attributes a);
-  List.iter
-    (fun (fid, fty) ->
-      fprintf p "@ %s;" (name_cdecl (extern_atom fid) fty))
-    m;
+  List.iter (print_member p) m;
   fprintf p "@;<0 -2>};@]@ @ "
 
 let print_program p prog =

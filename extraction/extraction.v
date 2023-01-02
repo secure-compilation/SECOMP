@@ -6,10 +6,11 @@
 (*                                                                     *)
 (*  Copyright Institut National de Recherche en Informatique et en     *)
 (*  Automatique.  All rights reserved.  This file is distributed       *)
-(*  under the terms of the GNU General Public License as published by  *)
-(*  the Free Software Foundation, either version 2 of the License, or  *)
-(*  (at your option) any later version.  This file is also distributed *)
-(*  under the terms of the INRIA Non-Commercial License Agreement.     *)
+(*  under the terms of the GNU Lesser General Public License as        *)
+(*  published by the Free Software Foundation, either version 2.1 of   *)
+(*  the License, or  (at your option) any later version.               *)
+(*  This file is also distributed under the terms of the               *)
+(*  INRIA Non-Commercial License Agreement.                            *)
 (*                                                                     *)
 (* *********************************************************************)
 
@@ -143,13 +144,6 @@ Load extractionMachdep.
 (* Avoid name clashes *)
 Extraction Blacklist List String Int.
 
-(* Cutting the dependency to R. *)
-Extract Inlined Constant Defs.F2R => "fun _ -> assert false".
-Extract Inlined Constant Binary.FF2R => "fun _ -> assert false".
-Extract Inlined Constant Binary.B2R => "fun _ -> assert false".
-Extract Inlined Constant Binary.round_mode => "fun _ -> assert false".
-Extract Inlined Constant Bracket.inbetween_loc => "fun _ -> assert false".
-
 (* Needed in Coq 8.4 to avoid problems with Function definitions. *)
 Set Extraction AccessOpaque.
 
@@ -160,7 +154,8 @@ Cd "extraction".
 Separate Extraction
    Compiler.transf_c_program Compiler.transf_cminor_program
    Cexec.do_initial_state Cexec.do_step Cexec.at_final_state
-   Ctypes.merge_attributes Ctypes.remove_attributes Ctypes.build_composite_env
+   Ctypes.merge_attributes Ctypes.remove_attributes 
+   Ctypes.build_composite_env Ctypes.layout_struct
    Initializers.transl_init Initializers.constval
    Csyntax.Eindex Csyntax.Epreincr Csyntax.Eselection
    Ctyping.typecheck_program

@@ -339,10 +339,10 @@ Qed.
 Lemma aregs_sound:
   forall bc e ae rl, ematch bc e ae -> list_forall2 (vmatch bc) (e##rl) (aregs ae rl).
 Proof.
-  induction rl; simpl; intros. constructor. constructor; auto. apply areg_sound; auto.
+  induction rl; simpl; intros. constructor. constructor; [apply areg_sound|]; auto.
 Qed.
 
-Hint Resolve areg_sound aregs_sound: va.
+Global Hint Resolve areg_sound aregs_sound: va.
 
 Lemma abuiltin_arg_sound:
   forall bc ge rs sp m ae rm am,
@@ -544,8 +544,8 @@ Proof.
     eapply SM; auto. eapply mmatch_top; eauto.
   + (* below *)
     red; simpl; intros. rewrite NB. destruct (eq_block b sp).
-    subst b; rewrite SP; xomega.
-    exploit mmatch_below; eauto. xomega.
+    subst b; rewrite SP; extlia.
+    exploit mmatch_below; eauto. extlia.
 - (* unchanged *)
   simpl; intros. apply dec_eq_false. apply Plt_ne. auto.
 - (* values *)
@@ -1081,6 +1081,7 @@ Section SOUNDNESS.
 
 Variable prog: program.
 Variable ge: genv.
+
 Let rm := romem_for prog.
 
 Inductive sound_stack: block_classification -> list stackframe -> mem -> block -> Prop :=
@@ -1163,13 +1164,13 @@ Proof.
 - constructor.
 - assert (Plt sp bound') by eauto with va.
   eapply sound_stack_public_call; eauto. apply IHsound_stack; intros.
-  apply INV. xomega. rewrite SAME; auto with ordered_type. xomega. auto. auto.
+  apply INV. extlia. rewrite SAME; auto with ordered_type. extlia. auto. auto.
   apply INV'. auto.
 - assert (Plt sp bound') by eauto with va.
   eapply sound_stack_private_call; eauto. apply IHsound_stack; intros.
-  apply INV. xomega. rewrite SAME; auto with ordered_type. xomega. auto. auto.
+  apply INV. extlia. rewrite SAME; auto with ordered_type. extlia. auto. auto.
   apply INV'. auto.
-  apply bmatch_ext with m; auto. intros. apply INV. xomega. auto. auto. auto.
+  apply bmatch_ext with m; auto. intros. apply INV. extlia. auto. auto. auto.
 Qed.
 
 Lemma sound_stack_inv:
@@ -1236,8 +1237,8 @@ Lemma sound_stack_new_bound:
 Proof.
   intros. inv H.
 - constructor.
-- eapply sound_stack_public_call with (bound' := bound'0); eauto. xomega.
-- eapply sound_stack_private_call with (bound' := bound'0); eauto. xomega.
+- eapply sound_stack_public_call with (bound' := bound'0); eauto. extlia.
+- eapply sound_stack_private_call with (bound' := bound'0); eauto. extlia.
 Qed.
 
 Lemma sound_stack_exten:
@@ -1250,12 +1251,12 @@ Proof.
 - constructor.
 - assert (Plt sp bound') by eauto with va.
   eapply sound_stack_public_call; eauto.
-  rewrite H0; auto. xomega.
-  intros. rewrite H0; auto. xomega.
+  rewrite H0; auto. extlia.
+  intros. rewrite H0; auto. extlia.
 - assert (Plt sp bound') by eauto with va.
   eapply sound_stack_private_call; eauto.
-  rewrite H0; auto. xomega.
-  intros. rewrite H0; auto. xomega.
+  rewrite H0; auto. extlia.
+  intros. rewrite H0; auto. extlia.
 Qed.
 
 (** ** Preservation of the semantic invariant by one step of execution *)
@@ -1952,7 +1953,7 @@ Proof.
 - exact NOSTACK.
 Qed.
 
-Hint Resolve areg_sound aregs_sound: va.
+Global Hint Resolve areg_sound aregs_sound: va.
 
 (** * Interface with other optimizations *)
 

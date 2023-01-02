@@ -36,7 +36,6 @@ Proof.
   intros. eapply match_transform_partial_program; eauto.
 Qed.
 
-
 Section PRESERVATION.
 
 Variable prog: Mach.program.
@@ -112,7 +111,7 @@ Lemma transf_function_no_overflow:
   transf_function f = OK tf -> list_length_z tf.(fn_code) <= Ptrofs.max_unsigned.
 Proof.
   intros. monadInv H. destruct (zlt Ptrofs.max_unsigned (list_length_z x.(fn_code))); inv EQ0.
-  omega.
+  lia.
 Qed.
 
 Lemma exec_straight_exec:
@@ -480,8 +479,8 @@ Proof.
   split. unfold goto_label. rewrite P. rewrite H1. auto.
   split. rewrite Pregmap.gss. econstructor; eauto.
   rewrite Ptrofs.unsigned_repr. replace (pos' - 0) with pos' in Q.
-  auto. omega.
-  generalize (transf_function_no_overflow _ _ H0). omega.
+  auto. lia.
+  generalize (transf_function_no_overflow _ _ H0). lia.
   intros. apply Pregmap.gso; auto.
 Qed.
 
@@ -1382,6 +1381,7 @@ Local Transparent destroyed_by_op.
     destruct Ptrofs.eq_dec; try congruence.
     rewrite FIND, CALLED, COMP. reflexivity. }
   apply agree_set_other; auto with asmgen.
+  apply agree_set_other; auto with asmgen.
   Simpl. unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H. auto.
 
 - (* Mbuiltin *)
@@ -1565,10 +1565,10 @@ Local Transparent destroyed_by_op.
     rewrite <- (sp_val _ _ _ AG). rewrite chunk_of_Tptr in F. rewrite F. reflexivity.
     reflexivity. reflexivity. reflexivity.
     eexact U. }
-  exploit exec_straight_steps_2; eauto using functions_transl. omega. constructor.
+  exploit exec_straight_steps_2; eauto using functions_transl. lia. constructor.
   intros (ofs' & X & Y).
   left; eexists; split.
-  eapply exec_straight_steps_1; eauto. omega. simpl. unfold Genv.find_comp; simpl.
+  eapply exec_straight_steps_1; eauto. lia. simpl. unfold Genv.find_comp; simpl.
   now rewrite A. constructor.
   econstructor; eauto.
   { rewrite X, <- STACKS_COMP, ATPC. reflexivity. }

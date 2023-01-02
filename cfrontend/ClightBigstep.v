@@ -6,10 +6,11 @@
 (*                                                                     *)
 (*  Copyright Institut National de Recherche en Informatique et en     *)
 (*  Automatique.  All rights reserved.  This file is distributed       *)
-(*  under the terms of the GNU General Public License as published by  *)
-(*  the Free Software Foundation, either version 2 of the License, or  *)
-(*  (at your option) any later version.  This file is also distributed *)
-(*  under the terms of the INRIA Non-Commercial License Agreement.     *)
+(*  under the terms of the GNU Lesser General Public License as        *)
+(*  published by the Free Software Foundation, either version 2.1 of   *)
+(*  the License, or  (at your option) any later version.               *)
+(*  This file is also distributed under the terms of the               *)
+(*  INRIA Non-Commercial License Agreement.                            *)
 (*                                                                     *)
 (* *********************************************************************)
 
@@ -79,11 +80,11 @@ Inductive exec_stmt: env -> compartment -> temp_env ->
   | exec_Sskip:   forall e c le m,
       exec_stmt e c le m Sskip
                E0 le m Out_normal
-  | exec_Sassign:   forall e c le m a1 a2 loc ofs v2 v m',
-      eval_lvalue ge e c le m a1 loc ofs ->
+  | exec_Sassign:   forall e c le m a1 a2 loc ofs bf v2 v m',
+      eval_lvalue ge e c le m a1 loc ofs bf ->
       eval_expr ge e c le m a2 v2 ->
       sem_cast v2 (typeof a2) (typeof a1) m = Some v ->
-      assign_loc ge c (typeof a1) m loc ofs v m' ->
+      assign_loc ge c (typeof a1) m loc ofs bf v m' ->
       exec_stmt e c le m (Sassign a1 a2)
                E0 le m' Out_normal
   | exec_Sset:     forall e c le m id a v,

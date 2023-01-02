@@ -6,10 +6,11 @@
 (*                                                                     *)
 (*  Copyright Institut National de Recherche en Informatique et en     *)
 (*  Automatique.  All rights reserved.  This file is distributed       *)
-(*  under the terms of the GNU General Public License as published by  *)
-(*  the Free Software Foundation, either version 2 of the License, or  *)
-(*  (at your option) any later version.  This file is also distributed *)
-(*  under the terms of the INRIA Non-Commercial License Agreement.     *)
+(*  under the terms of the GNU Lesser General Public License as        *)
+(*  published by the Free Software Foundation, either version 2.1 of   *)
+(*  the License, or  (at your option) any later version.               *)
+(*  This file is also distributed under the terms of the               *)
+(*  INRIA Non-Commercial License Agreement.                            *)
 (*                                                                     *)
 (* *********************************************************************)
 
@@ -156,7 +157,7 @@ let transf_outputs loc env = function
 let check_clobbers loc clob =
   List.iter
     (fun c ->
-      if Machregsaux.register_by_name c <> None
+      if Machregsnames.register_by_name c <> None
       || Machregsaux.is_scratch_register c
       || c = "memory" || c = "cc" (* GCC does not accept MEMORY or CC *)
       then ()

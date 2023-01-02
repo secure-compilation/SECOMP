@@ -30,9 +30,9 @@ let sdump_suffix = ref ".json"
 let nolink () =
   !option_c || !option_S || !option_E || !option_interp
 
-let object_filename sourcename suff =
+let object_filename sourcename =
   if nolink () then
-    output_filename ~final: !option_c sourcename suff ".o"
+    output_filename ~final: !option_c sourcename ~suffix:".o"
   else
     tmp_file ".o"
 
@@ -41,7 +41,7 @@ let object_filename sourcename suff =
 let compile_c_file sourcename ifile ofile =
   (* Prepare to dump Clight, RTL, etc, if requested *)
   let set_dest dst opt ext =
-    dst := if !opt then Some (output_filename sourcename ".c" ext)
+    dst := if !opt then Some (output_filename sourcename ~suffix:ext)
       else None in
   set_dest Cprint.destination option_dparse ".parsed.c";
   set_dest Cprint.destination' option_dparse ".parsed.imports";
@@ -82,15 +82,15 @@ let compile_i_file sourcename preproname =
         ""
   end else if !option_S then begin
     compile_c_file sourcename preproname
-      (output_filename ~final:true sourcename ".c" ".s");
+      (output_filename ~final:true sourcename ~suffix:".s");
     ""
   end else begin
     let asmname =
       if !option_dasm
-      then output_filename sourcename ".c" ".s"
+      then output_filename sourcename ~suffix:".s"
       else tmp_file ".s" in
     compile_c_file sourcename preproname asmname;
-    let objname = object_filename sourcename ".c" in
+    let objname = object_filename sourcename  in
     assemble asmname objname;
     objname
   end
@@ -104,7 +104,7 @@ let process_c_file sourcename =
     ""
   end else begin
     let preproname = if !option_dprepro then
-      output_filename sourcename ".c" ".i"
+      output_filename sourcename ~suffix:".i"
     else
       tmp_file ".i" in
     preprocess sourcename preproname;
@@ -121,7 +121,7 @@ let process_i_file sourcename =
 
 let process_s_file sourcename =
   ensure_inputfile_exists sourcename;
-  let objname = object_filename sourcename ".s" in
+  let objname = object_filename sourcename in
   assemble sourcename objname;
   objname
 
@@ -133,7 +133,7 @@ let process_S_file sourcename =
   end else begin
     let preproname = tmp_file ".s" in
     preprocess sourcename preproname;
-    let objname = object_filename sourcename ".S" in
+    let objname = object_filename sourcename in
     assemble preproname objname;
     objname
   end
@@ -234,16 +234,11 @@ Code generation options: (use -fno-<opt> to turn off -f<opt>)
   -trace         Have the interpreter produce a detailed trace of reductions
   -random        Randomize execution order
   -all           Simulate all possible execution orders
+  -main <name>   Start executing at function <name> instead of main()
 |}
 
 let print_usage_and_exit () =
   printf "%s" usage_string; exit 0
-
-let enforce_buildnr nr =
-  let build = int_of_string Version.buildnr in
-  if nr != build then
-    fatal_error no_loc "Mismatching builds: This is CompCert build %d, but QSK requires build %d.\n\
-Please use matching builds of QSK and CompCert." build nr
 
 let dump_mnemonics destfile =
   let oc = open_out_bin destfile in
@@ -280,10 +275,7 @@ let cmdline_actions =
   @ version_options tool_name @
 (* Enforcing CompCert build numbers for QSKs and mnemonics dump *)
   (if Version.buildnr <> "" then
-    [ Exact "-qsk-enforce-build", Integer enforce_buildnr;
-      Exact "--qsk-enforce-build", Integer enforce_buildnr;
-      Exact "-dump-mnemonics", String  dump_mnemonics;
-    ]
+     [Exact "-dump-mnemonics", String  dump_mnemonics;]
    else []) @
 (* Processing options *)
  [ Exact "-c", Set option_c;
@@ -365,7 +357,8 @@ let cmdline_actions =
   Exact "-quiet", Unit (fun () -> Interp.trace := 0);
   Exact "-trace", Unit (fun () -> Interp.trace := 2);
   Exact "-random", Unit (fun () -> Interp.mode := Interp.Random);
-  Exact "-all", Unit (fun () -> Interp.mode := Interp.All)
+  Exact "-all", Unit (fun () -> Interp.mode := Interp.All);
+  Exact "-main", String (fun s -> main_function_name := s)
  ]
 (* Optimization options *)
 (* -f options: come in -f and -fno- variants *)
@@ -420,6 +413,8 @@ let _ =
       fatal_error no_loc "ambiguous '-o' option (multiple source files)";
     if !num_input_files = 0 then
       fatal_error no_loc "no input file";
+    if not !option_interp && !main_function_name <> "main" then
+      fatal_error no_loc "option '-main' requires option '-interp'";
     let linker_args = time "Total compilation time" perform_actions () in
     if not (nolink ()) && linker_args <> [] then begin
       linker (output_filename_default "a.out") linker_args

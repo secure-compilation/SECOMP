@@ -6,10 +6,11 @@
 (*                                                                     *)
 (*  Copyright Institut National de Recherche en Informatique et en     *)
 (*  Automatique.  All rights reserved.  This file is distributed       *)
-(*  under the terms of the GNU General Public License as published by  *)
-(*  the Free Software Foundation, either version 2 of the License, or  *)
-(*  (at your option) any later version.  This file is also distributed *)
-(*  under the terms of the INRIA Non-Commercial License Agreement.     *)
+(*  under the terms of the GNU Lesser General Public License as        *)
+(*  published by the Free Software Foundation, either version 2.1 of   *)
+(*  the License, or  (at your option) any later version.               *)
+(*  This file is also distributed under the terms of the               *)
+(*  INRIA Non-Commercial License Agreement.                            *)
 (*                                                                     *)
 (* *********************************************************************)
 
@@ -49,13 +50,15 @@ let process_use_section_pragma classname id =
 
 (* #pragma reserve_register *)
 
+let reserved_registers = ref ([]: Machregs.mreg list)
+
 let process_reserve_register_pragma name =
-  match Machregsaux.register_by_name name with
+  match Machregsnames.register_by_name name with
   | None ->
       C2C.error "unknown register in `reserve_register' pragma"
   | Some r ->
-      if Machregsaux.can_reserve_register r then
-        IRC.reserved_registers := r :: !IRC.reserved_registers
+      if Conventions1.is_callee_save r then
+        reserved_registers := r :: !reserved_registers
       else
         C2C.error "cannot reserve this register (not a callee-save)"
 
@@ -83,6 +86,9 @@ let process_pragma name =
       C2C.error "ill-formed `reserve_register' pragma"; true
   | _ ->
       false
+
+let reset () =
+  reserved_registers := []
 
 let initialize () =
   C2C.process_pragma_hook := process_pragma

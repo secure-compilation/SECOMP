@@ -54,6 +54,7 @@ with condexpr : Type :=
   | CEcondition : condexpr -> condexpr -> condexpr -> condexpr
   | CElet: expr -> condexpr -> condexpr.
 
+Declare Scope cminorsel_scope.
 Infix ":::" := Econs (at level 60, right associativity) : cminorsel_scope.
 
 (** Conditional expressions [condexpr] are expressions that are evaluated
@@ -500,7 +501,7 @@ Inductive final_state: state -> int -> Prop :=
 Definition semantics (p: program) :=
   Semantics step (initial_state p) final_state (Genv.globalenv p).
 
-Hint Constructors eval_expr eval_exprlist eval_condexpr: evalexpr.
+Global Hint Constructors eval_expr eval_exprlist eval_condexpr: evalexpr.
 
 (** * Lifting of let-bound variables *)
 
@@ -558,9 +559,9 @@ Lemma insert_lenv_lookup1:
   nth_error le' n = Some v.
 Proof.
   induction 1; intros.
-  omegaContradiction.
+  extlia.
   destruct n; simpl; simpl in H0. auto.
-  apply IHinsert_lenv. auto. omega.
+  apply IHinsert_lenv. auto. lia.
 Qed.
 
 Lemma insert_lenv_lookup2:
@@ -572,8 +573,8 @@ Lemma insert_lenv_lookup2:
 Proof.
   induction 1; intros.
   simpl. assumption.
-  simpl. destruct n. omegaContradiction.
-  apply IHinsert_lenv. exact H0. omega.
+  simpl. destruct n. extlia.
+  apply IHinsert_lenv. exact H0. lia.
 Qed.
 
 Lemma eval_lift_expr:
@@ -616,4 +617,4 @@ Proof.
   eexact H. apply insert_lenv_0.
 Qed.
 
-Hint Resolve eval_lift: evalexpr.
+Global Hint Resolve eval_lift: evalexpr.

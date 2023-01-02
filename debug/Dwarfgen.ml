@@ -543,8 +543,8 @@ let diab_file_loc sec (f,l)  =
 
 let prod_name =
   let version_string =
-    if Version.buildnr <> "" && Version.tag <> "" then
-      Printf.sprintf "Release: %s, Build: %s, Tag: %s" Version.version Version.buildnr Version.tag
+    if Version.buildnr <> "" && Version.tag <> "" && Version.branch <> "" then
+      Printf.sprintf "Release: %s, Build: %s, Tag: %s, Branch:%s" Version.version Version.buildnr Version.tag Version.branch
     else
       Version.version in
   Printf.sprintf "AbsInt Angewandte Informatik GmbH:CompCert Version %s:(%s,%s,%s,%s)"
@@ -594,7 +594,7 @@ let gnu_file_loc (f,l) =
 let string_table: (string,int) Hashtbl.t = Hashtbl.create 7
 
 let gnu_string_entry s =
-  if (String.length s < 4 && Configuration.system <> "macosx") (* macosx needs debug_str *)
+  if (String.length s < 4 && Configuration.system <> "macos") (* macos needs debug_str *)
   || Configuration.system = "cygwin" then (*Cygwin does not use the debug_str section*)
     Simple_string s
   else

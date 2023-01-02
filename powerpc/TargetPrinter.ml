@@ -118,24 +118,20 @@ module Linux_System : SYSTEM =
     let name_of_section = function
       | Section_text -> ".text"
       | Section_data i ->
-          if i then
-            ".data"
-          else
-            common_section ~sec:".section	.bss" ()
+          variable_section ~sec:".data" ~bss:".section	.bss" i
       | Section_small_data i ->
-          if i then
-            ".section	.sdata,\"aw\",@progbits"
-          else
-            common_section ~sec:".section	.sbss,\"aw\",@nobits" ()
+          variable_section
+            ~sec:".section	.sdata,\"aw\",@progbits"
+            ~bss:".section	.sbss,\"aw\",@nobits"
+            i
       | Section_const i ->
-          if i || (not !Clflags.option_fcommon) then ".rodata" else "COMM"
+          variable_section ~sec:".rodata" i
       | Section_small_const i ->
-          if i || (not !Clflags.option_fcommon) then
-            ".section	.sdata2,\"a\",@progbits"
-          else
-            "COMM"
-      | Section_string -> ".rodata"
-      | Section_literal -> ".section	.rodata.cst8,\"aM\",@progbits,8"
+          variable_section ~sec:".section	.sdata2,\"a\",@progbits" i
+      | Section_string sz ->
+          elf_mergeable_string_section sz ".section	.rodata"
+      | Section_literal sz ->
+          elf_mergeable_literal_section sz ".section	.rodata"
       | Section_jumptable -> ".text"
       | Section_user(s, wr, ex) ->
           sprintf ".section	\"%s\",\"a%s%s\",@progbits"
@@ -218,12 +214,14 @@ module Diab_System : SYSTEM =
 
     let name_of_section = function
       | Section_text -> ".text"
-      | Section_data i -> if i then ".data" else common_section ()
-      | Section_small_data i -> if i then ".sdata" else ".sbss"
+      | Section_data i ->
+          variable_section ~sec:".data" ~bss:".bss" i
+      | Section_small_data i ->
+          variable_section ~sec:".sdata" ~bss:".sbss" ~common:false i
       | Section_const _ -> ".text"
       | Section_small_const _ -> ".sdata2"
-      | Section_string -> ".text"
-      | Section_literal -> ".text"
+      | Section_string _ -> ".text"
+      | Section_literal _ -> ".text"
       | Section_jumptable -> ".text"
       | Section_user(s, wr, ex) ->
           sprintf ".section	\"%s\",,%c"
@@ -553,22 +551,16 @@ module Target (System : SYSTEM):TARGET =
           fprintf oc "	fadds	%a, %a, %a\n" freg r1 freg r2 freg r3
       | Pfcmpu(r1, r2) ->
           fprintf oc "	fcmpu	%a, %a, %a\n" creg 0 freg r1 freg r2
-      | Pfcfi(r1, r2) ->
-          assert false
       | Pfcfl(r1, r2) ->
           assert false
       | Pfcfid(r1, r2) ->
           fprintf oc "	fcfid	%a, %a\n" freg r1 freg r2
-      | Pfcfiu(r1, r2) ->
-          assert false
       | Pfcti(r1, r2) ->
           assert false
       | Pfctid(r1, r2) ->
           assert false
       | Pfctidz(r1, r2) ->
           fprintf oc "	fctidz	%a, %a\n" freg r1 freg r2
-      | Pfctiu(r1, r2) ->
-          assert false
       | Pfctiw(r1, r2) ->
           fprintf oc "	fctiw	%a, %a\n" freg r1 freg r2
       | Pfctiwz(r1, r2) ->
@@ -918,31 +910,9 @@ module Target (System : SYSTEM):TARGET =
 
     (* Print the code for a function *)
 
-    let print_literal64 oc n lbl =
-      let nlo = Int64.to_int32 n
-      and nhi = Int64.to_int32(Int64.shift_right_logical n 32) in
-      fprintf oc "%a:	.long	0x%lx, 0x%lx\n" label lbl nhi nlo
-
-    let print_literal32 oc n lbl =
-      fprintf oc "%a:	.long	0x%lx\n" label lbl n
-
     let print_fun_info = elf_print_fun_info
 
-    let emit_constants oc lit =
-      if exists_constants () then begin
-        section oc lit;
-        fprintf oc "	.balign 8\n";
-        Hashtbl.iter (print_literal64 oc) literal64_labels;
-        Hashtbl.iter (print_literal32 oc) literal32_labels;
-      end;
-      reset_literals ()
-
     let print_optional_fun_info _ = ()
-
-    let get_section_names name =
-      match C2C.atom_sections name with
-      | [t;l;j] -> (t, l, j)
-      |    _    -> (Section_text, Section_literal, Section_jumptable)
 
     let print_var_info = elf_print_var_info
 

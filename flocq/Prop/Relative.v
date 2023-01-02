@@ -18,8 +18,10 @@ COPYING file for more details.
 *)
 
 (** * Relative error of the roundings *)
+
+From Coq Require Import ZArith Reals Psatz.
+
 Require Import Core.
-Require Import Psatz.  (* for lra *)
 
 Section Fprop_relative.
 
@@ -147,7 +149,7 @@ apply (lt_bpow beta).
 apply Rle_lt_trans with (2 := proj2 He).
 exact Hx.
 generalize (Hmin ex).
-omega.
+lia.
 apply Rmult_le_compat_l.
 apply bpow_ge_0.
 apply He.
@@ -218,7 +220,7 @@ apply Rle_trans with (bpow (-p + 1) * bpow (ex - 1))%R.
 rewrite <- bpow_plus.
 apply bpow_le.
 generalize (Hmin ex).
-omega.
+lia.
 apply Rmult_le_compat_l.
 apply bpow_ge_0.
 generalize He.
@@ -230,7 +232,7 @@ now apply round_le.
 apply generic_format_bpow.
 ring_simplify (ex - 1 + 1)%Z.
 generalize (Hmin ex).
-omega.
+lia.
 Qed.
 
 Theorem relative_error_round_F2R_emin :
@@ -283,7 +285,7 @@ apply (lt_bpow beta).
 apply Rle_lt_trans with (2 := proj2 He).
 exact Hx.
 generalize (Hmin ex).
-omega.
+lia.
 apply Rmult_le_compat_l.
 apply bpow_ge_0.
 apply He.
@@ -375,7 +377,7 @@ apply Rle_trans with (bpow (-p + 1) * bpow (ex - 1))%R.
 rewrite <- bpow_plus.
 apply bpow_le.
 generalize (Hmin ex).
-omega.
+lia.
 apply Rmult_le_compat_l.
 apply bpow_ge_0.
 generalize He.
@@ -387,7 +389,7 @@ now apply round_le.
 apply generic_format_bpow.
 ring_simplify (ex - 1 + 1)%Z.
 generalize (Hmin ex).
-omega.
+lia.
 Qed.
 
 Theorem relative_error_N_round_F2R_emin :
@@ -425,7 +427,7 @@ Lemma relative_error_FLX_aux :
 Proof.
 intros k.
 unfold FLX_exp.
-omega.
+lia.
 Qed.
 
 Variable rnd : R -> Z.
@@ -505,7 +507,7 @@ Proof.
 unfold u_ro; apply (Rmult_lt_reg_l 2); [lra|].
 rewrite <-Rmult_assoc, Rinv_r, Rmult_1_l, Rmult_1_r; [|lra].
 apply (Rle_lt_trans _ (bpow 0));
-  [apply bpow_le; omega|simpl; lra].
+  [apply bpow_le; lia|simpl; lra].
 Qed.
 
 Lemma u_rod1pu_ro_pos : (0 <= u_ro / (1 + u_ro))%R.
@@ -659,7 +661,7 @@ Proof.
 intros k Hk.
 unfold FLT_exp.
 generalize (Zmax_spec (k - prec) emin).
-omega.
+lia.
 Qed.
 
 Variable rnd : R -> Z.
@@ -843,7 +845,7 @@ destruct relative_error_N_ex with (FLT_exp emin prec) (emin+prec)%Z prec choice 
   as (eps,(Heps1,Heps2)).
 now apply FLT_exp_valid.
 intros; unfold FLT_exp.
-rewrite Zmax_left; omega.
+lia.
 rewrite Rabs_right;[assumption|apply Rle_ge; now left].
 exists eps; exists 0%R.
 split;[assumption|split].
@@ -869,14 +871,14 @@ rewrite ulp_neq_0.
 apply bpow_le.
 unfold FLT_exp, cexp.
 rewrite Zmax_right.
-omega.
+lia.
 destruct (mag beta x) as (e,He); simpl.
 assert (e-1 < emin+prec)%Z.
 apply (lt_bpow beta).
 apply Rle_lt_trans with (2:=Hx).
 rewrite <- (Rabs_pos_eq x) by now apply Rlt_le.
 now apply He, Rgt_not_eq.
-omega.
+lia.
 split ; ring.
 Qed.
 

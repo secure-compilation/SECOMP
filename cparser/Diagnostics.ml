@@ -6,10 +6,11 @@
 (*                                                                     *)
 (*  Copyright Institut National de Recherche en Informatique et en     *)
 (*  Automatique.  All rights reserved.  This file is distributed       *)
-(*  under the terms of the GNU General Public License as published by  *)
-(*  the Free Software Foundation, either version 2 of the License, or  *)
-(*  (at your option) any later version.  This file is also distributed *)
-(*  under the terms of the INRIA Non-Commercial License Agreement.     *)
+(*  under the terms of the GNU Lesser General Public License as        *)
+(*  published by the Free Software Foundation, either version 2.1 of   *)
+(*  the License, or  (at your option) any later version.               *)
+(*  This file is also distributed under the terms of the               *)
+(*  INRIA Non-Commercial License Agreement.                            *)
 (*                                                                     *)
 (* *********************************************************************)
 
@@ -103,6 +104,7 @@ type warning_type =
   | Tentative_incomplete_static
   | Reduced_alignment
   | Non_linear_cond_expr
+  | Invalid_UTF8
 
 (* List of all warnings with default status.
    "true" means the warning is active by default.
@@ -139,6 +141,7 @@ let all_warnings =
     (Tentative_incomplete_static, false);
     (Reduced_alignment, false);
     (Non_linear_cond_expr, false);
+    (Invalid_UTF8, true);
   ]
 
 (* List of active warnings *)
@@ -181,6 +184,7 @@ let string_of_warning = function
   | Tentative_incomplete_static -> "tentative-incomplete-static"
   | Reduced_alignment -> "reduced-alignment"
   | Non_linear_cond_expr -> "non-linear-cond-expr"
+  | Invalid_UTF8 -> "invalid-utf8"
 
 (* Activate the given warning *)
 let activate_warning w () =
@@ -400,16 +404,16 @@ let raise_on_errors () =
     raise Abort
 
 let crash exn =
-  if Version.buildnr <> "" && Version.tag <> "" then begin
+  if Version.buildnr <> "" && Version.tag <> "" && Version.branch <> "" then begin
     let backtrace = Printexc.get_backtrace () in
-    eprintf "%tThis is CompCert, Release %s, Build:%s, Tag:%s%t\n"
-      bc Version.version Version.buildnr Version.tag rsc;
+    eprintf "%tThis is CompCert, Release %s, Build:%s, Tag:%s, Branch:%s%t\n"
+      bc Version.version Version.buildnr Version.tag Version.branch rsc;
     eprintf "Backtrace (please include this in your support request):\n%s"
       backtrace;
     eprintf "%tUncaught exception: %s.\n\
 \    Please report this problem to our support.\n\
-\    Error occurred in Build: %s, Tag: %s.\n%t"
-      rc (Printexc.to_string exn) Version.buildnr Version.tag rsc;
+\    Error occurred in Build: %s, Tag: %s, Branch %s.\n%t"
+      rc (Printexc.to_string exn) Version.buildnr Version.tag Version.branch rsc;
     exit 2
   end else begin
     let backtrace = Printexc.get_backtrace ()

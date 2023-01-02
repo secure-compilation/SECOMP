@@ -6,10 +6,11 @@
 (*                                                                     *)
 (*  Copyright Institut National de Recherche en Informatique et en     *)
 (*  Automatique.  All rights reserved.  This file is distributed       *)
-(*  under the terms of the GNU General Public License as published by  *)
-(*  the Free Software Foundation, either version 2 of the License, or  *)
-(*  (at your option) any later version.  This file is also distributed *)
-(*  under the terms of the INRIA Non-Commercial License Agreement.     *)
+(*  under the terms of the GNU Lesser General Public License as        *)
+(*  published by the Free Software Foundation, either version 2.1 of   *)
+(*  the License, or  (at your option) any later version.               *)
+(*  This file is also distributed under the terms of the               *)
+(*  INRIA Non-Commercial License Agreement.                            *)
 (*                                                                     *)
 (* *********************************************************************)
 
@@ -162,8 +163,8 @@ let stmt ~expr ?(decl = fun env decl -> assert false) env s =
   | Scontinue -> s
   | Sswitch(e, s1) ->
       {s with sdesc = Sswitch(expr s.sloc env Val e, stm s1)}
-  | Slabeled(lbl, s) ->
-      {s with sdesc = Slabeled(lbl, stm s)}
+  | Slabeled(lbl, s1) ->
+      {s with sdesc = Slabeled(lbl, stm s1)}
   | Sgoto lbl -> s
   | Sreturn None -> s
   | Sreturn (Some e) ->
@@ -192,12 +193,12 @@ let fundef trstmt env f =
 (* Generic transformation of a program *)
 
 let program
-    ?(decl = fun env d -> d)
-    ?(fundef = fun env fd -> fd)
-    ?(composite = fun env su id attr fl -> (attr, fl))
-    ?(typedef = fun env id ty -> ty)
-    ?(enum = fun env id attr members -> (attr, members))
-    ?(pragma = fun env s -> s)
+    ?(decl = fun env loc d -> d)
+    ?(fundef = fun env loc fd -> fd)
+    ?(composite = fun env loc su id attr fl -> (attr, fl))
+    ?(typedef = fun env loc id ty -> ty)
+    ?(enum = fun env loc id attr members -> (attr, members))
+    ?(pragma = fun env loc s -> s)
     (defs, imports) =
 
   let rec transf_globdecls env accu = function
@@ -206,25 +207,25 @@ let program
       let (desc', env') =
         match g.gdesc with
         | Gdecl((sto, id, ty, init, cp) as d) ->
-           (Gdecl(decl env d), Env.add_ident env id sto ty)
+           (Gdecl(decl env g.gloc d), Env.add_ident env id sto ty)
         | Gfundef f ->
-           (Gfundef(fundef env f),
+            (Gfundef(fundef env g.gloc f),
             Env.add_ident env f.fd_name f.fd_storage (fundef_typ f))
         | Gcompositedecl(su, id, attr) ->
             (Gcompositedecl(su, id, attr),
              Env.add_composite env id (composite_info_decl su attr))
         | Gcompositedef(su, id, attr, fl) ->
-            let (attr', fl') = composite env su id attr fl in
+            let (attr', fl') = composite env  g.gloc su id attr fl in
             (Gcompositedef(su, id, attr', fl'),
              Env.add_composite env id (composite_info_def env su attr fl))
         | Gtypedef(id, ty) ->
-            (Gtypedef(id, typedef env id ty), Env.add_typedef env id ty)
+            (Gtypedef(id, typedef env g.gloc id ty), Env.add_typedef env id ty)
         | Genumdef(id, attr, members) ->
-            let (attr', members') = enum env id attr members in
+            let (attr', members') = enum env g.gloc id attr members in
             (Genumdef(id, attr', members'),
              Env.add_enum env id {ei_members =  members; ei_attr = attr})
         | Gpragma s ->
-            (Gpragma(pragma env s), env)
+            (Gpragma(pragma env g.gloc s), env)
       in
         transf_globdecls env' ({g with gdesc = desc'} :: accu) gl
 

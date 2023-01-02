@@ -61,7 +61,7 @@ Definition needs_of_operation (op: operation) (nv: nval): list nval :=
   | Onegfs | Oabsfs => op1 (default nv)
   | Oaddfs | Osubfs | Omulfs | Odivfs => op2 (default nv)
   | Osingleoffloat | Ofloatofsingle => op1 (default nv)
-  | Ointoffloat | Ointuoffloat | Ofloatofint | Ofloatofintu => op1 (default nv)
+  | Ointoffloat => op1 (default nv)
   | Ofloatofwords | Omakelong => op2 (default nv)
   | Olowlong | Ohighlong => op1 (default nv)
   | Ocmp c => needs_of_condition c
@@ -162,8 +162,8 @@ Lemma operation_is_redundant_sound:
   vagree v arg1' nv.
 Proof.
   intros. destruct op; simpl in *; try discriminate; inv H1; FuncInv; subst.
-- apply sign_ext_redundant_sound; auto. omega.
-- apply sign_ext_redundant_sound; auto. omega.
+- apply sign_ext_redundant_sound; auto. lia.
+- apply sign_ext_redundant_sound; auto. lia.
 - apply andimm_redundant_sound; auto.
 - apply orimm_redundant_sound; auto.
 - apply rolm_redundant_sound; auto.

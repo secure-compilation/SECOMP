@@ -6,10 +6,11 @@
 #                                                                     #
 #  Copyright Institut National de Recherche en Informatique et en     #
 #  Automatique.  All rights reserved.  This file is distributed       #
-#  under the terms of the GNU General Public License as published by  #
-#  the Free Software Foundation, either version 2 of the License, or  #
-#  (at your option) any later version.  This file is also distributed #
-#  under the terms of the INRIA Non-Commercial License Agreement.     #
+#  under the terms of the GNU Lesser General Public License as        #
+#  published by the Free Software Foundation, either version 2.1 of   #
+#  the License, or (at your option) any later version.                #
+#  This file is also distributed under the terms of the               #
+#  INRIA Non-Commercial License Agreement.                            #
 #                                                                     #
 #######################################################################
 
@@ -19,7 +20,8 @@ include Makefile.config
 
 #
 # Variables from Makefile.config:
-# -OCAML_OPT_COMP: can we use the native version
+# -OCAML_NATIVE_COMP: native-code compilation is supported
+# -OCAML_OPT_COMP: can we use the natively-compiled compilers
 # -COMPFLAGS: compile options
 # -LINK_OPT: additional linker flags for the native binary
 #
@@ -43,19 +45,26 @@ cparser/pre_parser_messages.ml:
 
 DIRS=extraction \
   lib common $(ARCH) backend cfrontend cparser driver \
-  exportclight debug
+  export debug
 
 INCLUDES=$(patsubst %,-I %, $(DIRS))
 
 # Control of warnings:
 
-WARNINGS=-w +a-4-9-27 -strict-sequence -safe-string -warn-error +a #Deprication returns with ocaml 4.03
+WARNINGS=-w +a-4-9-27-70
 extraction/%.cmx: WARNINGS +=-w -20-27-32..34-39-41-44..45-60-67
 extraction/%.cmo: WARNINGS +=-w -20-27-32..34-39-41-44..45-60-67
 cparser/pre_parser.cmx: WARNINGS += -w -41
 cparser/pre_parser.cmo: WARNINGS += -w -41
 
-COMPFLAGS+=-g $(INCLUDES) -I "$(MENHIR_DIR)" $(WARNINGS)
+# Turn warnings into errors, but not for released tarballs
+ifeq ($(wildcard .git),.git)
+WARN_ERRORS=-warn-error +a
+else
+WARN_ERRORS=
+endif
+
+COMPFLAGS+=-g -strict-sequence -safe-string $(INCLUDES) -I "$(MENHIR_DIR)" $(WARNINGS) $(WARN_ERRORS)
 
 # Using .opt compilers if available
 
@@ -71,6 +80,7 @@ OCAMLDEP=ocamldep$(DOTOPT) -slash $(INCLUDES)
 
 OCAMLLEX=ocamllex -q
 MODORDER=tools/modorder .depend.extr
+COPY=cp
 
 PARSERS=cparser/pre_parser.mly
 LEXERS=cparser/Lexer.mll lib/Tokenize.mll \
@@ -88,19 +98,31 @@ ifeq ($(wildcard .depend.extr),.depend.extr)
 
 CCOMP_OBJS:=$(shell $(MODORDER) driver/Driver.cmx)
 
+ifeq ($(OCAML_NATIVE_COMP),true)
 ccomp: $(CCOMP_OBJS)
 	@echo "Linking $@"
 	@$(OCAMLOPT) -o $@ $(LIBS) $(LINK_OPT) $+
+else
+ccomp: ccomp.byte
+	@echo "Copying to $@"
+	@$(COPY) $+ $@
+endif
 
 ccomp.byte: $(CCOMP_OBJS:.cmx=.cmo)
 	@echo "Linking $@"
 	@$(OCAMLC) -o $@ $(LIBS_BYTE) $+
 
-CLIGHTGEN_OBJS:=$(shell $(MODORDER) exportclight/Clightgen.cmx)
+CLIGHTGEN_OBJS:=$(shell $(MODORDER) export/ExportDriver.cmx)
 
+ifeq ($(OCAML_NATIVE_COMP),true)
 clightgen: $(CLIGHTGEN_OBJS)
 	@echo "Linking $@"
 	@$(OCAMLOPT) -o $@ $(LIBS) $(LINK_OPT) $+
+else
+clightgen: clightgen.byte
+	@echo "Copying to $@"
+	@$(COPY) $+ $@
+endif
 
 clightgen.byte: $(CLIGHTGEN_OBJS:.cmx=.cmo)
 	@echo "Linking $@"

@@ -7,18 +7,18 @@
 (*                                                                     *)
 (*  Copyright Institut National de Recherche en Informatique et en     *)
 (*  Automatique.  All rights reserved.  This file is distributed       *)
-(*  under the terms of the GNU General Public License as published by  *)
-(*  the Free Software Foundation, either version 2 of the License, or  *)
-(*  (at your option) any later version.  This file is also distributed *)
-(*  under the terms of the INRIA Non-Commercial License Agreement.     *)
+(*  under the terms of the GNU Lesser General Public License as        *)
+(*  published by the Free Software Foundation, either version 2.1 of   *)
+(*  the License, or  (at your option) any later version.               *)
+(*  This file is also distributed under the terms of the               *)
+(*  INRIA Non-Commercial License Agreement.                            *)
 (*                                                                     *)
 (* *********************************************************************)
 
 (** Architecture-dependent parameters for RISC-V *)
 
+From Flocq Require Import Binary Bits.
 Require Import ZArith List.
-(*From Flocq*)
-Require Import Binary Bits.
 
 Parameter ptr64 : bool.
 
@@ -63,11 +63,14 @@ Definition fma_invalid_mul_is_nan := false.
 
 Definition float_of_single_preserves_sNaN := false.
 
+Definition float_conversion_default_nan := true.
+
 Global Opaque ptr64 big_endian splitlong
               default_nan_64 choose_nan_64
               default_nan_32 choose_nan_32
               fma_order fma_invalid_mul_is_nan
-              float_of_single_preserves_sNaN.
+              float_of_single_preserves_sNaN
+              float_conversion_default_nan.
 
 (** Whether to generate position-independent code or not *)
 

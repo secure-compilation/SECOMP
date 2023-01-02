@@ -108,11 +108,16 @@ module Target : TARGET =
     let name_of_section = function
       | Section_text         -> ".text"
       | Section_data i | Section_small_data i ->
-          if i then ".data" else common_section ()
+          variable_section ~sec:".data" ~bss:".bss" i
       | Section_const i | Section_small_const i ->
-          if i || (not !Clflags.option_fcommon) then ".section	.rodata" else "COMM"
-      | Section_string       -> ".section	.rodata"
-      | Section_literal      -> ".section	.rodata"
+          variable_section
+            ~sec:".section      .rodata"
+            ~reloc:".section    .data.rel.ro,\"aw\",@progbits"
+            i
+      | Section_string sz ->
+          elf_mergeable_string_section sz ".section	.rodata"
+      | Section_literal sz ->
+          elf_mergeable_literal_section sz ".section	.rodata"
       | Section_jumptable    -> ".section	.rodata"
       | Section_debug_info _ -> ".section	.debug_info,\"\",%progbits"
       | Section_debug_loc    -> ".section	.debug_loc,\"\",%progbits"
@@ -127,29 +132,6 @@ module Target : TARGET =
 
     let section oc sec =
       fprintf oc "	%s\n" (name_of_section sec)
-
-(* Associate labels to floating-point constants and to symbols. *)
-
-    let emit_constants oc lit =
-      if exists_constants () then begin
-         section oc lit;
-         if Hashtbl.length literal64_labels > 0 then
-           begin
-             fprintf oc "	.align 3\n";
-             Hashtbl.iter
-               (fun bf lbl -> fprintf oc "%a:	.quad	0x%Lx\n" label lbl bf)
-               literal64_labels
-           end;
-         if Hashtbl.length literal32_labels > 0 then
-           begin
-             fprintf oc "	.align	2\n";
-             Hashtbl.iter
-               (fun bf lbl ->
-                  fprintf oc "%a:	.long	0x%lx\n" label lbl bf)
-               literal32_labels
-           end;
-         reset_literals ()
-      end
 
 (* Generate code to load the address of id + ofs in register r *)
 
@@ -322,7 +304,7 @@ module Target : TARGET =
       | Pj_l(l) ->
          fprintf oc "	j	%a\n" print_label l
       | Pj_s(s, sg) ->
-         fprintf oc "	j	%a\n" symbol s
+         fprintf oc "	jump	%a, x31\n" symbol s
       | Pj_r(r, sg, _) ->
          fprintf oc "	jr	%a\n" ireg r
       | Pjal_s(s, sg, _) ->
@@ -394,8 +376,12 @@ module Target : TARGET =
          fprintf oc "	fmv.d	%a, %a\n"     freg fd freg fs
       | Pfmvxs (rd,fs) ->
          fprintf oc "	fmv.x.s	%a, %a\n"     ireg rd freg fs
+      | Pfmvsx (fd,rs) ->
+         fprintf oc "	fmv.s.x	%a, %a\n"     freg fd ireg rs
       | Pfmvxd (rd,fs) ->
          fprintf oc "	fmv.x.d	%a, %a\n"     ireg rd freg fs
+      | Pfmvdx (fd,rs) ->
+         fprintf oc "	fmv.d.x	%a, %a\n"     freg fd ireg rs
 
       (* 32-bit (single-precision) floating point *)
       | Pfls (fd, ra, ofs, priv) ->
@@ -590,17 +576,10 @@ module Target : TARGET =
               assert false
          end
 
-    let get_section_names name =
-      let (text, lit) =
-        match C2C.atom_sections name with
-        | t :: l :: _ -> (t, l)
-        | _    -> (Section_text, Section_literal) in
-      text,lit,Section_jumptable
-
     let print_align oc alignment =
       fprintf oc "	.balign %d\n" alignment
 
-    let print_jumptable oc jmptbl =
+    let print_jumptable oc _jmptbl =
       let print_tbl oc (lbl, tbl) =
         fprintf oc "%a:\n" label lbl;
         List.iter
@@ -609,7 +588,7 @@ module Target : TARGET =
           tbl in
       if !jumptables <> [] then
         begin
-          section oc jmptbl;
+          section oc Section_jumptable;
           fprintf oc "	.balign 4\n";
           List.iter (print_tbl oc) !jumptables;
           jumptables := []

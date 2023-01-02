@@ -6,23 +6,29 @@
 (*                                                                     *)
 (*  Copyright Institut National de Recherche en Informatique et en     *)
 (*  Automatique.  All rights reserved.  This file is distributed       *)
-(*  under the terms of the GNU General Public License as published by  *)
-(*  the Free Software Foundation, either version 2 of the License, or  *)
-(*  (at your option) any later version.  This file is also distributed *)
-(*  under the terms of the INRIA Non-Commercial License Agreement.     *)
+(*  under the terms of the GNU Lesser General Public License as        *)
+(*  published by the Free Software Foundation, either version 2.1 of   *)
+(*  the License, or  (at your option) any later version.               *)
+(*  This file is also distributed under the terms of the               *)
+(*  INRIA Non-Commercial License Agreement.                            *)
 (*                                                                     *)
 (* *********************************************************************)
 
 (* Handling of linker sections *)
 
+type initialized =
+  | Uninit       (* uninitialized data area *)
+  | Init         (* initialized with fixed, non-relocatable data *)
+  | Init_reloc   (* initialized with relocatable data (symbol addresses) *)
+
 type section_name =
   | Section_text
-  | Section_data of bool          (* true = init data, false = uninit data *)
-  | Section_small_data of bool
-  | Section_const of bool
-  | Section_small_const of bool
-  | Section_string
-  | Section_literal
+  | Section_data of initialized
+  | Section_small_data of initialized
+  | Section_const of initialized
+  | Section_small_const of initialized
+  | Section_string of int   (* character size; zero if unknown *)
+  | Section_literal of int  (* literal size; zero if unknown *)
   | Section_jumptable
   | Section_user of string * bool (*writable*) * bool (*executable*)
   | Section_debug_abbrev
@@ -33,6 +39,11 @@ type section_name =
   | Section_debug_str
   | Section_ais_annotation
 
+let with_size sz = function
+  | Section_string prev -> assert (prev = 0); Section_string sz
+  | Section_literal prev -> assert (prev = 0); Section_literal sz
+  | sec -> sec
+
 type access_mode =
   | Access_default
   | Access_near
@@ -40,6 +51,7 @@ type access_mode =
 
 type section_info = {
   sec_name_init: section_name;
+  sec_name_init_reloc: section_name;
   sec_name_uninit: section_name;
   sec_writable: bool;
   sec_executable: bool;
@@ -47,8 +59,9 @@ type section_info = {
 }
 
 let default_section_info = {
-  sec_name_init = Section_data true;
-  sec_name_uninit = Section_data false;
+  sec_name_init = Section_data Init;
+  sec_name_init_reloc = Section_data Init_reloc;
+  sec_name_uninit = Section_data Uninit;
   sec_writable = true;
   sec_executable = false;
   sec_access = Access_default
@@ -59,41 +72,49 @@ let default_section_info = {
 let builtin_sections = [
   "CODE",
      {sec_name_init = Section_text;
+      sec_name_init_reloc = Section_text;
       sec_name_uninit = Section_text;
       sec_writable = false; sec_executable = true;
       sec_access = Access_default};
   "DATA",
-     {sec_name_init = Section_data true;
-      sec_name_uninit = Section_data false;
+     {sec_name_init = Section_data Init;
+      sec_name_init_reloc = Section_data Init_reloc;
+      sec_name_uninit = Section_data Uninit;
       sec_writable = true; sec_executable = false;
       sec_access = Access_default};
   "SDATA",
-     {sec_name_init = Section_small_data true;
-      sec_name_uninit = Section_small_data false;
+     {sec_name_init = Section_small_data Init;
+      sec_name_init_reloc = Section_small_data Init_reloc;
+      sec_name_uninit = Section_small_data Uninit;
       sec_writable = true; sec_executable = false;
       sec_access = Access_near};
   "CONST",
-     {sec_name_init = Section_const true;
-      sec_name_uninit = Section_const false;
+     {sec_name_init = Section_const Init;
+      sec_name_init_reloc = Section_const Init_reloc;
+      sec_name_uninit = Section_const Uninit;
       sec_writable = false; sec_executable = false;
       sec_access = Access_default};
   "SCONST",
-     {sec_name_init = Section_small_const true;
-      sec_name_uninit = Section_small_const false;
+     {sec_name_init = Section_small_const Init;
+      sec_name_init_reloc = Section_small_const Init_reloc;
+      sec_name_uninit = Section_small_const Uninit;
       sec_writable = false; sec_executable = false;
       sec_access = Access_near};
   "STRING",
-     {sec_name_init = Section_string;
-      sec_name_uninit = Section_string;
+     {sec_name_init = Section_string 0;
+      sec_name_init_reloc = Section_string 0;
+      sec_name_uninit = Section_string 0;
       sec_writable = false; sec_executable = false;
       sec_access = Access_default};
   "LITERAL",
-     {sec_name_init = Section_literal;
-      sec_name_uninit = Section_literal;
+     {sec_name_init = Section_literal 0;
+      sec_name_init_reloc = Section_literal 0;
+      sec_name_uninit = Section_literal 0;
       sec_writable = false; sec_executable = false;
       sec_access = Access_default};
   "JUMPTABLE",
      {sec_name_init = Section_jumptable;
+      sec_name_init_reloc = Section_jumptable;
       sec_name_uninit = Section_jumptable;
       sec_writable = false; sec_executable = false;
       sec_access = Access_default}
@@ -128,15 +149,19 @@ let define_section name ?iname ?uname ?writable ?executable ?access () =
     match executable with Some b -> b | None -> si.sec_executable
   and access =
     match access with Some b -> b | None -> si.sec_access in
-  let iname =
+  let i =
     match iname with Some s -> Section_user(s, writable, executable)
                    | None -> si.sec_name_init in
-  let uname =
+  let ir =
+    match iname with Some s -> Section_user(s, writable, executable)
+                   | None -> si.sec_name_init_reloc in
+  let u =
     match uname with Some s -> Section_user(s, writable, executable)
                    | None -> si.sec_name_uninit in
   let new_si =
-    { sec_name_init = iname;
-      sec_name_uninit = uname;
+    { sec_name_init = i;
+      sec_name_init_reloc = ir;
+      sec_name_uninit = u;
       sec_writable = writable;
       sec_executable = executable;
       sec_access = access } in
@@ -156,13 +181,26 @@ let use_section_for id name =
 
 let gcc_section name readonly exec =
   let sn = Section_user(name, not readonly, exec) in
-  { sec_name_init = sn; sec_name_uninit = sn;
+  { sec_name_init = sn; sec_name_init_reloc = sn; sec_name_uninit = sn;
     sec_writable = not readonly; sec_executable = exec;
     sec_access = Access_default }
 
+(* Check and extract whether a section was given as attribute *)
+
+let get_attr_section loc attr =
+  match Cutil.find_custom_attributes ["section"; "__section__"] attr with
+  | [] -> None
+  | [[C.AString name]] -> Some name
+  | [[_]] ->
+    Diagnostics.error loc "'section' attribute requires a string";
+    None
+  | _ ->
+    Diagnostics.error loc "ambiguous 'section' attribute";
+    None
+
 (* Determine section for a variable definition *)
 
-let for_variable env id ty init =
+let for_variable env loc id ty init =
   let attr = Cutil.attributes_of_type env ty in
   let readonly = List.mem C.AConst attr && not(List.mem C.AVolatile attr) in
   let si =
@@ -170,11 +208,11 @@ let for_variable env id ty init =
       (* 1- Section explicitly associated with #use_section *)
       Hashtbl.find use_section_table id
     with Not_found ->
-      match Cutil.find_custom_attributes ["section"; "__section__"] attr with
-      | [[C.AString name]] ->
+      match get_attr_section loc attr with
+      | Some name ->
         (* 2- Section given as an attribute, gcc-style *)
         gcc_section name readonly false
-      | _ ->
+      | None ->
         (* 3- Default section appropriate for size and const-ness *)
         let size =
           match Cutil.sizeof env ty with Some sz -> sz | None -> max_int in
@@ -186,21 +224,26 @@ let for_variable env id ty init =
           Hashtbl.find current_section_table name
         with Not_found ->
           assert false in
-  ((if init then si.sec_name_init else si.sec_name_uninit), si.sec_access)
+  let secname =
+    match init with
+    | Uninit -> si.sec_name_uninit
+    | Init -> si.sec_name_init
+    | Init_reloc -> si.sec_name_init_reloc in
+  (secname, si.sec_access)
 
 (* Determine sections for a function definition *)
 
-let for_function env id attr =
+let for_function env loc id attr =
   let si_code =
     try
       (* 1- Section explicitly associated with #use_section *)
       Hashtbl.find use_section_table id
     with Not_found ->
-      match Cutil.find_custom_attributes ["section"; "__section__"] attr with
-      | [[C.AString name]] ->
+      match get_attr_section loc attr with
+      | Some name ->
           (* 2- Section given as an attribute, gcc-style *)
           gcc_section name true true
-      | _ ->
+      | None ->
           (* 3- Default section *)
           try
             Hashtbl.find current_section_table "CODE"
@@ -220,10 +263,10 @@ let for_function env id attr =
 
 (* Determine section for a string literal *)
 
-let for_stringlit() =
+let for_stringlit sz =
   let si =
     try
       Hashtbl.find current_section_table "STRING"
     with Not_found ->
       assert false in
-  si.sec_name_init
+  with_size sz (si.sec_name_init)

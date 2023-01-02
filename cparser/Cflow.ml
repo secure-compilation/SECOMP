@@ -6,10 +6,11 @@
 (*                                                                     *)
 (*  Copyright Institut National de Recherche en Informatique et en     *)
 (*  Automatique.  All rights reserved.  This file is distributed       *)
-(*  under the terms of the GNU General Public License as published by  *)
-(*  the Free Software Foundation, either version 2 of the License, or  *)
-(*  (at your option) any later version.  This file is also distributed *)
-(*  under the terms of the INRIA Non-Commercial License Agreement.     *)
+(*  under the terms of the GNU Lesser General Public License as        *)
+(*  published by the Free Software Foundation, either version 2.1 of   *)
+(*  the License, or  (at your option) any later version.               *)
+(*  This file is also distributed under the terms of the               *)
+(*  INRIA Non-Commercial License Agreement.                            *)
 (*                                                                     *)
 (* *********************************************************************)
 
@@ -23,8 +24,12 @@ open Cutil
 module StringSet = Set.Make(String)
 
 (* Functions declared noreturn by the standard *)
+(* We also add our own "__builtin_unreachable" function because, currently,
+   it is difficult to attach attributes to a built-in function. *)
+
 let std_noreturn_functions =
-   ["longjmp";"exit";"_exit";"abort";"_Exit";"quick_exit";"thrd_exit"]
+   ["longjmp";"exit";"_exit";"abort";"_Exit";"quick_exit";"thrd_exit";
+    "__builtin_unreachable"]
 
 (* Statements are abstracted as "flow transformers":
    functions from possible inputs to possible outcomes.
@@ -199,6 +204,18 @@ let rec contains_default s =
   | Sdecl dcl -> false
   | Sasm _ -> false
 
+(* Extract the attributes of a function type, looking for "noreturn". *)
+
+let rec function_attributes env = function
+  | TFun(_, _, _, a) -> a
+  | TPtr(t, _) -> function_attributes env t
+  | TNamed _ as t ->
+      begin match unroll env t with
+      | t' -> function_attributes env t'
+      | exception Env.Error _ -> []
+            (* Any error due to local types should be ignored *)
+      end
+  | _ -> []
 
 (* This is the main analysis function.  Given a C statement [s] it returns
    a flow that overapproximates the behavior of [s]. *)
@@ -208,10 +225,12 @@ let rec outcomes env s : flow =
   | Sskip ->
       normal
   | Sdo {edesc = ECall(fn, args)} ->
-    let returns = find_custom_attributes ["noreturn"; "__noreturn__"]
-        (attributes_of_type env fn.etyp) = [] in
-    let std_noreturn = List.exists (is_call_to_fun fn) std_noreturn_functions in
-    if returns && not std_noreturn then normal else noflow
+      let attr_noreturn =
+        find_custom_attributes ["noreturn"; "__noreturn__"]
+          (function_attributes env fn.etyp)
+      and std_noreturn =
+        List.exists (is_call_to_fun fn) std_noreturn_functions in
+      if attr_noreturn <> [] || std_noreturn then noflow else normal
   | Sdo e ->
       normal
   | Sseq(s1, s2) ->

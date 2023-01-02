@@ -113,7 +113,7 @@ Definition needs_of_operation (op: operation) (nv: nval): list nval :=
   | Ororlimm _ => op1 (default nv)
   | Oleal addr => needs_of_addressing_64 addr nv
   | Onegf | Oabsf => op1 (default nv)
-  | Oaddf | Osubf | Omulf | Odivf => op2 (default nv)
+  | Oaddf | Osubf | Omulf | Odivf | Omaxf | Ominf => op2 (default nv)
   | Onegfs | Oabsfs => op1 (default nv)
   | Oaddfs | Osubfs | Omulfs | Odivfs => op2 (default nv)
   | Osingleoffloat | Ofloatofsingle => op1 (default nv)
@@ -206,9 +206,9 @@ Proof.
   unfold needs_of_operation; intros; destruct op; try (eapply default_needs_of_operation_sound; eauto; fail);
   simpl in *; FuncInv; InvAgree; TrivialExists.
 - apply sign_ext_sound; auto. compute; auto.
-- apply zero_ext_sound; auto. omega.
+- apply zero_ext_sound; auto. lia.
 - apply sign_ext_sound; auto. compute; auto.
-- apply zero_ext_sound; auto. omega.
+- apply zero_ext_sound; auto. lia.
 - apply neg_sound; auto.
 - apply mul_sound; auto.
 - apply mul_sound; auto with na.
@@ -246,10 +246,10 @@ Lemma operation_is_redundant_sound:
   vagree v arg1' nv.
 Proof.
   intros. destruct op; simpl in *; try discriminate; inv H1; FuncInv; subst.
-- apply sign_ext_redundant_sound; auto. omega.
-- apply zero_ext_redundant_sound; auto. omega.
-- apply sign_ext_redundant_sound; auto. omega.
-- apply zero_ext_redundant_sound; auto. omega.
+- apply sign_ext_redundant_sound; auto. lia.
+- apply zero_ext_redundant_sound; auto. lia.
+- apply sign_ext_redundant_sound; auto. lia.
+- apply zero_ext_redundant_sound; auto. lia.
 - apply andimm_redundant_sound; auto.
 - apply orimm_redundant_sound; auto.
 Qed.

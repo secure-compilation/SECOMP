@@ -6,10 +6,11 @@
 (*                                                                     *)
 (*  Copyright Institut National de Recherche en Informatique et en     *)
 (*  Automatique.  All rights reserved.  This file is distributed       *)
-(*  under the terms of the GNU General Public License as published by  *)
-(*  the Free Software Foundation, either version 2 of the License, or  *)
-(*  (at your option) any later version.  This file is also distributed *)
-(*  under the terms of the INRIA Non-Commercial License Agreement.     *)
+(*  under the terms of the GNU Lesser General Public License as        *)
+(*  published by the Free Software Foundation, either version 2.1 of   *)
+(*  the License, or  (at your option) any later version.               *)
+(*  This file is also distributed under the terms of the               *)
+(*  INRIA Non-Commercial License Agreement.                            *)
 (*                                                                     *)
 (* *********************************************************************)
 
@@ -141,8 +142,6 @@ val composite_info_decl:
   struct_or_union -> attributes -> Env.composite_info
 val composite_info_def:
   Env.t -> struct_or_union -> attributes -> field list -> Env.composite_info
-val struct_layout:
-  Env.t -> attributes -> field list -> (string * int) list
 val offsetof:
   Env.t -> typ -> field -> int
 (* Compute the offset of a struct member *)

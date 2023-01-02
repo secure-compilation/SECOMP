@@ -164,7 +164,7 @@ Proof.
   subst r0; contradiction.
   apply Regmap.gso; auto.
 Qed.
-Hint Resolve match_env_update_temp: rtlg.
+Global Hint Resolve match_env_update_temp: rtlg.
 
 (** Matching between environments is preserved by simultaneous
   assignment to a Cminor local variable (in the Cminor environments)
@@ -204,7 +204,7 @@ Proof.
   eapply match_env_update_temp; eauto.
   eapply match_env_update_var; eauto.
 Qed.
-Hint Resolve match_env_update_dest: rtlg.
+Global Hint Resolve match_env_update_dest: rtlg.
 
 (** A variant of [match_env_update_var] corresponding to the assignment
   of the result of a builtin. *)
@@ -405,9 +405,8 @@ Lemma sig_transl_function:
 Proof.
   intros until tf. unfold transl_fundef, transf_partial_fundef.
   case f; intro.
-  unfold transl_function.
-  destruct (reserve_labels (fn_body f0) (PTree.empty node, init_state)) as [ngoto s0].
-  case (transl_fun f0 ngoto s0); simpl; intros.
+  unfold transl_function. 
+  case (transl_fun f0 (init_state)); simpl; intros.
   discriminate.
   destruct p. simpl in H. inversion H. reflexivity.
   intro. inversion H. reflexivity.
@@ -1124,7 +1123,7 @@ Lemma invert_eval_builtin_arg:
   /\ Events.eval_builtin_arg ge (fun v => v) sp m (fst (convert_builtin_arg a vl)) v
   /\ (forall vl', convert_builtin_arg a (vl ++ vl') = (fst (convert_builtin_arg a vl), vl')).
 Proof.
-  induction 1; simpl; try (econstructor; intuition eauto with evalexpr barg; fail).
+  induction 1; simpl. 2-8: try (econstructor; intuition eauto with evalexpr barg; fail).
 - econstructor; split; eauto with evalexpr. split. constructor. auto. 
 - econstructor; split; eauto with evalexpr. split. constructor. auto. 
 - econstructor; split; eauto with evalexpr. split. repeat constructor. auto. 
@@ -1259,7 +1258,7 @@ Proof.
 Qed.
 
 Ltac Lt_state :=
-  apply lt_state_intro; simpl; try omega.
+  apply lt_state_intro; simpl; try lia.
 
 Lemma lt_state_wf:
   well_founded lt_state.

@@ -6,10 +6,11 @@
 (*                                                                     *)
 (*  Copyright Institut National de Recherche en Informatique et en     *)
 (*  Automatique.  All rights reserved.  This file is distributed       *)
-(*  under the terms of the GNU General Public License as published by  *)
-(*  the Free Software Foundation, either version 2 of the License, or  *)
-(*  (at your option) any later version.  This file is also distributed *)
-(*  under the terms of the INRIA Non-Commercial License Agreement.     *)
+(*  under the terms of the GNU Lesser General Public License as        *)
+(*  published by the Free Software Foundation, either version 2.1 of   *)
+(*  the License, or  (at your option) any later version.               *)
+(*  This file is also distributed under the terms of the               *)
+(*  INRIA Non-Commercial License Agreement.                            *)
 (*                                                                     *)
 (* *********************************************************************)
 
@@ -24,7 +25,7 @@ type filebuf = {
    the first character of line number [b.lineno]. *)
 
 let openfile f =
-  { chan = open_in f;
+  { chan = open_in_bin f;
     lineno = 1 }
 
 let close b =
@@ -100,11 +101,13 @@ let copy oc pref b first last =
     try
       while b.lineno <= last do
         let c = input_char b.chan in
-        output_char oc c;
-        if c = '\n' then begin
+        match c with
+        | '\n' ->
+          output_char oc c;
           b.lineno <- b.lineno + 1;
           if b.lineno <= last then output_string oc pref
-        end
+        | '\r' | '\011' | '\012' -> output_char oc ' '
+        | _ -> output_char oc c
       done
     with End_of_file ->
       output_char oc '\n'

@@ -6,10 +6,11 @@
 (*                                                                     *)
 (*  Copyright Institut National de Recherche en Informatique et en     *)
 (*  Automatique.  All rights reserved.  This file is distributed       *)
-(*  under the terms of the GNU General Public License as published by  *)
-(*  the Free Software Foundation, either version 2 of the License, or  *)
-(*  (at your option) any later version.  This file is also distributed *)
-(*  under the terms of the INRIA Non-Commercial License Agreement.     *)
+(*  under the terms of the GNU Lesser General Public License as        *)
+(*  published by the Free Software Foundation, either version 2.1 of   *)
+(*  the License, or  (at your option) any later version.               *)
+(*  This file is also distributed under the terms of the               *)
+(*  INRIA Non-Commercial License Agreement.                            *)
 (*                                                                     *)
 (* *********************************************************************)
 
@@ -71,7 +72,7 @@ Inductive linkorder_fundef {F: Type} {CF: has_comp F} : fundef F -> fundef F -> 
   | linkorder_fundef_refl: forall fd, linkorder_fundef fd fd
   | linkorder_fundef_ext_int: forall f id sg, linkorder_fundef (External (EF_external id (comp_of f) sg)) (Internal f).
 
-Program Instance Linker_fundef (F: Type) {CP: has_comp F} : Linker (fundef F) := {
+Global Program Instance Linker_fundef (F: Type) {CP: has_comp F}: Linker (fundef F) := {
   link := link_fundef;
   linkorder := linkorder_fundef
 }.
@@ -131,7 +132,7 @@ Inductive linkorder_varinit: list init_data -> list init_data -> Prop :=
       il <> nil -> init_data_list_size il = sz ->
       linkorder_varinit (Init_space sz :: nil) il.
 
-Program Instance Linker_varinit : Linker (list init_data) := {
+Global Program Instance Linker_varinit : Linker (list init_data) := {
   link := link_varinit;
   linkorder := linkorder_varinit
 }.
@@ -141,7 +142,7 @@ Defined.
 Next Obligation.
   inv H; inv H0; constructor; auto.
   congruence.
-  simpl. generalize (init_data_list_size_pos z). xomega.
+  simpl. generalize (init_data_list_size_pos z). extlia.
 Defined.
 Next Obligation.
   revert H; unfold link_varinit.
@@ -182,7 +183,7 @@ Inductive linkorder_vardef {V: Type} {LV: Linker V}: globvar V -> globvar V -> P
       linkorder i1 i2 ->
       linkorder_vardef (mkglobvar info1 c i1 ro vo) (mkglobvar info2 c i2 ro vo).
 
-Program Instance Linker_vardef (V: Type) {LV: Linker V}: Linker (globvar V) := {
+Global Program Instance Linker_vardef (V: Type) {LV: Linker V}: Linker (globvar V) := {
   link := link_vardef;
   linkorder := linkorder_vardef
 }.
@@ -209,7 +210,7 @@ Global Opaque Linker_vardef.
 
 (** A trivial linker for the trivial var info [unit]. *)
 
-Program Instance Linker_unit: Linker unit := {
+Global Program Instance Linker_unit: Linker unit := {
   link := fun x y => Some tt;
   linkorder := fun x y => True
 }.
@@ -235,7 +236,7 @@ Inductive linkorder_def {F V: Type} {LF: Linker F} {LV: Linker V}: globdef F V -
       linkorder v1 v2 ->
       linkorder_def (Gvar v1) (Gvar v2).
 
-Program Instance Linker_def (F V: Type) {LF: Linker F} {LV: Linker V}: Linker (globdef F V) := {
+Global Program Instance Linker_def (F V: Type) {LF: Linker F} {LV: Linker V}: Linker (globdef F V) := {
   link := link_def;
   linkorder := linkorder_def
 }.
@@ -363,7 +364,7 @@ Qed.
 
 End LINKER_PROG.
 
-Program Instance Linker_prog (F V: Type) {LF: Linker F} {LV: Linker V} : Linker (program F V) := {
+Global Program Instance Linker_prog (F V: Type) {LF: Linker F} {LV: Linker V} : Linker (program F V) := {
   link := link_prog;
   linkorder := fun p1 p2 =>
      p1.(prog_main) = p2.(prog_main)
@@ -751,7 +752,7 @@ Local Transparent Linker_fundef.
 - destruct (external_function_eq ef1 ef2); inv H. exists (External ef2); split; auto. simpl. rewrite dec_eq_true; auto.
 Qed.
 
-Instance TransfPartialContextualLink
+Global Instance TransfPartialContextualLink
            {A B C V: Type} {LV: Linker V}
            {CA: has_comp A} {CB: has_comp B}
            (tr_fun: C -> A -> res B)
@@ -768,7 +769,7 @@ Proof.
 - intros; subst. exists v; auto.
 Qed.
 
-Instance TransfPartialLink
+Global Instance TransfPartialLink
            {A B V: Type} {LV: Linker V}
            {CA: has_comp A} {CB: has_comp B}
            (tr_fun: A -> res B)
@@ -784,7 +785,7 @@ Proof.
 - intros; subst. exists v; auto.
 Qed.
 
-Instance TransfTotallContextualLink
+Global Instance TransfTotallContextualLink
            {A B C V: Type}
            {CA: has_comp A} {CB: has_comp B} {LV: Linker V}
            (tr_fun: C -> A -> B)
@@ -813,7 +814,7 @@ Proof.
 - intros; subst. exists v; auto.
 Qed.
 
-Instance TransfTotalLink
+Global Instance TransfTotalLink
            {A B V: Type}
            {CA: has_comp A} {CB: has_comp B} {LV: Linker V}
            (tr_fun: A -> B)
@@ -938,6 +939,8 @@ Inductive Passes: Language -> Language -> Type :=
   | pass_nil: forall l, Passes l l
   | pass_cons: forall l1 l2 l3, Pass l1 l2 -> Passes l2 l3 -> Passes l1 l3.
 
+Declare Scope linking_scope.
+
 Infix ":::" := pass_cons (at level 60, right associativity) : linking_scope.
 
 (** The pass corresponding to the composition of a list of passes. *)
@@ -945,7 +948,7 @@ Infix ":::" := pass_cons (at level 60, right associativity) : linking_scope.
 Fixpoint compose_passes (l l': Language) (passes: Passes l l') : Pass l l' :=
   match passes in Passes l l' return Pass l l' with
   | pass_nil l => pass_identity l
-  | pass_cons l1 l2 l3 pass1 passes => pass_compose pass1 (compose_passes passes)
+  | pass_cons pass1 passes => pass_compose pass1 (compose_passes passes)
   end.
 
 (** Some more lemmas about [nlist_forall2]. *)
@@ -991,3 +994,4 @@ Proof.
   exploit IHpasses; eauto. intros (tgt_prog & X & Y).
   exists tgt_prog; split; auto. exists interm_prog; auto.
 Qed.
+

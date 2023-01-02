@@ -13,6 +13,7 @@
 .*.aux
 *.cmti
 *.cmt
+.coq-native
 # Emacs saves
 *~
 # Executables and configuration
@@ -26,10 +27,12 @@
 /Makefile.config
 /.merlin
 /_CoqProject
+/compile.pl
 # Generated files
 /.depend
 /.depend.extr
 /compcert.ini
+/compcert.config
 /x86/ConstpropOp.v
 /x86/SelectOp.v
 /x86/SelectLong.v
@@ -72,7 +75,8 @@
 # MacOS metadata
 .DS_Store
 # Test generated data
-/test/clightgen/*.v
+/test/export/clight/*.v
+/test/export/csyntax/*.v
 # Coq caches
 .lia.cache
 .nia.cache

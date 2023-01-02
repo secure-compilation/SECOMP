@@ -6,10 +6,11 @@
 (*                                                                     *)
 (*  Copyright Institut National de Recherche en Informatique et en     *)
 (*  Automatique.  All rights reserved.  This file is distributed       *)
-(*  under the terms of the GNU General Public License as published by  *)
-(*  the Free Software Foundation, either version 2 of the License, or  *)
-(*  (at your option) any later version.  This file is also distributed *)
-(*  under the terms of the INRIA Non-Commercial License Agreement.     *)
+(*  under the terms of the GNU Lesser General Public License as        *)
+(*  published by the Free Software Foundation, either version 2.1 of   *)
+(*  the License, or  (at your option) any later version.               *)
+(*  This file is also distributed under the terms of the               *)
+(*  INRIA Non-Commercial License Agreement.                            *)
 (*                                                                     *)
 (* *********************************************************************)
 
@@ -21,15 +22,25 @@ open Driveraux
 open Frontend
 open Diagnostics
 
-let tool_name = "Clight generator"
+let tool_name = "CompCert AST generator"
 
-(* clightgen-specific options *)
+(* Specific options *)
 
+type export_mode = Mode_Csyntax | Mode_Clight
+let option_mode = ref Mode_Clight
 let option_normalize = ref false
 
-(* From CompCert C AST to Clight *)
+(* Export the CompCert Csyntax AST *)
 
-let compile_c_ast sourcename csyntax ofile =
+let export_csyntax sourcename csyntax ofile =
+  let oc = open_out ofile in
+  ExportCsyntax.print_program (Format.formatter_of_out_channel oc)
+                              csyntax sourcename;
+  close_out oc
+
+(* Transform the CompCert Csyntax AST into Clight and export it *)
+
+let export_clight sourcename csyntax ofile =
   let loc = file_loc sourcename in
   let clight =
     match SimplExpr.transl_program csyntax with
@@ -52,31 +63,34 @@ let compile_c_ast sourcename csyntax ofile =
                              clight sourcename !option_normalize;
   close_out oc
 
-(* From C source to Clight *)
+(* From C source to exported AST *)
 
 let compile_c_file sourcename ifile ofile =
   let set_dest dst opt ext =
-    dst := if !opt then Some (output_filename sourcename ".c" ext)
+    dst := if !opt then Some (output_filename sourcename ~suffix:ext)
       else None in
   set_dest Cprint.destination option_dparse ".parsed.c";
   set_dest PrintCsyntax.destination option_dcmedium ".compcert.c";
   set_dest PrintClight.destination option_dclight ".light.c";
-  compile_c_ast sourcename (parse_c_file sourcename ifile) ofile
+  let cs = parse_c_file sourcename ifile in
+  match !option_mode with
+  | Mode_Csyntax -> export_csyntax sourcename cs ofile
+  | Mode_Clight  -> export_clight sourcename cs ofile
 
-let output_filename sourcename suff =
-  let prefixname = Filename.chop_suffix sourcename suff in
+let output_filename sourcename  =
+  let prefixname = Filename.remove_extension sourcename in
   output_filename_default (prefixname ^ ".v")
 
 (* Processing of a .c file *)
 
 let process_c_file sourcename =
   ensure_inputfile_exists sourcename;
-  let ofile = output_filename sourcename ".c" in
+  let ofile = output_filename sourcename in
   if !option_E then begin
     preprocess sourcename "-"
   end else begin
     let preproname = if !option_dprepro then
-        Driveraux.output_filename sourcename ".c" ".i"
+        Driveraux.output_filename sourcename ~suffix:".i"
       else
         Driveraux.tmp_file ".i" in
     preprocess sourcename preproname;
@@ -87,17 +101,21 @@ let process_c_file sourcename =
 
 let process_i_file sourcename =
   ensure_inputfile_exists sourcename;
-  let ofile = output_filename sourcename ".i" in
+  let ofile = output_filename sourcename in
   compile_c_file sourcename sourcename ofile
 
 let usage_string =
-  version_string tool_name^
-{|Usage: clightgen [options] <source files>
+  version_string tool_name ^
+{|Usage: clightgen <mode> [options] <source files>
 Recognized source files:
   .c             C source file
   .i or .p       C source file that should not be preprocessed
 Processing options:
+  -clight        Produce Clight AST  [default]
+  -csyntax       Produce Csyntax AST
   -normalize     Normalize the generated Clight code w.r.t. loads in expressions
+  -canonical-idents  Use canonical numbers to represent identifiers  (default)
+  -short-idents  Use small, non-canonical numbers to represent identifiers
   -E             Preprocess only, send result to standard output
   -o <file>      Generate output in <file>
 |} ^
@@ -140,8 +158,13 @@ let cmdline_actions =
   (* Getting version info *)
  @ version_options tool_name @
 (* Processing options *)
- [ Exact "-E", Set option_E;
+ [
+  Exact "-csyntax", Unit (fun () -> option_mode := Mode_Csyntax);
+  Exact "-clight", Unit (fun () -> option_mode := Mode_Clight);
+  Exact "-E", Set option_E;
   Exact "-normalize", Set option_normalize;
+  Exact "-canonical-idents", Set Camlcoq.use_canonical_atoms;
+  Exact "-short-idents", Unset Camlcoq.use_canonical_atoms;
   Exact "-o", String(fun s -> option_o := Some s);
   Prefix "-o", Self (fun s -> let s = String.sub s 2 ((String.length s) - 2) in
                               option_o := Some s);]
@@ -175,12 +198,13 @@ let cmdline_actions =
   ]
 
 let _ =
-  try
+try
   Gc.set { (Gc.get()) with
               Gc.minor_heap_size = 524288; (* 512k *)
               Gc.major_heap_increment = 4194304 (* 4M *)
          };
   Printexc.record_backtrace true;
+  Camlcoq.use_canonical_atoms := true;
   Frontend.init ();
   parse_cmdline cmdline_actions;
   if !option_o <> None && !num_input_files >= 2 then
@@ -188,7 +212,7 @@ let _ =
   if !num_input_files = 0 then
     fatal_error no_loc "no input file";
   perform_actions ()
-      with
+with
   | Sys_error msg
   | CmdError msg -> error no_loc "%s" msg; exit 2
   | Abort -> exit 2

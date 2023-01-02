@@ -84,7 +84,7 @@ Lemma transf_function_no_overflow:
   transf_function f = OK tf -> list_length_z tf.(fn_code) <= Ptrofs.max_unsigned.
 Proof.
   intros. monadInv H. destruct (zlt Ptrofs.max_unsigned (list_length_z x.(fn_code))); inv EQ0.
-  omega.
+  lia.
 Qed.
 
 Lemma exec_straight_exec:
@@ -220,10 +220,13 @@ Remark loadind_label:
   forall base ofs ty dst k c,
   loadind base ofs ty dst k = OK c -> tail_nolabel k c.
 Proof.
-  unfold loadind, accessind; intros. set (ofs' := Ptrofs.to_int ofs) in *.
+  unfold loadind, accessind ; intros.
+  set (ofs' := Ptrofs.to_int ofs) in *.
+  set (ofs_mod := Int.eq (Int.mods ofs' (Int.repr 4)) Int.zero) in *.
   destruct ty; try discriminate;
   destruct (preg_of dst); try discriminate;
   destruct (Int.eq (high_s ofs') Int.zero);
+  destruct ofs_mod;
   TailNoLabel; eapply tail_nolabel_trans; TailNoLabel.
 Qed.
 
@@ -231,10 +234,13 @@ Remark storeind_label:
   forall base ofs ty src k c,
   storeind src base ofs ty k = OK c -> tail_nolabel k c.
 Proof.
-  unfold storeind, accessind; intros. set (ofs' := Ptrofs.to_int ofs) in *.
+  unfold storeind, accessind;
+  intros. set (ofs' := Ptrofs.to_int ofs) in *.
+  set (ofs_mod := Int.eq (Int.mods ofs' (Int.repr 4)) Int.zero) in *.
   destruct ty; try discriminate;
   destruct (preg_of src); try discriminate;
   destruct (Int.eq (high_s ofs') Int.zero);
+  destruct ofs_mod;
   TailNoLabel; eapply tail_nolabel_trans; TailNoLabel.
 Qed.
 
@@ -303,27 +309,32 @@ Opaque Int.eq.
 - unfold xorimm64, opimm64. destruct Int64.eq. TailNoLabel.
   destruct ireg_eq; [apply tail_nolabel_cons; unfold nolabel;auto|]; eapply tail_nolabel_trans; TailNoLabel.
 - unfold rolm64, andimm64_base, opimm64.
-  destruct (is_rldl_mask i0 || is_rldr_mask i0 || is_rldl_mask (Int64.shru' i0 i)). TailNoLabel.
-  apply tail_nolabel_cons; unfold nolabel; auto.
+  destruct orb.
+  TailNoLabel.
   destruct Int64.eq. TailNoLabel.
-  destruct ireg_eq; [apply tail_nolabel_cons; unfold nolabel;auto|]; eapply tail_nolabel_trans; TailNoLabel.
+  destruct ireg_eq; TailNoLabel; eapply tail_nolabel_trans; TailNoLabel.
 - eapply transl_cond_op_label; eauto.
 - destruct (preg_of r); monadInv H. eapply transl_select_op_label; eauto. eapply transl_fselect_op_label; eauto.
 Qed.
 
 Remark transl_memory_access_label:
   forall (mk1: constant -> ireg -> instruction) (mk2: ireg -> ireg -> instruction)
-         addr args temp k c,
-  transl_memory_access mk1 mk2 addr args temp k = OK c ->
+         unaligned addr args temp k c,
+  transl_memory_access mk1 mk2 unaligned addr args temp k = OK c ->
   (forall c r, nolabel (mk1 c r)) ->
   (forall r1 r2, nolabel (mk2 r1 r2)) ->
   tail_nolabel k c.
 Proof.
-  unfold transl_memory_access; intros; destruct addr; TailNoLabel.
-  destruct (Int.eq (high_s i) Int.zero); TailNoLabel.
+  unfold transl_memory_access, aindexed, aindexed2, aglobal, abased, ainstack; intros; destruct addr; TailNoLabel.
+  destruct (unaligned || Int.eq (Int.mods i (Int.repr 4)) Int.zero). destruct (Int.eq (high_s i) Int.zero); TailNoLabel.
+  eapply tail_nolabel_trans. apply loadimm_label. TailNoLabel.
+  destruct (symbol_is_small_data i i0). destruct (unaligned || symbol_ofs_word_aligned i i0); TailNoLabel. destruct (symbol_is_rel_data i i0); TailNoLabel.
+  destruct (unaligned || symbol_ofs_word_aligned i i0); TailNoLabel.
   destruct (symbol_is_small_data i i0). TailNoLabel. destruct (symbol_is_rel_data i i0); TailNoLabel.
-  destruct (symbol_is_small_data i i0). TailNoLabel. destruct (symbol_is_rel_data i i0); TailNoLabel.
+  destruct (unaligned || symbol_ofs_word_aligned i i0); TailNoLabel.
+  destruct (unaligned || Int.eq (Int.mods (Ptrofs.to_int i) (Int.repr 4)) Int.zero).
   destruct (Int.eq (high_s (Ptrofs.to_int i)) Int.zero); TailNoLabel.
+  eapply tail_nolabel_trans. eapply addimm_label. TailNoLabel.
 Qed.
 
 Remark transl_epilogue_label:
@@ -416,8 +427,8 @@ Proof.
   split. unfold goto_label. rewrite P. rewrite H1. auto.
   split. rewrite Pregmap.gss. econstructor; eauto.
   rewrite Ptrofs.unsigned_repr. replace (pos' - 0) with pos' in Q.
-  auto. omega.
-  generalize (transf_function_no_overflow _ _ H0). omega.
+  auto. lia.
+  generalize (transf_function_no_overflow _ _ H0). lia.
   intros. apply Pregmap.gso; auto.
 Qed.
 
@@ -799,16 +810,18 @@ Opaque loadind.
   econstructor; eauto.
   instantiate (2 := tf); instantiate (1 := x).
   unfold nextinstr. rewrite Pregmap.gss.
-  rewrite set_res_other. rewrite undef_regs_other_2.
+  rewrite set_res_other. simpl. rewrite undef_regs_other_2.
+  rewrite Pregmap.gso by auto with asmgen.
   rewrite <- H1. simpl. econstructor; eauto.
   eapply code_tail_next_int; eauto.
   rewrite preg_notin_charact. intros. auto with asmgen.
   auto with asmgen.
   apply agree_nextinstr. eapply agree_set_res; auto.
-  eapply agree_undef_regs; eauto. intros; apply undef_regs_other_2; auto.
+  eapply agree_undef_regs; eauto.
+  intros. simpl. rewrite undef_regs_other_2; auto. apply Pregmap.gso. auto with asmgen.
   congruence.
   intros. Simpl. rewrite set_res_other by auto.
-  rewrite undef_regs_other_2; auto with asmgen.
+  simpl. rewrite undef_regs_other_2; auto with asmgen.
 
 - (* Mgoto *)
   assert (f0 = f) by congruence. subst f0.
@@ -944,14 +957,14 @@ Local Transparent destroyed_by_jumptable.
   simpl const_low. rewrite ATLR. erewrite storev_offset_ptr by eexact P. auto. congruence.
   auto. auto. auto.
   left; exists (State rs5 m3'); split.
-  eapply exec_straight_steps_1; eauto. omega. constructor.
+  eapply exec_straight_steps_1; eauto. lia. constructor.
   econstructor; eauto.
   change (rs5 PC) with (Val.offset_ptr (Val.offset_ptr (Val.offset_ptr (Val.offset_ptr (rs0 PC) Ptrofs.one) Ptrofs.one) Ptrofs.one) Ptrofs.one).
   rewrite ATPC. simpl. econstructor; eauto.
-  eapply code_tail_next_int. omega.
-  eapply code_tail_next_int. omega.
-  eapply code_tail_next_int. omega.
-  eapply code_tail_next_int. omega.
+  eapply code_tail_next_int. lia.
+  eapply code_tail_next_int. lia.
+  eapply code_tail_next_int. lia.
+  eapply code_tail_next_int. lia.
   constructor.
   unfold rs5, rs4, rs3, rs2.
   apply agree_nextinstr. apply agree_nextinstr.
@@ -979,7 +992,7 @@ Local Transparent destroyed_by_jumptable.
 
 - (* return *)
   inv STACKS. simpl in *.
-  right. split. omega. split. auto.
+  right. split. lia. split. auto.
   rewrite <- ATPC in H5.
   econstructor; eauto.
   congruence.

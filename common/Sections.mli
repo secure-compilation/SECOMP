@@ -6,24 +6,30 @@
 (*                                                                     *)
 (*  Copyright Institut National de Recherche en Informatique et en     *)
 (*  Automatique.  All rights reserved.  This file is distributed       *)
-(*  under the terms of the GNU General Public License as published by  *)
-(*  the Free Software Foundation, either version 2 of the License, or  *)
-(*  (at your option) any later version.  This file is also distributed *)
-(*  under the terms of the INRIA Non-Commercial License Agreement.     *)
+(*  under the terms of the GNU Lesser General Public License as        *)
+(*  published by the Free Software Foundation, either version 2.1 of   *)
+(*  the License, or  (at your option) any later version.               *)
+(*  This file is also distributed under the terms of the               *)
+(*  INRIA Non-Commercial License Agreement.                            *)
 (*                                                                     *)
 (* *********************************************************************)
 
 
 (* Handling of linker sections *)
 
+type initialized =
+  | Uninit       (* uninitialized data area *)
+  | Init         (* initialized with fixed, non-relocatable data *)
+  | Init_reloc   (* initialized with relocatable data (symbol addresses) *)
+
 type section_name =
   | Section_text
-  | Section_data of bool          (* true = init data, false = uninit data *)
-  | Section_small_data of bool
-  | Section_const of bool
-  | Section_small_const of bool
-  | Section_string
-  | Section_literal
+  | Section_data of initialized
+  | Section_small_data of initialized
+  | Section_const of initialized
+  | Section_small_const of initialized
+  | Section_string of int   (* character size; zero if unknown *)
+  | Section_literal of int  (* literal size; zero if unknown *)
   | Section_jumptable
   | Section_user of string * bool (*writable*) * bool (*executable*)
   | Section_debug_abbrev
@@ -46,7 +52,8 @@ val define_section:
          -> ?writable:bool -> ?executable:bool -> ?access:access_mode -> unit -> unit
 val use_section_for: AST.ident -> string -> bool
 
-val for_variable: Env.t -> AST.ident -> C.typ -> bool ->
+val for_variable: Env.t -> C.location -> AST.ident -> C.typ -> initialized ->
                                           section_name * access_mode
-val for_function: Env.t -> AST.ident -> C.attributes -> section_name list
-val for_stringlit: unit -> section_name
+val for_function: Env.t -> C.location -> AST.ident -> C.attributes -> section_name list
+val for_stringlit: int -> section_name
+val with_size: int -> section_name -> section_name

@@ -6,7 +6,11 @@
 (*                                                                     *)
 (*  Copyright Institut National de Recherche en Informatique et en     *)
 (*  Automatique.  All rights reserved.  This file is distributed       *)
-(*  under the terms of the INRIA Non-Commercial License Agreement.     *)
+(*  under the terms of the GNU Lesser General Public License as        *)
+(*  published by the Free Software Foundation, either version 2.1 of   *)
+(*  the License, or  (at your option) any later version.               *)
+(*  This file is also distributed under the terms of the               *)
+(*  INRIA Non-Commercial License Agreement.                            *)
 (*                                                                     *)
 (* *********************************************************************)
 
@@ -14,29 +18,33 @@
 
 open C
 
-(* va_list is a struct of size 32 and alignment 8, passed by reference *)
+(* AAPCS64:
+     va_list is a struct of size 32 and alignment 8, passed by reference
+   Apple:
+     va_list is a pointer (size 8, alignment 8), passed by reference *)
 
-let va_list_type = TArray(TInt(IULong, []), Some 4L, [])
-let size_va_list = 32
-let va_list_scalar = false
+let (va_list_type, size_va_list, va_list_scalar) =
+  match Archi.abi with
+  | Archi.AAPCS64 -> (TArray(TInt(IULong, []), Some 4L, []), 32, false)
+  | Archi.Apple   -> (TPtr(TVoid [], []), 8, true)
+
+(* Some macOS headers use the GCC built-in types "__int128_t" and
+   "__uint128_t" unconditionally.  Provide a dummy definition. *)
+
+let int128_type = TArray(TInt(IULong, []), Some 2L, [])
 
 let builtins = {
-  builtin_typedefs = [
-    "__builtin_va_list", va_list_type
-  ];
+  builtin_typedefs =
+  [ "__builtin_va_list", va_list_type ] @
+  (if Configuration.system = "macos" then
+  [ "__int128_t", int128_type;
+    "__uint128_t", int128_type ]
+  else []);
   builtin_functions = [
     (* Synchronization *)
     "__builtin_fence",
       (TVoid [], [], false);
     (* Integer arithmetic *)
-    "__builtin_bswap64",
-      (TInt(IULongLong, []), [TInt(IULongLong, [])], false);
-    "__builtin_clz",
-      (TInt(IInt, []), [TInt(IUInt, [])], false);
-    "__builtin_clzl",
-      (TInt(IInt, []), [TInt(IULong, [])], false);
-    "__builtin_clzll",
-      (TInt(IInt, []), [TInt(IULongLong, [])], false);
     "__builtin_cls",
       (TInt(IInt, []), [TInt(IInt, [])], false);
     "__builtin_clsl",

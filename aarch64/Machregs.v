@@ -54,9 +54,9 @@ Proof.
   intros. specialize (H r). InvBooleans. auto.
 Qed.
 
-Instance Decidable_eq_mreg : forall (x y: mreg), Decidable (eq x y) := Decidable_eq mreg_eq.
+Global Instance Decidable_eq_mreg : forall (x y: mreg), Decidable (eq x y) := Decidable_eq mreg_eq.
 
-Instance Finite_mreg : Finite mreg := {
+Global Instance Finite_mreg : Finite mreg := {
   Finite_elements := all_mregs;
   Finite_elements_spec := all_mregs_complete
 }.
@@ -156,18 +156,18 @@ Fixpoint destroyed_by_clobber (cl: list string): list mreg :=
 
 Definition destroyed_by_builtin (ef: external_function): list mreg :=
   match ef with
-  | EF_memcpy sz al => R15 :: R17 :: R29 :: nil
+  | EF_memcpy sz al => R14 :: R15 :: R17 :: nil
   | EF_inline_asm txt sg clob => destroyed_by_clobber clob
   | _ => nil
   end.
 
 Definition destroyed_by_setstack (ty: typ): list mreg := nil.
 
-Definition destroyed_at_function_entry: list mreg := R29 :: nil.
+Definition destroyed_at_function_entry: list mreg := R15 :: nil.
 
 Definition destroyed_at_indirect_call: list mreg := nil.
 
-Definition temp_for_parent_frame: mreg := R29.
+Definition temp_for_parent_frame: mreg := R15.
 
 Definition mregs_for_operation (op: operation): list (option mreg) * option mreg :=
   (nil, None).

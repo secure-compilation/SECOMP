@@ -6,10 +6,11 @@
 (*                                                                     *)
 (*  Copyright Institut National de Recherche en Informatique et en     *)
 (*  Automatique.  All rights reserved.  This file is distributed       *)
-(*  under the terms of the GNU General Public License as published by  *)
-(*  the Free Software Foundation, either version 2 of the License, or  *)
-(*  (at your option) any later version.  This file is also distributed *)
-(*  under the terms of the INRIA Non-Commercial License Agreement.     *)
+(*  under the terms of the GNU Lesser General Public License as        *)
+(*  published by the Free Software Foundation, either version 2.1 of   *)
+(*  the License, or  (at your option) any later version.               *)
+(*  This file is also distributed under the terms of the               *)
+(*  INRIA Non-Commercial License Agreement.                            *)
 (*                                                                     *)
 (* *********************************************************************)
 
@@ -19,8 +20,12 @@ open C
 
 let (va_list_type, va_list_scalar, size_va_list) =
   if Archi.ptr64 then
-    (* Actually a struct passed by reference; equivalent to 3 64-bit words *)
-    (TArray(TInt(IULong, []), Some 3L, []), false, 3*8)
+    if Archi.win64 then
+      (* Just a pointer *)
+      (TPtr(TVoid [], []), true, 8)
+    else
+      (* Actually a struct passed by reference; equivalent to 3 64-bit words *)
+      (TArray(TInt(IULong, []), Some 3L, []), false, 3*8)
   else
     (* Just a pointer *)
     (TPtr(TVoid [], []), true, 4)
@@ -30,19 +35,6 @@ let builtins = {
     "__builtin_va_list", va_list_type;
   ];
   builtin_functions = [
-    (* Integer arithmetic *)
-    "__builtin_clz",
-      (TInt(IInt, []), [TInt(IUInt, [])], false);
-    "__builtin_clzl",
-      (TInt(IInt, []), [TInt(IULong, [])], false);
-    "__builtin_clzll",
-      (TInt(IInt, []), [TInt(IULongLong, [])], false);
-    "__builtin_ctz",
-      (TInt(IInt, []), [TInt(IUInt, [])], false);
-    "__builtin_ctzl",
-      (TInt(IInt, []), [TInt(IULong, [])], false);
-    "__builtin_ctzll",
-      (TInt(IInt, []), [TInt(IULongLong, [])], false);
     (* Float arithmetic *)
     "__builtin_fmax",
       (TFloat(FDouble, []), [TFloat(FDouble, []); TFloat(FDouble, [])], false);

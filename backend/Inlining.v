@@ -71,12 +71,12 @@ Inductive sincr (s1 s2: state) : Prop :=
 
 Remark sincr_refl: forall s, sincr s s.
 Proof.
-  intros; constructor; xomega.
+  intros; constructor; extlia.
 Qed.
 
 Lemma sincr_trans: forall s1 s2 s3, sincr s1 s2 -> sincr s2 s3 -> sincr s1 s3.
 Proof.
-  intros. inv H; inv H0. constructor; xomega.
+  intros. inv H; inv H0. constructor; extlia.
 Qed.
 
 (** Dependently-typed state monad, ensuring that the final state is
@@ -111,7 +111,7 @@ Program Definition set_instr (pc: node) (i: instruction): mon unit :=
       (mkstate s.(st_nextreg) s.(st_nextnode) (PTree.set pc i s.(st_code)) s.(st_stksize))
       _.
 Next Obligation.
-  intros; constructor; simpl; xomega.
+  intros; constructor; simpl; extlia.
 Qed.
 
 Program Definition add_instr (i: instruction): mon node :=
@@ -121,7 +121,7 @@ Program Definition add_instr (i: instruction): mon node :=
       (mkstate s.(st_nextreg) (Pos.succ pc) (PTree.set pc i s.(st_code)) s.(st_stksize))
       _.
 Next Obligation.
-  intros; constructor; simpl; xomega.
+  intros; constructor; simpl; extlia.
 Qed.
 
 Program Definition reserve_nodes (numnodes: positive): mon positive :=
@@ -130,7 +130,7 @@ Program Definition reserve_nodes (numnodes: positive): mon positive :=
       (mkstate s.(st_nextreg) (Pos.add s.(st_nextnode) numnodes) s.(st_code) s.(st_stksize))
       _.
 Next Obligation.
-  intros; constructor; simpl; xomega.
+  intros; constructor; simpl; extlia.
 Qed.
 
 Program Definition reserve_regs (numregs: positive): mon positive :=
@@ -139,7 +139,7 @@ Program Definition reserve_regs (numregs: positive): mon positive :=
       (mkstate (Pos.add s.(st_nextreg) numregs) s.(st_nextnode) s.(st_code) s.(st_stksize))
       _.
 Next Obligation.
-  intros; constructor; simpl; xomega.
+  intros; constructor; simpl; extlia.
 Qed.
 
 Program Definition request_stack (sz: Z): mon unit :=
@@ -148,7 +148,7 @@ Program Definition request_stack (sz: Z): mon unit :=
       (mkstate s.(st_nextreg) s.(st_nextnode) s.(st_code) (Z.max s.(st_stksize) sz))
       _.
 Next Obligation.
-  intros; constructor; simpl; xomega.
+  intros; constructor; simpl; extlia.
 Qed.
 
 Program Definition ptree_mfold {A: Type} (f: positive -> A -> mon unit) (t: PTree.t A): mon unit :=
@@ -293,6 +293,9 @@ Inductive inline_decision cp (ros: reg + ident) : Type :=
   | Cannot_inline
   | Can_inline (id: ident) (f: function) (P: ros = inr reg id) (Q: fenv!id = Some f) (R: cp = (comp_of f)).
 
+Arguments Cannot_inline {ros}.
+Arguments Can_inline {ros}.
+
 Program Definition can_inline (cp: compartment) (ros: reg + ident): inline_decision cp ros :=
   match ros with
   | inl r => Cannot_inline _ _
@@ -397,7 +400,7 @@ Definition expand_instr (ctx: context) (cp: compartment) (pc: node) (i: instruct
               set_instr (spc ctx pc)
                         (Icall sg (sros ctx ros) (sregs ctx args) rreg rpc)
           end
-      | Can_inline id f P Q _ =>
+      | Can_inline id f P Q =>
           do n <- inline_tail_function ctx id f Q args;
           set_instr (spc ctx pc) (Inop n)
       end
