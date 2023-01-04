@@ -612,6 +612,8 @@ with match_stacks_inside (F: meminj) (m m': mem):
       match_stacks_inside F m m' stk stk' f' ctx sp' rs'
   | match_stacks_inside_inlined: forall res f sp pc rs stk stk' f' fenv ctx sp' rs' ctx' ty cp
         (MS: match_stacks_inside F m m' stk stk' f' ctx' sp' rs')
+        (SAMECOMP: comp_of f = comp_of f')
+        (COMP: cp = comp_of f)
         (COMPAT: fenv_compat prog fenv)
         (FB: tr_funbody fenv f'.(fn_stacksize) ctx' f f'.(fn_code))
         (AG: agree_regs F ctx' rs rs')
@@ -1231,15 +1233,14 @@ Proof.
   rewrite R in EV. eapply call_trace_same_cp; eauto.
   econstructor; eauto.
   eapply match_stacks_inside_inlined; eauto.
-(*   (* { clear -FUNPTR H0 SAMECOMP0. *) *)
-(*   (*   unfold Genv.find_comp, find_function in *. *) *)
-(*   (*   rewrite FUNPTR in H0; rewrite H0. now rewrite SAMECOMP0. } *) *)
-(*   (* admit. *) *)
-(*   (* red; intros; apply PRIV. destruct H17. lia. *) *)
-  admit.
+  { clear -FUNPTR H0 SAMECOMP0.
+    unfold Genv.find_comp, find_function in *.
+    rewrite FUNPTR in H0; rewrite H0. now rewrite SAMECOMP0. }
+  red; intros; apply PRIV. inv H14. destruct H17. lia.
   congruence.
   apply agree_val_regs_gen; auto.
   red; intros. apply PRIV. inv H14. destruct H17. extlia.
+
 - (* tailcall *)
   exploit match_stacks_inside_globalenvs; eauto. intros [bound G].
   exploit find_function_agree; eauto. intros (cu & fd' & A & B & C).
@@ -1314,12 +1315,10 @@ Proof.
   eapply match_stacks_inside_invariant; eauto.
     intros. eapply Mem.perm_free_3; eauto.
   easy.
-  admit.
-  (* { reflexivity. } *)
-  (* { rewrite <- find_comp_translated. *)
-  (*   clear -FUNPTR H0 COMP SAMECOMP. *)
-  (*   unfold Genv.find_comp, find_function in *. *)
-  (*   rewrite FUNPTR in H0; rewrite H0; congruence. } *)
+  { rewrite <- find_comp_translated.
+    clear -FUNPTR H0 COMP SAMECOMP.
+    unfold Genv.find_comp, find_function in *.
+    rewrite FUNPTR in H0; rewrite H0; congruence. }
   { unfold uptodate_caller. rewrite COMP, ALLOWED. easy. }
   eapply agree_val_regs; eauto.
   eapply Mem.free_left_inject; eauto.
@@ -1551,15 +1550,12 @@ Proof.
   eapply plus_one. eapply exec_return.
   intros G. exfalso. eapply Genv.type_of_call_same_cp; eauto.
   assert (t = E0).
-  (* { clear -EV. inv EV; auto. *)
-  (*   exfalso. eapply Genv.type_of_call_same_cp; eauto. } *)
-  admit.
+  { clear -EV. inv EV; auto.
+    exfalso. eapply Genv.type_of_call_same_cp; eauto. }
   subst; constructor; eauto using Genv.type_of_call_same_cp.
   eapply match_regular_states.
   eapply match_stacks_inside_set_reg; eauto.
-  (* eauto. eauto. auto. *)
-  admit.
-  eauto. eauto.
+  auto. eauto. auto.
   apply agree_set_reg; auto.
   auto. auto. auto. auto.
   red; intros. destruct (zlt ofs (dstk ctx)). apply PAD; lia. apply PRIV; lia.
@@ -1570,12 +1566,11 @@ Proof.
   unfold inline_return in AT.
   assert (PRIV': range_private F m m' sp' (dstk ctx' + mstk ctx') f'.(fn_stacksize)).
     red; intros. destruct (zlt ofs (dstk ctx)). apply PAD. lia. apply PRIV. lia.
-  (* assert (t = E0). { rewrite SAMECOMP in EV. pose proof return_trace_intra as G. *)
-  (*                    assert  (Genv.type_of_call ge (comp_of f') (comp_of f') <> Genv.CrossCompartmentCall) by *)
-  (*                      (unfold Genv.type_of_call; now rewrite Pos.eqb_refl). *)
-  (*                    specialize (G _ _ _ (comp_of f') (comp_of f') vres ty H). *)
-  (*                    now inv EV; inv G. } *)
-  assert (t = E0) by admit.
+  assert (t = E0). { rewrite SAMECOMP in EV. pose proof return_trace_intra as G.
+                     assert  (Genv.type_of_call ge (comp_of f') (comp_of f') <> Genv.CrossCompartmentCall) by
+                       (unfold Genv.type_of_call; now rewrite Pos.eqb_refl).
+                     specialize (G _ _ _ (comp_of f') (comp_of f') vres ty H).
+                     now inv EV; inv G. }
   subst t.
   destruct or.
 + (* with a result *)
@@ -1583,16 +1578,13 @@ Proof.
   eapply plus_one.
   eapply exec_Iop; eauto. simpl. reflexivity.
   econstructor; eauto. eapply match_stacks_inside_set_reg; eauto.
-  admit.
   apply agree_set_reg; auto.
 + (* without a result *)
   left; econstructor; split.
   eapply plus_one. eapply exec_Inop; eauto.
   econstructor; eauto.
-  admit.
   subst vres. apply agree_set_reg_undef'; auto.
-(* Qed. *)
-Admitted.
+Qed.
 
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 -> exists st2, initial_state tprog st2 /\ match_states st1 st2.

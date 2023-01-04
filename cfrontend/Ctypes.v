@@ -1933,41 +1933,34 @@ Theorem link_match_program_gen:
   link p1 p2 = Some p -> match_program p1 tp1 -> match_program p2 tp2 ->
   exists tp, link tp1 tp2 = Some tp /\ match_program p tp.
 Proof.
-  intros. destruct H0, H1.
+  intros until p; intros L [M1 T1] [M2 T2].
+  destruct (link_linkorder _ _ _ L) as [LO1 LO2].
 Local Transparent Linker_program.
-  simpl in H; unfold link_program in H.
+  simpl in L; unfold link_program in L.
   destruct (link (program_of_program p1) (program_of_program p2)) as [pp|] eqn:LP; try discriminate.
   assert (A: exists tpp,
                link (program_of_program tp1) (program_of_program tp2) = Some tpp
              /\ Linking.match_program_gen match_fundef eq p pp tpp).
-  { eapply Linking.link_match_program.
-  - intros. exploit link_match_fundef; eauto.
+  { eapply Linking.link_match_program; eauto.
   - intros.
     Local Transparent Linker_types.
-    simpl in *. destruct (type_eq v1 v2); inv H4. exists v; rewrite dec_eq_true; auto.
-  - eauto.
-  - eauto.
-  - eauto.
-  (* - apply (link_linkorder _ _ _ LP). *)
-  (* - apply (link_linkorder _ _ _ LP). } *)
-  - admit.
-  - admit. }
+    simpl in *. destruct (type_eq v1 v2); inv H. exists v; rewrite dec_eq_true; auto.
+  }
   destruct A as (tpp & TLP & MP).
   simpl; unfold link_program. rewrite TLP.
   destruct (lift_option (link (prog_types p1) (prog_types p2))) as [[typs EQ]|EQ]; try discriminate.
   destruct (link_build_composite_env (prog_types p1) (prog_types p2) typs
            (prog_comp_env p1) (prog_comp_env p2) (prog_comp_env_eq p1)
            (prog_comp_env_eq p2) EQ) as (env & P & Q).
-  rewrite <- H2, <- H3 in EQ.
+  rewrite <- T1, <- T2 in EQ.
   destruct (lift_option (link (prog_types tp1) (prog_types tp2))) as [[ttyps EQ']|EQ']; try congruence.
   assert (ttyps = typs) by congruence. subst ttyps.
   destruct (link_build_composite_env (prog_types tp1) (prog_types tp2) typs
          (prog_comp_env tp1) (prog_comp_env tp2) (prog_comp_env_eq tp1)
          (prog_comp_env_eq tp2) EQ') as (tenv & R & S).
   assert (tenv = env) by congruence. subst tenv.
-  econstructor; split; eauto. inv H. split; auto.
-(* Qed. *)
-Admitted.
+  econstructor; split; eauto. inv L. split; auto.
+Qed.
 
 End LINK_MATCH_PROGRAM_GEN.
 

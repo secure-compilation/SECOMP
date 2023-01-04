@@ -667,19 +667,30 @@ Lemma store_init_data_loadbytes:
   Mem.loadbytes m' b p (init_data_size i) (Some cp) = Some (boid i).
 Proof.
   intros; destruct i; simpl in H; try apply (Mem.loadbytes_store_same _ _ _ _ _ _ H).
-- admit.
-- admit.
-- admit.
-- admit.
-- admit.
-- admit.
+- change (init_data_size (Init_int8 i)) with (size_chunk Mint8unsigned).
+  rewrite (Mem.loadbytes_store_same _ _ _ _ _ _ _ H).
+  reflexivity.
+- change (init_data_size (Init_int16 i)) with (size_chunk Mint16unsigned).
+  rewrite (Mem.loadbytes_store_same _ _ _ _ _ _ _ H).
+  reflexivity.
+- change (init_data_size (Init_int32 i)) with (size_chunk Mint32).
+  rewrite (Mem.loadbytes_store_same _ _ _ _ _ _ _ H).
+  reflexivity.
+- change (init_data_size (Init_int64 i)) with (size_chunk Mint64).
+  rewrite (Mem.loadbytes_store_same _ _ _ _ _ _ _ H).
+  reflexivity.
+- change (init_data_size (Init_float32 f)) with (size_chunk Mfloat32).
+  rewrite (Mem.loadbytes_store_same _ _ _ _ _ _ _ H).
+  reflexivity.
+- change (init_data_size (Init_float64 f)) with (size_chunk Mfloat64).
+  rewrite (Mem.loadbytes_store_same _ _ _ _ _ _ _ H).
+  reflexivity.
 - contradiction.
 - rewrite Genv.init_data_size_addrof. simpl.
   destruct (Genv.find_symbol ge i) as [b'|]; try discriminate.
   rewrite (Mem.loadbytes_store_same _ _ _ _ _ _ _ H).
   unfold encode_val, Mptr; destruct Archi.ptr64; reflexivity.
-(* Qed. *)
-Admitted.
+Qed.
 
 (** ** Validity and size of initialization data *)
 
