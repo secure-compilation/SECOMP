@@ -331,18 +331,18 @@ Proof.
   destruct l; simpl; intuition.
 Qed.
 
-Lemma loc_arguments_rec_charact_stronger:
+Lemma loc_arguments_rec_charact:
   forall va tyl ri rf ofs p,
   ofs >= 0 ->
-  In p (loc_arguments_rec va tyl ri rf ofs) -> forall_rpair loc_argument_acceptable_stronger p.
+  In p (loc_arguments_rec va tyl ri rf ofs) -> forall_rpair loc_argument_acceptable p.
 Proof.
   set (OK := fun (l: list (rpair loc)) =>
-             forall p, In p l -> forall_rpair loc_argument_acceptable_stronger p).
+             forall p, In p l -> forall_rpair loc_argument_acceptable p).
   set (OKF := fun (f: Z -> Z -> Z -> list (rpair loc)) =>
               forall ri rf ofs, ofs >= 0 -> OK (f ri rf ofs)).
-  assert (CSI: forall r, In r int_param_regs -> is_callee_save r = false /\ r <> R30).
+  assert (CSI: forall r, In r int_param_regs -> is_callee_save r = false).
   { decide_goal. }
-  assert (CSF: forall r, In r float_param_regs -> is_callee_save r = false /\ r <> R30).
+  assert (CSF: forall r, In r float_param_regs -> is_callee_save r = false).
   { decide_goal. }
   assert (CSFX: forall r, In r float_extra_param_regs -> is_callee_save r = false).
   { decide_goal. }
@@ -414,22 +414,6 @@ Proof.
 + (* single *) apply B; unfold OKF; auto.
 + (* any32 *) apply A; unfold OKF; auto.
 + (* any64 *) apply B; unfold OKF; auto.
-Qed.
-
-Lemma loc_arguments_rec_charact:
-  forall va tyl ri rf ofs p,
-  ofs >= 0 ->
-  In p (loc_arguments_rec va tyl ri rf ofs) -> forall_rpair loc_argument_acceptable p.
-Proof.
-  intros. eapply loc_arguments_rec_charact_stronger in H0; auto.
-  destruct p; simpl in *; intuition; auto using loc_argument_acceptable_stronger_loc_argument_acceptable.
-Qed.
-
-Lemma loc_arguments_acceptable_stronger:
-  forall (s: signature) (p: rpair loc),
-  In p (loc_arguments s) -> forall_rpair loc_argument_acceptable_stronger p.
-Proof.
-  unfold loc_arguments; intros. eapply loc_arguments_rec_charact_stronger; eauto. omega.
 Qed.
 
 Lemma loc_arguments_acceptable:

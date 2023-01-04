@@ -1130,7 +1130,7 @@ Lemma classify_stmt_sound:
       eventually n (Cminor.State f s k sp e m) (eq (Cminor.State f Cminor.Sskip k sp e m))
   | SCassign id a =>
       exists n, forall f k sp e m v,
-      Cminor.eval_expr ge sp e m a v ->
+      Cminor.eval_expr ge sp e m (comp_of f) a v ->
       eventually n (Cminor.State f s k sp e m) (eq (Cminor.State f Cminor.Sskip k sp (PTree.set id v e) m))
   | SCother => True
   end.
@@ -1178,16 +1178,17 @@ Qed.
 
 Lemma if_conversion_base_correct:
   forall f env cond id ifso ifnot s e ty vb b sp m tf tk e' m',
+  forall (COMP: comp_of f = comp_of tf),
   if_conversion_base (known_id f) env cond id ifso ifnot = Some s ->
   def_env f e -> wt_env env e ->
   env id = ty ->
   wt_expr env ifso ty ->
   wt_expr env ifnot ty ->
-  Cminor.eval_expr ge sp e m cond vb -> Val.bool_of_val vb b ->
+  Cminor.eval_expr ge sp e m (comp_of f) cond vb -> Val.bool_of_val vb b ->
   env_lessdef e e' -> Mem.extends m m' ->
   exists v1 v2 v',
-     Cminor.eval_expr ge sp e m ifso v1
-  /\ Cminor.eval_expr ge sp e m ifnot v2
+     Cminor.eval_expr ge sp e m (comp_of f) ifso v1
+  /\ Cminor.eval_expr ge sp e m (comp_of f) ifnot v2
   /\ Val.lessdef (if b then v1 else v2) v'
   /\ step tge (State tf s tk sp e' m')
            E0 (State tf Sskip tk sp (PTree.set id v' e') m').
@@ -1199,23 +1200,24 @@ Proof.
             if_conversion_heuristic cond ifso ifnot ty) eqn:C; try discriminate.
   destruct (sel_select_opt ty cond ifso ifnot) as [a'|] eqn:SSO; simpl in H; inv H.
   InvBooleans.
-  destruct (eval_safe_expr ge f sp e m ifso) as (v1 & EV1); auto.
-  destruct (eval_safe_expr ge f sp e m ifnot) as (v2 & EV2); auto.
+  destruct (eval_safe_expr ge f sp e m (comp_of f) ifso) as (v1 & EV1); auto.
+  destruct (eval_safe_expr ge f sp e m (comp_of f) ifnot) as (v2 & EV2); auto.
   assert (TY1: Val.has_type v1 ty) by (eapply wt_eval_expr; eauto).
   assert (TY2: Val.has_type v2 ty) by (eapply wt_eval_expr; eauto).
   exploit sel_select_opt_correct; eauto. intros (v' & EV' & LD).
   simpl in LD. rewrite Val.normalize_idem in LD by (destruct b; auto).
   exists v1, v2, v'; intuition auto.
-  constructor. eexact EV'.
+  econstructor. eexact COMP. eexact EV'.
 Qed.
 
 Lemma if_conversion_correct:
   forall f env tyret cond ifso ifnot s vb b k f' k' sp e m e' m',
+  forall (COMP: comp_of f = comp_of f'),
   if_conversion (known_id f) env cond ifso ifnot = Some s ->
   def_env f e -> wt_env env e ->
   wt_stmt env tyret ifso ->
   wt_stmt env tyret ifnot ->
-  Cminor.eval_expr ge sp e m cond vb -> Val.bool_of_val vb b ->
+  Cminor.eval_expr ge sp e m (comp_of f) cond vb -> Val.bool_of_val vb b ->
   env_lessdef e e' -> Mem.extends m m' ->
   let s0 := if b then ifso else ifnot in
   exists n e1 e1',
@@ -1228,7 +1230,7 @@ Proof.
   generalize (classify_stmt_sound ifso) (classify_stmt_sound ifnot).
   destruct (classify_stmt ifso) eqn:IFSO; try discriminate;
   destruct (classify_stmt ifnot) eqn:IFNOT; try discriminate;
-  intros (n1 & EV1) (n2 & EV2).
+  intros (n1 & EV1) (n2 & EV2) EXT.
 - exploit if_conversion_base_correct; eauto using wt_expr, classify_stmt_wt.
   intros (v1 & v2 & v' & E1 & E2 & VLD & STEP).
   exists (if b then n1 else n2), (PTree.set id (if b then v1 else v2) e), (PTree.set id v' e').
@@ -1510,7 +1512,7 @@ Proof.
   left; econstructor; split.
   apply plus_one; econstructor. eapply match_is_call_cont; eauto.
   erewrite stackspace_function_translated, <- CPT; eauto.
-  erewrite stackspace_function_translated; eauto.
+  monadInv TF. simpl. rewrite <- CPT.
   econstructor; eauto. eapply match_is_call_cont; eauto.
 - (* assign *)
   exploit sel_expr_correct; eauto. intros [v' [A B]].
@@ -1683,6 +1685,7 @@ Proof.
   exploit sel_expr_correct; eauto. intros [v' [A B]].
   left; econstructor; split.
   apply plus_one; econstructor; eauto.
+  monadInv TF.
   econstructor; eauto. eapply call_cont_commut; eauto.
 - (* Slabel *)
   left; econstructor; split. apply plus_one; constructor. econstructor; eauto.
@@ -1772,11 +1775,11 @@ Theorem transf_program_correct:
   forward_simulation (Cminor.semantics prog) (CminorSel.semantics tprog).
 Proof.
   set (MS := fun S T => match_states S T /\ wt_state S).
-  apply forward_simulation_determ_star with (match_states := MS) (measure := measure).
-- apply Cminor.semantics_determinate.
+  apply forward_simulation_eventually_star with (measure := measure) (match_states := MS).
 - apply senv_preserved.
 - intros S INIT. exploit sel_initial_states; eauto. intros (T & P & Q).
   assert (W: wt_state S). { eapply wt_initial_state. eexact wt_prog. auto. }
+  unfold MS.
   eauto.
 - intros S T r (M & W) FIN.
   eapply sel_final_states; eauto.
@@ -1785,7 +1788,9 @@ Proof.
   exploit sel_step_correct; eauto.
   intros [(T2 & D & E) | [(D & E & F) | (T2 & n & D & E)]].
 + left; exists T2; auto.
+  split. left; auto. unfold MS; auto.
 + subst t. left; exists T1; auto using star_refl.
+  split. right. split. apply star_refl. exact D. unfold MS; auto.
 + right; exists n, T2; split.
   apply plus_one; auto.
   apply eventually_and_invariant; eauto using subject_reduction, wt_prog.

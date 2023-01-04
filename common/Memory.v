@@ -385,10 +385,10 @@ Theorem valid_pointer_valid_access_nonpriv:
 Proof.
   intros. rewrite valid_pointer_nonempty_perm.
   split; intros.
-  split. simpl; red; intros. replace ofs0 with ofs by omega. auto.
+  split. simpl; red; intros. replace ofs0 with ofs by lia. auto.
   split; auto.
   simpl. apply Z.divide_1_l.
-  destruct H. apply H0. simpl. omega.
+  destruct H. apply H0. simpl. lia.
 Qed.
 
 Theorem valid_pointer_valid_access_priv:
@@ -489,15 +489,6 @@ Program Definition empty: mem :=
         (PMap.init (fun ofs k => None))
         (PTree.empty _)
         1%positive _ _ _ _.
-Next Obligation.
-  repeat rewrite PMap.gi. red; auto.
-Qed.
-Next Obligation.
-  rewrite PMap.gi. auto.
-Qed.
-Next Obligation.
-  rewrite PMap.gi. auto.
-Qed.
 Next Obligation.
   unfold Plt.
   rewrite PTree.gempty.
@@ -798,7 +789,7 @@ Next Obligation.
   apply access_max.
 Qed.
 Next Obligation.
-  exploit (nextblock_noaccess m b0 ofs k H1). auto. intros NOACC.
+  exploit (nextblock_noaccess m b0 ofs k). auto. intros NOACC.
   rewrite PMap.gsspec. destruct (peq b0 b). subst b0.
   destruct (zle lo ofs). destruct (zlt ofs hi).
   assert (P: perm m b ofs k Freeable) by auto using perm_cur.

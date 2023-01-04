@@ -246,13 +246,13 @@ Next Obligation.
                             | Z.neg y' => Z.neg y'~0~0
                   end) with (4 * ofs) in *.
 
-    split; auto. split; [omega |].
+    split; auto. split; [lia |].
     rewrite <- Z.add_assoc in H9. rewrite Zred_factor4 in H9.
     change (match bound with
             | 0 => 0
             | Z.pos y' => Z.pos y'~0~0
             | Z.neg y' => Z.neg y'~0~0
-            end) with (4 * bound). omega.
+            end) with (4 * bound). lia.
 Qed.
 Next Obligation.
   eauto with mem.
@@ -1865,7 +1865,7 @@ Proof.
 + simpl in SEP. unfold parent_sp. simpl.
   assert (slot_valid f Outgoing pos ty = true).
   { destruct H0. unfold slot_valid, proj_sumbool.
-    rewrite zle_true by omega. rewrite pred_dec_true by auto. reflexivity. }
+    rewrite zle_true by lia. rewrite pred_dec_true by auto. reflexivity. }
   assert (slot_within_bounds (function_bounds f) Outgoing pos ty) by eauto.
   exploit frame_get_outgoing; eauto. intros (v & A & B).
   exists v; split.

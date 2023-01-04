@@ -1250,7 +1250,7 @@ Local Opaque Conventions1.parameter_needs_normalization.
   reflexivity. reflexivity.
   eexact U.
   traceEq.
-  rewrite (assign_loc_nextblock _ _ _ _ _ _ _ _ A) in Z. auto.
+  rewrite (assign_loc_nextblock _ _ _ _ _ _ _ _ _ A) in Z. auto.
 Qed.
 
 Lemma bind_parameters_nextblock:
@@ -1342,7 +1342,7 @@ Proof.
   eapply OWN_BLOCKS; eauto.
   rewrite A. apply IHl; auto.
   intros. red; intros. eapply Mem.perm_free_1; eauto.
-  exploit H1; eauto. intros [B|B]. auto. right; omega.
+  exploit H1; eauto. intros [B|B]. auto. right; lia.
   eapply H; eauto.
   intros. eapply Mem.free_can_access_block_inj_1; eauto. eapply OWN_BLOCKS. eauto.
 Qed.
@@ -1846,7 +1846,7 @@ Proof.
   inv H; auto.
   destruct a. destruct p. destruct (Mem.free m b z0 z) as [m1|] eqn:?; try discriminate.
   transitivity (Mem.load chunk m1 b' 0 c'). eauto.
-  eapply Mem.load_free. eauto. left. assert (Plt b' b) by eauto. unfold block; xomega.
+  eapply Mem.load_free. eauto. left. assert (Plt b' b) by eauto. unfold block; extlia.
 Qed.
 
 Lemma match_cont_free_env:
@@ -1865,8 +1865,8 @@ Proof.
   unfold blocks_of_env; intros. exploit list_in_map_inv; eauto.
   intros [[id [b1 ty]] [P Q]]. simpl in P. inv P.
   exploit me_range; eauto. eapply PTree.elements_complete; eauto. extlia.
-  rewrite (free_list_nextblock _ _ _ H3). inv H; extlia.
-  rewrite (free_list_nextblock _ _ _ H4). inv H; extlia.
+  rewrite (free_list_nextblock _ _ _ _ H3). inv H; extlia.
+  rewrite (free_list_nextblock _ _ _ _ H4). inv H; extlia.
 Qed.
 
 (** Matching of global environments *)

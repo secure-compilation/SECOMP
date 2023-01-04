@@ -406,7 +406,7 @@ Ltac DestructM :=
     eapply match_if_simulation. eassumption. exact Debugvarproof.transf_program_correct.
   eapply compose_forward_simulations.
     eapply Stackingproof.transf_program_correct with (return_address_offset := Asmgenproof0.return_address_offset).
-    exact Asmgenproof.return_address_exists.
+    now eapply Asmgenproof.return_address_exists.
     eassumption.
   eapply Asmgenproof.transf_program_correct; eassumption.
   }

@@ -354,8 +354,7 @@ Instance comp_transl_function: has_comp_transl_partial transl_function.
 Proof.
   unfold transl_function.
   intros f tf H; simpl in *.
-  destruct (reserve_labels _ _) as [l s].
-  destruct (transl_fun _ _ _) as [|[??] ? ?]; try discriminate.
+  destruct (transl_fun _ _) as [|[??] ? ?]; try discriminate.
   now inv H.
 Qed.
 
@@ -798,7 +797,8 @@ Proof.
   eapply exec_Ibuiltin; eauto.
   eapply eval_builtin_args_trivial.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  eauto.
+  rewrite <- COMP. eauto.
+  auto.
 (* Match-env *)
   split. eauto with rtlg.
 (* Result reg *)
@@ -845,19 +845,28 @@ Proof.
   rewrite e0. erewrite <- find_comp_translated; eauto.
   destruct (Pos.eqb_spec (Genv.find_comp ge (Vptr b Ptrofs.zero)) default_compartment).
   rewrite <- e0. erewrite find_comp_translated; eauto.
+  rewrite <- COMP in n. apply Pos.eqb_neq in n. rewrite n in INTRA.
   congruence.
   intros CROSS. erewrite <- find_comp_translated with (vf := Vptr b Ptrofs.zero) in CROSS; eauto.
-  rewrite <- CROSS in INTRA. unfold Genv.type_of_call in *. congruence.
+  rewrite <- CROSS in INTRA. unfold Genv.type_of_call in *.
+  rewrite <- COMP in CROSS. rewrite <- COMP in INTRA.
+  destruct ((cp =? Genv.find_comp ge (Vptr b Ptrofs.zero))%positive) eqn:EQ1;
+    [discriminate |].
+  destruct ((Genv.find_comp ge (Vptr b Ptrofs.zero) =? default_compartment)%positive) eqn:EQ2;
+    [discriminate |].
+  congruence.
   instantiate (1 := E0).
   econstructor.
+  rewrite COMP in INTRA.
   erewrite <- find_comp_translated with (vf := Vptr b Ptrofs.zero); eauto.
   eapply star_left. eapply exec_function_external.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  subst cp. eauto.
+  clear H3; subst cp. eauto.
   apply star_one. apply exec_return.
-  erewrite find_comp_translated in INTRA; eauto. contradiction.
+  erewrite find_comp_translated in INTRA; eauto. rewrite <- COMP. contradiction.
   econstructor.
   erewrite find_comp_translated in INTRA; eauto.
+  rewrite <- type_of_call_translated, <- COMP. auto.
   reflexivity. reflexivity. reflexivity.
 (* Match-env *)
   split. eauto with rtlg.

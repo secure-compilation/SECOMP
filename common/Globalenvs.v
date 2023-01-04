@@ -302,15 +302,6 @@ Qed.
 
 Program Definition empty_genv (pub: list ident) (pol: Policy.t): t :=
   @mkgenv pub (PTree.empty _) (PTree.empty _) 1%positive pol _ _ _.
-Next Obligation.
-  rewrite PTree.gempty in H. discriminate.
-Qed.
-Next Obligation.
-  rewrite PTree.gempty in H. discriminate.
-Qed.
-Next Obligation.
-  rewrite PTree.gempty in H. discriminate.
-Qed.
 
 Definition globalenv (p: program F V) :=
   add_globals (empty_genv p.(prog_public) p.(prog_pol)) p.(prog_defs).
@@ -1011,8 +1002,8 @@ Proof.
   intros until cp. functional induction (store_zeros m b p n cp); intros.
 - inv H; apply Mem.unchanged_on_refl.
 - apply Mem.unchanged_on_trans with m'.
-+ eapply Mem.store_unchanged_on; eauto. simpl. intros. apply H0. omega.
-+ apply IHo; auto. intros; apply H0; omega.
++ eapply Mem.store_unchanged_on; eauto. simpl. intros. apply H0. lia.
++ apply IHo; auto. intros; apply H0; lia.
 - discriminate.
 Qed.
 
@@ -1781,7 +1772,7 @@ Proof.
   eapply (Mem.store_can_access_block_inj _ _ _ _ _ _ _ e0). eauto.
 - destruct (Mem.valid_access_store m Mint8unsigned b p cp Vzero) as (m' & STORE).
   split. red; intros. apply Mem.perm_cur. apply PERM. simpl in H. lia.
-  simpl. apply Z.divide_1_l.
+  simpl. split. assumption. apply Z.divide_1_l.
   congruence.
 Qed.
 
@@ -1820,10 +1811,10 @@ Proof.
 - exists m; auto.
 - destruct H0.
   destruct (@store_init_data_exists m b p i1 cp) as (m1 & S1); eauto.
-  red; intros. apply H. generalize (init_data_list_size_pos il); omega.
+  red; intros. apply H. generalize (init_data_list_size_pos il); lia.
   rewrite S1.
   apply IHil; eauto.
-  red; intros. erewrite <- store_init_data_perm by eauto. apply H. generalize (init_data_size_pos i1); omega.
+  red; intros. erewrite <- store_init_data_perm by eauto. apply H. generalize (init_data_size_pos i1); lia.
 
   destruct i1; inv S1;
     try eapply (Mem.store_can_access_block_inj _ _ _ _ _ _ _ H4); eauto.
@@ -2005,7 +1996,7 @@ Proof.
            exists i0. exists (c~1)%positive. split; auto. split; auto. simpl.
            destruct ((Policy.policy_import (genv_policy ge)) ! cp) as [imps |]; try discriminate.
            destruct (Policy.policy_export (genv_policy ge)); try discriminate.
-           destruct (t0_2 ! c); try discriminate.
+           destruct ((PTree.Nodes t0) ! (c~1)); try discriminate.
            apply andb_prop in H.
            destruct H as [H1 H2].
            apply proj_sumbool_true in H1.
@@ -2016,7 +2007,7 @@ Proof.
            exists i0. exists (c~0)%positive. split; auto. split; auto. simpl.
            destruct ((Policy.policy_import (genv_policy ge)) ! cp) as [imps |]; try discriminate.
            destruct (Policy.policy_export (genv_policy ge)); try discriminate.
-           destruct (t0_1 ! c); try discriminate.
+           destruct ((PTree.Nodes t0) ! (c~0)); try discriminate.
            apply andb_prop in H.
            destruct H as [H1 H2].
            apply proj_sumbool_true in H1.

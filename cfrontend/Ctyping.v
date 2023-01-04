@@ -1711,8 +1711,8 @@ Proof.
 Qed.
 
 Lemma wt_assign_loc:
-  forall ge ty m b ofs bf v t m' v',
-  assign_loc ge ty m b ofs bf v t m' v' ->
+  forall ge cp ty m b ofs bf v t m' v',
+  assign_loc ge cp ty m b ofs bf v t m' v' ->
   wt_val v ty -> wt_val v' ty.
 Proof.
   induction 1; intros; auto.

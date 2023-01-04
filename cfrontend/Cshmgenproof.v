@@ -984,9 +984,9 @@ Proof.
   set (amount2 := Int.repr (Int.zwordsize - width)) in MKLOAD.
   destruct (zle 0 pos && zlt 0 width && zle (pos + width) (bitsize_carrier sz)); inv MKLOAD.
   set (e1 := Eload (chunk_for_carrier sz) addr).
-  assert (E1: eval_expr ge e le m e1 (Vint c)) by (econstructor; eauto).
+  assert (E1: eval_expr ge e cp le m e1 (Vint c)) by (econstructor; eauto).
   set (e2 := Ebinop Oshl e1 (make_intconst amount1)).
-  assert (E2: eval_expr ge e le m e2 (Vint (Int.shl c amount1))).
+  assert (E2: eval_expr ge e cp le m e2 (Vint (Int.shl c amount1))).
   { econstructor; eauto using make_intconst_correct. cbn.
     unfold amount1 at 1; rewrite int_ltu_true by lia. auto. } 
   econstructor; eauto using make_intconst_correct.
@@ -999,9 +999,9 @@ Qed.
 
 Lemma make_store_bitfield_correct: 
   forall f sz sg pos width dst src ty k e le m b ofs v m' s,
-  eval_expr ge e le m dst (Vptr b ofs) ->
-  eval_expr ge e le m src v ->
-  assign_loc prog.(prog_comp_env) ty m b ofs (Bits sz sg pos width) v m' ->
+  eval_expr ge e (comp_of f) le m dst (Vptr b ofs) ->
+  eval_expr ge e (comp_of f) le m src v ->
+  assign_loc prog.(prog_comp_env) (comp_of f) ty m b ofs (Bits sz sg pos width) v m' ->
   make_store_bitfield sz sg pos width dst src = OK s ->
   step ge (State f s k e le m) E0 (State f Sskip k e le m').
 Proof.
@@ -1322,7 +1322,7 @@ Variable cp: compartment.
 
 Lemma transl_expr_lvalue:
   forall a loc ofs bf ta,
-  Clight.eval_lvalue ge e le m a loc ofs bf ->
+  Clight.eval_lvalue ge e cp le m a loc ofs bf ->
   transl_expr cunit.(prog_comp_env) a = OK ta ->
   exists tb, transl_lvalue cunit.(prog_comp_env) a = OK (tb, bf)
           /\ make_load tb (typeof a) bf = OK ta.

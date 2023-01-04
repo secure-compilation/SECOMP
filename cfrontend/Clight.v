@@ -221,7 +221,7 @@ Inductive deref_loc (cp: compartment) (ty: type) (m: mem) (b: block) (ofs: ptrof
       access_mode ty = By_copy ->
       deref_loc cp ty m b ofs Full (Vptr b ofs)
   | deref_loc_bitfield: forall sz sg pos width v,
-      load_bitfield ty sz sg pos width m (Vptr b ofs) v ->
+      load_bitfield ty sz sg pos width m (Vptr b ofs) v (Some cp) ->
       deref_loc cp ty m b ofs (Bits sz sg pos width) v.
 
 (** Symmetrically, [assign_loc ty m b ofs bf v m'] returns the
@@ -248,7 +248,7 @@ Inductive assign_loc (ce: composite_env) (cp: compartment) (ty: type) (m: mem) (
       Mem.storebytes m b (Ptrofs.unsigned ofs) bytes cp = Some m' ->
       assign_loc ce cp ty m b ofs Full (Vptr b' ofs') m'
   | assign_loc_bitfield: forall sz sg pos width v m' v',
-      store_bitfield ty sz sg pos width m (Vptr b ofs) v m' v' ->
+      store_bitfield ty sz sg pos width m (Vptr b ofs) v m' v' cp ->
       assign_loc ce cp ty m b ofs (Bits sz sg pos width) v m'.
 
 Section SEMANTICS.
@@ -288,7 +288,7 @@ Inductive bind_parameters (cp: compartment) (e: env):
   | bind_parameters_cons:
       forall m id ty params v1 vl b m1 m2,
       PTree.get id e = Some(b, ty) ->
-      assign_loc cp ge ty m b Ptrofs.zero Full v1 m1 ->
+      assign_loc ge cp ty m b Ptrofs.zero Full v1 m1 ->
       bind_parameters cp e m1 params vl m2 ->
       bind_parameters cp e m ((id, ty) :: params) (v1 :: vl) m2.
 
@@ -774,7 +774,7 @@ Proof.
   (* return *)
   inv EV; inv H0; eauto.
 (* trace length *)
-  red; simpl; intros. inv H; simpl; try omega.
+  red; simpl; intros. inv H; simpl; try lia.
   (* call *)
   inv EV; auto.
   eapply external_call_trace_length; eauto.

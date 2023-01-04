@@ -1197,14 +1197,14 @@ Proof.
   eapply star_plus_trans.
   eapply eval_simple_lvalue_steps with (C := fun x => C(Eassign x r (typeof l))); eauto.
   eapply plus_right.
-  eapply eval_simple_rvalue_steps with (C := fun x => C(Eassign (Eloc b ofs (typeof l)) x (typeof l))); eauto.
+  eapply eval_simple_rvalue_steps with (C := fun x => C(Eassign (Eloc b ofs bf (typeof l)) x (typeof l))); eauto.
   left; eapply step_rred; eauto. econstructor; eauto.
   reflexivity. auto.
 (* assignop *)
   eapply star_plus_trans.
   eapply eval_simple_lvalue_steps with (C := fun x => C(Eassignop op x r tyres (typeof l))); eauto.
   eapply star_plus_trans.
-  eapply eval_simple_rvalue_steps with (C := fun x => C(Eassignop op (Eloc b ofs (typeof l)) x tyres (typeof l))); eauto.
+  eapply eval_simple_rvalue_steps with (C := fun x => C(Eassignop op (Eloc b ofs bf (typeof l)) x tyres (typeof l))); eauto.
   eapply plus_left.
   left; eapply step_rred; auto. econstructor; eauto.
   eapply star_left.
@@ -1751,7 +1751,7 @@ with eval_expr: compartment -> env -> mem -> kind -> expr -> trace -> mem -> exp
   | eval_alignof: forall c e m ty' ty,
       eval_expr c e m RV (Ealignof ty' ty) E0 m (Ealignof ty' ty)
   | eval_assign: forall c e m l r ty t1 m1 l' t2 m2 r' b ofs bf v v1 v' t3 m3,
-      eval_expr c e m LV l t1 m1 l' -> eval_expr e m1 RV r t2 m2 r' ->
+      eval_expr c e m LV l t1 m1 l' -> eval_expr c e m1 RV r t2 m2 r' ->
       eval_simple_lvalue ge e c m2 l' b ofs bf ->
       eval_simple_rvalue ge e c m2 r' v ->
       sem_cast v (typeof r) (typeof l) m2 = Some v1 ->
@@ -1760,7 +1760,7 @@ with eval_expr: compartment -> env -> mem -> kind -> expr -> trace -> mem -> exp
       eval_expr c e m RV (Eassign l r ty) (t1**t2**t3) m3 (Eval v' ty)
   | eval_assignop: forall c e m op l r tyres ty t1 m1 l' t2 m2 r' b ofs bf
                           v1 v2 v3 v4 v' t3 t4 m3,
-      eval_expr c e m LV l t1 m1 l' -> eval_expr e m1 RV r t2 m2 r' ->
+      eval_expr c e m LV l t1 m1 l' -> eval_expr c e m1 RV r t2 m2 r' ->
       eval_simple_lvalue ge e c m2 l' b ofs bf ->
       deref_loc ge c (typeof l) m2 b ofs bf t3 v1 ->
       eval_simple_rvalue ge e c m2 r' v2 ->
@@ -2353,7 +2353,7 @@ Proof.
   simpl; intuition.
   eapply star_trans. eexact D.
   eapply star_right. eexact G.
-  left. eapply step_assign; eauto. congruence. rewrite B; eauto. congruence.
+  left. eapply step_assign; eauto. rewrite B, F; eassumption. rewrite B; eauto. congruence.
   reflexivity. traceEq.
 (* assignop *)
   exploit (H0 (fun x => C(Eassignop op x r tyres ty))); eauto.
@@ -2364,7 +2364,7 @@ Proof.
   eapply star_trans. eexact D.
   eapply star_right. eexact G.
   left. eapply step_assignop; eauto.
-  rewrite B; eauto. rewrite B; rewrite F; eauto. congruence. rewrite B; eauto. congruence.
+  rewrite B; eauto. rewrite B; rewrite F; eauto. rewrite B; eassumption. rewrite B; eauto. congruence.
   reflexivity. traceEq.
 (* postincr *)
   exploit (H0 (fun x => C(Epostincr id x ty))); eauto.

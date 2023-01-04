@@ -332,8 +332,8 @@ Proof.
   apply eventval_of_val_sound; auto.
   split. econstructor. constructor; eauto. constructor. auto.
   split.
-  split. constructor; auto. eapply Mem.store_can_access_block_1; eauto. auto. (* FIXME? *)
-  constructor.
+  constructor; auto. eapply Mem.store_can_access_block_1; eauto.
+  split. constructor; auto. auto.
 Qed.
 
 Lemma do_volatile_store_complete:
@@ -369,7 +369,7 @@ Definition do_deref_loc (w: world) (ty: type) (m: mem) (b: block) (ofs: ptrofs) 
       check (intsize_eq sz1 sz &&
              signedness_eq sg1 (if zlt width (bitsize_intsize sz) then Signed else sg) &&
              zle 0 pos && zlt 0 width && zle width (bitsize_intsize sz) && zle (pos + width) (bitsize_carrier sz));
-      match Mem.loadv (chunk_for_carrier sz) m (Vptr b ofs) with
+      match Mem.loadv (chunk_for_carrier sz) m (Vptr b ofs) (Some cp) with
       | Some (Vint c) => Some (w, E0, Vint (bitfield_extract sz sg pos width c))
       | _ => None
       end
@@ -406,7 +406,7 @@ Proof with try (right; intuition lia).
   destruct Y... left; intuition lia.
 Defined.
 
-Definition do_assign_loc (w: world) (ty: type) (m: mem) (b: block) (ofs: ptrofs) (bf: bitfield) (v: val): option (world * trace * mem * val) :=
+Definition do_assign_loc (w: world) (ty: type) (m: mem) (b: block) (ofs: ptrofs) (bf: bitfield) (v: val) (cp: compartment): option (world * trace * mem * val) :=
   match bf with
   | Full =>
     match access_mode ty with
@@ -433,8 +433,8 @@ Definition do_assign_loc (w: world) (ty: type) (m: mem) (b: block) (ofs: ptrofs)
     | Tint sz1 sg1 _, Vint n, Some (Vint c) =>
         check (intsize_eq sz1 sz &&
                signedness_eq sg1 (if zlt width (bitsize_intsize sz) then Signed else sg));
-        do m' <- Mem.storev (chunk_for_carrier sz) m (Vptr b ofs) cp
-                            (Vint ((Int.bitfield_insert (first_bit sz pos width) width c n)));
+        do m' <- Mem.storev (chunk_for_carrier sz) m (Vptr b ofs)
+                            (Vint ((Int.bitfield_insert (first_bit sz pos width) width c n))) cp;
         Some (w, E0, m', Vint (bitfield_normalize sz sg width n))
     | _, _, _ => None
     end
@@ -473,7 +473,7 @@ Qed.
 
 Lemma do_assign_loc_sound:
   forall w ty m b ofs bf v cp w' t m' v',
-  do_assign_loc w ty m b ofs bp v cp = Some(w', t, m', v') ->
+  do_assign_loc w ty m b ofs bf v cp = Some(w', t, m', v') ->
   assign_loc ge cp ty m b ofs bf v t m' v' /\ possible_trace w t w'.
 Proof.
   unfold do_assign_loc; intros until v'.
@@ -1787,7 +1787,7 @@ Proof.
   induction 1; simpl; intros.
 (* valof *)
   rewrite dec_eq_true.
-  rewrite (do_deref_loc_complete _ _ _ _ _ _ _ _ _ H H0). econstructor; eauto.
+  rewrite (do_deref_loc_complete _ _ _ _ _ _ _ _ _ _ H H0). econstructor; eauto.
 (* addrof *)
   inv H. econstructor; eauto.
 (* unop *)
@@ -1809,13 +1809,13 @@ Proof.
 (* alignof *)
   inv H. econstructor; eauto.
 (* assign *)
-  rewrite dec_eq_true. rewrite H. rewrite (do_assign_loc_complete _ _ _ _ _ _ _ _ _ _ _ H0 H1).
+  rewrite dec_eq_true. rewrite H. rewrite (do_assign_loc_complete _ _ _ _ _ _ _ _ _ _ _ _ H0 H1).
   econstructor; eauto.
 (* assignop *)
-  rewrite dec_eq_true. rewrite (do_deref_loc_complete _ _ _ _ _ _ _ _ _ H H0).
+  rewrite dec_eq_true. rewrite (do_deref_loc_complete _ _ _ _ _ _ _ _ _ _ H H0).
   econstructor; eauto.
 (* postincr *)
-  rewrite dec_eq_true. subst. rewrite (do_deref_loc_complete _ _ _ _ _ _ _ _ _ H H1).
+  rewrite dec_eq_true. subst. rewrite (do_deref_loc_complete _ _ _ _ _ _ _ _ _ _ H H1).
   econstructor; eauto.
 (* comma *)
   inv H0. rewrite dec_eq_true. econstructor; eauto.
@@ -2153,7 +2153,7 @@ Local Opaque do_assign_loc.
    induction 1; simpl; auto.
    rewrite H. rewrite dec_eq_true.
    assert (possible_trace w E0 w) by constructor.
-   rewrite (do_assign_loc_complete _ _ _ _ _ _ _ _ _ _ _ H0 H2).
+   rewrite (do_assign_loc_complete _ _ _ _ _ _ _ _ _ _ _ _ H0 H2).
    simpl. auto.
 Qed.
 

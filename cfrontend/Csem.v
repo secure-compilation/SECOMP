@@ -73,7 +73,7 @@ Inductive deref_loc (cp: compartment) (ty: type) (m: mem) (b: block) (ofs: ptrof
       access_mode ty = By_copy ->
       deref_loc cp ty m b ofs Full E0 (Vptr b ofs)
   | deref_loc_bitfield: forall sz sg pos width v,
-      load_bitfield ty sz sg pos width m (Vptr b ofs) v ->
+      load_bitfield ty sz sg pos width m (Vptr b ofs) v (Some cp) ->
       deref_loc cp ty m b ofs (Bits sz sg pos width) E0 v.
 
 (** Symmetrically, [assign_loc ty m b ofs bf v t m' v'] returns the
@@ -110,7 +110,7 @@ Inductive assign_loc (cp: compartment) (ty: type) (m: mem) (b: block) (ofs: ptro
       Mem.storebytes m b (Ptrofs.unsigned ofs) bytes cp = Some m' ->
       assign_loc cp ty m b ofs Full (Vptr b' ofs') E0 m' (Vptr b' ofs')
   | assign_loc_bitfield: forall sz sg pos width v m' v',
-      store_bitfield ty sz sg pos width m (Vptr b ofs) v m' v' ->
+      store_bitfield ty sz sg pos width m (Vptr b ofs) v m' v' cp ->
       assign_loc cp ty m b ofs (Bits sz sg pos width) v E0 m' v'.
 
 (** Allocation of function-local variables.

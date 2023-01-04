@@ -293,19 +293,19 @@ Inductive inline_decision cp (ros: reg + ident) : Type :=
   | Cannot_inline
   | Can_inline (id: ident) (f: function) (P: ros = inr reg id) (Q: fenv!id = Some f) (R: cp = (comp_of f)).
 
-Arguments Cannot_inline {ros}.
-Arguments Can_inline {ros}.
+Arguments Cannot_inline {cp} {ros}.
+Arguments Can_inline {cp} {ros}.
 
 Program Definition can_inline (cp: compartment) (ros: reg + ident): inline_decision cp ros :=
   match ros with
-  | inl r => Cannot_inline _ _
+  | inl r => Cannot_inline
   | inr id =>
     match fenv!id with
     | Some f =>
       if eq_compartment cp (comp_of f) then
-        Can_inline _ _ id f _ _ _
-      else Cannot_inline _ _
-    | None => Cannot_inline _ _
+        Can_inline id f _ _ _
+      else Cannot_inline
+    | None => Cannot_inline
     end
   end.
 
@@ -400,7 +400,7 @@ Definition expand_instr (ctx: context) (cp: compartment) (pc: node) (i: instruct
               set_instr (spc ctx pc)
                         (Icall sg (sros ctx ros) (sregs ctx args) rreg rpc)
           end
-      | Can_inline id f P Q =>
+      | Can_inline id f P Q _ =>
           do n <- inline_tail_function ctx id f Q args;
           set_instr (spc ctx pc) (Inop n)
       end

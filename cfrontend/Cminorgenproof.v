@@ -930,7 +930,6 @@ Proof.
   intros. apply Mem.perm_implies with Freeable; auto with mem. eapply Mem.perm_alloc_2; eauto.
   instantiate (1 := f1). red; intros. eelim Mem.fresh_block_alloc; eauto.
   eapply Mem.valid_block_inject_2; eauto.
-  intros. apply PTree.gempty.
   eapply match_callstack_alloc_right; eauto.
   intros. destruct (In_dec peq id (map fst vars)).
   apply cenv_remove_gss; auto.
@@ -2315,7 +2314,7 @@ Opaque PTree.set.
   eapply match_callstack_external_call; eauto.
   intros. eapply external_call_max_perm; eauto.
   intros. eapply external_call_can_access_block; eauto.
-  xomega. xomega.
+  extlia. extlia.
   eapply external_call_nextblock; eauto.
   eapply external_call_nextblock; eauto.
 
