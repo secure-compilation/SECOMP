@@ -2450,27 +2450,25 @@ Proof.
       { clear.
         unfold loc_parameters.
         destruct l as [[] |]; try congruence.
-        - pose proof (loc_arguments_acceptable sg) as G.
+        - pose proof (loc_arguments_acceptable_stronger sg) as G.
           intros rhi rlo IN.
           eapply in_map_iff in IN as [x [Hx' Hx]].
           eapply G in Hx.
           destruct x; inv Hx'.
           destruct r0 as [| []]; simpl; try congruence.
-          (* simpl in Hx. destruct Hx. inv H0. split; [| split]; congruence. *)
-          admit.
+          simpl in Hx. destruct Hx. inv H0. split; [| split]; congruence.
           contradiction.
           contradiction.
           split; [| split]; congruence.
         - intros.
           split; [| split]; congruence.
-        - pose proof (loc_arguments_acceptable sg) as G.
+        - pose proof (loc_arguments_acceptable_stronger sg) as G.
           intros rhi' rlo' IN.
           eapply in_map_iff in IN as [x [Hx' Hx]].
           eapply G in Hx.
           destruct x; inv Hx'.
           destruct rhi0 as [| []]; destruct rlo0 as [| []];
             destruct Hx as [[] []]; simpl; (split; [| split]); try congruence.
-          admit. admit. admit. admit.
       }
       clear -G. revert G.
       generalize (loc_parameters sg).
@@ -2509,27 +2507,25 @@ Proof.
       { clear.
         unfold loc_parameters.
         destruct l as [[] |]; try congruence.
-        - pose proof (loc_arguments_acceptable sg) as G.
+        - pose proof (loc_arguments_acceptable_stronger sg) as G.
           intros rhi rlo IN.
           eapply in_map_iff in IN as [x [Hx' Hx]].
           eapply G in Hx.
           destruct x; inv Hx'.
           destruct r0 as [| []]; simpl; try congruence.
-          (* simpl in Hx. destruct Hx. inv H0. split; [| split]; congruence. *)
-          admit.
+          simpl in Hx. destruct Hx. inv H0. split; [| split]; congruence.
           contradiction.
           contradiction.
           split; [| split]; congruence.
         - intros.
           split; [| split]; congruence.
-        - pose proof (loc_arguments_acceptable sg) as G.
+        - pose proof (loc_arguments_acceptable_stronger sg) as G.
           intros rhi' rlo' IN.
           eapply in_map_iff in IN as [x [Hx' Hx]].
           eapply G in Hx.
           destruct x; inv Hx'.
           destruct rhi0 as [| []]; destruct rlo0 as [| []];
             destruct Hx as [[] []]; simpl; (split; [| split]); try congruence.
-          admit. admit. admit. admit.
       }
       clear -G. revert G.
       generalize (loc_parameters sg).
@@ -2748,8 +2744,7 @@ Proof.
   eexact A. traceEq.
   econstructor; eauto.
   apply wt_regset_assign; auto. rewrite WTRES0; auto.
-(* Qed. *)
-Admitted.
+Qed.
 
 Lemma initial_states_simulation:
   forall st1, RTL.initial_state prog st1 ->
