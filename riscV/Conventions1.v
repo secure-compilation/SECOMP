@@ -331,6 +331,95 @@ Proof.
   destruct l; simpl; intuition.
 Qed.
 
+Lemma loc_arguments_rec_charact_stronger:
+  forall va tyl ri rf ofs p,
+  ofs >= 0 ->
+  In p (loc_arguments_rec va tyl ri rf ofs) -> forall_rpair loc_argument_acceptable_stronger p.
+Proof.
+  set (OK := fun (l: list (rpair loc)) =>
+             forall p, In p l -> forall_rpair loc_argument_acceptable_stronger p).
+  set (OKF := fun (f: Z -> Z -> Z -> list (rpair loc)) =>
+              forall ri rf ofs, ofs >= 0 -> OK (f ri rf ofs)).
+  assert (CSI: forall r, In r int_param_regs -> is_callee_save r = false /\ r <> R30).
+  { decide_goal. }
+  assert (CSF: forall r, In r float_param_regs -> is_callee_save r = false /\ r <> R30).
+  { decide_goal. }
+  assert (CSFX: forall r, In r float_extra_param_regs -> is_callee_save r = false /\ r <> R30).
+  { decide_goal. }
+  assert (AL: forall ofs ty, ofs >= 0 -> align ofs (typesize ty) >= 0).
+  { intros. 
+    assert (ofs <= align ofs (typesize ty)) by (apply align_le; apply typesize_pos).
+    lia. }
+  assert (ALD: forall ofs ty, ofs >= 0 -> (typealign ty | align ofs (typesize ty))).
+  { intros. eapply Z.divide_trans. apply typealign_typesize.
+    apply align_divides. apply typesize_pos. }
+  assert (SK: (if Archi.ptr64 then 2 else 1) > 0).
+  { destruct Archi.ptr64; lia. }
+  assert (SKK: forall ty, (if Archi.ptr64 then 2 else typesize ty) > 0).
+  { intros. destruct Archi.ptr64. lia. apply typesize_pos.  }
+  assert (A: forall ri rf ofs ty f,
+             OKF f -> ofs >= 0 -> OK (int_arg ri rf ofs ty f)).
+  { intros until f; intros OF OO; red; unfold int_arg; intros.
+    destruct (list_nth_z int_param_regs ri) as [r|] eqn:NTH; destruct H.
+  - subst p; simpl. apply CSI. eapply list_nth_z_in; eauto. 
+  - eapply OF; eauto. 
+  - subst p; simpl. auto using align_divides, typealign_pos.
+  - eapply OF; [idtac|eauto].
+    generalize (AL ofs ty OO) (SKK ty); lia.
+  }
+  assert (B: forall va ri rf ofs ty f,
+             OKF f -> ofs >= 0 -> OK (float_arg va ri rf ofs ty f)).
+  { intros until f; intros OF OO; red; unfold float_arg; intros.
+    destruct (list_nth_z (if va then nil else float_param_regs) rf) as [r|] eqn:NTH.
+  - destruct H.
+    + subst p; simpl. apply CSF. destruct va. simpl in NTH; discriminate. eapply list_nth_z_in; eauto.
+    + eapply OF; eauto.
+  - set (regpair := negb Archi.ptr64 && zeq (typesize ty) 2) in *.
+    set (ri' := if va && regpair then align ri 2 else ri) in *.
+    destruct (list_nth_z float_extra_param_regs ri') as [r|] eqn:NTH'; destruct H.
+    + subst p; simpl. apply CSFX. eapply list_nth_z_in; eauto.
+    + eapply OF; [|eauto]. destruct (regpair && zeq ri' 7); lia.
+    + subst p; simpl. auto.
+    + eapply OF; [|eauto]. generalize (AL ofs ty OO) (SKK ty); lia.
+  }
+  assert (C: forall va ri rf ofs f,
+             OKF f -> ofs >= 0 -> OK (split_long_arg va ri rf ofs f)).
+  { intros until f; intros OF OO; unfold split_long_arg.
+    set (ri' := if va then align ri 2 else ri).
+    set (ofs' := align ofs 2).
+    assert (OO': ofs' >= 0) by (apply (AL ofs Tlong); auto).
+    destruct (list_nth_z int_param_regs ri') as [r1|] eqn:NTH1;
+    [destruct (list_nth_z int_param_regs (ri'+1)) as [r2|] eqn:NTH2 | idtac].
+  - red; simpl; intros; destruct H.
+    + subst p; split; apply CSI; eauto using list_nth_z_in.
+    + eapply OF; [idtac|eauto]. lia.
+  - red; simpl; intros; destruct H.
+    + subst p; split. split; auto using Z.divide_1_l. apply CSI; eauto using list_nth_z_in.
+    + eapply OF; [idtac|eauto]. lia.
+  - red; simpl; intros; destruct H.
+    + subst p; repeat split; auto using Z.divide_1_l. lia. 
+    + eapply OF; [idtac|eauto]. lia.
+  }
+  cut (forall tyl fixed ri rf ofs, ofs >= 0 -> OK (loc_arguments_rec tyl fixed ri rf ofs)).
+  unfold OK. eauto.
+  induction tyl as [ | ty1 tyl]; intros until ofs; intros OO; simpl.
+- red; simpl; tauto.
+- destruct ty1.
++ (* int *) apply A; unfold OKF; auto.
++ (* float *) apply B; unfold OKF; auto.
++ (* long *)
+  destruct Archi.ptr64.
+  apply A; unfold OKF; auto.
+  apply C; unfold OKF; auto.
++ (* single *) apply B; unfold OKF; auto.
++ (* any32 *) apply A; unfold OKF; auto.
++ (* any64 *) apply B; unfold OKF; auto.
+Qed.
+
+(* Alternative proof based on stronger version:
+  intros. eapply loc_arguments_rec_charact_stronger in H0; auto.
+  destruct p; simpl in *; intuition; auto using loc_argument_acceptable_stronger_loc_argument_acceptable.
+ *)
 Lemma loc_arguments_rec_charact:
   forall va tyl ri rf ofs p,
   ofs >= 0 ->
@@ -414,6 +503,13 @@ Proof.
 + (* single *) apply B; unfold OKF; auto.
 + (* any32 *) apply A; unfold OKF; auto.
 + (* any64 *) apply B; unfold OKF; auto.
+Qed.
+
+Lemma loc_arguments_acceptable_stronger:
+  forall (s: signature) (p: rpair loc),
+  In p (loc_arguments s) -> forall_rpair loc_argument_acceptable_stronger p.
+Proof.
+  unfold loc_arguments; intros. eapply loc_arguments_rec_charact_stronger; eauto. lia.
 Qed.
 
 Lemma loc_arguments_acceptable:
