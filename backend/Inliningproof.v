@@ -575,7 +575,7 @@ Inductive match_stacks (F: meminj) (m m': mem):
         (SP: F sp = Some(sp', ctx.(dstk)))
         (PRIV: range_private F m m' sp' (ctx.(dstk) + ctx.(mstk)) f'.(fn_stacksize))
         (SSZ1: 0 <= f'.(fn_stacksize) < Ptrofs.max_unsigned)
-        (SSZ2: forall ofs, Mem.perm m' sp' ofs Max Nonempty -> 0 <= ofs <= f'.(fn_stacksize)) (* FIXME off-by-one error? *)
+        (SSZ2: forall ofs, Mem.perm m' sp' ofs Max Nonempty -> 0 <= ofs <= f'.(fn_stacksize))
         (RES: Ple res ctx.(mreg))
         (BELOW: Plt sp' bound)
         (ACCESS: Mem.can_access_block m' sp' (Some (comp_of f'))),
@@ -587,7 +587,7 @@ Inductive match_stacks (F: meminj) (m m': mem):
         (MS: match_stacks_inside F m m' stk stk' f' ctx sp' rs')
         (PRIV: range_private F m m' sp' ctx.(dstk) f'.(fn_stacksize))
         (SSZ1: 0 <= f'.(fn_stacksize) < Ptrofs.max_unsigned)
-        (SSZ2: forall ofs, Mem.perm m' sp' ofs Max Nonempty -> 0 <= ofs <= f'.(fn_stacksize)) (* FIXME off-by-one error? *)
+        (SSZ2: forall ofs, Mem.perm m' sp' ofs Max Nonempty -> 0 <= ofs <= f'.(fn_stacksize))
         (RET: ctx.(retinfo) = Some (rpc, res))
         (BELOW: Plt sp' bound)
         (COMP: cp = comp_of f')
@@ -1044,7 +1044,7 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
         (AC: Mem.can_access_block m' sp' (Some (comp_of f')))
         (PRIV: range_private F m m' sp' (ctx.(dstk) + ctx.(mstk)) f'.(fn_stacksize))
         (SSZ1: 0 <= f'.(fn_stacksize) < Ptrofs.max_unsigned)
-        (SSZ2: forall ofs, Mem.perm m' sp' ofs Max Nonempty -> 0 <= ofs <= f'.(fn_stacksize)), (* FIXME off-by-one error? *)
+        (SSZ2: forall ofs, Mem.perm m' sp' ofs Max Nonempty -> 0 <= ofs <= f'.(fn_stacksize)),
       match_states (State stk f (Vptr sp Ptrofs.zero) pc rs m)
                    (State stk' f' (Vptr sp' Ptrofs.zero) (spc ctx pc) rs' m')
   | match_call_states: forall stk fd args m stk' fd' args' m' cunit F
@@ -1070,7 +1070,7 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
         (AC: Mem.can_access_block m' sp' (Some (comp_of f')))
         (PRIV: range_private F m m' sp' ctx.(dstk) f'.(fn_stacksize))
         (SSZ1: 0 <= f'.(fn_stacksize) < Ptrofs.max_unsigned)
-        (SSZ2: forall ofs, Mem.perm m' sp' ofs Max Nonempty -> 0 <= ofs <= f'.(fn_stacksize)), (* FIXME off-by-one error *)
+        (SSZ2: forall ofs, Mem.perm m' sp' ofs Max Nonempty -> 0 <= ofs <= f'.(fn_stacksize)),
       match_states (Callstate stk (Internal f) vargs m)
                    (State stk' f' (Vptr sp' Ptrofs.zero) pc' rs' m')
   | match_return_states: forall stk v m stk' v' m' F
@@ -1089,7 +1089,7 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
         (AC: Mem.can_access_block m' sp' (Some (comp_of f')))
         (PRIV: range_private F m m' sp' ctx.(dstk) f'.(fn_stacksize))
         (SSZ1: 0 <= f'.(fn_stacksize) < Ptrofs.max_unsigned)
-        (SSZ2: forall ofs, Mem.perm m' sp' ofs Max Nonempty -> 0 <= ofs <= f'.(fn_stacksize)), (* FIXME off-by-one error? *)
+        (SSZ2: forall ofs, Mem.perm m' sp' ofs Max Nonempty -> 0 <= ofs <= f'.(fn_stacksize)),
       match_states (Returnstate stk v m)
                    (State stk' f' (Vptr sp' Ptrofs.zero) pc' rs' m').
 

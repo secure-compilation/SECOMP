@@ -1356,27 +1356,6 @@ Proof.
   exists x0; split; auto. simpl; rewrite EQ; auto.
 Qed.
 
-(* FIXME?
-Lemma transl_expr_lvalue:
-  forall ge e c le m a loc ofs ce ta,
-  Clight.eval_lvalue ge e c le m a loc ofs ->
-  transl_expr ce a = OK ta ->
-  (exists tb, transl_lvalue ce a = OK tb /\ make_load tb (typeof a) = OK ta).
-Proof.
-  intros until ta; intros EVAL TR. inv EVAL; simpl in TR.
-  (* var local *)
-  exists (Eaddrof id); auto.
-  (* var global *)
-  exists (Eaddrof id); auto.
-  (* deref *)
-  monadInv TR. exists x; auto.
-  (* field struct *)
-  monadInv TR. exists x0; split; auto. simpl; rewrite EQ; auto.
-  (* field union *)
-  monadInv TR. exists x0; split; auto. simpl; rewrite EQ; auto.
-Qed.
-*)
-
 Lemma transl_expr_lvalue_correct:
   (forall a v,
    Clight.eval_expr ge e cp le m a v ->
