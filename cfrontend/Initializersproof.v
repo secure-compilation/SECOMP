@@ -809,25 +809,25 @@ Qed.
 Lemma reads_as_zeros_loadbytes: forall m cp b from to,
   reads_as_zeros m b from to cp ->
   forall len pos, from <= pos -> pos + len <= to -> 0 <= len ->
+  forall (OWN: Mem.can_access_block m b (Some cp)),
   Mem.loadbytes m b pos len (Some cp) = Some (repeat (Byte Byte.zero) (Z.to_nat len)).
 Proof.
   intros until to; intros RZ.
   induction len using (well_founded_induction (Zwf_well_founded 0)).
   intros. destruct (zeq len 0).
-(* - subst len. rewrite Mem.loadbytes_empty by lia. auto. *)
-- subst len. simpl. rewrite Mem.loadbytes_empty; auto. admit.
+- subst len. simpl. apply Mem.loadbytes_empty. lia. auto.
 - replace (Z.to_nat len) with (S (Z.to_nat (len - 1))).
   change (repeat (Byte Byte.zero) (S (Z.to_nat (len - 1))))
     with ((Byte Byte.zero :: nil) ++ repeat (Byte Byte.zero) (Z.to_nat (len - 1))).
   replace len with (1 + (len - 1)) at 1 by lia. 
   apply Mem.loadbytes_concat; try lia.
   + apply RZ. lia.
-  + apply H; unfold Zwf; lia.
+  + apply H; try exact OWN; unfold Zwf; lia.
   + rewrite <- Z2Nat.inj_succ by lia. f_equal; lia. 
-(* Qed. *)
-Admitted.
+Qed.
 
 Lemma reads_as_zeros_equiv: forall m b from to cp,
+  forall (OWN: Mem.can_access_block m b (Some cp)),
   reads_as_zeros m b from to cp <-> Genv.readbytes_as_zero m b from (to - from) (Some cp).
 Proof.
   intros; split; intros.
@@ -849,7 +849,9 @@ Record match_state (s: state) (m: mem) (b: block) (cp: compartment) : Prop := {
   match_valid:
     idlvalid 0 (rev s.(init));
   match_uninitialized:
-    reads_as_zeros m b s.(curr) s.(total_size) cp
+    reads_as_zeros m b s.(curr) s.(total_size) cp;
+  match_own:
+    Mem.can_access_block m b (Some cp)
 }.
 
 Lemma match_size: forall s m b cp,
@@ -887,6 +889,7 @@ Proof.
     * eapply reads_as_zeros_loadbytes; eauto. lia. lia. lia.
 - rewrite idlvalid_app. split; auto. simpl. intuition auto using Z.divide_1_l.
 - eapply reads_as_zeros_mono; eauto; lia.
+- assumption.
 Qed.
 
 Lemma trisection_correct: forall s m b cp pos sz bytes1 bytes2 il,
@@ -1012,6 +1015,7 @@ Proof.
     * eapply Mem.loadbytes_unchanged_on; eauto.
       intros. simpl. lia.
       eapply reads_as_zeros_loadbytes. eapply match_uninitialized; eauto. lia. lia. lia.
+      eapply match_own; eassumption.
     * exact D.
     * eapply match_range; eauto.
   + rewrite idlvalid_app; split.
@@ -1027,6 +1031,7 @@ Proof.
   + eapply reads_as_zeros_unchanged; eauto.
     eapply reads_as_zeros_mono. eapply match_uninitialized; eauto. lia. lia.
     intros. simpl. lia.
+  + apply Mem.loadbytes_can_access_block_inj in D. congruence.
 - monadInv ST. destruct x as [[bytes1 bytes2] il]. inv EQ0.
   assert (pos + sz <= curr s1) by (apply curr_pad_to).
   assert (MS': match_state s1 m b cp) by (apply pad_to_correct; auto).
@@ -1050,6 +1055,7 @@ Proof.
       rewrite Z2Nat.id by lia. simpl. tauto.
   + eapply reads_as_zeros_unchanged; eauto. eapply match_uninitialized; eauto.
     intros. simpl. lia.
+  + apply Mem.loadbytes_can_access_block_inj in D. congruence.
 Qed.
 
 Corollary store_int_correct: forall s m b cp pos isz n s' m',
@@ -1067,6 +1073,7 @@ Theorem init_data_list_of_state_correct: forall s m b cp il b' m1,
   match_state s m b cp ->
   init_data_list_of_state s = OK il ->
   Mem.range_perm m1 b' 0 s.(total_size) Cur Writable ->
+  forall (OWN: Mem.can_access_block m1 b' (Some cp)),
   reads_as_zeros m1 b' 0 s.(total_size) cp ->
   exists m2,
      Genv.store_init_data_list ge m1 b' 0 il cp = Some m2
@@ -1090,16 +1097,15 @@ Proof.
   exploit Genv.store_init_data_list_exists.
   3: eexact A. 3: eexact B.
   erewrite match_size by eauto. rewrite C. eauto.
-  instantiate (1 := cp). admit.
+  eauto.
   intros (m2 & ST). exists m2; split.
 - rewrite R. auto.
 - rewrite R. transitivity (Some (boidl (rev (init s1)))).
   + eapply Genv.store_init_data_list_loadbytes; eauto.
-    admit.
     erewrite match_size, C by eauto. auto.
   + symmetry. rewrite <- C. eapply match_contents; eauto.
-(* Qed. *)
-Admitted.
+- auto.
+Qed.
 
 (** ** Total size properties *)
 
@@ -1567,9 +1573,12 @@ Theorem transl_init_sound:
   let sz := sizeof (prog_comp_env p) ty in
   Mem.range_perm m b 0 sz Cur Writable ->
   reads_as_zeros m b 0 sz cp ->
+  forall (OWN: Mem.can_access_block m b (Some cp)),
   exec_init (globalenv p) m b 0 Full ty i cp m1 ->
   transl_init (prog_comp_env p) ty i = OK data ->
-  Genv.store_init_data_list (globalenv p) m b sz data cp = Some m1.
+  exists m2,
+     Genv.store_init_data_list (globalenv p) m b 0 data cp = Some m2
+  /\ Mem.loadbytes m2 b 0 (init_data_list_size data) (Some cp) = Mem.loadbytes m1 b 0 sz (Some cp).
 Proof.
   intros.
   set (ge := globalenv p) in *.
@@ -1580,15 +1589,14 @@ Proof.
   { constructor; simpl.
   - generalize (sizeof_pos ge ty). fold sz. lia.
   - apply Mem.loadbytes_empty. lia.
-    admit.
+    assumption.
   - auto.
   - assumption.
+  - rewrite OWN. reflexivity.
   }
   assert (match_state ge x m1 b cp).
   { eapply (proj1 (transl_init_rec_sound ge)); eauto. }
   assert (total_size x = sz).
   { change sz with s0.(total_size). eapply total_size_transl_init_rec; eauto. }
-  (* rewrite <- H4. eapply init_data_list_of_state_correct; eauto; rewrite H4; auto. *)
-  admit.
-(* Qed. *)
-Admitted.
+  rewrite <- H4. eapply init_data_list_of_state_correct; eauto; rewrite H4; auto.
+Qed.
