@@ -57,7 +57,7 @@ let preprocessed_file transfs name sourcefile =
   let p =
       let t = parse_transformations transfs in
       let log_fuel = Camlcoq.Nat.of_int 50 in
-      let ast : Cabs.definition list * Cabs.import list =
+      let ast : Cabs.definition list * (Cabs.import list * Cabs.export list) =
           (match Timing.time "Parsing"
               (* The call to Lexer.tokens_stream results in the pre
                  parsing of the entire file. This is non-negligeabe,

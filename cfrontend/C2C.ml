@@ -1465,9 +1465,37 @@ let public_globals gl =
     (fun accu (id, g) -> if atom_is_static id then accu else id :: accu)
     [] gl
 
+(* Let f := fun (m: T.t A) (k_v: T.elt * A) => T.set (fst k_v) (snd k_v) m. *)
+
+(* Definition of_list (l: list (T.elt * A)) : T.t A := *)
+(*   List.fold_left f l (T.empty _). *)
+
+let add_to_tree = fun m k_v ->
+  match Maps.PTree.get (fst k_v) m with
+  | None -> Maps.PTree.set (fst k_v) [snd k_v] m
+  | Some s -> Maps.PTree.set (fst k_v) (snd k_v :: s) m
+
+let of_list' l =
+  List.fold_left add_to_tree Maps.PTree.empty l
+
+(* FIXME: this is very ad-hoc. I'm worried that by generating new names using "intern_string", we might be doing something bad. Ideally, we should inspect *)
+(* the rest of the file and figure out how the translation between C.ident and AST.ident works. *)
+let build_policy (imports: C.import list) (exports: C.export list): AST.Policy.t =
+  let open AST.Policy in
+  let exports' = List.map (function Export(id1, id2) -> (intern_string id1.name, intern_string id2.name)) exports in
+  let exports'': AST.ident list Maps.PTree.t = of_list' exports' in
+  let imports' = List.map (function Import(id1, id2, id3) -> (intern_string id1.name, (intern_string id2.name, intern_string id3.name))) imports in
+  let imports'': (AST.compartment * AST.ident) list Maps.PTree.t = of_list' imports' in
+  (* let imports'': (AST.compartment * AST.ident) list Maps.PTree.t = Maps.PTree_Properties.of_list [] in *)
+  let p = { policy_export = exports'';
+            policy_import = imports'' } in
+  p
+
+  (* AST.Policy.empty_pol *)
+
 (** Convert a [C.program] into a [Csyntax.program] *)
 
-let convertProgram (p, imports) =
+let convertProgram (p, (imports, exports)) =
   Diagnostics.reset();
   stringNum := 0;
   Hashtbl.clear decl_atom;
@@ -1487,7 +1515,7 @@ let convertProgram (p, imports) =
         let gl2 = globals_for_strings gl1 in
         comp_env := Maps.PTree.empty;
         let p' =
-          { prog_pol = AST.Policy.empty_pol; (* FIXME *)
+          { prog_pol = build_policy imports exports ;
             prog_defs = gl2;
             prog_public = public_globals gl2;
             prog_main = intern_string "main";

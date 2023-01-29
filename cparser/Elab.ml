@@ -72,6 +72,7 @@ let elab_loc l = (l.filename, l.lineno)
 
 let top_declarations = ref ([] : globdecl list)
 let top_imports = ref ([] : C.import list)
+let top_exports = ref ([] : C.export list)
 
 (* Environment that records the top declarations of functions and
    variables with external or internal linkage.  Used for
@@ -114,16 +115,25 @@ let emit_import imp =
   | C.Import(id1, id2, id3) ->
     top_imports := imp :: !top_imports
 
-let reset() = top_declarations := []; top_imports := []; top_environment := Env.empty; global_defines := StringSet.empty
+(* TODO: integrate it better with the rest of CompCert *)
+let emit_export exp =
+  match exp with
+  | C.Export(id1, id2) ->
+    top_exports := exp :: !top_exports
+
+let reset() = top_declarations := []; top_imports := []; top_exports := [];
+  top_environment := Env.empty; global_defines := StringSet.empty
 
 let elaborated_program () =
   let p = !top_declarations in
   let imports = !top_imports in
+  let exports = !top_exports in
   top_declarations := [];
   top_imports := [];
+  top_exports := [];
   (* let imports: C.import list = (\* TODO *\) failwith "NOT IMPLEMENTED YET" in *)
   (* Reverse it and eliminate unreferenced declarations *)
-  Cleanup.program (p, imports)
+  Cleanup.program (p, (imports, exports))
 
 (* Monadic map for functions env -> 'a -> 'b * env *)
 
@@ -2853,6 +2863,13 @@ let elab_import (imp: Cabs.import): unit =
     let id3 = Env.fresh_ident name3 in
     emit_import(C.Import(id1, id2, id3))
 
+(* TODO: check this does the right thing.  *)
+let elab_export (exp: Cabs.export): unit =
+  match exp with
+  | Cabs.Export(name1, name2) ->
+    let id1 = Env.fresh_ident name1 in
+    let id2 = Env.fresh_ident name2 in
+    emit_export(C.Export(id1, id2))
 
 (* Extended asm *)
 
@@ -3169,12 +3186,13 @@ let _ = elab_funbody_f := elab_funbody
 
 (** * Entry point *)
 
-let elab_file (prog, imports) =
+let elab_file (prog, (imports, exports)) =
   reset();
   let env = Env.initial () in
   let elab_def env d = snd (elab_definition false false false env d) in
   ignore (List.fold_left elab_def env prog);
   ignore (List.iter elab_import imports);
+  ignore (List.iter elab_export exports);
   let p = elaborated_program () in
   Checks.unused_variables p;
   Checks.unknown_attrs_program p;

@@ -560,15 +560,22 @@ let imp pp g =
         ident id3
         ident id2
 
+let expor pp g =
+  match g with
+  | Export(id1, id2) ->
+      fprintf pp "%a exports %a"
+        ident id1
+        ident id2
 
-let program pp (defs, imports) =
+let program pp (defs, (imports, exports)) =
   fprintf pp "@[<v 0>";
   List.iter (globdecl pp) defs;
   fprintf pp "@]@."
 
-let program' pp (defs, imports) =
+let program' pp (defs, (imports, exports)) =
   fprintf pp "@[<v 0>";
   List.iter (imp pp) imports;
+  List.iter (expor pp) exports;
   fprintf pp "@]@."
 
 

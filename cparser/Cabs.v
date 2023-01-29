@@ -230,3 +230,7 @@ Variant import :=
   | Import : (* importing compartment *) string ->
              (* compartment imported from *) string ->
              (* imported function name *) string -> import.
+
+Variant export :=
+  | Export : (* exporting compartment *) string ->
+             (* imported function name *) string -> export.

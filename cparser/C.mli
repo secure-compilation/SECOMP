@@ -268,7 +268,10 @@ and globdecl_desc =
 type import =
   | Import of ident * ident * ident
 
-type program = (globdecl list * import list)
+type export =
+  | Export of ident * ident
+
+type program = (globdecl list * (import list * export list))
 
 (** Builtin types and functions *)
 

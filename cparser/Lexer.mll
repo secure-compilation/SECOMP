@@ -332,6 +332,7 @@ rule initial = parse
   | "]"|":>"                      { RBRACK(currentLoc lexbuf) }
   | "§"                           { SECTION(currentLoc lexbuf) }
   | "«"                           { IMPORTS(currentLoc lexbuf) }
+  | "»"                           { EXPORTS(currentLoc lexbuf) }
   | "("                           { LPAREN(currentLoc lexbuf) }
   | ")"                           { RPAREN(currentLoc lexbuf) }
   | ";"                           { SEMICOLON(currentLoc lexbuf) }
@@ -574,6 +575,7 @@ and singleline_comment = parse
       | Pre_parser.RPAREN loc -> loop (Parser.RPAREN loc)
       | Pre_parser.SECTION loc -> loop (Parser.SECTION loc)
       | Pre_parser.IMPORTS loc -> loop (Parser.IMPORTS loc)
+      | Pre_parser.EXPORTS loc -> loop (Parser.EXPORTS loc)
       | Pre_parser.SEMICOLON loc -> loop (Parser.SEMICOLON loc)
       | Pre_parser.SHORT loc -> loop (Parser.SHORT loc)
       | Pre_parser.SIGNED loc -> loop (Parser.SIGNED loc)

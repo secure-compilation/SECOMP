@@ -4,6 +4,9 @@ static §comp_add§ int add(int x, int y) {
   return x + y;
 }
 
+§comp_add§ exports add
+§comp_main§ exports add
+
 §comp_main§ « §comp_add§[add]
 
 §comp_main§ int main() {
