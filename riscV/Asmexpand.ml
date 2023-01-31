@@ -68,11 +68,11 @@ let move_double_arg fr i =
   end else begin
     emit (Paddiw(X2, X X2, Integers.Int.neg _16));
     emit (Pfsd(fr, X2, Ofsimm _0));
-    emit (Plw(int_param_regs.(i), X2, Ofsimm _0));
+    emit (Plw(int_param_regs.(i), X2, Ofsimm _0, false));
     if i < 7 then begin
-      emit (Plw(int_param_regs.(i + 1), X2, Ofsimm _4))
+      emit (Plw(int_param_regs.(i + 1), X2, Ofsimm _4, false))
     end else begin
-      emit (Plw(X31, X2, Ofsimm _4));
+      emit (Plw(X31, X2, Ofsimm _4, false));
       emit (Psw(X31, X2, Ofsimm _16))
     end;
     emit (Paddiw(X2, X X2, _16))
@@ -90,10 +90,10 @@ let move_double_param fr i =
     if i < 7 then begin
       emit (Psw(int_param_regs.(i + 1), X2, Ofsimm _4))
     end else begin
-      emit (Plw(X31, X2, Ofsimm _16));
+      emit (Plw(X31, X2, Ofsimm _16, false));
       emit (Psw(X31, X2, Ofsimm _4))
     end;
-    emit (Pfld(fr, X2, Ofsimm _0));
+    emit (Pfld(fr, X2, Ofsimm _0, false));
     emit (Paddiw(X2, X X2, _16))
   end
 

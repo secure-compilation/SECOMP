@@ -605,7 +605,9 @@ let global_for_string s id =
     init := AST.Init_int8(Z.of_uint(Char.code c)) :: !init in
   add_char '\000';
   for i = String.length s - 1 downto 0 do add_char s.[i] done;
-  AST.(id, Gvar { gvar_info = typeStringLiteral s;  gvar_init = !init;
+  AST.(id, Gvar { gvar_comp = privileged_compartment;
+                   (* FIXME: this is incorrect *)
+      gvar_info = typeStringLiteral s;  gvar_init = !init;
                   gvar_readonly = true;  gvar_volatile = false})
 
 let is_C_wide_string s = not (List.mem 0L s)
@@ -645,7 +647,8 @@ let global_for_wide_string (s, ik) id =
     init := init_of_char(Z.of_uint64 c) :: !init in
   List.iter add_char s;
   add_char 0L;
-  AST.(id, Gvar { gvar_info = typeWideStringLiteral s ik;
+  AST.(id, Gvar { gvar_comp = privileged_compartment; (* FIXME: incorrect *)
+      gvar_info = typeWideStringLiteral s ik;
                   gvar_init = List.rev !init;
                   gvar_readonly = true; gvar_volatile = false})
 
@@ -1521,7 +1524,6 @@ let debug_set_struct_ofs env typs =
         | _ -> ()) typs
 
 (** Convert a [C.program] into a [Csyntax.program] *)
-
 let convertProgram (p, (imports, exports)) =
   Diagnostics.reset();
   stringNum := 0;

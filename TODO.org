@@ -2,10 +2,9 @@
 
 ** Parser and testing
 
-[] Finish writing a working parser. We need to modify the C2C.ml file in cfrontend/
-   so that it uses the list of imports the parser gives and produces a C-level interface.
-
-[] Write new syntax and a parser for exports, probably by adding a declaration specifier.
+[] Important fix in the Parser: in C2C.ml, we currently
+   generate some [privileged_compartment] for the compartment
+   of some variables. Should those be something else?
 
 [] Fixing various things in the parser. Integrate the parsing of imports and exports with
    the rest of the parsing and compilation steps before "parsed C". 

@@ -115,9 +115,6 @@ Proof.
   intros cp vf H.
   destruct TRANSL.
   eapply (Genv.match_genvs_allowed_calls H0). eauto.
-Unshelve. (* TODO build instance proof in *)
-  intros ctx f tf [? ? []|]; trivial.
-  symmetry; eauto.
 Qed.
 
 Lemma find_comp_translated:
@@ -126,9 +123,6 @@ Lemma find_comp_translated:
 Proof.
   destruct TRANSL.
   eapply (Genv.match_genvs_find_comp H).
-Unshelve. (* TODO build instance proof in *)
-  intros ctx f tf [? ? []|]; trivial.
-  symmetry; eauto.
 Qed.
 
 Lemma type_of_call_translated:
@@ -2593,9 +2587,6 @@ Proof.
   eexact FIND.
   rewrite <- H3. eapply type_of_fundef_preserved; eauto.
   econstructor; eauto. intros; constructor.
-Unshelve. (* TODO build instance proof in *)
-  intros ctx ? ? [? ? []|]; trivial.
-  symmetry; eauto.
 Qed.
 
 Lemma transl_final_states:

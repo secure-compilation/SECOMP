@@ -47,7 +47,7 @@ let parse_string name text =
     Parser.translation_unit_file log_fuel (Lexer.tokens_stream name text)
   with
   | Parser.MenhirLibParser.Inter.Parsed_pr (ast, _ ) ->
-      (ast: Cabs.definition list)
+      ast
   | _ -> (* Fail_pr or Fail_pr_full or Timeout_pr, depending
             on the version of Menhir.
             Fail_pr{,_full} means that there's an inconsistency
