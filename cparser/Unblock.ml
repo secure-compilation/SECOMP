@@ -6,10 +6,11 @@
 (*                                                                     *)
 (*  Copyright Institut National de Recherche en Informatique et en     *)
 (*  Automatique.  All rights reserved.  This file is distributed       *)
-(*  under the terms of the GNU General Public License as published by  *)
-(*  the Free Software Foundation, either version 2 of the License, or  *)
-(*  (at your option) any later version.  This file is also distributed *)
-(*  under the terms of the INRIA Non-Commercial License Agreement.     *)
+(*  under the terms of the GNU Lesser General Public License as        *)
+(*  published by the Free Software Foundation, either version 2.1 of   *)
+(*  the License, or  (at your option) any later version.               *)
+(*  This file is also distributed under the terms of the               *)
+(*  INRIA Non-Commercial License Agreement.                            *)
 (*                                                                     *)
 (* *********************************************************************)
 
@@ -31,6 +32,9 @@ let rec local_initializer env path init k =
       let (ty_elt, sz) =
         match unroll env path.etyp with
         | TArray(ty_elt, Some sz, _) -> (ty_elt, sz)
+        (* We accept empty array initializer for flexible array members, which
+           has size zero *)
+        | TArray(ty_elt, None, _) when il = [] -> (ty_elt, 0L)
         | _ -> Diagnostics.fatal_error Diagnostics.no_loc "wrong type for array initializer" in
       let rec array_init pos il =
         if pos >= sz then k else begin
@@ -213,14 +217,12 @@ let debug_scope ctx =
   debug_annot 6L (empty_string :: List.rev_map integer_const ctx)
 
 (* Add line number debug annotation if the line number changes.
-   Labels are ignored since the code before the label can become
-   unreachable. Add scope debug annotation regardless. *)
+   Add scope debug annotation regardless. *)
 
-
-let add_lineno ?(label=false) ctx prev_loc this_loc s =
+let add_lineno ctx prev_loc this_loc s =
   if !Clflags.option_g then
     sseq no_loc (debug_scope ctx)
-      (if this_loc <> prev_loc && this_loc <> no_loc && not label
+      (if this_loc <> prev_loc && this_loc <> no_loc
        then sseq no_loc (debug_lineno this_loc) s
        else s)
   else s
@@ -293,12 +295,15 @@ let rec unblock_stmt env ctx ploc s cp =
         {s with sdesc = Sswitch(expand_expr true env e cp,
                                 unblock_stmt env ctx s.sloc s1 cp)}
   | Slabeled(lbl, s1) ->
-    let loc,label = if s.sloc <> s1.sloc then
-        s.sloc,false (* Label and code are on different lines *)
-      else
-        ploc,true in
-    add_lineno ~label:label ctx ploc s.sloc
-        {s with sdesc = Slabeled(lbl, unblock_stmt env ctx loc s1 cp)}
+      (* Do not put debug info before label, only after. *)
+      (* If the label and the statement are on different lines,
+         put extra debug info before s1, referring to the line of the label. *)
+      let s1' =
+        if s.sloc <> s1.sloc then
+          add_lineno ctx ploc s.sloc (unblock_stmt env ctx s.sloc s1 cp)
+        else
+          unblock_stmt env ctx ploc s1 cp in
+      {s with sdesc = Slabeled(lbl, s1')}
   | Sgoto lbl ->
       add_lineno ctx ploc s.sloc s
   | Sreturn None ->

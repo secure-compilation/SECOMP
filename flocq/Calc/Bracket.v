@@ -19,14 +19,19 @@ COPYING file for more details.
 
 (** * Locations: where a real number is positioned with respect to its rounded-down value in an arbitrary format. *)
 
-Require Import Raux Defs Float_prop.
+From Coq Require Import ZArith Reals Lia.
+From Coq Require SpecFloat.
+
+Require Import Zaux Raux Defs Float_prop.
+
+Notation location := SpecFloat.location (only parsing).
+Notation loc_Exact := SpecFloat.loc_Exact (only parsing).
+Notation loc_Inexact := SpecFloat.loc_Inexact (only parsing).
 
 Section Fcalc_bracket.
 
 Variable d u : R.
 Hypothesis Hdu : (d < u)%R.
-
-Inductive location := loc_Exact | loc_Inexact : comparison -> location.
 
 Variable x : R.
 
@@ -233,7 +238,7 @@ apply Rplus_le_compat_l.
 apply Rmult_le_compat_r.
 now apply Rlt_le.
 apply IZR_le.
-omega.
+lia.
 (* . *)
 now rewrite middle_range.
 Qed.
@@ -246,7 +251,7 @@ Theorem inbetween_step_Lo :
 Proof.
 intros x k l Hx Hk1 Hk2.
 apply inbetween_step_not_Eq with (1 := Hx).
-omega.
+lia.
 apply Rcompare_Lt.
 assert (Hx' := inbetween_bounds _ _ (ordered_steps _) _ _ Hx).
 apply Rlt_le_trans with (1 := proj2 Hx').
@@ -255,7 +260,7 @@ rewrite Rcompare_plus_l, Rcompare_mult_r, Rcompare_half_l.
 apply Rcompare_not_Lt.
 rewrite <- mult_IZR.
 apply IZR_le.
-omega.
+lia.
 exact Hstep.
 Qed.
 
@@ -267,7 +272,7 @@ Theorem inbetween_step_Hi :
 Proof.
 intros x k l Hx Hk1 Hk2.
 apply inbetween_step_not_Eq with (1 := Hx).
-omega.
+lia.
 apply Rcompare_Gt.
 assert (Hx' := inbetween_bounds _ _ (ordered_steps _) _ _ Hx).
 apply Rlt_le_trans with (2 := proj1 Hx').
@@ -276,7 +281,7 @@ rewrite Rcompare_plus_l, Rcompare_mult_r, Rcompare_half_l.
 apply Rcompare_Lt.
 rewrite <- mult_IZR.
 apply IZR_lt.
-omega.
+lia.
 exact Hstep.
 Qed.
 
@@ -331,7 +336,7 @@ Theorem inbetween_step_any_Mi_odd :
 Proof.
 intros x k l Hx Hk.
 apply inbetween_step_not_Eq with (1 := Hx).
-omega.
+lia.
 inversion_clear Hx as [|l' _ Hl].
 now rewrite (middle_odd _ Hk) in Hl.
 Qed.
@@ -344,7 +349,7 @@ Theorem inbetween_step_Lo_Mi_Eq_odd :
 Proof.
 intros x k Hx Hk.
 apply inbetween_step_not_Eq with (1 := Hx).
-omega.
+lia.
 inversion_clear Hx as [Hl|].
 rewrite Hl.
 rewrite Rcompare_plus_l, Rcompare_mult_r, Rcompare_half_r.
@@ -365,7 +370,7 @@ Theorem inbetween_step_Hi_Mi_even :
 Proof.
 intros x k l Hx Hl Hk.
 apply inbetween_step_not_Eq with (1 := Hx).
-omega.
+lia.
 apply Rcompare_Gt.
 assert (Hx' := inbetween_bounds_not_Eq _ _ _ _ Hx Hl).
 apply Rle_lt_trans with (2 := proj1 Hx').
@@ -387,7 +392,7 @@ Theorem inbetween_step_Mi_Mi_even :
 Proof.
 intros x k Hx Hk.
 apply inbetween_step_not_Eq with (1 := Hx).
-omega.
+lia.
 apply Rcompare_Eq.
 inversion_clear Hx as [Hx'|].
 rewrite Hx', <- Hk, mult_IZR.
@@ -433,10 +438,10 @@ now apply inbetween_step_Lo_not_Eq with (2 := H1).
 destruct (Zcompare_spec (2 * k) nb_steps) as [Hk1|Hk1|Hk1].
 (* . 2 * k < nb_steps *)
 apply inbetween_step_Lo with (1 := Hx).
-omega.
+lia.
 destruct (Zeven_ex nb_steps).
 rewrite He in H.
-omega.
+lia.
 (* . 2 * k = nb_steps *)
 set (l' := match l with loc_Exact => Eq | _ => Gt end).
 assert ((l = loc_Exact /\ l' = Eq) \/ (l <> loc_Exact /\ l' = Gt)).
@@ -490,7 +495,7 @@ now apply inbetween_step_Lo_not_Eq with (2 := H1).
 destruct (Zcompare_spec (2 * k + 1) nb_steps) as [Hk1|Hk1|Hk1].
 (* . 2 * k + 1 < nb_steps *)
 apply inbetween_step_Lo with (1 := Hx) (3 := Hk1).
-omega.
+lia.
 (* . 2 * k + 1 = nb_steps *)
 destruct l.
 apply inbetween_step_Lo_Mi_Eq_odd with (1 := Hx) (2 := Hk1).
@@ -499,7 +504,7 @@ apply inbetween_step_any_Mi_odd with (1 := Hx) (2 := Hk1).
 apply inbetween_step_Hi with (1 := Hx).
 destruct (Zeven_ex nb_steps).
 rewrite Ho in H.
-omega.
+lia.
 apply Hk.
 Qed.
 
@@ -529,15 +534,34 @@ Qed.
 
 End Fcalc_bracket_step.
 
-Section Fcalc_bracket_scale.
+Section Bracket_plus.
 
-Lemma inbetween_mult_aux :
-  forall x d s,
-  ((x * s + d * s) / 2 = (x + d) / 2 * s)%R.
+Theorem inbetween_plus_compat :
+  forall x d u l t,
+  inbetween x d u l ->
+  inbetween (x + t) (d + t) (u + t) l.
 Proof.
-intros x d s.
-field.
+intros x d u l t [Hx|l' Hx Hl] ; constructor.
+now rewrite Hx.
+now split ; apply Rplus_lt_compat_r.
+replace ((x + t + (d + t)) / 2)%R with ((x + d) / 2 + t)%R by field.
+now rewrite Rcompare_plus_r.
 Qed.
+
+Theorem inbetween_plus_reg :
+  forall x d u l t,
+  inbetween (x + t) (d + t) (u + t) l ->
+  inbetween x d u l.
+Proof.
+intros x d u l t H.
+generalize (inbetween_plus_compat _ _ _ _ (Ropp t) H).
+assert (K: forall y, (y + t + -t = y)%R) by (intros y ; ring).
+now rewrite 3!K.
+Qed.
+
+End Bracket_plus.
+
+Section Fcalc_bracket_scale.
 
 Theorem inbetween_mult_compat :
   forall x d u l s,
@@ -548,7 +572,7 @@ Proof.
 intros x d u l s Hs [Hx|l' Hx Hl] ; constructor.
 now rewrite Hx.
 now split ; apply Rmult_lt_compat_r.
-rewrite inbetween_mult_aux.
+replace ((x * s + d * s) / 2)%R with ((x + d) / 2 * s)%R by field.
 now rewrite Rcompare_mult_r.
 Qed.
 
@@ -558,12 +582,11 @@ Theorem inbetween_mult_reg :
   inbetween (x * s) (d * s) (u * s) l ->
   inbetween x d u l.
 Proof.
-intros x d u l s Hs [Hx|l' Hx Hl] ; constructor.
-apply Rmult_eq_reg_r with (1 := Hx).
-now apply Rgt_not_eq.
-now split ; apply Rmult_lt_reg_r with s.
-rewrite <- Rcompare_mult_r with (1 := Hs).
-now rewrite inbetween_mult_aux in Hl.
+intros x d u l s Hs H.
+generalize (inbetween_mult_compat _ _ _ _ _ (Rinv_0_lt_compat s Hs) H).
+assert (K: forall y, (y * s * /s = y)%R).
+{ intros y. field. now apply Rgt_not_eq. }
+now rewrite 3!K.
 Qed.
 
 End Fcalc_bracket_scale.
@@ -612,7 +635,7 @@ clear -Hk. intros m.
 rewrite (F2R_change_exp beta e).
 apply (f_equal (fun r => F2R (Float beta (m * Zpower _ r) e))).
 ring.
-omega.
+lia.
 assert (Hp: (Zpower beta k > 0)%Z).
 apply Z.lt_gt.
 apply Zpower_gt_0.
@@ -622,7 +645,7 @@ rewrite 2!Hr.
 rewrite Zmult_plus_distr_l, Zmult_1_l.
 unfold F2R at 2. simpl.
 rewrite plus_IZR, Rmult_plus_distr_r.
-apply new_location_correct.
+apply new_location_correct; unfold F2R; simpl.
 apply bpow_gt_0.
 now apply Zpower_gt_1.
 now apply Z_mod_lt.
@@ -665,7 +688,7 @@ rewrite <- Hm in H'. clear -H H'.
 apply inbetween_unique with (1 := H) (2 := H').
 destruct (inbetween_float_bounds x m e l H) as (H1,H2).
 destruct (inbetween_float_bounds x m' e l' H') as (H3,H4).
-cut (m < m' + 1 /\ m' < m + 1)%Z. clear ; omega.
+cut (m < m' + 1 /\ m' < m + 1)%Z. clear ; lia.
 now split ; apply lt_F2R with beta e ; apply Rle_lt_trans with x.
 Qed.
 

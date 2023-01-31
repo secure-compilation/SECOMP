@@ -87,6 +87,7 @@ Module Pregmap := EMap(PregEq).
 
 (** Conventional names for stack pointer ([SP]) and return address ([RA]) *)
 
+Declare Scope asm.
 Notation "'SP'" := GPR1 (only parsing) : asm.
 Notation "'RA'" := LR (only parsing) : asm.
 
@@ -200,12 +201,9 @@ Inductive instruction : Type :=
   | Pfadd: freg -> freg -> freg -> instruction                (**r float addition *)
   | Pfadds: freg -> freg -> freg -> instruction               (**r float addition *)
   | Pfcmpu: freg -> freg -> instruction                       (**r float comparison *)
-  | Pfcfi: freg -> ireg -> instruction                        (**r signed-int-to-float conversion (pseudo, PPC64) *)
   | Pfcfl: freg -> ireg -> instruction                        (**r signed-long-to-float conversion (pseudo, PPC64) *)
-  | Pfcfiu: freg -> ireg -> instruction                       (**r unsigned-int-to-float conversion (pseudo, PPC64) *)
   | Pfcfid: freg -> freg -> instruction                       (**r signed-long-to-float conversion (PPC64) *)
   | Pfcti: ireg -> freg -> instruction                        (**r float-to-signed-int conversion, round towards 0 (pseudo) *)
-  | Pfctiu: ireg -> freg -> instruction                       (**r float-to-unsigned-int conversion, round towards 0 (pseudo, PPC64) *)
   | Pfctid: ireg -> freg -> instruction                       (**r float-to-signed-int conversion, round towards 0 (pseudo, PPC64) *)
   | Pfctidz: freg -> freg -> instruction                      (**r float-to-signed-long conversion, round towards 0 (PPC64) *)
   | Pfctiw: freg -> freg -> instruction                       (**r float-to-signed-int conversion, round by default *)
@@ -542,6 +540,8 @@ Axiom small_data_area_addressing:
 
 Parameter symbol_is_rel_data: ident -> ptrofs -> bool.
 
+Parameter symbol_is_aligned: ident -> Z -> bool.
+
 (** Armed with the [low_half] and [high_half] functions,
   we can define the evaluation of a symbolic constant.
   Note that for [const_high], integer constants
@@ -826,16 +826,10 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : out
       Next (nextinstr (rs#rd <- (Val.addfs rs#r1 rs#r2))) m
   | Pfcmpu r1 r2 =>
       Next (nextinstr (compare_float rs rs#r1 rs#r2)) m
-  | Pfcfi rd r1 =>
-      Next (nextinstr (rs#rd <- (Val.maketotal (Val.floatofint rs#r1)))) m
   | Pfcfl rd r1 =>
       Next (nextinstr (rs#rd <- (Val.maketotal (Val.floatoflong rs#r1)))) m
-  | Pfcfiu rd r1 =>
-      Next (nextinstr (rs#rd <- (Val.maketotal (Val.floatofintu rs#r1)))) m
   | Pfcti rd r1 =>
       Next (nextinstr (rs#FPR13 <- Vundef #rd <- (Val.maketotal (Val.intoffloat rs#r1)))) m
-  | Pfctiu rd r1 =>
-      Next (nextinstr (rs#FPR13 <- Vundef #rd <- (Val.maketotal (Val.intuoffloat rs#r1)))) m
   | Pfctid rd r1 =>
       Next (nextinstr (rs#FPR13 <- Vundef #rd <- (Val.maketotal (Val.longoffloat rs#r1)))) m
   | Pfdiv rd r1 r2 =>
@@ -1205,7 +1199,7 @@ Inductive step: state -> trace -> state -> Prop :=
       external_call ef ge (comp_of f) vargs m t vres m' ->
       rs' = nextinstr
               (set_res res vres
-                (undef_regs (map preg_of (destroyed_by_builtin ef)) rs)) ->
+                (undef_regs (IR GPR0 :: map preg_of (destroyed_by_builtin ef)) rs)) ->
       step (State rs m) t (State rs' m')
   | exec_step_external:
       forall b ef args res rs m t rs' m' cp,
@@ -1287,7 +1281,7 @@ Ltac Equalities :=
   split. auto. intros. destruct B; auto. subst. auto.
 (* trace length *)
   red; intros. inv H; simpl.
-  omega.
+  lia.
   eapply external_call_trace_length; eauto.
   eapply external_call_trace_length; eauto.
 (* initial states *)

@@ -82,7 +82,7 @@ Lemma transf_function_no_overflow:
   transf_function f = OK tf -> list_length_z tf.(fn_code) <= Ptrofs.max_unsigned.
 Proof.
   intros. monadInv H. destruct (zlt Ptrofs.max_unsigned (list_length_z x.(fn_code))); inv EQ0.
-  omega.
+  lia.
 Qed.
 
 Lemma exec_straight_exec:
@@ -223,7 +223,7 @@ Qed.
 Remark loadsymbol_label: forall r id ofs k, tail_nolabel k (loadsymbol r id ofs k).
 Proof.
   intros; unfold loadsymbol.
-  destruct (Archi.pic_code tt); TailNoLabel. destruct Ptrofs.eq; TailNoLabel.
+  destruct (SelectOp.symbol_is_relocatable id); TailNoLabel. destruct Ptrofs.eq; TailNoLabel.
 Qed. 
 Hint Resolve loadsymbol_label: labels.
 
@@ -439,8 +439,8 @@ Proof.
   split. unfold goto_label. rewrite P. rewrite H1. auto.
   split. rewrite Pregmap.gss. econstructor; eauto.
   rewrite Ptrofs.unsigned_repr. replace (pos' - 0) with pos' in Q.
-  auto. omega.
-  generalize (transf_function_no_overflow _ _ H0). omega.
+  auto. lia.
+  generalize (transf_function_no_overflow _ _ H0). lia.
   intros. apply Pregmap.gso; auto.
 Qed.
 
@@ -487,7 +487,7 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
         (MEXT: Mem.extends m m')
         (AT: transl_code_at_pc ge (rs PC) fb f c ep tf tc)
         (AG: agree ms sp rs)
-        (DXP: ep = true -> rs#X29 = parent_sp s),
+        (DXP: ep = true -> rs#X15 = parent_sp s),
       match_states (Mach.State s fb sp c ms m)
                    (Asm.State rs m')
   | match_states_call:
@@ -518,7 +518,7 @@ Lemma exec_straight_steps:
    exists rs2,
        exec_straight tge tf c rs1 m1' k rs2 m2'
     /\ agree ms2 sp rs2
-    /\ (it1_is_parent ep i = true -> rs2#X29 = parent_sp s)) ->
+    /\ (it1_is_parent ep i = true -> rs2#X15 = parent_sp s)) ->
   exists st',
   plus step tge (State rs1 m1') E0 st' /\
   match_states (Mach.State s fb sp c ms2 m2) st'.
@@ -629,9 +629,9 @@ Definition measure (s: Mach.state) : nat :=
   | Mach.Returnstate _ _ _ => 1%nat
   end.
 
-Remark preg_of_not_X29: forall r, negb (mreg_eq r R29) = true -> IR X29 <> preg_of r.
+Remark preg_of_not_X15: forall r, negb (mreg_eq r R15) = true -> IR X15 <> preg_of r.
 Proof.
-  intros. change (IR X29) with (preg_of R29). red; intros.
+  intros. change (IR X15) with (preg_of R15). red; intros.
   exploit preg_of_injective; eauto. intros; subst r; discriminate.
 Qed.
 
@@ -687,26 +687,26 @@ Proof.
 Opaque loadind.
   left; eapply exec_straight_steps; eauto; intros. monadInv TR. 
   destruct ep.
-(* X30 contains parent *)
+(* X15 contains parent *)
   exploit loadind_correct. eexact EQ.
   instantiate (2 := rs0). simpl; rewrite DXP; eauto. simpl; congruence.
   intros [rs1 [P [Q R]]].
   exists rs1; split. eauto.
   split. eapply agree_set_mreg. eapply agree_set_mreg; eauto. congruence. auto with asmgen.
   simpl; intros. rewrite R; auto with asmgen.
-  apply preg_of_not_X29; auto.
-(* X30 does not contain parent *)
+  apply preg_of_not_X15; auto.
+(* X15 does not contain parent *)
   exploit loadptr_correct. eexact A. simpl; congruence. intros [rs1 [P [Q R]]].
   exploit loadind_correct. eexact EQ. instantiate (2 := rs1). simpl; rewrite Q. eauto. simpl; congruence.
   intros [rs2 [S [T U]]].
   exists rs2; split. eapply exec_straight_trans; eauto.
   split. eapply agree_set_mreg. eapply agree_set_mreg. eauto. eauto.
-  instantiate (1 := rs1#X29 <- (rs2#X29)). intros.
+  instantiate (1 := rs1#X15 <- (rs2#X15)). intros.
   rewrite Pregmap.gso; auto with asmgen.
   congruence.
-  intros. unfold Pregmap.set. destruct (PregEq.eq r' X29). congruence. auto with asmgen.
+  intros. unfold Pregmap.set. destruct (PregEq.eq r' X15). congruence. auto with asmgen.
   simpl; intros. rewrite U; auto with asmgen.
-  apply preg_of_not_X29; auto.
+  apply preg_of_not_X15; auto.
 
 - (* Mop *)
   assert (eval_operation tge sp op (map rs args) m = Some v).
@@ -719,7 +719,7 @@ Opaque loadind.
   apply agree_set_undef_mreg with rs0; auto. 
   apply Val.lessdef_trans with v'; auto.
   simpl; intros. InvBooleans. 
-  rewrite R; auto. apply preg_of_not_X29; auto.
+  rewrite R; auto. apply preg_of_not_X15; auto.
 Local Transparent destroyed_by_op.
   destruct op; try exact I; simpl; congruence.
 
@@ -849,13 +849,16 @@ Local Transparent destroyed_by_op.
   econstructor; eauto.
   instantiate (2 := tf); instantiate (1 := x).
   unfold nextinstr. rewrite Pregmap.gss.
-  rewrite set_res_other. rewrite undef_regs_other_2.
+  rewrite set_res_other. rewrite undef_regs_other.
   rewrite <- H1. simpl. econstructor; eauto.
   eapply code_tail_next_int; eauto.
-  rewrite preg_notin_charact. intros. auto with asmgen.
+  simpl; intros. destruct H4. congruence. destruct H4. congruence.
+  exploit list_in_map_inv; eauto. intros (mr & U & V). subst.
+  auto with asmgen.
   auto with asmgen.
   apply agree_nextinstr. eapply agree_set_res; auto.
-  eapply agree_undef_regs; eauto. intros. rewrite undef_regs_other_2; auto.
+  eapply agree_undef_regs; eauto. intros.
+  simpl. rewrite undef_regs_other_2; auto. Simpl.
   congruence.
 
 - (* Mgoto *)
@@ -897,7 +900,7 @@ Local Transparent destroyed_by_op.
   exploit functions_transl; eauto. intro FN.
   generalize (transf_function_no_overflow _ _ H5); intro NOOV.
   exploit find_label_goto_label. eauto. eauto.
-  instantiate (2 := rs0#X16 <- Vundef #X17 <- Vundef).
+  instantiate (2 := rs0#X16 <- Vundef).
   Simpl. eauto.
   eauto.
   intros [tc' [rs' [A [B C]]]].
@@ -948,7 +951,7 @@ Local Transparent destroyed_by_op.
   set (tfbody := Pallocframe (fn_stacksize f) (fn_link_ofs f) ::
                  storeptr RA XSP (fn_retaddr_ofs f) x0) in *.
   set (tf := {| fn_sig := Mach.fn_sig f; fn_code := tfbody |}) in *.
-  set (rs2 := nextinstr (rs0#X29 <- (parent_sp s) #SP <- sp #X16 <- Vundef)).
+  set (rs2 := nextinstr (rs0#X15 <- (parent_sp s) #SP <- sp #X16 <- Vundef)).
   exploit (storeptr_correct tge tf XSP (fn_retaddr_ofs f) RA x0 m2' m3' rs2).
     simpl preg_of_iregsp. change (rs2 X30) with (rs0 X30). rewrite ATLR. 
     change (rs2 X2) with sp. eexact P. 
@@ -966,10 +969,10 @@ Local Transparent destroyed_by_op.
     rewrite <- (sp_val _ _ _ AG). rewrite F. reflexivity.
     reflexivity. 
     eexact U. }
-  exploit exec_straight_steps_2; eauto using functions_transl. omega. constructor.
+  exploit exec_straight_steps_2; eauto using functions_transl. lia. constructor.
   intros (ofs' & X & Y).                    
   left; exists (State rs3 m3'); split.
-  eapply exec_straight_steps_1; eauto. omega. constructor.
+  eapply exec_straight_steps_1; eauto. lia. constructor.
   econstructor; eauto.
   rewrite X; econstructor; eauto. 
   apply agree_exten with rs2; eauto with asmgen.
@@ -1001,7 +1004,7 @@ Local Transparent destroyed_at_function_entry. simpl.
 
 - (* return *)
   inv STACKS. simpl in *.
-  right. split. omega. split. auto.
+  right. split. lia. split. auto.
   rewrite <- ATPC in H5.
   econstructor; eauto. congruence.
 Qed.

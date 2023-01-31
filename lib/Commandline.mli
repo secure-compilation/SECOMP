@@ -6,10 +6,11 @@
 (*                                                                     *)
 (*  Copyright Institut National de Recherche en Informatique et en     *)
 (*  Automatique.  All rights reserved.  This file is distributed       *)
-(*  under the terms of the GNU General Public License as published by  *)
-(*  the Free Software Foundation, either version 2 of the License, or  *)
-(*  (at your option) any later version.  This file is also distributed *)
-(*  under the terms of the INRIA Non-Commercial License Agreement.     *)
+(*  under the terms of the GNU Lesser General Public License as        *)
+(*  published by the Free Software Foundation, either version 2.1 of   *)
+(*  the License, or  (at your option) any later version.               *)
+(*  This file is also distributed under the terms of the               *)
+(*  INRIA Non-Commercial License Agreement.                            *)
 (*                                                                     *)
 (* *********************************************************************)
 
@@ -44,6 +45,11 @@ exception CmdError of string
 val parse_cmdline: (pattern * action) list -> unit
 (** [parse_cmdline actions] parses the command line (after @-file expansion)
     and performs all [actions].  Raises [CmdError] if an error occurred.
+*)
+
+val longopt: string -> (string -> unit) -> pattern * action
+(** [longopt_int key fn] generates a pattern and an action for
+    options of the form [key=<text>] and calls [fn] with the string argument
 *)
 
 val longopt_int: string -> (int -> unit) -> pattern * action

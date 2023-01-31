@@ -40,14 +40,14 @@ Lemma ireg_of_not_R14:
 Proof.
   intros. erewrite <- ireg_of_eq; eauto with asmgen.
 Qed.
-Hint Resolve ireg_of_not_R14: asmgen.
+Global Hint Resolve ireg_of_not_R14: asmgen.
 
 Lemma ireg_of_not_R14':
   forall m r, ireg_of m = OK r -> r <> IR14.
 Proof.
   intros. generalize (ireg_of_not_R14 _ _ H). congruence.
 Qed.
-Hint Resolve ireg_of_not_R14': asmgen.
+Global Hint Resolve ireg_of_not_R14': asmgen.
 
 (** [undef_flags] and [nextinstr_nf] *)
 
@@ -75,7 +75,7 @@ Proof.
   intros; red; intros; subst; discriminate.
 Qed.
 
-Hint Resolve data_if_preg if_preg_not_PC: asmgen.
+Global Hint Resolve data_if_preg if_preg_not_PC: asmgen.
 
 Lemma nextinstr_nf_inv:
   forall r rs, if_preg r = true -> (nextinstr_nf rs)#r = rs#r.
@@ -352,15 +352,15 @@ Proof.
   apply exec_straight_one. simpl; eauto. auto. split; intros; Simpl.
   econstructor; split.
   eapply exec_straight_two. simpl; reflexivity. simpl; reflexivity. auto. auto.
-  split; intros; Simpl. simpl. f_equal. rewrite Int.zero_ext_and by omega.
+  split; intros; Simpl. simpl. f_equal. rewrite Int.zero_ext_and by lia.
   rewrite Int.and_assoc. change 65535 with (two_p 16 - 1). rewrite Int.and_idem.
   apply Int.same_bits_eq; intros.
   rewrite Int.bits_or, Int.bits_and, Int.bits_shl, Int.testbit_repr by auto.
-  rewrite Ztestbit_two_p_m1 by omega. change (Int.unsigned (Int.repr 16)) with 16.
+  rewrite Ztestbit_two_p_m1 by lia. change (Int.unsigned (Int.repr 16)) with 16.
   destruct (zlt i 16).
   rewrite andb_true_r, orb_false_r; auto.
-  rewrite andb_false_r; simpl. rewrite Int.bits_shru by omega.
-  change (Int.unsigned (Int.repr 16)) with 16. rewrite zlt_true by omega. f_equal; omega.
+  rewrite andb_false_r; simpl. rewrite Int.bits_shru by lia.
+  change (Int.unsigned (Int.repr 16)) with 16. rewrite zlt_true by lia. f_equal; lia.
 }
   destruct (Nat.leb l1 l2).
 { (* mov - orr* *)
@@ -696,10 +696,10 @@ Lemma int_not_lt:
 Proof.
   intros. unfold Int.lt. rewrite int_signed_eq. unfold proj_sumbool.
   destruct (zlt (Int.signed y) (Int.signed x)).
-  rewrite zlt_false. rewrite zeq_false. auto. omega. omega.
+  rewrite zlt_false. rewrite zeq_false. auto. lia. lia.
   destruct (zeq (Int.signed x) (Int.signed y)).
-  rewrite zlt_false. auto. omega.
-  rewrite zlt_true. auto. omega.
+  rewrite zlt_false. auto. lia.
+  rewrite zlt_true. auto. lia.
 Qed.
 
 Lemma int_lt_not:
@@ -713,10 +713,10 @@ Lemma int_not_ltu:
 Proof.
   intros. unfold Int.ltu, Int.eq.
   destruct (zlt (Int.unsigned y) (Int.unsigned x)).
-  rewrite zlt_false. rewrite zeq_false. auto. omega. omega.
+  rewrite zlt_false. rewrite zeq_false. auto. lia. lia.
   destruct (zeq (Int.unsigned x) (Int.unsigned y)).
-  rewrite zlt_false. auto. omega.
-  rewrite zlt_true. auto. omega.
+  rewrite zlt_false. auto. lia.
+  rewrite zlt_true. auto. lia.
 Qed.
 
 Lemma int_ltu_not:
@@ -1218,7 +1218,7 @@ Proof.
   split. unfold rs2; Simpl. unfold rs1; Simpl.
   unfold Val.shr, Val.shl; destruct (rs x0); auto.
   change (Int.ltu (Int.repr 24) Int.iwordsize) with true; simpl.
-  f_equal. symmetry. apply (Int.sign_ext_shr_shl 8). compute; auto.
+  f_equal. symmetry. apply (Int.sign_ext_shr_shl 8). compute; intuition congruence.
   intros. unfold rs2, rs1; Simpl.
   (* Ocast16signed *)
   destruct Archi.thumb2_support.
@@ -1231,7 +1231,7 @@ Proof.
   split. unfold rs2; Simpl. unfold rs1; Simpl.
   unfold Val.shr, Val.shl; destruct (rs x0); auto.
   change (Int.ltu (Int.repr 16) Int.iwordsize) with true; simpl.
-  f_equal. symmetry. apply (Int.sign_ext_shr_shl 16). compute; auto.
+  f_equal. symmetry. apply (Int.sign_ext_shr_shl 16). compute; intuition congruence.
   intros. unfold rs2, rs1; Simpl.
   (* Oaddimm *)
   generalize (addimm_correct x x0 i k rs m).
@@ -1279,16 +1279,16 @@ Local Transparent destroyed_by_op.
     rewrite Int.unsigned_repr. apply zlt_true.
     assert (Int.unsigned i <> 0).
     { red; intros; elim H. rewrite <- (Int.repr_unsigned i). rewrite H1; reflexivity. }
-    omega.
+    lia.
     change (Int.unsigned (Int.repr 31)) with (Int.zwordsize - 1) in H0.
-    generalize Int.wordsize_max_unsigned; omega.
+    generalize Int.wordsize_max_unsigned; lia.
   }
   assert (LTU'': Int.ltu i Int.iwordsize = true).
   {
     generalize (Int.ltu_inv _ _ LTU). intros.
     unfold Int.ltu. rewrite Int.unsigned_repr_wordsize. apply zlt_true.
     change (Int.unsigned (Int.repr 31)) with (Int.zwordsize - 1) in H0.
-    omega.
+    lia.
   }
   set (j := Int.sub Int.iwordsize i) in *.
   set (rs1 := nextinstr_nf (rs#IR14 <- (Val.shr (Vint i0) (Vint (Int.repr 31))))).

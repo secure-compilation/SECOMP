@@ -35,7 +35,7 @@ Proof.
 - set (m := Int.sub n lo).
   assert (A: eqmod (two_p 12) (Int.unsigned lo) (Int.unsigned n)) by (apply Int.eqmod_sign_ext'; compute; auto).
   assert (B: eqmod (two_p 12) (Int.unsigned n - Int.unsigned  lo) 0).
-  { replace 0 with (Int.unsigned n - Int.unsigned n) by omega.
+  { replace 0 with (Int.unsigned n - Int.unsigned n) by lia.
     auto using eqmod_sub, eqmod_refl. }
   assert (C: eqmod (two_p 12) (Int.unsigned m) 0).
   { apply eqmod_trans with (Int.unsigned n - Int.unsigned lo); auto.
@@ -45,7 +45,7 @@ Proof.
   { apply eqmod_mod_eq in C. unfold Int.modu. 
     change (Int.unsigned (Int.repr 4096)) with (two_p 12). rewrite C. 
     reflexivity.
-    apply two_p_gt_ZERO; omega. }
+    apply two_p_gt_ZERO; lia. }
   rewrite <- (Int.divu_pow2 m (Int.repr 4096) (Int.repr 12)) by auto.
   rewrite Int.shl_mul_two_p. 
   change (two_p (Int.unsigned (Int.repr 12))) with 4096.
@@ -88,7 +88,7 @@ Proof.
   intros. apply ireg_of_not_X31 in H. congruence.
 Qed.
 
-Hint Resolve ireg_of_not_X31 ireg_of_not_X31': asmgen.
+Global Hint Resolve ireg_of_not_X31 ireg_of_not_X31': asmgen.
 
 (** Useful simplification tactic *)
 
@@ -743,18 +743,18 @@ Proof.
   unfold Val.cmp; destruct (rs#r1); simpl; auto. rewrite B1. 
   unfold Int.lt. rewrite zlt_false. auto. 
   change (Int.signed (Int.repr Int.max_signed)) with Int.max_signed.
-  generalize (Int.signed_range i); omega.
+  generalize (Int.signed_range i); lia.
 * exploit (opimm32_correct Psltw Psltiw (Val.cmp Clt)); eauto. intros (rs1 & A1 & B1 & C1).
   exists rs1; split. eexact A1. split; auto. 
   rewrite B1. unfold Val.cmp; simpl; destruct (rs#r1); simpl; auto.
   unfold Int.lt. replace (Int.signed (Int.add n Int.one)) with (Int.signed n + 1).
   destruct (zlt (Int.signed n) (Int.signed i)).
-  rewrite zlt_false by omega. auto.
-  rewrite zlt_true by omega. auto.
+  rewrite zlt_false by lia. auto.
+  rewrite zlt_true by lia. auto.
   rewrite Int.add_signed. symmetry; apply Int.signed_repr. 
   assert (Int.signed n <> Int.max_signed).
   { red; intros E. elim H1. rewrite <- (Int.repr_signed n). rewrite E. auto. }
-  generalize (Int.signed_range n); omega.
+  generalize (Int.signed_range n); lia.
 + apply DFL.
 + apply DFL.
 Qed.
@@ -841,18 +841,18 @@ Proof.
   unfold Val.cmpl; destruct (rs#r1); simpl; auto. rewrite B1. 
   unfold Int64.lt. rewrite zlt_false. auto. 
   change (Int64.signed (Int64.repr Int64.max_signed)) with Int64.max_signed.
-  generalize (Int64.signed_range i); omega.
+  generalize (Int64.signed_range i); lia.
 * exploit (opimm64_correct Psltl Psltil (fun v1 v2 => Val.maketotal (Val.cmpl Clt v1 v2))); eauto. intros (rs1 & A1 & B1 & C1).
   exists rs1; split. eexact A1. split; auto. 
   rewrite B1. unfold Val.cmpl; simpl; destruct (rs#r1); simpl; auto.
   unfold Int64.lt. replace (Int64.signed (Int64.add n Int64.one)) with (Int64.signed n + 1).
   destruct (zlt (Int64.signed n) (Int64.signed i)).
-  rewrite zlt_false by omega. auto.
-  rewrite zlt_true by omega. auto.
+  rewrite zlt_false by lia. auto.
+  rewrite zlt_true by lia. auto.
   rewrite Int64.add_signed. symmetry; apply Int64.signed_repr. 
   assert (Int64.signed n <> Int64.max_signed).
   { red; intros E. elim H1. rewrite <- (Int64.repr_signed n). rewrite E. auto. }
-  generalize (Int64.signed_range n); omega.
+  generalize (Int64.signed_range n); lia.
 + apply DFL.
 + apply DFL.
 Qed.
@@ -1077,14 +1077,14 @@ Opaque Int.eq.
   split; intros; Simpl.
   assert (A: Int.ltu (Int.repr 24) Int.iwordsize = true) by auto.
   destruct (rs x0); auto; simpl. rewrite A; simpl. rewrite A. 
-  apply Val.lessdef_same. f_equal. apply Int.sign_ext_shr_shl. split; reflexivity.
+  apply Val.lessdef_same. f_equal. apply Int.sign_ext_shr_shl. compute; intuition congruence.
 - (* cast16signed *)
   econstructor; split.
   eapply exec_straight_two. simpl;eauto. simpl;eauto. auto. auto. auto. auto. auto. auto.
   split; intros; Simpl.
   assert (A: Int.ltu (Int.repr 16) Int.iwordsize = true) by auto.
   destruct (rs x0); auto; simpl. rewrite A; simpl. rewrite A. 
-  apply Val.lessdef_same. f_equal. apply Int.sign_ext_shr_shl. split; reflexivity.
+  apply Val.lessdef_same. f_equal. apply Int.sign_ext_shr_shl. compute; intuition congruence.
 - (* addimm *)
   exploit (opimm32_correct Paddw Paddiw Val.add); auto. instantiate (1 := x0); eauto with asmgen.
   intros (rs' & A & B & C).

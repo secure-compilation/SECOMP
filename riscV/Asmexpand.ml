@@ -24,6 +24,7 @@ open Asmexpandaux
 open AST
 open Camlcoq
 open! Integers
+open Locations
 
 exception Error of string
 
@@ -50,57 +51,92 @@ let expand_addptrofs dst src n =
 let expand_storeind_ptr src base ofs =
   List.iter emit (Asmgen.storeind_ptr src base ofs [])
 
+(* Fix-up code around function calls and function entry.
+   Some floating-point arguments residing in FP registers need to be
+   moved to integer registers or register pairs.
+   Symmetrically, some floating-point parameter passed in integer
+   registers or register pairs need to be moved to FP registers. *)
+
+let int_param_regs = [| X10; X11; X12; X13; X14; X15; X16; X17 |]
+
+let move_single_arg fr i =
+  emit (Pfmvxs(int_param_regs.(i), fr))
+
+let move_double_arg fr i =
+  if Archi.ptr64 then begin
+    emit (Pfmvxd(int_param_regs.(i), fr))
+  end else begin
+    emit (Paddiw(X2, X X2, Integers.Int.neg _16));
+    emit (Pfsd(fr, X2, Ofsimm _0));
+    emit (Plw(int_param_regs.(i), X2, Ofsimm _0));
+    if i < 7 then begin
+      emit (Plw(int_param_regs.(i + 1), X2, Ofsimm _4))
+    end else begin
+      emit (Plw(X31, X2, Ofsimm _4));
+      emit (Psw(X31, X2, Ofsimm _16))
+    end;
+    emit (Paddiw(X2, X X2, _16))
+  end
+
+let move_single_param fr i =
+  emit (Pfmvsx(fr, int_param_regs.(i)))
+
+let move_double_param fr i =
+  if Archi.ptr64 then begin
+    emit (Pfmvdx(fr, int_param_regs.(i)))
+  end else begin
+    emit (Paddiw(X2, X X2, Integers.Int.neg _16));
+    emit (Psw(int_param_regs.(i), X2, Ofsimm _0));
+    if i < 7 then begin
+      emit (Psw(int_param_regs.(i + 1), X2, Ofsimm _4))
+    end else begin
+      emit (Plw(X31, X2, Ofsimm _16));
+      emit (Psw(X31, X2, Ofsimm _4))
+    end;
+    emit (Pfld(fr, X2, Ofsimm _0));
+    emit (Paddiw(X2, X X2, _16))
+  end
+
+let float_extra_index = function
+  | Machregs.F0 -> Some (F0, 0)
+  | Machregs.F1 -> Some (F1, 1)
+  | Machregs.F2 -> Some (F2, 2)
+  | Machregs.F3 -> Some (F3, 3)
+  | Machregs.F4 -> Some (F4, 4)
+  | Machregs.F5 -> Some (F5, 5)
+  | Machregs.F6 -> Some (F6, 6)
+  | Machregs.F7 -> Some (F7, 7)
+  | _  -> None
+
+let fixup_gen single double sg =
+  let fixup ty loc =
+    match ty, loc with
+    | Tsingle, One (R r) ->
+        begin match float_extra_index r with
+        | Some(r, i) -> single r i
+        | None -> ()
+        end
+    | (Tfloat | Tany64), One (R r) ->
+        begin match float_extra_index r with
+        | Some(r, i) -> double r i
+        | None -> ()
+        end
+    | _, _ -> ()
+  in
+    List.iter2 fixup sg.sig_args (Conventions1.loc_arguments sg)
+
+let fixup_call sg =
+  fixup_gen move_single_arg move_double_arg sg
+
+let fixup_function_entry sg =
+  fixup_gen move_single_param move_double_param sg
+
 (* Built-ins.  They come in two flavors:
    - annotation statements: take their arguments in registers or stack
      locations; generate no code;
    - inlined by the compiler: take their arguments in arbitrary
      registers.
 *)
-
-(* Fix-up code around calls to variadic functions.  Floating-point arguments
-   residing in FP registers need to be moved to integer registers. *)
-
-let int_param_regs   = [| X10; X11; X12; X13; X14; X15; X16; X17 |]
-let float_param_regs = [| F10; F11; F12; F13; F14; F15; F16; F17 |]
-
-let rec fixup_variadic_call ri rf tyl =
-  if ri < 8 then
-    match tyl with
-    | [] ->
-        ()
-    | (Tint | Tany32) :: tyl ->
-        fixup_variadic_call (ri + 1) rf tyl
-    | Tsingle :: tyl ->
-        let rs = float_param_regs.(rf)
-        and rd = int_param_regs.(ri) in
-        emit (Pfmvxs(rd, rs));
-        fixup_variadic_call (ri + 1) (rf + 1) tyl
-    | Tlong :: tyl ->
-        let ri' = if Archi.ptr64 then ri + 1 else align ri 2 + 2 in
-        fixup_variadic_call ri' rf tyl
-    | (Tfloat | Tany64) :: tyl ->
-        if Archi.ptr64 then begin
-          let rs = float_param_regs.(rf)
-          and rd = int_param_regs.(ri) in
-          emit (Pfmvxd(rd, rs));
-          fixup_variadic_call (ri + 1) (rf + 1) tyl
-        end else begin
-          let ri = align ri 2 in
-          if ri < 8 then begin
-            let rs = float_param_regs.(rf)
-            and rd1 = int_param_regs.(ri)
-            and rd2 = int_param_regs.(ri + 1) in
-            emit (Paddiw(X2, X X2, Integers.Int.neg _16));
-            emit (Pfsd(rs, X2, Ofsimm _0));
-            emit (Plw(rd1, X2, Ofsimm _0, false));
-            emit (Plw(rd2, X2, Ofsimm _4, false));
-            emit (Paddiw(X2, X X2, _16));
-            fixup_variadic_call (ri + 2) (rf + 1) tyl
-          end
-        end
-        
-let fixup_call sg =
-  if sg.sig_cc.cc_vararg then fixup_variadic_call 0 0 sg.sig_args
 
 (* Handling of annotations *)
 
@@ -134,8 +170,8 @@ let memcpy_small_arg sz arg tmp =
       assert false
 
 let expand_builtin_memcpy_small sz al src dst =
-  let (tsrc, tdst) =
-    if dst <> BA (IR X5) then (X5, X6) else (X6, X5) in
+  let tsrc = if dst <> BA (IR X5) then X5 else X6 in
+  let tdst = if src <> BA (IR X6) then X6 else X5 in
   let (rsrc, osrc) = memcpy_small_arg sz src tsrc in
   let (rdst, odst) = memcpy_small_arg sz dst tdst in
   let rec copy osrc odst sz =
@@ -305,18 +341,53 @@ let expand_builtin_vstore chunk args =
 
 (* Handling of varargs *)
 
-(* Size in words of the arguments to a function.  This includes both
-   arguments passed in registers and arguments passed on stack. *)
+(* Number of integer registers, FP registers, and stack words
+   used to pass the (fixed) arguments to a function. *)
 
-let rec args_size sz = function
-  | [] -> sz
-  | (Tint | Tsingle | Tany32) :: l ->
-      args_size (sz + 1) l
-  | (Tlong | Tfloat | Tany64) :: l ->
-      args_size (if Archi.ptr64 then sz + 1 else align sz 2 + 2) l
+let arg_int_size ri rf ofs k =
+  if ri < 8
+  then k (ri + 1) rf ofs
+  else k ri rf (ofs + 1)
+
+let arg_single_size ri rf ofs k =
+  if rf < 8
+  then k ri (rf + 1) ofs
+  else arg_int_size ri rf ofs k
+
+let arg_long_size ri rf ofs k =
+  if Archi.ptr64 then
+    if ri < 8
+    then k (ri + 1) rf ofs
+    else k ri rf (ofs + 1)
+  else
+    if ri < 7 then k (ri + 2) rf ofs
+    else if ri = 7 then k (ri + 1) rf (ofs + 1)
+    else k ri rf (align ofs 2 + 2)
+
+let arg_double_size ri rf ofs k =
+  if rf < 8
+  then k ri (rf + 1) ofs
+  else arg_long_size ri rf ofs k
+
+let rec args_size l ri rf ofs =
+  match l with
+  | [] -> (ri, rf, ofs)
+  | (Tint | Tany32) :: l ->
+      arg_int_size ri rf ofs (args_size l)
+  | Tsingle :: l ->
+      arg_single_size ri rf ofs (args_size l)
+  | Tlong :: l ->
+      arg_long_size ri rf ofs (args_size l)
+  | (Tfloat | Tany64) :: l ->
+      arg_double_size ri rf ofs (args_size l)
+
+(* Size in words of the arguments to a function.  This includes both
+   arguments passed in integer registers and arguments passed on stack,
+   but not arguments passed in FP registers. *)
 
 let arguments_size sg =
-  args_size 0 sg.sig_args
+  let (ri, _, ofs) = args_size sg.sig_args 0 0 0 in
+  ri + ofs
 
 let save_arguments first_reg base_ofs =
   for i = first_reg to 7 do
@@ -394,6 +465,90 @@ let expand_bswap64 d s =
   emit (Psrlil(X31, X s, coqint_of_camlint 56l));
   emit (Porl(d, X X1, X X31))
 
+(* Count leading zeros.  Algorithm 5-7 from Hacker's Delight,
+   re-rolled as a loop to produce more compact code. *)
+
+let expand_clz ~sixtyfour ~splitlong =
+  (* Input:  X in X5 or (X5, X6) if splitlong
+     Result: N in X7
+     Temporaries: S in X8, Y in X9 *)
+  let lbl1 = new_label() in
+  let lbl2 = new_label() in
+  (* N := bitsize of X's type (32 or 64) *)
+  expand_loadimm32 X7 (coqint_of_camlint
+                         (if sixtyfour || splitlong then 64l else 32l));
+  (* S := initial shift amount (16 or 32) *)                         
+  expand_loadimm32 X8 (coqint_of_camlint (if sixtyfour then 32l else 16l));
+  if splitlong then begin
+    (* if (Xhigh == 0) goto lbl1 *)
+    emit (Pbeqw(X X6, X0, lbl1));
+    (* N := 32 *)
+    expand_loadimm32 X7 (coqint_of_camlint 32l);
+    (* X := Xhigh *)
+    emit (Pmv(X5, X6))
+  end;
+  (* lbl1: *)
+  emit (Plabel lbl1);
+  (* Y := X >> S *)
+  emit (if sixtyfour then Psrll(X9, X X5, X X8) else Psrlw(X9, X X5, X X8));
+  (* if (Y == 0) goto lbl2 *)
+  emit (if sixtyfour then Pbeql(X X9, X0, lbl2) else Pbeqw(X X9, X0, lbl2));
+  (* N := N - S *)
+  emit (Psubw(X7, X X7, X X8));
+  (* X := Y *)
+  emit (Pmv(X5, X9));
+  (* lbl2: *)
+  emit (Plabel lbl2);
+  (* S := S / 2 *)
+  emit (Psrliw(X8, X X8, _1));
+  (* if (S != 0) goto lbl1; *)
+  emit (Pbnew(X X8, X0, lbl1));
+  (* N := N - X *)
+  emit (Psubw(X7, X X7, X X5))
+
+(* Count trailing zeros.  Algorithm 5-14 from Hacker's Delight,
+   re-rolled as a loop to produce more compact code. *)
+
+let expand_ctz ~sixtyfour ~splitlong =
+  (* Input:  X in X6 or (X5, X6) if splitlong
+     Result: N in X7
+     Temporaries: S in X8, Y in X9 *)
+  let lbl1 = new_label() in
+  let lbl2 = new_label() in
+  (* N := bitsize of X's type (32 or 64) *)
+  expand_loadimm32 X7 (coqint_of_camlint
+                         (if sixtyfour || splitlong then 64l else 32l));
+  (* S := initial shift amount (16 or 32) *)                         
+  expand_loadimm32 X8 (coqint_of_camlint (if sixtyfour then 32l else 16l));
+  if splitlong then begin
+    (* if (Xlow == 0) goto lbl1 *)
+    emit (Pbeqw(X X5, X0, lbl1));
+    (* N := 32 *)
+    expand_loadimm32 X7 (coqint_of_camlint 32l);
+    (* X := Xlow *)
+    emit (Pmv(X6, X5))
+  end;
+  (* lbl1: *)
+  emit (Plabel lbl1);
+  (* Y := X >> S *)
+  emit (if sixtyfour then Pslll(X9, X X6, X X8) else Psllw(X9, X X6, X X8));
+  (* if (Y == 0) goto lbl2 *)
+  emit (if sixtyfour then Pbeql(X X9, X0, lbl2) else Pbeqw(X X9, X0, lbl2));
+  (* N := N - S *)
+  emit (Psubw(X7, X X7, X X8));
+  (* X := Y *)
+  emit (Pmv(X6, X9));
+  (* lbl2: *)
+  emit (Plabel lbl2);
+  (* S := S / 2 *)
+  emit (Psrliw(X8, X X8, _1));
+  (* if (S != 0) goto lbl1; *)
+  emit (Pbnew(X X8, X0, lbl1));
+  (* N := N - most significant bit of X *)
+  emit (if sixtyfour then Psrlil(X6, X X6, coqint_of_camlint 63l)
+                     else Psrliw(X6, X X6, coqint_of_camlint 31l));
+  emit (Psubw(X7, X X7, X X6))
+
 (* Handling of compiler-inlined builtins *)
 
 let expand_builtin_inline name args res =
@@ -418,10 +573,33 @@ let expand_builtin_inline name args res =
      assert (ah = X6 && al = X5 && rh = X5 && rl = X6);
      expand_bswap32 X5 X5;
      expand_bswap32 X6 X6
+  (* Count zeros *)
+  | "__builtin_clz", [BA(IR a)], BR(IR res) ->
+     assert (a = X5 && res = X7);
+     expand_clz ~sixtyfour:false ~splitlong:false
+  | "__builtin_clzl", [BA(IR a)], BR(IR res) ->
+     assert (a = X5 && res = X7);
+     expand_clz ~sixtyfour:Archi.ptr64 ~splitlong:false
+  | "__builtin_clzll", [BA(IR a)], BR(IR res) ->
+     assert (a = X5 && res = X7);
+     expand_clz ~sixtyfour:true ~splitlong:false
+  | "__builtin_clzll", [BA_splitlong(BA(IR ah), BA(IR al))], BR(IR res) ->
+     assert (al = X5 && ah = X6 && res = X7);
+     expand_clz ~sixtyfour:false ~splitlong:true
+  | "__builtin_ctz", [BA(IR a)], BR(IR res) ->
+     assert (a = X6 && res = X7);
+     expand_ctz ~sixtyfour:false ~splitlong:false
+  | "__builtin_ctzl", [BA(IR a)], BR(IR res) ->
+     assert (a = X6 && res = X7);
+     expand_ctz ~sixtyfour:Archi.ptr64 ~splitlong:false
+  | "__builtin_ctzll", [BA(IR a)], BR(IR res) ->
+     assert (a = X6 && res = X7);
+     expand_ctz ~sixtyfour:true ~splitlong:false
+  | "__builtin_ctzll", [BA_splitlong(BA(IR ah), BA(IR al))], BR(IR res) ->
+     assert (al = X5 && ah = X6 && res = X7);
+     expand_ctz ~sixtyfour:false ~splitlong:true
   (* Float arithmetic *)
-  | "__builtin_fabs",  [BA(FR a1)], BR(FR res) ->
-     emit (Pfabsd(res, a1))
-  | "__builtin_fsqrt", [BA(FR a1)], BR(FR res) ->
+  | ("__builtin_fsqrt" | "__builtin_sqrt"), [BA(FR a1)], BR(FR res) ->
      emit (Pfsqrtd(res, a1))
   | "__builtin_fmadd", [BA(FR a1); BA(FR a2); BA(FR a3)], BR(FR res) ->
       emit (Pfmaddd(res, a1, a2, a3))
@@ -468,8 +646,12 @@ let expand_builtin_inline name args res =
                         (fun rl ->
                           emit (Pmulw (rl, X a, X b));
                           emit (Pmulhuw (rh, X a, X b)))
+  (* No operation *)
   | "__builtin_nop", [], _ ->
      emit Pnop
+  (* Optimization hint *)
+  | "__builtin_unreachable", [], _ ->
+     ()
   (* Catch-all *)
   | _ ->
      raise (Error ("unrecognized builtin " ^ name))
@@ -481,7 +663,7 @@ let expand_instruction instr =
   | Pallocframe (sz, ofs) ->
       let sg = get_current_function_sig() in
       emit (Pmv (X30, X2));
-      if sg.sig_cc.cc_vararg then begin
+      if (sg.sig_cc.cc_vararg <> None) then begin
         let n = arguments_size sg in
         let extra_sz = if n >= 8 then 0 else align ((8 - n) * wordsize) 16 in
         let full_sz = Z.add sz (Z.of_uint extra_sz) in
@@ -499,7 +681,7 @@ let expand_instruction instr =
   | Pfreeframe (sz, ofs) ->
      let sg = get_current_function_sig() in
      let extra_sz =
-      if sg.sig_cc.cc_vararg then begin
+      if (sg.sig_cc.cc_vararg <> None) then begin
         let n = arguments_size sg in
         if n >= 8 then 0 else align ((8 - n) * wordsize) 16
       end else 0 in
@@ -600,6 +782,7 @@ let preg_to_dwarf = function
 let expand_function id fn =
   try
     set_current_function fn;
+    fixup_function_entry fn.fn_sig;
     expand id (* sp= *) 2 preg_to_dwarf expand_instruction fn.fn_code;
     Errors.OK (get_current_function ())
   with Error s ->

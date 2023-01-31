@@ -137,9 +137,9 @@ Proof.
   exists valu2; splitall.
 + constructor; simpl; intros.
 * constructor; simpl; intros.
-  apply wf_equation_incr with (num_next n). eauto with cse. xomega.
+  apply wf_equation_incr with (num_next n). eauto with cse. extlia.
   rewrite PTree.gsspec in H0. destruct (peq r0 r).
-  inv H0; xomega.
+  inv H0; extlia.
   apply Plt_trans_succ; eauto with cse.
   rewrite PMap.gsspec in H0. destruct (peq v (num_next n)).
   replace r0 with r by (simpl in H0; intuition). rewrite PTree.gss. subst; auto.
@@ -151,8 +151,8 @@ Proof.
   rewrite peq_false. eauto with cse. apply Plt_ne; eauto with cse.
 + unfold valu2. rewrite peq_true; auto.
 + auto.
-+ xomega.
-+ xomega.
++ extlia.
++ extlia.
 Qed.
 
 Lemma valnum_regs_holds:
@@ -167,7 +167,7 @@ Lemma valnum_regs_holds:
   /\ Ple n.(num_next) n'.(num_next).
 Proof.
   induction rl; simpl; intros.
-- inv H0. exists valu1; splitall; auto. red; auto. simpl; tauto. xomega.
+- inv H0. exists valu1; splitall; auto. red; auto. simpl; tauto. extlia.
 - destruct (valnum_reg n a) as [n1 v1] eqn:V1.
   destruct (valnum_regs n1 rl) as [n2 vs] eqn:V2.
   inv H0.
@@ -178,9 +178,9 @@ Proof.
   exists valu3; splitall.
   + auto.
   + simpl; f_equal; auto. rewrite R; auto.
-  + red; intros. transitivity (valu2 v); auto. apply R. xomega.
-  + simpl; intros. destruct H0; auto. subst v1; xomega.
-  + xomega.
+  + red; intros. transitivity (valu2 v); auto. apply R. extlia.
+  + simpl; intros. destruct H0; auto. subst v1; extlia.
+  + extlia.
 Qed.
 
 Lemma find_valnum_rhs_charact:
@@ -342,11 +342,11 @@ Proof.
   { red; intros. unfold valu2. apply peq_false. apply Plt_ne; auto. }
   exists valu2; constructor; simpl; intros.
 + constructor; simpl; intros.
-  * destruct H3. inv H3. simpl; split. xomega.
+  * destruct H3. inv H3. simpl; split. extlia.
     red; intros. apply Plt_trans_succ; eauto.
-    apply wf_equation_incr with (num_next n). eauto with cse. xomega.
+    apply wf_equation_incr with (num_next n). eauto with cse. extlia.
   * rewrite PTree.gsspec in H3. destruct (peq r rd).
-    inv H3. xomega.
+    inv H3. extlia.
     apply Plt_trans_succ; eauto with cse.
   * apply update_reg_charact; eauto with cse.
 + destruct H3. inv H3.
@@ -510,10 +510,10 @@ Lemma store_normalized_range_sound:
 Proof.
   intros. unfold Val.load_result; remember Archi.ptr64 as ptr64.
   destruct chunk; simpl in *; destruct v; auto.
-- inv H. rewrite is_sgn_sign_ext in H4 by omega. rewrite H4; auto.
-- inv H. rewrite is_uns_zero_ext in H4 by omega. rewrite H4; auto.
-- inv H. rewrite is_sgn_sign_ext in H4 by omega. rewrite H4; auto.
-- inv H. rewrite is_uns_zero_ext in H4 by omega. rewrite H4; auto.
+- inv H. rewrite is_sgn_sign_ext in H4 by lia. rewrite H4; auto.
+- inv H. rewrite is_uns_zero_ext in H4 by lia. rewrite H4; auto.
+- inv H. rewrite is_sgn_sign_ext in H4 by lia. rewrite H4; auto.
+- inv H. rewrite is_uns_zero_ext in H4 by lia. rewrite H4; auto.
 - destruct ptr64; auto.
 - destruct ptr64; auto.
 - destruct ptr64; auto.
@@ -572,7 +572,7 @@ Proof.
   simpl.
   rewrite negb_false_iff in H8.
   eapply Mem.load_storebytes_other. eauto.
-  rewrite H6. rewrite Z2Nat.id by omega.
+  rewrite H6. rewrite Z2Nat.id by lia.
   eapply pdisjoint_sound. eauto.
   unfold aaddressing. apply match_aptr_of_aval. eapply eval_static_addressing_sound; eauto.
   erewrite <- regs_valnums_sound by eauto. eauto with va.
@@ -593,39 +593,39 @@ Proof.
   set (n1 := i - ofs1).
   set (n2 := size_chunk chunk).
   set (n3 := sz - (n1 + n2)).
-  replace sz with (n1 + (n2 + n3)) in H by (unfold n3, n2, n1; omega).
+  replace sz with (n1 + (n2 + n3)) in H by (unfold n3, n2, n1; lia).
   exploit Mem.loadbytes_split; eauto.
-  unfold n1; omega.
-  unfold n3, n2, n1; omega.
+  unfold n1; lia.
+  unfold n3, n2, n1; lia.
   intros (bytes1 & bytes23 & LB1 & LB23 & EQ).
   clear H.
   exploit Mem.loadbytes_split; eauto.
-  unfold n2; omega.
-  unfold n3, n2, n1; omega.
+  unfold n2; lia.
+  unfold n3, n2, n1; lia.
   intros (bytes2 & bytes3 & LB2 & LB3 & EQ').
   subst bytes23; subst bytes.
   exploit Mem.load_loadbytes; eauto. intros (bytes2' & A & B).
   assert (bytes2' = bytes2).
-  { replace (ofs1 + n1) with i in LB2 by (unfold n1; omega). unfold n2 in LB2. congruence.  }
+  { replace (ofs1 + n1) with i in LB2 by (unfold n1; lia). unfold n2 in LB2. congruence.  }
   subst bytes2'.
   exploit Mem.storebytes_split; eauto. intros (m1 & SB1 & SB23).
   clear H0.
   exploit Mem.storebytes_split; eauto. intros (m2 & SB2 & SB3).
   clear SB23.
   assert (L1: Z.of_nat (length bytes1) = n1).
-  { erewrite Mem.loadbytes_length by eauto. apply Z2Nat.id. unfold n1; omega. }
+  { erewrite Mem.loadbytes_length by eauto. apply Z2Nat.id. unfold n1; lia. }
   assert (L2: Z.of_nat (length bytes2) = n2).
-  { erewrite Mem.loadbytes_length by eauto. apply Z2Nat.id. unfold n2; omega. }
+  { erewrite Mem.loadbytes_length by eauto. apply Z2Nat.id. unfold n2; lia. }
   rewrite L1 in *. rewrite L2 in *.
   assert (LB': Mem.loadbytes m2 b2 (ofs2 + n1) n2 (Some cp2) = Some bytes2).
   { rewrite <- L2. eapply Mem.loadbytes_storebytes_same; eauto. }
   assert (LB'': Mem.loadbytes m' b2 (ofs2 + n1) n2 (Some cp2) = Some bytes2).
   { rewrite <- LB'. eapply Mem.loadbytes_storebytes_other; eauto.
-    unfold n2; omega.
-    right; left; omega. }
+    unfold n2; lia.
+    right; left; lia. }
   exploit Mem.load_valid_access; eauto. intros [P [Q R]].
   rewrite B. apply Mem.loadbytes_load.
-  replace (i + (ofs2 - ofs1)) with (ofs2 + n1) by (unfold n1; omega).
+  replace (i + (ofs2 - ofs1)) with (ofs2 + n1) by (unfold n1; lia).
   exact LB''.
   apply Z.divide_add_r; auto.
 Qed.
@@ -670,9 +670,9 @@ Proof with (try discriminate).
     Mem.loadv chunk m (Vptr sp ofs) (Some cp) = Some v ->
     Mem.loadv chunk m' (Vptr sp (Ptrofs.repr j)) (Some cp) = Some v).
   {
-    simpl; intros. rewrite Ptrofs.unsigned_repr by omega.
+    simpl; intros. rewrite Ptrofs.unsigned_repr by lia.
     unfold j, delta. eapply load_memcpy; eauto.
-    apply Zmod_divide; auto. generalize (align_chunk_pos chunk); omega.
+    apply Zmod_divide; auto. generalize (align_chunk_pos chunk); lia.
   }
   inv H2.
 + inv H3. exploit eval_addressing_Ainstack_inv; eauto. intros [E1 E2].
@@ -863,7 +863,6 @@ Proof.
   symmetry. eapply Solver.fixpoint_entry; eauto.
 Qed.
 
-
 (** * Semantic preservation *)
 
 Section PRESERVATION.
@@ -871,7 +870,6 @@ Section PRESERVATION.
 Variable prog: program.
 Variable tprog : program.
 Hypothesis TRANSF: match_prog prog tprog.
-
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
 
@@ -881,25 +879,19 @@ Proof (Genv.find_symbol_match TRANSF).
 
 Lemma senv_preserved:
   Senv.equiv ge tge.
-Proof. exact (Genv.senv_match TRANSF). Qed.
+Proof (Genv.senv_match TRANSF).
 
 Lemma functions_translated:
   forall (v: val) (f: RTL.fundef),
   Genv.find_funct ge v = Some f ->
-  exists cu tf,
-  Genv.find_funct tge v = Some tf /\
-  transf_fundef (romem_for cu) f = OK tf /\
-  linkorder cu prog.
-Proof. exact (Genv.find_funct_match TRANSF). Qed.
+  exists cu tf, Genv.find_funct tge v = Some tf /\ transf_fundef (romem_for cu) f = OK tf /\ linkorder cu prog.
+Proof (Genv.find_funct_match TRANSF).
 
 Lemma funct_ptr_translated:
   forall (b: block) (f: RTL.fundef),
   Genv.find_funct_ptr ge b = Some f ->
-  exists cu tf,
-  Genv.find_funct_ptr tge b = Some tf /\
-  transf_fundef (romem_for cu) f = OK tf /\
-  linkorder cu prog.
-Proof. exact (Genv.find_funct_ptr_match TRANSF). Qed.
+  exists cu tf, Genv.find_funct_ptr tge b = Some tf /\ transf_fundef (romem_for cu) f = OK tf /\ linkorder cu prog.
+Proof (Genv.find_funct_ptr_match TRANSF).
 
 Lemma sig_preserved:
   forall rm f tf, transf_fundef rm f = OK tf -> funsig tf = funsig f.

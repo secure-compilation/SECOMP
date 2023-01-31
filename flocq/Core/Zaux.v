@@ -17,8 +17,11 @@ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 COPYING file for more details.
 *)
 
-Require Import ZArith Omega.
-Require Import Zquot.
+From Coq Require Import ZArith Lia Zquot.
+From Coq Require SpecFloat.
+
+Notation cond_Zopp := SpecFloat.cond_Zopp (only parsing).
+Notation iter_pos := SpecFloat.iter_pos (only parsing).
 
 Section Zmissing.
 
@@ -262,7 +265,7 @@ apply Z.le_refl.
 split.
 easy.
 apply Zpower_gt_1.
-clear -He ; omega.
+clear -He ; lia.
 apply Zle_minus_le_0.
 now apply Zlt_le_weak.
 revert H1.
@@ -282,7 +285,7 @@ apply Znot_gt_le.
 intros H.
 apply Zlt_not_le with (1 := He).
 apply Zpower_le.
-clear -H ; omega.
+clear -H ; lia.
 Qed.
 
 Theorem Zpower_gt_id :
@@ -302,7 +305,7 @@ clear.
 apply Zlt_0_minus_lt.
 replace (r * (Z_of_nat n0 + 1) - (Z_of_nat n0 + 1))%Z with ((r - 1) * (Z_of_nat n0 + 1))%Z by ring.
 apply Zmult_lt_0_compat.
-cut (2 <= r)%Z. omega.
+cut (2 <= r)%Z. lia.
 apply Zle_bool_imp_le.
 apply r.
 apply (Zle_lt_succ 0).
@@ -323,18 +326,10 @@ Theorem Zmod_mod_mult :
   forall n a b, (0 < a)%Z -> (0 <= b)%Z ->
   Zmod (Zmod n (a * b)) b = Zmod n b.
 Proof.
-intros n a [|b|b] Ha Hb.
-now rewrite 2!Zmod_0_r.
-rewrite (Zmod_eq n (a * Zpos b)).
-rewrite Zmult_assoc.
-unfold Zminus.
-rewrite Zopp_mult_distr_l.
-apply Z_mod_plus.
-easy.
-apply Zmult_gt_0_compat.
-now apply Z.lt_gt.
-easy.
-now elim Hb.
+  intros n a b Ha Hb. destruct (Zle_lt_or_eq _ _ Hb) as [H'b|H'b].
+  - rewrite (Z.mul_comm a b), Z.rem_mul_r, Z.add_mod, Z.mul_mod, Z.mod_same,
+      Z.mul_0_l, Z.mod_0_l, Z.add_0_r, !Z.mod_mod; lia.
+  - subst. now rewrite Z.mul_0_r, !Zmod_0_r.
 Qed.
 
 Theorem ZOmod_eq :
@@ -366,24 +361,14 @@ Theorem Zdiv_mod_mult :
   (Z.div (Zmod n (a * b)) a) = Zmod (Z.div n a) b.
 Proof.
 intros n a b Ha Hb.
-destruct (Zle_lt_or_eq _ _ Ha) as [Ha'|Ha'].
-destruct (Zle_lt_or_eq _ _ Hb) as [Hb'|Hb'].
-rewrite (Zmod_eq n (a * b)).
-rewrite (Zmult_comm a b) at 2.
-rewrite Zmult_assoc.
-unfold Zminus.
-rewrite Zopp_mult_distr_l.
-rewrite Z_div_plus by now apply Z.lt_gt.
-rewrite <- Zdiv_Zdiv by easy.
-apply sym_eq.
-apply Zmod_eq.
-now apply Z.lt_gt.
-now apply Zmult_gt_0_compat ; apply Z.lt_gt.
-rewrite <- Hb'.
-rewrite Zmult_0_r, 2!Zmod_0_r.
-apply Zdiv_0_l.
-rewrite <- Ha'.
-now rewrite 2!Zdiv_0_r, Zmod_0_l.
+destruct (Zle_lt_or_eq _ _ Ha) as [Ha'|<-].
+- destruct (Zle_lt_or_eq _ _ Hb) as [Hb'|<-].
+  + rewrite Z.rem_mul_r, Z.add_comm, Z.mul_comm, Z.div_add_l by lia.
+    rewrite (Zdiv_small (Zmod n a)).
+    apply Z.add_0_r.
+    now apply Z.mod_pos_bound.
+  + now rewrite Z.mul_0_r, !Zmod_0_r, ?Zdiv_0_l.
+- now rewrite Z.mul_0_l, !Zdiv_0_r, Zmod_0_l.
 Qed.
 
 Theorem ZOdiv_mod_mult :
@@ -420,7 +405,7 @@ apply Z.opp_inj.
 rewrite <- Zquot_opp_l, Z.opp_0.
 apply Z.quot_small.
 generalize (Zabs_non_eq a).
-omega.
+lia.
 Qed.
 
 Theorem ZOmod_small_abs :
@@ -437,7 +422,7 @@ apply Z.opp_inj.
 rewrite <- Zrem_opp_l.
 apply Z.rem_small.
 generalize (Zabs_non_eq a).
-omega.
+lia.
 Qed.
 
 Theorem ZOdiv_plus :
@@ -549,6 +534,39 @@ now apply He.
 now intros _ _.
 Qed.
 
+Theorem Zeq_bool_diag :
+  forall x, Zeq_bool x x = true.
+Proof.
+intros x.
+now apply Zeq_bool_true.
+Qed.
+
+Theorem Zeq_bool_opp :
+  forall x y,
+  Zeq_bool (Z.opp x) y = Zeq_bool x (Z.opp y).
+Proof.
+intros x y.
+case Zeq_bool_spec.
+- intros <-.
+  apply eq_sym, Zeq_bool_true.
+  apply eq_sym, Z.opp_involutive.
+- intros H.
+  case Zeq_bool_spec.
+  2: easy.
+  intros ->.
+  contradict H.
+  apply Z.opp_involutive.
+Qed.
+
+Theorem Zeq_bool_opp' :
+  forall x y,
+  Zeq_bool (Z.opp x) (Z.opp y) = Zeq_bool x y.
+Proof.
+intros x y.
+rewrite Zeq_bool_opp.
+apply f_equal, Z.opp_involutive.
+Qed.
+
 End Zeq_bool.
 
 Section Zle_bool.
@@ -587,6 +605,32 @@ case Zle_bool ; intros H.
 elim (Z.lt_irrefl x).
 now apply Z.le_lt_trans with y.
 apply refl_equal.
+Qed.
+
+Theorem Zle_bool_opp_l :
+  forall x y,
+  Zle_bool (Z.opp x) y = Zle_bool (Z.opp y) x.
+Proof.
+intros x y.
+case Zle_bool_spec ; intros Hxy ;
+  case Zle_bool_spec ; intros Hyx ; try easy ; lia.
+Qed.
+
+Theorem Zle_bool_opp :
+  forall x y,
+  Zle_bool (Z.opp x) (Z.opp y) = Zle_bool y x.
+Proof.
+intros x y.
+now rewrite Zle_bool_opp_l, Z.opp_involutive.
+Qed.
+
+Theorem Zle_bool_opp_r :
+  forall x y,
+  Zle_bool x (Z.opp y) = Zle_bool y (Z.opp x).
+Proof.
+intros x y.
+rewrite <- (Z.opp_involutive x) at 1.
+apply Zle_bool_opp.
 Qed.
 
 End Zle_bool.
@@ -649,6 +693,33 @@ now rewrite Zle_bool_false.
 now rewrite Zle_bool_true.
 Qed.
 
+Theorem Zlt_bool_opp_l :
+  forall x y,
+  Zlt_bool (Z.opp x) y = Zlt_bool (Z.opp y) x.
+Proof.
+intros x y.
+rewrite <- 2! negb_Zle_bool.
+apply f_equal, Zle_bool_opp_r.
+Qed.
+
+Theorem Zlt_bool_opp_r :
+  forall x y,
+  Zlt_bool x (Z.opp y) = Zlt_bool y (Z.opp x).
+Proof.
+intros x y.
+rewrite <- 2! negb_Zle_bool.
+apply f_equal, Zle_bool_opp_l.
+Qed.
+
+Theorem Zlt_bool_opp :
+  forall x y,
+  Zlt_bool (Z.opp x) (Z.opp y) = Zlt_bool y x.
+Proof.
+intros x y.
+rewrite <- 2! negb_Zle_bool.
+apply f_equal, Zle_bool_opp.
+Qed.
+
 End Zlt_bool.
 
 Section Zcompare.
@@ -702,7 +773,11 @@ End Zcompare.
 
 Section cond_Zopp.
 
-Definition cond_Zopp (b : bool) m := if b then Z.opp m else m.
+Theorem cond_Zopp_0 :
+  forall sx, cond_Zopp sx 0 = 0%Z.
+Proof.
+now intros [|].
+Qed.
 
 Theorem cond_Zopp_negb :
   forall x y, cond_Zopp (negb x) y = Z.opp (cond_Zopp x y).
@@ -731,6 +806,15 @@ case Zlt_bool_spec ; intros Hm.
 apply Zabs_non_eq.
 now apply Zlt_le_weak.
 now apply Z.abs_eq.
+Qed.
+
+Theorem Zeq_bool_cond_Zopp :
+  forall s m n,
+  Zeq_bool (cond_Zopp s m) n = Zeq_bool m (cond_Zopp s n).
+Proof.
+intros [|] m n ; simpl.
+apply Zeq_bool_opp.
+easy.
 Qed.
 
 End cond_Zopp.
@@ -854,7 +938,7 @@ Definition Zfast_div_eucl (a b : Z) :=
   | Z0 => (0, 0)%Z
   | Zpos a' =>
     match b with
-    | Z0 => (0, 0)%Z
+    | Z0 => (0, (match (1 mod 0) with | 0 => 0 | _ => a end))%Z
     | Zpos b' => Zpos_div_eucl_aux a' b'
     | Zneg b' =>
       let (q, r) := Zpos_div_eucl_aux a' b' in
@@ -866,7 +950,7 @@ Definition Zfast_div_eucl (a b : Z) :=
     end
   | Zneg a' =>
     match b with
-    | Z0 => (0, 0)%Z
+    | Z0 => (0, (match (1 mod 0) with | 0 => 0 | _ => a end))%Z
     | Zpos b' =>
       let (q, r) := Zpos_div_eucl_aux a' b' in
       match r with
@@ -921,16 +1005,9 @@ intros x.
 apply IHp.
 Qed.
 
-Fixpoint iter_pos (n : positive) (x : A) {struct n} : A :=
-  match n with
-  | xI n' => iter_pos n' (iter_pos n' (f x))
-  | xO n' => iter_pos n' (iter_pos n' x)
-  | xH => f x
-  end.
-
 Lemma iter_pos_nat :
   forall (p : positive) (x : A),
-  iter_pos p x = iter_nat (Pos.to_nat p) x.
+  iter_pos f p x = iter_nat (Pos.to_nat p) x.
 Proof.
 induction p ; intros x.
 rewrite Pos2Nat.inj_xI.

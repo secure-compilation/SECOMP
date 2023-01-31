@@ -94,6 +94,7 @@ Module Pregmap := EMap(PregEq).
 
 (** Conventional names for stack pointer ([SP]) and return address ([RA]) *)
 
+Declare Scope asm.
 Notation "'SP'" := IR13 (only parsing) : asm.
 Notation "'RA'" := IR14 (only parsing) : asm.
 
@@ -697,7 +698,7 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : out
   | Pfsubd r1 r2 r3 =>
       Next (nextinstr (rs#r1 <- (Val.subf rs#r2 rs#r3))) m
   | Pflid r1 f =>
-      Next (nextinstr (rs#r1 <- (Vfloat f))) m
+      Next (nextinstr (rs#IR14 <- Vundef #r1 <- (Vfloat f))) m
   | Pfcmpd r1 r2 =>
       Next (nextinstr (compare_float rs rs#r1 rs#r2)) m
   | Pfcmpzd r1 =>
@@ -924,7 +925,7 @@ Inductive step: state -> trace -> state -> Prop :=
       external_call ef ge (comp_of f) vargs m t vres m' ->
       rs' = nextinstr
               (set_res res vres
-                (undef_regs (map preg_of (destroyed_by_builtin ef)) rs)) ->
+                (undef_regs (IR IR14 :: map preg_of (destroyed_by_builtin ef)) rs)) ->
       step (State rs m) t (State rs' m')
   | exec_step_external:
       forall b ef args res rs m t rs' m' cp,
@@ -1006,7 +1007,7 @@ Ltac Equalities :=
   split. auto. intros. destruct B; auto. subst. auto.
 (* trace length *)
   red; intros; inv H; simpl.
-  omega.
+  lia.
   inv H3; eapply external_call_trace_length; eauto.
   eapply external_call_trace_length; eauto.
 (* initial states *)

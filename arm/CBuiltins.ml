@@ -6,10 +6,11 @@
 (*                                                                     *)
 (*  Copyright Institut National de Recherche en Informatique et en     *)
 (*  Automatique.  All rights reserved.  This file is distributed       *)
-(*  under the terms of the GNU General Public License as published by  *)
-(*  the Free Software Foundation, either version 2 of the License, or  *)
-(*  (at your option) any later version.  This file is also distributed *)
-(*  under the terms of the INRIA Non-Commercial License Agreement.     *)
+(*  under the terms of the GNU Lesser General Public License as        *)
+(*  published by the Free Software Foundation, either version 2.1 of   *)
+(*  the License, or  (at your option) any later version.               *)
+(*  This file is also distributed under the terms of the               *)
+(*  INRIA Non-Commercial License Agreement.                            *)
 (*                                                                     *)
 (* *********************************************************************)
 
@@ -22,19 +23,6 @@ let builtins = {
     "__builtin_va_list", TPtr(TVoid [], [])
   ];
   builtin_functions = [
-    (* Integer arithmetic *)
-    "__builtin_clz",
-      (TInt(IInt, []), [TInt(IUInt, [])], false);
-    "__builtin_clzl",
-      (TInt(IInt, []), [TInt(IULong, [])], false);
-    "__builtin_clzll",
-      (TInt(IInt, []), [TInt(IULongLong, [])], false);
-    "__builtin_ctz",
-      (TInt(IInt, []), [TInt(IUInt, [])], false);
-    "__builtin_ctzl",
-      (TInt(IInt, []), [TInt(IULong, [])], false);
-    "__builtin_ctzll",
-      (TInt(IInt, []), [TInt(IULongLong, [])], false);
     (* Memory accesses *)
     "__builtin_read16_reversed",
       (TInt(IUShort, []), [TPtr(TInt(IUShort, [AConst]), [])], false);

@@ -6,10 +6,11 @@
 (*                                                                     *)
 (*  Copyright Institut National de Recherche en Informatique et en     *)
 (*  Automatique.  All rights reserved.  This file is distributed       *)
-(*  under the terms of the GNU General Public License as published by  *)
-(*  the Free Software Foundation, either version 2 of the License, or  *)
-(*  (at your option) any later version.  This file is also distributed *)
-(*  under the terms of the INRIA Non-Commercial License Agreement.     *)
+(*  under the terms of the GNU Lesser General Public License as        *)
+(*  published by the Free Software Foundation, either version 2.1 of   *)
+(*  the License, or  (at your option) any later version.               *)
+(*  This file is also distributed under the terms of the               *)
+(*  INRIA Non-Commercial License Agreement.                            *)
 (*                                                                     *)
 (* *********************************************************************)
 
@@ -21,6 +22,6 @@ val elab_file : (Cabs.definition list * (Cabs.import list * Cabs.export list)) -
 
 val elab_int_constant : Cabs.loc -> string -> int64 * C.ikind
 val elab_float_constant : Cabs.floatInfo -> C.float_cst * C.fkind
-val elab_char_constant : Cabs.loc -> bool -> int64 list -> int64
+val elab_char_constant : Cabs.loc -> Cabs.encoding -> int64 list -> int64
   (* These auxiliary functions are exported so that they can be reused
      in other projects that deal with C-style source languages. *)

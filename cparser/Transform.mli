@@ -6,10 +6,11 @@
 (*                                                                     *)
 (*  Copyright Institut National de Recherche en Informatique et en     *)
 (*  Automatique.  All rights reserved.  This file is distributed       *)
-(*  under the terms of the GNU General Public License as published by  *)
-(*  the Free Software Foundation, either version 2 of the License, or  *)
-(*  (at your option) any later version.  This file is also distributed *)
-(*  under the terms of the INRIA Non-Commercial License Agreement.     *)
+(*  under the terms of the GNU Lesser General Public License as        *)
+(*  published by the Free Software Foundation, either version 2.1 of   *)
+(*  the License, or  (at your option) any later version.               *)
+(*  This file is also distributed under the terms of the               *)
+(*  INRIA Non-Commercial License Agreement.                            *)
 (*                                                                     *)
 (* *********************************************************************)
 
@@ -62,14 +63,14 @@ val fundef : (Env.t -> C.stmt -> C.stmt) -> Env.t -> C.fundef -> C.fundef
 (** Generic transformation of a program *)
 
 val program :
-  ?decl:(Env.t -> C.decl -> C.decl) ->
-  ?fundef:(Env.t -> C.fundef -> C.fundef) ->
-  ?composite:(Env.t -> C.struct_or_union ->
+  ?decl:(Env.t -> C.location -> C.decl -> C.decl) ->
+  ?fundef:(Env.t -> C.location -> C.fundef -> C.fundef) ->
+  ?composite:(Env.t -> C.location -> C.struct_or_union ->
                 C.ident -> C.attributes -> C.field list ->
                   C.attributes * C.field list) ->
-  ?typedef:(Env.t -> C.ident -> C.typ -> C.typ) ->
-  ?enum:(Env.t -> C.ident -> C.attributes -> C.enumerator list ->
+  ?typedef:(Env.t -> C.location -> C.ident -> C.typ -> C.typ) ->
+  ?enum:(Env.t -> C.location -> C.ident -> C.attributes -> C.enumerator list ->
                   C.attributes * C.enumerator list) ->
-  ?pragma:(Env.t -> string -> string) ->
+  ?pragma:(Env.t -> C.location -> string -> string) ->
   C.program ->
   C.program

@@ -164,7 +164,7 @@ Proof.
   subst r0; contradiction.
   apply Regmap.gso; auto.
 Qed.
-Hint Resolve match_env_update_temp: rtlg.
+Global Hint Resolve match_env_update_temp: rtlg.
 
 (** Matching between environments is preserved by simultaneous
   assignment to a Cminor local variable (in the Cminor environments)
@@ -204,7 +204,7 @@ Proof.
   eapply match_env_update_temp; eauto.
   eapply match_env_update_var; eauto.
 Qed.
-Hint Resolve match_env_update_dest: rtlg.
+Global Hint Resolve match_env_update_dest: rtlg.
 
 (** A variant of [match_env_update_var] corresponding to the assignment
   of the result of a builtin. *)
@@ -354,8 +354,7 @@ Instance comp_transl_function: has_comp_transl_partial transl_function.
 Proof.
   unfold transl_function.
   intros f tf H; simpl in *.
-  destruct (reserve_labels _ _) as [l s].
-  destruct (transl_fun _ _ _) as [|[??] ? ?]; try discriminate.
+  destruct (transl_fun _ _) as [|[??] ? ?]; try discriminate.
   now inv H.
 Qed.
 
@@ -405,9 +404,8 @@ Lemma sig_transl_function:
 Proof.
   intros until tf. unfold transl_fundef, transf_partial_fundef.
   case f; intro.
-  unfold transl_function.
-  destruct (reserve_labels (fn_body f0) (PTree.empty node, init_state)) as [ngoto s0].
-  case (transl_fun f0 ngoto s0); simpl; intros.
+  unfold transl_function. 
+  case (transl_fun f0 (init_state)); simpl; intros.
   discriminate.
   destruct p. simpl in H. inversion H. reflexivity.
   intro. inversion H. reflexivity.
@@ -799,7 +797,8 @@ Proof.
   eapply exec_Ibuiltin; eauto.
   eapply eval_builtin_args_trivial.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  eauto.
+  rewrite <- COMP. eauto.
+  auto.
 (* Match-env *)
   split. eauto with rtlg.
 (* Result reg *)
@@ -846,19 +845,28 @@ Proof.
   rewrite e0. erewrite <- find_comp_translated; eauto.
   destruct (Pos.eqb_spec (Genv.find_comp ge (Vptr b Ptrofs.zero)) default_compartment).
   rewrite <- e0. erewrite find_comp_translated; eauto.
+  rewrite <- COMP in n. apply Pos.eqb_neq in n. rewrite n in INTRA.
   congruence.
   intros CROSS. erewrite <- find_comp_translated with (vf := Vptr b Ptrofs.zero) in CROSS; eauto.
-  rewrite <- CROSS in INTRA. unfold Genv.type_of_call in *. congruence.
+  rewrite <- CROSS in INTRA. unfold Genv.type_of_call in *.
+  rewrite <- COMP in CROSS. rewrite <- COMP in INTRA.
+  destruct ((cp =? Genv.find_comp ge (Vptr b Ptrofs.zero))%positive) eqn:EQ1;
+    [discriminate |].
+  destruct ((Genv.find_comp ge (Vptr b Ptrofs.zero) =? default_compartment)%positive) eqn:EQ2;
+    [discriminate |].
+  congruence.
   instantiate (1 := E0).
   econstructor.
+  rewrite COMP in INTRA.
   erewrite <- find_comp_translated with (vf := Vptr b Ptrofs.zero); eauto.
   eapply star_left. eapply exec_function_external.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  subst cp. eauto.
+  clear H3; subst cp. eauto.
   apply star_one. apply exec_return.
-  erewrite find_comp_translated in INTRA; eauto. contradiction.
+  erewrite find_comp_translated in INTRA; eauto. rewrite <- COMP. contradiction.
   econstructor.
   erewrite find_comp_translated in INTRA; eauto.
+  rewrite <- type_of_call_translated, <- COMP. auto.
   reflexivity. reflexivity. reflexivity.
 (* Match-env *)
   split. eauto with rtlg.
@@ -1124,7 +1132,7 @@ Lemma invert_eval_builtin_arg:
   /\ Events.eval_builtin_arg ge (fun v => v) sp m (fst (convert_builtin_arg a vl)) v
   /\ (forall vl', convert_builtin_arg a (vl ++ vl') = (fst (convert_builtin_arg a vl), vl')).
 Proof.
-  induction 1; simpl; try (econstructor; intuition eauto with evalexpr barg; fail).
+  induction 1; simpl. 2-8: try (econstructor; intuition eauto with evalexpr barg; fail).
 - econstructor; split; eauto with evalexpr. split. constructor. auto. 
 - econstructor; split; eauto with evalexpr. split. constructor. auto. 
 - econstructor; split; eauto with evalexpr. split. repeat constructor. auto. 
@@ -1259,7 +1267,7 @@ Proof.
 Qed.
 
 Ltac Lt_state :=
-  apply lt_state_intro; simpl; try omega.
+  apply lt_state_intro; simpl; try lia.
 
 Lemma lt_state_wf:
   well_founded lt_state.

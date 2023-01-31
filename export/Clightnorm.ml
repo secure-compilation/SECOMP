@@ -6,10 +6,11 @@
 (*                                                                     *)
 (*  Copyright Institut National de Recherche en Informatique et en     *)
 (*  Automatique.  All rights reserved.  This file is distributed       *)
-(*  under the terms of the GNU General Public License as published by  *)
-(*  the Free Software Foundation, either version 2 of the License, or  *)
-(*  (at your option) any later version.  This file is also distributed *)
-(*  under the terms of the INRIA Non-Commercial License Agreement.     *)
+(*  under the terms of the GNU Lesser General Public License as        *)
+(*  published by the Free Software Foundation, either version 2.1 of   *)
+(*  the License, or  (at your option) any later version.               *)
+(*  This file is also distributed under the terms of the               *)
+(*  INRIA Non-Commercial License Agreement.                            *)
 (*                                                                     *)
 (* *********************************************************************)
 
@@ -143,7 +144,18 @@ and norm_lbl_stmt ls =
   | LSnil -> LSnil
   | LScons(n, s, ls) -> LScons(n, norm_stmt s, norm_lbl_stmt ls)
 
-let next_var curr (v, _) = if P.lt v curr then curr else P.succ v
+(* In "canonical atoms" mode, temporaries are between 2^7 and 2^12 - 1.
+   Below 2^7 are single-letter identifiers and above 2^12 are all
+   other identifiers. *)
+
+let first_temp = P.of_int 128
+let last_temp  = P.of_int 4095
+
+let next_var curr (v, _) =
+  if P.lt v curr
+  || !use_canonical_atoms && (P.lt v first_temp || P.gt v last_temp)
+  then curr
+  else P.succ v
 
 let next_var_list vars start = List.fold_left next_var start vars
 

@@ -15,6 +15,7 @@
 Require Import Recdef Coqlib Zwf Zbits.
 Require Import Errors AST Integers Floats Op.
 Require Import Locations Mach Asm.
+Require SelectOp.
 
 Local Open Scope string_scope.
 Local Open Scope list_scope.
@@ -284,7 +285,7 @@ Definition shrx64 (rd r1: ireg) (n: int) (k: code) : code :=
 (** Load the address [id + ofs] in [rd] *)
 
 Definition loadsymbol (rd: ireg) (id: ident) (ofs: ptrofs) (k: code) : code :=
-  if Archi.pic_code tt then
+  if SelectOp.symbol_is_relocatable id then
     if Ptrofs.eq ofs Ptrofs.zero then
       Ploadsymbol rd id :: k
     else
@@ -946,7 +947,7 @@ Definition transl_addressing (sz: Z) (addr: Op.addressing) (args: list mreg)
         OK (arith_extended Paddext (Padd X) X16 r1 r2 x a
                            (insn (ADimm X16 Int64.zero) :: k))
   | Aglobal id ofs, nil =>
-      assertion (negb (Archi.pic_code tt));
+      assertion (negb (SelectOp.symbol_is_relocatable id));
       if Ptrofs.eq (Ptrofs.modu ofs (Ptrofs.repr sz)) Ptrofs.zero && symbol_is_aligned id sz
       then OK (Padrp X16 id ofs :: insn (ADadr X16 id ofs) :: k)
       else OK (loadsymbol X16 id ofs (insn (ADimm X16 Int64.zero) :: k))
@@ -1056,7 +1057,7 @@ Definition make_epilogue (f: Mach.function) (k: code) :=
 (** Translation of a Mach instruction. *)
 
 Definition transl_instr (f: Mach.function) (i: Mach.instruction)
-                        (r29_is_parent: bool) (k: code) : res code :=
+                        (r15_is_parent: bool) (k: code) : res code :=
   match i with
   | Mgetstack ofs ty dst =>
       loadind XSP ofs ty dst k
@@ -1064,8 +1065,8 @@ Definition transl_instr (f: Mach.function) (i: Mach.instruction)
       storeind src XSP ofs ty k
   | Mgetparam ofs ty dst =>
       (* load via the frame pointer if it is valid *)
-      do c <- loadind X29 ofs ty dst k;
-      OK (if r29_is_parent then c else loadptr XSP f.(fn_link_ofs) X29 c)
+      do c <- loadind X15 ofs ty dst k;
+      OK (if r15_is_parent then c else loadptr XSP f.(fn_link_ofs) X15 c)
   | Mop op args res =>
       transl_op op args res k
   | Mload chunk addr args dst =>
@@ -1101,8 +1102,8 @@ Definition transl_instr (f: Mach.function) (i: Mach.instruction)
 Definition it1_is_parent (before: bool) (i: Mach.instruction) : bool :=
   match i with
   | Msetstack src ofs ty => before
-  | Mgetparam ofs ty dst => negb (mreg_eq dst R29)
-  | Mop op args res => before && negb (mreg_eq res R29)
+  | Mgetparam ofs ty dst => negb (mreg_eq dst R15)
+  | Mop op args res => before && negb (mreg_eq res R15)
   | _ => false
   end.
 

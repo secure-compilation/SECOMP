@@ -67,7 +67,7 @@ Lemma slot_outgoing_argument_valid:
 Proof.
   intros. exploit loc_arguments_acceptable_2; eauto. intros [A B].
   unfold slot_valid. unfold proj_sumbool.
-  rewrite zle_true by omega.
+  rewrite zle_true by lia.
   rewrite pred_dec_true by auto.
   auto.
 Qed.
@@ -80,7 +80,6 @@ Proof.
   destruct 1; intros; auto; destruct ty; simpl;
   try contradiction; try discriminate; econstructor; eauto.
 Qed.
-
 
 Section PRESERVATION.
 
@@ -104,79 +103,6 @@ Section FRAME_PROPERTIES.
 Variable f: Linear.function.
 Let b := function_bounds f.
 Let fe := make_env b.
-
-(** [contains_locations j sp pos bound sl ls] is a separation logic assertion
-  that holds if the memory area at block [sp], offset [pos], size [4 * bound],
-  reflects the values of the stack locations of kind [sl] given by the
-  location map [ls], up to the memory injection [j].
-
-  Two such [contains_locations] assertions will be used later, one to
-  reason about the values of [Local] slots, the other about the values of
-  [Outgoing] slots. *)
-
-(* RB: NOTE: Adding compartment parameter here with corresponding
-   [Mem.own_block] conjunct to link premise and conclusion, where the
-   compartment is strictly needed.
-
-   It might be interesting to derive [Mem.own_block] from other permissions,
-   however for now exposing the new dependencies as parameters seems enough.
-
-   Unfortunately, the added conjunct modifies automatically generated names of
-   related hypotheses in proofs below, and there is no clear way to avoid this.
-
-   There is a new proof obligation that we need to solve to avoid unnecessary
-   section when we use the assertion later.
-
-   The documentation above (and for related assertions) needs to be amended. *)
-Program Definition contains_locations (j: meminj) (sp: block) (pos bound: Z) (sl: slot) (ls: locset)
-        (ocp: option compartment) (cp: compartment) : massert := {|
-  m_pred := fun m =>
-    (8 | pos) /\ 0 <= pos /\ pos + 4 * bound <= Ptrofs.modulus /\
-    Mem.range_perm m sp pos (pos + 4 * bound) Cur Freeable /\
-      Mem.can_access_block m sp ocp /\
-      ocp = Some cp /\
-    forall ofs ty, 0 <= ofs -> ofs + typesize ty <= bound -> (typealign ty | ofs) ->
-    exists v, Mem.load (chunk_of_type ty) m sp (pos + 4 * ofs) ocp = Some v
-           /\ Val.inject j (ls (S sl ofs ty)) v;
-  m_footprint := fun b ofs =>
-    b = sp /\ pos <= ofs < pos + 4 * bound
-|}.
-Next Obligation.
-  intuition auto.
-  - red; intros. eapply Mem.perm_unchanged_on; eauto. simpl; auto.
-  - change (match bound with
-            | 0 => 0
-            | Z.pos y' => Z.pos y'~0~0
-            | Z.neg y' => Z.neg y'~0~0
-            end) with (4 * bound) in *.
-    eapply Mem.unchanged_on_own with (b := sp) (cp := Some cp) in H0.
-    eapply H0. eauto.
-    eapply Mem.can_access_block_valid_block; eauto.
-  - exploit H6; eauto. intros (v & A & B). exists v; split; auto.
-    change (match ofs with | 0 => 0
-                            | Z.pos y' => Z.pos y'~0~0
-                            | Z.neg y' => Z.neg y'~0~0
-                  end) with (4 * ofs) in *.
-
-    eapply Mem.load_unchanged_on; eauto.
-    simpl; intros. rewrite size_type_chunk, typesize_typesize in H9.
-    change (match ofs with | 0 => 0
-                            | Z.pos y' => Z.pos y'~0~0
-                            | Z.neg y' => Z.neg y'~0~0
-                  end) with (4 * ofs) in *.
-
-    split; auto. split; [omega |].
-    rewrite <- Z.add_assoc in H9. rewrite Zred_factor4 in H9.
-    change (match bound with
-            | 0 => 0
-            | Z.pos y' => Z.pos y'~0~0
-            | Z.neg y' => Z.neg y'~0~0
-            end) with (4 * bound). omega.
-Qed.
-Next Obligation.
-  eauto with mem.
-Qed.
-
 Variable tf: Mach.function.
 Hypothesis TRANSF_F: transf_function f = OK tf.
 
@@ -210,7 +136,7 @@ Proof.
   destruct (wt_function f); simpl negb.
   destruct (zlt Ptrofs.max_unsigned (fe_size (make_env (function_bounds f)))).
   intros; discriminate.
-  intros. unfold fe. unfold b. omega.
+  intros. unfold fe. unfold b. lia.
   intros; discriminate.
 Qed.
 
@@ -259,6 +185,78 @@ Proof.
   simpl. rewrite Ptrofs.add_zero_l; auto.
 Qed.
 
+(** [contains_locations j sp pos bound sl ls] is a separation logic assertion
+  that holds if the memory area at block [sp], offset [pos], size [4 * bound],
+  reflects the values of the stack locations of kind [sl] given by the
+  location map [ls], up to the memory injection [j].
+
+  Two such [contains_locations] assertions will be used later, one to
+  reason about the values of [Local] slots, the other about the values of
+  [Outgoing] slots. *)
+
+(* RB: NOTE: Adding compartment parameter here with corresponding
+   [Mem.own_block] conjunct to link premise and conclusion, where the
+   compartment is strictly needed.
+
+   It might be interesting to derive [Mem.own_block] from other permissions,
+   however for now exposing the new dependencies as parameters seems enough.
+
+   Unfortunately, the added conjunct modifies automatically generated names of
+   related hypotheses in proofs below, and there is no clear way to avoid this.
+
+   There is a new proof obligation that we need to solve to avoid unnecessary
+   section when we use the assertion later.
+
+   The documentation above (and for related assertions) needs to be amended. *)
+
+Program Definition contains_locations (j: meminj) (sp: block) (pos bound: Z) (sl: slot) (ls: locset)
+        (ocp: option compartment) (cp: compartment) : massert := {|
+  m_pred := fun m =>
+    (8 | pos) /\ 0 <= pos /\ pos + 4 * bound <= Ptrofs.modulus /\
+    Mem.range_perm m sp pos (pos + 4 * bound) Cur Freeable /\
+      Mem.can_access_block m sp ocp /\
+      ocp = Some cp /\
+    forall ofs ty, 0 <= ofs -> ofs + typesize ty <= bound -> (typealign ty | ofs) ->
+    exists v, Mem.load (chunk_of_type ty) m sp (pos + 4 * ofs) ocp = Some v
+           /\ Val.inject j (ls (S sl ofs ty)) v;
+  m_footprint := fun b ofs =>
+    b = sp /\ pos <= ofs < pos + 4 * bound
+|}.
+Next Obligation.
+  intuition auto.
+  - red; intros. eapply Mem.perm_unchanged_on; eauto. simpl; auto.
+  - change (match bound with
+            | 0 => 0
+            | Z.pos y' => Z.pos y'~0~0
+            | Z.neg y' => Z.neg y'~0~0
+            end) with (4 * bound) in *.
+    eapply Mem.unchanged_on_own with (b := sp) (cp := Some cp) in H0.
+    eapply H0. eauto.
+    eapply Mem.can_access_block_valid_block; eauto.
+  - exploit H6; eauto. intros (v & A & B). exists v; split; auto.
+    change (match ofs with | 0 => 0
+                            | Z.pos y' => Z.pos y'~0~0
+                            | Z.neg y' => Z.neg y'~0~0
+                  end) with (4 * ofs) in *.
+
+    eapply Mem.load_unchanged_on; eauto.
+    simpl; intros. rewrite size_type_chunk, typesize_typesize in H9.
+    change (match ofs with | 0 => 0
+                            | Z.pos y' => Z.pos y'~0~0
+                            | Z.neg y' => Z.neg y'~0~0
+                  end) with (4 * ofs) in *.
+
+    split; auto. split; [lia |].
+    rewrite <- Z.add_assoc in H9. rewrite Zred_factor4 in H9.
+    change (match bound with
+            | 0 => 0
+            | Z.pos y' => Z.pos y'~0~0
+            | Z.neg y' => Z.neg y'~0~0
+            end) with (4 * bound). lia.
+Qed.
+Next Obligation.
+  eauto with mem.
+Qed.
 
 Remark valid_access_location:
   forall m sp pos bound cp ofs ty p,
@@ -270,14 +268,13 @@ Remark valid_access_location:
 Proof.
   intros; split.
 - red; intros. apply Mem.perm_implies with Freeable; auto with mem.
-  apply H0. rewrite size_type_chunk, typesize_typesize in H5. omega.
+  apply H0. rewrite size_type_chunk, typesize_typesize in H5. lia.
 - split. eauto.
   rewrite align_type_chunk. apply Z.divide_add_r.
   apply Z.divide_trans with 8; auto.
   exists (8 / (4 * typealign ty)); destruct ty; reflexivity.
   apply Z.mul_divide_mono_l. auto.
 Qed.
-
 
 Lemma get_location:
   forall m j sp pos bound sl ls cp ofs ty,
@@ -290,7 +287,7 @@ Proof.
   intros. destruct H as (D & E & F & G & [H' [_ H]]).
   exploit H; eauto. intros (v & U & V). exists v; split; auto.
   unfold load_stack; simpl. rewrite Ptrofs.add_zero_l, Ptrofs.unsigned_repr; auto.
-  unfold Ptrofs.max_unsigned. generalize (typesize_pos ty). omega.
+  unfold Ptrofs.max_unsigned. generalize (typesize_pos ty). lia.
 Qed.
 
 Lemma set_location:
@@ -309,7 +306,7 @@ Proof.
   { red; intros; eauto with mem. }
   exists m'; split.
 - unfold store_stack; simpl. rewrite Ptrofs.add_zero_l, Ptrofs.unsigned_repr; eauto.
-  unfold Ptrofs.max_unsigned. generalize (typesize_pos ty). omega.
+  unfold Ptrofs.max_unsigned. generalize (typesize_pos ty). lia.
 - simpl. intuition auto.
   + fold (Mem.can_access_block m' sp (Some cp)).
     eapply Mem.store_can_access_block_inj in STORE. eapply STORE; eauto.
@@ -318,12 +315,12 @@ Proof.
 * (* same location *)
   inv e. rename ofs0 into ofs. rename ty0 into ty.
   exists (Val.load_result (chunk_of_type ty) v'); split.
-  eapply Mem.load_store_similar_2; eauto. omega.
+  eapply Mem.load_store_similar_2; eauto. lia.
   apply Val.load_result_inject; auto.
 * (* different locations *)
   exploit H; eauto. intros (v0 & X & Y). exists v0; split; auto.
   rewrite <- X; eapply Mem.load_store_other; eauto.
-  destruct d. congruence. right. rewrite ! size_type_chunk, ! typesize_typesize. omega.
+  destruct d. congruence. right. rewrite ! size_type_chunk, ! typesize_typesize. lia.
 * (* overlapping locations *)
   destruct (Mem.valid_access_load m' (chunk_of_type ty0) sp (pos + 4 * ofs0) (Some cp)) as [v'' LOAD].
   apply Mem.valid_access_implies with Writable; auto with mem.
@@ -334,7 +331,7 @@ Proof.
 + apply (m_invar P) with m; auto.
   eapply Mem.store_unchanged_on; eauto.
   intros i; rewrite size_type_chunk, typesize_typesize. intros; red; intros.
-  eelim C; eauto. simpl. split; auto. omega.
+  eelim C; eauto. simpl. split; auto. lia.
 Qed.
 
 Lemma initial_locations:
@@ -1002,13 +999,13 @@ Local Opaque mreg_type.
   { unfold pos1. apply Z.divide_trans with sz.
     unfold sz; rewrite <- size_type_chunk. apply align_size_chunk_divides.
     apply align_divides; auto. }
-  apply range_drop_left with (mid := pos1) in SEP; [ | omega ].
-  apply range_split with (mid := pos1 + sz) in SEP; [ | omega ].
+  apply range_drop_left with (mid := pos1) in SEP; [ | lia ].
+  apply range_split with (mid := pos1 + sz) in SEP; [ | lia ].
   unfold sz at 1 in SEP. rewrite <- size_type_chunk in SEP.
   eapply range_contains in SEP; eauto.
   exploit (contains_set_stack (fun v' => Val.inject j (ls (R r)) v') (rs r)).
   eexact SEP.
-  apply load_result_inject; auto. apply wt_ls.
+  apply load_result_inject; [auto|apply wt_ls].
   clear SEP; intros (m1 & STORE & SEP).
   set (rs1 := undef_regs (destroyed_by_setstack ty) rs).
   assert (AG1: agree_regs j ls rs1).
@@ -1164,7 +1161,7 @@ Local Opaque b fe.
   instantiate (1 := fe_stack_data fe). tauto.
   reflexivity.
   instantiate (1 := fe_stack_data fe + bound_stack_data b). rewrite Z.max_comm. reflexivity.
-  generalize (bound_stack_data_pos b) size_no_overflow; omega.
+  generalize (bound_stack_data_pos b) size_no_overflow; lia.
   tauto.
   tauto.
   clear SEP. intros (j' & SEP & INCR & SAME).
@@ -1783,7 +1780,7 @@ Proof.
 + simpl in SEP. unfold parent_sp.
   assert (slot_valid f Outgoing pos ty = true).
   { destruct H0. unfold slot_valid, proj_sumbool.
-    rewrite zle_true by omega. rewrite pred_dec_true by auto. reflexivity. }
+    rewrite zle_true by lia. rewrite pred_dec_true by auto. reflexivity. }
   assert (slot_within_bounds (function_bounds f) Outgoing pos ty) by eauto.
   exploit frame_get_outgoing; eauto. intros (v & A & B).
   exists v; split.
@@ -1868,7 +1865,7 @@ Proof.
 + simpl in SEP. unfold parent_sp. simpl.
   assert (slot_valid f Outgoing pos ty = true).
   { destruct H0. unfold slot_valid, proj_sumbool.
-    rewrite zle_true by omega. rewrite pred_dec_true by auto. reflexivity. }
+    rewrite zle_true by lia. rewrite pred_dec_true by auto. reflexivity. }
   assert (slot_within_bounds (function_bounds f) Outgoing pos ty) by eauto.
   exploit frame_get_outgoing; eauto. intros (v & A & B).
   exists v; split.
@@ -2516,7 +2513,6 @@ Proof.
     change (Mem.valid_block m0 b0). eapply Genv.find_var_info_not_fresh; eauto.
   red; simpl; tauto.
 Qed.
-
 
 Lemma transf_final_states:
   forall st1 st2 r,

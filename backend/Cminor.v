@@ -6,10 +6,11 @@
 (*                                                                     *)
 (*  Copyright Institut National de Recherche en Informatique et en     *)
 (*  Automatique.  All rights reserved.  This file is distributed       *)
-(*  under the terms of the GNU General Public License as published by  *)
-(*  the Free Software Foundation, either version 2 of the License, or  *)
-(*  (at your option) any later version.  This file is also distributed *)
-(*  under the terms of the INRIA Non-Commercial License Agreement.     *)
+(*  under the terms of the GNU Lesser General Public License as        *)
+(*  published by the Free Software Foundation, either version 2.1 of   *)
+(*  the License, or  (at your option) any later version.               *)
+(*  This file is also distributed under the terms of the               *)
+(*  INRIA Non-Commercial License Agreement.                            *)
 (*                                                                     *)
 (* *********************************************************************)
 
@@ -189,7 +190,6 @@ Definition funsig (fd: fundef) :=
 
 Definition genv := Genv.t fundef unit.
 Definition env := PTree.t val.
-
 
 (** The following functions build the initial local environment at
   function entry, binding parameters to the provided arguments and
@@ -614,7 +614,7 @@ Proof.
   exists (Returnstate vres2 k m2 (sig_res (ef_sig ef)) (comp_of ef)). econstructor; eauto.
   inv EV; inv H0; eexists; eauto.
 (* trace length *)
-  red; intros; inv H; simpl; try omega; try now eapply external_call_trace_length; eauto.
+  red; intros; inv H; simpl; try lia; try now eapply external_call_trace_length; eauto.
   inv EV; auto.
   inv EV; auto.
 Qed.
@@ -689,7 +689,7 @@ Proof.
     assert (res0 = res) by now eapply eventval_match_determ_2; eauto. subst.
     split; [constructor | auto].
 - (* single event *)
-  red; simpl. destruct 1; simpl; try omega;
+  red; simpl. destruct 1; simpl; try lia;
   try now eapply external_call_trace_length; eauto.
   inv EV; auto.
   inv EV; auto.

@@ -148,11 +148,14 @@ struct
   let name_of_section = function
     | Section_text -> ".text"
     | Section_data i | Section_small_data i ->
-      if i then ".data" else common_section ()
+        variable_section ~sec:".data" ~bss:".bss" i
     | Section_const i | Section_small_const i ->
-      if i || (not !Clflags.option_fcommon) then ".section	.rodata" else "COMM"
-    | Section_string -> ".section	.rodata"
-    | Section_literal -> ".text"
+        variable_section
+          ~sec:".section      .rodata"
+          ~reloc:".section    .data.rel.ro,\"aw\",%progbits"
+          i
+    | Section_string _ -> ".section	.rodata"
+    | Section_literal _ -> ".text"
     | Section_jumptable -> ".text"
     | Section_user(s, wr, ex) ->
       sprintf ".section	\"%s\",\"a%s%s\",%%progbits"
@@ -529,13 +532,6 @@ struct
         ireg r1 print_label lbl comment symbol_offset (id, ofs)
 
 
-  let get_section_names name =
-    let (text, lit) =
-      match C2C.atom_sections name with
-      | t :: l :: _ -> (t, l)
-      | _    -> (Section_text, Section_literal) in
-    text,lit,Section_jumptable
-
   let print_align oc alignment =
     fprintf oc "	.balign %d\n" alignment
 
@@ -569,15 +565,6 @@ struct
     current_function_sig := fn.fn_sig;
     List.iter (print_instruction oc) fn.fn_code
 
-
-  let emit_constants oc lit =
-    if not !Constantexpand.literals_in_code && exists_constants () then begin
-      section oc lit;
-      fprintf oc "	.balign 4\n";
-      Hashtbl.iter (print_literal64 oc) literal64_labels;
-    end;
-    reset_constants ()
-
   (* Data *)
 
   let print_prologue oc =
@@ -592,7 +579,12 @@ struct
        | _ -> "armv7");
     fprintf oc "	.fpu	%s\n"
       (if Opt.vfpv3 then "vfpv3-d16" else "vfpv2");
-    fprintf oc "	.%s\n" (if !Clflags.option_mthumb then "thumb" else "arm");
+    fprintf oc "	.eabi_attribute Tag_ABI_VFP_args, %d\n"
+      (match Configuration.abi with
+       | "hardfloat" -> 1
+       | _ -> 0);
+    fprintf oc "	.%s\n"
+      (if !Clflags.option_mthumb then "thumb" else "arm");
     if !Clflags.option_g then begin
       section oc Section_text;
       cfi_section oc

@@ -33,8 +33,8 @@ type node =
   { ident: int;                         (*r unique identifier *)
     typ: typ;                           (*r its type *)
     var: var;                           (*r the XTL variable it comes from *)
-    mutable regclass: int;              (*r identifier of register class *)
-    mutable accesses: int;              (*r number of defs and uses *)
+    regclass: int;                      (*r identifier of register class *)
+    accesses: int;                      (*r number of defs and uses *)
     mutable spillcost: float;           (*r estimated cost of spilling *)
     mutable adjlist: node list;         (*r all nodes it interferes with *)
     mutable degree: int;                (*r number of adjacent nodes *)
@@ -101,7 +101,7 @@ after IRC elimination, when assigning a stack slot to a spilled variable. *)
 
 let name_of_loc = function
   | R r ->
-      begin match Machregsaux.name_of_register r with
+      begin match Machregsnames.name_of_register r with
                 | None -> "fixed-reg"
                 | Some s -> s
       end
@@ -206,7 +206,7 @@ type graph = {
   varTable: (var, node) Hashtbl.t;
   mutable nextIdent: int;
   (* The adjacency set  *)
-  mutable adjSet: unit IntPairs.t;
+  adjSet: unit IntPairs.t;
   (* Low-degree, non-move-related nodes *)
   simplifyWorklist: DLinkNode.t;
   (* Low-degree, move-related nodes *)
@@ -252,12 +252,10 @@ let class_of_loc = function
 
 let no_spill_class = 2
 
-let reserved_registers = ref ([]: mreg list)
-
 let rec remove_reserved = function
   | [] -> []
   | hd :: tl ->
-      if List.mem hd !reserved_registers
+      if List.mem hd !CPragmas.reserved_registers
       then remove_reserved tl
       else hd :: remove_reserved tl
 
@@ -913,10 +911,10 @@ let location_of_var g v =
 (* The exported interface *)
 
 let add_interf g v1 v2 =
-  addEdge g (nodeOfVar g v1) (nodeOfVar g v2)
+  let n1 = nodeOfVar g v1 in let n2 = nodeOfVar g v2 in addEdge g n1 n2
 
 let add_pref g v1 v2 =
-  addMovePref g (nodeOfVar g v1) (nodeOfVar g v2)
+  let n1 = nodeOfVar g v1 in let n2 = nodeOfVar g v2 in addMovePref g n1 n2
 
 let coloring g =
   initialNodePartition g;

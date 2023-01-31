@@ -13,17 +13,8 @@
 (** Translation from Compcert C to Clight.
     Side effects are pulled out of Compcert C expressions. *)
 
-Require Import Coqlib.
-Require Import Errors.
-Require Import Integers.
-Require Import Floats.
-Require Import Values.
-Require Import Memory.
-Require Import AST.
-Require Import Ctypes.
-Require Import Cop.
-Require Import Csyntax.
-Require Import Clight.
+Require Import Coqlib Maps Integers Floats Values AST Memory Errors.
+Require Import Ctypes Cop Csyntax Clight.
 
 Local Open Scope string_scope.
 Local Open Scope list_scope.
@@ -64,14 +55,13 @@ Definition bind {A B: Type} (x: mon A) (f: A -> mon B) : mon B :=
 Definition bind2 {A B C: Type} (x: mon (A * B)) (f: A -> B -> mon C) : mon C :=
   bind x (fun p => f (fst p) (snd p)).
 
+Declare Scope gensym_monad_scope.
 Notation "'do' X <- A ; B" := (bind A (fun X => B))
    (at level 200, X ident, A at level 100, B at level 200)
    : gensym_monad_scope.
 Notation "'do' ( X , Y ) <- A ; B" := (bind2 A (fun X Y => B))
    (at level 200, X ident, Y ident, A at level 100, B at level 200)
    : gensym_monad_scope.
-
-Local Open Scope gensym_monad_scope.
 
 Parameter first_unused_ident: unit -> ident.
 
@@ -95,6 +85,12 @@ Fixpoint makeseq_rec (s: statement) (l: list statement) : statement :=
 
 Definition makeseq (l: list statement) : statement :=
   makeseq_rec Sskip l.
+
+Section SIMPL_EXPR.
+
+Local Open Scope gensym_monad_scope.
+
+Variable ce: composite_env.
 
 (** Smart constructor for [if ... then ... else]. *)
 
@@ -144,16 +140,64 @@ Definition transl_incrdecr (id: incr_or_decr) (a: expr) (ty: type) : expr :=
   | Decr => Ebinop Osub a (Econst_int Int.one type_int32s) (incrdecr_type ty)
   end.
 
+(** Given a simple l-value expression [l], determine whether it
+    designates a bitfield.  *)
+
+Definition is_bitfield_access_aux
+              (fn: composite_env -> ident -> members -> res (Z * bitfield))
+              (id: ident) (fld: ident) : mon bitfield :=
+  match ce!id with
+  | None => error (MSG "unknown composite " :: CTX id :: nil)
+  | Some co =>
+      match fn ce fld (co_members co) with
+      | OK (_, bf) => ret bf
+      | Error _ => error (MSG "unknown field " :: CTX fld :: nil)
+      end
+  end.
+
+Definition is_bitfield_access (l: expr) : mon bitfield :=
+  match l with
+  | Efield r f _ =>
+      match typeof r with
+      | Tstruct id _ => is_bitfield_access_aux field_offset id f
+      | Tunion id _  => is_bitfield_access_aux union_field_offset id f
+      | _ => error (msg "is_bitfield_access")
+      end
+  | _ => ret Full
+  end.
+
+(** According to the CompCert C semantics, an access to a l-value of
+    volatile-qualified type can either
+  - produce an event in the trace of observable events, or
+  - produce no event and behave as if no volatile qualifier was there.
+
+    The latter case, where the volatile qualifier is ignored, happens if
+  - the l-value is a struct or union
+  - the l-value is an access to a bit field.
+
+    The [chunk_for_volatile_type] function distinguishes between the two
+    cases.  It returns [Some chunk] if the semantics is to produce
+    an observable event of the [Event_vload chunk] or [Event_vstore chunk]
+    kind.  It returns [None] if the semantics is that of a non-volatile
+    access. *)
+
+Definition chunk_for_volatile_type (ty: type) (bf: bitfield) : option memory_chunk :=
+  if type_is_volatile ty then
+    match access_mode ty with
+    | By_value chunk =>
+        match bf with
+        | Full => Some chunk
+        | Bits _ _ _ _ => None
+        end
+    | _ => None
+    end
+  else None.
+
 (** Generate a [Sset] or [Sbuiltin] operation as appropriate
   to dereference a l-value [l] and store its result in temporary variable [id]. *)
 
-Definition chunk_for_volatile_type (ty: type) : option memory_chunk :=
-  if type_is_volatile ty
-  then match access_mode ty with By_value chunk => Some chunk | _ => None end
-  else None.
-
-Definition make_set (id: ident) (l: expr) : statement :=
-  match chunk_for_volatile_type (typeof l) with
+Definition make_set (bf: bitfield) (id: ident) (l: expr) : statement :=
+  match chunk_for_volatile_type (typeof l) bf with
   | None => Sset id l
   | Some chunk =>
       let typtr := Tpointer (typeof l) noattr in
@@ -165,13 +209,15 @@ Definition make_set (id: ident) (l: expr) : statement :=
 
 Definition transl_valof (ty: type) (l: expr) : mon (list statement * expr) :=
   if type_is_volatile ty
-  then do t <- gensym ty; ret (make_set t l :: nil, Etempvar t ty)
+  then do t <- gensym ty;
+       do bf <- is_bitfield_access l;
+       ret (make_set bf t l :: nil, Etempvar t ty)
   else ret (nil, l).
 
 (** Translation of an assignment. *)
 
-Definition make_assign (l r: expr) : statement :=
-  match chunk_for_volatile_type (typeof l) with
+Definition make_assign (bf: bitfield) (l r: expr) : statement :=
+  match chunk_for_volatile_type (typeof l) bf with
   | None =>
       Sassign l r
   | Some chunk =>
@@ -181,20 +227,38 @@ Definition make_assign (l r: expr) : statement :=
                     (Eaddrof l typtr :: r :: nil)
   end.
 
-(** Translation of expressions.  Return a pair [(sl, a)] of
-    a list of statements [sl] and a pure expression [a].
-- If the [dst] argument is [For_val], the statements [sl]
-  perform the side effects of the original expression,
-  and [a] evaluates to the same value as the original expression.
-- If the [dst] argument is [For_effects], the statements [sl]
-  perform the side effects of the original expression,
-  and [a] is meaningless.
-- If the [dst] argument is [For_set tyl tvar], the statements [sl]
-  perform the side effects of the original expression, then
-  assign the value of the original expression to the temporary [tvar].
-  The value is casted according to the list of types [tyl] before
-  assignment.  In this case, [a] is meaningless.
-*)
+(** Translation of the value of an assignment expression.
+    For non-bitfield assignments, it's the value of the right-hand side
+    converted to the type of the left-hand side.
+    For assignments to bitfields, an additional normalization to
+    the width and signedness of the bitfield is required. *)
+
+Definition make_normalize (sz: intsize) (sg: signedness) (width: Z) (r: expr) :=
+  let intconst (n: Z) := Econst_int (Int.repr n) type_int32s in
+  if intsize_eq sz IBool || signedness_eq sg Unsigned then
+    let mask := two_p width - 1 in
+    Ebinop Oand r (intconst mask) (typeof r)
+  else
+    let amount := Int.zwordsize - width in
+    Ebinop Oshr
+           (Ebinop Oshl r (intconst amount) type_int32s)
+           (intconst amount)
+           (typeof r).
+
+Definition make_assign_value (bf: bitfield) (r: expr): expr :=
+  match bf with
+  | Full => r
+  | Bits sz sg pos width => make_normalize sz sg width r
+  end.
+
+(** The destinations for evaluating an expression.
+- [For_val]: evaluate the expression for its side effects and its final value.
+- [For_effects]: evaluate the expression for its side effects only;
+  the final value is ignored.
+- [For_set dest]: evaluate the expression for its side effects and its value,
+  then cast and assign its value to temporaries as described in [dest],
+  which is a nonempty list of (destination-type, source-type, temporary-name)
+  triples. *)
 
 Inductive set_destination : Type :=
   | SDbase (tycast ty: type) (tmp: ident)
@@ -207,11 +271,15 @@ Inductive destination : Type :=
 
 Definition dummy_expr := Econst_int Int.zero type_int32s.
 
+(** Perform the assignments described by [sd]. *)
+
 Fixpoint do_set (sd: set_destination) (a: expr) : list statement :=
   match sd with
   | SDbase tycast ty tmp => Sset tmp (Ecast a tycast) :: nil
   | SDcons tycast ty tmp sd' => Sset tmp (Ecast a tycast) :: do_set sd' (Etempvar tmp ty)
   end.
+
+(** Perform the assignments described by [dst], if any. *)
 
 Definition finish (dst: destination) (sl: list statement) (a: expr) :=
   match dst with
@@ -220,16 +288,39 @@ Definition finish (dst: destination) (sl: list statement) (a: expr) :=
   | For_set sd => (sl ++ do_set sd a, a)
   end.
 
+(** Smart constructor for destinations. 
+    For chained assignments, better code is generated eventually
+    if the same temporary is reused.  However, temporaries must have
+    unique types, otherwise Cminor type reconstruction can fail,
+    hence reuse is restricted to the case where the new type
+    and the original type coincide. *)
+
 Definition sd_temp (sd: set_destination) :=
   match sd with SDbase _ _ tmp => tmp | SDcons _ _ tmp _ => tmp end.
-Definition sd_seqbool_val (tmp: ident) (ty: type) :=
-  SDbase type_bool ty tmp.
-Definition sd_seqbool_set (ty: type) (sd: set_destination) :=
-  let tmp :=  sd_temp sd in SDcons type_bool ty tmp sd.
+
+Definition sd_head_type (sd: set_destination) :=
+  match sd with SDbase _ ty _ => ty | SDcons _ ty _ _ => ty end.
+
+Definition temp_for_sd (ty: type) (sd: set_destination) : mon ident :=
+    if type_eq ty (sd_head_type sd) then ret (sd_temp sd) else gensym ty.
+
+(** Translation of expressions.  Return a pair [(sl, a)] of
+    a list of statements [sl] and a pure expression [a].
+- If the [dst] argument is [For_val], the statements [sl]
+  perform the side effects of the original expression,
+  and [a] evaluates to the same value as the original expression.
+- If the [dst] argument is [For_effects], the statements [sl]
+  perform the side effects of the original expression,
+  and [a] is meaningless.
+- If the [dst] argument is [For_set sd], the statements [sl]
+  perform the side effects of the original expression, then
+  assign the value of the original expression to one or several
+  temporaries, as described by the destination [sd].
+*)
 
 Fixpoint transl_expr (dst: destination) (a: Csyntax.expr) : mon (list statement * expr) :=
   match a with
-  | Csyntax.Eloc b ofs ty =>
+  | Csyntax.Eloc b ofs bf ty =>
       error (msg "SimplExpr.transl_expr: Eloc")
   | Csyntax.Evar x ty =>
       ret (finish dst nil (Evar x ty))
@@ -268,14 +359,20 @@ Fixpoint transl_expr (dst: destination) (a: Csyntax.expr) : mon (list statement 
       do (sl2, a2) <- transl_expr For_val r2;
       ret (finish dst (sl1 ++ sl2) (Ebinop op a1 a2 ty))
   | Csyntax.Ecast r1 ty =>
-      do (sl1, a1) <- transl_expr For_val r1;
-      ret (finish dst sl1 (Ecast a1 ty))
+      match dst with
+      | For_val | For_set _ =>
+          do (sl1, a1) <- transl_expr For_val r1;
+          ret (finish dst sl1 (Ecast a1 ty))
+      | For_effects =>
+          transl_expr For_effects r1
+      end
   | Csyntax.Eseqand r1 r2 ty =>
       do (sl1, a1) <- transl_expr For_val r1;
       match dst with
       | For_val =>
           do t <- gensym ty;
-          do (sl2, a2) <- transl_expr (For_set (sd_seqbool_val t ty)) r2;
+          let sd := SDbase type_bool ty t in
+          do (sl2, a2) <- transl_expr (For_set sd) r2;
           ret (sl1 ++
                makeif a1 (makeseq sl2) (Sset t (Econst_int Int.zero ty)) :: nil,
                Etempvar t ty)
@@ -283,7 +380,9 @@ Fixpoint transl_expr (dst: destination) (a: Csyntax.expr) : mon (list statement 
           do (sl2, a2) <- transl_expr For_effects r2;
           ret (sl1 ++ makeif a1 (makeseq sl2) Sskip :: nil, dummy_expr)
       | For_set sd =>
-          do (sl2, a2) <- transl_expr (For_set (sd_seqbool_set ty sd)) r2;
+          do t <- temp_for_sd ty sd;
+          let sd' := SDcons type_bool ty t sd in
+          do (sl2, a2) <- transl_expr (For_set sd') r2;
           ret (sl1 ++
                makeif a1 (makeseq sl2) (makeseq (do_set sd (Econst_int Int.zero ty))) :: nil,
                dummy_expr)
@@ -293,7 +392,8 @@ Fixpoint transl_expr (dst: destination) (a: Csyntax.expr) : mon (list statement 
       match dst with
       | For_val =>
           do t <- gensym ty;
-          do (sl2, a2) <- transl_expr (For_set (sd_seqbool_val t ty)) r2;
+          let sd := SDbase type_bool ty t in
+          do (sl2, a2) <- transl_expr (For_set sd) r2;
           ret (sl1 ++
                makeif a1 (Sset t (Econst_int Int.one ty)) (makeseq sl2) :: nil,
                Etempvar t ty)
@@ -301,7 +401,9 @@ Fixpoint transl_expr (dst: destination) (a: Csyntax.expr) : mon (list statement 
           do (sl2, a2) <- transl_expr For_effects r2;
           ret (sl1 ++ makeif a1 Sskip (makeseq sl2) :: nil, dummy_expr)
       | For_set sd =>
-          do (sl2, a2) <- transl_expr (For_set (sd_seqbool_set ty sd)) r2;
+          do t <- temp_for_sd ty sd;
+          let sd' := SDcons type_bool ty t sd in
+          do (sl2, a2) <- transl_expr (For_set sd') r2;
           ret (sl1 ++
                makeif a1 (makeseq (do_set sd (Econst_int Int.one ty))) (makeseq sl2) :: nil,
                dummy_expr)
@@ -311,8 +413,9 @@ Fixpoint transl_expr (dst: destination) (a: Csyntax.expr) : mon (list statement 
       match dst with
       | For_val =>
           do t <- gensym ty;
-          do (sl2, a2) <- transl_expr (For_set (SDbase ty ty t)) r2;
-          do (sl3, a3) <- transl_expr (For_set (SDbase ty ty t)) r3;
+          let sd := SDbase ty ty t in
+          do (sl2, a2) <- transl_expr (For_set sd) r2;
+          do (sl3, a3) <- transl_expr (For_set sd) r3;
           ret (sl1 ++ makeif a1 (makeseq sl2) (makeseq sl3) :: nil,
                Etempvar t ty)
       | For_effects =>
@@ -321,25 +424,27 @@ Fixpoint transl_expr (dst: destination) (a: Csyntax.expr) : mon (list statement 
           ret (sl1 ++ makeif a1 (makeseq sl2) (makeseq sl3) :: nil,
                dummy_expr)
       | For_set sd =>
-          do t <- gensym ty;
-          do (sl2, a2) <- transl_expr (For_set (SDcons ty ty t sd)) r2;
-          do (sl3, a3) <- transl_expr (For_set (SDcons ty ty t sd)) r3;
+          do t <- temp_for_sd ty sd;
+          let sd' := SDcons ty ty t sd in
+          do (sl2, a2) <- transl_expr (For_set sd') r2;
+          do (sl3, a3) <- transl_expr (For_set sd') r3;
           ret (sl1 ++ makeif a1 (makeseq sl2) (makeseq sl3) :: nil,
                dummy_expr)
       end
   | Csyntax.Eassign l1 r2 ty =>
       do (sl1, a1) <- transl_expr For_val l1;
       do (sl2, a2) <- transl_expr For_val r2;
+      do bf <- is_bitfield_access a1;
       let ty1 := Csyntax.typeof l1 in
       let ty2 := Csyntax.typeof r2 in
       match dst with
       | For_val | For_set _ =>
           do t <- gensym ty1;
           ret (finish dst
-                 (sl1 ++ sl2 ++ Sset t (Ecast a2 ty1) :: make_assign a1 (Etempvar t ty1) :: nil)
-                 (Etempvar t ty1))
+                 (sl1 ++ sl2 ++ Sset t (Ecast a2 ty1) :: make_assign bf a1 (Etempvar t ty1) :: nil)
+                 (make_assign_value bf (Etempvar t ty1)))
       | For_effects =>
-          ret (sl1 ++ sl2 ++ make_assign a1 a2 :: nil,
+          ret (sl1 ++ sl2 ++ make_assign bf a1 a2 :: nil,
                dummy_expr)
       end
   | Csyntax.Eassignop op l1 r2 tyres ty =>
@@ -347,31 +452,33 @@ Fixpoint transl_expr (dst: destination) (a: Csyntax.expr) : mon (list statement 
       do (sl1, a1) <- transl_expr For_val l1;
       do (sl2, a2) <- transl_expr For_val r2;
       do (sl3, a3) <- transl_valof ty1 a1;
+      do bf <- is_bitfield_access a1;
       match dst with
       | For_val | For_set _ =>
           do t <- gensym ty1;
           ret (finish dst
                  (sl1 ++ sl2 ++ sl3 ++
                   Sset t (Ecast (Ebinop op a3 a2 tyres) ty1) ::
-                  make_assign a1 (Etempvar t ty1) :: nil)
-                 (Etempvar t ty1))
+                  make_assign bf a1 (Etempvar t ty1) :: nil)
+                 (make_assign_value bf (Etempvar t ty1)))
       | For_effects =>
-          ret (sl1 ++ sl2 ++ sl3 ++ make_assign a1 (Ebinop op a3 a2 tyres) :: nil,
+          ret (sl1 ++ sl2 ++ sl3 ++ make_assign bf a1 (Ebinop op a3 a2 tyres) :: nil,
                dummy_expr)
       end
   | Csyntax.Epostincr id l1 ty =>
       let ty1 := Csyntax.typeof l1 in
       do (sl1, a1) <- transl_expr For_val l1;
+      do bf <- is_bitfield_access a1;
       match dst with
       | For_val | For_set _ =>
           do t <- gensym ty1;
           ret (finish dst
-                 (sl1 ++ make_set t a1 ::
-                  make_assign a1 (transl_incrdecr id (Etempvar t ty1) ty1) :: nil)
+                 (sl1 ++ make_set bf t a1 ::
+                  make_assign bf a1 (transl_incrdecr id (Etempvar t ty1) ty1) :: nil)
                  (Etempvar t ty1))
       | For_effects =>
           do (sl2, a2) <- transl_valof ty1 a1;
-          ret (sl1 ++ sl2 ++ make_assign a1 (transl_incrdecr id a2 ty1) :: nil,
+          ret (sl1 ++ sl2 ++ make_assign bf a1 (transl_incrdecr id a2 ty1) :: nil,
                dummy_expr)
       end
   | Csyntax.Ecomma r1 r2 ty =>
@@ -418,12 +525,6 @@ Definition transl_expression (r: Csyntax.expr) : mon (statement * expr) :=
 
 Definition transl_expr_stmt (r: Csyntax.expr) : mon statement :=
   do (sl, a) <- transl_expr For_effects r; ret (makeseq sl).
-
-(*
-Definition transl_if (r: Csyntax.expr) (s1 s2: statement) : mon statement :=
-  do (sl, a) <- transl_expr For_val r;
-  ret (makeseq (sl ++ makeif a s1 s2 :: nil)).
-*)
 
 Definition transl_if (r: Csyntax.expr) (s1 s2: statement) : mon statement :=
   do (sl, a) <- transl_expr For_val r;
@@ -529,8 +630,12 @@ Definition transl_fundef (fd: Csyntax.fundef) : res fundef :=
       OK (External ef targs tres cc)
   end.
 
+End SIMPL_EXPR.
+
+Local Open Scope error_monad_scope.
+
 Definition transl_program (p: Csyntax.program) : res program :=
-  do p1 <- AST.transform_partial_program transl_fundef p;
+  do p1 <- AST.transform_partial_program (transl_fundef p.(prog_comp_env)) p;
   OK {| prog_defs := AST.prog_defs p1;
         prog_public := AST.prog_public p1;
         prog_main := AST.prog_main p1;

@@ -57,6 +57,9 @@ let preprocess ifile ofile =
     if ofile = "-" then None else Some ofile in
   let cmd = List.concat [
     Configuration.prepro;
+    (if Configuration.gnu_toolchain
+     then ["-std=" ^ !option_std]
+     else []);
     predefined_macros;
     (if !Clflags.use_standard_headers
      then ["-I" ^ Filename.concat !Clflags.stdlib_path "include" ]
@@ -75,15 +78,15 @@ let preprocess ifile ofile =
 let parse_c_file sourcename ifile =
   Debug.init_compile_unit sourcename;
   Sections.initialize();
-  (* Simplification options *)
-  let simplifs =
-    "b" (* blocks: mandatory *)
-  ^ (if !option_fstruct_passing then "s" else "")
-  ^ (if !option_fbitfields then "f" else "")
-  ^ (if !option_fpacked_structs then "p" else "")
-  in
+  CPragmas.reset();
   (* Parsing and production of a simplified C AST *)
-  let ast = Parse.preprocessed_file simplifs sourcename ifile in
+  let ast =
+    Parse.preprocessed_file
+      ~unblock: true
+      ~switch_norm: (if !option_funstructured_switch then `Full else `Partial)
+      ~struct_passing: !option_fstruct_passing
+      ~packed_structs: !option_fpacked_structs
+      sourcename ifile in
   (* Save C AST if requested *)
   Cprint.print_if ast;
   (* Conversion to Csyntax *)
@@ -108,15 +111,17 @@ let init () =
     | "x86"     -> if Configuration.model = "64" then
                      Machine.x86_64
                    else
-                     if Configuration.abi = "macosx"
-                     then Machine.x86_32_macosx
+                     if Configuration.abi = "macos"
+                     then Machine.x86_32_macos
                      else if Configuration.system = "bsd"
                      then Machine.x86_32_bsd
                      else Machine.x86_32
     | "riscV"   -> if Configuration.model = "64"
                    then Machine.rv64
                    else Machine.rv32
-    | "aarch64" -> Machine.aarch64
+    | "aarch64" -> if Configuration.abi = "apple"
+                   then Machine.aarch64_apple
+                   else Machine.aarch64
     | _         -> assert false
   end;
   Env.set_builtins C2C.builtins;
@@ -152,7 +157,8 @@ let gnu_prepro_actions = [
   Exact "-iquote", String (gnu_prepro_opt_key "-iquote");
   Exact "-P", Self gnu_prepro_opt;
   Exact "-C", Self gnu_prepro_opt;
-  Exact "-CC", Self gnu_prepro_opt;]
+  Exact "-CC", Self gnu_prepro_opt;
+  Prefix "-finput-charset=", Self gnu_prepro_opt]
 
 let prepro_actions = [
   (* Preprocessing options *)
@@ -196,6 +202,8 @@ let gnu_prepro_help =
   -C              Do not discard comments
   -CC             Do not discard comments, including during macro
                   expansion
+  -finput-charset=<charset>
+                  Set the input character set, used for reading source files.
 |}
 
 let prepro_help = {|Preprocessing options:

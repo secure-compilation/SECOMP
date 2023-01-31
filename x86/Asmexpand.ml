@@ -39,12 +39,7 @@ let _16z = Z.of_sint 16
 
 let stack_alignment () = 16
 
-(* Pseudo instructions for 32/64 bit compatibility *)
-
-let _Plea (r, addr) =
-  if Archi.ptr64 then Pleaq (r, addr) else Pleal (r, addr)
-
-(* SP adjustment to allocate or free a stack frame *)
+(* SP adjustment to allocate or free a stack frame. *)
 
 let align n a =
   if n >= 0 then (n + a - 1) land (-a) else n land (-a)
@@ -56,7 +51,7 @@ let sp_adjustment_32 sz =
   (* The top 4 bytes have already been allocated by the "call" instruction. *)
   sz - 4
 
-let sp_adjustment_64 sz =
+let sp_adjustment_elf64 sz =
   let sz = Z.to_int sz in
   if is_current_function_variadic() then begin
     (* If variadic, add room for register save area, which must be 16-aligned *)
@@ -72,6 +67,13 @@ let sp_adjustment_64 sz =
     (* The top 8 bytes have already been allocated by the "call" instruction. *)
     (sz - 8, -1)
   end
+
+let sp_adjustment_win64 sz =
+  let sz = Z.to_int sz in
+  (* Preserve proper alignment of the stack *)
+  let sz = align sz 16 in
+  (* The top 8 bytes have already been allocated by the "call" instruction. *)
+  sz - 8
 
 (* Built-ins.  They come in two flavors:
    - annotation statements: take their arguments in registers or stack
@@ -101,6 +103,21 @@ let offset_addressing (Addrmode(base, ofs, cst)) delta =
 
 let linear_addr reg ofs = Addrmode(Some reg, None, Coq_inl ofs)
 let global_addr id ofs = Addrmode(None, None, Coq_inr(id, ofs))
+
+(* A "leaq" instruction that does not overflow *)
+
+let emit_leaq r addr =
+  match Asmgen.normalize_addrmode_64 addr with
+  | (addr, None) ->
+      emit (Pleaq (r, addr))
+  | (addr, Some delta) ->
+      emit (Pleaq (r, addr));
+      emit (Paddq_ri (r, delta))
+
+(* Pseudo "lea" instruction for 32/64 bit compatibility *)
+
+let emit_lea r addr =
+  if Archi.ptr64 then emit_leaq r addr else emit (Pleal (r, addr))
 
 (* Translate a builtin argument into an addressing mode *)
 
@@ -143,8 +160,8 @@ let expand_builtin_memcpy_small sz al src dst =
   copy (addressing_of_builtin_arg src) (addressing_of_builtin_arg dst) sz
 
 let expand_builtin_memcpy_big sz al src dst =
-  if src <> BA (IR RSI) then emit (_Plea (RSI, addressing_of_builtin_arg src));
-  if dst <> BA (IR RDI) then emit (_Plea (RDI, addressing_of_builtin_arg dst));
+  if src <> BA (IR RSI) then emit_lea RSI (addressing_of_builtin_arg src);
+  if dst <> BA (IR RDI) then emit_lea RDI (addressing_of_builtin_arg dst);
   (* TODO: movsq? *)
   emit (Pmovl_ri (RCX,coqint_of_camlint (Int32.of_int (sz / 4))));
   emit Prep_movsl;
@@ -256,7 +273,7 @@ let expand_builtin_va_start_32 r =
   emit (Pleal (RAX, linear_addr RSP (Z.of_uint32 ofs)));
   emit (Pmovl_mr (linear_addr r _0z, RAX))
 
-let expand_builtin_va_start_64 r =
+let expand_builtin_va_start_elf64 r =
   if not (is_current_function_variadic ()) then
     invalid_arg "Fatal error: va_start used in non-vararg function";
   let (ir, fr, ofs) =
@@ -282,10 +299,21 @@ let expand_builtin_va_start_64 r =
   emit (Pmovl_mr (linear_addr r _0z, RAX));
   emit (Pmovl_ri (RAX, coqint_of_camlint fp_offset));
   emit (Pmovl_mr (linear_addr r _4z, RAX));
-  emit (Pleaq (RAX, linear_addr RSP (Z.of_uint64 overflow_arg_area)));
+  emit_leaq RAX (linear_addr RSP (Z.of_uint64 overflow_arg_area));
   emit (Pmovq_mr (linear_addr r _8z, RAX));
-  emit (Pleaq (RAX, linear_addr RSP (Z.of_uint64 reg_save_area)));
+  emit_leaq RAX (linear_addr RSP (Z.of_uint64 reg_save_area));
   emit (Pmovq_mr (linear_addr r _16z, RAX))
+
+let expand_builtin_va_start_win64 r =
+  if not (is_current_function_variadic ()) then
+    invalid_arg "Fatal error: va_start used in non-vararg function";
+  let num_args =
+    List.length (get_current_function_args()) in
+  let ofs =
+    Int64.(add !current_function_stacksize
+               (mul 8L (of_int num_args))) in
+  emit_leaq RAX (linear_addr RSP (Z.of_uint64 ofs));
+  emit (Pmovq_mr (linear_addr r _0z, RAX))
 
 (* FMA operations *)
 
@@ -378,30 +406,8 @@ let expand_builtin_inline name args res =
      emit (Paddl_ri(res, coqint_of_camlint 32l));
      emit (Plabel lbl2)
   (* Float arithmetic *)
-  | "__builtin_fabs", [BA(FR a1)], BR(FR res) ->
-     if a1 <> res then
-       emit (Pmovsd_ff (res,a1));
-     emit (Pabsd res) (* This ensures that need_masks is set to true *)
-  | "__builtin_fsqrt", [BA(FR a1)], BR(FR res) ->
+  | ("__builtin_fsqrt" | "__builtin_sqrt"), [BA(FR a1)], BR(FR res) ->
      emit (Psqrtsd (res,a1))
-  | "__builtin_fmax", [BA(FR a1); BA(FR a2)], BR(FR res) ->
-     if res = a1 then
-       emit (Pmaxsd (res,a2))
-     else if res = a2 then
-       emit (Pmaxsd (res,a1))
-     else begin
-	 emit (Pmovsd_ff (res,a1));
-	 emit (Pmaxsd (res,a2))
-       end
-  | "__builtin_fmin", [BA(FR a1); BA(FR a2)], BR(FR res) ->
-     if res = a1 then
-       emit (Pminsd (res,a2))
-     else if res = a2 then
-       emit (Pminsd (res,a1))
-     else begin
-	 emit (Pmovsd_ff (res,a1));
-	 emit (Pminsd (res,a2))
-       end
   | "__builtin_fmadd",  _, _ ->
       expand_fma args res
         (fun r1 r2 r3 -> Pfmadd132(r1, r2, r3))
@@ -467,44 +473,89 @@ let expand_builtin_inline name args res =
   (* Vararg stuff *)
   | "__builtin_va_start", [BA(IR a)], _ ->
      assert (a = RDX);
-     if Archi.ptr64
-     then expand_builtin_va_start_64 a
+     if Archi.win64 then expand_builtin_va_start_win64 a
+     else if Archi.ptr64 then expand_builtin_va_start_elf64 a
      else expand_builtin_va_start_32 a
   (* Synchronization *)
   | "__builtin_membar", [], _ ->
      ()
-  (* no operation *)
+  (* No operation *)
   | "__builtin_nop", [], _ ->
      emit Pnop
+  (* Optimization hint *)
+  | "__builtin_unreachable", [], _ ->
+     ()
   (* Catch-all *)
   | _ ->
      raise (Error ("unrecognized builtin " ^ name))
 
-(* Calls to variadic functions for x86-64: register AL must contain
+(* Calls to variadic functions for x86-64 ELF: register AL must contain
    the number of XMM registers used for parameter passing.  To be on
-   the safe side.  do the same if the called function is
+   the safe side, do the same if the called function is
    unprototyped. *)
 
-let set_al sg =
-  if Archi.ptr64 && (sg.sig_cc.cc_vararg || sg.sig_cc.cc_unproto) then begin
+let fixup_funcall_elf64 sg =
+  if sg.sig_cc.cc_vararg <> None || sg.sig_cc.cc_unproto then begin
     let (ir, fr, ofs) = next_arg_locations 0 0 0 sg.sig_args in
     emit (Pmovl_ri (RAX, coqint_of_camlint (Int32.of_int fr)))
   end
+
+(* Calls to variadic functions for x86-64 Windows:
+   FP arguments passed in FP registers must also be passed in integer
+   registers.
+*)
+
+let rec copy_fregs_to_iregs args fr ir =
+  match (ir, fr, args) with
+  | (i1 :: ir, f1 :: fr, (Tfloat | Tsingle) :: args) ->
+      emit (Pmovq_rf (i1, f1));
+      copy_fregs_to_iregs args fr ir
+  | (i1 :: ir, f1 :: fr, _ :: args) ->
+      copy_fregs_to_iregs args fr ir
+  | _ ->
+      ()
+
+let fixup_funcall_win64 sg =
+  if sg.sig_cc.cc_vararg <> None then
+    copy_fregs_to_iregs sg.sig_args [XMM0; XMM1; XMM2; XMM3] [RCX; RDX; R8; R9]
+
+let fixup_funcall sg =
+  if Archi.ptr64
+  then if Archi.win64
+       then fixup_funcall_win64 sg
+       else fixup_funcall_elf64 sg
+  else ()
 
 (* Expansion of instructions *)
 
 let expand_instruction instr =
   match instr with
   | Pallocframe (sz, ofs_ra, ofs_link) ->
-     if Archi.ptr64 then begin
-       let (sz, save_regs) = sp_adjustment_64 sz in
+     if Archi.win64 then begin
+       let sz = sp_adjustment_win64 sz in
+       if is_current_function_variadic() then
+         (* Save parameters passed in registers in reserved stack area *)
+         emit (Pcall_s (intern_string "__compcert_va_saveregs",
+                        {sig_args = []; sig_res = Tvoid; sig_cc = cc_default}));
+       (* Allocate frame *)
+       let sz' = Z.of_uint sz in
+       emit (Psubl_ri (RSP, sz'));
+       emit (Pcfi_adjust sz');
+       (* Stack chaining *)
+       let addr1 = linear_addr RSP (Z.of_uint (sz + 8)) in
+       let addr2 = linear_addr RSP ofs_link in
+       emit_leaq RAX addr1;
+       emit (Pmovq_mr (addr2, RAX));
+       current_function_stacksize := Int64.of_int (sz + 8)
+     end else if Archi.ptr64 then begin
+       let (sz, save_regs) = sp_adjustment_elf64 sz in
        (* Allocate frame *)
        let sz' = Z.of_uint sz in
        emit (Psubq_ri (RSP, sz'));
        emit (Pcfi_adjust sz');
        if save_regs >= 0 then begin
          (* Save the registers *)
-         emit (Pleaq (R10, linear_addr RSP (Z.of_uint save_regs)));
+         emit_leaq R10 (linear_addr RSP (Z.of_uint save_regs));
          emit (Pcall_s (intern_string "__compcert_va_saveregs",
                         {sig_args = []; sig_res = Tvoid; sig_cc = cc_default}))
        end;
@@ -512,7 +563,7 @@ let expand_instruction instr =
        let fullsz = sz + 8 in
        let addr1 = linear_addr RSP (Z.of_uint fullsz) in
        let addr2 = linear_addr RSP ofs_link in
-       emit (Pleaq (RAX, addr1));
+       emit_leaq RAX addr1;
        emit (Pmovq_mr (addr2, RAX));
        current_function_stacksize := Int64.of_int fullsz
      end else begin
@@ -529,15 +580,18 @@ let expand_instruction instr =
        PrintAsmaux.current_function_stacksize := Int32.of_int sz
      end
   | Pfreeframe(sz, ofs_ra, ofs_link) ->
-     if Archi.ptr64 then begin
-       let (sz, _) = sp_adjustment_64 sz in
+     if Archi.win64 then begin
+       let sz = sp_adjustment_win64 sz in
+       emit (Paddq_ri (RSP, Z.of_uint sz))
+     end else if Archi.ptr64 then begin
+       let (sz, _) = sp_adjustment_elf64 sz in
        emit (Paddq_ri (RSP, Z.of_uint sz))
      end else begin
        let sz = sp_adjustment_32 sz in
        emit (Paddl_ri (RSP, Z.of_uint sz))
      end
   | Pjmp_s(_, sg) | Pjmp_r(_, sg) | Pcall_s(_, sg) | Pcall_r(_, sg) ->
-     set_al sg;
+     fixup_funcall sg;
      emit instr
   | Pbuiltin (ef,args, res) ->
      begin

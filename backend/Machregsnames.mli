@@ -6,11 +6,11 @@
 (*                                                                     *)
 (*  Copyright Institut National de Recherche en Informatique et en     *)
 (*  Automatique.  All rights reserved.  This file is distributed       *)
-(*  under the terms of the GNU General Public License as published by  *)
-(*  the Free Software Foundation, either version 2 of the License, or  *)
-(*  (at your option) any later version.  This file is also distributed *)
 (*  under the terms of the INRIA Non-Commercial License Agreement.     *)
 (*                                                                     *)
 (* *********************************************************************)
 
-val program: C.program -> C.program
+(** Auxiliary functions on machine registers *)
+
+val name_of_register: Machregs.mreg -> string option
+val register_by_name: string -> Machregs.mreg option

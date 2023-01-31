@@ -6,10 +6,11 @@
 (*                                                                     *)
 (*  Copyright Institut National de Recherche en Informatique et en     *)
 (*  Automatique.  All rights reserved.  This file is distributed       *)
-(*  under the terms of the GNU General Public License as published by  *)
-(*  the Free Software Foundation, either version 2 of the License, or  *)
-(*  (at your option) any later version.  This file is also distributed *)
-(*  under the terms of the INRIA Non-Commercial License Agreement.     *)
+(*  under the terms of the GNU Lesser General Public License as        *)
+(*  published by the Free Software Foundation, either version 2.1 of   *)
+(*  the License, or  (at your option) any later version.               *)
+(*  This file is also distributed under the terms of the               *)
+(*  INRIA Non-Commercial License Agreement.                            *)
 (*                                                                     *)
 (* *********************************************************************)
 
@@ -170,7 +171,7 @@ Definition floatsize_eq: forall (x y: floatsize), {x=y} + {x<>y}.
 Proof. decide equality. Defined.
 
 Definition callconv_combine (cc1 cc2: calling_convention) : res calling_convention :=
-  if bool_eq cc1.(cc_vararg) cc2.(cc_vararg) then
+  if option_eq Z.eq_dec cc1.(cc_vararg) cc2.(cc_vararg) then
     OK {| cc_vararg := cc1.(cc_vararg);
           cc_unproto := cc1.(cc_unproto) && cc2.(cc_unproto);
           cc_structret := cc1.(cc_structret) |}
@@ -409,8 +410,8 @@ Inductive wt_rvalue : expr -> Prop :=
       wt_rvalue (Eparen r tycast ty)
 
 with wt_lvalue : expr -> Prop :=
-  | wt_Eloc: forall b ofs ty,
-      wt_lvalue (Eloc b ofs ty)
+  | wt_Eloc: forall b ofs bf ty,
+      wt_lvalue (Eloc b ofs bf ty)
   | wt_Evar: forall x ty,
       e!x = Some ty ->
       wt_lvalue (Evar x ty)
@@ -439,7 +440,7 @@ Definition wt_expr_kind (k: kind) (a: expr) :=
 
 Definition expr_kind (a: expr) : kind :=
   match a with
-  | Eloc _ _ _ => LV
+  | Eloc _ _ _ _ => LV
   | Evar _ _ => LV
   | Ederef _ _ => LV
   | Efield _ _ _ => LV
@@ -537,9 +538,9 @@ Inductive wt_program : program -> Prop :=
          wt_fundef p.(prog_comp_env) e fd) ->
       wt_program p.
 
-Hint Constructors wt_val wt_rvalue wt_lvalue wt_stmt wt_lblstmts: ty.
-Hint Extern 1 (wt_int _ _ _) => exact I: ty.
-Hint Extern 1 (wt_int _ _ _) => reflexivity: ty.
+Global Hint Constructors wt_val wt_rvalue wt_lvalue wt_stmt wt_lblstmts: ty.
+Global Hint Extern 1 (wt_int _ _ _) => exact I: ty.
+Global Hint Extern 1 (wt_int _ _ _) => reflexivity: ty.
 
 Ltac DestructCases :=
   match goal with
@@ -595,7 +596,7 @@ Fixpoint check_arguments (el: exprlist) (tyl: typelist) : res unit :=
 
 Definition check_rval (e: expr) : res unit :=
   match e with
-  | Eloc _ _ _ | Evar _ _ | Ederef _ _ | Efield _ _ _ =>
+  | Eloc _ _ _ _ | Evar _ _ | Ederef _ _ | Efield _ _ _ =>
       Error (msg "not a r-value")
   | _ =>
       OK tt
@@ -603,7 +604,7 @@ Definition check_rval (e: expr) : res unit :=
 
 Definition check_lval (e: expr) : res unit :=
   match e with
-  | Eloc _ _ _ | Evar _ _ | Ederef _ _ | Efield _ _ _ =>
+  | Eloc _ _ _ _ | Evar _ _ | Ederef _ _ | Efield _ _ _ =>
       OK tt
   | _ =>
       Error (msg "not a l-value")
@@ -845,7 +846,7 @@ Fixpoint retype_expr (ce: composite_env) (e: typenv) (a: expr) : res expr :=
       do r1' <- retype_expr ce e r1; do rl' <- retype_exprlist ce e rl; ecall r1' rl'
   | Ebuiltin ef tyargs rl tyres =>
       do rl' <- retype_exprlist ce e rl; ebuiltin ef tyargs rl' tyres
-  | Eloc _ _ _ =>
+  | Eloc _ _ _ _ =>
       Error (msg "Eloc in source")
   | Eparen _ _ _ =>
       Error (msg "Eparen in source")
@@ -957,7 +958,7 @@ Proof.
   destruct (classify_bool t); congruence.
 Qed.
 
-Hint Resolve check_cast_sound check_bool_sound: ty.
+Global Hint Resolve check_cast_sound check_bool_sound: ty.
 
 Lemma check_arguments_sound:
   forall el tl x, check_arguments el tl = OK x -> wt_arguments el tl.
@@ -985,6 +986,7 @@ Lemma binarith_type_cast:
   forall t1 t2 m t,
   binarith_type t1 t2 m = OK t -> wt_cast t1 t /\ wt_cast t2 t.
 Proof.
+Local Transparent Ctypes.intsize_eq.
   unfold wt_cast, binarith_type, classify_binarith; intros; DestructCases;
   simpl; split; try congruence;
   try (destruct Archi.ptr64; congruence).
@@ -1430,8 +1432,8 @@ Lemma pres_cast_int_int:
   forall sz sg n, wt_int (cast_int_int sz sg n) sz sg.
 Proof.
   intros. unfold cast_int_int. destruct sz; simpl.
-- destruct sg. apply Int.sign_ext_idem; omega. apply Int.zero_ext_idem; omega.
-- destruct sg. apply Int.sign_ext_idem; omega. apply Int.zero_ext_idem; omega.
+- destruct sg. apply Int.sign_ext_idem; lia. apply Int.zero_ext_idem; lia.
+- destruct sg. apply Int.sign_ext_idem; lia. apply Int.zero_ext_idem; lia.
 - auto.
 - destruct (Int.eq n Int.zero); auto.
 Qed.
@@ -1618,12 +1620,12 @@ Proof.
   unfold access_mode, Val.load_result. remember Archi.ptr64 as ptr64. 
   intros until v; intros AC. destruct ty; simpl in AC; try discriminate AC.
 - destruct i; [destruct s|destruct s|idtac|idtac]; inv AC; simpl.
-  destruct v; auto with ty. constructor; red. apply Int.sign_ext_idem; omega.
-  destruct v; auto with ty. constructor; red. apply Int.zero_ext_idem; omega.
-  destruct v; auto with ty. constructor; red. apply Int.sign_ext_idem; omega.
-  destruct v; auto with ty. constructor; red. apply Int.zero_ext_idem; omega.
+  destruct v; auto with ty. constructor; red. apply Int.sign_ext_idem; lia.
+  destruct v; auto with ty. constructor; red. apply Int.zero_ext_idem; lia.
+  destruct v; auto with ty. constructor; red. apply Int.sign_ext_idem; lia.
+  destruct v; auto with ty. constructor; red. apply Int.zero_ext_idem; lia.
   destruct Archi.ptr64 eqn:SF; destruct v; auto with ty.
-  destruct v; auto with ty. constructor; red. apply Int.zero_ext_idem; omega.
+  destruct v; auto with ty. constructor; red. apply Int.zero_ext_idem; lia.
 - inv AC. destruct Archi.ptr64 eqn:SF; destruct v; auto with ty.
 - destruct f; inv AC; destruct v; auto with ty.
 - inv AC. unfold Mptr. destruct Archi.ptr64 eqn:SF; destruct v; auto with ty.
@@ -1639,16 +1641,16 @@ Proof.
   destruct ty; simpl in ACC; try discriminate. 
 - destruct i; [destruct s|destruct s|idtac|idtac]; inv ACC; unfold decode_val.
   destruct (proj_bytes vl); auto with ty.
-  constructor; red. apply Int.sign_ext_idem; omega.
+  constructor; red. apply Int.sign_ext_idem; lia.
   destruct (proj_bytes vl); auto with ty.
-  constructor; red. apply Int.zero_ext_idem; omega.
+  constructor; red. apply Int.zero_ext_idem; lia.
   destruct (proj_bytes vl); auto with ty.
-  constructor; red. apply Int.sign_ext_idem; omega.
+  constructor; red. apply Int.sign_ext_idem; lia.
   destruct (proj_bytes vl); auto with ty.
-  constructor; red. apply Int.zero_ext_idem; omega.
+  constructor; red. apply Int.zero_ext_idem; lia.
   destruct (proj_bytes vl). auto with ty. destruct Archi.ptr64 eqn:SF; auto with ty. 
   destruct (proj_bytes vl); auto with ty.
-  constructor; red. apply Int.zero_ext_idem; omega.
+  constructor; red. apply Int.zero_ext_idem; lia.
 - inv ACC. unfold decode_val. destruct (proj_bytes vl). auto with ty.
   destruct Archi.ptr64 eqn:SF; auto with ty. 
 - destruct f; inv ACC; unfold decode_val; destruct (proj_bytes vl); auto with ty.
@@ -1657,9 +1659,31 @@ Proof.
   unfold Mptr in *. destruct Archi.ptr64 eqn:SF; auto with ty.
 Qed.
 
+Remark wt_bitfield_normalize: forall sz sg width sg1 n,
+  0 < width <= bitsize_intsize sz ->
+  sg1 = (if zlt width (bitsize_intsize sz) then Signed else sg) ->
+  wt_int (bitfield_normalize sz sg width n) sz sg1.
+Proof.
+  intros. destruct sz; cbn in *.
+  + destruct sg.
+    * replace sg1 with Signed by (destruct zlt; auto).
+      apply Int.sign_ext_widen; lia.
+    * subst sg1; destruct zlt.
+      ** apply Int.sign_zero_ext_widen; lia.
+      ** apply Int.zero_ext_widen; lia.
+  + destruct sg.
+    * replace sg1 with Signed by (destruct zlt; auto).
+      apply Int.sign_ext_widen; lia.
+    * subst sg1; destruct zlt.
+      ** apply Int.sign_zero_ext_widen; lia.
+      ** apply Int.zero_ext_widen; lia.
+  + auto.
+  + apply Int.zero_ext_widen; lia.
+Qed.
+
 Lemma wt_deref_loc:
-  forall ge cp ty m b ofs t v,
-  deref_loc ge cp ty m b ofs t v ->
+  forall ge cp ty m b ofs bf t v,
+  deref_loc ge cp ty m b ofs bf t v ->
   wt_val v ty.
 Proof.
   induction 1.
@@ -1681,6 +1705,19 @@ Proof.
   destruct ty; simpl in H; try discriminate; auto with ty.
   destruct i; destruct s; discriminate.
   destruct f; discriminate.
+- (* bitfield *)
+  inv H. constructor.
+  apply wt_bitfield_normalize. lia. auto.
+Qed.
+
+Lemma wt_assign_loc:
+  forall ge cp ty m b ofs bf v t m' v',
+  assign_loc ge cp ty m b ofs bf v t m' v' ->
+  wt_val v ty -> wt_val v' ty.
+Proof.
+  induction 1; intros; auto.
+- inv H. constructor.
+  apply wt_bitfield_normalize. lia. auto.
 Qed.
 
 Lemma wt_cast_self:
@@ -1771,7 +1808,7 @@ Proof.
 - (* condition *) constructor. destruct b; auto. destruct b; auto. red; auto.
 - (* sizeof *)  unfold size_t, Vptrofs; destruct Archi.ptr64; constructor; auto with ty.
 - (* alignof *)  unfold size_t, Vptrofs; destruct Archi.ptr64; constructor; auto with ty.
-- (* assign *) inversion H5. constructor. eapply pres_sem_cast; eauto.
+- (* assign *) inversion H5. constructor. eapply wt_assign_loc; eauto. eapply pres_sem_cast; eauto.
 - (* assignop *) subst tyres l r. constructor. auto.
   constructor. constructor. eapply wt_deref_loc; eauto.
   auto. auto. auto.
@@ -2085,12 +2122,12 @@ Lemma wt_find_label:
   wt_stmt ge e f.(fn_return) s' /\ wt_stmt_cont e f k'.
 Proof.
   intros lbl e f s0 WTS0. pattern s0.
-  apply (wt_stmt_ind2 ge e f.(fn_return)) with
-    (P0 := fun ls => wt_lblstmts ge e f.(fn_return) ls ->
+  apply (wt_stmt_ind2 ge e f.(fn_return) _
+    (fun ls => wt_lblstmts ge e f.(fn_return) ls ->
            forall k s' k',
            find_label_ls lbl ls k = Some (s', k') ->
            wt_stmt_cont e f k ->
-           wt_stmt ge e f.(fn_return) s' /\ wt_stmt_cont e f k');
+           wt_stmt ge e f.(fn_return) s' /\ wt_stmt_cont e f k'));
   simpl; intros; try discriminate.
   + destruct (find_label lbl s1 (Kseq s2 k)) as [[sx kx] | ] eqn:F.
     inv H3. eauto with ty.

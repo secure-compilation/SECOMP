@@ -37,10 +37,39 @@ module Printer(Target:TARGET) =
     let print_location oc loc =
       if loc <> Cutil.no_loc then Target.print_file_line oc (fst loc) (snd loc)
 
+    let splitlong b =
+      if Archi.big_endian then
+        (Int64.shift_right_logical b 32),
+        (Int64.logand b 0xFFFFFFFFL)
+      else
+        (Int64.logand b 0xFFFFFFFFL),
+        (Int64.shift_right_logical b 32)
+
+    let emit_constants oc lit =
+      if Hashtbl.length literal64_labels > 0 then begin
+        Target.section oc (Sections.with_size 8 lit);
+        Target.print_align oc 8;
+        iter_literal64 (fun n lbl ->
+            let (hi, lo) = splitlong n in
+            fprintf oc "%a:	.long	0x%Lx, 0x%Lx\n" Target.label lbl hi lo)
+      end;
+      if Hashtbl.length literal32_labels > 0 then begin
+        Target.section oc (Sections.with_size 4 lit);
+        Target.print_align oc 4;
+        iter_literal32 (fun n lbl ->
+            fprintf oc "%a:	.long	0x%lx\n" Target.label lbl n);
+      end;
+      reset_literals ()
+
+    let get_section_names name =
+      match C2C.atom_sections name with
+      | [t;l;j] -> (t, l, j)
+      |    _    -> (Section_text, Section_literal 0, Section_jumptable)
+
     let print_function oc name fn =
       Hashtbl.clear current_function_labels;
       Debug.symbol_printed (extern_atom name);
-      let (text, lit, jmptbl) = Target.get_section_names name in
+      let (text, lit, jmptbl) = get_section_names name in
       Target.section oc text;
       let alignment =
         match !Clflags.option_falignfunctions with Some n -> n | None -> Target.default_falignment in
@@ -60,7 +89,7 @@ module Printer(Target:TARGET) =
       Target.cfi_endproc oc;
       print_debug_label oc e;
       Target.print_fun_info oc name;
-      Target.emit_constants oc lit;
+      emit_constants oc lit;
       Target.print_jumptable oc jmptbl;
       if !Clflags.option_g then
         Hashtbl.iter (fun p i -> Debug.add_label name p i) current_function_labels
@@ -70,14 +99,6 @@ module Printer(Target:TARGET) =
         Target.symbol oc symb;
         let ofs = camlint64_of_ptrofs ofs in
         if ofs <> 0L then fprintf oc " + %Ld" ofs in
-      let splitlong b =
-        let b = camlint64_of_coqint b in
-        if Archi.big_endian then
-          (Int64.shift_right_logical b 32),
-          (Int64.logand b 0xFFFFFFFFL)
-        else
-          (Int64.logand b 0xFFFFFFFFL),
-          (Int64.shift_right_logical b 32) in
       match init with
       | Init_int8 n ->
           fprintf oc "	.byte	%ld\n" (camlint_of_coqint n)
@@ -86,14 +107,15 @@ module Printer(Target:TARGET) =
       | Init_int32 n ->
           fprintf oc "	.long	%ld\n" (camlint_of_coqint n)
       | Init_int64 n ->
-          let hi,lo = splitlong n in
+          let (hi, lo) = splitlong (camlint64_of_coqint n) in
           fprintf oc "	.long	0x%Lx, 0x%Lx\n" hi lo
       | Init_float32 n ->
           fprintf oc "	.long	0x%lx %s %.18g\n"
             (camlint_of_coqint (Floats.Float32.to_bits n))
             Target.comment (camlfloat_of_coqfloat32 n)
       | Init_float64 n ->
-          let hi,lo = splitlong (Floats.Float.to_bits n) in
+          let (hi, lo) =
+            splitlong (camlint64_of_coqint (Floats.Float.to_bits n)) in
           fprintf oc "	.long	0x%Lx, 0x%Lx %s %.18g\n" hi lo
             Target.comment (camlfloat_of_coqfloat n)
       | Init_space n ->
@@ -121,7 +143,7 @@ module Printer(Target:TARGET) =
           let sec =
             match C2C.atom_sections name with
             | [s] -> s
-            |  _  -> Section_data true
+            |  _  -> Section_data Init
           and align =
             match C2C.atom_alignof name with
             | Some a -> a

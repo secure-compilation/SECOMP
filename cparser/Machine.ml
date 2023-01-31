@@ -6,10 +6,11 @@
 (*                                                                     *)
 (*  Copyright Institut National de Recherche en Informatique et en     *)
 (*  Automatique.  All rights reserved.  This file is distributed       *)
-(*  under the terms of the GNU General Public License as published by  *)
-(*  the Free Software Foundation, either version 2 of the License, or  *)
-(*  (at your option) any later version.  This file is also distributed *)
-(*  under the terms of the INRIA Non-Commercial License Agreement.     *)
+(*  under the terms of the GNU Lesser General Public License as        *)
+(*  published by the Free Software Foundation, either version 2.1 of   *)
+(*  the License, or  (at your option) any later version.               *)
+(*  This file is also distributed under the terms of the               *)
+(*  INRIA Non-Commercial License Agreement.                            *)
 (*                                                                     *)
 (* *********************************************************************)
 
@@ -178,12 +179,12 @@ let x86_32 =
                    struct_passing_style = SP_split_args;
                    struct_return_style = SR_ref}
 
-let x86_32_macosx =
+let x86_32_macos =
   {x86_32 with struct_passing_style = SP_split_args;
                struct_return_style = SR_int1248 }
 
 let x86_32_bsd =
-  x86_32_macosx
+  x86_32_macos
 
 let x86_64 =
   { i32lpll64 with name = "x86_64"; char_signed = true;
@@ -241,6 +242,9 @@ let aarch64 =
   { i32lpll64 with name = "aarch64";
                    struct_passing_style = SP_ref_callee; (* Wrong *)
                    struct_return_style = SR_ref } (* Wrong *)
+
+let aarch64_apple =
+  { aarch64 with char_signed = true }
 
 (* Add GCC extensions re: sizeof and alignof *)
 

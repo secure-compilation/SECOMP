@@ -96,6 +96,7 @@ Coercion preg_of_iregsp: iregsp >-> preg.
 
 (** Conventional name for return address ([RA]) *)
 
+Declare Scope asm.
 Notation "'RA'" := X30 (only parsing) : asm.
 
 (** The instruction set.  Most instructions correspond exactly to
@@ -237,6 +238,7 @@ Inductive instruction: Type :=
   | Pclz (sz: isize) (rd r1: ireg)                                    (**r count leading zero bits *)
   | Prev (sz: isize) (rd r1: ireg)                                    (**r reverse bytes *)
   | Prev16 (sz: isize) (rd r1: ireg)                                  (**r reverse bytes in each 16-bit word *)
+  | Prbit (sz: isize) (rd r1: ireg)                                   (**r reverse bits *)
   (** Conditional data processing *)
   | Pcsel (rd: ireg) (r1 r2: ireg) (c: testcond)                      (**r int conditional move *)
   | Pcset (rd: ireg) (c: testcond)                                    (**r set to 1/0 if cond is true/false *)
@@ -282,6 +284,8 @@ Inductive instruction: Type :=
   | Pfmsub (sz: fsize) (rd r1 r2 r3: freg)                            (**r [rd = r3 - r1 * r2] *)
   | Pfnmadd (sz: fsize) (rd r1 r2 r3: freg)                           (**r [rd = - r3 - r1 * r2] *)
   | Pfnmsub (sz: fsize) (rd r1 r2 r3: freg)                           (**r [rd = - r3 + r1 * r2] *)
+  | Pfmax (sz: fsize) (rd r1 r2: freg)                                (**r maximum *)
+  | Pfmin (sz: fsize) (rd r1 r2: freg)                                (**r minimum *)
   (** Floating-point comparison *)
   | Pfcmp (sz: fsize) (r1 r2: freg)                                   (**r compare [r1] and [r2] *)
   | Pfcmp0 (sz: fsize) (r1: freg)                                     (**r compare [r1] and [+0.0] *)
@@ -968,9 +972,9 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : out
   | Pfmov rd r1 =>
       Next (nextinstr (rs#rd <- (rs#r1))) m
   | Pfmovimms rd f =>
-      Next (nextinstr (rs#rd <- (Vsingle f))) m
+      Next (nextinstr (rs#X16 <- Vundef #rd <- (Vsingle f))) m
   | Pfmovimmd rd f =>
-      Next (nextinstr (rs#rd <- (Vfloat f))) m
+      Next (nextinstr (rs#X16 <- Vundef #rd <- (Vfloat f))) m
   | Pfmovi S rd r1 =>
       Next (nextinstr (rs#rd <- (float32_of_bits rs##r1))) m
   | Pfmovi D rd r1 =>
@@ -1065,7 +1069,7 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : out
       let sp := (Vptr stk Ptrofs.zero) in
       match Mem.storev Mint64 m1 (Val.offset_ptr sp pos) rs#SP with
       | None => Stuck
-      | Some m2 => Next (nextinstr (rs #X29 <- (rs#SP) #SP <- sp #X16 <- Vundef)) m2
+      | Some m2 => Next (nextinstr (rs #X15 <- (rs#SP) #SP <- sp #X16 <- Vundef)) m2
       end
   | Pfreeframe sz pos =>
       match Mem.loadv Mint64 m (Val.offset_ptr rs#SP pos) with
@@ -1095,7 +1099,7 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : out
       | Vint n =>
           match list_nth_z tbl (Int.unsigned n) with
           | None => Stuck
-          | Some lbl => goto_label f lbl (rs#X16 <- Vundef #X17 <- Vundef) m
+          | Some lbl => goto_label f lbl (rs#X16 <- Vundef) m
           end
       | _ => Stuck
       end
@@ -1108,11 +1112,14 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) : out
   | Pclz _ _ _
   | Prev _ _ _
   | Prev16 _ _ _
+  | Prbit _ _ _
   | Pfsqrt _ _ _
   | Pfmadd _ _ _ _ _
   | Pfmsub _ _ _ _ _
   | Pfnmadd _ _ _ _ _
   | Pfnmsub _ _ _ _ _
+  | Pfmax _ _ _ _
+  | Pfmin _ _ _ _
   | Pnop
   | Pcfi_adjust _ 
   | Pcfi_rel_offset _ =>
@@ -1207,7 +1214,7 @@ Inductive step: state -> trace -> state -> Prop :=
       external_call ef ge (comp_of f) vargs m t vres m' ->
       rs' = nextinstr
               (set_res res vres
-                (undef_regs (map preg_of (destroyed_by_builtin ef)) rs)) ->
+                (undef_regs (IR X16 :: IR X30 :: map preg_of (destroyed_by_builtin ef)) rs)) ->
       step (State rs m) t (State rs' m')
   | exec_step_external:
       forall b ef args res rs m t rs' m' cp,
@@ -1289,7 +1296,7 @@ Ltac Equalities :=
   split. auto. intros. destruct B; auto. subst. auto.
 - (* trace length *)
   red; intros. inv H; simpl.
-  omega.
+  lia.
   eapply external_call_trace_length; eauto.
   eapply external_call_trace_length; eauto.
 - (* initial states *)

@@ -19,6 +19,8 @@ COPYING file for more details.
 
 (** * Helper function for computing the rounded value of a real number. *)
 
+From Coq Require Import ZArith Reals Lia.
+
 Require Import Core Digits Float_prop Bracket.
 
 Section Fcalc_round.
@@ -88,7 +90,7 @@ destruct Px as [Px|Px].
   destruct Bx as [Bx1 Bx2].
   apply lt_0_F2R in Bx1.
   apply gt_0_F2R in Bx2.
-  omega.
+  lia.
 Qed.
 
 (** Relates location and rounding. *)
@@ -111,6 +113,12 @@ now rewrite scaled_mantissa_mult_bpow.
 Qed.
 
 Definition cond_incr (b : bool) m := if b then (m + 1)%Z else m.
+
+Lemma le_cond_incr_le :
+  forall b m, (m <= cond_incr b m <= m + 1)%Z.
+Proof.
+unfold cond_incr; intros b; case b; lia.
+Qed.
 
 Theorem inbetween_float_round_sign :
   forall rnd choice,
@@ -585,7 +593,17 @@ apply Zlt_succ.
 rewrite Zle_bool_true with (1 := Hm).
 rewrite Zle_bool_false.
 now case Rlt_bool.
-omega.
+lia.
+Qed.
+
+Theorem inbetween_float_NA_sign :
+  forall x m l,
+  let e := cexp beta fexp x in
+  inbetween_float beta m e (Rabs x) l ->
+  round beta fexp ZnearestA x = F2R (Float beta (cond_Zopp (Rlt_bool x 0) (cond_incr (round_N true l) m)) e).
+Proof.
+apply inbetween_float_round_sign with (choice := fun s m l => cond_incr (round_N true l) m).
+exact inbetween_int_NA_sign.
 Qed.
 
 Definition truncate_aux t k :=
@@ -674,7 +692,7 @@ unfold cexp.
 rewrite mag_F2R_Zdigits.
 2: now apply Zgt_not_eq.
 unfold k in Hk. clear -Hk.
-omega.
+lia.
 rewrite <- Hm', F2R_0.
 apply generic_format_0.
 Qed.
@@ -717,14 +735,14 @@ simpl.
 apply Zfloor_div.
 intros H.
 generalize (Zpower_pos_gt_0 beta k) (Zle_bool_imp_le _ _ (radix_prop beta)).
-omega.
+lia.
 rewrite scaled_mantissa_generic with (1 := Fx).
 now rewrite Zfloor_IZR.
 (* *)
 split.
 apply refl_equal.
 unfold k in Hk.
-omega.
+lia.
 Qed.
 
 Theorem truncate_correct_partial' :
@@ -744,7 +762,7 @@ destruct Zlt_bool ; intros Hk.
   now apply inbetween_float_new_location.
   ring.
 - apply (conj H1).
-  omega.
+  lia.
 Qed.
 
 Theorem truncate_correct_partial :
@@ -790,7 +808,7 @@ intros x m e l [Hx|Hx] H1 H2.
     destruct Zlt_bool.
       intros H.
       apply False_ind.
-      omega.
+      lia.
     intros _.
     apply (conj H1).
     right.
@@ -803,7 +821,7 @@ intros x m e l [Hx|Hx] H1 H2.
     rewrite mag_F2R_Zdigits with (1 := Zm).
     now apply Zlt_le_weak.
 - assert (Hm: m = 0%Z).
-  cut (m <= 0 < m + 1)%Z. omega.
+  cut (m <= 0 < m + 1)%Z. lia.
   assert (F2R (Float beta m e) <= x < F2R (Float beta (m + 1) e))%R as Hx'.
     apply inbetween_float_bounds with (1 := H1).
     rewrite <- Hx in Hx'.
@@ -1156,7 +1174,7 @@ exact H1.
 unfold k in Hk.
 destruct H2 as [H2|H2].
 left.
-omega.
+lia.
 right.
 split.
 exact H2.
@@ -1165,7 +1183,7 @@ inversion_clear H1.
 rewrite H.
 apply generic_format_F2R.
 unfold cexp.
-omega.
+lia.
 Qed.
 
 End Fcalc_round.

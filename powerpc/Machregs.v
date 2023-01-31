@@ -75,9 +75,9 @@ Proof.
   intros. specialize (H r). InvBooleans. auto.
 Qed.
 
-Instance Decidable_eq_mreg : forall (x y: mreg), Decidable (eq x y) := Decidable_eq mreg_eq.
+Global Instance Decidable_eq_mreg : forall (x y: mreg), Decidable (eq x y) := Decidable_eq mreg_eq.
 
-Instance Finite_mreg : Finite mreg := {
+Global Instance Finite_mreg : Finite mreg := {
   Finite_elements := all_mregs;
   Finite_elements_spec := all_mregs_complete
 }.
@@ -166,7 +166,7 @@ Definition destroyed_by_op (op: operation): list mreg :=
   | Ofloatconst _ => R12 :: nil
   | Osingleconst _ => R12 :: nil
   | Olongconst _ => R12 :: nil
-  | Ointoffloat | Ointuoffloat => F13 :: nil
+  | Ointoffloat => F13 :: nil
   | Olongoffloat => F13 :: nil
   | Oaddlimm _ => R12 :: nil
   | Oandlimm _ => R12 :: nil
@@ -232,7 +232,7 @@ Definition mregs_for_builtin (ef: external_function): list (option mreg) * list 
     | EF_builtin id sg =>
       if string_dec id "__builtin_atomic_exchange" then ((Some R3)::(Some R4)::(Some R5)::nil,nil)
       else if string_dec id "__builtin_sync_fetch_and_add" then ((Some R4)::(Some R5)::nil,(Some R3)::nil)
-      else if string_dec id "___builtin_atomic_compare_exchange" then ((Some R4)::(Some R5)::(Some R6)::nil, (Some R3):: nil)
+      else if string_dec id "__builtin_atomic_compare_exchange" then ((Some R4)::(Some R5)::(Some R6)::nil, (Some R3):: nil)
       else (nil, nil)
     | _ => (nil, nil)
   end.

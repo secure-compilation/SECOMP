@@ -36,109 +36,142 @@ let is_immediate_float32 bits =
   let mant = Int32.logand bits 0x7F_FFFFl in
   exp >= -3 && exp <= 4 && Int32.logand mant 0x78_0000l = mant
 
-(* Module containing the printing functions *)
+(* Naming and printing registers *)
 
-module Target : TARGET =
+let intsz oc (sz, n) =
+  match sz with X -> coqint64 oc n | W -> coqint oc n
+
+let xreg_name = function
+  | X0 -> "x0"   | X1 -> "x1"   | X2 -> "x2"   | X3 -> "x3"
+  | X4 -> "x4"   | X5 -> "x5"   | X6 -> "x6"   | X7 -> "x7"
+  | X8 -> "x8"   | X9 -> "x9"   | X10 -> "x10" | X11 -> "x11"
+  | X12 -> "x12" | X13 -> "x13" | X14 -> "x14" | X15 -> "x15"
+  | X16 -> "x16" | X17 -> "x17" | X18 -> "x18" | X19 -> "x19"
+  | X20 -> "x20" | X21 -> "x21" | X22 -> "x22" | X23 -> "x23"
+  | X24 -> "x24" | X25 -> "x25" | X26 -> "x26" | X27 -> "x27"
+  | X28 -> "x28" | X29 -> "x29" | X30 -> "x30"
+
+let wreg_name = function
+  | X0 -> "w0"   | X1 -> "w1"   | X2 -> "w2"   | X3 -> "w3"
+  | X4 -> "w4"   | X5 -> "w5"   | X6 -> "w6"   | X7 -> "w7"
+  | X8 -> "w8"   | X9 -> "w9"   | X10 -> "w10" | X11 -> "w11"
+  | X12 -> "w12" | X13 -> "w13" | X14 -> "w14" | X15 -> "w15"
+  | X16 -> "w16" | X17 -> "w17" | X18 -> "w18" | X19 -> "w19"
+  | X20 -> "w20" | X21 -> "w21" | X22 -> "w22" | X23 -> "w23"
+  | X24 -> "w24" | X25 -> "w25" | X26 -> "w26" | X27 -> "w27"
+  | X28 -> "w28" | X29 -> "w29" | X30 -> "w30"
+
+let xreg0_name = function RR0 r -> xreg_name r | XZR -> "xzr"
+let wreg0_name = function RR0 r -> wreg_name r | XZR -> "wzr"
+
+let xregsp_name = function RR1 r -> xreg_name r | XSP -> "sp"
+let wregsp_name = function RR1 r -> wreg_name r | XSP -> "wsp"
+
+let dreg_name = function
+| D0 -> "d0"   | D1 -> "d1"   | D2 -> "d2"   | D3 -> "d3"
+| D4 -> "d4"   | D5 -> "d5"   | D6 -> "d6"   | D7 -> "d7"
+| D8 -> "d8"   | D9 -> "d9"   | D10 -> "d10" | D11 -> "d11"
+| D12 -> "d12" | D13 -> "d13" | D14 -> "d14" | D15 -> "d15"
+| D16 -> "d16" | D17 -> "d17" | D18 -> "d18" | D19 -> "d19"
+| D20 -> "d20" | D21 -> "d21" | D22 -> "d22" | D23 -> "d23"
+| D24 -> "d24" | D25 -> "d25" | D26 -> "d26" | D27 -> "d27"
+| D28 -> "d28" | D29 -> "d29" | D30 -> "d30" | D31 -> "d31"
+
+let sreg_name = function
+| D0 -> "s0"   | D1 -> "s1"   | D2 -> "s2"   | D3 -> "s3"
+| D4 -> "s4"   | D5 -> "s5"   | D6 -> "s6"   | D7 -> "s7"
+| D8 -> "s8"   | D9 -> "s9"   | D10 -> "s10" | D11 -> "s11"
+| D12 -> "s12" | D13 -> "s13" | D14 -> "s14" | D15 -> "s15"
+| D16 -> "s16" | D17 -> "s17" | D18 -> "s18" | D19 -> "s19"
+| D20 -> "s20" | D21 -> "s21" | D22 -> "s22" | D23 -> "s23"
+| D24 -> "s24" | D25 -> "s25" | D26 -> "s26" | D27 -> "s27"
+| D28 -> "s28" | D29 -> "s29" | D30 -> "s30" | D31 -> "s31"
+
+let xreg oc r = output_string oc (xreg_name r)
+let wreg oc r = output_string oc (wreg_name r)
+let ireg oc (sz, r) =
+  output_string oc (match sz with X -> xreg_name r | W -> wreg_name r)
+
+let xreg0 oc r = output_string oc (xreg0_name r)
+let wreg0 oc r = output_string oc (wreg0_name r)
+let ireg0 oc (sz, r) =
+  output_string oc (match sz with X -> xreg0_name r | W -> wreg0_name r)
+
+let xregsp oc r = output_string oc (xregsp_name r)
+let iregsp oc (sz, r) =
+  output_string oc (match sz with X -> xregsp_name r | W -> wregsp_name r)
+
+let dreg oc r = output_string oc (dreg_name r)
+let sreg oc r = output_string oc (sreg_name r)
+let freg oc (sz, r) =
+  output_string oc (match sz with D -> dreg_name r | S -> sreg_name r)
+
+let preg_asm oc ty = function
+  | IR r -> if ty = Tint then wreg oc r else xreg oc r
+  | FR r -> if ty = Tsingle then sreg oc r else dreg oc r
+  | _    -> assert false
+
+let preg_annot = function
+  | IR r -> xreg_name r
+  | FR r -> dreg_name r
+  | _ -> assert false
+
+(* Base-2 log of a Caml integer *)
+let rec log2 n =
+  assert (n > 0);
+  if n = 1 then 0 else 1 + log2 (n lsr 1)
+
+(* System dependent printer functions *)
+
+module type SYSTEM =
+  sig
+    val comment: string
+    val raw_symbol: out_channel -> string -> unit
+    val symbol: out_channel -> P.t -> unit
+    val symbol_offset_high: out_channel -> P.t * Z.t -> unit
+    val symbol_offset_low: out_channel -> P.t * Z.t -> unit
+    val label: out_channel -> int -> unit
+    val label_high: out_channel -> int -> unit
+    val label_low: out_channel -> int -> unit
+    val load_symbol_address: out_channel -> ireg -> P.t -> unit
+    val name_of_section: section_name -> string
+    val print_fun_info:  out_channel -> P.t -> unit
+    val print_var_info: out_channel -> P.t -> unit
+    val print_comm_decl: out_channel -> P.t -> Z.t -> int -> unit
+    val print_lcomm_decl: out_channel -> P.t -> Z.t -> int -> unit
+  end
+
+module ELF_System : SYSTEM =
   struct
-
-(* Basic printing functions *)
-
     let comment = "//"
+    let raw_symbol = output_string
+    let symbol = elf_symbol
+    let symbol_offset_high = elf_symbol_offset
+    let symbol_offset_low oc id_ofs =
+      fprintf oc "#:lo12:%a" elf_symbol_offset id_ofs
 
-    let symbol        = elf_symbol
-    let symbol_offset = elf_symbol_offset
-    let label         = elf_label
+    let label = elf_label
+    let label_high = elf_label
+    let label_low oc lbl =
+      fprintf oc "#:lo12:%a" elf_label lbl
 
-    let print_label oc lbl = label oc (transl_label lbl)
-
-    let intsz oc (sz, n) =
-      match sz with X -> coqint64 oc n | W -> coqint oc n
-
-    let xreg_name = function
-    | X0 -> "x0"   | X1 -> "x1"   | X2 -> "x2"   | X3 -> "x3"
-    | X4 -> "x4"   | X5 -> "x5"   | X6 -> "x6"   | X7 -> "x7"
-    | X8 -> "x8"   | X9 -> "x9"   | X10 -> "x10" | X11 -> "x11"
-    | X12 -> "x12" | X13 -> "x13" | X14 -> "x14" | X15 -> "x15"
-    | X16 -> "x16" | X17 -> "x17" | X18 -> "x18" | X19 -> "x19"
-    | X20 -> "x20" | X21 -> "x21" | X22 -> "x22" | X23 -> "x23"
-    | X24 -> "x24" | X25 -> "x25" | X26 -> "x26" | X27 -> "x27"
-    | X28 -> "x28" | X29 -> "x29" | X30 -> "x30"
-
-    let wreg_name = function
-    | X0 -> "w0"   | X1 -> "w1"   | X2 -> "w2"   | X3 -> "w3"
-    | X4 -> "w4"   | X5 -> "w5"   | X6 -> "w6"   | X7 -> "w7"
-    | X8 -> "w8"   | X9 -> "w9"   | X10 -> "w10" | X11 -> "w11"
-    | X12 -> "w12" | X13 -> "w13" | X14 -> "w14" | X15 -> "w15"
-    | X16 -> "w16" | X17 -> "w17" | X18 -> "w18" | X19 -> "w19"
-    | X20 -> "w20" | X21 -> "w21" | X22 -> "w22" | X23 -> "w23"
-    | X24 -> "w24" | X25 -> "w25" | X26 -> "w26" | X27 -> "w27"
-    | X28 -> "w28" | X29 -> "w29" | X30 -> "w30"
-
-    let xreg0_name = function RR0 r -> xreg_name r | XZR -> "xzr"
-    let wreg0_name = function RR0 r -> wreg_name r | XZR -> "wzr"
-
-    let xregsp_name = function RR1 r -> xreg_name r | XSP -> "sp"
-    let wregsp_name = function RR1 r -> wreg_name r | XSP -> "wsp"
-
-    let dreg_name = function
-    | D0 -> "d0"   | D1 -> "d1"   | D2 -> "d2"   | D3 -> "d3"
-    | D4 -> "d4"   | D5 -> "d5"   | D6 -> "d6"   | D7 -> "d7"
-    | D8 -> "d8"   | D9 -> "d9"   | D10 -> "d10" | D11 -> "d11"
-    | D12 -> "d12" | D13 -> "d13" | D14 -> "d14" | D15 -> "d15"
-    | D16 -> "d16" | D17 -> "d17" | D18 -> "d18" | D19 -> "d19"
-    | D20 -> "d20" | D21 -> "d21" | D22 -> "d22" | D23 -> "d23"
-    | D24 -> "d24" | D25 -> "d25" | D26 -> "d26" | D27 -> "d27"
-    | D28 -> "d28" | D29 -> "d29" | D30 -> "d30" | D31 -> "d31"
-
-    let sreg_name = function
-    | D0 -> "s0"   | D1 -> "s1"   | D2 -> "s2"   | D3 -> "s3"
-    | D4 -> "s4"   | D5 -> "s5"   | D6 -> "s6"   | D7 -> "s7"
-    | D8 -> "s8"   | D9 -> "s9"   | D10 -> "s10" | D11 -> "s11"
-    | D12 -> "s12" | D13 -> "s13" | D14 -> "s14" | D15 -> "s15"
-    | D16 -> "s16" | D17 -> "s17" | D18 -> "s18" | D19 -> "s19"
-    | D20 -> "s20" | D21 -> "s21" | D22 -> "s22" | D23 -> "s23"
-    | D24 -> "s24" | D25 -> "s25" | D26 -> "s26" | D27 -> "s27"
-    | D28 -> "s28" | D29 -> "s29" | D30 -> "s30" | D31 -> "s31"
-
-    let xreg oc r = output_string oc (xreg_name r)
-    let wreg oc r = output_string oc (wreg_name r)
-    let ireg oc (sz, r) =
-      output_string oc (match sz with X -> xreg_name r | W -> wreg_name r)
-
-    let xreg0 oc r = output_string oc (xreg0_name r)
-    let wreg0 oc r = output_string oc (wreg0_name r)
-    let ireg0 oc (sz, r) =
-      output_string oc (match sz with X -> xreg0_name r | W -> wreg0_name r)
-
-    let xregsp oc r = output_string oc (xregsp_name r)
-    let iregsp oc (sz, r) =
-      output_string oc (match sz with X -> xregsp_name r | W -> wregsp_name r)
-
-    let dreg oc r = output_string oc (dreg_name r)
-    let sreg oc r = output_string oc (sreg_name r)
-    let freg oc (sz, r) =
-      output_string oc (match sz with D -> dreg_name r | S -> sreg_name r)
-
-    let preg_asm oc ty = function
-      | IR r -> if ty = Tint then wreg oc r else xreg oc r
-      | FR r -> if ty = Tsingle then sreg oc r else dreg oc r
-      | _    -> assert false
-
-    let preg_annot = function
-      | IR r -> xreg_name r
-      | FR r -> dreg_name r
-      | _ -> assert false
-
-(* Names of sections *)
+    let load_symbol_address oc rd id =
+      fprintf oc "	adrp	%a, :got:%a\n" xreg rd symbol id;
+      fprintf oc "	ldr	%a, [%a, #:got_lo12:%a]\n" xreg rd xreg rd symbol id
 
     let name_of_section = function
       | Section_text         -> ".text"
       | Section_data i | Section_small_data i ->
-          if i then ".data" else common_section ()
+          variable_section ~sec:".data" ~bss:".bss" i
       | Section_const i | Section_small_const i ->
-          if i || (not !Clflags.option_fcommon) then ".section	.rodata" else "COMM"
-      | Section_string       -> ".section	.rodata"
-      | Section_literal      -> ".section	.rodata"
+          variable_section
+            ~sec:".section      .rodata"
+            ~reloc:".section    .data.rel.ro,\"aw\",@progbits"
+            i
+      | Section_string sz ->
+          elf_mergeable_string_section sz ".section	.rodata"
+      | Section_literal sz ->
+          elf_mergeable_literal_section sz ".section	.rodata"
       | Section_jumptable    -> ".section	.rodata"
       | Section_debug_info _ -> ".section	.debug_info,\"\",%progbits"
       | Section_debug_loc    -> ".section	.debug_loc,\"\",%progbits"
@@ -151,31 +184,98 @@ module Target : TARGET =
             s (if wr then "w" else "") (if ex then "x" else "")
       | Section_ais_annotation -> sprintf ".section	\"__compcert_ais_annotations\",\"\",@note"
 
+    let print_fun_info = elf_print_fun_info
+    let print_var_info = elf_print_var_info
+
+    let print_comm_decl oc name sz al =
+      fprintf oc "	.comm	%a, %s, %d\n" symbol name (Z.to_string sz) al
+
+    let print_lcomm_decl oc name sz al =
+      fprintf oc "	.local	%a\n" symbol name;
+      print_comm_decl oc name sz al
+    
+  end
+
+module MacOS_System : SYSTEM =
+  struct
+    let comment = ";"
+
+    let raw_symbol oc s =
+      fprintf oc "_%s" s
+
+    let symbol oc symb =
+      raw_symbol oc (extern_atom symb)
+
+    let symbol_offset_gen kind oc (id, ofs) =
+      fprintf oc "%a@%s" symbol id kind;
+      let ofs = camlint64_of_ptrofs ofs in
+      if ofs <> 0L then fprintf oc " + %Ld" ofs
+
+    let symbol_offset_high = symbol_offset_gen "PAGE"
+    let symbol_offset_low = symbol_offset_gen "PAGEOFF"
+
+    let label oc lbl =
+      fprintf oc "L%d" lbl
+
+    let label_high oc lbl =
+      fprintf oc "%a@PAGE" label lbl
+    let label_low oc lbl =
+      fprintf oc "%a@PAGEOFF" label lbl
+
+    let load_symbol_address oc rd id =
+      fprintf oc "	adrp	%a, %a@GOTPAGE\n" xreg rd symbol id;
+      fprintf oc "	ldr	%a, [%a, %a@GOTPAGEOFF]\n" xreg rd xreg rd symbol id
+
+    let name_of_section = function
+      | Section_text -> ".text"
+      | Section_data i | Section_small_data i ->
+          variable_section ~sec:".data" i
+      | Section_const i  | Section_small_const i ->
+          variable_section ~sec:".const" ~reloc:".const_data" i
+      | Section_string sz -> 
+          macos_mergeable_string_section sz
+      | Section_literal sz ->
+          macos_mergeable_literal_section sz
+      | Section_jumptable -> ".text"
+      | Section_user(s, wr, ex) ->
+          sprintf ".section	\"%s\", %s, %s"
+            (if wr then "__DATA" else "__TEXT") s
+            (if ex then "regular, pure_instructions" else "regular")
+      | Section_debug_info _ ->	".section	__DWARF,__debug_info,regular,debug"
+      | Section_debug_loc  -> ".section	__DWARF,__debug_loc,regular,debug"
+      | Section_debug_line _ -> ".section	__DWARF,__debug_line,regular,debug"
+      | Section_debug_str -> ".section	__DWARF,__debug_str,regular,debug"
+      | Section_debug_ranges -> ".section	__DWARF,__debug_ranges,regular,debug"
+      | Section_debug_abbrev -> ".section	__DWARF,__debug_abbrev,regular,debug"
+      | Section_ais_annotation -> assert false (* Not supported under MacOS *)
+
+    let print_fun_info _ _ = ()
+    let print_var_info _ _ = ()
+
+    let print_comm_decl oc name sz al =
+      fprintf oc "	.comm	%a, %s, %d\n"
+                 symbol name (Z.to_string sz) (log2 al)
+
+    let print_lcomm_decl oc name sz al =
+      fprintf oc "	.lcomm	%a, %s, %d\n"
+                 symbol name (Z.to_string sz) (log2 al)
+
+  end
+
+(* Module containing the printing functions *)
+
+module Target(System: SYSTEM): TARGET =
+  struct
+    include System
+
+(* Basic printing functions *)
+
+    let print_label oc lbl = label oc (transl_label lbl)
+
+(* Names of sections *)
+
     let section oc sec =
       fprintf oc "	%s\n" (name_of_section sec)
-
-(* Associate labels to floating-point constants and to symbols. *)
-
-    let emit_constants oc lit =
-      if exists_constants () then begin
-         section oc lit;
-         if Hashtbl.length literal64_labels > 0 then
-           begin
-             fprintf oc "	.balign 8\n";
-             Hashtbl.iter
-               (fun bf lbl -> fprintf oc "%a:	.quad	0x%Lx\n" label lbl bf)
-               literal64_labels
-           end;
-         if Hashtbl.length literal32_labels > 0 then
-           begin
-             fprintf oc "	.balign	4\n";
-             Hashtbl.iter
-               (fun bf lbl ->
-                  fprintf oc "%a:	.long	0x%lx\n" label lbl bf)
-               literal32_labels
-           end;
-         reset_literals ()
-      end
 
 (* Emit .file / .loc debugging directives *)
 
@@ -206,7 +306,7 @@ module Target : TARGET =
     | ADlsl(base, r, n) -> fprintf oc "[%a, %a, lsl #%a]" xregsp base xreg r coqint n
     | ADsxt(base, r, n) -> fprintf oc "[%a, %a, sxtw #%a]" xregsp base wreg r coqint n
     | ADuxt(base, r, n) -> fprintf oc "[%a, %a, uxtw #%a]" xregsp base wreg r coqint n
-    | ADadr(base, id, ofs) -> fprintf oc "[%a, #:lo12:%a]" xregsp base symbol_offset (id, ofs)
+    | ADadr(base, id, ofs) -> fprintf oc "[%a, %a]" xregsp base symbol_offset_low (id, ofs)
     | ADpostincr(base, n) -> fprintf oc "[%a], #%a" xregsp base coqint64 n
 
 (* Print a shifted operand *)
@@ -217,15 +317,15 @@ module Target : TARGET =
     | SOasr n -> fprintf oc ", asr #%a" coqint n
     | SOror n -> fprintf oc ", ror #%a" coqint n
 
-(* Print a sign- or zero-extended operand *)
-    let extendop oc = function
-    | EOsxtb n -> fprintf oc ", sxtb #%a" coqint n
-    | EOsxth n -> fprintf oc ", sxth #%a" coqint n
-    | EOsxtw n -> fprintf oc ", sxtw #%a" coqint n
-    | EOuxtb n -> fprintf oc ", uxtb #%a" coqint n
-    | EOuxth n -> fprintf oc ", uxth #%a" coqint n
-    | EOuxtw n -> fprintf oc ", uxtw #%a" coqint n
-    | EOuxtx n -> fprintf oc ", uxtx #%a" coqint n
+(* Print a sign- or zero-extended register operand *)
+    let regextend oc = function
+    | (r, EOsxtb n) -> fprintf oc "%a, sxtb #%a" wreg r coqint n
+    | (r, EOsxth n) -> fprintf oc "%a, sxth #%a" wreg r coqint n
+    | (r, EOsxtw n) -> fprintf oc "%a, sxtw #%a" wreg r coqint n
+    | (r, EOuxtb n) -> fprintf oc "%a, uxtb #%a" wreg r coqint n
+    | (r, EOuxth n) -> fprintf oc "%a, uxth #%a" wreg r coqint n
+    | (r, EOuxtw n) -> fprintf oc "%a, uxtw #%a" wreg r coqint n
+    | (r, EOuxtx n) -> fprintf oc "%a, uxtx #%a" xreg r coqint n
 
 (* Printing of instructions *)
     let print_instruction oc = function
@@ -312,9 +412,9 @@ module Target : TARGET =
         fprintf oc "	movk	%a, #%d, lsl #%d\n" ireg (sz, rd) (Z.to_int n) (Z.to_int pos)
     (* PC-relative addressing *)
     | Padrp(rd, id, ofs) ->
-        fprintf oc "	adrp	%a, %a\n" xreg rd symbol_offset (id, ofs)
+        fprintf oc "	adrp	%a, %a\n" xreg rd symbol_offset_high (id, ofs)
     | Paddadr(rd, r1, id, ofs) ->
-        fprintf oc "	add	%a, %a, #:lo12:%a\n" xreg rd xreg r1 symbol_offset (id, ofs)
+        fprintf oc "	add	%a, %a, %a\n" xreg rd xreg r1 symbol_offset_low (id, ofs)
     (* Bit-field operations *)
     | Psbfiz(sz, rd, r1, r, s) ->
         fprintf oc "	sbfiz	%a, %a, %a, %d\n" ireg (sz, rd) ireg (sz, r1) coqint r (Z.to_int s)
@@ -335,13 +435,13 @@ module Target : TARGET =
         fprintf oc "	cmn	%a, %a%a\n" ireg0 (sz, r1) ireg (sz, r2) shiftop s
     (* Integer arithmetic, extending register *)
     | Paddext(rd, r1, r2, x) ->
-        fprintf oc "	add	%a, %a, %a%a\n" xregsp rd xregsp r1 wreg r2 extendop x
+        fprintf oc "	add	%a, %a, %a\n" xregsp rd xregsp r1 regextend (r2, x)
     | Psubext(rd, r1, r2, x) ->
-        fprintf oc "	sub	%a, %a, %a%a\n" xregsp rd xregsp r1 wreg r2 extendop x
+        fprintf oc "	sub	%a, %a, %a\n" xregsp rd xregsp r1 regextend (r2, x)
     | Pcmpext(r1, r2, x) ->
-        fprintf oc "	cmp	%a, %a%a\n" xreg r1 wreg r2 extendop x
+        fprintf oc "	cmp	%a, %a\n" xreg r1 regextend (r2, x)
     | Pcmnext(r1, r2, x) ->
-        fprintf oc "	cmn	%a, %a%a\n" xreg r1 wreg r2 extendop x
+        fprintf oc "	cmn	%a, %a\n" xreg r1 regextend (r2, x)
     (* Logical, shifted register *)
     | Pand(sz, rd, r1, r2, s) ->
         fprintf oc "	and	%a, %a, %a%a\n" ireg (sz, rd) ireg0 (sz, r1) ireg (sz, r2) shiftop s
@@ -375,6 +475,8 @@ module Target : TARGET =
         fprintf oc "	rev	%a, %a\n" ireg (sz, rd) ireg (sz, r1)
     | Prev16(sz, rd, r1) ->
         fprintf oc "	rev16	%a, %a\n" ireg (sz, rd) ireg (sz, r1)
+    | Prbit(sz, rd, r1) ->
+        fprintf oc "	rbit	%a, %a\n" ireg (sz, rd) ireg (sz, r1)
     (* Conditional data processing *)
     | Pcsel(rd, r1, r2, c) ->
         fprintf oc "	csel	%a, %a, %a, %s\n" xreg rd xreg r1 xreg r2 (condition_name c)
@@ -411,8 +513,8 @@ module Target : TARGET =
           fprintf oc "	fmov	%a, #%.7f\n" dreg rd (Int64.float_of_bits d)
         else begin
           let lbl = label_literal64 d in
-          fprintf oc "	adrp	x16, %a\n" label lbl;
-          fprintf oc "	ldr	%a, [x16, #:lo12:%a] %s %.18g\n" dreg rd label lbl comment (Int64.float_of_bits d)
+          fprintf oc "	adrp	x16, %a\n" label_high lbl;
+          fprintf oc "	ldr	%a, [x16, %a] %s %.18g\n" dreg rd label_low lbl comment (Int64.float_of_bits d)
         end
     | Pfmovimms(rd, f) ->
         let d = camlint_of_coqint (Floats.Float32.to_bits f) in
@@ -420,8 +522,8 @@ module Target : TARGET =
           fprintf oc "	fmov	%a, #%.7f\n" sreg rd (Int32.float_of_bits d)
         else begin
           let lbl = label_literal32 d in
-          fprintf oc "	adrp	x16, %a\n" label lbl;
-          fprintf oc "	ldr	%a, [x16, #:lo12:%a] %s %.18g\n" sreg rd label lbl comment (Int32.float_of_bits d)
+          fprintf oc "	adrp	x16, %a\n" label_high lbl;
+          fprintf oc "	ldr	%a, [x16, %a] %s %.18g\n" sreg rd label_low lbl comment (Int32.float_of_bits d)
         end
     | Pfmovi(D, rd, r1) ->
         fprintf oc "	fmov	%a, %a\n" dreg rd xreg0 r1
@@ -465,6 +567,10 @@ module Target : TARGET =
         fprintf oc "	fnmadd	%a, %a, %a, %a\n" freg (sz, rd) freg (sz, r1) freg (sz, r2) freg (sz, r3)
     | Pfnmsub(sz, rd, r1, r2, r3) ->
         fprintf oc "	fnmsub	%a, %a, %a, %a\n" freg (sz, rd) freg (sz, r1) freg (sz, r2) freg (sz, r3)
+    | Pfmax (sz, rd, r1, r2) ->
+        fprintf oc "	fmax	%a, %a, %a\n" freg (sz, rd) freg (sz, r1) freg (sz, r2)
+    | Pfmin (sz, rd, r1, r2) ->
+        fprintf oc "	fmin	%a, %a, %a\n" freg (sz, rd) freg (sz, r1) freg (sz, r2)
     (* Floating-point comparison *)
     | Pfcmp(sz, r1, r2) ->
         fprintf oc "	fcmp	%a, %a\n" freg (sz, r1) freg (sz, r2)
@@ -484,8 +590,7 @@ module Target : TARGET =
     | Plabel lbl ->
         fprintf oc "%a:\n" print_label lbl
     | Ploadsymbol(rd, id) ->
-        fprintf oc "	adrp	%a, :got:%a\n" xreg rd symbol id;
-        fprintf oc "	ldr	%a, [%a, #:got_lo12:%a]\n" xreg rd xreg rd symbol id
+        load_symbol_address oc rd id
     | Pcvtsw2x(rd, r1) ->
         fprintf oc "	sxtw	%a, %a\n" xreg rd wreg r1
     | Pcvtuw2x(rd, r1) ->
@@ -523,17 +628,10 @@ module Target : TARGET =
              assert false
         end
 
-    let get_section_names name =
-      let (text, lit) =
-        match C2C.atom_sections name with
-        | t :: l :: _ -> (t, l)
-        | _    -> (Section_text, Section_literal) in
-      text,lit,Section_jumptable
-
     let print_align oc alignment =
       fprintf oc "	.balign %d\n" alignment
 
-    let print_jumptable oc jmptbl =
+    let print_jumptable oc _jmptbl =
       let print_tbl oc (lbl, tbl) =
         fprintf oc "%a:\n" label lbl;
         List.iter
@@ -542,25 +640,18 @@ module Target : TARGET =
           tbl in
       if !jumptables <> [] then
         begin
-          section oc jmptbl;
+          section oc Section_jumptable;
           fprintf oc "	.balign 4\n";
           List.iter (print_tbl oc) !jumptables;
           jumptables := []
         end
 
-    let print_fun_info = elf_print_fun_info
-
     let print_optional_fun_info _ = ()
 
-    let print_var_info = elf_print_var_info
-
     let print_comm_symb oc sz name align =
-      if C2C.atom_is_static name then
-        fprintf oc "	.local	%a\n" symbol name;
-        fprintf oc "	.comm	%a, %s, %d\n"
-        symbol name
-        (Z.to_string sz)
-        align
+      if C2C.atom_is_static name
+      then print_lcomm_decl oc name sz align
+      else print_comm_decl oc name sz align
 
     let print_instructions oc fn =
       current_function_sig := fn.fn_sig;
@@ -581,7 +672,7 @@ module Target : TARGET =
         section oc Section_text;
       end
 
-    let default_falignment = 2
+    let default_falignment = 4
 
     let cfi_startproc oc = ()
     let cfi_endproc oc = ()
@@ -589,4 +680,10 @@ module Target : TARGET =
   end
 
 let sel_target () =
-  (module Target:TARGET)
+  let module S =
+    (val (match Configuration.system with
+          | "linux" -> (module ELF_System : SYSTEM)
+          | "macos" -> (module MacOS_System : SYSTEM)
+          | _ -> invalid_arg ("System " ^ Configuration.system ^ " not supported"))
+     : SYSTEM) in
+  (module Target(S) : TARGET)

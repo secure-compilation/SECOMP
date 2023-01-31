@@ -111,8 +111,8 @@ let memcpy_small_arg sz arg tmp =
       assert false
 
 let expand_builtin_memcpy_small sz al src dst =
-  let (tsrc, tdst) =
-    if dst <> BA (IR IR2) then (IR2, IR3) else (IR3, IR2) in
+  let tsrc = if dst <> BA (IR IR2) then IR2 else IR3 in
+  let tdst = if src <> BA (IR IR3) then IR3 else IR2 in
   let (rsrc, osrc) = memcpy_small_arg sz src tsrc in
   let (rdst, odst) = memcpy_small_arg sz dst tdst in
   let rec copy osrc odst sz  =
@@ -349,9 +349,7 @@ let expand_builtin_inline name args res =
      emit (Prsb(res, res, SOimm _32));
      emit (Plabel lbl2)
   (* Float arithmetic *)
-  | "__builtin_fabs",  [BA(FR a1)], BR(FR res) ->
-     emit (Pfabsd (res,a1))
-  | "__builtin_fsqrt", [BA(FR a1)], BR(FR res) ->
+  | ("__builtin_fsqrt" | "__builtin_sqrt"), [BA(FR a1)], BR(FR res) ->
      emit (Pfsqrt (res,a1))
   (* 64-bit integer arithmetic *)
   | "__builtin_negl", [BA_splitlong(BA(IR ah), BA(IR al))],
@@ -409,8 +407,12 @@ let expand_builtin_inline name args res =
   (* Vararg stuff *)
   | "__builtin_va_start", [BA(IR a)], _ ->
      expand_builtin_va_start a
+  (* No operation *)
   | "__builtin_nop", [], _ ->
      emit Pnop
+  (* Optimization hint *)
+  | "__builtin_unreachable", [], _ ->
+     ()
   (* Catch-all *)
   | _ ->
       raise (Error ("unrecognized builtin " ^ name))
@@ -547,7 +549,7 @@ module FixupHF = struct
       end
 
   let fixup_arguments dir sg =
-    if sg.sig_cc.cc_vararg then
+    if sg.sig_cc.cc_vararg <> None then
       FixupEABI.fixup_arguments dir sg
     else begin
       let act = fixup_actions (Array.make 16 false) 0 sg.sig_args in
@@ -557,7 +559,7 @@ module FixupHF = struct
     end
 
   let fixup_result dir sg =
-    if sg.sig_cc.cc_vararg then
+    if sg.sig_cc.cc_vararg <> None then
       FixupEABI.fixup_result dir sg
 end
 

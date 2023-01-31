@@ -6,10 +6,11 @@
 (*                                                                     *)
 (*  Copyright Institut National de Recherche en Informatique et en     *)
 (*  Automatique.  All rights reserved.  This file is distributed       *)
-(*  under the terms of the GNU General Public License as published by  *)
-(*  the Free Software Foundation, either version 2 of the License, or  *)
-(*  (at your option) any later version.  This file is also distributed *)
-(*  under the terms of the INRIA Non-Commercial License Agreement.     *)
+(*  under the terms of the GNU Lesser General Public License as        *)
+(*  published by the Free Software Foundation, either version 2.1 of   *)
+(*  the License, or  (at your option) any later version.               *)
+(*  This file is also distributed under the terms of the               *)
+(*  INRIA Non-Commercial License Agreement.                            *)
 (*                                                                     *)
 (* *********************************************************************)
 
@@ -48,7 +49,7 @@ Variable ge: genv.
 
 Fixpoint simple (a: expr) : bool :=
   match a with
-  | Eloc _ _ _ => true
+  | Eloc _ _ _ _ => true
   | Evar _ _ => true
   | Ederef r _ => simple r
   | Efield r _ _ => simple r
@@ -86,41 +87,42 @@ Variable e: env.
 Variable cp: compartment.
 Variable m: mem.
 
-Inductive eval_simple_lvalue: expr -> block -> ptrofs -> Prop :=
-  | esl_loc: forall b ofs ty,
-      eval_simple_lvalue (Eloc b ofs ty) b ofs
+Inductive eval_simple_lvalue: expr -> block -> ptrofs -> bitfield -> Prop :=
+  | esl_loc: forall b ofs ty bf,
+      eval_simple_lvalue (Eloc b ofs bf ty) b ofs bf
   | esl_var_local: forall x ty b,
       e!x = Some(b, ty) ->
-      eval_simple_lvalue (Evar x ty) b Ptrofs.zero
+      eval_simple_lvalue (Evar x ty) b Ptrofs.zero Full
   | esl_var_global: forall x ty b,
       e!x = None ->
       Genv.find_symbol ge x = Some b ->
-      eval_simple_lvalue (Evar x ty) b Ptrofs.zero
+      eval_simple_lvalue (Evar x ty) b Ptrofs.zero Full
   | esl_deref: forall r ty b ofs,
       eval_simple_rvalue r (Vptr b ofs) ->
-      eval_simple_lvalue (Ederef r ty) b ofs
-  | esl_field_struct: forall r f ty b ofs id co a delta,
+      eval_simple_lvalue (Ederef r ty) b ofs Full
+  | esl_field_struct: forall r f ty b ofs id co a delta bf,
       eval_simple_rvalue r (Vptr b ofs) ->
       typeof r = Tstruct id a ->
       ge.(genv_cenv)!id = Some co ->
-      field_offset ge f (co_members co) = OK delta ->
-      eval_simple_lvalue (Efield r f ty) b (Ptrofs.add ofs (Ptrofs.repr delta))
-  | esl_field_union: forall r f ty b ofs id co a,
+      field_offset ge f (co_members co) = OK (delta, bf) ->
+      eval_simple_lvalue (Efield r f ty) b (Ptrofs.add ofs (Ptrofs.repr delta)) bf
+  | esl_field_union: forall r f ty b ofs id co a delta bf,
       eval_simple_rvalue r (Vptr b ofs) ->
       typeof r = Tunion id a ->
+      union_field_offset ge f (co_members co) = OK (delta, bf) ->
       ge.(genv_cenv)!id = Some co ->
-      eval_simple_lvalue (Efield r f ty) b ofs
+      eval_simple_lvalue (Efield r f ty) b (Ptrofs.add ofs (Ptrofs.repr delta)) bf
 
 with eval_simple_rvalue: expr -> val -> Prop :=
   | esr_val: forall v ty,
       eval_simple_rvalue (Eval v ty) v
-  | esr_rvalof: forall b ofs l ty v,
-      eval_simple_lvalue l b ofs ->
+  | esr_rvalof: forall b ofs bf l ty v,
+      eval_simple_lvalue l b ofs bf ->
       ty = typeof l -> type_is_volatile ty = false ->
-      deref_loc ge cp ty m b ofs E0 v ->
+      deref_loc ge cp ty m b ofs bf E0 v ->
       eval_simple_rvalue (Evalof l ty) v
   | esr_addrof: forall b ofs l ty,
-      eval_simple_lvalue l b ofs ->
+      eval_simple_lvalue l b ofs Full ->
       eval_simple_rvalue (Eaddrof l ty) (Vptr b ofs)
   | esr_unop: forall op r1 ty v1 v,
       eval_simple_rvalue r1 v1 ->
@@ -240,10 +242,10 @@ Inductive estep: state -> trace -> state -> Prop :=
       estep (ExprState f r k e m)
          E0 (ExprState f (Eval v ty) k e m)
 
-  | step_rvalof_volatile: forall f C l ty k e m b ofs t v,
+  | step_rvalof_volatile: forall f C l ty k e m b ofs bf t v,
       leftcontext RV RV C ->
-      eval_simple_lvalue e (comp_of f) m l b ofs ->
-      deref_loc ge (comp_of f) ty m b ofs t v ->
+      eval_simple_lvalue e (comp_of f) m l b ofs bf ->
+      deref_loc ge (comp_of f) ty m b ofs bf t v ->
       ty = typeof l -> type_is_volatile ty = true ->
       estep (ExprState f (C (Evalof l ty)) k e m)
           t (ExprState f (C (Eval v ty)) k e m)
@@ -281,68 +283,68 @@ Inductive estep: state -> trace -> state -> Prop :=
       estep (ExprState f (C (Econdition r1 r2 r3 ty)) k e m)
          E0 (ExprState f (C (Eparen (if b then r2 else r3) ty ty)) k e m)
 
-  | step_assign: forall f C l r ty k e m b ofs v v' t m',
+  | step_assign: forall f C l r ty k e m b ofs bf v v1 t m' v',
       leftcontext RV RV C ->
-      eval_simple_lvalue e (comp_of f) m l b ofs ->
+      eval_simple_lvalue e (comp_of f) m l b ofs bf ->
       eval_simple_rvalue e (comp_of f) m r v ->
-      sem_cast v (typeof r) (typeof l) m = Some v' ->
-      assign_loc ge (comp_of f) (typeof l) m b ofs v' t m' ->
+      sem_cast v (typeof r) (typeof l) m = Some v1 ->
+      assign_loc ge (comp_of f) (typeof l) m b ofs bf v1 t m' v' ->
       ty = typeof l ->
       estep (ExprState f (C (Eassign l r ty)) k e m)
           t (ExprState f (C (Eval v' ty)) k e m')
 
-  | step_assignop: forall f C op l r tyres ty k e m b ofs v1 v2 v3 v4 t1 t2 m' t,
+  | step_assignop: forall f C op l r tyres ty k e m b ofs bf v1 v2 v3 v4 t1 t2 m' v' t,
       leftcontext RV RV C ->
-      eval_simple_lvalue e (comp_of f) m l b ofs ->
-      deref_loc ge (comp_of f) (typeof l) m b ofs t1 v1 ->
+      eval_simple_lvalue e (comp_of f) m l b ofs bf ->
+      deref_loc ge (comp_of f) (typeof l) m b ofs bf t1 v1 ->
       eval_simple_rvalue e (comp_of f) m r v2 ->
       sem_binary_operation ge op v1 (typeof l) v2 (typeof r) m = Some v3 ->
       sem_cast v3 tyres (typeof l) m = Some v4 ->
-      assign_loc ge (comp_of f) (typeof l) m b ofs v4 t2 m' ->
+      assign_loc ge (comp_of f) (typeof l) m b ofs bf v4 t2 m' v' ->
       ty = typeof l ->
       t = t1 ** t2 ->
       estep (ExprState f (C (Eassignop op l r tyres ty)) k e m)
-          t (ExprState f (C (Eval v4 ty)) k e m')
+          t (ExprState f (C (Eval v' ty)) k e m')
 
-  | step_assignop_stuck: forall f C op l r tyres ty k e m b ofs v1 v2 t,
+  | step_assignop_stuck: forall f C op l r tyres ty k e m b ofs bf v1 v2 t,
       leftcontext RV RV C ->
-      eval_simple_lvalue e (comp_of f) m l b ofs ->
-      deref_loc ge (comp_of f) (typeof l) m b ofs t v1 ->
+      eval_simple_lvalue e (comp_of f) m l b ofs bf ->
+      deref_loc ge (comp_of f) (typeof l) m b ofs bf t v1 ->
       eval_simple_rvalue e (comp_of f) m r v2 ->
       match sem_binary_operation ge op v1 (typeof l) v2 (typeof r) m with
       | None => True
       | Some v3 =>
           match sem_cast v3 tyres (typeof l) m with
           | None => True
-          | Some v4 => forall t2 m', ~(assign_loc ge (comp_of f) (typeof l) m b ofs v4 t2 m')
+          | Some v4 => forall t2 m' v', ~(assign_loc ge (comp_of f) (typeof l) m b ofs bf v4 t2 m' v')
           end
       end ->
       ty = typeof l ->
       estep (ExprState f (C (Eassignop op l r tyres ty)) k e m)
           t Stuckstate
 
-  | step_postincr: forall f C id l ty k e m b ofs v1 v2 v3 t1 t2 m' t,
+  | step_postincr: forall f C id l ty k e m b ofs bf v1 v2 v3 t1 t2 m' v' t,
       leftcontext RV RV C ->
-      eval_simple_lvalue e (comp_of f) m l b ofs ->
-      deref_loc ge (comp_of f) ty m b ofs t1 v1 ->
+      eval_simple_lvalue e (comp_of f) m l b ofs bf ->
+      deref_loc ge (comp_of f) ty m b ofs bf t1 v1 ->
       sem_incrdecr ge id v1 ty m = Some v2 ->
       sem_cast v2 (incrdecr_type ty) ty m = Some v3 ->
-      assign_loc ge (comp_of f) ty m b ofs v3 t2 m' ->
+      assign_loc ge (comp_of f) ty m b ofs bf v3 t2 m' v' ->
       ty = typeof l ->
       t = t1 ** t2 ->
       estep (ExprState f (C (Epostincr id l ty)) k e m)
           t (ExprState f (C (Eval v1 ty)) k e m')
 
-  | step_postincr_stuck: forall f C id l ty k e m b ofs v1 t,
+  | step_postincr_stuck: forall f C id l ty k e m b ofs bf v1 t,
       leftcontext RV RV C ->
-      eval_simple_lvalue e (comp_of f) m l b ofs ->
-      deref_loc ge (comp_of f) ty m b ofs t v1 ->
+      eval_simple_lvalue e (comp_of f) m l b ofs bf ->
+      deref_loc ge (comp_of f) ty m b ofs bf t v1 ->
       match sem_incrdecr ge id v1 ty m with
       | None => True
       | Some v2 =>
           match sem_cast v2 (incrdecr_type ty) ty m with
           | None => True
-          | Some v3 => forall t2 m', ~(assign_loc ge (comp_of f) (typeof l) m b ofs v3 t2 m')
+          | Some v3 => forall t2 m' v', ~(assign_loc ge (comp_of f) (typeof l) m b ofs bf v3 t2 m' v')
           end
       end ->
       ty = typeof l ->
@@ -455,7 +457,7 @@ Qed.
 
 Definition expr_kind (a: expr) : kind :=
   match a with
-  | Eloc _ _ _ => LV
+  | Eloc _ _ _ _ => LV
   | Evar _ _ => LV
   | Ederef _ _ => LV
   | Efield _ _ _ => LV
@@ -528,23 +530,25 @@ Fixpoint exprlist_no_ptr (rl: exprlist): Prop :=
 
 Definition invert_expr_prop (cp: compartment) (a: expr) (m: mem) : Prop :=
   match a with
-  | Eloc b ofs ty => False
+  | Eloc b ofs bf ty => False
   | Evar x ty =>
       exists b,
       e!x = Some(b, ty)
       \/ (e!x = None /\ Genv.find_symbol ge x = Some b)
   | Ederef (Eval v ty1) ty =>
       exists b, exists ofs, v = Vptr b ofs
+  | Eaddrof (Eloc b ofs bf ty) ty' =>
+      bf = Full
   | Efield (Eval v ty1) f ty =>
       exists b, exists ofs, v = Vptr b ofs /\
       match ty1 with
-      | Tstruct id _ => exists co delta, ge.(genv_cenv)!id = Some co /\ field_offset ge f (co_members co) = Errors.OK delta
-      | Tunion id _ => exists co, ge.(genv_cenv)!id = Some co
+      | Tstruct id _ => exists co delta bf, ge.(genv_cenv)!id = Some co /\ field_offset ge f (co_members co) = Errors.OK (delta, bf)
+      | Tunion id _ => exists co delta bf, ge.(genv_cenv)!id = Some co /\ union_field_offset ge f (co_members co) = Errors.OK (delta, bf)
       | _ => False
       end
   | Eval v ty => False
-  | Evalof (Eloc b ofs ty') ty =>
-      ty' = ty /\ exists t, exists v, deref_loc ge cp ty m b ofs t v
+  | Evalof (Eloc b ofs bf ty') ty =>
+      ty' = ty /\ exists t, exists v, deref_loc ge cp ty m b ofs bf t v
   | Eunop op (Eval v1 ty1) ty =>
       exists v, sem_unary_operation op v1 ty1 m = Some v
   | Ebinop op (Eval v1 ty1) (Eval v2 ty2) ty =>
@@ -557,17 +561,17 @@ Definition invert_expr_prop (cp: compartment) (a: expr) (m: mem) : Prop :=
       exists b, bool_val v1 ty1 m = Some b
   | Econdition (Eval v1 ty1) r1 r2 ty =>
       exists b, bool_val v1 ty1 m = Some b
-  | Eassign (Eloc b ofs ty1) (Eval v2 ty2) ty =>
-      exists v, exists m', exists t,
-      ty = ty1 /\ sem_cast v2 ty2 ty1 m = Some v /\ assign_loc ge cp ty1 m b ofs v t m'
-  | Eassignop op (Eloc b ofs ty1) (Eval v2 ty2) tyres ty =>
-      exists t, exists v1,
+  | Eassign (Eloc b ofs bf ty1) (Eval v2 ty2) ty =>
+      exists v m' v' t,
+      ty = ty1 /\ sem_cast v2 ty2 ty1 m = Some v /\ assign_loc ge cp ty1 m b ofs bf v t m' v'
+  | Eassignop op (Eloc b ofs bf ty1) (Eval v2 ty2) tyres ty =>
+      exists t v1,
       ty = ty1
-      /\ deref_loc ge cp ty1 m b ofs t v1
-  | Epostincr id (Eloc b ofs ty1) ty =>
-      exists t, exists v1,
+      /\ deref_loc ge cp ty1 m b ofs bf t v1
+  | Epostincr id (Eloc b ofs bf ty1) ty =>
+      exists t v1,
       ty = ty1
-      /\ deref_loc ge cp ty m b ofs t v1
+      /\ deref_loc ge cp ty m b ofs bf t v1
   | Ecomma (Eval v ty1) r2 ty =>
       typeof r2 = ty
   | Eparen (Eval v1 ty1) ty2 ty =>
@@ -597,8 +601,8 @@ Proof.
   exists b; auto.
   exists b; auto.
   exists b; exists ofs; auto.
-  exists b; exists ofs; split; auto. exists co, delta; auto.
-  exists b; exists ofs; split; auto. exists co; auto.
+  exists b; exists ofs; split; auto. exists co, delta, bf; auto.
+  exists b; exists ofs; split; auto. exists co, delta, bf; auto.
 Qed.
 
 Lemma rred_invert:
@@ -612,7 +616,7 @@ Proof.
   exists true; auto. exists false; auto.
   exists true; auto. exists false; auto.
   exists b; auto.
-  exists v; exists m'; exists t; auto.
+  exists v; exists m'; exists v'; exists t; auto.
   exists t; exists v1; auto.
   exists t; exists v1; auto.
   exists v; auto.
@@ -648,7 +652,7 @@ Proof.
   destruct (C a); auto; contradiction.
   destruct (C a); auto; contradiction.
   destruct (C a); auto; contradiction.
-  auto.
+  destruct (C a); auto; contradiction.
   destruct (C a); auto; contradiction.
   destruct (C a); auto; contradiction.
   destruct e1; auto; destruct (C a); auto; contradiction.
@@ -674,7 +678,7 @@ Lemma imm_safe_inv:
   forall cp k a m,
   imm_safe ge e cp k a m ->
   match a with
-  | Eloc _ _ _ => True
+  | Eloc _ _ _ _ => True
   | Eval _ _ => True
   | _ => invert_expr_prop cp a m
   end.
@@ -699,7 +703,7 @@ Lemma safe_inv:
   safe (ExprState f (C a) K e m) ->
   context k RV C ->
   match a with
-  | Eloc _ _ _ => True
+  | Eloc _ _ _ _ => True
   | Eval _ _ => True
   | _ => invert_expr_prop (comp_of f) a m
   end.
@@ -723,10 +727,10 @@ Lemma eval_simple_steps:
     forall C, context RV RV C ->
     star Csem.step ge (ExprState f (C a) k e m)
                    E0 (ExprState f (C (Eval v (typeof a))) k e m))
-/\ (forall a b ofs, eval_simple_lvalue e (comp_of f) m a b ofs ->
+/\ (forall a b ofs bf, eval_simple_lvalue e (comp_of f) m a b ofs bf ->
     forall C, context LV RV C ->
     star Csem.step ge (ExprState f (C a) k e m)
-                   E0 (ExprState f (C (Eloc b ofs (typeof a))) k e m)).
+                   E0 (ExprState f (C (Eloc b ofs bf (typeof a))) k e m)).
 Proof.
 
 Ltac Steps REC C' := eapply star_trans; [apply (REC C'); eauto | idtac | simpl; reflexivity].
@@ -774,10 +778,10 @@ Lemma eval_simple_rvalue_steps:
 Proof (proj1 eval_simple_steps).
 
 Lemma eval_simple_lvalue_steps:
-  forall a b ofs, eval_simple_lvalue e (comp_of f) m a b ofs ->
+  forall a b ofs bf, eval_simple_lvalue e (comp_of f) m a b ofs bf ->
   forall C, context LV RV C ->
   star Csem.step ge (ExprState f (C a) k e m)
-                E0 (ExprState f (C (Eloc b ofs (typeof a))) k e m).
+                E0 (ExprState f (C (Eloc b ofs bf (typeof a))) k e m).
 Proof (proj2 eval_simple_steps).
 
 Corollary eval_simple_rvalue_safe:
@@ -790,10 +794,10 @@ Proof.
 Qed.
 
 Corollary eval_simple_lvalue_safe:
-  forall C a b ofs,
-  eval_simple_lvalue e (comp_of f) m a b ofs ->
+  forall C a b ofs bf,
+  eval_simple_lvalue e (comp_of f) m a b ofs bf ->
   context LV RV C -> safe (ExprState f (C a) k e m) ->
-  safe (ExprState f (C (Eloc b ofs (typeof a))) k e m).
+  safe (ExprState f (C (Eloc b ofs bf (typeof a))) k e m).
 Proof.
   intros. eapply safe_steps; eauto. eapply eval_simple_lvalue_steps; eauto.
 Qed.
@@ -802,15 +806,15 @@ Lemma simple_can_eval:
   forall a from C,
   simple a = true -> context from RV C -> safe (ExprState f (C a) k e m) ->
   match from with
-  | LV => exists b, exists ofs, eval_simple_lvalue e (comp_of f) m a b ofs
+  | LV => exists b ofs bf, eval_simple_lvalue e (comp_of f) m a b ofs bf
   | RV => exists v, eval_simple_rvalue e (comp_of f) m a v
   end.
 Proof.
 Ltac StepL REC C' a :=
-  let b := fresh "b" in let ofs := fresh "ofs" in
+  let b := fresh "b" in let ofs := fresh "ofs" in let bf := fresh "bf" in
   let E := fresh "E" in let S := fresh "SAFE" in
-  exploit (REC LV C'); eauto; intros [b [ofs E]];
-  assert (S: safe (ExprState f (C' (Eloc b ofs (typeof a))) k e m)) by
+  exploit (REC LV C'); eauto; intros (b & ofs & bf & E);
+  assert (S: safe (ExprState f (C' (Eloc b ofs bf (typeof a))) k e m)) by
     (eapply (eval_simple_lvalue_safe C'); eauto);
   simpl in S.
 Ltac StepR REC C' a :=
@@ -823,51 +827,52 @@ Ltac StepR REC C' a :=
   induction a; intros from C S CTX SAFE;
   generalize (safe_expr_kind _ _ _ _ _ _ _ CTX SAFE); intro K; subst;
   simpl in S; try discriminate; simpl.
-(* val *)
+- (* val *)
   exists v; constructor.
-(* var *)
+- (* var *)
   exploit safe_inv; eauto; simpl. intros [b A].
-  exists b; exists Ptrofs.zero.
+  exists b, Ptrofs.zero, Full.
   intuition. apply esl_var_local; auto. apply esl_var_global; auto.
-(* field *)
+- (* field *)
   StepR IHa (fun x => C(Efield x f0 ty)) a.
   exploit safe_inv. eexact SAFE0. eauto. simpl.
   intros [b [ofs [EQ TY]]]. subst v. destruct (typeof a) eqn:?; try contradiction.
-  destruct TY as (co & delta & CE & OFS). exists b; exists (Ptrofs.add ofs (Ptrofs.repr delta)); econstructor; eauto.
-  destruct TY as (co & CE).  exists b; exists ofs; econstructor; eauto.
-(* valof *)
+  destruct TY as (co & delta & bf & CE & OFS). exists b, (Ptrofs.add ofs (Ptrofs.repr delta)), bf; eapply esl_field_struct; eauto.
+  destruct TY as (co & delta & bf & CE & OFS). exists b, (Ptrofs.add ofs (Ptrofs.repr delta)), bf; eapply esl_field_union; eauto.
+- (* valof *)
   destruct (andb_prop _ _ S) as [S1 S2]. clear S. rewrite negb_true_iff in S2.
   StepL IHa (fun x => C(Evalof x ty)) a.
   exploit safe_inv. eexact SAFE0. eauto. simpl. intros [TY [t [v LOAD]]].
   assert (t = E0). inv LOAD; auto. congruence. subst t.
   exists v; econstructor; eauto. congruence.
-(* deref *)
+- (* deref *)
   StepR IHa (fun x => C(Ederef x ty)) a.
   exploit safe_inv. eexact SAFE0. eauto. simpl. intros [b [ofs EQ]].
-  subst v. exists b; exists ofs; econstructor; eauto.
-(* addrof *)
+  subst v. exists b, ofs, Full; econstructor; eauto.
+- (* addrof *)
   StepL IHa (fun x => C(Eaddrof x ty)) a.
+  exploit safe_inv. eexact SAFE0. eauto. simpl. intros EQ; subst bf.
   exists (Vptr b ofs); econstructor; eauto.
-(* unop *)
+- (* unop *)
   StepR IHa (fun x => C(Eunop op x ty)) a.
   exploit safe_inv. eexact SAFE0. eauto. simpl. intros [v' EQ].
   exists v'; econstructor; eauto.
-(* binop *)
+- (* binop *)
   destruct (andb_prop _ _ S) as [S1 S2]; clear S.
   StepR IHa1 (fun x => C(Ebinop op x a2 ty)) a1.
   StepR IHa2 (fun x => C(Ebinop op (Eval v (typeof a1)) x ty)) a2.
   exploit safe_inv. eexact SAFE1. eauto. simpl. intros [v' EQ].
   exists v'; econstructor; eauto.
-(* cast *)
+- (* cast *)
   StepR IHa (fun x => C(Ecast x ty)) a.
   exploit safe_inv. eexact SAFE0. eauto. simpl. intros [v' CAST].
   exists v'; econstructor; eauto.
-(* sizeof *)
+- (* sizeof *)
   econstructor; econstructor.
-(* alignof *)
+- (* alignof *)
   econstructor; econstructor.
-(* loc *)
-  exists b; exists ofs; constructor.
+- (* loc *)
+  exists b, ofs, bf; constructor.
 Qed.
 
 Lemma simple_can_eval_rval:
@@ -883,11 +888,11 @@ Qed.
 Lemma simple_can_eval_lval:
   forall l C,
   simple l = true -> context LV RV C -> safe (ExprState f (C l) k e m) ->
-  exists b, exists ofs, eval_simple_lvalue e (comp_of f) m l b ofs
-         /\ safe (ExprState f (C (Eloc b ofs (typeof l))) k e m).
+  exists b ofs bf, eval_simple_lvalue e (comp_of f) m l b ofs bf
+         /\ safe (ExprState f (C (Eloc b ofs bf (typeof l))) k e m).
 Proof.
-  intros. exploit (simple_can_eval l LV); eauto. intros [b [ofs A]].
-  exists b; exists ofs; split; auto. eapply eval_simple_lvalue_safe; eauto.
+  intros. exploit (simple_can_eval l LV); eauto. intros (b & ofs & bf & A).
+  exists b, ofs, bf; split; auto. eapply eval_simple_lvalue_safe; eauto.
 Qed.
 
 Fixpoint rval_list (vl: list val) (rl: exprlist) : exprlist :=
@@ -1192,18 +1197,18 @@ Proof.
   eapply star_plus_trans.
   eapply eval_simple_lvalue_steps with (C := fun x => C(Eassign x r (typeof l))); eauto.
   eapply plus_right.
-  eapply eval_simple_rvalue_steps with (C := fun x => C(Eassign (Eloc b ofs (typeof l)) x (typeof l))); eauto.
+  eapply eval_simple_rvalue_steps with (C := fun x => C(Eassign (Eloc b ofs bf (typeof l)) x (typeof l))); eauto.
   left; eapply step_rred; eauto. econstructor; eauto.
   reflexivity. auto.
 (* assignop *)
   eapply star_plus_trans.
   eapply eval_simple_lvalue_steps with (C := fun x => C(Eassignop op x r tyres (typeof l))); eauto.
   eapply star_plus_trans.
-  eapply eval_simple_rvalue_steps with (C := fun x => C(Eassignop op (Eloc b ofs (typeof l)) x tyres (typeof l))); eauto.
+  eapply eval_simple_rvalue_steps with (C := fun x => C(Eassignop op (Eloc b ofs bf (typeof l)) x tyres (typeof l))); eauto.
   eapply plus_left.
   left; eapply step_rred; auto. econstructor; eauto.
   eapply star_left.
-  left; eapply step_rred with (C := fun x => C(Eassign (Eloc b ofs (typeof l)) x (typeof l))); eauto. econstructor; eauto.
+  left; eapply step_rred with (C := fun x => C(Eassign (Eloc b ofs bf (typeof l)) x (typeof l))); eauto. econstructor; eauto.
   apply star_one.
   left; eapply step_rred; auto. econstructor; eauto.
   reflexivity. reflexivity. reflexivity. traceEq.
@@ -1211,19 +1216,19 @@ Proof.
   eapply star_plus_trans.
   eapply eval_simple_lvalue_steps with (C := fun x => C(Eassignop op x r tyres (typeof l))); eauto.
   eapply star_plus_trans.
-  eapply eval_simple_rvalue_steps with (C := fun x => C(Eassignop op (Eloc b ofs (typeof l)) x tyres (typeof l))); eauto.
+  eapply eval_simple_rvalue_steps with (C := fun x => C(Eassignop op (Eloc b ofs bf (typeof l)) x tyres (typeof l))); eauto.
   eapply plus_left.
   left; eapply step_rred; auto. econstructor; eauto.
   destruct (sem_binary_operation ge op v1 (typeof l) v2 (typeof r) m) as [v3|] eqn:?.
   eapply star_left.
-  left; eapply step_rred with (C := fun x => C(Eassign (Eloc b ofs (typeof l)) x (typeof l))); eauto. econstructor; eauto.
+  left; eapply step_rred with (C := fun x => C(Eassign (Eloc b ofs bf (typeof l)) x (typeof l))); eauto. econstructor; eauto.
   apply star_one.
   left; eapply step_stuck; eauto.
-  red; intros. exploit imm_safe_inv; eauto. simpl. intros [v4' [m' [t' [A [B D]]]]].
+  red; intros. exploit imm_safe_inv; eauto. simpl. intros [v4' [m' [v' [t' [A [B D]]]]]].
   rewrite B in H4. eelim H4; eauto.
   reflexivity.
   apply star_one.
-  left; eapply step_stuck with (C := fun x => C(Eassign (Eloc b ofs (typeof l)) x (typeof l))); eauto.
+  left; eapply step_stuck with (C := fun x => C(Eassign (Eloc b ofs bf (typeof l)) x (typeof l))); eauto.
   red; intros. exploit imm_safe_inv; eauto. simpl. intros [v3 A]. congruence.
   reflexivity.
   reflexivity. traceEq.
@@ -1233,7 +1238,7 @@ Proof.
   eapply plus_left.
   left; eapply step_rred; auto. econstructor; eauto.
   eapply star_left.
-  left; eapply step_rred with (C := fun x => C (Ecomma (Eassign (Eloc b ofs (typeof l)) x (typeof l)) (Eval v1 (typeof l)) (typeof l))); eauto.
+  left; eapply step_rred with (C := fun x => C (Ecomma (Eassign (Eloc b ofs bf (typeof l)) x (typeof l)) (Eval v1 (typeof l)) (typeof l))); eauto.
   econstructor. instantiate (1 := v2). destruct id; assumption.
   eapply star_left.
   left; eapply step_rred with (C := fun x => C (Ecomma x (Eval v1 (typeof l)) (typeof l))); eauto.
@@ -1252,15 +1257,15 @@ Proof.
     destruct id; auto.
   destruct (sem_incrdecr ge id v1 (typeof l) m) as [v2|].
   eapply star_left.
-  left; eapply step_rred with (C := fun x => C (Ecomma (Eassign (Eloc b ofs (typeof l)) x (typeof l)) (Eval v1 (typeof l)) (typeof l))); eauto.
+  left; eapply step_rred with (C := fun x => C (Ecomma (Eassign (Eloc b ofs bf (typeof l)) x (typeof l)) (Eval v1 (typeof l)) (typeof l))); eauto.
   econstructor; eauto.
   apply star_one.
   left; eapply step_stuck with (C := fun x => C (Ecomma x (Eval v1 (typeof l)) (typeof l))); eauto.
-  red; intros. exploit imm_safe_inv; eauto. simpl. intros [v3 [m' [t' [A [B D]]]]].
+  red; intros. exploit imm_safe_inv; eauto. simpl. intros [v3 [m' [v' [t' [A [B D]]]]]].
   rewrite B in H3. eelim H3; eauto.
   reflexivity.
   apply star_one.
-  left; eapply step_stuck with (C := fun x => C (Ecomma (Eassign (Eloc b ofs (typeof l)) x (typeof l)) (Eval v1 (typeof l)) (typeof l))); eauto.
+  left; eapply step_stuck with (C := fun x => C (Ecomma (Eassign (Eloc b ofs bf (typeof l)) x (typeof l)) (Eval v1 (typeof l)) (typeof l))); eauto.
   red; intros. exploit imm_safe_inv; eauto. simpl. intros [v2 A]. congruence.
   reflexivity.
   traceEq.
@@ -1280,7 +1285,6 @@ Proof.
   eapply eval_simple_list_steps with (C := fun x => C(Ecall (Eval vf (typeof rf)) x ty)); eauto.
   eapply contextlist'_call with (rl0 := Enil); auto.
   left; apply Csem.step_call; eauto. econstructor; eauto.
-
   traceEq. auto.
 (* builtin *)
   exploit eval_simple_list_implies; eauto. intros [vl' [A B]].
@@ -1306,7 +1310,7 @@ Proof.
 + (* valof volatile *)
   destruct Q.
   exploit (simple_can_eval_lval f k e m b (fun x => C(Evalof x ty))); eauto.
-  intros [b1 [ofs [E1 S1]]].
+  intros (b1 & ofs & bf & E1 & S1).
   exploit safe_inv. eexact S1. eauto. simpl. intros [A [t [v B]]].
   econstructor; econstructor; eapply step_rvalof_volatile; eauto. congruence.
 + (* seqand *)
@@ -1331,40 +1335,40 @@ Proof.
 + (* assign *)
   destruct Q.
   exploit (simple_can_eval_lval f k e m b1 (fun x => C(Eassign x b2 ty))); eauto.
-  intros [b [ofs [E1 S1]]].
-  exploit (simple_can_eval_rval f k e m b2 (fun x => C(Eassign (Eloc b ofs (typeof b1)) x ty))); eauto.
+  intros (b & ofs & bf & E1 & S1).
+  exploit (simple_can_eval_rval f k e m b2 (fun x => C(Eassign (Eloc b ofs bf (typeof b1)) x ty))); eauto.
   intros [v [E2 S2]].
-  exploit safe_inv. eexact S2. eauto. simpl. intros [v' [m' [t [A [B D]]]]].
+  exploit safe_inv. eexact S2. eauto. simpl. intros [v1 [m' [v' [t [A [B D]]]]]].
   econstructor; econstructor; eapply step_assign; eauto.
 + (* assignop *)
   destruct Q.
   exploit (simple_can_eval_lval f k e m b1 (fun x => C(Eassignop op x b2 tyres ty))); eauto.
-  intros [b [ofs [E1 S1]]].
-  exploit (simple_can_eval_rval f k e m b2 (fun x => C(Eassignop op (Eloc b ofs (typeof b1)) x tyres ty))); eauto.
+  intros (b & ofs & bf & E1 & S1).
+  exploit (simple_can_eval_rval f k e m b2 (fun x => C(Eassignop op (Eloc b ofs bf (typeof b1)) x tyres ty))); eauto.
   intros [v [E2 S2]].
   exploit safe_inv. eexact S2. eauto. simpl. intros [t1 [v1 [A B]]].
   destruct (sem_binary_operation ge op v1 (typeof b1) v (typeof b2) m) as [v3|] eqn:?.
   destruct (sem_cast v3 tyres (typeof b1) m) as [v4|] eqn:?.
-  destruct (classic (exists t2, exists m', assign_loc ge (comp_of f) (typeof b1) m b ofs v4 t2 m')).
-  destruct H2 as [t2 [m' D]].
+  destruct (classic (exists t2 m' v', assign_loc ge (comp_of f) (typeof b1) m b ofs bf v4 t2 m' v')).
+  destruct H2 as [t2 [m' [v' D]]].
   econstructor; econstructor; eapply step_assignop; eauto.
   econstructor; econstructor; eapply step_assignop_stuck; eauto.
-  rewrite Heqo. rewrite Heqo0. intros; red; intros. elim H2. exists t2; exists m'; auto.
+  rewrite Heqo. rewrite Heqo0. intros; red; intros. elim H2. exists t2, m', v'; auto.
   econstructor; econstructor; eapply step_assignop_stuck; eauto.
   rewrite Heqo. rewrite Heqo0. auto.
   econstructor; econstructor; eapply step_assignop_stuck; eauto.
   rewrite Heqo. auto.
 + (* postincr *)
   exploit (simple_can_eval_lval f k e m b (fun x => C(Epostincr id x ty))); eauto.
-  intros [b1 [ofs [E1 S1]]].
+  intros (b1 & ofs & bf & E1 & S1).
   exploit safe_inv. eexact S1. eauto. simpl. intros [t [v1 [A B]]].
   destruct (sem_incrdecr ge id v1 ty m) as [v2|] eqn:?.
   destruct (sem_cast v2 (incrdecr_type ty) ty m) as [v3|] eqn:?.
-  destruct (classic (exists t2, exists m', assign_loc ge (comp_of f) ty m b1 ofs v3 t2 m')).
-  destruct H0 as [t2 [m' D]].
+  destruct (classic (exists t2 m' v', assign_loc ge (comp_of f) ty m b1 ofs bf v3 t2 m' v')).
+  destruct H0 as [t2 [m' [v' D]]].
   econstructor; econstructor; eapply step_postincr; eauto.
   econstructor; econstructor; eapply step_postincr_stuck; eauto.
-  rewrite Heqo. rewrite Heqo0. intros; red; intros. elim H0. exists t2; exists m'; congruence.
+  rewrite Heqo. rewrite Heqo0. intros; red; intros. elim H0. exists t2, m', v'; congruence.
   econstructor; econstructor; eapply step_postincr_stuck; eauto.
   rewrite Heqo. rewrite Heqo0. auto.
   econstructor; econstructor; eapply step_postincr_stuck; eauto.
@@ -1455,18 +1459,18 @@ Definition semantics (p: program) :=
 (** This semantics is receptive to changes in events. *)
 
 Remark deref_loc_trace:
-  forall ge cp ty m b ofs t v,
-  deref_loc ge cp ty m b ofs t v ->
+  forall ge cp ty m b ofs bf t v,
+  deref_loc ge cp ty m b ofs bf t v ->
   match t with nil => True | ev :: nil => True | _ => False end.
 Proof.
   intros. inv H; simpl; auto. inv H2; simpl; auto.
 Qed.
 
 Remark deref_loc_receptive:
-  forall ge cp ty m b ofs ev1 t1 v ev2,
-  deref_loc ge cp ty m b ofs (ev1 :: t1) v ->
+  forall ge cp ty m b ofs bf ev1 t1 v ev2,
+  deref_loc ge cp ty m b ofs bf (ev1 :: t1) v ->
   match_traces ge (ev1 :: nil) (ev2 :: nil) ->
-  t1 = nil /\ exists v', deref_loc ge cp ty m b ofs (ev2 :: nil) v'.
+  t1 = nil /\ exists v', deref_loc ge cp ty m b ofs bf (ev2 :: nil) v'.
 Proof.
   intros.
   assert (t1 = nil). exploit deref_loc_trace; eauto. destruct t1; simpl; tauto.
@@ -1475,16 +1479,16 @@ Proof.
 Qed.
 
 Remark assign_loc_trace:
-  forall ge cp ty m b ofs t v m',
-  assign_loc ge cp ty m b ofs v t m' ->
+  forall ge cp ty m b ofs bf t v m' v',
+  assign_loc ge cp ty m b ofs bf v t m' v' ->
   match t with nil => True | ev :: nil => output_event ev | _ => False end.
 Proof.
   intros. inv H; simpl; auto. inv H2; simpl; auto.
 Qed.
 
 Remark assign_loc_receptive:
-  forall ge cp ty m b ofs ev1 t1 v m' ev2,
-  assign_loc ge cp ty m b ofs v (ev1 :: t1) m' ->
+  forall ge cp ty m b ofs bf ev1 t1 v m' v' ev2,
+  assign_loc ge cp ty m b ofs bf v (ev1 :: t1) m' v' ->
   match_traces ge (ev1 :: nil) (ev2 :: nil) ->
   ev1 :: t1 = ev2 :: nil.
 Proof.
@@ -1514,11 +1518,11 @@ Proof.
   inv H10. exploit deref_loc_receptive; eauto. intros [EQ [v1' A]]. subst t0.
   destruct (sem_binary_operation ge op v1' (typeof l) v2 (typeof r) m) as [v3'|] eqn:?.
   destruct (sem_cast v3' tyres (typeof l) m) as [v4'|] eqn:?.
-  destruct (classic (exists t2', exists m'', assign_loc ge (comp_of f) (typeof l) m b ofs v4' t2' m'')).
-  destruct H1 as [t2' [m'' P]].
+  destruct (classic (exists t2' m'' v'', assign_loc ge (comp_of f) (typeof l) m b ofs bf v4' t2' m'' v'')).
+  destruct H1 as [t2' [m'' [v'' P]]].
   econstructor; econstructor. left; eapply step_assignop with (v1 := v1'); eauto. simpl; reflexivity.
   econstructor; econstructor. left; eapply step_assignop_stuck with (v1 := v1'); eauto.
-  rewrite Heqo; rewrite Heqo0. intros; red; intros; elim H1. exists t0; exists m'0; auto.
+  rewrite Heqo; rewrite Heqo0. intros; red; intros; elim H1. exists t0, m'0, v'0; auto.
   econstructor; econstructor. left; eapply step_assignop_stuck with (v1 := v1'); eauto.
   rewrite Heqo; rewrite Heqo0; auto.
   econstructor; econstructor. left; eapply step_assignop_stuck with (v1 := v1'); eauto.
@@ -1527,11 +1531,11 @@ Proof.
   exploit deref_loc_receptive; eauto. intros [EQ [v1' A]]. subst t1.
   destruct (sem_binary_operation ge op v1' (typeof l) v2 (typeof r) m) as [v3'|] eqn:?.
   destruct (sem_cast v3' tyres (typeof l) m) as [v4'|] eqn:?.
-  destruct (classic (exists t2', exists m'', assign_loc ge (comp_of f) (typeof l) m b ofs v4' t2' m'')).
-  destruct H1 as [t2' [m'' P]].
+  destruct (classic (exists t2' m'' v'', assign_loc ge (comp_of f) (typeof l) m b ofs bf v4' t2' m'' v'')).
+  destruct H1 as [t2' [m'' [v'' P]]].
   econstructor; econstructor. left; eapply step_assignop with (v1 := v1'); eauto. simpl; reflexivity.
   econstructor; econstructor. left; eapply step_assignop_stuck with (v1 := v1'); eauto.
-  rewrite Heqo; rewrite Heqo0. intros; red; intros; elim H1. exists t2; exists m'; auto.
+  rewrite Heqo; rewrite Heqo0. intros; red; intros; elim H1. exists t2, m', v'; auto.
   econstructor; econstructor. left; eapply step_assignop_stuck with (v1 := v1'); eauto.
   rewrite Heqo; rewrite Heqo0; auto.
   econstructor; econstructor. left; eapply step_assignop_stuck with (v1 := v1'); eauto.
@@ -1543,11 +1547,11 @@ Proof.
   inv H9. exploit deref_loc_receptive; eauto. intros [EQ [v1' A]]. subst t0.
   destruct (sem_incrdecr ge id v1' (typeof l) m) as [v2'|] eqn:?.
   destruct (sem_cast v2' (incrdecr_type (typeof l)) (typeof l) m) as [v3'|] eqn:?.
-  destruct (classic (exists t2', exists m'', assign_loc ge (comp_of f) (typeof l) m b ofs v3' t2' m'')).
-  destruct H1 as [t2' [m'' P]].
+  destruct (classic (exists t2' m'' v'', assign_loc ge (comp_of f) (typeof l) m b ofs bf v3' t2' m'' v'')).
+  destruct H1 as [t2' [m'' [v'' P]]].
   econstructor; econstructor. left; eapply step_postincr with (v1 := v1'); eauto. simpl; reflexivity.
   econstructor; econstructor. left; eapply step_postincr_stuck with (v1 := v1'); eauto.
-  rewrite Heqo; rewrite Heqo0. intros; red; intros; elim H1. exists t0; exists m'0; auto.
+  rewrite Heqo; rewrite Heqo0. intros; red; intros; elim H1. exists t0, m'0, v'0; auto.
   econstructor; econstructor. left; eapply step_postincr_stuck with (v1 := v1'); eauto.
   rewrite Heqo; rewrite Heqo0; auto.
   econstructor; econstructor. left; eapply step_postincr_stuck with (v1 := v1'); eauto.
@@ -1556,11 +1560,11 @@ Proof.
   exploit deref_loc_receptive; eauto. intros [EQ [v1' A]]. subst t1.
   destruct (sem_incrdecr ge id v1' (typeof l) m) as [v2'|] eqn:?.
   destruct (sem_cast v2' (incrdecr_type (typeof l)) (typeof l) m) as [v3'|] eqn:?.
-  destruct (classic (exists t2', exists m'', assign_loc ge (comp_of f) (typeof l) m b ofs v3' t2' m'')).
-  destruct H1 as [t2' [m'' P]].
+  destruct (classic (exists t2' m'' v'', assign_loc ge (comp_of f) (typeof l) m b ofs bf v3' t2' m'' v'')).
+  destruct H1 as [t2' [m'' [v'' P]]].
   econstructor; econstructor. left; eapply step_postincr with (v1 := v1'); eauto. simpl; reflexivity.
   econstructor; econstructor. left; eapply step_postincr_stuck with (v1 := v1'); eauto.
-  rewrite Heqo; rewrite Heqo0. intros; red; intros; elim H1. exists t2; exists m'; auto.
+  rewrite Heqo; rewrite Heqo0. intros; red; intros; elim H1. exists t2, m', v'; auto.
   econstructor; econstructor. left; eapply step_postincr_stuck with (v1 := v1'); eauto.
   rewrite Heqo; rewrite Heqo0; auto.
   econstructor; econstructor. left; eapply step_postincr_stuck with (v1 := v1'); eauto.
@@ -1571,13 +1575,13 @@ Proof.
   exploit external_call_trace_length; eauto. destruct t1; simpl; intros.
   exploit external_call_receptive; eauto. intros [vres2 [m2 EC2]].
   econstructor; econstructor. left; eapply step_builtin; eauto.
-  omegaContradiction.
+  extlia.
   (* external calls *)
   inv H1.
   exploit external_call_trace_length; eauto. destruct t1; simpl; intros.
   exploit external_call_receptive; eauto. intros [vres2 [m2 EC2]].
   exists (Returnstate vres2 k m2 (rettype_of_type tres) (comp_of ef)); exists E0; right; econstructor; eauto.
-  omegaContradiction.
+  extlia.
   inv EV; inv H0. eexists; eexists; right; econstructor; eauto.
   econstructor; eauto.
 (* well-behaved traces *)
@@ -1604,10 +1608,10 @@ Proof.
   inv EV; try reflexivity.
   (* builtins *)
   exploit external_call_trace_length; eauto.
-  destruct t; simpl; auto. destruct t; simpl; auto. intros; omegaContradiction.
+  destruct t; simpl; auto. destruct t; simpl; auto. intros; extlia.
   (* external calls *)
   exploit external_call_trace_length; eauto.
-  destruct t; simpl; auto. destruct t; simpl; auto. intros; omegaContradiction.
+  destruct t; simpl; auto. destruct t; simpl; auto. intros; extlia.
   (* return *)
   inv EV; try reflexivity.
 Qed.
@@ -1694,11 +1698,11 @@ with eval_expr: compartment -> env -> mem -> kind -> expr -> trace -> mem -> exp
       type_is_volatile (typeof a) = false ->
       eval_expr c e m LV a t m' a' ->
       eval_expr c e m RV (Evalof a ty) t m' (Evalof a' ty)
-  | eval_valof_volatile: forall c e m a t1 m' a' ty b ofs t2 v,
+  | eval_valof_volatile: forall c e m a t1 m' a' ty b ofs bf t2 v,
       type_is_volatile (typeof a) = true ->
       eval_expr c e m LV a t1 m' a' ->
-      eval_simple_lvalue ge e c m' a' b ofs ->
-      deref_loc ge c (typeof a) m' b ofs t2 v ->
+      eval_simple_lvalue ge e c m' a' b ofs bf ->
+      deref_loc ge c (typeof a) m' b ofs bf t2 v ->
       ty = typeof a ->
       eval_expr c e m RV (Evalof a ty) (t1 ** t2) m' (Eval v ty)
   | eval_deref: forall c e m a t m' a' ty,
@@ -1746,32 +1750,32 @@ with eval_expr: compartment -> env -> mem -> kind -> expr -> trace -> mem -> exp
       eval_expr c e m RV (Esizeof ty' ty) E0 m (Esizeof ty' ty)
   | eval_alignof: forall c e m ty' ty,
       eval_expr c e m RV (Ealignof ty' ty) E0 m (Ealignof ty' ty)
-  | eval_assign: forall c e m l r ty t1 m1 l' t2 m2 r' b ofs v v' t3 m3,
+  | eval_assign: forall c e m l r ty t1 m1 l' t2 m2 r' b ofs bf v v1 v' t3 m3,
       eval_expr c e m LV l t1 m1 l' -> eval_expr c e m1 RV r t2 m2 r' ->
-      eval_simple_lvalue ge e c m2 l' b ofs ->
+      eval_simple_lvalue ge e c m2 l' b ofs bf ->
       eval_simple_rvalue ge e c m2 r' v ->
-      sem_cast v (typeof r) (typeof l) m2 = Some v' ->
-      assign_loc ge c (typeof l) m2 b ofs v' t3 m3 ->
+      sem_cast v (typeof r) (typeof l) m2 = Some v1 ->
+      assign_loc ge c (typeof l) m2 b ofs bf v1 t3 m3 v' ->
       ty = typeof l ->
       eval_expr c e m RV (Eassign l r ty) (t1**t2**t3) m3 (Eval v' ty)
-  | eval_assignop: forall c e m op l r tyres ty t1 m1 l' t2 m2 r' b ofs
-                          v1 v2 v3 v4 t3 t4 m3,
+  | eval_assignop: forall c e m op l r tyres ty t1 m1 l' t2 m2 r' b ofs bf
+                          v1 v2 v3 v4 v' t3 t4 m3,
       eval_expr c e m LV l t1 m1 l' -> eval_expr c e m1 RV r t2 m2 r' ->
-      eval_simple_lvalue ge e c m2 l' b ofs ->
-      deref_loc ge c (typeof l) m2 b ofs t3 v1 ->
+      eval_simple_lvalue ge e c m2 l' b ofs bf ->
+      deref_loc ge c (typeof l) m2 b ofs bf t3 v1 ->
       eval_simple_rvalue ge e c m2 r' v2 ->
       sem_binary_operation ge op v1 (typeof l) v2 (typeof r) m2 = Some v3 ->
       sem_cast v3 tyres (typeof l) m2 = Some v4 ->
-      assign_loc ge c (typeof l) m2 b ofs v4 t4 m3 ->
+      assign_loc ge c (typeof l) m2 b ofs bf v4 t4 m3 v' ->
       ty = typeof l ->
-      eval_expr c e m RV (Eassignop op l r tyres ty) (t1**t2**t3**t4) m3 (Eval v4 ty)
-  | eval_postincr: forall c e m id l ty t1 m1 l' b ofs v1 v2 v3 m2 t2 t3,
+      eval_expr c e m RV (Eassignop op l r tyres ty) (t1**t2**t3**t4) m3 (Eval v' ty)
+  | eval_postincr: forall c e m id l ty t1 m1 l' b ofs bf v1 v2 v3 v' m2 t2 t3,
       eval_expr c e m LV l t1 m1 l' ->
-      eval_simple_lvalue ge e c m1 l' b ofs ->
-      deref_loc ge c ty m1 b ofs t2 v1 ->
+      eval_simple_lvalue ge e c m1 l' b ofs bf ->
+      deref_loc ge c ty m1 b ofs bf t2 v1 ->
       sem_incrdecr ge id v1 ty m1 = Some v2 ->
       sem_cast v2 (incrdecr_type ty) ty m1 = Some v3 ->
-      assign_loc ge c ty m1 b ofs v3 t3 m2 ->
+      assign_loc ge c ty m1 b ofs bf v3 t3 m2 v' ->
       ty = typeof l ->
       eval_expr c e m RV (Epostincr id l ty) (t1**t2**t3) m2 (Eval v1 ty)
   | eval_comma: forall c e m r1 r2 ty t1 m1 r1' v1 t2 m2 r2',
@@ -2349,7 +2353,7 @@ Proof.
   simpl; intuition.
   eapply star_trans. eexact D.
   eapply star_right. eexact G.
-  left. eapply step_assign; eauto. congruence. rewrite B; eauto. congruence.
+  left. eapply step_assign; eauto. rewrite B, F; eassumption. rewrite B; eauto. congruence.
   reflexivity. traceEq.
 (* assignop *)
   exploit (H0 (fun x => C(Eassignop op x r tyres ty))); eauto.
@@ -2360,7 +2364,7 @@ Proof.
   eapply star_trans. eexact D.
   eapply star_right. eexact G.
   left. eapply step_assignop; eauto.
-  rewrite B; eauto. rewrite B; rewrite F; eauto. congruence. rewrite B; eauto. congruence.
+  rewrite B; eauto. rewrite B; rewrite F; eauto. rewrite B; eassumption. rewrite B; eauto. congruence.
   reflexivity. traceEq.
 (* postincr *)
   exploit (H0 (fun x => C(Epostincr id x ty))); eauto.
@@ -2702,7 +2706,7 @@ Proof (proj2 (proj2 (proj2 (proj2 bigstep_to_steps)))).
 
 Fixpoint esize (a: expr) : nat :=
   match a with
-  | Eloc _ _ _ => 1%nat
+  | Eloc _ _ _ _ => 1%nat
   | Evar _ _ => 1%nat
   | Ederef r1 _ => S(esize r1)
   | Efield l1 _ _ => S(esize l1)
@@ -2785,7 +2789,7 @@ Proof.
   cofix COEL.
   intros. inv H.
 (* cons left *)
-  eapply forever_N_star with (a2 := (esize a0)). apply star_refl. simpl; omega.
+  eapply forever_N_star with (a2 := (esize a0)). apply star_refl. simpl; lia.
   eapply COE with (C := fun x => C(Ecall a1 (exprlist_app al (Econs x al0)) ty)); eauto.
   eapply leftcontext_compose; eauto. constructor. auto.
   apply exprlist_app_leftcontext; auto. traceEq.
@@ -2796,7 +2800,7 @@ Proof.
   eapply leftcontext_compose; eauto. repeat constructor. auto.
   apply exprlist_app_leftcontext; auto.
   eapply forever_N_star with (a2 := (esizelist al0)).
-  eexact R. simpl; omega.
+  eexact R. simpl; lia.
   change (Econs a1' al0) with (exprlist_app (Econs a1' Enil) al0).
   rewrite <- exprlist_app_assoc.
   eapply COEL; eauto.
@@ -2805,42 +2809,42 @@ Proof.
 
   intros. inv H.
 (* field *)
-  eapply forever_N_star with (a2 := (esize a0)). apply star_refl. simpl; omega.
+  eapply forever_N_star with (a2 := (esize a0)). apply star_refl. simpl; lia.
   eapply COE with (C := fun x => C(Efield x f0 ty)); eauto.
   eapply leftcontext_compose; eauto. repeat constructor. traceEq.
 (* valof *)
-  eapply forever_N_star with (a2 := (esize a0)). apply star_refl. simpl; omega.
+  eapply forever_N_star with (a2 := (esize a0)). apply star_refl. simpl; lia.
   eapply COE with (C := fun x => C(Evalof x ty)); eauto.
   eapply leftcontext_compose; eauto. repeat constructor. traceEq.
 (* deref *)
-  eapply forever_N_star with (a2 := (esize a0)). apply star_refl. simpl; omega.
+  eapply forever_N_star with (a2 := (esize a0)). apply star_refl. simpl; lia.
   eapply COE with (C := fun x => C(Ederef x ty)); eauto.
   eapply leftcontext_compose; eauto. repeat constructor. traceEq.
 (* addrof *)
-  eapply forever_N_star with (a2 := (esize a0)). apply star_refl. simpl; omega.
+  eapply forever_N_star with (a2 := (esize a0)). apply star_refl. simpl; lia.
   eapply COE with (C := fun x => C(Eaddrof x ty)); eauto.
   eapply leftcontext_compose; eauto. repeat constructor. traceEq.
 (* unop *)
-  eapply forever_N_star with (a2 := (esize a0)). apply star_refl. simpl; omega.
+  eapply forever_N_star with (a2 := (esize a0)). apply star_refl. simpl; lia.
   eapply COE with (C := fun x => C(Eunop op x ty)); eauto.
   eapply leftcontext_compose; eauto. repeat constructor. traceEq.
 (* binop left *)
-  eapply forever_N_star with (a2 := (esize a1)). apply star_refl. simpl; omega.
+  eapply forever_N_star with (a2 := (esize a1)). apply star_refl. simpl; lia.
   eapply COE with (C := fun x => C(Ebinop op x a2 ty)); eauto.
   eapply leftcontext_compose; eauto. repeat constructor. traceEq.
 (* binop right *)
   destruct (eval_expr_to_steps _ _ _ _ _ _ _ _ H1 (fun x => C(Ebinop op x a2 ty)) f k)
   as [P [Q R]]; eauto.
   eapply leftcontext_compose; eauto. repeat constructor.
-  eapply forever_N_star with (a2 := (esize a2)). eexact R. simpl; omega.
+  eapply forever_N_star with (a2 := (esize a2)). eexact R. simpl; lia.
   eapply COE with (C := fun x => C(Ebinop op a1' x ty)); eauto.
   eapply leftcontext_compose; eauto. repeat constructor. auto. traceEq.
 (* cast *)
-  eapply forever_N_star with (a2 := (esize a0)). apply star_refl. simpl; omega.
+  eapply forever_N_star with (a2 := (esize a0)). apply star_refl. simpl; lia.
   eapply COE with (C := fun x => C(Ecast x ty)); eauto.
   eapply leftcontext_compose; eauto. repeat constructor. traceEq.
 (* seqand left *)
-  eapply forever_N_star with (a2 := (esize a1)). apply star_refl. simpl; omega.
+  eapply forever_N_star with (a2 := (esize a1)). apply star_refl. simpl; lia.
   eapply COE with (C := fun x => C(Eseqand x a2 ty)); eauto.
   eapply leftcontext_compose; eauto. repeat constructor. traceEq.
 (* seqand 2 *)
@@ -2853,7 +2857,7 @@ Proof.
   eapply COE with (C := fun x => (C (Eparen x type_bool ty))); eauto.
   eapply leftcontext_compose; eauto. repeat constructor. traceEq.
 (* seqor left *)
-  eapply forever_N_star with (a2 := (esize a1)). apply star_refl. simpl; omega.
+  eapply forever_N_star with (a2 := (esize a1)). apply star_refl. simpl; lia.
   eapply COE with (C := fun x => C(Eseqor x a2 ty)); eauto.
   eapply leftcontext_compose; eauto. repeat constructor. traceEq.
 (* seqor 2 *)
@@ -2866,7 +2870,7 @@ Proof.
   eapply COE with (C := fun x => (C (Eparen x type_bool ty))); eauto.
   eapply leftcontext_compose; eauto. repeat constructor. traceEq.
 (* condition top *)
-  eapply forever_N_star with (a2 := (esize a1)). apply star_refl. simpl; omega.
+  eapply forever_N_star with (a2 := (esize a1)). apply star_refl. simpl; lia.
   eapply COE with (C := fun x => C(Econdition x a2 a3 ty)); eauto.
   eapply leftcontext_compose; eauto. repeat constructor. traceEq.
 (* condition *)
@@ -2879,33 +2883,33 @@ Proof.
   eapply COE with (C := fun x => (C (Eparen x ty ty))); eauto.
   eapply leftcontext_compose; eauto. repeat constructor. traceEq.
 (* assign left *)
-  eapply forever_N_star with (a2 := (esize a1)). apply star_refl. simpl; omega.
+  eapply forever_N_star with (a2 := (esize a1)). apply star_refl. simpl; lia.
   eapply COE with (C := fun x => C(Eassign x a2 ty)); eauto.
   eapply leftcontext_compose; eauto. repeat constructor. traceEq.
 (* assign right *)
   destruct (eval_expr_to_steps _ _ _ _ _ _ _ _ H1 (fun x => C(Eassign x a2 ty)) f k)
   as [P [Q R]]; eauto.
   eapply leftcontext_compose; eauto. repeat constructor.
-  eapply forever_N_star with (a2 := (esize a2)). eexact R. simpl; omega.
+  eapply forever_N_star with (a2 := (esize a2)). eexact R. simpl; lia.
   eapply COE with (C := fun x => C(Eassign a1' x ty)); eauto.
   eapply leftcontext_compose; eauto. repeat constructor. auto. traceEq.
 (* assignop left *)
-  eapply forever_N_star with (a2 := (esize a1)). apply star_refl. simpl; omega.
+  eapply forever_N_star with (a2 := (esize a1)). apply star_refl. simpl; lia.
   eapply COE with (C := fun x => C(Eassignop op x a2 tyres ty)); eauto.
   eapply leftcontext_compose; eauto. repeat constructor. traceEq.
 (* assignop right *)
   destruct (eval_expr_to_steps _ _ _ _ _ _ _ _ H1 (fun x => C(Eassignop op x a2 tyres ty)) f k)
   as [P [Q R]]; eauto.
   eapply leftcontext_compose; eauto. repeat constructor.
-  eapply forever_N_star with (a2 := (esize a2)). eexact R. simpl; omega.
+  eapply forever_N_star with (a2 := (esize a2)). eexact R. simpl; lia.
   eapply COE with (C := fun x => C(Eassignop op a1' x tyres ty)); eauto.
   eapply leftcontext_compose; eauto. repeat constructor. auto. traceEq.
 (* postincr *)
-  eapply forever_N_star with (a2 := (esize a0)). apply star_refl. simpl; omega.
+  eapply forever_N_star with (a2 := (esize a0)). apply star_refl. simpl; lia.
   eapply COE with (C := fun x => C(Epostincr id x ty)); eauto.
   eapply leftcontext_compose; eauto. repeat constructor. traceEq.
 (* comma left *)
-  eapply forever_N_star with (a2 := (esize a1)). apply star_refl. simpl; omega.
+  eapply forever_N_star with (a2 := (esize a1)). apply star_refl. simpl; lia.
   eapply COE with (C := fun x => C(Ecomma x a2 ty)); eauto.
   eapply leftcontext_compose; eauto. repeat constructor. traceEq.
 (* comma right *)
@@ -2916,14 +2920,14 @@ Proof.
   left; eapply step_comma; eauto. reflexivity.
   eapply COE with (C := C); eauto. traceEq.
 (* call left *)
-  eapply forever_N_star with (a2 := (esize a1)). apply star_refl. simpl; omega.
+  eapply forever_N_star with (a2 := (esize a1)). apply star_refl. simpl; lia.
   eapply COE with (C := fun x => C(Ecall x a2 ty)); eauto.
   eapply leftcontext_compose; eauto. repeat constructor. traceEq.
 (* call right *)
   destruct (eval_expr_to_steps _ _ _ _ _ _ _ _ H1 (fun x => C(Ecall x a2 ty)) f k)
   as [P [Q R]]; eauto.
   eapply leftcontext_compose; eauto. repeat constructor.
-  eapply forever_N_star with (a2 := (esizelist a2)). eexact R. simpl; omega.
+  eapply forever_N_star with (a2 := (esizelist a2)). eexact R. simpl; lia.
   eapply COEL with (al := Enil); eauto. traceEq.
 (* call *)
   destruct (eval_expr_to_steps _ _ _ _ _ _ _ _ H1 (fun x => C(Ecall x rargs ty)) f k)

@@ -575,7 +575,7 @@ Proof.
   unfold select_reg_l; intros. destruct H.
   red in H. congruence.
   rewrite Pos.leb_le in *. red in H. destruct H as [A | [A B]].
-  red in A. zify; omega.
+  red in A. zify; lia.
   rewrite <- A; auto.
 Qed.
 
@@ -587,7 +587,7 @@ Proof.
   unfold select_reg_h; intros. destruct H.
   red in H. congruence.
   rewrite Pos.leb_le in *. red in H. destruct H as [A | [A B]].
-  red in A. zify; omega.
+  red in A. zify; lia.
   rewrite A; auto.
 Qed.
 
@@ -595,7 +595,7 @@ Remark select_reg_charact:
   forall r q, select_reg_l r q = true /\ select_reg_h r q = true <-> ereg q = r.
 Proof.
   unfold select_reg_l, select_reg_h; intros; split.
-  rewrite ! Pos.leb_le. unfold reg; zify; omega.
+  rewrite ! Pos.leb_le. unfold reg; zify; lia.
   intros. rewrite H. rewrite ! Pos.leb_refl; auto.
 Qed.
 
@@ -2468,7 +2468,8 @@ Proof.
           eapply G in Hx.
           destruct x; inv Hx'.
           destruct rhi0 as [| []]; destruct rlo0 as [| []];
-            destruct Hx as [[] []]; simpl; (split; [| split]); try congruence. }
+            destruct Hx as [[] []]; simpl; (split; [| split]); try congruence.
+      }
       clear -G. revert G.
       generalize (loc_parameters sg).
       induction l; intros.
@@ -2524,7 +2525,8 @@ Proof.
           eapply G in Hx.
           destruct x; inv Hx'.
           destruct rhi0 as [| []]; destruct rlo0 as [| []];
-            destruct Hx as [[] []]; simpl; (split; [| split]); try congruence. }
+            destruct Hx as [[] []]; simpl; (split; [| split]); try congruence.
+      }
       clear -G. revert G.
       generalize (loc_parameters sg).
       induction l; intros.

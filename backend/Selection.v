@@ -248,9 +248,15 @@ Function sel_known_builtin (bf: builtin_function) (args: exprlist) :=
       Some (sel_select ty a1 a2 a3)
   | BI_standard BI_fabs, a1 ::: Enil =>
       Some (SelectOp.absf a1)
+  | BI_standard BI_fabsf, a1 ::: Enil =>
+      Some (SelectOp.absfs a1)
   | _, _ =>
       None
   end.
+
+(** A CminorSel statement that does nothing, like [Sskip], but reduces. *)
+
+Definition Sno_op := Sseq Sskip Sskip.
 
 (** Builtin functions in general *)
 
@@ -261,17 +267,22 @@ Definition sel_builtin_default (optid: option ident) (ef: external_function)
 
 Definition sel_builtin (optid: option ident) (ef: external_function)
                                (args: list Cminor.expr) :=
-  match optid, ef with
-  | Some id, EF_builtin name sg =>
+  match ef with
+  | EF_builtin name sg =>
       match lookup_builtin_function name sg with
       | Some bf =>
-          match sel_known_builtin bf (sel_exprlist args) with
-          | Some a => Sassign id a
-          | None => sel_builtin_default optid ef args
+          match optid with
+          | Some id =>
+              match sel_known_builtin bf (sel_exprlist args) with
+              | Some a => Sassign id a
+              | None => sel_builtin_default optid ef args
+              end
+          | None =>
+              Sno_op   (**r builtins with semantics are pure *)
           end
       | None => sel_builtin_default optid ef args
       end
-  | _, _ =>
+  | _ =>
       sel_builtin_default optid ef args
   end.
 
@@ -334,12 +345,17 @@ Inductive stmt_class : Type :=
   | SCassign (id: ident) (a: Cminor.expr)
   | SCother.
 
-Function classify_stmt (s: Cminor.stmt) : stmt_class :=
+Fixpoint classify_stmt (s: Cminor.stmt) : stmt_class :=
   match s with
   | Cminor.Sskip => SCskip
   | Cminor.Sassign id a => SCassign id a
-  | Cminor.Sseq Cminor.Sskip s => classify_stmt s
-  | Cminor.Sseq s Cminor.Sskip => classify_stmt s
+  | Cminor.Sbuiltin None (EF_debug _ _ _) _ => SCskip
+  | Cminor.Sseq s1 s2 =>
+      match classify_stmt s1, classify_stmt s2 with
+      | SCskip, c2 => c2
+      | c1, SCskip => c1
+      | _, _ => SCother
+      end
   | _ => SCother
   end.
 

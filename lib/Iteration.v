@@ -6,10 +6,11 @@
 (*                                                                     *)
 (*  Copyright Institut National de Recherche en Informatique et en     *)
 (*  Automatique.  All rights reserved.  This file is distributed       *)
-(*  under the terms of the GNU General Public License as published by  *)
-(*  the Free Software Foundation, either version 2 of the License, or  *)
-(*  (at your option) any later version.  This file is also distributed *)
-(*  under the terms of the INRIA Non-Commercial License Agreement.     *)
+(*  under the terms of the GNU Lesser General Public License as        *)
+(*  published by the Free Software Foundation, either version 2.1 of   *)
+(*  the License, or  (at your option) any later version.               *)
+(*  This file is also distributed under the terms of the               *)
+(*  INRIA Non-Commercial License Agreement.                            *)
 (*                                                                     *)
 (* *********************************************************************)
 
@@ -18,6 +19,8 @@
 Require Import Axioms.
 Require Import Coqlib.
 Require Import Wfsimpl.
+
+Set Asymmetric Patterns.
 
 (** This modules defines several Coq encodings of a general "while" loop.
   The loop is presented in functional style as the iteration
@@ -237,8 +240,8 @@ Lemma iter_monot:
 Proof.
   induction p; intros.
   simpl. red; intros; red; auto.
-  destruct q. elimtype False; omega.
-  simpl. apply F_iter_monot. apply IHp. omega.
+  destruct q. elimtype False; lia.
+  simpl. apply F_iter_monot. apply IHp. lia.
 Qed.
 
 Lemma iter_either:

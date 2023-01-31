@@ -47,17 +47,28 @@ let expand_storeptr (src: ireg) (base: iregsp) ofs =
 (* Determine the number of int registers, FP registers, and stack locations
    used to pass the fixed parameters. *)
 
+let align n a = (n + a - 1) land (-a)
+
+let typesize = function
+  | Tint | Tany32 | Tsingle -> 4
+  | Tlong | Tany64 | Tfloat -> 8
+
+let reserve_stack stk ty =
+  match Archi.abi with
+  | Archi.AAPCS64 -> stk + 8
+  | Archi.Apple -> align stk (typesize ty) + typesize ty
+
 let rec next_arg_locations ir fr stk = function
   | [] ->
       (ir, fr, stk)
-  | (Tint | Tlong | Tany32 | Tany64) :: l ->
+  | (Tint | Tlong | Tany32 | Tany64 as ty) :: l ->
       if ir < 8
       then next_arg_locations (ir + 1) fr stk l
-      else next_arg_locations ir fr (stk + 8) l
-  | (Tfloat | Tsingle) :: l ->
+      else next_arg_locations ir fr (reserve_stack stk ty) l
+  | (Tfloat | Tsingle as ty) :: l ->
       if fr < 8
       then next_arg_locations ir (fr + 1) stk l
-      else next_arg_locations ir fr (stk + 8) l
+      else next_arg_locations ir fr (reserve_stack stk ty) l
 
 (* Allocate memory on the stack and use it to save the registers
    used for parameter passing.  As an optimization, do not save
@@ -86,6 +97,8 @@ let save_parameter_registers ir fr =
     emit (Pstrd(float_param_regs.(i), ADimm(XSP, Z.of_uint pos)))
   done
 
+let current_function_stacksize = ref 0L
+
 (* Initialize a va_list as per va_start.
    Register r points to the following struct:
 
@@ -98,11 +111,7 @@ let save_parameter_registers ir fr =
    }
 *)
 
-let current_function_stacksize = ref 0L
-
-let expand_builtin_va_start r =
-  if not (is_current_function_variadic ()) then
-    invalid_arg "Fatal error: va_start used in non-vararg function";
+let expand_builtin_va_start_aapcs64 r =
   let (ir, fr, stk) =
     next_arg_locations 0 0 0 (get_current_function_args ()) in
   let stack_ofs = Int64.(add !current_function_stacksize (of_int stk))
@@ -126,6 +135,25 @@ let expand_builtin_va_start r =
   (* va->__vr_offs = vr_offs *)
   expand_loadimm32 X16 (coqint_of_camlint (Int32.of_int vr_offs));
   emit (Pstrw(X16, ADimm(RR1 r, coqint_of_camlint64 28L)))
+
+(* In macOS, va_list is just a pointer (char * ) and all variadic arguments
+   are passed on the stack. *)
+
+let expand_builtin_va_start_apple r =
+  let (ir, fr, stk) =
+    next_arg_locations 0 0 0 (get_current_function_args ()) in
+  let stk = align stk 8 in
+  let stack_ofs = Int64.(add !current_function_stacksize (of_int stk)) in
+  (* *va = sp + stack_ofs *)
+  expand_addimm64 (RR1 X16) XSP (coqint_of_camlint64 stack_ofs);
+  emit (Pstrx(X16, ADimm(RR1 r, coqint_of_camlint64 0L)))
+
+let expand_builtin_va_start r =
+  if not (is_current_function_variadic ()) then
+    invalid_arg "Fatal error: va_start used in non-vararg function";
+  match Archi.abi with
+  | Archi.AAPCS64 -> expand_builtin_va_start_aapcs64 r
+  | Archi.Apple   -> expand_builtin_va_start_apple r
 
 (* Handling of annotations *)
 
@@ -157,14 +185,15 @@ let memcpy_small_arg sz arg tmp =
   | BA_addrstack ofs ->
       if offset_in_range ofs
       && offset_in_range (Ptrofs.add ofs (Ptrofs.repr (Z.of_uint sz)))
+      && Int64.rem (Z.to_int64 ofs) 8L = 0L
       then (XSP, ofs)
       else begin expand_addimm64 (RR1 tmp) XSP ofs; (RR1 tmp, _0) end
   | _ ->
       assert false
 
 let expand_builtin_memcpy_small sz al src dst =
-  let (tsrc, tdst) =
-    if dst <> BA (IR X17) then (X17, X29) else (X29, X17) in
+  let tsrc = if dst <> BA (IR X17) then X17 else X15 in
+  let tdst = if src <> BA (IR X15) then X15 else X17 in
   let (rsrc, osrc) = memcpy_small_arg sz src tsrc in
   let (rdst, odst) = memcpy_small_arg sz dst tdst in
   let rec copy osrc odst sz =
@@ -204,29 +233,29 @@ let memcpy_big_arg arg tmp =
 let expand_builtin_memcpy_big sz al src dst =
   assert (sz >= 16);
   memcpy_big_arg src X30;
-  memcpy_big_arg dst X29;
+  memcpy_big_arg dst X14;
   let lbl = new_label () in
   expand_loadimm32 X15 (Z.of_uint (sz / 16));
   emit (Plabel lbl);
   emit (Pldp(X16, X17, ADpostincr(RR1 X30, _16)));
-  emit (Pstp(X16, X17, ADpostincr(RR1 X29, _16)));
+  emit (Pstp(X16, X17, ADpostincr(RR1 X14, _16)));
   emit (Psubimm(W, RR1 X15, RR1 X15, _1));
   emit (Pcbnz(W, X15, lbl));
   if sz mod 16 >= 8 then begin
     emit (Pldrx(X16, ADpostincr(RR1 X30, _8)));
-    emit (Pstrx(X16, ADpostincr(RR1 X29, _8)))
+    emit (Pstrx(X16, ADpostincr(RR1 X14, _8)))
   end;
   if sz mod 8 >= 4 then begin
     emit (Pldrw(X16, ADpostincr(RR1 X30, _4)));
-    emit (Pstrw(X16, ADpostincr(RR1 X29, _4)))
+    emit (Pstrw(X16, ADpostincr(RR1 X14, _4)))
   end;
   if sz mod 4 >= 2 then begin
     emit (Pldrh(W, X16, ADpostincr(RR1 X30, _2)));
-    emit (Pstrh(X16, ADpostincr(RR1 X29, _2)))
+    emit (Pstrh(X16, ADpostincr(RR1 X14, _2)))
   end;
   if sz mod 2 >= 1 then begin
     emit (Pldrb(W, X16, ADpostincr(RR1 X30, _1)));
-    emit (Pstrb(X16, ADpostincr(RR1 X29, _1)))
+    emit (Pstrb(X16, ADpostincr(RR1 X14, _1)))
   end
 
 let expand_builtin_memcpy  sz al args =
@@ -327,8 +356,12 @@ let expand_builtin_inline name args res =
   (* Synchronization *)
   | "__builtin_membar", [], _ ->
      ()
+  (* No operation *)
   | "__builtin_nop", [], _ ->
      emit Pnop
+  (* Optimization hint *)
+  | "__builtin_unreachable", [], _ ->
+     ()
   (* Byte swap *)
   | ("__builtin_bswap" | "__builtin_bswap32"), [BA(IR a1)], BR(IR res) ->
      emit (Prev(W, res, a1))
@@ -337,7 +370,7 @@ let expand_builtin_inline name args res =
   | "__builtin_bswap16", [BA(IR a1)], BR(IR res) ->
      emit (Prev16(W, res, a1));
      emit (Pandimm(W, res, RR0 res, Z.of_uint 0xFFFF))
-  (* Count leading zeros and leading sign bits *)
+  (* Count leading zeros, leading sign bits, trailing zeros *)
   | "__builtin_clz",  [BA(IR a1)], BR(IR res) ->
      emit (Pclz(W, res, a1))
   | ("__builtin_clzl" | "__builtin_clzll"),  [BA(IR a1)], BR(IR res) ->
@@ -346,10 +379,14 @@ let expand_builtin_inline name args res =
      emit (Pcls(W, res, a1))
   | ("__builtin_clsl" | "__builtin_clsll"),  [BA(IR a1)], BR(IR res) ->
      emit (Pcls(X, res, a1))
+  | "__builtin_ctz",  [BA(IR a1)], BR(IR res) ->
+     emit (Prbit(W, res, a1));
+     emit (Pclz(W, res, res))
+  | ("__builtin_ctzl" | "__builtin_ctzll"),  [BA(IR a1)], BR(IR res) ->
+     emit (Prbit(X, res, a1));
+     emit (Pclz(X, res, res))
  (* Float arithmetic *)
-  | "__builtin_fabs",  [BA(FR a1)], BR(FR res) ->
-     emit (Pfabs(D, res, a1))
-  | "__builtin_fsqrt",  [BA(FR a1)], BR(FR res) ->
+  | ("__builtin_fsqrt" | "__builtin_sqrt"),  [BA(FR a1)], BR(FR res) ->
      emit (Pfsqrt(D, res, a1))
   | "__builtin_fmadd", [BA(FR a1); BA(FR a2); BA(FR a3)], BR(FR res) ->
       emit (Pfmadd(D, res, a1, a2, a3))
@@ -359,6 +396,10 @@ let expand_builtin_inline name args res =
       emit (Pfnmadd(D, res, a1, a2, a3))
   | "__builtin_fnmsub", [BA(FR a1); BA(FR a2); BA(FR a3)], BR(FR res) ->
       emit (Pfnmsub(D, res, a1, a2, a3))
+  | "__builtin_fmax", [BA (FR a1); BA (FR a2)], BR (FR res) ->
+      emit (Pfmax (D, res, a1, a2))
+  | "__builtin_fmin", [BA (FR a1); BA (FR a2)], BR (FR res) ->
+      emit (Pfmin (D, res, a1, a2))
   (* Vararg *)
   | "__builtin_va_start", [BA(IR a)], _ ->
       expand_builtin_va_start a
@@ -371,8 +412,8 @@ let expand_builtin_inline name args res =
 let expand_instruction instr =
   match instr with
   | Pallocframe (sz, ofs) ->
-      emit (Pmov (RR1 X29, XSP));
-      if is_current_function_variadic() then begin
+      emit (Pmov (RR1 X15, XSP));
+      if is_current_function_variadic() && Archi.abi = Archi.AAPCS64 then begin
         let (ir, fr, _) =
           next_arg_locations 0 0 0 (get_current_function_args ()) in
         save_parameter_registers ir fr;
@@ -382,7 +423,7 @@ let expand_instruction instr =
         current_function_stacksize := Z.to_int64 sz
       end;
       expand_addimm64 XSP XSP (Ptrofs.repr (Z.neg sz));
-      expand_storeptr X29 XSP ofs
+      expand_storeptr X15 XSP ofs
   | Pfreeframe (sz, ofs) ->
       expand_addimm64 XSP XSP (coqint_of_camlint64 !current_function_stacksize)
   | Pcvtx2w rd ->

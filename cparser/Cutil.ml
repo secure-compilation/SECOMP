@@ -6,10 +6,11 @@
 (*                                                                     *)
 (*  Copyright Institut National de Recherche en Informatique et en     *)
 (*  Automatique.  All rights reserved.  This file is distributed       *)
-(*  under the terms of the GNU General Public License as published by  *)
-(*  the Free Software Foundation, either version 2 of the License, or  *)
-(*  (at your option) any later version.  This file is also distributed *)
-(*  under the terms of the INRIA Non-Commercial License Agreement.     *)
+(*  under the terms of the GNU Lesser General Public License as        *)
+(*  published by the Free Software Foundation, either version 2.1 of   *)
+(*  the License, or  (at your option) any later version.               *)
+(*  This file is also distributed under the terms of the               *)
+(*  INRIA Non-Commercial License Agreement.                            *)
 (*                                                                     *)
 (* *********************************************************************)
 
@@ -319,6 +320,8 @@ let packing_parameters al =
 
 (* Type compatibility *)
 
+let enum_ikind = IInt
+
 exception Incompat
 
 type attr_handling =
@@ -399,8 +402,8 @@ let combine_types mode env t1 t2 =
         TUnion(comp_base s1 s2, comp_attr m a1 a2)
     | TEnum(s1, a1), TEnum(s2, a2) ->
         TEnum(comp_base s1 s2, comp_attr m a1 a2)
-    | TEnum(s,a1), TInt(enum_ikind,a2)
-    | TInt(enum_ikind,a2), TEnum (s,a1) ->
+    | TEnum(s,a1), TInt(ik,a2)
+    | TInt(ik,a2), TEnum (s,a1) when ik = enum_ikind ->
         TEnum(s,comp_attr m a1 a2)
     | _, _ ->
         raise Incompat
@@ -448,34 +451,6 @@ let rec equal_types env t1 t2 =
 let compatible_types mode env t1 t2 =
   match combine_types mode env t1 t2 with Some _ -> true | None -> false
 
-(* Naive placement algorithm for bit fields, might not match that
-   of the compiler. *)
-
-let pack_bitfields ml =
-  let rec pack nbits = function
-  | [] ->
-      (nbits, [])
-  | m :: ms as ml ->
-      match m.fld_bitfield with
-      | None -> (nbits, ml)
-      | Some n ->
-          if n = 0 then
-            (nbits, ms) (* bit width 0 means end of pack *)
-          else if nbits + n > 8 * !config.sizeof_int then
-            (nbits, ml) (* doesn't fit in current word *)
-          else
-            pack (nbits + n) ms (* add to current word *)
-  in
-  let (nbits, ml') = pack 0 ml in
-  let (sz, al) =
-    (* A lone bitfield of width 0 consumes no space and aligns to 1 *)
-    if nbits = 0 then (0, 1) else
-    if nbits <= 8 then (1, 1) else
-    if nbits <= 16 then (2, 2) else
-    if nbits <= 32 then (4, 4) else
-    if nbits <= 64 then (8, 8) else assert false in
-  (sz, al, ml')
-
 (* Natural alignment, in bytes *)
 
 let alignof_ikind = function
@@ -491,8 +466,6 @@ let alignof_fkind = function
   | FLongDouble -> !config.alignof_longdouble
 
 (* Return natural alignment of given type, or None if the type is incomplete *)
-
-let enum_ikind = IInt
 
 let rec alignof env t =
   let a = alignas_attribute (attributes_of_type env t) in
@@ -519,15 +492,13 @@ let rec alignof env t =
 let alignof_struct_union env members =
   let rec align_rec al = function
   | [] -> Some al
-  | m :: rem as ml ->
-      if m.fld_bitfield = None then begin
+  | m :: rem ->
+      if m.fld_name = "" then
+        align_rec al rem
+      else
         match alignof env m.fld_typ with
         | None -> None
         | Some a -> align_rec (max a al) rem
-      end else begin
-        let (s, a, ml') = pack_bitfields ml in
-        align_rec (max a al) ml'
-      end
   in align_rec 1 members
 
 let align x boundary =
@@ -604,43 +575,63 @@ let sizeof_union env members =
    Bitfields are taken into account for the size and offset computations
    but not given an offset.
    Not done here but in composite_info_def: rounding size to alignment. *)
+
 let sizeof_layout_struct env members ma =
-  let align_offset ofs a =
-    align ofs (if ma > 0 && a > ma then ma else a) in
-  let rec sizeof_rec ofs accu = function
+
+  let align_bit_offset pos a =
+    align pos (8 * (if ma > 0 && a > ma then ma else a)) in
+
+  let record_field name pos =
+    assert (pos mod 8 = 0);
+    (name, pos / 8) in
+
+  (* pos is the current position in bits *)
+  let rec sizeof_rec pos accu = function
   | [] ->
-      Some (ofs, accu)
+      Some (pos, accu)
   | [ { fld_typ = TArray(_, None, _) } as m ] ->
       (* C99: ty[] allowed as last field *)
       begin match alignof env m.fld_typ with
       | Some a ->
-          let ofs = align_offset ofs a in
-          Some (ofs, (m.fld_name, ofs) :: accu)
+          let pos = align_bit_offset pos a in
+          Some (pos, record_field m.fld_name pos :: accu)
       | None -> None
       end
-  | m :: rem as ml ->
-      if m.fld_bitfield = None then begin
-        match alignof env m.fld_typ, sizeof env m.fld_typ with
-        | Some a, Some s ->
-            let ofs = align_offset ofs a in
-            sizeof_rec (ofs + s) ((m.fld_name, ofs) :: accu) rem
-        | _, _ -> None
-      end else begin
-        let (s, a, ml') = pack_bitfields ml in
-        sizeof_rec (align_offset ofs a + s) accu ml'
+  | m :: rem ->
+      begin match alignof env m.fld_typ, sizeof env m.fld_typ with
+      | Some a, Some s ->
+          begin match m.fld_bitfield with
+          | None ->
+              let pos = align_bit_offset pos a in
+              sizeof_rec (pos + s * 8)
+                         (record_field m.fld_name pos :: accu)
+                         rem
+          | Some width ->
+              (* curr = beginning of storage unit, in bits
+                 next = one past end of storage unit, in bits *)
+              let curr = pos / (a * 8) * (a * 8) in
+              let next = curr + s * 8 in
+              let pos' =
+                if width <= 0 then align pos (a * 8)
+                else if pos + width <= next then pos + width
+                else next + width in
+              sizeof_rec pos' accu rem
+          end
+      | _, _ ->
+          None
       end
   in sizeof_rec 0 [] members
 
 let sizeof_struct env members ma =
   match sizeof_layout_struct env members ma with
   | None -> None
-  | Some(sz, offsets) -> Some sz
+  | Some(bitsize, offsets) -> Some ((bitsize + 7) / 8)
 
 (* Compute the offsets of all non-bitfield members of a struct. *)
 let struct_layout env attrs members =
   let (ma, _, _) = packing_parameters attrs in
   match sizeof_layout_struct env members ma with
-  | Some(sz, offsets) -> offsets
+  | Some(bitsize, offsets) -> offsets
   | None -> []
 
 (* Compute the offset of a struct member *)
@@ -1033,9 +1024,9 @@ let type_of_constant = function
   | CStr s ->
     let size = Int64.of_int (String.length s + 1) in
     TArray(TInt(IChar,[]), Some size, [])
-  | CWStr s ->
+  | CWStr(s, ik) ->
     let size = Int64.of_int (List.length s + 1) in
-    TArray(TInt(wchar_ikind(), []), Some size, [])
+    TArray(TInt(ik, []), Some size, [])
   | CEnum(_, _) -> TInt(IInt, [])
 
 (* Check that a C expression is a lvalue *)
@@ -1272,11 +1263,16 @@ let rec default_init env ty =
       let ci = Env.find_struct env id in
       Init_struct(id, default_init_fields ci.ci_members)
   | TUnion(id, _) ->
-      let ci = Env.find_union env id in
-      begin match ci.ci_members with
+    let ci = Env.find_union env id in
+    let rec default_init_field = function
       | [] -> raise No_default_init
-      | fld :: _ -> Init_union(id, fld, default_init env fld.fld_typ)
-      end
+      | fld :: fl ->
+        if fld.fld_name = "" then
+          default_init_field fl
+        else
+          Init_union(id, fld, default_init env fld.fld_typ)
+    in
+    default_init_field ci.ci_members
   | _ ->
       raise No_default_init
 
