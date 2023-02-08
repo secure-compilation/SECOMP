@@ -83,7 +83,7 @@ Definition locset := Locmap.t.
 - Local and outgoing stack slots are initialized to undefined values.
 *)
 
-Definition call_regs (caller: locset) : locset :=
+Definition call_regs (caller: locset) (callee_sig: signature) : locset :=
   fun (l: loc) =>
     match l with
     | R r => caller (R r)
@@ -104,7 +104,7 @@ Definition call_regs (caller: locset) : locset :=
   may have been changed by the callee.
 *)
 
-Definition return_regs (caller callee: locset) : locset :=
+Definition return_regs (caller callee: locset) (callee_sig: signature) : locset :=
   fun (l: loc) =>
     match l with
     | R r => if is_callee_save r then caller (R r) else callee (R r)
@@ -239,6 +239,12 @@ Definition parent_locset (stack: list stackframe) : locset :=
   | Stackframe f _ _ sp ls bb :: stack' => ls
   end.
 
+Definition parent_signature (stack: list stackframe) : signature :=
+  match stack with
+  | nil => signature_main
+  | Stackframe _ _ sig _ _ _ :: stack' => sig
+  end.
+
 Inductive step: state -> trace -> state -> Prop :=
   | exec_start_block: forall s f sp pc rs m bb,
       (fn_code f)!pc = Some bb ->
@@ -275,7 +281,7 @@ Inductive step: state -> trace -> state -> Prop :=
       funsig fd = sig ->
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
       forall (ARGS: args = map (fun p => Locmap.getpair p
-                                   (undef_regs destroyed_at_function_entry (call_regs rs)))
+                                   (undef_regs destroyed_at_function_entry (call_regs rs sig)))
                         (loc_parameters sig)),
       forall (NO_CROSS_PTR:
           Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall ->
@@ -284,7 +290,7 @@ Inductive step: state -> trace -> state -> Prop :=
       step (Block s f sp (Lcall sig ros :: bb) rs m)
         t (Callstate (Stackframe f (Genv.find_comp ge vf) sig sp rs bb :: s) fd rs m)
   | exec_Ltailcall: forall s f sp sig ros bb rs m fd rs' m' vf,
-      rs' = return_regs (parent_locset s) rs ->
+      rs' = return_regs (parent_locset s) rs sig ->
       find_function ros rs' = Some fd ->
       find_function_ptr ros rs' = Some vf ->
       funsig fd = sig ->
@@ -318,10 +324,10 @@ Inductive step: state -> trace -> state -> Prop :=
   | exec_Lreturn: forall s f sp bb rs m m',
       Mem.free m sp 0 f.(fn_stacksize) (comp_of f) = Some m' ->
       step (Block s f (Vptr sp Ptrofs.zero) (Lreturn :: bb) rs m)
-        E0 (Returnstate s (return_regs (parent_locset s) rs) m')
+        E0 (Returnstate s (return_regs (parent_locset s) rs (parent_signature s)) m')
   | exec_function_internal: forall s f rs m m' sp rs',
       Mem.alloc m (comp_of f) 0 f.(fn_stacksize) = (m', sp) ->
-      rs' = undef_regs destroyed_at_function_entry (call_regs rs) ->
+      rs' = undef_regs destroyed_at_function_entry (call_regs rs (parent_signature s)) ->
       step (Callstate s (Internal f) rs m)
         E0 (State s f (Vptr sp Ptrofs.zero) f.(fn_entrypoint) rs' m')
   | exec_function_external: forall s ef t args res rs m rs' m',

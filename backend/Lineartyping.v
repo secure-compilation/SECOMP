@@ -132,7 +132,7 @@ Proof.
 Qed.
 
 Lemma wt_call_regs:
-  forall ls, wt_locset ls -> wt_locset (call_regs ls).
+  forall ls sg, wt_locset ls -> wt_locset (call_regs ls sg).
 Proof.
   intros; red; intros. unfold call_regs. destruct l. auto.
   destruct sl.
@@ -142,8 +142,8 @@ Proof.
 Qed.
 
 Lemma wt_return_regs:
-  forall caller callee,
-  wt_locset caller -> wt_locset callee -> wt_locset (return_regs caller callee).
+  forall caller callee sg,
+  wt_locset caller -> wt_locset callee -> wt_locset (return_regs caller callee sg).
 Proof.
   intros; red; intros.
   unfold return_regs. destruct l.

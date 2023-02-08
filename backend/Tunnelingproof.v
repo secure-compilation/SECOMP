@@ -533,16 +533,16 @@ Proof.
 Qed.
 
 Lemma call_regs_lessdef:
-  forall ls1 ls2, locmap_lessdef ls1 ls2 -> locmap_lessdef (call_regs ls1) (call_regs ls2).
+  forall ls1 ls2 sg, locmap_lessdef ls1 ls2 -> locmap_lessdef (call_regs ls1 sg) (call_regs ls2 sg).
 Proof.
   intros; red; intros. destruct l as [r | [] ofs ty]; simpl; auto.
 Qed.
 
 Lemma return_regs_lessdef:
-  forall caller1 callee1 caller2 callee2,
+  forall caller1 callee1 caller2 callee2 sg,
   locmap_lessdef caller1 caller2 ->
   locmap_lessdef callee1 callee2 ->
-  locmap_lessdef (return_regs caller1 callee1) (return_regs caller2 callee2).
+  locmap_lessdef (return_regs caller1 callee1 sg) (return_regs caller2 callee2 sg).
 Proof.
   intros; red; intros. destruct l; simpl.
 - destruct (Conventions1.is_callee_save r); auto.
@@ -662,10 +662,10 @@ Proof.
     specialize (NO_CROSS_PTR X).
     apply Forall_forall. rewrite Forall_forall in NO_CROSS_PTR.
     intros v Hin. apply in_map_iff in Hin as [v' [Heq Hin]].
-    apply in_map with (f := (fun p : rpair loc => Locmap.getpair p (undef_regs destroyed_at_function_entry (call_regs rs))))
+    apply in_map with (f := (fun p : rpair loc => Locmap.getpair p (undef_regs destroyed_at_function_entry (call_regs rs (funsig fd)))))
                          in Hin.
     specialize (NO_CROSS_PTR _ Hin).
-    assert (Val.lessdef (Locmap.getpair v' (undef_regs destroyed_at_function_entry (call_regs rs))) v).
+    assert (Val.lessdef (Locmap.getpair v' (undef_regs destroyed_at_function_entry (call_regs rs (funsig fd)))) v).
     { subst.
       apply locmap_getpair_lessdef; auto.
       apply locmap_undef_regs_lessdef; auto.
@@ -676,10 +676,10 @@ Proof.
   assert (LD: Val.lessdef_list
         (map
             (fun p : rpair loc =>
-             Locmap.getpair p (undef_regs destroyed_at_function_entry (call_regs rs)))
+             Locmap.getpair p (undef_regs destroyed_at_function_entry (call_regs rs (funsig fd))))
             (Conventions.loc_parameters (funsig fd)))
         (map
-       (fun p : rpair loc => Locmap.getpair p (undef_regs destroyed_at_function_entry (call_regs tls)))
+       (fun p : rpair loc => Locmap.getpair p (undef_regs destroyed_at_function_entry (call_regs tls (funsig fd))))
        (Conventions.loc_parameters (funsig fd)))).
   { apply locmap_getpairs_lessdef.
     apply locmap_undef_regs_lessdef.
@@ -745,12 +745,18 @@ Proof.
   exploit Mem.free_parallel_extends. eauto. eauto. intros (tm' & FREE & MEM'). 
   left; simpl; econstructor; split.
   eapply exec_Lreturn; eauto.
+  assert (SIG : parent_signature s = parent_signature ts).
+  { inv STK; [reflexivity |]. inv H0; reflexivity. }
+  rewrite SIG.
   constructor; eauto using return_regs_lessdef, match_parent_locset.
 - (* internal function *)
   exploit Mem.alloc_extends. eauto. eauto. apply Z.le_refl. apply Z.le_refl.
   intros (tm' & ALLOC & MEM'). 
   left; simpl; econstructor; split.
   eapply exec_function_internal; eauto.
+  assert (SIG : parent_signature s = parent_signature ts).
+  { inv STK; [reflexivity |]. inv H0; reflexivity. }
+  rewrite SIG.
   simpl. econstructor; eauto using locmap_undef_regs_lessdef, call_regs_lessdef.
 - (* external function *)
   exploit external_call_mem_extends; eauto using locmap_getpairs_lessdef.

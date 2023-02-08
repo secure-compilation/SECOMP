@@ -159,6 +159,12 @@ Definition parent_locset (stack: list stackframe) : locset :=
   | Stackframe f _ _ sp ls c :: stack' => ls
   end.
 
+Definition parent_signature (stack: list stackframe) : signature :=
+  match stack with
+  | nil => signature_main
+  | Stackframe _ _ sig _ _ _ :: _ => sig
+  end.
+
 Inductive step: state -> trace -> state -> Prop :=
   | exec_Lgetstack:
       forall s f sp sl ofs ty dst b rs m rs',
@@ -197,7 +203,7 @@ Inductive step: state -> trace -> state -> Prop :=
       sig = funsig f' ->
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
       forall (ARGS: args = map (fun p => Locmap.getpair p
-                                   (undef_regs destroyed_at_function_entry (call_regs rs)))
+                                   (undef_regs destroyed_at_function_entry (call_regs rs sig)))
                         (loc_parameters sig)),
       forall (NO_CROSS_PTR:
           Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall ->
@@ -207,7 +213,7 @@ Inductive step: state -> trace -> state -> Prop :=
         t (Callstate (Stackframe f (Genv.find_comp ge vf) sig sp rs b:: s) f' rs m)
   | exec_Ltailcall:
       forall s f stk sig ros b rs m rs' f' m' vf,
-      rs' = return_regs (parent_locset s) rs ->
+      rs' = return_regs (parent_locset s) rs sig ->
       find_function ros rs' = Some f' ->
       find_function_ptr ros rs' = Some vf ->
       sig = funsig f' ->
@@ -258,11 +264,11 @@ Inductive step: state -> trace -> state -> Prop :=
       forall s f stk b rs m m',
       Mem.free m stk 0 f.(fn_stacksize) (comp_of f) = Some m' ->
       step (State s f (Vptr stk Ptrofs.zero) (Lreturn :: b) rs m)
-        E0 (Returnstate s (return_regs (parent_locset s) rs) m')
+        E0 (Returnstate s (return_regs (parent_locset s) rs (parent_signature s)) m')
   | exec_function_internal:
       forall s f rs m rs' m' stk,
       Mem.alloc m (comp_of f) 0 f.(fn_stacksize) = (m', stk) ->
-      rs' = undef_regs destroyed_at_function_entry (call_regs rs) ->
+      rs' = undef_regs destroyed_at_function_entry (call_regs rs (parent_signature s)) ->
       step (Callstate s (Internal f) rs m)
         E0 (State s f (Vptr stk Ptrofs.zero) f.(fn_code) rs' m')
   | exec_function_external:

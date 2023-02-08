@@ -1345,8 +1345,8 @@ Proof.
 Qed.
 
 Lemma return_regs_agree_callee_save:
-  forall caller callee,
-  agree_callee_save caller (return_regs caller callee).
+  forall caller callee callee_sig,
+  agree_callee_save caller (return_regs caller callee callee_sig).
 Proof.
   intros; red; intros. unfold return_regs. red in H.
   destruct l.
@@ -1486,12 +1486,12 @@ Qed.
 
 Lemma call_regs_param_values:
   forall sg ls,
-  map (fun p => Locmap.getpair p (call_regs ls)) (loc_parameters sg)
+  map (fun p => Locmap.getpair p (call_regs ls sg)) (loc_parameters sg)
   = map (fun p => Locmap.getpair p ls) (loc_arguments sg).
 Proof.
   intros. unfold loc_parameters. rewrite list_map_compose.
   apply list_map_exten; intros. symmetry.
-  assert (A: forall l, loc_argument_acceptable l -> call_regs ls (parameter_of_argument l) = ls l).
+  assert (A: forall l sig, loc_argument_acceptable l -> call_regs ls sig (parameter_of_argument l) = ls l).
   { destruct l as [r | [] ofs ty]; simpl; auto; contradiction. }
   exploit loc_arguments_acceptable; eauto. destruct x; simpl; intros.
 - auto.
@@ -1501,7 +1501,7 @@ Qed.
 Lemma return_regs_arg_values:
   forall sg ls1 ls2,
   tailcall_is_possible sg = true ->
-  map (fun p => Locmap.getpair p (return_regs ls1 ls2)) (loc_arguments sg)
+  map (fun p => Locmap.getpair p (return_regs ls1 ls2 sg)) (loc_arguments sg)
   = map (fun p => Locmap.getpair p ls2) (loc_arguments sg).
 Proof.
   intros.
@@ -1514,9 +1514,9 @@ Proof.
 Qed.
 
 Lemma find_function_tailcall:
-  forall tge ros ls1 ls2,
+  forall tge ros ls1 ls2 sg,
   ros_compatible_tailcall ros = true ->
-  find_function tge ros (return_regs ls1 ls2) = find_function tge ros ls2.
+  find_function tge ros (return_regs ls1 ls2 sg) = find_function tge ros ls2.
 Proof.
   unfold ros_compatible_tailcall, find_function, find_function_ptr; intros.
   destruct ros as [r|id]; auto.
@@ -1525,9 +1525,9 @@ Qed.
 
 
 Lemma find_function_ptr_tailcall:
-  forall tge ros ls1 ls2,
+  forall tge ros ls1 ls2 sg,
   ros_compatible_tailcall ros = true ->
-  find_function_ptr tge ros (return_regs ls1 ls2) = find_function_ptr tge ros ls2.
+  find_function_ptr tge ros (return_regs ls1 ls2 sg) = find_function_ptr tge ros ls2.
 Proof.
   unfold ros_compatible_tailcall, find_function_ptr; intros.
   destruct ros as [r|id]; auto.
@@ -2443,8 +2443,8 @@ Proof.
     unfold args' in Heqo2.
     rewrite <- call_regs_param_values in Heqo2.
     pose proof (Val.lessdef_list_not_ptr _ _ Heqo2 NO_CROSS_PTR) as H.
-    assert (R: map (fun p : rpair loc => Locmap.getpair p (undef_regs destroyed_at_function_entry (call_regs ls1))) (loc_parameters sg) =
-            map (fun p : rpair loc => Locmap.getpair p (call_regs ls1)) (loc_parameters sg)).
+    assert (R: map (fun p : rpair loc => Locmap.getpair p (undef_regs destroyed_at_function_entry (call_regs ls1 sg))) (loc_parameters sg) =
+            map (fun p : rpair loc => Locmap.getpair p (call_regs ls1 sg)) (loc_parameters sg)).
     { (* TODO: try using [Locmap.getpair_exten] *)
       assert (G: forall l rhi rlo, In l (loc_parameters sg) -> l <> One (R R30) /\ l <> Twolong (R R30) rlo /\ l <> Twolong rhi (R R30)).
       { clear.
@@ -2499,8 +2499,8 @@ Proof.
     unfold args' in Heqo2.
     rewrite <- call_regs_param_values in Heqo2.
     (* pose proof (Val.lessdef_list_not_ptr _ _ Heqo2 NO_CROSS_PTR) as H. *)
-    assert (R: map (fun p : rpair loc => Locmap.getpair p (undef_regs destroyed_at_function_entry (call_regs ls1))) (loc_parameters sg) =
-            map (fun p : rpair loc => Locmap.getpair p (call_regs ls1)) (loc_parameters sg)).
+    assert (R: map (fun p : rpair loc => Locmap.getpair p (undef_regs destroyed_at_function_entry (call_regs ls1 sg))) (loc_parameters sg) =
+            map (fun p : rpair loc => Locmap.getpair p (call_regs ls1 sg)) (loc_parameters sg)).
     { (* TODO: try using [Locmap.getpair_exten]
          TODO: remove the code duplication *)
       assert (G: forall l rhi rlo, In l (loc_parameters sg) -> l <> One (R R30) /\ l <> Twolong (R R30) rlo /\ l <> Twolong rhi (R R30)).
@@ -2675,7 +2675,7 @@ Proof.
   rewrite <- comp_transf_function; eauto. eauto. traceEq.
   simpl. econstructor; eauto. rewrite <- H11.
   replace (Locmap.getpair (map_rpair R (loc_result (RTL.fn_sig f)))
-                          (return_regs (parent_locset ts) ls1))
+                          (return_regs (parent_locset ts) ls1 (parent_signature ts)))
   with (Locmap.getpair (map_rpair R (loc_result (RTL.fn_sig f))) ls1).
   eapply add_equations_res_lessdef; eauto.
   rewrite <- H14. apply WTRS.
