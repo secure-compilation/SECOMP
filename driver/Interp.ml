@@ -413,12 +413,12 @@ and world_io ge m id args =
 and world_vload ge m chunk id ofs =
   Genv.find_symbol ge.genv_genv id >>= fun b ->
   Mem.load chunk m b ofs None >>= fun v ->
-  Cexec.eventval_of_val ge v (type_of_chunk chunk) >>= fun ev ->
+  Exec.eventval_of_val ge.genv_genv v (type_of_chunk chunk) >>= fun ev ->
   Some(ev, world ge m)
 
 and world_vstore ge m chunk id ofs ev =
   Genv.find_symbol ge.genv_genv id >>= fun b ->
-  Cexec.val_of_eventval ge ev (type_of_chunk chunk) >>= fun v ->
+  Exec.val_of_eventval ge.genv_genv ev (type_of_chunk chunk) >>= fun v ->
   Mem.block_compartment m b >>= fun cp ->
   Mem.store chunk m b ofs v cp >>= fun m' ->
   Some(world ge m')
