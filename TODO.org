@@ -64,7 +64,7 @@
 
 ** On the secure compilation proof
 
-[] State the top-level theorem (with blame?)
+[] State the top-level theorem (with blame?) [Jérémy: started working on that]
 [] How do we deal with external declarations? Should everything be implemented, i.e. part of our
    program or context "internally" or can we allow some level of external declaration?
 [] Figure out some way of splitting a whole C program into context and partial program.
