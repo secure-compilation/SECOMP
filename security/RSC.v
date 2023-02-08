@@ -1,0 +1,126 @@
+Require Import String.
+Require Import Coqlib Maps Errors.
+Require Import AST Linking Smallstep Events Behaviors.
+
+Require Import Csyntax Asm.
+Require Import Compiler Complements.
+
+
+Section RSC.
+
+  Variable pol: Policy.t.
+
+  Variable p: Csyntax.program.
+  Hypothesis pol_p: Ctypes.prog_pol p = pol.
+
+  Variable p_compiled: Asm.program.
+
+  Variable Ct: Asm.program.
+  Hypothesis pol_Ct: prog_pol Ct = pol.
+
+  Variable W_t: Asm.program.
+
+  Hypothesis p_p_compiled: transf_c_program p = OK p_compiled.
+  (* TODO: move to Compiler.v file *)
+  Lemma transf_c_program_pol: forall p p',
+      transf_c_program p = OK p' ->
+      Ctypes.prog_pol p = prog_pol p'.
+  Proof.
+    admit.
+  Admitted.
+
+  Hypothesis W_t_is_Ct_p_compiled: link p_compiled Ct = Some W_t.
+  (* TODO: move to Linker.v *)
+  Lemma link_pol: forall p p' p'',
+      link p p' = Some p'' ->
+      prog_pol p = prog_pol p''.
+  Proof.
+    admit.
+  Admitted.
+
+  (* TODO: What does blame mean? *)
+  Axiom c_program_blame: Csyntax.program -> Csyntax.program -> trace -> Prop.
+
+  Axiom backtranslation: Policy.t -> trace -> Csyntax.program.
+  Axiom backtranslation_correct:
+    forall pol t,
+      c_program_has_initial_trace (backtranslation pol t) t.
+  Axiom backtranslation_pol: forall pol t,
+      Ctypes.prog_pol (backtranslation pol t) = pol.
+  Axiom backtranslation_compile: forall pol t,
+      exists W_compiled,
+        transf_c_program (backtranslation pol t) = OK W_compiled.
+
+  Axiom split_along_interface: Csyntax.program -> Csyntax.program -> Asm.program -> (Csyntax.program * Csyntax.program).
+  Axiom split_along_interface_correct_1:
+    forall W ps pt p p',
+      split_along_interface W ps pt = (p, p') ->
+      exists W', link ps p' = Some W'.
+
+  Axiom split_along_interface_compilation_correct:
+    forall W W_compiled ps pt p p',
+      split_along_interface W ps pt = (p, p') ->
+      transf_c_program W = OK W_compiled ->
+      exists p_compiled p'_compiled,
+        transf_c_program p = OK p_compiled /\
+        transf_c_program p' = OK p'_compiled /\
+        link p_compiled p'_compiled = Some W_compiled.
+
+  Axiom compatible: Asm.program -> Asm.program -> Asm.program -> Asm.program -> Prop.
+  Axiom recomposition:
+    forall W W'' p1 p2 p1'' p2'' t,
+      link p1 p2 = Some W ->
+      link p1'' p2'' = Some W'' ->
+      compatible p1 p2 p1'' p2'' ->
+      asm_program_has_initial_trace W t ->
+      asm_program_has_initial_trace W'' t ->
+      exists W',
+        link p1 p2'' = Some W' /\
+          asm_program_has_initial_trace W' t.
+
+  Axiom backward_correctness:
+    forall W W' t,
+      transf_c_program W = OK W' ->
+      asm_program_has_initial_trace W' t ->
+      (c_program_has_initial_trace W t \/ exists m, trace_prefix m t /\ c_program_blame W p m).
+
+  Theorem RSC:
+    forall (t: trace),
+      asm_program_has_initial_trace W_t t ->
+      exists (Cs: Csyntax.program) (W: Csyntax.program),
+        link p Cs = Some W /\
+        (c_program_has_initial_trace W t \/
+         exists (m: trace), trace_prefix m t /\ c_program_blame W p m).
+  Proof.
+    intros t H.
+    set (W_bt := backtranslation pol t).
+    destruct (split_along_interface W_bt p Ct) as (p', Cs) eqn:split_bt; subst W_bt.
+    exists Cs.
+    exploit split_along_interface_correct_1; eauto.
+    intros [W link_W].
+    exists W; split; eauto.
+
+    (* Backtranslation *)
+    destruct (backtranslation_compile pol t) as [W_compiled W_bt_compiled].
+    assert (W_compiled_t: asm_program_has_initial_trace W_compiled t).
+    { intros beh W_compiled_beh.
+      eapply transf_c_program_preserves_initial_trace; eauto.
+      now apply backtranslation_correct. }
+
+    (* Split the compilation of the back-translation *)
+    exploit split_along_interface_compilation_correct; eauto.
+    intros [p'_compiled [Cs_compiled [p'_p'_compiled [Cs_Cs_compiled link_W_compiled]]]].
+
+    (* Recomposition *)
+    pose proof (recomposition W_t W_compiled) as recomp.
+    exploit recomp; eauto.
+    { (* We should define what [compatible] means and add it to the axioms of [split], but this seems
+       tedious, so I'm leaving it for later. *) admit. }
+    clear recomp.
+    intros [W' [link_W' W'_t]].
+
+    (* Backward compiler correctness *)
+    assert (W_W': transf_c_program W = OK W').
+    { admit. (* This comes from commutativity of linking and compilation: transf_link *) }
+    exploit backward_correctness; eauto.
+  Admitted.
