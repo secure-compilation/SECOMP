@@ -83,10 +83,25 @@ Definition locset := Locmap.t.
 - Local and outgoing stack slots are initialized to undefined values.
 *)
 
+Definition parameters_mregs (sig: signature) : list mreg :=
+  let fix aux rs :=
+    match rs with
+    | nil => nil
+    | (R r) :: rs' => r :: aux rs'
+    | (S _ _ _) :: rs' => aux rs'
+    end
+  in
+  aux (regs_of_rpairs (loc_parameters sig)).
+
+Definition in_mreg (r: mreg) (rs: list mreg) : bool :=
+  existsb (fun r' => DecidableClass.decide (r = r')) rs.
+
 Definition call_regs (caller: locset) (callee_sig: signature) : locset :=
   fun (l: loc) =>
     match l with
-    | R r => caller (R r)
+    | R r => if in_mreg r (parameters_mregs callee_sig)
+             then caller (R r)
+             else Vundef
     | S Local ofs ty => Vundef
     | S Incoming ofs ty => caller (S Outgoing ofs ty)
     | S Outgoing ofs ty => Vundef
@@ -107,7 +122,9 @@ Definition call_regs (caller: locset) (callee_sig: signature) : locset :=
 Definition return_regs (caller callee: locset) (callee_sig: signature) : locset :=
   fun (l: loc) =>
     match l with
-    | R r => if is_callee_save r then caller (R r) else callee (R r)
+    | R r => if in_mreg r (regs_of_rpair (loc_result callee_sig))
+             then callee (R r)
+             else (* Vundef *) caller (R r)
     | S Outgoing ofs ty => Vundef
     | S sl ofs ty => caller (S sl ofs ty)
     end.
