@@ -87,7 +87,14 @@ Section Split.
       - destruct p1, p2; inv H. simpl. admit.
       - destruct p1, p2; inv H; reflexivity.
       - destruct p1, p2; inv H. unfold prog_defmap; simpl.
-        admit.
+        remember (Ctypes.prog_defs p) as l. clear Heql.
+        induction l.
+        + intros; simpl in *. inv H.
+        + intros. apply PTree_Properties.in_of_list in H, H0.
+          (* I would like to prove that (id, gd1) and (id, gd2) are necessarily found at the same
+           position in the list. I need to prove some kind of uniqueness of the definitions, but I couldn't
+           find what I need to prove that. *)
+          admit.
       - destruct p1, p2; inv H. simpl. now rewrite Policy.eqb_refl.
     Admitted.
 
