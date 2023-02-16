@@ -42,17 +42,17 @@ Section Split.
         match d with
         | Gfun (Ctypes.Internal f) =>
             match s (Csyntax.fn_comp f) with
-            | Right => (id, Gfun (Ctypes.Internal f)) :: (unlink_prog_defs_left s defs')
+            | Right => (id, Gfun (Ctypes.Internal f)) :: (unlink_prog_defs_right s defs')
             | Left => (id, Gfun (Ctypes.External (EF_external ""
                                                     (Csyntax.fn_comp f)
                                                     {| sig_args := map (fun '(x, ty) => Ctypes.typ_of_type ty) (fn_params f);
                                                       sig_res := Ctypes.typ_of_type (fn_return f);
                                                       sig_cc := fn_callconv f|})
                       (Ctypes.type_of_params (Csyntax.fn_params f)) (fn_return f) (fn_callconv f))) ::
-                        (unlink_prog_defs_left s defs')
+                        (unlink_prog_defs_right s defs')
             end
-        | Gfun (Ctypes.External f tys ty cc) => (id, Gfun (Ctypes.External f tys ty cc)) :: (unlink_prog_defs_left s defs')
-        | Gvar v => (id, Gvar v) :: (unlink_prog_defs_left s defs')
+        | Gfun (Ctypes.External f tys ty cc) => (id, Gfun (Ctypes.External f tys ty cc)) :: (unlink_prog_defs_right s defs')
+        | Gvar v => (id, Gvar v) :: (unlink_prog_defs_right s defs')
         end
     end
     .
@@ -75,6 +75,15 @@ Section Split.
        Ctypes.prog_comp_env_eq := Ctypes.prog_comp_env_eq p;
     |}).
 
+    Lemma unlink_prog_pol (s: split): forall p p1 p2,
+        unlink s p = (p1, p2) ->
+        Ctypes.prog_pol p = Ctypes.prog_pol p1 /\
+          Ctypes.prog_pol p = Ctypes.prog_pol p2.
+    Proof.
+      unfold unlink. intros p p1 p2 H.
+      now inv H.
+    Qed.
+
     Lemma link_unlink (s: split):
       forall p p1 p2,
         unlink s p = (p1, p2) ->
@@ -94,9 +103,51 @@ Section Split.
           (* I would like to prove that (id, gd1) and (id, gd2) are necessarily found at the same
            position in the list. I need to prove some kind of uniqueness of the definitions, but I couldn't
            find what I need to prove that. *)
+          (* USE: prog_defmap_unique or prog_defmap_norepet *)
+          destruct a as [id' gd].
           admit.
       - destruct p1, p2; inv H. simpl. now rewrite Policy.eqb_refl.
     Admitted.
+
+    Definition c_has_side (s: split) (lr: side) (p: Csyntax.program) :=
+      List.Forall (fun '(id, gd) =>
+                     match gd with
+                     | Gfun (Ctypes.Internal f) => s (comp_of f) = lr
+                     | _ => True
+                     end)
+        (Ctypes.prog_defs p).
+
+    Definition asm_has_side (s: split) (lr: side) (p: Asm.program) :=
+      List.Forall (fun '(id, gd) =>
+                     match gd with
+                     | Gfun (Internal f) => s (comp_of f) = lr
+                     | _ => True
+                     end)
+        (prog_defs p).
+
+    Definition c_compatible (s: split) (p p': Csyntax.program) :=
+      c_has_side s Left p /\ c_has_side s Right p'.
+
+    Definition asm_compatible (s: split) (p p': Asm.program) :=
+      asm_has_side s Left p /\ asm_has_side s Right p'.
+
+    Lemma unlink_compatible: forall s W p p',
+        unlink s W = (p, p') ->
+        c_compatible s p p'.
+    Proof.
+      admit.
+    Admitted.
+
+    Lemma link_compatible: forall s p p',
+        c_compatible s p p' ->
+        Ctypes.prog_pol p = Ctypes.prog_pol p' ->
+        exists W, link p p' = Some W.
+    Proof.
+      admit.
+    Admitted.
+
+
+End Split.
 
 Section RSC.
 
@@ -105,11 +156,13 @@ Section RSC.
 
   Variable p: Csyntax.program.
   Hypothesis pol_p: Ctypes.prog_pol p = pol.
+  Hypothesis p_Left: c_has_side s Left p.
 
   Variable p_compiled: Asm.program.
 
   Variable Ct: Asm.program.
   Hypothesis pol_Ct: prog_pol Ct = pol.
+  Hypothesis Ct_Right: asm_has_side s Right Ct.
 
   Variable W_t: Asm.program.
 
@@ -118,6 +171,21 @@ Section RSC.
   Lemma transf_c_program_pol: forall p p',
       transf_c_program p = OK p' ->
       Ctypes.prog_pol p = prog_pol p'.
+  Proof.
+    admit.
+  Admitted.
+
+  Lemma transf_c_program_side: forall p p' lr,
+      transf_c_program p = OK p' ->
+      c_has_side s lr p <-> asm_has_side s lr p'.
+  Proof.
+    admit.
+  Admitted.
+
+  Lemma transf_c_program_compatible: forall p1 p1' p2 p2',
+      transf_c_program p1 = OK p1' ->
+      transf_c_program p2 = OK p2' ->
+      c_compatible s p1 p2 <-> asm_compatible s p1' p2'.
   Proof.
     admit.
   Admitted.
@@ -144,27 +212,27 @@ Section RSC.
       exists W_compiled,
         transf_c_program (backtranslation pol t) = OK W_compiled.
 
-  Axiom split_along_interface: Csyntax.program -> Csyntax.program -> Asm.program -> (Csyntax.program * Csyntax.program).
-  Axiom split_along_interface_correct_1:
-    forall W ps pt p p',
-      split_along_interface W ps pt = (p, p') ->
-      exists W', link ps p' = Some W'.
+  Axiom forward_correctness:
+    forall W W' t,
+      transf_c_program W = OK W' ->
+      c_program_has_initial_trace W t ->
+      asm_program_has_initial_trace W' t.
 
-  Axiom split_along_interface_compilation_correct:
-    forall W W_compiled ps pt p p',
-      split_along_interface W ps pt = (p, p') ->
+  Axiom unlink_compilation_correct:
+    forall W W_compiled p p',
+      unlink s W = (p, p') ->
       transf_c_program W = OK W_compiled ->
       exists p_compiled p'_compiled,
         transf_c_program p = OK p_compiled /\
         transf_c_program p' = OK p'_compiled /\
         link p_compiled p'_compiled = Some W_compiled.
 
-  Axiom compatible: Asm.program -> Asm.program -> Asm.program -> Asm.program -> Prop.
   Axiom recomposition:
     forall W W'' p1 p2 p1'' p2'' t,
       link p1 p2 = Some W ->
       link p1'' p2'' = Some W'' ->
-      compatible p1 p2 p1'' p2'' ->
+      asm_compatible s p1 p2 ->
+      asm_compatible s p1'' p2'' ->
       asm_program_has_initial_trace W t ->
       asm_program_has_initial_trace W'' t ->
       exists W',
@@ -175,7 +243,22 @@ Section RSC.
     forall W W' t,
       transf_c_program W = OK W' ->
       asm_program_has_initial_trace W' t ->
-      (c_program_has_initial_trace W t \/ exists m, trace_prefix m t /\ c_program_blame W p m).
+      (c_program_has_initial_trace W t \/ exists m, trace_prefix m t /\ m <> t /\ program_behaves (Csem.semantics W) (Goes_wrong m)).
+
+  Axiom last_comp_in_trace: trace -> compartment.
+
+  Definition blame_on_program (t: trace) :=
+    s (last_comp_in_trace t) = Left.
+
+  Axiom blame:
+    forall W W' p1 p1' p2 t m,
+      link p1 p2 = Some W ->
+      link p1' p2 = Some W' ->
+      c_program_has_initial_trace W' t ->
+      trace_prefix m t ->
+      m <> t ->
+      program_behaves (Csem.semantics W) (Goes_wrong m) ->
+      blame_on_program m.
 
   Theorem RSC:
     forall (t: trace),
@@ -183,32 +266,36 @@ Section RSC.
       exists (Cs: Csyntax.program) (W: Csyntax.program),
         link p Cs = Some W /\
         (c_program_has_initial_trace W t \/
-         exists (m: trace), trace_prefix m t /\ c_program_blame W p m).
+         exists (m: trace), trace_prefix m t /\ m <> t /\ program_behaves (Csem.semantics W) (Goes_wrong m) /\ blame_on_program m).
   Proof.
     intros t H.
-    set (W_bt := backtranslation pol t).
-    destruct (split_along_interface W_bt p Ct) as (p', Cs) eqn:split_bt; subst W_bt.
+    (* Backtranslation *)
+    pose proof (backtranslation_correct pol t) as bt_does_t.
+    destruct (unlink s (backtranslation pol t)) as [p' Cs] eqn:split_bt.
+
     exists Cs.
-    exploit split_along_interface_correct_1; eauto.
-    intros [W link_W].
+    exploit unlink_compatible; eauto. intros [p'_Left Cs_Right].
+    destruct (link_compatible s p Cs) as [W link_p_Cs];
+      [split; eauto
+      | apply unlink_prog_pol in split_bt as [_ G]; now rewrite pol_p, <- G, backtranslation_pol
+      |].
     exists W; split; eauto.
 
-    (* Backtranslation *)
+    (* Forward compiler correctness *)
     destruct (backtranslation_compile pol t) as [W_compiled W_bt_compiled].
     assert (W_compiled_t: asm_program_has_initial_trace W_compiled t).
     { intros beh W_compiled_beh.
-      eapply transf_c_program_preserves_initial_trace; eauto.
-      now apply backtranslation_correct. }
+      eapply transf_c_program_preserves_initial_trace; eauto. }
 
     (* Split the compilation of the back-translation *)
-    exploit split_along_interface_compilation_correct; eauto.
+    exploit unlink_compilation_correct; eauto.
     intros [p'_compiled [Cs_compiled [p'_p'_compiled [Cs_Cs_compiled link_W_compiled]]]].
 
     (* Recomposition *)
     pose proof (recomposition W_t W_compiled) as recomp.
     exploit recomp; eauto.
-    { (* We should define what [compatible] means and add it to the axioms of [split], but this seems
-       tedious, so I'm leaving it for later. *) admit. }
+    { split; [eapply transf_c_program_side; eauto | eauto]. }
+    { split; [eapply transf_c_program_side; eauto | eapply transf_c_program_side; eauto]. }
     clear recomp.
     intros [W' [link_W' W'_t]].
 
@@ -216,4 +303,10 @@ Section RSC.
     assert (W_W': transf_c_program W = OK W').
     { admit. (* This comes from commutativity of linking and compilation: transf_link *) }
     exploit backward_correctness; eauto.
+    intros [G | [m [prefix_m_t [m_not_t W_behaves_m]]]]; [now left | right].
+    exists m; split; [| split; [| split]]; eauto.
+    eapply blame with (W' := backtranslation pol t); eauto.
+    eapply link_unlink; eauto.
   Admitted.
+
+End RSC.
