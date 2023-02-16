@@ -251,8 +251,8 @@ Section RSC.
     | Event_vload _ _ _ _ => cp
     | Event_vstore _ _ _ _ => cp
     | Event_annot _ _ => cp
-    | Event_call cp' _ _ _ => cp'
-    | Event_return cp' _ _ => cp'
+    | Event_call _ cp' _ _ => cp'
+    | Event_return _ cp' _ => cp'
     end.
 
   Fixpoint last_comp_in_trace' (t: trace) (cp: compartment): compartment :=
@@ -268,9 +268,9 @@ Section RSC.
     s (last_comp_in_trace t) = Left.
 
   Axiom blame:
-    forall W W' p1 p1' p2 t m,
-      link p1 p2 = Some W ->
-      link p1' p2 = Some W' ->
+    forall W W' p1 p2 C t m,
+      link p1 C = Some W ->
+      link p2 C = Some W' ->
       c_program_has_initial_trace W' t ->
       trace_prefix m t ->
       m <> t ->
@@ -283,7 +283,8 @@ Section RSC.
       exists (Cs: Csyntax.program) (W: Csyntax.program),
         link p Cs = Some W /\
         (c_program_has_initial_trace W t \/
-         exists (m: trace), trace_prefix m t /\ m <> t /\ program_behaves (Csem.semantics W) (Goes_wrong m) /\ blame_on_program m).
+         exists (m: trace), trace_prefix m t /\ m <> t /\
+                         program_behaves (Csem.semantics W) (Goes_wrong m) /\ blame_on_program m).
   Proof.
     intros t H.
     (* Backtranslation *)
