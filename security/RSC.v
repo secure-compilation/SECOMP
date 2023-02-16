@@ -245,7 +245,24 @@ Section RSC.
       asm_program_has_initial_trace W' t ->
       (c_program_has_initial_trace W t \/ exists m, trace_prefix m t /\ m <> t /\ program_behaves (Csem.semantics W) (Goes_wrong m)).
 
-  Axiom last_comp_in_trace: trace -> compartment.
+  Definition comp_of_event_or_default (e: event) (cp: compartment) :=
+    match e with
+    | Event_syscall _ _ _ => cp
+    | Event_vload _ _ _ _ => cp
+    | Event_vstore _ _ _ _ => cp
+    | Event_annot _ _ => cp
+    | Event_call cp' _ _ _ => cp'
+    | Event_return cp' _ _ => cp'
+    end.
+
+  Fixpoint last_comp_in_trace' (t: trace) (cp: compartment): compartment :=
+    match t with
+    | nil => cp
+    | e :: t' => last_comp_in_trace' t' (comp_of_event_or_default e cp)
+    end.
+
+  Definition last_comp_in_trace (t: trace): compartment :=
+    last_comp_in_trace' t default_compartment.
 
   Definition blame_on_program (t: trace) :=
     s (last_comp_in_trace t) = Left.
