@@ -1,15 +1,12 @@
 Require Import String.
 Require Import Coqlib Maps Errors.
 Require Import AST Linking Smallstep Events Behaviors.
+Require Import Split.
 
 Require Import Csyntax Asm.
 Require Import Compiler Complements.
 
 Section Split.
-
-  Variant side := Left | Right.
-
-  Definition split := compartment -> side.
 
   Fixpoint unlink_prog_defs_left (s: split) (defs: list (ident * globdef (Ctypes.fundef Csyntax.function) Ctypes.type)):
     list (ident * globdef (Ctypes.fundef Csyntax.function) Ctypes.type) :=
@@ -84,30 +81,30 @@ Section Split.
       now inv H.
     Qed.
 
-    Lemma link_unlink (s: split):
-      forall p p1 p2,
-        unlink s p = (p1, p2) ->
-        link p1 p2 = Some p.
-    Proof.
-      intros.
-      Local Transparent Ctypes.Linker_program Ctypes.link_program Linker_prog.
-      unfold link, Ctypes.Linker_program, Ctypes.link_program, link, Linker_prog; simpl.
-      rewrite link_prog_succeeds; simpl.
-      - destruct p1, p2; inv H. simpl. admit.
-      - destruct p1, p2; inv H; reflexivity.
-      - destruct p1, p2; inv H. unfold prog_defmap; simpl.
-        remember (Ctypes.prog_defs p) as l. clear Heql.
-        induction l.
-        + intros; simpl in *. inv H.
-        + intros. apply PTree_Properties.in_of_list in H, H0.
-          (* I would like to prove that (id, gd1) and (id, gd2) are necessarily found at the same
-           position in the list. I need to prove some kind of uniqueness of the definitions, but I couldn't
-           find what I need to prove that. *)
-          (* USE: prog_defmap_unique or prog_defmap_norepet *)
-          destruct a as [id' gd].
-          admit.
-      - destruct p1, p2; inv H. simpl. now rewrite Policy.eqb_refl.
-    Admitted.
+    (* Lemma link_unlink (s: split): *)
+    (*   forall p p1 p2, *)
+    (*     unlink s p = (p1, p2) -> *)
+    (*     link p1 p2 = Some p. *)
+    (* Proof. *)
+    (*   intros. *)
+    (*   Local Transparent Ctypes.Linker_program Ctypes.link_program Linker_prog. *)
+    (*   unfold link, Ctypes.Linker_program, Ctypes.link_program, link, Linker_prog; simpl. *)
+    (*   rewrite link_prog_succeeds; simpl. *)
+    (*   - destruct p1, p2; inv H. simpl. admit. *)
+    (*   - destruct p1, p2; inv H; reflexivity. *)
+    (*   - destruct p1, p2; inv H. unfold prog_defmap; simpl. *)
+    (*     remember (Ctypes.prog_defs p) as l. clear Heql. *)
+    (*     induction l. *)
+    (*     + intros; simpl in *. inv H. *)
+    (*     + intros. apply PTree_Properties.in_of_list in H, H0. *)
+    (*       (* I would like to prove that (id, gd1) and (id, gd2) are necessarily found at the same *)
+    (*        position in the list. I need to prove some kind of uniqueness of the definitions, but I couldn't *)
+    (*        find what I need to prove that. *) *)
+    (*       (* USE: prog_defmap_unique or prog_defmap_norepet *) *)
+    (*       destruct a as [id' gd]. *)
+    (*       admit. *)
+    (*   - destruct p1, p2; inv H. simpl. now rewrite Policy.eqb_refl. *)
+    (* Admitted. *)
 
     Definition c_has_side (s: split) (lr: side) (p: Csyntax.program) :=
       List.Forall (fun '(id, gd) =>
@@ -324,6 +321,7 @@ Section RSC.
     intros [G | [m [prefix_m_t [m_not_t W_behaves_m]]]]; [now left | right].
     exists m; split; [| split; [| split]]; eauto.
     eapply blame with (W' := backtranslation pol t); eauto.
+    instantiate (1 := p').
     eapply link_unlink; eauto.
   Admitted.
 

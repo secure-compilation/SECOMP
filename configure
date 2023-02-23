@@ -804,6 +804,7 @@ S debug
 S export
 S cparser
 S extraction
+S security
 
 B lib
 B common
@@ -815,6 +816,7 @@ B debug
 B export
 B cparser
 B extraction
+B security
 EOF
 
 $make CoqProject
