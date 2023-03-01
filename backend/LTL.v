@@ -96,7 +96,16 @@ Definition parameters_mregs (sig: signature) : list mreg :=
 Definition in_mreg (r: mreg) (rs: list mreg) : bool :=
   existsb (fun r' => DecidableClass.decide (r = r')) rs.
 
-Definition call_regs (caller: locset) (callee_sig: signature) : locset :=
+Definition call_regs (caller: locset) : locset :=
+  fun (l: loc) =>
+    match l with
+    | R r => caller (R r)
+    | S Local ofs ty => Vundef
+    | S Incoming ofs ty => caller (S Outgoing ofs ty)
+    | S Outgoing ofs ty => Vundef
+    end.
+
+Definition call_regs_ext (caller: locset) (callee_sig: signature) : locset :=
   fun (l: loc) =>
     match l with
     | R r => if in_mreg r (parameters_mregs callee_sig)
@@ -119,7 +128,15 @@ Definition call_regs (caller: locset) (callee_sig: signature) : locset :=
   may have been changed by the callee.
 *)
 
-Definition return_regs (caller callee: locset) (callee_sig: signature) : locset :=
+Definition return_regs (caller callee: locset) : locset :=
+  fun (l: loc) =>
+    match l with
+    | R r => if is_callee_save r then caller (R r) else callee (R r)
+    | S Outgoing ofs ty => Vundef
+    | S sl ofs ty => caller (S sl ofs ty)
+    end.
+
+Definition return_regs_ext (caller callee: locset) (callee_sig: signature) : locset :=
   fun (l: loc) =>
     match l with
     | R r => if in_mreg r (regs_of_rpair (loc_result callee_sig))
@@ -186,6 +203,12 @@ Definition call_comp (stack: list stackframe) : compartment :=
   match stack with
   | nil => default_compartment
   | Stackframe f _ _ _ _ _ :: _ => (comp_of f)
+  end.
+
+Definition callee_comp (stack: list stackframe) : compartment :=
+  match stack with
+  | nil => default_compartment (* should not happen *)
+  | Stackframe _ cp _ _ _ _ :: _ => cp
   end.
 
 
@@ -292,13 +315,19 @@ Inductive step: state -> trace -> state -> Prop :=
       rs' = undef_regs (destroyed_by_store chunk addr) rs ->
       step (Block s f sp (Lstore chunk addr args src :: bb) rs m)
         E0 (Block s f sp bb rs' m')
-  | exec_Lcall: forall s f sp sig ros bb rs m fd vf args t,
+  | exec_Lcall: forall s f sp sig ros bb rs m fd vf callrs args t,
       find_function ros rs = Some fd ->
       find_function_ptr ros rs = Some vf ->
       funsig fd = sig ->
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
+      forall (CALLREGS:
+               callrs =
+                 match Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) with
+                 | Genv.CrossCompartmentCall => call_regs_ext rs sig
+                 | _ => call_regs rs
+                 end),
       forall (ARGS: args = map (fun p => Locmap.getpair p
-                                   (undef_regs destroyed_at_function_entry (call_regs rs sig)))
+                                   (undef_regs destroyed_at_function_entry callrs))
                         (loc_parameters sig)),
       forall (NO_CROSS_PTR:
           Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall ->
@@ -307,7 +336,7 @@ Inductive step: state -> trace -> state -> Prop :=
       step (Block s f sp (Lcall sig ros :: bb) rs m)
         t (Callstate (Stackframe f (Genv.find_comp ge vf) sig sp rs bb :: s) fd rs m)
   | exec_Ltailcall: forall s f sp sig ros bb rs m fd rs' m' vf,
-      rs' = return_regs (parent_locset s) rs sig ->
+      rs' = return_regs (parent_locset s) rs ->
       find_function ros rs' = Some fd ->
       find_function_ptr ros rs' = Some vf ->
       funsig fd = sig ->
@@ -338,13 +367,25 @@ Inductive step: state -> trace -> state -> Prop :=
       rs' = undef_regs (destroyed_by_jumptable) rs ->
       step (Block s f sp (Ljumptable arg tbl :: bb) rs m)
         E0 (State s f sp pc rs' m)
-  | exec_Lreturn: forall s f sp bb rs m m',
+  | exec_Lreturn: forall s f retrs sp bb rs m m',
       Mem.free m sp 0 f.(fn_stacksize) (comp_of f) = Some m' ->
+      forall (RETREGS:
+               retrs =
+                 match Genv.type_of_call ge (call_comp s) (callee_comp s (* = [comp_of f] *)) with
+                 | Genv.CrossCompartmentCall => return_regs_ext (parent_locset s) rs (parent_signature s)
+                 | _ => return_regs (parent_locset s) rs
+                 end),
       step (Block s f (Vptr sp Ptrofs.zero) (Lreturn :: bb) rs m)
-        E0 (Returnstate s (return_regs (parent_locset s) rs (parent_signature s)) m')
-  | exec_function_internal: forall s f rs m m' sp rs',
+        E0 (Returnstate s retrs m')
+  | exec_function_internal: forall s f rs m m' sp callrs rs',
       Mem.alloc m (comp_of f) 0 f.(fn_stacksize) = (m', sp) ->
-      rs' = undef_regs destroyed_at_function_entry (call_regs rs (parent_signature s)) ->
+      forall (CALLREGS:
+               callrs =
+                 match Genv.type_of_call ge (call_comp s) (comp_of f) with
+                 | Genv.CrossCompartmentCall => call_regs_ext rs (parent_signature s)
+                 | _ => call_regs rs
+                 end),
+      rs' = undef_regs destroyed_at_function_entry callrs ->
       step (Callstate s (Internal f) rs m)
         E0 (State s f (Vptr sp Ptrofs.zero) f.(fn_entrypoint) rs' m')
   | exec_function_external: forall s ef t args res rs m rs' m',
