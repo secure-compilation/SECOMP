@@ -110,31 +110,16 @@ Section RSC.
         transf_c_program p = OK p_compiled /\
           transf_c_program C = OK C_compiled.
 
-  (* Axiom backtranslation_correct: *)
-  (*   forall pol t, *)
-  (*     c_program_has_initial_trace (backtranslation pol t) t. *)
   Axiom backtranslation_pol: forall pol s t,
       Ctypes.prog_pol (fst (backtranslation pol s t)) = pol /\
       Ctypes.prog_pol (snd (backtranslation pol s t)) = pol.
-  (* Axiom backtranslation_compile: forall pol t, *)
-  (*     exists W_compiled, *)
-  (*       transf_c_program (backtranslation pol t) = OK W_compiled. *)
 
   Axiom forward_correctness:
     forall W W' t,
       match_prog W W' ->
-      (* transf_c_program W = OK W' -> *)
       c_program_has_initial_trace W t ->
       asm_program_has_initial_trace W' t.
 
-  (* Axiom unlink_compilation_correct: *)
-  (*   forall W W_compiled p p', *)
-  (*     unlink s W = (p, p') -> *)
-  (*     transf_c_program W = OK W_compiled -> *)
-  (*     exists p_compiled p'_compiled, *)
-  (*       transf_c_program p = OK p_compiled /\ *)
-  (*       transf_c_program p' = OK p'_compiled /\ *)
-  (*       link p_compiled p'_compiled = Some W_compiled. *)
 
   Axiom recomposition:
     forall W W'' p1 p2 p1'' p2'' t,
