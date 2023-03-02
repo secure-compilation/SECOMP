@@ -697,9 +697,14 @@ Proof.
     assert (X: Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall).
     { erewrite find_comp_translated, type_of_call_translated; eauto. rewrite comp_transf_fundef; eauto. }
     specialize (NO_CROSS_PTR X).
+    rewrite H1. rewrite X in NO_CROSS_PTR.
     eauto.
   }
   { erewrite <- find_comp_translated, <- comp_transf_fundef; eauto.
+    erewrite <- type_of_call_translated, comp_preserved; eauto.
+    destruct (Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf)) eqn:TY_CALL.
+    eapply call_trace_eq; eauto using symbols_preserved, senv_preserved.
+    eapply call_trace_eq; eauto using symbols_preserved, senv_preserved.
     eapply call_trace_eq; eauto using symbols_preserved, senv_preserved. }
   econstructor; eauto. constructor; auto.
   rewrite find_comp_translated.
@@ -770,6 +775,19 @@ Proof.
   simpl. apply plus_one. econstructor; eauto.
   rewrite (stacksize_preserved _ _ TRF). erewrite comp_preserved; eauto.
   rewrite (match_parent_locset _ _ STACKS).
+  assert (CALLER: LTL.call_comp s = call_comp ts).
+  { inv STACKS. reflexivity.
+    inv H0. simpl. erewrite comp_preserved; eauto. }
+  assert (CALLEE: LTL.callee_comp s = callee_comp ts).
+  { inv STACKS. reflexivity.
+    inv H0. reflexivity. }
+  assert (SIG: LTL.parent_signature s = parent_signature ts).
+  { inv STACKS. reflexivity.
+    inv H0. reflexivity. }
+  rewrite type_of_call_translated, CALLER, CALLEE, SIG.
+  destruct (Genv.type_of_call tge (call_comp ts) (callee_comp ts)).
+  econstructor; eauto.
+  econstructor; eauto.
   econstructor; eauto.
 
   (* internal functions *)
@@ -781,6 +799,24 @@ Proof.
   rewrite (stacksize_preserved _ _ EQ).
   rewrite (comp_preserved _ _ EQ). eauto.
   generalize EQ; intro EQ'; monadInv EQ'. simpl.
+  assert (CALLER: LTL.call_comp s = call_comp ts).
+  { inv H6. reflexivity.
+    inv H0. simpl. erewrite comp_preserved; eauto. }
+  assert (SIG: LTL.parent_signature s = parent_signature ts).
+  { inv H6. reflexivity.
+    inv H0. reflexivity. }
+  rewrite type_of_call_translated, CALLER, SIG.
+  change (LTL.fn_comp f) with (comp_of f).
+  change (comp_of
+            {|
+              fn_comp := comp_of f;
+              fn_sig := LTL.fn_sig f;
+              fn_stacksize := LTL.fn_stacksize f;
+              fn_code := add_branch (fn_entrypoint f) (linearize_body f x0)
+            |}) with (comp_of f).
+  destruct (Genv.type_of_call tge (call_comp ts) (comp_of f)).
+  econstructor; eauto. simpl. eapply is_tail_add_branch. constructor.
+  econstructor; eauto. simpl. eapply is_tail_add_branch. constructor.
   econstructor; eauto. simpl. eapply is_tail_add_branch. constructor.
 
   (* external function *)
