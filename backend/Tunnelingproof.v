@@ -533,21 +533,39 @@ Proof.
 Qed.
 
 Lemma call_regs_lessdef:
-  forall ls1 ls2 sg, locmap_lessdef ls1 ls2 -> locmap_lessdef (call_regs ls1 sg) (call_regs ls2 sg).
+  forall ls1 ls2, locmap_lessdef ls1 ls2 -> locmap_lessdef (call_regs ls1) (call_regs ls2).
 Proof.
   intros; red; intros. destruct l as [r | [] ofs ty]; simpl; auto.
 Qed.
 
+Lemma call_regs_ext_lessdef:
+  forall ls1 ls2 sg, locmap_lessdef ls1 ls2 -> locmap_lessdef (call_regs_ext ls1 sg) (call_regs_ext ls2 sg).
+Proof.
+  intros; red; intros. destruct l as [r | [] ofs ty]; simpl; auto.
+  destruct (in_mreg r (parameters_mregs sg)); auto.
+Qed.
+
 Lemma return_regs_lessdef:
-  forall caller1 callee1 caller2 callee2 sg,
+  forall caller1 callee1 caller2 callee2,
   locmap_lessdef caller1 caller2 ->
   locmap_lessdef callee1 callee2 ->
-  locmap_lessdef (return_regs caller1 callee1 sg) (return_regs caller2 callee2 sg).
+  locmap_lessdef (return_regs caller1 callee1) (return_regs caller2 callee2).
 Proof.
   intros; red; intros. destruct l; simpl.
 - destruct (Conventions1.is_callee_save r); auto.
 - destruct sl; auto.
 Qed. 
+
+Lemma return_regs_ext_lessdef:
+  forall caller1 callee1 caller2 callee2 sg,
+  locmap_lessdef caller1 caller2 ->
+  locmap_lessdef callee1 callee2 ->
+  locmap_lessdef (return_regs_ext caller1 callee1 sg) (return_regs_ext caller2 callee2 sg).
+Proof.
+  intros; red; intros. destruct l; simpl.
+- destruct (in_mreg r (regs_of_rpair (Conventions1.loc_result sg))); auto.
+- destruct sl; auto.
+Qed.
 
 (** To preserve non-terminating behaviours, we show that the transformed
   code cannot take an infinity of "zero transition" cases.
@@ -660,29 +678,46 @@ Proof.
     assert (X: Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall).
     { erewrite find_comp_translated, type_of_call_translated; eauto. }
     specialize (NO_CROSS_PTR X).
+    rewrite X in NO_CROSS_PTR, EV. rewrite H1.
     apply Forall_forall. rewrite Forall_forall in NO_CROSS_PTR.
     intros v Hin. apply in_map_iff in Hin as [v' [Heq Hin]].
-    apply in_map with (f := (fun p : rpair loc => Locmap.getpair p (undef_regs destroyed_at_function_entry (call_regs rs (funsig fd)))))
+    apply in_map with (f := (fun p : rpair loc => Locmap.getpair p (undef_regs destroyed_at_function_entry (call_regs_ext rs (funsig fd)))))
                          in Hin.
     specialize (NO_CROSS_PTR _ Hin).
-    assert (Val.lessdef (Locmap.getpair v' (undef_regs destroyed_at_function_entry (call_regs rs (funsig fd)))) v).
+    assert (Val.lessdef (Locmap.getpair v' (undef_regs destroyed_at_function_entry (call_regs_ext rs (funsig fd)))) v).
     { subst.
       apply locmap_getpair_lessdef; auto.
       apply locmap_undef_regs_lessdef; auto.
-      apply call_regs_lessdef; auto. }
+      apply call_regs_ext_lessdef; auto. }
     inv H2; eauto.
     rewrite <- H4 in NO_CROSS_PTR; inv NO_CROSS_PTR.
   }
   assert (LD: Val.lessdef_list
-        (map
-            (fun p : rpair loc =>
-             Locmap.getpair p (undef_regs destroyed_at_function_entry (call_regs rs (funsig fd))))
-            (Conventions.loc_parameters (funsig fd)))
-        (map
-       (fun p : rpair loc => Locmap.getpair p (undef_regs destroyed_at_function_entry (call_regs tls (funsig fd))))
-       (Conventions.loc_parameters (funsig fd)))).
+                (map
+                   (fun p : rpair loc =>
+                    Locmap.getpair p
+                      (undef_regs destroyed_at_function_entry
+                         match Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) with
+                         | Genv.CrossCompartmentCall => call_regs_ext rs (funsig fd)
+                         | _ => call_regs rs
+                         end)) (Conventions.loc_parameters (funsig fd)))
+                (map
+                   (fun p : rpair loc =>
+                    Locmap.getpair p
+                      (undef_regs destroyed_at_function_entry
+                         match Genv.type_of_call tge (comp_of (tunnel_function f)) (Genv.find_comp ge vf) with
+                         | Genv.CrossCompartmentCall => call_regs_ext tls (funsig fd)
+                         | _ => call_regs tls
+                         end)) (Conventions.loc_parameters (funsig fd)))).
   { apply locmap_getpairs_lessdef.
     apply locmap_undef_regs_lessdef.
+    assert (EQ: Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf)
+                = Genv.type_of_call tge (comp_of (tunnel_function f)) (Genv.find_comp ge vf)). {
+      rewrite type_of_call_translated, find_comp_translated. reflexivity. }
+    rewrite EQ.
+    destruct (Genv.type_of_call tge (comp_of (tunnel_function f)) (Genv.find_comp ge vf)).
+    apply call_regs_lessdef. auto.
+    apply call_regs_ext_lessdef. auto.
     apply call_regs_lessdef. auto. }
   rewrite <- find_comp_translated, comp_tunnel_fundef.
   eapply call_trace_lessdef; eauto using symbols_preserved, senv_preserved.
@@ -748,6 +783,14 @@ Proof.
   assert (SIG : parent_signature s = parent_signature ts).
   { inv STK; [reflexivity |]. inv H0; reflexivity. }
   rewrite SIG.
+  assert (CALLER : call_comp s = call_comp ts).
+  { inv STK; [reflexivity |]. inv H0; reflexivity. }
+  assert (CALLEE : callee_comp s = callee_comp ts).
+  { inv STK; [reflexivity |]. inv H0; reflexivity. }
+  rewrite type_of_call_translated, CALLER, CALLEE.
+  destruct (Genv.type_of_call tge (call_comp ts) (callee_comp ts)).
+  constructor; eauto using return_regs_lessdef, match_parent_locset.
+  constructor; eauto using return_regs_ext_lessdef, match_parent_locset.
   constructor; eauto using return_regs_lessdef, match_parent_locset.
 - (* internal function *)
   exploit Mem.alloc_extends. eauto. eauto. apply Z.le_refl. apply Z.le_refl.
@@ -757,6 +800,14 @@ Proof.
   assert (SIG : parent_signature s = parent_signature ts).
   { inv STK; [reflexivity |]. inv H0; reflexivity. }
   rewrite SIG.
+  assert (CALLER : call_comp s = call_comp ts).
+  { inv STK; [reflexivity |]. inv H0; reflexivity. }
+  assert (CALLEE : comp_of f = comp_of (tunnel_function f)).
+  { reflexivity. }
+  rewrite type_of_call_translated, CALLER, CALLEE.
+  destruct (Genv.type_of_call tge (call_comp ts) (comp_of (tunnel_function f))).
+  simpl. econstructor; eauto using locmap_undef_regs_lessdef, call_regs_lessdef.
+  simpl. econstructor; eauto using locmap_undef_regs_lessdef, call_regs_ext_lessdef.
   simpl. econstructor; eauto using locmap_undef_regs_lessdef, call_regs_lessdef.
 - (* external function *)
   exploit external_call_mem_extends; eauto using locmap_getpairs_lessdef.
