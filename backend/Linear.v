@@ -151,6 +151,12 @@ Definition call_comp (stack: list stackframe): compartment :=
   | Stackframe f _ _ _ _ _ :: _ => comp_of f
   end.
 
+Definition callee_comp (stack: list stackframe) : compartment :=
+  match stack with
+  | nil => default_compartment (* should not happen *)
+  | Stackframe _ cp _ _ _ _ :: _ => cp
+  end.
+
 (** [parent_locset cs] returns the mapping of values for locations
   of the caller function. *)
 Definition parent_locset (stack: list stackframe) : locset :=
@@ -197,13 +203,19 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State s f sp (Lstore chunk addr args src :: b) rs m)
         E0 (State s f sp b rs' m')
   | exec_Lcall:
-      forall s f sp sig ros b rs m f' vf args t,
+      forall s f sp sig ros b rs m f' vf callrs args t,
       find_function ros rs = Some f' ->
       find_function_ptr ros rs = Some vf ->
       sig = funsig f' ->
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
+      forall (CALLREGS:
+               callrs =
+                 match Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) with
+                 | Genv.CrossCompartmentCall => call_regs_ext rs sig
+                 | _ => call_regs rs
+                 end),
       forall (ARGS: args = map (fun p => Locmap.getpair p
-                                   (undef_regs destroyed_at_function_entry (call_regs rs sig)))
+                                   (undef_regs destroyed_at_function_entry callrs))
                         (loc_parameters sig)),
       forall (NO_CROSS_PTR:
           Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall ->
@@ -213,7 +225,7 @@ Inductive step: state -> trace -> state -> Prop :=
         t (Callstate (Stackframe f (Genv.find_comp ge vf) sig sp rs b:: s) f' rs m)
   | exec_Ltailcall:
       forall s f stk sig ros b rs m rs' f' m' vf,
-      rs' = return_regs (parent_locset s) rs sig ->
+      rs' = return_regs (parent_locset s) rs ->
       find_function ros rs' = Some f' ->
       find_function_ptr ros rs' = Some vf ->
       sig = funsig f' ->
@@ -261,14 +273,26 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State s f sp (Ljumptable arg tbl :: b) rs m)
         E0 (State s f sp b' rs' m)
   | exec_Lreturn:
-      forall s f stk b rs m m',
+      forall s f retrs stk  b rs m m',
       Mem.free m stk 0 f.(fn_stacksize) (comp_of f) = Some m' ->
+      forall (RETREGS:
+               retrs =
+                 match Genv.type_of_call ge (call_comp s) (callee_comp s (* = [comp_of f] *)) with
+                 | Genv.CrossCompartmentCall => return_regs_ext (parent_locset s) rs (parent_signature s)
+                 | _ => return_regs (parent_locset s) rs
+                 end),
       step (State s f (Vptr stk Ptrofs.zero) (Lreturn :: b) rs m)
-        E0 (Returnstate s (return_regs (parent_locset s) rs (parent_signature s)) m')
+        E0 (Returnstate s retrs m')
   | exec_function_internal:
-      forall s f rs m rs' m' stk,
+      forall s f callrs rs m rs' m' stk,
       Mem.alloc m (comp_of f) 0 f.(fn_stacksize) = (m', stk) ->
-      rs' = undef_regs destroyed_at_function_entry (call_regs rs (parent_signature s)) ->
+      forall (CALLREGS:
+               callrs =
+                 match Genv.type_of_call ge (call_comp s) (comp_of f) with
+                 | Genv.CrossCompartmentCall => call_regs_ext rs (parent_signature s)
+                 | _ => call_regs rs
+                 end),
+      rs' = undef_regs destroyed_at_function_entry callrs ->
       step (Callstate s (Internal f) rs m)
         E0 (State s f (Vptr stk Ptrofs.zero) f.(fn_code) rs' m')
   | exec_function_external:
