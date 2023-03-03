@@ -164,6 +164,12 @@ Qed.
 Definition undef_caller_save_regs (rs: regset) : regset :=
   fun r => if is_callee_save r then rs r else Vundef.
 
+Definition undef_caller_save_regs_ext (rs: regset) (callee_sig: signature) : regset :=
+  fun r => if LTL.in_mreg r (LTL.parameters_mregs callee_sig) then rs r else Vundef.
+
+Definition undef_non_return_regs_ext (rs: regset) (callee_sig: signature) : regset :=
+  fun r => if LTL.in_mreg r (regs_of_rpair (loc_result callee_sig)) then rs r else Vundef.
+
 Definition set_pair (p: rpair mreg) (v: val) (rs: regset) : regset :=
   match p with
   | One r => rs#r <- v
@@ -323,7 +329,8 @@ Inductive stackframe: Type :=
 
 Definition callee_comp (s: list stackframe) :=
   match s with
-  | nil => comp_of_main
+  | nil => default_compartment (* should not happen *)
+  (* | nil => comp_of_main *)
   | Stackframe _ cp _ _ _ _ :: _ => cp
   end.
 
@@ -369,6 +376,13 @@ Definition call_comp (s: list stackframe): compartment :=
   match parent_ra s with
   | Vptr b _ => Genv.find_comp ge (Vptr b Ptrofs.zero)
   | _ => default_compartment
+  end.
+
+(* TODO: Better name (also LTL)! *)
+Definition parent_signature (stack: list stackframe) : signature :=
+  match stack with
+  | nil => signature_main
+  | Stackframe _ _ sig _ _ _ :: _ => sig
   end.
 
 Inductive step: state -> trace -> state -> Prop :=
@@ -428,6 +442,7 @@ Inductive step: state -> trace -> state -> Prop :=
       return_address_offset f c ra ->
       forall (CALLED: Genv.find_funct_ptr ge f' = Some fd),
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) (Vptr f' Ptrofs.zero)),
+      (* call_arguments are never invalidated *)
       forall (ARGS: call_arguments (undef_regs destroyed_at_function_entry rs) m sp sig args),
       forall (NO_CROSS_PTR:
           Genv.type_of_call ge (comp_of f) (Genv.find_comp ge (Vptr f' Ptrofs.zero)) = Genv.CrossCompartmentCall ->
@@ -491,23 +506,35 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State s fb sp c' rs' m)
   | exec_Mreturn:
       (* RB: NOTE: Think about compartment variables, here and in a similar case. *)
-      forall s fb stk soff c rs m f m' cp,
+      forall s fb stk soff c rs m f m' retrs cp,
       forall (CURCOMP: Genv.find_comp ge (Vptr fb Ptrofs.zero) = cp),
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
       load_stack m (Vptr stk soff) Tptr f.(fn_link_ofs) (Some cp) = Some (parent_sp s) ->
       load_stack m (Vptr stk soff) Tptr f.(fn_retaddr_ofs) (Some cp) = Some (parent_ra s) ->
       Mem.free m stk 0 f.(fn_stacksize) cp = Some m' ->
+      forall (RETREGS:
+               retrs =
+                 match Genv.type_of_call ge (call_comp s) (callee_comp s (* = [comp_of f] *)) with
+                 | Genv.CrossCompartmentCall => undef_non_return_regs_ext rs (parent_signature s)
+                 | _ => rs
+                 end),
       step (State s fb (Vptr stk soff) (Mreturn :: c) rs m)
-        E0 (Returnstate s rs m')
+        E0 (Returnstate s retrs m')
   | exec_function_internal:
-      forall s fb rs m f m1 m2 m3 stk rs' cp,
+      forall s fb rs m f m1 m2 m3 stk callrs rs' cp,
       forall (CURCOMP: Genv.find_comp ge (Vptr fb Ptrofs.zero) = cp),
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
       Mem.alloc m cp 0 f.(fn_stacksize) = (m1, stk) ->
       let sp := Vptr stk Ptrofs.zero in
       store_stack m1 sp Tptr f.(fn_link_ofs) (parent_sp s) cp = Some m2 ->
       store_stack m2 sp Tptr f.(fn_retaddr_ofs) (parent_ra s) cp = Some m3 ->
-      rs' = undef_regs destroyed_at_function_entry rs ->
+      forall (CALLREGS:
+               callrs =
+                 match Genv.type_of_call ge (call_comp s) (Genv.find_comp ge (Vptr fb Ptrofs.zero)) with
+                 | Genv.CrossCompartmentCall => undef_caller_save_regs_ext rs (parent_signature s)
+                 | _ => rs
+                 end),
+      rs' = undef_regs destroyed_at_function_entry callrs ->
       step (Callstate s fb rs m)
         E0 (State s fb sp f.(fn_code) rs' m3)
   | exec_function_external:
