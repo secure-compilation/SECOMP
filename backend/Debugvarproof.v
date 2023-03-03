@@ -524,11 +524,14 @@ Proof.
   inv TRF.
   eapply allowed_call_translated; eauto.
   reflexivity.
+  reflexivity.
   { intros. subst.
     assert (X: Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall).
     { erewrite find_comp_translated, type_of_call_translated; eauto.
       inv TRF. eauto. }
-    specialize (NO_CROSS_PTR X). eauto.
+    specialize (NO_CROSS_PTR X).
+    rewrite H1. rewrite X in NO_CROSS_PTR.
+    eauto.
   }
   { erewrite <- find_comp_translated.
     inv TRF; unfold comp_of; simpl.
@@ -587,13 +590,41 @@ Proof.
   econstructor; split.
   apply plus_one.  econstructor. inv TRF; eauto. traceEq.
   rewrite (parent_locset_match _ _ STACKS).
+  assert (CALLER: call_comp s = call_comp ts).
+  { inv STACKS. reflexivity.
+    inv H0. inv H2. reflexivity. }
+  assert (CALLEE: callee_comp s = callee_comp ts).
+  { inv STACKS. reflexivity.
+    inv H0. reflexivity. }
+  assert (SIG: parent_signature s = parent_signature ts).
+  { inv STACKS. reflexivity.
+    inv H0. reflexivity. }
+  rewrite type_of_call_translated, CALLEE, CALLER, SIG.
+  destruct (Genv.type_of_call tge (call_comp ts) (callee_comp ts)).
+  inv TRF; constructor; auto.
+  inv TRF; constructor; auto.
   inv TRF; constructor; auto.
 - (* internal function *)
   monadInv H7. rename x into tf.
   assert (MF: match_function f tf) by (apply transf_function_match; auto).
   inversion MF; subst.
   econstructor; split.
-  apply plus_one. constructor. simpl; eauto. reflexivity.
+
+  apply plus_one. eapply exec_function_internal. simpl; eauto. reflexivity. reflexivity.
+
+  assert (CALLER: call_comp s = call_comp ts).
+  { inv H6. reflexivity.
+    inv H1. inv H3. reflexivity. }
+  assert (SIG: parent_signature s = parent_signature ts).
+  { inv H6. reflexivity.
+    inv H1. reflexivity. }
+  rewrite type_of_call_translated, CALLER, SIG.
+  change
+    (comp_of {| fn_comp := fn_comp f; fn_sig := fn_sig f; fn_stacksize := fn_stacksize f; fn_code := c |})
+    with (comp_of f).
+  destruct (Genv.type_of_call tge (call_comp ts) (comp_of f)).
+  constructor; auto.
+  constructor; auto.
   constructor; auto.
 - (* external function *)
   monadInv H8. econstructor; split.
