@@ -65,7 +65,7 @@ Variant right_executing_injection: state -> state -> Prop :=
        context continuation *)
     right_cont_injection k1 k2 ->
 
-    right_execution_injection (State f s k1 en m1) (State f s k2 en m2)
+    right_executing_injection (State f s k1 en m1) (State f s k2 en m2)
 | inject_exprstates: forall f e k1 k2 en m1 m2,
     (* we forget about program memories but require injection of context memories *)
     right_mem_injection m1 m2 ->
@@ -74,7 +74,7 @@ Variant right_executing_injection: state -> state -> Prop :=
        context continuation *)
     right_cont_injection k1 k2 ->
 
-    right_execution_injection (ExprState f e k1 en m1) (ExprState f e k2 en m2)
+    right_executing_injection (ExprState f e k1 en m1) (ExprState f e k2 en m2)
 | inject_callstates: forall f vs k1 k2 m1 m2,
     (* we forget about program memories but require injection of context memories *)
     right_mem_injection m1 m2 ->
@@ -83,7 +83,7 @@ Variant right_executing_injection: state -> state -> Prop :=
        context continuation *)
     right_cont_injection k1 k2 ->
 
-    right_execution_injection (Callstate f vs k1 m1) (Callstate f vs k2 m2)
+    right_executing_injection (Callstate f vs k1 m1) (Callstate f vs k2 m2)
 | inject_returnstates: forall v k1 k2 m1 m2 ty cp,
     (* we forget about program memories but require injection of context memories *)
     right_mem_injection m1 m2 ->
@@ -92,10 +92,15 @@ Variant right_executing_injection: state -> state -> Prop :=
        context continuation *)
     right_cont_injection k1 k2 ->
 
-    right_execution_injection (Returnstate v k1 m1 ty cp) (Returnstate v k2 m2 ty cp)
+    right_executing_injection (Returnstate v k1 m1 ty cp) (Returnstate v k2 m2 ty cp)
 | inject_stuckstates:
-    right_execution_injection Stuckstate Stuckstate.
+    right_executing_injection Stuckstate Stuckstate.
 
+Axiom is_left: split -> state -> Prop.
+Axiom is_right: split -> state -> Prop.
+
+Axiom memory_of: state -> mem.
+Axiom cont_of: state -> cont.
 
 Variant right_state_injection: state -> state -> Prop :=
 | LeftControl: forall st1 st2,
@@ -119,13 +124,59 @@ Variant right_state_injection: state -> state -> Prop :=
     right_state_injection st1 st2.
 
 
-    right_mem_injection (memory_of st1) (memory_of st2) ->
-    (* we put holes in place of context information in the stack *)
-    pgps = to_partial_stack gps (domm ctx) C ->
+End Equivalence.
 
-    partial_state ctx [CState C, gps, mem, k, e, arg] (CC (C, pgps, pmem)).
+Section Simulation.
+  Context (c p1 p2: Csyntax.program).
+  Variable s: split.
+  Variable j: meminj.
+
+  Context (ge1 ge2: genv).
 
 
+  Lemma parallel_concrete: forall s1 s2 s1' t,
+      right_state_injection s j s1 s2 ->
+      is_right s s1 ->
+      Csem.step ge1 s1 t s1' ->
+      exists s2',
+        Csem.step ge2 s2 t s2' /\
+          right_state_injection s j s1' s2'.
+    Proof.
+      intros s1 s2 s1' t rs_inj is_r step1.
+      inv rs_inj.
+      - admit. (* contradiction *)
+      - inv step1; inv H2.
+        + inv H1.
+          assert (lemma: right_mem_injection s j m m2 ->
+                  lred ge1 e a m a' m' ->
+                  exists m2', lred ge2 e a m2 a' m2' /\ right_mem_injection s j m' m2').
+          admit.
+          exploit lemma; eauto. intros [? [? ?]].
+          eexists; split.
+          constructor. constructor; eauto.
+          right. admit. admit. econstructor; eauto.
+  Admitted.
+
+
+  Lemma parallel_abstract_E0: forall s1 s2 s1' s2',
+      right_state_injection s j s1 s2 ->
+      is_left s s1 ->
+      Csem.step ge1 s1 E0 s1' ->
+      Csem.step ge2 s2 E0 s2' ->
+      right_state_injection s j s1' s2'.
+    Proof.
+      intros s1 s2 s1' t rs_inj is_l step1.
+      inv rs_inj.
+      - admit.
+      - admit. (* contradiction *)
+  Admitted.
+
+  Lemma parallel_abstract_t: forall s1 s2 s1' s2' t,
+      right_state_injection s j s1 s2 ->
+      is_left s s1 ->
+      Csem.step ge1 s1 t s1' ->
+      Csem.step ge2 s2 t s2' ->
+      right_state_injection s j s1' s2'.
 
 Lemma parallel_concrete p1 p2 scs1 scs2:
   left_side s p1 -> (* use definitions from RSC.v *)
