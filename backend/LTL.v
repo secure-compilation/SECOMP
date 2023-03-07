@@ -371,7 +371,7 @@ Inductive step: state -> trace -> state -> Prop :=
       Mem.free m sp 0 f.(fn_stacksize) (comp_of f) = Some m' ->
       forall (RETREGS:
                retrs =
-                 match Genv.type_of_call ge (call_comp s) (callee_comp s (* = [comp_of f] *)) with
+                 match Genv.type_of_call ge (call_comp s) (callee_comp s (* FIXME = [comp_of f] *)) with
                  | Genv.CrossCompartmentCall => return_regs_ext (parent_locset s) rs (parent_signature s)
                  | _ => return_regs (parent_locset s) rs
                  end),

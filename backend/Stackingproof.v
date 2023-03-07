@@ -2398,10 +2398,10 @@ Proof.
     unfold comp_of; simpl. eauto.
   traceEq.
   assert (TY_CALL: Genv.type_of_call ge (Linear.call_comp s) (Linear.callee_comp s)
-                   = Genv.type_of_call tge (call_comp tge cs') (callee_comp cs'))
+                   = Genv.type_of_call tge (call_comp tge cs') (comp_of tf))
     by admit.
   rewrite TY_CALL.
-  destruct (Genv.type_of_call tge (call_comp tge cs') (callee_comp cs')).
+  destruct (Genv.type_of_call tge (call_comp tge cs') (comp_of tf)).
   {
   econstructor; eauto.
   rewrite sep_swap; exact G.

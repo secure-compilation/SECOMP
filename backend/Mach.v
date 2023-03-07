@@ -329,8 +329,7 @@ Inductive stackframe: Type :=
 
 Definition callee_comp (s: list stackframe) :=
   match s with
-  | nil => default_compartment (* should not happen *)
-  (* | nil => comp_of_main *)
+  | nil => comp_of_main
   | Stackframe _ cp _ _ _ _ :: _ => cp
   end.
 
@@ -514,7 +513,7 @@ Inductive step: state -> trace -> state -> Prop :=
       Mem.free m stk 0 f.(fn_stacksize) cp = Some m' ->
       forall (RETREGS:
                retrs =
-                 match Genv.type_of_call ge (call_comp s) (callee_comp s (* = [comp_of f] *)) with
+                 match Genv.type_of_call ge (call_comp s) (comp_of f) with
                  | Genv.CrossCompartmentCall => undef_non_return_regs_ext rs (parent_signature s)
                  | _ => rs
                  end),
