@@ -46,11 +46,11 @@
    This seems *very* bad and worth fixing, as it makes the proof particulary redundant and ugly
 [] In general: clean the proofs :(
 [] Make the other backends compile. In these backends, ignore compartments completely.
-[] Try to merge current CompCert into our branch. That way we can identify the biggest changes we made
-   and document them. 
-   /!\ If someone does that it's really important to use this opportunity to identify parts that could
-   be simplified/that are redundant/etc.
-   /!\ And also to write documentation
+[X] Try to merge current CompCert into our branch. That way we can identify the biggest changes we made
+    and document them.
+    /!\ If someone does that it's really important to use this opportunity to identify parts that could
+    be simplified/that are redundant/etc.
+    /!\ And also to write documentation
 
 [] (Rob) Understand how callee/caller-saved works in CompCert. Can we make everything except arguments
    caller-saved (only for cross-compartment calls?)? (arguments do not need to be saved anyway)
