@@ -888,6 +888,16 @@ Definition no_caller_saves (e: eqs) : bool :=
        end)
     e.
 
+Definition no_caller_saves_ext (e: eqs) : bool :=
+  EqSet.for_all
+   (fun eq =>
+     match eloc eq with
+       | R r => false
+       | S Outgoing _ _ => false
+       | S _ _ _ => true
+       end)
+    e.
+
 (** [compat_left r l e] returns true if all equations in [e] that involve
     [r] are of the form [r = l [Full]]. *)
 
@@ -997,6 +1007,14 @@ Definition kind_second_word := if Archi.big_endian then Low else High.
   of an RTL instruction and an LTL basic block.  It returns the set of
   equations that must hold "before" these instructions, or [None] if
   impossible. *)
+
+(* FIXME A [Genv.type_of_call]-like function that closely mimics it but does not
+   take a global environment as a parameter and only distinguishes between
+   cross-compartment calls and everything else. Can be made cleaner. *)
+Definition is_external_call (cp: compartment) (cp': compartment): bool :=
+  if Pos.eqb cp cp' then false
+  else if Pos.eqb cp' default_compartment then false
+       else true.
 
 Definition transfer_aux (f: RTL.function) (env: regenv)
                         (shape: block_shape) (e: eqs) : option eqs :=

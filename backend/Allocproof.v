@@ -1368,17 +1368,40 @@ Qed.
 (* Definition agree_callee_save_ext (ls1 ls2: Locmap.t) (callee_sig: signature) : Prop := *)
 (*   forall l, callee_save_loc_ext l callee_sig -> ls1 l = ls2 l. *)
 
-(* Lemma return_regs_ext_agree_callee_save: *)
-(*   forall caller callee callee_sig, *)
-(*   agree_callee_save_ext caller (return_regs_ext caller callee callee_sig) callee_sig. *)
-(* Proof. *)
-(*   intros; red; intros. unfold return_regs_ext. red in H. *)
-(*   destruct l. *)
-(*   rewrite H; auto. simpl in *. admit. *)
-(*   (* destruct (in_mreg r (regs_of_rpair (loc_result callee_sig))) eqn:IN; *) *)
-(*   (*   [| reflexivity]. *) *)
-(*   (* unfold loc_result in IN. destruct (proj_sig_res callee_sig) eqn:TY. *) *)
-(*   destruct sl; auto || congruence. *)
+(* TODO: Relocate "external" calling convention *)
+
+(* No registers are callee save in the external case (we would turn all
+   non-signature registers into caller-save, but registers for arguments and
+   return values are always caller-save already -- TODO establish formally for
+   the calling convention *)
+Definition callee_save_loc_ext (l: loc) :=
+  match l with
+  | R r => False
+  | S sl ofs ty => sl <> Outgoing
+  end.
+
+Definition agree_callee_save_ext (ls1 ls2: Locmap.t) : Prop :=
+  forall l, callee_save_loc_ext l -> ls1 l = ls2 l.
+
+Lemma return_regs_agree_callee_save_ext:
+  forall caller callee,
+  agree_callee_save_ext caller (return_regs caller callee).
+Proof.
+  intros; red; intros. unfold return_regs. red in H.
+  destruct l.
+  contradiction.
+  destruct sl; auto || congruence.
+Qed.
+
+Lemma return_regs_ext_agree_callee_save_ext:
+  forall caller callee callee_sig,
+  agree_callee_save_ext caller (return_regs_ext caller callee callee_sig).
+Proof.
+  intros; red; intros. unfold return_regs_ext. red in H.
+  destruct l.
+  contradiction.
+  destruct sl; auto || congruence.
+Qed.
 
 Lemma no_caller_saves_sound:
   forall e q,
@@ -1390,6 +1413,42 @@ Proof.
   exploit EqSet.for_all_2; eauto.
   hnf. intros. simpl in H1. rewrite H1. auto.
   lazy beta. destruct (eloc q). auto. destruct sl; congruence.
+Qed.
+
+(* TODO: relocate *)
+Definition no_caller_saves_ext (e: eqs) : bool :=
+  EqSet.for_all
+   (fun eq =>
+     match eloc eq with
+       | R r => false
+       | S Outgoing _ _ => false
+       | S _ _ _ => true
+       end)
+    e.
+
+(* TODO: relocate *)
+Lemma locmap_get_set_loc_result_callee_save_ext:
+  forall sg v rs l,
+  callee_save_loc_ext l ->
+  Locmap.setpair (loc_result sg) v rs l = rs l.
+Proof.
+  intros.
+  apply locmap_get_set_loc_result_callee_save.
+  destruct l.
+  - contradiction.
+  - assumption.
+Qed.
+
+Lemma no_caller_saves_sound_ext:
+  forall e q,
+  no_caller_saves_ext e = true ->
+  EqSet.In q e ->
+  callee_save_loc_ext (eloc q).
+Proof.
+  unfold no_caller_saves_ext, callee_save_loc_ext; intros.
+  exploit EqSet.for_all_2; eauto.
+  hnf. intros. simpl in H1. rewrite H1. auto.
+  lazy beta. destruct (eloc q). discriminate. destruct sl; congruence.
 Qed.
 
 Lemma val_hiword_longofwords:
@@ -1445,6 +1504,48 @@ Proof.
   exploit reg_loc_unconstrained_sound. eexact H2. eauto. intros [C D].
   rewrite Regmap.gso; auto.
   exploit no_caller_saves_sound; eauto. intros.
+  red in H5. rewrite <- H5; auto.
+Qed.
+
+Lemma function_return_satisf_ext:
+  forall rs ls_before ls_after res res' sg e e' v,
+  res' = loc_result sg ->
+  remove_equations_res res res' e = Some e' ->
+  satisf rs ls_before e' ->
+  forallb (fun l => reg_loc_unconstrained res l e') (map R (regs_of_rpair res')) = true ->
+  no_caller_saves_ext e' = true ->
+  Val.lessdef v (Locmap.getpair (map_rpair R res') ls_after) ->
+  agree_callee_save_ext ls_before ls_after ->
+  satisf (rs#res <- v) ls_after e.
+Proof.
+  intros; red; intros.
+  functional inversion H0.
+- (* One register *)
+  subst. rewrite <- H8 in *. simpl in *. InvBooleans.
+  set (e' := remove_equation {| ekind := Full; ereg := res; eloc := R mr |} e) in *.
+  destruct (OrderedEquation.eq_dec q (Eq Full res (R mr))).
+  subst q; simpl. rewrite Regmap.gss; auto.
+  assert (EqSet.In q e'). unfold e', remove_equation; simpl. ESD.fsetdec.
+  exploit reg_loc_unconstrained_sound; eauto. intros [A B].
+  rewrite Regmap.gso; auto.
+  exploit no_caller_saves_sound_ext; eauto. intros.
+  red in H5. rewrite <- H5; auto.
+- (* Two 32-bit halves *)
+  subst. rewrite <- H9 in *. simpl in *.
+  set (e' := remove_equation {| ekind := Low; ereg := res; eloc := R mr2 |}
+          (remove_equation {| ekind := High; ereg := res; eloc := R mr1 |} e)) in *.
+  InvBooleans.
+  destruct (OrderedEquation.eq_dec q (Eq Low res (R mr2))).
+  subst q; simpl. rewrite Regmap.gss.
+  eapply Val.lessdef_trans. apply Val.loword_lessdef. eauto. apply val_loword_longofwords.
+  destruct (OrderedEquation.eq_dec q (Eq High res (R mr1))).
+  subst q; simpl. rewrite Regmap.gss.
+  eapply Val.lessdef_trans. apply Val.hiword_lessdef. eauto. apply val_hiword_longofwords.
+  assert (EqSet.In q e'). unfold e', remove_equation; simpl; ESD.fsetdec.
+  exploit reg_loc_unconstrained_sound. eexact H. eauto. intros [A B].
+  exploit reg_loc_unconstrained_sound. eexact H2. eauto. intros [C D].
+  rewrite Regmap.gso; auto.
+  exploit no_caller_saves_sound_ext; eauto. intros.
   red in H5. rewrite <- H5; auto.
 Qed.
 
