@@ -2213,16 +2213,16 @@ Record tsim_properties (L1 L2 L3: semantics)
          (Plus L3 s3 (e :: nil) s3' \/ (Star L3 s3 (e :: nil) s3' /\ order i' i))
          /\ match_states i' s1' s2' s3';
     tsim_simulation1:
-      forall s1 t s1', Step L1 s1 t s1' ->
+      forall s1 s1', Step L1 s1 E0 s1' ->
       forall i s2 s3, match_states i s1 s2 s3 ->
       exists i', exists s3',
-         (Plus L3 s3 t s3' \/ (Star L3 s3 t s3' /\ order i' i))
+         (Plus L3 s3 E0 s3' \/ (Star L3 s3 E0 s3' /\ order i' i))
       /\ match_states i' s1' s2 s3';
     tsim_simulation2:
-      forall s2 t s2', Step L2 s2 t s2' ->
+      forall s2 s2', Step L2 s2 E0 s2' ->
       forall i s1 s3, match_states i s1 s2 s3 ->
       exists i', exists s3',
-         (Plus L3 s3 t s3' \/ (Star L3 s3 t s3' /\ order i' i))
+         (Plus L3 s3 E0 s3' \/ (Star L3 s3 E0 s3' /\ order i' i))
       /\ match_states i' s1 s2' s3';
     tsim_public_preserved:
       forall id, Senv.public_symbol (symbolenv L3) id = Senv.public_symbol (symbolenv L1) id }
@@ -2230,6 +2230,16 @@ Record tsim_properties (L1 L2 L3: semantics)
 
 Arguments tsim_properties: clear implicits.
 
+Inductive threeway_simulation (L1 L2 L3: semantics)
+  {single_L1: single_events L1} {single_L2: single_events L2} {single_L3: single_events L3} : Prop :=
+  Threeway_simulation (index: Type)
+                      (order: index -> index -> Prop)
+                      (match_states: index -> state L1 -> state L2 -> state L3 -> Prop)
+                      (props: tsim_properties L1 L2 L3 single_L1 single_L2 single_L3
+                                index order match_states).
+
+Arguments Threeway_simulation {L1 L2 L3 single_L1 single_L2 single_L3 index}
+  order match_states props.
 (** ** Three-way simulation of transition sequences *)
 
 Section TSIMULATION_SEQUENCES.
@@ -2311,12 +2321,12 @@ Proof.
         intros [i' [s3' [A B]]].
         destruct A as [A | [A C]].
         -- apply plus_star in A.
-           pose proof (tsim_simulation2 S _ _ _ H2 _ _ _ B).
+           pose proof (tsim_simulation2 S _ _ H2 _ _ _ B).
            destruct H1 as [i'' [s3'' [D E]]].
            specialize (IHstar _ _ H3 _ _ E) as [i''' [s3''' [F G]]].
            exists i'''; exists s3'''; split; auto. eapply star_trans; eauto. eapply star_trans; eauto.
            destruct D. eapply plus_star; eauto. intuition auto. auto.
-        -- pose proof (tsim_simulation2 S _ _ _ H2 _ _ _ B).
+        -- pose proof (tsim_simulation2 S _ _ H2 _ _ _ B).
            destruct H1 as [i'' [s3'' [D E]]].
            specialize (IHstar _ _ H3 _ _ E) as [i''' [s3''' [F G]]].
            exists i'''; exists s3'''; split; auto. eapply star_trans; eauto. eapply star_trans; eauto.
@@ -2453,29 +2463,184 @@ Proof.
       * inv B.
 Qed.
 
-Lemma simulation_forever_silent:
-  forall i s1 s2,
-  Forever_silent L1 s1 -> match_states i s1 s2 ->
-  Forever_silent L2 s2.
+Lemma tsimulation_forever_silent:
+  forall i s1 s2 s3,
+  Forever_silent L1 s1 -> Forever_silent L2 s2 -> match_states i s1 s2 s3 ->
+  Forever_silent L3 s3.
 Proof.
-  assert (forall i s1 s2,
-          Forever_silent L1 s1 -> match_states i s1 s2 ->
-          forever_silent_N (step L2) order (globalenv L2) i s2).
-    cofix COINDHYP; intros.
-    inv H. destruct (fsim_simulation S _ _ _ H1 _ _ H0) as [i' [s2' [A B]]].
+  assert (forall i s1 s2 s3,
+             Forever_silent L1 s1 -> Forever_silent L2 s2 -> match_states i s1 s2 s3 ->
+             forever_silent_N (step L3) order (globalenv L3) i s3).
+  { cofix COINDHYP; intros.
+    inv H.
+    destruct (tsim_simulation1 S _ _ H2 _ _ _ H1) as [i' [s3' [A B]]].
     destruct A as [C | [C D]].
-    eapply forever_silent_N_plus; eauto.
-    eapply forever_silent_N_star; eauto.
-  intros. eapply forever_silent_N_forever; eauto. eapply fsim_order_wf; eauto.
-Qed.
+    - eapply forever_silent_N_plus; eauto.
+    - eapply forever_silent_N_star; eauto. }
 
-Lemma simulation_forever_reactive:
-  forall i s1 s2 T,
-  Forever_reactive L1 s1 T -> match_states i s1 s2 ->
-  Forever_reactive L2 s2 T.
+    intros. eapply forever_silent_N_forever; eauto. eapply tsim_order_wf; eauto.
+Qed. (* NOTE: this proof doesn't use the fact that the second state is forever silent. Is that worrying?
+        -> I don't think so. If the two executions produce the same trace, then it's impossible for one
+        to silently diverge without the other one also diverging. *)
+
+Lemma tsimulation_forever_reactive:
+  forall i s1 s2 s3 T,
+  Forever_reactive L1 s1 T ->
+  Forever_reactive L2 s2 T ->
+  match_states i s1 s2 s3 ->
+  Forever_reactive L3 s3 T.
 Proof.
   cofix COINDHYP; intros.
   inv H.
-  edestruct simulation_star as [i' [st2' [A B]]]; eauto.
+  assert (exists s2', Star L2 s2 t s2' /\ Forever_reactive L2 s2' T0) as [s2' [? ?]].
+  { clear -H0 single_L2. revert s2 T0 H0.
+    induction t; intros.
+    - simpl in *. eexists; eauto using star_refl.
+    - simpl in *. inv H0.
+      destruct t0.
+      + simpl in *. contradiction.
+      + simpl in *. inv H.
+        exploit star_non_E0_split'; eauto. simpl.
+        intros [? [? ?]].
+        destruct t0; simpl in *; subst.
+        * exploit IHt; eauto. intros [? [? ?]].
+          eexists; split; eauto using star_trans.
+        * assert (Forever_reactive L2 x ((e :: t0) *** T)).
+          econstructor; eauto. easy.
+          simpl in H3. rewrite H5 in H3.
+          specialize (IHt _ _ H3) as [? [? ?]].
+          eexists; split; eauto. eapply star_trans. eapply plus_star; eauto. eauto. eauto. }
+  edestruct tsimulation_star as [i' [st2' [A B]]]; eauto.
   econstructor; eauto.
 Qed.
+
+End TSIMULATION_SEQUENCES.
+
+Section THREEWAY_SIMU_DIAGRAM.
+
+Variable L1: semantics.
+Variable L2: semantics.
+Variable L3: semantics.
+Context {single_L1: single_events L1} {single_L2: single_events L2} {single_L3: single_events L3}.
+
+Hypothesis public_preserved:
+  forall id, Senv.public_symbol (symbolenv L2) id = Senv.public_symbol (symbolenv L1) id.
+
+Hypothesis public_preserved':
+  forall id, Senv.public_symbol (symbolenv L3) id = Senv.public_symbol (symbolenv L2) id.
+
+Variable strong_equivalence1: state L1 -> state L3 -> Prop.
+Variable strong_equivalence2: state L2 -> state L3 -> Prop.
+Variable weak_equivalence1: state L1 -> state L3 -> Prop.
+Variable weak_equivalence2: state L2 -> state L3 -> Prop.
+
+Variant match_states: state L1 -> state L2 -> state L3 -> Prop :=
+  | match_states_left: forall s1 s2 s3,
+      strong_equivalence1 s1 s3 ->
+      weak_equivalence2 s2 s3 ->
+      match_states s1 s2 s3
+  | match_states_right: forall s1 s2 s3,
+      weak_equivalence1 s1 s3 ->
+      strong_equivalence2 s2 s3 ->
+      match_states s1 s2 s3.
+
+Hypothesis match_initial_states:
+  forall s1, initial_state L1 s1 ->
+  forall s2, initial_state L2 s2 ->
+  exists s3, initial_state L3 s3 /\ match_states s1 s2 s3.
+
+Hypothesis match_final_states:
+  forall s1 s2 s3 r,
+  match_states s1 s2 s3 ->
+  final_state L1 s1 r ->
+  final_state L2 s2 r ->
+  final_state L3 s3 r.
+
+
+Variable order: (state L1 * state L2) -> (state L1 * state L2) -> Prop.
+Hypothesis order_wf: well_founded order.
+
+
+(* The strongly-related states take a silent step at the same time *)
+Hypothesis step_silent_strong1:
+  forall s1 s1', Step L1 s1 E0 s1' ->
+  forall s2 s3, strong_equivalence1 s1 s3 ->
+           weak_equivalence2 s2 s3 ->
+  exists s3', Plus L3 s3 E0 s3' /\ (* Using Plus to ensure the strongly related states take a step *)
+           strong_equivalence1 s1' s3' /\
+           weak_equivalence2 s2 s3'.
+
+Hypothesis step_silent_strong2:
+  forall s2 s2', Step L2 s2 E0 s2' ->
+  forall s1 s3, strong_equivalence2 s2 s3 ->
+           weak_equivalence1 s1 s3 ->
+  exists s3', Plus L3 s3 E0 s3' /\ (* idem *)
+           strong_equivalence2 s2' s3' /\
+           weak_equivalence1 s1 s3'.
+
+(* The weakly-related state takes a step, not the strongly-related states *)
+Hypothesis step_silent_weak1:
+  forall s1 s1', Step L1 s1 E0 s1' ->
+  forall s2 s3, strong_equivalence2 s2 s3 ->
+           weak_equivalence1 s1 s3 ->
+           weak_equivalence1 s1' s3 /\ order (s1', s2) (s1, s2).
+
+Hypothesis step_silent_weak2:
+  forall s2 s2', Step L2 s2 E0 s2' ->
+  forall s1 s3, strong_equivalence1 s1 s3 ->
+           weak_equivalence2 s2 s3 ->
+           weak_equivalence2 s2' s3 /\ order (s1, s2') (s1, s2).
+
+(* NOTE: should we add a lemma about internal steps that generate an event? *)
+
+(* The three states take a step at the same time, generating an event *)
+(* NOTE: is this lemma enough or should we enforce that the weak and strong relations
+   get swapped? -> i think no, but that's just an intuition that comes from the fact
+   we could imagine having two executions where private events are synchronized but
+   do not lead to a control swap *)
+Hypothesis step_event:
+  forall s1 e s1', Step L1 s1 (e :: nil) s1' ->
+  forall s2 s2',   Step L2 s2 (e :: nil) s2' ->
+  forall s3, match_states s1 s2 s3    ->
+  exists s3', Plus L3 s3 (e :: nil) s3' /\ (* using Plus here because we know if an event is emitted then we've done at least one step *)
+         match_states s1' s2' s3'.
+
+Lemma threeway_simulation_diagram:
+  @threeway_simulation L1 L2 L3 single_L1 single_L2 single_L3.
+Proof.
+  eapply Threeway_simulation with (order := order) (match_states := fun idx s1 s2 s3 => idx = (s1, s2) /\ match_states s1 s2 s3).
+  econstructor; eauto.
+  - intros.
+    exploit match_initial_states; eauto.
+    intros [? [? ?]]. eexists; eexists; split; [| split]; eauto.
+  - intros.
+    exploit match_final_states; intuition eauto.
+  - intros.
+    exploit step_event; try now intuition eauto.
+    intros [? [? ?]].
+    eexists; eexists; intuition eauto.
+  - intros ? ? step1 [? ?] ? ? [eq H].
+    inv eq.
+    inv H.
+    + exploit step_silent_strong1; eauto.
+      intros [? [? [? ?]]].
+      eexists; eexists; intuition eauto.
+      apply match_states_left; auto.
+    + exploit step_silent_weak1; eauto.
+      intros.
+      eexists; eexists; intuition eauto. right; split.
+      eapply star_refl. assumption. apply match_states_right; auto.
+  - intros ? ? step2 [? ?] ? ? [eq H].
+    inv eq.
+    inv H.
+    + exploit step_silent_weak2; eauto.
+      intros.
+      eexists; eexists; intuition eauto. right; split.
+      eapply star_refl. assumption. apply match_states_left; auto.
+    + exploit step_silent_strong2; eauto.
+      intros [? [? [? ?]]].
+      eexists; eexists; intuition eauto.
+      apply match_states_right; auto.
+Qed.
+
+End THREEWAY_SIMU_DIAGRAM.
