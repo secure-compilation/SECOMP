@@ -3,6 +3,7 @@ Require Import Coqlib Maps Errors.
 Require Import AST Linking Smallstep Events Behaviors.
 Require Import Split.
 
+(* TODO: Change everything to start from Clight instead of C. *)
 Require Import Csyntax Asm.
 Require Import Compiler Complements.
 

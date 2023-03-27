@@ -157,6 +157,48 @@ Section Simulation.
           right. admit. admit. econstructor; eauto.
   Admitted.
 
+    (* Example that shows why Blame doesn't hold in the C semantics.
+       Because the semantics are not determinate we can end up in situation like this one:
+
+
+    int f();
+    int x;
+
+    int main() {
+      int a[2];
+      a[0] = (x = 0) + f();
+      if x { a[5] = 42; }
+      else { }
+    }
+
+    (* 2 executions *)
+    (* We know that f(y) produces the same trace. Can the value of x change? *)
+    (* Let's say f() does x = 1 - x *)
+
+    (* execution 1: assignment first: x = 1 we take the if branch *)
+    (* execution 2: call first:       x = 0 we take the else branch *)
+    *)
+
+
+  Lemma parallel_concrete_E0: forall s1 s2 s1' s2' t,
+      right_state_injection s j s1 s2 ->
+      is_right s s1 -> (* in the context *)
+      Csem.step ge1 s1 E0 s1' ->
+      Csem.step ge2 s2 t s2' ->
+      t = E0 /\ right_state_injection s j s1' s2'.
+    Proof.
+      intros.
+      exploit parallel_concrete; eauto.
+      intros [? [? ?]].
+      assert (t = E0 /\ s2' = x).
+      { clear -H2 H3.
+        inv H2; inv H3.
+        - admit.
+        - inv H; inv H0; eauto.
+      }
+      (* rely on determinacy lemma with empty traces? *)
+      (* doesn't seem to work because Csem doesn't seem to have a fixed evaluation order *)
+  Admitted.
 
   Lemma parallel_abstract_E0: forall s1 s2 s1' s2',
       right_state_injection s j s1 s2 ->
