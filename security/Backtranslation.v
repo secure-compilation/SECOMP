@@ -29,7 +29,8 @@ Section Backtranslation.
     match v with
     | EVint i => Econst_int i (Tint I32 Signed noattr)
     | EVlong i => Econst_long i (Tlong Signed noattr)
-    | EVfloat f => Econst_float f (Tfloat F32 noattr)
+    | EVfloat f => Econst_float f (Tfloat F64 noattr)
+    (* | EVfloat f => Econst_float f (Tfloat F32 noattr) *)
     | EVsingle f => Econst_single f (Tfloat F32 noattr)
     | EVptr_global id ofs => Ebinop Cop.Oadd
                               (Eaddrof (Evar id Tvoid) (Tpointer Tvoid noattr))
