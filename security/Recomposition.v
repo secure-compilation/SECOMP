@@ -74,6 +74,125 @@ End SEMANTICS.
 
 Require Import Split.
 
+Section MERGE.
+
+Variable sp : split.
+
+Definition merge_frames (f f'' : stackframe) : stackframe :=
+  match f with
+  | Stackframe _ cp _ _ _ =>
+      match sp cp with
+      | Left => f
+      | Right => f''
+      end
+  end.
+
+Fixpoint merge_stacks (s s'' : stack) : stack :=
+  match s, s'' with
+  | nil, nil => nil
+  | f :: s, f'' :: s'' => merge_frames f f'' :: merge_stacks s s''
+  | _, _ => nil (* Should not happen *)
+  end.
+
+(* Merging the memories of two executions can be tricky. The main reason for
+   this is that in the CompCert memory model (extended with compartments) the
+   mapping between memory blocks across executions is not necessarily the
+   identity.
+
+   Consider for example two parallel executions which perform different
+   allocation sequences. These can be split depending on the side that is
+   executing at each point in time according to the split.
+
+            | Left    | Right   | Left    | ...
+     prog   | 1, 2, 3 | 4, 5, 6 | 7, 8, 9 | ...
+     prog'' | 1       | 2       | 3       | ...
+
+   It is not possible to simply take the Left blocks from one execution and the
+   Right blocks from the other, as this could result in clashes between block
+   identifiers.
+
+     prog'  | 1, 2, 3 | 2       | 7, 8, 9 | ...
+
+   A possible solution to this problem must involve a slightly more interesting
+   mapping from block identifiers and sides to block identifiers. For example,
+   we could reserve even blocks for blocks coming from the Left side (2 * n) and
+   odd blocks for blocks coming from the Right side (2 * n + 1). Thus:
+
+     prog'  | 2, 4, 6 | 5       | 14, ... | ...
+
+   A consequence of this rearrangement is that memory contents must also change
+   to reflect the mapping, i.e., the same mapping must be applied to block
+   identifiers in pointer values. *)
+
+(* TODO Actually go from [memval] to [val], remap blocks according to the side
+   and leave the rest intact *)
+Definition merge_value (s : side) (v : memval) : memval :=
+  v.
+
+Definition merge_contents (m m'' : mem) :=
+  let c := Mem.mem_contents m in
+  let c'' := Mem.mem_contents m'' in
+  (* TODO Not a pure map function *)
+  let cnew := Maps.PMap.map (Maps.ZMap.map (merge_value Left)) c in
+  let cnew'' := Maps.PMap.map (Maps.ZMap.map (merge_value Left)) c'' in
+  cnew. (* TODO Merge [cnew] and [cnew''] *)
+
+Definition merge_access (m m'' : mem) :=
+  let a := Mem.mem_access m in
+  let a'' := Mem.mem_access m'' in
+  (* TODO Remap and combine block identifiers according to side *)
+  a.
+
+Definition merge_compartments (m m'' : mem) :=
+  let c := Mem.mem_compartments m in
+  let c'' := Mem.mem_compartments m'' in
+  (* TODO Remap and combine block identifiers according to side *)
+  c.
+
+Definition merge_nextblocks (m m'' : mem) :=
+  let n := Mem.nextblock m in
+  let n'' := Mem.nextblock m'' in
+  (* TODO Tight bounds based on side *)
+  Pos.max (2 * n + 1) (2 * n'' + 1).
+
+Program Definition merge_memories (m m'' : mem) : mem :=
+  {| Mem.mem_contents := merge_contents m m''
+   ; Mem.mem_access := merge_access m m''
+   ; Mem.mem_compartments := merge_compartments m m''
+   ; Mem.nextblock := merge_nextblocks m m''
+  |}.
+Next Obligation.
+Admitted.
+Next Obligation.
+Admitted.
+Next Obligation.
+Admitted.
+Next Obligation.
+Admitted.
+
+Definition merge_registers (r r'' : regset) (m : mem) : regset :=
+  match Mem.val_compartment m r#PC with
+  | Some cp =>
+      match sp cp with
+      | Left => r
+      | Right => r''
+      end
+  | None =>
+      r (* Should not happen *)
+  end.
+
+Definition merge_states (state state'' : state) : Asm.state :=
+  match state, state'' with
+  | State s r m, State s'' r'' m'' =>
+      State (merge_stacks s s'') (merge_registers r r'' m) (merge_memories m m'')
+  | ReturnState s r m, ReturnState s'' r'' m'' =>
+      ReturnState (merge_stacks s s'') (merge_registers r r'' m) (merge_memories m m'')
+  | _, _ =>
+      state (* Should not happen *)
+  end.
+
+End MERGE.
+
 Section MERGEABLE.
 
 Variables p c p' c' : program.
