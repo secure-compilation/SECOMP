@@ -125,6 +125,14 @@ Fixpoint merge_stacks (s s'' : stack) : stack :=
    to reflect the mapping, i.e., the same mapping must be applied to block
    identifiers in pointer values. *)
 
+Definition remap {X : Type} (s : side) (t : Maps.PTree.t X) (e : positive * X) : Maps.PTree.t X :=
+  let '(b, x) := e in
+  let b' := match s with
+            | Left => 2 * b
+            | Right => 2 * b + 1
+            end%positive in
+  Maps.PTree.set b' x t.
+
 (* TODO Actually go from [memval] to [val], remap blocks according to the side
    and leave the rest intact (see [memory_chunk], [AST]) *)
 Definition merge_value (s : side) (v : memval) : memval :=
@@ -588,24 +596,24 @@ Theorem recombination_prefix m :
   does_prefix sem'' m ->
   does_prefix sem'  m.
 Proof.
-  (* unfold does_prefix. *)
-  (* intros [b [Hbeh Hprefix]] [b'' [Hbeh'' Hprefix'']]. *)
-  (* assert (Hst_beh := Hbeh). assert (Hst_beh'' := Hbeh''). *)
-  (* apply program_behaves_inv in Hst_beh   as [s1   [Hini1   Hst_beh  ]]. *)
-  (* apply program_behaves_inv in Hst_beh'' as [s1'' [Hini1'' Hst_beh'']]. *)
-  (* destruct m as [tm nm | tm | tm]. *)
-  (* - destruct b   as [t   n   | ? | ? | ?]; try contradiction. *)
-  (*   destruct b'' as [t'' n'' | ? | ? | ?]; try contradiction. *)
-  (*   simpl in Hprefix, Hprefix''. destruct Hprefix. destruct Hprefix''. subst t t'' n n''. *)
-  (*   inversion Hst_beh   as [? s2   Hstar12   Hfinal2   | | |]; subst. *)
-  (*   inversion Hst_beh'' as [? s2'' Hstar12'' Hfinal2'' | | |]; subst. *)
-  (*   exists (Terminates tm nm). split; [| now constructor]. *)
-  (*     pose proof match_initial_states Hwfp Hwfc Hwfp' Hwfc' Hmergeable_ifaces Hifacep Hifacec *)
-  (*          Hprog_is_closed Hprog_is_closed' Hini1 Hini1'' as [Hini1' Hmerge1]. *)
-  (*     pose proof star_simulation Hmerge1 Hstar12 Hstar12'' as [Hstar12' Hmerge2]. *)
-  (*     apply program_runs with (s := merge_states ip ic s1 s1''); *)
-  (*       first assumption. *)
-  (*     apply state_terminates with (s' := merge_states ip ic s2 s2''); *)
+  unfold does_prefix.
+  intros [b [Hbeh Hprefix]] [b'' [Hbeh'' Hprefix'']].
+  assert (Hst_beh := Hbeh). assert (Hst_beh'' := Hbeh'').
+  apply program_behaves_inv in Hst_beh   as [s1   [Hini1   Hst_beh  ]].
+  apply program_behaves_inv in Hst_beh'' as [s1'' [Hini1'' Hst_beh'']].
+  destruct m as [tm nm | tm | tm].
+  - destruct b   as [t   n   | ? | ? | ?]; try contradiction.
+    destruct b'' as [t'' n'' | ? | ? | ?]; try contradiction.
+    simpl in Hprefix, Hprefix''. destruct Hprefix. destruct Hprefix''. subst t t'' n n''.
+    inversion Hst_beh   as [? s2   Hstar12   Hfinal2   | | |]; subst.
+    inversion Hst_beh'' as [? s2'' Hstar12'' Hfinal2'' | | |]; subst.
+    exists (Terminates tm nm). split; [| now constructor].
+    pose proof match_initial_states _ _ _ _ _ Hcompat Hcompat' _ _ _
+      Hprog Hprog' Hprog'' _ _ Hini1 Hini1'' as [Hini1' Hmerge1].
+    pose proof star_simulation Hmerge1 Hstar12 Hstar12'' as [Hstar12' Hmerge2].
+    apply program_runs with (s := merge_states ip ic s1 s1'');
+      first assumption.
+      apply state_terminates with (s' := merge_states ip ic s2 s2'');
   (*       first assumption. *)
   (*     now apply match_final_states with (p' := p'). *)
   (*   - destruct b   as [? | ? | ? | t  ]; try contradiction. *)
