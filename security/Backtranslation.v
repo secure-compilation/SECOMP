@@ -181,6 +181,22 @@ Section Backtranslation.
     now apply G; lia.
   Admitted.
 
+
+  Section WithTrace.
+
+    Variable cp: compartment.
+    Variable t: trace.
+    (* Hypothesis t_cp: forall e \in t, comp_of e = cp. *)
+    (* Hypothesis t_small_enoug: length t <= 2^60. *)
+
+    Definition statement_of_trace: statement :=
+      switch (map (statement_of_event cp) t) Sskip.
+
+
+
+
+  End WithTrace.
+
 End Backtranslation.
 
   (* Axiom backtranslation: Policy.t -> split -> trace -> Csyntax.program * Csyntax.program. *)

@@ -123,11 +123,31 @@ Variant right_executing_injection (ge1 ge2: genv): state -> state -> Prop :=
     right_executing_injection ge1 ge2 (Returnstate v k1 m1 ty cp) (Returnstate v k2 m2 ty cp)
 .
 
-Axiom is_left: split -> state -> Prop.
-Axiom is_right: split -> state -> Prop.
+Definition is_left (s: split) (st: state) :=
+  match st with
+  | State f _ _ _ _ _ => s (comp_of f) = Left
+  | Callstate fd _ _ _ => s (comp_of fd) = Left (* Should this be the compartment that's on top of the stack instead? *)
+  | Returnstate _ _ _ _ cp => s cp = Left
+  end.
 
-Axiom memory_of: state -> mem.
-Axiom cont_of: state -> cont.
+Definition is_right (s: split) (st: state) :=
+  match st with
+  | State f _ _ _ _ _ => s (comp_of f) = Right
+  | Callstate fd _ _ _ => s (comp_of fd) = Right
+  | Returnstate _ _ _ _ cp => s cp = Right
+  end.
+
+Definition memory_of (st: state): mem :=
+  match st with
+  | State _ _ _ _ _ m | Callstate _ _ _ m
+  | Returnstate _ _ m _ _ => m
+  end.
+
+Definition cont_of (st: state): cont :=
+  match st with
+  | State _ _ k _ _ _ | Callstate _ _ k _
+  | Returnstate _ k _ _ _ => k
+  end.
 
 Variant right_state_injection (ge1 ge2: genv): state -> state -> Prop :=
 | LeftControl: forall st1 st2,
@@ -309,7 +329,8 @@ Section Simulation.
       intros j s1 s2 s1' t rs_inj is_r step1.
       destruct rs_inj as [? | st1 st2 is_r1 is_r2 right_exec_inj].
       (* inv rs_inj. *)
-      - admit. (* contradiction *)
+      - (* contradiction *)
+        destruct st1; simpl in *; congruence.
       - inv step1; inv right_exec_inj.
         Ltac destruct_mem_inj :=
           match goal with
@@ -330,8 +351,7 @@ Section Simulation.
             -- econstructor; eauto.
                econstructor; eauto.
                rewrite Ptrofs.add_zero; eauto.
-            -- apply RightControl.
-               admit. admit.
+            -- apply RightControl; eauto.
                constructor; eauto.
                split; eauto.
                clear -same_dom H10.
@@ -350,8 +370,7 @@ Section Simulation.
                rewrite <- same_cenv, !Z.add_0_r, !Ptrofs.add_zero in *; eauto.
                eapply assign_loc_copy; eauto.
                { admit. }
-            -- apply RightControl.
-               admit. admit.
+            -- apply RightControl; eauto.
                constructor; eauto.
                split; eauto.
                clear -same_dom H17.
