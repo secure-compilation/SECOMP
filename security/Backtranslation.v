@@ -29,13 +29,14 @@ Section Backtranslation.
     match v with
     | EVint i => Econst_int i (Tint I32 Signed noattr)
     | EVlong i => Econst_long i (Tlong Signed noattr)
-    | EVfloat f => Econst_float f (Tfloat F64 noattr)
     (* | EVfloat f => Econst_float f (Tfloat F32 noattr) *)
+    | EVfloat f => Econst_float f (Tfloat F64 noattr)
     | EVsingle f => Econst_single f (Tfloat F32 noattr)
-    | EVptr_global id ofs => Ebinop Cop.Oadd
-                              (Eaddrof (Evar id Tvoid) (Tpointer Tvoid noattr))
-                              (Econst_int (Ptrofs.to_int ofs) (Tint I32 Signed noattr))
-                              (Tpointer Tvoid noattr)
+    (* | EVptr_global id ofs => Ebinop Cop.Oadd *)
+    (*                           (Eaddrof (Evar id Tvoid) (Tpointer Tvoid noattr)) *)
+    (*                           (Econst_int (Ptrofs.to_int ofs) (Tint I32 Signed noattr)) *)
+    (*                           (Tpointer Tvoid noattr) *)
+    | EVptr_global id ofs => ptr_of_id_ofs id ofs
     end.
 
   Definition list_eventval_to_list_expr (vs: list eventval): list expr :=
@@ -74,18 +75,19 @@ Section Backtranslation.
     | Event_return cp cp' v => code_of_return cp cp' v
     end.
 
-  Definition type_counter: type := Tint I32 Unsigned noattr.
+  Definition type_counter: type := Tlong Unsigned noattr.
   Definition type_bool:    type := Tint IBool Signed noattr.
 
   Definition switch_clause (cp: compartment) (n: Z) (s_then s_else: statement): statement :=
-    let one := Econst_int (Int.repr 1%Z) (Tint I32 Unsigned noattr) in
+    let one := Econst_long Int64.one type_counter in
     Sifthenelse (Ebinop Cop.Oeq
-                   (Evar (bt_env.(local_counter) cp) type_counter)
-                   (Econst_int (Int.repr n) (Tint I32 Unsigned noattr)) type_bool)
+                        (Evar (bt_env.(local_counter) cp) type_counter)
+                        (Econst_long (Int64.repr n) type_counter)
+                        type_bool)
                 (* if true *)
                 (Ssequence
                    (Sassign (Evar (bt_env.(local_counter) cp) type_counter)
-                      (Ebinop Cop.Oadd (Evar (bt_env.(local_counter) cp) type_counter) one type_counter))
+                            (Ebinop Cop.Oadd (Evar (bt_env.(local_counter) cp) type_counter) one type_counter))
                    s_then)
                 (* if false *)
                 s_else.
@@ -108,30 +110,29 @@ Section Backtranslation.
 
   Ltac take_step := econstructor; [econstructor; simpl_expr | | traceEq]; simpl.
 
-  Lemma switch_clause_spec p (cp: compartment) f (e: env) le m b (n: int) (n': Z) s_then s_else:
+  Lemma switch_clause_spec p (cp: compartment) f (e: env) le m b (n: int64) (n': Z) s_then s_else:
     cp = comp_of f ->
     e ! (bt_env.(local_counter) cp) = Some (b, type_counter) ->
-    Mem.valid_access m Mint32 b 0 Writable (Some cp) ->
-    Mem.loadv Mint32 m (Vptr b Ptrofs.zero) (Some cp) = Some (Vint n) ->
-    if Int.eq n (Int.repr n') then
+    Mem.valid_access m Mint64 b 0 Writable (Some cp) ->
+    Mem.loadv Mint64 m (Vptr b Ptrofs.zero) (Some cp) = Some (Vlong n) ->
+    if Int64.eq n (Int64.repr n') then
       exists m',
-        Mem.storev Mint32 m (Vptr b Ptrofs.zero) (Vint (Int.add n Int.one)) cp = Some m' /\
-        (* Memory.store mem (C, Block.local, 0%Z) (Int (Z.succ n)) = Some mem' /\ *)
-        Star (Clight.semantics1 p) (State f (switch_clause cp n' s_then s_else) Kstop e le m) E0 (State f s_then Kstop e le m')
+        Mem.storev Mint64 m (Vptr b Ptrofs.zero) (Vlong (Int64.add n Int64.one)) cp = Some m' /\
+          Star (Clight.semantics1 p) (State f (switch_clause cp n' s_then s_else) Kstop e le m) E0 (State f s_then Kstop e le m')
     else
-        Star (Clight.semantics1 p) (State f (switch_clause cp n' s_then s_else) Kstop e le m) E0 (State f s_else Kstop e le m).
-    Proof.
-      intros; subst cp.
-      destruct (Int.eq n (Int.repr n')) eqn:eq_n_n'.
-      - simpl.
-        destruct (Mem.valid_access_store m Mint32 b 0%Z (comp_of f) (Vint (Int.add n Int.one))) as [m' m_m']; try assumption.
-        exists m'. split; eauto.
-        do 4 take_step.
-        now apply star_refl.
-      - (* take_steps. *)
-        take_step. rewrite Int.eq_true; simpl.
-        now apply star_refl.
-    Qed.
+      Star (Clight.semantics1 p) (State f (switch_clause cp n' s_then s_else) Kstop e le m) E0 (State f s_else Kstop e le m).
+  Proof.
+    intros; subst cp.
+    destruct (Int64.eq n (Int64.repr n')) eqn:eq_n_n'.
+    - simpl.
+      destruct (Mem.valid_access_store m Mint64 b 0%Z (comp_of f) (Vlong (Int64.add n Int64.one))) as [m' m_m']; try assumption.
+      exists m'. split; eauto.
+      do 4 take_step.
+      now apply star_refl.
+    - (* take_steps. *)
+      take_step. rewrite Int.eq_true; simpl.
+      now apply star_refl.
+  Qed.
 
   Definition switch_add_statement cp s res :=
     (Z.pred (fst res), switch_clause cp (Z.pred (fst res)) s (snd res)).
@@ -146,41 +147,47 @@ Section Backtranslation.
     simpl; lia.
   Qed.
 
-  Lemma switch_spec_else p (cp: compartment) f Kstop (e: env) le m b (n: Z) ss s_else:
-    n >= 0 ->
+  Lemma switch_spec_else
+        p (cp: compartment) f Kstop (e: env) le m b (n: Z) ss s_else
+        (WF: Z.of_nat (length ss) < Int64.modulus - 1)
+        (RANGE: Z.of_nat (length ss) <= n < Int64.modulus)
+    :
     cp = comp_of f ->
     e ! (bt_env.(local_counter) cp) = Some (b, type_counter) ->
-    Mem.valid_access m Mint32 b 0 Writable (Some cp) ->
-    Mem.loadv Mint32 m (Vptr b Ptrofs.zero) (Some cp) = Some (Vint (Int.repr n)) ->
-    (Z.of_nat (length ss) <= n)%Z ->
+    Mem.valid_access m Mint64 b 0 Writable (Some cp) ->
+    Mem.loadv Mint64 m (Vptr b Ptrofs.zero) (Some cp) = Some (Vlong (Int64.repr n)) ->
     Star (Clight.semantics1 p)
          (State f (switch cp ss s_else) Kstop e le m)
          E0
          (State f s_else Kstop e le m).
   Proof.
-    intros; subst cp. unfold switch.
+    intros; subst cp. unfold switch. destruct RANGE as [RA1 RA2].
     assert (G: forall n',
-               0 <= n' ->
+               (Z.of_nat (length ss)) <= n' ->
                n' <= n ->
-               Z.of_nat (length ss) <= n ->
+               (* Z.of_nat (length ss) <= n -> *)
                Star (Clight.semantics1 p)
                  (State f (snd (fold_right (switch_add_statement (comp_of f)) (n', s_else) ss)) Kstop e le m)
                  E0
                  (State f s_else Kstop e le m)).
-    { clear H4.
-      intros n' zero_le_n' n'_le_n' ss_le_n.
+    { intros n' LE1 LE2.
       induction ss as [|s ss IH]; try apply star_refl.
-      simpl. simpl in ss_le_n. rewrite fst_switch, <- Z.sub_succ_r.
+      simpl. simpl in RA1, LE1. rewrite fst_switch, <- Z.sub_succ_r.
       take_step.
-      { rewrite Int.eq_false. reflexivity.
+      { rewrite Int64.eq_false. reflexivity. clear - WF RA1 RA2 LE1 LE2.
         destruct (Z.eqb_spec n (n' - Z.of_nat (S (length ss)))) as [n_eq_0|?]; simpl.
         - lia.
-        - (* I think it's not always true. Might need restricton on [n] fitting in 32 bits? *)
-          admit. }
+        - intros EQ. apply n0; clear n0.
+          rewrite <- (Int64.unsigned_repr n).
+          rewrite EQ. rewrite Int64.unsigned_repr. lia.
+          1: split.
+          all: unfold Int64.max_unsigned; try lia.
+      }
       rewrite Int.eq_true; simpl.
-      eapply IH. lia. }
+      eapply IH; lia.
+    }
     now apply G; lia.
-  Admitted.
+  Qed.
 
 
   Section WithTrace.
