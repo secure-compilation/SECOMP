@@ -1881,6 +1881,18 @@ Qed.
 
 Local Hint Resolve storebytes_valid_access_1 storebytes_valid_access_2: mem.
 
+
+Theorem storebytes_block_compartment:
+  forall b',
+  block_compartment m2 b' = block_compartment m1 b'.
+Proof.
+  unfold storebytes in STORE.
+  destruct range_perm_dec; try easy.
+  destruct can_access_block_dec; try easy.
+  injection STORE.
+  now intros <- b'.
+Qed.
+
 Theorem nextblock_storebytes:
   nextblock m2 = nextblock m1.
 Proof.

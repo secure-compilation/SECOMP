@@ -338,7 +338,26 @@ Section Simulation.
                unfold same_domain in *.
                intros. eapply same_dom.
                erewrite <- Mem.store_block_compartment; eauto.
-          * admit.
+          * inv H8.
+            exploit Mem.loadbytes_inj; eauto using Mem.mi_inj.
+            intros [? [? ?]].
+            exploit Mem.storebytes_mapped_inject; eauto using Mem.mi_inj.
+            intros [? [? ?]].
+            exploit delta_zero; eauto; intros; subst.
+            exploit (delta_zero loc); eauto; intros; subst.
+            exists j; eexists; split.
+            -- econstructor; eauto.
+               rewrite <- same_cenv, !Z.add_0_r, !Ptrofs.add_zero in *; eauto.
+               eapply assign_loc_copy; eauto.
+               { admit. }
+            -- apply RightControl.
+               admit. admit.
+               constructor; eauto.
+               split; eauto.
+               clear -same_dom H17.
+               unfold same_domain in *.
+               intros. eapply same_dom.
+               erewrite <- Mem.storebytes_block_compartment; eauto.
           * admit.
 Admitted.
 
