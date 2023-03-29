@@ -76,12 +76,13 @@ Require Import Split.
 
 Section MERGE.
 
-Variable sp : split.
+Variable lrsplit : split.
 
+(* TODO Modify [b] and [sp] as needed *)
 Definition merge_frames (f f'' : stackframe) : stackframe :=
   match f with
-  | Stackframe _ cp _ _ _ =>
-      match sp cp with
+  | Stackframe b cp _ sp _ =>
+      match lrsplit cp with
       | Left => f
       | Right => f''
       end
@@ -125,7 +126,7 @@ Fixpoint merge_stacks (s s'' : stack) : stack :=
    identifiers in pointer values. *)
 
 (* TODO Actually go from [memval] to [val], remap blocks according to the side
-   and leave the rest intact *)
+   and leave the rest intact (see [memory_chunk], [AST]) *)
 Definition merge_value (s : side) (v : memval) : memval :=
   v.
 
@@ -173,7 +174,7 @@ Admitted.
 Definition merge_registers (r r'' : regset) (m : mem) : regset :=
   match Mem.val_compartment m r#PC with
   | Some cp =>
-      match sp cp with
+      match lrsplit cp with
       | Left => r
       | Right => r''
       end
@@ -331,10 +332,10 @@ Section THREEWAY_MULTISEM_4.
 
 Variables p c p' c' : program.
 
-Variable sp : split.
+Variable lrsplit : split.
 
-Hypothesis Hcompat  : asm_compatible sp p  c.
-Hypothesis Hcompat' : asm_compatible sp p' c'.
+Hypothesis Hcompat  : asm_compatible lrsplit p  c.
+Hypothesis Hcompat' : asm_compatible lrsplit p' c'.
 
 Variables prog prog' prog'' : program.
 
@@ -360,10 +361,10 @@ Proof.
 Admitted.
 
 Lemma match_initial_states s s'' :
-  initial_state sem   s   ->
-  initial_state sem'' s'' ->
-  initial_state sem'  (merge_states ip ic s s'') /\
-  mergeable_states p c p' c' s s''.
+  initial_state prog   s   ->
+  initial_state prog'' s'' ->
+  initial_state prog'  (merge_states lrsplit s s'') /\
+  mergeable_states p c p' c' prog prog'' s s''.
 Proof.
   (*   intros Hini Hini''. *)
   (*   inversion Hmergeable_ifaces as [Hlinkable _]. *)
@@ -408,7 +409,7 @@ Section THREEWAY_MULTISEM_5.
 
 Variables p c p' c' : program.
 
-(* Variable s : split. *)
+Variable rlsplit : split.
 
 (* Hypothesis Hcompat  : asm_compatible s p  c. *)
 (* Hypothesis Hcompat' : asm_compatible s p' c'. *)
@@ -423,11 +424,11 @@ Let sem   := semantics prog.
 Let sem'  := semantics prog'.
 Let sem'' := semantics prog''.
 
-Theorem match_final_states s s'' :
-  mergeable_states p c p' c' s s'' ->
-  final_state sem   s   ->
-  final_state sem'' s'' ->
-  final_state sem'  (merge_states ip ic s s'').
+Theorem match_final_states s s'' n :
+  mergeable_states p c p' c' prog prog'' s s'' ->
+  final_state prog   s                            n ->
+  final_state prog'' s''                          n ->
+  final_state prog'  (merge_states rlsplit s s'') n.
 Proof.
   (*   destruct s as [[[gps mem] regs] pc]. *)
   (*   destruct s'' as [[[gps'' mem''] regs''] pc'']. *)
@@ -458,73 +459,75 @@ Proof.
   (* Qed. *)
 Admitted.
 
-  Theorem match_nofinal s s'' :
-    mergeable_states p c p' c' s s'' ->
-    ~ final_state sem   s   ->
-    ~ final_state sem'' s'' ->
-    ~ final_state sem'  (merge_states ip ic s s'').
+  Theorem match_nofinal s s'' n n'' n' :
+    mergeable_states p c p' c' prog prog'' s s'' ->
+    ~ final_state prog   s                            n   ->
+    ~ final_state prog'' s''                          n'' ->
+    ~ final_state prog'  (merge_states rlsplit s s'') n'.
   Proof.
-    destruct s as [[[gps mem] regs] pc].
-    destruct s'' as [[[gps'' mem''] regs''] pc''].
-    unfold final_state. simpl. unfold merge_pcs.
-    intros Hmerge Hfinal Hfinal'' Hfinal'.
-    inversion Hmerge as [_ _ _ Hwfp Hwfc Hwfp' Hwfc' Hmergeable_ifaces Hifacep Hifacec _ _ _ _ _ _ ].
-    inversion Hmergeable_ifaces as [Hlinkable _].
-    destruct (Pointer.component pc \in domm ip) eqn:Hcase.
-    - apply execution_invariant_to_linking with (c2 := c) in Hfinal'; try easy.
-      + congruence.
-      + apply linkable_implies_linkable_mains; congruence.
-      + apply linkable_implies_linkable_mains; congruence.
-    - (* Symmetric case. *)
-      unfold prog', prog'' in *.
-      rewrite program_linkC in Hfinal'; try congruence.
-      rewrite program_linkC in Hfinal''; try congruence.
-      apply execution_invariant_to_linking with (c2 := p') in Hfinal'; try easy.
-      + apply linkable_sym; congruence.
-      + apply linkable_sym; congruence.
-      + apply linkable_mains_sym, linkable_implies_linkable_mains; congruence.
-      + apply linkable_mains_sym, linkable_implies_linkable_mains; congruence.
-      + setoid_rewrite <- (mergeable_states_pc_same_component Hmerge).
-        rewrite <- Hifacec.
-        apply negb_true_iff in Hcase.
-        now eapply (mergeable_states_notin_to_in Hmerge).
-  Qed.
+    (* destruct s as [[[gps mem] regs] pc]. *)
+    (* destruct s'' as [[[gps'' mem''] regs''] pc'']. *)
+    (* unfold final_state. simpl. unfold merge_pcs. *)
+    (* intros Hmerge Hfinal Hfinal'' Hfinal'. *)
+    (* inversion Hmerge as [_ _ _ Hwfp Hwfc Hwfp' Hwfc' Hmergeable_ifaces Hifacep Hifacec _ _ _ _ _ _ ]. *)
+    (* inversion Hmergeable_ifaces as [Hlinkable _]. *)
+    (* destruct (Pointer.component pc \in domm ip) eqn:Hcase. *)
+    (* - apply execution_invariant_to_linking with (c2 := c) in Hfinal'; try easy. *)
+    (*   + congruence. *)
+    (*   + apply linkable_implies_linkable_mains; congruence. *)
+    (*   + apply linkable_implies_linkable_mains; congruence. *)
+    (* - (* Symmetric case. *) *)
+    (*   unfold prog', prog'' in *. *)
+    (*   rewrite program_linkC in Hfinal'; try congruence. *)
+    (*   rewrite program_linkC in Hfinal''; try congruence. *)
+    (*   apply execution_invariant_to_linking with (c2 := p') in Hfinal'; try easy. *)
+    (*   + apply linkable_sym; congruence. *)
+    (*   + apply linkable_sym; congruence. *)
+    (*   + apply linkable_mains_sym, linkable_implies_linkable_mains; congruence. *)
+    (*   + apply linkable_mains_sym, linkable_implies_linkable_mains; congruence. *)
+    (*   + setoid_rewrite <- (mergeable_states_pc_same_component Hmerge). *)
+    (*     rewrite <- Hifacec. *)
+    (*     apply negb_true_iff in Hcase. *)
+    (*     now eapply (mergeable_states_notin_to_in Hmerge). *)
+  (* Qed. *)
+  Admitted.
 
   Lemma match_nostep s s'' :
-    mergeable_states p c p' c' s s'' ->
+    mergeable_states p c p' c' prog prog'' s s'' ->
     Nostep sem   s   ->
     Nostep sem'' s'' ->
-    Nostep sem'  (merge_states ip ic s s'').
+    Nostep sem'  (merge_states rlsplit s s'').
   Proof.
-    rename s into s1. rename s'' into s1''.
-    intros Hmerge Hstep Hstep'' t s2' Hstep'.
-    inversion Hmerge as [_ _ _ Hwfp Hwfc Hwfp' Hwfc' Hmergeable_ifaces Hifacep Hifacec _ _ _ _ _ _].
-    inversion Hmergeable_ifaces as [Hlinkable _].
-    inversion Hmergeable_ifaces as [Hlinkable' _]; rewrite Hifacep Hifacec in Hlinkable'.
-    pose proof linkable_implies_linkable_mains Hwfp Hwfc Hlinkable as Hmain_linkability.
-    pose proof linkable_implies_linkable_mains Hwfp' Hwfc' Hlinkable' as Hmain_linkability'.
-    destruct (CS.is_program_component s1 ic) eqn:Hcase.
-    - pose proof threeway_multisem_step_inv_program Hcase Hmerge Hstep'
-        as [s2 Hcontra].
-      specialize (Hstep t s2). contradiction.
-    - (* Symmetric case. *)
-      apply negb_false_iff in Hcase.
-      pose proof mergeable_states_context_to_program Hmerge Hcase as Hcase'.
-      pose proof proj1 (mergeable_states_sym _ _ _ _ _ _) Hmerge as Hmerge'.
-      pose proof @threeway_multisem_step_inv_program c' p' c p as H.
-      rewrite -Hifacec -Hifacep in H.
-      specialize (H s1'' s1 t s2' Hcase' Hmerge').
-      rewrite program_linkC in H; try assumption; [| apply linkable_sym; congruence].
-      rewrite Hifacec Hifacep in H.
-      erewrite merge_states_sym with (p := c') (c := p') (p' := c) (c' := p) in H;
-        try eassumption; try now symmetry.
-      rewrite -Hifacec -Hifacep in H.
-      specialize (H Hstep').
-      destruct H as [s2'' Hcontra].
-      specialize (Hstep'' t s2'').
-      unfold sem'', prog'' in Hstep''; rewrite program_linkC in Hstep''; try assumption.
-      contradiction.
-  Qed.
+    (* rename s into s1. rename s'' into s1''. *)
+    (* intros Hmerge Hstep Hstep'' t s2' Hstep'. *)
+    (* inversion Hmerge as [_ _ _ Hwfp Hwfc Hwfp' Hwfc' Hmergeable_ifaces Hifacep Hifacec _ _ _ _ _ _]. *)
+    (* inversion Hmergeable_ifaces as [Hlinkable _]. *)
+    (* inversion Hmergeable_ifaces as [Hlinkable' _]; rewrite Hifacep Hifacec in Hlinkable'. *)
+    (* pose proof linkable_implies_linkable_mains Hwfp Hwfc Hlinkable as Hmain_linkability. *)
+    (* pose proof linkable_implies_linkable_mains Hwfp' Hwfc' Hlinkable' as Hmain_linkability'. *)
+    (* destruct (CS.is_program_component s1 ic) eqn:Hcase. *)
+    (* - pose proof threeway_multisem_step_inv_program Hcase Hmerge Hstep' *)
+    (*     as [s2 Hcontra]. *)
+    (*   specialize (Hstep t s2). contradiction. *)
+    (* - (* Symmetric case. *) *)
+    (*   apply negb_false_iff in Hcase. *)
+    (*   pose proof mergeable_states_context_to_program Hmerge Hcase as Hcase'. *)
+    (*   pose proof proj1 (mergeable_states_sym _ _ _ _ _ _) Hmerge as Hmerge'. *)
+    (*   pose proof @threeway_multisem_step_inv_program c' p' c p as H. *)
+    (*   rewrite -Hifacec -Hifacep in H. *)
+    (*   specialize (H s1'' s1 t s2' Hcase' Hmerge'). *)
+    (*   rewrite program_linkC in H; try assumption; [| apply linkable_sym; congruence]. *)
+    (*   rewrite Hifacec Hifacep in H. *)
+    (*   erewrite merge_states_sym with (p := c') (c := p') (p' := c) (c' := p) in H; *)
+    (*     try eassumption; try now symmetry. *)
+    (*   rewrite -Hifacec -Hifacep in H. *)
+    (*   specialize (H Hstep'). *)
+    (*   destruct H as [s2'' Hcontra]. *)
+    (*   specialize (Hstep'' t s2''). *)
+    (*   unfold sem'', prog'' in Hstep''; rewrite program_linkC in Hstep''; try assumption. *)
+    (*   contradiction. *)
+  (* Qed. *)
+  Admitted.
 
 End THREEWAY_MULTISEM_5.
 
@@ -549,10 +552,10 @@ Variables p c p' c' : program.
 (* Let ip := prog_interface p. *)
 (* Let ic := prog_interface c. *)
 
-Variable s : split.
+Variable rlsplit : split.
 
-Hypothesis Hcompat  : asm_compatible s p  c.
-Hypothesis Hcompat' : asm_compatible s p' c'.
+Hypothesis Hcompat  : asm_compatible rlsplit p  c.
+Hypothesis Hcompat' : asm_compatible rlsplit p' c'.
 
 Variables prog prog' prog'' : program.
 
@@ -572,61 +575,62 @@ Theorem recombination_prefix m :
   does_prefix sem'' m ->
   does_prefix sem'  m.
 Proof.
-  unfold does_prefix.
-  intros [b [Hbeh Hprefix]] [b'' [Hbeh'' Hprefix'']].
-  assert (Hst_beh := Hbeh). assert (Hst_beh'' := Hbeh'').
-  apply program_behaves_inv in Hst_beh   as [s1   [Hini1   Hst_beh  ]].
-  apply program_behaves_inv in Hst_beh'' as [s1'' [Hini1'' Hst_beh'']].
-  destruct m as [tm nm | tm | tm].
-  - destruct b   as [t   n   | ? | ? | ?]; try contradiction.
-    destruct b'' as [t'' n'' | ? | ? | ?]; try contradiction.
-    simpl in Hprefix, Hprefix''. destruct Hprefix. destruct Hprefix''. subst t t'' n n''.
-    inversion Hst_beh   as [? s2   Hstar12   Hfinal2   | | |]; subst.
-    inversion Hst_beh'' as [? s2'' Hstar12'' Hfinal2'' | | |]; subst.
-    exists (Terminates tm nm). split; [| now constructor].
-      pose proof match_initial_states Hwfp Hwfc Hwfp' Hwfc' Hmergeable_ifaces Hifacep Hifacec
-           Hprog_is_closed Hprog_is_closed' Hini1 Hini1'' as [Hini1' Hmerge1].
-      pose proof star_simulation Hmerge1 Hstar12 Hstar12'' as [Hstar12' Hmerge2].
-      apply program_runs with (s := merge_states ip ic s1 s1'');
-        first assumption.
-      apply state_terminates with (s' := merge_states ip ic s2 s2'');
-        first assumption.
-      now apply match_final_states with (p' := p').
-    - destruct b   as [? | ? | ? | t  ]; try contradiction.
-      destruct b'' as [? | ? | ? | t'']; try contradiction.
-      simpl in Hprefix, Hprefix''. subst t t''.
-      inversion Hst_beh   as [| | | ? s2   Hstar12   Hstep2   Hfinal2  ]; subst.
-      inversion Hst_beh'' as [| | | ? s2'' Hstar12'' Hstep2'' Hfinal2'']; subst.
-      exists (Goes_wrong tm). split; last reflexivity.
-      pose proof match_initial_states Hwfp Hwfc Hwfp' Hwfc' Hmergeable_ifaces Hifacep Hifacec
-           Hprog_is_closed Hprog_is_closed' Hini1 Hini1'' as [Hini' Hmerge1].
-      pose proof star_simulation Hmerge1 Hstar12 Hstar12'' as [Hstar12' Hmerge2].
-      apply program_runs with (s := merge_states ip ic s1 s1'');
-        first assumption.
-      apply state_goes_wrong with (s' := merge_states ip ic s2 s2'');
-        first assumption.
-      + eapply match_nostep; eassumption.
-      + eapply match_nofinal; eassumption.
-    - (* Here we talk about the stars associated to the behaviors, without
-         worrying now about connecting them to the existing initial states. *)
-      destruct (CS.behavior_prefix_star Hbeh Hprefix) as [s1_ [s2 [Hini1_ Hstar12]]].
-      destruct (CS.behavior_prefix_star Hbeh'' Hprefix'') as [s1''_ [s2'' [Hini1''_ Hstar12'']]].
-      pose proof match_initial_states Hwfp Hwfc Hwfp' Hwfc' Hmergeable_ifaces Hifacep Hifacec
-           Hprog_is_closed Hprog_is_closed' Hini1_ Hini1''_ as [Hini1' Hmerge1].
-      pose proof star_simulation Hmerge1 Hstar12 Hstar12'' as [Hstar12' Hmerge2].
-      eapply program_behaves_finpref_exists;
-        last now apply Hstar12'.
-      assumption.
-  Qed.
+  (* unfold does_prefix. *)
+  (* intros [b [Hbeh Hprefix]] [b'' [Hbeh'' Hprefix'']]. *)
+  (* assert (Hst_beh := Hbeh). assert (Hst_beh'' := Hbeh''). *)
+  (* apply program_behaves_inv in Hst_beh   as [s1   [Hini1   Hst_beh  ]]. *)
+  (* apply program_behaves_inv in Hst_beh'' as [s1'' [Hini1'' Hst_beh'']]. *)
+  (* destruct m as [tm nm | tm | tm]. *)
+  (* - destruct b   as [t   n   | ? | ? | ?]; try contradiction. *)
+  (*   destruct b'' as [t'' n'' | ? | ? | ?]; try contradiction. *)
+  (*   simpl in Hprefix, Hprefix''. destruct Hprefix. destruct Hprefix''. subst t t'' n n''. *)
+  (*   inversion Hst_beh   as [? s2   Hstar12   Hfinal2   | | |]; subst. *)
+  (*   inversion Hst_beh'' as [? s2'' Hstar12'' Hfinal2'' | | |]; subst. *)
+  (*   exists (Terminates tm nm). split; [| now constructor]. *)
+  (*     pose proof match_initial_states Hwfp Hwfc Hwfp' Hwfc' Hmergeable_ifaces Hifacep Hifacec *)
+  (*          Hprog_is_closed Hprog_is_closed' Hini1 Hini1'' as [Hini1' Hmerge1]. *)
+  (*     pose proof star_simulation Hmerge1 Hstar12 Hstar12'' as [Hstar12' Hmerge2]. *)
+  (*     apply program_runs with (s := merge_states ip ic s1 s1''); *)
+  (*       first assumption. *)
+  (*     apply state_terminates with (s' := merge_states ip ic s2 s2''); *)
+  (*       first assumption. *)
+  (*     now apply match_final_states with (p' := p'). *)
+  (*   - destruct b   as [? | ? | ? | t  ]; try contradiction. *)
+  (*     destruct b'' as [? | ? | ? | t'']; try contradiction. *)
+  (*     simpl in Hprefix, Hprefix''. subst t t''. *)
+  (*     inversion Hst_beh   as [| | | ? s2   Hstar12   Hstep2   Hfinal2  ]; subst. *)
+  (*     inversion Hst_beh'' as [| | | ? s2'' Hstar12'' Hstep2'' Hfinal2'']; subst. *)
+  (*     exists (Goes_wrong tm). split; last reflexivity. *)
+  (*     pose proof match_initial_states Hwfp Hwfc Hwfp' Hwfc' Hmergeable_ifaces Hifacep Hifacec *)
+  (*          Hprog_is_closed Hprog_is_closed' Hini1 Hini1'' as [Hini' Hmerge1]. *)
+  (*     pose proof star_simulation Hmerge1 Hstar12 Hstar12'' as [Hstar12' Hmerge2]. *)
+  (*     apply program_runs with (s := merge_states ip ic s1 s1''); *)
+  (*       first assumption. *)
+  (*     apply state_goes_wrong with (s' := merge_states ip ic s2 s2''); *)
+  (*       first assumption. *)
+  (*     + eapply match_nostep; eassumption. *)
+  (*     + eapply match_nofinal; eassumption. *)
+  (*   - (* Here we talk about the stars associated to the behaviors, without *)
+  (*        worrying now about connecting them to the existing initial states. *) *)
+  (*     destruct (CS.behavior_prefix_star Hbeh Hprefix) as [s1_ [s2 [Hini1_ Hstar12]]]. *)
+  (*     destruct (CS.behavior_prefix_star Hbeh'' Hprefix'') as [s1''_ [s2'' [Hini1''_ Hstar12'']]]. *)
+  (*     pose proof match_initial_states Hwfp Hwfc Hwfp' Hwfc' Hmergeable_ifaces Hifacep Hifacec *)
+  (*          Hprog_is_closed Hprog_is_closed' Hini1_ Hini1''_ as [Hini1' Hmerge1]. *)
+  (*     pose proof star_simulation Hmerge1 Hstar12 Hstar12'' as [Hstar12' Hmerge2]. *)
+  (*     eapply program_behaves_finpref_exists; *)
+  (*       last now apply Hstar12'. *)
+  (*     assumption. *)
+  (* Qed. *)
+  Admitted.
 
 End RECOMBINATION.
 
 Corollary recomposition:
-  forall W W'' p1 p2 p1'' p2'' t,
+  forall W W'' p1 p2 p1'' p2'' rlsplit t,
     link p1 p2 = Some W ->
     link p1'' p2'' = Some W'' ->
-    asm_compatible s p1 p2 ->
-    asm_compatible s p1'' p2'' ->
+    asm_compatible rlsplit p1 p2 ->
+    asm_compatible rlsplit p1'' p2'' ->
     asm_program_has_initial_trace W t ->
     asm_program_has_initial_trace W'' t ->
   exists W',
