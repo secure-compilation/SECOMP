@@ -377,7 +377,86 @@ Section Simulation.
                unfold same_domain in *.
                intros. eapply same_dom.
                erewrite <- Mem.storebytes_block_compartment; eauto.
-          * admit.
+          * inv H9.
+            exploit Mem.load_inject; eauto using Mem.mi_inj.
+            intros [? [? ?]].
+            exploit Mem.store_mapped_inject; eauto.
+            intros [? [? ?]].
+            inv H16.
+            exploit delta_zero; eauto; intros; subst.
+            rewrite Z.add_0_r in *.
+            exists j; eexists; split.
+            -- econstructor; eauto.
+               rewrite Ptrofs.add_zero.
+               eapply assign_loc_bitfield. rewrite <- H2. inv H8.
+               econstructor; eauto.
+            -- apply RightControl; eauto.
+               constructor; eauto.
+               split; eauto.
+               clear -same_dom H18.
+               unfold same_domain in *.
+               intros. eapply same_dom.
+               erewrite <- Mem.store_block_compartment; eauto.
+        + exploit eval_expr_injection; eauto.
+          intros [v' [? ?]].
+          exists j; eexists; split.
+          * econstructor; eauto.
+          * apply RightControl; eauto.
+            constructor; eauto.
+            unfold right_tenv_injection in *.
+            intros; rewrite PTree.gsspec in *.
+            destruct (peq i id); eauto. inv H2; subst.
+            eexists; split; eauto.
+        + admit.
+        + admit.
+        + exists j; eexists; split; [constructor | apply RightControl]; auto.
+          constructor; auto. constructor; auto.
+        + inv H7.
+          exists j; eexists; split; [constructor | apply RightControl]; auto.
+          constructor; auto.
+        + inv H7.
+          exists j; eexists; split; [constructor | apply RightControl]; auto.
+          constructor; auto.
+        + inv H7.
+          exists j; eexists; split; [constructor | apply RightControl]; auto.
+          constructor; auto.
+        + exploit eval_expr_injection; eauto.
+          intros [v' [? ?]].
+          destruct_mem_inj.
+          exploit bool_val_inject; eauto. intros ?.
+          exists j; eexists; split; [econstructor | apply RightControl]; eauto.
+          constructor; auto. constructor; auto.
+        + exists j; eexists; split; [econstructor | apply RightControl]; eauto.
+          constructor; auto. constructor; auto.
+        + inv H8. exists j; eexists; split; [constructor | apply RightControl]; eauto.
+          constructor; auto. constructor; auto.
+        + inv H7. exists j; eexists; split; [apply step_break_loop1 | apply RightControl]; eauto.
+          constructor; auto.
+        + inv H7. exists j; eexists; split; [apply step_skip_loop2 | apply RightControl]; eauto.
+          constructor; auto.
+        + inv H7. exists j; eexists; split; [apply step_break_loop2 | apply RightControl]; eauto.
+          constructor; auto.
+        + admit.
+        + admit.
+        + admit.
+        + exploit eval_expr_injection; eauto.
+          intros [v' [? ?]].
+          assert (sem_switch_arg v (typeof a) = Some n -> sem_switch_arg v' (typeof a) = Some n).
+          { intros. unfold sem_switch_arg in *.
+            destruct (classify_switch (typeof a)); simpl in *; try easy; inv H1; try easy. }
+          exists j; eexists; split; [econstructor | apply RightControl]; eauto.
+          constructor; auto.
+          constructor; auto.
+        + inv H8. exists j; eexists; split; [constructor | apply RightControl]; eauto.
+          constructor; auto.
+        + inv H7. exists j; eexists; split; [apply step_continue_switch | apply RightControl]; eauto.
+          constructor; auto.
+        + exists j; eexists; split; [constructor | apply RightControl]; auto.
+          constructor; auto.
+        + admit.
+        + admit.
+        + admit.
+        + admit.
 Admitted.
 
 
