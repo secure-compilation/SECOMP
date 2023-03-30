@@ -303,6 +303,29 @@ Section Simulation.
       intros [? _]. eauto.
     Qed.
 
+  Lemma eval_exprlist_injection:
+    forall s j m1 m2 e1 e2 le1 le2 cp,
+    forall inj: right_mem_injection s j ge1 ge2 m1 m2,
+    forall env_inj: right_env_injection j e1 e2,
+    forall lenv_inj: right_tenv_injection j le1 le2,
+    forall al tys vs,
+      eval_exprlist ge1 e1 cp le1 m1 al tys vs ->
+      exists vs', Val.inject_list j vs vs' /\
+              eval_exprlist ge2 e2 cp le2 m2 al tys vs'.
+    Proof.
+      intros.
+      induction H.
+      - exists nil; split; eauto. constructor.
+      - destruct IHeval_exprlist as [vs' [? ?]].
+        exploit eval_expr_injection; eauto.
+        intros [v' [? ?]].
+        destruct inj.
+        exploit sem_cast_inject; eauto.
+        intros [tv [? ?]].
+        exists (tv :: vs'). split. constructor; eauto.
+        econstructor; eauto.
+    Qed.
+
   Lemma eval_lvalue_injection:
     forall s j m1 m2 e1 e2 le1 le2 cp,
     forall inj: right_mem_injection s j ge1 ge2 m1 m2,
@@ -369,7 +392,8 @@ Section Simulation.
             -- econstructor; eauto.
                rewrite <- same_cenv, !Z.add_0_r, !Ptrofs.add_zero in *; eauto.
                eapply assign_loc_copy; eauto.
-               { admit. }
+               { (* TODO: need help here *)
+                 admit. }
             -- apply RightControl; eauto.
                constructor; eauto.
                split; eauto.
@@ -407,8 +431,36 @@ Section Simulation.
             intros; rewrite PTree.gsspec in *.
             destruct (peq i id); eauto. inv H2; subst.
             eexists; split; eauto.
-        + admit.
-        + admit.
+        + exploit eval_expr_injection; eauto.
+          intros [v' [? ?]].
+          exploit eval_exprlist_injection; eauto.
+          intros [vs' [? ?]].
+          admit.
+        + exploit eval_exprlist_injection; eauto.
+          intros [vs' [? ?]].
+          exploit ec_mem_inject; eauto. admit. admit. admit.
+          intros [j' [? [? [? [? [? [? [? [? ?]]]]]]]]].
+          exists j'; eexists; split.
+          econstructor; eauto.
+          apply RightControl; eauto.
+          constructor; eauto.
+          * constructor; eauto.
+            -- admit.
+            -- admit.
+            -- admit.
+          * destruct H10.
+            split. intros ? ? ? ?.
+            exploit H10; eauto. intros [b' [? ?]].
+            exists b'; split; eauto.
+            intros ? ?.
+            exploit H14; eauto.
+          * intros ? ? ?.
+            destruct optid.
+            -- simpl in *. rewrite PTree.gsspec in *.
+               destruct (peq i i0); subst.
+               inv H14. eexists; split; eauto.
+               exploit H11; eauto. intros [? [? ?]]; eauto.
+            -- exploit H11; eauto. intros [? [? ?]]; eauto.
         + exists j; eexists; split; [constructor | apply RightControl]; auto.
           constructor; auto. constructor; auto.
         + inv H7.
