@@ -181,10 +181,17 @@ Section Backtranslation.
     end.
 
   Definition ptr_of_id_ofs (id: ident) (ofs: ptrofs): expr :=
-    Ebinop Cop.Oadd
-      (Eaddrof (Evar id Tvoid) (Tpointer Tvoid noattr))
-      (Econst_int (Ptrofs.to_int ofs) (Tint I32 Signed noattr))
-      (Tpointer Tvoid noattr).
+    if Archi.ptr64
+    then
+      Ebinop Cop.Oadd
+             (Eaddrof (Evar id Tvoid) (Tpointer Tvoid noattr))
+             (Econst_long (Ptrofs.to_int64 ofs) (Tlong Signed noattr))
+             (Tpointer Tvoid noattr)
+    else
+      Ebinop Cop.Oadd
+             (Eaddrof (Evar id Tvoid) (Tpointer Tvoid noattr))
+             (Econst_int (Ptrofs.to_int ofs) (Tint I32 Signed noattr))
+             (Tpointer Tvoid noattr).
 
   Definition eventval_to_expr (v: eventval): expr :=
     match v with
@@ -195,7 +202,7 @@ Section Backtranslation.
     | EVptr_global id ofs => ptr_of_id_ofs id ofs
     end.
 
-  Definition wf_eventval (ge: Senv.t) (v: eventval): Prop :=
+  Definition wf_eventval (ge: genv) (v: eventval): Prop :=
     match v with
     | EVptr_global id _ => (Senv.public_symbol ge id = true)
     | _ => True
@@ -204,6 +211,7 @@ Section Backtranslation.
   Lemma eventval_to_expr_inv
         ge env cp le m
         ev exp v ty
+        (WFEV: wf_eventval ge ev)
         (CONV: eventval_to_expr ev = exp)
         (EVAL: eval_expr ge env cp le m exp v)
         (TYPE: typ_of_type (eventval_to_type ev) = ty)
@@ -215,15 +223,39 @@ Section Backtranslation.
     - inversion EVAL; subst; simpl in *; try constructor. inversion H.
     - inversion EVAL; subst; simpl in *; try constructor. inversion H.
     - inversion EVAL; subst; simpl in *; try constructor. inversion H.
-    - inversion EVAL; subst; simpl in *; try constructor.
-      + inversion H5; subst; simpl in *.
+    - unfold ptr_of_id_ofs in EVAL. destruct Archi.ptr64 eqn:ARCH.
+      + inversion EVAL; subst; simpl in *; try constructor.
+        2:{ inversion H. }
+        inversion H5; subst; simpl in *.
         2:{ inversion H. }
         clear H5. inversion H4; subst; simpl in *.
-        2:{ 
-        
-
-      inversion H.
-      
+        2:{ inversion H. }
+        clear H4. inversion H2; subst; simpl.
+        { admit. }
+        { inversion H6.
+          rewrite Ptrofs.mul_commut, Ptrofs.mul_one.
+          rewrite Ptrofs.add_zero_l.
+          replace (Ptrofs.of_int64 (Ptrofs.to_int64 i0)) with i0.
+          constructor; auto.
+          symmetry. apply Ptrofs.of_int64_to_int64. auto.
+        }
+      + inversion EVAL; subst; simpl in *; try constructor.
+        2:{ inversion H. }
+        inversion H5; subst; simpl in *.
+        2:{ inversion H. }
+        clear H5. inversion H4; subst; simpl in *.
+        2:{ inversion H. }
+        clear H4. inversion H2; subst; simpl.
+        { admit. }
+        { inversion H6.
+          rewrite Ptrofs.mul_commut, Ptrofs.mul_one.
+          rewrite Ptrofs.add_zero_l.
+          replace (Ptrofs.of_ints (Ptrofs.to_int i0)) with i0.
+          constructor; auto.
+          symmetry. apply Ptrofs.agree32_of_ints_eq; auto.
+          apply Ptrofs.agree32_to_int; auto.
+        }
+  Qed.
 
   (* | step_call : forall (f : function) (optid : option ident) (a : expr) (al : list expr) (k : cont) (e : env) (le : temp_env) (m : mem) (tyargs : typelist) (tyres : type) (cconv : calling_convention) *)
   (*                 (vf : val) (vargs : list val) (fd : fundef) (t : trace), *)
