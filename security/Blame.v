@@ -59,6 +59,12 @@ Inductive right_cont_injection: cont -> cont -> Prop :=
     s (comp_of f2) = Left ->
     right_cont_injection (remove_until_right k1) (remove_until_right k2) ->
     right_cont_injection (Kcall id1 f1 en1 le1 k1) (Kcall id2 f2 en2 le2 k2)
+(* TODO: is it correct to add [right_cont_injection_kcall_right]? *)
+| right_cont_injection_kcall_right: forall id1 id2 f1 f2 en1 en2 le1 le2 k1 k2,
+    s (comp_of f1) = Right ->
+    s (comp_of f2) = Right ->
+    right_cont_injection k1 k2 ->
+    right_cont_injection (Kcall id1 f1 en1 le1 k1) (Kcall id2 f2 en2 le2 k2)
 .
 
 Definition right_env_injection_some (e1 e2: env): Prop :=
@@ -103,7 +109,7 @@ Variant right_executing_injection (ge1 ge2: genv): state -> state -> Prop :=
     right_tenv_injection le1 le2 ->
 
     right_executing_injection ge1 ge2 (State f s k1 e1 le1 m1) (State f s k2 e2 le2 m2)
-| inject_callstates: forall f vs k1 k2 m1 m2,
+| inject_callstates: forall f vs vs' k1 k2 m1 m2,
     (* we forget about program memories but require injection of context memories *)
     right_mem_injection ge1 ge2 m1 m2 ->
 
@@ -111,8 +117,11 @@ Variant right_executing_injection (ge1 ge2: genv): state -> state -> Prop :=
        context continuation *)
     right_cont_injection k1 k2 ->
 
-    right_executing_injection ge1 ge2 (Callstate f vs k1 m1) (Callstate f vs k2 m2)
-| inject_returnstates: forall v k1 k2 m1 m2 ty cp,
+    (* the parameters are related by the memory injection *)
+    Val.inject_list j vs vs' ->
+
+    right_executing_injection ge1 ge2 (Callstate f vs k1 m1) (Callstate f vs' k2 m2)
+| inject_returnstates: forall v v' k1 k2 m1 m2 ty cp,
     (* we forget about program memories but require injection of context memories *)
     right_mem_injection ge1 ge2 m1 m2 ->
 
@@ -120,7 +129,10 @@ Variant right_executing_injection (ge1 ge2: genv): state -> state -> Prop :=
        context continuation *)
     right_cont_injection k1 k2 ->
 
-    right_executing_injection ge1 ge2 (Returnstate v k1 m1 ty cp) (Returnstate v k2 m2 ty cp)
+    (* The return values are related by the injection *)
+    Val.inject j v v' ->
+
+    right_executing_injection ge1 ge2 (Returnstate v k1 m1 ty cp) (Returnstate v' k2 m2 ty cp)
 .
 
 Definition is_left (s: split) (st: state) :=
@@ -435,7 +447,19 @@ Section Simulation.
           intros [v' [? ?]].
           exploit eval_exprlist_injection; eauto.
           intros [vs' [? ?]].
-          admit.
+          exists j; eexists; split.
+          * econstructor; eauto.
+            -- admit.
+            -- admit.
+            -- (* use [Val.inject_list_not_ptr] *) admit.
+            -- exploit call_trace_inj; eauto. admit.
+          * (* Case analysis: are we changing side or not? *)
+            destruct (s (comp_of fd)) eqn:side.
+            -- apply LeftControl; eauto.
+               simpl. apply right_cont_injection_kcall_right; eauto.
+            -- apply RightControl; eauto.
+               constructor; eauto.
+               simpl. apply right_cont_injection_kcall_right; eauto.
         + exploit eval_exprlist_injection; eauto.
           intros [vs' [? ?]].
           exploit ec_mem_inject; eauto. admit. admit. admit.
