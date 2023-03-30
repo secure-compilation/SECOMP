@@ -171,30 +171,77 @@ Section Backtranslation.
 
   (** converting trace to code **)
 
+  Definition eventval_to_type (v: eventval): type :=
+    match v with
+    | EVint _ => Tint I32 Signed noattr
+    | EVlong _ => Tlong Signed noattr
+    | EVfloat _ => Tfloat F64 noattr
+    | EVsingle _ => Tfloat F32 noattr
+    | EVptr_global id _ => Tpointer Tvoid noattr
+    end.
+
   Definition ptr_of_id_ofs (id: ident) (ofs: ptrofs): expr :=
     Ebinop Cop.Oadd
       (Eaddrof (Evar id Tvoid) (Tpointer Tvoid noattr))
       (Econst_int (Ptrofs.to_int ofs) (Tint I32 Signed noattr))
       (Tpointer Tvoid noattr).
 
-  Fixpoint list_eventval_to_typelist (vs: list eventval): typelist :=
-    match vs with
-    | nil => Tnil
-    | cons v vs' => Tcons Tvoid (list_eventval_to_typelist vs')
-    end. (* TODO: currently this is just a list of Tvoid of the right size. Fix? *)
-
   Definition eventval_to_expr (v: eventval): expr :=
     match v with
     | EVint i => Econst_int i (Tint I32 Signed noattr)
     | EVlong i => Econst_long i (Tlong Signed noattr)
-    (* | EVfloat f => Econst_float f (Tfloat F32 noattr) *)
     | EVfloat f => Econst_float f (Tfloat F64 noattr)
     | EVsingle f => Econst_single f (Tfloat F32 noattr)
-    (* | EVptr_global id ofs => Ebinop Cop.Oadd *)
-    (*                           (Eaddrof (Evar id Tvoid) (Tpointer Tvoid noattr)) *)
-    (*                           (Econst_int (Ptrofs.to_int ofs) (Tint I32 Signed noattr)) *)
-    (*                           (Tpointer Tvoid noattr) *)
     | EVptr_global id ofs => ptr_of_id_ofs id ofs
+    end.
+
+  Definition wf_eventval (ge: Senv.t) (v: eventval): Prop :=
+    match v with
+    | EVptr_global id _ => (Senv.public_symbol ge id = true)
+    | _ => True
+    end.
+
+  Lemma eventval_to_expr_inv
+        ge env cp le m
+        ev exp v ty
+        (CONV: eventval_to_expr ev = exp)
+        (EVAL: eval_expr ge env cp le m exp v)
+        (TYPE: typ_of_type (eventval_to_type ev) = ty)
+    :
+    eventval_match ge ev ty v.
+  Proof.
+    subst. destruct ev; simpl in *.
+    - inversion EVAL; subst; simpl in *; try constructor. inversion H.
+    - inversion EVAL; subst; simpl in *; try constructor. inversion H.
+    - inversion EVAL; subst; simpl in *; try constructor. inversion H.
+    - inversion EVAL; subst; simpl in *; try constructor. inversion H.
+    - inversion EVAL; subst; simpl in *; try constructor.
+      + inversion H5; subst; simpl in *.
+        2:{ inversion H. }
+        clear H5. inversion H4; subst; simpl in *.
+        2:{ 
+        
+
+      inversion H.
+      
+
+  (* | step_call : forall (f : function) (optid : option ident) (a : expr) (al : list expr) (k : cont) (e : env) (le : temp_env) (m : mem) (tyargs : typelist) (tyres : type) (cconv : calling_convention) *)
+  (*                 (vf : val) (vargs : list val) (fd : fundef) (t : trace), *)
+  (*     Cop.classify_fun (typeof a) = Cop.fun_case_f tyargs tyres cconv -> *)
+  (*     eval_expr ge e (comp_of f) le m a vf -> *)
+  (*     eval_exprlist ge e (comp_of f) le m al tyargs vargs -> *)
+  (*     Genv.find_funct ge vf = Some fd -> *)
+  (*     type_of_fundef fd = Tfunction tyargs tyres cconv -> *)
+  (*     Genv.allowed_call ge (comp_of f) vf -> *)
+  (*     (Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall -> Forall not_ptr vargs) -> *)
+  (*     call_trace ge (comp_of f) (Genv.find_comp ge vf) vf vargs (typlist_of_typelist tyargs) t -> *)
+  (*     step ge function_entry (State f (Scall optid a al) k e le m) t (Callstate fd vargs (Kcall optid f e le k) m) *)
+
+
+  Fixpoint list_eventval_to_typelist (vs: list eventval): typelist :=
+    match vs with
+    | nil => Tnil
+    | cons v vs' => Tcons (eventval_to_type v) (list_eventval_to_typelist vs')
     end.
 
   Definition list_eventval_to_list_expr (vs: list eventval): list expr :=
