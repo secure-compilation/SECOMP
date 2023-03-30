@@ -13,67 +13,7 @@ Section Backtranslation.
 
   Variable bt_env: backtranslation_environment.
 
-  Definition ptr_of_id_ofs (id: ident) (ofs: ptrofs): expr :=
-    Ebinop Cop.Oadd
-      (Eaddrof (Evar id Tvoid) (Tpointer Tvoid noattr))
-      (Econst_int (Ptrofs.to_int ofs) (Tint I32 Signed noattr))
-      (Tpointer Tvoid noattr).
-
-  Fixpoint list_eventval_to_typelist (vs: list eventval): typelist :=
-    match vs with
-    | nil => Tnil
-    | cons v vs' => Tcons Tvoid (list_eventval_to_typelist vs')
-    end. (* TODO: currently this is just a list of Tvoid of the right size. Fix? *)
-
-  Definition eventval_to_expr (v: eventval): expr :=
-    match v with
-    | EVint i => Econst_int i (Tint I32 Signed noattr)
-    | EVlong i => Econst_long i (Tlong Signed noattr)
-    (* | EVfloat f => Econst_float f (Tfloat F32 noattr) *)
-    | EVfloat f => Econst_float f (Tfloat F64 noattr)
-    | EVsingle f => Econst_single f (Tfloat F32 noattr)
-    (* | EVptr_global id ofs => Ebinop Cop.Oadd *)
-    (*                           (Eaddrof (Evar id Tvoid) (Tpointer Tvoid noattr)) *)
-    (*                           (Econst_int (Ptrofs.to_int ofs) (Tint I32 Signed noattr)) *)
-    (*                           (Tpointer Tvoid noattr) *)
-    | EVptr_global id ofs => ptr_of_id_ofs id ofs
-    end.
-
-  Definition list_eventval_to_list_expr (vs: list eventval): list expr :=
-    List.map eventval_to_expr vs.
-
-  (* An [event_syscall] does not need any code, because it is only generated after a call to an external function *)
-  Definition code_of_syscall (name: string) (vs: list eventval) (v: eventval) := Sskip.
-
-  Definition code_of_vload (ch: memory_chunk) (id: ident) (ofs: Ptrofs.int) (v: eventval) :=
-    Sbuiltin None (EF_vload ch) (Tcons (Tpointer Tvoid noattr) Tnil) (ptr_of_id_ofs id ofs :: nil).
-
-  Definition code_of_vstore (ch: memory_chunk) (id: ident) (ofs: Ptrofs.int) (v: eventval) :=
-    Sbuiltin None (EF_vstore ch) (Tcons (Tpointer Tvoid noattr) Tnil) (ptr_of_id_ofs id ofs :: nil).
-
-  Definition code_of_annot (str: string) (vs: list eventval) :=
-    Sbuiltin None (EF_annot
-                     (Pos.of_nat (List.length (typlist_of_typelist (list_eventval_to_typelist vs))))
-                     str
-                     (typlist_of_typelist (list_eventval_to_typelist vs))
-           ) (list_eventval_to_typelist vs)
-           (list_eventval_to_list_expr vs).
-
-  Definition code_of_call (cp cp': compartment) (id: ident) (vs: list eventval) :=
-    Scall None (Evar id (Tfunction (list_eventval_to_typelist vs) Tvoid cc_default)) (list_eventval_to_list_expr vs).
-
-  Definition code_of_return (cp cp': compartment) (v: eventval) :=
-    Sreturn (Some (eventval_to_expr v)).
-
-  Definition code_of_event (e: event): statement :=
-    match e with
-    | Event_syscall name vs v => code_of_syscall name vs v
-    | Event_vload ch id ofs v => code_of_vload ch id ofs v
-    | Event_vstore ch id ofs v => code_of_vstore ch id ofs v
-    | Event_annot str vs => code_of_annot str vs
-    | Event_call cp cp' id vs => code_of_call cp cp' id vs
-    | Event_return cp cp' v => code_of_return cp cp' v
-    end.
+  (** switch statement; use to convert a trace to a code **)
 
   Definition type_counter: type := Tlong Unsigned noattr.
   Definition type_bool:    type := Tint IBool Signed noattr.
@@ -148,13 +88,13 @@ Section Backtranslation.
   Qed.
 
   Lemma switch_spec_else
-        p (cp: compartment) f Kstop (e: env) le m b (n: Z) ss s_else
-        (WF: Z.of_nat (length ss) < Int64.modulus - 1)
+        p (cp: compartment) f (e: env) le m b (n: Z) ss s_else
+        (WF: Z.of_nat (length ss) < Int64.modulus)
         (RANGE: Z.of_nat (length ss) <= n < Int64.modulus)
     :
     cp = comp_of f ->
     e ! (bt_env.(local_counter) cp) = Some (b, type_counter) ->
-    Mem.valid_access m Mint64 b 0 Writable (Some cp) ->
+    (* Mem.valid_access m Mint64 b 0 Writable (Some cp) -> *)
     Mem.loadv Mint64 m (Vptr b Ptrofs.zero) (Some cp) = Some (Vlong (Int64.repr n)) ->
     Star (Clight.semantics1 p)
          (State f (switch cp ss s_else) Kstop e le m)
@@ -165,7 +105,6 @@ Section Backtranslation.
     assert (G: forall n',
                (Z.of_nat (length ss)) <= n' ->
                n' <= n ->
-               (* Z.of_nat (length ss) <= n -> *)
                Star (Clight.semantics1 p)
                  (State f (snd (fold_right (switch_add_statement (comp_of f)) (n', s_else) ss)) Kstop e le m)
                  E0
@@ -188,6 +127,112 @@ Section Backtranslation.
     }
     now apply G; lia.
   Qed.
+
+  Let nat64 n := Int64.repr (Z.of_nat n).
+
+  Lemma switch_spec
+        p (cp: compartment) f (e: env) le m b
+        ss s ss' s_else
+        (WF: Z.of_nat (length (ss ++ s :: ss')) < Int64.modulus)
+    :
+    cp = comp_of f ->
+    e ! (bt_env.(local_counter) cp) = Some (b, type_counter) ->
+    Mem.valid_access m Mint64 b 0 Writable (Some cp) ->
+    Mem.loadv Mint64 m (Vptr b Ptrofs.zero) (Some cp) = Some (Vlong (nat64 (length ss))) ->
+    exists m',
+      Mem.storev Mint64 m (Vptr b Ptrofs.zero) (Vlong (Int64.add (nat64 (length ss)) Int64.one)) cp = Some m' /\
+        Star (Clight.semantics1 p)
+             (State f (switch cp (ss ++ s :: ss') s_else) Kstop e le m)
+             E0
+             (State f s Kstop e le m').
+  Proof.
+    intros.
+    assert (Eswitch :
+             exists s_else',
+               switch cp (ss ++ s :: ss') s_else =
+                 switch cp ss (switch_clause cp (Z.of_nat (length ss)) s s_else')).
+    { unfold switch. rewrite fold_right_app, app_length. simpl.
+      exists (snd (fold_right (switch_add_statement cp) (Z.of_nat (length ss + S (length ss')), s_else) ss')).
+      repeat f_equal. rewrite -> surjective_pairing at 1. simpl.
+      rewrite fst_switch, Nat.add_succ_r.
+      assert (A: Z.pred (Z.of_nat (S (Datatypes.length ss + Datatypes.length ss')) - Z.of_nat (Datatypes.length ss')) = Z.of_nat (Datatypes.length ss)) by lia.
+      rewrite A. reflexivity.
+    }
+    destruct Eswitch as [s_else' ->]. clear s_else. rename s_else' into s_else.
+    exploit (switch_clause_spec p cp f e le m b (nat64 (length ss)) (Z.of_nat (length ss)) s s_else); auto.
+    unfold nat64. rewrite Int64.eq_true. intro Hcont.
+    destruct Hcont as (m' & Hstore & Hstar2).
+    exists m'. split; trivial.
+    apply (fun H => @star_trans _ _ _ _ _ E0 _ H E0 _ _ Hstar2); trivial.
+    assert (WF2: Z.of_nat (Datatypes.length ss) < Int64.modulus).
+    { clear - WF. rewrite app_length in WF. lia. }
+    eapply switch_spec_else; eauto. split; auto. reflexivity.
+  Qed.
+
+  (** converting trace to code **)
+
+  Definition ptr_of_id_ofs (id: ident) (ofs: ptrofs): expr :=
+    Ebinop Cop.Oadd
+      (Eaddrof (Evar id Tvoid) (Tpointer Tvoid noattr))
+      (Econst_int (Ptrofs.to_int ofs) (Tint I32 Signed noattr))
+      (Tpointer Tvoid noattr).
+
+  Fixpoint list_eventval_to_typelist (vs: list eventval): typelist :=
+    match vs with
+    | nil => Tnil
+    | cons v vs' => Tcons Tvoid (list_eventval_to_typelist vs')
+    end. (* TODO: currently this is just a list of Tvoid of the right size. Fix? *)
+
+  Definition eventval_to_expr (v: eventval): expr :=
+    match v with
+    | EVint i => Econst_int i (Tint I32 Signed noattr)
+    | EVlong i => Econst_long i (Tlong Signed noattr)
+    (* | EVfloat f => Econst_float f (Tfloat F32 noattr) *)
+    | EVfloat f => Econst_float f (Tfloat F64 noattr)
+    | EVsingle f => Econst_single f (Tfloat F32 noattr)
+    (* | EVptr_global id ofs => Ebinop Cop.Oadd *)
+    (*                           (Eaddrof (Evar id Tvoid) (Tpointer Tvoid noattr)) *)
+    (*                           (Econst_int (Ptrofs.to_int ofs) (Tint I32 Signed noattr)) *)
+    (*                           (Tpointer Tvoid noattr) *)
+    | EVptr_global id ofs => ptr_of_id_ofs id ofs
+    end.
+
+  Definition list_eventval_to_list_expr (vs: list eventval): list expr :=
+    List.map eventval_to_expr vs.
+
+  (* An [event_syscall] does not need any code, because it is only generated after a call to an external function *)
+  Definition code_of_syscall (name: string) (vs: list eventval) (v: eventval) := Sskip.
+
+  Definition code_of_vload (ch: memory_chunk) (id: ident) (ofs: Ptrofs.int) (v: eventval) :=
+    Sbuiltin None (EF_vload ch) (Tcons (Tpointer Tvoid noattr) Tnil) (ptr_of_id_ofs id ofs :: nil).
+
+  Definition code_of_vstore (ch: memory_chunk) (id: ident) (ofs: Ptrofs.int) (v: eventval) :=
+    Sbuiltin None (EF_vstore ch) (Tcons (Tpointer Tvoid noattr) Tnil) (ptr_of_id_ofs id ofs :: nil).
+
+  Definition code_of_annot (str: string) (vs: list eventval) :=
+    Sbuiltin None (EF_annot
+                     (Pos.of_nat (List.length (typlist_of_typelist (list_eventval_to_typelist vs))))
+                     str
+                     (typlist_of_typelist (list_eventval_to_typelist vs))
+           ) (list_eventval_to_typelist vs)
+           (list_eventval_to_list_expr vs).
+
+  Definition code_of_call (cp cp': compartment) (id: ident) (vs: list eventval) :=
+    Scall None (Evar id (Tfunction (list_eventval_to_typelist vs) Tvoid cc_default)) (list_eventval_to_list_expr vs).
+
+  Definition code_of_return (cp cp': compartment) (v: eventval) :=
+    Sreturn (Some (eventval_to_expr v)).
+
+  Definition code_of_event (e: event): statement :=
+    match e with
+    | Event_syscall name vs v => code_of_syscall name vs v
+    | Event_vload ch id ofs v => code_of_vload ch id ofs v
+    | Event_vstore ch id ofs v => code_of_vstore ch id ofs v
+    | Event_annot str vs => code_of_annot str vs
+    | Event_call cp cp' id vs => code_of_call cp cp' id vs
+    | Event_return cp cp' v => code_of_return cp cp' v
+    end.
+
 
 
   Section WithTrace.
