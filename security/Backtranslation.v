@@ -202,16 +202,16 @@ Section Backtranslation.
     | EVptr_global id ofs => ptr_of_id_ofs id ofs
     end.
 
-  Definition wf_eventval (ge: genv) (v: eventval): Prop :=
+  Definition wf_eventval (ge: genv) (e: env) (v: eventval): Prop :=
     match v with
-    | EVptr_global id _ => (Senv.public_symbol ge id = true)
+    | EVptr_global id _ => (e ! id = None) /\ (Senv.public_symbol ge id = true)
     | _ => True
     end.
 
   Lemma eventval_to_expr_inv
         ge env cp le m
         ev exp v ty
-        (WFEV: wf_eventval ge ev)
+        (WFEV: wf_eventval ge env ev)
         (CONV: eventval_to_expr ev = exp)
         (EVAL: eval_expr ge env cp le m exp v)
         (TYPE: typ_of_type (eventval_to_type ev) = ty)
@@ -223,7 +223,7 @@ Section Backtranslation.
     - inversion EVAL; subst; simpl in *; try constructor. inversion H.
     - inversion EVAL; subst; simpl in *; try constructor. inversion H.
     - inversion EVAL; subst; simpl in *; try constructor. inversion H.
-    - unfold ptr_of_id_ofs in EVAL. destruct Archi.ptr64 eqn:ARCH.
+    - destruct WFEV as [WFEV1 WFEV2]. unfold ptr_of_id_ofs in EVAL. destruct Archi.ptr64 eqn:ARCH.
       + inversion EVAL; subst; simpl in *; try constructor.
         2:{ inversion H. }
         inversion H5; subst; simpl in *.
@@ -231,7 +231,7 @@ Section Backtranslation.
         clear H5. inversion H4; subst; simpl in *.
         2:{ inversion H. }
         clear H4. inversion H2; subst; simpl.
-        { admit. }
+        { rewrite WFEV1 in H4. inversion H4. }
         { inversion H6.
           rewrite Ptrofs.mul_commut, Ptrofs.mul_one.
           rewrite Ptrofs.add_zero_l.
@@ -246,7 +246,7 @@ Section Backtranslation.
         clear H5. inversion H4; subst; simpl in *.
         2:{ inversion H. }
         clear H4. inversion H2; subst; simpl.
-        { admit. }
+        { rewrite WFEV1 in H4. inversion H4. }
         { inversion H6.
           rewrite Ptrofs.mul_commut, Ptrofs.mul_one.
           rewrite Ptrofs.add_zero_l.
@@ -256,19 +256,6 @@ Section Backtranslation.
           apply Ptrofs.agree32_to_int; auto.
         }
   Qed.
-
-  (* | step_call : forall (f : function) (optid : option ident) (a : expr) (al : list expr) (k : cont) (e : env) (le : temp_env) (m : mem) (tyargs : typelist) (tyres : type) (cconv : calling_convention) *)
-  (*                 (vf : val) (vargs : list val) (fd : fundef) (t : trace), *)
-  (*     Cop.classify_fun (typeof a) = Cop.fun_case_f tyargs tyres cconv -> *)
-  (*     eval_expr ge e (comp_of f) le m a vf -> *)
-  (*     eval_exprlist ge e (comp_of f) le m al tyargs vargs -> *)
-  (*     Genv.find_funct ge vf = Some fd -> *)
-  (*     type_of_fundef fd = Tfunction tyargs tyres cconv -> *)
-  (*     Genv.allowed_call ge (comp_of f) vf -> *)
-  (*     (Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall -> Forall not_ptr vargs) -> *)
-  (*     call_trace ge (comp_of f) (Genv.find_comp ge vf) vf vargs (typlist_of_typelist tyargs) t -> *)
-  (*     step ge function_entry (State f (Scall optid a al) k e le m) t (Callstate fd vargs (Kcall optid f e le k) m) *)
-
 
   Fixpoint list_eventval_to_typelist (vs: list eventval): typelist :=
     match vs with
@@ -312,7 +299,107 @@ Section Backtranslation.
     | Event_return cp cp' v => code_of_return cp cp' v
     end.
 
+  (* A while(1)-loop with a big switch inside it *)
+  Definition code_of_trace cp (t: trace): statement :=
+    Swhile (Econst_int Int.one (Tint I32 Signed noattr)) (switch cp (map code_of_event t) (Sreturn None)).
 
+  (** Projection of the trace according to compartments **)
+
+  (* Definition curr_comp_of_event (e: event): option compartment := *)
+  (*   match e with *)
+  (*   | Event_call cp cp' id vs => Some cp *)
+  (*   | Event_return cp cp' v => Some cp' *)
+  (*   | _ => None *)
+  (*   end. *)
+
+  (* Definition next_comp_of_event (e: event): option compartment := *)
+  (*   match e with *)
+  (*   | Event_call cp cp' id vs => Some cp' *)
+  (*   | Event_return cp cp' v => Some cp *)
+  (*   | _ => None *)
+  (*   end. *)
+
+  Definition comp_of_event (e: event): option (compartment * compartment) :=
+    match e with
+    | Event_call cp cp' id vs => Some (cp, cp')
+    | Event_return cp cp' v => Some (cp', cp)
+    | _ => None
+    end.
+
+  (* Instance has_comp_event: has_comp event := *)
+
+  Definition comp_proj_trace (cp: compartment) (t: trace): compartment * trace :=
+    fold_right
+      (fun ev '(cp_now, sub) => match comp_of_event ev with
+                             | Some (cp_curr, cp_next) => (cp_next, if (Pos.eqb cp_curr cp) then (ev :: sub) else sub)
+                             | None => (cp_now, if (Pos.eqb cp_now cp) then (ev :: sub) else sub)
+                             end)
+      (default_compartment, nil) t.
+
+  Definition comp_subtrace (cp: compartment) (t: trace) :=
+    snd (comp_proj_trace cp t).
+
+  Definition code_of_subtrace cp t :=
+    code_of_trace cp (comp_subtrace cp t).
+
+  (* TODO *)
+
+  (* old CCS version *)
+  Lemma comp_subtrace_app (C: Component.id) (t1 t2: trace) :
+    comp_subtrace C (t1 ++ t2) = comp_subtrace C t1 ++ comp_subtrace C t2.
+  Proof. apply: filter_cat. Qed.
+
+  Definition procedures_of_trace (t: trace) : NMap (NMap expr) :=
+    mapim (fun C Ciface =>
+             let procs :=
+                 if C == Component.main then
+                   Procedure.main |: Component.export Ciface
+                 else Component.export Ciface in
+               mkfmapf (fun P => procedure_of_trace C P t) procs)
+          intf.
+
+  Definition valid_procedure C P :=
+    C = Component.main /\ P = Procedure.main
+    \/ exported_procedure intf C P.
+
+  Lemma find_procedures_of_trace_exp (t: trace) C P :
+    exported_procedure intf C P ->
+    find_procedure (procedures_of_trace t) C P
+    = Some (procedure_of_trace C P t).
+  Proof.
+    intros [CI [C_CI CI_P]].
+    unfold find_procedure, procedures_of_trace.
+    rewrite mapimE C_CI /= mkfmapfE.
+    case: eqP=> _; last by rewrite CI_P.
+    by rewrite in_fsetU1 CI_P orbT.
+  Qed.
+
+  Lemma find_procedures_of_trace_main (t: trace) :
+    find_procedure (procedures_of_trace t) Component.main Procedure.main
+    = Some (procedure_of_trace Component.main Procedure.main t).
+  Proof.
+    rewrite /find_procedure /procedures_of_trace.
+    rewrite mapimE eqxx.
+    case: (intf Component.main) (has_main)=> [Cint|] //= _.
+    by rewrite mkfmapfE in_fsetU1 eqxx.
+  Qed.
+
+  Lemma find_procedures_of_trace (t: trace) C P :
+    valid_procedure C P ->
+    find_procedure (procedures_of_trace t) C P
+    = Some (procedure_of_trace C P t).
+  Proof.
+    by move=> [[-> ->]|?];
+    [apply: find_procedures_of_trace_main|apply: find_procedures_of_trace_exp].
+  Qed.
+
+  Definition program_of_trace (t: trace) : program :=
+    {| prog_interface  := intf;
+       prog_procedures := procedures_of_trace t;
+       prog_buffers    := mapm (fun _ => inr [Int 0]) intf |}.
+
+  (* old CCS version *)
+  
 
   Section WithTrace.
 
