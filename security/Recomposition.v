@@ -43,7 +43,29 @@ Definition prefix (m:finpref_behavior) (b:program_behavior) : Prop :=
   | _, _ => False
   end.
 
+Definition finpref_trace (m : finpref_behavior) : trace :=
+  match m with
+  | FTerminates t _ | FGoes_wrong t | FTbc t => t
+  end.
+
 Definition does_prefix x m := exists b, program_behaves x b /\ prefix m b.
+
+Lemma program_behaves_finpref_exists :
+  forall L s t s',
+    initial_state L s ->
+    Star (semantics L) s t s' ->
+  exists beh,
+    program_behaves (semantics L) beh /\
+    prefix (FTbc t) beh.
+Proof.
+  intros L s t s' Hini HStar.
+  destruct (state_behaves_exists (semantics L) s') as [beh_s' Hbeh_s'].
+  (* pose proof program_runs Hini (state_behaves_app HStar Hbeh_s') as Hbeh. *)
+  pose proof @program_runs (semantics L) s _ Hini (state_behaves_app HStar Hbeh_s') as Hbeh.
+  eexists. split.
+  - exact Hbeh.
+  - simpl. exists beh_s'. reflexivity.
+Qed.
 
 (* CS *)
 
@@ -100,6 +122,14 @@ Proof.
 Admitted.
 
 End SEMANTICS.
+
+Theorem behavior_prefix_star {p b m} :
+  program_behaves (sem p) b ->
+  prefix m b ->
+exists s1 s2,
+  initial_state p s1 /\
+  Star (sem p) s1 (finpref_trace m) s2.
+Admitted.
 
 (* Recombination *)
 
@@ -976,7 +1006,7 @@ Proof.
     now apply star_refl.
 Qed.
 
-Lemma match_initial_states s s'' :
+Lemma match_initial_states {s s''} :
   initial_state prog   s   ->
   initial_state prog'' s'' ->
   initial_state prog'  (merge_states lrsplit s s'') /\
@@ -1210,7 +1240,7 @@ Proof.
     inversion Hst_beh'' as [? s2'' ? Hstar12'' Hfinal2'' | | |]; subst.
     exists (Terminates tm nm). split; [| now constructor].
     pose proof match_initial_states _ _ _ _ _ Hcompat Hcompat' _ _ _
-      Hprog Hprog' Hprog'' _ _ Hini1 Hini1'' as [Hini1' Hmerge1].
+      Hprog Hprog' Hprog'' Hini1 Hini1'' as [Hini1' Hmerge1].
     pose proof star_simulation
       _ _ _ _ _ Hcompat Hcompat' _ _ _ Hprog Hprog' Hprog''
       Hmerge1 Hstar12 Hstar12'' as [Hstar12' Hmerge2].
@@ -1220,33 +1250,43 @@ Proof.
       [assumption |].
     (* now apply match_final_states with (p' := p'). *)
     eapply match_final_states with (p' := p'); eassumption.
-  (*   - destruct b   as [? | ? | ? | t  ]; try contradiction. *)
-  (*     destruct b'' as [? | ? | ? | t'']; try contradiction. *)
-  (*     simpl in Hprefix, Hprefix''. subst t t''. *)
-  (*     inversion Hst_beh   as [| | | ? s2   Hstar12   Hstep2   Hfinal2  ]; subst. *)
-  (*     inversion Hst_beh'' as [| | | ? s2'' Hstar12'' Hstep2'' Hfinal2'']; subst. *)
-  (*     exists (Goes_wrong tm). split; last reflexivity. *)
-  (*     pose proof match_initial_states Hwfp Hwfc Hwfp' Hwfc' Hmergeable_ifaces Hifacep Hifacec *)
-  (*          Hprog_is_closed Hprog_is_closed' Hini1 Hini1'' as [Hini' Hmerge1]. *)
-  (*     pose proof star_simulation Hmerge1 Hstar12 Hstar12'' as [Hstar12' Hmerge2]. *)
-  (*     apply program_runs with (s := merge_states ip ic s1 s1''); *)
-  (*       first assumption. *)
-  (*     apply state_goes_wrong with (s' := merge_states ip ic s2 s2''); *)
-  (*       first assumption. *)
-  (*     + eapply match_nostep; eassumption. *)
-  (*     + eapply match_nofinal; eassumption. *)
-  (*   - (* Here we talk about the stars associated to the behaviors, without *)
-  (*        worrying now about connecting them to the existing initial states. *) *)
-  (*     destruct (CS.behavior_prefix_star Hbeh Hprefix) as [s1_ [s2 [Hini1_ Hstar12]]]. *)
-  (*     destruct (CS.behavior_prefix_star Hbeh'' Hprefix'') as [s1''_ [s2'' [Hini1''_ Hstar12'']]]. *)
-  (*     pose proof match_initial_states Hwfp Hwfc Hwfp' Hwfc' Hmergeable_ifaces Hifacep Hifacec *)
-  (*          Hprog_is_closed Hprog_is_closed' Hini1_ Hini1''_ as [Hini1' Hmerge1]. *)
-  (*     pose proof star_simulation Hmerge1 Hstar12 Hstar12'' as [Hstar12' Hmerge2]. *)
-  (*     eapply program_behaves_finpref_exists; *)
-  (*       last now apply Hstar12'. *)
-  (*     assumption. *)
-  (* Qed. *)
-  Admitted.
+  - destruct b   as [? | ? | ? | t  ]; try contradiction.
+    destruct b'' as [? | ? | ? | t'']; try contradiction.
+    simpl in Hprefix, Hprefix''. subst t t''.
+    inversion Hst_beh   as [| | | ? s2   Hstar12   Hstep2   Hfinal2  ]; subst.
+    inversion Hst_beh'' as [| | | ? s2'' Hstar12'' Hstep2'' Hfinal2'']; subst.
+    exists (Goes_wrong tm). split; [| reflexivity].
+    pose proof match_initial_states
+      _ _ _ _ _ Hcompat Hcompat' _ _ _ Hprog Hprog' Hprog''
+      Hini1 Hini1'' as [Hini' Hmerge1].
+    pose proof star_simulation
+      _ _ _ _ _ Hcompat Hcompat' _ _ _ Hprog Hprog' Hprog''
+      Hmerge1 Hstar12 Hstar12'' as [Hstar12' Hmerge2].
+    apply program_runs with (s := merge_states lrsplit s1 s1'');
+      [assumption |].
+    apply state_goes_wrong with (s' := merge_states lrsplit s2 s2'');
+      [assumption | |].
+    (* + eapply match_nostep; eassumption. *)
+    (* + eapply match_nofinal; eassumption. *)
+    + eapply (match_nostep p c p' c'); eassumption.
+    + intros r. eapply (@match_nofinal p c p' c'); now eauto.
+  - (* Here we talk about the stars associated to the behaviors, without
+       worrying now about connecting them to the existing initial states. *)
+    destruct (behavior_prefix_star Hbeh Hprefix) as [s1_ [s2 [Hini1_ Hstar12]]].
+    destruct (behavior_prefix_star Hbeh'' Hprefix'') as [s1''_ [s2'' [Hini1''_ Hstar12'']]].
+    pose proof match_initial_states
+      _ _ _ _ _ Hcompat Hcompat' _ _ _ Hprog Hprog' Hprog''
+      Hini1_ Hini1''_ as [Hini1' Hmerge1].
+    pose proof star_simulation
+      _ _ _ _ _ Hcompat Hcompat' _ _ _ Hprog Hprog' Hprog''
+      Hmerge1 Hstar12 Hstar12'' as [Hstar12' Hmerge2].
+    eapply program_behaves_finpref_exists;
+      [| now apply Hstar12'].
+    assumption.
+(* TODO Fix shelved variables *)
+Unshelve.
+  all:auto.
+Qed.
 
 End RECOMBINATION.
 
