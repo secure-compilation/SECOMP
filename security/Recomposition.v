@@ -141,14 +141,14 @@ Definition merge_value (s : side) (v : memval) : memval :=
 Definition merge_contents (m m'' : mem) :=
   let (def, c) := Mem.mem_contents m in
   let (def'', c'') := Mem.mem_contents m'' in
-  let set_left t '(b, o2mv) := Maps.PTree.set (2 * b) o2mv t in (* TODO Merge values *)
-  let set_right t '(b, o2mv) := Maps.PTree.set (2 * b + 1) o2mv t in (* TODO Merge values *)
+  (* let set_left t '(b, o2mv) := Maps.PTree.set (2 * b) o2mv t in (* TODO Merge values *) *)
+  (* let set_right t '(b, o2mv) := Maps.PTree.set (2 * b + 1) o2mv t in (* TODO Merge values *) *)
   (* let celts := Maps.PTree.elements c in *)
   (* let celts'' := Maps.PTree.elements c'' in *)
   (* let _ := List.fold_left (fun acc '(b, y) => Maps.PTree.set b y acc) celts (Maps.PTree.empty _) in *)
   (* not there yet? -- filter things not in left/right! *)
-  let t0 := List.fold_left set_left (Maps.PTree.elements c) (Maps.PTree.empty _) in
-  let t1 := List.fold_left set_right (Maps.PTree.elements c'') t0 in
+  let t0 := List.fold_left (remap Left) (Maps.PTree.elements c) (Maps.PTree.empty _) in
+  let t1 := List.fold_left (remap Right) (Maps.PTree.elements c'') t0 in
   (def, t1).
   (* TODO Not a pure map function *)
   (* m. *)
@@ -158,18 +158,21 @@ Definition merge_contents (m m'' : mem) :=
 
 Definition merge_access (m m'' : mem) :=
   let '(def, a) := Mem.mem_access m in
-  let '(def'', a'') := Mem.mem_access m'' in
+  let '(def'', a'') := Mem.mem_access m'' in (* default discarded *)
   (* TODO Remap and combine block identifiers according to side *)
-  let t0 := List.fold_left set_left (Maps.PTree.elements a) (Maps.PTree.empty _) in
-  let t1 := List.fold_left set_right (Maps.PTree.elements a'') t0 in
+  let t0 := List.fold_left (remap Left) (Maps.PTree.elements a) (Maps.PTree.empty _) in
+  let t1 := List.fold_left (remap Right) (Maps.PTree.elements a'') t0 in
   (def, t1).
 
 
 Definition merge_compartments (m m'' : mem) :=
   let c := Mem.mem_compartments m in
   let c'' := Mem.mem_compartments m'' in
-  (* TODO Remap and combine block identifiers according to side *)
-  c.
+  (* TODO Remap and combine block identifiers according to side
+     Filter *)
+  let t0 := List.fold_left (remap Left) (Maps.PTree.elements c) (Maps.PTree.empty _) in
+  let t1 := List.fold_left (remap Right) (Maps.PTree.elements c'') t0 in
+  t1.
 
 Definition merge_nextblocks (m m'' : mem) :=
   let n := Mem.nextblock m in
