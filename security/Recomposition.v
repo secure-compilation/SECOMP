@@ -877,11 +877,12 @@ Lemma threeway_multisem_star_E0 s1 s1'' s2 s2'':
   Star sem   s1   E0 s2   ->
   Star sem'' s1'' E0 s2'' ->
   Star sem'  (merge_states lrsplit s1 s1'') E0 (merge_states lrsplit s2 s2'').
-  (* Proof. *)
-  (*   intros H H0 H1. *)
+Proof.
+  intros H H0 H1.
   (*   inversion H as [_ _ _ Hwfp Hwfc Hwfp' Hwfc' Hmergeable_ifaces Hifacep Hifacec _ _ _ _ _ _]. *)
-  (*   destruct (CS.is_program_component s1 ic) eqn:Hprg_component. *)
-  (*   - now apply threeway_multisem_star_E0_program. *)
+  destruct (is_program_component s1 lrsplit) eqn:Hprg_component.
+  - now apply (threeway_multisem_star_E0_program p c p' c').
+  (* TODO symmetric case *)
   (*   - rewrite (merge_states_sym H); try assumption. *)
   (*     rewrite (merge_states_sym (threeway_multisem_mergeable H H0 H1)); try assumption. *)
   (*     assert (Hlinkable : linkable ip ic) by now destruct Hmergeable_ifaces. *)
@@ -922,11 +923,12 @@ Lemma threeway_multisem_event_lockstep s1 s1'' e s2 s2'' :
   Step sem'' s1'' (e :: nil) s2'' ->
   Step sem'  (merge_states lrsplit s1 s1'') (e :: nil) (merge_states lrsplit s2 s2'') /\
   mergeable_states p c p' c' prog prog'' s2 s2''.
-  (* Proof. *)
-  (*   intros Hmerge1 Hstep12 Hstep12''. *)
+Proof.
+  intros Hmerge1 Hstep12 Hstep12''.
   (*   inversion Hmerge1 as [? ? ? Hwfp Hwfc Hwfp' Hwfc' Hmergeable_ifaces Hifacep Hifacec Hprog_is_closed _ Hini H1 Hstar H2]. *)
-  (*   destruct (CS.is_program_component s1 ic) eqn:Hcase. *)
-  (*   - now apply threeway_multisem_event_lockstep_program. *)
+  destruct (is_program_component s1 lrsplit) eqn:Hcase.
+  - now apply threeway_multisem_event_lockstep_program.
+  (* TODO symmetric case *)
   (*   - inversion Hmergeable_ifaces as [Hlinkable _]. *)
   (*     pose proof @threeway_multisem_event_lockstep_program c' p' c p as H. *)
   (*     rewrite <- Hifacec, <- Hifacep in H. *)
@@ -1051,6 +1053,7 @@ Proof.
   (*   destruct (CS.is_program_component s1 ic) eqn:Hcomp1. *)
   destruct (is_program_component s1 lrsplit) eqn:Homp1.
   - now apply (threeway_multisem_star_program p c p' c').
+  (* TODO symmetric case *)
   (*   - apply negb_false_iff in Hcomp1. *)
   (*     apply (mergeable_states_context_to_program Hmerge1) *)
   (*       in Hcomp1. *)
