@@ -221,6 +221,12 @@ Section Backtranslation.
         erewrite Ptrofs.agree32_of_ints_eq; auto. apply Ptrofs.agree32_to_int; auto.
     Qed.
 
+    Lemma ptr_of_id_ofs_typeof
+          i i0
+      :
+      typeof (ptr_of_id_ofs i i0) = Tpointer Tvoid noattr.
+    Proof. unfold ptr_of_id_ofs. destruct Archi.ptr64; simpl; auto. Qed.
+
     Definition eventval_to_expr (v: eventval): expr :=
       match v with
       | EVint i => Econst_int i (Tint I32 Signed noattr)
@@ -235,6 +241,30 @@ Section Backtranslation.
       | EVptr_global id _ => (e ! id = None) /\ (Senv.public_symbol ge id = true)
       | _ => True
       end.
+
+    Definition wf_eventval_weak (ge: genv) (e: env) (v: eventval): Prop :=
+      match v with
+      | EVptr_global id _ => (e ! id = None) /\ (exists b, Genv.find_symbol ge id = Some b)
+      | _ => True
+      end.
+
+    Lemma wf_eventval_weak_weak
+          ge e v
+      :
+      wf_eventval ge e v -> wf_eventval_weak ge e v.
+    Proof. intros H. destruct v; simpl in *; auto. destruct H. split; auto. apply Genv.public_symbol_exists in H0. auto. Qed.
+
+    Definition wf_eventval_weak2 (ge: genv) (v: eventval): Prop :=
+      match v with
+      | EVptr_global id _ => (exists b, Genv.find_symbol ge id = Some b)
+      | _ => True
+      end.
+
+    Lemma wf_eventval_weak2_weak
+          ge e v
+      :
+      wf_eventval_weak ge e v -> wf_eventval_weak2 ge v.
+    Proof. intros H. destruct v; simpl in *; auto. destruct H. auto. Qed.
 
     Lemma eventval_to_expr_match
           ge env cp le m
@@ -285,7 +315,64 @@ Section Backtranslation.
           }
     Qed.
 
+    Definition eventval_to_val (ge: genv) (v: eventval): val :=
+      match v with
+      | EVint i => Vint i
+      | EVlong i => Vlong i
+      | EVfloat f => Vfloat f
+      | EVsingle f => Vsingle f
+      | EVptr_global id ofs => match Senv.find_symbol ge id with
+                              | Some b => Vptr b ofs
+                              | None => Vundef
+                              end
+      end.
 
+    Lemma eventval_to_expr_val_eval
+          ge en cp temp m ev
+          (WF: wf_eventval_weak ge en ev)
+      :
+      eval_expr ge en cp temp m (eventval_to_expr ev) (eventval_to_val ge ev).
+    Proof.
+      destruct ev; simpl in *; try constructor.
+      destruct WF as [WF0 [b WF1]].
+      rewrite WF1. unfold ptr_of_id_ofs. destruct Archi.ptr64 eqn:ARCH.
+      - econstructor; try econstructor. eapply eval_Evar_global; eauto.
+        simpl. simpl_expr. rewrite Ptrofs.mul_commut, Ptrofs.mul_one. rewrite Ptrofs.add_zero_l.
+        rewrite Ptrofs.of_int64_to_int64; auto.
+      - econstructor; try econstructor. eapply eval_Evar_global; eauto.
+        simpl. simpl_expr. rewrite Ptrofs.mul_commut, Ptrofs.mul_one. rewrite Ptrofs.add_zero_l.
+        erewrite Ptrofs.agree32_of_ints_eq; auto. apply Ptrofs.agree32_to_int; auto.
+    Qed.
+
+    Lemma eventval_to_expr_val_match
+          ge env
+          ev exp v ty
+          (WFEV: wf_eventval ge env ev)
+          (CONV0: eventval_to_expr ev = exp)
+          (CONV1: eventval_to_val ge ev = v)
+          (TYPE: typ_of_type (eventval_to_type ev) = ty)
+      :
+      eventval_match ge ev ty v.
+    Proof.
+      subst. eapply eventval_to_expr_match; eauto. eapply eventval_to_expr_val_eval; eauto. apply wf_eventval_weak_weak; auto.
+      Unshelve. exact default_compartment. exact (PTree.empty val). exact Mem.empty.
+    Qed.
+
+    Lemma typeof_eventval_to_expr_type
+          v
+      :
+      typeof (eventval_to_expr v) = eventval_to_type v.
+    Proof. destruct v; simpl; auto. apply ptr_of_id_ofs_typeof. Qed.
+
+    Lemma sem_cast_eventval
+          ge v m
+          (WFEV: wf_eventval_weak2 ge v)
+      :
+      Cop.sem_cast (eventval_to_val ge v) (typeof (eventval_to_expr v)) (eventval_to_type v) m = Some (eventval_to_val ge v).
+    Proof. rewrite typeof_eventval_to_expr_type. destruct v; simpl in *; simpl_expr. destruct WFEV. rewrite H. simpl_expr. Qed.
+
+
+    (* converting functions *)
     Fixpoint list_eventval_to_typelist (vs: list eventval): typelist :=
       match vs with
       | nil => Tnil
@@ -295,14 +382,12 @@ Section Backtranslation.
     Definition list_eventval_to_list_expr (vs: list eventval): list expr :=
       List.map eventval_to_expr vs.
 
-    (* An [event_syscall] does not need any code, because it is only generated after a call to an external function *)
-    Definition code_of_syscall (name: string) (vs: list eventval) (v: eventval) := Sskip.
 
     Definition code_of_vload (ch: memory_chunk) (id: ident) (ofs: Ptrofs.int) (v: eventval) :=
       Sbuiltin None (EF_vload ch) (Tcons (Tpointer Tvoid noattr) Tnil) (ptr_of_id_ofs id ofs :: nil).
 
     Definition code_of_vstore (ch: memory_chunk) (id: ident) (ofs: Ptrofs.int) (v: eventval) :=
-      Sbuiltin None (EF_vstore ch) (Tcons (Tpointer Tvoid noattr) Tnil) (ptr_of_id_ofs id ofs :: nil).
+      Sbuiltin None (EF_vstore ch) (Tcons (Tpointer Tvoid noattr) (Tcons (eventval_to_type v) Tnil)) ((ptr_of_id_ofs id ofs) :: (eventval_to_expr v) :: nil).
 
     Definition code_of_annot (str: string) (vs: list eventval) :=
       Sbuiltin None (EF_annot
@@ -315,38 +400,44 @@ Section Backtranslation.
     Definition code_of_call (cp cp': compartment) (id: ident) (vs: list eventval) :=
       Scall None (Evar id (Tfunction (list_eventval_to_typelist vs) Tvoid cc_default)) (list_eventval_to_list_expr vs).
 
+    (* An [event_syscall] does not need any code, because it is only generated after a call to an external function *)
+    Definition code_of_syscall (name: string) (vs: list eventval) (v: eventval) := Sskip.
+
     Definition code_of_return (cp cp': compartment) (v: eventval) :=
       Sreturn (Some (eventval_to_expr v)).
 
     Definition code_of_event (e: event): statement :=
       match e with
-      | Event_syscall name vs v => code_of_syscall name vs v
       | Event_vload ch id ofs v => code_of_vload ch id ofs v
       | Event_vstore ch id ofs v => code_of_vstore ch id ofs v
       | Event_annot str vs => code_of_annot str vs
       | Event_call cp cp' id vs => code_of_call cp cp' id vs
+      | Event_syscall name vs v => code_of_syscall name vs v
       | Event_return cp cp' v => code_of_return cp cp' v
       end.
 
+    (* A while(1)-loop with a big switch inside it *)
+    Definition code_of_trace cp (t: trace): statement :=
+      Swhile (Econst_int Int.one (Tint I32 Signed noattr)) (switch cp (map code_of_event t) (Sreturn None)).
 
+
+    (* Properties *)
     Lemma code_of_event_step_vload
           ev
           ch id ofs v
           p f k e le m
-          (WFEV: wf_eventval (globalenv p) e v)
           (EV: ev = Event_vload ch id ofs v)
-          (WFTY: typ_of_type (eventval_to_type v) = type_of_chunk ch)
           (GLOB: e ! id = None)
           b
-          (GE: Genv.find_symbol (globalenv p) id = Some b)
           (VOL: Senv.block_is_volatile (globalenv p) b = true)
+          (GE: Genv.find_symbol (globalenv p) id = Some b)
+          rv
+          (MATCH: eventval_match (globalenv p) v (type_of_chunk ch) rv)
       :
-      (* exists m', *)
         Star (Clight.semantics1 p)
              (State f (code_of_event ev) k e le m)
              (ev :: nil)
              (State f Sskip k e le m).
-             (* (State f Sskip k e le m'). *)
     Proof.
       subst; simpl in *. unfold code_of_vload.
       destruct Archi.ptr64 eqn:ARCH.
@@ -357,8 +448,7 @@ Section Backtranslation.
             - eapply ptr_of_id_ofs_eval; eauto.
             - unfold ptr_of_id_ofs; simpl. rewrite ARCH. simpl. simpl_expr.
           }
-          repeat econstructor; eauto. eapply eventval_to_expr_match; eauto.
-          admit.
+          repeat econstructor; eauto.
         }
         econstructor 1.
       - econstructor 2.
@@ -368,24 +458,62 @@ Section Backtranslation.
             - eapply ptr_of_id_ofs_eval; eauto.
             - unfold ptr_of_id_ofs; simpl. rewrite ARCH. simpl. simpl_expr.
           }
-          repeat econstructor; eauto. eapply eventval_to_expr_match; eauto.
-          admit.
+          repeat econstructor; eauto.
         }
         econstructor 1.
-      
+    Qed.
 
-    volatile_load_vol : forall (chunk : memory_chunk) (m : mem) (b : block) (ofs : ptrofs) (id : ident) (ev : eventval) (v : val),
-                        Senv.block_is_volatile ge b = true ->
-                        Senv.find_symbol ge id = Some b -> eventval_match ge ev (type_of_chunk chunk) v -> volatile_load ge cp chunk m b ofs (Event_vload chunk id ofs ev :: nil) (Val.load_result chunk v)
-      
-  | step_builtin : forall (f : function) (optid : option ident) (ef : external_function) (tyargs : typelist) (al : list expr) (k : cont) (e : env) (le : temp_env) (m : mem) (vargs : list val) (t : trace) (vres : val) (m' : mem),
-                   eval_exprlist ge e (comp_of f) le m al tyargs vargs ->
-                   external_call ef ge (comp_of f) vargs m t vres m' ->
-                   step ge function_entry (State f (Sbuiltin optid ef tyargs al) k e le m) t (State f Sskip k e (set_opttemp optid vres le) m')
+    Lemma code_of_event_step_vstore
+          ev
+          ch id ofs v
+          p f k e le m
+          (EV: ev = Event_vstore ch id ofs v)
+          (GLOB: e ! id = None)
+          b
+          (VOL: Senv.block_is_volatile (globalenv p) b = true)
+          (GE: Genv.find_symbol (globalenv p) id = Some b)
+          (WFSV: wf_eventval_weak (globalenv p) e v)
+          (MATCH: eventval_match (globalenv p) v (type_of_chunk ch) (Val.load_result ch (eventval_to_val (globalenv p) v)))
+      :
+        Star (Clight.semantics1 p)
+             (State f (code_of_event ev) k e le m)
+             (ev :: nil)
+             (State f Sskip k e le m).
+    Proof.
+      subst; simpl in *. unfold code_of_vstore.
+      destruct Archi.ptr64 eqn:ARCH.
+      - econstructor 2.
+        3:{ rewrite E0_right. reflexivity. }
+        { eapply step_builtin.
+          { econstructor; eauto.
+            { eapply ptr_of_id_ofs_eval; eauto. }
+            { unfold ptr_of_id_ofs; simpl. rewrite ARCH. simpl. simpl_expr. }
+            econstructor; eauto. 3: econstructor.
+            { eapply eventval_to_expr_val_eval. auto. }
+            { apply sem_cast_eventval. eapply wf_eventval_weak2_weak; eauto. }
+          }
+          simpl.
+          repeat econstructor; eauto.
+        }
+        econstructor 1.
+      - econstructor 2.
+        3:{ rewrite E0_right. reflexivity. }
+        { eapply step_builtin.
+          { econstructor; eauto.
+            { eapply ptr_of_id_ofs_eval; eauto. }
+            { unfold ptr_of_id_ofs; simpl. rewrite ARCH. simpl. simpl_expr. }
+            econstructor; eauto. 3: econstructor.
+            { eapply eventval_to_expr_val_eval. auto. }
+            { apply sem_cast_eventval. eapply wf_eventval_weak2_weak; eauto. }
+          }
+          simpl.
+          repeat econstructor; eauto.
+        }
+        econstructor 1.
+    Qed.
 
-    (* A while(1)-loop with a big switch inside it *)
-    Definition code_of_trace cp (t: trace): statement :=
-      Swhile (Econst_int Int.one (Tint I32 Signed noattr)) (switch cp (map code_of_event t) (Sreturn None)).
+    (* TODO *)
+
 
   End CODE.
 
