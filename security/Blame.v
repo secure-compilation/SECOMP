@@ -17,6 +17,22 @@ Definition same_symbols (j: meminj) (ge1 ge2: genv): Prop :=
     Genv.find_symbol ge1 id = Some loc ->
     exists loc', j loc = Some (loc', 0) /\ Genv.find_symbol ge2 id = Some loc'.
 
+Definition same_functions (j: meminj) (ge1 ge2: genv): Prop :=
+  forall vf vf' fd,
+    Val.inject j vf vf' ->
+    Genv.find_funct ge1 vf = Some fd ->
+    exists fd', Genv.find_funct ge2 vf' = Some fd' /\
+             type_of_fundef fd' = type_of_fundef fd /\
+             comp_of fd' = comp_of fd.
+
+Definition same_functions_right (s: split) (j: meminj) (ge1 ge2: genv): Prop :=
+  forall vf vf' fd,
+        Val.inject j vf vf' ->
+        Genv.find_funct ge1 vf = Some fd ->
+        s (comp_of fd) = Right ->
+        Genv.find_funct ge2 vf' = Some fd.
+
+
 Section Equivalence.
   Variable s: split.
   Variable j: meminj.
@@ -25,7 +41,9 @@ Section Equivalence.
     { same_dom: same_domain s j m1;
       partial_mem_inject: Mem.inject j m1 m2;
       j_delta_zero: delta_zero j;
-      same_symb: same_symbols j ge1 ge2
+      same_symb: same_symbols j ge1 ge2;
+      related_funct: same_functions j ge1 ge2;
+      same_funct_right: same_functions_right s j ge1 ge2
     }.
 
 
@@ -447,17 +465,22 @@ Section Simulation.
           intros [v' [? ?]].
           exploit eval_exprlist_injection; eauto.
           intros [vs' [? ?]].
+          exploit (related_funct _ _ _ _ _ _ H11); eauto.
+          intros [fd' [find_fd' [type_fd' comp_fd']]].
           exists j; eexists; split.
           * econstructor; eauto.
-            -- admit.
-            -- admit.
+            -- congruence.
+            -- (* TODO to solve this goal: define match_genvs as if we were doing a
+                standard simulation proof *) admit.
             -- (* use [Val.inject_list_not_ptr] *) admit.
             -- exploit call_trace_inj; eauto. admit.
           * (* Case analysis: are we changing side or not? *)
             destruct (s (comp_of fd)) eqn:side.
-            -- apply LeftControl; eauto.
+            -- apply LeftControl; eauto; try congruence.
                simpl. apply right_cont_injection_kcall_right; eauto.
-            -- apply RightControl; eauto.
+            -- exploit (same_funct_right _ _ _ _ _ _ H11); eauto. intros.
+               replace fd' with fd by congruence.
+               apply RightControl; eauto; try congruence.
                constructor; eauto.
                simpl. apply right_cont_injection_kcall_right; eauto.
         + exploit eval_exprlist_injection; eauto.
@@ -469,6 +492,8 @@ Section Simulation.
           apply RightControl; eauto.
           constructor; eauto.
           * constructor; eauto.
+            -- admit.
+            -- admit.
             -- admit.
             -- admit.
             -- admit.
