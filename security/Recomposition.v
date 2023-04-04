@@ -346,9 +346,46 @@ Definition remap
 Definition merge_value (s : side) (v : memval) : memval :=
   v.
 
+(* TODO Potential modifications to the following core definitions:
+
+    - Filter unused Right-side block components from Left-side memory, and vice
+      versa, e.g., using functions like [Maps.PTree.filter1] or
+      [Maps.PTree.map_filter1*]. Currently all blocks are mapped and some will
+      be left unused. This detail should have no bearing on the correctness of
+      the operations. In any case, combining two memories into one can leave
+      gaps, i.e., unmapped blocks in the new memory. Some memory well-formedness
+      conditions, in particular those involving block to compartment mapping, do
+      not currently support gaps. These disagreements need to be harmonized.
+
+    - Consider alternative definitions and their impact on proof effort. For
+      example, one should at the very least use [Maps.PTree_Properties.of_list].
+      Instead of extracting tree elements to lists, transforming them and
+      generating new trees from those revised elements, one could attempt to
+      operate on trees as much as possible, using maps on trees to transform the
+      payload, and lists only to remap the blocks that serve as key identifiers.
+      This last non-standard operation is what makes maps insufficient for our
+      purposes.
+
+   Beyond these improvements, the more fundamental obstacle to a straightforward
+   adaptation of the simplified proof in the single-memory model (as opposed to
+   per-compartment memories) is the difficulty of defining a merging function on
+   memory contents. Even if we can come up with systematic mappings from the
+   blocks of two executions to the blocks of a singled recomposed execution,
+   these mappings involve renamings of block identifiers across executions.
+   Extended to memory contents, this means that block identifiers in pointers
+   held in memory must also be renamed according to the same mapping. The
+   information about which [memval]s stored in memory correspond to high-level
+   pointer [val]s is not readily available without the program, which at the
+   assembly level simply annotates each load or store operation with the
+   corresponding [memory_chunk].
+
+   On the whole, all of this points towards an adaptation of the proof based
+   purely on state relations which build a suitable mapping incrementally and
+   which are preserved by stepping. *)
+
 Definition merge_contents (m m'' : mem) :=
   let (def, c) := Mem.mem_contents m in
-  let (_, c'') := Mem.mem_contents m'' in (* default discarder *)
+  let (_, c'') := Mem.mem_contents m'' in (* default discarded *)
   (* TODO Filter according to side *)
   let t0 := List.fold_left (remap Left id) (Maps.PTree.elements c) (Maps.PTree.empty _) in
   let t1 := List.fold_left (remap Right id) (Maps.PTree.elements c'') t0 in
@@ -632,20 +669,24 @@ Lemma merge_states_silent_star {s s1'' s2''} :
   is_program_component s lrsplit = true ->
   Star sem'' s1'' E0 s2'' ->
   merge_states lrsplit s s1'' = merge_states lrsplit s s2''.
-  (* Proof. *)
-  (*   intros Hmerge1 Hcomp Hstar12''. *)
-  (*   remember E0 as t. *)
-  (*   apply star_iff_starR in Hstar12''. *)
-  (*   induction Hstar12'' *)
-  (*     as [s'' | s1'' t1 s2'' t2 s3'' ? Hstar12'' IHstar'' Hstep23'' Ht12]; subst. *)
-  (*   - reflexivity. *)
-  (*   - (* Simplify, apply IH and case analyze. *) *)
-  (*     symmetry in Ht12; apply Eapp_E0_inv in Ht12 as [? ?]; subst. *)
-  (*     specialize (IHstar'' Hmerge1 eq_refl). rewrite IHstar''. *)
-  (*     apply star_iff_starR in Hstar12''. *)
+Proof.
+  intros Hmerge1 Hcomp Hstar12''.
+  remember E0 as t.
+  apply star_iff_starR in Hstar12''.
+  induction Hstar12''
+    as [s'' | s1'' t1 s2'' t2 s3'' ? Hstar12'' IHstar'' Hstep23'' Ht12]; subst.
+  - reflexivity.
+  - (* Simplify, apply IH and case analyze. *)
+    symmetry in Ht12; apply Eapp_E0_inv in Ht12 as [? ?]; subst.
+    specialize (IHstar'' Hmerge1 eq_refl). rewrite IHstar''.
+    apply star_iff_starR in Hstar12''.
+    destruct s.
   (*     destruct s as [[[gps mem] regs] pc]. *)
   (*     destruct s2'' as [[[gps2'' mem2''] regs2''] pc2'']. *)
   (*     destruct s3'' as [[[gps3'' mem3''] regs3''] pc3'']. *)
+    inversion Hstep23''; subst;
+      unfold merge_states, merge_memories.
+    pose proof to_partial_memory_epsilon_star _ _ _ _ Hmerge1 Hcomp Hstar12'' Hstep23'' as Hmem23''.
   (*     inversion Hstep23''; subst; *)
   (*       (* Unfold, common rewrite on PC, memory rewrite for memory goals and done. *) *)
   (*       unfold merge_states, merge_registers, merge_pcs, merge_memories, ip; *)
@@ -723,11 +764,11 @@ Theorem threeway_multisem_star_E0_program s1 s1'' s2 s2'':
   Star sem   s1   E0 s2   ->
   Star sem'' s1'' E0 s2'' ->
   Star sem'  (merge_states lrsplit s1 s1'') E0 (merge_states lrsplit s2 s2'').
-  (* Proof. *)
-  (*   intros Hcomp1 Hmerge1 Hstar12 Hstar12''. *)
+Proof.
+  intros Hcomp1 Hmerge1 Hstar12 Hstar12''.
   (*   inversion Hmerge1 as [?? t0 ???? Hmergeable_ifaces ? Hifacec ???? Hstar ?]. *)
-  (*   pose proof mergeable_states_program_to_program Hmerge1 Hcomp1 as Hcomp1'. *)
-  (*   rewrite Hifacec in Hcomp1'. *)
+  (* pose proof mergeable_states_program_to_program Hmerge1 Hcomp1 as Hcomp1'. *)
+    (*   rewrite Hifacec in Hcomp1'. *)
   (*   remember E0 as t eqn:Ht. *)
   (*   revert Ht Hmerge1 Hcomp1 Hcomp1' Hstar12''. *)
   (*   apply star_iff_starR in Hstar12. *)
