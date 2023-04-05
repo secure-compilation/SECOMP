@@ -12,26 +12,53 @@ Definition same_domain (s: split) (j: meminj) (m: mem): Prop :=
 Definition delta_zero (j: meminj): Prop :=
   forall loc loc' delta, j loc = Some (loc', delta) -> delta = 0.
 
-Definition same_symbols (j: meminj) (ge1 ge2: genv): Prop :=
+Definition same_symbols (j: meminj) (ge1: genv): Prop :=
   forall id loc,
     Genv.find_symbol ge1 id = Some loc ->
-    exists loc', j loc = Some (loc', 0) /\ Genv.find_symbol ge2 id = Some loc'.
+    j loc = Some (loc, 0).
 
-Definition same_functions (j: meminj) (ge1 ge2: genv): Prop :=
-  forall vf vf' fd,
-    Val.inject j vf vf' ->
-    Genv.find_funct ge1 vf = Some fd ->
-    exists fd', Genv.find_funct ge2 vf' = Some fd' /\
-             type_of_fundef fd' = type_of_fundef fd /\
-             comp_of fd' = comp_of fd.
+(* Definition same_functions (j: meminj) (ge1 ge2: genv): Prop := *)
+(*   forall vf vf' fd, *)
+(*     Val.inject j vf vf' -> *)
+(*     Genv.find_funct ge1 vf = Some fd -> *)
+(*     exists fd', Genv.find_funct ge2 vf' = Some fd' /\ *)
+(*              type_of_fundef fd' = type_of_fundef fd /\ *)
+(*              comp_of fd' = comp_of fd. *)
 
-Definition same_functions_right (s: split) (j: meminj) (ge1 ge2: genv): Prop :=
-  forall vf vf' fd,
-        Val.inject j vf vf' ->
-        Genv.find_funct ge1 vf = Some fd ->
-        s (comp_of fd) = Right ->
-        Genv.find_funct ge2 vf' = Some fd.
+(* Definition same_functions_right (s: split) (j: meminj) (ge1 ge2: genv): Prop := *)
+(*   forall vf vf' fd, *)
+(*         Val.inject j vf vf' -> *)
+(*         Genv.find_funct ge1 vf = Some fd -> *)
+(*         s (comp_of fd) = Right -> *)
+(*         Genv.find_funct ge2 vf' = Some fd. *)
 
+Variant match_fundef (s: split): unit -> fundef -> fundef -> Prop :=
+  | match_function_left: forall cp ty cc params vars vars' temps temps' body body',
+      s cp = Left ->
+      match_fundef s tt (Internal {| fn_comp := cp; fn_return := ty; fn_callconv := cc;
+                                fn_params := params; fn_vars := vars; fn_temps := temps;
+                                fn_body := body |})
+                     (Internal {| fn_comp := cp; fn_return := ty; fn_callconv := cc;
+                                fn_params := params; fn_vars := vars'; fn_temps := temps';
+                                fn_body := body' |})
+  | match_external_left: forall ef tys ty cc,
+      s (comp_of ef) = Left ->
+      match_fundef s tt (External ef tys ty cc)
+                     (External ef tys ty cc)
+  | match_right: forall fd,
+      s (comp_of fd) = Right ->
+      match_fundef s tt fd fd
+.
+
+Instance has_comp_match_fundef (s: split): has_comp_match (match_fundef s).
+intros ? x y H.
+inv H; auto.
+Qed.
+
+
+Definition match_varinfo (ty1 ty2: type): Prop := ty1 = ty2.
+
+Definition match_prog (s: split) := match_program_gen (match_fundef s) match_varinfo.
 
 Section Equivalence.
   Variable s: split.
@@ -41,9 +68,9 @@ Section Equivalence.
     { same_dom: same_domain s j m1;
       partial_mem_inject: Mem.inject j m1 m2;
       j_delta_zero: delta_zero j;
-      same_symb: same_symbols j ge1 ge2;
-      related_funct: same_functions j ge1 ge2;
-      same_funct_right: same_functions_right s j ge1 ge2
+      same_symb: same_symbols j ge1;
+      (* related_funct: same_functions j ge1 ge2; *)
+      (* same_funct_right: same_functions_right s j ge1 ge2 *)
     }.
 
 
@@ -207,8 +234,15 @@ Section Simulation.
   Context (c p1 p2: Clight.program).
   Variable s: split.
 
+  Context (W1 W2: Clight.program).
+  Hypothesis c_p1: link p1 c = Some W1.
+  Hypothesis c_p2: link p2 c = Some W2.
 
-  Context (ge1 ge2: genv).
+  Hypothesis match_W1_W2: match_prog s tt W1 W2.
+
+  (* Context (ge1 ge2: genv). *)
+  Let ge1 := globalenv W1.
+  Let ge2 := globalenv W2.
   (* Is this hypothesis realistic? *)
   Hypothesis same_cenv: genv_cenv ge1 = genv_cenv ge2.
 
@@ -228,7 +262,7 @@ Section Simulation.
       exists loc' ofs', j loc = Some (loc', ofs') /\
                      eval_lvalue ge2 e2 cp le2 m2 a loc' (Ptrofs.add ofs (Ptrofs.repr ofs')) bf).
   Proof.
-    intros.
+    intros. subst ge1 ge2.
     destruct inj as [inj_dom inj_inject j_delta_zero same_symb].
     apply eval_expr_lvalue_ind; intros;
     try now match goal with
@@ -298,8 +332,8 @@ Section Simulation.
     - destruct env_inj as [_ env_inj].
       exploit env_inj; eauto.
       intros ?.
-      exploit same_symb; eauto.
-      intros [loc' [? ?]].
+      exploit same_symb; eauto; intros ?.
+      eapply Genv.find_symbol_match in match_W1_W2. rewrite <- match_W1_W2 in H0.
       eexists; eexists; split; eauto.
       eapply eval_Evar_global; eauto.
     - destruct H0 as [v' [? ?]].
@@ -465,22 +499,30 @@ Section Simulation.
           intros [v' [? ?]].
           exploit eval_exprlist_injection; eauto.
           intros [vs' [? ?]].
-          exploit (related_funct _ _ _ _ _ _ H11); eauto.
-          intros [fd' [find_fd' [type_fd' comp_fd']]].
+          exploit (Genv.find_funct_match match_W1_W2); eauto.
+          (* exploit (related_funct _ _ _ _ _ _ H11); eauto. *)
+          intros [? [fd' [find_fd' [match_fd' _]]]].
           exists j; eexists; split.
-          * econstructor; eauto.
-            -- congruence.
-            -- (* TODO to solve this goal: define match_genvs as if we were doing a
-                standard simulation proof *) admit.
-            -- (* use [Val.inject_list_not_ptr] *) admit.
-            -- exploit call_trace_inj; eauto. admit.
+          * assert (vf = v') by admit. subst v'.
+            econstructor; eauto.
+            -- inv match_fd'; eauto.
+            (* -- destruct vf; inv H4; simpl in *; try congruence. *)
+            (*    destruct (Ptrofs.eq_dec). *)
+            -- exploit (Genv.match_genvs_allowed_calls match_W1_W2); eauto.
+            -- eapply (Genv.match_genvs_not_ptr_list_inj); eauto.
+               exploit (Genv.match_genvs_find_comp match_W1_W2); eauto. intros <-.
+               erewrite <- (Genv.match_genvs_type_of_call); eauto.
+            -- exploit (Genv.match_genvs_find_comp match_W1_W2); eauto. intros <-.
+               exploit (@call_trace_inj _ _ _ _ ge1 ge2); eauto.
+               unfold ge2, ge1. simpl. apply Genv.globalenvs_match in match_W1_W2.
+               intros sy. pose proof (Genv.mge_symb match_W1_W2 sy). unfold Genv.find_symbol; eauto.
           * (* Case analysis: are we changing side or not? *)
             destruct (s (comp_of fd)) eqn:side.
-            -- apply LeftControl; eauto; try congruence.
+            -- apply LeftControl; eauto; try now inv match_fd'; auto.
                simpl. apply right_cont_injection_kcall_right; eauto.
-            -- exploit (same_funct_right _ _ _ _ _ _ H11); eauto. intros.
-               replace fd' with fd by congruence.
-               apply RightControl; eauto; try congruence.
+            -- inv match_fd'; unfold comp_of in *; simpl in side; unfold comp_of in *; simpl in side;
+                 try congruence.
+               apply RightControl; eauto.
                constructor; eauto.
                simpl. apply right_cont_injection_kcall_right; eauto.
         + exploit eval_exprlist_injection; eauto.
@@ -492,8 +534,6 @@ Section Simulation.
           apply RightControl; eauto.
           constructor; eauto.
           * constructor; eauto.
-            -- admit.
-            -- admit.
             -- admit.
             -- admit.
             -- admit.

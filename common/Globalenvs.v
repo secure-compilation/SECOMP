@@ -2299,6 +2299,62 @@ Proof.
   intros. reflexivity.
 Qed.
 
+Lemma match_genvs_not_ptr_inj:
+  forall j cp cp' v v',
+    Val.inject j v v' ->
+    (Genv.type_of_call (globalenv p) cp cp' = Genv.CrossCompartmentCall -> not_ptr v) ->
+    Genv.type_of_call (globalenv tp) cp cp' = Genv.CrossCompartmentCall -> not_ptr v'.
+Proof.
+  intros. inv H; eauto.
+  rewrite match_genvs_type_of_call in H0; simpl in *. contradiction.
+Qed.
+
+Lemma match_genvs_not_ptr_lessdef:
+  forall cp cp' v v',
+    Val.lessdef v v' ->
+    (Genv.type_of_call (globalenv p) cp cp' = Genv.CrossCompartmentCall -> not_ptr v) ->
+    Genv.type_of_call (globalenv tp) cp cp' = Genv.CrossCompartmentCall -> not_ptr v'.
+Proof.
+  intros. inv H; eauto.
+  rewrite match_genvs_type_of_call in H0; simpl in *. contradiction.
+Qed.
+
+Lemma match_genvs_not_ptr:
+  forall cp cp' v,
+    (Genv.type_of_call (globalenv p) cp cp' = Genv.CrossCompartmentCall -> not_ptr v) ->
+    Genv.type_of_call (globalenv tp) cp cp' = Genv.CrossCompartmentCall -> not_ptr v.
+Proof.
+  intros. eapply match_genvs_not_ptr_lessdef; eauto using Val.lessdef_refl.
+Qed.
+
+Lemma match_genvs_not_ptr_list_inj:
+  forall j cp cp' vargs vargs',
+    Val.inject_list j vargs vargs' ->
+    (Genv.type_of_call (globalenv p) cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr vargs) ->
+    Genv.type_of_call (globalenv tp) cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr vargs'.
+Proof.
+  intros. exploit Val.inject_list_not_ptr; eauto.
+Qed.
+
+Lemma match_genvs_not_ptr_list_lessdef:
+  forall cp cp' vargs vargs',
+    Val.lessdef_list vargs vargs' ->
+    (Genv.type_of_call (globalenv p) cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr vargs) ->
+    Genv.type_of_call (globalenv tp) cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr vargs'.
+Proof.
+  intros. exploit Val.lessdef_list_not_ptr; eauto.
+Qed.
+
+Lemma match_genvs_not_ptr_list:
+  forall cp cp' vargs,
+    (Genv.type_of_call (globalenv p) cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr vargs) ->
+    Genv.type_of_call (globalenv tp) cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr vargs.
+Proof.
+  intros. eapply match_genvs_not_ptr_list_lessdef; eauto.
+  clear. now induction vargs; auto.
+Qed.
+
+
 End MATCH_PROGRAMS.
 
 (** Special case for partial transformations that do not depend on the compilation unit *)
@@ -2398,6 +2454,61 @@ Proof.
   eapply (match_genvs_type_of_call).
 Qed.
 
+Lemma not_ptr_transf_partial_inj:
+  forall j cp cp' v v',
+    Val.inject j v v' ->
+    (Genv.type_of_call (globalenv p) cp cp' = Genv.CrossCompartmentCall -> not_ptr v) ->
+    Genv.type_of_call (globalenv tp) cp cp' = Genv.CrossCompartmentCall -> not_ptr v'.
+Proof.
+  intros. inv H; eauto.
+  rewrite type_of_call_transf_partial in H0; simpl in *. contradiction.
+Qed.
+
+Lemma not_ptr_transf_partial_lessdef:
+  forall cp cp' v v',
+    Val.lessdef v v' ->
+    (Genv.type_of_call (globalenv p) cp cp' = Genv.CrossCompartmentCall -> not_ptr v) ->
+    Genv.type_of_call (globalenv tp) cp cp' = Genv.CrossCompartmentCall -> not_ptr v'.
+Proof.
+  intros. inv H; eauto.
+  rewrite type_of_call_transf_partial in H0; simpl in *. contradiction.
+Qed.
+
+Lemma not_ptr_transf_partial:
+  forall cp cp' v,
+    (Genv.type_of_call (globalenv p) cp cp' = Genv.CrossCompartmentCall -> not_ptr v) ->
+    Genv.type_of_call (globalenv tp) cp cp' = Genv.CrossCompartmentCall -> not_ptr v.
+Proof.
+  intros; eapply not_ptr_transf_partial_lessdef; eauto using Val.lessdef_refl.
+Qed.
+
+Lemma not_ptr_list_transf_partial_inj:
+  forall j cp cp' vargs vargs',
+    Val.inject_list j vargs vargs' ->
+    (Genv.type_of_call (globalenv p) cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr vargs) ->
+    Genv.type_of_call (globalenv tp) cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr vargs'.
+Proof.
+  intros. exploit Val.inject_list_not_ptr; eauto.
+Qed.
+
+Lemma not_ptr_list_transf_partial_lessdef:
+  forall cp cp' vargs vargs',
+    Val.lessdef_list vargs vargs' ->
+    (Genv.type_of_call (globalenv p) cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr vargs) ->
+    Genv.type_of_call (globalenv tp) cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr vargs'.
+Proof.
+  intros. exploit Val.lessdef_list_not_ptr; eauto.
+Qed.
+
+Lemma not_ptr_list_transf_partial:
+  forall cp cp' vargs,
+    (Genv.type_of_call (globalenv p) cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr vargs) ->
+    Genv.type_of_call (globalenv tp) cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr vargs.
+Proof.
+  intros. eapply not_ptr_list_transf_partial_lessdef; eauto.
+  clear; now induction vargs; auto.
+Qed.
+
 End TRANSFORM_PARTIAL.
 
 (** Special case for total transformations that do not depend on the compilation unit *)
@@ -2474,6 +2585,61 @@ Theorem type_of_call_transf:
       type_of_call (globalenv tp) cp cp'.
 Proof.
   eapply (match_genvs_type_of_call).
+Qed.
+
+Lemma not_ptr_transf_inj:
+  forall j cp cp' v v',
+    Val.inject j v v' ->
+    (Genv.type_of_call (globalenv p) cp cp' = Genv.CrossCompartmentCall -> not_ptr v) ->
+    Genv.type_of_call (globalenv tp) cp cp' = Genv.CrossCompartmentCall -> not_ptr v'.
+Proof.
+  intros. inv H; eauto.
+  rewrite type_of_call_transf in H0; simpl in *. contradiction.
+Qed.
+
+Lemma not_ptr_transf_lessdef:
+  forall cp cp' v v',
+    Val.lessdef v v' ->
+    (Genv.type_of_call (globalenv p) cp cp' = Genv.CrossCompartmentCall -> not_ptr v) ->
+    Genv.type_of_call (globalenv tp) cp cp' = Genv.CrossCompartmentCall -> not_ptr v'.
+Proof.
+  intros. inv H; eauto.
+  rewrite type_of_call_transf in H0; simpl in *. contradiction.
+Qed.
+
+Lemma not_ptr_transf:
+  forall cp cp' v,
+    (Genv.type_of_call (globalenv p) cp cp' = Genv.CrossCompartmentCall -> not_ptr v) ->
+    Genv.type_of_call (globalenv tp) cp cp' = Genv.CrossCompartmentCall -> not_ptr v.
+Proof.
+  intros. eapply not_ptr_transf_lessdef; eauto using Val.lessdef_refl.
+Qed.
+
+Lemma not_ptr_list_transf_inj:
+  forall j cp cp' vargs vargs',
+    Val.inject_list j vargs vargs' ->
+    (Genv.type_of_call (globalenv p) cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr vargs) ->
+    Genv.type_of_call (globalenv tp) cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr vargs'.
+Proof.
+  intros. exploit Val.inject_list_not_ptr; eauto.
+Qed.
+
+Lemma not_ptr_list_transf_lessdef:
+  forall cp cp' vargs vargs',
+    Val.lessdef_list vargs vargs' ->
+    (Genv.type_of_call (globalenv p) cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr vargs) ->
+    Genv.type_of_call (globalenv tp) cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr vargs'.
+Proof.
+  intros. exploit Val.lessdef_list_not_ptr; eauto.
+Qed.
+
+Lemma not_ptr_list_transf:
+  forall cp cp' vargs,
+    (Genv.type_of_call (globalenv p) cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr vargs) ->
+    Genv.type_of_call (globalenv tp) cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr vargs.
+Proof.
+  intros. eapply not_ptr_list_transf_lessdef; eauto.
+  clear; now induction vargs; auto.
 Qed.
 
 End TRANSFORM_TOTAL.
