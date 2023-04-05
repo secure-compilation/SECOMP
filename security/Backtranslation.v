@@ -327,6 +327,18 @@ Section Backtranslation.
                               end
       end.
 
+    Fixpoint list_eventval_to_typelist (vs: list eventval): typelist :=
+      match vs with
+      | nil => Tnil
+      | cons v vs' => Tcons (eventval_to_type v) (list_eventval_to_typelist vs')
+      end.
+
+    Definition list_eventval_to_list_expr (vs: list eventval): list expr :=
+      List.map eventval_to_expr vs.
+
+    Definition list_eventval_to_list_val (ge: genv) (vs: list eventval): list val :=
+      List.map (eventval_to_val ge) vs.
+
     Lemma eventval_to_expr_val_eval
           ge en cp temp m ev
           (WF: wf_eventval_weak ge en ev)
@@ -371,18 +383,33 @@ Section Backtranslation.
       Cop.sem_cast (eventval_to_val ge v) (typeof (eventval_to_expr v)) (eventval_to_type v) m = Some (eventval_to_val ge v).
     Proof. rewrite typeof_eventval_to_expr_type. destruct v; simpl in *; simpl_expr. destruct WFEV. rewrite H. simpl_expr. Qed.
 
+    Lemma list_eventval_to_expr_val_eval
+          ge en cp temp m evs
+          (WF: Forall (wf_eventval_weak ge en) evs)
+      :
+      eval_exprlist ge en cp temp m (list_eventval_to_list_expr evs) (list_eventval_to_typelist evs) (list_eventval_to_list_val ge evs).
+    Proof.
+      move evs at top. revert ge en cp temp m WF. induction evs; intros; simpl in *. constructor.
+      inversion WF; clear WF; subst. econstructor; eauto. eapply eventval_to_expr_val_eval; eauto.
+      apply sem_cast_eventval. eapply wf_eventval_weak2_weak; eauto.
+    Qed.
+
+    Lemma list_eventval_to_expr_val_match
+          ge env
+          evs exps vs tys
+          (WFEV: Forall (wf_eventval ge env) evs)
+          (CONV0: list_eventval_to_list_expr evs = exps)
+          (CONV1: list_eventval_to_list_val ge evs = vs)
+          (TYPE: list_eventval_to_typelist evs = tys)
+      :
+      eventval_list_match ge evs (typlist_of_typelist tys) vs.
+    Proof.
+      move evs at top. revert ge env exps vs tys WFEV CONV0 CONV1 TYPE. induction evs; intros; simpl in *; subst. constructor.
+      inversion WFEV; clear WFEV; subst. econstructor; eauto. eapply eventval_to_expr_val_match; eauto.
+    Qed.
+
 
     (* converting functions *)
-    Fixpoint list_eventval_to_typelist (vs: list eventval): typelist :=
-      match vs with
-      | nil => Tnil
-      | cons v vs' => Tcons (eventval_to_type v) (list_eventval_to_typelist vs')
-      end.
-
-    Definition list_eventval_to_list_expr (vs: list eventval): list expr :=
-      List.map eventval_to_expr vs.
-
-
     Definition code_of_vload (ch: memory_chunk) (id: ident) (ofs: Ptrofs.int) (v: eventval) :=
       Sbuiltin None (EF_vload ch) (Tcons (Tpointer Tvoid noattr) Tnil) (ptr_of_id_ofs id ofs :: nil).
 
@@ -427,10 +454,12 @@ Section Backtranslation.
           ch id ofs v
           p f k e le m
           (EV: ev = Event_vload ch id ofs v)
+          (* bt should ensure them *)
           (GLOB: e ! id = None)
           b
           (VOL: Senv.block_is_volatile (globalenv p) b = true)
           (GE: Genv.find_symbol (globalenv p) id = Some b)
+          (* asm should ensure them *)
           rv
           (MATCH: eventval_match (globalenv p) v (type_of_chunk ch) rv)
       :
@@ -468,10 +497,12 @@ Section Backtranslation.
           ch id ofs v
           p f k e le m
           (EV: ev = Event_vstore ch id ofs v)
+          (* bt should ensure them *)
           (GLOB: e ! id = None)
           b
           (VOL: Senv.block_is_volatile (globalenv p) b = true)
           (GE: Genv.find_symbol (globalenv p) id = Some b)
+          (* asm should ensure them *)
           (WFSV: wf_eventval_weak (globalenv p) e v)
           (MATCH: eventval_match (globalenv p) v (type_of_chunk ch) (Val.load_result ch (eventval_to_val (globalenv p) v)))
       :
@@ -510,6 +541,30 @@ Section Backtranslation.
           repeat econstructor; eauto.
         }
         econstructor 1.
+    Qed.
+
+    Lemma code_of_event_step_annot
+          ev
+          str vs
+          p f k e le m
+          (EV: ev = Event_annot str vs)
+          (* bt should ensure them *)
+          (WF: Forall (wf_eventval (globalenv p) e) vs)
+          (* asm should ensure them *)
+      :
+        Star (Clight.semantics1 p)
+             (State f (code_of_event ev) k e le m)
+             (ev :: nil)
+             (State f Sskip k e le m).
+    Proof.
+      subst; simpl in *. unfold code_of_annot.
+      econstructor 2.
+      3:{ rewrite E0_right. reflexivity. }
+      { eapply step_builtin.
+        { eapply list_eventval_to_expr_val_eval. eapply Forall_impl. 2: eauto. intros. apply wf_eventval_weak_weak; auto. }
+        repeat econstructor; eauto. eapply list_eventval_to_expr_val_match; eauto.
+      }
+      econstructor 1.
     Qed.
 
     (* TODO *)
