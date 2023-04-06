@@ -567,7 +567,7 @@ Section Backtranslation.
       econstructor 1.
     Qed.
 
-    Lemma code_of_event_step_call_internal
+    Lemma code_of_event_step_call_start
           ev
           cp cp' id vs
           p f k e le m
@@ -582,22 +582,17 @@ Section Backtranslation.
           (FINDF: Genv.find_funct ge (Vptr b Ptrofs.zero) = Some fd)
           (TYPEF: type_of_fundef fd = Tfunction (list_eventval_to_typelist vs) Tvoid cc_default)
           (WFARGS: Forall (wf_eventval ge e) vs)
-          f1
-          (INTERNAL: fd = Internal f1)
           (* asm should ensure them *)
           (NPTR: Forall not_ptr (list_eventval_to_list_val ge vs))
           (CP1: cp = comp_of f)
           (CP2: cp' = comp_of fd)
           (CROSS: Genv.type_of_call ge (comp_of f) (comp_of fd) = Genv.CrossCompartmentCall)
           (ALLOW: Genv.allowed_cross_call ge (comp_of f) (Vptr b Ptrofs.zero))
-          (* handle during proof *)
-          e1 le1 m1
-          (ENTRY: function_entry1 ge f1 (list_eventval_to_list_val ge vs) m e1 le1 m1)
       :
         Star (Clight.semantics1 p)
              (State f (code_of_event ev) k e le m)
              (ev :: nil)
-             (State f1 (fn_body f1) (Kcall None f e le k) e1 le1 m1).
+             (Callstate fd (list_eventval_to_list_val ge vs) (Kcall None f e le k) m).
     Proof.
       subst; simpl. unfold code_of_call.
       econstructor 2.
@@ -613,6 +608,27 @@ Section Backtranslation.
         eapply call_trace_cross; eauto. apply Genv.find_invert_symbol; auto.
         eapply (list_eventval_to_expr_val_match (globalenv p)); eauto.
       }
+      econstructor 1.
+    Qed.
+
+    Lemma code_of_event_step_call_internal
+          p f k e le m
+          ge
+          (GE: ge = globalenv p)
+          (* bt should ensure them *)
+          fd args f1
+          (INTERNAL: fd = Internal f1)
+          (* asm should ensure them *)
+          (* handle during proof *)
+          e1 le1 m1
+          (ENTRY: function_entry1 ge f1 args m e1 le1 m1)
+      :
+        Star (Clight.semantics1 p)
+             (Callstate fd args (Kcall None f e le k) m)
+             nil
+             (State f1 (fn_body f1) (Kcall None f e le k) e1 le1 m1).
+    Proof.
+      subst; simpl.
       econstructor 2.
       3:{ rewrite E0_right. reflexivity. }
       { eapply step_internal_function; eauto. }
@@ -620,78 +636,35 @@ Section Backtranslation.
     Qed.
 
     Lemma code_of_event_step_call_external
-          ev
-          cp cp' id vs
-          p f k e le m
+          p m
           ge
           (GE: ge = globalenv p)
-          (EV: ev = Event_call cp cp' id vs)
           (* bt should ensure them *)
-          (GLOB: e ! id = None)
-          b
-          (FINDB: Genv.find_symbol ge id = Some b)
-          fd
-          (FINDF: Genv.find_funct ge (Vptr b Ptrofs.zero) = Some fd)
-          (TYPEF: type_of_fundef fd = Tfunction (list_eventval_to_typelist vs) Tvoid cc_default)
-          (WFARGS: Forall (wf_eventval ge e) vs)
-          ef0 targs0 tres0 cconv0
-          (EXTERNAL: fd = External ef0 targs0 tres0 cconv0)
+          fd k args ef targs tres cconv
+          (EXTERNAL: fd = External ef targs tres cconv)
           (* asm should ensure them *)
-          (NPTR: Forall not_ptr (list_eventval_to_list_val ge vs))
-          (CP1: cp = comp_of f)
-          (CP2: cp' = comp_of fd)
-          (CROSS: Genv.type_of_call ge (comp_of f) (comp_of fd) = Genv.CrossCompartmentCall)
-          (ALLOW: Genv.allowed_cross_call ge (comp_of f) (Vptr b Ptrofs.zero))
           (* handle during proof *)
           sev sname sargs svr
           (SYSEV: sev = Event_syscall sname sargs svr)
           vres m1
-          (SEM: external_call ef0 ge (comp_of f) (list_eventval_to_list_val ge vs) m (sev :: nil) vres m1)
+          (SEM: external_call ef ge (call_comp k) args m (sev :: nil) vres m1)
       :
         Star (Clight.semantics1 p)
-             (State f (code_of_event ev) k e le m)
-             (ev :: sev :: nil)
-             (Returnstate vres (Kcall None f e le k) m1 (rettype_of_type tres0) (comp_of ef0)).
+             (Callstate fd args k m)
+             (sev :: nil)
+             (Returnstate vres k m1 (rettype_of_type tres) (comp_of ef)).
     Proof.
-      subst; simpl. unfold code_of_call.
+      subst; simpl.
       econstructor 2.
       3:{ rewrite E0_right. reflexivity. }
-      { eapply step_call; simpl; eauto.
-        { eapply eval_Elvalue.
-          - eapply eval_Evar_global; eauto.
-          - eapply deref_loc_reference. auto.
-        }
-        { eapply list_eventval_to_expr_val_eval. eapply Forall_impl. 2: eauto. intros. apply wf_eventval_weak_weak; auto. }
-        red; auto.
-        unfold Genv.find_comp. setoid_rewrite FINDF.
-        eapply call_trace_cross; eauto. apply Genv.find_invert_symbol; auto.
-        eapply (list_eventval_to_expr_val_match (globalenv p)); eauto.
-      }
-      econstructor 2.
-      3:{ rewrite E0_right. reflexivity. }
-      { eapply step_internal_function; eauto. }
+      { eapply step_external_function; eauto. }
       econstructor 1.
     Qed.
 
     (* TODO *)
 
-  | step_call : forall (f : function) (optid : option ident) (a : expr) (al : list expr) (k : cont) (e : env) (le : temp_env) (m : mem) (tyargs : typelist) (tyres : type) (cconv : calling_convention)
-                  (vf : val) (vargs : list val) (fd : fundef) (t : trace),
-                Cop.classify_fun (typeof a) = Cop.fun_case_f tyargs tyres cconv ->
-                eval_expr ge e (comp_of f) le m a vf ->
-                eval_exprlist ge e (comp_of f) le m al tyargs vargs ->
-                Genv.find_funct ge vf = Some fd ->
-                type_of_fundef fd = Tfunction tyargs tyres cconv ->
-                Genv.allowed_call ge (comp_of f) vf ->
-                (Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall -> Forall not_ptr vargs) ->
-                call_trace ge (comp_of f) (Genv.find_comp ge vf) vf vargs (typlist_of_typelist tyargs) t ->
-                step ge function_entry (State f (Scall optid a al) k e le m) t (Callstate fd vargs (Kcall optid f e le k) m)
-
-    Definition code_of_call (cp cp': compartment) (id: ident) (vs: list eventval) :=
-      Scall None (Evar id (Tfunction (list_eventval_to_typelist vs) Tvoid cc_default)) (list_eventval_to_list_expr vs).
 
     match e with
-      | Event_syscall name vs v => code_of_syscall name vs v
       | Event_return cp cp' v => code_of_return cp cp' v
       end.
 
