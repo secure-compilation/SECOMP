@@ -139,7 +139,8 @@ CFRONTEND=Ctypes.v Cop.v Csyntax.v Csem.v Ctyping.v Cstrategy.v Cexec.v \
   Csharpminor.v Cminorgen.v Cminorgenproof.v
 
 # Security proof (in security/)
-SECURITY=RSC.v Split.v Blame.v
+
+SECURITY=RSC.v Split.v Blame.v Recomposition.v
 
 # Parser
 
