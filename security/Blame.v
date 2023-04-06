@@ -457,7 +457,36 @@ Section Simulation.
                rewrite <- same_cenv, !Z.add_0_r, !Ptrofs.add_zero in *; eauto.
                eapply assign_loc_copy; eauto.
                { (* TODO: need help here *)
-                 admit. }
+
+                 destruct H15.
+                 - (* H15, H5, H19 *)
+                   destruct (sizeof ge1 (typeof a1)) eqn:eq_size.
+                   + admit.
+                   + pose proof Mem.mi_no_overlap.
+                     specialize (H21 j m m2 mem_inject). unfold Mem.meminj_no_overlap in H21.
+                     specialize (H21 _ _ _ _ _ _ (Ptrofs.unsigned ofs'0 + Z.pos p - 1) (Ptrofs.unsigned ofs + Z.pos p - 1)
+                                   H15 H19 H5).
+                     assert (X: Mem.perm m b' (Ptrofs.unsigned ofs'0 + Z.pos p - 1) Max Nonempty).
+                     { apply Mem.loadbytes_range_perm in H16. apply Mem.range_perm_max in H16.
+                       eapply Mem.perm_implies with (p1 := Readable); [ |constructor].
+                       specialize (H16 (Ptrofs.unsigned ofs'0 + Z.pos p - 1)).
+                       apply H16. lia. }
+                     specialize (H21 X).
+                     assert (Y: Mem.perm m loc (Ptrofs.unsigned ofs + Z.pos p - 1) Max Nonempty).
+                     { apply Mem.storebytes_range_perm in H17. apply Mem.range_perm_max in H17.
+                       eapply Mem.perm_implies with (p1 := Writable); [ |constructor].
+                       specialize (H17 (Ptrofs.unsigned ofs + Z.pos p - 1)).
+                       exploit H17.
+                       { exploit list_forall2_length; eauto. intros ->.
+                         erewrite Mem.loadbytes_length; eauto. rewrite Z2Nat.id. lia. lia. }
+                       eauto. }
+                     specialize (H21 Y). destruct H21; [left; easy | try lia]. right.
+                     (* Can't seem to conclude here -- I tried instanciating with various offsets, and couldn't find
+                        one that allowed me to conclude 🤯🤯 *)
+                     admit.
+                   + admit.
+                 - auto.
+               }
             -- apply RightControl; eauto.
                constructor; eauto.
                split; eauto.
