@@ -210,10 +210,11 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
       forall (CALLREGS:
                callrs =
-                 match Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) with
-                 | Genv.CrossCompartmentCall => call_regs_ext rs sig
-                 | _ => call_regs rs
-                 end),
+                 (* match Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) with *)
+                 (* | Genv.CrossCompartmentCall => call_regs_ext rs sig *)
+                 (* | _ => call_regs rs *)
+                 (* end), *)
+                 call_regs_ext rs sig),
       forall (ARGS: args = map (fun p => Locmap.getpair p
                                    (undef_regs destroyed_at_function_entry callrs))
                         (loc_parameters sig)),
@@ -277,10 +278,11 @@ Inductive step: state -> trace -> state -> Prop :=
       Mem.free m stk 0 f.(fn_stacksize) (comp_of f) = Some m' ->
       forall (RETREGS:
                retrs =
-                 match Genv.type_of_call ge (call_comp s) (callee_comp s (* = FIXME [comp_of f] *)) with
-                 | Genv.CrossCompartmentCall => return_regs_ext (parent_locset s) rs (parent_signature s)
-                 | _ => return_regs (parent_locset s) rs
-                 end),
+                 (* match Genv.type_of_call ge (call_comp s) (callee_comp s (* = FIXME [comp_of f] *)) with *)
+                 (* | Genv.CrossCompartmentCall => return_regs_ext (parent_locset s) rs (parent_signature s) *)
+                 (* | _ => return_regs (parent_locset s) rs *)
+                 (* end), *)
+                 return_regs_ext (parent_locset s) rs (parent_signature s)),
       step (State s f (Vptr stk Ptrofs.zero) (Lreturn :: b) rs m)
         E0 (Returnstate s retrs m')
   | exec_function_internal:
@@ -288,10 +290,11 @@ Inductive step: state -> trace -> state -> Prop :=
       Mem.alloc m (comp_of f) 0 f.(fn_stacksize) = (m', stk) ->
       forall (CALLREGS:
                callrs =
-                 match Genv.type_of_call ge (call_comp s) (comp_of f) with
-                 | Genv.CrossCompartmentCall => call_regs_ext rs (parent_signature s)
-                 | _ => call_regs rs
-                 end),
+                 (* match Genv.type_of_call ge (call_comp s) (comp_of f) with *)
+                 (* | Genv.CrossCompartmentCall => call_regs_ext rs (parent_signature s) *)
+                 (* | _ => call_regs rs *)
+                 (* end), *)
+                 call_regs_ext rs (parent_signature s)),
       rs' = undef_regs destroyed_at_function_entry callrs ->
       step (Callstate s (Internal f) rs m)
         E0 (State s f (Vptr stk Ptrofs.zero) f.(fn_code) rs' m')

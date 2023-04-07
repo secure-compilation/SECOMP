@@ -697,14 +697,15 @@ Proof.
     assert (X: Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall).
     { erewrite find_comp_translated, type_of_call_translated; eauto. rewrite comp_transf_fundef; eauto. }
     specialize (NO_CROSS_PTR X).
-    rewrite H1. rewrite X in NO_CROSS_PTR.
+    (* rewrite H1. *)
+    (* rewrite X in NO_CROSS_PTR. *)
     eauto.
   }
   { erewrite <- find_comp_translated, <- comp_transf_fundef; eauto.
-    erewrite <- type_of_call_translated, comp_preserved; eauto.
-    destruct (Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf)) eqn:TY_CALL.
-    eapply call_trace_eq; eauto using symbols_preserved, senv_preserved.
-    eapply call_trace_eq; eauto using symbols_preserved, senv_preserved.
+    (* erewrite <- type_of_call_translated, comp_preserved; eauto. *)
+    (* destruct (Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf)) eqn:TY_CALL. *)
+    (* eapply call_trace_eq; eauto using symbols_preserved, senv_preserved. *)
+    (* eapply call_trace_eq; eauto using symbols_preserved, senv_preserved. *)
     eapply call_trace_eq; eauto using symbols_preserved, senv_preserved. }
   econstructor; eauto. constructor; auto.
   rewrite find_comp_translated.
@@ -784,11 +785,12 @@ Proof.
   assert (SIG: LTL.parent_signature s = parent_signature ts).
   { inv STACKS. reflexivity.
     inv H0. reflexivity. }
-  rewrite type_of_call_translated, CALLER, CALLEE, SIG.
-  destruct (Genv.type_of_call tge (call_comp ts) (callee_comp ts)).
+  (* rewrite type_of_call_translated, CALLER, CALLEE, SIG. *)
+  rewrite SIG.
+  (* destruct (Genv.type_of_call tge (call_comp ts) (callee_comp ts)). *)
+  (* econstructor; eauto. *)
   econstructor; eauto.
-  econstructor; eauto.
-  econstructor; eauto.
+  (* econstructor; eauto. *)
 
   (* internal functions *)
   assert (REACH: (reachable f)!!(LTL.fn_entrypoint f) = true).
@@ -805,7 +807,8 @@ Proof.
   assert (SIG: LTL.parent_signature s = parent_signature ts).
   { inv H6. reflexivity.
     inv H0. reflexivity. }
-  rewrite type_of_call_translated, CALLER, SIG.
+  (* rewrite type_of_call_translated, CALLER, SIG. *)
+  rewrite SIG.
   change (LTL.fn_comp f) with (comp_of f).
   change (comp_of
             {|

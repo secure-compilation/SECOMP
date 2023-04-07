@@ -530,7 +530,7 @@ Proof.
     { erewrite find_comp_translated, type_of_call_translated; eauto.
       inv TRF. eauto. }
     specialize (NO_CROSS_PTR X).
-    rewrite H1. rewrite X in NO_CROSS_PTR.
+    (* rewrite H1. rewrite X in NO_CROSS_PTR. *)
     eauto.
   }
   { erewrite <- find_comp_translated.
@@ -599,7 +599,8 @@ Proof.
   assert (SIG: parent_signature s = parent_signature ts).
   { inv STACKS. reflexivity.
     inv H0. reflexivity. }
-  rewrite type_of_call_translated, CALLEE, CALLER, SIG.
+  (* rewrite type_of_call_translated, CALLEE, CALLER, SIG. *)
+  rewrite SIG.
   destruct (Genv.type_of_call tge (call_comp ts) (callee_comp ts)).
   inv TRF; constructor; auto.
   inv TRF; constructor; auto.
@@ -618,7 +619,8 @@ Proof.
   assert (SIG: parent_signature s = parent_signature ts).
   { inv H6. reflexivity.
     inv H1. reflexivity. }
-  rewrite type_of_call_translated, CALLER, SIG.
+  (* rewrite type_of_call_translated, CALLER, SIG. *)
+  rewrite SIG.
   change
     (comp_of {| fn_comp := fn_comp f; fn_sig := fn_sig f; fn_stacksize := fn_stacksize f; fn_code := c |})
     with (comp_of f).

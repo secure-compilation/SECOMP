@@ -321,7 +321,7 @@ Proof.
     assert (X: Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall).
     { erewrite find_comp_translated, type_of_call_translated; eauto. }
     specialize (NO_CROSS_PTR X).
-    rewrite X in NO_CROSS_PTR, EV. rewrite H1.
+    (* rewrite X in NO_CROSS_PTR, EV. rewrite H1. *)
     eauto. }
   { rewrite <- find_comp_translated, comp_match_prog.
     intros; subst.
@@ -383,7 +383,8 @@ Proof.
   assert (SIG: parent_signature s = parent_signature ts).
   { inv STACKS. reflexivity.
     inv H0. reflexivity. }
-  rewrite type_of_call_translated, CALLER, CALLEE, SIG.
+  (* rewrite type_of_call_translated, CALLER, CALLEE, SIG. *)
+  rewrite SIG.
   destruct (Genv.type_of_call tge (call_comp ts) (callee_comp ts)).
   econstructor; eauto with coqlib.
   econstructor; eauto with coqlib.
@@ -397,7 +398,8 @@ Proof.
   assert (SIG: parent_signature s = parent_signature ts).
   { inv H6. reflexivity.
     inv H0. reflexivity. }
-  rewrite type_of_call_translated, CALLER, SIG.
+  (* rewrite type_of_call_translated, CALLER, SIG. *)
+  rewrite SIG.
   change (comp_of (transf_function f)) with (comp_of f).
   destruct (Genv.type_of_call tge (call_comp ts) (comp_of f)).
   econstructor; eauto with coqlib.

@@ -1368,21 +1368,6 @@ Qed.
 (* Definition agree_callee_save_ext (ls1 ls2: Locmap.t) (callee_sig: signature) : Prop := *)
 (*   forall l, callee_save_loc_ext l callee_sig -> ls1 l = ls2 l. *)
 
-(* TODO: Relocate "external" calling convention *)
-
-(* No registers are callee save in the external case (we would turn all
-   non-signature registers into caller-save, but registers for arguments and
-   return values are always caller-save already -- TODO establish formally for
-   the calling convention *)
-Definition callee_save_loc_ext (l: loc) :=
-  match l with
-  | R r => False
-  | S sl ofs ty => sl <> Outgoing
-  end.
-
-Definition agree_callee_save_ext (ls1 ls2: Locmap.t) : Prop :=
-  forall l, callee_save_loc_ext l -> ls1 l = ls2 l.
-
 Lemma return_regs_agree_callee_save_ext:
   forall caller callee,
   agree_callee_save_ext caller (return_regs caller callee).
