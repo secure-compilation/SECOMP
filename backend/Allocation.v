@@ -1097,7 +1097,8 @@ Definition transfer_aux (f: RTL.function) (env: regenv)
       do e2 <- remove_equations_res res res' e1;
       assertion (forallb (fun l => reg_loc_unconstrained res l e2)
                          (map R (regs_of_rpair res')));
-      assertion (no_caller_saves e2);
+      (* assertion (no_caller_saves e2); *)
+      assertion (no_caller_saves_ext e2);
       do e3 <- add_equation_ros ros ros' e2;
       do e4 <- add_equations_args args (sig_args sg) args' e3;
       track_moves env mv1 e4
