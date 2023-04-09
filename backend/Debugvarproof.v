@@ -545,7 +545,7 @@ Proof.
   apply plus_one.
   inv TRF.
   econstructor. eauto. rewrite PLS. eexact A.
-  eapply find_function_ptr_translated; eauto. rewrite PLS. eauto.
+  eapply find_function_ptr_translated; eauto. (* rewrite PLS. eauto. *)
   symmetry; apply sig_preserved; auto.
   now rewrite <- (comp_transl_partial _ B).
   auto.

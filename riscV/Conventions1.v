@@ -33,41 +33,42 @@ Require Import AST Machregs Locations.
 *)
 
 Definition is_callee_save (* (is_cross_compartment: bool) *) (r: mreg) : bool := (* false *)
-  (* is_cross_compartment || *)
-  match r with
-  | R5 | R6 | R7 => false
-  | R8 | R9 => true
-  | R10 | R11 | R12 | R13 | R14 | R15 | R16 | R17 => false
-  | R18 | R19 | R20 | R21 | R22 | R23 | R24 | R25 | R26 | R27 => true
-  | R28 | R29 | R30 => false
-  | F0 | F1 | F2 | F3 | F4 | F5 | F6 | F7 => false
-  | F8 | F9 => true
-  | F10 | F11 | F12 | F13 | F14 | F15 | F16 | F17 => false
-  | F18 | F19 | F20 | F21 | F22 | F23 | F24 | F25 | F26 | F27 => true
-  | F28 | F29 | F30 | F31 => false
-  end.
+  (* (* is_cross_compartment || *) *)
+  (* match r with *)
+  (* | R5 | R6 | R7 => false *)
+  (* | R8 | R9 => true *)
+  (* | R10 | R11 | R12 | R13 | R14 | R15 | R16 | R17 => false *)
+  (* | R18 | R19 | R20 | R21 | R22 | R23 | R24 | R25 | R26 | R27 => true *)
+  (* | R28 | R29 | R30 => false *)
+  (* | F0 | F1 | F2 | F3 | F4 | F5 | F6 | F7 => false *)
+  (* | F8 | F9 => true *)
+  (* | F10 | F11 | F12 | F13 | F14 | F15 | F16 | F17 => false *)
+  (* | F18 | F19 | F20 | F21 | F22 | F23 | F24 | F25 | F26 | F27 => true *)
+  (* | F28 | F29 | F30 | F31 => false *)
+  (* end. *)
+  false.
 
 Definition int_caller_save_regs :=
   R5  :: R6  :: R7 ::
+  R8  :: R9  ::
   R10 :: R11 :: R12 :: R13 :: R14 :: R15 :: R16 :: R17 ::
+  R18 :: R19 :: R20 :: R21 :: R22 :: R23 :: R24 :: R25 :: R26 :: R27 ::
   R28 :: R29 :: R30 ::
   nil.
 
 Definition float_caller_save_regs :=
   F0  :: F1  :: F2  :: F3  :: F4  :: F5  :: F6  :: F7  ::
+  F8  :: F9  ::
   F10 :: F11 :: F12 :: F13 :: F14 :: F15 :: F16 :: F17 ::
+  F18 :: F19 :: F20 :: F21 :: F22 :: F23 :: F24 :: F25 :: F26 :: F27 ::
   F28 :: F29 :: F30 :: F31 ::
   nil.
 
 Definition int_callee_save_regs :=
-  R8  :: R9  ::
-  R18 :: R19 :: R20 :: R21 :: R22 :: R23 :: R24 :: R25 :: R26 :: R27 ::
-  nil.
+  @nil mreg.
 
 Definition float_callee_save_regs :=
-  F8  :: F9  ::
-  F18 :: F19 :: F20 :: F21 :: F22 :: F23 :: F24 :: F25 :: F26 :: F27 ::
-  nil.
+  @nil mreg.
 
 Definition destroyed_at_call :=
   List.filter (fun r => negb (is_callee_save r)) all_mregs.

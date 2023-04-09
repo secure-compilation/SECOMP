@@ -284,13 +284,13 @@ Inductive wt_state: state -> Prop :=
         (WTSTK: wt_callstack s)
         (WTFD: wt_fundef fd)
         (WTRS: wt_locset rs)
-        (AGCS: agree_callee_save_ext rs (parent_locset s))
+        (AGCS: agree_callee_save rs (parent_locset s))
         (AGARGS: agree_outgoing_arguments (funsig fd) rs (parent_locset s)),
       wt_state (Callstate s fd rs m)
   | wt_return_state: forall s rs m
         (WTSTK: wt_callstack s)
         (WTRS: wt_locset rs)
-        (AGCS: agree_callee_save_ext rs (parent_locset s))
+        (AGCS: agree_callee_save rs (parent_locset s))
         (UOUT: outgoing_undef rs),
       wt_state (Returnstate s rs m).
 
@@ -371,7 +371,7 @@ Local Opaque mreg_type.
   eapply wt_find_function; eauto.
   apply wt_return_regs; auto. apply wt_parent_locset; auto.
   (* red; simpl; intros. destruct l; simpl in *. rewrite H4; auto. destruct sl; auto; congruence. *)
-  red; simpl; intros. destruct l; simpl in *. contradiction. destruct sl; auto; congruence.
+  red; simpl; intros. destruct l; simpl in *. destruct r; discriminate. destruct sl; auto; congruence.
   red; simpl; intros. apply zero_size_arguments_tailcall_possible in H. apply H in H4. contradiction.
 - (* builtin *)
   simpl in *; InvBooleans.
@@ -403,7 +403,7 @@ Local Opaque mreg_type.
   { (* new case*)
   econstructor; eauto.
   apply wt_return_regs_ext; auto. apply wt_parent_locset; auto.
-  red; simpl; intros. destruct l; simpl in *. contradiction. destruct sl; auto; congruence.
+  red; simpl; intros. destruct l; simpl in *. destruct r; discriminate. destruct sl; auto; congruence.
   red; simpl; intros. auto.
   }
   (* { (* same as Genv.InternalCall *) *)
@@ -431,7 +431,7 @@ Local Opaque mreg_type.
   apply wt_undef_caller_save_regs; auto.
   red; simpl; intros. destruct l; simpl in *.
   (* rewrite locmap_get_set_loc_result by auto. simpl. rewrite H; auto.  *)
-  contradiction.
+  destruct r; discriminate.
   rewrite locmap_get_set_loc_result by auto. simpl. destruct sl; auto; congruence.
   red; simpl; intros. rewrite locmap_get_set_loc_result by auto. auto.
 - (* return *)
@@ -497,7 +497,7 @@ Lemma wt_callstate_agree:
   forall s f rs m,
   wt_state (Callstate s f rs m) ->
   (* agree_callee_save rs (parent_locset s) /\ agree_outgoing_arguments (funsig f) rs (parent_locset s). *)
-  agree_callee_save_ext rs (parent_locset s) /\ agree_outgoing_arguments (funsig f) rs (parent_locset s).
+  agree_callee_save rs (parent_locset s) /\ agree_outgoing_arguments (funsig f) rs (parent_locset s).
 Proof.
   intros. inv H; auto.
 Qed.
@@ -506,7 +506,7 @@ Lemma wt_returnstate_agree:
   forall s rs m,
   wt_state (Returnstate s rs m) ->
   (* agree_callee_save rs (parent_locset s) /\ outgoing_undef rs. *)
-  agree_callee_save_ext rs (parent_locset s) /\ outgoing_undef rs.
+  agree_callee_save rs (parent_locset s) /\ outgoing_undef rs.
 Proof.
   intros. inv H; auto.
 Qed.

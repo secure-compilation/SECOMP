@@ -164,14 +164,14 @@ Definition undef_caller_save_regs (ls: locset) : locset :=
    non-signature registers into caller-save, but registers for arguments and
    return values are always caller-save already -- TODO establish formally for
    the calling convention *)
-Definition callee_save_loc_ext (l: loc) :=
-  match l with
-  | R r => False
-  | S sl ofs ty => sl <> Outgoing
-  end.
+(* Definition callee_save_loc_ext (l: loc) := *)
+(*   match l with *)
+(*   | R r => False *)
+(*   | S sl ofs ty => sl <> Outgoing *)
+(*   end. *)
 
-Definition agree_callee_save_ext (ls1 ls2: Locmap.t) : Prop :=
-  forall l, callee_save_loc_ext l -> ls1 l = ls2 l.
+(* Definition agree_callee_save_ext (ls1 ls2: Locmap.t) : Prop := *)
+(*   forall l, callee_save_loc_ext l -> ls1 l = ls2 l. *)
 
 (** LTL execution states. *)
 

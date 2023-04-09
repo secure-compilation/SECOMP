@@ -716,8 +716,8 @@ Proof.
   exploit find_function_ptr_translated; eauto. intros C.
   left; econstructor; split. simpl.
   apply plus_one. econstructor; eauto.
-  rewrite (match_parent_locset _ _ STACKS). eauto.
-  rewrite (match_parent_locset _ _ STACKS). eauto.
+  (* rewrite (match_parent_locset _ _ STACKS). eauto. *)
+  (* rewrite (match_parent_locset _ _ STACKS). eauto. *)
   symmetry; eapply sig_preserved; eauto.
   now rewrite <- (comp_transl_partial _ B), <- (comp_transl_partial _ TRF).
   now rewrite <- (comp_transl_partial _ TRF).

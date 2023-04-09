@@ -762,6 +762,16 @@ Proof.
   unfold call_regs; intros; red; intros; auto.
 Qed.
 
+Lemma agree_regs_call_regs_ext:
+  forall j ls rs sg,
+  agree_regs j ls rs ->
+  agree_regs j (call_regs_ext ls sg) rs.
+Proof.
+  intros.
+  unfold call_regs_ext; intros; red; intros.
+  destruct (in_mreg r (parameters_mregs sg)); auto.
+Qed.
+
 (** ** Properties of [agree_locs] *)
 
 (** Preservation under assignment of machine register. *)
@@ -837,10 +847,10 @@ Lemma agree_locs_undef_locs:
   agree_locs (LTL.undef_regs regs ls) ls0.
 Proof.
   intros. eapply agree_locs_undef_locs_1; eauto.
-  intros. destruct (is_callee_save r) eqn:CS; auto.
-  assert (existsb is_callee_save regs = true).
-  { apply existsb_exists. exists r; auto. }
-  congruence.
+(*   intros. destruct (is_callee_save r) eqn:CS; auto. *)
+(*   assert (existsb is_callee_save regs = true). *)
+(*   { apply existsb_exists. exists r; auto. } *)
+(*   congruence. *)
 Qed.
 
 (** Preservation by assignment to local slot *)
