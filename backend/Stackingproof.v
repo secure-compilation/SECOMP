@@ -2240,8 +2240,11 @@ Proof.
   apply plus_one.
   (* assert (H1: agree_callee_save rs (parent_locset (Linear.Stackframe f (Vptr sp0 Ptrofs.zero) rs b :: s))). *)
   (* { red; simpl; auto. } *)
-  assert (H1: agree_incoming_arguments (Linear.funsig f') (LTL.undef_regs destroyed_at_function_entry (call_regs rs))
+  (* assert (H1: agree_incoming_arguments (Linear.funsig f') (LTL.undef_regs destroyed_at_function_entry (call_regs rs)) *)
+  (*               (parent_locset (Linear.Stackframe f (Genv.find_comp ge (Vptr bf Ptrofs.zero)) (Linear.funsig f') (Vptr sp0 Ptrofs.zero) rs b :: s))). *)
+  assert (H1: agree_incoming_arguments (Linear.funsig f') (LTL.undef_regs destroyed_at_function_entry (call_regs_ext rs (Linear.funsig f')))
                 (parent_locset (Linear.Stackframe f (Genv.find_comp ge (Vptr bf Ptrofs.zero)) (Linear.funsig f') (Vptr sp0 Ptrofs.zero) rs b :: s))).
+  (* assert (H1: agree_callee_save_ext rs (parent_locset (Linear.Stackframe f (comp_of f) (Linear.fn_sig f) (Vptr sp0 Ptrofs.zero) rs b :: s))). *)
   { red; simpl; auto. }
   eapply match_stacks_cons with (ra := ra) (cp := Genv.find_comp ge (Vptr bf Ptrofs.zero))
     in STACKS; eauto. (* NOTE: the fact we have to instantiate [cp] is suspicious *)
@@ -2254,7 +2257,7 @@ Proof.
   { simpl in ARGS.
     rewrite <- (comp_transl_partial _ TRANSL), E.
     intros G. specialize (NO_CROSS_PTR G).
-    rewrite G in NO_CROSS_PTR.
+    (* rewrite G in NO_CROSS_PTR. *)
     eapply Val.inject_list_not_ptr; eauto.
      clear -NO_CROSS_PTR.
      unfold loc_parameters in NO_CROSS_PTR.
@@ -2279,10 +2282,10 @@ Proof.
   congruence.
   (* auto. *)
   intros G. rewrite G in NO_CROSS_PTR. admit.
-  destruct (Genv.type_of_call ge (comp_of f) (Genv.find_comp ge (Vptr bf Ptrofs.zero))).
-  unfold loc_parameters in EV. rewrite map_map in EV. auto.
+  (* destruct (Genv.type_of_call ge (comp_of f) (Genv.find_comp ge (Vptr bf Ptrofs.zero))). *)
+  (* unfold loc_parameters in EV. rewrite map_map in EV. auto. *)
   unfold loc_parameters in EV. rewrite map_map in EV. auto. admit.
-  unfold loc_parameters in EV. rewrite map_map in EV. auto.
+  (* unfold loc_parameters in EV. rewrite map_map in EV. auto. *)
   }
   { apply Val.Vptr_has_type. }
   { intros; red.
@@ -2410,18 +2413,18 @@ Proof.
   assert (TY_CALL: Genv.type_of_call ge (Linear.call_comp s) (Linear.callee_comp s)
                    = Genv.type_of_call tge (call_comp tge cs') (comp_of tf))
     by admit.
-  rewrite TY_CALL.
-  destruct (Genv.type_of_call tge (call_comp tge cs') (comp_of tf)).
-  {
-  econstructor; eauto.
-  rewrite sep_swap; exact G.
-  }
+  (* rewrite TY_CALL. *)
+  (* destruct (Genv.type_of_call tge (call_comp tge cs') (comp_of tf)). *)
+  (* { *)
+  (* econstructor; eauto. *)
+  (* rewrite sep_swap; exact G. *)
+  (* } *)
   { (* new case*)
   econstructor; eauto.
   admit.
   rewrite sep_swap; exact G.
   }
-  { (* same as Genv.InternalCall *) admit. }
+  (* { (* same as Genv.InternalCall *) admit. } *)
 
 - (* internal function *)
   revert TRANSL. unfold transf_fundef, transf_partial_fundef.
@@ -2437,27 +2440,27 @@ Proof.
   intros (j' & rs' & m2' & sp' & m3' & m4' & m5' & A & B & C & D & E & F & SEP & J & K).
   rewrite (sep_comm (globalenv_inject ge j')) in SEP.
   rewrite (sep_swap (minjection j' m')) in SEP.
-  assert (TY_CALL: Genv.type_of_call ge (Linear.call_comp s) (comp_of f)
-          = Genv.type_of_call tge (call_comp tge cs') (Genv.find_comp tge (Vptr fb Ptrofs.zero)))
-    by admit.
-  destruct (Genv.type_of_call ge (Linear.call_comp s) (comp_of f)).
-  {
-  econstructor; split.
-  eapply plus_left. econstructor; eauto.
-    unfold Genv.find_comp; simpl; rewrite FIND; destruct Ptrofs.eq_dec; try congruence.
-    unfold comp_of; simpl. eauto.
-    unfold Genv.find_comp; simpl; rewrite FIND; destruct Ptrofs.eq_dec; try congruence.
-    unfold comp_of; simpl. eauto.
-    unfold Genv.find_comp; simpl; rewrite FIND; destruct Ptrofs.eq_dec; try congruence.
-    unfold comp_of; simpl. eauto.
-  rewrite (unfold_transf_function _ _ TRANSL). unfold fn_code. unfold transl_body.
-  rewrite <- TY_CALL.
-  eexact D. traceEq.
-  eapply match_states_intro with (j := j'); eauto with coqlib.
-  eapply match_stacks_change_meminj; eauto.
-  rewrite sep_swap in SEP. rewrite sep_swap. eapply stack_contents_change_meminj; eauto.
-  rewrite comp_transf_function; eauto.
-  }
+  (* assert (TY_CALL: Genv.type_of_call ge (Linear.call_comp s) (comp_of f) *)
+  (*         = Genv.type_of_call tge (call_comp tge cs') (Genv.find_comp tge (Vptr fb Ptrofs.zero))) *)
+  (*   by admit. *)
+  (* destruct (Genv.type_of_call ge (Linear.call_comp s) (comp_of f)). *)
+  (* { *)
+  (* econstructor; split. *)
+  (* eapply plus_left. econstructor; eauto. *)
+  (*   unfold Genv.find_comp; simpl; rewrite FIND; destruct Ptrofs.eq_dec; try congruence. *)
+  (*   unfold comp_of; simpl. eauto. *)
+  (*   unfold Genv.find_comp; simpl; rewrite FIND; destruct Ptrofs.eq_dec; try congruence. *)
+  (*   unfold comp_of; simpl. eauto. *)
+  (*   unfold Genv.find_comp; simpl; rewrite FIND; destruct Ptrofs.eq_dec; try congruence. *)
+  (*   unfold comp_of; simpl. eauto. *)
+  (* rewrite (unfold_transf_function _ _ TRANSL). unfold fn_code. unfold transl_body. *)
+  (* (* rewrite <- TY_CALL. *) *)
+  (* eexact D. traceEq. *)
+  (* eapply match_states_intro with (j := j'); eauto with coqlib. *)
+  (* eapply match_stacks_change_meminj; eauto. *)
+  (* rewrite sep_swap in SEP. rewrite sep_swap. eapply stack_contents_change_meminj; eauto. *)
+  (* rewrite comp_transf_function; eauto. *)
+  (* } *)
   { (* new case *)
   econstructor; split.
   eapply plus_left. econstructor; eauto.
@@ -2468,16 +2471,17 @@ Proof.
     unfold Genv.find_comp; simpl; rewrite FIND; destruct Ptrofs.eq_dec; try congruence.
     unfold comp_of; simpl. eauto.
   rewrite (unfold_transf_function _ _ TRANSL). unfold fn_code. unfold transl_body.
-  rewrite <- TY_CALL.
+  (* rewrite <- TY_CALL. *)
   admit. (* FIXME *)
   (* eexact D. traceEq. *)
-  admit. admit.
+  traceEq.
+  admit.
   (* eapply match_states_intro with (j := j'); eauto with coqlib. *)
   (* eapply match_stacks_change_meminj; eauto. *)
   (* rewrite sep_swap in SEP. rewrite sep_swap. eapply stack_contents_change_meminj; eauto. *)
   (* rewrite comp_transf_function; eauto. *)
   }
-  { (* same as Genv.InternalCall *) admit. }
+  (* { (* same as Genv.InternalCall *) admit. } *)
 
 - (* external function *)
   simpl in TRANSL. inversion TRANSL; subst tf.
