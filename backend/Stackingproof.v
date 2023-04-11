@@ -1135,12 +1135,14 @@ Qed.
 Lemma function_prologue_correct:
   forall j ls ls0 ls1 rs rs1 m1 m1' m2 sp parent ra cs fb k P,
   forall (FUNPTR: Genv.find_funct_ptr tge fb = Some (Internal tf)),
-  agree_regs j ls rs ->
+  (* agree_regs j ls rs -> *)
+  agree_regs j ls (undef_caller_save_regs_ext rs (parent_signature cs)) ->
   agree_callee_save ls ls0 ->
   agree_outgoing_arguments (Linear.fn_sig f) ls ls0 ->
   (forall r, Val.has_type (ls (R r)) (mreg_type r)) ->
   ls1 = LTL.undef_regs destroyed_at_function_entry (LTL.call_regs ls) ->
-  rs1 = undef_regs destroyed_at_function_entry rs ->
+  (* rs1 = undef_regs destroyed_at_function_entry rs -> *)
+  rs1 = undef_regs destroyed_at_function_entry (undef_caller_save_regs_ext rs (parent_signature cs)) ->
   Mem.alloc m1 f.(Linear.fn_comp) 0 f.(Linear.fn_stacksize) = (m2, sp) ->
   Val.has_type parent Tptr -> Val.has_type ra Tptr ->
   m1' |= minjection j m1 ** globalenv_inject ge j ** P ->
@@ -1202,7 +1204,8 @@ Local Opaque b fe.
   rewrite sep_swap4 in SEP.
   (* Saving callee-save registers *)
   rewrite sep_swap5 in SEP.
-  exploit (save_callee_save_correct j' ls ls0 rs sp' cs fb); eauto.
+  (* exploit (save_callee_save_correct j' ls ls0 rs sp' cs fb); eauto. *)
+  exploit (save_callee_save_correct j' ls ls0 (undef_caller_save_regs_ext rs (parent_signature cs)) sp' cs fb); eauto.
   { unfold store_stack in STORE_RETADDR. simpl in STORE_RETADDR.
     eapply Mem.store_can_access_block_2 in STORE_RETADDR.
     unfold Genv.find_comp; simpl in *; rewrite FUNPTR; destruct Ptrofs.eq_dec; try congruence.
@@ -1212,7 +1215,8 @@ Local Opaque b fe.
   (*   rewrite transf_function_comp. reflexivity. } *)
   apply agree_regs_inject_incr with j; auto.
   replace (LTL.undef_regs destroyed_at_function_entry (call_regs ls)) with ls1 by auto.
-  replace (undef_regs destroyed_at_function_entry rs) with rs1 by auto.
+  (* replace (undef_regs destroyed_at_function_entry rs) with rs1 by auto. *)
+  replace (undef_regs destroyed_at_function_entry (undef_caller_save_regs_ext rs (parent_signature cs))) with rs1 by auto.
   clear SEP; intros (rs2 & m5' & SAVE_CS & SEP & PERMS & AGREGS').
   rewrite sep_swap5 in SEP.
   (* Materializing the Local and Outgoing locations *)
@@ -2249,7 +2253,7 @@ Proof.
   eapply match_stacks_cons with (ra := ra) (cp := Genv.find_comp ge (Vptr bf Ptrofs.zero))
     in STACKS; eauto. (* NOTE: the fact we have to instantiate [cp] is suspicious *)
   assert (AGREGS' := AGREGS).
-  apply agree_regs_call_regs in AGREGS.
+  apply agree_regs_call_regs_ext with (sg := Linear.funsig f') in AGREGS.
   apply agree_regs_undef_regs with (rl := destroyed_at_function_entry) in AGREGS.
   exploit (fun x2 x3 x4 x5 => transl_arguments _ x2 x3 x4 x5 _ _ AGREGS); eauto. simpl. simpl. apply sep_assoc in SEP. apply sep_proj1 in SEP; eauto. intros [vl [ARGS VINJ]].
   eapply exec_Mcall with (args := vl); eauto.
@@ -2262,7 +2266,7 @@ Proof.
      clear -NO_CROSS_PTR.
      unfold loc_parameters in NO_CROSS_PTR.
      (* now rewrite map_map in NO_CROSS_PTR. *)
-     rewrite map_map in NO_CROSS_PTR. admit. }
+     now rewrite map_map in NO_CROSS_PTR. }
   { rewrite <- comp_transf_function, <- find_comp_translated; eauto.
     eapply call_trace_inj with (ge := ge); eauto using symbols_preserved.
   (* eapply call_trace_translated. exact VINJ. *)
@@ -2277,14 +2281,14 @@ Proof.
   rewrite eq_rs0 in AGREGS'. inv AGREGS'.
   assert (b1 = bf) by congruence. subst b1.
   assert (ofs1 = Ptrofs.zero) by congruence. subst ofs1.
-  (* auto. *)
-  intros G. rewrite G in NO_CROSS_PTR. admit.
+  auto.
+  (* intros G. rewrite G in NO_CROSS_PTR. admit. *)
   congruence.
-  (* auto. *)
-  intros G. rewrite G in NO_CROSS_PTR. admit.
+  auto.
+  (* intros G. rewrite G in NO_CROSS_PTR. admit. *)
   (* destruct (Genv.type_of_call ge (comp_of f) (Genv.find_comp ge (Vptr bf Ptrofs.zero))). *)
-  (* unfold loc_parameters in EV. rewrite map_map in EV. auto. *)
-  unfold loc_parameters in EV. rewrite map_map in EV. auto. admit.
+  unfold loc_parameters in EV. rewrite map_map in EV. auto.
+  (* unfold loc_parameters in EV. rewrite map_map in EV. auto. admit. *)
   (* unfold loc_parameters in EV. rewrite map_map in EV. auto. *)
   }
   { apply Val.Vptr_has_type. }
@@ -2410,9 +2414,9 @@ Proof.
     unfold Genv.find_comp; simpl; rewrite FIND; destruct Ptrofs.eq_dec; try congruence.
     unfold comp_of; simpl. eauto.
   traceEq.
-  assert (TY_CALL: Genv.type_of_call ge (Linear.call_comp s) (Linear.callee_comp s)
-                   = Genv.type_of_call tge (call_comp tge cs') (comp_of tf))
-    by admit.
+  (* assert (TY_CALL: Genv.type_of_call ge (Linear.call_comp s) (Linear.callee_comp s) *)
+  (*                  = Genv.type_of_call tge (call_comp tge cs') (comp_of tf)) *)
+  (*   by admit. *)
   (* rewrite TY_CALL. *)
   (* destruct (Genv.type_of_call tge (call_comp tge cs') (comp_of tf)). *)
   (* { *)
@@ -2421,6 +2425,8 @@ Proof.
   (* } *)
   { (* new case*)
   econstructor; eauto.
+  (* assert (R : (return_regs_ext (parent_locset s) rs (Linear.parent_signature s)) = (return_regs (parent_locset s) rs)) by admit. rewrite R. clear R. auto. *)
+  (* assert (F' : agree_regs j (return_regs_ext (parent_locset s) rs (Linear.parent_signature s)) rs') by admit. auto. *)
   admit.
   rewrite sep_swap; exact G.
   }
@@ -2433,6 +2439,7 @@ Proof.
   rewrite sep_comm, sep_assoc in SEP.
   exploit wt_callstate_agree; eauto. intros [AGCS AGARGS].
   exploit function_prologue_correct; eauto.
+  admit.
   red; intros; eapply wt_callstate_wt_regs; eauto.
   eapply match_stacks_type_sp; eauto.
   eapply match_stacks_type_retaddr; eauto.
@@ -2472,13 +2479,16 @@ Proof.
     unfold comp_of; simpl. eauto.
   rewrite (unfold_transf_function _ _ TRANSL). unfold fn_code. unfold transl_body.
   (* rewrite <- TY_CALL. *)
-  admit. (* FIXME *)
-  (* eexact D. traceEq. *)
-  traceEq.
+  (* instantiate (2 := cs') in D. instantiate (2 := E0). instantiate (1 := (transl_code (make_env (function_bounds f)) (Linear.fn_code f))) in D. instantiate (1 := (State cs' fb (Vptr sp' Ptrofs.zero) (transl_code (make_env (function_bounds f)) (Linear.fn_code f)) rs' m5')). *)
+  (* exact D. *)
+  (* rs vs. (undef_caller_save_regs_ext rs0 (parent_signature cs')) *)
+  (* admit. (* FIXME *) *)
+  eexact D. traceEq.
+  (* traceEq. *)
   admit.
   (* eapply match_states_intro with (j := j'); eauto with coqlib. *)
   (* eapply match_stacks_change_meminj; eauto. *)
-  (* rewrite sep_swap in SEP. rewrite sep_swap. eapply stack_contents_change_meminj; eauto. *)
+  (* rewrite sep_swap in SEP. rewrite sep_swap. eapply stack_contents_change_meminj; eauto. * *)
   (* rewrite comp_transf_function; eauto. *)
   }
   (* { (* same as Genv.InternalCall *) admit. } *)
