@@ -17,6 +17,14 @@ Definition same_symbols (j: meminj) (ge1: genv): Prop :=
     Genv.find_symbol ge1 id = Some loc ->
     j loc = Some (loc, 0).
 
+Definition meminj_injective (j: meminj): Prop :=
+  forall b1 b2 b1' b2' ofs1 ofs2,
+      b1 <> b2 ->
+      j b1 = Some (b1', ofs1) ->
+      j b2 = Some (b2', ofs2) ->
+      b1' <> b2' \/ ofs1 <> ofs2.
+
+
 (* Definition same_functions (j: meminj) (ge1 ge2: genv): Prop := *)
 (*   forall vf vf' fd, *)
 (*     Val.inject j vf vf' -> *)
@@ -69,6 +77,7 @@ Section Equivalence.
       partial_mem_inject: Mem.inject j m1 m2;
       j_delta_zero: delta_zero j;
       same_symb: same_symbols j ge1;
+      jinjective: meminj_injective j
       (* related_funct: same_functions j ge1 ge2; *)
       (* same_funct_right: same_functions_right s j ge1 ge2 *)
     }.
@@ -421,7 +430,7 @@ Section Simulation.
       - inv step1; inv right_exec_inj.
         Ltac destruct_mem_inj :=
           match goal with
-          | H: right_mem_injection _ _ _ _ _ _ |- _ => destruct H as [same_dom mem_inject delta_zero same_symb]
+          | H: right_mem_injection _ _ _ _ _ _ |- _ => destruct H as [same_dom mem_inject delta_zero same_symb injective]
           end.
         + exploit eval_lvalue_injection; eauto.
           exploit eval_expr_injection; eauto.
@@ -456,37 +465,9 @@ Section Simulation.
             -- econstructor; eauto.
                rewrite <- same_cenv, !Z.add_0_r, !Ptrofs.add_zero in *; eauto.
                eapply assign_loc_copy; eauto.
-               { (* TODO: need help here *)
-
-                 destruct H15.
-                 - (* H15, H5, H19 *)
-                   destruct (sizeof ge1 (typeof a1)) eqn:eq_size.
-                   + admit.
-                   + pose proof Mem.mi_no_overlap.
-                     specialize (H21 j m m2 mem_inject). unfold Mem.meminj_no_overlap in H21.
-                     specialize (H21 _ _ _ _ _ _ (Ptrofs.unsigned ofs'0 + Z.pos p - 1) (Ptrofs.unsigned ofs + Z.pos p - 1)
-                                   H15 H19 H5).
-                     assert (X: Mem.perm m b' (Ptrofs.unsigned ofs'0 + Z.pos p - 1) Max Nonempty).
-                     { apply Mem.loadbytes_range_perm in H16. apply Mem.range_perm_max in H16.
-                       eapply Mem.perm_implies with (p1 := Readable); [ |constructor].
-                       specialize (H16 (Ptrofs.unsigned ofs'0 + Z.pos p - 1)).
-                       apply H16. lia. }
-                     specialize (H21 X).
-                     assert (Y: Mem.perm m loc (Ptrofs.unsigned ofs + Z.pos p - 1) Max Nonempty).
-                     { apply Mem.storebytes_range_perm in H17. apply Mem.range_perm_max in H17.
-                       eapply Mem.perm_implies with (p1 := Writable); [ |constructor].
-                       specialize (H17 (Ptrofs.unsigned ofs + Z.pos p - 1)).
-                       exploit H17.
-                       { exploit list_forall2_length; eauto. intros ->.
-                         erewrite Mem.loadbytes_length; eauto. rewrite Z2Nat.id. lia. lia. }
-                       eauto. }
-                     specialize (H21 Y). destruct H21; [left; easy | try lia]. right.
-                     (* Can't seem to conclude here -- I tried instanciating with various offsets, and couldn't find
-                        one that allowed me to conclude 🤯🤯 *)
-                     admit.
-                   + admit.
-                 - auto.
-               }
+               { destruct H15.
+                 - exploit injective; eauto. intros []; [now left| contradiction].
+                 - auto. }
             -- apply RightControl; eauto.
                constructor; eauto.
                split; eauto.
@@ -563,6 +544,7 @@ Section Simulation.
           apply RightControl; eauto.
           constructor; eauto.
           * constructor; eauto.
+            -- admit.
             -- admit.
             -- admit.
             -- admit.
