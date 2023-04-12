@@ -583,9 +583,9 @@ Section Backtranslation.
           (TYPEF: type_of_fundef fd = Tfunction (list_eventval_to_typelist vs) Tvoid cc_default)
           (WFARGS: Forall (wf_eventval ge e) vs)
           (* asm should ensure them *)
-          (NPTR: Forall not_ptr (list_eventval_to_list_val ge vs))
           (CP1: cp = comp_of f)
           (CP2: cp' = comp_of fd)
+          (NPTR: Forall not_ptr (list_eventval_to_list_val ge vs))
           (CROSS: Genv.type_of_call ge (comp_of f) (comp_of fd) = Genv.CrossCompartmentCall)
           (ALLOW: Genv.allowed_cross_call ge (comp_of f) (Vptr b Ptrofs.zero))
       :
@@ -619,7 +619,7 @@ Section Backtranslation.
           fd args f1
           (INTERNAL: fd = Internal f1)
           (* asm should ensure them *)
-          (* handle during proof *)
+          (* handle during proving *)
           e1 le1 m1
           (ENTRY: function_entry1 ge f1 args m e1 le1 m1)
       :
@@ -643,11 +643,12 @@ Section Backtranslation.
           fd k args ef targs tres cconv
           (EXTERNAL: fd = External ef targs tres cconv)
           (* asm should ensure them *)
-          (* handle during proof *)
-          sev sname sargs svr
-          (SYSEV: sev = Event_syscall sname sargs svr)
+          sev
           vres m1
           (SEM: external_call ef ge (call_comp k) args m (sev :: nil) vres m1)
+          (* handle during proving *)
+          sname sargs svr
+          (SYSEV: sev = Event_syscall sname sargs svr)
       :
         Star (Clight.semantics1 p)
              (Callstate fd args k m)
@@ -661,13 +662,50 @@ Section Backtranslation.
       econstructor 1.
     Qed.
 
+    Lemma code_of_event_step_return
+          ev
+          cp cp' rv
+          p f k e le m
+          ge
+          (GE: ge = globalenv p)
+          (EV: ev = Event_return cp' cp rv)
+          (* bt should ensure them *)
+          (WFRV: wf_eventval ge e rv)
+          (RTTYP: fn_return f = eventval_to_type rv)
+          (* asm should ensure them *)
+          optid f' e' le' k'
+          (CONT: call_cont k = Kcall optid f' e' le' k')
+          (CP1: cp = comp_of f)
+          (CP2: cp' = comp_of f')
+          (NPTR: not_ptr (eventval_to_val ge rv))
+          (CROSS: Genv.type_of_call ge (comp_of f') (comp_of f) = Genv.CrossCompartmentCall)
+          (* handle during proving *)
+          m'
+          (FREE: Mem.free_list m (blocks_of_env ge e) (comp_of f) = Some m')
+      :
+      Star (Clight.semantics1 p)
+           (State f (code_of_event ev) k e le m)
+           (ev :: nil)
+           (State f' Sskip k' e' (set_opttemp optid (eventval_to_val ge rv) le') m').
+    Proof.
+      subst; simpl. unfold code_of_return.
+      econstructor 2.
+      3:{ rewrite E0_left. reflexivity. }
+      { eapply step_return_1; simpl; eauto.
+        { eapply eventval_to_expr_val_eval; auto. apply wf_eventval_weak_weak; auto. }
+        { rewrite RTTYP. eapply sem_cast_eventval.
+          eapply wf_eventval_weak2_weak. eapply wf_eventval_weak_weak; eauto. }
+      }
+      econstructor 2.
+      3:{ rewrite E0_right. reflexivity. }
+      { rewrite CONT. eapply step_returnstate; auto.
+        econstructor 2; auto. rewrite RTTYP. eapply eventval_to_expr_val_match; eauto.
+        clear. destruct rv; simpl; auto.
+      }
+      econstructor 1.
+    Qed.
+
     (* TODO *)
-
-
-    match e with
-      | Event_return cp cp' v => code_of_return cp cp' v
-      end.
-
 
   End CODE.
 
