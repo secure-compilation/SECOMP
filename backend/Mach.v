@@ -161,9 +161,11 @@ Proof.
   unfold Regmap.set. destruct (RegEq.eq r a); auto.
 Qed.
 
+(* Used to simulate the effect of external calls *)
 Definition undef_caller_save_regs (rs: regset) : regset :=
   fun r => if is_callee_save r then rs r else Vundef.
 
+(* Used to simulate the secure calling convention *)
 Definition undef_caller_save_regs_ext (rs: regset) (callee_sig: signature) : regset :=
   fun r => if LTL.in_mreg r (LTL.parameters_mregs callee_sig) then rs r else Vundef.
 

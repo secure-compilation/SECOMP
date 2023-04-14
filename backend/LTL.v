@@ -141,7 +141,7 @@ Definition return_regs_ext (caller callee: locset) (callee_sig: signature) : loc
     match l with
     | R r => if in_mreg r (regs_of_rpair (loc_result callee_sig))
              then callee (R r)
-             else (* Vundef *) caller (R r)
+             else Vundef (* caller (R r) *)
     | S Outgoing ofs ty => Vundef
     | S sl ofs ty => caller (S sl ofs ty)
     end.

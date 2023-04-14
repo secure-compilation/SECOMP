@@ -168,7 +168,7 @@ Lemma wt_return_regs_ext:
 Proof.
   intros; red; intros.
   unfold return_regs_ext. destruct l.
-- destruct (in_mreg r (regs_of_rpair (loc_result sg))); auto.
+- destruct (in_mreg r (regs_of_rpair (loc_result sg))); auto. reflexivity.
 - destruct sl; auto; red; auto.
 Qed.
 
