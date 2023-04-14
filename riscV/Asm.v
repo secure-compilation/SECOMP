@@ -20,6 +20,7 @@
 Require Import Coqlib.
 Require Import Maps.
 Require Import AST.
+Require Import Split.
 Require Import Integers.
 Require Import Floats.
 Require Import Values.
@@ -1672,3 +1673,22 @@ Definition build_initial_state (p: program): option state :=
   Some (State initial_stack rs0 m0).
 
 End ExecSem.
+
+
+Section SECURITY.
+
+Definition asm_in_side (s: split) (lr: side) (p: Asm.program) :=
+  List.Forall (fun '(id, gd) =>
+                 match gd with
+                 | Gfun (Internal f) => s (comp_of f) = lr
+                 | _ => True
+                 end)
+    (prog_defs p).
+
+#[export] Instance asm_has_side: has_side (Asm.program) :=
+  { in_side s := fun p δ => asm_in_side s δ p }.
+
+Definition asm_compatible (s: split) (p p': Asm.program) :=
+  s |= p ∈ Left /\ s |= p' ∈ Right.
+
+End SECURITY.

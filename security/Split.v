@@ -1,7 +1,7 @@
 Require Import String.
 Require Import Coqlib Maps Errors.
-Require Import AST Linking Smallstep Events Behaviors.
-Require Import Clight Asm.
+Require Import AST.
+Require Import Values.
 
 
 Variant side := Left | Right.
@@ -10,36 +10,23 @@ Proof.
   decide equality.
 Defined.
 
+Definition opposite (δ: side) :=
+  match δ with
+  | Left => Right
+  | Right => Left
+  end.
+
 Definition split := compartment -> side.
 
+Class has_side {ctx: Type} (A: Type) :=
+  { in_side: ctx -> A -> side -> Prop }.
+
+#[export] Instance compartment_has_side: has_side compartment :=
+  { in_side s := fun cp δ => s cp = δ }.
+
+#[export] Instance has_comp_has_side (A: Type) {CA: has_comp A}: has_side A :=
+  { in_side s :=  fun a δ => s (comp_of a) = δ }.
+
+Notation "s '|=' a '∈' δ " := (in_side s a δ) (no associativity, at level 75).
 
 
-Definition clight_has_side (s: split) (lr: side) (p: Clight.program) :=
-  List.Forall (fun '(id, gd) =>
-                 match gd with
-                 | Gfun (Ctypes.Internal f) => s (comp_of f) = lr
-                 | _ => True
-                 end)
-    (Ctypes.prog_defs p).
-
-Definition asm_has_side (s: split) (lr: side) (p: Asm.program) :=
-  List.Forall (fun '(id, gd) =>
-                 match gd with
-                 | Gfun (Internal f) => s (comp_of f) = lr
-                 | _ => True
-                 end)
-    (prog_defs p).
-
-Definition clight_compatible (s: split) (p p': Clight.program) :=
-  clight_has_side s Left p /\ clight_has_side s Right p'.
-
-Definition asm_compatible (s: split) (p p': Asm.program) :=
-  asm_has_side s Left p /\ asm_has_side s Right p'.
-
-Lemma link_compatible: forall s p p',
-    clight_compatible s p p' ->
-    Ctypes.prog_pol p = Ctypes.prog_pol p' ->
-    exists W, link p p' = Some W.
-Proof.
-  admit.
-Admitted.

@@ -5,44 +5,9 @@ Require Import AST Globalenvs Linking Smallstep Events Behaviors Memory Values.
 Require Import Ctypes Cop Clight.
 Require Import Split.
 
-Definition same_domain (s: split) (j: meminj) (m: mem): Prop :=
-  forall b cp, Mem.block_compartment m b = Some cp ->
-          (j b <> None <-> s cp = Right).
-
-Definition delta_zero (j: meminj): Prop :=
-  forall loc loc' delta, j loc = Some (loc', delta) -> delta = 0.
-
-Definition same_symbols (j: meminj) (ge1: genv): Prop :=
-  forall id loc,
-    Genv.find_symbol ge1 id = Some loc ->
-    j loc = Some (loc, 0).
-
-Definition meminj_injective (j: meminj): Prop :=
-  forall b1 b2 b1' b2' ofs1 ofs2,
-      b1 <> b2 ->
-      j b1 = Some (b1', ofs1) ->
-      j b2 = Some (b2', ofs2) ->
-      b1' <> b2' \/ ofs1 <> ofs2.
-
-
-(* Definition same_functions (j: meminj) (ge1 ge2: genv): Prop := *)
-(*   forall vf vf' fd, *)
-(*     Val.inject j vf vf' -> *)
-(*     Genv.find_funct ge1 vf = Some fd -> *)
-(*     exists fd', Genv.find_funct ge2 vf' = Some fd' /\ *)
-(*              type_of_fundef fd' = type_of_fundef fd /\ *)
-(*              comp_of fd' = comp_of fd. *)
-
-(* Definition same_functions_right (s: split) (j: meminj) (ge1 ge2: genv): Prop := *)
-(*   forall vf vf' fd, *)
-(*         Val.inject j vf vf' -> *)
-(*         Genv.find_funct ge1 vf = Some fd -> *)
-(*         s (comp_of fd) = Right -> *)
-(*         Genv.find_funct ge2 vf' = Some fd. *)
-
 Variant match_fundef (s: split): unit -> fundef -> fundef -> Prop :=
   | match_function_left: forall cp ty cc params vars vars' temps temps' body body',
-      s cp = Left ->
+      s |= cp ∈ Left ->
       match_fundef s tt (Internal {| fn_comp := cp; fn_return := ty; fn_callconv := cc;
                                 fn_params := params; fn_vars := vars; fn_temps := temps;
                                 fn_body := body |})
@@ -50,15 +15,15 @@ Variant match_fundef (s: split): unit -> fundef -> fundef -> Prop :=
                                 fn_params := params; fn_vars := vars'; fn_temps := temps';
                                 fn_body := body' |})
   | match_external_left: forall ef tys ty cc,
-      s (comp_of ef) = Left ->
+      s |= ef ∈ Left ->
       match_fundef s tt (External ef tys ty cc)
                      (External ef tys ty cc)
   | match_right: forall fd,
-      s (comp_of fd) = Right ->
+      s |= fd ∈ Right ->
       match_fundef s tt fd fd
 .
 
-Instance has_comp_match_fundef (s: split): has_comp_match (match_fundef s).
+#[local] Instance has_comp_match_fundef (s: split): has_comp_match (match_fundef s).
 intros ? x y H.
 inv H; auto.
 Qed.
@@ -73,11 +38,11 @@ Section Equivalence.
   Variable j: meminj.
 
   Record right_mem_injection (ge1 ge2: genv) (m1 m2: mem) :=
-    { same_dom: same_domain s j m1;
+    { same_dom: Mem.same_domain s j Right m1;
       partial_mem_inject: Mem.inject j m1 m2;
-      j_delta_zero: delta_zero j;
-      same_symb: same_symbols j ge1;
-      jinjective: meminj_injective j
+      j_delta_zero: Mem.delta_zero j;
+      same_symb: Genv.same_symbols j ge1;
+      jinjective: Mem.meminj_injective j
       (* related_funct: same_functions j ge1 ge2; *)
       (* same_funct_right: same_functions_right s j ge1 ge2 *)
     }.
@@ -109,14 +74,18 @@ Inductive right_cont_injection: cont -> cont -> Prop :=
     right_cont_injection k1 k2 ->
     right_cont_injection (Kswitch k1) (Kswitch k2)
 | right_cont_injection_kcall_left: forall id1 id2 f1 f2 en1 en2 le1 le2 k1 k2,
-    s (comp_of f1) = Left ->
-    s (comp_of f2) = Left ->
+    s |= f1 ∈ Left ->
+    s |= f2 ∈ Left ->
+    (* s (comp_of f1) = Left -> *)
+    (* s (comp_of f2) = Left -> *)
     right_cont_injection (remove_until_right k1) (remove_until_right k2) ->
     right_cont_injection (Kcall id1 f1 en1 le1 k1) (Kcall id2 f2 en2 le2 k2)
 (* TODO: is it correct to add [right_cont_injection_kcall_right]? *)
 | right_cont_injection_kcall_right: forall id1 id2 f1 f2 en1 en2 le1 le2 k1 k2,
-    s (comp_of f1) = Right ->
-    s (comp_of f2) = Right ->
+    s |= f1 ∈ Right ->
+    s |= f2 ∈ Right ->
+    (* s (comp_of f1) = Right -> *)
+    (* s (comp_of f2) = Right -> *)
     right_cont_injection k1 k2 ->
     right_cont_injection (Kcall id1 f1 en1 le1 k1) (Kcall id2 f2 en2 le2 k2)
 .
@@ -189,19 +158,14 @@ Variant right_executing_injection (ge1 ge2: genv): state -> state -> Prop :=
     right_executing_injection ge1 ge2 (Returnstate v k1 m1 ty cp) (Returnstate v' k2 m2 ty cp)
 .
 
-Definition is_left (s: split) (st: state) :=
-  match st with
-  | State f _ _ _ _ _ => s (comp_of f) = Left
-  | Callstate fd _ _ _ => s (comp_of fd) = Left (* Should this be the compartment that's on top of the stack instead? *)
-  | Returnstate _ _ _ _ cp => s cp = Left
-  end.
-
-Definition is_right (s: split) (st: state) :=
-  match st with
-  | State f _ _ _ _ _ => s (comp_of f) = Right
-  | Callstate fd _ _ _ => s (comp_of fd) = Right
-  | Returnstate _ _ _ _ cp => s cp = Right
-  end.
+#[export] Instance state_has_side: has_side state :=
+    { in_side s := fun st δ =>
+                     match st with
+                     | State f _ _ _ _ _ => s |= f ∈ δ
+                     | Callstate fd _ _ _ => s |= fd ∈ δ (* Should this be the compartment that's on top of the stack instead? *)
+                     | Returnstate _ _ _ _ cp => s |= cp ∈ δ
+                     end
+    }.
 
 Definition memory_of (st: state): mem :=
   match st with
@@ -218,8 +182,8 @@ Definition cont_of (st: state): cont :=
 Variant right_state_injection (ge1 ge2: genv): state -> state -> Prop :=
 | LeftControl: forall st1 st2,
     (* program (left) has control *)
-    is_left s st1 ->
-    is_left s st2 ->
+    s |= st1 ∈ Left ->
+    s |= st2 ∈ Left ->
 
     (* we forget about program memories but require injection of context memories *)
     right_mem_injection ge1 ge2 (memory_of st1) (memory_of st2) ->
@@ -231,8 +195,8 @@ Variant right_state_injection (ge1 ge2: genv): state -> state -> Prop :=
     right_state_injection ge1 ge2 st1 st2
 | RightControl: forall st1 st2,
     (* context (right) has control *)
-    is_right s st1 ->
-    is_right s st2 ->
+    s |= st1 ∈ Right ->
+    s |= st2 ∈ Right ->
     right_executing_injection ge1 ge2 st1 st2 ->
     right_state_injection ge1 ge2 st1 st2.
 
@@ -416,7 +380,7 @@ Section Simulation.
 
   Lemma parallel_concrete: forall j s1 s2 s1' t,
       right_state_injection s j ge1 ge2 s1 s2 ->
-      is_right s s1 ->
+      s |= s1 ∈ Right ->
       Clight.step1 ge1 s1 t s1' ->
       exists j' s2',
         Clight.step1 ge2 s2 t s2' /\
@@ -451,9 +415,10 @@ Section Simulation.
                constructor; eauto.
                split; eauto.
                clear -same_dom H10.
-               unfold same_domain in *.
-               intros. eapply same_dom.
-               erewrite <- Mem.store_block_compartment; eauto.
+               unfold Mem.same_domain in *.
+               intros.
+               unfold in_side in *; simpl in *.
+               erewrite Mem.store_block_compartment; eauto.
           * inv H8.
             exploit Mem.loadbytes_inj; eauto using Mem.mi_inj.
             intros [? [? ?]].
@@ -472,9 +437,10 @@ Section Simulation.
                constructor; eauto.
                split; eauto.
                clear -same_dom H17.
-               unfold same_domain in *.
-               intros. eapply same_dom.
-               erewrite <- Mem.storebytes_block_compartment; eauto.
+               unfold Mem.same_domain in *.
+               intros.
+               unfold in_side in *; simpl in *.
+               erewrite Mem.storebytes_block_compartment; eauto.
           * inv H9.
             exploit Mem.load_inject; eauto using Mem.mi_inj.
             intros [? [? ?]].
@@ -492,9 +458,10 @@ Section Simulation.
                constructor; eauto.
                split; eauto.
                clear -same_dom H18.
-               unfold same_domain in *.
-               intros. eapply same_dom.
-               erewrite <- Mem.store_block_compartment; eauto.
+               unfold Mem.same_domain in *.
+               intros.
+               unfold in_side in *; simpl in *.
+               erewrite Mem.store_block_compartment; eauto.
         + exploit eval_expr_injection; eauto.
           intros [v' [? ?]].
           exists j; eexists; split.
@@ -516,8 +483,6 @@ Section Simulation.
           * assert (vf = v') by admit. subst v'.
             econstructor; eauto.
             -- inv match_fd'; eauto.
-            (* -- destruct vf; inv H4; simpl in *; try congruence. *)
-            (*    destruct (Ptrofs.eq_dec). *)
             -- exploit (Genv.match_genvs_allowed_calls match_W1_W2); eauto.
             -- eapply (Genv.match_genvs_not_ptr_list_inj); eauto.
                exploit (Genv.match_genvs_find_comp match_W1_W2); eauto. intros <-.
@@ -530,7 +495,8 @@ Section Simulation.
             destruct (s (comp_of fd)) eqn:side.
             -- apply LeftControl; eauto; try now inv match_fd'; auto.
                simpl. apply right_cont_injection_kcall_right; eauto.
-            -- inv match_fd'; unfold comp_of in *; simpl in side; unfold comp_of in *; simpl in side;
+            -- inv match_fd'; unfold in_side in *; simpl in *;
+                 unfold comp_of in *; simpl in side; unfold comp_of in *; simpl in side;
                  try congruence.
                apply RightControl; eauto.
                constructor; eauto.
@@ -652,7 +618,6 @@ Admitted.
         - inv H; inv H0; eauto.
       }
       (* rely on determinacy lemma with empty traces? *)
-      (* doesn't seem to work because Csem doesn't seem to have a fixed evaluation order *)
   Admitted.
 
   Lemma parallel_abstract_E0: forall s1 s2 s1' s2',

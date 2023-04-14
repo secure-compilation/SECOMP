@@ -2015,6 +2015,15 @@ Proof.
            auto.
 Qed.
 
+Section SECURITY.
+
+Definition same_symbols (j: meminj) (ge1: t): Prop :=
+  forall id loc,
+    find_symbol ge1 id = Some loc ->
+    j loc = Some (loc, 0).
+
+End SECURITY.
+
 End GENV.
 
 (** * Commutation with program transformations *)

@@ -14,13 +14,13 @@ Section RSC.
 
   Variable p: Clight.program.
   Hypothesis pol_p: Ctypes.prog_pol p = pol.
-  Hypothesis p_Left: clight_has_side s Left p.
+  Hypothesis p_Left: s |= p ∈ Left.
 
   Variable p_compiled: Asm.program.
 
   Variable Ct: Asm.program.
   Hypothesis pol_Ct: prog_pol Ct = pol.
-  Hypothesis Ct_Right: asm_has_side s Right Ct.
+  Hypothesis Ct_Right: s |= Ct ∈ Right.
 
   Variable W_t: Asm.program.
 
@@ -33,9 +33,9 @@ Section RSC.
     admit.
   Admitted.
 
-  Lemma transf_clight_program_side: forall p p' lr,
+  Lemma transf_clight_program_side: forall p p' δ,
       transf_clight_program p = OK p' ->
-      clight_has_side s lr p <-> asm_has_side s lr p'.
+      s |= p ∈ δ <-> s |= p' ∈ δ.
   Proof.
     admit.
   Admitted.

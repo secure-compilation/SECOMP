@@ -37,6 +37,7 @@ Require Import AST.
 Require Import Integers.
 Require Import Floats.
 Require Import Values.
+Require Import Split.
 Require Export Memdata.
 Require Export Memtype.
 
@@ -5386,7 +5387,30 @@ Proof.
 - apply unchanged_on_own0; auto.
 Qed.
 
+Section SECURITY.
+
+#[export] Instance has_side_block: has_side block :=
+  { in_side '(s, m) := fun b δ => match Mem.block_compartment m b with
+                               | Some cp => s cp = δ
+                               | _ => False
+                               end }.
+
+Definition same_domain (s: split) (j: meminj) (δ: side) (m: mem): Prop :=
+  forall b, (j b <> None <-> (s, m) |= b ∈ δ).
+
+Definition delta_zero (j: meminj): Prop :=
+  forall loc loc' delta, j loc = Some (loc', delta) -> delta = 0.
+
+Definition meminj_injective (j: meminj): Prop :=
+  forall b1 b2 b1' b2' ofs1 ofs2,
+      b1 <> b2 ->
+      j b1 = Some (b1', ofs1) ->
+      j b2 = Some (b2', ofs2) ->
+      b1' <> b2' \/ ofs1 <> ofs2.
+End SECURITY.
+
 End Mem.
+
 
 Notation mem := Mem.mem.
 
