@@ -4,6 +4,7 @@ Require Import AST Linking Smallstep Events Behaviors.
 
 Require Import Split.
 
+Require Import riscV.Asm.
 Require Import Ctypes Clight.
 
 Record backtranslation_environment :=
@@ -753,188 +754,60 @@ Section Backtranslation.
   End PROJ.
 
 
+  Section FROMASM.
+    (** Well-formed conditions for the trace, namely from the semantics of Asm **)
+
+    Variable p: Asm.program.
+    Let ge := Genv.globalenv p.
+
+    Definition wf_tr_vload ch (id: ident) (ofs: ptrofs) v :=
+      exists rv, eventval_match ge v (type_of_chunk ch) rv.
+
+    (* TODO: fix eventval_to_val *)
+    (* Definition wf_tr_vstore ch (id: ident) (ofs: ptrofs) v := *)
+    (*   eventval_match ge v (type_of_chunk ch) (Val.load_result ch (eventval_to_val ge v)). *)
+
+    Definition wf_tr_annot (str: string) (vs: list eventval) := True.
+
+    (* TODO: fix *)
+    Definition wf_tr_call_start (cp cp': compartment) (id: ident) (vs: list eventval) :=
+      (* (Forall not_ptr (list_eventval_to_list_val ge vs)) /\ *)
+        (Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall) /\
+        (exists l1, ((Policy.policy_import (Genv.genv_policy ge)) ! cp = Some l1) /\ (In (cp', id) l1)) /\
+        (exists l2, ((Policy.policy_export (Genv.genv_policy ge)) ! cp' = Some l2) /\ (In id l2)).
+
+  End FROMASM.
+
+
   Section WELLFORMED.
+    (** Well-formed conditions for the back-translated program **)
 
     Variable p: program.
     Let ge := globalenv p.
 
-    (** Well-formed conditions for the trace, namely from the semantics of Asm **)
-    Definition wf_trace_vload ch v :=
-      exists rv, eventval_match (globalenv p) v (type_of_chunk ch) rv.
-
-
-    (** Well-formed conditions for the back-translated program **)
-    Definition wf_bt_vload (e: env) id :=
+    Definition wf_bt_vload (ch: memory_chunk) (id: ident) (ofs: ptrofs) (v: eventval) e :=
       (wf_env e id) /\
         (exists b, (Genv.find_symbol ge id = Some b) /\ (Senv.block_is_volatile ge b = true)).
-      
 
-    Lemma code_of_event_step_vload
-          ev
-          ch id ofs v
-          p f k e le m
-          (EV: ev = Event_vload ch id ofs v)
-          (* bt should ensure them *)
-          (WFENV: wf_env e id)
-          b
-          (VOL: Senv.block_is_volatile (globalenv p) b = true)
-          (GE: Genv.find_symbol (globalenv p) id = Some b)
-          (* asm should ensure them *)
-          rv
-          (MATCH: eventval_match (globalenv p) v (type_of_chunk ch) rv)
-      :
-        Star (Clight.semantics1 p)
-             (State f (code_of_event ev) k e le m)
-             (ev :: nil)
-             (State f Sskip k e le m).
-    Proof.
-      subst; simpl in *. unfold code_of_vload.
-      destruct Archi.ptr64 eqn:ARCH.
-      - econstructor 2.
-        3:{ rewrite E0_right. reflexivity. }
-        { eapply step_builtin.
-          { econstructor; eauto. 3: econstructor.
-            - eapply ptr_of_id_ofs_eval; eauto.
-            - unfold ptr_of_id_ofs; simpl. rewrite ARCH. simpl. simpl_expr.
-          }
-          repeat econstructor; eauto.
-        }
-        econstructor 1.
-      - econstructor 2.
-        3:{ rewrite E0_right. reflexivity. }
-        { eapply step_builtin.
-          { econstructor; eauto. 3: econstructor.
-            - eapply ptr_of_id_ofs_eval; eauto.
-            - unfold ptr_of_id_ofs; simpl. rewrite ARCH. simpl. simpl_expr.
-          }
-          repeat econstructor; eauto.
-        }
-        econstructor 1.
-    Qed.
+    Definition wf_bt_vstore (ch: memory_chunk) (id: ident) (ofs: ptrofs) v e :=
+      (wf_eventval_env e v) /\ (wf_eventval_ge ge v) /\ (wf_env e id) /\
+        (exists b, (Genv.find_symbol ge id = Some b) /\ (Senv.block_is_volatile ge b = true)).
 
-    Lemma code_of_event_step_vstore
-          ev
-          ch id ofs v
-          p f k e le m
-          (EV: ev = Event_vstore ch id ofs v)
-          (* bt should ensure them *)
-          (WFENV: wf_env e id)
-          b
-          (VOL: Senv.block_is_volatile (globalenv p) b = true)
-          (GE: Genv.find_symbol (globalenv p) id = Some b)
-          (* asm should ensure them *)
-          (WFSV1: wf_eventval_env e v)
-          (WFSV2: wf_eventval_ge (globalenv p) v)
-          (MATCH: eventval_match (globalenv p) v (type_of_chunk ch) (Val.load_result ch (eventval_to_val (globalenv p) v)))
-      :
-        Star (Clight.semantics1 p)
-             (State f (code_of_event ev) k e le m)
-             (ev :: nil)
-             (State f Sskip k e le m).
-    Proof.
-      subst; simpl in *. unfold code_of_vstore.
-      destruct Archi.ptr64 eqn:ARCH.
-      - econstructor 2.
-        3:{ rewrite E0_right. reflexivity. }
-        { eapply step_builtin.
-          { econstructor; eauto.
-            { eapply ptr_of_id_ofs_eval; eauto. }
-            { unfold ptr_of_id_ofs; simpl. rewrite ARCH. simpl. simpl_expr. }
-            econstructor; eauto. 3: econstructor.
-            { eapply eventval_to_expr_val_eval; auto. }
-            { apply sem_cast_eventval; auto. }
-          }
-          simpl.
-          repeat econstructor; eauto.
-        }
-        econstructor 1.
-      - econstructor 2.
-        3:{ rewrite E0_right. reflexivity. }
-        { eapply step_builtin.
-          { econstructor; eauto.
-            { eapply ptr_of_id_ofs_eval; eauto. }
-            { unfold ptr_of_id_ofs; simpl. rewrite ARCH. simpl. simpl_expr. }
-            econstructor; eauto. 3: econstructor.
-            { eapply eventval_to_expr_val_eval; auto. }
-            { apply sem_cast_eventval; auto. }
-          }
-          simpl.
-          repeat econstructor; eauto.
-        }
-        econstructor 1.
-    Qed.
+    Definition wf_bt_annot (str: string) (vs: list eventval) e :=
+      (Forall (wf_eventval_env e) vs) /\ (Forall (wf_eventval_pub ge) vs).
 
-    Lemma code_of_event_step_annot
-          ev
-          str vs
-          p f k e le m
-          (EV: ev = Event_annot str vs)
-          (* bt should ensure them *)
-          (WFENV: Forall (wf_eventval_env e) vs)
-          (WFPUB: Forall (wf_eventval_pub (globalenv p)) vs)
-          (* asm should ensure them *)
-      :
-        Star (Clight.semantics1 p)
-             (State f (code_of_event ev) k e le m)
-             (ev :: nil)
-             (State f Sskip k e le m).
-    Proof.
-      subst; simpl in *. unfold code_of_annot.
-      econstructor 2.
-      3:{ rewrite E0_right. reflexivity. }
-      { eapply step_builtin.
-        { eapply list_eventval_to_expr_val_eval; auto.
-          eapply Forall_impl. 2: eauto. intros. apply wf_eventval_pub_ge; auto. }
-        repeat econstructor; eauto. eapply list_eventval_to_expr_val_match; eauto.
-      }
-      econstructor 1.
-    Qed.
+    Definition wf_bt_call_start (cp cp': compartment) (id: ident) (vs: list eventval) e :=
+      (wf_env e id) /\
+        (Forall (wf_eventval_env e) vs) /\
+        (Forall (wf_eventval_pub ge) vs) /\
+        (exists b fd,
+            (Genv.find_symbol ge id = Some b) /\
+              (Genv.find_funct ge (Vptr b Ptrofs.zero) = Some fd) /\
+              (type_of_fundef fd = Tfunction (list_eventval_to_typelist vs) Tvoid cc_default) /\
+              (cp' = comp_of fd)
+        ).
 
-    Lemma code_of_event_step_call_start
-          ev
-          cp cp' id vs
-          p f k e le m
-          ge
-          (GE: ge = globalenv p)
-          (EV: ev = Event_call cp cp' id vs)
-          (* bt should ensure them *)
-          (GLOB: e ! id = None)
-          b
-          (FINDB: Genv.find_symbol ge id = Some b)
-          fd
-          (FINDF: Genv.find_funct ge (Vptr b Ptrofs.zero) = Some fd)
-          (TYPEF: type_of_fundef fd = Tfunction (list_eventval_to_typelist vs) Tvoid cc_default)
-          (WFARGS1: Forall (wf_eventval_env e) vs)
-          (WFARGS2: Forall (wf_eventval_pub ge) vs)
-          (* asm should ensure them *)
-          (CP1: cp = comp_of f)
-          (CP2: cp' = comp_of fd)
-          (NPTR: Forall not_ptr (list_eventval_to_list_val ge vs))
-          (CROSS: Genv.type_of_call ge (comp_of f) (comp_of fd) = Genv.CrossCompartmentCall)
-          (ALLOW: Genv.allowed_cross_call ge (comp_of f) (Vptr b Ptrofs.zero))
-      :
-        Star (Clight.semantics1 p)
-             (State f (code_of_event ev) k e le m)
-             (ev :: nil)
-             (Callstate fd (list_eventval_to_list_val ge vs) (Kcall None f e le k) m).
-    Proof.
-      subst; simpl. unfold code_of_call.
-      econstructor 2.
-      3:{ rewrite E0_right. reflexivity. }
-      { eapply step_call; simpl; eauto.
-        { eapply eval_Elvalue.
-          - eapply eval_Evar_global; eauto.
-          - eapply deref_loc_reference. auto.
-        }
-        { eapply list_eventval_to_expr_val_eval; auto.
-          eapply Forall_impl. 2: eauto. intros. apply wf_eventval_pub_ge; auto. }
-        red; auto.
-        unfold Genv.find_comp. setoid_rewrite FINDF.
-        eapply call_trace_cross; eauto. apply Genv.find_invert_symbol; auto.
-        eapply (list_eventval_to_expr_val_match (globalenv p)); eauto.
-      }
-      econstructor 1.
-    Qed.
+    (* TODO: need a proof invariant - related to continuation/stack/function *)
 
     Lemma code_of_event_step_call_internal
           p f k e le m
@@ -952,13 +825,6 @@ Section Backtranslation.
              (Callstate fd args (Kcall None f e le k) m)
              nil
              (State f1 (fn_body f1) (Kcall None f e le k) e1 le1 m1).
-    Proof.
-      subst; simpl.
-      econstructor 2.
-      3:{ rewrite E0_right. reflexivity. }
-      { eapply step_internal_function; eauto. }
-      econstructor 1.
-    Qed.
 
     Lemma code_of_event_step_call_external
           p m
@@ -979,13 +845,6 @@ Section Backtranslation.
              (Callstate fd args k m)
              (sev :: nil)
              (Returnstate vres k m1 (rettype_of_type tres) (comp_of ef)).
-    Proof.
-      subst; simpl.
-      econstructor 2.
-      3:{ rewrite E0_right. reflexivity. }
-      { eapply step_external_function; eauto. }
-      econstructor 1.
-    Qed.
 
     Lemma code_of_event_step_return
           ev
@@ -997,7 +856,6 @@ Section Backtranslation.
           (* bt should ensure them *)
           (WFRV1: wf_eventval_env e rv)
           (WFRV2: wf_eventval_pub ge rv)
-          (RTTYP: fn_return f = eventval_to_type rv)
           (* asm should ensure them *)
           optid f' e' le' k'
           (CONT: call_cont k = Kcall optid f' e' le' k')
@@ -1006,6 +864,7 @@ Section Backtranslation.
           (NPTR: not_ptr (eventval_to_val ge rv))
           (CROSS: Genv.type_of_call ge (comp_of f') (comp_of f) = Genv.CrossCompartmentCall)
           (* handle during proving *)
+          (RTTYP: fn_return f = eventval_to_type rv)
           m'
           (FREE: Mem.free_list m (blocks_of_env ge e) (comp_of f) = Some m')
       :
@@ -1013,22 +872,6 @@ Section Backtranslation.
            (State f (code_of_event ev) k e le m)
            (ev :: nil)
            (State f' Sskip k' e' (set_opttemp optid (eventval_to_val ge rv) le') m').
-    Proof.
-      subst; simpl. unfold code_of_return.
-      econstructor 2.
-      3:{ rewrite E0_left. reflexivity. }
-      { eapply step_return_1; simpl; eauto.
-        { eapply eventval_to_expr_val_eval; auto. apply wf_eventval_pub_ge; auto. }
-        { rewrite RTTYP. eapply sem_cast_eventval; auto. eapply wf_eventval_pub_ge; eauto. }
-      }
-      econstructor 2.
-      3:{ rewrite E0_right. reflexivity. }
-      { rewrite CONT. eapply step_returnstate; auto.
-        econstructor 2; auto. rewrite RTTYP. eapply eventval_to_expr_val_match; eauto.
-        clear. destruct rv; simpl; auto.
-      }
-      econstructor 1.
-    Qed.
 
   End WELLFORMED.
 
