@@ -2952,7 +2952,14 @@ Proof.
   with (Locmap.getpair (map_rpair R (loc_result (RTL.fn_sig f))) ls1).
   eapply add_equations_res_lessdef; eauto.
   rewrite <- H14. apply WTRS.
-  assert (SIG: parent_signature ts = fn_sig tf) by admit. rewrite SIG, <- H11.
+  assert (SIG: return_regs_ext (parent_locset ts) ls1 (parent_signature ts) = return_regs_ext (parent_locset ts) ls1 (fn_sig tf)). {
+    clear -STACKS.
+    unfold return_regs_ext, loc_result, proj_sig_res.
+    inv STACKS.
+    - now rewrite H.
+    - simpl. now rewrite SIG.
+  }
+  rewrite SIG, <- H11.
   destruct (loc_result (RTL.fn_sig f)) eqn:RES; simpl.
   { rewrite RES. simpl. destruct (mreg_eq r r). reflexivity. contradiction. }
   { rewrite RES. simpl.
@@ -3097,8 +3104,7 @@ Proof.
   (* econstructor; eauto. *)
   (* apply wt_regset_assign; auto. rewrite WTRES0; auto. *)
   (* } *)
-(* Qed. *)
-Admitted.
+Qed.
 
 Lemma initial_states_simulation:
   forall st1, RTL.initial_state prog st1 ->
