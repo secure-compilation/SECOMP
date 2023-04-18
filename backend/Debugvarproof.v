@@ -442,11 +442,11 @@ Inductive match_states: Linear.state ->  Linear.state -> Prop :=
       match_states (State s f sp c rs m)
                    (State ts tf sp tc rs m)
   | match_states_call:
-      forall s f rs m tf ts,
+      forall s f rs m tf ts sig,
       list_forall2 match_stackframes s ts ->
       transf_fundef f = OK tf ->
-      match_states (Callstate s f rs m)
-                   (Callstate ts tf rs m)
+      match_states (Callstate s f sig rs m)
+                   (Callstate ts tf sig rs m)
   | match_states_return:
       forall s rs m ts,
       list_forall2 match_stackframes s ts ->
@@ -606,7 +606,7 @@ Proof.
   inv TRF; constructor; auto.
   inv TRF; constructor; auto.
 - (* internal function *)
-  monadInv H7. rename x into tf.
+  monadInv H8. rename x into tf.
   assert (MF: match_function f tf) by (apply transf_function_match; auto).
   inversion MF; subst.
   econstructor; split.
@@ -614,13 +614,12 @@ Proof.
   apply plus_one. eapply exec_function_internal. simpl; eauto. reflexivity. reflexivity.
 
   assert (CALLER: call_comp s = call_comp ts).
-  { inv H6. reflexivity.
+  { inv H7. reflexivity.
     inv H1. inv H3. reflexivity. }
   assert (SIG: parent_signature s = parent_signature ts).
-  { inv H6. reflexivity.
+  { inv H7. reflexivity.
     inv H1. reflexivity. }
   (* rewrite type_of_call_translated, CALLER, SIG. *)
-  rewrite SIG.
   change
     (comp_of {| fn_comp := fn_comp f; fn_sig := fn_sig f; fn_stacksize := fn_stacksize f; fn_code := c |})
     with (comp_of f).
@@ -629,7 +628,7 @@ Proof.
   constructor; auto.
   constructor; auto.
 - (* external function *)
-  monadInv H8. econstructor; split.
+  monadInv H9. econstructor; split.
   apply plus_one. econstructor; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   erewrite <- match_stacks_call_comp; eauto.
@@ -650,7 +649,7 @@ Lemma transf_initial_states:
 Proof.
   intros. inversion H.
   exploit function_ptr_translated; eauto. intros [tf [A B]].
-  exists (Callstate nil tf (Locmap.init Vundef) m0); split.
+  exists (Callstate nil tf signature_main (Locmap.init Vundef) m0); split.
   econstructor; eauto. eapply (Genv.init_mem_transf_partial TRANSF); eauto.
   rewrite (match_program_main TRANSF), symbols_preserved. auto.
   rewrite <- H3. apply sig_preserved. auto.

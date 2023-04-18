@@ -651,7 +651,7 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
       match_states (Mach.State s fb sp c ms m)
                    (Asm.State s' rs m')
   | match_states_call:
-      forall s s' fb ms m m' rs
+      forall s s' fb ms m m' rs sig
         (STACKS: match_stack ge s)
         (STACKS': match_stacks s s')
         (STACKS_COMP: Genv.find_comp_ignore_offset ge (rs PC) = callee_comp comp_of_main s')
@@ -659,7 +659,7 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
         (AG: agree ms (parent_sp s) rs)
         (ATPC: rs PC = Vptr fb Ptrofs.zero)
         (ATLR: rs RA = parent_ra s),
-      match_states (Mach.Callstate s fb ms m)
+      match_states (Mach.Callstate s fb sig ms m)
                    (Asm.State s' rs m')
   | match_states_return:
     forall s s' ms m m' rs
@@ -839,7 +839,7 @@ Qed.
 Definition measure (s: Mach.state) : nat :=
   match s with
   | Mach.State _ _ _ _ _ _ => 0%nat
-  | Mach.Callstate _ _ _ _ => 2%nat
+  | Mach.Callstate _ _ _ _ _ => 2%nat
   | Mach.Returnstate _ _ _ => 1%nat
   end.
 
@@ -1628,7 +1628,7 @@ Local Transparent destroyed_by_op.
   { unfold undef_caller_save_regs_ext.
     inv AG. constructor; auto.
     intros r. specialize (agree_mregs r).
-    destruct (LTL.in_mreg r (LTL.parameters_mregs (parent_signature s)));
+    destruct (LTL.in_mreg r (LTL.parameters_mregs sig));
     auto. }
 Local Transparent destroyed_at_function_entry.
   simpl; intros; Simpl.

@@ -2201,7 +2201,7 @@ Inductive match_states: RTL.state -> LTL.state -> Prop :=
         (MEM: Mem.extends m m')
         (WTARGS: Val.has_type_list args (sig_args (funsig tf))),
       match_states (RTL.Callstate s f args m)
-                   (LTL.Callstate ts tf ls m')
+                   (LTL.Callstate ts tf (funsig tf) ls m')
   | match_states_return:
       forall s res m ts ls m' sg
         (STACKS: match_stackframes s ts sg)
@@ -2772,6 +2772,7 @@ Proof.
   }
   traceEq. traceEq.
   exploit analyze_successors; eauto. simpl. left; eauto. intros [enext [U V]].
+  rewrite <- SIG.
   econstructor; eauto.
   assert (R: comp_of tfd = Genv.find_comp ge vf).
   { clear -H0 FUNPTR F.
@@ -2840,6 +2841,7 @@ Proof.
   rewrite <- comp_transf_function; eauto.
   destruct (transf_function_inv _ _ FUN); auto.
   eauto. traceEq.
+  rewrite <- SIG'.
   econstructor; eauto.
   eapply match_stackframes_change_sig; eauto. rewrite SIG'. rewrite e0. decEq.
   destruct (transf_function_inv _ _ FUN); auto.
@@ -2995,7 +2997,6 @@ Proof.
   eapply plus_left. econstructor; eauto. rewrite <- COMP; eauto.
   (* rewrite TY_CALL. *)
   eapply star_left. econstructor; eauto.
-  assert (SIG: parent_signature ts = fn_sig x) by admit. rewrite SIG.
   eapply star_right. eexact A.
   econstructor; eauto.
   eauto. eauto. traceEq.
@@ -3106,12 +3107,13 @@ Proof.
   intros. inv H.
   exploit function_ptr_translated; eauto. intros [tf [FIND TR]].
   exploit sig_function_translated; eauto. intros SIG.
-  exists (LTL.Callstate nil tf (Locmap.init Vundef) m0); split.
+  exists (LTL.Callstate nil tf signature_main (Locmap.init Vundef) m0); split.
   econstructor; eauto.
   eapply (Genv.init_mem_transf_partial TRANSF); eauto.
   rewrite symbols_preserved.
   rewrite (match_program_main TRANSF).  auto.
   congruence.
+  rewrite <- H3, <- SIG.
   constructor; auto.
   constructor. rewrite SIG; rewrite H3; auto.
   rewrite SIG, H3, loc_arguments_main. auto.

@@ -1086,15 +1086,15 @@ Proof.
 Qed.
 
 Lemma save_callee_save_correct:
-  forall j ls ls0 rs sp cs fb k cp m P,
+  forall j ls ls0 rs sp cs fb k sig cp m P,
   m |= range sp fe.(fe_ofs_callee_save) (size_callee_save_area b fe.(fe_ofs_callee_save)) ** P ->
   (forall r, Val.has_type (ls (R r)) (mreg_type r)) ->
   forall ACC : Mem.can_access_block m sp (Some cp),
   forall COMP : Genv.find_comp tge (Vptr fb Ptrofs.zero) = cp,
   agree_callee_save ls ls0 ->
   agree_regs j ls rs ->
-  let ls1 := LTL.undef_regs destroyed_at_function_entry (LTL.call_regs_ext ls (parent_signature cs)) in
-  let rs1 := undef_regs destroyed_at_function_entry (undef_caller_save_regs_ext rs (parent_signature cs)) in
+  let ls1 := LTL.undef_regs destroyed_at_function_entry (LTL.call_regs_ext ls sig) in
+  let rs1 := undef_regs destroyed_at_function_entry (undef_caller_save_regs_ext rs sig) in
   exists rs', exists m',
      star step tge
         (State cs fb (Vptr sp Ptrofs.zero) (save_callee_save fe k) rs1 m)
@@ -1107,7 +1107,7 @@ Proof.
   exploit (save_callee_save_rec_correct j cs fb sp ls1).
 - intros. unfold ls1. apply LTL_undef_regs_same. eapply destroyed_by_setstack_function_entry; eauto.
 - intros. unfold ls1. apply undef_regs_type.
-  unfold call_regs_ext. destruct (in_mreg r (parameters_mregs (parent_signature cs))) eqn:IN.
+  unfold call_regs_ext. destruct (in_mreg r (parameters_mregs sig)) eqn:IN.
   + apply TY.
   + constructor.
 - exact b.(used_callee_save_prop).
@@ -1152,16 +1152,14 @@ Proof.
 Qed.
 
 Lemma function_prologue_correct:
-  forall j ls ls0 ls1 rs rs1 m1 m1' m2 sp parent ra cs fb k P,
+  forall j ls ls0 ls1 rs rs1 m1 m1' m2 sp parent ra cs sig fb k P,
   forall (FUNPTR: Genv.find_funct_ptr tge fb = Some (Internal tf)),
   agree_regs j ls rs ->
   agree_callee_save ls ls0 ->
   agree_outgoing_arguments (Linear.fn_sig f) ls ls0 ->
   (forall r, Val.has_type (ls (R r)) (mreg_type r)) ->
-  (* ls1 = LTL.undef_regs destroyed_at_function_entry (LTL.call_regs ls) -> *)
-  ls1 = LTL.undef_regs destroyed_at_function_entry (LTL.call_regs_ext ls (parent_signature cs)) ->
-  (* rs1 = undef_regs destroyed_at_function_entry rs -> *)
-  rs1 = undef_regs destroyed_at_function_entry (undef_caller_save_regs_ext rs (parent_signature cs)) ->
+  ls1 = LTL.undef_regs destroyed_at_function_entry (LTL.call_regs_ext ls sig) -> (* XXX *)
+  rs1 = undef_regs destroyed_at_function_entry (undef_caller_save_regs_ext rs sig) -> (* XXX *)
   Mem.alloc m1 f.(Linear.fn_comp) 0 f.(Linear.fn_stacksize) = (m2, sp) ->
   Val.has_type parent Tptr -> Val.has_type ra Tptr ->
   m1' |= minjection j m1 ** globalenv_inject ge j ** P ->
@@ -1232,9 +1230,9 @@ Local Opaque b fe.
   (* { unfold find_comp_ptr. rewrite FUNPTR. eauto. *)
   (*   rewrite transf_function_comp. reflexivity. } *)
   apply agree_regs_inject_incr with j; auto.
-  replace (LTL.undef_regs destroyed_at_function_entry (call_regs_ext ls (parent_signature cs))) with ls1 by auto.
+  replace (LTL.undef_regs destroyed_at_function_entry (call_regs_ext ls sig)) with ls1 by auto.
   (* replace (undef_regs destroyed_at_function_entry rs) with rs1 by auto. *)
-  replace (undef_regs destroyed_at_function_entry (undef_caller_save_regs_ext rs (parent_signature cs))) with rs1 by auto.
+  replace (undef_regs destroyed_at_function_entry (undef_caller_save_regs_ext rs sig)) with rs1 by auto.
   clear SEP; intros (rs2 & m5' & SAVE_CS & SEP & PERMS & AGREGS').
   rewrite sep_swap5 in SEP.
   (* Materializing the Local and Outgoing locations *)
@@ -2080,7 +2078,7 @@ Inductive match_states: Linear.state -> Mach.state -> Prop :=
       match_states (Linear.State cs f (Vptr sp Ptrofs.zero) c ls m)
                    (Mach.State cs' fb (Vptr sp' Ptrofs.zero) (transl_code (make_env (function_bounds f)) c) rs m')
   | match_states_call:
-      forall cs f ls m cs' fb rs m' j tf
+      forall cs f ls m cs' fb rs m' j tf sig
         (STACKS: match_stacks j cs cs' (Linear.funsig f))
         (TRANSL: transf_fundef f = OK tf)
         (FIND: Genv.find_funct_ptr tge fb = Some (tf))
@@ -2088,8 +2086,8 @@ Inductive match_states: Linear.state -> Mach.state -> Prop :=
         (SEP: m' |= stack_contents j cs cs'
                  ** minjection j m
                  ** globalenv_inject ge j),
-      match_states (Linear.Callstate cs f ls m)
-                   (Mach.Callstate cs' fb rs m')
+      match_states (Linear.Callstate cs f sig ls m)
+                   (Mach.Callstate cs' fb sig rs m')
   | match_states_return:
       forall cs ls m cs' rs m' j sg
         (STACKS: match_stacks j cs cs' sg)
@@ -2517,18 +2515,7 @@ Proof.
   eexact D. traceEq.
   eapply match_states_intro with (j := j'); eauto with coqlib.
   eapply match_stacks_change_meminj; eauto.
-  { assert (SIG: parent_signature cs' = Linear.parent_signature s)
-      by (now inv STACKS).
-    rewrite SIG in E.
-    exact E.
-  }
-  { clear -F. split.
-    - intros r IN.
-      exfalso. apply IN.
-      intros CONTRA. destruct r; discriminate. (* TODO add lemma *)
-    - destruct F as [_ F]. exact F. }
   rewrite sep_swap in SEP. rewrite sep_swap. eapply stack_contents_change_meminj; eauto.
-  assert (SIG: Linear.parent_signature s = parent_signature cs') by (inv STACKS; auto). rewrite SIG.
   rewrite comp_transf_function; eauto.
   }
   (* { (* same as Genv.InternalCall *) admit. } *)

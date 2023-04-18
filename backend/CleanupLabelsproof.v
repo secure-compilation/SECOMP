@@ -243,10 +243,10 @@ Inductive match_states: state -> state -> Prop :=
       match_states (State s f sp c ls m)
                    (State ts (transf_function f) sp (remove_unused_labels (labels_branched_to f.(fn_code)) c) ls m)
   | match_states_call:
-      forall s f ls m ts,
+      forall s f ls m ts sig,
       list_forall2 match_stackframes s ts ->
-      match_states (Callstate s f ls m)
-                   (Callstate ts (transf_fundef f) ls m)
+      match_states (Callstate s f sig ls m)
+                   (Callstate ts (transf_fundef f) sig ls m)
   | match_states_return:
       forall s ls m ts,
       list_forall2 match_stackframes s ts ->
@@ -393,13 +393,12 @@ Proof.
   left; econstructor; split.
   econstructor; simpl; eauto.
   assert (CALLER: call_comp s = call_comp ts).
-  { inv H6. reflexivity.
+  { inv H7. reflexivity.
     inv H0. reflexivity. }
   assert (SIG: parent_signature s = parent_signature ts).
-  { inv H6. reflexivity.
+  { inv H7. reflexivity.
     inv H0. reflexivity. }
   (* rewrite type_of_call_translated, CALLER, SIG. *)
-  rewrite SIG.
   change (comp_of (transf_function f)) with (comp_of f).
   destruct (Genv.type_of_call tge (call_comp ts) (comp_of f)).
   econstructor; eauto with coqlib.
