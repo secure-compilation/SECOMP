@@ -7,15 +7,16 @@ Require Import Split.
 Require Import riscV.Asm.
 Require Import Ctypes Clight.
 
-Record backtranslation_environment :=
-  { local_counter: compartment -> ident }.
+(* Record backtranslation_environment := *)
+(*   { local_counter: compartment -> ident }. *)
 
 Section Backtranslation.
 
   Ltac simpl_expr :=
     repeat (match goal with
             | |- eval_expr _ _ _ _ _ _ _ => econstructor
-            | |- eval_lvalue _ _ _ _ _ _ _ _ _ => econstructor
+            | |- eval_lvalue _ _ _ _ _ _ _ _ _ => econstructor 2
+            (* | |- eval_lvalue _ _ _ _ _ _ _ _ _ => econstructor *)
             | |- deref_loc _ _ _ _ _ _ _ => econstructor
             | |- assign_loc _ _ _ _ _ _ _ _ _ => econstructor
             | |- Cop.sem_cmp _ _ _ _ _ _ = Some _ => unfold Cop.sem_cmp
@@ -29,7 +30,7 @@ Section Backtranslation.
 
   Ltac take_step := econstructor; [econstructor; simpl_expr | | traceEq]; simpl.
 
-  Variable bt_env: backtranslation_environment.
+  (* Variable bt_env: backtranslation_environment. *)
 
   Section SWITCH.
     (** switch statement; use to convert a trace to a code **)
@@ -37,16 +38,16 @@ Section Backtranslation.
     Definition type_counter: type := Tlong Unsigned noattr.
     Definition type_bool:    type := Tint IBool Signed noattr.
 
-    Definition switch_clause (cp: compartment) (n: Z) (s_then s_else: statement): statement :=
+    Definition switch_clause (cnt: ident) (n: Z) (s_then s_else: statement): statement :=
       let one := Econst_long Int64.one type_counter in
       Sifthenelse (Ebinop Cop.Oeq
-                          (Evar (bt_env.(local_counter) cp) type_counter)
+                          (Evar cnt type_counter)
                           (Econst_long (Int64.repr n) type_counter)
                           type_bool)
                   (* if true *)
                   (Ssequence
-                     (Sassign (Evar (bt_env.(local_counter) cp) type_counter)
-                              (Ebinop Cop.Oadd (Evar (bt_env.(local_counter) cp) type_counter) one type_counter))
+                     (Sassign (Evar cnt type_counter)
+                              (Ebinop Cop.Oadd (Evar cnt type_counter) one type_counter))
                      s_then)
                   (* if false *)
                   s_else.
@@ -56,19 +57,22 @@ Section Backtranslation.
 
     Ltac take_step' := econstructor; [econstructor; simpl_expr' | | traceEq]; simpl.
 
-    Lemma switch_clause_spec p (cp: compartment) f (e: env) le m b (n: int64) (n': Z) s_then s_else:
-      cp = comp_of f ->
-      e ! (bt_env.(local_counter) cp) = Some (b, type_counter) ->
+    Lemma switch_clause_spec p (cnt: ident) f e le m b (n: int64) (n': Z) s_then s_else:
+      let cp := comp_of f in
+      let ge := globalenv p in
+      e ! cnt = None ->
+      Genv.find_symbol ge cnt = Some b ->
+      (* e ! cnt = Some (b, type_counter) -> *)
       Mem.valid_access m Mint64 b 0 Writable (Some cp) ->
       Mem.loadv Mint64 m (Vptr b Ptrofs.zero) (Some cp) = Some (Vlong n) ->
       if Int64.eq n (Int64.repr n') then
         exists m',
           Mem.storev Mint64 m (Vptr b Ptrofs.zero) (Vlong (Int64.add n Int64.one)) cp = Some m' /\
-            Star (Clight.semantics1 p) (State f (switch_clause cp n' s_then s_else) Kstop e le m) E0 (State f s_then Kstop e le m')
+            Star (Clight.semantics1 p) (State f (switch_clause cnt n' s_then s_else) Kstop e le m) E0 (State f s_then Kstop e le m')
       else
-        Star (Clight.semantics1 p) (State f (switch_clause cp n' s_then s_else) Kstop e le m) E0 (State f s_else Kstop e le m).
+        Star (Clight.semantics1 p) (State f (switch_clause cnt n' s_then s_else) Kstop e le m) E0 (State f s_else Kstop e le m).
     Proof.
-      intros; subst cp.
+      intros; subst cp ge.
       destruct (Int64.eq n (Int64.repr n')) eqn:eq_n_n'.
       - simpl.
         destruct (Mem.valid_access_store m Mint64 b 0%Z (comp_of f) (Vlong (Int64.add n Int64.one))) as [m' m_m']; try assumption.
@@ -81,39 +85,42 @@ Section Backtranslation.
     Qed.
 
 
-    Definition switch_add_statement cp s res :=
-      (Z.pred (fst res), switch_clause cp (Z.pred (fst res)) s (snd res)).
+    Definition switch_add_statement cnt s res :=
+      (Z.pred (fst res), switch_clause cnt (Z.pred (fst res)) s (snd res)).
 
-    Definition switch (cp: compartment) (ss: list statement) (s_else: statement): statement :=
-      snd (fold_right (switch_add_statement cp) (Z.of_nat (length ss), s_else) ss).
+    Definition switch (cnt: ident) (ss: list statement) (s_else: statement): statement :=
+      snd (fold_right (switch_add_statement cnt) (Z.of_nat (length ss), s_else) ss).
 
-    Lemma fst_switch (cp: compartment) n (s_else: statement) (ss : list statement) :
-      fst (fold_right (switch_add_statement cp) (n, s_else) ss) = (n - Z.of_nat (length ss))%Z.
+    Lemma fst_switch (cnt: ident) n (s_else: statement) (ss : list statement) :
+      fst (fold_right (switch_add_statement cnt) (n, s_else) ss) = (n - Z.of_nat (length ss))%Z.
     Proof.
       induction ss as [|s' ss IH]; try now rewrite Z.sub_0_r.
       simpl; lia.
     Qed.
 
     Lemma switch_spec_else
-          p (cp: compartment) f (e: env) le m b (n: Z) ss s_else
+          p (cnt: ident) f (e: env) le m b (n: Z) ss s_else
           (WF: Z.of_nat (length ss) < Int64.modulus)
           (RANGE: Z.of_nat (length ss) <= n < Int64.modulus)
       :
-      cp = comp_of f ->
-      e ! (bt_env.(local_counter) cp) = Some (b, type_counter) ->
+      let ge := globalenv p in
+      let cp := comp_of f in
+      e ! cnt = None ->
+      Genv.find_symbol ge cnt = Some b ->
+      (* e ! (bt_env.(local_counter) cp) = Some (b, type_counter) -> *)
       (* Mem.valid_access m Mint64 b 0 Writable (Some cp) -> *)
       Mem.loadv Mint64 m (Vptr b Ptrofs.zero) (Some cp) = Some (Vlong (Int64.repr n)) ->
       Star (Clight.semantics1 p)
-           (State f (switch cp ss s_else) Kstop e le m)
+           (State f (switch cnt ss s_else) Kstop e le m)
            E0
            (State f s_else Kstop e le m).
     Proof.
-      intros; subst cp. unfold switch. destruct RANGE as [RA1 RA2].
+      intros; subst cp ge. unfold switch. destruct RANGE as [RA1 RA2].
       assert (G: forall n',
                  (Z.of_nat (length ss)) <= n' ->
                  n' <= n ->
                  Star (Clight.semantics1 p)
-                      (State f (snd (fold_right (switch_add_statement (comp_of f)) (n', s_else) ss)) Kstop e le m)
+                      (State f (snd (fold_right (switch_add_statement cnt) (n', s_else) ss)) Kstop e le m)
                       E0
                       (State f s_else Kstop e le m)).
       { intros n' LE1 LE2.
@@ -138,35 +145,38 @@ Section Backtranslation.
     Let nat64 n := Int64.repr (Z.of_nat n).
 
     Lemma switch_spec
-          p (cp: compartment) f (e: env) le m b
+          p (cnt: ident) f (e: env) le m b
           ss s ss' s_else
           (WF: Z.of_nat (length (ss ++ s :: ss')) < Int64.modulus)
       :
-      cp = comp_of f ->
-      e ! (bt_env.(local_counter) cp) = Some (b, type_counter) ->
+      let ge := globalenv p in
+      let cp := comp_of f in
+      e ! cnt = None ->
+      Genv.find_symbol ge cnt = Some b ->
+      (* e ! (bt_env.(local_counter) cp) = Some (b, type_counter) -> *)
       Mem.valid_access m Mint64 b 0 Writable (Some cp) ->
       Mem.loadv Mint64 m (Vptr b Ptrofs.zero) (Some cp) = Some (Vlong (nat64 (length ss))) ->
       exists m',
         Mem.storev Mint64 m (Vptr b Ptrofs.zero) (Vlong (Int64.add (nat64 (length ss)) Int64.one)) cp = Some m' /\
           Star (Clight.semantics1 p)
-               (State f (switch cp (ss ++ s :: ss') s_else) Kstop e le m)
+               (State f (switch cnt (ss ++ s :: ss') s_else) Kstop e le m)
                E0
                (State f s Kstop e le m').
     Proof.
       intros.
       assert (Eswitch :
                exists s_else',
-                 switch cp (ss ++ s :: ss') s_else =
-                   switch cp ss (switch_clause cp (Z.of_nat (length ss)) s s_else')).
+                 switch cnt (ss ++ s :: ss') s_else =
+                   switch cnt ss (switch_clause cnt (Z.of_nat (length ss)) s s_else')).
       { unfold switch. rewrite fold_right_app, app_length. simpl.
-        exists (snd (fold_right (switch_add_statement cp) (Z.of_nat (length ss + S (length ss')), s_else) ss')).
+        exists (snd (fold_right (switch_add_statement cnt) (Z.of_nat (length ss + S (length ss')), s_else) ss')).
         repeat f_equal. rewrite -> surjective_pairing at 1. simpl.
         rewrite fst_switch, Nat.add_succ_r.
         assert (A: Z.pred (Z.of_nat (S (Datatypes.length ss + Datatypes.length ss')) - Z.of_nat (Datatypes.length ss')) = Z.of_nat (Datatypes.length ss)) by lia.
         rewrite A. reflexivity.
       }
       destruct Eswitch as [s_else' ->]. clear s_else. rename s_else' into s_else.
-      exploit (switch_clause_spec p cp f e le m b (nat64 (length ss)) (Z.of_nat (length ss)) s s_else); auto.
+      exploit (switch_clause_spec p cnt f e le m b (nat64 (length ss)) (Z.of_nat (length ss)) s s_else); auto.
       unfold nat64. rewrite Int64.eq_true. intro Hcont.
       destruct Hcont as (m' & Hstore & Hstar2).
       exists m'. split; trivial.
@@ -179,8 +189,12 @@ Section Backtranslation.
   End SWITCH.
 
 
-  Section CODE.
-    (** converting trace to code **)
+  Section CONV.
+    (** converting event to data **)
+
+    Context {F: Type}.
+    Context {V: Type}.
+    Variable ge: Genv.t F V.
 
     Definition wf_env (e: env) id := e ! id = None.
 
@@ -206,24 +220,6 @@ Section Backtranslation.
                (Econst_int (Ptrofs.to_int ofs) (Tint I32 Signed noattr))
                (Tpointer Tvoid noattr).
 
-    Lemma ptr_of_id_ofs_eval
-          id ofs e (ge: genv) b cp le m
-          (GE1: wf_env e id)
-          (GE2: Genv.find_symbol ge id = Some b)
-      :
-      eval_expr ge e cp le m (ptr_of_id_ofs id ofs) (Vptr b ofs).
-    Proof.
-      unfold ptr_of_id_ofs. destruct (Archi.ptr64) eqn:ARCH.
-      - eapply eval_Ebinop. eapply eval_Eaddrof. eapply eval_Evar_global; eauto.
-        simpl_expr.
-        simpl. simpl_expr. rewrite Ptrofs.mul_commut, Ptrofs.mul_one. rewrite Ptrofs.add_zero_l.
-        rewrite Ptrofs.of_int64_to_int64; auto.
-      - eapply eval_Ebinop. eapply eval_Eaddrof. eapply eval_Evar_global; eauto.
-        simpl_expr.
-        simpl. simpl_expr. rewrite Ptrofs.mul_commut, Ptrofs.mul_one. rewrite Ptrofs.add_zero_l.
-        erewrite Ptrofs.agree32_of_ints_eq; auto. apply Ptrofs.agree32_to_int; auto.
-    Qed.
-
     Lemma ptr_of_id_ofs_typeof
           i i0
       :
@@ -245,26 +241,121 @@ Section Backtranslation.
       | _ => True
       end.
 
-    Definition wf_eventval_pub (ge: genv) (v: eventval): Prop :=
+    Definition wf_eventval_pub (v: eventval): Prop :=
       match v with
       | EVptr_global id _ => (Senv.public_symbol ge id = true)
       | _ => True
       end.
 
-    Definition wf_eventval_ge (ge: genv) (v: eventval): Prop :=
+    Definition wf_eventval_ge (v: eventval): Prop :=
       match v with
       | EVptr_global id _ => (exists b, Genv.find_symbol ge id = Some b)
       | _ => True
       end.
 
     Lemma wf_eventval_pub_ge
-          ge v
+          v
       :
-      wf_eventval_pub ge v -> wf_eventval_ge ge v.
+      wf_eventval_pub v -> wf_eventval_ge v.
     Proof. intros H. destruct v; simpl in *; auto. apply Genv.public_symbol_exists in H; auto. Qed.
 
+    Definition eventval_to_val (v: eventval): val :=
+      match v with
+      | EVint i => Vint i
+      | EVlong i => Vlong i
+      | EVfloat f => Vfloat f
+      | EVsingle f => Vsingle f
+      | EVptr_global id ofs => match Senv.find_symbol ge id with
+                              | Some b => Vptr b ofs
+                              | None => Vundef
+                              end
+      end.
+
+    Fixpoint list_eventval_to_typelist (vs: list eventval): typelist :=
+      match vs with
+      | nil => Tnil
+      | cons v vs' => Tcons (eventval_to_type v) (list_eventval_to_typelist vs')
+      end.
+
+    Definition list_eventval_to_list_expr (vs: list eventval): list expr :=
+      List.map eventval_to_expr vs.
+
+    Definition list_eventval_to_list_val (vs: list eventval): list val :=
+      List.map (eventval_to_val) vs.
+
+    Lemma typeof_eventval_to_expr_type
+          v
+      :
+      typeof (eventval_to_expr v) = eventval_to_type v.
+    Proof. destruct v; simpl; auto. apply ptr_of_id_ofs_typeof. Qed.
+
+  End CONV.
+
+
+  Section CODE.
+    (** converting trace to code **)
+
+    (* converting functions *)
+    Definition code_of_vload (ch: memory_chunk) (id: ident) (ofs: Ptrofs.int) (v: eventval) :=
+      Sbuiltin None (EF_vload ch) (Tcons (Tpointer Tvoid noattr) Tnil) (ptr_of_id_ofs id ofs :: nil).
+
+    Definition code_of_vstore (ch: memory_chunk) (id: ident) (ofs: Ptrofs.int) (v: eventval) :=
+      Sbuiltin None (EF_vstore ch) (Tcons (Tpointer Tvoid noattr) (Tcons (eventval_to_type v) Tnil)) ((ptr_of_id_ofs id ofs) :: (eventval_to_expr v) :: nil).
+
+    Definition code_of_annot (str: string) (vs: list eventval) :=
+      Sbuiltin None (EF_annot
+                       (Pos.of_nat (List.length (typlist_of_typelist (list_eventval_to_typelist vs))))
+                       str
+                       (typlist_of_typelist (list_eventval_to_typelist vs))
+                    ) (list_eventval_to_typelist vs)
+               (list_eventval_to_list_expr vs).
+
+    Definition code_of_call (cp cp': compartment) (id: ident) (vs: list eventval) :=
+      Scall None (Evar id (Tfunction (list_eventval_to_typelist vs) Tvoid cc_default)) (list_eventval_to_list_expr vs).
+
+    (* An [event_syscall] does not need any code, because it is only generated after a call to an external function *)
+    Definition code_of_syscall (name: string) (vs: list eventval) (v: eventval) := Sskip.
+
+    Definition code_of_return (cp cp': compartment) (v: eventval) :=
+      Sreturn (Some (eventval_to_expr v)).
+
+    Definition code_of_event (e: event): statement :=
+      match e with
+      | Event_vload ch id ofs v => code_of_vload ch id ofs v
+      | Event_vstore ch id ofs v => code_of_vstore ch id ofs v
+      | Event_annot str vs => code_of_annot str vs
+      | Event_call cp cp' id vs => code_of_call cp cp' id vs
+      | Event_syscall name vs v => code_of_syscall name vs v
+      | Event_return cp cp' v => code_of_return cp cp' v
+      end.
+
+    (* A while(1)-loop with a big switch inside it *)
+    Definition code_of_trace cp (t: trace): statement :=
+      Swhile (Econst_int Int.one (Tint I32 Signed noattr)) (switch cp (map code_of_event t) (Sreturn None)).
+
+
+    (* Properties *)
+
+    Lemma ptr_of_id_ofs_eval
+          id ofs e (ge: genv) b cp le m
+          (GE1: wf_env e id)
+          (GE2: Genv.find_symbol ge id = Some b)
+      :
+      eval_expr ge e cp le m (ptr_of_id_ofs id ofs) (Vptr b ofs).
+    Proof.
+      unfold ptr_of_id_ofs. destruct (Archi.ptr64) eqn:ARCH.
+      - eapply eval_Ebinop. eapply eval_Eaddrof. eapply eval_Evar_global; eauto.
+        simpl_expr.
+        simpl. simpl_expr. rewrite Ptrofs.mul_commut, Ptrofs.mul_one. rewrite Ptrofs.add_zero_l.
+        rewrite Ptrofs.of_int64_to_int64; auto.
+      - eapply eval_Ebinop. eapply eval_Eaddrof. eapply eval_Evar_global; eauto.
+        simpl_expr.
+        simpl. simpl_expr. rewrite Ptrofs.mul_commut, Ptrofs.mul_one. rewrite Ptrofs.add_zero_l.
+        erewrite Ptrofs.agree32_of_ints_eq; auto. apply Ptrofs.agree32_to_int; auto.
+    Qed.
+
     Lemma eventval_to_expr_match
-          ge env cp le m
+          (ge: genv) env cp le m
           ev exp v ty
           (WFENV: wf_eventval_env env ev)
           (WFGE: wf_eventval_pub ge ev)
@@ -313,32 +404,8 @@ Section Backtranslation.
           }
     Qed.
 
-    Definition eventval_to_val (ge: genv) (v: eventval): val :=
-      match v with
-      | EVint i => Vint i
-      | EVlong i => Vlong i
-      | EVfloat f => Vfloat f
-      | EVsingle f => Vsingle f
-      | EVptr_global id ofs => match Senv.find_symbol ge id with
-                              | Some b => Vptr b ofs
-                              | None => Vundef
-                              end
-      end.
-
-    Fixpoint list_eventval_to_typelist (vs: list eventval): typelist :=
-      match vs with
-      | nil => Tnil
-      | cons v vs' => Tcons (eventval_to_type v) (list_eventval_to_typelist vs')
-      end.
-
-    Definition list_eventval_to_list_expr (vs: list eventval): list expr :=
-      List.map eventval_to_expr vs.
-
-    Definition list_eventval_to_list_val (ge: genv) (vs: list eventval): list val :=
-      List.map (eventval_to_val ge) vs.
-
     Lemma eventval_to_expr_val_eval
-          ge en cp temp m ev
+          (ge: genv) en cp temp m ev
           (WFENV: wf_eventval_env en ev)
           (WFGE: wf_eventval_ge ge ev)
       :
@@ -356,7 +423,7 @@ Section Backtranslation.
     Qed.
 
     Lemma eventval_to_expr_val_match
-          ge env
+          (ge: genv) env
           ev exp v ty
           (WFENV: wf_eventval_env env ev)
           (WFEV: wf_eventval_pub ge ev)
@@ -370,21 +437,15 @@ Section Backtranslation.
       Unshelve. exact default_compartment. exact (PTree.empty val). exact Mem.empty.
     Qed.
 
-    Lemma typeof_eventval_to_expr_type
-          v
-      :
-      typeof (eventval_to_expr v) = eventval_to_type v.
-    Proof. destruct v; simpl; auto. apply ptr_of_id_ofs_typeof. Qed.
-
     Lemma sem_cast_eventval
-          ge v m
+          (ge: genv) v m
           (WFEV: wf_eventval_ge ge v)
       :
       Cop.sem_cast (eventval_to_val ge v) (typeof (eventval_to_expr v)) (eventval_to_type v) m = Some (eventval_to_val ge v).
     Proof. rewrite typeof_eventval_to_expr_type. destruct v; simpl in *; simpl_expr. destruct WFEV. rewrite H. simpl_expr. Qed.
 
     Lemma list_eventval_to_expr_val_eval
-          ge en cp temp m evs
+          (ge: genv) en cp temp m evs
           (WFENV: Forall (wf_eventval_env en) evs)
           (WFGE: Forall (wf_eventval_ge ge) evs)
       :
@@ -398,7 +459,7 @@ Section Backtranslation.
     Qed.
 
     Lemma list_eventval_to_expr_val_match
-          ge env
+          (ge: genv) env
           evs exps vs tys
           (WFENV: Forall (wf_eventval_env env) evs)
           (WFPUB: Forall (wf_eventval_pub ge) evs)
@@ -415,46 +476,6 @@ Section Backtranslation.
     Qed.
 
 
-    (* converting functions *)
-    Definition code_of_vload (ch: memory_chunk) (id: ident) (ofs: Ptrofs.int) (v: eventval) :=
-      Sbuiltin None (EF_vload ch) (Tcons (Tpointer Tvoid noattr) Tnil) (ptr_of_id_ofs id ofs :: nil).
-
-    Definition code_of_vstore (ch: memory_chunk) (id: ident) (ofs: Ptrofs.int) (v: eventval) :=
-      Sbuiltin None (EF_vstore ch) (Tcons (Tpointer Tvoid noattr) (Tcons (eventval_to_type v) Tnil)) ((ptr_of_id_ofs id ofs) :: (eventval_to_expr v) :: nil).
-
-    Definition code_of_annot (str: string) (vs: list eventval) :=
-      Sbuiltin None (EF_annot
-                       (Pos.of_nat (List.length (typlist_of_typelist (list_eventval_to_typelist vs))))
-                       str
-                       (typlist_of_typelist (list_eventval_to_typelist vs))
-                    ) (list_eventval_to_typelist vs)
-               (list_eventval_to_list_expr vs).
-
-    Definition code_of_call (cp cp': compartment) (id: ident) (vs: list eventval) :=
-      Scall None (Evar id (Tfunction (list_eventval_to_typelist vs) Tvoid cc_default)) (list_eventval_to_list_expr vs).
-
-    (* An [event_syscall] does not need any code, because it is only generated after a call to an external function *)
-    Definition code_of_syscall (name: string) (vs: list eventval) (v: eventval) := Sskip.
-
-    Definition code_of_return (cp cp': compartment) (v: eventval) :=
-      Sreturn (Some (eventval_to_expr v)).
-
-    Definition code_of_event (e: event): statement :=
-      match e with
-      | Event_vload ch id ofs v => code_of_vload ch id ofs v
-      | Event_vstore ch id ofs v => code_of_vstore ch id ofs v
-      | Event_annot str vs => code_of_annot str vs
-      | Event_call cp cp' id vs => code_of_call cp cp' id vs
-      | Event_syscall name vs v => code_of_syscall name vs v
-      | Event_return cp cp' v => code_of_return cp cp' v
-      end.
-
-    (* A while(1)-loop with a big switch inside it *)
-    Definition code_of_trace cp (t: trace): statement :=
-      Swhile (Econst_int Int.one (Tint I32 Signed noattr)) (switch cp (map code_of_event t) (Sreturn None)).
-
-
-    (* Properties *)
     Lemma code_of_event_step_vload
           ev
           ch id ofs v
@@ -780,51 +801,78 @@ Section Backtranslation.
 
 
   Section WELLFORMED.
-    (** Well-formed conditions for the back-translated program **)
 
-    Variable p: program.
-    Let ge := globalenv p.
+    (* wf_sem *)
+    Definition wf_sem_vload {F V} (ge: Genv.t F V) (ch: memory_chunk) (id: ident) (ofs: ptrofs) (v: eventval) :=
+      (exists b, (Genv.find_symbol ge id = Some b) /\ (Senv.block_is_volatile ge b = true)) /\
+        (exists rv, (eventval_match ge v (type_of_chunk ch) rv)).
 
-    Definition wf_bt_vload (ch: memory_chunk) (id: ident) (ofs: ptrofs) (v: eventval) e :=
-      (wf_env e id) /\
-        (exists b, (Genv.find_symbol ge id = Some b) /\ (Senv.block_is_volatile ge b = true)).
+    Definition wf_sem_vstore {F V} (ge: Genv.t F V) (ch: memory_chunk) (id: ident) (ofs: ptrofs) v :=
+      (exists b, (Genv.find_symbol ge id = Some b) /\ (Senv.block_is_volatile ge b = true)) /\
+        (wf_eventval_ge ge v) /\
+        (eventval_match ge v (type_of_chunk ch) (Val.load_result ch (eventval_to_val ge v))).
 
-    Definition wf_bt_vstore (ch: memory_chunk) (id: ident) (ofs: ptrofs) v e :=
-      (wf_eventval_env e v) /\ (wf_eventval_ge ge v) /\ (wf_env e id) /\
-        (exists b, (Genv.find_symbol ge id = Some b) /\ (Senv.block_is_volatile ge b = true)).
+    Definition wf_sem_annot {F V} (ge: Genv.t F V) (str: string) (vs: list eventval) :=
+      (Forall (wf_eventval_pub ge) vs).
 
-    Definition wf_bt_annot (str: string) (vs: list eventval) e :=
-      (Forall (wf_eventval_env e) vs) /\ (Forall (wf_eventval_pub ge) vs).
+    Definition wf_sem_call_internal {F V} {CF: has_comp F} (FD: F -> Prop) (ge: Genv.t F V) (cp cp': compartment) (id: ident) (vs: list eventval) :=
+      (Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall) /\
+        ((Forall (wf_eventval_pub ge) vs) /\ (Forall not_ptr (list_eventval_to_list_val ge vs))) /\
+        exists b,
+          (Genv.find_symbol ge id = Some b) /\ (Genv.allowed_cross_call ge cp (Vptr b Ptrofs.zero)) /\
+            (exists fd, (Genv.find_funct ge (Vptr b Ptrofs.zero) = Some fd) /\ (cp' = comp_of fd) /\ (FD fd)).
+          (* (TYPEF: type_of_fundef fd = Tfunction (list_eventval_to_typelist vs) Tvoid cc_default) *)
+          (* (INTERNAL: fd = Internal f1) *)
 
-    Definition wf_bt_call_start (cp cp': compartment) (id: ident) (vs: list eventval) e :=
-      (wf_env e id) /\
-        (Forall (wf_eventval_env e) vs) /\
-        (Forall (wf_eventval_pub ge) vs) /\
-        (exists b fd,
-            (Genv.find_symbol ge id = Some b) /\
-              (Genv.find_funct ge (Vptr b Ptrofs.zero) = Some fd) /\
-              (type_of_fundef fd = Tfunction (list_eventval_to_typelist vs) Tvoid cc_default) /\
-              (cp' = comp_of fd)
-        ).
+    Definition wf_sem_return {F V} (ge: Genv.t F V) (cp cp': compartment) (rv: eventval) :=
+      (wf_eventval_pub ge rv) /\
+        (not_ptr (eventval_to_val ge rv)) /\
+        (Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall).
 
-    (* TODO: need a proof invariant - related to continuation/stack/function *)
+    (* wf_bt *)
 
-    Lemma code_of_event_step_call_internal
-          p f k e le m
-          ge
-          (GE: ge = globalenv p)
-          (* bt should ensure them *)
-          fd args f1
-          (INTERNAL: fd = Internal f1)
-          (* asm should ensure them *)
-          (* handle during proving *)
-          e1 le1 m1
-          (ENTRY: function_entry1 ge f1 args m e1 le1 m1)
-      :
-        Star (Clight.semantics1 p)
-             (Callstate fd args (Kcall None f e le k) m)
-             nil
-             (State f1 (fn_body f1) (Kcall None f e le k) e1 le1 m1).
+
+    (* wf_inv *)
+    Definition wf_inv_vload (ch: memory_chunk) (id: ident) (ofs: ptrofs) (v: eventval) e :=
+      (wf_env e id).
+
+    Definition wf_inv_vstore (ch: memory_chunk) (id: ident) (ofs: ptrofs) v e :=
+      (wf_env e id) /\ (wf_eventval_env e v).
+
+    Definition wf_inv_annot (str: string) (vs: list eventval) e :=
+      (Forall (wf_eventval_env e) vs).
+
+    Definition wf_inv_call_internal (cp cp': compartment) (id: ident) (vs: list eventval) e :=
+      (e ! id = None) /\ (Forall (wf_eventval_env e) vs).
+    (* (CP1: cp = comp_of f) *)
+
+    Definition wf_inv_return (cp cp': compartment) (rv: eventval) e (k: cont) :=
+      (wf_eventval_env e rv) /\
+        exists optid f' e' le' k',
+          (call_cont k = Kcall optid f' e' le' k') /\
+            (cp = comp_of f').
+          (* (fn_return f = eventval_to_type rv) *)
+          (* (CP1: cp' = comp_of f) *)
+
+    (* TODO *)
+
+(** Events.v **)
+(* (** External calls must commute with memory injections, *)
+(*   in the following sense. *) *)
+(*   ec_mem_inject: *)
+(*     forall ge1 ge2 c vargs m1 t vres m2 f m1' vargs', *)
+(*     symbols_inject f ge1 ge2 -> *)
+(*     sem ge1 c vargs m1 t vres m2 -> *)
+(*     Mem.inject f m1 m1' -> *)
+(*     Val.inject_list f vargs vargs' -> *)
+(*     exists f', exists vres', exists m2', *)
+(*        sem ge2 c vargs' m1' t vres' m2' *)
+(*     /\ Val.inject f' vres vres' *)
+(*     /\ Mem.inject f' m2 m2' *)
+(*     /\ Mem.unchanged_on (loc_unmapped f) m1 m2 *)
+(*     /\ Mem.unchanged_on (loc_out_of_reach f m1) m1' m2' *)
+(*     /\ inject_incr f f' *)
+(*     /\ inject_separated f f' m1 m1'; *)
 
     Lemma code_of_event_step_call_external
           p m
@@ -846,38 +894,11 @@ Section Backtranslation.
              (sev :: nil)
              (Returnstate vres k m1 (rettype_of_type tres) (comp_of ef)).
 
-    Lemma code_of_event_step_return
-          ev
-          cp cp' rv
-          p f k e le m
-          ge
-          (GE: ge = globalenv p)
-          (EV: ev = Event_return cp' cp rv)
-          (* bt should ensure them *)
-          (WFRV1: wf_eventval_env e rv)
-          (WFRV2: wf_eventval_pub ge rv)
-          (* asm should ensure them *)
-          optid f' e' le' k'
-          (CONT: call_cont k = Kcall optid f' e' le' k')
-          (CP1: cp = comp_of f)
-          (CP2: cp' = comp_of f')
-          (NPTR: not_ptr (eventval_to_val ge rv))
-          (CROSS: Genv.type_of_call ge (comp_of f') (comp_of f) = Genv.CrossCompartmentCall)
-          (* handle during proving *)
-          (RTTYP: fn_return f = eventval_to_type rv)
-          m'
-          (FREE: Mem.free_list m (blocks_of_env ge e) (comp_of f) = Some m')
-      :
-      Star (Clight.semantics1 p)
-           (State f (code_of_event ev) k e le m)
-           (ev :: nil)
-           (State f' Sskip k' e' (set_opttemp optid (eventval_to_val ge rv) le') m').
-
   End WELLFORMED.
 
 
   (* TODO *)
-  (* Axiom backtranslation: Policy.t -> split -> trace -> Clight.program * Clight.program. *)
+  (* Axiom backtranslation: Asm.program -> split -> trace -> Clight.program * Clight.program. *)
   (* Axiom backtranslation_correct: *)
   (*   forall pol s t p C, *)
   (*     backtranslation pol s t = (p, C) -> *)
