@@ -7,8 +7,25 @@ Require Import Split.
 Require Import riscV.Asm.
 Require Import Ctypes Clight.
 
-(* Record backtranslation_environment := *)
-(*   { local_counter: compartment -> ident }. *)
+
+
+Lemma loc_out_of_reach_unchanged_content:
+  forall f b ofs m1 m1' m2'
+    (NOTMAP: forall b0 ofs0, not (f b0 = Some (b, ofs0))), (* f doesn't map anything to [b], i.e. the counter *)
+    Mem.perm m1' b ofs Cur Writable ->
+    Mem.unchanged_on (loc_out_of_reach f m1) m1' m2' ->
+    ZMap.get ofs (Mem.mem_contents m2') !! b = ZMap.get ofs (Mem.mem_contents m1') !! b.
+Proof.
+  intros. destruct H0. apply unchanged_on_contents; eauto.
+  - unfold loc_out_of_reach. intros. now specialize (NOTMAP _ _ H0).
+  - eapply Mem.perm_implies; eauto. constructor.
+Qed.
+
+(*
+forall b, b is the block of one of the counter ->
+     (forall b0 ofs, ~ (f b0 = Some (b, ofs)))
+ *)
+
 
 Section Backtranslation.
 
@@ -292,6 +309,60 @@ Section Backtranslation.
   End CONV.
 
 
+  Section CODEAUX.
+
+    (* We extract function data: argument types, fn_return, rn_callconv from signature of Asm.function *)
+    (* Coreectness should follow from the semantics of Asm, especially eventval_match *)
+    Definition typ_to_type: typ -> type :=
+      fun t: typ =>
+        match t with
+        | AST.Tint => Tint I32 Signed noattr
+        | AST.Tfloat => Tfloat F64 noattr
+        | AST.Tlong => Tlong Signed noattr
+        | AST.Tsingle => Tfloat F32 noattr
+        (* will not appear in well formed traces *)
+        | AST.Tany32 => Tvoid
+        | AST.Tany64 => Tvoid
+        end.
+
+    Fixpoint list_typ_to_typelist (ts: list typ): typelist :=
+      match ts with
+      | nil => Tnil
+      | cons t ts' => Tcons (typ_to_type t) (list_typ_to_typelist ts')
+      end.
+
+    Definition rettype_to_type: rettype -> type :=
+      fun rt: rettype =>
+        match rt with
+        | Tint8signed => Tint I8 Signed noattr
+        | Tint8unsigned => Tint I8 Unsigned noattr
+        | Tint16signed => Tint I16 Signed noattr
+        | Tint16unsigned => Tint I16 Unsigned noattr
+        | AST.Tvoid => Tvoid
+        | Tret t => typ_to_type t
+        end.
+
+    (* Wanted internal function data from signature *)
+    Definition fun_data : Type := (typelist * type * calling_convention).
+    Definition funs_data : Type := (PTree.tree fun_data).
+
+    Definition from_sig_fun_data (sig: signature): fun_data := (list_typ_to_typelist sig.(sig_args), rettype_to_type sig.(sig_res), sig.(sig_cc)).
+
+    (* Extract from Asm *)
+    Definition from_asmfun_fun_data (af: Asm.function): fun_data := from_sig_fun_data af.(fn_sig).
+    Definition from_extfun_fun_data (ef: external_function): fun_data := from_sig_fun_data (ef_sig ef).
+    Definition from_asmfd_fun_data (fd: Asm.fundef): fun_data :=
+      match fd with | AST.Internal af => from_asmfun_fun_data af | AST.External ef => from_extfun_fun_data ef end.
+    Definition from_asmgd_fun_data (gd: globdef Asm.fundef unit): option fun_data :=
+      match gd with | Gfun fd => Some (from_asmfd_fun_data fd) | Gvar _ => None end.
+
+    Definition from_asm_funs_data (asm: Asm.program): funs_data :=
+      let defs := Genv.genv_defs (Genv.globalenv asm) in
+      PTree.map_filter1 from_asmgd_fun_data defs.
+
+  End CODEAUX.
+
+
   Section CODE.
     (** converting trace to code **)
 
@@ -310,6 +381,7 @@ Section Backtranslation.
                     ) (list_eventval_to_typelist vs)
                (list_eventval_to_list_expr vs).
 
+    (* TODO: return type! *)
     Definition code_of_call (cp cp': compartment) (id: ident) (vs: list eventval) :=
       Scall None (Evar id (Tfunction (list_eventval_to_typelist vs) Tvoid cc_default)) (list_eventval_to_list_expr vs).
 
@@ -333,7 +405,10 @@ Section Backtranslation.
     Definition code_of_trace cp (t: trace): statement :=
       Swhile (Econst_int Int.one (Tint I32 Signed noattr)) (switch cp (map code_of_event t) (Sreturn None)).
 
+  End CODE.
 
+
+  Section CODEPROP.
     (* Properties *)
 
     Lemma ptr_of_id_ofs_eval
@@ -597,6 +672,7 @@ Section Backtranslation.
       econstructor 1.
     Qed.
 
+    (* TODO: return type? *)
     Lemma code_of_event_step_call_start
           ev
           cp cp' id vs
@@ -737,7 +813,122 @@ Section Backtranslation.
       econstructor 1.
     Qed.
 
-  End CODE.
+  End CODEPROP.
+
+
+  Section WELLFORMED.
+
+    (* wf_sem *)
+    Definition wf_sem_vload {F V} (ge: Genv.t F V) (ch: memory_chunk) (id: ident) (ofs: ptrofs) (v: eventval) :=
+      (exists b, (Genv.find_symbol ge id = Some b) /\ (Senv.block_is_volatile ge b = true)) /\
+        (exists rv, (eventval_match ge v (type_of_chunk ch) rv)).
+
+    Definition wf_sem_vstore {F V} (ge: Genv.t F V) (ch: memory_chunk) (id: ident) (ofs: ptrofs) v :=
+      (exists b, (Genv.find_symbol ge id = Some b) /\ (Senv.block_is_volatile ge b = true)) /\
+        (wf_eventval_ge ge v) /\
+        (eventval_match ge v (type_of_chunk ch) (Val.load_result ch (eventval_to_val ge v))).
+
+    Definition wf_sem_annot {F V} (ge: Genv.t F V) (str: string) (vs: list eventval) :=
+      (Forall (wf_eventval_pub ge) vs).
+
+    Definition wf_sem_call_internal {F V} {CF: has_comp F} (FD: (list eventval) -> F -> Prop) (ge: Genv.t F V) (cp cp': compartment) (id: ident) (vs: list eventval) :=
+      (Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall) /\
+        ((Forall (wf_eventval_pub ge) vs) /\ (Forall not_ptr (list_eventval_to_list_val ge vs))) /\
+        exists b,
+          (Genv.find_symbol ge id = Some b) /\ (Genv.allowed_cross_call ge cp (Vptr b Ptrofs.zero)) /\
+            (exists fd, (Genv.find_funct ge (Vptr b Ptrofs.zero) = Some fd) /\ (cp' = comp_of fd) /\ (FD vs fd)).
+          (* (TYPEF: type_of_fundef fd = Tfunction (list_eventval_to_typelist vs) Tvoid cc_default) *)
+          (* (INTERNAL: fd = Internal f1) *)
+
+    Definition wf_sem_return {F V} (ge: Genv.t F V) (cp cp': compartment) (rv: eventval) :=
+      (wf_eventval_pub ge rv) /\
+        (not_ptr (eventval_to_val ge rv)) /\
+        (Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall).
+
+    (* wf_bt *)
+
+
+    (* wf_inv *)
+    Definition wf_inv_vload (ch: memory_chunk) (id: ident) (ofs: ptrofs) (v: eventval) e :=
+      (wf_env e id).
+
+    Definition wf_inv_vstore (ch: memory_chunk) (id: ident) (ofs: ptrofs) v e :=
+      (wf_env e id) /\ (wf_eventval_env e v).
+
+    Definition wf_inv_annot (str: string) (vs: list eventval) e :=
+      (Forall (wf_eventval_env e) vs).
+
+    Definition wf_inv_call_internal (cp cp': compartment) (id: ident) (vs: list eventval) e :=
+      (e ! id = None) /\ (Forall (wf_eventval_env e) vs).
+    (* (CP1: cp = comp_of f) *)
+
+    Definition wf_inv_return (cp cp': compartment) (rv: eventval) e (k: cont) :=
+      (wf_eventval_env e rv) /\
+        exists optid f' e' le' k',
+          (call_cont k = Kcall optid f' e' le' k') /\
+            (cp = comp_of f').
+          (* (fn_return f = eventval_to_type rv) *)
+          (* (CP1: cp' = comp_of f) *)
+
+    (* TODO *)
+  | step_return_1 : forall (f : function) (a : expr) (k : cont) (e : env) (le : temp_env) (m : mem) (v v' : val) (m' : mem),
+                    eval_expr ge e (comp_of f) le m a v ->
+                    Cop.sem_cast v (typeof a) (fn_return f) m = Some v' ->
+                    Mem.free_list m (blocks_of_env ge e) (comp_of f) = Some m' ->
+                    step ge function_entry (State f (Sreturn (Some a)) k e le m) E0 (Returnstate v' (call_cont k) m' (rettype_of_type (fn_return f)) (comp_of f))
+  | step_returnstate : forall (v : val) (optid : option ident) (f : function) (e : env) (le : temp_env) (ty : rettype) (cp : compartment) (k : cont) (m : mem) (t : trace),
+                       (Genv.type_of_call ge (comp_of f) cp = Genv.CrossCompartmentCall -> not_ptr v) ->
+                       return_trace ge (comp_of f) cp v ty t -> step ge function_entry (Returnstate v (Kcall optid f e le k) m ty cp) t (State f Sskip k e (set_opttemp optid v le) m).
+Inductive return_trace (F V : Type) (ge : Genv.t F V) : compartment -> compartment -> val -> rettype -> trace -> Prop :=
+    return_trace_intra : forall (cp cp' : compartment) (v : val) (ty : rettype), Genv.type_of_call ge cp cp' <> Genv.CrossCompartmentCall -> return_trace ge cp cp' v ty E0
+  | return_trace_cross : forall (cp cp' : compartment) (res : eventval) (v : val) (ty : rettype),
+                         Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall -> eventval_match ge res (proj_rettype ty) v -> return_trace ge cp cp' v ty (Event_return cp cp' res :: nil).
+Inductive eventval_match (ge : Senv.t) : eventval -> typ -> val -> Prop :=
+    ev_match_int : forall i : int, eventval_match ge (EVint i) AST.Tint (Vint i)
+  | ev_match_long : forall i : int64, eventval_match ge (EVlong i) AST.Tlong (Vlong i)
+  | ev_match_float : forall f : Floats.float, eventval_match ge (EVfloat f) AST.Tfloat (Vfloat f)
+  | ev_match_single : forall f : Floats.float32, eventval_match ge (EVsingle f) Tsingle (Vsingle f)
+  | ev_match_ptr : forall (id : ident) (b : block) (ofs : ptrofs), Senv.public_symbol ge id = true -> Senv.find_symbol ge id = Some b -> eventval_match ge (EVptr_global id ofs) Tptr (Vptr b ofs).
+
+(** Events.v **)
+(* (** External calls must commute with memory injections, *)
+(*   in the following sense. *) *)
+(*   ec_mem_inject: *)
+(*     forall ge1 ge2 c vargs m1 t vres m2 f m1' vargs', *)
+(*     symbols_inject f ge1 ge2 -> *)
+(*     sem ge1 c vargs m1 t vres m2 -> *)
+(*     Mem.inject f m1 m1' -> *)
+(*     Val.inject_list f vargs vargs' -> *)
+(*     exists f', exists vres', exists m2', *)
+(*        sem ge2 c vargs' m1' t vres' m2' *)
+(*     /\ Val.inject f' vres vres' *)
+(*     /\ Mem.inject f' m2 m2' *)
+(*     /\ Mem.unchanged_on (loc_unmapped f) m1 m2 *)
+(*     /\ Mem.unchanged_on (loc_out_of_reach f m1) m1' m2' *)
+(*     /\ inject_incr f f' *)
+(*     /\ inject_separated f f' m1 m1'; *)
+
+    (* Lemma code_of_event_step_call_external *)
+    (*       p m *)
+    (*       ge *)
+    (*       (GE: ge = globalenv p) *)
+    (*       (* bt should ensure them *) *)
+    (*       fd k args ef targs tres cconv *)
+    (*       (EXTERNAL: fd = External ef targs tres cconv) *)
+    (*       (* asm should ensure them *) *)
+    (*       sev *)
+    (*       vres m1 *)
+    (*       (SEM: external_call ef ge (call_comp k) args m (sev :: nil) vres m1) *)
+    (*       (* handle during proving *) *)
+    (*       sname sargs svr *)
+    (*       (SYSEV: sev = Event_syscall sname sargs svr) *)
+    (*   : *)
+    (*     Star (Clight.semantics1 p) *)
+    (*          (Callstate fd args k m) *)
+    (*          (sev :: nil) *)
+    (*          (Returnstate vres k m1 (rettype_of_type tres) (comp_of ef)). *)
+
+  End WELLFORMED.
 
 
   Section PROJ.
@@ -773,128 +964,6 @@ Section Backtranslation.
       map fst (PTree.elements p.(Policy.policy_export)).
 
   End PROJ.
-
-
-  Section FROMASM.
-    (** Well-formed conditions for the trace, namely from the semantics of Asm **)
-
-    Variable p: Asm.program.
-    Let ge := Genv.globalenv p.
-
-    Definition wf_tr_vload ch (id: ident) (ofs: ptrofs) v :=
-      exists rv, eventval_match ge v (type_of_chunk ch) rv.
-
-    (* TODO: fix eventval_to_val *)
-    (* Definition wf_tr_vstore ch (id: ident) (ofs: ptrofs) v := *)
-    (*   eventval_match ge v (type_of_chunk ch) (Val.load_result ch (eventval_to_val ge v)). *)
-
-    Definition wf_tr_annot (str: string) (vs: list eventval) := True.
-
-    (* TODO: fix *)
-    Definition wf_tr_call_start (cp cp': compartment) (id: ident) (vs: list eventval) :=
-      (* (Forall not_ptr (list_eventval_to_list_val ge vs)) /\ *)
-        (Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall) /\
-        (exists l1, ((Policy.policy_import (Genv.genv_policy ge)) ! cp = Some l1) /\ (In (cp', id) l1)) /\
-        (exists l2, ((Policy.policy_export (Genv.genv_policy ge)) ! cp' = Some l2) /\ (In id l2)).
-
-  End FROMASM.
-
-
-  Section WELLFORMED.
-
-    (* wf_sem *)
-    Definition wf_sem_vload {F V} (ge: Genv.t F V) (ch: memory_chunk) (id: ident) (ofs: ptrofs) (v: eventval) :=
-      (exists b, (Genv.find_symbol ge id = Some b) /\ (Senv.block_is_volatile ge b = true)) /\
-        (exists rv, (eventval_match ge v (type_of_chunk ch) rv)).
-
-    Definition wf_sem_vstore {F V} (ge: Genv.t F V) (ch: memory_chunk) (id: ident) (ofs: ptrofs) v :=
-      (exists b, (Genv.find_symbol ge id = Some b) /\ (Senv.block_is_volatile ge b = true)) /\
-        (wf_eventval_ge ge v) /\
-        (eventval_match ge v (type_of_chunk ch) (Val.load_result ch (eventval_to_val ge v))).
-
-    Definition wf_sem_annot {F V} (ge: Genv.t F V) (str: string) (vs: list eventval) :=
-      (Forall (wf_eventval_pub ge) vs).
-
-    Definition wf_sem_call_internal {F V} {CF: has_comp F} (FD: F -> Prop) (ge: Genv.t F V) (cp cp': compartment) (id: ident) (vs: list eventval) :=
-      (Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall) /\
-        ((Forall (wf_eventval_pub ge) vs) /\ (Forall not_ptr (list_eventval_to_list_val ge vs))) /\
-        exists b,
-          (Genv.find_symbol ge id = Some b) /\ (Genv.allowed_cross_call ge cp (Vptr b Ptrofs.zero)) /\
-            (exists fd, (Genv.find_funct ge (Vptr b Ptrofs.zero) = Some fd) /\ (cp' = comp_of fd) /\ (FD fd)).
-          (* (TYPEF: type_of_fundef fd = Tfunction (list_eventval_to_typelist vs) Tvoid cc_default) *)
-          (* (INTERNAL: fd = Internal f1) *)
-
-    Definition wf_sem_return {F V} (ge: Genv.t F V) (cp cp': compartment) (rv: eventval) :=
-      (wf_eventval_pub ge rv) /\
-        (not_ptr (eventval_to_val ge rv)) /\
-        (Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall).
-
-    (* wf_bt *)
-
-
-    (* wf_inv *)
-    Definition wf_inv_vload (ch: memory_chunk) (id: ident) (ofs: ptrofs) (v: eventval) e :=
-      (wf_env e id).
-
-    Definition wf_inv_vstore (ch: memory_chunk) (id: ident) (ofs: ptrofs) v e :=
-      (wf_env e id) /\ (wf_eventval_env e v).
-
-    Definition wf_inv_annot (str: string) (vs: list eventval) e :=
-      (Forall (wf_eventval_env e) vs).
-
-    Definition wf_inv_call_internal (cp cp': compartment) (id: ident) (vs: list eventval) e :=
-      (e ! id = None) /\ (Forall (wf_eventval_env e) vs).
-    (* (CP1: cp = comp_of f) *)
-
-    Definition wf_inv_return (cp cp': compartment) (rv: eventval) e (k: cont) :=
-      (wf_eventval_env e rv) /\
-        exists optid f' e' le' k',
-          (call_cont k = Kcall optid f' e' le' k') /\
-            (cp = comp_of f').
-          (* (fn_return f = eventval_to_type rv) *)
-          (* (CP1: cp' = comp_of f) *)
-
-    (* TODO *)
-
-(** Events.v **)
-(* (** External calls must commute with memory injections, *)
-(*   in the following sense. *) *)
-(*   ec_mem_inject: *)
-(*     forall ge1 ge2 c vargs m1 t vres m2 f m1' vargs', *)
-(*     symbols_inject f ge1 ge2 -> *)
-(*     sem ge1 c vargs m1 t vres m2 -> *)
-(*     Mem.inject f m1 m1' -> *)
-(*     Val.inject_list f vargs vargs' -> *)
-(*     exists f', exists vres', exists m2', *)
-(*        sem ge2 c vargs' m1' t vres' m2' *)
-(*     /\ Val.inject f' vres vres' *)
-(*     /\ Mem.inject f' m2 m2' *)
-(*     /\ Mem.unchanged_on (loc_unmapped f) m1 m2 *)
-(*     /\ Mem.unchanged_on (loc_out_of_reach f m1) m1' m2' *)
-(*     /\ inject_incr f f' *)
-(*     /\ inject_separated f f' m1 m1'; *)
-
-    Lemma code_of_event_step_call_external
-          p m
-          ge
-          (GE: ge = globalenv p)
-          (* bt should ensure them *)
-          fd k args ef targs tres cconv
-          (EXTERNAL: fd = External ef targs tres cconv)
-          (* asm should ensure them *)
-          sev
-          vres m1
-          (SEM: external_call ef ge (call_comp k) args m (sev :: nil) vres m1)
-          (* handle during proving *)
-          sname sargs svr
-          (SYSEV: sev = Event_syscall sname sargs svr)
-      :
-        Star (Clight.semantics1 p)
-             (Callstate fd args k m)
-             (sev :: nil)
-             (Returnstate vres k m1 (rettype_of_type tres) (comp_of ef)).
-
-  End WELLFORMED.
 
 
   (* TODO *)
