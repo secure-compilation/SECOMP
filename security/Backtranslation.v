@@ -343,10 +343,13 @@ Section Backtranslation.
         end.
 
     (* Wanted internal function data from signature *)
-    Definition fun_data : Type := (typelist * type * calling_convention).
+    (* Definition fun_data : Type := (typelist * type * calling_convention). *)
+    Record fun_data : Type := mkfundata { dargs: typelist; dret: type; dcc: calling_convention }.
     Definition funs_data : Type := (PTree.tree fun_data).
 
-    Definition from_sig_fun_data (sig: signature): fun_data := (list_typ_to_typelist sig.(sig_args), rettype_to_type sig.(sig_res), sig.(sig_cc)).
+    (* Definition from_sig_fun_data (sig: signature): fun_data := (list_typ_to_typelist sig.(sig_args), rettype_to_type sig.(sig_res), sig.(sig_cc)). *)
+    Definition from_sig_fun_data (sig: signature): fun_data :=
+      mkfundata (list_typ_to_typelist sig.(sig_args)) (rettype_to_type sig.(sig_res)) (sig.(sig_cc)).
 
     (* Extract from Asm *)
     Definition from_asmfun_fun_data (af: Asm.function): fun_data := from_sig_fun_data af.(fn_sig).
@@ -368,22 +371,28 @@ Section Backtranslation.
 
     (* converting functions *)
     Definition code_of_vload (ch: memory_chunk) (id: ident) (ofs: Ptrofs.int) (v: eventval) :=
-      Sbuiltin None (EF_vload ch) (Tcons (Tpointer Tvoid noattr) Tnil) (ptr_of_id_ofs id ofs :: nil).
+      Sbuiltin None (EF_vload ch) (dargs (from_extfun_fun_data (EF_vload ch))) (ptr_of_id_ofs id ofs :: nil).
 
     Definition code_of_vstore (ch: memory_chunk) (id: ident) (ofs: Ptrofs.int) (v: eventval) :=
-      Sbuiltin None (EF_vstore ch) (Tcons (Tpointer Tvoid noattr) (Tcons (eventval_to_type v) Tnil)) ((ptr_of_id_ofs id ofs) :: (eventval_to_expr v) :: nil).
+      Sbuiltin None (EF_vstore ch) (dargs (from_extfun_fun_data (EF_vstore ch))) ((ptr_of_id_ofs id ofs) :: (eventval_to_expr v) :: nil).
 
     Definition code_of_annot (str: string) (vs: list eventval) :=
-      Sbuiltin None (EF_annot
-                       (Pos.of_nat (List.length (typlist_of_typelist (list_eventval_to_typelist vs))))
-                       str
-                       (typlist_of_typelist (list_eventval_to_typelist vs))
-                    ) (list_eventval_to_typelist vs)
-               (list_eventval_to_list_expr vs).
+      let efa := (EF_annot
+                    (Pos.of_nat (List.length (typlist_of_typelist (list_eventval_to_typelist vs))))
+                    str
+                    (typlist_of_typelist (list_eventval_to_typelist vs))
+                 )
+      in
+      Sbuiltin None efa (dargs (from_extfun_fun_data efa)) (list_eventval_to_list_expr vs).
 
-    (* TODO: return type! *)
-    Definition code_of_call (cp cp': compartment) (id: ident) (vs: list eventval) :=
-      Scall None (Evar id (Tfunction (list_eventval_to_typelist vs) Tvoid cc_default)) (list_eventval_to_list_expr vs).
+    Definition code_of_call (fds: funs_data) (cp cp': compartment) (id: ident) (vs: list eventval) :=
+      let '(targs, tret, cc) := match fds ! id with
+                                | Some data => (dargs data, dret data, dcc data)
+                                | None => (Tnil, Tvoid, cc_default)
+                                end
+      in
+      Scall None (Evar id (Tfunction targs tret cc)) (list_eventval_to_list_expr vs).
+      (* Scall None (Evar id (Tfunction (list_eventval_to_typelist vs) Tvoid cc_default)) (list_eventval_to_list_expr vs). *)
 
     (* An [event_syscall] does not need any code, because it is only generated after a call to an external function *)
     Definition code_of_syscall (name: string) (vs: list eventval) (v: eventval) := Sskip.
@@ -391,21 +400,66 @@ Section Backtranslation.
     Definition code_of_return (cp cp': compartment) (v: eventval) :=
       Sreturn (Some (eventval_to_expr v)).
 
-    Definition code_of_event (e: event): statement :=
+    Definition code_of_event (fds: funs_data) (e: event): statement :=
       match e with
       | Event_vload ch id ofs v => code_of_vload ch id ofs v
       | Event_vstore ch id ofs v => code_of_vstore ch id ofs v
       | Event_annot str vs => code_of_annot str vs
-      | Event_call cp cp' id vs => code_of_call cp cp' id vs
+      | Event_call cp cp' id vs => code_of_call fds cp cp' id vs
       | Event_syscall name vs v => code_of_syscall name vs v
       | Event_return cp cp' v => code_of_return cp cp' v
       end.
 
     (* A while(1)-loop with a big switch inside it *)
-    Definition code_of_trace cp (t: trace): statement :=
-      Swhile (Econst_int Int.one (Tint I32 Signed noattr)) (switch cp (map code_of_event t) (Sreturn None)).
+    Definition code_of_trace (fds: funs_data) (t: trace) cnt: statement :=
+      Swhile (Econst_int Int.one (Tint I32 Signed noattr)) (switch cnt (map (code_of_event fds) t) (Sreturn None)).
 
   End CODE.
+
+
+  (* Section CODE. *)
+  (*   (** converting trace to code **) *)
+
+  (*   (* converting functions *) *)
+  (*   Definition code_of_vload (ch: memory_chunk) (id: ident) (ofs: Ptrofs.int) (v: eventval) := *)
+  (*     Sbuiltin None (EF_vload ch) (Tcons (Tpointer Tvoid noattr) Tnil) (ptr_of_id_ofs id ofs :: nil). *)
+
+  (*   Definition code_of_vstore (ch: memory_chunk) (id: ident) (ofs: Ptrofs.int) (v: eventval) := *)
+  (*     Sbuiltin None (EF_vstore ch) (Tcons (Tpointer Tvoid noattr) (Tcons (eventval_to_type v) Tnil)) ((ptr_of_id_ofs id ofs) :: (eventval_to_expr v) :: nil). *)
+
+  (*   Definition code_of_annot (str: string) (vs: list eventval) := *)
+  (*     Sbuiltin None (EF_annot *)
+  (*                      (Pos.of_nat (List.length (typlist_of_typelist (list_eventval_to_typelist vs)))) *)
+  (*                      str *)
+  (*                      (typlist_of_typelist (list_eventval_to_typelist vs)) *)
+  (*                   ) (list_eventval_to_typelist vs) *)
+  (*              (list_eventval_to_list_expr vs). *)
+
+  (*   (* TODO: return type! *) *)
+  (*   Definition code_of_call (cp cp': compartment) (id: ident) (vs: list eventval) := *)
+  (*     Scall None (Evar id (Tfunction (list_eventval_to_typelist vs) Tvoid cc_default)) (list_eventval_to_list_expr vs). *)
+
+  (*   (* An [event_syscall] does not need any code, because it is only generated after a call to an external function *) *)
+  (*   Definition code_of_syscall (name: string) (vs: list eventval) (v: eventval) := Sskip. *)
+
+  (*   Definition code_of_return (cp cp': compartment) (v: eventval) := *)
+  (*     Sreturn (Some (eventval_to_expr v)). *)
+
+  (*   Definition code_of_event (e: event): statement := *)
+  (*     match e with *)
+  (*     | Event_vload ch id ofs v => code_of_vload ch id ofs v *)
+  (*     | Event_vstore ch id ofs v => code_of_vstore ch id ofs v *)
+  (*     | Event_annot str vs => code_of_annot str vs *)
+  (*     | Event_call cp cp' id vs => code_of_call cp cp' id vs *)
+  (*     | Event_syscall name vs v => code_of_syscall name vs v *)
+  (*     | Event_return cp cp' v => code_of_return cp cp' v *)
+  (*     end. *)
+
+  (*   (* A while(1)-loop with a big switch inside it *) *)
+  (*   Definition code_of_trace cp (t: trace): statement := *)
+  (*     Swhile (Econst_int Int.one (Tint I32 Signed noattr)) (switch cp (map code_of_event t) (Sreturn None)). *)
+
+  (* End CODE. *)
 
 
   Section CODEPROP.
