@@ -363,6 +363,17 @@ Section Backtranslation.
       let defs := Genv.genv_defs (Genv.globalenv asm) in
       PTree.map_filter1 from_asmgd_fun_data defs.
 
+    (* Extract from Clight *)
+    Definition from_clfun_fun_data (cf: Clight.function): fun_data := mkfundata (type_of_params cf.(fn_params)) cf.(fn_return) cf.(fn_callconv).
+    Definition from_clfd_fun_data (fd: Clight.fundef): fun_data :=
+      match fd with | Ctypes.Internal cf => from_clfun_fun_data cf | Ctypes.External _ tps tr cc => mkfundata tps tr cc end.
+    Definition from_clgd_fun_data (gd: globdef Clight.fundef type): option fun_data :=
+      match gd with | Gfun fd => Some (from_clfd_fun_data fd) | Gvar _ => None end.
+
+    Definition from_cl_funs_data (cl: Clight.program): funs_data :=
+      let defs := Genv.genv_defs (genv_genv (globalenv cl)) in
+      PTree.map_filter1 from_clgd_fun_data defs.
+
   End CODEAUX.
 
 
@@ -565,20 +576,16 @@ Section Backtranslation.
     Qed.
 
 
-
-
-
+    (* TODO *)
     Lemma code_of_event_step_vload
           ev
           ch id ofs v
           p f k e le m
           (EV: ev = Event_vload ch id ofs v)
-          (* bt should ensure them *)
           (WFENV: wf_env e id)
           b
           (VOL: Senv.block_is_volatile (globalenv p) b = true)
           (GE: Genv.find_symbol (globalenv p) id = Some b)
-          (* asm should ensure them *)
           rv
           (MATCH: eventval_match (globalenv p) v (type_of_chunk ch) rv)
       :
