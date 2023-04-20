@@ -9,22 +9,81 @@ Require Import Ctypes Clight.
 
 
 
-Lemma loc_out_of_reach_unchanged_content:
-  forall f b ofs m1 m1' m2'
-    (NOTMAP: forall b0 ofs0, not (f b0 = Some (b, ofs0))), (* f doesn't map anything to [b], i.e. the counter *)
-    Mem.perm m1' b ofs Cur Writable ->
-    Mem.unchanged_on (loc_out_of_reach f m1) m1' m2' ->
-    ZMap.get ofs (Mem.mem_contents m2') !! b = ZMap.get ofs (Mem.mem_contents m1') !! b.
-Proof.
-  intros. destruct H0. apply unchanged_on_contents; eauto.
-  - unfold loc_out_of_reach. intros. now specialize (NOTMAP _ _ H0).
-  - eapply Mem.perm_implies; eauto. constructor.
-Qed.
+Section AUX.
 
-(*
+  (* f doesn't map anything to [b], e.g. the counter and function parameters *)
+  Definition meminj_notmap (f: meminj) b := forall b0 ofs0, ~ (f b0 = Some (b, ofs0)).
+
+  Lemma loc_out_of_reach_unchanged_on_content:
+    forall f b ofs m1 m1' m2'
+      (NOTMAP: meminj_notmap f b),
+      Mem.perm m1' b ofs Cur Readable ->
+      (* Mem.perm m1' b ofs Cur Writable -> *)
+      Mem.unchanged_on (loc_out_of_reach f m1) m1' m2' ->
+      ZMap.get ofs (Mem.mem_contents m2') !! b = ZMap.get ofs (Mem.mem_contents m1') !! b.
+  Proof.
+    intros. destruct H0. apply unchanged_on_contents; eauto.
+    unfold loc_out_of_reach. intros. now specialize (NOTMAP _ _ H0).
+    (* eapply Mem.perm_implies; eauto. constructor. *)
+  Qed.
+
+  Lemma loc_out_of_reach_unchanged_on_perm:
+    forall f b ofs m1 m1' m2' k p
+      (NOTMAP: meminj_notmap f b),
+      Mem.perm m1' b ofs k p ->
+      Mem.unchanged_on (loc_out_of_reach f m1) m1' m2' ->
+      Mem.perm m2' b ofs k p.
+  Proof.
+    intros. destruct H0. apply unchanged_on_perm; eauto.
+    unfold loc_out_of_reach. intros. now specialize (NOTMAP _ _ H0).
+    eapply Mem.perm_valid_block; eauto.
+  Qed.
+
+  (* Record unchanged_on (P : block -> Z -> Prop) (m_before m_after : mem) : Prop := mk_unchanged_on *)
+  (* { unchanged_on_nextblock : Ple (Mem.nextblock m_before) (Mem.nextblock m_after); *)
+  (*   unchanged_on_perm : forall (b : block) (ofs : Z) (k : perm_kind) (p : permission), P b ofs -> Mem.valid_block m_before b -> Mem.perm m_before b ofs k p <-> Mem.perm m_after b ofs k p; *)
+  (*   unchanged_on_contents : forall (b : block) (ofs : Z), P b ofs -> Mem.perm m_before b ofs Cur Readable -> ZMap.get ofs (Mem.mem_contents m_after) !! b = ZMap.get ofs (Mem.mem_contents m_before) !! b; *)
+  (*   unchanged_on_own : forall (b : block) (cp : option compartment), Mem.valid_block m_before b -> Mem.can_access_block m_before b cp <-> Mem.can_access_block m_after b cp }. *)
+
+  Lemma inject_separated_notmap
+        f f' m m' b
+        (NM: meminj_notmap f b)
+        (VALID: Mem.valid_block m' b)
+        (* (INJ: Mem.inject f m m') *)
+        (INCR: inject_incr f f')
+        (SEP: inject_separated f f' m m')
+    :
+    meminj_notmap f' b.
+  Proof.
+    unfold meminj_notmap, inject_incr, inject_separated in *.
+    intros. intros CONTRA. specialize (NM b0 ofs0). destruct (f b0) eqn:FB.
+    { destruct p. specialize (INCR _ _ _ FB). rewrite CONTRA in INCR. inversion INCR; clear INCR; subst. congruence. }
+    specialize (SEP _ _ _ FB CONTRA). destruct SEP as [NV1 NV2]. congruence.
+  Qed.
+
+  (*
 forall b, b is the block of one of the counter ->
      (forall b0 ofs, ~ (f b0 = Some (b, ofs)))
- *)
+   *)
+
+  (*   (** External calls must commute with memory injections, *)
+   (* in the following sense. *) *)
+  (* ec_mem_inject: *)
+  (*   forall ge1 ge2 c vargs m1 t vres m2 f m1' vargs', *)
+  (*   symbols_inject f ge1 ge2 -> *)
+  (*   sem ge1 c vargs m1 t vres m2 -> *)
+  (*   Mem.inject f m1 m1' -> *)
+  (*   Val.inject_list f vargs vargs' -> *)
+  (*   exists f', exists vres', exists m2', *)
+  (*      sem ge2 c vargs' m1' t vres' m2' *)
+  (*   /\ Val.inject f' vres vres' *)
+  (*   /\ Mem.inject f' m2 m2' *)
+  (*   /\ Mem.unchanged_on (loc_unmapped f) m1 m2 *)
+  (*   /\ Mem.unchanged_on (loc_out_of_reach f m1) m1' m2' *)
+  (*   /\ inject_incr f f' *)
+  (*   /\ inject_separated f f' m1 m1'; *)
+
+End AUX.
 
 
 Section Backtranslation.
@@ -488,6 +547,14 @@ Section Backtranslation.
       setoid_rewrite H0. unfold Tptr in *. destruct Archi.ptr64; auto.
     Qed.
 
+    Lemma eventval_match_eventval_to_val
+          F V (ge: Genv.t F V)
+          ev ty v
+          (EM: eventval_match ge ev ty v)
+      :
+      eventval_to_val ge ev = v.
+    Proof. inversion EM; subst; simpl; auto. setoid_rewrite H0. auto. Qed.
+
     Lemma eventval_match_wf_eventval_ge
           F V (ge: Genv.t F V)
           ev ty v
@@ -624,7 +691,19 @@ Section Backtranslation.
       rewrite H3, H. rewrite H0. rewrite val_load_result_idem. auto.
     Qed.
 
+    Lemma eventval_match_proj_rettype
+          F V (ge: Genv.t F V)
+          ev ty v
+          (EM: eventval_match ge ev ty v)
+      :
+      eventval_match ge ev (proj_rettype (rettype_of_type (typ_to_type ty))) v.
+    Proof.
+      inversion EM; subst; simpl; try constructor.
+      unfold Tptr in *. destruct Archi.ptr64; simpl; auto.
+    Qed.
 
+
+    (* Step lemmas *)
     Lemma code_of_event_step_vload
           ev
           ch id ofs v
@@ -773,6 +852,49 @@ Section Backtranslation.
       econstructor 1.
     Qed.
 
+    Lemma code_of_event_step_return
+          ev
+          cp cp' rv
+          p f k e le m
+          ge
+          (GE: ge = globalenv p)
+          (EV: ev = Event_return cp' cp rv)
+          (* bt should ensure them *)
+          (WFRV1: wf_eventval_env e rv)
+          (* asm should ensure them *)
+          (NPTR: not_ptr (eventval_to_val ge rv))
+          some_sig_ret some_val
+          (EM: eventval_match ge rv some_sig_ret some_val)
+          (RTTYP: fn_return f = typ_to_type some_sig_ret)
+          (* handle during proving *)
+          optid f' e' le' k'
+          (CONT: call_cont k = Kcall optid f' e' le' k')
+          (CP1: cp = comp_of f)
+          (CP2: cp' = comp_of f')
+          (CROSS: Genv.type_of_call ge (comp_of f') (comp_of f) = Genv.CrossCompartmentCall)
+          m'
+          (FREE: Mem.free_list m (blocks_of_env ge e) (comp_of f) = Some m')
+      :
+      Star (Clight.semantics1 p)
+           (State f (code_of_event (from_cl_funs_data p) ev) k e le m)
+           (ev :: nil)
+           (State f' Sskip k' e' (set_opttemp optid (eventval_to_val ge rv) le') m').
+    Proof.
+      subst; simpl. unfold code_of_return.
+      econstructor 2.
+      3:{ rewrite E0_left. reflexivity. }
+      { eapply step_return_1; simpl; eauto.
+        { eapply eventval_to_expr_val_eval; auto. eapply eventval_match_wf_eventval_ge; eauto. }
+        { rewrite RTTYP. eapply sem_cast_eventval_match. eapply eventval_match_transl; eauto. }
+      }
+      econstructor 2.
+      3:{ rewrite E0_right. reflexivity. }
+      { rewrite CONT. eapply step_returnstate; auto.
+        econstructor 2; auto. rewrite RTTYP. apply eventval_match_proj_rettype. erewrite eventval_match_eventval_to_val; eauto.
+      }
+      econstructor 1.
+    Qed.
+
     (* TODO *)
     Lemma code_of_event_step_call_internal
           p f k e le m
@@ -822,49 +944,6 @@ Section Backtranslation.
       econstructor 2.
       3:{ rewrite E0_right. reflexivity. }
       { eapply step_external_function; eauto. }
-      econstructor 1.
-    Qed.
-
-    Lemma code_of_event_step_return
-          ev
-          cp cp' rv
-          p f k e le m
-          ge
-          (GE: ge = globalenv p)
-          (EV: ev = Event_return cp' cp rv)
-          (* bt should ensure them *)
-          (WFRV1: wf_eventval_env e rv)
-          (WFRV2: wf_eventval_pub ge rv)
-          (RTTYP: fn_return f = eventval_to_type rv)
-          (* asm should ensure them *)
-          optid f' e' le' k'
-          (CONT: call_cont k = Kcall optid f' e' le' k')
-          (CP1: cp = comp_of f)
-          (CP2: cp' = comp_of f')
-          (NPTR: not_ptr (eventval_to_val ge rv))
-          (CROSS: Genv.type_of_call ge (comp_of f') (comp_of f) = Genv.CrossCompartmentCall)
-          (* handle during proving *)
-          m'
-          (FREE: Mem.free_list m (blocks_of_env ge e) (comp_of f) = Some m')
-      :
-      Star (Clight.semantics1 p)
-           (State f (code_of_event ev) k e le m)
-           (ev :: nil)
-           (State f' Sskip k' e' (set_opttemp optid (eventval_to_val ge rv) le') m').
-    Proof.
-      subst; simpl. unfold code_of_return.
-      econstructor 2.
-      3:{ rewrite E0_left. reflexivity. }
-      { eapply step_return_1; simpl; eauto.
-        { eapply eventval_to_expr_val_eval; auto. apply wf_eventval_pub_ge; auto. }
-        { rewrite RTTYP. eapply sem_cast_eventval; auto. eapply wf_eventval_pub_ge; eauto. }
-      }
-      econstructor 2.
-      3:{ rewrite E0_right. reflexivity. }
-      { rewrite CONT. eapply step_returnstate; auto.
-        econstructor 2; auto. rewrite RTTYP. eapply eventval_to_expr_val_match; eauto.
-        clear. destruct rv; simpl; auto.
-      }
       econstructor 1.
     Qed.
 
