@@ -446,7 +446,6 @@ Section Backtranslation.
   (*                   ) (list_eventval_to_typelist vs) *)
   (*              (list_eventval_to_list_expr vs). *)
 
-  (*   (* TODO: return type! *) *)
   (*   Definition code_of_call (cp cp': compartment) (id: ident) (vs: list eventval) := *)
   (*     Scall None (Evar id (Tfunction (list_eventval_to_typelist vs) Tvoid cc_default)) (list_eventval_to_list_expr vs). *)
 
@@ -474,6 +473,9 @@ Section Backtranslation.
 
 
   Section CODEPROP.
+
+    Let cgenv := Genv.t fundef type.
+
     (* Properties *)
     Lemma eventval_match_transl
           F V (ge: Genv.t F V)
@@ -485,6 +487,14 @@ Section Backtranslation.
       inversion EM; subst; simpl; try constructor.
       setoid_rewrite H0. unfold Tptr in *. destruct Archi.ptr64; auto.
     Qed.
+
+    Lemma eventval_match_wf_eventval_ge
+          F V (ge: Genv.t F V)
+          ev ty v
+          (EM: eventval_match ge ev ty v)
+      :
+      wf_eventval_ge ge ev.
+    Proof. inversion EM; subst; simpl; eauto. Qed.
 
     Lemma eventval_list_match_transl
           F V (ge: Genv.t F V)
@@ -541,8 +551,7 @@ Section Backtranslation.
     Qed.
 
     Lemma sem_cast_eventval_match
-          (ge: genv) v ty vv m
-          (WFEV: wf_eventval_ge ge v)
+          (ge: cgenv) v ty vv m
           (EM: eventval_match ge v (typ_of_type (typ_to_type ty)) vv)
       :
       Cop.sem_cast vv (typeof (eventval_to_expr v)) (typ_to_type ty) m = Some vv.
@@ -558,31 +567,72 @@ Section Backtranslation.
     Lemma list_eventval_to_expr_val_eval
           (ge: genv) en cp temp m evs tys
           (WFENV: Forall (wf_eventval_env en) evs)
-          (WFGE: Forall (wf_eventval_ge ge) evs)
           (EMS: eventval_list_match ge evs (typlist_of_typelist (list_typ_to_typelist tys)) (list_eventval_to_list_val ge evs))
       :
       eval_exprlist ge en cp temp m (list_eventval_to_list_expr evs) (list_typ_to_typelist tys) (list_eventval_to_list_val ge evs).
     Proof.
-      revert en cp temp m WFENV WFGE.
+      revert en cp temp m WFENV.
       match goal with | [H: eventval_list_match _ _ ?t ?v |- _] => remember t as tys2; remember v as vs2 end.
       revert tys Heqtys2 Heqvs2. induction EMS; intros; subst; simpl in *.
       { destruct tys; simpl in *. constructor. congruence. }
       inversion Heqvs2; clear Heqvs2; subst; simpl in *.
-      inversion WFENV; clear WFENV; subst. inversion WFGE; clear WFGE; subst.
+      inversion WFENV; clear WFENV; subst.
       destruct tys; simpl in Heqtys2. congruence with Heqtys2.
       inversion Heqtys2; clear Heqtys2; subst; simpl in *.
       econstructor; eauto. eapply eventval_to_expr_val_eval; eauto.
+      eapply eventval_match_wf_eventval_ge; eauto.
       eapply sem_cast_eventval_match; eauto.
     Qed.
 
+    Lemma eventval_match_eventval_to_type
+          F V (ge: Genv.t F V)
+          ev ty v
+          (EM: eventval_match ge ev ty v)
+      :
+      eventval_match ge ev (typ_of_type (eventval_to_type ev)) v.
+    Proof. inversion EM; subst; simpl; auto. Qed.
 
-    (* TODO *)
+    Lemma list_eventval_match_eventval_to_type
+          F V (ge: Genv.t F V)
+          evs tys vs
+          (ESM: eventval_list_match ge evs tys vs)
+      :
+      eventval_list_match ge evs (typlist_of_typelist (list_eventval_to_typelist evs)) vs.
+    Proof. induction ESM; simpl. constructor. constructor; auto. eapply eventval_match_eventval_to_type; eauto. Qed.
+
+    Lemma val_load_result_idem
+          ch v
+      :
+      Val.load_result ch (Val.load_result ch v) = Val.load_result ch v.
+    Proof.
+      destruct ch, v; simpl; auto.
+      5,6,7: destruct Archi.ptr64; simpl; auto.
+      1,3: rewrite Int.sign_ext_idem; auto.
+      3,4: rewrite Int.zero_ext_idem; auto.
+      all: lia.
+    Qed.
+
+    Lemma val_load_result_aux
+          F V (ge: Genv.t F V)
+          ev ch v
+          (EM: eventval_match ge ev (type_of_chunk ch) (Val.load_result ch v))
+      :
+      eventval_match ge ev (type_of_chunk ch) (Val.load_result ch (eventval_to_val ge ev)).
+    Proof.
+      inversion EM; subst; simpl in *; auto.
+      1,2,3,4: rewrite H1, H2; rewrite val_load_result_idem; auto.
+      rewrite H3, H. rewrite H0. rewrite val_load_result_idem. auto.
+    Qed.
+
+
     Lemma code_of_event_step_vload
           ev
           ch id ofs v
           p f k e le m
           (EV: ev = Event_vload ch id ofs v)
+          (* bt_wf *)
           (WFENV: wf_env e id)
+          (* from_asm *)
           b
           (VOL: Senv.block_is_volatile (globalenv p) b = true)
           (GE: Genv.find_symbol (globalenv p) id = Some b)
@@ -590,32 +640,23 @@ Section Backtranslation.
           (MATCH: eventval_match (globalenv p) v (type_of_chunk ch) rv)
       :
         Star (Clight.semantics1 p)
-             (State f (code_of_event ev) k e le m)
+             (State f (code_of_event (from_cl_funs_data p) ev) k e le m)
              (ev :: nil)
              (State f Sskip k e le m).
     Proof.
-      subst; simpl in *. unfold code_of_vload.
-      destruct Archi.ptr64 eqn:ARCH.
-      - econstructor 2.
-        3:{ rewrite E0_right. reflexivity. }
-        { eapply step_builtin.
-          { econstructor; eauto. 3: econstructor.
-            - eapply ptr_of_id_ofs_eval; eauto.
-            - unfold ptr_of_id_ofs; simpl. rewrite ARCH. simpl. simpl_expr.
-          }
-          repeat econstructor; eauto.
+      subst; simpl in *. unfold code_of_vload. simpl.
+      econstructor 2.
+      3:{ rewrite E0_right. reflexivity. }
+      { eapply step_builtin.
+        { econstructor; eauto. 3: econstructor.
+          - eapply ptr_of_id_ofs_eval; eauto.
+          - destruct Archi.ptr64 eqn:ARCH.
+            + unfold ptr_of_id_ofs, Tptr. rewrite ARCH. simpl. unfold Cop.sem_cast. simpl. rewrite ARCH. eauto.
+            + unfold ptr_of_id_ofs, Tptr. rewrite ARCH. simpl. unfold Cop.sem_cast. simpl. rewrite ARCH. eauto.
         }
-        econstructor 1.
-      - econstructor 2.
-        3:{ rewrite E0_right. reflexivity. }
-        { eapply step_builtin.
-          { econstructor; eauto. 3: econstructor.
-            - eapply ptr_of_id_ofs_eval; eauto.
-            - unfold ptr_of_id_ofs; simpl. rewrite ARCH. simpl. simpl_expr.
-          }
-          repeat econstructor; eauto.
-        }
-        econstructor 1.
+        repeat econstructor; eauto.
+      }
+      econstructor 1.
     Qed.
 
     Lemma code_of_event_step_vstore
@@ -623,51 +664,39 @@ Section Backtranslation.
           ch id ofs v
           p f k e le m
           (EV: ev = Event_vstore ch id ofs v)
-          (* bt should ensure them *)
+          (* bt_wf *)
           (WFENV: wf_env e id)
+          (WFSV1: wf_eventval_env e v)
+          (* from_asm *)
           b
           (VOL: Senv.block_is_volatile (globalenv p) b = true)
           (GE: Genv.find_symbol (globalenv p) id = Some b)
-          (* asm should ensure them *)
-          (WFSV1: wf_eventval_env e v)
-          (WFSV2: wf_eventval_ge (globalenv p) v)
-          (MATCH: eventval_match (globalenv p) v (type_of_chunk ch) (Val.load_result ch (eventval_to_val (globalenv p) v)))
+          vv
+          (MATCH: eventval_match (globalenv p) v (type_of_chunk ch) (Val.load_result ch vv))
       :
         Star (Clight.semantics1 p)
-             (State f (code_of_event ev) k e le m)
+             (State f (code_of_event (from_cl_funs_data p) ev) k e le m)
              (ev :: nil)
              (State f Sskip k e le m).
     Proof.
+      apply val_load_result_aux in MATCH.
       subst; simpl in *. unfold code_of_vstore.
-      destruct Archi.ptr64 eqn:ARCH.
-      - econstructor 2.
-        3:{ rewrite E0_right. reflexivity. }
-        { eapply step_builtin.
-          { econstructor; eauto.
-            { eapply ptr_of_id_ofs_eval; eauto. }
-            { unfold ptr_of_id_ofs; simpl. rewrite ARCH. simpl. simpl_expr. }
-            econstructor; eauto. 3: econstructor.
-            { eapply eventval_to_expr_val_eval; auto. }
-            { apply sem_cast_eventval; auto. }
+      econstructor 2.
+      3:{ rewrite E0_right. reflexivity. }
+      { eapply step_builtin.
+        { econstructor; eauto.
+          { eapply ptr_of_id_ofs_eval; eauto. }
+          { destruct Archi.ptr64 eqn:ARCH.
+            - unfold ptr_of_id_ofs, Tptr. rewrite ARCH; simpl. unfold Cop.sem_cast. simpl. rewrite ARCH. eauto.
+            - unfold ptr_of_id_ofs, Tptr. rewrite ARCH; simpl. unfold Cop.sem_cast. simpl. rewrite ARCH. eauto.
           }
-          simpl.
-          repeat econstructor; eauto.
+          econstructor; eauto. 3: econstructor.
+          { eapply eventval_to_expr_val_eval; auto. eapply eventval_match_wf_eventval_ge; eauto. }
+          { eapply sem_cast_eventval_match; eauto. eapply eventval_match_transl. eauto. }
         }
-        econstructor 1.
-      - econstructor 2.
-        3:{ rewrite E0_right. reflexivity. }
-        { eapply step_builtin.
-          { econstructor; eauto.
-            { eapply ptr_of_id_ofs_eval; eauto. }
-            { unfold ptr_of_id_ofs; simpl. rewrite ARCH. simpl. simpl_expr. }
-            econstructor; eauto. 3: econstructor.
-            { eapply eventval_to_expr_val_eval; auto. }
-            { apply sem_cast_eventval; auto. }
-          }
-          simpl.
-          repeat econstructor; eauto.
-        }
-        econstructor 1.
+        simpl. repeat econstructor; eauto.
+      }
+      econstructor 1.
     Qed.
 
     Lemma code_of_event_step_annot
@@ -675,57 +704,59 @@ Section Backtranslation.
           str vs
           p f k e le m
           (EV: ev = Event_annot str vs)
-          (* bt should ensure them *)
+          (* bt_wf *)
           (WFENV: Forall (wf_eventval_env e) vs)
-          (WFPUB: Forall (wf_eventval_pub (globalenv p)) vs)
-          (* asm should ensure them *)
+          (* from_asm *)
+          targs vargs
+          (ESM: eventval_list_match (globalenv p) vs targs vargs)
       :
         Star (Clight.semantics1 p)
-             (State f (code_of_event ev) k e le m)
+             (State f (code_of_event (from_cl_funs_data p) ev) k e le m)
              (ev :: nil)
              (State f Sskip k e le m).
     Proof.
       subst; simpl in *. unfold code_of_annot.
       econstructor 2.
       3:{ rewrite E0_right. reflexivity. }
-      { eapply step_builtin.
-        { eapply list_eventval_to_expr_val_eval; auto.
-          eapply Forall_impl. 2: eauto. intros. apply wf_eventval_pub_ge; auto. }
-        repeat econstructor; eauto. eapply list_eventval_to_expr_val_match; eauto.
+      { eapply step_builtin; simpl.
+        { eapply list_eventval_to_expr_val_eval; auto. eapply eventval_list_match_transl. eapply list_eventval_match_eventval_to_type; eauto. }
+        { repeat econstructor; eauto. eapply list_eventval_match_eventval_to_type. eapply eventval_list_match_transl; eauto. }
       }
       econstructor 1.
     Qed.
 
-    (* TODO: return type? *)
     Lemma code_of_event_step_call_start
           ev
           cp cp' id vs
           p f k e le m
-          ge
+          ge data
           (GE: ge = globalenv p)
           (EV: ev = Event_call cp cp' id vs)
-          (* bt should ensure them *)
+          (FDATA: (from_cl_funs_data p) ! id = Some data)
+          (* bt_wf *)
           (GLOB: e ! id = None)
+          (WFARGS1: Forall (wf_eventval_env e) vs)
+          (* from_asm *)
           b
           (FINDB: Genv.find_symbol ge id = Some b)
           fd
           (FINDF: Genv.find_funct ge (Vptr b Ptrofs.zero) = Some fd)
-          (TYPEF: type_of_fundef fd = Tfunction (list_eventval_to_typelist vs) Tvoid cc_default)
-          (WFARGS1: Forall (wf_eventval_env e) vs)
-          (WFARGS2: Forall (wf_eventval_pub ge) vs)
-          (* asm should ensure them *)
+          (TYPEF: type_of_fundef fd = Tfunction data.(dargs) data.(dret) data.(dcc))
           (CP1: cp = comp_of f)
           (CP2: cp' = comp_of fd)
-          (NPTR: Forall not_ptr (list_eventval_to_list_val ge vs))
           (CROSS: Genv.type_of_call ge (comp_of f) (comp_of fd) = Genv.CrossCompartmentCall)
+          (NPTR: Forall not_ptr (list_eventval_to_list_val ge vs))
           (ALLOW: Genv.allowed_cross_call ge (comp_of f) (Vptr b Ptrofs.zero))
+          some_sig_args some_vals
+          (ESM: eventval_list_match ge vs some_sig_args some_vals)
+          (SIGARGS: data.(dargs) = (list_typ_to_typelist some_sig_args))
       :
         Star (Clight.semantics1 p)
-             (State f (code_of_event ev) k e le m)
+             (State f (code_of_event (from_cl_funs_data p) ev) k e le m)
              (ev :: nil)
              (Callstate fd (list_eventval_to_list_val ge vs) (Kcall None f e le k) m).
     Proof.
-      subst; simpl. unfold code_of_call.
+      subst; simpl. unfold code_of_call. rewrite FDATA.
       econstructor 2.
       3:{ rewrite E0_right. reflexivity. }
       { eapply step_call; simpl; eauto.
@@ -733,16 +764,16 @@ Section Backtranslation.
           - eapply eval_Evar_global; eauto.
           - eapply deref_loc_reference. auto.
         }
-        { eapply list_eventval_to_expr_val_eval; auto.
-          eapply Forall_impl. 2: eauto. intros. apply wf_eventval_pub_ge; auto. }
+        { rewrite SIGARGS. apply list_eventval_to_expr_val_eval; auto. eapply eventval_list_match_transl. eauto. }
         red; auto.
         unfold Genv.find_comp. setoid_rewrite FINDF.
         eapply call_trace_cross; eauto. apply Genv.find_invert_symbol; auto.
-        eapply (list_eventval_to_expr_val_match (globalenv p)); eauto.
+        rewrite SIGARGS. eapply eventval_list_match_transl; eauto.
       }
       econstructor 1.
     Qed.
 
+    (* TODO *)
     Lemma code_of_event_step_call_internal
           p f k e le m
           ge
