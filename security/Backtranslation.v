@@ -928,25 +928,30 @@ Section Backtranslation.
     Definition wf_st_annot (str: string) (vs: list eventval) e :=
       (Forall (wf_eventval_env e) vs).
 
-    Definition wf_sem_call_start_cl (p: Clight.program) (cp cp': compartment) (id: ident) (vs: list eventval) :=
-      let ge := globalenv p in
-      exists data,
-        ((from_cl_funs_data p) ! id = Some data) /\
-          exists b,
-            (Genv.find_symbol ge id = Some b) /\
-              exists fd, 
-                (Genv.find_funct ge (Vptr b Ptrofs.zero) = Some fd) /\
-                  (type_of_fundef fd = Tfunction data.(dargs) data.(dret) data.(dcc)) /\
-                  (cp' = comp_of fd) /\
-                  (Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall) /\
-                  (Forall not_ptr (list_eventval_to_list_val ge vs)) /\
-                  (Genv.allowed_cross_call ge cp (Vptr b Ptrofs.zero)) /\
-                  exists some_sig_args some_vals,
-                    (eventval_list_match ge vs some_sig_args some_vals) /\
-                      (data.(dargs) = (list_typ_to_typelist some_sig_args)).
+    Definition wf_sem_call_start_cl (ge: genv) (cp cp': compartment) (id: ident) (vs: list eventval) :=
+      exists b,
+        (Genv.find_symbol ge id = Some b) /\
+          exists fd, 
+            (Genv.find_funct ge (Vptr b Ptrofs.zero) = Some fd) /\
+              let data := from_clfd_fun_data fd in
+              (type_of_fundef fd = Tfunction data.(dargs) data.(dret) data.(dcc)) /\
+                (cp' = comp_of fd) /\
+                (Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall) /\
+                (Forall not_ptr (list_eventval_to_list_val ge vs)) /\
+                (Genv.allowed_cross_call ge cp (Vptr b Ptrofs.zero)) /\
+                exists some_sig_args some_vals,
+                  (eventval_list_match ge vs some_sig_args some_vals) /\
+                    (data.(dargs) = (list_typ_to_typelist some_sig_args)).
 
     Definition wf_st_call_start (cp cp': compartment) (id: ident) (vs: list eventval) e (f: Clight.function) :=
       (e ! id = None) /\ (Forall (wf_eventval_env e) vs) /\ (cp = comp_of f).
+
+    Definition wf_st_call_internal (ge: genv) (vs: list eventval) (f1: Clight.function) m :=
+      exists e1 le1 m1, function_entry1 ge f1 (list_eventval_to_list_val ge vs) m e1 le1 m1.
+
+    Definition wf_st_call_external (ge: genv) (vs: list eventval) k m sname sargs svr ef :=
+      let sev := Event_syscall sname sargs svr in
+      exists vres m1, (external_call ef ge (call_comp k) (list_eventval_to_list_val ge vs) m (sev :: nil) vres m1).
 
     Definition wf_sem_return {F V} (ge: Genv.t F V) (cp cp': compartment) (rv: eventval) :=
       (Genv.type_of_call ge cp' cp = Genv.CrossCompartmentCall) /\
@@ -965,59 +970,28 @@ Section Backtranslation.
               (Mem.free_list m (blocks_of_env ge e) (comp_of f) = Some m').
 
 
+    Inductive wf_inv_cl (ge: genv) : Clight.function -> cont -> env -> mem -> trace -> Prop :=
+    | wf_inv_vload
+        f k e m t
+        ch id ofs v
+        (SEM: wf_sem_vload ge ch id ofs v)
+        (ST: wf_st_vload ch id ofs v e)
+        (IND: wf_inv_cl ge f k e m t)
+      :
+      wf_inv_cl ge f k e m (Event_vload ch id ofs v :: t)
+    | wf_inv_vstore
+        f k e m t
+        ch id ofs v
+        (SEM: wf_sem_vstore ge ch id ofs v)
+        (ST: wf_st_vstore ch id ofs v e)
+        (IND: wf_inv_cl ge f k e m t)
+      :
+      wf_inv_cl ge f k e m (Event_vstore ch id ofs v :: t)
+    .
 
     (* TODO *)
     (* we need a more precise invariant for the proof, e.g. counters, mem_inj *)
-    Lemma code_of_event_step_call_internal
-          p f k e le m
-          ge
-          (GE: ge = globalenv p)
-          (* bt should ensure them *)
-          fd args f1
-          (INTERNAL: fd = Internal f1)
-          (* asm should ensure them *)
-          (* handle during proving *)
-          e1 le1 m1
-          (ENTRY: function_entry1 ge f1 args m e1 le1 m1)
-      :
-        Star (Clight.semantics1 p)
-             (Callstate fd args (Kcall None f e le k) m)
-             nil
-             (State f1 (fn_body f1) (Kcall None f e le k) e1 le1 m1).
-    Proof.
-      subst; simpl.
-      econstructor 2.
-      3:{ rewrite E0_right. reflexivity. }
-      { eapply step_internal_function; eauto. }
-      econstructor 1.
-    Qed.
 
-    Lemma code_of_event_step_call_external
-          p m
-          ge
-          (GE: ge = globalenv p)
-          (* bt should ensure them *)
-          fd k args ef targs tres cconv
-          (EXTERNAL: fd = External ef targs tres cconv)
-          (* asm should ensure them *)
-          sev
-          vres m1
-          (SEM: external_call ef ge (call_comp k) args m (sev :: nil) vres m1)
-          (* handle during proving *)
-          sname sargs svr
-          (SYSEV: sev = Event_syscall sname sargs svr)
-      :
-        Star (Clight.semantics1 p)
-             (Callstate fd args k m)
-             (sev :: nil)
-             (Returnstate vres k m1 (rettype_of_type tres) (comp_of ef)).
-    Proof.
-      subst; simpl.
-      econstructor 2.
-      3:{ rewrite E0_right. reflexivity. }
-      { eapply step_external_function; eauto. }
-      econstructor 1.
-    Qed.
 
 
 (** Events.v **)
