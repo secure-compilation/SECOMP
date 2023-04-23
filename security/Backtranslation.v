@@ -468,7 +468,9 @@ Section Backtranslation.
        2. intra-compartment. need to execute a 'Scall'. We define this case.
      *)
     (** need function: external call name -> id **)
-    (** need axiom: 'Event_syscall name _ _' can be uniquely converted into an ident. **)
+    (** need axiom: 'Event_syscall name _ _' can be uniquely converted into a code (ident).
+        e.g., an external call to 'EF_external name _ _' invokes 'Event_syscall name _ _'.
+     **)
     Variable syscall_ident: string -> ident.
     Definition code_of_syscall (fds: funs_data) (name: string) (vs: list eventval) (v: eventval) :=
       let id := syscall_ident name in
@@ -494,8 +496,8 @@ Section Backtranslation.
 
     (* A while(1)-loop with a big switch inside it *)
     (* TODO: needs to distinguish intra/cross syscall *)
-    Definition code_of_trace (fds: funs_data) (t: trace) cnt: statement :=
-      Swhile (Econst_int Int.one (Tint I32 Signed noattr)) (switch cnt (map (code_of_event fds) t) (Sreturn None)).
+    (* Definition code_of_trace (fds: funs_data) (t: trace) cnt: statement := *)
+    (*   Swhile (Econst_int Int.one (Tint I32 Signed noattr)) (switch cnt (map (code_of_event fds) t) (Sreturn None)). *)
 
   End CODE.
 
