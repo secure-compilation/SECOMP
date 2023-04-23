@@ -462,10 +462,22 @@ Section Backtranslation.
                                 end
       in
       Scall None (Evar id (Tfunction targs tret cc)) (list_eventval_to_list_expr vs).
-      (* Scall None (Evar id (Tfunction (list_eventval_to_typelist vs) Tvoid cc_default)) (list_eventval_to_list_expr vs). *)
 
-    (* An [event_syscall] does not need any code, because it is only generated after a call to an external function *)
-    Definition code_of_syscall (name: string) (vs: list eventval) (v: eventval) := Sskip.
+    (* Two cases for invoking an Event_syscall: 
+       1. cross-compartment. follows a call event, so just a skip is enough. 
+       2. intra-compartment. need to execute a 'Scall'. We define this case.
+     *)
+    (** need function: external call name -> id **)
+    (** need axiom: 'Event_syscall name _ _' can be uniquely converted into an ident. **)
+    Variable syscall_ident: string -> ident.
+    Definition code_of_syscall (fds: funs_data) (name: string) (vs: list eventval) (v: eventval) :=
+      let id := syscall_ident name in
+      let '(targs, tret, cc) := match fds ! id with
+                                | Some data => (dargs data, dret data, dcc data)
+                                | None => (Tnil, Tvoid, cc_default)
+                                end
+      in
+      Scall None (Evar id (Tfunction targs tret cc)) (list_eventval_to_list_expr vs).
 
     Definition code_of_return (cp cp': compartment) (v: eventval) :=
       Sreturn (Some (eventval_to_expr v)).
@@ -476,11 +488,12 @@ Section Backtranslation.
       | Event_vstore ch id ofs v => code_of_vstore ch id ofs v
       | Event_annot str vs => code_of_annot str vs
       | Event_call cp cp' id vs => code_of_call fds cp cp' id vs
-      | Event_syscall name vs v => code_of_syscall name vs v
+      | Event_syscall name vs v => code_of_syscall fds name vs v
       | Event_return cp cp' v => code_of_return cp cp' v
       end.
 
     (* A while(1)-loop with a big switch inside it *)
+    (* TODO: needs to distinguish intra/cross syscall *)
     Definition code_of_trace (fds: funs_data) (t: trace) cnt: statement :=
       Swhile (Econst_int Int.one (Tint I32 Signed noattr)) (switch cnt (map (code_of_event fds) t) (Sreturn None)).
 
@@ -658,6 +671,11 @@ Section Backtranslation.
       unfold Tptr in *. destruct Archi.ptr64; simpl; auto.
     Qed.
 
+  End CODEPROP.
+
+
+  Section STEPPROP.
+    Variable sid: string -> ident.
 
     (* Step lemmas *)
     Lemma code_of_event_step_vload
@@ -675,7 +693,7 @@ Section Backtranslation.
           (MATCH: eventval_match (globalenv p) v (type_of_chunk ch) rv)
       :
         Star (Clight.semantics1 p)
-             (State f (code_of_event (from_cl_funs_data p) ev) k e le m)
+             (State f (code_of_event sid (from_cl_funs_data p) ev) k e le m)
              (ev :: nil)
              (State f Sskip k e le m).
     Proof.
@@ -710,7 +728,7 @@ Section Backtranslation.
           (MATCH: eventval_match (globalenv p) v (type_of_chunk ch) (Val.load_result ch vv))
       :
         Star (Clight.semantics1 p)
-             (State f (code_of_event (from_cl_funs_data p) ev) k e le m)
+             (State f (code_of_event sid (from_cl_funs_data p) ev) k e le m)
              (ev :: nil)
              (State f Sskip k e le m).
     Proof.
@@ -746,7 +764,7 @@ Section Backtranslation.
           (ESM: eventval_list_match (globalenv p) vs targs vargs)
       :
         Star (Clight.semantics1 p)
-             (State f (code_of_event (from_cl_funs_data p) ev) k e le m)
+             (State f (code_of_event sid (from_cl_funs_data p) ev) k e le m)
              (ev :: nil)
              (State f Sskip k e le m).
     Proof.
@@ -787,7 +805,7 @@ Section Backtranslation.
           (SIGARGS: data.(dargs) = (list_typ_to_typelist some_sig_args))
       :
         Star (Clight.semantics1 p)
-             (State f (code_of_event (from_cl_funs_data p) ev) k e le m)
+             (State f (code_of_event sid (from_cl_funs_data p) ev) k e le m)
              (ev :: nil)
              (Callstate fd (list_eventval_to_list_val ge vs) (Kcall None f e le k) m).
     Proof.
@@ -832,7 +850,7 @@ Section Backtranslation.
           (FREE: Mem.free_list m (blocks_of_env ge e) (comp_of f) = Some m')
       :
       Star (Clight.semantics1 p)
-           (State f (code_of_event (from_cl_funs_data p) ev) k e le m)
+           (State f (code_of_event sid (from_cl_funs_data p) ev) k e le m)
            (ev :: nil)
            (State f' Sskip k' e' (set_opttemp optid (eventval_to_val ge rv) le') m').
     Proof.
@@ -902,7 +920,7 @@ Section Backtranslation.
       econstructor 1.
     Qed.
 
-  End CODEPROP.
+  End STEPPROP.
 
 
   Section WELLFORMED.
@@ -1017,6 +1035,7 @@ Section Backtranslation.
       :
       wf_inv_cl ge f k e m (Event_return cp cp' rv :: t).
 
+    (* TODO: external call - 2 cases: cross-comp, intra-comp -- diff event, code *)
 
     Definition wf_st_call_external (ge: genv) (vs: list eventval) k m sname sargs svr ef m1 :=
       let sev := Event_syscall sname sargs svr in
