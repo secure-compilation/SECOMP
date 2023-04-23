@@ -673,6 +673,27 @@ Section Backtranslation.
       unfold Tptr in *. destruct Archi.ptr64; simpl; auto.
     Qed.
 
+    Lemma sem_cast_eventval
+          (ge: cgenv) v m
+          (WFEV: wf_eventval_ge ge v)
+      :
+      Cop.sem_cast (eventval_to_val ge v) (typeof (eventval_to_expr v)) (eventval_to_type v) m = Some (eventval_to_val ge v).
+    Proof. rewrite typeof_eventval_to_expr_type. destruct v; simpl in *; simpl_expr. destruct WFEV. rewrite H. simpl_expr. Qed.
+
+    Lemma list_eventval_to_expr_val_eval2
+          (ge: genv) en cp temp m evs
+          (WFENV: Forall (wf_eventval_env en) evs)
+          (WFGE: Forall (wf_eventval_ge ge) evs)
+      :
+      eval_exprlist ge en cp temp m (list_eventval_to_list_expr evs) (list_eventval_to_typelist evs) (list_eventval_to_list_val ge evs).
+    Proof.
+      move evs at top. revert ge en cp temp m WFENV WFGE. induction evs; intros; simpl in *.
+      constructor.
+      inversion WFENV; clear WFENV; subst. inversion WFGE; clear WFGE; subst.
+      econstructor; eauto. eapply eventval_to_expr_val_eval; eauto.
+      apply sem_cast_eventval; auto.
+    Qed.
+
   End CODEPROP.
 
 
@@ -895,7 +916,7 @@ Section Backtranslation.
       econstructor 1.
     Qed.
 
-    Lemma code_of_event_step_call_external
+    Lemma code_of_event_step_call_external_cross
           p m
           ge
           (GE: ge = globalenv p)
@@ -919,6 +940,103 @@ Section Backtranslation.
       econstructor 2.
       3:{ rewrite E0_right. reflexivity. }
       { eapply step_external_function; eauto. }
+      econstructor 1.
+    Qed.
+
+    Lemma code_of_event_step_return_external_cross
+          p m
+          ge
+          (GE: ge = globalenv p)
+          ev rv f cp
+          (EV: ev = Event_return (comp_of f) cp rv)
+          (* bt should ensure them *)
+          (* asm should ensure them *)
+          vres optid e le k ty
+          (CROSS: Genv.type_of_call ge (comp_of f) cp = Genv.CrossCompartmentCall)
+          (NPTR: not_ptr vres)
+          (EM: eventval_match ge rv (proj_rettype ty) vres)
+          (* handle during proving *)
+      :
+        Star (Clight.semantics1 p)
+             (Returnstate vres (Kcall optid f e le k) m ty cp)
+             (ev :: nil)
+             (State f Sskip k e (set_opttemp optid vres le) m).
+    Proof.
+      subst; simpl.
+      econstructor 2.
+      3:{ rewrite E0_right. reflexivity. }
+      { eapply step_returnstate; eauto. econstructor 2; eauto. }
+      econstructor 1.
+    Qed.
+
+    (* TODO: TYARGS condition needs fix? *)
+    Lemma code_of_event_step_call_external_intra
+          ev
+          name args rv
+          p f k e le m
+          ge data
+          (GE: ge = globalenv p)
+          (EV: ev = Event_syscall name args rv)
+          (* start call *)
+          id
+          (ID: sid name = id)
+          (FDATA: (from_cl_funs_data p) ! id = Some data)
+          (* bt_wf *)
+          (GLOB: e ! id = None)
+          (WFARGS1: Forall (wf_eventval_env e) args)
+          (WFARGS2: Forall (wf_eventval_ge ge) args)
+          (* from_asm *)
+          b
+          (FINDB: Genv.find_symbol ge id = Some b)
+          (ALLOW: Genv.allowed_call ge (comp_of f) (Vptr b Ptrofs.zero))
+          fd
+          (FINDF: Genv.find_funct ge (Vptr b Ptrofs.zero) = Some fd)
+          (TYPEF: type_of_fundef fd = Tfunction data.(dargs) data.(dret) data.(dcc))
+          cp cp'
+          (CP1: cp = comp_of f)
+          (CP2: cp' = comp_of fd)
+          (INTRA: Genv.type_of_call ge (comp_of f) (comp_of fd) <> Genv.CrossCompartmentCall)
+          (* invoke syscall *)
+          ef cp'' sg
+          (EF: ef = EF_external name cp'' sg)
+          (EXTERNAL: fd = External ef data.(dargs) data.(dret) data.(dcc))
+          srv m'
+          (SEM: external_call ef ge cp (list_eventval_to_list_val (globalenv p) args) m (ev :: nil) srv m')
+          (* returnstate *)
+          (TYARGS: data.(dargs) = (list_eventval_to_typelist args))
+      :
+        Star (Clight.semantics1 p)
+             (State f (code_of_event sid (from_cl_funs_data p) ev) k e le m)
+             (ev :: nil)
+             (State f Sskip k e le m').
+    Proof.
+      subst; simpl. unfold code_of_syscall. rewrite FDATA.
+      econstructor 2.
+      3:{ rewrite E0_left. reflexivity. }
+      { eapply step_call. simpl; eauto.
+        { eapply eval_Elvalue.
+          - eapply eval_Evar_global; eauto.
+          - eapply deref_loc_reference. auto.
+        }
+        { rewrite TYARGS. eapply list_eventval_to_expr_val_eval2; auto. }
+        all: simpl in *; eauto.
+        { unfold Genv.find_comp. unfold Genv.find_funct.
+          rewrite pred_dec_true; auto. rewrite pred_dec_true in FINDF; auto.
+          rewrite FINDF. intros. exfalso. apply INTRA. auto.
+        }
+        { econstructor 1. unfold Genv.find_comp. unfold Genv.find_funct.
+          rewrite pred_dec_true; auto. rewrite pred_dec_true in FINDF; auto.
+          rewrite FINDF. intros H. apply INTRA. auto.
+        }
+      }
+      econstructor 2.
+      3:{ rewrite E0_right. reflexivity. }
+      { eapply step_external_function. eauto. }
+      econstructor 2.
+      3:{ rewrite E0_right. reflexivity. }
+      { eapply step_returnstate. intro. exfalso. apply INTRA. auto.
+        econstructor 1. intros H. apply INTRA. auto.
+      }
       econstructor 1.
     Qed.
 
@@ -1038,15 +1156,6 @@ Section Backtranslation.
       wf_inv_cl ge f k e m (Event_return cp cp' rv :: t).
 
     (* TODO: external call - 2 cases: cross-comp, intra-comp -- diff event, code *)
-
-    Definition wf_st_call_external (ge: genv) (vs: list eventval) k m sname sargs svr ef m1 :=
-      let sev := Event_syscall sname sargs svr in
-      exists vres, (external_call ef ge (call_comp k) (list_eventval_to_list_val ge vs) m (sev :: nil) vres m1).
-
-
-
-
-    .
 
     (* TODO *)
     (* we need a more precise invariant for the proof, e.g. counters, mem_inj *)
