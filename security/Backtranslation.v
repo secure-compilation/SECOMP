@@ -907,6 +907,8 @@ Section Backtranslation.
 
   Section WELLFORMED.
 
+    Definition empty_le := PTree.empty val.
+
     (* wf_sem: from asm, wf_st: proof invariant for Clight states *)
     Definition wf_sem_vload {F V} (ge: Genv.t F V) (ch: memory_chunk) (id: ident) (ofs: ptrofs) (v: eventval) :=
       (exists b, (Genv.find_symbol ge id = Some b) /\ (Senv.block_is_volatile ge b = true)) /\
@@ -928,30 +930,29 @@ Section Backtranslation.
     Definition wf_st_annot (str: string) (vs: list eventval) e :=
       (Forall (wf_eventval_env e) vs).
 
-    Definition wf_sem_call_start_cl (ge: genv) (cp cp': compartment) (id: ident) (vs: list eventval) :=
+    Definition wf_sem_call_start_cl (ge: genv) (cp cp': compartment) (id: ident) (vs: list eventval) (fd: Clight.fundef) :=
       exists b,
         (Genv.find_symbol ge id = Some b) /\
-          exists fd, 
-            (Genv.find_funct ge (Vptr b Ptrofs.zero) = Some fd) /\
-              let data := from_clfd_fun_data fd in
-              (type_of_fundef fd = Tfunction data.(dargs) data.(dret) data.(dcc)) /\
-                (cp' = comp_of fd) /\
-                (Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall) /\
-                (Forall not_ptr (list_eventval_to_list_val ge vs)) /\
-                (Genv.allowed_cross_call ge cp (Vptr b Ptrofs.zero)) /\
-                exists some_sig_args some_vals,
-                  (eventval_list_match ge vs some_sig_args some_vals) /\
-                    (data.(dargs) = (list_typ_to_typelist some_sig_args)).
+          (Genv.find_funct ge (Vptr b Ptrofs.zero) = Some fd) /\
+          let data := from_clfd_fun_data fd in
+          (type_of_fundef fd = Tfunction data.(dargs) data.(dret) data.(dcc)) /\
+            (cp' = comp_of fd) /\
+            (Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall) /\
+            (Forall not_ptr (list_eventval_to_list_val ge vs)) /\
+            (Genv.allowed_cross_call ge cp (Vptr b Ptrofs.zero)) /\
+            exists some_sig_args some_vals,
+              (eventval_list_match ge vs some_sig_args some_vals) /\
+                (data.(dargs) = (list_typ_to_typelist some_sig_args)).
 
     Definition wf_st_call_start (cp cp': compartment) (id: ident) (vs: list eventval) e (f: Clight.function) :=
       (e ! id = None) /\ (Forall (wf_eventval_env e) vs) /\ (cp = comp_of f).
 
-    Definition wf_st_call_internal (ge: genv) (vs: list eventval) (f1: Clight.function) m :=
-      exists e1 le1 m1, function_entry1 ge f1 (list_eventval_to_list_val ge vs) m e1 le1 m1.
+    Definition wf_st_call_internal (ge: genv) (vs: list eventval) (f1: Clight.function) m e1 m1 :=
+      function_entry1 ge f1 (list_eventval_to_list_val ge vs) m e1 empty_le m1.
 
-    Definition wf_st_call_external (ge: genv) (vs: list eventval) k m sname sargs svr ef :=
+    Definition wf_st_call_external (ge: genv) (vs: list eventval) k m sname sargs svr ef m1 :=
       let sev := Event_syscall sname sargs svr in
-      exists vres m1, (external_call ef ge (call_comp k) (list_eventval_to_list_val ge vs) m (sev :: nil) vres m1).
+      exists vres, (external_call ef ge (call_comp k) (list_eventval_to_list_val ge vs) m (sev :: nil) vres m1).
 
     Definition wf_sem_return {F V} (ge: Genv.t F V) (cp cp': compartment) (rv: eventval) :=
       (Genv.type_of_call ge cp' cp = Genv.CrossCompartmentCall) /\
@@ -959,15 +960,13 @@ Section Backtranslation.
         exists some_sig_ret some_val,
           (eventval_match ge rv some_sig_ret some_val).
 
-    Definition wf_st_return (ge: genv) (cp cp': compartment) (rv: eventval) e (f: Clight.function) (k: cont) (m: mem) :=
+    Definition wf_st_return (ge: genv) (cp cp': compartment) (rv: eventval) e (f: Clight.function) (k: cont) (m: mem) f' k' e' m' :=
       (wf_eventval_env e rv) /\
         (cp = comp_of f) /\
         (forall some_sig_ret some_val, (eventval_match ge rv some_sig_ret some_val) -> (fn_return f = typ_to_type some_sig_ret)) /\
-        exists optid f' e' le' k',
-          (call_cont k = Kcall optid f' e' le' k') /\
-            (cp' = comp_of f') /\
-            exists m',
-              (Mem.free_list m (blocks_of_env ge e) (comp_of f) = Some m').
+        (call_cont k = Kcall None f' e' empty_le k') /\
+        (cp' = comp_of f') /\
+        (Mem.free_list m (blocks_of_env ge e) (comp_of f) = Some m').
 
 
     Inductive wf_inv_cl (ge: genv) : Clight.function -> cont -> env -> mem -> trace -> Prop :=
@@ -987,6 +986,45 @@ Section Backtranslation.
         (IND: wf_inv_cl ge f k e m t)
       :
       wf_inv_cl ge f k e m (Event_vstore ch id ofs v :: t)
+    | wf_inv_annot
+        f k e m t
+        str vs
+        (SEM: wf_sem_annot ge str vs)
+        (ST: wf_st_annot str vs e)
+        (IND: wf_inv_cl ge f k e m t)
+      :
+      wf_inv_cl ge f k e m (Event_annot str vs :: t)
+
+    | wf_inv_call_internal
+        f k e m t
+        cp cp' id vs
+        fd
+        (SEM: wf_sem_call_start_cl ge cp cp' id vs fd)
+        (ST: wf_st_call_start cp cp' id vs e f)
+        f1 e1 m1
+        (ISINT: fd = Internal f1)
+        (INT: wf_st_call_internal ge vs f1 m e1 m1)
+        (IND: wf_inv_cl ge f1 (Kcall None f e empty_le k) e1 m1 t)
+      :
+      wf_inv_cl ge f k e m (Event_call cp cp' id vs :: t)
+    | wf_inv_return
+        f k e m t
+        cp cp' rv
+        (SEM: wf_sem_return ge cp cp' rv)
+        f' k' e' m'
+        (ST: wf_st_return ge cp cp' rv e f k m f' k' e' m')
+        (IND: wf_inv_cl ge f' k' e' m' t)
+      :
+      wf_inv_cl ge f k e m (Event_return cp cp' rv :: t).
+
+
+    Definition wf_st_call_external (ge: genv) (vs: list eventval) k m sname sargs svr ef m1 :=
+      let sev := Event_syscall sname sargs svr in
+      exists vres, (external_call ef ge (call_comp k) (list_eventval_to_list_val ge vs) m (sev :: nil) vres m1).
+
+
+
+
     .
 
     (* TODO *)
