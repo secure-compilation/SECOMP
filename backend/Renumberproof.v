@@ -269,8 +269,6 @@ Proof.
     eapply find_function_translated; eauto.
     apply sig_preserved.
     rewrite comp_transl, COMP. eauto.
-    eapply find_function_ptr_translated; eauto.
-    eapply allowed_call_translated; eauto.
   constructor. auto.
 (* builtin *)
   econstructor; split.
@@ -302,7 +300,6 @@ Proof.
   eapply exec_function_external; eauto.
     eapply external_call_symbols_preserved; eauto.
      apply senv_preserved.
-    rewrite <- (match_stacks_call_comp _ _ STACKS); eauto.
   constructor; auto.
 (* return *)
   inv STACKS. inv H1.

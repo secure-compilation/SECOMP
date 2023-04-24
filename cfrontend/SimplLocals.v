@@ -54,19 +54,19 @@ Definition make_cast (a: expr) (tto: type) : expr :=
 
 (** Insertion of debug annotations *)
 
-Definition Sdebug_temp (id: ident) (ty: type) :=
-  Sbuiltin None (EF_debug 2%positive id (typ_of_type ty :: nil))
+Definition Sdebug_temp (cp: compartment) (id: ident) (ty: type) :=
+  Sbuiltin None (EF_debug cp 2%positive id (typ_of_type ty :: nil))
                 (Tcons (typeconv ty) Tnil)
                 (Etempvar id ty :: nil).
 
-Definition Sdebug_var (id: ident) (ty: type) :=
-  Sbuiltin None (EF_debug 5%positive id (AST.Tptr :: nil))
+Definition Sdebug_var (cp: compartment) (id: ident) (ty: type) :=
+  Sbuiltin None (EF_debug cp 5%positive id (AST.Tptr :: nil))
                 (Tcons (Tpointer ty noattr) Tnil)
                 (Eaddrof (Evar id ty) (Tpointer ty noattr) :: nil).
 
-Definition Sset_debug (id: ident) (ty: type) (a: expr) :=
+Definition Sset_debug (cp: compartment) (id: ident) (ty: type) (a: expr) :=
   if Compopts.debug tt
-  then Ssequence (Sset id (make_cast a ty)) (Sdebug_temp id ty)
+  then Ssequence (Sset id (make_cast a ty)) (Sdebug_temp cp id ty)
   else Sset id (make_cast a ty).
 
 (** Rewriting of expressions and statements. *)
@@ -103,13 +103,13 @@ Definition check_opttemp (cenv: compilenv) (optid: option ident) : res unit :=
   | None => OK tt
   end.
 
-Fixpoint simpl_stmt (cenv: compilenv) (s: statement) : res statement :=
+Fixpoint simpl_stmt (cenv: compilenv) (cp: compartment) (s: statement) : res statement :=
   match s with
   | Sskip => OK Sskip
   | Sassign a1 a2 =>
       match is_liftable_var cenv a1 with
       | Some id =>
-          OK (Sset_debug id (typeof a1) (simpl_expr cenv a2))
+          OK (Sset_debug cp id (typeof a1) (simpl_expr cenv a2))
       | None =>
           OK (Sassign (simpl_expr cenv a1) (simpl_expr cenv a2))
       end
@@ -123,36 +123,36 @@ Fixpoint simpl_stmt (cenv: compilenv) (s: statement) : res statement :=
       do x <- check_opttemp cenv optid;
       OK (Sbuiltin optid ef tyargs (simpl_exprlist cenv al))
   | Ssequence s1 s2 =>
-      do s1' <- simpl_stmt cenv s1;
-      do s2' <- simpl_stmt cenv s2;
+      do s1' <- simpl_stmt cenv cp s1;
+      do s2' <- simpl_stmt cenv cp s2;
       OK (Ssequence s1' s2')
   | Sifthenelse a s1 s2 =>
-      do s1' <- simpl_stmt cenv s1;
-      do s2' <- simpl_stmt cenv s2;
+      do s1' <- simpl_stmt cenv cp s1;
+      do s2' <- simpl_stmt cenv cp s2;
       OK (Sifthenelse (simpl_expr cenv a) s1' s2')
   | Sloop s1 s2 =>
-      do s1' <- simpl_stmt cenv s1;
-      do s2' <- simpl_stmt cenv s2;
+      do s1' <- simpl_stmt cenv cp s1;
+      do s2' <- simpl_stmt cenv cp s2;
       OK (Sloop s1' s2')
   | Sbreak => OK Sbreak
   | Scontinue => OK Scontinue
   | Sreturn opta => OK (Sreturn (option_map (simpl_expr cenv) opta))
   | Sswitch a ls =>
-      do ls' <- simpl_lblstmt cenv ls;
+      do ls' <- simpl_lblstmt cenv cp ls;
       OK (Sswitch (simpl_expr cenv a) ls')
   | Slabel lbl s =>
-      do s' <- simpl_stmt cenv s;
+      do s' <- simpl_stmt cenv cp s;
       OK (Slabel lbl s')
   | Sgoto lbl => OK (Sgoto lbl)
   end
 
-with simpl_lblstmt (cenv: compilenv) (ls: labeled_statements) : res labeled_statements :=
+with simpl_lblstmt (cenv: compilenv) (cp: compartment) (ls: labeled_statements) : res labeled_statements :=
   match ls with
   | LSnil =>
       OK LSnil
   | LScons c s ls1 =>
-      do s' <- simpl_stmt cenv s;
-      do ls1' <- simpl_lblstmt cenv ls1;
+      do s' <- simpl_stmt cenv cp s;
+      do ls1' <- simpl_lblstmt cenv cp ls1;
       OK (LScons c s' ls1')
   end.
 
@@ -245,20 +245,20 @@ Definition cenv_for (f: function) : compilenv :=
 
 (** Transform a function *)
 
-Definition add_debug_var (id_ty: ident * type) (s: statement) :=
-  let (id, ty) := id_ty in Ssequence (Sdebug_var id ty) s.
+Definition add_debug_var (cp: compartment) (id_ty: ident * type) (s: statement) :=
+  let (id, ty) := id_ty in Ssequence (Sdebug_var cp id ty) s.
 
-Definition add_debug_vars (vars: list (ident * type)) (s: statement) :=
+Definition add_debug_vars (cp: compartment) (vars: list (ident * type)) (s: statement) :=
   if Compopts.debug tt
-  then List.fold_right add_debug_var s vars
+  then List.fold_right (add_debug_var cp) s vars
   else s.
 
-Definition add_debug_param (id_ty: ident * type) (s: statement) :=
-  let (id, ty) := id_ty in Ssequence (Sdebug_temp id ty) s.
+Definition add_debug_param (cp: compartment) (id_ty: ident * type) (s: statement) :=
+  let (id, ty) := id_ty in Ssequence (Sdebug_temp cp id ty) s.
 
-Definition add_debug_params (params: list (ident * type)) (s: statement) :=
+Definition add_debug_params (cp: compartment) (params: list (ident * type)) (s: statement) :=
   if Compopts.debug tt
-  then List.fold_right add_debug_param s params
+  then List.fold_right (add_debug_param cp) s params
   else s.
 
 Definition remove_lifted (cenv: compilenv) (vars: list (ident * type)) :=
@@ -270,7 +270,7 @@ Definition add_lifted (cenv: compilenv) (vars1 vars2: list (ident * type)) :=
 Definition transf_function (f: function) : res function :=
   let cenv := cenv_for f in
   assertion (list_disjoint_dec ident_eq (var_names f.(fn_params)) (var_names f.(fn_temps)));
-  do body' <- simpl_stmt cenv f.(fn_body);
+  do body' <- simpl_stmt cenv f.(fn_comp) f.(fn_body);
   let vars' := remove_lifted cenv (f.(fn_params) ++ f.(fn_vars)) in
   let temps' := add_lifted cenv f.(fn_vars) f.(fn_temps) in
   OK {| fn_comp := f.(fn_comp);
@@ -279,9 +279,9 @@ Definition transf_function (f: function) : res function :=
         fn_params := f.(fn_params);
         fn_vars := vars';
         fn_temps := temps';
-        fn_body := add_debug_params f.(fn_params)
+        fn_body := add_debug_params f.(fn_comp) f.(fn_params)
                       (store_params cenv f.(fn_params)
-                        (add_debug_vars vars' body')) |}.
+                        (add_debug_vars f.(fn_comp) vars' body')) |}.
 
 (** Whole-program transformation *)
 

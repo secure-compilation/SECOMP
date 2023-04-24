@@ -2141,8 +2141,9 @@ Proof.
   intros [f' [vres' [tm' [EC [VINJ [MINJ' [UNMAPPED [OUTOFREACH [INCR SEPARATED]]]]]]]]].
   left; econstructor; split.
   apply plus_one. econstructor. eauto.
-  rewrite <- (comp_transl_partial _ TRF).
+  (* rewrite <- (comp_transl_partial _ TRF). *)
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  monadInv TRF; auto.
   assert (MCS': match_callstack f' m' tm'
                  (Frame cenv tfn e le te sp lo hi :: cs)
                  (Mem.nextblock m') (Mem.nextblock tm')).
@@ -2308,7 +2309,6 @@ Opaque PTree.set.
   left; econstructor; split.
   apply plus_one. econstructor.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  erewrite <- match_cont_call_comp; eauto.
   econstructor; eauto.
   apply match_callstack_incr_bound with (Mem.nextblock m) (Mem.nextblock tm).
   eapply match_callstack_external_call; eauto.

@@ -54,6 +54,7 @@ Definition sig_ii_l := mksignature (Tint :: Tint :: nil) Tlong cc_default.
 Section SELECT.
 
 Context {hf: helper_functions}.
+Context (cp: compartment).
 
 Definition makelong (h l: expr): expr :=
   Eop Omakelong (h ::: l ::: Enil).
@@ -124,7 +125,7 @@ Definition longofintu (e: expr) :=
 Definition negl (e: expr) :=
   match is_longconst e with
   | Some n => longconst (Int64.neg n)
-  | None => Ebuiltin (EF_builtin "__builtin_negl" sig_l_l) (e ::: Enil)
+  | None => Ebuiltin (EF_builtin cp "__builtin_negl" sig_l_l) (e ::: Enil)
   end.
 
 Definition notl (e: expr) :=
@@ -218,7 +219,7 @@ Definition shrl (e1 e2: expr) :=
   end.
 
 Definition addl (e1 e2: expr) :=
-  let default := Ebuiltin (EF_builtin "__builtin_addl" sig_ll_l) (e1 ::: e2 ::: Enil) in
+  let default := Ebuiltin (EF_builtin cp "__builtin_addl" sig_ll_l) (e1 ::: e2 ::: Enil) in
   match is_longconst e1, is_longconst e2 with
   | Some n1, Some n2 => longconst (Int64.add n1 n2)
   | Some n1, _ => if Int64.eq n1 Int64.zero then e2 else default
@@ -227,7 +228,7 @@ Definition addl (e1 e2: expr) :=
   end.
 
 Definition subl (e1 e2: expr) :=
-  let default := Ebuiltin (EF_builtin "__builtin_subl" sig_ll_l) (e1 ::: e2 ::: Enil) in
+  let default := Ebuiltin (EF_builtin cp "__builtin_subl" sig_ll_l) (e1 ::: e2 ::: Enil) in
   match is_longconst e1, is_longconst e2 with
   | Some n1, Some n2 => longconst (Int64.sub n1 n2)
   | Some n1, _ => if Int64.eq n1 Int64.zero then negl e2 else default
@@ -237,7 +238,7 @@ Definition subl (e1 e2: expr) :=
 
 Definition mull_base (e1 e2: expr) :=
   splitlong2 e1 e2 (fun h1 l1 h2 l2 =>
-    Elet (Ebuiltin (EF_builtin "__builtin_mull" sig_ii_l) (l1 ::: l2 ::: Enil))
+    Elet (Ebuiltin (EF_builtin cp "__builtin_mull" sig_ii_l) (l1 ::: l2 ::: Enil))
       (makelong
         (add (add (Eop Ohighlong (Eletvar O ::: Enil))
                   (mul (lift l1) (lift h2)))

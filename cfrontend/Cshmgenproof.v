@@ -161,28 +161,28 @@ Qed.
 (** Properties of labeled statements *)
 
 Lemma transl_lbl_stmt_1:
-  forall ce tyret nbrk ncnt n sl tsl,
-  transl_lbl_stmt ce tyret nbrk ncnt sl = OK tsl ->
-  transl_lbl_stmt ce tyret nbrk ncnt (Clight.select_switch n sl) = OK (select_switch n tsl).
+  forall ce cp tyret nbrk ncnt n sl tsl,
+  transl_lbl_stmt ce cp tyret nbrk ncnt sl = OK tsl ->
+  transl_lbl_stmt ce cp tyret nbrk ncnt (Clight.select_switch n sl) = OK (select_switch n tsl).
 Proof.
   intros until n.
   assert (DFL: forall sl tsl,
-    transl_lbl_stmt ce tyret nbrk ncnt sl = OK tsl ->
-    transl_lbl_stmt ce tyret nbrk ncnt (Clight.select_switch_default sl) = OK (select_switch_default tsl)).
+    transl_lbl_stmt ce cp tyret nbrk ncnt sl = OK tsl ->
+    transl_lbl_stmt ce cp tyret nbrk ncnt (Clight.select_switch_default sl) = OK (select_switch_default tsl)).
   {
     induction sl; simpl; intros.
     inv H; auto.
     monadInv H. simpl. destruct o; eauto. simpl; rewrite EQ; simpl; rewrite EQ1; auto.
   }
   assert (CASE: forall sl tsl,
-    transl_lbl_stmt ce tyret nbrk ncnt sl = OK tsl ->
+    transl_lbl_stmt ce cp tyret nbrk ncnt sl = OK tsl ->
     match Clight.select_switch_case n sl with
     | None =>
         select_switch_case n tsl = None
     | Some sl' =>
         exists tsl',
            select_switch_case n tsl = Some tsl'
-        /\ transl_lbl_stmt ce tyret nbrk ncnt sl' = OK tsl'
+        /\ transl_lbl_stmt ce cp tyret nbrk ncnt sl' = OK tsl'
     end).
   {
     induction sl; simpl; intros.
@@ -199,9 +199,9 @@ Proof.
 Qed.
 
 Lemma transl_lbl_stmt_2:
-  forall ce tyret nbrk ncnt sl tsl,
-  transl_lbl_stmt ce tyret nbrk ncnt sl = OK tsl ->
-  transl_statement ce tyret nbrk ncnt (seq_of_labeled_statement sl) = OK (seq_of_lbl_stmt tsl).
+  forall ce cp tyret nbrk ncnt sl tsl,
+  transl_lbl_stmt ce cp tyret nbrk ncnt sl = OK tsl ->
+  transl_statement ce cp tyret nbrk ncnt (seq_of_labeled_statement sl) = OK (seq_of_lbl_stmt tsl).
 Proof.
   induction sl; intros.
   monadInv H. auto.
@@ -1022,7 +1022,7 @@ Lemma make_memcpy_correct:
   eval_expr ge e (comp_of f) le m src v ->
   assign_loc prog.(prog_comp_env) (comp_of f) ty m b ofs Full v m' ->
   access_mode ty = By_copy ->
-  make_memcpy cunit.(prog_comp_env) dst src ty = OK s ->
+  make_memcpy cunit.(prog_comp_env) (comp_of f) dst src ty = OK s ->
   step ge (State f s k e le m) E0 (State f Sskip k e le m').
 Proof.
   intros. inv H1; try congruence.
@@ -1031,7 +1031,7 @@ Proof.
   change le with (set_optvar None Vundef le) at 2.
   econstructor.
   econstructor.
-  eauto. econstructor. eauto. constructor.
+  eauto. econstructor. eauto. constructor. reflexivity.
   econstructor; eauto.
   apply alignof_blockcopy_1248.
   apply sizeof_pos.
@@ -1040,7 +1040,7 @@ Qed.
 
 Lemma make_store_correct:
   forall addr ty bf rhs code e le m b ofs v m' f k,
-  make_store cunit.(prog_comp_env) addr ty bf rhs = OK code ->
+  make_store cunit.(prog_comp_env) (comp_of f) addr ty bf rhs = OK code ->
   eval_expr ge e (comp_of f) le m addr (Vptr b ofs) ->
   eval_expr ge e (comp_of f) le m rhs v ->
   assign_loc prog.(prog_comp_env) (comp_of f) ty m b ofs bf v m' ->
@@ -1501,49 +1501,49 @@ Proof.
   apply star_refl.
 Qed.
 
-Inductive match_cont: composite_env -> type -> nat -> nat -> Clight.cont -> Csharpminor.cont -> Prop :=
-  | match_Kstop: forall ce tyret nbrk ncnt,
-      match_cont tyret ce nbrk ncnt Clight.Kstop Kstop
-  | match_Kseq: forall ce tyret nbrk ncnt s k ts tk,
-      transl_statement ce tyret nbrk ncnt s = OK ts ->
-      match_cont ce tyret nbrk ncnt k tk ->
-      match_cont ce tyret nbrk ncnt
+Inductive match_cont: composite_env -> compartment -> type -> nat -> nat -> Clight.cont -> Csharpminor.cont -> Prop :=
+  | match_Kstop: forall ce cp tyret nbrk ncnt,
+      match_cont tyret ce cp nbrk ncnt Clight.Kstop Kstop
+  | match_Kseq: forall ce cp tyret nbrk ncnt s k ts tk,
+      transl_statement ce cp tyret nbrk ncnt s = OK ts ->
+      match_cont ce cp tyret nbrk ncnt k tk ->
+      match_cont ce cp tyret nbrk ncnt
                  (Clight.Kseq s k)
                  (Kseq ts tk)
-  | match_Kloop1: forall ce tyret s1 s2 k ts1 ts2 nbrk ncnt tk,
-      transl_statement ce tyret 1%nat 0%nat s1 = OK ts1 ->
-      transl_statement ce tyret 0%nat (S ncnt) s2 = OK ts2 ->
-      match_cont ce tyret nbrk ncnt k tk ->
-      match_cont ce tyret 1%nat 0%nat
+  | match_Kloop1: forall ce cp tyret s1 s2 k ts1 ts2 nbrk ncnt tk,
+      transl_statement ce cp tyret 1%nat 0%nat s1 = OK ts1 ->
+      transl_statement ce cp tyret 0%nat (S ncnt) s2 = OK ts2 ->
+      match_cont ce cp tyret nbrk ncnt k tk ->
+      match_cont ce cp tyret 1%nat 0%nat
                  (Clight.Kloop1 s1 s2 k)
                  (Kblock (Kseq ts2 (Kseq (Sloop (Sseq (Sblock ts1) ts2)) (Kblock tk))))
-  | match_Kloop2: forall ce tyret s1 s2 k ts1 ts2 nbrk ncnt tk,
-      transl_statement ce tyret 1%nat 0%nat s1 = OK ts1 ->
-      transl_statement ce tyret 0%nat (S ncnt) s2 = OK ts2 ->
-      match_cont ce tyret nbrk ncnt k tk ->
-      match_cont ce tyret 0%nat (S ncnt)
+  | match_Kloop2: forall ce cp tyret s1 s2 k ts1 ts2 nbrk ncnt tk,
+      transl_statement ce cp tyret 1%nat 0%nat s1 = OK ts1 ->
+      transl_statement ce cp tyret 0%nat (S ncnt) s2 = OK ts2 ->
+      match_cont ce cp tyret nbrk ncnt k tk ->
+      match_cont ce cp tyret 0%nat (S ncnt)
                  (Clight.Kloop2 s1 s2 k)
                  (Kseq (Sloop (Sseq (Sblock ts1) ts2)) (Kblock tk))
-  | match_Kswitch: forall ce tyret nbrk ncnt k tk,
-      match_cont ce tyret nbrk ncnt k tk ->
-      match_cont ce tyret 0%nat (S ncnt)
+  | match_Kswitch: forall ce cp tyret nbrk ncnt k tk,
+      match_cont ce cp tyret nbrk ncnt k tk ->
+      match_cont ce cp tyret 0%nat (S ncnt)
                  (Clight.Kswitch k)
                  (Kblock tk)
-  | match_Kcall: forall ce tyret nbrk ncnt nbrk' ncnt' f e k id tf te le tk cu,
+  | match_Kcall: forall ce cp tyret nbrk ncnt nbrk' ncnt' f e k id tf te le tk cu,
       linkorder cu prog ->
       transl_function cu.(prog_comp_env) f = OK tf ->
       match_env e te ->
-      match_cont cu.(prog_comp_env) (Clight.fn_return f) nbrk' ncnt' k tk ->
-      match_cont ce tyret nbrk ncnt
+      match_cont cu.(prog_comp_env) (Clight.fn_comp f) (Clight.fn_return f) nbrk' ncnt' k tk ->
+      match_cont ce cp tyret nbrk ncnt
                  (Clight.Kcall id f e le k)
                  (Kcall id tf te le tk)
-  | match_Kcall_normalize: forall ce tyret nbrk ncnt nbrk' ncnt' f e k id a tf te le tk cu,
+  | match_Kcall_normalize: forall ce cp tyret nbrk ncnt nbrk' ncnt' f e k id a tf te le tk cu,
       linkorder cu prog ->
       transl_function cu.(prog_comp_env) f = OK tf ->
       match_env e te ->
-      match_cont cu.(prog_comp_env) (Clight.fn_return f) nbrk' ncnt' k tk ->
+      match_cont cu.(prog_comp_env) (Clight.fn_comp f) (Clight.fn_return f) nbrk' ncnt' k tk ->
       (forall v e le m, wt_val v tyret -> le!id = Some v -> eval_expr tge e (comp_of f) le m a v) ->
-      match_cont ce tyret nbrk ncnt
+      match_cont ce cp tyret nbrk ncnt
                  (Clight.Kcall (Some id) f e le k)
                  (Kcall (Some id) tf te le (Kseq (Sset id a) tk)).
 
@@ -1552,24 +1552,24 @@ Inductive match_states: Clight.state -> Csharpminor.state -> Prop :=
       forall f nbrk ncnt s k e le m tf ts tk te ts' tk' cu
           (LINK: linkorder cu prog)
           (TRF: transl_function cu.(prog_comp_env) f = OK tf)
-          (TR: transl_statement cu.(prog_comp_env) (Clight.fn_return f) nbrk ncnt s = OK ts)
+          (TR: transl_statement cu.(prog_comp_env) (Clight.fn_comp f) (Clight.fn_return f) nbrk ncnt s = OK ts)
           (MTR: match_transl ts tk ts' tk')
           (MENV: match_env e te)
-          (MK: match_cont cu.(prog_comp_env) (Clight.fn_return f) nbrk ncnt k tk),
+          (MK: match_cont cu.(prog_comp_env) (Clight.fn_comp f) (Clight.fn_return f) nbrk ncnt k tk),
       match_states (Clight.State f s k e le m)
                    (State tf ts' tk' te le m)
   | match_callstate:
       forall fd args k m tfd tk targs tres cconv cu ce
           (LINK: linkorder cu prog)
           (TR: match_fundef cu fd tfd)
-          (MK: match_cont ce tres 0%nat 0%nat k tk)
+          (MK: match_cont ce (comp_of fd) tres 0%nat 0%nat k tk)
           (ISCC: Clight.is_call_cont k)
           (TY: type_of_fundef fd = Tfunction targs tres cconv),
       match_states (Clight.Callstate fd args k m)
                    (Callstate tfd args tk m)
   | match_returnstate:
       forall res tres k m tk ce ty cp
-          (MK: match_cont ce tres 0%nat 0%nat k tk)
+          (MK: match_cont ce cp tres 0%nat 0%nat k tk)
           (WT: wt_val res tres),
       match_states (Clight.Returnstate res k m ty (* (rettype_of_type tres) *) cp)
                    (Returnstate res tk m ty (* (rettype_of_type tres) *) cp).
@@ -1579,7 +1579,7 @@ Remark match_states_skip:
   linkorder cu prog ->
   transl_function cu.(prog_comp_env) f = OK tf ->
   match_env e te ->
-  match_cont cu.(prog_comp_env) (Clight.fn_return f) nbrk ncnt k tk ->
+  match_cont cu.(prog_comp_env) (Clight.fn_comp f) (Clight.fn_return f) nbrk ncnt k tk ->
   match_states (Clight.State f Clight.Sskip k e le m) (State tf Sskip tk te le m).
 Proof.
   intros. econstructor; eauto. simpl; reflexivity. constructor.
@@ -1589,33 +1589,34 @@ Qed.
 
 Section FIND_LABEL.
 Variable ce: composite_env.
+Variable cp: compartment.
 Variable lbl: label.
 Variable tyret: type.
 
 Lemma transl_find_label:
   forall s nbrk ncnt k ts tk
-  (TR: transl_statement ce tyret nbrk ncnt s = OK ts)
-  (MC: match_cont ce tyret nbrk ncnt k tk),
+  (TR: transl_statement ce cp tyret nbrk ncnt s = OK ts)
+  (MC: match_cont ce cp tyret nbrk ncnt k tk),
   match Clight.find_label lbl s k with
   | None => find_label lbl ts tk = None
   | Some (s', k') =>
       exists ts', exists tk', exists nbrk', exists ncnt',
       find_label lbl ts tk = Some (ts', tk')
-      /\ transl_statement ce tyret nbrk' ncnt' s' = OK ts'
-      /\ match_cont ce tyret nbrk' ncnt' k' tk'
+      /\ transl_statement ce cp tyret nbrk' ncnt' s' = OK ts'
+      /\ match_cont ce cp tyret nbrk' ncnt' k' tk'
   end
 
 with transl_find_label_ls:
   forall ls nbrk ncnt k tls tk
-  (TR: transl_lbl_stmt ce tyret nbrk ncnt ls = OK tls)
-  (MC: match_cont ce tyret nbrk ncnt k tk),
+  (TR: transl_lbl_stmt ce cp tyret nbrk ncnt ls = OK tls)
+  (MC: match_cont ce cp tyret nbrk ncnt k tk),
   match Clight.find_label_ls lbl ls k with
   | None => find_label_ls lbl tls tk = None
   | Some (s', k') =>
       exists ts', exists tk', exists nbrk', exists ncnt',
       find_label_ls lbl tls tk = Some (ts', tk')
-      /\ transl_statement ce tyret nbrk' ncnt' s' = OK ts'
-      /\ match_cont ce tyret nbrk' ncnt' k' tk'
+      /\ transl_statement ce cp tyret nbrk' ncnt' s' = OK ts'
+      /\ match_cont ce cp tyret nbrk' ncnt' k' tk'
   end.
 
 Proof.
@@ -1692,9 +1693,9 @@ End FIND_LABEL.
 (** Properties of call continuations *)
 
 Lemma match_cont_call_cont:
-  forall ce' nbrk' ncnt' ce tyret nbrk ncnt k tk,
-  match_cont ce tyret nbrk ncnt k tk ->
-  match_cont ce' tyret nbrk' ncnt' (Clight.call_cont k) (call_cont tk).
+  forall ce' cp nbrk' ncnt' ce tyret nbrk ncnt k tk,
+  match_cont ce cp tyret nbrk ncnt k tk ->
+  match_cont ce' cp tyret nbrk' ncnt' (Clight.call_cont k) (call_cont tk).
 Proof.
   induction 1; simpl; auto.
 - apply match_Kstop.
@@ -1703,10 +1704,10 @@ Proof.
 Qed.
 
 Lemma match_cont_is_call_cont:
-  forall ce tyret nbrk ncnt k tk ce' nbrk' ncnt',
-  match_cont ce tyret nbrk ncnt k tk ->
+  forall ce cp tyret nbrk ncnt k tk ce' nbrk' ncnt',
+  match_cont ce cp tyret nbrk ncnt k tk ->
   Clight.is_call_cont k ->
-  match_cont ce' tyret nbrk' ncnt' k tk /\ is_call_cont tk.
+  match_cont ce' cp tyret nbrk' ncnt' k tk /\ is_call_cont tk.
 Proof.
   intros. inv H; simpl in H0; try contradiction; simpl.
   split; auto; apply match_Kstop.
@@ -1715,13 +1716,13 @@ Proof.
 Qed.
 
 Lemma match_cont_call_comp:
-  forall ce tyret nbrk ncnt k tk,
-  match_cont ce tyret nbrk ncnt k tk ->
+  forall ce cp tyret nbrk ncnt k tk,
+  match_cont ce cp tyret nbrk ncnt k tk ->
   Clight.call_comp k = call_comp tk.
 Proof.
-  intros ce tyret nbrk ncnt k tk H.
+  intros ce cp tyret nbrk ncnt k tk H.
   unfold Clight.call_comp, call_comp.
-  apply (match_cont_call_cont ce nbrk ncnt) in H.
+  apply (match_cont_call_cont ce cp nbrk ncnt) in H.
   destruct H; trivial.
   all: match goal with
   | H : transl_function _ _ = _ |- _ =>
@@ -1753,12 +1754,13 @@ Proof.
   exploit transl_lvalue_correct; eauto. intros [A B]; subst x0.
   econstructor; split.
   apply plus_one. eapply make_store_correct; eauto.
-  rewrite <- (comp_transl_function _ _ _ TRF).
+  rewrite <- (comp_transl_function _ _ _ TRF); eauto.
   eapply transl_lvalue_correct; eauto.
-  rewrite <- (comp_transl_function _ _ _ TRF).
+  rewrite <- (comp_transl_function _ _ _ TRF); eauto.
   eapply make_cast_correct; eauto.
   eapply transl_expr_correct; eauto.
-  rewrite <- (comp_transl_function _ _ _ TRF). eauto.
+  rewrite <- (comp_transl_function _ _ _ TRF); eauto.
+  rewrite <- (comp_transl_function _ _ _ TRF); eauto.
   eapply match_states_skip; eauto.
 
 - (* set *)
@@ -1829,9 +1831,9 @@ Proof.
   econstructor; split.
   apply plus_one. econstructor.
   eapply transl_arglist_correct; eauto.
-  rewrite <- (comp_transl_function _ _ _ TRF). eauto.
+  rewrite <- (comp_transl_function _ _ _ TRF). eauto. rewrite <- (comp_transl_function _ _ _ TRF); eauto.
   eapply external_call_symbols_preserved with (ge1 := ge). apply senv_preserved. eauto.
-  change tf.(fn_comp) with (comp_of tf). now rewrite <- (comp_transl_partial _ TRF); eauto.
+  change tf.(fn_comp) with (comp_of tf).
   eapply match_states_skip; eauto.
 
 - (* seq *)
@@ -1904,7 +1906,7 @@ Proof.
   econstructor; split.
   apply plus_one. constructor.
   econstructor; eauto.
-  simpl. rewrite H6; simpl. rewrite H8; simpl. eauto.
+  simpl. rewrite H7; simpl. rewrite H9; simpl. eauto.
   constructor.
 
 - (* break loop2 *)
@@ -1993,7 +1995,8 @@ Proof.
 - (* goto *)
   monadInv TR. inv MTR.
   generalize TRF. unfold transl_function. intro TRF'. monadInv TRF'.
-  exploit (transl_find_label (prog_comp_env cu) lbl). eexact EQ. eapply match_cont_call_cont. eauto.
+  exploit (transl_find_label (prog_comp_env cu) (Clight.fn_comp f) lbl).
+  eexact EQ. eapply match_cont_call_cont. eauto.
   rewrite H.
   intros [ts' [tk'' [nbrk' [ncnt' [A [B C]]]]]].
   econstructor; split.
@@ -2025,7 +2028,6 @@ Proof.
   econstructor; split.
   apply plus_one. constructor.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  erewrite <- match_cont_call_comp; eauto.
   replace (rettype_of_type tres) with (sig_res (ef_sig ef)) by now rewrite H5.
   eapply match_returnstate with (ce := ce); eauto.
   apply has_rettype_wt_val. 
@@ -2050,7 +2052,7 @@ Proof.
     eapply return_trace_eq; eauto using senv_preserved.
     econstructor. constructor.
     simpl.
-    rewrite <- (comp_transl_function _ _ _ H10). apply H13. eauto. apply PTree.gss.
+    rewrite <- (comp_transl_function _ _ _ H11). apply H14. eauto. apply PTree.gss.
     traceEq.
     simpl. rewrite PTree.set2. econstructor; eauto. simpl; reflexivity. constructor.
 Qed.

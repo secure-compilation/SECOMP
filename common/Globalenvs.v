@@ -1901,21 +1901,20 @@ Definition allowed_cross_call (ge: t) (cp: compartment) (vf: val) :=
 Variant call_type :=
   | InternalCall
   | CrossCompartmentCall
-  | DefaultCompartmentCall
+  (* | DefaultCompartmentCall *)
 .
 
 Definition type_of_call (ge: t) (cp: compartment) (cp': compartment): call_type :=
   if Pos.eqb cp cp' then InternalCall
-  else if Pos.eqb cp' default_compartment then DefaultCompartmentCall
-       else CrossCompartmentCall.
+  else CrossCompartmentCall.
 
-Lemma type_of_call_cp_default:
-  forall ge cp, type_of_call ge cp default_compartment <> CrossCompartmentCall.
-Proof.
-  intros ge cp; unfold type_of_call.
-  destruct (cp =? default_compartment)%positive; [congruence |].
-  rewrite Pos.eqb_refl; congruence.
-Qed.
+(* Lemma type_of_call_cp_default: *)
+(*   forall ge cp, type_of_call ge cp default_compartment <> CrossCompartmentCall. *)
+(* Proof. *)
+(*   intros ge cp; unfold type_of_call. *)
+(*   destruct (cp =? default_compartment)%positive; [congruence |]. *)
+(*   rewrite Pos.eqb_refl; congruence. *)
+(* Qed. *)
 
 Lemma type_of_call_same_cp:
   forall ge cp, type_of_call ge cp cp <> CrossCompartmentCall.
@@ -1930,7 +1929,7 @@ Qed.
 (3) the call is an inter-compartment call and is allowed by the policy
 *)
 Definition allowed_call (ge: t) (cp: compartment) (vf: val) :=
-  default_compartment = find_comp ge vf \/ (* TODO: does this mean we allow all compartment to perform IO calls? *)
+  (* default_compartment = find_comp ge vf \/ (* TODO: does this mean we allow all compartment to perform IO calls? *) *)
   cp = find_comp ge vf \/
   allowed_cross_call ge cp vf.
 
@@ -1945,25 +1944,24 @@ Qed.
 
 Definition allowed_call_b (ge: t) (cp: compartment) (vf: val): bool :=
   match find_comp ge vf with
-  | c => Pos.eqb c default_compartment
-             || Pos.eqb c cp
-             || match vf with
-               | Vptr b _ => match invert_symbol ge b with
-                            | Some i =>
-                              match (Policy.policy_import ge.(genv_policy)) ! cp with
-                              | Some imps =>
-                                match (Policy.policy_export ge.(genv_policy)) ! c with
-                                | Some exps =>
-                                  in_dec comp_ident_eq_dec (c, i) imps &&
-                                  in_dec Pos.eq_dec i exps
-                                | None => false
-                                end
-                              | None => false
-                              end
-                            | None => false
-                            end
-               | _ => false
-               end
+  | c => Pos.eqb c cp
+        || match vf with
+        | Vptr b _ => match invert_symbol ge b with
+                     | Some i =>
+                         match (Policy.policy_import ge.(genv_policy)) ! cp with
+                         | Some imps =>
+                             match (Policy.policy_export ge.(genv_policy)) ! c with
+                             | Some exps =>
+                                 in_dec comp_ident_eq_dec (c, i) imps &&
+                                   in_dec Pos.eq_dec i exps
+                             | None => false
+                             end
+                         | None => false
+                         end
+                     | None => false
+                     end
+        | _ => false
+        end
   end.
 
 Lemma allowed_call_reflect: forall ge cp vf,
@@ -1971,50 +1969,27 @@ Lemma allowed_call_reflect: forall ge cp vf,
 Proof.
   intros ge cp vf.
   unfold allowed_call, allowed_call_b, allowed_cross_call.
-  destruct vf eqn:VF; try (firstorder; discriminate).
-  (* destruct (find_comp ge (Vptr b i)) eqn:COMP; try (firstorder; discriminate). *)
-  remember (find_comp ge (Vptr b i)) as c.
-  destruct (Pos.eq_dec default_compartment c); subst.
-  - rewrite <- e. split; auto.
-  - destruct (Pos.eq_dec (find_comp ge (Vptr b i)) cp); subst.
-    (* destruct (Pos.eq_dec c cp); subst. *)
-    + rewrite Pos.eqb_refl. rewrite orb_true_r. simpl. split; auto.
-    + split; auto.
-      * intros H. destruct H as [? | [? | ?]]; try congruence.
-        destruct H as [i' [cp' [H1 [H2 [H3 H4]]]]].
-        rewrite H1. inv H2.
-        destruct ((Policy.policy_import (genv_policy ge)) ! cp) as [imps |]; auto.
-        destruct ((Policy.policy_export (genv_policy ge)) ! (find_comp ge (Vptr b i))) as [exps |]; auto.
-        destruct (in_dec comp_ident_eq_dec ((find_comp ge (Vptr b i)), i') imps);
-          destruct (in_dec Pos.eq_dec i' exps); simpl; auto.
-        now rewrite orb_true_r.
-      * intros H.
-        right; right.
-        destruct (find_comp ge (Vptr b i)); try (now unfold default_compartment in n).
-        -- simpl in H. apply Pos.eqb_neq in n0. rewrite n0 in H. simpl in H.
-           destruct (invert_symbol ge b); try discriminate.
-           exists i0. exists (c~1)%positive. split; auto. split; auto. simpl.
-           destruct ((Policy.policy_import (genv_policy ge)) ! cp) as [imps |]; try discriminate.
-           destruct (Policy.policy_export (genv_policy ge)); try discriminate.
-           destruct ((PTree.Nodes t0) ! (c~1)); try discriminate.
-           apply andb_prop in H.
-           destruct H as [H1 H2].
-           apply proj_sumbool_true in H1.
-           apply proj_sumbool_true in H2.
-           auto.
-        -- simpl in H. apply Pos.eqb_neq in n0. rewrite n0 in H. simpl in H.
-           destruct (invert_symbol ge b); try discriminate.
-           exists i0. exists (c~0)%positive. split; auto. split; auto. simpl.
-           destruct ((Policy.policy_import (genv_policy ge)) ! cp) as [imps |]; try discriminate.
-           destruct (Policy.policy_export (genv_policy ge)); try discriminate.
-           destruct ((PTree.Nodes t0) ! (c~0)); try discriminate.
-           apply andb_prop in H.
-           destruct H as [H1 H2].
-           apply proj_sumbool_true in H1.
-           apply proj_sumbool_true in H2.
-           auto.
+  destruct (Pos.eqb_spec (find_comp ge vf) cp); subst; firstorder.
+  - destruct vf eqn:VF; try (firstorder; discriminate).
+    subst.
+    destruct H as (i' & cp' & A & B & C & D).
+    rewrite A.
+    destruct ((Policy.policy_import (genv_policy ge)) ! cp) as [imps |]; auto.
+    rewrite B.
+    destruct ((Policy.policy_export (genv_policy ge)) ! cp') as [exps |]; auto.
+    destruct (in_dec comp_ident_eq_dec (cp', i') imps);
+      destruct (in_dec Pos.eq_dec i' exps); simpl; auto.
+  - destruct vf eqn:VF; try (firstorder; discriminate).
+    subst. right. simpl in H.
+    destruct (invert_symbol ge b) eqn:A; try discriminate.
+    destruct ((Policy.policy_import (genv_policy ge)) ! cp) eqn:B; try discriminate.
+    destruct ((Policy.policy_export (genv_policy ge)) ! (find_comp ge (Vptr b i))) eqn:C; try discriminate.
+    apply andb_prop in H. destruct H as (D & E).
+    eexists; eexists; split; [reflexivity | split; [reflexivity |]].
+    rewrite C.
+    apply proj_sumbool_true in D.
+    apply proj_sumbool_true in E. auto.
 Qed.
-
 Section SECURITY.
 
 Definition same_symbols (j: meminj) (ge1: t): Prop :=
@@ -2258,8 +2233,8 @@ Proof.
   intros cp vf.
   unfold allowed_call.
   rewrite !match_genvs_find_comp.
-  intros [H1 | [H1 | H1]]; auto.
-  right; right.
+  intros [H1 | H1]; auto.
+  right.
   unfold allowed_cross_call in *.
   rewrite match_genvs_find_comp in H1.
   destruct vf; auto.

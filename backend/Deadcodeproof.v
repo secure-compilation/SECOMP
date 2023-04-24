@@ -798,12 +798,12 @@ Qed.
 
 Lemma transf_volatile_store:
   forall cp v1 v2 v1' v2' m tm chunk sp nm t v m',
-  volatile_store_sem chunk ge cp (v1::v2::nil) m t v m' ->
+  volatile_store_sem cp chunk ge (v1::v2::nil) m t v m' ->
   Val.lessdef v1 v1' ->
   vagree v2 v2' (store_argument chunk) ->
   magree m tm (nlive ge sp nm) ->
   v = Vundef /\
-  exists tm', volatile_store_sem chunk ge cp (v1'::v2'::nil) tm t Vundef tm'
+  exists tm', volatile_store_sem cp chunk ge (v1'::v2'::nil) tm t Vundef tm'
            /\ magree m' tm' (nlive ge sp nm).
 Proof.
   intros. inv H. split; auto.
@@ -1013,13 +1013,10 @@ Ltac UseTransfer :=
   exploit magree_free. eauto. eauto. instantiate (1 := nlive ge stk nmem_all).
   intros; eapply nlive_dead_stack; eauto.
   intros (tm' & C & D).
-  exploit find_function_ptr_translated; eauto 2 with na. intros E.
+  (* exploit find_function_ptr_translated; eauto 2 with na. intros E. *)
   econstructor; split.
   eapply exec_Itailcall; eauto. eapply sig_function_translated; eauto.
   rewrite <- (comp_transl_partial _ B), COMP. now apply (comp_transl_partial _ FUN).
-  unfold transf_function in FUN. destruct analyze; inv FUN; auto.
-  rewrite <- comp_transf_function; eauto.
-  eapply allowed_call_translated; eauto.
   erewrite stacksize_translated by eauto.
   rewrite <- comp_transf_function; eauto.
   eapply match_call_states with (cu := cu'); eauto 2 with na.
@@ -1037,6 +1034,7 @@ Ltac UseTransfer :=
                 (size_chunk chunk)) a1) as (ne1, nm1) eqn: TR.
   InvSoundState. exploit transfer_builtin_arg_sound; eauto.
   intros (tv1 & A & B & C & D).
+  unfold comp_of in ALLOWED; simpl in ALLOWED; subst _x.
   inv H1. simpl in B. inv B.
   assert (X: exists tvres, volatile_load ge (comp_of f) chunk tm b ofs t tvres /\ Val.lessdef vres tvres).
   {
@@ -1052,11 +1050,12 @@ Ltac UseTransfer :=
   destruct X as (tvres & P & Q).
   econstructor; split.
   eapply exec_Ibuiltin; eauto.
+  unfold comp_of. simpl. rewrite comp_transf_function; eauto.
   apply eval_builtin_args_preserved with (ge1 := ge). exact symbols_preserved.
   constructor. eauto. constructor.
-  rewrite <- comp_transf_function; eauto.
+  rewrite comp_transf_function; eauto.
   eapply external_call_symbols_preserved. apply senv_preserved.
-  constructor. simpl. eauto.
+  constructor. rewrite <- comp_transf_function; eauto.
   eapply match_succ_states; eauto. simpl; auto.
   apply eagree_set_res; auto.
   eapply magree_monotone; eauto. intros. apply incl_nmem_add; auto.
@@ -1073,10 +1072,9 @@ Ltac UseTransfer :=
   exploit transf_volatile_store; eauto.
   intros (EQ & tm' & P & Q). subst vres.
   econstructor; split.
-  eapply exec_Ibuiltin; eauto.
+  eapply exec_Ibuiltin; eauto. rewrite <- comp_transf_function; eauto.
   apply eval_builtin_args_preserved with (ge1 := ge). exact symbols_preserved.
   constructor. eauto. constructor. eauto. constructor.
-  rewrite <- comp_transf_function; eauto.
   eapply external_call_symbols_preserved. apply senv_preserved.
   simpl; eauto.
   eapply match_succ_states; eauto. simpl; auto.
@@ -1114,10 +1112,10 @@ Ltac UseTransfer :=
   eauto.
   intros (tm' & A & B).
   econstructor; split.
-  eapply exec_Ibuiltin; eauto.
+  eapply exec_Ibuiltin; eauto. rewrite <- comp_transf_function; eauto.
   apply eval_builtin_args_preserved with (ge1 := ge). exact symbols_preserved.
   constructor. eauto. constructor. eauto. constructor.
-  rewrite <- comp_transf_function; eauto.
+  (* rewrite <- comp_transf_function; eauto. *)
   eapply external_call_symbols_preserved. apply senv_preserved.
   simpl in B1; inv B1. simpl in B2; inv B2. econstructor; eauto.
   eapply match_succ_states; eauto. simpl; auto.
@@ -1140,27 +1138,25 @@ Ltac UseTransfer :=
   erewrite Mem.loadbytes_length in H0 by eauto.
   rewrite Z2Nat.id in H0 by lia. auto.
 + (* annot *)
-  destruct (transfer_builtin_args (kill_builtin_res res ne, nm) _x2) as (ne1, nm1) eqn:TR.
+  destruct (transfer_builtin_args (kill_builtin_res res ne, nm) _x3) as (ne1, nm1) eqn:TR.
   InvSoundState.
   exploit transfer_builtin_args_sound; eauto. intros (tvl & A & B & C & D).
   inv H1.
   econstructor; split.
-  eapply exec_Ibuiltin; eauto.
+  eapply exec_Ibuiltin; eauto. rewrite <- comp_transf_function; eauto.
   apply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
-  rewrite <- comp_transf_function; eauto.
   eapply external_call_symbols_preserved. apply senv_preserved.
   constructor. eapply eventval_list_match_lessdef; eauto 2 with na.
   eapply match_succ_states; eauto. simpl; auto.
   apply eagree_set_res; auto.
 + (* annot val *)
-  destruct (transfer_builtin_args (kill_builtin_res res ne, nm) _x2) as (ne1, nm1) eqn:TR.
+  destruct (transfer_builtin_args (kill_builtin_res res ne, nm) _x3) as (ne1, nm1) eqn:TR.
   InvSoundState.
   exploit transfer_builtin_args_sound; eauto. intros (tvl & A & B & C & D).
   inv H1. inv B. inv H6.
   econstructor; split.
-  eapply exec_Ibuiltin; eauto.
+  eapply exec_Ibuiltin; eauto. rewrite <- comp_transf_function; eauto.
   apply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
-  rewrite <- comp_transf_function; eauto.
   eapply external_call_symbols_preserved. apply senv_preserved.
   constructor.
   eapply eventval_match_lessdef; eauto 2 with na.
@@ -1188,9 +1184,9 @@ Ltac UseTransfer :=
   eapply magree_extends; eauto. intros. apply nlive_all.
   intros (v' & tm' & P & Q & R & S).
   econstructor; split.
-  eapply exec_Ibuiltin; eauto.
+  eapply exec_Ibuiltin; eauto. rewrite <- comp_transf_function; eauto.
   apply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
-  eapply external_call_symbols_preserved. apply senv_preserved. rewrite <- comp_transf_function. eauto. eauto.
+  eapply external_call_symbols_preserved. apply senv_preserved. eauto.
   eapply match_succ_states; eauto. simpl; auto.
   apply eagree_set_res; auto.
   eapply mextends_agree; eauto.
@@ -1248,7 +1244,6 @@ Ltac UseTransfer :=
   econstructor; split.
   econstructor; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  erewrite <- match_stacks_call_comp; eauto.
   econstructor; eauto.
 
 - (* return *)

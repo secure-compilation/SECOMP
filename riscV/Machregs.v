@@ -192,9 +192,9 @@ Fixpoint destroyed_by_clobber (cl: list string): list mreg :=
 
 Definition destroyed_by_builtin (ef: external_function): list mreg :=
   match ef with
-  | EF_inline_asm txt sg clob => destroyed_by_clobber clob
-  | EF_memcpy sz al => R5 :: R6 :: R7 :: F0 :: nil
-  | EF_builtin name sg =>
+  | EF_inline_asm cp txt sg clob => destroyed_by_clobber clob
+  | EF_memcpy cp sz al => R5 :: R6 :: R7 :: F0 :: nil
+  | EF_builtin cp name sg =>
       if string_dec name "__builtin_clz"
       || string_dec name "__builtin_clzl"
       || string_dec name "__builtin_clzll" then
@@ -221,7 +221,7 @@ Definition mregs_for_operation (op: operation): list (option mreg) * option mreg
 
 Definition mregs_for_builtin (ef: external_function): list (option mreg) * list(option mreg) :=
   match ef with
-  | EF_builtin name sg =>
+  | EF_builtin cp name sg =>
       if (negb Archi.ptr64) && string_dec name "__builtin_bswap64" then
         (Some R6 :: Some R5 :: nil, Some R5 :: Some R6 :: nil)
       else if string_dec name "__builtin_clz"
@@ -268,11 +268,11 @@ Definition two_address_op (op: operation) : bool :=
 Definition builtin_constraints (ef: external_function) :
                                        list builtin_arg_constraint :=
   match ef with
-  | EF_builtin id sg => nil
-  | EF_vload _ => OK_addressing :: nil
-  | EF_vstore _ => OK_addressing :: OK_default :: nil
-  | EF_memcpy _ _ => OK_addrstack :: OK_addrstack :: nil
-  | EF_annot kind txt targs => map (fun _ => OK_all) targs
-  | EF_debug kind txt targs => map (fun _ => OK_all) targs
+  | EF_builtin cp id sg => nil
+  | EF_vload cp _ => OK_addressing :: nil
+  | EF_vstore cp _ => OK_addressing :: OK_default :: nil
+  | EF_memcpy cp _ _ => OK_addrstack :: OK_addrstack :: nil
+  | EF_annot cp kind txt targs => map (fun _ => OK_all) targs
+  | EF_debug cp kind txt targs => map (fun _ => OK_all) targs
   | _ => nil
   end.

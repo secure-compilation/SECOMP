@@ -783,7 +783,8 @@ Lemma transl_expr_Ebuiltin_correct:
   forall le ef al vl v,
   eval_exprlist ge sp e cp m le al vl ->
   transl_exprlist_prop le al vl ->
-  external_call ef ge cp vl m E0 v m ->
+  external_call ef ge vl m E0 v m ->
+  comp_of ef = cp ->
   transl_expr_prop le (Ebuiltin ef al) v.
 Proof.
   intros; red; intros. inv TE.
@@ -794,11 +795,10 @@ Proof.
 (* Exec *)
   split. eapply star_right. eexact EX1.
   change (rs1#rd <- v') with (regmap_setres (BR rd) v' rs1).
-  eapply exec_Ibuiltin; eauto.
+  eapply exec_Ibuiltin; eauto. congruence.
   eapply eval_builtin_args_trivial.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  rewrite <- COMP. eauto.
-  auto.
+  traceEq.
 (* Match-env *)
   split. eauto with rtlg.
 (* Result reg *)
@@ -814,17 +814,11 @@ Lemma transl_expr_Eexternal_correct:
   Genv.find_symbol ge id = Some b ->
   Genv.find_funct_ptr ge b = Some (External ef) ->
   ef_sig ef = sg ->
+  (* comp_of ef = cp -> *)
   eval_exprlist ge sp e cp m le al vl ->
   transl_exprlist_prop le al vl ->
-  external_call ef ge cp vl m E0 v m ->
-  (* forall (ALLOWED: Genv.allowed_call ge cp (Vptr b Ptrofs.zero)), *)
-  (* forall (NO_CROSS_PTR_CALL: Genv.type_of_call ge cp (Genv.find_comp ge (Vptr b Ptrofs.zero)) = *)
-  (*                    Genv.CrossCompartmentCall -> Forall not_ptr vl), *)
-  (* forall (NO_CROSS_PTR_RETURN: Genv.type_of_call ge cp (Genv.find_comp ge (Vptr b Ptrofs.zero)) = *)
-  (*                    Genv.CrossCompartmentCall -> not_ptr v), *)
+  external_call ef ge vl m E0 v m ->
   forall (INTRA: Genv.type_of_call ge cp (Genv.find_comp ge (Vptr b Ptrofs.zero)) <> Genv.CrossCompartmentCall),
-  (* forall (EV: call_trace ge cp (Genv.find_comp ge (Vptr b Ptrofs.zero)) *)
-  (*          (Vptr b Ptrofs.zero) vl (sig_args (ef_sig ef)) E0), *)
   transl_expr_prop le (Eexternal id sg al) v.
 Proof.
   intros; red; intros. inv TE.
@@ -838,13 +832,10 @@ Proof.
   eapply star_left. eapply exec_Icall; eauto.
   unfold find_function.
   simpl. rewrite symbols_preserved. rewrite H. eauto. auto. simpl. rewrite symbols_preserved. rewrite H. eauto.
-  (* clear -INTRA. *)
   unfold Genv.type_of_call in INTRA.
   unfold Genv.allowed_call.
   destruct (Pos.eqb_spec (comp_of f) (Genv.find_comp ge (Vptr b Ptrofs.zero))).
   rewrite e0. erewrite <- find_comp_translated; eauto.
-  destruct (Pos.eqb_spec (Genv.find_comp ge (Vptr b Ptrofs.zero)) default_compartment).
-  rewrite <- e0. erewrite find_comp_translated; eauto.
   rewrite <- COMP in n. apply Pos.eqb_neq in n. rewrite n in INTRA.
   congruence.
   intros CROSS. erewrite <- find_comp_translated with (vf := Vptr b Ptrofs.zero) in CROSS; eauto.
@@ -852,8 +843,8 @@ Proof.
   rewrite <- COMP in CROSS. rewrite <- COMP in INTRA.
   destruct ((cp =? Genv.find_comp ge (Vptr b Ptrofs.zero))%positive) eqn:EQ1;
     [discriminate |].
-  destruct ((Genv.find_comp ge (Vptr b Ptrofs.zero) =? default_compartment)%positive) eqn:EQ2;
-    [discriminate |].
+  (* destruct ((Genv.find_comp ge (Vptr b Ptrofs.zero) =? default_compartment)%positive) eqn:EQ2; *)
+  (*   [discriminate |]. *)
   congruence.
   instantiate (1 := E0).
   econstructor.
@@ -863,10 +854,9 @@ Proof.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   clear H3; subst cp. eauto.
   apply star_one. apply exec_return.
-  erewrite find_comp_translated in INTRA; eauto. rewrite <- COMP. contradiction.
+  erewrite find_comp_translated in INTRA; eauto. contradiction.
   econstructor.
   erewrite find_comp_translated in INTRA; eauto.
-  rewrite <- type_of_call_translated, <- COMP. auto.
   reflexivity. reflexivity. reflexivity.
 (* Match-env *)
   split. eauto with rtlg.
@@ -1566,11 +1556,6 @@ Proof.
   eapply exec_Itailcall; eauto. unfold find_function. simpl. rewrite J. destruct C. eauto. discriminate P. simpl; auto.
   apply sig_transl_function; auto.
     rewrite <- (comp_transl_partial fd Q), COMP. inv TF; congruence.
-    (* apply sig_transl_function in Q. rewrite <- Q. inv TF; congruence. *)
-  rewrite <- COMP'; eauto.
-  simpl; eauto.
-  rewrite (J rf (or_introl eq_refl)).
-  eapply allowed_call_translated; eauto. now rewrite <- COMP'.
   rewrite H, <- COMP'; eauto.
   traceEq.
   constructor; auto. rewrite <- COMP, SIG in U. auto.
@@ -1587,10 +1572,6 @@ Proof.
   rewrite Genv.find_funct_find_funct_ptr in P. eauto.
   apply sig_transl_function; auto.
   rewrite <- (comp_transl_partial _ Q), COMP. inv TF; congruence.
-    (* apply sig_transl_function in Q. rewrite <- Q. inv TF; congruence. *)
-  rewrite <- COMP'. eauto.
-  simpl. rewrite symbols_preserved. rewrite H5. eauto.
-  rewrite <- COMP'. eapply allowed_call_translated_same; eauto.
   rewrite H, <- COMP'; eauto.
   traceEq.
   constructor; auto. rewrite <- COMP, SIG in U. auto.
@@ -1609,10 +1590,9 @@ Proof.
   edestruct external_call_mem_extends as [tv [tm'' [A [B [C D]]]]]; eauto.
   econstructor; split.
   left. eapply plus_right. eexact E.
-  eapply exec_Ibuiltin; eauto.
+  eapply exec_Ibuiltin; eauto. congruence.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
   eapply external_call_symbols_preserved. apply senv_preserved. eauto.
-  rewrite <- COMP. eauto.
   traceEq.
   econstructor; eauto. constructor.
   eapply match_env_update_res; eauto.
@@ -1735,7 +1715,6 @@ Proof.
   econstructor; split.
   left; apply plus_one. eapply exec_function_external; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  rewrite <- (match_stacks_call_comp _ _ _ _ MS); eauto.
   constructor; auto.
 
   (* return *)

@@ -471,16 +471,16 @@ Definition transfer (f: function) (approx: PMap.t VA.t) (pc: node) (before: numb
           empty_numbering
       | Ibuiltin ef args res s =>
           match ef with
-          | EF_external _ _ _ | EF_runtime _ _ | EF_malloc | EF_free | EF_inline_asm _ _ _ =>
+          | EF_external _ _ _ | EF_runtime _ _ _ | EF_malloc _ | EF_free _ | EF_inline_asm _ _ _ _ =>
               empty_numbering
-          | EF_vstore _ =>
+          | EF_vstore _ _ =>
               set_res_unknown (kill_all_loads before) res
-          | EF_builtin name sg =>
+          | EF_builtin _ name sg =>
               match lookup_builtin_function name sg with
               | Some bf => set_res_unknown before res
               | None    => set_res_unknown (kill_all_loads before) res
               end
-          | EF_memcpy sz al =>
+          | EF_memcpy _ sz al =>
               match args with
               | dst :: src :: nil =>
                   let app := approx!!pc in
@@ -491,7 +491,7 @@ Definition transfer (f: function) (approx: PMap.t VA.t) (pc: node) (before: numb
               | _ =>
                   empty_numbering
               end
-          | EF_vload _ | EF_annot _ _ _ | EF_annot_val _ _ _ | EF_debug _ _ _ =>
+          | EF_vload _ _ | EF_annot _ _ _ _ | EF_annot_val _ _ _ _ | EF_debug _ _ _ _ =>
               set_res_unknown before res
           end
       | Icond cond args ifso ifnot =>

@@ -225,10 +225,10 @@ Qed.
 
 (** Translation of simple expressions. *)
 
-Lemma tr_simple_nil:
-  (forall cp le dst r sl a tmps, tr_expr ce cp le dst r sl a tmps ->
+Lemma tr_simple_nil cp:
+  (forall le dst r sl a tmps, tr_expr ce cp le dst r sl a tmps ->
    dst = For_val \/ dst = For_effects -> simple r = true -> sl = nil)
-/\(forall cp le rl sl al tmps, tr_exprlist ce cp le rl sl al tmps ->
+/\(forall le rl sl al tmps, tr_exprlist ce cp le rl sl al tmps ->
    simplelist rl = true -> sl = nil).
 Proof.
   assert (A: forall dst a, dst = For_val \/ dst = For_effects -> final dst a = nil).
@@ -248,15 +248,15 @@ Proof.
 - destruct (andb_prop _ _ H6). rewrite H0; auto.
 Qed.
 
-Lemma tr_simple_expr_nil:
-  forall cp le dst r sl a tmps, tr_expr ce cp le dst r sl a tmps ->
+Lemma tr_simple_expr_nil cp:
+  forall le dst r sl a tmps, tr_expr ce cp le dst r sl a tmps ->
   dst = For_val \/ dst = For_effects -> simple r = true -> sl = nil.
-Proof (proj1 tr_simple_nil).
+Proof (proj1 (tr_simple_nil cp)).
 
-Lemma tr_simple_exprlist_nil:
-  forall cp le rl sl al tmps, tr_exprlist ce cp le rl sl al tmps ->
+Lemma tr_simple_exprlist_nil cp:
+  forall le rl sl al tmps, tr_exprlist ce cp le rl sl al tmps ->
   simplelist rl = true -> sl = nil.
-Proof (proj2 tr_simple_nil).
+Proof (proj2 (tr_simple_nil cp)).
 
 (** Translation of [deref_loc] and [assign_loc] operations. *)
 
@@ -882,19 +882,19 @@ Qed.
 
 Theorem tr_top_leftcontext:
   forall e le m cp dst rtop sl a tmps,
-  tr_top ce tge e le m cp dst rtop sl a tmps ->
+  tr_top ce cp tge e le m dst rtop sl a tmps ->
   forall r C,
   rtop = C r ->
   leftcontext RV RV C ->
   exists dst', exists sl1, exists sl2, exists a', exists tmp',
-  tr_top ce tge e le m cp dst' r sl1 a' tmp'
+  tr_top ce cp tge e le m dst' r sl1 a' tmp'
   /\ sl = sl1 ++ sl2
   /\ incl tmp' tmps
   /\ (forall le' m' r' sl3,
         tr_expr ce cp le' dst' r' sl3 a' tmp' ->
         (forall id, ~In id tmp' -> le'!id = le!id) ->
         Csyntax.typeof r' = Csyntax.typeof r ->
-        tr_top ce tge e le' m' cp dst (C r') (sl3 ++ sl2) a tmps).
+        tr_top ce cp tge e le' m' dst (C r') (sl3 ++ sl2) a tmps).
 Proof.
   induction 1; intros.
 (* val for val *)
@@ -976,7 +976,7 @@ Lemma step_make_set:
   Csem.deref_loc ge (comp_of f) ty m b ofs bf t v ->
   eval_lvalue tge e (comp_of f) le m a b ofs bf ->
   typeof a = ty ->
-  step1 tge (State f (make_set bf id a) k e le m)
+  step1 tge (State f (make_set (comp_of f) bf id a) k e le m)
           t (State f Sskip k e (PTree.set id v le) m).
 Proof.
   intros. exploit deref_loc_translated; eauto. rewrite <- H1.
@@ -985,7 +985,7 @@ Proof.
   intros [A B]. subst bf.
   change (PTree.set id v le) with (set_opttemp (Some id) v le). econstructor.
   econstructor. econstructor. eauto.
-  simpl. unfold sem_cast. simpl. eauto. constructor.
+  simpl. unfold sem_cast. simpl. eauto. constructor. auto.
   simpl. econstructor; eauto.
 (* nonvolatile case *)
   intros [A B]. subst t. constructor. eapply eval_Elvalue; eauto.
@@ -998,7 +998,7 @@ Lemma step_make_assign:
   eval_expr tge e (comp_of f) le m a2 v2 ->
   sem_cast v2 (typeof a2) ty m = Some v ->
   typeof a1 = ty ->
-  step1 tge (State f (make_assign bf a1 a2) k e le m)
+  step1 tge (State f (make_assign (comp_of f) bf a1 a2) k e le m)
           t (State f Sskip k e le m').
 Proof.
   intros. exploit assign_loc_translated; eauto. rewrite <- H3.
@@ -1007,7 +1007,7 @@ Proof.
   intros [A B]. subst bf. change le with (set_opttemp None Vundef le) at 2. econstructor.
   econstructor. constructor. eauto.
   simpl. unfold sem_cast. simpl. eauto.
-  econstructor; eauto. rewrite H3; eauto. constructor.
+  econstructor; eauto. rewrite H3; eauto. constructor. auto.
   simpl. econstructor; eauto.
 (* nonvolatile case *)
   intros [A B]. subst t. econstructor; eauto. congruence.
@@ -1041,7 +1041,7 @@ Lemma step_tr_rvalof:
   forall ty m b ofs bf t v e le a sl a' tmp f k,
   Csem.deref_loc ge (comp_of f) ty m b ofs bf t v ->
   eval_lvalue tge e (comp_of f) le m a b ofs bf ->
-  tr_rvalof ce ty a sl a' tmp ->
+  tr_rvalof ce (comp_of f) ty a sl a' tmp ->
   typeof a = ty ->
   exists le',
     star step1 tge (State f Sskip (Kseqlist sl k) e le m)
@@ -1072,49 +1072,49 @@ End TRANSLATION.
 
 (** Matching between continuations *)
 
-Inductive match_cont : composite_env -> Csem.cont -> cont -> Prop :=
-  | match_Kstop: forall ce,
-      match_cont ce Csem.Kstop Kstop
-  | match_Kseq: forall ce s k ts tk,
-      tr_stmt ce s ts ->
-      match_cont ce k tk ->
-      match_cont ce (Csem.Kseq s k) (Kseq ts tk)
-  | match_Kwhile2: forall ce r s k s' ts tk,
-      tr_if ce r Sskip Sbreak s' ->
-      tr_stmt ce s ts ->
-      match_cont ce k tk ->
-      match_cont ce (Csem.Kwhile2 r s k)
+Inductive match_cont : composite_env -> compartment -> Csem.cont -> cont -> Prop :=
+  | match_Kstop: forall ce cp,
+      match_cont ce cp Csem.Kstop Kstop
+  | match_Kseq: forall ce cp s k ts tk,
+      tr_stmt ce cp s ts ->
+      match_cont ce cp k tk ->
+      match_cont ce cp (Csem.Kseq s k) (Kseq ts tk)
+  | match_Kwhile2: forall ce cp r s k s' ts tk,
+      tr_if ce cp r Sskip Sbreak s' ->
+      tr_stmt ce cp s ts ->
+      match_cont ce cp k tk ->
+      match_cont ce cp (Csem.Kwhile2 r s k)
                     (Kloop1 (Ssequence s' ts) Sskip tk)
-  | match_Kdowhile1: forall ce r s k s' ts tk,
-      tr_if ce r Sskip Sbreak s' ->
-      tr_stmt ce s ts ->
-      match_cont ce k tk ->
-      match_cont ce (Csem.Kdowhile1 r s k)
+  | match_Kdowhile1: forall ce cp r s k s' ts tk,
+      tr_if ce cp r Sskip Sbreak s' ->
+      tr_stmt ce cp s ts ->
+      match_cont ce cp k tk ->
+      match_cont ce cp (Csem.Kdowhile1 r s k)
                     (Kloop1 ts s' tk)
-  | match_Kfor3: forall ce r s3 s k ts3 s' ts tk,
-      tr_if ce r Sskip Sbreak s' ->
-      tr_stmt ce s3 ts3 ->
-      tr_stmt ce s ts ->
-      match_cont ce k tk ->
-      match_cont ce (Csem.Kfor3 r s3 s k)
+  | match_Kfor3: forall ce cp r s3 s k ts3 s' ts tk,
+      tr_if ce cp r Sskip Sbreak s' ->
+      tr_stmt ce cp s3 ts3 ->
+      tr_stmt ce cp s ts ->
+      match_cont ce cp k tk ->
+      match_cont ce cp (Csem.Kfor3 r s3 s k)
                     (Kloop1 (Ssequence s' ts) ts3 tk)
-  | match_Kfor4: forall ce r s3 s k ts3 s' ts tk,
-      tr_if ce r Sskip Sbreak s' ->
-      tr_stmt ce s3 ts3 ->
-      tr_stmt ce s ts ->
-      match_cont ce k tk ->
-      match_cont ce (Csem.Kfor4 r s3 s k)
+  | match_Kfor4: forall ce cp r s3 s k ts3 s' ts tk,
+      tr_if ce cp r Sskip Sbreak s' ->
+      tr_stmt ce cp s3 ts3 ->
+      tr_stmt ce cp s ts ->
+      match_cont ce cp k tk ->
+      match_cont ce cp (Csem.Kfor4 r s3 s k)
                     (Kloop2 (Ssequence s' ts) ts3 tk)
-  | match_Kswitch2: forall ce k tk,
-      match_cont ce k tk ->
-      match_cont ce (Csem.Kswitch2 k) (Kswitch tk)
-  | match_Kcall: forall f e C ty k optid tf le sl tk a dest tmps cu ce,
+  | match_Kswitch2: forall ce cp k tk,
+      match_cont ce cp k tk ->
+      match_cont ce cp (Csem.Kswitch2 k) (Kswitch tk)
+  | match_Kcall: forall f e C ty k optid tf le sl tk a dest tmps cu cp ce,
       linkorder cu prog ->
       tr_function cu.(prog_comp_env) f tf ->
       leftcontext RV RV C ->
-      (forall v m, tr_top cu.(prog_comp_env) tge e (set_opttemp optid v le) m (comp_of f) dest (C (Csyntax.Eval v ty)) sl a tmps) ->
-      match_cont_exp cu.(prog_comp_env) dest a k tk ->
-      match_cont ce (Csem.Kcall f e C ty k)
+      (forall v m, tr_top cu.(prog_comp_env) (comp_of f) tge e (set_opttemp optid v le) m dest (C (Csyntax.Eval v ty)) sl a tmps) ->
+      match_cont_exp cu.(prog_comp_env) (comp_of f) dest a k tk ->
+      match_cont ce cp (Csem.Kcall f e C ty k)
                     (Kcall optid tf e le (Kseqlist sl tk))
 (*
   | match_Kcall_some: forall f e C ty k dst tf le sl tk a dest tmps,
@@ -1126,71 +1126,71 @@ Inductive match_cont : composite_env -> Csem.cont -> cont -> Prop :=
                  (Kcall (Some dst) tf e le (Kseqlist sl tk))
 *)
 
-with match_cont_exp : composite_env -> destination -> expr -> Csem.cont -> cont -> Prop :=
-  | match_Kdo: forall ce k a tk,
-      match_cont ce k tk ->
-      match_cont_exp ce For_effects a (Csem.Kdo k) tk
-  | match_Kifthenelse_empty: forall ce a k tk,
-      match_cont ce k tk ->
-      match_cont_exp ce For_val a (Csem.Kifthenelse Csyntax.Sskip Csyntax.Sskip k) (Kseq Sskip tk)
-  | match_Kifthenelse_1: forall ce a s1 s2 k ts1 ts2 tk,
-      tr_stmt ce s1 ts1 -> tr_stmt ce s2 ts2 ->
-      match_cont ce k tk ->
-      match_cont_exp ce For_val a (Csem.Kifthenelse s1 s2 k) (Kseq (Sifthenelse a ts1 ts2) tk)
-  | match_Kwhile1: forall ce r s k s' a ts tk,
-      tr_if ce r Sskip Sbreak s' ->
-      tr_stmt ce s ts ->
-      match_cont ce k tk ->
-      match_cont_exp ce For_val a
+with match_cont_exp : composite_env -> compartment -> destination -> expr -> Csem.cont -> cont -> Prop :=
+  | match_Kdo: forall ce cp k a tk,
+      match_cont ce cp k tk ->
+      match_cont_exp ce cp For_effects a (Csem.Kdo k) tk
+  | match_Kifthenelse_empty: forall ce cp a k tk,
+      match_cont ce cp k tk ->
+      match_cont_exp ce cp For_val a (Csem.Kifthenelse Csyntax.Sskip Csyntax.Sskip k) (Kseq Sskip tk)
+  | match_Kifthenelse_1: forall ce cp a s1 s2 k ts1 ts2 tk,
+      tr_stmt ce cp s1 ts1 -> tr_stmt ce cp s2 ts2 ->
+      match_cont ce cp k tk ->
+      match_cont_exp ce cp For_val a (Csem.Kifthenelse s1 s2 k) (Kseq (Sifthenelse a ts1 ts2) tk)
+  | match_Kwhile1: forall ce cp r s k s' a ts tk,
+      tr_if ce cp r Sskip Sbreak s' ->
+      tr_stmt ce cp s ts ->
+      match_cont ce cp k tk ->
+      match_cont_exp ce cp For_val a
          (Csem.Kwhile1 r s k)
          (Kseq (makeif a Sskip Sbreak)
            (Kseq ts (Kloop1 (Ssequence s' ts) Sskip tk)))
-  | match_Kdowhile2: forall ce r s k s' a ts tk,
-      tr_if ce r Sskip Sbreak s' ->
-      tr_stmt ce s ts ->
-      match_cont ce k tk ->
-      match_cont_exp ce For_val a
+  | match_Kdowhile2: forall ce cp r s k s' a ts tk,
+      tr_if ce cp r Sskip Sbreak s' ->
+      tr_stmt ce cp s ts ->
+      match_cont ce cp k tk ->
+      match_cont_exp ce cp For_val a
         (Csem.Kdowhile2 r s k)
         (Kseq (makeif a Sskip Sbreak) (Kloop2 ts s' tk))
-  | match_Kfor2: forall ce r s3 s k s' a ts3 ts tk,
-      tr_if ce r Sskip Sbreak s' ->
-      tr_stmt ce s3 ts3 ->
-      tr_stmt ce s ts ->
-      match_cont ce k tk ->
-      match_cont_exp ce For_val a
+  | match_Kfor2: forall ce cp r s3 s k s' a ts3 ts tk,
+      tr_if ce cp r Sskip Sbreak s' ->
+      tr_stmt ce cp s3 ts3 ->
+      tr_stmt ce cp s ts ->
+      match_cont ce cp k tk ->
+      match_cont_exp ce cp For_val a
         (Csem.Kfor2 r s3 s k)
         (Kseq (makeif a Sskip Sbreak)
           (Kseq ts (Kloop1 (Ssequence s' ts) ts3 tk)))
-  | match_Kswitch1: forall ce ls k a tls tk,
-      tr_lblstmts ce ls tls ->
-      match_cont ce k tk ->
-      match_cont_exp ce For_val a (Csem.Kswitch1 ls k) (Kseq (Sswitch a tls) tk)
-  | match_Kreturn: forall ce k a tk,
-      match_cont ce k tk ->
-      match_cont_exp ce For_val a (Csem.Kreturn k) (Kseq (Sreturn (Some a)) tk).
+  | match_Kswitch1: forall ce cp ls k a tls tk,
+      tr_lblstmts ce cp ls tls ->
+      match_cont ce cp k tk ->
+      match_cont_exp ce cp For_val a (Csem.Kswitch1 ls k) (Kseq (Sswitch a tls) tk)
+  | match_Kreturn: forall ce cp k a tk,
+      match_cont ce cp k tk ->
+      match_cont_exp ce cp For_val a (Csem.Kreturn k) (Kseq (Sreturn (Some a)) tk).
 
 Lemma match_cont_is_call_cont:
-  forall ce k tk,
-  match_cont ce k tk -> Csem.is_call_cont k ->
-  forall ce', match_cont ce' k tk.
+  forall ce cp k tk,
+  match_cont ce cp k tk -> Csem.is_call_cont k ->
+  forall ce', match_cont ce' cp k tk.
 Proof.
   destruct 1; simpl; intros; try contradiction; econstructor; eauto.
 Qed. 
 
 Lemma match_cont_call_cont:
-  forall ce k tk,
-  match_cont ce k tk ->
-  forall ce', match_cont ce' (Csem.call_cont k) (call_cont tk).
+  forall ce cp k tk,
+  match_cont ce cp k tk ->
+  forall ce', match_cont ce' cp (Csem.call_cont k) (call_cont tk).
 Proof.
   induction 1; simpl; auto; intros; econstructor; eauto.
 Qed.
 
 Lemma match_cont_call_comp:
-  forall ce k tk,
-  match_cont ce k tk ->
+  forall ce cp k tk,
+  match_cont ce cp k tk ->
   Csem.call_comp k = call_comp tk.
 Proof.
-  intros ce k tk H.
+  intros ce cp k tk H.
 
   apply match_cont_call_cont with (ce' := ce) in H.
   unfold Csem.call_comp, call_comp.
@@ -1211,25 +1211,25 @@ Inductive match_states: Csem.state -> state -> Prop :=
   | match_exprstates: forall f r k e m tf sl tk le dest a tmps cu
       (LINK: linkorder cu prog)
       (TRF: tr_function cu.(prog_comp_env) f tf)
-      (TR: tr_top cu.(prog_comp_env) tge e le m (comp_of f) dest r sl a tmps)
-      (MK: match_cont_exp cu.(prog_comp_env) dest a k tk),
+      (TR: tr_top cu.(prog_comp_env) (comp_of f) tge e le m dest r sl a tmps)
+      (MK: match_cont_exp cu.(prog_comp_env) (comp_of f) dest a k tk),
       match_states (Csem.ExprState f r k e m)
                    (State tf Sskip (Kseqlist sl tk) e le m)
   | match_regularstates: forall f s k e m tf ts tk le cu
       (LINK: linkorder cu prog)
       (TRF: tr_function cu.(prog_comp_env) f tf)
-      (TR: tr_stmt cu.(prog_comp_env) s ts)
-      (MK: match_cont cu.(prog_comp_env) k tk),
+      (TR: tr_stmt cu.(prog_comp_env) (comp_of f) s ts)
+      (MK: match_cont cu.(prog_comp_env) (comp_of f) k tk),
       match_states (Csem.State f s k e m)
                    (State tf ts tk e le m)
   | match_callstates: forall fd args k m tfd tk cu
       (LINK: linkorder cu prog)
       (TR: tr_fundef cu fd tfd)
-      (MK: forall ce, match_cont ce k tk),
+      (MK: forall ce, match_cont ce (comp_of fd) k tk),
       match_states (Csem.Callstate fd args k m)
                    (Callstate tfd args tk m)
   | match_returnstates: forall res k m cp tk ty
-      (MK: forall ce, match_cont ce k tk),
+      (MK: forall ce, match_cont ce cp k tk),
       (* call_cont_ty (Csem.call_cont k) ty -> *)
       match_states (Csem.Returnstate res k m ty cp)
                    (Returnstate res tk m ty cp)
@@ -1239,22 +1239,22 @@ Inductive match_states: Csem.state -> state -> Prop :=
 (** Additional results on translation of statements *)
 
 Lemma tr_select_switch:
-  forall ce n ls tls,
-  tr_lblstmts ce ls tls ->
-  tr_lblstmts ce (Csem.select_switch n ls) (select_switch n tls).
+  forall ce cp n ls tls,
+  tr_lblstmts ce cp ls tls ->
+  tr_lblstmts ce cp (Csem.select_switch n ls) (select_switch n tls).
 Proof.
-  intros ce.
+  intros ce cp.
   assert (DFL: forall ls tls,
-      tr_lblstmts ce ls tls ->
-      tr_lblstmts ce (Csem.select_switch_default ls) (select_switch_default tls)).
+      tr_lblstmts ce cp ls tls ->
+      tr_lblstmts ce cp (Csem.select_switch_default ls) (select_switch_default tls)).
   { induction 1; simpl. constructor. destruct c; auto. constructor; auto. }
   assert (CASE: forall n ls tls,
-      tr_lblstmts ce ls tls ->
+      tr_lblstmts ce cp ls tls ->
       match Csem.select_switch_case n ls with
       | None =>
           select_switch_case n tls = None
       | Some ls' =>
-          exists tls', select_switch_case n tls = Some tls' /\ tr_lblstmts ce ls' tls'
+          exists tls', select_switch_case n tls = Some tls' /\ tr_lblstmts ce cp ls' tls'
       end).
   { induction 1; simpl; intros.
     auto.
@@ -1268,9 +1268,9 @@ Proof.
 Qed.
 
 Lemma tr_seq_of_labeled_statement:
-  forall ce ls tls,
-  tr_lblstmts ce ls tls ->
-  tr_stmt ce (Csem.seq_of_labeled_statement ls) (seq_of_labeled_statement tls).
+  forall ce cp ls tls,
+  tr_lblstmts ce cp ls tls ->
+  tr_stmt ce cp (Csem.seq_of_labeled_statement ls) (seq_of_labeled_statement tls).
 Proof.
   induction 1; simpl; constructor; auto.
 Qed.
@@ -1315,21 +1315,21 @@ Proof.
 Qed.
 
 Lemma make_set_nolabel:
-  forall bf t a, nolabel (make_set bf t a).
+  forall cp bf t a, nolabel (make_set cp bf t a).
 Proof.
   unfold make_set; intros; red; intros.
   destruct (chunk_for_volatile_type (typeof a) bf); auto.
 Qed.
 
 Lemma make_assign_nolabel:
-  forall bf l r, nolabel (make_assign bf l r).
+  forall cp bf l r, nolabel (make_assign cp bf l r).
 Proof.
   unfold make_assign; intros; red; intros.
   destruct (chunk_for_volatile_type (typeof l) bf); auto.
 Qed.
 
 Lemma tr_rvalof_nolabel:
-  forall ce ty a sl a' tmp, tr_rvalof ce ty a sl a' tmp -> nolabel_list sl.
+  forall ce cp ty a sl a' tmp, tr_rvalof ce cp ty a sl a' tmp -> nolabel_list sl.
 Proof.
   destruct 1; simpl; intuition. apply make_set_nolabel.
 Qed.
@@ -1355,16 +1355,16 @@ Ltac NoLabelTac :=
   | [ H: _ -> nolabel_list ?x |- nolabel_list ?x ] => apply H; NoLabelTac
   | [ |- nolabel (makeseq _) ] => apply makeseq_nolabel; NoLabelTac
   | [ |- nolabel (makeif _ _ _) ] => apply makeif_nolabel; NoLabelTac
-  | [ |- nolabel (make_set _ _ _) ] => apply make_set_nolabel
-  | [ |- nolabel (make_assign _ _ _) ] => apply make_assign_nolabel
+  | [ |- nolabel (make_set _ _ _ _) ] => apply make_set_nolabel
+  | [ |- nolabel (make_assign _ _ _ _) ] => apply make_assign_nolabel
   | [ |- nolabel _ ] => red; intros; simpl; auto
   | [ |- _ /\ _ ] => split; NoLabelTac
   | _ => auto
   end.
 
-Lemma tr_find_label_expr:
-  (forall cp le dst r sl a tmps, tr_expr ce cp le dst r sl a tmps -> nolabel_list sl)
-/\(forall cp le rl sl al tmps, tr_exprlist ce cp le rl sl al tmps -> nolabel_list sl).
+Lemma tr_find_label_expr cp:
+  (forall le dst r sl a tmps, tr_expr ce cp le dst r sl a tmps -> nolabel_list sl)
+/\(forall le rl sl al tmps, tr_exprlist ce cp le rl sl al tmps -> nolabel_list sl).
 Proof.
   apply tr_expr_exprlist; intros; NoLabelTac.
   apply nolabel_do_set.
@@ -1376,37 +1376,35 @@ Proof.
   eapply tr_rvalof_nolabel; eauto.
 Qed.
 
-Lemma tr_find_label_top:
-  forall e le m cp dst r sl a tmps,
-  tr_top ce tge e le m cp dst r sl a tmps -> nolabel_list sl.
+Lemma tr_find_label_top cp:
+  forall e le m dst r sl a tmps,
+  tr_top ce cp tge e le m dst r sl a tmps -> nolabel_list sl.
 Proof.
   induction 1; intros; NoLabelTac.
-  eapply (proj1 tr_find_label_expr); eauto.
+  eapply (proj1 (tr_find_label_expr cp)); eauto.
 Qed.
 
 Lemma tr_find_label_expression:
-  forall r s a, tr_expression ce r s a -> forall k, find_label lbl s k = None.
+  forall cp r s a, tr_expression ce cp r s a -> forall k, find_label lbl s k = None.
 Proof.
   intros. inv H.
   assert (nolabel (makeseq sl)). apply makeseq_nolabel.
   eapply tr_find_label_top with (e := empty_env) (le := PTree.empty val) (m := Mem.empty).
   eauto. apply H.
-  Unshelve. exact default_compartment. (* NOTE: Uninstantiated compartment is suspect *)
 Qed.
 
 Lemma tr_find_label_expr_stmt:
-  forall r s, tr_expr_stmt ce r s -> forall k, find_label lbl s k = None.
+  forall cp r s, tr_expr_stmt ce cp r s -> forall k, find_label lbl s k = None.
 Proof.
   intros. inv H.
   assert (nolabel (makeseq sl)). apply makeseq_nolabel.
   eapply tr_find_label_top with (e := empty_env) (le := PTree.empty val) (m := Mem.empty).
   eauto. apply H.
-  Unshelve. exact default_compartment. (* NOTE: Uninstantiated compartment is suspect *)
 Qed.
 
 Lemma tr_find_label_if:
-  forall r s,
-  tr_if ce r Sskip Sbreak s ->
+  forall cp r s,
+  tr_if ce cp r Sskip Sbreak s ->
   forall k, find_label lbl s k = None.
 Proof.
   intros. inv H.
@@ -1417,34 +1415,33 @@ Proof.
   eauto.
   simpl; split; auto. apply makeif_nolabel. red; simpl; auto. red; simpl; auto.
   apply H.
-  Unshelve. exact default_compartment. (* NOTE: Uninstantiated compartment is suspect *)
 Qed.
 
-Lemma tr_find_label:
+Lemma tr_find_label cp:
   forall s k ts tk
-    (TR: tr_stmt ce s ts)
-    (MC: match_cont ce k tk),
+    (TR: tr_stmt ce cp s ts)
+    (MC: match_cont ce cp k tk),
   match Csem.find_label lbl s k with
   | None =>
       find_label lbl ts tk = None
   | Some (s', k') =>
       exists ts', exists tk',
           find_label lbl ts tk = Some (ts', tk')
-       /\ tr_stmt ce s' ts'
-       /\ match_cont ce k' tk'
+       /\ tr_stmt ce cp s' ts'
+       /\ match_cont ce cp k' tk'
   end
-with tr_find_label_ls:
+with tr_find_label_ls cp:
   forall s k ts tk
-    (TR: tr_lblstmts ce s ts)
-    (MC: match_cont ce k tk),
+    (TR: tr_lblstmts ce cp s ts)
+    (MC: match_cont ce cp k tk),
   match Csem.find_label_ls lbl s k with
   | None =>
       find_label_ls lbl ts tk = None
   | Some (s', k') =>
       exists ts', exists tk',
           find_label_ls lbl ts tk = Some (ts', tk')
-       /\ tr_stmt ce s' ts'
-       /\ match_cont ce k' tk'
+       /\ tr_stmt ce cp s' ts'
+       /\ match_cont ce cp k' tk'
   end.
 Proof.
   induction s; intros; inversion TR; subst; clear TR; simpl.
@@ -1457,32 +1454,32 @@ Proof.
   intro EQ. rewrite EQ. eapply IHs2; eauto.
 (* if empty *)
   rename s' into sr.
-  rewrite (tr_find_label_expression _ _ _ H3).
+  rewrite (tr_find_label_expression _ _ _ _ H3).
   auto.
 (* if not empty *)
   rename s' into sr.
-  rewrite (tr_find_label_expression _ _ _ H2).
+  rewrite (tr_find_label_expression _ _ _ _ H2).
   exploit (IHs1 k); eauto.
   destruct (Csem.find_label lbl s1 k) as [[s' k'] | ].
   intros [ts' [tk' [A [B C]]]]. rewrite A. exists ts'; exists tk'; intuition.
   intro EQ. rewrite EQ. eapply IHs2; eauto.
 (* while *)
   rename s' into sr.
-  rewrite (tr_find_label_if _ _ H1); auto.
+  rewrite (tr_find_label_if _ _ _ H1); auto.
   exploit (IHs (Kwhile2 e s k)); eauto. econstructor; eauto.
   destruct (Csem.find_label lbl s (Kwhile2 e s k)) as [[s' k'] | ].
   intros [ts' [tk' [A [B C]]]]. rewrite A. exists ts'; exists tk'; intuition.
   intro EQ. rewrite EQ. auto.
 (* dowhile *)
   rename s' into sr.
-  rewrite (tr_find_label_if _ _ H1); auto.
+  rewrite (tr_find_label_if _ _ _ H1); auto.
   exploit (IHs (Kdowhile1 e s k)); eauto. econstructor; eauto.
   destruct (Csem.find_label lbl s (Kdowhile1 e s k)) as [[s' k'] | ].
   intros [ts' [tk' [A [B C]]]]. rewrite A. exists ts'; exists tk'; intuition.
   intro EQ. rewrite EQ. auto.
 (* for skip *)
   rename s' into sr.
-  rewrite (tr_find_label_if _ _ H4); auto.
+  rewrite (tr_find_label_if _ _ _ H4); auto.
   exploit (IHs3 (Csem.Kfor3 e s2 s3 k)); eauto. econstructor; eauto.
   destruct (Csem.find_label lbl s3 (Csem.Kfor3 e s2 s3 k)) as [[s' k'] | ].
   intros [ts' [tk' [A [B C]]]]. rewrite A. exists ts'; exists tk'; intuition.
@@ -1490,7 +1487,7 @@ Proof.
   exploit (IHs2 (Csem.Kfor4 e s2 s3 k)); eauto. econstructor; eauto.
 (* for not skip *)
   rename s' into sr.
-  rewrite (tr_find_label_if _ _ H3); auto.
+  rewrite (tr_find_label_if _ _ _ H3); auto.
   exploit (IHs1 (Csem.Kseq (Csyntax.Sfor Csyntax.Sskip e s2 s3) k)); eauto.
     econstructor; eauto. econstructor; eauto.
   destruct (Csem.find_label lbl s1
@@ -1505,9 +1502,9 @@ Proof.
 (* break, continue, return 0 *)
   auto. auto. auto.
 (* return 1 *)
-  rewrite (tr_find_label_expression _ _ _ H0). auto.
+  rewrite (tr_find_label_expression _ _ _ _ H0). auto.
 (* switch *)
-  rewrite (tr_find_label_expression _ _ _ H1). apply tr_find_label_ls. auto. constructor; auto.
+  rewrite (tr_find_label_expression _ _ _ _ H1). apply tr_find_label_ls. auto. constructor; auto.
 (* labeled stmt *)
   destruct (ident_eq lbl l). exists ts0; exists tk; auto. apply IHs; auto.
 (* goto *)
@@ -1517,7 +1514,7 @@ Proof.
 (* nil *)
   auto.
 (* case *)
-  exploit (tr_find_label s (Csem.Kseq (Csem.seq_of_labeled_statement s0) k)); eauto.
+  exploit (tr_find_label cp s (Csem.Kseq (Csem.seq_of_labeled_statement s0) k)); eauto.
   econstructor; eauto. apply tr_seq_of_labeled_statement; eauto.
   destruct (Csem.find_label lbl s
     (Csem.Kseq (Csem.seq_of_labeled_statement s0) k)) as [[s' k'] | ].
@@ -1658,7 +1655,7 @@ Ltac NOTIN :=
   exploit tr_simple_lvalue; eauto. intros [SL [TY EV]]. subst sl0; simpl.
   exploit is_bitfield_access_sound; eauto. intros EQ; subst bf0.
   econstructor; split.
-  left. eapply plus_two. constructor. eapply step_make_set; eauto.
+  left. eapply plus_two. constructor. rewrite <- CO. eapply step_make_set; eauto.
   rewrite <- TY, CO; eauto.
   rewrite CO; eauto.
   traceEq.
@@ -1900,7 +1897,7 @@ Ltac NOTIN :=
   subst; simpl Kseqlist.
   econstructor; split.
   left. eapply plus_left. constructor.
-  apply star_one. eapply step_make_assign; eauto.
+  apply star_one. rewrite <- CO. eapply step_make_assign; eauto.
   rewrite <- TY1, CO; eauto.
   rewrite CO; eauto.
   rewrite CO; eauto.
@@ -1919,7 +1916,7 @@ Ltac NOTIN :=
   left. eapply plus_left. constructor.
   eapply star_left. constructor. econstructor. rewrite CO; eauto. rewrite <- TY2; eauto.
   eapply star_left. constructor.
-  apply star_one. eapply step_make_assign; eauto.
+  apply star_one. rewrite <- CO. eapply step_make_assign; eauto.
   rewrite <- TY1, CO; eauto.
   rewrite CO; eauto.
   constructor. apply PTree.gss. simpl. rewrite TY1. eapply cast_idempotent. rewrite <- TY1; eauto. 
@@ -1938,8 +1935,9 @@ Ltac NOTIN :=
 + (* for effects *)
   exploit tr_simple_lvalue; eauto. intros [SL1 [TY1 EV1]].
   exploit step_tr_rvalof; eauto.
+  rewrite CO, <- TY1; eauto.
   rewrite CO; eauto.
-  rewrite CO; eauto.
+  rewrite CO, <- TY1; eauto.
   intros [le' [EXEC [EV3 [TY3 INV]]]].
   exploit tr_simple_lvalue. eauto. eapply tr_expr_invariant with (le := le) (le' := le'). eauto.
   intros. apply INV. NOTIN. intros [? [? EV1']].
@@ -1949,7 +1947,7 @@ Ltac NOTIN :=
   subst; simpl Kseqlist.
   econstructor; split.
   left. eapply star_plus_trans. rewrite app_ass. rewrite Kseqlist_app. eexact EXEC.
-  eapply plus_two. simpl. econstructor. eapply step_make_assign; eauto.
+  eapply plus_two. simpl. econstructor. rewrite <- CO. eapply step_make_assign; eauto.
     rewrite CO; eauto.
     rewrite CO; eauto.
     econstructor. eexact EV3. rewrite CO; eexact EV2.
@@ -1959,7 +1957,8 @@ Ltac NOTIN :=
   constructor. auto. auto.
 + (* for value *)
   exploit tr_simple_lvalue; eauto. intros [SL1 [TY1 EV1]].
-  exploit step_tr_rvalof; eauto. rewrite CO; eauto. rewrite CO; eauto. intros [le' [EXEC [EV3 [TY3 INV]]]].
+  exploit step_tr_rvalof; eauto. rewrite CO, <- TY1; eauto. rewrite CO; eauto. rewrite CO, <- TY1; eauto.
+  intros [le' [EXEC [EV3 [TY3 INV]]]].
   exploit tr_simple_lvalue. eauto. eapply tr_expr_invariant with (le := le) (le' := le'). eauto.
   intros. apply INV. NOTIN. intros [? [? EV1']].
   exploit tr_simple_rvalue. eauto. eapply tr_expr_invariant with (le := le) (le' := le'). eauto.
@@ -1977,7 +1976,7 @@ Ltac NOTIN :=
     econstructor. econstructor. eexact EV3. rewrite CO; eexact EV2.
     rewrite TY3; rewrite <- TY1; rewrite <- TY2; rewrite comp_env_preserved; eauto.
     eassumption.
-  econstructor. eapply step_make_assign; eauto.
+  econstructor. rewrite <- CO. eapply step_make_assign; eauto.
     rewrite <- TY1, CO; eauto.
     rewrite CO; eauto.
     constructor. apply PTree.gss. simpl. rewrite TY1. eapply cast_idempotent. rewrite <- TY1; eauto.
@@ -1999,8 +1998,9 @@ Ltac NOTIN :=
   exploit tr_simple_lvalue; eauto. intros [SL1 [TY1 EV1]].
   exploit tr_simple_rvalue; eauto. intros [SL2 [TY2 EV2]].
   exploit step_tr_rvalof; eauto.
-  rewrite <- CO in H1. eauto.
-  rewrite CO. eauto.
+  rewrite CO, <- TY1; eauto.
+  rewrite CO; eauto.
+  rewrite CO, <- TY1; eauto.
   intros [le' [EXEC [EV3 [TY3 INV]]]].
   subst; simpl Kseqlist.
   econstructor; split.
@@ -2010,7 +2010,8 @@ Ltac NOTIN :=
 + (* for value *)
   exploit tr_simple_lvalue; eauto. intros [SL1 [TY1 EV1]].
   exploit tr_simple_rvalue; eauto. intros [SL2 [TY2 EV2]].
-  exploit step_tr_rvalof; eauto. rewrite CO; eauto. rewrite CO; eauto. intros [le' [EXEC [EV3 [TY3 INV]]]].
+  exploit step_tr_rvalof; eauto. rewrite CO, <- TY1; eauto. rewrite CO; eauto. rewrite CO, <- TY1; eauto.
+  intros [le' [EXEC [EV3 [TY3 INV]]]].
   subst; simpl Kseqlist.
   econstructor; split.
   right; split. rewrite app_ass. rewrite Kseqlist_app. eexact EXEC.
@@ -2023,7 +2024,8 @@ Ltac NOTIN :=
   inv P. inv H5.
 + (* for effects *)
   exploit tr_simple_lvalue; eauto. intros [SL1 [TY1 EV1]].
-  exploit step_tr_rvalof; eauto. rewrite CO; eauto. rewrite CO; eauto. intros [le' [EXEC [EV3 [TY3 INV]]]].
+  exploit step_tr_rvalof; eauto. rewrite CO, <- TY1; eauto. rewrite CO; eauto. rewrite CO, <- TY1; eauto.
+  intros [le' [EXEC [EV3 [TY3 INV]]]].
   exploit tr_simple_lvalue. eauto. eapply tr_expr_invariant with (le := le) (le' := le'). eauto.
   intros. apply INV. NOTIN. intros [? [? EV1']].
   assert (bf0 = bf) by (eapply is_bitfield_access_sound; eauto).
@@ -2031,7 +2033,7 @@ Ltac NOTIN :=
   econstructor; split.
   left. rewrite app_ass; rewrite Kseqlist_app.
   eapply star_plus_trans. eexact EXEC.
-  eapply plus_two. simpl. constructor.
+  eapply plus_two. simpl. constructor. rewrite <- CO.
   eapply step_make_assign; eauto. rewrite <- TY1, CO; eauto. rewrite CO; eauto.
   unfold transl_incrdecr. destruct id; simpl in H2.
   econstructor. eauto. constructor. rewrite TY3; rewrite <- TY1; rewrite comp_env_preserved. simpl; eauto.
@@ -2050,6 +2052,7 @@ Ltac NOTIN :=
   subst; simpl Kseqlist.
   econstructor; split.
   left. eapply plus_four. constructor.
+  rewrite <- CO.
   eapply step_make_set; eauto.
   rewrite <- TY1, CO; eauto.
   rewrite CO; eauto.
@@ -2077,7 +2080,8 @@ Ltac NOTIN :=
   inv P. inv H3.
 + (* for effects *)
   exploit tr_simple_lvalue; eauto. intros [SL1 [TY1 EV1]].
-  exploit step_tr_rvalof; eauto. rewrite CO; eauto. rewrite CO; eauto. intros [le' [EXEC [EV3 [TY3 INV]]]].
+  exploit step_tr_rvalof; eauto. rewrite CO, <- TY1; eauto. rewrite CO; eauto. rewrite CO, <- TY1; eauto.
+  intros [le' [EXEC [EV3 [TY3 INV]]]].
   subst. simpl Kseqlist.
   econstructor; split.
   right; split. rewrite app_ass; rewrite Kseqlist_app. eexact EXEC.
@@ -2088,7 +2092,7 @@ Ltac NOTIN :=
   assert (bf0 = bf) by (eapply is_bitfield_access_sound; eauto).
   subst. simpl Kseqlist.
   econstructor; split.
-  left. eapply plus_two. constructor. eapply step_make_set; eauto.
+  left. eapply plus_two. constructor. rewrite <- CO. eapply step_make_set; eauto.
   rewrite <- TY1, CO; eauto.
   rewrite CO; eauto.
   traceEq.
@@ -2201,9 +2205,8 @@ Ltac NOTIN :=
   econstructor; split.
   left. eapply plus_left. constructor.  apply star_one.
   econstructor; eauto.
-  rewrite CO; eauto.
+  rewrite CO; eauto. congruence.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  { rewrite CO; eauto. }
   traceEq.
   econstructor; eauto.
   change sl2 with (nil ++ sl2). apply S. constructor. simpl; auto. auto.
@@ -2213,9 +2216,8 @@ Ltac NOTIN :=
   econstructor; split.
   left. eapply plus_left. constructor. apply star_one.
   econstructor; eauto.
-  rewrite CO; eauto.
+  rewrite CO; eauto. congruence.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  { rewrite CO; eauto. }
   traceEq.
   econstructor; eauto.
   change sl2 with (nil ++ sl2). apply S.
@@ -2228,7 +2230,7 @@ Qed.
 
 Lemma tr_top_val_for_val_inv:
   forall ce e le m cp v ty sl a tmps,
-  tr_top ce tge e le m cp For_val (Csyntax.Eval v ty) sl a tmps ->
+  tr_top ce cp tge e le m For_val (Csyntax.Eval v ty) sl a tmps ->
   sl = nil /\ typeof a = ty /\ eval_expr tge e cp le m a v.
 Proof.
   intros. inv H. auto. inv H0. auto.
@@ -2372,7 +2374,7 @@ Proof.
   econstructor; eauto. constructor; auto.
 - (* skip_or_continue dowhile *)
   assert (ts = Sskip \/ ts = Scontinue). { destruct H; subst s0; inv TR; auto. }
-  inv MK. inv H5.
+  inv MK. inv H6.
   econstructor; split.
   left. eapply plus_left. apply step_skip_or_continue_loop1. auto.
   apply push_seq.
@@ -2539,21 +2541,17 @@ Proof.
   econstructor; split.
   left; apply plus_one. econstructor; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  erewrite <- match_cont_call_comp; eauto.
   apply match_returnstates. auto.
 
 - (* return *)
   specialize (MK (PTree.empty _)). inv MK.
   econstructor; split.
-  assert (CO : comp_of tf = comp_of f) by (inv H7; assumption). (* NOTE: Intros/tactics? *)
+  assert (CO : comp_of tf = comp_of f) by (inv H8; assumption). (* NOTE: Intros/tactics? *)
   left; apply plus_one. constructor.
   rewrite CO. now rewrite type_of_call_translated in NO_CROSS_PTR.
   rewrite CO. eapply return_trace_eq; eauto using senv_preserved.
   econstructor; eauto.
 
-(* FIXME instantiate existential variables locally *)
-Unshelve.
-  exact (Csem.genv_cenv ge).
 Qed.
 
 (** Semantic preservation *)

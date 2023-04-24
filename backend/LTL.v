@@ -283,21 +283,20 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (EV: call_trace ge (comp_of f) (Genv.find_comp ge vf) vf args (sig_args sig) t),
       step (Block s f sp (Lcall sig ros :: bb) rs m)
         t (Callstate (Stackframe f (Genv.find_comp ge vf) sig sp rs bb :: s) fd rs m)
-  | exec_Ltailcall: forall s f sp sig ros bb rs m fd rs' m' vf,
+  | exec_Ltailcall: forall s f sp sig ros bb rs m fd rs' m',
       rs' = return_regs (parent_locset s) rs ->
       find_function ros rs' = Some fd ->
-      find_function_ptr ros rs' = Some vf ->
+      (* find_function_ptr ros rs' = Some vf -> *)
       funsig fd = sig ->
       forall (COMP: comp_of fd = (comp_of f)),
-      forall (ALLOWED: needs_calling_comp (comp_of f) = false),
-      forall (ALLOWED': Genv.allowed_call ge (comp_of f) vf),
       Mem.free m sp 0 f.(fn_stacksize) (comp_of f) = Some m' ->
       step (Block s f (Vptr sp Ptrofs.zero) (Ltailcall sig ros :: bb) rs m)
         E0 (Callstate s fd rs' m')
   | exec_Lbuiltin: forall s f sp ef args res bb rs m vargs t vres rs' m',
       eval_builtin_args ge rs sp m args vargs ->
-      external_call ef ge (comp_of f) vargs m t vres m' ->
+      external_call ef ge vargs m t vres m' ->
       rs' = Locmap.setres res vres (undef_regs (destroyed_by_builtin ef) rs) ->
+      forall ALLOWED: comp_of f = comp_of ef,
       step (Block s f sp (Lbuiltin ef args res :: bb) rs m)
          t (Block s f sp bb rs' m')
   | exec_Lbranch: forall s f sp pc bb rs m,
@@ -326,7 +325,7 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State s f (Vptr sp Ptrofs.zero) f.(fn_entrypoint) rs' m')
   | exec_function_external: forall s ef t args res rs m rs' m',
       args = map (fun p => Locmap.getpair p rs) (loc_arguments (ef_sig ef)) ->
-      external_call ef ge (call_comp s) args m t res m' ->
+      external_call ef ge args m t res m' ->
       rs' = Locmap.setpair (loc_result (ef_sig ef)) res (undef_caller_save_regs rs) ->
       step (Callstate s (External ef) rs m)
          t (Returnstate s rs' m')

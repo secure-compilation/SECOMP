@@ -488,8 +488,8 @@ Inductive step: state -> trace -> state -> Prop :=
       funsig fd = sig ->
       forall (COMP: comp_of fd = (comp_of f)),
       forall (SIG: sig_res (fn_sig f) = sig_res sig),
-      forall (ALLOWED: needs_calling_comp (comp_of f) = false),
-      forall (ALLOWED': Genv.allowed_call ge (comp_of f) vf),
+      (* forall (ALLOWED: needs_calling_comp (comp_of f) = false), *)
+      (* forall (ALLOWED': Genv.allowed_call ge (comp_of f) vf), *) (* Not needed: call is allowed because we don't change compartment (hypothesis COMP) *)
       Mem.free m sp 0 f.(fn_stackspace) (comp_of f) = Some m' ->
       (* forall (EV: call_trace ge (comp_of f) (Genv.find_comp ge vf) vf vargs (sig_args sig) t), *)
       step (State f (Stailcall sig a bl) k (Vptr sp Ptrofs.zero) e m)
@@ -497,7 +497,8 @@ Inductive step: state -> trace -> state -> Prop :=
 
   | step_builtin: forall f optid ef bl k sp e m vargs t vres m',
       eval_exprlist sp e m (comp_of f) bl vargs ->
-      external_call ef ge (comp_of f) vargs m t vres m' ->
+      external_call ef ge vargs m t vres m' ->
+      forall ALLOWED: comp_of ef = comp_of f,
       step (State f (Sbuiltin optid ef bl) k sp e m)
          t (State f Sskip k sp (set_optvar optid vres e) m')
 
@@ -560,7 +561,7 @@ Inductive step: state -> trace -> state -> Prop :=
       step (Callstate (Internal f) vargs k m)
         E0 (State f f.(fn_body) k (Vptr sp Ptrofs.zero) e m')
   | step_external_function: forall ef vargs k m t vres m',
-      external_call ef ge (call_comp k) vargs m t vres m' ->
+      external_call ef ge vargs m t vres m' ->
       step (Callstate (External ef) vargs k m)
          t (Returnstate vres k m' (sig_res (ef_sig ef)) (comp_of ef))
 
@@ -775,7 +776,7 @@ Inductive eval_funcall:
       eval_funcall cp m (Internal f) vargs t m3 vres
   | eval_funcall_external:
       forall ef cp m args t res m',
-      external_call ef ge cp args m t res m' ->
+      external_call ef ge args m t res m' ->
       eval_funcall cp m (External ef) args t m' res
 
 (** Execution of a statement: [exec_stmt ge f sp e m s t e' m' out]
@@ -818,8 +819,9 @@ with exec_stmt:
   | exec_Sbuiltin:
       forall f sp e m optid ef bl t m' vargs vres e',
       eval_exprlist ge sp e m (comp_of f) bl vargs ->
-      external_call ef ge (comp_of f) vargs m t vres m' ->
+      external_call ef ge vargs m t vres m' ->
       e' = set_optvar optid vres e ->
+      forall ALLOWED: comp_of ef = comp_of f,
       exec_stmt f sp e m (Sbuiltin optid ef bl) t e' m' Out_normal
   | exec_Sifthenelse:
       forall f sp e m a s1 s2 v b t e' m' out,
@@ -877,8 +879,8 @@ with exec_stmt:
       funsig fd = sig ->
       forall (COMP: comp_of fd = (comp_of f)),
       forall (SIG: sig_res (fn_sig f) = sig_res sig),
-      forall (ALLOWED: needs_calling_comp (comp_of f) = false),
-      forall (ALLOWED': Genv.allowed_call ge (comp_of f) vf),
+      (* forall (ALLOWED: needs_calling_comp (comp_of f) = false), *)
+      (* forall (ALLOWED': Genv.allowed_call ge (comp_of f) vf), *)
       Mem.free m sp 0 f.(fn_stackspace) (comp_of f) = Some m' ->
       eval_funcall (comp_of f) m' fd vargs t m'' vres ->
       (* forall (EV: call_trace ge (comp_of f) (Genv.find_comp ge vf) vf vargs (sig_args sig) t'), *)
@@ -1046,7 +1048,7 @@ Lemma eval_funcall_exec_stmt_steps:
   (forall cp m fd args t m' res,
    eval_funcall ge cp m fd args t m' res ->
    forall k,
-   forall UPD: uptodate_caller (comp_of fd) cp (call_comp k),
+   (* forall UPD: cp = call_comp k, *)
    is_call_cont k ->
    star step ge (Callstate fd args k m)
               t (Returnstate res k m' (sig_res (funsig fd)) (comp_of fd)))
@@ -1081,7 +1083,6 @@ Proof.
 
 (* funcall external *)
   apply star_one. econstructor; eauto.
-  now eapply external_call_caller_independent; eauto.
 
 (* skip *)
   econstructor; split.
@@ -1102,7 +1103,6 @@ Proof.
   econstructor; split.
   eapply star_left. econstructor; eauto.
   eapply star_right. apply H4; simpl; eauto.
-  easy.
   constructor.
   (* TODO: Move lemma to Globalenvs.v and also find other usages of the same lemma *)
   assert (Lemma: forall vf fd,
@@ -1217,8 +1217,7 @@ Proof.
 (* tailcall *)
   econstructor; split.
   eapply star_left. econstructor; eauto.
-  apply H5; eauto; try apply is_call_cont_call_cont.
-  { red. now rewrite COMP, ALLOWED. }
+  apply H5; eauto; try apply is_call_cont_call_cont. simpl.
   traceEq.
   rewrite COMP. subst sig. rewrite <- SIG.
   econstructor.
@@ -1228,7 +1227,6 @@ Lemma eval_funcall_steps:
    forall cp m fd args t m' res,
    eval_funcall ge cp m fd args t m' res ->
    forall k,
-   forall COMP: uptodate_caller (comp_of fd) cp (call_comp k),
    is_call_cont k ->
    star step ge (Callstate fd args k m)
               t (Returnstate res k m' (sig_res (funsig fd)) (comp_of fd)).

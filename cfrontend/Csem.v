@@ -314,7 +314,8 @@ Inductive rred: expr -> mem -> trace -> expr -> mem -> Prop :=
         E0 (Eval v ty) m
   | red_builtin: forall ef tyargs el ty m vargs t vres m',
       cast_arguments m el tyargs vargs ->
-      external_call ef ge cp vargs m t vres m' ->
+      comp_of ef = cp ->
+      external_call ef ge vargs m t vres m' ->
       rred (Ebuiltin ef tyargs el ty) m
          t (Eval vres ty) m'.
 
@@ -459,7 +460,7 @@ Lemma red_selection:
   bool_val v1 ty1 m = Some b ->
   sem_cast v2 ty2 ty m = Some v2' ->
   sem_cast v3 ty3 ty m = Some v3' ->
-  rred (Eselection (Eval v1 ty1) (Eval v2 ty2) (Eval v3 ty3) ty) m
+  rred (Eselection cp (Eval v1 ty1) (Eval v2 ty2) (Eval v3 ty3) ty) m
     E0 (Eval (if b then v2' else v3') ty) m.
 Proof.
   intros. unfold Eselection.
@@ -478,24 +479,25 @@ Proof.
   constructor. eauto.
   constructor. eauto.
   constructor.
+- reflexivity.
 - red. red. rewrite LK. constructor. simpl. rewrite <- EQ.
   destruct b; auto.
 Qed.
 
 Lemma ctx_selection_1:
-  forall k C r2 r3 ty, context k RV C -> context k RV (fun x => Eselection (C x) r2 r3 ty).
+  forall k C r2 r3 ty, context k RV C -> context k RV (fun x => Eselection cp (C x) r2 r3 ty).
 Proof.
   intros. apply ctx_builtin. constructor; auto.
 Qed.
 
 Lemma ctx_selection_2:
-  forall k r1 C r3 ty, context k RV C -> context k RV (fun x => Eselection r1 (C x) r3 ty).
+  forall k r1 C r3 ty, context k RV C -> context k RV (fun x => Eselection cp r1 (C x) r3 ty).
 Proof.
   intros. apply ctx_builtin. constructor; constructor; auto.
 Qed.
 
 Lemma ctx_selection_3:
-  forall k r1 r2 C ty, context k RV C -> context k RV (fun x => Eselection r1 r2 (C x) ty).
+  forall k r1 r2 C ty, context k RV C -> context k RV (fun x => Eselection cp r1 r2 (C x) ty).
 Proof.
   intros. apply ctx_builtin. constructor; constructor; constructor; auto.
 Qed.
@@ -819,7 +821,7 @@ Inductive sstep: state -> trace -> state -> Prop :=
          E0 (State f f.(fn_body) k e m2)
 
   | step_external_function: forall ef targs tres cc vargs k m vres t m',
-      external_call ef ge (call_comp k) vargs m t vres m' ->
+      external_call ef ge vargs m t vres m' ->
       sstep (Callstate (External ef targs tres cc) vargs k m)
           t (Returnstate vres k m' (rettype_of_type tres) (comp_of ef))
           (* sig_res (ef_sig ef) *)

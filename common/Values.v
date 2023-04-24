@@ -2654,3 +2654,703 @@ Proof.
   unfold compose_meminj; rewrite H1; rewrite H3; eauto.
   rewrite Ptrofs.add_assoc. decEq. unfold Ptrofs.add. apply Ptrofs.eqm_samerepr. auto with ints.
 Qed.
+
+
+Section Solve_Inject.
+
+  Lemma cmp_inject:
+    forall j op v1 v1' v2 v2',
+      Val.inject j v1 v1' ->
+      Val.inject j v2 v2' ->
+      Val.inject j (Val.cmp op v1 v2) (Val.cmp op v1' v2').
+  Proof.
+    intros j op v1 v1' v2 v2' v1_v1' v2_v2'.
+    inv v1_v1'; inv v2_v2'; simpl; auto.
+    unfold Val.cmp; simpl.
+    destruct Int.cmp; [unfold Vtrue | unfold Vfalse]; auto.
+  Qed.
+
+  Lemma cmpl_inject:
+    forall j op v1 v1' v2 v2',
+      Val.inject j v1 v1' ->
+      Val.inject j v2 v2' ->
+      Val.inject j (Val.maketotal (Val.cmpl op v1 v2)) (Val.maketotal (Val.cmpl op v1' v2')).
+  Proof.
+    intros j op v1 v1' v2 v2' v1_v1' v2_v2'.
+    inv v1_v1'; inv v2_v2'; simpl; auto.
+    destruct Int64.cmp; simpl; [unfold Vtrue | unfold Vfalse]; auto.
+  Qed.
+
+  Lemma cmpfs_inject:
+    forall j op v1 v1' v2 v2',
+      Val.inject j v1 v1' ->
+      Val.inject j v2 v2' ->
+      Val.inject j (Val.cmpfs op v1 v2) (Val.cmpfs op v1' v2').
+  Proof.
+    intros j op v1 v1' v2 v2' v1_v1' v2_v2'.
+    inv v1_v1'; inv v2_v2'; simpl; auto.
+    unfold Val.cmpfs; simpl.
+    destruct Float32.cmp; [unfold Vtrue | unfold Vfalse]; auto.
+  Qed.
+
+  Lemma cmpf_inject:
+    forall j op v1 v1' v2 v2',
+      Val.inject j v1 v1' ->
+      Val.inject j v2 v2' ->
+      Val.inject j (Val.cmpf op v1 v2) (Val.cmpf op v1' v2').
+  Proof.
+    intros j op v1 v1' v2 v2' v1_v1' v2_v2'.
+    inv v1_v1'; inv v2_v2'; simpl; auto.
+    unfold Val.cmpf; simpl.
+    destruct Float.cmp; [unfold Vtrue | unfold Vfalse]; auto.
+  Qed.
+
+
+  (* Casts *)
+
+  Lemma intofsingle_inject:
+    forall j v v',
+      Val.inject j v v' ->
+      Val.inject j (Val.maketotal (Val.intofsingle v))
+        (Val.maketotal (Val.intofsingle v')).
+  Proof.
+    intros j v v' v_v'.
+    inv v_v'; simpl; auto.
+    destruct Float32.to_int; simpl; auto.
+  Qed.
+
+  Lemma intuofsingle_inject:
+    forall j v v',
+      Val.inject j v v' ->
+      Val.inject j (Val.maketotal (Val.intuofsingle v))
+        (Val.maketotal (Val.intuofsingle v')).
+  Proof.
+    intros j v v' v_v'.
+    inv v_v'; simpl; auto.
+    destruct Float32.to_intu; simpl; auto.
+  Qed.
+
+  Lemma intoffloat_inject:
+    forall j v v',
+      Val.inject j v v' ->
+      Val.inject j (Val.maketotal (Val.intoffloat v))
+        (Val.maketotal (Val.intoffloat v')).
+  Proof.
+    intros j v v' v_v'.
+    inv v_v'; simpl; auto.
+    destruct Float.to_int; simpl; auto.
+  Qed.
+
+  Lemma intuoffloat_inject:
+    forall j v v',
+      Val.inject j v v' ->
+      Val.inject j (Val.maketotal (Val.intuoffloat v))
+        (Val.maketotal (Val.intuoffloat v')).
+  Proof.
+    intros j v v' v_v'.
+    inv v_v'; simpl; auto.
+    destruct Float.to_intu; simpl; auto.
+  Qed.
+
+  Lemma longofsingle_inject:
+    forall j v v',
+      Val.inject j v v' ->
+      Val.inject j (Val.maketotal (Val.longofsingle v))
+        (Val.maketotal (Val.longofsingle v')).
+  Proof.
+    intros j v v' v_v'.
+    inv v_v'; simpl; auto.
+    destruct Float32.to_long; simpl; auto.
+  Qed.
+
+  Lemma longuofsingle_inject:
+    forall j v v',
+      Val.inject j v v' ->
+      Val.inject j (Val.maketotal (Val.longuofsingle v))
+        (Val.maketotal (Val.longuofsingle v')).
+  Proof.
+    intros j v v' v_v'.
+    inv v_v'; simpl; auto.
+    destruct Float32.to_longu; simpl; auto.
+  Qed.
+
+  Lemma longoffloat_inject:
+    forall j v v',
+      Val.inject j v v' ->
+      Val.inject j (Val.maketotal (Val.longoffloat v))
+        (Val.maketotal (Val.longoffloat v')).
+  Proof.
+    intros j v v' v_v'.
+    inv v_v'; simpl; auto.
+    destruct Float.to_long; simpl; auto.
+  Qed.
+
+  Lemma longuoffloat_inject:
+    forall j v v',
+      Val.inject j v v' ->
+      Val.inject j (Val.maketotal (Val.longuoffloat v))
+        (Val.maketotal (Val.longuoffloat v')).
+  Proof.
+    intros j v v' v_v'.
+    inv v_v'; simpl; auto.
+    destruct Float.to_longu; simpl; auto.
+  Qed.
+
+  Lemma longofint_inject:
+    forall j v v',
+      Val.inject j v v' ->
+      Val.inject j (Val.longofint v) (Val.longofint v').
+  Proof.
+    intros j v v' v_v'.
+    inv v_v'; simpl; auto.
+  Qed.
+
+  Lemma singleofint_inject:
+    forall j v v',
+      Val.inject j v v' ->
+      Val.inject j (Val.maketotal (Val.singleofint v))
+        (Val.maketotal (Val.singleofint v')).
+  Proof.
+    intros j v v' v_v'.
+    inv v_v'; simpl; auto.
+  Qed.
+
+  Lemma singleofintu_inject:
+    forall j v v',
+      Val.inject j v v' ->
+      Val.inject j (Val.maketotal (Val.singleofintu v))
+        (Val.maketotal (Val.singleofintu v')).
+  Proof.
+    intros j v v' v_v'.
+    inv v_v'; simpl; auto.
+  Qed.
+
+  Lemma singleoflong_inject:
+    forall j v v',
+      Val.inject j v v' ->
+      Val.inject j (Val.maketotal (Val.singleoflong v))
+        (Val.maketotal (Val.singleoflong v')).
+  Proof.
+    intros j v v' v_v'.
+    inv v_v'; simpl; auto.
+  Qed.
+
+  Lemma singleoflongu_inject:
+    forall j v v',
+      Val.inject j v v' ->
+      Val.inject j (Val.maketotal (Val.singleoflongu v))
+        (Val.maketotal (Val.singleoflongu v')).
+  Proof.
+    intros j v v' v_v'.
+    inv v_v'; simpl; auto.
+  Qed.
+
+  Lemma singleoffloat_inject:
+    forall j v v',
+      Val.inject j v v' ->
+      Val.inject j (Val.singleoffloat v) (Val.singleoffloat v').
+  Proof.
+    intros j v v' v_v'.
+    inv v_v'; simpl; auto.
+  Qed.
+
+  Lemma floatofint_inject:
+    forall j v v',
+      Val.inject j v v' ->
+      Val.inject j (Val.maketotal (Val.floatofint v))
+        (Val.maketotal (Val.floatofint v')).
+  Proof.
+    intros j v v' v_v'.
+    inv v_v'; simpl; auto.
+  Qed.
+
+  Lemma floatofintu_inject:
+    forall j v v',
+      Val.inject j v v' ->
+      Val.inject j (Val.maketotal (Val.floatofintu v))
+        (Val.maketotal (Val.floatofintu v')).
+  Proof.
+    intros j v v' v_v'.
+    inv v_v'; simpl; auto.
+  Qed.
+
+  Lemma floatoflong_inject:
+    forall j v v',
+      Val.inject j v v' ->
+      Val.inject j (Val.maketotal (Val.floatoflong v))
+        (Val.maketotal (Val.floatoflong v')).
+  Proof.
+    intros j v v' v_v'.
+    inv v_v'; simpl; auto.
+  Qed.
+
+  Lemma floatoflongu_inject:
+    forall j v v',
+      Val.inject j v v' ->
+      Val.inject j (Val.maketotal (Val.floatoflongu v))
+        (Val.maketotal (Val.floatoflongu v')).
+  Proof.
+    intros j v v' v_v'.
+    inv v_v'; simpl; auto.
+  Qed.
+
+  Lemma floatofsingle_inject:
+    forall j v v',
+      Val.inject j v v' ->
+      Val.inject j (Val.floatofsingle v) (Val.floatofsingle v').
+  Proof.
+    intros j v v' v_v'.
+    inv v_v'; simpl; auto.
+  Qed.
+
+  (* Boolean-integer operations *)
+  Lemma and_inject:
+    forall j v1 v1' v2 v2',
+      Val.inject j v1 v1' ->
+      Val.inject j v2 v2' ->
+      Val.inject j (Val.and v1 v2) (Val.and v1' v2').
+  Proof.
+    intros j v1 v1' v2 v2' v1_v1' v2_v2'.
+    inv v1_v1'; inv v2_v2'; simpl; auto.
+  Qed.
+
+  Lemma or_inject:
+    forall j v1 v1' v2 v2',
+      Val.inject j v1 v1' ->
+      Val.inject j v2 v2' ->
+      Val.inject j (Val.or v1 v2) (Val.or v1' v2').
+  Proof.
+    intros j v1 v1' v2 v2' v1_v1' v2_v2'.
+    inv v1_v1'; inv v2_v2'; simpl; auto.
+  Qed.
+
+  Lemma xor_inject:
+    forall j v1 v1' v2 v2',
+      Val.inject j v1 v1' ->
+      Val.inject j v2 v2' ->
+      Val.inject j (Val.xor v1 v2) (Val.xor v1' v2').
+  Proof.
+    intros j v1 v1' v2 v2' v1_v1' v2_v2'.
+    inv v1_v1'; inv v2_v2'; simpl; auto.
+  Qed.
+
+  Lemma andl_inject:
+    forall j v1 v1' v2 v2',
+      Val.inject j v1 v1' ->
+      Val.inject j v2 v2' ->
+      Val.inject j (Val.andl v1 v2) (Val.andl v1' v2').
+  Proof.
+    intros j v1 v1' v2 v2' v1_v1' v2_v2'.
+    inv v1_v1'; inv v2_v2'; simpl; auto.
+  Qed.
+
+  Lemma orl_inject:
+    forall j v1 v1' v2 v2',
+      Val.inject j v1 v1' ->
+      Val.inject j v2 v2' ->
+      Val.inject j (Val.orl v1 v2) (Val.orl v1' v2').
+  Proof.
+    intros j v1 v1' v2 v2' v1_v1' v2_v2'.
+    inv v1_v1'; inv v2_v2'; simpl; auto.
+  Qed.
+
+  Lemma xorl_inject:
+    forall j v1 v1' v2 v2',
+      Val.inject j v1 v1' ->
+      Val.inject j v2 v2' ->
+      Val.inject j (Val.xorl v1 v2) (Val.xorl v1' v2').
+  Proof.
+    intros j v1 v1' v2 v2' v1_v1' v2_v2'.
+    inv v1_v1'; inv v2_v2'; simpl; auto.
+  Qed.
+
+  (* Integer operations *)
+  Lemma divs_inject:
+    forall j v1 v1' v2 v2',
+      Val.inject j v1 v1' ->
+      Val.inject j v2 v2' ->
+      Val.inject j (Val.maketotal (Val.divs v1 v2))
+        (Val.maketotal (Val.divs v1' v2')).
+  Proof.
+    intros j v1 v1' v2 v2' v1_v1' v2_v2'.
+    unfold Val.divs.
+    inv v1_v1'; inv v2_v2'; simpl; auto.
+    destruct orb; simpl; auto.
+  Qed.
+
+  Lemma divu_inject:
+    forall j v1 v1' v2 v2',
+      Val.inject j v1 v1' ->
+      Val.inject j v2 v2' ->
+      Val.inject j (Val.maketotal (Val.divu v1 v2))
+        (Val.maketotal (Val.divu v1' v2')).
+  Proof.
+    intros j v1 v1' v2 v2' v1_v1' v2_v2'.
+    unfold Val.divu.
+    inv v1_v1'; inv v2_v2'; simpl; auto.
+    destruct Int.eq; simpl; auto.
+  Qed.
+
+  Lemma mods_inject:
+    forall j v1 v1' v2 v2',
+      Val.inject j v1 v1' ->
+      Val.inject j v2 v2' ->
+      Val.inject j (Val.maketotal (Val.mods v1 v2))
+        (Val.maketotal (Val.mods v1' v2')).
+  Proof.
+    intros j v1 v1' v2 v2' v1_v1' v2_v2'.
+    unfold Val.mods.
+    inv v1_v1'; inv v2_v2'; simpl; auto.
+    destruct orb; simpl; auto.
+  Qed.
+
+  Lemma modu_inject:
+    forall j v1 v1' v2 v2',
+      Val.inject j v1 v1' ->
+      Val.inject j v2 v2' ->
+      Val.inject j (Val.maketotal (Val.modu v1 v2))
+        (Val.maketotal (Val.modu v1' v2')).
+  Proof.
+    intros j v1 v1' v2 v2' v1_v1' v2_v2'.
+    unfold Val.modu.
+    inv v1_v1'; inv v2_v2'; simpl; auto.
+    destruct Int.eq; simpl; auto.
+  Qed.
+
+  Lemma divls_inject:
+    forall j v1 v1' v2 v2',
+      Val.inject j v1 v1' ->
+      Val.inject j v2 v2' ->
+      Val.inject j (Val.maketotal (Val.divls v1 v2))
+        (Val.maketotal (Val.divls v1' v2')).
+  Proof.
+    intros j v1 v1' v2 v2' v1_v1' v2_v2'.
+    unfold Val.divls.
+    inv v1_v1'; inv v2_v2'; simpl; auto.
+    destruct orb; simpl; auto.
+  Qed.
+
+  Lemma divlu_inject:
+    forall j v1 v1' v2 v2',
+      Val.inject j v1 v1' ->
+      Val.inject j v2 v2' ->
+      Val.inject j (Val.maketotal (Val.divlu v1 v2))
+        (Val.maketotal (Val.divlu v1' v2')).
+  Proof.
+    intros j v1 v1' v2 v2' v1_v1' v2_v2'.
+    unfold Val.divlu.
+    inv v1_v1'; inv v2_v2'; simpl; auto.
+    destruct Int64.eq; simpl; auto.
+  Qed.
+
+  Lemma modls_inject:
+    forall j v1 v1' v2 v2',
+      Val.inject j v1 v1' ->
+      Val.inject j v2 v2' ->
+      Val.inject j (Val.maketotal (Val.modls v1 v2))
+        (Val.maketotal (Val.modls v1' v2')).
+  Proof.
+    intros j v1 v1' v2 v2' v1_v1' v2_v2'.
+    unfold Val.modls.
+    inv v1_v1'; inv v2_v2'; simpl; auto.
+    destruct orb; simpl; auto.
+  Qed.
+
+  Lemma modlu_inject:
+    forall j v1 v1' v2 v2',
+      Val.inject j v1 v1' ->
+      Val.inject j v2 v2' ->
+      Val.inject j (Val.maketotal (Val.modlu v1 v2))
+        (Val.maketotal (Val.modlu v1' v2')).
+  Proof.
+    intros j v1 v1' v2 v2' v1_v1' v2_v2'.
+    unfold Val.modlu.
+    inv v1_v1'; inv v2_v2'; simpl; auto.
+    destruct Int64.eq; simpl; auto.
+  Qed.
+  Lemma mul_inject:
+    forall j v1 v1' v2 v2',
+      Val.inject j v1 v1' ->
+      Val.inject j v2 v2' ->
+      Val.inject j (Val.mul v1 v2) (Val.mul v1' v2').
+  Proof.
+    intros j v1 v1' v2 v2' v1_v1' v2_v2'.
+    inv v1_v1'; inv v2_v2'; simpl; auto.
+  Qed.
+
+  Lemma mulhs_inject:
+    forall j v1 v1' v2 v2',
+      Val.inject j v1 v1' ->
+      Val.inject j v2 v2' ->
+      Val.inject j (Val.mulhs v1 v2) (Val.mulhs v1' v2').
+  Proof.
+    intros j v1 v1' v2 v2' v1_v1' v2_v2'.
+    inv v1_v1'; inv v2_v2'; simpl; auto.
+  Qed.
+
+  Lemma mulhu_inject:
+    forall j v1 v1' v2 v2',
+      Val.inject j v1 v1' ->
+      Val.inject j v2 v2' ->
+      Val.inject j (Val.mulhu v1 v2) (Val.mulhu v1' v2').
+  Proof.
+    intros j v1 v1' v2 v2' v1_v1' v2_v2'.
+    inv v1_v1'; inv v2_v2'; simpl; auto.
+  Qed.
+
+  Lemma mull_inject:
+    forall j v1 v1' v2 v2',
+      Val.inject j v1 v1' ->
+      Val.inject j v2 v2' ->
+      Val.inject j (Val.mull v1 v2) (Val.mull v1' v2').
+  Proof.
+    intros j v1 v1' v2 v2' v1_v1' v2_v2'.
+    inv v1_v1'; inv v2_v2'; simpl; auto.
+  Qed.
+
+  Lemma mullhs_inject:
+    forall j v1 v1' v2 v2',
+      Val.inject j v1 v1' ->
+      Val.inject j v2 v2' ->
+      Val.inject j (Val.mullhs v1 v2) (Val.mullhs v1' v2').
+  Proof.
+    intros j v1 v1' v2 v2' v1_v1' v2_v2'.
+    inv v1_v1'; inv v2_v2'; simpl; auto.
+  Qed.
+
+  Lemma mullhu_inject:
+    forall j v1 v1' v2 v2',
+      Val.inject j v1 v1' ->
+      Val.inject j v2 v2' ->
+      Val.inject j (Val.mullhu v1 v2) (Val.mullhu v1' v2').
+  Proof.
+    intros j v1 v1' v2 v2' v1_v1' v2_v2'.
+    inv v1_v1'; inv v2_v2'; simpl; auto.
+  Qed.
+
+  (* Bitwise operations *)
+  Lemma shl_inject:
+    forall j v1 v1' v2 v2',
+      Val.inject j v1 v1' ->
+      Val.inject j v2 v2' ->
+      Val.inject j (Val.shl v1 v2) (Val.shl v1' v2').
+  Proof.
+    intros j v1 v1' v2 v2' v1_v1' v2_v2'.
+    inv v1_v1'; inv v2_v2'; simpl; auto.
+    destruct Int.ltu; auto.
+  Qed.
+
+  Lemma shru_inject:
+    forall j v1 v1' v2 v2',
+      Val.inject j v1 v1' ->
+      Val.inject j v2 v2' ->
+      Val.inject j (Val.shru v1 v2) (Val.shru v1' v2').
+  Proof.
+    intros j v1 v1' v2 v2' v1_v1' v2_v2'.
+    inv v1_v1'; inv v2_v2'; simpl; auto.
+    destruct Int.ltu; auto.
+  Qed.
+
+  Lemma shr_inject:
+    forall j v1 v1' v2 v2',
+      Val.inject j v1 v1' ->
+      Val.inject j v2 v2' ->
+      Val.inject j (Val.shr v1 v2) (Val.shr v1' v2').
+  Proof.
+    intros j v1 v1' v2 v2' v1_v1' v2_v2'.
+    inv v1_v1'; inv v2_v2'; simpl; auto.
+    destruct Int.ltu; auto.
+  Qed.
+
+  Lemma shll_inject:
+    forall j v1 v1' v2 v2',
+      Val.inject j v1 v1' ->
+      Val.inject j v2 v2' ->
+      Val.inject j (Val.shll v1 v2) (Val.shll v1' v2').
+  Proof.
+    intros j v1 v1' v2 v2' v1_v1' v2_v2'.
+    inv v1_v1'; inv v2_v2'; simpl; auto.
+    destruct Int.ltu; auto.
+  Qed.
+
+  Lemma shrlu_inject:
+    forall j v1 v1' v2 v2',
+      Val.inject j v1 v1' ->
+      Val.inject j v2 v2' ->
+      Val.inject j (Val.shrlu v1 v2) (Val.shrlu v1' v2').
+  Proof.
+    intros j v1 v1' v2 v2' v1_v1' v2_v2'.
+    inv v1_v1'; inv v2_v2'; simpl; auto.
+    destruct Int.ltu; auto.
+  Qed.
+
+  Lemma shrl_inject:
+    forall j v1 v1' v2 v2',
+      Val.inject j v1 v1' ->
+      Val.inject j v2 v2' ->
+      Val.inject j (Val.shrl v1 v2) (Val.shrl v1' v2').
+  Proof.
+    intros j v1 v1' v2 v2' v1_v1' v2_v2'.
+    inv v1_v1'; inv v2_v2'; simpl; auto.
+    destruct Int.ltu; auto.
+  Qed.
+
+  (* Floating point operations *)
+  Lemma negfs_inject:
+    forall j v v',
+      Val.inject j v v' ->
+      Val.inject j (Val.negfs v) (Val.negfs v').
+  Proof.
+    intros j v v' v_v'.
+    inv v_v'; simpl; auto.
+  Qed.
+
+  Lemma negf_inject:
+    forall j v v',
+      Val.inject j v v' ->
+      Val.inject j (Val.negf v) (Val.negf v').
+  Proof.
+    intros j v v' v_v'.
+    inv v_v'; simpl; auto.
+  Qed.
+
+  Lemma absfs_inject:
+    forall j v v',
+      Val.inject j v v' ->
+      Val.inject j (Val.absfs v) (Val.absfs v').
+  Proof.
+    intros j v v' v_v'.
+    inv v_v'; simpl; auto.
+  Qed.
+
+  Lemma absf_inject:
+    forall j v v',
+      Val.inject j v v' ->
+      Val.inject j (Val.absf v) (Val.absf v').
+  Proof.
+    intros j v v' v_v'.
+    inv v_v'; simpl; auto.
+  Qed.
+
+  Lemma addfs_inject:
+    forall j v1 v1' v2 v2',
+      Val.inject j v1 v1' ->
+      Val.inject j v2 v2' ->
+      Val.inject j (Val.addfs v1 v2) (Val.addfs v1' v2').
+  Proof.
+    intros j v1 v1' v2 v2' v1_v1' v2_v2'.
+    inv v1_v1'; inv v2_v2'; simpl; auto.
+  Qed.
+
+  Lemma addf_inject:
+    forall j v1 v1' v2 v2',
+      Val.inject j v1 v1' ->
+      Val.inject j v2 v2' ->
+      Val.inject j (Val.addf v1 v2) (Val.addf v1' v2').
+  Proof.
+    intros j v1 v1' v2 v2' v1_v1' v2_v2'.
+    inv v1_v1'; inv v2_v2'; simpl; auto.
+  Qed.
+
+  Lemma subfs_inject:
+    forall j v1 v1' v2 v2',
+      Val.inject j v1 v1' ->
+      Val.inject j v2 v2' ->
+      Val.inject j (Val.subfs v1 v2) (Val.subfs v1' v2').
+  Proof.
+    intros j v1 v1' v2 v2' v1_v1' v2_v2'.
+    inv v1_v1'; inv v2_v2'; simpl; auto.
+  Qed.
+
+  Lemma subf_inject:
+    forall j v1 v1' v2 v2',
+      Val.inject j v1 v1' ->
+      Val.inject j v2 v2' ->
+      Val.inject j (Val.subf v1 v2) (Val.subf v1' v2').
+  Proof.
+    intros j v1 v1' v2 v2' v1_v1' v2_v2'.
+    inv v1_v1'; inv v2_v2'; simpl; auto.
+  Qed.
+
+  Lemma mulfs_inject:
+    forall j v1 v1' v2 v2',
+      Val.inject j v1 v1' ->
+      Val.inject j v2 v2' ->
+      Val.inject j (Val.mulfs v1 v2) (Val.mulfs v1' v2').
+  Proof.
+    intros j v1 v1' v2 v2' v1_v1' v2_v2'.
+    inv v1_v1'; inv v2_v2'; simpl; auto.
+  Qed.
+
+  Lemma mulf_inject:
+    forall j v1 v1' v2 v2',
+      Val.inject j v1 v1' ->
+      Val.inject j v2 v2' ->
+      Val.inject j (Val.mulf v1 v2) (Val.mulf v1' v2').
+  Proof.
+    intros j v1 v1' v2 v2' v1_v1' v2_v2'.
+    inv v1_v1'; inv v2_v2'; simpl; auto.
+  Qed.
+
+  Lemma divfs_inject:
+    forall j v1 v1' v2 v2',
+      Val.inject j v1 v1' ->
+      Val.inject j v2 v2' ->
+      Val.inject j (Val.divfs v1 v2) (Val.divfs v1' v2').
+  Proof.
+    intros j v1 v1' v2 v2' v1_v1' v2_v2'.
+    inv v1_v1'; inv v2_v2'; simpl; auto.
+  Qed.
+
+  Lemma divf_inject:
+    forall j v1 v1' v2 v2',
+      Val.inject j v1 v1' ->
+      Val.inject j v2 v2' ->
+      Val.inject j (Val.divf v1 v2) (Val.divf v1' v2').
+  Proof.
+    intros j v1 v1' v2 v2' v1_v1' v2_v2'.
+    inv v1_v1'; inv v2_v2'; simpl; auto.
+  Qed.
+
+  (* Misc *)
+
+  Lemma loword_inject:
+    forall j v v',
+      Val.inject j v v' ->
+      Val.inject j (Val.loword v) (Val.loword v').
+  Proof.
+    intros j v v' v_v'.
+    inv v_v'; simpl; auto.
+  Qed.
+
+
+End Solve_Inject.
+
+
+Global Hint Constructors Val.inject: solve_inject.
+Global Hint Resolve
+    (* comparisons *)
+    cmp_inject cmpl_inject cmpf_inject cmpfs_inject
+    (* casts *)
+    intofsingle_inject intuofsingle_inject intoffloat_inject intuoffloat_inject
+    longofsingle_inject longuofsingle_inject longoffloat_inject longuoffloat_inject
+    longofint_inject
+    singleofint_inject singleofintu_inject singleoflong_inject singleoflongu_inject singleoffloat_inject
+    floatofint_inject floatofintu_inject floatoflong_inject floatoflongu_inject floatofsingle_inject
+    (* bool/int *)
+    and_inject or_inject xor_inject andl_inject orl_inject xorl_inject
+    Val.add_inject Val.addl_inject Val.sub_inject Val.subl_inject
+    mul_inject mulhs_inject mulhu_inject
+    mull_inject mullhs_inject mullhu_inject
+    divs_inject divu_inject divls_inject divlu_inject
+    mods_inject modu_inject modls_inject modlu_inject
+    shl_inject shru_inject shr_inject shll_inject shrlu_inject shrl_inject
+    (* floats *)
+    negfs_inject negf_inject
+    absfs_inject absf_inject
+    addfs_inject addf_inject subfs_inject subf_inject
+    mulfs_inject mulf_inject divfs_inject divf_inject
+    (* misc *)
+    Val.offset_ptr_inject
+    loword_inject
+    : solve_inject.

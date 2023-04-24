@@ -1101,7 +1101,7 @@ Definition transfer_aux (f: RTL.function) (env: regenv)
       assertion (can_undef (destroyed_by_builtin ef) e2);
       do e3 <-
         match ef with
-        | EF_debug _ _ _ => add_equations_debug_args env args args' e2
+        | EF_debug _ _ _ _ => add_equations_debug_args env args args' e2
         | _              => add_equations_builtin_args env args args' e2
         end;
       track_moves env mv1 e3

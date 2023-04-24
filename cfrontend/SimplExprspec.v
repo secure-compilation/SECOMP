@@ -20,6 +20,9 @@ Section SPEC.
 
 Variable ce: composite_env.
 
+Section TR_FUNCTION.
+Variable cp: compartment.
+
 Local Open Scope gensym_monad_scope.
 
 (** * Relational specification of the translation. *)
@@ -63,293 +66,293 @@ Inductive tr_rvalof: type -> expr -> list statement -> expr -> list ident -> Pro
   | tr_rvalof_vol: forall ty a t bf tmp,
       type_is_volatile ty = true -> In t tmp ->
       tr_is_bitfield_access a bf ->
-      tr_rvalof ty a (make_set bf t a :: nil) (Etempvar t ty) tmp.
+      tr_rvalof ty a (make_set cp bf t a :: nil) (Etempvar t ty) tmp.
 
 (* Section TR_EXPR. *)
 
 (* Variable cp: compartment. *)
 
-Inductive tr_expr: compartment -> temp_env -> destination -> Csyntax.expr -> list statement -> expr -> list ident -> Prop :=
-  | tr_var: forall cp le dst id ty tmp,
-      tr_expr cp le dst (Csyntax.Evar id ty)
+Inductive tr_expr: temp_env -> destination -> Csyntax.expr -> list statement -> expr -> list ident -> Prop :=
+  | tr_var: forall le dst id ty tmp,
+      tr_expr le dst (Csyntax.Evar id ty)
               (final dst (Evar id ty)) (Evar id ty) tmp
-  | tr_deref: forall cp le dst e1 ty sl1 a1 tmp,
-      tr_expr cp le For_val e1 sl1 a1 tmp ->
-      tr_expr cp le dst (Csyntax.Ederef e1 ty)
+  | tr_deref: forall le dst e1 ty sl1 a1 tmp,
+      tr_expr le For_val e1 sl1 a1 tmp ->
+      tr_expr le dst (Csyntax.Ederef e1 ty)
               (sl1 ++ final dst (Ederef' a1 ty)) (Ederef' a1 ty) tmp
-  | tr_field: forall cp le dst e1 f ty sl1 a1 tmp,
-      tr_expr cp le For_val e1 sl1 a1 tmp ->
-      tr_expr cp le dst (Csyntax.Efield e1 f ty)
+  | tr_field: forall le dst e1 f ty sl1 a1 tmp,
+      tr_expr le For_val e1 sl1 a1 tmp ->
+      tr_expr le dst (Csyntax.Efield e1 f ty)
               (sl1 ++ final dst (Efield a1 f ty)) (Efield a1 f ty) tmp
-  | tr_val_effect: forall cp le v ty any tmp,
-      tr_expr cp le For_effects (Csyntax.Eval v ty) nil any tmp
-  | tr_val_value: forall cp le v ty a tmp,
+  | tr_val_effect: forall le v ty any tmp,
+      tr_expr le For_effects (Csyntax.Eval v ty) nil any tmp
+  | tr_val_value: forall le v ty a tmp,
       typeof a = ty ->
       (forall tge e le' m,
          (forall id, In id tmp -> le'!id = le!id) ->
          eval_expr tge e cp le' m a v) ->
-      tr_expr cp le For_val (Csyntax.Eval v ty)
+      tr_expr le For_val (Csyntax.Eval v ty)
                            nil a tmp
-  | tr_val_set: forall cp le sd v ty a any tmp,
+  | tr_val_set: forall le sd v ty a any tmp,
       typeof a = ty ->
       (forall tge e le' m,
          (forall id, In id tmp -> le'!id = le!id) ->
          eval_expr tge e cp le' m a v) ->
-      tr_expr cp le (For_set sd) (Csyntax.Eval v ty)
+      tr_expr le (For_set sd) (Csyntax.Eval v ty)
                    (do_set sd a) any tmp
-  | tr_sizeof: forall cp le dst ty' ty tmp,
-      tr_expr cp le dst (Csyntax.Esizeof ty' ty)
+  | tr_sizeof: forall le dst ty' ty tmp,
+      tr_expr le dst (Csyntax.Esizeof ty' ty)
                    (final dst (Esizeof ty' ty))
                    (Esizeof ty' ty) tmp
-  | tr_alignof: forall cp le dst ty' ty tmp,
-      tr_expr cp le dst (Csyntax.Ealignof ty' ty)
+  | tr_alignof: forall le dst ty' ty tmp,
+      tr_expr le dst (Csyntax.Ealignof ty' ty)
                    (final dst (Ealignof ty' ty))
                    (Ealignof ty' ty) tmp
-  | tr_valof: forall cp le dst e1 ty tmp sl1 a1 tmp1 sl2 a2 tmp2,
-      tr_expr cp le For_val e1 sl1 a1 tmp1 ->
+  | tr_valof: forall le dst e1 ty tmp sl1 a1 tmp1 sl2 a2 tmp2,
+      tr_expr le For_val e1 sl1 a1 tmp1 ->
       tr_rvalof (Csyntax.typeof e1) a1 sl2 a2 tmp2 ->
       list_disjoint tmp1 tmp2 -> incl tmp1 tmp -> incl tmp2 tmp ->
-      tr_expr cp le dst (Csyntax.Evalof e1 ty)
+      tr_expr le dst (Csyntax.Evalof e1 ty)
                     (sl1 ++ sl2 ++ final dst a2)
                     a2 tmp
-  | tr_addrof: forall cp le dst e1 ty tmp sl1 a1,
-      tr_expr cp le For_val e1 sl1 a1 tmp ->
-      tr_expr cp le dst (Csyntax.Eaddrof e1 ty)
+  | tr_addrof: forall le dst e1 ty tmp sl1 a1,
+      tr_expr le For_val e1 sl1 a1 tmp ->
+      tr_expr le dst (Csyntax.Eaddrof e1 ty)
                    (sl1 ++ final dst (Eaddrof' a1 ty))
                    (Eaddrof' a1 ty) tmp
-  | tr_unop: forall cp le dst op e1 ty tmp sl1 a1,
-      tr_expr cp le For_val e1 sl1 a1 tmp ->
-      tr_expr cp le dst (Csyntax.Eunop op e1 ty)
+  | tr_unop: forall le dst op e1 ty tmp sl1 a1,
+      tr_expr le For_val e1 sl1 a1 tmp ->
+      tr_expr le dst (Csyntax.Eunop op e1 ty)
                    (sl1 ++ final dst (Eunop op a1 ty))
                    (Eunop op a1 ty) tmp
-  | tr_binop: forall cp le dst op e1 e2 ty sl1 a1 tmp1 sl2 a2 tmp2 tmp,
-      tr_expr cp le For_val e1 sl1 a1 tmp1 ->
-      tr_expr cp le For_val e2 sl2 a2 tmp2 ->
+  | tr_binop: forall le dst op e1 e2 ty sl1 a1 tmp1 sl2 a2 tmp2 tmp,
+      tr_expr le For_val e1 sl1 a1 tmp1 ->
+      tr_expr le For_val e2 sl2 a2 tmp2 ->
       list_disjoint tmp1 tmp2 -> incl tmp1 tmp -> incl tmp2 tmp ->
-      tr_expr cp le dst (Csyntax.Ebinop op e1 e2 ty)
+      tr_expr le dst (Csyntax.Ebinop op e1 e2 ty)
                    (sl1 ++ sl2 ++ final dst (Ebinop op a1 a2 ty))
                    (Ebinop op a1 a2 ty) tmp
-  | tr_cast_effects: forall cp le e1 ty sl1 a1 any tmp,
-      tr_expr cp le For_effects e1 sl1 a1 tmp ->
-      tr_expr cp le For_effects (Csyntax.Ecast e1 ty)
+  | tr_cast_effects: forall le e1 ty sl1 a1 any tmp,
+      tr_expr le For_effects e1 sl1 a1 tmp ->
+      tr_expr le For_effects (Csyntax.Ecast e1 ty)
                    sl1
                    any tmp
-  | tr_cast_val: forall cp le dst e1 ty sl1 a1 tmp,
-      tr_expr cp le For_val e1 sl1 a1 tmp ->
-      tr_expr cp le dst (Csyntax.Ecast e1 ty)
+  | tr_cast_val: forall le dst e1 ty sl1 a1 tmp,
+      tr_expr le For_val e1 sl1 a1 tmp ->
+      tr_expr le dst (Csyntax.Ecast e1 ty)
                    (sl1 ++ final dst (Ecast a1 ty))
                    (Ecast a1 ty) tmp
-  | tr_seqand_val: forall cp le e1 e2 ty sl1 a1 tmp1 t sl2 a2 tmp2 tmp,
-      tr_expr cp le For_val e1 sl1 a1 tmp1 ->
-      tr_expr cp le (For_set (SDbase type_bool ty t)) e2 sl2 a2 tmp2 ->
+  | tr_seqand_val: forall le e1 e2 ty sl1 a1 tmp1 t sl2 a2 tmp2 tmp,
+      tr_expr le For_val e1 sl1 a1 tmp1 ->
+      tr_expr le (For_set (SDbase type_bool ty t)) e2 sl2 a2 tmp2 ->
       list_disjoint tmp1 tmp2 ->
       incl tmp1 tmp -> incl tmp2 tmp -> In t tmp ->
-      tr_expr cp le For_val (Csyntax.Eseqand e1 e2 ty)
+      tr_expr le For_val (Csyntax.Eseqand e1 e2 ty)
                     (sl1 ++ makeif a1 (makeseq sl2)
                                       (Sset t (Econst_int Int.zero ty)) :: nil)
                     (Etempvar t ty) tmp
-  | tr_seqand_effects: forall cp le e1 e2 ty sl1 a1 tmp1 sl2 a2 tmp2 any tmp,
-      tr_expr cp le For_val e1 sl1 a1 tmp1 ->
-      tr_expr cp le For_effects e2 sl2 a2 tmp2 ->
+  | tr_seqand_effects: forall le e1 e2 ty sl1 a1 tmp1 sl2 a2 tmp2 any tmp,
+      tr_expr le For_val e1 sl1 a1 tmp1 ->
+      tr_expr le For_effects e2 sl2 a2 tmp2 ->
       list_disjoint tmp1 tmp2 ->
       incl tmp1 tmp -> incl tmp2 tmp ->
-      tr_expr cp le For_effects (Csyntax.Eseqand e1 e2 ty)
+      tr_expr le For_effects (Csyntax.Eseqand e1 e2 ty)
                     (sl1 ++ makeif a1 (makeseq sl2) Sskip :: nil)
                     any tmp
-  | tr_seqand_set: forall cp le sd e1 e2 ty sl1 a1 tmp1 t sl2 a2 tmp2 any tmp,
-      tr_expr cp le For_val e1 sl1 a1 tmp1 ->
-      tr_expr cp le (For_set (SDcons type_bool ty t sd)) e2 sl2 a2 tmp2 ->
+  | tr_seqand_set: forall le sd e1 e2 ty sl1 a1 tmp1 t sl2 a2 tmp2 any tmp,
+      tr_expr le For_val e1 sl1 a1 tmp1 ->
+      tr_expr le (For_set (SDcons type_bool ty t sd)) e2 sl2 a2 tmp2 ->
       list_disjoint tmp1 tmp2 ->
       incl tmp1 tmp -> incl tmp2 tmp -> In t tmp ->
-      tr_expr cp le (For_set sd) (Csyntax.Eseqand e1 e2 ty)
+      tr_expr le (For_set sd) (Csyntax.Eseqand e1 e2 ty)
                     (sl1 ++ makeif a1 (makeseq sl2)
                                       (makeseq (do_set sd (Econst_int Int.zero ty))) :: nil)
                     any tmp
-  | tr_seqor_val: forall cp le e1 e2 ty sl1 a1 tmp1 t sl2 a2 tmp2 tmp,
-      tr_expr cp le For_val e1 sl1 a1 tmp1 ->
-      tr_expr cp le (For_set (SDbase type_bool ty t)) e2 sl2 a2 tmp2 ->
+  | tr_seqor_val: forall le e1 e2 ty sl1 a1 tmp1 t sl2 a2 tmp2 tmp,
+      tr_expr le For_val e1 sl1 a1 tmp1 ->
+      tr_expr le (For_set (SDbase type_bool ty t)) e2 sl2 a2 tmp2 ->
       list_disjoint tmp1 tmp2 ->
       incl tmp1 tmp -> incl tmp2 tmp -> In t tmp ->
-      tr_expr cp le For_val (Csyntax.Eseqor e1 e2 ty)
+      tr_expr le For_val (Csyntax.Eseqor e1 e2 ty)
                     (sl1 ++ makeif a1 (Sset t (Econst_int Int.one ty))
                                       (makeseq sl2) :: nil)
                     (Etempvar t ty) tmp
-  | tr_seqor_effects: forall cp le e1 e2 ty sl1 a1 tmp1 sl2 a2 tmp2 any tmp,
-      tr_expr cp le For_val e1 sl1 a1 tmp1 ->
-      tr_expr cp le For_effects e2 sl2 a2 tmp2 ->
+  | tr_seqor_effects: forall le e1 e2 ty sl1 a1 tmp1 sl2 a2 tmp2 any tmp,
+      tr_expr le For_val e1 sl1 a1 tmp1 ->
+      tr_expr le For_effects e2 sl2 a2 tmp2 ->
       list_disjoint tmp1 tmp2 ->
       incl tmp1 tmp -> incl tmp2 tmp ->
-      tr_expr cp le For_effects (Csyntax.Eseqor e1 e2 ty)
+      tr_expr le For_effects (Csyntax.Eseqor e1 e2 ty)
                     (sl1 ++ makeif a1 Sskip (makeseq sl2) :: nil)
                     any tmp
-  | tr_seqor_set: forall cp le sd e1 e2 ty sl1 a1 tmp1 t sl2 a2 tmp2 any tmp,
-      tr_expr cp le For_val e1 sl1 a1 tmp1 ->
-      tr_expr cp le (For_set (SDcons type_bool ty t sd)) e2 sl2 a2 tmp2 ->
+  | tr_seqor_set: forall le sd e1 e2 ty sl1 a1 tmp1 t sl2 a2 tmp2 any tmp,
+      tr_expr le For_val e1 sl1 a1 tmp1 ->
+      tr_expr le (For_set (SDcons type_bool ty t sd)) e2 sl2 a2 tmp2 ->
       list_disjoint tmp1 tmp2 ->
       incl tmp1 tmp -> incl tmp2 tmp -> In t tmp ->
-      tr_expr cp le (For_set sd) (Csyntax.Eseqor e1 e2 ty)
+      tr_expr le (For_set sd) (Csyntax.Eseqor e1 e2 ty)
                     (sl1 ++ makeif a1 (makeseq (do_set sd (Econst_int Int.one ty)))
                                       (makeseq sl2) :: nil)
                     any tmp
-  | tr_condition_val: forall cp le e1 e2 e3 ty sl1 a1 tmp1 sl2 a2 tmp2 sl3 a3 tmp3 t tmp,
-      tr_expr cp le For_val e1 sl1 a1 tmp1 ->
-      tr_expr cp le (For_set (SDbase ty ty t)) e2 sl2 a2 tmp2 ->
-      tr_expr cp le (For_set (SDbase ty ty t)) e3 sl3 a3 tmp3 ->
+  | tr_condition_val: forall le e1 e2 e3 ty sl1 a1 tmp1 sl2 a2 tmp2 sl3 a3 tmp3 t tmp,
+      tr_expr le For_val e1 sl1 a1 tmp1 ->
+      tr_expr le (For_set (SDbase ty ty t)) e2 sl2 a2 tmp2 ->
+      tr_expr le (For_set (SDbase ty ty t)) e3 sl3 a3 tmp3 ->
       list_disjoint tmp1 tmp2 ->
       list_disjoint tmp1 tmp3 ->
       incl tmp1 tmp -> incl tmp2 tmp ->  incl tmp3 tmp -> In t tmp ->
-      tr_expr cp le For_val (Csyntax.Econdition e1 e2 e3 ty)
+      tr_expr le For_val (Csyntax.Econdition e1 e2 e3 ty)
                       (sl1 ++ makeif a1 (makeseq sl2) (makeseq sl3) :: nil)
                       (Etempvar t ty) tmp
-  | tr_condition_effects: forall cp le e1 e2 e3 ty sl1 a1 tmp1 sl2 a2 tmp2 sl3 a3 tmp3 any tmp,
-      tr_expr cp le For_val e1 sl1 a1 tmp1 ->
-      tr_expr cp le For_effects e2 sl2 a2 tmp2 ->
-      tr_expr cp le For_effects e3 sl3 a3 tmp3 ->
+  | tr_condition_effects: forall le e1 e2 e3 ty sl1 a1 tmp1 sl2 a2 tmp2 sl3 a3 tmp3 any tmp,
+      tr_expr le For_val e1 sl1 a1 tmp1 ->
+      tr_expr le For_effects e2 sl2 a2 tmp2 ->
+      tr_expr le For_effects e3 sl3 a3 tmp3 ->
       list_disjoint tmp1 tmp2 ->
       list_disjoint tmp1 tmp3 ->
       incl tmp1 tmp -> incl tmp2 tmp -> incl tmp3 tmp ->
-      tr_expr cp le For_effects (Csyntax.Econdition e1 e2 e3 ty)
+      tr_expr le For_effects (Csyntax.Econdition e1 e2 e3 ty)
                        (sl1 ++ makeif a1 (makeseq sl2) (makeseq sl3) :: nil)
                        any tmp
-  | tr_condition_set: forall cp le sd t e1 e2 e3 ty sl1 a1 tmp1 sl2 a2 tmp2 sl3 a3 tmp3 any tmp,
-      tr_expr cp le For_val e1 sl1 a1 tmp1 ->
-      tr_expr cp le (For_set (SDcons ty ty t sd)) e2 sl2 a2 tmp2 ->
-      tr_expr cp le (For_set (SDcons ty ty t sd)) e3 sl3 a3 tmp3 ->
+  | tr_condition_set: forall le sd t e1 e2 e3 ty sl1 a1 tmp1 sl2 a2 tmp2 sl3 a3 tmp3 any tmp,
+      tr_expr le For_val e1 sl1 a1 tmp1 ->
+      tr_expr le (For_set (SDcons ty ty t sd)) e2 sl2 a2 tmp2 ->
+      tr_expr le (For_set (SDcons ty ty t sd)) e3 sl3 a3 tmp3 ->
       list_disjoint tmp1 tmp2 ->
       list_disjoint tmp1 tmp3 ->
       incl tmp1 tmp -> incl tmp2 tmp -> incl tmp3 tmp -> In t tmp ->
-      tr_expr cp le (For_set sd) (Csyntax.Econdition e1 e2 e3 ty)
+      tr_expr le (For_set sd) (Csyntax.Econdition e1 e2 e3 ty)
                        (sl1 ++ makeif a1 (makeseq sl2) (makeseq sl3) :: nil)
                        any tmp
-  | tr_assign_effects: forall cp le e1 e2 ty sl1 a1 tmp1 sl2 a2 tmp2 bf any tmp,
-      tr_expr cp le For_val e1 sl1 a1 tmp1 ->
-      tr_expr cp le For_val e2 sl2 a2 tmp2 ->
+  | tr_assign_effects: forall le e1 e2 ty sl1 a1 tmp1 sl2 a2 tmp2 bf any tmp,
+      tr_expr le For_val e1 sl1 a1 tmp1 ->
+      tr_expr le For_val e2 sl2 a2 tmp2 ->
       list_disjoint tmp1 tmp2 ->
       incl tmp1 tmp -> incl tmp2 tmp ->
       tr_is_bitfield_access a1 bf ->
-      tr_expr cp le For_effects (Csyntax.Eassign e1 e2 ty)
-                      (sl1 ++ sl2 ++ make_assign bf a1 a2 :: nil)
+      tr_expr le For_effects (Csyntax.Eassign e1 e2 ty)
+                      (sl1 ++ sl2 ++ make_assign cp bf a1 a2 :: nil)
                       any tmp
-  | tr_assign_val: forall cp le dst e1 e2 ty sl1 a1 tmp1 sl2 a2 tmp2 t tmp ty1 ty2 bf,
-      tr_expr cp le For_val e1 sl1 a1 tmp1 ->
-      tr_expr cp le For_val e2 sl2 a2 tmp2 ->
+  | tr_assign_val: forall le dst e1 e2 ty sl1 a1 tmp1 sl2 a2 tmp2 t tmp ty1 ty2 bf,
+      tr_expr le For_val e1 sl1 a1 tmp1 ->
+      tr_expr le For_val e2 sl2 a2 tmp2 ->
       incl tmp1 tmp -> incl tmp2 tmp ->
       list_disjoint tmp1 tmp2 ->
       In t tmp -> ~In t tmp1 -> ~In t tmp2 ->
       ty1 = Csyntax.typeof e1 ->
       ty2 = Csyntax.typeof e2 ->
       tr_is_bitfield_access a1 bf ->
-      tr_expr cp le dst (Csyntax.Eassign e1 e2 ty)
+      tr_expr le dst (Csyntax.Eassign e1 e2 ty)
                    (sl1 ++ sl2 ++
                     Sset t (Ecast a2 ty1) ::
-                    make_assign bf a1 (Etempvar t ty1) ::
+                    make_assign cp bf a1 (Etempvar t ty1) ::
                     final dst (make_assign_value bf (Etempvar t ty1)))
                    (make_assign_value bf (Etempvar t ty1)) tmp
-  | tr_assignop_effects: forall cp le op e1 e2 tyres ty ty1 sl1 a1 tmp1 sl2 a2 tmp2 bf sl3 a3 tmp3 any tmp,
-      tr_expr cp le For_val e1 sl1 a1 tmp1 ->
-      tr_expr cp le For_val e2 sl2 a2 tmp2 ->
+  | tr_assignop_effects: forall le op e1 e2 tyres ty ty1 sl1 a1 tmp1 sl2 a2 tmp2 bf sl3 a3 tmp3 any tmp,
+      tr_expr le For_val e1 sl1 a1 tmp1 ->
+      tr_expr le For_val e2 sl2 a2 tmp2 ->
       ty1 = Csyntax.typeof e1 ->
       tr_rvalof ty1 a1 sl3 a3 tmp3 ->
       list_disjoint tmp1 tmp2 -> list_disjoint tmp1 tmp3 -> list_disjoint tmp2 tmp3 ->
       incl tmp1 tmp -> incl tmp2 tmp -> incl tmp3 tmp ->
       tr_is_bitfield_access a1 bf ->
-      tr_expr cp le For_effects (Csyntax.Eassignop op e1 e2 tyres ty)
-                      (sl1 ++ sl2 ++ sl3 ++ make_assign bf a1 (Ebinop op a3 a2 tyres) :: nil)
+      tr_expr le For_effects (Csyntax.Eassignop op e1 e2 tyres ty)
+                      (sl1 ++ sl2 ++ sl3 ++ make_assign cp bf a1 (Ebinop op a3 a2 tyres) :: nil)
                       any tmp
-  | tr_assignop_val: forall cp le dst op e1 e2 tyres ty sl1 a1 tmp1 sl2 a2 tmp2 sl3 a3 tmp3 t bf tmp ty1,
-      tr_expr cp le For_val e1 sl1 a1 tmp1 ->
-      tr_expr cp le For_val e2 sl2 a2 tmp2 ->
+  | tr_assignop_val: forall le dst op e1 e2 tyres ty sl1 a1 tmp1 sl2 a2 tmp2 sl3 a3 tmp3 t bf tmp ty1,
+      tr_expr le For_val e1 sl1 a1 tmp1 ->
+      tr_expr le For_val e2 sl2 a2 tmp2 ->
       tr_rvalof ty1 a1 sl3 a3 tmp3 ->
       list_disjoint tmp1 tmp2 -> list_disjoint tmp1 tmp3 -> list_disjoint tmp2 tmp3 ->
       incl tmp1 tmp -> incl tmp2 tmp -> incl tmp3 tmp ->
       In t tmp -> ~In t tmp1 -> ~In t tmp2 -> ~In t tmp3 ->
       ty1 = Csyntax.typeof e1 ->
       tr_is_bitfield_access a1 bf ->
-      tr_expr cp le dst (Csyntax.Eassignop op e1 e2 tyres ty)
+      tr_expr le dst (Csyntax.Eassignop op e1 e2 tyres ty)
                    (sl1 ++ sl2 ++ sl3 ++
                     Sset t (Ecast (Ebinop op a3 a2 tyres) ty1) ::
-                    make_assign bf a1 (Etempvar t ty1) ::
+                    make_assign cp bf a1 (Etempvar t ty1) ::
                     final dst (make_assign_value bf (Etempvar t ty1)))
                    (make_assign_value bf (Etempvar t ty1)) tmp
-  | tr_postincr_effects: forall cp le id e1 ty ty1 sl1 a1 tmp1 sl2 a2 tmp2 bf any tmp,
-      tr_expr cp le For_val e1 sl1 a1 tmp1 ->
+  | tr_postincr_effects: forall le id e1 ty ty1 sl1 a1 tmp1 sl2 a2 tmp2 bf any tmp,
+      tr_expr le For_val e1 sl1 a1 tmp1 ->
       tr_rvalof ty1 a1 sl2 a2 tmp2 ->
       ty1 = Csyntax.typeof e1 ->
       incl tmp1 tmp -> incl tmp2 tmp ->
       list_disjoint tmp1 tmp2 ->
       tr_is_bitfield_access a1 bf ->
-      tr_expr cp le For_effects (Csyntax.Epostincr id e1 ty)
-                      (sl1 ++ sl2 ++ make_assign bf a1 (transl_incrdecr id a2 ty1) :: nil)
+      tr_expr le For_effects (Csyntax.Epostincr id e1 ty)
+                      (sl1 ++ sl2 ++ make_assign cp bf a1 (transl_incrdecr id a2 ty1) :: nil)
                       any tmp
-  | tr_postincr_val: forall cp le dst id e1 ty sl1 a1 tmp1 bf t ty1 tmp,
-      tr_expr cp le For_val e1 sl1 a1 tmp1 ->
+  | tr_postincr_val: forall le dst id e1 ty sl1 a1 tmp1 bf t ty1 tmp,
+      tr_expr le For_val e1 sl1 a1 tmp1 ->
       incl tmp1 tmp -> In t tmp -> ~In t tmp1 ->
       ty1 = Csyntax.typeof e1 ->
       tr_is_bitfield_access a1 bf ->
-      tr_expr cp le dst (Csyntax.Epostincr id e1 ty)
-                   (sl1 ++ make_set bf t a1 ::
-                    make_assign bf a1 (transl_incrdecr id (Etempvar t ty1) ty1) ::
+      tr_expr le dst (Csyntax.Epostincr id e1 ty)
+                   (sl1 ++ make_set cp bf t a1 ::
+                    make_assign cp bf a1 (transl_incrdecr id (Etempvar t ty1) ty1) ::
                     final dst (Etempvar t ty1))
                    (Etempvar t ty1) tmp
-  | tr_comma: forall cp le dst e1 e2 ty sl1 a1 tmp1 sl2 a2 tmp2 tmp,
-      tr_expr cp le For_effects e1 sl1 a1 tmp1 ->
-      tr_expr cp le dst e2 sl2 a2 tmp2 ->
+  | tr_comma: forall le dst e1 e2 ty sl1 a1 tmp1 sl2 a2 tmp2 tmp,
+      tr_expr le For_effects e1 sl1 a1 tmp1 ->
+      tr_expr le dst e2 sl2 a2 tmp2 ->
       list_disjoint tmp1 tmp2 ->
       incl tmp1 tmp -> incl tmp2 tmp ->
-      tr_expr cp le dst (Csyntax.Ecomma e1 e2 ty) (sl1 ++ sl2) a2 tmp
-  | tr_call_effects: forall cp le e1 el2 ty sl1 a1 tmp1 sl2 al2 tmp2 any tmp,
-      tr_expr cp le For_val e1 sl1 a1 tmp1 ->
-      tr_exprlist cp le el2 sl2 al2 tmp2 ->
+      tr_expr le dst (Csyntax.Ecomma e1 e2 ty) (sl1 ++ sl2) a2 tmp
+  | tr_call_effects: forall le e1 el2 ty sl1 a1 tmp1 sl2 al2 tmp2 any tmp,
+      tr_expr le For_val e1 sl1 a1 tmp1 ->
+      tr_exprlist le el2 sl2 al2 tmp2 ->
       list_disjoint tmp1 tmp2 ->
       incl tmp1 tmp -> incl tmp2 tmp ->
-      tr_expr cp le For_effects (Csyntax.Ecall e1 el2 ty)
+      tr_expr le For_effects (Csyntax.Ecall e1 el2 ty)
                    (sl1 ++ sl2 ++ Scall None a1 al2 :: nil)
                    any tmp
-  | tr_call_val: forall cp le dst e1 el2 ty sl1 a1 tmp1 sl2 al2 tmp2 t tmp,
+  | tr_call_val: forall le dst e1 el2 ty sl1 a1 tmp1 sl2 al2 tmp2 t tmp,
       dst <> For_effects ->
-      tr_expr cp le For_val e1 sl1 a1 tmp1 ->
-      tr_exprlist cp le el2 sl2 al2 tmp2 ->
+      tr_expr le For_val e1 sl1 a1 tmp1 ->
+      tr_exprlist le el2 sl2 al2 tmp2 ->
       list_disjoint tmp1 tmp2 -> In t tmp ->
       incl tmp1 tmp -> incl tmp2 tmp ->
-      tr_expr cp le dst (Csyntax.Ecall e1 el2 ty)
+      tr_expr le dst (Csyntax.Ecall e1 el2 ty)
                    (sl1 ++ sl2 ++ Scall (Some t) a1 al2 :: final dst (Etempvar t ty))
                    (Etempvar t ty) tmp
-  | tr_builtin_effects: forall cp le ef tyargs el ty sl al tmp1 any tmp,
-      tr_exprlist cp le el sl al tmp1 ->
+  | tr_builtin_effects: forall le ef tyargs el ty sl al tmp1 any tmp,
+      tr_exprlist le el sl al tmp1 ->
       incl tmp1 tmp ->
-      tr_expr cp le For_effects (Csyntax.Ebuiltin ef tyargs el ty)
+      tr_expr le For_effects (Csyntax.Ebuiltin ef tyargs el ty)
                    (sl ++ Sbuiltin None ef tyargs al :: nil)
                    any tmp
-  | tr_builtin_val: forall cp le dst ef tyargs el ty sl al tmp1 t tmp,
+  | tr_builtin_val: forall le dst ef tyargs el ty sl al tmp1 t tmp,
       dst <> For_effects ->
-      tr_exprlist cp le el sl al tmp1 ->
+      tr_exprlist le el sl al tmp1 ->
       In t tmp -> incl tmp1 tmp ->
-      tr_expr cp le dst (Csyntax.Ebuiltin ef tyargs el ty)
+      tr_expr le dst (Csyntax.Ebuiltin ef tyargs el ty)
                    (sl ++ Sbuiltin (Some t) ef tyargs al :: final dst (Etempvar t ty))
                    (Etempvar t ty) tmp
-  | tr_paren_val: forall cp le e1 tycast ty sl1 a1 t tmp,
-      tr_expr cp le (For_set (SDbase tycast ty t)) e1 sl1 a1 tmp ->
+  | tr_paren_val: forall le e1 tycast ty sl1 a1 t tmp,
+      tr_expr le (For_set (SDbase tycast ty t)) e1 sl1 a1 tmp ->
       In t tmp ->
-      tr_expr cp le For_val (Csyntax.Eparen e1 tycast ty)
+      tr_expr le For_val (Csyntax.Eparen e1 tycast ty)
                        sl1
                        (Etempvar t ty) tmp
-  | tr_paren_effects: forall cp le e1 tycast ty sl1 a1 tmp any,
-      tr_expr cp le For_effects e1 sl1 a1 tmp ->
-      tr_expr cp le For_effects (Csyntax.Eparen e1 tycast ty) sl1 any tmp
-  | tr_paren_set: forall cp le t sd e1 tycast ty sl1 a1 tmp any,
-      tr_expr cp le (For_set (SDcons tycast ty t sd)) e1 sl1 a1 tmp ->
+  | tr_paren_effects: forall le e1 tycast ty sl1 a1 tmp any,
+      tr_expr le For_effects e1 sl1 a1 tmp ->
+      tr_expr le For_effects (Csyntax.Eparen e1 tycast ty) sl1 any tmp
+  | tr_paren_set: forall le t sd e1 tycast ty sl1 a1 tmp any,
+      tr_expr le (For_set (SDcons tycast ty t sd)) e1 sl1 a1 tmp ->
       In t tmp ->
-      tr_expr cp le (For_set sd) (Csyntax.Eparen e1 tycast ty) sl1 any tmp
+      tr_expr le (For_set sd) (Csyntax.Eparen e1 tycast ty) sl1 any tmp
 
-with tr_exprlist: compartment -> temp_env -> Csyntax.exprlist -> list statement -> list expr -> list ident -> Prop :=
-  | tr_nil: forall cp le tmp,
-      tr_exprlist cp le Csyntax.Enil nil nil tmp
-  | tr_cons: forall cp le e1 el2 sl1 a1 tmp1 sl2 al2 tmp2 tmp,
-      tr_expr cp le For_val e1 sl1 a1 tmp1 ->
-      tr_exprlist cp le el2 sl2 al2 tmp2 ->
+with tr_exprlist: temp_env -> Csyntax.exprlist -> list statement -> list expr -> list ident -> Prop :=
+  | tr_nil: forall le tmp,
+      tr_exprlist le Csyntax.Enil nil nil tmp
+  | tr_cons: forall le e1 el2 sl1 a1 tmp1 sl2 al2 tmp2 tmp,
+      tr_expr le For_val e1 sl1 a1 tmp1 ->
+      tr_exprlist le el2 sl2 al2 tmp2 ->
       list_disjoint tmp1 tmp2 ->
       incl tmp1 tmp -> incl tmp2 tmp ->
-      tr_exprlist cp le (Csyntax.Econs e1 el2) (sl1 ++ sl2) (a1 :: al2) tmp.
+      tr_exprlist le (Csyntax.Econs e1 el2) (sl1 ++ sl2) (a1 :: al2) tmp.
 
 Scheme tr_expr_ind2 := Minimality for tr_expr Sort Prop
   with tr_exprlist_ind2 := Minimality for tr_exprlist Sort Prop.
@@ -358,13 +361,13 @@ Combined Scheme tr_expr_exprlist from tr_expr_ind2, tr_exprlist_ind2.
 (** Useful invariance properties. *)
 
 Lemma tr_expr_invariant:
-  forall cp le dst r sl a tmps, tr_expr cp le dst r sl a tmps ->
+  forall le dst r sl a tmps, tr_expr le dst r sl a tmps ->
   forall le', (forall x, In x tmps -> le'!x = le!x) ->
-  tr_expr cp le' dst r sl a tmps
+  tr_expr le' dst r sl a tmps
 with tr_exprlist_invariant:
-  forall cp le rl sl al tmps, tr_exprlist cp le rl sl al tmps ->
+  forall le rl sl al tmps, tr_exprlist le rl sl al tmps ->
   forall le', (forall x, In x tmps -> le'!x = le!x) ->
-  tr_exprlist cp le' rl sl al tmps.
+  tr_exprlist le' rl sl al tmps.
 Proof.
   induction 1; intros; econstructor; eauto.
     intros. apply H0. intros. transitivity (le'!id); auto.
@@ -380,11 +383,11 @@ Proof.
 Qed.
 
 Lemma tr_expr_monotone:
-  forall cp le dst r sl a tmps, tr_expr cp le dst r sl a tmps ->
-  forall tmps', incl tmps tmps' -> tr_expr cp le dst r sl a tmps'
+  forall le dst r sl a tmps, tr_expr le dst r sl a tmps ->
+  forall tmps', incl tmps tmps' -> tr_expr le dst r sl a tmps'
 with tr_exprlist_monotone:
-  forall cp le rl sl al tmps, tr_exprlist cp le rl sl al tmps ->
-  forall tmps', incl tmps tmps' -> tr_exprlist cp le rl sl al tmps'.
+  forall le rl sl al tmps, tr_exprlist le rl sl al tmps ->
+  forall tmps', incl tmps tmps' -> tr_exprlist le rl sl al tmps'.
 Proof.
   specialize tr_rvalof_monotone. intros RVALOF.
   induction 1; intros; econstructor; unfold incl in *; eauto.
@@ -408,14 +411,13 @@ Variable ge: genv.
 Variable e: env.
 Variable le: temp_env.
 Variable m: mem.
-Variable cp: compartment.
 
 Inductive tr_top: destination -> Csyntax.expr -> list statement -> expr -> list ident -> Prop :=
   | tr_top_val_val: forall v ty a tmp,
       typeof a = ty -> eval_expr ge e cp le m a v ->
       tr_top For_val (Csyntax.Eval v ty) nil a tmp
   | tr_top_base: forall dst r sl a tmp,
-      tr_expr cp le dst r sl a tmp ->
+      tr_expr le dst r sl a tmp ->
       tr_top dst r sl a tmp.
 
 End TR_TOP.
@@ -424,17 +426,17 @@ End TR_TOP.
 
 Inductive tr_expression: Csyntax.expr -> statement -> expr -> Prop :=
   | tr_expression_intro: forall r sl a tmps,
-      (forall ge e le m cp, tr_top ge e le m cp For_val r sl a tmps) ->
+      (forall ge e le m, tr_top ge e le m For_val r sl a tmps) ->
       tr_expression r (makeseq sl) a.
 
 Inductive tr_expr_stmt: Csyntax.expr -> statement -> Prop :=
   | tr_expr_stmt_intro: forall r sl a tmps,
-      (forall ge e le cp m, tr_top ge e le m cp For_effects r sl a tmps) ->
+      (forall ge e le m, tr_top ge e le m For_effects r sl a tmps) ->
       tr_expr_stmt r (makeseq sl).
 
 Inductive tr_if: Csyntax.expr -> statement -> statement -> statement -> Prop :=
   | tr_if_intro: forall r s1 s2 sl a tmps,
-      (forall ge e le m cp, tr_top ge e le m cp For_val r sl a tmps) ->
+      (forall ge e le m, tr_top ge e le m For_val r sl a tmps) ->
       tr_if r s1 s2 (makeseq (sl ++ makeif a s1 s2 :: nil)).
 
 Inductive tr_stmt: Csyntax.statement -> statement -> Prop :=
@@ -814,9 +816,9 @@ Proof.
 Qed.
 
 Lemma tr_expr_add_dest:
-  forall cp le dst r sl a tmps,
-  tr_expr cp le dst r sl a tmps ->
-  tr_expr cp le dst r sl a (add_dest dst tmps).
+  forall le dst r sl a tmps,
+  tr_expr le dst r sl a tmps ->
+  tr_expr le dst r sl a (add_dest dst tmps).
 Proof.
   intros. apply tr_expr_monotone with tmps; auto. apply add_dest_incl.
 Qed.
@@ -840,7 +842,7 @@ Qed.
 
 Lemma transl_valof_meets_spec:
   forall ty a g sl b g' I,
-  transl_valof ce ty a g = Res (sl, b) g' I ->
+  transl_valof ce cp ty a g = Res (sl, b) g' I ->
   exists tmps, tr_rvalof ty a sl b tmps /\ contained tmps g g'.
 Proof.
   unfold transl_valof; intros.
@@ -856,13 +858,13 @@ Combined Scheme expr_exprlist_ind from expr_ind2, exprlist_ind2.
 
 Lemma transl_meets_spec:
    (forall r dst g sl a g' I,
-    transl_expr ce dst r g = Res (sl, a) g' I ->
+    transl_expr ce cp dst r g = Res (sl, a) g' I ->
     dest_below dst g ->
-    exists tmps, (forall cp le, tr_expr cp le dst r sl a (add_dest dst tmps)) /\ contained tmps g g')
+    exists tmps, (forall le, tr_expr le dst r sl a (add_dest dst tmps)) /\ contained tmps g g')
   /\
    (forall rl g sl al g' I,
-    transl_exprlist ce rl g = Res (sl, al) g' I ->
-    exists tmps, (forall cp le, tr_exprlist cp le rl sl al tmps) /\ contained tmps g g').
+    transl_exprlist ce cp rl g = Res (sl, al) g' I ->
+    exists tmps, (forall le, tr_exprlist le rl sl al tmps) /\ contained tmps g g').
 Proof.
   apply expr_exprlist_ind; simpl add_dest; intros.
 - (* val *)
@@ -1128,9 +1130,9 @@ Qed.
 
 Lemma transl_expr_meets_spec:
    forall r dst g sl a g' I,
-   transl_expr ce dst r g = Res (sl, a) g' I ->
+   transl_expr ce cp dst r g = Res (sl, a) g' I ->
    dest_below dst g ->
-   exists tmps, forall ge e le m cp, tr_top ge e le m cp dst r sl a tmps.
+   exists tmps, forall ge e le m, tr_top ge e le m dst r sl a tmps.
 Proof.
   intros. exploit (proj1 transl_meets_spec); eauto. intros [tmps [A B]].
   exists (add_dest dst tmps); intros. apply tr_top_base. auto.
@@ -1138,7 +1140,7 @@ Qed.
 
 Lemma transl_expression_meets_spec:
   forall r g s a g' I,
-  transl_expression ce r g = Res (s, a) g' I ->
+  transl_expression ce cp r g = Res (s, a) g' I ->
   tr_expression r s a.
 Proof.
   intros. monadInv H. exploit transl_expr_meets_spec; eauto.
@@ -1147,7 +1149,7 @@ Qed.
 
 Lemma transl_expr_stmt_meets_spec:
   forall r g s g' I,
-  transl_expr_stmt ce r g = Res s g' I ->
+  transl_expr_stmt ce cp r g = Res s g' I ->
   tr_expr_stmt r s.
 Proof.
   intros. monadInv H. exploit transl_expr_meets_spec; eauto.
@@ -1156,7 +1158,7 @@ Qed.
 
 Lemma transl_if_meets_spec:
   forall r s1 s2 g s g' I,
-  transl_if ce r s1 s2 g = Res s g' I ->
+  transl_if ce cp r s1 s2 g = Res s g' I ->
   tr_if r s1 s2 s.
 Proof.
   intros. monadInv H. exploit transl_expr_meets_spec; eauto.
@@ -1164,9 +1166,9 @@ Proof.
 Qed.
 
 Lemma transl_stmt_meets_spec:
-  forall s g ts g' I, transl_stmt ce s g = Res ts g' I -> tr_stmt s ts
+  forall s g ts g' I, transl_stmt ce cp s g = Res ts g' I -> tr_stmt s ts
 with transl_lblstmt_meets_spec:
-  forall s g ts g' I, transl_lblstmt ce s g = Res ts g' I -> tr_lblstmts s ts.
+  forall s g ts g' I, transl_lblstmt ce cp s g = Res ts g' I -> tr_lblstmts s ts.
 Proof.
   generalize transl_expression_meets_spec transl_expr_stmt_meets_spec transl_if_meets_spec; intros T1 T2 T3.
 Opaque transl_expression transl_expr_stmt.
@@ -1184,12 +1186,13 @@ Opaque transl_expression transl_expr_stmt.
   monadInv TR; constructor; eauto.
 Qed.
 
+End TR_FUNCTION.
 (** Relational presentation for the transformation of functions, fundefs, and variables. *)
 
 Inductive tr_function: Csyntax.function -> Clight.function -> Prop :=
   | tr_function_intro: forall f tf,
       comp_of tf = comp_of f ->
-      tr_stmt f.(Csyntax.fn_body) tf.(fn_body) ->
+      tr_stmt f.(Csyntax.fn_comp) f.(Csyntax.fn_body) tf.(fn_body) ->
       fn_return tf = Csyntax.fn_return f ->
       fn_callconv tf = Csyntax.fn_callconv f ->
       fn_params tf = Csyntax.fn_params f ->
@@ -1202,7 +1205,7 @@ Lemma transl_function_spec:
   tr_function f tf.
 Proof.
   unfold transl_function; intros.
-  destruct (transl_stmt ce (Csyntax.fn_body f) (initial_generator tt)) eqn:T; inv H.
+  destruct (transl_stmt ce (Csyntax.fn_comp f) (Csyntax.fn_body f) (initial_generator tt)) eqn:T; inv H.
   constructor; auto. simpl. eapply transl_stmt_meets_spec; eauto.
 Qed.
 

@@ -178,7 +178,7 @@ Proof.
   - unfold get_call_trace.
     intros H.
     destruct (Genv.type_of_call ge cp cp') eqn:TOC;
-      inv H; [constructor; auto; congruence | | constructor; auto; congruence].
+      inv H; [constructor; auto; congruence |].
     destruct vf; try congruence.
     destruct (Genv.invert_symbol ge b) eqn:IS; [| congruence].
     destruct (list_eventval_of_val vargs tyargs) eqn:LEOV; [| congruence].
@@ -208,7 +208,7 @@ Proof.
   - unfold get_return_trace.
     intros H.
     destruct (Genv.type_of_call ge cp cp') eqn:TOC;
-      inv H; [constructor; auto; congruence | | constructor; auto; congruence].
+      inv H; [constructor; auto; congruence |].
     destruct (eventval_of_val vres (proj_rettype ty)) eqn:LEOV; [| congruence].
     inv H1. unfold E0. econstructor; eauto.
     eapply eventval_of_val_sound; eauto.
@@ -301,54 +301,54 @@ Qed.
 (** External calls *)
 
 Variable do_external_function:
-  string -> signature -> Senv.t -> world -> compartment -> list val -> mem -> option (world * trace * val * mem).
+  string -> signature -> Senv.t -> world -> list val -> mem -> option (world * trace * val * mem).
 
 Hypothesis do_external_function_sound:
-  forall id sg ge cp vargs m t vres m' w w',
-  do_external_function id sg ge w cp vargs m = Some(w', t, vres, m') ->
-  external_functions_sem id sg ge cp vargs m t vres m' /\ possible_trace w t w'.
+  forall id sg ge vargs m t vres m' w w',
+  do_external_function id sg ge w vargs m = Some(w', t, vres, m') ->
+  external_functions_sem id sg ge vargs m t vres m' /\ possible_trace w t w'.
 
 Hypothesis do_external_function_complete:
-  forall id sg ge cp vargs m t vres m' w w',
-  external_functions_sem id sg ge cp vargs m t vres m' ->
+  forall id sg ge vargs m t vres m' w w',
+  external_functions_sem id sg ge vargs m t vres m' ->
   possible_trace w t w' ->
-  do_external_function id sg ge w cp vargs m = Some(w', t, vres, m').
+  do_external_function id sg ge w vargs m = Some(w', t, vres, m').
 
 Variable do_inline_assembly:
-  string -> signature -> Senv.t -> world -> compartment -> list val -> mem -> option (world * trace * val * mem).
+  compartment -> string -> signature -> Senv.t -> world -> list val -> mem -> option (world * trace * val * mem).
 
 Hypothesis do_inline_assembly_sound:
-  forall txt sg ge cp vargs m t vres m' w w',
-  do_inline_assembly txt sg ge w cp vargs m = Some(w', t, vres, m') ->
-  inline_assembly_sem txt sg ge cp vargs m t vres m' /\ possible_trace w t w'.
+  forall cp txt sg ge vargs m t vres m' w w',
+  do_inline_assembly cp txt sg ge w vargs m = Some(w', t, vres, m') ->
+  inline_assembly_sem cp txt sg ge vargs m t vres m' /\ possible_trace w t w'.
 
 Hypothesis do_inline_assembly_complete:
-  forall txt sg ge cp vargs m t vres m' w w',
-  inline_assembly_sem txt sg ge cp vargs m t vres m' ->
+  forall cp txt sg ge vargs m t vres m' w w',
+  inline_assembly_sem cp txt sg ge vargs m t vres m' ->
   possible_trace w t w' ->
-  do_inline_assembly txt sg ge w cp vargs m = Some(w', t, vres, m').
+  do_inline_assembly cp txt sg ge w vargs m = Some(w', t, vres, m').
 
-Definition do_ef_volatile_load (chunk: memory_chunk)
-       (w: world) (cp: compartment) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
+Definition do_ef_volatile_load (cp: compartment) (chunk: memory_chunk)
+       (w: world) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
   match vargs with
   | Vptr b ofs :: nil => do w',t,v <- do_volatile_load w chunk cp m b ofs; Some(w',t,v,m)
   | _ => None
   end.
 
-Definition do_ef_volatile_store (chunk: memory_chunk)
-       (w: world) (cp: compartment) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
+Definition do_ef_volatile_store (cp: compartment) (chunk: memory_chunk)
+       (w: world) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
   match vargs with
   | Vptr b ofs :: v :: nil => do w',t,m',v' <- do_volatile_store w chunk cp m b ofs v; Some(w',t,Vundef,m')
   | _ => None
   end.
 
-Definition do_ef_volatile_load_global (chunk: memory_chunk) (id: ident) (ofs: ptrofs)
-       (w: world) (cp: compartment) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
-  do b <- Genv.find_symbol ge id; do_ef_volatile_load chunk w cp (Vptr b ofs :: vargs) m.
+Definition do_ef_volatile_load_global (cp: compartment) (chunk: memory_chunk) (id: ident) (ofs: ptrofs)
+       (w: world) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
+  do b <- Genv.find_symbol ge id; do_ef_volatile_load cp chunk w (Vptr b ofs :: vargs) m.
 
-Definition do_ef_volatile_store_global (chunk: memory_chunk) (id: ident) (ofs: ptrofs)
-       (w: world) (cp: compartment) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
-  do b <- Genv.find_symbol ge id; do_ef_volatile_store chunk w cp (Vptr b ofs :: vargs) m.
+Definition do_ef_volatile_store_global (cp: compartment) (chunk: memory_chunk) (id: ident) (ofs: ptrofs)
+       (w: world) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
+  do b <- Genv.find_symbol ge id; do_ef_volatile_store cp chunk w (Vptr b ofs :: vargs) m.
 
 Definition do_alloc_size (v: val) : option ptrofs :=
   match v with
@@ -357,8 +357,8 @@ Definition do_alloc_size (v: val) : option ptrofs :=
   | _ => None
   end.
 
-Definition do_ef_malloc
-       (w: world) (cp: compartment) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
+Definition do_ef_malloc (cp: compartment)
+       (w: world) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
   match vargs with
   | v :: nil =>
       do sz <- do_alloc_size v;
@@ -368,8 +368,8 @@ Definition do_ef_malloc
   | _ => None
   end.
 
-Definition do_ef_free
-       (w: world) (cp: compartment) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
+Definition do_ef_free (cp: compartment)
+       (w: world) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
   match vargs with
   | Vptr b lo :: nil =>
       do vsz <- Mem.load Mptr m b (Ptrofs.unsigned lo - size_chunk Mptr) (Some cp);
@@ -396,8 +396,8 @@ Definition memcpy_args_ok
    /\ (sz > 0 -> (al | odst))
    /\ (bsrc <> bdst \/ osrc = odst \/ osrc + sz <= odst \/ odst + sz <= osrc).
 
-Definition do_ef_memcpy (sz al: Z)
-       (w: world) (cp: compartment) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
+Definition do_ef_memcpy (cp: compartment) (sz al: Z)
+       (w: world) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
   match vargs with
   | Vptr bdst odst :: Vptr bsrc osrc :: nil =>
       if decide (memcpy_args_ok sz al bdst (Ptrofs.unsigned odst) bsrc (Ptrofs.unsigned osrc)) then
@@ -408,13 +408,13 @@ Definition do_ef_memcpy (sz al: Z)
   | _ => None
   end.
 
-Definition do_ef_annot (text: string) (targs: list typ)
-       (w: world) (cp: compartment) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
+Definition do_ef_annot (cp: compartment) (text: string) (targs: list typ)
+       (w: world) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
   do args <- list_eventval_of_val vargs targs;
   Some(w, Event_annot text args :: E0, Vundef, m).
 
-Definition do_ef_annot_val (text: string) (targ: typ)
-       (w: world) (cp: compartment) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
+Definition do_ef_annot_val (cp: compartment) (text: string) (targ: typ)
+       (w: world) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
   match vargs with
   | varg :: nil =>
       do arg <- eventval_of_val varg targ;
@@ -422,46 +422,46 @@ Definition do_ef_annot_val (text: string) (targ: typ)
   | _ => None
   end.
 
-Definition do_ef_debug (kind: positive) (text: ident) (targs: list typ)
-       (w: world) (cp: compartment) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
+Definition do_ef_debug (cp: compartment) (kind: positive) (text: ident) (targs: list typ)
+       (w: world) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
   Some(w, E0, Vundef, m).
 
 Definition do_builtin_or_external (name: string) (sg: signature)
-       (w: world) (cp: compartment) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
+       (w: world) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
   match lookup_builtin_function name sg with
   | Some bf => match builtin_function_sem bf vargs with Some v => Some(w, E0, v, m) | None => None end
-  | None    => do_external_function name sg ge w cp vargs m
+  | None    => do_external_function name sg ge w vargs m
   end.
 
 Definition do_external (ef: external_function):
-       world -> compartment -> list val -> mem -> option (world * trace * val * mem) :=
+       world -> list val -> mem -> option (world * trace * val * mem) :=
   match ef with
-  | EF_external name cp sg => do_external_function name sg ge
-  | EF_builtin name sg => do_builtin_or_external name sg
-  | EF_runtime name sg => do_builtin_or_external name sg
-  | EF_vload chunk => do_ef_volatile_load chunk
-  | EF_vstore chunk => do_ef_volatile_store chunk
-  | EF_malloc => do_ef_malloc
-  | EF_free => do_ef_free
-  | EF_memcpy sz al => do_ef_memcpy sz al
-  | EF_annot kind text targs => do_ef_annot text targs
-  | EF_annot_val kind text targ => do_ef_annot_val text targ
-  | EF_inline_asm text sg clob => do_inline_assembly text sg ge
-  | EF_debug kind text targs => do_ef_debug kind text targs
+  | EF_external cp name sg => do_external_function name sg ge
+  | EF_builtin cp name sg => do_builtin_or_external name sg
+  | EF_runtime cp name sg => do_builtin_or_external name sg
+  | EF_vload cp chunk => do_ef_volatile_load cp chunk
+  | EF_vstore cp chunk => do_ef_volatile_store cp chunk
+  | EF_malloc cp => do_ef_malloc cp
+  | EF_free cp => do_ef_free cp
+  | EF_memcpy cp sz al => do_ef_memcpy cp sz al
+  | EF_annot cp kind text targs => do_ef_annot cp text targs
+  | EF_annot_val cp kind text targ => do_ef_annot_val cp text targ
+  | EF_inline_asm cp text sg clob => do_inline_assembly cp text sg ge
+  | EF_debug cp kind text targs => do_ef_debug cp kind text targs
   end.
 
 Lemma do_ef_external_sound:
-  forall ef w cp vargs m w' t vres m',
-  do_external ef w cp vargs m = Some(w', t, vres, m') ->
-  external_call ef ge cp vargs m t vres m' /\ possible_trace w t w'.
+  forall ef w vargs m w' t vres m',
+  do_external ef w vargs m = Some(w', t, vres, m') ->
+  external_call ef ge vargs m t vres m' /\ possible_trace w t w'.
 Proof with try congruence.
   intros until m'.
   assert (SIZE: forall v sz, do_alloc_size v = Some sz -> v = Vptrofs sz).
   { intros until sz; unfold Vptrofs; destruct v; simpl; destruct Archi.ptr64 eqn:SF;
     intros EQ; inv EQ; f_equal; symmetry; eauto with ptrofs. }
-  assert (BF_EX: forall name sg cp,
-    do_builtin_or_external name sg w cp vargs m = Some (w', t, vres, m') ->
-    builtin_or_external_sem name sg ge cp vargs m t vres m' /\ possible_trace w t w').
+  assert (BF_EX: forall name sg,
+    do_builtin_or_external name sg w vargs m = Some (w', t, vres, m') ->
+    builtin_or_external_sem name sg ge vargs m t vres m' /\ possible_trace w t w').
   { unfold do_builtin_or_external, builtin_or_external_sem; intros.
     destruct (lookup_builtin_function name sg ) as [bf|].
   - destruct (builtin_function_sem bf vargs) as [vres1|] eqn:BF; inv H.
@@ -518,9 +518,9 @@ Proof with try congruence.
 Qed.
 
 Lemma do_ef_external_complete:
-  forall ef w cp vargs m w' t vres m',
-  external_call ef ge cp vargs m t vres m' -> possible_trace w t w' ->
-  do_external ef w cp vargs m = Some(w', t, vres, m').
+  forall ef w vargs m w' t vres m',
+  external_call ef ge vargs m t vres m' -> possible_trace w t w' ->
+  do_external ef w vargs m = Some(w', t, vres, m').
 Proof.
   intros.
   assert (SIZE: forall n, do_alloc_size (Vptrofs n) = Some n).
@@ -528,8 +528,8 @@ Proof.
     rewrite Ptrofs.of_int64_to_int64; auto.
     rewrite Ptrofs.of_int_to_int; auto. }
   assert (BF_EX: forall name sg,
-    builtin_or_external_sem name sg ge cp vargs m t vres m' ->
-    do_builtin_or_external name sg w cp vargs m = Some (w', t, vres, m')).
+    builtin_or_external_sem name sg ge vargs m t vres m' ->
+    do_builtin_or_external name sg w vargs m = Some (w', t, vres, m')).
   { unfold do_builtin_or_external, builtin_or_external_sem; intros.
     destruct (lookup_builtin_function name sg) as [bf|].
   - inv H1. inv H0. rewrite H2. auto.

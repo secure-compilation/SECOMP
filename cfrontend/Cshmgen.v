@@ -426,9 +426,9 @@ Definition make_store_bitfield (sz: intsize) (sg: signedness) (pos width: Z)
 (** [make_memcpy dst src ty] returns a [memcpy] builtin appropriate for
   by-copy assignment of a value of Clight type [ty]. *)
 
-Definition make_memcpy (ce: composite_env) (dst src: expr) (ty: type) :=
+Definition make_memcpy (ce: composite_env) (cp: compartment) (dst src: expr) (ty: type) :=
   do sz <- sizeof ce ty;
-  OK (Sbuiltin None (EF_memcpy sz (Ctypes.alignof_blockcopy ce ty))
+  OK (Sbuiltin None (EF_memcpy cp sz (Ctypes.alignof_blockcopy ce ty))
                     (dst :: src :: nil)).
 
 (** [make_store addr ty bf rhs] stores the value of the
@@ -436,12 +436,12 @@ Definition make_memcpy (ce: composite_env) (dst src: expr) (ty: type) :=
    Csharpminor expression [addr].
    [ty] is the type of the memory location and [bf] a bitfield designator. *)
 
-Definition make_store (ce: composite_env) (addr: expr) (ty: type) (bf: bitfield) (rhs: expr) :=
+Definition make_store (ce: composite_env) (cp: compartment) (addr: expr) (ty: type) (bf: bitfield) (rhs: expr) :=
   match bf with
   | Full =>
       match access_mode ty with
       | By_value chunk => OK (Sstore chunk addr rhs)
-      | By_copy => make_memcpy ce addr rhs ty
+      | By_copy => make_memcpy ce cp addr rhs ty
       | _ => Error (msg "Cshmgen.make_store")
       end
   | Bits sz sg pos width =>
@@ -663,7 +663,7 @@ loop s1 s2          --->     block {
                              // break in s1 and s2 branches here
 *)
 
-Fixpoint transl_statement (ce: composite_env) (tyret: type) (nbrk ncnt: nat)
+Fixpoint transl_statement (ce: composite_env) (cp: compartment) (tyret: type) (nbrk ncnt: nat)
                           (s: Clight.statement) {struct s} : res stmt :=
   match s with
   | Clight.Sskip =>
@@ -672,7 +672,7 @@ Fixpoint transl_statement (ce: composite_env) (tyret: type) (nbrk ncnt: nat)
       do (tb, bf) <- transl_lvalue ce b;
       do tc <- transl_expr ce c;
       do tc' <- make_cast (typeof c) (typeof b) tc;
-      make_store ce tb (typeof b) bf tc'
+      make_store ce cp tb (typeof b) bf tc'
   | Clight.Sset x b =>
       do tb <- transl_expr ce b;
       OK(Sset x tb)
@@ -691,17 +691,17 @@ Fixpoint transl_statement (ce: composite_env) (tyret: type) (nbrk ncnt: nat)
       do tbl <- transl_arglist ce bl tyargs;
       OK(Sbuiltin x ef tbl)
   | Clight.Ssequence s1 s2 =>
-      do ts1 <- transl_statement ce tyret nbrk ncnt s1;
-      do ts2 <- transl_statement ce tyret nbrk ncnt s2;
+      do ts1 <- transl_statement ce cp tyret nbrk ncnt s1;
+      do ts2 <- transl_statement ce cp tyret nbrk ncnt s2;
       OK (Sseq ts1 ts2)
   | Clight.Sifthenelse e s1 s2 =>
       do te <- transl_expr ce e;
-      do ts1 <- transl_statement ce tyret nbrk ncnt s1;
-      do ts2 <- transl_statement ce tyret nbrk ncnt s2;
+      do ts1 <- transl_statement ce cp tyret nbrk ncnt s1;
+      do ts2 <- transl_statement ce cp tyret nbrk ncnt s2;
       OK (Sifthenelse (make_boolean te (typeof e)) ts1 ts2)
   | Clight.Sloop s1 s2 =>
-      do ts1 <- transl_statement ce tyret 1%nat 0%nat s1;
-      do ts2 <- transl_statement ce tyret 0%nat (S ncnt) s2;
+      do ts1 <- transl_statement ce cp tyret 1%nat 0%nat s1;
+      do ts2 <- transl_statement ce cp tyret 0%nat (S ncnt) s2;
       OK (Sblock (Sloop (Sseq (Sblock ts1) ts2)))
   | Clight.Sbreak =>
       OK (Sexit nbrk)
@@ -715,28 +715,28 @@ Fixpoint transl_statement (ce: composite_env) (tyret: type) (nbrk ncnt: nat)
       OK (Sreturn None)
   | Clight.Sswitch a sl =>
       do ta <- transl_expr ce a;
-      do tsl <- transl_lbl_stmt ce tyret 0%nat (S ncnt) sl;
+      do tsl <- transl_lbl_stmt ce cp tyret 0%nat (S ncnt) sl;
       match classify_switch (typeof a) with
       | switch_case_i => OK (Sblock (Sswitch false ta tsl))
       | switch_case_l => OK (Sblock (Sswitch true ta tsl))
       | switch_default => Error(msg "Cshmgen.transl_stmt(switch)")
       end
   | Clight.Slabel lbl s =>
-      do ts <- transl_statement ce tyret nbrk ncnt s;
+      do ts <- transl_statement ce cp tyret nbrk ncnt s;
       OK (Slabel lbl ts)
   | Clight.Sgoto lbl =>
       OK (Sgoto lbl)
   end
 
-with transl_lbl_stmt (ce: composite_env) (tyret: type) (nbrk ncnt: nat)
+with transl_lbl_stmt (ce: composite_env) (cp: compartment) (tyret: type) (nbrk ncnt: nat)
                      (sl: Clight.labeled_statements)
                      {struct sl}: res lbl_stmt :=
   match sl with
   | Clight.LSnil =>
       OK LSnil
   | Clight.LScons n s sl' =>
-      do ts <- transl_statement ce tyret nbrk ncnt s;
-      do tsl' <- transl_lbl_stmt ce tyret nbrk ncnt sl';
+      do ts <- transl_statement ce cp tyret nbrk ncnt s;
+      do tsl' <- transl_lbl_stmt ce cp tyret nbrk ncnt sl';
       OK (LScons n ts tsl')
   end.
 
@@ -751,7 +751,7 @@ Definition signature_of_function (f: Clight.function) :=
      sig_cc   := Clight.fn_callconv f |}.
 
 Definition transl_function (ce: composite_env) (f: Clight.function) : res function :=
-  do tbody <- transl_statement ce f.(Clight.fn_return) 1%nat 0%nat (Clight.fn_body f);
+  do tbody <- transl_statement ce f.(Clight.fn_comp) f.(Clight.fn_return) 1%nat 0%nat (Clight.fn_body f);
   do tvars <- mmap (transl_var ce) (Clight.fn_vars f);
   OK (mkfunction
        (Clight.fn_comp f)

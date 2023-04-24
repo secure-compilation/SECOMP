@@ -1234,12 +1234,12 @@ Proof.
 - (* Itailcall *)
   exploit find_function_translated; eauto. intros (cu' & tf & FIND' & TRANSF' & LINK').
   exploit Mem.free_parallel_extends; eauto. intros [m'' [A B]].
-  exploit find_function_ptr_translated; eauto. intros FUNPTR'.
+  (* exploit find_function_ptr_translated; eauto. intros FUNPTR'. *)
   econstructor; split.
   eapply exec_Itailcall; eauto.
   eapply sig_preserved; eauto.
   now rewrite <- (comp_transl_partial _ TRANSF'), COMP.
-  eapply allowed_call_translated; eauto.
+  (* eapply allowed_call_translated; eauto. *)
   econstructor; eauto.
   apply regs_lessdef_regs; auto.
 
@@ -1340,7 +1340,7 @@ Proof.
   econstructor; split.
   eapply exec_function_external; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  erewrite <- match_stackframes_call_comp; eauto.
+  (* erewrite <- match_stackframes_call_comp; eauto. *)
   econstructor; eauto.
 
 - (* return *)

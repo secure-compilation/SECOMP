@@ -23,25 +23,25 @@ Local Open Scope string_scope.
 
 (** * Properties of the helper functions *)
 
-Definition helper_declared {F V: Type} (p: AST.program (AST.fundef F) V) (id: ident) (name: string) (sg: signature) : Prop :=
-  (prog_defmap p)!id = Some (Gfun (External (EF_runtime name sg))).
+Definition helper_declared {F V: Type} (p: AST.program (AST.fundef F) V) (id: ident) (cp: compartment) (name: string) (sg: signature) : Prop :=
+  (prog_defmap p)!id = Some (Gfun (External (EF_runtime cp name sg))).
 
-Definition helper_functions_declared {F V: Type} (p: AST.program (AST.fundef F) V) (hf: helper_functions) : Prop :=
-     helper_declared p i64_dtos  "__compcert_i64_dtos" sig_f_l
-  /\ helper_declared p i64_dtou  "__compcert_i64_dtou" sig_f_l
-  /\ helper_declared p i64_stod  "__compcert_i64_stod" sig_l_f
-  /\ helper_declared p i64_utod  "__compcert_i64_utod" sig_l_f
-  /\ helper_declared p i64_stof  "__compcert_i64_stof" sig_l_s
-  /\ helper_declared p i64_utof  "__compcert_i64_utof" sig_l_s
-  /\ helper_declared p i64_sdiv  "__compcert_i64_sdiv" sig_ll_l
-  /\ helper_declared p i64_udiv  "__compcert_i64_udiv" sig_ll_l
-  /\ helper_declared p i64_smod  "__compcert_i64_smod" sig_ll_l
-  /\ helper_declared p i64_umod  "__compcert_i64_umod" sig_ll_l
-  /\ helper_declared p i64_shl   "__compcert_i64_shl" sig_li_l
-  /\ helper_declared p i64_shr   "__compcert_i64_shr" sig_li_l
-  /\ helper_declared p i64_sar   "__compcert_i64_sar" sig_li_l
-  /\ helper_declared p i64_umulh "__compcert_i64_umulh" sig_ll_l
-  /\ helper_declared p i64_smulh "__compcert_i64_smulh" sig_ll_l.
+Definition helper_functions_declared {F V: Type} (p: AST.program (AST.fundef F) V) (hf: helper_functions) (cp: compartment): Prop :=
+     helper_declared p i64_dtos cp "__compcert_i64_dtos" sig_f_l
+  /\ helper_declared p i64_dtou  cp "__compcert_i64_dtou" sig_f_l
+  /\ helper_declared p i64_stod  cp "__compcert_i64_stod" sig_l_f
+  /\ helper_declared p i64_utod  cp "__compcert_i64_utod" sig_l_f
+  /\ helper_declared p i64_stof  cp "__compcert_i64_stof" sig_l_s
+  /\ helper_declared p i64_utof  cp "__compcert_i64_utof" sig_l_s
+  /\ helper_declared p i64_sdiv  cp "__compcert_i64_sdiv" sig_ll_l
+  /\ helper_declared p i64_udiv  cp "__compcert_i64_udiv" sig_ll_l
+  /\ helper_declared p i64_smod  cp "__compcert_i64_smod" sig_ll_l
+  /\ helper_declared p i64_umod  cp "__compcert_i64_umod" sig_ll_l
+  /\ helper_declared p i64_shl   cp "__compcert_i64_shl" sig_li_l
+  /\ helper_declared p i64_shr   cp "__compcert_i64_shr" sig_li_l
+  /\ helper_declared p i64_sar   cp "__compcert_i64_sar" sig_li_l
+  /\ helper_declared p i64_umulh cp "__compcert_i64_umulh" sig_ll_l
+  /\ helper_declared p i64_smulh cp "__compcert_i64_smulh" sig_ll_l.
 
 (** * Correctness of the instruction selection functions for 64-bit operators *)
 
@@ -49,11 +49,11 @@ Section CMCONSTR.
 
 Variable prog: program.
 Variable hf: helper_functions.
-Hypothesis HELPERS: helper_functions_declared prog hf.
 Let ge := Genv.globalenv prog.
 Variable sp: val.
 Variable e: env.
 Variable cp: compartment.
+Hypothesis HELPERS: helper_functions_declared prog hf cp.
 Variable m: mem.
 
 Ltac DeclHelper := red in HELPERS; decompose [Logic.and] HELPERS; eauto.
@@ -61,7 +61,7 @@ Ltac DeclHelper := red in HELPERS; decompose [Logic.and] HELPERS; eauto.
 Lemma eval_helper:
   forall bf le id name sg args vargs vres,
   eval_exprlist ge sp e cp m le args vargs ->
-  helper_declared prog id name sg  ->
+  helper_declared prog id cp name sg ->
   lookup_builtin_function name sg = Some bf ->
   builtin_function_sem bf vargs = Some vres ->
   (* forall (ALLOWED: allowed_call ge cp vf), *)
@@ -73,13 +73,13 @@ Proof.
   econstructor; eauto. 
   simpl. red. rewrite H1. constructor; auto.
   unfold Genv.type_of_call. simpl. unfold ge, Genv.find_comp.
-  do 2 setoid_rewrite Q. simpl. destruct cp; congruence.
+  setoid_rewrite Q. simpl. rewrite Pos.eqb_refl. congruence.
 Qed.
 
 Corollary eval_helper_1:
   forall bf le id name sg arg1 varg1 vres,
   eval_expr ge sp e cp m le arg1 varg1 ->
-  helper_declared prog id name sg  ->
+  helper_declared prog id cp name sg  ->
   lookup_builtin_function name sg = Some bf ->
   builtin_function_sem bf (varg1 :: nil) = Some vres ->
   (* forall (ALLOWED: Policy.allowed_call cp (External (EF_runtime name sg))), *)
@@ -92,7 +92,7 @@ Corollary eval_helper_2:
   forall bf le id name sg arg1 arg2 varg1 varg2 vres,
   eval_expr ge sp e cp m le arg1 varg1 ->
   eval_expr ge sp e cp m le arg2 varg2 ->
-  helper_declared prog id name sg  ->
+  helper_declared prog id cp name sg  ->
   lookup_builtin_function name sg = Some bf ->
   builtin_function_sem bf (varg1 :: varg2 :: nil) = Some vres ->
   (* forall (ALLOWED: Policy.allowed_call cp (External (EF_runtime name sg))), *)
@@ -107,10 +107,10 @@ Remark eval_builtin_1:
   lookup_builtin_function id sg = Some bf ->
   builtin_function_sem bf (varg1 :: nil) = Some vres ->
   (* forall (ALLOWED: Policy.allowed_call cp (External (EF_builtin id sg))), *)
-  eval_expr ge sp e cp m le (Ebuiltin (EF_builtin id sg) (arg1 ::: Enil)) vres.
+  eval_expr ge sp e cp m le (Ebuiltin (EF_builtin cp id sg) (arg1 ::: Enil)) vres.
 Proof.
   intros. econstructor. econstructor. eauto. constructor.
-  simpl. red. rewrite H0. constructor. auto.
+  simpl. red. rewrite H0. constructor. auto. auto.
 Qed.
 
 Remark eval_builtin_2:
@@ -119,10 +119,10 @@ Remark eval_builtin_2:
   eval_expr ge sp e cp m le arg2 varg2 ->
   lookup_builtin_function id sg = Some bf ->
   builtin_function_sem bf (varg1 :: varg2 :: nil) = Some vres ->
-  eval_expr ge sp e cp m le (Ebuiltin (EF_builtin id sg) (arg1 ::: arg2 ::: Enil)) vres.
+  eval_expr ge sp e cp m le (Ebuiltin (EF_builtin cp id sg) (arg1 ::: arg2 ::: Enil)) vres.
 Proof.
   intros. econstructor. constructor; eauto. constructor; eauto. constructor.
-  simpl. red. rewrite H1. constructor. auto.
+  simpl. red. rewrite H1. constructor. auto. auto.
 Qed.
 
 Definition unary_constructor_sound (cstr: expr -> expr) (sem: val -> val) : Prop :=
@@ -368,7 +368,7 @@ Proof.
   f_equal. destruct (zlt (i0 - Int.zwordsize + (Int.zwordsize - 1)) Int.zwordsize); lia.
 Qed.
 
-Theorem eval_negl: unary_constructor_sound negl Val.negl.
+Theorem eval_negl: unary_constructor_sound (negl cp) Val.negl.
 Proof.
   unfold negl; red; intros. destruct (is_longconst a) eqn:E.
 - econstructor; split. apply eval_longconst.
@@ -720,10 +720,10 @@ Proof.
   econstructor; split. eapply eval_helper_2; eauto. DeclHelper. reflexivity. reflexivity. auto.
 Qed.
 
-Theorem eval_addl: Archi.ptr64 = false -> binary_constructor_sound addl Val.addl.
+Theorem eval_addl: Archi.ptr64 = false -> binary_constructor_sound (addl cp) Val.addl.
 Proof.
   unfold addl; red; intros.
-  set (default := Ebuiltin (EF_builtin "__builtin_addl" sig_ll_l) (a ::: b ::: Enil)).
+  set (default := Ebuiltin (EF_builtin cp "__builtin_addl" sig_ll_l) (a ::: b ::: Enil)).
   assert (DEFAULT:
     exists v, eval_expr ge sp e cp m le default v /\ Val.lessdef (Val.addl x y) v).
   {
@@ -743,10 +743,10 @@ Proof.
 - auto.
 Qed.
 
-Theorem eval_subl: Archi.ptr64 = false -> binary_constructor_sound subl Val.subl.
+Theorem eval_subl: Archi.ptr64 = false -> binary_constructor_sound (subl cp) Val.subl.
 Proof.
   unfold subl; red; intros.
-  set (default := Ebuiltin (EF_builtin "__builtin_subl" sig_ll_l) (a ::: b ::: Enil)).
+  set (default := Ebuiltin (EF_builtin cp "__builtin_subl" sig_ll_l) (a ::: b ::: Enil)).
   assert (DEFAULT:
     exists v, eval_expr ge sp e cp m le default v /\ Val.lessdef (Val.subl x y) v).
   {
@@ -767,7 +767,7 @@ Proof.
 - auto.
 Qed.
 
-Lemma eval_mull_base: binary_constructor_sound mull_base Val.mull.
+Lemma eval_mull_base: binary_constructor_sound (mull_base cp) Val.mull.
 Proof.
   unfold mull_base; red; intros. apply eval_splitlong2; auto.
 - intros.
@@ -789,7 +789,7 @@ Proof.
 Qed.
 
 Lemma eval_mullimm:
-  forall n, unary_constructor_sound (mullimm n) (fun v => Val.mull v (Vlong n)).
+  forall n, unary_constructor_sound (mullimm cp n) (fun v => Val.mull v (Vlong n)).
 Proof.
   unfold mullimm; red; intros.
   predSpec Int64.eq Int64.eq_spec n Int64.zero.
@@ -808,7 +808,7 @@ Proof.
   apply eval_mull_base; auto. apply eval_longconst.
 Qed.
 
-Theorem eval_mull: binary_constructor_sound mull Val.mull.
+Theorem eval_mull: binary_constructor_sound (mull cp) Val.mull.
 Proof.
   unfold mull; red; intros.
   destruct (is_longconst a) as [p|] eqn:LC1;
@@ -844,7 +844,7 @@ Theorem eval_shrxlimm:
   Archi.ptr64 = false ->
   eval_expr ge sp e cp m le a x ->
   Val.shrxl x (Vint n) = Some z ->
-  exists v, eval_expr ge sp e cp m le (shrxlimm a n) v /\ Val.lessdef z v.
+  exists v, eval_expr ge sp e cp m le (shrxlimm cp a n) v /\ Val.lessdef z v.
 Proof.
   intros.
   apply Val.shrxl_shrl_2 in H1. unfold shrxlimm.

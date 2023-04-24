@@ -707,18 +707,13 @@ Proof.
 
   (* Ltailcall *)
   exploit find_function_translated; eauto. intros [tfd [A B]].
-  exploit find_function_ptr_translated; eauto. intros C.
   left; econstructor; split. simpl.
   apply plus_one. econstructor; eauto.
   rewrite (match_parent_locset _ _ STACKS). eauto.
-  rewrite (match_parent_locset _ _ STACKS). eauto.
   symmetry; eapply sig_preserved; eauto.
   now rewrite <- (comp_transl_partial _ B), <- (comp_transl_partial _ TRF).
-  now rewrite <- (comp_transl_partial _ TRF).
   rewrite <- comp_transf_fundef; eauto.
-  eapply allowed_call_translated; eauto.
   rewrite (stacksize_preserved _ _ TRF); eauto.
-  rewrite <- comp_transf_fundef; eauto.
   rewrite (match_parent_locset _ _ STACKS).
   econstructor; eauto.
 
@@ -726,8 +721,8 @@ Proof.
   left; econstructor; split. simpl.
   apply plus_one. eapply exec_Lbuiltin; eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
-  rewrite <- comp_transf_fundef; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  rewrite <- (comp_transl_partial _ TRF); eauto.
   econstructor; eauto.
 
   (* Lbranch *)
@@ -787,7 +782,6 @@ Proof.
   monadInv H8. left; econstructor; split.
   apply plus_one. eapply exec_function_external; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  erewrite <- match_stacks_call_comp; eauto.
   econstructor; eauto.
 
   (* return *)

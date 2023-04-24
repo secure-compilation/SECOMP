@@ -206,22 +206,20 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State s f sp (Lcall sig ros :: b) rs m)
         t (Callstate (Stackframe f (Genv.find_comp ge vf) sig sp rs b:: s) f' rs m)
   | exec_Ltailcall:
-      forall s f stk sig ros b rs m rs' f' m' vf,
+      forall s f stk sig ros b rs m rs' f' m',
       rs' = return_regs (parent_locset s) rs ->
       find_function ros rs' = Some f' ->
-      find_function_ptr ros rs' = Some vf ->
       sig = funsig f' ->
       forall COMP: comp_of f' = comp_of f,
-      forall ALLOWED: needs_calling_comp (comp_of f) = false,
-      forall (ALLOWED': Genv.allowed_call ge (comp_of f) vf),
       Mem.free m stk 0 f.(fn_stacksize) (comp_of f) = Some m' ->
       step (State s f (Vptr stk Ptrofs.zero) (Ltailcall sig ros :: b) rs m)
         E0 (Callstate s f' rs' m')
   | exec_Lbuiltin:
       forall s f sp rs m ef args res b vargs t vres rs' m',
       eval_builtin_args ge rs sp m args vargs ->
-      external_call ef ge (comp_of f) vargs m t vres m' ->
+      external_call ef ge vargs m t vres m' ->
       rs' = Locmap.setres res vres (undef_regs (destroyed_by_builtin ef) rs) ->
+      forall ALLOWED: comp_of ef = comp_of f,
       step (State s f sp (Lbuiltin ef args res :: b) rs m)
          t (State s f sp b rs' m')
   | exec_Llabel:
@@ -268,7 +266,7 @@ Inductive step: state -> trace -> state -> Prop :=
   | exec_function_external:
       forall s ef args res rs1 rs2 m t m',
       args = map (fun p => Locmap.getpair p rs1) (loc_arguments (ef_sig ef)) ->
-      external_call ef ge (call_comp s) args m t res m' ->
+      external_call ef ge args m t res m' ->
       rs2 = Locmap.setpair (loc_result (ef_sig ef)) res (undef_caller_save_regs rs1) ->
       step (Callstate s (External ef) rs1 m)
          t (Returnstate s rs2 m')

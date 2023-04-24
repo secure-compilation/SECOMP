@@ -1791,14 +1791,14 @@ Definition link_fundef {F: Type} {CF: has_comp F} (fd1 fd2: fundef F) :=
       else None
   | Internal f, External ef targs tres cc =>
       match ef with
-      | EF_external id cp sg =>
+      | EF_external cp id sg =>
         if eq_compartment cp (comp_of f) then Some (Internal f)
         else None
       | _ => None
       end
   | External ef targs tres cc, Internal f =>
       match ef with
-      | EF_external id cp sg =>
+      | EF_external cp id sg =>
         if eq_compartment cp (comp_of f) then Some (Internal f)
         else None
       | _ => None
@@ -1809,7 +1809,7 @@ Inductive linkorder_fundef {F: Type} {CF: has_comp F}: fundef F -> fundef F -> P
   | linkorder_fundef_refl: forall fd,
       linkorder_fundef fd fd
   | linkorder_fundef_ext_int: forall f id sg targs tres cc,
-      linkorder_fundef (External (EF_external id (comp_of f) sg) targs tres cc) (Internal f).
+      linkorder_fundef (External (EF_external (comp_of f) id sg) targs tres cc) (Internal f).
 
 Global Program Instance Linker_fundef (F: Type) {CF: has_comp F}: Linker (fundef F) := {
   link := link_fundef;

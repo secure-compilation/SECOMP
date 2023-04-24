@@ -1303,7 +1303,7 @@ Inductive step: state -> trace -> state -> Prop :=
       exec_instr f i rs m cp = Next rs' m' ->
       sig_call i = Some sig ->
       forall (NEXTPC: rs' PC = Vptr b' ofs'),
-      forall (ALLOWED: Genv.allowed_call ge (comp_of f) (Vptr b' ofs')),
+      forall (ALLOWED: Genv.allowed_call ge (comp_of f) (Vptr b' Ptrofs.zero)),
       forall (CURCOMP: Genv.find_comp_ignore_offset ge (Vptr b Ptrofs.zero) = cp),
       (* Is a call, we update the stack *)
       forall (STUPD: update_stack_call st sig cp rs' = Some st'),
@@ -1356,18 +1356,19 @@ Inductive step: state -> trace -> state -> Prop :=
       Genv.find_funct_ptr ge b = Some (Internal f) ->
       find_instr (Ptrofs.unsigned ofs) f.(fn_code) = Some (Pbuiltin ef args res) ->
       eval_builtin_args ge rs (rs SP) m args vargs ->
-      external_call ef ge (comp_of f) vargs m t vres m' ->
+      external_call ef ge vargs m t vres m' ->
+      forall (ALLOWED: comp_of ef = comp_of f),
       rs' = nextinstr
               (set_res res vres
                 (undef_regs (map preg_of (destroyed_by_builtin ef))
                    (rs #X1 <- Vundef #X31 <- Vundef))) ->
       step (State st rs m) t (State st rs' m')
   | exec_step_external:
-      forall b ef args res rs m t rs' m' cp st,
+      forall b ef args res rs m t rs' m' st,
       rs PC = Vptr b Ptrofs.zero ->
       Genv.find_funct_ptr ge b = Some (External ef) ->
-      forall COMP: Genv.find_comp_ignore_offset ge (rs RA) = cp, (* compartment that is calling the external function *)
-      external_call ef ge cp args m t res m' ->
+      (* forall COMP: Genv.find_comp_ignore_offset ge (rs RA) = cp, (* compartment that is calling the external function *) *)
+      external_call ef ge args m t res m' ->
       extcall_arguments rs m (ef_sig ef) args ->
       rs' = (set_pair (loc_external_result (ef_sig ef)) res (undef_caller_save_regs rs))#PC <- (rs RA) ->
       (* These steps behave like returns. So we do the same as in the [exec_step_internal_return] case. *)
@@ -1405,6 +1406,14 @@ Definition comp_of_main (p: program) :=
 
 Definition semantics (p: program) :=
   Semantics (step (comp_of_main p)) (initial_state p) (final_state p) (Genv.globalenv p).
+
+(** [has_comp] instance for [Asm] states *)
+#[export] Instance has_comp_state (p: program): has_comp state :=
+  fun s => match s with
+        | State _ rs _
+        | ReturnState _ rs _ =>
+            Genv.find_comp_ignore_offset (Genv.globalenv p) (rs PC)
+        end.
 
 (** Determinacy of the [Asm] semantics. *)
 
@@ -1572,32 +1581,32 @@ Section ExecSem.
   Local Open Scope reducts_monad_scope.
 
   Variable do_external_function:
-    string -> signature -> Senv.t -> world -> compartment -> list val -> mem -> option (world * trace * val * mem).
+    string -> signature -> Senv.t -> world -> list val -> mem -> option (world * trace * val * mem).
 
   Hypothesis do_external_function_sound:
-    forall id sg ge cp vargs m t vres m' w w',
-      do_external_function id sg ge w cp vargs m = Some(w', t, vres, m') ->
-      external_functions_sem id sg ge cp vargs m t vres m' /\ possible_trace w t w'.
+    forall id sg ge vargs m t vres m' w w',
+      do_external_function id sg ge w vargs m = Some(w', t, vres, m') ->
+      external_functions_sem id sg ge vargs m t vres m' /\ possible_trace w t w'.
 
   Hypothesis do_external_function_complete:
-    forall id sg ge cp vargs m t vres m' w w',
-      external_functions_sem id sg ge cp vargs m t vres m' ->
+    forall id sg ge vargs m t vres m' w w',
+      external_functions_sem id sg ge vargs m t vres m' ->
       possible_trace w t w' ->
-      do_external_function id sg ge w cp vargs m = Some(w', t, vres, m').
+      do_external_function id sg ge w vargs m = Some(w', t, vres, m').
 
   Variable do_inline_assembly:
-    string -> signature -> Senv.t -> world -> compartment -> list val -> mem -> option (world * trace * val * mem).
+    compartment -> string -> signature -> Senv.t -> world -> list val -> mem -> option (world * trace * val * mem).
 
   Hypothesis do_inline_assembly_sound:
     forall txt sg ge cp vargs m t vres m' w w',
-      do_inline_assembly txt sg ge w cp vargs m = Some(w', t, vres, m') ->
-      inline_assembly_sem txt sg ge cp vargs m t vres m' /\ possible_trace w t w'.
+      do_inline_assembly cp txt sg ge w vargs m = Some(w', t, vres, m') ->
+      inline_assembly_sem cp txt sg ge vargs m t vres m' /\ possible_trace w t w'.
 
   Hypothesis do_inline_assembly_complete:
     forall txt sg ge cp vargs m t vres m' w w',
-      inline_assembly_sem txt sg ge cp vargs m t vres m' ->
+      inline_assembly_sem cp txt sg ge vargs m t vres m' ->
       possible_trace w t w' ->
-      do_inline_assembly txt sg ge w cp vargs m = Some(w', t, vres, m').
+      do_inline_assembly cp txt sg ge w vargs m = Some(w', t, vres, m').
 
   Definition take_step (p: program) (ge: genv) (w: world) (s: state): option (trace * state) :=
     let comp_of_main := comp_of_main p in
@@ -1638,7 +1647,7 @@ Section ExecSem.
             check (Ptrofs.eq ofs Ptrofs.zero);
             let cp := Genv.find_comp_ignore_offset ge (rs X1) in
             do vargs <- get_extcall_arguments rs m (ef_sig ef);
-            do res_external <- do_external _ _ ge do_external_function do_inline_assembly ef w cp vargs m;
+            do res_external <- do_external _ _ ge do_external_function do_inline_assembly ef w vargs m;
             let '(w', t, res, m') := res_external in
             let rs' := (set_pair (loc_external_result (ef_sig ef)) res (undef_caller_save_regs rs)) # PC <- (rs X1) in
             check (Pos.eqb (Genv.find_comp_ignore_offset ge (rs PC)) (callee_comp comp_of_main st));

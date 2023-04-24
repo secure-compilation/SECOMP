@@ -1049,7 +1049,7 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
                    (State stk' f' (Vptr sp' Ptrofs.zero) (spc ctx pc) rs' m')
   | match_call_states: forall stk fd args m stk' fd' args' m' cunit F
         (MS: match_stacks F m m' stk stk' (Mem.nextblock m'))
-        (UPD: uptodate_caller (comp_of fd) (call_comp stk) (call_comp stk'))
+        (* (UPD: uptodate_caller (comp_of fd) (call_comp stk) (call_comp stk')) *)
         (LINK: linkorder cunit prog)
         (FD: transf_fundef (funenv_program cunit) fd = OK fd')
         (VINJ: Val.inject_list F args args')
@@ -1219,7 +1219,7 @@ Proof.
   eapply call_trace_translated; eauto.
   econstructor; eauto.
   rewrite find_comp_translated; eapply match_stacks_cons; eauto.
-  { red; eauto. }
+  (* { red; eauto. } *)
   eapply agree_val_regs; eauto.
 + (* inlined *)
   assert (EQ: fd = Internal f0) by (eapply find_inlined_function; eauto).
@@ -1262,9 +1262,9 @@ Proof.
   eapply sig_function_translated; eauto.
     now rewrite <- (comp_transl_partial _ B), COMP.
     (* rewrite <- SIG. symmetry. apply SIGRES; auto. *)
-  congruence.
-  eapply find_function_ptr_translated; eauto.
-  rewrite <- SAMECOMP. eapply allowed_call_translated; eauto.
+  (* congruence. *)
+  (* eapply find_function_ptr_translated; eauto. *)
+  (* rewrite <- SAMECOMP. eapply allowed_call_translated; eauto. *)
   econstructor; eauto.
   eapply match_stacks_bound with (bound := sp').
   eapply match_stacks_invariant; eauto.
@@ -1275,7 +1275,7 @@ Proof.
     eapply Mem.free_can_access_block_inj_2; eauto.
     eapply Mem.free_can_access_block_inj_1; eauto. }
   erewrite Mem.nextblock_free; eauto. red in VB; extlia.
-  congruence.
+  (* congruence. *)
   eapply agree_val_regs; eauto.
   eapply Mem.free_right_inject; eauto. eapply Mem.free_left_inject; eauto.
   (* show that no valid location points into the stack block being freed *)
@@ -1283,43 +1283,32 @@ Proof.
   eelim Q; eauto. replace (ofs + delta - delta) with ofs by lia.
   apply Mem.perm_max with k. apply Mem.perm_implies with p; auto with mem.
 + (* turned into a call *)
+  exploit (find_function_find_function_ptr ge); eauto. intros (vf & Hvf).
+  exploit find_function_ptr_translated; eauto. intros Hvf'.
+  assert (FINDCOMP: Genv.find_comp tge vf = comp_of f).
+  { rewrite <- find_comp_translated.
+    unfold Genv.find_comp.
+    unfold find_function in *.
+    unfold find_function_ptr in *.
+    destruct ros; simpl in *.
+    - inv Hvf. rewrite H0. eauto.
+    - destruct (Genv.find_symbol ge i); try discriminate.
+      inv Hvf. rewrite H0. eauto. }
   left; econstructor; split.
   eapply plus_one. eapply exec_Icall; eauto.
+
   eapply sig_function_translated; eauto.
-  eapply find_function_ptr_translated; eauto.
-  rewrite <- SAMECOMP. eapply allowed_call_translated; eauto.
+  rewrite <- SAMECOMP. left; rewrite FINDCOMP; reflexivity.
   (* This is a tailcall, so the type of call is InternalCall *)
-  assert (Genv.type_of_call tge (comp_of f') (Genv.find_comp tge vf) = Genv.InternalCall).
-  { erewrite <- find_comp_translated, <- type_of_call_translated.
-    clear -H0 FUNPTR COMP SAMECOMP TRANSF.
-    unfold find_function in H0. unfold find_function_ptr in FUNPTR.
-    unfold Genv.type_of_call. unfold Genv.find_comp.
-    destruct ros; simpl in *.
-    - inv FUNPTR.
-      destruct (rs # r); try discriminate. simpl in *.
-      destruct (Ptrofs.eq_dec i Ptrofs.zero); try discriminate.
-      rewrite H0. rewrite COMP, SAMECOMP, Pos.eqb_refl. reflexivity.
-    - destruct (Genv.find_symbol ge i); try discriminate.
-      inv FUNPTR.
-      rewrite H0. rewrite COMP, SAMECOMP, Pos.eqb_refl. reflexivity.
-  }
-  rewrite H1. congruence.
+  rewrite <- SAMECOMP, FINDCOMP. unfold Genv.type_of_call. now rewrite Pos.eqb_refl.
   econstructor; eauto.
-  assert (R: comp_of f' = Genv.find_comp ge vf).
-  { rewrite <-SAMECOMP, <- COMP. clear -H0 FUNPTR.
-    unfold find_function in H0; rewrite FUNPTR in H0.
-    unfold Genv.find_comp. now rewrite H0. }
-  rewrite R, <- find_comp_translated. eapply Genv.type_of_call_same_cp.
+  rewrite <- SAMECOMP, FINDCOMP. unfold Genv.type_of_call. now rewrite Pos.eqb_refl.
   econstructor; eauto.
   eapply match_stacks_untailcall; eauto.
   eapply match_stacks_inside_invariant; eauto.
     intros. eapply Mem.perm_free_3; eauto.
   easy.
-  { rewrite <- find_comp_translated.
-    clear -FUNPTR H0 COMP SAMECOMP.
-    unfold Genv.find_comp, find_function in *.
-    rewrite FUNPTR in H0; rewrite H0; congruence. }
-  { unfold uptodate_caller. rewrite COMP, ALLOWED. easy. }
+  congruence.
   eapply agree_val_regs; eauto.
   eapply Mem.free_left_inject; eauto.
 + (* inlined *)
@@ -1346,8 +1335,7 @@ Proof.
     eapply match_stacks_inside_globals; eauto.
   intros [F1 [v1 [m1' [A [B [C [D [E [J K]]]]]]]]].
   left; econstructor; split.
-  eapply plus_one. eapply exec_Ibuiltin; eauto.
-    rewrite <- SAMECOMP.
+  eapply plus_one. eapply exec_Ibuiltin; eauto. congruence.
     eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   econstructor.
     eapply match_stacks_inside_set_res.
@@ -1519,9 +1507,6 @@ Proof.
   left; econstructor; split.
   eapply plus_one. eapply exec_function_external; eauto.
     eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  { destruct (needs_calling_comp (comp_of ef)) eqn:ALLOWED.
-    - rewrite <- (UPD ALLOWED). eauto.
-    - eapply external_call_caller_independent; eauto. }
   econstructor.
     eapply match_stacks_bound with (Mem.nextblock m'0).
     eapply match_stacks_extcall with (F1 := F) (F2 := F1) (m1 := m) (m1' := m'0); eauto.
@@ -1607,7 +1592,6 @@ Proof.
     eapply Genv.find_funct_ptr_not_fresh; eauto.
     eapply Genv.find_var_info_not_fresh; eauto.
     apply Ple_refl.
-    unfold uptodate_caller; eauto.
   eapply Genv.initmem_inject; eauto.
 Qed.
 

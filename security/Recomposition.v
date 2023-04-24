@@ -1,1521 +1,1706 @@
-Require Import Coqlib Errors.
+Require Import Coqlib Maps Errors Integers.
 Require Import Integers Floats AST Linking.
-Require Import Values Memory Events Globalenvs Smallstep.
+Require Import AST Globalenvs Linking Smallstep Events Behaviors Memory Values.
 Require Import Op Locations Mach Conventions Asm.
-
-(* Require Import Coqlib. *)
-Require Import Maps.
-(* Require Import AST. *)
-(* Require Import Integers. *)
-(* Require Import Floats. *)
-(* Require Import Values. *)
-(* Require Import Memory. *)
-(* Require Import Events. *)
-(* Require Import Globalenvs. *)
-(* Require Import Smallstep. *)
-(* Require Import Locations. *)
-(* Require Stacklayout. *)
-(* Require Import Conventions. *)
-
-Require Import Behaviors.
-Require Import Split.
 Require Import Complements.
 
-(* Smallstep *)
+Require Import Split.
 
-Lemma star_app_inv L :
-  single_events L ->
-  forall s1 t1 t2 s2,
-    Star L s1 (t1 ** t2) s2 ->
-  exists s, Star L s1 t1 s /\ Star L s t2 s2.
-Proof.
-  intros Hsingle s1 t1 t2 s2 Hstar.
-  remember (t1 ** t2) as t eqn:E.
-  revert t1 t2 E.
-  induction Hstar as [s|s1 t1' s1' t2' s t' Hstep Hstar IH e].
-  - intros t1 t2 E.
-    assert (E' : t1 = E0 /\ t2 = E0).
-    { destruct t1 as [|??]; try discriminate.
-      split; eauto. }
-    destruct E'; subst t1 t2; clear E.
-    exists s; split; apply star_refl.
-  - intros t1 t2 E.
-    specialize (Hsingle _ _ _ Hstep).
-    destruct t1' as [|ev [|??]]; simpl in Hsingle; try lia; clear Hsingle.
-    + simpl in e. subst t2'.
-      destruct (IH _ _ E) as [s' [H1 H2]].
-      exists s'.
-      split; trivial.
-      now eapply star_step; eauto.
-    + simpl in e.
-      destruct t1 as [|ev' t1'].
-      * simpl in E. subst t' t2.
-        exists s1.
-        split; try apply star_refl.
-        eapply star_step; eauto.
-      * simpl in E. subst t'.
-        inv E.
-        destruct (IH _ _ eq_refl) as [s' [Hstar1 Hstar2]].
-        exists s'.
-        split; trivial.
-        eapply star_step; eauto.
+#[local] Instance has_side_stackframe: has_side stackframe :=
+  { in_side s := fun '(Stackframe _ cp _ _ _) δ => s cp = δ  }.
+
+#[local] Instance has_side_stack: has_side stack :=
+  { in_side s := fun st δ => List.Forall (fun f => s |= f ∈ δ) st }.
+
+Print Instances has_side.
+
+#[local] Instance has_side_regset: has_side regset :=
+  { in_side '(s, ge) := fun (rs: regset) δ => s (@Genv.find_comp_ignore_offset fundef unit _ ge (rs PC)) = δ }.
+
+
+Variant match_fundef (s: split) (δ: side): unit -> fundef -> fundef -> Prop :=
+  | match_function_opp: forall cp sig code code',
+      s |= cp ∈ opposite δ ->
+      match_fundef s δ tt (Internal {| fn_comp := cp; fn_sig := sig; fn_code := code |})
+        (Internal {| fn_comp := cp; fn_sig := sig; fn_code := code' |})
+  | match_external_opp: forall ef,
+      s |= ef ∈ opposite δ ->
+      match_fundef s δ tt (External ef) (External ef)
+  | match_δ : forall fd,
+      s |= fd ∈ δ ->
+      match_fundef s δ tt fd fd
+.
+
+#[local] Instance has_comp_match_fundef (s: split) (δ: side): has_comp_match (match_fundef s δ).
+intros ? x y H.
+inv H; auto.
 Qed.
 
-(* Memory *)
+Definition match_varinfo (_ _: unit) := True.
 
-(* Old style: remove components from "context"
-   New style: remove components from given side *)
-Definition to_partial_memory (m : mem) (lrsplit : split) (lr : side) : mem :=
-  m. (* TODO *)
+Definition match_prog (s: split) (δ: side) := match_program_gen (match_fundef s δ) match_varinfo.
 
-(* CompCertExtensions *)
+Section Invariants.
+  Variable s: split.
 
-Section CLOSURES.
+  Variant stackframe_rel (j: meminj): stackframe -> stackframe -> Prop :=
+    | stackframe_related: forall b b' cp sg sp sp' ofs ofs',
+        Val.inject j (Vptr b ofs) (Vptr b' ofs') ->
+        Val.inject j sp sp' ->
+        stackframe_rel j (Stackframe b cp sg sp ofs) (Stackframe b' cp sg sp' ofs')
+  .
 
-Variable genv: Type.
-Variable state: Type.
+  (* Inductive stack_rel (j: meminj) (δ: side): stack -> stack -> Prop := *)
+  (* | stack_rel_empty: forall st1' st2', *)
+  (*     s |= st1' ∈ opposite δ -> *)
+  (*     s |= st2' ∈ opposite δ -> *)
+  (*     stack_rel j δ st1' st2' *)
+  (* | stack_rel_frame_in_δ: forall st1 st2 st1' st2' f1 f2, *)
+  (*     s |= st1' ∈ opposite δ -> *)
+  (*     s |= st2' ∈ opposite δ -> *)
+  (*     s |= f1 ∈ δ -> *)
+  (*     s |= f2 ∈ δ -> *)
+  (*     stack_rel j δ st1 st2 -> *)
+  (*     stackframe_rel j f1 f2 -> *)
+  (*     stack_rel j δ (st1' ++ f1 :: st1) (st2' ++ f2 :: st2) *)
+  (* . *)
 
-Variable step: genv -> state -> trace -> state -> Prop.
+  (* Lemma stack_rel_opposite_cons: *)
+  (*   forall j δ f2 st1 st2, *)
+  (*     s |= f2 ∈ opposite δ -> *)
+  (*     stack_rel j δ st1 st2 -> *)
+  (*     stack_rel j δ st1 (f2 :: st2). *)
+  (* Proof. *)
+  (*   intros. *)
+  (*   induction H0. *)
+  (*   - econstructor; simpl; eauto. *)
+  (*   - eapply stack_rel_frame_in_δ with (st1' := st1') (st2' := f2 :: st2'); simpl; eauto. *)
+  (* Qed. *)
 
-Inductive starR (ge: genv): state -> trace -> state -> Prop :=
-  | starR_refl: forall s,
-      starR ge s E0 s
-  | starR_step: forall s1 t1 s2 t2 s3 t,
-      starR ge s1 t1 s2 -> step ge s2 t2 s3 -> t = t1 ** t2 ->
-      starR ge s1 t s3.
+  Inductive stack_rel (j__left j__right: meminj): stack -> stack -> stack -> Prop :=
+  | stack_rel_empty:
+    stack_rel j__left j__right nil nil nil
+  | stack_rel_cons_left: forall st1 st2 st2' st3 f1 f3,
+      stack_rel j__left j__right st1 st2 st3 ->
+      s |= f1 ∈ Left ->
+      s |= st2' ∈ Left ->
+      s |= f3 ∈ Left ->
+      stackframe_rel j__left f1 f3 ->
+      stack_rel j__left j__right (f1 :: st1) (st2' ++ st2) (f3 :: st3)
+  | stack_rel_cons_right: forall st1 st1' st2 st3 f2 f3,
+      stack_rel j__left j__right st1 st2 st3 ->
+      s |= st1' ∈ Right ->
+      s |= f2 ∈ Right ->
+      s |= f3 ∈ Right ->
+      stackframe_rel j__right f2 f3 ->
+      stack_rel j__left j__right (st1' ++ st1) (f2 :: st2) (f3 :: st3)
+  .
 
-Lemma starR_one:
-  forall ge s1 t s2, step ge s1 t s2 -> starR ge s1 t s2.
-Proof.
-  intros. eapply starR_step; eauto. apply starR_refl. traceEq.
-Qed.
+  Definition regset_rel (j: meminj) (rs rs': regset): Prop :=
+    forall r, Val.inject j (rs r) (rs' r).
 
-Lemma starR_trans:
-  forall ge s1 t1 s2, starR ge s1 t1 s2 ->
-  forall t2 s3 t, starR ge s2 t2 s3 -> t = t1 ** t2 -> starR ge s1 t s3.
-Proof.
-  intros ge s1 t1 s2 HstarR1 t2 s3 t HstarR2 Ht.
-  generalize dependent t.
-  generalize dependent t1.
-  generalize dependent s1.
-  induction HstarR2 as [| s1 t1 s2 t2 s3 t HstarR1 IHHstarR2 Hstep2 Ht].
-  - intros s1 t1 HstarR1 t Ht.
-    rewrite E0_right in Ht.
-    subst.
+
+  Record mem_rel (ge1 ge2: genv) (j: meminj) (δ: side) (m1 m2: mem) :=
+    { (* Uncomment as needed *)
+      same_dom: Mem.same_domain s j δ m1;
+
+      partial_mem_inject: Mem.inject j m1 m2;
+
+      delta_zero: Mem.delta_zero j;
+
+      (* symb_inj: symbols_inject j ge1 ge2; *)
+      pres_globals: meminj_preserves_globals ge1 j;
+      ple_nextblock1: Ple (Senv.nextblock ge1) (Mem.nextblock m1);
+      ple_nextblock2: Ple (Senv.nextblock ge2) (Mem.nextblock m2);
+
+      (* Functions *)
+      funct_preserved1: forall b fd, Genv.find_funct_ptr ge1 b = Some fd -> j b = Some (b, 0);
+      funct_preserved2: forall b1 b2 fd, Genv.find_funct_ptr ge2 b2 = Some fd -> j b1 = Some (b2, 0) -> b1 = b2;
+      (* Varinfo *)
+      var_info_valid: forall b gv, Genv.find_var_info ge2 b = Some gv -> Mem.valid_block m2 b;
+
+      (* genv_preserved: Separation.globalenv_preserved ge1 j (Senv.nextblock ge1); *)
+
+      same_high_half: forall id ofs,
+        Val.inject j (high_half ge1 id ofs) (high_half ge2 id ofs)
+    }.
+
+  Inductive strong_equivalence (ge ge': genv) (j: meminj) (δ: side): state -> state -> Prop :=
+  | strong_equivalence_State: forall st st' rs rs' m m',
+      (s, ge) |= rs ∈ δ ->
+      (* (s, ge') |= rs' ∈ δ -> *)
+      (* stack_rel j δ st st' -> *)
+      regset_rel j rs rs' ->
+      mem_rel ge ge' j δ m m' ->
+      strong_equivalence ge ge' j δ (State st rs m) (State st' rs' m')
+  | strong_equivalence_ReturnState: forall st st' rs rs' m m',
+      (s, ge) |= rs ∈ δ ->
+      (* (s, ge') |= rs' ∈ δ -> *)
+      (* stack_rel j δ st st' -> *)
+      regset_rel j rs rs' ->
+      mem_rel ge ge' j δ m m' ->
+      strong_equivalence ge ge' j δ (ReturnState st rs m) (ReturnState st' rs' m')
+  .
+
+  Inductive weak_equivalence (ge ge': genv) (j: meminj) (δ: side): state -> state -> Prop :=
+  | weak_equivalence_State: forall st st' rs rs' m m',
+      (s, ge) |= rs ∈ opposite δ ->
+      (* (s, ge') |= rs' ∈ opposite δ -> *)
+      (* stack_rel j δ st st' -> *)
+      mem_rel ge ge' j δ m m' ->
+      weak_equivalence ge ge' j δ (State st rs m) (State st' rs' m')
+  | weak_equivalence_ReturnState: forall st st' rs rs' m m',
+      (s, m) |= rs PC ∈ opposite δ ->
+      (* (s, m') |= rs' PC ∈ opposite δ -> *)
+      (* stack_rel j δ st st' -> *)
+      mem_rel ge ge' j δ m m' ->
+      weak_equivalence ge ge' j δ (ReturnState st rs m) (ReturnState st' rs' m')
+  .
+
+End Invariants.
+
+
+Section Simulation.
+  Context (c1 c2 p1 p2: Asm.program).
+  Variable s: split.
+
+  Context (W1 W2 W3: Asm.program).
+  Hypothesis c1_p1: link p1 c1 = Some W1.
+  Hypothesis c2_p2: link p2 c2 = Some W2.
+  Hypothesis c2_p1: link p1 c2 = Some W3.
+
+  Hypothesis match_W1_W3: match_prog s Left tt W1 W3.
+  Hypothesis match_W2_W3: match_prog s Right tt W2 W3.
+
+  (* Context (ge1 ge2: genv). *)
+  Notation ge1 := (Genv.globalenv W1).
+  Notation ge2 := (Genv.globalenv W2).
+  Notation ge3 := (Genv.globalenv W3).
+
+  Hypothesis same_low_half1: low_half ge1 = low_half ge3.
+  Hypothesis same_low_half2: low_half ge2 = low_half ge3.
+  Hypothesis same_high_half1: high_half ge1 = high_half ge3.
+  Hypothesis same_high_half2: high_half ge2 = high_half ge3.
+
+  Let single_L1 := sd_traces (semantics_determinate W1).
+  Let single_L2 := sd_traces (semantics_determinate W2).
+  Let single_L3 := sd_traces (semantics_determinate W3).
+
+  Lemma public_symbol_eq21: forall (id: ident),
+      Senv.public_symbol (symbolenv (semantics W2)) id = Senv.public_symbol (symbolenv (semantics W1)) id.
+  Proof.
+    apply Genv.senv_match in match_W1_W3 as [? [? ?]], match_W2_W3 as [? [? ?]]. simpl in *; now intuition.
+  Qed.
+
+  Lemma public_symbol_eq32: forall (id: ident),
+      Senv.public_symbol (symbolenv (semantics W3)) id = Senv.public_symbol (symbolenv (semantics W2)) id.
+  Proof.
+    apply Genv.senv_match in match_W1_W3 as [? [? ?]], match_W2_W3 as [? [? ?]]. simpl in *; now intuition.
+  Qed.
+
+  Local Arguments comp_of /.
+  Local Arguments Genv.find_comp _ /.
+
+  Ltac RecompSimpl :=
+    (* unfold ge1 in *; *)
+    (* unfold ge2 in *; *)
+    (* unfold ge3 in *; *)
+    repeat (simpl in *;
+            multimatch goal with
+            | H: ?rs PC = _, H': context [ ?rs PC ] |- _ => rewrite H in H'; simpl in *; try congruence
+            | H: Genv.find_funct_ptr ?ge ?b = _, H': context [ Genv.find_funct_ptr ?ge ?b ] |- _ =>
+                rewrite H in H'; simpl in *; try congruence
+            | _: context [ Ptrofs.eq_dec Ptrofs.zero Ptrofs.zero ] |- _ => destruct Ptrofs.eq_dec; [| contradiction]
+            | H: regset_rel _ _ _ |- context [PC] =>
+                let H' := fresh "H" in
+                assert (H' := H);
+                specialize (H' PC); inv H'; try congruence
+            | H: Vptr _ _ = Vptr _ _ |- _ => inv H
+            (* | H: _ = ?rs PC, H': context [ ?rs PC ] |- _ => rewrite H in H'; simpl in *; try congruence *)
+            end).
+
+  Ltac exploit_globalenv_preserved :=
+    repeat match goal with
+      | H: Separation.globalenv_preserved _ _ _ |- _ => destruct H as [? ? ? ? ?]
+      | H: forall b, Plt b ?bound -> ?j b = Some (b, 0),
+        H': ?j ?b = Some (_, _),
+        H'': Genv.find_funct_ptr ?ge ?b = Some _,
+        FUNCTIONS : forall b fd, Genv.find_funct_ptr ?ge b = Some fd -> Plt b _ |- _ =>
+          rewrite H in H'; [inv H' | now eapply FUNCTIONS; eauto]
+      end.
+
+  (** Useful simplification tactic *)
+  (** Taken from Asmgenproof1.v *)
+
+  Ltac Simplif :=
+    ((rewrite Asmgenproof0.nextinstr_inv by eauto with asmgen)
+     || (rewrite Asmgenproof0.nextinstr_inv1 by eauto with asmgen)
+     || (rewrite Pregmap.gss)
+     || (rewrite Asmgenproof0.nextinstr_pc)
+     || (rewrite Pregmap.gso by eauto with asmgen)); auto with asmgen.
+
+  Ltac Simpl := repeat Simplif.
+
+  (* Some tactics *)
+  Ltac simpl_nextinstr_PC r :=
+    destruct (Pregmap.elt_eq r PC);
+    [subst r; Simpl; eapply Val.offset_ptr_inject; eauto|
+      Simpl].
+
+
+  Lemma ptrofs_of_int_zero:
+    Ptrofs.of_int Int.zero = Ptrofs.zero.
+  Proof.
+    Local Transparent Ptrofs.repr Int.repr.
+    simpl.
+    Local Opaque Ptrofs.repr Int.repr.
+    reflexivity.
+  Qed.
+
+  Lemma lt_xx_false: forall x,
+    Int.lt x x = false.
+  Proof.
+    intros. unfold Int.lt. apply zlt_false. lia.
+  Qed.
+
+  Lemma ltu_xx_false: forall x,
+    Int.ltu x x = false.
+  Proof.
+    intros. unfold Int.ltu. apply zlt_false. lia.
+  Qed.
+
+  Lemma lt64_xx_false: forall x,
+    Int64.lt x x = false.
+  Proof.
+    intros. unfold Int64.lt. apply zlt_false. lia.
+  Qed.
+
+  Lemma ltu64_xx_false: forall x,
+    Int64.ltu x x = false.
+  Proof.
+    intros. unfold Int64.ltu. apply zlt_false. lia.
+  Qed.
+
+  (* Comparisons *)
+
+  (* TODO: rename variables *)
+  Lemma cmpu_bool_preserved: forall ge ge' j δ m1' m3 v1 v2 v1' v2' op b,
+      mem_rel s ge ge' j δ m1' m3 ->
+      Val.inject j v1 v1' ->
+      Val.inject j v2 v2' ->
+      Val.cmpu_bool (Mem.valid_pointer m1') op v1 v2 = Some b ->
+      Val.cmpu_bool (Mem.valid_pointer m3) op v1' v2' = Some b.
+  Proof.
+    intros until b. intros m1_m3 inj1 inj2.
+    inv inj1; simpl; inv inj2; simpl; destruct Archi.ptr64; simpl; auto; try congruence.
+    - destruct Int.eq; simpl; try congruence. destruct Mem.valid_pointer eqn:valid; simpl; try congruence.
+      eapply Mem.valid_pointer_inject_val in valid; eauto using partial_mem_inject; rewrite valid; simpl; auto.
+      clear valid. destruct Mem.valid_pointer eqn:valid'; simpl; try congruence.
+      assert (delta = 0) by (eapply delta_zero; eauto); subst.
+      eapply Mem.valid_pointer_inject in valid'; eauto using partial_mem_inject.
+      rewrite Ptrofs.add_zero in *. rewrite Z.add_0_r in valid'. rewrite valid'.
+      now rewrite orb_true_r.
+    - destruct Int.eq; simpl; try congruence. destruct Mem.valid_pointer eqn:valid; simpl; try congruence.
+      eapply Mem.valid_pointer_inject_val in valid; eauto using partial_mem_inject; rewrite valid; simpl; auto.
+      clear valid. destruct Mem.valid_pointer eqn:valid'; simpl; try congruence.
+      assert (delta = 0) by (eapply delta_zero; eauto); subst.
+      eapply Mem.valid_pointer_inject in valid'; eauto using partial_mem_inject.
+      rewrite Ptrofs.add_zero in *. rewrite Z.add_0_r in valid'. rewrite valid'.
+      now rewrite orb_true_r.
+    - destruct eq_block; subst; simpl in *; try congruence.
+      + assert (b3 = b2) by congruence; subst; simpl.
+        assert (delta = delta0) by congruence; subst; simpl.
+        destruct eq_block; try congruence.
+        destruct Mem.valid_pointer eqn:valid; simpl; try congruence.
+        eapply Mem.valid_pointer_inject_val in valid; eauto using partial_mem_inject; rewrite valid; simpl; auto.
+        clear valid.
+        destruct Mem.valid_pointer eqn:valid'; simpl; try congruence.
+        assert (delta0 = 0) by (eapply delta_zero; eauto); subst.
+        eapply Mem.valid_pointer_inject in valid'; eauto using partial_mem_inject.
+        rewrite Ptrofs.add_zero in *. rewrite Z.add_0_r in valid'. rewrite valid'. rewrite Ptrofs.add_zero; auto.
+        clear valid'.
+        destruct Mem.valid_pointer eqn:valid''; simpl; try congruence.
+        assert (delta0 = 0) by (eapply delta_zero; eauto); subst.
+        eapply Mem.valid_pointer_inject in valid''; eauto using partial_mem_inject.
+        rewrite Ptrofs.add_zero in *. rewrite Z.add_0_r in valid''. rewrite valid''. rewrite Ptrofs.add_zero; auto.
+        now rewrite orb_true_r.
+        clear valid.
+        destruct Mem.valid_pointer eqn:valid'; simpl; try congruence.
+        assert (delta0 = 0) by (eapply delta_zero; eauto); subst.
+        eapply Mem.valid_pointer_inject in valid'; eauto using partial_mem_inject.
+        rewrite Ptrofs.add_zero in *. rewrite Z.add_0_r in valid'. rewrite valid'. rewrite Ptrofs.add_zero; auto.
+        rewrite orb_true_r. simpl.
+        clear valid'.
+        destruct Mem.valid_pointer eqn:valid''; simpl; try congruence.
+        eapply Mem.valid_pointer_inject in valid''; eauto using partial_mem_inject.
+        rewrite Z.add_0_r in valid''. rewrite valid''. now auto.
+        clear valid''.
+        destruct Mem.valid_pointer eqn:valid'''; simpl; try congruence.
+        eapply Mem.valid_pointer_inject in valid'''; eauto using partial_mem_inject.
+        rewrite Z.add_0_r in valid'''. rewrite valid'''.
+        now rewrite orb_true_r.
+      + destruct eq_block; subst; simpl in *.
+        * destruct Mem.valid_pointer eqn:valid; simpl; try congruence.
+          destruct (Mem.valid_pointer m1' b0) eqn:valid'; simpl; try congruence.
+          assert (delta = 0) by (eapply delta_zero; eauto); subst.
+          assert (delta0 = 0) by (eapply delta_zero; eauto); subst.
+          eapply Mem.mi_no_overlap with (f := j) in n; [| now eapply partial_mem_inject; eauto].
+          specialize (n H H0 (Mem.perm_cur_max _ _ _ _ ((proj1 (Mem.valid_pointer_nonempty_perm _ _ _)) valid))
+                        (Mem.perm_cur_max _ _ _ _ ((proj1 (Mem.valid_pointer_nonempty_perm _ _ _)) valid')));
+            rewrite !Z.add_0_r in n.
+          destruct n; [contradiction |].
+          eapply Mem.valid_pointer_inject_val in valid; eauto using partial_mem_inject; rewrite valid; simpl; auto.
+          eapply Mem.valid_pointer_inject_val in valid'; eauto using partial_mem_inject; rewrite valid'; simpl; auto.
+          destruct op; simpl; try congruence.
+          intros. inv H2. rewrite !Ptrofs.add_zero. unfold Ptrofs.eq. destruct zeq; auto; congruence.
+          intros. inv H2. rewrite !Ptrofs.add_zero. unfold Ptrofs.eq. destruct zeq; auto; congruence.
+        * destruct Mem.valid_pointer eqn:valid; simpl; try congruence.
+          eapply Mem.valid_pointer_inject_val in valid; eauto using partial_mem_inject; rewrite valid; simpl; auto.
+          clear valid.
+          destruct Mem.valid_pointer eqn:valid'; simpl; try congruence.
+          assert (delta = 0) by (eapply delta_zero; eauto); subst.
+          assert (delta0 = 0) by (eapply delta_zero; eauto); subst.
+          eapply Mem.valid_pointer_inject in valid'; eauto using partial_mem_inject.
+          rewrite Ptrofs.add_zero in *. rewrite Z.add_0_r in valid'. rewrite valid'. auto.
+  Qed.
+
+
+  Lemma cmpu_inject:
+    forall ge ge' j δ op m1 m3 v1 v1' v2 v2',
+      mem_rel s ge ge' j δ m1 m3 ->
+      Val.inject j v1 v1' ->
+      Val.inject j v2 v2' ->
+      Val.inject j (Val.cmpu (Mem.valid_pointer m1) op v1 v2)
+        (Val.cmpu (Mem.valid_pointer m3) op v1' v2').
+  Proof.
+    intros ge ge' j δ op m1 m3 v1 v1' v2 v2' m1_m3 v1_v1' v2_v2'.
+    unfold Val.cmpu.
+    destruct (Val.cmpu_bool) eqn:eq_cmpu.
+    - eapply cmpu_bool_preserved in eq_cmpu; eauto. rewrite eq_cmpu; now eapply Cminorgenproof.val_inject_val_of_optbool.
+    - auto.
+  Qed.
+
+  (* TODO: this is the same proof as [cmpu_bool_preserved] above, but with [Int64] substituted for [Int] *)
+  Lemma cmplu_bool_preserved: forall ge ge' j δ m1' m3 v1 v2 v1' v2' op b,
+      mem_rel s ge ge' j δ m1' m3 ->
+      Val.inject j v1 v1' ->
+      Val.inject j v2 v2' ->
+      Val.cmplu_bool (Mem.valid_pointer m1') op v1 v2 = Some b ->
+      Val.cmplu_bool (Mem.valid_pointer m3) op v1' v2' = Some b.
+  Proof.
+    intros until b. intros m1_m3 inj1 inj2.
+    inv inj1; simpl; inv inj2; simpl; destruct Archi.ptr64; simpl; auto; try congruence.
+    - destruct Int64.eq; simpl; try congruence. destruct Mem.valid_pointer eqn:valid; simpl; try congruence.
+      eapply Mem.valid_pointer_inject_val in valid; eauto using partial_mem_inject; rewrite valid; simpl; auto.
+      clear valid. destruct Mem.valid_pointer eqn:valid'; simpl; try congruence.
+      assert (delta = 0) by (eapply delta_zero; eauto); subst.
+      eapply Mem.valid_pointer_inject in valid'; eauto using partial_mem_inject.
+      rewrite Ptrofs.add_zero in *. rewrite Z.add_0_r in valid'. rewrite valid'.
+      now rewrite orb_true_r.
+    - destruct Int64.eq; simpl; try congruence. destruct Mem.valid_pointer eqn:valid; simpl; try congruence.
+      eapply Mem.valid_pointer_inject_val in valid; eauto using partial_mem_inject; rewrite valid; simpl; auto.
+      clear valid. destruct Mem.valid_pointer eqn:valid'; simpl; try congruence.
+      assert (delta = 0) by (eapply delta_zero; eauto); subst.
+      eapply Mem.valid_pointer_inject in valid'; eauto using partial_mem_inject.
+      rewrite Ptrofs.add_zero in *. rewrite Z.add_0_r in valid'. rewrite valid'.
+      now rewrite orb_true_r.
+    - destruct eq_block; subst; simpl in *; try congruence.
+      + assert (b3 = b2) by congruence; subst; simpl.
+        assert (delta = delta0) by congruence; subst; simpl.
+        destruct eq_block; try congruence.
+        destruct Mem.valid_pointer eqn:valid; simpl; try congruence.
+        eapply Mem.valid_pointer_inject_val in valid; eauto using partial_mem_inject; rewrite valid; simpl; auto.
+        clear valid.
+        destruct Mem.valid_pointer eqn:valid'; simpl; try congruence.
+        assert (delta0 = 0) by (eapply delta_zero; eauto); subst.
+        eapply Mem.valid_pointer_inject in valid'; eauto using partial_mem_inject.
+        rewrite Ptrofs.add_zero in *. rewrite Z.add_0_r in valid'. rewrite valid'. rewrite Ptrofs.add_zero; auto.
+        clear valid'.
+        destruct Mem.valid_pointer eqn:valid''; simpl; try congruence.
+        assert (delta0 = 0) by (eapply delta_zero; eauto); subst.
+        eapply Mem.valid_pointer_inject in valid''; eauto using partial_mem_inject.
+        rewrite Ptrofs.add_zero in *. rewrite Z.add_0_r in valid''. rewrite valid''. rewrite Ptrofs.add_zero; auto.
+        now rewrite orb_true_r.
+        clear valid.
+        destruct Mem.valid_pointer eqn:valid'; simpl; try congruence.
+        assert (delta0 = 0) by (eapply delta_zero; eauto); subst.
+        eapply Mem.valid_pointer_inject in valid'; eauto using partial_mem_inject.
+        rewrite Ptrofs.add_zero in *. rewrite Z.add_0_r in valid'. rewrite valid'. rewrite Ptrofs.add_zero; auto.
+        rewrite orb_true_r. simpl.
+        clear valid'.
+        destruct Mem.valid_pointer eqn:valid''; simpl; try congruence.
+        eapply Mem.valid_pointer_inject in valid''; eauto using partial_mem_inject.
+        rewrite Z.add_0_r in valid''. rewrite valid''. now auto.
+        clear valid''.
+        destruct Mem.valid_pointer eqn:valid'''; simpl; try congruence.
+        eapply Mem.valid_pointer_inject in valid'''; eauto using partial_mem_inject.
+        rewrite Z.add_0_r in valid'''. rewrite valid'''.
+        now rewrite orb_true_r.
+      + destruct eq_block; subst; simpl in *.
+        * destruct Mem.valid_pointer eqn:valid; simpl; try congruence.
+          destruct (Mem.valid_pointer m1' b0) eqn:valid'; simpl; try congruence.
+          assert (delta = 0) by (eapply delta_zero; eauto); subst.
+          assert (delta0 = 0) by (eapply delta_zero; eauto); subst.
+          eapply Mem.mi_no_overlap with (f := j) in n; [| now eapply partial_mem_inject; eauto].
+          specialize (n H H0 (Mem.perm_cur_max _ _ _ _ ((proj1 (Mem.valid_pointer_nonempty_perm _ _ _)) valid))
+                        (Mem.perm_cur_max _ _ _ _ ((proj1 (Mem.valid_pointer_nonempty_perm _ _ _)) valid')));
+            rewrite !Z.add_0_r in n.
+          destruct n; [contradiction |].
+          eapply Mem.valid_pointer_inject_val in valid; eauto using partial_mem_inject; rewrite valid; simpl; auto.
+          eapply Mem.valid_pointer_inject_val in valid'; eauto using partial_mem_inject; rewrite valid'; simpl; auto.
+          destruct op; simpl; try congruence.
+          intros. inv H2. rewrite !Ptrofs.add_zero. unfold Ptrofs.eq. destruct zeq; auto; congruence.
+          intros. inv H2. rewrite !Ptrofs.add_zero. unfold Ptrofs.eq. destruct zeq; auto; congruence.
+        * destruct Mem.valid_pointer eqn:valid; simpl; try congruence.
+          eapply Mem.valid_pointer_inject_val in valid; eauto using partial_mem_inject; rewrite valid; simpl; auto.
+          clear valid.
+          destruct Mem.valid_pointer eqn:valid'; simpl; try congruence.
+          assert (delta = 0) by (eapply delta_zero; eauto); subst.
+          assert (delta0 = 0) by (eapply delta_zero; eauto); subst.
+          eapply Mem.valid_pointer_inject in valid'; eauto using partial_mem_inject.
+          rewrite Ptrofs.add_zero in *. rewrite Z.add_0_r in valid'. rewrite valid'. auto.
+  Qed.
+
+  Lemma cmplu_inject:
+    forall ge ge' j δ op m1 m3 v1 v1' v2 v2',
+      mem_rel s ge ge' j δ m1 m3 ->
+      Val.inject j v1 v1' ->
+      Val.inject j v2 v2' ->
+      Val.inject j (Val.maketotal (Val.cmplu (Mem.valid_pointer m1) op v1 v2))
+        (Val.maketotal (Val.cmplu (Mem.valid_pointer m3) op v1' v2')).
+  Proof.
+    intros ge ge' j δ op m1 m3 v1 v1' v2 v2' m1_m3 v1_v1' v2_v2'.
+    unfold Val.cmplu.
+    destruct (Val.cmplu_bool) eqn:eq_cmplu.
+    - eapply cmplu_bool_preserved in eq_cmplu; eauto. rewrite eq_cmplu.
+      simpl. now eapply Cop.val_inject_of_bool.
+    - auto.
+  Qed.
+
+  Hint Resolve cmpu_inject cmplu_inject : solve_inject.
+  Hint Resolve Cop.val_inject_of_bool: solve_inject.
+
+  Local Opaque Val.add Val.addl Val.sub Val.subl
+    Val.mul Val.mulhs Val.mulhu Val.mull Val.mullhs Val.mullhu
+    Val.and Val.or Val.xor Val.andl Val.orl Val.xorl
+    Val.shl Val.shru Val.shr Val.shll Val.shrlu Val.shrl
+    Val.cmp Val.cmpl Val.cmpf Val.cmpfs
+    Val.cmpu Val.cmplu
+    Val.divs Val.divu Val.divls Val.divlu
+    Val.mods Val.modu Val.modls Val.modlu
+    Val.negfs Val.negf Val.absfs Val.absf
+    Val.addfs Val.addf Val.subfs Val.subf Val.mulfs Val.mulf
+    Val.divfs Val.divf.
+
+  Locate symbols_inject.
+  Lemma alloc_preserves_rel_left1:
+    forall cp j__left j__right m1 m1' m2 m3 lo hi b1 rs1 rs3,
+      s |= cp ∈ Left ->
+      mem_rel s ge1 ge3 j__left Left m1 m3 ->
+      mem_rel s ge2 ge3 j__right Right m2 m3 ->
+      regset_rel j__left rs1 rs3 ->
+      Mem.alloc m1 cp lo hi = (m1', b1) ->
+      exists j__left' m3' b3, Mem.alloc m3 cp lo hi = (m3', b3) /\
+                     mem_rel s ge1 ge3 j__left' Left m1' m3' /\
+                     mem_rel s ge2 ge3 j__right Right m2 m3' /\
+                     regset_rel j__left' rs1 rs3 /\
+                     j__left' b1 = Some (b3, 0) /\
+                     inject_incr j__left j__left'.
+  Proof.
+    intros cp j__left j__right m1 m1' m2 m3 lo hi b1 rs1 rs3 side_cp m1_m3 m2_m3 rs1_rs3 alloc1.
+    exploit (Mem.alloc_parallel_inject j__left m1); eauto using partial_mem_inject, Z.le_refl.
+    intros [j' [m3' [b3 [? [? [? [? rewr]]]]]]].
+    exists j', m3', b3.
+    split; [| split; [| split; [| split; [| split]]]];
+      [assumption | | | intros ?; eauto using val_inject_incr | assumption | assumption].
+    { clear dependent j__right.
+      constructor.
+      - intros b. destruct (Pos.eq_dec b b1); subst.
+        + split; [| congruence].
+          intros _. apply Mem.owned_new_block in alloc1. simpl in alloc1. simpl; now rewrite alloc1.
+        + rewrite (rewr _ n).
+          eapply same_dom in m1_m3. specialize (m1_m3 b).
+          eapply Mem.alloc_block_compartment with (b' := b) in alloc1.
+          simpl. rewrite alloc1. rewrite peq_false; eauto.
+      - assumption.
+      - intros b b' delta.
+        destruct (Pos.eq_dec b b1); subst.
+        + congruence.
+        + rewrite (rewr _ n).
+          intros G. exploit delta_zero; eauto.
+      - exploit pres_globals; eauto.
+        intros (A & B & C).
+        split; [| split].
+        + intros. exploit A; eauto.
+        + intros. exploit C; eauto.
+        + intros.
+          destruct (Pos.eqb_spec b0 b1); subst.
+          * exploit B; eauto. intros ?.
+            assert (b3 = b2) by congruence; assert (delta = 0) by congruence; subst b3 delta.
+            unfold ge1 in *.
+            eapply Genv.find_var_info_match with (b := b2) in match_W1_W3 as [? [? ?]]; eauto.
+            replace (Genv.globalenv W3) with ge3 in H5 by reflexivity.
+            assert (V: Mem.valid_block m3 b2) by now eapply var_info_valid in m1_m3; eauto.
+            assert (nV: not (Mem.valid_block m3 b2)).
+            { unfold Mem.valid_block. apply Mem.alloc_result in H; subst b2.
+              now apply Plt_strict. }
+            contradiction.
+          * eapply C. eauto. rewrite <- rewr; eauto.
+      - erewrite Mem.nextblock_alloc; eauto using Ple_trans, Ple_succ, ple_nextblock1.
+      - erewrite Mem.nextblock_alloc; eauto using Ple_trans, Ple_succ, ple_nextblock2.
+      - intros. exploit funct_preserved1; eauto.
+      - intros. exploit funct_preserved2; eauto.
+        rewrite <- rewr; eauto.
+        intros ?. subst. assert (b3 = b2) by congruence; subst b3.
+        apply Genv.find_funct_ptr_iff in H3.
+        apply Genv.genv_defs_range in H3. apply Mem.alloc_result in H. subst.
+        apply ple_nextblock2 in m1_m3. simpl in *.
+        eapply Plt_strict. eapply Plt_Ple_trans; eauto.
+      - intros. exploit var_info_valid; eauto. eapply Mem.valid_block_alloc. eauto.
+      - intros id ofs.
+        exploit same_high_half; eauto. }
+    { clear dependent j__left.
+      destruct m2_m3.
+      constructor; eauto.
+      - eapply Mem.alloc_right_inject; eauto using partial_mem_inject.
+      - erewrite Mem.nextblock_alloc; eauto using Ple_trans, Ple_succ, ple_nextblock1.
+      - intros. eapply Mem.valid_block_alloc; eauto. }
+  Qed.
+
+  Lemma alloc_preserves_rel_left2:
+    forall cp j__left j__right m1 m1' m2 m3 lo hi b1 rs1 rs3,
+      s |= cp ∈ Right ->
+      mem_rel s ge1 ge3 j__left Left m1 m3 ->
+      mem_rel s ge2 ge3 j__right Right m2 m3 ->
+      regset_rel j__left rs1 rs3 ->
+      Mem.alloc m1 cp lo hi = (m1', b1) ->
+      exists j__left' m3' b3, Mem.alloc m3 cp lo hi = (m3', b3) /\
+                         mem_rel s ge1 ge3 j__left' Left m1' m3' /\
+                         mem_rel s ge2 ge3 j__right Right m2 m3' /\
+                         regset_rel j__left' rs1 rs3 /\
+                         inject_incr j__left j__left'.
+  Proof.
+    intros cp j__left j__right m1 m1' m2 m3 lo hi b1 rs1 rs3 side_cp m1_m3 m2_m3 rs1_rs3 alloc1.
+    exploit (Mem.alloc_parallel_inject j__left m1); eauto using partial_mem_inject, Z.le_refl.
+    intros [_ [m3' [b3 [alloc3 [_ [_ [_ _]]]]]]].
+    exploit (Mem.alloc_left_unmapped_inject j__left m1); eauto using partial_mem_inject.
+    intros [j' [inj [incr [isnone diff]]]].
+    exploit Mem.alloc_right_inject; eauto. intros inj'.
+    exists j', m3', b3. split; [| split; [| split; [| split]]];
+      [assumption |  | | intros ?; eauto using val_inject_incr | assumption].
+    { clear dependent j__right.
+      constructor; auto.
+      - intros b. destruct (Pos.eq_dec b b1); subst.
+        + split; [congruence |].
+          intros ?. apply Mem.owned_new_block in alloc1. simpl in *. rewrite alloc1 in H.
+          congruence.
+        + rewrite (diff _ n).
+          eapply same_dom in m1_m3. specialize (m1_m3 b).
+          eapply Mem.alloc_block_compartment with (b' := b) in alloc1.
+          simpl. rewrite alloc1. rewrite peq_false; eauto.
+    (* - auto. *)
+    - intros b b' delta.
+      destruct (Pos.eq_dec b b1); subst.
+      + congruence.
+      + rewrite (diff _ n).
+        intros G. exploit delta_zero; eauto.
+    - exploit pres_globals; eauto.
+      intros (A & B & C).
+      split; [| split].
+      + intros. exploit A; eauto.
+      + intros. exploit C; eauto.
+      + intros.
+        destruct (Pos.eqb_spec b0 b1); subst.
+        * exploit B; eauto. intros ?.
+          assert (b3 = b2) by congruence; assert (delta = 0) by congruence; subst b3 delta.
+          unfold ge1 in *.
+          eapply Genv.find_var_info_match with (b := b2) in match_W1_W3 as [? [? ?]]; eauto.
+          replace (Genv.globalenv W3) with ge3 in H2 by reflexivity.
+          assert (V: Mem.valid_block m3 b2) by now eapply var_info_valid in m1_m3; eauto.
+          assert (nV: not (Mem.valid_block m3 b2)).
+          { unfold Mem.valid_block. apply Mem.alloc_result in alloc3; subst b2.
+            now apply Plt_strict. }
+          contradiction.
+        * eapply C. eauto. rewrite <- diff; eauto.
+    - erewrite Mem.nextblock_alloc; eauto using Ple_trans, Ple_succ, ple_nextblock1.
+    - erewrite Mem.nextblock_alloc; eauto using Ple_trans, Ple_succ, ple_nextblock2.
+    - intros. exploit funct_preserved1; eauto.
+    - intros. exploit funct_preserved2; eauto.
+      rewrite <- diff; eauto.
+      intros ?. subst. assert (b3 = b2) by congruence; subst b3.
+      apply Genv.find_funct_ptr_iff in H.
+      apply Genv.genv_defs_range in H. apply Mem.alloc_result in alloc3. subst.
+      apply ple_nextblock2 in m1_m3. simpl in *.
+      eapply Plt_strict. eapply Plt_Ple_trans; eauto.
+    - intros. exploit var_info_valid; eauto. eapply Mem.valid_block_alloc. eauto.
+    - intros id ofs.
+      exploit same_high_half; eauto.
+    }
+    { clear dependent j__left.
+      destruct m2_m3.
+      constructor; eauto.
+      - eapply Mem.alloc_right_inject; eauto using partial_mem_inject.
+      - erewrite Mem.nextblock_alloc; eauto using Ple_trans, Ple_succ, ple_nextblock1.
+      - intros. eapply Mem.valid_block_alloc; eauto. }
+  Qed.
+
+  Lemma alloc_preserves_rel_left:
+    forall cp j__left j__right m1 m1' m2 m3 lo hi b1 rs1 rs3,
+      mem_rel s ge1 ge3 j__left Left m1 m3 ->
+      mem_rel s ge2 ge3 j__right Right m2 m3 ->
+      regset_rel j__left rs1 rs3 ->
+      Mem.alloc m1 cp lo hi = (m1', b1) ->
+      exists j__left' m3' b3, Mem.alloc m3 cp lo hi = (m3', b3) /\
+                         mem_rel s ge1 ge3 j__left' Left m1' m3' /\
+                         mem_rel s ge2 ge3 j__right Right m2 m3' /\
+                         regset_rel j__left' rs1 rs3 /\
+                         (s |= cp ∈ Left -> j__left' b1 = Some (b3, 0)) /\
+                         inject_incr j__left j__left'.
+  Proof.
+    intros.
+    destruct (s cp) eqn:s_cp.
+    - exploit alloc_preserves_rel_left1; eauto. now simpl.
+      intros [? [? [? [? [? [? [? [? ?]]]]]]]].
+      eexists; eexists; eexists; repeat (split; eauto).
+    - exploit alloc_preserves_rel_left2; eauto. now simpl.
+      intros [? [? [? [? [? [? [? ?]]]]]]].
+      eexists; eexists; eexists; repeat (split; eauto). simpl; congruence.
+  Qed.
+
+  Lemma free_preserves_rel_left:
+    forall cp j__left j__right m1 m1' m2 m3 lo hi b1 b3,
+      j__left b1 = Some (b3, 0) -> (* we are necessarily in the Left case *)
+      mem_rel s ge1 ge3 j__left Left m1 m3 ->
+      mem_rel s ge2 ge3 j__right Right m2 m3 ->
+      Mem.free m1 b1 lo hi cp = Some m1' ->
+      exists m3', Mem.free m3 b3 lo hi cp = Some m3' /\
+               mem_rel s ge1 ge3 j__left Left m1' m3' /\
+               mem_rel s ge2 ge3 j__right Right m2 m3'.
+  Proof.
+    intros cp j__left j__right m1 m1' m2 m3 lo hi b1 b3 ptr_inj m1_m3 m2_m3 free1.
+    exploit (Mem.free_parallel_inject j__left m1); eauto using partial_mem_inject.
+    intros [m3' [free3 m1'_m3']].
+    rewrite 2!Z.add_0_r in free3.
+    exists m3'; split; [| split]; [assumption | |].
+    { clear dependent j__right.
+      constructor.
+      - intros b. apply same_dom in m1_m3.
+        specialize (m1_m3 b).
+        simpl in *. apply Mem.free_result in free1. unfold Mem.unchecked_free in free1. now subst.
+      - assumption.
+      - intros b b' delta.
+        intros G. exploit delta_zero; eauto.
+      - exploit pres_globals; eauto.
+      - erewrite Mem.nextblock_free; eauto using Ple_trans, Ple_succ, ple_nextblock1.
+      - erewrite Mem.nextblock_free; eauto using Ple_trans, Ple_succ, ple_nextblock2.
+      - intros. exploit funct_preserved1; eauto.
+      - intros. exploit funct_preserved2; eauto.
+      - intros. exploit var_info_valid; eauto. eapply Mem.valid_block_free_1; eauto.
+      - intros id ofs.
+        exploit same_high_half; eauto. }
+    { (* clear dependent j__left. *)
+      destruct m2_m3.
+      constructor; auto.
+      - eapply Mem.free_right_inject; eauto.
+        intros.
+        apply Mem.mi_inj in partial_mem_inject0.
+        eapply Mem.mi_own with (cp := (Mem.block_compartment m2 b0)) in partial_mem_inject0; eauto;
+          [| now destruct Mem.block_compartment eqn:?]; eauto.
+        specialize (same_dom0 b0).
+        assert (X: j__right b0 <> None) by congruence.
+        apply same_dom0 in X. simpl in *.
+        apply same_dom in m1_m3 as G.
+        specialize (G b1).
+        assert (Y: j__left b1 <> None) by congruence.
+        apply G in Y. simpl in *. clear G.
+        apply partial_mem_inject in m1_m3.
+        apply Mem.mi_inj in m1_m3.
+        eapply Mem.mi_own with (cp := (Mem.block_compartment m1 b1)) in m1_m3; eauto;
+          [| now destruct (Mem.block_compartment m1 b1) eqn:?]; eauto.
+        unfold Mem.can_access_block in *.
+        destruct (Mem.block_compartment m2 b0); destruct (Mem.block_compartment m1 b1); try congruence.
+      - erewrite Mem.nextblock_free; eauto using Ple_trans, Ple_succ, ple_nextblock1.
+      - intros. eapply Mem.valid_block_free_1; eauto. }
+  Qed.
+
+  Lemma store_preserves_rel_left:
+    forall cp j__left j__right m1 m1' m2 m3 ch ofs v1 v3 b1 b3,
+      j__left b1 = Some (b3, 0) -> (* we are necessarily in the δ case *)
+      mem_rel s ge1 ge3 j__left Left m1 m3 ->
+      mem_rel s ge2 ge3 j__right Right m2 m3 ->
+      Val.inject j__left v1 v3 ->
+      Mem.store ch m1 b1 ofs v1 cp = Some m1' ->
+      exists m3', Mem.store ch m3 b3 ofs v3 cp = Some m3' /\
+               mem_rel s ge1 ge3 j__left Left m1' m3' /\
+               mem_rel s ge2 ge3 j__right Right m2 m3'.
+  Proof.
+    intros cp j__left j__right m1 m1' m2 m3 ch ofs v1 v3 b1 b3 ptr_inj m1_m3 m2_m3 val_inj store1.
+    exploit (Mem.store_mapped_inject j__left); eauto using partial_mem_inject.
+    intros [m3' [store3 ?]].
+    rewrite Z.add_0_r in store3.
+    exists m3'; split; [| split]; [assumption | |].
+    { clear dependent j__right.
+      constructor.
+      - intros b. apply same_dom in m1_m3.
+        specialize (m1_m3 b). simpl in *.
+        eapply Mem.store_block_compartment in store1. now rewrite store1.
+      - assumption.
+      - now eapply delta_zero; eauto.
+      - exploit pres_globals; eauto.
+      - erewrite Mem.nextblock_store; eauto using Ple_trans, Ple_succ, ple_nextblock1.
+      - erewrite Mem.nextblock_store; eauto using Ple_trans, Ple_succ, ple_nextblock2.
+      - intros. exploit funct_preserved1; eauto.
+      - intros. exploit funct_preserved2; eauto.
+      - intros. exploit var_info_valid; eauto. eapply Mem.store_valid_block_1; eauto.
+      - intros id ofs0.
+        exploit same_high_half; eauto. }
+    { destruct m2_m3.
+      constructor; eauto.
+      (* - Mem.store_outside_inject *)
+      - eapply Mem.store_outside_inject; eauto.
+        intros.
+        apply Mem.mi_inj in partial_mem_inject0.
+        eapply Mem.mi_own with (cp := (Mem.block_compartment m2 b')) in partial_mem_inject0; eauto;
+          [| now destruct Mem.block_compartment eqn:?]; eauto.
+        specialize (same_dom0 b').
+        assert (X: j__right b' <> None) by congruence.
+        apply same_dom0 in X. simpl in *.
+        apply same_dom in m1_m3 as G.
+        specialize (G b1).
+        assert (Y: j__left b1 <> None) by congruence.
+        apply G in Y. simpl in *. clear G.
+        apply partial_mem_inject in m1_m3.
+        apply Mem.mi_inj in m1_m3.
+        eapply Mem.mi_own with (cp := (Mem.block_compartment m1 b1)) in m1_m3; eauto;
+          [| now destruct (Mem.block_compartment m1 b1) eqn:?]; eauto.
+        unfold Mem.can_access_block in *.
+        destruct (Mem.block_compartment m2 b'); destruct (Mem.block_compartment m1 b1); try congruence.
+      - erewrite Mem.nextblock_store; eauto using Ple_trans, Ple_succ, ple_nextblock1.
+      - intros. exploit var_info_valid; eauto. eapply Mem.store_valid_block_1; eauto. }
+  Qed.
+
+  Lemma regset_rel_inject: forall j rs1 rs3 rd v v',
+      regset_rel j rs1 rs3 ->
+      Val.inject j v v' ->
+      regset_rel j (rs1 # rd <- v) (rs3 # rd <- v').
+  Proof.
+    intros.
+    intros r.
+    destruct (Pregmap.elt_eq r rd); now try subst r; Simpl.
+  Qed.
+
+  Lemma inject_incr_stack_rel1:
+    forall δ j1 j1' j2 st st',
+      inject_incr j1 j1' ->
+      stack_rel s j1 j2 δ st st' ->
+      stack_rel s j1' j2 δ st st'.
+  Proof.
+    intros * incr st_rel.
+    induction st_rel.
+    - constructor; eauto.
+    - constructor; eauto.
+      inv H2. constructor; eauto.
+    - constructor; eauto.
+  Qed.
+
+  Lemma inject_incr_stack_rel2:
+    forall δ j1 j2 j2' st st',
+      inject_incr j2 j2' ->
+      stack_rel s j1 j2 δ st st' ->
+      stack_rel s j1 j2' δ st st'.
+  Proof.
+    intros * incr st_rel.
+    induction st_rel.
+    - constructor; eauto.
+    - constructor; eauto.
+    - constructor; eauto.
+      inv H2. constructor; eauto.
+  Qed.
+
+  Ltac Simplif_all :=
+    ((rewrite Asmgenproof0.nextinstr_inv in * by eauto with asmgen)
+     || (rewrite Asmgenproof0.nextinstr_inv1 in * by eauto with asmgen)
+     || (rewrite Pregmap.gss in *)
+     || (rewrite Asmgenproof0.nextinstr_pc in *)
+     || (rewrite Pregmap.gso in * by eauto with asmgen)); auto with asmgen.
+
+  Ltac Simpl_all := repeat Simplif_all.
+
+  Ltac eexists_and_split :=
+    fun k =>
+      match goal with
+      | m1_m3: mem_rel _ _ _ ?j _ ?m1 ?m3,
+          rs1_rs3: regset_rel ?j ?rs1 ?rs3 |- _ =>
+          exists j; eexists; eexists; split; [| split; [| split; [| split]]]; eauto;
+          k j rs1 rs3 rs1_rs3 m1 m3 m1_m3
+      end.
+
+  Ltac simpl_before_exists :=
+    repeat (Simpl_all;
+            match goal with
+            (* Goto *)
+            | _: goto_label _ _ ?rs _ = Next _ _ |- _ =>
+                unfold goto_label in *; destruct label_pos; try congruence
+            | _: eval_branch _ _ ?rs _ _ = Next _ _ |- _ =>
+                unfold eval_branch in *; simpl in *
+            | _: exec_load _ _ _ _ _ _ _ _ _ = Next _ _ |- _ =>
+                unfold exec_load in *; simpl in *
+            | _: exec_store _ _ _ _ _ _ _ _ = Next _ _ |- _ =>
+                unfold exec_store in *; simpl in *
+            | _: context [Val.cmp_bool] |- _ =>
+                unfold Val.cmp_bool in *; simpl in *
+            | _: context [Val.cmpl_bool] |- _ =>
+                unfold Val.cmpl_bool in *; simpl in *
+            | _: context [eval_offset _ ?ofs] |- _ =>
+                destruct ofs; simpl in *
+
+            | _: context [low_half ge1] |- _ =>
+                rewrite same_low_half1 in *
+
+
+            | H: Mem.alloc ?m1 ?cp ?lo1 ?hi1 = (?m1', ?b1),
+              m1_m3: mem_rel _ _ _ ?j__left Left ?m1 ?m3,
+              m2_m3: mem_rel _ _ _ ?j__right Right ?m2 ?m3,
+              rs1_rs3: regset_rel _ _ _ |- _ =>
+                idtac "alloc case";
+                let j__left' := fresh "j__left" in
+                let m3' := fresh "m3" in
+                let b3 := fresh "b3" in
+                let alloc3 := fresh "alloc3" in
+                let m1'_m3' := fresh "m1'_m3'" in
+                let m2_m3' := fresh "m2_m3'" in
+                let proj := fresh "proj" in
+                let incr := fresh "incr" in
+                apply (alloc_preserves_rel_left _ _ _ _ _ _ _ _ _ _ _ _ m1_m3 m2_m3 rs1_rs3) in H as
+                    [j__left' [m3' [b3 [alloc3 [m1'_m3' [m2_m3' [? [proj incr]]]]]]]];
+                idtac "done with alloc";
+                clear m1_m3 rs1_rs3 m2_m3
+            | H: s ?cp = ?δ -> _,
+              side_cp: s ?cp = ?δ |- _ =>
+                specialize (H side_cp)
+
+            | H: Mem.store ?ch ?m1 ?b1 ?ofs (?rs1 ?r) ?cp = Some ?m1',
+              m1_m3: mem_rel _ _ _ ?j__left Left ?m1 ?m3,
+              m2_m3: mem_rel _ _ _ ?j__right Right ?m2 ?m3,
+              ptr_inj: ?j__left ?b1 = Some (?b3, 0),
+              rs1_rs3: regset_rel ?j__left ?rs1 ?rs3 |- _ =>
+                idtac "store case";
+                let m3' := fresh "m3" in
+                apply (store_preserves_rel_left _ _ _ _ _ _ _ _ _ _ _ _ _ ptr_inj m1_m3 m2_m3 (rs1_rs3 r)) in H as
+                    [m3' [? [? ?]]];
+                idtac "done with store";
+                clear m1_m3 m2_m3
+
+            | H: Mem.free ?m1 ?b1 ?lo ?hi ?cp = Some ?m1',
+              m1_m3: mem_rel _ _ _ ?j__left Left ?m1 ?m3,
+              m2_m3: mem_rel _ _ _ ?j__right Right ?m2 ?m3,
+              ptr_inj: ?j__left ?b1 = Some (?b3, 0) |- _ =>
+                (* rs1_rs3: regset_rel ?j ?rs1 ?rs3 |- _ => *)
+                idtac "free case";
+                let m3' := fresh "m3" in
+                apply (free_preserves_rel_left _ _ _ _ _ _ _ _ _ _ _ ptr_inj m1_m3 m2_m3) in H as
+                    [m3' [? [? ?]]];
+                idtac "done with free";
+                clear m1_m3
+
+            | H: Mem.load ?ch ?m1 ?b1 ?ofs ?cp = Some ?v1,
+                m1_m3: mem_rel _ _ _ ?j _ ?m1 ?m3,
+                  ptr_inj: ?j ?b1 = Some (?b3, 0) |- _ =>
+                (* idtac "load case"; *)
+                let v3 := fresh "v3" in
+                let load3 := fresh "load3" in
+                destruct (Mem.load_inject _ _ _ _ _ _ _ _ _ _ (partial_mem_inject _ _ _ _ _ _ _ m1_m3) H ptr_inj) as
+                  [v3 [load3 ?]];
+                rewrite Z.add_0_r in load3;
+                (* idtac "done with load"; *)
+                clear H
+
+            | H: Val.cmpu_bool (Mem.valid_pointer ?m1) ?op (?rs1 ?r) (?rs1 ?r') = Some ?b,
+                m1_m3: mem_rel _ _ _ ?j _ ?m1 ?m3,
+                rs1_rs3: regset_rel ?j ?rs1 ?rs3 |- _ =>
+                (* idtac "Val.cmpu_bool case 0"; *)
+                eapply cmpu_bool_preserved with (m3 := m3) in H; eauto using rs1_rs3;
+                try rewrite H in *;
+                (* idtac "done with Val.cmpu_bool 0"; *)
+                try congruence
+
+            | H: Val.cmpu_bool (Mem.valid_pointer ?m1) ?op (Vint ?x) (?rs1 ?r') = Some ?b,
+                m1_m3: mem_rel _ _ _ ?j _ ?m1 ?m3,
+                rs1_rs3: regset_rel ?j ?rs1 ?rs3 |- _ =>
+                (* idtac "Val.cmpu_bool case 1"; *)
+                eapply cmpu_bool_preserved with (m3 := m3) (v1' := Vint x) in H; eauto using rs1_rs3;
+                try rewrite H in *;
+                (* idtac "done with Val.cmpu_bool 1"; *)
+                try congruence
+
+            | H: Val.cmpu_bool (Mem.valid_pointer ?m1) ?op (?rs1 ?r) (Vint ?x) = Some ?b,
+                m1_m3: mem_rel _ _ _ ?j _ ?m1 ?m3,
+                rs1_rs3: regset_rel ?j ?rs1 ?rs3 |- _ =>
+                (* idtac "Val.cmpu_bool case 2"; *)
+                eapply cmpu_bool_preserved with (m3 := m3) (v2' := Vint x) in H; eauto using rs1_rs3;
+                try rewrite H in *;
+                (* idtac "done with Val.cmpu_bool 2"; *)
+                try congruence
+
+            | H: Val.cmpu_bool (Mem.valid_pointer ?m1) ?op (Vint ?x) (Vint ?y) = Some ?b,
+                m1_m3: mem_rel _ _ _ ?j _ ?m1 ?m3,
+                rs1_rs3: regset_rel ?j ?rs1 ?rs3 |- _ =>
+                (* idtac "Val.cmpu_bool case 3"; *)
+                eapply cmpu_bool_preserved with (m3 := m3) (v1' := Vint x) (v2' := Vint y) in H; eauto using rs1_rs3;
+                try rewrite H in *;
+                (* idtac "done with Val.cmpu_bool 3"; *)
+                try congruence
+
+            | H: Val.cmplu_bool (Mem.valid_pointer ?m1) ?op (?rs1 ?r) (?rs1 ?r') = Some ?b,
+                m1_m3: mem_rel _ _ _ ?j _ ?m1 ?m3,
+                rs1_rs3: regset_rel ?j ?rs1 ?rs3 |- _ =>
+                (* idtac "Val.cmplu_bool case 0"; *)
+                eapply cmplu_bool_preserved with (m3 := m3) in H; eauto using rs1_rs3;
+                try rewrite H in *;
+                (* idtac "done with Val.cmplu_bool 0"; *)
+                try congruence
+
+            | H: Val.cmplu_bool (Mem.valid_pointer ?m1) ?op (Vlong ?x) (?rs1 ?r') = Some ?b,
+                m1_m3: mem_rel _ _ _ ?j _ ?m1 ?m3,
+                rs1_rs3: regset_rel ?j ?rs1 ?rs3 |- _ =>
+                (* idtac "Val.cmplu_bool case 1"; *)
+                eapply cmplu_bool_preserved with (m3 := m3) (v1' := Vlong x) in H; eauto using rs1_rs3;
+                try rewrite H in *;
+                (* idtac "done with Val.cmplu_bool 1"; *)
+                try congruence
+
+            | H: Val.cmplu_bool (Mem.valid_pointer ?m1) ?op (?rs1 ?r) (Vlong ?x) = Some ?b,
+                m1_m3: mem_rel _ _ _ ?j _ ?m1 ?m3,
+                rs1_rs3: regset_rel ?j ?rs1 ?rs3 |- _ =>
+                (* idtac "Val.cmplu_bool case 2"; *)
+                eapply cmplu_bool_preserved with (m3 := m3) (v2' := Vlong x) in H; eauto using rs1_rs3;
+                try rewrite H in *;
+                (* idtac "done with Val.cmplu_bool 2"; *)
+                try congruence
+
+            | H: Val.cmplu_bool (Mem.valid_pointer ?m1) ?op (Vlong ?x) (Vlong ?y) = Some ?b,
+                m1_m3: mem_rel _ _ _ ?j _ ?m1 ?m3,
+                rs1_rs3: regset_rel ?j ?rs1 ?rs3 |- _ =>
+                (* idtac "Val.cmplu_bool case 3"; *)
+                eapply cmplu_bool_preserved with (m3 := m3) (v1' := Vlong x) (v2' := Vlong y) in H; eauto using rs1_rs3;
+                try rewrite H in *;
+                (* idtac "done with Val.cmplu_bool 3"; *)
+                try congruence
+
+            | H: Val.cmp_bool ?op (?rs1 ?r) (?rs1 ?r') = Some ?b,
+                m1_m3: mem_rel _ _ _ ?j _ ?m1 ?m3,
+                rs1_rs3: regset_rel ?j ?rs1 ?rs3 |- _ =>
+                (* idtac "Val.cmp_bool case"; *)
+                eapply Val.cmp_bool_inject in H; eauto using rs1_rs3;
+                try rewrite H in *;
+                (* idtac "done with Val.cmp_bool"; *)
+                try congruence
+
+            | d: Z |- _ =>
+                match goal with
+                | H: ?j _ = Some (_, d) ,
+                    m1_m3: mem_rel _ _ _ ?j _ ?m1 ?m3 |- _ =>
+                    let G := fresh "G" in
+                    pose proof (delta_zero _ _ _ _ _ _ _ m1_m3 _ _ _ H) as G;
+                    subst d
+                end
+
+
+            | |- context [Ptrofs.repr 0] => replace (Ptrofs.repr 0) with Ptrofs.zero by reflexivity; auto
+            | H: context [Ptrofs.repr 0] |- _ => replace (Ptrofs.repr 0) with Ptrofs.zero in H by reflexivity; auto
+            | |- context [Ptrofs.add _ Ptrofs.zero] => rewrite Ptrofs.add_zero; auto
+            | H: context [Ptrofs.add _ Ptrofs.zero] |- _ => rewrite Ptrofs.add_zero in H; simpl in *; try congruence
+            | |- context [Ptrofs.sub _ Ptrofs.zero] => rewrite Ptrofs.sub_zero_l; auto
+            | H: context [Ptrofs.sub _ Ptrofs.zero] |- _ => rewrite Ptrofs.sub_zero_l in H; simpl in *; try congruence
+
+            (* hypothesis manipulation *)
+            | rs1_rs3: regset_rel ?j ?rs1 ?rs3,
+              _: context [match ?rs1 ?i with | _ => _ end] |- _ =>
+                let H := fresh "rs1_rs3" in
+                assert (H := rs1_rs3 i);
+                destruct (rs1 i); inv H; try congruence; simpl in *; eauto
+
+            | rs1_rs3: regset_rel ?j ?rs1 ?rs3,
+              _: context [Val.offset_ptr (?rs1 ?i) _] |- _ =>
+                let H := fresh "rs1_rs3" in
+                assert (H := rs1_rs3 i);
+                destruct (rs1 i); inv H; try congruence; simpl in *; eauto
+
+            | H: Next _ _ = Next _ _ |- _ => inv H
+            | H: Some _ = Some _ |- _ => inv H
+            | H: Some _ = None |- _ => inv H
+            | H: None = Some _ |- _ => inv H
+            | H: Stuck = Next _ _ |- _ => inv H
+            | H: Next _ _ = Stuck |- _ => inv H
+            | H: negb _ = true |- _ => apply negb_true_iff in H
+            | H: negb _ = false |- _ => apply negb_false_iff in H
+            | H: Int.eq ?x ?x = false |- _ => rewrite Int.eq_true in H
+            | H: Int64.eq ?x ?x = false |- _ => rewrite Int64.eq_true in H
+            | H: Int.lt ?x ?x = true |- _ => rewrite lt_xx_false in H
+            | H: Int64.lt ?x ?x = true |- _ => rewrite lt64_xx_false in H
+            | H: Int.ltu ?x ?x = true |- _ => rewrite ltu_xx_false in H
+            | H: Int64.ltu ?x ?x = true |- _ => rewrite ltu64_xx_false in H
+            | H: false = true |- _ => congruence
+            | H: true = false |- _ => congruence
+            | H: ?x = false, H': ?x = true |- _ => congruence
+            | H: match ?x with | _ => _ end = Next _ _ |- _ =>
+                let eq := fresh "eq" in
+                destruct x eqn:eq; simpl in *; try congruence
+            | _: context [?rs1 ### ?rs] |- context [?rs3 ### ?rs] =>
+                let i := fresh "i" in destruct rs as [| i]; simpl in *
+            | _: context [?rs1 ## ?rs] |- context [?rs3 ## ?rs] =>
+                let i := fresh "i" in destruct rs as [| i]; simpl in *
+            | H: ?x = _ |- context [if ?x then _ else _] =>
+                rewrite H; simpl
+            | H: ?x = _ |- context [match ?x with | _ => _ end] =>
+                rewrite H; simpl
+            | |- context [(if ?x then _ else _) = Next _ _] =>
+                let eq := fresh "eq" in destruct x eqn:eq; simpl in *
+            | |- context [(match ?x with | _ => _ end) = Next _ _] =>
+                let eq := fresh "eq" in destruct x eqn:eq; simpl in *
+
+            end);
+    simpl.
+
+  Ltac solve_simple_regset_rel j rs1 rs3 rs1_rs3 m1 m3 m1_m3:=
+    repeat (Simpl;
+            match goal with
+            | |- regset_rel j (nextinstr _) (nextinstr _) => unfold nextinstr
+            | |- regset_rel j (_ # _ <- _) (_ # _ <- _) => eapply regset_rel_inject
+            | |- regset_rel j rs1 rs3 => assumption
+
+            | |- stack_rel _ _ _ _ _ _ => eauto using inject_incr_stack_rel1, inject_incr_stack_rel2, inject_incr_refl
+
+            | _: ?x |- ?x => assumption
+
+            | d: Z |- _ =>
+                match goal with
+                | H: j _ = Some (_, d) |- _ =>
+                    let G := fresh "G" in
+                    pose proof (delta_zero _ _ _ _ _ _ _ m1_m3 _ _ _ H) as G;
+                    subst d
+                end
+
+
+            | |- Ptrofs.add (Ptrofs.add ?ofs1 ?delta) ?imm = Ptrofs.add (Ptrofs.add ?ofs1 ?imm) ?delta =>
+                now rewrite (Ptrofs.add_assoc ofs1 delta imm), (Ptrofs.add_commut delta imm), <- Ptrofs.add_assoc
+
+            | |- context [_ ### ?rs] =>
+                let i := fresh "i" in destruct rs as [| i]; simpl in *
+            | |- context [_ ## ?rs] =>
+                let i := fresh "i" in destruct rs as [| i]; simpl in *
+            (* | |- context [rs1 # ?i] => *)
+            (*     match goal with *)
+            (*     | |- context [rs3 # ?i] => *)
+            (*         let H := fresh "rs1_rs3" in *)
+            (*         assert (H := rs1_rs3 i); inv H; simpl; eauto *)
+            (*     end *)
+
+
+            | |- context [Ptrofs.sub (Ptrofs.add _ _) _] => rewrite Ptrofs.sub_add_l; simpl; auto
+            | |- context [Ptrofs.repr 0] => replace (Ptrofs.repr 0) with Ptrofs.zero by reflexivity; auto
+            | |- context [Ptrofs.add _ Ptrofs.zero] => rewrite Ptrofs.add_zero; auto
+            | |- context [Ptrofs.sub _ Ptrofs.zero] => rewrite Ptrofs.sub_zero_l; auto
+
+
+
+            | |- Val.inject _ _ _ => eauto using Ptrofs.add_zero with solve_inject
+            end).
+
+  (* Lemma exec_instr_preserved: *)
+  (*   forall δ j f i rs1 rs1' rs3 m1 m1' m3 st1 st3, *)
+  (*     s |= has_comp_function f ∈ δ -> *)
+  (*     mem_rel s ge1 ge3 j δ m1 m3 -> *)
+  (*     regset_rel j rs1 rs3 -> *)
+  (*     stack_rel s j δ st1 st3 -> *)
+  (*     exec_instr ge1 f i rs1 m1 (has_comp_function f) = Next rs1' m1' -> *)
+  (*     exists j' rs3' m3', *)
+  (*       exec_instr ge3 f i rs3 m3 (has_comp_function f) = Next rs3' m3' /\ *)
+  (*         mem_rel s ge1 ge3 j' δ m1' m3' /\ *)
+  (*         regset_rel j' rs1' rs3' /\ *)
+  (*         stack_rel s j' δ st1 st3. *)
+
+  Lemma exec_instr_preserved_left:
+    forall j__left j__right f i rs1 rs1' rs3 m1 m1' m2 m3 st1 st2 st3,
+      s |= has_comp_function f ∈ Left ->
+      mem_rel s ge1 ge3 j__left Left m1 m3 ->
+      mem_rel s ge2 ge3 j__right Right m2 m3 ->
+      regset_rel j__left rs1 rs3 ->
+      stack_rel s j__left j__right st1 st2 st3 ->
+      (* stack_rel s j δ st1 st3 -> *)
+      exec_instr ge1 f i rs1 m1 (has_comp_function f) = Next rs1' m1' ->
+      exists j__left' rs3' m3',
+        exec_instr ge3 f i rs3 m3 (has_comp_function f) = Next rs3' m3' /\
+          mem_rel s ge1 ge3 j__left' Left m1' m3' /\
+          mem_rel s ge2 ge3 j__right Right m2 m3' /\
+          regset_rel j__left' rs1' rs3' /\
+          stack_rel s j__left' j__right st1 st2 st3.
+  Proof.
+    intros until st3.
+    intros side_cp m1_m3 m2_m3 rs1_rs3 st1_st3 exec.
+
+    Local Opaque Val.cmpu_bool Val.cmplu_bool.
+
+    destruct i; inv exec; simpl in *;
+      try now (simpl_before_exists;
+               (eexists_and_split
+                  ltac:(fun j rs1 rs3 rs1_rs3 m1 m3 m1_m3 =>
+                          (simpl; try reflexivity; try eassumption;
+                           solve_simple_regset_rel j rs1 rs3 rs1_rs3 m1 m3 m1_m3; try reflexivity)))).
+    - (eexists_and_split
+         ltac:(fun j rs1 rs3 rs1_rs3 m1 m3 m1_m3 =>
+                 (simpl; try reflexivity; try eassumption;
+                  solve_simple_regset_rel j rs1 rs3 rs1_rs3 m1 m3 m1_m3; try reflexivity))).
+      apply Genv.find_symbol_match with (s := symb) in match_W1_W3.
+      unfold Genv.symbol_address. rewrite match_W1_W3.
+      now eapply symbol_address_inject; eauto using pres_globals.
+    - (eexists_and_split
+         ltac:(fun j rs1 rs3 rs1_rs3 m1 m3 m1_m3 =>
+                 (simpl; try reflexivity; try eassumption;
+                  solve_simple_regset_rel j rs1 rs3 rs1_rs3 m1 m3 m1_m3; try reflexivity))).
+      apply Genv.find_symbol_match with (s := symb) in match_W1_W3.
+      unfold Genv.symbol_address. rewrite match_W1_W3.
+      now eapply symbol_address_inject; eauto using pres_globals.
+    - simpl_before_exists.
+      (eexists_and_split
+         ltac:(fun j rs1 rs3 rs1_rs3 m1 m3 m1_m3 =>
+                 (simpl; try reflexivity; try eassumption;
+                  solve_simple_regset_rel j rs1 rs3 rs1_rs3 m1 m3 m1_m3; try reflexivity))).
+      apply Genv.find_symbol_match with (s := id) in match_W1_W3.
+      unfold Genv.symbol_address. rewrite match_W1_W3.
+      now eapply symbol_address_inject; eauto using pres_globals.
+    - (eexists_and_split
+         ltac:(fun j rs1 rs3 rs1_rs3 m1 m3 m1_m3 =>
+                 (simpl; try reflexivity; try eassumption;
+                  solve_simple_regset_rel j rs1 rs3 rs1_rs3 m1 m3 m1_m3; try reflexivity))).
+      eapply same_high_half; eauto.
+  Qed.
+
+  Lemma store_inj_outside_domain:
+    forall f chunk m1 b1 ofs v1 cp n2 m2,
+      Mem.mem_inj f m1 m2 ->
+      Mem.store chunk m2 b1 ofs v1 cp = Some n2 ->
+      (forall b0 delta, f b0 = Some (b1, delta) -> False) ->
+      Mem.mem_inj f m1 n2.
+  Proof.
+    intros. constructor.
+    (* perm *)
+    intros. eapply Mem.mi_perm in H; eauto. eapply Mem.perm_store_1; eauto.
+    (* own *)
+    intros. eapply Mem.mi_own in H; eauto.
+    (* RB: NOTE: Should be solvable by properly extended hint databases. *)
+    apply (proj1 (Mem.store_can_access_block_inj _ _ _ _ _ _ _ H0 _ _)).
     assumption.
-  - intros s0 t0 HstarR0 t3 Ht3.
-    eapply starR_step.
-    + apply (IHHstarR2 _ _ HstarR0 _ eq_refl).
-    + apply Hstep2.
-    + subst.
-      rewrite Eapp_assoc.
-      reflexivity.
-Qed.
+    (* align *)
+    intros. eapply Mem.mi_align with (ofs := ofs0) (p := p) in H; eauto.
+    (* mem_contents *)
+    intros.
+    (* Local Transparent Mem.store. *)
+    (* unfold Mem.store in H0. *)
+    (* destruct Mem.valid_access_dec; try congruence. *)
+    (* inv H0. simpl. *)
+    eapply Mem.mi_memval in H; eauto.
+    rewrite (Mem.store_mem_contents _ _ _ _ _ _ _ H0).
+    rewrite PMap.gso. eauto with mem.
+    intros ?. subst. now eapply H1; eauto.
+  Qed.
 
-Lemma star_iff_starR : forall ge s1 t s2, star step ge s1 t s2 <-> starR ge s1 t s2.
-Proof.
-  split.
-  - intros H.
+
+  Theorem store_inject_outside_domain:
+    forall f chunk m1 b1 ofs v1 cp n2 m2,
+      Mem.inject f m1 m2 ->
+      Mem.store chunk m2 b1 ofs v1 cp = Some n2 ->
+      (forall b0 delta, f b0 = Some (b1, delta) -> False) ->
+      Mem.inject f m1 n2.
+  Proof.
+    intros. inversion H.
+    constructor.
+    (* inj *)
+    eapply store_inj_outside_domain; eauto.
+    (* freeblocks *)
+    eauto with mem.
+    (* mappedblocks *)
+    eauto with mem.
+    (* no overlap *)
+    red; intros. eauto with mem.
+    (* representable *)
+    intros. eapply mi_representable; try eassumption.
+    (* destruct H3; eauto with mem. *)
+    (* perm inv *)
+    intros. exploit mi_perm_inv; eauto using Mem.perm_store_2.
+  Qed.
+
+  (* Lemma exec_instr_preserved': *)
+  (*   forall δ j f i rs3 rs3' m1 m3 m3' st1 st3, *)
+  (*     s |= has_comp_function f ∈ opposite δ -> *)
+  (*     mem_rel s ge2 ge3 j δ m1 m3 -> *)
+  (*     stack_rel s j δ st1 st3 -> *)
+  (*     exec_instr ge3 f i rs3 m3 (has_comp_function f) = Next rs3' m3' -> *)
+  (*     mem_rel s ge2 ge3 j δ m1 m3' /\ *)
+  (*       stack_rel s j δ st1 st3. *)
+  (* Proof. *)
+  (*   intros until st3. *)
+  (*   intros side_cp m1_m3 st1_st3 exec. *)
+
+  (*   assert ( forall chunk addr v, *)
+  (*       s |= has_comp_function f ∈ opposite δ -> *)
+  (*       mem_rel s ge2 ge3 j δ m1 m3 -> *)
+  (*       Mem.storev chunk m3 addr v (has_comp_function f) = Some m3' -> *)
+  (*       mem_rel s ge2 ge3 j δ m1 m3' *)
+  (*          ). *)
+  (*   { clear. *)
+  (*     intros chunk addr v side_cp m1_m3 store. *)
+  (*     destruct m1_m3. *)
+  (*     constructor; auto. *)
+  (*     - destruct addr; simpl in store; try congruence. *)
+  (*       eapply store_inject_outside_domain; eauto. *)
+  (*       intros. *)
+  (*       specialize (same_dom0 b0) as [G _]. *)
+  (*       assert (N: j b0 <> None) by now congruence. *)
+  (*       specialize (G N). simpl in *. *)
+  (*       apply Mem.store_can_access_block_1 in store. simpl in store. *)
+  (*       destruct (Mem.block_compartment m1 b0) as [c' |] eqn:eq; try congruence. *)
+  (*       assert (Mem.can_access_block m1 b0 (Some c')) by auto. *)
+  (*       exploit Mem.mi_own; eauto using Mem.mi_inj. *)
+  (*       intros ?. simpl in H1. subst. rewrite H1 in store; inv store. *)
+  (*       now destruct (s (has_comp_function f)). *)
+  (*     - destruct addr; simpl in store; try congruence. *)
+  (*       erewrite Mem.nextblock_store; eauto. *)
+  (*     - intros. *)
+  (*       destruct addr; simpl in store; try congruence. *)
+  (*       eapply Mem.store_valid_block_1; eauto. } *)
+  (*   destruct i; inv exec; simpl in *; split; auto; *)
+  (*     simpl_before_exists; *)
+  (*     simpl in *; try now eapply H; eauto. *)
+  (*   admit. *)
+  (*   admit. *)
+  (* Admitted. *)
+
+
+  Lemma strong_equiv_state_inv_left:
+    forall j__left st1 rs1 m1 s3 b ofs f i,
+      strong_equivalence s ge1 ge3 j__left Left (State st1 rs1 m1) s3 ->
+      rs1 PC = Vptr b ofs ->
+      Genv.find_funct_ptr ge1 b = Some (Internal f) ->
+      find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
+      exists st3 rs3 m3,
+        s3 = State st3 rs3 m3 /\
+          rs3 PC = Vptr b ofs /\
+          Genv.find_funct_ptr ge3 b = Some (Internal f) /\
+          mem_rel s ge1 ge3 j__left Left m1 m3 /\
+          regset_rel j__left rs1 rs3 /\
+          s (has_comp_function f) = Left.
+  Proof.
+    intros * equiv eq_pc find_fun find_ins.
+    inv equiv.
+    eexists; eexists; eexists; split; eauto.
+    exploit (Genv.find_funct_ptr_match match_W1_W3); eauto.
+    intros [[] [f' [find_f' [match_f_f' _]]]].
+    inv match_f_f'; simpl in *.
+    - rewrite eq_pc in *; simpl in *.
+      destruct Ptrofs.eq_dec; try congruence. unfold ge1 in *. rewrite find_fun in H2.
+      simpl in *; congruence.
+    - pose proof (H4 PC) as inj.
+      rewrite eq_pc in *; simpl in *. inv inj.
+      exploit funct_preserved1; eauto. intros.
+      assert (b2 = b) by congruence; assert (delta = 0) by congruence; subst b2 delta.
+      destruct Ptrofs.eq_dec; try congruence. rewrite find_fun in H2.
+
+      apply Genv.globalenvs_match in match_W1_W3.
+      apply Genv.mge_defs with (b := b) in match_W1_W3.
+      inv match_W1_W3.
+      + unfold Genv.find_funct_ptr in *. unfold Genv.find_def in *. rewrite <- H7 in *. congruence.
+      + unfold Genv.find_funct_ptr in *. unfold Genv.find_def in *. rewrite <- H7 in *. rewrite <- H1 in *.
+        inv H8; inv find_fun.
+        inv H10; repeat (split; eauto).
+        * now rewrite Ptrofs.add_zero.
+        * now rewrite Ptrofs.add_zero.
+  Qed.
+
+  Lemma find_comp_preserved:
+    forall j rs rs' r
+      (funct_preserved1: forall (b : block) (fd : fundef), Genv.find_funct_ptr ge1 b = Some fd -> j b = Some (b, 0))
+      (funct_preserved2: forall (b1 b2 : block) (fd : fundef), Genv.find_funct_ptr ge3 b2 = Some fd -> j b1 = Some (b2, 0) -> b1 = b2)
+      (delta_zero: Mem.delta_zero j),
+      rs r <> Vundef ->
+      regset_rel j rs rs' ->
+      Genv.find_comp ge1 (rs r) =
+        Genv.find_comp ge3 (rs' r).
+  Proof.
+    intros j rs rs' r funct_preserved1 funct_preserved2 delta_zero nundef H.
+    specialize (H r).
+    inv H; simpl; auto; try congruence.
+    destruct Ptrofs.eq_dec; auto.
+    { destruct (Genv.find_funct_ptr ge1 b1) eqn:find_funct;
+        destruct (Genv.find_funct_ptr ge3 b2) eqn:find_funct';
+        auto.
+      - exploit funct_preserved1; eauto; intros.
+        assert (b1 = b2) by congruence; assert (delta = 0) by congruence; subst b2 delta.
+        eapply Genv.find_funct_ptr_match in match_W1_W3 as [? [f' [? [match_fd ?]]]]; eauto.
+        assert (f0 = f') by congruence; subst f0.
+        now inv match_fd.
+      - exploit funct_preserved1; eauto; intros.
+        assert (b1 = b2) by congruence; assert (delta = 0) by congruence; subst b2 delta.
+        eapply Genv.find_funct_ptr_match in match_W1_W3 as [? [f' [? [match_fd ?]]]]; eauto.
+        congruence.
+      - exploit delta_zero; eauto; intros ->.
+        exploit funct_preserved2; eauto; intros <-.
+        eapply Genv.find_funct_ptr_match_conv in match_W1_W3 as [? [f' [? [match_fd ?]]]]; eauto.
+        congruence.
+      - exploit delta_zero; eauto; intros ->.
+        rewrite Ptrofs.add_zero.
+        destruct Ptrofs.eq_dec; auto. }
+    { destruct Ptrofs.eq_dec; auto.
+      exploit delta_zero; eauto; intros ->.
+      rewrite Ptrofs.add_zero in *; congruence. }
+  Qed.
+
+  Lemma find_comp_ignore_offset_preserved:
+    forall j rs rs' r
+      (funct_preserved1: forall (b : block) (fd : fundef), Genv.find_funct_ptr ge1 b = Some fd -> j b = Some (b, 0))
+      (funct_preserved2: forall (b1 b2 : block) (fd : fundef), Genv.find_funct_ptr ge3 b2 = Some fd -> j b1 = Some (b2, 0) -> b1 = b2)
+      (delta_zero: Mem.delta_zero j),
+      rs r <> Vundef ->
+      regset_rel j rs rs' ->
+      Genv.find_comp_ignore_offset ge1 (rs r) =
+        Genv.find_comp_ignore_offset ge3 (rs' r).
+  Proof.
+    intros j rs rs' r funct_preserved1 funct_preserved2 delta_zero nundef H.
+    specialize (H r).
+    inv H; simpl; auto; try congruence.
+    destruct Ptrofs.eq_dec; auto.
+    destruct (Genv.find_funct_ptr ge1 b1) eqn:find_funct;
+      destruct (Genv.find_funct_ptr ge3 b2) eqn:find_funct';
+      auto.
+    - exploit funct_preserved1; eauto; intros.
+      assert (b1 = b2) by congruence; assert (delta = 0) by congruence; subst b2 delta.
+      eapply Genv.find_funct_ptr_match in match_W1_W3 as [? [f' [? [match_fd ?]]]]; eauto.
+      assert (f0 = f') by congruence; subst f0.
+      now inv match_fd.
+    - exploit funct_preserved1; eauto; intros.
+      assert (b1 = b2) by congruence; assert (delta = 0) by congruence; subst b2 delta.
+      eapply Genv.find_funct_ptr_match in match_W1_W3 as [? [f' [? [match_fd ?]]]]; eauto.
+      congruence.
+    - exploit delta_zero; eauto; intros ->.
+      exploit funct_preserved2; eauto; intros <-.
+      eapply Genv.find_funct_ptr_match_conv in match_W1_W3 as [? [f' [? [match_fd ?]]]]; eauto.
+      congruence.
+  Qed.
+
+  Lemma allowed_call_preserved:
+    forall j cp v v'
+      (funct_preserved1: forall (b : block) (fd : fundef), Genv.find_funct_ptr ge1 b = Some fd -> j b = Some (b, 0))
+      (funct_preserved2: forall (b1 b2 : block) (fd : fundef), Genv.find_funct_ptr ge3 b2 = Some fd -> j b1 = Some (b2, 0) -> b1 = b2)
+      (delta_zero: Mem.delta_zero j),
+      v <> Vundef ->
+      Val.inject j v v' ->
+      Genv.allowed_call ge1 cp v ->
+      Genv.allowed_call ge3 cp v'.
+  Proof.
+    intros * funct_preserved1 funct_preserved2 delta_zero nundef H allowed.
+    inv H; auto; try congruence.
+    (* unfold Genv.allowed_call, Genv.find_comp in allowed. *)
+    destruct (Genv.find_funct ge1 (Vptr b1 ofs1)) eqn:find_v.
+    - simpl in find_v; destruct Ptrofs.eq_dec; try congruence; subst.
+      (* exploit delta_zero; eauto; intros ?; subst delta0. *)
+      exploit funct_preserved1; eauto. intros ?.
+      assert (b1 = b2) by congruence. assert (delta = 0) by congruence. subst b2 delta.
+      rewrite Ptrofs.add_zero.
+      eapply Genv.match_genvs_allowed_calls in match_W1_W3; eauto using has_comp_match_fundef.
+    - destruct (Genv.find_funct ge3 (Vptr b2 (Ptrofs.add ofs1 (Ptrofs.repr delta)))) eqn:find_v'.
+      + exploit delta_zero; eauto. intros ->. rewrite Ptrofs.add_zero in *.
+        simpl in find_v'. destruct Ptrofs.eq_dec; try congruence; subst.
+        exploit funct_preserved2; eauto. intros <-.
+        eapply Genv.find_funct_match_conv with (v := Vptr b1 Ptrofs.zero) in match_W1_W3; eauto.
+        destruct match_W1_W3 as [? [? [? [? ?]]]]; congruence.
+      + destruct allowed.
+        * left; subst; auto. simpl in *; now rewrite find_v, find_v'.
+        * right. simpl in *. rewrite find_v, find_v' in *.
+          admit.
+  Admitted.
+
+  Lemma update_stack_call_preserved_left:
+    forall j__left j__right rs1 rs3 st1 st1' st2 st3 cp sig
+      (funct_preserved1: forall (b : block) (fd : fundef), Genv.find_funct_ptr ge1 b = Some fd -> j__left b = Some (b, 0))
+      (funct_preserved2: forall (b1 b2 : block) (fd : fundef), Genv.find_funct_ptr ge3 b2 = Some fd -> j__left b1 = Some (b2, 0) -> b1 = b2)
+      (delta_zero: Mem.delta_zero j__left)
+      (left_side: (s, ge3) |= rs3 ∈ Left),
+      (rs1 PC <> Vundef) ->
+      regset_rel j__left rs1 rs3 ->
+      stack_rel s j__left j__right st1 st2 st3 ->
+      update_stack_call ge1 st1 sig cp rs1 = Some st1' ->
+      exists st3',
+        update_stack_call ge3 st3 sig cp rs3 = Some st3' /\
+          stack_rel s j__left j__right st1' st2 st3'.
+  Proof.
+    intros * funct_preserved1 funct_preserved2 delta_zero left_side nundef rs1_rs3 st_rel.
+    unfold update_stack_call.
+    erewrite find_comp_ignore_offset_preserved; eauto.
+    destruct ((cp =? Genv.find_comp_ignore_offset ge3 (rs3 PC))%positive); auto.
+    - intros R; inv R.
+      eexists; split; auto.
+    - pose proof (rs1_rs3 X1) as I.
+      inv I; try congruence.
+      intros R; inv R.
+      eexists; split; auto.
+      + eapply stack_rel_cons_left with (st2' := nil); simpl; eauto.
+        constructor; auto. econstructor; eauto.
+  Qed.
+
+  Lemma call_arguments_preserved:
+    forall j δ m1 m3 rs1 rs3,
+      mem_rel s ge1 ge3 j δ m1 m3 ->
+      regset_rel j rs1 rs3 ->
+      forall sig args, call_arguments rs1 m1 sig args ->
+                  exists args', Val.inject_list j args args'
+                           /\ call_arguments rs3 m3 sig args'.
+  Proof.
+    intros * m1_m3 rs1_rs3 sig args H.
+    unfold call_arguments in H.
+    unfold call_arguments.
     induction H.
-    + apply starR_refl.
-    + apply starR_one in H.
-      apply (starR_trans _ _ _ _ H _ _ _ IHstar H1).
-  - intros H.
-    induction H.
-    + apply star_refl.
-    + apply star_one in H0.
-      apply (star_trans IHstarR H0 H1).
-Qed.
-
-End CLOSURES.
-
-Section INVERSION.
-
-Variables (L : Smallstep.semantics) (Hsingle : single_events L).
-
-Lemma star_cons_inv s1 e t s2 :
-  Star L s1 (e :: t) s2 ->
-  exists s1' s2', Star L s1 E0 s1' /\ Step L s1' (e :: nil) s2' /\ Star L s2' t s2.
-Proof.
-  change (e :: t) with ((e :: nil) ** t).
-  intros Hstar.
-  destruct (star_app_inv _ Hsingle _ _ _ _ Hstar) as [s2'' [Hstar1 Hstar2]].
-  apply star_non_E0_split in Hstar1 as [s1' [s2' [A [B C]]]]; [| now auto].
-  exists s1', s2'.
-  split; [now auto |]. split; [now auto |]. eapply star_trans; now eauto.
-Qed.
-
-Lemma star_middle1_inv s1 t1 e t2 s2 :
-  Star L s1 (t1 ** e :: t2) s2 ->
-  exists s1' s2', Star L s1 t1 s1' /\ Step L s1' (e :: nil) s2' /\ Star L s2' t2 s2.
-Proof.
-  intros Hstar.
-  destruct (star_app_inv _ Hsingle _ _ _ _ Hstar) as [s0 [Hstar0 Hstar0']].
-  destruct (star_cons_inv _ _ _ _ Hstar0') as [s1' [s2' [Hstar1 [Hstep2 Hstar3]]]].
-  exists s1', s2'.
-  split; [| split]; [| assumption | assumption].
-  eapply star_trans; [now eauto | now eauto |].
-  now rewrite E0_right.
-Qed.
-
-End INVERSION.
-
-Inductive finpref_behavior : Type :=
-  | FTerminates: trace -> int -> finpref_behavior
-  | FGoes_wrong: trace -> finpref_behavior
-  | FTbc : trace -> finpref_behavior.
-
-Definition prefix (m:finpref_behavior) (b:program_behavior) : Prop :=
-  match m, b with
-  | FTerminates t1 n1, Terminates t2 n2 => t1 = t2 /\ n1 = n2
-  | FGoes_wrong t1, Goes_wrong t2 => t1 = t2
-  | FTbc t1, b => behavior_prefix t1 b
-  | _, _ => False
-  end.
-
-Definition finpref_trace (m : finpref_behavior) : trace :=
-  match m with
-  | FTerminates t _ | FGoes_wrong t | FTbc t => t
-  end.
-
-Definition does_prefix x m := exists b, program_behaves x b /\ prefix m b.
-
-Lemma program_behaves_finpref_exists :
-  forall L s t s',
-    initial_state L s ->
-    Star (semantics L) s t s' ->
-  exists beh,
-    program_behaves (semantics L) beh /\
-    prefix (FTbc t) beh.
-Proof.
-  intros L s t s' Hini HStar.
-  destruct (state_behaves_exists (semantics L) s') as [beh_s' Hbeh_s'].
-  (* pose proof program_runs Hini (state_behaves_app HStar Hbeh_s') as Hbeh. *)
-  pose proof @program_runs (semantics L) s _ Hini (state_behaves_app HStar Hbeh_s') as Hbeh.
-  eexists. split.
-  - exact Hbeh.
-  - simpl. exists beh_s'. reflexivity.
-Qed.
-
-(* CS *)
-
-(* is_left_component? *)
-Definition is_program_component (s : state) (lrsplit : split) : bool :=
-  match s with
-  | State _ rs m
-  | ReturnState _ rs m =>
-      match rs # PC with
-      | Vptr b _ =>
-          match (Mem.mem_compartments m) ! b with
-          | Some cp =>
-              match lrsplit cp with
-              | Left => true
-              | Right => false
-              end
-          | None => false
-          end
-      | _ => false
-      end
-  end.
-
-Definition state_mem (s : state) : mem :=
-  match s with
-  | State _ _ m
-  | ReturnState _ _ m
-    => m
-  end.
-
-Section SEMANTICS.
-
-Variable p: program.
-
-(* Hypothesis valid_program: *)
-(*   well_formed_program p. *)
-
-(* Hypothesis complete_program: *)
-(*   closed_program p. *)
-
-(* Let G := prepare_global_env p. *)
-
-Definition sem :=
-  semantics p.
-
-Lemma program_behaves_inv:
-  forall b,
-    program_behaves sem b ->
-  exists s,
-    initial_state p s /\ state_behaves sem s b.
-Proof.
-  intros b [s b' Hini Hbeh | Hini]; subst.
-  - now exists s.
-  - simpl in Hini.
-  (*   specialize (Hini (initial_machine_state p)). *)
-  (*   unfold initial_state in Hini. *)
-  (*     contradiction. *)
-  (* Qed. *)
-Admitted.
-
-Lemma singleton_traces:
-  single_events sem.
-Proof.
-  unfold single_events.
-  intros s t s' Hstep.
-  inversion Hstep; simpl; auto.
-  - inversion EV; auto.
-  - inversion EV; auto.
-  - eapply external_call_trace_length; eauto.
-  - eapply external_call_trace_length; eauto.
-Qed.
-
-End SEMANTICS.
-
-Theorem behavior_prefix_star {p b m} :
-  program_behaves (sem p) b ->
-  prefix m b ->
-exists s1 s2,
-  initial_state p s1 /\
-  Star (sem p) s1 (finpref_trace m) s2.
-Admitted.
-
-(* Recombination *)
-
-Section MERGE.
-
-Variable lrsplit : split.
-
-(* TODO Modify [b] and [sp] as needed *)
-Definition merge_frames (f f'' : stackframe) : stackframe :=
-  match f with
-  | Stackframe b cp _ sp _ =>
-      match lrsplit cp with
-      | Left => f
-      | Right => f''
-      end
-  end.
-
-Fixpoint merge_stacks (s s'' : stack) : stack :=
-  match s, s'' with
-  | nil, nil => nil
-  | f :: s, f'' :: s'' => merge_frames f f'' :: merge_stacks s s''
-  | _, _ => nil (* Should not happen *)
-  end.
-
-(* Merging the memories of two executions can be tricky. The main reason for
-   this is that in the CompCert memory model (extended with compartments) the
-   mapping between memory blocks across executions is not necessarily the
-   identity.
-
-   Consider for example two parallel executions which perform different
-   allocation sequences. These can be split depending on the side that is
-   executing at each point in time according to the split.
-
-            | Left    | Right   | Left    | ...
-     prog   | 1, 2, 3 | 4, 5, 6 | 7, 8, 9 | ...
-     prog'' | 1       | 2       | 3       | ...
-
-   It is not possible to simply take the Left blocks from one execution and the
-   Right blocks from the other, as this could result in clashes between block
-   identifiers.
-
-     prog'  | 1, 2, 3 | 2       | 7, 8, 9 | ...
-
-   A possible solution to this problem must involve a slightly more interesting
-   mapping from block identifiers and sides to block identifiers. For example,
-   we could reserve even blocks for blocks coming from the Left side (2 * n) and
-   odd blocks for blocks coming from the Right side (2 * n + 1). Thus:
-
-     prog'  | 2, 4, 6 | 5       | 14, ... | ...
-
-   A consequence of this rearrangement is that memory contents must also change
-   to reflect the mapping, i.e., the same mapping must be applied to block
-   identifiers in pointer values. *)
-
-(* TODO Add side filtering *)
-Definition remap
-  {X : Type} (s : side) (f : X -> X)
-  (t : Maps.PTree.t X) (e : positive * X) : Maps.PTree.t X :=
-  let '(b, x) := e in
-  let b' := match s with
-            | Left => 2 * b
-            | Right => 2 * b + 1
-            end%positive in
-  Maps.PTree.set b' (f x) t.
-
-(* TODO Actually go from [memval] to [val], remap blocks according to the side
-   and leave the rest intact (see [memory_chunk], [AST]) *)
-Definition merge_value (s : side) (v : memval) : memval :=
-  v.
-
-(* TODO Potential modifications to the following core definitions:
-
-    - Filter unused Right-side block components from Left-side memory, and vice
-      versa, e.g., using functions like [Maps.PTree.filter1] or
-      [Maps.PTree.map_filter1*]. Currently all blocks are mapped and some will
-      be left unused. This detail should have no bearing on the correctness of
-      the operations. In any case, combining two memories into one can leave
-      gaps, i.e., unmapped blocks in the new memory. Some memory well-formedness
-      conditions, in particular those involving block to compartment mapping, do
-      not currently support gaps. These disagreements need to be harmonized.
-
-    - Consider alternative definitions and their impact on proof effort. For
-      example, one should at the very least use [Maps.PTree_Properties.of_list].
-      Instead of extracting tree elements to lists, transforming them and
-      generating new trees from those revised elements, one could attempt to
-      operate on trees as much as possible, using maps on trees to transform the
-      payload, and lists only to remap the blocks that serve as key identifiers.
-      This last non-standard operation is what makes maps insufficient for our
-      purposes.
-
-   Beyond these improvements, the more fundamental obstacle to a straightforward
-   adaptation of the simplified proof in the single-memory model (as opposed to
-   per-compartment memories) is the difficulty of defining a merging function on
-   memory contents. Even if we can come up with systematic mappings from the
-   blocks of two executions to the blocks of a singled recomposed execution,
-   these mappings involve renamings of block identifiers across executions.
-   Extended to memory contents, this means that block identifiers in pointers
-   held in memory must also be renamed according to the same mapping. The
-   information about which [memval]s stored in memory correspond to high-level
-   pointer [val]s is not readily available without the program, which at the
-   assembly level simply annotates each load or store operation with the
-   corresponding [memory_chunk].
-
-   On the whole, all of this points towards an adaptation of the proof based
-   purely on state relations which build a suitable mapping incrementally and
-   which are preserved by stepping. *)
-
-Definition merge_contents (m m'' : mem) :=
-  let (def, c) := Mem.mem_contents m in
-  let (_, c'') := Mem.mem_contents m'' in (* default discarded *)
-  (* TODO Filter according to side *)
-  let t0 := List.fold_left (remap Left id) (Maps.PTree.elements c) (Maps.PTree.empty _) in
-  let t1 := List.fold_left (remap Right id) (Maps.PTree.elements c'') t0 in
-  (def, t1).
-
-Definition merge_access (m m'' : mem) :=
-  let '(def, a) := Mem.mem_access m in
-  let '(_, a'') := Mem.mem_access m'' in (* default discarded *)
-  (* TODO Filter according to side *)
-  let t0 := List.fold_left (remap Left id) (Maps.PTree.elements a) (Maps.PTree.empty _) in
-  let t1 := List.fold_left (remap Right id) (Maps.PTree.elements a'') t0 in
-  (def, t1).
-
-(* TODO Compartments must be assigned to all "allocated" blocks:
-   [Plt b (merge_nextblocks m m'')] *)
-Definition merge_compartments (m m'' : mem) :=
-  let c := Mem.mem_compartments m in
-  let c'' := Mem.mem_compartments m'' in
-  (* TODO Filter according to side *)
-  let t0 := List.fold_left (remap Left id) (Maps.PTree.elements c) (Maps.PTree.empty _) in
-  let t1 := List.fold_left (remap Right id) (Maps.PTree.elements c'') t0 in
-  t1.
-
-Definition merge_nextblocks (m m'' : mem) :=
-  let n := Mem.nextblock m in
-  let n'' := Mem.nextblock m'' in
-  (* TODO Tight bounds based on side *)
-  Pos.max (2 * n + 1) (2 * n'' + 1).
-
-Program Definition merge_memories (m m'' : mem) : mem :=
-  {| Mem.mem_contents := merge_contents m m''
-   ; Mem.mem_access := merge_access m m''
-   ; Mem.mem_compartments := merge_compartments m m''
-   ; Mem.nextblock := merge_nextblocks m m''
-  |}.
-Next Obligation.
-Proof.
-  unfold Mem.perm_order'', merge_access.
-  destruct m as [A [def mem_access] C D access_max F G H]; simpl; clear A C D F G H.
-  destruct m'' as [A [def'' mem_access''] C D access_max'' F G H]; simpl; clear A C D F G H.
-Admitted.
-Next Obligation.
-Admitted.
-Next Obligation.
-Admitted.
-Next Obligation.
-Admitted.
-
-Definition merge_registers (r r'' : regset) (m : mem) : regset :=
-  match Mem.val_compartment m r#PC with
-  | Some cp =>
-      match lrsplit cp with
-      | Left => r
-      | Right => r''
-      end
-  | None =>
-      r (* Should not happen *)
-  end.
-
-Definition merge_states (state state'' : state) : Asm.state :=
-  match state, state'' with
-  | State s r m, State s'' r'' m'' =>
-      State (merge_stacks s s'') (merge_registers r r'' m) (merge_memories m m'')
-  | ReturnState s r m, ReturnState s'' r'' m'' =>
-      ReturnState (merge_stacks s s'') (merge_registers r r'' m) (merge_memories m m'')
-  | _, _ =>
-      state (* Should not happen *)
-  end.
-
-End MERGE.
-
-Section MERGEABLE.
-
-Variables p c p' c' : program.
-
-(* Variable sp : split. *)
-
-(* Hypothesis Hcompat  : asm_compatible s p  c. *)
-(* Hypothesis Hcompat' : asm_compatible s p' c'. *)
-
-Variables prog prog' prog'' : program.
-
-Hypothesis Hprog   : link p  c  = Some prog.
-Hypothesis Hprog'  : link p  c' = Some prog'.
-Hypothesis Hprog'' : link p' c' = Some prog''.
-
-Let sem   := semantics prog.
-Let sem'  := semantics prog'.
-Let sem'' := semantics prog''.
-
-Inductive mergeable_states (s s'' : state) : Prop :=
-  mergeable_states_intro : forall sp s0 s0'' t,
-    (* Well-formedness conditions. *)
-    asm_compatible sp p  c ->
-    asm_compatible sp p' c' ->
-    (* "Proper" definition. *)
-    initial_state prog   s0   ->
-    initial_state prog'' s0'' ->
-    Star sem   s0   t s   ->
-    Star sem'' s0'' t s'' ->
-    mergeable_states s s''.
-
-Lemma mergeable_states_ind' : forall P : state -> state -> Prop,
-    (forall (s s'' : state),
-        initial_state prog s ->
-        initial_state prog'' s'' ->
-        P s s'') ->
-    (forall (s1 s2 s'' : state),
-        mergeable_states s1 s'' ->
-        Step sem s1 E0 s2 ->
-        P s1 s'' ->
-        P s2 s'') ->
-    (forall (s s1'' s2'' : state),
-        mergeable_states s s1'' ->
-        Step sem'' s1'' E0 s2'' ->
-        P s s1'' ->
-        P s s2'') ->
-    (forall (s1 s2 s1'' s2'' : state) (t : trace),
-        t <> E0 ->
-        mergeable_states s1 s1'' ->
-        Step sem s1 t s2 ->
-        Step sem'' s1'' t s2'' ->
-        P s1 s1'' ->
-        P s2 s2'') ->
-    forall (s s'' : state), mergeable_states s s'' -> P s s''.
-Proof.
-  (*   intros P. *)
-  (*   intros Hindini HindE0l HindE0r Hindstep. *)
-  (*   intros s s'' Hmerg. *)
-  (*   inversion Hmerg *)
-  (*     as [s0 s0'' t ? ? ? ? ? ? ? ? ? Hini Hini'' Hstar Hstar'']. *)
-  (*   apply star_iff_starR in Hstar. apply star_iff_starR in Hstar''. *)
-  (*   generalize dependent s''. *)
-  (*   induction Hstar *)
-  (*     as [s | s1 t1 s2 t2 s3 ? Hstar12 IHstar Hstep23 Ht12]; *)
-  (*     intros s'' Hmerg Hstar''. *)
-  (*   - remember E0 as t. *)
-  (*     induction Hstar''. *)
-  (*     + now apply Hindini. *)
-  (*     + subst. *)
-  (*       assert (Ht1 : t1 = E0) by now destruct t1. *)
-  (*       assert (Ht2 : t2 = E0) by now destruct t1. *)
-  (*       subst. *)
-  (*       specialize (IHHstar'' eq_refl HindE0l HindE0r Hindstep). *)
-  (*       assert (Hmergss2 : mergeable_states s s2). *)
-  (*       { apply star_iff_starR in Hstar''. *)
-  (*         econstructor; try eassumption. now apply star_refl. } *)
-  (*       specialize (IHHstar'' Hini'' Hmergss2). eapply HindE0r; eauto. *)
-  (*   - pose proof (CS.singleton_traces (program_link p c) _ _ _ Hstep23) as Hlen. *)
-  (*     assert (t2 = E0 \/ exists ev, t2 = [ev]) as [Ht2E0 | [ev Ht2ev]]. *)
-  (*     { clear -Hlen. *)
-  (*       inversion Hlen. *)
-  (*       - right. destruct t2. simpl in *. congruence. *)
-  (*         simpl in *. destruct t2; eauto. simpl in *. congruence. *)
-  (*       - left. subst. destruct t2; simpl in *. reflexivity. *)
-  (*         omega. } *)
-  (*     + subst. *)
-  (*       unfold Eapp in Hstar''; rewrite app_nil_r in Hstar''. *)
-  (*       assert (Hmergs2s'' : mergeable_states s2 s''). *)
-  (*       { econstructor; try eassumption. *)
-  (*         apply star_iff_starR in Hstar12. apply Hstar12. *)
-  (*         apply star_iff_starR in Hstar''. apply Hstar''. } *)
-  (*       specialize (IHstar Hini s'' Hmergs2s'' Hstar''). *)
-  (*       eapply HindE0l; eauto. *)
-  (*     + subst. *)
-  (*       remember (t1 ** [ev]) as t. *)
-  (*       induction Hstar''; subst. *)
-  (*       * assert (E0 <> t1 ** [ev]) by now induction t1. contradiction. *)
-  (*       * subst. *)
-  (*         specialize (IHHstar'' Hini'' IHstar). *)
-  (*         pose proof (CS.singleton_traces (program_link p' c') _ _ _ H8) as Hlen2. *)
-  (*         assert (t2 = E0 \/ exists ev, t2 = [ev]) as [ht2E0 | [ev' Ht2ev']]. *)
-  (*         { clear -Hlen2. *)
-  (*           inversion Hlen2. *)
-  (*           - right. destruct t2. simpl in *; congruence. *)
-  (*             simpl in *. destruct t2; eauto. simpl in *. congruence. *)
-  (*           - left. inversion H0. destruct t2; simpl in *. reflexivity. *)
-  (*             congruence. } *)
-  (*         ** subst. *)
-  (*            unfold Eapp in H9; rewrite app_nil_r in H9; subst. *)
-  (*            assert (Hmergs3s4 : mergeable_states s3 s4). *)
-  (*            { econstructor; eauto. *)
-  (*              apply star_iff_starR. *)
-  (*              eapply starR_step. *)
-  (*              apply Hstar12. *)
-  (*              eauto. reflexivity. *)
-  (*              apply star_iff_starR in Hstar''; apply Hstar''. } *)
-  (*            specialize (IHHstar'' Hmergs3s4 eq_refl). *)
-  (*            eapply HindE0r; eauto. *)
-  (*         ** subst. *)
-  (*            assert (t1 = t0 /\ ev = ev') as [Ht1t0 Hevev'] by now apply app_inj_tail. *)
-  (*            subst. clear IHHstar''. *)
-  (*            specialize (IHstar Hini s4). *)
-  (*            assert (Hmerge : mergeable_states s2 s4). *)
-  (*            { econstructor; try eassumption. apply star_iff_starR in Hstar12; apply Hstar12. *)
-  (*              apply star_iff_starR in Hstar''; apply Hstar''. } *)
-  (*            specialize (IHstar Hmerge Hstar''). *)
-  (*            eapply Hindstep with (t := [ev']); eauto. unfold E0. congruence. *)
-  (* Qed. *)
-Admitted.
-
-End MERGEABLE.
-
-Section THREEWAY_MULTISEM_1.
-
-Variables p c p' c' : program.
-
-Variable lrsplit : split.
-
-Hypothesis Hcompat  : asm_compatible lrsplit p  c.
-Hypothesis Hcompat' : asm_compatible lrsplit p' c'.
-
-Variables prog prog' prog'' : program.
-
-Hypothesis Hprog   : link p  c  = Some prog.
-Hypothesis Hprog'  : link p  c' = Some prog'.
-Hypothesis Hprog'' : link p' c' = Some prog''.
-
-Let sem   := semantics prog.
-Let sem'  := semantics prog'.
-Let sem'' := semantics prog''.
-
-Lemma to_partial_memory_epsilon_star s s1'' s2'' s3'' :
-  mergeable_states p c p' c' prog prog'' s s1'' ->
-  is_program_component s lrsplit = true ->
-  Star sem'' s1'' E0 s2'' ->
-  Step sem'' s2'' E0 s3'' ->
-  to_partial_memory (state_mem s2'') lrsplit Left =
-  to_partial_memory (state_mem s3'') lrsplit Left.
-  (* Proof. *)
-  (*   intros Hmerge1 Hcomp Hstar12'' Hstep23''. *)
-  (*   destruct s2'' as [[[gps2'' mem2''] regs2''] pc2'']. *)
-  (*   destruct s3'' as [[[gps3'' mem3''] regs3''] pc3'']. *)
-  (*   inversion Hstep23''; subst; *)
-  (*     (* Most cases do not touch the memory. *) *)
-  (*     try reflexivity; *)
-  (*     (* Rewrite memory goals, discharge side goals and homogenize shape. *) *)
-  (*     match goal with *)
-  (*     | Hstore : Memory.store _ _ _ = _, *)
-  (*       Heq : Pointer.component _ = Pointer.component _ |- _ => *)
-  (*       erewrite Memory.program_store_to_partialized_memory; eauto 1; rewrite Heq *)
-  (*     | Halloc : Memory.alloc _ _ _ = _ |- _ => *)
-  (*       erewrite program_allocation_to_partialized_memory; eauto 1 *)
-  (*     end; *)
-  (*     (* Prove the PC is in the program in both cases. *) *)
-  (*     unfold ip; *)
-  (*     t_to_partial_memory_epsilon_star Hmerge1 Hcomp Hstar12''. *)
-  (* Qed. *)
-
-  (* Lemma merge_states_silent_star s s1'' s2'' : *)
-  (*   mergeable_states p c p' c' s s1'' -> *)
-  (*   CS.is_program_component s ic -> *)
-  (*   Star sem'' s1'' E0 s2'' -> *)
-  (*   merge_states ip ic s s1'' = merge_states ip ic s s2''. *)
-  (* Proof. *)
-  (*   intros Hmerge1 Hcomp Hstar12''. *)
-  (*   remember E0 as t. *)
-  (*   apply star_iff_starR in Hstar12''. *)
-  (*   induction Hstar12'' *)
-  (*     as [s'' | s1'' t1 s2'' t2 s3'' ? Hstar12'' IHstar'' Hstep23'' Ht12]; subst. *)
-  (*   - reflexivity. *)
-  (*   - (* Simplify, apply IH and case analyze. *) *)
-  (*     symmetry in Ht12; apply Eapp_E0_inv in Ht12 as [? ?]; subst. *)
-  (*     specialize (IHstar'' Hmerge1 eq_refl). rewrite IHstar''. *)
-  (*     apply star_iff_starR in Hstar12''. *)
-  (*     destruct s as [[[gps mem] regs] pc]. *)
-  (*     destruct s2'' as [[[gps2'' mem2''] regs2''] pc2'']. *)
-  (*     destruct s3'' as [[[gps3'' mem3''] regs3''] pc3'']. *)
-  (*     inversion Hstep23''; subst; *)
-  (*       (* Unfold, common rewrite on PC, memory rewrite for memory goals and done. *) *)
-  (*       unfold merge_states, merge_registers, merge_pcs, merge_memories, ip; *)
-  (*       erewrite mergeable_states_program_component_domm; try eassumption; *)
-  (*       try (pose proof to_partial_memory_epsilon_star Hmerge1 Hcomp Hstar12'' Hstep23'' as Hmem23''; *)
-  (*            simpl in Hmem23''; rewrite Hmem23''); *)
-  (*       reflexivity. *)
-  (* Qed. *)
-Admitted.
-
-Lemma merge_states_silent_star {s s1'' s2''} :
-  mergeable_states p c p' c' prog prog'' s s1'' ->
-  is_program_component s lrsplit = true ->
-  Star sem'' s1'' E0 s2'' ->
-  merge_states lrsplit s s1'' = merge_states lrsplit s s2''.
-Proof.
-  intros Hmerge1 Hcomp Hstar12''.
-  remember E0 as t.
-  apply star_iff_starR in Hstar12''.
-  induction Hstar12''
-    as [s'' | s1'' t1 s2'' t2 s3'' ? Hstar12'' IHstar'' Hstep23'' Ht12]; subst.
-  - reflexivity.
-  - (* Simplify, apply IH and case analyze. *)
-    symmetry in Ht12; apply Eapp_E0_inv in Ht12 as [? ?]; subst.
-    specialize (IHstar'' Hmerge1 eq_refl). rewrite IHstar''.
-    apply star_iff_starR in Hstar12''.
-    destruct s.
-  (*     destruct s as [[[gps mem] regs] pc]. *)
-  (*     destruct s2'' as [[[gps2'' mem2''] regs2''] pc2'']. *)
-  (*     destruct s3'' as [[[gps3'' mem3''] regs3''] pc3'']. *)
-    inversion Hstep23''; subst;
-      unfold merge_states, merge_memories.
-    pose proof to_partial_memory_epsilon_star _ _ _ _ Hmerge1 Hcomp Hstar12'' Hstep23'' as Hmem23''.
-  (*     inversion Hstep23''; subst; *)
-  (*       (* Unfold, common rewrite on PC, memory rewrite for memory goals and done. *) *)
-  (*       unfold merge_states, merge_registers, merge_pcs, merge_memories, ip; *)
-  (*       erewrite mergeable_states_program_component_domm; try eassumption; *)
-  (*       try (pose proof to_partial_memory_epsilon_star Hmerge1 Hcomp Hstar12'' Hstep23'' as Hmem23''; *)
-  (*            simpl in Hmem23''; rewrite Hmem23''); *)
-  (*       reflexivity. *)
-  (* Qed. *)
-Admitted.
-
-Lemma context_epsilon_star_merge_states s s1 s2 :
-  mergeable_states p c p' c' prog prog'' s s1 ->
-  is_program_component s lrsplit = true ->
-  Star sem'' s1 E0 s2 ->
-  Star sem' (merge_states lrsplit s s1) E0 (merge_states lrsplit s s2).
-Proof.
-  intros Hmerg Hcomp Hstar.
-  rewrite (merge_states_silent_star Hmerg Hcomp Hstar).
-  apply star_refl.
-Qed.
-
-Lemma threeway_multisem_mergeable_step_E0 s1 s2 s1'' :
-  is_program_component s1 lrsplit = true ->
-  mergeable_states p c p' c' prog prog'' s1 s1'' ->
-  Step sem s1 E0 s2 ->
-  mergeable_states p c p' c' prog prog'' s2 s1''.
-Proof.
-  intros Hcomp1 Hmerge1 Hstep12.
-  inversion Hmerge1 as [sp s0 s0'' t Hini1 Hini2 Hstar01 Hstar01''].
-  apply mergeable_states_intro with (sp := sp) (s0 := s0) (s0'' := s0'') (t := t);
-    try assumption.
-  eapply star_right; try eassumption; now rewrite E0_right.
-Qed.
-
-Lemma threeway_multisem_mergeable_program s1 s1'' t s2 s2'' :
-  is_program_component s1 lrsplit = true ->
-  mergeable_states p c p' c' prog prog'' s1 s1'' ->
-  Star sem   s1   t s2   ->
-  Star sem'' s1'' t s2'' ->
-  mergeable_states p c p' c' prog prog'' s2 s2''.
-Proof.
-  intros _ Hmerg Hstar Hstar''. inversion Hmerg.
-  econstructor; try eassumption.
-  - eapply star_trans; try eassumption; reflexivity.
-  - eapply star_trans; try eassumption; reflexivity.
-Qed.
-
-Theorem threeway_multisem_step_E0 s1 s2 s1'' :
-  is_program_component s1 lrsplit = true ->
-  mergeable_states p c p' c' prog prog'' s1 s1'' ->
-  Step sem  s1 E0 s2 ->
-  Step sem' (merge_states lrsplit s1 s1'') E0 (merge_states lrsplit s2 s1'').
-  (* Proof. *)
-  (*   intros Hcomp1 Hmerge1 Hstep12. *)
-  (*   inversion Hmerge1 as [??????? Hmergeable_ifaces ????????]. *)
-  (*   (* Derive some useful facts and begin to expose state structure. *) *)
-  (*   inversion Hmergeable_ifaces as [Hlinkable _]. *)
-  (*   rewrite (mergeable_states_merge_program Hcomp1 Hmerge1). *)
-  (*   pose proof CS.silent_step_preserves_program_component _ _ _ _ Hcomp1 Hstep12 as Hcomp2. *)
-  (*   pose proof threeway_multisem_mergeable_step_E0 Hcomp1 Hmerge1 Hstep12 *)
-  (*     as Hmerge2. *)
-  (*   rewrite (mergeable_states_merge_program Hcomp2 Hmerge2). *)
-  (*   destruct s1 as [[[gps1 mem1] regs1] pc1]. *)
-  (*   destruct s2 as [[[gps2 mem2] regs2] pc2]. *)
-  (*   destruct s1'' as [[[gps1'' mem1''] regs1''] pc1'']. *)
-  (*   (* Case analysis on step. *) *)
-  (*   inversion Hstep12; subst; *)
-  (*     t_threeway_multisem_step_E0. *)
-  (* Qed. *)
-Admitted.
-
-Theorem threeway_multisem_star_E0_program s1 s1'' s2 s2'':
-  is_program_component s1 lrsplit = true ->
-  mergeable_states p c p' c' prog prog'' s1 s1'' ->
-  Star sem   s1   E0 s2   ->
-  Star sem'' s1'' E0 s2'' ->
-  Star sem'  (merge_states lrsplit s1 s1'') E0 (merge_states lrsplit s2 s2'').
-Proof.
-  intros Hcomp1 Hmerge1 Hstar12 Hstar12''.
-  (*   inversion Hmerge1 as [?? t0 ???? Hmergeable_ifaces ? Hifacec ???? Hstar ?]. *)
-  (* pose proof mergeable_states_program_to_program Hmerge1 Hcomp1 as Hcomp1'. *)
-    (*   rewrite Hifacec in Hcomp1'. *)
-  (*   remember E0 as t eqn:Ht. *)
-  (*   revert Ht Hmerge1 Hcomp1 Hcomp1' Hstar12''. *)
-  (*   apply star_iff_starR in Hstar12. *)
-  (*   induction Hstar12 as [s | s1 t1 s2 t2 s3 ? Hstar12 IHstar Hstep23]; subst; *)
-  (*     intros Ht Hmerge1 Hcomp1 Hcomp1' Hstar12'. *)
-  (*   - rewrite -Hifacec in Hcomp1'. *)
-  (*     unfold ip, ic; erewrite merge_states_silent_star; try eassumption. *)
-  (*     now apply star_refl. *)
-  (*   - apply Eapp_E0_inv in Ht. destruct Ht; subst. *)
-  (*     specialize (IHstar Hstar eq_refl Hmerge1 Hcomp1 Hcomp1' Hstar12'). *)
-  (*     apply star_trans with (t1 := E0) (s2 := merge_states ip ic s2 s2'') (t2 := E0); *)
-  (*       [assumption | | reflexivity]. *)
-  (*     apply star_step with (t1 := E0) (s2 := merge_states ip ic s3 s2'') (t2 := E0). *)
-  (*     + apply star_iff_starR in Hstar12. *)
-  (*       pose proof threeway_multisem_mergeable_program Hcomp1 Hmerge1 Hstar12 Hstar12' *)
-  (*         as Hmerge2. *)
-  (*       pose proof CS.epsilon_star_preserves_program_component _ _ _ _ Hcomp1 Hstar12 *)
-  (*         as Hcomp2. *)
-  (*       exact (threeway_multisem_step_E0 Hcomp2 Hmerge2 Hstep23). *)
-  (*     + now constructor. *)
-  (*     + reflexivity. *)
-  (* Qed. *)
-Admitted.
-
-Lemma threeway_multisem_event_lockstep_program_mergeable s1 s1'' e s2 s2'' :
-  is_program_component s1 lrsplit = true ->
-  mergeable_states p c p' c' prog prog'' s1 s1'' ->
-  Step sem   s1   (e :: nil) s2   ->
-  Step sem'' s1'' (e :: nil) s2'' ->
-  mergeable_states p c p' c' prog prog'' s2 s2''.
-Proof.
-  intros Hcomp1 Hmerge1 Hstep12 Hstep12''. inversion Hmerge1.
-  apply mergeable_states_intro with (sp := sp) (s0 := s0) (s0'' := s0'') (t := t ** (e :: nil));
-    try assumption.
-  - eapply star_right; try eassumption; reflexivity.
-  - eapply star_right; try eassumption; reflexivity.
-Qed.
-
-Theorem threeway_multisem_event_lockstep_program_step s1 s1'' e s2 s2'' :
-  is_program_component s1 lrsplit = true ->
-  mergeable_states p c p' c' prog prog'' s1 s1'' ->
-  Step sem   s1   (e :: nil) s2   ->
-  Step sem'' s1'' (e :: nil) s2'' ->
-  Step sem'  (merge_states lrsplit s1 s1'') (e :: nil) (merge_states lrsplit s2 s2'').
-  (* Proof. *)
-  (*   intros Hcomp1 Hmerge1 Hstep12 Hstep12''. *)
-  (*   (* Derive some useful facts and begin to expose state structure. *) *)
-  (*   inversion Hmerge1 as [??? Hwfp Hwfc Hwfp' Hwfc' Hmergeable_ifaces Hifacep Hifacec ??????]. *)
-  (*   inversion Hmergeable_ifaces as [Hlinkable _]. *)
-  (*   pose proof linkable_implies_linkable_mains Hwfp Hwfc Hlinkable as Hmain_linkability. *)
-  (*   assert (Hlinkable' := Hlinkable); rewrite Hifacep Hifacec in Hlinkable'. *)
-  (*   pose proof linkable_implies_linkable_mains Hwfp' Hwfc' Hlinkable' as Hmain_linkability'. *)
-  (*   rewrite (mergeable_states_merge_program Hcomp1 Hmerge1). *)
-  (*   pose proof threeway_multisem_event_lockstep_program_mergeable *)
-  (*        Hcomp1 Hmerge1 Hstep12 Hstep12'' as Hmerge2. *)
-  (*   set s1copy := s1. destruct s1 as [[[gps1 mem1] regs1] pc1]. *)
-  (*   set s2copy := s2. destruct s2 as [[[gps2 mem2] regs2] pc2]. *)
-  (*   destruct s1'' as [[[gps1'' mem1''] regs1''] pc1'']. *)
-  (*   destruct s2'' as [[[gps2'' mem2''] regs2''] pc2'']. *)
-  (*   (* Case analysis on step. *) *)
-  (*   inversion Hstep12; subst; *)
-  (*     inversion Hstep12''; subst. *)
-  (*   - (* Call: case analysis on call point. *) *)
-  (*     pose proof is_program_component_in_domm Hcomp1 Hmerge1 as Hdomm. *)
-  (*     unfold CS.state_component in Hdomm; simpl in Hdomm. unfold ip, ic. *)
-  (*     rewrite <- Pointer.inc_preserves_component in Hdomm. *)
-  (*     destruct (CS.is_program_component s2copy ic) eqn:Hcomp2; *)
-  (*       [ pose proof mergeable_states_program_to_context Hmerge2 Hcomp2 as Hcomp2'' *)
-  (*       | apply negb_false_iff in Hcomp2 ]; *)
-  (*       [ erewrite mergeable_states_merge_program *)
-  (*       | erewrite mergeable_states_merge_context ]; try eassumption; *)
-  (*       unfold merge_states_mem, merge_states_stack; *)
-  (*       rewrite merge_stacks_cons_program; try eassumption; *)
-  (*       match goal with *)
-  (*       | Heq : Pointer.component pc1'' = Pointer.component pc1 |- _ => *)
-  (*         rewrite Heq *)
-  (*       end; *)
-  (*       [| erewrite Register.invalidate_eq with (regs2 := regs1); [| congruence]]; *)
-  (*       t_threeway_multisem_event_lockstep_program_step_call Hcomp1 Hmerge1. *)
-  (*   - (* Return: case analysis on return point. *) *)
-  (*     match goal with *)
-  (*     | H1 : Pointer.component pc1'' = Pointer.component pc1, *)
-  (*       H2 : Pointer.component pc2'' = Pointer.component pc2 |- _ => *)
-  (*       rename H1 into Heq1; rename H2 into Heq2 *)
-  (*     end. *)
-  (*     destruct (CS.is_program_component s2copy ic) eqn:Hcomp2; *)
-  (*       [| apply negb_false_iff in Hcomp2]; *)
-  (*       [ rewrite (mergeable_states_merge_program _ Hmerge2); try assumption *)
-  (*       | rewrite (mergeable_states_merge_context _ Hmerge2); try assumption ]; *)
-  (*       unfold merge_states_mem, merge_states_stack; simpl; *)
-  (*       [ pose proof is_program_component_in_domm Hcomp2 Hmerge2 as Hcomp2''; *)
-  (*         erewrite merge_frames_program; try eassumption *)
-  (*       | erewrite merge_frames_context; try eassumption ]; *)
-  (*       [ rewrite Heq1 Heq2 | rewrite Heq1 ]; *)
-  (*       [| erewrite Register.invalidate_eq with (regs2 := regs1); [| congruence]]; *)
-  (*       t_threeway_multisem_event_lockstep_program_step_return Hcomp1 Hmerge1. *)
-  (* Qed. *)
-Admitted.
-
-Corollary threeway_multisem_event_lockstep_program s1 s1'' e s2 s2'' :
-  is_program_component s1 lrsplit = true ->
-  mergeable_states p c p' c' prog prog'' s1 s1'' ->
-  Step sem   s1   (e :: nil) s2   ->
-  Step sem'' s1'' (e :: nil) s2'' ->
-  Step sem'  (merge_states lrsplit s1 s1'') (e :: nil) (merge_states lrsplit s2 s2'') /\
-  mergeable_states p c p' c' prog prog'' s2 s2''.
-Proof.
-  split.
-  - now apply threeway_multisem_event_lockstep_program_step.
-  - eapply threeway_multisem_event_lockstep_program_mergeable; eassumption.
-Qed.
-
-End THREEWAY_MULTISEM_1.
-
-Section THREEWAY_MULTISEM_2.
-
-Variables p c p' c' : program.
-
-Variable lrsplit : split.
-
-Hypothesis Hcompat  : asm_compatible lrsplit p  c.
-Hypothesis Hcompat' : asm_compatible lrsplit p' c'.
-
-Variables prog prog' prog'' : program.
-
-Hypothesis Hprog   : link p  c  = Some prog.
-Hypothesis Hprog'  : link p  c' = Some prog'.
-Hypothesis Hprog'' : link p' c' = Some prog''.
-
-Let sem   := semantics prog.
-Let sem'  := semantics prog'.
-Let sem'' := semantics prog''.
-
-Lemma threeway_multisem_mergeable s1 s1'' t s2 s2'' :
-  mergeable_states p c p' c' prog prog'' s1 s1'' ->
-  Star sem   s1   t s2   ->
-  Star sem'' s1'' t s2'' ->
-  mergeable_states p c p' c' prog prog'' s2 s2''.
-Proof.
-  intros Hmerg Hstar12 Hstar12''. inversion Hmerg.
-  econstructor; try eassumption;
-    eapply star_trans; try eassumption; reflexivity.
-Qed.
-
-Lemma threeway_multisem_star_E0 s1 s1'' s2 s2'':
-  mergeable_states p c p' c' prog prog'' s1 s1'' ->
-  Star sem   s1   E0 s2   ->
-  Star sem'' s1'' E0 s2'' ->
-  Star sem'  (merge_states lrsplit s1 s1'') E0 (merge_states lrsplit s2 s2'').
-Proof.
-  intros H H0 H1.
-  (*   inversion H as [_ _ _ Hwfp Hwfc Hwfp' Hwfc' Hmergeable_ifaces Hifacep Hifacec _ _ _ _ _ _]. *)
-  destruct (is_program_component s1 lrsplit) eqn:Hprg_component.
-  - now apply (threeway_multisem_star_E0_program p c p' c').
-  (* TODO symmetric case *)
-  (*   - rewrite (merge_states_sym H); try assumption. *)
-  (*     rewrite (merge_states_sym (threeway_multisem_mergeable H H0 H1)); try assumption. *)
-  (*     assert (Hlinkable : linkable ip ic) by now destruct Hmergeable_ifaces. *)
-  (*     unfold ic in Hlinkable. rewrite Hifacec in Hlinkable. *)
-  (*     pose proof (program_linkC Hwfp Hwfc' Hlinkable) as Hprg_linkC'. *)
-  (*     unfold sem', prog'. *)
-  (*     rewrite Hprg_linkC'. *)
-  (*     pose proof (program_linkC Hwfp' Hwfc') as Hprg_linkC''; rewrite <- Hifacep in Hprg_linkC''. *)
-  (*     unfold sem'', prog'' in H1. *)
-  (*     rewrite (Hprg_linkC'' Hlinkable) in H1. *)
-  (*     pose proof (program_linkC Hwfp Hwfc) as Hprg_linkC; rewrite Hifacec in Hprg_linkC. *)
-  (*     unfold sem, prog in H0. *)
-  (*     rewrite (Hprg_linkC Hlinkable) in H0. *)
-  (*     pose proof (threeway_multisem_star_E0_program) as Hmultisem. *)
-  (*     specialize (Hmultisem c' p' c p). *)
-  (*     rewrite <- Hifacep, <- Hifacec in Hmultisem. *)
-  (*     specialize (Hmultisem s1'' s1 s2'' s2). *)
-  (*     assert (His_prg_component'' : CS.is_program_component s1'' (prog_interface p)). *)
-  (*     { eapply mergeable_states_context_to_program. *)
-  (*       apply H. *)
-  (*       unfold CS.is_program_component in Hprg_component. apply negbFE in Hprg_component. *)
-  (*       assumption. *)
-  (*     } *)
-  (*     assert (Hmerg_sym : mergeable_states c' p' c p s1'' s1). *)
-  (*     { inversion H. *)
-  (*       econstructor; *)
-  (*         try rewrite <- (Hprg_linkC Hlinkable); try rewrite <- (Hprg_linkC'' Hlinkable); eauto. *)
-  (*       apply mergeable_interfaces_sym; congruence. *)
-  (*     } *)
-  (*     specialize (Hmultisem His_prg_component'' Hmerg_sym H1 H0). *)
-  (*     assumption. *)
-  (* Qed. *)
-Admitted.
-
-Lemma threeway_multisem_event_lockstep s1 s1'' e s2 s2'' :
-  mergeable_states p c p' c' prog prog'' s1 s1'' ->
-  Step sem   s1   (e :: nil) s2   ->
-  Step sem'' s1'' (e :: nil) s2'' ->
-  Step sem'  (merge_states lrsplit s1 s1'') (e :: nil) (merge_states lrsplit s2 s2'') /\
-  mergeable_states p c p' c' prog prog'' s2 s2''.
-Proof.
-  intros Hmerge1 Hstep12 Hstep12''.
-  (*   inversion Hmerge1 as [? ? ? Hwfp Hwfc Hwfp' Hwfc' Hmergeable_ifaces Hifacep Hifacec Hprog_is_closed _ Hini H1 Hstar H2]. *)
-  destruct (is_program_component s1 lrsplit) eqn:Hcase.
-  - now apply threeway_multisem_event_lockstep_program.
-  (* TODO symmetric case *)
-  (*   - inversion Hmergeable_ifaces as [Hlinkable _]. *)
-  (*     pose proof @threeway_multisem_event_lockstep_program c' p' c p as H. *)
-  (*     rewrite <- Hifacec, <- Hifacep in H. *)
-  (*     specialize (H s1'' s1 e s2'' s2). *)
-  (*     assert (Hmerge11 := Hmerge1). *)
-  (*     erewrite mergeable_states_sym in Hmerge11; try eassumption. *)
-  (*     erewrite mergeable_states_sym; try eassumption. *)
-  (*     unfold ip, ic; erewrite merge_states_sym; try eassumption. *)
-  (*     assert (Hmerge2 : mergeable_states p c p' c' s2 s2''). *)
-  (*     { inversion Hmerge1. *)
-  (*       econstructor; try eassumption. *)
-  (*       apply star_iff_starR; eapply starR_step; try eassumption. *)
-  (*       apply star_iff_starR; eassumption. reflexivity. *)
-  (*       apply star_iff_starR; eapply starR_step; try eassumption. *)
-  (*       apply star_iff_starR; eassumption. reflexivity. } *)
-  (*     rewrite (merge_states_sym Hmerge2); try assumption. *)
-  (*     unfold sem', prog'; rewrite program_linkC; try congruence. *)
-  (*     apply H; try assumption. *)
-  (*     + unfold CS.is_program_component, CS.is_context_component, turn_of, CS.state_turn. *)
-  (*       pose proof mergeable_states_pc_same_component Hmerge1 as Hpc. *)
-  (*       destruct s1 as [[[? ?] ?] pc1]; destruct s1'' as [[[? ?] ?] pc1'']. *)
-  (*       simpl in Hpc. *)
-  (*       rewrite -Hpc. *)
-  (*       unfold CS.is_program_component, CS.is_context_component, turn_of, CS.state_turn in Hcase. *)
-  (*       destruct (CS.star_pc_domm _ _ Hwfp Hwfc Hmergeable_ifaces Hprog_is_closed Hini Hstar) as [Hdomm | Hdomm]. *)
-  (*       apply domm_partition_notin_r with (ctx2 := ic) in Hdomm. *)
-  (*       move: Hcase => /idP Hcase. rewrite Hdomm in Hcase. congruence. assumption. *)
-  (*       now apply domm_partition_notin with (ctx1 := ip) in Hdomm. *)
-  (*     + rewrite program_linkC; try assumption. *)
-  (*       apply linkable_sym; congruence. *)
-  (*     + rewrite program_linkC; try assumption. *)
-  (*       now apply linkable_sym. *)
-  (* Qed. *)
-Admitted.
-
-Theorem threeway_multisem_star_program s1 s1'' t s2 s2'' :
-  is_program_component s1 lrsplit = true ->
-  mergeable_states p c p' c' prog prog'' s1 s1'' ->
-  Star sem   s1   t s2   ->
-  Star sem'' s1'' t s2'' ->
-  Star sem'  (merge_states lrsplit s1 s1'') t (merge_states lrsplit s2 s2'').
-Proof.
-  simpl in *. intros Hcomp1 Hmerge1 Hstar12. revert s1'' s2'' Hcomp1 Hmerge1.
-  apply star_iff_starR in Hstar12.
-  induction Hstar12 as [s | s1 t1 s2 t2 s3 ? Hstar12 IHstar12' Hstep23]; subst;
-    intros s1'' s2'' Hcomp1 Hmerge1 Hstar12''.
-  - eapply (context_epsilon_star_merge_states p c p' c'); eassumption.
-  - rename s2'' into s3''. rename Hstar12'' into Hstar13''.
-    apply (star_app_inv _ (singleton_traces prog'')) in Hstar13''
-      as [s2'' [Hstar12'' Hstar23'']].
-    specialize (IHstar12' _ _ Hcomp1 Hmerge1 Hstar12'').
-    (* Apply instantiated IH and case analyze step trace. *)
-    apply star_trans with (t1 := t1) (s2 := merge_states lrsplit s2 s2'') (t2 := t2);
-      [assumption | | reflexivity].
-    apply star_iff_starR in Hstar12.
-    pose proof threeway_multisem_mergeable
-      _ _ _ _ _
-      Hmerge1 Hstar12 Hstar12''
-      as Hmerge2.
-    destruct t2 as [| e2 [| e2' t2]].
-    + (* An epsilon step and comparable epsilon star. One is in the context and *)
-      (*          therefore silent, the other executes and leads the MultiSem star. *)
-      eapply star_step in Hstep23; [| now apply star_refl | now apply eq_refl].
-      exact (threeway_multisem_star_E0 _ _ _ _ Hmerge2 Hstep23 Hstar23'').
-    + (* The step generates a trace event, mimicked on the other side (possibly
-         between sequences of silent steps). *)
-      change (e2 :: nil) with (E0 ** e2 :: E0) in Hstar23''.
-      apply (star_middle1_inv _ (singleton_traces _)) in Hstar23''
-        as [s2''1 [s2''2 [Hstar2'' [Hstep23'' Hstar3'']]]].
-      (* Prefix star. *)
-      pose proof star_refl (step (comp_of_main prog)) (Genv.globalenv prog) s2
-        as Hstar2.
-      pose proof threeway_multisem_star_E0 _ _ _ _ Hmerge2 Hstar2 Hstar2''
-        as Hstar2'.
-      (* Propagate mergeability, step. *)
-      pose proof threeway_multisem_mergeable _ _ _ _ _ Hmerge2 Hstar2 Hstar2'' as Hmerge21.
-      pose proof threeway_multisem_event_lockstep _ _ _ _ _ Hmerge21 Hstep23 Hstep23''
-        as [Hstep23' Hmerge22].
-      (* Propagate mergeability, suffix star. *)
-      pose proof star_refl (step (comp_of_main prog)) (Genv.globalenv prog) s3
-        as Hstar3.
-      pose proof threeway_multisem_star_E0 _ _ _ _ Hmerge22 Hstar3 Hstar3'' as Hstar3'.
-      (* Compose. *)
-      exact (star_trans
-               (star_right _ _ Hstar2' Hstep23' (eq_refl _))
-               Hstar3' (eq_refl _)).
-    + (* Contradiction: a step generates at most one event. *)
-      pose proof singleton_traces _ _ _ _ Hstep23 as Hcontra.
-      simpl in Hcontra. lia.
-Qed.
-
-End THREEWAY_MULTISEM_2.
-
-Section THREEWAY_MULTISEM_3.
-
-Variables p c p' c' : program.
-
-Variable lrsplit : split.
-
-Hypothesis Hcompat  : asm_compatible lrsplit p  c.
-Hypothesis Hcompat' : asm_compatible lrsplit p' c'.
-
-Variables prog prog' prog'' : program.
-
-Hypothesis Hprog   : link p  c  = Some prog.
-Hypothesis Hprog'  : link p  c' = Some prog'.
-Hypothesis Hprog'' : link p' c' = Some prog''.
-
-Let sem   := semantics prog.
-Let sem'  := semantics prog'.
-Let sem'' := semantics prog''.
-
-Theorem threeway_multisem_star s1 s1'' t s2 s2'' :
-  mergeable_states p c p' c' prog prog'' s1 s1'' ->
-  Star sem   s1   t s2   ->
-  Star sem'' s1'' t s2'' ->
-  Star sem'  (merge_states lrsplit s1 s1'') t (merge_states lrsplit s2 s2'').
-  (* /\ mergeable_states ip ic s2 s2'' *)
-Proof.
-  intros Hmerge1 Hstar12 Hstar12''.
-  (*   inversion Hmerge1 as [_ _ _ Hwfp Hwfc Hwfp' Hwfc' Hmergeable_ifaces Hifacep Hifacec _ _ _ _ _ _]. *)
-  (*   destruct (CS.is_program_component s1 ic) eqn:Hcomp1. *)
-  destruct (is_program_component s1 lrsplit) eqn:Homp1.
-  - now apply (threeway_multisem_star_program p c p' c').
-  (* TODO symmetric case *)
-  (*   - apply negb_false_iff in Hcomp1. *)
-  (*     apply (mergeable_states_context_to_program Hmerge1) *)
-  (*       in Hcomp1. *)
-  (*     assert (Hmerge2: mergeable_states p c p' c' s2 s2'') *)
-  (*       by (eapply threeway_multisem_mergeable; eassumption). *)
-  (*     rewrite program_linkC in Hstar12; try assumption; *)
-  (*       last now destruct Hmergeable_ifaces. *)
-  (*     rewrite program_linkC in Hstar12''; try assumption; *)
-  (*       last now destruct Hmergeable_ifaces; rewrite -Hifacec -Hifacep. *)
-  (*     rewrite program_linkC; try assumption; *)
-  (*       last now destruct Hmergeable_ifaces; rewrite -Hifacec. *)
-  (*     unfold ip, ic. *)
-  (*     setoid_rewrite merge_states_sym at 1 2; try eassumption. *)
-  (*     pose proof threeway_multisem_star_program as H. *)
-  (*     specialize (H c' p' c p). *)
-  (*     rewrite <- Hifacep, <- Hifacec in H. *)
-  (*     specialize (H s1'' s1 t s2'' s2). *)
-  (*     apply H; try assumption. *)
-  (*     apply mergeable_states_sym in Hmerge1; try assumption; *)
-  (*       try rewrite -Hifacec; try rewrite -Hifacep; try apply mergeable_interfaces_sym; *)
-  (*         now auto. *)
-  (* Qed. *)
-Admitted.
-
-Corollary star_simulation {s1 s1'' t s2 s2''} :
-  mergeable_states p c p' c' prog prog'' s1 s1'' ->
-  Star sem   s1   t s2   ->
-  Star sem'' s1'' t s2'' ->
-  Star sem'  (merge_states lrsplit s1 s1'') t (merge_states lrsplit s2 s2'') /\
-  mergeable_states p c p' c' prog prog'' s2 s2''.
-Proof.
-  intros. split.
-  - now apply threeway_multisem_star.
-  - eapply threeway_multisem_mergeable; eassumption.
-Qed.
-
-Theorem threeway_multisem_step_inv_program {s1 s1'' t s2'} :
-  is_program_component s1 lrsplit = true ->
-  mergeable_states p c p' c' prog prog'' s1 s1'' ->
-  Step sem' (merge_states lrsplit s1 s1'') t s2' ->
-exists s2,
-  Step sem                      s1       t s2.
-  (* Proof. *)
-  (*   intros Hpc Hmerge Hstep. *)
-  (*   inversion Hmerge as [_ _ _ Hwfp Hwfc Hwfp' Hwfc' Hmergeable_ifaces Hifacep Hifacec _ _ _ _ _ _]. *)
-  (*   destruct s1 as [[[gps1 mem1] regs1] pc1]. *)
-  (*   destruct s1'' as [[[gps1'' mem1''] regs1''] pc1'']. *)
-  (*   inversion Hmergeable_ifaces as [Hlinkable _]. *)
-  (*   pose proof linkable_implies_linkable_mains Hwfp Hwfc Hlinkable as Hmain_linkability. *)
-  (*   assert (Hlinkable' := Hlinkable); rewrite Hifacep Hifacec in Hlinkable'. *)
-  (*   pose proof linkable_implies_linkable_mains Hwfp' Hwfc' Hlinkable' as Hmain_linkability'. *)
-  (*   pose proof is_program_component_pc_in_domm Hpc Hmerge as Hdomm. *)
-  (*   pose proof is_program_component_pc_in_domm Hpc Hmerge as Hdomm'. *)
-  (*   pose proof CS.is_program_component_pc_notin_domm _ _ Hpc as Hnotin; unfold ic in Hnotin; *)
-  (*   assert (Hmains : linkable_mains p c') *)
-  (*     by (apply linkable_implies_linkable_mains; congruence). *)
-  (*   rewrite (mergeable_states_merge_program _ Hmerge) in Hstep; *)
-  (*     try assumption. *)
-  (*   pose proof linking_well_formedness Hwfp Hwfc Hlinkable as Hwfprog. *)
-  (*   pose proof linking_well_formedness Hwfp' Hwfc' Hlinkable' as Hwfprog'. *)
-  (*   assert (Hlinkable'' := Hlinkable); rewrite Hifacec in Hlinkable''. *)
-  (*   pose proof linking_well_formedness Hwfp Hwfc' Hlinkable'' as Hwfprog''. *)
-
-  (*   inversion Hstep; subst; *)
-  (*     t_threeway_multisem_step_inv_program gps1 gps1'' Hmerge Hnotin Hifacec. *)
-  (* Qed. *)
-Admitted.
-
-End THREEWAY_MULTISEM_3.
-
-(* Theorems on initial states for main simulation. *)
-
-Section THREEWAY_MULTISEM_4.
-
-Variables p c p' c' : program.
-
-Variable lrsplit : split.
-
-Hypothesis Hcompat  : asm_compatible lrsplit p  c.
-Hypothesis Hcompat' : asm_compatible lrsplit p' c'.
-
-Variables prog prog' prog'' : program.
-
-Hypothesis Hprog   : link p  c  = Some prog.
-Hypothesis Hprog'  : link p  c' = Some prog'.
-Hypothesis Hprog'' : link p' c' = Some prog''.
-
-Let sem   := semantics prog.
-Let sem'  := semantics prog'.
-Let sem'' := semantics prog''.
-
-Lemma initial_states_mergeability {s s''} :
-  initial_state prog   s   ->
-  initial_state prog'' s'' ->
-  mergeable_states p c p' c' prog prog'' s s''.
-Proof.
-  intros Hini Hini''.
-  econstructor;
-    try eassumption;
-    now apply star_refl.
-Qed.
-
-Lemma match_initial_states {s s''} :
-  initial_state prog   s   ->
-  initial_state prog'' s'' ->
-  initial_state prog'  (merge_states lrsplit s s'') /\
-  mergeable_states p c p' c' prog prog'' s s''.
-Proof.
-  intros Hini Hini''.
-  pose proof initial_states_mergeability Hini Hini'' as Hmerge.
-  split; [| assumption].
-  inversion Hini as [m ge rs Hmem Hstack];
-    inversion Hini'' as [m'' ge'' rs'' Hmem'' Hstack''];
-    subst.
-  unfold merge_states. simpl.
-  assert (REGS : merge_registers lrsplit rs rs'' m =
-            (((Pregmap.init Vundef) # PC
-              <- (Genv.symbol_address (Genv.globalenv prog') (prog_main prog') Ptrofs.zero)) # X2
-              <- Vnullptr) # X1
-              <- Vnullptr).
-  {
-    unfold merge_registers.
-    (* apply link_prog_inv in Hprog' as [Hmain' Hprog']. *)
-    admit.
-  }
-  rewrite REGS. constructor.
-  (*   intros Hini Hini''. *)
-  (*   inversion Hmergeable_ifaces as [Hlinkable _]. *)
-  (*   pose proof initial_states_mergeability Hini Hini'' as Hmerge. *)
-  (*   pose proof linkable_implies_linkable_mains Hwfp Hwfc Hlinkable as Hmain_linkability. *)
-  (*   simpl in *. unfold CS.initial_state in *. subst. *)
-  (*   split; last assumption. *)
-  (*   (* Expose structure of initial states. *) *)
-  (*   rewrite !CS.initial_machine_state_after_linking; try congruence; *)
-  (*     last (apply interface_preserves_closedness_r with (p2 := c); try assumption; *)
-  (*           now apply interface_implies_matching_mains). *)
-  (*   unfold merge_states, merge_memories, merge_registers, merge_pcs; simpl. *)
-  (*   (* Memory simplifictions. *) *)
-  (*   rewrite (prepare_procedures_memory_left Hlinkable). *)
-  (*   unfold ip. erewrite Hifacep at 1. rewrite Hifacep Hifacec in Hlinkable. *)
-  (*   rewrite (prepare_procedures_memory_right Hlinkable). *)
-  (*   (* Case analysis on main and related simplifications. *) *)
-  (*   destruct (Component.main \in domm ip) eqn:Hcase; *)
-  (*     rewrite Hcase. *)
-  (*   - pose proof domm_partition_notin_r _ _ Hmergeable_ifaces _ Hcase as Hnotin. *)
-  (*     rewrite (CS.prog_main_block_no_main _ Hwfc Hnotin). *)
-  (*     rewrite Hifacec in Hnotin. now rewrite (CS.prog_main_block_no_main _ Hwfc' Hnotin). *)
-  (*   - (* Symmetric case. *) *)
-  (*     assert (Hcase' : Component.main \in domm ic). *)
-  (*     { pose proof domm_partition_program_link_in_neither Hwfp Hwfc Hprog_is_closed as H. *)
-  (*       rewrite Hcase in H. *)
-  (*       destruct (Component.main \in domm ic) eqn:Hcase''. *)
-  (*       - reflexivity. *)
-  (*       - rewrite Hcase'' in H. *)
-  (*         exfalso; now apply H. *)
-  (*     } *)
-  (*     pose proof domm_partition_notin _ _ Hmergeable_ifaces _ Hcase' as Hnotin. *)
-  (*     rewrite (CS.prog_main_block_no_main _ Hwfp Hnotin). *)
-  (*     rewrite Hifacep in Hnotin. now rewrite (CS.prog_main_block_no_main _ Hwfp' Hnotin). *)
-  (* Qed. *)
-Admitted.
-
-End THREEWAY_MULTISEM_4.
-
-(* Remaining theorems for main simulation.  *)
-Section THREEWAY_MULTISEM_5.
-
-Variables p c p' c' : program.
-
-Variable lrsplit : split.
-
-Hypothesis Hcompat  : asm_compatible lrsplit p  c.  (* TODO temp *)
-Hypothesis Hcompat' : asm_compatible lrsplit p' c'. (* TODO temp *)
-
-Variables prog prog' prog'' : program.
-
-Hypothesis Hprog   : link p  c  = Some prog.
-Hypothesis Hprog'  : link p  c' = Some prog'.
-Hypothesis Hprog'' : link p' c' = Some prog''.
-
-Let sem   := semantics prog.
-Let sem'  := semantics prog'.
-Let sem'' := semantics prog''.
-
-Theorem match_final_states s s'' n :
-  mergeable_states p c p' c' prog prog'' s s'' ->
-  final_state prog   s                            n ->
-  final_state prog'' s''                          n ->
-  final_state prog'  (merge_states lrsplit s s'') n.
-Proof.
-  destruct s as [gps regs mem | gps regs mem];
-    destruct s'' as [gps'' regs'' mem'' | gps'' regs'' mem''];
-    intros Hmergeable Hfinal Hfinal'';
-    try now inversion Hfinal.
-  simpl.
-  inversion Hfinal; inversion Hfinal''; subst.
-  simpl. constructor.
-  - unfold merge_registers.
-    destruct (Mem.val_compartment mem (regs PC)) as [cp |].
-    + destruct (lrsplit cp); assumption.
-    + assumption. (* should not happen, but the fallback works *)
-  - unfold merge_registers.
-    destruct (Mem.val_compartment mem (regs PC)) as [cp |].
-    + destruct (lrsplit cp); assumption.
-    + assumption. (* should not happen, but the fallback works *)
-Qed.
-
-Theorem match_nofinal s s'' n' :
-  mergeable_states p c p' c' prog prog'' s s'' ->
-  (forall n,   ~ final_state prog   s                            n)   ->
-  (forall n'', ~ final_state prog'' s''                          n'') ->
-  ~ final_state prog'  (merge_states lrsplit s s'') n'.
-Proof.
-  intros Hmerge Hfinal Hfinal'' Hfinal'.
-  destruct s as [gps rs m | gps rs m];
-    destruct s'' as [gps'' rs'' m'' | gps'' rs'' m''];
-    try now inversion Hfinal'.
-  - admit.
-  - inversion Hmerge as [sp s0 s0'' t Hspcompat Hspcompat'' Hini Hini'' Hstar Hstar''].
-    inversion Hfinal' as [rs' m' r Hnull Hint Hstack]; subst rs' m' r.
-    (* destruct (Pointer.component pc \in domm ip) eqn:Hcase. *)
-    destruct (is_program_component (ReturnState gps rs m) lrsplit) eqn:Hcase.
-    + assert (CONTRA : final_state prog (ReturnState gps rs m) n').
-      {
-        (* assert (RINT : rs X10 = Vint n') by admit. *)
-        (* assert (RNULL : rs PC = Vnullptr) by admit. *)
-        (* assert (STACK : gps = initial_stack) by admit. *)
-        econstructor.
+    - exists nil. split; auto. constructor.
+    - assert (exists b1', Val.inject j b1 b1' /\ call_arg_pair rs3 m3 a1 b1').
+      { inv H.
+        - inv H1.
+          + specialize (rs1_rs3 (preg_of r)).
+            exists (rs3 (preg_of r)). split; eauto. constructor; constructor.
+          + exploit Mem.loadv_inject; eauto using partial_mem_inject.
+            eapply Val.offset_ptr_inject. eapply rs1_rs3.
+            intros [b1' [? ?]].
+            exists b1'; split. eauto. constructor. econstructor; eauto.
+        - inv H1; inv H2.
+          + pose proof (rs1_rs3 (preg_of r)).
+            pose proof (rs1_rs3 (preg_of r0)).
+            eexists; split; [eapply Val.longofwords_inject; eauto |].
+            constructor; constructor; eauto.
+          + pose proof (rs1_rs3 (preg_of r)).
+            exploit Mem.loadv_inject; eauto using partial_mem_inject.
+            eapply Val.offset_ptr_inject. eapply rs1_rs3.
+            intros [b1' [? ?]].
+            eexists; split; [eapply Val.longofwords_inject; eauto |].
+            constructor; econstructor; eauto.
+          + pose proof (rs1_rs3 (preg_of r)).
+            exploit Mem.loadv_inject; eauto using partial_mem_inject.
+            eapply Val.offset_ptr_inject. eapply rs1_rs3.
+            intros [b1' [? ?]].
+            eexists; split; [eapply Val.longofwords_inject; eauto |].
+            constructor; econstructor; eauto.
+          + exploit Mem.loadv_inject; eauto using partial_mem_inject.
+            eapply Val.offset_ptr_inject. eapply rs1_rs3. clear H1.
+            exploit Mem.loadv_inject; eauto using partial_mem_inject.
+            eapply Val.offset_ptr_inject. eapply rs1_rs3.
+            intros [b1' [? ?]].
+            intros [b0' [? ?]].
+            eexists; split; [eapply Val.longofwords_inject; eauto |].
+            constructor; econstructor; eauto. }
+      destruct IHlist_forall2 as [? [? ?]].
+      destruct H1 as [? [? ?]].
+      eexists (cons _ _); split.
+      + constructor; eassumption.
+      + constructor; eauto.
+  Qed.
+
+  Notation comp_of1 := (@comp_of _ (has_comp_state W1)).
+  Notation comp_of2 := (@comp_of _ (has_comp_state W2)).
+  Notation comp_of3 := (@comp_of _ (has_comp_state W3)).
+
+  Definition stack_of_state (s: state) :=
+    match s with
+    | State st _ _ | ReturnState st _ _ => st
+    end.
+
+  Lemma step_E0_strong_Left: forall (s1 s1': state),
+      Step (semantics W1) s1 E0 s1' ->
+      (s (comp_of1 s1) = s (comp_of1 s1')) ->
+      forall (s2 s3: state) j__left j__right,
+        stack_rel s j__left j__right (stack_of_state s1) (stack_of_state s2) (stack_of_state s3) ->
+        strong_equivalence s ge1 ge3 j__left Left s1 s3 ->
+        weak_equivalence s ge2 ge3 j__right Right s2 s3 ->
+        exists (s3': state) j__left' j__right',
+          Plus (semantics W3) s3 E0 s3' /\
+            stack_rel s j__left' j__right' (stack_of_state s1') (stack_of_state s2) (stack_of_state s3') /\
+            strong_equivalence s ge1 ge3 j__left' Left s1' s3' /\
+            weak_equivalence s ge2 ge3 j__right' Right s2 s3'.
+  Proof.
+    simpl.
+    intros s1 s1' H same_side s2 s3 j__left j__right st_rel strong_s1_s3 weak_s2_s3; inv H.
+    - exploit strong_equiv_state_inv_left; eauto.
+      intros (st3 & rs3 & m3 & ? & eq_pc' & find_funct & m1_m3 & rs1_rs3 & side_f); subst.
+      inv weak_s2_s3.
+      exploit exec_instr_preserved_left; simpl; eauto.
+      intros (j__left' & rs3' & m3' & exec_instr' & m1_m3' & m2_m3' & rs1_rs3' & st_rel').
+      assert (pc_comp: Genv.find_comp_ignore_offset ge1 (rs' PC) = Genv.find_comp_ignore_offset ge3 (rs3' PC)).
+      { pose proof (rs1_rs3' PC) as inj_pc; rewrite NEXTPC in *; inv inj_pc.
+        assert (delta = 0) by now eapply delta_zero with (j := j__left'); eauto. subst delta.
+        rewrite Ptrofs.add_zero.
+        simpl. destruct Ptrofs.eq_dec; try congruence.
+        destruct (Genv.find_funct_ptr ge1 b') eqn:A.
+        - exploit (Genv.find_funct_ptr_match match_W1_W3); eauto.
+          intros [[] [f' [find_f' [match_f_f' _]]]].
+          exploit (funct_preserved1 s ge1 ge3); eauto. intros.
+          assert (b2 = b') by congruence; subst. rewrite find_f'.
+          now inv match_f_f'.
+        - destruct (Genv.find_funct_ptr ge3 b2) eqn:B; [| reflexivity].
+          exploit (funct_preserved2 s ge1 ge3); eauto. intros; subst.
+          (* Find a contradiction *)
+          apply Genv.find_funct_ptr_iff in B.
+          apply Genv.find_def_match_2 with (b := b2) in match_W1_W3.
+          inv match_W1_W3; try congruence.
+          inv H11; try congruence.
+          symmetry in H. apply <- Genv.find_funct_ptr_iff in H. congruence.
       }
-      eapply Hfinal; now eauto.
-    destruct gps as [| f gps];
-      destruct gps'' as [| f'' gps''];
-      [| | | discriminate].
-    + admit.
-    + simpl in *.
-    discriminate.
-    (* destruct s as [[[gps mem] regs] pc]. *)
-    (* destruct s'' as [[[gps'' mem''] regs''] pc'']. *)
-    (* unfold final_state. simpl. unfold merge_pcs. *)
-    (* intros Hmerge Hfinal Hfinal'' Hfinal'. *)
-    (* inversion Hmerge as [_ _ _ Hwfp Hwfc Hwfp' Hwfc' Hmergeable_ifaces Hifacep Hifacec _ _ _ _ _ _ ]. *)
-    (* inversion Hmergeable_ifaces as [Hlinkable _]. *)
-    (* destruct (Pointer.component pc \in domm ip) eqn:Hcase. *)
-    (* - apply execution_invariant_to_linking with (c2 := c) in Hfinal'; try easy. *)
-    (*   + congruence. *)
-    (*   + apply linkable_implies_linkable_mains; congruence. *)
-    (*   + apply linkable_implies_linkable_mains; congruence. *)
-    (* - (* Symmetric case. *) *)
-    (*   unfold prog', prog'' in *. *)
-    (*   rewrite program_linkC in Hfinal'; try congruence. *)
-    (*   rewrite program_linkC in Hfinal''; try congruence. *)
-    (*   apply execution_invariant_to_linking with (c2 := p') in Hfinal'; try easy. *)
-    (*   + apply linkable_sym; congruence. *)
-    (*   + apply linkable_sym; congruence. *)
-    (*   + apply linkable_mains_sym, linkable_implies_linkable_mains; congruence. *)
-    (*   + apply linkable_mains_sym, linkable_implies_linkable_mains; congruence. *)
-    (*   + setoid_rewrite <- (mergeable_states_pc_same_component Hmerge). *)
-    (*     rewrite <- Hifacec. *)
-    (*     apply negb_true_iff in Hcase. *)
-    (*     now eapply (mergeable_states_notin_to_in Hmerge). *)
-  (* Qed. *)
-Admitted.
+      exists (State st3 rs3' m3'), j__left', j__right; split; [| split; [| split]].
+      + econstructor; [| now eapply star_refl | now traceEq].
+        (* unfold ge3 in exec_instr'. *)
+        pose proof (rs1_rs3' PC) as inj_pc; rewrite NEXTPC in *; inv inj_pc. rewrite <- H7 in *.
+        econstructor; eauto.
+        * rewrite <- ALLOWED; eauto.
+      + eauto.
+      + econstructor; eauto.
+        * simpl; rewrite NEXTPC; simpl in *; rewrite <- ALLOWED. auto.
+        (* * simpl. rewrite <- pc_comp. rewrite NEXTPC; simpl in *; rewrite <- ALLOWED. auto. *)
+      + econstructor; eauto.
 
-Lemma match_nostep s s'' :
-  mergeable_states p c p' c' prog prog'' s s'' ->
-  Nostep sem   s   ->
-  Nostep sem'' s'' ->
-  Nostep sem'  (merge_states lrsplit s s'').
-Proof.
-  rename s into s1. rename s'' into s1''.
-  intros Hmerge Hstep Hstep'' t s2' Hstep'.
-    (* inversion Hmerge as [_ _ _ Hwfp Hwfc Hwfp' Hwfc' Hmergeable_ifaces Hifacep Hifacec _ _ _ _ _ _]. *)
-    (* inversion Hmergeable_ifaces as [Hlinkable _]. *)
-    (* inversion Hmergeable_ifaces as [Hlinkable' _]; rewrite Hifacep Hifacec in Hlinkable'. *)
-    (* pose proof linkable_implies_linkable_mains Hwfp Hwfc Hlinkable as Hmain_linkability. *)
-    (* pose proof linkable_implies_linkable_mains Hwfp' Hwfc' Hlinkable' as Hmain_linkability'. *)
-    (* destruct (CS.is_program_component s1 ic) eqn:Hcase. *)
-  destruct (is_program_component s1 lrsplit) eqn:Hcase.
-  - pose proof threeway_multisem_step_inv_program
-      _ _ _ _ _ Hcompat Hcompat' _ _ _ Hprog Hprog' Hprog''
-      Hcase Hmerge Hstep'
-      as [s2 Hcontra].
-    specialize (Hstep t s2). contradiction.
-    (* - (* Symmetric case. *) *)
-    (*   apply negb_false_iff in Hcase. *)
-    (*   pose proof mergeable_states_context_to_program Hmerge Hcase as Hcase'. *)
-    (*   pose proof proj1 (mergeable_states_sym _ _ _ _ _ _) Hmerge as Hmerge'. *)
-    (*   pose proof @threeway_multisem_step_inv_program c' p' c p as H. *)
-    (*   rewrite -Hifacec -Hifacep in H. *)
-    (*   specialize (H s1'' s1 t s2' Hcase' Hmerge'). *)
-    (*   rewrite program_linkC in H; try assumption; [| apply linkable_sym; congruence]. *)
-    (*   rewrite Hifacec Hifacep in H. *)
-    (*   erewrite merge_states_sym with (p := c') (c := p') (p' := c) (c' := p) in H; *)
-    (*     try eassumption; try now symmetry. *)
-    (*   rewrite -Hifacec -Hifacep in H. *)
-    (*   specialize (H Hstep'). *)
-    (*   destruct H as [s2'' Hcontra]. *)
-    (*   specialize (Hstep'' t s2''). *)
-    (*   unfold sem'', prog'' in Hstep''; rewrite program_linkC in Hstep''; try assumption. *)
-    (*   contradiction. *)
-  (* Qed. *)
-Admitted.
+    - exploit strong_equiv_state_inv_left; eauto.
+      intros (st3 & rs3 & m3 & ? & eq_pc' & find_funct & m1_m3 & rs1_rs3 & side_f); subst.
+      simpl in H3. destruct Ptrofs.eq_dec; try congruence. simpl in H1; rewrite H1 in H3.
+      inv weak_s2_s3.
+      exploit exec_instr_preserved_left; simpl; eauto.
+      intros (j__left' & rs3' & m3' & exec_instr' & m1_m3' & m2_m3' & rs1_rs3' & st_rel').
+      assert (pc_comp: Genv.find_comp_ignore_offset ge1 (rs' PC) = Genv.find_comp_ignore_offset ge3 (rs3' PC)).
+      { pose proof (rs1_rs3' PC) as inj_pc; rewrite NEXTPC in *; inv inj_pc.
+        assert (delta = 0) by now eapply (delta_zero s ge1 ge3); eauto. subst delta.
+        rewrite Ptrofs.add_zero.
+        simpl. destruct Ptrofs.eq_dec; try congruence.
+        destruct (Genv.find_funct_ptr ge1 b') eqn:A.
+        - exploit (Genv.find_funct_ptr_match match_W1_W3); eauto.
+          intros [[] [f' [find_f' [match_f_f' _]]]].
+          exploit (funct_preserved1 s ge1 ge3); eauto. intros.
+          assert (b2 = b') by congruence; subst. rewrite find_f'.
+          now inv match_f_f'.
+        - destruct (Genv.find_funct_ptr (Genv.globalenv W3) b2) eqn:B; [| reflexivity].
+          exploit (funct_preserved2 s ge1 ge3); eauto. intros; subst.
+          (* Find a contradiction *)
+          apply Genv.find_funct_ptr_iff in B.
+          apply Genv.find_def_match_2 with (b := b2) in match_W1_W3.
+          inv match_W1_W3; try congruence. inv H10; try congruence.
+          symmetry in H. apply <- Genv.find_funct_ptr_iff in H. congruence.
+      }
 
-End THREEWAY_MULTISEM_5.
+      assert (is_left: s (Genv.find_comp_ignore_offset ge3 (rs3' PC)) = Left).
+      { simpl in same_side. rewrite <- pc_comp, <- same_side, H0.
+        simpl. rewrite H1. auto. }
+      exploit update_stack_call_preserved_left; [| | | exact is_left | | | | |];
+        eauto using funct_preserved1, funct_preserved2, delta_zero;
+        [congruence |].
+      intros [st3' [STUPD' st_rel'']].
+      exploit call_arguments_preserved; eauto.
+      intros [args' [inj_args call_args]].
 
-Section RECOMBINATION.
+      exists (State st3' rs3' m3'), j__left', j__right; split; [| split; [| split]].
+      + econstructor; [| now eapply star_refl | now traceEq].
+        pose proof (rs1_rs3' PC) as inj_pc; rewrite NEXTPC in *; inv inj_pc. rewrite <- H6 in *.
+        (* clear dependent j0. *)
+        eapply exec_step_internal_call; eauto.
+        * exploit (delta_zero s ge1 ge3); eauto. intros ->.
+          eapply allowed_call_preserved with (v := Vptr b' Ptrofs.zero);
+            eauto using funct_preserved1, funct_preserved2, delta_zero.
+          congruence.
+        * simpl; now rewrite find_funct.
+        * simpl in STUPD'; now rewrite H1 in STUPD'.
+        * rewrite <- pc_comp. intros is_cross.
+          specialize (NO_CROSS_PTR is_cross).
+          now eapply Val.inject_list_not_ptr; eauto.
+        * inv EV. constructor. now rewrite <- pc_comp.
+      + eauto.
+      + simpl in same_side.
+        econstructor; eauto.
+        simpl. rewrite <- same_side. rewrite H0. simpl. now rewrite H1.
+      + simpl in same_side.
+        econstructor; eauto.
 
-Variables p c p' c' : program.
+    (** [State] to [ReturnState] *)
+    - exploit strong_equiv_state_inv_left; eauto.
+      intros (st3 & rs3 & m3 & ? & eq_pc' & find_funct & m1_m3 & rs1_rs3 & side_f); subst.
+      rewrite H0 in H3. simpl in H3. destruct Ptrofs.eq_dec; try congruence. simpl in H1; rewrite H1 in H3.
+      inv weak_s2_s3.
+      exploit exec_instr_preserved_left; simpl; eauto.
+      intros (j__left' & rs3' & m3' & exec_instr' & m1_m3' & m2_m3' & rs1_rs3' & st_rel').
+      (* assert (pc_comp: Genv.find_comp_ignore_offset ge1 (rs' PC) = Genv.find_comp_ignore_offset ge3 (rs3' PC)). *)
+      (* { pose proof (rs1_rs3' PC) as inj_pc; inv inj_pc; auto. admit. *)
+      (*   assert (delta = 0) by now eapply delta_zero; eauto. subst delta. *)
+      (*   rewrite Ptrofs.add_zero. *)
+      (*   simpl. destruct Ptrofs.eq_dec; try congruence. *)
+      (*   destruct (Genv.find_funct_ptr ge1 b') eqn:A. *)
+      (*   - exploit (Genv.find_funct_ptr_match match_W1_W3); eauto. *)
+      (*     intros [[] [f' [find_f' [match_f_f' _]]]]. *)
+      (*     exploit funct_preserved1; eauto. intros. *)
+      (*     assert (b2 = b') by congruence; subst. rewrite find_f'. *)
+      (*     now inv match_f_f'. *)
+      (*   - destruct (Genv.find_funct_ptr (Genv.globalenv W3) b2) eqn:B; [| reflexivity]. *)
+      (*     exploit funct_preserved2; eauto. intros; subst. *)
+      (*     (* Find a contradiction *) *)
+      (*     apply Genv.find_funct_ptr_iff in B. *)
+      (*     apply Genv.find_def_match_2 with (b := b2) in match_W1_W3. *)
+      (*     inv match_W1_W3; try congruence. inv H8; try congruence. *)
+      (*     symmetry in H. apply <- Genv.find_funct_ptr_iff in H. congruence. *)
+      (* } *)
 
-(* Hypothesis Hwfp  : well_formed_program p. *)
-(* Hypothesis Hwfc  : well_formed_program c. *)
-(* Hypothesis Hwfp' : well_formed_program p'. *)
-(* Hypothesis Hwfc' : well_formed_program c'. *)
+      (* assert (is_left: s (Genv.find_comp_ignore_offset ge3 (rs3' PC)) = Left). *)
+      (* { simpl in same_side. rewrite <- pc_comp, <- same_side, H0. *)
+      (*   simpl. rewrite H1. auto. } *)
+      (* exploit update_stack_call_preserved; [| | | exact is_left | | | | | | ]; *)
+      (*   eauto using funct_preserved1, funct_preserved2, delta_zero; *)
+      (*   [congruence |]. *)
+      (* intros [st3' [STUPD' [st'_st3' st2_st3']]]. *)
+      (* exploit call_arguments_preserved; eauto. *)
+      (* intros [args' [inj_args call_args]]. *)
 
-(* Hypothesis Hmergeable_ifaces : *)
-(*   mergeable_interfaces (prog_interface p) (prog_interface c). *)
+      exists (ReturnState st3 rs3' m3'), j__left', j__right; split; [| split; [| split]].
+      + econstructor; [| now eapply star_refl | now traceEq].
+        (* pose proof (rs1_rs3' PC) as inj_pc; rewrite NEXTPC in *; inv inj_pc. rewrite <- H6 in *. *)
+        (* clear dependent j0. *)
+        eapply exec_step_internal_return; eauto.
+        * rewrite eq_pc'. simpl. destruct Ptrofs.eq_dec; try congruence; now rewrite find_funct.
+        * rewrite eq_pc'. simpl. destruct Ptrofs.eq_dec; try congruence; rewrite find_funct.
+          rewrite H0 in REC_CURCOMP; simpl in REC_CURCOMP. destruct Ptrofs.eq_dec; try congruence; rewrite H1 in REC_CURCOMP.
+          rewrite REC_CURCOMP.
+          (* Q: am I missing something?? *)
+          admit.
+      + eauto.
+      + simpl in same_side.
+        econstructor; eauto.
+        simpl. rewrite <- same_side. rewrite H0. simpl. now rewrite H1.
+      + (* Am missing the weak relation between state and returnstate *)
+        admit.
 
-(* Hypothesis Hifacep  : prog_interface p  = prog_interface p'. *)
-(* Hypothesis Hifacec  : prog_interface c  = prog_interface c'. *)
+    (** [ReturnState] to [State] *)
+    - admit.
 
-(* Hypothesis Hprog_is_closed  : closed_program (program_link p  c ). *)
-(* Hypothesis Hprog_is_closed' : closed_program (program_link p' c'). *)
+    (** Builtin *)
+    - admit.
 
-(* Let ip := prog_interface p. *)
-(* Let ic := prog_interface c. *)
+    (** External call *)
+    - admit.
+  Admitted.
 
-Variable lrsplit : split.
+  Lemma simulation:
+    @threeway_simulation (semantics W1) (semantics W2) (semantics W3) single_L1 single_L2 single_L3.
+  Proof.
 
-Hypothesis Hcompat  : asm_compatible lrsplit p  c.
-Hypothesis Hcompat' : asm_compatible lrsplit p' c'.
+    apply threeway_simulation_diagram with (strong_equivalence1 := strong_equivalence s ge1 ge3 Left)
+                                           (strong_equivalence2 := strong_equivalence s ge2 ge3 Right)
+                                           (weak_equivalence1   := weak_equivalence   s ge1 ge3 Left)
+                                           (weak_equivalence2   := weak_equivalence   s ge1 ge3 Right)
+                                           (order := fun _ _ => True).
+    - apply public_symbol_eq21.
+    - apply public_symbol_eq32.
+    - admit.
+    - admit.
+    - admit.
+    -
 
-Variables prog prog' prog'' : program.
 
-Hypothesis Hprog   : link p  c  = Some prog.
-Hypothesis Hprog'  : link p  c' = Some prog'.
-Hypothesis Hprog'' : link p' c' = Some prog''.
+End Simulation.
 
-Let sem   := semantics prog.
-Let sem'  := semantics prog'.
-Let sem'' := semantics prog''.
-
-(* asm_program_has_initial_trace W t *)
-(* asm_program_has_initial_trace W'' t *)
-
-Theorem recombination_prefix m :
-  does_prefix sem   m ->
-  does_prefix sem'' m ->
-  does_prefix sem'  m.
-Proof.
-  unfold does_prefix.
-  intros [b [Hbeh Hprefix]] [b'' [Hbeh'' Hprefix'']].
-  assert (Hst_beh := Hbeh). assert (Hst_beh'' := Hbeh'').
-  apply program_behaves_inv in Hst_beh   as [s1   [Hini1   Hst_beh  ]].
-  apply program_behaves_inv in Hst_beh'' as [s1'' [Hini1'' Hst_beh'']].
-  destruct m as [tm nm | tm | tm].
-  - destruct b   as [t   n   | ? | ? | ?]; try contradiction.
-    destruct b'' as [t'' n'' | ? | ? | ?]; try contradiction.
-    simpl in Hprefix, Hprefix''. destruct Hprefix. destruct Hprefix''. subst t t'' n n''.
-    inversion Hst_beh   as [? s2   ? Hstar12   Hfinal2   | | |]; subst.
-    inversion Hst_beh'' as [? s2'' ? Hstar12'' Hfinal2'' | | |]; subst.
-    exists (Terminates tm nm). split; [| now constructor].
-    pose proof match_initial_states _ _ _ _ _ Hcompat Hcompat' _ _ _
-      Hprog Hprog' Hprog'' Hini1 Hini1'' as [Hini1' Hmerge1].
-    pose proof star_simulation
-      _ _ _ _ _ Hcompat Hcompat' _ _ _ Hprog Hprog' Hprog''
-      Hmerge1 Hstar12 Hstar12'' as [Hstar12' Hmerge2].
-    apply program_runs with (s := merge_states lrsplit s1 s1'');
-      [simpl; assumption |].
-    apply state_terminates with (s' := merge_states lrsplit s2 s2'');
-      [assumption |].
-    (* now apply match_final_states with (p' := p'). *)
-    eapply match_final_states with (p' := p'); eassumption.
-  - destruct b   as [? | ? | ? | t  ]; try contradiction.
-    destruct b'' as [? | ? | ? | t'']; try contradiction.
-    simpl in Hprefix, Hprefix''. subst t t''.
-    inversion Hst_beh   as [| | | ? s2   Hstar12   Hstep2   Hfinal2  ]; subst.
-    inversion Hst_beh'' as [| | | ? s2'' Hstar12'' Hstep2'' Hfinal2'']; subst.
-    exists (Goes_wrong tm). split; [| reflexivity].
-    pose proof match_initial_states
-      _ _ _ _ _ Hcompat Hcompat' _ _ _ Hprog Hprog' Hprog''
-      Hini1 Hini1'' as [Hini' Hmerge1].
-    pose proof star_simulation
-      _ _ _ _ _ Hcompat Hcompat' _ _ _ Hprog Hprog' Hprog''
-      Hmerge1 Hstar12 Hstar12'' as [Hstar12' Hmerge2].
-    apply program_runs with (s := merge_states lrsplit s1 s1'');
-      [assumption |].
-    apply state_goes_wrong with (s' := merge_states lrsplit s2 s2'');
-      [assumption | |].
-    (* + eapply match_nostep; eassumption. *)
-    (* + eapply match_nofinal; eassumption. *)
-    + eapply (match_nostep p c p' c'); eassumption.
-    + intros r. eapply (@match_nofinal p c p' c'); now eauto.
-  - (* Here we talk about the stars associated to the behaviors, without
-       worrying now about connecting them to the existing initial states. *)
-    destruct (behavior_prefix_star Hbeh Hprefix) as [s1_ [s2 [Hini1_ Hstar12]]].
-    destruct (behavior_prefix_star Hbeh'' Hprefix'') as [s1''_ [s2'' [Hini1''_ Hstar12'']]].
-    pose proof match_initial_states
-      _ _ _ _ _ Hcompat Hcompat' _ _ _ Hprog Hprog' Hprog''
-      Hini1_ Hini1''_ as [Hini1' Hmerge1].
-    pose proof star_simulation
-      _ _ _ _ _ Hcompat Hcompat' _ _ _ Hprog Hprog' Hprog''
-      Hmerge1 Hstar12 Hstar12'' as [Hstar12' Hmerge2].
-    eapply program_behaves_finpref_exists;
-      [| now apply Hstar12'].
-    assumption.
-(* TODO Fix shelved variables *)
-Unshelve.
-  all:auto.
-Qed.
-
-End RECOMBINATION.
-
-Corollary recomposition:
-  forall W W'' p1 p2 p1'' p2'' lrsplit t,
-    link p1 p2 = Some W ->
-    link p1'' p2'' = Some W'' ->
-    asm_compatible lrsplit p1 p2 ->
-    asm_compatible lrsplit p1'' p2'' ->
-    asm_program_has_initial_trace W t ->
-    asm_program_has_initial_trace W'' t ->
-  exists W',
-    link p1 p2'' = Some W' /\
-    asm_program_has_initial_trace W' t.
-Admitted.

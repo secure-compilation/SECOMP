@@ -135,7 +135,7 @@ Fixpoint debug_strength_reduction (ae: AE.t) (al: list (builtin_arg reg)) :=
 Definition builtin_strength_reduction
              (ae: AE.t) (ef: external_function) (al: list (builtin_arg reg)) :=
   match ef with
-  | EF_debug _ _ _ => debug_strength_reduction ae al
+  | EF_debug _ _ _ _ => debug_strength_reduction ae al
   | _ => builtin_args_strength_reduction ae al (Machregs.builtin_constraints ef)
   end.
 
@@ -202,7 +202,7 @@ Definition transf_instr (f: function) (an: PMap.t VA.t) (rm: romem)
       | Ibuiltin ef args res s =>
           let dfl := Ibuiltin ef (builtin_strength_reduction ae ef args) res s in
           match ef, res with
-          | EF_builtin name sg, BR rd =>
+          | EF_builtin _ name sg, BR rd =>
               match lookup_builtin_function name sg with
               | Some bf => 
                   match eval_static_builtin_function ae am rm bf args with

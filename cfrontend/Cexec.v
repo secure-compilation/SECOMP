@@ -268,32 +268,32 @@ Proof.
 Qed.
 
 Variable do_external_function:
-  string -> signature -> Senv.t -> world -> compartment -> list val -> mem -> option (world * trace * val * mem).
+  string -> signature -> Senv.t -> world -> list val -> mem -> option (world * trace * val * mem).
 
 Hypothesis do_external_function_sound:
-  forall id sg ge cp vargs m t vres m' w w',
-  do_external_function id sg ge w cp vargs m = Some(w', t, vres, m') ->
-  external_functions_sem id sg ge cp vargs m t vres m' /\ possible_trace w t w'.
+  forall id sg ge vargs m t vres m' w w',
+  do_external_function id sg ge w vargs m = Some(w', t, vres, m') ->
+  external_functions_sem id sg ge vargs m t vres m' /\ possible_trace w t w'.
 
 Hypothesis do_external_function_complete:
-  forall id sg ge cp vargs m t vres m' w w',
-  external_functions_sem id sg ge cp vargs m t vres m' ->
+  forall id sg ge vargs m t vres m' w w',
+  external_functions_sem id sg ge vargs m t vres m' ->
   possible_trace w t w' ->
-  do_external_function id sg ge w cp vargs m = Some(w', t, vres, m').
+  do_external_function id sg ge w vargs m = Some(w', t, vres, m').
 
 Variable do_inline_assembly:
-  string -> signature -> Senv.t -> world -> compartment -> list val -> mem -> option (world * trace * val * mem).
+  compartment -> string -> signature -> Senv.t -> world -> list val -> mem -> option (world * trace * val * mem).
 
 Hypothesis do_inline_assembly_sound:
   forall txt sg ge cp vargs m t vres m' w w',
-  do_inline_assembly txt sg ge w cp vargs m = Some(w', t, vres, m') ->
-  inline_assembly_sem txt sg ge cp vargs m t vres m' /\ possible_trace w t w'.
+  do_inline_assembly cp txt sg ge w vargs m = Some(w', t, vres, m') ->
+  inline_assembly_sem cp txt sg ge vargs m t vres m' /\ possible_trace w t w'.
 
 Hypothesis do_inline_assembly_complete:
   forall txt sg ge cp vargs m t vres m' w w',
-  inline_assembly_sem txt sg ge cp vargs m t vres m' ->
+  inline_assembly_sem cp txt sg ge vargs m t vres m' ->
   possible_trace w t w' ->
-  do_inline_assembly txt sg ge w cp vargs m = Some(w', t, vres, m').
+  do_inline_assembly cp txt sg ge w vargs m = Some(w', t, vres, m').
 
 (** * Reduction of expressions *)
 
@@ -560,7 +560,8 @@ Fixpoint step_expr (cp: compartment) (k: kind) (a: expr) (m: mem): reducts expr 
       match is_val_list rargs with
       | Some vtl =>
           do vargs <- sem_cast_arguments vtl tyargs m;
-          match do_external _ _ ge do_external_function do_inline_assembly ef w cp vargs m with
+          check (Pos.eqb (comp_of ef) cp);
+          match do_external _ _ ge do_external_function do_inline_assembly ef w vargs m with
           | None => stuck
           | Some(w',t,v,m') => topred (Rred "red_builtin" (Eval v ty) m' t)
           end
@@ -677,7 +678,8 @@ Definition invert_expr_prop (cp: compartment) (a: expr) (m: mem) : Prop :=
       exprlist_all_values rargs ->
       exists vargs t vres m' w',
          cast_arguments m rargs tyargs vargs
-      /\ external_call ef ge cp vargs m t vres m'
+      /\ external_call ef ge vargs m t vres m'
+      /\ comp_of ef = cp
       /\ possible_trace w t w'
   | _ => True
   end.
@@ -1205,16 +1207,17 @@ Proof with (try (apply not_invert_ok; simpl; intro; myinv; intuition congruence;
   eapply eq_true_false_abs with (b := forallb not_ptr_b x3); [| auto].
   eapply forallb_forall. intros. eapply not_ptr_reflect; eauto.
   destruct (get_call_trace _ _ ge cp (Genv.find_comp ge vf) vf vargs (typlist_of_typelist tyargs)) eqn:?...
-  apply topred_ok; auto. red. split; auto. eapply red_call; eauto.
-  eapply sem_cast_arguments_sound; eauto.
-  eapply Genv.allowed_call_reflect; eauto. congruence.
-  eapply get_call_trace_eq; eauto.
-  apply not_invert_ok; simpl; intros; myinv. specialize (H ALLVAL). myinv.
-  rewrite Heqc in H; inv H.
-  rewrite Heqo1 in H0; inv H0.
-  exploit sem_cast_arguments_complete; eauto. intros [vtl' [P Q]]. rewrite Heqo0 in P. inv P.
-  rewrite Heqo2 in Q; inv Q. eapply get_call_trace_eq in H5; congruence.
+  (* apply topred_ok; auto. red. split; auto. eapply red_call; eauto. *)
+  (* eapply sem_cast_arguments_sound; eauto. *)
+  (* eapply Genv.allowed_call_reflect; eauto. congruence. *)
+  (* eapply get_call_trace_eq; eauto. *)
   apply not_invert_ok; simpl; intros; myinv. specialize (H ALLVAL). myinv. congruence.
+  apply not_invert_ok; simpl; intros; myinv. specialize (H ALLVAL). myinv. congruence.
+  (* rewrite Heqc in H; inv H. *)
+  (* rewrite Heqo1 in H0; inv H0. *)
+  (* exploit sem_cast_arguments_complete; eauto. intros [vtl' [P Q]]. rewrite Heqo0 in P. inv P. *)
+  (* rewrite Heqo2 in Q; inv Q. eapply get_call_trace_eq in H5; congruence. *)
+  (* apply not_invert_ok; simpl; intros; myinv. specialize (H ALLVAL). myinv. congruence. *)
   (* intros. apply Genv.cross_call_reflect in H; congruence. *)
 
   apply not_invert_ok; simpl; intros; myinv. specialize (H ALLVAL). myinv.
@@ -1234,15 +1237,17 @@ Proof with (try (apply not_invert_ok; simpl; intro; myinv; intuition congruence;
   exploit is_val_list_all_values; eauto. intros ALLVAL.
   (* top *)
   destruct (sem_cast_arguments vtl tyargs m) as [vargs|] eqn:?...
-  destruct (do_external _ _ ge do_external_function do_inline_assembly ef w cp vargs m) as [[[[? ?] v] m'] | ] eqn:?...
+  destruct (Pos.eqb (comp_of ef) cp) eqn:?...
+  destruct (do_external _ _ ge do_external_function do_inline_assembly ef w vargs m) as [[[[? ?] v] m'] | ] eqn:?...
   exploit do_ef_external_sound; eauto. intros [EC PT].
   apply topred_ok; auto. red. split; auto. eapply red_builtin; eauto.
-  eapply sem_cast_arguments_sound; eauto.
+  eapply sem_cast_arguments_sound; eauto. now apply Peqb_true_eq.
   exists w0; auto.
   apply not_invert_ok; simpl; intros; myinv. specialize (H ALLVAL). myinv.
   assert (x = vargs).
     exploit sem_cast_arguments_complete; eauto. intros [vtl' [A B]]. congruence.
   subst x. exploit do_ef_external_complete; eauto. congruence.
+  apply not_invert_ok; simpl; intros; myinv. specialize (H ALLVAL). myinv. subst. now rewrite Pos.eqb_refl in Heqb.
   apply not_invert_ok; simpl; intros; myinv. specialize (H ALLVAL). myinv.
   exploit sem_cast_arguments_complete; eauto. intros [vtl' [A B]]. congruence.
   (* depth *)
@@ -1340,8 +1345,9 @@ Proof.
   inv H0. rewrite H; econstructor; eauto.
 (* builtin *)
   exploit sem_cast_arguments_complete; eauto. intros [vtl [A B]].
+  subst cp.
   exploit do_ef_external_complete; eauto. intros C.
-  rewrite A. rewrite B. rewrite C. econstructor; eauto.
+  rewrite A. rewrite B. rewrite Pos.eqb_refl. rewrite C. econstructor; eauto.
 Qed.
 
 Lemma callred_topred:
@@ -1363,7 +1369,6 @@ Proof.
   { eapply forallb_forall.
     intros. eapply not_ptr_reflect. eauto. }
   rewrite G'.
-  eapply get_call_trace_eq in EV; rewrite EV; eauto.
   eapply get_call_trace_eq in EV; rewrite EV; eauto.
 Qed.
 
@@ -1798,7 +1803,7 @@ Definition do_step (w: world) (s: state) : list transition :=
       do m2 <- sem_bind_parameters w e m1 f.(fn_params) vargs (fn_comp f);
       ret "step_internal_function" (State f f.(fn_body) k e m2)
   | Callstate (External ef _ tres _) vargs k m =>
-      match do_external _ _ ge do_external_function do_inline_assembly ef w (call_comp k) vargs m with
+      match do_external _ _ ge do_external_function do_inline_assembly ef w vargs m with
       | None => nil
       | Some(w',t,v,m') => TR "step_external_function" t (Returnstate v k m' (rettype_of_type tres) (comp_of ef)) :: nil
       end
@@ -1984,7 +1989,7 @@ Proof with (unfold ret; eauto with coqlib).
            | _ => true
            end = true).
   { destruct (Genv.type_of_call ge (comp_of f) cp) eqn:eq_type_of_call;
-      [reflexivity | | reflexivity].
+      [reflexivity | ].
     apply not_ptr_reflect; auto. }
   rewrite H. apply get_return_trace_eq in EV; rewrite EV. simpl.
   left; reflexivity.

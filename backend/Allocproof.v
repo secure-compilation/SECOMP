@@ -1657,20 +1657,20 @@ Proof.
 Qed.
 
 Lemma add_equations_builtin_eval:
-  forall cp ef env args args' e1 e2 m1 m1' rs ls (ge: RTL.genv) sp vargs t vres m2,
+  forall ef env args args' e1 e2 m1 m1' rs ls (ge: RTL.genv) sp vargs t vres m2,
   wt_regset env rs ->
   match ef with
-  | EF_debug _ _ _ => add_equations_debug_args env args args' e1
+  | EF_debug _ _ _ _ => add_equations_debug_args env args args' e1
   | _              => add_equations_builtin_args env args args' e1
   end = Some e2 ->
   Mem.extends m1 m1' ->
   satisf rs ls e2 ->
   eval_builtin_args ge (fun r => rs # r) sp m1 args vargs ->
-  external_call ef ge cp vargs m1 t vres m2 ->
+  external_call ef ge vargs m1 t vres m2 ->
   satisf rs ls e1 /\
   exists vargs' vres' m2',
      eval_builtin_args ge ls sp m1' args' vargs'
-  /\ external_call ef ge cp vargs' m1' t vres' m2'
+  /\ external_call ef ge vargs' m1' t vres' m2'
   /\ Val.lessdef vres vres'
   /\ Mem.extends m2 m2'.
 Proof.
@@ -1679,7 +1679,7 @@ Proof.
     satisf rs ls e1 /\
     exists vargs' vres' m2',
        eval_builtin_args ge ls sp m1' args' vargs'
-    /\ external_call ef ge cp vargs' m1' t vres' m2'
+    /\ external_call ef ge vargs' m1' t vres' m2'
     /\ Val.lessdef vres vres'
     /\ Mem.extends m2 m2').
   {
@@ -2577,20 +2577,20 @@ Proof.
   exploit find_function_translated. eauto. eauto. eapply add_equations_args_satisf; eauto.
   intros [tfd [E F]].
   assert (SIG': funsig tfd = sg). eapply sig_function_translated; eauto.
-  exploit find_function_ptr_translated. eauto. eauto. eauto. eapply add_equations_args_satisf; eauto.
-  intros G.
+  (* exploit find_function_ptr_translated. eauto. eauto. eauto. eapply add_equations_args_satisf; eauto. *)
+  (* intros G. *)
   econstructor; split.
   eapply plus_left. econstructor; eauto.
   eapply star_right. eexact A1. econstructor; eauto.
   rewrite <- E. apply find_function_tailcall; auto.
-  rewrite find_function_ptr_tailcall; eauto.
+  (* rewrite find_function_ptr_tailcall; eauto. *)
   rewrite <- comp_transf_fundef; eauto. rewrite <- comp_transf_function; eauto.
-  rewrite <- comp_transf_function; eauto.
-  rewrite <- comp_transf_function; eauto. eapply allowed_call_translated; eauto.
+  (* rewrite <- comp_transf_function; eauto. *)
+  (* rewrite <- comp_transf_function; eauto. eapply allowed_call_translated; eauto. *)
   replace (fn_stacksize tf) with (RTL.fn_stacksize f); eauto.
   rewrite <- comp_transf_function; eauto.
   destruct (transf_function_inv _ _ FUN); auto.
-  eauto. traceEq.
+  traceEq. traceEq.
   econstructor; eauto.
   eapply match_stackframes_change_sig; eauto. rewrite SIG'. rewrite e0. decEq.
   destruct (transf_function_inv _ _ FUN); auto.
@@ -2614,8 +2614,8 @@ Proof.
   eapply star_trans. eexact A1.
   eapply star_left. econstructor.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
-  eapply external_call_symbols_preserved. apply senv_preserved. rewrite comp_transf_function in E. eauto. eauto.
-  instantiate (1 := ls2); auto.
+  eapply external_call_symbols_preserved. apply senv_preserved. eauto.
+  eauto. rewrite <- comp_transf_function; eauto.
   eapply star_right. eexact A3.
   econstructor.
   reflexivity. reflexivity. reflexivity. traceEq.
@@ -2712,7 +2712,7 @@ Proof.
   econstructor; split.
   apply plus_one. econstructor; eauto.
   eapply external_call_symbols_preserved with (ge1 := ge); eauto. apply senv_preserved.
-  erewrite <- match_stackframes_call_comp; eauto.
+  (* erewrite <- match_stackframes_call_comp; eauto. *)
   econstructor; eauto.
   simpl. destruct (loc_result (ef_sig ef)) eqn:RES; simpl.
   rewrite Locmap.gss; auto.

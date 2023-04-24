@@ -331,10 +331,8 @@ Proof.
 (* Ltailcall *)
   left; econstructor; split.
   econstructor. erewrite match_parent_locset; eauto. eapply find_function_translated; eauto.
-  eapply find_function_ptr_translated; eauto.
   symmetry; apply sig_function_translated.
   now rewrite ! comp_transl. simpl; eauto.
-  eapply allowed_call_translated; eauto.
   eauto.
   econstructor; eauto.
 (* Lbuiltin *)
@@ -342,7 +340,7 @@ Proof.
   econstructor.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  eauto.
+  eauto. rewrite comp_transl; eauto.
   econstructor; eauto with coqlib.
 (* Llabel *)
   case_eq (Labelset.mem lbl (labels_branched_to (fn_code f))); intros.
@@ -381,7 +379,6 @@ Proof.
 (* external function *)
   left; econstructor; split.
   econstructor; eauto. eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  erewrite <- match_stacks_call_comp; eauto.
   econstructor; eauto with coqlib.
 (* return *)
   inv H3. inv H1. left; econstructor; split.

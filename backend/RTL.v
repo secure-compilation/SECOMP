@@ -277,25 +277,20 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State s f sp pc rs m)
         t (Callstate (Stackframe res (sig_res sig) (Genv.find_comp ge vf) f sp pc' rs :: s) fd rs##args m)
   | exec_Itailcall:
-      forall s f stk pc rs m sig ros args fd m' vf,
+      forall s f stk pc rs m sig ros args fd m',
       (fn_code f)!pc = Some(Itailcall sig ros args) ->
       find_function ros rs = Some fd ->
       funsig fd = sig ->
       forall COMP: comp_of fd = (comp_of f),
-      (* forall SIG: sig_res (fn_sig f) = sig_res sig, (* not needed anymore? *) *)
-      forall ALLOWED: needs_calling_comp (comp_of f) = false,
-      forall (FUNPTR: find_function_ptr ros rs = Some vf),
-      forall (ALLOWED': Genv.allowed_call ge (comp_of f) vf),
-      (* forall (EV: call_trace ge (comp_of f) (Genv.find_comp ge vf) vf (rs##args) (sig_args sig) t), *)
-      (* forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) vf = Genv.CrossCompartmentCall -> Forall not_ptr (rs##args)), *)
       Mem.free m stk 0 f.(fn_stacksize) (comp_of f) = Some m' ->
       step (State s f (Vptr stk Ptrofs.zero) pc rs m)
         E0 (Callstate s fd rs##args m')
   | exec_Ibuiltin:
       forall s f sp pc rs m ef args res pc' vargs t vres m',
+      forall ALLOWED: comp_of ef = comp_of f,
       (fn_code f)!pc = Some(Ibuiltin ef args res pc') ->
       eval_builtin_args ge (fun r => rs#r) sp m args vargs ->
-      external_call ef ge (comp_of f) vargs m t vres m' ->
+      external_call ef ge vargs m t vres m' ->
       step (State s f sp pc rs m)
          t (State s f sp pc' (regmap_setres res vres rs) m')
   | exec_Icond:
@@ -330,7 +325,7 @@ Inductive step: state -> trace -> state -> Prop :=
                   m')
   | exec_function_external:
       forall s ef args res t m m',
-      external_call ef ge (call_comp s) args m t res m' ->
+      external_call ef ge args m t res m' ->
       step (Callstate s (External ef) args m)
          t (Returnstate s res m' (* (sig_res (ef_sig ef)) *) (* (comp_of ef) *))
   | exec_return:

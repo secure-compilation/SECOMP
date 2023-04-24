@@ -358,7 +358,7 @@ Lemma step_Sdebug_temp:
   forall f id ty k e le m v,
   le!id = Some v ->
   val_casted v ty ->
-  step2 tge (State f (Sdebug_temp id ty) k e le m)
+  step2 tge (State f (Sdebug_temp (comp_of f) id ty) k e le m)
          E0 (State f Sskip k e le m).
 Proof.
   intros. unfold Sdebug_temp. eapply step_builtin with (optid := None); eauto.
@@ -369,7 +369,7 @@ Qed.
 Lemma step_Sdebug_var:
   forall f id ty k e le m b,
   e!id = Some(b, ty) ->
-  step2 tge (State f (Sdebug_var id ty) k e le m)
+  step2 tge (State f (Sdebug_var (comp_of f) id ty) k e le m)
          E0 (State f Sskip k e le m).
 Proof.
   intros. unfold Sdebug_var. eapply step_builtin with (optid := None); eauto.
@@ -382,7 +382,7 @@ Lemma step_Sset_debug:
   forall f id ty a k e le m v v',
   eval_expr tge e (comp_of f) le m a v ->
   sem_cast v (typeof a) ty m = Some v' ->
-  plus step2 tge (State f (Sset_debug id ty a) k e le m)
+  plus step2 tge (State f (Sset_debug (comp_of f) id ty a) k e le m)
               E0 (State f Sskip k e (PTree.set id v' le) m).
 Proof.
   intros; unfold Sset_debug.
@@ -402,7 +402,7 @@ Qed.
 Lemma step_add_debug_vars:
   forall f s e le m vars k,
   (forall id ty, In (id, ty) vars -> exists b, e!id = Some (b, ty)) ->
-  star step2 tge (State f (add_debug_vars vars s) k e le m)
+  star step2 tge (State f (add_debug_vars (comp_of f) vars s) k e le m)
               E0 (State f s k e le m).
 Proof.
   unfold add_debug_vars. destruct (Compopts.debug tt).
@@ -436,7 +436,7 @@ Lemma step_add_debug_params:
   list_norepet (var_names params) ->
   list_forall2 val_casted vl (map snd params) ->
   bind_parameter_temps params vl le1 = Some le ->
-  star step2 tge (State f (add_debug_params params s) k e le m)
+  star step2 tge (State f (add_debug_params (comp_of f) params s) k e le m)
               E0 (State f s k e le m).
 Proof.
   unfold add_debug_params. destruct (Compopts.debug tt).
@@ -1672,50 +1672,50 @@ End EVAL_EXPR.
 
 (** Matching continuations *)
 
-Inductive match_cont (f: meminj): compilenv -> cont -> cont -> mem -> block -> block -> Prop :=
-  | match_Kstop: forall cenv m bound tbound hi,
+Inductive match_cont (f: meminj): compilenv -> compartment -> cont -> cont -> mem -> block -> block -> Prop :=
+  | match_Kstop: forall cenv cp m bound tbound hi,
       match_globalenvs f hi -> Ple hi bound -> Ple hi tbound ->
-      match_cont f cenv Kstop Kstop m bound tbound
-  | match_Kseq: forall cenv s k ts tk m bound tbound,
-      simpl_stmt cenv s = OK ts ->
-      match_cont f cenv k tk m bound tbound ->
+      match_cont f cenv cp Kstop Kstop m bound tbound
+  | match_Kseq: forall cenv cp s k ts tk m bound tbound,
+      simpl_stmt cenv cp s = OK ts ->
+      match_cont f cenv cp k tk m bound tbound ->
       compat_cenv (addr_taken_stmt s) cenv ->
-      match_cont f cenv (Kseq s k) (Kseq ts tk) m bound tbound
-  | match_Kloop1: forall cenv s1 s2 k ts1 ts2 tk m bound tbound,
-      simpl_stmt cenv s1 = OK ts1 ->
-      simpl_stmt cenv s2 = OK ts2 ->
-      match_cont f cenv k tk m bound tbound ->
+      match_cont f cenv cp (Kseq s k) (Kseq ts tk) m bound tbound
+  | match_Kloop1: forall cenv cp s1 s2 k ts1 ts2 tk m bound tbound,
+      simpl_stmt cenv cp s1 = OK ts1 ->
+      simpl_stmt cenv cp s2 = OK ts2 ->
+      match_cont f cenv cp k tk m bound tbound ->
       compat_cenv (VSet.union (addr_taken_stmt s1) (addr_taken_stmt s2)) cenv ->
-      match_cont f cenv (Kloop1 s1 s2 k) (Kloop1 ts1 ts2 tk) m bound tbound
-  | match_Kloop2: forall cenv s1 s2 k ts1 ts2 tk m bound tbound,
-      simpl_stmt cenv s1 = OK ts1 ->
-      simpl_stmt cenv s2 = OK ts2 ->
-      match_cont f cenv k tk m bound tbound ->
+      match_cont f cenv cp (Kloop1 s1 s2 k) (Kloop1 ts1 ts2 tk) m bound tbound
+  | match_Kloop2: forall cenv cp s1 s2 k ts1 ts2 tk m bound tbound,
+      simpl_stmt cenv cp s1 = OK ts1 ->
+      simpl_stmt cenv cp s2 = OK ts2 ->
+      match_cont f cenv cp k tk m bound tbound ->
       compat_cenv (VSet.union (addr_taken_stmt s1) (addr_taken_stmt s2)) cenv ->
-      match_cont f cenv (Kloop2 s1 s2 k) (Kloop2 ts1 ts2 tk) m bound tbound
-  | match_Kswitch: forall cenv k tk m bound tbound,
-      match_cont f cenv k tk m bound tbound ->
-      match_cont f cenv (Kswitch k) (Kswitch tk) m bound tbound
-  | match_Kcall: forall cenv optid fn e le k tfn te tle tk m hi thi lo tlo bound tbound x,
+      match_cont f cenv cp (Kloop2 s1 s2 k) (Kloop2 ts1 ts2 tk) m bound tbound
+  | match_Kswitch: forall cenv cp k tk m bound tbound,
+      match_cont f cenv cp k tk m bound tbound ->
+      match_cont f cenv cp (Kswitch k) (Kswitch tk) m bound tbound
+  | match_Kcall: forall cenv cp optid fn e le k tfn te tle tk m hi thi lo tlo bound tbound x,
       transf_function fn = OK tfn ->
       match_envs f (cenv_for fn) e le m lo hi te tle tlo thi ->
-      match_cont f (cenv_for fn) k tk m lo tlo ->
+      match_cont f (cenv_for fn) fn.(fn_comp) k tk m lo tlo ->
       check_opttemp (cenv_for fn) optid = OK x ->
       Ple hi bound -> Ple thi tbound ->
-      match_cont f cenv (Kcall optid fn e le k)
+      match_cont f cenv cp (Kcall optid fn e le k)
                         (Kcall optid tfn te tle tk) m bound tbound.
 
 (** Invariance property by change of memory and injection *)
 
 Lemma match_cont_invariant:
-  forall f' m' f cenv k tk m bound tbound,
-  match_cont f cenv k tk m bound tbound ->
+  forall f' m' f cenv cp k tk m bound tbound,
+  match_cont f cenv cp k tk m bound tbound ->
   (forall b chunk v c,
     f b = None -> Plt b bound -> Mem.load chunk m b 0 c = Some v -> Mem.load chunk m' b 0 c = Some v) ->
   inject_incr f f' ->
   (forall b, Plt b bound -> f' b = f b) ->
   (forall b b' delta, f' b = Some(b', delta) -> Plt b' tbound -> f' b = f b) ->
-  match_cont f' cenv k tk m' bound tbound.
+  match_cont f' cenv cp k tk m' bound tbound.
 Proof.
   induction 1; intros LOAD INCR INJ1 INJ2; econstructor; eauto.
 (* globalenvs *)
@@ -1736,11 +1736,11 @@ Qed.
 (** Invariance by assignment to location "above" *)
 
 Lemma match_cont_assign_loc:
-  forall c f cenv k tk m bound tbound ty loc ofs bf v m',
-  match_cont f cenv k tk m bound tbound ->
+  forall c f cenv cp k tk m bound tbound ty loc ofs bf v m',
+  match_cont f cenv cp k tk m bound tbound ->
   assign_loc ge c ty m loc ofs bf v m' ->
   Ple bound loc ->
-  match_cont f cenv k tk m' bound tbound.
+  match_cont f cenv cp k tk m' bound tbound.
 Proof.
   intros. eapply match_cont_invariant; eauto.
   intros. rewrite <- H4. inv H0.
@@ -1755,13 +1755,13 @@ Qed.
 (** Invariance by external calls *)
 
 Lemma match_cont_extcall:
-  forall f cenv k tk m bound tbound tm f' m',
-  match_cont f cenv k tk m bound tbound ->
+  forall f cenv cp k tk m bound tbound tm f' m',
+  match_cont f cenv cp k tk m bound tbound ->
   Mem.unchanged_on (loc_unmapped f) m m' ->
   inject_incr f f' ->
   inject_separated f f' m tm ->
   Ple bound (Mem.nextblock m) -> Ple tbound (Mem.nextblock tm) ->
-  match_cont f' cenv k tk m' bound tbound.
+  match_cont f' cenv cp k tk m' bound tbound.
 Proof.
   intros. eapply match_cont_invariant; eauto.
   intros. eapply Mem.load_unchanged_on; eauto.
@@ -1775,11 +1775,11 @@ Qed.
 (** Invariance by change of bounds *)
 
 Lemma match_cont_incr_bounds:
-  forall f cenv k tk m bound tbound,
-  match_cont f cenv k tk m bound tbound ->
+  forall f cenv cp k tk m bound tbound,
+  match_cont f cenv cp k tk m bound tbound ->
   forall bound' tbound',
   Ple bound bound' -> Ple tbound tbound' ->
-  match_cont f cenv k tk m bound' tbound'.
+  match_cont f cenv cp k tk m bound' tbound'.
 Proof.
   induction 1; intros; econstructor; eauto; extlia.
 Qed.
@@ -1787,17 +1787,17 @@ Qed.
 (** [match_cont] and call continuations. *)
 
 Lemma match_cont_change_cenv:
-  forall f cenv k tk m bound tbound cenv',
-  match_cont f cenv k tk m bound tbound ->
+  forall f cenv cp k tk m bound tbound cenv',
+  match_cont f cenv cp k tk m bound tbound ->
   is_call_cont k ->
-  match_cont f cenv' k tk m bound tbound.
+  match_cont f cenv' cp k tk m bound tbound.
 Proof.
   intros. inv H; simpl in H0; try contradiction; econstructor; eauto.
 Qed.
 
 Lemma match_cont_is_call_cont:
-  forall f cenv k tk m bound tbound,
-  match_cont f cenv k tk m bound tbound ->
+  forall f cenv cp k tk m bound tbound,
+  match_cont f cenv cp k tk m bound tbound ->
   is_call_cont k ->
   is_call_cont tk.
 Proof.
@@ -1805,20 +1805,20 @@ Proof.
 Qed.
 
 Lemma match_cont_call_cont:
-  forall f cenv k tk m bound tbound,
-  match_cont f cenv k tk m bound tbound ->
+  forall f cenv cp k tk m bound tbound,
+  match_cont f cenv cp k tk m bound tbound ->
   forall cenv',
-  match_cont f cenv' (call_cont k) (call_cont tk) m bound tbound.
+  match_cont f cenv' cp (call_cont k) (call_cont tk) m bound tbound.
 Proof.
   induction 1; simpl; auto; intros; econstructor; eauto.
 Qed.
 
 Lemma match_cont_call_comp:
-  forall f cenv k tk m bound tbound,
-  match_cont f cenv k tk m bound tbound ->
+  forall f cenv cp k tk m bound tbound,
+  match_cont f cenv cp k tk m bound tbound ->
   call_comp k = call_comp tk.
 Proof.
-  intros f cenv k tk m bound tbound H.
+  intros f cenv cp k tk m bound tbound H.
   unfold call_comp.
   induction H; simpl; auto.
   now apply comp_transl_partial.
@@ -1850,14 +1850,14 @@ Proof.
 Qed.
 
 Lemma match_cont_free_env:
-  forall f cenv e le m lo hi te tle tm tlo thi k tk m' tm' c,
+  forall f cenv e le m lo hi te tle tm tlo thi k tk m' tm' cp,
   match_envs f cenv e le m lo hi te tle tlo thi ->
-  match_cont f cenv k tk m lo tlo ->
+  match_cont f cenv cp k tk m lo tlo ->
   Ple hi (Mem.nextblock m) ->
   Ple thi (Mem.nextblock tm) ->
-  Mem.free_list m (blocks_of_env ge e) c = Some m' ->
-  Mem.free_list tm (blocks_of_env tge te) c = Some tm' ->
-  match_cont f cenv k tk m' (Mem.nextblock m') (Mem.nextblock tm').
+  Mem.free_list m (blocks_of_env ge e) cp = Some m' ->
+  Mem.free_list tm (blocks_of_env tge te) cp = Some tm' ->
+  match_cont f cenv cp k tk m' (Mem.nextblock m') (Mem.nextblock tm').
 Proof.
   intros. apply match_cont_incr_bounds with lo tlo.
   eapply match_cont_invariant; eauto.
@@ -1872,8 +1872,8 @@ Qed.
 (** Matching of global environments *)
 
 Lemma match_cont_globalenv:
-  forall f cenv k tk m bound tbound,
-  match_cont f cenv k tk m bound tbound ->
+  forall f cenv cp k tk m bound tbound,
+  match_cont f cenv cp k tk m bound tbound ->
   exists bound, match_globalenvs f bound.
 Proof.
   induction 1; auto. exists hi; auto.
@@ -1882,8 +1882,8 @@ Qed.
 Hint Resolve match_cont_globalenv: compat.
 
 Lemma match_cont_find_funct:
-  forall f cenv k tk m bound tbound vf fd tvf,
-  match_cont f cenv k tk m bound tbound ->
+  forall f cenv cp k tk m bound tbound vf fd tvf,
+  match_cont f cenv cp k tk m bound tbound ->
   Genv.find_funct ge vf = Some fd ->
   Val.inject f vf tvf ->
   exists tfd, Genv.find_funct tge tvf = Some tfd /\ transf_fundef fd = OK tfd.
@@ -1899,8 +1899,8 @@ Qed.
 
 
 Lemma match_cont_find_funct_eq:
-  forall f cenv k tk m bound tbound vf fd tvf,
-  match_cont f cenv k tk m bound tbound ->
+  forall f cenv cp k tk m bound tbound vf fd tvf,
+  match_cont f cenv cp k tk m bound tbound ->
   Genv.find_funct ge vf = Some fd ->
   Val.inject f vf tvf ->
   vf = tvf.
@@ -1921,9 +1921,9 @@ Inductive match_states: state -> state -> Prop :=
   | match_regular_states:
       forall f s k e le m tf ts tk te tle tm j lo hi tlo thi
         (TRF: transf_function f = OK tf)
-        (TRS: simpl_stmt (cenv_for f) s = OK ts)
+        (TRS: simpl_stmt (cenv_for f) (comp_of f) s = OK ts)
         (MENV: match_envs j (cenv_for f) e le m lo hi te tle tlo thi)
-        (MCONT: match_cont j (cenv_for f) k tk m lo tlo)
+        (MCONT: match_cont j (cenv_for f) (comp_of f) k tk m lo tlo)
         (MINJ: Mem.inject j m tm)
         (COMPAT: compat_cenv (addr_taken_stmt s) (cenv_for f))
         (BOUND: Ple hi (Mem.nextblock m))
@@ -1933,7 +1933,7 @@ Inductive match_states: state -> state -> Prop :=
   | match_call_state:
       forall fd vargs k m tfd tvargs tk tm j targs tres cconv
         (TRFD: transf_fundef fd = OK tfd)
-        (MCONT: forall cenv, match_cont j cenv k tk m (Mem.nextblock m) (Mem.nextblock tm))
+        (MCONT: forall cenv cp, match_cont j cenv cp k tk m (Mem.nextblock m) (Mem.nextblock tm))
         (MINJ: Mem.inject j m tm)
         (AINJ: Val.inject_list j vargs tvargs)
         (FUNTY: type_of_fundef fd = Tfunction targs tres cconv)
@@ -1942,7 +1942,7 @@ Inductive match_states: state -> state -> Prop :=
                    (Callstate tfd tvargs tk tm)
   | match_return_state:
       forall v k m tv tk tm ty cp j
-        (MCONT: forall cenv, match_cont j cenv k tk m (Mem.nextblock m) (Mem.nextblock tm))
+        (MCONT: forall cenv, match_cont j cenv cp k tk m (Mem.nextblock m) (Mem.nextblock tm))
         (MINJ: Mem.inject j m tm)
         (RINJ: Val.inject j v tv),
       match_states (Returnstate v k m ty cp)
@@ -1964,15 +1964,15 @@ Proof.
 Qed.
 
 Remark simpl_select_switch:
-  forall cenv n ls tls,
-  simpl_lblstmt cenv ls = OK tls ->
-  simpl_lblstmt cenv (select_switch n ls) = OK (select_switch n tls).
+  forall cenv cp n ls tls,
+  simpl_lblstmt cenv cp ls = OK tls ->
+  simpl_lblstmt cenv cp (select_switch n ls) = OK (select_switch n tls).
 Proof.
-  intros cenv n.
+  intros cenv cp n.
   assert (DFL:
     forall ls tls,
-    simpl_lblstmt cenv ls = OK tls ->
-    simpl_lblstmt cenv (select_switch_default ls) = OK (select_switch_default tls)).
+    simpl_lblstmt cenv cp ls = OK tls ->
+    simpl_lblstmt cenv cp (select_switch_default ls) = OK (select_switch_default tls)).
   {
     induction ls; simpl; intros; monadInv H.
     auto.
@@ -1980,11 +1980,11 @@ Proof.
   }
   assert (CASE:
     forall ls tls,
-    simpl_lblstmt cenv ls = OK tls ->
+    simpl_lblstmt cenv cp ls = OK tls ->
     match select_switch_case n ls with
     | None => select_switch_case n tls = None
     | Some ls' =>
-        exists tls', select_switch_case n tls = Some tls' /\ simpl_lblstmt cenv ls' = OK tls'
+        exists tls', select_switch_case n tls = Some tls' /\ simpl_lblstmt cenv cp ls' = OK tls'
     end).
   {
     induction ls; simpl; intros; monadInv H; simpl.
@@ -2002,9 +2002,9 @@ Proof.
 Qed.
 
 Remark simpl_seq_of_labeled_statement:
-  forall cenv ls tls,
-  simpl_lblstmt cenv ls = OK tls ->
-  simpl_stmt cenv (seq_of_labeled_statement ls) = OK (seq_of_labeled_statement tls).
+  forall cenv cp ls tls,
+  simpl_lblstmt cenv cp ls = OK tls ->
+  simpl_stmt cenv cp (seq_of_labeled_statement ls) = OK (seq_of_labeled_statement tls).
 Proof.
   induction ls; simpl; intros; monadInv H; simpl.
   auto.
@@ -2049,14 +2049,15 @@ Section FIND_LABEL.
 
 Variable f: meminj.
 Variable cenv: compilenv.
+Variable cp: compartment.
 Variable m: mem.
 Variables bound tbound: block.
 Variable lbl: ident.
 
 Lemma simpl_find_label:
   forall s k ts tk,
-  simpl_stmt cenv s = OK ts ->
-  match_cont f cenv k tk m bound tbound ->
+  simpl_stmt cenv cp s = OK ts ->
+  match_cont f cenv cp k tk m bound tbound ->
   compat_cenv (addr_taken_stmt s) cenv ->
   match find_label lbl s k with
   | None =>
@@ -2065,14 +2066,14 @@ Lemma simpl_find_label:
       exists ts', exists tk',
          find_label lbl ts tk = Some(ts', tk')
       /\ compat_cenv (addr_taken_stmt s') cenv
-      /\ simpl_stmt cenv s' = OK ts'
-      /\ match_cont f cenv k' tk' m bound tbound
+      /\ simpl_stmt cenv cp s' = OK ts'
+      /\ match_cont f cenv cp k' tk' m bound tbound
   end
 
 with simpl_find_label_ls:
   forall ls k tls tk,
-  simpl_lblstmt cenv ls = OK tls ->
-  match_cont f cenv k tk m bound tbound ->
+  simpl_lblstmt cenv cp ls = OK tls ->
+  match_cont f cenv cp k tk m bound tbound ->
   compat_cenv (addr_taken_lblstmt ls) cenv ->
   match find_label_ls lbl ls k with
   | None =>
@@ -2081,8 +2082,8 @@ with simpl_find_label_ls:
       exists ts', exists tk',
          find_label_ls lbl tls tk = Some(ts', tk')
       /\ compat_cenv (addr_taken_stmt s') cenv
-      /\ simpl_stmt cenv s' = OK ts'
-      /\ match_cont f cenv k' tk' m bound tbound
+      /\ simpl_stmt cenv cp s' = OK ts'
+      /\ match_cont f cenv cp k' tk' m bound tbound
   end.
 
 Proof.
@@ -2157,14 +2158,14 @@ Proof.
 Qed.
 
 Lemma find_label_add_debug_vars:
-  forall s k vars, find_label lbl (add_debug_vars vars s) k = find_label lbl s k.
+  forall s k vars, find_label lbl (add_debug_vars cp vars s) k = find_label lbl s k.
 Proof.
   unfold add_debug_vars. destruct (Compopts.debug tt); auto.
   induction vars; simpl; auto. destruct a as [id ty]; simpl. auto.
 Qed.
 
 Lemma find_label_add_debug_params:
-  forall s k vars, find_label lbl (add_debug_params vars s) k = find_label lbl s k.
+  forall s k vars, find_label lbl (add_debug_params cp vars s) k = find_label lbl s k.
 Proof.
   unfold add_debug_params. destruct (Compopts.debug tt); auto.
   induction vars; simpl; auto. destruct a as [id ty]; simpl. auto.
@@ -2189,6 +2190,7 @@ Proof.
   inv H.
   (* local variable *)
   econstructor; split.
+  rewrite (comp_transl_partial _ TRF).
   eapply step_Sset_debug.
   rewrite <- (comp_transl_partial _ TRF). eauto. rewrite typeof_simpl_expr. eauto.
   econstructor; eauto with compat.
@@ -2258,9 +2260,9 @@ Proof.
   econstructor; split.
   apply plus_one. econstructor; eauto.
   rewrite <- (comp_transl_partial _ TRF). eauto.
+  rewrite <- (comp_transl_partial _ TRF); eauto.
 
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  erewrite <- (comp_transl_partial _ TRF); eauto.
   econstructor; eauto with compat.
   eapply match_envs_set_opttemp; eauto.
   eapply match_envs_extcall; eauto.
@@ -2304,7 +2306,7 @@ Proof.
 
 (* skip loop2 *)
   inv MCONT. econstructor; split. apply plus_one. eapply step_skip_loop2.
-  econstructor; eauto with compat. simpl; rewrite H2; rewrite H4; auto.
+  econstructor; eauto with compat. simpl; rewrite H2; rewrite H5; auto.
 
 (* break loop2 *)
   inv MCONT. econstructor; split. apply plus_one. eapply step_break_loop2.
@@ -2370,7 +2372,7 @@ Proof.
 
 (* goto *)
   generalize TRF; intros TRF'. monadInv TRF'.
-  exploit (simpl_find_label j (cenv_for f) m lo tlo lbl (fn_body f) (call_cont k) x (call_cont tk)).
+  exploit (simpl_find_label j (cenv_for f) (comp_of f) m lo tlo lbl (fn_body f) (call_cont k) x (call_cont tk)).
     eauto. eapply match_cont_call_cont. eauto.
     apply compat_cenv_for.
   rewrite H. intros [ts' [tk' [A [B [C D]]]]].
@@ -2409,7 +2411,20 @@ Proof.
   econstructor; split.
   eapply plus_left. econstructor.
   econstructor. exact Y. exact X. exact Z. simpl. eexact A. simpl. eexact Q.
-  simpl. eapply star_trans. eapply step_add_debug_params. auto. eapply forall2_val_casted_inject; eauto. eexact Q.
+  simpl. eapply star_trans.
+  replace (fn_comp f) with (fn_comp {|
+         fn_comp := fn_comp f;
+         fn_return := fn_return f;
+         fn_callconv := fn_callconv f;
+         fn_params := fn_params f;
+         fn_vars := remove_lifted (cenv_for f) (fn_params f ++ fn_vars f);
+         fn_temps := add_lifted (cenv_for f) (fn_vars f) (fn_temps f);
+         fn_body :=
+           add_debug_params (fn_comp f) (fn_params f)
+             (store_params (cenv_for f) (fn_params f)
+                (add_debug_vars (fn_comp f) (remove_lifted (cenv_for f) (fn_params f ++ fn_vars f)) x0))
+       |}) by reflexivity.
+  eapply step_add_debug_params. auto. eapply forall2_val_casted_inject; eauto. eexact Q.
   eapply star_trans. eexact P.
   eapply step_add_debug_vars.
   unfold remove_lifted; intros. rewrite List.filter_In in H3. destruct H3.
@@ -2430,11 +2445,10 @@ Proof.
 (* external function *)
   monadInv TRFD. inv FUNTY.
   exploit external_call_mem_inject; eauto. apply match_globalenvs_preserves_globals.
-  eapply match_cont_globalenv. eexact (MCONT VSet.empty).
+  eapply match_cont_globalenv. eexact (MCONT VSet.empty (comp_of ef)).
   intros [j' [tvres [tm' [P [Q [R [S [T [U V]]]]]]]]].
   econstructor; split.
   apply plus_one. econstructor; eauto. eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  rewrite <- (match_cont_call_comp _ _ _ _ _ _ _ (MCONT VSet.empty)); eauto.
   econstructor; eauto.
   intros. apply match_cont_incr_bounds with (Mem.nextblock m) (Mem.nextblock tm).
   eapply match_cont_extcall; eauto. extlia. extlia.

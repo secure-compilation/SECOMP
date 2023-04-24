@@ -600,7 +600,8 @@ Inductive step: state -> trace -> state -> Prop :=
 
   | step_builtin:   forall f optid ef tyargs al k e le m vargs t vres m',
       eval_exprlist e (comp_of f) le m al tyargs vargs ->
-      external_call ef ge (comp_of f) vargs m t vres m' ->
+      forall ALLOWED: comp_of ef = comp_of f,
+      external_call ef ge vargs m t vres m' ->
       step (State f (Sbuiltin optid ef tyargs al) k e le m)
          t (State f Sskip k e (set_opttemp optid vres le) m')
 
@@ -684,7 +685,7 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State f f.(fn_body) k e le m1)
 
   | step_external_function: forall ef targs tres cconv vargs k m vres t m',
-      external_call ef ge (call_comp k) vargs m t vres m' ->
+      external_call ef ge vargs m t vres m' ->
       step (Callstate (External ef targs tres cconv) vargs k m)
          t (Returnstate vres k m' (rettype_of_type tres) (comp_of ef))
 

@@ -1693,6 +1693,32 @@ Proof.
   eapply (Genv.match_genvs_find_comp TRANSF).
 Qed.
 
+Lemma find_function_translated':
+  forall j ls rs m ros f,
+  agree_regs j ls rs ->
+  m |= globalenv_inject ge j ->
+  Linear.find_function ge ros ls = Some f ->
+  exists bf, exists tf,
+     find_function_ptr tge ros rs = Some bf
+  /\ Genv.find_funct_ptr tge bf = Some tf
+  /\ transf_fundef f = OK tf.
+Proof.
+  unfold find_function.
+  intros until f; intros AG [bound [_ [?????]]] FF.
+  destruct ros; simpl in FF.
+- exploit Genv.find_funct_inv; eauto. intros [b EQ]. rewrite EQ in FF.
+  rewrite Genv.find_funct_find_funct_ptr in FF.
+  exploit function_ptr_translated; eauto. intros [tf [A B]].
+  exists b; exists tf; split; auto. simpl.
+  generalize (AG m0). rewrite EQ. intro INJ. inv INJ.
+  rewrite DOMAIN in H2. inv H2. simpl. auto. eapply FUNCTIONS; eauto.
+- destruct (Genv.find_symbol ge i) as [b|] eqn:?; try discriminate.
+  unfold Genv.find_funct in FF. destruct Ptrofs.eq_dec; try discriminate.
+  exploit function_ptr_translated; eauto. intros [tf [A B]].
+  exists b; exists tf; split; auto. simpl.
+  rewrite symbols_preserved. auto.
+Qed.
+
 Lemma find_function_translated:
   forall j ls rs m ros f cp vf,
   agree_regs j ls rs ->
@@ -2285,9 +2311,9 @@ Proof.
   exploit function_epilogue_correct; eauto.
   clear SEP. intros (rs1 & m1' & P & Q & R & S & T & U & SEP).
   rewrite sep_swap in SEP.
-  exploit find_function_translated; eauto.
+  exploit find_function_translated'; eauto.
     eapply sep_proj2. eapply sep_proj2. eexact SEP.
-  intros [bf [tf' [A [B [C [D E]]]]]].
+  intros [bf [tf' [A [B C]]]].
   econstructor; split.
   eapply plus_right. eexact S. econstructor; eauto.
     unfold Genv.find_comp; simpl; rewrite FIND; destruct Ptrofs.eq_dec; try congruence.
@@ -2296,11 +2322,11 @@ Proof.
     unfold comp_of; simpl. eauto.
     unfold Genv.find_comp; simpl; rewrite FIND; destruct Ptrofs.eq_dec; try congruence.
     unfold comp_of; simpl. eauto.
-    rewrite <- (comp_transl_partial _ C), <- (comp_transl_partial _ TRANSL). eauto.
-    unfold Genv.find_comp; simpl; rewrite FIND; destruct Ptrofs.eq_dec; try congruence.
-    unfold comp_of; simpl. rewrite <- (comp_transf_function); eauto.
-    unfold Genv.find_comp; simpl; rewrite FIND; destruct Ptrofs.eq_dec; try congruence.
-    unfold comp_of; simpl. rewrite <- (comp_transf_function); eauto.
+    { unfold Genv.find_comp; simpl; rewrite FIND; destruct Ptrofs.eq_dec; try congruence.
+      rewrite B; unfold comp_of; simpl.
+      rewrite <- comp_transf_function; eauto. rewrite <- COMP.
+      destruct f'; auto. monadInv C. unfold comp_of; simpl. rewrite <- (comp_transf_function _ _ EQ); eauto.
+      inv C. reflexivity. }
   traceEq.
   econstructor; eauto.
   apply match_stacks_change_sig with (Linear.fn_sig f); auto.
@@ -2432,7 +2458,6 @@ Proof.
   econstructor; split.
   apply plus_one. eapply exec_function_external; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  { erewrite (match_stacks_call_comp); eauto. }
   eapply match_states_return with (j := j').
   eapply match_stacks_change_meminj; eauto.
   apply agree_regs_set_pair. apply agree_regs_undef_caller_save_regs. 

@@ -5395,6 +5395,12 @@ Section SECURITY.
                                | _ => False
                                end }.
 
+#[export] Instance has_side_value: has_side val :=
+  {| in_side := fun '(s, m) v δ => match v with
+                                | Vptr b _=> (s, m) |= b ∈ δ
+                                | _ => False
+                                end |}.
+
 Definition same_domain (s: split) (j: meminj) (δ: side) (m: mem): Prop :=
   forall b, (j b <> None <-> (s, m) |= b ∈ δ).
 
@@ -5411,6 +5417,8 @@ End SECURITY.
 
 End Mem.
 
+#[export] Existing Instance Mem.has_side_block.
+#[export] Existing Instance Mem.has_side_value.
 
 Notation mem := Mem.mem.
 
