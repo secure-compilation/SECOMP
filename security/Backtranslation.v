@@ -9,6 +9,64 @@ Require Import Ctypes Clight.
 
 
 
+Definition eventval_to_val (ge: Senv.t) (v: eventval): val :=
+  match v with
+  | EVint i => Vint i
+  | EVlong i => Vlong i
+  | EVfloat f => Vfloat f
+  | EVsingle f => Vsingle f
+  | EVptr_global id ofs => match Senv.find_symbol ge id with
+                          | Some b => Vptr b ofs
+                          | None => Vundef
+                          end
+  end.
+
+Definition list_eventval_to_list_val ge (vs: list eventval): list val :=
+  List.map (eventval_to_val ge) vs.
+
+(* need to handle type: It seems that Asm.step does not utilizes sig, so we need to correctly craft type in Clight.step.
+   e.g., if we bt everything into void, ok when intra but not when cross.
+*)
+Definition syscall_properties1 (sem: extcall_sem) : Prop :=
+  forall ge cp vargs m1 name evargs evres vres m2,
+    sem ge cp vargs m1 (Event_syscall name evargs evres :: nil) vres m2 ->
+    exists vres' m2',
+      sem ge cp (list_eventval_to_list_val ge evargs) m1 (Event_syscall name evargs evres :: nil) vres' m2'.
+
+Definition syscall_properties2 (sem: extcall_sem) (sg: signature) : Prop :=
+  forall ge cp vargs m1 name evargs evres vres m2,
+    sem ge cp vargs m1 (Event_syscall name evargs evres :: nil) vres m2 ->
+    eventval_list_match ge evargs sg.(sig_args) vargs.
+
+(* Record syscall_properties1 (sem: extcall_sem) (sg: signature) : Prop := *)
+(*   mk_syscall_properties { *)
+(*       sc_args_match: *)
+(*       forall ge cp vargs m1 name evargs evres vres m2, *)
+(*         sem ge cp vargs m1 (Event_syscall name evargs evres :: nil) vres m2 -> *)
+(*         sem ge cp (list_eventval_to_list_val ge vargs) m1 (Event_syscall name evargs evres :: nil) vres m2; *)
+
+(*       sc_name_match: *)
+(*       forall name' ge cp vargs m1 name evargs evres vres m2, *)
+(*         sem = external_functions_sem name' sg -> *)
+(*         sem ge cp vargs m1 (Event_syscall name evargs evres :: nil) vres m2 -> *)
+(*         (name' = name); *)
+(*     }. *)
+
+(* Record syscall_properties2 (sem: extcall_sem) (sg: signature) : Prop := *)
+(*   mk_syscall_properties { *)
+(*       sc_args_match: *)
+(*       forall ge cp vargs m1 name evargs evres vres m2, *)
+(*         sem ge cp vargs m1 (Event_syscall name evargs evres :: nil) vres m2 -> *)
+(*         eventval_list_match ge evargs sg.(sig_args) vargs; *)
+
+(*       sc_name_match: *)
+(*       forall name' ge cp vargs m1 name evargs evres vres m2, *)
+(*         sem = external_functions_sem name' sg -> *)
+(*         sem ge cp vargs m1 (Event_syscall name evargs evres :: nil) vres m2 -> *)
+(*         (name' = name); *)
+(*     }. *)
+
+
 Section AUX.
 
   (* f doesn't map anything to [b], e.g. the counter and function parameters *)
@@ -332,18 +390,6 @@ Section Backtranslation.
       wf_eventval_pub v -> wf_eventval_ge v.
     Proof. intros H. destruct v; simpl in *; auto. apply Genv.public_symbol_exists in H; auto. Qed.
 
-    Definition eventval_to_val (v: eventval): val :=
-      match v with
-      | EVint i => Vint i
-      | EVlong i => Vlong i
-      | EVfloat f => Vfloat f
-      | EVsingle f => Vsingle f
-      | EVptr_global id ofs => match Senv.find_symbol ge id with
-                              | Some b => Vptr b ofs
-                              | None => Vundef
-                              end
-      end.
-
     Fixpoint list_eventval_to_typelist (vs: list eventval): typelist :=
       match vs with
       | nil => Tnil
@@ -352,9 +398,6 @@ Section Backtranslation.
 
     Definition list_eventval_to_list_expr (vs: list eventval): list expr :=
       List.map eventval_to_expr vs.
-
-    Definition list_eventval_to_list_val (vs: list eventval): list val :=
-      List.map (eventval_to_val) vs.
 
     Lemma typeof_eventval_to_expr_type
           v
@@ -1025,7 +1068,7 @@ Section Backtranslation.
           (* bt_wf *)
           (GLOB: e ! id = None)
           (WFARGS1: Forall (wf_eventval_env e) args)
-          (WFARGS2: Forall (wf_eventval_ge ge) args)
+          (* (WFARGS2: Forall (wf_eventval_ge ge) args) *)
           (* from_asm *)
           b
           (FINDB: Genv.find_symbol ge id = Some b)
@@ -1038,8 +1081,8 @@ Section Backtranslation.
           (CP2: cp' = comp_of fd)
           (INTRA: Genv.type_of_call ge (comp_of f) (comp_of fd) <> Genv.CrossCompartmentCall)
           (* invoke syscall *)
-          ef cp'' sg
-          (EF: ef = EF_external name cp'' sg)
+          ef name' cp'' sg
+          (EF: ef = EF_external name' cp'' sg)
           (EXTERNAL: fd = External ef data.(dargs) data.(dret) data.(dcc))
           srv m'
           (SEM: external_call ef ge cp (list_eventval_to_list_val (globalenv p) args) m (ev :: nil) srv m')
@@ -1089,21 +1132,6 @@ Section Backtranslation.
     Qed.
 
   End STEPPROP.
-
-
-  Record syscall_properties (sem: extcall_sem) (sg: signature) : Prop :=
-    mk_syscall_properties {
-        sc_args_match:
-        forall ge cp vargs m1 name evargs evres vres m2,
-          sem ge cp vargs m1 (Event_syscall name evargs evres :: nil) vres m2 ->
-          eventval_list_match ge evargs sg.(sig_args) vargs;
-
-        sc_name_match:
-        forall name' ge cp vargs m1 name evargs evres vres m2,
-          sem = external_functions_sem name' sg ->
-          sem ge cp vargs m1 (Event_syscall name evargs evres :: nil) vres m2 ->
-          (name' = name);
-      }.
 
 
   Section WELLFORMED.
@@ -1175,32 +1203,55 @@ Section Backtranslation.
         (Genv.type_of_call ge cp_f' cp = Genv.CrossCompartmentCall) /\
         (not_ptr vres) /\ (eventval_match ge rv (proj_rettype ty) vres).
 
+    Definition wf_sem_call_external_intra (ge: genv) (name: string) (evargs: list eventval) (evres: eventval) (id: ident) (f: Clight.function) (fd: Clight.fundef) :=
+      exists b,
+        (Genv.find_symbol ge id = Some b) /\
+          (Genv.find_funct ge (Vptr b Ptrofs.zero) = Some fd) /\
+          let data := from_clfd_fun_data fd in
+          (type_of_fundef fd = Tfunction data.(dargs) data.(dret) data.(dcc)) /\
+            let cp := comp_of f in
+            let cp' := comp_of fd in
+            (Genv.type_of_call ge cp cp' <> Genv.CrossCompartmentCall) /\
+              (Genv.allowed_call ge cp (Vptr b Ptrofs.zero)) /\
+              exists some_sig_args some_vals,
+                (eventval_list_match ge evargs some_sig_args some_vals) /\
+                  (data.(dargs) = (list_typ_to_typelist some_sig_args)).
 
-    Inductive wf_inv_cl (ge: genv) : Clight.function -> cont -> env -> mem -> trace -> Prop :=
+    Definition wf_st_call_external_intra (ge: genv) (name: string) (evargs: list eventval) (evres: eventval) (id: ident) (f: Clight.function) e :=
+      (e ! id = None) /\ (Forall (wf_eventval_env e) evargs).
+
+    Definition wf_sem_event_external_intra (ge: genv) (name: string) (evargs: list eventval) (evres: eventval) cp (ef: external_function) m m' :=
+      exists name' cp' sg',
+        (* TODO: fix to incldue builtin, runtime, inline_asm *)
+        (ef = EF_external name' cp' sg') /\
+          exists res,
+            (external_call ef ge cp (list_eventval_to_list_val ge evargs) m (Event_syscall name evargs evres :: nil) res m').
+
+    Inductive wf_inv_cl (ge: genv) (sid: string -> ident) : Clight.function -> cont -> env -> mem -> trace -> Prop :=
     | wf_inv_vload
         f k e m t
         ch id ofs v
         (SEM: wf_sem_vload ge ch id ofs v)
         (ST: wf_st_vload ch id ofs v e)
-        (IND: wf_inv_cl ge f k e m t)
+        (IND: wf_inv_cl ge sid f k e m t)
       :
-      wf_inv_cl ge f k e m (Event_vload ch id ofs v :: t)
+      wf_inv_cl ge sid f k e m (Event_vload ch id ofs v :: t)
     | wf_inv_vstore
         f k e m t
         ch id ofs v
         (SEM: wf_sem_vstore ge ch id ofs v)
         (ST: wf_st_vstore ch id ofs v e)
-        (IND: wf_inv_cl ge f k e m t)
+        (IND: wf_inv_cl ge sid f k e m t)
       :
-      wf_inv_cl ge f k e m (Event_vstore ch id ofs v :: t)
+      wf_inv_cl ge sid f k e m (Event_vstore ch id ofs v :: t)
     | wf_inv_annot
         f k e m t
         str vs
         (SEM: wf_sem_annot ge str vs)
         (ST: wf_st_annot str vs e)
-        (IND: wf_inv_cl ge f k e m t)
+        (IND: wf_inv_cl ge sid f k e m t)
       :
-      wf_inv_cl ge f k e m (Event_annot str vs :: t)
+      wf_inv_cl ge sid f k e m (Event_annot str vs :: t)
 
     | wf_inv_call_internal
         f k e m t
@@ -1212,18 +1263,18 @@ Section Backtranslation.
         f1 e1 m1
         (ISINT: fd = Internal f1)
         (INT: wf_st_call_internal ge vs f1 m e1 m1)
-        (IND: wf_inv_cl ge f1 k1 e1 m1 t)
+        (IND: wf_inv_cl ge sid f1 k1 e1 m1 t)
       :
-      wf_inv_cl ge f k e m (Event_call cp cp' id vs :: t)
+      wf_inv_cl ge sid f k e m (Event_call cp cp' id vs :: t)
     | wf_inv_return
         f k e m t
         cp cp' rv
         (SEM: wf_sem_return ge cp cp' rv)
         f' k' e' m'
         (ST: wf_st_return ge cp cp' rv e f k m f' k' e' m')
-        (IND: wf_inv_cl ge f' k' e' m' t)
+        (IND: wf_inv_cl ge sid f' k' e' m' t)
       :
-      wf_inv_cl ge f k e m (Event_return cp cp' rv :: t)
+      wf_inv_cl ge sid f k e m (Event_return cp cp' rv :: t)
 
     | wf_inv_external_cross
         f k e m t
@@ -1239,61 +1290,27 @@ Section Backtranslation.
         cp_f' cp_ef evres
         f' k' e'
         (EXT2: wf_st_return_external_cross ge cp_f' (comp_of ef) vres evres (rettype_of_type tres) k1 f' k' e')
-        (IND: wf_inv_cl ge f' k' e' m' t)
+        (IND: wf_inv_cl ge sid f' k' e' m' t)
       :
-      wf_inv_cl ge f k e m ((Event_call cp cp' id vs) :: (Event_syscall sname sargs svr) :: (Event_return cp_f' cp_ef evres) :: t)
-    .
+      wf_inv_cl ge sid f k e m ((Event_call cp cp' id vs) :: (Event_syscall sname sargs svr) :: (Event_return cp_f' cp_ef evres) :: t)
 
-    (* TODO: external call - 2 cases: cross-comp, intra-comp -- diff event, code *)
+    | wf_inv_external_intra
+        f k e m t
+        name evargs evres
+        fd
+        (SEM: wf_sem_call_external_intra ge name evargs evres (sid name) f fd)
+        (ST: wf_st_call_external_intra ge name evargs evres (sid name) f e)
+        ef targs tres cconv
+        (ISEXT: fd = External ef targs tres cconv)
+        m'
+        (EXT: wf_sem_event_external_intra ge name evargs evres (comp_of f) ef m m')
+        (IND: wf_inv_cl ge sid f k e m' t)
+      :
+      wf_inv_cl ge sid f k e m (Event_syscall name evargs evres :: t)
+    .
 
     (* TODO *)
     (* we need a more precise invariant for the proof, e.g. counters, mem_inj *)
-
-    Lemma code_of_event_step_call_external_intra
-          ev
-          name args rv
-          p f k e le m
-          ge data
-          (GE: ge = globalenv p)
-          (EV: ev = Event_syscall name args rv)
-          (* start call *)
-          id
-          (ID: sid name = id)
-          (FDATA: (from_cl_funs_data p) ! id = Some data)
-          (* bt_wf *)
-          (GLOB: e ! id = None)
-          (WFARGS1: Forall (wf_eventval_env e) args)
-          (WFARGS2: Forall (wf_eventval_ge ge) args)
-          (* from_asm *)
-          b
-          (FINDB: Genv.find_symbol ge id = Some b)
-          (ALLOW: Genv.allowed_call ge (comp_of f) (Vptr b Ptrofs.zero))
-          fd
-          (FINDF: Genv.find_funct ge (Vptr b Ptrofs.zero) = Some fd)
-          (TYPEF: type_of_fundef fd = Tfunction data.(dargs) data.(dret) data.(dcc))
-          cp cp'
-          (CP1: cp = comp_of f)
-          (CP2: cp' = comp_of fd)
-          (INTRA: Genv.type_of_call ge (comp_of f) (comp_of fd) <> Genv.CrossCompartmentCall)
-          (* invoke syscall *)
-          ef cp'' sg
-          (EF: ef = EF_external name cp'' sg)
-          (EXTERNAL: fd = External ef data.(dargs) data.(dret) data.(dcc))
-          srv m'
-          (SEM: external_call ef ge cp (list_eventval_to_list_val (globalenv p) args) m (ev :: nil) srv m')
-          (* returnstate *)
-          (* conditions for argument types - might need extra semantics for EF_external *)
-          (* (TYARGS: data.(dargs) = (list_eventval_to_typelist args)) *)
-          some_sig_args some_vals
-          (ESM: eventval_list_match ge args some_sig_args some_vals)
-          (SIGARGS: data.(dargs) = (list_typ_to_typelist some_sig_args))
-      :
-        Star (Clight.semantics1 p)
-             (State f (code_of_event sid (from_cl_funs_data p) ev) k e le m)
-             (ev :: nil)
-             (State f Sskip k e le m').
-
-
 
   End WELLFORMED.
 
