@@ -9,6 +9,13 @@ Require Import Ctypes Clight.
 
 
 
+Variant sys_kind :=
+  | sys_external (id: ident)
+  | sys_builtin (name: string) (sg: signature)
+  | sys_inline (txt: string) (sg: signature) (strs: list string)
+.
+
+
 Definition eventval_to_val (ge: Senv.t) (v: eventval): val :=
   match v with
   | EVint i => Vint i
@@ -516,15 +523,24 @@ Section Backtranslation.
     (** need axiom: 'Event_syscall name _ _' can be uniquely converted into a code (ident).
         e.g., an external call to 'EF_external name _ _' invokes 'Event_syscall name _ _'.
      **)
-    Variable syscall_ident: string -> ident.
+    Variable sid: string -> option sys_kind.
     Definition code_of_syscall (fds: funs_data) (name: string) (vs: list eventval) (v: eventval) :=
-      let id := syscall_ident name in
-      let '(targs, tret, cc) := match fds ! id with
-                                | Some data => (dargs data, dret data, dcc data)
-                                | None => (Tnil, Tvoid, cc_default)
-                                end
-      in
-      Scall None (Evar id (Tfunction targs tret cc)) (list_eventval_to_list_expr vs).
+      match (sid name) with
+      | Some (sys_external id) => 
+          let '(targs, tret, cc) := match fds ! id with
+                                    | Some data => (dargs data, dret data, dcc data)
+                                    | None => (Tnil, Tvoid, cc_default)
+                                    end
+          in
+          Scall None (Evar id (Tfunction targs tret cc)) (list_eventval_to_list_expr vs)
+      | Some (sys_builtin name' sg) =>
+          Sbuiltin None (EF_builtin name' sg) (dargs (from_sig_fun_data sg)) (list_eventval_to_list_expr vs)
+      | Some (sys_inline txt sg strs) =>
+          Sbuiltin None (EF_inline_asm txt sg strs) (dargs (from_sig_fun_data sg)) (list_eventval_to_list_expr vs)
+      | None =>
+          Sskip
+      end.
+
 
     Definition code_of_return (cp cp': compartment) (v: eventval) :=
       Sreturn (Some (eventval_to_expr v)).
@@ -783,7 +799,8 @@ Section Backtranslation.
 
 
   Section STEPPROP.
-    Variable sid: string -> ident.
+
+    Variable sid: string -> option sys_kind.
 
     (* Step lemmas *)
     Lemma code_of_event_step_vload
@@ -1054,6 +1071,8 @@ Section Backtranslation.
       econstructor 1.
     Qed.
 
+    (* TODO: similar to external_cross? *)
+
     Lemma code_of_event_step_call_external_intra
           ev
           name args rv
@@ -1063,7 +1082,7 @@ Section Backtranslation.
           (EV: ev = Event_syscall name args rv)
           (* start call *)
           id
-          (ID: sid name = id)
+          (ID: sid name = Some (sys_external id))
           (FDATA: (from_cl_funs_data p) ! id = Some data)
           (* bt_wf *)
           (GLOB: e ! id = None)
@@ -1098,7 +1117,7 @@ Section Backtranslation.
              (ev :: nil)
              (State f Sskip k e le m').
     Proof.
-      subst; simpl. unfold code_of_syscall. rewrite FDATA.
+      subst; simpl. unfold code_of_syscall. rewrite ID. rewrite FDATA.
       econstructor 2.
       3:{ rewrite E0_left. reflexivity. }
       { eapply step_call. simpl; eauto.
@@ -1128,6 +1147,76 @@ Section Backtranslation.
       { eapply step_returnstate. intro. exfalso. apply INTRA. auto.
         econstructor 1. intros H. apply INTRA. auto.
       }
+      econstructor 1.
+    Qed.
+
+    Lemma code_of_event_step_builtin
+          ev
+          name args rv
+          p f k e le m
+          ge
+          (GE: ge = globalenv p)
+          (EV: ev = Event_syscall name args rv)
+          name' sg
+          (ID: sid name = Some (sys_builtin name' sg))
+          (* bt_wf *)
+          (WFARGS: Forall (wf_eventval_env e) args)
+          (* from_asm *)
+          (* invoke syscall *)
+          ef
+          (EF: ef = EF_builtin name' sg)
+          srv m'
+          (SEM: external_call ef ge (comp_of f) (list_eventval_to_list_val (globalenv p) args) m (ev :: nil) srv m')
+          (* conditions for argument types - might need extra semantics for EF_external *)
+          (* (TYARGS: data.(dargs) = (list_eventval_to_typelist args)) *)
+          some_sig_args some_vals
+          (ESM: eventval_list_match ge args some_sig_args some_vals)
+          (SIGARGS: sg.(sig_args) = (some_sig_args))
+      :
+        Star (Clight.semantics1 p)
+             (State f (code_of_event sid (from_cl_funs_data p) ev) k e le m)
+             (ev :: nil)
+             (State f Sskip k e le m').
+    Proof.
+      subst; simpl. unfold code_of_syscall. rewrite ID.
+      econstructor 2.
+      3:{ rewrite E0_right. reflexivity. }
+      { eapply step_builtin; simpl; eauto. eapply list_eventval_to_expr_val_eval_typs; auto. eapply eventval_list_match_transl_val; eauto. }
+      econstructor 1.
+    Qed.
+
+    Lemma code_of_event_step_inline
+          ev
+          name args rv
+          p f k e le m
+          ge
+          (GE: ge = globalenv p)
+          (EV: ev = Event_syscall name args rv)
+          txt sg strs
+          (ID: sid name = Some (sys_inline txt sg strs))
+          (* bt_wf *)
+          (WFARGS: Forall (wf_eventval_env e) args)
+          (* from_asm *)
+          (* invoke syscall *)
+          ef
+          (EF: ef = EF_inline_asm txt sg strs)
+          srv m'
+          (SEM: external_call ef ge (comp_of f) (list_eventval_to_list_val (globalenv p) args) m (ev :: nil) srv m')
+          (* conditions for argument types - might need extra semantics for EF_external *)
+          (* (TYARGS: data.(dargs) = (list_eventval_to_typelist args)) *)
+          some_sig_args some_vals
+          (ESM: eventval_list_match ge args some_sig_args some_vals)
+          (SIGARGS: sg.(sig_args) = (some_sig_args))
+      :
+        Star (Clight.semantics1 p)
+             (State f (code_of_event sid (from_cl_funs_data p) ev) k e le m)
+             (ev :: nil)
+             (State f Sskip k e le m').
+    Proof.
+      subst; simpl. unfold code_of_syscall. rewrite ID.
+      econstructor 2.
+      3:{ rewrite E0_right. reflexivity. }
+      { eapply step_builtin; simpl; eauto. eapply list_eventval_to_expr_val_eval_typs; auto. eapply eventval_list_match_transl_val; eauto. }
       econstructor 1.
     Qed.
 
@@ -1226,6 +1315,34 @@ Section Backtranslation.
         (ef = EF_external name' cp' sg') /\
           exists res,
             (external_call ef ge cp (list_eventval_to_list_val ge evargs) m (Event_syscall name evargs evres :: nil) res m').
+
+    Lemma code_of_event_step_builtin
+          ev
+          name args rv
+          p f k e le m
+          ge
+          (GE: ge = globalenv p)
+          (EV: ev = Event_syscall name args rv)
+          name' sg
+          (ID: sid name = Some (sys_builtin name' sg))
+          (* bt_wf *)
+          (WFARGS: Forall (wf_eventval_env e) args)
+          (* from_asm *)
+          (* invoke syscall *)
+          ef
+          (EF: ef = EF_builtin name' sg)
+          srv m'
+          (SEM: external_call ef ge (comp_of f) (list_eventval_to_list_val (globalenv p) args) m (ev :: nil) srv m')
+          (* conditions for argument types - might need extra semantics for EF_external *)
+          (* (TYARGS: data.(dargs) = (list_eventval_to_typelist args)) *)
+          some_sig_args some_vals
+          (ESM: eventval_list_match ge args some_sig_args some_vals)
+          (SIGARGS: sg.(sig_args) = (some_sig_args))
+      :
+        Star (Clight.semantics1 p)
+             (State f (code_of_event sid (from_cl_funs_data p) ev) k e le m)
+             (ev :: nil)
+             (State f Sskip k e le m').
 
     Inductive wf_inv_cl (ge: genv) (sid: string -> ident) : Clight.function -> cont -> env -> mem -> trace -> Prop :=
     | wf_inv_vload
