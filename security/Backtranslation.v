@@ -9,69 +9,149 @@ Require Import Ctypes Clight.
 
 
 
-Variant sys_kind :=
-  | sys_external (id: ident)
-  | sys_builtin (name: string) (sg: signature)
-  | sys_inline (txt: string) (sg: signature) (strs: list string)
-.
+Record syscall_properties (sem: extcall_sem) (sg: signature) : Prop :=
+  mk_syscall_properties {
+      sc_args_match:
+      forall ge cp args m1 name evargs evres res m2,
+        sem ge cp args m1 (Event_syscall name evargs evres :: nil) res m2 ->
+        eventval_list_match ge evargs sg.(sig_args) args;
+    }.
 
 
-Definition eventval_to_val (ge: Senv.t) (v: eventval): val :=
-  match v with
-  | EVint i => Vint i
-  | EVlong i => Vlong i
-  | EVfloat f => Vfloat f
-  | EVsingle f => Vsingle f
-  | EVptr_global id ofs => match Senv.find_symbol ge id with
-                          | Some b => Vptr b ofs
-                          | None => Vundef
-                          end
-  end.
+Section GENV.
 
-Definition list_eventval_to_list_val ge (vs: list eventval): list val :=
-  List.map (eventval_to_val ge) vs.
+  Context {F: Type}.
+  Context {V: Type}.
 
-(* need to handle type: It seems that Asm.step does not utilizes sig, so we need to correctly craft type in Clight.step.
+  (* For NR, use below: *)
+  (* ::: mkpass Unusedglobproof.match_prog *)
+  (* match_prog_unique: *)
+  (*   list_norepet (prog_defs_names tp) *)
+  Lemma genv_def_to_ident
+        (p: AST.program F V)
+        (NR: list_norepet (prog_defs_names p))
+        ge
+        (GE: ge = Genv.globalenv p)
+        b gd
+        (DEF: Genv.find_def ge b = Some gd)
+    :
+    exists id b', Genv.find_symbol ge id = Some b' /\ Genv.find_def ge b' = Some gd.
+  Proof.
+    subst ge. exploit Genv.find_def_inversion; eauto. intros [id IN].
+    assert (GET: (prog_defmap p) ! id = Some gd).
+    { unfold prog_defmap. unfold prog_defs_names in NR. apply PTree_Properties.of_list_norepet; auto. }
+    apply Genv.find_def_symbol in GET. destruct GET as [b' [FINDSYM FINDDEF]]. eauto.
+  Qed.
+
+End GENV.
+
+
+Section INFORMATIVE.
+
+  (* At CROSS-COMP calls, if fundef is ext, set to is_ext. Otherwise is_not_ext. *)
+  (* Similar at return. *)
+  (* When a Event_syscall is is_cross_ext, do not back-translate Event_syscall and the following Event_return. *)
+  Variant cross_ext := | is_cross_ext | is_not_cross_ext.
+
+  (* TODO: how to make code from block?? *)
+  (* To get information for inter-comp external calls or builtins *)
+  Variant sys_kind :=
+    | sys_external (b: block)
+    | sys_builtin (ef: external_function)
+    (* | sys_inline (txt: string) (sg: signature) (strs: list string) *)
+  .
+
+  Definition informative_event := (event * (cross_ext * (option sys_kind)))%type.
+  Definition informative_trace := list informative_event.
+
+End INFORMATIVE.
+
+
+Section INFOASM.
+
+
+End INFOASM.
+
+
+
+Section EXTFUN.
+
+  (* Requirements for external call semantics and definitions. *)
+
+
+  Definition match_sk_ef_asm (ge: Asm.genv) (sk: sys_kind) (ef: external_function) : Prop :=
+    match sk with
+    | sys_external id =>
+        exists b, (Genv.find_symbol ge id = Some b) /\ (Genv.find_funct ge (Vptr b Ptrofs.zero) = Some (AST.External ef))
+    | sys_builtin name sg =>
+        (ef = EF_builtin name sg) \/ (ef = EF_runtime name sg)
+    | sys_inline txt sg strs =>
+        (ef = EF_inline_asm txt sg strs)
+    end.
+
+  Definition match_sk_ef_cl (ge: Clight.genv) (sk: sys_kind) (ef: external_function) : Prop :=
+    match sk with
+    | sys_external id =>
+        exists b, (Genv.find_symbol ge id = Some b) /\ (exists targs tres cc, Genv.find_funct ge (Vptr b Ptrofs.zero) = Some (External ef targs tres cc))
+    | sys_builtin name sg =>
+        (ef = EF_builtin name sg) \/ (ef = EF_runtime name sg)
+    | sys_inline txt sg strs =>
+        (ef = EF_inline_asm txt sg strs)
+    end.
+
+  Definition sys_env := string -> option sys_kind.
+
+  Definition wf_sys_env_asm (ske: sys_env): Prop :=
+    forall ef (ge: Asm.genv) cp args m name evargs evres res m'
+      (DEFINED: external_call ef ge cp args m (Event_syscall name evargs evres :: nil) res m'),
+    exists sk,
+      (ske name = Some sk) /\ (match_sk_ef_asm ge sk ef).
+
+
+
+
+  (SEM: external_call ef ge cp (list_eventval_to_list_val (globalenv p) args) m (ev :: nil) srv m')
+
+
+
+  (* need to handle type: It seems that Asm.step does not utilizes sig, so we need to correctly craft type in Clight.step.
    e.g., if we bt everything into void, ok when intra but not when cross.
-*)
-Definition syscall_properties1 (sem: extcall_sem) : Prop :=
-  forall ge cp vargs m1 name evargs evres vres m2,
-    sem ge cp vargs m1 (Event_syscall name evargs evres :: nil) vres m2 ->
-    exists vres' m2',
-      sem ge cp (list_eventval_to_list_val ge evargs) m1 (Event_syscall name evargs evres :: nil) vres' m2'.
+   *)
+  Definition syscall_properties1 (sem: extcall_sem) : Prop :=
+    forall ge cp vargs m1 name evargs evres vres m2,
+      sem ge cp vargs m1 (Event_syscall name evargs evres :: nil) vres m2 ->
+      exists vres' m2',
+        sem ge cp (list_eventval_to_list_val ge evargs) m1 (Event_syscall name evargs evres :: nil) vres' m2'.
 
-Definition syscall_properties2 (sem: extcall_sem) (sg: signature) : Prop :=
-  forall ge cp vargs m1 name evargs evres vres m2,
-    sem ge cp vargs m1 (Event_syscall name evargs evres :: nil) vres m2 ->
-    eventval_list_match ge evargs sg.(sig_args) vargs.
 
-(* Record syscall_properties1 (sem: extcall_sem) (sg: signature) : Prop := *)
-(*   mk_syscall_properties { *)
-(*       sc_args_match: *)
-(*       forall ge cp vargs m1 name evargs evres vres m2, *)
-(*         sem ge cp vargs m1 (Event_syscall name evargs evres :: nil) vres m2 -> *)
-(*         sem ge cp (list_eventval_to_list_val ge vargs) m1 (Event_syscall name evargs evres :: nil) vres m2; *)
+  (* Record syscall_properties1 (sem: extcall_sem) (sg: signature) : Prop := *)
+  (*   mk_syscall_properties { *)
+  (*       sc_args_match: *)
+  (*       forall ge cp vargs m1 name evargs evres vres m2, *)
+  (*         sem ge cp vargs m1 (Event_syscall name evargs evres :: nil) vres m2 -> *)
+  (*         sem ge cp (list_eventval_to_list_val ge vargs) m1 (Event_syscall name evargs evres :: nil) vres m2; *)
 
-(*       sc_name_match: *)
-(*       forall name' ge cp vargs m1 name evargs evres vres m2, *)
-(*         sem = external_functions_sem name' sg -> *)
-(*         sem ge cp vargs m1 (Event_syscall name evargs evres :: nil) vres m2 -> *)
-(*         (name' = name); *)
-(*     }. *)
+  (*       sc_name_match: *)
+  (*       forall name' ge cp vargs m1 name evargs evres vres m2, *)
+  (*         sem = external_functions_sem name' sg -> *)
+  (*         sem ge cp vargs m1 (Event_syscall name evargs evres :: nil) vres m2 -> *)
+  (*         (name' = name); *)
+  (*     }. *)
 
-(* Record syscall_properties2 (sem: extcall_sem) (sg: signature) : Prop := *)
-(*   mk_syscall_properties { *)
-(*       sc_args_match: *)
-(*       forall ge cp vargs m1 name evargs evres vres m2, *)
-(*         sem ge cp vargs m1 (Event_syscall name evargs evres :: nil) vres m2 -> *)
-(*         eventval_list_match ge evargs sg.(sig_args) vargs; *)
+  (* Record syscall_properties2 (sem: extcall_sem) (sg: signature) : Prop := *)
+  (*   mk_syscall_properties { *)
+  (*       sc_args_match: *)
+  (*       forall ge cp vargs m1 name evargs evres vres m2, *)
+  (*         sem ge cp vargs m1 (Event_syscall name evargs evres :: nil) vres m2 -> *)
+  (*         eventval_list_match ge evargs sg.(sig_args) vargs; *)
 
-(*       sc_name_match: *)
-(*       forall name' ge cp vargs m1 name evargs evres vres m2, *)
-(*         sem = external_functions_sem name' sg -> *)
-(*         sem ge cp vargs m1 (Event_syscall name evargs evres :: nil) vres m2 -> *)
-(*         (name' = name); *)
-(*     }. *)
+  (*       sc_name_match: *)
+  (*       forall name' ge cp vargs m1 name evargs evres vres m2, *)
+  (*         sem = external_functions_sem name' sg -> *)
+  (*         sem ge cp vargs m1 (Event_syscall name evargs evres :: nil) vres m2 -> *)
+  (*         (name' = name); *)
+  (*     }. *)
+End EXTFUN.
 
 
 Section AUX.
@@ -336,6 +416,21 @@ Section Backtranslation.
 
     Definition wf_env (e: env) id := e ! id = None.
 
+    Definition eventval_to_val (ge: Senv.t) (v: eventval): val :=
+      match v with
+      | EVint i => Vint i
+      | EVlong i => Vlong i
+      | EVfloat f => Vfloat f
+      | EVsingle f => Vsingle f
+      | EVptr_global id ofs => match Senv.find_symbol ge id with
+                              | Some b => Vptr b ofs
+                              | None => Vundef
+                              end
+      end.
+
+    Definition list_eventval_to_list_val ge (vs: list eventval): list val :=
+      List.map (eventval_to_val ge) vs.
+
     Definition eventval_to_type (v: eventval): type :=
       match v with
       | EVint _ => Tint I32 Signed noattr
@@ -471,8 +566,10 @@ Section Backtranslation.
 
     (* Extract from Clight *)
     Definition from_clfun_fun_data (cf: Clight.function): fun_data := mkfundata (type_of_params cf.(fn_params)) cf.(fn_return) cf.(fn_callconv).
+    (* Definition from_clfd_fun_data (fd: Clight.fundef): fun_data := *)
+    (*   match fd with | Ctypes.Internal cf => from_clfun_fun_data cf | Ctypes.External _ tps tr cc => mkfundata tps tr cc end. *)
     Definition from_clfd_fun_data (fd: Clight.fundef): fun_data :=
-      match fd with | Ctypes.Internal cf => from_clfun_fun_data cf | Ctypes.External _ tps tr cc => mkfundata tps tr cc end.
+      match fd with | Ctypes.Internal cf => from_clfun_fun_data cf | Ctypes.External ef _ _ _ => from_extfun_fun_data ef end.
     Definition from_clgd_fun_data (gd: globdef Clight.fundef type): option fun_data :=
       match gd with | Gfun fd => Some (from_clfd_fun_data fd) | Gvar _ => None end.
 
@@ -1071,8 +1168,8 @@ Section Backtranslation.
       econstructor 1.
     Qed.
 
-    (* TODO: similar to external_cross? *)
 
+    (* TODO *)
     Lemma code_of_event_step_call_external_intra
           ev
           name args rv
@@ -1100,8 +1197,9 @@ Section Backtranslation.
           (CP2: cp' = comp_of fd)
           (INTRA: Genv.type_of_call ge (comp_of f) (comp_of fd) <> Genv.CrossCompartmentCall)
           (* invoke syscall *)
-          ef name' cp'' sg
-          (EF: ef = EF_external name' cp'' sg)
+          ef
+          (* name' cp'' sg *)
+          (* (EF: ef = EF_external name' cp'' sg) *)
           (EXTERNAL: fd = External ef data.(dargs) data.(dret) data.(dcc))
           srv m'
           (SEM: external_call ef ge cp (list_eventval_to_list_val (globalenv p) args) m (ev :: nil) srv m')
