@@ -34,15 +34,17 @@ Proof.
 - contradiction.
 Defined.
 
-Definition mkprogram (types: list composite_definition)
+Program Definition mkprogram (types: list composite_definition)
                      (defs: list (ident * globdef fundef type))
                      (public: list ident)
                      (main: ident)
+                     (pol: Policy.t)
                      (WF: wf_composites types) : Clight.program :=
   let (ce, EQ) := build_composite_env' types WF in
   {| prog_defs := defs;
      prog_public := public;
      prog_main := main;
+     prog_pol := pol;
      prog_types := types;
      prog_comp_env := ce;
      prog_comp_env_eq := EQ |}.
