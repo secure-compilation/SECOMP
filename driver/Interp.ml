@@ -34,6 +34,8 @@ let mode = ref First
 
 let simulate_backend = ref false
 
+let simulate_fuel = ref 100
+
 (* Printing events *)
 
 let print_id_ofs p (id, ofs) =
@@ -702,6 +704,20 @@ and world_vstore_asm ge m chunk id ofs ev =
   Mem.store chunk m b ofs v cp >>= fun m' ->
   Some(world_asm ge m')
 
+(* NOTE no world updates *)
+let rec explore_one_asm p prog ge time s w =
+  if !trace >= 2 then
+    (* fprintf p "@[<hov 2>Time %d:@ %a@]@." time print_state (prog, ge, s); *)
+    fprintf p "@[<hov 2>Time %d:@ @]@." time;
+  if time > 0 then begin
+    match Asm.take_step do_external_function do_inline_assembly prog ge w s with
+    | None ->
+        fprintf p "++ Stuck@."
+    | Some(e, s') ->
+        fprintf p "++ Step@.";
+        explore_one_asm p prog ge (time - 1) s' w
+  end
+
 let world_program_asm prog =
   let change_def (id, gd) =
     match gd with
@@ -731,5 +747,4 @@ let execute_asm prog =
    | None ->
        fprintf p "ERROR: Initial state undefined@."; exit 126
    | Some(s) ->
-       let _ =  Asm.take_step do_external_function do_inline_assembly prog wge (world_asm wge wm) s in
-       ()
+       explore_one_asm p prog wge (!simulate_fuel) s (world_asm wge wm)
