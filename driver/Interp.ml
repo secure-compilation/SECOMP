@@ -704,18 +704,29 @@ and world_vstore_asm ge m chunk id ofs ev =
   Mem.store chunk m b ofs v cp >>= fun m' ->
   Some(world_asm ge m')
 
-(* NOTE no world updates *)
+let do_step_asm p prog ge time s w =
+    match Asm.take_step do_external_function do_inline_assembly prog ge w s with
+    | None ->
+        if !trace >= 1 then
+          fprintf p "Time %d: program terminated (machine stuck)@."
+                    time;
+          (* exit 0 *)
+          None
+    | Some(t, s') ->
+        Some ([], s', do_events p ge time w t)
+
 let rec explore_one_asm p prog ge time s w =
   if !trace >= 2 then
     (* fprintf p "@[<hov 2>Time %d:@ %a@]@." time print_state (prog, ge, s); *)
     fprintf p "@[<hov 2>Time %d:@ @]@." time;
   if time > 0 then begin
-    match Asm.take_step do_external_function do_inline_assembly prog ge w s with
+    match do_step_asm p prog ge time s w with
+    | Some (r, s', w') ->
+        if !trace >= 2 then
+          fprintf p "--[%s]-->@." (camlstring_of_coqstring r);
+        explore_one_asm p prog ge (time - 1) s' w'
     | None ->
-        fprintf p "++ Stuck@."
-    | Some(e, s') ->
-        fprintf p "++ Step@.";
-        explore_one_asm p prog ge (time - 1) s' w
+        ()
   end
 
 let world_program_asm prog =
