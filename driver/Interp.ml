@@ -34,7 +34,7 @@ let mode = ref First
 
 let simulate_backend = ref false
 
-let simulate_fuel = ref 100
+let simulate_fuel = ref 10000
 
 (* Printing events *)
 
@@ -77,10 +77,17 @@ let print_event p = function
       fprintf p "annotation \"%s\" %a"
                 (camlstring_of_coqstring text)
                 print_eventval_list args
-  | Event_call(_, _, _, _) ->
-      fprintf p "Call"
-  | Event_return(_, _, _) ->
-      fprintf p "Return"
+  | Event_call(caller, callee, f, args) ->
+      fprintf p "Call %ld -[%a]-> %ld.%ld"
+                (P.to_int32 caller)
+                print_eventval_list args
+                (P.to_int32 callee)
+                (P.to_int32 f)
+  | Event_return(caller, callee, ret) ->
+      fprintf p "Return %ld <-[%a]- %ld"
+                (P.to_int32 caller)
+                print_eventval ret
+                (P.to_int32 callee)
 
 (* Printing states *)
 
@@ -705,6 +712,12 @@ and world_vstore_asm ge m chunk id ofs ev =
   Some(world_asm ge m')
 
 let do_step_asm p prog ge time s w =
+    if !trace >= 1 && time <= 0 then begin
+      fprintf p "Time %d: out of fuel@."
+                time;
+      (* exit 0 *)
+      None
+    end else
     match Asm.take_step do_external_function do_inline_assembly prog ge w s with
     | None ->
         if !trace >= 1 then
@@ -719,15 +732,13 @@ let rec explore_one_asm p prog ge time s w =
   if !trace >= 2 then
     (* fprintf p "@[<hov 2>Time %d:@ %a@]@." time print_state (prog, ge, s); *)
     fprintf p "@[<hov 2>Time %d:@ @]@." time;
-  if time > 0 then begin
-    match do_step_asm p prog ge time s w with
-    | Some (r, s', w') ->
-        if !trace >= 2 then
-          fprintf p "--[%s]-->@." (camlstring_of_coqstring r);
-        explore_one_asm p prog ge (time - 1) s' w'
-    | None ->
-        ()
-  end
+  match do_step_asm p prog ge time s w with
+  | Some (r, s', w') ->
+      if !trace >= 2 then
+        fprintf p "--[%s]-->@." (camlstring_of_coqstring r);
+      explore_one_asm p prog ge (time - 1) s' w'
+  | None ->
+      ()
 
 let world_program_asm prog =
   let change_def (id, gd) =
