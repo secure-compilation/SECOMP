@@ -65,6 +65,7 @@ let compile_c_file sourcename ifile ofile =
     | Errors.Error msg ->
       let loc = file_loc sourcename in
         fatal_error loc "%a"  print_error msg in
+  Interp.execute_asm asm; (* TEMP *)
   (* Dump Asm in binary and JSON format *)
   AsmToJSON.print_if asm sourcename;
   (* Print Asm in text form *)

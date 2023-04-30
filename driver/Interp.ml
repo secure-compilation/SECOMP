@@ -32,6 +32,8 @@ type mode = First | Random | All
 
 let mode = ref First
 
+let simulate_backend = ref false
+
 (* Printing events *)
 
 let print_id_ofs p (id, ofs) =
@@ -678,3 +680,56 @@ let execute prog =
               explore_one p prog1 ge 0 s (world wge wm)
           | All ->
               explore_all p prog1 ge 0 [(1, s, world wge wm)]
+
+(* Execution of compiled assembly *)
+
+let rec world_asm ge m =
+  lazy (Determinism.World(world_io_asm ge m, world_vload_asm ge m, world_vstore_asm ge m))
+
+and world_io_asm ge m id args =
+  None
+
+and world_vload_asm ge m chunk id ofs =
+  Genv.find_symbol ge id >>= fun b ->
+  Mem.load chunk m b ofs None >>= fun v ->
+  Exec.eventval_of_val ge v (type_of_chunk chunk) >>= fun ev ->
+  Some(ev, world_asm ge m)
+
+and world_vstore_asm ge m chunk id ofs ev =
+  Genv.find_symbol ge id >>= fun b ->
+  Exec.val_of_eventval ge ev (type_of_chunk chunk) >>= fun v ->
+  Mem.block_compartment m b >>= fun cp ->
+  Mem.store chunk m b ofs v cp >>= fun m' ->
+  Some(world_asm ge m')
+
+let world_program_asm prog =
+  let change_def (id, gd) =
+    match gd with
+    | Gvar gv ->
+        let gv' =
+          if gv.gvar_volatile then
+            {gv with gvar_readonly = false; gvar_volatile = false}
+          else
+            {gv with gvar_init = []} in
+        (id, Gvar gv')
+    | Gfun fd ->
+        (id, gd) in
+ {prog with AST.prog_defs = List.map change_def prog.AST.prog_defs}
+
+let execute_asm prog =
+  Random.self_init();
+  let p = std_formatter in
+  pp_set_max_indent p 30;
+  pp_set_max_boxes p 10;
+  let wprog = world_program_asm prog in
+  let wge = Genv.globalenv wprog in
+   match Genv.init_mem (AST.has_comp_fundef Asm.has_comp_function) wprog with
+   | None ->
+       fprintf p "ERROR: World memory state undefined@."; exit 126
+   | Some wm ->
+   match Asm.build_initial_state prog with
+   | None ->
+       fprintf p "ERROR: Initial state undefined@."; exit 126
+   | Some(s) ->
+       let _ =  Asm.take_step do_external_function do_inline_assembly prog wge (world_asm wge wm) s in
+       ()
