@@ -66,7 +66,7 @@ let compile_c_file sourcename ifile ofile =
       let loc = file_loc sourcename in
         fatal_error loc "%a"  print_error msg in
   let _  = (* TEMP *)
-    if !Interp.simulate_backend then
+    if !Interp.emulate_backend then
       match Compiler.transf_c_program csyntax with
       | Errors.OK asm ->
           (* PrintAsm.print_program stderr asm; *)

@@ -32,9 +32,9 @@ type mode = First | Random | All
 
 let mode = ref First
 
-let simulate_backend = ref false
+let emulate_backend = ref true
 
-let simulate_fuel = ref 10000
+let emulate_fuel = ref 10000
 
 (* Printing events *)
 
@@ -769,4 +769,4 @@ let execute_asm prog =
    | None ->
        fprintf p "ERROR: Initial state undefined@."; exit 126
    | Some(s) ->
-       explore_one_asm p prog wge (!simulate_fuel) s (world_asm wge wm)
+       explore_one_asm p prog wge (!emulate_fuel) s (world_asm wge wm)
