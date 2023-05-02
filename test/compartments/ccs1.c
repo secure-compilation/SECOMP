@@ -10,7 +10,7 @@
 }
 
 §E§ int write(int data, int x) {
-  return 0;
+  return NULL;
 }
 
 /* component C0 */
@@ -33,7 +33,7 @@
   x = read();
   y = parse(x);
   process(x, y);
-  return 0;
+  return NULL;
 }
 
 // can yield Undef for some x
@@ -49,7 +49,7 @@
 §C2§ » process
 
 §C2§ int init() {
-  return 0;
+  return NULL;
 }
 
 §C2§ int process(int x, int y) {
@@ -59,12 +59,12 @@
   if (valid(data)) {
     write(data, x);
   }
-  return 0;
+  return NULL;
 }
 
 // can yield Undef if not initialized
 §C2§ int prepare() {
-  return 0;
+  return NULL;
 }
 
 // can yield Undef for some y
