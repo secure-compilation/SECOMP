@@ -114,33 +114,6 @@ Section GENV.
 End GENV.
 
 
-Section INFORMATIVE.
-
-  (* At CROSS-COMP calls, if fundef is ext, set to is_ext. Otherwise is_not_ext. *)
-  (* Similar at return. *)
-  (* When a Event_syscall is is_cross_ext, do not back-translate Event_syscall and the following Event_return. *)
-  Variant cross_ext := | is_cross_ext | is_not_cross_ext.
-
-  (* TODO: how to make code from block?? *)
-  (* To get information for inter-comp external calls or builtins *)
-  Variant sys_kind :=
-    | sys_external (b: block)
-    | sys_builtin (ef: external_function)
-    (* | sys_inline (txt: string) (sg: signature) (strs: list string) *)
-  .
-
-  Definition informative_event := (event * (cross_ext * (option sys_kind)))%type.
-  Definition informative_trace := list informative_event.
-
-End INFORMATIVE.
-
-
-Section INFOASM.
-
-
-End INFOASM.
-
-
 
 Section EXTFUN.
 
