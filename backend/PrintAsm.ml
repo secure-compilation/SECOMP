@@ -377,6 +377,14 @@ let print_instruction_asm p = function
       print_offset_asm p ofs;
       Format.fprintf p ")@ ";
       Format.pp_print_bool p priv
+  | Asm.Psw (rs, ra, ofs) ->
+      Format.fprintf p "Psw@ ";
+      print_ireg_asm p rs;
+      Format.fprintf p "@ ";
+      print_ireg_asm p ra;
+      Format.fprintf p "@ (";
+      print_offset_asm p ofs;
+      Format.fprintf p ")@ ";
   | Asm.Psd (rs, ra, ofs) ->
       Format.fprintf p "Psd@ ";
       print_ireg_asm p rs;
@@ -385,6 +393,14 @@ let print_instruction_asm p = function
       Format.fprintf p "@ (";
       print_offset_asm p ofs;
       Format.fprintf p ")@ ";
+  | Asm.Ploadsymbol_high (rd, s, ofs) ->
+      Format.fprintf p "Ploadsymbol_high@ ";
+      print_ireg_asm p rd;
+      Format.fprintf p "@ ";
+      print_ident_asm p s;
+      Format.fprintf p "@ ";
+      print_Z_asm p ofs;
+      Format.fprintf p "@ ";
   | _ ->
       Format.fprintf p "<instr>"
 
@@ -450,13 +466,49 @@ let print_fundef_asm p = function
       print_external_function_asm p e;
       Format.fprintf p ")@,"
 
+let print_init_data_asm p = function
+  | Init_int8 n ->
+      Format.fprintf p "Init_int8@ ";
+      print_Z_asm p n
+  | Init_int16 n ->
+      Format.fprintf p "Init_int816@ ";
+      print_Z_asm p n
+  | Init_int32 n ->
+      Format.fprintf p "Init_int32@ ";
+      print_Z_asm p n
+  | Init_int64 n ->
+      Format.fprintf p "Init_int64@ ";
+      print_Z_asm p n
+  | _ ->
+      failwith "unimplemented initial data"
+  (* | Init_float32 of float32
+   * | Init_float64 of float
+   * | Init_space of coq_Z
+   * | Init_addrof of ident * Ptrofs.int *)
+
+let print_globvar_asm
+  p AST.{ (* gvar_info; *) gvar_comp; gvar_init; gvar_readonly; gvar_volatile } =
+  (* TODO unit *)
+  Format.fprintf p "{|@ gvar_info@ := tt;@ ";
+  Format.fprintf p ";@ gvar_comp@ :=@ ";
+  print_ident_asm p gvar_comp;
+  Format.fprintf p ";@ gvar_init@ :=@ ";
+  print_list_asm p print_init_data_asm gvar_init;
+  Format.fprintf p ";@ gvar_readonly@ :=@ ";
+  Format.pp_print_bool p gvar_readonly;
+  Format.fprintf p ";@ gvar_volatile@ :=@ ";
+  Format.pp_print_bool p gvar_volatile;
+  Format.fprintf p "|}@,"
+
 let print_globdef_asm p = function
   | Gfun f ->
       Format.fprintf p "Gfun@ @[(";
       print_fundef_asm p f;
       Format.fprintf p ")@]@,"
   | Gvar v ->
-      Format.fprintf p "Gvar _"
+      Format.fprintf p "Gvar @[";
+      print_globvar_asm p v;
+      Format.fprintf p "@]@,"
 
 let print_prog_def_asm p (id, glob) =
   Format.fprintf p "@[(";
