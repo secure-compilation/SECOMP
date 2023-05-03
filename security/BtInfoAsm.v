@@ -8,8 +8,74 @@ Require Import riscV.Machregs.
 Require Import riscV.Asm.
 Require Import Complements.
 
-Section INFORMATIVE.
+Section HASINIT.
+  Import Smallstep.
 
+  Variant semantics_has_initial_trace_cut (L: Smallstep.semantics) (t: trace) : Prop :=
+    | semantics_cut_runs :
+      forall s, (initial_state L s) -> (exists s' beh', ((star (step L) (globalenv L)) s t s') /\ (state_behaves L s' beh')) -> semantics_has_initial_trace_cut _ t
+    | semantics_cut_goes_initially_wrong : (forall s : state L, ~ initial_state L s) -> (t = nil) -> semantics_has_initial_trace_cut _ t.
+
+  Definition semantics_has_initial_trace_prefix (L: Smallstep.semantics) (t: trace): Prop :=
+    exists beh, (program_behaves L beh) /\ (behavior_prefix t beh).
+
+  Lemma semantics_has_initial_trace_cut_implies_prefix
+        L t
+        (HAS: semantics_has_initial_trace_cut L t)
+    :
+    semantics_has_initial_trace_prefix L t.
+  Proof.
+    inversion HAS.
+    - destruct H0 as (s' & beh' & STAR & BEH). red. exists (behavior_app t beh'). split.
+      + econstructor 1. eauto. eapply state_behaves_app; eauto.
+      + red. eauto.
+    - subst. red. eexists. split.
+      + econstructor 2. eauto.
+      + red. exists (Goes_wrong E0). reflexivity.
+  Qed.
+
+  (* semantics_determinate: forall p : program, determinate (Asm.semantics p) *)
+  (* sd_traces: forall [L : semantics], determinate L -> single_events L *)
+
+  Lemma state_behaves_app_inv
+        L s1 beh t beh'
+        (BEH: state_behaves L s1 beh)
+        (APP: beh = behavior_app t beh')
+        (ONE: (Datatypes.length t <= 1)%nat)
+    :
+    exists s2, (Star L s1 t s2) /\ (state_behaves L s2 beh').
+  Proof.
+    inv BEH.
+    - destruct beh'; simpl in *; try congruence. inv H1.
+      remember (t ** t1) as tr. revert t t1 i ONE Heqtr H0. induction H; intros.
+      { symmetry in Heqtr; apply Eapp_E0_inv in Heqtr. destruct Heqtr; subst. exists s. split.
+        constructor 1. econstructor 1; eauto. constructor 1.
+      }
+      subst.
+      admit.
+    - destruct beh'; simpl in *; try congruence. inv H1.
+      admit.
+    - destruct beh'; simpl in *; try congruence. inv H0.
+      admit.
+    - destruct beh'; simpl in *; try congruence. inv H2.
+      admit.
+    -
+
+  Lemma semantics_has_initial_trace_prefix_implies_cut
+        L t
+        (HAS: semantics_has_initial_trace_prefix L t)
+    :
+    semantics_has_initial_trace_cut L t.
+  Proof.
+    inversion HAS. destruct H as [BEH (beh' & APP)]. subst x. inversion BEH; clear BEH.
+    - subst beh. econstructor 1. eauto.
+
+      exploit state_behaves_app.
+
+End HASINIT.
+
+
+Section INFORMATIVE.
   Import Smallstep.
 
   (* At CROSS-COMP calls, if fundef is ext, set to is_cross_ext. Otherwise is_not_ext. *)
@@ -32,34 +98,43 @@ Section INFORMATIVE.
   Definition ievent := (event * info_kind)%type.
   Definition itrace := list ievent.
 
+  Definition iE0: itrace := nil.
+
   (* Informative to original *)
   Definition iev_to_ev (ie: ievent) : event := (fst ie).
   Definition itr_to_tr (ies: itrace) : trace := map iev_to_ev ies.
 
   (* Informative behavior *)
-  CoInductive itraceinf : Type :=  iEconsinf : ievent -> itraceinf -> itraceinf.
-  CoFixpoint itri_to_tri (itri: itraceinf): traceinf :=
-    match itri with iEconsinf hd tl => Econsinf (iev_to_ev hd) (itri_to_tri tl) end.
+  (* CoInductive itraceinf : Type :=  iEconsinf : ievent -> itraceinf -> itraceinf. *)
+  (* CoFixpoint itri_to_tri (itri: itraceinf): traceinf := *)
+  (*   match itri with iEconsinf hd tl => Econsinf (iev_to_ev hd) (itri_to_tri tl) end. *)
 
-  Definition itri_to_tri_obs (itri: itraceinf) :=
-    match itri with iEconsinf hd tl => iEconsinf hd tl end.
+  (* Definition itri_to_tri_obs (itri: itraceinf) := *)
+  (*   match itri with iEconsinf hd tl => iEconsinf hd tl end. *)
 
-  Lemma itri_to_tri_obs_eq: forall itri, itri_to_tri_obs itri = itri.
-  Proof. destruct itri; reflexivity. Qed.
+  (* Lemma itri_to_tri_obs_eq: forall itri, itri_to_tri_obs itri = itri. *)
+  (* Proof. destruct itri; reflexivity. Qed. *)
 
-  Inductive iprogram_behavior : Type :=
-    iTerminates : itrace -> int -> iprogram_behavior
-  | iDiverges : itrace -> iprogram_behavior
-  | iReacts : itraceinf -> iprogram_behavior
-  | iGoes_wrong : itrace -> iprogram_behavior.
+  (* Fixpoint iEappinf (t: itrace) (T: itraceinf) {struct t} : itraceinf := *)
+  (*   match t with *)
+  (*   | nil => T *)
+  (*   | ev :: t' => iEconsinf ev (iEappinf t' T) *)
+  (*   end. *)
 
-  Definition iph_to_pb (ipb: iprogram_behavior): program_behavior :=
-    match ipb with
-    | iTerminates itr r => Terminates (itr_to_tr itr) r
-    | iDiverges itr => Diverges (itr_to_tr itr)
-    | iReacts itri => Reacts (itri_to_tri itri)
-    | iGoes_wrong itr => Goes_wrong (itr_to_tr itr)
-    end.
+
+  (* Inductive iprogram_behavior : Type := *)
+  (*   iTerminates : itrace -> int -> iprogram_behavior *)
+  (* | iDiverges : itrace -> iprogram_behavior *)
+  (* | iReacts : itraceinf -> iprogram_behavior *)
+  (* | iGoes_wrong : itrace -> iprogram_behavior. *)
+
+  (* Definition iph_to_pb (ipb: iprogram_behavior): program_behavior := *)
+  (*   match ipb with *)
+  (*   | iTerminates itr r => Terminates (itr_to_tr itr) r *)
+  (*   | iDiverges itr => Diverges (itr_to_tr itr) *)
+  (*   | iReacts itri => Reacts (itri_to_tri itri) *)
+  (*   | iGoes_wrong itr => Goes_wrong (itr_to_tr itr) *)
+  (*   end. *)
 
   Inductive istar {genv state : Type} (step : genv -> state -> itrace -> state -> Prop) (ge : genv) : state -> itrace -> state -> Prop :=
     istar_refl : forall s : state, istar step ge s nil s
@@ -67,44 +142,119 @@ Section INFORMATIVE.
       step ge s1 t1 s2 -> istar step ge s2 t2 s3 -> t = t1 ++ t2 -> istar step ge s1 t s3.
 
 
-  Record isemantics : Type :=
-    iSemantics_gen
-      { istate : Type;
-        igenvtype : Type;
-        istep : igenvtype -> istate -> itrace -> istate -> Prop;
-        iinitial_state : istate -> Prop;
-        ifinal_state : istate -> int -> Prop;
-        iglobalenv : igenvtype;
-        isymbolenv : Senv.t
-      }.
+  (* Record isemantics : Type := *)
+  (*   iSemantics_gen *)
+  (*     { istate : Type; *)
+  (*       igenvtype : Type; *)
+  (*       istep : igenvtype -> istate -> itrace -> istate -> Prop; *)
+  (*       iinitial_state : istate -> Prop; *)
+  (*       ifinal_state : istate -> int -> Prop; *)
+  (*       iglobalenv : igenvtype; *)
+  (*       isymbolenv : Senv.t *)
+  (*     }. *)
 
-  Definition sem_to_isem (L: Smallstep.semantics) (istep: (genvtype L) -> (state L) -> itrace -> (state L) -> Prop) : isemantics :=
-    iSemantics_gen _ _ istep (initial_state L) (final_state L) (globalenv L) (symbolenv L).
+  (* Definition sem_to_isem (L: Smallstep.semantics) (istep: (genvtype L) -> (state L) -> itrace -> (state L) -> Prop) : isemantics := *)
+  (*   iSemantics_gen _ _ istep (initial_state L) (final_state L) (globalenv L) (symbolenv L). *)
 
-  CoInductive forever_silent (genv state : Type) (step : genv -> state -> trace -> state -> Prop) (ge : genv) : state -> Prop :=
-    forever_silent_intro : forall s1 s2 : state, step ge s1 E0 s2 -> forever_silent step ge s2 -> forever_silent step ge s1.
+  CoInductive iforever_silent (genv state : Type) (step : genv -> state -> itrace -> state -> Prop) (ge : genv) : state -> Prop :=
+    iforever_silent_intro : forall s1 s2 : state, step ge s1 nil s2 -> iforever_silent _ _ step ge s2 -> iforever_silent _ _ step ge s1.
 
-  Inductive istate_behaves (L : isemantics) (s : istate L) : iprogram_behavior -> Prop :=
-    istate_terminates : forall (t : itrace) (s' : istate L) (r : int),
-        (istar (istep L) (iglobalenv L)) s t s' -> ifinal_state L s' r -> istate_behaves L s (iTerminates t r)
-  | istate_diverges : forall (t : itrace) (s' : istate L),
-      (istar (istep L) (iglobalenv L)) s t s' -> (forever_silent (istep L) (iglobalenv L)) s' -> istate_behaves L s (iDiverges t).
-  | istate_reacts : forall T : itraceinf, forever_reactive L s T -> state_behaves L s (Reacts T)
-  | istate_goes_wrong : forall (t : trace) (s' : Smallstep.state L), Star L s t s' -> Nostep L s' -> (forall r : int, ~ Smallstep.final_state L s' r) -> state_behaves L s (Goes_wrong t).
+  CoInductive iforever_reactive (genv state : Type) (step : genv -> state -> itrace -> state -> Prop) (ge : genv) : state -> itraceinf -> Prop :=
+    iforever_reactive_intro : forall (s1 s2 : state) (t : itrace) (T : itraceinf),
+        istar step ge s1 t s2 -> t <> nil -> iforever_reactive _ _ step ge s2 T -> iforever_reactive _ _ step ge s1 (iEappinf t T).
 
+  Definition inostep := fun (genv state : Type) (step : genv -> state -> itrace -> state -> Prop) (ge : genv) (s : state) => forall (t : itrace) (s' : state), ~ step ge s t s'.
 
-asm_program_has_initial_trace = fun (p : program) (t : trace) => forall beh : program_behavior, program_behaves (semantics p) beh -> behavior_prefix t beh
-     : program -> trace -> Prop
-Inductive program_behaves (L : Smallstep.semantics) : program_behavior -> Prop :=
-    program_runs : forall (s : Smallstep.state L) (beh : program_behavior), Smallstep.initial_state L s -> state_behaves L s beh -> program_behaves L beh
-  | program_goes_initially_wrong : (forall s : Smallstep.state L, ~ Smallstep.initial_state L s) -> program_behaves L (Goes_wrong E0).
-Inductive state_behaves (L : Smallstep.semantics) (s : Smallstep.state L) : program_behavior -> Prop :=
-    state_terminates : forall (t : trace) (s' : Smallstep.state L) (r : int), Star L s t s' -> Smallstep.final_state L s' r -> state_behaves L s (Terminates t r)
-  | state_diverges : forall (t : trace) (s' : Smallstep.state L), Star L s t s' -> Forever_silent L s' -> state_behaves L s (Diverges t)
-  | state_reacts : forall T : traceinf, Forever_reactive L s T -> state_behaves L s (Reacts T)
-| state_goes_wrong : forall (t : trace) (s' : Smallstep.state L), Star L s t s' -> Nostep L s' -> (forall r : int, ~ Smallstep.final_state L s' r) -> state_behaves L s (Goes_wrong t).
+  Inductive istate_behaves (L : semantics) (istep: (genvtype L) -> (state L) -> itrace -> (state L) -> Prop) (s : state L): itrace -> program_behavior -> Prop :=
+    istate_terminates : forall (t : itrace) (s' : state L) (r : int),
+        (istar istep (globalenv L)) s t s' -> final_state L s' r -> istate_behaves L istep s t (Terminates (itr_to_tr t) r)
+  | istate_diverges : forall (t : itrace) (s' : state L),
+      (istar (istep) (globalenv L)) s t s' -> (forever_silent _ _ (step L) (globalenv L)) s' -> istate_behaves L istep s t (Diverges (itr_to_tr t))
+  | istate_reacts : forall (t: itrace) (T : traceinf),
+      (iforever_reactive _ _ (istep L) (iglobalenv L)) s T -> istate_behaves L istep s t (Reacts T)
+  | istate_goes_wrong : forall (t : itrace) (s' : istate L),
+      (istar (istep L) (iglobalenv L)) s t s' -> (inostep _ _ (istep L) (iglobalenv L)) s' -> (forall r : int, ~ ifinal_state L s' r) -> istate_behaves L s (iGoes_wrong t).
+
+  Inductive iprogram_behaves (L : semantics) (istep: (genvtype L) -> (state L) -> itrace -> (state L) -> Prop): itrace -> program_behavior -> Prop :=
+    iprogram_runs : forall (s : state L) (t: itrace) (beh : iprogram_behavior),
+        initial_state L s -> istate_behaves L istep s t beh -> iprogram_behaves L t beh
+  | iprogram_goes_initially_wrong : (forall s : state L, ~ initial_state L s) -> iprogram_behaves L nil (Goes_wrong nil).
+
+  Definition semantics_has_initial_trace_informative (L: semantics) (istep: (genvtype L) -> (state L) -> itrace -> (state L) -> Prop) (t: itrace): Prop :=
+    exists beh, (iprogram_behaves L istep t beh).
 
 End INFORMATIVE.
+
+
+Lemma iE0_left: forall t, iE0 ++ t = t.
+Proof. auto. Qed.
+
+Lemma iE0_right: forall t, t ++ iE0 = t.
+Proof. intros. unfold iE0, Eapp. rewrite <- app_nil_end. auto. Qed.
+
+Lemma iEapp_assoc: forall (t1 t2 t3: itrace), (t1 ++ t2) ++ t3 = t1 ++ (t2 ++ t3).
+Proof. intros. unfold Eapp, trace. apply app_ass. Qed.
+
+Lemma iEapp_E0_inv: forall t1 t2, t1 ++ t2 = iE0 -> t1 = iE0 /\ t2 = iE0.
+Proof. eapply (@app_eq_nil ievent). Qed.
+
+Lemma iE0_left_inf: forall T, iEappinf iE0 T = T.
+Proof. auto. Qed.
+
+Lemma iEappinf_assoc: forall t1 t2 T, iEappinf (t1 ++ t2) T = iEappinf t1 (iEappinf t2 T).
+Proof.
+  induction t1; intros; simpl. auto. decEq; auto.
+Qed.
+
+#[global]
+Hint Rewrite iE0_left iE0_right iEapp_assoc
+             iE0_left_inf iEappinf_assoc: itrace_rewrite.
+
+Ltac isubstTraceHyp :=
+  match goal with
+  | [ H: (@eq itrace ?x ?y) |- _ ] =>
+       subst x || clear H
+  end.
+
+Ltac idecomposeTraceEq :=
+  match goal with
+  | [ |- (_ ++ _) = (_ ++ _) ] =>
+      apply (f_equal2 app); auto; decomposeTraceEq
+  | _ =>
+      auto
+  end.
+
+Ltac itraceEq :=
+  repeat isubstTraceHyp; autorewrite with itrace_rewrite; idecomposeTraceEq.
+
+
+Section AUX.
+
+  Definition ibehavior_app (t: itrace) (beh: iprogram_behavior): iprogram_behavior :=
+    match beh with
+    | iTerminates t1 r => iTerminates (t ++ t1) r
+    | iDiverges t1 => iDiverges (t ++ t1)
+    | iReacts T => iReacts (iEappinf t T)
+    | iGoes_wrong t1 => iGoes_wrong (t ++ t1)
+    end.
+
+  Lemma ibehavior_app_assoc:
+    forall t1 t2 beh,
+      ibehavior_app (t1 ++ t2) beh = ibehavior_app t1 (ibehavior_app t2 beh).
+  Proof.
+    intros. destruct beh; simpl; f_equal; itraceEq.
+  Qed.
+
+  Lemma ibehavior_app_E0:
+    forall beh, ibehavior_app iE0 beh = beh.
+  Proof.
+    destruct beh; auto.
+  Qed.
+
+  Definition ibehavior_prefix (t: itrace) (beh: iprogram_behavior) : Prop :=
+    exists beh', beh = ibehavior_app t beh'.
+
+End AUX.
 
 
 Section ASMISTEP.
@@ -119,8 +269,8 @@ Section ASMISTEP.
   (*   forall id ofs, *)
   (*   Val.offset_ptr (high_half ge id ofs) (low_half ge id ofs) = Genv.symbol_address ge id ofs. *)
 
-  Inductive istep: state -> itrace -> state -> Prop :=
-  | exec_istep_internal:
+  Inductive asm_istep: state -> itrace -> state -> Prop :=
+  | exec_asm_istep_internal:
     forall b ofs f i rs m rs' m' b' ofs' st cp,
       rs PC = Vptr b ofs ->
       Genv.find_funct_ptr ge b = Some (Internal f) ->
@@ -131,8 +281,8 @@ Section ASMISTEP.
         is_return i = false ->
         forall (NEXTPC: rs' PC = Vptr b' ofs'),
         forall (ALLOWED: cp = Genv.find_comp_ignore_offset ge (Vptr b' ofs')),
-          istep (State st rs m) nil (State st rs' m')
-  | exec_istep_internal_call:
+          asm_istep (State st rs m) nil (State st rs' m')
+  | exec_asm_istep_internal_call:
     forall b ofs f i sig rs m rs' m' b' ofs' cp st st' args t it,
       rs PC = Vptr b ofs ->
       Genv.find_funct_ptr ge b = Some (Internal f) ->
@@ -156,8 +306,8 @@ Section ASMISTEP.
                          | _ => not_cross_ext
                          end in
                it = map (fun e => (e, info_call ce sig)) t),
-        istep (State st rs m) it (State st' rs' m')
-  | exec_istep_internal_return:
+        asm_istep (State st rs m) it (State st' rs' m')
+  | exec_asm_istep_internal_return:
     forall b ofs f i rs m rs' cp m' st,
       rs PC = Vptr b ofs ->
       Genv.find_funct_ptr ge b = Some (Internal f) ->
@@ -170,10 +320,10 @@ Section ASMISTEP.
       (*      of the top stack frame*)
       forall (REC_CURCOMP: Genv.find_comp_ignore_offset ge (rs PC) = callee_comp cpm st),
         (* forall (NEXTCOMP: Genv.find_comp_ignore_offset ge (rs' PC) = cp'), *)
-        istep (State st rs m) nil (ReturnState st rs' m')
-  | exec_istep_return:
+        asm_istep (State st rs m) nil (ReturnState st rs' m')
+  | exec_asm_istep_return:
     forall st st' rs m sg t rec_cp rec_cp' cp' it,
-      rs PC <> Vnullptr -> (* this condition is there to stop the execution 1 istep earlier, to make the proof easier *)
+      rs PC <> Vnullptr -> (* this condition is there to stop the execution 1 asm_istep earlier, to make the proof easier *)
       forall (REC_CURCOMP: callee_comp cpm st = rec_cp),
       forall (REC_NEXTCOMP: call_comp ge st = rec_cp'),
       forall (NEXTCOMP: Genv.find_comp_ignore_offset ge (rs PC) = cp'),
@@ -192,8 +342,8 @@ Section ASMISTEP.
            not_ptr (return_value rs sg))),
       forall (EV: return_trace ge cp' rec_cp (return_value rs sg) (sig_res sg) t),
       forall (INFO: it = map (fun e => (e, info_return sg)) t),
-        istep (ReturnState st rs m) it (State st' rs m)
-  | exec_istep_builtin:
+        asm_istep (ReturnState st rs m) it (State st' rs m)
+  | exec_asm_istep_builtin:
     forall b ofs f ef args res rs m vargs t vres rs' m' st it,
       rs PC = Vptr b ofs ->
       Genv.find_funct_ptr ge b = Some (Internal f) ->
@@ -205,8 +355,8 @@ Section ASMISTEP.
                        (undef_regs (map preg_of (destroyed_by_builtin ef))
                                    (rs #X1 <- Vundef #X31 <- Vundef))) ->
       forall (INFO: it = map (fun e => (e, info_builtin ef)) t),
-        istep (State st rs m) it (State st rs' m')
-  | exec_istep_external:
+        asm_istep (State st rs m) it (State st rs' m')
+  | exec_asm_istep_external:
     forall b ef args res rs m t rs' m' cp st it,
       rs PC = Vptr b Ptrofs.zero ->
       Genv.find_funct_ptr ge b = Some (External ef) ->
@@ -214,40 +364,21 @@ Section ASMISTEP.
         external_call ef ge cp args m t res m' ->
         extcall_arguments rs m (ef_sig ef) args ->
         rs' = (set_pair (loc_external_result (ef_sig ef)) res (undef_caller_save_regs rs))#PC <- (rs RA) ->
-        (* These steps behave like returns. So we do the same as in the [exec_istep_internal_return] case. *)
+        (* These steps behave like returns. So we do the same as in the [exec_asm_istep_internal_return] case. *)
         forall (REC_CURCOMP: Genv.find_comp_ignore_offset ge (rs PC) = callee_comp cpm st),
         forall (INFO: it = map (fun e => (e, info_external b (ef_sig ef))) t),
-          istep (State st rs m) it (ReturnState st rs' m').
-
-  Inductive istar {genv state : Type} (step : genv -> state -> itrace -> state -> Prop) (ge : genv) : state -> itrace -> state -> Prop :=
-    istar_refl : forall s : state, istar step ge s nil s
-  | istar_step : forall (s1 : state) (t1 : itrace) (s2 : state) (t2 : itrace) (s3 : state) (t : itrace),
-      step ge s1 t1 s2 -> istar step ge s2 t2 s3 -> t = t1 ++ t2 -> istar step ge s1 t s3.
+          asm_istep (State st rs m) it (ReturnState st rs' m').
 
 End ASMISTEP.
 
 
-Section INFOASM.
+Section ASMISEM.
 
-  Variable cpm: compartment.
+  Definition iasm_program_has_initial_trace :=
+    fun (p : program) (t : itrace) =>
+      let isem := sem_to_isem (semantics p) (asm_istep (prog_main p)) in
+      exists beh : iprogram_behavior, (iprogram_behaves isem beh) /\ (ibehavior_prefix t beh).
 
-  Inductive istate_behaves (L : Smallstep.semantics) (s : Smallstep.state L) : iprogram_behavior -> Prop :=
-    istate_terminates : forall (t : itrace) (s' : Smallstep.state L) (r : int),
-        (istar (istep cpm) (globalenv L)) s t s' -> Smallstep.final_state L s' r -> istate_behaves L s (iTerminates t r).
-  | istate_diverges : forall (t : itrace) (s' : Smallstep.state L), (istar istep (globalenv L)) s t s' -> (forever_silent istep (globalenv L)) s' -> istate_behaves L s (iDiverges t)
-  | istate_reacts : forall T : itraceinf, forever_reactive L s T -> state_behaves L s (Reacts T)
-  | istate_goes_wrong : forall (t : trace) (s' : Smallstep.state L), Star L s t s' -> Nostep L s' -> (forall r : int, ~ Smallstep.final_state L s' r) -> state_behaves L s (Goes_wrong t).
+  
 
-
-asm_program_has_initial_trace = fun (p : program) (t : trace) => forall beh : program_behavior, program_behaves (semantics p) beh -> behavior_prefix t beh
-     : program -> trace -> Prop
-Inductive program_behaves (L : Smallstep.semantics) : program_behavior -> Prop :=
-    program_runs : forall (s : Smallstep.state L) (beh : program_behavior), Smallstep.initial_state L s -> state_behaves L s beh -> program_behaves L beh
-  | program_goes_initially_wrong : (forall s : Smallstep.state L, ~ Smallstep.initial_state L s) -> program_behaves L (Goes_wrong E0).
-Inductive state_behaves (L : Smallstep.semantics) (s : Smallstep.state L) : program_behavior -> Prop :=
-    state_terminates : forall (t : trace) (s' : Smallstep.state L) (r : int), Star L s t s' -> Smallstep.final_state L s' r -> state_behaves L s (Terminates t r)
-  | state_diverges : forall (t : trace) (s' : Smallstep.state L), Star L s t s' -> Forever_silent L s' -> state_behaves L s (Diverges t)
-  | state_reacts : forall T : traceinf, Forever_reactive L s T -> state_behaves L s (Reacts T)
-| state_goes_wrong : forall (t : trace) (s' : Smallstep.state L), Star L s t s' -> Nostep L s' -> (forall r : int, ~ Smallstep.final_state L s' r) -> state_behaves L s (Goes_wrong t).
-
-End INFOASM.
+End ASMISEM.
