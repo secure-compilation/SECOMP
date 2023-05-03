@@ -37,40 +37,93 @@ Section HASINIT.
   (* semantics_determinate: forall p : program, determinate (Asm.semantics p) *)
   (* sd_traces: forall [L : semantics], determinate L -> single_events L *)
 
-  Lemma state_behaves_app_inv
+  Lemma state_behaves_app_inv_one
         L s1 beh t beh'
+        (SE: single_events L)
         (BEH: state_behaves L s1 beh)
         (APP: beh = behavior_app t beh')
-        (ONE: (Datatypes.length t <= 1)%nat)
+        (ONE: (Datatypes.length t = 1)%nat)
     :
     exists s2, (Star L s1 t s2) /\ (state_behaves L s2 beh').
   Proof.
+    destruct t; simpl in *. congruence. destruct t; simpl in *. 2: congruence. clear ONE.
     inv BEH.
     - destruct beh'; simpl in *; try congruence. inv H1.
-      remember (t ** t1) as tr. revert t t1 i ONE Heqtr H0. induction H; intros.
-      { symmetry in Heqtr; apply Eapp_E0_inv in Heqtr. destruct Heqtr; subst. exists s. split.
-        constructor 1. econstructor 1; eauto. constructor 1.
-      }
-      subst.
-      admit.
+      remember (e :: t0) as tr. revert e t0 i SE Heqtr H0. induction H; intros.
+      { inv Heqtr. }
+      subst. assert (SE0: single_events L) by auto. specialize (SE _ _ _ H). inv SE.
+      + destruct t1; simpl in *. congruence. destruct t1; simpl in *. 2: congruence.
+        inv Heqtr. exists s2. split. econstructor 2. eauto. econstructor 1. traceEq.
+        econstructor; eauto.
+      + destruct t1; simpl in *. 2: lia. clear H3.
+        specialize (IHstar _ _ _ SE0 Heqtr H2). destruct IHstar as (s2' & STAR & TERM).
+        exists s2'. split; auto. econstructor 2. eauto. eauto. traceEq.
     - destruct beh'; simpl in *; try congruence. inv H1.
-      admit.
+      remember (e :: t0) as tr. revert e t0 SE Heqtr H0. induction H; intros.
+      { inv Heqtr. }
+      subst. assert (SE0: single_events L) by auto. specialize (SE _ _ _ H). inv SE.
+      + destruct t1; simpl in *. congruence. destruct t1; simpl in *. 2: congruence.
+        inv Heqtr. exists s2. split. econstructor 2. eauto. econstructor 1. traceEq.
+        econstructor; eauto.
+      + destruct t1; simpl in *. 2: lia. clear H3.
+        specialize (IHstar _ _ SE0 Heqtr H2). destruct IHstar as (s2' & STAR & TERM).
+        exists s2'. split; auto. econstructor 2. eauto. eauto. traceEq.
     - destruct beh'; simpl in *; try congruence. inv H0.
-      admit.
+      inv H. revert e t SE T H2 H4 H0. induction H1; intros. congruence.
+      subst. assert (SE0: single_events L) by auto. specialize (SE _ _ _ H). inv SE.
+      + destruct t1; simpl in *. congruence. destruct t1; simpl in *. 2: congruence.
+        clear H5. inv H3. destruct t2.
+        * exists s3. split. econstructor 2. eauto. eauto. traceEq.
+          econstructor. auto.
+        * exists s2. split. econstructor 2. eauto. econstructor 1. traceEq.
+          econstructor. econstructor. eauto. intros F. inv F. auto.
+      + destruct t1; simpl in *. 2: lia. clear H5.
+        specialize (IHstar _ _ SE0 _ H2 H4 H3). destruct IHstar as (s2' & STAR & TERM).
+        exists s2'. split; auto. econstructor 2. eauto. eauto. traceEq.
     - destruct beh'; simpl in *; try congruence. inv H2.
-      admit.
-    -
+      remember (e :: t0) as tr. revert e t0 SE Heqtr H0 H1. induction H; intros.
+      { inv Heqtr. }
+      subst. assert (SE0: single_events L) by auto. specialize (SE _ _ _ H). inv SE.
+      + destruct t1; simpl in *. congruence. destruct t1; simpl in *. 2: congruence.
+        clear H4. inv Heqtr. exists s2. split. econstructor 2. eauto. econstructor 1. traceEq.
+        econstructor; eauto.
+      + destruct t1; simpl in *. 2: lia. clear H4.
+        specialize (IHstar _ _ SE0 Heqtr H2 H3). destruct IHstar as (s2' & STAR & TERM).
+        exists s2'. split; auto. econstructor 2. eauto. eauto. traceEq.
+  Qed.
+
+  Lemma state_behaves_app_inv
+        L s1 beh t beh'
+        (SE: single_events L)
+        (BEH: state_behaves L s1 beh)
+        (APP: beh = behavior_app t beh')
+    :
+    exists s2, (Star L s1 t s2) /\ (state_behaves L s2 beh').
+  Proof.
+    revert s1 beh beh' SE BEH APP. induction t; intros.
+    { rewrite behavior_app_E0 in APP. subst beh'. exists s1. split; auto. econstructor 1. }
+    replace (a :: t) with ((a :: E0) ++ t) in *.
+    2:{ simpl. auto. }
+    rewrite behavior_app_assoc in APP. exploit state_behaves_app_inv_one.
+    3: eapply APP. all: eauto.
+    intros (s2 & STAR & NEXTBEH). specialize (IHt _ _ beh' SE NEXTBEH).
+    exploit IHt; auto. intros (s3 & STAR2 & TERM).
+    exists s3. split; auto. eapply star_trans; eauto.
+  Qed.
 
   Lemma semantics_has_initial_trace_prefix_implies_cut
         L t
+        (SE: single_events L)
         (HAS: semantics_has_initial_trace_prefix L t)
     :
     semantics_has_initial_trace_cut L t.
   Proof.
     inversion HAS. destruct H as [BEH (beh' & APP)]. subst x. inversion BEH; clear BEH.
-    - subst beh. econstructor 1. eauto.
-
-      exploit state_behaves_app.
+    - subst beh. econstructor 1. eauto. exploit state_behaves_app_inv; eauto.
+      intros (s2 & STAR & BEH). exists s2, beh'. auto.
+    - econstructor 2. auto. destruct beh'; simpl in *; try congruence. inv H.
+      symmetry in H2; apply Eapp_E0_inv in H2. destruct H2; auto.
+  Qed.
 
 End HASINIT.
 
