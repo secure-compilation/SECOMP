@@ -5,8 +5,8 @@ Require Import AST Linking Smallstep Events Behaviors.
 Require Import Split.
 
 Require Import riscV.Asm.
+Require Import BtInfoAsm.
 Require Import Ctypes Clight.
-
 
 
 Record syscall_properties (sem: extcall_sem) (sg: signature) : Prop :=
@@ -114,88 +114,7 @@ Section GENV.
 End GENV.
 
 
-
-Section EXTFUN.
-
-  (* Requirements for external call semantics and definitions. *)
-
-
-  Definition match_sk_ef_asm (ge: Asm.genv) (sk: sys_kind) (ef: external_function) : Prop :=
-    match sk with
-    | sys_external id =>
-        exists b, (Genv.find_symbol ge id = Some b) /\ (Genv.find_funct ge (Vptr b Ptrofs.zero) = Some (AST.External ef))
-    | sys_builtin name sg =>
-        (ef = EF_builtin name sg) \/ (ef = EF_runtime name sg)
-    | sys_inline txt sg strs =>
-        (ef = EF_inline_asm txt sg strs)
-    end.
-
-  Definition match_sk_ef_cl (ge: Clight.genv) (sk: sys_kind) (ef: external_function) : Prop :=
-    match sk with
-    | sys_external id =>
-        exists b, (Genv.find_symbol ge id = Some b) /\ (exists targs tres cc, Genv.find_funct ge (Vptr b Ptrofs.zero) = Some (External ef targs tres cc))
-    | sys_builtin name sg =>
-        (ef = EF_builtin name sg) \/ (ef = EF_runtime name sg)
-    | sys_inline txt sg strs =>
-        (ef = EF_inline_asm txt sg strs)
-    end.
-
-  Definition sys_env := string -> option sys_kind.
-
-  Definition wf_sys_env_asm (ske: sys_env): Prop :=
-    forall ef (ge: Asm.genv) cp args m name evargs evres res m'
-      (DEFINED: external_call ef ge cp args m (Event_syscall name evargs evres :: nil) res m'),
-    exists sk,
-      (ske name = Some sk) /\ (match_sk_ef_asm ge sk ef).
-
-
-
-
-  (SEM: external_call ef ge cp (list_eventval_to_list_val (globalenv p) args) m (ev :: nil) srv m')
-
-
-
-  (* need to handle type: It seems that Asm.step does not utilizes sig, so we need to correctly craft type in Clight.step.
-   e.g., if we bt everything into void, ok when intra but not when cross.
-   *)
-  Definition syscall_properties1 (sem: extcall_sem) : Prop :=
-    forall ge cp vargs m1 name evargs evres vres m2,
-      sem ge cp vargs m1 (Event_syscall name evargs evres :: nil) vres m2 ->
-      exists vres' m2',
-        sem ge cp (list_eventval_to_list_val ge evargs) m1 (Event_syscall name evargs evres :: nil) vres' m2'.
-
-
-  (* Record syscall_properties1 (sem: extcall_sem) (sg: signature) : Prop := *)
-  (*   mk_syscall_properties { *)
-  (*       sc_args_match: *)
-  (*       forall ge cp vargs m1 name evargs evres vres m2, *)
-  (*         sem ge cp vargs m1 (Event_syscall name evargs evres :: nil) vres m2 -> *)
-  (*         sem ge cp (list_eventval_to_list_val ge vargs) m1 (Event_syscall name evargs evres :: nil) vres m2; *)
-
-  (*       sc_name_match: *)
-  (*       forall name' ge cp vargs m1 name evargs evres vres m2, *)
-  (*         sem = external_functions_sem name' sg -> *)
-  (*         sem ge cp vargs m1 (Event_syscall name evargs evres :: nil) vres m2 -> *)
-  (*         (name' = name); *)
-  (*     }. *)
-
-  (* Record syscall_properties2 (sem: extcall_sem) (sg: signature) : Prop := *)
-  (*   mk_syscall_properties { *)
-  (*       sc_args_match: *)
-  (*       forall ge cp vargs m1 name evargs evres vres m2, *)
-  (*         sem ge cp vargs m1 (Event_syscall name evargs evres :: nil) vres m2 -> *)
-  (*         eventval_list_match ge evargs sg.(sig_args) vargs; *)
-
-  (*       sc_name_match: *)
-  (*       forall name' ge cp vargs m1 name evargs evres vres m2, *)
-  (*         sem = external_functions_sem name' sg -> *)
-  (*         sem ge cp vargs m1 (Event_syscall name evargs evres :: nil) vres m2 -> *)
-  (*         (name' = name); *)
-  (*     }. *)
-End EXTFUN.
-
-
-Section AUX.
+Section MEM.
 
   (* f doesn't map anything to [b], e.g. the counter and function parameters *)
   Definition meminj_notmap (f: meminj) b := forall b0 ofs0, ~ (f b0 = Some (b, ofs0)).
@@ -270,7 +189,7 @@ forall b, b is the block of one of the counter ->
 (*     /\ inject_incr f f' *)
 (*     /\ inject_separated f f' m1 m1'; *)
 
-End AUX.
+End MEM.
 
 
 Section Backtranslation.
@@ -293,8 +212,9 @@ Section Backtranslation.
 
   Ltac take_step := econstructor; [econstructor; simpl_expr | | traceEq]; simpl.
 
+
   Section SWITCH.
-    (** switch statement; use to convert a trace to a code **)
+    (** switch statement; used when converting a trace to a code **)
 
     Definition type_counter: type := Tlong Unsigned noattr.
     Definition type_bool:    type := Tint IBool Signed noattr.
@@ -553,7 +473,7 @@ Section Backtranslation.
 
   Section CODEAUX.
 
-    (* We extract function data: argument types, fn_return, rn_callconv from signature of Asm.function *)
+    (* We extract function data: argument types, fn_return, rn_callconv from signature *)
     (* Correctness should follow from the semantics of Asm, especially eventval_match *)
     Definition typ_to_type: typ -> type :=
       fun t: typ =>
@@ -562,7 +482,7 @@ Section Backtranslation.
         | AST.Tfloat => Tfloat F64 noattr
         | AST.Tlong => Tlong Signed noattr
         | AST.Tsingle => Tfloat F32 noattr
-        (* not appear in eventval_match *)
+        (* do not appear in eventval_match *)
         | AST.Tany32 => Tvoid
         | AST.Tany64 => Tvoid
         end.
@@ -622,75 +542,62 @@ Section Backtranslation.
 
 
   Section CODE.
-    (** converting trace to code **)
+    (** converting *informative* trace to code **)
+
+    Context {F: Type}.
+    Context {V: Type}.
+    Variable ge: Genv.t F V.
 
     (* converting functions *)
-    Definition code_of_vload (ch: memory_chunk) (id: ident) (ofs: Ptrofs.int) (v: eventval) :=
-      Sbuiltin None (EF_vload ch) (dargs (from_extfun_fun_data (EF_vload ch))) (ptr_of_id_ofs id ofs :: nil).
-
-    Definition code_of_vstore (ch: memory_chunk) (id: ident) (ofs: Ptrofs.int) (v: eventval) :=
-      Sbuiltin None (EF_vstore ch) (dargs (from_extfun_fun_data (EF_vstore ch))) ((ptr_of_id_ofs id ofs) :: (eventval_to_expr v) :: nil).
-
-    Definition code_of_annot (str: string) (vs: list eventval) :=
-      let efa := (EF_annot
-                    (Pos.of_nat (List.length (typlist_of_typelist (list_eventval_to_typelist vs))))
-                    str
-                    (typlist_of_typelist (list_eventval_to_typelist vs))
-                 )
-      in
-      Sbuiltin None efa (dargs (from_extfun_fun_data efa)) (list_eventval_to_list_expr vs).
-
-    Definition code_of_call (fds: funs_data) (cp cp': compartment) (id: ident) (vs: list eventval) :=
-      let '(targs, tret, cc) := match fds ! id with
-                                | Some data => (dargs data, dret data, dcc data)
-                                | None => (Tnil, Tvoid, cc_default)
-                                end
-      in
-      Scall None (Evar id (Tfunction targs tret cc)) (list_eventval_to_list_expr vs).
-
-    (* TODO: syscall_ident should have more information to distinguish below cases:
-       | EF_external name _ sg => external_functions_sem name sg
-       | EF_builtin name sg | EF_runtime name sg => builtin_or_external_sem name sg
-       | EF_inline_asm txt sg _ => inline_assembly_sem txt sg
-     *)
-    (* Two cases for invoking an Event_syscall: 
-       1. cross-compartment. follows a call event, so just a skip is enough. 
-       2. intra-compartment. need to execute a 'Scall'. We define this case.
-     *)
-    (** need function: external call name -> id **)
-    (** need axiom: 'Event_syscall name _ _' can be uniquely converted into a code (ident).
-        e.g., an external call to 'EF_external name _ _' invokes 'Event_syscall name _ _'.
-     **)
-    Variable sid: string -> option sys_kind.
-    Definition code_of_syscall (fds: funs_data) (name: string) (vs: list eventval) (v: eventval) :=
-      match (sid name) with
-      | Some (sys_external id) => 
-          let '(targs, tret, cc) := match fds ! id with
-                                    | Some data => (dargs data, dret data, dcc data)
-                                    | None => (Tnil, Tvoid, cc_default)
-                                    end
-          in
-          Scall None (Evar id (Tfunction targs tret cc)) (list_eventval_to_list_expr vs)
-      | Some (sys_builtin name' sg) =>
-          Sbuiltin None (EF_builtin name' sg) (dargs (from_sig_fun_data sg)) (list_eventval_to_list_expr vs)
-      | Some (sys_inline txt sg strs) =>
-          Sbuiltin None (EF_inline_asm txt sg strs) (dargs (from_sig_fun_data sg)) (list_eventval_to_list_expr vs)
-      | None =>
-          Sskip
+    Definition code_of_external (argsexpr: list expr) (ik: info_kind) :=
+      match ik with
+      | info_builtin ef =>
+          Sbuiltin None ef (dargs (from_sig_fun_data (ef_sig ef))) argsexpr
+      | info_external b sg =>
+          match Genv.invert_symbol ge b with
+          | Some id =>
+              let tys := from_sig_fun_data sg in
+              Scall None (Evar id (Tfunction (dargs tys) (dret tys) (dcc tys))) argsexpr
+          | None => Sskip
+          end
+      | _ => Sskip
       end.
 
+    Definition code_of_vload (ch: memory_chunk) (id: ident) (ofs: Ptrofs.int) (v: eventval) (ik: info_kind) :=
+      let argsexpr := (ptr_of_id_ofs id ofs :: nil) in code_of_external argsexpr ik.
 
-    Definition code_of_return (cp cp': compartment) (v: eventval) :=
-      Sreturn (Some (eventval_to_expr v)).
+    Definition code_of_vstore (ch: memory_chunk) (id: ident) (ofs: Ptrofs.int) (v: eventval) (ik: info_kind) :=
+      let argsexpr := ((ptr_of_id_ofs id ofs) :: (eventval_to_expr v) :: nil) in code_of_external argsexpr ik.
 
-    Definition code_of_event (fds: funs_data) (e: event): statement :=
+    Definition code_of_annot (str: string) (vs: list eventval) (ik: info_kind) :=
+      let argsexpr := (list_eventval_to_list_expr vs) in code_of_external argsexpr ik.
+
+    Definition code_of_syscall (name: string) (vs: list eventval) (v: eventval) (ik: info_kind) :=
+      let argsexpr := (list_eventval_to_list_expr vs) in code_of_external argsexpr ik.
+
+    Definition code_of_call (cp cp': compartment) (id: ident) (vs: list eventval) (ik: info_kind) :=
+      match ik with
+      | info_call _ sg =>
+          let tys := from_sig_fun_data sg in
+          Scall None (Evar id (Tfunction (dargs tys) (dret tys) (dcc tys))) (list_eventval_to_list_expr vs)
+      | _ => Sskip
+      end.
+
+    Definition code_of_return (cp cp': compartment) (v: eventval) (ik: info_kind) :=
+      match ik with
+      | info_return _ =>
+          Sreturn (Some (eventval_to_expr v))
+      | _ => Sskip
+      end.
+
+    Definition code_of_ievent (e: ievent): statement :=
       match e with
-      | Event_vload ch id ofs v => code_of_vload ch id ofs v
-      | Event_vstore ch id ofs v => code_of_vstore ch id ofs v
-      | Event_annot str vs => code_of_annot str vs
-      | Event_call cp cp' id vs => code_of_call fds cp cp' id vs
-      | Event_syscall name vs v => code_of_syscall fds name vs v
-      | Event_return cp cp' v => code_of_return cp cp' v
+      | (Event_vload ch id ofs v, ik) => code_of_vload ch id ofs v ik
+      | (Event_vstore ch id ofs v, ik) => code_of_vstore ch id ofs v ik
+      | (Event_annot str vs, ik) => code_of_annot str vs ik
+      | (Event_call cp cp' id vs, ik) => code_of_call cp cp' id vs ik
+      | (Event_syscall name vs v, ik) => code_of_syscall name vs v ik
+      | (Event_return cp cp' v, ik) => code_of_return cp cp' v ik
       end.
 
     (* A while(1)-loop with a big switch inside it *)
@@ -937,8 +844,6 @@ Section Backtranslation.
 
 
   Section STEPPROP.
-
-    Variable sid: string -> option sys_kind.
 
     (* Step lemmas *)
     Lemma code_of_event_step_vload

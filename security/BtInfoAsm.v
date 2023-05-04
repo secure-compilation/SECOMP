@@ -132,8 +132,7 @@ Section INFORMATIVE.
   Import Smallstep.
 
   (* At CROSS-COMP calls, if fundef is ext, set to is_cross_ext. Otherwise is_not_ext. *)
-  (* Similar at return. *)
-  (* When a Event_call is is_cross_ext, do not back-translate the following Event_syscall and Event_return. *)
+  (* When a Event_call is is_cross_ext, do not back-translate the following (possible Event_syscall and) Event_return. *)
   Variant cross_ext := | is_cross_ext | not_cross_ext.
 
   (* Additional information *)
