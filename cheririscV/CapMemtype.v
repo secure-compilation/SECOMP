@@ -181,20 +181,20 @@ Parameter load: forall (a: act_kind) (chunk: cap_memory_chunk) (m: mem) (ptr: oc
 Parameter store: forall (a: act_kind) (chunk: cap_memory_chunk) (m: mem) (ptr: occap) (ofs: Z) (v: ocval) (cp: compartment), (occap * mem) + error_kind.
 
 (** [loadv] and [storev] are variants of [load] and [store] where
-  the address being accessed is passed as a value (of the [Vptr] kind). *)
+  the address and capability being accessed is passed as a value (of the [Vcap] and [Vptr] kind respectively). *)
 
-Definition loadv (a: act_kind) (chunk: cap_memory_chunk) (m: mem) (c: occap) (addr: ocval) (cp: option compartment) : ocval + error_kind :=
-  match addr with
-  | OCVptr (heap_ptr ofs) => load a chunk m c (Ptrofs.unsigned ofs) cp
-  | OCVptr (stack_ptr ofs) => load a chunk m c (Ptrofs.unsigned ofs) cp
-  | _ => inr PtrErr
+Definition loadv (a: act_kind) (chunk: cap_memory_chunk) (m: mem) (c: ocval) (addr: ocval) (cp: option compartment) : ocval + error_kind :=
+  match addr,c with
+  | OCVptr (heap_ptr ofs), OCVcap c' => load a chunk m c' (Ptrofs.unsigned ofs) cp
+  | OCVptr (stack_ptr ofs), OCVcap c' => load a chunk m c' (Ptrofs.unsigned ofs) cp
+  | _,_ => inr PtrErr
   end.
 
-Definition storev (a: act_kind) (chunk: cap_memory_chunk) (m: mem) (c: occap) (addr v: ocval) (cp: compartment) : (occap * mem) + error_kind :=
-  match addr with
-  | OCVptr (heap_ptr ofs) => store a chunk m c (Ptrofs.unsigned ofs) v cp
-  | OCVptr (stack_ptr ofs) => store a chunk m c (Ptrofs.unsigned ofs) v cp
-  | _ => inr PtrErr
+Definition storev (a: act_kind) (chunk: cap_memory_chunk) (m: mem) (c: ocval) (addr v: ocval) (cp: compartment) : (occap * mem) + error_kind :=
+  match addr,c with
+  | OCVptr (heap_ptr ofs),OCVcap c' => store a chunk m c' (Ptrofs.unsigned ofs) v cp
+  | OCVptr (stack_ptr ofs),OCVcap c' => store a chunk m c' (Ptrofs.unsigned ofs) v cp
+  | _,_ => inr PtrErr
   end.
 
 (** [loadbytes m b ofs n cp] reads and returns the byte-level representation of

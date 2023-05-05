@@ -162,6 +162,12 @@ Definition isU (p: permission) :=
   | _ => false
   end.
 
+Definition isE (p: permission) :=
+  match p with
+  | E => true
+  | _ => false
+  end.
+
 Definition pwl p : bool :=
   match p with
   | RWLX | RWL => true
@@ -200,6 +206,52 @@ Definition promote_perm (p: permission): permission :=
   | URWX => RWX
   | URWLX => RWLX
   | _ => p
+  end.
+
+Definition encode_locality (l : locality) : int :=
+  match l with
+  | Directed => Int.repr 0
+  | Local => Int.repr 1
+  | Global => Int.repr 2
+  end.
+Definition encode_permission (p: permission) : int :=
+  match p with
+  | O => Int.repr 0
+  | E => Int.repr 1
+  | RX => Int.repr 2
+  | RWX => Int.repr 3
+  | RWLX => Int.repr 4
+  | RO => Int.repr 5
+  | RW => Int.repr 6
+  | RWL => Int.repr 7
+  | URW => Int.repr 8
+  | URWL => Int.repr 9
+  | URWX => Int.repr 10
+  | URWLX => Int.repr 11
+  end.
+
+Definition decode_locality (l : int) : option locality :=
+  match Int.unsigned l with
+  | 0 => Some Directed
+  | 1 => Some Local
+  | 2 => Some Global
+  | _ => None
+  end. 
+Definition decode_permission (p: int) : option permission :=
+  match Int.unsigned p with
+  | 0 => Some O
+  | 1 => Some E
+  | 2 => Some RX
+  | 3 => Some RWX
+  | 4 => Some RWLX
+  | 5 => Some RO
+  | 6 => Some RW
+  | 7 => Some RWL
+  | 8 => Some URW
+  | 9 => Some URWL
+  | 10 => Some URWX
+  | 11 => Some URWLX
+  | _ => None
   end.
 
 Lemma writeA_implies_readA p :
@@ -348,11 +400,12 @@ Definition incr_addr_stk (v: occap) (ofs: Z) : option occap :=
 
 Inductive pointer: Type :=
 | heap_ptr: ptrofs -> pointer
-| stack_ptr: ptrofs -> pointer.
+| stack_ptr: ptrofs -> pointer
+| seal_ptr: ptrofs -> pointer.
 
 Definition pointer_ofs (ptr: pointer): ptrofs :=
   match ptr with
-  | heap_ptr ofs | stack_ptr ofs => ofs
+  | heap_ptr ofs | stack_ptr ofs | seal_ptr ofs => ofs
   end.
       
 Inductive ocval: Type :=
@@ -727,6 +780,7 @@ Definition pointer_arith (f: ptrofs -> ptrofs -> ptrofs) (ptr1: pointer) (ofs: p
   match ptr1 with
   | heap_ptr ofs1 => heap_ptr (f ofs1 ofs)
   | stack_ptr ofs1 => stack_ptr (f ofs1 ofs)
+  | seal_ptr ofs1 => seal_ptr (f ofs1 ofs)
   end.
 
 Definition add (v1 v2: ocval): ocval :=
@@ -745,6 +799,9 @@ Definition sub (v1 v2: ocval): ocval :=
       if Archi.ptr64 then OCVundef else
         OCVint(Ptrofs.to_int (Ptrofs.sub ofs1 ofs2))
   | OCVptr (stack_ptr ofs1), OCVptr (stack_ptr ofs2) =>
+      if Archi.ptr64 then OCVundef else
+        OCVint(Ptrofs.to_int (Ptrofs.sub ofs1 ofs2))
+  | OCVptr (seal_ptr ofs1), OCVptr (seal_ptr ofs2) =>
       if Archi.ptr64 then OCVundef else
         OCVint(Ptrofs.to_int (Ptrofs.sub ofs1 ofs2))
   | _, _ => OCVundef
@@ -1064,6 +1121,8 @@ Definition subl (v1 v2: ocval): ocval :=
       if negb Archi.ptr64 then OCVundef else OCVlong(Ptrofs.to_int64 (Ptrofs.sub ofs1 ofs2))
   | OCVptr (stack_ptr ofs1), OCVptr (stack_ptr ofs2) =>
       if negb Archi.ptr64 then OCVundef else OCVlong(Ptrofs.to_int64 (Ptrofs.sub ofs1 ofs2))
+  | OCVptr (seal_ptr ofs1), OCVptr (seal_ptr ofs2) =>
+      if negb Archi.ptr64 then OCVundef else OCVlong(Ptrofs.to_int64 (Ptrofs.sub ofs1 ofs2))
   | _, _ => OCVundef
   end.
 
@@ -1265,7 +1324,7 @@ Definition cmpu_bool (c: comparison) (v1 v2: ocval): option bool :=
       if Int.eq n1 Int.zero && weak_valid_ptr (Ptrofs.unsigned (pointer_ofs ofs2))
       then cmp_different_blocks c
       else None
-  | OCVptr (stack_ptr ofs1), OCVptr (stack_ptr ofs2) | OCVptr (heap_ptr ofs1), OCVptr (heap_ptr ofs2) =>
+  | OCVptr (stack_ptr ofs1), OCVptr (stack_ptr ofs2) | OCVptr (heap_ptr ofs1), OCVptr (heap_ptr ofs2) | OCVptr (seal_ptr ofs1), OCVptr (seal_ptr ofs2) =>
       if Archi.ptr64 then None else
         if weak_valid_ptr (Ptrofs.unsigned (ofs1))
            && weak_valid_ptr (Ptrofs.unsigned (ofs2))
@@ -1305,7 +1364,7 @@ Definition cmplu_bool (c: comparison) (v1 v2: ocval): option bool :=
       if Int64.eq n1 Int64.zero && weak_valid_ptr (Ptrofs.unsigned (pointer_ofs ofs2))
       then cmp_different_blocks c
       else None
-  | OCVptr (stack_ptr ofs1), OCVptr (stack_ptr ofs2) | OCVptr (heap_ptr ofs1), OCVptr (heap_ptr ofs2) =>
+  | OCVptr (stack_ptr ofs1), OCVptr (stack_ptr ofs2) | OCVptr (heap_ptr ofs1), OCVptr (heap_ptr ofs2) | OCVptr (seal_ptr ofs1), OCVptr (seal_ptr ofs2) =>
       if negb Archi.ptr64 then None else
         if weak_valid_ptr (Ptrofs.unsigned (ofs1))
            && weak_valid_ptr (Ptrofs.unsigned (ofs2))
@@ -1351,21 +1410,300 @@ End COMPARISONS.
 (** Add the given offset to the given pointer or capability. *)
 (** The following definition is partial and fails if the capability is
     sealed *)
+(** Additions or subtractions that cause overflow are not allowed  *)
 Definition offset_cap (c: occap) (delta: ptrofs) : option occap :=
   match c with
-  | (OCsealable (OCVmem p l b e a)) => Some (OCsealable (OCVmem p l b e (Ptrofs.add a delta)))
-  | (OCsealable (OCVseal b e a)) => Some (OCsealable (OCVseal b e (Ptrofs.add a delta)))
+  | (OCsealable (OCVmem p l b e a)) =>
+      if ((Ptrofs.unsigned a + Ptrofs.unsigned delta) <? Ptrofs.modulus) then
+        Some (OCsealable (OCVmem p l b e (Ptrofs.add a delta)))
+      else None
+  | (OCsealable (OCVseal b e a)) =>
+      if ((Ptrofs.unsigned a + Ptrofs.unsigned delta) <? Ptrofs.modulus) then
+        Some (OCsealable (OCVseal b e (Ptrofs.add a delta)))
+      else None
   | (OCsealed _ _) => None
   end.
   
 Definition offset_ptr (v: ocval) (delta: ptrofs) : option ocval :=
   match v with
   | OCVptr ofs => Some (OCVptr (pointer_arith Ptrofs.add ofs delta))
-  | OCVcap (OCsealable (OCVmem p l b e a)) => Some (OCVcap (OCsealable (OCVmem p l b e (Ptrofs.add a delta))))
-  | OCVcap (OCsealable (OCVseal b e a)) => Some (OCVcap (OCsealable (OCVseal b e (Ptrofs.add a delta))))
+  | OCVcap (OCsealable (OCVmem p l b e a)) =>
+      if ((Ptrofs.unsigned a + Ptrofs.unsigned delta) <? Ptrofs.modulus) then
+        Some (OCVcap (OCsealable (OCVmem p l b e (Ptrofs.add a delta))))
+      else None
+  | OCVcap (OCsealable (OCVseal b e a)) =>
+      if ((Ptrofs.unsigned a + Ptrofs.unsigned delta) <? Ptrofs.modulus) then
+        Some (OCVcap (OCsealable (OCVseal b e (Ptrofs.add a delta))))
+      else None
   | OCVcap (OCsealed _ _) => None
   | _ => Some OCVundef
   end.
+
+Definition sub_offset_cap (c: occap) (delta: ptrofs) : option occap :=
+  match c with
+  | (OCsealable (OCVmem p l b e a)) =>
+      if (Ptrofs.unsigned delta <=? Ptrofs.unsigned a) then
+        Some (OCsealable (OCVmem p l b e (Ptrofs.sub a delta)))
+      else None
+  | (OCsealable (OCVseal b e a)) =>
+      if (Ptrofs.unsigned delta <=? Ptrofs.unsigned a) then
+        Some (OCsealable (OCVseal b e (Ptrofs.sub a delta)))
+      else None
+  | (OCsealed _ _) => None
+  end.
+  
+Definition sub_offset_ptr (v: ocval) (delta: ptrofs) : option ocval :=
+  match v with
+  | OCVptr ofs => Some (OCVptr (pointer_arith Ptrofs.add ofs delta))
+  | OCVcap (OCsealable (OCVmem p l b e a)) =>
+      if (Ptrofs.unsigned delta <=? Ptrofs.unsigned a) then
+        Some (OCVcap (OCsealable (OCVmem p l b e (Ptrofs.sub a delta))))
+      else None
+  | OCVcap (OCsealable (OCVseal b e a)) =>
+      if (Ptrofs.unsigned delta <=? Ptrofs.unsigned a) then
+        Some (OCVcap (OCsealable (OCVseal b e (Ptrofs.sub a delta))))
+      else None
+  | OCVcap (OCsealed _ _) => None
+  | _ => Some OCVundef
+  end.
+
+(** Other operations on capabilities *)
+
+Definition update_pc_perm (v: ocval) : ocval :=
+  match v with
+  | OCVcap (OCsealable (OCVmem E l b e a)) => OCVcap (OCsealable (OCVmem RX l b e a))
+  | _ => v
+  end.
+
+Definition ptrofs_in_bounds s1 s2 s0 : bool := ((Ptrofs.unsigned s1 <=? Ptrofs.unsigned s0) && (Ptrofs.unsigned s0 <? Ptrofs.unsigned s2)).
+  
+Definition seal_capability (v: ocval) (s: ocval) : option ocval :=
+  match v,s with
+  | OCVcap (OCsealable c), OCVcap (OCsealable (OCVseal s1 s2 s0)) =>
+      if (ptrofs_in_bounds s1 s2 s0) then
+        Some (OCVcap (OCsealed s0 c))
+      else None
+  | _,_ => None
+  end.
+
+Definition unseal_capability (v: ocval) (s: ocval) : option ocval :=
+  match v,s with
+  | OCVcap (OCsealed s0' c), OCVcap (OCsealable (OCVseal s1 s2 s0)) =>
+      if (ptrofs_in_bounds s1 s2 s0 && Ptrofs.eq s0' s0) then
+        Some (OCVcap (OCsealable c))
+      else None
+  | _,_ => None
+  end.
+
+
+Definition restrict_perm (v: ocval) (p': ocval) : option ocval :=
+  match v,p' with
+  | OCVcap (OCsealable (OCVmem p l b1 b2 a)), OCVint i =>
+      match decode_permission i with
+      | Some p' => if permFlowsTo p' p then Some (OCVcap (OCsealable (OCVmem p' l b1 b2 a))) else None
+      | None => None
+      end
+  | _,_ => None
+  end.
+
+Definition restrict_locality (v: ocval) (p': ocval) : option ocval :=
+  match v,p' with
+  | OCVcap (OCsealable (OCVmem p l b1 b2 a)), OCVint i =>
+      match decode_locality i with
+      | Some l' => if locFlowsTo l' l then Some (OCVcap (OCsealable (OCVmem p l' b1 b2 a))) else None
+      | None => None
+      end
+  | _,_ => None
+  end.
+
+Definition set_address (v: ocval) (a: ocval) : option ocval :=
+  match v,a with
+  (* if the source is a memory capability *)
+  | OCVcap (OCsealable (OCVmem p l b1 b2 b)), OCVptr (heap_ptr a) =>
+      if isE p || isU p then None
+      else Some (OCVcap (OCsealable (OCVmem p l b1 b2 a)))
+  | OCVcap (OCsealable (OCVmem p l b1 b2 b)), OCVptr (stack_ptr a) =>
+      if isE p || negb (isU p) then None
+      else if Ptrofs.unsigned a <=? Ptrofs.unsigned b then
+             Some (OCVcap (OCsealable (OCVmem p l b1 b2 a)))
+           else None
+  | OCVcap (OCsealable (OCVmem p l b1 b2 b)), OCVint i =>
+      if (isE p) then None
+      else
+        if (isU p)
+        then
+          if Int.unsigned i <=? Ptrofs.unsigned b then
+            Some (OCVcap (OCsealable (OCVmem p l b1 b2 (Ptrofs.of_int i))))
+          else
+            None
+        else Some (OCVcap (OCsealable (OCVmem p l b1 b2 (Ptrofs.of_int i))))
+  (* if the source is a seal capability *)
+  | OCVcap (OCsealable (OCVseal s1 s2 s)), OCVptr (seal_ptr a) =>
+      Some (OCVcap (OCsealable (OCVseal s1 s2 a)))
+  | OCVcap (OCsealable (OCVseal s1 s2 s)), OCVint i =>
+      Some (OCVcap (OCsealable (OCVseal s1 s2 (Ptrofs.of_int i))))
+  (* if the new address is of the wrong type, we define behavior as undefined *)
+  | OCVcap (OCsealable _), _ => Some OCVundef
+  (* if the source is either sealed, or not a capability, we fail *)
+  | _,_ => None
+  end.
+
+Definition set_addressl (v: ocval) (a: ocval) : option ocval :=
+  match v,a with
+  (* if the source is a memory capability *)
+  | OCVcap (OCsealable (OCVmem p l b1 b2 b)), OCVptr (heap_ptr a) =>
+      if isE p || isU p then None
+      else Some (OCVcap (OCsealable (OCVmem p l b1 b2 a)))
+  | OCVcap (OCsealable (OCVmem p l b1 b2 b)), OCVptr (stack_ptr a) =>
+      if isE p || negb (isU p) then None
+      else if Ptrofs.unsigned a <=? Ptrofs.unsigned b then
+             Some (OCVcap (OCsealable (OCVmem p l b1 b2 a)))
+           else None
+  | OCVcap (OCsealable (OCVmem p l b1 b2 b)), OCVlong i =>
+      if (isE p) then None
+      else
+        if (isU p)
+        then
+          if Int64.unsigned i <=? Ptrofs.unsigned b then
+            Some (OCVcap (OCsealable (OCVmem p l b1 b2 (Ptrofs.of_int64 i))))
+          else
+            None
+        else Some (OCVcap (OCsealable (OCVmem p l b1 b2 (Ptrofs.of_int64 i))))
+  (* if the source is a seal capability *)
+  | OCVcap (OCsealable (OCVseal s1 s2 s)), OCVptr (seal_ptr a) =>
+      Some (OCVcap (OCsealable (OCVseal s1 s2 a)))
+  | OCVcap (OCsealable (OCVseal s1 s2 s)), OCVlong i =>
+      Some (OCVcap (OCsealable (OCVseal s1 s2 (Ptrofs.of_int64 i))))
+  (* if the new address is of the wrong type, we define behavior as undefined *)
+  | OCVcap (OCsealable _), _ => Some OCVundef
+  (* if the source is either sealed, or not a capability, we fail *)
+  | _,_ => None
+  end.
+
+Definition incr_address (v: ocval) (i: ocval) : option ocval :=
+  match v,i with
+  | OCVcap (OCsealable (OCVmem p l b1 b2 b)), OCVint i =>
+      let new := Ptrofs.add b (Ptrofs.of_int i) in
+      if (isE p) then None
+      else
+        if (isU p)
+        then
+          if Ptrofs.unsigned new <=? Ptrofs.unsigned b then
+            Some (OCVcap (OCsealable (OCVmem p l b1 b2 new)))
+          else
+            None
+        else Some (OCVcap (OCsealable (OCVmem p l b1 b2 new)))
+  | OCVcap (OCsealable (OCVmem p l b1 b2 b)), OCVptr (heap_ptr a) =>
+      let new := Ptrofs.add b a in
+      if isE p || isU p then None
+      else Some (OCVcap (OCsealable (OCVmem p l b1 b2 new)))
+  | OCVcap (OCsealable (OCVmem p l b1 b2 b)), OCVptr (stack_ptr a) =>
+      let new := Ptrofs.add b a in
+      if isE p || negb (isU p) then None
+      else if Ptrofs.unsigned new <=? Ptrofs.unsigned b then
+             Some (OCVcap (OCsealable (OCVmem p l b1 b2 new)))
+           else None
+  | OCVcap (OCsealable (OCVseal s1 s2 s)), OCVptr (seal_ptr a) =>
+      Some (OCVcap (OCsealable (OCVseal s1 s2 (Ptrofs.add s a))))
+  | OCVcap (OCsealable (OCVseal s1 s2 s)), OCVint i =>
+      Some (OCVcap (OCsealable (OCVseal s1 s2 (Ptrofs.add s (Ptrofs.of_int i)))))
+  | OCVcap (OCsealable _), _ => Some OCVundef
+  | _,_ => None
+  end.
+
+Definition incr_addressl (v: ocval) (i: ocval) : option ocval :=
+  match v,i with
+  | OCVcap (OCsealable (OCVmem p l b1 b2 b)), OCVlong i =>
+      let new := Ptrofs.add b (Ptrofs.of_int64 i) in
+      if (isE p) then None
+      else
+        if (isU p)
+        then
+          if Ptrofs.unsigned new <=? Ptrofs.unsigned b then
+            Some (OCVcap (OCsealable (OCVmem p l b1 b2 new)))
+          else
+            None
+        else Some (OCVcap (OCsealable (OCVmem p l b1 b2 new)))
+  | OCVcap (OCsealable (OCVmem p l b1 b2 b)), OCVptr (heap_ptr a) =>
+      let new := Ptrofs.add b a in
+      if isE p || isU p then None
+      else Some (OCVcap (OCsealable (OCVmem p l b1 b2 new)))
+  | OCVcap (OCsealable (OCVmem p l b1 b2 b)), OCVptr (stack_ptr a) =>
+      let new := Ptrofs.add b a in
+      if isE p || negb (isU p) then None
+      else if Ptrofs.unsigned new <=? Ptrofs.unsigned b then
+             Some (OCVcap (OCsealable (OCVmem p l b1 b2 new)))
+           else None
+  | OCVcap (OCsealable (OCVseal s1 s2 s)), OCVptr (seal_ptr a) =>
+      Some (OCVcap (OCsealable (OCVseal s1 s2 (Ptrofs.add s a))))
+  | OCVcap (OCsealable (OCVseal s1 s2 s)), OCVlong i =>
+      Some (OCVcap (OCsealable (OCVseal s1 s2 (Ptrofs.add s (Ptrofs.of_int64 i)))))
+  | OCVcap (OCsealable _), _ => Some OCVundef
+  | _,_ => None
+  end.
+
+Definition decr_address (v: ocval) (i: ocval) : option ocval :=
+  match v,i with
+  | OCVcap (OCsealable (OCVmem p l b1 b2 b)), OCVint i =>
+      let new := Ptrofs.sub b (Ptrofs.of_int i) in
+      if (isE p) then None
+      else
+        if (isU p)
+        then
+          if Ptrofs.unsigned new <=? Ptrofs.unsigned b then
+            Some (OCVcap (OCsealable (OCVmem p l b1 b2 new)))
+          else
+            None
+        else Some (OCVcap (OCsealable (OCVmem p l b1 b2 new)))
+  | OCVcap (OCsealable (OCVmem p l b1 b2 b)), OCVptr (heap_ptr a) =>
+      let new := Ptrofs.sub b a in
+      if isE p || isU p then None
+      else Some (OCVcap (OCsealable (OCVmem p l b1 b2 new)))
+  | OCVcap (OCsealable (OCVmem p l b1 b2 b)), OCVptr (stack_ptr a) =>
+      let new := Ptrofs.sub b a in
+      if isE p || negb (isU p) then None
+      else if Ptrofs.unsigned new <=? Ptrofs.unsigned b then
+             Some (OCVcap (OCsealable (OCVmem p l b1 b2 new)))
+           else None
+  | OCVcap (OCsealable (OCVseal s1 s2 s)), OCVptr (seal_ptr a) =>
+      Some (OCVcap (OCsealable (OCVseal s1 s2 (Ptrofs.sub s a))))
+  | OCVcap (OCsealable (OCVseal s1 s2 s)), OCVint i =>
+      Some (OCVcap (OCsealable (OCVseal s1 s2 (Ptrofs.sub s (Ptrofs.of_int i)))))
+  | OCVcap (OCsealable _), _ => Some OCVundef
+  | _,_ => None
+  end.
+
+Definition decr_addressl (v: ocval) (i: ocval) : option ocval :=
+  match v,i with
+  | OCVcap (OCsealable (OCVmem p l b1 b2 b)), OCVlong i =>
+      let new := Ptrofs.sub b (Ptrofs.of_int64 i) in
+      if (isE p) then None
+      else
+        if (isU p)
+        then
+          if Ptrofs.unsigned new <=? Ptrofs.unsigned b then
+            Some (OCVcap (OCsealable (OCVmem p l b1 b2 new)))
+          else
+            None
+        else Some (OCVcap (OCsealable (OCVmem p l b1 b2 new)))
+  | OCVcap (OCsealable (OCVmem p l b1 b2 b)), OCVptr (heap_ptr a) =>
+      let new := Ptrofs.sub b a in
+      if isE p || isU p then None
+      else Some (OCVcap (OCsealable (OCVmem p l b1 b2 new)))
+  | OCVcap (OCsealable (OCVmem p l b1 b2 b)), OCVptr (stack_ptr a) =>
+      let new := Ptrofs.sub b a in
+      if isE p || negb (isU p) then None
+      else if Ptrofs.unsigned new <=? Ptrofs.unsigned b then
+             Some (OCVcap (OCsealable (OCVmem p l b1 b2 new)))
+           else None
+  | OCVcap (OCsealable (OCVseal s1 s2 s)), OCVptr (seal_ptr a) =>
+      Some (OCVcap (OCsealable (OCVseal s1 s2 (Ptrofs.sub s a))))
+  | OCVcap (OCsealable (OCVseal s1 s2 s)), OCVlong i =>
+      Some (OCVcap (OCsealable (OCVseal s1 s2 (Ptrofs.sub s (Ptrofs.of_int64 i)))))
+  | OCVcap (OCsealable _), _ => Some OCVundef
+  | _,_ => None
+  end.
+
 
 (** Normalize a value to the given type, turning it into Vundef if it does not
     match the type. *)
@@ -1458,10 +1796,10 @@ Lemma load_result_rettype:
   forall chunk v, has_rettype (load_result chunk v) (rettype_of_chunk chunk).
 Proof.
   intros. unfold has_rettype; destruct chunk; destruct v; simpl; auto.
-- rewrite Int.sign_ext_idem by omega; auto.
-- rewrite Int.zero_ext_idem by omega; auto.
-- rewrite Int.sign_ext_idem by omega; auto.
-- rewrite Int.zero_ext_idem by omega; auto.
+- rewrite Int.sign_ext_idem by lia; auto.
+- rewrite Int.zero_ext_idem by lia; auto.
+- rewrite Int.sign_ext_idem by lia; auto.
+- rewrite Int.zero_ext_idem by lia; auto.
 - destruct Archi.ptr64 eqn:SF; simpl; auto.
 - destruct Archi.ptr64 eqn:SF; simpl; auto.
 - destruct Archi.ptr64 eqn:SF; simpl; auto.
@@ -1490,14 +1828,14 @@ Theorem cast8unsigned_and:
   forall x, zero_ext 8 x = and x (OCVint(Int.repr 255)).
 Proof.
   destruct x; simpl; auto. decEq.
-  change 255 with (two_p 8 - 1). apply Int.zero_ext_and. omega.
+  change 255 with (two_p 8 - 1). apply Int.zero_ext_and. lia.
 Qed.
 
 Theorem cast16unsigned_and:
   forall x, zero_ext 16 x = and x (OCVint(Int.repr 65535)).
 Proof.
   destruct x; simpl; auto. decEq.
-  change 65535 with (two_p 16 - 1). apply Int.zero_ext_and. omega.
+  change 65535 with (two_p 16 - 1). apply Int.zero_ext_and. lia.
 Qed.
 
 Theorem bool_of_val_of_bool:
@@ -1743,7 +2081,7 @@ Proof.
    unfold divs. rewrite Int.eq_false; try discriminate.
    simpl. rewrite (Int.eq_false Int.one Int.mone); try discriminate.
    rewrite andb_false_intro2; auto. f_equal. f_equal.
-   rewrite Int.divs_one; auto. replace Int.zwordsize with 32; auto. omega.
+   rewrite Int.divs_one; auto. replace Int.zwordsize with 32; auto. lia.
 Qed.
 
 Theorem divu_pow2:
@@ -1870,7 +2208,7 @@ Proof.
   destruct (Int.ltu i0 (Int.repr 31)) eqn:?; inv H1.
   exploit Int.ltu_inv; eauto. change (Int.unsigned (Int.repr 31)) with 31. intros.
   assert (Int.ltu i0 Int.iwordsize = true).
-    unfold Int.ltu. apply zlt_true. change (Int.unsigned Int.iwordsize) with 32. omega.
+    unfold Int.ltu. apply zlt_true. change (Int.unsigned Int.iwordsize) with 32. lia.
   simpl. rewrite H0. simpl. decEq. rewrite Int.shrx_carry; auto.
 Qed.
 
@@ -1885,7 +2223,7 @@ Proof.
   destruct (Int.ltu i0 (Int.repr 31)) eqn:?; inv H1.
   exploit Int.ltu_inv; eauto. change (Int.unsigned (Int.repr 31)) with 31. intros.
   assert (Int.ltu i0 Int.iwordsize = true).
-    unfold Int.ltu. apply zlt_true. change (Int.unsigned Int.iwordsize) with 32. omega.
+    unfold Int.ltu. apply zlt_true. change (Int.unsigned Int.iwordsize) with 32. lia.
   exists i; exists i0; intuition.
   rewrite Int.shrx_shr; auto. destruct (Int.lt i Int.zero); simpl; rewrite H0; auto.
 Qed.
@@ -1908,12 +2246,12 @@ Proof.
   replace (Int.ltu (Int.sub (Int.repr 32) n) Int.iwordsize) with true. simpl.
   replace (Int.ltu n Int.iwordsize) with true.
   f_equal; apply Int.shrx_shr_2; assumption.
-  symmetry; apply zlt_true. change (Int.unsigned n < 32); omega.
+  symmetry; apply zlt_true. change (Int.unsigned n < 32); lia.
   symmetry; apply zlt_true. unfold Int.sub. change (Int.unsigned (Int.repr 32)) with 32.
   assert (Int.unsigned n <> 0). { red; intros; elim H. rewrite <- (Int.repr_unsigned n), H0. auto. }
   rewrite Int.unsigned_repr.
-  change (Int.unsigned Int.iwordsize) with 32; omega.
-  assert (32 < Int.max_unsigned) by reflexivity. omega.
+  change (Int.unsigned Int.iwordsize) with 32; lia.
+  assert (32 < Int.max_unsigned) by reflexivity. lia.
 Qed.
 
 Theorem or_rolm:
@@ -2119,7 +2457,7 @@ Proof.
   rewrite (Int64.eq_false Int64.one Int64.mone); try discriminate.
   rewrite andb_false_intro2; auto.
   simpl. f_equal. f_equal. apply Int64.divs_one.
-  replace Int64.zwordsize with 64; auto. omega.
+  replace Int64.zwordsize with 64; auto. lia.
 Qed.
 
 Theorem divlu_pow2:
@@ -2162,7 +2500,7 @@ Proof.
   destruct (Int.ltu i0 (Int.repr 63)) eqn:?; inv H1.
   exploit Int.ltu_inv; eauto. change (Int.unsigned (Int.repr 63)) with 63. intros.
   assert (Int.ltu i0 Int64.iwordsize' = true).
-    unfold Int.ltu. apply zlt_true. change (Int.unsigned Int64.iwordsize') with 64. omega.
+    unfold Int.ltu. apply zlt_true. change (Int.unsigned Int64.iwordsize') with 64. lia.
   simpl. rewrite H0. simpl. decEq. rewrite Int64.shrx'_carry; auto.
 Qed.
 
@@ -2183,12 +2521,12 @@ Proof.
   replace (Int.ltu (Int.sub (Int.repr 64) n) Int64.iwordsize') with true. simpl.
   replace (Int.ltu n Int64.iwordsize') with true.
   f_equal; apply Int64.shrx'_shr_2; assumption.
-  symmetry; apply zlt_true. change (Int.unsigned n < 64); omega.
+  symmetry; apply zlt_true. change (Int.unsigned n < 64); lia.
   symmetry; apply zlt_true. unfold Int.sub. change (Int.unsigned (Int.repr 64)) with 64.
   assert (Int.unsigned n <> 0). { red; intros; elim H. rewrite <- (Int.repr_unsigned n), H0. auto. }
   rewrite Int.unsigned_repr.
-  change (Int.unsigned Int64.iwordsize') with 64; omega.
-  assert (64 < Int.max_unsigned) by reflexivity. omega.
+  change (Int.unsigned Int64.iwordsize') with 64; lia.
+  assert (64 < Int.max_unsigned) by reflexivity. lia.
 Qed.
 
 Theorem negate_cmp_bool:
@@ -2671,23 +3009,26 @@ Lemma offset_ptr_zero:
 Proof.
   intros. destruct v,v'; simpl; auto; inv H.
   all: try (destruct o,o;inv H1).
-  3: destruct p;simpl.
-  all: rewrite Ptrofs.add_zero; auto.
+  all: try (edestruct (Ptrofs.unsigned _ + Ptrofs.unsigned Ptrofs.zero <? Ptrofs.modulus);discriminate).
+  all: try (edestruct (Ptrofs.unsigned _ + Ptrofs.unsigned Ptrofs.zero <? Ptrofs.modulus));try inv H0;simpl.
+  rewrite Ptrofs.add_zero; auto.
+  rewrite Ptrofs.add_zero; auto.
+  unfold pointer_arith. destruct p;simpl; rewrite Ptrofs.add_zero;auto.
 Qed.
 
-Lemma offset_ptr_assoc:
-  forall v d1 d2 v1 v2 v3,
-    offset_ptr v d1 = Some v1 ->
-    offset_ptr v1 d2 = Some v3 ->
-    offset_ptr v (Ptrofs.add d1 d2) = Some v2 ->
-    v2 = v3.
-Proof.
-  intros. destruct v; simpl; auto; inv H; inv H1; inv H0;auto.
-  destruct o,o;inv H2; inv H3; inv H1.
-  3: destruct p;simpl.
-  all: f_equal ; f_equal. 1,2: f_equal.
-  all: rewrite Ptrofs.add_assoc;auto.  
-Qed.
+(* Lemma offset_ptr_assoc: *)
+(*   forall v d1 d2 v1 v2 v3, *)
+(*     offset_ptr v d1 = Some v1 -> *)
+(*     offset_ptr v1 d2 = Some v3 -> *)
+(*     offset_ptr v (Ptrofs.add d1 d2) = Some v2 -> *)
+(*     v2 = v3. *)
+(* Proof. *)
+(*   intros. destruct v; simpl; auto; inv H; inv H1; inv H0;auto. *)
+(*   destruct o,o;inv H2; inv H3; inv H1. *)
+(*   3: destruct p;simpl. *)
+(*   all: f_equal ; f_equal. 1,2: f_equal. *)
+(*   all: rewrite Ptrofs.add_assoc;auto. *)
+(* Qed. *)
 
 Lemma lessdef_normalize:
   forall v ty, (is_cap v -> ty = CTcap \/ ty = CTanycap) -> lessdef (normalize v ty) v.
@@ -2732,428 +3073,4 @@ intros; unfold select. destruct H.
   apply normalize_lessdef. destruct b; auto.
 Qed.
 
-(* (** * Values and memory injections *) *)
-
-(* (** A memory injection [f] is a function from addresses to either [None] *)
-(*   or [Some] of an address and an offset.  It defines a correspondence *)
-(*   between the blocks of two memory states [m1] and [m2]: *)
-(* - if [f b = None], the block [b] of [m1] has no equivalent in [m2]; *)
-(* - if [f b = Some(b', ofs)], the block [b] of [m2] corresponds to *)
-(*   a sub-block at offset [ofs] of the block [b'] in [m2]. *)
-(* *) *)
-
-(* Definition meminj : Type := block -> option (block * Z). *)
-
-(* (** A memory injection defines a relation between values that is the *)
-(*   identity relation, except for pointer values which are shifted *)
-(*   as prescribed by the memory injection.  Moreover, [Vundef] values *)
-(*   inject into any other value. *) *)
-
-(* Inductive inject (mi: meminj): ocval -> ocval -> Prop := *)
-(*   | inject_int: *)
-(*       forall i, inject mi (OCVint i) (OCVint i) *)
-(*   | inject_long: *)
-(*       forall i, inject mi (OCVlong i) (OCVlong i) *)
-(*   | inject_float: *)
-(*       forall f, inject mi (OCVfloat f) (OCVfloat f) *)
-(*   | inject_single: *)
-(*       forall f, inject mi (OCVsingle f) (OCVsingle f) *)
-(*   | inject_ptr: *)
-(*       forall b1 ofs1 b2 ofs2 delta, *)
-(*       mi b1 = Some (b2, delta) -> *)
-(*       ofs2 = Ptrofs.add ofs1 (Ptrofs.repr delta) -> *)
-(*       inject mi (Vptr b1 ofs1) (Vptr b2 ofs2) *)
-(*   | val_inject_undef: forall v, *)
-(*       inject mi Vundef v. *)
-
-(* Hint Constructors inject : core. *)
-
-(* Inductive inject_list (mi: meminj): list val -> list val-> Prop:= *)
-(*   | inject_list_nil : *)
-(*       inject_list mi nil nil *)
-(*   | inject_list_cons : forall v v' vl vl' , *)
-(*       inject mi v v' -> inject_list mi vl vl'-> *)
-(*       inject_list mi (v :: vl) (v' :: vl'). *)
-
-(* Hint Resolve inject_list_nil inject_list_cons : core. *)
-
-
-(* Lemma inject_list_not_ptr (mi: meminj): *)
-(*   forall vl vl', *)
-(*     inject_list mi vl vl' -> *)
-(*     Forall not_ptr vl -> *)
-(*     Forall not_ptr vl'. *)
-(* Proof. *)
-(*   intros vl. induction vl. *)
-(*   - intros. inv H. eauto. *)
-(*   - intros. inv H. inv H0. *)
-(*     constructor. *)
-(*     + inv H3; auto. inv H2. *)
-(*     + eauto. *)
-(* Qed. *)
-
-
-(* Lemma inject_ptrofs: *)
-(*   forall mi i, inject mi (Vptrofs i) (Vptrofs i). *)
-(* Proof. *)
-(*   unfold Vptrofs; intros. destruct Archi.ptr64; auto. *)
-(* Qed. *)
-
-(* Hint Resolve inject_ptrofs : core. *)
-
-(* Section VAL_INJ_OPS. *)
-
-(* Variable f: meminj. *)
-
-(* Lemma load_result_inject: *)
-(*   forall chunk v1 v2, *)
-(*   inject f v1 v2 -> *)
-(*   inject f (Val.load_result chunk v1) (Val.load_result chunk v2). *)
-(* Proof. *)
-(*   intros. inv H; destruct chunk; simpl; try constructor; destruct Archi.ptr64; econstructor; eauto. *)
-(* Qed. *)
-
-(* Remark add_inject: *)
-(*   forall v1 v1' v2 v2', *)
-(*   inject f v1 v1' -> *)
-(*   inject f v2 v2' -> *)
-(*   inject f (Val.add v1 v2) (Val.add v1' v2'). *)
-(* Proof. *)
-(*   intros. unfold Val.add. destruct Archi.ptr64 eqn:SF. *)
-(* - inv H; inv H0; constructor. *)
-(* - inv H; inv H0; simpl; auto. *)
-(* + econstructor; eauto. *)
-(*   rewrite ! Ptrofs.add_assoc. decEq. apply Ptrofs.add_commut. *)
-(* + econstructor; eauto. *)
-(*   rewrite ! Ptrofs.add_assoc. decEq. apply Ptrofs.add_commut. *)
-(* Qed. *)
-
-(* Remark sub_inject: *)
-(*   forall v1 v1' v2 v2', *)
-(*   inject f v1 v1' -> *)
-(*   inject f v2 v2' -> *)
-(*   inject f (Val.sub v1 v2) (Val.sub v1' v2'). *)
-(* Proof. *)
-(*   intros. unfold Val.sub. destruct Archi.ptr64 eqn:SF. *)
-(* - inv H; inv H0; constructor. *)
-(* - inv H; inv H0; simpl; auto. *)
-(* + econstructor; eauto. *)
-(*   rewrite Ptrofs.sub_add_l. auto. *)
-(* + destruct (eq_block b1 b0); auto. *)
-(*   subst. rewrite H1 in H. inv H. rewrite dec_eq_true. *)
-(*   rewrite Ptrofs.sub_shifted. auto. *)
-(* Qed. *)
-
-(* Remark addl_inject: *)
-(*   forall v1 v1' v2 v2', *)
-(*   inject f v1 v1' -> *)
-(*   inject f v2 v2' -> *)
-(*   inject f (Val.addl v1 v2) (Val.addl v1' v2'). *)
-(* Proof. *)
-(*   intros. unfold Val.addl. destruct Archi.ptr64 eqn:SF. *)
-(* - inv H; inv H0; simpl; auto. *)
-(* + econstructor; eauto. *)
-(*   rewrite ! Ptrofs.add_assoc. decEq. apply Ptrofs.add_commut. *)
-(* + econstructor; eauto. *)
-(*   rewrite ! Ptrofs.add_assoc. decEq. apply Ptrofs.add_commut. *)
-(* - inv H; inv H0; constructor. *)
-(* Qed. *)
-
-(* Remark subl_inject: *)
-(*   forall v1 v1' v2 v2', *)
-(*   inject f v1 v1' -> *)
-(*   inject f v2 v2' -> *)
-(*   inject f (Val.subl v1 v2) (Val.subl v1' v2'). *)
-(* Proof. *)
-(*   intros. unfold Val.subl. destruct Archi.ptr64 eqn:SF. *)
-(* - inv H; inv H0; simpl; auto. *)
-(* + econstructor; eauto. *)
-(*   rewrite Ptrofs.sub_add_l. auto. *)
-(* + destruct (eq_block b1 b0); auto. *)
-(*   subst. rewrite H1 in H. inv H. rewrite dec_eq_true. *)
-(*   rewrite Ptrofs.sub_shifted. auto. *)
-(* - inv H; inv H0; constructor. *)
-(* Qed. *)
-
-(* Lemma offset_ptr_inject: *)
-(*   forall v v' ofs, inject f v v' -> inject f (offset_ptr v ofs) (offset_ptr v' ofs). *)
-(* Proof. *)
-(*   intros. inv H; simpl; econstructor; eauto. *)
-(*   rewrite ! Ptrofs.add_assoc. f_equal. apply Ptrofs.add_commut. *)
-(* Qed. *)
-
-(* Lemma cmp_bool_inject: *)
-(*   forall c v1 v2 v1' v2' b, *)
-(*   inject f v1 v1' -> *)
-(*   inject f v2 v2' -> *)
-(*   Val.cmp_bool c v1 v2 = Some b -> *)
-(*   Val.cmp_bool c v1' v2' = Some b. *)
-(* Proof. *)
-(*   intros. inv H; simpl in H1; try discriminate; inv H0; simpl in H1; try discriminate; simpl; auto. *)
-(* Qed. *)
-
-(* Variable (valid_ptr1 valid_ptr2 : block -> Z -> bool). *)
-
-(* Let weak_valid_ptr1 b ofs := valid_ptr1 b ofs || valid_ptr1 b (ofs - 1). *)
-(* Let weak_valid_ptr2 b ofs := valid_ptr2 b ofs || valid_ptr2 b (ofs - 1). *)
-
-(* Hypothesis valid_ptr_inj: *)
-(*   forall b1 ofs b2 delta, *)
-(*   f b1 = Some(b2, delta) -> *)
-(*   valid_ptr1 b1 (Ptrofs.unsigned ofs) = true -> *)
-(*   valid_ptr2 b2 (Ptrofs.unsigned (Ptrofs.add ofs (Ptrofs.repr delta))) = true. *)
-
-(* Hypothesis weak_valid_ptr_inj: *)
-(*   forall b1 ofs b2 delta, *)
-(*   f b1 = Some(b2, delta) -> *)
-(*   weak_valid_ptr1 b1 (Ptrofs.unsigned ofs) = true -> *)
-(*   weak_valid_ptr2 b2 (Ptrofs.unsigned (Ptrofs.add ofs (Ptrofs.repr delta))) = true. *)
-
-(* Hypothesis weak_valid_ptr_no_overflow: *)
-(*   forall b1 ofs b2 delta, *)
-(*   f b1 = Some(b2, delta) -> *)
-(*   weak_valid_ptr1 b1 (Ptrofs.unsigned ofs) = true -> *)
-(*   0 <= Ptrofs.unsigned ofs + Ptrofs.unsigned (Ptrofs.repr delta) <= Ptrofs.max_unsigned. *)
-
-(* Hypothesis valid_different_ptrs_inj: *)
-(*   forall b1 ofs1 b2 ofs2 b1' delta1 b2' delta2, *)
-(*   b1 <> b2 -> *)
-(*   valid_ptr1 b1 (Ptrofs.unsigned ofs1) = true -> *)
-(*   valid_ptr1 b2 (Ptrofs.unsigned ofs2) = true -> *)
-(*   f b1 = Some (b1', delta1) -> *)
-(*   f b2 = Some (b2', delta2) -> *)
-(*   b1' <> b2' \/ *)
-(*   Ptrofs.unsigned (Ptrofs.add ofs1 (Ptrofs.repr delta1)) <> Ptrofs.unsigned (Ptrofs.add ofs2 (Ptrofs.repr delta2)). *)
-
-(* Lemma cmpu_bool_inject: *)
-(*   forall c v1 v2 v1' v2' b, *)
-(*   inject f v1 v1' -> *)
-(*   inject f v2 v2' -> *)
-(*   Val.cmpu_bool valid_ptr1 c v1 v2 = Some b -> *)
-(*   Val.cmpu_bool valid_ptr2 c v1' v2' = Some b. *)
-(* Proof. *)
-(*   Local Opaque Int.add Ptrofs.add. *)
-(*   intros. *)
-(*   unfold cmpu_bool in *; destruct Archi.ptr64; *)
-(*   inv H; simpl in H1; try discriminate; inv H0; simpl in H1; try discriminate; simpl; auto. *)
-(* - fold (weak_valid_ptr1 b1 (Ptrofs.unsigned ofs1)) in H1. *)
-(*   fold (weak_valid_ptr2 b2 (Ptrofs.unsigned (Ptrofs.add ofs1 (Ptrofs.repr delta)))). *)
-(*   destruct (Int.eq i Int.zero); auto. *)
-(*   destruct (weak_valid_ptr1 b1 (Ptrofs.unsigned ofs1)) eqn:E; try discriminate. *)
-(*   erewrite weak_valid_ptr_inj by eauto. auto. *)
-(* - fold (weak_valid_ptr1 b1 (Ptrofs.unsigned ofs1)) in H1. *)
-(*   fold (weak_valid_ptr2 b2 (Ptrofs.unsigned (Ptrofs.add ofs1 (Ptrofs.repr delta)))). *)
-(*   destruct (Int.eq i Int.zero); auto. *)
-(*   destruct (weak_valid_ptr1 b1 (Ptrofs.unsigned ofs1)) eqn:E; try discriminate. *)
-(*   erewrite weak_valid_ptr_inj by eauto. auto. *)
-(* - fold (weak_valid_ptr1 b1 (Ptrofs.unsigned ofs1)) in H1. *)
-(*   fold (weak_valid_ptr1 b0 (Ptrofs.unsigned ofs0)) in H1. *)
-(*   fold (weak_valid_ptr2 b2 (Ptrofs.unsigned (Ptrofs.add ofs1 (Ptrofs.repr delta)))). *)
-(*   fold (weak_valid_ptr2 b3 (Ptrofs.unsigned (Ptrofs.add ofs0 (Ptrofs.repr delta0)))). *)
-(*   destruct (eq_block b1 b0); subst. *)
-(*   rewrite H in H2. inv H2. rewrite dec_eq_true. *)
-(*   destruct (weak_valid_ptr1 b0 (Ptrofs.unsigned ofs1)) eqn:?; try discriminate. *)
-(*   destruct (weak_valid_ptr1 b0 (Ptrofs.unsigned ofs0)) eqn:?; try discriminate. *)
-(*   erewrite !weak_valid_ptr_inj by eauto. simpl. *)
-(*   rewrite <-H1. simpl. decEq. apply Ptrofs.translate_cmpu; eauto. *)
-(*   destruct (valid_ptr1 b1 (Ptrofs.unsigned ofs1)) eqn:?; try discriminate. *)
-(*   destruct (valid_ptr1 b0 (Ptrofs.unsigned ofs0)) eqn:?; try discriminate. *)
-(*   destruct (eq_block b2 b3); subst. *)
-(*   assert (valid_ptr_implies: forall b ofs, valid_ptr1 b ofs = true -> weak_valid_ptr1 b ofs = true). *)
-(*     intros. unfold weak_valid_ptr1. rewrite H0; auto. *)
-(*   erewrite !weak_valid_ptr_inj by eauto using valid_ptr_implies. simpl. *)
-(*   exploit valid_different_ptrs_inj; eauto. intros [?|?]; [congruence |]. *)
-(*   destruct c; simpl in H1; inv H1. *)
-(*   simpl; decEq. rewrite Ptrofs.eq_false; auto. congruence. *)
-(*   simpl; decEq. rewrite Ptrofs.eq_false; auto. congruence. *)
-(*   now erewrite !valid_ptr_inj by eauto. *)
-(* Qed. *)
-
-(* Lemma cmplu_bool_inject: *)
-(*   forall c v1 v2 v1' v2' b, *)
-(*   inject f v1 v1' -> *)
-(*   inject f v2 v2' -> *)
-(*   Val.cmplu_bool valid_ptr1 c v1 v2 = Some b -> *)
-(*   Val.cmplu_bool valid_ptr2 c v1' v2' = Some b. *)
-(* Proof. *)
-(*   Local Opaque Int64.add Ptrofs.add. *)
-(*   intros. *)
-(*   unfold cmplu_bool in *; destruct Archi.ptr64; *)
-(*   inv H; simpl in H1; try discriminate; inv H0; simpl in H1; try discriminate; simpl; auto. *)
-(* - fold (weak_valid_ptr1 b1 (Ptrofs.unsigned ofs1)) in H1. *)
-(*   fold (weak_valid_ptr2 b2 (Ptrofs.unsigned (Ptrofs.add ofs1 (Ptrofs.repr delta)))). *)
-(*   destruct (Int64.eq i Int64.zero); auto. *)
-(*   destruct (weak_valid_ptr1 b1 (Ptrofs.unsigned ofs1)) eqn:E; try discriminate. *)
-(*   erewrite weak_valid_ptr_inj by eauto. auto. *)
-(* - fold (weak_valid_ptr1 b1 (Ptrofs.unsigned ofs1)) in H1. *)
-(*   fold (weak_valid_ptr2 b2 (Ptrofs.unsigned (Ptrofs.add ofs1 (Ptrofs.repr delta)))). *)
-(*   destruct (Int64.eq i Int64.zero); auto. *)
-(*   destruct (weak_valid_ptr1 b1 (Ptrofs.unsigned ofs1)) eqn:E; try discriminate. *)
-(*   erewrite weak_valid_ptr_inj by eauto. auto. *)
-(* - fold (weak_valid_ptr1 b1 (Ptrofs.unsigned ofs1)) in H1. *)
-(*   fold (weak_valid_ptr1 b0 (Ptrofs.unsigned ofs0)) in H1. *)
-(*   fold (weak_valid_ptr2 b2 (Ptrofs.unsigned (Ptrofs.add ofs1 (Ptrofs.repr delta)))). *)
-(*   fold (weak_valid_ptr2 b3 (Ptrofs.unsigned (Ptrofs.add ofs0 (Ptrofs.repr delta0)))). *)
-(*   destruct (eq_block b1 b0); subst. *)
-(*   rewrite H in H2. inv H2. rewrite dec_eq_true. *)
-(*   destruct (weak_valid_ptr1 b0 (Ptrofs.unsigned ofs1)) eqn:?; try discriminate. *)
-(*   destruct (weak_valid_ptr1 b0 (Ptrofs.unsigned ofs0)) eqn:?; try discriminate. *)
-(*   erewrite !weak_valid_ptr_inj by eauto. simpl. *)
-(*   rewrite <-H1. simpl. decEq. apply Ptrofs.translate_cmpu; eauto. *)
-(*   destruct (valid_ptr1 b1 (Ptrofs.unsigned ofs1)) eqn:?; try discriminate. *)
-(*   destruct (valid_ptr1 b0 (Ptrofs.unsigned ofs0)) eqn:?; try discriminate. *)
-(*   destruct (eq_block b2 b3); subst. *)
-(*   assert (valid_ptr_implies: forall b ofs, valid_ptr1 b ofs = true -> weak_valid_ptr1 b ofs = true). *)
-(*     intros. unfold weak_valid_ptr1. rewrite H0; auto. *)
-(*   erewrite !weak_valid_ptr_inj by eauto using valid_ptr_implies. simpl. *)
-(*   exploit valid_different_ptrs_inj; eauto. intros [?|?]; [congruence |]. *)
-(*   destruct c; simpl in H1; inv H1. *)
-(*   simpl; decEq. rewrite Ptrofs.eq_false; auto. congruence. *)
-(*   simpl; decEq. rewrite Ptrofs.eq_false; auto. congruence. *)
-(*   now erewrite !valid_ptr_inj by eauto. *)
-(* Qed. *)
-
-(* Lemma longofwords_inject: *)
-(*   forall v1 v2 v1' v2', *)
-(*   inject f v1 v1' -> inject f v2 v2' -> inject f (Val.longofwords v1 v2) (Val.longofwords v1' v2'). *)
-(* Proof. *)
-(*   intros. unfold Val.longofwords. inv H; auto. inv H0; auto. *)
-(* Qed. *)
-
-(* Lemma loword_inject: *)
-(*   forall v v', inject f v v' -> inject f (Val.loword v) (Val.loword v'). *)
-(* Proof. *)
-(*   intros. unfold Val.loword; inv H; auto. *)
-(* Qed. *)
-
-(* Lemma hiword_inject: *)
-(*   forall v v', inject f v v' -> inject f (Val.hiword v) (Val.hiword v'). *)
-(* Proof. *)
-(*   intros. unfold Val.hiword; inv H; auto. *)
-(* Qed. *)
-
-(* Lemma normalize_inject: *)
-(*   forall v v' ty, inject f v v' -> inject f (normalize v ty) (normalize v' ty). *)
-(* Proof. *)
-(*   intros. inv H. *)
-(* - destruct ty; constructor. *)
-(* - destruct ty; constructor. *)
-(* - destruct ty; constructor. *)
-(* - destruct ty; constructor. *)
-(* - simpl. destruct ty. *)
-(* + destruct Archi.ptr64; econstructor; eauto. *)
-(* + auto. *)
-(* + destruct Archi.ptr64; econstructor; eauto. *)
-(* + auto. *)
-(* + destruct Archi.ptr64; econstructor; eauto. *)
-(* + econstructor; eauto. *)
-(* - constructor. *)
-(* Qed. *)
-
-(* Lemma select_inject: *)
-(*   forall ob ob' v1 v1' v2 v2' ty, *)
-(*   ob = None \/ ob = ob' -> *)
-(*   inject f v1 v1' -> inject f v2 v2' -> *)
-(*   inject f (select ob v1 v2 ty) (select ob' v1' v2' ty). *)
-(* Proof. *)
-(*   intros; unfold select. destruct H. *)
-(* - subst ob; auto. *)
-(* - subst ob'; destruct ob as [b|]; auto. *)
-(*   apply normalize_inject. destruct b; auto. *)
-(* Qed. *)
-
-(* End VAL_INJ_OPS. *)
-
 End Val.
-
-(* Notation meminj := Val.meminj. *)
-
-(* (** Monotone evolution of a memory injection. *) *)
-
-(* Definition inject_incr (f1 f2: meminj) : Prop := *)
-(*   forall b b' delta, f1 b = Some(b', delta) -> f2 b = Some(b', delta). *)
-
-(* Lemma inject_incr_refl : *)
-(*    forall f , inject_incr f f . *)
-(* Proof. unfold inject_incr. auto. Qed. *)
-
-(* Lemma inject_incr_trans : *)
-(*   forall f1 f2 f3, *)
-(*   inject_incr f1 f2 -> inject_incr f2 f3 -> inject_incr f1 f3 . *)
-(* Proof. *)
-(*   unfold inject_incr; intros. eauto. *)
-(* Qed. *)
-
-(* Lemma val_inject_incr: *)
-(*   forall f1 f2 v v', *)
-(*   inject_incr f1 f2 -> *)
-(*   Val.inject f1 v v' -> *)
-(*   Val.inject f2 v v'. *)
-(* Proof. *)
-(*   intros. inv H0; eauto. *)
-(* Qed. *)
-
-(* Lemma val_inject_list_incr: *)
-(*   forall f1 f2 vl vl' , *)
-(*   inject_incr f1 f2 -> Val.inject_list f1 vl vl' -> *)
-(*   Val.inject_list f2 vl vl'. *)
-(* Proof. *)
-(*   induction vl; intros; inv H0. auto. *)
-(*   constructor. eapply val_inject_incr; eauto. auto. *)
-(* Qed. *)
-
-(* Hint Resolve inject_incr_refl val_inject_incr val_inject_list_incr : core. *)
-
-(* Lemma val_inject_lessdef: *)
-(*   forall v1 v2, Val.lessdef v1 v2 <-> Val.inject (fun b => Some(b, 0)) v1 v2. *)
-(* Proof. *)
-(*   intros; split; intros. *)
-(*   inv H; auto. destruct v2; econstructor; eauto. rewrite Ptrofs.add_zero; auto. *)
-(*   inv H; auto. inv H0. rewrite Ptrofs.add_zero; auto. *)
-(* Qed. *)
-
-(* Lemma val_inject_list_lessdef: *)
-(*   forall vl1 vl2, Val.lessdef_list vl1 vl2 <-> Val.inject_list (fun b => Some(b, 0)) vl1 vl2. *)
-(* Proof. *)
-(*   intros; split. *)
-(*   induction 1; constructor; auto. apply val_inject_lessdef; auto. *)
-(*   induction 1; constructor; auto. apply val_inject_lessdef; auto. *)
-(* Qed. *)
-
-(* (** The identity injection gives rise to the "less defined than" relation. *) *)
-
-(* Definition inject_id : meminj := fun b => Some(b, 0). *)
-
-(* Lemma val_inject_id: *)
-(*   forall v1 v2, *)
-(*   Val.inject inject_id v1 v2 <-> Val.lessdef v1 v2. *)
-(* Proof. *)
-(*   intros; split; intros. *)
-(*   inv H; auto. *)
-(*   unfold inject_id in H0. inv H0. rewrite Ptrofs.add_zero. constructor. *)
-(*   inv H. destruct v2; econstructor. unfold inject_id; reflexivity. rewrite Ptrofs.add_zero; auto. *)
-(*   constructor. *)
-(* Qed. *)
-
-(* (** Composing two memory injections *) *)
-
-(* Definition compose_meminj (f f': meminj) : meminj := *)
-(*   fun b => *)
-(*     match f b with *)
-(*     | None => None *)
-(*     | Some(b', delta) => *)
-(*         match f' b' with *)
-(*         | None => None *)
-(*         | Some(b'', delta') => Some(b'', delta + delta') *)
-(*         end *)
-(*     end. *)
-
-(* Lemma val_inject_compose: *)
-(*   forall f f' v1 v2 v3, *)
-(*   Val.inject f v1 v2 -> Val.inject f' v2 v3 -> *)
-(*   Val.inject (compose_meminj f f') v1 v3. *)
-(* Proof. *)
-(*   intros. inv H; auto; inv H0; auto. econstructor. *)
-(*   unfold compose_meminj; rewrite H1; rewrite H3; eauto. *)
-(*   rewrite Ptrofs.add_assoc. decEq. unfold Ptrofs.add. apply Ptrofs.eqm_samerepr. auto with ints. *)
-(* Qed. *)

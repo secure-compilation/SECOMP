@@ -173,25 +173,29 @@ Qed.
 (** ** Location of function arguments *)
 
 (** The RISC-V ABI states the following conventions for passing arguments
-  to a function:
+  to a function.  First for non-variadic functions:
 
-- RV64, not variadic: pass the first 8 integer arguments in
-  integer registers (a1...a8: int_param_regs), the first 8 FP arguments
-  in FP registers (fa1...fa8: float_param_regs), and the remaining
-  arguments on the stack, in 8-byte slots.
+- RV64: pass the first 8 integer arguments in integer registers
+  (a1...a8: int_param_regs), the first 8 FP arguments in FP registers
+  (fa1...fa8: float_param_regs) then in integer registers (a1...a8),
+  and the remaining arguments on the stack, in 8-byte slots.
 
-- RV32, not variadic: same, but arguments of 64-bit integer type
-  are passed in two consecutive integer registers (a(i), a(i+1))
-  or in a(8) and on a 32-bit word on the stack.  Stack-allocated
-  arguments are aligned to their natural alignment.
+- RV32: same, but arguments of size 64 bits that must be passed in
+  integer registers are passed in two consecutive integer registers
+  (a(i), a(i+1)), or in a(8) and on a 32-bit word on the stack.
+  Stack-allocated arguments are aligned to their natural alignment.
 
-- RV64, variadic: pass the first 8 arguments in integer registers
-  (a1...a8), including FP arguments; pass the remaining arguments on
-  the stack, in 8-byte slots.
+For variadic functions, the fixed arguments are passed as described
+above, then the variadic arguments receive special treatment:
 
-- RV32, variadic: same, but arguments of 64-bit types (integers as well
+- RV64: FP registers are not used for passing variadic arguments.
+  All variadic arguments, including FP arguments, are passed in the
+  remaining integer registers (a1...a8), then on the stack, in 8-byte
+  slots.
+
+- RV32: likewise, but arguments of 64-bit types (integers as well
   as floats) are passed in two consecutive aligned integer registers
-  (a(2i), a(2i+1)).  
+  (a(2i), a(2i+1)), or on the stack, in aligned 8-byte slots.
 
 The passing of FP arguments to variadic functions in integer registers
 doesn't quite fit CompCert's model.  We do our best by passing the FP
@@ -204,6 +208,15 @@ Definition int_param_regs :=
   R10 :: R11 :: R12 :: R13 :: R14 :: R15 :: R16 :: R17 :: nil.
 Definition float_param_regs :=
   F10 :: F11 :: F12 :: F13 :: F14 :: F15 :: F16 :: F17 :: nil.
+
+(** To evaluate FP arguments that must be passed in integer registers,
+    we can use any FP caller-save register that is not already used to pass
+    a fixed FP argument.  Since there are 8 integer registers for argument
+    passing, we need at most 8 extra more FP registers for these FP
+    arguments. *)
+
+Definition float_extra_param_regs :=
+  F0 :: F1 :: F2 :: F3 :: F4 :: F5 :: F6 :: F7 :: nil.
 
 Definition int_arg (ri rf ofs: Z) (ty: typ)
                    (rec: Z -> Z -> Z -> list (rpair loc)) :=
@@ -218,26 +231,27 @@ Definition int_arg (ri rf ofs: Z) (ty: typ)
 
 Definition float_arg (va: bool) (ri rf ofs: Z) (ty: typ)
                      (rec: Z -> Z -> Z -> list (rpair loc)) :=
-  match list_nth_z float_param_regs rf with
+  match list_nth_z (if va then nil else float_param_regs) rf with
   | Some r =>
-      if va then
-       (let ri' :=  (* reserve 1 or 2 aligned integer registers *)
-          if Archi.ptr64 || zeq (typesize ty) 1 then ri + 1 else align ri 2 + 2 in
-        if zle ri' 8 then
-            (* we have enough integer registers, put argument in FP reg
-               and fixup code will put it in one or two integer regs *)
-            One (R r) :: rec ri' (rf + 1) ofs
-        else
-            (* we are out of integer registers, pass argument on stack *)
+      One (R r) :: rec ri (rf + 1) ofs
+  | None =>
+      (* We are out of FP registers, or cannot use them because vararg,
+         so try to put the argument in an extra FP register while
+         reserving an integer register or register pair into which
+         fixup code will move the extra FP register. *)
+      let regpair := negb Archi.ptr64 && zeq (typesize ty) 2 in
+      let ri' := if va && regpair then align ri 2 else ri in
+      match list_nth_z float_extra_param_regs ri' with
+      | Some r =>
+          let ri'' := ri' + (if Archi.ptr64 then 1 else typesize ty) in
+          let ofs'' := if regpair && zeq ri' 7 then ofs + 1 else ofs in
+          One (R r) :: rec ri'' rf ofs''
+      | None =>
+          (* We are out of integer registers, pass argument on stack *)
             let ofs := align ofs (typesize ty) in
             One(S Outgoing ofs ty)
-            :: rec ri' rf (ofs + (if Archi.ptr64 then 2 else typesize ty)))
-      else
-        One (R r) :: rec ri (rf + 1) ofs
-  | None   =>
-      let ofs := align ofs (typesize ty) in
-      One(S Outgoing ofs ty)
-      :: rec ri rf (ofs + (if Archi.ptr64 then 2 else typesize ty))
+            :: rec ri' rf (ofs + (if Archi.ptr64 then 2 else typesize ty))
+      end
   end.
 
 Definition split_long_arg (va: bool) (ri rf ofs: Z)
@@ -254,35 +268,43 @@ Definition split_long_arg (va: bool) (ri rf ofs: Z)
       rec ri rf (ofs + 2)
   end.
 
-Fixpoint loc_arguments_rec (va: bool)
-    (tyl: list typ) (ri rf ofs: Z) {struct tyl} : list (rpair loc) :=
+Fixpoint loc_arguments_rec
+    (tyl: list typ) (fixed ri rf ofs: Z) {struct tyl} : list (rpair loc) :=
   match tyl with
   | nil => nil
   | (Tint | Tany32) as ty :: tys =>
       (* pass in one integer register or on stack *)
-      int_arg ri rf ofs ty (loc_arguments_rec va tys)
+      int_arg ri rf ofs ty (loc_arguments_rec tys (fixed - 1))
   | Tsingle as ty :: tys =>
       (* pass in one FP register or on stack.
          If vararg, reserve 1 integer register. *)
-      float_arg va ri rf ofs ty (loc_arguments_rec va tys)
+      float_arg (zle fixed 0) ri rf ofs ty (loc_arguments_rec tys (fixed - 1))
   | Tlong as ty :: tys =>
       if Archi.ptr64 then
         (* pass in one integer register or on stack *)
-        int_arg ri rf ofs ty (loc_arguments_rec va tys)
+        int_arg ri rf ofs ty (loc_arguments_rec tys (fixed - 1))
       else
         (* pass in register pair or on stack; align register pair if vararg *)
-        split_long_arg va ri rf ofs(loc_arguments_rec va tys)
+        split_long_arg (zle fixed 0) ri rf ofs(loc_arguments_rec tys (fixed - 1))
   | (Tfloat | Tany64) as ty :: tys =>
       (* pass in one FP register or on stack.
          If vararg, reserve 1 or 2 integer registers. *)
-      float_arg va ri rf ofs ty (loc_arguments_rec va tys)
+      float_arg (zle fixed 0) ri rf ofs ty (loc_arguments_rec tys (fixed - 1))
+  end.
+
+(** Number of fixed arguments for a function with signature [s]. *)
+
+Definition fixed_arguments (s: signature) : Z :=
+  match s.(sig_cc).(cc_vararg) with
+  | Some n => n
+  | None => list_length_z s.(sig_args)
   end.
 
 (** [loc_arguments s] returns the list of locations where to store arguments
   when calling a function with signature [s].  *)
 
 Definition loc_arguments (s: signature) : list (rpair loc) :=
-  loc_arguments_rec s.(sig_cc).(cc_vararg) s.(sig_args) 0 0 0.
+  loc_arguments_rec s.(sig_args) (fixed_arguments s) 0 0 0.
 
 (** Argument locations are either non-temporary registers or [Outgoing]
   stack slots at nonnegative offsets. *)
@@ -322,17 +344,19 @@ Proof.
   { decide_goal. }
   assert (CSF: forall r, In r float_param_regs -> is_callee_save r = false /\ r <> R30).
   { decide_goal. }
+  assert (CSFX: forall r, In r float_extra_param_regs -> is_callee_save r = false /\ r <> R30).
+  { decide_goal. }
   assert (AL: forall ofs ty, ofs >= 0 -> align ofs (typesize ty) >= 0).
   { intros. 
     assert (ofs <= align ofs (typesize ty)) by (apply align_le; apply typesize_pos).
-    omega. }
+    lia. }
   assert (ALD: forall ofs ty, ofs >= 0 -> (typealign ty | align ofs (typesize ty))).
   { intros. eapply Z.divide_trans. apply typealign_typesize.
     apply align_divides. apply typesize_pos. }
   assert (SK: (if Archi.ptr64 then 2 else 1) > 0).
-  { destruct Archi.ptr64; omega. }
+  { destruct Archi.ptr64; lia. }
   assert (SKK: forall ty, (if Archi.ptr64 then 2 else typesize ty) > 0).
-  { intros. destruct Archi.ptr64. omega. apply typesize_pos.  }
+  { intros. destruct Archi.ptr64. lia. apply typesize_pos.  }
   assert (A: forall ri rf ofs ty f,
              OKF f -> ofs >= 0 -> OK (int_arg ri rf ofs ty f)).
   { intros until f; intros OF OO; red; unfold int_arg; intros.
@@ -341,23 +365,22 @@ Proof.
   - eapply OF; eauto. 
   - subst p; simpl. auto using align_divides, typealign_pos.
   - eapply OF; [idtac|eauto].
-    generalize (AL ofs ty OO) (SKK ty); omega.
+    generalize (AL ofs ty OO) (SKK ty); lia.
   }
   assert (B: forall va ri rf ofs ty f,
              OKF f -> ofs >= 0 -> OK (float_arg va ri rf ofs ty f)).
   { intros until f; intros OF OO; red; unfold float_arg; intros.
-    destruct (list_nth_z float_param_regs rf) as [r|] eqn:NTH.
-  - set (ri' := if Archi.ptr64 || zeq (typesize ty) 1 then ri + 1 else align ri 2 + 2) in *.
-    destruct va; [destruct (zle ri' 8)|idtac]; destruct H.
-    + subst p; simpl. apply CSF. eapply list_nth_z_in; eauto.
-    + eapply OF; eauto.
-    + subst p; repeat split; auto.
-    + eapply OF; [idtac|eauto]. generalize (AL ofs ty OO) (SKK ty); omega.
-    + subst p; simpl. apply CSF. eapply list_nth_z_in; eauto.
-    + eapply OF; eauto.
+    destruct (list_nth_z (if va then nil else float_param_regs) rf) as [r|] eqn:NTH.
   - destruct H.
-    + subst p; repeat split; auto.
-    + eapply OF; [idtac|eauto]. generalize (AL ofs ty OO) (SKK ty); omega.
+    + subst p; simpl. apply CSF. destruct va. simpl in NTH; discriminate. eapply list_nth_z_in; eauto.
+    + eapply OF; eauto.
+  - set (regpair := negb Archi.ptr64 && zeq (typesize ty) 2) in *.
+    set (ri' := if va && regpair then align ri 2 else ri) in *.
+    destruct (list_nth_z float_extra_param_regs ri') as [r|] eqn:NTH'; destruct H.
+    + subst p; simpl. apply CSFX. eapply list_nth_z_in; eauto.
+    + eapply OF; [|eauto]. destruct (regpair && zeq ri' 7); lia.
+    + subst p; simpl. auto.
+    + eapply OF; [|eauto]. generalize (AL ofs ty OO) (SKK ty); lia.
   }
   assert (C: forall va ri rf ofs f,
              OKF f -> ofs >= 0 -> OK (split_long_arg va ri rf ofs f)).
@@ -369,51 +392,131 @@ Proof.
     [destruct (list_nth_z int_param_regs (ri'+1)) as [r2|] eqn:NTH2 | idtac].
   - red; simpl; intros; destruct H.
     + subst p; split; apply CSI; eauto using list_nth_z_in.
-    + eapply OF; [idtac|eauto]. omega.
+    + eapply OF; [idtac|eauto]. lia.
   - red; simpl; intros; destruct H.
     + subst p; split. split; auto using Z.divide_1_l. apply CSI; eauto using list_nth_z_in.
-    + eapply OF; [idtac|eauto]. omega.
+    + eapply OF; [idtac|eauto]. lia.
   - red; simpl; intros; destruct H.
-    + subst p; repeat split; auto using Z.divide_1_l. omega. 
-    + eapply OF; [idtac|eauto]. omega.
+    + subst p; repeat split; auto using Z.divide_1_l. lia. 
+    + eapply OF; [idtac|eauto]. lia.
   }
-  cut (forall va tyl ri rf ofs, ofs >= 0 -> OK (loc_arguments_rec va tyl ri rf ofs)).
+  cut (forall tyl fixed ri rf ofs, ofs >= 0 -> OK (loc_arguments_rec tyl fixed ri rf ofs)).
   unfold OK. eauto.
   induction tyl as [ | ty1 tyl]; intros until ofs; intros OO; simpl.
 - red; simpl; tauto.
 - destruct ty1.
-+ (* int *) apply A; auto.
-+ (* float *) apply B; auto.
++ (* int *) apply A; unfold OKF; auto.
++ (* float *) apply B; unfold OKF; auto.
 + (* long *)
   destruct Archi.ptr64.
-  apply A; auto.
-  apply C; auto.
-+ (* single *) apply B; auto.
-+ (* any32 *) apply A; auto.
-+ (* any64 *) apply B; auto.
+  apply A; unfold OKF; auto.
+  apply C; unfold OKF; auto.
++ (* single *) apply B; unfold OKF; auto.
++ (* any32 *) apply A; unfold OKF; auto.
++ (* any64 *) apply B; unfold OKF; auto.
 Qed.
 
+(* Alternative proof based on stronger version:
+  intros. eapply loc_arguments_rec_charact_stronger in H0; auto.
+  destruct p; simpl in *; intuition; auto using loc_argument_acceptable_stronger_loc_argument_acceptable.
+ *)
 Lemma loc_arguments_rec_charact:
   forall va tyl ri rf ofs p,
   ofs >= 0 ->
   In p (loc_arguments_rec va tyl ri rf ofs) -> forall_rpair loc_argument_acceptable p.
 Proof.
-  intros. eapply loc_arguments_rec_charact_stronger in H0; auto.
-  destruct p; simpl in *; intuition; auto using loc_argument_acceptable_stronger_loc_argument_acceptable.
+  set (OK := fun (l: list (rpair loc)) =>
+             forall p, In p l -> forall_rpair loc_argument_acceptable p).
+  set (OKF := fun (f: Z -> Z -> Z -> list (rpair loc)) =>
+              forall ri rf ofs, ofs >= 0 -> OK (f ri rf ofs)).
+  assert (CSI: forall r, In r int_param_regs -> is_callee_save r = false).
+  { decide_goal. }
+  assert (CSF: forall r, In r float_param_regs -> is_callee_save r = false).
+  { decide_goal. }
+  assert (CSFX: forall r, In r float_extra_param_regs -> is_callee_save r = false).
+  { decide_goal. }
+  assert (AL: forall ofs ty, ofs >= 0 -> align ofs (typesize ty) >= 0).
+  { intros. 
+    assert (ofs <= align ofs (typesize ty)) by (apply align_le; apply typesize_pos).
+    lia. }
+  assert (ALD: forall ofs ty, ofs >= 0 -> (typealign ty | align ofs (typesize ty))).
+  { intros. eapply Z.divide_trans. apply typealign_typesize.
+    apply align_divides. apply typesize_pos. }
+  assert (SK: (if Archi.ptr64 then 2 else 1) > 0).
+  { destruct Archi.ptr64; lia. }
+  assert (SKK: forall ty, (if Archi.ptr64 then 2 else typesize ty) > 0).
+  { intros. destruct Archi.ptr64. lia. apply typesize_pos.  }
+  assert (A: forall ri rf ofs ty f,
+             OKF f -> ofs >= 0 -> OK (int_arg ri rf ofs ty f)).
+  { intros until f; intros OF OO; red; unfold int_arg; intros.
+    destruct (list_nth_z int_param_regs ri) as [r|] eqn:NTH; destruct H.
+  - subst p; simpl. apply CSI. eapply list_nth_z_in; eauto. 
+  - eapply OF; eauto. 
+  - subst p; simpl. auto using align_divides, typealign_pos.
+  - eapply OF; [idtac|eauto].
+    generalize (AL ofs ty OO) (SKK ty); lia.
+  }
+  assert (B: forall va ri rf ofs ty f,
+             OKF f -> ofs >= 0 -> OK (float_arg va ri rf ofs ty f)).
+  { intros until f; intros OF OO; red; unfold float_arg; intros.
+    destruct (list_nth_z (if va then nil else float_param_regs) rf) as [r|] eqn:NTH.
+  - destruct H.
+    + subst p; simpl. apply CSF. destruct va. simpl in NTH; discriminate. eapply list_nth_z_in; eauto.
+    + eapply OF; eauto.
+  - set (regpair := negb Archi.ptr64 && zeq (typesize ty) 2) in *.
+    set (ri' := if va && regpair then align ri 2 else ri) in *.
+    destruct (list_nth_z float_extra_param_regs ri') as [r|] eqn:NTH'; destruct H.
+    + subst p; simpl. apply CSFX. eapply list_nth_z_in; eauto.
+    + eapply OF; [|eauto]. destruct (regpair && zeq ri' 7); lia.
+    + subst p; simpl. auto.
+    + eapply OF; [|eauto]. generalize (AL ofs ty OO) (SKK ty); lia.
+  }
+  assert (C: forall va ri rf ofs f,
+             OKF f -> ofs >= 0 -> OK (split_long_arg va ri rf ofs f)).
+  { intros until f; intros OF OO; unfold split_long_arg.
+    set (ri' := if va then align ri 2 else ri).
+    set (ofs' := align ofs 2).
+    assert (OO': ofs' >= 0) by (apply (AL ofs Tlong); auto).
+    destruct (list_nth_z int_param_regs ri') as [r1|] eqn:NTH1;
+    [destruct (list_nth_z int_param_regs (ri'+1)) as [r2|] eqn:NTH2 | idtac].
+  - red; simpl; intros; destruct H.
+    + subst p; split; apply CSI; eauto using list_nth_z_in.
+    + eapply OF; [idtac|eauto]. lia.
+  - red; simpl; intros; destruct H.
+    + subst p; split. split; auto using Z.divide_1_l. apply CSI; eauto using list_nth_z_in.
+    + eapply OF; [idtac|eauto]. lia.
+  - red; simpl; intros; destruct H.
+    + subst p; repeat split; auto using Z.divide_1_l. lia. 
+    + eapply OF; [idtac|eauto]. lia.
+  }
+  cut (forall tyl fixed ri rf ofs, ofs >= 0 -> OK (loc_arguments_rec tyl fixed ri rf ofs)).
+  unfold OK. eauto.
+  induction tyl as [ | ty1 tyl]; intros until ofs; intros OO; simpl.
+- red; simpl; tauto.
+- destruct ty1.
++ (* int *) apply A; unfold OKF; auto.
++ (* float *) apply B; unfold OKF; auto.
++ (* long *)
+  destruct Archi.ptr64.
+  apply A; unfold OKF; auto.
+  apply C; unfold OKF; auto.
++ (* single *) apply B; unfold OKF; auto.
++ (* any32 *) apply A; unfold OKF; auto.
++ (* any64 *) apply B; unfold OKF; auto.
 Qed.
 
 Lemma loc_arguments_acceptable_stronger:
   forall (s: signature) (p: rpair loc),
   In p (loc_arguments s) -> forall_rpair loc_argument_acceptable_stronger p.
 Proof.
-  unfold loc_arguments; intros. eapply loc_arguments_rec_charact_stronger; eauto. omega.
+  unfold loc_arguments; intros. eapply loc_arguments_rec_charact_stronger; eauto. lia.
 Qed.
 
 Lemma loc_arguments_acceptable:
   forall (s: signature) (p: rpair loc),
   In p (loc_arguments s) -> forall_rpair loc_argument_acceptable p.
 Proof.
-  unfold loc_arguments; intros. eapply loc_arguments_rec_charact; eauto. omega.
+  unfold loc_arguments; intros. eapply loc_arguments_rec_charact; eauto. lia.
 Qed.
 
 
@@ -423,8 +526,9 @@ Proof.
   reflexivity.
 Qed.
 
-(** ** Normalization of function results *)
+(** ** Normalization of function results and parameters *)
 
 (** No normalization needed. *)
 
 Definition return_value_needs_normalization (t: rettype) := false.
+Definition parameter_needs_normalization (t: rettype) := false.

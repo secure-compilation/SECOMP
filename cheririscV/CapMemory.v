@@ -197,11 +197,11 @@ Proof.
   induction lo using (well_founded_induction_type (Zwf_up_well_founded hi)).
   destruct (zlt lo hi).
   destruct (perm_dec m lo k p).
-  destruct (H (lo + 1)). red. omega.
-  left; red; intros. destruct (zeq lo ofs). congruence. apply r. omega.
-  right; red; intros. elim n. red; intros; apply H0; omega.
-  right; red; intros. elim n. apply H0. omega.
-  left; red; intros. omegaContradiction.
+  destruct (H (lo + 1)). red. lia.
+  left; red; intros. destruct (zeq lo ofs). congruence. apply r. lia.
+  right; red; intros. elim n. red; intros; apply H0; lia.
+  right; red; intros. elim n. apply H0. lia.
+  left; red; intros. lia.
 Defined.
 
 (** [can_access_block m c cp] holds if a component [cp] has control
@@ -239,7 +239,7 @@ Proof.
   left;left;auto.
   destruct (Z_ge_dec (Ptrofs.unsigned (get_lo c)) (Ptrofs.unsigned (get_hi c'))).
   left;right;auto.
-  right. intros [Hcontr|Hcontr];omega.
+  right. intros [Hcontr|Hcontr];lia.
 Qed.  
 
 Definition can_access_block (m: mem) (c: occap) (cp: option compartment): Prop :=
@@ -427,7 +427,7 @@ Theorem valid_access_perm:
 Proof.
   intros until c'. intros V.
   inv V. inv H0. apply perm_cur. apply H1.
-  generalize (size_chunk_pos chunk). omega.
+  generalize (size_chunk_pos chunk). lia.
 Qed.
   
 Theorem valid_access_freeable_any:
@@ -520,9 +520,9 @@ Proof.
   intros until l2. intros LE B.
   destruct c,o;try easy.
   inv B. split;auto.
-  simpl in *. (* rewrite Z2Nat.id in H0;[|destruct chunk;simpl;omega]. *)
+  simpl in *. (* rewrite Z2Nat.id in H0;[|destruct chunk;simpl;lia]. *)
   (* generalize (size_chunk_pos chunk). *)
-  omega.
+  lia.
 Qed.
   
 Theorem valid_pointer_valid_access:
@@ -537,13 +537,13 @@ Proof.
   - apply is_valid_capability_iff in V. inv V.
     repeat constructor;auto.
     + intros x [Hx1 Hx2]. simpl in *.
-      assert (x = derive_offset k (OCsealable (OCVmem p l b e a)) ofs) as ->;[omega|].
+      assert (x = derive_offset k (OCsealable (OCVmem p l b e a)) ofs) as ->;[lia|].
       auto.
     + simpl. apply Z.divide_1_l.
   - apply is_valid_capability_iff.
     destruct c,o;try easy.
     constructor. destruct V as [_ [V _]].
-    apply V. simpl. omega.
+    apply V. simpl. lia.
 Qed.
     
 Lemma size_chunk_nat_eq:
@@ -566,7 +566,7 @@ Proof.
   repeat constructor;auto.
   - erewrite size_chunk_nat_eq;eauto.
   - erewrite size_chunk_nat_eq;eauto.
-  - intros x Hx. apply V3. omega.
+  - intros x Hx. apply V3. lia.
   - eapply Z.divide_trans; eauto. eapply align_le_divides; eauto.  
 Qed.
 
@@ -930,11 +930,11 @@ Definition load (a: act_kind) (chunk: cap_memory_chunk) (m: mem) (ptr: occap) (o
 (** [loadv chunk m addr cp] is similar, but the address and offset are given
   as a single value [addr], which must be a pointer value. *)
 
-Definition loadv (a: act_kind) (chunk: cap_memory_chunk) (m: mem) (c: occap) (addr: ocval) (cp: option compartment) : ocval + error_kind :=
-  match addr with
-  | OCVptr (heap_ptr ofs) => load a chunk m c (Ptrofs.unsigned ofs) cp
-  | OCVptr (stack_ptr ofs) => load a chunk m c (Ptrofs.unsigned ofs) cp
-  | _ => inr PtrErr
+Definition loadv (a: act_kind) (chunk: cap_memory_chunk) (m: mem) (c: ocval) (addr: ocval) (cp: option compartment) : ocval + error_kind :=
+  match addr,c with
+  | OCVptr (heap_ptr ofs), OCVcap c' => load a chunk m c' (Ptrofs.unsigned ofs) cp
+  | OCVptr (stack_ptr ofs), OCVcap c' => load a chunk m c' (Ptrofs.unsigned ofs) cp
+  | _,_ => inr PtrErr
   end.
 
 (** [loadbytes m b ofs n cp] reads [n] consecutive bytes starting at
@@ -970,8 +970,8 @@ Proof.
   auto.
   simpl length in H. rewrite Nat2Z.inj_succ in H.
   transitivity (ZMap.get q (ZMap.set p a c)).
-  apply IHvl. intros. apply H. omega.
-  apply ZMap.gso. apply not_eq_sym. apply H. omega.
+  apply IHvl. intros. apply H. lia.
+  apply ZMap.gso. apply not_eq_sym. apply H. lia.
 Qed.
 
 Remark setN_outside:
@@ -980,7 +980,7 @@ Remark setN_outside:
   ZMap.get q (setN vl p c) = ZMap.get q c.
 Proof.
   intros. apply setN_other.
-  intros. omega.
+  intros. lia.
 Qed.
 
 Remark getN_setN_same:
@@ -990,7 +990,7 @@ Proof.
   induction vl; intros; simpl.
   auto.
   decEq.
-  rewrite setN_outside. apply ZMap.gss. omega.
+  rewrite setN_outside. apply ZMap.gss. lia.
   apply IHvl.
 Qed.
 
@@ -1000,7 +1000,7 @@ Remark getN_exten:
   getN n p c1 = getN n p c2.
 Proof.
   induction n; intros. auto. rewrite Nat2Z.inj_succ in H. simpl. decEq.
-  apply H. omega. apply IHn. intros. apply H. omega.
+  apply H. lia. apply IHn. intros. apply H. lia.
 Qed.
 
 Remark getN_setN_disjoint:
@@ -1052,12 +1052,13 @@ Qed.
 (** [storev chunk m addr v cp] is similar, but the address and offset are given
   as a single value [addr], which must be a pointer value. *)
 
-Definition storev (a: act_kind) (chunk: cap_memory_chunk) (m: mem) (c: occap) (addr v: ocval) (cp: compartment) : (occap * mem) + error_kind :=
-  match addr with
-  | OCVptr (heap_ptr ofs) => store a chunk m c (Ptrofs.unsigned ofs) v cp
-  | OCVptr (stack_ptr ofs) => store a chunk m c (Ptrofs.unsigned ofs) v cp
-  | _ => inr PtrErr
+Definition storev (a: act_kind) (chunk: cap_memory_chunk) (m: mem) (c: ocval) (addr v: ocval) (cp: compartment) : (occap * mem) + error_kind :=
+  match addr,c with
+  | OCVptr (heap_ptr ofs),OCVcap c' => store a chunk m c' (Ptrofs.unsigned ofs) v cp
+  | OCVptr (stack_ptr ofs),OCVcap c' => store a chunk m c' (Ptrofs.unsigned ofs) v cp
+  | _,_ => inr PtrErr
   end.
+
 
 (** [storebytes m b ofs bytes cp] has component [cp] store the given list of
   bytes [bytes] starting at location [(b, ofs)].  Returns updated memory state
@@ -1335,7 +1336,7 @@ Proof.
   setoid_rewrite pred_dec_true;auto.
   setoid_rewrite pred_dec_true;auto.
   - rewrite Z_to_nat_neg; auto.
-  - red;intros. omegaContradiction.
+  - red;intros. lia.
 Qed.
 
 Lemma getN_concat:
@@ -1343,9 +1344,9 @@ Lemma getN_concat:
   getN (n1 + n2)%nat p c = getN n1 p c ++ getN n2 (p + Z.of_nat n1) c.
 Proof.
   induction n1; intros.
-  simpl. decEq. omega.
+  simpl. decEq. lia.
   rewrite Nat2Z.inj_succ. simpl. decEq.
-  replace (p + Z.succ (Z.of_nat n1)) with ((p + 1) + Z.of_nat n1) by omega.
+  replace (p + Z.succ (Z.of_nat n1)) with ((p + 1) + Z.of_nat n1) by lia.
   auto.
 Qed.
 
@@ -1366,11 +1367,11 @@ Lemma incr_pointer_derive_offset:
 Proof.
   intros until ofs2. intros L M P.
   assert (Ptrofs.unsigned (get_addr ptr1) >= 0) as L'.
-  { pose proof (Ptrofs.unsigned_range (get_addr ptr1)). omega. }
+  { pose proof (Ptrofs.unsigned_range (get_addr ptr1)). lia. }
   destruct k, ptr1, o;simpl in *;inv P.
-  all: simpl; try omega.
+  all: simpl; try lia.
   rewrite !Ptrofs.unsigned_repr_eq.
-  rewrite !Zmod_small;auto. split;omega.
+  rewrite !Zmod_small;auto. split;lia.
 Qed.
 
 Theorem loadbytes_concat:
@@ -1393,13 +1394,13 @@ Proof.
   destruct (dynamic_conditions_ptr_dec m ptr2 cp);[|simpl in *; congruence].
   simpl in *.
   inv H0; inv H1.
-  setoid_rewrite pred_dec_true. setoid_rewrite pred_dec_true. rewrite Z2Nat.inj_add by omega.
-  rewrite getN_concat. rewrite Z2Nat.id by omega.
+  setoid_rewrite pred_dec_true. setoid_rewrite pred_dec_true. rewrite Z2Nat.inj_add by lia.
+  rewrite getN_concat. rewrite Z2Nat.id by lia.
   simpl in *. erewrite incr_pointer_derive_offset;eauto.
   red; intros.
-  assert (ofs < derive_offset k ptr1 ofs1 + n1 \/ ofs >= derive_offset k ptr1 ofs1 + n1) as [?|?] by omega.
-  apply r;omega. apply r0. erewrite incr_pointer_derive_offset in H1;eauto.
-  inv H0. split;try omega. rewrite Z.add_assoc in H6.
+  assert (ofs < derive_offset k ptr1 ofs1 + n1 \/ ofs >= derive_offset k ptr1 ofs1 + n1) as [?|?] by lia.
+  apply r;lia. apply r0. erewrite incr_pointer_derive_offset in H1;eauto.
+  inv H0. split;try lia. rewrite Z.add_assoc in H6.
   erewrite <- incr_pointer_derive_offset;eauto.
 Admitted.
 
@@ -1418,13 +1419,13 @@ Proof. Admitted.
 (*     [| rewrite andb_comm in *; simpl in *; congruence]. *)
 (*   destruct (range_perm_dec m b ofs (ofs + (n1 + n2)) Cur Readable); *)
 (*   try (simpl in *; congruence). *)
-(*   rewrite Z2Nat.inj_add in H by omega. rewrite getN_concat in H. *)
-(*   rewrite Z2Nat.id in H by omega. *)
+(*   rewrite Z2Nat.inj_add in H by lia. rewrite getN_concat in H. *)
+(*   rewrite Z2Nat.id in H by lia. *)
 (*   repeat setoid_rewrite pred_dec_true. *)
 (*   econstructor; econstructor. *)
 (*   split. reflexivity. split. reflexivity. simpl in *. congruence. *)
-(*   red; intros; apply r; omega. *)
-(*   red; intros; apply r; omega. *)
+(*   red; intros; apply r; lia. *)
+(*   red; intros; apply r; lia. *)
 (* Qed. *)
 
 Theorem load_rep:
@@ -1446,13 +1447,13 @@ Proof.
   revert m H; induction n; intros; simpl; auto.
   f_equal.
   rewrite Nat2Z.inj_succ in H.
-  replace m with (m +0) by omega.
-  apply H; omega.
+  replace m with (m +0) by lia.
+  apply H; lia.
   apply IHn.
   intros.
   rewrite <- Z.add_assoc.
   apply H.
-  rewrite Nat2Z.inj_succ. omega.
+  rewrite Nat2Z.inj_succ. lia.
 Qed.
 
 (*Theorem load_int64_split:
@@ -1467,7 +1468,7 @@ Proof.
   exploit load_valid_access; eauto. intros [A [B C]]. simpl in *.
   exploit load_loadbytes. eexact H. simpl. intros [bytes [LB EQ]].
   change 8 with (4 + 4) in LB.
-  exploit loadbytes_split. eexact LB. omega. omega.
+  exploit loadbytes_split. eexact LB. lia. lia.
   intros (bytes1 & bytes2 & LB1 & LB2 & APP).
   change 4 with (size_chunk Mint32) in LB1.
   exploit loadbytes_load. eexact LB1.
@@ -1499,11 +1500,11 @@ Proof.
   change (Int.unsigned (Int.repr 4)) with 4.
   apply Ptrofs.unsigned_repr.
   exploit (Zdivide_interval (Ptrofs.unsigned i) Ptrofs.modulus 8).
-  omega. apply Ptrofs.unsigned_range. auto.
+  lia. apply Ptrofs.unsigned_range. auto.
   exists (two_p (Ptrofs.zwordsize - 3)).
   unfold Ptrofs.modulus, Ptrofs.zwordsize, Ptrofs.wordsize.
   unfold Wordsize_Ptrofs.wordsize. destruct Archi.ptr64; reflexivity.
-  unfold Ptrofs.max_unsigned. omega.
+  unfold Ptrofs.max_unsigned. lia.
 Qed.
 
 Theorem loadv_int64_split:
@@ -1747,7 +1748,7 @@ Admitted.
 (*Theorem load_store_same:
   load chunk m2 b ofs (Some cp) = Some (Val.load_result chunk v).
 Proof.
-  apply load_store_similar_2; auto. omega.
+  apply load_store_similar_2; auto. lia.
 Qed.
 
 Theorem load_store_other:
@@ -1886,9 +1887,9 @@ Proof.
   destruct H. congruence.
   destruct (zle n 0) as [z | n0].
   rewrite (Z_to_nat_neg _ z). auto.
-  destruct H. omegaContradiction.
+  destruct H. lia.
   apply getN_setN_outside. rewrite encode_val_length. rewrite <- size_chunk_conv.
-  rewrite Z2Nat.id. auto. omega.
+  rewrite Z2Nat.id. auto. lia.
   auto.
   apply store_can_access_block_inj; auto.
 * setoid_rewrite pred_dec_false; auto.
@@ -1905,11 +1906,11 @@ Lemma setN_in:
   In (ZMap.get q (setN vl p c)) vl.
 Proof.
   induction vl; intros.
-  simpl in H. omegaContradiction.
+  simpl in H. lia.
   simpl length in H. rewrite Nat2Z.inj_succ in H. simpl.
   destruct (zeq p q). subst q. rewrite setN_outside. rewrite ZMap.gss.
-  auto with coqlib. omega.
-  right. apply IHvl. omega.
+  auto with coqlib. lia.
+  right. apply IHvl. lia.
 Qed.
 
 Lemma getN_in:
@@ -1918,10 +1919,10 @@ Lemma getN_in:
   In (ZMap.get q c) (getN n p c).
 Proof.
   induction n; intros.
-  simpl in H; omegaContradiction.
+  simpl in H; lia.
   rewrite Nat2Z.inj_succ in H. simpl. destruct (zeq p q).
   subst q. auto.
-  right. apply IHn. omega.
+  right. apply IHn. lia.
 Qed.
 
 End STORE.
@@ -1961,28 +1962,28 @@ Proof.
   split. rewrite V', SIZE'. apply decode_val_shape.
   destruct (zeq ofs' ofs).
 - subst ofs'. left; split. auto. unfold c'. simpl.
-  rewrite setN_outside by omega. apply ZMap.gss.
+  rewrite setN_outside by lia. apply ZMap.gss.
 - right. destruct (zlt ofs ofs').
 (* If ofs < ofs':  the load reads (at ofs') a continuation byte from the write.
        ofs   ofs'   ofs+|chunk|
         [-------------------]       write
              [-------------------]  read
 *)
-+ left; split. omega. unfold c'. simpl. apply setN_in.
++ left; split. lia. unfold c'. simpl. apply setN_in.
   assert (Z.of_nat (length (mv1 :: mvl)) = size_chunk chunk).
   { rewrite <- ENC; rewrite encode_val_length. rewrite size_chunk_conv; auto. }
-  simpl length in H3. rewrite Nat2Z.inj_succ in H3. omega.
+  simpl length in H3. rewrite Nat2Z.inj_succ in H3. lia.
 (* If ofs > ofs':  the load reads (at ofs) the first byte from the write.
        ofs'   ofs   ofs'+|chunk'|
                [-------------------]  write
          [----------------]           read
 *)
-+ right; split. omega. replace mv1 with (ZMap.get ofs c').
++ right; split. lia. replace mv1 with (ZMap.get ofs c').
   apply getN_in.
   assert (size_chunk chunk' = Z.succ (Z.of_nat sz')).
   { rewrite size_chunk_conv. rewrite SIZE'. rewrite Nat2Z.inj_succ; auto. }
-  omega.
-  unfold c'. simpl. rewrite setN_outside by omega. apply ZMap.gss.
+  lia.
+  unfold c'. simpl. rewrite setN_outside by lia. apply ZMap.gss.
 Qed.*)
 
 Definition compat_pointer_chunks (chunk1 chunk2: cap_memory_chunk) (storev: ocval) : Prop :=
@@ -2075,10 +2076,10 @@ Theorem load_store_pointer_mismatch:
 Proof. Admitted.
 (*   intros. *)
 (*   exploit load_store_overlap; eauto. *)
-(*   generalize (size_chunk_pos chunk'); omega. *)
-(*   generalize (size_chunk_pos chunk); omega. *)
+(*   generalize (size_chunk_pos chunk'); lia. *)
+(*   generalize (size_chunk_pos chunk); lia. *)
 (*   intros (mv1 & mvl & mv1' & mvl' & ENC & DEC & CASES). *)
-(*   destruct CASES as [(A & B) | [(A & B) | (A & B)]]; try omegaContradiction. *)
+(*   destruct CASES as [(A & B) | [(A & B) | (A & B)]]; try lia. *)
 (*   inv ENC; inv DEC; auto. *)
 (* - elim H1. apply compat_pointer_chunks_true; auto. *)
 (* - contradiction. *)
@@ -2177,7 +2178,7 @@ Proof.
   destruct (valid_access_dec m Mfloat64 b ofs Writable); try discriminate.
   destruct (valid_access_dec m Mfloat64al32 b ofs Writable).
   rewrite <- H. f_equal. apply mkmem_ext; auto.
-  elim n. apply valid_access_compat with Mfloat64; auto. simpl; omega.
+  elim n. apply valid_access_compat with Mfloat64; auto. simpl; lia.
 Qed.
 
 Theorem storev_float64al32:
@@ -2439,7 +2440,7 @@ Proof.
 (* - setoid_rewrite pred_dec_true; simpl. *)
 (* + rewrite storebytes_mem_contents. decEq. *)
 (*   rewrite PMap.gsspec. destruct (peq b' b). subst b'. *)
-(*   apply getN_setN_disjoint. rewrite Z2Nat.id by omega. intuition congruence. *)
+(*   apply getN_setN_disjoint. rewrite Z2Nat.id by lia. intuition congruence. *)
 (*   auto. *)
 (* + red; auto with mem. *)
 (* + apply storebytes_can_access_block_inj_1; assumption. *)
@@ -2496,8 +2497,8 @@ Lemma setN_concat:
   setN (bytes1 ++ bytes2) ofs c = setN bytes2 (ofs + Z.of_nat (length bytes1)) (setN bytes1 ofs c).
 Proof.
   induction bytes1; intros.
-  simpl. decEq. omega.
-  simpl length. rewrite Nat2Z.inj_succ. simpl. rewrite IHbytes1. decEq. omega.
+  simpl. decEq. lia.
+  simpl length. rewrite Nat2Z.inj_succ. simpl. rewrite IHbytes1. decEq. lia.
 Qed.
 
 (* ALG: not obvious how to formulate splitting stores in the cap machine for uninitialized capabilities *)
@@ -2527,8 +2528,8 @@ Proof.
   elim n.
   rewrite app_length. rewrite Nat2Z.inj_add. red; intros.
   destruct (zlt ofs0 (ofs + Z.of_nat(length bytes1))).
-  apply r. omega.
-  eapply perm_storebytes_2; eauto. apply r0. omega.
+  apply r. lia.
+  eapply perm_storebytes_2; eauto. apply r0. lia.
 Qed.
 
 Theorem storebytes_split:
@@ -2541,11 +2542,11 @@ Proof.
   intros.
   destruct (range_perm_storebytes m b ofs bytes1 cp) as [m1 ST1].
   red; intros. exploit storebytes_range_perm; eauto. rewrite app_length.
-  rewrite Nat2Z.inj_add. omega.
+  rewrite Nat2Z.inj_add. lia.
   eapply storebytes_can_access_block_1; eassumption.
   destruct (range_perm_storebytes m1 b (ofs + Z.of_nat (length bytes1)) bytes2 cp) as [m2' ST2].
   red; intros. eapply perm_storebytes_1; eauto. exploit storebytes_range_perm.
-  eexact H. instantiate (1 := ofs0). rewrite app_length. rewrite Nat2Z.inj_add. omega.
+  eexact H. instantiate (1 := ofs0). rewrite app_length. rewrite Nat2Z.inj_add. lia.
   auto.
   eapply storebytes_can_access_block_2; eassumption.
   assert (Some m2 = Some m2').
@@ -2619,7 +2620,7 @@ Hypothesis ALLOC: alloc m1 cap c l = inl (ptr, m2).
 (*   unfold alloc in ALLOC. destruct m1. inv ALLOC. *)
 (*   unfold block_compartment. simpl. *)
 (*   rewrite PMap.gss. apply Exists_cons_hd. *)
-(*   constructor. omega. omega. reflexivity. reflexivity. *)
+(*   constructor. lia. lia. reflexivity. reflexivity. *)
 (* Qed. *)
 
 Theorem perm_alloc_1:
@@ -2654,13 +2655,13 @@ Proof.
   - inv H. exfalso.
     rewrite Ptrofs.add_unsigned in g.
     rewrite !Ptrofs.unsigned_repr in g.
-    omega. unfold Ptrofs.max_unsigned. omega. 
+    lia. unfold Ptrofs.max_unsigned. lia. 
     pose proof (Ptrofs.unsigned_range ((mem_compartments_next m1) # c)) as [? _].
     pose proof (Ptrofs.unsigned_range (Ptrofs.repr (Z.of_nat l))) as [? _].
-    split;[omega|].
+    split;[lia|].
     unfold Ptrofs.max_unsigned.
     admit.
-  - inv H. omega.
+  - inv H. lia.
 Admitted.
   
 Theorem perm_alloc_inv:
@@ -2759,10 +2760,10 @@ Proof.
   destruct cap,o0;[|easy..]. simpl in *. destruct Hb as [? ?].
   simpl. destruct H3.
   pose proof (size_chunk_pos chunk).
-  rewrite Z2Nat.id in H5;[|omega].
+  rewrite Z2Nat.id in H5;[|lia].
   pose proof (Ptrofs.unsigned_range i) as [? _].
   pose proof (Ptrofs.unsigned_range (pointer_ofs ptr)) as [? _].
-  assert (Z.of_nat l >= 0);[omega|]. rewrite <-S. omega.
+  assert (Z.of_nat l >= 0);[lia|]. rewrite <-S. lia.
 Qed.
 
 Local Hint Resolve valid_access_alloc_other valid_access_alloc_same: mem.
@@ -2779,11 +2780,11 @@ Proof.
   intros. inv H. destruct H1 as [H1 Hx].
   generalize (size_chunk_pos chunk); intro.
 (*   destruct (eq_block b' b). subst b'. *)
-(*   assert (perm m2 b ofs Cur p). apply H0. omega. *)
-(*   assert (perm m2 b (ofs + size_chunk chunk - 1) Cur p). apply H0. omega. *)
+(*   assert (perm m2 b ofs Cur p). apply H0. lia. *)
+(*   assert (perm m2 b (ofs + size_chunk chunk - 1) Cur p). apply H0. lia. *)
 (*   exploit perm_alloc_inv. eexact H2. rewrite dec_eq_true. intro. *)
 (*   exploit perm_alloc_inv. eexact H3. rewrite dec_eq_true. intro. *)
-(*   intuition omega. *)
+(*   intuition lia. *)
 (*   split; auto. red; intros. *)
 (*   exploit perm_alloc_inv. apply H0. eauto. rewrite dec_eq_false; auto. *)
 (*   split. *)
@@ -2800,10 +2801,10 @@ Lemma disjoint_not_derived:
 Proof.
   intros until ptr'. intros Hle2 D1 D2.
   inv D1;inv D2.
-  + simpl in *. omega.
-  + inv H0;simpl in *. omega.
-  + simpl in *. omega.
-  + inv H0;simpl in *. omega.
+  + simpl in *. lia.
+  + inv H0;simpl in *. lia.
+  + simpl in *. lia.
+  + inv H0;simpl in *. lia.
 Qed.
 
 Theorem load_alloc_unchanged:
@@ -2828,7 +2829,7 @@ Proof.
     intros D.
     eapply disjoint_not_derived;eauto.
     destruct ptr',o;[|easy..].
-    simpl. omega.
+    simpl. lia.
   - rewrite pred_dec_false;auto.
     intros v'. apply n.
     unfold valid_access_ptr in *.
@@ -2872,7 +2873,7 @@ capabilities are not restricted by compiler *)
 (* Proof. *)
 (*   intros. (* assert (exists v, load chunk m2 b ofs (Some c) = Some v). *) *)
 (* (*     apply valid_access_load. constructor; auto. *) *)
-(* (*     red; intros. eapply perm_implies. apply perm_alloc_2. omega. auto with mem. *) *)
+(* (*     red; intros. eapply perm_implies. apply perm_alloc_2. lia. auto with mem. *) *)
 (* (*   destruct H3 as [v LOAD]. rewrite LOAD. decEq. *) *)
 (* (*   eapply load_alloc_same; eauto. *) *)
 (*   (* Qed. *) *)
@@ -3060,7 +3061,7 @@ Proof.
   pose proof (size_chunk_pos chunk).
   red; intros. split;[|split];auto.
   - red;intros; eapply perm_free_1; eauto.    
-    inv H0; simpl in *; omega.
+    inv H0; simpl in *; lia.
   - apply free_can_access_block_inj_1; auto.
 Qed.
 
@@ -3075,9 +3076,9 @@ Proof.
   unfold free in FREE.
   elim (perm_free_2 (derive_offset k ptr' ofs) Cur p).
   - inv H;[|inv H1];simpl;inv B.
-    split;omega.
+    split;lia.
   - apply H0.
-    generalize (size_chunk_pos chunk). omega.
+    generalize (size_chunk_pos chunk). lia.
 Qed.
 
 Theorem valid_access_free_inv_1:
@@ -3116,7 +3117,7 @@ Proof.
   apply valid_access_in_bounds in H as B.
   destruct ptr',o0;[|easy..]. destruct B as [B1 B2].
   destruct (Z_le_dec (Ptrofs.unsigned (get_hi ptr)) (Ptrofs.unsigned (get_lo ptr)));cycle 1.
-  - eapply not_disjoint_nonemptycap_exists in n;[..|omega|simpl;omega].
+  - eapply not_disjoint_nonemptycap_exists in n;[..|lia|simpl;lia].
     destruct n as [ofs' [D1 D2]].
     destruct H as [_ [H _]]. simpl in *.
     admit.
@@ -3172,8 +3173,8 @@ Proof.
     destruct ptr',o;[|easy..].
     simpl in *.
     destruct H.
-    + simpl in *. omega.
-    + simpl in *. rewrite Z2Nat.id in B. omega. omega.
+    + simpl in *. lia.
+    + simpl in *. rewrite Z2Nat.id in B. lia. lia.
   - setoid_rewrite pred_dec_false at 1; auto.
     red; intros. apply n0. elim n0; red; intros.
     eapply perm_free_1; eauto.
@@ -3182,8 +3183,8 @@ Proof.
     destruct ptr',o;[|easy..].
     simpl in *.
     destruct H.
-    + simpl in *. omega.
-    + simpl in *. rewrite Z2Nat.id in B. omega. omega.
+    + simpl in *. lia.
+    + simpl in *. rewrite Z2Nat.id in B. lia. lia.
 Qed.    
 
 Theorem loadbytes_free_2:
@@ -3255,7 +3256,7 @@ Proof.
   destruct (can_access_block_dec m ptr (Some cp));inv DROP.
   unfold perm. simpl. (* rewrite PMap.gss. unfold proj_sumbool. *)
   destruct zle,zlt; simpl. constructor.
-  all: omega.
+  all: lia.
 Qed.
 
 Theorem perm_drop_2:
@@ -3269,7 +3270,7 @@ Proof.
   apply r in H as P.
   unfold perm in *;simpl.  
   destruct zle,zlt; simpl;auto.
-  all: byContradiction; intuition omega.
+  all: byContradiction; intuition lia.
 Qed.
 
 Theorem perm_drop_3:
@@ -3281,7 +3282,7 @@ Proof.
   destruct (can_access_block_dec m ptr (Some cp));inv DROP.
   unfold perm; simpl.
   unfold proj_sumbool. destruct (zle). destruct (zlt).
-  byContradiction. intuition omega.
+  byContradiction. intuition lia.
   auto. auto.
 Qed.
 
@@ -3349,7 +3350,7 @@ Admitted.
 (*   destruct (eq_block b' b). subst b'. *)
 (*   destruct (zlt ofs0 lo). eapply perm_drop_3; eauto. *)
 (*   destruct (zle hi ofs0). eapply perm_drop_3; eauto. *)
-(*   apply perm_implies with p. eapply perm_drop_1; eauto. omega. *)
+(*   apply perm_implies with p. eapply perm_drop_1; eauto. lia. *)
 (*   generalize (size_chunk_pos chunk); intros. intuition. *)
 (*   eapply perm_drop_3; eauto. *)
 (*   split. apply can_access_block_drop_1; easy. easy. *)
@@ -3402,7 +3403,7 @@ Proof.
   destruct (eq_block b' b). subst b'.
   destruct (zlt ofs0 lo). eapply perm_drop_3; eauto.
   destruct (zle hi ofs0). eapply perm_drop_3; eauto.
-  apply perm_implies with p. eapply perm_drop_1; eauto. omega. intuition.
+  apply perm_implies with p. eapply perm_drop_1; eauto. lia. intuition.
   eapply perm_drop_3; eauto.
 * apply can_access_block_drop_1; assumption.
 + setoid_rewrite pred_dec_false at 2.

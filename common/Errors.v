@@ -6,11 +6,10 @@
 (*                                                                     *)
 (*  Copyright Institut National de Recherche en Informatique et en     *)
 (*  Automatique.  All rights reserved.  This file is distributed       *)
-(*  under the terms of the GNU Lesser General Public License as        *)
-(*  published by the Free Software Foundation, either version 2.1 of   *)
-(*  the License, or  (at your option) any later version.               *)
-(*  This file is also distributed under the terms of the               *)
-(*  INRIA Non-Commercial License Agreement.                            *)
+(*  under the terms of the GNU General Public License as published by  *)
+(*  the Free Software Foundation, either version 2 of the License, or  *)
+(*  (at your option) any later version.  This file is also distributed *)
+(*  under the terms of the INRIA Non-Commercial License Agreement.     *)
 (*                                                                     *)
 (* *********************************************************************)
 
@@ -38,6 +37,35 @@ Definition errmsg: Type := list errcode.
 
 Definition msg (s: string) : errmsg := MSG s :: nil.
 
+(** * The monad typeclass *)
+Declare Scope monad_scope.
+Declare Scope error_monad_scope.
+
+Class Monad (M: Type -> Type) : Type :=
+  { ret: forall {T: Type}, T -> M T;
+    bind: forall {T U: Type}, M T -> (T -> M U) -> M U
+  }.
+
+Notation "'do' X <- A ; B" := (bind A (fun X => B))
+   ( at level 200, X ident, A at level 100, B at level 200)
+    : monad_scope.
+Notation "A >>= F" := (bind A F) (at level 42, left associativity)
+    : monad_scope.
+
+(** * The option monad *)
+
+Arguments Some [A].
+
+Definition some_bind (A B: Type) (a: option A) (g: A -> option B) : option B :=
+  match a with
+  | Some a => g a
+  | None => None
+  end.
+Definition some_ret (A: Type) (a: A) : option A := Some a.
+
+#[ global ] Instance option_monad : Monad option :=
+  { ret:=some_ret; bind:=some_bind }.
+   
 (** * The error monad *)
 
 (** Compilation functions that can fail have return type [res A].
@@ -53,11 +81,37 @@ Arguments Error [A].
 (** To automate the propagation of errors, we use a monadic style
   with the following [bind] operation. *)
 
-Definition bind (A B: Type) (f: res A) (g: A -> res B) : res B :=
+Definition err_bind (A B: Type) (f: res A) (g: A -> res B) : res B :=
   match f with
   | OK x => g x
   | Error msg => Error msg
   end.
+Definition err_ret (A: Type) (a: A) : res A := OK a.
+
+Local Open Scope monad_scope.
+
+Lemma mon_left_id : forall (A B : Type) (a : A) (f : A -> option B),
+  ret a >>= f = f a.
+intros.
+reflexivity.
+Qed.
+ 
+Lemma mon_right_id : forall (A : Type) (a : option A),
+  a >>= ret = a.
+intros.
+induction a; repeat reflexivity.
+Qed.
+ 
+Lemma mon_assoc :
+  forall (A B C : Type) (a : option A) (f : A -> option B) (g : B -> option C),
+    (a >>= f) >>= g = a >>= (fun x => f x >>= g).
+intros.
+induction a; repeat reflexivity.
+Qed.
+
+#[ global] Instance error_monad : Monad res :=
+  { ret:=err_ret; bind:= err_bind }.
+  
 
 Definition bind2 (A B C: Type) (f: res (A * B)) (g: A -> B -> res C) : res C :=
   match f with
@@ -67,15 +121,17 @@ Definition bind2 (A B C: Type) (f: res (A * B)) (g: A -> B -> res C) : res C :=
 
 (** The [do] notation, inspired by Haskell's, keeps the code readable. *)
 
-Declare Scope error_monad_scope.
-
-Notation "'do' X <- A ; B" := (bind A (fun X => B))
- (at level 200, X ident, A at level 100, B at level 200)
- : error_monad_scope.
+(* Notation "'do' X <- A ; B" := (bind A (fun X => B)) *)
+(*  (at level 200, X ident, A at level 100, B at level 200) *)
+(*  : error_monad_scope. *)
 
 Notation "'do' ( X , Y ) <- A ; B" := (bind2 A (fun X Y => B))
  (at level 200, X ident, Y ident, A at level 100, B at level 200)
- : error_monad_scope.
+    : error_monad_scope.
+
+Notation "'do' X <- A ; B" := (err_bind A (fun X => B))
+ (at level 200, X ident, A at level 100, B at level 200)
+    : error_monad_scope.
 
 Remark bind_inversion:
   forall (A B: Type) (f: res A) (g: A -> res B) (y: B),
@@ -149,7 +205,7 @@ Ltac monadInv1 H :=
       inversion H; clear H; try subst
   | (Error _ = OK _) =>
       discriminate
-  | (bind ?F ?G = OK ?X) =>
+  | (err_bind ?F ?G = OK ?X) =>
       let x := fresh "x" in (
       let EQ1 := fresh "EQ" in (
       let EQ2 := fresh "EQ" in (
@@ -178,19 +234,19 @@ Ltac monadInv H :=
   monadInv1 H ||
   match type of H with
   | (?F _ _ _ _ _ _ _ _ = OK _) =>
-      ((progress simpl in H) || unfold F in H); monadInv1 H
+      ((progress simpl in H) || unfold F in H; simpl in H); monadInv1 H
   | (?F _ _ _ _ _ _ _ = OK _) =>
-      ((progress simpl in H) || unfold F in H); monadInv1 H
+      ((progress simpl in H) || unfold F in H; simpl in H); monadInv1 H
   | (?F _ _ _ _ _ _ = OK _) =>
-      ((progress simpl in H) || unfold F in H); monadInv1 H
+      ((progress simpl in H) || unfold F in H; simpl in H); monadInv1 H
   | (?F _ _ _ _ _ = OK _) =>
-      ((progress simpl in H) || unfold F in H); monadInv1 H
+      ((progress simpl in H) || unfold F in H; simpl in H); monadInv1 H
   | (?F _ _ _ _ = OK _) =>
-      ((progress simpl in H) || unfold F in H); monadInv1 H
+      ((progress simpl in H) || unfold F in H; simpl in H); monadInv1 H
   | (?F _ _ _ = OK _) =>
-      ((progress simpl in H) || unfold F in H); monadInv1 H
+      ((progress simpl in H) || unfold F in H; simpl in H); monadInv1 H
   | (?F _ _ = OK _) =>
-      ((progress simpl in H) || unfold F in H); monadInv1 H
+      ((progress simpl in H) || unfold F in H; simpl in H); monadInv1 H
   | (?F _ = OK _) =>
-      ((progress simpl in H) || unfold F in H); monadInv1 H
+      ((progress simpl in H) || unfold F in H; simpl in H); monadInv1 H
   end.
