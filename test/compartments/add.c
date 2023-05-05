@@ -1,15 +1,16 @@
 #include <stdio.h>
 
+§comp_add§ » add
+
 static §comp_add§ int add(int x, int y) {
   return x + y;
 }
 
-// §comp_add§ exports add
-// §comp_main§ exports add
-
 §comp_main§ « §comp_add§[add]
 
 §comp_main§ int main() {
-  printf("%d", 3+3);
+  int x;
+  x = add(3, 3);
+  printf("%d", x);
   return 0;
 }
