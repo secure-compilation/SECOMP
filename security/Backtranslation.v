@@ -840,32 +840,262 @@ Section Backtranslation.
       eapply eventval_match_wf_eventval_ge; eauto.
     Qed.
 
+    Lemma sem_cast_ptr
+          b ofs m
+      :
+      Cop.sem_cast (Vptr b ofs) (Tpointer Tvoid noattr) (typ_to_type Tptr) m = Some (Vptr b ofs).
+    Proof.
+      unfold Tptr. destruct Archi.ptr64 eqn:ARCH; unfold Cop.sem_cast; simpl; rewrite ARCH; auto.
+    Qed.
+
   End CODEPROP.
 
 
   Section STEPPROP.
 
+    Variant external_call_event_match (ef: external_function) (ev: event) (ge: Senv.t) (cp: compartment) (m1: mem) (e: env) (m2: mem): Prop :=
+      | ext_match_vload
+          ch
+          (EF: ef = EF_vload ch)
+          id ofs evv
+          (EV: ev = Event_vload ch id ofs evv)
+          (WF: wf_env e id)
+          b res
+          (SEM: volatile_load_sem ch ge cp (Vptr b ofs :: nil) m1 (ev :: nil) res m2)
+        :
+        external_call_event_match ef ev ge cp m1 e m2
+      | ext_match_vstore
+          ch
+          (EF: ef = EF_vstore ch)
+          id ofs evv
+          (EV: ev = Event_vstore ch id ofs evv)
+          (WF0: wf_env e id)
+          (WF1: wf_eventval_env e evv)
+          b argv
+          (SEM: volatile_store_sem ch ge cp (Vptr b ofs :: argv :: nil) m1 (ev :: nil) Vundef m2)
+        :
+        external_call_event_match ef ev ge cp m1 e m2
+      | ext_match_annot
+          len text targs
+          (EF: ef = EF_annot len text targs)
+          evargs
+          (EV: ev = Event_annot text evargs)
+          (WFENV: Forall (wf_eventval_env e) evargs)
+          vargs
+          (SEM: extcall_annot_sem text targs ge cp vargs m1 (ev :: nil) Vundef m2)
+        :
+        external_call_event_match ef ev ge cp m1 e m2
+      | ext_match_external
+          name excp sg
+          (EF: ef = EF_external name excp sg)
+          evname evargs evres
+          (EV: ev = Event_syscall evname evargs evres)
+          (WFENV: Forall (wf_eventval_env e) evargs)
+          vargs vres
+          (SEM: external_functions_sem name sg ge cp vargs m1 (ev :: nil) vres m2)
+          (ARGS: eventval_list_match ge evargs sg.(sig_args) vargs)
+        :
+        external_call_event_match ef ev ge cp m1 e m2
+      | ext_match_builtin
+          name sg
+          (EF: (ef = EF_builtin name sg) \/ (ef = EF_runtime name sg))
+          evname evargs evres
+          (EV: ev = Event_syscall evname evargs evres)
+          (WFENV: Forall (wf_eventval_env e) evargs)
+          (ISEXT: Builtins.lookup_builtin_function name sg = None)
+          vargs vres
+          (SEM: external_functions_sem name sg ge cp vargs m1 (ev :: nil) vres m2)
+          (ARGS: eventval_list_match ge evargs sg.(sig_args) vargs)
+        :
+        external_call_event_match ef ev ge cp m1 e m2
+      | ext_match_inline_asm
+          txt sg strs
+          (EF: ef = EF_inline_asm txt sg strs)
+          evname evargs evres
+          (EV: ev = Event_syscall evname evargs evres)
+          (WFENV: Forall (wf_eventval_env e) evargs)
+          vargs vres
+          (SEM: inline_assembly_sem txt sg ge cp vargs m1 (ev :: nil) vres m2)
+          (ARGS: eventval_list_match ge evargs sg.(sig_args) vargs)
+        :
+        external_call_event_match ef ev ge cp m1 e m2
+    .
+
     (* Step lemmas *)
+    Lemma code_of_event_step_intra_call_ext
+          ev ik ef
+          p f k e le m1 ge cp m2
+          (CP: cp = comp_of f)
+          (GE: ge = globalenv p)
+          (EXT: external_call_event_match ef ev ge cp m1 e m2)
+          fb
+          (IK: ik = info_external fb (ef_sig ef))
+          fid
+          (INV: Genv.invert_symbol ge fb = Some fid)
+          (WF: wf_env e fid)
+          (* bt_wf *)
+          (* from_asm *)
+          (ISEXT: let tys := from_sig_fun_data (ef_sig ef) in
+                  Genv.find_funct_ptr ge fb = Some (Ctypes.External ef (dargs tys) (dret tys) (dcc tys)))
+          (ALLOWED: Genv.allowed_call ge cp (Vptr fb Ptrofs.zero))
+          (INTRA: Genv.type_of_call ge cp (Genv.find_comp ge (Vptr fb Ptrofs.zero)) <> Genv.CrossCompartmentCall)
+      :
+      Star (Clight.semantics1 p)
+           (State f (code_of_ievent ge (ev, ik)) k e le m1)
+           (ev :: nil)
+           (State f Sskip k e le m2).
+    Proof.
+      inv EXT; subst; simpl in *.
+      - pose proof SEM as SEM0. inv SEM. inv H5. rewrite INV. econstructor 2.
+        { eapply step_call.
+          4:{ instantiate (2:=Vptr fb Ptrofs.zero). unfold Genv.find_funct. rewrite pred_dec_true; eauto. }
+          4:{ simpl. eauto. }
+          auto.
+          { eapply eval_Elvalue. eapply eval_Evar_global; auto. eapply Genv.invert_find_symbol; eauto. simpl. econstructor 2. auto. }
+          { econstructor; eauto. 3: econstructor. eapply ptr_of_id_ofs_eval; eauto. rewrite ptr_of_id_ofs_typeof. eapply sem_cast_ptr. }
+          auto.
+          { intros F. simpl in *. contradiction. }
+          { econstructor 1. auto. }
+        }
+        econstructor 2.
+        { eapply step_external_function. simpl. eauto. }
+        econstructor 2.
+        { unfold Genv.find_comp, Genv.find_funct in INTRA. rewrite pred_dec_true in INTRA; auto. rewrite ISEXT in INTRA; simpl in INTRA. unfold comp_of at 2 in INTRA. simpl in INTRA.
+          eapply step_returnstate; simpl.
+          - intros F. contradiction.
+          - econstructor 1. auto.
+        }
+        simpl. econstructor 1. all: eauto.
+      - pose proof SEM as SEM0. inv SEM. inv H5. rewrite INV. econstructor 2.
+        { eapply step_call.
+          4:{ instantiate (2:=Vptr fb Ptrofs.zero). unfold Genv.find_funct. rewrite pred_dec_true; eauto. }
+          4:{ simpl. eauto. }
+          auto.
+          { eapply eval_Elvalue. eapply eval_Evar_global; auto. eapply Genv.invert_find_symbol; eauto. simpl. econstructor 2. auto. }
+          { econstructor; eauto. eapply ptr_of_id_ofs_eval; eauto. rewrite ptr_of_id_ofs_typeof. eapply sem_cast_ptr.
+            econstructor; eauto. 3: econstructor. eapply eventval_to_expr_val_eval; auto. eapply eventval_match_wf_eventval_ge; eauto.
+            eapply eventval_match_sem_cast. erewrite eventval_match_eventval_to_val; eauto.
+          }
+          auto.
+          { intros F. simpl in *. contradiction. }
+          { econstructor 1. auto. }
+        }
+        econstructor 2.
+        { eapply step_external_function. unfold call_comp. simpl. econstructor. econstructor 1; eauto. eapply val_load_result_aux; eauto. }
+        econstructor 2.
+        { unfold Genv.find_comp, Genv.find_funct in INTRA. rewrite pred_dec_true in INTRA; auto. rewrite ISEXT in INTRA; simpl in INTRA. unfold comp_of at 2 in INTRA. simpl in INTRA.
+          eapply step_returnstate; simpl.
+          - intros F. contradiction.
+          - econstructor 1. auto.
+        }
+        simpl. econstructor 1. all: eauto.
+      - pose proof SEM as SEM0. inv SEM. rewrite INV. econstructor 2.
+        { eapply step_call.
+          4:{ instantiate (2:=Vptr fb Ptrofs.zero). unfold Genv.find_funct. rewrite pred_dec_true; eauto. }
+          4:{ simpl. eauto. }
+          auto.
+          { eapply eval_Elvalue. eapply eval_Evar_global; auto. eapply Genv.invert_find_symbol; eauto. simpl. econstructor 2. auto. }
+          { eapply list_eventval_to_expr_val_eval_typs; eauto. }
+          auto.
+          { intros F. simpl in *. contradiction. }
+          { econstructor 1. auto. }
+        }
+        econstructor 2.
+        { eapply step_external_function. unfold call_comp. simpl. eauto. }
+        econstructor 2.
+        { unfold Genv.find_comp, Genv.find_funct in INTRA. rewrite pred_dec_true in INTRA; auto. rewrite ISEXT in INTRA; simpl in INTRA. unfold comp_of at 2 in INTRA. simpl in INTRA.
+          eapply step_returnstate; simpl.
+          - intros F. contradiction.
+          - econstructor 1. auto.
+        }
+        simpl. econstructor 1. all: eauto.
+      - rewrite INV. econstructor 2.
+        { eapply step_call.
+          4:{ instantiate (2:=Vptr fb Ptrofs.zero). unfold Genv.find_funct. rewrite pred_dec_true; eauto. }
+          4:{ simpl. eauto. }
+          auto.
+          { eapply eval_Elvalue. eapply eval_Evar_global; auto. eapply Genv.invert_find_symbol; eauto. simpl. econstructor 2. auto. }
+          { eapply list_eventval_to_expr_val_eval_typs; eauto. }
+          auto.
+          { intros F. simpl in *. contradiction. }
+          { econstructor 1. auto. }
+        }
+        econstructor 2.
+        { eapply step_external_function. unfold call_comp. simpl. eauto. }
+        econstructor 2.
+        { unfold Genv.find_comp, Genv.find_funct in INTRA. rewrite pred_dec_true in INTRA; auto. rewrite ISEXT in INTRA; simpl in INTRA. unfold comp_of at 2 in INTRA. simpl in INTRA.
+          eapply step_returnstate; simpl.
+          - intros F. contradiction.
+          - econstructor 1. auto.
+        }
+        simpl. econstructor 1. all: eauto.
+      - rewrite INV. econstructor 2.
+        { eapply step_call.
+          4:{ instantiate (2:=Vptr fb Ptrofs.zero). unfold Genv.find_funct. rewrite pred_dec_true; eauto. }
+          4:{ simpl. eauto. }
+          auto.
+          { eapply eval_Elvalue. eapply eval_Evar_global; auto. eapply Genv.invert_find_symbol; eauto. simpl. econstructor 2. auto. }
+          { eapply list_eventval_to_expr_val_eval_typs; eauto. destruct EF; subst; simpl; eauto. }
+          auto.
+          { intros F. simpl in *. contradiction. }
+          { econstructor 1. auto. }
+        }
+        econstructor 2.
+        { eapply step_external_function. unfold call_comp. simpl. destruct EF; subst; simpl; red; rewrite ISEXT0; eauto. }
+        econstructor 2.
+        { unfold Genv.find_comp, Genv.find_funct in INTRA. rewrite pred_dec_true in INTRA; auto. rewrite ISEXT in INTRA; simpl in INTRA. unfold comp_of at 2 in INTRA. simpl in INTRA.
+          eapply step_returnstate; simpl.
+          - intros F. contradiction.
+          - econstructor 1. auto.
+        }
+        simpl. econstructor 1. all: eauto.
+      - rewrite INV. econstructor 2.
+        { eapply step_call.
+          4:{ instantiate (2:=Vptr fb Ptrofs.zero). unfold Genv.find_funct. rewrite pred_dec_true; eauto. }
+          4:{ simpl. eauto. }
+          auto.
+          { eapply eval_Elvalue. eapply eval_Evar_global; auto. eapply Genv.invert_find_symbol; eauto. simpl. econstructor 2. auto. }
+          { eapply list_eventval_to_expr_val_eval_typs; eauto. }
+          auto.
+          { intros F. simpl in *. contradiction. }
+          { econstructor 1. auto. }
+        }
+        econstructor 2.
+        { eapply step_external_function. unfold call_comp. simpl. eauto. }
+        econstructor 2.
+        { unfold Genv.find_comp, Genv.find_funct in INTRA. rewrite pred_dec_true in INTRA; auto. rewrite ISEXT in INTRA; simpl in INTRA. unfold comp_of at 2 in INTRA. simpl in INTRA.
+          eapply step_returnstate; simpl.
+          - intros F. contradiction.
+          - econstructor 1. auto.
+        }
+        simpl. econstructor 1. all: eauto.
+    Qed.
+
     Lemma code_of_event_step_vload
-          ev
+          ev ik
           ch id ofs v
-          p f k e le m
+          p f k e le m ge
+          (GE: ge = globalenv p)
           (EV: ev = Event_vload ch id ofs v)
+          fb
+          (IK: ik = info_external fb (ef_sig (EF_vload ch)))
+          fid
+          (EXT: Genv.invert_symbol ge fb = Some fid)
           (* bt_wf *)
           (WFENV: wf_env e id)
           (* from_asm *)
           b
-          (VOL: Senv.block_is_volatile (globalenv p) b = true)
-          (GE: Genv.find_symbol (globalenv p) id = Some b)
+          (VOL: Senv.block_is_volatile ge b = true)
+          (SYMB: Genv.find_symbol ge id = Some b)
           rv
-          (MATCH: eventval_match (globalenv p) v (type_of_chunk ch) rv)
+          (MATCH: eventval_match ge v (type_of_chunk ch) rv)
       :
         Star (Clight.semantics1 p)
-             (State f (code_of_event sid (from_cl_funs_data p) ev) k e le m)
+             (State f (code_of_ievent ge (ev, ik)) k e le m)
              (ev :: nil)
              (State f Sskip k e le m).
     Proof.
-      subst; simpl in *. unfold code_of_vload. simpl.
+      subst; simpl in *. rewrite EXT.
       econstructor 2.
       3:{ rewrite E0_right. reflexivity. }
       { eapply step_builtin.
