@@ -853,17 +853,17 @@ Section Backtranslation.
 
   Section STEPPROP.
 
-    Variant external_call_event_match (ef: external_function) (ev: event) (ge: Senv.t) (cp: compartment) (m1: mem) (e: env) (m2: mem): Prop :=
+    Variant external_call_event_match (ef: external_function) (ev: event) (ge: Senv.t) (cp: compartment) (m1: mem) (e: env) : val -> mem -> Prop :=
       | ext_match_vload
           ch
           (EF: ef = EF_vload ch)
           id ofs evv
           (EV: ev = Event_vload ch id ofs evv)
           (WF: wf_env e id)
-          b res
+          b res m2
           (SEM: volatile_load_sem ch ge cp (Vptr b ofs :: nil) m1 (ev :: nil) res m2)
         :
-        external_call_event_match ef ev ge cp m1 e m2
+        external_call_event_match ef ev ge cp m1 e res m2
       | ext_match_vstore
           ch
           (EF: ef = EF_vstore ch)
@@ -871,31 +871,31 @@ Section Backtranslation.
           (EV: ev = Event_vstore ch id ofs evv)
           (WF0: wf_env e id)
           (WF1: wf_eventval_env e evv)
-          b argv
+          b argv m2
           (SEM: volatile_store_sem ch ge cp (Vptr b ofs :: argv :: nil) m1 (ev :: nil) Vundef m2)
         :
-        external_call_event_match ef ev ge cp m1 e m2
+        external_call_event_match ef ev ge cp m1 e Vundef m2
       | ext_match_annot
           len text targs
           (EF: ef = EF_annot len text targs)
           evargs
           (EV: ev = Event_annot text evargs)
           (WFENV: Forall (wf_eventval_env e) evargs)
-          vargs
+          vargs m2
           (SEM: extcall_annot_sem text targs ge cp vargs m1 (ev :: nil) Vundef m2)
         :
-        external_call_event_match ef ev ge cp m1 e m2
+        external_call_event_match ef ev ge cp m1 e Vundef m2
       | ext_match_external
           name excp sg
           (EF: ef = EF_external name excp sg)
           evname evargs evres
           (EV: ev = Event_syscall evname evargs evres)
           (WFENV: Forall (wf_eventval_env e) evargs)
-          vargs vres
+          vargs vres m2
           (SEM: external_functions_sem name sg ge cp vargs m1 (ev :: nil) vres m2)
           (ARGS: eventval_list_match ge evargs sg.(sig_args) vargs)
         :
-        external_call_event_match ef ev ge cp m1 e m2
+        external_call_event_match ef ev ge cp m1 e vres m2
       | ext_match_builtin
           name sg
           (EF: (ef = EF_builtin name sg) \/ (ef = EF_runtime name sg))
@@ -903,31 +903,31 @@ Section Backtranslation.
           (EV: ev = Event_syscall evname evargs evres)
           (WFENV: Forall (wf_eventval_env e) evargs)
           (ISEXT: Builtins.lookup_builtin_function name sg = None)
-          vargs vres
+          vargs vres m2
           (SEM: external_functions_sem name sg ge cp vargs m1 (ev :: nil) vres m2)
           (ARGS: eventval_list_match ge evargs sg.(sig_args) vargs)
         :
-        external_call_event_match ef ev ge cp m1 e m2
+        external_call_event_match ef ev ge cp m1 e vres m2
       | ext_match_inline_asm
           txt sg strs
           (EF: ef = EF_inline_asm txt sg strs)
           evname evargs evres
           (EV: ev = Event_syscall evname evargs evres)
           (WFENV: Forall (wf_eventval_env e) evargs)
-          vargs vres
+          vargs vres m2
           (SEM: inline_assembly_sem txt sg ge cp vargs m1 (ev :: nil) vres m2)
           (ARGS: eventval_list_match ge evargs sg.(sig_args) vargs)
         :
-        external_call_event_match ef ev ge cp m1 e m2
+        external_call_event_match ef ev ge cp m1 e vres m2
     .
 
     (* Step lemmas *)
     Lemma code_of_event_step_intra_call_ext
           ev ik ef
-          p f k e le m1 ge cp m2
+          p f k e le m1 ge cp res m2
           (CP: cp = comp_of f)
           (GE: ge = globalenv p)
-          (EXT: external_call_event_match ef ev ge cp m1 e m2)
+          (EXT: external_call_event_match ef ev ge cp m1 e res m2)
           fb
           (IK: ik = info_external fb (ef_sig ef))
           fid
@@ -1070,6 +1070,77 @@ Section Backtranslation.
         }
         simpl. econstructor 1. all: eauto.
     Qed.
+
+    Lemma code_of_event_step_builtin
+          ev ik ef
+          p f k e le m1 ge cp res m2
+          (CP: cp = comp_of f)
+          (GE: ge = globalenv p)
+          (EXT: external_call_event_match ef ev ge cp m1 e res m2)
+          (IK: ik = info_builtin ef)
+          (* bt_wf *)
+          (* from_asm *)
+      :
+      Star (Clight.semantics1 p)
+           (State f (code_of_ievent ge (ev, ik)) k e le m1)
+           (ev :: nil)
+           (State f Sskip k e le m2).
+    Proof.
+      inv EXT; subst; simpl in *.
+      - pose proof SEM as SEM0. inv SEM. inv H5. econstructor 2.
+        { eapply step_builtin; eauto.
+          econstructor; eauto. 3: econstructor. eapply ptr_of_id_ofs_eval; eauto. rewrite ptr_of_id_ofs_typeof. eapply sem_cast_ptr.
+        }
+        simpl. econstructor 1. all: eauto.
+      - pose proof SEM as SEM0. inv SEM. inv H5. econstructor 2.
+        { apply val_load_result_aux in H10.
+          eapply step_builtin.
+          - econstructor; eauto. eapply ptr_of_id_ofs_eval; eauto. rewrite ptr_of_id_ofs_typeof. eapply sem_cast_ptr.
+          econstructor; eauto. 3: econstructor. eapply eventval_to_expr_val_eval; auto. eapply eventval_match_wf_eventval_ge; eauto.
+          eapply eventval_match_sem_cast. erewrite eventval_match_eventval_to_val; eauto.
+          - simpl. econstructor. econstructor 1; eauto.
+        }
+        simpl. econstructor 1. all: eauto.
+      - pose proof SEM as SEM0. inv SEM. econstructor 2.
+        { eapply step_builtin; eauto. eapply list_eventval_to_expr_val_eval_typs; eauto. }
+        simpl. econstructor 1. all: eauto.
+      - econstructor 2.
+        { eapply step_builtin; eauto. eapply list_eventval_to_expr_val_eval_typs; eauto. }
+        simpl. econstructor 1. all: eauto.
+      - econstructor 2.
+        { destruct EF; subst; simpl.
+          - eapply step_builtin. eapply list_eventval_to_expr_val_eval_typs; eauto.
+            simpl. red. rewrite ISEXT. eauto.
+          - eapply step_builtin. eapply list_eventval_to_expr_val_eval_typs; eauto.
+            simpl. red. rewrite ISEXT. eauto.
+        }
+        simpl. econstructor 1. all: eauto.
+      - econstructor 2.
+        { eapply step_builtin; eauto. eapply list_eventval_to_expr_val_eval_typs; eauto. }
+        simpl. econstructor 1. all: eauto.
+    Qed.
+
+    Lemma code_of_event_step_cross_call_ext
+          ev ef
+          p k m ge cp vres m'
+          targs tres cconv vargs
+          (CP: cp = call_comp k)
+          (GE: ge = globalenv p)
+          (* (EXT: external_call_event_match ef ev ge cp m1 e res m2) *)
+          (EXT: external_call ef ge cp vargs m (ev :: nil) vres m')
+          (* bt_wf *)
+          (* from_asm *)
+      :
+      Star (Clight.semantics1 p)
+           (Callstate (External ef targs tres cconv) vargs k m)
+           (ev :: nil)
+           (Returnstate vres k m' (rettype_of_type tres) (comp_of ef)).
+    Proof.
+      subst; simpl in *. econstructor 2. eapply step_external_function. eauto.
+      econstructor 1. auto.
+    Qed.
+
+    (* TODO *)
 
     Lemma code_of_event_step_vload
           ev ik
