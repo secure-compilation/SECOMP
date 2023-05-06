@@ -1126,7 +1126,6 @@ Section Backtranslation.
           targs tres cconv vargs
           (CP: cp = call_comp k)
           (GE: ge = globalenv p)
-          (* (EXT: external_call_event_match ef ev ge cp m1 e res m2) *)
           (EXT: external_call ef ge cp vargs m (ev :: nil) vres m')
           (* bt_wf *)
           (* from_asm *)
@@ -1140,7 +1139,174 @@ Section Backtranslation.
       econstructor 1. auto.
     Qed.
 
+    Lemma code_of_event_step_cross_call_start
+          ev ik
+          p f k e le m ge cp
+          (CP: cp = comp_of f)
+          (GE: ge = globalenv p)
+          cp' fid evargs
+          (EV: ev = Event_call cp cp' fid evargs)
+          ce sg
+          (IK: ik = info_call ce sg)
+          (WF0: wf_env e fid)
+          (WF1: Forall (wf_eventval_env e) evargs)
+          tdata
+          (TD: tdata = from_sig_fun_data sg)
+          args
+          (ARGS: args = list_eventval_to_list_val ge evargs)
+          b
+          (FINDB: Genv.find_symbol ge fid = Some b)
+          fd
+          (FINDF: Genv.find_funct ge (Vptr b Ptrofs.zero) = Some fd)
+          (TYPEF: type_of_fundef fd = Tfunction tdata.(dargs) tdata.(dret) tdata.(dcc))
+          (CP': cp' = comp_of fd)
+          (CROSS: Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall)
+          (NPTR: Forall not_ptr args)
+          (ALLOW: Genv.allowed_cross_call ge cp (Vptr b Ptrofs.zero))
+          (ESM: eventval_list_match ge evargs (sig_args sg) args)
+      :
+      Star (Clight.semantics1 p)
+           (State f (code_of_ievent ge (ev, ik)) k e le m)
+           (ev :: nil)
+           (Callstate fd args (Kcall None f e le k) m).
+    Proof.
+      subst; simpl. econstructor 2.
+      { eapply step_call. 4: eauto. all: simpl; eauto.
+        { econstructor. econstructor 2; eauto. simpl. econstructor 2; auto. }
+        { eapply list_eventval_to_expr_val_eval_typs; auto. }
+        { red. auto. }
+        { econstructor 2; eauto.
+          - unfold Genv.find_comp. setoid_rewrite FINDF. auto.
+          - eapply Genv.find_invert_symbol; eauto.
+          - eapply eventval_list_match_transl; eauto.
+        }
+      }
+      { econstructor 1. }
+      { simpl. unfold Genv.find_comp.
+        unfold Genv.find_funct in *. simpl in *. rewrite FINDF. auto.
+      }
+    Qed.
+
+
+    Lemma code_of_event_step_cross_call_int
+    Lemma code_of_event_step_cross_return_start
+    Lemma code_of_event_step_cross_returnstate
+
     (* TODO *)
+    Lemma code_of_event_step_call_start
+          ev
+          cp cp' id vs
+          p f k e le m
+          ge data
+          (GE: ge = globalenv p)
+          (EV: ev = Event_call cp cp' id vs)
+          (FDATA: (from_cl_funs_data p) ! id = Some data)
+          (* bt_wf *)
+          (GLOB: e ! id = None)
+          (WFARGS1: Forall (wf_eventval_env e) vs)
+          (* from_asm *)
+          b
+          (FINDB: Genv.find_symbol ge id = Some b)
+          fd
+          (FINDF: Genv.find_funct ge (Vptr b Ptrofs.zero) = Some fd)
+          (TYPEF: type_of_fundef fd = Tfunction data.(dargs) data.(dret) data.(dcc))
+          (CP1: cp = comp_of f)
+          (CP2: cp' = comp_of fd)
+          (CROSS: Genv.type_of_call ge (comp_of f) (comp_of fd) = Genv.CrossCompartmentCall)
+          (NPTR: Forall not_ptr (list_eventval_to_list_val ge vs))
+          (ALLOW: Genv.allowed_cross_call ge (comp_of f) (Vptr b Ptrofs.zero))
+          some_sig_args some_vals
+          (ESM: eventval_list_match ge vs some_sig_args some_vals)
+          (SIGARGS: data.(dargs) = (list_typ_to_typelist some_sig_args))
+      :
+        Star (Clight.semantics1 p)
+             (State f (code_of_event sid (from_cl_funs_data p) ev) k e le m)
+             (ev :: nil)
+             (Callstate fd (list_eventval_to_list_val ge vs) (Kcall None f e le k) m).
+    Proof.
+      subst; simpl. unfold code_of_call. rewrite FDATA.
+      econstructor 2.
+      3:{ rewrite E0_right. reflexivity. }
+      { eapply step_call; simpl; eauto.
+        { eapply eval_Elvalue.
+          - eapply eval_Evar_global; eauto.
+          - eapply deref_loc_reference. auto.
+        }
+        { rewrite SIGARGS. apply list_eventval_to_expr_val_eval; auto. eapply eventval_list_match_transl. eauto. }
+        red; auto.
+        unfold Genv.find_comp. setoid_rewrite FINDF.
+        eapply call_trace_cross; eauto. apply Genv.find_invert_symbol; auto.
+        rewrite SIGARGS. eapply eventval_list_match_transl; eauto.
+      }
+      econstructor 1.
+    Qed.
+
+    Lemma code_of_event_step_return
+          ev
+          cp cp' rv
+          p f k e le m
+          ge
+          (GE: ge = globalenv p)
+          (EV: ev = Event_return cp' cp rv)
+          (* bt should ensure them *)
+          (WFRV1: wf_eventval_env e rv)
+          (* asm should ensure them *)
+          (NPTR: not_ptr (eventval_to_val ge rv))
+          some_sig_ret some_val
+          (EM: eventval_match ge rv some_sig_ret some_val)
+          (RTTYP: fn_return f = typ_to_type some_sig_ret)
+          (* handle during proving *)
+          optid f' e' le' k'
+          (CONT: call_cont k = Kcall optid f' e' le' k')
+          (CP1: cp = comp_of f)
+          (CP2: cp' = comp_of f')
+          (CROSS: Genv.type_of_call ge (comp_of f') (comp_of f) = Genv.CrossCompartmentCall)
+          m'
+          (FREE: Mem.free_list m (blocks_of_env ge e) (comp_of f) = Some m')
+      :
+      Star (Clight.semantics1 p)
+           (State f (code_of_event sid (from_cl_funs_data p) ev) k e le m)
+           (ev :: nil)
+           (State f' Sskip k' e' (set_opttemp optid (eventval_to_val ge rv) le') m').
+    Proof.
+      subst; simpl. unfold code_of_return.
+      econstructor 2.
+      3:{ rewrite E0_left. reflexivity. }
+      { eapply step_return_1; simpl; eauto.
+        { eapply eventval_to_expr_val_eval; auto. eapply eventval_match_wf_eventval_ge; eauto. }
+        { rewrite RTTYP. eapply sem_cast_eventval_match. eapply eventval_match_transl; eauto. }
+      }
+      econstructor 2.
+      3:{ rewrite E0_right. reflexivity. }
+      { rewrite CONT. eapply step_returnstate; auto.
+        econstructor 2; auto. rewrite RTTYP. apply eventval_match_proj_rettype. erewrite eventval_match_eventval_to_val; eauto.
+      }
+      econstructor 1.
+    Qed.
+
+    Lemma code_of_event_step_call_internal
+          p f k e le m
+          ge
+          (GE: ge = globalenv p)
+          (* bt should ensure them *)
+          fd args f1
+          (INTERNAL: fd = Internal f1)
+          (* asm should ensure them *)
+          (* handle during proving *)
+          e1 le1 m1
+          (ENTRY: function_entry1 ge f1 args m e1 le1 m1)
+      :
+        Star (Clight.semantics1 p)
+             (Callstate fd args (Kcall None f e le k) m)
+             nil
+             (State f1 (fn_body f1) (Kcall None f e le k) e1 le1 m1).
+    Proof.
+      subst; simpl.
+      econstructor 2.
+      3:{ rewrite E0_right. reflexivity. }
+      { eapply step_internal_function; eauto. }
+      econstructor 1.
+    Qed.
 
     Lemma code_of_event_step_vload
           ev ik
