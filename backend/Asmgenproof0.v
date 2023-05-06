@@ -822,7 +822,8 @@ Ltac TailNoLabel :=
   | [ H: Error _ = OK _ |- _ ] => discriminate
   | [ H: assertion_failed = OK _ |- _ ] => discriminate
   | [ H: OK _ = OK _ |- _ ] => inv H; TailNoLabel
-  | [ H: bind _ _ = OK _ |- _ ] => monadInv H;  TailNoLabel
+  | [ H: bind _ _ = OK _ |- _ ] => monadInv H;  TailNoLabel (* NOTE not needed? *)
+  | [ H: err_bind _ _ = OK _ |- _ ] => monadInv H;  TailNoLabel
   | [ H: (if ?x then _ else _) = OK _ |- _ ] => destruct x; TailNoLabel
   | [ H: match ?x with nil => _ | _ :: _ => _ end = OK _ |- _ ] => destruct x; TailNoLabel
   | _ => idtac

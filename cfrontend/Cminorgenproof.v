@@ -117,7 +117,7 @@ Lemma sig_preserved:
 Proof.
   intros until tf; destruct f; simpl.
   unfold transl_function. destruct (build_compilenv f).
-  case (zle z Ptrofs.max_unsigned); simpl bind; try congruence.
+  case (zle z Ptrofs.max_unsigned); simpl err_bind; try congruence.
   intros. monadInv H. simpl. eapply sig_preserved_body; eauto.
   intro. inv H. reflexivity.
 Qed.
