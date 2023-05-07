@@ -83,15 +83,15 @@ Definition locset := Locmap.t.
 - Local and outgoing stack slots are initialized to undefined values.
 *)
 
+Fixpoint filter_mregs rs : list mreg :=
+  match rs with
+  | nil => nil
+  | (R r) :: rs' => r :: filter_mregs rs'
+  | (S _ _ _) :: rs' => filter_mregs rs'
+  end.
+
 Definition parameters_mregs (sig: signature) : list mreg :=
-  let fix aux rs :=
-    match rs with
-    | nil => nil
-    | (R r) :: rs' => r :: aux rs'
-    | (S _ _ _) :: rs' => aux rs'
-    end
-  in
-  aux (regs_of_rpairs (loc_parameters sig)).
+  filter_mregs (regs_of_rpairs (loc_parameters sig)).
 
 Definition in_mreg (r: mreg) (rs: list mreg) : bool :=
   existsb (fun r' => DecidableClass.decide (r = r')) rs.

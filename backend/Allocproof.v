@@ -1610,28 +1610,636 @@ Proof.
 - destruct H0; f_equal; auto.
 Qed.
 
+(* TODO related to calling convention, relocate *)
+(* Automate these! *)
+
+Remark in_loc_arguments_parameters_One :
+  forall sg r,
+  In (One (R r)) (loc_arguments sg) ->
+  In (One (R r)) (loc_parameters sg).
+Proof.
+  intros sg r IN.
+  change (One (R r)) with (map_rpair parameter_of_argument (One (R r))).
+  now apply in_map.
+Qed.
+
+Remark in_loc_arguments_parameters_Twolong_hi :
+  forall sg r lo,
+  In (Twolong (R r) lo) (loc_arguments sg) ->
+  exists lo',
+  In (Twolong (R r) lo') (loc_parameters sg).
+Proof.
+  intros sg r lo IN.
+  apply (in_map (map_rpair parameter_of_argument)) in IN.
+  eauto.
+Qed.
+
+Remark in_loc_arguments_parameters_Twolong_lo :
+  forall sg r hi,
+  In (Twolong hi (R r)) (loc_arguments sg) ->
+  exists hi',
+  In (Twolong hi' (R r)) (loc_parameters sg).
+Proof.
+  intros sg r lo IN.
+  apply (in_map (map_rpair parameter_of_argument)) in IN.
+  eauto.
+Qed.
+
+Remark in_regs_of_rpairs_One :
+  forall locs r,
+  In (One (R r)) locs ->
+  In (R r) (regs_of_rpairs locs).
+Proof.
+  induction locs as [| loc locs IHlocs]; [contradiction |].
+  intros r [IN | IN].
+  - subst. now left.
+  - apply in_or_app. now auto.
+Qed.
+
+Remark in_regs_of_rpairs_Twolong_hi :
+  forall locs r lo,
+  In (Twolong (R r) lo) locs ->
+  In (R r) (regs_of_rpairs locs).
+Proof.
+  induction locs as [| loc locs IHlocs]; [contradiction |].
+  intros r lo [IN | IN].
+  - subst. now left.
+  - apply in_or_app. now eauto.
+Qed.
+
+Remark in_regs_of_rpairs_Twolong_lo :
+  forall locs r hi,
+  In (Twolong hi (R r)) locs ->
+  In (R r) (regs_of_rpairs locs).
+Proof.
+  induction locs as [| loc locs IHlocs]; [contradiction |].
+  intros r hi [IN | IN].
+  (* - subst. now left. *)
+  - subst. right. now left.
+  - apply in_or_app. now eauto.
+Qed.
+
+Remark in_filter_mregs :
+  forall locs r,
+  In r (filter_mregs locs) <-> In (R r) locs.
+Proof.
+  induction locs as [| loc locs IHlocs].
+  - intros r. now split.
+  - intros r. split; intros IN.
+    + destruct loc as [r' |].
+      * destruct IN as [IN | IN].
+        -- subst. now left.
+        -- right. now apply IHlocs.
+      * right. now apply IHlocs.
+    + destruct IN as [IN | IN].
+      * subst. now left.
+      * destruct loc as [r' |].
+        -- right. now apply IHlocs.
+        -- now apply IHlocs.
+Qed.
+
+Remark in_in_mreg :
+  forall locs r,
+  In r locs ->
+  in_mreg r locs = true.
+Proof.
+  induction locs as [| loc locs IHlocs]; [contradiction |].
+  intros r [IN | IN].
+  - subst. simpl. destruct (mreg_eq r r).
+    + reflexivity.
+    + contradiction.
+  - simpl. now rewrite (IHlocs _ IN), orb_true_r.
+Qed.
+
+Remark loc_argumens_parameters_mregs_One :
+  forall r sg,
+  In (One (R r)) (loc_arguments sg) ->
+  in_mreg r (parameters_mregs sg) = true.
+Proof.
+  intros r sg IN.
+  apply in_loc_arguments_parameters_One, in_regs_of_rpairs_One in IN.
+  apply (proj2 (in_filter_mregs _ _)) in IN.
+  apply in_in_mreg.
+  exact IN.
+Qed.
+
+Remark loc_argumens_parameters_mregs_Twolong_hi :
+  forall r lo sg,
+  In (Twolong (R r) lo) (loc_arguments sg) ->
+  in_mreg r (parameters_mregs sg) = true.
+Proof.
+  intros r lo sg IN.
+  apply in_loc_arguments_parameters_Twolong_hi in IN as [lo' IN].
+  apply in_regs_of_rpairs_Twolong_hi in IN.
+  apply (proj2 (in_filter_mregs _ _)) in IN.
+  apply in_in_mreg.
+  exact IN.
+Qed.
+
+Remark loc_argumens_parameters_mregs_Twolong_lo :
+  forall r hi sg,
+  In (Twolong hi (R r)) (loc_arguments sg) ->
+  in_mreg r (parameters_mregs sg) = true.
+Proof.
+  intros r hi sg IN.
+  apply in_loc_arguments_parameters_Twolong_lo in IN as [hi' IN].
+  apply in_regs_of_rpairs_Twolong_lo in IN.
+  apply (proj2 (in_filter_mregs _ _)) in IN.
+  apply in_in_mreg.
+  exact IN.
+Qed.
+
+Remark loc_arguments_rec_One_S_Local :
+  forall tyl fixed ri rf ofs pos ty,
+  In (One (S Local pos ty)) (loc_arguments_rec tyl fixed ri rf ofs) -> False.
+Proof.
+  induction tyl as [| ty tyl IHtyl]; [contradiction |].
+  intros fixed ri rf ofs pos ty' Hcontra.
+  (* specialize (IHtyl fixed ri rf ofs pos ty'). apply IHtyl. *)
+  simpl in Hcontra. destruct ty.
+  - unfold int_arg in Hcontra.
+    destruct (list_nth_z int_param_regs ri).
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+  - unfold float_arg in Hcontra.
+    destruct (list_nth_z (if proj_sumbool (zle fixed 0) then nil else float_param_regs) rf).
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+    + destruct (list_nth_z float_extra_param_regs
+                  (if zle fixed 0 && (negb Archi.ptr64 && zeq (typesize Tfloat) 2)
+                   then align ri 2
+                   else ri)).
+      * destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+        eauto.
+      * destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+        eauto.
+  - destruct Archi.ptr64.
+    + {
+    unfold int_arg in Hcontra.
+    destruct (list_nth_z int_param_regs ri).
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+      }
+    + unfold split_long_arg in Hcontra.
+      destruct (list_nth_z int_param_regs (if proj_sumbool (zle fixed 0) then align ri 2 else ri)).
+      * destruct (list_nth_z int_param_regs ((if proj_sumbool (zle fixed 0) then align ri 2 else ri) + 1)).
+        ++ destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+           eauto.
+        ++ destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+           eauto.
+      * destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+        eauto.
+  - unfold float_arg in Hcontra.
+    destruct (list_nth_z (if proj_sumbool (zle fixed 0) then nil else float_param_regs) rf).
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+    + destruct (list_nth_z float_extra_param_regs
+                  (if zle fixed 0 && (negb Archi.ptr64 && zeq (typesize Tsingle) 2)
+                   then align ri 2
+                   else ri)).
+      * destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+        eauto.
+      * destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+        eauto.
+  - unfold int_arg in Hcontra.
+    destruct (list_nth_z int_param_regs ri).
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+  - unfold float_arg in Hcontra.
+    destruct (list_nth_z (if proj_sumbool (zle fixed 0) then nil else float_param_regs) rf).
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+    + destruct (list_nth_z float_extra_param_regs
+                  (if zle fixed 0 && (negb Archi.ptr64 && zeq (typesize Tany64) 2)
+                   then align ri 2
+                   else ri)).
+      * destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+        eauto.
+      * destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+        eauto.
+Qed.
+
+(* Same as above *)
+Remark loc_arguments_rec_One_S_Incoming :
+  forall tyl fixed ri rf ofs pos ty,
+  In (One (S Incoming pos ty)) (loc_arguments_rec tyl fixed ri rf ofs) -> False.
+Proof.
+  induction tyl as [| ty tyl IHtyl]; [contradiction |].
+  intros fixed ri rf ofs pos ty' Hcontra.
+  (* specialize (IHtyl fixed ri rf ofs pos ty'). apply IHtyl. *)
+  simpl in Hcontra. destruct ty.
+  - unfold int_arg in Hcontra.
+    destruct (list_nth_z int_param_regs ri).
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+  - unfold float_arg in Hcontra.
+    destruct (list_nth_z (if proj_sumbool (zle fixed 0) then nil else float_param_regs) rf).
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+    + destruct (list_nth_z float_extra_param_regs
+                  (if zle fixed 0 && (negb Archi.ptr64 && zeq (typesize Tfloat) 2)
+                   then align ri 2
+                   else ri)).
+      * destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+        eauto.
+      * destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+        eauto.
+  - destruct Archi.ptr64.
+    + {
+    unfold int_arg in Hcontra.
+    destruct (list_nth_z int_param_regs ri).
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+      }
+    + unfold split_long_arg in Hcontra.
+      destruct (list_nth_z int_param_regs (if proj_sumbool (zle fixed 0) then align ri 2 else ri)).
+      * destruct (list_nth_z int_param_regs ((if proj_sumbool (zle fixed 0) then align ri 2 else ri) + 1)).
+        ++ destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+           eauto.
+        ++ destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+           eauto.
+      * destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+        eauto.
+  - unfold float_arg in Hcontra.
+    destruct (list_nth_z (if proj_sumbool (zle fixed 0) then nil else float_param_regs) rf).
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+    + destruct (list_nth_z float_extra_param_regs
+                  (if zle fixed 0 && (negb Archi.ptr64 && zeq (typesize Tsingle) 2)
+                   then align ri 2
+                   else ri)).
+      * destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+        eauto.
+      * destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+        eauto.
+  - unfold int_arg in Hcontra.
+    destruct (list_nth_z int_param_regs ri).
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+  - unfold float_arg in Hcontra.
+    destruct (list_nth_z (if proj_sumbool (zle fixed 0) then nil else float_param_regs) rf).
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+    + destruct (list_nth_z float_extra_param_regs
+                  (if zle fixed 0 && (negb Archi.ptr64 && zeq (typesize Tany64) 2)
+                   then align ri 2
+                   else ri)).
+      * destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+        eauto.
+      * destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+        eauto.
+Qed.
+
+(* Same as above *)
+Remark loc_arguments_rec_Twolong_S_Local_hi :
+  forall tyl fixed ri rf ofs pos ty rlo,
+  In (Twolong (S Local pos ty) rlo) (loc_arguments_rec tyl fixed ri rf ofs) -> False.
+Proof.
+  induction tyl as [| ty tyl IHtyl]; [contradiction |].
+  intros fixed ri rf ofs pos ty' rlo Hcontra.
+  (* specialize (IHtyl fixed ri rf ofs pos ty'). apply IHtyl. *)
+  simpl in Hcontra. destruct ty.
+  - unfold int_arg in Hcontra.
+    destruct (list_nth_z int_param_regs ri).
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+  - unfold float_arg in Hcontra.
+    destruct (list_nth_z (if proj_sumbool (zle fixed 0) then nil else float_param_regs) rf).
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+    + destruct (list_nth_z float_extra_param_regs
+                  (if zle fixed 0 && (negb Archi.ptr64 && zeq (typesize Tfloat) 2)
+                   then align ri 2
+                   else ri)).
+      * destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+        eauto.
+      * destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+        eauto.
+  - destruct Archi.ptr64.
+    + {
+    unfold int_arg in Hcontra.
+    destruct (list_nth_z int_param_regs ri).
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+      }
+    + unfold split_long_arg in Hcontra.
+      destruct (list_nth_z int_param_regs (if proj_sumbool (zle fixed 0) then align ri 2 else ri)).
+      * destruct (list_nth_z int_param_regs ((if proj_sumbool (zle fixed 0) then align ri 2 else ri) + 1)).
+        ++ destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+           eauto.
+        ++ destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+           eauto.
+      * destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+        eauto.
+  - unfold float_arg in Hcontra.
+    destruct (list_nth_z (if proj_sumbool (zle fixed 0) then nil else float_param_regs) rf).
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+    + destruct (list_nth_z float_extra_param_regs
+                  (if zle fixed 0 && (negb Archi.ptr64 && zeq (typesize Tsingle) 2)
+                   then align ri 2
+                   else ri)).
+      * destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+        eauto.
+      * destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+        eauto.
+  - unfold int_arg in Hcontra.
+    destruct (list_nth_z int_param_regs ri).
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+  - unfold float_arg in Hcontra.
+    destruct (list_nth_z (if proj_sumbool (zle fixed 0) then nil else float_param_regs) rf).
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+    + destruct (list_nth_z float_extra_param_regs
+                  (if zle fixed 0 && (negb Archi.ptr64 && zeq (typesize Tany64) 2)
+                   then align ri 2
+                   else ri)).
+      * destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+        eauto.
+      * destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+        eauto.
+Qed.
+
+(* Same as above *)
+Remark loc_arguments_rec_Twolong_S_Incoming_hi :
+  forall tyl fixed ri rf ofs pos ty rlo,
+  In (Twolong (S Incoming pos ty) rlo) (loc_arguments_rec tyl fixed ri rf ofs) -> False.
+Proof.
+  induction tyl as [| ty tyl IHtyl]; [contradiction |].
+  intros fixed ri rf ofs pos ty' rlo Hcontra.
+  (* specialize (IHtyl fixed ri rf ofs pos ty'). apply IHtyl. *)
+  simpl in Hcontra. destruct ty.
+  - unfold int_arg in Hcontra.
+    destruct (list_nth_z int_param_regs ri).
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+  - unfold float_arg in Hcontra.
+    destruct (list_nth_z (if proj_sumbool (zle fixed 0) then nil else float_param_regs) rf).
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+    + destruct (list_nth_z float_extra_param_regs
+                  (if zle fixed 0 && (negb Archi.ptr64 && zeq (typesize Tfloat) 2)
+                   then align ri 2
+                   else ri)).
+      * destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+        eauto.
+      * destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+        eauto.
+  - destruct Archi.ptr64.
+    + {
+    unfold int_arg in Hcontra.
+    destruct (list_nth_z int_param_regs ri).
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+      }
+    + unfold split_long_arg in Hcontra.
+      destruct (list_nth_z int_param_regs (if proj_sumbool (zle fixed 0) then align ri 2 else ri)).
+      * destruct (list_nth_z int_param_regs ((if proj_sumbool (zle fixed 0) then align ri 2 else ri) + 1)).
+        ++ destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+           eauto.
+        ++ destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+           eauto.
+      * destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+        eauto.
+  - unfold float_arg in Hcontra.
+    destruct (list_nth_z (if proj_sumbool (zle fixed 0) then nil else float_param_regs) rf).
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+    + destruct (list_nth_z float_extra_param_regs
+                  (if zle fixed 0 && (negb Archi.ptr64 && zeq (typesize Tsingle) 2)
+                   then align ri 2
+                   else ri)).
+      * destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+        eauto.
+      * destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+        eauto.
+  - unfold int_arg in Hcontra.
+    destruct (list_nth_z int_param_regs ri).
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+  - unfold float_arg in Hcontra.
+    destruct (list_nth_z (if proj_sumbool (zle fixed 0) then nil else float_param_regs) rf).
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+    + destruct (list_nth_z float_extra_param_regs
+                  (if zle fixed 0 && (negb Archi.ptr64 && zeq (typesize Tany64) 2)
+                   then align ri 2
+                   else ri)).
+      * destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+        eauto.
+      * destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+        eauto.
+Qed.
+
+(* Same as above *)
+Remark loc_arguments_rec_Twolong_S_Local_lo :
+  forall tyl fixed ri rf ofs rhi pos ty,
+  In (Twolong rhi (S Local pos ty)) (loc_arguments_rec tyl fixed ri rf ofs) -> False.
+Proof.
+  induction tyl as [| ty tyl IHtyl]; [contradiction |].
+  intros fixed ri rf ofs rhi pos ty' Hcontra.
+  (* specialize (IHtyl fixed ri rf ofs pos ty'). apply IHtyl. *)
+  simpl in Hcontra. destruct ty.
+  - unfold int_arg in Hcontra.
+    destruct (list_nth_z int_param_regs ri).
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+  - unfold float_arg in Hcontra.
+    destruct (list_nth_z (if proj_sumbool (zle fixed 0) then nil else float_param_regs) rf).
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+    + destruct (list_nth_z float_extra_param_regs
+                  (if zle fixed 0 && (negb Archi.ptr64 && zeq (typesize Tfloat) 2)
+                   then align ri 2
+                   else ri)).
+      * destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+        eauto.
+      * destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+        eauto.
+  - destruct Archi.ptr64.
+    + {
+    unfold int_arg in Hcontra.
+    destruct (list_nth_z int_param_regs ri).
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+      }
+    + unfold split_long_arg in Hcontra.
+      destruct (list_nth_z int_param_regs (if proj_sumbool (zle fixed 0) then align ri 2 else ri)).
+      * destruct (list_nth_z int_param_regs ((if proj_sumbool (zle fixed 0) then align ri 2 else ri) + 1)).
+        ++ destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+           eauto.
+        ++ destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+           eauto.
+      * destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+        eauto.
+  - unfold float_arg in Hcontra.
+    destruct (list_nth_z (if proj_sumbool (zle fixed 0) then nil else float_param_regs) rf).
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+    + destruct (list_nth_z float_extra_param_regs
+                  (if zle fixed 0 && (negb Archi.ptr64 && zeq (typesize Tsingle) 2)
+                   then align ri 2
+                   else ri)).
+      * destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+        eauto.
+      * destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+        eauto.
+  - unfold int_arg in Hcontra.
+    destruct (list_nth_z int_param_regs ri).
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+  - unfold float_arg in Hcontra.
+    destruct (list_nth_z (if proj_sumbool (zle fixed 0) then nil else float_param_regs) rf).
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+    + destruct (list_nth_z float_extra_param_regs
+                  (if zle fixed 0 && (negb Archi.ptr64 && zeq (typesize Tany64) 2)
+                   then align ri 2
+                   else ri)).
+      * destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+        eauto.
+      * destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+        eauto.
+Qed.
+
+(* Same as above *)
+Remark loc_arguments_rec_Twolong_S_Incoming_lo :
+  forall tyl fixed ri rf ofs rhi pos ty,
+  In (Twolong rhi (S Incoming pos ty)) (loc_arguments_rec tyl fixed ri rf ofs) -> False.
+Proof.
+  induction tyl as [| ty tyl IHtyl]; [contradiction |].
+  intros fixed ri rf ofs rhi pos ty' Hcontra.
+  (* specialize (IHtyl fixed ri rf ofs pos ty'). apply IHtyl. *)
+  simpl in Hcontra. destruct ty.
+  - unfold int_arg in Hcontra.
+    destruct (list_nth_z int_param_regs ri).
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+  - unfold float_arg in Hcontra.
+    destruct (list_nth_z (if proj_sumbool (zle fixed 0) then nil else float_param_regs) rf).
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+    + destruct (list_nth_z float_extra_param_regs
+                  (if zle fixed 0 && (negb Archi.ptr64 && zeq (typesize Tfloat) 2)
+                   then align ri 2
+                   else ri)).
+      * destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+        eauto.
+      * destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+        eauto.
+  - destruct Archi.ptr64.
+    + {
+    unfold int_arg in Hcontra.
+    destruct (list_nth_z int_param_regs ri).
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+      }
+    + unfold split_long_arg in Hcontra.
+      destruct (list_nth_z int_param_regs (if proj_sumbool (zle fixed 0) then align ri 2 else ri)).
+      * destruct (list_nth_z int_param_regs ((if proj_sumbool (zle fixed 0) then align ri 2 else ri) + 1)).
+        ++ destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+           eauto.
+        ++ destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+           eauto.
+      * destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+        eauto.
+  - unfold float_arg in Hcontra.
+    destruct (list_nth_z (if proj_sumbool (zle fixed 0) then nil else float_param_regs) rf).
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+    + destruct (list_nth_z float_extra_param_regs
+                  (if zle fixed 0 && (negb Archi.ptr64 && zeq (typesize Tsingle) 2)
+                   then align ri 2
+                   else ri)).
+      * destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+        eauto.
+      * destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+        eauto.
+  - unfold int_arg in Hcontra.
+    destruct (list_nth_z int_param_regs ri).
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+  - unfold float_arg in Hcontra.
+    destruct (list_nth_z (if proj_sumbool (zle fixed 0) then nil else float_param_regs) rf).
+    + destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+      eauto.
+    + destruct (list_nth_z float_extra_param_regs
+                  (if zle fixed 0 && (negb Archi.ptr64 && zeq (typesize Tany64) 2)
+                   then align ri 2
+                   else ri)).
+      * destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+        eauto.
+      * destruct Hcontra as [Hcontra | Hcontra]; [discriminate |].
+        eauto.
+Qed.
+
 Lemma call_regs_ext_param_values:
   forall sg ls,
   map (fun p => Locmap.getpair p (call_regs_ext ls sg)) (loc_parameters sg)
   = map (fun p => Locmap.getpair p ls) (loc_arguments sg).
-Admitted.
-
-Lemma call_regs_parameters_call_regs_ext:
-  forall ls sg,
-  map (fun p : rpair loc => Locmap.getpair p (call_regs ls)) (loc_parameters sg)
-  = map (fun p : rpair loc => Locmap.getpair p (call_regs_ext ls sg)) (loc_parameters sg).
 Proof.
-  intros ls sg. unfold loc_parameters. rewrite !list_map_compose.
-  apply list_map_exten; intros locs IN.
-  exploit loc_arguments_acceptable; eauto.
-  destruct locs as [loc | loc1 loc2]; simpl; intros ACCEPT.
-  - destruct loc as [r |s].
-    + simpl. admit. (* Should hold *)
-    + unfold call_regs_ext, call_regs. destruct s; reflexivity.
-  - f_equal.
-    + admit. (* Ditto *)
-    + admit. (* Ditto *)
-Admitted.
+  intros sg ls.
+  unfold loc_parameters. rewrite list_map_compose.
+  apply list_map_exten; intros l ARG.
+  destruct l as [r | rhi rlo].
+  - destruct r; simpl.
+    + apply loc_argumens_parameters_mregs_One in ARG.
+      now rewrite ARG.
+    + destruct sl.
+      * now apply loc_arguments_rec_One_S_Local in ARG.
+      * now apply loc_arguments_rec_One_S_Incoming in ARG.
+      * reflexivity.
+  - simpl. f_equal.
+    + destruct rhi as [| []]; simpl.
+      * apply loc_argumens_parameters_mregs_Twolong_hi in ARG.
+        now rewrite ARG.
+      * now apply loc_arguments_rec_Twolong_S_Local_hi in ARG.
+      * now apply loc_arguments_rec_Twolong_S_Incoming_hi in ARG.
+      * reflexivity.
+    + destruct rlo as [| []]; simpl.
+      * apply loc_argumens_parameters_mregs_Twolong_lo in ARG.
+        now rewrite ARG.
+      * now apply loc_arguments_rec_Twolong_S_Local_lo in ARG.
+      * now apply loc_arguments_rec_Twolong_S_Incoming_lo in ARG.
+      * reflexivity.
+Qed.
 
 Lemma return_regs_arg_values:
   forall sg ls1 ls2,
