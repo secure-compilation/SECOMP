@@ -1319,22 +1319,25 @@ Section Backtranslation.
     Qed.
 
     Lemma code_of_event_step_cross_call_ext
-          ev ef
+          (* ev ef *)
+          tr ef
           p k m ge cp vres m'
           targs tres cconv vargs
           (CP: cp = call_comp k)
           (GE: ge = globalenv p)
-          (EXT: external_call ef ge cp vargs m (ev :: nil) vres m')
+          (* (EXT: external_call ef ge cp vargs m (ev :: nil) vres m') *)
+          (EXT: external_call ef ge cp vargs m tr vres m')
           (* bt_wf *)
           (* from_asm *)
       :
       Star (Clight.semantics1 p)
            (Callstate (External ef targs tres cconv) vargs k m)
-           (ev :: nil)
+           (tr)
+           (* (ev :: nil) *)
            (Returnstate vres k m' (rettype_of_type tres) (comp_of ef)).
     Proof.
       subst; simpl in *. econstructor 2. eapply step_external_function. eauto.
-      econstructor 1. auto.
+      econstructor 1. traceEq.
     Qed.
 
     Lemma code_of_event_step_cross_call_start
@@ -1521,13 +1524,18 @@ Section Backtranslation.
         (ESM: eventval_list_match ge evargs (sig_args sg) args)
         callee_f
         (INTERNAL: fd = AST.Internal callee_f)
+        (* TODO: separate this; 
+           might be better to upgrade Asm semantics to actually refer to its fn_sig.
+           Note that it's not possible to recover Clight fun type data from trace since
+           there can be conflicts, since Asm semantics actually allows non-fixed sigs.
+         *)
         (SIG: sg = Asm.fn_sig callee_f)
         (* internal call: memory changes in Clight-side, so need inj-relation *)
         (NEXT: from_info_asm_wf ge b m1 ((sf_cont cur) :: sf) tl)
       :
       from_info_asm_wf ge cur m1 sf ((ev, ik) :: tl)
     | from_info_asm_wf_cross_return_internal
-        cur m1 sf ev ik tl
+        cur m1 ev ik tl
         cp
         (CURCP: cp = Genv.find_comp ge (Vptr cur Ptrofs.zero))
         cp_c evres
@@ -1536,379 +1544,116 @@ Section Backtranslation.
         (IK: ik = info_return sg)
         cur_f
         (INTERNAL: Genv.find_funct_ptr ge cur = Some (AST.Internal cur_f))
+        (* TODO: separate this *)
         (SIG: sg = Asm.fn_sig cur_f)
         (CROSS: Genv.type_of_call ge cp_c cp = Genv.CrossCompartmentCall)
         res
         (EVM: eventval_match ge evres (proj_rettype (sig_res sg)) res)
         (NPTR: not_ptr res)
         b_c sf_tl
-        (SF: sf = (sf_cont b_c) :: sf_tl)
         (CPC: cp_c = Genv.find_comp ge (Vptr b_c Ptrofs.zero))
         (* internal return: memory changes in Clight-side, so need inj-relation *)
         (NEXT: from_info_asm_wf ge b_c m1 sf_tl tl)
       :
-      from_info_asm_wf ge cur m1 sf ((ev, ik) :: tl).
-    (* TODO: cross-ext cases *)
-
-
-    Lemma code_of_event_step_cross_call_start
-          ev ik
-          p f k e le m ge cp
-          (CP: cp = comp_of f)
-          (GE: ge = globalenv p)
-          cp' fid evargs
-          (EV: ev = Event_call cp cp' fid evargs)
-          ce sg
-          (IK: ik = info_call ce sg)
-          (WF0: wf_env e fid)
-          (WF1: Forall (wf_eventval_env e) evargs)
-          tdata
-          (TD: tdata = from_sig_fun_data sg)
-          args
-          (ARGS: args = list_eventval_to_list_val ge evargs)
-          b
-          (FINDB: Genv.find_symbol ge fid = Some b)
-          fd
-          (FINDF: Genv.find_funct ge (Vptr b Ptrofs.zero) = Some fd)
-          (TYPEF: type_of_fundef fd = Tfunction tdata.(dargs) tdata.(dret) tdata.(dcc))
-          (CP': cp' = comp_of fd)
-          (CROSS: Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall)
-          (NPTR: Forall not_ptr args)
-          (ALLOW: Genv.allowed_cross_call ge cp (Vptr b Ptrofs.zero))
-          (ESM: eventval_list_match ge evargs (sig_args sg) args)
-      :
-      Star (Clight.semantics1 p)
-           (State f (code_of_ievent ge (ev, ik)) k e le m)
-           (ev :: nil)
-           (Callstate fd args (Kcall None f e le k) m).
-    Proof.
-    Qed.
-
-    Lemma code_of_event_step_cross_call_ext
-          ev ef
-          p k m ge cp vres m'
-          targs tres cconv vargs
-          (CP: cp = call_comp k)
-          (GE: ge = globalenv p)
-          (EXT: external_call ef ge cp vargs m (ev :: nil) vres m')
-          (* bt_wf *)
-          (* from_asm *)
-      :
-      Star (Clight.semantics1 p)
-           (Callstate (External ef targs tres cconv) vargs k m)
-           (ev :: nil)
-           (Returnstate vres k m' (rettype_of_type tres) (comp_of ef)).
-    Proof.
-    Qed.
-
-    Lemma code_of_event_step_cross_returnstate
-          ev ik sg evres
-          p ge res optid f e le k m ty cp
-          (GE: ge = globalenv p)
-          (EV: ev = Event_return (comp_of f) cp evres)
-          (IK: ik = info_return sg)
-          (CROSS: Genv.type_of_call ge (comp_of f) cp = Genv.CrossCompartmentCall)
-          (EVM: eventval_match ge evres (proj_rettype (sig_res sg)) res)
-          (NPTR: not_ptr res)
-          (RETTY: ty = sig_res sg)
-      :
-      Star (Clight.semantics1 p)
-           (Returnstate res (Kcall optid f e le k) m ty cp)
-           (ev :: nil)
-           (State f Sskip k e (set_opttemp optid res le) m).
-    Proof.
-    Qed.
-
-    (* TODO *)
-    (* Step lemmas *)
-    Lemma code_of_event_step_cross_call_ext
-          ev ef
-          p k m ge cp vres m'
-          targs tres cconv vargs
-          (CP: cp = call_comp k)
-          (GE: ge = globalenv p)
-          (EXT: external_call ef ge cp vargs m (ev :: nil) vres m')
-          (* bt_wf *)
-          (* from_asm *)
-      :
-      Star (Clight.semantics1 p)
-           (Callstate (External ef targs tres cconv) vargs k m)
-           (ev :: nil)
-           (Returnstate vres k m' (rettype_of_type tres) (comp_of ef)).
-    Proof.
-    Qed.
-
-    Lemma code_of_event_step_cross_call_start
-          ev ik
-          p f k e le m ge cp
-          (CP: cp = comp_of f)
-          (GE: ge = globalenv p)
-          cp' fid evargs
-          (EV: ev = Event_call cp cp' fid evargs)
-          ce sg
-          (IK: ik = info_call ce sg)
-          (WF0: wf_env e fid)
-          (WF1: Forall (wf_eventval_env e) evargs)
-          tdata
-          (TD: tdata = from_sig_fun_data sg)
-          args
-          (ARGS: args = list_eventval_to_list_val ge evargs)
-          b
-          (FINDB: Genv.find_symbol ge fid = Some b)
-          fd
-          (FINDF: Genv.find_funct ge (Vptr b Ptrofs.zero) = Some fd)
-          (TYPEF: type_of_fundef fd = Tfunction tdata.(dargs) tdata.(dret) tdata.(dcc))
-          (CP': cp' = comp_of fd)
-          (CROSS: Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall)
-          (NPTR: Forall not_ptr args)
-          (ALLOW: Genv.allowed_cross_call ge cp (Vptr b Ptrofs.zero))
-          (ESM: eventval_list_match ge evargs (sig_args sg) args)
-      :
-      Star (Clight.semantics1 p)
-           (State f (code_of_ievent ge (ev, ik)) k e le m)
-           (ev :: nil)
-           (Callstate fd args (Kcall None f e le k) m).
-    Proof.
-    Qed.
-
-    Lemma code_of_event_step_cross_call_int
-          p f vargs k m1 m2 e le
-          (ENT: function_entry1 (globalenv p) f vargs m1 e le m2)
-      :
-      Star (Clight.semantics1 p)
-           (Callstate (Internal f) vargs k m1)
-           (nil)
-           (State f (fn_body f) k e le m2).
-    Proof.
-    Qed.
-
-    Lemma code_of_event_step_cross_returnstate
-          ev ik sg evres
-          p ge res optid f e le k m ty cp
-          (GE: ge = globalenv p)
-          (EV: ev = Event_return (comp_of f) cp evres)
-          (IK: ik = info_return sg)
-          (CROSS: Genv.type_of_call ge (comp_of f) cp = Genv.CrossCompartmentCall)
-          (EVM: eventval_match ge evres (proj_rettype (sig_res sg)) res)
-          (NPTR: not_ptr res)
-          (RETTY: ty = sig_res sg)
-      :
-      Star (Clight.semantics1 p)
-           (Returnstate res (Kcall optid f e le k) m ty cp)
-           (ev :: nil)
-           (State f Sskip k e (set_opttemp optid res le) m).
-    Proof.
-    Qed.
-
-    Lemma code_of_event_step_cross_return_code
-          ev ik
-          p f k e le m ge cp
-          (CP: cp = comp_of f)
-          (GE: ge = globalenv p)
-          cp_c evres
-          (EV: ev = Event_return cp_c cp evres)
-          (WF: wf_eventval_env e evres)
-          sg
-          (IK: ik = info_return sg)
-          (CROSS: Genv.type_of_call ge cp_c cp = Genv.CrossCompartmentCall)
-          optid f_c e_c le_c k_c
-          (CONT: call_cont k = Kcall optid f_c e_c le_c k_c)
-          (CPC: cp_c = comp_of f_c)
-          res
-          (EVM: eventval_match ge evres (proj_rettype (sig_res sg)) res)
-          (NPTR: not_ptr res)
-          (TY: fn_return f = rettype_to_type (sig_res sg))
-          m'
-          (FREE: Mem.free_list m (blocks_of_env ge e) cp = Some m')
-      :
-      Star (Clight.semantics1 p)
-           (State f (code_of_ievent ge (ev, ik)) k e le m)
-           (ev :: nil)
-           (State f_c Sskip k_c e_c (set_opttemp optid res le_c) m').
-    Proof.
-    Qed.
-
-
-    Definition wf_sem_call_start_cl (ge: genv) (cp cp': compartment) (id: ident) (vs: list eventval) (fd: Clight.fundef) :=
-      exists b,
-        (Genv.find_symbol ge id = Some b) /\
-          (Genv.find_funct ge (Vptr b Ptrofs.zero) = Some fd) /\
-          let data := from_clfd_fun_data fd in
-          (type_of_fundef fd = Tfunction data.(dargs) data.(dret) data.(dcc)) /\
-            (cp' = comp_of fd) /\
-            (Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall) /\
-            (Forall not_ptr (list_eventval_to_list_val ge vs)) /\
-            (Genv.allowed_cross_call ge cp (Vptr b Ptrofs.zero)) /\
-            exists some_sig_args some_vals,
-              (eventval_list_match ge vs some_sig_args some_vals) /\
-                (data.(dargs) = (list_typ_to_typelist some_sig_args)).
-
-    Definition wf_st_call_start (cp cp': compartment) (id: ident) (vs: list eventval) e (f: Clight.function) k k' :=
-      (e ! id = None) /\ (Forall (wf_eventval_env e) vs) /\ (cp = comp_of f) /\ (k' = Kcall None f e empty_le k).
-
-    Definition wf_st_call_internal (ge: genv) (vs: list eventval) (f1: Clight.function) m e1 m1 :=
-      function_entry1 ge f1 (list_eventval_to_list_val ge vs) m e1 empty_le m1.
-
-    Definition wf_sem_return {F V} (ge: Genv.t F V) (cp cp': compartment) (rv: eventval) :=
-      (Genv.type_of_call ge cp' cp = Genv.CrossCompartmentCall) /\
-        (not_ptr (eventval_to_val ge rv)) /\
-        exists some_sig_ret some_val,
-          (eventval_match ge rv some_sig_ret some_val).
-
-    Definition wf_st_return (ge: genv) (cp cp': compartment) (rv: eventval) e (f: Clight.function) (k: cont) (m: mem) f' k' e' m' :=
-      (wf_eventval_env e rv) /\
-        (cp = comp_of f) /\
-        (forall some_sig_ret some_val, (eventval_match ge rv some_sig_ret some_val) -> (fn_return f = typ_to_type some_sig_ret)) /\
-        (call_cont k = Kcall None f' e' empty_le k') /\
-        (cp' = comp_of f') /\
-        (Mem.free_list m (blocks_of_env ge e) (comp_of f) = Some m').
-
-    Definition wf_st_call_external_cross (ge: genv) (vs: list eventval) k m sname sargs svr ef m1 vres :=
-      let sev := Event_syscall sname sargs svr in
-      (external_call ef ge (call_comp k) (list_eventval_to_list_val ge vs) m (sev :: nil) vres m1).
-
-    Definition wf_st_return_external_cross (ge: genv) (cp_f' cp: compartment) vres (rv: eventval) ty (k: cont) f' k' e' :=
-      (k = Kcall None f' e' empty_le k') /\
-        (cp_f' = comp_of f') /\
-        (Genv.type_of_call ge cp_f' cp = Genv.CrossCompartmentCall) /\
-        (not_ptr vres) /\ (eventval_match ge rv (proj_rettype ty) vres).
-
-    Definition wf_sem_call_external_intra (ge: genv) (name: string) (evargs: list eventval) (evres: eventval) (id: ident) (f: Clight.function) (fd: Clight.fundef) :=
-      exists b,
-        (Genv.find_symbol ge id = Some b) /\
-          (Genv.find_funct ge (Vptr b Ptrofs.zero) = Some fd) /\
-          let data := from_clfd_fun_data fd in
-          (type_of_fundef fd = Tfunction data.(dargs) data.(dret) data.(dcc)) /\
-            let cp := comp_of f in
-            let cp' := comp_of fd in
-            (Genv.type_of_call ge cp cp' <> Genv.CrossCompartmentCall) /\
-              (Genv.allowed_call ge cp (Vptr b Ptrofs.zero)) /\
-              exists some_sig_args some_vals,
-                (eventval_list_match ge evargs some_sig_args some_vals) /\
-                  (data.(dargs) = (list_typ_to_typelist some_sig_args)).
-
-    Definition wf_st_call_external_intra (ge: genv) (name: string) (evargs: list eventval) (evres: eventval) (id: ident) (f: Clight.function) e :=
-      (e ! id = None) /\ (Forall (wf_eventval_env e) evargs).
-
-    Definition wf_sem_event_external_intra (ge: genv) (name: string) (evargs: list eventval) (evres: eventval) cp (ef: external_function) m m' :=
-      exists name' cp' sg',
-        (* TODO: fix to incldue builtin, runtime, inline_asm *)
-        (ef = EF_external name' cp' sg') /\
-          exists res,
-            (external_call ef ge cp (list_eventval_to_list_val ge evargs) m (Event_syscall name evargs evres :: nil) res m').
-
-    Lemma code_of_event_step_builtin
-          ev
-          name args rv
-          p f k e le m
-          ge
-          (GE: ge = globalenv p)
-          (EV: ev = Event_syscall name args rv)
-          name' sg
-          (ID: sid name = Some (sys_builtin name' sg))
-          (* bt_wf *)
-          (WFARGS: Forall (wf_eventval_env e) args)
-          (* from_asm *)
-          (* invoke syscall *)
-          ef
-          (EF: ef = EF_builtin name' sg)
-          srv m'
-          (SEM: external_call ef ge (comp_of f) (list_eventval_to_list_val (globalenv p) args) m (ev :: nil) srv m')
-          (* conditions for argument types - might need extra semantics for EF_external *)
-          (* (TYARGS: data.(dargs) = (list_eventval_to_typelist args)) *)
-          some_sig_args some_vals
-          (ESM: eventval_list_match ge args some_sig_args some_vals)
-          (SIGARGS: sg.(sig_args) = (some_sig_args))
-      :
-        Star (Clight.semantics1 p)
-             (State f (code_of_event sid (from_cl_funs_data p) ev) k e le m)
-             (ev :: nil)
-             (State f Sskip k e le m').
-
-    Inductive wf_inv_cl (ge: genv) (sid: string -> ident) : Clight.function -> cont -> env -> mem -> trace -> Prop :=
-    | wf_inv_vload
-        f k e m t
-        ch id ofs v
-        (SEM: wf_sem_vload ge ch id ofs v)
-        (ST: wf_st_vload ch id ofs v e)
-        (IND: wf_inv_cl ge sid f k e m t)
-      :
-      wf_inv_cl ge sid f k e m (Event_vload ch id ofs v :: t)
-    | wf_inv_vstore
-        f k e m t
-        ch id ofs v
-        (SEM: wf_sem_vstore ge ch id ofs v)
-        (ST: wf_st_vstore ch id ofs v e)
-        (IND: wf_inv_cl ge sid f k e m t)
-      :
-      wf_inv_cl ge sid f k e m (Event_vstore ch id ofs v :: t)
-    | wf_inv_annot
-        f k e m t
-        str vs
-        (SEM: wf_sem_annot ge str vs)
-        (ST: wf_st_annot str vs e)
-        (IND: wf_inv_cl ge sid f k e m t)
-      :
-      wf_inv_cl ge sid f k e m (Event_annot str vs :: t)
-
-    | wf_inv_call_internal
-        f k e m t
-        cp cp' id vs
+      from_info_asm_wf ge cur m1 ((sf_cont b_c) :: sf_tl) ((ev, ik) :: tl)
+    | from_info_asm_wf_cross_call_external1
+        (* early cut at call event *)
+        cur m1 sf ev ik
+        cp
+        (CURCP: cp = Genv.find_comp ge (Vptr cur Ptrofs.zero))
+        cp' fid evargs
+        (EV: ev = Event_call cp cp' fid evargs)
+        sg
+        (IK: ik = info_call is_cross_ext sg)
+        b
+        (FINDB: Genv.find_symbol ge fid = Some b)
         fd
-        (SEM: wf_sem_call_start_cl ge cp cp' id vs fd)
-        k1
-        (ST: wf_st_call_start cp cp' id vs e f k k1)
-        f1 e1 m1
-        (ISINT: fd = Internal f1)
-        (INT: wf_st_call_internal ge vs f1 m e1 m1)
-        (IND: wf_inv_cl ge sid f1 k1 e1 m1 t)
+        (FINDF: Genv.find_funct ge (Vptr b Ptrofs.zero) = Some fd)
+        (CP': cp' = comp_of fd)
+        (CROSS: Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall)
+        args
+        (NPTR: Forall not_ptr args)
+        (ALLOW: Genv.allowed_cross_call ge cp (Vptr b Ptrofs.zero))
+        (ESM: eventval_list_match ge evargs (sig_args sg) args)
+        ef
+        (EXTERNAL: fd = AST.External ef)
+        (* TODO: separate this *)
+        (SIG: sg = ef_sig ef)
       :
-      wf_inv_cl ge sid f k e m (Event_call cp cp' id vs :: t)
-    | wf_inv_return
-        f k e m t
-        cp cp' rv
-        (SEM: wf_sem_return ge cp cp' rv)
-        f' k' e' m'
-        (ST: wf_st_return ge cp cp' rv e f k m f' k' e' m')
-        (IND: wf_inv_cl ge sid f' k' e' m' t)
-      :
-      wf_inv_cl ge sid f k e m (Event_return cp cp' rv :: t)
-
-    | wf_inv_external_cross
-        f k e m t
-        cp cp' id vs
+      from_info_asm_wf ge cur m1 sf ((ev, ik) :: nil)
+    | from_info_asm_wf_cross_call_external2
+        (* early cut at call-ext_call event *)
+        cur m1 sf ev1 ik1
+        cp
+        (CURCP: cp = Genv.find_comp ge (Vptr cur Ptrofs.zero))
+        cp' fid evargs
+        (EV: ev1 = Event_call cp cp' fid evargs)
+        sg
+        (IK: ik1 = info_call is_cross_ext sg)
+        b
+        (FINDB: Genv.find_symbol ge fid = Some b)
         fd
-        (SEM: wf_sem_call_start_cl ge cp cp' id vs fd)
-        k1
-        (ST: wf_st_call_start cp cp' id vs e f k k1)
-        ef targs tres cconv
-        (ISEXT: fd = External ef targs tres cconv)
-        sname sargs svr m' vres
-        (EXT1: wf_st_call_external_cross ge vs k1 m sname sargs svr ef m' vres)
-        cp_f' cp_ef evres
-        f' k' e'
-        (EXT2: wf_st_return_external_cross ge cp_f' (comp_of ef) vres evres (rettype_of_type tres) k1 f' k' e')
-        (IND: wf_inv_cl ge sid f' k' e' m' t)
+        (FINDF: Genv.find_funct ge (Vptr b Ptrofs.zero) = Some fd)
+        (CP': cp' = comp_of fd)
+        (CROSS: Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall)
+        args
+        (NPTR: Forall not_ptr args)
+        (ALLOW: Genv.allowed_cross_call ge cp (Vptr b Ptrofs.zero))
+        (ESM: eventval_list_match ge evargs (sig_args sg) args)
+        ef
+        (EXTERNAL: fd = AST.External ef)
+        (* TODO: separate this *)
+        (SIG: sg = ef_sig ef)
+        (* external call part *)
+        tr vres m2
+        (EXTCALL: external_call ef ge cp args m1 tr vres m2)
+        itr
+        (INFO: itr = map (fun e => (e, info_external b (ef_sig ef))) tr)
       :
-      wf_inv_cl ge sid f k e m ((Event_call cp cp' id vs) :: (Event_syscall sname sargs svr) :: (Event_return cp_f' cp_ef evres) :: t)
-
-    | wf_inv_external_intra
-        f k e m t
-        name evargs evres
+      from_info_asm_wf ge cur m1 sf ((ev1, ik1) :: itr)
+    | from_info_asm_wf_cross_call_external3
+        (* full call-ext_call-return event *)
+        cur m1 sf ev1 ik1
+        cp
+        (CURCP: cp = Genv.find_comp ge (Vptr cur Ptrofs.zero))
+        cp' fid evargs
+        (EV: ev1 = Event_call cp cp' fid evargs)
+        sg
+        (IK: ik1 = info_call is_cross_ext sg)
+        b
+        (FINDB: Genv.find_symbol ge fid = Some b)
         fd
-        (SEM: wf_sem_call_external_intra ge name evargs evres (sid name) f fd)
-        (ST: wf_st_call_external_intra ge name evargs evres (sid name) f e)
-        ef targs tres cconv
-        (ISEXT: fd = External ef targs tres cconv)
-        m'
-        (EXT: wf_sem_event_external_intra ge name evargs evres (comp_of f) ef m m')
-        (IND: wf_inv_cl ge sid f k e m' t)
+        (FINDF: Genv.find_funct ge (Vptr b Ptrofs.zero) = Some fd)
+        (CP': cp' = comp_of fd)
+        (CROSS: Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall)
+        args
+        (NPTR: Forall not_ptr args)
+        (ALLOW: Genv.allowed_cross_call ge cp (Vptr b Ptrofs.zero))
+        (ESM: eventval_list_match ge evargs (sig_args sg) args)
+        ef
+        (EXTERNAL: fd = AST.External ef)
+        (* TODO: separate this *)
+        (SIG: sg = ef_sig ef)
+        (* external call part *)
+        tr vres m2
+        (EXTCALL: external_call ef ge cp args m1 tr vres m2)
+        itr
+        (INFO: itr = map (fun e => (e, info_external b (ef_sig ef))) tr)
+        (* return part *)
+        ev3 ik3 tl
+        evres
+        (EV: ev3 = Event_return cp cp' evres)
+        sg
+        (IK: ik3 = info_return sg)
+        (EVM: eventval_match ge evres (proj_rettype (sig_res sg)) vres)
+        (NPTR: not_ptr vres)
+        (NEXT: from_info_asm_wf ge cur m2 sf tl)
       :
-      wf_inv_cl ge sid f k e m (Event_syscall name evargs evres :: t)
+      from_info_asm_wf ge cur m1 sf ((ev1, ik1) :: (itr ++ ((ev3, ik3) :: tl)))
     .
 
     (* TODO *)
-    (* we need a more precise invariant for the proof, e.g. counters, mem_inj *)
+    (* we need a more precise invariant for the proof; counters, mem_inj, env, cont, state *)
 
   End WELLFORMED.
 
