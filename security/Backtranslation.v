@@ -950,73 +950,167 @@ Section Backtranslation.
 
   Section STEPPROP.
 
-    Variant external_call_event_match (ef: external_function) (ev: event) (ge: Senv.t) (cp: compartment) (m1: mem) (e: env) : val -> mem -> Prop :=
+    Variant external_call_event_match_common
+            (ef: external_function) (ev: event) (ge: Senv.t) (cp: compartment) (m1: mem)
+      : val -> mem -> Prop :=
       | ext_match_vload
           ch
           (EF: ef = EF_vload ch)
           id ofs evv
           (EV: ev = Event_vload ch id ofs evv)
-          (WF: wf_env e id)
           b res m2
           (SEM: volatile_load_sem ch ge cp (Vptr b ofs :: nil) m1 (ev :: nil) res m2)
         :
-        external_call_event_match ef ev ge cp m1 e res m2
+        external_call_event_match_common ef ev ge cp m1 res m2
       | ext_match_vstore
           ch
           (EF: ef = EF_vstore ch)
           id ofs evv
           (EV: ev = Event_vstore ch id ofs evv)
-          (WF0: wf_env e id)
-          (WF1: wf_eventval_env e evv)
           b argv m2
           (SEM: volatile_store_sem ch ge cp (Vptr b ofs :: argv :: nil) m1 (ev :: nil) Vundef m2)
         :
-        external_call_event_match ef ev ge cp m1 e Vundef m2
+        external_call_event_match_common ef ev ge cp m1 Vundef m2
       | ext_match_annot
           len text targs
           (EF: ef = EF_annot len text targs)
           evargs
           (EV: ev = Event_annot text evargs)
-          (WFENV: Forall (wf_eventval_env e) evargs)
           vargs m2
           (SEM: extcall_annot_sem text targs ge cp vargs m1 (ev :: nil) Vundef m2)
         :
-        external_call_event_match ef ev ge cp m1 e Vundef m2
+        external_call_event_match_common ef ev ge cp m1 Vundef m2
       | ext_match_external
           name excp sg
           (EF: ef = EF_external name excp sg)
           evname evargs evres
           (EV: ev = Event_syscall evname evargs evres)
-          (WFENV: Forall (wf_eventval_env e) evargs)
           vargs vres m2
           (SEM: external_functions_sem name sg ge cp vargs m1 (ev :: nil) vres m2)
           (ARGS: eventval_list_match ge evargs sg.(sig_args) vargs)
         :
-        external_call_event_match ef ev ge cp m1 e vres m2
+        external_call_event_match_common ef ev ge cp m1 vres m2
       | ext_match_builtin
           name sg
           (EF: (ef = EF_builtin name sg) \/ (ef = EF_runtime name sg))
           evname evargs evres
           (EV: ev = Event_syscall evname evargs evres)
-          (WFENV: Forall (wf_eventval_env e) evargs)
           (ISEXT: Builtins.lookup_builtin_function name sg = None)
           vargs vres m2
           (SEM: external_functions_sem name sg ge cp vargs m1 (ev :: nil) vres m2)
           (ARGS: eventval_list_match ge evargs sg.(sig_args) vargs)
         :
-        external_call_event_match ef ev ge cp m1 e vres m2
+        external_call_event_match_common ef ev ge cp m1 vres m2
       | ext_match_inline_asm
           txt sg strs
           (EF: ef = EF_inline_asm txt sg strs)
           evname evargs evres
           (EV: ev = Event_syscall evname evargs evres)
-          (WFENV: Forall (wf_eventval_env e) evargs)
           vargs vres m2
           (SEM: inline_assembly_sem txt sg ge cp vargs m1 (ev :: nil) vres m2)
           (ARGS: eventval_list_match ge evargs sg.(sig_args) vargs)
         :
-        external_call_event_match ef ev ge cp m1 e vres m2
+        external_call_event_match_common ef ev ge cp m1 vres m2
     .
+
+    Variant external_call_wf_env (ev: event) (e: env): Prop :=
+      | ext_wf_env_vload
+          ch id ofs evv
+          (EV: ev = Event_vload ch id ofs evv)
+          (WF: wf_env e id)
+        :
+        external_call_wf_env ev e
+      | ext_wf_env_vstore
+          ch id ofs evv
+          (EV: ev = Event_vstore ch id ofs evv)
+          (WF0: wf_env e id)
+          (WF1: wf_eventval_env e evv)
+        :
+        external_call_wf_env ev e
+      | ext_wf_env_annot
+          text evargs
+          (EV: ev = Event_annot text evargs)
+          (WFENV: Forall (wf_eventval_env e) evargs)
+        :
+        external_call_wf_env ev e
+      | ext_wf_env_syscall
+          evname evargs evres
+          (EV: ev = Event_syscall evname evargs evres)
+          (WFENV: Forall (wf_eventval_env e) evargs)
+        :
+        external_call_wf_env ev e.
+
+    Definition external_call_event_match (ef: external_function) (ev: event) (ge: Senv.t) (cp: compartment) (m1: mem) (e: env) : val -> mem -> Prop :=
+      fun res m2 =>
+      (external_call_event_match_common ef ev ge cp m1 res m2) /\ (external_call_wf_env ev e).
+
+    (* Variant external_call_event_match (ef: external_function) (ev: event) (ge: Senv.t) (cp: compartment) (m1: mem) (e: env) : val -> mem -> Prop := *)
+    (*   | ext_match_vload *)
+    (*       ch *)
+    (*       (EF: ef = EF_vload ch) *)
+    (*       id ofs evv *)
+    (*       (EV: ev = Event_vload ch id ofs evv) *)
+    (*       (WF: wf_env e id) *)
+    (*       b res m2 *)
+    (*       (SEM: volatile_load_sem ch ge cp (Vptr b ofs :: nil) m1 (ev :: nil) res m2) *)
+    (*     : *)
+    (*     external_call_event_match ef ev ge cp m1 e res m2 *)
+    (*   | ext_match_vstore *)
+    (*       ch *)
+    (*       (EF: ef = EF_vstore ch) *)
+    (*       id ofs evv *)
+    (*       (EV: ev = Event_vstore ch id ofs evv) *)
+    (*       (WF0: wf_env e id) *)
+    (*       (WF1: wf_eventval_env e evv) *)
+    (*       b argv m2 *)
+    (*       (SEM: volatile_store_sem ch ge cp (Vptr b ofs :: argv :: nil) m1 (ev :: nil) Vundef m2) *)
+    (*     : *)
+    (*     external_call_event_match ef ev ge cp m1 e Vundef m2 *)
+    (*   | ext_match_annot *)
+    (*       len text targs *)
+    (*       (EF: ef = EF_annot len text targs) *)
+    (*       evargs *)
+    (*       (EV: ev = Event_annot text evargs) *)
+    (*       (WFENV: Forall (wf_eventval_env e) evargs) *)
+    (*       vargs m2 *)
+    (*       (SEM: extcall_annot_sem text targs ge cp vargs m1 (ev :: nil) Vundef m2) *)
+    (*     : *)
+    (*     external_call_event_match ef ev ge cp m1 e Vundef m2 *)
+    (*   | ext_match_external *)
+    (*       name excp sg *)
+    (*       (EF: ef = EF_external name excp sg) *)
+    (*       evname evargs evres *)
+    (*       (EV: ev = Event_syscall evname evargs evres) *)
+    (*       (WFENV: Forall (wf_eventval_env e) evargs) *)
+    (*       vargs vres m2 *)
+    (*       (SEM: external_functions_sem name sg ge cp vargs m1 (ev :: nil) vres m2) *)
+    (*       (ARGS: eventval_list_match ge evargs sg.(sig_args) vargs) *)
+    (*     : *)
+    (*     external_call_event_match ef ev ge cp m1 e vres m2 *)
+    (*   | ext_match_builtin *)
+    (*       name sg *)
+    (*       (EF: (ef = EF_builtin name sg) \/ (ef = EF_runtime name sg)) *)
+    (*       evname evargs evres *)
+    (*       (EV: ev = Event_syscall evname evargs evres) *)
+    (*       (WFENV: Forall (wf_eventval_env e) evargs) *)
+    (*       (ISEXT: Builtins.lookup_builtin_function name sg = None) *)
+    (*       vargs vres m2 *)
+    (*       (SEM: external_functions_sem name sg ge cp vargs m1 (ev :: nil) vres m2) *)
+    (*       (ARGS: eventval_list_match ge evargs sg.(sig_args) vargs) *)
+    (*     : *)
+    (*     external_call_event_match ef ev ge cp m1 e vres m2 *)
+    (*   | ext_match_inline_asm *)
+    (*       txt sg strs *)
+    (*       (EF: ef = EF_inline_asm txt sg strs) *)
+    (*       evname evargs evres *)
+    (*       (EV: ev = Event_syscall evname evargs evres) *)
+    (*       (WFENV: Forall (wf_eventval_env e) evargs) *)
+    (*       vargs vres m2 *)
+    (*       (SEM: inline_assembly_sem txt sg ge cp vargs m1 (ev :: nil) vres m2) *)
+    (*       (ARGS: eventval_list_match ge evargs sg.(sig_args) vargs) *)
+    (*     : *)
+    (*     external_call_event_match ef ev ge cp m1 e vres m2 *)
+    (* . *)
 
     (* Step lemmas *)
     Lemma code_of_event_step_intra_call_ext
@@ -1042,14 +1136,17 @@ Section Backtranslation.
            (ev :: nil)
            (State f Sskip k e le m2).
     Proof.
-      inv EXT; subst; simpl in *.
-      - pose proof SEM as SEM0. inv SEM. inv H5. rewrite INV. econstructor 2.
+      destruct EXT as [EXT ENV]. inv EXT; subst; simpl in *.
+      - inv ENV; inv EV.
+        pose proof SEM as SEM0. inv SEM. inv H5. rewrite INV. econstructor 2.
         { eapply step_call.
           4:{ instantiate (2:=Vptr fb Ptrofs.zero). unfold Genv.find_funct. rewrite pred_dec_true; eauto. }
           4:{ simpl. eauto. }
           auto.
           { eapply eval_Elvalue. eapply eval_Evar_global; auto. eapply Genv.invert_find_symbol; eauto. simpl. econstructor 2. auto. }
-          { econstructor; eauto. 3: econstructor. eapply ptr_of_id_ofs_eval; eauto. rewrite ptr_of_id_ofs_typeof. eapply sem_cast_ptr. }
+          { econstructor; eauto. 3: econstructor. eapply ptr_of_id_ofs_eval; eauto.
+            rewrite ptr_of_id_ofs_typeof. eapply sem_cast_ptr.
+          }
           auto.
           { intros F. simpl in *. contradiction. }
           { econstructor 1. auto. }
@@ -1063,14 +1160,17 @@ Section Backtranslation.
           - econstructor 1. auto.
         }
         simpl. econstructor 1. all: eauto.
-      - pose proof SEM as SEM0. inv SEM. inv H5. rewrite INV. econstructor 2.
+      - inv ENV; inv EV.
+        pose proof SEM as SEM0. inv SEM. inv H5. rewrite INV. econstructor 2.
         { eapply step_call.
           4:{ instantiate (2:=Vptr fb Ptrofs.zero). unfold Genv.find_funct. rewrite pred_dec_true; eauto. }
           4:{ simpl. eauto. }
           auto.
           { eapply eval_Elvalue. eapply eval_Evar_global; auto. eapply Genv.invert_find_symbol; eauto. simpl. econstructor 2. auto. }
-          { econstructor; eauto. eapply ptr_of_id_ofs_eval; eauto. rewrite ptr_of_id_ofs_typeof. eapply sem_cast_ptr.
-            econstructor; eauto. 3: econstructor. eapply eventval_to_expr_val_eval; auto. eapply eventval_match_wf_eventval_ge; eauto.
+          { econstructor; eauto. eapply ptr_of_id_ofs_eval; eauto.
+            rewrite ptr_of_id_ofs_typeof. eapply sem_cast_ptr.
+            econstructor; eauto. 3: econstructor. eapply eventval_to_expr_val_eval; auto.
+            eapply eventval_match_wf_eventval_ge; eauto.
             eapply eventval_match_sem_cast. erewrite eventval_match_eventval_to_val; eauto.
           }
           auto.
@@ -1086,7 +1186,8 @@ Section Backtranslation.
           - econstructor 1. auto.
         }
         simpl. econstructor 1. all: eauto.
-      - pose proof SEM as SEM0. inv SEM. rewrite INV. econstructor 2.
+      - inv ENV; inv EV.
+        pose proof SEM as SEM0. inv SEM. rewrite INV. econstructor 2.
         { eapply step_call.
           4:{ instantiate (2:=Vptr fb Ptrofs.zero). unfold Genv.find_funct. rewrite pred_dec_true; eauto. }
           4:{ simpl. eauto. }
@@ -1106,7 +1207,7 @@ Section Backtranslation.
           - econstructor 1. auto.
         }
         simpl. econstructor 1. all: eauto.
-      - rewrite INV. econstructor 2.
+      - inv ENV; inv EV. rewrite INV. econstructor 2.
         { eapply step_call.
           4:{ instantiate (2:=Vptr fb Ptrofs.zero). unfold Genv.find_funct. rewrite pred_dec_true; eauto. }
           4:{ simpl. eauto. }
@@ -1126,7 +1227,7 @@ Section Backtranslation.
           - econstructor 1. auto.
         }
         simpl. econstructor 1. all: eauto.
-      - rewrite INV. econstructor 2.
+      - inv ENV; inv EV. rewrite INV. econstructor 2.
         { eapply step_call.
           4:{ instantiate (2:=Vptr fb Ptrofs.zero). unfold Genv.find_funct. rewrite pred_dec_true; eauto. }
           4:{ simpl. eauto. }
@@ -1146,7 +1247,7 @@ Section Backtranslation.
           - econstructor 1. auto.
         }
         simpl. econstructor 1. all: eauto.
-      - rewrite INV. econstructor 2.
+      - inv ENV; inv EV. rewrite INV. econstructor 2.
         { eapply step_call.
           4:{ instantiate (2:=Vptr fb Ptrofs.zero). unfold Genv.find_funct. rewrite pred_dec_true; eauto. }
           4:{ simpl. eauto. }
@@ -1183,13 +1284,13 @@ Section Backtranslation.
            (ev :: nil)
            (State f Sskip k e le m2).
     Proof.
-      inv EXT; subst; simpl in *.
-      - pose proof SEM as SEM0. inv SEM. inv H5. econstructor 2.
+      destruct EXT as [EXT ENV]. inv EXT; subst; simpl in *.
+      - inv ENV; inv EV. pose proof SEM as SEM0. inv SEM. inv H5. econstructor 2.
         { eapply step_builtin; eauto.
           econstructor; eauto. 3: econstructor. eapply ptr_of_id_ofs_eval; eauto. rewrite ptr_of_id_ofs_typeof. eapply sem_cast_ptr.
         }
         simpl. econstructor 1. all: eauto.
-      - pose proof SEM as SEM0. inv SEM. inv H5. econstructor 2.
+      - inv ENV; inv EV. pose proof SEM as SEM0. inv SEM. inv H5. econstructor 2.
         { apply val_load_result_aux in H10.
           eapply step_builtin.
           - econstructor; eauto. eapply ptr_of_id_ofs_eval; eauto. rewrite ptr_of_id_ofs_typeof. eapply sem_cast_ptr.
@@ -1198,13 +1299,13 @@ Section Backtranslation.
           - simpl. econstructor. econstructor 1; eauto.
         }
         simpl. econstructor 1. all: eauto.
-      - pose proof SEM as SEM0. inv SEM. econstructor 2.
+      - inv ENV; inv EV. pose proof SEM as SEM0. inv SEM. econstructor 2.
         { eapply step_builtin; eauto. eapply list_eventval_to_expr_val_eval_typs; eauto. }
         simpl. econstructor 1. all: eauto.
-      - econstructor 2.
+      - inv ENV; inv EV. econstructor 2.
         { eapply step_builtin; eauto. eapply list_eventval_to_expr_val_eval_typs; eauto. }
         simpl. econstructor 1. all: eauto.
-      - econstructor 2.
+      - inv ENV; inv EV. econstructor 2.
         { destruct EF; subst; simpl.
           - eapply step_builtin. eapply list_eventval_to_expr_val_eval_typs; eauto.
             simpl. red. rewrite ISEXT. eauto.
@@ -1212,7 +1313,7 @@ Section Backtranslation.
             simpl. red. rewrite ISEXT. eauto.
         }
         simpl. econstructor 1. all: eauto.
-      - econstructor 2.
+      - inv ENV; inv EV. econstructor 2.
         { eapply step_builtin; eauto. eapply list_eventval_to_expr_val_eval_typs; eauto. }
         simpl. econstructor 1. all: eauto.
     Qed.
@@ -1361,34 +1462,272 @@ Section Backtranslation.
       all: eauto.
     Qed.
 
-    (* TODO *)
   End STEPPROP.
 
 
   Section WELLFORMED.
 
-    Definition empty_le := PTree.empty val.
+    Definition empty_te: temp_env := PTree.empty val.
+
+    (* Variant sf_cont_type : Type := | sf_cont: block -> signature -> sf_cont_type. *)
+    Variant sf_cont_type : Type := | sf_cont: block -> sf_cont_type.
+    Definition sf_conts := list sf_cont_type.
 
     (* wf_sem: from asm, wf_st: proof invariant for Clight states *)
-    Definition wf_sem_vload {F V} (ge: Genv.t F V) (ch: memory_chunk) (id: ident) (ofs: ptrofs) (v: eventval) :=
-      (exists b, (Genv.find_symbol ge id = Some b) /\ (Senv.block_is_volatile ge b = true)) /\
-        (exists rv, (eventval_match ge v (type_of_chunk ch) rv)).
+    Inductive from_info_asm_wf (ge: Asm.genv) : block -> mem -> sf_conts -> itrace -> Prop :=
+    | from_info_asm_wf_intra_call_external
+        cur m1 sf ev ik tl
+        cp
+        (CURCP: cp = Genv.find_comp ge (Vptr cur Ptrofs.zero))
+        ef res m2
+        (EXTEV: external_call_event_match_common ef ev ge cp m1 res m2)
+        fb
+        (IK: ik = info_external fb (ef_sig ef))
+        fid
+        (INV: Genv.invert_symbol ge fb = Some fid)
+        (ISEXT: Genv.find_funct_ptr ge fb = Some (AST.External ef))
+        (ALLOWED: Genv.allowed_call ge cp (Vptr fb Ptrofs.zero))
+        (INTRA: Genv.type_of_call ge cp (Genv.find_comp ge (Vptr fb Ptrofs.zero)) <> Genv.CrossCompartmentCall)
+        (NEXT: from_info_asm_wf ge cur m2 sf tl)
+      :
+      from_info_asm_wf ge cur m1 sf ((ev, ik) :: tl)
+    | from_info_asm_wf_builtin
+        cur m1 sf ev ik tl
+        cp
+        (CURCP: cp = Genv.find_comp ge (Vptr cur Ptrofs.zero))
+        ef res m2
+        (EXT: external_call_event_match_common ef ev ge cp m1 res m2)
+        (IK: ik = info_builtin ef)
+        (NEXT: from_info_asm_wf ge cur m2 sf tl)
+      :
+      from_info_asm_wf ge cur m1 sf ((ev, ik) :: tl)
+    | from_info_asm_wf_cross_call_internal
+        cur m1 sf ev ik tl
+        cp
+        (CURCP: cp = Genv.find_comp ge (Vptr cur Ptrofs.zero))
+        cp' fid evargs
+        (EV: ev = Event_call cp cp' fid evargs)
+        sg
+        (IK: ik = info_call not_cross_ext sg)
+        b
+        (FINDB: Genv.find_symbol ge fid = Some b)
+        fd
+        (FINDF: Genv.find_funct ge (Vptr b Ptrofs.zero) = Some fd)
+        (CP': cp' = comp_of fd)
+        (CROSS: Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall)
+        args
+        (NPTR: Forall not_ptr args)
+        (ALLOW: Genv.allowed_cross_call ge cp (Vptr b Ptrofs.zero))
+        (ESM: eventval_list_match ge evargs (sig_args sg) args)
+        callee_f
+        (INTERNAL: fd = AST.Internal callee_f)
+        (SIG: sg = Asm.fn_sig callee_f)
+        (* internal call: memory changes in Clight-side, so need inj-relation *)
+        (NEXT: from_info_asm_wf ge b m1 ((sf_cont cur) :: sf) tl)
+      :
+      from_info_asm_wf ge cur m1 sf ((ev, ik) :: tl)
+    | from_info_asm_wf_cross_return_internal
+        cur m1 sf ev ik tl
+        cp
+        (CURCP: cp = Genv.find_comp ge (Vptr cur Ptrofs.zero))
+        cp_c evres
+        (EV: ev = Event_return cp_c cp evres)
+        sg
+        (IK: ik = info_return sg)
+        cur_f
+        (INTERNAL: Genv.find_funct_ptr ge cur = Some (AST.Internal cur_f))
+        (SIG: sg = Asm.fn_sig cur_f)
+        (CROSS: Genv.type_of_call ge cp_c cp = Genv.CrossCompartmentCall)
+        res
+        (EVM: eventval_match ge evres (proj_rettype (sig_res sg)) res)
+        (NPTR: not_ptr res)
+        b_c sf_tl
+        (SF: sf = (sf_cont b_c) :: sf_tl)
+        (CPC: cp_c = Genv.find_comp ge (Vptr b_c Ptrofs.zero))
+        (* internal return: memory changes in Clight-side, so need inj-relation *)
+        (NEXT: from_info_asm_wf ge b_c m1 sf_tl tl)
+      :
+      from_info_asm_wf ge cur m1 sf ((ev, ik) :: tl).
+    (* TODO: cross-ext cases *)
 
-    Definition wf_st_vload (ch: memory_chunk) (id: ident) (ofs: ptrofs) (v: eventval) e :=
-      (wf_env e id).
 
-    Definition wf_sem_vstore {F V} (ge: Genv.t F V) (ch: memory_chunk) (id: ident) (ofs: ptrofs) v :=
-      (exists b, (Genv.find_symbol ge id = Some b) /\ (Senv.block_is_volatile ge b = true)) /\
-        (exists vv, eventval_match ge v (type_of_chunk ch) (Val.load_result ch vv)).
+    Lemma code_of_event_step_cross_call_start
+          ev ik
+          p f k e le m ge cp
+          (CP: cp = comp_of f)
+          (GE: ge = globalenv p)
+          cp' fid evargs
+          (EV: ev = Event_call cp cp' fid evargs)
+          ce sg
+          (IK: ik = info_call ce sg)
+          (WF0: wf_env e fid)
+          (WF1: Forall (wf_eventval_env e) evargs)
+          tdata
+          (TD: tdata = from_sig_fun_data sg)
+          args
+          (ARGS: args = list_eventval_to_list_val ge evargs)
+          b
+          (FINDB: Genv.find_symbol ge fid = Some b)
+          fd
+          (FINDF: Genv.find_funct ge (Vptr b Ptrofs.zero) = Some fd)
+          (TYPEF: type_of_fundef fd = Tfunction tdata.(dargs) tdata.(dret) tdata.(dcc))
+          (CP': cp' = comp_of fd)
+          (CROSS: Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall)
+          (NPTR: Forall not_ptr args)
+          (ALLOW: Genv.allowed_cross_call ge cp (Vptr b Ptrofs.zero))
+          (ESM: eventval_list_match ge evargs (sig_args sg) args)
+      :
+      Star (Clight.semantics1 p)
+           (State f (code_of_ievent ge (ev, ik)) k e le m)
+           (ev :: nil)
+           (Callstate fd args (Kcall None f e le k) m).
+    Proof.
+    Qed.
 
-    Definition wf_st_vstore (ch: memory_chunk) (id: ident) (ofs: ptrofs) v e :=
-      (wf_env e id) /\ (wf_eventval_env e v).
+    Lemma code_of_event_step_cross_call_ext
+          ev ef
+          p k m ge cp vres m'
+          targs tres cconv vargs
+          (CP: cp = call_comp k)
+          (GE: ge = globalenv p)
+          (EXT: external_call ef ge cp vargs m (ev :: nil) vres m')
+          (* bt_wf *)
+          (* from_asm *)
+      :
+      Star (Clight.semantics1 p)
+           (Callstate (External ef targs tres cconv) vargs k m)
+           (ev :: nil)
+           (Returnstate vres k m' (rettype_of_type tres) (comp_of ef)).
+    Proof.
+    Qed.
 
-    Definition wf_sem_annot {F V} (ge: Genv.t F V) (str: string) (vs: list eventval) :=
-      exists targs vargs, eventval_list_match ge vs targs vargs.
+    Lemma code_of_event_step_cross_returnstate
+          ev ik sg evres
+          p ge res optid f e le k m ty cp
+          (GE: ge = globalenv p)
+          (EV: ev = Event_return (comp_of f) cp evres)
+          (IK: ik = info_return sg)
+          (CROSS: Genv.type_of_call ge (comp_of f) cp = Genv.CrossCompartmentCall)
+          (EVM: eventval_match ge evres (proj_rettype (sig_res sg)) res)
+          (NPTR: not_ptr res)
+          (RETTY: ty = sig_res sg)
+      :
+      Star (Clight.semantics1 p)
+           (Returnstate res (Kcall optid f e le k) m ty cp)
+           (ev :: nil)
+           (State f Sskip k e (set_opttemp optid res le) m).
+    Proof.
+    Qed.
 
-    Definition wf_st_annot (str: string) (vs: list eventval) e :=
-      (Forall (wf_eventval_env e) vs).
+    (* TODO *)
+    (* Step lemmas *)
+    Lemma code_of_event_step_cross_call_ext
+          ev ef
+          p k m ge cp vres m'
+          targs tres cconv vargs
+          (CP: cp = call_comp k)
+          (GE: ge = globalenv p)
+          (EXT: external_call ef ge cp vargs m (ev :: nil) vres m')
+          (* bt_wf *)
+          (* from_asm *)
+      :
+      Star (Clight.semantics1 p)
+           (Callstate (External ef targs tres cconv) vargs k m)
+           (ev :: nil)
+           (Returnstate vres k m' (rettype_of_type tres) (comp_of ef)).
+    Proof.
+    Qed.
+
+    Lemma code_of_event_step_cross_call_start
+          ev ik
+          p f k e le m ge cp
+          (CP: cp = comp_of f)
+          (GE: ge = globalenv p)
+          cp' fid evargs
+          (EV: ev = Event_call cp cp' fid evargs)
+          ce sg
+          (IK: ik = info_call ce sg)
+          (WF0: wf_env e fid)
+          (WF1: Forall (wf_eventval_env e) evargs)
+          tdata
+          (TD: tdata = from_sig_fun_data sg)
+          args
+          (ARGS: args = list_eventval_to_list_val ge evargs)
+          b
+          (FINDB: Genv.find_symbol ge fid = Some b)
+          fd
+          (FINDF: Genv.find_funct ge (Vptr b Ptrofs.zero) = Some fd)
+          (TYPEF: type_of_fundef fd = Tfunction tdata.(dargs) tdata.(dret) tdata.(dcc))
+          (CP': cp' = comp_of fd)
+          (CROSS: Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall)
+          (NPTR: Forall not_ptr args)
+          (ALLOW: Genv.allowed_cross_call ge cp (Vptr b Ptrofs.zero))
+          (ESM: eventval_list_match ge evargs (sig_args sg) args)
+      :
+      Star (Clight.semantics1 p)
+           (State f (code_of_ievent ge (ev, ik)) k e le m)
+           (ev :: nil)
+           (Callstate fd args (Kcall None f e le k) m).
+    Proof.
+    Qed.
+
+    Lemma code_of_event_step_cross_call_int
+          p f vargs k m1 m2 e le
+          (ENT: function_entry1 (globalenv p) f vargs m1 e le m2)
+      :
+      Star (Clight.semantics1 p)
+           (Callstate (Internal f) vargs k m1)
+           (nil)
+           (State f (fn_body f) k e le m2).
+    Proof.
+    Qed.
+
+    Lemma code_of_event_step_cross_returnstate
+          ev ik sg evres
+          p ge res optid f e le k m ty cp
+          (GE: ge = globalenv p)
+          (EV: ev = Event_return (comp_of f) cp evres)
+          (IK: ik = info_return sg)
+          (CROSS: Genv.type_of_call ge (comp_of f) cp = Genv.CrossCompartmentCall)
+          (EVM: eventval_match ge evres (proj_rettype (sig_res sg)) res)
+          (NPTR: not_ptr res)
+          (RETTY: ty = sig_res sg)
+      :
+      Star (Clight.semantics1 p)
+           (Returnstate res (Kcall optid f e le k) m ty cp)
+           (ev :: nil)
+           (State f Sskip k e (set_opttemp optid res le) m).
+    Proof.
+    Qed.
+
+    Lemma code_of_event_step_cross_return_code
+          ev ik
+          p f k e le m ge cp
+          (CP: cp = comp_of f)
+          (GE: ge = globalenv p)
+          cp_c evres
+          (EV: ev = Event_return cp_c cp evres)
+          (WF: wf_eventval_env e evres)
+          sg
+          (IK: ik = info_return sg)
+          (CROSS: Genv.type_of_call ge cp_c cp = Genv.CrossCompartmentCall)
+          optid f_c e_c le_c k_c
+          (CONT: call_cont k = Kcall optid f_c e_c le_c k_c)
+          (CPC: cp_c = comp_of f_c)
+          res
+          (EVM: eventval_match ge evres (proj_rettype (sig_res sg)) res)
+          (NPTR: not_ptr res)
+          (TY: fn_return f = rettype_to_type (sig_res sg))
+          m'
+          (FREE: Mem.free_list m (blocks_of_env ge e) cp = Some m')
+      :
+      Star (Clight.semantics1 p)
+           (State f (code_of_ievent ge (ev, ik)) k e le m)
+           (ev :: nil)
+           (State f_c Sskip k_c e_c (set_opttemp optid res le_c) m').
+    Proof.
+    Qed.
+
 
     Definition wf_sem_call_start_cl (ge: genv) (cp cp': compartment) (id: ident) (vs: list eventval) (fd: Clight.fundef) :=
       exists b,
