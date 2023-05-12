@@ -193,6 +193,112 @@ Section INFORMATIVE.
   | istar_step : forall (s1 : state) (t1 : itrace) (s2 : state) (t2 : itrace) (s3 : state) (t : itrace),
       step ge s1 t1 s2 -> istar step ge s2 t2 s3 -> t = t1 ++ t2 -> istar step ge s1 t s3.
 
+  Lemma istar_ind2:
+  forall (genv state : Type) (step : genv -> state -> itrace -> state -> Prop) (ge : genv) (P : state -> itrace -> state -> Prop),
+  (forall s : state, P s nil s) ->
+  (forall (s1 : state) (t1 : itrace) (s2 : state) (t2 : itrace) (s3 : state) (t : itrace), step ge s1 t1 s2 -> istar step ge s2 t2 s3 -> P s2 t2 s3 -> t = t1 ++ t2 -> P s1 t s3) ->
+  forall (y : state) (i : itrace) (y0 : state), istar step ge y i y0 -> P y i y0.
+  Proof.
+    intros genv state step ge P. fix IH 6. intros. inv H1.
+    { eapply H. }
+    eapply H0. eauto. eauto. 2: auto.
+    eapply IH. auto. apply H0. apply H3.
+  Qed.
+
+  Definition istar_cut {genv state : Type} (step : genv -> state -> itrace -> state -> Prop) (ge : genv) : state -> itrace -> state -> state -> itrace -> Prop :=
+    fun s0 tr s2 s1 tr1 => (istar step ge s0 tr s2) -> exists tr0, (tr = tr0 ++ tr1) /\ (istar step ge s0 tr0 s1) /\ (istar step ge s1 tr1 s2).
+
+  Lemma istar_ind_clo:
+    forall (genv state : Type) (step : genv -> state -> itrace -> state -> Prop) (ge : genv) (P : state -> itrace -> state -> Prop),
+      (forall s : state, P s nil s) ->
+      (forall (s1 : state) (t1 : itrace) (s2 : state) (t2 : itrace) (s3 : state) (t : itrace),
+          step ge s1 t1 s2 -> istar step ge s2 t2 s3 -> t = t1 ++ t2 ->
+          (exists s2' t2', (istar_cut step ge s2 t2 s3 s2' t2') /\ (P s2' t2' s3 -> P s1 t s3))) ->
+      forall (y : state) (i : itrace) (y0 : state), istar step ge y i y0 -> P y i y0.
+  Proof.
+    intros genv state step ge P. fix IH 6. intros. inv H1.
+    { eapply H. }
+    exploit H0; eauto. intros (s2' & t2' & CUT & IMP). apply IMP.
+    eapply CUT in H3. destruct H3 as (tr0 & TR & ISTAR0 & ISTAR1).    
+    eapply IH. auto.
+    2: auto.
+
+    Guarded.
+
+    
+    eapply H0. eauto. eauto. 2: auto.
+    intros.
+
+    eapply IH. auto.
+    eapply H0.
+    Guarded.
+    auto.
+  Qed.
+  
+
+
+  Lemma istar_ind_clo:
+    forall (genv state : Type) (step : genv -> state -> itrace -> state -> Prop) (ge : genv) (P : state -> itrace -> state -> Prop),
+      (forall s : state, P s nil s) ->
+      (forall (s1 : state) (t1 : itrace) (s2 : state) (t2 : itrace) (s3 : state) (t : itrace),
+          step ge s1 t1 s2 -> istar step ge s2 t2 s3 ->
+          (forall s2' t2a t2b, (istar step ge s2 t2a s2') -> (istar step ge s2' t2b s3) -> (t2 = t2a ++ t2b) -> P s2' t2b s3) -> t = t1 ++ t2 -> P s1 t s3) ->
+      forall (y : state) (i : itrace) (y0 : state), istar step ge y i y0 -> P y i y0.
+  Proof.
+    intros genv state step ge P. fix IH 6. intros. inv H1.
+    { eapply H. }
+    eapply H0. eauto. eauto. 2: auto.
+    intros. eapply IH. auto. 2: 
+
+    inv H4. auto.
+    
+
+
+    inv H4.
+    { auto. }
+    eapply H0.  eauto. eauto. 2: auto.
+    intros. eapply IH. 1: auto.
+    2: apply H5.
+    Guarded.
+
+
+    Guarded.
+
+    eapply IH. auto. eapply H0.
+    
+    apply H4.
+    
+    Guarded.
+    
+    intros. inv H7.
+
+    { eapply H0. eauto. econstructor 1. 2: auto. Guarded. apply H8. }
+    Guarded.
+
+
+    apply H0. auto. 2: auto.
+    intros. eapply H0. 4: eapply H9. eauto. auto. apply H8.
+  Qed.
+  
+    Guarded.
+
+    eapply IH. auto. 2: auto. intros. eapply H0; eauto.
+  Qed.
+  
+
+    
+    eapply IH; eauto. econstructor 2; eauto.
+    Guarded.
+  Qed.
+  
+    
+    eapply H0. eapply H2. eapply H3. 2: auto. intros.
+    eapply IH. auto. 2: auto. intros.
+    
+    { 
+
+    Guarded.
+
 
   (* Record isemantics : Type := *)
   (*   iSemantics_gen *)

@@ -510,16 +510,24 @@ Section PROOF.
             simpl. pose proof NEXTFUN as NF0. unfold Genv.find_funct_ptr in NF0. destruct (Genv.find_def ge b0) eqn:FDB0; [|inv NF0]. destruct g; inv NF0.
             exploit wf_ge_block_to_id; eauto. intros (fid & INV).
             econstructor 4; try reflexivity; auto.
-            { admit. }
+            { admit. (* ext call sem *) }
             { eauto. }
             { unfold Genv.allowed_call. right; left. rewrite <- NEXTPC. rewrite INTRA. unfold Genv.find_comp_ignore_offset, Genv.find_comp. rewrite NEXTPC. auto. }
             { unfold Genv.type_of_call. rewrite INTRA. unfold Genv.find_comp_ignore_offset, Genv.find_comp. rewrite NEXTPC. rewrite Pos.eqb_refl. intros F. inv F. }
             { constructor 1. }
         }
+        inv H; simpl in *.
+
+        (* TODO *)
+
+        eapply IHSTAR.
         
 
-            eapply Genv.find_invert_symbol. 
-          
+istar_ind:
+  forall (genv state : Type) (step : genv -> state -> itrace -> state -> Prop) (ge : genv) (P : state -> itrace -> state -> Prop),
+  (forall s : state, P s nil s) ->
+  (forall (s1 : state) (t1 : itrace) (s2 : state) (t2 : itrace) (s3 : state) (t : itrace), step ge s1 t1 s2 -> istar step ge s2 t2 s3 -> P s2 t2 s3 -> t = t1 ++ t2 -> P s1 t s3) ->
+  forall (y : state) (i : itrace) (y0 : state), istar step ge y i y0 -> P y i y0
         
        
     
