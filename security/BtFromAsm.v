@@ -5,17 +5,10 @@ Require Import AST Linking Smallstep Events Behaviors.
 Require Import Split.
 
 Require Import riscV.Asm.
-Require Import BtInfoAsm.
-(* BtBasics. *)
+Require Import BtInfoAsm BtBasics.
 
 
 Section WELLFORMED.
-
-  Definition fd_sig (fd: fundef): signature :=
-    match fd with
-    | Internal f => fn_sig f
-    | External ef => ef_sig ef
-    end.
 
   (* Variant sf_cont_type : Type := | sf_cont: block -> signature -> sf_cont_type. *)
   Variant sf_cont_type : Type := | sf_cont: block -> sf_cont_type.
@@ -45,7 +38,7 @@ Section WELLFORMED.
       (NPTR: Forall not_ptr args)
       (ALLOW: Genv.allowed_cross_call ge cp (Vptr b Ptrofs.zero))
       (ESM: eventval_list_match ge evargs (sig_args sg) args)
-      (SIG: sg = fd_sig fd)
+      (SIG: sg = Asm.funsig fd)
       (NEXT: info_asm_sem_wf ge b m1 ((sf_cont cur) :: sf) tl)
     :
     info_asm_sem_wf ge cur m1 sf ((ev, ik) :: tl)
@@ -59,7 +52,7 @@ Section WELLFORMED.
       (IK: ik = info_return sg)
       cur_f
       (INTERNAL: Genv.find_funct_ptr ge cur = Some (AST.Internal cur_f))
-      (* TODO: separate this *)
+      (* Follows from cross call - stack has the sig *)
       (SIG: sg = Asm.fn_sig cur_f)
       (CROSS: Genv.type_of_call ge cp_c cp = Genv.CrossCompartmentCall)
       res
@@ -118,7 +111,6 @@ Section WELLFORMED.
       (ESM: eventval_list_match ge evargs (sig_args sg) args)
       ef
       (EXTERNAL: fd = AST.External ef)
-      (* TODO: separate this *)
       (SIG: sg = ef_sig ef)
     :
     info_asm_sem_wf ge cur m1 sf ((ev, ik) :: nil)
@@ -143,7 +135,6 @@ Section WELLFORMED.
       (ESM: eventval_list_match ge evargs (sig_args sg) args)
       ef
       (EXTERNAL: fd = AST.External ef)
-      (* TODO: separate this *)
       (SIG: sg = ef_sig ef)
       (* external call part *)
       tr vres m2
@@ -173,7 +164,6 @@ Section WELLFORMED.
       (ESM: eventval_list_match ge evargs (sig_args sg) args)
       ef
       (EXTERNAL: fd = AST.External ef)
-      (* TODO: separate this *)
       (SIG: sg = ef_sig ef)
       (* external call part *)
       tr vres m2
@@ -387,8 +377,8 @@ Section MATCH.
 
   Definition match_stack (sf: sf_conts) (st: stack) := Forall2 match_stack_type sf st.
 
-  Definition match_block (ge: Asm.genv) (cur: block) (b: block) : Prop :=
-    Genv.find_comp ge (Vptr cur Ptrofs.zero) = Genv.find_comp ge (Vptr b Ptrofs.zero).
+  Definition match_cp (ge: Asm.genv) (cur: block) (cp: compartment) : Prop :=
+    Genv.find_comp ge (Vptr cur Ptrofs.zero) = cp.
 
   Definition meminj_ge {F V} (ge: Genv.t F V): meminj :=
     fun b => match Genv.invert_symbol ge b with
@@ -400,6 +390,37 @@ Section MATCH.
           end.
 
   Definition match_mem (ge: Asm.genv) (m_ir m_asm: mem): Prop := Mem.inject (meminj_ge ge) m_asm m_ir.
+
+  Definition wf_stackframe (ge: Asm.genv) (fr: stackframe) :=
+    match fr with
+    | Stackframe b _ _ _ _ => match Genv.find_funct_ptr ge b with
+                             | Some (Internal f) => True
+                             | _ => False
+                             end
+    end.
+  Definition wf_stack (ge: Asm.genv) (sk: stack) := Forall (wf_stackframe ge) sk.
+
+  Definition wf_regset_stack cpm (ge: Asm.genv) (rs: regset) (sk: stack) :=
+    match rs PC with
+    | Vptr b _ => match Genv.find_funct_ptr ge b with
+                 | Some (External ef) => Genv.find_comp_ignore_offset ge (rs RA) = callee_comp cpm sk
+                 | _ => True
+                 end
+    | _ => True
+    end.
+
+  (* Definition wf_state cpm (ge: Asm.genv) (s: state) := *)
+  (*   match s with *)
+  (*   | State sk rs m => match rs PC with *)
+  (*                     | Vptr b _ => match Genv.find_funct_ptr ge b with *)
+  (*                                  | Some (External ef) => Genv.find_comp_ignore_offset ge (rs RA) = callee_comp cpm sk *)
+  (*                                  | _ => True *)
+  (*                                  end *)
+  (*                     | _ => True *)
+  (*                     end *)
+  (*   | _ => False *)
+  (*   end. *)
+
 
 (* Definition external_call_mem_inject_gen ef := ec_mem_inject (external_call_spec ef). *)
 
@@ -444,21 +465,20 @@ Section PROOF.
 
   (* If main is External, treat it in a different case - the trace can start with Event_syscall, without a preceding Event_call *)
   Lemma from_info_asm_sem_wf
-        ge cp s s' it
+        cpm ge cp s s' it
         (STAR: istar (asm_istep cp) ge s it s')
-        st rs m
-        (STATE: s = State st rs m)
-        b ofs f
-        (RSPC: rs PC = Vptr b ofs)
-        (FUN: Genv.find_funct_ptr ge b = Some (Internal f))
+        sk rs m
+        (STATE: s = State sk rs m)
+        (WFSK: wf_stack ge sk)
+        (WFRS: wf_regset_stack cpm ge rs sk)
         cur m_ir k
-        (MB: match_block ge cur b)
+        (MC: match_cp ge cur (Genv.find_comp_ignore_offset ge (rs PC)))
         (MM: match_mem ge m_ir m)
-        (MS: match_stack k st)
+        (MS: match_stack k sk)
     :
     info_asm_sem_wf ge cur m_ir k it.
   Proof.
-    remember (asm_istep cp) as istep. revert dependent cp. revert st rs m STATE b ofs f RSPC FUN cur m_ir k MB MM MS. induction STAR; intros; subst.
+    remember (asm_istep cp) as istep. revert dependent cp. revert sk rs m STATE b ofs RSPC FUN cur m_ir k MB MM MS. induction STAR; intros; subst.
     { constructor 1. }
     inv H.
     - rewrite RSPC in H3. inv H3. rewrite FUN in H4. inv H4.

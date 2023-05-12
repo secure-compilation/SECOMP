@@ -366,6 +366,9 @@ Section ASMISTEP.
                          | _ => not_cross_ext
                          end in
                it = map (fun e => (e, info_call ce sig)) t),
+      forall (CROSS_SIG: Genv.type_of_call ge (comp_of f) (Genv.find_comp_ignore_offset ge (Vptr b' ofs')) = Genv.CrossCompartmentCall ->
+                    (exists fd, Genv.find_funct_ptr ge b' = Some fd /\ Asm.funsig fd = sig)
+        ),
         asm_istep (State st rs m) it (State st' rs' m')
   | exec_asm_istep_internal_return:
     forall b ofs f i rs m rs' cp m' st,
@@ -440,6 +443,7 @@ Section ASMITR.
   Definition asm_has_initial_trace (p: Asm.program) (t: trace): Prop := semantics_has_initial_trace_prefix (Asm.semantics p) t.
 
 
+  (* TODO: fix Asm sem *)
   Lemma asm_star_tr_implies_istar_info_tr
         (p: Asm.program) (t: trace)
         (s s': Asm.state)
@@ -456,7 +460,7 @@ Section ASMITR.
       auto.
     - pose proof EV as EV0. inv EV0.
       + exists (it). simpl. split; [|auto]. exists s2'. econstructor 2. 2: eapply ISTAR.
-        { econstructor 2; eauto. }
+        { econstructor 2; eauto. admit. }
         auto.
       + assert (CASES: (exists ef, Genv.find_funct_ptr (Genv.globalenv p) b' = Some (External ef)) \/
                          ((exists intf, Genv.find_funct_ptr (Genv.globalenv p) b' = Some (Internal intf)) \/ (Genv.find_funct_ptr (Genv.globalenv p) b' = None))).
@@ -464,11 +468,11 @@ Section ASMITR.
         destruct CASES as [EXT | ELSE].
         * exists ((Event_call (comp_of f) (Genv.find_comp_ignore_offset (Genv.globalenv p) (Vptr b' ofs')) i0 vl, info_call is_cross_ext sig) :: it). simpl. split; [|auto].
           exists s2'. econstructor 2. 2: eapply ISTAR.
-          { econstructor 2; eauto. }
+          { econstructor 2; eauto. admit. }
           simpl. destruct EXT. rewrite H8. unfold Genv.find_comp_ignore_offset in H. rewrite H. auto.
         * exists ((Event_call (comp_of f) (Genv.find_comp_ignore_offset (Genv.globalenv p) (Vptr b' ofs')) i0 vl, info_call not_cross_ext sig) :: it). simpl. split; [|auto].
           exists s2'. econstructor 2. 2: eapply ISTAR.
-          { econstructor 2; eauto. }
+          { econstructor 2; eauto. admit. }
           simpl. destruct ELSE. destruct H8. rewrite H8. auto. rewrite H8. auto.
     - exists (it). simpl. split; [|auto]. exists s2'. econstructor 2. 2: eapply ISTAR.
       { econstructor 3; eauto. }
@@ -491,7 +495,7 @@ Section ASMITR.
       exists s2'. econstructor 2. 2: eapply ISTAR.
       { econstructor 6; eauto. }
       auto.
-  Qed.
+  Admitted.
 
   Lemma asm_tr_implies_info_tr
         (p: Asm.program) (t: trace)

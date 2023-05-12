@@ -1252,7 +1252,7 @@ Definition update_stack_return (s: stack) (cp: compartment) rs' :=
   else
     (* Otherwise we just pop the top stackframe, if it exists *)
     match s with
-    | nil => Some nil
+    | nil => None
     | _ :: st' => Some st'
     end
   .
@@ -1297,6 +1297,12 @@ Definition sig_of_call s :=
   match s with
   | Stackframe _ _ sg _ _ :: _ => sg
   | _ => signature_main
+  end.
+
+Definition funsig (fd: fundef): signature :=
+  match fd with
+  | Internal f => fn_sig f
+  | External ef => ef_sig ef
   end.
 
 Inductive step: state -> trace -> state -> Prop :=
