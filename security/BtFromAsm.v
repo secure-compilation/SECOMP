@@ -463,10 +463,22 @@ End MATCH.
 
 Section PROOF.
 
+  Definition wf_ge {F V} (ge: Genv.t F V) := exists (p: AST.program F V), (list_norepet (prog_defs_names p)) /\ (ge = Genv.globalenv p).
+
+  Lemma wf_ge_block_to_id
+        F V (ge: Genv.t F V)
+        (WF: wf_ge ge)
+        b gd
+        (DEF: Genv.find_def ge b = Some gd)
+    :
+    exists id, Genv.invert_symbol ge b = Some id.
+  Proof. destruct WF as (p & A & B). eapply genv_def_to_ident; eauto. Qed.
+
   (* If main is External, treat it in a different case - the trace can start with Event_syscall, without a preceding Event_call *)
   Lemma from_info_asm_sem_wf
-        cpm ge cp s s' it
-        (STAR: istar (asm_istep cp) ge s it s')
+        cpm ge s s' it
+        (WFGE: wf_ge ge)
+        (STAR: istar (asm_istep cpm) ge s it s')
         sk rs m
         (STATE: s = State sk rs m)
         (WFSK: wf_stack ge sk)
@@ -478,10 +490,42 @@ Section PROOF.
     :
     info_asm_sem_wf ge cur m_ir k it.
   Proof.
-    remember (asm_istep cp) as istep. revert dependent cp. revert sk rs m STATE b ofs RSPC FUN cur m_ir k MB MM MS. induction STAR; intros; subst.
+    remember (asm_istep cpm) as istep. revert dependent cpm. revert sk rs m STATE WFSK cur m_ir k MC MM MS. induction STAR; intros; subst.
     { constructor 1. }
-    inv H.
-    - rewrite RSPC in H3. inv H3. rewrite FUN in H4. inv H4.
+    inv H; simpl.
+    - assert (INTRA: Genv.find_comp ge (Vptr cur Ptrofs.zero) = Genv.find_comp_ignore_offset ge (rs' PC)).
+      { rewrite MC. rewrite NEXTPC, <- ALLOWED. unfold Genv.find_comp_ignore_offset. rewrite H3. unfold Genv.find_comp. rewrite Genv.find_funct_find_funct_ptr. rewrite H4. auto. }
+      destruct (Genv.find_funct_ptr ge b') eqn:NEXTFUN. destruct f0.
+      + eapply IHSTAR; try reflexivity. all: auto.
+        { admit. (* mem *) }
+        { unfold wf_regset_stack. rewrite NEXTPC, NEXTFUN. auto. }
+      + inv STAR.
+        { constructor 1. }
+        inv H.
+        all: rewrite NEXTPC in H8; inv H8; rewrite NEXTFUN in H11; inv H11.
+        inv H0.
+        { exploit external_call_trace_length. eauto. intros EVLEN. destruct t.
+          - simpl. constructor 1.
+          - destruct t; simpl in EVLEN. 2: lia.
+            simpl. pose proof NEXTFUN as NF0. unfold Genv.find_funct_ptr in NF0. destruct (Genv.find_def ge b0) eqn:FDB0; [|inv NF0]. destruct g; inv NF0.
+            exploit wf_ge_block_to_id; eauto. intros (fid & INV).
+            econstructor 4; try reflexivity; auto.
+            { admit. }
+            { eauto. }
+            { unfold Genv.allowed_call. right; left. rewrite <- NEXTPC. rewrite INTRA. unfold Genv.find_comp_ignore_offset, Genv.find_comp. rewrite NEXTPC. auto. }
+            { unfold Genv.type_of_call. rewrite INTRA. unfold Genv.find_comp_ignore_offset, Genv.find_comp. rewrite NEXTPC. rewrite Pos.eqb_refl. intros F. inv F. }
+            { constructor 1. }
+        }
+        
+
+            eapply Genv.find_invert_symbol. 
+          
+        
+       
+    
+external_call_trace_length:
+  forall (ef : external_function) (ge : Senv.t) (c : compartment) (vargs : list val) (m : mem) (t : trace) (vres : val) (m' : mem), external_call ef ge c vargs m t vres m' -> (Datatypes.length t <= 1)%nat
+
       
 
 
