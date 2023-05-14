@@ -490,15 +490,19 @@ Section PROOF.
     :
     info_asm_sem_wf ge cur m_ir k it.
   Proof.
-    remember (asm_istep cpm) as istep. revert dependent cpm. revert sk rs m STATE WFSK cur m_ir k MC MM MS. induction STAR; intros; subst.
+    apply measure_istar in STAR. destruct STAR as (n & STAR).
+    move n before ge. revert s s' it WFGE STAR sk rs m STATE WFSK WFRS cur m_ir k MC MM MS.
+    pattern n. apply (well_founded_induction Nat.lt_wf_0). intros m IH. intros.
+    inv STAR; subst.
+    (* remember (asm_istep cpm) as istep. revert dependent cpm. revert sk rs m STATE WFSK cur m_ir k MC MM MS. induction STAR; intros; subst. *)
     { constructor 1. }
-    inv H; simpl.
+    rename H0 into STAR. inv H; simpl.
     - assert (INTRA: Genv.find_comp ge (Vptr cur Ptrofs.zero) = Genv.find_comp_ignore_offset ge (rs' PC)).
       { rewrite MC. rewrite NEXTPC, <- ALLOWED. unfold Genv.find_comp_ignore_offset. rewrite H3. unfold Genv.find_comp. rewrite Genv.find_funct_find_funct_ptr. rewrite H4. auto. }
       destruct (Genv.find_funct_ptr ge b') eqn:NEXTFUN. destruct f0.
-      + eapply IHSTAR; try reflexivity. all: auto.
-        { admit. (* mem *) }
+      + eapply IH; try reflexivity. 3: eauto. all: auto.
         { unfold wf_regset_stack. rewrite NEXTPC, NEXTFUN. auto. }
+        { admit. (* mem *) }
       + inv STAR.
         { constructor 1. }
         inv H.
@@ -517,6 +521,7 @@ Section PROOF.
             { constructor 1. }
         }
         inv H; simpl in *.
+        
 
         (* TODO *)
 
