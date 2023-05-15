@@ -521,7 +521,13 @@ Section PROOF.
             { constructor 1. }
         }
         inv H; simpl in *.
-        
+        exploit external_call_trace_length. eauto. intros EVLEN. destruct t.
+        { simpl. pose proof EV as RETEV. inv RETEV; simpl.
+          { eapply IH. 3: eauto. all: auto.
+            assert (STEQ: st' = sk).
+            
+            { unfold update_stack_return in STUPD.
+        econstructor 4.
 
         (* TODO *)
 

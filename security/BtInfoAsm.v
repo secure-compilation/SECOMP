@@ -135,11 +135,13 @@ Section INFORMATIVE.
   (* When a Event_call is is_cross_ext, do not back-translate the following (possible Event_syscall and) Event_return. *)
   Variant cross_ext := | is_cross_ext | not_cross_ext.
 
+  Variant real_virtual := | is_real | is_virtual.
+
   (* Additional information *)
   Variant info_kind :=
     (* Get information for cross-comp calls and returns *)
-    | info_call (ce: cross_ext) (sg: signature)
-    | info_return (sg: signature)
+    | info_call (ce: cross_ext) (sg: signature) (vr: real_virtual)
+    | info_return (sg: signature) (vr: real_virtual)
     (* Get information for inter-comp external calls or builtins *)
     | info_external (b: block) (sg: signature)
     | info_builtin (ef: external_function)
@@ -154,7 +156,35 @@ Section INFORMATIVE.
 
   (* Informative to original *)
   Definition iev_to_ev (ie: ievent) : event := (fst ie).
-  Definition itr_to_tr (ies: itrace) : trace := map iev_to_ev ies.
+  (* Definition itr_to_tr (ies: itrace) : trace := map iev_to_ev ies. *)
+
+  Definition filter_virtual (iev: ievent): bool :=
+    match iev with
+    | (ev, info_call _ _ is_virtual) | (ev, info_return _ is_virtual) => false
+    | _ => true
+    end.
+
+  Definition itr_to_tr (itr: itrace) : trace := map iev_to_ev (filter filter_virtual itr).
+
+  Lemma itr_to_tr_cons
+        ev tr
+    :
+    itr_to_tr (ev :: tr) = if (filter_virtual ev) then (fst ev) :: (itr_to_tr tr) else (itr_to_tr tr).
+  Proof. unfold itr_to_tr. destruct ev. destruct i; simpl; auto. 1,2: destruct vr; simpl; auto. Qed.
+
+  Lemma itr_to_tr_app
+        t1 t2
+    :
+    itr_to_tr (t1 ++ t2) = (itr_to_tr t1) ++ (itr_to_tr t2).
+  Proof. unfold itr_to_tr. rewrite filter_app. rewrite map_app. auto. Qed.
+
+  Lemma filter_map
+        A B f (m: A -> B)
+        (l: list A)
+        (FA: forall a, f (m a) = true)
+    :
+    filter f (map m l) = map m l.
+  Proof. induction l; simpl; auto. rewrite FA. rewrite IHl. auto. Qed.
 
   (* Informative behavior *)
   (* CoInductive itraceinf : Type :=  iEconsinf : ievent -> itraceinf -> itraceinf. *)
@@ -348,6 +378,39 @@ Section ASMISTEP.
   (*   forall id ofs, *)
   (*   Val.offset_ptr (high_half ge id ofs) (low_half ge id ofs) = Genv.symbol_address ge id ofs. *)
 
+  Definition typ_to_eventval (ty: typ): eventval :=
+    match ty with
+    | Tint => EVint Int.zero
+    | Tfloat => EVfloat Floats.Float.zero
+    | Tlong => EVlong Int64.zero
+    | Tsingle => EVsingle Floats.Float32.zero
+    | Tany32 => EVint Int.zero
+    | Tany64 => EVfloat Floats.Float.zero
+    end.
+
+  Definition typ_to_eventvals (ty: list typ): list eventval := map typ_to_eventval ty.
+
+  Definition genv_invert_symbol_total {F V : Type} (ge : Genv.t F V) : block -> ident :=
+    fun b => match Genv.invert_symbol ge b with | Some i => i | None => xH end.
+
+  Inductive call_trace_vr {F V : Type} (ge : Genv.t F V) : compartment -> compartment -> val -> list val -> list typ -> trace -> Prop :=
+    call_trace_vr_intra : forall (cp cp' : compartment) (vf : val) (vargs : list val) (ty : list typ),
+        Genv.type_of_call ge cp cp' = Genv.InternalCall -> call_trace_vr ge cp cp' vf vargs ty E0
+  | call_trace_vr_virtual : forall (cp cp' : compartment) (vf : val) (vargs : list val) (vl : list eventval) (ty : list typ) (b : block) (ofs : ptrofs) (i : ident),
+      Genv.type_of_call ge cp cp' = Genv.DefaultCompartmentCall ->
+      vf = Vptr b ofs -> genv_invert_symbol_total ge b = i -> (vl = typ_to_eventvals ty) -> call_trace_vr ge cp cp' vf vargs ty (Event_call cp cp' i vl :: nil)
+  | call_trace_vr_cross : forall (cp cp' : compartment) (vf : val) (vargs : list val) (vl : list eventval) (ty : list typ) (b : block) (ofs : ptrofs) (i : ident),
+      Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall ->
+      vf = Vptr b ofs -> Genv.invert_symbol ge b = Some i -> eventval_list_match ge vl ty vargs -> call_trace_vr ge cp cp' vf vargs ty (Event_call cp cp' i vl :: nil).
+
+  Inductive return_trace_vr {F V : Type} (ge : Genv.t F V) : compartment -> compartment -> val -> rettype -> trace -> Prop :=
+    return_trace_vr_intra : forall (cp cp' : compartment) (v : val) (ty : rettype),
+        Genv.type_of_call ge cp cp' <> Genv.CrossCompartmentCall -> return_trace_vr ge cp cp' v ty E0
+  | return_trace_vr_virtual : forall (cp cp' : compartment) (res : eventval) (v : val) (ty : rettype),
+      Genv.type_of_call ge cp cp' = Genv.DefaultCompartmentCall -> (res = typ_to_eventval (proj_rettype ty)) -> return_trace_vr ge cp cp' v ty (Event_return cp cp' res :: nil)
+  | return_trace_vr_cross : forall (cp cp' : compartment) (res : eventval) (v : val) (ty : rettype),
+      Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall -> eventval_match ge res (proj_rettype ty) v -> return_trace_vr ge cp cp' v ty (Event_return cp cp' res :: nil).
+
   Variant asm_istep: state -> itrace -> state -> Prop :=
   | exec_asm_istep_internal:
     forall b ofs f i rs m rs' m' b' ofs' st cp,
@@ -378,16 +441,20 @@ Section ASMISTEP.
       forall (NO_CROSS_PTR:
           Genv.type_of_call ge (comp_of f) (Genv.find_comp_ignore_offset ge (Vptr b' ofs')) = Genv.CrossCompartmentCall ->
           List.Forall not_ptr args),
-      forall (EV: call_trace ge (comp_of f) (Genv.find_comp_ignore_offset ge (Vptr b' ofs')) (Vptr b' ofs')
-                        args (sig_args sig) t),
-      forall (INFO: let ce := match (Genv.find_funct_ptr ge b', Genv.type_of_call ge (comp_of f) (Genv.find_comp_ignore_offset ge (Vptr b' ofs'))) with
-                         | (Some (External ef), Genv.CrossCompartmentCall) => is_cross_ext
+      forall (EV: call_trace_vr ge (comp_of f) (Genv.find_comp_ignore_offset ge (Vptr b' ofs')) (Vptr b' ofs')
+                           args (sig_args sig) t),
+      forall (INFO: let ce := match (Genv.find_funct_ptr ge b', (comp_of f) =? (Genv.find_comp_ignore_offset ge (Vptr b' ofs'))) with
+                         | (Some (External ef), false) => is_cross_ext
                          | _ => not_cross_ext
                          end in
-               it = map (fun e => (e, info_call ce sig)) t),
-      forall (CROSS_SIG: Genv.type_of_call ge (comp_of f) (Genv.find_comp_ignore_offset ge (Vptr b' ofs')) = Genv.CrossCompartmentCall ->
-                    (exists fd, Genv.find_funct_ptr ge b' = Some fd /\ Asm.funsig fd = sig)
-        ),
+               let vr := match Genv.type_of_call ge (comp_of f) (Genv.find_comp_ignore_offset ge (Vptr b' ofs')) with
+                         | Genv.DefaultCompartmentCall => is_virtual
+                         | _ => is_real
+                         end in
+               it = map (fun e => (e, info_call ce sig vr)) t),
+      forall (CALLSIG: Genv.type_of_call ge (comp_of f) (Genv.find_comp_ignore_offset ge (Vptr b' ofs')) <> Genv.InternalCall ->
+                    (exists fd, Genv.find_funct_ptr ge b' = Some fd /\ sig = Asm.funsig fd)),
+      forall (CPEQ: cp = (comp_of f)),
         asm_istep (State st rs m) it (State st' rs' m')
   | exec_asm_istep_internal_return:
     forall b ofs f i rs m rs' cp m' st,
@@ -422,10 +489,14 @@ Section ASMISTEP.
       forall (NO_CROSS_PTR:
           (Genv.type_of_call ge cp' rec_cp = Genv.CrossCompartmentCall ->
            not_ptr (return_value rs sg))),
-      forall (EV: return_trace ge cp' rec_cp (return_value rs sg) (sig_res sg) t),
-      forall (INFO: it = map (fun e => (e, info_return sg)) t),
+      forall (EV: return_trace_vr ge cp' rec_cp (return_value rs sg) (sig_res sg) t),
+      forall (INFO: let vr := match Genv.type_of_call ge cp' rec_cp with
+                         | Genv.DefaultCompartmentCall => is_virtual
+                         | _ => is_real
+                         end in
+               it = map (fun e => (e, info_return sg vr)) t),
         asm_istep (ReturnState st rs m) it (State st' rs m)
-  | exec_asm_istep_builtin:
+    | exec_asm_istep_builtin:
     forall b ofs f ef args res rs m vargs t vres rs' m' st it,
       rs PC = Vptr b ofs ->
       Genv.find_funct_ptr ge b = Some (Internal f) ->
@@ -477,40 +548,124 @@ Section ASMITR.
     - exists (it). simpl. split; [|auto]. exists s2'. econstructor 2. 2: eapply ISTAR.
       { econstructor 1; eauto. simpl. rewrite ALLOWED in H3. unfold Genv.find_comp_ignore_offset in H3. auto. }
       auto.
-    - pose proof EV as EV0. inv EV0.
-      + exists (it). simpl. split; [|auto]. exists s2'. econstructor 2. 2: eapply ISTAR.
-        { econstructor 2; eauto. admit. }
+    - pose proof EV as EV0.
+      destruct (Genv.type_of_call (Genv.globalenv p) (comp_of f) (Genv.find_comp_ignore_offset (Genv.globalenv p) (Vptr b' ofs'))) eqn:CCASES.
+      + inv EV0. 2: rewrite CCASES in H; inv H.
+        exists (it). simpl. split; [|auto]. exists s2'. econstructor 2. 2: eapply ISTAR.
+        { econstructor 2; eauto.
+          - simpl. setoid_rewrite CCASES. intros F; inv F.
+          - econstructor 1. auto.
+          - simpl. setoid_rewrite CCASES. intros F; contradiction F. auto.
+          - simpl. unfold Genv.find_comp. rewrite Genv.find_funct_find_funct_ptr. rewrite H1. auto.
+        }
         auto.
-      + assert (CASES: (exists ef, Genv.find_funct_ptr (Genv.globalenv p) b' = Some (External ef)) \/
+      + inv EV0. rewrite CCASES in H. congruence with H.
+        assert (CASES: (exists ef, Genv.find_funct_ptr (Genv.globalenv p) b' = Some (External ef)) \/
                          ((exists intf, Genv.find_funct_ptr (Genv.globalenv p) b' = Some (Internal intf)) \/ (Genv.find_funct_ptr (Genv.globalenv p) b' = None))).
         { destruct (Genv.find_funct_ptr (Genv.globalenv p) b') eqn:CASES; [|auto]. destruct f0; eauto. }
         destruct CASES as [EXT | ELSE].
-        * exists ((Event_call (comp_of f) (Genv.find_comp_ignore_offset (Genv.globalenv p) (Vptr b' ofs')) i0 vl, info_call is_cross_ext sig) :: it). simpl. split; [|auto].
+        * exists ((Event_call (comp_of f) (Genv.find_comp_ignore_offset (Genv.globalenv p) (Vptr b' ofs')) i0 vl, info_call is_cross_ext sig is_real) :: it). simpl. split; [|auto].
           exists s2'. econstructor 2. 2: eapply ISTAR.
-          { econstructor 2; eauto. admit. }
-          simpl. destruct EXT. rewrite H8. unfold Genv.find_comp_ignore_offset in H. rewrite H. auto.
-        * exists ((Event_call (comp_of f) (Genv.find_comp_ignore_offset (Genv.globalenv p) (Vptr b' ofs')) i0 vl, info_call not_cross_ext sig) :: it). simpl. split; [|auto].
+          { econstructor 2; eauto.
+            - simpl. econstructor 3; eauto.
+            - admit. (* signature *)
+            - simpl. unfold Genv.find_comp. rewrite Genv.find_funct_find_funct_ptr. rewrite H1. auto.
+          }
+          simpl. destruct EXT. rewrite H8. unfold Genv.find_comp_ignore_offset in H. rewrite H.
+          clear - H. unfold Genv.type_of_call in H. destruct (comp_of f =? Genv.find_comp (Genv.globalenv p) (Vptr b' Ptrofs.zero)). inv H. auto.
+        * exists ((Event_call (comp_of f) (Genv.find_comp_ignore_offset (Genv.globalenv p) (Vptr b' ofs')) i0 vl, info_call not_cross_ext sig is_real) :: it). simpl. split; [|auto].
           exists s2'. econstructor 2. 2: eapply ISTAR.
-          { econstructor 2; eauto. admit. }
-          simpl. destruct ELSE. destruct H8. rewrite H8. auto. rewrite H8. auto.
+          { econstructor 2; eauto.
+            - simpl. econstructor 3; eauto.
+            - admit. (* signature *)
+            - simpl. unfold Genv.find_comp. rewrite Genv.find_funct_find_funct_ptr. rewrite H1. auto.
+          }
+          simpl. unfold Genv.find_comp_ignore_offset in H. rewrite H. destruct ELSE. destruct H8. rewrite H8. auto. rewrite H8. auto.
+      + inv EV0.
+        2:{ rewrite CCASES in H. inv H. }
+        assert (CASES: (exists ef, Genv.find_funct_ptr (Genv.globalenv p) b' = Some (External ef)) \/
+                         ((exists intf, Genv.find_funct_ptr (Genv.globalenv p) b' = Some (Internal intf)) \/ (Genv.find_funct_ptr (Genv.globalenv p) b' = None))).
+        { destruct (Genv.find_funct_ptr (Genv.globalenv p) b') eqn:CASES; [|auto]. destruct f0; eauto. }
+        destruct (Genv.invert_symbol (Genv.globalenv p) b') eqn:SYMB.
+        2:{ destruct CASES as [EXT | ELSE].
+            * exists ((Event_call (comp_of f) (Genv.find_comp_ignore_offset (Genv.globalenv p) (Vptr b' ofs')) xH (typ_to_eventvals (sig_args sig)), info_call is_cross_ext sig is_virtual) :: it). simpl. split; [|auto].
+              exists s2'. econstructor 2. 2: eapply ISTAR.
+              { econstructor 2; eauto.
+                - setoid_rewrite CCASES. intros F; inv F.
+                - simpl. econstructor 2; eauto.
+                - admit. (* signature *)
+                - simpl. unfold Genv.find_comp. rewrite Genv.find_funct_find_funct_ptr. rewrite H1. auto.
+              }
+              simpl. destruct EXT. rewrite H5. unfold Genv.find_comp_ignore_offset in CCASES. rewrite CCASES.
+              unfold genv_invert_symbol_total. rewrite SYMB.
+              clear - CCASES. unfold Genv.type_of_call in CCASES. destruct (comp_of f =? Genv.find_comp (Genv.globalenv p) (Vptr b' Ptrofs.zero)); auto. inv CCASES.
+            * exists ((Event_call (comp_of f) (Genv.find_comp_ignore_offset (Genv.globalenv p) (Vptr b' ofs')) xH (typ_to_eventvals (sig_args sig)), info_call not_cross_ext sig is_virtual) :: it). simpl. split; [|auto].
+              exists s2'. econstructor 2. 2: eapply ISTAR.
+              { econstructor 2; eauto.
+                - setoid_rewrite CCASES. intros F; inv F.
+                - simpl. econstructor 2; eauto.
+                - admit. (* signature *)
+                - simpl. unfold Genv.find_comp. rewrite Genv.find_funct_find_funct_ptr. rewrite H1. auto.
+              }
+              simpl. unfold Genv.find_comp_ignore_offset in CCASES. rewrite CCASES. unfold genv_invert_symbol_total. rewrite SYMB. destruct ELSE.
+              destruct H5; rewrite H5. auto. rewrite H5. auto.
+        }
+        destruct CASES as [EXT | ELSE].
+        * exists ((Event_call (comp_of f) (Genv.find_comp_ignore_offset (Genv.globalenv p) (Vptr b' ofs')) i0 (typ_to_eventvals (sig_args sig)), info_call is_cross_ext sig is_virtual) :: it). simpl. split; [|auto].
+          exists s2'. econstructor 2. 2: eapply ISTAR.
+          { econstructor 2; eauto.
+            - setoid_rewrite CCASES. intros F; inv F.
+            - simpl. econstructor 2; eauto.
+            - admit. (* signature *)
+            - simpl. unfold Genv.find_comp. rewrite Genv.find_funct_find_funct_ptr. rewrite H1. auto.
+          }
+          simpl. destruct EXT. rewrite H5. unfold Genv.find_comp_ignore_offset in CCASES. rewrite CCASES.
+          unfold genv_invert_symbol_total. rewrite SYMB.
+          clear - CCASES. unfold Genv.type_of_call in CCASES. destruct (comp_of f =? Genv.find_comp (Genv.globalenv p) (Vptr b' Ptrofs.zero)); auto. inv CCASES.
+        * exists ((Event_call (comp_of f) (Genv.find_comp_ignore_offset (Genv.globalenv p) (Vptr b' ofs')) i0 (typ_to_eventvals (sig_args sig)), info_call not_cross_ext sig is_virtual) :: it). simpl. split; [|auto].
+          exists s2'. econstructor 2. 2: eapply ISTAR.
+          { econstructor 2; eauto.
+            - setoid_rewrite CCASES. intros F; inv F.
+            - simpl. econstructor 2; eauto.
+            - admit. (* signature *)
+            - simpl. unfold Genv.find_comp. rewrite Genv.find_funct_find_funct_ptr. rewrite H1. auto.
+          }
+          simpl. unfold Genv.find_comp_ignore_offset in CCASES. rewrite CCASES. unfold genv_invert_symbol_total. rewrite SYMB. destruct ELSE.
+          destruct H5; rewrite H5. auto. rewrite H5. auto.
     - exists (it). simpl. split; [|auto]. exists s2'. econstructor 2. 2: eapply ISTAR.
       { econstructor 3; eauto. }
       auto.
-    - pose proof EV as EV0. inv EV0.
-      + exists (it). simpl. split; [|auto]. exists s2'. econstructor 2. 2: eapply ISTAR.
-        { econstructor 4; eauto. }
+    - pose proof EV as EV0.
+      destruct (Genv.type_of_call (Genv.globalenv p) (Genv.find_comp_ignore_offset (Genv.globalenv p) (rs PC)) (callee_comp (comp_of_main p) st)) eqn:CCASES.
+      + inv EV0.
+        2:{ rewrite CCASES in H. inv H. }
+        exists (it). simpl. split; [|auto]. exists s2'. econstructor 2. 2: eapply ISTAR.
+        { econstructor 4; eauto.
+          - simpl. rewrite CCASES. intros F; inv F.
+          - econstructor 1; auto.
+        }
         auto.
-      + exists ((Event_return (Genv.find_comp_ignore_offset (Genv.globalenv p) (rs PC)) (callee_comp (comp_of_main p) st) res, info_return (sig_of_call st)) :: it).
+      + inv EV0. rewrite CCASES in H. congruence with H.
+        exists ((Event_return (Genv.find_comp_ignore_offset (Genv.globalenv p) (rs PC)) (callee_comp (comp_of_main p) st) res, info_return (sig_of_call st) is_real) :: it).
         simpl. split; [|auto]. exists s2'. econstructor 2. 2: eapply ISTAR.
-        { econstructor 4; eauto. }
-        auto.
+        { econstructor 4; eauto. econstructor 3; eauto. }
+        simpl. rewrite CCASES. auto.
+      + inv EV0.
+        2:{ rewrite CCASES in H. inv H. }
+        exists ((Event_return (Genv.find_comp_ignore_offset (Genv.globalenv p) (rs PC)) (callee_comp (comp_of_main p) st) (typ_to_eventval (proj_rettype (sig_res (sig_of_call st)))), info_return (sig_of_call st) is_virtual) :: it).
+        simpl. split; [|auto]. exists s2'. econstructor 2. 2: eapply ISTAR.
+        { econstructor 4; eauto.
+          - simpl. rewrite CCASES. intros F; inv F.
+          - econstructor 2; eauto.
+        }
+        simpl. rewrite CCASES. auto.
     - exists ((map (fun e => (e, info_builtin ef)) t1) ++ it). simpl; split.
-      2:{ unfold itr_to_tr. rewrite map_app. unfold Eapp. f_equal. rewrite map_map. simpl. apply map_id. }
+      2:{ rewrite itr_to_tr_app. unfold Eapp. f_equal. unfold itr_to_tr. rewrite filter_map; simpl; auto. rewrite map_map. simpl. apply map_id. }
       exists s2'. econstructor 2. 2: eapply ISTAR.
       { econstructor 5; eauto. }
       auto.
     - exists ((map (fun e => (e, info_external b (ef_sig ef))) t1) ++ it). simpl; split.
-      2:{ unfold itr_to_tr. rewrite map_app. unfold Eapp. f_equal. rewrite map_map. simpl. apply map_id. }
+      2:{ rewrite itr_to_tr_app. unfold Eapp. f_equal. unfold itr_to_tr. rewrite filter_map; simpl; auto. rewrite map_map. simpl. apply map_id. }
       exists s2'. econstructor 2. 2: eapply ISTAR.
       { econstructor 6; eauto. }
       auto.
