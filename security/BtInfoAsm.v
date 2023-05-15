@@ -405,7 +405,7 @@ Section ASMISTEP.
 
   Inductive return_trace_vr {F V : Type} (ge : Genv.t F V) : compartment -> compartment -> val -> rettype -> trace -> Prop :=
     return_trace_vr_intra : forall (cp cp' : compartment) (v : val) (ty : rettype),
-        Genv.type_of_call ge cp cp' <> Genv.CrossCompartmentCall -> return_trace_vr ge cp cp' v ty E0
+        Genv.type_of_call ge cp cp' = Genv.InternalCall -> return_trace_vr ge cp cp' v ty E0
   | return_trace_vr_virtual : forall (cp cp' : compartment) (res : eventval) (v : val) (ty : rettype),
       Genv.type_of_call ge cp cp' = Genv.DefaultCompartmentCall -> (res = typ_to_eventval (proj_rettype ty)) -> return_trace_vr ge cp cp' v ty (Event_return cp cp' res :: nil)
   | return_trace_vr_cross : forall (cp cp' : compartment) (res : eventval) (v : val) (ty : rettype),
