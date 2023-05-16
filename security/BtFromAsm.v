@@ -390,10 +390,11 @@ Section PROOF.
           destruct H1 as (b2 & ofs2 & NEXTPC2). destruct (Genv.find_funct_ptr ge b2) eqn:NEXTFUN2. destruct f0.
           { (* next fun is internal - done by induction *)
             exploit external_call_trace_length. eauto. intros EVLEN. destruct t; simpl.
-            { clear EVLEN. eapply IH. 3: eapply IH_ISTAR. all: auto.
+            { clear EVLEN.
+              eapply IH. 3: eapply IH_ISTAR. all: auto.
               - red. rewrite Pregmap.gss. rewrite NEXTPC2. rewrite NEXTFUN2. auto.
               - rewrite Pregmap.gss in *. rewrite <- e. rewrite <- REC_CURCOMP. auto.
-              - admit. (* mem *)
+              - admit. (* mem -> need to execute external call to maintain injection? *)
             }
             destruct t; simpl in *. 2:lia. clear EVLEN.
             pose proof NEXTFUN as NF0. unfold Genv.find_funct_ptr in NF0. destruct (Genv.find_def ge b0) eqn:FDB0; [|inv NF0]. destruct g; inv NF0.
@@ -408,6 +409,7 @@ Section PROOF.
             - admit. (* mem *)
           }
           { (* next fun is external; undef_caller_save_regs sets RA=Vundef, so we take extcall-step, which sets PC=RA, and after the return step, we have PC=Vundef. *)
+            (* TODO *)
             
               
               
