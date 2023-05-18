@@ -366,6 +366,34 @@ Ltac itraceEq :=
 (* End AUX. *)
 
 
+Section AUX.
+
+  Definition block_first_order (m: mem) (b: block): Prop :=
+    forall (ofs: Z),
+      match (ZMap.get ofs (Mem.mem_contents m) !! b) with
+      | Fragment vv _ _ => not_ptr vv
+      | _ => True
+      end.
+
+  (* Definition val_first_order (m: mem) (v: val): Prop := *)
+  (*   match v with *)
+  (*   | Vptr b _ => block_first_order m b *)
+  (*   | _ => True *)
+  (*   end. *)
+
+  (* Redundant - we enforce Event_syscall to respect eventval_list_match on args,
+     which enforce pointers to be public - which are first-order by the semantics *)
+  (* Definition syscall_args_first_order (m: mem) (args: list val) := *)
+  (*   Forall (val_first_order m) args. *)
+
+  (* Public symbols are visible outside the compilation unit, 
+     so when interacting via external calls, limit them to first-order. *)
+  Definition public_first_order (ge: Senv.t) (m: mem) :=
+    forall id b (PUBLIC: Senv.public_symbol ge id = true) (FIND: Senv.find_symbol ge id = Some b),
+      block_first_order m b.
+
+End AUX.
+
 Section ASMISTEP.
 
   Variable cpm: compartment.
@@ -520,7 +548,10 @@ Section ASMISTEP.
         (* These steps behave like returns. So we do the same as in the [exec_asm_istep_internal_return] case. *)
         forall (REC_CURCOMP: Genv.find_comp_ignore_offset ge (rs PC) = callee_comp cpm st),
         forall (INFO: it = map (fun e => (e, info_external b (ef_sig ef))) t),
+        forall (PFO: public_first_order ge m),
           asm_istep (State st rs m) it (ReturnState st rs' m').
+
+  (* TODO: fix all the semantics, add CALLSIG and PFO *)
 
 End ASMISTEP.
 
