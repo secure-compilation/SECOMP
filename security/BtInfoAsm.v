@@ -8,6 +8,27 @@ Require Import riscV.Machregs.
 Require Import riscV.Asm.
 Require Import Complements.
 
+
+Section BUNDLE.
+
+  (* ()-no event, {}-may event, when len(tr) > 1, need to consider cuts *)
+  (* intra/cross/virtual(default), internal/external *)
+  Variant bundle_event : Type :=
+  (* generate a call code + others *)
+    | Bundle_call_ci (evs: trace) (* call *)
+    | Bundle_call_ce (cutat: nat) (evs: trace) (* call-{ext}-ret - cutat in {1, 2, 3} *)
+    | Bundle_call_vi (evs: trace) (* (call) - compartment changes *)
+    | Bundle_call_ve (evs: trace) (* (call)-ext-(ret) - call/ret cancels compartment change, so only consider when visible *)
+    | Bundle_call_ie (evs: trace) (* (call)-ext-(ret) *)
+  (* generate a return code *)
+    | Bundle_return_ci (evs: trace) (* ret *)
+    | Bundle_return_vi (evs: trace) (* (ret) - compartment change *)
+  (* generate a builtin code *)
+    | Bundle_builtin (evs: trace) (* ext *)
+  .
+
+End BUNDLE.
+
 Section HASINIT.
   Import Smallstep.
 
@@ -698,7 +719,9 @@ Section ASMITR.
     - exists ((map (fun e => (e, info_external b (ef_sig ef))) t1) ++ it). simpl; split.
       2:{ rewrite itr_to_tr_app. unfold Eapp. f_equal. unfold itr_to_tr. rewrite filter_map; simpl; auto. rewrite map_map. simpl. apply map_id. }
       exists s2'. econstructor 2. 2: eapply ISTAR.
-      { econstructor 6; eauto. }
+      { econstructor 6; eauto.
+        admit. (* public first order *)
+      }
       auto.
   Admitted.
 
