@@ -15,17 +15,37 @@ Section BUNDLE.
   (* intra/cross/virtual(default), internal/external *)
   Variant bundle_event : Type :=
   (* generate a call code + other followup events *)
-    | Bundle_call_ci (evs: trace) (* call *)
-    | Bundle_call_ce (evs: trace) (* call-{ext}-ret - cutat in {1, 2, 3} *)
-    | Bundle_call_vi (evs: trace) (* (call) - compartment changes *)
-    | Bundle_call_ve (evs: trace) (* (call)-ext-(ret) - call/ret cancels compartment change, so only consider when visible *)
-    | Bundle_call_ie (evs: trace) (* (call)-ext-(ret) *)
+    | Bundle_call_ci (tr: trace) (sg: signature) (* call *)
+    | Bundle_call_ce (tr: trace) (sg: signature) (* call-{ext}-ret - cut at {1, 2, 3} *)
+    | Bundle_call_vi (tr: trace) (sg: signature) (* (call) - compartment changes *)
+    | Bundle_call_ve (tr: trace) (sg: signature) (* (call)-ext-(ret) - call/ret cancels compartment change, so only consider when visible *)
+    | Bundle_call_ie (tr: trace) (id: ident) (sg: signature) (* (call)-ext-(ret) *)
   (* generate a return code *)
-    | Bundle_return_ci (evs: trace) (* ret *)
-    | Bundle_return_vi (evs: trace) (* (ret) - compartment change *)
+    | Bundle_return_ci (tr: trace) (sg: signature) (* ret *)
+    | Bundle_return_vi (tr: trace) (sg: signature) (* (ret) - compartment change *)
   (* generate a builtin code *)
-    | Bundle_builtin (evs: trace) (* ext *)
+    | Bundle_builtin (tr: trace) (ef: external_function) (* ext *)
   .
+
+  Definition bundle_trace := list bundle_event.
+
+  Definition unbundle (be: bundle_event): trace :=
+    match be with
+    | Bundle_call_ci tr _
+    | Bundle_call_ce tr _
+    | Bundle_call_vi tr _
+    | Bundle_call_ve tr _
+    | Bundle_call_ie tr _ _
+    | Bundle_return_ci tr _
+    | Bundle_return_vi tr _
+    | Bundle_builtin tr _ => tr
+    end.
+
+  Fixpoint unbundle_trace (btr: bundle_trace) : trace :=
+    match btr with
+    | be :: tl => (unbundle be) ++ (unbundle_trace tl)
+    | nil => nil
+    end.
 
 End BUNDLE.
 

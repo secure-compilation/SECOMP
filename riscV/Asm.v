@@ -1305,6 +1305,7 @@ Definition funsig (fd: fundef): signature :=
   | External ef => ef_sig ef
   end.
 
+(* TODO: replace with the one below *)
 Inductive step: state -> trace -> state -> Prop :=
   | exec_step_internal:
       forall b ofs f i rs m rs' m' b' ofs' st cp,
@@ -1397,6 +1398,126 @@ Inductive step: state -> trace -> state -> Prop :=
       (* These steps behave like returns. So we do the same as in the [exec_step_internal_return] case. *)
       forall (REC_CURCOMP: Genv.find_comp_ignore_offset ge (rs PC) = callee_comp st),
       step (State st rs m) t (ReturnState st rs' m').
+
+
+Section AUX.
+
+  Definition block_first_order (m: mem) (b: block): Prop :=
+    forall (ofs: Z),
+      match (ZMap.get ofs (Mem.mem_contents m) !! b) with
+      | Fragment vv _ _ => not_ptr vv
+      | _ => True
+      end.
+
+  (* Public symbols are visible outside the compilation unit, 
+     so when interacting via external calls, limit them to first-order. *)
+  Definition public_first_order (ge: Senv.t) (m: mem) :=
+    forall id b (PUBLIC: Senv.public_symbol ge id = true) (FIND: Senv.find_symbol ge id = Some b),
+      block_first_order m b.
+
+  (* We enforce Event_syscall to respect eventval_list_match on args,
+     which enforce pointers to be public - which should be first-order by the semantics *)
+
+End AUX.
+
+(* Two fixes: check sig when call, public first order when syscall event *)
+Inductive step_fix: state -> trace -> state -> Prop :=
+  | exec_step_fix_internal:
+      forall b ofs f i rs m rs' m' b' ofs' st cp,
+      rs PC = Vptr b ofs ->
+      Genv.find_funct_ptr ge b = Some (Internal f) ->
+      find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
+      forall (COMP: comp_of f = cp),
+      exec_instr f i rs m cp = Next rs' m' ->
+      sig_call i = None ->
+      is_return i = false ->
+      forall (NEXTPC: rs' PC = Vptr b' ofs'),
+      forall (ALLOWED: cp = Genv.find_comp_ignore_offset ge (Vptr b' ofs')),
+      step_fix (State st rs m) E0 (State st rs' m')
+  | exec_step_fix_internal_call:
+      forall b ofs f i sig rs m rs' m' b' ofs' cp st st' args t,
+      rs PC = Vptr b ofs ->
+      Genv.find_funct_ptr ge b = Some (Internal f) ->
+      find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
+      exec_instr f i rs m cp = Next rs' m' ->
+      sig_call i = Some sig ->
+      forall (NEXTPC: rs' PC = Vptr b' ofs'),
+      forall (ALLOWED: Genv.allowed_call ge (comp_of f) (Vptr b' ofs')),
+      forall (CURCOMP: Genv.find_comp_ignore_offset ge (Vptr b Ptrofs.zero) = cp),
+      (* Is a call, we update the stack *)
+      forall (STUPD: update_stack_call st sig cp rs' = Some st'),
+      forall (ARGS: call_arguments rs' m' sig args),
+      (* Is a call, we check whether we are allowed to pass pointers *)
+      forall (NO_CROSS_PTR:
+          Genv.type_of_call ge (comp_of f) (Genv.find_comp_ignore_offset ge (Vptr b' ofs')) = Genv.CrossCompartmentCall ->
+          List.Forall not_ptr args),
+      forall (EV: call_trace ge (comp_of f) (Genv.find_comp_ignore_offset ge (Vptr b' ofs')) (Vptr b' ofs') args (sig_args sig) t),
+      (* Check signature *)
+      forall (CALLSIG: Genv.type_of_call ge (comp_of f) (Genv.find_comp_ignore_offset ge (Vptr b' ofs')) <> Genv.InternalCall ->
+                    (exists fd, Genv.find_funct_ptr ge b' = Some fd /\ sig = funsig fd)),
+      step_fix (State st rs m) t (State st' rs' m')
+  | exec_step_fix_internal_return:
+      forall b ofs f i rs m rs' cp m' st,
+      rs PC = Vptr b ofs ->
+      Genv.find_funct_ptr ge b = Some (Internal f) ->
+      find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
+      exec_instr f i rs m cp = Next rs' m' ->
+      is_return i = true ->
+      forall (CURCOMP: Genv.find_comp_ignore_offset ge (rs PC) = cp),
+      (* We attempt a return, so we go to a ReturnState*)
+      (* The only condition is the following: we are currently in the compartment stored in the callee compartment field
+       of the top stack frame*)
+      forall (REC_CURCOMP: Genv.find_comp_ignore_offset ge (rs PC) = callee_comp st),
+      (* forall (NEXTCOMP: Genv.find_comp_ignore_offset ge (rs' PC) = cp'), *)
+      step_fix (State st rs m) E0 (ReturnState st rs' m')
+  | exec_step_fix_return:
+      forall st st' rs m sg t rec_cp rec_cp' cp',
+        rs PC <> Vnullptr -> (* this condition is there to stop the execution 1 step_fix earlier, to make the proof easier *)
+        forall (REC_CURCOMP: callee_comp st = rec_cp),
+        forall (REC_NEXTCOMP: call_comp st = rec_cp'),
+        forall (NEXTCOMP: Genv.find_comp_ignore_offset ge (rs PC) = cp'),
+        (* We only impose conditions on when returns can be executed for cross-compartment
+           returns. These conditions are that we restore the previous RA and SP *)
+        forall (PC_RA: rec_cp <> cp' -> rs PC = asm_parent_ra st),
+        forall (RESTORE_SP: rec_cp <> cp' -> rs SP = asm_parent_sp st),
+        (* forall (RETURN_FROM_CP: cp <> cp' -> cp = callee_comp st), *)
+        (* Note that in the same manner, this definition only updates the stack when doing
+         cross-compartment returns *)
+        forall (STUPD: update_stack_return st rec_cp rs = Some st'),
+        (* We do not return a pointer *)
+        forall (SIG_STACK: sig_of_call st = sg),
+        forall (NO_CROSS_PTR:
+            (Genv.type_of_call ge cp' rec_cp = Genv.CrossCompartmentCall ->
+             not_ptr (return_value rs sg))),
+        forall (EV: return_trace ge cp' rec_cp (return_value rs sg) (sig_res sg) t),
+          step_fix (ReturnState st rs m) t (State st' rs m)
+  | exec_step_fix_builtin:
+      forall b ofs f ef args res rs m vargs t vres rs' m' st,
+      rs PC = Vptr b ofs ->
+      Genv.find_funct_ptr ge b = Some (Internal f) ->
+      find_instr (Ptrofs.unsigned ofs) f.(fn_code) = Some (Pbuiltin ef args res) ->
+      eval_builtin_args ge rs (rs SP) m args vargs ->
+      external_call ef ge (comp_of f) vargs m t vres m' ->
+      rs' = nextinstr
+              (set_res res vres
+                (undef_regs (map preg_of (destroyed_by_builtin ef))
+                   (rs #X1 <- Vundef #X31 <- Vundef))) ->
+      (* Public global symbols should be first order *)
+      forall (PFO: public_first_order ge m),
+      step_fix (State st rs m) t (State st rs' m')
+  | exec_step_fix_external:
+      forall b ef args res rs m t rs' m' cp st,
+      rs PC = Vptr b Ptrofs.zero ->
+      Genv.find_funct_ptr ge b = Some (External ef) ->
+      forall COMP: Genv.find_comp_ignore_offset ge (rs RA) = cp, (* compartment that is calling the external function *)
+      external_call ef ge cp args m t res m' ->
+      extcall_arguments rs m (ef_sig ef) args ->
+      rs' = (set_pair (loc_external_result (ef_sig ef)) res (undef_caller_save_regs rs))#PC <- (rs RA) ->
+      (* These step_fixs behave like returns. So we do the same as in the [exec_step_fix_internal_return] case. *)
+      forall (REC_CURCOMP: Genv.find_comp_ignore_offset ge (rs PC) = callee_comp st),
+      (* Public global symbols should be first order *)
+      forall (PFO: public_first_order ge m),
+      step_fix (State st rs m) t (ReturnState st rs' m').
 
 End RELSEM.
 
