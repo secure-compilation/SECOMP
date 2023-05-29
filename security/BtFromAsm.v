@@ -5,7 +5,7 @@ Require Import AST Linking Smallstep Events Behaviors.
 Require Import Split.
 
 Require Import riscV.Asm.
-Require Import BtInfoAsm BtBasics.
+Require Import BtBasics.
 
 
 Section WELLFORMED.
