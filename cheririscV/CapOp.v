@@ -30,8 +30,9 @@
 *)
 
 Require Import BoolEqual Coqlib.
-Require Import AST Integers Floats.
-Require Import Values Memory Globalenvs Events.
+Require Import CapAST Integers Floats.
+(* Require Import Values CapMemory CapGlobalenvs Events. *)
+Require Import OCapValues CapMemory CapGlobalenvs Events.
 
 Set Implicit Arguments.
 

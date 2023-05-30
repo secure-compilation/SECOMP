@@ -21,7 +21,7 @@ Require Import Decidableplus.
 Require Import Maps.
 Require Import AST CapAST.
 Require Import Integers.
-Require Import Op.
+Require Import CapOp.
 
 (** ** Machine registers *)
 

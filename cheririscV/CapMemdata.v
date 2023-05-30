@@ -18,7 +18,7 @@
 
 Require Import Coqlib.
 Require Import Zbits.
-Require Archi.
+Require CapArchi.
 Require Import CapAST.
 Require Import Integers.
 Require Import Floats.

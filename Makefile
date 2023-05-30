@@ -28,7 +28,9 @@ else
 ARCHDIRS=$(ARCH)_$(BITSIZE) $(ARCH)
 endif
 
-DIRS := lib common $(ARCHDIRS) backend cfrontend security driver export cparser
+DIRS := lib common $(ARCHDIRS) backend cfrontend \
+	security cheririscV \
+	driver export cparser
 
 COQINCLUDES := $(foreach d, $(DIRS), -R $(d) compcert.$(d))
 
@@ -140,7 +142,13 @@ CFRONTEND=Ctypes.v Cop.v Csyntax.v Csem.v Ctyping.v Cstrategy.v Cexec.v \
 
 # Security proof (in security/)
 
-SECURITY=RSC.v Split.v Blame.v Recomposition.v
+SECURITY=RSC.v Split.v
+         # Blame.v
+	 # Recomposition.v
+
+# Low-level backend (in cheririscV/)
+
+SECARCH=CapArchi.v CapAST.v OCapValues.v CapMemdata.v CapMemtype.v CapMemory.v CapGlobalenvs.v CapOp.v CapMachregs.v CapLocations.v CapAsm.v
 
 # Parser
 
@@ -170,7 +178,9 @@ endif
 
 # All source files
 
-FILES=$(VLIB) $(COMMON) $(BACKEND) $(CFRONTEND) $(SECURITY) $(DRIVER) $(FLOCQ) \
+FILES=$(VLIB) $(COMMON) $(BACKEND) $(CFRONTEND) \
+  $(SECURITY) $(SECARCH) \
+  $(DRIVER) $(FLOCQ) \
   $(MENHIRLIB) $(PARSER) $(EXPORTLIB)
 
 # Generated source files

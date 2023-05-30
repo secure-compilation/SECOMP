@@ -20,7 +20,7 @@
 Require Import String.
 Require Export AST.
 Require Import Coqlib Maps Errors Integers Floats.
-Require Archi.
+Require CapArchi.
 
 Set Implicit Arguments.
 
