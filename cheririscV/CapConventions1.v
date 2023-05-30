@@ -117,11 +117,12 @@ Definition is_float_reg (r: mreg) :=
   returned value.  We treat a function without result as a function
   with one integer result. *)
 
-Definition loc_result (s: signature) : rpair mreg :=
+Definition loc_result (s: capsignature) : rpair mreg :=
   match proj_sig_res s with
-  | Tint | Tany32 => One R10
-  | Tfloat | Tsingle | Tany64 => One F10
-  | Tlong => if Archi.ptr64 then One R10 else Twolong R11 R10
+  | CTint | CTany32 => One R10
+  | CTfloat | CTsingle | CTany64 => One F10
+  | CTlong => if Archi.ptr64 then One R10 else Twolong R11 R10
+  | _ => (* FIXME *)
   end.
 
 (** The result registers have types compatible with that given in the signature. *)
