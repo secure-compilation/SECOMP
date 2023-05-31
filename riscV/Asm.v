@@ -1305,7 +1305,7 @@ Definition funsig (fd: fundef): signature :=
   | External ef => ef_sig ef
   end.
 
-(* TODO: replace with the one below *)
+(* TODO: replace with step_fix *)
 Inductive step: state -> trace -> state -> Prop :=
   | exec_step_internal:
       forall b ofs f i rs m rs' m' b' ofs' st cp,
@@ -1399,28 +1399,7 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (REC_CURCOMP: Genv.find_comp_ignore_offset ge (rs PC) = callee_comp st),
       step (State st rs m) t (ReturnState st rs' m').
 
-
-Section AUX.
-
-  Definition block_first_order (m: mem) (b: block): Prop :=
-    forall (ofs: Z),
-      match (ZMap.get ofs (Mem.mem_contents m) !! b) with
-      | Fragment vv _ _ => not_ptr vv
-      | _ => True
-      end.
-
-  (* Public symbols are visible outside the compilation unit, 
-     so when interacting via external calls, limit them to first-order. *)
-  Definition public_first_order (ge: Senv.t) (m: mem) :=
-    forall id b (PUBLIC: Senv.public_symbol ge id = true) (FIND: Senv.find_symbol ge id = Some b),
-      block_first_order m b.
-
-  (* We enforce Event_syscall to respect eventval_list_match on args,
-     which enforce pointers to be public - which should be first-order by the semantics *)
-
-End AUX.
-
-(* Two fixes: check sig when call, public first order when syscall event *)
+(* Two fixes: check sig when call CALLSIG, public & first order args when undefined external call LL *)
 Inductive step_fix: state -> trace -> state -> Prop :=
   | exec_step_fix_internal:
       forall b ofs f i rs m rs' m' b' ofs' st cp,
@@ -1502,8 +1481,8 @@ Inductive step_fix: state -> trace -> state -> Prop :=
               (set_res res vres
                 (undef_regs (map preg_of (destroyed_by_builtin ef))
                    (rs #X1 <- Vundef #X31 <- Vundef))) ->
-      (* Public global symbols should be first order *)
-      forall (PFO: public_first_order ge m),
+      (* Limit leaks when calling unknown function *)
+      forall (LL: limit_leaks_if_unknown ef ge m vargs),
       step_fix (State st rs m) t (State st rs' m')
   | exec_step_fix_external:
       forall b ef args res rs m t rs' m' cp st,
@@ -1515,8 +1494,8 @@ Inductive step_fix: state -> trace -> state -> Prop :=
       rs' = (set_pair (loc_external_result (ef_sig ef)) res (undef_caller_save_regs rs))#PC <- (rs RA) ->
       (* These step_fixs behave like returns. So we do the same as in the [exec_step_fix_internal_return] case. *)
       forall (REC_CURCOMP: Genv.find_comp_ignore_offset ge (rs PC) = callee_comp st),
-      (* Public global symbols should be first order *)
-      forall (PFO: public_first_order ge m),
+      (* Limit leaks when calling unknown function *)
+      forall (LL: limit_leaks_if_unknown ef ge m args),
       step_fix (State st rs m) t (ReturnState st rs' m').
 
 End RELSEM.

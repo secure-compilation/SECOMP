@@ -205,6 +205,7 @@ Section MATCH.
   Variant match_stack_type : (sf_cont_type) -> (stackframe) -> Prop :=
     | match_stack_type_intro
         b cp sg v ofs
+        (* needs to talk about sig in stack *)
       :
       match_stack_type (sf_cont b) (Stackframe b cp sg v ofs).
 

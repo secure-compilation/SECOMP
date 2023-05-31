@@ -7,6 +7,7 @@ Require Import Split.
 Require Import riscV.Machregs.
 Require Import riscV.Asm.
 Require Import Complements.
+Require Import BtBasics.
 
 
 Section BUNDLE.
@@ -81,14 +82,14 @@ Section AUX.
   (* Definition genv_invert_symbol_total {F V : Type} (ge : Genv.t F V) : block -> ident := *)
   (*   fun b => match Genv.invert_symbol ge b with | Some i => i | None => xH end. *)
 
-  (* only virtual (default), cross cases *)
-  Inductive call_trace_vr {F V : Type} (ge : Genv.t F V) : compartment -> compartment -> val -> list val -> list typ -> trace -> ident -> list eventval -> Prop :=
-  | call_trace_vr_virtual : forall (cp cp' : compartment) (vf : val) (vargs : list val) (vl : list eventval) (ty : list typ) (b : block) (ofs : ptrofs) (i : ident),
+  (* only virtual (default) or real (cross) cases *)
+  Inductive call_trace_vr {F V : Type} (ge : Genv.t F V) : compartment -> compartment -> block -> list val -> list typ -> trace -> ident -> list eventval -> Prop :=
+  | call_trace_vr_virtual : forall (cp cp' : compartment) (b : block) (vargs : list val) (vl : list eventval) (ty : list typ) (i : ident),
       Genv.type_of_call ge cp cp' = Genv.DefaultCompartmentCall ->
-      vf = Vptr b ofs -> Genv.invert_symbol ge b = Some i -> (vl = typ_to_eventvals ty) -> call_trace_vr ge cp cp' vf vargs ty E0 i vl
-  | call_trace_vr_cross : forall (cp cp' : compartment) (vf : val) (vargs : list val) (vl : list eventval) (ty : list typ) (b : block) (ofs : ptrofs) (i : ident),
+      Genv.invert_symbol ge b = Some i -> (vl = typ_to_eventvals ty) -> call_trace_vr ge cp cp' b vargs ty E0 i vl
+  | call_trace_vr_cross : forall (cp cp' : compartment) (b : block) (vargs : list val) (vl : list eventval) (ty : list typ) (i : ident),
       Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall ->
-      vf = Vptr b ofs -> Genv.invert_symbol ge b = Some i -> eventval_list_match ge vl ty vargs -> call_trace_vr ge cp cp' vf vargs ty (Event_call cp cp' i vl :: nil) i vl.
+      Genv.invert_symbol ge b = Some i -> eventval_list_match ge vl ty vargs -> call_trace_vr ge cp cp' b vargs ty (Event_call cp cp' i vl :: nil) i vl.
 
   Inductive return_trace_vr {F V : Type} (ge : Genv.t F V) : compartment -> compartment -> val -> rettype -> trace -> eventval -> Prop :=
   | return_trace_vr_virtual : forall (cp cp' : compartment) (res : eventval) (v : val) (ty : rettype),
@@ -96,204 +97,269 @@ Section AUX.
   | return_trace_vr_cross : forall (cp cp' : compartment) (res : eventval) (v : val) (ty : rettype),
       Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall -> eventval_match ge res (proj_rettype ty) v -> return_trace_vr ge cp cp' v ty (Event_return cp cp' res :: nil) res.
 
-  (* intra external call case *)
+  (* external call *)
+  Definition senv_invert_symbol_total (ge: Senv.t) (b: block) : ident :=
+    match Senv.invert_symbol ge b with
+    | Some id => id
+    | _ => xH
+    end.
+
+  Definition val_to_eventval (ge: Senv.t) (v: val): eventval :=
+    match v with
+    | Vundef => EVint Int.zero
+    | Vint n => EVint n
+    | Vlong n => EVlong n
+    | Vfloat n => EVfloat n
+    | Vsingle n => EVsingle n
+    | Vptr b o => let id := senv_invert_symbol_total ge b in EVptr_global id o
+    end.
+
+  Definition vals_to_eventvals (ge: Senv.t) (vs: list val): list eventval := map (val_to_eventval ge) vs.
 
 End AUX.
 
 
-Section WELLFORMED.
+Section IR.
 
-  (* Variant sf_cont_type : Type := | sf_cont: block -> signature -> sf_cont_type. *)
-  Variant sf_cont_type : Type := | sf_cont: block -> sf_cont_type.
-  Definition sf_conts := list sf_cont_type.
+  Variant ir_cont_type : Type := | ir_cont: block -> signature -> ir_cont_type.
+  Definition ir_conts := list ir_cont_type.
 
   Definition crossing_comp {F V} (ge: Genv.t F V) (cp cp': compartment) :=
     Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall.
 
-  Definition virtual_reality (ct: Genv.call_type): Prop :=
-    match ct with
-    | Genv.InternalCall => False
-    | Genv.CrossCompartmentCall => False
-    | Genv.DefaultCompartmentCall => True
+  Definition ir_state := option (block * mem * ir_conts)%type.
+
+  Variant ir_step (ge: Asm.genv) : ir_state -> bundle_event -> ir_state -> Prop :=
+    | ir_step_vr_call_internal
+        cur m1 ik
+        tr id evargs sg
+        cp cp' vargs
+        (CURCP: cp = Genv.find_comp ge (Vptr cur Ptrofs.zero))
+        b f_next
+        (FINDB: Genv.find_symbol ge id = Some b)
+        (FINDF: Genv.find_funct ge (Vptr b Ptrofs.zero) = Some (AST.Internal f_next))
+        (CP': cp' = comp_of f_next)
+        (ALLOW: Genv.allowed_call ge cp (Vptr b Ptrofs.zero))
+        (NPTR: crossing_comp ge cp cp' -> Forall not_ptr vargs)
+        (SIG: sg = Asm.fn_sig f_next)
+        (TR: call_trace_vr ge cp cp' b vargs (sig_args sg) tr id evargs)
+      :
+      ir_step ge (Some (cur, m1, ik)) (Bundle_call tr id evargs sg) (Some (b, m1, (ir_cont cur sg) :: ik))
+    | ir_step_vr_return_internal
+        cur m1 next ik_tl
+        tr evretv
+        cp_cur cp_next vretv
+        (CURCP: cp_cur = Genv.find_comp ge (Vptr cur Ptrofs.zero))
+        sg fd_cur
+        (FINDFD: Genv.find_funct_ptr ge cur = Some (fd_cur))
+        (* in Asm, stack has the sig --- TODO : false? fix? *)
+        (SIG: sg = Asm.funsig fd_cur)
+        (NPTR: crossing_comp ge cp_next cp_cur -> not_ptr vretv)
+        (NEXTCP: cp_next = Genv.find_comp ge (Vptr next Ptrofs.zero))
+        f_next
+        (INTERNAL: Genv.find_funct_ptr ge next = Some (AST.Internal f_next))
+        (* internal return: memory changes in Clight-side, so need inj-relation *)
+        (TR: return_trace_vr ge cp_next cp_cur vretv (sig_res sg) tr evretv)
+      :
+      ir_step ge (Some (cur, m1, ((ir_cont next sg) :: ik_tl))) (Bundle_return tr evretv) (Some (next, m1, ik_tl))
+    | ir_step_intra_call_external
+        cur m1 m2 ik
+        tr id evargs sg
+        cp_cur
+        (CURCP: cp_cur = Genv.find_comp ge (Vptr cur Ptrofs.zero))
+        b_ext ef cp_ext
+        (FINDB: Genv.find_symbol ge id = Some b_ext)
+        (FINDF: Genv.find_funct ge (Vptr b_ext Ptrofs.zero) = Some (AST.External ef))
+        (EXTCP: cp_ext = comp_of ef)
+        (INTRA: Genv.type_of_call ge cp_cur cp_ext = Genv.InternalCall)
+        (SIG: sg = ef_sig ef)
+        vargs vretv
+        (EC: external_call ef ge cp_cur vargs m1 tr vretv m2)
+        (LL: limit_leaks_if_unknown ef ge m1 vargs)
+        (ARGS: evargs = vals_to_eventvals ge vargs)
+      :
+      ir_step ge (Some (cur, m1, ik)) (Bundle_call tr id evargs sg) (Some (cur, m2, ik))
+    | ir_step_builtin
+        cur m1 m2 ik
+        tr ef evargs
+        cp_cur
+        (CURCP: cp_cur = Genv.find_comp ge (Vptr cur Ptrofs.zero))
+        vargs vretv
+        (EC: external_call ef ge cp_cur vargs m1 tr vretv m2)
+        (LL: limit_leaks_if_unknown ef ge m1 vargs)
+        (ARGS: evargs = vals_to_eventvals ge vargs)
+      :
+      ir_step ge (Some (cur, m1, ik)) (Bundle_builtin tr ef evargs) (Some (cur, m2, ik))
+    | ir_step_vr_call_external1
+        (* early cut at call *)
+        cur m1 ik
+        tr id evargs sg
+        cp cp' vargs
+        (CURCP: cp = Genv.find_comp ge (Vptr cur Ptrofs.zero))
+        b ef
+        (FINDB: Genv.find_symbol ge id = Some b)
+        (FINDF: Genv.find_funct ge (Vptr b Ptrofs.zero) = Some (AST.External ef))
+        (CP': cp' = comp_of ef)
+        (ALLOW: Genv.allowed_call ge cp (Vptr b Ptrofs.zero))
+        (NPTR: crossing_comp ge cp cp' -> Forall not_ptr vargs)
+        (SIG: sg = ef_sig ef)
+        (TR: call_trace_vr ge cp cp' b vargs (sig_args sg) tr id evargs)
+      :
+      ir_step ge (Some (cur, m1, ik)) (Bundle_call tr id evargs sg) None
+    | ir_step_cross_call_external2
+        (* early cut at call-ext_call *)
+        cur m1 ik
+        tr1 id evargs sg
+        cp cp' vargs
+        (CURCP: cp = Genv.find_comp ge (Vptr cur Ptrofs.zero))
+        b ef
+        (FINDB: Genv.find_symbol ge id = Some b)
+        (FINDF: Genv.find_funct ge (Vptr b Ptrofs.zero) = Some (AST.External ef))
+        (CP': cp' = comp_of ef)
+        (ALLOW: Genv.allowed_call ge cp (Vptr b Ptrofs.zero))
+        (NPTR: crossing_comp ge cp cp' -> Forall not_ptr vargs)
+        (SIG: sg = ef_sig ef)
+        (TR: call_trace_vr ge cp cp' b vargs (sig_args sg) tr1 id evargs)
+        (* external function part *)
+        tr2 m2 vretv
+        (EC: external_call ef ge cp vargs m1 tr2 vretv m2)
+        (LL: limit_leaks_if_unknown ef ge m1 vargs)
+        (ARGS: evargs = vals_to_eventvals ge vargs)
+      :
+      ir_step ge (Some (cur, m1, ik)) (Bundle_call (tr1 ++ tr2) id evargs sg) None
+    | ir_step_cross_call_external3
+        (* early cut at call-ext_call *)
+        cur m1 ik
+        tr1 id evargs sg
+        cp cp' vargs
+        (CURCP: cp = Genv.find_comp ge (Vptr cur Ptrofs.zero))
+        b ef
+        (FINDB: Genv.find_symbol ge id = Some b)
+        (FINDF: Genv.find_funct ge (Vptr b Ptrofs.zero) = Some (AST.External ef))
+        (CP': cp' = comp_of ef)
+        (ALLOW: Genv.allowed_call ge cp (Vptr b Ptrofs.zero))
+        (NPTR: crossing_comp ge cp cp' -> Forall not_ptr vargs)
+        (SIG: sg = ef_sig ef)
+        (TR1: call_trace_vr ge cp cp' b vargs (sig_args sg) tr1 id evargs)
+        (* external function part *)
+        tr2 m2 vretv
+        (TR2: external_call ef ge cp vargs m1 tr2 vretv m2)
+        (LL: limit_leaks_if_unknown ef ge m1 vargs)
+        (ARGS: evargs = vals_to_eventvals ge vargs)
+        (* return part *)
+        tr3 evretv
+        (NPTR: crossing_comp ge cp cp' -> not_ptr vretv)
+        f_cur
+        (INTERNAL: Genv.find_funct_ptr ge cur = Some (AST.Internal f_cur))
+        (TR3: return_trace_vr ge cp cp' vretv (sig_res sg) tr3 evretv)
+      :
+      ir_step ge (Some (cur, m1, ik)) (Bundle_call (tr1 ++ tr2 ++ tr3) id evargs sg) (Some (cur, m2, ik)).
+
+  (* we need a more precise invariant for the proof for Clight; counters, mem_inj, env, cont, state *)
+
+End IR.
+
+
+Section AUX.
+
+  Definition wf_ge {F V} (ge: Genv.t F V) := exists (p: AST.program F V), (list_norepet (prog_defs_names p)) /\ (ge = Genv.globalenv p).
+
+  Lemma wf_ge_block_to_id
+        F V (ge: Genv.t F V)
+        (WF: wf_ge ge)
+        b gd
+        (DEF: Genv.find_def ge b = Some gd)
+    :
+    exists id, Genv.invert_symbol ge b = Some id.
+  Proof. destruct WF as (p & A & B). eapply genv_def_to_ident; eauto. Qed.
+
+  Lemma val_is_ptr_or_not
+        (v: val)
+    :
+    (forall b o, v <> Vptr b o) \/ (exists b o, v = Vptr b o).
+  Proof. destruct v; eauto. all: left; intros; intros F; inv F. Qed.
+
+End AUX.
+
+
+Section ASMTOIR.
+
+  (* fix sig? *)
+  Definition wf_ir (ge: Asm.genv) (ist: ir_state) :=
+    match ist with
+    | Some (cur, _, ik) =>
+        match Genv.find_funct_ptr ge cur with
+          | Some (Internal f) =>
+    | _ => False
     end.
 
-  Variant info_asm_sem_wf (ge: Asm.genv) : block -> mem -> sf_conts -> bundle_event -> Prop :=
-  | info_asm_sem_wf_call_cross_internal
-      cur m1 sf tr sg
-      cp
-      (CURCP: cp = Genv.find_comp ge (Vptr cur Ptrofs.zero))
-      cp' fid evargs
-      (EV: ev = Event_call cp cp' fid evargs)
-      sg
-      b
-      (FINDB: Genv.find_symbol ge fid = Some b)
-      fd
-      (FINDF: Genv.find_funct ge (Vptr b Ptrofs.zero) = Some fd)
-      (CP': cp' = comp_of fd)
-      (VR: virtual_reality (Genv.type_of_call ge cp cp') vr)
-      (* (CROSS: Genv.type_of_call ge cp cp' <> Genv.InternalCall) *)
-      args
-      (NPTR: crossing_comp ge cp cp' -> Forall not_ptr args)
-      (ALLOW: Genv.allowed_call ge cp (Vptr b Ptrofs.zero))
-      (ESM: crossing_comp ge cp cp' -> eventval_list_match ge evargs (sig_args sg) args)
-      (SIG: sg = Asm.funsig fd)
-      (NEXT: info_asm_sem_wf ge b m1 ((sf_cont cur) :: sf) tl)
-    :
-    info_asm_sem_wf ge cur m1 sf (Bundle_call_ci tr sg)
-    | Bundle_call_ci (tr: trace) (sg: signature) (* call *)
-    | Bundle_call_ce (tr: trace) (sg: signature) (* call-{ext}-ret - cut at {1, 2, 3} *)
-    | Bundle_call_vi (tr: trace) (sg: signature) (* (call) - compartment changes *)
-    | Bundle_call_ve (tr: trace) (sg: signature) (* (call)-ext-(ret) - also cut *)
-    | Bundle_call_ie (tr: trace) (id: ident) (sg: signature) (* (call)-ext-(ret) *)
-    | Bundle_return_ci (tr: trace) (sg: signature) (* ret *)
-    | Bundle_return_vi (tr: trace) (sg: signature) (* (ret) - compartment change *)
-    | Bundle_builtin (tr: trace) (ef: external_function) (* ext *)
-  | info_asm_sem_wf_cross_return_internal
-      cur m1 ev ik vr tl
-      cp
-      (CURCP: cp = Genv.find_comp ge (Vptr cur Ptrofs.zero))
-      cp_c evres
-      (EV: ev = Event_return cp_c cp evres)
-      sg
-      (IK: ik = info_return sg vr)
-      cur_f
-      (INTERNAL: Genv.find_funct_ptr ge cur = Some (AST.Internal cur_f))
-      (* Follows from cross call - stack has the sig *)
-      (SIG: sg = Asm.fn_sig cur_f)
-      (VR: virtual_reality (Genv.type_of_call ge cp_c cp) vr)
-      res
-      (EVM: crossing_comp ge cp_c cp -> eventval_match ge evres (proj_rettype (sig_res sg)) res)
-      (NPTR: crossing_comp ge cp_c cp -> not_ptr res)
-      b_c sf_tl
-      (CPC: cp_c = Genv.find_comp ge (Vptr b_c Ptrofs.zero))
-      (* internal return: memory changes in Clight-side, so need inj-relation *)
-      (NEXT: info_asm_sem_wf ge b_c m1 sf_tl tl)
-    :
-    info_asm_sem_wf ge cur m1 ((sf_cont b_c) :: sf_tl) ((ev, ik) :: tl)
-  | info_asm_sem_wf_intra_call_external
-      cur m1 sf ev ik tl
-      cp
-      (CURCP: cp = Genv.find_comp ge (Vptr cur Ptrofs.zero))
-      ef res m2
-      (EXTEV: external_call_event_match_common ef ev ge cp m1 res m2)
-      fb
-      (IK: ik = info_external fb (ef_sig ef))
-      fid
-      (INV: Genv.invert_symbol ge fb = Some fid)
-      (ISEXT: Genv.find_funct_ptr ge fb = Some (AST.External ef))
-      (ALLOWED: Genv.allowed_call ge cp (Vptr fb Ptrofs.zero))
-      (INTRA: Genv.type_of_call ge cp (Genv.find_comp ge (Vptr fb Ptrofs.zero)) = Genv.InternalCall)
-      (NEXT: info_asm_sem_wf ge cur m2 sf tl)
-    :
-    info_asm_sem_wf ge cur m1 sf ((ev, ik) :: tl)
-  | info_asm_sem_wf_builtin
-      cur m1 sf ev ik tl
-      cp
-      (CURCP: cp = Genv.find_comp ge (Vptr cur Ptrofs.zero))
-      ef res m2
-      (EXT: external_call_event_match_common ef ev ge cp m1 res m2)
-      (IK: ik = info_builtin ef)
-      (NEXT: info_asm_sem_wf ge cur m2 sf tl)
-    :
-    info_asm_sem_wf ge cur m1 sf ((ev, ik) :: tl)
-  | info_asm_sem_wf_cross_call_external1
-      (* early cut at call event *)
-      cur m1 sf ev vr ik
-      cp
-      (CURCP: cp = Genv.find_comp ge (Vptr cur Ptrofs.zero))
-      cp' fid evargs
-      (EV: ev = Event_call cp cp' fid evargs)
-      sg
-      (IK: ik = info_call is_cross_ext sg vr)
-      b
-      (FINDB: Genv.find_symbol ge fid = Some b)
-      fd
-      (FINDF: Genv.find_funct ge (Vptr b Ptrofs.zero) = Some fd)
-      (CP': cp' = comp_of fd)
-      (VR: virtual_reality (Genv.type_of_call ge cp cp') vr)
-      args
-      (NPTR: crossing_comp ge cp cp' -> Forall not_ptr args)
-      (ALLOW: Genv.allowed_call ge cp (Vptr b Ptrofs.zero))
-      (ESM: crossing_comp ge cp cp' -> eventval_list_match ge evargs (sig_args sg) args)
-      ef
-      (EXTERNAL: fd = AST.External ef)
-      (SIG: sg = ef_sig ef)
-    :
-    info_asm_sem_wf ge cur m1 sf ((ev, ik) :: nil)
-  | info_asm_sem_wf_cross_call_external2
-      (* early cut at call-ext_call event *)
-      cur m1 sf ev1 vr1 ik1
-      cp
-      (CURCP: cp = Genv.find_comp ge (Vptr cur Ptrofs.zero))
-      cp' fid evargs
-      (EV: ev1 = Event_call cp cp' fid evargs)
-      sg
-      (IK: ik1 = info_call is_cross_ext sg vr1)
-      b
-      (FINDB: Genv.find_symbol ge fid = Some b)
-      fd
-      (FINDF: Genv.find_funct ge (Vptr b Ptrofs.zero) = Some fd)
-      (CP': cp' = comp_of fd)
-      (VR: virtual_reality (Genv.type_of_call ge cp cp') vr1)
-      args
-      (NPTR: crossing_comp ge cp cp' -> Forall not_ptr args)
-      (ALLOW: Genv.allowed_call ge cp (Vptr b Ptrofs.zero))
-      (ESM: crossing_comp ge cp cp' -> eventval_list_match ge evargs (sig_args sg) args)
-      ef
-      (EXTERNAL: fd = AST.External ef)
-      (SIG: sg = ef_sig ef)
-      (* external call part *)
-      tr vres m2
-      (EXTCALL: external_call ef ge cp args m1 tr vres m2)
-      itr
-      (INFO: itr = map (fun e => (e, info_external b (ef_sig ef))) tr)
-    :
-    info_asm_sem_wf ge cur m1 sf ((ev1, ik1) :: itr)
-  | info_asm_sem_wf_cross_call_external3
-      (* full call-ext_call-return event *)
-      cur m1 sf ev1 vr1 ik1
-      cp
-      (CURCP: cp = Genv.find_comp ge (Vptr cur Ptrofs.zero))
-      cp' fid evargs
-      (EV: ev1 = Event_call cp cp' fid evargs)
-      sg
-      (IK: ik1 = info_call is_cross_ext sg vr1)
-      b
-      (FINDB: Genv.find_symbol ge fid = Some b)
-      fd
-      (FINDF: Genv.find_funct ge (Vptr b Ptrofs.zero) = Some fd)
-      (CP': cp' = comp_of fd)
-      (VR1: virtual_reality (Genv.type_of_call ge cp cp') vr1)
-      args
-      (NPTR: crossing_comp ge cp cp' -> Forall not_ptr args)
-      (ALLOW: Genv.allowed_call ge cp (Vptr b Ptrofs.zero))
-      (ESM: crossing_comp ge cp cp' -> eventval_list_match ge evargs (sig_args sg) args)
-      ef
-      (EXTERNAL: fd = AST.External ef)
-      (SIG: sg = ef_sig ef)
-      (* external call part *)
-      tr vres m2
-      (EXTCALL: external_call ef ge cp args m1 tr vres m2)
-      itr
-      (INFO: itr = map (fun e => (e, info_external b (ef_sig ef))) tr)
-      (* return part *)
-      ev3 vr3 ik3 tl
-      evres
-      (EV: ev3 = Event_return cp cp' evres)
-      sg
-      (IK: ik3 = info_return sg vr3)
-      (VR2: virtual_reality (Genv.type_of_call ge cp cp') vr3)
-      (EVM: crossing_comp ge cp cp' -> eventval_match ge evres (proj_rettype (sig_res sg)) vres)
-      (NPTR: crossing_comp ge cp cp' -> not_ptr vres)
-      (NEXT: info_asm_sem_wf ge cur m2 sf tl)
-    :
-    info_asm_sem_wf ge cur m1 sf ((ev1, ik1) :: (itr ++ ((ev3, ik3) :: tl)))
-  .
+  Definition wf_stackframe (ge: Asm.genv) (fr: stackframe) :=
+    match fr with
+    | Stackframe b _ _ _ _ => match Genv.find_funct_ptr ge b with
+                             | Some (Internal f) => True
+                             | _ => False
+                             end
+    end.
+  Definition wf_stack (ge: Asm.genv) (sk: stack) := Forall (wf_stackframe ge) sk.
 
-  (* TODO *)
-  (* we need a more precise invariant for the proof; counters, mem_inj, env, cont, state *)
+  Definition wf_regset (ge: Asm.genv) (rs: regset) :=
+    match rs PC with
+    | Vptr b _ => match Genv.find_funct_ptr ge b with
+                 | Some (Internal f) => True
+                 | _ => False
+                 end
+    | _ => False
+    end.
 
-End WELLFORMED.
+  Definition wf_asm (ge: Asm.genv) (ast: Asm.state) :=
+    match ast with
+    | State sk rs m => (wf_stack ge sk) /\ (wf_regset ge rs)
+    | _ => False
+    end.
+
+  Definition match_cur_stack (cur: block) (ge: Asm.genv) (sk: stack) :=
+    match Genv.find_funct_ptr ge cur with
+    | Some fd => Asm.funsig fd = sig_of_call sk
+    | _ => False
+    end.
+
+  Definition match_cur_regset (cur: block) (ge: Asm.genv) (rs: regset) :=
+    Genv.find_comp ge (Vptr cur Ptrofs.zero) = Genv.find_comp_ignore_offset ge (rs PC).
+
+  Variant match_stackframe : ir_cont_type -> stackframe -> Prop :=
+    | match_stackframe_intro
+        b cp sg v ofs
+        (* needs to talk about sig in stack *)
+      :
+      match_stack_type (sf_cont b) (Stackframe b cp sg v ofs).
+    
+
+  Variant match_stack_type : (sf_cont_type) -> (stackframe) -> Prop :=
+    | match_stack_type_intro
+        b cp sg v ofs
+        (* needs to talk about sig in stack *)
+      :
+      match_stack_type (sf_cont b) (Stackframe b cp sg v ofs).
+
+  Definition match_stack (sf: sf_conts) (st: stack) := Forall2 match_stack_type sf st.
+
+  Definition match_cp (ge: Asm.genv) (cur: block) (cp: compartment) : Prop :=
+    Genv.find_comp ge (Vptr cur Ptrofs.zero) = cp.
+
+  Definition meminj_ge {F V} (ge: Genv.t F V): meminj :=
+    fun b => match Genv.invert_symbol ge b with
+          | Some id => match Genv.find_symbol ge id with
+                      | Some b' => Some (b', 0)
+                      | None => None
+                      end
+          | None => None
+          end.
+
+  Definition match_mem (ge: Asm.genv) (m_ir m_asm: mem): Prop := Mem.inject (meminj_ge ge) m_asm m_ir.
+
+
+End ASMTOIR.
+
 
 
 Section INFORMATIVE.
