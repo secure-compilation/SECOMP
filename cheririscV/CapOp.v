@@ -205,16 +205,17 @@ Global Opaque eq_condition eq_addressing eq_operation.
   error, e.g. integer division by zero.  [eval_condition] returns a boolean,
   [eval_operation] and [eval_addressing] return a value. *)
 
-Definition eval_condition (cond: condition) (vl: list val) (m: mem): option bool :=
+Definition eval_condition (cond: condition) (vl: list ocval) (m: mem)
+                          (a: act_kind) (oc: occap) : option bool :=
   match cond, vl with
   | Ccomp c, v1 :: v2 :: nil => Val.cmp_bool c v1 v2
-  | Ccompu c, v1 :: v2 :: nil => Val.cmpu_bool (Mem.valid_pointer m) c v1 v2
-  | Ccompimm c n, v1 :: nil => Val.cmp_bool c v1 (Vint n)
-  | Ccompuimm c n, v1 :: nil => Val.cmpu_bool (Mem.valid_pointer m) c v1 (Vint n)
+  | Ccompu c, v1 :: v2 :: nil => Val.cmpu_bool (Mem.valid_capability m a oc) c v1 v2
+  | Ccompimm c n, v1 :: nil => Val.cmp_bool c v1 (OCVint n)
+  | Ccompuimm c n, v1 :: nil => Val.cmpu_bool (Mem.valid_capability m a oc) c v1 (OCVint n)
   | Ccompl c, v1 :: v2 :: nil => Val.cmpl_bool c v1 v2
-  | Ccomplu c, v1 :: v2 :: nil => Val.cmplu_bool (Mem.valid_pointer m) c v1 v2
-  | Ccomplimm c n, v1 :: nil => Val.cmpl_bool c v1 (Vlong n)
-  | Ccompluimm c n, v1 :: nil => Val.cmplu_bool (Mem.valid_pointer m) c v1 (Vlong n)
+  | Ccomplu c, v1 :: v2 :: nil => Val.cmplu_bool (Mem.valid_capability m a oc) c v1 v2
+  | Ccomplimm c n, v1 :: nil => Val.cmpl_bool c v1 (OCVlong n)
+  | Ccompluimm c n, v1 :: nil => Val.cmplu_bool (Mem.valid_capability m a oc) c v1 (OCVlong n)
   | Ccompf c, v1 :: v2 :: nil => Val.cmpf_bool c v1 v2
   | Cnotcompf c, v1 :: v2 :: nil => option_map negb (Val.cmpf_bool c v1 v2)
   | Ccompfs c, v1 :: v2 :: nil => Val.cmpfs_bool c v1 v2
@@ -223,20 +224,21 @@ Definition eval_condition (cond: condition) (vl: list val) (m: mem): option bool
   end.
 
 Definition eval_operation
-    (F V: Type) (genv: Genv.t F V) (sp: val)
-    (op: operation) (vl: list val) (m: mem): option val :=
+    (F V: Type) (genv: Genv.t F V) (sp: ocval)
+    (op: operation) (vl: list ocval) (m: mem)
+    (a: act_kind) (oc: occap) : option ocval :=
   match op, vl with
   | Omove, v1::nil => Some v1
-  | Ointconst n, nil => Some (Vint n)
-  | Olongconst n, nil => Some (Vlong n)
-  | Ofloatconst n, nil => Some (Vfloat n)
-  | Osingleconst n, nil => Some (Vsingle n)
+  | Ointconst n, nil => Some (OCVint n)
+  | Olongconst n, nil => Some (OCVlong n)
+  | Ofloatconst n, nil => Some (OCVfloat n)
+  | Osingleconst n, nil => Some (OCVsingle n)
   | Oaddrsymbol s ofs, nil => Some (Genv.symbol_address genv s ofs)
-  | Oaddrstack ofs, nil => Some (Val.offset_ptr sp ofs)
+  | Oaddrstack ofs, nil => Val.offset_ptr sp ofs
   | Ocast8signed, v1 :: nil => Some (Val.sign_ext 8 v1)
   | Ocast16signed, v1 :: nil => Some (Val.sign_ext 16 v1)
   | Oadd, v1 :: v2 :: nil => Some (Val.add v1 v2)
-  | Oaddimm n, v1 :: nil => Some (Val.add v1 (Vint n))
+  | Oaddimm n, v1 :: nil => Some (Val.add v1 (OCVint n))
   | Oneg, v1 :: nil => Some (Val.neg v1)
   | Osub, v1 :: v2 :: nil => Some (Val.sub v1 v2)
   | Omul, v1 :: v2 :: nil => Some (Val.mul v1 v2)
@@ -247,25 +249,25 @@ Definition eval_operation
   | Omod, v1 :: v2 :: nil => Val.mods v1 v2
   | Omodu, v1 :: v2 :: nil => Val.modu v1 v2
   | Oand, v1 :: v2 :: nil => Some (Val.and v1 v2)
-  | Oandimm n, v1 :: nil => Some (Val.and v1 (Vint n))
+  | Oandimm n, v1 :: nil => Some (Val.and v1 (OCVint n))
   | Oor, v1 :: v2 :: nil => Some (Val.or v1 v2)
-  | Oorimm n, v1 :: nil => Some (Val.or v1 (Vint n))
+  | Oorimm n, v1 :: nil => Some (Val.or v1 (OCVint n))
   | Oxor, v1 :: v2 :: nil => Some (Val.xor v1 v2)
-  | Oxorimm n, v1 :: nil => Some (Val.xor v1 (Vint n))
+  | Oxorimm n, v1 :: nil => Some (Val.xor v1 (OCVint n))
   | Oshl, v1 :: v2 :: nil => Some (Val.shl v1 v2)
-  | Oshlimm n, v1 :: nil => Some (Val.shl v1 (Vint n))
+  | Oshlimm n, v1 :: nil => Some (Val.shl v1 (OCVint n))
   | Oshr, v1 :: v2 :: nil => Some (Val.shr v1 v2)
-  | Oshrimm n, v1 :: nil => Some (Val.shr v1 (Vint n))
+  | Oshrimm n, v1 :: nil => Some (Val.shr v1 (OCVint n))
   | Oshru, v1 :: v2 :: nil => Some (Val.shru v1 v2)
-  | Oshruimm n, v1 :: nil => Some (Val.shru v1 (Vint n))
-  | Oshrximm n, v1::nil => Val.shrx v1 (Vint n)
+  | Oshruimm n, v1 :: nil => Some (Val.shru v1 (OCVint n))
+  | Oshrximm n, v1::nil => Val.shrx v1 (OCVint n)
   | Omakelong, v1::v2::nil => Some (Val.longofwords v1 v2)
   | Olowlong, v1::nil => Some (Val.loword v1)
   | Ohighlong, v1::nil => Some (Val.hiword v1)
   | Ocast32signed, v1 :: nil => Some (Val.longofint v1)
   | Ocast32unsigned, v1 :: nil => Some (Val.longofintu v1)
   | Oaddl, v1 :: v2 :: nil => Some (Val.addl v1 v2)
-  | Oaddlimm n, v1::nil => Some (Val.addl v1 (Vlong n))
+  | Oaddlimm n, v1::nil => Some (Val.addl v1 (OCVlong n))
   | Onegl, v1::nil => Some (Val.negl v1)
   | Osubl, v1::v2::nil => Some (Val.subl v1 v2)
   | Omull, v1::v2::nil => Some (Val.mull v1 v2)
@@ -276,18 +278,18 @@ Definition eval_operation
   | Omodl, v1::v2::nil => Val.modls v1 v2
   | Omodlu, v1::v2::nil => Val.modlu v1 v2
   | Oandl, v1::v2::nil => Some(Val.andl v1 v2)
-  | Oandlimm n, v1::nil => Some (Val.andl v1 (Vlong n))
+  | Oandlimm n, v1::nil => Some (Val.andl v1 (OCVlong n))
   | Oorl, v1::v2::nil => Some(Val.orl v1 v2)
-  | Oorlimm n, v1::nil => Some (Val.orl v1 (Vlong n))
+  | Oorlimm n, v1::nil => Some (Val.orl v1 (OCVlong n))
   | Oxorl, v1::v2::nil => Some(Val.xorl v1 v2)
-  | Oxorlimm n, v1::nil => Some (Val.xorl v1 (Vlong n))
+  | Oxorlimm n, v1::nil => Some (Val.xorl v1 (OCVlong n))
   | Oshll, v1::v2::nil => Some (Val.shll v1 v2)
-  | Oshllimm n, v1::nil => Some (Val.shll v1 (Vint n))
+  | Oshllimm n, v1::nil => Some (Val.shll v1 (OCVint n))
   | Oshrl, v1::v2::nil => Some (Val.shrl v1 v2)
-  | Oshrlimm n, v1::nil => Some (Val.shrl v1 (Vint n))
+  | Oshrlimm n, v1::nil => Some (Val.shrl v1 (OCVint n))
   | Oshrlu, v1::v2::nil => Some (Val.shrlu v1 v2)
-  | Oshrluimm n, v1::nil => Some (Val.shrlu v1 (Vint n))
-  | Oshrxlimm n, v1::nil => Val.shrxl v1 (Vint n)
+  | Oshrluimm n, v1::nil => Some (Val.shrlu v1 (OCVint n))
+  | Oshrxlimm n, v1::nil => Val.shrxl v1 (OCVint n)
   | Onegf, v1::nil => Some (Val.negf v1)
   | Oabsf, v1::nil => Some (Val.absf v1)
   | Oaddf, v1::v2::nil => Some (Val.addf v1 v2)
@@ -318,30 +320,30 @@ Definition eval_operation
   | Olonguofsingle, v1::nil => Val.longuofsingle v1
   | Osingleoflong, v1::nil => Val.singleoflong v1
   | Osingleoflongu, v1::nil => Val.singleoflongu v1
-  | Ocmp c, _ => Some (Val.of_optbool (eval_condition c vl m))
+  | Ocmp c, _ => Some (Val.of_optbool (eval_condition c vl m a oc))
   | _, _ => None
   end.
 
 Definition eval_addressing
-    (F V: Type) (genv: Genv.t F V) (sp: val)
-    (addr: addressing) (vl: list val) : option val :=
+    (F V: Type) (genv: Genv.t F V) (sp: ocval)
+    (addr: addressing) (vl: list ocval) : option ocval :=
   match addr, vl with
-  | Aindexed n, v1 :: nil => Some (Val.offset_ptr v1 n)
+  | Aindexed n, v1 :: nil => Val.offset_ptr v1 n
   | Aglobal s ofs, nil => Some (Genv.symbol_address genv s ofs)
-  | Ainstack n, nil => Some (Val.offset_ptr sp n)
+  | Ainstack n, nil => Val.offset_ptr sp n
   | _, _ => None
   end.
 
 Remark eval_addressing_Ainstack:
   forall (F V: Type) (genv: Genv.t F V) sp ofs,
-  eval_addressing genv sp (Ainstack ofs) nil = Some (Val.offset_ptr sp ofs).
+  eval_addressing genv sp (Ainstack ofs) nil = Val.offset_ptr sp ofs.
 Proof.
   intros. reflexivity.
 Qed.
 
 Remark eval_addressing_Ainstack_inv:
   forall (F V: Type) (genv: Genv.t F V) sp ofs vl v,
-  eval_addressing genv sp (Ainstack ofs) vl = Some v -> vl = nil /\ v = Val.offset_ptr sp ofs.
+  eval_addressing genv sp (Ainstack ofs) vl = Some v -> vl = nil /\ Some v = Val.offset_ptr sp ofs.
 Proof.
   unfold eval_addressing; intros; destruct vl; inv H; auto.
 Qed.
@@ -350,7 +352,7 @@ Ltac FuncInv :=
   match goal with
   | H: (match ?x with nil => _ | _ :: _ => _ end = Some _) |- _ =>
       destruct x; simpl in H; FuncInv
-  | H: (match ?v with Vundef => _ | Vint _ => _ | Vfloat _ => _ | Vptr _ _ => _ end = Some _) |- _ =>
+  | H: (match ?v with OCVundef => _ | OCVint _ => _ | OCVfloat _ => _ | OCVptr _ => _ end = Some _) |- _ =>
       destruct v; simpl in H; FuncInv
   | H: (if Archi.ptr64 then _ else _) = Some _ |- _ =>
       destruct Archi.ptr64 eqn:?; FuncInv
@@ -494,178 +496,179 @@ Variable A V: Type.
 Variable genv: Genv.t A V.
 
 Remark type_add:
-  forall v1 v2, Val.has_type (Val.add v1 v2) Tint.
+  forall v1 v2, Val.has_type (Val.add v1 v2) CTint.
 Proof.
   intros. unfold Val.has_type, Val.add. destruct Archi.ptr64, v1, v2; auto.
 Qed.
 
 Remark type_addl:
-  forall v1 v2, Val.has_type (Val.addl v1 v2) Tlong.
+  forall v1 v2, Val.has_type (Val.addl v1 v2) CTlong.
 Proof.
   intros. unfold Val.has_type, Val.addl. destruct Archi.ptr64, v1, v2; auto.
 Qed.
 
-Lemma type_of_operation_sound:
-  forall op vl sp v m,
-  op <> Omove ->
-  eval_operation genv sp op vl m = Some v ->
-  Val.has_type v (snd (type_of_operation op)).
-Proof with (try exact I; try reflexivity; auto using Val.Vptr_has_type).
-  intros.
-  destruct op; simpl; simpl in H0; FuncInv; subst; simpl.
-  (* move *)
-  - congruence.
-  (* intconst, longconst, floatconst, singleconst *)
-  - exact I.
-  - exact I.
-  - exact I.
-  - exact I.
-  (* addrsymbol *)
-  - unfold Genv.symbol_address. destruct (Genv.find_symbol genv id)...
-  (* addrstack *)
-  - destruct sp... apply Val.Vptr_has_type.
-  (* castsigned *)
-  - destruct v0...
-  - destruct v0...
-  (* add, addimm *)
-  - apply type_add.
-  - apply type_add.
-  (* neg, sub *)
-  - destruct v0...
-  - unfold Val.sub. destruct v0; destruct v1... 
-    unfold Val.has_type; destruct Archi.ptr64...
-    destruct Archi.ptr64... destruct (eq_block b b0)...
-  (* mul, mulhs, mulhu *)
-  - destruct v0; destruct v1...
-  - destruct v0; destruct v1...
-  - destruct v0; destruct v1...
-  (* div, divu *)
-  - destruct v0; destruct v1; simpl in *; inv H0.
-    destruct (Int.eq i0 Int.zero || Int.eq i (Int.repr Int.min_signed) && Int.eq i0 Int.mone); inv H2...
-  - destruct v0; destruct v1; simpl in *; inv H0.
-    destruct (Int.eq i0 Int.zero); inv H2...
-  (* mod, modu *)
-  - destruct v0; destruct v1; simpl in *; inv H0.
-    destruct (Int.eq i0 Int.zero || Int.eq i (Int.repr Int.min_signed) && Int.eq i0 Int.mone); inv H2...
-  - destruct v0; destruct v1; simpl in *; inv H0.
-    destruct (Int.eq i0 Int.zero); inv H2...
-  (* and, andimm *)
-  - destruct v0; destruct v1...
-  - destruct v0...
-  (* or, orimm *)
-  - destruct v0; destruct v1...
-  - destruct v0...
-  (* xor, xorimm *)
-  - destruct v0; destruct v1...
-  - destruct v0...
-  (* shl, shlimm *)
-  - destruct v0; destruct v1; simpl... destruct (Int.ltu i0 Int.iwordsize)...
-  - destruct v0; simpl... destruct (Int.ltu n Int.iwordsize)...
-  (* shr, shrimm *)
-  - destruct v0; destruct v1; simpl... destruct (Int.ltu i0 Int.iwordsize)...
-  - destruct v0; simpl... destruct (Int.ltu n Int.iwordsize)...
-  (* shru, shruimm *)
-  - destruct v0; destruct v1; simpl... destruct (Int.ltu i0 Int.iwordsize)...
-  - destruct v0; simpl... destruct (Int.ltu n Int.iwordsize)...
-  (* shrx *)
-  - destruct v0; simpl in H0; try discriminate. destruct (Int.ltu n (Int.repr 31)); inv H0...
-  (* makelong, lowlong, highlong *)
-  - destruct v0; destruct v1...
-  - destruct v0...
-  - destruct v0...
-  (* cast32 *)
-  - destruct v0...
-  - destruct v0...
-  (* addl, addlimm *)
-  - apply type_addl.
-  - apply type_addl.
-  (* negl, subl *)
-  - destruct v0...
-  - unfold Val.subl. destruct v0; destruct v1... 
-    unfold Val.has_type; destruct Archi.ptr64...
-    destruct Archi.ptr64... destruct (eq_block b b0)...
-  (* mull, mullhs, mullhu *)
-  - destruct v0; destruct v1...
-  - destruct v0; destruct v1...
-  - destruct v0; destruct v1...
-  (* divl, divlu *)
-  - destruct v0; destruct v1; simpl in *; inv H0.
-    destruct (Int64.eq i0 Int64.zero || Int64.eq i (Int64.repr Int64.min_signed) && Int64.eq i0 Int64.mone); inv H2...
-  - destruct v0; destruct v1; simpl in *; inv H0.
-    destruct (Int64.eq i0 Int64.zero); inv H2...
-  (* modl, modlu *)
-  - destruct v0; destruct v1; simpl in *; inv H0.
-    destruct (Int64.eq i0 Int64.zero || Int64.eq i (Int64.repr Int64.min_signed) && Int64.eq i0 Int64.mone); inv H2...
-  - destruct v0; destruct v1; simpl in *; inv H0.
-    destruct (Int64.eq i0 Int64.zero); inv H2...
-  (* andl, andlimm *)
-  - destruct v0; destruct v1...
-  - destruct v0...
-  (* orl, orlimm *)
-  - destruct v0; destruct v1...
-  - destruct v0...
-  (* xorl, xorlimm *)
-  - destruct v0; destruct v1...
-  - destruct v0...
-  (* shll, shllimm *)
-  - destruct v0; destruct v1; simpl... destruct (Int.ltu i0 Int64.iwordsize')...
-  - destruct v0; simpl... destruct (Int.ltu n Int64.iwordsize')...
-  (* shr, shrimm *)
-  - destruct v0; destruct v1; simpl... destruct (Int.ltu i0 Int64.iwordsize')...
-  - destruct v0; simpl... destruct (Int.ltu n Int64.iwordsize')...
-  (* shru, shruimm *)
-  - destruct v0; destruct v1; simpl... destruct (Int.ltu i0 Int64.iwordsize')...
-  - destruct v0; simpl... destruct (Int.ltu n Int64.iwordsize')...
-  (* shrxl *)
-  - destruct v0; simpl in H0; try discriminate. destruct (Int.ltu n (Int.repr 63)); inv H0...
-  (* negf, absf *)
-  - destruct v0...
-  - destruct v0...
-  (* addf, subf *)
-  - destruct v0; destruct v1...
-  - destruct v0; destruct v1...
-  (* mulf, divf *)
-  - destruct v0; destruct v1...
-  - destruct v0; destruct v1...
-  (* negfs, absfs *)
-  - destruct v0...
-  - destruct v0...
-  (* addfs, subfs *)
-  - destruct v0; destruct v1...
-  - destruct v0; destruct v1...
-  (* mulfs, divfs *)
-  - destruct v0; destruct v1...
-  - destruct v0; destruct v1...
-  (* singleoffloat, floatofsingle *)
-  - destruct v0...
-  - destruct v0...
-  (* intoffloat, intuoffloat *)
-  - destruct v0; simpl in H0; inv H0. destruct (Float.to_int f); inv H2...
-  - destruct v0; simpl in H0; inv H0. destruct (Float.to_intu f); inv H2...
-  (* floatofint, floatofintu *)
-  - destruct v0; simpl in H0; inv H0...
-  - destruct v0; simpl in H0; inv H0...
-  (* intofsingle, intuofsingle *)
-  - destruct v0; simpl in H0; inv H0. destruct (Float32.to_int f); inv H2...
-  - destruct v0; simpl in H0; inv H0. destruct (Float32.to_intu f); inv H2...
-  (* singleofint, singleofintu *)
-  - destruct v0; simpl in H0; inv H0...
-  - destruct v0; simpl in H0; inv H0...
-  (* longoffloat, longuoffloat *)
-  - destruct v0; simpl in H0; inv H0. destruct (Float.to_long f); inv H2...
-  - destruct v0; simpl in H0; inv H0. destruct (Float.to_longu f); inv H2...
-  (* floatoflong, floatoflongu *)
-  - destruct v0; simpl in H0; inv H0...
-  - destruct v0; simpl in H0; inv H0...
-  (* longofsingle, longuofsingle *)
-  - destruct v0; simpl in H0; inv H0. destruct (Float32.to_long f); inv H2...
-  - destruct v0; simpl in H0; inv H0. destruct (Float32.to_longu f); inv H2...
-  (* singleoflong, singleoflongu *)
-  - destruct v0; simpl in H0; inv H0...
-  - destruct v0; simpl in H0; inv H0...
-  (* cmp *)
-  - destruct (eval_condition cond vl m)... destruct b...
-Qed.
+(* FIXME *)
+(* Lemma type_of_operation_sound: *)
+(*   forall op vl sp v m, *)
+(*   op <> Omove -> *)
+(*   eval_operation genv sp op vl m = Some v -> *)
+(*   Val.has_type v (snd (type_of_operation op)). *)
+(* Proof with (try exact I; try reflexivity; auto using Val.Vptr_has_type). *)
+(*   intros. *)
+(*   destruct op; simpl; simpl in H0; FuncInv; subst; simpl. *)
+(*   (* move *) *)
+(*   - congruence. *)
+(*   (* intconst, longconst, floatconst, singleconst *) *)
+(*   - exact I. *)
+(*   - exact I. *)
+(*   - exact I. *)
+(*   - exact I. *)
+(*   (* addrsymbol *) *)
+(*   - unfold Genv.symbol_address. destruct (Genv.find_symbol genv id)... *)
+(*   (* addrstack *) *)
+(*   - destruct sp... apply Val.Vptr_has_type. *)
+(*   (* castsigned *) *)
+(*   - destruct v0... *)
+(*   - destruct v0... *)
+(*   (* add, addimm *) *)
+(*   - apply type_add. *)
+(*   - apply type_add. *)
+(*   (* neg, sub *) *)
+(*   - destruct v0... *)
+(*   - unfold Val.sub. destruct v0; destruct v1...  *)
+(*     unfold Val.has_type; destruct Archi.ptr64... *)
+(*     destruct Archi.ptr64... destruct (eq_block b b0)... *)
+(*   (* mul, mulhs, mulhu *) *)
+(*   - destruct v0; destruct v1... *)
+(*   - destruct v0; destruct v1... *)
+(*   - destruct v0; destruct v1... *)
+(*   (* div, divu *) *)
+(*   - destruct v0; destruct v1; simpl in *; inv H0. *)
+(*     destruct (Int.eq i0 Int.zero || Int.eq i (Int.repr Int.min_signed) && Int.eq i0 Int.mone); inv H2... *)
+(*   - destruct v0; destruct v1; simpl in *; inv H0. *)
+(*     destruct (Int.eq i0 Int.zero); inv H2... *)
+(*   (* mod, modu *) *)
+(*   - destruct v0; destruct v1; simpl in *; inv H0. *)
+(*     destruct (Int.eq i0 Int.zero || Int.eq i (Int.repr Int.min_signed) && Int.eq i0 Int.mone); inv H2... *)
+(*   - destruct v0; destruct v1; simpl in *; inv H0. *)
+(*     destruct (Int.eq i0 Int.zero); inv H2... *)
+(*   (* and, andimm *) *)
+(*   - destruct v0; destruct v1... *)
+(*   - destruct v0... *)
+(*   (* or, orimm *) *)
+(*   - destruct v0; destruct v1... *)
+(*   - destruct v0... *)
+(*   (* xor, xorimm *) *)
+(*   - destruct v0; destruct v1... *)
+(*   - destruct v0... *)
+(*   (* shl, shlimm *) *)
+(*   - destruct v0; destruct v1; simpl... destruct (Int.ltu i0 Int.iwordsize)... *)
+(*   - destruct v0; simpl... destruct (Int.ltu n Int.iwordsize)... *)
+(*   (* shr, shrimm *) *)
+(*   - destruct v0; destruct v1; simpl... destruct (Int.ltu i0 Int.iwordsize)... *)
+(*   - destruct v0; simpl... destruct (Int.ltu n Int.iwordsize)... *)
+(*   (* shru, shruimm *) *)
+(*   - destruct v0; destruct v1; simpl... destruct (Int.ltu i0 Int.iwordsize)... *)
+(*   - destruct v0; simpl... destruct (Int.ltu n Int.iwordsize)... *)
+(*   (* shrx *) *)
+(*   - destruct v0; simpl in H0; try discriminate. destruct (Int.ltu n (Int.repr 31)); inv H0... *)
+(*   (* makelong, lowlong, highlong *) *)
+(*   - destruct v0; destruct v1... *)
+(*   - destruct v0... *)
+(*   - destruct v0... *)
+(*   (* cast32 *) *)
+(*   - destruct v0... *)
+(*   - destruct v0... *)
+(*   (* addl, addlimm *) *)
+(*   - apply type_addl. *)
+(*   - apply type_addl. *)
+(*   (* negl, subl *) *)
+(*   - destruct v0... *)
+(*   - unfold Val.subl. destruct v0; destruct v1...  *)
+(*     unfold Val.has_type; destruct Archi.ptr64... *)
+(*     destruct Archi.ptr64... destruct (eq_block b b0)... *)
+(*   (* mull, mullhs, mullhu *) *)
+(*   - destruct v0; destruct v1... *)
+(*   - destruct v0; destruct v1... *)
+(*   - destruct v0; destruct v1... *)
+(*   (* divl, divlu *) *)
+(*   - destruct v0; destruct v1; simpl in *; inv H0. *)
+(*     destruct (Int64.eq i0 Int64.zero || Int64.eq i (Int64.repr Int64.min_signed) && Int64.eq i0 Int64.mone); inv H2... *)
+(*   - destruct v0; destruct v1; simpl in *; inv H0. *)
+(*     destruct (Int64.eq i0 Int64.zero); inv H2... *)
+(*   (* modl, modlu *) *)
+(*   - destruct v0; destruct v1; simpl in *; inv H0. *)
+(*     destruct (Int64.eq i0 Int64.zero || Int64.eq i (Int64.repr Int64.min_signed) && Int64.eq i0 Int64.mone); inv H2... *)
+(*   - destruct v0; destruct v1; simpl in *; inv H0. *)
+(*     destruct (Int64.eq i0 Int64.zero); inv H2... *)
+(*   (* andl, andlimm *) *)
+(*   - destruct v0; destruct v1... *)
+(*   - destruct v0... *)
+(*   (* orl, orlimm *) *)
+(*   - destruct v0; destruct v1... *)
+(*   - destruct v0... *)
+(*   (* xorl, xorlimm *) *)
+(*   - destruct v0; destruct v1... *)
+(*   - destruct v0... *)
+(*   (* shll, shllimm *) *)
+(*   - destruct v0; destruct v1; simpl... destruct (Int.ltu i0 Int64.iwordsize')... *)
+(*   - destruct v0; simpl... destruct (Int.ltu n Int64.iwordsize')... *)
+(*   (* shr, shrimm *) *)
+(*   - destruct v0; destruct v1; simpl... destruct (Int.ltu i0 Int64.iwordsize')... *)
+(*   - destruct v0; simpl... destruct (Int.ltu n Int64.iwordsize')... *)
+(*   (* shru, shruimm *) *)
+(*   - destruct v0; destruct v1; simpl... destruct (Int.ltu i0 Int64.iwordsize')... *)
+(*   - destruct v0; simpl... destruct (Int.ltu n Int64.iwordsize')... *)
+(*   (* shrxl *) *)
+(*   - destruct v0; simpl in H0; try discriminate. destruct (Int.ltu n (Int.repr 63)); inv H0... *)
+(*   (* negf, absf *) *)
+(*   - destruct v0... *)
+(*   - destruct v0... *)
+(*   (* addf, subf *) *)
+(*   - destruct v0; destruct v1... *)
+(*   - destruct v0; destruct v1... *)
+(*   (* mulf, divf *) *)
+(*   - destruct v0; destruct v1... *)
+(*   - destruct v0; destruct v1... *)
+(*   (* negfs, absfs *) *)
+(*   - destruct v0... *)
+(*   - destruct v0... *)
+(*   (* addfs, subfs *) *)
+(*   - destruct v0; destruct v1... *)
+(*   - destruct v0; destruct v1... *)
+(*   (* mulfs, divfs *) *)
+(*   - destruct v0; destruct v1... *)
+(*   - destruct v0; destruct v1... *)
+(*   (* singleoffloat, floatofsingle *) *)
+(*   - destruct v0... *)
+(*   - destruct v0... *)
+(*   (* intoffloat, intuoffloat *) *)
+(*   - destruct v0; simpl in H0; inv H0. destruct (Float.to_int f); inv H2... *)
+(*   - destruct v0; simpl in H0; inv H0. destruct (Float.to_intu f); inv H2... *)
+(*   (* floatofint, floatofintu *) *)
+(*   - destruct v0; simpl in H0; inv H0... *)
+(*   - destruct v0; simpl in H0; inv H0... *)
+(*   (* intofsingle, intuofsingle *) *)
+(*   - destruct v0; simpl in H0; inv H0. destruct (Float32.to_int f); inv H2... *)
+(*   - destruct v0; simpl in H0; inv H0. destruct (Float32.to_intu f); inv H2... *)
+(*   (* singleofint, singleofintu *) *)
+(*   - destruct v0; simpl in H0; inv H0... *)
+(*   - destruct v0; simpl in H0; inv H0... *)
+(*   (* longoffloat, longuoffloat *) *)
+(*   - destruct v0; simpl in H0; inv H0. destruct (Float.to_long f); inv H2... *)
+(*   - destruct v0; simpl in H0; inv H0. destruct (Float.to_longu f); inv H2... *)
+(*   (* floatoflong, floatoflongu *) *)
+(*   - destruct v0; simpl in H0; inv H0... *)
+(*   - destruct v0; simpl in H0; inv H0... *)
+(*   (* longofsingle, longuofsingle *) *)
+(*   - destruct v0; simpl in H0; inv H0. destruct (Float32.to_long f); inv H2... *)
+(*   - destruct v0; simpl in H0; inv H0. destruct (Float32.to_longu f); inv H2... *)
+(*   (* singleoflong, singleoflongu *) *)
+(*   - destruct v0; simpl in H0; inv H0... *)
+(*   - destruct v0; simpl in H0; inv H0... *)
+(*   (* cmp *) *)
+(*   - destruct (eval_condition cond vl m)... destruct b... *)
+(* Qed. *)
 
 End SOUNDNESS.
 
@@ -711,24 +714,25 @@ Definition negate_condition (cond: condition): condition :=
   | Cnotcompfs c => Ccompfs c
   end.
 
-Lemma eval_negate_condition:
-  forall cond vl m,
-  eval_condition (negate_condition cond) vl m = option_map negb (eval_condition cond vl m).
-Proof.
-  intros. destruct cond; simpl.
-  repeat (destruct vl; auto). apply Val.negate_cmp_bool.
-  repeat (destruct vl; auto). apply Val.negate_cmpu_bool.
-  repeat (destruct vl; auto). apply Val.negate_cmp_bool.
-  repeat (destruct vl; auto). apply Val.negate_cmpu_bool.
-  repeat (destruct vl; auto). apply Val.negate_cmpl_bool.
-  repeat (destruct vl; auto). apply Val.negate_cmplu_bool.
-  repeat (destruct vl; auto). apply Val.negate_cmpl_bool.
-  repeat (destruct vl; auto). apply Val.negate_cmplu_bool.
-  repeat (destruct vl; auto).
-  repeat (destruct vl; auto). destruct (Val.cmpf_bool c v v0) as [[]|]; auto.
-  repeat (destruct vl; auto).
-  repeat (destruct vl; auto). destruct (Val.cmpfs_bool c v v0) as [[]|]; auto.
-Qed.
+(* FIXME *)
+(* Lemma eval_negate_condition: *)
+(*   forall cond vl m, *)
+(*   eval_condition (negate_condition cond) vl m = option_map negb (eval_condition cond vl m). *)
+(* Proof. *)
+(*   intros. destruct cond; simpl. *)
+(*   repeat (destruct vl; auto). apply Val.negate_cmp_bool. *)
+(*   repeat (destruct vl; auto). apply Val.negate_cmpu_bool. *)
+(*   repeat (destruct vl; auto). apply Val.negate_cmp_bool. *)
+(*   repeat (destruct vl; auto). apply Val.negate_cmpu_bool. *)
+(*   repeat (destruct vl; auto). apply Val.negate_cmpl_bool. *)
+(*   repeat (destruct vl; auto). apply Val.negate_cmplu_bool. *)
+(*   repeat (destruct vl; auto). apply Val.negate_cmpl_bool. *)
+(*   repeat (destruct vl; auto). apply Val.negate_cmplu_bool. *)
+(*   repeat (destruct vl; auto). *)
+(*   repeat (destruct vl; auto). destruct (Val.cmpf_bool c v v0) as [[]|]; auto. *)
+(*   repeat (destruct vl; auto). *)
+(*   repeat (destruct vl; auto). destruct (Val.cmpfs_bool c v v0) as [[]|]; auto. *)
+(* Qed. *)
 
 (** Shifting stack-relative references.  This is used in [Stacking]. *)
 
@@ -757,22 +761,23 @@ Proof.
 Qed.
 
 Lemma eval_shift_stack_addressing:
-  forall F V (ge: Genv.t F V) sp addr vl delta,
-  eval_addressing ge (Vptr sp Ptrofs.zero) (shift_stack_addressing delta addr) vl =
-  eval_addressing ge (Vptr sp (Ptrofs.repr delta)) addr vl.
+  forall F V (ge: Genv.t F V) addr vl delta,
+  eval_addressing ge (OCVptr (stack_ptr Ptrofs.zero)) (shift_stack_addressing delta addr) vl =
+  eval_addressing ge (OCVptr (stack_ptr (Ptrofs.repr delta))) addr vl.
 Proof.
   intros. destruct addr; simpl; auto. destruct vl; auto.
   rewrite Ptrofs.add_zero_l, Ptrofs.add_commut; auto.
 Qed.
 
-Lemma eval_shift_stack_operation:
-  forall F V (ge: Genv.t F V) sp op vl m delta,
-  eval_operation ge (Vptr sp Ptrofs.zero) (shift_stack_operation delta op) vl m =
-  eval_operation ge (Vptr sp (Ptrofs.repr delta)) op vl m.
-Proof.
-  intros. destruct op; simpl; auto. destruct vl; auto.
-  rewrite Ptrofs.add_zero_l, Ptrofs.add_commut; auto.
-Qed.
+(* FIXME *)
+(* Lemma eval_shift_stack_operation: *)
+(*   forall F V (ge: Genv.t F V) op vl m delta, *)
+(*   eval_operation ge (OCVptr (stack_ptr Ptrofs.zero)) (shift_stack_operation delta op) vl m = *)
+(*   eval_operation ge (OCVptr (stack_ptr (Ptrofs.repr delta))) op vl m. *)
+(* Proof. *)
+(*   intros. destruct op; simpl; auto. destruct vl; auto. *)
+(*   rewrite Ptrofs.add_zero_l, Ptrofs.add_commut; auto. *)
+(* Qed. *)
 
 (** Offset an addressing mode [addr] by a quantity [delta], so that
   it designates the pointer [delta] bytes past the pointer designated
@@ -785,25 +790,26 @@ Definition offset_addressing (addr: addressing) (delta: Z) : option addressing :
   | Ainstack n => Some(Ainstack (Ptrofs.add n (Ptrofs.repr delta)))
   end.
 
-Lemma eval_offset_addressing:
-  forall (F V: Type) (ge: Genv.t F V) sp addr args delta addr' v,
-  offset_addressing addr delta = Some addr' ->
-  eval_addressing ge sp addr args = Some v ->
-  Archi.ptr64 = false ->
-  eval_addressing ge sp addr' args = Some(Val.add v (Vint (Int.repr delta))).
-Proof.
-  intros.
-  assert (A: forall x n,
-             Val.offset_ptr x (Ptrofs.add n (Ptrofs.repr delta)) =
-             Val.add (Val.offset_ptr x n) (Vint (Int.repr delta))).
-  { intros; destruct x; simpl; auto. rewrite H1. 
-    rewrite Ptrofs.add_assoc. f_equal; f_equal; f_equal. symmetry; auto with ptrofs. }
-  destruct addr; simpl in H; inv H; simpl in *; FuncInv; subst.
-- rewrite A; auto.
-- unfold Genv.symbol_address. destruct (Genv.find_symbol ge i); auto. 
-  simpl. rewrite H1. f_equal; f_equal; f_equal. symmetry; auto with ptrofs.
-- rewrite A; auto.
-Qed.
+(* FIXME *)
+(* Lemma eval_offset_addressing: *)
+(*   forall (F V: Type) (ge: Genv.t F V) sp addr args delta addr' v, *)
+(*   offset_addressing addr delta = Some addr' -> *)
+(*   eval_addressing ge sp addr args = Some v -> *)
+(*   Archi.ptr64 = false -> *)
+(*   eval_addressing ge sp addr' args = Some(Val.add v (Vint (Int.repr delta))). *)
+(* Proof. *)
+(*   intros. *)
+(*   assert (A: forall x n, *)
+(*              Val.offset_ptr x (Ptrofs.add n (Ptrofs.repr delta)) = *)
+(*              Val.add (Val.offset_ptr x n) (Vint (Int.repr delta))). *)
+(*   { intros; destruct x; simpl; auto. rewrite H1.  *)
+(*     rewrite Ptrofs.add_assoc. f_equal; f_equal; f_equal. symmetry; auto with ptrofs. } *)
+(*   destruct addr; simpl in H; inv H; simpl in *; FuncInv; subst. *)
+(* - rewrite A; auto. *)
+(* - unfold Genv.symbol_address. destruct (Genv.find_symbol ge i); auto.  *)
+(*   simpl. rewrite H1. f_equal; f_equal; f_equal. symmetry; auto with ptrofs. *)
+(* - rewrite A; auto. *)
+(* Qed. *)
 
 (** Operations that are so cheap to recompute that CSE should not factor them out. *)
 
@@ -827,15 +833,16 @@ Definition op_depends_on_memory (op: operation) : bool :=
   | _ => false
   end.
 
-Lemma op_depends_on_memory_correct:
-  forall (F V: Type) (ge: Genv.t F V) sp op args m1 m2,
-  op_depends_on_memory op = false ->
-  eval_operation ge sp op args m1 = eval_operation ge sp op args m2.
-Proof.
-  intros until m2. destruct op; simpl; try congruence.
-  destruct cond; simpl; intros SF; auto; rewrite ? negb_false_iff in SF;
-  unfold Val.cmpu_bool, Val.cmplu_bool; rewrite SF; reflexivity.
-Qed.
+(* FIXME *)
+(* Lemma op_depends_on_memory_correct: *)
+(*   forall (F V: Type) (ge: Genv.t F V) sp op args m1 m2, *)
+(*   op_depends_on_memory op = false -> *)
+(*   eval_operation ge sp op args m1 = eval_operation ge sp op args m2. *)
+(* Proof. *)
+(*   intros until m2. destruct op; simpl; try congruence. *)
+(*   destruct cond; simpl; intros SF; auto; rewrite ? negb_false_iff in SF; *)
+(*   unfold Val.cmpu_bool, Val.cmplu_bool; rewrite SF; reflexivity. *)
+(* Qed. *)
 
 (** Global variables mentioned in an operation or addressing mode *)
 
@@ -888,457 +895,458 @@ End GENV_TRANSF.
 
 (** Compatibility of the evaluation functions with value injections. *)
 
-Section EVAL_COMPAT.
+(* FIXME *)
+(* Section EVAL_COMPAT. *)
 
-Variable F1 F2 V1 V2: Type.
-Variable ge1: Genv.t F1 V1.
-Variable ge2: Genv.t F2 V2.
-Variable f: meminj.
+(* Variable F1 F2 V1 V2: Type. *)
+(* Variable ge1: Genv.t F1 V1. *)
+(* Variable ge2: Genv.t F2 V2. *)
+(* Variable f: meminj. *)
 
-Variable m1: mem.
-Variable m2: mem.
+(* Variable m1: mem. *)
+(* Variable m2: mem. *)
 
-Hypothesis valid_pointer_inj:
-  forall b1 ofs b2 delta,
-  f b1 = Some(b2, delta) ->
-  Mem.valid_pointer m1 b1 (Ptrofs.unsigned ofs) = true ->
-  Mem.valid_pointer m2 b2 (Ptrofs.unsigned (Ptrofs.add ofs (Ptrofs.repr delta))) = true.
+(* Hypothesis valid_pointer_inj: *)
+(*   forall b1 ofs b2 delta, *)
+(*   f b1 = Some(b2, delta) -> *)
+(*   Mem.valid_pointer m1 b1 (Ptrofs.unsigned ofs) = true -> *)
+(*   Mem.valid_pointer m2 b2 (Ptrofs.unsigned (Ptrofs.add ofs (Ptrofs.repr delta))) = true. *)
 
-Hypothesis weak_valid_pointer_inj:
-  forall b1 ofs b2 delta,
-  f b1 = Some(b2, delta) ->
-  Mem.weak_valid_pointer m1 b1 (Ptrofs.unsigned ofs) = true ->
-  Mem.weak_valid_pointer m2 b2 (Ptrofs.unsigned (Ptrofs.add ofs (Ptrofs.repr delta))) = true.
+(* Hypothesis weak_valid_pointer_inj: *)
+(*   forall b1 ofs b2 delta, *)
+(*   f b1 = Some(b2, delta) -> *)
+(*   Mem.weak_valid_pointer m1 b1 (Ptrofs.unsigned ofs) = true -> *)
+(*   Mem.weak_valid_pointer m2 b2 (Ptrofs.unsigned (Ptrofs.add ofs (Ptrofs.repr delta))) = true. *)
 
-Hypothesis weak_valid_pointer_no_overflow:
-  forall b1 ofs b2 delta,
-  f b1 = Some(b2, delta) ->
-  Mem.weak_valid_pointer m1 b1 (Ptrofs.unsigned ofs) = true ->
-  0 <= Ptrofs.unsigned ofs + Ptrofs.unsigned (Ptrofs.repr delta) <= Ptrofs.max_unsigned.
+(* Hypothesis weak_valid_pointer_no_overflow: *)
+(*   forall b1 ofs b2 delta, *)
+(*   f b1 = Some(b2, delta) -> *)
+(*   Mem.weak_valid_pointer m1 b1 (Ptrofs.unsigned ofs) = true -> *)
+(*   0 <= Ptrofs.unsigned ofs + Ptrofs.unsigned (Ptrofs.repr delta) <= Ptrofs.max_unsigned. *)
 
-Hypothesis valid_different_pointers_inj:
-  forall b1 ofs1 b2 ofs2 b1' delta1 b2' delta2,
-  b1 <> b2 ->
-  Mem.valid_pointer m1 b1 (Ptrofs.unsigned ofs1) = true ->
-  Mem.valid_pointer m1 b2 (Ptrofs.unsigned ofs2) = true ->
-  f b1 = Some (b1', delta1) ->
-  f b2 = Some (b2', delta2) ->
-  b1' <> b2' \/
-  Ptrofs.unsigned (Ptrofs.add ofs1 (Ptrofs.repr delta1)) <> Ptrofs.unsigned (Ptrofs.add ofs2 (Ptrofs.repr delta2)).
+(* Hypothesis valid_different_pointers_inj: *)
+(*   forall b1 ofs1 b2 ofs2 b1' delta1 b2' delta2, *)
+(*   b1 <> b2 -> *)
+(*   Mem.valid_pointer m1 b1 (Ptrofs.unsigned ofs1) = true -> *)
+(*   Mem.valid_pointer m1 b2 (Ptrofs.unsigned ofs2) = true -> *)
+(*   f b1 = Some (b1', delta1) -> *)
+(*   f b2 = Some (b2', delta2) -> *)
+(*   b1' <> b2' \/ *)
+(*   Ptrofs.unsigned (Ptrofs.add ofs1 (Ptrofs.repr delta1)) <> Ptrofs.unsigned (Ptrofs.add ofs2 (Ptrofs.repr delta2)). *)
 
-Ltac InvInject :=
-  match goal with
-  | [ H: Val.inject _ (Vint _) _ |- _ ] =>
-      inv H; InvInject
-  | [ H: Val.inject _ (Vfloat _) _ |- _ ] =>
-      inv H; InvInject
-  | [ H: Val.inject _ (Vptr _ _) _ |- _ ] =>
-      inv H; InvInject
-  | [ H: Val.inject_list _ nil _ |- _ ] =>
-      inv H; InvInject
-  | [ H: Val.inject_list _ (_ :: _) _ |- _ ] =>
-      inv H; InvInject
-  | _ => idtac
-  end.
+(* Ltac InvInject := *)
+(*   match goal with *)
+(*   | [ H: Val.inject _ (Vint _) _ |- _ ] => *)
+(*       inv H; InvInject *)
+(*   | [ H: Val.inject _ (Vfloat _) _ |- _ ] => *)
+(*       inv H; InvInject *)
+(*   | [ H: Val.inject _ (Vptr _ _) _ |- _ ] => *)
+(*       inv H; InvInject *)
+(*   | [ H: Val.inject_list _ nil _ |- _ ] => *)
+(*       inv H; InvInject *)
+(*   | [ H: Val.inject_list _ (_ :: _) _ |- _ ] => *)
+(*       inv H; InvInject *)
+(*   | _ => idtac *)
+(*   end. *)
 
-Lemma eval_condition_inj:
-  forall cond vl1 vl2 b,
-  Val.inject_list f vl1 vl2 ->
-  eval_condition cond vl1 m1 = Some b ->
-  eval_condition cond vl2 m2 = Some b.
-Proof.
-  intros. destruct cond; simpl in H0; FuncInv; InvInject; simpl; auto.
-- inv H3; inv H2; simpl in H0; inv H0; auto.
-- eauto 3 using Val.cmpu_bool_inject, Mem.valid_pointer_implies.
-- inv H3; simpl in H0; inv H0; auto.
-- eauto 3 using Val.cmpu_bool_inject, Mem.valid_pointer_implies.
-- inv H3; inv H2; simpl in H0; inv H0; auto.
-- eauto 3 using Val.cmplu_bool_inject, Mem.valid_pointer_implies.
-- inv H3; simpl in H0; inv H0; auto.
-- eauto 3 using Val.cmplu_bool_inject, Mem.valid_pointer_implies.
-- inv H3; inv H2; simpl in H0; inv H0; auto.
-- inv H3; inv H2; simpl in H0; inv H0; auto.
-- inv H3; inv H2; simpl in H0; inv H0; auto.
-- inv H3; inv H2; simpl in H0; inv H0; auto.
-Qed.
+(* Lemma eval_condition_inj: *)
+(*   forall cond vl1 vl2 b, *)
+(*   Val.inject_list f vl1 vl2 -> *)
+(*   eval_condition cond vl1 m1 = Some b -> *)
+(*   eval_condition cond vl2 m2 = Some b. *)
+(* Proof. *)
+(*   intros. destruct cond; simpl in H0; FuncInv; InvInject; simpl; auto. *)
+(* - inv H3; inv H2; simpl in H0; inv H0; auto. *)
+(* - eauto 3 using Val.cmpu_bool_inject, Mem.valid_pointer_implies. *)
+(* - inv H3; simpl in H0; inv H0; auto. *)
+(* - eauto 3 using Val.cmpu_bool_inject, Mem.valid_pointer_implies. *)
+(* - inv H3; inv H2; simpl in H0; inv H0; auto. *)
+(* - eauto 3 using Val.cmplu_bool_inject, Mem.valid_pointer_implies. *)
+(* - inv H3; simpl in H0; inv H0; auto. *)
+(* - eauto 3 using Val.cmplu_bool_inject, Mem.valid_pointer_implies. *)
+(* - inv H3; inv H2; simpl in H0; inv H0; auto. *)
+(* - inv H3; inv H2; simpl in H0; inv H0; auto. *)
+(* - inv H3; inv H2; simpl in H0; inv H0; auto. *)
+(* - inv H3; inv H2; simpl in H0; inv H0; auto. *)
+(* Qed. *)
 
-Ltac TrivialExists :=
-  match goal with
-  | [ |- exists v2, Some ?v1 = Some v2 /\ Val.inject _ _ v2 ] =>
-      exists v1; split; auto
-  | _ => idtac
-  end.
+(* Ltac TrivialExists := *)
+(*   match goal with *)
+(*   | [ |- exists v2, Some ?v1 = Some v2 /\ Val.inject _ _ v2 ] => *)
+(*       exists v1; split; auto *)
+(*   | _ => idtac *)
+(*   end. *)
 
-Lemma eval_operation_inj:
-  forall op sp1 vl1 sp2 vl2 v1,
-  (forall id ofs,
-      In id (globals_operation op) ->
-      Val.inject f (Genv.symbol_address ge1 id ofs) (Genv.symbol_address ge2 id ofs)) ->
-  Val.inject f sp1 sp2 ->
-  Val.inject_list f vl1 vl2 ->
-  eval_operation ge1 sp1 op vl1 m1 = Some v1 ->
-  exists v2, eval_operation ge2 sp2 op vl2 m2 = Some v2 /\ Val.inject f v1 v2.
-Proof.
-  intros until v1; intros GL; intros. destruct op; simpl in H1; simpl; FuncInv; InvInject; TrivialExists.
-  (* addrsymbol *)
-  - apply GL; simpl; auto.
-  (* addrstack *)
-  - apply Val.offset_ptr_inject; auto. 
-  (* castsigned *)
-  - inv H4; simpl; auto.
-  - inv H4; simpl; auto.
-  (* add, addimm *)
-  - apply Val.add_inject; auto.
-  - apply Val.add_inject; auto.
-  (* neg, sub *)
-  - inv H4; simpl; auto.
-  - apply Val.sub_inject; auto.
-  (* mul, mulhs, mulhu *)
-  - inv H4; inv H2; simpl; auto.
-  - inv H4; inv H2; simpl; auto.
-  - inv H4; inv H2; simpl; auto.
-  (* div, divu *)
-  - inv H4; inv H3; simpl in H1; inv H1. simpl.
-    destruct (Int.eq i0 Int.zero
-              || Int.eq i (Int.repr Int.min_signed) && Int.eq i0 Int.mone); inv H2.
-    TrivialExists.
-  - inv H4; inv H3; simpl in H1; inv H1. simpl.
-    destruct (Int.eq i0 Int.zero); inv H2. TrivialExists.
-  (* mod, modu *)
-  - inv H4; inv H3; simpl in H1; inv H1. simpl.
-    destruct (Int.eq i0 Int.zero
-                     || Int.eq i (Int.repr Int.min_signed) && Int.eq i0 Int.mone); inv H2.
-    TrivialExists.
-  - inv H4; inv H3; simpl in H1; inv H1. simpl.
-    destruct (Int.eq i0 Int.zero); inv H2. TrivialExists.
-  (* and, andimm *)
-  - inv H4; inv H2; simpl; auto.
-  - inv H4; simpl; auto.
-  (* or, orimm *)
-  - inv H4; inv H2; simpl; auto.
-  - inv H4; simpl; auto.
-  (* xor, xorimm *)
-  - inv H4; inv H2; simpl; auto.
-  - inv H4; simpl; auto.
-  (* shl, shlimm *)
-  - inv H4; inv H2; simpl; auto. destruct (Int.ltu i0 Int.iwordsize); auto.
-  - inv H4; simpl; auto. destruct (Int.ltu n Int.iwordsize); auto.
-  (* shr, shrimm *)
-  - inv H4; inv H2; simpl; auto. destruct (Int.ltu i0 Int.iwordsize); auto.
-  - inv H4; simpl; auto. destruct (Int.ltu n Int.iwordsize); auto.
-  (* shru, shruimm *)
-  - inv H4; inv H2; simpl; auto. destruct (Int.ltu i0 Int.iwordsize); auto.
-  - inv H4; simpl; auto. destruct (Int.ltu n Int.iwordsize); auto.
-  (* shrx *)
-  - inv H4; simpl in H1; try discriminate. simpl.
-    destruct (Int.ltu n (Int.repr 31)); inv H1. TrivialExists.
-  (* makelong, highlong, lowlong *)
-  - inv H4; inv H2; simpl; auto.
-  - inv H4; simpl; auto.
-  - inv H4; simpl; auto.
-  (* cast32 *)
-  - inv H4; simpl; auto.
-  - inv H4; simpl; auto.
-  (* addl, addlimm *)
-  - apply Val.addl_inject; auto.
-  - apply Val.addl_inject; auto.
-  (* negl, subl *)
-  - inv H4; simpl; auto.
-  - apply Val.subl_inject; auto.
-  (* mull, mullhs, mullhu *)
-  - inv H4; inv H2; simpl; auto.
-  - inv H4; inv H2; simpl; auto.
-  - inv H4; inv H2; simpl; auto.
-  (* divl, divlu *)
-  - inv H4; inv H3; simpl in H1; inv H1. simpl.
-    destruct (Int64.eq i0 Int64.zero
-              || Int64.eq i (Int64.repr Int64.min_signed) && Int64.eq i0 Int64.mone); inv H2.
-    TrivialExists.
-  - inv H4; inv H3; simpl in H1; inv H1. simpl.
-    destruct (Int64.eq i0 Int64.zero); inv H2. TrivialExists.
-  (* modl, modlu *)
-  - inv H4; inv H3; simpl in H1; inv H1. simpl.
-    destruct (Int64.eq i0 Int64.zero
-                     || Int64.eq i (Int64.repr Int64.min_signed) && Int64.eq i0 Int64.mone); inv H2.
-    TrivialExists.
-  - inv H4; inv H3; simpl in H1; inv H1. simpl.
-    destruct (Int64.eq i0 Int64.zero); inv H2. TrivialExists.
-  (* andl, andlimm *)
-  - inv H4; inv H2; simpl; auto.
-  - inv H4; simpl; auto.
-  (* orl, orlimm *)
-  - inv H4; inv H2; simpl; auto.
-  - inv H4; simpl; auto.
-  (* xorl, xorlimm *)
-  - inv H4; inv H2; simpl; auto.
-  - inv H4; simpl; auto.
-  (* shll, shllimm *)
-  - inv H4; inv H2; simpl; auto. destruct (Int.ltu i0 Int64.iwordsize'); auto.
-  - inv H4; simpl; auto. destruct (Int.ltu n Int64.iwordsize'); auto.
-  (* shr, shrimm *)
-  - inv H4; inv H2; simpl; auto. destruct (Int.ltu i0 Int64.iwordsize'); auto.
-  - inv H4; simpl; auto. destruct (Int.ltu n Int64.iwordsize'); auto.
-  (* shru, shruimm *)
-  - inv H4; inv H2; simpl; auto. destruct (Int.ltu i0 Int64.iwordsize'); auto.
-  - inv H4; simpl; auto. destruct (Int.ltu n Int64.iwordsize'); auto.
-  (* shrx *)
-  - inv H4; simpl in H1; try discriminate. simpl.
-    destruct (Int.ltu n (Int.repr 63)); inv H1. TrivialExists.
-  (* negf, absf *)
-  - inv H4; simpl; auto.
-  - inv H4; simpl; auto.
-  (* addf, subf *)
-  - inv H4; inv H2; simpl; auto.
-  - inv H4; inv H2; simpl; auto.
-  (* mulf, divf *)
-  - inv H4; inv H2; simpl; auto.
-  - inv H4; inv H2; simpl; auto.
-  (* negfs, absfs *)
-  - inv H4; simpl; auto.
-  - inv H4; simpl; auto.
-  (* addfs, subfs *)
-  - inv H4; inv H2; simpl; auto.
-  - inv H4; inv H2; simpl; auto.
-  (* mulfs, divfs *)
-  - inv H4; inv H2; simpl; auto.
-  - inv H4; inv H2; simpl; auto.
-  (* singleoffloat, floatofsingle *)
-  - inv H4; simpl; auto.
-  - inv H4; simpl; auto.
-  (* intoffloat, intuoffloat *)
-  - inv H4; simpl in H1; inv H1. simpl. destruct (Float.to_int f0); simpl in H2; inv H2.
-    exists (Vint i); auto.
-  - inv H4; simpl in H1; inv H1. simpl. destruct (Float.to_intu f0); simpl in H2; inv H2.
-    exists (Vint i); auto.
-  (* floatofint, floatofintu *)
-  - inv H4; simpl in H1; inv H1. simpl. TrivialExists.
-  - inv H4; simpl in H1; inv H1. simpl. TrivialExists.
-  (* intofsingle, intuofsingle *)
-  - inv H4; simpl in H1; inv H1. simpl. destruct (Float32.to_int f0); simpl in H2; inv H2.
-    exists (Vint i); auto.
-  - inv H4; simpl in H1; inv H1. simpl. destruct (Float32.to_intu f0); simpl in H2; inv H2.
-    exists (Vint i); auto.
-  (* singleofint, singleofintu *)
-  - inv H4; simpl in H1; inv H1. simpl. TrivialExists.
-  - inv H4; simpl in H1; inv H1. simpl. TrivialExists.
-  (* longoffloat, longuoffloat *)
-  - inv H4; simpl in H1; inv H1. simpl. destruct (Float.to_long f0); simpl in H2; inv H2.
-    exists (Vlong i); auto.
-  - inv H4; simpl in H1; inv H1. simpl. destruct (Float.to_longu f0); simpl in H2; inv H2.
-    exists (Vlong i); auto.
-  (* floatoflong, floatoflongu *)
-  - inv H4; simpl in H1; inv H1. simpl. TrivialExists.
-  - inv H4; simpl in H1; inv H1. simpl. TrivialExists.
-  (* longofsingle, longuofsingle *)
-  - inv H4; simpl in H1; inv H1. simpl. destruct (Float32.to_long f0); simpl in H2; inv H2.
-    exists (Vlong i); auto.
-  - inv H4; simpl in H1; inv H1. simpl. destruct (Float32.to_longu f0); simpl in H2; inv H2.
-    exists (Vlong i); auto.
-  (* singleoflong, singleoflongu *)
-  - inv H4; simpl in H1; inv H1. simpl. TrivialExists.
-  - inv H4; simpl in H1; inv H1. simpl. TrivialExists.
-  (* cmp *)
-  - subst v1. destruct (eval_condition cond vl1 m1) eqn:?.
-    exploit eval_condition_inj; eauto. intros EQ; rewrite EQ.
-    destruct b; simpl; constructor.
-    simpl; constructor.
-Qed.
+(* Lemma eval_operation_inj: *)
+(*   forall op sp1 vl1 sp2 vl2 v1, *)
+(*   (forall id ofs, *)
+(*       In id (globals_operation op) -> *)
+(*       Val.inject f (Genv.symbol_address ge1 id ofs) (Genv.symbol_address ge2 id ofs)) -> *)
+(*   Val.inject f sp1 sp2 -> *)
+(*   Val.inject_list f vl1 vl2 -> *)
+(*   eval_operation ge1 sp1 op vl1 m1 = Some v1 -> *)
+(*   exists v2, eval_operation ge2 sp2 op vl2 m2 = Some v2 /\ Val.inject f v1 v2. *)
+(* Proof. *)
+(*   intros until v1; intros GL; intros. destruct op; simpl in H1; simpl; FuncInv; InvInject; TrivialExists. *)
+(*   (* addrsymbol *) *)
+(*   - apply GL; simpl; auto. *)
+(*   (* addrstack *) *)
+(*   - apply Val.offset_ptr_inject; auto.  *)
+(*   (* castsigned *) *)
+(*   - inv H4; simpl; auto. *)
+(*   - inv H4; simpl; auto. *)
+(*   (* add, addimm *) *)
+(*   - apply Val.add_inject; auto. *)
+(*   - apply Val.add_inject; auto. *)
+(*   (* neg, sub *) *)
+(*   - inv H4; simpl; auto. *)
+(*   - apply Val.sub_inject; auto. *)
+(*   (* mul, mulhs, mulhu *) *)
+(*   - inv H4; inv H2; simpl; auto. *)
+(*   - inv H4; inv H2; simpl; auto. *)
+(*   - inv H4; inv H2; simpl; auto. *)
+(*   (* div, divu *) *)
+(*   - inv H4; inv H3; simpl in H1; inv H1. simpl. *)
+(*     destruct (Int.eq i0 Int.zero *)
+(*               || Int.eq i (Int.repr Int.min_signed) && Int.eq i0 Int.mone); inv H2. *)
+(*     TrivialExists. *)
+(*   - inv H4; inv H3; simpl in H1; inv H1. simpl. *)
+(*     destruct (Int.eq i0 Int.zero); inv H2. TrivialExists. *)
+(*   (* mod, modu *) *)
+(*   - inv H4; inv H3; simpl in H1; inv H1. simpl. *)
+(*     destruct (Int.eq i0 Int.zero *)
+(*                      || Int.eq i (Int.repr Int.min_signed) && Int.eq i0 Int.mone); inv H2. *)
+(*     TrivialExists. *)
+(*   - inv H4; inv H3; simpl in H1; inv H1. simpl. *)
+(*     destruct (Int.eq i0 Int.zero); inv H2. TrivialExists. *)
+(*   (* and, andimm *) *)
+(*   - inv H4; inv H2; simpl; auto. *)
+(*   - inv H4; simpl; auto. *)
+(*   (* or, orimm *) *)
+(*   - inv H4; inv H2; simpl; auto. *)
+(*   - inv H4; simpl; auto. *)
+(*   (* xor, xorimm *) *)
+(*   - inv H4; inv H2; simpl; auto. *)
+(*   - inv H4; simpl; auto. *)
+(*   (* shl, shlimm *) *)
+(*   - inv H4; inv H2; simpl; auto. destruct (Int.ltu i0 Int.iwordsize); auto. *)
+(*   - inv H4; simpl; auto. destruct (Int.ltu n Int.iwordsize); auto. *)
+(*   (* shr, shrimm *) *)
+(*   - inv H4; inv H2; simpl; auto. destruct (Int.ltu i0 Int.iwordsize); auto. *)
+(*   - inv H4; simpl; auto. destruct (Int.ltu n Int.iwordsize); auto. *)
+(*   (* shru, shruimm *) *)
+(*   - inv H4; inv H2; simpl; auto. destruct (Int.ltu i0 Int.iwordsize); auto. *)
+(*   - inv H4; simpl; auto. destruct (Int.ltu n Int.iwordsize); auto. *)
+(*   (* shrx *) *)
+(*   - inv H4; simpl in H1; try discriminate. simpl. *)
+(*     destruct (Int.ltu n (Int.repr 31)); inv H1. TrivialExists. *)
+(*   (* makelong, highlong, lowlong *) *)
+(*   - inv H4; inv H2; simpl; auto. *)
+(*   - inv H4; simpl; auto. *)
+(*   - inv H4; simpl; auto. *)
+(*   (* cast32 *) *)
+(*   - inv H4; simpl; auto. *)
+(*   - inv H4; simpl; auto. *)
+(*   (* addl, addlimm *) *)
+(*   - apply Val.addl_inject; auto. *)
+(*   - apply Val.addl_inject; auto. *)
+(*   (* negl, subl *) *)
+(*   - inv H4; simpl; auto. *)
+(*   - apply Val.subl_inject; auto. *)
+(*   (* mull, mullhs, mullhu *) *)
+(*   - inv H4; inv H2; simpl; auto. *)
+(*   - inv H4; inv H2; simpl; auto. *)
+(*   - inv H4; inv H2; simpl; auto. *)
+(*   (* divl, divlu *) *)
+(*   - inv H4; inv H3; simpl in H1; inv H1. simpl. *)
+(*     destruct (Int64.eq i0 Int64.zero *)
+(*               || Int64.eq i (Int64.repr Int64.min_signed) && Int64.eq i0 Int64.mone); inv H2. *)
+(*     TrivialExists. *)
+(*   - inv H4; inv H3; simpl in H1; inv H1. simpl. *)
+(*     destruct (Int64.eq i0 Int64.zero); inv H2. TrivialExists. *)
+(*   (* modl, modlu *) *)
+(*   - inv H4; inv H3; simpl in H1; inv H1. simpl. *)
+(*     destruct (Int64.eq i0 Int64.zero *)
+(*                      || Int64.eq i (Int64.repr Int64.min_signed) && Int64.eq i0 Int64.mone); inv H2. *)
+(*     TrivialExists. *)
+(*   - inv H4; inv H3; simpl in H1; inv H1. simpl. *)
+(*     destruct (Int64.eq i0 Int64.zero); inv H2. TrivialExists. *)
+(*   (* andl, andlimm *) *)
+(*   - inv H4; inv H2; simpl; auto. *)
+(*   - inv H4; simpl; auto. *)
+(*   (* orl, orlimm *) *)
+(*   - inv H4; inv H2; simpl; auto. *)
+(*   - inv H4; simpl; auto. *)
+(*   (* xorl, xorlimm *) *)
+(*   - inv H4; inv H2; simpl; auto. *)
+(*   - inv H4; simpl; auto. *)
+(*   (* shll, shllimm *) *)
+(*   - inv H4; inv H2; simpl; auto. destruct (Int.ltu i0 Int64.iwordsize'); auto. *)
+(*   - inv H4; simpl; auto. destruct (Int.ltu n Int64.iwordsize'); auto. *)
+(*   (* shr, shrimm *) *)
+(*   - inv H4; inv H2; simpl; auto. destruct (Int.ltu i0 Int64.iwordsize'); auto. *)
+(*   - inv H4; simpl; auto. destruct (Int.ltu n Int64.iwordsize'); auto. *)
+(*   (* shru, shruimm *) *)
+(*   - inv H4; inv H2; simpl; auto. destruct (Int.ltu i0 Int64.iwordsize'); auto. *)
+(*   - inv H4; simpl; auto. destruct (Int.ltu n Int64.iwordsize'); auto. *)
+(*   (* shrx *) *)
+(*   - inv H4; simpl in H1; try discriminate. simpl. *)
+(*     destruct (Int.ltu n (Int.repr 63)); inv H1. TrivialExists. *)
+(*   (* negf, absf *) *)
+(*   - inv H4; simpl; auto. *)
+(*   - inv H4; simpl; auto. *)
+(*   (* addf, subf *) *)
+(*   - inv H4; inv H2; simpl; auto. *)
+(*   - inv H4; inv H2; simpl; auto. *)
+(*   (* mulf, divf *) *)
+(*   - inv H4; inv H2; simpl; auto. *)
+(*   - inv H4; inv H2; simpl; auto. *)
+(*   (* negfs, absfs *) *)
+(*   - inv H4; simpl; auto. *)
+(*   - inv H4; simpl; auto. *)
+(*   (* addfs, subfs *) *)
+(*   - inv H4; inv H2; simpl; auto. *)
+(*   - inv H4; inv H2; simpl; auto. *)
+(*   (* mulfs, divfs *) *)
+(*   - inv H4; inv H2; simpl; auto. *)
+(*   - inv H4; inv H2; simpl; auto. *)
+(*   (* singleoffloat, floatofsingle *) *)
+(*   - inv H4; simpl; auto. *)
+(*   - inv H4; simpl; auto. *)
+(*   (* intoffloat, intuoffloat *) *)
+(*   - inv H4; simpl in H1; inv H1. simpl. destruct (Float.to_int f0); simpl in H2; inv H2. *)
+(*     exists (Vint i); auto. *)
+(*   - inv H4; simpl in H1; inv H1. simpl. destruct (Float.to_intu f0); simpl in H2; inv H2. *)
+(*     exists (Vint i); auto. *)
+(*   (* floatofint, floatofintu *) *)
+(*   - inv H4; simpl in H1; inv H1. simpl. TrivialExists. *)
+(*   - inv H4; simpl in H1; inv H1. simpl. TrivialExists. *)
+(*   (* intofsingle, intuofsingle *) *)
+(*   - inv H4; simpl in H1; inv H1. simpl. destruct (Float32.to_int f0); simpl in H2; inv H2. *)
+(*     exists (Vint i); auto. *)
+(*   - inv H4; simpl in H1; inv H1. simpl. destruct (Float32.to_intu f0); simpl in H2; inv H2. *)
+(*     exists (Vint i); auto. *)
+(*   (* singleofint, singleofintu *) *)
+(*   - inv H4; simpl in H1; inv H1. simpl. TrivialExists. *)
+(*   - inv H4; simpl in H1; inv H1. simpl. TrivialExists. *)
+(*   (* longoffloat, longuoffloat *) *)
+(*   - inv H4; simpl in H1; inv H1. simpl. destruct (Float.to_long f0); simpl in H2; inv H2. *)
+(*     exists (Vlong i); auto. *)
+(*   - inv H4; simpl in H1; inv H1. simpl. destruct (Float.to_longu f0); simpl in H2; inv H2. *)
+(*     exists (Vlong i); auto. *)
+(*   (* floatoflong, floatoflongu *) *)
+(*   - inv H4; simpl in H1; inv H1. simpl. TrivialExists. *)
+(*   - inv H4; simpl in H1; inv H1. simpl. TrivialExists. *)
+(*   (* longofsingle, longuofsingle *) *)
+(*   - inv H4; simpl in H1; inv H1. simpl. destruct (Float32.to_long f0); simpl in H2; inv H2. *)
+(*     exists (Vlong i); auto. *)
+(*   - inv H4; simpl in H1; inv H1. simpl. destruct (Float32.to_longu f0); simpl in H2; inv H2. *)
+(*     exists (Vlong i); auto. *)
+(*   (* singleoflong, singleoflongu *) *)
+(*   - inv H4; simpl in H1; inv H1. simpl. TrivialExists. *)
+(*   - inv H4; simpl in H1; inv H1. simpl. TrivialExists. *)
+(*   (* cmp *) *)
+(*   - subst v1. destruct (eval_condition cond vl1 m1) eqn:?. *)
+(*     exploit eval_condition_inj; eauto. intros EQ; rewrite EQ. *)
+(*     destruct b; simpl; constructor. *)
+(*     simpl; constructor. *)
+(* Qed. *)
 
-Lemma eval_addressing_inj:
-  forall addr sp1 vl1 sp2 vl2 v1,
-  (forall id ofs,
-      In id (globals_addressing addr) ->
-      Val.inject f (Genv.symbol_address ge1 id ofs) (Genv.symbol_address ge2 id ofs)) ->
-  Val.inject f sp1 sp2 ->
-  Val.inject_list f vl1 vl2 ->
-  eval_addressing ge1 sp1 addr vl1 = Some v1 ->
-  exists v2, eval_addressing ge2 sp2 addr vl2 = Some v2 /\ Val.inject f v1 v2.
-Proof.
-  intros. destruct addr; simpl in H2; simpl; FuncInv; InvInject; TrivialExists.
-  apply Val.offset_ptr_inject; auto.
-  apply H; simpl; auto.
-  apply Val.offset_ptr_inject; auto. 
-Qed.
+(* Lemma eval_addressing_inj: *)
+(*   forall addr sp1 vl1 sp2 vl2 v1, *)
+(*   (forall id ofs, *)
+(*       In id (globals_addressing addr) -> *)
+(*       Val.inject f (Genv.symbol_address ge1 id ofs) (Genv.symbol_address ge2 id ofs)) -> *)
+(*   Val.inject f sp1 sp2 -> *)
+(*   Val.inject_list f vl1 vl2 -> *)
+(*   eval_addressing ge1 sp1 addr vl1 = Some v1 -> *)
+(*   exists v2, eval_addressing ge2 sp2 addr vl2 = Some v2 /\ Val.inject f v1 v2. *)
+(* Proof. *)
+(*   intros. destruct addr; simpl in H2; simpl; FuncInv; InvInject; TrivialExists. *)
+(*   apply Val.offset_ptr_inject; auto. *)
+(*   apply H; simpl; auto. *)
+(*   apply Val.offset_ptr_inject; auto.  *)
+(* Qed. *)
 
-End EVAL_COMPAT.
+(* End EVAL_COMPAT. *)
 
 (** Compatibility of the evaluation functions with the ``is less defined'' relation over values. *)
 
-Section EVAL_LESSDEF.
+(* Section EVAL_LESSDEF. *)
 
-Variable F V: Type.
-Variable genv: Genv.t F V.
+(* Variable F V: Type. *)
+(* Variable genv: Genv.t F V. *)
 
-Remark valid_pointer_extends:
-  forall m1 m2, Mem.extends m1 m2 ->
-  forall b1 ofs b2 delta,
-  Some(b1, 0) = Some(b2, delta) ->
-  Mem.valid_pointer m1 b1 (Ptrofs.unsigned ofs) = true ->
-  Mem.valid_pointer m2 b2 (Ptrofs.unsigned (Ptrofs.add ofs (Ptrofs.repr delta))) = true.
-Proof.
-  intros. inv H0. rewrite Ptrofs.add_zero. eapply Mem.valid_pointer_extends; eauto.
-Qed.
+(* Remark valid_pointer_extends: *)
+(*   forall m1 m2, Mem.extends m1 m2 -> *)
+(*   forall b1 ofs b2 delta, *)
+(*   Some(b1, 0) = Some(b2, delta) -> *)
+(*   Mem.valid_pointer m1 b1 (Ptrofs.unsigned ofs) = true -> *)
+(*   Mem.valid_pointer m2 b2 (Ptrofs.unsigned (Ptrofs.add ofs (Ptrofs.repr delta))) = true. *)
+(* Proof. *)
+(*   intros. inv H0. rewrite Ptrofs.add_zero. eapply Mem.valid_pointer_extends; eauto. *)
+(* Qed. *)
 
-Remark weak_valid_pointer_extends:
-  forall m1 m2, Mem.extends m1 m2 ->
-  forall b1 ofs b2 delta,
-  Some(b1, 0) = Some(b2, delta) ->
-  Mem.weak_valid_pointer m1 b1 (Ptrofs.unsigned ofs) = true ->
-  Mem.weak_valid_pointer m2 b2 (Ptrofs.unsigned (Ptrofs.add ofs (Ptrofs.repr delta))) = true.
-Proof.
-  intros. inv H0. rewrite Ptrofs.add_zero. eapply Mem.weak_valid_pointer_extends; eauto.
-Qed.
+(* Remark weak_valid_pointer_extends: *)
+(*   forall m1 m2, Mem.extends m1 m2 -> *)
+(*   forall b1 ofs b2 delta, *)
+(*   Some(b1, 0) = Some(b2, delta) -> *)
+(*   Mem.weak_valid_pointer m1 b1 (Ptrofs.unsigned ofs) = true -> *)
+(*   Mem.weak_valid_pointer m2 b2 (Ptrofs.unsigned (Ptrofs.add ofs (Ptrofs.repr delta))) = true. *)
+(* Proof. *)
+(*   intros. inv H0. rewrite Ptrofs.add_zero. eapply Mem.weak_valid_pointer_extends; eauto. *)
+(* Qed. *)
 
-Remark weak_valid_pointer_no_overflow_extends:
-  forall m1 b1 ofs b2 delta,
-  Some(b1, 0) = Some(b2, delta) ->
-  Mem.weak_valid_pointer m1 b1 (Ptrofs.unsigned ofs) = true ->
-  0 <= Ptrofs.unsigned ofs + Ptrofs.unsigned (Ptrofs.repr delta) <= Ptrofs.max_unsigned.
-Proof.
-  intros. inv H. rewrite Z.add_0_r. apply Ptrofs.unsigned_range_2.
-Qed.
+(* Remark weak_valid_pointer_no_overflow_extends: *)
+(*   forall m1 b1 ofs b2 delta, *)
+(*   Some(b1, 0) = Some(b2, delta) -> *)
+(*   Mem.weak_valid_pointer m1 b1 (Ptrofs.unsigned ofs) = true -> *)
+(*   0 <= Ptrofs.unsigned ofs + Ptrofs.unsigned (Ptrofs.repr delta) <= Ptrofs.max_unsigned. *)
+(* Proof. *)
+(*   intros. inv H. rewrite Z.add_0_r. apply Ptrofs.unsigned_range_2. *)
+(* Qed. *)
 
-Remark valid_different_pointers_extends:
-  forall m1 b1 ofs1 b2 ofs2 b1' delta1 b2' delta2,
-  b1 <> b2 ->
-  Mem.valid_pointer m1 b1 (Ptrofs.unsigned ofs1) = true ->
-  Mem.valid_pointer m1 b2 (Ptrofs.unsigned ofs2) = true ->
-  Some(b1, 0) = Some (b1', delta1) ->
-  Some(b2, 0) = Some (b2', delta2) ->
-  b1' <> b2' \/
-  Ptrofs.unsigned(Ptrofs.add ofs1 (Ptrofs.repr delta1)) <> Ptrofs.unsigned(Ptrofs.add ofs2 (Ptrofs.repr delta2)).
-Proof.
-  intros. inv H2; inv H3. auto.
-Qed.
+(* Remark valid_different_pointers_extends: *)
+(*   forall m1 b1 ofs1 b2 ofs2 b1' delta1 b2' delta2, *)
+(*   b1 <> b2 -> *)
+(*   Mem.valid_pointer m1 b1 (Ptrofs.unsigned ofs1) = true -> *)
+(*   Mem.valid_pointer m1 b2 (Ptrofs.unsigned ofs2) = true -> *)
+(*   Some(b1, 0) = Some (b1', delta1) -> *)
+(*   Some(b2, 0) = Some (b2', delta2) -> *)
+(*   b1' <> b2' \/ *)
+(*   Ptrofs.unsigned(Ptrofs.add ofs1 (Ptrofs.repr delta1)) <> Ptrofs.unsigned(Ptrofs.add ofs2 (Ptrofs.repr delta2)). *)
+(* Proof. *)
+(*   intros. inv H2; inv H3. auto. *)
+(* Qed. *)
 
-Lemma eval_condition_lessdef:
-  forall cond vl1 vl2 b m1 m2,
-  Val.lessdef_list vl1 vl2 ->
-  Mem.extends m1 m2 ->
-  eval_condition cond vl1 m1 = Some b ->
-  eval_condition cond vl2 m2 = Some b.
-Proof.
-  intros. eapply eval_condition_inj with (f := fun b => Some(b, 0)) (m1 := m1).
-  apply valid_pointer_extends; auto.
-  apply weak_valid_pointer_extends; auto.
-  apply weak_valid_pointer_no_overflow_extends.
-  apply valid_different_pointers_extends; auto.
-  rewrite <- val_inject_list_lessdef. eauto. auto.
-Qed.
+(* Lemma eval_condition_lessdef: *)
+(*   forall cond vl1 vl2 b m1 m2, *)
+(*   Val.lessdef_list vl1 vl2 -> *)
+(*   Mem.extends m1 m2 -> *)
+(*   eval_condition cond vl1 m1 = Some b -> *)
+(*   eval_condition cond vl2 m2 = Some b. *)
+(* Proof. *)
+(*   intros. eapply eval_condition_inj with (f := fun b => Some(b, 0)) (m1 := m1). *)
+(*   apply valid_pointer_extends; auto. *)
+(*   apply weak_valid_pointer_extends; auto. *)
+(*   apply weak_valid_pointer_no_overflow_extends. *)
+(*   apply valid_different_pointers_extends; auto. *)
+(*   rewrite <- val_inject_list_lessdef. eauto. auto. *)
+(* Qed. *)
 
-Lemma eval_operation_lessdef:
-  forall sp op vl1 vl2 v1 m1 m2,
-  Val.lessdef_list vl1 vl2 ->
-  Mem.extends m1 m2 ->
-  eval_operation genv sp op vl1 m1 = Some v1 ->
-  exists v2, eval_operation genv sp op vl2 m2 = Some v2 /\ Val.lessdef v1 v2.
-Proof.
-  intros. rewrite val_inject_list_lessdef in H.
-  assert (exists v2 : val,
-          eval_operation genv sp op vl2 m2 = Some v2
-          /\ Val.inject (fun b => Some(b, 0)) v1 v2).
-  eapply eval_operation_inj with (m1 := m1) (sp1 := sp).
-  apply valid_pointer_extends; auto.
-  apply weak_valid_pointer_extends; auto.
-  apply weak_valid_pointer_no_overflow_extends.
-  apply valid_different_pointers_extends; auto.
-  intros. apply val_inject_lessdef. auto.
-  apply val_inject_lessdef; auto.
-  eauto.
-  auto.
-  destruct H2 as [v2 [A B]]. exists v2; split; auto. rewrite val_inject_lessdef; auto.
-Qed.
+(* Lemma eval_operation_lessdef: *)
+(*   forall sp op vl1 vl2 v1 m1 m2, *)
+(*   Val.lessdef_list vl1 vl2 -> *)
+(*   Mem.extends m1 m2 -> *)
+(*   eval_operation genv sp op vl1 m1 = Some v1 -> *)
+(*   exists v2, eval_operation genv sp op vl2 m2 = Some v2 /\ Val.lessdef v1 v2. *)
+(* Proof. *)
+(*   intros. rewrite val_inject_list_lessdef in H. *)
+(*   assert (exists v2 : val, *)
+(*           eval_operation genv sp op vl2 m2 = Some v2 *)
+(*           /\ Val.inject (fun b => Some(b, 0)) v1 v2). *)
+(*   eapply eval_operation_inj with (m1 := m1) (sp1 := sp). *)
+(*   apply valid_pointer_extends; auto. *)
+(*   apply weak_valid_pointer_extends; auto. *)
+(*   apply weak_valid_pointer_no_overflow_extends. *)
+(*   apply valid_different_pointers_extends; auto. *)
+(*   intros. apply val_inject_lessdef. auto. *)
+(*   apply val_inject_lessdef; auto. *)
+(*   eauto. *)
+(*   auto. *)
+(*   destruct H2 as [v2 [A B]]. exists v2; split; auto. rewrite val_inject_lessdef; auto. *)
+(* Qed. *)
 
-Lemma eval_addressing_lessdef:
-  forall sp addr vl1 vl2 v1,
-  Val.lessdef_list vl1 vl2 ->
-  eval_addressing genv sp addr vl1 = Some v1 ->
-  exists v2, eval_addressing genv sp addr vl2 = Some v2 /\ Val.lessdef v1 v2.
-Proof.
-  intros. rewrite val_inject_list_lessdef in H.
-  assert (exists v2 : val,
-          eval_addressing genv sp addr vl2 = Some v2
-          /\ Val.inject (fun b => Some(b, 0)) v1 v2).
-  eapply eval_addressing_inj with (sp1 := sp).
-  intros. rewrite <- val_inject_lessdef; auto.
-  rewrite <- val_inject_lessdef; auto.
-  eauto. auto.
-  destruct H1 as [v2 [A B]]. exists v2; split; auto. rewrite val_inject_lessdef; auto.
-Qed.
+(* Lemma eval_addressing_lessdef: *)
+(*   forall sp addr vl1 vl2 v1, *)
+(*   Val.lessdef_list vl1 vl2 -> *)
+(*   eval_addressing genv sp addr vl1 = Some v1 -> *)
+(*   exists v2, eval_addressing genv sp addr vl2 = Some v2 /\ Val.lessdef v1 v2. *)
+(* Proof. *)
+(*   intros. rewrite val_inject_list_lessdef in H. *)
+(*   assert (exists v2 : val, *)
+(*           eval_addressing genv sp addr vl2 = Some v2 *)
+(*           /\ Val.inject (fun b => Some(b, 0)) v1 v2). *)
+(*   eapply eval_addressing_inj with (sp1 := sp). *)
+(*   intros. rewrite <- val_inject_lessdef; auto. *)
+(*   rewrite <- val_inject_lessdef; auto. *)
+(*   eauto. auto. *)
+(*   destruct H1 as [v2 [A B]]. exists v2; split; auto. rewrite val_inject_lessdef; auto. *)
+(* Qed. *)
 
-End EVAL_LESSDEF.
+(* End EVAL_LESSDEF. *)
 
 (** Compatibility of the evaluation functions with memory injections. *)
 
-Section EVAL_INJECT.
+(* Section EVAL_INJECT. *)
 
-Variable F V: Type.
-Variable genv: Genv.t F V.
-Variable f: meminj.
-Hypothesis globals: meminj_preserves_globals genv f.
-Variable sp1: block.
-Variable sp2: block.
-Variable delta: Z.
-Hypothesis sp_inj: f sp1 = Some(sp2, delta).
+(* Variable F V: Type. *)
+(* Variable genv: Genv.t F V. *)
+(* Variable f: meminj. *)
+(* Hypothesis globals: meminj_preserves_globals genv f. *)
+(* Variable sp1: block. *)
+(* Variable sp2: block. *)
+(* Variable delta: Z. *)
+(* Hypothesis sp_inj: f sp1 = Some(sp2, delta). *)
 
-Remark symbol_address_inject:
-  forall id ofs, Val.inject f (Genv.symbol_address genv id ofs) (Genv.symbol_address genv id ofs).
-Proof.
-  intros. unfold Genv.symbol_address. destruct (Genv.find_symbol genv id) eqn:?; auto.
-  exploit (proj1 globals); eauto. intros.
-  econstructor; eauto. rewrite Ptrofs.add_zero; auto.
-Qed.
+(* Remark symbol_address_inject: *)
+(*   forall id ofs, Val.inject f (Genv.symbol_address genv id ofs) (Genv.symbol_address genv id ofs). *)
+(* Proof. *)
+(*   intros. unfold Genv.symbol_address. destruct (Genv.find_symbol genv id) eqn:?; auto. *)
+(*   exploit (proj1 globals); eauto. intros. *)
+(*   econstructor; eauto. rewrite Ptrofs.add_zero; auto. *)
+(* Qed. *)
 
-Lemma eval_condition_inject:
-  forall cond vl1 vl2 b m1 m2,
-  Val.inject_list f vl1 vl2 ->
-  Mem.inject f m1 m2 ->
-  eval_condition cond vl1 m1 = Some b ->
-  eval_condition cond vl2 m2 = Some b.
-Proof.
-  intros. eapply eval_condition_inj with (f := f) (m1 := m1); eauto.
-  intros; eapply Mem.valid_pointer_inject_val; eauto.
-  intros; eapply Mem.weak_valid_pointer_inject_val; eauto.
-  intros; eapply Mem.weak_valid_pointer_inject_no_overflow; eauto.
-  intros; eapply Mem.different_pointers_inject; eauto.
-Qed.
+(* Lemma eval_condition_inject: *)
+(*   forall cond vl1 vl2 b m1 m2, *)
+(*   Val.inject_list f vl1 vl2 -> *)
+(*   Mem.inject f m1 m2 -> *)
+(*   eval_condition cond vl1 m1 = Some b -> *)
+(*   eval_condition cond vl2 m2 = Some b. *)
+(* Proof. *)
+(*   intros. eapply eval_condition_inj with (f := f) (m1 := m1); eauto. *)
+(*   intros; eapply Mem.valid_pointer_inject_val; eauto. *)
+(*   intros; eapply Mem.weak_valid_pointer_inject_val; eauto. *)
+(*   intros; eapply Mem.weak_valid_pointer_inject_no_overflow; eauto. *)
+(*   intros; eapply Mem.different_pointers_inject; eauto. *)
+(* Qed. *)
 
-Lemma eval_addressing_inject:
-  forall addr vl1 vl2 v1,
-  Val.inject_list f vl1 vl2 ->
-  eval_addressing genv (Vptr sp1 Ptrofs.zero) addr vl1 = Some v1 ->
-  exists v2,
-     eval_addressing genv (Vptr sp2 Ptrofs.zero) (shift_stack_addressing delta addr) vl2 = Some v2
-  /\ Val.inject f v1 v2.
-Proof.
-  intros.
-  rewrite eval_shift_stack_addressing.
-  eapply eval_addressing_inj with (sp1 := Vptr sp1 Ptrofs.zero); eauto.
-  intros. apply symbol_address_inject.
-  econstructor; eauto. rewrite Ptrofs.add_zero_l; auto. 
-Qed.
+(* Lemma eval_addressing_inject: *)
+(*   forall addr vl1 vl2 v1, *)
+(*   Val.inject_list f vl1 vl2 -> *)
+(*   eval_addressing genv (Vptr sp1 Ptrofs.zero) addr vl1 = Some v1 -> *)
+(*   exists v2, *)
+(*      eval_addressing genv (Vptr sp2 Ptrofs.zero) (shift_stack_addressing delta addr) vl2 = Some v2 *)
+(*   /\ Val.inject f v1 v2. *)
+(* Proof. *)
+(*   intros. *)
+(*   rewrite eval_shift_stack_addressing. *)
+(*   eapply eval_addressing_inj with (sp1 := Vptr sp1 Ptrofs.zero); eauto. *)
+(*   intros. apply symbol_address_inject. *)
+(*   econstructor; eauto. rewrite Ptrofs.add_zero_l; auto.  *)
+(* Qed. *)
 
-Lemma eval_operation_inject:
-  forall op vl1 vl2 v1 m1 m2,
-  Val.inject_list f vl1 vl2 ->
-  Mem.inject f m1 m2 ->
-  eval_operation genv (Vptr sp1 Ptrofs.zero) op vl1 m1 = Some v1 ->
-  exists v2,
-     eval_operation genv (Vptr sp2 Ptrofs.zero) (shift_stack_operation delta op) vl2 m2 = Some v2
-  /\ Val.inject f v1 v2.
-Proof.
-  intros.
-  rewrite eval_shift_stack_operation. simpl.
-  eapply eval_operation_inj with (sp1 := Vptr sp1 Ptrofs.zero) (m1 := m1); eauto.
-  intros; eapply Mem.valid_pointer_inject_val; eauto.
-  intros; eapply Mem.weak_valid_pointer_inject_val; eauto.
-  intros; eapply Mem.weak_valid_pointer_inject_no_overflow; eauto.
-  intros; eapply Mem.different_pointers_inject; eauto.
-  intros. apply symbol_address_inject.
-  econstructor; eauto. rewrite Ptrofs.add_zero_l; auto. 
-Qed.
+(* Lemma eval_operation_inject: *)
+(*   forall op vl1 vl2 v1 m1 m2, *)
+(*   Val.inject_list f vl1 vl2 -> *)
+(*   Mem.inject f m1 m2 -> *)
+(*   eval_operation genv (Vptr sp1 Ptrofs.zero) op vl1 m1 = Some v1 -> *)
+(*   exists v2, *)
+(*      eval_operation genv (Vptr sp2 Ptrofs.zero) (shift_stack_operation delta op) vl2 m2 = Some v2 *)
+(*   /\ Val.inject f v1 v2. *)
+(* Proof. *)
+(*   intros. *)
+(*   rewrite eval_shift_stack_operation. simpl. *)
+(*   eapply eval_operation_inj with (sp1 := Vptr sp1 Ptrofs.zero) (m1 := m1); eauto. *)
+(*   intros; eapply Mem.valid_pointer_inject_val; eauto. *)
+(*   intros; eapply Mem.weak_valid_pointer_inject_val; eauto. *)
+(*   intros; eapply Mem.weak_valid_pointer_inject_no_overflow; eauto. *)
+(*   intros; eapply Mem.different_pointers_inject; eauto. *)
+(*   intros. apply symbol_address_inject. *)
+(*   econstructor; eauto. rewrite Ptrofs.add_zero_l; auto.  *)
+(* Qed. *)
 
-End EVAL_INJECT.
+(* End EVAL_INJECT. *)
 
 (** * Handling of builtin arguments *)
 
