@@ -65,7 +65,7 @@ Section BUNDLE.
 End BUNDLE.
 
 
-Section AUX.
+Section EVENT.
 
   Definition typ_to_eventval (ty: typ): eventval :=
     match ty with
@@ -116,11 +116,12 @@ Section AUX.
 
   Definition vals_to_eventvals (ge: Senv.t) (vs: list val): list eventval := map (val_to_eventval ge) vs.
 
-End AUX.
+End EVENT.
 
 
 Section MEMDATA.
 
+  (* Relational invariant for memory *)
   Record mem_weak_inj (f : meminj) (m1 m2 : mem) : Prop :=
     mk_mem_weak_inj
       { mwi_perm : forall (b1 b2 : block) (delta ofs : Z) (k : perm_kind) (p : permission),
@@ -150,6 +151,24 @@ Section MEMDATA.
           | Some id => if Senv.public_symbol ge id then Some (b, 0%Z) else None
           | None => None
           end.
+
+  (* Well formedness to enable correct Mem.store *)
+  Record mem_delta (ge: Senv.t) (m: mem): Type :=
+    mk_mem_delta {
+        mem_delta_data : PTree.t (ZTree.t (memory_chunk * val * compartment)%type);
+        mem_dalta_writable :
+        forall (b: block) (ofs: Z) bd chunk v cp,
+          (PTree.get b mem_delta_data) = Some bd ->
+          (ZTree.get ofs bd) = Some (chunk, v, cp) ->
+          Mem.valid_access m chunk b ofs Writable (Some cp)
+
+      }.
+  
+Mem.store = 
+fun (chunk : memory_chunk) (m : mem) (b : block) (ofs : Z) (v : val) (cp : compartment) =>
+match Mem.valid_access_dec m chunk b ofs Writable (Some cp) with
+
+    block -> (option (
 
   Lemma memval_inject_get_store_get
         m m_ephemeral
