@@ -2124,69 +2124,63 @@ End INFORM_TRACES_PRESERVED.
 
 Section LEAK.
 
-  Definition block_first_order (m: mem) (b: block): Prop :=
-    forall (ofs: Z),
-      match (ZMap.get ofs (Mem.mem_contents m) !! b) with
-      | Fragment vv _ _ => not_ptr vv
-      | _ => True
-      end.
-
-  (* Public symbols are visible outside the compilation unit, 
-     so when interacting via external calls, limit them to first-order. *)
-  Definition public_first_order (ge: Senv.t) (m: mem) :=
-    forall id b (PUBLIC: Senv.public_symbol ge id = true) (FIND: Senv.find_symbol ge id = Some b),
-      block_first_order m b.
-
-  Definition val_first_order (m: mem) (v: val): Prop :=
-    match v with
-    | Vptr b _ => block_first_order m b
-    | Vundef => False
-    | _ => True
+  (* Memory location has only sequence of bytes *)
+  Definition loc_first_order (m: mem) (b: block) (ofs: Z) : Prop :=
+    match (ZMap.get ofs (Mem.mem_contents m) !! b) with
+    | Byte _ => True
+    | _ => False
     end.
 
-  Definition vals_first_order (m: mem) (vs: list val): Prop :=
-    Forall (val_first_order m) vs.
+  (* Public symbols are visible outside the compilation unit, 
+     so when interacting via external calls, limit them to first-order (if Readable). *)
+  Definition public_first_order (ge: Senv.t) (m: mem) :=
+    forall id b ofs
+      (PUBLIC: Senv.public_symbol ge id = true)
+      (FIND: Senv.find_symbol ge id = Some b)
+      (READABLE: Mem.perm m b ofs Cur Readable)
+    ,
+      loc_first_order m b ofs.
 
   Definition block_public (ge: Senv.t) (b: block): Prop :=
     exists id, Senv.invert_symbol ge b = Some id /\ Senv.public_symbol ge id = true.
 
-  Definition val_public (ge: Senv.t) (v: val): Prop :=
-    match v with
-    | Vptr b _ => block_public ge b
-    | Vundef => False
-    | _ => True
-    end.
+  Variant val_public (ge: Senv.t) : typ -> val -> Prop :=
+    | val_public_int: forall i, val_public ge Tint (Vint i)
+    | val_public_long: forall i, val_public ge Tlong (Vlong i)
+    | val_public_float: forall f, val_public ge Tfloat (Vfloat f)
+    | val_public_single: forall f, val_public ge Tsingle (Vsingle f)
+    | val_public_ptr: forall b ofs, block_public ge b -> val_public ge Tptr (Vptr b ofs).
 
-  Definition vals_public (ge: Senv.t) (vs: list val): Prop :=
-    Forall (val_public ge) vs.
+  Definition vals_public (ge: Senv.t) (ts: list typ) (vs: list val): Prop :=
+    Forall2 (val_public ge) ts vs.
 
-  Definition limit_leaks (ge: Senv.t) (m: mem) (args: list val): Prop :=
-    public_first_order ge m /\ vals_public ge args.
-
-  Lemma limit_leaks_ensures_args_first_order
-        ge m args
-        (LL: limit_leaks ge m args)
-    :
-    vals_first_order m args.
-  Proof.
-    revert LL. induction args; intros; simpl. econstructor.
-    inv LL. inv H0. econstructor; eauto.
-    - destruct a; simpl in *; auto. destruct H3 as (id & INV & PUB).
-      apply Senv.invert_find_symbol in INV. specialize (H id b PUB INV). auto.
-    - apply IHargs. red. auto.
-  Qed.
+  Definition limit_leaks (ge: Senv.t) (m: mem) (tys: list typ) (args: list val): Prop :=
+    public_first_order ge m /\ vals_public ge tys args.
 
   Definition limit_leaks_if_unknown
              (ef: external_function) (ge: Senv.t) (m: mem) (args: list val) : Prop :=
     match ef with
-    | EF_external name cp sg => limit_leaks ge m args
+    | EF_external name cp sg => limit_leaks ge m (sig_args sg) args
     | EF_builtin name sg | EF_runtime name sg =>
                              match lookup_builtin_function name sg with
-                             | None => limit_leaks ge m args
+                             | None => limit_leaks ge m (sig_args sg) args
                              | _ => True
                              end
-    | EF_inline_asm txt sg clb => limit_leaks ge m args
+    | EF_inline_asm txt sg clb => limit_leaks ge m (sig_args sg) args
     | _ => True
+    end.
+
+  Definition limit_leaks_and_unknown
+             (ef: external_function) (ge: Senv.t) (m: mem) (args: list val) : Prop :=
+    match ef with
+    | EF_external name cp sg => limit_leaks ge m (sig_args sg) args
+    | EF_builtin name sg | EF_runtime name sg =>
+                             match lookup_builtin_function name sg with
+                             | None => limit_leaks ge m (sig_args sg) args
+                             | _ => False
+                             end
+    | EF_inline_asm txt sg clb => limit_leaks ge m (sig_args sg) args
+    | _ => False
     end.
 
 End LEAK.

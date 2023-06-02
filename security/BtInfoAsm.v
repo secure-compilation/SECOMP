@@ -119,9 +119,141 @@ Section AUX.
 End AUX.
 
 
+Section MEMDATA.
+
+  Record mem_weak_inj (f : meminj) (m1 m2 : mem) : Prop :=
+    mk_mem_weak_inj
+      { mwi_perm : forall (b1 b2 : block) (delta ofs : Z) (k : perm_kind) (p : permission),
+          f b1 = Some (b2, delta) -> Mem.perm m1 b1 ofs k p -> Mem.perm m2 b2 (ofs + delta) k p;
+        mwi_own : forall (b1 b2 : block) (delta : Z) (cp : option compartment),
+          f b1 = Some (b2, delta) -> Mem.can_access_block m1 b1 cp -> Mem.can_access_block m2 b2 cp;
+        mwi_align : forall (b1 b2 : block) (delta : Z) (chunk : memory_chunk) (ofs : Z) (p : permission),
+          f b1 = Some (b2, delta) -> Mem.range_perm m1 b1 ofs (ofs + size_chunk chunk) Max p -> (align_chunk chunk | delta)%Z;
+        mwi_memval : forall (b1 : block) (ofs : Z) (b2 : block) (delta : Z),
+          f b1 = Some (b2, delta) -> ((Mem.mem_access m1) !! b1 ofs Cur = Some Readable) ->
+          memval_inject f (ZMap.get ofs (Mem.mem_contents m1) !! b1) (ZMap.get (ofs + delta)%Z (Mem.mem_contents m2) !! b2) }.
+
+  Record weak_inject (f : meminj) (m1 m2 : mem) : Prop :=
+    mk_weak_inject
+      { mwi_inj : mem_weak_inj f m1 m2;
+        mwi_freeblocks : forall b : block, ~ Mem.valid_block m1 b -> f b = None;
+        mwi_mappedblocks : forall (b b' : block) (delta : Z), f b = Some (b', delta) -> Mem.valid_block m2 b';
+        mwi_no_overlap : Mem.meminj_no_overlap f m1;
+        mwi_representable : forall (b b' : block) (delta : Z) (ofs : ptrofs),
+          f b = Some (b', delta) ->
+          Mem.perm m1 b (Ptrofs.unsigned ofs) Max Nonempty \/ Mem.perm m1 b (Ptrofs.unsigned ofs - 1) Max Nonempty -> (delta >= 0)%Z /\ (0 <= Ptrofs.unsigned ofs + delta <= Ptrofs.max_unsigned)%Z;
+        mwi_perm_inv : forall (b1 : block) (ofs : Z) (b2 : block) (delta : Z) (k : perm_kind) (p : permission),
+          f b1 = Some (b2, delta) -> Mem.perm m2 b2 (ofs + delta) k p -> Mem.perm m1 b1 ofs k p \/ ~ Mem.perm m1 b1 ofs Max Nonempty }.
+
+  Definition meminj_public (ge: Senv.t): meminj :=
+    fun b => match Senv.invert_symbol ge b with
+          | Some id => if Senv.public_symbol ge id then Some (b, 0%Z) else None
+          | None => None
+          end.
+
+  Lemma memval_inject_get_store_get
+        m m_ephemeral
+        b ofs
+        v
+        (GET: ZMap.get ofs (Mem.mem_contents m) !! b = v)
+        (STORE: Mem.store 
+
+Mem.getN_setN_same: forall (vl : list memval) (p : Z) (c : ZMap.t memval), Mem.getN (Datatypes.length vl) p (Mem.setN vl p c) = vl
+
+  memval_inject f (ZMap.get ofs (Mem.mem_contents m1) !! b1) (ZMap.get (ofs + delta)%Z (Mem.mem_contents m2) !! b2) }.
+
+Genv.alloc_global = 
+fun (F V : Type) (CF : has_comp F) (ge : Genv.t F V) (m : mem) (idg : ident * globdef F V) =>
+let (_, g) := idg in
+match g with
+| Gfun f => let (m1, b) := Mem.alloc m (comp_of f) 0 1 in Mem.drop_perm m1 b 0 1 Nonempty (comp_of f)
+| Gvar v =>
+    let init := gvar_init v in
+    let comp := gvar_comp v in
+    let sz := init_data_list_size init in
+    let (m1, b) := Mem.alloc m comp 0 sz in
+    match store_zeros m1 b 0 sz comp with
+    | Some m2 => match Genv.store_init_data_list ge m2 b 0 init comp with
+                 | Some m3 => Mem.drop_perm m3 b 0 sz (Genv.perm_globvar v) comp
+                 | None => None
+                 end
+    | None => None
+    end
+end
+     : forall F V : Type, has_comp F -> Genv.t F V -> mem -> ident * globdef F V -> option mem
+
+Definition access_mode (ty: type) : mode :=
+  match ty with
+  | Tint I8 Signed _ => By_value Mint8signed
+  | Tint I8 Unsigned _ => By_value Mint8unsigned
+  | Tint I16 Signed _ => By_value Mint16signed
+  | Tint I16 Unsigned _ => By_value Mint16unsigned
+  | Tint I32 _ _ => By_value Mint32
+  | Tint IBool _ _ => By_value Mint8unsigned
+  | Tlong _ _ => By_value Mint64
+  | Tfloat F32 _ => By_value Mfloat32
+  | Tfloat F64 _ => By_value Mfloat64
+  | Tvoid => By_nothing
+  | Tpointer _ _ => By_value Mptr
+  | Tarray _ _ _ => By_reference
+  | Tfunction _ _ _ => By_reference
+  | Tstruct _ _ => By_copy
+  | Tunion _ _ => By_copy
+end.
+  | assign_loc_value: forall v chunk m',
+      access_mode ty = By_value chunk ->
+      Mem.storev chunk m (Vptr b ofs) v cp = Some m' ->
+      assign_loc ce cp ty m b ofs Full v m'
+  
+Inductive memval_inject (f : meminj) : memval -> memval -> Prop :=
+    memval_inject_byte : forall n : byte, memval_inject f (Byte n) (Byte n)
+  | memval_inject_frag : forall (v1 v2 : val) (q : quantity) (n : nat), Val.inject f v1 v2 -> memval_inject f (Fragment v1 q n) (Fragment v2 q n)
+  | memval_inject_undef : forall mv : memval, memval_inject f Undef mv.
+
+Mem.storev_mapped_inject:
+  forall (f : meminj) (chunk : memory_chunk) (m1 : mem) (a1 v1 : val) (cp : compartment) (n1 m2 : mem) (a2 v2 : val),
+  Mem.inject f m1 m2 -> Mem.storev chunk m1 a1 v1 cp = Some n1 -> Val.inject f a1 a2 -> Val.inject f v1 v2 -> exists n2 : mem, Mem.storev chunk m2 a2 v2 cp = Some n2 /\ Mem.inject f n1 n2
+
+| assign_loc_value: forall v chunk m',
+      access_mode ty = By_value chunk ->
+      Mem.storev chunk m (Vptr b ofs) v cp = Some m' ->
+      assign_loc ce cp ty m b ofs Full v m'
+
+
+Mem.store = 
+fun (chunk : memory_chunk) (m : mem) (b : block) (ofs : Z) (v : val) (cp : compartment) =>
+match Mem.valid_access_dec m chunk b ofs Writable (Some cp) with
+| left x =>
+    Some
+      {|
+        Mem.mem_contents := PMap.set b (Mem.setN (encode_val chunk v) ofs (Mem.mem_contents m) !! b) (Mem.mem_contents m);
+        Mem.mem_access := Mem.mem_access m;
+        Mem.mem_compartments := Mem.mem_compartments m;
+        Mem.nextblock := Mem.nextblock m;
+        Mem.access_max :=
+          (fun (chunk0 : memory_chunk) (m0 : mem) (b0 : block) (ofs0 : Z) (_ : val) (cp0 : compartment) (_ : Mem.valid_access m0 chunk0 b0 ofs0 Writable (Some cp0)) (b1 : positive) (ofs1 : Z) =>
+           Memory.Mem.store_obligation_1 m0 b1 ofs1) chunk m b ofs v cp x;
+        Mem.nextblock_noaccess :=
+          (fun (chunk0 : memory_chunk) (m0 : mem) (b0 : block) (ofs0 : Z) (_ : val) (cp0 : compartment) (_ : Mem.valid_access m0 chunk0 b0 ofs0 Writable (Some cp0)) (b1 : positive) 
+             (ofs1 : Z) (k : perm_kind) (H0 : ~ Plt b1 (Mem.nextblock m0)) => Memory.Mem.store_obligation_2 m0 b1 ofs1 k H0) chunk m b ofs v cp x;
+        Mem.contents_default :=
+          (fun (chunk0 : memory_chunk) (m0 : mem) (b0 : block) (ofs0 : Z) (v0 : val) (cp0 : compartment) (_ : Mem.valid_access m0 chunk0 b0 ofs0 Writable (Some cp0)) (b1 : positive) =>
+           Memory.Mem.store_obligation_3 chunk0 m0 b0 ofs0 v0 b1) chunk m b ofs v cp x;
+        Mem.nextblock_compartments :=
+          (fun (chunk0 : memory_chunk) (m0 : mem) (b0 : block) (ofs0 : Z) (_ : val) (cp0 : compartment) (_ : Mem.valid_access m0 chunk0 b0 ofs0 Writable (Some cp0)) (b1 : positive) =>
+           Memory.Mem.store_obligation_4 m0 b1) chunk m b ofs v cp x
+      |}
+| right _ => None
+end
+     : memory_chunk -> mem -> block -> Z -> val -> compartment -> option mem
+
+
+End MEMDATA.
+
+
 Section IR.
 
-  Variant ir_cont_type : Type := | ir_cont: block -> signature -> ir_cont_type.
+  Variant ir_cont_type : Type := | ir_cont: block -> ir_cont_type.
   Definition ir_conts := list ir_cont_type.
 
   Definition crossing_comp {F V} (ge: Genv.t F V) (cp cp': compartment) :=
@@ -144,7 +276,7 @@ Section IR.
         (SIG: sg = Asm.fn_sig f_next)
         (TR: call_trace_vr ge cp cp' b vargs (sig_args sg) tr id evargs)
       :
-      ir_step ge (Some (cur, m1, ik)) (Bundle_call tr id evargs sg) (Some (b, m1, (ir_cont cur sg) :: ik))
+      ir_step ge (Some (cur, m1, ik)) (Bundle_call tr id evargs sg) (Some (b, m1, (ir_cont cur) :: ik))
     | ir_step_vr_return_internal
         cur m1 next ik_tl
         tr evretv
@@ -152,7 +284,7 @@ Section IR.
         (CURCP: cp_cur = Genv.find_comp ge (Vptr cur Ptrofs.zero))
         sg fd_cur
         (FINDFD: Genv.find_funct_ptr ge cur = Some (fd_cur))
-        (* in Asm, stack has the sig --- TODO : false? fix? *)
+        (* in Asm, stack has the sig *)
         (SIG: sg = Asm.funsig fd_cur)
         (NPTR: crossing_comp ge cp_next cp_cur -> not_ptr vretv)
         (NEXTCP: cp_next = Genv.find_comp ge (Vptr next Ptrofs.zero))
@@ -161,7 +293,7 @@ Section IR.
         (* internal return: memory changes in Clight-side, so need inj-relation *)
         (TR: return_trace_vr ge cp_next cp_cur vretv (sig_res sg) tr evretv)
       :
-      ir_step ge (Some (cur, m1, ((ir_cont next sg) :: ik_tl))) (Bundle_return tr evretv) (Some (next, m1, ik_tl))
+      ir_step ge (Some (cur, m1, ((ir_cont next) :: ik_tl))) (Bundle_return tr evretv) (Some (next, m1, ik_tl))
     | ir_step_intra_call_external
         cur m1 m2 ik
         tr id evargs sg
@@ -175,7 +307,7 @@ Section IR.
         (SIG: sg = ef_sig ef)
         vargs vretv
         (EC: external_call ef ge cp_cur vargs m1 tr vretv m2)
-        (LL: limit_leaks_if_unknown ef ge m1 vargs)
+        (LL: limit_leaks_and_unknown ef ge m1 vargs)
         (ARGS: evargs = vals_to_eventvals ge vargs)
       :
       ir_step ge (Some (cur, m1, ik)) (Bundle_call tr id evargs sg) (Some (cur, m2, ik))
@@ -186,7 +318,7 @@ Section IR.
         (CURCP: cp_cur = Genv.find_comp ge (Vptr cur Ptrofs.zero))
         vargs vretv
         (EC: external_call ef ge cp_cur vargs m1 tr vretv m2)
-        (LL: limit_leaks_if_unknown ef ge m1 vargs)
+        (LL: limit_leaks_and_unknown ef ge m1 vargs)
         (ARGS: evargs = vals_to_eventvals ge vargs)
       :
       ir_step ge (Some (cur, m1, ik)) (Bundle_builtin tr ef evargs) (Some (cur, m2, ik))
@@ -223,7 +355,7 @@ Section IR.
         (* external function part *)
         tr2 m2 vretv
         (EC: external_call ef ge cp vargs m1 tr2 vretv m2)
-        (LL: limit_leaks_if_unknown ef ge m1 vargs)
+        (LL: limit_leaks_and_unknown ef ge m1 vargs)
         (ARGS: evargs = vals_to_eventvals ge vargs)
       :
       ir_step ge (Some (cur, m1, ik)) (Bundle_call (tr1 ++ tr2) id evargs sg) None
@@ -244,7 +376,7 @@ Section IR.
         (* external function part *)
         tr2 m2 vretv
         (TR2: external_call ef ge cp vargs m1 tr2 vretv m2)
-        (LL: limit_leaks_if_unknown ef ge m1 vargs)
+        (LL: limit_leaks_and_unknown ef ge m1 vargs)
         (ARGS: evargs = vals_to_eventvals ge vargs)
         (* return part *)
         tr3 evretv
@@ -282,16 +414,14 @@ Section AUX.
 End AUX.
 
 
-Section ASMTOIR.
+Section INVS.
 
-  (* fix sig? *)
-  Definition wf_ir (ge: Asm.genv) (ist: ir_state) :=
-    match ist with
-    | Some (cur, _, ik) =>
-        match Genv.find_funct_ptr ge cur with
-          | Some (Internal f) =>
-    | _ => False
-    end.
+  (* Definition wf_ir (ge: Asm.genv) (ist: ir_state) := *)
+  (*   match ist with *)
+  (*   | Some _ => True *)
+  (*   | _ => False *)
+  (*   end. *)
+
 
   Definition wf_stackframe (ge: Asm.genv) (fr: stackframe) :=
     match fr with
@@ -317,6 +447,7 @@ Section ASMTOIR.
     | _ => False
     end.
 
+
   Definition match_cur_stack (cur: block) (ge: Asm.genv) (sk: stack) :=
     match Genv.find_funct_ptr ge cur with
     | Some fd => Asm.funsig fd = sig_of_call sk
@@ -329,37 +460,65 @@ Section ASMTOIR.
   Variant match_stackframe : ir_cont_type -> stackframe -> Prop :=
     | match_stackframe_intro
         b cp sg v ofs
-        (* needs to talk about sig in stack *)
       :
-      match_stack_type (sf_cont b) (Stackframe b cp sg v ofs).
-    
+      match_stackframe (ir_cont b) (Stackframe b cp sg v ofs).
+  Definition match_stack (ik: ir_conts) (st: stack) := Forall2 match_stackframe ik st.
 
-  Variant match_stack_type : (sf_cont_type) -> (stackframe) -> Prop :=
-    | match_stack_type_intro
-        b cp sg v ofs
-        (* needs to talk about sig in stack *)
-      :
-      match_stack_type (sf_cont b) (Stackframe b cp sg v ofs).
+  (* Definition meminj_ge {F V} (ge: Genv.t F V): meminj := *)
+  (*   fun b => match Genv.invert_symbol ge b with *)
+  (*         | Some id => match Genv.find_symbol ge id with *)
+  (*                     | Some b' => Some (b', 0) *)
+  (*                     | None => None *)
+  (*                     end *)
+  (*         | None => None *)
+  (*         end. *)
 
-  Definition match_stack (sf: sf_conts) (st: stack) := Forall2 match_stack_type sf st.
+  Definition match_mem (ge: Asm.genv) (m_asm m_ir: mem): Prop := Mem.inject (meminj_public ge) m_asm m_ir.
 
-  Definition match_cp (ge: Asm.genv) (cur: block) (cp: compartment) : Prop :=
-    Genv.find_comp ge (Vptr cur Ptrofs.zero) = cp.
+  Definition match_state (ge: Asm.genv) (ast: Asm.state) (ist: ir_state): Prop :=
+    match ast, ist with
+    | State sk rs m_a, Some (cur, m_i, ik) =>
+        (match_cur_stack cur ge sk) /\ (match_cur_regset cur ge rs) /\ (match_stack ik sk) /\ (match_mem ge m_a m_i)
+    | _, _ => False
+    end.
 
-  Definition meminj_ge {F V} (ge: Genv.t F V): meminj :=
-    fun b => match Genv.invert_symbol ge b with
-          | Some id => match Genv.find_symbol ge id with
-                      | Some b' => Some (b', 0)
-                      | None => None
-                      end
-          | None => None
-          end.
+End INVS.
 
-  Definition match_mem (ge: Asm.genv) (m_ir m_asm: mem): Prop := Mem.inject (meminj_ge ge) m_asm m_ir.
+Inductive extcall_memcpy_sem (sz al: Z) (ge: Senv.t):
+                        compartment -> list val -> mem -> trace -> val -> mem -> Prop :=
+  | extcall_memcpy_sem_intro: forall c bdst odst bsrc osrc m bytes m',
+      al = 1 \/ al = 2 \/ al = 4 \/ al = 8 -> sz >= 0 -> (al | sz) ->
+      (sz > 0 -> (al | Ptrofs.unsigned osrc)) ->
+      (sz > 0 -> (al | Ptrofs.unsigned odst)) ->
+      bsrc <> bdst \/ Ptrofs.unsigned osrc = Ptrofs.unsigned odst
+                   \/ Ptrofs.unsigned osrc + sz <= Ptrofs.unsigned odst
+                   \/ Ptrofs.unsigned odst + sz <= Ptrofs.unsigned osrc ->
+      Mem.loadbytes m bsrc (Ptrofs.unsigned osrc) sz (Some c) = Some bytes ->
+      Mem.storebytes m bdst (Ptrofs.unsigned odst) bytes c = Some m' ->
+      extcall_memcpy_sem sz al ge c (Vptr bdst odst :: Vptr bsrc osrc :: nil) m E0 Vundef m'.
 
+Section AUX.
 
-End ASMTOIR.
+  Inductive star_measure {genv state : Type} (step : genv -> state -> trace -> state -> Prop) (ge : genv) : nat -> state -> trace -> state -> Prop :=
+    star_measure_refl : forall s : state, star_measure step ge O s E0 s
+  | star_step : forall n (s1 : state) (t1 : trace) (s2 : state) (t2 : trace) (s3 : state) (t : trace),
+      step ge s1 t1 s2 -> star_measure step ge n s2 t2 s3 -> t = t1 ** t2 -> star_measure step ge (S n) s1 t s3.
 
+  Lemma measure_star
+        genv state
+        (step : genv -> state -> trace -> state -> Prop)
+        (ge : genv)
+        s0 tr s1
+        (STAR: star step ge s0 tr s1)
+    :
+    exists n, star_measure step ge n s0 tr s1.
+  Proof.
+    induction STAR.
+    { exists O. constructor 1. }
+    destruct IHSTAR as (n & NEXT). exists (S n). econstructor 2. eapply H. eapply NEXT. auto.
+  Qed.
+
+End AUX.
 
 
 Section INFORMATIVE.
