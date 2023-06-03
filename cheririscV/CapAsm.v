@@ -943,9 +943,9 @@ Definition exec_jal (rs: regset) (m: mem) (t: ocval) : outcome :=
   end.
 
 Definition exec_jal_seal (rs: regset) (m: mem) (t s: ocval) : outcome :=
-  match offset_ptr rs#PCC Ptrofs.one with
+  match Val.offset_ptr rs#PCC Ptrofs.one with
   | Some ret => match Val.seal_capability ret s with
-               | Some res => Next (rs#PCC <- (update_pc_perm t) #RAC <- res) m
+               | Some res => Next (rs#PCC <- (Val.update_pc_perm t) #RAC <- res) m
                | _ => Crashed
                end
   | _ => Crashed
@@ -1030,8 +1030,8 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) (cp: 
       nextinstr (rs#d <- (Val.add rs##s (OCVint i))) m
   | Psltiw d s i =>
       nextinstr (rs#d <- (Val.cmp Clt rs##s (OCVint i))) m
-  | Psltiuw d s i => (* ALG: ?? -- uses memory model *)
-      nextinstr (rs#d <- (Val.cmpu (Mem.valid_pointer m) Clt rs##s (OCVint i))) m
+  (* | Psltiuw d s i => (* ALG: ?? -- uses memory model *) *)
+  (*     nextinstr (rs#d <- (Val.cmpu (Mem.valid_pointer m) Clt rs##s (OCVint i))) m *)
   | Pandiw d s i =>
       nextinstr (rs#d <- (Val.and rs##s (OCVint i))) m
   | Poriw d s i =>
@@ -1068,12 +1068,12 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) (cp: 
        (nextinstr (rs#d <- (Val.maketotal (Val.modu rs##s1 rs##s2)))) m
   | Psltw d s1 s2 =>
        (nextinstr (rs#d <- (Val.cmp Clt rs##s1 rs##s2))) m
-  | Psltuw d s1 s2 =>
-       (nextinstr (rs#d <- (Val.cmpu (Mem.valid_pointer m) Clt rs##s1 rs##s2))) m
-  | Pseqw d s1 s2 =>
-       (nextinstr (rs#d <- (Val.cmpu (Mem.valid_pointer m) Ceq rs##s1 rs##s2))) m
-  | Psnew d s1 s2 =>
-       (nextinstr (rs#d <- (Val.cmpu (Mem.valid_pointer m) Cne rs##s1 rs##s2))) m
+  (* | Psltuw d s1 s2 => *)
+  (*      (nextinstr (rs#d <- (Val.cmpu (Mem.valid_pointer m) Clt rs##s1 rs##s2))) m *)
+  (* | Pseqw d s1 s2 => *)
+  (*      (nextinstr (rs#d <- (Val.cmpu (Mem.valid_pointer m) Ceq rs##s1 rs##s2))) m *)
+  (* | Psnew d s1 s2 => *)
+  (*      (nextinstr (rs#d <- (Val.cmpu (Mem.valid_pointer m) Cne rs##s1 rs##s2))) m *)
   | Pandw d s1 s2 =>
        (nextinstr (rs#d <- (Val.and rs##s1 rs##s2))) m
   | Porw d s1 s2 =>
@@ -1092,8 +1092,8 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) (cp: 
        (nextinstr (rs#d <- (Val.addl rs###s (OCVlong i)))) m
   | Psltil d s i =>
        (nextinstr (rs#d <- (Val.maketotal (Val.cmpl Clt rs###s (OCVlong i))))) m
-  | Psltiul d s i =>
-       (nextinstr (rs#d <- (Val.maketotal (Val.cmplu (Mem.valid_pointer m) Clt rs###s (OCVlong i))))) m
+  (* | Psltiul d s i => *)
+  (*      (nextinstr (rs#d <- (Val.maketotal (Val.cmplu (Mem.valid_pointer m) Clt rs###s (OCVlong i))))) m *)
   | Pandil d s i =>
        (nextinstr (rs#d <- (Val.andl rs###s (OCVlong i)))) m
   | Poril d s i =>
@@ -1130,12 +1130,12 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) (cp: 
        (nextinstr (rs#d <- (Val.maketotal (Val.modlu rs###s1 rs###s2)))) m
   | Psltl d s1 s2 =>
        (nextinstr (rs#d <- (Val.maketotal (Val.cmpl Clt rs###s1 rs###s2)))) m
-  | Psltul d s1 s2 =>
-       (nextinstr (rs#d <- (Val.maketotal (Val.cmplu (Mem.valid_pointer m) Clt rs###s1 rs###s2)))) m
-  | Pseql d s1 s2 =>
-       (nextinstr (rs#d <- (Val.maketotal (Val.cmplu (Mem.valid_pointer m) Ceq rs###s1 rs###s2)))) m
-  | Psnel d s1 s2 =>
-       (nextinstr (rs#d <- (Val.maketotal (Val.cmplu (Mem.valid_pointer m) Cne rs###s1 rs###s2)))) m
+  (* | Psltul d s1 s2 => *)
+  (*      (nextinstr (rs#d <- (Val.maketotal (Val.cmplu (Mem.valid_pointer m) Clt rs###s1 rs###s2)))) m *)
+  (* | Pseql d s1 s2 => *)
+  (*      (nextinstr (rs#d <- (Val.maketotal (Val.cmplu (Mem.valid_pointer m) Ceq rs###s1 rs###s2)))) m *)
+  (* | Psnel d s1 s2 => *)
+  (*      (nextinstr (rs#d <- (Val.maketotal (Val.cmplu (Mem.valid_pointer m) Cne rs###s1 rs###s2)))) m *)
   | Pandl d s1 s2 =>
        (nextinstr (rs#d <- (Val.andl rs###s1 rs###s2))) m
   | Porl d s1 s2 =>
@@ -1160,7 +1160,7 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) (cp: 
   (* | Pj_s s sg => *)
   (*    Next (rs#PCC <- (update_pc_perm (Genv.symbol_address ge s Ptrofs.zero))) m *)
   | Pj_r r =>
-      Next (rs#PCC <- (update_pc_perm (rs#r))) m
+      Next (rs#PCC <- (Val.update_pc_perm (rs#r))) m
   (* | Pjal_s s sg _ => *)
   (*     exec_jal rs m (Genv.symbol_address ge s Ptrofs.zero) *)
   | Pjal_r r sg _ =>
@@ -1171,37 +1171,38 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) (cp: 
   (*     exec_jal_seal rs m (Genv.symbol_address ge f Ptrofs.zero) (rs#s) *)
 
 (** Sealed capability invocation *)
-  | PCinvoke r s _ =>
-      exec_capability_outcome (Val.unseal_capability_pair (rs##r) (rs##s))
-                              (fun c => Next (rs#PCC <- (fst c) #EC <- (snd c)) m)
+  (* FIXME unseal_capability_paor undefined *)
+  (* | PCinvoke r s _ => *)
+  (*     exec_capability_outcome (Val.unseal_capability_pair (rs##r) (rs##s)) *)
+  (*                             (fun c => Next (rs#PCC <- (fst c) #EC <- (snd c)) m) *)
       
 (** Conditional branches, 32-bit comparisons *)
-  | Pbeqw s1 s2 l =>
-      eval_branch f l rs m (Val.cmpu_bool (Mem.valid_pointer m) Ceq rs##s1 rs##s2)
-  | Pbnew s1 s2 l =>
-      eval_branch f l rs m (Val.cmpu_bool (Mem.valid_pointer m) Cne rs##s1 rs##s2)
+  (* | Pbeqw s1 s2 l => *)
+  (*     eval_branch f l rs m (Val.cmpu_bool (Mem.valid_pointer m) Ceq rs##s1 rs##s2) *)
+  (* | Pbnew s1 s2 l => *)
+  (*     eval_branch f l rs m (Val.cmpu_bool (Mem.valid_pointer m) Cne rs##s1 rs##s2) *)
   | Pbltw s1 s2 l =>
       eval_branch f l rs m (Val.cmp_bool Clt rs##s1 rs##s2)
-  | Pbltuw s1 s2 l =>
-      eval_branch f l rs m (Val.cmpu_bool (Mem.valid_pointer m) Clt rs##s1 rs##s2)
+  (* | Pbltuw s1 s2 l => *)
+  (*     eval_branch f l rs m (Val.cmpu_bool (Mem.valid_pointer m) Clt rs##s1 rs##s2) *)
   | Pbgew s1 s2 l =>
       eval_branch f l rs m (Val.cmp_bool Cge rs##s1 rs##s2)
-  | Pbgeuw s1 s2 l =>
-      eval_branch f l rs m (Val.cmpu_bool (Mem.valid_pointer m) Cge rs##s1 rs##s2)
+  (* | Pbgeuw s1 s2 l => *)
+  (*     eval_branch f l rs m (Val.cmpu_bool (Mem.valid_pointer m) Cge rs##s1 rs##s2) *)
 
 (** Conditional branches, 64-bit comparisons *)
-  | Pbeql s1 s2 l =>
-      eval_branch f l rs m (Val.cmplu_bool (Mem.valid_pointer m) Ceq rs###s1 rs###s2)
-  | Pbnel s1 s2 l =>
-      eval_branch f l rs m (Val.cmplu_bool (Mem.valid_pointer m) Cne rs###s1 rs###s2)
+  (* | Pbeql s1 s2 l => *)
+  (*     eval_branch f l rs m (Val.cmplu_bool (Mem.valid_pointer m) Ceq rs###s1 rs###s2) *)
+  (* | Pbnel s1 s2 l => *)
+  (*     eval_branch f l rs m (Val.cmplu_bool (Mem.valid_pointer m) Cne rs###s1 rs###s2) *)
   | Pbltl s1 s2 l =>
       eval_branch f l rs m (Val.cmpl_bool Clt rs###s1 rs###s2)
-  | Pbltul s1 s2 l =>
-      eval_branch f l rs m (Val.cmplu_bool (Mem.valid_pointer m) Clt rs###s1 rs###s2)
+  (* | Pbltul s1 s2 l => *)
+  (*     eval_branch f l rs m (Val.cmplu_bool (Mem.valid_pointer m) Clt rs###s1 rs###s2) *)
   | Pbgel s1 s2 l =>
       eval_branch f l rs m (Val.cmpl_bool Cge rs###s1 rs###s2)
-  | Pbgeul s1 s2 l =>
-      eval_branch f l rs m (Val.cmplu_bool (Mem.valid_pointer m) Cge rs###s1 rs###s2)
+  (* | Pbgeul s1 s2 l => *)
+  (*     eval_branch f l rs m (Val.cmplu_bool (Mem.valid_pointer m) Cge rs###s1 rs###s2) *)
 
 (** Loads and stores *)
   | Plb d a ofs priv =>
@@ -1359,38 +1360,41 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) (cp: 
       exec_store_Ucapability CMany64 rs m s a rofs ofs cp h
                              
 (** Capability inspection *)
-  | PCgp d s =>
-      Next (rs#d <- (Val.maketotal (do X <- get_cap rs#s >>= get_perm; Some (encode_perm X)))) m
-  | PCgt d s =>
-      Next (rs#d <- (Val.maketotal (do X <- get_cap rs#s >>= get_otype; Some (OCVint (Ptrofs.to_int X))))) m
-  | PCgb_h d s =>
-      Next (rs#d <- (Val.maketotal (do X <- get_cap rs#s; Some (ptrofs_heap_res (get_lo X))))) m
-  | PCge_h d s =>
-      Next (rs#d <- (Val.maketotal (do X <- get_cap rs#s; Some (ptrofs_heap_res (get_hi X))))) m
-  | PCgb_s d s =>
-      Next (rs#d <- (Val.maketotal (do X <- get_cap rs#s; Some (ptrofs_stack_res (get_lo X))))) m
-  | PCge_s d s =>
-      Next (rs#d <- (Val.maketotal (do X <- get_cap rs#s; Some (ptrofs_stack_res (get_hi X))))) m
+  (* FIXME get_cap undefined *)
+  (* | PCgp d s => *)
+  (*     Next (rs#d <- (Val.maketotal (do X <- get_cap rs#s >>= get_perm; Some (encode_perm X)))) m *)
+  (* | PCgt d s => *)
+  (*     Next (rs#d <- (Val.maketotal (do X <- get_cap rs#s >>= get_otype; Some (OCVint (Ptrofs.to_int X))))) m *)
+  (* | PCgb_h d s => *)
+  (*     Next (rs#d <- (Val.maketotal (do X <- get_cap rs#s; Some (ptrofs_heap_res (get_lo X))))) m *)
+  (* | PCge_h d s => *)
+  (*     Next (rs#d <- (Val.maketotal (do X <- get_cap rs#s; Some (ptrofs_heap_res (get_hi X))))) m *)
+  (* | PCgb_s d s => *)
+  (*     Next (rs#d <- (Val.maketotal (do X <- get_cap rs#s; Some (ptrofs_stack_res (get_lo X))))) m *)
+  (* | PCge_s d s => *)
+  (*     Next (rs#d <- (Val.maketotal (do X <- get_cap rs#s; Some (ptrofs_stack_res (get_hi X))))) m *)
   | PCgg d s =>
       Next (rs#d <- (OCVint (Int.repr (Z.b2z (is_cap_b rs#s))))) m
-  | PCgs d s =>
-      Next (rs#d <- (OCVint (Int.repr (Z.b2z (is_sealed_cap rs#s))))) m
-  | PCga_h d s =>
-      Next (rs#d <- (Val.maketotal (do X <- get_cap rs#s; Some (ptrofs_heap_res (get_addr X))))) m
-  | PCga_s d s =>
-      Next (rs#d <- (Val.maketotal (do X <- get_cap rs#s; Some (ptrofs_stack_res (get_addr X))))) m
-  | PCgl_h d s =>
-      Next (rs#d <- (Val.maketotal (do X <- get_cap rs#s; Some (ptrofs_heap_res (get_region_size_ptrofs X))))) m
-  | PCgl_s d s =>
-      Next (rs#d <- (Val.maketotal (do X <- get_cap rs#s; Some (ptrofs_stack_res (get_region_size_ptrofs X))))) m
+  (* FIXME is_sealed_cap undefined *)
+  (* | PCgs d s => *)
+  (*     Next (rs#d <- (OCVint (Int.repr (Z.b2z (is_sealed_cap rs#s))))) m *)
+  (* | PCga_h d s => *)
+  (*     Next (rs#d <- (Val.maketotal (do X <- get_cap rs#s; Some (ptrofs_heap_res (get_addr X))))) m *)
+  (* | PCga_s d s => *)
+  (*     Next (rs#d <- (Val.maketotal (do X <- get_cap rs#s; Some (ptrofs_stack_res (get_addr X))))) m *)
+  (* | PCgl_h d s => *)
+  (*     Next (rs#d <- (Val.maketotal (do X <- get_cap rs#s; Some (ptrofs_heap_res (get_region_size_ptrofs X))))) m *)
+  (* | PCgl_s d s => *)
+  (*     Next (rs#d <- (Val.maketotal (do X <- get_cap rs#s; Some (ptrofs_stack_res (get_region_size_ptrofs X))))) m *)
 
 (** Capability modification *)
   | PCseal d r1 r2 =>
       exec_capability_outcome (Val.seal_capability rs#r1 rs#r2) (fun b => Next (rs#d <- b) m)
   | PCunseal d r1 r2 =>
       exec_capability_outcome (Val.unseal_capability rs#r1 rs#r2) (fun b => Next (rs#d <- b) m)
-  | PCpermand d r1 r2 =>
-      exec_capability_outcome (Val.restrict_perm decode_perm_int rs#r1 rs#r2) (fun b => Next (rs#d <- b) m)
+  (* FIXME decode_permit_int undefined *)
+  (* | PCpermand d r1 r2 => *)
+  (*     exec_capability_outcome (Val.restrict_perm decode_perm_int rs#r1 rs#r2) (fun b => Next (rs#d <- b) m) *)
   | PCsaddr_w d r1 r2 =>
       exec_capability_outcome (Val.set_address rs#r1 rs#r2) (fun b => Next (rs#d <- b) m)
   | PCsaddr_l d r1 r2 =>
@@ -1403,47 +1407,55 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) (cp: 
       exec_capability_outcome (Val.incr_addressl rs##r1 (OCVlong imm)) (fun b => Next (rs#d <- b) m)
   | PCiaddr_iw d r1 imm =>
       exec_capability_outcome (Val.incr_address rs##r1 (OCVint imm)) (fun b => Next (rs#d <- b) m)
-  | PCsbase d r1 r2 =>
-      exec_capability_outcome (Val.sub_bounds rs#r1 rs#r2) (fun b => Next (rs#d <- b) m)
-  | PCsbase_il d r1 imm =>
-      exec_capability_outcome (Val.sub_bounds rs#r1 (OCVlong imm)) (fun b => Next (rs#d <- b) m)
-  | PCsbase_iw d r1 imm =>
-      exec_capability_outcome (Val.sub_bounds rs#r1 (OCVint imm)) (fun b => Next (rs#d <- b) m)
+  (* FIXME sub_bounds undefined *)
+  (* | PCsbase d r1 r2 => *)
+  (*     exec_capability_outcome (Val.sub_bounds rs#r1 rs#r2) (fun b => Next (rs#d <- b) m) *)
+  (* | PCsbase_il d r1 imm => *)
+  (*     exec_capability_outcome (Val.sub_bounds rs#r1 (OCVlong imm)) (fun b => Next (rs#d <- b) m) *)
+  (* | PCsbase_iw d r1 imm => *)
+  (*     exec_capability_outcome (Val.sub_bounds rs#r1 (OCVint imm)) (fun b => Next (rs#d <- b) m) *)
   (* | PCcleart _ _ *) (* removed for now => needs some kind of
   enconding from capabilities to integers, however issues with space:
   the encoding has to go from a capability to two integers/two
   longs *)
-  | PCCseal d r1 r2 =>
-      exec_capability_outcome (Val.conditional_seal_capability rs#r1 rs#r2) (fun b => Next (rs#d <- b) m)
-  | PCseal_e d r =>
-      exec_capability_outcome (Val.restrict_perm decode_perm_int rs#r (OCVint (encode_perm_int E)))
-                              (fun b => Next (rs#d <- b) m)
-  | PCpromote d r1 =>
-      exec_capability_outcome (Val.promote rs#r1) (fun b => Next (rs#d <- b) m)
+  (* FIXME conditional_seal_capability undefined *)
+  (* | PCCseal d r1 r2 => *)
+  (*     exec_capability_outcome (Val.conditional_seal_capability rs#r1 rs#r2) (fun b => Next (rs#d <- b) m) *)
+  (* | PCseal_e d r => *)
+  (*     exec_capability_outcome (Val.restrict_perm decode_perm_int rs#r (OCVint (encode_perm_int E))) *)
+  (*                             (fun b => Next (rs#d <- b) m) *)
+  (* FIXME promote undefined  *)
+  (* | PCpromote d r1 => *)
+  (*     exec_capability_outcome (Val.promote rs#r1) (fun b => Next (rs#d <- b) m) *)
                               
 (** Capability arithmetic *)
-  | PCtoPtr_h d r1 r2 =>
-      exec_capability_outcome (Val.c_to_ptr_heap rs#r1 rs#r2) (fun b => Next (rs#d <- b) m)
-  | PCsub_h d r1 r2 =>
-      Next (rs#d <- (Val.capability_sub_heap rs#r1 rs#r2)) m
-  | PCtoPtr_s d r1 r2 =>
-      exec_capability_outcome (Val.c_to_ptr_stack rs#r1 rs#r2) (fun b => Next (rs#d <- b) m)
-  | PCsub_s d r1 r2 =>
-      Next (rs#d <- (Val.capability_sub_stack rs#r1 rs#r2)) m
-  | PCUtoPtr_h d r1 r2 =>
-      exec_capability_outcome (Val.c_to_Uptr_heap rs#r1 rs#r2) (fun b => Next (rs#d <- b) m)
-  | PCUtoPtr_s d r1 r2 => 
-      exec_capability_outcome (Val.c_to_Uptr_heap rs#r1 rs#r2) (fun b => Next (rs#d <- b) m)
+  (* FIXME c_to_ptr_heap undefined *)
+  (* | PCtoPtr_h d r1 r2 => *)
+  (*     exec_capability_outcome (Val.c_to_ptr_heap rs#r1 rs#r2) (fun b => Next (rs#d <- b) m) *)
+  (* FIXME capability_sub_heap undefined *)
+  (* | PCsub_h d r1 r2 => *)
+  (*     Next (rs#d <- (Val.capability_sub_heap rs#r1 rs#r2)) m *)
+  (* FIXME c_to_ptr_stack undefined *)
+  (* | PCtoPtr_s d r1 r2 => *)
+  (*     exec_capability_outcome (Val.c_to_ptr_stack rs#r1 rs#r2) (fun b => Next (rs#d <- b) m) *)
+  (* FIXME capability_sub_stack undefined *)
+  (* | PCsub_s d r1 r2 => *)
+  (*     Next (rs#d <- (Val.capability_sub_stack rs#r1 rs#r2)) m *)
+  (* FIXME c_to_Uptr_heap undefined *)
+  (* | PCUtoPtr_h d r1 r2 => *)
+  (*     exec_capability_outcome (Val.c_to_Uptr_heap rs#r1 rs#r2) (fun b => Next (rs#d <- b) m) *)
+  (* | PCUtoPtr_s d r1 r2 =>  *)
+  (*     exec_capability_outcome (Val.c_to_Uptr_heap rs#r1 rs#r2) (fun b => Next (rs#d <- b) m) *)
                               
 (** Capability comparisons *)
-  | PCsubset d r1 r2 =>
-      Next (rs#d <- (Val.maketotal (do X1 <- get_cap rs#r1;
-                                   do X2 <- get_cap rs#r2;
-                    Some (OCVint (Int.repr (Z.b2z (Mem.derived_cap_dec X1 X2))))))) m
-  | PCeex d r1 r2 =>
-      Next (rs#d <- (Val.maketotal (do X1 <- get_cap rs#r1;
-                                   do X2 <- get_cap rs#r2;
-                    Some (OCVint (Int.repr (Z.b2z (occap_dec X1 X2))))))) m
+  (* | PCsubset d r1 r2 => *)
+  (*     Next (rs#d <- (Val.maketotal (do X1 <- get_cap rs#r1; *)
+  (*                                  do X2 <- get_cap rs#r2; *)
+  (*                   Some (OCVint (Int.repr (Z.b2z (Mem.derived_cap_dec X1 X2))))))) m *)
+  (* | PCeex d r1 r2 => *)
+  (*     Next (rs#d <- (Val.maketotal (do X1 <- get_cap rs#r1; *)
+  (*                                  do X2 <- get_cap rs#r2; *)
+  (*                   Some (OCVint (Int.repr (Z.b2z (occap_dec X1 X2))))))) m *)
 
 (** Fast clearing *)
   | PCCclear imm => Next (clear_registers rs imm true) m
@@ -1624,6 +1636,7 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) (cp: 
   | Pfnmsubd _ _ _ _
   | Pnop
     => Stuck
+  | _ => Stuck (* FIXME commented out operations *)
   end.
 
 (* RB: NOTE: Where should we expose compartments to the execution of Asm
@@ -1658,17 +1671,33 @@ Definition preg_of (r: mreg) : preg :=
   | R24 => X24 | R25 => X25 | R26 => X26 | R27 => X27
   | R28 => X28 | R29 => X29 | R30 => X30
 
-  | Machregs.F0  => F0  | Machregs.F1  => F1  | Machregs.F2  => F2  | Machregs.F3  => F3
-  | Machregs.F4  => F4  | Machregs.F5  => F5  | Machregs.F6  => F6  | Machregs.F7  => F7
-  | Machregs.F8  => F8  | Machregs.F9  => F9  | Machregs.F10 => F10 | Machregs.F11 => F11
-  | Machregs.F12 => F12 | Machregs.F13 => F13 | Machregs.F14 => F14 | Machregs.F15 => F15
-  | Machregs.F16 => F16 | Machregs.F17 => F17 | Machregs.F18 => F18 | Machregs.F19 => F19
-  | Machregs.F20 => F20 | Machregs.F21 => F21 | Machregs.F22 => F22 | Machregs.F23 => F23
-  | Machregs.F24 => F24 | Machregs.F25 => F25 | Machregs.F26 => F26 | Machregs.F27 => F27
-  | Machregs.F28 => F28 | Machregs.F29 => F29 | Machregs.F30 => F30 | Machregs.F31 => F31
+  | CapMachregs.F0  => F0  | CapMachregs.F1  => F1  | CapMachregs.F2  => F2  | CapMachregs.F3  => F3
+  | CapMachregs.F4  => F4  | CapMachregs.F5  => F5  | CapMachregs.F6  => F6  | CapMachregs.F7  => F7
+  | CapMachregs.F8  => F8  | CapMachregs.F9  => F9  | CapMachregs.F10 => F10 | CapMachregs.F11 => F11
+  | CapMachregs.F12 => F12 | CapMachregs.F13 => F13 | CapMachregs.F14 => F14 | CapMachregs.F15 => F15
+  | CapMachregs.F16 => F16 | CapMachregs.F17 => F17 | CapMachregs.F18 => F18 | CapMachregs.F19 => F19
+  | CapMachregs.F20 => F20 | CapMachregs.F21 => F21 | CapMachregs.F22 => F22 | CapMachregs.F23 => F23
+  | CapMachregs.F24 => F24 | CapMachregs.F25 => F25 | CapMachregs.F26 => F26 | CapMachregs.F27 => F27
+  | CapMachregs.F28 => F28 | CapMachregs.F29 => F29 | CapMachregs.F30 => F30 | CapMachregs.F31 => F31
   end.
 
 (** Undefine all registers except SP and callee-save registers *)
+
+(* FIXME should be part of CapConventions *)
+Definition is_callee_save (* (is_cross_compartment: bool) *) (r: mreg) : bool := (* false *)
+  (* is_cross_compartment || *)
+  match r with
+  | R5 | R6 | R7 => false
+  | R8 | R9 => true
+  | R10 | R11 | R12 | R13 | R14 | R15 | R16 | R17 => false
+  | R18 | R19 | R20 | R21 | R22 | R23 | R24 | R25 | R26 | R27 => true
+  | R28 | R29 | R30 => false
+  | CapMachregs.F0 | CapMachregs.F1 | CapMachregs.F2 | CapMachregs.F3 | CapMachregs.F4 | CapMachregs.F5 | CapMachregs.F6 | CapMachregs.F7 => false
+  | CapMachregs.F8 | CapMachregs.F9 => true
+  | CapMachregs.F10 | CapMachregs.F11 | CapMachregs.F12 | CapMachregs.F13 | CapMachregs.F14 | CapMachregs.F15 | CapMachregs.F16 | CapMachregs.F17 => false
+  | CapMachregs.F18 | CapMachregs.F19 | CapMachregs.F20 | CapMachregs.F21 | CapMachregs.F22 | CapMachregs.F23 | CapMachregs.F24 | CapMachregs.F25 | CapMachregs.F26 | CapMachregs.F27 => true
+  | CapMachregs.F28 | CapMachregs.F29 | CapMachregs.F30 | CapMachregs.F31 => false
+  end.
 
 Definition undef_caller_save_regs (rs: regset) : regset :=
   fun r =>
@@ -1686,7 +1715,7 @@ Inductive extcall_arg (rs: regset) (m: mem): caploc -> ocval -> Prop :=
       extcall_arg rs m (R r) (rs (preg_of r))
   | extcall_arg_stack: forall ofs ty bofs cp v,
       bofs = Stacklayout.fe_ofs_arg + 4 * ofs ->
-      Mem.loadv UNINIT (chunk_of_type ty) m rs#SPC (OCVstackptr bofs) cp false = inl v ->
+      Mem.loadv UNINIT (chunk_of_type ty) m rs#SPC (OCVptr (stack_ptr (Ptrofs.repr bofs))) cp (* false *) = inl v ->
       extcall_arg rs m (S Outgoing ofs ty) v.
 
 Inductive extcall_arg_pair (rs: regset) (m: mem): rpair caploc -> ocval -> Prop :=
@@ -1700,10 +1729,14 @@ Inductive extcall_arg_pair (rs: regset) (m: mem): rpair caploc -> ocval -> Prop 
 
 Definition extcall_arguments
     (rs: regset) (m: mem) (sg: capsignature) (args: list ocval) : Prop :=
-  list_forall2 (extcall_arg_pair rs m) (caploc_arguments sg) args.
+  (* FIXME *)
+  (* list_forall2 (extcall_arg_pair rs m) (caploc_arguments sg) args. *)
+  list_forall2 (extcall_arg_pair rs m) nil args.
 
 Definition loc_external_result (sg: capsignature) : rpair preg :=
-  map_rpair preg_of (caploc_result sg).
+  (* FIXME *)
+  (* map_rpair preg_of (caploc_result sg). *)
+  map_rpair preg_of (One R10).
 
 (** Execution of the instruction at [rs PC]. *)
 
@@ -1799,6 +1832,8 @@ Definition is_return i rs :=
 (*   | Stackframe b sp retaddr :: _ => sp *)
 (*   end. *)
 
+Definition executeAllowedCap (c : occap) : bool := false. (* FIXME *)
+
 Inductive step: state -> trace -> state -> Prop :=
   | exec_step_internal:
     forall c ofs f i rs m rs' m' c' cp,
@@ -1824,8 +1859,10 @@ Inductive step: state -> trace -> state -> Prop :=
       exec_instr f i rs m cp = Next rs' m' ->
       sig_call i = Some sig ->
       forall (NEXTPC: rs' PCC = OCVcap c'),
+      (* FIXME *)
       (* forall (ALLOWED: Genv.allowed_call ge (comp_of f) (Vptr b' ofs')), *) (* ownership of the capability determines allowed calls *)
-      forall (ALLOWED: Genv.allowed_call_capability ge (OCVcap c')), (* a step is only flagged as a call if it targets an E capability of the environment *)
+      forall (ALLOWED: Genv.allowed_call ge (comp_of f) (OCVcap c')),
+      (* forall (ALLOWED: Genv.allowed_call_capability ge (OCVcap c')), (* a step is only flagged as a call if it targets an E capability of the environment *) *)
       forall (CURCOMP: Genv.find_comp ge (OCVcap c) = cp),
       (* Is a call, we update the stack *)
       (* forall (STUPD: update_stack_call st cp rs' = Some st'), *)
@@ -1928,18 +1965,28 @@ Parameter heap_size: Z.
 Parameter seal_size: compartment -> program -> Z. (* TODO: define this one here? *)
 Parameter seal_size_pos: forall c gls, seal_size c gls >= 0.
 
-Definition globalenv := Genv.globalenv stack_size heap_size seal_size seal_size_pos.
-Definition init_mem := Genv.init_mem stack_size heap_size seal_size seal_size_pos.
+(* Parameter *)
+
+(* FIXME? *)
+Parameter build_capability : ptrofs -> globdef fundef unit -> occap.
+Parameter build_capability_inv :
+  forall base glob,
+    Genv.globdef_capability_spec base glob (build_capability base glob).
+
+(* Definition globalenv := Genv.globalenv stack_size heap_size seal_size seal_size_pos. *)
+Definition globalenv := Genv.globalenv build_capability build_capability_inv.
+(* Definition init_mem := Genv.init_mem stack_size heap_size seal_size seal_size_pos. *)
+Definition init_mem := Genv.init_mem build_capability build_capability_inv.
 
 Inductive initial_state (p: program) (gstart gend sstart send : ptrofs) : state -> Prop :=
   | initial_state_intro: forall m0 ge,
-      globalenv p gstart gend sstart send = Some ge ->
+      globalenv p gstart gend (* sstart send *) = Some ge ->
       let rs0 :=
         (Pregmap.init OCVundef)
         # PCC <- (Genv.symbol_address ge p.(prog_main) Ptrofs.zero)
         # SPC <- OCVnullcap
                   # RAC <- Vnullptr in
-      init_mem p gstart gend sstart send = Some m0 ->
+      init_mem p gstart gend (* sstart send *) = Some m0 ->
       initial_state p gstart gend sstart send (State rs0 m0).
 
 Inductive final_state: state -> int -> Prop :=
