@@ -37,11 +37,38 @@ Section Equivalence.
   Variable s: split.
   Variable j: meminj.
 
+  Definition same_symbols (ge1 : genv) m1 :=
+    let H := Mem.has_side_block in
+    forall id loc,
+      Genv.find_symbol ge1 id = Some loc ->
+      (* AAA: This condition is not present in Genv.same_symbols. This is
+         problematic for the invariant below because, together with same_dom, it
+         means that the global environment can only have identifiers defined on
+         the right. Cf. problem lemma below. *)
+      (s, m1) |= loc ∈ Right ->
+      j loc = Some (loc, 0).
+
+  Lemma problem (ge1 : genv) m1 id (b : block) :
+    let H := Mem.has_side_block in
+    Mem.same_domain s j Right m1 ->
+    Genv.same_symbols j ge1 ->
+    Genv.find_symbol ge1 id = Some b ->
+    (s, m1) |= b ∈ Right.
+  Proof.
+    simpl. intros same_dom same_sym find.
+    specialize (same_sym _ _ find).
+    assert (def : j b <> None) by congruence.
+    now rewrite (same_dom b) in def.
+  Qed.
+
   Record right_mem_injection (ge1 ge2: genv) (m1 m2: mem) :=
     { same_dom: Mem.same_domain s j Right m1;
+      (* AAA: Mem.same_domain says that the domain of the memory injection is
+         restricted to blocks that belong to the Right side according to
+         s. Maybe we should change this name to something else. *)
       partial_mem_inject: Mem.inject j m1 m2;
       j_delta_zero: Mem.delta_zero j;
-      same_symb: Genv.same_symbols j ge1;
+      same_symb: same_symbols ge1 m1;
       jinjective: Mem.meminj_injective j
       (* related_funct: same_functions j ge1 ge2; *)
       (* same_funct_right: same_functions_right s j ge1 ge2 *)
@@ -219,6 +246,25 @@ Section Simulation.
   (* Is this hypothesis realistic? *)
   Hypothesis same_cenv: genv_cenv ge1 = genv_cenv ge2.
 
+
+  (* AAA: Right now, this statement is forcing every global identifier id that
+     occurs in an expression to refer to a function or variable that is defined
+     on the right.  This is because, when you evaluate an lvalue, you get
+     something that is defined in the memory injection j.  Here are possible
+     solutions:
+
+     1. Modify the second implication so that, if we evaluate an lvalue that is
+     not defined in the memory injection j (and, therefore, is on the Left),
+     then this lvalue must be either a global function or variable.  The problem
+     with this is that we would probably have to extend this to an invariant on
+     memories: every pointer to a non-global-function-or-variable that is stored
+     in Right memory must point to the Right. And this sounds complicated to
+     reason about.
+
+     2. Change the second implication so that we do not care if we get a
+     non-global-function-or-variable pointer that is on the left.
+
+   *)
   Lemma eval_expr_lvalue_injection:
     forall s j m1 m2 e1 e2 le1 le2 cp,
     forall inj: right_mem_injection s j ge1 ge2 m1 m2,
@@ -228,12 +274,13 @@ Section Simulation.
       eval_expr ge1 e1 cp le1 m1 a v ->
       (* forall loc ofs (EQv: v = Vptr loc ofs), *)
       exists v', Val.inject j v v' /\
-                     eval_expr ge2 e2 cp le2 m2 a v')
-      /\
+                   eval_expr ge2 e2 cp le2 m2 a v')
+    /\
     (forall a loc ofs bf,
       eval_lvalue ge1 e1 cp le1 m1 a loc ofs bf ->
-      exists loc' ofs', j loc = Some (loc', ofs') /\
-                     eval_lvalue ge2 e2 cp le2 m2 a loc' (Ptrofs.add ofs (Ptrofs.repr ofs')) bf).
+      exists loc' ofs',
+        j loc = Some (loc', ofs') /\
+        eval_lvalue ge2 e2 cp le2 m2 a loc' (Ptrofs.add ofs (Ptrofs.repr ofs')) bf).
   Proof.
     intros. subst ge1 ge2.
     destruct inj as [inj_dom inj_inject j_delta_zero same_symb].
@@ -305,7 +352,7 @@ Section Simulation.
     - destruct env_inj as [_ env_inj].
       exploit env_inj; eauto.
       intros ?.
-      exploit same_symb; eauto; intros ?.
+      exploit same_symb; eauto.
       eapply Genv.find_symbol_match in match_W1_W2. rewrite <- match_W1_W2 in H0.
       eexists; eexists; split; eauto.
       eapply eval_Evar_global; eauto.
@@ -481,9 +528,9 @@ Section Simulation.
       intros [vs' [? ?]].
       exploit (Genv.find_funct_match match_W1_W2); eauto.
       intros [? [fd' [find_fd' [match_fd' _]]]].
+      assert (vf = v') by admit. subst v'.
       exists j; eexists; split.
-      * assert (vf = v') by admit. subst v'.
-        econstructor; eauto.
+      * econstructor; eauto.
         - inv match_fd'; eauto.
         - exploit (Genv.match_genvs_allowed_calls match_W1_W2); eauto.
         - eapply (Genv.match_genvs_not_ptr_list_inj); eauto.
