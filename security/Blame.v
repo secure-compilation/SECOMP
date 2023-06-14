@@ -372,11 +372,16 @@ Section Simulation.
       eval_lvalue ge1 e1 cp le1 m1 a loc ofs bf ->
       exists loc' ofs', j loc = Some (loc', ofs') /\
                      eval_lvalue ge2 e2 cp le2 m2 a loc' (Ptrofs.add ofs (Ptrofs.repr ofs')) bf.
-    Proof.
-      intros.
-      exploit eval_expr_lvalue_injection; eauto.
-      intros [_ ?]. eauto.
-    Qed.
+  Proof.
+    intros.
+    exploit eval_expr_lvalue_injection; eauto.
+    intros [_ ?]. eauto.
+  Qed.
+
+  Ltac destruct_mem_inj :=
+    match goal with
+    | H: right_mem_injection _ _ _ _ _ _ |- _ => destruct H as [same_dom mem_inject delta_zero same_symb injective]
+    end.
 
   Lemma parallel_concrete: forall j s1 s2 s1' t,
       right_state_injection s j ge1 ge2 s1 s2 ->
@@ -385,197 +390,216 @@ Section Simulation.
       exists j' s2',
         Clight.step1 ge2 s2 t s2' /\
           right_state_injection s j' ge1 ge2 s1' s2'.
-    Proof.
-      intros j s1 s2 s1' t rs_inj is_r step1.
-      destruct rs_inj as [? | st1 st2 is_r1 is_r2 right_exec_inj].
-      (* inv rs_inj. *)
-      - (* contradiction *)
-        destruct st1; simpl in *; congruence.
-      - inv step1; inv right_exec_inj.
-        Ltac destruct_mem_inj :=
-          match goal with
-          | H: right_mem_injection _ _ _ _ _ _ |- _ => destruct H as [same_dom mem_inject delta_zero same_symb injective]
-          end.
-        + exploit eval_lvalue_injection; eauto.
-          exploit eval_expr_injection; eauto.
-          intros [v' [? ?]] [loc' [ofs' [? ?]]].
-          destruct_mem_inj.
-          exploit sem_cast_inject; eauto.
-          intros [tv [? ?]].
-          inv H2.
-          * exploit Mem.store_mapped_inject; eauto.
-            intros [? [? ?]].
-            exploit delta_zero; eauto. intros ?; subst.
-            rewrite Z.add_0_r in *.
-            exists j; eexists; split.
-            -- econstructor; eauto.
-               econstructor; eauto.
-               rewrite Ptrofs.add_zero; eauto.
-            -- apply RightControl; eauto.
-               constructor; eauto.
-               split; eauto.
-               clear -same_dom H10.
-               unfold Mem.same_domain in *.
-               intros.
-               unfold in_side in *; simpl in *.
-               erewrite Mem.store_block_compartment; eauto.
-          * inv H8.
-            exploit Mem.loadbytes_inj; eauto using Mem.mi_inj.
-            intros [? [? ?]].
-            exploit Mem.storebytes_mapped_inject; eauto using Mem.mi_inj.
-            intros [? [? ?]].
-            exploit delta_zero; eauto; intros; subst.
-            exploit (delta_zero loc); eauto; intros; subst.
-            exists j; eexists; split.
-            -- econstructor; eauto.
-               rewrite <- same_cenv, !Z.add_0_r, !Ptrofs.add_zero in *; eauto.
-               eapply assign_loc_copy; eauto.
-               { destruct H15.
-                 - exploit injective; eauto. intros []; [now left| contradiction].
-                 - auto. }
-            -- apply RightControl; eauto.
-               constructor; eauto.
-               split; eauto.
-               clear -same_dom H17.
-               unfold Mem.same_domain in *.
-               intros.
-               unfold in_side in *; simpl in *.
-               erewrite Mem.storebytes_block_compartment; eauto.
-          * inv H9.
-            exploit Mem.load_inject; eauto using Mem.mi_inj.
-            intros [? [? ?]].
-            exploit Mem.store_mapped_inject; eauto.
-            intros [? [? ?]].
-            inv H16.
-            exploit delta_zero; eauto; intros; subst.
-            rewrite Z.add_0_r in *.
-            exists j; eexists; split.
-            -- econstructor; eauto.
-               rewrite Ptrofs.add_zero.
-               eapply assign_loc_bitfield. rewrite <- H2. inv H8.
-               econstructor; eauto.
-            -- apply RightControl; eauto.
-               constructor; eauto.
-               split; eauto.
-               clear -same_dom H18.
-               unfold Mem.same_domain in *.
-               intros.
-               unfold in_side in *; simpl in *.
-               erewrite Mem.store_block_compartment; eauto.
-        + exploit eval_expr_injection; eauto.
-          intros [v' [? ?]].
-          exists j; eexists; split.
-          * econstructor; eauto.
-          * apply RightControl; eauto.
-            constructor; eauto.
-            unfold right_tenv_injection in *.
-            intros; rewrite PTree.gsspec in *.
-            destruct (peq i id); eauto. inv H2; subst.
-            eexists; split; eauto.
-        + exploit eval_expr_injection; eauto.
-          intros [v' [? ?]].
-          exploit eval_exprlist_injection; eauto.
-          intros [vs' [? ?]].
-          exploit (Genv.find_funct_match match_W1_W2); eauto.
-          (* exploit (related_funct _ _ _ _ _ _ H11); eauto. *)
-          intros [? [fd' [find_fd' [match_fd' _]]]].
-          exists j; eexists; split.
-          * assert (vf = v') by admit. subst v'.
-            econstructor; eauto.
-            -- inv match_fd'; eauto.
-            -- exploit (Genv.match_genvs_allowed_calls match_W1_W2); eauto.
-            -- eapply (Genv.match_genvs_not_ptr_list_inj); eauto.
-               exploit (Genv.match_genvs_find_comp match_W1_W2); eauto. intros <-.
-               erewrite <- (Genv.match_genvs_type_of_call); eauto.
-            -- exploit (Genv.match_genvs_find_comp match_W1_W2); eauto. intros <-.
-               exploit (@call_trace_inj _ _ _ _ ge1 ge2); eauto.
-               unfold ge2, ge1. simpl. apply Genv.globalenvs_match in match_W1_W2.
-               intros sy. pose proof (Genv.mge_symb match_W1_W2 sy). unfold Genv.find_symbol; eauto.
-          * (* Case analysis: are we changing side or not? *)
-            destruct (s (comp_of fd)) eqn:side.
-            -- apply LeftControl; eauto; try now inv match_fd'; auto.
-               simpl. apply right_cont_injection_kcall_right; eauto.
-            -- inv match_fd'; unfold in_side in *; simpl in *;
-                 unfold comp_of in *; simpl in side; unfold comp_of in *; simpl in side;
-                 try congruence.
-               apply RightControl; eauto.
-               constructor; eauto.
-               simpl. apply right_cont_injection_kcall_right; eauto.
-        + exploit eval_exprlist_injection; eauto.
-          intros [vs' [? ?]].
-          exploit ec_mem_inject; eauto. admit. admit. admit.
-          intros [j' [? [? [? [? [? [? [? [? ?]]]]]]]]].
-          exists j'; eexists; split.
+  Proof.
+    intros j s1 s2 s1' t rs_inj is_r step1.
+    destruct rs_inj as [? | st1 st2 is_r1 is_r2 right_exec_inj].
+    { (* contradiction *)
+      destruct st1; simpl in *; congruence. }
+    inv step1; inv right_exec_inj.
+    + (* step_assign *)
+      exploit eval_lvalue_injection; eauto.
+      exploit eval_expr_injection; eauto.
+      intros [v' [? ?]] [loc' [ofs' [? ?]]].
+      destruct_mem_inj.
+      exploit sem_cast_inject; eauto.
+      intros [tv [? ?]].
+      inv H2.
+      * exploit Mem.store_mapped_inject; eauto.
+        intros [? [? ?]].
+        exploit delta_zero; eauto. intros ?; subst.
+        rewrite Z.add_0_r in *.
+        exists j; eexists; split.
+        - econstructor; eauto.
           econstructor; eauto.
+          rewrite Ptrofs.add_zero; eauto.
+        - apply RightControl; eauto.
+          constructor; eauto.
+          split; eauto.
+          clear -same_dom H10.
+          unfold Mem.same_domain in *.
+          intros.
+          unfold in_side in *; simpl in *.
+          erewrite Mem.store_block_compartment; eauto.
+      * inv H8.
+        exploit Mem.loadbytes_inj; eauto using Mem.mi_inj.
+        intros [? [? ?]].
+        exploit Mem.storebytes_mapped_inject; eauto using Mem.mi_inj.
+        intros [? [? ?]].
+        exploit delta_zero; eauto; intros; subst.
+        exploit (delta_zero loc); eauto; intros; subst.
+        exists j; eexists; split.
+        - econstructor; eauto.
+          rewrite <- same_cenv, !Z.add_0_r, !Ptrofs.add_zero in *; eauto.
+          eapply assign_loc_copy; eauto.
+          { destruct H15.
+            - exploit injective; eauto. intros []; [now left| contradiction].
+            - auto. }
+        - apply RightControl; eauto.
+          constructor; eauto.
+          split; eauto.
+          clear -same_dom H17.
+          unfold Mem.same_domain in *.
+          intros.
+          unfold in_side in *; simpl in *.
+          erewrite Mem.storebytes_block_compartment; eauto.
+      * inv H9.
+        exploit Mem.load_inject; eauto using Mem.mi_inj.
+        intros [? [? ?]].
+        exploit Mem.store_mapped_inject; eauto.
+        intros [? [? ?]].
+        inv H16.
+        exploit delta_zero; eauto; intros; subst.
+        rewrite Z.add_0_r in *.
+        exists j; eexists; split.
+        - econstructor; eauto.
+          rewrite Ptrofs.add_zero.
+          eapply assign_loc_bitfield. rewrite <- H2. inv H8.
+          econstructor; eauto.
+        - apply RightControl; eauto.
+          constructor; eauto.
+          split; eauto.
+          clear -same_dom H18.
+          unfold Mem.same_domain in *.
+          intros.
+          unfold in_side in *; simpl in *.
+          erewrite Mem.store_block_compartment; eauto.
+    + (* step_set *)
+      exploit eval_expr_injection; eauto.
+      intros [v' [? ?]].
+      exists j; eexists; split.
+      * econstructor; eauto.
+      * apply RightControl; eauto.
+        constructor; eauto.
+        unfold right_tenv_injection in *.
+        intros; rewrite PTree.gsspec in *.
+        destruct (peq i id); eauto. inv H2; subst.
+        eexists; split; eauto.
+    + (* step_call *)
+      exploit eval_expr_injection; eauto.
+      intros [v' [? ?]].
+      exploit eval_exprlist_injection; eauto.
+      intros [vs' [? ?]].
+      exploit (Genv.find_funct_match match_W1_W2); eauto.
+      intros [? [fd' [find_fd' [match_fd' _]]]].
+      exists j; eexists; split.
+      * assert (vf = v') by admit. subst v'.
+        econstructor; eauto.
+        - inv match_fd'; eauto.
+        - exploit (Genv.match_genvs_allowed_calls match_W1_W2); eauto.
+        - eapply (Genv.match_genvs_not_ptr_list_inj); eauto.
+          exploit (Genv.match_genvs_find_comp match_W1_W2); eauto. intros <-.
+          erewrite <- (Genv.match_genvs_type_of_call); eauto.
+        - exploit (Genv.match_genvs_find_comp match_W1_W2); eauto. intros <-.
+          exploit (@call_trace_inj _ _ _ _ ge1 ge2); eauto.
+          unfold ge2, ge1. simpl. apply Genv.globalenvs_match in match_W1_W2.
+          intros sy. pose proof (Genv.mge_symb match_W1_W2 sy). unfold Genv.find_symbol; eauto.
+      * (* Case analysis: are we changing side or not? *)
+        destruct (s (comp_of fd)) eqn:side.
+        - apply LeftControl; eauto; try now inv match_fd'; auto.
+          simpl. apply right_cont_injection_kcall_right; eauto.
+        - inv match_fd'; unfold in_side in *; simpl in *;
+            unfold comp_of in *; simpl in side; unfold comp_of in *; simpl in side;
+            try congruence.
           apply RightControl; eauto.
           constructor; eauto.
-          * constructor; eauto.
-            -- admit.
-            -- admit.
-            -- admit.
-            -- admit.
-          * destruct H10.
-            split. intros ? ? ? ?.
-            exploit H10; eauto. intros [b' [? ?]].
-            exists b'; split; eauto.
-            intros ? ?.
-            exploit H14; eauto.
-          * intros ? ? ?.
-            destruct optid.
-            -- simpl in *. rewrite PTree.gsspec in *.
-               destruct (peq i i0); subst.
-               inv H14. eexists; split; eauto.
-               exploit H11; eauto. intros [? [? ?]]; eauto.
-            -- exploit H11; eauto. intros [? [? ?]]; eauto.
-        + exists j; eexists; split; [constructor | apply RightControl]; auto.
-          constructor; auto. constructor; auto.
-        + inv H7.
-          exists j; eexists; split; [constructor | apply RightControl]; auto.
-          constructor; auto.
-        + inv H7.
-          exists j; eexists; split; [constructor | apply RightControl]; auto.
-          constructor; auto.
-        + inv H7.
-          exists j; eexists; split; [constructor | apply RightControl]; auto.
-          constructor; auto.
-        + exploit eval_expr_injection; eauto.
-          intros [v' [? ?]].
-          destruct_mem_inj.
-          exploit bool_val_inject; eauto. intros ?.
-          exists j; eexists; split; [econstructor | apply RightControl]; eauto.
-          constructor; auto. constructor; auto.
-        + exists j; eexists; split; [econstructor | apply RightControl]; eauto.
-          constructor; auto. constructor; auto.
-        + inv H8. exists j; eexists; split; [constructor | apply RightControl]; eauto.
-          constructor; auto. constructor; auto.
-        + inv H7. exists j; eexists; split; [apply step_break_loop1 | apply RightControl]; eauto.
-          constructor; auto.
-        + inv H7. exists j; eexists; split; [apply step_skip_loop2 | apply RightControl]; eauto.
-          constructor; auto.
-        + inv H7. exists j; eexists; split; [apply step_break_loop2 | apply RightControl]; eauto.
-          constructor; auto.
-        + admit.
-        + admit.
-        + admit.
-        + exploit eval_expr_injection; eauto.
-          intros [v' [? ?]].
-          assert (sem_switch_arg v (typeof a) = Some n -> sem_switch_arg v' (typeof a) = Some n).
-          { intros. unfold sem_switch_arg in *.
-            destruct (classify_switch (typeof a)); simpl in *; try easy; inv H1; try easy. }
-          exists j; eexists; split; [econstructor | apply RightControl]; eauto.
-          constructor; auto.
-          constructor; auto.
-        + inv H8. exists j; eexists; split; [constructor | apply RightControl]; eauto.
-          constructor; auto.
-        + inv H7. exists j; eexists; split; [apply step_continue_switch | apply RightControl]; eauto.
-          constructor; auto.
-        + exists j; eexists; split; [constructor | apply RightControl]; auto.
-          constructor; auto.
-        + admit.
-        + admit.
-        + admit.
-        + admit.
-Admitted.
+          simpl. apply right_cont_injection_kcall_right; eauto.
+    + (* step_builtin *)
+      exploit eval_exprlist_injection; eauto.
+      intros [vs' [? ?]].
+      exploit ec_mem_inject; eauto. admit. admit. admit.
+      intros [j' [? [? [? [? [? [? [? [? ?]]]]]]]]].
+      exists j'; eexists; split.
+      econstructor; eauto.
+      apply RightControl; eauto.
+      constructor; eauto.
+      * constructor; eauto.
+        - admit.
+        - admit.
+        - admit.
+        - admit.
+      * destruct H10.
+        split. intros ? ? ? ?.
+        exploit H10; eauto. intros [b' [? ?]].
+        exists b'; split; eauto.
+        intros ? ?.
+        exploit H14; eauto.
+      * intros ? ? ?.
+        destruct optid.
+        - simpl in *. rewrite PTree.gsspec in *.
+          destruct (peq i i0); subst.
+          inv H14. eexists; split; eauto.
+          exploit H11; eauto. intros [? [? ?]]; eauto.
+        - exploit H11; eauto. intros [? [? ?]]; eauto.
+    + (* step_seq*)
+      exists j; eexists; split; [constructor | apply RightControl]; auto.
+      constructor; auto. constructor; auto.
+    + (* step_skip_seq *)
+      inv H7.
+      exists j; eexists; split; [constructor | apply RightControl]; auto.
+      constructor; auto.
+    + (* step_continue_seq *)
+      inv H7.
+      exists j; eexists; split; [constructor | apply RightControl]; auto.
+      constructor; auto.
+    + (* step_break_seq *)
+      inv H7.
+      exists j; eexists; split; [constructor | apply RightControl]; auto.
+      constructor; auto.
+    + (* step_ifthenelse *)
+      exploit eval_expr_injection; eauto.
+      intros [v' [? ?]].
+      destruct_mem_inj.
+      exploit bool_val_inject; eauto. intros ?.
+      exists j; eexists; split; [econstructor | apply RightControl]; eauto.
+      constructor; auto. constructor; auto.
+    + (* step_loop *)
+      exists j; eexists; split; [econstructor | apply RightControl]; eauto.
+      constructor; auto. constructor; auto.
+    + (* step_skip_or_continue_loop1 *)
+      inv H8. exists j; eexists; split; [constructor | apply RightControl]; eauto.
+      constructor; auto. constructor; auto.
+    + (* step_break_loop1 *)
+      inv H7. exists j; eexists; split; [apply step_break_loop1 | apply RightControl]; eauto.
+      constructor; auto.
+    + (* step_skip_loop2 *)
+      inv H7. exists j; eexists; split; [apply step_skip_loop2 | apply RightControl]; eauto.
+      constructor; auto.
+    + (* step_break_loop2 *)
+      inv H7. exists j; eexists; split; [apply step_break_loop2 | apply RightControl]; eauto.
+      constructor; auto.
+    + (* step_return_0 *)
+      admit.
+    + (* step_return_1 *)
+      admit.
+    + (* step_skip_call *)
+      admit.
+    + (* step_switch *)
+      exploit eval_expr_injection; eauto.
+      intros [v' [? ?]].
+      assert (sem_switch_arg v (typeof a) = Some n -> sem_switch_arg v' (typeof a) = Some n).
+      { intros. unfold sem_switch_arg in *.
+        destruct (classify_switch (typeof a)); simpl in *; try easy; inv H1; try easy. }
+      exists j; eexists; split; [econstructor | apply RightControl]; eauto.
+      constructor; auto.
+      constructor; auto.
+    + (* step_break_switch *)
+      inv H8. exists j; eexists; split; [constructor | apply RightControl]; eauto.
+      constructor; auto.
+    + (* step_continue_switch *)
+      inv H7. exists j; eexists; split; [apply step_continue_switch | apply RightControl]; eauto.
+      constructor; auto.
+    + (* step_label *)
+      exists j; eexists; split; [constructor | apply RightControl]; auto.
+      constructor; auto.
+    + (* step_goto *)
+      admit.
+    + (* step_internal_function *)
+      admit.
+    + (* step_external_function *)
+      admit.
+    + (* step_returnstate *)
+      admit.
+  Admitted.
 
 
     (* Example that shows why Blame doesn't hold in the C semantics.
