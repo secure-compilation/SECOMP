@@ -47,6 +47,8 @@ Section Equivalence.
          the right. Cf. problem lemma below. *)
       (s, m1) |= loc ∈ Right ->
       j loc = Some (loc, 0).
+  (* AAA: Consider using symbols_inject instead of this condition. *)
+
 
   Lemma problem (ge1 : genv) m1 id (b : block) :
     let H := Mem.has_side_block in
@@ -61,12 +63,32 @@ Section Equivalence.
     now rewrite (same_dom b) in def.
   Qed.
 
+  Definition attempt (ge1 ge2: genv) (m1 m2: mem) :=
+    let H := Mem.has_side_block in
+    forall b,
+      match Genv.invert_symbol ge1 b with
+      | Some _ =>
+          (* Any symbol that is present on the first program must correspond to
+             something in the second program *)
+          exists b', j b = Some (b', 0)
+      | None =>
+          (* All other blocks must belong to the Right. *)
+          (s, m1) |= b ∈ Right
+      end /\
+      (j b <> None ->
+       (s, m1) |= b ∈ Left ->
+       Genv.invert_symbol ge1 b <> None).
+
+  (* AAA: Maybe we can do the same thing by using two memory injections. *)
+
   Record right_mem_injection (ge1 ge2: genv) (m1 m2: mem) :=
     { same_dom: Mem.same_domain s j Right m1;
       (* AAA: Mem.same_domain says that the domain of the memory injection is
          restricted to blocks that belong to the Right side according to
          s. Maybe we should change this name to something else. *)
       partial_mem_inject: Mem.inject j m1 m2;
+      (* AAA: We need to weaken this so that the values stored in memory are
+         only related if they are on the Right. *)
       j_delta_zero: Mem.delta_zero j;
       same_symb: same_symbols ge1 m1;
       jinjective: Mem.meminj_injective j
