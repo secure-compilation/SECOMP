@@ -63,39 +63,26 @@ Section Equivalence.
     now rewrite (same_dom b) in def.
   Qed.
 
-  Definition attempt (ge1 ge2: genv) (m1 m2: mem) :=
+  Definition same_domain (ge1 ge2: genv) (m1 m2: mem) :=
     let H := Mem.has_side_block in
     forall b,
       match Genv.invert_symbol ge1 b with
-      | Some _ =>
-          (* Any symbol that is present on the first program must correspond to
-             something in the second program *)
-          exists b', j b = Some (b', 0)
+      | Some id =>
+          if Senv.public_symbol ge1 id then
+            j b <> None
+          else
+            j b <> None -> (s, m1) |= b ∈ Right
       | None =>
-          (* All other blocks must belong to the Right. *)
-          (s, m1) |= b ∈ Right
-      end /\
-      (j b <> None ->
-       (s, m1) |= b ∈ Left ->
-       Genv.invert_symbol ge1 b <> None).
-
-  (* AAA: Maybe we can do the same thing by using two memory injections. *)
+          j b <> None -> (s, m1) |= b ∈ Right
+      end.
 
   Record right_mem_injection (ge1 ge2: genv) (m1 m2: mem) :=
-    { same_dom: Mem.same_domain s j Right m1;
-      (* AAA: Mem.same_domain says that the domain of the memory injection is
-         restricted to blocks that belong to the Right side according to
-         s. Maybe we should change this name to something else. *)
+    { same_dom: same_domain ge1 ge2 m1 m2;
       partial_mem_inject: Mem.inject j m1 m2;
-      (* AAA: We need to weaken this so that the values stored in memory are
-         only related if they are on the Right. *)
       j_delta_zero: Mem.delta_zero j;
-      same_symb: same_symbols ge1 m1;
+      same_symb: symbols_inject j ge1 ge2;
       jinjective: Mem.meminj_injective j
-      (* related_funct: same_functions j ge1 ge2; *)
-      (* same_funct_right: same_functions_right s j ge1 ge2 *)
     }.
-
 
 Fixpoint remove_until_right (k: cont) :=
   match k with
@@ -372,12 +359,19 @@ Section Simulation.
       eexists; eexists; split; eauto.
       econstructor; eauto.
     - destruct env_inj as [_ env_inj].
+      rename l into b.
+      rename H into e1_id.
+      rename H0 into W1_id.
       exploit env_inj; eauto.
-      intros ?.
-      exploit same_symb; eauto.
-      eapply Genv.find_symbol_match in match_W1_W2. rewrite <- match_W1_W2 in H0.
+      intros e2_id.
+      exploit Genv.find_invert_symbol; eauto.
+      intros W1_l.
+      pose proof (idP := inj_dom b).
+      rewrite W1_l in idP.
+      destruct (Senv.public_symbol _ id) eqn: public_id.
+(*      eapply Genv.find_symbol_match in match_W1_W2. rewrite <- match_W1_W2 in H0.
       eexists; eexists; split; eauto.
-      eapply eval_Evar_global; eauto.
+      eapply eval_Evar_global; eauto.*) admit.
     - destruct H0 as [v' [? ?]].
       inv H0.
       eexists; eexists; split; eauto.
