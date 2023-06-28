@@ -2989,7 +2989,7 @@ let elab_decdef (for_loop: bool) (local: bool) (nonstatic_inline: bool)
     let a' = if noret then add_attributes [Attr ("noreturn", [])] a else a in
     if has_std_alignas env ty && has_fun_typ then
       error loc "alignment specified for function '%s'" id;
-    let decl = (id, add_attributes_type a' ty, init, "0") in
+    let decl = (id, add_attributes_type a' ty, init, comp) in (* NOTE check hardwired compartments elsewhere *)
     if tydef then
       (decls, enter_typedef loc env1 sto decl)
     else

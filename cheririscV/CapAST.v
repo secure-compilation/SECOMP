@@ -62,7 +62,7 @@ Definition typesize (ty: captyp) : Z :=
   end.
 
 Lemma typesize_pos: forall ty, typesize ty > 0.
-Proof. destruct ty; simpl; omega. Qed.
+Proof. destruct ty; simpl; lia. Qed.
 
 Lemma typesize_CTcap: typesize CTcap = if Archi.ptr64 then 16 else 8.
 Proof. unfold CTcap; destruct Archi.ptr64; auto. Qed.
@@ -437,13 +437,13 @@ Fixpoint cap_init_data_list_size (il: list init_data) {struct il} : Z :=
 Lemma cap_init_data_size_pos:
   forall i, cap_init_data_size i >= 0.
 Proof.
-  destruct i; simpl; try xomega. destruct Archi.ptr64; omega.
+  destruct i; simpl; try lia. destruct Archi.ptr64; lia.
 Qed.
 
 Lemma cap_init_data_list_size_pos:
   forall il, cap_init_data_list_size il >= 0.
 Proof.
-  induction il; simpl. omega. generalize (cap_init_data_size_pos a); omega.
+  induction il; simpl. lia. generalize (cap_init_data_size_pos a); lia.
 Qed.
 
 Set Contextual Implicit.
