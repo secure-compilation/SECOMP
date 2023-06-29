@@ -12,52 +12,55 @@ Require Import BtBasics.
 
 Section MEMDATA.
 
-  (* Data to get injection by invoking correct Mem.store - weak inj + history = inj *)
-  Definition mem_delta := PTree.t (ZTree.t (memory_chunk * val * compartment)%type).
+  (* Data to get injection by invoking correct Mem.store: inj + (apply delta) = inj *)
+  Definition mem_delta_data := (memory_chunk * val * compartment)%type.
+  Definition mem_delta_ofs := list (Z * mem_delta_data).
+  Definition mem_delta := PTree.t mem_delta_ofs.
 
-  Definition mem_delta_get (d: mem_delta) (b: block) (ofs: Z) :=
+  Definition mem_delta_ofs_get (dd: mem_delta_ofs) (ofs: Z): option mem_delta_data :=
+    match find (fun '(k, data) => Z.eqb k ofs) dd with | Some (k, data) => Some data | None => None end.
+  Definition mem_delta_get (d: mem_delta) (b: block) (ofs: Z): option mem_delta_data :=
     match PTree.get b d with
-    | Some dd => ZTree.get ofs dd
+    | Some dd => mem_delta_ofs_get dd ofs
     | _ => None
     end.
 
-  (* Relational invariant for memory *)
-  Record mem_weak_inj (d: mem_delta) (f : meminj) (m1 m2 : mem) : Prop :=
-    mk_mem_weak_inj
-      { mwi_perm : forall (b1 b2 : block) (delta ofs : Z) (k : perm_kind) (p : permission),
-          f b1 = Some (b2, delta) -> Mem.perm m1 b1 ofs k p -> Mem.perm m2 b2 (ofs + delta) k p;
-        mwi_own : forall (b1 b2 : block) (delta : Z) (cp : option compartment),
-          f b1 = Some (b2, delta) -> Mem.can_access_block m1 b1 cp -> Mem.can_access_block m2 b2 cp;
-        mwi_align : forall (b1 b2 : block) (delta : Z) (chunk : memory_chunk) (ofs : Z) (p : permission),
-          f b1 = Some (b2, delta) -> Mem.range_perm m1 b1 ofs (ofs + size_chunk chunk) Max p -> (align_chunk chunk | delta)%Z;
-        mwi_memval : forall (b1 : block) (ofs : Z) (b2 : block) (delta : Z),
-          (mem_delta_get d b1 ofs = None) ->
-          f b1 = Some (b2, delta) ->
-          (* ((Mem.mem_access m1) !! b1 ofs Cur = Some Readable) -> *)
-          Mem.perm m1 b1 ofs Cur Readable ->
-          memval_inject f (ZMap.get ofs (Mem.mem_contents m1) !! b1) (ZMap.get (ofs + delta)%Z (Mem.mem_contents m2) !! b2) }.
+  Definition mem_delta_apply_ofs (b: block) (dd: mem_delta_ofs) (m0: mem) : option mem :=
+    fold_left (fun om '(ofs, (ch, v, cp)) => match om with | Some m => Mem.store ch m b ofs v cp | _ => None end) dd (Some m0).
+  Definition mem_delta_apply (d: mem_delta) (m0: mem) : option mem :=
+    PTree.fold (fun om b dd => match om with | Some m => mem_delta_apply_ofs b dd m | _ => None end) d (Some m0).
 
-  Record weak_inject (d: mem_delta) (f : meminj) (m1 m2 : mem) : Prop :=
-    mk_weak_inject
-      { mwi_inj : mem_weak_inj d f m1 m2;
-        mwi_freeblocks : forall b : block, ~ Mem.valid_block m1 b -> f b = None;
-        mwi_mappedblocks : forall (b b' : block) (delta : Z), f b = Some (b', delta) -> Mem.valid_block m2 b';
-        mwi_no_overlap : Mem.meminj_no_overlap f m1;
-        mwi_representable : forall (b b' : block) (delta : Z) (ofs : ptrofs),
-          f b = Some (b', delta) ->
-          Mem.perm m1 b (Ptrofs.unsigned ofs) Max Nonempty \/ Mem.perm m1 b (Ptrofs.unsigned ofs - 1) Max Nonempty -> (delta >= 0)%Z /\ (0 <= Ptrofs.unsigned ofs + delta <= Ptrofs.max_unsigned)%Z;
-        mwi_perm_inv : forall (b1 : block) (ofs : Z) (b2 : block) (delta : Z) (k : perm_kind) (p : permission),
-          f b1 = Some (b2, delta) -> Mem.perm m2 b2 (ofs + delta) k p -> Mem.perm m1 b1 ofs k p \/ ~ Mem.perm m1 b1 ofs Max Nonempty }.
-
+  (* Memory injection for public global symbols: visible for external calls *)
   Definition meminj_public (ge: Senv.t): meminj :=
     fun b => match Senv.invert_symbol ge b with
           | Some id => if Senv.public_symbol ge id then Some (b, 0%Z) else None
           | None => None
           end.
 
+  (* We keep delta only for some partial memory, as specified by some meminj *)
+  Definition mem_delta_wf_inj (d: mem_delta) (j: meminj): Prop :=
+    forall b ofs dd jj, (mem_delta_get d b ofs = Some dd) -> (j b = Some jj).
 
-  Definition mem_apply_delta (d: mem_delta) (m: mem) : option mem.
-  Admitted.
+  Definition mem_delta_data_fo (ddd: mem_delta_data): Prop :=
+    let '(ch, v, cp) := ddd in Forall (fun mv => match mv with | Byte bt => True | _ => False end) (encode_val ch v).
+  Definition mem_delta_ofs_fo (dd: mem_delta_ofs): Prop :=
+    Forall (fun '(k, ddd) => mem_delta_data_fo ddd) dd.
+  Definition mem_delta_fo (d: mem_delta): Prop :=
+    PTree.fold (fun p b dd => p /\ (mem_delta_ofs_fo dd)) d True.
+
+  Lemma mem_delta_apply_preserves_inj
+        (j: meminj) m0 m0'
+        (INJ0: Mem.inject j m0 m0')
+        (d: mem_delta)
+        (DWF: mem_delta_wf_inj d j)
+        (DFO: mem_delta_fo d)
+        m1
+        (APPD: mem_delta_apply d m0 = Some m1)
+    :
+    exists m1', (mem_delta_apply d m0' = Some m1') /\ (Mem.inject j m1 m1').
+  Proof.
+  Abort.
+
 
   Definition mem_delta_writable (d: mem_delta) (m: mem) :=
     forall (b: block) (ofs: Z) chunk v cp,

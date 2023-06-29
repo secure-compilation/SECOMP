@@ -2122,7 +2122,7 @@ Section INFORM_TRACES_PRESERVED.
 End INFORM_TRACES_PRESERVED.
 
 
-Section LEAK.
+Section VISIBLE.
 
   (* Memory location has only sequence of bytes *)
   Definition loc_first_order (m: mem) (b: block) (ofs: Z) : Prop :=
@@ -2154,33 +2154,40 @@ Section LEAK.
   Definition vals_public (ge: Senv.t) (ts: list typ) (vs: list val): Prop :=
     Forall2 (val_public ge) ts vs.
 
-  Definition limit_leaks (ge: Senv.t) (m: mem) (tys: list typ) (args: list val): Prop :=
+  Definition visible_fo (ge: Senv.t) (m: mem) (tys: list typ) (args: list val): Prop :=
     public_first_order ge m /\ vals_public ge tys args.
 
-  Definition limit_leaks_if_unknown
-             (ef: external_function) (ge: Senv.t) (m: mem) (args: list val) : Prop :=
-    match ef with
-    | EF_external name cp sg => limit_leaks ge m (sig_args sg) args
-    | EF_builtin name sg | EF_runtime name sg =>
-                             match lookup_builtin_function name sg with
-                             | None => limit_leaks ge m (sig_args sg) args
-                             | _ => True
-                             end
-    | EF_inline_asm txt sg clb => limit_leaks ge m (sig_args sg) args
+  Definition EF_memcpy_dest_not_pub (ge: Senv.t) (args: list val) :=
+    match args with
+    | (Vptr bdst _) :: tl => ~ (block_public ge bdst)
     | _ => True
     end.
 
-  Definition limit_leaks_and_unknown
+  Definition visible_fo_if_unknown
              (ef: external_function) (ge: Senv.t) (m: mem) (args: list val) : Prop :=
     match ef with
-    | EF_external name cp sg => limit_leaks ge m (sig_args sg) args
-    | EF_builtin name sg | EF_runtime name sg =>
+    | EF_external cp name sg => visible_fo ge m (sig_args sg) args
+    | EF_builtin cp name sg | EF_runtime cp name sg =>
                              match lookup_builtin_function name sg with
-                             | None => limit_leaks ge m (sig_args sg) args
+                             | None => visible_fo ge m (sig_args sg) args
+                             | _ => True
+                             end
+    | EF_inline_asm cp txt sg clb => visible_fo ge m (sig_args sg) args
+    | EF_memcpy cp sz al => EF_memcpy_dest_not_pub ge args
+    | _ => True
+    end.
+
+  Definition visible_fo_and_unknown
+             (ef: external_function) (ge: Senv.t) (m: mem) (args: list val) : Prop :=
+    match ef with
+    | EF_external cp name sg => visible_fo ge m (sig_args sg) args
+    | EF_builtin cp name sg | EF_runtime cp name sg =>
+                             match lookup_builtin_function name sg with
+                             | None => visible_fo ge m (sig_args sg) args
                              | _ => False
                              end
-    | EF_inline_asm txt sg clb => limit_leaks ge m (sig_args sg) args
+    | EF_inline_asm cp txt sg clb => visible_fo ge m (sig_args sg) args
     | _ => False
     end.
 
-End LEAK.
+End VISIBLE.

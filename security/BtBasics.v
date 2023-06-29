@@ -4,13 +4,13 @@ Require Import AST Linking Smallstep Events Behaviors.
 
 Require Import Split.
 
-Record syscall_properties (sem: extcall_sem) (sg: signature) : Prop :=
-  mk_syscall_properties {
-      sc_args_match:
-      forall ge cp args m1 name evargs evres res m2,
-        sem ge cp args m1 (Event_syscall name evargs evres :: nil) res m2 ->
-        eventval_list_match ge evargs sg.(sig_args) args;
-    }.
+(* Record syscall_properties (sem: extcall_sem) (sg: signature) : Prop := *)
+(*   mk_syscall_properties { *)
+(*       sc_args_match: *)
+(*       forall ge cp args m1 name evargs evres res m2, *)
+(*         sem ge cp args m1 (Event_syscall name evargs evres :: nil) res m2 -> *)
+(*         eventval_list_match ge evargs sg.(sig_args) args; *)
+(*     }. *)
 
 
 Section GENV.
@@ -306,69 +306,69 @@ Section HASINIT.
 End HASINIT.
 
 
-Section EXTCALL.
+(* Section EXTCALL. *)
 
-  Variant external_call_event_match_common
-          (ef: external_function) (ev: event) (ge: Senv.t) (cp: compartment) (m1: mem)
-    : val -> mem -> Prop :=
-    | ext_match_vload
-        ch
-        (EF: ef = EF_vload ch)
-        id ofs evv
-        (EV: ev = Event_vload ch id ofs evv)
-        b res m2
-        (SEM: volatile_load_sem ch ge cp (Vptr b ofs :: nil) m1 (ev :: nil) res m2)
-      :
-      external_call_event_match_common ef ev ge cp m1 res m2
-    | ext_match_vstore
-        ch
-        (EF: ef = EF_vstore ch)
-        id ofs evv
-        (EV: ev = Event_vstore ch id ofs evv)
-        b argv m2
-        (SEM: volatile_store_sem ch ge cp (Vptr b ofs :: argv :: nil) m1 (ev :: nil) Vundef m2)
-      :
-      external_call_event_match_common ef ev ge cp m1 Vundef m2
-    | ext_match_annot
-        len text targs
-        (EF: ef = EF_annot len text targs)
-        evargs
-        (EV: ev = Event_annot text evargs)
-        vargs m2
-        (SEM: extcall_annot_sem text targs ge cp vargs m1 (ev :: nil) Vundef m2)
-      :
-      external_call_event_match_common ef ev ge cp m1 Vundef m2
-    | ext_match_external
-        name excp sg
-        (EF: ef = EF_external name excp sg)
-        evname evargs evres
-        (EV: ev = Event_syscall evname evargs evres)
-        vargs vres m2
-        (SEM: external_functions_sem name sg ge cp vargs m1 (ev :: nil) vres m2)
-        (ARGS: eventval_list_match ge evargs sg.(sig_args) vargs)
-      :
-      external_call_event_match_common ef ev ge cp m1 vres m2
-    | ext_match_builtin
-        name sg
-        (EF: (ef = EF_builtin name sg) \/ (ef = EF_runtime name sg))
-        evname evargs evres
-        (EV: ev = Event_syscall evname evargs evres)
-        (ISEXT: Builtins.lookup_builtin_function name sg = None)
-        vargs vres m2
-        (SEM: external_functions_sem name sg ge cp vargs m1 (ev :: nil) vres m2)
-        (ARGS: eventval_list_match ge evargs sg.(sig_args) vargs)
-      :
-      external_call_event_match_common ef ev ge cp m1 vres m2
-    | ext_match_inline_asm
-        txt sg strs
-        (EF: ef = EF_inline_asm txt sg strs)
-        evname evargs evres
-        (EV: ev = Event_syscall evname evargs evres)
-        vargs vres m2
-        (SEM: inline_assembly_sem txt sg ge cp vargs m1 (ev :: nil) vres m2)
-        (ARGS: eventval_list_match ge evargs sg.(sig_args) vargs)
-      :
-      external_call_event_match_common ef ev ge cp m1 vres m2
-  .
+(*   Variant external_call_event_match_common *)
+(*           (ef: external_function) (ev: event) (ge: Senv.t) (cp: compartment) (m1: mem) *)
+(*     : val -> mem -> Prop := *)
+(*     | ext_match_vload *)
+(*         ch *)
+(*         (EF: ef = EF_vload ch) *)
+(*         id ofs evv *)
+(*         (EV: ev = Event_vload ch id ofs evv) *)
+(*         b res m2 *)
+(*         (SEM: volatile_load_sem ch ge cp (Vptr b ofs :: nil) m1 (ev :: nil) res m2) *)
+(*       : *)
+(*       external_call_event_match_common ef ev ge cp m1 res m2 *)
+(*     | ext_match_vstore *)
+(*         ch *)
+(*         (EF: ef = EF_vstore ch) *)
+(*         id ofs evv *)
+(*         (EV: ev = Event_vstore ch id ofs evv) *)
+(*         b argv m2 *)
+(*         (SEM: volatile_store_sem ch ge cp (Vptr b ofs :: argv :: nil) m1 (ev :: nil) Vundef m2) *)
+(*       : *)
+(*       external_call_event_match_common ef ev ge cp m1 Vundef m2 *)
+(*     | ext_match_annot *)
+(*         len text targs *)
+(*         (EF: ef = EF_annot len text targs) *)
+(*         evargs *)
+(*         (EV: ev = Event_annot text evargs) *)
+(*         vargs m2 *)
+(*         (SEM: extcall_annot_sem text targs ge cp vargs m1 (ev :: nil) Vundef m2) *)
+(*       : *)
+(*       external_call_event_match_common ef ev ge cp m1 Vundef m2 *)
+(*     | ext_match_external *)
+(*         name excp sg *)
+(*         (EF: ef = EF_external name excp sg) *)
+(*         evname evargs evres *)
+(*         (EV: ev = Event_syscall evname evargs evres) *)
+(*         vargs vres m2 *)
+(*         (SEM: external_functions_sem name sg ge cp vargs m1 (ev :: nil) vres m2) *)
+(*         (ARGS: eventval_list_match ge evargs sg.(sig_args) vargs) *)
+(*       : *)
+(*       external_call_event_match_common ef ev ge cp m1 vres m2 *)
+(*     | ext_match_builtin *)
+(*         name sg *)
+(*         (EF: (ef = EF_builtin name sg) \/ (ef = EF_runtime name sg)) *)
+(*         evname evargs evres *)
+(*         (EV: ev = Event_syscall evname evargs evres) *)
+(*         (ISEXT: Builtins.lookup_builtin_function name sg = None) *)
+(*         vargs vres m2 *)
+(*         (SEM: external_functions_sem name sg ge cp vargs m1 (ev :: nil) vres m2) *)
+(*         (ARGS: eventval_list_match ge evargs sg.(sig_args) vargs) *)
+(*       : *)
+(*       external_call_event_match_common ef ev ge cp m1 vres m2 *)
+(*     | ext_match_inline_asm *)
+(*         txt sg strs *)
+(*         (EF: ef = EF_inline_asm txt sg strs) *)
+(*         evname evargs evres *)
+(*         (EV: ev = Event_syscall evname evargs evres) *)
+(*         vargs vres m2 *)
+(*         (SEM: inline_assembly_sem txt sg ge cp vargs m1 (ev :: nil) vres m2) *)
+(*         (ARGS: eventval_list_match ge evargs sg.(sig_args) vargs) *)
+(*       : *)
+(*       external_call_event_match_common ef ev ge cp m1 vres m2 *)
+(*   . *)
 
-End EXTCALL.
+(* End EXTCALL. *)
