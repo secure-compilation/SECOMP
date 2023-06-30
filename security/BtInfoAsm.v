@@ -10,25 +10,161 @@ Require Import Complements.
 Require Import BtBasics.
 
 
-Section MEMDATA.
+Section MEMDELTA.
 
   (* Data to get injection by invoking correct Mem.store: inj + (apply delta) = inj *)
   Definition mem_delta_data := (memory_chunk * val * compartment)%type.
-  Definition mem_delta_ofs := list (Z * mem_delta_data).
-  Definition mem_delta := PTree.t mem_delta_ofs.
+  Definition mem_delta_bytes := ((list memval) * compartment)%type.
 
-  Definition mem_delta_ofs_get (dd: mem_delta_ofs) (ofs: Z): option mem_delta_data :=
-    match find (fun '(k, data) => Z.eqb k ofs) dd with | Some (k, data) => Some data | None => None end.
-  Definition mem_delta_get (d: mem_delta) (b: block) (ofs: Z): option mem_delta_data :=
-    match PTree.get b d with
-    | Some dd => mem_delta_ofs_get dd ofs
-    | _ => None
-    end.
+  Inductive mem_delta_kind :=
+  | mem_delta_kind_data (d: mem_delta_data)
+  | mem_delta_kind_bytes (d: mem_delta_bytes)
+  .
 
-  Definition mem_delta_apply_ofs (b: block) (dd: mem_delta_ofs) (m0: mem) : option mem :=
-    fold_left (fun om '(ofs, (ch, v, cp)) => match om with | Some m => Mem.store ch m b ofs v cp | _ => None end) dd (Some m0).
+  Definition mem_delta_key := (block * Z)%type.
+  Definition mem_delta := list (mem_delta_key * mem_delta_kind).
+
+  Definition mem_delta_key_eqb (k1 k2: mem_delta_key): bool :=
+    let (b1, ofs1) := k1 in let (b2, ofs2) := k2 in andb (Pos.eqb b1 b2) (Z.eqb ofs1 ofs2).
+
+  Definition mem_delta_get (d: mem_delta) (b: block) (ofs: Z): option mem_delta_kind :=
+    match find (fun '(k, data) => mem_delta_key_eqb k (b, ofs)) d with | Some (k, data) => Some data | None => None end.
+
   Definition mem_delta_apply (d: mem_delta) (m0: mem) : option mem :=
-    PTree.fold (fun om b dd => match om with | Some m => mem_delta_apply_ofs b dd m | _ => None end) d (Some m0).
+    fold_right (fun '((b, ofs), data) om =>
+                  match om with
+                  | Some m =>
+                      match data with
+                      | mem_delta_kind_data (ch, v, cp) => Mem.store ch m b ofs v cp
+                      | mem_delta_kind_bytes (mvs, cp) => Mem.storebytes m b ofs mvs cp
+                      end
+                  | None => None end) (Some m0) d.
+
+  (* Delta and injection relation *)
+  Definition mem_delta_wf_inj (j: meminj): mem_delta -> Prop :=
+    fun d => Forall (fun '((b, _), data) =>
+                    match j b with
+                    | Some _ => (match data with | mem_delta_kind_data _ => True | _ => False end)
+                    (* | Some (b', ofs') => (b' = b) /\ (ofs' = 0%Z) /\ (match data with | mem_delta_kind_data _ => True | _ => False end) *)
+                    | None => True
+                    end) d.
+
+  Definition mem_delta_data_fo (dd: mem_delta_data): Prop :=
+    let '(ch, v, cp) := dd in Forall (fun mv => match mv with | Byte bt => True | _ => False end) (encode_val ch v).
+  Definition mem_delta_fo (j: meminj) (d: mem_delta): Prop :=
+    Forall (fun '((b, _), data) =>
+              match j b with
+              | Some _ => match data with | mem_delta_kind_data dd => mem_delta_data_fo dd | _ => False end
+              | None => True
+              end) d.
+
+  Definition mem_delta_apply_inj (j: meminj) (d: mem_delta) (m0: mem) : option mem :=
+    fold_right (fun '((b, ofs), data) om =>
+                  match om with
+                  | Some m =>
+                      match j b with
+                      | Some (b', ofsd) => 
+                          match data with
+                          | mem_delta_kind_data (ch, v, cp) => Mem.store ch m b' (ofs + ofsd) v cp
+                          | mem_delta_kind_bytes _ => None
+                          end
+                      | None => om
+                      end
+                  | None => None
+                  end) (Some m0) d.
+
+  Lemma mem_delta_apply_preserves_inj
+        (j: meminj) m0 m0'
+        (INJ0: Mem.inject j m0 m0')
+        (d: mem_delta)
+        (DWF: mem_delta_wf_inj j d)
+        (DFO: mem_delta_fo j d)
+        m1
+        (APPD: mem_delta_apply d m0 = Some m1)
+    :
+    exists m1', (mem_delta_apply_inj j d m0' = Some m1') /\ (Mem.inject j m1 m1').
+  Proof.
+    move d after j. revert j m0 m0' INJ0 DWF DFO m1 APPD. induction d; simpl; intros.
+    { inv APPD. exists m0'. split; auto. }
+    destruct a as ((b & ofs) & kind). destruct (mem_delta_apply d m0) eqn:DAM.
+    2:{ inv APPD. }
+    inv DWF. rename H1 into DWF1, H2 into DWF0. inv DFO. rename H1 into DFO1, H2 into DFO0.
+    specialize (IHd _ _ _ INJ0 DWF0 DFO0 _ DAM). destruct IHd as (m_i' & DAM' & INJ_I). rename m into m_i. rewrite DAM'.
+    destruct (j b) eqn:JB.
+    2:{ exists m_i'. split; auto. destruct kind.
+        - destruct d0 as (p & cp), p as (ch, v). eapply Mem.store_unmapped_inject; eauto.
+        - destruct d0 as (mvs & cp). eapply Mem.storebytes_unmapped_inject; eauto.
+    }
+    destruct kind; [|contradiction].
+    destruct p as (b', ofsd). destruct d0 as (p & cp), p as (ch, v). eapply Mem.store_mapped_inject; eauto.
+    clear - DFO1. destruct v; auto. exfalso. simpl in *. destruct Archi.ptr64.
+    - destruct ch; simpl in *; try (inv DFO1; contradiction).
+    - destruct ch; simpl in *; try (inv DFO1; contradiction).
+  Qed.
+
+(*   Lemma mem_store_neq_comm *)
+(*         m *)
+(*         ch0 b0 ofs0 v0 cp0 m0 *)
+(*         (STORE0: Mem.store ch0 m b0 ofs0 v0 cp0 = Some m0) *)
+(*         ch1 b1 ofs1 v1 cp1 m1 *)
+(*         (STORE1: Mem.store ch1 m0 b1 ofs1 v1 cp1 = Some m1) *)
+(*         (NEQ: b0 <> b1) *)
+(*     : *)
+(*     exists m_i, (Mem.store ch1 m b1 ofs1 v1 cp1 = Some m_i) /\ (Mem.store ch0 m_i b0 ofs0 v0 cp0 = Some m1). *)
+(*   Proof. *)
+(*     assert (VA: Mem.valid_access m ch1 b1 ofs1 Writable (Some cp1)). *)
+(*     { eapply Mem.store_valid_access_2; eauto. eapply Mem.store_valid_access_3; eauto. } *)
+(*     eapply Mem.valid_access_store in VA. eapply ex_of_sig in VA. destruct VA as (m_i & STORE_I). exists m_i. split; eauto. *)
+    
+
+(*     eapply STORE1. *)
+
+    
+(* Mem.store_valid_access_1: *)
+(*   forall (chunk : memory_chunk) (m1 : mem) (b : block) (ofs : Z) (v : val) (cp : compartment) (m2 : mem), *)
+(*   Mem.store chunk m1 b ofs v cp = Some m2 -> *)
+(*   forall (chunk' : memory_chunk) (b' : block) (ofs' : Z) (p : permission) (cp' : option compartment), Mem.valid_access m1 chunk' b' ofs' p cp' -> Mem.valid_access m2 chunk' b' ofs' p cp' *)
+(* Mem.store_valid_access_2: *)
+(*   forall (chunk : memory_chunk) (m1 : mem) (b : block) (ofs : Z) (v : val) (cp : compartment) (m2 : mem), *)
+(*   Mem.store chunk m1 b ofs v cp = Some m2 -> *)
+(*   forall (chunk' : memory_chunk) (b' : block) (ofs' : Z) (p : permission) (cp' : option compartment), Mem.valid_access m2 chunk' b' ofs' p cp' -> Mem.valid_access m1 chunk' b' ofs' p cp' *)
+(* Mem.store_valid_access_3: *)
+(*   forall (chunk : memory_chunk) (m1 : mem) (b : block) (ofs : Z) (v : val) (cp : compartment) (m2 : mem), Mem.store chunk m1 b ofs v cp = Some m2 -> Mem.valid_access m1 chunk b ofs Writable (Some cp) *)
+(* Mem.valid_access_store: *)
+(*   forall (m1 : mem) (chunk : memory_chunk) (b : block) (ofs : Z) (cp : compartment) (v : val), Mem.valid_access m1 chunk b ofs Writable (Some cp) -> {m2 : mem | Mem.store chunk m1 b ofs v cp = Some m2} *)
+(* ex_of_sig: forall [A : Type] [P : A -> Prop], {x : A | P x} -> exists y, P y *)
+    
+(*     unfold Mem.store in *. *)
+(*   APPD : Mem.store ch0 m b0 ofs0 v0 cp0 = Some m1 *)
+(*   STORE : Mem.store ch m1 b ofs v cp = Some m2 *)
+
+
+  (* Lemma mem_delta_inv_unmapped *)
+  (*       (j: meminj) m0 m0' *)
+  (*       (INJ0: Mem.inject j m0 m0') *)
+  (*       (d: mem_delta) *)
+  (*       (DWF: mem_delta_wf_inj j d) *)
+  (*       m1 *)
+  (*       (APPD: mem_delta_apply d m0 = Some m1) *)
+  (*       ch b ofs v cp m2 *)
+  (*       (STORE: Mem.store ch m1 b ofs v cp = Some m2) *)
+  (*       (UNMAPPED: j b = None) *)
+  (*   : *)
+  (*   exists m_i0, (Mem.inject j m_i0 m0') /\ (mem_delta_apply d m_i0 = Some m2). *)
+  (* Proof. *)
+  (*   revert j m0 m0' INJ0 DWF m1 APPD ch b ofs v cp m2 STORE UNMAPPED. induction d; simpl; intros. *)
+  (*   { inv APPD. exists m2. split; auto. eapply Mem.store_unmapped_inject; eauto. } *)
+  (*   destruct a as ((b0 & ofs0) & ((ch0 & v0) & cp0)). destruct (mem_delta_apply d m0) eqn:DAM. *)
+  (*   2:{ inv APPD. } *)
+  (*   inv DWF. rename H1 into DWF1, H2 into DWF0. *)
+  (*   specialize (IHd _ _ _ INJ0 DWF0 _ DAM). *)
+  (*   (* TODO: store commutes *) *)
+
+  (*   destruct IHd as (m_i' & DAM' & INJ_I). rewrite DAM'. rename m into m_i. *)
+
+Mem.store_unmapped_inject:
+  forall (f : meminj) (chunk : memory_chunk) (m1 : mem) (b1 : block) (ofs : Z) (v1 : val) (cp : compartment) (n1 m2 : mem),
+  Mem.inject f m1 m2 -> Mem.store chunk m1 b1 ofs v1 cp = Some n1 -> f b1 = None -> Mem.inject f n1 m2
 
   (* Memory injection for public global symbols: visible for external calls *)
   Definition meminj_public (ge: Senv.t): meminj :=
@@ -37,43 +173,7 @@ Section MEMDATA.
           | None => None
           end.
 
-  (* We keep delta only for some partial memory, as specified by some meminj *)
-  Definition mem_delta_wf_inj (d: mem_delta) (j: meminj): Prop :=
-    forall b ofs dd jj, (mem_delta_get d b ofs = Some dd) -> (j b = Some jj).
-
-  Definition mem_delta_data_fo (ddd: mem_delta_data): Prop :=
-    let '(ch, v, cp) := ddd in Forall (fun mv => match mv with | Byte bt => True | _ => False end) (encode_val ch v).
-  Definition mem_delta_ofs_fo (dd: mem_delta_ofs): Prop :=
-    Forall (fun '(k, ddd) => mem_delta_data_fo ddd) dd.
-  Definition mem_delta_fo (d: mem_delta): Prop :=
-    PTree.fold (fun p b dd => p /\ (mem_delta_ofs_fo dd)) d True.
-
-  Lemma mem_delta_apply_preserves_inj
-        (j: meminj) m0 m0'
-        (INJ0: Mem.inject j m0 m0')
-        (d: mem_delta)
-        (DWF: mem_delta_wf_inj d j)
-        (DFO: mem_delta_fo d)
-        m1
-        (APPD: mem_delta_apply d m0 = Some m1)
-    :
-    exists m1', (mem_delta_apply d m0' = Some m1') /\ (Mem.inject j m1 m1').
-  Proof.
-  Abort.
-
-
-  Definition mem_delta_writable (d: mem_delta) (m: mem) :=
-    forall (b: block) (ofs: Z) chunk v cp,
-      mem_delta_get d b ofs = Some (chunk, v, cp) ->
-      Mem.valid_access m chunk b ofs Writable (Some cp).
-
-  Definition mem_delta_respect_inj (d: mem_delta) (f: meminj) (m1 m2: mem) :=
-    (* (mem_weak_inj d f m1 m2) -> *)
-    (exists m2', (mem_apply_delta d m2 = Some m2') /\ (Mem.mem_inj f m1 m2')).
-
-  (* Memory inv = weak_inject /\ mem_delta_writable /\ mem_delta_respect_inj, meminj_public *)
-
-End MEMDATA.
+End MEMDELTA.
 
 
 Section BUNDLE.
