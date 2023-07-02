@@ -314,16 +314,11 @@ Section EVENT.
 
   (* only virtual (default) or real (cross) cases *)
   Inductive call_trace_vr {F V : Type} (ge : Genv.t F V) : compartment -> compartment -> block -> list val -> list typ -> trace -> ident -> list eventval -> Prop :=
-  | call_trace_vr_virtual : forall (cp cp' : compartment) (b : block) (vargs : list val) (vl : list eventval) (ty : list typ) (i : ident),
-      Genv.type_of_call ge cp cp' = Genv.DefaultCompartmentCall ->
-      Genv.invert_symbol ge b = Some i -> (vl = typ_to_eventvals ty) -> call_trace_vr ge cp cp' b vargs ty E0 i vl
   | call_trace_vr_cross : forall (cp cp' : compartment) (b : block) (vargs : list val) (vl : list eventval) (ty : list typ) (i : ident),
       Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall ->
       Genv.invert_symbol ge b = Some i -> eventval_list_match ge vl ty vargs -> call_trace_vr ge cp cp' b vargs ty (Event_call cp cp' i vl :: nil) i vl.
 
   Inductive return_trace_vr {F V : Type} (ge : Genv.t F V) : compartment -> compartment -> val -> rettype -> trace -> eventval -> Prop :=
-  | return_trace_vr_virtual : forall (cp cp' : compartment) (res : eventval) (v : val) (ty : rettype),
-      Genv.type_of_call ge cp cp' = Genv.DefaultCompartmentCall -> (res = typ_to_eventval (proj_rettype ty)) -> return_trace_vr ge cp cp' v ty E0 res
   | return_trace_vr_cross : forall (cp cp' : compartment) (res : eventval) (v : val) (ty : rettype),
       Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall -> eventval_match ge res (proj_rettype ty) v -> return_trace_vr ge cp cp' v ty (Event_return cp cp' res :: nil) res.
 
@@ -359,6 +354,7 @@ Section IR.
 
   Definition ir_state := option (block * mem * ir_conts)%type.
 
+  (* TODO *)
   Variant ir_step (ge: Asm.genv) : ir_state -> bundle_event -> ir_state -> Prop :=
     | ir_step_vr_call_internal
         cur m1 ik
@@ -404,10 +400,10 @@ Section IR.
         (INTRA: Genv.type_of_call ge cp_cur cp_ext = Genv.InternalCall)
         (SIG: sg = ef_sig ef)
         d m1'
-        (MEM: mem_apply_delta d m1 = Some m1')
+        (MEM: mem_delta_apply d m1 = Some m1')
         vargs vretv
-        (EC: external_call ef ge cp_cur vargs m1' tr vretv m2)
-        (LL: limit_leaks_and_unknown ef ge m1 vargs)
+        (EC: external_call ef ge vargs m1' tr vretv m2)
+        (VISFO: visible_fo_and_unknown ef ge m1 vargs)
         (ARGS: evargs = vals_to_eventvals ge vargs)
       :
       ir_step ge (Some (cur, m1, ik)) (Bundle_call tr id evargs sg (Some d)) (Some (cur, m2, ik))
@@ -417,10 +413,10 @@ Section IR.
         cp_cur
         (CURCP: cp_cur = Genv.find_comp ge (Vptr cur Ptrofs.zero))
         d m1'
-        (MEM: mem_apply_delta d m1 = Some m1')
+        (MEM: mem_delta_apply d m1 = Some m1')
         vargs vretv
-        (EC: external_call ef ge cp_cur vargs m1' tr vretv m2)
-        (LL: limit_leaks_and_unknown ef ge m1 vargs)
+        (EC: external_call ef ge vargs m1' tr vretv m2)
+        (VISFO: visible_fo_and_unknown ef ge m1 vargs)
         (ARGS: evargs = vals_to_eventvals ge vargs)
       :
       ir_step ge (Some (cur, m1, ik)) (Bundle_builtin tr ef evargs d) (Some (cur, m2, ik))
@@ -456,10 +452,10 @@ Section IR.
         (TR: call_trace_vr ge cp cp' b vargs (sig_args sg) tr1 id evargs)
         (* external function part *)
         d m1'
-        (MEM: mem_apply_delta d m1 = Some m1')
+        (MEM: mem_delta_apply d m1 = Some m1')
         tr2 m2 vretv
-        (EC: external_call ef ge cp vargs m1' tr2 vretv m2)
-        (LL: limit_leaks_and_unknown ef ge m1 vargs)
+        (EC: external_call ef ge vargs m1' tr2 vretv m2)
+        (VISFO: visible_fo_and_unknown ef ge m1 vargs)
         (ARGS: evargs = vals_to_eventvals ge vargs)
       :
       ir_step ge (Some (cur, m1, ik)) (Bundle_call (tr1 ++ tr2) id evargs sg (Some d)) None
@@ -479,10 +475,10 @@ Section IR.
         (TR1: call_trace_vr ge cp cp' b vargs (sig_args sg) tr1 id evargs)
         (* external function part *)
         d m1'
-        (MEM: mem_apply_delta d m1 = Some m1')
+        (MEM: mem_delta_apply d m1 = Some m1')
         tr2 m2 vretv
-        (TR2: external_call ef ge cp vargs m1' tr2 vretv m2)
-        (LL: limit_leaks_and_unknown ef ge m1 vargs)
+        (TR2: external_call ef ge vargs m1' tr2 vretv m2)
+        (VISFO: visible_fo_and_unknown ef ge m1 vargs)
         (ARGS: evargs = vals_to_eventvals ge vargs)
         (* return part *)
         tr3 evretv
@@ -492,8 +488,6 @@ Section IR.
         (TR3: return_trace_vr ge cp cp' vretv (sig_res sg) tr3 evretv)
       :
       ir_step ge (Some (cur, m1, ik)) (Bundle_call (tr1 ++ tr2 ++ tr3) id evargs sg (Some d)) (Some (cur, m2, ik)).
-
-  (* we need a more precise invariant for the proof for Clight; counters, mem_inj, env, cont, state *)
 
 End IR.
 
@@ -565,23 +559,22 @@ Section INVS.
   Definition match_stack (ge: Asm.genv) (ik: ir_conts) (st: stack) :=
     Forall2 (match_stackframe ge) ik st.
 
-  Definition match_mem (ge: Asm.genv) (d: mem_delta) (m_asm m_ir: mem): Prop :=
+  Definition match_mem (ge: Senv.t) (d: mem_delta) (m0 m_i m_a: mem): Prop :=
     let j := meminj_public ge in
-    (weak_inject d j m_asm m_ir) /\ (mem_delta_writable d m_asm) /\
-      (mem_delta_respect_inj d j m_asm m_ir).
+    (Mem.inject j m0 m_i) /\ (mem_delta_inj_wf j d) /\
+      (mem_delta_apply d m0 = Some m_a).
 
-
-  Definition match_state (ge: Asm.genv) (ast: Asm.state) (ist: ir_state) (d: mem_delta): Prop :=
+  Definition match_state (ge: Asm.genv) (m0: mem) (d: mem_delta)
+             (ast: Asm.state) (ist: ir_state): Prop :=
     match ast, ist with
     | State sk rs m_a, Some (cur, m_i, ik) =>
         (match_cur_stack cur ge sk) /\ (match_cur_regset cur ge rs) /\
-          (match_stack ge ik sk) /\ (match_mem ge d m_a m_i)
+          (match_stack ge ik sk) /\ (match_mem ge d m0 m_a m_i)
     | _, _ => False
     end.
 
 End INVS.
 
-(* TODO: destination of memcpy should not be public glob symb *)
 
 Section AUX.
 
