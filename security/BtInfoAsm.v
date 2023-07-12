@@ -354,7 +354,6 @@ Section IR.
 
   Definition ir_state := option (block * mem * ir_conts)%type.
 
-  (* TODO *)
   Variant ir_step (ge: Asm.genv) : ir_state -> bundle_event -> ir_state -> Prop :=
     | ir_step_vr_call_internal
         cur m1 ik
@@ -576,7 +575,7 @@ Section INVS.
 End INVS.
 
 
-Section AUX.
+Section MEASURE.
 
   Inductive star_measure {genv state : Type} (step : genv -> state -> trace -> state -> Prop) (ge : genv) : nat -> state -> trace -> state -> Prop :=
     star_measure_refl : forall s : state, star_measure step ge O s E0 s
@@ -597,7 +596,112 @@ Section AUX.
     destruct IHSTAR as (n & NEXT). exists (S n). econstructor 2. eapply H. eapply NEXT. auto.
   Qed.
 
-End AUX.
+End MEASURE.
+
+
+Section PROOF.
+
+  (* TODO *)
+
+  (* If main is External, treat it in a different case - 
+     the trace can start with Event_syscall, without a preceding Event_call *)
+  Lemma asm_to_ir
+        cpm ge ast ast' tr
+        (WFGE: wf_ge ge)
+        (WFASM: wf_asm ge ast)
+        (STAR: star (Asm.step cpm) ge ast tr ast')
+        ist m0 d
+        (MTST: match_state ge m0 d ast ist)
+    :
+    exists ist' btr, (unbundle btr = tr) /\ (star (ir_step) ge ist btr ist').
+  Proof.
+    apply measure_istar in STAR. destruct STAR as (n & STAR).
+    move n before ge. revert s s' it WFGE STAR sk rs m STATE WFSK WFRS cur m_ir k MC MM MS.
+    pattern n. apply (well_founded_induction Nat.lt_wf_0). intros m IH. intros.
+    inv STAR; subst.
+    { constructor 1. }
+    rename H0 into STAR. inv H; simpl.
+    - assert (INTRA: Genv.find_comp ge (Vptr cur Ptrofs.zero) = Genv.find_comp_ignore_offset ge (rs' PC)).
+      { rewrite MC. rewrite NEXTPC, <- ALLOWED. unfold Genv.find_comp_ignore_offset. rewrite H3. unfold Genv.find_comp. rewrite Genv.find_funct_find_funct_ptr. rewrite H4. auto. }
+      destruct (Genv.find_funct_ptr ge b') eqn:NEXTFUN. destruct f0.
+      + eapply IH; try reflexivity. 3: eauto. all: auto.
+        { unfold wf_regset_stack. rewrite NEXTPC, NEXTFUN. auto. }
+        { admit. (* mem *) }
+      + (* intra -> external *)
+        inv STAR.
+        { constructor 1. }
+        inv H. all: rewrite NEXTPC in H8; inv H8; rewrite NEXTFUN in H11; inv H11.
+        inv H0.
+        { (* trace ends *)
+          exploit external_call_trace_length. eauto. intros EVLEN. destruct t.
+          - simpl. constructor 1.
+          - destruct t; simpl in EVLEN. 2: lia. clear EVLEN.
+            simpl. pose proof NEXTFUN as NF0. unfold Genv.find_funct_ptr in NF0. destruct (Genv.find_def ge b0) eqn:FDB0; [|inv NF0]. destruct g; inv NF0.
+            exploit wf_ge_block_to_id; eauto. intros (fid & INV).
+            econstructor 4; try reflexivity; auto.
+            { admit. (* ext call sem *) }
+            { eauto. }
+            { unfold Genv.allowed_call. right; left. rewrite <- NEXTPC. rewrite INTRA. unfold Genv.find_comp_ignore_offset, Genv.find_comp. rewrite NEXTPC. auto. }
+            { unfold Genv.type_of_call. rewrite INTRA. unfold Genv.find_comp_ignore_offset, Genv.find_comp. rewrite NEXTPC. rewrite Pos.eqb_refl. auto. }
+            { constructor 1. }
+        }
+        inv H.
+        (* replace ((set_pair (loc_external_result (ef_sig ef)) res (undef_caller_save_regs rs')) # PC <- (rs' X1) PC) with (rs' X1) in *. *)
+        (* 2:{ rewrite Pregmap.gss. auto. } *)
+        destruct (Pos.eqb_spec (callee_comp cpm sk) (Genv.find_comp_ignore_offset ge ((set_pair (loc_external_result (ef_sig ef)) res (undef_caller_save_regs rs')) # PC <- (rs' X1) PC))).
+        { (* intra-return *)
+          clear PC_RA RESTORE_SP NO_CROSS_PTR. pose proof EV as RETEV. inv RETEV; simpl.
+          2:{ exfalso. unfold Genv.type_of_call in H. rewrite <- e in H. rewrite Pos.eqb_refl in H. inv H. }
+          2:{ exfalso. unfold Genv.type_of_call in H. rewrite <- e in H. rewrite Pos.eqb_refl in H. inv H. }
+          assert (STK: st' = sk).
+          { unfold update_stack_return in STUPD. rewrite <- e in STUPD. rewrite Pos.eqb_refl in STUPD. inv STUPD. auto. }
+          subst st'. simpl in INFO; subst. simpl.
+          pose proof H1 as IH_ISTAR. move IH_ISTAR after H1. inv H1.
+          { (* trace ends *)
+            exploit external_call_trace_length. eauto. intros EVLEN. destruct t.
+            { simpl. clear EVLEN. constructor 1. }
+            destruct t; simpl in EVLEN. 2: lia. clear EVLEN.
+            pose proof NEXTFUN as NF0. unfold Genv.find_funct_ptr in NF0. destruct (Genv.find_def ge b0) eqn:FDB0; [|inv NF0]. destruct g; inv NF0.
+            exploit wf_ge_block_to_id. eauto. eapply FDB0. intros (fid & INV).
+            eapply info_asm_sem_wf_intra_call_external; eauto.
+            { admit. (* ext call sem *) }
+            { unfold Genv.allowed_call. right; left. rewrite <- NEXTPC. rewrite INTRA. unfold Genv.find_comp_ignore_offset, Genv.find_comp. rewrite NEXTPC. auto. }
+            { unfold Genv.type_of_call. rewrite INTRA. unfold Genv.find_comp_ignore_offset, Genv.find_comp. rewrite NEXTPC. rewrite Pos.eqb_refl. auto. }
+            { constructor 1. }
+          }
+          (* now we case-analysis new PC = (rs' X1) *)
+          destruct (val_is_ptr_or_not (rs' X1)).
+          { (* not a Vptr, so booms for every step *)
+            rename H1 into NP. clear - H0 NP. inv H0; exfalso. all: rewrite Pregmap.gss in H3; eapply NP; eauto.
+          }
+          destruct H1 as (b2 & ofs2 & NEXTPC2). destruct (Genv.find_funct_ptr ge b2) eqn:NEXTFUN2. destruct f0.
+          { (* next fun is internal - done by induction *)
+            exploit external_call_trace_length. eauto. intros EVLEN. destruct t; simpl.
+            { clear EVLEN.
+              eapply IH. 3: eapply IH_ISTAR. all: auto.
+              - red. rewrite Pregmap.gss. rewrite NEXTPC2. rewrite NEXTFUN2. auto.
+              - rewrite Pregmap.gss in *. rewrite <- e. rewrite <- REC_CURCOMP. auto.
+              - admit. (* mem -> need to execute external call to maintain injection? *)
+            }
+            destruct t; simpl in *. 2:lia. clear EVLEN.
+            pose proof NEXTFUN as NF0. unfold Genv.find_funct_ptr in NF0. destruct (Genv.find_def ge b0) eqn:FDB0; [|inv NF0]. destruct g; inv NF0.
+            exploit wf_ge_block_to_id. eauto. eapply FDB0. intros (fid & INV).
+            eapply info_asm_sem_wf_intra_call_external; eauto.
+            { admit. (* ext call sem *) }
+            { unfold Genv.allowed_call. right; left. rewrite <- NEXTPC. rewrite INTRA. unfold Genv.find_comp_ignore_offset, Genv.find_comp. rewrite NEXTPC. auto. }
+            { unfold Genv.type_of_call. rewrite INTRA. unfold Genv.find_comp_ignore_offset, Genv.find_comp. rewrite NEXTPC. rewrite Pos.eqb_refl. auto. }
+            eapply IH. 3: eapply IH_ISTAR. all: auto.
+            - red. rewrite Pregmap.gss. rewrite NEXTPC2. rewrite NEXTFUN2. auto.
+            - rewrite Pregmap.gss in *. rewrite <- e. rewrite <- REC_CURCOMP. auto.
+            - admit. (* mem *)
+          }
+          { (* next fun is external; undef_caller_save_regs sets RA=Vundef, so we take extcall-step, which sets PC=RA, and after the return step, we have PC=Vundef. *)
+            (* TODO *)
+
+            Abort.
+
+
+End PROOF.
 
 
 Section INFORMATIVE.
