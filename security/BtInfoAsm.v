@@ -292,6 +292,11 @@ Section BUNDLE.
     | nil => nil
     end.
 
+  Inductive istar {genv state : Type} (step : genv -> state -> bundle_event -> state -> Prop) (ge : genv) : state -> bundle_trace -> state -> Prop :=
+    istar_refl : forall s : state, istar step ge s nil s
+  | istar_step : forall (s1 : state) (ev : bundle_event) (s2 : state) (t2 : bundle_trace) (s3 : state) (t : bundle_trace),
+      step ge s1 ev s2 -> istar step ge s2 t2 s3 -> t = ev :: t2 -> istar step ge s1 t s3.
+
 End BUNDLE.
 
 
@@ -568,7 +573,7 @@ Section INVS.
     match ast, ist with
     | State sk rs m_a, Some (cur, m_i, ik) =>
         (match_cur_stack cur ge sk) /\ (match_cur_regset cur ge rs) /\
-          (match_stack ge ik sk) /\ (match_mem ge d m0 m_a m_i)
+          (match_stack ge ik sk) /\ (match_mem ge d m0 m_i m_a)
     | _, _ => False
     end.
 
@@ -601,27 +606,77 @@ End MEASURE.
 
 Section PROOF.
 
-  (* TODO *)
+  Ltac empty_case := do 2 eexists; split; [|constructor 1]; auto.
 
   (* If main is External, treat it in a different case - 
      the trace can start with Event_syscall, without a preceding Event_call *)
   Lemma asm_to_ir
-        cpm ge ast ast' tr
+        cpm ge m0
+        ast ast' tr
         (WFGE: wf_ge ge)
         (WFASM: wf_asm ge ast)
         (STAR: star (Asm.step cpm) ge ast tr ast')
-        ist m0 d
+        ist d
         (MTST: match_state ge m0 d ast ist)
     :
-    exists ist' btr, (unbundle btr = tr) /\ (star (ir_step) ge ist btr ist').
+    exists btr ist', (unbundle_trace btr = tr) /\ (istar (ir_step) ge ist btr ist').
   Proof.
-    apply measure_istar in STAR. destruct STAR as (n & STAR).
-    move n before ge. revert s s' it WFGE STAR sk rs m STATE WFSK WFRS cur m_ir k MC MM MS.
-    pattern n. apply (well_founded_induction Nat.lt_wf_0). intros m IH. intros.
+    apply measure_star in STAR. destruct STAR as (n & STAR).
+    move n before m0. revert ast ast' tr WFGE WFASM STAR ist d MTST.
+    pattern n. apply (well_founded_induction Nat.lt_wf_0). intros n1 IH. intros.
     inv STAR; subst.
-    { constructor 1. }
+    (* empty case *)
+    { empty_case. }
     rename H0 into STAR. inv H; simpl.
-    - assert (INTRA: Genv.find_comp ge (Vptr cur Ptrofs.zero) = Genv.find_comp_ignore_offset ge (rs' PC)).
+    - destruct (Genv.find_funct_ptr ge b') eqn:NEXTF.
+      (* no next function *)
+      2:{ move STAR after NEXTF. inv STAR.
+          (* empty case *)
+          { empty_case. }
+          (* take a step *)
+          { inv H.
+            (* invalid *)
+            all: exfalso; rewrite NEXTPC in H10; inv H10; rewrite NEXTF in H11; inv H11.
+          }
+      }
+      destruct f0.
+      (* has next function --- internal *)
+      { assert (WFASM2: wf_asm ge (State st rs' m')).
+        { clear IH. unfold wf_asm in *. destruct WFASM as [WFASM0 WFASM1]. split; [auto|].
+          unfold wf_regset in *. rewrite H0, H1 in WFASM1. rewrite NEXTPC, NEXTF. auto.
+        }
+        (* TODO: lemma for asm-step and mem_delta *)
+        assert (d': mem_delta).
+        { admit. }
+        assert (MTST2: match_state ge m0 d' (State st rs' m') ist).
+        { clear IH. unfold match_state in *. destruct ist as [[[cur m_i] ik] |].
+          2:{ inv MTST. }
+          destruct MTST as (MTST0 & MTST1 & MTST2 & MTST3). split. auto. split.
+          { unfold match_cur_regset in *. rewrite NEXTPC. rewrite <- ALLOWED. rewrite MTST1.
+            unfold Genv.find_comp_ignore_offset. rewrite H0. unfold Genv.find_comp. rewrite Genv.find_funct_find_funct_ptr.
+            rewrite H1. auto.
+          }
+          split. auto.
+          { unfold match_mem in *. destruct MTST3 as (MEM0 & MEM1 & MEM2). split. auto. split.
+            
+            
+mem_delta_apply_preserves_inj:
+  forall (j : meminj) (m0 m0' : mem),
+  Mem.inject j m0 m0' ->
+  forall d : mem_delta,
+  mem_delta_inj_wf j d ->
+  mem_delta_inj_fo j d ->
+  forall m1 : mem, mem_delta_apply d m0 = Some m1 -> exists m1' : mem, mem_delta_apply_inj j d m0' = Some m1' /\ Mem.inject j m1 m1'
+
+match_mem = 
+fun (ge : Senv.t) (d : mem_delta) (m0 m_i m_a : mem) => let j := meminj_public ge in Mem.inject j m0 m_i /\ mem_delta_inj_wf j d /\ mem_delta_apply d m0 = Some m_a
+     : Senv.t -> mem_delta -> mem -> mem -> mem -> Prop
+
+
+
+
+      unfold wf_asm in WFASM. unfold match_state in MTST. 
+      assert (INTRA: Genv.find_comp ge (Vptr cur Ptrofs.zero) = Genv.find_comp_ignore_offset ge (rs' PC)).
       { rewrite MC. rewrite NEXTPC, <- ALLOWED. unfold Genv.find_comp_ignore_offset. rewrite H3. unfold Genv.find_comp. rewrite Genv.find_funct_find_funct_ptr. rewrite H4. auto. }
       destruct (Genv.find_funct_ptr ge b') eqn:NEXTFUN. destruct f0.
       + eapply IH; try reflexivity. 3: eauto. all: auto.
