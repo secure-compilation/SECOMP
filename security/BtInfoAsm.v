@@ -694,7 +694,16 @@ Section PROOF.
         exists btr, ist'. split; auto.
       }
       (* has next function --- external *)
-
+      { move STAR after NEXTF. inv STAR.
+        (* empty case *)
+        { empty_case. }
+        (* take a step *)
+        inv H.
+        (* invalid *)
+        1,2,3,4: rewrite NEXTPC in H10; inv H10; rewrite NEXTF in H11; inv H11.
+        (* external call *)
+        {
+          (* TODO *)
 
 
 
