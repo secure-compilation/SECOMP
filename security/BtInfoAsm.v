@@ -97,6 +97,19 @@ Section MEMDELTA.
                   end
                ) (Some m0) d.
 
+  Lemma mem_delta_apply_cons
+        d m0 m k
+        (MEM: mem_delta_apply d m0 = Some m)
+    :
+    mem_delta_apply (k :: d) m0 = 
+      match k with
+      | mem_delta_kind_store dd => mem_delta_apply_store (Some m) dd
+      | mem_delta_kind_bytes dd => mem_delta_apply_bytes (Some m) dd
+      | mem_delta_kind_alloc dd => mem_delta_apply_alloc (Some m) dd
+      | mem_delta_kind_free dd => mem_delta_apply_free (Some m) dd
+      end.
+  Proof. simpl. rewrite MEM. auto. Qed.
+
   (* Delta and injection relation *)
   Definition mem_delta_kind_inj_wf (j: meminj): mem_delta_kind -> Prop :=
     fun data =>
@@ -604,6 +617,24 @@ Section MEASURE.
 End MEASURE.
 
 
+Section FROMASM.
+
+  Lemma mem_delta_exec_instr
+        ge f i rs m cp rs' m'
+        (* comp_of f ? *)
+        (EXEC: exec_instr ge f i rs m cp = Next rs' m')
+        m0 d
+        (DELTA0: mem_delta_inj_wf (meminj_public ge) d)
+        (DELTA1: mem_delta_apply d m0 = Some m)
+    :
+    exists d', (mem_delta_inj_wf (meminj_public ge) d') /\ (mem_delta_apply d' m0 = Some m').
+  Proof.
+    (* TODO *)
+  Admitted.
+
+End FROMASM.
+
+
 Section PROOF.
 
   Ltac empty_case := do 2 eexists; split; [|constructor 1]; auto.
@@ -641,40 +672,33 @@ Section PROOF.
       }
       destruct f0.
       (* has next function --- internal *)
-      { assert (WFASM2: wf_asm ge (State st rs' m')).
+      { assert (WFASM': wf_asm ge (State st rs' m')).
         { clear IH. unfold wf_asm in *. destruct WFASM as [WFASM0 WFASM1]. split; [auto|].
           unfold wf_regset in *. rewrite H0, H1 in WFASM1. rewrite NEXTPC, NEXTF. auto.
         }
-        (* TODO: lemma for asm-step and mem_delta *)
-        assert (d': mem_delta).
-        { admit. }
-        assert (MTST2: match_state ge m0 d' (State st rs' m') ist).
-        { clear IH. unfold match_state in *. destruct ist as [[[cur m_i] ik] |].
-          2:{ inv MTST. }
-          destruct MTST as (MTST0 & MTST1 & MTST2 & MTST3). split. auto. split.
+        unfold match_state in MTST. destruct ist as [[[cur m_i] ik] |].
+        2:{ inv MTST. }
+        destruct MTST as (MTST0 & MTST1 & MTST2 & MTST3). destruct MTST3 as (MEM0 & MEM1 & MEM2).
+        exploit mem_delta_exec_instr. eapply H3. eapply MEM1. eapply MEM2. intros (d' & MEM1' & MEM2').
+        assert (MTST': match_state ge m0 d' (State st rs' m') (Some (cur, m_i, ik))).
+        { clear IH. split. auto. split.
           { unfold match_cur_regset in *. rewrite NEXTPC. rewrite <- ALLOWED. rewrite MTST1.
             unfold Genv.find_comp_ignore_offset. rewrite H0. unfold Genv.find_comp. rewrite Genv.find_funct_find_funct_ptr.
             rewrite H1. auto.
           }
           split. auto.
-          { unfold match_mem in *. destruct MTST3 as (MEM0 & MEM1 & MEM2). split. auto. split.
-            
-            
-mem_delta_apply_preserves_inj:
-  forall (j : meminj) (m0 m0' : mem),
-  Mem.inject j m0 m0' ->
-  forall d : mem_delta,
-  mem_delta_inj_wf j d ->
-  mem_delta_inj_fo j d ->
-  forall m1 : mem, mem_delta_apply d m0 = Some m1 -> exists m1' : mem, mem_delta_apply_inj j d m0' = Some m1' /\ Mem.inject j m1 m1'
-
-match_mem = 
-fun (ge : Senv.t) (d : mem_delta) (m0 m_i m_a : mem) => let j := meminj_public ge in Mem.inject j m0 m_i /\ mem_delta_inj_wf j d /\ mem_delta_apply d m0 = Some m_a
-     : Senv.t -> mem_delta -> mem -> mem -> mem -> Prop
+          { unfold match_mem; auto. }
+        }
+        exploit IH. 4: eapply STAR. all: auto. eapply MTST'.
+        intros (btr & ist' & UNTR & ISTAR).
+        exists btr, ist'. split; auto.
+      }
+      (* has next function --- external *)
 
 
 
 
+            (*   OLD   *)
       unfold wf_asm in WFASM. unfold match_state in MTST. 
       assert (INTRA: Genv.find_comp ge (Vptr cur Ptrofs.zero) = Genv.find_comp_ignore_offset ge (rs' PC)).
       { rewrite MC. rewrite NEXTPC, <- ALLOWED. unfold Genv.find_comp_ignore_offset. rewrite H3. unfold Genv.find_comp. rewrite Genv.find_funct_find_funct_ptr. rewrite H4. auto. }
