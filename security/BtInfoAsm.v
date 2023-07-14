@@ -260,6 +260,37 @@ Section MEMDELTA.
           | None => None
           end.
 
+  (* TODO: this is false --- pointers can mess around *)
+(*   Lemma val_inject_incr_inv *)
+(*         f f' v v' *)
+(*         (INCR: inject_incr f f') *)
+(*         (INJ: Val.inject f' v v') *)
+(*     : *)
+(*     Val.inject f v v'. *)
+(*   Proof. *)
+(*     inv INJ; auto. eapply Val.inject_ptr; auto. *)
+(* val_inject_incr: forall (f1 f2 : meminj) (v v' : val), inject_incr f1 f2 -> Val.inject f1 v v' -> Val.inject f2 v v' *)
+
+  Lemma mem_inject_incr
+        f f' m m'
+        (INCR: inject_incr f f')
+        (INJ: Mem.inject f' m m')
+    :
+    Mem.inject f m m'.
+  Proof.
+    unfold Mem.inject in *. inv INJ. split; eauto.
+    - clear - INCR mi_inj. inv mi_inj. split; eauto. intros. exploit mi_memval; eauto. intros.
+      eapply memval_inject_incr; eauto.
+    
+    
+val_inject_incr: forall (f1 f2 : meminj) (v v' : val), inject_incr f1 f2 -> Val.inject f1 v v' -> Val.inject f2 v v'
+Unusedglobproof.regset_inject_incr: forall (f f' : meminj) (rs rs' : RTL.regset), Unusedglobproof.regset_inject f rs rs' -> inject_incr f f' -> Unusedglobproof.regset_inject f' rs rs'
+memval_inject_incr: forall (f f' : meminj) (v1 v2 : memval), memval_inject f v1 v2 -> inject_incr f f' -> memval_inject f' v1 v2
+Stackingproof.agree_regs_inject_incr: forall (j : meminj) (ls : Linear.locset) (rs : Mach.regset) (j' : meminj), Stackingproof.agree_regs j ls rs -> inject_incr j j' -> Stackingproof.agree_regs j' ls rs
+Cminorgenproof.match_temps_invariant: forall (f f' : meminj) (le : Csharpminor.temp_env) (te : Cminor.env), Cminorgenproof.match_temps f le te -> inject_incr f f' -> Cminorgenproof.match_temps f' le te
+val_inject_list_incr: forall (f1 f2 : meminj) (vl vl' : list val), inject_incr f1 f2 -> Val.inject_list f1 vl vl' -> Val.inject_list f2 vl vl'
+
+
 End MEMDELTA.
 
 
