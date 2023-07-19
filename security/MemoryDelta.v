@@ -379,8 +379,146 @@ Section MEMDELTA.
   Qed.
 
 
+  (* Lemma nth_of_encode_val *)
+  (*       ch v ofs ofs' *)
+  (*       (GE: ofs <= ofs' < ofs + (size_chunk ch)) *)
+  (*   : *)
+  (*   exists mv, nth_error (encode_val ch v) (Z.to_nat (ofs' - ofs)) = Some mv. *)
+  (* Proof. *)
+
+  Lemma get_from_setN_same
+        ofs0 ofs l
+        (OFS: ofs0 <= ofs < ofs0 + Z.of_nat (Datatypes.length l))
+        (mc1 mc2 : (ZMap.t memval))
+    :
+    ZMap.get ofs (Mem.setN l ofs0 mc1) = ZMap.get ofs (Mem.setN l ofs0 mc2).
+  Proof.
+    revert ofs0 ofs OFS mc1 mc2. induction l; simpl; intros.
+    { lia. }
+    destruct (Z.eqb_spec ofs0 ofs).
+    { subst ofs0. clear OFS. rewrite ! Mem.setN_outside; try lia. rewrite ! ZMap.gss. auto. }
+    { eapply IHl. lia. }
+  Qed.
+
+  Definition mem_delta_changed_store (d: mem_delta_store) (b': block) (ofs': Z): Prop :=
+    let '(ch, b, ofs, v, cp) := d in
+    (b = b') /\ (ofs <= ofs' < ofs + (size_chunk ch)).
+
+  Lemma mem_delta_changed_store_same
+        d b ofs
+        (CHG: mem_delta_changed_store d b ofs)
+        m1 m1' m2 m2'
+        (APPD1: mem_delta_apply_store (Some m1) d = Some m1')
+        (APPD2: mem_delta_apply_store (Some m2) d = Some m2')
+    :
+    ZMap.get ofs (Mem.mem_contents m1') !! b = ZMap.get ofs (Mem.mem_contents m2') !! b.
+  Proof.
+    destruct d as [[[[ch0 b0] ofs0] v0] cp0]. destruct CHG as (BLK & OFS). subst b0.
+    simpl in *. apply Mem.store_mem_contents in APPD1, APPD2. rewrite APPD1, APPD2. rewrite ! PMap.gss.
+    rewrite size_chunk_conv, <- (encode_val_length ch0 v0) in OFS.
+    remember (encode_val ch0 v0) as l. remember (Mem.mem_contents m1) as mc1. remember (Mem.mem_contents m2) as mc2. clear - OFS.
+    eapply get_from_setN_same. auto.
+  Qed.
+
+  Definition mem_delta_changed_bytes (d: mem_delta_bytes) (b': block) (ofs': Z): Prop :=
+    let '(b, ofs, mvs, cp) := d in
+    (b = b') /\ (ofs <= ofs' < ofs + Z.of_nat (Datatypes.length mvs)).
+
+  Lemma mem_delta_changed_bytes_same
+        d b ofs
+        (CHG: mem_delta_changed_bytes d b ofs)
+        m1 m1' m2 m2'
+        (APPD1: mem_delta_apply_bytes (Some m1) d = Some m1')
+        (APPD2: mem_delta_apply_bytes (Some m2) d = Some m2')
+    :
+    ZMap.get ofs (Mem.mem_contents m1') !! b = ZMap.get ofs (Mem.mem_contents m2') !! b.
+  Proof.
+    destruct d as [[[b0 ofs0] mvs0] cp0]. destruct CHG as (BLK & OFS). subst b0.
+    simpl in *. apply Mem.storebytes_mem_contents in APPD1, APPD2. rewrite APPD1, APPD2. rewrite ! PMap.gss.
+    eapply get_from_setN_same. auto.
+  Qed.
+
+  Definition mem_delta_changed_alloc (d: mem_delta_alloc) (b': block) (ofs': Z): Prop :=
+    let '(cp, lo, hi) := d in
+    False.
+
+  Lemma mem_delta_changed_alloc_same
+        d b ofs
+        (CHG: mem_delta_changed_alloc d b ofs)
+        m1 m1' m2 m2'
+        (APPD1: mem_delta_apply_alloc (Some m1) d = Some m1')
+        (APPD2: mem_delta_apply_alloc (Some m2) d = Some m2')
+    :
+    ZMap.get ofs (Mem.mem_contents m1') !! b = ZMap.get ofs (Mem.mem_contents m2') !! b.
+  Proof.
+    unfold mem_delta_changed_alloc in CHG. destruct d. destruct p. inv CHG.
+  Qed.
+
+  Definition mem_delta_changed_free (d: mem_delta_free) (b': block) (ofs': Z): Prop :=
+    let '(b, lo, hi, cp) := d in
+    (b = b') /\ (lo <= ofs' < hi).
+
+  Definition mem_delta_kind_changed (k: mem_delta_kind) (b: block) (ofs: Z) :=
+    match k with
+    | mem_delta_kind_store dd => mem_delta_changed_store dd b ofs
+    | mem_delta_kind_bytes dd => mem_delta_changed_bytes dd b ofs
+    | mem_delta_kind_alloc dd => mem_delta_changed_alloc dd b ofs
+    | mem_delta_kind_free dd => mem_delta_changed_free dd b ofs
+    end.
+
+  Definition mem_delta_changed (d: mem_delta) (b: block) (ofs: Z) :=
+    Exists (fun k => mem_delta_kind_changed k b ofs) d.
+
+  Definition mem_delta_kind_changed_by_store_inj (j: meminj) (k: mem_delta_kind) (b: block) (ofs: Z) :=
+    match k with
+    | mem_delta_kind_store (ch0, b0, ofs0, v0, cp0) =>
+        match j b0 with
+        | Some _ => mem_delta_changed_store (ch0, b0, ofs0, v0, cp0) b ofs
+        | _ => False
+        end
+    | _ => False
+    end.
+
+  Definition mem_delta_changed_by_store_inj (j: meminj) (d: mem_delta) (b: block) (ofs: Z) :=
+    Exists (fun k => mem_delta_kind_changed_by_store_inj j k b ofs) d.
+
+  Lemma mem_delta_changed_only_by_store
+        j d b ofs
+        (INJ: j b <> None)
+        (CHG: mem_delta_changed d b ofs)
+        (WF: mem_delta_inj_wf j d)
+    :
+    mem_delta_changed_by_store_inj j d b ofs.
+  Proof.
+
+  Abort.
+
+  Lemma mem_delta_unchanged_or_changed
+        d b ofs
+    :
+    mem_delta_unchanged d b ofs \/ mem_delta_changed d b ofs.
+  Proof.
+  Abort.
 
 
+(ZMap.get ofs (Mem.mem_contents m1) !! b1)
+Mem.store_mem_contents:
+  forall (chunk : memory_chunk) (m1 : mem) (b : block) (ofs : Z) (v : val) (cp : compartment) (m2 : mem),
+  Mem.store chunk m1 b ofs v cp = Some m2 -> Mem.mem_contents m2 = PMap.set b (Mem.setN (encode_val chunk v) ofs (Mem.mem_contents m1) !! b) (Mem.mem_contents m1)
+Mem.setN_in: forall (vl : list memval) (p q : Z) (c : ZMap.t memval), p <= q < p + Z.of_nat (Datatypes.length vl) -> In (ZMap.get q (Mem.setN vl p c)) vl
+
+
+
+
+
+
+
+Mem.store_mem_contents:
+  forall (chunk : memory_chunk) (m1 : mem) (b : block) (ofs : Z) (v : val) (cp : compartment) (m2 : mem),
+  Mem.store chunk m1 b ofs v cp = Some m2 -> Mem.mem_contents m2 = PMap.set b (Mem.setN (encode_val chunk v) ofs (Mem.mem_contents m1) !! b) (Mem.mem_contents m1)
+Mem.storebytes_mem_contents:
+  forall (m1 : mem) (b : block) (ofs : Z) (bytes : list memval) (cp : compartment) (m2 : mem),
+  Mem.storebytes m1 b ofs bytes cp = Some m2 -> Mem.mem_contents m2 = PMap.set b (Mem.setN bytes ofs (Mem.mem_contents m1) !! b) (Mem.mem_contents m1)
 
 
 
