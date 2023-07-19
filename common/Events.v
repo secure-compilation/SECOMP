@@ -2137,8 +2137,7 @@ Section VISIBLE.
     forall id b ofs
       (PUBLIC: Senv.public_symbol ge id = true)
       (FIND: Senv.find_symbol ge id = Some b)
-      (READABLE: Mem.perm m b ofs Cur Readable)
-    ,
+      (READABLE: Mem.perm m b ofs Cur Readable),
       loc_first_order m b ofs.
 
   Definition block_public (ge: Senv.t) (b: block): Prop :=
@@ -2188,6 +2187,24 @@ Section VISIBLE.
                              end
     | EF_inline_asm cp txt sg clb => visible_fo ge m (sig_args sg) args
     | _ => False
+    end.
+
+
+  (* Should be ensured by the user *)
+  Definition unknown_returns_fo_pub
+             (ef: external_function) (ge: Senv.t) (m: mem) (args: list val) : Prop :=
+    match ef with
+    | EF_external cp name sg =>
+        forall ge args m0 tr rv m1, (external_functions_sem name sg ge args m0 tr rv m1) -> public_first_order ge m1
+    | EF_builtin cp name sg
+    | EF_runtime cp name sg =>
+        match lookup_builtin_function name sg with
+        | None => forall ge args m0 tr rv m1, (external_functions_sem name sg ge args m0 tr rv m1) -> public_first_order ge m1
+        | _ => True
+        end
+    | EF_inline_asm cp txt sg clb =>
+        forall ge args m0 tr rv m1, (inline_assembly_sem cp txt sg ge args m0 tr rv m1) -> public_first_order ge m1
+    | _ => True
     end.
 
 End VISIBLE.
