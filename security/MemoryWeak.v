@@ -135,7 +135,6 @@ Section WINJ.
       store chunk m1 b1 ofs v1 cp = Some n1 ->
       meminj_no_overlap f m1 ->
       f b1 = Some (b2, delta) ->
-      Val.inject f v1 v2 ->
       exists n2,
         store chunk m2 b2 (ofs + delta) v2 cp = Some n2
         /\ mem_winj f n1 n2.
@@ -143,7 +142,7 @@ Section WINJ.
     intros.
     assert (valid_access m2 chunk b2 (ofs + delta) Writable (Some cp)).
     eapply valid_access_winj; eauto with mem.
-    destruct (valid_access_store _ _ _ _ _ v2 H4) as [n2 STORE].
+    destruct (valid_access_store _ _ _ _ _ v2 H3) as [n2 STORE].
     exists n2; split. auto.
     constructor.
     (* perm *)
@@ -849,7 +848,6 @@ Section WINJ.
       winject f m1 m2 ->
       store chunk m1 b1 ofs v1 cp = Some n1 ->
       f b1 = Some (b2, delta) ->
-      Val.inject f v1 v2 ->
       exists n2,
         store chunk m2 b2 (ofs + delta) v2 cp = Some n2
         /\ winject f n1 n2.
@@ -867,7 +865,7 @@ Section WINJ.
     red; intros. eauto with mem.
     (* representable *)
     intros. eapply mwi_representable; try eassumption.
-    destruct H4; eauto with mem.
+    destruct H3; eauto with mem.
     (* perm inv *)
     intros. exploit mwi_perm_inv0; eauto using perm_store_2.
     intuition eauto using perm_store_1, perm_store_2.
@@ -1552,20 +1550,20 @@ Section WINJ.
     eapply owned_new_block; eauto.
   Qed.
 
-  Theorem store_winject_neutral:
-    forall chunk m b ofs v cp m' thr,
-      store chunk m b ofs v cp = Some m' ->
-      winject_neutral thr m ->
-      Plt b thr ->
-      Val.inject (flat_winj thr) v v ->
-      winject_neutral thr m'.
-  Proof.
-    intros; red.
-    exploit store_mapped_winj. eauto. eauto. apply flat_winj_no_overlap.
-    unfold flat_winj. apply pred_dec_true; auto. eauto.
-    replace (ofs + 0) with ofs by lia.
-    intros [m'' [A B]]. congruence.
-  Qed.
+  (* Theorem store_winject_neutral: *)
+  (*   forall chunk m b ofs v cp m' thr, *)
+  (*     store chunk m b ofs v cp = Some m' -> *)
+  (*     winject_neutral thr m -> *)
+  (*     Plt b thr -> *)
+  (*     Val.inject (flat_winj thr) v v -> *)
+  (*     winject_neutral thr m'. *)
+  (* Proof. *)
+  (*   intros; red. *)
+  (*   exploit store_mapped_winj. eauto. eauto. apply flat_winj_no_overlap. *)
+  (*   unfold flat_winj. apply pred_dec_true; auto. eauto. *)
+  (*   replace (ofs + 0) with ofs by lia. *)
+  (*   intros [m'' [A B]]. congruence. *)
+  (* Qed. *)
 
   Theorem drop_winject_neutral:
     forall m b lo hi p cp m' thr,
@@ -1581,3 +1579,61 @@ Section WINJ.
   Qed.
 
 End WINJ.
+
+Section PROPS.
+
+  Lemma mem_winj_inj_incr
+        j1 j2 m m'
+        (INCR: inject_incr j1 j2)
+        (WINJ: mem_winj j2 m m')
+    :
+    mem_winj j1 m m'.
+  Proof. inv WINJ. split; eauto. Qed.
+
+  Lemma winject_inj_incr
+        j1 j2 m m'
+        (INCR: inject_incr j1 j2)
+        (WINJ: winject j2 m m')
+    :
+    winject j1 m m'.
+  Proof.
+    inv WINJ. split; eauto. eapply mem_winj_inj_incr; eauto.
+    { intros. destruct (j1 b) as [[b' ofs']|] eqn: JB; auto. specialize (INCR _ _ _ JB). specialize (mi_freeblocks0 _ H). rewrite INCR in mi_freeblocks0. congruence. }
+    { unfold meminj_no_overlap in *. intros. eapply mwi_no_overlap0; eauto. }
+  Qed.
+
+  Lemma mem_inj_implies_mem_winj
+        j m m'
+        (INJ: Mem.mem_inj j m m')
+    :
+    mem_winj j m m'.
+  Proof. inv INJ. split; auto. Qed.
+
+  Lemma inject_implies_winject
+        j m m'
+        (INJ: Mem.inject j m m')
+    :
+    winject j m m'.
+  Proof. inv INJ. split; auto. apply mem_inj_implies_mem_winj; auto. Qed.
+
+  Definition mem_inj_val f m1 m2 :=
+    forall (b1 : block) (ofs : Z) (b2 : block) (delta : Z),
+      f b1 = Some (b2, delta) -> Mem.perm m1 b1 ofs Cur Readable -> memval_inject f (ZMap.get ofs (Mem.mem_contents m1) # b1) (ZMap.get (ofs + delta) (Mem.mem_contents m2) # b2).
+
+  Lemma mem_winj_to_mem_inj
+        j m m'
+        (WINJ: mem_winj j m m')
+        (INJV: mem_inj_val j m m')
+    :
+    Mem.mem_inj j m m'.
+  Proof. inv WINJ. split; eauto. Qed.
+
+  Lemma winject_to_inject
+        j m m'
+        (WINJ: winject j m m')
+        (INJV: mem_inj_val j m m')
+    :
+    Mem.inject j m m'.
+  Proof. inv WINJ. split; eauto. apply mem_winj_to_mem_inj; auto. Qed.
+
+End PROPS.
