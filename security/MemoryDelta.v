@@ -225,28 +225,6 @@ Section MEMDELTA.
     mem_delta_apply_free None d = None.
   Proof. unfold mem_delta_apply_free. destruct d as [[[d0 d1] d2] d3]. auto. Qed.
 
-  (* Definition mem_delta_apply (d: mem_delta) (m0: mem) : option mem := *)
-  (*   fold_right (fun data om => *)
-  (*                 match data with *)
-  (*                 | mem_delta_kind_store d => mem_delta_apply_store om d *)
-  (*                 | mem_delta_kind_bytes d => mem_delta_apply_bytes om d *)
-  (*                 | mem_delta_kind_alloc d => mem_delta_apply_alloc om d *)
-  (*                 | mem_delta_kind_free d => mem_delta_apply_free om d *)
-  (*                 end *)
-  (*              ) (Some m0) d. *)
-
-  (* Lemma mem_delta_apply_cons *)
-  (*       d m0 m k *)
-  (*       (MEM: mem_delta_apply d m0 = Some m) *)
-  (*   : *)
-  (*   mem_delta_apply (k :: d) m0 =  *)
-  (*     match k with *)
-  (*     | mem_delta_kind_store dd => mem_delta_apply_store (Some m) dd *)
-  (*     | mem_delta_kind_bytes dd => mem_delta_apply_bytes (Some m) dd *)
-  (*     | mem_delta_kind_alloc dd => mem_delta_apply_alloc (Some m) dd *)
-  (*     | mem_delta_kind_free dd => mem_delta_apply_free (Some m) dd *)
-  (*     end. *)
-  (* Proof. simpl. rewrite MEM. auto. Qed. *)
 
   Definition mem_delta_apply (d: mem_delta) (om0: option mem) : option mem :=
     fold_left (fun om data =>
@@ -296,39 +274,6 @@ Section MEMDELTA.
     exists m, om = Some m.
   Proof. destruct om; eauto. rewrite mem_delta_apply_none in APPD. inv APPD. Qed.    
 
-  (* Lemma mem_delta_apply_eq *)
-  (*       d m0 *)
-  (*   : *)
-  (*   mem_delta_apply d m0 = mem_delta_apply_left (rev d) (Some m0). *)
-  (* Proof. *)
-  (*   rewrite <- (rev_involutive d) at 1. unfold mem_delta_apply, mem_delta_apply_left. rewrite fold_left_rev_right. f_equal. *)
-  (* Qed. *)
-
-  (* Definition mem_delta_apply_inj (j: meminj) (d: mem_delta) (m0: mem) : option mem := *)
-  (*   fold_right (fun data om => *)
-  (*                 match data with *)
-  (*                 | mem_delta_kind_store (ch, b, ofs, v, cp) => *)
-  (*                     match j b with *)
-  (*                     | Some (b', ofsd) => *)
-  (*                         mem_delta_apply_store om (ch, b', (ofs + ofsd)%Z, v, cp) *)
-  (*                     | None => om *)
-  (*                     end *)
-  (*                 | _ => om *)
-  (*                 end) (Some m0) d. *)
-
-  (* Lemma mem_delta_apply_inj_cons *)
-  (*       j d m0 m k *)
-  (*       (MEM: mem_delta_apply_inj j d m0 = Some m) *)
-  (*   : *)
-  (*   mem_delta_apply_inj j (k :: d) m0 =  *)
-  (*     match k with *)
-  (*     | mem_delta_kind_store (ch, b, ofs, v, cp) => *)
-  (*         match j b with Some (b', ofsd) => mem_delta_apply_store (Some m) (ch, b', (ofs + ofsd)%Z, v, cp) | None => (Some m) end *)
-  (*     | mem_delta_kind_bytes dd *)
-  (*     | mem_delta_kind_alloc dd *)
-  (*     | mem_delta_kind_free dd => Some m *)
-  (*     end. *)
-  (* Proof. simpl. rewrite MEM. auto. Qed. *)
 
   Definition mem_delta_apply_inj (j: meminj) (d: mem_delta) (om0: option mem) : option mem :=
     fold_left (fun om data =>
@@ -386,14 +331,6 @@ Section MEMDELTA.
     exists m, om = Some m.
   Proof. destruct om; eauto. rewrite mem_delta_apply_inj_none in APPD. inv APPD. Qed.    
 
-  (* Lemma mem_delta_apply_inj_eq *)
-  (*       j d m0 *)
-  (*   : *)
-  (*   mem_delta_apply_inj j d m0 = mem_delta_apply_inj_left j (rev d) (Some m0). *)
-  (* Proof. *)
-  (*   rewrite <- (rev_involutive d) at 1. unfold mem_delta_apply_inj, mem_delta_apply_inj_left. rewrite fold_left_rev_right. f_equal. *)
-  (* Qed. *)
-
 
   (** Delta and injection relations *)
 
@@ -419,19 +356,7 @@ Section MEMDELTA.
   Definition meminj_first_order (j: meminj) (m: mem) :=
     forall b ofs, (j b <> None) -> (Mem.perm m b ofs Cur Readable) -> loc_first_order m b ofs.
 
-  (* Definition mem_delta_inj_store_fo (j: meminj) (data: mem_delta_store): Prop := *)
-  (*   let '(ch, b, ofs, v, cp) := data in *)
-  (*   match j b with *)
-  (*   | Some _ => Forall (fun mv => match mv with | Byte bt => True | _ => False end) (encode_val ch v) *)
-  (*   | None => True *)
-  (*   end. *)
-
-  (* Definition mem_delta_inj_fo (j: meminj) (d: mem_delta): Prop := *)
-  (*   Forall (fun data => *)
-  (*             match data with *)
-  (*             | mem_delta_kind_store d => mem_delta_inj_store_fo j d *)
-  (*             | _ => True *)
-  (*             end) d. *)
+  Definition meminj_not_alloc (j: meminj) (m: mem) := forall b, (Mem.nextblock m <= b)%positive -> j b = None.
 
 
   (** Delta and location relations *)
@@ -675,18 +600,6 @@ Section MEMDELTA.
   Definition mem_delta_changed (d: mem_delta) (b: block) (ofs: Z) :=
     Exists (fun k => mem_delta_kind_changed k b ofs) d.
 
-  (* Definition mem_delta_kind_changed_by_store_inj (j: meminj) (k: mem_delta_kind) (b: block) (ofs: Z) := *)
-  (*   match k with *)
-  (*   | mem_delta_kind_store (ch0, b0, ofs0, v0, cp0) => *)
-  (*       match j b0 with *)
-  (*       | Some _ => mem_delta_changed_store (ch0, b0, ofs0, v0, cp0) b ofs *)
-  (*       | _ => False *)
-  (*       end *)
-  (*   | _ => False *)
-  (*   end. *)
-
-  (* Definition mem_delta_changed_by_store_inj (j: meminj) (d: mem_delta) (b: block) (ofs: Z) := *)
-  (*   Exists (fun k => mem_delta_kind_changed_by_store_inj j k b ofs) d. *)
 
   (** Propperties *)
   Lemma mem_delta_cases_store
@@ -797,27 +710,6 @@ Section MEMDELTA.
     }
   Qed.
 
-  (* Lemma mem_delta_changed_only_by_store *)
-  (*       j d b ofs *)
-  (*       (INJ: j b <> None) *)
-  (*       (CHG: mem_delta_changed d b ofs) *)
-  (*       (WF: mem_delta_inj_wf j d) *)
-  (*   : *)
-  (*   mem_delta_changed_by_store_inj j d b ofs. *)
-  (* Proof. *)
-  (* Abort. *)
-
-
-  (* Lemma mem_delta_apply_store_preserves_winject *)
-  (*       (j: meminj) m0 m0' *)
-  (*       (WINJ0: winject j m0 m0') *)
-  (*       ch b ofs v cp *)
-  (*       m0 m1 *)
-  (*       (MEM: mem_delta_apply_store (Some m0) (ch, b, ofs, v, cp) = Some m1) *)
-  (*   : *)
-  (*   exists m1', mem_delta_apply_store_inj *)
-  (* exists m1' : mem, mem_delta_apply_inj j d (mem_delta_apply_store (Some m0') (ch, b', ofs + ofs', v, cp)) = Some m1' /\ winject j m1 m1' *)
-
   Lemma mem_delta_apply_preserves_winject
         (j: meminj) m0 m0'
         (WINJ0: winject j m0 m0')
@@ -869,7 +761,17 @@ Section MEMDELTA.
       eapply Mem.perm_free_3; eauto. eapply IHd. erewrite Mem.nextblock_free; eauto.
   Qed.
 
-  Definition meminj_not_alloc (j: meminj) (m: mem) := forall b, (Mem.nextblock m <= b)%positive -> j b = None.
+  Lemma loc_first_order_always_memval_inject
+        m b ofs
+        (FO: loc_first_order m b ofs)
+        j v
+        (VINJ: memval_inject j (ZMap.get ofs (Mem.mem_contents m) !! b) v)
+    :
+    forall k, memval_inject k (ZMap.get ofs (Mem.mem_contents m) !! b) v.
+  Proof.
+    unfold loc_first_order in FO. destruct (ZMap.get ofs (Mem.mem_contents m) !! b) eqn:MV; try contradiction.
+    inv VINJ. intros. constructor.
+  Qed.
 
   Lemma mem_delta_apply_establish_inject
         (k j: meminj) m0 m0'
@@ -881,6 +783,7 @@ Section MEMDELTA.
         (DWF: mem_delta_inj_wf j d)
         m1
         (APPD: mem_delta_apply d (Some m0) = Some m1)
+        (FO: meminj_first_order j m1)
     :
     exists m1', (mem_delta_apply_inj j d (Some m0') = Some m1') /\ (Mem.inject j m1 m1').
   Proof.
@@ -897,316 +800,14 @@ Section MEMDELTA.
     - exploit mem_delta_unchanged_on; eauto. intros UNCHG1. exploit mem_delta_inj_unchanged_on; eauto. intros UNCHG2.
       erewrite (Mem.unchanged_on_contents _ _ _ UNCHG1). erewrite (Mem.unchanged_on_contents _ _ _ UNCHG2). all: eauto.
       2:{ right. exists b1, delta. split; auto. replace (ofs + delta - delta) with ofs by lia. auto. }
-      { inv INJ. inv mi_inj. eapply mi_memval.
-        (* TODO *)
-      
-      { clear - INJ INCR 
-
-      
-      eauto
-      .unchanged_on_contents:
-  forall (P : block -> Z -> Prop) (m_before m_after : mem),
-  Mem.unchanged_on P m_before m_after ->
-  forall (b : block) (ofs : Z), P b ofs -> Mem.perm m_before b ofs Cur Readable -> ZMap.get ofs (Mem.mem_contents m_after) !! b = ZMap.get ofs (Mem.mem_contents m_before) !! b
-        
-        (d_pre d_post: mem_delta)
-        (DWFPRE: mem_delta_inj_wf j d_pre)
-        (DWFPOST: mem_delta_inj_wf j d_post)
-        m_m
-        (APPDPRE: mem_delta_apply_left d_pre (Some m_i) = Some m_m)
-        (WINJ: mem_weak_inject j m_m m0')
-        m_f
-        (APPDPOST: mem_delta_apply_left d_post (Some m_m) = Some m_f)
-        (MFO: meminj_first_order j m_f)
-    :
-    exists m1', (mem_delta_apply_inj j (d_pre ++ d_post) m0' = Some m1') /\ (Mem.inject j m_f m1').
-  Proof.
-
-
-  (* TODO *)
-
-  Lemma mem_delta_apply_preserves_full
-        (k j: meminj) m_i m0'
-        (INJ0: Mem.inject k m_i m0')
-        (INCR: inject_incr j k)
-        (d_pre d_post: mem_delta)
-        (DWFPRE: mem_delta_inj_wf j d_pre)
-        (DWFPOST: mem_delta_inj_wf j d_post)
-        m_m
-        (APPDPRE: mem_delta_apply_left d_pre (Some m_i) = Some m_m)
-        (WINJ: mem_weak_inject j m_m m0')
-        m_f
-        (APPDPOST: mem_delta_apply_left d_post (Some m_m) = Some m_f)
-        (MFO: meminj_first_order j m_f)
-    :
-    exists m1', (mem_delta_apply_inj j (d_pre ++ d_post) m0' = Some m1') /\ (Mem.inject j m_f m1').
-  Proof.
-
-
-    rewrite mem_delta_apply_eq in APPD. rewrite mem_delta_apply_inj_eq. rewrite mem_delta_inj_wf_rev in DWF. remember (rev d) as rd. clear d Heqrd. rename rd into d.
-    revert m0 m0' INJ0 DWF APPD. induction d; intros.
-    { unfold mem_delta_apply_inj_left. simpl. exists m0'. split; auto. unfold mem_delta_apply_left in APPD. simpl in APPD. inv APPD. auto. }
-    inv DWF. rename H1 into DWF1, H2 into DWF0.
-    rewrite mem_delta_apply_left_cons in APPD. rewrite mem_delta_apply_inj_left_cons.
-
-    
-
-
-    
-    revert DWF DFO m1 APPD. induction d; simpl; intros.
-    { inv APPD. exists m0'. split; auto. }
-    inv DWF. rename H1 into DWF1, H2 into DWF0. inv DFO. rename H1 into DFO1, H2 into DFO0.
-    destruct (mem_delta_apply d m0) eqn:DAM.
-    2:{ destruct a;
-        [rewrite mem_delta_apply_store_none in APPD; inv APPD
-        | rewrite mem_delta_apply_bytes_none in APPD; inv APPD
-        | rewrite mem_delta_apply_alloc_none in APPD; inv APPD
-        | rewrite mem_delta_apply_free_none in APPD; inv APPD].
-    }
-    rename m into m_i.
-    specialize (IHd DWF0 DFO0 _ (eq_refl)). destruct IHd as (m_i' & DAM' & INJ_I).
-    rewrite DAM'.
-    destruct a.
-    - destruct d0 as ((((ch & b) & ofs) & v) & cp). simpl in *.
-      destruct (j b) eqn:JB.
-      + destruct p as (b' & ofs'). eapply Mem.store_mapped_inject; eauto.
-        clear - DFO1. destruct v; auto. exfalso. simpl in *. destruct Archi.ptr64.
-        * destruct ch; simpl in *; try (inv DFO1; contradiction).
-        * destruct ch; simpl in *; try (inv DFO1; contradiction).
-      + exists m_i'; split; auto. eapply Mem.store_unmapped_inject; eauto.
-    - destruct d0 as (((b & ofs) & mvs) & cp). simpl in *.
-      exists m_i'; split; auto. eapply Mem.storebytes_unmapped_inject; eauto.
-    - destruct d0 as ((cp & lo) & hi). simpl in *.
-      exists m_i'; split; auto. destruct (Mem.alloc m_i cp lo hi) eqn:ALLOC. simpl in *. inv APPD.
-      eapply alloc_left_unmapped_inject_keep; eauto.
-    - destruct d0 as (((b & lo) & hi) & cp). simpl in *.
-      exists m_i'; split; auto. eapply Mem.free_left_inject; eauto.
-  Qed.
-
-
-
-
-
-  Lemma val_inject_incr_inv
-        f f' v v'
-        (INCR: inject_incr f f')
-        (INJ: Val.inject f' v v')
-    :
-    Val.inject f v v'.
-  Proof.
-    inv INJ; auto. eapply Val.inject_ptr; auto.
-val_inject_incr: forall (f1 f2 : meminj) (v v' : val), inject_incr f1 f2 -> Val.inject f1 v v' -> Val.inject f2 v v'
-
-  Lemma mem_inject_incr
-        f f' m m'
-        (INCR: inject_incr f f')
-        (INJ: Mem.inject f' m m')
-    :
-    Mem.inject f m m'.
-  Proof.
-    unfold Mem.inject in *. inv INJ. split; eauto.
-    2:{ intros. specialize (mi_freeblocks _ H). unfold inject_incr in INCR.
-        destruct (f b) eqn:FB; auto. destruct p. specialize (INCR _ _ _ FB).
-        rewrite INCR in mi_freeblocks. inv mi_freeblocks.
-    }
-    2:{ clear - INCR mi_no_overlap. unfold Mem.meminj_no_overlap in *. intros.
-        exploit mi_no_overlap; eauto.
-    }
-    clear - INCR mi_inj. inv mi_inj. split; eauto. intros. exploit mi_memval; eauto. intros.
-    eapply memval_inject_incr; eauto.
-    `
-    
-val_inject_incr: forall (f1 f2 : meminj) (v v' : val), inject_incr f1 f2 -> Val.inject f1 v v' -> Val.inject f2 v v'
-Unusedglobproof.regset_inject_incr: forall (f f' : meminj) (rs rs' : RTL.regset), Unusedglobproof.regset_inject f rs rs' -> inject_incr f f' -> Unusedglobproof.regset_inject f' rs rs'
-memval_inject_incr: forall (f f' : meminj) (v1 v2 : memval), memval_inject f v1 v2 -> inject_incr f f' -> memval_inject f' v1 v2
-Stackingproof.agree_regs_inject_incr: forall (j : meminj) (ls : Linear.locset) (rs : Mach.regset) (j' : meminj), Stackingproof.agree_regs j ls rs -> inject_incr j j' -> Stackingproof.agree_regs j' ls rs
-Cminorgenproof.match_temps_invariant: forall (f f' : meminj) (le : Csharpminor.temp_env) (te : Cminor.env), Cminorgenproof.match_temps f le te -> inject_incr f f' -> Cminorgenproof.match_temps f' le te
-val_inject_list_incr: forall (f1 f2 : meminj) (vl vl' : list val), inject_incr f1 f2 -> Val.inject_list f1 vl vl' -> Val.inject_list f2 vl vl'
-
-  Lemma mem_delta_apply_preserves_inj
-        (j: meminj) m0 m0'
-        (INJ0: Mem.inject j m0 m0')
-        (d: mem_delta)
-        (DWF: mem_delta_inj_wf j d)
-        (DFO: mem_delta_inj_fo j d)
-        m1
-        (APPD: mem_delta_apply d m0 = Some m1)
-    :
-    exists m1', (mem_delta_apply_inj j d m0' = Some m1') /\ (Mem.inject j m1 m1').
-  Proof.
-    revert DWF DFO m1 APPD. induction d; simpl; intros.
-    { inv APPD. exists m0'. split; auto. }
-    inv DWF. rename H1 into DWF1, H2 into DWF0. inv DFO. rename H1 into DFO1, H2 into DFO0.
-    destruct (mem_delta_apply d m0) eqn:DAM.
-    2:{ destruct a;
-        [rewrite mem_delta_apply_store_none in APPD; inv APPD
-        | rewrite mem_delta_apply_bytes_none in APPD; inv APPD
-        | rewrite mem_delta_apply_alloc_none in APPD; inv APPD
-        | rewrite mem_delta_apply_free_none in APPD; inv APPD].
-    }
-    rename m into m_i.
-    specialize (IHd DWF0 DFO0 _ (eq_refl)). destruct IHd as (m_i' & DAM' & INJ_I).
-    rewrite DAM'.
-    destruct a.
-    - destruct d0 as ((((ch & b) & ofs) & v) & cp). simpl in *.
-      destruct (j b) eqn:JB.
-      + destruct p as (b' & ofs'). eapply Mem.store_mapped_inject; eauto.
-        clear - DFO1. destruct v; auto. exfalso. simpl in *. destruct Archi.ptr64.
-        * destruct ch; simpl in *; try (inv DFO1; contradiction).
-        * destruct ch; simpl in *; try (inv DFO1; contradiction).
-      + exists m_i'; split; auto. eapply Mem.store_unmapped_inject; eauto.
-    - destruct d0 as (((b & ofs) & mvs) & cp). simpl in *.
-      exists m_i'; split; auto. eapply Mem.storebytes_unmapped_inject; eauto.
-    - destruct d0 as ((cp & lo) & hi). simpl in *.
-      exists m_i'; split; auto. destruct (Mem.alloc m_i cp lo hi) eqn:ALLOC. simpl in *. inv APPD.
-      eapply alloc_left_unmapped_inject_keep; eauto.
-    - destruct d0 as (((b & lo) & hi) & cp). simpl in *.
-      exists m_i'; split; auto. eapply Mem.free_left_inject; eauto.
-  Qed.
-
-  Definition meminj_first_order (j: meminj) (m: mem) :=
-    forall b ofs, (j b <> None) -> (Mem.perm m b ofs Cur Readable) -> loc_first_order m b ofs.
-
-  Lemma mem_delta_apply_preserves_inj_incr
-        (j k: meminj) m0 m0'
-        (INCR: inject_incr j k)
-        (INJ0: Mem.inject k m0 m0')
-        (d: mem_delta)
-        (DWF: mem_delta_inj_wf j d)
-        (DFO: mem_delta_inj_fo j d)
-        m1
-        (APPD: mem_delta_apply d m0 = Some m1)
-        (MIFO: meminj_first_order j m1)
-    :
-    exists m1', (mem_delta_apply_inj j d m0' = Some m1') /\ (Mem.inject j m1 m1').
-  Proof.
-    revert DWF DFO m1 APPD MIFO. induction d; simpl; intros.
-    { inv APPD. exists m0'. split; auto. admit. (* MIFO *) }
-    inv DWF. rename H1 into DWF1, H2 into DWF0. inv DFO. rename H1 into DFO1, H2 into DFO0.
-    destruct (mem_delta_apply d m0) eqn:DAM.
-    2:{ destruct a;
-        [rewrite mem_delta_apply_store_none in APPD; inv APPD
-        | rewrite mem_delta_apply_bytes_none in APPD; inv APPD
-        | rewrite mem_delta_apply_alloc_none in APPD; inv APPD
-        | rewrite mem_delta_apply_free_none in APPD; inv APPD].
-    }
-    rename m into m_i.
-    specialize (IHd DWF0 DFO0 _ (eq_refl)). destruct IHd as (m_i' & DAM' & INJ_I).
-    { unfold meminj_first_order in *. intros. rename d into deltas.
-      specialize (MIFO _ ofs H). exploit MIFO; clear MIFO.
-      { destruct a; simpl in *.
-        - unfold mem_delta_apply_store in APPD. destruct d as [[[[ch0 b0] ofs0] v0] cp0].
-          eapply Mem.perm_store_1; eauto.
-        - unfold mem_delta_apply_bytes in APPD. destruct d as [[[b0 ofs0] mvs0] cp0].
-          eapply Mem.perm_storebytes_1; eauto.
-        - unfold mem_delta_apply_alloc in APPD. destruct d as [[cp0 lo0] hi0].
-          destruct (Mem.alloc m_i cp0 lo0 hi0) eqn:CASES. inv APPD.
-          eapply Mem.perm_alloc_1; eauto. 
-        - unfold mem_delta_apply_free in APPD. destruct d as [[[b0 lo0] hi0] cp0].
-          eapply Mem.perm_free_1; eauto. left. intros EQ. subst. rewrite DWF1 in H. congruence.
+      { inv INJ. inv mi_inj. specialize (mi_memval _ _ _ _ (INCR _ _ _ H) PERM0). eapply loc_first_order_always_memval_inject; eauto.
+        exploit FO. erewrite H. congruence. eauto. unfold loc_first_order; intros. destruct (ZMap.get ofs (Mem.mem_contents m1) !! b1) eqn:MEMV1; try contradiction.
+        erewrite (Mem.unchanged_on_contents _ _ _ UNCHG1) in MEMV1; eauto. rewrite MEMV1. auto.
       }
-      intros MIFO. clear H0.
-      { destruct a; simpl in *.
-        - unfold mem_delta_apply_store in APPD. destruct d as [[[[ch0 b0] ofs0] v0] cp0].
-          destruct (Pos.eqb_spec b b0).
-          + subst b0. unfold mem_delta_inj_store_fo in DFO1.
-            destruct (j b) eqn:JB. 2: congruence. clear H. destruct p.
-            unfold loc_first_order in *. clear MIFO APPD.
-            
-
-            
-Mem.store_mem_contents:
-  forall (chunk : memory_chunk) (m1 : mem) (b : block) (ofs : Z) (v : val) 
-    (cp : compartment) (m2 : mem),
-  Mem.store chunk m1 b ofs v cp = Some m2 ->
-  Mem.mem_contents m2 =
-  PMap.set b (Mem.setN (encode_val chunk v) ofs (Mem.mem_contents m1) !! b) (Mem.mem_contents m1)
-
-
-          
-          eapply Mem.perm_store_1; eauto.
-        - unfold mem_delta_apply_bytes in APPD. destruct d as [[[b0 ofs0] mvs0] cp0].
-          eapply Mem.perm_storebytes_1; eauto.
-        - unfold mem_delta_apply_alloc in APPD. destruct d as [[cp0 lo0] hi0].
-          destruct (Mem.alloc m_i cp0 lo0 hi0) eqn:CASES. inv APPD.
-          eapply Mem.perm_alloc_1; eauto. 
-        - unfold mem_delta_apply_free in APPD. destruct d as [[[b0 lo0] hi0] cp0].
-          eapply Mem.perm_free_1; eauto. left. intros EQ. subst. rewrite DWF1 in H. congruence.
-      }
-
-
-
-      
-    rewrite DAM'.
-    destruct a.
-    - destruct d0 as ((((ch & b) & ofs) & v) & cp). simpl in *.
-      destruct (j b) eqn:JB.
-      + destruct p as (b' & ofs'). eapply Mem.store_mapped_inject; eauto.
-        clear - DFO1. destruct v; auto. exfalso. simpl in *. destruct Archi.ptr64.
-        * destruct ch; simpl in *; try (inv DFO1; contradiction).
-        * destruct ch; simpl in *; try (inv DFO1; contradiction).
-      + exists m_i'; split; auto. eapply Mem.store_unmapped_inject; eauto.
-    - destruct d0 as (((b & ofs) & mvs) & cp). simpl in *.
-      exists m_i'; split; auto. eapply Mem.storebytes_unmapped_inject; eauto.
-    - destruct d0 as ((cp & lo) & hi). simpl in *.
-      exists m_i'; split; auto. destruct (Mem.alloc m_i cp lo hi) eqn:ALLOC. simpl in *. inv APPD.
-      eapply alloc_left_unmapped_inject_keep; eauto.
-    - destruct d0 as (((b & lo) & hi) & cp). simpl in *.
-      exists m_i'; split; auto. eapply Mem.free_left_inject; eauto.
+      { inv WINJ. inv mwi_inj. eapply mwi_perm; eauto. }
+    - rename H1 into CHG. erewrite <- mem_delta_changed_only_by_store; eauto.
+      { exploit FO; eauto. rewrite H. congruence. intros. unfold loc_first_order in H1. destruct (ZMap.get ofs (Mem.mem_contents m1) !! b1); try contradiction. constructor. }
+      { inv WINJ. inv mwi_inj. eapply mwi_perm; eauto. }
   Qed.
-
-
-
-        (DFO: mem_delta_inj_fo j d)
-                            visible_fo_if_unknown ef ge m vargs ->
-    | None => visible_fo ge m (sig_args sg) args
-visible_fo =
-fun (ge : Senv.t) (m : mem) (tys : list typ) (args : list val) =>
-public_first_order ge m /\ vals_public ge tys args
-     : Senv.t -> mem -> list typ -> list val -> Prop
-public_first_order =
-fun (ge : Senv.t) (m : mem) =>
-forall (id : ident) (b : block) (ofs : Z),
-Senv.public_symbol ge id = true ->
-Senv.find_symbol ge id = Some b -> Mem.perm m b ofs Cur Readable -> loc_first_order m b ofs
-     : Senv.t -> mem -> Prop
-
-  (* TODO: this is false --- pointers can mess around *)
-(*   Lemma val_inject_incr_inv *)
-(*         f f' v v' *)
-(*         (INCR: inject_incr f f') *)
-(*         (INJ: Val.inject f' v v') *)
-(*     : *)
-(*     Val.inject f v v'. *)
-(*   Proof. *)
-(*     inv INJ; auto. eapply Val.inject_ptr; auto. *)
-(* val_inject_incr: forall (f1 f2 : meminj) (v v' : val), inject_incr f1 f2 -> Val.inject f1 v v' -> Val.inject f2 v v' *)
-
-  Lemma mem_inject_incr
-        f f' m m'
-        (INCR: inject_incr f f')
-        (INJ: Mem.inject f' m m')
-    :
-    Mem.inject f m m'.
-  Proof.
-    unfold Mem.inject in *. inv INJ. split; eauto.
-    2:{ intros. specialize (mi_freeblocks _ H). unfold inject_incr in INCR.
-        destruct (f b) eqn:FB; auto. destruct p. specialize (INCR _ _ _ FB).
-        rewrite INCR in mi_freeblocks. inv mi_freeblocks.
-    }
-    2:{ clear - INCR mi_no_overlap. unfold Mem.meminj_no_overlap in *. intros.
-        exploit mi_no_overlap; eauto.
-    }
-    clear - INCR mi_inj. inv mi_inj. split; eauto. intros. exploit mi_memval; eauto. intros.
-    eapply memval_inject_incr; eauto.
-    `
-    
-val_inject_incr: forall (f1 f2 : meminj) (v v' : val), inject_incr f1 f2 -> Val.inject f1 v v' -> Val.inject f2 v v'
-Unusedglobproof.regset_inject_incr: forall (f f' : meminj) (rs rs' : RTL.regset), Unusedglobproof.regset_inject f rs rs' -> inject_incr f f' -> Unusedglobproof.regset_inject f' rs rs'
-memval_inject_incr: forall (f f' : meminj) (v1 v2 : memval), memval_inject f v1 v2 -> inject_incr f f' -> memval_inject f' v1 v2
-Stackingproof.agree_regs_inject_incr: forall (j : meminj) (ls : Linear.locset) (rs : Mach.regset) (j' : meminj), Stackingproof.agree_regs j ls rs -> inject_incr j j' -> Stackingproof.agree_regs j' ls rs
-Cminorgenproof.match_temps_invariant: forall (f f' : meminj) (le : Csharpminor.temp_env) (te : Cminor.env), Cminorgenproof.match_temps f le te -> inject_incr f f' -> Cminorgenproof.match_temps f' le te
-val_inject_list_incr: forall (f1 f2 : meminj) (vl vl' : list val), inject_incr f1 f2 -> Val.inject_list f1 vl vl' -> Val.inject_list f2 vl vl'
-
 
 End MEMDELTA.
