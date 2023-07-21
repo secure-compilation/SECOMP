@@ -325,17 +325,16 @@ Section INVS.
   Definition match_stack (ge: Asm.genv) (ik: ir_conts) (st: stack) :=
     Forall2 (match_stackframe ge) ik st.
 
-  Definition match_mem (ge: Senv.t) (d: mem_delta) (m0 m_i m_a: mem): Prop :=
+  Definition match_mem (ge: Senv.t) (k: meminj) (d: mem_delta) (m_a0 m_i m_a1: mem): Prop :=
     let j := meminj_public ge in
-    (Mem.inject j m0 m_i) /\ (mem_delta_inj_wf j d) /\
-      (mem_delta_apply d (Some m0) = Some m_a).
+    (Mem.inject k m_a0 m_i) /\ (inject_incr j k) /\ (meminj_not_alloc j m_a0) /\
+      (mem_delta_inj_wf j d) /\ (mem_delta_apply d (Some m_a0) = Some m_a1).
 
-  Definition match_state (ge: Asm.genv) (m0: mem) (d: mem_delta)
-             (ast: Asm.state) (ist: ir_state): Prop :=
+  Definition match_state (ge: Asm.genv) (k: meminj) (m_a0: mem) (d: mem_delta) (ast: Asm.state) (ist: ir_state): Prop :=
     match ast, ist with
     | State sk rs m_a, Some (cur, m_i, ik) =>
         (match_cur_stack cur ge sk) /\ (match_cur_regset cur ge rs) /\
-          (match_stack ge ik sk) /\ (match_mem ge d m0 m_i m_a)
+          (match_stack ge ik sk) /\ (match_mem ge k d m_a0 m_i m_a)
     | _, _ => False
     end.
 
@@ -368,9 +367,88 @@ End MEASURE.
 
 Section FROMASM.
 
+  Import ListNotations.
+
+  Ltac Simplif_all :=
+    ((rewrite Asmgenproof0.nextinstr_inv in * by eauto with asmgen)
+     || (rewrite Asmgenproof0.nextinstr_inv1 in * by eauto with asmgen)
+     || (rewrite Pregmap.gss in *)
+     || (rewrite Asmgenproof0.nextinstr_pc in *)
+     || (rewrite Pregmap.gso in * by eauto with asmgen)); auto with asmgen.
+
+  Ltac Simpl_all := repeat Simplif_all.
+
+  Ltac simpl_before_exists :=
+    repeat (Simpl_all;
+            match goal with
+            (* Goto *)
+            | _: goto_label _ _ ?rs _ = Next _ _ |- _ =>
+                unfold goto_label in *; destruct label_pos; try congruence
+            | _: eval_branch _ _ ?rs _ _ = Next _ _ |- _ =>
+                unfold eval_branch in *; simpl in *
+            | _: exec_load _ _ _ _ _ _ _ _ _ = Next _ _ |- _ =>
+                unfold exec_load in *; simpl in *
+            | _: exec_store _ _ _ _ _ _ _ _ = Next _ _ |- _ =>
+                unfold exec_store in *; simpl in *
+            | _: context [Val.cmp_bool] |- _ =>
+                unfold Val.cmp_bool in *; simpl in *
+            | _: context [Val.cmpl_bool] |- _ =>
+                unfold Val.cmpl_bool in *; simpl in *
+            | _: context [eval_offset _ ?ofs] |- _ =>
+                destruct ofs; simpl in *
+
+            | |- context [Ptrofs.repr 0] => replace (Ptrofs.repr 0) with Ptrofs.zero by reflexivity; auto
+            | H: context [Ptrofs.repr 0] |- _ => replace (Ptrofs.repr 0) with Ptrofs.zero in H by reflexivity; auto
+            | |- context [Ptrofs.add _ Ptrofs.zero] => rewrite Ptrofs.add_zero; auto
+            | H: context [Ptrofs.add _ Ptrofs.zero] |- _ => rewrite Ptrofs.add_zero in H; simpl in *; try congruence
+            | |- context [Ptrofs.sub _ Ptrofs.zero] => rewrite Ptrofs.sub_zero_l; auto
+            | H: context [Ptrofs.sub _ Ptrofs.zero] |- _ => rewrite Ptrofs.sub_zero_l in H; simpl in *; try congruence
+
+            (* hypothesis manipulation *)
+            | _: context [match ?rs1 ?i with | _ => _ end] |- _ =>
+                destruct (rs1 i) eqn:?; try congruence; simpl in *; eauto
+
+            | _: context [Val.offset_ptr (?rs1 ?i) _] |- _ =>
+                destruct (rs1 i) eqn:?; try congruence; simpl in *; eauto
+
+            | H: Next _ _ = Next _ _ |- _ => inv H
+            | H: Some _ = Some _ |- _ => inv H
+            | H: Some _ = None |- _ => inv H
+            | H: None = Some _ |- _ => inv H
+            | H: Stuck = Next _ _ |- _ => inv H
+            | H: Next _ _ = Stuck |- _ => inv H
+            | H: negb _ = true |- _ => apply negb_true_iff in H
+            | H: negb _ = false |- _ => apply negb_false_iff in H
+            | H: Int.eq ?x ?x = false |- _ => rewrite Int.eq_true in H
+            | H: Int64.eq ?x ?x = false |- _ => rewrite Int64.eq_true in H
+            | H: false = true |- _ => congruence
+            | H: true = false |- _ => congruence
+            | H: ?x = false, H': ?x = true |- _ => congruence
+            | H: match ?x with | _ => _ end = Next _ _ |- _ =>
+                let eq := fresh "eq" in
+                destruct x eqn:eq; simpl in *; try congruence
+            | _: context [?rs1 ### ?rs] |- context [?rs3 ### ?rs] =>
+                let i := fresh "i" in destruct rs as [| i]; simpl in *
+            | _: context [?rs1 ## ?rs] |- context [?rs3 ## ?rs] =>
+                let i := fresh "i" in destruct rs as [| i]; simpl in *
+            | H: ?x = _ |- context [if ?x then _ else _] =>
+                rewrite H; simpl
+            | H: ?x = _ |- context [match ?x with | _ => _ end] =>
+                rewrite H; simpl
+            | |- context [(if ?x then _ else _) = Next _ _] =>
+                let eq := fresh "eq" in destruct x eqn:eq; simpl in *
+            | |- context [(match ?x with | _ => _ end) = Next _ _] =>
+                let eq := fresh "eq" in destruct x eqn:eq; simpl in *
+
+            end);
+    simpl.
+
+  Definition public_not_freeable ge m := forall b, (meminj_public ge b <> None) -> (~ Mem.perm m b 0 Cur Freeable).
+
   Lemma mem_delta_exec_instr
-        ge f i rs m cp rs' m'
+        (ge: genv) f i rs m cp rs' m'
         (* comp_of f ? *)
+        (NFREE: public_not_freeable ge m)
         (EXEC: exec_instr ge f i rs m cp = Next rs' m')
         m0 d
         (DELTA0: mem_delta_inj_wf (meminj_public ge) d)
@@ -378,8 +456,57 @@ Section FROMASM.
     :
     exists d', (mem_delta_inj_wf (meminj_public ge) d') /\ (mem_delta_apply d' (Some m0) = Some m').
   Proof.
-    (* TODO *)
-  Admitted.
+    destruct i; simpl in EXEC.
+    all: try (inv EXEC; eauto).
+    all: simpl_before_exists; eauto.
+    all: try
+           (match goal with
+            | H: context [Mem.alloc] |- _ => idtac
+            | H: context [Mem.free] |- _ => idtac
+            | H: Mem.store ?ch ?m ?b ?ofs ?v ?cp = _ |-  _ =>
+                exists (d ++ [mem_delta_kind_store (ch, b, ofs, v, cp)]); split
+            end;
+            [apply Forall_app; split; [auto | constructor; simpl; auto]
+            | rewrite mem_delta_apply_app; (match goal with | H: mem_delta_apply _ _ = Some _ |- _ => rewrite H end; simpl; auto) ]).
+    { match goal with
+      | _: Mem.alloc _ ?cp1 ?lo ?hi = _, _: Mem.store ?ch _ ?b ?ofs ?v ?cp2 = _ |- _ =>
+          exists (d ++ ([mem_delta_kind_alloc (cp1, lo, hi)] ++ [mem_delta_kind_store (ch, b, ofs, v, cp2)]))
+      end.
+      split.
+      - apply Forall_app; split; auto. apply Forall_app; split; constructor; simpl; auto.
+      - rewrite mem_delta_apply_app. rewrite DELTA1. rewrite mem_delta_apply_app. simpl. rewrite Heqp. simpl. auto.
+    }
+    { destruct (Z.leb_spec sz 0); cycle 1.
+      { match goal with
+        | _: Mem.free _ ?b ?lo ?hi ?cp = _ |- _ =>
+            exists (d ++ [mem_delta_kind_free (b, lo, hi, cp)])
+        end.
+        split.
+        - apply Forall_app; split; auto. constructor; auto. simpl. destruct (meminj_public ge b) eqn:INJPUB; auto. exfalso.
+          eapply Mem.free_range_perm in Heqo0. unfold Mem.range_perm in Heqo0. eapply NFREE. erewrite INJPUB. congruence. apply Heqo0. lia.
+        - rewrite mem_delta_apply_app. rewrite DELTA1. simpl. auto.
+      }
+      { (* TODO *)
+Mem.range_perm = 
+fun (m : mem) (b : block) (lo hi : Z) (k : perm_kind) (p : permission) => forall ofs : Z, (lo <= ofs < hi)%Z -> Mem.perm m b ofs k p
+     : mem -> block -> Z -> Z -> perm_kind -> permission -> Prop
+
+        exists d. split; auto. rewrite DELTA1. 
+
+        assert (m' = m); cycle 1.
+        { exists d. subst m'. split; auto. }
+        clear - Heqo0 H.
+        apply Mem.free_result in Heqo0. subst m'.
+        destruct m. unfold Mem.unchecked_free. simpl.
+        assert (A: PMap.set b (fun (ofs : Z) (k : perm_kind) => if zle 0 ofs && zlt ofs sz then None else mem_access !! b ofs k) mem_access = mem_access).
+        { admit. }
+        rewrite A.
+
+
+        
+        f_equal. 
+        apply ClassicalFacts.proof_irrelevance. Axioms.functional_extensionality_dep.
+  Qed.
 
 End FROMASM.
 
@@ -391,18 +518,18 @@ Section PROOF.
   (* If main is External, treat it in a different case - 
      the trace can start with Event_syscall, without a preceding Event_call *)
   Lemma asm_to_ir
-        cpm ge m0
+        cpm ge m_a0
         ast ast' tr
         (WFGE: wf_ge ge)
         (WFASM: wf_asm ge ast)
         (STAR: star (Asm.step_fix cpm) ge ast tr ast')
-        ist d
-        (MTST: match_state ge m0 d ast ist)
+        ist k d
+        (MTST: match_state ge k m_a0 d ast ist)
     :
     exists btr ist', (unbundle_trace btr = tr) /\ (istar (ir_step) ge ist btr ist').
   Proof.
     apply measure_star in STAR. destruct STAR as (n & STAR).
-    move n before m0. revert ast ast' tr WFGE WFASM STAR ist d MTST.
+    move n before ge. revert m_a0 ast ast' tr WFGE WFASM STAR ist k d MTST.
     pattern n. apply (well_founded_induction Nat.lt_wf_0). intros n1 IH. intros.
     inv STAR; subst.
     (* empty case *)
@@ -421,15 +548,15 @@ Section PROOF.
       }
       unfold match_state in MTST. destruct ist as [[[cur m_i] ik] |].
       2:{ inv MTST. }
-      destruct MTST as (MTST0 & MTST1 & MTST2 & MTST3). destruct MTST3 as (MEM0 & MEM1 & MEM2).
-      exploit mem_delta_exec_instr. eapply H3. eapply MEM1. eapply MEM2. intros (d' & MEM1' & MEM2').
+      destruct MTST as (MTST0 & MTST1 & MTST2 & MTST3). destruct MTST3 as (MEM0 & MEM1 & MEM2 & MEM3 & MEM4).
+      exploit mem_delta_exec_instr. eapply H3. eapply MEM3. eapply MEM4. intros (d' & MEM3' & MEM4').
       destruct f0.
       (* has next function --- internal *)
       { assert (WFASM': wf_asm ge (State st rs' m')).
         { clear IH. unfold wf_asm in *. destruct WFASM as [WFASM0 WFASM1]. split; [auto|].
           unfold wf_regset in *. rewrite H0, H1 in WFASM1. rewrite NEXTPC, NEXTF. auto.
         }
-        assert (MTST': match_state ge m0 d' (State st rs' m') (Some (cur, m_i, ik))).
+        assert (MTST': match_state ge k m_a0 d' (State st rs' m') (Some (cur, m_i, ik))).
         { clear IH. split. auto. split.
           { unfold match_cur_regset in *. rewrite NEXTPC. rewrite <- ALLOWED. rewrite MTST1.
             unfold Genv.find_comp_ignore_offset. rewrite H0. unfold Genv.find_comp. rewrite Genv.find_funct_find_funct_ptr.
@@ -455,14 +582,15 @@ Section PROOF.
           exploit Genv.find_funct_ptr_iff. intros (TEMP & _). specialize (TEMP NEXTF). exploit wf_ge_block_to_id; eauto. intros (ef_id & INVSYMB).
           exploit Genv.invert_find_symbol; eauto. intros FINDSYMB.
           (* reestablish meminj *)
-          exploit mem_delta_apply_preserves_inj. eapply MEM0. eapply MEM1'.
-          { admit. (* from VISFO *) }
-          eapply MEM2'.
+          exploit mem_delta_apply_establish_inject. eapply MEM0. eapply MEM1.
+          { admit. (* ez *) }
+          eapply MEM2. eapply MEM3'. eapply MEM4'.
+          { admit. (* use VISFO *) }
           intros (m1' & MEMAPPIR & MEMINJ').
           exploit external_call_mem_inject.
+          2:{ eapply H12. }
+          2:{ eapply MEMINJ'. }
           { admit. }
-          { eapply H12. }
-          { eapply MEMINJ'. }
           { instantiate (1:=args). admit. }
           intros (f' & vres' & m2' & EXTCALL' & VALINJ' & MEMINJ'2 & _ & _ & INCRINJ & _).
           (* take a step *)
@@ -475,7 +603,7 @@ Section PROOF.
               rewrite H1. setoid_rewrite ALLOWED. simpl. unfold Genv.find_comp. simpl. rewrite pred_dec_true; auto. rewrite NEXTF.
               unfold Genv.type_of_call. rewrite Pos.eqb_refl. auto.
             }
-            { admit. (* VISFO --- maybe case analysis first on unknowns? *) }
+            { (* TODO *) admit. (* VISFO --- maybe case analysis first on unknowns? *) }
           }
           (* steps --- ReturnState *)
 
