@@ -547,6 +547,7 @@ Qed.
   range will fail.  Requires freeable permission on the given range. *)
 
 Program Definition unchecked_free (m: mem) (b: block) (lo hi: Z): mem :=
+  if zle hi lo then m else
   mkmem m.(mem_contents)
         (PMap.set b
                 (fun ofs k => if zle lo ofs && zlt ofs hi then None else m.(mem_access)#b ofs k)
@@ -2463,19 +2464,19 @@ Qed.
 Theorem nextblock_free:
   nextblock m2 = nextblock m1.
 Proof.
-  rewrite free_result; reflexivity.
+  rewrite free_result; unfold unchecked_free; destruct (zle hi lo); reflexivity.
 Qed.
 
 Theorem valid_block_free_1:
   forall b, valid_block m1 b -> valid_block m2 b.
 Proof.
-  intros. rewrite free_result. assumption.
+  intros. rewrite free_result. unfold unchecked_free; destruct (zle hi lo); assumption.
 Qed.
 
 Theorem valid_block_free_2:
   forall b, valid_block m2 b -> valid_block m1 b.
 Proof.
-  intros. rewrite free_result in H. assumption.
+  intros. rewrite free_result in H. unfold unchecked_free in *; destruct (zle hi lo); assumption.
 Qed.
 
 Local Hint Resolve valid_block_free_1 valid_block_free_2: mem.
@@ -2486,7 +2487,7 @@ Theorem perm_free_1:
   perm m1 b ofs k p ->
   perm m2 b ofs k p.
 Proof.
-  intros. rewrite free_result. unfold perm, unchecked_free; simpl.
+  intros. rewrite free_result. unfold perm, unchecked_free; destruct (zle hi lo); auto; simpl.
   rewrite PMap.gsspec. destruct (peq b bf). subst b.
   destruct (zle lo ofs); simpl.
   destruct (zlt ofs hi); simpl.
@@ -2498,7 +2499,7 @@ Qed.
 Theorem perm_free_2:
   forall ofs k p, lo <= ofs < hi -> ~ perm m2 bf ofs k p.
 Proof.
-  intros. rewrite free_result. unfold perm, unchecked_free; simpl.
+  intros. rewrite free_result. unfold perm, unchecked_free; destruct (zle hi lo); auto; simpl; try lia.
   rewrite PMap.gss. unfold proj_sumbool. rewrite zle_true. rewrite zlt_true.
   simpl. tauto. lia. lia.
 Qed.
@@ -2507,7 +2508,7 @@ Theorem perm_free_3:
   forall b ofs k p,
   perm m2 b ofs k p -> perm m1 b ofs k p.
 Proof.
-  intros until p. rewrite free_result. unfold perm, unchecked_free; simpl.
+  intros until p. rewrite free_result. unfold perm, unchecked_free; destruct (zle hi lo); auto; simpl.
   rewrite PMap.gsspec. destruct (peq b bf). subst b.
   destruct (zle lo ofs); simpl.
   destruct (zlt ofs hi); simpl. tauto.
@@ -2519,7 +2520,7 @@ Theorem perm_free_inv:
   perm m1 b ofs k p ->
   (b = bf /\ lo <= ofs < hi) \/ perm m2 b ofs k p.
 Proof.
-  intros. rewrite free_result. unfold perm, unchecked_free; simpl.
+  intros. rewrite free_result. unfold perm, unchecked_free; destruct (zle hi lo); auto; simpl.
   rewrite PMap.gsspec. destruct (peq b bf); auto. subst b.
   destruct (zle lo ofs); simpl; auto.
   destruct (zlt ofs hi); simpl; auto.
@@ -2540,7 +2541,7 @@ Proof.
   destruct (range_perm_dec m1 bf lo hi Cur Freeable);
     destruct (can_access_block_dec m1 bf (Some cp));
     inv FREE.
-  assumption.
+  unfold unchecked_free; destruct (zle hi lo); assumption.
 Qed.
 
 Lemma free_can_access_block_inj_1 :
@@ -2551,7 +2552,8 @@ Proof.
   unfold free in FREE.
   destruct (range_perm_dec m1 bf lo hi Cur Freeable); [| simpl in FREE; congruence].
   destruct (can_access_block_dec m1 bf (Some cp)); [| simpl in FREE; congruence].
-  inv FREE. rewrite <- Hown. reflexivity.
+  inv FREE. rewrite <- Hown.
+  unfold unchecked_free; destruct (zle hi lo); reflexivity.
 Qed.
 
 Lemma free_can_access_block_inj_2 :
@@ -2562,7 +2564,8 @@ Proof.
   unfold free in FREE.
   destruct (range_perm_dec m1 bf lo hi Cur Freeable); [| simpl in FREE; congruence].
   destruct (can_access_block_dec m1 bf (Some cp)); [| simpl in FREE; congruence].
-  inv FREE. rewrite <- Hown. reflexivity.
+  inv FREE. rewrite <- Hown.
+  unfold unchecked_free; destruct (zle hi lo); reflexivity.
 Qed.
 
 Theorem valid_access_free_1:
@@ -2599,7 +2602,7 @@ Theorem valid_access_free_inv_1:
 Proof.
   intros. destruct H. split; auto.
   red; intros. generalize (H ofs0 H1).
-  rewrite free_result. unfold perm, unchecked_free; simpl.
+  rewrite free_result. unfold perm, unchecked_free; destruct (zle hi lo); auto; simpl.
   rewrite PMap.gsspec. destruct (peq b bf). subst b.
   destruct (zle lo ofs0); simpl.
   destruct (zlt ofs0 hi); simpl.
@@ -2630,6 +2633,7 @@ Proof.
   destruct (valid_access_dec m2 chunk b ofs Readable cp').
   rewrite pred_dec_true.
   rewrite free_result; auto.
+  unfold unchecked_free; destruct (zle hi lo); auto.
   eapply valid_access_free_inv_1; eauto.
   rewrite pred_dec_false; auto.
   red; intro; elim n. eapply valid_access_free_1; eauto.
@@ -2641,6 +2645,7 @@ Theorem load_free_2:
 Proof.
   intros. unfold load. rewrite pred_dec_true.
   rewrite (load_result _ _ _ _ _ _ H). rewrite free_result; auto.
+  unfold unchecked_free; destruct (zle hi lo); auto.
   apply valid_access_free_inv_1. eauto with mem.
 Qed.
 
@@ -2655,6 +2660,7 @@ Proof.
 + simpl.
   setoid_rewrite pred_dec_true.
   rewrite free_result; auto.
+  unfold unchecked_free; destruct (zle hi lo); auto.
   red; intros. eapply perm_free_3; eauto.
   apply free_can_access_block_inj_2; assumption.
 + simpl. setoid_rewrite pred_dec_false at 2.
@@ -2674,6 +2680,7 @@ Proof.
   destruct (can_access_block_dec m2 b cp');
   inv H.
   setoid_rewrite pred_dec_true. rewrite free_result; auto.
+  unfold unchecked_free; destruct (zle hi lo); auto.
   red; intros. apply perm_free_3; auto.
   apply free_can_access_block_inj_2; assumption.
 Qed.
@@ -3457,7 +3464,9 @@ Lemma free_left_inj:
   free m1 b lo hi cp = Some m1' ->
   mem_inj f m1' m2.
 Proof.
-  intros. exploit free_result; eauto. intro FREE. inversion H. constructor.
+  intros. exploit free_result; eauto. intro FREE.
+  destruct (zle hi lo) eqn:R; [unfold unchecked_free in *; rewrite R in *; subst|]; auto.
+  inversion H. constructor.
 (* perm *)
   intros. eauto with mem.
 (* own *)
@@ -3466,7 +3475,8 @@ Proof.
   intros. eapply mi_align0 with (ofs := ofs) (p := p); eauto.
   red; intros; eapply perm_free_3; eauto.
 (* mem_contents *)
-  intros. rewrite FREE; simpl. eauto with mem.
+  intros. rewrite FREE; simpl.
+  unfold unchecked_free; rewrite R in *; simpl. eauto with mem.
 Qed.
 
 Lemma free_right_inj:
@@ -3496,7 +3506,8 @@ Proof.
 (* align *)
   eapply mi_align0; eauto.
 (* mem_contents *)
-  intros. rewrite FREE; simpl. eauto.
+  intros. rewrite FREE; simpl.
+  unfold unchecked_free; destruct (zle hi lo); eauto.
 Qed.
 
 (** Preservation of [drop_perm] operations. *)
@@ -5341,8 +5352,7 @@ Proof.
 - unfold free in H.
   destruct (range_perm_dec m b lo hi Cur Freeable);
   destruct (can_access_block_dec m b (Some cp));
-  inv H.
-  simpl. auto.
+  inv H. unfold unchecked_free; destruct (zle hi lo); simpl; auto.
 - split.
   eapply free_can_access_block_inj_1; eauto.
   eapply free_can_access_block_inj_2; eauto.

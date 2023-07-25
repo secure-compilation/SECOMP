@@ -282,13 +282,19 @@ Proof.
 - (* contents *)
   rewrite (Mem.free_result _ _ _ _ _ _ H0).
   rewrite (Mem.free_result _ _ _ _ _ _ FREE).
-  simpl. eapply ma_memval; eauto. eapply Mem.perm_free_3; eauto.
-  apply H1; auto. destruct (eq_block b0 b); auto.
-  subst b0. right. red; intros. eelim Mem.perm_free_2. eexact H0. eauto. eauto.
+  destruct (zle hi lo) eqn:R; unfold Mem.unchecked_free; rewrite R; eauto.
+  + eapply ma_memval; eauto.
+    eapply Mem.perm_free_3; eauto.
+    apply H1; auto. destruct (eq_block b0 b); auto.
+    subst b0. right. red; intros. eelim Mem.perm_free_2. eexact H0. eauto. eauto.
+  + simpl. eapply ma_memval; eauto.
+    eapply Mem.perm_free_3; eauto.
+    apply H1; auto. destruct (eq_block b0 b); auto.
+    subst b0. right. red; intros. eelim Mem.perm_free_2. eexact H0. eauto. eauto.
 - (* nextblock *)
   rewrite (Mem.free_result _ _ _ _ _ _ H0).
   rewrite (Mem.free_result _ _ _ _ _ _ FREE).
-  simpl. eapply ma_nextblock; eauto.
+  unfold Mem.unchecked_free; destruct (zle hi lo); simpl; eapply ma_nextblock; eauto.
 Qed.
 
 Lemma magree_valid_access:
