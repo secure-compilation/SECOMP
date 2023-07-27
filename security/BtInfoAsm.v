@@ -56,10 +56,45 @@ Section BUNDLE.
     | nil => nil
     end.
 
+  Lemma unbundle_trace_cons
+        be btr
+    :
+    unbundle_trace (be :: btr) = (unbundle be) ++ (unbundle_trace btr).
+  Proof. simpl. auto. Qed.
+
+  Lemma unbundle_trace_app
+        btr1 btr2
+    :
+    unbundle_trace (btr1 ++ btr2) = (unbundle_trace btr1) ++ (unbundle_trace btr2).
+  Proof.
+    revert btr2. induction btr1; intros.
+    { simpl. auto. }
+    rewrite <- app_comm_cons. rewrite ! unbundle_trace_cons. rewrite <- app_assoc. f_equal.
+    eauto.
+  Qed.
+
   Inductive istar {genv state : Type} (step : genv -> state -> bundle_event -> state -> Prop) (ge : genv) : state -> bundle_trace -> state -> Prop :=
     istar_refl : forall s : state, istar step ge s nil s
   | istar_step : forall (s1 : state) (ev : bundle_event) (s2 : state) (t2 : bundle_trace) (s3 : state) (t : bundle_trace),
       step ge s1 ev s2 -> istar step ge s2 t2 s3 -> t = ev :: t2 -> istar step ge s1 t s3.
+
+  Lemma istar_trans
+        genv state (step: genv -> state -> bundle_event -> state -> Prop) ge
+        s1 t1 s2
+        (ISTAR1: istar step ge s1 t1 s2)
+        t2 s3
+        (ISTAR2: istar step ge s2 t2 s3)
+        t
+        (TR: t = t1 ++ t2)
+    :
+    istar step ge s1 t s3.
+  Proof.
+    revert_until ISTAR1. induction ISTAR1; intros.
+    { simpl in *. subst; auto. }
+    subst. rewrite <- app_comm_cons. econstructor 2. eapply H.
+    { eapply IHISTAR1. eapply ISTAR2. eauto. }
+    auto.
+  Qed.
 
 End BUNDLE.
 
@@ -623,8 +658,429 @@ Section PROOF.
     exists fd, Genv.find_funct_ptr ge b = Some fd.
   Proof. destruct (Genv.find_funct_ptr ge b) eqn:CASE; eauto. exfalso. inv STEP; rewrite NEXTPC in H2; inv H2; rewrite CASE in H3; inv H3. Qed.
 
+  Lemma asm_to_ir_compose
+        ge ist0 t t1 t2
+        (ISTARS: exists btr1 ist1,
+            (unbundle_trace btr1 = t1 /\ istar ir_step ge ist0 btr1 ist1)
+            /\ exists btr2 ist2,
+              (unbundle_trace btr2 = t2 /\ istar ir_step ge ist1 btr2 ist2))
+        (TR: t = t1 ** t2)
+    :
+    exists (btr : bundle_trace) (ist' : ir_state),
+      unbundle_trace btr = t /\ istar ir_step ge ist0 btr ist'.
+  Proof.
+    subst. destruct ISTARS as (btr1 & ist1 & (UTR1 & ISTAR1) & btr2 & ist2 & (UTR2 & ISTAR2)).
+    exists (btr1 ++ btr2). exists ist2. split; auto.
+    { rewrite unbundle_trace_app. rewrite UTR1, UTR2. auto. }
+    { eapply istar_trans; eauto. }
+  Qed.
 
-  Lemma asm_to_ir_returnstate0
+  Lemma asm_to_ir_returnstate_nccc_internal
+        cpm (ge: genv) n n0
+        (LT: (n0 < n)%nat)
+        (IH: forall y : nat,
+            (y < n)%nat ->
+            forall (m_a0 : mem) (ast ast' : state) (tr : trace),
+              wf_ge ge ->
+              wf_asm ge ast ->
+              star_measure (step_fix cpm) ge y ast tr ast' ->
+              forall (ist : ir_state) (k : meminj) (d : mem_delta),
+                match_state ge k m_a0 d ast ist ->
+                exists (btr : bundle_trace) (ist' : ir_state), unbundle_trace btr = tr /\ istar ir_step ge ist btr ist')
+        (WFGE: wf_ge ge)
+        cur ik
+        (WFIR0 : wf_ir_cur ge cur)
+        (WFIR1 : wf_ir_conts ge ik)
+        st (rs: regset)
+        (WFASM1: wf_stack ge st)
+        (MTST0 : match_cur_stack cur ge st)
+        (CURCOMP : Genv.find_comp ge (Vptr cur Ptrofs.zero) = callee_comp cpm st)
+        (MTST2 : match_stack ge ik st)
+        k d m_a0 m_i m_a
+        (MEM: match_mem ge k d m_a0 m_i m_a)
+        t' ast'
+        (STEP: step_fix cpm ge (ReturnState st rs m_a) t' ast')
+        t'' ast''
+        (STAR: star_measure (step_fix cpm) ge n0 ast' t'' ast'')
+        (NCCC: Genv.type_of_call ge (Genv.find_comp_ignore_offset ge (rs PC)) (callee_comp cpm st) <> Genv.CrossCompartmentCall)
+        b1 ofs1
+        (NEXTPC: rs PC = Vptr b1 ofs1)
+        f
+        (NEXTF : Genv.find_funct_ptr ge b1 = Some (Internal f))
+    :
+    exists (btr : bundle_trace) (ist' : ir_state),
+      unbundle_trace btr = t' ** t'' /\ istar ir_step ge (Some (cur, m_i, ik)) btr ist'.
+  Proof.
+    destruct MEM as (MEM0 & MEM1 & MEM2 & MEM3 & MEM4 & MEM5).
+    (** step --- ReturnState *)
+    inv STEP. inv EV; simpl in *.
+    2:{ rewrite H in NCCC. congruence with NCCC. }
+    (** return is nccc *)
+    clear H. pose proof STAR as STAR0. inv STAR.
+    (* end case *)
+    { end_case. }
+    (* has next step - internal -> done*)
+    rename H into STEP, H0 into STAR.
+    (** next is internal *)
+    exploit IH; clear IH. 4: eapply STAR0. lia. all: auto.
+    { simpl. split.
+      - unfold Genv.type_of_call in NCCC. des_ifs. unfold update_stack_return in STUPD. rewrite Pos.eqb_sym, Heq in STUPD. inv STUPD. auto.
+      - unfold wf_regset in *. rewrite NEXTPC, NEXTF. auto.
+    }
+    { instantiate (4:=k). instantiate (3:=m_a0). instantiate (2:=d). instantiate (1:=Some (cur, m_i, ik)).
+      assert (st' = st).
+      { unfold Genv.type_of_call in NCCC. des_ifs. unfold update_stack_return in STUPD. rewrite Pos.eqb_sym, Heq in STUPD. inv STUPD. auto. }
+      subst st'. simpl. split; auto. split; auto. split; auto. split.
+      { unfold match_cur_regset in *. rewrite CURCOMP. unfold Genv.type_of_call in NCCC. des_ifs. apply Pos.eqb_eq in Heq. auto. }
+      split; auto.
+      { unfold match_mem. split; auto. }
+    }
+    intros (btr & ist' & UTR & ISTAR').
+    exists btr, ist'. split; auto.
+  Qed.
+
+  Definition extcall_known (ef: external_function) (ge: Senv.t) args :=
+    match ef with
+    | EF_builtin _ name sg | EF_runtime _ name sg =>
+                               match Builtins.lookup_builtin_function name sg with
+                               | Some _ => True
+                               | None => False
+                               end
+    | EF_memcpy _ _ _ => EF_memcpy_dest_not_pub ge args
+    | EF_external _ _ sg | EF_inline_asm _ _ sg _ => False
+    | _ => True
+    end.
+
+  Lemma extcall_cases
+        ef ge m args
+        (VIS: visible_fo_if_unknown ef ge m args)
+    :
+    (visible_fo_and_unknown ef ge m args) \/ (extcall_known ef ge args).
+  Proof. destruct ef; simpl in *; auto. des_ifs; auto. des_ifs; auto. Qed.
+
+  Lemma asm_to_ir_step_nccc_external
+        cpm (ge: genv)
+        (WFGE: wf_ge ge)
+        cur ik
+        (WFIR0 : wf_ir_cur ge cur)
+        (WFIR1 : wf_ir_conts ge ik)
+        st (rs: regset)
+        (WFASM1: wf_stack ge st)
+        (MTST0 : match_cur_stack cur ge st)
+        (CURCOMP : Genv.find_comp ge (Vptr cur Ptrofs.zero) = callee_comp cpm st)
+        (MTST2 : match_stack ge ik st)
+        k d m_a0 m_i m_a
+        (MEM: match_mem ge k d m_a0 m_i m_a)
+        t ast'
+        (STEP: step_fix cpm ge (State st rs m_a) t ast')
+        b1 ofs1
+        (NEXTPC: rs PC = Vptr b1 ofs1)
+        ef
+        (NEXTF : Genv.find_funct_ptr ge b1 = Some (External ef))
+        (* STEP : step_fix cpm ge (State st rs m_a) t1 s2 *)
+        n t' ast''
+        (STAR: star_measure (step_fix cpm) ge n ast' t' ast'')
+    :
+    exists (btr : bundle_trace) k' d' m_a0' m_i' m_a',
+      (unbundle_trace btr = t) /\
+        (istar ir_step ge (Some (cur, m_i, ik)) btr (Some (cur, m_i', ik))) /\
+        (match_mem ge k' d' m_a0' m_i' m_a') /\
+        (exists res, star_measure (step_fix cpm) ge n
+                             (ReturnState st (set_pair (loc_external_result (ef_sig ef)) res (undef_caller_save_regs rs)) # PC <- (rs X1) m_a') t' ast'').
+  Proof.
+    destruct MEM as (MEM0 & MEM1 & MEM2 & MEM3 & MEM4 & MEM5).
+    (* take a step *)
+    inv STEP.
+    (* invalid *)
+    1,2,3,4: rewrite NEXTPC in H2; inv H2; rewrite NEXTF in H3; inv H3.
+    rewrite NEXTPC in H2; inv H2; rewrite NEXTF in H3; inv H3.
+    exploit Genv.find_funct_ptr_iff. intros (TEMP & _). specialize (TEMP NEXTF).
+    exploit wf_ge_block_to_id; eauto. intros (ef_id & INVSYMB).
+    exploit Genv.invert_find_symbol. eapply INVSYMB. intros FINDSYMB. clear TEMP.
+    apply extcall_cases in VISFO. destruct VISFO as [VISFO | KNOWN].
+
+    - (* extcall is unknown *)
+      (* reestablish meminj *)
+      exploit mem_delta_apply_establish_inject; eauto.
+      { admit. (* ez *) }
+      { admit. (* VISFO *) }
+      intros (m_i' & APPD' & MEMINJ'). exploit external_call_mem_inject; eauto.
+      { admit. (* ez *) }
+      { instantiate (1:=args). admit. }
+      intros (f' & vres' & m_i'' & EXTCALL' & VALINJ' & MEMINJ'' & _ & _ & INCRINJ' & _).
+      assert (MM': match_mem ge f' [] m' m_i'' m').
+      { unfold match_mem. simpl. split; auto. split; auto. split.
+        { pose proof (meminj_not_alloc_delta _ _ MEM2 _ _ MEM5) as NALLOC.
+          clear - H4 NALLOC. unfold meminj_not_alloc in *. intros. apply NALLOC.
+          pose proof (@external_call_valid_block _ _ _ _ _ _ _ b H4).
+          destruct (Pos.leb_spec (Mem.nextblock m_a) b); auto.
+          unfold Mem.valid_block in H0. apply H0 in H1. exfalso. unfold Plt in H1. lia.
+        }
+        split.
+        { pose proof (meminj_not_alloc_delta _ _ MEM2 _ _ MEM5) as NALLOC.
+          clear - H4 MEM3 NALLOC. unfold public_not_freeable in *. intros.
+          specialize (MEM3 _ H). intros CC. apply MEM3; clear MEM3.
+          eapply external_call_max_perm; eauto. unfold Mem.valid_block.
+          unfold meminj_not_alloc in NALLOC. unfold Plt.
+          destruct (Pos.ltb_spec b (Mem.nextblock m_a)); auto.
+          specialize (NALLOC _ H0). congruence.
+        }
+        split; auto. constructor.
+      }
+      exists ([Bundle_call t ef_id (vals_to_eventvals ge args) (ef_sig ef0) (Some d)]).
+      do 5 eexists. splits; simpl. 3: eapply MM'. apply app_nil_r.
+      2:{ exists res. auto. }
+      econstructor 2. 2: econstructor 1. 2: eauto.
+      eapply ir_step_intra_call_external; eauto.
+      { unfold Genv.type_of_call in *. rewrite CURCOMP, <- REC_CURCOMP. rewrite NEXTPC. simpl.
+        unfold Genv.find_comp. setoid_rewrite NEXTF. rewrite Pos.eqb_refl. auto.
+      }
+      { clear - VISFO MEMINJ'. admit. (* TODO *) }.
+
+    - (* extcall is known *)
+      (* TODO *)
+
+  Admitted.
+
+  Lemma asm_to_ir_returnstate_undef_nccc_external
+        cpm (ge: genv) n n0
+        (LT: (n0 < n)%nat)
+        (IH: forall y : nat,
+            (y < n)%nat ->
+            forall (m_a0 : mem) (ast ast' : state) (tr : trace),
+              wf_ge ge ->
+              wf_asm ge ast ->
+              star_measure (step_fix cpm) ge y ast tr ast' ->
+              forall (ist : ir_state) (k : meminj) (d : mem_delta),
+                match_state ge k m_a0 d ast ist ->
+                exists (btr : bundle_trace) (ist' : ir_state), unbundle_trace btr = tr /\ istar ir_step ge ist btr ist')
+        (WFGE: wf_ge ge)
+        cur ik
+        (WFIR0 : wf_ir_cur ge cur)
+        (WFIR1 : wf_ir_conts ge ik)
+        st (rs: regset)
+        (WFASM1: wf_stack ge st)
+        (MTST0 : match_cur_stack cur ge st)
+        (CURCOMP : Genv.find_comp ge (Vptr cur Ptrofs.zero) = callee_comp cpm st)
+        (MTST2 : match_stack ge ik st)
+        k d m_a0 m_i m_a
+        (MEM: match_mem ge k d m_a0 m_i m_a)
+        (RSX: rs X1 = Vundef)
+        t' ast'
+        (STEP: step_fix cpm ge (ReturnState st rs m_a) t' ast')
+        t'' ast''
+        (STAR: star_measure (step_fix cpm) ge n0 ast' t'' ast'')
+        (NCCC: Genv.type_of_call ge (Genv.find_comp_ignore_offset ge (rs PC)) (callee_comp cpm st) <> Genv.CrossCompartmentCall)
+        b1 ofs1
+        (NEXTPC: rs PC = Vptr b1 ofs1)
+        ef
+        (NEXTF : Genv.find_funct_ptr ge b1 = Some (External ef))
+    :
+    exists (btr : bundle_trace) (ist' : ir_state), unbundle_trace btr = t' ** t'' /\ istar ir_step ge (Some (cur, m_i, ik)) btr ist'.
+  Proof.
+    destruct MEM as (MEM0 & MEM1 & MEM2 & MEM3 & MEM4 & MEM5).
+    (** step --- ReturnState *)
+    inv STEP. inv EV; simpl in *.
+    2:{ rewrite H in NCCC. congruence with NCCC. }
+    (** return is nccc *)
+    clear H. pose proof STAR as STAR0. inv STAR.
+    (* end case *)
+    { end_case. }
+    (** next is external --- another extcall, Returnstate, and finally next-next PC is Vundef *)
+    (* take a step *)
+    rename H into STEP, H0 into STAR.
+
+    assert (st' = st).
+    { unfold Genv.type_of_call in NCCC. des_ifs. unfold update_stack_return in STUPD. rewrite Pos.eqb_sym, Heq in STUPD. inv STUPD. auto. }
+    subst st'.
+    exploit asm_to_ir_step_nccc_external.
+    12: eapply STAR. 11: eapply NEXTF. 10: eapply NEXTPC. 9: eapply STEP.
+    all: eauto.
+    { split; eauto. }
+    clear STEP STAR.
+    intros (btr1 & k' & d' & m_a0' & m_i' & m_a' & UTR1 & ISTAR1 & MM' & (res & STAR)).
+    eapply asm_to_ir_compose. 2: eauto. do 2 eexists. split; eauto. clear btr1 UTR1 ISTAR1.
+
+    assert (STUCK: (set_pair (loc_external_result (ef_sig ef)) res (undef_caller_save_regs rs))
+                     # PC <- (rs X1) PC = Vundef).
+    { rewrite Pregmap.gss. auto. }
+    inv STAR.
+    (* end case *)
+    { exists []. eexists. split; auto. econstructor 1. }
+    (* now at Returnstate *)
+    inv H; simpl in *. rewrite Pregmap.gss in *. inv H0.
+    (* end case *)
+    { inv EV.
+      (* return is NCCC - silent *)
+      { exists []. simpl. eexists. split; auto. econstructor 1. }
+      (* return is CCC - return event *)
+      { unfold Genv.type_of_call in H. des_ifs. unfold update_stack_return in STUPD0.
+        clear H. rewrite Pregmap.gss in *.
+        rewrite Pos.eqb_sym in Heq. rewrite Heq in STUPD0. des_ifs.
+        pose proof Heq as NEQ. eapply Pos.eqb_neq in NEQ. specialize (PC_RA0 NEQ).
+        (* stuck --- return PC is Vundef *)
+        rewrite STUCK in PC_RA0. clear - PC_RA0. exfalso. simpl in PC_RA0. des_ifs.
+      }
+    }
+    (* stuck case *)
+    inv H; simpl in *; rewrite Pregmap.gss in *; rewrite STUCK in H5; inv H5.
+  Qed.
+
+  Lemma asm_to_ir_returnstate_undef_ccc_external
+        cpm (ge: genv) n n0
+        (LT: (n0 < n)%nat)
+        (IH: forall y : nat,
+            (y < n)%nat ->
+            forall (m_a0 : mem) (ast ast' : state) (tr : trace),
+              wf_ge ge ->
+              wf_asm ge ast ->
+              star_measure (step_fix cpm) ge y ast tr ast' ->
+              forall (ist : ir_state) (k : meminj) (d : mem_delta),
+                match_state ge k m_a0 d ast ist ->
+                exists (btr : bundle_trace) (ist' : ir_state), unbundle_trace btr = tr /\ istar ir_step ge ist btr ist')
+        (WFGE: wf_ge ge)
+        cur ik
+        (WFIR0 : wf_ir_cur ge cur)
+        (WFIR1 : wf_ir_conts ge ik)
+        st (rs: regset)
+        (WFASM1: wf_stack ge st)
+        (MTST0 : match_cur_stack cur ge st)
+        (CURCOMP : Genv.find_comp ge (Vptr cur Ptrofs.zero) = callee_comp cpm st)
+        (MTST2 : match_stack ge ik st)
+        k d m_a0 m_i m_a
+        (MEM: match_mem ge k d m_a0 m_i m_a)
+        (RSX: rs X1 = Vundef)
+        t' ast'
+        (STEP: step_fix cpm ge (ReturnState st rs m_a) t' ast')
+        t'' ast''
+        (STAR: star_measure (step_fix cpm) ge n0 ast' t'' ast'')
+        (CCC: Genv.type_of_call ge (Genv.find_comp_ignore_offset ge (rs PC)) (callee_comp cpm st) = Genv.CrossCompartmentCall)
+        b1 ofs1
+        (NEXTPC: rs PC = Vptr b1 ofs1)
+        ef
+        (NEXTF : Genv.find_funct_ptr ge b1 = Some (External ef))
+    :
+    exists (btr : bundle_trace) (ist' : ir_state), unbundle_trace btr = t' ** t'' /\ istar ir_step ge (Some (cur, m_i, ik)) btr ist'.
+  Proof.
+    destruct MEM as (MEM0 & MEM1 & MEM2 & MEM3 & MEM4 & MEM5).
+    (** step --- ReturnState *)
+    inv STEP. inv EV; simpl in *.
+    { rewrite CCC in H. congruence with H. }
+    clear H.
+    (* TODO *)
+    (** return is ccc --- next is poped from the stack, which is internal, so done *)
+    simpl in *. rewrite Pregmap.gss in *. rename H6 into STAR.
+    unfold Genv.type_of_call in H. des_ifs. clear H. unfold update_stack_return in STUPD. rewrite Pregmap.gss in *.
+    rewrite Pos.eqb_sym in Heq. rewrite Heq in STUPD. des_ifs. pose proof Heq as NEQ. eapply Pos.eqb_neq in NEQ. specialize (PC_RA NEQ).
+    destruct s as [b3 cp3 sig3 rv3 ptr3]. simpl in *. destruct WFASM as [WFASM1 WFASM2].
+    inv WFASM1. simpl in *. des_ifs. clear H8. inv MTST2.
+    exploit (IH _ _ _ _ _ _ _ _ STAR). lia. all: auto.
+    { simpl. split; auto. unfold wf_regset. rewrite Pregmap.gss. rewrite PC_RA. rewrite Heq0. auto. }
+    { instantiate (4:=f'). instantiate (3:=m'0). instantiate (2:=[]). instantiate (1:=Some (next, m2', ik_tl)). simpl. split.
+      { inv WFIR1. simpl in *. auto. }
+      split.
+      { inv WFIR1. auto. }
+      split; auto. split.
+      { unfold match_cur_regset. rewrite Pregmap.gss. rewrite COMP. rewrite PC_RA. auto. }
+      split; auto. split; auto. simpl. split; auto. split; auto.
+      { pose proof (meminj_not_alloc_delta _ _ MEM2 _ _ MEM5') as NALLOC. clear - H12 NALLOC. unfold meminj_not_alloc in *. intros. apply NALLOC.
+        pose proof (@external_call_valid_block _ _ _ _ _ _ _ b H12). destruct (Pos.leb_spec (Mem.nextblock m') b); auto.
+        unfold Mem.valid_block in H0. apply H0 in H1. exfalso. unfold Plt in H1. lia.
+      }
+      split.
+      { pose proof (meminj_not_alloc_delta _ _ MEM2 _ _ MEM5) as NALLOC. pose proof (public_not_freeable_exec_instr _ _ _ _ _ _ _ _ MEM3 NALLOC H3) as NFREE.
+        pose proof (meminj_not_alloc_delta _ _ MEM2 _ _ MEM5') as NALLOC2.
+        clear - H12 NFREE NALLOC2. unfold public_not_freeable in *. intros. specialize (NFREE _ H). intros CC. apply NFREE; clear NFREE.
+        eapply external_call_max_perm; eauto. unfold Mem.valid_block. unfold meminj_not_alloc in NALLOC2.
+        unfold Plt. destruct (Pos.ltb_spec b (Mem.nextblock m')); auto. specialize (NALLOC2 _ H0). congruence.
+      }
+      split; auto. constructor.
+    }
+    intros (btr & ist' & UTR & ISTAR').
+    (* FIX: case analysis on whether extcall is unknown or not *)
+    exists ([Bundle_call t1 ef_id (vals_to_eventvals ge args) (ef_sig ef) (Some d')]
+         ++ ((Bundle_return [Event_return (Genv.find_comp_ignore_offset ge (rs' X1)) (Genv.find_comp_ignore_offset ge (rs' PC)) res0] res0) :: btr)), ist'.
+    simpl. rewrite UTR. split; auto.
+    econstructor 2. 2: econstructor 2. 3: eapply ISTAR'. 3,4: auto.
+    - eapply ir_step_intra_call_external. 2: eapply FINDSYMB. 2: eapply NEXTF. 6: eapply EXTCALL'. all: eauto.
+      { unfold match_cur_regset in MTST1. rewrite MTST1. rewrite H0. simpl. unfold Genv.find_comp. simpl. rewrite pred_dec_true; auto.
+        rewrite H1. setoid_rewrite ALLOWED. simpl. unfold Genv.find_comp. simpl. rewrite pred_dec_true; auto. rewrite NEXTF.
+        unfold Genv.type_of_call. rewrite Pos.eqb_refl. auto.
+      }
+      { admit. (* fix? VISFO --- maybe case analysis first on unknowns? *) }
+    - inv WFIR1. simpl in *. des_ifs. clear H8. unfold wf_ir_cur in WFIR0. des_ifs. clear WFIR0.
+      eapply ir_step_vr_return_internal. 6: eapply Heq1. all: eauto.
+      { intros. eapply NO_CROSS_PTR.
+        rewrite PC_RA, NEXTPC. simpl. rewrite <- COMP. rewrite MTST1 in H.
+        rewrite <- ALLOWED. rewrite H0 in H. simpl in H. unfold Genv.find_comp at 2 in H. unfold Genv.find_funct in H. des_ifs.
+      }
+      constructor; auto.
+      { rewrite COMP, MTST1. rewrite PC_RA, NEXTPC in *. simpl in *. rewrite H0. simpl. unfold Genv.find_comp at 2. unfold Genv.find_funct in *. des_ifs.
+        setoid_rewrite ALLOWED. unfold Genv.type_of_call. rewrite Pos.eqb_sym, Heq. auto.
+      }
+      { replace (funsig (Internal f3)) with sig3; auto. unfold match_cur_stack in MTST0. des_ifs. }
+      { rewrite COMP. rewrite PC_RA. simpl. rewrite NEXTPC. simpl. unfold match_cur_regset in MTST1. rewrite MTST1. rewrite H0. simpl.
+        replace (Genv.find_comp ge (Vptr b0 Ptrofs.zero)) with (Genv.find_comp ge (Vptr b Ptrofs.zero)); auto.
+        rewrite <- ALLOWED. unfold Genv.find_comp. unfold Genv.find_funct. des_ifs.
+      }
+
+
+
+
+
+      (* garbage *)
+    move STEP after STAR. inv STEP.
+    (* invalid *)
+    1,2,3,4: rewrite NEXTPC in H2; inv H2; rewrite NEXTF in H3; inv H3.
+    (** external & InternalCall & next PC is Vundef *)
+    rewrite NEXTPC in H2; inv H2; rewrite NEXTF in H3; inv H3.
+
+
+    clear args H5 H8 VISFO.
+    assert (STUCK: (set_pair (loc_external_result (ef_sig ef0)) res (undef_caller_save_regs rs))
+                     # PC <- (rs X1) PC = Vundef).
+    { rewrite Pregmap.gss. auto. }
+    (* exploit Genv.find_funct_ptr_iff. intros (TEMP & _). specialize (TEMP NEXTF). *)
+    (* exploit wf_ge_block_to_id; eauto. intros (ef_id & INVSYMB). *)
+    (* exploit Genv.invert_find_symbol. eapply INVSYMB. intros FINDSYMB. clear TEMP. *)
+
+    (* (* reestablish meminj *) *)
+    (* exploit mem_delta_apply_establish_inject. eapply MEMINJ'2. eapply INCRINJ. *)
+    (* { admit. (* ez *) } *)
+    (* { pose proof (meminj_not_alloc_delta _ _ MEM2 _ _ MEM5') as NALLOC. clear - H12 NALLOC. unfold meminj_not_alloc in *. intros. apply NALLOC. *)
+    (*   pose proof (@external_call_valid_block _ _ _ _ _ _ _ b H12). destruct (Pos.leb_spec (Mem.nextblock m') b); auto. *)
+    (*   unfold Mem.valid_block in H0. apply H0 in H1. exfalso. unfold Plt in H1. lia. *)
+    (* } *)
+    (* { econstructor 1. } *)
+    (* { simpl; eauto. } *)
+    (* { admit. (* VISFO0, FIX - unknown or not *) } *)
+    (* simpl. intros (m3' & TEMPEQ & MEMINJ''). symmetry in TEMPEQ. inv TEMPEQ. *)
+    (* exploit external_call_mem_inject. *)
+    (* 2:{ eapply H10. } *)
+    (* 2:{ eapply MEMINJ''. } *)
+    (* { admit. } *)
+    (* { instantiate (1:=args0). admit. } *)
+    (* intros (f'' & vres'' & m3' & EXTCALL'' & VALINJ'' & MEMINJ'3 & _ & _ & INCRINJ'' & _). *)
+
+    exists ([Bundle_call t1 ef_id (vals_to_eventvals ge args) (ef_sig ef) (Some d'); Bundle_call t0 ef_id2 (vals_to_eventvals ge args0) (ef_sig ef0) (Some [])]). simpl.
+      eexists. split; auto. econstructor 2. 2: econstructor 2. 3: econstructor 1. 3,4: eauto.
+      - eapply ir_step_intra_call_external. 2: eapply FINDSYMB. 2: eapply NEXTF. 6: eapply EXTCALL'. all: eauto.
+        { unfold match_cur_regset in MTST1. rewrite MTST1. rewrite H0. simpl. unfold Genv.find_comp. simpl. rewrite pred_dec_true; auto.
+          rewrite H1. setoid_rewrite ALLOWED. simpl. unfold Genv.find_comp. simpl. rewrite pred_dec_true; auto. rewrite NEXTF.
+          unfold Genv.type_of_call. rewrite Pos.eqb_refl. auto.
+        }
+        { admit. (* fix? VISFO --- maybe case analysis first on unknowns? *) }
+      - eapply ir_step_intra_call_external. 2: eapply FINDSYMB2. 2: eapply NEXTF2. 6: eapply EXTCALL''. all: eauto.
+        { unfold match_cur_regset in MTST1. rewrite MTST1. rewrite H0. simpl. unfold Genv.find_comp. simpl. rewrite pred_dec_true; auto.
+          rewrite H1. setoid_rewrite ALLOWED. rewrite NEXTPC in REC_CURCOMP; simpl in *. rewrite REC_CURCOMP.
+          unfold Genv.type_of_call in NCCC. des_ifs. apply Pos.eqb_eq in Heq. rewrite <- Heq. unfold Genv.find_comp, Genv.find_funct. des_ifs.
+          unfold Genv.type_of_call. unfold comp_of at 1. simpl. rewrite Pos.eqb_refl; auto.
+        }
+        { admit. (* fix? VISFO0 --- maybe case analysis first on unknowns? *) }
+    }
+
+
+  Lemma asm_to_ir_returnstate_undef
         cpm (ge: genv) n n0
         (LT: (n0 < n)%nat)
         (IH: forall y : nat,
@@ -657,7 +1113,7 @@ Section PROOF.
   Proof.
     destruct MEM as (MEM0 & MEM1 & MEM2 & MEM3 & MEM4 & MEM5).
     (** step --- ReturnState *)
-    inv STEP. inv EV; simpl in *.
+    pose proof STEP as STEP0. inv STEP. inv EV; simpl in *.
 
     (** return is nccc *)
     { rename H into NCCC. pose proof STAR as STAR0. inv STAR.
@@ -669,159 +1125,146 @@ Section PROOF.
       destruct fd.
 
       (** next is internal *)
-      { exploit IH; clear IH. 4: eapply STAR0. lia. all: auto.
-        { simpl. split.
-          - unfold Genv.type_of_call in NCCC. des_ifs. unfold update_stack_return in STUPD. rewrite Pos.eqb_sym, Heq in STUPD. inv STUPD. auto.
-          - unfold wf_regset in *. rewrite NEXTPC, NEXTF. auto.
-        }
-        { instantiate (4:=k). instantiate (3:=m_a0). instantiate (2:=d). instantiate (1:=Some (cur, m_i, ik)).
-          assert (st' = st).
-          { unfold Genv.type_of_call in NCCC. des_ifs. unfold update_stack_return in STUPD. rewrite Pos.eqb_sym, Heq in STUPD. inv STUPD. auto. }
-          subst st'. simpl. split; auto. split; auto. split; auto. split.
-          { unfold match_cur_regset in *. rewrite CURCOMP. unfold Genv.type_of_call in NCCC. des_ifs. apply Pos.eqb_eq in Heq. auto. }
-          split; auto.
-          { unfold match_mem. split; auto. }
-        }
-        intros (btr & ist' & UTR & ISTAR').
-        exists btr, ist'. split; auto.
+      { exploit asm_to_ir_returnstate_nccc_internal. 2: eapply IH.
+        11: eapply STAR0. 10: eapply STEP0. all: eauto. split; eauto.
       }
 
       (* TODO *)
 
-    (*   (** next is external --- another extcall, Returnstate, and finally next-next PC is Vundef *) *)
-    (*   (* take a step *) *)
-    (*   inv STEP. *)
-    (*   (* invalid *) *)
-    (*   1,2,3,4: rewrite Pregmap.gss in H8; inv H8; rewrite NEXTF2 in H9; inv H9. *)
-    (*   (** external & InternalCall & next PC is Vundef *) *)
-    (*   rewrite Pregmap.gss in H8; inv H8. rewrite NEXTF2 in H9; inv H9. *)
-    (*   assert (STUCK: ((set_pair (loc_external_result (ef_sig ef)) res (undef_caller_save_regs rs')) # PC <- (Vptr b2 Ptrofs.zero) X1) = Vundef). *)
-    (*   { clear. rewrite Pregmap.gso. 2: congruence. unfold loc_external_result. unfold Conventions1.loc_result. des_ifs. } *)
-    (*   rewrite STUCK in STAR. *)
-    (*   exploit Genv.find_funct_ptr_iff. intros (TEMP & _). specialize (TEMP NEXTF2). exploit wf_ge_block_to_id; eauto. intros (ef_id2 & INVSYMB2). *)
-    (*   exploit Genv.invert_find_symbol. eapply INVSYMB2. intros FINDSYMB2. clear TEMP. *)
-    (*   (* reestablish meminj *) *)
-    (*   exploit mem_delta_apply_establish_inject. eapply MEMINJ'2. eapply INCRINJ. *)
-    (*   { admit. (* ez *) } *)
-    (*   { pose proof (meminj_not_alloc_delta _ _ MEM2 _ _ MEM5') as NALLOC. clear - H12 NALLOC. unfold meminj_not_alloc in *. intros. apply NALLOC. *)
-    (*     pose proof (@external_call_valid_block _ _ _ _ _ _ _ b H12). destruct (Pos.leb_spec (Mem.nextblock m') b); auto. *)
-    (*     unfold Mem.valid_block in H0. apply H0 in H1. exfalso. unfold Plt in H1. lia. *)
-    (*   } *)
-    (*   { econstructor 1. } *)
-    (*   { simpl; eauto. } *)
-    (*   { admit. (* VISFO0, FIX - unknown or not *) } *)
-    (*   simpl. intros (m3' & TEMPEQ & MEMINJ''). symmetry in TEMPEQ. inv TEMPEQ. *)
-    (*   exploit external_call_mem_inject. *)
-    (*   2:{ eapply H10. } *)
-    (*   2:{ eapply MEMINJ''. } *)
-    (*   { admit. } *)
-    (*   { instantiate (1:=args0). admit. } *)
-    (*   intros (f'' & vres'' & m3' & EXTCALL'' & VALINJ'' & MEMINJ'3 & _ & _ & INCRINJ'' & _). *)
-    (*   inv STAR. *)
-    (*   (* end case *) *)
-    (*   { exists ([Bundle_call t1 ef_id (vals_to_eventvals ge args) (ef_sig ef) (Some d'); Bundle_call t0 ef_id2 (vals_to_eventvals ge args0) (ef_sig ef0) (Some [])]). simpl. *)
-    (*     eexists. split; auto. econstructor 2. 2: econstructor 2. 3: econstructor 1. 3,4: eauto. *)
-    (*     - eapply ir_step_intra_call_external. 2: eapply FINDSYMB. 2: eapply NEXTF. 6: eapply EXTCALL'. all: eauto. *)
-    (*       { unfold match_cur_regset in MTST1. rewrite MTST1. rewrite H0. simpl. unfold Genv.find_comp. simpl. rewrite pred_dec_true; auto. *)
-    (*         rewrite H1. setoid_rewrite ALLOWED. simpl. unfold Genv.find_comp. simpl. rewrite pred_dec_true; auto. rewrite NEXTF. *)
-    (*         unfold Genv.type_of_call. rewrite Pos.eqb_refl. auto. *)
-    (*       } *)
-    (*       { admit. (* fix? VISFO --- maybe case analysis first on unknowns? *) } *)
-    (*     - eapply ir_step_intra_call_external. 2: eapply FINDSYMB2. 2: eapply NEXTF2. 6: eapply EXTCALL''. all: eauto. *)
-    (*       { unfold match_cur_regset in MTST1. rewrite MTST1. rewrite H0. simpl. unfold Genv.find_comp. simpl. rewrite pred_dec_true; auto. *)
-    (*         rewrite H1. setoid_rewrite ALLOWED. rewrite NEXTPC in REC_CURCOMP; simpl in *. rewrite REC_CURCOMP. *)
-    (*         unfold Genv.type_of_call in NCCC. des_ifs. apply Pos.eqb_eq in Heq. rewrite <- Heq. unfold Genv.find_comp, Genv.find_funct. des_ifs. *)
-    (*         unfold Genv.type_of_call. unfold comp_of at 1. simpl. rewrite Pos.eqb_refl; auto. *)
-    (*       } *)
-    (*       { admit. (* fix? VISFO0 --- maybe case analysis first on unknowns? *) } *)
-    (*   } *)
-    (*   inv H; simpl in *. rewrite Pregmap.gss in *. inv H6. *)
-    (*   (* end case *) *)
-    (*   { inv EV. *)
-    (*     (* return is NCCC - silent *) *)
-    (*     { exists ([Bundle_call t1 ef_id (vals_to_eventvals ge args) (ef_sig ef) (Some d'); Bundle_call t0 ef_id2 (vals_to_eventvals ge args0) (ef_sig ef0) (Some [])]). simpl. *)
-    (*       eexists. split; auto. econstructor 2. 2: econstructor 2. 3: econstructor 1. 3,4: eauto. *)
-    (*       - eapply ir_step_intra_call_external. 2: eapply FINDSYMB. 2: eapply NEXTF. 6: eapply EXTCALL'. all: eauto. *)
-    (*         { unfold match_cur_regset in MTST1. rewrite MTST1. rewrite H0. simpl. unfold Genv.find_comp. simpl. rewrite pred_dec_true; auto. *)
-    (*           rewrite H1. setoid_rewrite ALLOWED. simpl. unfold Genv.find_comp. simpl. rewrite pred_dec_true; auto. rewrite NEXTF. *)
-    (*           unfold Genv.type_of_call. rewrite Pos.eqb_refl. auto. *)
-    (*         } *)
-    (*         { admit. (* fix? VISFO --- maybe case analysis first on unknowns? *) } *)
-    (*       - eapply ir_step_intra_call_external. 2: eapply FINDSYMB2. 2: eapply NEXTF2. 6: eapply EXTCALL''. all: eauto. *)
-    (*         { unfold match_cur_regset in MTST1. rewrite MTST1. rewrite H0. simpl. unfold Genv.find_comp. simpl. rewrite pred_dec_true; auto. *)
-    (*           rewrite H1. setoid_rewrite ALLOWED. rewrite NEXTPC in REC_CURCOMP; simpl in *. rewrite REC_CURCOMP. *)
-    (*           unfold Genv.type_of_call in NCCC. des_ifs. apply Pos.eqb_eq in Heq. rewrite <- Heq. unfold Genv.find_comp, Genv.find_funct. des_ifs. *)
-    (*           unfold Genv.type_of_call. unfold comp_of at 1. simpl. rewrite Pos.eqb_refl; auto. *)
-    (*         } *)
-    (*         { admit. (* fix? VISFO0 --- maybe case analysis first on unknowns? *) } *)
-    (*     } *)
-    (*     (* return is CCC - return event *) *)
-    (*     { unfold Genv.type_of_call in H. des_ifs. unfold update_stack_return in STUPD0. clear H. rewrite Pregmap.gss in *. *)
-    (*       replace (Genv.find_comp_ignore_offset ge Vundef) with default_compartment in STUPD0; auto. rewrite Pos.eqb_sym in Heq. rewrite Heq in STUPD0. des_ifs. *)
-    (*       pose proof Heq as NEQ. eapply Pos.eqb_neq in NEQ. specialize (PC_RA0 NEQ). *)
-    (*       (* stuck --- by some hacky reason *) *)
-    (*       clear - PC_RA0. exfalso. simpl in PC_RA0. des_ifs. *)
-    (*     } *)
-    (*   } *)
-    (*   (* stuck case *) *)
-    (*   inv H; simpl in *; rewrite Pregmap.gss in *; inv H11. *)
-    (* } *)
+      (** next is external --- another extcall, Returnstate, and finally next-next PC is Vundef *)
+      (* take a step *)
+      inv STEP.
+      (* invalid *)
+      1,2,3,4: rewrite Pregmap.gss in H8; inv H8; rewrite NEXTF2 in H9; inv H9.
+      (** external & InternalCall & next PC is Vundef *)
+      rewrite Pregmap.gss in H8; inv H8. rewrite NEXTF2 in H9; inv H9.
+      assert (STUCK: ((set_pair (loc_external_result (ef_sig ef)) res (undef_caller_save_regs rs')) # PC <- (Vptr b2 Ptrofs.zero) X1) = Vundef).
+      { clear. rewrite Pregmap.gso. 2: congruence. unfold loc_external_result. unfold Conventions1.loc_result. des_ifs. }
+      rewrite STUCK in STAR.
+      exploit Genv.find_funct_ptr_iff. intros (TEMP & _). specialize (TEMP NEXTF2). exploit wf_ge_block_to_id; eauto. intros (ef_id2 & INVSYMB2).
+      exploit Genv.invert_find_symbol. eapply INVSYMB2. intros FINDSYMB2. clear TEMP.
+      (* reestablish meminj *)
+      exploit mem_delta_apply_establish_inject. eapply MEMINJ'2. eapply INCRINJ.
+      { admit. (* ez *) }
+      { pose proof (meminj_not_alloc_delta _ _ MEM2 _ _ MEM5') as NALLOC. clear - H12 NALLOC. unfold meminj_not_alloc in *. intros. apply NALLOC.
+        pose proof (@external_call_valid_block _ _ _ _ _ _ _ b H12). destruct (Pos.leb_spec (Mem.nextblock m') b); auto.
+        unfold Mem.valid_block in H0. apply H0 in H1. exfalso. unfold Plt in H1. lia.
+      }
+      { econstructor 1. }
+      { simpl; eauto. }
+      { admit. (* VISFO0, FIX - unknown or not *) }
+      simpl. intros (m3' & TEMPEQ & MEMINJ''). symmetry in TEMPEQ. inv TEMPEQ.
+      exploit external_call_mem_inject.
+      2:{ eapply H10. }
+      2:{ eapply MEMINJ''. }
+      { admit. }
+      { instantiate (1:=args0). admit. }
+      intros (f'' & vres'' & m3' & EXTCALL'' & VALINJ'' & MEMINJ'3 & _ & _ & INCRINJ'' & _).
+      inv STAR.
+      (* end case *)
+      { exists ([Bundle_call t1 ef_id (vals_to_eventvals ge args) (ef_sig ef) (Some d'); Bundle_call t0 ef_id2 (vals_to_eventvals ge args0) (ef_sig ef0) (Some [])]). simpl.
+        eexists. split; auto. econstructor 2. 2: econstructor 2. 3: econstructor 1. 3,4: eauto.
+        - eapply ir_step_intra_call_external. 2: eapply FINDSYMB. 2: eapply NEXTF. 6: eapply EXTCALL'. all: eauto.
+          { unfold match_cur_regset in MTST1. rewrite MTST1. rewrite H0. simpl. unfold Genv.find_comp. simpl. rewrite pred_dec_true; auto.
+            rewrite H1. setoid_rewrite ALLOWED. simpl. unfold Genv.find_comp. simpl. rewrite pred_dec_true; auto. rewrite NEXTF.
+            unfold Genv.type_of_call. rewrite Pos.eqb_refl. auto.
+          }
+          { admit. (* fix? VISFO --- maybe case analysis first on unknowns? *) }
+        - eapply ir_step_intra_call_external. 2: eapply FINDSYMB2. 2: eapply NEXTF2. 6: eapply EXTCALL''. all: eauto.
+          { unfold match_cur_regset in MTST1. rewrite MTST1. rewrite H0. simpl. unfold Genv.find_comp. simpl. rewrite pred_dec_true; auto.
+            rewrite H1. setoid_rewrite ALLOWED. rewrite NEXTPC in REC_CURCOMP; simpl in *. rewrite REC_CURCOMP.
+            unfold Genv.type_of_call in NCCC. des_ifs. apply Pos.eqb_eq in Heq. rewrite <- Heq. unfold Genv.find_comp, Genv.find_funct. des_ifs.
+            unfold Genv.type_of_call. unfold comp_of at 1. simpl. rewrite Pos.eqb_refl; auto.
+          }
+          { admit. (* fix? VISFO0 --- maybe case analysis first on unknowns? *) }
+      }
+      inv H; simpl in *. rewrite Pregmap.gss in *. inv H6.
+      (* end case *)
+      { inv EV.
+        (* return is NCCC - silent *)
+        { exists ([Bundle_call t1 ef_id (vals_to_eventvals ge args) (ef_sig ef) (Some d'); Bundle_call t0 ef_id2 (vals_to_eventvals ge args0) (ef_sig ef0) (Some [])]). simpl.
+          eexists. split; auto. econstructor 2. 2: econstructor 2. 3: econstructor 1. 3,4: eauto.
+          - eapply ir_step_intra_call_external. 2: eapply FINDSYMB. 2: eapply NEXTF. 6: eapply EXTCALL'. all: eauto.
+            { unfold match_cur_regset in MTST1. rewrite MTST1. rewrite H0. simpl. unfold Genv.find_comp. simpl. rewrite pred_dec_true; auto.
+              rewrite H1. setoid_rewrite ALLOWED. simpl. unfold Genv.find_comp. simpl. rewrite pred_dec_true; auto. rewrite NEXTF.
+              unfold Genv.type_of_call. rewrite Pos.eqb_refl. auto.
+            }
+            { admit. (* fix? VISFO --- maybe case analysis first on unknowns? *) }
+          - eapply ir_step_intra_call_external. 2: eapply FINDSYMB2. 2: eapply NEXTF2. 6: eapply EXTCALL''. all: eauto.
+            { unfold match_cur_regset in MTST1. rewrite MTST1. rewrite H0. simpl. unfold Genv.find_comp. simpl. rewrite pred_dec_true; auto.
+              rewrite H1. setoid_rewrite ALLOWED. rewrite NEXTPC in REC_CURCOMP; simpl in *. rewrite REC_CURCOMP.
+              unfold Genv.type_of_call in NCCC. des_ifs. apply Pos.eqb_eq in Heq. rewrite <- Heq. unfold Genv.find_comp, Genv.find_funct. des_ifs.
+              unfold Genv.type_of_call. unfold comp_of at 1. simpl. rewrite Pos.eqb_refl; auto.
+            }
+            { admit. (* fix? VISFO0 --- maybe case analysis first on unknowns? *) }
+        }
+        (* return is CCC - return event *)
+        { unfold Genv.type_of_call in H. des_ifs. unfold update_stack_return in STUPD0. clear H. rewrite Pregmap.gss in *.
+          replace (Genv.find_comp_ignore_offset ge Vundef) with default_compartment in STUPD0; auto. rewrite Pos.eqb_sym in Heq. rewrite Heq in STUPD0. des_ifs.
+          pose proof Heq as NEQ. eapply Pos.eqb_neq in NEQ. specialize (PC_RA0 NEQ).
+          (* stuck --- by some hacky reason *)
+          clear - PC_RA0. exfalso. simpl in PC_RA0. des_ifs.
+        }
+      }
+      (* stuck case *)
+      inv H; simpl in *; rewrite Pregmap.gss in *; inv H11.
+    }
 
-    (* (** return is ccc --- next is poped from the stack, which is internal, so done *) *)
-    (* simpl in *. rewrite Pregmap.gss in *. rename H6 into STAR. *)
-    (* unfold Genv.type_of_call in H. des_ifs. clear H. unfold update_stack_return in STUPD. rewrite Pregmap.gss in *. *)
-    (* rewrite Pos.eqb_sym in Heq. rewrite Heq in STUPD. des_ifs. pose proof Heq as NEQ. eapply Pos.eqb_neq in NEQ. specialize (PC_RA NEQ). *)
-    (* destruct s as [b3 cp3 sig3 rv3 ptr3]. simpl in *. destruct WFASM as [WFASM1 WFASM2]. *)
-    (* inv WFASM1. simpl in *. des_ifs. clear H8. inv MTST2. *)
-    (* exploit (IH _ _ _ _ _ _ _ _ STAR). lia. all: auto. *)
-    (* { simpl. split; auto. unfold wf_regset. rewrite Pregmap.gss. rewrite PC_RA. rewrite Heq0. auto. } *)
-    (* { instantiate (4:=f'). instantiate (3:=m'0). instantiate (2:=[]). instantiate (1:=Some (next, m2', ik_tl)). simpl. split. *)
-    (*   { inv WFIR1. simpl in *. auto. } *)
-    (*   split. *)
-    (*   { inv WFIR1. auto. } *)
-    (*   split; auto. split. *)
-    (*   { unfold match_cur_regset. rewrite Pregmap.gss. rewrite COMP. rewrite PC_RA. auto. } *)
-    (*   split; auto. split; auto. simpl. split; auto. split; auto. *)
-    (*   { pose proof (meminj_not_alloc_delta _ _ MEM2 _ _ MEM5') as NALLOC. clear - H12 NALLOC. unfold meminj_not_alloc in *. intros. apply NALLOC. *)
-    (*     pose proof (@external_call_valid_block _ _ _ _ _ _ _ b H12). destruct (Pos.leb_spec (Mem.nextblock m') b); auto. *)
-    (*     unfold Mem.valid_block in H0. apply H0 in H1. exfalso. unfold Plt in H1. lia. *)
-    (*   } *)
-    (*   split. *)
-    (*   { pose proof (meminj_not_alloc_delta _ _ MEM2 _ _ MEM5) as NALLOC. pose proof (public_not_freeable_exec_instr _ _ _ _ _ _ _ _ MEM3 NALLOC H3) as NFREE. *)
-    (*     pose proof (meminj_not_alloc_delta _ _ MEM2 _ _ MEM5') as NALLOC2. *)
-    (*     clear - H12 NFREE NALLOC2. unfold public_not_freeable in *. intros. specialize (NFREE _ H). intros CC. apply NFREE; clear NFREE. *)
-    (*     eapply external_call_max_perm; eauto. unfold Mem.valid_block. unfold meminj_not_alloc in NALLOC2. *)
-    (*     unfold Plt. destruct (Pos.ltb_spec b (Mem.nextblock m')); auto. specialize (NALLOC2 _ H0). congruence. *)
-    (*   } *)
-    (*   split; auto. constructor. *)
-    (* } *)
-    (* intros (btr & ist' & UTR & ISTAR'). *)
-    (* (* FIX: case analysis on whether extcall is unknown or not *) *)
-    (* exists ([Bundle_call t1 ef_id (vals_to_eventvals ge args) (ef_sig ef) (Some d')] *)
-    (*      ++ ((Bundle_return [Event_return (Genv.find_comp_ignore_offset ge (rs' X1)) (Genv.find_comp_ignore_offset ge (rs' PC)) res0] res0) :: btr)), ist'. *)
-    (* simpl. rewrite UTR. split; auto. *)
-    (* econstructor 2. 2: econstructor 2. 3: eapply ISTAR'. 3,4: auto. *)
-    (* - eapply ir_step_intra_call_external. 2: eapply FINDSYMB. 2: eapply NEXTF. 6: eapply EXTCALL'. all: eauto. *)
-    (*   { unfold match_cur_regset in MTST1. rewrite MTST1. rewrite H0. simpl. unfold Genv.find_comp. simpl. rewrite pred_dec_true; auto. *)
-    (*     rewrite H1. setoid_rewrite ALLOWED. simpl. unfold Genv.find_comp. simpl. rewrite pred_dec_true; auto. rewrite NEXTF. *)
-    (*     unfold Genv.type_of_call. rewrite Pos.eqb_refl. auto. *)
-    (*   } *)
-    (*   { admit. (* fix? VISFO --- maybe case analysis first on unknowns? *) } *)
-    (* - inv WFIR1. simpl in *. des_ifs. clear H8. unfold wf_ir_cur in WFIR0. des_ifs. clear WFIR0. *)
-    (*   eapply ir_step_vr_return_internal. 6: eapply Heq1. all: eauto. *)
-    (*   { intros. eapply NO_CROSS_PTR. *)
-    (*     rewrite PC_RA, NEXTPC. simpl. rewrite <- COMP. rewrite MTST1 in H. *)
-    (*     rewrite <- ALLOWED. rewrite H0 in H. simpl in H. unfold Genv.find_comp at 2 in H. unfold Genv.find_funct in H. des_ifs. *)
-    (*   } *)
-    (*   constructor; auto. *)
-    (*   { rewrite COMP, MTST1. rewrite PC_RA, NEXTPC in *. simpl in *. rewrite H0. simpl. unfold Genv.find_comp at 2. unfold Genv.find_funct in *. des_ifs. *)
-    (*     setoid_rewrite ALLOWED. unfold Genv.type_of_call. rewrite Pos.eqb_sym, Heq. auto. *)
-    (*   } *)
-    (*   { replace (funsig (Internal f3)) with sig3; auto. unfold match_cur_stack in MTST0. des_ifs. } *)
-    (*   { rewrite COMP. rewrite PC_RA. simpl. rewrite NEXTPC. simpl. unfold match_cur_regset in MTST1. rewrite MTST1. rewrite H0. simpl. *)
-    (*     replace (Genv.find_comp ge (Vptr b0 Ptrofs.zero)) with (Genv.find_comp ge (Vptr b Ptrofs.zero)); auto. *)
-    (*     rewrite <- ALLOWED. unfold Genv.find_comp. unfold Genv.find_funct. des_ifs. *)
-    (*   } *)
+    (** return is ccc --- next is poped from the stack, which is internal, so done *)
+    simpl in *. rewrite Pregmap.gss in *. rename H6 into STAR.
+    unfold Genv.type_of_call in H. des_ifs. clear H. unfold update_stack_return in STUPD. rewrite Pregmap.gss in *.
+    rewrite Pos.eqb_sym in Heq. rewrite Heq in STUPD. des_ifs. pose proof Heq as NEQ. eapply Pos.eqb_neq in NEQ. specialize (PC_RA NEQ).
+    destruct s as [b3 cp3 sig3 rv3 ptr3]. simpl in *. destruct WFASM as [WFASM1 WFASM2].
+    inv WFASM1. simpl in *. des_ifs. clear H8. inv MTST2.
+    exploit (IH _ _ _ _ _ _ _ _ STAR). lia. all: auto.
+    { simpl. split; auto. unfold wf_regset. rewrite Pregmap.gss. rewrite PC_RA. rewrite Heq0. auto. }
+    { instantiate (4:=f'). instantiate (3:=m'0). instantiate (2:=[]). instantiate (1:=Some (next, m2', ik_tl)). simpl. split.
+      { inv WFIR1. simpl in *. auto. }
+      split.
+      { inv WFIR1. auto. }
+      split; auto. split.
+      { unfold match_cur_regset. rewrite Pregmap.gss. rewrite COMP. rewrite PC_RA. auto. }
+      split; auto. split; auto. simpl. split; auto. split; auto.
+      { pose proof (meminj_not_alloc_delta _ _ MEM2 _ _ MEM5') as NALLOC. clear - H12 NALLOC. unfold meminj_not_alloc in *. intros. apply NALLOC.
+        pose proof (@external_call_valid_block _ _ _ _ _ _ _ b H12). destruct (Pos.leb_spec (Mem.nextblock m') b); auto.
+        unfold Mem.valid_block in H0. apply H0 in H1. exfalso. unfold Plt in H1. lia.
+      }
+      split.
+      { pose proof (meminj_not_alloc_delta _ _ MEM2 _ _ MEM5) as NALLOC. pose proof (public_not_freeable_exec_instr _ _ _ _ _ _ _ _ MEM3 NALLOC H3) as NFREE.
+        pose proof (meminj_not_alloc_delta _ _ MEM2 _ _ MEM5') as NALLOC2.
+        clear - H12 NFREE NALLOC2. unfold public_not_freeable in *. intros. specialize (NFREE _ H). intros CC. apply NFREE; clear NFREE.
+        eapply external_call_max_perm; eauto. unfold Mem.valid_block. unfold meminj_not_alloc in NALLOC2.
+        unfold Plt. destruct (Pos.ltb_spec b (Mem.nextblock m')); auto. specialize (NALLOC2 _ H0). congruence.
+      }
+      split; auto. constructor.
+    }
+    intros (btr & ist' & UTR & ISTAR').
+    (* FIX: case analysis on whether extcall is unknown or not *)
+    exists ([Bundle_call t1 ef_id (vals_to_eventvals ge args) (ef_sig ef) (Some d')]
+         ++ ((Bundle_return [Event_return (Genv.find_comp_ignore_offset ge (rs' X1)) (Genv.find_comp_ignore_offset ge (rs' PC)) res0] res0) :: btr)), ist'.
+    simpl. rewrite UTR. split; auto.
+    econstructor 2. 2: econstructor 2. 3: eapply ISTAR'. 3,4: auto.
+    - eapply ir_step_intra_call_external. 2: eapply FINDSYMB. 2: eapply NEXTF. 6: eapply EXTCALL'. all: eauto.
+      { unfold match_cur_regset in MTST1. rewrite MTST1. rewrite H0. simpl. unfold Genv.find_comp. simpl. rewrite pred_dec_true; auto.
+        rewrite H1. setoid_rewrite ALLOWED. simpl. unfold Genv.find_comp. simpl. rewrite pred_dec_true; auto. rewrite NEXTF.
+        unfold Genv.type_of_call. rewrite Pos.eqb_refl. auto.
+      }
+      { admit. (* fix? VISFO --- maybe case analysis first on unknowns? *) }
+    - inv WFIR1. simpl in *. des_ifs. clear H8. unfold wf_ir_cur in WFIR0. des_ifs. clear WFIR0.
+      eapply ir_step_vr_return_internal. 6: eapply Heq1. all: eauto.
+      { intros. eapply NO_CROSS_PTR.
+        rewrite PC_RA, NEXTPC. simpl. rewrite <- COMP. rewrite MTST1 in H.
+        rewrite <- ALLOWED. rewrite H0 in H. simpl in H. unfold Genv.find_comp at 2 in H. unfold Genv.find_funct in H. des_ifs.
+      }
+      constructor; auto.
+      { rewrite COMP, MTST1. rewrite PC_RA, NEXTPC in *. simpl in *. rewrite H0. simpl. unfold Genv.find_comp at 2. unfold Genv.find_funct in *. des_ifs.
+        setoid_rewrite ALLOWED. unfold Genv.type_of_call. rewrite Pos.eqb_sym, Heq. auto.
+      }
+      { replace (funsig (Internal f3)) with sig3; auto. unfold match_cur_stack in MTST0. des_ifs. }
+      { rewrite COMP. rewrite PC_RA. simpl. rewrite NEXTPC. simpl. unfold match_cur_regset in MTST1. rewrite MTST1. rewrite H0. simpl.
+        replace (Genv.find_comp ge (Vptr b0 Ptrofs.zero)) with (Genv.find_comp ge (Vptr b Ptrofs.zero)); auto.
+        rewrite <- ALLOWED. unfold Genv.find_comp. unfold Genv.find_funct. des_ifs.
+      }
 
   Admitted.
 
