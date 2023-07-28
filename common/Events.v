@@ -2162,7 +2162,7 @@ Section VISIBLE.
     | _ => True
     end.
 
-  Definition visible_fo_if_unknown
+  Definition external_call_conds
              (ef: external_function) (ge: Senv.t) (m: mem) (args: list val) : Prop :=
     match ef with
     | EF_external cp name sg => visible_fo ge m (sig_args sg) args
@@ -2176,7 +2176,7 @@ Section VISIBLE.
     | _ => True
     end.
 
-  Definition visible_fo_and_unknown
+  Definition external_call_unknowns
              (ef: external_function) (ge: Senv.t) (m: mem) (args: list val) : Prop :=
     match ef with
     | EF_external cp name sg => visible_fo ge m (sig_args sg) args
@@ -2187,6 +2187,32 @@ Section VISIBLE.
                              end
     | EF_inline_asm cp txt sg clb => visible_fo ge m (sig_args sg) args
     | _ => False
+    end.
+
+  Definition external_call_known_observables
+             (ef: external_function) (ge: Senv.t) (m: mem) (args: list val) tr rv m' : Prop :=
+    match ef with
+    | EF_external cp name sg => False
+    | EF_builtin cp name sg | EF_runtime cp name sg =>
+                             match lookup_builtin_function name sg with
+                             | None => False
+                             | _ => True
+                             end
+    | EF_inline_asm cp txt sg clb => False
+    | _ => (external_call ef ge args m tr rv m') /\ (tr <> E0)
+    end.
+
+  Definition external_call_known_silents
+             (ef: external_function) (ge: Senv.t) (m: mem) (args: list val) tr rv m': Prop :=
+    match ef with
+    | EF_external cp name sg => False
+    | EF_builtin cp name sg | EF_runtime cp name sg =>
+                             match lookup_builtin_function name sg with
+                             | None => False
+                             | _ => True
+                             end
+    | EF_inline_asm cp txt sg clb => False
+    | _ => (tr = E0) /\ (external_call ef ge args m E0 rv m')
     end.
 
 

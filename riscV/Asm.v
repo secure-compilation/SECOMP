@@ -1399,7 +1399,7 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (REC_CURCOMP: Genv.find_comp_ignore_offset ge (rs PC) = callee_comp st),
       step (State st rs m) t (ReturnState st rs' m').
 
-(* Two fixes: check sig when call CALLSIG, public & first order args when undefined external call VISFO *)
+(* Two fixes: check sig when call CALLSIG, public & first order args when undefined external call ECC *)
 Inductive step_fix: state -> trace -> state -> Prop :=
 | exec_step_fix_internal:
   forall b ofs f i rs m rs' m' b' ofs' st cp,
@@ -1484,7 +1484,7 @@ Inductive step_fix: state -> trace -> state -> Prop :=
                        (undef_regs (map preg_of (destroyed_by_builtin ef))
                                    (rs #X1 <- Vundef #X31 <- Vundef))) ->
       (* Limit leaks when calling unknown function *)
-      forall (VISFO: visible_fo_if_unknown ef ge m vargs),
+      forall (ECC: external_call_conds ef ge m vargs),
         step_fix (State st rs m) t (State st rs' m')
 | exec_step_fix_external:
   forall b ef args res rs m t rs' m' st,
@@ -1497,7 +1497,7 @@ Inductive step_fix: state -> trace -> state -> Prop :=
     (* These steps behave like returns. So we do the same as in the [exec_step_internal_return] case. *)
     forall (REC_CURCOMP: Genv.find_comp_ignore_offset ge (rs PC) = callee_comp st),
     (* Limit leaks when calling unknown function *)
-    forall (VISFO: visible_fo_if_unknown ef ge m args),
+    forall (ECC: external_call_conds ef ge m args),
       step_fix (State st rs m) t (ReturnState st rs' m').
 
 End RELSEM.
