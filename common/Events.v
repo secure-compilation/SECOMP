@@ -2212,7 +2212,9 @@ Section VISIBLE.
                              | _ => True
                              end
     | EF_inline_asm cp txt sg clb => False
-    | _ => (tr = E0) /\ (external_call ef ge args m E0 rv m')
+    | EF_memcpy cp sz al =>
+        (external_call ef ge args m E0 rv m') /\ (tr = E0) /\ (EF_memcpy_dest_not_pub ge args)
+    | _ => (external_call ef ge args m E0 rv m') /\ (tr = E0)
     end.
 
 

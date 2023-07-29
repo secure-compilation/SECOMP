@@ -14,23 +14,44 @@ Require Import BtBasics.
 
 
 
-Section BUNDLE.
+Section AUX.
 
-  (* (* ()-no event, {}-may event, when len(tr) > 1, need to consider cuts *) *)
-  (* (* intra/cross/virtual(default), internal/external *) *)
-  (* Variant bundle_event : Type := *)
-  (* (* generate a call code + other followup events *) *)
-  (*   | Bundle_call_ci (tr: trace) (id: ident) (args: list eventval) (sg: signature) (* call *) *)
-  (*   | Bundle_call_ce (tr: trace) (id: ident) (args: list eventval) (sg: signature) (* call-{ext}-ret - cut at {1, 2, 3} *) *)
-  (*   | Bundle_call_vi (tr: trace) (id: ident) (args: list eventval) (sg: signature) (* (call) - compartment changes *) *)
-  (*   | Bundle_call_ve (tr: trace) (id: ident) (args: list eventval) (sg: signature) (* (call)-ext-(ret) - also cut *) *)
-  (*   | Bundle_call_ie (tr: trace) (id: ident) (args: list eventval) (sg: signature) (* (call)-ext-(ret) *) *)
-  (* (* generate a return code *) *)
-  (*   | Bundle_return_ci (tr: trace) (sg: signature) (* ret *) *)
-  (*   | Bundle_return_vi (tr: trace) (sg: signature) (* (ret) - compartment change *) *)
-  (* (* generate a builtin code *) *)
-  (*   | Bundle_builtin (tr: trace) (ef: external_function) (* ext *) *)
-  (* . *)
+  Lemma val_load_result_idem chunk v:
+    Val.load_result chunk (Val.load_result chunk v) = Val.load_result chunk v.
+  Proof.
+    destruct chunk, v; ss.
+    all: try (rewrite Int.sign_ext_idem; auto; lia).
+    all: try (rewrite Int.zero_ext_idem; auto; lia).
+    all: des_ifs.
+  Qed.
+
+  Lemma extcall_cases
+        ef ge m args
+        (ECC: external_call_conds ef ge m args)
+        tr rv m'
+        (ECALL: external_call ef ge args m tr rv m')
+    :
+    (external_call_unknowns ef ge m args) \/
+      (external_call_known_observables ef ge m args tr rv m') \/
+      (external_call_known_silents ef ge m args tr rv m').
+  Proof.
+    destruct ef; ss; auto. des_ifs; auto. des_ifs; auto.
+    - destruct tr; ss; eauto. right; left. esplits; eauto. ss.
+    - destruct tr; ss; eauto. right; left. esplits; eauto. ss.
+    - inv ECALL. right; right. esplits; eauto. econs; eauto.
+    - inv ECALL. right; right. esplits; eauto. econs; eauto.
+      right; right. esplits; eauto. econs; eauto.
+    - inv ECALL. right; right. esplits; eauto. econs; eauto.
+    - destruct tr; ss; eauto. right; left. esplits; eauto. ss.
+    - destruct tr; ss; eauto. right; left. esplits; eauto. ss.
+    - inv ECALL. right; right. esplits; eauto. econs; eauto.
+  Qed.
+
+End AUX.
+
+
+
+Section BUNDLE.
 
   Variant bundle_event : Type :=
     (* generate a call code + other followup events; call-ext-ret *)
@@ -145,30 +166,28 @@ Section EVENT.
 
   Definition vals_to_eventvals (ge: Senv.t) (vs: list val): list eventval := map (val_to_eventval ge) vs.
 
+  Lemma eventval_match_val_to_eventval
+        ge ev ty v
+        (EVM: eventval_match ge ev ty v)
+    :
+    val_to_eventval ge v = ev.
+  Proof.
+    inv EVM; simpl; auto.
+    unfold senv_invert_symbol_total. erewrite Senv.find_invert_symbol; eauto.
+  Qed.
+
+  Lemma eventval_list_match_vals_to_eventvals
+        ge evs tys vs
+        (EVM: eventval_list_match ge evs tys vs)
+    :
+    vals_to_eventvals ge vs = evs.
+  Proof.
+    induction EVM; simpl; auto.
+    rewrite IHEVM. f_equal. eapply eventval_match_val_to_eventval; eauto.
+  Qed.
+
 End EVENT.
 
-
-Lemma extcall_cases
-      ef ge m args
-      (ECC: external_call_conds ef ge m args)
-      tr rv m'
-      (ECALL: external_call ef ge args m tr rv m')
-  :
-  (external_call_unknowns ef ge m args) \/
-    (external_call_known_observables ef ge m args tr rv m') \/
-    (external_call_known_silents ef ge m args tr rv m').
-Proof.
-  destruct ef; ss; auto. des_ifs; auto. des_ifs; auto.
-  - destruct tr; ss; eauto. right; left. esplits; eauto. ss.
-  - destruct tr; ss; eauto. right; left. esplits; eauto. ss.
-  - inv ECALL. right; right. esplits; eauto. econs; eauto.
-  - inv ECALL. right; right. esplits; eauto. econs; eauto.
-    right; right. esplits; eauto. econs; eauto.
-  - inv ECALL. right; right. esplits; eauto. econs; eauto.
-  - destruct tr; ss; eauto. right; left. esplits; eauto. ss.
-  - destruct tr; ss; eauto. right; left. esplits; eauto. ss.
-  - inv ECALL. right; right. esplits; eauto. econs; eauto.
-Qed.
 
 
 Section IR.
@@ -447,7 +466,22 @@ Section FROMASM.
             end);
     simpl.
 
-  Definition public_not_freeable ge m := forall b, (meminj_public ge b <> None) -> (~ Mem.perm m b 0 Max Freeable).
+  Definition public_not_freeable ge m := forall b, (meminj_public ge b <> None) -> (forall ofs, ~ Mem.perm m b ofs Max Freeable).
+
+  Lemma public_not_freeable_free_inj_none
+        ge m
+        (NFREE: public_not_freeable ge m)
+        b lo hi cp m'
+        (FREE: Mem.free m b lo hi cp = Some m')
+        (BOUND: (lo < hi)%Z)
+    :
+    meminj_public ge b = None.
+  Proof.
+    destruct (meminj_public ge b) eqn:INJPUB; auto. exfalso.
+    eapply Mem.free_range_perm in FREE. unfold Mem.range_perm in FREE.
+    eapply NFREE. erewrite INJPUB. congruence. eapply Mem.perm_cur_max; apply FREE.
+    instantiate (1:=lo). lia.
+  Qed.
 
   Lemma mem_delta_exec_instr
         (ge: genv) f i rs m cp rs' m'
@@ -487,11 +521,61 @@ Section FROMASM.
         end.
         split.
         - apply Forall_app; split; auto. constructor; auto. simpl. destruct (meminj_public ge b) eqn:INJPUB; auto. exfalso.
-          eapply Mem.free_range_perm in Heqo0. unfold Mem.range_perm in Heqo0. eapply NFREE. erewrite INJPUB. congruence. eapply Mem.perm_cur_max; apply Heqo0. lia.
+          eapply Mem.free_range_perm in Heqo0. unfold Mem.range_perm in Heqo0. eapply NFREE. erewrite INJPUB. congruence. eapply Mem.perm_cur_max; apply Heqo0. instantiate (1:=0%Z). lia.
         - rewrite mem_delta_apply_app. rewrite DELTA1. simpl. auto.
       }
       { apply Mem.free_result in Heqo0. unfold Mem.unchecked_free in Heqo0. unfold zle in Heqo0. des_ifs. eexists; eauto. }
     }
+  Qed.
+
+  Lemma public_not_freeable_store
+        ge m1
+        (NFREE: public_not_freeable ge m1)
+        chunk b ofs v cp m2
+        (STORE: Mem.store chunk m1 b ofs v cp = Some m2)
+    :
+    public_not_freeable ge m2.
+  Proof.
+    unfold public_not_freeable in *; intros b' H' ofs' CC; specialize (NFREE _ H' ofs').
+    apply NFREE; eapply Mem.perm_store_2; eauto.
+  Qed.
+
+  Lemma public_not_freeable_bytes
+        ge m1
+        (NFREE: public_not_freeable ge m1)
+        b ofs mvs cp m2
+        (STORE: Mem.storebytes m1 b ofs mvs cp = Some m2)
+    :
+    public_not_freeable ge m2.
+  Proof.
+    unfold public_not_freeable in *; intros b' H' ofs' CC; specialize (NFREE _ H' ofs').
+    apply NFREE; eapply Mem.perm_storebytes_2; eauto.
+  Qed.
+
+  Lemma public_not_freeable_alloc
+        ge m1
+        (NALLOC: meminj_not_alloc (meminj_public ge) m1)
+        (NFREE: public_not_freeable ge m1)
+        cp lo hi m2 bn
+        (STORE: Mem.alloc m1 cp lo hi = (m2, bn))
+    :
+    public_not_freeable ge m2.
+  Proof.
+    unfold public_not_freeable in *; intros b' H' ofs' CC; specialize (NFREE _ H' ofs').
+    apply NFREE. eapply Mem.perm_alloc_4; eauto.
+    intros EQ; subst b'. apply H'. apply NALLOC. erewrite Mem.alloc_result; eauto. lia.
+  Qed.
+
+  Lemma public_not_freeable_free
+        ge m1
+        (NFREE: public_not_freeable ge m1)
+        b lo hi cp m2
+        (STORE: Mem.free m1 b lo hi cp = Some m2)
+    :
+    public_not_freeable ge m2.
+  Proof.
+    unfold public_not_freeable in *; intros b' H' ofs' CC; specialize (NFREE _ H' ofs').
+    apply NFREE. eapply Mem.perm_free_3; eauto.
   Qed.
 
   Lemma public_not_freeable_exec_instr
@@ -510,12 +594,10 @@ Section FROMASM.
             | H: context [Mem.alloc] |- _ => idtac
             | H: context [Mem.free] |- _ => idtac
             | H: Mem.store ?ch ?m ?b ?ofs ?v ?cp = _ |-  _ =>
-                unfold public_not_freeable in *; intros b' H' CC; specialize (NFREE _ H'); apply NFREE; eapply Mem.perm_store_2; eauto
+                eapply public_not_freeable_store; eauto
             end).
-    { unfold public_not_freeable in *; intros b' H' CC; specialize (NFREE _ H'); apply NFREE. eapply Mem.perm_alloc_4; eauto.
-      eapply Mem.perm_store_2; eauto. intros EQ; subst b'. apply H'. apply NALLOC. erewrite Mem.alloc_result; eauto. lia.
-    }
-    { unfold public_not_freeable in *; intros b' H' CC; specialize (NFREE _ H'); apply NFREE. eapply Mem.perm_free_3; eauto. }
+    { eapply public_not_freeable_store. eapply public_not_freeable_alloc; eauto. eauto. }
+    { eapply public_not_freeable_free; eauto. }
   Qed.
 
   Lemma meminj_not_alloc_delta
@@ -792,7 +874,7 @@ Section PROOF.
         split.
         { pose proof (meminj_not_alloc_delta _ _ MEM2 _ _ MEM5) as NALLOC.
           clear - H4 MEM3 NALLOC. unfold public_not_freeable in *. intros.
-          specialize (MEM3 _ H). intros CC. apply MEM3; clear MEM3.
+          specialize (MEM3 _ H). intros CC. apply (MEM3 ofs); clear MEM3.
           eapply external_call_max_perm; eauto. unfold Mem.valid_block.
           unfold meminj_not_alloc in NALLOC. unfold Plt.
           destruct (Pos.ltb_spec b (Mem.nextblock m_a)); auto.
@@ -810,7 +892,7 @@ Section PROOF.
       }
       { clear - ECU MEMINJ'. left. admit. (* TODO *) }.
 
-    - (* extcall is known *)
+    - (* extcall is known and observable *)
       rename H4 into EXTCALL, H7 into EXTARGS. unfold external_call_known_observables in ECKO.
       des_ifs; simpl in *.
       { unfold builtin_or_external_sem in EXTCALL. rewrite Heq in EXTCALL. inv EXTCALL.
@@ -830,11 +912,106 @@ Section PROOF.
         { simpl. right. econs; eauto. econs. econs; eauto. }
         { simpl. unfold senv_invert_symbol_total. erewrite Senv.find_invert_symbol; eauto. }
       }
-      {
-        (* TODO *)
+      { destruct ECKO as [_ OBS]. inv EXTCALL. inv H; simpl in *; clarify.
+        exists ([Bundle_call [Event_vstore chunk id ofs ev] ef_id [EVptr_global id ofs; ev] {| sig_args := [Tptr; type_of_chunk chunk]; sig_res := Tvoid; sig_cc := cc_default |} (Some [])]).
+        exists k, d, m_a0, m_i, m'. simpl. splits; auto. 2: split; auto. 2: eauto.
+        econstructor 2. 2: econstructor 1. 2: auto.
+        eapply ir_step_intra_call_external. all: eauto.
+        { rewrite CURCOMP, <- REC_CURCOMP, NEXTPC. simpl. unfold Genv.find_comp. setoid_rewrite NEXTF. unfold Genv.type_of_call. rewrite Pos.eqb_refl. auto. }
+        { simpl. eauto. }
+        { instantiate (2:=[Vptr b0 ofs; Val.load_result chunk v]).
+          simpl. econstructor. econstructor 1; eauto. rewrite val_load_result_idem. auto.
+        }
+        { simpl. right. econs; eauto. econs. econs; eauto. rewrite val_load_result_idem. auto. }
+        { simpl. unfold senv_invert_symbol_total. erewrite Senv.find_invert_symbol; eauto.
+          f_equal. erewrite eventval_match_val_to_eventval; eauto.
+        }
+      }
+      { destruct ECKO as [_ OBS]. inv EXTCALL. clarify. }
+      { destruct ECKO as [_ OBS]. inv EXTCALL; clarify. }
+      { destruct ECKO as [_ OBS]. inv EXTCALL; clarify. }
+      { destruct ECKO as [_ OBS]. inv EXTCALL; simpl in *; clarify.
+        exists ([Bundle_call [Event_annot text args0] ef_id (vals_to_eventvals ge args) {| sig_args := targs; sig_res := Tvoid; sig_cc := cc_default |} (Some [])]).
+        exists k, d, m_a0, m_i, m'. simpl. splits; auto. 2: split; auto. 2: eauto.
+        econstructor 2. 2: econstructor 1. 2: auto.
+        eapply ir_step_intra_call_external. all: eauto.
+        { rewrite CURCOMP, <- REC_CURCOMP, NEXTPC. simpl. unfold Genv.find_comp. setoid_rewrite NEXTF. unfold Genv.type_of_call. rewrite Pos.eqb_refl. auto. }
+        { simpl. eauto. }
+        { simpl. econstructor. auto. }
+        { simpl. right. econs; eauto. econs. auto. }
+      }
+      { destruct ECKO as [_ OBS]. inv EXTCALL; simpl in *; clarify.
+        exists ([Bundle_call [Event_annot text [arg]] ef_id [val_to_eventval ge res] {| sig_args := [targ]; sig_res := targ; sig_cc := cc_default |} (Some [])]).
+        exists k, d, m_a0, m_i, m'. simpl. splits; auto. 2: split; auto. 2: eauto.
+        econstructor 2. 2: econstructor 1. 2: auto.
+        eapply ir_step_intra_call_external. all: eauto.
+        { rewrite CURCOMP, <- REC_CURCOMP, NEXTPC. simpl. unfold Genv.find_comp. setoid_rewrite NEXTF. unfold Genv.type_of_call. rewrite Pos.eqb_refl. auto. }
+        { simpl. eauto. }
+        { simpl. econstructor. eauto. }
+        { simpl. right. econs; eauto. econs. auto. }
+        { simpl. auto. }
+      }
+      { destruct ECKO as [_ OBS]. inv EXTCALL. clarify. }
 
+    - (* extcall is known and silent *)
+      rename H4 into EXTCALL, H7 into EXTARGS. unfold external_call_known_silents in ECKS.
+      des_ifs; ss; clarify.
+      { unfold builtin_or_external_sem in EXTCALL. rewrite Heq in EXTCALL. inv EXTCALL.
+        exists [], k, d, m_a0, m_i, m'. simpl. splits; auto. 2: split; auto. 2: eauto. econstructor 1.
+      }
+      { unfold builtin_or_external_sem in EXTCALL. rewrite Heq in EXTCALL. inv EXTCALL.
+        exists [], k, d, m_a0, m_i, m'. simpl. splits; auto. 2: split; auto. 2: eauto. econstructor 1.
+      }
+      { destruct ECKS as [_ OBS]. inv EXTCALL. inv H; simpl in *; clarify.
+        exists [], k, d, m_a0, m_i, m'. simpl. splits; auto. 2: split; auto. 2: eauto. econstructor 1.
+      }
+      { destruct ECKS as [_ OBS]. inv EXTCALL. inv H; simpl in *; clarify.
+        exists [], k, (d ++ [mem_delta_kind_store (chunk, b0, (Ptrofs.unsigned ofs), v, cp)]), m_a0, m_i, m'. simpl. splits; auto. econstructor 1. 2: eauto. unfold match_mem. splits; auto.
+        { eapply public_not_freeable_store; eauto. }
+        { setoid_rewrite Forall_app. split; auto. econs; auto. simpl. auto. }
+        { rewrite mem_delta_apply_app. rewrite MEM5. simpl. auto. }
+      }
+      { destruct ECKS as [_ OBS]. inv EXTCALL.
+        exists [], k, (d ++ [mem_delta_kind_alloc (cp, (- size_chunk Mptr), (Ptrofs.unsigned sz)); mem_delta_kind_store (Mptr, b0, (- size_chunk Mptr), (Vptrofs sz), cp)]), m_a0, m_i, m'.
+        simpl. splits; auto. econstructor 1. 2: eauto. unfold match_mem. splits; auto.
+        { eapply public_not_freeable_store. 2: eauto. eapply public_not_freeable_alloc.
+          3: eauto. all: auto.
+          eapply meminj_not_alloc_delta; eauto.
+        }
+        { setoid_rewrite Forall_app. split; auto. econs; auto.
+          { simpl. auto. }
+          econs; auto. simpl. auto.
+        }
+        { rewrite mem_delta_apply_app. rewrite MEM5. simpl. rewrite H. simpl. auto. }
+      }
+      { destruct ECKS as [_ OBS]. inv EXTCALL.
+        - exists [], k, (d ++ [mem_delta_kind_free (b0, (Ptrofs.unsigned lo - size_chunk Mptr)%Z, (Ptrofs.unsigned lo + Ptrofs.unsigned sz)%Z, cp)]), m_a0, m_i, m'.
+          simpl. splits; auto. econstructor 1. 2: eauto. unfold match_mem. splits; auto.
+          { eapply public_not_freeable_free; eauto. }
+          { setoid_rewrite Forall_app. split; auto. econs; auto. simpl.
+            eapply public_not_freeable_free_inj_none; eauto.
+            { unfold size_chunk. unfold Mptr. des_ifs; lia. }
+          }
+          { rewrite mem_delta_apply_app. rewrite MEM5. simpl. auto. }
+        - exists [], k, d, m_a0, m_i, m'.
+          simpl. splits; auto. econstructor 1. 2: eauto. unfold match_mem. splits; auto.
+      }
+      { destruct ECKS as [_ [OBS NPUB]]. inv EXTCALL.
+        exists [], k, (d ++ [mem_delta_kind_bytes (bdst, (Ptrofs.unsigned odst), bytes, cp)]), m_a0, m_i, m'.
+        simpl. splits; auto. econstructor 1. 2: eauto. unfold match_mem. splits; auto.
+        { eapply public_not_freeable_bytes; eauto. }
+        { setoid_rewrite Forall_app. split; auto. econs; auto. simpl.
+          clear - NPUB. simpl in NPUB. unfold meminj_public. des_ifs. exfalso. apply NPUB.
+          exists i. auto.
+        }
+        { rewrite mem_delta_apply_app. rewrite MEM5. simpl. auto. }
+      }
 
-
+      { destruct ECKS as [_ OBS]. inv EXTCALL. clarify. }
+      { destruct ECKS as [_ OBS]. inv EXTCALL. clarify. }
+      { destruct ECKS as [_ OBS]. inv EXTCALL.
+        exists [], k, d, m_a0, m_i, m'. simpl. splits; auto. 2: split; auto. 2: eauto. econstructor 1.
+      }
 
   Admitted.
 
@@ -1045,14 +1222,14 @@ Section PROOF.
 
   (* If main is External, treat it as a different case - 
      the trace can start with Event_syscall, without a preceding Event_call *)
-  Lemma asm_to_ir
-        cpm (ge: genv) m_a0
-        ast ast' tr
-        (WFGE: wf_ge ge)
-        (WFASM: wf_asm ge ast)
-        (STAR: star (Asm.step_fix cpm) ge ast tr ast')
-        ist k d
-        (MTST: match_state ge k m_a0 d ast ist)
+  Theorem asm_to_ir
+          cpm (ge: genv) m_a0
+          ast ast' tr
+          (WFGE: wf_ge ge)
+          (WFASM: wf_asm ge ast)
+          (STAR: star (Asm.step_fix cpm) ge ast tr ast')
+          ist k d
+          (MTST: match_state ge k m_a0 d ast ist)
     :
     exists btr ist', (unbundle_trace btr = tr) /\ (istar (ir_step) ge ist btr ist').
   Proof.
@@ -1098,7 +1275,6 @@ Section PROOF.
         }
         exploit IH. 4: eapply STAR. 3: apply WFASM'. 3: eapply MTST'. all: auto.
       }
-      (*** Next = internal -> done *)
 
       (** has next function --- external *)
       { move STAR after NEXTF. inv STAR.
@@ -1132,6 +1308,10 @@ Section PROOF.
       }
 
     - (** internal_call *)
+
+
+
+
       (*** TODO *)
 
           inv H; simpl in *; try rewrite Pregmap.gss in *. inv EV.
