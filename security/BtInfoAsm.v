@@ -1505,14 +1505,10 @@ Section PROOF.
       destruct WFASM as [WFASM0 WFASM1].
       remember (nextinstr (set_res res vres (undef_regs (map preg_of (destroyed_by_builtin ef)) (rs # X1 <- Vundef) # X31 <- Vundef))) as rs'.
       (** fix? 
-          after builtin, compartment can be changed since there is no constraint on next PC *)
+          after builtin, compartment can be changed since there is no constraint on next PC.
+          In fact, Asmgen ensures that res register of builtin is of form (preg_of r), which is never PC ---> augmenting Asm semantics should be possible?
+      *)
       (*** TODO *)
-      destruct (
-
-      
-      clear H2 H3 H4
-      remember 
-
 
       
       admit.
@@ -1522,8 +1518,12 @@ Section PROOF.
       rewrite H0 in WFASM1. rewrite H1 in WFASM1. contradiction WFASM1.
 
 
+  Abort.
 
-      (*** TODO *)
+
+  
+
+
 
           inv H; simpl in *; try rewrite Pregmap.gss in *. inv EV.
           2:{ ex
