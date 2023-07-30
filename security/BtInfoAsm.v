@@ -621,6 +621,14 @@ Section FROMASM.
       unfold meminj_not_alloc in *. intros. eapply NALLOC. erewrite Mem.nextblock_free in H; eauto.
   Qed.
 
+  Lemma exec_instr_is_return
+        ge f i rs m cp rs' m'
+        (EXEC: exec_instr ge f i rs m cp = Next rs' m')
+        (ISRET: is_return i = true)
+    :
+    (exists v, rs' = (rs # PC <- v)) /\ (m' = m).
+  Proof. destruct i; simpl in *; clarify. split; eauto. Qed.
+
 End FROMASM.
 
 
@@ -1385,9 +1393,132 @@ Section PROOF.
       { exploit asm_to_ir_returnstate_nccc_internal. 2: eapply IH.
         11: eapply STAR0. 10: eapply STEP0. all: eauto. split; eauto.
       }
-      (** next is external --- another extcall, Returnstate, and finally next-next PC is Vundef *)
+      (** next is external --- undef *)
       { exploit asm_to_ir_returnstate_undef_nccc_external. 2: eapply IH.
         12: eapply STAR0. 11: eapply STEP0. all: eauto. split; eauto.
+      }
+    }
+    (** return is ccc --- next is poped from the stack, which is internal, so done *)
+    { exploit asm_to_ir_returnstate_ccc. 2: eapply IH.
+      11: eapply STAR. 10: eapply STEP0. all: eauto. split; eauto.
+    }
+  Qed.
+
+  Lemma asm_to_ir_returnstate_nccc_external
+        cpm (ge: genv) n n0
+        (LT: (n0 < n)%nat)
+        (IH: forall y : nat,
+            (y < n)%nat ->
+            forall (m_a0 : mem) (ast ast' : state) (tr : trace),
+              wf_ge ge ->
+              wf_asm ge ast ->
+              star_measure (step_fix cpm) ge y ast tr ast' ->
+              forall (ist : ir_state) (k : meminj) (d : mem_delta),
+                match_state ge k m_a0 d ast ist ->
+                exists (btr : bundle_trace) (ist' : ir_state), unbundle_trace btr = tr /\ istar ir_step ge ist btr ist')
+        (WFGE: wf_ge ge)
+        cur ik
+        (WFIR0 : wf_ir_cur ge cur)
+        (WFIR1 : wf_ir_conts ge ik)
+        st (rs: regset)
+        (WFASM1: wf_stack ge st)
+        (MTST0 : match_cur_stack_sig cur ge st)
+        (CURCOMP : Genv.find_comp ge (Vptr cur Ptrofs.zero) = callee_comp cpm st)
+        (MTST2 : match_stack ge ik st)
+        k d m_a0 m_i m_a
+        (MEM: match_mem ge k d m_a0 m_i m_a)
+        t' ast'
+        (STEP: step_fix cpm ge (ReturnState st rs m_a) t' ast')
+        t'' ast''
+        (STAR: star_measure (step_fix cpm) ge n0 ast' t'' ast'')
+        (NCCC: Genv.type_of_call ge (Genv.find_comp_ignore_offset ge (rs PC)) (callee_comp cpm st) <> Genv.CrossCompartmentCall)
+        b1 ofs1
+        (NEXTPC: rs PC = Vptr b1 ofs1)
+        ef
+        (NEXTF : Genv.find_funct_ptr ge b1 = Some (External ef))
+    :
+    exists (btr : bundle_trace) (ist' : ir_state), unbundle_trace btr = t' ** t'' /\ istar ir_step ge (Some (cur, m_i, ik)) btr ist'.
+  Proof.
+    destruct MEM as (MEM0 & MEM1 & MEM2 & MEM3 & MEM4 & MEM5).
+    (** step --- ReturnState *)
+    inv STEP. inv EV; simpl in *.
+    2:{ rewrite H in NCCC. congruence with NCCC. }
+    (** return is nccc *)
+    clear H. pose proof STAR as STAR0. inv STAR.
+    (* end case *)
+    { end_case. }
+    (** next is external --- another extcall, Returnstate, and finally next-next PC is Vundef *)
+    (* take a step *)
+    rename H into STEP, H0 into STAR.
+
+    assert (st' = st).
+    { unfold Genv.type_of_call in NCCC. des_ifs. unfold update_stack_return in STUPD. rewrite Pos.eqb_sym, Heq in STUPD. inv STUPD. auto. }
+    subst st'.
+    exploit asm_to_ir_step_external.
+    12: eapply STAR. 11: eapply NEXTF. 10: eapply NEXTPC. 9: eapply STEP.
+    all: eauto.
+    { split; eauto. }
+    clear STEP STAR.
+    intros (btr1 & k' & d' & m_a0' & m_i' & m_a' & UTR1 & ISTAR1 & MM' & (res & STAR)).
+    eapply asm_to_ir_compose. 2: eauto. do 2 eexists. split; eauto. clear btr1 UTR1 ISTAR1.
+
+    inv STAR.
+    (* end case *)
+    { exists []. eexists. split; auto. econstructor 1. }
+    (* now at Returnstate *)
+    eapply asm_to_ir_returnstate_undef. 2: eapply IH. 12: eapply H0. 11: eapply H.
+    all: eauto. lia.
+    { clear. rewrite Pregmap.gso. 2: congruence. unfold loc_external_result. unfold Conventions1.loc_result. des_ifs. }
+  Qed.
+
+  Lemma asm_to_ir_returnstate
+        cpm (ge: genv) n n0
+        (LT: (n0 < n)%nat)
+        (IH: forall y : nat,
+            (y < n)%nat ->
+            forall (m_a0 : mem) (ast ast' : state) (tr : trace),
+              wf_ge ge ->
+              wf_asm ge ast ->
+              star_measure (step_fix cpm) ge y ast tr ast' ->
+              forall (ist : ir_state) (k : meminj) (d : mem_delta),
+                match_state ge k m_a0 d ast ist ->
+                exists (btr : bundle_trace) (ist' : ir_state), unbundle_trace btr = tr /\ istar ir_step ge ist btr ist')
+        (WFGE: wf_ge ge)
+        cur ik
+        (WFIR0 : wf_ir_cur ge cur)
+        (WFIR1 : wf_ir_conts ge ik)
+        st (rs: regset)
+        (WFASM1: wf_stack ge st)
+        (MTST0 : match_cur_stack_sig cur ge st)
+        (CURCOMP : Genv.find_comp ge (Vptr cur Ptrofs.zero) = callee_comp cpm st)
+        (MTST2 : match_stack ge ik st)
+        k d m_a0 m_i m_a
+        (MEM: match_mem ge k d m_a0 m_i m_a)
+        t' ast'
+        (STEP: step_fix cpm ge (ReturnState st rs m_a) t' ast')
+        t'' ast''
+        (STAR: star_measure (step_fix cpm) ge n0 ast' t'' ast'')
+    :
+    exists (btr : bundle_trace) (ist' : ir_state), unbundle_trace btr = t' ** t'' /\ istar ir_step ge (Some (cur, m_i, ik)) btr ist'.
+  Proof.
+    destruct MEM as (MEM0 & MEM1 & MEM2 & MEM3 & MEM4 & MEM5).
+    (** step --- ReturnState *)
+    pose proof STEP as STEP0. inv STEP. inv EV; simpl in *.
+    (** return is nccc *)
+    { rename H into NCCC. pose proof STAR as STAR0. inv STAR.
+      (* end case *)
+      { end_case. }
+      (* has next step - if internal, done; if external, one external step and X1 = undef *)
+      rename H into STEP, H0 into STAR. exploit asm_step_current_pc. eapply STEP. intros (b1 & ofs1 & NEXTPC).
+      exploit asm_step_some_fundef. eapply STEP. eapply NEXTPC. intros (fd & NEXTF).
+      destruct fd.
+      (** next is internal *)
+      { exploit asm_to_ir_returnstate_nccc_internal. 2: eapply IH.
+        11: eapply STAR0. 10: eapply STEP0. all: eauto. split; eauto.
+      }
+      (** next is external --- another extcall, Returnstate, and finally next-next PC is Vundef *)
+      { exploit asm_to_ir_returnstate_nccc_external. 2: eapply IH.
+        11: eapply STAR0. 10: eapply STEP0. all: eauto. split; eauto.
       }
     }
     (** return is ccc --- next is poped from the stack, which is internal, so done *)
@@ -1485,15 +1616,23 @@ Section PROOF.
       }
 
     - (** internal_call *)
+      (* TODO *)
+
+
+
       admit.
 
     - (** internal_return *)
-      
-
-
-
-
-      admit.
+      destruct ist as [[[cur m_i] ik] |]; ss.
+      destruct MTST as (WFIR0 & WFIR1 & MTST0 & MTST1 & MTST2 & MTST3).
+      destruct WFASM as [WFASM0 WFASM1].
+      inv STAR.
+      { end_case. }
+      rename H into STEP, H5 into STAR.
+      exploit exec_instr_is_return. eapply H3. auto. intros ((v & NEXTPC) & TEMP). subst m'.
+      eapply asm_to_ir_returnstate. 2: eapply IH. 11: eapply STAR. 10: eapply STEP.
+      all: eauto.
+      { rewrite <- REC_CURCOMP. apply MTST1. }
 
     - (** return *)
       exfalso. unfold wf_asm in WFASM. contradiction WFASM.
