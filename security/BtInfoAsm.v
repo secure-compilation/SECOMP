@@ -1488,6 +1488,11 @@ Section PROOF.
       admit.
 
     - (** internal_return *)
+      
+
+
+
+
       admit.
 
     - (** return *)
@@ -1504,14 +1509,25 @@ Section PROOF.
       clear dependent btr1. clear dependent m_i. rename m_i' into m_i.
       destruct WFASM as [WFASM0 WFASM1].
       remember (nextinstr (set_res res vres (undef_regs (map preg_of (destroyed_by_builtin ef)) (rs # X1 <- Vundef) # X31 <- Vundef))) as rs'.
-      (** fix? 
+      (* FIX 
           after builtin, compartment can be changed since there is no constraint on next PC.
           In fact, Asmgen ensures that res register of builtin is of form (preg_of r), which is never PC ---> augmenting Asm semantics should be possible?
-      *)
-      (*** TODO *)
-
-      
-      admit.
+       *)
+      assert (NEXTPC: rs' PC = Val.offset_ptr (rs PC) Ptrofs.one).
+      { subst rs'. clear. unfold nextinstr. simpl.
+        assert (exists mres, res = (map_builtin_res preg_of mres)).
+        { admit. (*** FIX *) }
+        des. subst res.
+        rewrite Pregmap.gss. f_equal. rewrite ! Asmgenproof0.set_res_other; ss.
+        rewrite Asmgenproof0.undef_regs_other_2.
+        rewrite Pregmap.gso. rewrite Pregmap.gso. all: ss; auto.
+        rewrite Asmgenproof0.preg_notin_charact. intros. destruct mr; ss.
+      }
+      eapply IH. 4: eapply STAR. all: auto.
+      { simpl. split; auto. unfold wf_regset in *. rewrite NEXTPC, H0. simpl. rewrite H1. auto. }
+      { simpl. splits. 6: eapply MEM. all: auto. unfold match_cur_regset in *.
+        rewrite NEXTPC, H0. ss. rewrite MTST1, H0. ss.
+      }
 
     - (** external *)
       exfalso. destruct WFASM as [WFASM0 WFASM1]. unfold wf_regset in WFASM1.
