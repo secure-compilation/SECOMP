@@ -912,12 +912,6 @@ Section PROOF.
     - (* extcall is known and observable *)
       rename H4 into EXTCALL, H7 into EXTARGS. unfold external_call_known_observables in ECKO.
       des_ifs; simpl in *.
-      { unfold builtin_or_external_sem in EXTCALL. rewrite Heq in EXTCALL. inv EXTCALL.
-        exists [], k, d, m_a0, m_i, m'. simpl. splits; auto. 2: split; auto. 2: eauto. econstructor 1.
-      }
-      { unfold builtin_or_external_sem in EXTCALL. rewrite Heq in EXTCALL. inv EXTCALL.
-        exists [], k, d, m_a0, m_i, m'. simpl. splits; auto. 2: split; auto. 2: eauto. econstructor 1.
-      }
       { destruct ECKO as [_ OBS]. inv EXTCALL. inv H; simpl in *; clarify.
         exists ([Bundle_call [Event_vload chunk id ofs ev] ef_id [EVptr_global id ofs] {| sig_args := [Tptr]; sig_res := rettype_of_chunk chunk; sig_cc := cc_default |} (Some [])]).
         exists k, d, m_a0, m_i, m'. simpl. splits; auto. 2: split; auto. 2: eauto.
@@ -1093,12 +1087,6 @@ Section PROOF.
     - (* extcall is known and observable *)
       unfold external_call_known_observables in ECKO.
       des_ifs; simpl in *.
-      { unfold builtin_or_external_sem in EXTCALL. rewrite Heq in EXTCALL. inv EXTCALL.
-        exists [], k, d, m_a0, m_i. simpl. splits; auto. 2: split; auto. econstructor 1.
-      }
-      { unfold builtin_or_external_sem in EXTCALL. rewrite Heq in EXTCALL. inv EXTCALL.
-        exists [], k, d, m_a0, m_i. simpl. splits; auto. 2: split; auto. econstructor 1.
-      }
       { destruct ECKO as [_ OBS]. inv EXTCALL. inv H; simpl in *; clarify.
         exists ([Bundle_builtin [Event_vload chunk id ofs0 ev] (EF_vload cp chunk) [EVptr_global id ofs0] []]).
         exists k, d, m_a0, m_i. simpl. splits; auto. 2: split; auto.
