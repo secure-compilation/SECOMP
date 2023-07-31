@@ -1475,12 +1475,12 @@ Inductive step_fix: state -> trace -> state -> Prop :=
   forall b ofs f ef args res rs m vargs t vres rs' m' st,
     rs PC = Vptr b ofs ->
     Genv.find_funct_ptr ge b = Some (Internal f) ->
-    find_instr (Ptrofs.unsigned ofs) f.(fn_code) = Some (Pbuiltin ef args res) ->
+    find_instr (Ptrofs.unsigned ofs) f.(fn_code) = Some (Pbuiltin ef args (map_builtin_res preg_of res)) ->
     eval_builtin_args ge rs (rs SP) m args vargs ->
     external_call ef ge vargs m t vres m' ->
     forall (ALLOWED: comp_of ef = comp_of f),
       rs' = nextinstr
-              (set_res res vres
+              (set_res (map_builtin_res preg_of res) vres
                        (undef_regs (map preg_of (destroyed_by_builtin ef))
                                    (rs #X1 <- Vundef #X31 <- Vundef))) ->
       (* Limit leaks when calling unknown function *)
