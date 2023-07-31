@@ -1399,7 +1399,10 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (REC_CURCOMP: Genv.find_comp_ignore_offset ge (rs PC) = callee_comp st),
       step (State st rs m) t (ReturnState st rs' m').
 
-(* Two fixes: check sig when call CALLSIG, public & first order args when undefined external call ECC *)
+(* 3 fixes: 
+check sig when call CALLSIG, public & 
+first order args when undefined external call ECC &
+builtin result register is only from mreg *)
 Inductive step_fix: state -> trace -> state -> Prop :=
 | exec_step_fix_internal:
   forall b ofs f i rs m rs' m' b' ofs' st cp,
