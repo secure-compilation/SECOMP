@@ -38,6 +38,11 @@ Proof.
   now monadInv EQ.
 Qed.
 
+Instance external_transf_fundef: is_external_transl_partial transf_fundef.
+Proof.
+  intros [f | ef] ? ? H; monadInv H; reflexivity.
+Qed.
+
 Lemma match_transf_program:
   forall p tp, transf_program p = OK tp -> match_prog p tp.
 Proof.

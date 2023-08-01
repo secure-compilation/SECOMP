@@ -39,6 +39,13 @@ Proof.
   symmetry; eauto.
 Qed.
 
+Instance external_tr_fundef:
+  is_external_match (fun cu f tf => tr_fundef cu f tf).
+Proof.
+  intros ctx f tf ? [? ? []|]; reflexivity.
+Qed.
+
+
 Lemma transf_program_match:
   forall p tp, transl_program p = OK tp -> match_prog p tp.
 Proof.

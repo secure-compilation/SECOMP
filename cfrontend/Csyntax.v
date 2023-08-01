@@ -17,7 +17,7 @@
 (** Abstract syntax for the Compcert C language *)
 
 Require Import Coqlib Maps Integers Floats Errors.
-Require Import AST Linking Values.
+Require Import AST Linking Values Builtins.
 Require Import Ctypes Cop.
 
 (** ** Expressions *)
@@ -227,3 +227,4 @@ Definition type_of_fundef (f: fundef) : type :=
 - a proof that this environment is consistent with the definitions. *)
 
 Definition program := Ctypes.program function.
+

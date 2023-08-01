@@ -27,6 +27,9 @@ Definition match_prog (p tp: Linear.program) :=
 Instance comp_match_prog: has_comp_transl transf_function.
 Proof. now intros f. Qed.
 
+Instance external_transf_fundef: is_external_transl transf_fundef.
+Proof. now intros ? [f | ef]. Qed.
+
 Lemma transf_program_match:
   forall p, match_prog p (transf_program p).
 Proof.

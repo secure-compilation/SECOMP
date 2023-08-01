@@ -358,6 +358,15 @@ Proof.
   now inv H.
 Qed.
 
+Instance external_transl_fundef: is_external_transl_partial transl_fundef.
+Proof.
+  unfold transl_fundef, transl_function.
+  intros [f | ef] tf ? H; simpl in *.
+  - destruct (transl_fun _ _) as [|[??] ? ?]; try discriminate.
+    now inv H.
+  - now inv H.
+Qed.
+
 Lemma transf_program_match:
   forall p tp, transl_program p = OK tp -> match_prog p tp.
 Proof.

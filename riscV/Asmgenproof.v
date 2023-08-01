@@ -30,6 +30,14 @@ Proof.
   now inv EQ0.
 Qed.
 
+Instance external_transf_fundef: is_external_transl_partial transf_fundef.
+Proof.
+  unfold transf_fundef, transf_function, transl_function.
+  intros [f | ef] ? ? H; monadInv H; trivial.
+  destruct transl_code'; simpl in *; try easy.
+  reflexivity.
+Qed.
+
 Lemma transf_program_match:
   forall p tp, transf_program p = OK tp -> match_prog p tp.
 Proof.

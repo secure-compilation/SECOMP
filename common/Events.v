@@ -2234,7 +2234,7 @@ Section VISIBLE.
 
 End VISIBLE.
 
-Global Instance is_external_fundef F : is_external (fundef F) :=
+Global Program Instance is_external_fundef (F: Type) : is_external (fundef F) :=
   { is_ok :=
     fun cp' fd =>
       match fd with
@@ -2258,5 +2258,35 @@ Global Instance is_external_fundef F : is_external (fundef F) :=
           | EF_inline_asm cp txt sg clb => True
           | EF_debug kind cp txt targs => cp = cp'
           end
-      end
+      end;
+    is_ok_b :=
+      fun cp' fd =>
+        match fd with
+        | Internal _ => true
+        | External ef =>
+            match ef with
+            | EF_external cp name sg  => true
+            | EF_builtin cp name sg
+            | EF_runtime cp name sg =>
+                match lookup_builtin_function name sg with
+                | None => true
+                | _ => Pos.eqb cp cp'
+                end
+            | EF_vload cp chunk          => Pos.eqb cp cp'
+            | EF_vstore cp chunk         => Pos.eqb cp cp'
+            | EF_malloc cp                => Pos.eqb cp cp'
+            | EF_free cp                 => Pos.eqb cp cp'
+            | EF_memcpy cp sz al         => Pos.eqb cp cp'
+            | EF_annot cp kind txt targs   => true
+            | EF_annot_val cp kind txt targ => true
+            | EF_inline_asm cp txt sg clb => true
+            | EF_debug kind cp txt targs => Pos.eqb cp cp'
+            end
+        end;
+    is_ok_reflect := _;
   }.
+Next Obligation.
+  destruct fd as [| []]; simpl; try now (symmetry; eauto using Pos.eqb_eq).
+  destruct (lookup_builtin_function name sg); try now (symmetry; eauto using Pos.eqb_eq).
+  destruct (lookup_builtin_function name sg); try now (symmetry; eauto using Pos.eqb_eq).
+Defined.

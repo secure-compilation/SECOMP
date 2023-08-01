@@ -23,6 +23,9 @@ Definition match_prog (p tp: RTL.program) :=
 Instance comp_transf_function: has_comp_transl transf_function.
 Proof. now intros. Qed.
 
+Instance is_external_transf_function: is_external_transl transf_fundef.
+Proof. unfold transf_fundef. intros ? [f | ef]; reflexivity. Qed.
+
 Lemma transf_program_match:
   forall p, match_prog p (transf_program p).
 Proof.

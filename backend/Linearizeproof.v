@@ -30,6 +30,12 @@ Proof.
   intros f ? H; now monadInv H.
 Qed.
 
+Instance external_transf_fundef: is_external_transl_partial transf_fundef.
+Proof.
+  unfold transf_fundef, transf_function.
+  intros [f | ef] ? ? H; now monadInv H.
+Qed.
+
 Lemma transf_program_match:
   forall p tp, transf_program p = OK tp -> match_prog p tp.
 Proof.

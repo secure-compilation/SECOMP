@@ -2522,8 +2522,10 @@ Section TRANSFORM_TOTAL.
 
 Context {A B V: Type} {LA: Linker A} {LV: Linker V}.
 Context {CA: has_comp A} {CB: has_comp B}.
+Context {EA: is_external A} {EB: is_external B}.
 Context {transf: A -> B} {p: program A V} {tp: program B V}.
 Context {CAB: has_comp_transl transf}.
+Context {EAB: is_external_transl transf}.
 Hypothesis progmatch: match_program (fun cu f tf => tf = transf f) eq p tp.
 
 Theorem find_funct_ptr_transf:

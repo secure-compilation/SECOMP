@@ -25,6 +25,9 @@ Definition match_prog (p tp: program) :=
 Instance comp_tunnel_fundef: has_comp_transl tunnel_function.
 Proof. now intro. Qed.
 
+Instance external_tunnel_fundef: is_external_transl tunnel_fundef.
+Proof. now intros ? []. Qed.
+
 Lemma transf_program_match:
   forall p, match_prog p (tunnel_program p).
 Proof.
