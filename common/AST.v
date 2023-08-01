@@ -792,6 +792,33 @@ Proof.
 Defined.
 Global Opaque external_function_eq.
 
+Class is_external (F: Type) := {
+    is_ok: compartment -> F -> Prop;
+    is_ok_b: compartment -> F -> bool;
+    is_ok_reflect: forall cp fd, is_ok cp fd <-> is_ok_b cp fd = true
+  }.
+
+Class is_external_match {C T S: Type} {ET: is_external T} {ES: is_external S}
+                     (R : C -> T -> S -> Prop) :=
+  ok_match:
+    forall c x y cp, R c x y -> is_ok cp x <-> is_ok cp y.
+
+Class is_external_transl_partial {T S: Type}
+                              {ET: is_external T} {ES: is_external S}
+                              (f : T -> res S) :=
+  ok_transl_partial:
+    forall x y cp, f x = OK y -> is_ok cp x <-> is_ok cp y.
+
+Instance is_external_transl_partial_match:
+  forall {C T S: Type}
+    {ET: is_external T} {ES: is_external S}
+    (f : T -> res S)
+    {Cf: is_external_transl_partial f},
+  is_external_match (fun (c : C) x y => f x = OK y).
+Proof.
+  intros C T S ???? c. exact ok_transl_partial.
+Qed.
+
 (** Function definitions are the union of internal and external functions. *)
 
 Inductive fundef (F: Type): Type :=

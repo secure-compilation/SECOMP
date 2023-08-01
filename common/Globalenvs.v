@@ -143,6 +143,7 @@ Section GENV.
 Variable F: Type.  (**r The type of function descriptions *)
 Variable V: Type.  (**r The type of information attached to variables *)
 
+Context {EF: is_external F}.
 Context {CF: has_comp F}.
 
 (** The type of global environments. *)
@@ -1884,17 +1885,18 @@ Qed.
 Definition allowed_cross_call (ge: t) (cp: compartment) (vf: val) :=
   match vf with
   | Vptr b _ =>
-    exists i cp',
-    invert_symbol ge b = Some i /\
-    find_comp ge vf = cp' /\
-    match (Policy.policy_import ge.(genv_policy)) ! cp with
-    | Some l => In (cp', i) l
-    | None => False
-    end /\
-    match (Policy.policy_export ge.(genv_policy)) ! cp' with
-    | Some l => In i l
-    | None => False
-    end
+      exists i cp',
+      invert_symbol ge b = Some i /\
+        (forall fd, find_funct ge vf = Some fd -> is_ok cp fd) /\
+        find_comp ge vf = cp' /\
+        match (Policy.policy_import ge.(genv_policy)) ! cp with
+        | Some l => In (cp', i) l
+        | None => False
+        end /\
+        match (Policy.policy_export ge.(genv_policy)) ! cp' with
+        | Some l => In i l
+        | None => False
+        end
   | _ => False
   end.
 
@@ -1945,23 +1947,30 @@ Qed.
 Definition allowed_call_b (ge: t) (cp: compartment) (vf: val): bool :=
   match find_comp ge vf with
   | c => Pos.eqb c cp
-        || match vf with
-        | Vptr b _ => match invert_symbol ge b with
-                     | Some i =>
-                         match (Policy.policy_import ge.(genv_policy)) ! cp with
-                         | Some imps =>
-                             match (Policy.policy_export ge.(genv_policy)) ! c with
-                             | Some exps =>
-                                 in_dec comp_ident_eq_dec (c, i) imps &&
-                                   in_dec Pos.eq_dec i exps
+        || ((match vf with
+            | Vptr b _ => match invert_symbol ge b with
+                         | Some i =>
+                             match (Policy.policy_import ge.(genv_policy)) ! cp with
+                             | Some imps =>
+                                 match (Policy.policy_export ge.(genv_policy)) ! c with
+                                 | Some exps =>
+                                     in_dec comp_ident_eq_dec (c, i) imps &&
+                                       in_dec Pos.eq_dec i exps
+                                 | None => false
+                                 end
                              | None => false
                              end
                          | None => false
                          end
-                     | None => false
-                     end
-        | _ => false
-        end
+            | _ => false
+            end)
+           &&
+             (match find_funct ge vf with
+              | Some fd => is_ok_b cp fd
+              | None => true
+              end
+             )
+          )
   end.
 
 Lemma allowed_call_reflect: forall ge cp vf,
@@ -1972,23 +1981,30 @@ Proof.
   destruct (Pos.eqb_spec (find_comp ge vf) cp); subst; firstorder.
   - destruct vf eqn:VF; try (firstorder; discriminate).
     subst.
-    destruct H as (i' & cp' & A & B & C & D).
+    destruct H as (i' & cp' & A & B & C & D & E).
     rewrite A.
     destruct ((Policy.policy_import (genv_policy ge)) ! cp) as [imps |]; auto.
-    rewrite B.
+    rewrite C.
     destruct ((Policy.policy_export (genv_policy ge)) ! cp') as [exps |]; auto.
     destruct (in_dec comp_ident_eq_dec (cp', i') imps);
       destruct (in_dec Pos.eq_dec i' exps); simpl; auto.
+    destruct (Ptrofs.eq_dec); auto. destruct (find_funct_ptr ge b) eqn:FD; auto.
+    apply is_ok_reflect. eapply B. unfold find_funct. rewrite e, FD.
+    now destruct Ptrofs.eq_dec.
   - destruct vf eqn:VF; try (firstorder; discriminate).
     subst. right. simpl in H.
     destruct (invert_symbol ge b) eqn:A; try discriminate.
     destruct ((Policy.policy_import (genv_policy ge)) ! cp) eqn:B; try discriminate.
     destruct ((Policy.policy_export (genv_policy ge)) ! (find_comp ge (Vptr b i))) eqn:C; try discriminate.
     apply andb_prop in H. destruct H as (D & E).
-    eexists; eexists; split; [reflexivity | split; [reflexivity |]].
+    apply andb_prop in D. destruct D as (D0 & D1).
+    eexists; eexists; split; [reflexivity | split; [| split; [reflexivity | ]]].
+    { intros. rewrite is_ok_reflect. unfold find_funct in H. destruct Ptrofs.eq_dec.
+      - now rewrite H in E.
+      - congruence.
+    }
     rewrite C.
-    apply proj_sumbool_true in D.
-    apply proj_sumbool_true in E. auto.
+    apply proj_sumbool_true in D0, D1. auto.
 Qed.
 Section SECURITY.
 
@@ -2047,12 +2063,14 @@ End MATCH_GENVS.
 Section MATCH_PROGRAMS.
 
 Context {C F1 V1 F2 V2: Type} {LC: Linker C} {LF: Linker F1} {LV: Linker V1}.
+Context {EF1: is_external F1} {EF2: is_external F2}.
 Context {CF1: has_comp F1} {CF2: has_comp F2}.
 Variable match_fundef: C -> F1 -> F2 -> Prop.
 Variable match_varinfo: V1 -> V2 -> Prop.
 Variable ctx: C.
 Variable p: program F1 V1.
 Variable tp: program F2 V2.
+Context {match_fundef_external: is_external_match match_fundef}.
 Context {match_fundef_comp: has_comp_match match_fundef}.
 Hypothesis progmatch: match_program_gen match_fundef match_varinfo ctx p tp.
 
@@ -2238,18 +2256,19 @@ Proof.
   unfold allowed_cross_call in *.
   rewrite match_genvs_find_comp in H1.
   destruct vf; auto.
-  destruct H1 as [i0 [cp' [? [? [? ?]]]]].
-  exists i0; exists cp'; split; [| split; [| split]].
+  destruct H1 as [i0 [cp' [? [? [? [? ?]]]]]].
+  exists i0; exists cp'; split; [| split; [| split; [| split]]].
   - apply find_invert_symbol. apply invert_find_symbol in H.
     rewrite find_symbol_match; eauto.
+  - intros. exploit find_funct_match_conv; eauto. intros (? & ? & ? & ? & ?). eapply match_fundef_external. eauto. eapply H0; eauto.
   - now auto.
   - destruct progmatch as [? [? [? EQPOL]]].
     destruct p, tp; simpl in *; subst.
-    unfold globalenv. unfold globalenv in H1.
+    unfold globalenv. unfold globalenv in H2.
     simpl in *.
-    clear -H1 EQPOL.
+    clear -H2 EQPOL.
     rewrite genv_pol_add_globals.
-    rewrite genv_pol_add_globals in H1.
+    rewrite genv_pol_add_globals in H2.
     unfold Policy.eqb in EQPOL. apply andb_prop in EQPOL.
     destruct EQPOL as [EQPOL1 EQPOL2].
     simpl in *.
@@ -2258,12 +2277,12 @@ Proof.
       destruct ((Policy.policy_import prog_pol) ! cp); auto.
     destruct (Policy.list_cpt_id_eq l l0); subst; simpl in *; auto; try discriminate. contradiction.
   - destruct progmatch as [? [? [? EQPOL]]].
-    rewrite <- match_genvs_find_comp in H0.
+    rewrite <- match_genvs_find_comp in H1.
     destruct p, tp; simpl in *; subst.
-    unfold globalenv. unfold globalenv in H2.
-    simpl in *. clear -H2 EQPOL CF2.
+    unfold globalenv. unfold globalenv in H3.
+    simpl in *. clear -H3 EQPOL CF2.
     rewrite genv_pol_add_globals.
-    rewrite genv_pol_add_globals in H2.
+    rewrite genv_pol_add_globals in H3.
     unfold Policy.eqb in EQPOL. apply andb_prop in EQPOL.
     destruct EQPOL as [EQPOL1 EQPOL2].
     simpl in *.
@@ -2346,8 +2365,10 @@ End MATCH_PROGRAMS.
 Section TRANSFORM_PARTIAL.
 
 Context {A B V: Type} {LA: Linker A} {LV: Linker V}.
+Context {EA: is_external A} {EB: is_external B}.
 Context {CA: has_comp A} {CB: has_comp B}.
 Context {transf: A -> res B} {p: program A V} {tp: program B V}.
+Context {EAB: is_external_transl_partial transf}.
 Context {CAB: has_comp_transl_partial transf}.
 Hypothesis progmatch: match_program (fun cu f tf => transf f = OK tf) eq p tp.
 

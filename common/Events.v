@@ -2233,3 +2233,30 @@ Section VISIBLE.
   (*   end. *)
 
 End VISIBLE.
+
+Global Instance is_external_fundef F : is_external (fundef F) :=
+  { is_ok :=
+    fun cp' fd =>
+      match fd with
+      | Internal _ => True
+      | External ef =>
+          match ef with
+          | EF_external cp name sg  => True
+          | EF_builtin cp name sg
+          | EF_runtime cp name sg =>
+              match lookup_builtin_function name sg with
+              | None => True
+              | _ => cp = cp'
+              end
+          | EF_vload cp chunk          => cp = cp'
+          | EF_vstore cp chunk         => cp = cp'
+          | EF_malloc cp                => cp = cp'
+          | EF_free cp                 => cp = cp'
+          | EF_memcpy cp sz al         => cp = cp'
+          | EF_annot cp kind txt targs   => True
+          | EF_annot_val cp kind txt targ => True
+          | EF_inline_asm cp txt sg clb => True
+          | EF_debug kind cp txt targs => cp = cp'
+          end
+      end
+  }.
