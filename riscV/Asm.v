@@ -1310,7 +1310,7 @@ Inductive step: state -> trace -> state -> Prop :=
       sig_call i = None ->
       is_return i = false ->
       forall (NEXTPC: rs' PC = Vptr b' ofs'),
-      forall (ALLOWED: cp = Genv.find_comp_ignore_offset ge (Vptr b' ofs')),
+      forall (ALLOWED: cp = Genv.find_comp ge (Vptr b' Ptrofs.zero)),
       step (State st rs m) E0 (State st rs' m')
   | exec_step_internal_call:
       forall b ofs f i sig rs m rs' m' b' ofs' cp st st' args t,
@@ -1321,15 +1321,15 @@ Inductive step: state -> trace -> state -> Prop :=
       sig_call i = Some sig ->
       forall (NEXTPC: rs' PC = Vptr b' ofs'),
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) (Vptr b' Ptrofs.zero)),
-      forall (CURCOMP: Genv.find_comp_ignore_offset ge (Vptr b Ptrofs.zero) = cp),
+      forall (CURCOMP: Genv.find_comp ge (Vptr b Ptrofs.zero) = cp),
       (* Is a call, we update the stack *)
       forall (STUPD: update_stack_call st sig cp rs' = Some st'),
       forall (ARGS: call_arguments rs' m' sig args),
       (* Is a call, we check whether we are allowed to pass pointers *)
       forall (NO_CROSS_PTR:
-          Genv.type_of_call ge (comp_of f) (Genv.find_comp_ignore_offset ge (Vptr b' ofs')) = Genv.CrossCompartmentCall ->
+          Genv.type_of_call ge (comp_of f) (Genv.find_comp ge (Vptr b' Ptrofs.zero)) = Genv.CrossCompartmentCall ->
           List.Forall not_ptr args),
-      forall (EV: call_trace ge (comp_of f) (Genv.find_comp_ignore_offset ge (Vptr b' ofs')) (Vptr b' ofs')
+      forall (EV: call_trace ge (comp_of f) (Genv.find_comp ge (Vptr b' Ptrofs.zero)) (Vptr b' ofs')
               args (sig_args sig) t),
       step (State st rs m) t (State st' rs' m')
   | exec_step_internal_return:

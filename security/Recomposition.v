@@ -108,8 +108,8 @@ Section Invariants.
 
       delta_zero: Mem.delta_zero j;
 
-      (* symb_inj: symbols_inject j ge1 ge2; *)
-      pres_globals: meminj_preserves_globals ge1 j;
+      symb_inj: symbols_inject j ge1 ge2;
+      (* pres_globals: meminj_preserves_globals ge1 j; *)
       ple_nextblock1: Ple (Senv.nextblock ge1) (Mem.nextblock m1);
       ple_nextblock2: Ple (Senv.nextblock ge2) (Mem.nextblock m2);
 
@@ -528,24 +528,42 @@ Section Simulation.
         + congruence.
         + rewrite (rewr _ n).
           intros G. exploit delta_zero; eauto.
-      - exploit pres_globals; eauto.
-        intros (A & B & C).
-        split; [| split].
+      - exploit symb_inj; eauto.
+        intros (A & B & C & D).
+        split; [| split; [| split]].
         + intros. exploit A; eauto.
-        + intros. exploit C; eauto.
-        + intros.
-          destruct (Pos.eqb_spec b0 b1); subst.
-          * exploit B; eauto. intros ?.
-            assert (b3 = b2) by congruence; assert (delta = 0) by congruence; subst b3 delta.
-            unfold ge1 in *.
-            eapply Genv.find_var_info_match with (b := b2) in match_W1_W3 as [? [? ?]]; eauto.
-            replace (Genv.globalenv W3) with ge3 in H5 by reflexivity.
-            assert (V: Mem.valid_block m3 b2) by now eapply var_info_valid in m1_m3; eauto.
-            assert (nV: not (Mem.valid_block m3 b2)).
-            { unfold Mem.valid_block. apply Mem.alloc_result in H; subst b2.
-              now apply Plt_strict. }
-            contradiction.
-          * eapply C. eauto. rewrite <- rewr; eauto.
+        + intros. exploit B; eauto. rewrite <- rewr. eauto.
+          exploit (Mem.alloc_result m1 cp lo hi m1' b1) ; eauto. intros ->.
+          exploit Senv.find_symbol_below; eauto.
+          eapply ple_nextblock1 in m1_m3. intros ? ?. subst.
+          exploit Plt_Ple_trans; eauto. now apply Plt_strict.
+            (* exploit C; eauto. *)
+        + intros. exploit C; eauto. intros ?.
+          destruct H5 as [b2 ?]. exists b2.
+          rewrite rewr; eauto.
+          exploit (Mem.alloc_result m1 cp lo hi m1' b1) ; eauto. intros ->.
+          exploit Senv.find_symbol_below; eauto.
+          eapply ple_nextblock1 in m1_m3. intros ? ?. subst.
+          exploit Plt_Ple_trans; eauto. now apply Plt_strict.
+        + intros. destruct (Pos.eq_dec b0 b1); subst.
+          * assert (Senv.block_is_volatile ge1 b1 = false).
+            { destruct (Senv.block_is_volatile ge1 b1) eqn:?; auto.
+              exfalso.
+              exploit (Mem.alloc_result m1 cp lo hi m1' b1) ; eauto. intros ->.
+              exploit Senv.block_is_volatile_below; eauto.
+              eapply ple_nextblock1 in m1_m3. intros ?.
+              exploit Plt_Ple_trans; eauto. intros ?. now eapply Plt_strict; eauto. }
+            assert (b3 = b2) by congruence. subst b2.
+            assert (Senv.block_is_volatile ge3 b3 = false).
+            { destruct (Senv.block_is_volatile ge3 b3) eqn:?; auto.
+              exfalso.
+              exploit (Mem.alloc_result m3 cp lo hi m3' b3) ; eauto. intros ->.
+              exploit Senv.block_is_volatile_below; eauto.
+              eapply ple_nextblock2 in m1_m3. intros ?.
+              exploit Plt_Ple_trans; eauto. intros ?. now eapply Plt_strict; eauto. }
+            now congruence.
+          * exploit D; eauto.
+            rewrite <- rewr; eauto.
       - erewrite Mem.nextblock_alloc; eauto using Ple_trans, Ple_succ, ple_nextblock1.
       - erewrite Mem.nextblock_alloc; eauto using Ple_trans, Ple_succ, ple_nextblock2.
       - intros. exploit funct_preserved1; eauto.
@@ -604,24 +622,42 @@ Section Simulation.
       + congruence.
       + rewrite (diff _ n).
         intros G. exploit delta_zero; eauto.
-    - exploit pres_globals; eauto.
-      intros (A & B & C).
-      split; [| split].
-      + intros. exploit A; eauto.
-      + intros. exploit C; eauto.
-      + intros.
-        destruct (Pos.eqb_spec b0 b1); subst.
-        * exploit B; eauto. intros ?.
-          assert (b3 = b2) by congruence; assert (delta = 0) by congruence; subst b3 delta.
-          unfold ge1 in *.
-          eapply Genv.find_var_info_match with (b := b2) in match_W1_W3 as [? [? ?]]; eauto.
-          replace (Genv.globalenv W3) with ge3 in H2 by reflexivity.
-          assert (V: Mem.valid_block m3 b2) by now eapply var_info_valid in m1_m3; eauto.
-          assert (nV: not (Mem.valid_block m3 b2)).
-          { unfold Mem.valid_block. apply Mem.alloc_result in alloc3; subst b2.
-            now apply Plt_strict. }
-          contradiction.
-        * eapply C. eauto. rewrite <- diff; eauto.
+      - exploit symb_inj; eauto.
+        intros (A & B & C & D).
+        split; [| split; [| split]].
+        + intros. exploit A; eauto.
+        + intros. exploit B; eauto. rewrite <- diff. eauto.
+          exploit (Mem.alloc_result m1 cp lo hi m1' b1) ; eauto. intros ->.
+          exploit Senv.find_symbol_below; eauto.
+          eapply ple_nextblock1 in m1_m3. intros ? ?. subst.
+          exploit Plt_Ple_trans; eauto. now apply Plt_strict.
+            (* exploit C; eauto. *)
+        + intros. exploit C; eauto. intros ?.
+          destruct H1 as [b2 ?]. exists b2.
+          rewrite diff; eauto.
+          exploit (Mem.alloc_result m1 cp lo hi m1' b1) ; eauto. intros ->.
+          exploit Senv.find_symbol_below; eauto.
+          eapply ple_nextblock1 in m1_m3. intros ? ?. subst.
+          exploit Plt_Ple_trans; eauto. now apply Plt_strict.
+        + intros. destruct (Pos.eq_dec b0 b1); subst.
+          * assert (Senv.block_is_volatile ge1 b1 = false).
+            { destruct (Senv.block_is_volatile ge1 b1) eqn:?; auto.
+              exfalso.
+              exploit (Mem.alloc_result m1 cp lo hi m1' b1) ; eauto. intros ->.
+              exploit Senv.block_is_volatile_below; eauto.
+              eapply ple_nextblock1 in m1_m3. intros ?.
+              exploit Plt_Ple_trans; eauto. intros ?. now eapply Plt_strict; eauto. }
+            assert (b3 = b2) by congruence. subst b2.
+            assert (Senv.block_is_volatile ge3 b3 = false).
+            { destruct (Senv.block_is_volatile ge3 b3) eqn:?; auto.
+              exfalso.
+              exploit (Mem.alloc_result m3 cp lo hi m3' b3) ; eauto. intros ->.
+              exploit Senv.block_is_volatile_below; eauto.
+              eapply ple_nextblock2 in m1_m3. intros ?.
+              exploit Plt_Ple_trans; eauto. intros ?. now eapply Plt_strict; eauto. }
+            now congruence.
+          * exploit D; eauto.
+            rewrite <- diff; eauto.
     - erewrite Mem.nextblock_alloc; eauto using Ple_trans, Ple_succ, ple_nextblock1.
     - erewrite Mem.nextblock_alloc; eauto using Ple_trans, Ple_succ, ple_nextblock2.
     - intros. exploit funct_preserved1; eauto.
@@ -686,11 +722,12 @@ Section Simulation.
       constructor.
       - intros b. apply same_dom in m1_m3.
         specialize (m1_m3 b).
-        simpl in *. apply Mem.free_result in free1. unfold Mem.unchecked_free in free1. now subst.
+        simpl in *. apply Mem.free_result in free1. unfold Mem.unchecked_free in free1.
+        destruct (zle hi lo); now subst.
       - assumption.
       - intros b b' delta.
         intros G. exploit delta_zero; eauto.
-      - exploit pres_globals; eauto.
+      - exploit symb_inj; eauto.
       - erewrite Mem.nextblock_free; eauto using Ple_trans, Ple_succ, ple_nextblock1.
       - erewrite Mem.nextblock_free; eauto using Ple_trans, Ple_succ, ple_nextblock2.
       - intros. exploit funct_preserved1; eauto.
@@ -746,7 +783,7 @@ Section Simulation.
         eapply Mem.store_block_compartment in store1. now rewrite store1.
       - assumption.
       - now eapply delta_zero; eauto.
-      - exploit pres_globals; eauto.
+      - exploit symb_inj; eauto.
       - erewrite Mem.nextblock_store; eauto using Ple_trans, Ple_succ, ple_nextblock1.
       - erewrite Mem.nextblock_store; eauto using Ple_trans, Ple_succ, ple_nextblock2.
       - intros. exploit funct_preserved1; eauto.
@@ -852,17 +889,18 @@ Section Simulation.
             | _: context [Val.cmpl_bool] |- _ =>
                 unfold Val.cmpl_bool in *; simpl in *
             | _: context [eval_offset _ ?ofs] |- _ =>
-                destruct ofs; simpl in *
+                destruct ofs eqn:?; subst; simpl in *
 
-            | _: context [low_half ge1] |- _ =>
-                rewrite same_low_half1 in *
+            | _: context [low_half] |- _ =>
+                unfold low_half in *; simpl in *
+                (* rewrite same_low_half1 in * *)
 
 
             | H: Mem.alloc ?m1 ?cp ?lo1 ?hi1 = (?m1', ?b1),
               m1_m3: mem_rel _ _ _ ?j__left Left ?m1 ?m3,
               m2_m3: mem_rel _ _ _ ?j__right Right ?m2 ?m3,
               rs1_rs3: regset_rel _ _ _ |- _ =>
-                idtac "alloc case";
+                (* idtac "alloc case"; *)
                 let j__left' := fresh "j__left" in
                 let m3' := fresh "m3" in
                 let b3 := fresh "b3" in
@@ -873,7 +911,7 @@ Section Simulation.
                 let incr := fresh "incr" in
                 apply (alloc_preserves_rel_left _ _ _ _ _ _ _ _ _ _ _ _ m1_m3 m2_m3 rs1_rs3) in H as
                     [j__left' [m3' [b3 [alloc3 [m1'_m3' [m2_m3' [? [proj incr]]]]]]]];
-                idtac "done with alloc";
+                (* idtac "done with alloc"; *)
                 clear m1_m3 rs1_rs3 m2_m3
             | H: s ?cp = ?δ -> _,
               side_cp: s ?cp = ?δ |- _ =>
@@ -884,11 +922,11 @@ Section Simulation.
               m2_m3: mem_rel _ _ _ ?j__right Right ?m2 ?m3,
               ptr_inj: ?j__left ?b1 = Some (?b3, 0),
               rs1_rs3: regset_rel ?j__left ?rs1 ?rs3 |- _ =>
-                idtac "store case";
+                (* idtac "store case"; *)
                 let m3' := fresh "m3" in
                 apply (store_preserves_rel_left _ _ _ _ _ _ _ _ _ _ _ _ _ ptr_inj m1_m3 m2_m3 (rs1_rs3 r)) in H as
                     [m3' [? [? ?]]];
-                idtac "done with store";
+                (* idtac "done with store"; *)
                 clear m1_m3 m2_m3
 
             | H: Mem.free ?m1 ?b1 ?lo ?hi ?cp = Some ?m1',
@@ -896,23 +934,23 @@ Section Simulation.
               m2_m3: mem_rel _ _ _ ?j__right Right ?m2 ?m3,
               ptr_inj: ?j__left ?b1 = Some (?b3, 0) |- _ =>
                 (* rs1_rs3: regset_rel ?j ?rs1 ?rs3 |- _ => *)
-                idtac "free case";
+                (* idtac "free case"; *)
                 let m3' := fresh "m3" in
                 apply (free_preserves_rel_left _ _ _ _ _ _ _ _ _ _ _ ptr_inj m1_m3 m2_m3) in H as
                     [m3' [? [? ?]]];
-                idtac "done with free";
+                (* idtac "done with free"; *)
                 clear m1_m3
 
             | H: Mem.load ?ch ?m1 ?b1 ?ofs ?cp = Some ?v1,
                 m1_m3: mem_rel _ _ _ ?j _ ?m1 ?m3,
                   ptr_inj: ?j ?b1 = Some (?b3, 0) |- _ =>
-                (* idtac "load case"; *)
+                idtac "load case";
                 let v3 := fresh "v3" in
                 let load3 := fresh "load3" in
                 destruct (Mem.load_inject _ _ _ _ _ _ _ _ _ _ (partial_mem_inject _ _ _ _ _ _ _ m1_m3) H ptr_inj) as
                   [v3 [load3 ?]];
                 rewrite Z.add_0_r in load3;
-                (* idtac "done with load"; *)
+                idtac "done with load";
                 clear H
 
             | H: Val.cmpu_bool (Mem.valid_pointer ?m1) ?op (?rs1 ?r) (?rs1 ?r') = Some ?b,
@@ -1051,9 +1089,9 @@ Section Simulation.
             | _: context [?rs1 ## ?rs] |- context [?rs3 ## ?rs] =>
                 let i := fresh "i" in destruct rs as [| i]; simpl in *
             | H: ?x = _ |- context [if ?x then _ else _] =>
-                rewrite H; simpl
+                setoid_rewrite H; simpl
             | H: ?x = _ |- context [match ?x with | _ => _ end] =>
-                rewrite H; simpl
+                setoid_rewrite H; simpl
             | |- context [(if ?x then _ else _) = Next _ _] =>
                 let eq := fresh "eq" in destruct x eqn:eq; simpl in *
             | |- context [(match ?x with | _ => _ end) = Next _ _] =>
@@ -1140,10 +1178,10 @@ Section Simulation.
     intros side_cp m1_m3 m2_m3 rs1_rs3 st1_st3 exec.
 
     Local Opaque Val.cmpu_bool Val.cmplu_bool.
+    (* Local Opaque low_half high_half. *)
 
     destruct i; inv exec; simpl in *;
-      try now (simpl_before_exists;
-               (eexists_and_split
+      try now (simpl_before_exists; (eexists_and_split
                   ltac:(fun j rs1 rs3 rs1_rs3 m1 m3 m1_m3 =>
                           (simpl; try reflexivity; try eassumption;
                            solve_simple_regset_rel j rs1 rs3 rs1_rs3 m1 m3 m1_m3; try reflexivity)))).
@@ -1151,30 +1189,31 @@ Section Simulation.
          ltac:(fun j rs1 rs3 rs1_rs3 m1 m3 m1_m3 =>
                  (simpl; try reflexivity; try eassumption;
                   solve_simple_regset_rel j rs1 rs3 rs1_rs3 m1 m3 m1_m3; try reflexivity))).
-      apply Genv.find_symbol_match with (s := symb) in match_W1_W3.
-      unfold Genv.symbol_address. rewrite match_W1_W3.
-      now eapply symbol_address_inject; eauto using pres_globals.
+      (* apply Genv.find_symbol_match with (s := symb) in match_W1_W3. *)
+      exploit symb_inj. exact m1_m3. intros (A & B & C & D).
+      unfold Genv.symbol_address. admit.
     - (eexists_and_split
          ltac:(fun j rs1 rs3 rs1_rs3 m1 m3 m1_m3 =>
                  (simpl; try reflexivity; try eassumption;
                   solve_simple_regset_rel j rs1 rs3 rs1_rs3 m1 m3 m1_m3; try reflexivity))).
-      apply Genv.find_symbol_match with (s := symb) in match_W1_W3.
-      unfold Genv.symbol_address. rewrite match_W1_W3.
-      now eapply symbol_address_inject; eauto using pres_globals.
-    - simpl_before_exists.
-      (eexists_and_split
+      (* apply Genv.find_symbol_match with (s := symb) in match_W1_W3. *)
+      admit.
+      (* unfold Genv.symbol_address. rewrite match_W1_W3. *)
+      (* now eapply symbol_address_inject; eauto using pres_globals. *)
+    - (eexists_and_split
          ltac:(fun j rs1 rs3 rs1_rs3 m1 m3 m1_m3 =>
                  (simpl; try reflexivity; try eassumption;
                   solve_simple_regset_rel j rs1 rs3 rs1_rs3 m1 m3 m1_m3; try reflexivity))).
-      apply Genv.find_symbol_match with (s := id) in match_W1_W3.
-      unfold Genv.symbol_address. rewrite match_W1_W3.
-      now eapply symbol_address_inject; eauto using pres_globals.
+      (* apply Genv.find_symbol_match with (s := id) in match_W1_W3. *)
+      admit.
+      (* unfold Genv.symbol_address. rewrite match_W1_W3. *)
+      (* now eapply symbol_address_inject; eauto using pres_globals. *)
     - (eexists_and_split
          ltac:(fun j rs1 rs3 rs1_rs3 m1 m3 m1_m3 =>
                  (simpl; try reflexivity; try eassumption;
                   solve_simple_regset_rel j rs1 rs3 rs1_rs3 m1 m3 m1_m3; try reflexivity))).
       eapply same_high_half; eauto.
-  Qed.
+  Admitted.
 
   Lemma store_inj_outside_domain:
     forall f chunk m1 b1 ofs v1 cp n2 m2,
@@ -1602,17 +1641,19 @@ Section Simulation.
       + econstructor; [| now eapply star_refl | now traceEq].
         pose proof (rs1_rs3' PC) as inj_pc; rewrite NEXTPC in *; inv inj_pc. rewrite <- H6 in *.
         (* clear dependent j0. *)
+        exploit (delta_zero s ge1 ge3); eauto. intros ->.
         eapply exec_step_internal_call; eauto.
-        * exploit (delta_zero s ge1 ge3); eauto. intros ->.
-          eapply allowed_call_preserved with (v := Vptr b' Ptrofs.zero);
+        * eapply allowed_call_preserved with (v := Vptr b' Ptrofs.zero);
             eauto using funct_preserved1, funct_preserved2, delta_zero.
           congruence.
         * simpl; now rewrite find_funct.
         * simpl in STUPD'; now rewrite H1 in STUPD'.
-        * rewrite <- pc_comp. intros is_cross.
+        * intros is_cross. unfold Genv.find_comp_ignore_offset in pc_comp.
+          rewrite <- pc_comp in is_cross.
           specialize (NO_CROSS_PTR is_cross).
           now eapply Val.inject_list_not_ptr; eauto.
-        * inv EV. constructor. now rewrite <- pc_comp.
+        * inv EV. constructor. unfold Genv.find_comp_ignore_offset in pc_comp.
+          now rewrite <- pc_comp.
       + eauto.
       + simpl in same_side.
         econstructor; eauto.
@@ -1688,7 +1729,6 @@ Section Simulation.
   Lemma simulation:
     @threeway_simulation (semantics W1) (semantics W2) (semantics W3) single_L1 single_L2 single_L3.
   Proof.
-
     apply threeway_simulation_diagram with (strong_equivalence1 := strong_equivalence s ge1 ge3 Left)
                                            (strong_equivalence2 := strong_equivalence s ge2 ge3 Right)
                                            (weak_equivalence1   := weak_equivalence   s ge1 ge3 Left)
