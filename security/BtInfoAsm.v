@@ -339,35 +339,6 @@ Section IR.
       :
       ir_step ge (Some (cur, m1, ik)) (Bundle_call (tr1 ++ tr2 ++ tr3) id evargs sg (Some d)) (Some (cur, m2, ik)).
 
-
-  Definition external_call_known_silents
-             (ef: external_function) (ge: Senv.t) (m: mem) (args: list val) tr rv m': Prop :=
-    match ef with
-    | EF_external cp name sg => False
-    | EF_builtin cp name sg | EF_runtime cp name sg =>
-                             match lookup_builtin_function name sg with
-                             | None => False
-                             | _ => True
-                             end
-    | EF_inline_asm cp txt sg clb => False
-    | EF_memcpy cp sz al =>
-        (external_call ef ge args m E0 rv m') /\ (tr = E0) /\ (EF_memcpy_dest_not_pub ge args)
-    | _ => (external_call ef ge args m E0 rv m') /\ (tr = E0)
-    end.
-
-external_call = 
-fun ef : external_function =>
-match ef with
-| EF_builtin _ name sg | EF_runtime _ name sg => builtin_or_external_sem name sg
-| EF_vload cp chunk => volatile_load_sem cp chunk
-| EF_vstore cp chunk => volatile_store_sem cp chunk
-| EF_malloc cp => extcall_malloc_sem cp
-| EF_free cp => extcall_free_sem cp
-| EF_memcpy cp sz al => extcall_memcpy_sem cp sz al
-| EF_debug _ cp _ _ => extcall_debug_sem cp
-end
-     : external_function -> extcall_sem
-
 End IR.
 
 
