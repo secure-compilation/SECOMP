@@ -1625,6 +1625,48 @@ Section PROOF.
     }
   Qed.
 
+  Lemma asm_to_ir_ccc_external1
+        ge rs cur
+        (MTST1 : match_cur_regset cur ge rs)
+        rs' e b ofs f args
+        (H0 : rs PC = Vptr b ofs)
+        (H1 : Genv.find_funct_ptr ge b = Some (Internal f))
+        ofs0 b0
+        (ALLOWED : Genv.allowed_call ge (comp_of f) (Vptr b0 Ptrofs.zero))
+        (NEXTPC : rs' PC = Vptr b0 ofs0)
+        (TYPEC : Genv.type_of_call ge (comp_of f) (Genv.find_comp ge (Vptr b0 Ptrofs.zero)) = Genv.CrossCompartmentCall)
+        (NO_CROSS_PTR : Forall not_ptr args)
+        (CALLSIG : Genv.find_funct_ptr ge b0 = Some (External e))
+        vl i0
+        (H3 : Genv.invert_symbol ge b0 = Some i0)
+        (H4 : eventval_list_match ge vl (sig_args (ef_sig e)) args)
+    :
+    exists cp cp' sg,
+      (cp = Genv.find_comp ge (Vptr cur Ptrofs.zero)) /\
+        (Genv.find_symbol ge i0 = Some b0) /\
+        (Genv.find_funct ge (Vptr b0 Ptrofs.zero) = Some (External e)) /\
+        (cp' = comp_of e) /\
+        (Genv.allowed_call ge cp (Vptr b0 Ptrofs.zero)) /\
+        (crossing_comp ge cp cp' -> Forall not_ptr args) /\
+        (sg = ef_sig e) /\
+        (call_trace_cross ge cp cp' b0 args (sig_args sg) [Event_call (comp_of f) (Genv.find_comp ge (Vptr b0 Ptrofs.zero)) i0 vl] i0 vl).
+  Proof.
+    assert (EQC : Genv.find_comp ge (Vptr b Ptrofs.zero) = comp_of f).
+    { unfold Genv.find_comp. setoid_rewrite H1. auto. }
+    assert (EQC2 : Genv.find_comp ge (Vptr b0 Ptrofs.zero) = comp_of e).
+    { unfold Genv.find_comp. setoid_rewrite CALLSIG. auto. }
+    do 3 eexists.
+    ss. splits; auto.
+    - eapply Genv.invert_find_symbol; auto.
+    - replace (Genv.find_comp ge (Vptr cur Ptrofs.zero)) with (comp_of f); auto. rewrite MTST1, H0. ss.
+    - econs; auto.
+      + unfold Genv.type_of_call.
+        replace (comp_of e) with (Genv.find_comp ge (Vptr b0 Ptrofs.zero)); auto.
+        replace (Genv.find_comp ge (Vptr cur Ptrofs.zero)) with (comp_of f); auto. rewrite MTST1, H0. ss.
+      + replace (comp_of e) with (Genv.find_comp ge (Vptr b0 Ptrofs.zero)); auto.
+        replace (Genv.find_comp ge (Vptr cur Ptrofs.zero)) with (comp_of f); auto. rewrite MTST1, H0. ss.
+  Qed.
+
   (* If main is External, treat it as a different case - 
      the trace can start with Event_syscall, without a preceding Event_call *)
   Theorem asm_to_ir
@@ -1705,19 +1747,24 @@ Section PROOF.
           { rewrite TYPEC in H. clarify. }
           clear H. clarify. unfold update_stack_call in STUPD. des_ifs.
           { unfold Genv.type_of_call in TYPEC. rewrite NEXTPC in Heq. rewrite <- EQC in TYPEC. ss. rewrite Heq in TYPEC. inv TYPEC. }
-          pose proof STAR as STAR0. move STAR after H4. inv STAR; ss.
+          pose proof STAR as STAR0. move STAR after H4.
+          exploit asm_to_ir_ccc_external1. eapply MTST1. eapply H0. eapply H1. eapply ALLOWED. eapply NEXTPC. all: auto. eapply CALLSIG. eapply H3. eapply H4.
+          intros (cp & cp' & sg & FACT1 & FACT2 & FACT3 & FACT4 & FACT5 & FACT6 & FACT7 & FACT8). subst.
+          inv STAR; ss.
           (* subcase 1 *)
           { exists ([Bundle_call [Event_call (comp_of f) (Genv.find_comp ge (Vptr b0 Ptrofs.zero)) i0 vl] i0 vl (ef_sig e) None]). eexists. ss. split; auto.
             econs 2. 2: econs 1. 2: eauto. eapply ir_step_cross_call_external1.
-            7: eauto. 6: intros; eapply NO_CROSS_PTR; auto. 5: eapply ALLOWED. all: auto.
-            { rewrite MTST1. rewrite H0. auto. }
-            { apply Genv.invert_find_symbol; auto. }
-            { econs. all: auto.
-              - replace (comp_of e) with (Genv.find_comp ge (Vptr b0 Ptrofs.zero)); auto.
-              - replace (comp_of e) with (Genv.find_comp ge (Vptr b0 Ptrofs.zero)); auto.
-            }
+            8: eapply FACT8. 6: eapply FACT6. 5: eapply FACT5. 3: eapply FACT3. 2: eapply FACT2. all: eauto.
           }
-          rename H into STEP, H2 into STAR.
+          rename H into STEP, H2 into STAR, TYPEC into CCC, CALLSIG into NEXTF. inv STEP.
+          1,2,3,4: rewrite NEXTPC in H6; inv H6; rewrite NEXTF in H7; inv H7.
+          rewrite NEXTPC in H6; inv H6. rewrite NEXTF in H7; inv H7. ss. clear REC_CURCOMP. rename H8 into EXTCALL, H11 into EXTARGS.
+          
+          inv STAR.
+          (* subcase 2 *)
+          { 
+          
+          
 
 
           (*** TODO *)
