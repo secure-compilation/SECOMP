@@ -1666,7 +1666,7 @@ Definition external_call (ef: external_function): extcall_sem :=
   | EF_annot cp kind txt targs   => extcall_annot_sem cp txt targs
   | EF_annot_val cp kind txt targ => extcall_annot_val_sem cp txt targ
   | EF_inline_asm cp txt sg clb => inline_assembly_sem cp txt sg
-  | EF_debug kind cp txt targs => extcall_debug_sem cp
+  | EF_debug cp kind txt targs => extcall_debug_sem cp
   end.
 
 Ltac external_call_caller_independent :=
@@ -2256,7 +2256,7 @@ Global Program Instance is_external_fundef (F: Type) : is_external (fundef F) :=
           | EF_annot cp kind txt targs   => True
           | EF_annot_val cp kind txt targ => True
           | EF_inline_asm cp txt sg clb => True
-          | EF_debug kind cp txt targs => cp = cp'
+          | EF_debug cp kind txt targs => cp = cp'
           end
       end;
     is_ok_b :=
@@ -2280,7 +2280,7 @@ Global Program Instance is_external_fundef (F: Type) : is_external (fundef F) :=
             | EF_annot cp kind txt targs   => true
             | EF_annot_val cp kind txt targ => true
             | EF_inline_asm cp txt sg clb => true
-            | EF_debug kind cp txt targs => Pos.eqb cp cp'
+            | EF_debug cp kind txt targs => Pos.eqb cp cp'
             end
         end;
     is_ok_reflect := _;

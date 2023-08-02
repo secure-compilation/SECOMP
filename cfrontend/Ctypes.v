@@ -2044,7 +2044,7 @@ Global Program Instance is_external_fundef_ctypes f : is_external (fundef f) :=
           | EF_annot cp kind txt targs   => True
           | EF_annot_val cp kind txt targ => True
           | EF_inline_asm cp txt sg clb => True
-          | EF_debug kind cp txt targs => cp = cp'
+          | EF_debug cp kind txt targs => cp = cp'
           end
       end;
     is_ok_b :=
@@ -2068,7 +2068,7 @@ Global Program Instance is_external_fundef_ctypes f : is_external (fundef f) :=
             | EF_annot cp kind txt targs   => true
             | EF_annot_val cp kind txt targ => true
             | EF_inline_asm cp txt sg clb => true
-            | EF_debug kind cp txt targs => Pos.eqb cp cp'
+            | EF_debug cp kind txt targs => Pos.eqb cp cp'
             end
         end;
     is_ok_reflect := _;
