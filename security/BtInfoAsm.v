@@ -485,7 +485,6 @@ Section FROMASM.
 
   Lemma mem_delta_exec_instr
         (ge: genv) f i rs m cp rs' m'
-        (* comp_of f ? *)
         (NFREE: public_not_freeable ge m)
         (EXEC: exec_instr ge f i rs m cp = Next rs' m')
         m0 d
@@ -766,6 +765,157 @@ Section PROOF.
     { eapply istar_trans; eauto. }
   Qed.
 
+
+  Lemma visible_fo_meminj_fo
+        (ge: Senv.t) m tys args
+        (VFO: visible_fo ge m tys args)
+    :
+    meminj_first_order (meminj_public ge) m.
+  Proof.
+    destruct VFO as [PFO _]. ii. unfold public_first_order in PFO. unfold meminj_public in H. des_ifs.
+    exploit PFO; eauto. apply Senv.invert_find_symbol. auto.
+  Qed.
+
+  Lemma external_call_unknowns_fo
+        ef (ge: Senv.t) m args
+        (ECC: external_call_unknowns ef ge m args)
+    :
+    meminj_first_order (meminj_public ge) m.
+  Proof.
+    unfold external_call_unknowns in ECC. des_ifs; eapply visible_fo_meminj_fo; eauto.
+  Qed.
+
+  Lemma symbols_inject_meminj_public
+        F V (ge: Genv.t F V)
+    :
+    symbols_inject (meminj_public ge) ge ge.
+  Proof.
+    unfold symbols_inject. splits; intros; unfold meminj_public in *; auto.
+    - des_ifs.
+    - erewrite Senv.find_invert_symbol; eauto. rewrite H. eauto.
+    - des_ifs.
+  Qed.
+
+  Lemma visible_fo_val_inject_list
+        (ge: Senv.t) m tys args
+        (VFO: visible_fo ge m tys args)
+    :
+    Val.inject_list (meminj_public ge) args args.
+  Proof.
+    destruct VFO as [PFO VP]. induction VP; ss. econs; eauto. clear dependent l. clear dependent l'. inv H; auto.
+    destruct H0 as [id [INV PUB]].
+    econs. unfold meminj_public. rewrite INV. rewrite PUB. eauto. rewrite Ptrofs.add_zero. auto.
+  Qed.
+
+  Lemma external_call_unknowns_val_inject_list
+        ef (ge: Senv.t) m args
+        (ECC: external_call_unknowns ef ge m args)
+    :
+    Val.inject_list (meminj_public ge) args args.
+  Proof.
+    unfold external_call_unknowns in ECC. des_ifs; eapply visible_fo_val_inject_list; eauto.
+  Qed.
+
+(*   Lemma visible_fo_mem_inj *)
+(*         (ge: Senv.t) m tys args *)
+(*         (VFO: visible_fo ge m tys args) *)
+(*         m' *)
+(*         (MEMINJ: Mem.inject (meminj_public ge) m m') *)
+(*     : *)
+(*     visible_fo ge m' tys args. *)
+(*   Proof. *)
+(*     destruct VFO as [PFO VP]. split; auto. clear VP. clear - PFO MEMINJ. *)
+(*     unfold public_first_order in *. intros. exploit PFO; clear PFO; eauto. *)
+(*     { instantiate (1:=ofs). *)
+(* Mem.perm_inject_inv: *)
+(*   forall (f : meminj) (m1 m2 : mem) (b1 : block) (ofs : Z) (b2 : block) (delta : Z) (k : perm_kind) (p : permission), *)
+(*   Mem.inject f m1 m2 -> f b1 = Some (b2, delta) -> Mem.perm m2 b2 (ofs + delta) k p -> Mem.perm m1 b1 ofs k p \/ ~ Mem.perm m1 b1 ofs Max Nonempty *)
+
+(*   Lemma external_call_unknowns_mem_inj *)
+(*         (ge: Senv.t) m ef args *)
+(*         (ECC: external_call_unknowns ef ge m args) *)
+(*         m' *)
+(*         (MEMINJ: Mem.inject (meminj_public ge) m m') *)
+(*     : *)
+(*     external_call_unknowns ef ge m' args. *)
+(*   Proof. *)
+(*     unfold external_call_unknowns in *. des_ifs. *)
+
+  Lemma match_mem_external_call_establish1
+        (ge: genv) k d m_a0 m_i m
+        (MEM: match_mem ge k d m_a0 m_i m)
+        ef args t res m'
+        (EXTCALL: external_call ef ge args m t res m')
+        (ECC: external_call_unknowns ef ge m args)
+    :
+    exists m1 m2 res',
+      (mem_delta_apply_inj (meminj_public ge) d (Some m_i) = Some m1) /\
+        (external_call ef ge args m1 t res' m2) /\
+        (external_call_unknowns ef ge m1 args) /\
+        (exists k2, match_mem ge k2 [] m' m2 m' /\ Val.inject k2 res res')
+  .
+  Proof.
+    destruct MEM as (MEM0 & MEM1 & MEM2 & MEM3 & MEM4 & MEM5).
+    (* reestablish meminj *)
+    exploit mem_delta_apply_establish_inject; eauto.
+    { apply meminj_public_strict. }
+    { eapply external_call_unknowns_fo. eauto. }
+    intros (m_i' & APPD' & MEMINJ').
+    hexploit ec_mem_inject. eapply external_call_spec. 2: eapply EXTCALL. all: eauto.
+    (* hexploit external_call_mem_inject. 2: eapply EXTCALL. all: eauto. *)
+    { instantiate (1:=ge). apply symbols_inject_meminj_public. }
+    { instantiate (1:=args). eapply external_call_unknowns_val_inject_list; eauto. }
+    intros (f' & vres' & m_i'' & EXTCALL' & VALINJ' & MEMINJ'' & _ & _ & INCRINJ' & _).
+    assert (MM': match_mem ge f' [] m' m_i'' m').
+    { unfold match_mem. simpl. splits; auto.
+      { pose proof (meminj_not_alloc_delta _ _ MEM2 _ _ MEM5) as NALLOC.
+        clear - EXTCALL NALLOC. unfold meminj_not_alloc in *. intros. apply NALLOC.
+        pose proof (@external_call_valid_block _ _ _ _ _ _ _ b EXTCALL).
+        destruct (Pos.leb_spec (Mem.nextblock m) b); auto.
+        unfold Mem.valid_block in H0. apply H0 in H1. exfalso. unfold Plt in H1. lia.
+      }
+      { pose proof (meminj_not_alloc_delta _ _ MEM2 _ _ MEM5) as NALLOC.
+        clear - EXTCALL MEM3 NALLOC. unfold public_not_freeable in *. intros.
+        specialize (MEM3 _ H). intros CC. apply (MEM3 ofs); clear MEM3.
+        eapply external_call_max_perm; eauto. unfold Mem.valid_block.
+        unfold meminj_not_alloc in NALLOC. unfold Plt.
+        destruct (Pos.ltb_spec b (Mem.nextblock m)); auto.
+        specialize (NALLOC _ H0). congruence.
+      }
+      constructor.
+    }
+    exists m_i', m_i'', vres'. splits; eauto.
+    { clear - ECC MEMINJ'. admit.
+
+Mem.perm_drop_1:
+  forall (m : mem) (b : block) (lo hi : Z) (p : permission) (cp : compartment) (m' : mem),
+  Mem.drop_perm m b lo hi p cp = Some m' -> forall (ofs : Z) (k : perm_kind), (lo <= ofs < hi)%Z -> Mem.perm m' b ofs k p
+
+Genv.alloc_global = 
+fun (F V : Type) (CF : has_comp F) (ge : Genv.t F V) (m : mem) (idg : ident * globdef F V) =>
+let (_, g) := idg in
+match g with
+| Gfun f => let (m1, b) := Mem.alloc m (comp_of f) 0 1 in Mem.drop_perm m1 b 0 1 Nonempty (comp_of f)
+| Gvar v =>
+    let init := gvar_init v in
+    let comp := gvar_comp v in
+    let sz := init_data_list_size init in
+    let (m1, b) := Mem.alloc m comp 0 sz in
+    match store_zeros m1 b 0 sz comp with
+    | Some m2 => match Genv.store_init_data_list ge m2 b 0 init comp with
+                 | Some m3 => Mem.drop_perm m3 b 0 sz (Genv.perm_globvar v) comp
+                 | None => None
+                 end
+    | None => None
+    end
+end
+     : forall F V : Type, has_comp F -> Genv.t F V -> mem -> ident * globdef F V -> option mem
+      
+
+    (* visible_fo *) }
+  Admitted.
+
+
   Lemma asm_to_ir_returnstate_nccc_internal
         cpm (ge: genv) n n0
         (LT: (n0 < n)%nat)
@@ -830,51 +980,6 @@ Section PROOF.
     exists btr, ist'. split; auto.
   Qed.
 
-  Lemma match_mem_external_call_establish1
-        (ge: genv) k d m_a0 m_i m
-        (MEM: match_mem ge k d m_a0 m_i m)
-        ef args t res m'
-        (EXTCALL: external_call ef ge args m t res m')
-        (ECC: external_call_unknowns ef ge m args)
-    :
-    exists m1 m2 res',
-      (mem_delta_apply_inj (meminj_public ge) d (Some m_i) = Some m1) /\
-        (external_call ef ge args m1 t res' m2) /\
-        (external_call_unknowns ef ge m1 args) /\
-        (exists k2, match_mem ge k2 [] m' m2 m' /\ Val.inject k2 res res')
-  .
-  Proof.
-    destruct MEM as (MEM0 & MEM1 & MEM2 & MEM3 & MEM4 & MEM5).
-    (* reestablish meminj *)
-    exploit mem_delta_apply_establish_inject; eauto.
-    { apply meminj_public_strict. }
-    { admit. (* ECU *) }
-    intros (m_i' & APPD' & MEMINJ'). hexploit external_call_mem_inject. 2: eapply EXTCALL. all: eauto.
-    { admit. (* ez *) }
-    { instantiate (1:=args). admit. }
-    intros (f' & vres' & m_i'' & EXTCALL' & VALINJ' & MEMINJ'' & _ & _ & INCRINJ' & _).
-    assert (MM': match_mem ge f' [] m' m_i'' m').
-    { unfold match_mem. simpl. splits; auto.
-      { pose proof (meminj_not_alloc_delta _ _ MEM2 _ _ MEM5) as NALLOC.
-        clear - EXTCALL NALLOC. unfold meminj_not_alloc in *. intros. apply NALLOC.
-        pose proof (@external_call_valid_block _ _ _ _ _ _ _ b EXTCALL).
-        destruct (Pos.leb_spec (Mem.nextblock m) b); auto.
-        unfold Mem.valid_block in H0. apply H0 in H1. exfalso. unfold Plt in H1. lia.
-      }
-      { pose proof (meminj_not_alloc_delta _ _ MEM2 _ _ MEM5) as NALLOC.
-        clear - EXTCALL MEM3 NALLOC. unfold public_not_freeable in *. intros.
-        specialize (MEM3 _ H). intros CC. apply (MEM3 ofs); clear MEM3.
-        eapply external_call_max_perm; eauto. unfold Mem.valid_block.
-        unfold meminj_not_alloc in NALLOC. unfold Plt.
-        destruct (Pos.ltb_spec b (Mem.nextblock m)); auto.
-        specialize (NALLOC _ H0). congruence.
-      }
-      constructor.
-    }
-    exists m_i', m_i'', vres'. splits; eauto.
-    { clear - ECC MEMINJ'. admit. (* visible_fo *) }
-  Admitted.
-
   Lemma match_mem_external_call_establish2
         ge k d m_a0 m_i m
         (MEM: match_mem ge k d m_a0 m_i m)
@@ -907,26 +1012,6 @@ Section PROOF.
     }
     { destruct ECKO as [_ OBS]. inv EXTCALL. clarify. }
   Qed.
-  (*   destruct MEM as (MEM0 & MEM1 & MEM2 & MEM3 & MEM4 & MEM5). *)
-  (*   unfold external_call_known_observables in ECKO. *)
-  (*   des_ifs; simpl in *. *)
-  (*   { destruct ECKO as [_ OBS]. inv EXTCALL. inv H; simpl in *; clarify. exists []. esplits; eauto. 4: unfold match_mem; splits; eauto. *)
-  (*     simpl. eauto. 1,2: econs; econs; eauto. *)
-  (*   } *)
-  (*   { destruct ECKO as [_ OBS]. inv EXTCALL. inv H; simpl in *; clarify. exists []. esplits; eauto. 4: unfold match_mem; splits; eauto. *)
-  (*     simpl. eauto. 1,2: econs; econs; eauto. *)
-  (*   } *)
-  (*   { destruct ECKO as [_ OBS]. inv EXTCALL. clarify. } *)
-  (*   { destruct ECKO as [_ OBS]. inv EXTCALL; clarify. } *)
-  (*   { destruct ECKO as [_ OBS]. inv EXTCALL; clarify. } *)
-  (*   { destruct ECKO as [_ OBS]. inv EXTCALL. exists []. esplits; eauto. 4: unfold match_mem; splits; eauto. *)
-  (*     simpl. eauto. 1,2: econs; eauto. *)
-  (*   } *)
-  (*   { destruct ECKO as [_ OBS]. inv EXTCALL. exists []. esplits; eauto. 4: unfold match_mem; splits; eauto. *)
-  (*     simpl. eauto. 1,2: econs; eauto. *)
-  (*   } *)
-  (*   { destruct ECKO as [_ OBS]. inv EXTCALL. clarify. } *)
-  (* Qed. *)
 
   Lemma match_mem_external_call_establish
         (ge: genv) k d m_a0 m_i m
@@ -998,42 +1083,6 @@ Section PROOF.
       { unfold Genv.type_of_call in *. rewrite CURCOMP, <- REC_CURCOMP. rewrite NEXTPC. simpl.
         unfold Genv.find_comp. setoid_rewrite NEXTF. rewrite Pos.eqb_refl. auto.
       }
-      (* reestablish meminj *)
-      (* exploit mem_delta_apply_establish_inject; eauto. *)
-      (* { admit. (* ez *) } *)
-      (* { admit. (* ECU *) } *)
-      (* intros (m_i' & APPD' & MEMINJ'). exploit external_call_mem_inject; eauto. *)
-      (* { admit. (* ez *) } *)
-      (* { instantiate (1:=args). admit. } *)
-      (* intros (f' & vres' & m_i'' & EXTCALL' & VALINJ' & MEMINJ'' & _ & _ & INCRINJ' & _). *)
-      (* assert (MM': match_mem ge f' [] m' m_i'' m'). *)
-      (* { unfold match_mem. simpl. split; auto. split; auto. split. *)
-      (*   { pose proof (meminj_not_alloc_delta _ _ MEM2 _ _ MEM5) as NALLOC. *)
-      (*     clear - H4 NALLOC. unfold meminj_not_alloc in *. intros. apply NALLOC. *)
-      (*     pose proof (@external_call_valid_block _ _ _ _ _ _ _ b H4). *)
-      (*     destruct (Pos.leb_spec (Mem.nextblock m_a) b); auto. *)
-      (*     unfold Mem.valid_block in H0. apply H0 in H1. exfalso. unfold Plt in H1. lia. *)
-      (*   } *)
-      (*   split. *)
-      (*   { pose proof (meminj_not_alloc_delta _ _ MEM2 _ _ MEM5) as NALLOC. *)
-      (*     clear - H4 MEM3 NALLOC. unfold public_not_freeable in *. intros. *)
-      (*     specialize (MEM3 _ H). intros CC. apply (MEM3 ofs); clear MEM3. *)
-      (*     eapply external_call_max_perm; eauto. unfold Mem.valid_block. *)
-      (*     unfold meminj_not_alloc in NALLOC. unfold Plt. *)
-      (*     destruct (Pos.ltb_spec b (Mem.nextblock m_a)); auto. *)
-      (*     specialize (NALLOC _ H0). congruence. *)
-      (*   } *)
-      (*   split; auto. constructor. *)
-      (* } *)
-      (* exists ([Bundle_call t ef_id (vals_to_eventvals ge args) (ef_sig ef0) (Some d)]). *)
-      (* do 5 eexists. splits; simpl. 3: eapply MM'. apply app_nil_r. *)
-      (* 2:{ exists res. auto. } *)
-      (* econstructor 2. 2: econstructor 1. 2: eauto. *)
-      (* eapply ir_step_intra_call_external; eauto. *)
-      (* { unfold Genv.type_of_call in *. rewrite CURCOMP, <- REC_CURCOMP. rewrite NEXTPC. simpl. *)
-      (*   unfold Genv.find_comp. setoid_rewrite NEXTF. rewrite Pos.eqb_refl. auto. *)
-      (* } *)
-      (* { clear - ECU MEMINJ'. left. admit. (* TODO *) } *)
 
     - (* extcall is known and observable *)
       rename H4 into EXTCALL, H7 into EXTARGS. unfold external_call_known_observables in ECKO.
@@ -1150,7 +1199,7 @@ Section PROOF.
         exists [], k, d, m_a0, m_i, m'. simpl. splits; auto. 2: split; auto. 2: eauto. econstructor 1.
       }
 
-  Admitted.
+  Qed.
 
   Lemma asm_to_ir_builtin
         (ge: genv)
@@ -1184,37 +1233,6 @@ Section PROOF.
       do 4 eexists. splits; simpl. 3: eapply x3. apply app_nil_r.
       econstructor 2. 2: econstructor 1. 2: eauto.
       eapply ir_step_builtin; eauto.
-      (* reestablish meminj *)
-      (* exploit mem_delta_apply_establish_inject; eauto. *)
-      (* { admit. (* ez *) } *)
-      (* { admit. (* ECU *) } *)
-      (* intros (m_i' & APPD' & MEMINJ'). exploit external_call_mem_inject; eauto. *)
-      (* { admit. (* ez *) } *)
-      (* { instantiate (1:=vargs). admit. } *)
-      (* intros (f' & vres' & m_i'' & EXTCALL' & VALINJ' & MEMINJ'' & _ & _ & INCRINJ' & _). *)
-      (* assert (MM': match_mem ge f' [] m' m_i'' m'). *)
-      (* { unfold match_mem. simpl. splits; auto. *)
-      (*   { pose proof (meminj_not_alloc_delta _ _ MEM2 _ _ MEM5) as NALLOC. *)
-      (*     clear - EXTCALL NALLOC. unfold meminj_not_alloc in *. intros. apply NALLOC. *)
-      (*     pose proof (@external_call_valid_block _ _ _ _ _ _ _ b EXTCALL). *)
-      (*     destruct (Pos.leb_spec (Mem.nextblock m) b); auto. *)
-      (*     unfold Mem.valid_block in H0. apply H0 in H1. exfalso. unfold Plt in H1. lia. *)
-      (*   } *)
-      (*   { pose proof (meminj_not_alloc_delta _ _ MEM2 _ _ MEM5) as NALLOC. *)
-      (*     clear - EXTCALL MEM3 NALLOC. unfold public_not_freeable in *. intros. *)
-      (*     specialize (MEM3 _ H). intros CC. apply (MEM3 ofs); clear MEM3. *)
-      (*     eapply external_call_max_perm; eauto. unfold Mem.valid_block. *)
-      (*     unfold meminj_not_alloc in NALLOC. unfold Plt. *)
-      (*     destruct (Pos.ltb_spec b (Mem.nextblock m)); auto. *)
-      (*     specialize (NALLOC _ H0). congruence. *)
-      (*   } *)
-      (*   constructor. *)
-      (* } *)
-      (* exists ([Bundle_builtin t1 ef (vals_to_eventvals ge vargs) d]). *)
-      (* do 4 eexists. splits; simpl. 3: eapply MM'. apply app_nil_r. *)
-      (* econstructor 2. 2: econstructor 1. 2: eauto. *)
-      (* eapply ir_step_builtin; eauto. *)
-      (* { clear - ECU MEMINJ'. left. admit. (* TODO *) } *)
 
     - (* extcall is known and observable *)
       unfold external_call_known_observables in ECKO.
@@ -1326,7 +1344,7 @@ Section PROOF.
         exists [], k, d, m_a0, m_i. simpl. splits; auto. 2: split; auto. econstructor 1.
       }
 
-  Admitted.
+  Qed.
 
 
   Lemma asm_to_ir_returnstate_undef_nccc_external
