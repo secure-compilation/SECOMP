@@ -700,6 +700,16 @@ Record extcall_properties (sem: extcall_sem) (sg: signature) : Prop :=
     sem ge vargs m1 t vres m2 ->
     Mem.valid_block m1 b -> Mem.perm m2 b ofs Max p -> Mem.perm m1 b ofs Max p;
 
+(* New property *)
+(** External calls cannot free public blocks without the Max Freeable permission *)
+  ec_public_not_freeable:
+    forall ge vargs m1 t vres m2 b ofs id,
+    sem ge vargs m1 t vres m2 ->
+    Mem.valid_block m1 b ->
+    Senv.invert_symbol ge b = Some id -> Senv.public_symbol ge id = true ->
+    Mem.perm m1 b ofs Max Nonempty -> (~ Mem.perm m1 b ofs Max Freeable) ->
+    Mem.perm m2 b ofs Max Nonempty;
+
 (** External call cannot modify memory unless they have [Max, Writable]
    permissions. *)
   ec_readonly:
@@ -853,6 +863,8 @@ Proof.
 (* accessiblity *)
 - inv H; auto.
 (* max perms *)
+- inv H; auto.
+(* not freeable *)
 - inv H; auto.
 (* readonly *)
 - inv H; auto.
@@ -1025,6 +1037,8 @@ Proof.
 - inv H. inv H1. auto. eapply Mem.store_can_access_block_inj in H2. eapply H2. eauto.
 (* perms *)
 - inv H. inv H2. auto. eauto with mem.
+(* not freeable *)
+- inv H. inv H5; auto. eauto with mem.
 (* readonly *)
 - inv H. eapply unchanged_on_readonly; eauto. eapply volatile_store_readonly; eauto.
 (* mem extends*)
@@ -1092,6 +1106,8 @@ Proof.
 - inv H. exploit Mem.perm_alloc_inv. eauto. eapply Mem.perm_store_2; eauto.
   rewrite dec_eq_false. auto.
   apply Mem.valid_not_valid_diff with m1; eauto with mem.
+(* not freeable *)
+- inv H. eapply Mem.perm_store_1; eauto. eapply Mem.perm_alloc_1; eauto.
 (* readonly *)
 - inv H. eapply unchanged_on_readonly; eauto. 
 (* mem extends *)
@@ -1171,6 +1187,10 @@ Proof.
 - inv H; eauto. eapply Mem.free_can_access_block_inj_1; eauto.
 (* perms *)
 - inv H; eauto using Mem.perm_free_3.
+(* not freeable *)
+- inv H; auto. eapply Mem.perm_free_1; eauto. eapply Mem.free_range_perm in H7. unfold Mem.range_perm in H7. specialize (H7 ofs).
+  destruct (Z.le_gt_cases (Ptrofs.unsigned lo - size_chunk Mptr) ofs); destruct (Z.lt_ge_cases ofs (Ptrofs.unsigned lo + Ptrofs.unsigned sz)); try lia.
+  left. intros EQ. subst b0. apply H4. eapply Mem.perm_max. eapply H7. lia.
 (* readonly *)
 - eapply unchanged_on_readonly; eauto. inv H.
 + eapply Mem.free_unchanged_on; eauto.
@@ -1286,6 +1306,8 @@ Proof.
   intros. inv H. eapply Mem.storebytes_can_access_block_inj_1; eauto.
 - (* perms *)
   intros. inv H. eapply Mem.perm_storebytes_2; eauto.
+- (* not freeable *)
+  intros. inv H. eapply Mem.perm_storebytes_1; eauto.
 - (* readonly *)
   intros. inv H. eapply unchanged_on_readonly; eauto. 
   eapply Mem.storebytes_unchanged_on; eauto.
@@ -1411,6 +1433,8 @@ Proof.
 - inv H; auto.
 (* perms *)
 - inv H; auto.
+(* not freeable *)
+- inv H; auto.
 (* readonly *)
 - inv H; auto.
 (* mem extends *)
@@ -1458,6 +1482,8 @@ Proof.
 - inv H; auto.
 (* perms *)
 - inv H; auto.
+(* not freeable *)
+- inv H; auto.
 (* readonly *)
 - inv H; auto.
 (* mem extends *)
@@ -1502,6 +1528,8 @@ Proof.
 (* accessibility *)
 - inv H; auto.
 (* perms *)
+- inv H; auto.
+(* not freeable *)
 - inv H; auto.
 (* readonly *)
 - inv H; auto.
@@ -1555,6 +1583,8 @@ Proof.
 (* accessibility *)
 - inv H; auto.
 (* perms *)
+- inv H; auto.
+(* not freeable *)
 - inv H; auto.
 (* readonly *)
 - inv H; auto.
@@ -1741,6 +1771,7 @@ Definition external_call_symbols_preserved ef := ec_symbols_preserved (external_
 Definition external_call_valid_block ef := ec_valid_block (external_call_spec ef).
 Definition external_call_can_access_block ef := ec_can_access_block (external_call_spec ef).
 Definition external_call_max_perm ef := ec_max_perm (external_call_spec ef).
+Definition external_call_public_not_freeable ef := ec_public_not_freeable (external_call_spec ef).
 Definition external_call_readonly ef := ec_readonly (external_call_spec ef).
 Definition external_call_mem_extends ef := ec_mem_extends (external_call_spec ef).
 Definition external_call_mem_inject_gen ef := ec_mem_inject (external_call_spec ef).
