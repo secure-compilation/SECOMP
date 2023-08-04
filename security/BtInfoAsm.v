@@ -395,7 +395,7 @@ Section CONDS.
   Definition public_rev_perm ge m1 m2 :=
     forall b, match meminj_public ge b with
          | Some (b', del) => forall ofs k p, Mem.perm m2 b' (ofs + del) k p -> Mem.perm m1 b ofs k p
-         | None => False
+         | None => True
          end.
 
 End CONDS.
@@ -2197,3 +2197,103 @@ Section PROOF.
   Qed.
 
 End PROOF.
+
+Section INIT.
+
+  Definition wf_program {F V} (p: AST.program F V) := list_norepet (prog_defs_names p).
+
+  Lemma wf_program_wf_ge
+        F V (p: AST.program F V)
+        (WFP: wf_program p)
+    :
+    wf_ge (Genv.globalenv p).
+  Proof. unfold wf_ge; eauto. Qed.
+
+  (* Definition wf_main {F V} (p: AST.program (AST.fundef F) V) := *)
+  (*   exists b, (Genv.find_symbol (Genv.globalenv p) (prog_main p) = Some b) /\ (exists f, Genv.find_funct_ptr (Genv.globalenv p) b = Some (Internal f) /\ (fn_sig f = signature_main)). *)
+  Definition wf_main (p: Asm.program) :=
+    exists b, (Genv.find_symbol (Genv.globalenv p) (prog_main p) = Some b) /\
+           (exists f, Genv.find_funct_ptr (Genv.globalenv p) b = Some (Internal f)).
+
+  Definition wf_main_sig (p: Asm.program) :=
+    forall b f, (Genv.find_symbol (Genv.globalenv p) (prog_main p) = Some b) ->
+           (Genv.find_funct_ptr (Genv.globalenv p) b = Some (Internal f)) ->
+           fn_sig f = signature_main.
+
+  Lemma wf_asm_initial_state
+        p ast
+        (WFMAIN: wf_main p)
+        (INIT: initial_state p ast)
+    :
+    wf_asm (Genv.globalenv p) ast.
+  Proof.
+    unfold wf_main in WFMAIN. des. inv INIT. unfold wf_asm. split.
+    { unfold initial_stack. ss. }
+    { unfold wf_regset. subst rs0. rewrite Pregmap.gso; ss. rewrite Pregmap.gso; ss. rewrite Pregmap.gss.
+      (* unfold fundef in *. *)
+      unfold Genv.symbol_address. subst ge. rewrite WFMAIN, WFMAIN0. auto.
+    }
+  Qed.
+
+  Variant ir_initial_state (p: Asm.program): ir_state -> Prop :=
+    | ir_initial_state_intro: forall cur m0,
+        let ge := Genv.globalenv p in
+        Genv.find_symbol ge (prog_main p) = Some cur ->
+        (exists f, Genv.find_funct_ptr ge cur = Some (Internal f)) ->
+        Genv.init_mem p = Some m0 ->
+        ir_initial_state p (Some (cur, m0, [])).
+
+  Lemma ir_has_initial_state
+        p ast
+        (WFMAIN: wf_main p)
+        (INIT: Asm.initial_state p ast)
+    :
+    exists ist, ir_initial_state p ist.
+  Proof.
+    unfold wf_main in WFMAIN. des. inv INIT.
+    (* unfold fundef in *. *)
+    exists (Some (b, m0, [])). econs; eauto.
+  Qed.
+
+  Lemma match_state_initial_state
+        p ast ist
+        (* (WFMAIN: wf_main p) *)
+        (WFMAINSIG: wf_main_sig p)
+        (INITA: Asm.initial_state p ast)
+        (INITI: ir_initial_state p ist)
+        ge
+        (GE: ge = Genv.globalenv p)
+    :
+    exists m0 j, (Genv.init_mem p = Some m0) /\ (match_state ge j m0 [] ast ist).
+  Proof.
+    inv INITA. inv INITI. des. specialize (WFMAINSIG _ _ H0 H1).
+    clarify. exists m0, (Mem.flat_inj (Mem.nextblock m0)). esplits; eauto. unfold match_state. subst ge. splits.
+    - unfold wf_ir_cur. rewrite H1. auto.
+    - econs.
+    - unfold match_cur_stack_sig. rewrite H1. ss.
+    - unfold match_cur_regset. subst rs0. rewrite Pregmap.gso; ss. rewrite Pregmap.gso; ss. rewrite Pregmap.gss.
+      unfold Genv.symbol_address. subst ge0. rewrite H0. ss.
+    - econs.
+    - unfold match_mem.
+      assert (MNA: meminj_not_alloc (meminj_public (Genv.globalenv p)) m0).
+      { unfold meminj_not_alloc. intros. unfold meminj_public. des_ifs. exfalso. apply Senv.invert_find_symbol in Heq. exploit Genv.find_symbol_not_fresh. eauto.
+        eapply Heq. intros CC. unfold Mem.valid_block in CC. unfold Plt in CC. lia.
+      }
+      splits; ss; auto.
+      + eapply Genv.initmem_inject; eauto.
+      + ii. unfold meminj_public in H. unfold Mem.flat_inj. des_ifs. exfalso.
+        apply n; clear n. unfold Plt. destruct (Pos.ltb_spec b' (Mem.nextblock m0)); auto.
+        exfalso. specialize (MNA _ H). unfold meminj_public in MNA. rewrite Heq, Heq0 in MNA. clarify.
+      + ii. unfold meminj_public in H. des_ifs. clear - Heq Heq0 H3 H2. exploit Senv.invert_find_symbol; eauto. intros FIND. rename H2 into INITM, H3 into FREE. clear - INITM FREE FIND.
+        eapply Genv.find_symbol_find_def_inversion in FIND. des. destruct g.
+        * exploit Genv.init_mem_characterization_2; eauto.
+          { unfold Genv.find_funct_ptr. rewrite FIND. eauto. }
+          intros [CUR CC]. exploit CC. eapply FREE. intros. des; clarify.
+        * exploit Genv.init_mem_characterization; eauto.
+          { unfold Genv.find_var_info. rewrite FIND. eauto. }
+          intros [_ [CC [_ _]]]. exploit CC. eapply FREE. intros. des. clear - x1. unfold Genv.perm_globvar in x1. des_ifs; inv x1.
+      + ii. unfold meminj_public. des_ifs. intros. rewrite Z.add_0_r in H. auto.
+  Qed.
+
+End INIT.
+
