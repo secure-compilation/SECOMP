@@ -4,6 +4,7 @@ Require Import AST Linking Smallstep Events Behaviors.
 
 Require Import Split.
 
+Require Import Tactics.
 Require Import riscV.Asm.
 Require Import BtBasics BtInfoAsm MemoryDelta.
 Require Import Ctypes Clight.
@@ -300,8 +301,8 @@ Section Backtranslation.
         | AST.Tlong => Tlong Signed noattr
         | AST.Tsingle => Tfloat F32 noattr
         (* do not appear in eventval_match *)
-        | AST.Tany32 => Tvoid
-        | AST.Tany64 => Tvoid
+        | AST.Tany32 => Tint I32 Signed noattr
+        | AST.Tany64 => Tlong Signed noattr
         end.
 
     Fixpoint list_typ_to_typelist (ts: list typ): typelist :=
@@ -410,14 +411,93 @@ Section Backtranslation.
   End CODEAUX.
 
 
-  Section CODE.
-    (** converting *informative* trace to code **)
-
-    (* TODO *)
+  Section CONVVAL.
 
     Context {F: Type}.
     Context {V: Type}.
     Variable ge: Genv.t F V.
+
+    Definition val_to_expr (v: val) : expr :=
+      match v with
+      | Vint i => Econst_int i (Tint I32 Signed noattr)
+      | Vlong i => Econst_long i (Tlong Signed noattr)
+      | Vfloat f => Econst_float f (Tfloat F64 noattr)
+      | Vsingle f => Econst_single f (Tfloat F32 noattr)
+      | Vptr b ofs => let id := senv_invert_symbol_total ge b in ptr_of_id_ofs id ofs
+      | Vundef => Econst_int Int.zero (Tint I32 Signed noattr)
+      end.
+
+  End CONVVAL.
+
+
+  Section CODE.
+    (** converting *informative* trace to code **)
+
+    Context {F: Type}.
+    Context {V: Type}.
+    Variable ge: Genv.t F V.
+
+    (* Type: Tvoid has size 1, which is what we want *)
+    Definition expr_of_addr (id: ident) (ofs: Z): expr :=
+      ptr_of_id_ofs id (Ptrofs.repr ofs).
+
+    Definition chunk_to_type (ch: memory_chunk): type :=
+      match ch with
+      | Mint8signed => Tint I8 Signed noattr
+      | Mint8unsigned => Tint I8 Unsigned noattr
+      | Mint16signed =>Tint I16 Signed noattr
+      | Mint16unsigned =>Tint I16 Unsigned noattr
+      | Mint32 => Tint I32 Signed noattr
+      | Mint64 => Tlong Signed noattr
+      | Mfloat32 => Tfloat F32 noattr
+      | Mfloat64 => Tfloat F64 noattr
+      | Many32 => Tvoid
+      | Many64 => Tvoid
+      end.
+
+    Definition wf_chunk (ch: memory_chunk): Prop :=
+      match ch with
+      | Many32 | Many64 => False
+      | _ => True
+      end.
+
+    Lemma access_mode_chunk_to_type_wf
+          ch
+          (WF: wf_chunk ch)
+      :
+      access_mode (chunk_to_type ch) = By_value ch.
+    Proof. destruct ch; ss. Qed.
+
+    Definition code_mem_delta_kind (d: mem_delta_kind): statement :=
+      match d with
+      | mem_delta_kind_store (ch, b, ofs, v, cp) =>
+          match Senv.invert_symbol ge b with
+          | Some id =>
+              Sassign (Ederef (expr_of_addr id ofs) (chunk_to_type ch)) (val_to_expr ge v)
+          | None => Sskip
+          end
+      | _ => Sskip
+      end.
+
+    (* TODO *)
+
+  | step_assign:   forall f a1 a2 k e le m loc ofs bf v2 v m',
+      eval_lvalue e (comp_of f) le m a1 loc ofs bf ->
+      eval_expr e (comp_of f) le m a2 v2 ->
+      sem_cast v2 (typeof a2) (typeof a1) m = Some v ->
+      assign_loc ge (comp_of f) (typeof a1) m loc ofs bf v m' ->
+      step (State f (Sassign a1 a2) k e le m)
+        E0 (State f Sskip k e le m')
+
+    Definition code_bundle_call (tr: trace) (id: ident) (evargs: list eventval) (sg: signature) (omd: option mem_delta): statement :=
+      let tys := from_sig_fun_data sg in
+      Scall None (Evar id (Tfunction tys.(dargs) tys.(dret) tys.(dcc))) (list_eventval_to_list_expr evargs).
+
+Variant bundle_event : Type :=
+    Bundle_call : trace -> ident -> list eventval -> signature -> option mem_delta -> bundle_event
+  | Bundle_return : trace -> eventval -> bundle_event
+  | Bundle_builtin : trace -> external_function -> list eventval -> mem_delta -> bundle_event.
+
 
     (* converting functions *)
     Definition code_of_external (argsexpr: list expr) (ik: info_kind) :=
