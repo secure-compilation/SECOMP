@@ -250,7 +250,7 @@ Section IR.
         vargs vretv
         (EC: external_call ef ge vargs m1' tr vretv m2)
         (ECCASES: (external_call_unknowns ef ge m1' vargs) \/
-                    (external_call_known_observables ef ge m1' vargs tr vretv m2))
+                    (external_call_known_observables ef ge m1' vargs tr vretv m2 /\ d = []))
         (ARGS: evargs = vals_to_eventvals ge vargs)
       :
       ir_step ge (Some (cur, m1, ik)) (Bundle_call tr id evargs sg (Some d)) (Some (cur, m2, ik))
@@ -264,7 +264,7 @@ Section IR.
         vargs vretv
         (EC: external_call ef ge vargs m1' tr vretv m2)
         (ECCASES: (external_call_unknowns ef ge m1' vargs) \/
-                    (external_call_known_observables ef ge m1' vargs tr vretv m2))
+                    (external_call_known_observables ef ge m1' vargs tr vretv m2 /\ d = []))
         (ARGS: evargs = vals_to_eventvals ge vargs)
       :
       ir_step ge (Some (cur, m1, ik)) (Bundle_builtin tr ef evargs d) (Some (cur, m2, ik))
@@ -304,7 +304,7 @@ Section IR.
         tr2 m2 vretv
         (TR2: external_call ef ge vargs m1' tr2 vretv m2)
         (ECCASES: (external_call_unknowns ef ge m1' vargs) \/
-                    (external_call_known_observables ef ge m1' vargs tr2 vretv m2))
+                    (external_call_known_observables ef ge m1' vargs tr2 vretv m2 /\ d = []))
         (ARGS: evargs = vals_to_eventvals ge vargs)
       :
       ir_step ge (Some (cur, m1, ik)) (Bundle_call (tr1 ++ tr2) id evargs sg (Some d)) None
@@ -328,7 +328,7 @@ Section IR.
         tr2 m2 vretv
         (TR2: external_call ef ge vargs m1' tr2 vretv m2)
         (ECCASES: (external_call_unknowns ef ge m1' vargs) \/
-                    (external_call_known_observables ef ge m1' vargs tr2 vretv m2))
+                    (external_call_known_observables ef ge m1' vargs tr2 vretv m2 /\ d = []))
         (ARGS: evargs = vals_to_eventvals ge vargs)
         (* return part *)
         tr3 evretv
@@ -1148,13 +1148,13 @@ Section PROOF.
     exists d' m1 m2 res',
       (mem_delta_apply_inj (meminj_public ge) d' (Some m_i) = Some m1) /\
         (external_call ef ge args m1 t res' m2) /\
-        ((external_call_unknowns ef ge m1 args) \/ (external_call_known_observables ef ge m1 args t res' m2)) /\
+        ((external_call_unknowns ef ge m1 args) \/ (external_call_known_observables ef ge m1 args t res' m2 /\ d' = [])) /\
         (exists k2 d2 m_a02, match_mem ge k2 d2 m_a02 m2 m' /\ (Val.inject k2 res res' \/ (res = res')))
   .
   Proof.
     destruct ECC as [ECC | ECC].
     - exploit match_mem_external_call_establish1; eauto. intros. des. esplits; eauto.
-    - exploit match_mem_external_call_establish2; eauto. intros. des. esplits; eauto. instantiate (1:=[]); ss. 
+    - exploit match_mem_external_call_establish2; eauto. intros. des. esplits; eauto. ss. 
   Qed.
 
   Lemma asm_to_ir_step_external
@@ -1220,7 +1220,7 @@ Section PROOF.
         { rewrite CURCOMP, <- REC_CURCOMP, NEXTPC. simpl. unfold Genv.find_comp. setoid_rewrite NEXTF. unfold Genv.type_of_call. rewrite Pos.eqb_refl. auto. }
         { simpl. eauto. }
         { simpl. econstructor. econstructor 1; eauto. }
-        { simpl. right. econs; eauto. econs. econs; eauto. }
+        { simpl. right. split; auto. econs; eauto. econs. econs; eauto. }
         { simpl. unfold senv_invert_symbol_total. erewrite Senv.find_invert_symbol; eauto. }
         splits; auto.
       }
@@ -1234,7 +1234,7 @@ Section PROOF.
         { instantiate (2:=[Vptr b0 ofs; Val.load_result chunk v]).
           simpl. econstructor. econstructor 1; eauto. rewrite val_load_result_idem. auto.
         }
-        { simpl. right. econs; eauto. econs. econs; eauto. rewrite val_load_result_idem. auto. }
+        { simpl. right. split; auto. econs; eauto. econs. econs; eauto. rewrite val_load_result_idem. auto. }
         { simpl. unfold senv_invert_symbol_total. erewrite Senv.find_invert_symbol; eauto.
           f_equal. erewrite eventval_match_val_to_eventval; eauto.
         }
@@ -1251,7 +1251,7 @@ Section PROOF.
         { rewrite CURCOMP, <- REC_CURCOMP, NEXTPC. simpl. unfold Genv.find_comp. setoid_rewrite NEXTF. unfold Genv.type_of_call. rewrite Pos.eqb_refl. auto. }
         { simpl. eauto. }
         { simpl. econstructor. auto. }
-        { simpl. right. econs; eauto. econs. auto. }
+        { simpl. right. split; auto. econs; eauto. econs. auto. }
         splits; auto.
       }
       { destruct ECKO as [_ OBS]. inv EXTCALL; simpl in *; clarify.
@@ -1262,7 +1262,7 @@ Section PROOF.
         { rewrite CURCOMP, <- REC_CURCOMP, NEXTPC. simpl. unfold Genv.find_comp. setoid_rewrite NEXTF. unfold Genv.type_of_call. rewrite Pos.eqb_refl. auto. }
         { simpl. eauto. }
         { simpl. econstructor. eauto. }
-        { simpl. right. econs; eauto. econs. auto. }
+        { simpl. right. split; auto. econs; eauto. econs. auto. }
         { simpl. auto. }
         splits; auto.
       }
@@ -1379,7 +1379,7 @@ Section PROOF.
         eapply ir_step_builtin. all: eauto.
         { simpl. eauto. }
         { simpl. econstructor. econstructor 1; eauto. }
-        { simpl. right. econs; eauto. econs. econs; eauto. }
+        { simpl. right. split; auto. econs; eauto. econs. econs; eauto. }
         { simpl. unfold senv_invert_symbol_total. erewrite Senv.find_invert_symbol; eauto. }
         splits; auto.
       }
@@ -1392,7 +1392,7 @@ Section PROOF.
         { instantiate (2:=[Vptr b0 ofs0; Val.load_result chunk v]).
           simpl. econstructor. econstructor 1; eauto. rewrite val_load_result_idem. auto.
         }
-        { simpl. right. econs; eauto. econs. econs; eauto. rewrite val_load_result_idem. auto. }
+        { simpl. right. split; auto. econs; eauto. econs. econs; eauto. rewrite val_load_result_idem. auto. }
         { simpl. unfold senv_invert_symbol_total. erewrite Senv.find_invert_symbol; eauto.
           f_equal. erewrite eventval_match_val_to_eventval; eauto.
         }
@@ -1408,7 +1408,7 @@ Section PROOF.
         eapply ir_step_builtin. all: eauto.
         { simpl. eauto. }
         { simpl. econstructor. auto. }
-        { simpl. right. econs; eauto. econs. auto. }
+        { simpl. right. split; auto. econs; eauto. econs. auto. }
         splits; auto.
       }
       { destruct ECKO as [_ OBS]. inv EXTCALL; simpl in *; clarify.
@@ -1418,7 +1418,7 @@ Section PROOF.
         eapply ir_step_builtin. all: eauto.
         { simpl. eauto. }
         { simpl. econstructor. eauto. }
-        { simpl. right. econs; eauto. econs. auto. }
+        { simpl. right. split; auto. econs; eauto. econs. auto. }
         { simpl. auto. }
         splits; auto.
       }
@@ -2296,4 +2296,3 @@ Section INIT.
   Qed.
 
 End INIT.
-
