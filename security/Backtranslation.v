@@ -411,83 +411,282 @@ Section Backtranslation.
   End CODEAUX.
 
 
-  Section CONVVAL.
+  Section CONV.
 
-    Context {F: Type}.
-    Context {V: Type}.
-    Variable ge: Genv.t F V.
+    (* Context {F: Type}. *)
+    (* Context {V: Type}. *)
+    (* Variable ge: Genv.t F V. *)
 
-    Definition val_to_expr (v: val) : expr :=
-      match v with
-      | Vint i => Econst_int i (Tint I32 Signed noattr)
-      | Vlong i => Econst_long i (Tlong Signed noattr)
-      | Vfloat f => Econst_float f (Tfloat F64 noattr)
-      | Vsingle f => Econst_single f (Tfloat F32 noattr)
-      | Vptr b ofs => let id := senv_invert_symbol_total ge b in ptr_of_id_ofs id ofs
-      | Vundef => Econst_int Int.zero (Tint I32 Signed noattr)
-      end.
-
-  End CONVVAL.
-
-
-  Section CODE.
-    (** converting *informative* trace to code **)
-
-    Context {F: Type}.
-    Context {V: Type}.
-    Variable ge: Genv.t F V.
+    Variable ge: Senv.t.
 
     (* Type: Tvoid has size 1, which is what we want *)
     Definition expr_of_addr (id: ident) (ofs: Z): expr :=
       ptr_of_id_ofs id (Ptrofs.repr ofs).
 
-    Definition chunk_to_type (ch: memory_chunk): type :=
+    Definition chunk_to_type (ch: memory_chunk): option type :=
       match ch with
-      | Mint8signed => Tint I8 Signed noattr
-      | Mint8unsigned => Tint I8 Unsigned noattr
-      | Mint16signed =>Tint I16 Signed noattr
-      | Mint16unsigned =>Tint I16 Unsigned noattr
-      | Mint32 => Tint I32 Signed noattr
-      | Mint64 => Tlong Signed noattr
-      | Mfloat32 => Tfloat F32 noattr
-      | Mfloat64 => Tfloat F64 noattr
-      | Many32 => Tvoid
-      | Many64 => Tvoid
-      end.
-
-    Definition wf_chunk (ch: memory_chunk): Prop :=
-      match ch with
-      | Many32 | Many64 => False
-      | _ => True
+      | Mint8signed => Some (Tint I8 Signed noattr)
+      | Mint8unsigned => Some (Tint I8 Unsigned noattr)
+      | Mint16signed => Some (Tint I16 Signed noattr)
+      | Mint16unsigned => Some (Tint I16 Unsigned noattr)
+      | Mint32 => Some (Tint I32 Signed noattr)
+      | Mint64 => Some (Tlong Signed noattr)
+      | Mfloat32 => Some (Tfloat F32 noattr)
+      | Mfloat64 => Some (Tfloat F64 noattr)
+      | Many32 => None
+      | Many64 => None
       end.
 
     Lemma access_mode_chunk_to_type_wf
-          ch
-          (WF: wf_chunk ch)
+          ch ty
+          (CT: chunk_to_type ch = Some ty)
       :
-      access_mode (chunk_to_type ch) = By_value ch.
-    Proof. destruct ch; ss. Qed.
+      access_mode ty = By_value ch.
+    Proof. destruct ch; inv CT; ss. Qed.
+
+    Definition chunk_val_to_expr (ch: memory_chunk) (v: val) : option expr :=
+      match chunk_to_type ch with
+      | Some ty =>
+          match v with
+          | Vint i => Some (Econst_int i ty)
+          | Vlong i => Some (Econst_long i ty)
+          | Vfloat f => Some (Econst_float f ty)
+          | Vsingle f => Some (Econst_single f ty)
+          | Vptr b ofs =>
+              match Senv.invert_symbol ge b with
+              | Some id => Some (ptr_of_id_ofs id ofs)
+              | None => None
+              end
+          (* | Vint i => Some (Econst_int i (Tint I32 Signed noattr)) *)
+          (* | Vlong i => Some (Econst_long i (Tlong Signed noattr)) *)
+          (* | Vfloat f => Some (Econst_float f (Tfloat F64 noattr)) *)
+          (* | Vsingle f => Some (Econst_single f (Tfloat F32 noattr)) *)
+          (* | Vptr b ofs => let id := senv_invert_symbol_total ge b in Some (ptr_of_id_ofs id ofs) *)
+          | Vundef => None
+          end
+      | None => None
+      end.
+
+  End CONV.
+
+
+  Section CODE.
+    (** converting *informative* trace to code **)
+
+    (* TODO list: 
+cross-call/return -> check current cp - public global blocks are fo
+ir: at cross-call/return, invoke a delta
+wf_env : if global id -> not exists
+change to Mem.storev (for Ptrofs.unsigned ofs)
+
+ *)
+
+    Variable ge: Clight.genv.
+
+    Lemma ptr_of_id_ofs_eval
+          id ofs e b cp le m
+          (GE1: wf_env e id)
+          (GE2: Genv.find_symbol ge id = Some b)
+      :
+      eval_expr ge e cp le m (ptr_of_id_ofs id ofs) (Vptr b ofs).
+    Proof.
+      unfold ptr_of_id_ofs. destruct (Archi.ptr64) eqn:ARCH.
+      - eapply eval_Ebinop. eapply eval_Eaddrof. eapply eval_Evar_global; eauto.
+        simpl_expr.
+        simpl. simpl_expr. rewrite Ptrofs.mul_commut, Ptrofs.mul_one. rewrite Ptrofs.add_zero_l.
+        rewrite Ptrofs.of_int64_to_int64; auto.
+      - eapply eval_Ebinop. eapply eval_Eaddrof. eapply eval_Evar_global; eauto.
+        simpl_expr.
+        simpl. simpl_expr. rewrite Ptrofs.mul_commut, Ptrofs.mul_one. rewrite Ptrofs.add_zero_l.
+        erewrite Ptrofs.agree32_of_ints_eq; auto. apply Ptrofs.agree32_to_int; auto.
+    Qed.
 
     Definition code_mem_delta_kind (d: mem_delta_kind): statement :=
       match d with
       | mem_delta_kind_store (ch, b, ofs, v, cp) =>
           match Senv.invert_symbol ge b with
           | Some id =>
-              Sassign (Ederef (expr_of_addr id ofs) (chunk_to_type ch)) (val_to_expr ge v)
+              match chunk_to_type ch, chunk_val_to_expr ge ch v with
+              | Some ty, Some ve => Sassign (Ederef (expr_of_addr id ofs) ty) ve
+              | _, _ => Sskip
+              end
           | None => Sskip
           end
       | _ => Sskip
       end.
+
+    Lemma type_of_chunk_val_to_expr
+          ch ty v e
+          (CT: chunk_to_type ch = Some ty)
+          (CVE: chunk_val_to_expr ge ch v = Some e)
+      :
+      typeof e = ty.
+    Proof.
+      unfold chunk_val_to_expr in CVE. rewrite CT in CVE. des_ifs. rewrite ptr_of_id_ofs_typeof.
+    Admitted.
+
+    Lemma sem_cast_chunk_val
+          m ch ty v e
+          (CT: chunk_to_type ch = Some ty)
+          (CVE: chunk_val_to_expr ge ch v = Some e)
+      :
+      Cop.sem_cast v (typeof e) ty m = Some v.
+    Proof.
+      erewrite type_of_chunk_val_to_expr; eauto.
+      apply Cop.cast_val_casted.
+
+encode_val = 
+fun (chunk : memory_chunk) (v : val) =>
+match v with
+| Vundef => match chunk with
+            | Many32 => inj_value Q32 v
+            | Many64 => inj_value Q64 v
+            | _ => repeat Undef (size_chunk_nat chunk)
+            end
+| Vint n =>
+    match chunk with
+    | Mint8signed | Mint8unsigned => inj_bytes (encode_int 1 (Int.unsigned n))
+    | Mint16signed | Mint16unsigned => inj_bytes (encode_int 2 (Int.unsigned n))
+    | Mint32 => inj_bytes (encode_int 4 (Int.unsigned n))
+    | Many32 => inj_value Q32 v
+    | Many64 => inj_value Q64 v
+    | _ => repeat Undef (size_chunk_nat chunk)
+    end
+| Vlong n => match chunk with
+             | Mint64 => inj_bytes (encode_int 8 (Int64.unsigned n))
+             | Many32 => inj_value Q32 v
+             | Many64 => inj_value Q64 v
+             | _ => repeat Undef (size_chunk_nat chunk)
+             end
+| Vfloat n =>
+    match chunk with
+    | Mfloat64 => inj_bytes (encode_int 8 (Int64.unsigned (Floats.Float.to_bits n)))
+    | Many32 => inj_value Q32 v
+    | Many64 => inj_value Q64 v
+    | _ => repeat Undef (size_chunk_nat chunk)
+    end
+| Vsingle n =>
+    match chunk with
+    | Mfloat32 => inj_bytes (encode_int 4 (Int.unsigned (Floats.Float32.to_bits n)))
+    | Many32 => inj_value Q32 v
+    | Many64 => inj_value Q64 v
+    | _ => repeat Undef (size_chunk_nat chunk)
+    end
+| Vptr _ _ =>
+    match chunk with
+    | Mint32 => if Archi.ptr64 then repeat Undef 4 else inj_value Q32 v
+    | Mint64 => if Archi.ptr64 then inj_value Q64 v else repeat Undef 8
+    | Many32 => inj_value Q32 v
+    | Many64 => inj_value Q64 v
+    | _ => repeat Undef (size_chunk_nat chunk)
+    end
+end
+     : memory_chunk -> val -> list memval
+Inductive val_casted : val -> type -> Prop :=
+    val_casted_int : forall (sz : intsize) (si : signedness) (attr : attr) (n : int), Cop.cast_int_int sz si n = n -> Cop.val_casted (Vint n) (Tint sz si attr)
+  | val_casted_float : forall (attr : attr) (n : Floats.float), Cop.val_casted (Vfloat n) (Tfloat F64 attr)
+  | val_casted_single : forall (attr : attr) (n : Floats.float32), Cop.val_casted (Vsingle n) (Tfloat F32 attr)
+  | val_casted_long : forall (si : signedness) (attr : attr) (n : int64), Cop.val_casted (Vlong n) (Tlong si attr)
+  | val_casted_ptr_ptr : forall (b : block) (ofs : ptrofs) (ty : type) (attr : attr), Cop.val_casted (Vptr b ofs) (Tpointer ty attr)
+  | val_casted_int_ptr : forall (n : int) (ty : type) (attr : attr), Archi.ptr64 = false -> Cop.val_casted (Vint n) (Tpointer ty attr)
+  | val_casted_ptr_int : forall (b : block) (ofs : ptrofs) (si : signedness) (attr : attr), Archi.ptr64 = false -> Cop.val_casted (Vptr b ofs) (Tint I32 si attr)
+  | val_casted_long_ptr : forall (n : int64) (ty : type) (attr : attr), Archi.ptr64 = true -> Cop.val_casted (Vlong n) (Tpointer ty attr)
+  | val_casted_ptr_long : forall (b : block) (ofs : ptrofs) (si : signedness) (attr : attr), Archi.ptr64 = true -> Cop.val_casted (Vptr b ofs) (Tlong si attr)
+  | val_casted_struct : forall (id : ident) (attr : attr) (b : block) (ofs : ptrofs), Cop.val_casted (Vptr b ofs) (Tstruct id attr)
+  | val_casted_union : forall (id : ident) (attr : attr) (b : block) (ofs : ptrofs), Cop.val_casted (Vptr b ofs) (Tunion id attr)
+  | val_casted_void : forall v : val, Cop.val_casted v Tvoid.
+
+Mem.store_mem_contents:
+  forall (chunk : memory_chunk) (m1 : mem) (b : block) (ofs : Z) (v : val) (cp : compartment) (m2 : mem),
+  Mem.store chunk m1 b ofs v cp = Some m2 -> Mem.mem_contents m2 = PMap.set b (Mem.setN (encode_val chunk v) ofs (Mem.mem_contents m1) !! b) (Mem.mem_contents m1)
+Mem.valid_access = 
+fun (m : mem) (chunk : memory_chunk) (b : block) (ofs : Z) (p : permission) (cp : option compartment) =>
+Mem.range_perm m b ofs (ofs + size_chunk chunk) Cur p /\ Mem.can_access_block m b cp /\ (align_chunk chunk | ofs)
+     : mem -> memory_chunk -> block -> Z -> permission -> option compartment -> Prop
+Mem.store = 
+fun (chunk : memory_chunk) (m : mem) (b : block) (ofs : Z) (v : val) (cp : compartment) =>
+match Mem.valid_access_dec m chunk b ofs Writable (Some cp) with
+| left x =>
+    Some
+      {|
+        Mem.mem_contents := PMap.set b (Mem.setN (encode_val chunk v) ofs (Mem.mem_contents m) !! b) (Mem.mem_contents m);
+        Mem.mem_access := Mem.mem_access m;
+        Mem.mem_compartments := Mem.mem_compartments m;
+        Mem.nextblock := Mem.nextblock m;
+        Mem.access_max :=
+          (fun (chunk0 : memory_chunk) (m0 : mem) (b0 : block) (ofs0 : Z) (_ : val) (cp0 : compartment) (_ : Mem.valid_access m0 chunk0 b0 ofs0 Writable (Some cp0)) (b1 : positive) (ofs1 : Z) =>
+           Memory.Mem.store_obligation_1 m0 b1 ofs1) chunk m b ofs v cp x;
+        Mem.nextblock_noaccess :=
+          (fun (chunk0 : memory_chunk) (m0 : mem) (b0 : block) (ofs0 : Z) (_ : val) (cp0 : compartment) (_ : Mem.valid_access m0 chunk0 b0 ofs0 Writable (Some cp0)) (b1 : positive) 
+             (ofs1 : Z) (k : perm_kind) (H0 : ~ Plt b1 (Mem.nextblock m0)) => Memory.Mem.store_obligation_2 m0 b1 ofs1 k H0) chunk m b ofs v cp x;
+        Mem.contents_default :=
+          (fun (chunk0 : memory_chunk) (m0 : mem) (b0 : block) (ofs0 : Z) (v0 : val) (cp0 : compartment) (_ : Mem.valid_access m0 chunk0 b0 ofs0 Writable (Some cp0)) (b1 : positive) =>
+           Memory.Mem.store_obligation_3 chunk0 m0 b0 ofs0 v0 b1) chunk m b ofs v cp x;
+        Mem.nextblock_compartments :=
+          (fun (chunk0 : memory_chunk) (m0 : mem) (b0 : block) (ofs0 : Z) (_ : val) (cp0 : compartment) (_ : Mem.valid_access m0 chunk0 b0 ofs0 Writable (Some cp0)) (b1 : positive) =>
+           Memory.Mem.store_obligation_4 m0 b1) chunk m b ofs v cp x
+      |}
+| right _ => None
+end
+     : memory_chunk -> mem -> block -> Z -> val -> compartment -> option mem
+
+
+      
+      unfold chunk_val_to_expr in CVE. rewrite CT in CVE.
+      destruct ch; ss; clarify.
+      - unfold chunk_val_to_expr in CVE. ss. des_ifs; ss; simpl_expr.
+        * admit.
+        *
+
+
+      
+    (*   unfold chunk_to_type in CT. unfold chunk_val_to_expr in CVE. *)
+    (*   unfold Cop.sem_cast. des_ifs. *)
+
+
+    (*   destruct ch; destruct v; ss; eauto. simpl_expr. *)
+
+    Lemma code_mem_delta_kind_correct
+          d f k e le m m'
+          (DEL: code_mem_delta_kind d <> Sskip)
+          (STORE: mem_delta_apply [d] (Some m) = Some m')
+      :
+      (step1 ge (State f (code_mem_delta_kind d) k e le m) E0 (State f Sskip k e le m')).
+    Proof.
+      destruct d; ss. des_ifs. clear DEL. ss. eapply step_assign.
+      - econs. unfold expr_of_addr. eapply ptr_of_id_ofs_eval. admit. eapply Genv.invert_find_symbol; eauto.
+      - instantiate (1:=v). admit.
+      - ss. admit.
+      - simpl_expr. eapply access_mode_chunk_to_type_wf; eauto.
+        
+        
+          simpl_expr. admit. instantiate (1:=b). admit.
+        +
+          
 
     (* TODO *)
 
   | step_assign:   forall f a1 a2 k e le m loc ofs bf v2 v m',
       eval_lvalue e (comp_of f) le m a1 loc ofs bf ->
       eval_expr e (comp_of f) le m a2 v2 ->
-      sem_cast v2 (typeof a2) (typeof a1) m = Some v ->
+      Cop.sem_cast v2 (typeof a2) (typeof a1) m = Some v ->
       assign_loc ge (comp_of f) (typeof a1) m loc ofs bf v m' ->
       step (State f (Sassign a1 a2) k e le m)
         E0 (State f Sskip k e le m')
+Inductive assign_loc (ce : composite_env) (cp : compartment) (ty : type) (m : mem) (b : block) (ofs : ptrofs) : bitfield -> val -> mem -> Prop :=
+    assign_loc_value : forall (v : val) (chunk : memory_chunk) (m' : mem), access_mode ty = By_value chunk -> Mem.storev chunk m (Vptr b ofs) v cp = Some m' -> assign_loc ce cp ty m b ofs Full v m'
+Cop.sem_add = 
+fun (cenv : composite_env) (v1 : val) (t1 : type) (v2 : val) (t2 : type) (m : mem) =>
+match Cop.classify_add t1 t2 with
+| Cop.add_case_pi ty si => Cop.sem_add_ptr_int cenv ty si v1 v2
+| Cop.add_case_pl ty => Cop.sem_add_ptr_long cenv ty v1 v2
+| Cop.add_case_ip si ty => Cop.sem_add_ptr_int cenv ty si v2 v1
+| Cop.add_case_lp ty => Cop.sem_add_ptr_long cenv ty v2 v1
+| Cop.add_default =>
+    Cop.sem_binarith (fun (_ : signedness) (n1 n2 : int) => Some (Vint (Int.add n1 n2))) (fun (_ : signedness) (n1 n2 : int64) => Some (Vlong (Int64.add n1 n2)))
+      (fun n1 n2 : Floats.float => Some (Vfloat (Floats.Float.add n1 n2))) (fun n1 n2 : Floats.float32 => Some (Vsingle (Floats.Float32.add n1 n2))) v1 t1 v2 t2 m
+end
+     : composite_env -> val -> type -> val -> type -> mem -> option val
 
     Definition code_bundle_call (tr: trace) (id: ident) (evargs: list eventval) (sg: signature) (omd: option mem_delta): statement :=
       let tys := from_sig_fun_data sg in
@@ -626,23 +825,23 @@ Variant bundle_event : Type :=
       typ_of_type (typ_to_type ty) = ty.
     Proof. inversion EM; simpl; auto. subst. unfold Tptr. destruct Archi.ptr64; simpl; auto. Qed.
 
-    Lemma ptr_of_id_ofs_eval
-          id ofs e (ge: genv) b cp le m
-          (GE1: wf_env e id)
-          (GE2: Genv.find_symbol ge id = Some b)
-      :
-      eval_expr ge e cp le m (ptr_of_id_ofs id ofs) (Vptr b ofs).
-    Proof.
-      unfold ptr_of_id_ofs. destruct (Archi.ptr64) eqn:ARCH.
-      - eapply eval_Ebinop. eapply eval_Eaddrof. eapply eval_Evar_global; eauto.
-        simpl_expr.
-        simpl. simpl_expr. rewrite Ptrofs.mul_commut, Ptrofs.mul_one. rewrite Ptrofs.add_zero_l.
-        rewrite Ptrofs.of_int64_to_int64; auto.
-      - eapply eval_Ebinop. eapply eval_Eaddrof. eapply eval_Evar_global; eauto.
-        simpl_expr.
-        simpl. simpl_expr. rewrite Ptrofs.mul_commut, Ptrofs.mul_one. rewrite Ptrofs.add_zero_l.
-        erewrite Ptrofs.agree32_of_ints_eq; auto. apply Ptrofs.agree32_to_int; auto.
-    Qed.
+    (* Lemma ptr_of_id_ofs_eval *)
+    (*       id ofs e (ge: genv) b cp le m *)
+    (*       (GE1: wf_env e id) *)
+    (*       (GE2: Genv.find_symbol ge id = Some b) *)
+    (*   : *)
+    (*   eval_expr ge e cp le m (ptr_of_id_ofs id ofs) (Vptr b ofs). *)
+    (* Proof. *)
+    (*   unfold ptr_of_id_ofs. destruct (Archi.ptr64) eqn:ARCH. *)
+    (*   - eapply eval_Ebinop. eapply eval_Eaddrof. eapply eval_Evar_global; eauto. *)
+    (*     simpl_expr. *)
+    (*     simpl. simpl_expr. rewrite Ptrofs.mul_commut, Ptrofs.mul_one. rewrite Ptrofs.add_zero_l. *)
+    (*     rewrite Ptrofs.of_int64_to_int64; auto. *)
+    (*   - eapply eval_Ebinop. eapply eval_Eaddrof. eapply eval_Evar_global; eauto. *)
+    (*     simpl_expr. *)
+    (*     simpl. simpl_expr. rewrite Ptrofs.mul_commut, Ptrofs.mul_one. rewrite Ptrofs.add_zero_l. *)
+    (*     erewrite Ptrofs.agree32_of_ints_eq; auto. apply Ptrofs.agree32_to_int; auto. *)
+    (* Qed. *)
 
     Lemma eventval_to_expr_val_eval
           (ge: genv) en cp temp m ev
