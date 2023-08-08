@@ -5,19 +5,47 @@ Require Import AST Globalenvs Linking Smallstep Events Behaviors Memory Values.
 Require Import Ctypes Cop Clight.
 Require Import Split.
 
+Record match_prog_1 (s: split) (p p': program) : Prop := {
+  match_prog_main:
+    p'.(prog_main) = p.(prog_main);
+  match_prog_public:
+    p'.(prog_public) = p.(prog_public);
+  match_prog_pol:
+    p'.(prog_pol) = p.(prog_pol);
+  match_prog_def:
+    forall id,
+      match (prog_defmap p')!id with
+      | Some gd =>
+          match s (comp_of gd) with
+          | Right =>
+              (prog_defmap p)!id = Some gd
+          | Left =>
+              In id p'.(prog_public) ->
+              (prog_defmap p)!id = Some gd
+          end
+      | None =>
+          forall gd,
+            (prog_defmap p)!id = Some gd ->
+            s (comp_of gd) = Left
+      end;
+  match_prog_unique:
+    list_norepet (prog_defs_names p')
+}.
+
 Variant match_fundef (s: split): unit -> fundef -> fundef -> Prop :=
   | match_function_left: forall cp ty cc params vars vars' temps temps' body body',
       s |= cp ∈ Left ->
-      match_fundef s tt (Internal {| fn_comp := cp; fn_return := ty; fn_callconv := cc;
-                                fn_params := params; fn_vars := vars; fn_temps := temps;
-                                fn_body := body |})
-                     (Internal {| fn_comp := cp; fn_return := ty; fn_callconv := cc;
-                                fn_params := params; fn_vars := vars'; fn_temps := temps';
-                                fn_body := body' |})
+      match_fundef s tt
+        (Internal {| fn_comp := cp; fn_return := ty; fn_callconv := cc;
+                     fn_params := params; fn_vars := vars; fn_temps := temps;
+                     fn_body := body |})
+        (Internal {| fn_comp := cp; fn_return := ty; fn_callconv := cc;
+                     fn_params := params; fn_vars := vars'; fn_temps := temps';
+                     fn_body := body' |})
   | match_external_left: forall ef tys ty cc,
       s |= ef ∈ Left ->
       match_fundef s tt (External ef tys ty cc)
-                     (External ef tys ty cc)
+                        (External ef tys ty cc)
   | match_right: forall fd,
       s |= fd ∈ Right ->
       match_fundef s tt fd fd
@@ -37,32 +65,6 @@ Section Equivalence.
   Variable s: split.
   Variable j: meminj.
 
-  Definition same_symbols (ge1 : genv) m1 :=
-    let H := Mem.has_side_block in
-    forall id loc,
-      Genv.find_symbol ge1 id = Some loc ->
-      (* AAA: This condition is not present in Genv.same_symbols. This is
-         problematic for the invariant below because, together with same_dom, it
-         means that the global environment can only have identifiers defined on
-         the right. Cf. problem lemma below. *)
-      (s, m1) |= loc ∈ Right ->
-      j loc = Some (loc, 0).
-  (* AAA: Consider using symbols_inject instead of this condition. *)
-
-
-  Lemma problem (ge1 : genv) m1 id (b : block) :
-    let H := Mem.has_side_block in
-    Mem.same_domain s j Right m1 ->
-    Genv.same_symbols j ge1 ->
-    Genv.find_symbol ge1 id = Some b ->
-    (s, m1) |= b ∈ Right.
-  Proof.
-    simpl. intros same_dom same_sym find.
-    specialize (same_sym _ _ find).
-    assert (def : j b <> None) by congruence.
-    now rewrite (same_dom b) in def.
-  Qed.
-
   Definition same_domain (ge1 ge2: genv) (m1 m2: mem) :=
     let H := Mem.has_side_block in
     forall b,
@@ -71,19 +73,19 @@ Section Equivalence.
           if Senv.public_symbol ge1 id then
             j b <> None
           else
-            j b <> None -> (s, m1) |= b ∈ Right
+            j b <> None <-> (s, m1) |= b ∈ Right
       | None =>
-          j b <> None -> (s, m1) |= b ∈ Right
+          j b <> None <-> (s, m1) |= b ∈ Right
       end.
 
-  Record right_mem_injection (ge1 ge2: genv) (m1 m2: mem) :=
+  Record right_mem_injection (ge1 ge2: genv) (m1 m2: mem) : Prop :=
     { same_dom: same_domain ge1 ge2 m1 m2;
       partial_mem_inject: Mem.inject j m1 m2;
       j_delta_zero: Mem.delta_zero j;
       same_symb: symbols_inject j ge1 ge2;
       jinjective: Mem.meminj_injective j
     }.
-
+a
 Fixpoint remove_until_right (k: cont) :=
   match k with
   | Kstop => Kstop
@@ -112,16 +114,12 @@ Inductive right_cont_injection: cont -> cont -> Prop :=
 | right_cont_injection_kcall_left: forall id1 id2 f1 f2 en1 en2 le1 le2 k1 k2,
     s |= f1 ∈ Left ->
     s |= f2 ∈ Left ->
-    (* s (comp_of f1) = Left -> *)
-    (* s (comp_of f2) = Left -> *)
     right_cont_injection (remove_until_right k1) (remove_until_right k2) ->
     right_cont_injection (Kcall id1 f1 en1 le1 k1) (Kcall id2 f2 en2 le2 k2)
 (* TODO: is it correct to add [right_cont_injection_kcall_right]? *)
 | right_cont_injection_kcall_right: forall id1 id2 f1 f2 en1 en2 le1 le2 k1 k2,
     s |= f1 ∈ Right ->
     s |= f2 ∈ Right ->
-    (* s (comp_of f1) = Right -> *)
-    (* s (comp_of f2) = Right -> *)
     right_cont_injection k1 k2 ->
     right_cont_injection (Kcall id1 f1 en1 le1 k1) (Kcall id2 f2 en2 le2 k2)
 .
@@ -256,11 +254,12 @@ Section Simulation.
   Hypothesis same_cenv: genv_cenv ge1 = genv_cenv ge2.
 
 
-  (* AAA: Right now, this statement is forcing every global identifier id that
-     occurs in an expression to refer to a function or variable that is defined
-     on the right.  This is because, when you evaluate an lvalue, you get
-     something that is defined in the memory injection j.  Here are possible
-     solutions:
+  (* AAA: [2023-08-08: This next part is not true anymore because left symbols
+     can be covered by a memory injection] Right now, this statement is forcing
+     every global identifier id that occurs in an expression to refer to a
+     function or variable that is defined on the right.  This is because, when
+     you evaluate an lvalue, you get something that is defined in the memory
+     injection j.  Here are possible solutions:
 
      1. Modify the second implication so that, if we evaluate an lvalue that is
      not defined in the memory injection j (and, therefore, is on the Left),
@@ -369,9 +368,14 @@ Section Simulation.
       pose proof (idP := inj_dom b).
       rewrite W1_l in idP.
       destruct (Senv.public_symbol _ id) eqn: public_id.
-(*      eapply Genv.find_symbol_match in match_W1_W2. rewrite <- match_W1_W2 in H0.
-      eexists; eexists; split; eauto.
-      eapply eval_Evar_global; eauto.*) admit.
+      + assert (exists b', j b = Some (b', 0) /\
+                             Senv.find_symbol (globalenv W2) id = Some b')
+          as (b' & j_b & W2_id).
+        { destruct same_symb as (_ & _ & H & _). now apply H. }
+        exists b', 0; split; trivial.
+        rewrite Ptrofs.add_zero_l.
+        eapply eval_Evar_global; eauto.
+      +
     - destruct H0 as [v' [? ?]].
       inv H0.
       eexists; eexists; split; eauto.
