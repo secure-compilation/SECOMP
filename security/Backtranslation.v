@@ -412,56 +412,6 @@ Section Backtranslation.
   End CODEAUX.
 
 
-  Section WFSTORE.
-
-    Definition wf_chunk_val_b (ch: memory_chunk) (v: val) :=
-      match v with
-      | Vundef => false
-      | Vint n =>
-          match ch with
-          | Mint8signed | Mint8unsigned => true
-          | Mint16signed | Mint16unsigned => true
-          | Mint32 => true
-          | _ => false
-          end
-      | Vlong n =>
-          match ch with
-          | Mint64 => true
-          | Many32 => false
-          | Many64 => false
-          | _ => false
-          end
-      | Vfloat n =>
-          match ch with
-          | Mfloat64 => true
-          | Many32 => false
-          | Many64 => false
-          | _ => false
-          end
-      | Vsingle n =>
-          match ch with
-          | Mfloat32 => true
-          | Many32 => false
-          | Many64 => false
-          | _ => false
-          end
-      | Vptr _ _ => false
-      end.
-    Definition wf_chunk_val ch v := is_true (wf_chunk_val_b ch v).
-
-    Definition wf_mem_delta_store_b (ge: Senv.t) (cp0: compartment) (d: mem_delta_store) :=
-      let '(ch, b, _, v, cp) := d in
-      match Senv.invert_symbol ge b with
-      | Some id => (Senv.public_symbol ge id) && (wf_chunk_val_b ch v) && (Pos.eqb cp0 cp)
-      | _ => false
-      end.
-
-    Definition wf_mem_delta_kind_b (ge: Senv.t) cp0 (d: mem_delta_kind) :=
-      match d with | mem_delta_kind_store dd => wf_mem_delta_store_b ge cp0 dd | _ => false end.
-
-  End WFSTORE.
-
-
   Section CONV.
 
     (* Context {F: Type}. *)

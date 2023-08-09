@@ -2,7 +2,7 @@ Require Import String.
 Require Import Coqlib Maps Errors Integers Values Memory Globalenvs.
 Require Import AST Linking Smallstep Events Behaviors.
 Require Import MemoryWeak.
-
+Require Import Tactics.
 
 
 Section AUX.
@@ -158,26 +158,40 @@ Section MEMDELTA.
   (** Memory delta data and apply *)
 
   (* Data to get injection by invoking correct Mem.store: inj + (apply delta) = inj *)
-  Definition mem_delta_store := (memory_chunk * val * val * compartment)%type.
-  (* Definition mem_delta_store := (memory_chunk * block * Z * val * compartment)%type. *)
+  Definition mem_delta_storev := (memory_chunk * val * val * compartment)%type.
+  Definition mem_delta_store := (memory_chunk * block * Z * val * compartment)%type.
   Definition mem_delta_bytes := (block * Z * (list memval) * compartment)%type.
   Definition mem_delta_alloc := (compartment * Z * Z)%type.
   Definition mem_delta_free := (block * Z * Z * compartment)%type.
 
   Inductive mem_delta_kind :=
+  | mem_delta_kind_storev (d: mem_delta_storev)
   | mem_delta_kind_store (d: mem_delta_store)
   | mem_delta_kind_bytes (d: mem_delta_bytes)
   | mem_delta_kind_alloc (d: mem_delta_alloc)
   | mem_delta_kind_free (d: mem_delta_free)
   .
 
-  (* old to new *)
+  (* order: old to new *)
   Definition mem_delta := list mem_delta_kind.
 
-  Definition mem_delta_apply_store (om: option mem) (d: mem_delta_store): option mem :=
+  Definition mem_delta_apply_storev (om: option mem) (d: mem_delta_storev): option mem :=
     let '(ch, ptr, v, cp) := d in
     match om with
     | Some m => Mem.storev ch m ptr v cp
+    | None => None
+    end.
+
+  Lemma mem_delta_apply_storev_none
+        d
+    :
+    mem_delta_apply_storev None d = None.
+  Proof. unfold mem_delta_apply_storev. destruct d as [[[d0 d2] d3] d4]. auto. Qed.
+
+  Definition mem_delta_apply_store (om: option mem) (d: mem_delta_store): option mem :=
+    let '(ch, b, ofs, v, cp) := d in
+    match om with
+    | Some m => Mem.store ch m b ofs v cp
     | None => None
     end.
 
@@ -185,7 +199,7 @@ Section MEMDELTA.
         d
     :
     mem_delta_apply_store None d = None.
-  Proof. unfold mem_delta_apply_store. destruct d as [[[d0 d2] d3] d4]. auto. Qed.
+  Proof. unfold mem_delta_apply_store. destruct d as [[[[d0 d1] d2] d3] d4]. auto. Qed.
 
   Definition mem_delta_apply_bytes (om: option mem) (d: mem_delta_bytes): option mem :=
     let '(b, ofs, mvs, cp) := d in
@@ -226,22 +240,24 @@ Section MEMDELTA.
     mem_delta_apply_free None d = None.
   Proof. unfold mem_delta_apply_free. destruct d as [[[d0 d1] d2] d3]. auto. Qed.
 
+  Definition mem_delta_apply_kind (data: mem_delta_kind) (om: option mem) : option mem :=
+    match data with
+    | mem_delta_kind_storev d => mem_delta_apply_storev om d
+    | mem_delta_kind_store d => mem_delta_apply_store om d
+    | mem_delta_kind_bytes d => mem_delta_apply_bytes om d
+    | mem_delta_kind_alloc d => mem_delta_apply_alloc om d
+    | mem_delta_kind_free d => mem_delta_apply_free om d
+    end.
 
   Definition mem_delta_apply (d: mem_delta) (om0: option mem) : option mem :=
-    fold_left (fun om data =>
-                 match data with
-                 | mem_delta_kind_store d => mem_delta_apply_store om d
-                 | mem_delta_kind_bytes d => mem_delta_apply_bytes om d
-                 | mem_delta_kind_alloc d => mem_delta_apply_alloc om d
-                 | mem_delta_kind_free d => mem_delta_apply_free om d
-                 end
-              ) d om0.
+    fold_left (fun om data => mem_delta_apply_kind data om) d om0.
 
   Lemma mem_delta_apply_cons
         d m0 k
     :
     mem_delta_apply (k :: d) m0 =
       match k with
+      | mem_delta_kind_storev dd => mem_delta_apply d (mem_delta_apply_storev (m0) dd)
       | mem_delta_kind_store dd => mem_delta_apply d (mem_delta_apply_store (m0) dd)
       | mem_delta_kind_bytes dd => mem_delta_apply d (mem_delta_apply_bytes (m0) dd)
       | mem_delta_kind_alloc dd => mem_delta_apply d (mem_delta_apply_alloc (m0) dd)
@@ -265,7 +281,8 @@ Section MEMDELTA.
     mem_delta_apply d None = None.
   Proof.
     induction d; auto. rewrite mem_delta_apply_cons.
-    destruct a; [rewrite mem_delta_apply_store_none | rewrite mem_delta_apply_bytes_none | rewrite mem_delta_apply_alloc_none | rewrite mem_delta_apply_free_none]; rewrite IHd; auto.
+    destruct a;
+      [rewrite mem_delta_apply_storev_none | rewrite mem_delta_apply_store_none | rewrite mem_delta_apply_bytes_none | rewrite mem_delta_apply_alloc_none | rewrite mem_delta_apply_free_none]; rewrite IHd; auto.
   Qed.
 
   Lemma mem_delta_apply_some
@@ -275,84 +292,131 @@ Section MEMDELTA.
     exists m, om = Some m.
   Proof. destruct om; eauto. rewrite mem_delta_apply_none in APPD. inv APPD. Qed.    
 
+End MEMDELTA.
 
-  Definition mem_delta_apply_inj (j: meminj) (d: mem_delta) (om0: option mem) : option mem :=
-    fold_left (fun om data =>
-                 match data with
-                 | mem_delta_kind_store (ch, b, ofs, v, cp) =>
-                     match j b with
-                     | Some (b', ofsd) =>
-                         mem_delta_apply_store om (ch, b', (ofs + ofsd)%Z, v, cp)
-                     | None => om
-                     end
-                 | _ => om
-                 end) d (om0).
 
-  Lemma mem_delta_apply_inj_cons
-        j d m0 k
+Section WFDELTA.
+  (** only wf delta is applied for back transltation *)
+
+  Definition wf_chunk_val_b (ch: memory_chunk) (v: val) :=
+    match v with
+    | Vundef => false
+    | Vint n =>
+        match ch with
+        | Mint8signed | Mint8unsigned => true
+        | Mint16signed | Mint16unsigned => true
+        | Mint32 => true
+        | _ => false
+        end
+    | Vlong n =>
+        match ch with
+        | Mint64 => true
+        | Many32 => false
+        | Many64 => false
+        | _ => false
+        end
+    | Vfloat n =>
+        match ch with
+        | Mfloat64 => true
+        | Many32 => false
+        | Many64 => false
+        | _ => false
+        end
+    | Vsingle n =>
+        match ch with
+        | Mfloat32 => true
+        | Many32 => false
+        | Many64 => false
+        | _ => false
+        end
+    | Vptr _ _ => false
+    end.
+
+  Definition wf_mem_delta_storev_b (ge: Senv.t) (cp0: compartment) (d: mem_delta_storev) :=
+    let '(ch, ptr, v, cp) := d in
+    match ptr with
+    | Vptr b ofs => match Senv.invert_symbol ge b with
+                   | Some id => (Senv.public_symbol ge id) && (wf_chunk_val_b ch v) && (Pos.eqb cp0 cp)
+                   | _ => false
+                   end
+    | _ => false
+    end.
+
+  Definition wf_mem_delta_kind_b (ge: Senv.t) cp0 (d: mem_delta_kind) :=
+    match d with | mem_delta_kind_storev dd => wf_mem_delta_storev_b ge cp0 dd | _ => false end.
+
+  Definition get_wf_mem_delta (ge: Senv.t) cp0 (d: mem_delta): mem_delta :=
+    filter (wf_mem_delta_kind_b ge cp0) d.
+
+  Lemma get_wf_mem_delta_cons
+        ge cp0 d k
     :
-    mem_delta_apply_inj j (k :: d) m0 =
-      match k with
-      | mem_delta_kind_store (ch, b, ofs, v, cp) =>
-          match j b with
-          | Some (b', ofsd) =>
-              mem_delta_apply_inj j d (mem_delta_apply_store m0 (ch, b', (ofs + ofsd)%Z, v, cp))
-          | None => mem_delta_apply_inj j d m0
-          end
-      | mem_delta_kind_bytes dd
-      | mem_delta_kind_alloc dd
-      | mem_delta_kind_free dd => mem_delta_apply_inj j d m0
-      end.
-  Proof. simpl. destruct k; auto. destruct d0 as [[[[a0 a1] a2] a3] a4]. destruct (j a1); auto. destruct p. auto. Qed.
+    get_wf_mem_delta ge cp0 (k :: d) =
+      if (wf_mem_delta_kind_b ge cp0 k) then k :: (get_wf_mem_delta ge cp0 d) else (get_wf_mem_delta ge cp0 d).
+  Proof. ss. Qed.
 
-  Lemma mem_delta_apply_inj_app
-        j d0 d1 m0
+  Lemma get_wf_mem_delta_app
+        ge cp0 d0 d1
     :
-    mem_delta_apply_inj j (d0 ++ d1) m0 = mem_delta_apply_inj j d1 (mem_delta_apply_inj j d0 m0).
-  Proof.
-    revert j d1 m0. induction d0; intros.
-    { simpl. auto. }
-    rewrite <- app_comm_cons. rewrite ! mem_delta_apply_inj_cons. destruct a; auto.
-    { destruct d as [[[[a0 a1] a2] a3] a4]. destruct (j a1); auto. destruct p; auto. }
-  Qed.
+    get_wf_mem_delta ge cp0 (d0 ++ d1) = (get_wf_mem_delta ge cp0 d0) ++ (get_wf_mem_delta ge cp0 d1).
+  Proof. apply filter_app. Qed.
 
-  Lemma mem_delta_apply_inj_none
-        j d
+
+  Definition mem_delta_apply_wf ge cp0 (d: mem_delta) (om0: option mem): option mem :=
+    mem_delta_apply (get_wf_mem_delta ge cp0 d) om0.
+
+  Lemma mem_delta_apply_wf_cons
+        ge cp0 d m0 k
     :
-    mem_delta_apply_inj j d None = None.
-  Proof.
-    induction d; auto. rewrite mem_delta_apply_inj_cons.
-    destruct a. destruct d0 as [[[[a0 a1] a2] a3] a4]. destruct (j a1). destruct p. rewrite mem_delta_apply_store_none. all: rewrite IHd; auto.
-  Qed.
+    mem_delta_apply_wf ge cp0 (k :: d) m0 =
+      if (wf_mem_delta_kind_b ge cp0 k) then mem_delta_apply_wf ge cp0 d (mem_delta_apply_kind k m0) else mem_delta_apply_wf ge cp0 d m0.
+  Proof. unfold mem_delta_apply_wf at 1. rewrite get_wf_mem_delta_cons. des_ifs. Qed.
 
-  Lemma mem_delta_apply_inj_some
-        j d om m'
-        (APPD: mem_delta_apply_inj j d om = Some m')
+  Lemma mem_delta_apply_wf_app
+        ge cp0 d0 d1 m0
     :
-    exists m, om = Some m.
-  Proof. destruct om; eauto. rewrite mem_delta_apply_inj_none in APPD. inv APPD. Qed.    
+    mem_delta_apply_wf ge cp0 (d0 ++ d1) m0 =
+      mem_delta_apply_wf ge cp0 d1 (mem_delta_apply_wf ge cp0 d0 m0).
+  Proof. unfold mem_delta_apply_wf. rewrite get_wf_mem_delta_app. apply mem_delta_apply_app. Qed.
 
-
-  (** Delta and injection relations *)
-
-  Definition mem_delta_kind_inj_wf (j: meminj): mem_delta_kind -> Prop :=
-    fun data =>
-      match data with
-      | mem_delta_kind_bytes (b, ofs, mvs, cp) => (j b) = None
-      | mem_delta_kind_free (b, lo, hi, cp) => (j b) = None
-      | _ => True
-      end.
-
-  Definition mem_delta_inj_wf (j: meminj): mem_delta -> Prop :=
-    fun d => Forall (fun data => mem_delta_kind_inj_wf j data) d.
-
-  Lemma mem_delta_inj_wf_rev
-        j d
+  Lemma mem_delta_apply_wf_none
+        ge cp0 d
     :
-    mem_delta_inj_wf j d <-> mem_delta_inj_wf j (rev d).
-  Proof.
-    unfold mem_delta_inj_wf. split; intros. apply Forall_rev; auto. rewrite <- rev_involutive. apply Forall_rev. auto.
-  Qed.
+    mem_delta_apply_wf ge cp0 d None = None.
+  Proof. unfold mem_delta_apply_wf. apply mem_delta_apply_none. Qed.
+
+  Lemma mem_delta_apply_wf_some
+        ge cp0 d m0 m1
+        (APPD: mem_delta_apply_wf ge cp0 d m0 = Some m1)
+    :
+    exists m, m0 = Some m.
+  Proof. unfold mem_delta_apply_wf in APPD. exploit mem_delta_apply_some; eauto. Qed.
+
+End WFDELTA.
+
+
+Section PROPS.
+  (** Props for proofs *)
+
+  (* Definition mem_delta_kind_inj_wf (j: meminj): mem_delta_kind -> Prop := *)
+  (*   fun data => *)
+  (*     match data with *)
+  (*     | mem_delta_kind_store (ch, b, ofs, v, cp) => (j b) = None *)
+  (*     | mem_delta_kind_bytes (b, ofs, mvs, cp) => (j b) = None *)
+  (*     | mem_delta_kind_free (b, lo, hi, cp) => (j b) = None *)
+  (*     | _ => True *)
+  (*     end. *)
+
+  (* Definition mem_delta_inj_wf (j: meminj): mem_delta -> Prop := *)
+  (*   fun d => Forall (fun data => mem_delta_kind_inj_wf j data) d. *)
+
+  (* Lemma mem_delta_inj_wf_rev *)
+  (*       j d *)
+  (*   : *)
+  (*   mem_delta_inj_wf j d <-> mem_delta_inj_wf j (rev d). *)
+  (* Proof. *)
+  (*   unfold mem_delta_inj_wf. split; intros. apply Forall_rev; auto. rewrite <- rev_involutive. apply Forall_rev. auto. *)
+  (* Qed. *)
 
   Definition meminj_first_order (j: meminj) (m: mem) :=
     forall b ofs, (j b <> None) -> (Mem.perm m b ofs Cur Readable) -> loc_first_order m b ofs.
@@ -362,9 +426,25 @@ Section MEMDELTA.
 
   (** Delta and location relations *)
 
+  Definition mem_delta_unchanged_storev (d: mem_delta_storev) (b': block) (ofs': Z): Prop :=
+    let '(ch, ptr, v, cp) := d in
+    match ptr with
+    | Vptr b ofs0 => let ofs := (Ptrofs.unsigned ofs0) in (b = b') -> (ofs > ofs' \/ ofs + (size_chunk ch) <= ofs')
+    | _ => True
+    end.
+
+  Lemma mem_delta_unchanged_on_storev
+        d m m'
+        (APPD: mem_delta_apply_storev (Some m) d = (Some m'))
+    :
+    Mem.unchanged_on (fun b ofs => mem_delta_unchanged_storev d b ofs) m m'.
+  Proof.
+    destruct d as (((ch & ptr) & v) & cp). ss. unfold Mem.storev in APPD. des_ifs.
+    eapply Mem.store_unchanged_on. eauto. intros. intros CONTRA. specialize (CONTRA eq_refl). lia.
+  Qed.
+
   Definition mem_delta_unchanged_store (d: mem_delta_store) (b': block) (ofs': Z): Prop :=
-    let '(ch, b, ofs, v, cp) := d in
-    (b = b') -> (ofs > ofs' \/ ofs + (size_chunk ch) <= ofs').
+    let '(ch, b, ofs, v, cp) := d in (b = b') -> (ofs > ofs' \/ ofs + (size_chunk ch) <= ofs').
 
   Lemma mem_delta_unchanged_on_store
         d m m'
@@ -372,7 +452,7 @@ Section MEMDELTA.
     :
     Mem.unchanged_on (fun b ofs => mem_delta_unchanged_store d b ofs) m m'.
   Proof.
-    destruct d as ((((ch & b) & ofs) & v) & cp). simpl in *.
+    destruct d as ((((ch & b) & ofs) & v) & cp). ss.
     eapply Mem.store_unchanged_on. eauto. intros. intros CONTRA. specialize (CONTRA eq_refl). lia.
   Qed.
 
@@ -420,6 +500,7 @@ Section MEMDELTA.
 
   Definition mem_delta_kind_unchanged (k: mem_delta_kind) (b: block) (ofs: Z) :=
     match k with
+    | mem_delta_kind_storev dd => mem_delta_unchanged_storev dd b ofs
     | mem_delta_kind_store dd => mem_delta_unchanged_store dd b ofs
     | mem_delta_kind_bytes dd => mem_delta_unchanged_bytes dd b ofs
     | mem_delta_kind_alloc dd => mem_delta_unchanged_alloc dd b ofs
@@ -438,6 +519,13 @@ Section MEMDELTA.
     revert m m' APPD. induction d; intros; simpl.
     { simpl in APPD. inv APPD. apply Mem.unchanged_on_refl. }
     rewrite mem_delta_apply_cons in APPD. destruct a.
+    - destruct d0 as [[[ch ptr] v] cp]. destruct (mem_delta_apply_storev (Some m) (ch, ptr, v, cp)) eqn:MEM.
+      2:{ rewrite mem_delta_apply_none in APPD. inv APPD. }
+      specialize (IHd _ _ APPD). eapply Mem.unchanged_on_trans.
+      2:{ eapply Mem.unchanged_on_implies. eapply IHd. intros. simpl. inv H. auto. }
+      { eapply Mem.unchanged_on_implies. eapply mem_delta_unchanged_on_storev. eauto.
+        intros. simpl. des_ifs. intros; subst. inv H. simpl in H3. specialize (H3 eq_refl). auto.
+      }
     - destruct d0 as [[[[ch b] ofs] v] cp]. destruct (mem_delta_apply_store (Some m) (ch, b, ofs, v, cp)) eqn:MEM.
       2:{ rewrite mem_delta_apply_none in APPD. inv APPD. }
       specialize (IHd _ _ APPD). eapply Mem.unchanged_on_trans.
@@ -468,31 +556,38 @@ Section MEMDELTA.
       }
   Qed.
 
-  Lemma mem_delta_inj_unchanged_on
-        j d m m'
-        (STRICT: meminj_strict j)
-        (APPD: mem_delta_apply_inj j d (Some m) = Some m')
+  Lemma mem_delta_wf_unchanged_on
+        ge cp d m m'
+        (APPD: mem_delta_apply_wf ge cp d (Some m) = Some m')
     :
-    Mem.unchanged_on (fun b ofs => (forall b0 ofsd, j b0 <> Some (b, ofsd)) \/ (exists b0 ofsd, j b0 = Some (b, ofsd) /\ mem_delta_unchanged d b0 (ofs - ofsd))) m m'.
-  Proof.
-    revert m m' APPD. induction d; intros; simpl.
-    { simpl in APPD. inv APPD. apply Mem.unchanged_on_refl. }
-    rewrite mem_delta_apply_inj_cons in APPD. destruct a.
-    - destruct d0 as [[[[ch b] ofs] v] cp]. destruct (j b) as [[b' ofs'] |] eqn:JB.
-      + exploit mem_delta_apply_inj_some. eauto. intros (mi & MEM). rewrite MEM in APPD.
-        specialize (IHd _ _ APPD). eapply Mem.unchanged_on_trans.
-        2:{ eapply Mem.unchanged_on_implies. eapply IHd. intros. simpl. inv H; eauto. destruct H1 as (b1 & ofsd & JB1 & UNCHG). inv UNCHG. right. eauto. }
-        { simpl in *. eapply Mem.store_unchanged_on. eauto. intros. intros [CC | CC].
-          - specialize (CC b ofs'). congruence.
-          - destruct CC as (b1 & ofsd & JB1 & UNCHG). inv UNCHG. simpl in H2. destruct (Pos.eqb_spec b b1).
-            + subst b1. rewrite JB in JB1. inv JB1. specialize (H2 eq_refl). lia.
-            + specialize (STRICT _ _ _ _ _ JB JB1). subst b1. lia.
-        }
-      + specialize (IHd _ _ APPD). eapply Mem.unchanged_on_implies. eapply IHd. intros. simpl. inv H; eauto. destruct H1 as (b1 & ofsd & JB1 & UNCHG). inv UNCHG. right. eauto.
-    - specialize (IHd _ _ APPD). eapply Mem.unchanged_on_implies. eapply IHd. intros. simpl. inv H; eauto. destruct H1 as (b1 & ofsd & JB1 & UNCHG). inv UNCHG. right. eauto.
-    - specialize (IHd _ _ APPD). eapply Mem.unchanged_on_implies. eapply IHd. intros. simpl. inv H; eauto. destruct H1 as (b1 & ofsd & JB1 & UNCHG). inv UNCHG. right. eauto.
-    - specialize (IHd _ _ APPD). eapply Mem.unchanged_on_implies. eapply IHd. intros. simpl. inv H; eauto. destruct H1 as (b1 & ofsd & JB1 & UNCHG). inv UNCHG. right. eauto.
-  Qed.
+    Mem.unchanged_on (fun b ofs => mem_delta_unchanged (get_wf_mem_delta ge cp d) b ofs) m m'.
+  Proof. eapply mem_delta_unchanged_on; eauto. Qed.
+
+  (* Lemma mem_delta_inj_unchanged_on *)
+  (*       j d m m' *)
+  (*       (STRICT: meminj_strict j) *)
+  (*       (APPD: mem_delta_apply_inj j d (Some m) = Some m') *)
+  (*   : *)
+  (*   Mem.unchanged_on (fun b ofs => (forall b0 ofsd, j b0 <> Some (b, ofsd)) \/ (exists b0 ofsd, j b0 = Some (b, ofsd) /\ mem_delta_unchanged d b0 (ofs - ofsd))) m m'. *)
+  (* Proof. *)
+  (*   revert m m' APPD. induction d; intros; simpl. *)
+  (*   { simpl in APPD. inv APPD. apply Mem.unchanged_on_refl. } *)
+  (*   rewrite mem_delta_apply_inj_cons in APPD. destruct a. *)
+  (*   - destruct d0 as [[[[ch b] ofs] v] cp]. destruct (j b) as [[b' ofs'] |] eqn:JB. *)
+  (*     + exploit mem_delta_apply_inj_some. eauto. intros (mi & MEM). rewrite MEM in APPD. *)
+  (*       specialize (IHd _ _ APPD). eapply Mem.unchanged_on_trans. *)
+  (*       2:{ eapply Mem.unchanged_on_implies. eapply IHd. intros. simpl. inv H; eauto. destruct H1 as (b1 & ofsd & JB1 & UNCHG). inv UNCHG. right. eauto. } *)
+  (*       { simpl in *. eapply Mem.store_unchanged_on. eauto. intros. intros [CC | CC]. *)
+  (*         - specialize (CC b ofs'). congruence. *)
+  (*         - destruct CC as (b1 & ofsd & JB1 & UNCHG). inv UNCHG. simpl in H2. destruct (Pos.eqb_spec b b1). *)
+  (*           + subst b1. rewrite JB in JB1. inv JB1. specialize (H2 eq_refl). lia. *)
+  (*           + specialize (STRICT _ _ _ _ _ JB JB1). subst b1. lia. *)
+  (*       } *)
+  (*     + specialize (IHd _ _ APPD). eapply Mem.unchanged_on_implies. eapply IHd. intros. simpl. inv H; eauto. destruct H1 as (b1 & ofsd & JB1 & UNCHG). inv UNCHG. right. eauto. *)
+  (*   - specialize (IHd _ _ APPD). eapply Mem.unchanged_on_implies. eapply IHd. intros. simpl. inv H; eauto. destruct H1 as (b1 & ofsd & JB1 & UNCHG). inv UNCHG. right. eauto. *)
+  (*   - specialize (IHd _ _ APPD). eapply Mem.unchanged_on_implies. eapply IHd. intros. simpl. inv H; eauto. destruct H1 as (b1 & ofsd & JB1 & UNCHG). inv UNCHG. right. eauto. *)
+  (*   - specialize (IHd _ _ APPD). eapply Mem.unchanged_on_implies. eapply IHd. intros. simpl. inv H; eauto. destruct H1 as (b1 & ofsd & JB1 & UNCHG). inv UNCHG. right. eauto. *)
+  (* Qed. *)
 
 
   Lemma get_from_setN_same_upto_ofs
@@ -533,6 +628,28 @@ Section MEMDELTA.
     eapply get_from_setN_same_upto_ofs. auto.
   Qed.
 
+
+  Definition mem_delta_changed_storev (d: mem_delta_storev) (b': block) (ofs': Z): Prop :=
+    let '(ch, ptr, v, cp) := d in
+    match ptr with
+    | Vptr b ofs0 => let ofs := Ptrofs.unsigned ofs0 in (b = b') /\ (ofs <= ofs' < ofs + (size_chunk ch))
+    | _ => False
+    end.
+
+  Lemma mem_delta_changed_storev_same
+        d b ofs
+        (CHG: mem_delta_changed_storev d b ofs)
+        m1 m1' m2 m2'
+        (APPD1: mem_delta_apply_storev (Some m1) d = Some m1')
+        (APPD2: mem_delta_apply_storev (Some m2) d = Some m2')
+    :
+    ZMap.get ofs (Mem.mem_contents m1') !! b = ZMap.get ofs (Mem.mem_contents m2') !! b.
+  Proof.
+    destruct d as [[[ch0 ptr0] v0] cp0]. unfold mem_delta_changed_storev in CHG. des_ifs.
+    destruct CHG as (BLK & OFS). subst b0.
+    simpl in *. replace ofs with (ofs + 0) at 2 by lia. eapply mem_store_same_upto_ofs; eauto.
+    rewrite Z.add_0_r. eauto.
+  Qed.
 
   Definition mem_delta_changed_store (d: mem_delta_store) (b': block) (ofs': Z): Prop :=
     let '(ch, b, ofs, v, cp) := d in
@@ -592,6 +709,7 @@ Section MEMDELTA.
 
   Definition mem_delta_kind_changed (k: mem_delta_kind) (b: block) (ofs: Z) :=
     match k with
+    | mem_delta_kind_storev dd => mem_delta_changed_storev dd b ofs
     | mem_delta_kind_store dd => mem_delta_changed_store dd b ofs
     | mem_delta_kind_bytes dd => mem_delta_changed_bytes dd b ofs
     | mem_delta_kind_alloc dd => mem_delta_changed_alloc dd b ofs
@@ -603,6 +721,12 @@ Section MEMDELTA.
 
 
   (** Propperties *)
+  Lemma mem_delta_cases_storev
+        d b ofs
+    :
+    mem_delta_unchanged_storev d b ofs \/ mem_delta_changed_storev d b ofs.
+  Proof. destruct d as [[[ch0 ptr0] v0] cp0]. ss. des_ifs; auto. lia. Qed.
+
   Lemma mem_delta_cases_store
         d b ofs
     :
@@ -631,7 +755,7 @@ Section MEMDELTA.
         d b ofs
     :
     mem_delta_kind_unchanged d b ofs \/ mem_delta_kind_changed d b ofs.
-  Proof. destruct d; simpl. apply mem_delta_cases_store. apply mem_delta_cases_bytes. apply mem_delta_cases_alloc. apply mem_delta_cases_free. Qed.
+  Proof. destruct d; simpl. apply mem_delta_cases_storev. apply mem_delta_cases_store. apply mem_delta_cases_bytes. apply mem_delta_cases_alloc. apply mem_delta_cases_free. Qed.
 
   Lemma mem_delta_unchanged_or_changed
         d b ofs
@@ -647,18 +771,21 @@ Section MEMDELTA.
     - right. constructor 1; auto.
   Qed.
 
-  Lemma mem_delta_changed_only_by_store
-        j d b ofs
-        (STRICT: meminj_strict j)
-        b' ofsd
-        (INJ: j b = Some (b', ofsd))
-        (WF: mem_delta_inj_wf j d)
+End PROPS.
+
+Section PROOFS.
+
+  Lemma mem_delta_changed_only_by_storev
+        ge cp d b ofs
+        (* (STRICT: meminj_strict j) *)
+        (* (INJ: j b = Some (b', ofsd)) *)
+        (WF: mem_inj_wf (meminj_public ge) d)
         (CHG: mem_delta_changed d b ofs)
         m1 m1' m2 m2'
         (PERM1: Mem.perm m1 b ofs Cur Readable)
-        (PERM2: Mem.perm m2 b' (ofs + ofsd) Cur Readable)
+        (PERM2: Mem.perm m2 b ofs Cur Readable)
         (APPD1: mem_delta_apply d (Some m1) = Some m1')
-        (APPD2: mem_delta_apply_inj j d (Some m2) = Some m2')
+        (APPD2: mem_delta_apply_wf ge cp d (Some m2) = Some m2')
     :
     ZMap.get ofs (Mem.mem_contents m1') !! b = ZMap.get (ofs + ofsd) (Mem.mem_contents m2') !! b'.
   Proof.
@@ -710,6 +837,70 @@ Section MEMDELTA.
       - destruct d0 as [[[w x] y] z]. simpl in *. inv CHG. rewrite WF1 in INJ. inv INJ.
     }
   Qed.
+
+  (* Lemma mem_delta_changed_only_by_store *)
+  (*       j d b ofs *)
+  (*       (STRICT: meminj_strict j) *)
+  (*       b' ofsd *)
+  (*       (INJ: j b = Some (b', ofsd)) *)
+  (*       (WF: mem_delta_inj_wf j d) *)
+  (*       (CHG: mem_delta_changed d b ofs) *)
+  (*       m1 m1' m2 m2' *)
+  (*       (PERM1: Mem.perm m1 b ofs Cur Readable) *)
+  (*       (PERM2: Mem.perm m2 b' (ofs + ofsd) Cur Readable) *)
+  (*       (APPD1: mem_delta_apply d (Some m1) = Some m1') *)
+  (*       (APPD2: mem_delta_apply_inj j d (Some m2) = Some m2') *)
+  (*   : *)
+  (*   ZMap.get ofs (Mem.mem_contents m1') !! b = ZMap.get (ofs + ofsd) (Mem.mem_contents m2') !! b'. *)
+  (* Proof. *)
+  (*   revert WF CHG m1 m1' m2 m2' PERM1 PERM2 APPD1 APPD2. induction d; intros. *)
+  (*   { inv CHG. } *)
+  (*   rewrite mem_delta_apply_cons in APPD1. rewrite mem_delta_apply_inj_cons in APPD2. inv WF. rename H1 into WF1, H2 into WF2. inv CHG. *)
+  (*   2:{ specialize (IHd WF2 H0). destruct a. *)
+  (*       - destruct d0 as [[[[ch0 b0 ]ofs0] v0] cp0]. destruct (j b0) as [[b0' ofs0'] |] eqn:JB. *)
+  (*         + exploit mem_delta_apply_some. eapply APPD1. intros (mi1 & MEM1). rewrite MEM1 in APPD1. *)
+  (*           exploit mem_delta_apply_inj_some. eapply APPD2. intros (mi2 & MEM2). rewrite MEM2 in APPD2. *)
+  (*           simpl in *. eapply IHd. 3,4: eauto. 1,2: eapply Mem.perm_store_1; eauto. *)
+  (*         + exploit mem_delta_apply_some. eapply APPD1. intros (mi1 & MEM1). rewrite MEM1 in APPD1. simpl in *. eapply IHd. 3,4: eauto. all: auto. eapply Mem.perm_store_1; eauto. *)
+  (*       - exploit mem_delta_apply_some. eapply APPD1. intros (mi1 & MEM1). rewrite MEM1 in APPD1. destruct d0 as [[[w x] y] z]. simpl in *. eapply IHd. 3,4: eauto. all: auto. *)
+  (*         eapply Mem.perm_storebytes_1; eauto. *)
+  (*       - exploit mem_delta_apply_some. eapply APPD1. intros (mi1 & MEM1). rewrite MEM1 in APPD1. destruct d0 as [[x y] z]. simpl in *. eapply IHd. 3,4: eauto. all: auto. *)
+  (*         destruct (Mem.alloc m1 x y z) eqn:ALLOC. simpl in MEM1. inv MEM1. eapply Mem.perm_alloc_1; eauto. *)
+  (*       - exploit mem_delta_apply_some. eapply APPD1. intros (mi1 & MEM1). rewrite MEM1 in APPD1. destruct d0 as [[[w x] y] z]. simpl in *. eapply IHd. 3,4: eauto. all: auto. *)
+  (*         eapply Mem.perm_free_1; eauto. left. intros CC. subst. congruence. *)
+  (*   } *)
+  (*   rename H0 into CHG. destruct (mem_delta_unchanged_or_changed d b ofs). *)
+  (*   2:{ specialize (IHd WF2 H). destruct a. *)
+  (*       - destruct d0 as [[[[ch0 b0 ]ofs0] v0] cp0]. destruct (j b0) as [[b0' ofs0'] |] eqn:JB. *)
+  (*         + exploit mem_delta_apply_some. eapply APPD1. intros (mi1 & MEM1). rewrite MEM1 in APPD1. *)
+  (*           exploit mem_delta_apply_inj_some. eapply APPD2. intros (mi2 & MEM2). rewrite MEM2 in APPD2. *)
+  (*           simpl in *. eapply IHd. 3,4: eauto. 1,2: eapply Mem.perm_store_1; eauto. *)
+  (*         + exploit mem_delta_apply_some. eapply APPD1. intros (mi1 & MEM1). rewrite MEM1 in APPD1. simpl in *. eapply IHd. 3,4: eauto. all: auto. eapply Mem.perm_store_1; eauto. *)
+  (*       - exploit mem_delta_apply_some. eapply APPD1. intros (mi1 & MEM1). rewrite MEM1 in APPD1. destruct d0 as [[[w x] y] z]. simpl in *. eapply IHd. 3,4: eauto. all: auto. *)
+  (*         eapply Mem.perm_storebytes_1; eauto. *)
+  (*       - exploit mem_delta_apply_some. eapply APPD1. intros (mi1 & MEM1). rewrite MEM1 in APPD1. destruct d0 as [[x y] z]. simpl in *. eapply IHd. 3,4: eauto. all: auto. *)
+  (*         destruct (Mem.alloc m1 x y z) eqn:ALLOC. simpl in MEM1. inv MEM1. eapply Mem.perm_alloc_1; eauto. *)
+  (*       - exploit mem_delta_apply_some. eapply APPD1. intros (mi1 & MEM1). rewrite MEM1 in APPD1. destruct d0 as [[[w x] y] z]. simpl in *. eapply IHd. 3,4: eauto. all: auto. *)
+  (*         eapply Mem.perm_free_1; eauto. left. intros CC. subst. congruence. *)
+  (*   } *)
+  (*   rename H into UNCHG. clear IHd.  *)
+  (*   { destruct a. *)
+  (*     - destruct d0 as [[[[ch0 b0] ofs0] v0] cp0]. destruct CHG as [CHG0 CHG1]. subst b0. rewrite INJ in APPD2. *)
+  (*       exploit mem_delta_apply_some. eapply APPD1. intros (mi1 & MEM1). rewrite MEM1 in APPD1. exploit mem_delta_apply_inj_some. eapply APPD2. intros (mi2 & MEM2). rewrite MEM2 in APPD2. *)
+  (*       simpl in *. *)
+  (*       eapply mem_delta_unchanged_on in APPD1. exploit (Mem.unchanged_on_contents _ _ _ APPD1 b ofs); auto. *)
+  (*       { eapply Mem.perm_store_1; eauto. } *)
+  (*       intros. rewrite H; clear H. *)
+  (*       eapply mem_delta_inj_unchanged_on in APPD2; auto. exploit (Mem.unchanged_on_contents _ _ _ APPD2 b' (ofs + ofsd)); auto. *)
+  (*       { right. exists b, ofsd. split; auto. replace (ofs + ofsd - ofsd) with ofs by lia. auto. } *)
+  (*       { eapply Mem.perm_store_1; eauto. } *)
+  (*       intros. rewrite H; clear H. *)
+  (*       eapply mem_store_same_upto_ofs; eauto. *)
+  (*     - destruct d0 as [[[w x] y] z]. simpl in *. destruct CHG as [CHG0 CHG1]. subst w. rewrite WF1 in INJ. inv INJ. *)
+  (*     - destruct d0 as [[x y] z]. simpl in *. inv CHG. *)
+  (*     - destruct d0 as [[[w x] y] z]. simpl in *. inv CHG. rewrite WF1 in INJ. inv INJ. *)
+  (*   } *)
+  (* Qed. *)
 
   Lemma mem_delta_apply_preserves_winject
         (j: meminj) m0 m0'
