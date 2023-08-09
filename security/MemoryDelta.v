@@ -158,7 +158,8 @@ Section MEMDELTA.
   (** Memory delta data and apply *)
 
   (* Data to get injection by invoking correct Mem.store: inj + (apply delta) = inj *)
-  Definition mem_delta_store := (memory_chunk * block * Z * val * compartment)%type.
+  Definition mem_delta_store := (memory_chunk * val * val * compartment)%type.
+  (* Definition mem_delta_store := (memory_chunk * block * Z * val * compartment)%type. *)
   Definition mem_delta_bytes := (block * Z * (list memval) * compartment)%type.
   Definition mem_delta_alloc := (compartment * Z * Z)%type.
   Definition mem_delta_free := (block * Z * Z * compartment)%type.
@@ -174,9 +175,9 @@ Section MEMDELTA.
   Definition mem_delta := list mem_delta_kind.
 
   Definition mem_delta_apply_store (om: option mem) (d: mem_delta_store): option mem :=
-    let '(ch, b, ofs, v, cp) := d in
+    let '(ch, ptr, v, cp) := d in
     match om with
-    | Some m => Mem.store ch m b ofs v cp
+    | Some m => Mem.storev ch m ptr v cp
     | None => None
     end.
 
@@ -184,7 +185,7 @@ Section MEMDELTA.
         d
     :
     mem_delta_apply_store None d = None.
-  Proof. unfold mem_delta_apply_store. destruct d as [[[[d0 d1] d2] d3] d4]. auto. Qed.
+  Proof. unfold mem_delta_apply_store. destruct d as [[[d0 d2] d3] d4]. auto. Qed.
 
   Definition mem_delta_apply_bytes (om: option mem) (d: mem_delta_bytes): option mem :=
     let '(b, ofs, mvs, cp) := d in
