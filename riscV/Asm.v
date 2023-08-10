@@ -1399,10 +1399,12 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (REC_CURCOMP: Genv.find_comp_ignore_offset ge (rs PC) = callee_comp st),
       step (State st rs m) t (ReturnState st rs' m').
 
-(* 3 fixes: 
-check sig when call CALLSIG, public & 
-first order args when undefined external call ECC &
-builtin result register is only from mreg *)
+(* 4 fixes: 
+check sig when call (CALLSIG),
+public symbols and args are first-order when undefined external calls/builtins (ECC),
+builtin result register is only from mreg (map_builtin_res preg_of res),
+before cross-compartment call/return, check that public symbols are first-order (CHECKPUB)
+*)
 Inductive step_fix: state -> trace -> state -> Prop :=
 | exec_step_fix_internal:
   forall b ofs f i rs m rs' m' b' ofs' st cp,
@@ -1436,8 +1438,11 @@ Inductive step_fix: state -> trace -> state -> Prop :=
     forall (EV: call_trace ge (comp_of f) (Genv.find_comp_ignore_offset ge (Vptr b' ofs')) (Vptr b' ofs')
                       args (sig_args sig) t),
     (* Check signature *)
-    forall (CALLSIG: Genv.type_of_call ge (comp_of f) (Genv.find_comp_ignore_offset ge (Vptr b' ofs')) <> Genv.InternalCall ->
+    forall (CALLSIG: Genv.type_of_call ge (comp_of f) (Genv.find_comp_ignore_offset ge (Vptr b' ofs')) = Genv.CrossCompartmentCall ->
                 (exists fd, Genv.find_funct_ptr ge b' = Some fd /\ sig = funsig fd)),
+    (* Check public symbols *)
+    forall (CHECKPUB: Genv.type_of_call ge (comp_of f) (Genv.find_comp_ignore_offset ge (Vptr b' ofs')) = Genv.CrossCompartmentCall ->
+                 public_first_order ge m),
       step_fix (State st rs m) t (State st' rs' m')
 | exec_step_fix_internal_return:
   forall b ofs f i rs m rs' cp m' st,
@@ -1473,6 +1478,9 @@ Inductive step_fix: state -> trace -> state -> Prop :=
         (Genv.type_of_call ge cp' rec_cp = Genv.CrossCompartmentCall ->
          not_ptr (return_value rs sg))),
     forall (EV: return_trace ge cp' rec_cp (return_value rs sg) (sig_res sg) t),
+    (* Check public symbols *)
+    forall (CHECKPUB: Genv.type_of_call ge cp' rec_cp = Genv.CrossCompartmentCall ->
+                 public_first_order ge m),
       step_fix (ReturnState st rs m) t (State st' rs m)
 | exec_step_fix_builtin:
   forall b ofs f ef args res rs m vargs t vres rs' m' st,
