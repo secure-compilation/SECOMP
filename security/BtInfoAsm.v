@@ -200,6 +200,7 @@ Section IR.
 
   Definition ir_state := option (block * mem * ir_conts)%type.
 
+  (* TODO *)
   Variant ir_step (ge: Asm.genv) : ir_state -> bundle_event -> ir_state -> Prop :=
     | ir_step_cross_call_internal
         cur m1 ik
@@ -213,6 +214,7 @@ Section IR.
         (ALLOW: Genv.allowed_call ge cp (Vptr b Ptrofs.zero))
         (NPTR: crossing_comp ge cp cp' -> Forall not_ptr vargs)
         (SIG: sg = Asm.fn_sig f_next)
+        (* (PUB: public_first_order ge m1) *)
         (TR: call_trace_cross ge cp cp' b vargs (sig_args sg) tr id evargs)
       :
       ir_step ge (Some (cur, m1, ik)) (Bundle_call tr id evargs sg None) (Some (b, m1, (ir_cont cur) :: ik))
