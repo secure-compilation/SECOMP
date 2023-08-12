@@ -2147,7 +2147,7 @@ Section PROOF.
           intros (cp & cp' & sg & FACT1 & FACT2 & FACT3 & FACT4 & FACT5 & FACT6 & FACT7 & FACT8). subst.
           inv STAR; ss.
           (* subcase 1 *)
-          { exists ([Bundle_call [Event_call (comp_of f) (Genv.find_comp ge (Vptr b0 Ptrofs.zero)) i0 vl] i0 vl (ef_sig e) None]). eexists. ss. split; auto.
+          { exists ([Bundle_call [Event_call (comp_of f) (Genv.find_comp ge (Vptr b0 Ptrofs.zero)) i0 vl] i0 vl (ef_sig e) []]). eexists. ss. split; auto.
             econs 2. 2: econs 1. 2: eauto. eapply ir_step_cross_call_external1.
             8: eapply FACT8. 6: eapply FACT6. 5: eapply FACT5. 3: eapply FACT3. 2: eapply FACT2. all: eauto.
           }
@@ -2169,7 +2169,7 @@ Section PROOF.
           destruct x0 as (d' & m1 & m2 & res' & EFACT1 & EFACT2 & EFACT3 & (k2 & d2 & m_a02 & MM)).
           inv STAR.
           (* subcase 2 *)
-          { exists ([Bundle_call ([Event_call (comp_of f) (Genv.find_comp ge (Vptr b2 Ptrofs.zero)) i0 vl] ++ t1) i0 vl (ef_sig ef) (Some d')]). eexists. split; auto.
+          { exists ([Bundle_call ([Event_call (comp_of f) (Genv.find_comp ge (Vptr b2 Ptrofs.zero)) i0 vl] ++ t1) i0 vl (ef_sig ef) (d')]). eexists. split; auto.
             econs 2. 2: econs 1. 2: eauto. eapply ir_step_cross_call_external2.
             8: eapply FACT8. 6: eapply FACT6. 5: eapply FACT5. 3: eapply FACT3. 2: eapply FACT2. all: eauto.
             erewrite eventval_list_match_vals_to_eventvals; eauto.
@@ -2191,7 +2191,7 @@ Section PROOF.
           }
           eapply asm_to_ir_compose.
           2:{ instantiate (1:=t3). rewrite app_comm_cons. setoid_rewrite app_assoc. eauto. }
-          exists ([Bundle_call ([Event_call (comp_of f) (Genv.find_comp ge (Vptr b2 Ptrofs.zero)) i0 vl] ++ t1 ++ [Event_return (Genv.find_comp_ignore_offset ge (rs' X1)) (Genv.find_comp_ignore_offset ge (rs' PC)) res0]) i0 vl (ef_sig ef) (Some d')]). eexists. split.
+          exists ([Bundle_call ([Event_call (comp_of f) (Genv.find_comp ge (Vptr b2 Ptrofs.zero)) i0 vl] ++ t1 ++ [Event_return (Genv.find_comp_ignore_offset ge (rs' X1)) (Genv.find_comp_ignore_offset ge (rs' PC)) res0]) i0 vl (ef_sig ef) (d')]). eexists. split.
           { split; auto.
             { ss. rewrite app_nil_r. auto. }
             econstructor 2. 2: econstructor 1. 2: eauto. eapply ir_step_cross_call_external3.
