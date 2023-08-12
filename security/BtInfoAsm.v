@@ -65,12 +65,16 @@ Section BUNDLE.
                      (d: mem_delta)
   .
 
-  Definition bundle_trace := list bundle_event.
+  Definition bundle_trace := list (ident * bundle_event).
 
-  Definition unbundle (be: bundle_event): trace :=
+  Definition unbundle_ev (be: (bundle_event)): trace :=
     match be with
-    | Bundle_call tr _ _ _ _ | Bundle_return tr _ _ | Bundle_builtin tr _ _ _ => tr
+    | (Bundle_call tr _ _ _ _)
+    | (Bundle_return tr _ _)
+    | (Bundle_builtin tr _ _ _) => tr
     end.
+
+  Definition unbundle (be: (ident * bundle_event)): trace := unbundle_ev (snd be).
 
   Fixpoint unbundle_trace (btr: bundle_trace) : trace :=
     match btr with
@@ -95,13 +99,15 @@ Section BUNDLE.
     eauto.
   Qed.
 
-  Inductive istar {genv state : Type} (step : genv -> state -> bundle_event -> state -> Prop) (ge : genv) : state -> bundle_trace -> state -> Prop :=
+  Inductive istar {genv state : Type}
+            (step : genv -> state -> (ident * bundle_event) -> state -> Prop) (ge : genv) :
+    state -> bundle_trace -> state -> Prop :=
     istar_refl : forall s : state, istar step ge s nil s
-  | istar_step : forall (s1 : state) (ev : bundle_event) (s2 : state) (t2 : bundle_trace) (s3 : state) (t : bundle_trace),
+  | istar_step : forall (s1 : state) ev (s2 : state) (t2 : bundle_trace) (s3 : state) (t : bundle_trace),
       step ge s1 ev s2 -> istar step ge s2 t2 s3 -> t = ev :: t2 -> istar step ge s1 t s3.
 
   Lemma istar_trans
-        genv state (step: genv -> state -> bundle_event -> state -> Prop) ge
+        genv state (step: genv -> state -> _ -> state -> Prop) ge
         s1 t1 s2
         (ISTAR1: istar step ge s1 t1 s2)
         t2 s3
@@ -201,7 +207,7 @@ Section IR.
 
   Definition ir_state := option (block * mem * ir_conts)%type.
 
-  Variant ir_step (ge: Asm.genv) : ir_state -> bundle_event -> ir_state -> Prop :=
+  Variant ir_step (ge: Asm.genv) : ir_state -> (ident * bundle_event) -> ir_state -> Prop :=
     | ir_step_cross_call_internal
         cur m1 ik
         tr id evargs sg
@@ -218,8 +224,10 @@ Section IR.
         d m2
         (DELTA: mem_delta_apply_wf ge cp d (Some m1) = Some m2)
         (PUB: public_first_order ge m2)
+        id_cur
+        (IDCUR: Genv.invert_symbol ge cur = Some id_cur)
       :
-      ir_step ge (Some (cur, m1, ik)) (Bundle_call tr id evargs sg d) (Some (b, m2, (ir_cont cur) :: ik))
+      ir_step ge (Some (cur, m1, ik)) (id_cur, Bundle_call tr id evargs sg d) (Some (b, m2, (ir_cont cur) :: ik))
     | ir_step_cross_return_internal
         cur m1 next ik ik_tl
         tr evretv
@@ -239,8 +247,10 @@ Section IR.
         d m2
         (DELTA: mem_delta_apply_wf ge cp_cur d (Some m1) = Some m2)
         (PUB: public_first_order ge m2)
+        id_cur
+        (IDCUR: Genv.invert_symbol ge cur = Some id_cur)
       :
-      ir_step ge (Some (cur, m1, ik)) (Bundle_return tr evretv d) (Some (next, m2, ik_tl))
+      ir_step ge (Some (cur, m1, ik)) (id_cur, Bundle_return tr evretv d) (Some (next, m2, ik_tl))
     | ir_step_intra_call_external
         cur m1 m2 ik
         tr id evargs sg
@@ -259,8 +269,10 @@ Section IR.
         (ECCASES: (external_call_unknowns ef ge m1' vargs) \/
                     (external_call_known_observables ef ge m1' vargs tr vretv m2 /\ d = []))
         (ARGS: evargs = vals_to_eventvals ge vargs)
+        id_cur
+        (IDCUR: Genv.invert_symbol ge cur = Some id_cur)
       :
-      ir_step ge (Some (cur, m1, ik)) (Bundle_call tr id evargs sg d) (Some (cur, m2, ik))
+      ir_step ge (Some (cur, m1, ik)) (id_cur, Bundle_call tr id evargs sg d) (Some (cur, m2, ik))
     | ir_step_builtin
         cur m1 m2 ik
         tr ef evargs
@@ -273,8 +285,10 @@ Section IR.
         (ECCASES: (external_call_unknowns ef ge m1' vargs) \/
                     (external_call_known_observables ef ge m1' vargs tr vretv m2 /\ d = []))
         (ARGS: evargs = vals_to_eventvals ge vargs)
+        id_cur
+        (IDCUR: Genv.invert_symbol ge cur = Some id_cur)
       :
-      ir_step ge (Some (cur, m1, ik)) (Bundle_builtin tr ef evargs d) (Some (cur, m2, ik))
+      ir_step ge (Some (cur, m1, ik)) (id_cur, Bundle_builtin tr ef evargs d) (Some (cur, m2, ik))
     | ir_step_cross_call_external1
         (* early cut at call *)
         cur m1 ik
@@ -289,8 +303,10 @@ Section IR.
         (NPTR: crossing_comp ge cp cp' -> Forall not_ptr vargs)
         (SIG: sg = ef_sig ef)
         (TR: call_trace_cross ge cp cp' b vargs (sig_args sg) tr id evargs)
+        id_cur
+        (IDCUR: Genv.invert_symbol ge cur = Some id_cur)
       :
-      ir_step ge (Some (cur, m1, ik)) (Bundle_call tr id evargs sg []) None
+      ir_step ge (Some (cur, m1, ik)) (id_cur, Bundle_call tr id evargs sg []) None
     | ir_step_cross_call_external2
         (* early cut at call-ext_call *)
         cur m1 ik
@@ -313,8 +329,10 @@ Section IR.
         (ECCASES: (external_call_unknowns ef ge m1' vargs) \/
                     (external_call_known_observables ef ge m1' vargs tr2 vretv m2 /\ d = []))
         (ARGS: evargs = vals_to_eventvals ge vargs)
+        id_cur
+        (IDCUR: Genv.invert_symbol ge cur = Some id_cur)
       :
-      ir_step ge (Some (cur, m1, ik)) (Bundle_call (tr1 ++ tr2) id evargs sg d) None
+      ir_step ge (Some (cur, m1, ik)) (id_cur, Bundle_call (tr1 ++ tr2) id evargs sg d) None
     | ir_step_cross_call_external3
         (* early cut at call-ext_call *)
         cur m1 ik
@@ -343,8 +361,10 @@ Section IR.
         f_cur
         (INTERNAL: Genv.find_funct_ptr ge cur = Some (AST.Internal f_cur))
         (TR3: return_trace_cross ge cp cp' vretv (sig_res sg) tr3 evretv)
+        id_cur
+        (IDCUR: Genv.invert_symbol ge cur = Some id_cur)
       :
-      ir_step ge (Some (cur, m1, ik)) (Bundle_call (tr1 ++ tr2 ++ tr3) id evargs sg d) (Some (cur, m2, ik)).
+      ir_step ge (Some (cur, m1, ik)) (id_cur, Bundle_call (tr1 ++ tr2 ++ tr3) id evargs sg d) (Some (cur, m2, ik)).
 
 End IR.
 
@@ -1200,6 +1220,11 @@ Section PROOF.
                              (ReturnState st (set_pair (loc_external_result (ef_sig ef)) res (undef_caller_save_regs rs)) # PC <- (rs X1) m_a') t' ast'').
   Proof.
     destruct MEM as (MEM0 & MEM1 & MEM2 & MEM3 & MEM4 & MEM5 & MEM6).
+    assert (exists id_cur, Genv.invert_symbol ge cur = Some id_cur).
+    { clear - WFGE WFIR0. unfold wf_ir_cur in WFIR0. unfold Genv.find_funct_ptr in WFIR0.
+      des_ifs. eapply wf_ge_block_to_id; eauto.
+    }
+    des. rename H into IDCUR.
     (* take a step *)
     inv STEP.
     (* invalid *)
@@ -1213,7 +1238,7 @@ Section PROOF.
     - (* extcall is unknown *)
       exploit match_mem_external_call_establish1; eauto. unfold match_mem; splits; eauto.
       intros. des.
-      exists ([Bundle_call t ef_id (vals_to_eventvals ge args) (ef_sig ef0) (d)]).
+      exists ([(id_cur, Bundle_call t ef_id (vals_to_eventvals ge args) (ef_sig ef0) (d))]).
       do 5 eexists. splits; simpl. 3: eapply x3. apply app_nil_r.
       2:{ exists res. auto. }
       econstructor 2. 2: econstructor 1. 2: eauto.
@@ -1226,7 +1251,7 @@ Section PROOF.
       rename H4 into EXTCALL, H7 into EXTARGS. unfold external_call_known_observables in ECKO.
       des_ifs; simpl in *.
       { destruct ECKO as [_ OBS]. inv EXTCALL. inv H; simpl in *; clarify.
-        exists ([Bundle_call [Event_vload chunk id ofs ev] ef_id [EVptr_global id ofs] {| sig_args := [Tptr]; sig_res := rettype_of_chunk chunk; sig_cc := cc_default |} ([])]).
+        exists ([(id_cur, Bundle_call [Event_vload chunk id ofs ev] ef_id [EVptr_global id ofs] {| sig_args := [Tptr]; sig_res := rettype_of_chunk chunk; sig_cc := cc_default |} ([]))]).
         exists k, d, m_a0, m_i, m'. simpl. splits; auto. 2: split; auto. 2: eauto.
         econstructor 2. 2: econstructor 1. 2: auto.
         eapply ir_step_intra_call_external. all: eauto.
@@ -1238,7 +1263,7 @@ Section PROOF.
         splits; auto.
       }
       { destruct ECKO as [_ OBS]. inv EXTCALL. inv H; simpl in *; clarify.
-        exists ([Bundle_call [Event_vstore chunk id ofs ev] ef_id [EVptr_global id ofs; ev] {| sig_args := [Tptr; type_of_chunk chunk]; sig_res := Tvoid; sig_cc := cc_default |} ([])]).
+        exists ([(id_cur, Bundle_call [Event_vstore chunk id ofs ev] ef_id [EVptr_global id ofs; ev] {| sig_args := [Tptr; type_of_chunk chunk]; sig_res := Tvoid; sig_cc := cc_default |} ([]))]).
         exists k, d, m_a0, m_i, m'. simpl. splits; auto. 2: split; auto. 2: eauto.
         econstructor 2. 2: econstructor 1. 2: auto.
         eapply ir_step_intra_call_external. all: eauto.
@@ -1257,7 +1282,7 @@ Section PROOF.
       { destruct ECKO as [_ OBS]. inv EXTCALL; clarify. }
       { destruct ECKO as [_ OBS]. inv EXTCALL; clarify. }
       { destruct ECKO as [_ OBS]. inv EXTCALL; simpl in *; clarify.
-        exists ([Bundle_call [Event_annot text args0] ef_id (vals_to_eventvals ge args) {| sig_args := targs; sig_res := Tvoid; sig_cc := cc_default |} ([])]).
+        exists ([(id_cur, Bundle_call [Event_annot text args0] ef_id (vals_to_eventvals ge args) {| sig_args := targs; sig_res := Tvoid; sig_cc := cc_default |} ([]))]).
         exists k, d, m_a0, m_i, m'. simpl. splits; auto. 2: split; auto. 2: eauto.
         econstructor 2. 2: econstructor 1. 2: auto.
         eapply ir_step_intra_call_external. all: eauto.
@@ -1268,7 +1293,7 @@ Section PROOF.
         splits; auto.
       }
       { destruct ECKO as [_ OBS]. inv EXTCALL; simpl in *; clarify.
-        exists ([Bundle_call [Event_annot text [arg]] ef_id [val_to_eventval ge res] {| sig_args := [targ]; sig_res := targ; sig_cc := cc_default |} ([])]).
+        exists ([(id_cur, Bundle_call [Event_annot text [arg]] ef_id [val_to_eventval ge res] {| sig_args := [targ]; sig_res := targ; sig_cc := cc_default |} ([]))]).
         exists k, d, m_a0, m_i, m'. simpl. splits; auto. 2: split; auto. 2: eauto.
         econstructor 2. 2: econstructor 1. 2: auto.
         eapply ir_step_intra_call_external. all: eauto.
@@ -1375,12 +1400,17 @@ Section PROOF.
     ss. destruct MTST as (WFIR0 & WFIR1 & MTST0 & MTST1 & MTST2 & MTST3).
     destruct MTST3 as (MEM0 & MEM1 & MEM2 & MEM3 & MEM4 & MEM5 & MEM6).
     destruct WFASM as [WFASM0 WFASM1].
+    assert (exists id_cur, Genv.invert_symbol ge cur = Some id_cur).
+    { clear - WFGE WFIR0. unfold wf_ir_cur in WFIR0. unfold Genv.find_funct_ptr in WFIR0.
+      des_ifs. eapply wf_ge_block_to_id; eauto.
+    }
+    des. rename H into IDCUR.
     exploit extcall_cases. eapply ECC. eauto. clear ECC. intros [ECU | [ECKO | ECKS]].
 
     - (* extcall is unknown *)
       exploit match_mem_external_call_establish1; eauto. unfold match_mem; splits; eauto.
       intros. des.
-      exists ([Bundle_builtin t1 ef (vals_to_eventvals ge vargs) d]).
+      exists ([(id_cur, Bundle_builtin t1 ef (vals_to_eventvals ge vargs) d)]).
       do 4 eexists. splits; simpl. 3: eapply x3. apply app_nil_r.
       econstructor 2. 2: econstructor 1. 2: eauto.
       eapply ir_step_builtin; eauto.
@@ -1389,7 +1419,7 @@ Section PROOF.
       unfold external_call_known_observables in ECKO.
       des_ifs; simpl in *.
       { destruct ECKO as [_ OBS]. inv EXTCALL. inv H; simpl in *; clarify.
-        exists ([Bundle_builtin [Event_vload chunk id ofs0 ev] (EF_vload cp chunk) [EVptr_global id ofs0] []]).
+        exists ([(id_cur, Bundle_builtin [Event_vload chunk id ofs0 ev] (EF_vload cp chunk) [EVptr_global id ofs0] [])]).
         exists k, d, m_a0, m_i. simpl. splits; auto. 2: split; auto.
         econstructor 2. 2: econstructor 1. 2: auto.
         eapply ir_step_builtin. all: eauto.
@@ -1400,7 +1430,7 @@ Section PROOF.
         splits; auto.
       }
       { destruct ECKO as [_ OBS]. inv EXTCALL. inv H; simpl in *; clarify.
-        exists ([Bundle_builtin [Event_vstore chunk id ofs0 ev] (EF_vstore cp chunk) [EVptr_global id ofs0; ev] []]).
+        exists ([(id_cur, Bundle_builtin [Event_vstore chunk id ofs0 ev] (EF_vstore cp chunk) [EVptr_global id ofs0; ev] [])]).
         exists k, d, m_a0, m_i. simpl. splits; auto. 2: split; auto.
         econstructor 2. 2: econstructor 1. 2: auto.
         eapply ir_step_builtin. all: eauto.
@@ -1418,7 +1448,7 @@ Section PROOF.
       { destruct ECKO as [_ OBS]. inv EXTCALL; clarify. }
       { destruct ECKO as [_ OBS]. inv EXTCALL; clarify. }
       { destruct ECKO as [_ OBS]. inv EXTCALL; simpl in *; clarify.
-        exists ([Bundle_builtin [Event_annot text args] (EF_annot cp kind text targs) (vals_to_eventvals ge vargs) []]).
+        exists ([(id_cur, Bundle_builtin [Event_annot text args] (EF_annot cp kind text targs) (vals_to_eventvals ge vargs) [])]).
         exists k, d, m_a0, m_i. simpl. splits; auto. 2: split; auto.
         econstructor 2. 2: econstructor 1. 2: auto.
         eapply ir_step_builtin. all: eauto.
@@ -1428,7 +1458,7 @@ Section PROOF.
         splits; auto.
       }
       { destruct ECKO as [_ OBS]. inv EXTCALL; simpl in *; clarify.
-        exists ([Bundle_builtin [Event_annot text [arg]] (EF_annot_val cp kind text targ) [val_to_eventval ge vres] []]).
+        exists ([(id_cur, Bundle_builtin [Event_annot text [arg]] (EF_annot_val cp kind text targ) [val_to_eventval ge vres] [])]).
         exists k, d, m_a0, m_i. simpl. splits; auto. 2: split; auto.
         econstructor 2. 2: econstructor 1. 2: auto.
         eapply ir_step_builtin. all: eauto.
@@ -1626,6 +1656,11 @@ Section PROOF.
     :
     exists (btr : bundle_trace) (ist' : ir_state), unbundle_trace btr = t' ** t'' /\ istar ir_step ge (Some (cur, m_i, ik)) btr ist'.
   Proof.
+    assert (exists id_cur, Genv.invert_symbol ge cur = Some id_cur).
+    { clear - WFGE WFIR0. unfold wf_ir_cur in WFIR0. unfold Genv.find_funct_ptr in WFIR0.
+      des_ifs. eapply wf_ge_block_to_id; eauto.
+    }
+    des. rename H into IDCUR.
     destruct MEM as (MEM0 & MEM1 & MEM2 & MEM3 & MEM4 & MEM5 & MEM6).
     (** step --- ReturnState *)
     inv STEP. inv EV; simpl in *.
@@ -1652,16 +1687,8 @@ Section PROOF.
       { rr; splits; auto. eapply meminj_not_alloc_delta; eauto. ss. eapply public_rev_perm_delta_apply_inj; eauto.
       }
     }
-    (* { instantiate (4:=k). instantiate (3:=m_a0). instantiate (2:=d). *)
-    (*   instantiate (1:=Some (next, m_i, ik_tl)). simpl. splits; auto. *)
-    (*   { inv WFIR1. simpl in *. auto. } *)
-    (*   { inv WFIR1. auto. } *)
-    (*   { unfold match_cur_regset. rewrite COMP. rewrite PC_RA. auto. } *)
-    (*   { rr; splits; auto. } *)
-    (* } *)
     intros (btr & ist' & UTR & ISTAR').
-    exists ((Bundle_return [Event_return (Genv.find_comp_ignore_offset ge (rs PC)) (Genv.find_comp ge (Vptr cur Ptrofs.zero)) res] res d) :: btr), ist'.
-    (* exists ((Bundle_return [Event_return (Genv.find_comp_ignore_offset ge (rs PC)) (Genv.find_comp ge (Vptr cur Ptrofs.zero)) res] res) :: btr), ist'. *)
+    exists ((id_cur, Bundle_return [Event_return (Genv.find_comp_ignore_offset ge (rs PC)) (Genv.find_comp ge (Vptr cur Ptrofs.zero)) res] res d) :: btr), ist'.
     simpl. rewrite UTR. split; auto.
     econstructor 2. 2: eapply ISTAR'. 2: auto.
     inv WFIR1. simpl in *. des_ifs. clear H2. unfold wf_ir_cur in WFIR0. des_ifs. clear WFIR0.
@@ -2086,6 +2113,11 @@ Section PROOF.
         destruct WFASM as [WFASM0 WFASM1].
         specialize (CALLSIG eq_refl). des.
         exploit exec_instr_is_call; eauto. clear H2 H3 H4. intros (RSX & MEM). subst m'.
+        assert (exists id_cur, Genv.invert_symbol ge cur = Some id_cur).
+        { clear - WFGE WFIR0. unfold wf_ir_cur in WFIR0. unfold Genv.find_funct_ptr in WFIR0.
+          des_ifs. eapply wf_ge_block_to_id; eauto.
+        }
+        des. rename H into IDCUR.
         destruct fd.
         (* calling internal function *)
         { inv EV.
@@ -2103,7 +2135,7 @@ Section PROOF.
             eapply CHECKPUB; eauto. apply Senv.invert_find_symbol; auto.
           }
           intros (m_i' & APPD & MEMINJ).
-          exists ([Bundle_call [Event_call (comp_of f) (Genv.find_comp ge (Vptr b0 Ptrofs.zero)) i0 vl] i0 vl (fn_sig f0) d]). eexists. split.
+          exists ([(id_cur, Bundle_call [Event_call (comp_of f) (Genv.find_comp ge (Vptr b0 Ptrofs.zero)) i0 vl] i0 vl (fn_sig f0) d)]). eexists. split.
           { simpl. split; auto. econstructor 2. 2: econstructor 1. 2: eauto. eapply ir_step_cross_call_internal.
             7: eauto. 6: intros; eapply NO_CROSS_PTR; auto. 3: setoid_rewrite CALLSIG; auto. 3,4: eauto.
             { rewrite MTST1. rewrite <- EQC, H0. simpl. auto. }
@@ -2119,6 +2151,7 @@ Section PROOF.
               instantiate (1:=ge). inv MEMINJ. inv mi_inj. replace ofs with (ofs + 0)%Z at 2 by lia. eapply mi_memval; auto.
               unfold meminj_public. rewrite INV, PUBLIC. auto.
             }
+            auto.
           }
           rewrite H0 in RSX. simpl in RSX. inv RSX.
           eapply IH. 4: eapply STAR. all: auto.
@@ -2147,7 +2180,7 @@ Section PROOF.
           intros (cp & cp' & sg & FACT1 & FACT2 & FACT3 & FACT4 & FACT5 & FACT6 & FACT7 & FACT8). subst.
           inv STAR; ss.
           (* subcase 1 *)
-          { exists ([Bundle_call [Event_call (comp_of f) (Genv.find_comp ge (Vptr b0 Ptrofs.zero)) i0 vl] i0 vl (ef_sig e) []]). eexists. ss. split; auto.
+          { exists ([(id_cur, Bundle_call [Event_call (comp_of f) (Genv.find_comp ge (Vptr b0 Ptrofs.zero)) i0 vl] i0 vl (ef_sig e) [])]). eexists. ss. split; auto.
             econs 2. 2: econs 1. 2: eauto. eapply ir_step_cross_call_external1.
             8: eapply FACT8. 6: eapply FACT6. 5: eapply FACT5. 3: eapply FACT3. 2: eapply FACT2. all: eauto.
           }
@@ -2169,7 +2202,7 @@ Section PROOF.
           destruct x0 as (d' & m1 & m2 & res' & EFACT1 & EFACT2 & EFACT3 & (k2 & d2 & m_a02 & MM)).
           inv STAR.
           (* subcase 2 *)
-          { exists ([Bundle_call ([Event_call (comp_of f) (Genv.find_comp ge (Vptr b2 Ptrofs.zero)) i0 vl] ++ t1) i0 vl (ef_sig ef) (d')]). eexists. split; auto.
+          { exists ([(id_cur, Bundle_call ([Event_call (comp_of f) (Genv.find_comp ge (Vptr b2 Ptrofs.zero)) i0 vl] ++ t1) i0 vl (ef_sig ef) (d'))]). eexists. split; auto.
             econs 2. 2: econs 1. 2: eauto. eapply ir_step_cross_call_external2.
             8: eapply FACT8. 6: eapply FACT6. 5: eapply FACT5. 3: eapply FACT3. 2: eapply FACT2. all: eauto.
             erewrite eventval_list_match_vals_to_eventvals; eauto.
@@ -2191,7 +2224,7 @@ Section PROOF.
           }
           eapply asm_to_ir_compose.
           2:{ instantiate (1:=t3). rewrite app_comm_cons. setoid_rewrite app_assoc. eauto. }
-          exists ([Bundle_call ([Event_call (comp_of f) (Genv.find_comp ge (Vptr b2 Ptrofs.zero)) i0 vl] ++ t1 ++ [Event_return (Genv.find_comp_ignore_offset ge (rs' X1)) (Genv.find_comp_ignore_offset ge (rs' PC)) res0]) i0 vl (ef_sig ef) (d')]). eexists. split.
+          exists ([(id_cur, Bundle_call ([Event_call (comp_of f) (Genv.find_comp ge (Vptr b2 Ptrofs.zero)) i0 vl] ++ t1 ++ [Event_return (Genv.find_comp_ignore_offset ge (rs' X1)) (Genv.find_comp_ignore_offset ge (rs' PC)) res0]) i0 vl (ef_sig ef) (d'))]). eexists. split.
           { split; auto.
             { ss. rewrite app_nil_r. auto. }
             econstructor 2. 2: econstructor 1. 2: eauto. eapply ir_step_cross_call_external3.
@@ -2277,8 +2310,6 @@ Section INIT.
     wf_ge (Genv.globalenv p).
   Proof. unfold wf_ge; eauto. Qed.
 
-  (* Definition wf_main {F V} (p: AST.program (AST.fundef F) V) := *)
-  (*   exists b, (Genv.find_symbol (Genv.globalenv p) (prog_main p) = Some b) /\ (exists f, Genv.find_funct_ptr (Genv.globalenv p) b = Some (Internal f) /\ (fn_sig f = signature_main)). *)
   Definition wf_main (p: Asm.program) :=
     exists b, (Genv.find_symbol (Genv.globalenv p) (prog_main p) = Some b) /\
            (exists f, Genv.find_funct_ptr (Genv.globalenv p) b = Some (Internal f)).
@@ -2319,13 +2350,11 @@ Section INIT.
     exists ist, ir_initial_state p ist.
   Proof.
     unfold wf_main in WFMAIN. des. inv INIT.
-    (* unfold fundef in *. *)
     exists (Some (b, m0, [])). econs; eauto.
   Qed.
 
   Lemma match_state_initial_state
         p ast ist
-        (* (WFMAIN: wf_main p) *)
         (WFMAINSIG: wf_main_sig p)
         (INITA: Asm.initial_state p ast)
         (INITI: ir_initial_state p ist)
