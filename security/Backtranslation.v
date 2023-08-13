@@ -55,9 +55,8 @@ Section Backtranslation.
 
     Ltac take_step' := econstructor; [econstructor; simpl_expr' | | traceEq]; simpl.
 
-    Lemma switch_clause_spec p (cnt: ident) f e le m b (n: int64) (n': Z) s_then s_else:
+    Lemma switch_clause_spec (ge: genv) (cnt: ident) f e le m b k (n: int64) (n': Z) s_then s_else:
       let cp := comp_of f in
-      let ge := globalenv p in
       e ! cnt = None ->
       Genv.find_symbol ge cnt = Some b ->
       Mem.valid_access m Mint64 b 0 Writable (Some cp) ->
@@ -65,11 +64,11 @@ Section Backtranslation.
       if Int64.eq n (Int64.repr n') then
         exists m',
           Mem.storev Mint64 m (Vptr b Ptrofs.zero) (Vlong (Int64.add n Int64.one)) cp = Some m' /\
-            Star (Clight.semantics1 p) (State f (switch_clause cnt n' s_then s_else) Kstop e le m) E0 (State f s_then Kstop e le m')
+            star (step1) ge (State f (switch_clause cnt n' s_then s_else) k e le m) E0 (State f s_then k e le m')
       else
-        Star (Clight.semantics1 p) (State f (switch_clause cnt n' s_then s_else) Kstop e le m) E0 (State f s_else Kstop e le m).
+        star (step1) ge (State f (switch_clause cnt n' s_then s_else) k e le m) E0 (State f s_else k e le m).
     Proof.
-      intros; subst cp ge.
+      intros; subst cp.
       destruct (Int64.eq n (Int64.repr n')) eqn:eq_n_n'.
       - simpl.
         destruct (Mem.valid_access_store m Mint64 b 0%Z (comp_of f) (Vlong (Int64.add n Int64.one))) as [m' m_m']; try assumption.
@@ -96,30 +95,27 @@ Section Backtranslation.
     Qed.
 
     Lemma switch_spec_else
-          p (cnt: ident) f (e: env) le m b (n: Z) ss s_else
+          (ge: genv) (cnt: ident) f (e: env) le m b k (n: Z) ss s_else
           (WF: Z.of_nat (length ss) < Int64.modulus)
           (RANGE: Z.of_nat (length ss) <= n < Int64.modulus)
       :
-      let ge := globalenv p in
       let cp := comp_of f in
       e ! cnt = None ->
       Genv.find_symbol ge cnt = Some b ->
-      (* e ! (bt_env.(local_counter) cp) = Some (b, type_counter) -> *)
-      (* Mem.valid_access m Mint64 b 0 Writable (Some cp) -> *)
       Mem.loadv Mint64 m (Vptr b Ptrofs.zero) (Some cp) = Some (Vlong (Int64.repr n)) ->
-      Star (Clight.semantics1 p)
-           (State f (switch cnt ss s_else) Kstop e le m)
+      star (step1) ge
+           (State f (switch cnt ss s_else) k e le m)
            E0
-           (State f s_else Kstop e le m).
+           (State f s_else k e le m).
     Proof.
-      intros; subst cp ge. unfold switch. destruct RANGE as [RA1 RA2].
+      intros; subst cp. unfold switch. destruct RANGE as [RA1 RA2].
       assert (G: forall n',
                  (Z.of_nat (length ss)) <= n' ->
                  n' <= n ->
-                 Star (Clight.semantics1 p)
-                      (State f (snd (fold_right (switch_add_statement cnt) (n', s_else) ss)) Kstop e le m)
+                 star (step1) ge
+                      (State f (snd (fold_right (switch_add_statement cnt) (n', s_else) ss)) k e le m)
                       E0
-                      (State f s_else Kstop e le m)).
+                      (State f s_else k e le m)).
       { intros n' LE1 LE2.
         induction ss as [|s ss IH]; try apply star_refl.
         simpl. simpl in RA1, LE1. rewrite fst_switch, <- Z.sub_succ_r.
@@ -142,11 +138,10 @@ Section Backtranslation.
     Let nat64 n := Int64.repr (Z.of_nat n).
 
     Lemma switch_spec
-          p (cnt: ident) f (e: env) le m b
+          (ge: genv) (cnt: ident) f (e: env) le m b k
           ss s ss' s_else
           (WF: Z.of_nat (length (ss ++ s :: ss')) < Int64.modulus)
       :
-      let ge := globalenv p in
       let cp := comp_of f in
       e ! cnt = None ->
       Genv.find_symbol ge cnt = Some b ->
@@ -154,10 +149,10 @@ Section Backtranslation.
       Mem.loadv Mint64 m (Vptr b Ptrofs.zero) (Some cp) = Some (Vlong (nat64 (length ss))) ->
       exists m',
         Mem.storev Mint64 m (Vptr b Ptrofs.zero) (Vlong (Int64.add (nat64 (length ss)) Int64.one)) cp = Some m' /\
-          Star (Clight.semantics1 p)
-               (State f (switch cnt (ss ++ s :: ss') s_else) Kstop e le m)
+          star (step1) ge
+               (State f (switch cnt (ss ++ s :: ss') s_else) k e le m)
                E0
-               (State f s Kstop e le m').
+               (State f s k e le m').
     Proof.
       intros.
       assert (Eswitch :
@@ -172,7 +167,7 @@ Section Backtranslation.
         rewrite A. reflexivity.
       }
       destruct Eswitch as [s_else' ->]. clear s_else. rename s_else' into s_else.
-      exploit (switch_clause_spec p cnt f e le m b (nat64 (length ss)) (Z.of_nat (length ss)) s s_else); auto.
+      exploit (switch_clause_spec ge cnt f e le m b k (nat64 (length ss)) (Z.of_nat (length ss)) s s_else); auto.
       unfold nat64. rewrite Int64.eq_true. intro Hcont.
       destruct Hcont as (m' & Hstore & Hstar2).
       exists m'. split; trivial.
@@ -421,8 +416,8 @@ Section Backtranslation.
     Variable ge: Senv.t.
 
     (* Type: Tvoid has size 1, which is what we want *)
-    Definition expr_of_addr (id: ident) (ofs: Z): expr :=
-      ptr_of_id_ofs id (Ptrofs.repr ofs).
+    Definition expr_of_addr (id: ident) (ofs: ptrofs): expr :=
+      ptr_of_id_ofs id ofs.
 
     Definition chunk_to_type (ch: memory_chunk): option type :=
       match ch with
@@ -474,13 +469,6 @@ Section Backtranslation.
   Section CODE.
     (** converting *informative* trace to code **)
 
-    (* TODO list: 
-cross-call/return -> check current cp - public global blocks are fo
-ir: at cross-call/return, invoke a delta
-change to Mem.storev (for Ptrofs.unsigned ofs)
-
- *)
-
     Variable ge: Clight.genv.
 
     Lemma ptr_of_id_ofs_eval
@@ -503,35 +491,58 @@ change to Mem.storev (for Ptrofs.unsigned ofs)
         erewrite Ptrofs.agree32_of_ints_eq; auto. apply Ptrofs.agree32_to_int; auto.
     Qed.
 
-    Definition code_mem_delta_store (d: mem_delta_store): statement :=
-      let '(ch, b, ofs, v, cp) := d in
-      if (wf_chunk_val_b ch v) then
-        match Senv.invert_symbol ge b with
-        | Some id =>
-            match chunk_to_type ch, chunk_val_to_expr ge ch v with
-            | Some ty, Some ve => Sassign (Ederef (expr_of_addr id ofs) ty) ve
-            | _, _ => Sskip
-            end
-        | None => Sskip
-        end
-      else Sskip.
-
-    Definition code_mem_delta_kind (d: mem_delta_kind): statement :=
-      match d with
-      | mem_delta_kind_store dd => code_mem_delta_store dd
+    Definition code_mem_delta_storev cp0 (d: mem_delta_storev): statement :=
+      let '(ch, ptr, v, cp) := d in
+      match ptr with
+      | Vptr b ofs =>
+          match Senv.invert_symbol ge b with
+          | Some id =>
+              match chunk_to_type ch, chunk_val_to_expr ge ch v with
+              | Some ty, Some ve =>
+                  if ((Senv.public_symbol ge id) && (wf_chunk_val_b ch v) && (cp0 =? cp)%positive)
+                  then Sassign (Ederef (expr_of_addr id ofs) ty) ve
+                  else Sskip
+              | _, _ => Sskip
+              end
+          | None => Sskip
+          end
       | _ => Sskip
       end.
 
+    Definition code_mem_delta_kind cp (d: mem_delta_kind): statement :=
+      match d with
+      | mem_delta_kind_storev dd => code_mem_delta_storev cp dd
+      | _ => Sskip
+      end.
+
+    Definition code_mem_delta cp (d: mem_delta) (snext: statement): statement :=
+      fold_right Ssequence snext (map (code_mem_delta_kind cp) d).
+
+    Lemma code_mem_delta_cons
+          cp k d sn
+      :
+      code_mem_delta cp (k :: d) sn =
+        Ssequence (code_mem_delta_kind cp k) (code_mem_delta cp d sn).
+    Proof. unfold code_mem_delta. ss. Qed.
+
+    Lemma code_mem_delta_app
+          cp d1 d2 sn
+      :
+      code_mem_delta cp (d1 ++ d2) sn = (code_mem_delta cp d1 (code_mem_delta cp d2 sn)).
+    Proof.
+      revert sn d2. induction d1; intros; ss.
+      rewrite ! code_mem_delta_cons. erewrite IHd1. auto.
+    Qed.
+
+
     Lemma type_of_chunk_val_to_expr
           ch ty v e
-          (WF: wf_chunk_val ch v)
+          (WF: wf_chunk_val_b ch v)
           (CT: chunk_to_type ch = Some ty)
           (CVE: chunk_val_to_expr ge ch v = Some e)
       :
       typeof e = ty.
-    Proof.
-      unfold chunk_val_to_expr in CVE. rewrite CT in CVE. des_ifs.
-    Qed.
+    Proof. unfold chunk_val_to_expr in CVE. rewrite CT in CVE. des_ifs. Qed.
 
     Definition val_is_int (v: val) := (match v with | Vint _ => True | _ => False end).
     Definition val_is_not_int (v: val) := (match v with | Vint _ => False | _ => True end).
@@ -541,7 +552,7 @@ change to Mem.storev (for Ptrofs.unsigned ofs)
 
     Lemma sem_cast_chunk_val
           m ch ty v e
-          (WF: wf_chunk_val ch v)
+          (WF: wf_chunk_val_b ch v)
           (CT: chunk_to_type ch = Some ty)
           (CVE: chunk_val_to_expr ge ch v = Some e)
           (NINT: val_is_not_int v)
@@ -549,7 +560,7 @@ change to Mem.storev (for Ptrofs.unsigned ofs)
       Cop.sem_cast v (typeof e) ty m = Some v.
     Proof.
       erewrite type_of_chunk_val_to_expr; eauto. apply Cop.cast_val_casted. clear - WF CT NINT.
-      unfold wf_chunk_val, wf_chunk_val_b in WF. des_ifs; ss; inv CT; econs.
+      unfold wf_chunk_val_b, wf_chunk_val_b in WF. des_ifs; ss; inv CT; econs.
     Qed.
 
     Definition cast_chunk_int (ch: memory_chunk) (i: int): val :=
@@ -565,7 +576,7 @@ change to Mem.storev (for Ptrofs.unsigned ofs)
     Lemma chunk_val_to_expr_eval
           ch v exp e cp le m
           (EXP: chunk_val_to_expr ge ch v = Some exp)
-          (WF: wf_chunk_val ch v)
+          (WF: wf_chunk_val_b ch v)
       :
       eval_expr ge e cp le m exp v.
     Proof. unfold chunk_val_to_expr in EXP. des_ifs; ss; econs. Qed.
@@ -587,25 +598,26 @@ change to Mem.storev (for Ptrofs.unsigned ofs)
       intros (ty & TY). rewrite TY. unfold wf_chunk_val_b in WF. des_ifs; ss; eauto.
     Qed.
 
-    Lemma code_mem_delta_store_correct
+    Lemma code_mem_delta_storev_correct
           f k e le m m'
           d
           (WFE: wf_env ge e)
-          (STORE: mem_delta_apply_store (Some m) d = Some m')
-          (WF: wf_mem_delta_store_b ge (comp_of f) d)
+          (STORE: mem_delta_apply_storev (Some m) d = Some m')
+          (WF: wf_mem_delta_storev_b ge (comp_of f) d)
       :
-      (step1 ge (State f (code_mem_delta_store d) k e le m) E0 (State f Sskip k e le m')).
+      step1 ge (State f (code_mem_delta_storev (comp_of f) d) k e le m)
+            E0 (State f Sskip k e le m').
     Proof.
-      unfold wf_mem_delta_store_b in WF. des_ifs. rename m0 into ch, z into ofs. ss.
-      (* specialize (WFE i). rewrite H0 in WFE. *)
+      unfold wf_mem_delta_storev_b in WF. des_ifs. rename m0 into ch, i into ofs. ss.
       exploit wf_chunk_val_chunk_to_type; eauto. intros (ty & TY).
       exploit wf_chunk_val_chunk_val_to_expr; eauto. intros (ve & EXPR).
       rewrite H, Heq, TY, EXPR.
       destruct (val_cases v) as [INT | NINT].
       { unfold val_is_int in INT. des_ifs. clear INT. eapply step_assign.
-        - econs. unfold expr_of_addr. eapply ptr_of_id_ofs_eval; auto. eapply Genv.invert_find_symbol; eauto.
-        - instantiate (1:=Vint i0). eapply chunk_val_to_expr_eval; eauto.
-        - instantiate (1:=cast_chunk_int ch i0). erewrite type_of_chunk_val_to_expr; eauto.
+        - econs. unfold expr_of_addr. eapply ptr_of_id_ofs_eval; auto.
+          eapply Genv.invert_find_symbol; eauto.
+        - instantiate (1:=Vint i). eapply chunk_val_to_expr_eval; eauto.
+        - instantiate (1:=cast_chunk_int ch i). erewrite type_of_chunk_val_to_expr; eauto.
           unfold chunk_to_type in TY. destruct ch; ss; inv TY.
           + unfold Cop.sem_cast. ss. des_ifs.
           + unfold Cop.sem_cast. ss. des_ifs.
@@ -613,207 +625,66 @@ change to Mem.storev (for Ptrofs.unsigned ofs)
           + unfold Cop.sem_cast. ss. des_ifs.
           + unfold Cop.sem_cast. ss. des_ifs.
         - simpl_expr. eapply access_mode_chunk_to_type_wf; eauto.
-          (*** TODO *)
-          rewrite <- STORE. destruct ch; ss.
-          + rewrite Mem.store_int8_sign_ext. admit.
-          + rewrite Mem.store_int8_zero_ext. admit.
-          + rewrite Mem.store_int16_sign_ext. admit.
-          + rewrite Mem.store_int16_zero_ext. admit.
-          + admit.
+          rewrite <- STORE. apply Pos.eqb_eq in WF. subst c. destruct ch; ss.
+          + rewrite Mem.store_int8_sign_ext. auto.
+          + rewrite Mem.store_int8_zero_ext. auto.
+          + rewrite Mem.store_int16_sign_ext. auto.
+          + rewrite Mem.store_int16_zero_ext. auto.
       }
-      { eapply step_assign.
-        - econs. unfold expr_of_addr. eapply ptr_of_id_ofs_eval. admit. eapply Genv.invert_find_symbol; eauto.
+      { rewrite WF, H0. ss. eapply step_assign.
+        - econs. unfold expr_of_addr. eapply ptr_of_id_ofs_eval; auto.
+          eapply Genv.invert_find_symbol; eauto.
         - instantiate (1:=v). eapply chunk_val_to_expr_eval; eauto.
         - ss. eapply sem_cast_chunk_val; eauto.
-        - simpl_expr. eapply access_mode_chunk_to_type_wf; eauto. admit.
-      }
-    Qed.
-
-    Lemma code_mem_delta_kind_correct
-          d f k e le m m'
-          (WFE: wf_env ge e)
-          (DEL: code_mem_delta_kind d <> Sskip)
-          (STORE: mem_delta_apply [d] (Some m) = Some m')
-          (WF: mem_delta_kind_wf d)
-      :
-      (step1 ge (State f (code_mem_delta_kind d) k e le m) E0 (State f Sskip k e le m')).
-    Proof.
-      destruct d; ss. des_ifs. clear DEL. ss. destruct (val_cases v) as [INT | NINT].
-      { unfold val_is_int in INT. des_ifs. clear INT. eapply step_assign.
-        - econs. unfold expr_of_addr. eapply ptr_of_id_ofs_eval. admit. eapply Genv.invert_find_symbol; eauto.
-        - instantiate (1:=Vint i0). eapply chunk_val_to_expr_eval; eauto.
-        - ss. instantiate (1:=cast_chunk_int m0 i0). rename m0 into ch. erewrite type_of_chunk_val_to_expr; eauto.
-          unfold chunk_to_type in Heq0. destruct ch; ss; inv Heq0.
-          + unfold Cop.sem_cast. ss. des_ifs.
-          + unfold Cop.sem_cast. ss. des_ifs.
-          + unfold Cop.sem_cast. ss. des_ifs.
-          + unfold Cop.sem_cast. ss. des_ifs.
-          + unfold Cop.sem_cast. ss. des_ifs.
         - simpl_expr. eapply access_mode_chunk_to_type_wf; eauto.
-          rewrite <- STORE. destruct m0; ss.
-          + rewrite Mem.store_int8_sign_ext. admit.
-          + rewrite Mem.store_int8_zero_ext. admit.
-          + rewrite Mem.store_int16_sign_ext. admit.
-          + rewrite Mem.store_int16_zero_ext. admit.
-          + admit.
-      }
-      { eapply step_assign.
-        - econs. unfold expr_of_addr. eapply ptr_of_id_ofs_eval. admit. eapply Genv.invert_find_symbol; eauto.
-        - instantiate (1:=v). eapply chunk_val_to_expr_eval; eauto.
-        - ss. eapply sem_cast_chunk_val; eauto.
-        - simpl_expr. eapply access_mode_chunk_to_type_wf; eauto. admit.
+          apply Pos.eqb_eq in WF. clarify.
       }
     Qed.
-    
+
+    Lemma wf_mem_delta_storev_false_is_skip
+          cp d
+          (NWF: wf_mem_delta_storev_b ge cp d = false)
+      :
+      code_mem_delta_storev cp d = Sskip.
+    Proof. destruct d as [[[ch ptr] v] cp0]. ss. des_ifs. Qed.
+
+    Lemma code_mem_delta_correct
+          f k e le m m'
+          d snext
+          (WFE: wf_env ge e)
+          (APPD: mem_delta_apply_wf ge (comp_of f) d (Some m) = Some m')
+      :
+      (star step1 ge (State f (code_mem_delta (comp_of f) d snext) k e le m)
+            E0 (State f snext k e le m')).
+    Proof.
+      revert m m' snext APPD. induction d; intros.
+      { unfold mem_delta_apply_wf in APPD. ss. inv APPD. unfold code_mem_delta. ss. econs 1. }
+      rewrite mem_delta_apply_wf_cons in APPD. rewrite code_mem_delta_cons.
+      des_ifs.
+      - exploit mem_delta_apply_wf_some; eauto. intros (mi & APPD0). rewrite APPD0 in APPD.
+        destruct a; ss. econs 2.
+        { eapply step_seq. }
+        econs 2.
+        { eapply code_mem_delta_storev_correct; eauto. }
+        take_step. eapply IHd; eauto. eauto. auto.
+      - destruct a; ss.
+        rewrite wf_mem_delta_storev_false_is_skip; auto.
+        all: take_step; take_step; eapply IHd; eauto.
+    Qed.
 
 
-
-Mem.store_mem_contents:
-  forall (chunk : memory_chunk) (m1 : mem) (b : block) (ofs : Z) (v : val) (cp : compartment) (m2 : mem),
-  Mem.store chunk m1 b ofs v cp = Some m2 -> Mem.mem_contents m2 = PMap.set b (Mem.setN (encode_val chunk v) ofs (Mem.mem_contents m1) !! b) (Mem.mem_contents m1)
-Mem.valid_access = 
-fun (m : mem) (chunk : memory_chunk) (b : block) (ofs : Z) (p : permission) (cp : option compartment) =>
-Mem.range_perm m b ofs (ofs + size_chunk chunk) Cur p /\ Mem.can_access_block m b cp /\ (align_chunk chunk | ofs)
-     : mem -> memory_chunk -> block -> Z -> permission -> option compartment -> Prop
-Mem.store = 
-fun (chunk : memory_chunk) (m : mem) (b : block) (ofs : Z) (v : val) (cp : compartment) =>
-match Mem.valid_access_dec m chunk b ofs Writable (Some cp) with
-| left x =>
-    Some
-      {|
-        Mem.mem_contents := PMap.set b (Mem.setN (encode_val chunk v) ofs (Mem.mem_contents m) !! b) (Mem.mem_contents m);
-        Mem.mem_access := Mem.mem_access m;
-        Mem.mem_compartments := Mem.mem_compartments m;
-        Mem.nextblock := Mem.nextblock m;
-        Mem.access_max :=
-          (fun (chunk0 : memory_chunk) (m0 : mem) (b0 : block) (ofs0 : Z) (_ : val) (cp0 : compartment) (_ : Mem.valid_access m0 chunk0 b0 ofs0 Writable (Some cp0)) (b1 : positive) (ofs1 : Z) =>
-           Memory.Mem.store_obligation_1 m0 b1 ofs1) chunk m b ofs v cp x;
-        Mem.nextblock_noaccess :=
-          (fun (chunk0 : memory_chunk) (m0 : mem) (b0 : block) (ofs0 : Z) (_ : val) (cp0 : compartment) (_ : Mem.valid_access m0 chunk0 b0 ofs0 Writable (Some cp0)) (b1 : positive) 
-             (ofs1 : Z) (k : perm_kind) (H0 : ~ Plt b1 (Mem.nextblock m0)) => Memory.Mem.store_obligation_2 m0 b1 ofs1 k H0) chunk m b ofs v cp x;
-        Mem.contents_default :=
-          (fun (chunk0 : memory_chunk) (m0 : mem) (b0 : block) (ofs0 : Z) (v0 : val) (cp0 : compartment) (_ : Mem.valid_access m0 chunk0 b0 ofs0 Writable (Some cp0)) (b1 : positive) =>
-           Memory.Mem.store_obligation_3 chunk0 m0 b0 ofs0 v0 b1) chunk m b ofs v cp x;
-        Mem.nextblock_compartments :=
-          (fun (chunk0 : memory_chunk) (m0 : mem) (b0 : block) (ofs0 : Z) (_ : val) (cp0 : compartment) (_ : Mem.valid_access m0 chunk0 b0 ofs0 Writable (Some cp0)) (b1 : positive) =>
-           Memory.Mem.store_obligation_4 m0 b1) chunk m b ofs v cp x
-      |}
-| right _ => None
-end
-     : memory_chunk -> mem -> block -> Z -> val -> compartment -> option mem
-
-
-      
-      unfold chunk_val_to_expr in CVE. rewrite CT in CVE.
-      destruct ch; ss; clarify.
-      - unfold chunk_val_to_expr in CVE. ss. des_ifs; ss; simpl_expr.
-        * admit.
-        *
-
-
-      
-    (*   unfold chunk_to_type in CT. unfold chunk_val_to_expr in CVE. *)
-    (*   unfold Cop.sem_cast. des_ifs. *)
-
-
-    (*   destruct ch; destruct v; ss; eauto. simpl_expr. *)
-
-
-    (* TODO *)
-
-  | step_assign:   forall f a1 a2 k e le m loc ofs bf v2 v m',
-      eval_lvalue e (comp_of f) le m a1 loc ofs bf ->
-      eval_expr e (comp_of f) le m a2 v2 ->
-      Cop.sem_cast v2 (typeof a2) (typeof a1) m = Some v ->
-      assign_loc ge (comp_of f) (typeof a1) m loc ofs bf v m' ->
-      step (State f (Sassign a1 a2) k e le m)
-        E0 (State f Sskip k e le m')
-Inductive assign_loc (ce : composite_env) (cp : compartment) (ty : type) (m : mem) (b : block) (ofs : ptrofs) : bitfield -> val -> mem -> Prop :=
-    assign_loc_value : forall (v : val) (chunk : memory_chunk) (m' : mem), access_mode ty = By_value chunk -> Mem.storev chunk m (Vptr b ofs) v cp = Some m' -> assign_loc ce cp ty m b ofs Full v m'
-Cop.sem_add = 
-fun (cenv : composite_env) (v1 : val) (t1 : type) (v2 : val) (t2 : type) (m : mem) =>
-match Cop.classify_add t1 t2 with
-| Cop.add_case_pi ty si => Cop.sem_add_ptr_int cenv ty si v1 v2
-| Cop.add_case_pl ty => Cop.sem_add_ptr_long cenv ty v1 v2
-| Cop.add_case_ip si ty => Cop.sem_add_ptr_int cenv ty si v2 v1
-| Cop.add_case_lp ty => Cop.sem_add_ptr_long cenv ty v2 v1
-| Cop.add_default =>
-    Cop.sem_binarith (fun (_ : signedness) (n1 n2 : int) => Some (Vint (Int.add n1 n2))) (fun (_ : signedness) (n1 n2 : int64) => Some (Vlong (Int64.add n1 n2)))
-      (fun n1 n2 : Floats.float => Some (Vfloat (Floats.Float.add n1 n2))) (fun n1 n2 : Floats.float32 => Some (Vsingle (Floats.Float32.add n1 n2))) v1 t1 v2 t2 m
-end
-     : composite_env -> val -> type -> val -> type -> mem -> option val
-
-    Definition code_bundle_call (tr: trace) (id: ident) (evargs: list eventval) (sg: signature) (omd: option mem_delta): statement :=
+    Definition code_bundle_call cp (tr: trace) (id: ident) (evargs: list eventval) (sg: signature) (d: mem_delta): statement :=
       let tys := from_sig_fun_data sg in
-      Scall None (Evar id (Tfunction tys.(dargs) tys.(dret) tys.(dcc))) (list_eventval_to_list_expr evargs).
+      code_mem_delta cp d (Scall None (Evar id (Tfunction tys.(dargs) tys.(dret) tys.(dcc))) (list_eventval_to_list_expr evargs)).
 
-Variant bundle_event : Type :=
-    Bundle_call : trace -> ident -> list eventval -> signature -> option mem_delta -> bundle_event
-  | Bundle_return : trace -> eventval -> bundle_event
-  | Bundle_builtin : trace -> external_function -> list eventval -> mem_delta -> bundle_event.
+    Definition code_bundle_return cp (tr: trace) (evr: eventval) (d: mem_delta): statement :=
+      code_mem_delta cp d (Sreturn (Some (eventval_to_expr evr))).
 
+    Definition code_bundle_builtin cp (tr: trace) (ef: external_function) (evargs: list eventval) (d: mem_delta): statement :=
+      code_mem_delta cp d (Sbuiltin None ef (list_eventval_to_typelist evargs) (list_eventval_to_list_expr evargs)).
 
-    (* converting functions *)
-    Definition code_of_external (argsexpr: list expr) (ik: info_kind) :=
-      match ik with
-      | info_builtin ef =>
-          Sbuiltin None ef (dargs (from_sig_fun_data (ef_sig ef))) argsexpr
-      | info_external b sg =>
-          match Genv.invert_symbol ge b with
-          | Some id =>
-              let tys := from_sig_fun_data sg in
-              Scall None (Evar id (Tfunction (dargs tys) (dret tys) (dcc tys))) argsexpr
-          | None => Sskip
-          end
-      | _ => Sskip
-      end.
-
-    Definition code_of_vload (ch: memory_chunk) (id: ident) (ofs: Ptrofs.int) (v: eventval) (ik: info_kind) :=
-      let argsexpr := (ptr_of_id_ofs id ofs :: nil) in code_of_external argsexpr ik.
-
-    Definition code_of_vstore (ch: memory_chunk) (id: ident) (ofs: Ptrofs.int) (v: eventval) (ik: info_kind) :=
-      let argsexpr := ((ptr_of_id_ofs id ofs) :: (eventval_to_expr v) :: nil) in code_of_external argsexpr ik.
-
-    Definition code_of_annot (str: string) (vs: list eventval) (ik: info_kind) :=
-      let argsexpr := (list_eventval_to_list_expr vs) in code_of_external argsexpr ik.
-
-    Definition code_of_syscall (name: string) (vs: list eventval) (v: eventval) (ik: info_kind) :=
-      let argsexpr := (list_eventval_to_list_expr vs) in code_of_external argsexpr ik.
-
-    Definition code_of_call (cp cp': compartment) (id: ident) (vs: list eventval) (ik: info_kind) :=
-      match ik with
-      | info_call _ sg =>
-          let tys := from_sig_fun_data sg in
-          Scall None (Evar id (Tfunction (dargs tys) (dret tys) (dcc tys))) (list_eventval_to_list_expr vs)
-      | _ => Sskip
-      end.
-
-    Definition code_of_return (cp cp': compartment) (v: eventval) (ik: info_kind) :=
-      match ik with
-      | info_return _ =>
-          Sreturn (Some (eventval_to_expr v))
-      | _ => Sskip
-      end.
-
-    (* Definition code_of_return (cp cp': compartment) (v: eventval) (ik: info_kind) := *)
-    (*   match ik with *)
-    (*   | info_return sg => *)
-    (*       Sreturn (Some (eventval_to_expr_return v (sig_res sg))) *)
-    (*   | _ => Sskip *)
-    (*   end. *)
-
-    Definition code_of_ievent (e: ievent): statement :=
-      match e with
-      | (Event_vload ch id ofs v, ik) => code_of_vload ch id ofs v ik
-      | (Event_vstore ch id ofs v, ik) => code_of_vstore ch id ofs v ik
-      | (Event_annot str vs, ik) => code_of_annot str vs ik
-      | (Event_call cp cp' id vs, ik) => code_of_call cp cp' id vs ik
-      | (Event_syscall name vs v, ik) => code_of_syscall name vs v ik
-      | (Event_return cp cp' v, ik) => code_of_return cp cp' v ik
-      end.
 
     (* A while(1)-loop with a big switch inside it *)
-    (* TODO: needs to distinguish intra/cross syscall *)
     (* Definition code_of_trace (fds: funs_data) (t: trace) cnt: statement := *)
     (*   Swhile (Econst_int Int.one (Tint I32 Signed noattr)) (switch cnt (map (code_of_event fds) t) (Sreturn None)). *)
 
