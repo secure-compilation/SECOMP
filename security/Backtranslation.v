@@ -683,6 +683,12 @@ Section Backtranslation.
     Definition code_bundle_builtin cp (tr: trace) (ef: external_function) (evargs: list eventval) (d: mem_delta): statement :=
       code_mem_delta cp d (Sbuiltin None ef (list_eventval_to_typelist evargs) (list_eventval_to_list_expr evargs)).
 
+    Definition code_bundle_event cp (be: bundle_event): statement :=
+      match be with
+      | Bundle_call tr id evargs sg d => code_bundle_call cp tr id evargs sg d
+      | Bundle_return tr evr d => code_bundle_return cp tr evr d
+      | Bundle_builtin tr ef evargs d => code_bundle_builtin cp tr ef evargs d
+      end.
 
     (* A while(1)-loop with a big switch inside it *)
     (* Definition code_of_trace (fds: funs_data) (t: trace) cnt: statement := *)
