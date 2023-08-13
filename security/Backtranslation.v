@@ -690,9 +690,10 @@ Section Backtranslation.
       | Bundle_builtin tr ef evargs d => code_bundle_builtin cp tr ef evargs d
       end.
 
-    (* A while(1)-loop with a big switch inside it *)
-    (* Definition code_of_trace (fds: funs_data) (t: trace) cnt: statement := *)
-    (*   Swhile (Econst_int Int.one (Tint I32 Signed noattr)) (switch cnt (map (code_of_event fds) t) (Sreturn None)). *)
+    (* A while(1)-loop with big if-then-elses inside it *)
+    Definition code_bundle_trace cp (cnt: ident) (tr: bundle_trace): statement :=
+      Swhile (Econst_int Int.one (Tint I32 Signed noattr))
+             (switch cnt (map (fun ib => code_bundle_event cp (snd ib)) tr) (Sreturn None)).
 
   End CODE.
 
