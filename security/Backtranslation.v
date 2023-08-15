@@ -835,6 +835,66 @@ Section Backtranslation.
 
     Definition match_symbs (ge1 ge2: Senv.t) := symbs_public ge1 ge2 /\ symbs_find ge1 ge2 /\ symbs_volatile ge1 ge2.
 
+    Lemma match_symbs_meminj_public
+          ge1 ge2
+          (MSYMB: match_symbs ge1 ge2)
+      :
+      meminj_public ge1 = meminj_public ge2.
+    Proof.
+      destruct MSYMB as (MSYMB1 & MSYMB2 & MSYMB3). unfold meminj_public. extensionalities b. des_ifs.
+      - exfalso. apply Senv.invert_find_symbol in Heq. exploit MSYMB2; eauto. intros.
+        apply Senv.find_invert_symbol in x0. rewrite x0 in Heq1. inv Heq1. specialize (MSYMB1 i0). clarify.
+      - exfalso. apply Senv.invert_find_symbol in Heq. exploit MSYMB2; eauto. intros.
+        apply Senv.find_invert_symbol in x0. clarify.
+      - exfalso. apply Senv.invert_find_symbol in Heq. exploit MSYMB2; eauto. intros.
+        apply Senv.find_invert_symbol in x0. rewrite x0 in Heq1. inv Heq1. specialize (MSYMB1 i0). clarify.
+      - exfalso. rewrite MSYMB1 in Heq1. apply Senv.public_symbol_exists in Heq1. des.
+        exploit MSYMB2; eauto. intros. apply Senv.invert_find_symbol in Heq0. clarify.
+        apply Senv.find_invert_symbol in Heq1. clarify.
+    Qed.
+
+    Lemma match_symbs_wf_mem_delta_storev
+          ge1 ge2
+          (MSYMB: match_symbs ge1 ge2)
+          cp0 d
+      :
+      wf_mem_delta_storev_b ge1 cp0 d = wf_mem_delta_storev_b ge2 cp0 d.
+    Proof.
+      destruct MSYMB as (MSYMB1 & MSYMB2 & MSYMB3).
+      destruct d as [[[ch ptr] v] cp]. ss. des_ifs.
+      - do 2 f_equal. apply Senv.invert_find_symbol, MSYMB2, Senv.find_invert_symbol in Heq. clarify.
+      - exfalso. apply Senv.invert_find_symbol, MSYMB2, Senv.find_invert_symbol in Heq. clarify.
+      - destruct (Senv.public_symbol ge2 i0) eqn:PUB; ss.
+        exfalso. rewrite MSYMB1 in PUB. apply Senv.public_symbol_exists in PUB. des.
+        exploit MSYMB2; eauto. intros. apply Senv.invert_find_symbol in Heq0. clarify.
+        apply Senv.find_invert_symbol in PUB. clarify.
+    Qed.
+
+    Lemma match_symbs_wf_mem_delta_kind
+          ge1 ge2
+          (MSYMB: match_symbs ge1 ge2)
+          cp
+      :
+      wf_mem_delta_kind_b ge1 cp = wf_mem_delta_kind_b ge2 cp.
+    Proof. unfold wf_mem_delta_kind_b. extensionalities d. des_ifs. apply match_symbs_wf_mem_delta_storev; auto. Qed.
+
+    Lemma match_symbs_get_wf_mem_delta
+          ge1 ge2
+          (MSYMB: match_symbs ge1 ge2)
+          cp d
+      :
+      get_wf_mem_delta ge1 cp d = get_wf_mem_delta ge2 cp d.
+    Proof. unfold get_wf_mem_delta. erewrite match_symbs_wf_mem_delta_kind; eauto. Qed.
+
+    Lemma match_symbs_mem_delta_apply_wf
+          ge1 ge2
+          (MSYMB: match_symbs ge1 ge2)
+          cp d m
+      :
+      mem_delta_apply_wf ge1 cp d m = mem_delta_apply_wf ge2 cp d m.
+    Proof. unfold mem_delta_apply_wf. erewrite match_symbs_get_wf_mem_delta; eauto. Qed.
+
+
     Lemma match_symbs_symbols_inject
           ge1 ge2
           (MSYMB: match_symbs ge1 ge2)
@@ -844,6 +904,62 @@ Section Backtranslation.
     Admitted.
 
   End GENV.
+
+
+  Section PROOF.
+
+    Lemma filter_filter
+          A (l: list A) (p q: A -> bool)
+      :
+      filter q (filter p l) = filter (fun a => (p a) && (q a)) l.
+    Proof.
+      induction l; ss. des_ifs; ss; clarify.
+      f_equal. auto.
+    Qed.
+
+    Lemma get_wf_mem_delta_idem
+          ge cp d
+      :
+      get_wf_mem_delta ge cp (get_wf_mem_delta ge cp d) = get_wf_mem_delta ge cp d.
+    Proof. unfold get_wf_mem_delta. rewrite filter_filter. f_equal. extensionalities k. apply andb_diag. Qed.
+
+    Lemma mem_delta_apply_wf_get_wf_mem_delta
+          ge cp d m
+      :
+      mem_delta_apply_wf ge cp d m = mem_delta_apply_wf ge cp (get_wf_mem_delta ge cp d) m.
+    Proof. unfold mem_delta_apply_wf. rewrite get_wf_mem_delta_idem. auto. Qed.
+
+    Lemma wf_mem_delta_kind_is_wf
+          ge cp k
+          (WF: wf_mem_delta_kind_b ge cp k)
+      :
+      mem_delta_kind_inj_wf cp (meminj_public ge) k.
+    Proof. unfold wf_mem_delta_kind_b in WF. des_ifs. unfold wf_mem_delta_storev_b in WF. ss. des_ifs. apply Pos.eqb_eq in WF. auto. Qed.
+
+    Lemma get_wf_mem_delta_is_wf
+          cp ge d
+      :
+      mem_delta_inj_wf cp (meminj_public ge) (get_wf_mem_delta ge cp d).
+    Proof. induction d; ss. des_ifs. econs; auto. apply wf_mem_delta_kind_is_wf; auto. Qed.
+
+    Lemma mem_delta_apply_establish_inject2
+          (ge: Senv.t) k m0 m0'
+          (INJ: Mem.inject k m0 m0')
+          (INCR: inject_incr (meminj_public ge) k)
+          (NALLOC: meminj_not_alloc (meminj_public ge) m0)
+          d cp m1
+          (APPD: mem_delta_apply_wf ge cp d (Some m0) = Some m1)
+          (FO: public_first_order ge m1)
+      :
+      exists m1', mem_delta_apply_wf ge cp d (Some m0') = Some m1' /\ Mem.inject (meminj_public ge) m1 m1'.
+    Proof.
+      unfold mem_delta_apply_wf in APPD. rewrite mem_delta_apply_wf_get_wf_mem_delta. eapply mem_delta_apply_establish_inject; eauto.
+      apply get_wf_mem_delta_is_wf.
+      unfold public_first_order in FO. ii. unfold meminj_public in H. des_ifs. apply Senv.invert_find_symbol in Heq.
+      eapply FO; eauto.
+    Qed.
+
+  End PROOF.
 
 
   Section COUNTERS.
@@ -858,31 +974,15 @@ Section Backtranslation.
              (Mem.loadv Mint64 m (Vptr b Ptrofs.zero) (Some cp) = Some (Vlong (nat64 n))).
 
     Definition wf_counters (ge: Clight.genv) (m: mem) (tr: bundle_trace) (cnts: cnt_ids) :=
-      forall id (f: function) cnt, (Genv.find_symbol ge id = Some b) -> (Genv.find_funct_ptr ge b = Some (Internal f)) ->
-                              (cnts ! id = Some cnt) -> 
-
-switch_spec:
-  forall (ge : genv) (cnt : ident) (f : function) (e : env) (le : temp_env) (m : mem) (b : block) (k : cont) (ss : list statement) (s : statement) (ss' : list statement) (s_else : statement),
-  Z.of_nat (Datatypes.length (ss ++ s :: ss')) < Int64.modulus ->
-  let cp := comp_of f in
-  e ! cnt = None ->
-  Genv.find_symbol ge cnt = Some b ->
-  Mem.valid_access m Mint64 b 0 Writable (Some cp) ->
-  Mem.loadv Mint64 m (Vptr b Ptrofs.zero) (Some cp) = Some (Vlong (nat64 (Datatypes.length ss))) ->
-  exists m' : mem,
-    Mem.storev Mint64 m (Vptr b Ptrofs.zero) (Vlong (Int64.add (nat64 (Datatypes.length ss)) Int64.one)) cp = Some m' /\
-    star step1 ge (State f (switch cnt (ss ++ s :: ss') s_else) k e le m) E0 (State f s k e le m')
-
+      forall id b (f: function) cnt,
+        (Genv.find_symbol ge id = Some b) -> (Genv.find_funct_ptr ge b = Some (Internal f)) ->
+        (cnts ! id = Some cnt) ->
+        wf_counter ge m (comp_of f) (length (get_id_tr tr id)) cnt.
 
   End COUNTERS.
 
-(* Genv.initmem_inject: forall [F V : Type] {CF : has_comp F} (p : AST.program F V) [m : mem], Genv.init_mem p = Some m -> Mem.inject (Mem.flat_inj (Mem.nextblock m)) m m *)
-(* Genv.alloc_globals_neutral: *)
-(*   forall [F V : Type] {CF : has_comp F} (ge : Genv.t F V) [thr : block], *)
-(*   (forall (id : ident) (b : block), Genv.find_symbol ge id = Some b -> Plt b thr) -> *)
-(*   forall (gl : list (ident * globdef F V)) (m m' : mem), Genv.alloc_globals ge m gl = Some m' -> Mem.inject_neutral thr m -> Ple (Mem.nextblock m') thr -> Mem.inject_neutral thr m' *)
 
-  Section INV.
+  Section MATCH.
 
     Definition match_senv (ge ge': Senv.t) := match_symbs ge ge'.
 
@@ -892,8 +992,13 @@ switch_spec:
     (* /\ (public_rev_perm m_i m_c). *)
 
 
-  End INV.
+  End MATCH.
 
+(* Genv.initmem_inject: forall [F V : Type] {CF : has_comp F} (p : AST.program F V) [m : mem], Genv.init_mem p = Some m -> Mem.inject (Mem.flat_inj (Mem.nextblock m)) m m *)
+(* Genv.alloc_globals_neutral: *)
+(*   forall [F V : Type] {CF : has_comp F} (ge : Genv.t F V) [thr : block], *)
+(*   (forall (id : ident) (b : block), Genv.find_symbol ge id = Some b -> Plt b thr) -> *)
+(*   forall (gl : list (ident * globdef F V)) (m m' : mem), Genv.alloc_globals ge m gl = Some m' -> Mem.inject_neutral thr m -> Ple (Mem.nextblock m') thr -> Mem.inject_neutral thr m' *)
 
   Section CODEPROP.
 
