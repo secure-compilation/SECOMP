@@ -991,6 +991,14 @@ Section Backtranslation.
       (Mem.inject k m_i m_c) /\ (inject_incr j k) /\ (meminj_not_alloc j m_i).
     (* /\ (public_rev_perm m_i m_c). *)
 
+    Definition match_cur (ge: Clight.genv) (cur: block) (f: function): Prop :=
+      Genv.find_funct_ptr ge cur = Some (Internal f).
+
+    
+
+Inductive state : Type :=
+    State : function -> statement -> cont -> env -> temp_env -> mem -> state | Callstate : fundef -> list val -> cont -> mem -> state | Returnstate : val -> cont -> mem -> rettype -> compartment -> state.
+ir_state = option (block * mem * ir_conts)
 
   End MATCH.
 
