@@ -135,7 +135,7 @@ Section Backtranslation.
       now apply G; lia.
     Qed.
 
-    Let nat64 n := Int64.repr (Z.of_nat n).
+    Definition nat64 n := Int64.repr (Z.of_nat n).
 
     Lemma switch_spec
           (ge: genv) (cnt: ident) f (e: env) le m b k
@@ -757,7 +757,7 @@ Section Backtranslation.
     Definition gen_counter_defs m (gds: list (ident * globdef Asm.fundef unit)): PTree.t (ident * globdef Clight.fundef type) :=
       fold_left (fun pt '(id, gd) => PTree.set id (Pos.add id m, gen_counter (comp_of gd)) pt) gds (@PTree.empty _).
 
-    (* Generate fresh parameter ids for each function *)
+    (* Generate fresh parameter ids for each function --- parameter ids for different functions are allowed to be duplicated *)
     Definition gen_params (m: positive) (gds: list (ident * globdef Asm.fundef unit)): PTree.t (list ident).
     Admitted.
 
@@ -767,13 +767,15 @@ Section Backtranslation.
       | _, _ => Gvar default_globvar
       end.
 
+    Definition get_id_tr (tr: bundle_trace) (id0: ident): bundle_trace := filter (fun '(id, _) => Pos.eqb id0 id) tr.
+
     Definition gen_prog_defs (a_ge: Senv.t) tr (gds: list (ident * globdef Asm.fundef unit)): list (ident * globdef Clight.fundef type) :=
       let m0 := next_id gds in
       let cnts := gen_counter_defs m0 gds in
       let cnt_defs := map snd (PTree.elements cnts) in
       let m1 := next_id cnt_defs in
       let params := gen_params m1 gds in
-      (map (fun '(id, gd) => (id, gen_progdef a_ge tr gd (cnts ! id) (params ! id))) gds) ++ cnt_defs.
+      (map (fun '(id, gd) => (id, gen_progdef a_ge (get_id_tr tr id) gd (cnts ! id) (params ! id))) gds) ++ cnt_defs.
 
     Program Definition gen_program tr (a_p: Asm.program): Clight.program :=
       let a_ge := Genv.globalenv a_p in
@@ -823,6 +825,74 @@ Section Backtranslation.
     Admitted.
 
   End GENPROOFS.
+
+
+  Section GENV.
+
+    Definition symbs_public (ge1 ge2: Senv.t) := (forall id : ident, Senv.public_symbol ge2 id = Senv.public_symbol ge1 id).
+    Definition symbs_find (ge1 ge2: Senv.t) := forall id b, Senv.find_symbol ge1 id = Some b -> Senv.find_symbol ge2 id = Some b.
+    Definition symbs_volatile (ge1 ge2: Senv.t) := forall b, Senv.block_is_volatile ge2 b = Senv.block_is_volatile ge1 b.
+
+    Definition match_symbs (ge1 ge2: Senv.t) := symbs_public ge1 ge2 /\ symbs_find ge1 ge2 /\ symbs_volatile ge1 ge2.
+
+    Lemma match_symbs_symbols_inject
+          ge1 ge2
+          (MSYMB: match_symbs ge1 ge2)
+      :
+      symbols_inject (meminj_public ge1) ge1 ge2.
+    Proof.
+    Admitted.
+
+  End GENV.
+
+
+  Section COUNTERS.
+
+    Definition cnt_ids := PTree.t ident.
+
+    Definition wf_env_cnt_ids (e: env) (cnts: cnt_ids) := forall id cnt, cnts ! id = Some cnt -> e ! cnt = None.
+
+    Definition wf_counter (ge: Senv.t) (m: mem) cp (n: nat) (cnt: ident): Prop :=
+      exists b, (Senv.find_symbol ge cnt = Some b) /\
+             (Mem.valid_access m Mint64 b 0 Writable (Some cp)) /\
+             (Mem.loadv Mint64 m (Vptr b Ptrofs.zero) (Some cp) = Some (Vlong (nat64 n))).
+
+    Definition wf_counters (ge: Clight.genv) (m: mem) (tr: bundle_trace) (cnts: cnt_ids) :=
+      forall id (f: function) cnt, (Genv.find_symbol ge id = Some b) -> (Genv.find_funct_ptr ge b = Some (Internal f)) ->
+                              (cnts ! id = Some cnt) -> 
+
+switch_spec:
+  forall (ge : genv) (cnt : ident) (f : function) (e : env) (le : temp_env) (m : mem) (b : block) (k : cont) (ss : list statement) (s : statement) (ss' : list statement) (s_else : statement),
+  Z.of_nat (Datatypes.length (ss ++ s :: ss')) < Int64.modulus ->
+  let cp := comp_of f in
+  e ! cnt = None ->
+  Genv.find_symbol ge cnt = Some b ->
+  Mem.valid_access m Mint64 b 0 Writable (Some cp) ->
+  Mem.loadv Mint64 m (Vptr b Ptrofs.zero) (Some cp) = Some (Vlong (nat64 (Datatypes.length ss))) ->
+  exists m' : mem,
+    Mem.storev Mint64 m (Vptr b Ptrofs.zero) (Vlong (Int64.add (nat64 (Datatypes.length ss)) Int64.one)) cp = Some m' /\
+    star step1 ge (State f (switch cnt (ss ++ s :: ss') s_else) k e le m) E0 (State f s k e le m')
+
+
+  End COUNTERS.
+
+(* Genv.initmem_inject: forall [F V : Type] {CF : has_comp F} (p : AST.program F V) [m : mem], Genv.init_mem p = Some m -> Mem.inject (Mem.flat_inj (Mem.nextblock m)) m m *)
+(* Genv.alloc_globals_neutral: *)
+(*   forall [F V : Type] {CF : has_comp F} (ge : Genv.t F V) [thr : block], *)
+(*   (forall (id : ident) (b : block), Genv.find_symbol ge id = Some b -> Plt b thr) -> *)
+(*   forall (gl : list (ident * globdef F V)) (m m' : mem), Genv.alloc_globals ge m gl = Some m' -> Mem.inject_neutral thr m -> Ple (Mem.nextblock m') thr -> Mem.inject_neutral thr m' *)
+
+  Section INV.
+
+    Definition match_senv (ge ge': Senv.t) := match_symbs ge ge'.
+
+    Definition match_mem (ge: Senv.t) (k: meminj) (m_i m_c: mem): Prop :=
+      let j := meminj_public ge in
+      (Mem.inject k m_i m_c) /\ (inject_incr j k) /\ (meminj_not_alloc j m_i).
+    (* /\ (public_rev_perm m_i m_c). *)
+
+
+  End INV.
 
 
   Section CODEPROP.
