@@ -991,6 +991,7 @@ Section Backtranslation.
 
     Definition cnt_ids := PTree.t ident.
 
+    (* well-formedness *)
     Definition wf_env_cnt_ids (e: env) (cnts: cnt_ids) := forall id cnt, cnts ! id = Some cnt -> e ! cnt = None.
 
     Definition wf_counter (ge: Senv.t) (m: mem) cp (n: nat) (cnt: ident): Prop :=
@@ -1003,6 +1004,55 @@ Section Backtranslation.
         (Genv.find_symbol ge id = Some b) -> (Genv.find_funct_ptr ge b = Some (Internal f)) ->
         (cnts ! id = Some cnt) ->
         wf_counter ge m (comp_of f) (length (get_id_tr tr id)) cnt.
+
+    Definition wf_env_unique_blocks (e: env) :=
+      forall id1 id2 b1 ty1 b2 ty2, e ! id1 = Some (b1, ty1) -> e ! id2 = Some (b2, ty2) -> id1 <> id2 -> b1 <> b2.
+
+    Definition wf_env_mem (ge: Clight.genv) cp (e: env) (m: mem) :=
+      let eranges := blocks_of_env ge e in
+      Forall (fun '(b, lo, hi) => Mem.range_perm m b lo hi Cur Freeable /\ Mem.can_access_block m b (Some cp)) eranges.
+
+    Lemma wf_env_conds_implies_free_list
+          ge cp e m
+          (WFEUB: wf_env_unique_blocks e)
+          (WFEM: wf_env_mem ge cp e m)
+      :
+      exists m', Mem.free_list m (blocks_of_env ge e) cp = Some m'.
+    Proof.
+    Admitted.
+
+    Inductive wf_c_cont (ge: Clight.genv) (m: mem): (cont) -> Prop :=
+    | wf_c_cont_nil
+      :
+      wf_c_cont ge m Kstop
+    | wf_c_cont_cons
+        ck
+        f e le s1 s2 ck'
+        (WFEUB: wf_env_unique_blocks e)
+        (WFEM: wf_env_mem ge (comp_of f) e m)
+        (CK: ck = Kcall None f e le (Kloop1 s1 s2 ck'))
+        (IND: wf_c_cont ge m ck')
+      :
+      wf_c_cont ge m ck.
+
+    Definition wf_c_stmt (ge: Senv.t) cp cnts id tr stmt :=
+      match cnts ! id with
+      | Some cnt => stmt = code_bundle_trace ge cp cnt (get_id_tr tr id)
+      | _ => False
+      end.
+
+    Definition wf_c_state (ge: Clight.genv) (tr ttr: bundle_trace) (cnts: cnt_ids) id (cst: Clight.state) :=
+      match cst with
+      | State f stmt k_c e le m_c =>
+          wf_counters ge m_c tr cnts /\ wf_c_cont ge m_c k_c /\ wf_c_stmt ge (comp_of f) cnts id ttr stmt /\
+            (wf_env ge e /\ wf_env_unique_blocks e /\ wf_env_mem ge (comp_of f) e m_c)
+      | _ => False
+      end.
+
+
+    Definition wf_c_genv (ge: Clight.genv) :=
+      forall b f, (Genv.find_funct_ptr ge b = Some (Internal f)) ->
+             (list_norepet (var_names (fn_params f) ++ var_names (fn_vars f))).
 
 
     Definition match_senv (ge ge': Senv.t) := match_symbs ge ge'.
@@ -1034,40 +1084,87 @@ Section Backtranslation.
       :
       match_cont ge tr cnts ck ik.
 
-    Definition wf_env_unique_blocks (e: env) :=
-      forall id1 id2 b1 ty1 b2 ty2, e ! id1 = Some (b1, ty1) -> e ! id2 = Some (b2, ty2) -> id1 <> id2 -> b1 <> b2.
-
-    Definition wf_env_mem (ge: Clight.genv) cp (e: env) (m: mem) :=
-      let eranges := blocks_of_env ge e in
-      Forall (fun '(b, lo, hi) => Mem.range_perm m b lo hi Cur Freeable /\ Mem.can_access_block m b (Some cp)) eranges.
-
-    Lemma wf_env_conds_implies_free_list
-          ge cp e m
-          (WFEUB: wf_env_unique_blocks e)
-          (WFEM: wf_env_mem ge cp e m)
-      :
-      exists m', Mem.free_list m (blocks_of_env ge e) cp = Some m'.
-    Proof.
-    Admitted.
-
-
-    Inductive wf_c_cont (ge: Clight.genv) (m: mem): (cont) -> Prop :=
-    | wf_c_cont_nil
-      :
-      wf_c_cont ge m Kstop
-    | wf_c_cont_cons
-        ck
-        f e le s1 s2 ck'
-        (WFEUB: wf_env_unique_blocks e)
-        (WFEM: wf_env_mem ge (comp_of f) e m)
-        (CK: ck = Kcall None f e le (Kloop1 s1 s2 ck'))
-        (IND: wf_c_cont ge m ck')
-      :
-      wf_c_cont ge m ck.
-
-    (* TODO *)
+    Definition match_state (ge_i: Asm.genv) (ge_c: Clight.genv) (k: meminj) tr cnts id (ist: ir_state) (cst: Clight.state) :=
+      match ist, cst with
+      | Some (cur, m_i, k_i), State f _ k_c e le m_c =>
+          (match_senv ge_i ge_c) /\ (match_mem ge_i k m_i m_c) /\ (match_fun ge_c cur f id) /\ (match_cont ge_c tr cnts k_c k_i)
+      | _, _ => False
+      end.
 
   End INVS.
+
+
+  Section PROOF.
+
+    Lemma unbundle_trace_app
+          tr1 tr2
+      :
+      unbundle_trace (tr1 ++ tr2) = (unbundle_trace tr1) ++ (unbundle_trace tr2).
+    Proof. induction tr1; ss. rewrite <- app_assoc. f_equal. auto. Qed.
+
+    Lemma ir_to_clight_step
+          (ge_i: Asm.genv) (ge_c: Clight.genv)
+          (WFCG: wf_c_genv ge_c)
+          cnts ist1 ev ist2
+          (STEP: ir_step ge_i ist1 ev ist2)
+          ttr pretr btr
+          (TOTAL: ttr = pretr ++ ev :: btr)
+          cst1 k id
+          (WFC: wf_c_state ge_c pretr ttr cnts id cst1)
+          (MS: match_state ge_i ge_c k ttr cnts id ist1 cst1)
+      :
+      exists cst2, (star step1 ge_c cst1 (unbundle ev) cst2) /\
+                exists id', (wf_c_state ge_c (pretr ++ [ev]) ttr cnts id' cst2) /\
+                         exists k, (match_state ge_i ge_c k ttr cnts id' ist2 cst2).
+    Proof.
+      (* TODO *)
+
+    Admitted.
+
+    Lemma ir_to_clight_aux
+          (ge_i: Asm.genv) (ge_c: Clight.genv)
+          (WFCG: wf_c_genv ge_c)
+          (pretr: bundle_trace)
+          pist ist
+          (PREIR: istar (ir_step) ge_i pist pretr ist)
+          pcst cst
+          (PREC: star step1 ge_c pcst (unbundle_trace pretr) cst)
+          ttr cnts k id
+          (WFC: wf_c_state ge_c pretr ttr cnts id cst)
+          (MS: match_state ge_i ge_c k ttr cnts id ist cst)
+          btr ist'
+          (TOTAL: ttr = pretr ++ btr)
+          (STAR: istar (ir_step) ge_i ist btr ist')
+      :
+      exists cst', star step1 ge_c cst (unbundle_trace btr) cst'.
+    Proof.
+      revert pretr PREIR cst PREC k id WFC MS TOTAL. induction STAR; intros.
+      { ss. eexists. econs 1. }
+      rename H into STEP. subst t. ss.
+      hexploit ir_to_clight_step; eauto. intros; des.
+      hexploit IHSTAR.
+      { eapply istar_trans. eapply PREIR. econs 2. eapply STEP. econs 1. all: ss. }
+      { rewrite unbundle_trace_app. eapply star_trans. eapply PREC. eapply H. ss. rewrite app_nil_r. ss. }
+      eauto. eauto.
+      { rewrite <- app_assoc. ss. }
+      intros (cst' & INDSTAR).
+      exists cst'. eapply star_trans. eapply H. eapply INDSTAR. ss.
+    Qed.
+
+    Theorem ir_to_clight
+          (ge_i: Asm.genv) (ge_c: Clight.genv)
+          (WFCG: wf_c_genv ge_c)
+          ist cst
+          ttr cnts k id
+          (WFC: wf_c_state ge_c [] ttr cnts id cst)
+          (MS: match_state ge_i ge_c k ttr cnts id ist cst)
+          ist'
+          (STAR: istar (ir_step) ge_i ist ttr ist')
+      :
+      exists cst', star step1 ge_c cst (unbundle_trace ttr) cst'.
+    Proof. eapply ir_to_clight_aux. 4,5,6,7: eauto. all: eauto. econs 1. ss. econs 1. Qed.
+
+  End PROOF.
 
 (* Genv.initmem_inject: forall [F V : Type] {CF : has_comp F} (p : AST.program F V) [m : mem], Genv.init_mem p = Some m -> Mem.inject (Mem.flat_inj (Mem.nextblock m)) m m *)
 (* Genv.alloc_globals_neutral: *)

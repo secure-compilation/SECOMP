@@ -298,6 +298,7 @@ End MEMDELTA.
 Section WFDELTA.
   (** only wf delta is applied for back transltation *)
 
+  (* Refer to encode_val *)
   Definition wf_chunk_val_b (ch: memory_chunk) (v: val) :=
     match v with
     | Vundef => false
