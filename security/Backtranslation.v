@@ -520,10 +520,14 @@ Section Backtranslation.
       | Bundle_builtin tr ef evargs d => code_bundle_builtin cp tr ef evargs d
       end.
 
+    Definition one_expr: expr := Econst_int Int.one (Tint I32 Signed noattr).
+
+    Definition switch_bundle_events cnt cp (tr: bundle_trace) :=
+      switch cnt (map (fun ib => code_bundle_event cp (snd ib)) tr) (Sreturn None).
+
     (* A while(1)-loop with big if-then-elses inside it *)
     Definition code_bundle_trace cp (cnt: ident) (tr: bundle_trace): statement :=
-      Swhile (Econst_int Int.one (Tint I32 Signed noattr))
-             (switch cnt (map (fun ib => code_bundle_event cp (snd ib)) tr) (Sreturn None)).
+      Swhile one_expr (switch_bundle_events cnt cp tr).
 
   End CODE.
 
@@ -704,6 +708,28 @@ Section Backtranslation.
         all: take_step; take_step; eapply IHd; eauto.
     Qed.
 
+    Lemma code_bundle_trace_spec
+          cp cnt tr
+          f e le m k
+      :
+      star step1 ge
+           (State f (code_bundle_trace ge cp cnt tr) k e le m)
+           E0
+           (State f (switch_bundle_events ge cnt cp tr)
+                  (Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge cnt cp tr)) Sskip k)
+                  e le m).
+    Proof.
+      econs 2.
+      { unfold code_bundle_trace, Swhile. eapply step_loop. }
+      econs 2.
+      { eapply step_seq. }
+      econs 2.
+      { eapply step_ifthenelse. simpl_expr. ss. }
+      rewrite Int.eq_false; ss. econs 2.
+      { eapply step_skip_seq. }
+      econs 1. all: eauto.
+    Qed.
+
   End CODEPROOFS.
 
 
@@ -747,7 +773,6 @@ Section Backtranslation.
 
     Definition gen_counter cp: globdef Clight.fundef type :=
       Gvar (mkglobvar type_counter cp [(Init_int64 Int64.zero)] false false).
-
 
     (* Generate the max + 1 of the keys *)
     Definition next_id {A} (l: list (ident * A)): ident.
@@ -962,7 +987,7 @@ Section Backtranslation.
   End PROOF.
 
 
-  Section COUNTERS.
+  Section INVS.
 
     Definition cnt_ids := PTree.t ident.
 
@@ -979,10 +1004,6 @@ Section Backtranslation.
         (cnts ! id = Some cnt) ->
         wf_counter ge m (comp_of f) (length (get_id_tr tr id)) cnt.
 
-  End COUNTERS.
-
-
-  Section MATCH.
 
     Definition match_senv (ge ge': Senv.t) := match_symbs ge ge'.
 
@@ -991,16 +1012,62 @@ Section Backtranslation.
       (Mem.inject k m_i m_c) /\ (inject_incr j k) /\ (meminj_not_alloc j m_i).
     (* /\ (public_rev_perm m_i m_c). *)
 
-    Definition match_cur (ge: Clight.genv) (cur: block) (f: function): Prop :=
-      Genv.find_funct_ptr ge cur = Some (Internal f).
+    Definition match_fun (ge: Clight.genv) (cur: block) (f: function) (id: ident): Prop :=
+      Genv.find_funct_ptr ge cur = Some (Internal f) /\ Genv.invert_symbol ge cur = Some id.
 
-    
+    Inductive match_cont (ge: Clight.genv) (tr: bundle_trace) (cnts: cnt_ids) : (cont) -> (ir_conts) -> Prop :=
+    | match_cont_nil
+        ck ik
+        (CK: ck = Kstop)
+        (IK: ik = nil)
+      :
+      match_cont ge tr cnts ck ik
+    | match_cont_cons
+        ck ik
+        f e le cnt id ck'
+        b ik'
+        (FUN: match_fun ge b f id)
+        (CNT: cnts ! id = Some cnt)
+        (CK: ck = Kcall None f e le (Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge cnt (comp_of f) (get_id_tr tr id))) Sskip ck'))
+        (IK: ik = (ir_cont b) :: ik')
+        (IND: match_cont ge tr cnts ck' ik')
+      :
+      match_cont ge tr cnts ck ik.
 
-Inductive state : Type :=
-    State : function -> statement -> cont -> env -> temp_env -> mem -> state | Callstate : fundef -> list val -> cont -> mem -> state | Returnstate : val -> cont -> mem -> rettype -> compartment -> state.
-ir_state = option (block * mem * ir_conts)
+    Definition wf_env_unique_blocks (e: env) :=
+      forall id1 id2 b1 ty1 b2 ty2, e ! id1 = Some (b1, ty1) -> e ! id2 = Some (b2, ty2) -> id1 <> id2 -> b1 <> b2.
 
-  End MATCH.
+    Definition wf_env_mem (ge: Clight.genv) cp (e: env) (m: mem) :=
+      let eranges := blocks_of_env ge e in
+      Forall (fun '(b, lo, hi) => Mem.range_perm m b lo hi Cur Freeable /\ Mem.can_access_block m b (Some cp)) eranges.
+
+    Lemma wf_env_conds_implies_free_list
+          ge cp e m
+          (WFEUB: wf_env_unique_blocks e)
+          (WFEM: wf_env_mem ge cp e m)
+      :
+      exists m', Mem.free_list m (blocks_of_env ge e) cp = Some m'.
+    Proof.
+    Admitted.
+
+
+    Inductive wf_c_cont (ge: Clight.genv) (m: mem): (cont) -> Prop :=
+    | wf_c_cont_nil
+      :
+      wf_c_cont ge m Kstop
+    | wf_c_cont_cons
+        ck
+        f e le s1 s2 ck'
+        (WFEUB: wf_env_unique_blocks e)
+        (WFEM: wf_env_mem ge (comp_of f) e m)
+        (CK: ck = Kcall None f e le (Kloop1 s1 s2 ck'))
+        (IND: wf_c_cont ge m ck')
+      :
+      wf_c_cont ge m ck.
+
+    (* TODO *)
+
+  End INVS.
 
 (* Genv.initmem_inject: forall [F V : Type] {CF : has_comp F} (p : AST.program F V) [m : mem], Genv.init_mem p = Some m -> Mem.inject (Mem.flat_inj (Mem.nextblock m)) m m *)
 (* Genv.alloc_globals_neutral: *)
