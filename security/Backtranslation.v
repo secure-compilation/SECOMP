@@ -860,6 +860,19 @@ Section Backtranslation.
     Proof.
     Admitted.
 
+
+    Lemma get_id_tr_cons
+          id be tr
+      :
+      get_id_tr (be :: tr) id = if (Pos.eqb id (fst be)) then (be :: get_id_tr tr id) else (get_id_tr tr id).
+    Proof. unfold get_id_tr. ss. des_ifs; ss; clarify. Qed.
+
+    Lemma get_id_tr_app
+          id tr1 tr2
+      :
+      get_id_tr (tr1 ++ tr2) id = (get_id_tr tr1 id) ++ (get_id_tr tr2 id).
+    Proof. unfold get_id_tr. rewrite filter_app. auto. Qed.
+
   End GENPROOFS.
 
 
@@ -976,6 +989,30 @@ Section Backtranslation.
       code_mem_delta ge1 cp d s = code_mem_delta ge2 cp d s.
     Proof. unfold code_mem_delta. erewrite match_symbs_code_mem_delta_kind; eauto. Qed.
 
+    Lemma match_symbs_code_bundle_call
+          ge1 ge2
+          (MSYMB: match_symbs ge1 ge2)
+          cp tr id evargs sg d
+      :
+      code_bundle_call ge1 cp tr id evargs sg d = code_bundle_call ge2 cp tr id evargs sg d.
+    Proof. unfold code_bundle_call. erewrite match_symbs_code_mem_delta; eauto. Qed.
+
+    Lemma match_symbs_code_bundle_return
+          ge1 ge2
+          (MSYMB: match_symbs ge1 ge2)
+          cp tr evr d
+      :
+      code_bundle_return ge1 cp tr evr d = code_bundle_return ge2 cp tr evr d.
+    Proof. unfold code_bundle_return. erewrite match_symbs_code_mem_delta; eauto. Qed.
+
+    Lemma match_symbs_code_bundle_builtin
+          ge1 ge2
+          (MSYMB: match_symbs ge1 ge2)
+          cp tr ef evargs d
+      :
+      code_bundle_builtin ge1 cp tr ef evargs d = code_bundle_builtin ge2 cp tr ef evargs d.
+    Proof. unfold code_bundle_builtin. erewrite match_symbs_code_mem_delta; eauto. Qed.
+
     Lemma match_symbs_code_bundle_events
           ge1 ge2
           (MSYMB: match_symbs ge1 ge2)
@@ -984,9 +1021,7 @@ Section Backtranslation.
       code_bundle_event ge1 cp = code_bundle_event ge2 cp.
     Proof.
       extensionalities be. unfold code_bundle_event. des_ifs.
-      - unfold code_bundle_call. erewrite match_symbs_code_mem_delta; eauto.
-      - unfold code_bundle_return. erewrite match_symbs_code_mem_delta; eauto.
-      - unfold code_bundle_builtin. erewrite match_symbs_code_mem_delta; eauto.
+      eapply match_symbs_code_bundle_call; auto. eapply match_symbs_code_bundle_return; auto. eapply match_symbs_code_bundle_builtin; auto.
     Qed.
 
     Lemma match_symbs_switch_bundle_events
@@ -1086,10 +1121,12 @@ Section Backtranslation.
              (Mem.loadv Mint64 m (Vptr b Ptrofs.zero) (Some cp) = Some (Vlong (nat64 n))).
 
     Definition wf_counters (ge: Clight.genv) (m: mem) (tr: bundle_trace) (cnts: cnt_ids) :=
-      forall id b (f: function) cnt,
+      forall id b (f: function),
         (Genv.find_symbol ge id = Some b) -> (Genv.find_funct_ptr ge b = Some (Internal f)) ->
-        (cnts ! id = Some cnt) ->
-        wf_counter ge m (comp_of f) (length (get_id_tr tr id)) cnt.
+        (exists cnt, (cnts ! id = Some cnt) /\ (wf_counter ge m (comp_of f) (length (get_id_tr tr id)) cnt)).
+
+    Definition wf_counters_find (ge: Clight.genv) (cnts: cnt_ids) :=
+      forall id cnt, cnts ! id = Some cnt -> exists b_cnt, Genv.find_symbol ge cnt = Some b_cnt.
 
     Definition wf_env_unique_blocks (e: env) :=
       forall id1 id2 b1 ty1 b2 ty2, e ! id1 = Some (b1, ty1) -> e ! id2 = Some (b2, ty2) -> id1 <> id2 -> b1 <> b2.
@@ -1130,7 +1167,8 @@ Section Backtranslation.
     Definition wf_c_state (ge: Clight.genv) (tr ttr: bundle_trace) (cnts: cnt_ids) id (cst: Clight.state) :=
       match cst with
       | State f stmt k_c e le m_c =>
-          wf_counters ge m_c tr cnts /\ wf_c_cont ge m_c k_c /\ wf_c_stmt ge (comp_of f) cnts id ttr stmt /\
+          wf_counters ge m_c tr cnts /\ wf_counters_find ge cnts /\
+            wf_c_cont ge m_c k_c /\ wf_c_stmt ge (comp_of f) cnts id ttr stmt /\
             (wf_env ge e /\ wf_env_unique_blocks e /\ wf_env_mem ge (comp_of f) e m_c)
       | _ => False
       end.
@@ -1198,45 +1236,116 @@ Section Backtranslation.
 
     Lemma ir_to_clight_step
           (ge_i: Asm.genv) (ge_c: Clight.genv)
-          (WFCG: wf_c_genv ge_c)
-          cnts ist1 ev ist2
+          cnts pars ist1 ev ist2
           (STEP: ir_step ge_i ist1 ev ist2)
           ttr pretr btr
+          (BOUND: Z.of_nat (Datatypes.length ttr) < Int64.modulus)
           (TOTAL: ttr = pretr ++ ev :: btr)
           cst1 k id
           (WFC: wf_c_state ge_c pretr ttr cnts id cst1)
-          (MS: match_state ge_i ge_c k ttr cnts id ist1 cst1)
+          (MS: match_state ge_i ge_c k ttr cnts pars id ist1 cst1)
       :
       exists cst2, (star step1 ge_c cst1 (unbundle ev) cst2) /\
                 ((exists id', (wf_c_state ge_c (pretr ++ [ev]) ttr cnts id' cst2) /\
-                           exists k, (match_state ge_i ge_c k ttr cnts id' ist2 cst2))
+                           exists k, (match_state ge_i ge_c k ttr cnts pars id' ist2 cst2))
                  \/ (ist2 = None)).
     Proof.
       unfold wf_c_state in WFC. des_ifs. rename s into stmt, k into k_c, m into m_c.
-      destruct WFC as (WFC0 & WFC1 & WFC2 & WFC3 & WFC4 & WFC5).
+      destruct WFC as (WFC0 & WFC1 & WFC2 & WFC3 & WFC4 & WFC5 & WFC6).
       unfold match_state in MS. des_ifs. rename i into k_i, b into cur, m into m_i.
-      destruct MS as (MS0 & MS1 & MS2 & MS3).
+      destruct MS as (MS0 & MS1 & MS2 & MS3 & MS4).
       move STEP after WFC5. inv STEP.
 
-      - exists (State 
+      - assert (id = id_cur).
+        { unfold match_fun in MS2. des. destruct MS0 as (MSENV0 & MSENV1 & MSENV2).
+          apply Genv.invert_find_symbol in IDCUR. apply MSENV1 in IDCUR. apply Senv.find_invert_symbol in IDCUR. setoid_rewrite MS5 in IDCUR. clarify.
+        }
+        subst id.
+        rename f_next into fi_next. exploit MS3.
+        { unfold Genv.find_funct in FINDF. des_ifs. unfold Genv.find_funct_ptr in FINDF. des_ifs. eapply Heq. }
+        { eapply Genv.find_invert_symbol; eauto. }
+        intros FINDF_C. des_ifs. rename id0 into id_next, i into cnt_next, Heq into CNTS_NEXT, l into params_next, Heq0 into PARS_NEXT. simpl in FINDF_C.
+        set (pretr ++ (id_cur, Bundle_call tr id_next evargs (fn_sig fi_next) d) :: btr) as ttr in *.
+        set (gen_function ge_i cnt_next params_next (get_id_tr ttr id_next) fi_next) as f_next.
+        set (fn_body f_next) as stmt_next.
+        assert (FIND_CUR_C: Genv.find_symbol ge_c id_cur = Some cur).
+        { destruct MS2 as (MFUN0 & MFUN1). apply Genv.invert_find_symbol; eauto. }
+        assert (FIND_FUN_C: Genv.find_funct_ptr ge_c cur = Some (Internal f)).
+        { destruct MS2 as (MFUN0 & MFUN1). auto. }
+        exploit WFC0. eapply FIND_CUR_C. eapply FIND_FUN_C. intros (cnt_cur & CNTS_CUR & WF_CNT_CUR).
+        set (Kcall None f e le (Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge_c cnt_cur (comp_of f) (get_id_tr ttr id_cur))) Sskip k0)) as kc_next.
+        assert (CUR_TR: get_id_tr ttr id_cur = (get_id_tr pretr id_cur) ++ (id_cur, Bundle_call tr id_next evargs (fn_sig fi_next) d) :: (get_id_tr btr id_cur)).
+        { subst ttr. clear. rewrite get_id_tr_app. rewrite get_id_tr_cons. ss. rewrite Pos.eqb_refl. auto. }
+        assert (BOUND2: Z.of_nat (Datatypes.length (map (fun ib : ident * bundle_event => code_bundle_event ge_i (comp_of f) (snd ib)) (get_id_tr ttr id_cur))) < Int64.modulus).
+        { rewrite map_length. etransitivity. 2: eauto. unfold get_id_tr. admit. }
+        destruct WF_CNT_CUR as (cnt_cur_b & FIND_CNT_CUR & CNT_CUR_MEM_VA & CNT_CUR_MEM_LOAD).
+
+        hexploit switch_spec.
+        { subst ttr. rewrite CUR_TR in BOUND2. rewrite map_app in BOUND2. ss. eapply BOUND2. }
+        { unfold wf_env in WFC4. specialize (WFC4 cnt_cur). des_ifs. eapply WFC4. }
+        eapply FIND_CNT_CUR. eapply CNT_CUR_MEM_VA.
+        { rewrite CNT_CUR_MEM_LOAD. rewrite map_length. auto. }
+        instantiate (1:=le).
+        instantiate (1:=(Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge_c cnt_cur (comp_of f) (get_id_tr ttr id_cur))) Sskip k0)).
+        instantiate (1:=Sreturn None).
+        intros (m_cu & CNT_CUR_STORE & CUR_SWITCH_STAR).
+        assert (DELTA_C: exists m_c', mem_delta_apply_wf ge_i (comp_of f) d (Some m_cu) = Some m_c').
+        { admit. }
+        des.
+        assert (ENV_ALLOC: exists e_next m_c_next0, alloc_variables ge_c (comp_of f_next) empty_env m_c' (fn_params f_next ++ fn_vars f_next) e_next m_c_next0).
+        { admit. }
+        des.
+        assert (ENV_BIND: exists m_c_next, bind_parameters ge_c (comp_of f_next) e_next m_c_next0 (fn_params f_next) vargs m_c_next).
+        { admit. }
+        des.
+        set (create_undef_temps (fn_temps f_next)) as le_next.
+        set (State f_next (fn_body f_next)
+                   (Kcall None f e le (Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge_c cnt_cur (comp_of f) (get_id_tr ttr id_cur))) Sskip k0))
+                   e_next le_next m_c_next) as cst2.
+
+        assert (WFC_NEXT: wf_c_state ge_c (pretr ++ [(id_cur, Bundle_call tr id_next evargs (fn_sig fi_next) d)]) ttr cnts id_next cst2).
+        { admit. }
+        assert (MS_NEXT: match_state ge_i ge_c (meminj_public ge_i) ttr cnts pars id_next (Some (b, m2, ir_cont cur :: k_i)) cst2).
+        { admit. }
+        exists cst2. split.
+        2:{ left. exists id_next. split. apply WFC_NEXT. eexists. eapply MS_NEXT. }
+
+        unfold wf_c_stmt in WFC3. rewrite CNTS_CUR in WFC3. subst stmt.
+        eapply star_trans. eapply code_bundle_trace_spec. 2: ss.
+        unfold switch_bundle_events at 1. rewrite CUR_TR at 1. rewrite map_app. simpl.
+        rewrite ! (match_symbs_code_bundle_call ge_i ge_c) in CUR_SWITCH_STAR. rewrite ! (match_symbs_code_bundle_events ge_i ge_c) in CUR_SWITCH_STAR.
+        eapply star_trans. eapply CUR_SWITCH_STAR. 2: ss. 2,3: auto.
+        clear BOUND2 CUR_SWITCH_STAR.
+        unfold code_bundle_call. eapply star_trans. eapply code_mem_delta_correct. auto.
+        { erewrite <- match_symbs_mem_delta_apply_wf. eapply DELTA_C. auto. }
+        2: ss.
+        unfold unbundle. simpl. rename b into next. econs 2.
+        { eapply step_call.
+          (* TODO *)
 
 
-      
+              econs.
+
+
+        2: econs 1. 2: setoid_rewrite app_nil_r; auto.
+        eapply step_call.
+
+
       (* TODO *)
 
     Admitted.
 
     Lemma ir_to_clight_aux
           (ge_i: Asm.genv) (ge_c: Clight.genv)
-          (WFCG: wf_c_genv ge_c)
           (pretr: bundle_trace)
           pist ist
           (PREIR: istar (ir_step) ge_i pist pretr ist)
           pcst cst
           (PREC: star step1 ge_c pcst (unbundle_trace pretr) cst)
-          ttr cnts k id
+          ttr cnts pars k id
+          (BOUND: Z.of_nat (Datatypes.length ttr) < Int64.modulus)
           (WFC: wf_c_state ge_c pretr ttr cnts id cst)
-          (MS: match_state ge_i ge_c k ttr cnts id ist cst)
+          (MS: match_state ge_i ge_c k ttr cnts pars id ist cst)
           btr ist'
           (TOTAL: ttr = pretr ++ btr)
           (STAR: istar (ir_step) ge_i ist btr ist')
