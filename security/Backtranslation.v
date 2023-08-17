@@ -534,10 +534,8 @@ Section Backtranslation.
 
   Section CODEPROOFS.
 
-    Variable ge: Clight.genv.
-
     Lemma ptr_of_id_ofs_eval
-          id ofs e b cp le m
+          (ge: genv) id ofs e b cp le m
           (GE1: wf_env ge e)
           (GE2: Senv.find_symbol ge id = Some b)
       :
@@ -556,14 +554,14 @@ Section Backtranslation.
     Qed.
 
     Lemma code_mem_delta_cons
-          cp k d sn
+          (ge: Senv.t) cp k d sn
       :
       code_mem_delta ge cp (k :: d) sn =
         Ssequence (code_mem_delta_kind ge cp k) (code_mem_delta ge cp d sn).
     Proof. unfold code_mem_delta. ss. Qed.
 
     Lemma code_mem_delta_app
-          cp d1 d2 sn
+          (ge: Senv.t) cp d1 d2 sn
       :
       code_mem_delta ge cp (d1 ++ d2) sn = (code_mem_delta ge cp d1 (code_mem_delta ge cp d2 sn)).
     Proof.
@@ -572,7 +570,7 @@ Section Backtranslation.
     Qed.
 
     Lemma type_of_chunk_val_to_expr
-          ch ty v e
+          (ge: Senv.t) ch ty v e
           (WF: wf_chunk_val_b ch v)
           (CT: chunk_to_type ch = Some ty)
           (CVE: chunk_val_to_expr ge ch v = Some e)
@@ -587,7 +585,7 @@ Section Backtranslation.
     Proof. destruct v; ss; auto. Qed.
 
     Lemma sem_cast_chunk_val
-          m ch ty v e
+          (ge: Senv.t) m ch ty v e
           (WF: wf_chunk_val_b ch v)
           (CT: chunk_to_type ch = Some ty)
           (CVE: chunk_val_to_expr ge ch v = Some e)
@@ -610,7 +608,7 @@ Section Backtranslation.
       end.
 
     Lemma chunk_val_to_expr_eval
-          ch v exp e cp le m
+          (ge: genv) ch v exp e cp le m
           (EXP: chunk_val_to_expr ge ch v = Some exp)
           (WF: wf_chunk_val_b ch v)
       :
@@ -625,7 +623,7 @@ Section Backtranslation.
     Proof. unfold wf_chunk_val_b in WF. des_ifs; ss; eauto. Qed.
 
     Lemma wf_chunk_val_chunk_val_to_expr
-          ch v
+          (ge: Senv.t) ch v
           (WF: wf_chunk_val_b ch v)
       :
       exists ve, chunk_val_to_expr ge ch v = Some ve.
@@ -635,7 +633,7 @@ Section Backtranslation.
     Qed.
 
     Lemma code_mem_delta_storev_correct
-          f k e le m m'
+          (ge: genv) f k e le m m'
           d
           (WFE: wf_env ge e)
           (STORE: mem_delta_apply_storev (Some m) d = Some m')
@@ -678,13 +676,14 @@ Section Backtranslation.
     Qed.
 
     Lemma wf_mem_delta_storev_false_is_skip
-          cp d
+          (ge: Senv.t) cp d
           (NWF: wf_mem_delta_storev_b ge cp d = false)
       :
       code_mem_delta_storev ge cp d = Sskip.
     Proof. destruct d as [[[ch ptr] v] cp0]. ss. des_ifs. Qed.
 
     Lemma code_mem_delta_correct
+          (ge: genv)
           f k e le m m'
           d snext
           (WFE: wf_env ge e)
@@ -709,7 +708,7 @@ Section Backtranslation.
     Qed.
 
     Lemma code_bundle_trace_spec
-          cp cnt tr
+          (ge: genv) cp cnt tr
           f e le m k
       :
       star step1 ge
@@ -782,9 +781,14 @@ Section Backtranslation.
     Definition gen_counter_defs m (gds: list (ident * globdef Asm.fundef unit)): PTree.t (ident * globdef Clight.fundef type) :=
       fold_left (fun pt '(id, gd) => PTree.set id (Pos.add id m, gen_counter (comp_of gd)) pt) gds (@PTree.empty _).
 
+    Definition params_of := PTree.t (list ident).
+
     (* Generate fresh parameter ids for each function --- parameter ids for different functions are allowed to be duplicated *)
-    Definition gen_params (m: positive) (gds: list (ident * globdef Asm.fundef unit)): PTree.t (list ident).
+    Definition gen_params (m: positive) (gds: list (ident * globdef Asm.fundef unit)): params_of.
     Admitted.
+
+    Definition wf_params_of (pars: params_of) :=
+      forall id params, (pars ! id = Some params) -> list_norepet params.
 
     Definition gen_progdef (ge: Senv.t) (tr: bundle_trace) a_gd (ocnt: option (ident * globdef Clight.fundef type)) (oparams: option (list ident)): globdef Clight.fundef type :=
       match ocnt, oparams with
@@ -846,6 +850,13 @@ Section Backtranslation.
           (IN: In p ps)
       :
       Pos.lt m p.
+    Proof.
+    Admitted.
+
+    Lemma gen_params_wf
+          m agds
+      :
+      wf_params_of (gen_params m agds).
     Proof.
     Admitted.
 
@@ -918,6 +929,81 @@ Section Backtranslation.
       :
       mem_delta_apply_wf ge1 cp d m = mem_delta_apply_wf ge2 cp d m.
     Proof. unfold mem_delta_apply_wf. erewrite match_symbs_get_wf_mem_delta; eauto. Qed.
+
+    Lemma match_symbs_code_mem_delta_kind
+          ge1 ge2
+          (MSYMB: match_symbs ge1 ge2)
+          cp
+      :
+      code_mem_delta_kind ge1 cp = code_mem_delta_kind ge2 cp.
+    Proof.
+      extensionalities k. unfold code_mem_delta_kind. des_ifs.
+      destruct d as [[[ch ptr] v] cp0]. ss. destruct ptr; ss.
+      destruct MSYMB as (MSYMB1 & MSYMB2 & MSYMB3).
+      destruct (Senv.invert_symbol ge1 b) eqn:INV1.
+      { exploit Senv.invert_find_symbol; eauto. intros FIND1.
+        exploit MSYMB2; eauto. intros FIND2. exploit Senv.find_invert_symbol; eauto. intros INV2.
+        rewrite INV2. destruct (chunk_to_type ch) eqn:CHTY; auto.
+        des_ifs.
+        - apply andb_prop in Heq0, Heq2. des. apply andb_prop in Heq0, Heq2. des.
+          assert (chunk_val_to_expr ge2 ch v = chunk_val_to_expr ge1 ch v).
+          { unfold chunk_val_to_expr. rewrite CHTY. clear - Heq6.
+            unfold wf_chunk_val_b in Heq6. des_ifs.
+          }
+          rewrite Heq, Heq1 in H. clarify.
+        - exfalso. apply andb_prop in Heq0. des. apply andb_prop in Heq0. des.
+          clarify. rewrite ! andb_true_r in Heq2. rewrite MSYMB1 in Heq2. clarify.
+        - exfalso. apply andb_prop in Heq0. des. apply andb_prop in Heq0. des.
+          apply (wf_chunk_val_chunk_val_to_expr (ge2)) in Heq3; eauto. des; clarify.
+        - exfalso. apply andb_prop in Heq2. des. apply andb_prop in Heq2. des.
+          clarify. rewrite ! andb_true_r in Heq0. rewrite MSYMB1 in Heq2; clarify.
+        - exfalso. apply andb_prop in Heq1. des. apply andb_prop in Heq1. des.
+          apply (wf_chunk_val_chunk_val_to_expr (ge1)) in Heq3; eauto. des; clarify.
+      }
+      { des_ifs.
+        exfalso. apply andb_prop in Heq2. des. apply andb_prop in Heq2. des.
+        rewrite MSYMB1 in Heq2. eapply Senv.public_symbol_exists in Heq2. des.
+        exploit MSYMB2. eapply Heq2. intros FIND4. eapply Senv.invert_find_symbol in Heq. clarify.
+        exploit Senv.find_invert_symbol. apply Heq2. intros INV3. clarify.
+      }
+    Qed.
+
+    Lemma match_symbs_code_mem_delta
+          ge1 ge2
+          (MSYMB: match_symbs ge1 ge2)
+          cp d s
+      :
+      code_mem_delta ge1 cp d s = code_mem_delta ge2 cp d s.
+    Proof. unfold code_mem_delta. erewrite match_symbs_code_mem_delta_kind; eauto. Qed.
+
+    Lemma match_symbs_code_bundle_events
+          ge1 ge2
+          (MSYMB: match_symbs ge1 ge2)
+          cp
+      :
+      code_bundle_event ge1 cp = code_bundle_event ge2 cp.
+    Proof.
+      extensionalities be. unfold code_bundle_event. des_ifs.
+      - unfold code_bundle_call. erewrite match_symbs_code_mem_delta; eauto.
+      - unfold code_bundle_return. erewrite match_symbs_code_mem_delta; eauto.
+      - unfold code_bundle_builtin. erewrite match_symbs_code_mem_delta; eauto.
+    Qed.
+
+    Lemma match_symbs_switch_bundle_events
+          ge1 ge2
+          (MSYMB: match_symbs ge1 ge2)
+          cp cnt tr
+      :
+      switch_bundle_events ge1 cnt cp tr = switch_bundle_events ge2 cnt cp tr.
+    Proof. unfold switch_bundle_events. erewrite match_symbs_code_bundle_events; eauto. Qed.
+
+    Lemma match_symbs_code_mem_trace
+          ge1 ge2
+          (MSYMB: match_symbs ge1 ge2)
+          cp cnt tr
+      :
+      code_bundle_trace ge1 cp cnt tr = code_bundle_trace ge2 cp cnt tr.
+    Proof. unfold code_bundle_trace. erewrite match_symbs_switch_bundle_events; eauto. Qed.
 
 
     Lemma match_symbs_symbols_inject
@@ -1050,10 +1136,6 @@ Section Backtranslation.
       end.
 
 
-    Definition wf_c_genv (ge: Clight.genv) :=
-      forall b f, (Genv.find_funct_ptr ge b = Some (Internal f)) ->
-             (list_norepet (var_names (fn_params f) ++ var_names (fn_vars f))).
-
 
     Definition match_senv (ge ge': Senv.t) := match_symbs ge ge'.
 
@@ -1064,6 +1146,16 @@ Section Backtranslation.
 
     Definition match_fun (ge: Clight.genv) (cur: block) (f: function) (id: ident): Prop :=
       Genv.find_funct_ptr ge cur = Some (Internal f) /\ Genv.invert_symbol ge cur = Some id.
+
+    Definition match_find_def (ge_i: Asm.genv) (ge_c: Clight.genv) (cnts: cnt_ids) (pars: params_of) tr :=
+      forall b gd_i id,
+        Genv.find_def ge_i b = Some gd_i ->
+        Senv.invert_symbol ge_i b = Some id ->
+        match (cnts ! id), (pars ! id) with
+        | Some cnt, Some params =>
+            Genv.find_def ge_c b = Some (gen_globdef ge_i cnt params (get_id_tr tr id) gd_i)
+        | _, _ => False
+        end.
 
     Inductive match_cont (ge: Clight.genv) (tr: bundle_trace) (cnts: cnt_ids) : (cont) -> (ir_conts) -> Prop :=
     | match_cont_nil
@@ -1084,10 +1176,12 @@ Section Backtranslation.
       :
       match_cont ge tr cnts ck ik.
 
-    Definition match_state (ge_i: Asm.genv) (ge_c: Clight.genv) (k: meminj) tr cnts id (ist: ir_state) (cst: Clight.state) :=
+    Definition match_state (ge_i: Asm.genv) (ge_c: Clight.genv) (k: meminj) tr cnts pars id (ist: ir_state) (cst: Clight.state) :=
       match ist, cst with
       | Some (cur, m_i, k_i), State f _ k_c e le m_c =>
-          (match_senv ge_i ge_c) /\ (match_mem ge_i k m_i m_c) /\ (match_fun ge_c cur f id) /\ (match_cont ge_c tr cnts k_c k_i)
+          (match_senv ge_i ge_c) /\ (match_mem ge_i k m_i m_c) /\
+            (match_fun ge_c cur f id) /\ (match_find_def ge_i ge_c cnts pars tr) /\
+            (match_cont ge_c tr cnts k_c k_i)
       | _, _ => False
       end.
 
@@ -1114,9 +1208,20 @@ Section Backtranslation.
           (MS: match_state ge_i ge_c k ttr cnts id ist1 cst1)
       :
       exists cst2, (star step1 ge_c cst1 (unbundle ev) cst2) /\
-                exists id', (wf_c_state ge_c (pretr ++ [ev]) ttr cnts id' cst2) /\
-                         exists k, (match_state ge_i ge_c k ttr cnts id' ist2 cst2).
+                ((exists id', (wf_c_state ge_c (pretr ++ [ev]) ttr cnts id' cst2) /\
+                           exists k, (match_state ge_i ge_c k ttr cnts id' ist2 cst2))
+                 \/ (ist2 = None)).
     Proof.
+      unfold wf_c_state in WFC. des_ifs. rename s into stmt, k into k_c, m into m_c.
+      destruct WFC as (WFC0 & WFC1 & WFC2 & WFC3 & WFC4 & WFC5).
+      unfold match_state in MS. des_ifs. rename i into k_i, b into cur, m into m_i.
+      destruct MS as (MS0 & MS1 & MS2 & MS3).
+      move STEP after WFC5. inv STEP.
+
+      - exists (State 
+
+
+      
       (* TODO *)
 
     Admitted.
@@ -1142,13 +1247,16 @@ Section Backtranslation.
       { ss. eexists. econs 1. }
       rename H into STEP. subst t. ss.
       hexploit ir_to_clight_step; eauto. intros; des.
-      hexploit IHSTAR.
-      { eapply istar_trans. eapply PREIR. econs 2. eapply STEP. econs 1. all: ss. }
-      { rewrite unbundle_trace_app. eapply star_trans. eapply PREC. eapply H. ss. rewrite app_nil_r. ss. }
-      eauto. eauto.
-      { rewrite <- app_assoc. ss. }
-      intros (cst' & INDSTAR).
-      exists cst'. eapply star_trans. eapply H. eapply INDSTAR. ss.
+      - hexploit IHSTAR.
+        { eapply istar_trans. eapply PREIR. econs 2. eapply STEP. econs 1. all: ss. }
+        { rewrite unbundle_trace_app. eapply star_trans. eapply PREC. eapply H. ss. rewrite app_nil_r. ss. }
+        eauto. eauto.
+        { rewrite <- app_assoc. ss. }
+        intros (cst' & INDSTAR).
+        exists cst'. eapply star_trans. eapply H. eapply INDSTAR. ss.
+      - subst s2. inv STAR.
+        + ss. rewrite app_nil_r. eauto.
+        + inv H0.
     Qed.
 
     Theorem ir_to_clight
