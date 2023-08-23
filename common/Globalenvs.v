@@ -204,8 +204,25 @@ Definition find_funct (ge: t) (v: val) : option F :=
   | _ => None
   end.
 
+(** [find_comp_of_block ge b] *)
+
+Definition find_comp_of_block (ge: t) (b: block) : option compartment :=
+  match find_def ge b with
+  | Some def => Some (comp_of def)
+  | None => None
+  end.
+
+Definition find_comp_of_ident (ge: t) (id: ident) : option compartment :=
+  match find_symbol ge id with
+  | Some b => find_comp_of_block ge b
+  | None => None
+  end.
+
 (** [find_comp ge v] finds the compartment associated with the pointer [v] as it
     is recorded in [ge]. *)
+
+(* FIXME: The return should be an option, because we do not have a default
+compartment anymore. *)
 
 Definition find_comp (ge: t) (v: val) : compartment :=
   match find_funct ge v with
@@ -1897,6 +1914,16 @@ Definition allowed_cross_call (ge: t) (cp: compartment) (vf: val) :=
     end
   | _ => False
   end.
+
+Definition allowed_addrof (ge: t) (cp: compartment) (id: ident) :=
+  find_comp_of_ident ge id = Some cp \/
+  public_symbol ge id = true.
+
+Definition allowed_addrof_b (ge: t) (cp: compartment) (id: ident) : bool :=
+  match find_comp_of_ident ge id with
+  | Some cp' => eq_compartment cp cp' : bool
+  | None => false
+  end || public_symbol ge id.
 
 Variant call_type :=
   | InternalCall
