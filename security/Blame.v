@@ -85,7 +85,7 @@ Section Equivalence.
       same_symb: symbols_inject j ge1 ge2;
       jinjective: Mem.meminj_injective j
     }.
-a
+
 Fixpoint remove_until_right (k: cont) :=
   match k with
   | Kstop => Kstop
@@ -272,22 +272,44 @@ Section Simulation.
      2. Change the second implication so that we do not care if we get a
      non-global-function-or-variable pointer that is on the left.
 
+     [2023-08-23] We realized that, if we allow programs to take the address of
+     arbitrary variables, we run into issues when a program running on the right
+     attempts to take the address of a private variable on the left. The issue
+     is that, according to our current matching definitions, this private
+     variable must not have a corresponding address in the memory injection
+     relating the two executions. Therefore, it would not be possible to produce
+     a matching evaluation on the other execution.
+
+     One solution would be to dynamically disallow taking the address of a
+     non-public variable that lives in a different compartment. But at lower
+     levels it might not be possible to impose this check, because there
+     probably isn't a difference between variables and their addresses (NB we
+     should double-check this!). But this might not be an issue, because we are
+     always free to omit checks at the target level.
+
+     Moreover, it sounds like this check might be necessary for blame to
+     hold. Consider a context C that is linked against two programs p1 and p2.
+     If C tries to access a private variable of p1 that is not defined by p2,
+     and the check is not performed, the execution with p1 might succeed,
+     whereas the one with p2 will definitely fail.
+
    *)
   Lemma eval_expr_lvalue_injection:
-    forall s j m1 m2 e1 e2 le1 le2 cp,
+    forall j m1 m2 e1 e2 le1 le2 cp,
     forall inj: right_mem_injection s j ge1 ge2 m1 m2,
     forall env_inj: right_env_injection j e1 e2,
     forall lenv_inj: right_tenv_injection j le1 le2,
+    forall cp_right: s cp = Right,
     (forall a v,
       eval_expr ge1 e1 cp le1 m1 a v ->
-      (* forall loc ofs (EQv: v = Vptr loc ofs), *)
       exists v', Val.inject j v v' /\
                    eval_expr ge2 e2 cp le2 m2 a v')
     /\
     (forall a loc ofs bf,
       eval_lvalue ge1 e1 cp le1 m1 a loc ofs bf ->
+      (s, m1) |= loc ∈ Right ->
       exists loc' ofs',
-        j loc = Some (loc', ofs') /\
+        (j loc = Some (loc', ofs')) /\
         eval_lvalue ge2 e2 cp le2 m2 a loc' (Ptrofs.add ofs (Ptrofs.repr ofs')) bf).
   Proof.
     intros. subst ge1 ge2.
@@ -302,7 +324,8 @@ Section Simulation.
     - exploit lenv_inj; eauto. intros [loc' [? ?]].
       eexists; split; eauto.
       constructor; auto.
-    - destruct H0 as [loc' [ofs' [? ?]]].
+    - (* eval_Eaddrof *)
+      destruct H0 as [loc' [ofs' [? ?]]].
       eexists; split; eauto.
       econstructor; eauto.
     - destruct H0 as [v' [? ?]].
@@ -357,25 +380,28 @@ Section Simulation.
       intros [b' [? ?]].
       eexists; eexists; split; eauto.
       econstructor; eauto.
-    - destruct env_inj as [_ env_inj].
+    - (* eval_Evar_global *)
+      destruct env_inj as [_ env_inj].
       rename l into b.
       rename H into e1_id.
       rename H0 into W1_id.
       exploit env_inj; eauto.
       intros e2_id.
       exploit Genv.find_invert_symbol; eauto.
-      intros W1_l.
+      intros W1_b.
       pose proof (idP := inj_dom b).
-      rewrite W1_l in idP.
+      rewrite W1_b in idP.
       destruct (Senv.public_symbol _ id) eqn: public_id.
-      + assert (exists b', j b = Some (b', 0) /\
+      + (* public symbol *)
+        assert (exists b', j b = Some (b', 0) /\
                              Senv.find_symbol (globalenv W2) id = Some b')
           as (b' & j_b & W2_id).
         { destruct same_symb as (_ & _ & H & _). now apply H. }
         exists b', 0; split; trivial.
         rewrite Ptrofs.add_zero_l.
         eapply eval_Evar_global; eauto.
-      +
+      + (* private symbol *)
+
     - destruct H0 as [v' [? ?]].
       inv H0.
       eexists; eexists; split; eauto.
