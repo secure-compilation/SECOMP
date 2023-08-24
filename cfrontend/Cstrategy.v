@@ -96,6 +96,7 @@ Inductive eval_simple_lvalue: expr -> block -> ptrofs -> bitfield -> Prop :=
   | esl_var_global: forall x ty b,
       e!x = None ->
       Genv.find_symbol ge x = Some b ->
+      Genv.allowed_addrof ge cp x ->
       eval_simple_lvalue (Evar x ty) b Ptrofs.zero Full
   | esl_deref: forall r ty b ofs,
       eval_simple_rvalue r (Vptr b ofs) ->
@@ -466,7 +467,7 @@ Definition expr_kind (a: expr) : kind :=
   end.
 
 Lemma lred_kind:
-  forall e a m a' m', lred ge e a m a' m' -> expr_kind a = LV.
+  forall e cp a m a' m', lred ge e cp a m a' m' -> expr_kind a = LV.
 Proof.
   induction 1; auto.
 Qed.
@@ -535,7 +536,7 @@ Definition invert_expr_prop (cp: compartment) (a: expr) (m: mem) : Prop :=
   | Evar x ty =>
       exists b,
       e!x = Some(b, ty)
-      \/ (e!x = None /\ Genv.find_symbol ge x = Some b)
+      \/ (e!x = None /\ Genv.find_symbol ge x = Some b /\ Genv.allowed_addrof ge cp x)
   | Ederef (Eval v ty1) ty =>
       exists b, exists ofs, v = Vptr b ofs
   | Eaddrof (Eloc b ofs bf ty) ty' =>
@@ -597,7 +598,7 @@ Definition invert_expr_prop (cp: compartment) (a: expr) (m: mem) : Prop :=
   end.
 
 Lemma lred_invert:
-  forall cp l m l' m', lred ge e l m l' m' -> invert_expr_prop cp l m.
+  forall cp l m l' m', lred ge e cp l m l' m' -> invert_expr_prop cp l m.
 Proof.
   induction 1; red; auto.
   exists b; auto.

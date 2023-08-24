@@ -107,6 +107,17 @@ Proof.
   intros. inv H; auto.
 Qed.
 
+Lemma allowed_addrof_translated:
+  forall cp id,
+    Genv.allowed_addrof ge cp id ->
+    Genv.allowed_addrof tge cp id.
+Proof.
+  intros cp id.
+  destruct TRANSL as [H _].
+  unfold ge, tge.
+  now rewrite (Genv.match_genvs_allowed_addrof H).
+Qed.
+
 Lemma allowed_call_translated:
   forall cp vf,
     Genv.allowed_call ge cp vf ->
@@ -429,7 +440,8 @@ Opaque makeif.
   split; auto. split; auto. apply eval_Evar_local; auto.
 - (* var global *)
   split; auto. split; auto. apply eval_Evar_global; auto.
-    rewrite symbols_preserved; auto.
+  + rewrite symbols_preserved; auto.
+  + now apply allowed_addrof_translated.
 - (* deref *)
   exploit H0; eauto. intros [A [B C]]. subst sl1.
   split; auto. split. rewrite typeof_Ederef'; auto. apply eval_Ederef'; auto. 

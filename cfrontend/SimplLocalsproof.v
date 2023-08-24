@@ -87,6 +87,17 @@ Proof.
   monadInv EQ. simpl; unfold type_of_function; simpl. auto.
 Qed.
 
+Lemma allowed_addrof_translated:
+  forall cp id,
+    Genv.allowed_addrof ge cp id ->
+    Genv.allowed_addrof tge cp id.
+Proof.
+  intros cp id.
+  destruct TRANSF as [H _].
+  unfold ge, tge.
+  now rewrite (Genv.match_genvs_allowed_addrof H).
+Qed.
+
 Lemma allowed_call_translated:
   forall f tf vf,
     Genv.allowed_call ge (comp_of f) vf ->
@@ -1622,10 +1633,11 @@ Proof.
   apply eval_Evar_local; auto.
   econstructor; eauto.
 (* global var *)
-  rewrite H2.
+  rewrite H3.
   exploit me_vars; eauto. instantiate (1 := id). intros MV. inv MV; try congruence.
   exists l; exists Ptrofs.zero; split.
   apply eval_Evar_global. auto. rewrite <- H0. apply symbols_preserved.
+  { now apply allowed_addrof_translated. }
   destruct GLOB as [bound GLOB1]. inv GLOB1.
   econstructor; eauto.
 (* deref *)

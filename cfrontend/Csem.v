@@ -220,6 +220,7 @@ Inductive lred: expr -> mem -> expr -> mem -> Prop :=
   | red_var_global: forall x ty m b,
       e!x = None ->
       Genv.find_symbol ge x = Some b ->
+      Genv.allowed_addrof ge cp x ->
       lred (Evar x ty) m
            (Eloc b Ptrofs.zero Full ty) m
   | red_deref: forall b ofs ty1 ty m,
@@ -655,7 +656,7 @@ the second group of rules can be reused as is. *)
 Inductive estep: state -> trace -> state -> Prop :=
 
   | step_lred: forall C f a k e m a' m',
-      lred e a m a' m' ->
+      lred e (comp_of f) a m a' m' ->
       context LV RV C ->
       estep (ExprState f (C a) k e m)
          E0 (ExprState f (C a') k e m')

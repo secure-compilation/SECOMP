@@ -421,6 +421,7 @@ with eval_lvalue: expr -> block -> ptrofs -> bitfield -> Prop :=
   | eval_Evar_global: forall id l ty,
       e!id = None ->
       Genv.find_symbol ge id = Some l ->
+      Genv.allowed_addrof ge cp id ->
       eval_lvalue (Evar id ty) l Ptrofs.zero Full
   | eval_Ederef: forall a ty l ofs,
       eval_expr a (Vptr l ofs) ->

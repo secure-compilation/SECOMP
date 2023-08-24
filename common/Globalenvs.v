@@ -1925,6 +1925,12 @@ Definition allowed_addrof_b (ge: t) (cp: compartment) (id: ident) : bool :=
   | None => false
   end || public_symbol ge id.
 
+Lemma allowed_addrof_b_reflect :
+  forall ge cp id,
+    allowed_addrof ge cp id <->
+      allowed_addrof_b ge cp id = true.
+Proof. Admitted.
+
 Variant call_type :=
   | InternalCall
   | CrossCompartmentCall
@@ -2250,6 +2256,48 @@ Proof.
   - destruct (find_funct (globalenv tp) vf) eqn:EQ'.
     + apply find_funct_match_conv in EQ' as [? [? [H [? ?]]]]; congruence.
     + reflexivity.
+Qed.
+
+Lemma match_genvs_find_comp_of_block:
+  forall b,
+    find_comp_of_block (globalenv p) b = find_comp_of_block (globalenv tp) b.
+Proof.
+  intros b. unfold find_comp_of_block.
+  destruct (find_def_match_2 b) as [|? ? MATCH]; trivial.
+  destruct MATCH as [? ? ? ? MATCH|? ? MATCH].
+  - f_equal. apply (match_fundef_comp MATCH).
+  - now inv MATCH.
+Qed.
+
+Lemma match_genvs_find_comp_of_ident:
+  forall id,
+    find_comp_of_ident (globalenv p) id = find_comp_of_ident (globalenv tp) id.
+Proof.
+  intros id. unfold find_comp_of_ident.
+  rewrite find_symbol_match.
+  destruct find_symbol; trivial.
+  apply match_genvs_find_comp_of_block.
+Qed.
+
+Lemma match_genvs_public_symbol:
+  forall id,
+    public_symbol (globalenv p) id = public_symbol (globalenv tp) id.
+Proof.
+  unfold public_symbol. intros id.
+  rewrite find_symbol_match.
+  destruct find_symbol; trivial.
+  rewrite !globalenv_public.
+  now destruct progmatch as (_ & _ & -> & _).
+Qed.
+
+Lemma match_genvs_allowed_addrof:
+  forall cp id,
+    allowed_addrof (globalenv p) cp id <->
+    allowed_addrof (globalenv tp) cp id.
+Proof.
+  unfold allowed_addrof.
+  intros cp id.
+  now rewrite match_genvs_find_comp_of_ident, match_genvs_public_symbol.
 Qed.
 
 Lemma match_genvs_allowed_calls:
