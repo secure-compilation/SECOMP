@@ -788,7 +788,11 @@ Section Backtranslation.
     Admitted.
 
     Definition wf_params_of (pars: params_of) :=
-      forall id params, (pars ! id = Some params) -> list_norepet params.
+      (forall id params, (pars ! id = Some params) -> list_norepet params).
+
+    Definition wf_params_of_sig (pars: params_of) (ge: Asm.genv) :=
+      forall b f id params, (Genv.find_funct_ptr ge b = Some f) -> (Genv.find_symbol ge id = Some b) -> (pars ! id = Some params) ->
+                       (Forall2 (fun _ _ => True) params (sig_args (Asm.funsig f))).
 
     Definition gen_progdef (ge: Senv.t) (tr: bundle_trace) a_gd (ocnt: option (ident * globdef Clight.fundef type)) (oparams: option (list ident)): globdef Clight.fundef type :=
       match ocnt, oparams with
@@ -859,6 +863,13 @@ Section Backtranslation.
       wf_params_of (gen_params m agds).
     Proof.
     Admitted.
+
+    (* Lemma gen_params_wf_sig *)
+    (*       m agds *)
+    (*   : *)
+    (*   wf_params_of_sig (gen_params m agds). *)
+    (* Proof. *)
+    (* Admitted. *)
 
 
     Lemma get_id_tr_cons
@@ -1182,8 +1193,8 @@ Section Backtranslation.
       (Mem.inject k m_i m_c) /\ (inject_incr j k) /\ (meminj_not_alloc j m_i).
     (* /\ (public_rev_perm m_i m_c). *)
 
-    Definition match_fun (ge: Clight.genv) (cur: block) (f: function) (id: ident): Prop :=
-      Genv.find_funct_ptr ge cur = Some (Internal f) /\ Genv.invert_symbol ge cur = Some id.
+    Definition match_cur_fun (ge: Asm.genv) (cur: block) f (id: ident): Prop :=
+      Genv.find_funct_ptr ge cur = Some (AST.Internal f) /\ Genv.invert_symbol ge cur = Some id.
 
     Definition match_find_def (ge_i: Asm.genv) (ge_c: Clight.genv) (cnts: cnt_ids) (pars: params_of) tr :=
       forall b gd_i id,
@@ -1195,7 +1206,7 @@ Section Backtranslation.
         | _, _ => False
         end.
 
-    Inductive match_cont (ge: Clight.genv) (tr: bundle_trace) (cnts: cnt_ids) : (cont) -> (ir_conts) -> Prop :=
+    Inductive match_cont (ge: Asm.genv) (tr: bundle_trace) (cnts: cnt_ids) : (cont) -> (ir_conts) -> Prop :=
     | match_cont_nil
         ck ik
         (CK: ck = Kstop)
@@ -1206,7 +1217,7 @@ Section Backtranslation.
         ck ik
         f e le cnt id ck'
         b ik'
-        (FUN: match_fun ge b f id)
+        (FUN: match_cur_fun ge b f id)
         (CNT: cnts ! id = Some cnt)
         (CK: ck = Kcall None f e le (Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge cnt (comp_of f) (get_id_tr tr id))) Sskip ck'))
         (IK: ik = (ir_cont b) :: ik')
@@ -1214,12 +1225,15 @@ Section Backtranslation.
       :
       match_cont ge tr cnts ck ik.
 
+    Definition match_params pars ge_i := (wf_params_of pars) /\ (wf_params_of_sig pars ge_i).
+
     Definition match_state (ge_i: Asm.genv) (ge_c: Clight.genv) (k: meminj) tr cnts pars id (ist: ir_state) (cst: Clight.state) :=
       match ist, cst with
       | Some (cur, m_i, k_i), State f _ k_c e le m_c =>
           (match_senv ge_i ge_c) /\ (match_mem ge_i k m_i m_c) /\
             (match_fun ge_c cur f id) /\ (match_find_def ge_i ge_c cnts pars tr) /\
-            (match_cont ge_c tr cnts k_c k_i)
+            (match_cont ge_c tr cnts k_c k_i) /\
+            (match_params pars ge_i)
       | _, _ => False
       end.
 
@@ -1227,6 +1241,269 @@ Section Backtranslation.
 
 
   Section PROOF.
+
+    (* Properties *)
+    Lemma eventval_match_transl
+          (ge: Senv.t)
+          ev ty v
+          (EM: eventval_match ge ev ty v)
+      :
+      eventval_match ge ev (typ_of_type (typ_to_type ty)) (eventval_to_val ge ev).
+    Proof.
+      inversion EM; subst; simpl; try constructor.
+      setoid_rewrite H0. unfold Tptr in *. destruct Archi.ptr64; auto.
+    Qed.
+
+    Lemma eventval_match_eventval_to_val
+          (ge: Senv.t)
+          ev ty v
+          (EM: eventval_match ge ev ty v)
+      :
+      eventval_to_val ge ev = v.
+    Proof. inversion EM; subst; simpl; auto. setoid_rewrite H0. auto. Qed.
+
+    Lemma eventval_list_match_transl
+          (ge: Senv.t)
+          evs tys vs
+          (EM: eventval_list_match ge evs tys vs)
+      :
+      eventval_list_match ge evs (typlist_of_typelist (list_typ_to_typelist tys)) (list_eventval_to_list_val ge evs).
+    Proof. induction EM; simpl. constructor. constructor; auto. eapply eventval_match_transl; eauto. Qed.
+
+    Lemma eventval_list_match_transl_val
+          (ge: Senv.t)
+          evs tys vs
+          (EM: eventval_list_match ge evs tys vs)
+      :
+      eventval_list_match ge evs tys (list_eventval_to_list_val ge evs).
+    Proof. induction EM; simpl. constructor. constructor; auto. erewrite eventval_match_eventval_to_val; eauto. Qed.
+
+    Lemma typ_type_typ
+          (ge: Senv.t)
+          ev ty v
+          (EM: eventval_match ge ev ty v)
+      :
+      typ_of_type (typ_to_type ty) = ty.
+    Proof. inversion EM; simpl; auto. subst. unfold Tptr. destruct Archi.ptr64; simpl; auto. Qed.
+
+    Lemma eventval_to_expr_val_eval
+          (ge: genv) en cp temp m ev ty v
+          (WFENV: wf_env ge en)
+          (EM: eventval_match ge ev ty v)
+          (* (WFGE: wf_eventval_ge ge ev) *)
+      :
+      eval_expr ge en cp temp m (eventval_to_expr ev) (eventval_to_val ge ev).
+    Proof. destruct ev; simpl in *; try constructor. inv EM. setoid_rewrite H4. eapply ptr_of_id_ofs_eval; auto. Qed.
+
+    Lemma sem_cast_eventval_match
+          (ge: Senv.t) v ty vv m
+          (EM: eventval_match ge v (typ_of_type (typ_to_type ty)) vv)
+      :
+      Cop.sem_cast vv (typeof (eventval_to_expr v)) (typ_to_type ty) m = Some vv.
+    Proof.
+      destruct ty; simpl in *; inversion EM; subst; simpl in *; simpl_expr.
+      all: try rewrite ptr_of_id_ofs_typeof; simpl.
+      all: try (cbn; auto).
+      all: unfold Tptr in *; destruct Archi.ptr64 eqn:ARCH; try congruence.
+      { unfold Cop.sem_cast. simpl. rewrite ARCH. simpl. rewrite pred_dec_true; auto. }
+      { unfold Cop.sem_cast. simpl. rewrite ARCH. auto. }
+      { unfold Cop.sem_cast. simpl. rewrite ARCH. simpl. rewrite pred_dec_true; auto. }
+      { unfold Cop.sem_cast. simpl. rewrite ARCH. auto. }
+    Qed.
+
+    Lemma list_eventval_to_expr_val_eval
+          (ge: genv) en cp temp m evs tys
+          (* (WFENV: Forall (wf_eventval_env en) evs) *)
+          (WFENV: wf_env ge en)
+          (EMS: eventval_list_match ge evs (typlist_of_typelist (list_typ_to_typelist tys)) (list_eventval_to_list_val ge evs))
+      :
+      eval_exprlist ge en cp temp m (list_eventval_to_list_expr evs) (list_typ_to_typelist tys) (list_eventval_to_list_val ge evs).
+    Proof.
+      revert en cp temp m WFENV.
+      match goal with | [H: eventval_list_match _ _ ?t ?v |- _] => remember t as tys2; remember v as vs2 end.
+      revert tys Heqtys2 Heqvs2. induction EMS; intros; subst; simpl in *.
+      { destruct tys; simpl in *. constructor. congruence. }
+      inversion Heqvs2; clear Heqvs2; subst; simpl in *.
+      destruct tys; simpl in Heqtys2. congruence with Heqtys2.
+      inversion Heqtys2; clear Heqtys2; subst; simpl in *.
+      econstructor; eauto. eapply eventval_to_expr_val_eval; eauto.
+      (* eapply eventval_match_wf_eventval_ge; eauto. *)
+      eapply sem_cast_eventval_match; eauto.
+    Qed.
+
+    Lemma eventval_match_eventval_to_type
+          (ge: Senv.t)
+          ev ty v
+          (EM: eventval_match ge ev ty v)
+      :
+      eventval_match ge ev (typ_of_type (eventval_to_type ev)) v.
+    Proof. inversion EM; subst; simpl; auto. Qed.
+
+    Lemma list_eventval_match_eventval_to_type
+          (ge: Senv.t)
+          evs tys vs
+          (ESM: eventval_list_match ge evs tys vs)
+      :
+      eventval_list_match ge evs (typlist_of_typelist (list_eventval_to_typelist evs)) vs.
+    Proof. induction ESM; simpl. constructor. constructor; auto. eapply eventval_match_eventval_to_type; eauto. Qed.
+
+    Lemma val_load_result_idem
+          ch v
+      :
+      Val.load_result ch (Val.load_result ch v) = Val.load_result ch v.
+    Proof.
+      destruct ch, v; simpl; auto.
+      5,6,7: destruct Archi.ptr64; simpl; auto.
+      1,3: rewrite Int.sign_ext_idem; auto.
+      3,4: rewrite Int.zero_ext_idem; auto.
+      all: lia.
+    Qed.
+
+    Lemma val_load_result_aux
+          F V (ge: Genv.t F V)
+          ev ch v
+          (EM: eventval_match ge ev (type_of_chunk ch) (Val.load_result ch v))
+      :
+      eventval_match ge ev (type_of_chunk ch) (Val.load_result ch (eventval_to_val ge ev)).
+    Proof.
+      inversion EM; subst; simpl in *; auto.
+      1,2,3,4: rewrite H1, H2; rewrite val_load_result_idem; auto.
+      rewrite H3, H. rewrite H0. rewrite val_load_result_idem. auto.
+    Qed.
+
+    Lemma eventval_match_proj_rettype
+          (ge: Senv.t)
+          ev ty v
+          (EM: eventval_match ge ev ty v)
+      :
+      eventval_match ge ev (proj_rettype (rettype_of_type (typ_to_type ty))) v.
+    Proof.
+      inversion EM; subst; simpl; try constructor.
+      unfold Tptr in *. destruct Archi.ptr64; simpl; auto.
+    Qed.
+
+    (* Lemma sem_cast_eventval *)
+    (*       (ge: cgenv) v m *)
+    (*       (WFEV: wf_eventval_ge ge v) *)
+    (*   : *)
+    (*   Cop.sem_cast (eventval_to_val ge v) (typeof (eventval_to_expr v)) (eventval_to_type v) m = Some (eventval_to_val ge v). *)
+    (* Proof. rewrite typeof_eventval_to_expr_type. destruct v; simpl in *; simpl_expr. destruct WFEV. rewrite H. simpl_expr. Qed. *)
+
+    (* Lemma list_eventval_to_expr_val_eval2 *)
+    (*       (ge: genv) en cp temp m evs *)
+    (*       (WFENV: Forall (wf_eventval_env en) evs) *)
+    (*       (WFGE: Forall (wf_eventval_ge ge) evs) *)
+    (*   : *)
+    (*   eval_exprlist ge en cp temp m (list_eventval_to_list_expr evs) (list_eventval_to_typelist evs) (list_eventval_to_list_val ge evs). *)
+    (* Proof. *)
+    (*   move evs at top. revert ge en cp temp m WFENV WFGE. induction evs; intros; simpl in *. *)
+    (*   constructor. *)
+    (*   inversion WFENV; clear WFENV; subst. inversion WFGE; clear WFGE; subst. *)
+    (*   econstructor; eauto. eapply eventval_to_expr_val_eval; eauto. *)
+    (*   apply sem_cast_eventval; auto. *)
+    (* Qed. *)
+
+    Lemma eventval_match_sem_cast
+          (* F V (ge: Genv.t F V) *)
+          (ge: genv)
+          m ev ty v
+          (EM: eventval_match ge ev ty v)
+      :
+      (* Cop.sem_cast (eventval_to_val ge ev) (typeof (eventval_to_expr ev)) (typ_to_type ty) m = Some (eventval_to_val ge ev). *)
+      Cop.sem_cast v (typeof (eventval_to_expr ev)) (typ_to_type ty) m = Some v.
+    Proof.
+      inversion EM; subst; simpl; try constructor. all: simpl_expr.
+      rewrite ptr_of_id_ofs_typeof. unfold Tptr. unfold Cop.sem_cast. destruct Archi.ptr64 eqn:ARCH; simpl.
+      - rewrite ARCH; auto.
+      - rewrite ARCH; auto.
+    Qed.
+
+    (* Lemma list_eventval_to_expr_val_eval_typs *)
+    (*       (ge: genv) en cp temp m evs tys vs *)
+    (*       (WFENV: Forall (wf_eventval_env en) evs) *)
+    (*       (EMS: eventval_list_match ge evs tys vs) *)
+    (*   : *)
+    (*   eval_exprlist ge en cp temp m (list_eventval_to_list_expr evs) (list_typ_to_typelist tys) vs. *)
+    (* Proof. *)
+    (*   revert en cp temp m WFENV. *)
+    (*   induction EMS; intros; subst; simpl in *. constructor. *)
+    (*   inversion WFENV; clear WFENV; subst. *)
+    (*   econstructor; eauto. 2: eapply eventval_match_sem_cast; eauto. *)
+    (*   exploit eventval_match_eventval_to_val. eauto. intros. rewrite <- H0. eapply eventval_to_expr_val_eval; auto. *)
+    (*   eapply eventval_match_wf_eventval_ge; eauto. *)
+    (* Qed. *)
+
+    Lemma sem_cast_ptr
+          b ofs m
+      :
+      Cop.sem_cast (Vptr b ofs) (Tpointer Tvoid noattr) (typ_to_type Tptr) m = Some (Vptr b ofs).
+    Proof.
+      unfold Tptr. destruct Archi.ptr64 eqn:ARCH; unfold Cop.sem_cast; simpl; rewrite ARCH; auto.
+    Qed.
+
+    Lemma sem_cast_proj_rettype
+          (ge: genv) evres rty res m
+          (EVM: eventval_match ge evres (proj_rettype rty) res)
+      :
+      Cop.sem_cast (eventval_to_val ge evres)
+                   (typeof (eventval_to_expr evres))
+                   (rettype_to_type rty) m
+      = Some (eventval_to_val ge evres).
+    Proof.
+      destruct rty; simpl in *.
+      { eapply eventval_match_sem_cast. eauto. erewrite eventval_match_eventval_to_val; eauto. }
+      { inv EVM; simpl; simpl_expr.
+        setoid_rewrite H2. rewrite ptr_of_id_ofs_typeof.
+        unfold Tptr in *. destruct Archi.ptr64 eqn:ARCH. congruence.
+        unfold Cop.sem_cast. simpl. rewrite ARCH. auto.
+      }
+      { inv EVM; simpl; simpl_expr.
+        setoid_rewrite H2. rewrite ptr_of_id_ofs_typeof.
+        unfold Tptr in *. destruct Archi.ptr64 eqn:ARCH. congruence.
+        unfold Cop.sem_cast. simpl. rewrite ARCH. auto.
+      }
+      { inv EVM; simpl; simpl_expr.
+        setoid_rewrite H2. rewrite ptr_of_id_ofs_typeof.
+        unfold Tptr in *. destruct Archi.ptr64 eqn:ARCH. congruence.
+        unfold Cop.sem_cast. simpl. rewrite ARCH. auto.
+      }
+      { inv EVM; simpl; simpl_expr.
+        setoid_rewrite H2. rewrite ptr_of_id_ofs_typeof.
+        unfold Tptr in *. destruct Archi.ptr64 eqn:ARCH. congruence.
+        unfold Cop.sem_cast. simpl. rewrite ARCH. auto.
+      }
+      { inv EVM; simpl; simpl_expr.
+        setoid_rewrite H2. rewrite ptr_of_id_ofs_typeof.
+        unfold Tptr in *. destruct Archi.ptr64 eqn:ARCH. congruence.
+        unfold Cop.sem_cast. simpl. rewrite ARCH. auto.
+      }
+    Qed.
+
+    Lemma type_of_params_eq
+          ids ts
+          (PARSIGS : Forall2 (fun (_ : ident) (_ : typ) => True) ids ts)
+      :
+      type_of_params (combine ids (list_typ_to_list_type ts)) = list_typ_to_typelist ts.
+    Proof. induction PARSIGS; ss. f_equal. auto. Qed.
+
+
+    Lemma match_senv_eventval_match
+          (ge0 ge1: Senv.t)
+          (MS: match_senv ge0 ge1)
+          ev ty v
+          (EM: eventval_match ge0 ev ty v)
+      :
+      eventval_match ge1 ev ty v.
+    Proof. destruct MS as (MS0 & MS1 & MS2). inv EM; try econs; auto. rewrite MS0. auto. Qed.
+
+    Lemma match_senv_eventval_list_match
+          (ge0 ge1: Senv.t)
+          (MS: match_senv ge0 ge1)
+          evs tys vs
+          (EM: eventval_list_match ge0 evs tys vs)
+      :
+      eventval_list_match ge1 evs tys vs.
+    Proof. induction EM; ss. econs; auto. econs; auto. eapply match_senv_eventval_match; eauto. Qed.
 
     Lemma unbundle_trace_app
           tr1 tr2
@@ -1253,12 +1530,12 @@ Section Backtranslation.
       unfold wf_c_state in WFC. des_ifs. rename s into stmt, k into k_c, m into m_c.
       destruct WFC as (WFC0 & WFC1 & WFC2 & WFC3 & WFC4 & WFC5 & WFC6).
       unfold match_state in MS. des_ifs. rename i into k_i, b into cur, m into m_i.
-      destruct MS as (MS0 & MS1 & MS2 & MS3 & MS4).
+      destruct MS as (MS0 & MS1 & MS2 & MS3 & MS4 & MS5).
       move STEP after WFC5. inv STEP.
 
       - assert (id = id_cur).
         { unfold match_fun in MS2. des. destruct MS0 as (MSENV0 & MSENV1 & MSENV2).
-          apply Genv.invert_find_symbol in IDCUR. apply MSENV1 in IDCUR. apply Senv.find_invert_symbol in IDCUR. setoid_rewrite MS5 in IDCUR. clarify.
+          apply Genv.invert_find_symbol in IDCUR. apply MSENV1 in IDCUR. apply Senv.find_invert_symbol in IDCUR. setoid_rewrite MS6 in IDCUR. clarify.
         }
         subst id.
         rename f_next into fi_next. exploit MS3.
@@ -1279,6 +1556,8 @@ Section Backtranslation.
         assert (BOUND2: Z.of_nat (Datatypes.length (map (fun ib : ident * bundle_event => code_bundle_event ge_i (comp_of f) (snd ib)) (get_id_tr ttr id_cur))) < Int64.modulus).
         { rewrite map_length. etransitivity. 2: eauto. unfold get_id_tr. admit. }
         destruct WF_CNT_CUR as (cnt_cur_b & FIND_CNT_CUR & CNT_CUR_MEM_VA & CNT_CUR_MEM_LOAD).
+        assert (PARSIGS: Forall2 (fun _ _ => True) params_next (sig_args (fn_sig fi_next))).
+        { destruct MS5 as (MPARS0 & MPARS1). ss. rewrite pred_dec_true in FINDF; auto. exploit MPARS1. 3: eauto. 2: eauto. all: eauto. }
 
         hexploit switch_spec.
         { subst ttr. rewrite CUR_TR in BOUND2. rewrite map_app in BOUND2. ss. eapply BOUND2. }
@@ -1320,7 +1599,29 @@ Section Backtranslation.
         { erewrite <- match_symbs_mem_delta_apply_wf. eapply DELTA_C. auto. }
         2: ss.
         unfold unbundle. simpl. rename b into next. econs 2.
-        { eapply step_call.
+        { eapply step_call. ss.
+          { econs. assert (FSN_C: Senv.find_symbol ge_c id_next = Some next).
+            { destruct MS0 as (MSENV0 & MSENV1 & MSENV2). apply MSENV1. auto. }
+            eapply eval_Evar_global.
+            - unfold wf_env in WFC4. specialize (WFC4 id_next). rewrite FSN_C in WFC4. apply WFC4.
+            - eapply FSN_C.
+            - econs 2. ss.
+          }
+          { eapply list_eventval_to_expr_val_eval. auto. inv TR. eapply eventval_list_match_transl. eapply match_senv_eventval_list_match; eauto. }
+          { unfold match_find_def in MS3. hexploit MS3.
+            unfold Genv.find_funct in FINDF. rewrite pred_dec_true in FINDF; auto. unfold Genv.find_funct_ptr in FINDF. des_ifs. eapply Heq.
+            eapply Senv.find_invert_symbol; eapply FINDB.
+            rewrite CNTS_NEXT, PARS_NEXT. intros. unfold Genv.find_funct. rewrite pred_dec_true. unfold Genv.find_funct_ptr. rewrite H. ss. ss.
+          }
+          { ss. unfold type_of_function, gen_function. ss. f_equal. apply type_of_params_eq. apply PARSIGS. }
+          { 
+  MS0 : match_senv ge_i ge_c
+  MS2 : match_fun ge_c cur f id_cur
+  MS3 : match_find_def ge_i ge_c cnts pars ttr
+  ALLOW : Genv.allowed_call ge_i (Genv.find_comp ge_i (Vptr cur Ptrofs.zero)) (Vptr next Ptrofs.zero)
+  IDCUR : Genv.invert_symbol ge_i cur = Some id_cur
+  Genv.allowed_call ge_c (comp_of f) (Vptr next Ptrofs.zero)
+
           (* TODO *)
 
 
@@ -1389,285 +1690,6 @@ Section Backtranslation.
 (*   (forall (id : ident) (b : block), Genv.find_symbol ge id = Some b -> Plt b thr) -> *)
 (*   forall (gl : list (ident * globdef F V)) (m m' : mem), Genv.alloc_globals ge m gl = Some m' -> Mem.inject_neutral thr m -> Ple (Mem.nextblock m') thr -> Mem.inject_neutral thr m' *)
 
-  Section CODEPROP.
-
-    Let cgenv := Genv.t fundef type.
-
-    (* Properties *)
-    Lemma eventval_match_transl
-          F V (ge: Genv.t F V)
-          ev ty v
-          (EM: eventval_match ge ev ty v)
-      :
-      eventval_match ge ev (typ_of_type (typ_to_type ty)) (eventval_to_val ge ev).
-    Proof.
-      inversion EM; subst; simpl; try constructor.
-      setoid_rewrite H0. unfold Tptr in *. destruct Archi.ptr64; auto.
-    Qed.
-
-    Lemma eventval_match_eventval_to_val
-          F V (ge: Genv.t F V)
-          ev ty v
-          (EM: eventval_match ge ev ty v)
-      :
-      eventval_to_val ge ev = v.
-    Proof. inversion EM; subst; simpl; auto. setoid_rewrite H0. auto. Qed.
-
-    Lemma eventval_match_wf_eventval_ge
-          F V (ge: Genv.t F V)
-          ev ty v
-          (EM: eventval_match ge ev ty v)
-      :
-      wf_eventval_ge ge ev.
-    Proof. inversion EM; subst; simpl; eauto. Qed.
-
-    Lemma eventval_list_match_transl
-          F V (ge: Genv.t F V)
-          evs tys vs
-          (EM: eventval_list_match ge evs tys vs)
-      :
-      eventval_list_match ge evs (typlist_of_typelist (list_typ_to_typelist tys)) (list_eventval_to_list_val ge evs).
-    Proof.
-      induction EM; simpl. constructor. constructor; auto. eapply eventval_match_transl; eauto.
-    Qed.
-
-    Lemma eventval_list_match_transl_val
-          F V (ge: Genv.t F V)
-          evs tys vs
-          (EM: eventval_list_match ge evs tys vs)
-      :
-      eventval_list_match ge evs tys (list_eventval_to_list_val ge evs).
-    Proof.
-      induction EM; simpl. constructor. constructor; auto. erewrite eventval_match_eventval_to_val; eauto.
-    Qed.
-
-    Lemma typ_type_typ
-          F V (ge: Genv.t F V)
-          ev ty v
-          (EM: eventval_match ge ev ty v)
-      :
-      typ_of_type (typ_to_type ty) = ty.
-    Proof. inversion EM; simpl; auto. subst. unfold Tptr. destruct Archi.ptr64; simpl; auto. Qed.
-
-    (* Lemma ptr_of_id_ofs_eval *)
-    (*       id ofs e (ge: genv) b cp le m *)
-    (*       (GE1: wf_env e id) *)
-    (*       (GE2: Genv.find_symbol ge id = Some b) *)
-    (*   : *)
-    (*   eval_expr ge e cp le m (ptr_of_id_ofs id ofs) (Vptr b ofs). *)
-    (* Proof. *)
-    (*   unfold ptr_of_id_ofs. destruct (Archi.ptr64) eqn:ARCH. *)
-    (*   - eapply eval_Ebinop. eapply eval_Eaddrof. eapply eval_Evar_global; eauto. *)
-    (*     simpl_expr. *)
-    (*     simpl. simpl_expr. rewrite Ptrofs.mul_commut, Ptrofs.mul_one. rewrite Ptrofs.add_zero_l. *)
-    (*     rewrite Ptrofs.of_int64_to_int64; auto. *)
-    (*   - eapply eval_Ebinop. eapply eval_Eaddrof. eapply eval_Evar_global; eauto. *)
-    (*     simpl_expr. *)
-    (*     simpl. simpl_expr. rewrite Ptrofs.mul_commut, Ptrofs.mul_one. rewrite Ptrofs.add_zero_l. *)
-    (*     erewrite Ptrofs.agree32_of_ints_eq; auto. apply Ptrofs.agree32_to_int; auto. *)
-    (* Qed. *)
-
-    Lemma eventval_to_expr_val_eval
-          (ge: genv) en cp temp m ev
-          (WFENV: wf_eventval_env en ev)
-          (WFGE: wf_eventval_ge ge ev)
-      :
-      eval_expr ge en cp temp m (eventval_to_expr ev) (eventval_to_val ge ev).
-    Proof.
-      destruct ev; simpl in *; try constructor.
-      destruct WFGE as [b WFGE].
-      rewrite WFGE. unfold ptr_of_id_ofs. destruct Archi.ptr64 eqn:ARCH.
-      - econstructor; try econstructor. eapply eval_Evar_global; eauto.
-        simpl. simpl_expr. rewrite Ptrofs.mul_commut, Ptrofs.mul_one. rewrite Ptrofs.add_zero_l.
-        rewrite Ptrofs.of_int64_to_int64; auto.
-      - econstructor; try econstructor. eapply eval_Evar_global; eauto.
-        simpl. simpl_expr. rewrite Ptrofs.mul_commut, Ptrofs.mul_one. rewrite Ptrofs.add_zero_l.
-        erewrite Ptrofs.agree32_of_ints_eq; auto. apply Ptrofs.agree32_to_int; auto.
-    Qed.
-
-    Lemma sem_cast_eventval_match
-          (ge: cgenv) v ty vv m
-          (EM: eventval_match ge v (typ_of_type (typ_to_type ty)) vv)
-      :
-      Cop.sem_cast vv (typeof (eventval_to_expr v)) (typ_to_type ty) m = Some vv.
-    Proof.
-      destruct ty; simpl in *; inversion EM; subst; simpl in *; simpl_expr.
-      all: try rewrite ptr_of_id_ofs_typeof; simpl.
-      all: try (cbn; auto).
-      all: unfold Tptr in *; destruct Archi.ptr64 eqn:ARCH; try congruence.
-      { unfold Cop.sem_cast. simpl. rewrite ARCH. simpl. rewrite pred_dec_true; auto. }
-      { unfold Cop.sem_cast. simpl. rewrite ARCH. auto. }
-    Qed.
-
-    Lemma list_eventval_to_expr_val_eval
-          (ge: genv) en cp temp m evs tys
-          (WFENV: Forall (wf_eventval_env en) evs)
-          (EMS: eventval_list_match ge evs (typlist_of_typelist (list_typ_to_typelist tys)) (list_eventval_to_list_val ge evs))
-      :
-      eval_exprlist ge en cp temp m (list_eventval_to_list_expr evs) (list_typ_to_typelist tys) (list_eventval_to_list_val ge evs).
-    Proof.
-      revert en cp temp m WFENV.
-      match goal with | [H: eventval_list_match _ _ ?t ?v |- _] => remember t as tys2; remember v as vs2 end.
-      revert tys Heqtys2 Heqvs2. induction EMS; intros; subst; simpl in *.
-      { destruct tys; simpl in *. constructor. congruence. }
-      inversion Heqvs2; clear Heqvs2; subst; simpl in *.
-      inversion WFENV; clear WFENV; subst.
-      destruct tys; simpl in Heqtys2. congruence with Heqtys2.
-      inversion Heqtys2; clear Heqtys2; subst; simpl in *.
-      econstructor; eauto. eapply eventval_to_expr_val_eval; eauto.
-      eapply eventval_match_wf_eventval_ge; eauto.
-      eapply sem_cast_eventval_match; eauto.
-    Qed.
-
-    Lemma eventval_match_eventval_to_type
-          F V (ge: Genv.t F V)
-          ev ty v
-          (EM: eventval_match ge ev ty v)
-      :
-      eventval_match ge ev (typ_of_type (eventval_to_type ev)) v.
-    Proof. inversion EM; subst; simpl; auto. Qed.
-
-    Lemma list_eventval_match_eventval_to_type
-          F V (ge: Genv.t F V)
-          evs tys vs
-          (ESM: eventval_list_match ge evs tys vs)
-      :
-      eventval_list_match ge evs (typlist_of_typelist (list_eventval_to_typelist evs)) vs.
-    Proof. induction ESM; simpl. constructor. constructor; auto. eapply eventval_match_eventval_to_type; eauto. Qed.
-
-    Lemma val_load_result_idem
-          ch v
-      :
-      Val.load_result ch (Val.load_result ch v) = Val.load_result ch v.
-    Proof.
-      destruct ch, v; simpl; auto.
-      5,6,7: destruct Archi.ptr64; simpl; auto.
-      1,3: rewrite Int.sign_ext_idem; auto.
-      3,4: rewrite Int.zero_ext_idem; auto.
-      all: lia.
-    Qed.
-
-    Lemma val_load_result_aux
-          F V (ge: Genv.t F V)
-          ev ch v
-          (EM: eventval_match ge ev (type_of_chunk ch) (Val.load_result ch v))
-      :
-      eventval_match ge ev (type_of_chunk ch) (Val.load_result ch (eventval_to_val ge ev)).
-    Proof.
-      inversion EM; subst; simpl in *; auto.
-      1,2,3,4: rewrite H1, H2; rewrite val_load_result_idem; auto.
-      rewrite H3, H. rewrite H0. rewrite val_load_result_idem. auto.
-    Qed.
-
-    Lemma eventval_match_proj_rettype
-          F V (ge: Genv.t F V)
-          ev ty v
-          (EM: eventval_match ge ev ty v)
-      :
-      eventval_match ge ev (proj_rettype (rettype_of_type (typ_to_type ty))) v.
-    Proof.
-      inversion EM; subst; simpl; try constructor.
-      unfold Tptr in *. destruct Archi.ptr64; simpl; auto.
-    Qed.
-
-    Lemma sem_cast_eventval
-          (ge: cgenv) v m
-          (WFEV: wf_eventval_ge ge v)
-      :
-      Cop.sem_cast (eventval_to_val ge v) (typeof (eventval_to_expr v)) (eventval_to_type v) m = Some (eventval_to_val ge v).
-    Proof. rewrite typeof_eventval_to_expr_type. destruct v; simpl in *; simpl_expr. destruct WFEV. rewrite H. simpl_expr. Qed.
-
-    Lemma list_eventval_to_expr_val_eval2
-          (ge: genv) en cp temp m evs
-          (WFENV: Forall (wf_eventval_env en) evs)
-          (WFGE: Forall (wf_eventval_ge ge) evs)
-      :
-      eval_exprlist ge en cp temp m (list_eventval_to_list_expr evs) (list_eventval_to_typelist evs) (list_eventval_to_list_val ge evs).
-    Proof.
-      move evs at top. revert ge en cp temp m WFENV WFGE. induction evs; intros; simpl in *.
-      constructor.
-      inversion WFENV; clear WFENV; subst. inversion WFGE; clear WFGE; subst.
-      econstructor; eauto. eapply eventval_to_expr_val_eval; eauto.
-      apply sem_cast_eventval; auto.
-    Qed.
-
-    Lemma eventval_match_sem_cast
-          (* F V (ge: Genv.t F V) *)
-          (ge: cgenv)
-          m ev ty v
-          (EM: eventval_match ge ev ty v)
-      :
-      (* Cop.sem_cast (eventval_to_val ge ev) (typeof (eventval_to_expr ev)) (typ_to_type ty) m = Some (eventval_to_val ge ev). *)
-      Cop.sem_cast v (typeof (eventval_to_expr ev)) (typ_to_type ty) m = Some v.
-    Proof.
-      inversion EM; subst; simpl; try constructor. all: simpl_expr.
-      rewrite ptr_of_id_ofs_typeof. unfold Tptr. unfold Cop.sem_cast. destruct Archi.ptr64 eqn:ARCH; simpl.
-      - rewrite ARCH; auto.
-      - rewrite ARCH; auto.
-    Qed.
-
-    Lemma list_eventval_to_expr_val_eval_typs
-          (ge: genv) en cp temp m evs tys vs
-          (WFENV: Forall (wf_eventval_env en) evs)
-          (EMS: eventval_list_match ge evs tys vs)
-      :
-      eval_exprlist ge en cp temp m (list_eventval_to_list_expr evs) (list_typ_to_typelist tys) vs.
-    Proof.
-      revert en cp temp m WFENV.
-      induction EMS; intros; subst; simpl in *. constructor.
-      inversion WFENV; clear WFENV; subst.
-      econstructor; eauto. 2: eapply eventval_match_sem_cast; eauto.
-      exploit eventval_match_eventval_to_val. eauto. intros. rewrite <- H0. eapply eventval_to_expr_val_eval; auto.
-      eapply eventval_match_wf_eventval_ge; eauto.
-    Qed.
-
-    Lemma sem_cast_ptr
-          b ofs m
-      :
-      Cop.sem_cast (Vptr b ofs) (Tpointer Tvoid noattr) (typ_to_type Tptr) m = Some (Vptr b ofs).
-    Proof.
-      unfold Tptr. destruct Archi.ptr64 eqn:ARCH; unfold Cop.sem_cast; simpl; rewrite ARCH; auto.
-    Qed.
-
-    Lemma sem_cast_proj_rettype
-          (ge: cgenv) evres rty res m
-          (EVM: eventval_match ge evres (proj_rettype rty) res)
-      :
-      Cop.sem_cast (eventval_to_val ge evres)
-                   (typeof (eventval_to_expr evres))
-                   (rettype_to_type rty) m
-      = Some (eventval_to_val ge evres).
-    Proof.
-      destruct rty; simpl in *.
-      { eapply eventval_match_sem_cast. eauto. erewrite eventval_match_eventval_to_val; eauto. }
-      { inv EVM; simpl; simpl_expr.
-        setoid_rewrite H2. rewrite ptr_of_id_ofs_typeof.
-        unfold Tptr in *. destruct Archi.ptr64 eqn:ARCH. congruence.
-        unfold Cop.sem_cast. simpl. rewrite ARCH. auto.
-      }
-      { inv EVM; simpl; simpl_expr.
-        setoid_rewrite H2. rewrite ptr_of_id_ofs_typeof.
-        unfold Tptr in *. destruct Archi.ptr64 eqn:ARCH. congruence.
-        unfold Cop.sem_cast. simpl. rewrite ARCH. auto.
-      }
-      { inv EVM; simpl; simpl_expr.
-        setoid_rewrite H2. rewrite ptr_of_id_ofs_typeof.
-        unfold Tptr in *. destruct Archi.ptr64 eqn:ARCH. congruence.
-        unfold Cop.sem_cast. simpl. rewrite ARCH. auto.
-      }
-      { inv EVM; simpl; simpl_expr.
-        setoid_rewrite H2. rewrite ptr_of_id_ofs_typeof.
-        unfold Tptr in *. destruct Archi.ptr64 eqn:ARCH. congruence.
-        unfold Cop.sem_cast. simpl. rewrite ARCH. auto.
-      }
-      { inv EVM; simpl; simpl_expr.
-        setoid_rewrite H2. rewrite ptr_of_id_ofs_typeof.
-        unfold Tptr in *. destruct Archi.ptr64 eqn:ARCH. congruence.
-        unfold Cop.sem_cast. simpl. rewrite ARCH. auto.
-      }
-    Qed.
-
-  End CODEPROP.
 
 
   Section STEPPROP.
