@@ -1581,7 +1581,8 @@ Section Backtranslation.
         assert (FIND_CUR_C: Genv.find_symbol ge_c id_cur = Some cur).
         { destruct MS0 as (MSENV0 & MSENV1 & MSENV2). apply Genv.invert_find_symbol in IDCUR. apply MSENV1 in IDCUR. auto. }
         assert (FIND_FUN_C: Genv.find_funct_ptr ge_c cur = Some (Internal f)).
-        { (* TODO *) destruct MS2 as (MFUN0 & MFUN1). auto. }
+        { destruct MS2 as (MFUN0 & MFUN1). auto. }
+        (* TODO *)
         exploit WFC0. eapply FIND_CUR_C. eapply FIND_FUN_C. intros (cnt_cur & CNTS_CUR & WF_CNT_CUR).
         set (Kcall None f e le (Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge_c cnt_cur (comp_of f) (get_id_tr ttr id_cur))) Sskip k0)) as kc_next.
         assert (CUR_TR: get_id_tr ttr id_cur = (get_id_tr pretr id_cur) ++ (id_cur, Bundle_call tr id_next evargs (fn_sig fi_next) d) :: (get_id_tr btr id_cur)).
