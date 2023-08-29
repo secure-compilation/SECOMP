@@ -736,16 +736,16 @@ Section Backtranslation.
 
     Definition list_typ_to_list_type (ts: list typ): list type := map typ_to_type ts.
 
-    Definition gen_function (ge: Senv.t) (cnt: ident) (params: list ident) (tr: bundle_trace) (a_f: Asm.function): function :=
+    Definition gen_function (ge: Senv.t) (cnt: ident) (params: list (ident * type)) (tr: bundle_trace) (a_f: Asm.function): function :=
       let a_sg := Asm.fn_sig a_f in
-      let targs := list_typ_to_list_type a_sg.(sig_args) in
+      (* let targs := list_typ_to_list_type a_sg.(sig_args) in *)
       let tret := rettype_to_type a_sg.(sig_res) in
       let cc := a_sg.(sig_cc) in
       let cp := Asm.fn_comp a_f in
       mkfunction cp
                  tret
                  cc
-                 (combine params targs)
+                 params
                  []
                  []
                  (code_bundle_trace ge cp cnt tr).
@@ -781,20 +781,23 @@ Section Backtranslation.
     Definition gen_counter_defs m (gds: list (ident * globdef Asm.fundef unit)): PTree.t (ident * globdef Clight.fundef type) :=
       fold_left (fun pt '(id, gd) => PTree.set id (Pos.add id m, gen_counter (comp_of gd)) pt) gds (@PTree.empty _).
 
-    Definition params_of := PTree.t (list ident).
+    Definition params_of := PTree.t (list (ident * type)).
 
     (* Generate fresh parameter ids for each function --- parameter ids for different functions are allowed to be duplicated *)
     Definition gen_params (m: positive) (gds: list (ident * globdef Asm.fundef unit)): params_of.
     Admitted.
 
     Definition wf_params_of (pars: params_of) :=
-      (forall id params, (pars ! id = Some params) -> list_norepet params).
+      (forall id params, (pars ! id = Some params) -> list_norepet (var_names params)).
 
     Definition wf_params_of_sig (pars: params_of) (ge: Asm.genv) :=
       forall b f id params, (Genv.find_funct_ptr ge b = Some f) -> (Genv.find_symbol ge id = Some b) -> (pars ! id = Some params) ->
-                       (Forall2 (fun _ _ => True) params (sig_args (Asm.funsig f))).
+                       (list_typ_to_list_type (sig_args (funsig f)) = map snd params).
+    (* Definition wf_params_of_sig (pars: params_of) (ge: genv) := *)
+    (*   forall b f id params, (Genv.find_funct_ptr ge b = Some f) -> (Genv.find_symbol ge id = Some b) -> (pars ! id = Some params) -> *)
+    (*                    forall tyargs tyres cconv, (type_of_fundef f = Tfunction tyargs tyres cconv) -> (type_of_params params = tyargs). *)
 
-    Definition gen_progdef (ge: Senv.t) (tr: bundle_trace) a_gd (ocnt: option (ident * globdef Clight.fundef type)) (oparams: option (list ident)): globdef Clight.fundef type :=
+    Definition gen_progdef (ge: Senv.t) (tr: bundle_trace) a_gd (ocnt: option (ident * globdef Clight.fundef type)) (oparams: option (list (ident * type))): globdef Clight.fundef type :=
       match ocnt, oparams with
       | Some (cnt, _), Some params => gen_globdef ge cnt params tr a_gd
       | _, _ => Gvar default_globvar
@@ -850,8 +853,8 @@ Section Backtranslation.
           m agds
           id ps
           (GET: (gen_params m agds) ! id = Some ps)
-          p
-          (IN: In p ps)
+          p t
+          (IN: In (p, t) ps)
       :
       Pos.lt m p.
     Proof.
@@ -1124,7 +1127,7 @@ Section Backtranslation.
     Definition cnt_ids := PTree.t ident.
 
     (* well-formedness *)
-    Definition wf_env_cnt_ids (e: env) (cnts: cnt_ids) := forall id cnt, cnts ! id = Some cnt -> e ! cnt = None.
+    (* Definition wf_env_cnt_ids (e: env) (cnts: cnt_ids) := forall id cnt, cnts ! id = Some cnt -> e ! cnt = None. *)
 
     Definition wf_counter (ge: Senv.t) (m: mem) cp (n: nat) (cnt: ident): Prop :=
       exists b, (Senv.find_symbol ge cnt = Some b) /\
@@ -1135,9 +1138,14 @@ Section Backtranslation.
       forall id b (f: function),
         (Genv.find_symbol ge id = Some b) -> (Genv.find_funct_ptr ge b = Some (Internal f)) ->
         (exists cnt, (cnts ! id = Some cnt) /\ (wf_counter ge m (comp_of f) (length (get_id_tr tr id)) cnt)).
+    (* Definition wf_counters (ge: Clight.genv) (m: mem) (tr: bundle_trace) (cnts: cnt_ids) := *)
+    (*   forall id b (f: function) cnt, *)
+    (*     (Genv.find_symbol ge id = Some b) -> (Genv.find_funct_ptr ge b = Some (Internal f)) -> *)
+    (*     (cnts ! id = Some cnt) -> *)
+    (*     (wf_counter ge m (comp_of f) (length (get_id_tr tr id)) cnt). *)
 
-    Definition wf_counters_find (ge: Clight.genv) (cnts: cnt_ids) :=
-      forall id cnt, cnts ! id = Some cnt -> exists b_cnt, Genv.find_symbol ge cnt = Some b_cnt.
+    (* Definition wf_counters_find (ge: Senv.t) (cnts: cnt_ids) := *)
+    (*   forall id cnt, cnts ! id = Some cnt -> exists b_cnt, Senv.find_symbol ge cnt = Some b_cnt. *)
 
     Definition wf_env_unique_blocks (e: env) :=
       forall id1 id2 b1 ty1 b2 ty2, e ! id1 = Some (b1, ty1) -> e ! id2 = Some (b2, ty2) -> id1 <> id2 -> b1 <> b2.
@@ -1170,19 +1178,28 @@ Section Backtranslation.
       wf_c_cont ge m ck.
 
     Definition wf_c_stmt (ge: Senv.t) cp cnts id tr stmt :=
-      match cnts ! id with
-      | Some cnt => stmt = code_bundle_trace ge cp cnt (get_id_tr tr id)
-      | _ => False
-      end.
+      forall cnt, (cnts ! id = Some cnt) -> stmt = code_bundle_trace ge cp cnt (get_id_tr tr id).
+      (* match cnts ! id with *)
+      (* | Some cnt => stmt = code_bundle_trace ge cp cnt (get_id_tr tr id) *)
+      (* | _ => False *)
+      (* end. *)
 
     Definition wf_c_state (ge: Clight.genv) (tr ttr: bundle_trace) (cnts: cnt_ids) id (cst: Clight.state) :=
       match cst with
       | State f stmt k_c e le m_c =>
-          wf_counters ge m_c tr cnts /\ wf_counters_find ge cnts /\
+          wf_counters ge m_c tr cnts /\
             wf_c_cont ge m_c k_c /\ wf_c_stmt ge (comp_of f) cnts id ttr stmt /\
             (wf_env ge e /\ wf_env_unique_blocks e /\ wf_env_mem ge (comp_of f) e m_c)
       | _ => False
       end.
+    (* Definition wf_c_state (ge: Clight.genv) (tr ttr: bundle_trace) (cnts: cnt_ids) id (cst: Clight.state) := *)
+    (*   match cst with *)
+    (*   | State f stmt k_c e le m_c => *)
+    (*       wf_counters ge m_c tr cnts /\ wf_counters_find ge cnts /\ *)
+    (*         wf_c_cont ge m_c k_c /\ wf_c_stmt ge (comp_of f) cnts id ttr stmt /\ *)
+    (*         (wf_env ge e /\ wf_env_unique_blocks e /\ wf_env_mem ge (comp_of f) e m_c) *)
+    (*   | _ => False *)
+    (*   end. *)
 
 
 
@@ -1193,8 +1210,10 @@ Section Backtranslation.
       (Mem.inject k m_i m_c) /\ (inject_incr j k) /\ (meminj_not_alloc j m_i).
     (* /\ (public_rev_perm m_i m_c). *)
 
-    Definition match_cur_fun (ge: Asm.genv) (cur: block) f (id: ident): Prop :=
-      Genv.find_funct_ptr ge cur = Some (AST.Internal f) /\ Genv.invert_symbol ge cur = Some id.
+    Definition match_cur_fun (ge_i: Asm.genv) (ge_c: genv) (cur: block) f (id: ident): Prop :=
+      (Genv.find_funct_ptr ge_c cur = Some (Internal f)) /\
+        (exists f_i, Genv.find_funct_ptr ge_i cur = Some (AST.Internal f_i)) /\
+        (Genv.invert_symbol ge_i cur = Some id).
 
     Definition match_find_def (ge_i: Asm.genv) (ge_c: Clight.genv) (cnts: cnt_ids) (pars: params_of) tr :=
       forall b gd_i id,
@@ -1206,7 +1225,7 @@ Section Backtranslation.
         | _, _ => False
         end.
 
-    Inductive match_cont (ge: Asm.genv) (tr: bundle_trace) (cnts: cnt_ids) : (cont) -> (ir_conts) -> Prop :=
+    Inductive match_cont (ge: Clight.genv) (tr: bundle_trace) (cnts: cnt_ids) : (cont) -> (ir_conts) -> Prop :=
     | match_cont_nil
         ck ik
         (CK: ck = Kstop)
@@ -1217,7 +1236,9 @@ Section Backtranslation.
         ck ik
         f e le cnt id ck'
         b ik'
-        (FUN: match_cur_fun ge b f id)
+        (* (FUN: match_cur_fun ge b f id) *)
+        (FUN: Genv.find_funct_ptr ge b = Some (Internal f))
+        (ID: Genv.invert_symbol ge b = Some id)
         (CNT: cnts ! id = Some cnt)
         (CK: ck = Kcall None f e le (Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge cnt (comp_of f) (get_id_tr tr id))) Sskip ck'))
         (IK: ik = (ir_cont b) :: ik')
@@ -1231,7 +1252,7 @@ Section Backtranslation.
       match ist, cst with
       | Some (cur, m_i, k_i), State f _ k_c e le m_c =>
           (match_senv ge_i ge_c) /\ (match_mem ge_i k m_i m_c) /\
-            (match_fun ge_c cur f id) /\ (match_find_def ge_i ge_c cnts pars tr) /\
+            (match_cur_fun ge_i ge_c cur f id) /\ (match_find_def ge_i ge_c cnts pars tr) /\
             (match_cont ge_c tr cnts k_c k_i) /\
             (match_params pars ge_i)
       | _, _ => False
@@ -1528,27 +1549,39 @@ Section Backtranslation.
                  \/ (ist2 = None)).
     Proof.
       unfold wf_c_state in WFC. des_ifs. rename s into stmt, k into k_c, m into m_c.
-      destruct WFC as (WFC0 & WFC1 & WFC2 & WFC3 & WFC4 & WFC5 & WFC6).
+      destruct WFC as (WFC0 & WFC1 & WFC2 & WFC3 & WFC4 & WFC5).
       unfold match_state in MS. des_ifs. rename i into k_i, b into cur, m into m_i.
       destruct MS as (MS0 & MS1 & MS2 & MS3 & MS4 & MS5).
       move STEP after WFC5. inv STEP.
 
       - assert (id = id_cur).
-        { unfold match_fun in MS2. des. destruct MS0 as (MSENV0 & MSENV1 & MSENV2).
-          apply Genv.invert_find_symbol in IDCUR. apply MSENV1 in IDCUR. apply Senv.find_invert_symbol in IDCUR. setoid_rewrite MS6 in IDCUR. clarify.
-        }
+        { unfold match_cur_fun in MS2. des. rewrite MS7 in IDCUR. clarify. }
+          (* destruct MS0 as (MSENV0 & MSENV1 & MSENV2). *)
+        (*   apply Genv.invert_find_symbol in IDCUR. apply Senv.find_invert_symbol in IDCUR. setoid_rewrite MS6 in IDCUR. clarify. *)
+        (* } *)
         subst id.
         rename f_next into fi_next. exploit MS3.
-        { unfold Genv.find_funct in FINDF. des_ifs. unfold Genv.find_funct_ptr in FINDF. des_ifs. eapply Heq. }
+
+        Set Nested Proofs Allowed.
+        (* MOVE *)
+        Lemma ffp_find_def
+              F V (ge: Genv.t F V)
+              b fd
+              (FFP: Genv.find_funct_ptr ge b = Some fd)
+          :
+          Genv.find_def ge b = Some (Gfun fd).
+        Proof. unfold Genv.find_funct_ptr in FFP. des_ifs. Qed.
+
+        { eapply ffp_find_def. erewrite <- Genv.find_funct_find_funct_ptr. eapply FINDF. }
         { eapply Genv.find_invert_symbol; eauto. }
         intros FINDF_C. des_ifs. rename id0 into id_next, i into cnt_next, Heq into CNTS_NEXT, l into params_next, Heq0 into PARS_NEXT. simpl in FINDF_C.
         set (pretr ++ (id_cur, Bundle_call tr id_next evargs (fn_sig fi_next) d) :: btr) as ttr in *.
-        set (gen_function ge_i cnt_next params_next (get_id_tr ttr id_next) fi_next) as f_next.
+        set (gen_function ge_i cnt_next params_next (get_id_tr ttr id_next) fi_next) as f_next in *.
         set (fn_body f_next) as stmt_next.
         assert (FIND_CUR_C: Genv.find_symbol ge_c id_cur = Some cur).
-        { destruct MS2 as (MFUN0 & MFUN1). apply Genv.invert_find_symbol; eauto. }
+        { destruct MS0 as (MSENV0 & MSENV1 & MSENV2). apply Genv.invert_find_symbol in IDCUR. apply MSENV1 in IDCUR. auto. }
         assert (FIND_FUN_C: Genv.find_funct_ptr ge_c cur = Some (Internal f)).
-        { destruct MS2 as (MFUN0 & MFUN1). auto. }
+        { (* TODO *) destruct MS2 as (MFUN0 & MFUN1). auto. }
         exploit WFC0. eapply FIND_CUR_C. eapply FIND_FUN_C. intros (cnt_cur & CNTS_CUR & WF_CNT_CUR).
         set (Kcall None f e le (Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge_c cnt_cur (comp_of f) (get_id_tr ttr id_cur))) Sskip k0)) as kc_next.
         assert (CUR_TR: get_id_tr ttr id_cur = (get_id_tr pretr id_cur) ++ (id_cur, Bundle_call tr id_next evargs (fn_sig fi_next) d) :: (get_id_tr btr id_cur)).
