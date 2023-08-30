@@ -78,12 +78,17 @@ Section Equivalence.
           j b <> None <-> (s, m1) |= b ∈ Right
       end.
 
+  Definition same_blocks (ge: genv) (m: mem) :=
+    forall b cp, Genv.find_comp_of_block ge b = Some cp ->
+                 Mem.block_compartment m b = Some cp.
+
   Record right_mem_injection (ge1 ge2: genv) (m1 m2: mem) : Prop :=
     { same_dom: same_domain ge1 ge2 m1 m2;
       partial_mem_inject: Mem.inject j m1 m2;
       j_delta_zero: Mem.delta_zero j;
       same_symb: symbols_inject j ge1 ge2;
-      jinjective: Mem.meminj_injective j
+      jinjective: Mem.meminj_injective j;
+      same_blks: same_blocks ge1 m1;
     }.
 
 Fixpoint remove_until_right (k: cont) :=
@@ -253,6 +258,19 @@ Section Simulation.
   (* Is this hypothesis realistic? *)
   Hypothesis same_cenv: genv_cenv ge1 = genv_cenv ge2.
 
+  Lemma symbols_preserved:
+    forall (s: ident), Genv.find_symbol ge2 s = Genv.find_symbol ge1 s.
+  Proof (Genv.find_symbol_match match_W1_W2).
+
+  Lemma allowed_addrof_translated:
+    forall cp id,
+      Genv.allowed_addrof ge1 cp id ->
+      Genv.allowed_addrof ge2 cp id.
+  Proof.
+    intros cp id.
+    unfold ge1, ge2.
+    now rewrite (Genv.match_genvs_allowed_addrof match_W1_W2).
+  Qed.
 
   (* AAA: [2023-08-08: This next part is not true anymore because left symbols
      can be covered by a memory injection] Right now, this statement is forcing
@@ -307,13 +325,12 @@ Section Simulation.
     /\
     (forall a loc ofs bf,
       eval_lvalue ge1 e1 cp le1 m1 a loc ofs bf ->
-      (s, m1) |= loc ∈ Right ->
       exists loc' ofs',
         (j loc = Some (loc', ofs')) /\
         eval_lvalue ge2 e2 cp le2 m2 a loc' (Ptrofs.add ofs (Ptrofs.repr ofs')) bf).
   Proof.
-    intros. subst ge1 ge2.
-    destruct inj as [inj_dom inj_inject j_delta_zero same_symb].
+    intros. unfold ge1, ge2 in *.
+    destruct inj as [inj_dom inj_inject j_delta_zero same_symb jinj SAMEBLKS].
     apply eval_expr_lvalue_ind; intros;
     try now match goal with
     | |- exists _, Val.inject _ (Vint _) _ /\ _ => eexists; split; [eapply Val.inject_int | econstructor; eauto]
@@ -321,37 +338,44 @@ Section Simulation.
     | |- exists _, Val.inject _ (Vsingle _) _ /\ _ => eexists; split; [eapply Val.inject_single | econstructor; eauto]
     | |- exists _, Val.inject _ (Vlong _) _ /\ _ => eexists; split; [eapply Val.inject_long | econstructor; eauto]
     end.
-    - exploit lenv_inj; eauto. intros [loc' [? ?]].
+    - (* eval_Etempvar *)
+      exploit lenv_inj; eauto. intros [loc' [? ?]].
       eexists; split; eauto.
       constructor; auto.
     - (* eval_Eaddrof *)
       destruct H0 as [loc' [ofs' [? ?]]].
       eexists; split; eauto.
       econstructor; eauto.
-    - destruct H0 as [v' [? ?]].
+    - (* eval_Eunop *)
+      destruct H0 as [v' [? ?]].
       exploit sem_unary_operation_inject; eauto.
       intros [? [? ?]].
       eexists; split; eauto.
       econstructor; eauto.
-    - destruct H0 as [v1' [? ?]].
+    - (* eval_Ebinop *)
+      destruct H0 as [v1' [? ?]].
       destruct H2 as [v2' [? ?]].
       exploit sem_binary_operation_inject; eauto.
       rewrite same_cenv.
       intros [? [? ?]].
       eexists; split; eauto.
       econstructor; eauto.
-    - destruct H0 as [v' [? ?]].
+    - (* eval_Ecast *)
+      destruct H0 as [v' [? ?]].
       exploit sem_cast_inject; eauto.
       intros [v1' [? ?]].
       eexists; split; eauto.
       econstructor; eauto.
-    - rewrite same_cenv.
+    - (* eval_Esizeof *)
+      rewrite same_cenv.
       eexists; split; eauto.
       econstructor; eauto.
-    - rewrite same_cenv.
+    - (* eval_Ealignof *)
+      rewrite same_cenv.
       eexists; split; eauto.
       econstructor; eauto.
-    - destruct H0 as [loc' [ofs' [? ?]]].
+    - (* eval_Elvalue *)
+      destruct H0 as [loc' [ofs' [? ?]]].
       (* This assert heavily relies on the assumption that the injection always gives a delta = 0. *)
       assert (G: exists v', Val.inject j v v' /\
                          deref_loc cp (typeof a) m2 loc' (Ptrofs.add ofs (Ptrofs.repr ofs')) bf v').
@@ -375,7 +399,8 @@ Section Simulation.
       destruct G as [v' [? ?]].
       eexists; split; eauto.
       econstructor; eauto.
-    - destruct env_inj as [env_inj _].
+    - (* eval_Evar_local *)
+      destruct env_inj as [env_inj _].
       exploit env_inj; eauto.
       intros [b' [? ?]].
       eexists; eexists; split; eauto.
@@ -385,6 +410,7 @@ Section Simulation.
       rename l into b.
       rename H into e1_id.
       rename H0 into W1_id.
+      rename H1 into ALLOWED.
       exploit env_inj; eauto.
       intros e2_id.
       exploit Genv.find_invert_symbol; eauto.
@@ -400,18 +426,43 @@ Section Simulation.
         exists b', 0; split; trivial.
         rewrite Ptrofs.add_zero_l.
         eapply eval_Evar_global; eauto.
+        now apply allowed_addrof_translated.
       + (* private symbol *)
-
-    - destruct H0 as [v' [? ?]].
+        assert (id_cp : Genv.find_comp_of_ident ge1 id = Some cp).
+        { destruct ALLOWED; trivial.
+          unfold Genv.to_senv in public_id. simpl in public_id.
+          unfold globalenv in H. simpl in H.
+          congruence. }
+        assert (b_right : (s, m1) |= b ∈ Right).
+        { unfold Mem.has_side_block. simpl.
+          unfold Genv.find_comp_of_ident in id_cp.
+          unfold ge1 in id_cp. rewrite W1_id in id_cp.
+          apply SAMEBLKS in id_cp. now rewrite id_cp. }
+        apply idP in b_right.
+        destruct (j b) as [[loc' ofs']|] eqn:j_b; try easy.
+        clear b_right idP.
+        exists loc', ofs'. split; trivial.
+        assert (ofs' = 0 /\ Genv.find_symbol (globalenv W2) id = Some loc')
+          as [? W2_id].
+        { destruct same_symb as (_ & same_symb & _).
+          eapply same_symb; eauto. }
+        subst ofs'.
+        rewrite Ptrofs.add_zero_l.
+        apply eval_Evar_global; eauto.
+        now apply allowed_addrof_translated.
+    - (* eval_Ederef *)
+      destruct H0 as [v' [? ?]].
       inv H0.
       eexists; eexists; split; eauto.
       econstructor; eauto.
-    - destruct H0 as [v' [? ?]].
+    - (* eval_Efield_struct *)
+      destruct H0 as [v' [? ?]].
       inv H0.
       eexists; eexists; split; eauto.
       rewrite Ptrofs.add_assoc, (Ptrofs.add_commut (Ptrofs.repr delta)), <- Ptrofs.add_assoc.
       eapply eval_Efield_struct; try rewrite <- same_cenv; eauto.
-    - destruct H0 as [v' [? ?]].
+    - (* eval_Efield_union *)
+      destruct H0 as [v' [? ?]].
       inv H0.
       eexists; eexists; split; eauto.
       rewrite Ptrofs.add_assoc, (Ptrofs.add_commut (Ptrofs.repr delta)), <- Ptrofs.add_assoc.
