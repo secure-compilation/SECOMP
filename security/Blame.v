@@ -470,10 +470,11 @@ Section Simulation.
   Qed.
 
   Lemma eval_expr_injection:
-    forall s j m1 m2 e1 e2 le1 le2 cp,
+    forall j m1 m2 e1 e2 le1 le2 cp,
     forall inj: right_mem_injection s j ge1 ge2 m1 m2,
     forall env_inj: right_env_injection j e1 e2,
     forall lenv_inj: right_tenv_injection j le1 le2,
+    forall s_right: s cp = Right,
     forall a v,
       eval_expr ge1 e1 cp le1 m1 a v ->
       exists v', Val.inject j v v' /\
@@ -485,10 +486,11 @@ Section Simulation.
     Qed.
 
   Lemma eval_exprlist_injection:
-    forall s j m1 m2 e1 e2 le1 le2 cp,
+    forall j m1 m2 e1 e2 le1 le2 cp,
     forall inj: right_mem_injection s j ge1 ge2 m1 m2,
     forall env_inj: right_env_injection j e1 e2,
     forall lenv_inj: right_tenv_injection j le1 le2,
+    forall s_right: s cp = Right,
     forall al tys vs,
       eval_exprlist ge1 e1 cp le1 m1 al tys vs ->
       exists vs', Val.inject_list j vs vs' /\
@@ -508,10 +510,11 @@ Section Simulation.
     Qed.
 
   Lemma eval_lvalue_injection:
-    forall s j m1 m2 e1 e2 le1 le2 cp,
+    forall j m1 m2 e1 e2 le1 le2 cp,
     forall inj: right_mem_injection s j ge1 ge2 m1 m2,
     forall env_inj: right_env_injection j e1 e2,
     forall lenv_inj: right_tenv_injection j le1 le2,
+    forall s_right: s cp = Right,
     forall a loc ofs bf,
       eval_lvalue ge1 e1 cp le1 m1 a loc ofs bf ->
       exists loc' ofs', j loc = Some (loc', ofs') /\
@@ -524,8 +527,15 @@ Section Simulation.
 
   Ltac destruct_mem_inj :=
     match goal with
-    | H: right_mem_injection _ _ _ _ _ _ |- _ => destruct H as [same_dom mem_inject delta_zero same_symb injective]
+    | H: right_mem_injection _ _ _ _ _ _ |- _ =>
+        destruct H as [same_dom mem_inject delta_zero same_symb injective SAMEBLKS]
     end.
+
+(*
+  Lemma same_domain_store j m1 m2 chunk v :
+    same_domain s j ge1 ge2 m1 m2 ->
+    Mem.store
+*)
 
   Lemma parallel_concrete: forall j s1 s2 s1' t,
       right_state_injection s j ge1 ge2 s1 s2 ->
@@ -541,31 +551,63 @@ Section Simulation.
       destruct st1; simpl in *; congruence. }
     inv step1; inv right_exec_inj.
     + (* step_assign *)
+      rename m into m1. rename m' into m1'.
+      rename k into k1. rename e into e1.
+      rename le into le1.
+      rename a1 into lhs. rename a2 into rhs.
+      rename v2 into v1. rename v into v1'.
+      rename loc into loc1. rename ofs into ofs1.
+      rename H into eval_lhs1.
+      rename H0 into eval_rhs1.
+      rename H1 into cast_v1.
+      rename H2 into ASSIGN.
+      rename H10 into MEMINJ.
+      rename H11 into CONTINJ.
+      rename H12 into ENVINJ.
+      rename H13 into TENVINJ.
+      assert (f_right : s (comp_of f) = Right) by exact is_r2.
       exploit eval_lvalue_injection; eauto.
       exploit eval_expr_injection; eauto.
-      intros [v' [? ?]] [loc' [ofs' [? ?]]].
+      intros [v2 [v1_v2 eval_rhs2]] [loc2 [loc1_ofs [j_loc1 eval_lhs2]]].
       destruct_mem_inj.
       exploit sem_cast_inject; eauto.
-      intros [tv [? ?]].
-      inv H2.
-      * exploit Mem.store_mapped_inject; eauto.
-        intros [? [? ?]].
-        exploit delta_zero; eauto. intros ?; subst.
-        rewrite Z.add_0_r in *.
+      intros [v2' [cast_v2 v1'_v2']].
+      exploit delta_zero; eauto. intros ?; subst loc1_ofs.
+      rewrite Ptrofs.add_zero in *.
+      inv ASSIGN.
+      * rename H into ACCESS.
+        rename H0 into store_v1'.
+        exploit Mem.store_mapped_inject; eauto.
+        rewrite Z.add_0_r.
+        intros [m2' [store_v2' mem_inject']].
         exists j; eexists; split.
         - econstructor; eauto.
           econstructor; eauto.
-          rewrite Ptrofs.add_zero; eauto.
         - apply RightControl; eauto.
           constructor; eauto.
           split; eauto.
-          clear -same_dom H10.
-          unfold Mem.same_domain in *.
-          intros.
-          unfold in_side in *; simpl in *.
-          erewrite Mem.store_block_compartment; eauto.
-      * inv H8.
+          ++ unfold same_domain in *.
+             intros b. specialize same_dom with b.
+             enough (((s, m1') |= b ∈ Right) = ((s, m1) |= b ∈ Right))
+               as -> by easy.
+             unfold Mem.has_side_block. simpl.
+             erewrite Mem.store_block_compartment; eauto.
+          ++ unfold same_blocks in *.
+             intros b cp b_cp.
+             specialize (SAMEBLKS b cp b_cp).
+             erewrite Mem.store_block_compartment; eauto.
+      * rename b' into b1'. rename ofs' into ofs1'.
+        rename H into ACCESS.
+        rename H0 into align_lhs1'.
+        rename H1 into align_lhs1.
+        rename H2 into sizes1.
+        rename H3 into load_b1'.
+        rename H4 into store_loc1.
+        inv v1'_v2'.
+        rename b2 into b2'. rename H1 into j_b1'.
+        exploit delta_zero; try exact j_b1'; eauto. intros ?; subst delta.
         exploit Mem.loadbytes_inj; eauto using Mem.mi_inj.
+        (* Stopped here... *)
         intros [? [? ?]].
         exploit Mem.storebytes_mapped_inject; eauto using Mem.mi_inj.
         intros [? [? ?]].
