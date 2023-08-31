@@ -5,33 +5,6 @@ Require Import AST Globalenvs Linking Smallstep Events Behaviors Memory Values.
 Require Import Ctypes Cop Clight.
 Require Import Split.
 
-Record match_prog_1 (s: split) (p p': program) : Prop := {
-  match_prog_main:
-    p'.(prog_main) = p.(prog_main);
-  match_prog_public:
-    p'.(prog_public) = p.(prog_public);
-  match_prog_pol:
-    p'.(prog_pol) = p.(prog_pol);
-  match_prog_def:
-    forall id,
-      match (prog_defmap p')!id with
-      | Some gd =>
-          match s (comp_of gd) with
-          | Right =>
-              (prog_defmap p)!id = Some gd
-          | Left =>
-              In id p'.(prog_public) ->
-              (prog_defmap p)!id = Some gd
-          end
-      | None =>
-          forall gd,
-            (prog_defmap p)!id = Some gd ->
-            s (comp_of gd) = Left
-      end;
-  match_prog_unique:
-    list_norepet (prog_defs_names p')
-}.
-
 Variant match_fundef (s: split): unit -> fundef -> fundef -> Prop :=
   | match_function_left: forall cp ty cc params vars vars' temps temps' body body',
       s |= cp ∈ Left ->
@@ -56,8 +29,52 @@ intros ? x y H.
 inv H; auto.
 Qed.
 
-
 Definition match_varinfo (ty1 ty2: type): Prop := ty1 = ty2.
+
+Definition kept_genv (s: split) (ge: genv) (δ: side) (id: ident): bool :=
+  match Genv.find_symbol ge id with
+  | Some b =>
+      match (Genv.genv_defs ge)!b with
+      | None => false
+      | Some gd => side_eq (s (comp_of gd)) δ
+      end
+  | None => false
+  end.
+
+(*Definition kept_prog (s: split) (p: program) (δ: side) (id: ident): bool :=
+  kept_genv s (Genv.globalenv p) δ id.*)
+
+Definition match_globdefs_right (s: split) (ge1 ge2: genv) :=
+  forall id cp,
+    Genv.find_comp_of_ident ge1 id = Some cp ->
+    s cp = Right ->
+    exists b1 b2,
+      Genv.find_symbol ge1 id = Some b1 /\
+      Genv.find_symbol ge2 id = Some b2 /\
+      Genv.find_def ge1 b1 = Genv.find_def ge2 b2.
+
+Definition match_globdefs_left (s: split) (ge1 ge2: genv) :=
+  forall id cp,
+    Genv.find_comp_of_ident ge1 id = Some cp ->
+    s cp = Left ->
+    Genv.public_symbol ge1 id = true ->
+    (* FIXME: This allows a symbol to be sometimes a function and sometimes a
+    variable... *)
+    Genv.find_symbol ge1 id <> None <->
+      Genv.find_symbol ge2 id <> None.
+
+Record match_prog (s: split) (p p': program) : Prop := {
+  match_prog_main:
+    p'.(prog_main) = p.(prog_main);
+  match_prog_public:
+    p'.(prog_public) = p.(prog_public);
+  match_prog_pol:
+    p'.(prog_pol) = p.(prog_pol);
+  match_prog_globdefs:
+    match_globdefs s (globalenv p) (globalenv p');
+  match_prog_unique:
+    list_norepet (prog_defs_names p')
+}.
 
 Definition match_prog (s: split) := match_program_gen (match_fundef s) match_varinfo.
 
@@ -178,39 +195,39 @@ Definition right_tenv_injection (le1 le2: temp_env): Prop :=
 Variant right_executing_injection (ge1 ge2: genv): state -> state -> Prop :=
 | inject_states: forall f s k1 k2 e1 e2 le1 le2 m1 m2,
     (* we forget about program memories but require injection of context memories *)
-    right_mem_injection ge1 ge2 m1 m2 ->
+    forall RMEMINJ : right_mem_injection ge1 ge2 m1 m2,
 
     (* we forget about program parts of the continuation but require injection of
        context continuation *)
-    right_cont_injection k1 k2 ->
+    forall RCONTINJ : right_cont_injection k1 k2,
 
     (* the environments satisfy the injection *)
-    right_env_injection e1 e2 ->
-    right_tenv_injection le1 le2 ->
+    forall RENVINJ : right_env_injection e1 e2,
+    forall RTENVINJ : right_tenv_injection le1 le2,
 
     right_executing_injection ge1 ge2 (State f s k1 e1 le1 m1) (State f s k2 e2 le2 m2)
 | inject_callstates: forall f vs vs' k1 k2 m1 m2,
     (* we forget about program memories but require injection of context memories *)
-    right_mem_injection ge1 ge2 m1 m2 ->
+    forall RMEMINJ : right_mem_injection ge1 ge2 m1 m2,
 
     (* we forget about program parts of the continuation but require injection of
        context continuation *)
-    right_cont_injection k1 k2 ->
+    forall RCONTINJ : right_cont_injection k1 k2,
 
     (* the parameters are related by the memory injection *)
-    Val.inject_list j vs vs' ->
+    forall ARGINJ : Val.inject_list j vs vs',
 
     right_executing_injection ge1 ge2 (Callstate f vs k1 m1) (Callstate f vs' k2 m2)
 | inject_returnstates: forall v v' k1 k2 m1 m2 ty cp,
     (* we forget about program memories but require injection of context memories *)
-    right_mem_injection ge1 ge2 m1 m2 ->
+    forall RMEMINJ : right_mem_injection ge1 ge2 m1 m2,
 
     (* we forget about program parts of the continuation but require injection of
        context continuation *)
-    right_cont_injection k1 k2 ->
+    forall RCONTINJ : right_cont_injection k1 k2,
 
     (* The return values are related by the injection *)
-    Val.inject j v v' ->
+    forall RVALINJ : Val.inject j v v',
 
     right_executing_injection ge1 ge2 (Returnstate v k1 m1 ty cp) (Returnstate v' k2 m2 ty cp)
 .
@@ -563,8 +580,8 @@ Section Simulation.
         Clight.step1 ge2 s2 t s2' /\
           right_state_injection s j' ge1 ge2 s1' s2'.
   Proof.
-    intros j s1 s2 s1' t rs_inj is_r step1.
-    destruct rs_inj as [? | st1 st2 is_r1 is_r2 right_exec_inj].
+    intros j s1 s2 s1' t rs_inj is_r1 step1.
+    destruct rs_inj as [? | st1 st2 _ is_r2 right_exec_inj].
     { (* contradiction *)
       destruct st1; simpl in *; congruence. }
     inv step1; inv right_exec_inj.
@@ -579,10 +596,6 @@ Section Simulation.
       rename H0 into eval_rhs1.
       rename H1 into cast_v1.
       rename H2 into ASSIGN.
-      rename H10 into MEMINJ.
-      rename H11 into CONTINJ.
-      rename H12 into ENVINJ.
-      rename H13 into TENVINJ.
       assert (f_right : s (comp_of f) = Right) by exact is_r2.
       exploit eval_lvalue_injection; eauto.
       exploit eval_expr_injection; eauto.
@@ -684,14 +697,23 @@ Section Simulation.
         destruct (peq i id); eauto. inv H2; subst.
         eexists; split; eauto.
     + (* step_call *)
-      exploit eval_expr_injection; eauto.
-      auto.
-      intros [v' [? ?]].
-      exploit eval_exprlist_injection; eauto.
-      auto.
-      intros [vs' [? ?]].
+      rename m into m1.
+      rename k into k1.
+      rename e into e1.
+      rename le into le1.
+      rename vf into vf1. rename fd into fd1.
+      rename vargs into vargs1.
+      rename H into a_type.
+      rename H0 into eval_a1.
+      rename H1 into eval_vargs1.
+      rename H2 into find_vf1.
+      rename H3 into type_fd1.
+      exploit eval_expr_injection; eauto; eauto.
+      intros [vf2 [vf1_vf2 eval_a2]].
+      exploit eval_exprlist_injection; eauto; eauto.
+      intros [vargs2 [vargs1_vargs2 eval_vargs2]].
       exploit (Genv.find_funct_match match_W1_W2); eauto.
-      intros [? [fd' [find_fd' [match_fd' _]]]].
+      intros [[] [fd2 [find_vf2 [fd1_fd2 _]]]].
       (* Stopped here... *)
       assert (vf = v') by admit. subst v'.
       exists j; eexists; split.
