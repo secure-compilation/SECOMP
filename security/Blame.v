@@ -82,6 +82,24 @@ Section Equivalence.
     forall b cp, Genv.find_comp_of_block ge b = Some cp ->
                  Mem.block_compartment m b = Some cp.
 
+  Lemma same_blocks_store chunk m b ofs sz cp m' ge
+    (STORE : Mem.store chunk m b ofs sz cp = Some m')
+    (BLOCKS : same_blocks ge m) :
+    same_blocks ge m'.
+  Proof.
+    intros. intros b' cp' FIND. specialize (BLOCKS b' cp' FIND).
+    erewrite Mem.store_block_compartment; eauto.
+  Qed.
+
+  Lemma same_blocks_storebytes m b ofs sz ocp m' ge
+    (STORE : Mem.storebytes m b ofs sz ocp = Some m')
+    (BLOCKS : same_blocks ge m) :
+    same_blocks ge m'.
+  Proof.
+    intros. intros b' cp FIND. specialize (BLOCKS b' cp FIND).
+    erewrite Mem.storebytes_block_compartment; eauto.
+  Qed.
+
   Record right_mem_injection (ge1 ge2: genv) (m1 m2: mem) : Prop :=
     { same_dom: same_domain ge1 ge2 m1 m2;
       partial_mem_inject: Mem.inject j m1 m2;
@@ -605,52 +623,57 @@ Section Simulation.
         rename H4 into store_loc1.
         inv v1'_v2'.
         rename b2 into b2'. rename H1 into j_b1'.
+        rename bytes into bytes1.
         exploit delta_zero; try exact j_b1'; eauto. intros ?; subst delta.
         exploit Mem.loadbytes_inj; eauto using Mem.mi_inj.
-        (* Stopped here... *)
-        intros [? [? ?]].
+        rewrite Z.add_0_r.
+        intros [bytes2 [load_b2' MVALINJ]].
         exploit Mem.storebytes_mapped_inject; eauto using Mem.mi_inj.
-        intros [? [? ?]].
-        exploit delta_zero; eauto; intros; subst.
-        exploit (delta_zero loc); eauto; intros; subst.
+        rewrite Z.add_0_r.
+        intros [m2' [store_loc2 mem_inject']].
         exists j; eexists; split.
         - econstructor; eauto.
-          rewrite <- same_cenv, !Z.add_0_r, !Ptrofs.add_zero in *; eauto.
-          eapply assign_loc_copy; eauto.
-          { destruct H15.
+          rewrite <- same_cenv in *.
+          eapply assign_loc_copy; try rewrite Ptrofs.add_zero; eauto.
+          { destruct sizes1.
             - exploit injective; eauto. intros []; [now left| contradiction].
             - auto. }
         - apply RightControl; eauto.
           constructor; eauto.
           split; eauto.
-          clear -same_dom H17.
-          unfold Mem.same_domain in *.
-          intros.
-          unfold in_side in *; simpl in *.
-          erewrite Mem.storebytes_block_compartment; eauto.
-      * inv H9.
+          ++ clear -same_dom store_loc1.
+             unfold same_domain in *.
+             intros b.
+             unfold in_side in *; simpl in *.
+             erewrite Mem.storebytes_block_compartment; eauto.
+             exact (same_dom b).
+          ++ eapply same_blocks_storebytes; eauto.
+      * inv H.
         exploit Mem.load_inject; eauto using Mem.mi_inj.
         intros [? [? ?]].
         exploit Mem.store_mapped_inject; eauto.
         intros [? [? ?]].
-        inv H16.
+        inv H8.
         exploit delta_zero; eauto; intros; subst.
         rewrite Z.add_0_r in *.
         exists j; eexists; split.
         - econstructor; eauto.
-          rewrite Ptrofs.add_zero.
-          eapply assign_loc_bitfield. rewrite <- H2. inv H8.
+          eapply assign_loc_bitfield. rewrite <- H0. inv H4. inv v1'_v2'.
           econstructor; eauto.
         - apply RightControl; eauto.
           constructor; eauto.
           split; eauto.
-          clear -same_dom H18.
-          unfold Mem.same_domain in *.
-          intros.
-          unfold in_side in *; simpl in *.
-          erewrite Mem.store_block_compartment; eauto.
+          ++ clear -same_dom H6.
+             unfold same_domain in *.
+             intros b.
+             unfold in_side in *; simpl in *.
+             erewrite Mem.store_block_compartment; eauto.
+             exact (same_dom b).
+          ++ now constructor.
+          ++ eapply same_blocks_store; eauto.
     + (* step_set *)
       exploit eval_expr_injection; eauto.
+      auto.
       intros [v' [? ?]].
       exists j; eexists; split.
       * econstructor; eauto.
@@ -662,11 +685,14 @@ Section Simulation.
         eexists; split; eauto.
     + (* step_call *)
       exploit eval_expr_injection; eauto.
+      auto.
       intros [v' [? ?]].
       exploit eval_exprlist_injection; eauto.
+      auto.
       intros [vs' [? ?]].
       exploit (Genv.find_funct_match match_W1_W2); eauto.
       intros [? [fd' [find_fd' [match_fd' _]]]].
+      (* Stopped here... *)
       assert (vf = v') by admit. subst v'.
       exists j; eexists; split.
       * econstructor; eauto.
@@ -691,6 +717,7 @@ Section Simulation.
           simpl. apply right_cont_injection_kcall_right; eauto.
     + (* step_builtin *)
       exploit eval_exprlist_injection; eauto.
+      auto.
       intros [vs' [? ?]].
       exploit ec_mem_inject; eauto. admit. admit. admit.
       intros [j' [? [? [? [? [? [? [? [? ?]]]]]]]]].
