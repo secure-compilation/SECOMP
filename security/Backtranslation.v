@@ -1750,23 +1750,12 @@ Section Backtranslation.
             }
             apply NPTR. unfold crossing_comp.
 
+            TODO
+
             (* MOVE *)
             Lemma type_of_call_eq
 
 
-            
-                destruct (
-
-                
-                
-                  
-
-                
-            
-
-          
-
-              TODO
 
 
 
