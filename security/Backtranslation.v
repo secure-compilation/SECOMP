@@ -1203,7 +1203,11 @@ Section Backtranslation.
 
 
 
-    Definition match_senv (ge ge': Senv.t) := match_symbs ge ge'.
+    Definition eq_policy (ge1: Asm.genv) (ge2: genv) :=
+      Genv.genv_policy ge1 = Genv.genv_policy ge2.
+
+    Definition match_genv (ge: Asm.genv) (ge': genv) :=
+      (match_symbs ge ge') /\ (eq_policy ge ge').
 
     Definition match_mem (ge: Senv.t) (k: meminj) (m_i m_c: mem): Prop :=
       let j := meminj_public ge in
@@ -1251,7 +1255,7 @@ Section Backtranslation.
     Definition match_state (ge_i: Asm.genv) (ge_c: Clight.genv) (k: meminj) tr cnts pars id (ist: ir_state) (cst: Clight.state) :=
       match ist, cst with
       | Some (cur, m_i, k_i), State f _ k_c e le m_c =>
-          (match_senv ge_i ge_c) /\ (match_mem ge_i k m_i m_c) /\
+          (match_genv ge_i ge_c) /\ (match_mem ge_i k m_i m_c) /\
             (match_cur_fun ge_i ge_c cur f id) /\ (match_find_def ge_i ge_c cnts pars tr) /\
             (match_cont ge_c tr cnts k_c k_i) /\
             (match_params pars ge_i)
@@ -1501,16 +1505,19 @@ Section Backtranslation.
     Qed.
 
     Lemma type_of_params_eq
-          ids ts
-          (PARSIGS : Forall2 (fun (_ : ident) (_ : typ) => True) ids ts)
+          params ts
+          (PARSIGS : list_typ_to_list_type ts = map snd params)
       :
-      type_of_params (combine ids (list_typ_to_list_type ts)) = list_typ_to_typelist ts.
-    Proof. induction PARSIGS; ss. f_equal. auto. Qed.
-
+      type_of_params params = list_typ_to_typelist ts.
+    Proof.
+      revert params PARSIGS. induction ts; ii; ss.
+      { destruct params; ss. }
+      destruct params; ss. destruct p; ss. clarify. f_equal. auto.
+    Qed.
 
     Lemma match_senv_eventval_match
           (ge0 ge1: Senv.t)
-          (MS: match_senv ge0 ge1)
+          (MS: match_symbs ge0 ge1)
           ev ty v
           (EM: eventval_match ge0 ev ty v)
       :
@@ -1519,7 +1526,7 @@ Section Backtranslation.
 
     Lemma match_senv_eventval_list_match
           (ge0 ge1: Senv.t)
-          (MS: match_senv ge0 ge1)
+          (MS: match_symbs ge0 ge1)
           evs tys vs
           (EM: eventval_list_match ge0 evs tys vs)
       :
@@ -1531,6 +1538,7 @@ Section Backtranslation.
       :
       unbundle_trace (tr1 ++ tr2) = (unbundle_trace tr1) ++ (unbundle_trace tr2).
     Proof. induction tr1; ss. rewrite <- app_assoc. f_equal. auto. Qed.
+
 
     Lemma ir_to_clight_step
           (ge_i: Asm.genv) (ge_c: Clight.genv)
@@ -1548,6 +1556,9 @@ Section Backtranslation.
                            exists k, (match_state ge_i ge_c k ttr cnts pars id' ist2 cst2))
                  \/ (ist2 = None)).
     Proof.
+      (* REMOVE *)
+      Set Nested Proofs Allowed.
+
       unfold wf_c_state in WFC. des_ifs. rename s into stmt, k into k_c, m into m_c.
       destruct WFC as (WFC0 & WFC1 & WFC2 & WFC3 & WFC4 & WFC5).
       unfold match_state in MS. des_ifs. rename i into k_i, b into cur, m into m_i.
@@ -1562,40 +1573,30 @@ Section Backtranslation.
         subst id.
         rename f_next into fi_next. exploit MS3.
 
-        Set Nested Proofs Allowed.
-        (* MOVE *)
-        Lemma ffp_find_def
-              F V (ge: Genv.t F V)
-              b fd
-              (FFP: Genv.find_funct_ptr ge b = Some fd)
-          :
-          Genv.find_def ge b = Some (Gfun fd).
-        Proof. unfold Genv.find_funct_ptr in FFP. des_ifs. Qed.
-
-        { eapply ffp_find_def. erewrite <- Genv.find_funct_find_funct_ptr. eapply FINDF. }
+        { eapply Genv.find_funct_ptr_iff. erewrite <- Genv.find_funct_find_funct_ptr. eapply FINDF. }
         { eapply Genv.find_invert_symbol; eauto. }
         intros FINDF_C. des_ifs. rename id0 into id_next, i into cnt_next, Heq into CNTS_NEXT, l into params_next, Heq0 into PARS_NEXT. simpl in FINDF_C.
         set (pretr ++ (id_cur, Bundle_call tr id_next evargs (fn_sig fi_next) d) :: btr) as ttr in *.
         set (gen_function ge_i cnt_next params_next (get_id_tr ttr id_next) fi_next) as f_next in *.
         set (fn_body f_next) as stmt_next.
         assert (FIND_CUR_C: Genv.find_symbol ge_c id_cur = Some cur).
-        { destruct MS0 as (MSENV0 & MSENV1 & MSENV2). apply Genv.invert_find_symbol in IDCUR. apply MSENV1 in IDCUR. auto. }
+        { destruct MS0 as ((MSENV0 & MSENV1 & MSENV2) & MGENV). apply Genv.invert_find_symbol in IDCUR. apply MSENV1 in IDCUR. auto. }
         assert (FIND_FUN_C: Genv.find_funct_ptr ge_c cur = Some (Internal f)).
         { destruct MS2 as (MFUN0 & MFUN1). auto. }
-        (* TODO *)
+
         exploit WFC0. eapply FIND_CUR_C. eapply FIND_FUN_C. intros (cnt_cur & CNTS_CUR & WF_CNT_CUR).
         set (Kcall None f e le (Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge_c cnt_cur (comp_of f) (get_id_tr ttr id_cur))) Sskip k0)) as kc_next.
         assert (CUR_TR: get_id_tr ttr id_cur = (get_id_tr pretr id_cur) ++ (id_cur, Bundle_call tr id_next evargs (fn_sig fi_next) d) :: (get_id_tr btr id_cur)).
         { subst ttr. clear. rewrite get_id_tr_app. rewrite get_id_tr_cons. ss. rewrite Pos.eqb_refl. auto. }
         assert (BOUND2: Z.of_nat (Datatypes.length (map (fun ib : ident * bundle_event => code_bundle_event ge_i (comp_of f) (snd ib)) (get_id_tr ttr id_cur))) < Int64.modulus).
-        { rewrite map_length. etransitivity. 2: eauto. unfold get_id_tr. admit. }
+        { rewrite map_length. etransitivity. 2: eauto. unfold get_id_tr. admit. (* ez *) }
         destruct WF_CNT_CUR as (cnt_cur_b & FIND_CNT_CUR & CNT_CUR_MEM_VA & CNT_CUR_MEM_LOAD).
-        assert (PARSIGS: Forall2 (fun _ _ => True) params_next (sig_args (fn_sig fi_next))).
-        { destruct MS5 as (MPARS0 & MPARS1). ss. rewrite pred_dec_true in FINDF; auto. exploit MPARS1. 3: eauto. 2: eauto. all: eauto. }
+        assert (PARSIGS: list_typ_to_list_type (sig_args (fn_sig fi_next)) = map snd params_next).
+        { destruct MS5 as (_ & WFP1). exploit WFP1. apply FINDF. apply FINDB. apply PARS_NEXT. ss. }
 
         hexploit switch_spec.
         { subst ttr. rewrite CUR_TR in BOUND2. rewrite map_app in BOUND2. ss. eapply BOUND2. }
-        { unfold wf_env in WFC4. specialize (WFC4 cnt_cur). des_ifs. eapply WFC4. }
+        { unfold wf_env in WFC3. specialize (WFC3 cnt_cur). des_ifs. eapply WFC3. }
         eapply FIND_CNT_CUR. eapply CNT_CUR_MEM_VA.
         { rewrite CNT_CUR_MEM_LOAD. rewrite map_length. auto. }
         instantiate (1:=le).
@@ -1623,47 +1624,150 @@ Section Backtranslation.
         exists cst2. split.
         2:{ left. exists id_next. split. apply WFC_NEXT. eexists. eapply MS_NEXT. }
 
-        unfold wf_c_stmt in WFC3. rewrite CNTS_CUR in WFC3. subst stmt.
+        unfold wf_c_stmt in WFC2. specialize (WFC2 _ CNTS_CUR). subst stmt.
         eapply star_trans. eapply code_bundle_trace_spec. 2: ss.
         unfold switch_bundle_events at 1. rewrite CUR_TR at 1. rewrite map_app. simpl.
         rewrite ! (match_symbs_code_bundle_call ge_i ge_c) in CUR_SWITCH_STAR. rewrite ! (match_symbs_code_bundle_events ge_i ge_c) in CUR_SWITCH_STAR.
         eapply star_trans. eapply CUR_SWITCH_STAR. 2: ss. 2,3: auto.
         clear BOUND2 CUR_SWITCH_STAR.
         unfold code_bundle_call. eapply star_trans. eapply code_mem_delta_correct. auto.
-        { erewrite <- match_symbs_mem_delta_apply_wf. eapply DELTA_C. auto. }
+        { erewrite <- match_symbs_mem_delta_apply_wf. eapply DELTA_C.
+          destruct MS0 as (MSYMB & _). auto. }
         2: ss.
         unfold unbundle. simpl. rename b into next. econs 2.
-        { eapply step_call. ss.
+        {
+          (* MOVE *)
+          Lemma cur_fun_def
+                ge_i (ge_c: genv) cur f (f_i_cur : Asm.function) id_cur cnts pars ttr
+                (FINDF_C_CUR : Genv.find_funct_ptr ge_c cur = Some (Internal f))
+                (FINDF_I_CUR : Genv.find_funct_ptr ge_i cur = Some (AST.Internal f_i_cur))
+                (INV_CUR : Genv.invert_symbol ge_i cur = Some id_cur)
+                (MS3 : match_find_def ge_i ge_c cnts pars ttr)
+            :
+            exists cnt_cur params_cur,
+              (cnts ! id_cur = Some cnt_cur) /\ (pars ! id_cur = Some params_cur) /\
+                (f = gen_function ge_i cnt_cur params_cur (get_id_tr ttr id_cur) f_i_cur).
+          Proof.
+            exploit MS3. eapply Genv.find_funct_ptr_iff. eauto. eapply INV_CUR. intros. des_ifs.
+            esplits; eauto. apply Genv.find_funct_ptr_iff in FINDF_C_CUR.
+            setoid_rewrite FINDF_C_CUR in x0. unfold gen_globdef in x0. clarify.
+          Qed.
+
+          (* MOVE *)
+          Lemma allowed_call_gen_function
+                cp (ge_i: Asm.genv) (ge_c: genv) next cnt params tr f_i f_c
+                (GE: symbs_find ge_i ge_c)
+                (GEPOL: eq_policy ge_i ge_c)
+                (GEN: f_c = gen_function ge_i cnt params tr f_i)
+                (ALLOW : Genv.allowed_call ge_i cp (Vptr next Ptrofs.zero))
+                (FINDF : Genv.find_funct ge_i (Vptr next Ptrofs.zero) = Some (AST.Internal f_i))
+                (FINDF_C : Genv.find_funct ge_c (Vptr next Ptrofs.zero) = Some (Internal f_c))
+            :
+            Genv.allowed_call ge_c cp (Vptr next Ptrofs.zero).
+          Proof.
+            unfold Genv.allowed_call in *. des; [left | right].
+            - subst. unfold Genv.find_comp. rewrite FINDF, FINDF_C. ss.
+            - subst. unfold Genv.allowed_cross_call in *. des.
+              unfold eq_policy in GEPOL. rewrite GEPOL in ALLOW2, ALLOW3.
+              specialize (ALLOW0 _ FINDF). exists i, cp'. splits; auto.
+              { apply Genv.invert_find_symbol in ALLOW. apply Genv.find_invert_symbol.
+                apply GE. auto.
+              }
+              { i. rewrite FINDF_C in H. clarify. }
+              { unfold Genv.find_comp in *. rewrite FINDF in ALLOW1. rewrite FINDF_C.
+                rewrite <- ALLOW1. ss.
+              }
+          Qed.
+
+          eapply step_call. ss.
           { econs. assert (FSN_C: Senv.find_symbol ge_c id_next = Some next).
-            { destruct MS0 as (MSENV0 & MSENV1 & MSENV2). apply MSENV1. auto. }
+            { destruct MS0 as ((MSENV0 & MSENV1 & MSENV2) & MGENV). apply MSENV1. auto. }
             eapply eval_Evar_global.
-            - unfold wf_env in WFC4. specialize (WFC4 id_next). rewrite FSN_C in WFC4. apply WFC4.
+            - unfold wf_env in WFC3. specialize (WFC3 id_next). rewrite FSN_C in WFC3. apply WFC3.
             - eapply FSN_C.
             - econs 2. ss.
           }
-          { eapply list_eventval_to_expr_val_eval. auto. inv TR. eapply eventval_list_match_transl. eapply match_senv_eventval_list_match; eauto. }
+          { eapply list_eventval_to_expr_val_eval. auto. inv TR. eapply eventval_list_match_transl. eapply match_senv_eventval_list_match; eauto. destruct MS0 as (MSENV & _); auto. }
           { unfold match_find_def in MS3. hexploit MS3.
             unfold Genv.find_funct in FINDF. rewrite pred_dec_true in FINDF; auto. unfold Genv.find_funct_ptr in FINDF. des_ifs. eapply Heq.
             eapply Senv.find_invert_symbol; eapply FINDB.
             rewrite CNTS_NEXT, PARS_NEXT. intros. unfold Genv.find_funct. rewrite pred_dec_true. unfold Genv.find_funct_ptr. rewrite H. ss. ss.
           }
           { ss. unfold type_of_function, gen_function. ss. f_equal. apply type_of_params_eq. apply PARSIGS. }
-          { 
-  MS0 : match_senv ge_i ge_c
-  MS2 : match_fun ge_c cur f id_cur
-  MS3 : match_find_def ge_i ge_c cnts pars ttr
-  ALLOW : Genv.allowed_call ge_i (Genv.find_comp ge_i (Vptr cur Ptrofs.zero)) (Vptr next Ptrofs.zero)
-  IDCUR : Genv.invert_symbol ge_i cur = Some id_cur
-  Genv.allowed_call ge_c (comp_of f) (Vptr next Ptrofs.zero)
+          { destruct MS2 as (FINDF_C_CUR & (f_i_cur & FINDF_I_CUR) & INV_CUR).
+            hexploit cur_fun_def. eapply FINDF_C_CUR. eapply FINDF_I_CUR. eapply INV_CUR. eauto.
+            intros (cnt_cur0 & params_cur & CNT_CUR0 & PARAMS_CUR & CUR_F).
+            rewrite CNTS_CUR in CNT_CUR0. clarify. rename cnt_cur0 into cnt_cur.
+            replace 
+              (comp_of (gen_function ge_i cnt_cur params_cur (get_id_tr ttr id_cur) f_i_cur))
+              with
+              (Genv.find_comp ge_i (Vptr cur Ptrofs.zero)).
+            2:{ unfold Genv.find_comp. setoid_rewrite FINDF_I_CUR. ss. }
+            destruct MS0 as ((MSENV0 & MSENV1 & MSENV2) & MGENV).
+            eapply allowed_call_gen_function; eauto.
+            { setoid_rewrite Genv.find_funct_ptr_iff. rewrite FINDF_C. subst f_next. eauto. }
+          }
+          { move NPTR after MS_NEXT. move TR after NPTR. i.
+            replace (list_eventval_to_list_val ge_c evargs) with vargs.
+            2:{ destruct MS0 as (MSENV & MGENV). inv TR.
 
-          (* TODO *)
+                (* MOVE *)
+                Lemma eventval_list_match_list_eventval_to_list_val
+                      (ge: Senv.t) evargs tys vargs
+                      (EVMS: eventval_list_match ge evargs tys vargs)
+                  :
+                  list_eventval_to_list_val ge evargs = vargs.
+                Proof.
+                  induction EVMS; ss. f_equal; auto.
+                  eapply eventval_match_eventval_to_val. eauto.
+                Qed.
+
+                symmetry. eapply eventval_list_match_list_eventval_to_list_val.
+
+                (* MOVE *)
+                Lemma match_symbs_eventval_match
+                      ge0 ge1 ev ty v
+                      (MS: match_symbs ge0 ge1)
+                      (EVM: eventval_match ge0 ev ty v)
+                  :
+                  eventval_match ge1 ev ty v.
+                Proof.
+                  destruct MS as (MS0 & MS1 & MS2). inv EVM; econs; auto. rewrite MS0; auto.
+                Qed.
+
+                (* MOVE *)
+                Lemma match_symbs_eventval_list_match
+                      ge0 ge1 ev ty v
+                      (MS: match_symbs ge0 ge1)
+                      (EVM: eventval_list_match ge0 ev ty v)
+                  :
+                  eventval_list_match ge1 ev ty v.
+                Proof.
+                  induction EVM. econs. econs; auto. eapply match_symbs_eventval_match; eauto.
+                Qed.
+
+                eapply match_symbs_eventval_list_match; eauto.
+            }
+            apply NPTR. unfold crossing_comp.
+
+            (* MOVE *)
+            Lemma type_of_call_eq
 
 
-              econs.
+            
+                destruct (
 
+                
+                
+                  
 
-        2: econs 1. 2: setoid_rewrite app_nil_r; auto.
-        eapply step_call.
+                
+            
+
+          
+
+              TODO
+
 
 
       (* TODO *)
