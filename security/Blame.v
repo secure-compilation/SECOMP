@@ -5,10 +5,11 @@ Require Import AST Globalenvs Linking Smallstep Events Behaviors Memory Values.
 Require Import Ctypes Cop Clight.
 Require Import Split.
 
-Variant match_fundef (s: split): unit -> fundef -> fundef -> Prop :=
+Definition gdef := globdef fundef type.
+
+Variant match_fundef : unit -> fundef -> fundef -> Prop :=
   | match_function_left: forall cp ty cc params vars vars' temps temps' body body',
-      s |= cp ∈ Left ->
-      match_fundef s tt
+      match_fundef tt
         (Internal {| fn_comp := cp; fn_return := ty; fn_callconv := cc;
                      fn_params := params; fn_vars := vars; fn_temps := temps;
                      fn_body := body |})
@@ -16,15 +17,11 @@ Variant match_fundef (s: split): unit -> fundef -> fundef -> Prop :=
                      fn_params := params; fn_vars := vars'; fn_temps := temps';
                      fn_body := body' |})
   | match_external_left: forall ef tys ty cc,
-      s |= ef ∈ Left ->
-      match_fundef s tt (External ef tys ty cc)
+      match_fundef tt (External ef tys ty cc)
                         (External ef tys ty cc)
-  | match_right: forall fd,
-      s |= fd ∈ Right ->
-      match_fundef s tt fd fd
 .
 
-#[local] Instance has_comp_match_fundef (s: split): has_comp_match (match_fundef s).
+#[local] Instance has_comp_match_fundef : has_comp_match match_fundef.
 intros ? x y H.
 inv H; auto.
 Qed.
@@ -41,27 +38,27 @@ Definition kept_genv (s: split) (ge: genv) (δ: side) (id: ident): bool :=
   | None => false
   end.
 
-(*Definition kept_prog (s: split) (p: program) (δ: side) (id: ident): bool :=
-  kept_genv s (Genv.globalenv p) δ id.*)
+Variant match_globdef : gdef -> gdef -> Prop :=
+| match_gfun f1 f2 :
+  match_fundef tt f1 f2 -> match_globdef (Gfun f1) (Gfun f2)
+| match_gvar v1 v2 :
+  match_globvar match_varinfo v1 v2 ->
+  match_globdef (Gvar v1) (Gvar v2).
 
-Definition match_globdefs_right (s: split) (ge1 ge2: genv) :=
+Definition match_opt_globdefs sd d1 d2 :=
+  match sd with
+  | Left => option_rel match_globdef d1 d2
+  | Right => d1 = d2
+  end.
+
+Definition match_globdefs (s: split) (ge1 ge2: genv) :=
   forall id cp,
     Genv.find_comp_of_ident ge1 id = Some cp ->
-    s cp = Right ->
+    (s cp = Right \/ Genv.public_symbol ge1 id = true) ->
     exists b1 b2,
       Genv.find_symbol ge1 id = Some b1 /\
       Genv.find_symbol ge2 id = Some b2 /\
-      Genv.find_def ge1 b1 = Genv.find_def ge2 b2.
-
-Definition match_globdefs_left (s: split) (ge1 ge2: genv) :=
-  forall id cp,
-    Genv.find_comp_of_ident ge1 id = Some cp ->
-    s cp = Left ->
-    Genv.public_symbol ge1 id = true ->
-    (* FIXME: This allows a symbol to be sometimes a function and sometimes a
-    variable... *)
-    Genv.find_symbol ge1 id <> None <->
-      Genv.find_symbol ge2 id <> None.
+      match_opt_globdefs (s cp) (Genv.find_def ge1 b1) (Genv.find_def ge2 b2).
 
 Record match_prog (s: split) (p p': program) : Prop := {
   match_prog_main:
@@ -75,8 +72,6 @@ Record match_prog (s: split) (p p': program) : Prop := {
   match_prog_unique:
     list_norepet (prog_defs_names p')
 }.
-
-Definition match_prog (s: split) := match_program_gen (match_fundef s) match_varinfo.
 
 Section Equivalence.
   Variable s: split.
@@ -285,26 +280,62 @@ Section Simulation.
   Hypothesis c_p1: link p1 c = Some W1.
   Hypothesis c_p2: link p2 c = Some W2.
 
-  Hypothesis match_W1_W2: match_prog s tt W1 W2.
+  Hypothesis match_W1_W2: match_prog s W1 W2.
 
   (* Context (ge1 ge2: genv). *)
   Let ge1 := globalenv W1.
   Let ge2 := globalenv W2.
   (* Is this hypothesis realistic? *)
-  Hypothesis same_cenv: genv_cenv ge1 = genv_cenv ge2.
+  (*Hypothesis same_cenv: genv_cenv ge1 = genv_cenv ge2.*)
 
+(*
   Lemma symbols_preserved:
     forall (s: ident), Genv.find_symbol ge2 s = Genv.find_symbol ge1 s.
   Proof (Genv.find_symbol_match match_W1_W2).
+*)
+
+  Lemma public_symbols_preserved:
+    forall id, Genv.public_symbol ge2 id = Genv.public_symbol ge1 id.
+  Proof.
+    intros id.
+    destruct (Genv.public_symbol ge1 id) eqn:public1.
+    - destruct (Genv.public_symbol_exists _ _ public1) as [b1 ge1_id_b1].
+      assert (exists cp, Genv.find_comp_of_ident ge1 id = Some cp)
+        as [cp ge1_id_cp].
+      { unfold Genv.find_comp_of_ident. rewrite ge1_id_b1.
+        unfold Genv.find_comp_of_block.
+        destruct (Genv.find_symbol_find_def_inversion _ _ ge1_id_b1)
+          as [def ge1_b1].
+        exists (comp_of def). unfold ge1, globalenv. simpl.
+        unfold fundef in *. now rewrite ge1_b1. }
+      assert (exists b2, Genv.find_symbol ge2 id = Some b2)
+        as [b2 ge2_id_b2].
+      { destruct (match_prog_globdefs _ _ _ match_W1_W2 _ _ ge1_id_cp)
+          as (? & b2 & _ & H & _).
+        { now right. } eauto. }
+      unfold Genv.public_symbol in *.
+      rewrite ge1_id_b1 in public1.
+      simpl in public1.
+      rewrite ge2_id_b2.
+      rewrite Genv.globalenv_public in public1. simpl in public1.
+      unfold ge2. simpl. rewrite Genv.globalenv_public. simpl.
+      now rewrite (match_prog_public _ _ _ match_W1_W2).
+    - admit.
+  Admitted.
 
   Lemma allowed_addrof_translated:
     forall cp id,
       Genv.allowed_addrof ge1 cp id ->
       Genv.allowed_addrof ge2 cp id.
   Proof.
-    intros cp id.
-    unfold ge1, ge2.
-    now rewrite (Genv.match_genvs_allowed_addrof match_W1_W2).
+    intros cp id H.
+    destruct (Genv.public_symbol ge1 id) eqn:public_id.
+    {
+
+ left.
+      destruct (match_prog_globdefs _ _ _ match_W1_W2) as [RIGHT LEFT].
+      destruct (s cp) eqn:s_cp.
+      + specialize (LEFT _ _ H s_cp).
   Qed.
 
   (* AAA: [2023-08-08: This next part is not true anymore because left symbols
