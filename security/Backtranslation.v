@@ -1130,9 +1130,10 @@ Section Backtranslation.
     (* Definition wf_env_cnt_ids (e: env) (cnts: cnt_ids) := forall id cnt, cnts ! id = Some cnt -> e ! cnt = None. *)
 
     Definition wf_counter (ge: Senv.t) (m: mem) cp (n: nat) (cnt: ident): Prop :=
-      exists b, (Senv.find_symbol ge cnt = Some b) /\
-             (Mem.valid_access m Mint64 b 0 Writable (Some cp)) /\
-             (Mem.loadv Mint64 m (Vptr b Ptrofs.zero) (Some cp) = Some (Vlong (nat64 n))).
+      (Senv.public_symbol ge cnt = false) /\
+        exists b, (Senv.find_symbol ge cnt = Some b) /\
+               (Mem.valid_access m Mint64 b 0 Writable (Some cp)) /\
+               (Mem.loadv Mint64 m (Vptr b Ptrofs.zero) (Some cp) = Some (Vlong (nat64 n))).
 
     Definition wf_counters (ge: Clight.genv) (m: mem) (tr: bundle_trace) (cnts: cnt_ids) :=
       forall id b (f: function),
@@ -1263,6 +1264,57 @@ Section Backtranslation.
       end.
 
   End INVS.
+
+
+  (* Section MEM. *)
+
+  (*   Import Mem. *)
+
+  (*   Lemma store_unmapped_inj_inv : *)
+  (*     forall f chunk m1 b1 ofs v1 cp n m2, *)
+  (*       Mem.mem_inj f m1 m2 -> *)
+  (*       Mem.store chunk m2 b1 ofs v1 cp = Some n -> *)
+  (*       (forall b ofs, f b <> Some (b1, ofs)) -> *)
+  (*       Mem.mem_inj f m1 n. *)
+  (*   Proof. *)
+  (*     intros. constructor. *)
+  (*     (* perm *) *)
+  (*     - intros. eapply perm_store_1. eapply H0. eapply mi_perm; eauto with mem. *)
+  (*     (* own *) *)
+  (*     - intros. rewrite <- store_can_access_block_inj. 2: eauto. eapply mi_own; eauto. *)
+  (*     (* align *) *)
+  (*     - intros. eapply mi_align with (ofs := ofs0) (p := p); eauto. *)
+  (*     (* mem_contents *) *)
+  (*     - intros. rewrite (store_mem_contents _ _ _ _ _ _ _ H0). *)
+  (*       rewrite PMap.gso. eapply mi_memval; eauto with mem. *)
+  (*       intros EQ; subst. eapply H1. eauto. *)
+  (*   Qed. *)
+
+  (*   Lemma store_unmapped_inject_inv : *)
+  (*     forall f chunk m1 b1 ofs v1 cp n m2, *)
+  (*       inject f m1 m2 -> *)
+  (*       store chunk m2 b1 ofs v1 cp = Some n -> *)
+  (*       (forall b ofs, f b <> Some (b1, ofs)) -> *)
+  (*       inject f m1 n. *)
+  (*   Proof. *)
+  (*     intros. inversion H. *)
+  (*     constructor. *)
+  (*     (* inj *) *)
+  (*     - eapply store_unmapped_inj_inv; eauto. *)
+  (*     (* freeblocks *) *)
+  (*     - eauto with mem. *)
+  (*     (* mappedblocks *) *)
+  (*     - eauto with mem. *)
+  (*     (* no overlap *) *)
+  (*     - red; intros. eauto with mem. *)
+  (*     (* representable *) *)
+  (*     - intros. eapply mi_representable; try eassumption. *)
+  (*     (* perm inv *) *)
+  (*     - intros. exploit mi_perm_inv0; eauto using perm_store_1. *)
+  (*       intuition eauto using perm_store_1, perm_store_2. *)
+  (*   Qed. *)
+
+  (* End MEM. *)
 
 
   Section PROOF.
@@ -1659,7 +1711,7 @@ Section Backtranslation.
         { subst ttr. clear. rewrite get_id_tr_app. rewrite get_id_tr_cons. ss. rewrite Pos.eqb_refl. auto. }
         assert (BOUND2: Z.of_nat (Datatypes.length (map (fun ib : ident * bundle_event => code_bundle_event ge_i (comp_of f) (snd ib)) (get_id_tr ttr id_cur))) < Int64.modulus).
         { rewrite map_length. etransitivity. 2: eauto. unfold get_id_tr. admit. (* ez *) }
-        destruct WF_CNT_CUR as (cnt_cur_b & FIND_CNT_CUR & CNT_CUR_MEM_VA & CNT_CUR_MEM_LOAD).
+        destruct WF_CNT_CUR as (CNT_CUR_NPUB & cnt_cur_b & FIND_CNT_CUR & CNT_CUR_MEM_VA & CNT_CUR_MEM_LOAD).
         assert (PARSIGS: list_typ_to_list_type (sig_args (fn_sig fi_next)) = map snd params_next).
         { destruct MS5 as (_ & WFP1). exploit WFP1. apply FINDF. apply FINDB. apply PARS_NEXT. ss. }
 
@@ -1684,17 +1736,22 @@ Section Backtranslation.
         instantiate (1:=(Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge_c cnt_cur (comp_of f) (get_id_tr ttr id_cur))) Sskip k0)).
         instantiate (1:=Sreturn None).
         intros (m_cu & CNT_CUR_STORE & CUR_SWITCH_STAR).
+
         assert (DELTA_C: exists m_c', (mem_delta_apply_wf ge_i (comp_of f) d (Some m_cu) = Some m_c') /\
                                    (Mem.inject (meminj_public ge_i) m2 m_c')).
-        { (* After counter update --- need that counters are not private *)
+        { move MS1 after CUR_SWITCH_STAR. destruct MS1 as (MINJ & INJINCR & NALLOC).
+          move DELTA after NALLOC. move PUB after NALLOC.
+          hexploit mem_delta_apply_establish_inject_preprocess.
+          apply MINJ. eapply CNT_CUR_STORE.
+          { 
 
-          (* move MS1 after CUR_SWITCH_STAR. destruct MS1 as (MINJ & INJINCR & NALLOC). *)
-          (* move DELTA after NALLOC. move PUB after NALLOC. *)
-          (* hexploit mem_delta_apply_establish_inject2. *)
-          (* apply MINJ. apply INJINCR. apply NALLOC. apply DELTA. apply PUB. *)
-          (* intros (m_c' & DELTA' & INJ'). exists m_c'. splits; auto. *)
-          (* rewrite CP_CUR.  *)
-          
+          apply INJINCR. apply NALLOC. apply DELTA. apply PUB.
+          intros (m_c' & DELTA' & INJ'). exists m_c'. splits; auto.
+          rewrite CP_CUR.
+
+
+          (* After counter update --- need that counters are not private *)
+          TODO
 
 
             (* TODO *)

@@ -4,7 +4,6 @@ Require Import AST Linking Smallstep Events Behaviors.
 Require Import MemoryWeak.
 Require Import Tactics.
 
-
 Section AUX.
 
   Lemma alloc_left_unmapped_winject_keep:
@@ -1082,6 +1081,56 @@ Section PROOFS.
       { inv INJ. inv mi_inj. specialize (mi_memval _ _ _ _ (INCR _ _ _ INJPUB) PERM0). eapply loc_first_order_always_memval_inject; eauto.
         exploit FO. erewrite INJPUB. congruence. eauto. unfold loc_first_order; intros. destruct (ZMap.get ofs (Mem.mem_contents m1) !! b1) eqn:MEMV1; try contradiction.
         erewrite (Mem.unchanged_on_contents _ _ _ UNCHG1) in MEMV1; eauto. rewrite MEMV1. auto.
+      }
+      { eapply mem_delta_unchanged_implies_wf_unchanged; eauto. rewrite Z.add_0_r. auto. }
+      { inv WINJ. inv mwi_inj. rewrite <- (Z.add_0_r ofs). eapply mwi_perm; eauto. rewrite Z.add_0_r. auto. }
+    - rename H into CHG. exploit mem_delta_changed_only_by_storev. eauto. rewrite INJPUB; ss. eauto. eapply APPD. eapply APPD'. auto.
+      { inv WINJ. inv mwi_inj. rewrite <- (Z.add_0_r ofs). eapply mwi_perm; eauto. }
+      { exploit FO; eauto. rewrite INJPUB. congruence. }
+      intros. rewrite Z.add_0_r, <- x0. 
+      exploit FO; eauto. rewrite INJPUB; ss. intros. unfold loc_first_order in x1. destruct (ZMap.get ofs (Mem.mem_contents m1) !! b1); try contradiction. constructor.
+  Qed.
+
+  Import Mem.
+
+  Lemma mem_delta_apply_establish_inject_preprocess
+        (ge: Senv.t) (k: meminj) m0 m0'
+        (INJ: Mem.inject k m0 m0')
+        pch pb pofs pv pcp m0''
+        (PRE: store pch m0' pb pofs pv pcp = Some m0'')
+        (PREB: forall b ofs, (meminj_public ge) b <> Some (pb, ofs))
+        (INCR: inject_incr (meminj_public ge) k)
+        (NALLOC: meminj_not_alloc (meminj_public ge) m0)
+        (d: mem_delta) cp
+        (DWF: mem_delta_inj_wf cp (meminj_public ge) d)
+        m1
+        (APPD: mem_delta_apply d (Some m0) = Some m1)
+        (FO: meminj_first_order (meminj_public ge) m1)
+    :
+    exists m1', (mem_delta_apply_wf ge cp d (Some m0'') = Some m1') /\ (Mem.inject (meminj_public ge) m1 m1').
+  Proof.
+    exploit inject_implies_winject; eauto. intros WINJ. exploit winject_inj_incr; eauto. clear WINJ; intro WINJ.
+    hexploit store_outside_winject. eauto.
+    { intros. eapply PREB. rewrite H. eauto. }
+    eapply PRE. clear WINJ. intros WINJ.
+    exploit mem_delta_apply_preserves_winject. eapply WINJ. eauto. intros (m1' & APPD' & WINJ'). exists m1'. split; eauto.
+    apply winject_to_inject; auto. unfold mem_inj_val. intros.
+    exploit mem_delta_apply_keeps_perm; eauto. congruence.
+    { destruct (Pos.ltb_spec0 b1 (Mem.nextblock m0)); auto. exfalso. assert ((meminj_public ge) b1 = None).
+      { eapply NALLOC. lia. }
+      congruence.
+    }
+    intros PERM0. pose proof H as INJPUB. unfold meminj_public in H. des_ifs. rename Heq into INV, Heq0 into ISPUB.
+    rename b2 into b1.
+    assert (NOT_PRE: b1 <> pb).
+    { intros EQ. subst b1. eapply PREB. eapply INJPUB. }
+    destruct (mem_delta_unchanged_or_changed d b1 ofs).
+    - exploit mem_delta_unchanged_on. eapply APPD. intros UNCHG1. exploit mem_delta_wf_unchanged_on. eapply APPD'. intros UNCHG2.
+      erewrite (Mem.unchanged_on_contents _ _ _ UNCHG1). erewrite (Mem.unchanged_on_contents _ _ _ UNCHG2). all: eauto.
+      { inv INJ. inv mi_inj0. specialize (mi_memval0 _ _ _ _ (INCR _ _ _ INJPUB) PERM0). eapply loc_first_order_always_memval_inject; eauto.
+        - exploit FO. erewrite INJPUB. congruence. eauto. unfold loc_first_order; intros. destruct (ZMap.get ofs (Mem.mem_contents m1) !! b1) eqn:MEMV1; try contradiction.
+          erewrite (Mem.unchanged_on_contents _ _ _ UNCHG1) in MEMV1; eauto. rewrite MEMV1. auto.
+        - erewrite (store_mem_contents _ m0' _ _ _ _ m0''). 2: eapply PRE. rewrite PMap.gso. 2: auto. eauto.
       }
       { eapply mem_delta_unchanged_implies_wf_unchanged; eauto. rewrite Z.add_0_r. auto. }
       { inv WINJ. inv mwi_inj. rewrite <- (Z.add_0_r ofs). eapply mwi_perm; eauto. rewrite Z.add_0_r. auto. }
