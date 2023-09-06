@@ -1119,6 +1119,27 @@ Section Backtranslation.
       eapply FO; eauto.
     Qed.
 
+    Lemma mem_delta_apply_establish_inject_preprocess2
+          (ge: Senv.t) (k: meminj) m0 m0'
+          (INJ: Mem.inject k m0 m0')
+          pch pb pofs pv pcp m0''
+          (PRE: Mem.store pch m0' pb pofs pv pcp = Some m0'')
+          (PREB: forall b ofs, (meminj_public ge) b <> Some (pb, ofs))
+          (INCR: inject_incr (meminj_public ge) k)
+          (NALLOC: meminj_not_alloc (meminj_public ge) m0)
+          d cp m1
+          (APPD: mem_delta_apply_wf ge cp d (Some m0) = Some m1)
+          (FO: public_first_order ge m1)
+      :
+      exists m1', mem_delta_apply_wf ge cp d (Some m0'') = Some m1' /\ Mem.inject (meminj_public ge) m1 m1'.
+    Proof.
+      unfold mem_delta_apply_wf in APPD. rewrite mem_delta_apply_wf_get_wf_mem_delta.
+      eapply mem_delta_apply_establish_inject_preprocess; eauto.
+      apply get_wf_mem_delta_is_wf.
+      unfold public_first_order in FO. ii. unfold meminj_public in H. des_ifs. apply Senv.invert_find_symbol in Heq.
+      eapply FO; eauto.
+    Qed.
+
   End PROOF.
 
 
@@ -1741,25 +1762,26 @@ Section Backtranslation.
                                    (Mem.inject (meminj_public ge_i) m2 m_c')).
         { move MS1 after CUR_SWITCH_STAR. destruct MS1 as (MINJ & INJINCR & NALLOC).
           move DELTA after NALLOC. move PUB after NALLOC.
-          hexploit mem_delta_apply_establish_inject_preprocess.
+          hexploit mem_delta_apply_establish_inject_preprocess2.
           apply MINJ. eapply CNT_CUR_STORE.
-          { 
-
+          { instantiate (1:=ge_i). erewrite match_symbs_meminj_public. 2: destruct MS0 as (MS & _); apply MS.
+            ii. unfold meminj_public in H. des_ifs. apply Senv.find_invert_symbol in FIND_CNT_CUR.
+            rewrite FIND_CNT_CUR in Heq. clarify.
+          }
           apply INJINCR. apply NALLOC. apply DELTA. apply PUB.
           intros (m_c' & DELTA' & INJ'). exists m_c'. splits; auto.
-          rewrite CP_CUR.
+          rewrite CP_CUR. auto.
+        }
+        des. rename DELTA_C0 into MEMINJ_CNT.
+        assert (ENV_ALLOC: exists e_next m_c_next0, alloc_variables ge_c (comp_of f_next) empty_env m_c' (fn_params f_next ++ fn_vars f_next) e_next m_c_next0).
+        {
 
 
-          (* After counter update --- need that counters are not private *)
           TODO
 
 
-            (* TODO *)
 
           admit. }
-        des.
-        assert (ENV_ALLOC: exists e_next m_c_next0, alloc_variables ge_c (comp_of f_next) empty_env m_c' (fn_params f_next ++ fn_vars f_next) e_next m_c_next0).
-        { admit. }
         des.
         assert (ENV_BIND: exists m_c_next, bind_parameters ge_c (comp_of f_next) e_next m_c_next0 (fn_params f_next) vargs m_c_next).
         { admit. }
