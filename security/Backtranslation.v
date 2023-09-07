@@ -1683,6 +1683,107 @@ Section Backtranslation.
       induction EVM. econs. econs; auto. eapply match_symbs_eventval_match; eauto.
     Qed.
 
+    Lemma alloc_variables_exists
+          ge cp e m l
+      :
+      exists e' m', alloc_variables ge cp e m l e' m'.
+    Proof.
+      revert ge cp e m. induction l; ii.
+      { do 2 eexists. econs 1. }
+      destruct a as (id & ty).
+      destruct (Mem.alloc m cp 0 (sizeof ge ty)) as (m0 & b0) eqn:ALLOC.
+      specialize (IHl ge cp (PTree.set id (b0, ty) e) m0). des.
+      do 2 eexists. econs 2. eapply ALLOC. eapply IHl.
+    Qed.
+
+    Lemma access_mode_typ_to_type
+          s
+      :
+      exists ch, access_mode (typ_to_type s) = By_value ch.
+    Proof. destruct s; ss; eauto. Qed.
+
+    Lemma bind_parameters_exists
+          (ge: genv) cp (e: env) m params vargs
+          (INENV: Forall (fun '(id, ty) =>
+                            exists b, (e ! id = Some (b, ty)) /\
+                                   (forall ch, access_mode ty = By_value ch ->
+                                          Mem.valid_access m ch b 0 Writable (Some cp)))
+                         params)
+          sg
+          (PARSIGS: list_typ_to_list_type sg = map snd params)
+          evargs
+          (EMS: eventval_list_match ge evargs sg vargs)
+      :
+      exists m', bind_parameters ge cp e m params vargs m'.
+    Proof.
+      revert e m vargs INENV sg PARSIGS evargs EMS. induction params; ii.
+      { ss. inv EMS; ss. eexists. econs. }
+      destruct a as (id & ty). inv INENV. des. ss.
+      destruct sg; ss. rename t into s. clarify. inv EMS.
+      destruct (access_mode_typ_to_type s) as (ch & ACCM).
+      specialize (H0 _ ACCM). hexploit Mem.valid_access_store. apply H0. instantiate (1:=v1).
+      intros (m0 & STORE).
+      assert 
+        (FA: Forall
+               (fun '(id, ty) =>
+                  exists b : block,
+                    e ! id = Some (b, ty) /\
+                      (forall ch : memory_chunk, access_mode ty = By_value ch ->
+                                            Mem.valid_access m0 ch b 0 Writable (Some cp))) params).
+      { clear - H2 STORE. move H2 before cp. revert_until H2. induction H2; ii; ss.
+        econs; eauto. des_ifs. des. esplits; eauto. i. eapply Mem.store_valid_access_1; eauto.
+      }
+      hexploit IHparams. apply FA. 1,2: eauto. intros. des. exists m'.
+      econs; eauto. econs; eauto.
+    Qed.
+
+    Lemma alloc_variables_wf_id
+          ge cp e m params e' m'
+          (EA: alloc_variables ge cp e m params e' m')
+          (WF: list_norepet (var_names params))
+      :
+      forall id bt, (~ In id (var_names params)) -> (e ! id = Some bt) -> (e' ! id = Some bt).
+    Proof.
+      revert WF. induction EA; ii; ss.
+      apply Classical_Prop.not_or_and in H0. des. inv WF.
+      apply IHEA; auto. rewrite PTree.gso; auto.
+    Qed.
+
+    Lemma alloc_variables_valid_access
+          ge cp e m params e' m'
+          (EA: alloc_variables ge cp e m params e' m')
+      :
+      forall b', (b' < Mem.nextblock m)%positive ->
+            forall ch' ofs' p' cp', Mem.valid_access m ch' b' ofs' p' cp' ->
+                               Mem.valid_access m' ch' b' ofs' p' cp'.
+    Proof.
+      induction EA; ii; ss.
+      apply IHEA.
+      { erewrite Mem.nextblock_alloc; eauto. lia. }
+      { eapply Mem.valid_access_alloc_other; eauto. }
+    Qed.
+
+    Lemma alloc_variables_forall
+          ge cp e m params e' m'
+          (EA: alloc_variables ge cp e m params e' m')
+          (WF: list_norepet (var_names params))
+      :
+      Forall (fun '(id, ty) =>
+                exists b, (e' ! id = Some (b, ty)) /\
+                       (forall ch, access_mode ty = By_value ch ->
+                              Mem.valid_access m' ch b 0 Writable (Some cp))) params.
+    Proof.
+      revert WF. induction EA; ii; ss.
+      inv WF. econs; eauto.
+      hexploit alloc_variables_wf_id. apply EA. auto. apply H2. apply PTree.gss.
+      i. esplits; eauto.
+      i. eapply alloc_variables_valid_access. apply EA.
+      { hexploit Mem.alloc_result. eauto. intros; subst. erewrite (Mem.nextblock_alloc _ _ _ _ _ _ H). lia. }
+      apply Mem.valid_access_freeable_any. eapply Mem.valid_access_alloc_same; eauto. lia.
+      { ss. clear - H1. destruct ty; ss; clarify. des_ifs; clarify; ss. des_ifs; clarify; ss. unfold Mptr. des_ifs. }
+      exists 0. ss.
+    Qed.
+
 
 
     Lemma ir_to_clight_step
@@ -1740,11 +1841,6 @@ Section Backtranslation.
         hexploit cur_fun_def. eapply FINDF_C_CUR. eapply FINDF_I_CUR. eapply INV_CUR. eauto.
         intros (cnt_cur0 & params_cur & CNT_CUR0 & PARAMS_CUR & CUR_F).
         rewrite CNTS_CUR in CNT_CUR0. inversion CNT_CUR0. subst cnt_cur0. clear CNT_CUR0.
-        (* set (f := (gen_function ge_i cnt_cur params_cur (get_id_tr ttr id_cur) f_i_cur)) in *. *)
-
-        (* assert (CP_CUR: *)
-        (*          (comp_of (gen_function ge_i cnt_cur params_cur (get_id_tr ttr id_cur) f_i_cur)) = *)
-        (*            (Genv.find_comp ge_i (Vptr cur Ptrofs.zero))). *)
         assert (CP_CUR: (comp_of f) = (Genv.find_comp ge_i (Vptr cur Ptrofs.zero))).
         { unfold Genv.find_comp. setoid_rewrite FINDF_I_CUR. subst f. ss. }
 
@@ -1774,17 +1870,15 @@ Section Backtranslation.
         }
         des. rename DELTA_C0 into MEMINJ_CNT.
         assert (ENV_ALLOC: exists e_next m_c_next0, alloc_variables ge_c (comp_of f_next) empty_env m_c' (fn_params f_next ++ fn_vars f_next) e_next m_c_next0).
-        {
-
-
-          TODO
-
-
-
-          admit. }
+        { eapply alloc_variables_exists. }
         des.
         assert (ENV_BIND: exists m_c_next, bind_parameters ge_c (comp_of f_next) e_next m_c_next0 (fn_params f_next) vargs m_c_next).
-        { admit. }
+        { move PARSIGS after ENV_ALLOC. inv TR; ss.
+          eapply bind_parameters_exists. 2: apply PARSIGS.
+          2:{ eapply match_senv_eventval_list_match. 2: apply H1. destruct MS0 as (MS0 & _); auto. }
+          rewrite app_nil_r in ENV_ALLOC. eapply alloc_variables_forall. apply ENV_ALLOC.
+          { move MS5 after H1. destruct MS5. specialize (H2 _ _ PARS_NEXT). auto. }
+        }
         des.
         set (create_undef_temps (fn_temps f_next)) as le_next.
         set (State f_next (fn_body f_next)
@@ -1792,7 +1886,13 @@ Section Backtranslation.
                    e_next le_next m_c_next) as cst2.
 
         assert (WFC_NEXT: wf_c_state ge_c (pretr ++ [(id_cur, Bundle_call tr id_next evargs (fn_sig fi_next) d)]) ttr cnts id_next cst2).
-        { admit. }
+        {
+
+
+
+          TODO
+
+          admit. }
         assert (MS_NEXT: match_state ge_i ge_c (meminj_public ge_i) ttr cnts pars id_next (Some (b, m2, ir_cont cur :: k_i)) cst2).
         { admit. }
         exists cst2. split.
