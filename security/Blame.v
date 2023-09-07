@@ -53,8 +53,10 @@ Definition match_opt_globdefs sd d1 d2 :=
 
 Definition match_globdefs (s: split) (ge1 ge2: genv) :=
   forall id cp,
-    Genv.find_comp_of_ident ge1 id = Some cp ->
-    (s cp = Right \/ Genv.public_symbol ge1 id = true) ->
+    (Genv.find_comp_of_ident ge1 id = Some cp \/
+       Genv.find_comp_of_ident ge2 id = Some cp) ->
+    (s cp = Right \/ Genv.public_symbol ge1 id = true \/
+       Genv.public_symbol ge2 id = true) ->
     exists b1 b2,
       Genv.find_symbol ge1 id = Some b1 /\
       Genv.find_symbol ge2 id = Some b2 /\
@@ -64,6 +66,8 @@ Record match_prog (s: split) (p p': program) : Prop := {
   match_prog_main:
     p'.(prog_main) = p.(prog_main);
   match_prog_public:
+    (* forall id, Genv.public_symbol (globalenv p) id =
+       Genv.public_symbol (globalenv p') *)
     p'.(prog_public) = p.(prog_public);
   match_prog_pol:
     p'.(prog_pol) = p.(prog_pol);
@@ -294,34 +298,59 @@ Section Simulation.
   Proof (Genv.find_symbol_match match_W1_W2).
 *)
 
+  (* FIXME: Move to Globalenv.v *)
+  Lemma find_symbol_find_comp :
+    forall p id,
+      let ge := globalenv p in
+      Genv.find_symbol ge id <> None ->
+      exists cp, Genv.find_comp_of_ident ge id = Some cp.
+  Proof.
+    intros p id ge ge_id.
+    unfold Genv.find_comp_of_ident, Genv.find_comp_of_block.
+    destruct Genv.find_symbol as [b|] eqn:ge_id_b; try congruence.
+    destruct (Genv.find_symbol_find_def_inversion _ _ ge_id_b)
+      as [def ge_b].
+    exists (comp_of def). simpl. unfold ge.
+    unfold fundef in *. now rewrite ge_b.
+  Qed.
+
   Lemma public_symbols_preserved:
     forall id, Genv.public_symbol ge2 id = Genv.public_symbol ge1 id.
   Proof.
     intros id.
+    assert (in_dec ident_eq id (Genv.genv_public ge2) =
+              in_dec ident_eq id (Genv.genv_public ge1) :> bool)
+      as public_eq.
+    { unfold ge1, ge2. simpl. rewrite !Genv.globalenv_public. simpl.
+      now rewrite (match_prog_public _ _ _ match_W1_W2). }
     destruct (Genv.public_symbol ge1 id) eqn:public1.
     - destruct (Genv.public_symbol_exists _ _ public1) as [b1 ge1_id_b1].
       assert (exists cp, Genv.find_comp_of_ident ge1 id = Some cp)
         as [cp ge1_id_cp].
-      { unfold Genv.find_comp_of_ident. rewrite ge1_id_b1.
-        unfold Genv.find_comp_of_block.
-        destruct (Genv.find_symbol_find_def_inversion _ _ ge1_id_b1)
-          as [def ge1_b1].
-        exists (comp_of def). unfold ge1, globalenv. simpl.
-        unfold fundef in *. now rewrite ge1_b1. }
+      { apply find_symbol_find_comp. unfold ge1 in *. congruence. }
       assert (exists b2, Genv.find_symbol ge2 id = Some b2)
         as [b2 ge2_id_b2].
-      { destruct (match_prog_globdefs _ _ _ match_W1_W2 _ _ ge1_id_cp)
-          as (? & b2 & _ & H & _).
-        { now right. } eauto. }
+      { exploit match_prog_globdefs; eauto.
+        intros (? & b2 & _ & H & _). eauto. }
       unfold Genv.public_symbol in *.
       rewrite ge1_id_b1 in public1.
-      simpl in public1.
-      rewrite ge2_id_b2.
-      rewrite Genv.globalenv_public in public1. simpl in public1.
-      unfold ge2. simpl. rewrite Genv.globalenv_public. simpl.
-      now rewrite (match_prog_public _ _ _ match_W1_W2).
-    - admit.
-  Admitted.
+      rewrite ge2_id_b2. congruence.
+    - unfold Genv.public_symbol in public1.
+      destruct (Genv.find_symbol ge1 id) as [b1|] eqn:ge1_id.
+      + assert (exists cp, Genv.find_comp_of_ident ge1 id = Some cp)
+          as [cp ge1_id_cp].
+        { apply find_symbol_find_comp. unfold ge1 in *. congruence. }
+        unfold Genv.public_symbol.
+        destruct (Genv.find_symbol ge2 id) as [b2|] eqn:ge2_id; trivial.
+        congruence.
+      + destruct (Genv.public_symbol ge2 id) eqn:public2; trivial.
+        destruct (Genv.public_symbol_exists _ _ public2) as [b2 ge2_id_b2].
+        assert (exists cp, Genv.find_comp_of_ident ge2 id = Some cp)
+          as [cp ge2_id_cp].
+        { apply find_symbol_find_comp. unfold ge2 in *. congruence. }
+        exploit match_prog_globdefs; eauto.
+        unfold ge1 in *. intros (? & _ & ? & _). congruence.
+  Qed.
 
   Lemma allowed_addrof_translated:
     forall cp id,
