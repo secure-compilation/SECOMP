@@ -1753,14 +1753,21 @@ Section Backtranslation.
           ge cp e m params e' m'
           (EA: alloc_variables ge cp e m params e' m')
       :
-      forall b', (b' < Mem.nextblock m)%positive ->
-            forall ch' ofs' p' cp', Mem.valid_access m ch' b' ofs' p' cp' ->
-                               Mem.valid_access m' ch' b' ofs' p' cp'.
+      forall b' ch' ofs' p' cp', Mem.valid_access m ch' b' ofs' p' cp' ->
+                            Mem.valid_access m' ch' b' ofs' p' cp'.
     Proof.
-      induction EA; ii; ss.
+      i. assert (WF: (b' < Mem.nextblock m)%positive).
+      { unfold Mem.valid_access in H. des. destruct (Unusedglob.IS.MSet.Raw.MX.lt_dec b' (Mem.nextblock m)); auto.
+        exfalso. unfold Mem.range_perm in H. specialize (H ofs').
+        eapply (Mem.nextblock_noaccess _ _ ofs' Cur) in n.
+        exploit H.
+        { pose proof (size_chunk_pos ch'). lia. }
+        i. unfold Mem.perm in x0. rewrite n in x0. ss.
+      }
+      revert_until EA. induction EA; ii; ss.
       apply IHEA.
-      { erewrite Mem.nextblock_alloc; eauto. lia. }
       { eapply Mem.valid_access_alloc_other; eauto. }
+      { erewrite Mem.nextblock_alloc; eauto. lia. }
     Qed.
 
     Lemma alloc_variables_forall
@@ -1778,7 +1785,6 @@ Section Backtranslation.
       hexploit alloc_variables_wf_id. apply EA. auto. apply H2. apply PTree.gss.
       i. esplits; eauto.
       i. eapply alloc_variables_valid_access. apply EA.
-      { hexploit Mem.alloc_result. eauto. intros; subst. erewrite (Mem.nextblock_alloc _ _ _ _ _ _ H). lia. }
       apply Mem.valid_access_freeable_any. eapply Mem.valid_access_alloc_same; eauto. lia.
       { ss. clear - H1. destruct ty; ss; clarify. des_ifs; clarify; ss. des_ifs; clarify; ss. unfold Mptr. des_ifs. }
       exists 0. ss.
@@ -1886,7 +1892,70 @@ Section Backtranslation.
                    e_next le_next m_c_next) as cst2.
 
         assert (WFC_NEXT: wf_c_state ge_c (pretr ++ [(id_cur, Bundle_call tr id_next evargs (fn_sig fi_next) d)]) ttr cnts id_next cst2).
-        {
+        { subst cst2; ss. splits.
+          - move WFC0 after le_next. move CNT_CUR_STORE after CUR_SWITCH_STAR.
+            ii. specialize (WFC0 _ _ _ H H0). des. exists cnt. splits; auto.
+            unfold wf_counter in WFC6. des. unfold wf_counter. splits; auto.
+            exists b1. splits; auto.
+            +
+
+              (* MOVE *)
+              Lemma assign_loc_valid_access
+                    ge cp ty m b ofs bit v m'
+                    (AL: assign_loc ge cp ty m b ofs bit v m')
+                    ch' b' ofs' perm' cp'
+                    (VA: Mem.valid_access m ch' b' ofs' perm' (Some cp'))
+                :
+                Mem.valid_access m' ch' b' ofs' perm' (Some cp').
+              Proof.
+                inv AL.
+                - eapply Mem.store_valid_access_1; eauto.
+                - eapply Mem.storebytes_valid_access_1; eauto.
+                - inv H. eapply Mem.store_valid_access_1; eauto.
+              Qed.
+
+              Lemma bind_parameters_valid_access
+                    (ge: genv) cp (e: env) m params vargs m'
+                    (BIND: bind_parameters ge cp e m params vargs m')
+                    ch b ofs perm cp'
+                    (VA: Mem.valid_access m ch b ofs perm (Some cp'))
+                :
+                Mem.valid_access m' ch b ofs perm (Some cp').
+              Proof.
+                revert_until BIND. induction BIND; ii; ss.
+                apply IHBIND. eapply assign_loc_valid_access; eauto.
+              Qed.
+
+              eapply bind_parameters_valid_access. eapply ENV_BIND.
+              eapply alloc_variables_valid_access. eapply ENV_ALLOC.
+
+              (* MOVE *)
+              Lemma mem_delta_apply_wf_valid_access
+                    ge cp d m m'
+                    (APPD: mem_delta_apply_wf ge cp d (Some m) = Some m')
+                    ch b ofs perm cp'
+                    (VA: Mem.valid_access m ch b ofs perm cp')
+                :
+                Mem.valid_access m' ch b ofs perm cp'.
+              Proof.
+                move d before ge. revert_until d. induction d; ii.
+                { unfold mem_delta_apply_wf in APPD. ss; clarify. }
+                rewrite mem_delta_apply_wf_cons in APPD. des_ifs.
+                - destruct a; ss. hexploit mem_delta_apply_wf_some; eauto.
+                  intros (m0 & STOREV). rewrite STOREV in APPD.
+                  eapply IHd. apply APPD.
+                  unfold mem_delta_apply_storev in STOREV. des_ifs.
+                  unfold Mem.storev in STOREV. des_ifs.
+                  eapply Mem.store_valid_access_1; eauto.
+                - eapply IHd; eauto.
+              Qed.
+
+              eapply mem_delta_apply_wf_valid_access. eapply DELTA_C.
+              eapply Mem.store_valid_access_1. eapply CNT_CUR_STORE.
+              auto.
+            + 
+              
+
 
 
 
