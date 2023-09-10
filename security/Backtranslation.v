@@ -1157,9 +1157,10 @@ Section Backtranslation.
                (Mem.loadv Mint64 m (Vptr b Ptrofs.zero) (Some cp) = Some (Vlong (nat64 n))).
 
     Definition wf_counters (ge: Clight.genv) (m: mem) (tr: bundle_trace) (cnts: cnt_ids) :=
-      forall id b (f: function),
-        (Genv.find_symbol ge id = Some b) -> (Genv.find_funct_ptr ge b = Some (Internal f)) ->
-        (exists cnt, (cnts ! id = Some cnt) /\ (wf_counter ge m (comp_of f) (length (get_id_tr tr id)) cnt)).
+      (forall id0 id1 cnt, (cnts ! id0 = Some cnt) -> (cnts ! id1 = Some cnt) -> (id0 = id1)) /\
+        (forall id b (f: function),
+            (Genv.find_symbol ge id = Some b) -> (Genv.find_funct_ptr ge b = Some (Internal f)) ->
+            (exists cnt, (cnts ! id = Some cnt) /\ (wf_counter ge m (comp_of f) (length (get_id_tr tr id)) cnt))).
     (* Definition wf_counters (ge: Clight.genv) (m: mem) (tr: bundle_trace) (cnts: cnt_ids) := *)
     (*   forall id b (f: function) cnt, *)
     (*     (Genv.find_symbol ge id = Some b) -> (Genv.find_funct_ptr ge b = Some (Internal f)) -> *)
@@ -1790,6 +1791,139 @@ Section Backtranslation.
       exists 0. ss.
     Qed.
 
+    Lemma assign_loc_valid_access
+          ge cp ty m b ofs bit v m'
+          (AL: assign_loc ge cp ty m b ofs bit v m')
+          ch' b' ofs' perm' cp'
+          (VA: Mem.valid_access m ch' b' ofs' perm' (Some cp'))
+      :
+      Mem.valid_access m' ch' b' ofs' perm' (Some cp').
+    Proof.
+      inv AL.
+      - eapply Mem.store_valid_access_1; eauto.
+      - eapply Mem.storebytes_valid_access_1; eauto.
+      - inv H. eapply Mem.store_valid_access_1; eauto.
+    Qed.
+
+    Lemma bind_parameters_valid_access
+          (ge: genv) cp (e: env) m params vargs m'
+          (BIND: bind_parameters ge cp e m params vargs m')
+          ch b ofs perm cp'
+          (VA: Mem.valid_access m ch b ofs perm (Some cp'))
+      :
+      Mem.valid_access m' ch b ofs perm (Some cp').
+    Proof.
+      revert_until BIND. induction BIND; ii; ss.
+      apply IHBIND. eapply assign_loc_valid_access; eauto.
+    Qed.
+
+    Lemma mem_delta_apply_wf_valid_access
+          ge cp d m m'
+          (APPD: mem_delta_apply_wf ge cp d (Some m) = Some m')
+          ch b ofs perm cp'
+          (VA: Mem.valid_access m ch b ofs perm cp')
+      :
+      Mem.valid_access m' ch b ofs perm cp'.
+    Proof.
+      move d before ge. revert_until d. induction d; ii.
+      { unfold mem_delta_apply_wf in APPD. ss; clarify. }
+      rewrite mem_delta_apply_wf_cons in APPD. des_ifs.
+      - destruct a; ss. hexploit mem_delta_apply_wf_some; eauto.
+        intros (m0 & STOREV). rewrite STOREV in APPD.
+        eapply IHd. apply APPD.
+        unfold mem_delta_apply_storev in STOREV. des_ifs.
+        unfold Mem.storev in STOREV. des_ifs.
+        eapply Mem.store_valid_access_1; eauto.
+      - eapply IHd; eauto.
+    Qed.
+
+    Lemma bind_parameters_mem_load
+          ge cp e m0 params vargs m1
+          (BIND: bind_parameters ge cp e m0 params vargs m1)
+      :
+      forall ch b ofs cp',
+        (forall id b_e ty, (e ! id = Some (b_e, ty) -> b <> b_e)) ->
+        (Mem.load ch m1 b ofs cp' = Mem.load ch m0 b ofs cp').
+    Proof.
+      induction BIND; ii; ss.
+      rewrite IHBIND; auto.
+      inv H0.
+      - eapply Mem.load_store_other. eapply H3. left. ii. clarify. specialize (H1 _ _ _ H). clarify.
+      - eapply Mem.load_storebytes_other. eapply H7. left. ii. clarify. specialize (H1 _ _ _ H). clarify.
+    Qed.
+
+    Lemma alloc_variables_mem_load
+          ge cp e m params e' m'
+          (EA: alloc_variables ge cp e m params e' m')
+      :
+      forall ch b ofs cp',
+        (b < Mem.nextblock m)%positive ->
+        (Mem.load ch m' b ofs cp' = Mem.load ch m b ofs cp').
+    Proof.
+      induction EA; ii; ss.
+      rewrite IHEA.
+      { eapply Mem.load_alloc_unchanged; eauto. }
+      { erewrite Mem.nextblock_alloc; eauto. lia. }
+    Qed.
+
+    Lemma alloc_variables_old_blocks
+          ge cp e m params e' m'
+          (EA: alloc_variables ge cp e m params e' m')
+      :
+      forall b, (b < Mem.nextblock m)%positive ->
+           (forall id b' ty, e ! id = Some (b', ty) -> b <> b') ->
+           (forall id b' ty, e' ! id = Some (b', ty) -> b <> b').
+    Proof.
+      induction EA; i.
+      { ii; clarify. specialize (H0 _ _ _ H1). clarify. }
+      hexploit Mem.alloc_result; eauto. intros; clarify.
+      eapply IHEA. 3: eapply H2.
+      { erewrite Mem.nextblock_alloc; eauto. lia. }
+      { i. destruct (Pos.eq_dec id id1).
+        - clarify. rewrite PTree.gss in H3. clarify. lia.
+        - rewrite PTree.gso in H3; auto. eapply H1; eauto.
+      }
+    Qed.
+
+    Lemma mem_delta_apply_wf_mem_load
+          ge cp d m m'
+          (APPD: mem_delta_apply_wf ge cp d (Some m) = Some m')
+      :
+      forall id ch b ofs cp',
+        Senv.invert_symbol ge b = Some id ->
+        Senv.public_symbol ge id = false ->
+        (Mem.load ch m' b ofs cp' = Mem.load ch m b ofs cp').
+    Proof.
+      move d before ge. revert_until d. induction d; ii.
+      { unfold mem_delta_apply_wf in APPD. ss. clarify. }
+      rewrite mem_delta_apply_wf_cons in APPD. des_ifs.
+      { destruct a; ss. unfold wf_mem_delta_storev_b in Heq. des_ifs. ss.
+        hexploit mem_delta_apply_wf_some; eauto. intros (m1 & STORE). rewrite STORE in APPD.
+        erewrite IHd. 2: eauto. 2: eauto. all: auto.
+        destruct (Pos.eq_dec b b0).
+        - clarify.
+        - erewrite Mem.load_store_other. 2: eauto. all: auto.
+      }
+      { eapply IHd; eauto. }
+    Qed.
+
+    Lemma nat64_int64_add_one
+          n
+          (BOUND: Z.of_nat n < Int64.modulus)
+      :
+      Int64.add (nat64 n) Int64.one = nat64 (n + 1).
+    Proof.
+      unfold nat64. rewrite Nat2Z.inj_add. ss.
+      assert (N: Z.of_nat n = Int64.unsigned (Int64.repr (Z.of_nat n))).
+      { symmetry. apply Int64.unsigned_repr. split. apply Zle_0_nat.
+        unfold Int64.max_unsigned. lia.
+      }
+      assert (ONE: 1 = (Int64.unsigned (Int64.repr 1))).
+      { ss. }
+      rewrite N at 2. rewrite ONE. rewrite <- Int64.add_unsigned. ss.
+    Qed.
+
+
 
 
     Lemma ir_to_clight_step
@@ -1812,7 +1946,7 @@ Section Backtranslation.
       Set Nested Proofs Allowed.
 
       unfold wf_c_state in WFC. des_ifs. rename s into stmt, k into k_c, m into m_c.
-      destruct WFC as (WFC0 & WFC1 & WFC2 & WFC3 & WFC4 & WFC5).
+      destruct WFC as ((CNT_INJ & WFC0) & WFC1 & WFC2 & WFC3 & WFC4 & WFC5).
       unfold match_state in MS. des_ifs. rename i into k_i, b into cur, m into m_i.
       destruct MS as (MS0 & MS1 & MS2 & MS3 & MS4 & MS5).
       move STEP after WFC5. inv STEP.
@@ -1893,157 +2027,55 @@ Section Backtranslation.
 
         assert (WFC_NEXT: wf_c_state ge_c (pretr ++ [(id_cur, Bundle_call tr id_next evargs (fn_sig fi_next) d)]) ttr cnts id_next cst2).
         { subst cst2; ss. splits.
-          - clear CUR_SWITCH_STAR. move WFC0 after le_next.
+          - unfold wf_counters. split. auto.
+            clear CUR_SWITCH_STAR. move WFC0 after le_next.
             ii. specialize (WFC0 _ _ _ H H0). des. exists cnt. splits; auto.
             unfold wf_counter in WFC6. des. unfold wf_counter. splits; auto.
             exists b1. splits; auto.
-            +
-
-              (* MOVE *)
-              Lemma assign_loc_valid_access
-                    ge cp ty m b ofs bit v m'
-                    (AL: assign_loc ge cp ty m b ofs bit v m')
-                    ch' b' ofs' perm' cp'
-                    (VA: Mem.valid_access m ch' b' ofs' perm' (Some cp'))
-                :
-                Mem.valid_access m' ch' b' ofs' perm' (Some cp').
-              Proof.
-                inv AL.
-                - eapply Mem.store_valid_access_1; eauto.
-                - eapply Mem.storebytes_valid_access_1; eauto.
-                - inv H. eapply Mem.store_valid_access_1; eauto.
-              Qed.
-
-              Lemma bind_parameters_valid_access
-                    (ge: genv) cp (e: env) m params vargs m'
-                    (BIND: bind_parameters ge cp e m params vargs m')
-                    ch b ofs perm cp'
-                    (VA: Mem.valid_access m ch b ofs perm (Some cp'))
-                :
-                Mem.valid_access m' ch b ofs perm (Some cp').
-              Proof.
-                revert_until BIND. induction BIND; ii; ss.
-                apply IHBIND. eapply assign_loc_valid_access; eauto.
-              Qed.
-
-              eapply bind_parameters_valid_access. eapply ENV_BIND.
+            + eapply bind_parameters_valid_access. eapply ENV_BIND.
               eapply alloc_variables_valid_access. eapply ENV_ALLOC.
-
-              (* MOVE *)
-              Lemma mem_delta_apply_wf_valid_access
-                    ge cp d m m'
-                    (APPD: mem_delta_apply_wf ge cp d (Some m) = Some m')
-                    ch b ofs perm cp'
-                    (VA: Mem.valid_access m ch b ofs perm cp')
-                :
-                Mem.valid_access m' ch b ofs perm cp'.
-              Proof.
-                move d before ge. revert_until d. induction d; ii.
-                { unfold mem_delta_apply_wf in APPD. ss; clarify. }
-                rewrite mem_delta_apply_wf_cons in APPD. des_ifs.
-                - destruct a; ss. hexploit mem_delta_apply_wf_some; eauto.
-                  intros (m0 & STOREV). rewrite STOREV in APPD.
-                  eapply IHd. apply APPD.
-                  unfold mem_delta_apply_storev in STOREV. des_ifs.
-                  unfold Mem.storev in STOREV. des_ifs.
-                  eapply Mem.store_valid_access_1; eauto.
-                - eapply IHd; eauto.
-              Qed.
-
               eapply mem_delta_apply_wf_valid_access. eapply DELTA_C.
               eapply Mem.store_valid_access_1. eapply CNT_CUR_STORE.
               auto.
             + destruct (Pos.eq_dec id id_cur).
               * subst id. clarify. ss. rewrite FIND_CNT_CUR in WFC7. clarify.
-
-
-                Lemma bind_parameters_mem_load
-                      ge cp e m0 params vargs m1
-                      (BIND: bind_parameters ge cp e m0 params vargs m1)
-                  :
-                  forall ch b ofs cp',
-                    (forall id b_e ty, (e ! id = Some (b_e, ty) -> b <> b_e)) ->
-                    (Mem.load ch m1 b ofs cp' = Mem.load ch m0 b ofs cp').
-                Proof.
-                  induction BIND; ii; ss.
-                  rewrite IHBIND; auto.
-                  inv H0.
-                  - eapply Mem.load_store_other. eapply H3. left. ii. clarify. specialize (H1 _ _ _ H). clarify.
-                  - eapply Mem.load_storebytes_other. eapply H7. left. ii. clarify. specialize (H1 _ _ _ H). clarify.
-                Qed.
-
-                Lemma alloc_variables_mem_load
-                      ge cp e m params e' m'
-                      (EA: alloc_variables ge cp e m params e' m')
-                  :
-                  forall ch b ofs cp',
-                    (b < Mem.nextblock m)%positive ->
-                    (Mem.load ch m' b ofs cp' = Mem.load ch m b ofs cp').
-                Proof.
-                  induction EA; ii; ss.
-                  rewrite IHEA.
-                  { eapply Mem.load_alloc_unchanged; eauto. }
-                  { erewrite Mem.nextblock_alloc; eauto. lia. }
-                Qed.
-
-                Lemma alloc_variables_old_blocks
-                      ge cp e m params e' m'
-                      (EA: alloc_variables ge cp e m params e' m')
-                  :
-                  forall b, (b < Mem.nextblock m)%positive ->
-                       (forall id b' ty, e ! id = Some (b', ty) -> b <> b') ->
-                       (forall id b' ty, e' ! id = Some (b', ty) -> b <> b').
-                Proof.
-                  induction EA; i.
-                  { ii; clarify. specialize (H0 _ _ _ H1). clarify. }
-                  hexploit Mem.alloc_result; eauto. intros; clarify.
-                  eapply IHEA. 3: eapply H2.
-                  { erewrite Mem.nextblock_alloc; eauto. lia. }
-                  { i. destruct (Pos.eq_dec id id1).
-                    - clarify. rewrite PTree.gss in H3. clarify. lia.
-                    - rewrite PTree.gso in H3; auto. eapply H1; eauto.
-                  }
-                Qed.
-
                 erewrite bind_parameters_mem_load. 2: eapply ENV_BIND.
                 2:{ eapply alloc_variables_old_blocks. eapply ENV_ALLOC. 2: ii; ss. admit. (*ez*) }
                 erewrite alloc_variables_mem_load. 2: eapply ENV_ALLOC.
                 2:{ admit. (* same ez *) }
-
-                Lemma mem_delta_apply_wf_mem_load
-                      ge cp d m m'
-                      (APPD: mem_delta_apply_wf ge cp d (Some m) = Some m')
-                  :
-                  forall id ch b ofs cp',
-                    Senv.invert_symbol ge b = Some id ->
-                    Senv.public_symbol ge id = false ->
-                    (Mem.load ch m' b ofs cp' = Mem.load ch m b ofs cp').
-                Proof.
-                  move d before ge. revert_until d. induction d; ii.
-                  { unfold mem_delta_apply_wf in APPD. ss. clarify. }
-                  rewrite mem_delta_apply_wf_cons in APPD. des_ifs.
-                  { destruct a; ss. unfold wf_mem_delta_storev_b in Heq. des_ifs. ss.
-                    hexploit mem_delta_apply_wf_some; eauto. intros (m1 & STORE). rewrite STORE in APPD.
-                    erewrite IHd. 2: eauto. 2: eauto. all: auto.
-                    destruct (Pos.eq_dec b b0).
-                    - clarify.
-                    - erewrite Mem.load_store_other. 2: eauto. all: auto.
-                  }
-                  { eapply IHd; eauto. }
-                Qed.
-
                 erewrite mem_delta_apply_wf_mem_load.
                 2:{ erewrite match_symbs_mem_delta_apply_wf in DELTA_C. apply DELTA_C. destruct MS0 as (MS & _). eauto. }
                 2:{ eapply Genv.find_invert_symbol. eapply FIND_CNT_CUR. }
                 2:{ auto. }
                 erewrite Mem.load_store_same. 2: eapply CNT_CUR_STORE.
-                ss.
-                  
+                ss. rewrite map_length. rewrite get_id_tr_app. ss.
+                rewrite Pos.eqb_refl. rewrite app_length. ss.
+                do 2 f_equal. apply nat64_int64_add_one.
+                admit. (*ez*)
+              * ss. erewrite bind_parameters_mem_load. 2: eapply ENV_BIND.
+                2:{ eapply alloc_variables_old_blocks. eapply ENV_ALLOC. 2: ii; ss. admit. (*ez*) }
+                erewrite alloc_variables_mem_load. 2: eapply ENV_ALLOC.
+                2:{ admit. (* same ez *) }
+                erewrite mem_delta_apply_wf_mem_load.
+                2:{ erewrite match_symbs_mem_delta_apply_wf in DELTA_C. apply DELTA_C. destruct MS0 as (MS & _). eauto. }
+                2:{ eapply Genv.find_invert_symbol. eapply WFC7. }
+                2:{ auto. }
+                erewrite Mem.load_store_other. 2: eapply CNT_CUR_STORE.
+                2:{ left. ii. clarify. apply Genv.find_invert_symbol in FIND_CNT_CUR, WFC7.
+                    rewrite FIND_CNT_CUR in WFC7. clarify. rename cnt into cnt_cur.
+                    specialize (CNT_INJ _ _ _ CNTS_CUR WFC0). clarify.
+                }
+                rewrite get_id_tr_app. ss. apply Pos.eqb_neq in n. rewrite n. rewrite app_nil_r.
+                rewrite WFC9. auto.
 
+          - clear CUR_SWITCH_STAR. move WFC1 after le_next.
 
+            (* env: continuation env, also extcall *)
 
-          TODO
+            TODO
 
+            econs. 4: apply WFC1.
+                
           admit. }
         assert (MS_NEXT: match_state ge_i ge_c (meminj_public ge_i) ttr cnts pars id_next (Some (b, m2, ir_cont cur :: k_i)) cst2).
         { admit. }
