@@ -1186,19 +1186,33 @@ Section Backtranslation.
     Proof.
     Admitted.
 
-    Inductive wf_c_cont (ge: Clight.genv) (m: mem): (cont) -> Prop :=
+    Inductive wf_c_cont (ge: Clight.genv) : mem -> cont -> Prop :=
     | wf_c_cont_nil
+        m
       :
       wf_c_cont ge m Kstop
     | wf_c_cont_cons
-        ck
-        f e le s1 s2 ck'
-        (WFEUB: wf_env_unique_blocks e)
-        (WFEM: wf_env_mem ge (comp_of f) e m)
+        m ck
+        f e le s1 s2 m' ck'
+        (WFENV: wf_env ge e)
         (CK: ck = Kcall None f e le (Kloop1 s1 s2 ck'))
-        (IND: wf_c_cont ge m ck')
+        (FREE: Mem.free_list m (blocks_of_env ge e) (comp_of f) = Some m')
+        (IND: wf_c_cont ge m' ck')
       :
       wf_c_cont ge m ck.
+    (* Inductive wf_c_cont (ge: Clight.genv) (m: mem): (cont) -> Prop := *)
+    (* | wf_c_cont_nil *)
+    (*   : *)
+    (*   wf_c_cont ge m Kstop *)
+    (* | wf_c_cont_cons *)
+    (*     ck *)
+    (*     f e le s1 s2 ck' *)
+    (*     (WFEUB: wf_env_unique_blocks e) *)
+    (*     (WFEM: wf_env_mem ge (comp_of f) e m) *)
+    (*     (CK: ck = Kcall None f e le (Kloop1 s1 s2 ck')) *)
+    (*     (IND: wf_c_cont ge m ck') *)
+    (*   : *)
+    (*   wf_c_cont ge m ck. *)
 
     Definition wf_c_stmt (ge: Senv.t) cp cnts id tr stmt :=
       forall cnt, (cnts ! id = Some cnt) -> stmt = code_bundle_trace ge cp cnt (get_id_tr tr id).
@@ -1211,8 +1225,10 @@ Section Backtranslation.
       match cst with
       | State f stmt k_c e le m_c =>
           wf_counters ge m_c tr cnts /\
-            wf_c_cont ge m_c k_c /\ wf_c_stmt ge (comp_of f) cnts id ttr stmt /\
-            (wf_env ge e /\ wf_env_unique_blocks e /\ wf_env_mem ge (comp_of f) e m_c)
+            (exists m_c', Mem.free_list m_c (blocks_of_env ge e) (comp_of f) = Some m_c' /\ wf_c_cont ge m_c' k_c) /\
+            wf_c_stmt ge (comp_of f) cnts id ttr stmt /\
+            wf_env ge e
+            (* (wf_env ge e /\ wf_env_unique_blocks e /\ wf_env_mem ge (comp_of f) e m_c) *)
       | _ => False
       end.
     (* Definition wf_c_state (ge: Clight.genv) (tr ttr: bundle_trace) (cnts: cnt_ids) id (cst: Clight.state) := *)
