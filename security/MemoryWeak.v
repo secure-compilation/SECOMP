@@ -1704,7 +1704,6 @@ Qed.
 Lemma store_wunchanged_on:
   forall chunk m b ofs v cp m',
   store chunk m b ofs v cp = Some m' ->
-  (forall i, ofs <= i < ofs + size_chunk chunk -> ~ P b i) ->
   wunchanged_on m m'.
 Proof.
   intros; constructor; intros.
@@ -1716,7 +1715,6 @@ Qed.
 Lemma storebytes_wunchanged_on:
   forall m b ofs bytes cp m',
   storebytes m b ofs bytes cp = Some m' ->
-  (forall i, ofs <= i < ofs + Z.of_nat (length bytes) -> ~ P b i) ->
   wunchanged_on m m'.
 Proof.
   intros; constructor; intros.
