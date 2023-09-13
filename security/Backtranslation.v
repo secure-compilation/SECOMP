@@ -1170,21 +1170,26 @@ Section Backtranslation.
     (* Definition wf_counters_find (ge: Senv.t) (cnts: cnt_ids) := *)
     (*   forall id cnt, cnts ! id = Some cnt -> exists b_cnt, Senv.find_symbol ge cnt = Some b_cnt. *)
 
-    Definition wf_env_unique_blocks (e: env) :=
-      forall id1 id2 b1 ty1 b2 ty2, e ! id1 = Some (b1, ty1) -> e ! id2 = Some (b2, ty2) -> id1 <> id2 -> b1 <> b2.
+    (* Definition wf_env_unique_blocks (e: env) := *)
+    (*   forall id1 id2 b1 ty1 b2 ty2, e ! id1 = Some (b1, ty1) -> e ! id2 = Some (b2, ty2) -> id1 <> id2 -> b1 <> b2. *)
 
-    Definition wf_env_mem (ge: Clight.genv) cp (e: env) (m: mem) :=
-      let eranges := blocks_of_env ge e in
-      Forall (fun '(b, lo, hi) => Mem.range_perm m b lo hi Cur Freeable /\ Mem.can_access_block m b (Some cp)) eranges.
+    (* Definition wf_env_mem (ge: Clight.genv) cp (e: env) (m: mem) := *)
+    (*   let eranges := blocks_of_env ge e in *)
+    (*   Forall (fun '(b, lo, hi) => Mem.range_perm m b lo hi Cur Freeable /\ Mem.can_access_block m b (Some cp)) eranges. *)
 
-    Lemma wf_env_conds_implies_free_list
-          ge cp e m
-          (WFEUB: wf_env_unique_blocks e)
-          (WFEM: wf_env_mem ge cp e m)
-      :
-      exists m', Mem.free_list m (blocks_of_env ge e) cp = Some m'.
-    Proof.
-    Admitted.
+    (* Lemma wf_env_conds_implies_free_list *)
+    (*       ge cp e m *)
+    (*       (WFEUB: wf_env_unique_blocks e) *)
+    (*       (WFEM: wf_env_mem ge cp e m) *)
+    (*   : *)
+    (*   exists m', Mem.free_list m (blocks_of_env ge e) cp = Some m'. *)
+    (* Proof. *)
+    (* Admitted. *)
+
+    Definition not_inj_blks (j: meminj) (ebs: list block) :=
+      Forall (fun b => j b = None) ebs.
+
+    Definition blocks_of_env2 ge e : list block := (map (fun x => fst (fst x)) (blocks_of_env ge e)).
 
     Inductive wf_c_cont (ge: Clight.genv) : mem -> cont -> Prop :=
     | wf_c_cont_nil
@@ -1195,6 +1200,7 @@ Section Backtranslation.
         m ck
         f e le s1 s2 m' ck'
         (WFENV: wf_env ge e)
+        (NINJ: not_inj_blks (meminj_public ge) (blocks_of_env2 ge e))
         (CK: ck = Kcall None f e le (Kloop1 s1 s2 ck'))
         (FREE: Mem.free_list m (blocks_of_env ge e) (comp_of f) = Some m')
         (IND: wf_c_cont ge m' ck')
@@ -1227,7 +1233,7 @@ Section Backtranslation.
           wf_counters ge m_c tr cnts /\
             (exists m_c', Mem.free_list m_c (blocks_of_env ge e) (comp_of f) = Some m_c' /\ wf_c_cont ge m_c' k_c) /\
             wf_c_stmt ge (comp_of f) cnts id ttr stmt /\
-            wf_env ge e
+            (wf_env ge e /\ (not_inj_blks (meminj_public ge) (blocks_of_env2 ge e)))
             (* (wf_env ge e /\ wf_env_unique_blocks e /\ wf_env_mem ge (comp_of f) e m_c) *)
       | _ => False
       end.
@@ -1941,7 +1947,6 @@ Section Backtranslation.
 
 
 
-
     Lemma ir_to_clight_step
           (ge_i: Asm.genv) (ge_c: Clight.genv)
           cnts pars ist1 ev ist2
@@ -1962,10 +1967,10 @@ Section Backtranslation.
       Set Nested Proofs Allowed.
 
       unfold wf_c_state in WFC. des_ifs. rename s into stmt, k into k_c, m into m_c.
-      destruct WFC as ((CNT_INJ & WFC0) & WFC1 & WFC2 & WFC3 & WFC4 & WFC5).
+      destruct WFC as ((CNT_INJ & WFC0) & (m_freeenv & FREEENV & WFC1) & WFC2 & WFC3 & WFC4).
       unfold match_state in MS. des_ifs. rename i into k_i, b into cur, m into m_i.
       destruct MS as (MS0 & MS1 & MS2 & MS3 & MS4 & MS5).
-      move STEP after WFC5. inv STEP.
+      move STEP after WFC4. inv STEP.
 
       - assert (id = id_cur).
         { unfold match_cur_fun in MS2. des. rewrite MS7 in IDCUR. clarify. }
@@ -2046,7 +2051,7 @@ Section Backtranslation.
           - unfold wf_counters. split. auto.
             clear CUR_SWITCH_STAR. move WFC0 after le_next.
             ii. specialize (WFC0 _ _ _ H H0). des. exists cnt. splits; auto.
-            unfold wf_counter in WFC6. des. unfold wf_counter. splits; auto.
+            unfold wf_counter in WFC5. des. unfold wf_counter. splits; auto.
             exists b1. splits; auto.
             + eapply bind_parameters_valid_access. eapply ENV_BIND.
               eapply alloc_variables_valid_access. eapply ENV_ALLOC.
@@ -2054,7 +2059,7 @@ Section Backtranslation.
               eapply Mem.store_valid_access_1. eapply CNT_CUR_STORE.
               auto.
             + destruct (Pos.eq_dec id id_cur).
-              * subst id. clarify. ss. rewrite FIND_CNT_CUR in WFC7. clarify.
+              * subst id. clarify. ss. rewrite FIND_CNT_CUR in WFC6. clarify.
                 erewrite bind_parameters_mem_load. 2: eapply ENV_BIND.
                 2:{ eapply alloc_variables_old_blocks. eapply ENV_ALLOC. 2: ii; ss. admit. (*ez*) }
                 erewrite alloc_variables_mem_load. 2: eapply ENV_ALLOC.
@@ -2074,17 +2079,17 @@ Section Backtranslation.
                 2:{ admit. (* same ez *) }
                 erewrite mem_delta_apply_wf_mem_load.
                 2:{ erewrite match_symbs_mem_delta_apply_wf in DELTA_C. apply DELTA_C. destruct MS0 as (MS & _). eauto. }
-                2:{ eapply Genv.find_invert_symbol. eapply WFC7. }
+                2:{ eapply Genv.find_invert_symbol. eapply WFC6. }
                 2:{ auto. }
                 erewrite Mem.load_store_other. 2: eapply CNT_CUR_STORE.
-                2:{ left. ii. clarify. apply Genv.find_invert_symbol in FIND_CNT_CUR, WFC7.
-                    rewrite FIND_CNT_CUR in WFC7. clarify. rename cnt into cnt_cur.
+                2:{ left. ii. clarify. apply Genv.find_invert_symbol in FIND_CNT_CUR, WFC6.
+                    rewrite FIND_CNT_CUR in WFC6. clarify. rename cnt into cnt_cur.
                     specialize (CNT_INJ _ _ _ CNTS_CUR WFC0). clarify.
                 }
                 rewrite get_id_tr_app. ss. apply Pos.eqb_neq in n. rewrite n. rewrite app_nil_r.
-                rewrite WFC9. auto.
+                rewrite WFC8. auto.
 
-          - clear CUR_SWITCH_STAR. move WFC1 after le_next.
+          - clear CUR_SWITCH_STAR. move WFC1 after le_next. move WFC4 after WFC1. move FREEENV after WFC4.
 
             (* env: continuation env, also extcall *)
 

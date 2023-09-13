@@ -1637,3 +1637,161 @@ Section PROPS.
   Proof. inv WINJ. split; eauto. apply mem_winj_to_mem_inj; auto. Qed.
 
 End PROPS.
+
+
+(** * Weak Invariance properties between two memory states *)
+
+Section WUNCHANGED_ON.
+
+Import Mem.
+
+Variable P: block -> Z -> Prop.
+
+Record wunchanged_on (m_before m_after: mem) : Prop := mk_wunchanged_on {
+  wunchanged_on_nextblock:
+    Ple (nextblock m_before) (nextblock m_after);
+  wunchanged_on_perm:
+    forall b ofs k p,
+    P b ofs -> valid_block m_before b ->
+    (perm m_before b ofs k p <-> perm m_after b ofs k p);
+  wunchanged_on_own:
+    forall b cp,
+    (* P b ofs -> *)
+    valid_block m_before b -> (* Adjust preconditions as needed. *)
+    (can_access_block m_before b cp <-> can_access_block m_after b cp)
+}.
+
+Lemma wunchanged_on_refl:
+  forall m, wunchanged_on m m.
+Proof.
+  intros; constructor. apply Ple_refl. tauto. tauto.
+Qed.
+
+Lemma valid_block_wunchanged_on:
+  forall m m' b,
+  wunchanged_on m m' -> valid_block m b -> valid_block m' b.
+Proof.
+  unfold valid_block; intros. apply wunchanged_on_nextblock in H. extlia.
+Qed.
+
+Lemma perm_wunchanged_on:
+  forall m m' b ofs k p,
+  wunchanged_on m m' -> P b ofs ->
+  perm m b ofs k p -> perm m' b ofs k p.
+Proof.
+  intros. destruct H. apply wunchanged_on_perm0; auto. eapply perm_valid_block; eauto.
+Qed.
+
+Lemma perm_wunchanged_on_2:
+  forall m m' b ofs k p,
+  wunchanged_on m m' -> P b ofs -> valid_block m b ->
+  perm m' b ofs k p -> perm m b ofs k p.
+Proof.
+  intros. destruct H. apply wunchanged_on_perm0; auto.
+Qed.
+
+Lemma wunchanged_on_trans:
+  forall m1 m2 m3, wunchanged_on m1 m2 -> wunchanged_on m2 m3 -> wunchanged_on m1 m3.
+Proof.
+  intros; constructor.
+- apply Ple_trans with (nextblock m2); apply wunchanged_on_nextblock; auto.
+- intros. transitivity (perm m2 b ofs k p); apply wunchanged_on_perm; auto.
+  eapply valid_block_wunchanged_on; eauto.
+- intros. transitivity (can_access_block m2 b cp); apply wunchanged_on_own; auto.
+  eapply valid_block_wunchanged_on; eauto.
+Qed.
+
+Lemma store_wunchanged_on:
+  forall chunk m b ofs v cp m',
+  store chunk m b ofs v cp = Some m' ->
+  (forall i, ofs <= i < ofs + size_chunk chunk -> ~ P b i) ->
+  wunchanged_on m m'.
+Proof.
+  intros; constructor; intros.
+- rewrite (nextblock_store _ _ _ _ _ _ _ H). apply Ple_refl.
+- split; intros; eauto with mem.
+- eapply store_can_access_block_inj; eauto.
+Qed.
+
+Lemma storebytes_wunchanged_on:
+  forall m b ofs bytes cp m',
+  storebytes m b ofs bytes cp = Some m' ->
+  (forall i, ofs <= i < ofs + Z.of_nat (length bytes) -> ~ P b i) ->
+  wunchanged_on m m'.
+Proof.
+  intros; constructor; intros.
+- rewrite (nextblock_storebytes _ _ _ _ _ _ H). apply Ple_refl.
+- split; intros. eapply perm_storebytes_1; eauto. eapply perm_storebytes_2; eauto.
+- split.
+  eapply storebytes_can_access_block_inj_1; eauto.
+  eapply storebytes_can_access_block_inj_2; eauto.
+Qed.
+
+Lemma alloc_wunchanged_on:
+  forall m c lo hi m' b,
+  alloc m c lo hi = (m', b) ->
+  wunchanged_on m m'.
+Proof.
+  intros; constructor; intros.
+- rewrite (nextblock_alloc _ _ _ _ _ _ H). apply Ple_succ.
+- split; intros.
+  eapply perm_alloc_1; eauto.
+  eapply perm_alloc_4; eauto.
+  eapply valid_not_valid_diff; eauto with mem.
+- destruct (peq b0 b).
++ subst b0. apply fresh_block_alloc in H. contradiction.
++ split.
+  eapply alloc_can_access_block_other_inj_1; eauto.
+  eapply alloc_can_access_block_other_inj_2; eauto.
+Qed.
+
+Lemma free_wunchanged_on:
+  forall m b lo hi cp m',
+  free m b lo hi cp = Some m' ->
+  (forall i, lo <= i < hi -> ~ P b i) ->
+  wunchanged_on m m'.
+Proof.
+  intros; constructor; intros.
+- rewrite (nextblock_free _ _ _ _ _ _ H). apply Ple_refl.
+- split; intros.
+  eapply perm_free_1; eauto.
+  destruct (eq_block b0 b); auto. destruct (zlt ofs lo); auto. destruct (zle hi ofs); auto.
+  subst b0. elim (H0 ofs). lia. auto.
+  eapply perm_free_3; eauto.
+- split.
+  eapply free_can_access_block_inj_1; eauto.
+  eapply free_can_access_block_inj_2; eauto.
+Qed.
+
+Lemma drop_perm_wunchanged_on:
+  forall m b lo hi p cp m',
+  drop_perm m b lo hi p cp = Some m' ->
+  (forall i, lo <= i < hi -> ~ P b i) ->
+  wunchanged_on m m'.
+Proof.
+  intros; constructor; intros.
+- rewrite (nextblock_drop _ _ _ _ _ _ _ H). apply Ple_refl.
+- split; intros. eapply perm_drop_3; eauto.
+  destruct (eq_block b0 b); auto.
+  subst b0.
+  assert (~ (lo <= ofs < hi)). { red; intros; eelim H0; eauto. }
+  right; lia.
+  eapply perm_drop_4; eauto.
+- split.
+  eapply can_access_block_drop_1; eauto.
+  eapply can_access_block_drop_2; eauto.
+Qed.
+
+End WUNCHANGED_ON.
+
+Lemma wunchanged_on_implies:
+  forall (P Q: block -> Z -> Prop) m m',
+  wunchanged_on P m m' ->
+  (forall b ofs, Q b ofs -> Mem.valid_block m b -> P b ofs) ->
+  wunchanged_on Q m m'.
+Proof.
+  intros. destruct H. constructor; intros.
+- auto.
+- apply wunchanged_on_perm0; auto.
+- apply wunchanged_on_own0; auto.
+Qed.
