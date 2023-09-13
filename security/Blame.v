@@ -66,9 +66,9 @@ Record match_prog (s: split) (p p': program) : Prop := {
   match_prog_main:
     p'.(prog_main) = p.(prog_main);
   match_prog_public:
-    (* forall id, Genv.public_symbol (globalenv p) id =
-       Genv.public_symbol (globalenv p') *)
     p'.(prog_public) = p.(prog_public);
+  match_prog_types:
+    p'.(prog_types) = p.(prog_types);
   match_prog_pol:
     p'.(prog_pol) = p.(prog_pol);
   match_prog_globdefs:
@@ -287,11 +287,8 @@ Section Simulation.
   Hypothesis match_W1_W2: match_prog s W1 W2.
 
   (* Context (ge1 ge2: genv). *)
-  Let ge1 := globalenv W1.
-  Let ge2 := globalenv W2.
-  (* Is this hypothesis realistic? *)
-  (*Hypothesis same_cenv: genv_cenv ge1 = genv_cenv ge2.*)
-
+  Notation ge1 := (globalenv W1).
+  Notation ge2 := (globalenv W2).
 (*
   Lemma symbols_preserved:
     forall (s: ident), Genv.find_symbol ge2 s = Genv.find_symbol ge1 s.
@@ -314,20 +311,20 @@ Section Simulation.
     unfold fundef in *. now rewrite ge_b.
   Qed.
 
-  Lemma public_symbols_preserved:
+  Lemma public_symbol_preserved:
     forall id, Genv.public_symbol ge2 id = Genv.public_symbol ge1 id.
   Proof.
     intros id.
     assert (in_dec ident_eq id (Genv.genv_public ge2) =
               in_dec ident_eq id (Genv.genv_public ge1) :> bool)
       as public_eq.
-    { unfold ge1, ge2. simpl. rewrite !Genv.globalenv_public. simpl.
+    { simpl. rewrite !Genv.globalenv_public. simpl.
       now rewrite (match_prog_public _ _ _ match_W1_W2). }
     destruct (Genv.public_symbol ge1 id) eqn:public1.
     - destruct (Genv.public_symbol_exists _ _ public1) as [b1 ge1_id_b1].
       assert (exists cp, Genv.find_comp_of_ident ge1 id = Some cp)
         as [cp ge1_id_cp].
-      { apply find_symbol_find_comp. unfold ge1 in *. congruence. }
+      { apply find_symbol_find_comp. congruence. }
       assert (exists b2, Genv.find_symbol ge2 id = Some b2)
         as [b2 ge2_id_b2].
       { exploit match_prog_globdefs; eauto.
@@ -339,7 +336,7 @@ Section Simulation.
       destruct (Genv.find_symbol ge1 id) as [b1|] eqn:ge1_id.
       + assert (exists cp, Genv.find_comp_of_ident ge1 id = Some cp)
           as [cp ge1_id_cp].
-        { apply find_symbol_find_comp. unfold ge1 in *. congruence. }
+        { apply find_symbol_find_comp. congruence. }
         unfold Genv.public_symbol.
         destruct (Genv.find_symbol ge2 id) as [b2|] eqn:ge2_id; trivial.
         congruence.
@@ -347,24 +344,35 @@ Section Simulation.
         destruct (Genv.public_symbol_exists _ _ public2) as [b2 ge2_id_b2].
         assert (exists cp, Genv.find_comp_of_ident ge2 id = Some cp)
           as [cp ge2_id_cp].
-        { apply find_symbol_find_comp. unfold ge2 in *. congruence. }
+        { apply find_symbol_find_comp. congruence. }
         exploit match_prog_globdefs; eauto.
-        unfold ge1 in *. intros (? & _ & ? & _). congruence.
+        intros (? & _ & ? & _). congruence.
   Qed.
 
   Lemma allowed_addrof_translated:
     forall cp id,
+      s cp = Right ->
       Genv.allowed_addrof ge1 cp id ->
       Genv.allowed_addrof ge2 cp id.
   Proof.
-    intros cp id H.
-    destruct (Genv.public_symbol ge1 id) eqn:public_id.
-    {
+    intros cp id RIGHT [H|H].
+    - left.
+      exploit match_prog_globdefs; eauto. rewrite RIGHT. simpl.
+      intros (b1 & b2 & ge1_id & ge2_id & MATCH).
+      unfold Genv.find_comp_of_ident in *.
+      simpl in H. rewrite ge1_id in H.
+      rewrite ge2_id.
+      unfold Genv.find_comp_of_block in *. now rewrite <- MATCH.
+    - right. now rewrite public_symbol_preserved.
+  Qed.
 
- left.
-      destruct (match_prog_globdefs _ _ _ match_W1_W2) as [RIGHT LEFT].
-      destruct (s cp) eqn:s_cp.
-      + specialize (LEFT _ _ H s_cp).
+  Lemma genv_cenv_preserved : ge2 = ge1 :> composite_env.
+  Proof.
+    simpl.
+    pose proof (prog_comp_env_eq W1) as H1.
+    pose proof (prog_comp_env_eq W2) as H2.
+    rewrite (match_prog_types _ _ _ match_W1_W2) in H2.
+    congruence.
   Qed.
 
   (* AAA: [2023-08-08: This next part is not true anymore because left symbols
@@ -424,7 +432,7 @@ Section Simulation.
         (j loc = Some (loc', ofs')) /\
         eval_lvalue ge2 e2 cp le2 m2 a loc' (Ptrofs.add ofs (Ptrofs.repr ofs')) bf).
   Proof.
-    intros. unfold ge1, ge2 in *.
+    intros.
     destruct inj as [inj_dom inj_inject j_delta_zero same_symb jinj SAMEBLKS].
     apply eval_expr_lvalue_ind; intros;
     try now match goal with
@@ -451,7 +459,7 @@ Section Simulation.
       destruct H0 as [v1' [? ?]].
       destruct H2 as [v2' [? ?]].
       exploit sem_binary_operation_inject; eauto.
-      rewrite same_cenv.
+      rewrite <- genv_cenv_preserved.
       intros [? [? ?]].
       eexists; split; eauto.
       econstructor; eauto.
@@ -462,11 +470,11 @@ Section Simulation.
       eexists; split; eauto.
       econstructor; eauto.
     - (* eval_Esizeof *)
-      rewrite same_cenv.
+      rewrite <- genv_cenv_preserved.
       eexists; split; eauto.
       econstructor; eauto.
     - (* eval_Ealignof *)
-      rewrite same_cenv.
+      rewrite <- genv_cenv_preserved.
       eexists; split; eauto.
       econstructor; eauto.
     - (* eval_Elvalue *)
@@ -531,7 +539,7 @@ Section Simulation.
         assert (b_right : (s, m1) |= b ∈ Right).
         { unfold Mem.has_side_block. simpl.
           unfold Genv.find_comp_of_ident in id_cp.
-          unfold ge1 in id_cp. rewrite W1_id in id_cp.
+          rewrite W1_id in id_cp.
           apply SAMEBLKS in id_cp. now rewrite id_cp. }
         apply idP in b_right.
         destruct (j b) as [[loc' ofs']|] eqn:j_b; try easy.
@@ -555,13 +563,13 @@ Section Simulation.
       inv H0.
       eexists; eexists; split; eauto.
       rewrite Ptrofs.add_assoc, (Ptrofs.add_commut (Ptrofs.repr delta)), <- Ptrofs.add_assoc.
-      eapply eval_Efield_struct; try rewrite <- same_cenv; eauto.
+      eapply eval_Efield_struct; try rewrite genv_cenv_preserved; eauto.
     - (* eval_Efield_union *)
       destruct H0 as [v' [? ?]].
       inv H0.
       eexists; eexists; split; eauto.
       rewrite Ptrofs.add_assoc, (Ptrofs.add_commut (Ptrofs.repr delta)), <- Ptrofs.add_assoc.
-      eapply eval_Efield_union; try rewrite <- same_cenv; eauto.
+      eapply eval_Efield_union; try rewrite genv_cenv_preserved; eauto.
   Qed.
 
   Lemma eval_expr_injection:
@@ -631,6 +639,43 @@ Section Simulation.
     same_domain s j ge1 ge2 m1 m2 ->
     Mem.store
 *)
+
+  Lemma find_funct_preserved j f v v' :
+    s (comp_of f) = Right ->
+    Val.inject j v v' ->
+    symbols_inject j ge1 ge2 ->
+    Genv.find_funct ge1 v = Some f ->
+    exists tf,
+      Genv.find_funct ge2 v' = Some tf /\
+        match_fundef tt f tf.
+  Proof.
+    unfold Genv.find_funct. intros s_cp v_inj symbs_inj.
+    case v_inj; try congruence. clear v_inj.
+    intros b ofs b' _ delta j_b ->.
+    destruct Ptrofs.eq_dec as [?|_]; try congruence. subst ofs.
+    intros ge1_b.
+    apply Genv.find_funct_ptr_iff in ge1_b.
+
+
+    (* Know: b corresponds to some symbol id
+       Genv.find_symbol ge1 id = Some b
+
+*)
+
+
+    pose proof (Genv.find_funct_ptr_inversion _ _ ge1_b) as [id ge1_id].
+    pose proof (Genv.find_symbol_exists _ _ _ id_f) as [b ge1_id].
+
+
+    case v; try congruence. intros b off. simpl.
+    intros s_cp j_inj ge1_v.
+    unfold
+    pose proof (Genv.find_funct_inversion _ _ ge1_v) as [id id_f].
+
+
+    exploit match_prog_globdefs; eauto.
+
+
 
   Lemma parallel_concrete: forall j s1 s2 s1' t,
       right_state_injection s j ge1 ge2 s1 s2 ->
@@ -706,7 +751,7 @@ Section Simulation.
         intros [m2' [store_loc2 mem_inject']].
         exists j; eexists; split.
         - econstructor; eauto.
-          rewrite <- same_cenv in *.
+          rewrite genv_cenv_preserved in *.
           eapply assign_loc_copy; try rewrite Ptrofs.add_zero; eauto.
           { destruct sizes1.
             - exploit injective; eauto. intros []; [now left| contradiction].
@@ -772,6 +817,8 @@ Section Simulation.
       intros [vf2 [vf1_vf2 eval_a2]].
       exploit eval_exprlist_injection; eauto; eauto.
       intros [vargs2 [vargs1_vargs2 eval_vargs2]].
+
+
       exploit (Genv.find_funct_match match_W1_W2); eauto.
       intros [[] [fd2 [find_vf2 [fd1_fd2 _]]]].
       (* Stopped here... *)
@@ -785,7 +832,7 @@ Section Simulation.
           erewrite <- (Genv.match_genvs_type_of_call); eauto.
         - exploit (Genv.match_genvs_find_comp match_W1_W2); eauto. intros <-.
           exploit (@call_trace_inj _ _ _ _ ge1 ge2); eauto.
-          unfold ge2, ge1. simpl. apply Genv.globalenvs_match in match_W1_W2.
+          simpl. apply Genv.globalenvs_match in match_W1_W2.
           intros sy. pose proof (Genv.mge_symb match_W1_W2 sy). unfold Genv.find_symbol; eauto.
       * (* Case analysis: are we changing side or not? *)
         destruct (s (comp_of fd)) eqn:side.
