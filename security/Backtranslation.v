@@ -774,8 +774,8 @@ Section Backtranslation.
       Gvar (mkglobvar type_counter cp [(Init_int64 Int64.zero)] false false).
 
     (* Generate the max + 1 of the keys *)
-    Definition next_id {A} (l: list (ident * A)): ident.
-    Admitted.
+    Definition next_id {A} (l: list (ident * A)): ident :=
+      Pos.succ (fold_left (fun x '(i, _) => if (x <? i)%positive then i else x) l 1%positive).
 
     (* Generate fresh counter ids with definitions for each global definitions *)
     Definition gen_counter_defs m (gds: list (ident * globdef Asm.fundef unit)): PTree.t (ident * globdef Clight.fundef type) :=
@@ -783,9 +783,24 @@ Section Backtranslation.
 
     Definition params_of := PTree.t (list (ident * type)).
 
+    Fixpoint numbering {A} (i: ident) (l: list A): list (ident * A) :=
+      match l with
+      | [] => []
+      | hd :: tl => (i, hd) :: (numbering (Pos.succ i) tl)
+      end.
+
+    Definition gen_params_one (m: ident) (gd: globdef Asm.fundef unit): option (list (ident * type)) :=
+      match gd with
+      | Gvar _ => None
+      | Gfun fd =>
+          let types := map typ_to_type (sig_args (funsig fd)) in
+          Some (numbering m types)
+      end.
+
     (* Generate fresh parameter ids for each function --- parameter ids for different functions are allowed to be duplicated *)
-    Definition gen_params (m: positive) (gds: list (ident * globdef Asm.fundef unit)): params_of.
-    Admitted.
+    Definition gen_params (m: ident) (gds: list (ident * globdef Asm.fundef unit)): params_of :=
+      fold_left (fun pt '(id, gd) =>
+                   match gen_params_one m gd with | Some ps => PTree.set id ps pt | None => pt end) gds (@PTree.empty _).
 
     Definition wf_params_of (pars: params_of) :=
       (forall id params, (pars ! id = Some params) -> list_norepet (var_names params)).
