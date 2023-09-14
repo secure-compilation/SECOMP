@@ -2320,7 +2320,7 @@ Section Backtranslation.
             { eapply wunchanged_on_implies. eapply bind_parameters_wunchanged_on. apply ENV_BIND. ss. }
             intros (m_f' & FREE).
 
-            Lemma wunchanged_on_free_list
+            Lemma mem_free_list_wunchanged_on
                   x m l cp m'
                   (FL: Mem.free_list m l cp = Some m')
                   (WF: Forall (fun '(b, lo, hi) => (x <= b)%positive) l)
@@ -2346,13 +2346,82 @@ Section Backtranslation.
               des_ifs. eapply IHl. 2,3: eauto. eapply wunchanged_on_free_preserves; eauto.
             Qed.
 
+            Lemma mem_delta_apply_wf_wunchanged_on
+                  ge cp d m m'
+                  (APPD: mem_delta_apply_wf ge cp d (Some m) = Some m')
+              :
+              wunchanged_on (fun b _ => Mem.valid_block m b) m m'.
+            Proof.
+              revert_until d. induction d; ii; ss.
+              { cbn in APPD. clarify. apply wunchanged_on_refl. }
+              rewrite mem_delta_apply_wf_cons in APPD. des_ifs.
+              - hexploit mem_delta_apply_wf_some; eauto. intros (m0 & ST). rewrite ST in APPD.
+                specialize (IHd _ _ APPD). unfold mem_delta_apply_kind in ST. unfold mem_delta_apply_storev in ST. des_ifs.
+                ss. des_ifs. ss. eapply wunchanged_on_trans. eapply store_wunchanged_on. eapply ST.
+                eapply wunchanged_on_implies. eapply IHd. ss.
+              - eauto.
+            Qed.
+
+            assert (WU: wunchanged_on (fun b _ => Mem.valid_block m_c b) m_c m_f').
+            { eapply wunchanged_on_trans. eapply store_wunchanged_on. eapply CNT_CUR_STORE.
+              eapply wunchanged_on_trans. eapply wunchanged_on_implies. eapply mem_delta_apply_wf_wunchanged_on. eapply DELTA_C. ss.
+              eapply wunchanged_on_trans. eapply wunchanged_on_implies. eapply alloc_variables_wunchanged_on. eapply ENV_ALLOC. ss.
+              eapply wunchanged_on_trans. eapply wunchanged_on_implies. eapply bind_parameters_wunchanged_on. eapply ENV_BIND. ss.
+              eapply mem_free_list_wunchanged_on. eapply FREE.
+
+              Lemma alloc_variables_fresh_blocks
+                    ge cp e m params e' m'
+                    (EA: alloc_variables ge cp e m params e' m')
+                    x
+                    (X: (x <= Mem.nextblock m)%positive)
+                    (FA: Forall (fun '(b0, _, _) => (x <= b0)%positive) (blocks_of_env ge e))
+                :
+                Forall (fun '(b0, _, _) => (x <= b0)%positive) (blocks_of_env ge e').
+              Proof.
+                revert_until EA. induction EA; ii; ss. specialize (IHEA x).
+                eapply IHEA; clear IHEA.
+                { erewrite Mem.nextblock_alloc; eauto. lia. }
+                apply Forall_forall. rewrite Forall_forall in FA. ii. specialize (FA x0). des_ifs.
+                unfold blocks_of_env in H0. apply list_in_map_inv in H0. des. destruct x0 as (xid & xb & xt).
+                apply PTree.elements_complete in H1. destruct (Pos.eqb_spec id xid); clarify.
+                - rewrite PTree.gss in H1. ss. clarify. erewrite Mem.alloc_result. 2: eauto. auto.
+                - rewrite PTree.gso in H1; auto. apply FA. rewrite H0. unfold blocks_of_env. apply in_map.
+                  apply PTree.elements_correct; auto.
+              Qed.
+
+              eapply alloc_variables_fresh_blocks. eapply ENV_ALLOC.
+              2:{ unfold blocks_of_env, empty_env. ss. }
+              hexploit mem_delta_apply_wf_wunchanged_on. eapply DELTA_C. i. eapply wunchanged_on_nextblock in H0.
+              etransitivity. 2: eapply H0. erewrite <- Mem.nextblock_store. 2: eapply CNT_CUR_STORE. lia.
+            }
+
+            hexploit wunchanged_on_exists_mem_free_list. eapply WU. eapply FREEENV. intros (m_freeenv' & FREEENV').
+            exists m_f'. splits; auto. econs. 1,2,3: eauto. eapply FREEENV'.
+            hexploit wunchanged_on_free_list_preserves. eapply WU. eapply FREEENV. eapply FREEENV'. intros WUFREE.
+            move WFC1 after FREEENV'.
+
+            Lemma wf_c_cont_wunchanged_on
+                  ge m k
+                  (WFC: wf_c_cont ge m k)
+                  m'
+                  (WU: wunchanged_on (fun b _ => Mem.valid_block m b) m m')
+              :
+              wf_c_cont ge m' k.
+            Proof.
+              revert_until WFC. induction WFC; ii. econs.
+              clarify.
+              hexploit wunchanged_on_exists_mem_free_list. eapply WU. eapply FREE. intros (m_f & FREE2).
+              econs. 1,2,3: eauto. eapply FREE2. eapply IHWFC.
+              eapply wunchanged_on_free_list_preserves. eapply WU. all: eauto.
+            Qed.
+
+            eapply wf_c_cont_wunchanged_on. eapply WFC1. apply WUFREE.
+
+          -
+
 
             TODO
 
-
-            esplits; eauto. econs. 1,2,3: eauto.
-            
-              
 
 
             (* env: continuation env, also extcall *)
