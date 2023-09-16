@@ -1061,7 +1061,7 @@ Section Backtranslation.
       switch_bundle_events ge1 cnt cp tr = switch_bundle_events ge2 cnt cp tr.
     Proof. unfold switch_bundle_events. erewrite match_symbs_code_bundle_events; eauto. Qed.
 
-    Lemma match_symbs_code_mem_trace
+    Lemma match_symbs_code_bundle_trace
           ge1 ge2
           (MSYMB: match_symbs ge1 ge2)
           cp cnt tr
@@ -1162,9 +1162,6 @@ Section Backtranslation.
 
     Definition cnt_ids := PTree.t ident.
 
-    (* well-formedness *)
-    (* Definition wf_env_cnt_ids (e: env) (cnts: cnt_ids) := forall id cnt, cnts ! id = Some cnt -> e ! cnt = None. *)
-
     Definition wf_counter (ge: Senv.t) (m: mem) cp (n: nat) (cnt: ident): Prop :=
       (Senv.public_symbol ge cnt = false) /\
         exists b, (Senv.find_symbol ge cnt = Some b) /\
@@ -1176,30 +1173,6 @@ Section Backtranslation.
         (forall id b (f: function),
             (Genv.find_symbol ge id = Some b) -> (Genv.find_funct_ptr ge b = Some (Internal f)) ->
             (exists cnt, (cnts ! id = Some cnt) /\ (wf_counter ge m (comp_of f) (length (get_id_tr tr id)) cnt))).
-    (* Definition wf_counters (ge: Clight.genv) (m: mem) (tr: bundle_trace) (cnts: cnt_ids) := *)
-    (*   forall id b (f: function) cnt, *)
-    (*     (Genv.find_symbol ge id = Some b) -> (Genv.find_funct_ptr ge b = Some (Internal f)) -> *)
-    (*     (cnts ! id = Some cnt) -> *)
-    (*     (wf_counter ge m (comp_of f) (length (get_id_tr tr id)) cnt). *)
-
-    (* Definition wf_counters_find (ge: Senv.t) (cnts: cnt_ids) := *)
-    (*   forall id cnt, cnts ! id = Some cnt -> exists b_cnt, Senv.find_symbol ge cnt = Some b_cnt. *)
-
-    (* Definition wf_env_unique_blocks (e: env) := *)
-    (*   forall id1 id2 b1 ty1 b2 ty2, e ! id1 = Some (b1, ty1) -> e ! id2 = Some (b2, ty2) -> id1 <> id2 -> b1 <> b2. *)
-
-    (* Definition wf_env_mem (ge: Clight.genv) cp (e: env) (m: mem) := *)
-    (*   let eranges := blocks_of_env ge e in *)
-    (*   Forall (fun '(b, lo, hi) => Mem.range_perm m b lo hi Cur Freeable /\ Mem.can_access_block m b (Some cp)) eranges. *)
-
-    (* Lemma wf_env_conds_implies_free_list *)
-    (*       ge cp e m *)
-    (*       (WFEUB: wf_env_unique_blocks e) *)
-    (*       (WFEM: wf_env_mem ge cp e m) *)
-    (*   : *)
-    (*   exists m', Mem.free_list m (blocks_of_env ge e) cp = Some m'. *)
-    (* Proof. *)
-    (* Admitted. *)
 
     Definition not_inj_blks (j: meminj) (ebs: list block) :=
       Forall (fun b => j b = None) ebs.
@@ -1221,26 +1194,9 @@ Section Backtranslation.
         (IND: wf_c_cont ge m' ck')
       :
       wf_c_cont ge m ck.
-    (* Inductive wf_c_cont (ge: Clight.genv) (m: mem): (cont) -> Prop := *)
-    (* | wf_c_cont_nil *)
-    (*   : *)
-    (*   wf_c_cont ge m Kstop *)
-    (* | wf_c_cont_cons *)
-    (*     ck *)
-    (*     f e le s1 s2 ck' *)
-    (*     (WFEUB: wf_env_unique_blocks e) *)
-    (*     (WFEM: wf_env_mem ge (comp_of f) e m) *)
-    (*     (CK: ck = Kcall None f e le (Kloop1 s1 s2 ck')) *)
-    (*     (IND: wf_c_cont ge m ck') *)
-    (*   : *)
-    (*   wf_c_cont ge m ck. *)
 
     Definition wf_c_stmt (ge: Senv.t) cp cnts id tr stmt :=
       forall cnt, (cnts ! id = Some cnt) -> stmt = code_bundle_trace ge cp cnt (get_id_tr tr id).
-      (* match cnts ! id with *)
-      (* | Some cnt => stmt = code_bundle_trace ge cp cnt (get_id_tr tr id) *)
-      (* | _ => False *)
-      (* end. *)
 
     Definition wf_c_state (ge: Clight.genv) (tr ttr: bundle_trace) (cnts: cnt_ids) id (cst: Clight.state) :=
       match cst with
@@ -1252,14 +1208,6 @@ Section Backtranslation.
             (* (wf_env ge e /\ wf_env_unique_blocks e /\ wf_env_mem ge (comp_of f) e m_c) *)
       | _ => False
       end.
-    (* Definition wf_c_state (ge: Clight.genv) (tr ttr: bundle_trace) (cnts: cnt_ids) id (cst: Clight.state) := *)
-    (*   match cst with *)
-    (*   | State f stmt k_c e le m_c => *)
-    (*       wf_counters ge m_c tr cnts /\ wf_counters_find ge cnts /\ *)
-    (*         wf_c_cont ge m_c k_c /\ wf_c_stmt ge (comp_of f) cnts id ttr stmt /\ *)
-    (*         (wf_env ge e /\ wf_env_unique_blocks e /\ wf_env_mem ge (comp_of f) e m_c) *)
-    (*   | _ => False *)
-    (*   end. *)
 
 
 
@@ -1300,7 +1248,6 @@ Section Backtranslation.
         ck ik
         f e le cnt id ck'
         b ik'
-        (* (FUN: match_cur_fun ge b f id) *)
         (FUN: Genv.find_funct_ptr ge b = Some (Internal f))
         (ID: Genv.invert_symbol ge b = Some id)
         (CNT: cnts ! id = Some cnt)
@@ -1324,13 +1271,6 @@ Section Backtranslation.
 
   End INVS.
 
-
-  Section MEM.
-
-    Import Mem.
-
-
-  End MEM.
 
 
   Section PROOF.
@@ -2411,7 +2351,13 @@ Section Backtranslation.
             move WFC1 after FREEENV'.
             eapply wf_c_cont_wunchanged_on. eapply WFC1. apply WUFREE.
 
-          -
+          - move WFC2 after le_next. unfold wf_c_stmt in *. clear CUR_SWITCH_STAR.
+            i. rewrite CNTS_NEXT in H. inv H. rename cnt into cnt_next.
+            subst f_next. unfold comp_of. ss. apply match_symbs_code_bundle_trace.
+            destruct MS0 as (MS0 & _); auto.
+
+          - clear CUR_SWITCH_STAR. move 
+            
 
 
             TODO
