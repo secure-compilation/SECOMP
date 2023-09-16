@@ -1917,6 +1917,334 @@ Section Backtranslation.
       rewrite N at 2. rewrite ONE. rewrite <- Int64.add_unsigned. ss.
     Qed.
 
+    Lemma mem_free_list_impl1
+          blks m cp m_f
+          (FREE: Mem.free_list m blks cp = Some m_f)
+      :
+      Forall (fun '(b, lo, hi) => (Mem.range_perm m b lo hi Cur Freeable) /\ (Mem.can_access_block m b (Some cp))) blks.
+    Proof.
+      Local Opaque Mem.can_access_block.
+      revert_until blks. induction blks; ii; ss. des_ifs. ss. econs.
+      2:{ cut (Forall (fun '(b0, lo, hi) => Mem.range_perm m0 b0 lo hi Cur Freeable /\ Mem.can_access_block m0 b0 (Some cp)) blks); cycle 1.
+          { eapply IHblks; eauto. }
+          clear - Heq. intros FA. revert_until blks. induction blks; ii; ss.
+          destruct a as ((ba & loa) & hia). ss. inv FA. des; clarify. econs.
+          {
+            clear IHblks. split.
+            - unfold Mem.range_perm in *. ii. eapply Mem.perm_free_3. eauto. eauto.
+            - eapply Mem.free_can_access_block_inj_2; eauto.
+          }
+          eapply IHblks; eauto.
+      }
+      split.
+      - eapply Mem.free_range_perm; eauto.
+      - eapply Mem.free_can_access_block_1; eauto.
+        Local Transparent Mem.can_access_block.
+    Qed.
+
+    Lemma mem_free_list_impl2
+          blks m cp
+          (NR: list_norepet (map (fun x => fst (fst x)) blks))
+          (FA: Forall (fun '(b, lo, hi) => (Mem.range_perm m b lo hi Cur Freeable) /\ (Mem.can_access_block m b (Some cp))) blks)
+      :
+      exists m_f, (Mem.free_list m blks cp = Some m_f).
+    Proof.
+      Local Opaque Mem.can_access_block.
+      revert_until blks. induction blks; ii; ss; eauto.
+      inv FA. inv NR. des_ifs; des. 
+      2:{ exfalso. destruct (Mem.range_perm_free _ _ _ _ _ H1 H0) as (m0 & FREE). clarify. }
+      eapply IHblks; clear IHblks; eauto. ss. clear - H2 H3 Heq.
+      revert_until blks. induction blks; ii; ss. inv H2. des_ifs; ss. des. econs; eauto.
+      clear IHblks H4. apply Classical_Prop.not_or_and in H3. des. split.
+      - unfold Mem.range_perm in *. ii. hexploit Mem.perm_free_inv; eauto. ii. des; clarify.
+      - eapply Mem.free_can_access_block_inj_1; eauto.
+        Local Transparent Mem.can_access_block.
+    Qed.
+
+    Lemma list_map_norepet_rev
+          A (l: list A) B (f: A -> B)
+          (NR: list_norepet (map f l))
+      :
+      list_norepet l.
+    Proof.
+      revert NR. induction l; ii; ss. econs. inv NR. econs; eauto.
+      ii. apply H1; clear H1. apply in_map; auto.
+    Qed.
+
+    Lemma alloc_variables_wunchanged_on
+          ge cp e m params e' m'
+          (EA: alloc_variables ge cp e m params e' m')
+      :
+      wunchanged_on (fun b _ => Mem.valid_block m b) m m'.
+    Proof.
+      induction EA. apply wunchanged_on_refl.
+      eapply wunchanged_on_implies in IHEA.
+      { eapply wunchanged_on_trans. 2: eauto. eapply alloc_wunchanged_on. eauto. }
+      { ii. ss. }
+    Qed.
+
+    Lemma alloc_variables_exists_free_list
+          ge cp e m params e' m'
+          (EA: alloc_variables ge cp e m params e' m')
+          (ENV1: forall id1 id2 b1 b2 t1 t2, (id1 <> id2) -> (e ! id1 = Some (b1, t1)) -> (e ! id2 = Some (b2, t2)) -> (b1 <> b2))
+          (ENV2: forall id b t, (e ! id = Some (b, t)) -> (Mem.valid_block m b))
+          m_f0
+          (FREE: Mem.free_list m' (blocks_of_env ge e) cp = Some m_f0)
+      :
+      exists m_f, Mem.free_list m' (blocks_of_env ge e') cp = Some m_f.
+    Proof.
+      revert_until EA. induction EA; ii; ss; eauto.
+      assert (exists m_f0, Mem.free_list m2 (blocks_of_env ge (PTree.set id (b1, ty) e)) cp = Some m_f0); cycle 1.
+      { des. eapply IHEA; clear IHEA; eauto.
+        - i. destruct (Pos.eqb_spec id id1); clarify.
+          + rewrite PTree.gss in H2. rewrite PTree.gso in H3; auto. clarify. specialize (ENV2 _ _ _ H3).
+            ii. clarify. apply Mem.fresh_block_alloc in H. clarify.
+          + destruct (Pos.eqb_spec id id2); clarify.
+            * rewrite PTree.gso in H2; auto. rewrite PTree.gss in H3; auto. clarify. specialize (ENV2 _ _ _ H2).
+              ii. clarify. apply Mem.fresh_block_alloc in H. clarify.
+            * rewrite PTree.gso in H2, H3; auto. hexploit ENV1. 2: eapply H2. 2: eapply H3. all: auto.
+        - i. destruct (Pos.eqb_spec id id0); clarify.
+          + rewrite PTree.gss in H1. clarify. eapply Mem.valid_new_block; eauto.
+          + rewrite PTree.gso in H1; auto. specialize (ENV2 _ _ _ H1). eapply Mem.valid_block_alloc; eauto.
+      }
+      clear IHEA. eapply mem_free_list_impl2.
+      { unfold blocks_of_env. rewrite map_map. apply list_map_norepet.
+        { eapply list_map_norepet_rev. apply PTree.elements_keys_norepet. }
+        { i. unfold block_of_binding. des_ifs. ss. apply PTree.elements_complete in H0, H1.
+          destruct (Pos.eqb_spec id i); clarify.
+          - rewrite PTree.gss in H0. clarify. destruct (Pos.eqb_spec i i0); clarify.
+            + rewrite PTree.gss in H1; clarify.
+            + rewrite PTree.gso in H1; auto. specialize (ENV2 _ _ _ H1). ii; clarify.
+              apply Mem.fresh_block_alloc in H. clarify.
+          - rewrite PTree.gso in H0; auto. destruct (Pos.eqb_spec id i0); clarify.
+            + rewrite PTree.gss in H1. clarify. specialize (ENV2 _ _ _ H0). ii; clarify.
+              apply Mem.fresh_block_alloc in H. clarify.
+            + rewrite PTree.gso in H1; auto. eapply ENV1. 2: apply H0. 2: apply H1. ii; clarify.
+        }
+      }
+      { apply mem_free_list_impl1 in FREE. rewrite Forall_forall in *. i.
+        assert ((x = (b1, 0%Z, sizeof ge ty)) \/ (In x (blocks_of_env ge e))).
+        { clear - H0. unfold blocks_of_env in *. apply list_in_map_inv in H0. des.
+          destruct x0 as (xid & xb & xt). apply PTree.elements_complete in H1. clarify.
+          destruct (Pos.eqb_spec id xid); clarify.
+          - rewrite PTree.gss in H1. clarify. left; auto.
+          - rewrite PTree.gso in H1; auto. right. apply in_map. apply PTree.elements_correct. auto.
+        }
+        des.
+        - clarify. split.
+          + ii. eapply perm_wunchanged_on. eapply alloc_variables_wunchanged_on; eauto.
+            { ss. eapply Mem.valid_new_block; eauto. }
+            { eapply Mem.perm_alloc_2; eauto. }
+          + rewrite <- wunchanged_on_own. 2: eapply alloc_variables_wunchanged_on; eauto.
+            eapply Mem.owned_new_block; eauto. eapply Mem.valid_new_block; eauto.
+        - eapply FREE. eauto.
+      }
+    Qed.
+
+    Lemma assign_loc_wunchanged_on
+          ge cp ty m b ofs bit v m'
+          (AL: assign_loc ge cp ty m b ofs bit v m')
+      :
+      wunchanged_on (fun _ _ => True) m m'.
+    Proof.
+      inv AL.
+      - eapply store_wunchanged_on; eauto.
+      - eapply storebytes_wunchanged_on; eauto.
+      - inv H. eapply store_wunchanged_on; eauto.
+    Qed.
+
+    Lemma bind_parameters_wunchanged_on
+          (ge: genv) cp (e: env) m params vargs m'
+          (BIND: bind_parameters ge cp e m params vargs m')
+      :
+      wunchanged_on (fun _ _ => True) m m'.
+    Proof.
+      induction BIND. apply wunchanged_on_refl. eapply wunchanged_on_trans. 2: apply IHBIND.
+      eapply assign_loc_wunchanged_on; eauto.
+    Qed.
+
+    Lemma wunchanged_on_exists_free
+          m m'
+          (WU: wunchanged_on (fun b _ => Mem.valid_block m b) m m')
+          b lo hi cp m_f
+          (FREE: Mem.free m b lo hi cp = Some m_f)
+      :
+      exists m_f', Mem.free m' b lo hi cp = Some m_f'.
+    Proof.
+      hexploit Mem.free_range_perm; eauto. hexploit Mem.free_can_access_block_1; eauto. i.
+      hexploit Mem.range_perm_free.
+      3:{ intros (m0 & F). eexists; eapply F. }
+      - unfold Mem.range_perm in *. i. eapply perm_wunchanged_on. 3: eauto. eauto. ss. eapply Mem.perm_valid_block; eauto.
+      - rewrite <- wunchanged_on_own; eauto. eapply Mem.can_access_block_valid_block. eauto.
+    Qed.
+
+    Lemma assign_loc_perm
+          ge cp ty m b ofs bit v m'
+          (AL: assign_loc ge cp ty m b ofs bit v m')
+          b' o' C P
+          (PERM: Mem.perm m b' o' C P)
+      :
+      Mem.perm m' b' o' C P.
+    Proof.
+      inv AL.
+      - eapply Mem.perm_store_1; eauto.
+      - eapply Mem.perm_storebytes_1; eauto.
+      - inv H. eapply Mem.perm_store_1; eauto.
+    Qed.
+
+    Lemma assign_loc_own
+          ge cp ty m b ofs bit v m'
+          (AL: assign_loc ge cp ty m b ofs bit v m')
+          b' cp'
+          (OWN: Mem.can_access_block m b' cp')
+      :
+      Mem.can_access_block m' b' cp'.
+    Proof.
+      inv AL.
+      - rewrite <- Mem.store_can_access_block_inj; eauto.
+      - eapply Mem.storebytes_can_access_block_inj_1; eauto.
+      - inv H. rewrite <- Mem.store_can_access_block_inj; eauto.
+    Qed.
+
+    Lemma assign_loc_exists_free
+          ge cp ty m b ofs bit v m'
+          (AL: assign_loc ge cp ty m b ofs bit v m')
+          b' lo hi cp' m_f
+          (FREE: Mem.free m b' lo hi cp' = Some m_f)
+      :
+      exists m_f, Mem.free m' b' lo hi cp' = Some m_f.
+    Proof.
+      hexploit Mem.free_range_perm; eauto. hexploit Mem.free_can_access_block_1; eauto. i.
+      hexploit Mem.range_perm_free.
+      3:{ intros (m0 & F). eexists; eapply F. }
+      - unfold Mem.range_perm in *. i. eapply assign_loc_perm; eauto.
+      - eapply assign_loc_own; eauto.
+    Qed.
+
+    Lemma wunchanged_on_free_preserves
+          m m'
+          (WU : wunchanged_on (fun (b : block) (_ : Z) => Mem.valid_block m b) m m')
+          b lo hi cp m1 m1'
+          (FREE: Mem.free m b lo hi cp = Some m1)
+          (FREE': Mem.free m' b lo hi cp = Some m1')
+      :
+      wunchanged_on (fun (b0 : block) (_ : Z) => Mem.valid_block m1 b0) m1 m1'.
+    Proof.
+      inv WU. econs.
+      - rewrite (Mem.nextblock_free _ _ _ _ _ _ FREE). rewrite (Mem.nextblock_free _ _ _ _ _ _ FREE'). auto.
+      - i. assert (VB: Mem.valid_block m b0).
+        { eapply Mem.valid_block_free_2; eauto. }
+        split; i.
+        + pose proof (Mem.perm_free_3 _ _ _ _ _ _ FREE _ _ _ _ H1). rewrite wunchanged_on_perm in H2; auto.
+          eapply Mem.perm_free_inv in H2. 2: eauto. des; auto. clarify.
+          hexploit Mem.perm_free_2. eapply FREE. split; eauto. i. exfalso. apply H2. eapply H1.
+        + pose proof (Mem.perm_free_3 _ _ _ _ _ _ FREE' _ _ _ _ H1). rewrite <- wunchanged_on_perm in H2; auto.
+          eapply Mem.perm_free_inv in H2. 2: eauto. des; auto. clarify.
+          hexploit Mem.perm_free_2. eapply FREE'. split; eauto. i. exfalso. apply H2. eapply H1.
+      - i. assert (VB: Mem.valid_block m b0).
+        { eapply Mem.valid_block_free_2; eauto. }
+        split; i.
+        + eapply Mem.free_can_access_block_inj_1; eauto. apply wunchanged_on_own; auto.
+          eapply Mem.free_can_access_block_inj_2; eauto.
+        + eapply Mem.free_can_access_block_inj_1; eauto. apply wunchanged_on_own; auto.
+          eapply Mem.free_can_access_block_inj_2; eauto.
+    Qed.
+
+    Lemma wunchanged_on_exists_mem_free_list
+          m m'
+          (WU: wunchanged_on (fun b _ => Mem.valid_block m b) m m')
+          l cp m_f
+          (FREE: Mem.free_list m l cp = Some m_f)
+      :
+      exists m_f', Mem.free_list m' l cp = Some m_f'.
+    Proof.
+      move l after m. revert_until l. induction l; ii; ss; eauto. des_ifs.
+      2:{ exfalso. hexploit wunchanged_on_exists_free. 2: eapply Heq0. 2: auto.
+          2:{ intros. des. rewrite H in Heq; clarify. }
+          auto.
+      }
+      hexploit IHl. 2: eapply FREE.
+      { instantiate (1:=m0). eapply wunchanged_on_free_preserves; eauto. }
+      eauto.
+    Qed.
+
+    Lemma mem_free_list_wunchanged_on
+          x m l cp m'
+          (FL: Mem.free_list m l cp = Some m')
+          (WF: Forall (fun '(b, lo, hi) => (x <= b)%positive) l)
+      :
+      wunchanged_on (fun b _ => (b < x)%positive) m m'.
+    Proof.
+      move WF before x. revert_until WF. induction WF; i; ss. clarify. apply wunchanged_on_refl. des_ifs.
+      hexploit IHWF; eauto. i. eapply wunchanged_on_trans. 2: eauto.
+      eapply free_wunchanged_on; eauto.
+      i. lia.
+    Qed.
+
+    Lemma wunchanged_on_free_list_preserves
+          m m'
+          (WU: wunchanged_on (fun b _ => Mem.valid_block m b) m m')
+          l cp m_f m_f'
+          (FREE: Mem.free_list m l cp = Some m_f)
+          (FREE': Mem.free_list m' l cp = Some m_f')
+      :
+      wunchanged_on (fun b _ => Mem.valid_block m_f b) m_f m_f'.
+    Proof.
+      move l after m. revert_until l. induction l; ii; ss. clarify.
+      des_ifs. eapply IHl. 2,3: eauto. eapply wunchanged_on_free_preserves; eauto.
+    Qed.
+
+    Lemma mem_delta_apply_wf_wunchanged_on
+          ge cp d m m'
+          (APPD: mem_delta_apply_wf ge cp d (Some m) = Some m')
+      :
+      wunchanged_on (fun b _ => Mem.valid_block m b) m m'.
+    Proof.
+      revert_until d. induction d; ii; ss.
+      { cbn in APPD. clarify. apply wunchanged_on_refl. }
+      rewrite mem_delta_apply_wf_cons in APPD. des_ifs.
+      - hexploit mem_delta_apply_wf_some; eauto. intros (m0 & ST). rewrite ST in APPD.
+        specialize (IHd _ _ APPD). unfold mem_delta_apply_kind in ST. unfold mem_delta_apply_storev in ST. des_ifs.
+        ss. des_ifs. ss. eapply wunchanged_on_trans. eapply store_wunchanged_on. eapply ST.
+        eapply wunchanged_on_implies. eapply IHd. ss.
+      - eauto.
+    Qed.
+
+    Lemma alloc_variables_fresh_blocks
+          ge cp e m params e' m'
+          (EA: alloc_variables ge cp e m params e' m')
+          x
+          (X: (x <= Mem.nextblock m)%positive)
+          (FA: Forall (fun '(b0, _, _) => (x <= b0)%positive) (blocks_of_env ge e))
+      :
+      Forall (fun '(b0, _, _) => (x <= b0)%positive) (blocks_of_env ge e').
+    Proof.
+      revert_until EA. induction EA; ii; ss. specialize (IHEA x).
+      eapply IHEA; clear IHEA.
+      { erewrite Mem.nextblock_alloc; eauto. lia. }
+      apply Forall_forall. rewrite Forall_forall in FA. ii. specialize (FA x0). des_ifs.
+      unfold blocks_of_env in H0. apply list_in_map_inv in H0. des. destruct x0 as (xid & xb & xt).
+      apply PTree.elements_complete in H1. destruct (Pos.eqb_spec id xid); clarify.
+      - rewrite PTree.gss in H1. ss. clarify. erewrite Mem.alloc_result. 2: eauto. auto.
+      - rewrite PTree.gso in H1; auto. apply FA. rewrite H0. unfold blocks_of_env. apply in_map.
+        apply PTree.elements_correct; auto.
+    Qed.
+
+    Lemma wf_c_cont_wunchanged_on
+          ge m k
+          (WFC: wf_c_cont ge m k)
+          m'
+          (WU: wunchanged_on (fun b _ => Mem.valid_block m b) m m')
+      :
+      wf_c_cont ge m' k.
+    Proof.
+      revert_until WFC. induction WFC; ii. econs.
+      clarify.
+      hexploit wunchanged_on_exists_mem_free_list. eapply WU. eapply FREE. intros (m_f & FREE2).
+      econs. 1,2,3: eauto. eapply FREE2. eapply IHWFC.
+      eapply wunchanged_on_free_list_preserves. eapply WU. all: eauto.
+    Qed.
+
 
 
     Lemma ir_to_clight_step
@@ -2062,359 +2390,25 @@ Section Backtranslation.
                 rewrite WFC8. auto.
 
           - clear CUR_SWITCH_STAR. move WFC1 after le_next. move WFC4 after WFC1. move FREEENV after WFC4.
-
-            Lemma mem_free_list_impl1
-                  blks m cp m_f
-                  (FREE: Mem.free_list m blks cp = Some m_f)
-              :
-              Forall (fun '(b, lo, hi) => (Mem.range_perm m b lo hi Cur Freeable) /\ (Mem.can_access_block m b (Some cp))) blks.
-            Proof.
-              Local Opaque Mem.can_access_block.
-              revert_until blks. induction blks; ii; ss. des_ifs. ss. econs.
-              2:{ cut (Forall (fun '(b0, lo, hi) => Mem.range_perm m0 b0 lo hi Cur Freeable /\ Mem.can_access_block m0 b0 (Some cp)) blks); cycle 1.
-                  { eapply IHblks; eauto. }
-                  clear - Heq. intros FA. revert_until blks. induction blks; ii; ss.
-                  destruct a as ((ba & loa) & hia). ss. inv FA. des; clarify. econs.
-                  {
-                    clear IHblks. split.
-                    - unfold Mem.range_perm in *. ii. eapply Mem.perm_free_3. eauto. eauto.
-                    - eapply Mem.free_can_access_block_inj_2; eauto.
-                  }
-                  eapply IHblks; eauto.
-              }
-              split.
-              - eapply Mem.free_range_perm; eauto.
-              - eapply Mem.free_can_access_block_1; eauto.
-                Local Transparent Mem.can_access_block.
-            Qed.
-
-            Lemma mem_free_list_impl2
-                  blks m cp
-                  (NR: list_norepet (map (fun x => fst (fst x)) blks))
-                  (FA: Forall (fun '(b, lo, hi) => (Mem.range_perm m b lo hi Cur Freeable) /\ (Mem.can_access_block m b (Some cp))) blks)
-              :
-              exists m_f, (Mem.free_list m blks cp = Some m_f).
-            Proof.
-              Local Opaque Mem.can_access_block.
-              revert_until blks. induction blks; ii; ss; eauto.
-              inv FA. inv NR. des_ifs; des. 
-              2:{ exfalso. destruct (Mem.range_perm_free _ _ _ _ _ H1 H0) as (m0 & FREE). clarify. }
-              eapply IHblks; clear IHblks; eauto. ss. clear - H2 H3 Heq.
-              revert_until blks. induction blks; ii; ss. inv H2. des_ifs; ss. des. econs; eauto.
-              clear IHblks H4. apply Classical_Prop.not_or_and in H3. des. split.
-              - unfold Mem.range_perm in *. ii. hexploit Mem.perm_free_inv; eauto. ii. des; clarify.
-              - eapply Mem.free_can_access_block_inj_1; eauto.
-                Local Transparent Mem.can_access_block.
-            Qed.
-
-            Lemma list_map_norepet_rev
-                  A (l: list A) B (f: A -> B)
-                  (NR: list_norepet (map f l))
-              :
-              list_norepet l.
-            Proof.
-              revert NR. induction l; ii; ss. econs. inv NR. econs; eauto.
-              ii. apply H1; clear H1. apply in_map; auto.
-            Qed.
-
-            Lemma alloc_variables_wunchanged_on
-                  ge cp e m params e' m'
-                  (EA: alloc_variables ge cp e m params e' m')
-              :
-              wunchanged_on (fun b _ => Mem.valid_block m b) m m'.
-            Proof.
-              induction EA. apply wunchanged_on_refl.
-              eapply wunchanged_on_implies in IHEA.
-              { eapply wunchanged_on_trans. 2: eauto. eapply alloc_wunchanged_on. eauto. }
-              { ii. ss. }
-            Qed.
-
-            Lemma alloc_variables_exists_free_list
-                  ge cp e m params e' m'
-                  (EA: alloc_variables ge cp e m params e' m')
-                  (ENV1: forall id1 id2 b1 b2 t1 t2, (id1 <> id2) -> (e ! id1 = Some (b1, t1)) -> (e ! id2 = Some (b2, t2)) -> (b1 <> b2))
-                  (ENV2: forall id b t, (e ! id = Some (b, t)) -> (Mem.valid_block m b))
-                  m_f0
-                  (FREE: Mem.free_list m' (blocks_of_env ge e) cp = Some m_f0)
-              :
-              exists m_f, Mem.free_list m' (blocks_of_env ge e') cp = Some m_f.
-            Proof.
-              revert_until EA. induction EA; ii; ss; eauto.
-              assert (exists m_f0, Mem.free_list m2 (blocks_of_env ge (PTree.set id (b1, ty) e)) cp = Some m_f0); cycle 1.
-              { des. eapply IHEA; clear IHEA; eauto.
-                - i. destruct (Pos.eqb_spec id id1); clarify.
-                  + rewrite PTree.gss in H2. rewrite PTree.gso in H3; auto. clarify. specialize (ENV2 _ _ _ H3).
-                    ii. clarify. apply Mem.fresh_block_alloc in H. clarify.
-                  + destruct (Pos.eqb_spec id id2); clarify.
-                    * rewrite PTree.gso in H2; auto. rewrite PTree.gss in H3; auto. clarify. specialize (ENV2 _ _ _ H2).
-                      ii. clarify. apply Mem.fresh_block_alloc in H. clarify.
-                    * rewrite PTree.gso in H2, H3; auto. hexploit ENV1. 2: eapply H2. 2: eapply H3. all: auto.
-                - i. destruct (Pos.eqb_spec id id0); clarify.
-                  + rewrite PTree.gss in H1. clarify. eapply Mem.valid_new_block; eauto.
-                  + rewrite PTree.gso in H1; auto. specialize (ENV2 _ _ _ H1). eapply Mem.valid_block_alloc; eauto.
-              }
-              clear IHEA. eapply mem_free_list_impl2.
-              { unfold blocks_of_env. rewrite map_map. apply list_map_norepet.
-                { eapply list_map_norepet_rev. apply PTree.elements_keys_norepet. }
-                { i. unfold block_of_binding. des_ifs. ss. apply PTree.elements_complete in H0, H1.
-                  destruct (Pos.eqb_spec id i); clarify.
-                  - rewrite PTree.gss in H0. clarify. destruct (Pos.eqb_spec i i0); clarify.
-                    + rewrite PTree.gss in H1; clarify.
-                    + rewrite PTree.gso in H1; auto. specialize (ENV2 _ _ _ H1). ii; clarify.
-                      apply Mem.fresh_block_alloc in H. clarify.
-                  - rewrite PTree.gso in H0; auto. destruct (Pos.eqb_spec id i0); clarify.
-                    + rewrite PTree.gss in H1. clarify. specialize (ENV2 _ _ _ H0). ii; clarify.
-                      apply Mem.fresh_block_alloc in H. clarify.
-                    + rewrite PTree.gso in H1; auto. eapply ENV1. 2: apply H0. 2: apply H1. ii; clarify.
-                }
-              }
-              { apply mem_free_list_impl1 in FREE. rewrite Forall_forall in *. i.
-                assert ((x = (b1, 0%Z, sizeof ge ty)) \/ (In x (blocks_of_env ge e))).
-                { clear - H0. unfold blocks_of_env in *. apply list_in_map_inv in H0. des.
-                  destruct x0 as (xid & xb & xt). apply PTree.elements_complete in H1. clarify.
-                  destruct (Pos.eqb_spec id xid); clarify.
-                  - rewrite PTree.gss in H1. clarify. left; auto.
-                  - rewrite PTree.gso in H1; auto. right. apply in_map. apply PTree.elements_correct. auto.
-                }
-                des.
-                - clarify. split.
-                  + ii. eapply perm_wunchanged_on. eapply alloc_variables_wunchanged_on; eauto.
-                    { ss. eapply Mem.valid_new_block; eauto. }
-                    { eapply Mem.perm_alloc_2; eauto. }
-                  + rewrite <- wunchanged_on_own. 2: eapply alloc_variables_wunchanged_on; eauto.
-                    eapply Mem.owned_new_block; eauto. eapply Mem.valid_new_block; eauto.
-                - eapply FREE. eauto.
-              }
-            Qed.
-
             hexploit alloc_variables_exists_free_list. eapply ENV_ALLOC. ss. ss. ss. intros; des.
-
-            Lemma assign_loc_wunchanged_on
-                  ge cp ty m b ofs bit v m'
-                  (AL: assign_loc ge cp ty m b ofs bit v m')
-              :
-              wunchanged_on (fun _ _ => True) m m'.
-            Proof.
-              inv AL.
-              - eapply store_wunchanged_on; eauto.
-              - eapply storebytes_wunchanged_on; eauto.
-              - inv H. eapply store_wunchanged_on; eauto.
-            Qed.
-
-            Lemma bind_parameters_wunchanged_on
-                  (ge: genv) cp (e: env) m params vargs m'
-                  (BIND: bind_parameters ge cp e m params vargs m')
-              :
-              wunchanged_on (fun _ _ => True) m m'.
-            Proof.
-              induction BIND. apply wunchanged_on_refl. eapply wunchanged_on_trans. 2: apply IHBIND.
-              eapply assign_loc_wunchanged_on; eauto.
-            Qed.
-
-            Lemma wunchanged_on_exists_free
-                  m m'
-                  (WU: wunchanged_on (fun b _ => Mem.valid_block m b) m m')
-                  b lo hi cp m_f
-                  (FREE: Mem.free m b lo hi cp = Some m_f)
-              :
-              exists m_f', Mem.free m' b lo hi cp = Some m_f'.
-            Proof.
-              hexploit Mem.free_range_perm; eauto. hexploit Mem.free_can_access_block_1; eauto. i.
-              hexploit Mem.range_perm_free.
-              3:{ intros (m0 & F). eexists; eapply F. }
-              - unfold Mem.range_perm in *. i. eapply perm_wunchanged_on. 3: eauto. eauto. ss. eapply Mem.perm_valid_block; eauto.
-              - rewrite <- wunchanged_on_own; eauto. eapply Mem.can_access_block_valid_block. eauto.
-            Qed.
-
-            Lemma assign_loc_perm
-                  ge cp ty m b ofs bit v m'
-                  (AL: assign_loc ge cp ty m b ofs bit v m')
-                  b' o' C P
-                  (PERM: Mem.perm m b' o' C P)
-              :
-              Mem.perm m' b' o' C P.
-            Proof.
-              inv AL.
-              - eapply Mem.perm_store_1; eauto.
-              - eapply Mem.perm_storebytes_1; eauto.
-              - inv H. eapply Mem.perm_store_1; eauto.
-            Qed.
-
-            Lemma assign_loc_own
-                  ge cp ty m b ofs bit v m'
-                  (AL: assign_loc ge cp ty m b ofs bit v m')
-                  b' cp'
-                  (OWN: Mem.can_access_block m b' cp')
-              :
-              Mem.can_access_block m' b' cp'.
-            Proof.
-              inv AL.
-              - rewrite <- Mem.store_can_access_block_inj; eauto.
-              - eapply Mem.storebytes_can_access_block_inj_1; eauto.
-              - inv H. rewrite <- Mem.store_can_access_block_inj; eauto.
-            Qed.
-
-            Lemma assign_loc_exists_free
-                  ge cp ty m b ofs bit v m'
-                  (AL: assign_loc ge cp ty m b ofs bit v m')
-                  b' lo hi cp' m_f
-                  (FREE: Mem.free m b' lo hi cp' = Some m_f)
-              :
-              exists m_f, Mem.free m' b' lo hi cp' = Some m_f.
-            Proof.
-              hexploit Mem.free_range_perm; eauto. hexploit Mem.free_can_access_block_1; eauto. i.
-              hexploit Mem.range_perm_free.
-              3:{ intros (m0 & F). eexists; eapply F. }
-              - unfold Mem.range_perm in *. i. eapply assign_loc_perm; eauto.
-              - eapply assign_loc_own; eauto.
-            Qed.
-
-            Lemma wunchanged_on_free_preserves
-                  m m'
-                  (WU : wunchanged_on (fun (b : block) (_ : Z) => Mem.valid_block m b) m m')
-                  b lo hi cp m1 m1'
-                  (FREE: Mem.free m b lo hi cp = Some m1)
-                  (FREE': Mem.free m' b lo hi cp = Some m1')
-              :
-              wunchanged_on (fun (b0 : block) (_ : Z) => Mem.valid_block m1 b0) m1 m1'.
-            Proof.
-              inv WU. econs.
-              - rewrite (Mem.nextblock_free _ _ _ _ _ _ FREE). rewrite (Mem.nextblock_free _ _ _ _ _ _ FREE'). auto.
-              - i. assert (VB: Mem.valid_block m b0).
-                { eapply Mem.valid_block_free_2; eauto. }
-                split; i.
-                + pose proof (Mem.perm_free_3 _ _ _ _ _ _ FREE _ _ _ _ H1). rewrite wunchanged_on_perm in H2; auto.
-                  eapply Mem.perm_free_inv in H2. 2: eauto. des; auto. clarify.
-                  hexploit Mem.perm_free_2. eapply FREE. split; eauto. i. exfalso. apply H2. eapply H1.
-                + pose proof (Mem.perm_free_3 _ _ _ _ _ _ FREE' _ _ _ _ H1). rewrite <- wunchanged_on_perm in H2; auto.
-                  eapply Mem.perm_free_inv in H2. 2: eauto. des; auto. clarify.
-                  hexploit Mem.perm_free_2. eapply FREE'. split; eauto. i. exfalso. apply H2. eapply H1.
-              - i. assert (VB: Mem.valid_block m b0).
-                { eapply Mem.valid_block_free_2; eauto. }
-                split; i.
-                + eapply Mem.free_can_access_block_inj_1; eauto. apply wunchanged_on_own; auto.
-                  eapply Mem.free_can_access_block_inj_2; eauto.
-                + eapply Mem.free_can_access_block_inj_1; eauto. apply wunchanged_on_own; auto.
-                  eapply Mem.free_can_access_block_inj_2; eauto.
-            Qed.
-
-            Lemma wunchanged_on_exists_mem_free_list
-                  m m'
-                  (WU: wunchanged_on (fun b _ => Mem.valid_block m b) m m')
-                  l cp m_f
-                  (FREE: Mem.free_list m l cp = Some m_f)
-              :
-              exists m_f', Mem.free_list m' l cp = Some m_f'.
-            Proof.
-              move l after m. revert_until l. induction l; ii; ss; eauto. des_ifs.
-              2:{ exfalso. hexploit wunchanged_on_exists_free. 2: eapply Heq0. 2: auto.
-                  2:{ intros. des. rewrite H in Heq; clarify. }
-                  auto.
-              }
-              hexploit IHl. 2: eapply FREE.
-              { instantiate (1:=m0). eapply wunchanged_on_free_preserves; eauto. }
-              eauto.
-            Qed.
-
             hexploit wunchanged_on_exists_mem_free_list. 2: eapply H.
             { eapply wunchanged_on_implies. eapply bind_parameters_wunchanged_on. apply ENV_BIND. ss. }
             intros (m_f' & FREE).
-
-            Lemma mem_free_list_wunchanged_on
-                  x m l cp m'
-                  (FL: Mem.free_list m l cp = Some m')
-                  (WF: Forall (fun '(b, lo, hi) => (x <= b)%positive) l)
-              :
-              wunchanged_on (fun b _ => (b < x)%positive) m m'.
-            Proof.
-              move WF before x. revert_until WF. induction WF; i; ss. clarify. apply wunchanged_on_refl. des_ifs.
-              hexploit IHWF; eauto. i. eapply wunchanged_on_trans. 2: eauto.
-              eapply free_wunchanged_on; eauto.
-              i. lia.
-            Qed.
-
-            Lemma wunchanged_on_free_list_preserves
-                  m m'
-                  (WU: wunchanged_on (fun b _ => Mem.valid_block m b) m m')
-                  l cp m_f m_f'
-                  (FREE: Mem.free_list m l cp = Some m_f)
-                  (FREE': Mem.free_list m' l cp = Some m_f')
-              :
-              wunchanged_on (fun b _ => Mem.valid_block m_f b) m_f m_f'.
-            Proof.
-              move l after m. revert_until l. induction l; ii; ss. clarify.
-              des_ifs. eapply IHl. 2,3: eauto. eapply wunchanged_on_free_preserves; eauto.
-            Qed.
-
-            Lemma mem_delta_apply_wf_wunchanged_on
-                  ge cp d m m'
-                  (APPD: mem_delta_apply_wf ge cp d (Some m) = Some m')
-              :
-              wunchanged_on (fun b _ => Mem.valid_block m b) m m'.
-            Proof.
-              revert_until d. induction d; ii; ss.
-              { cbn in APPD. clarify. apply wunchanged_on_refl. }
-              rewrite mem_delta_apply_wf_cons in APPD. des_ifs.
-              - hexploit mem_delta_apply_wf_some; eauto. intros (m0 & ST). rewrite ST in APPD.
-                specialize (IHd _ _ APPD). unfold mem_delta_apply_kind in ST. unfold mem_delta_apply_storev in ST. des_ifs.
-                ss. des_ifs. ss. eapply wunchanged_on_trans. eapply store_wunchanged_on. eapply ST.
-                eapply wunchanged_on_implies. eapply IHd. ss.
-              - eauto.
-            Qed.
-
             assert (WU: wunchanged_on (fun b _ => Mem.valid_block m_c b) m_c m_f').
             { eapply wunchanged_on_trans. eapply store_wunchanged_on. eapply CNT_CUR_STORE.
               eapply wunchanged_on_trans. eapply wunchanged_on_implies. eapply mem_delta_apply_wf_wunchanged_on. eapply DELTA_C. ss.
               eapply wunchanged_on_trans. eapply wunchanged_on_implies. eapply alloc_variables_wunchanged_on. eapply ENV_ALLOC. ss.
               eapply wunchanged_on_trans. eapply wunchanged_on_implies. eapply bind_parameters_wunchanged_on. eapply ENV_BIND. ss.
               eapply mem_free_list_wunchanged_on. eapply FREE.
-
-              Lemma alloc_variables_fresh_blocks
-                    ge cp e m params e' m'
-                    (EA: alloc_variables ge cp e m params e' m')
-                    x
-                    (X: (x <= Mem.nextblock m)%positive)
-                    (FA: Forall (fun '(b0, _, _) => (x <= b0)%positive) (blocks_of_env ge e))
-                :
-                Forall (fun '(b0, _, _) => (x <= b0)%positive) (blocks_of_env ge e').
-              Proof.
-                revert_until EA. induction EA; ii; ss. specialize (IHEA x).
-                eapply IHEA; clear IHEA.
-                { erewrite Mem.nextblock_alloc; eauto. lia. }
-                apply Forall_forall. rewrite Forall_forall in FA. ii. specialize (FA x0). des_ifs.
-                unfold blocks_of_env in H0. apply list_in_map_inv in H0. des. destruct x0 as (xid & xb & xt).
-                apply PTree.elements_complete in H1. destruct (Pos.eqb_spec id xid); clarify.
-                - rewrite PTree.gss in H1. ss. clarify. erewrite Mem.alloc_result. 2: eauto. auto.
-                - rewrite PTree.gso in H1; auto. apply FA. rewrite H0. unfold blocks_of_env. apply in_map.
-                  apply PTree.elements_correct; auto.
-              Qed.
-
               eapply alloc_variables_fresh_blocks. eapply ENV_ALLOC.
               2:{ unfold blocks_of_env, empty_env. ss. }
               hexploit mem_delta_apply_wf_wunchanged_on. eapply DELTA_C. i. eapply wunchanged_on_nextblock in H0.
               etransitivity. 2: eapply H0. erewrite <- Mem.nextblock_store. 2: eapply CNT_CUR_STORE. lia.
             }
-
             hexploit wunchanged_on_exists_mem_free_list. eapply WU. eapply FREEENV. intros (m_freeenv' & FREEENV').
             exists m_f'. splits; auto. econs. 1,2,3: eauto. eapply FREEENV'.
             hexploit wunchanged_on_free_list_preserves. eapply WU. eapply FREEENV. eapply FREEENV'. intros WUFREE.
             move WFC1 after FREEENV'.
-
-            Lemma wf_c_cont_wunchanged_on
-                  ge m k
-                  (WFC: wf_c_cont ge m k)
-                  m'
-                  (WU: wunchanged_on (fun b _ => Mem.valid_block m b) m m')
-              :
-              wf_c_cont ge m' k.
-            Proof.
-              revert_until WFC. induction WFC; ii. econs.
-              clarify.
-              hexploit wunchanged_on_exists_mem_free_list. eapply WU. eapply FREE. intros (m_f & FREE2).
-              econs. 1,2,3: eauto. eapply FREE2. eapply IHWFC.
-              eapply wunchanged_on_free_list_preserves. eapply WU. all: eauto.
-            Qed.
-
             eapply wf_c_cont_wunchanged_on. eapply WFC1. apply WUFREE.
 
           -
