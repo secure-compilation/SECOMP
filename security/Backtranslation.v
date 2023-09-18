@@ -1211,8 +1211,8 @@ Section Backtranslation.
             (Genv.find_symbol ge id = Some b) -> (Genv.find_funct_ptr ge b = Some (Internal f)) ->
             (exists cnt, (cnts ! id = Some cnt) /\ (wf_counter ge m (comp_of f) (length (get_id_tr tr id)) cnt))).
 
-    Definition not_inj_blks (j: meminj) (ebs: list block) :=
-      Forall (fun b => j b = None) ebs.
+    Definition not_global_blks (ge: Senv.t) (ebs: list block) :=
+      Forall (fun b => Senv.invert_symbol ge b = None) ebs.
 
     Definition blocks_of_env2 ge e : list block := (map (fun x => fst (fst x)) (blocks_of_env ge e)).
 
@@ -1225,7 +1225,7 @@ Section Backtranslation.
         m ck
         f e le s1 s2 m' ck'
         (WFENV: wf_env ge e)
-        (NINJ: not_inj_blks (meminj_public ge) (blocks_of_env2 ge e))
+        (NINJ: not_global_blks (ge) (blocks_of_env2 ge e))
         (CK: ck = Kcall None f e le (Kloop1 s1 s2 ck'))
         (FREE: Mem.free_list m (blocks_of_env ge e) (comp_of f) = Some m')
         (IND: wf_c_cont ge m' ck')
@@ -1235,16 +1235,29 @@ Section Backtranslation.
     Definition wf_c_stmt (ge: Senv.t) cp cnts id tr stmt :=
       forall cnt, (cnts ! id = Some cnt) -> stmt = code_bundle_trace ge cp cnt (get_id_tr tr id).
 
+    Definition wf_c_nb (ge: Clight.genv) (m: mem) :=
+      (Genv.genv_next ge <= Mem.nextblock m)%positive.
+
     Definition wf_c_state (ge: Clight.genv) (tr ttr: bundle_trace) (cnts: cnt_ids) id (cst: Clight.state) :=
       match cst with
       | State f stmt k_c e le m_c =>
           wf_counters ge m_c tr cnts /\
             (exists m_c', Mem.free_list m_c (blocks_of_env ge e) (comp_of f) = Some m_c' /\ wf_c_cont ge m_c' k_c) /\
             wf_c_stmt ge (comp_of f) cnts id ttr stmt /\
-            (wf_env ge e /\ (not_inj_blks (meminj_public ge) (blocks_of_env2 ge e)))
+            (wf_env ge e /\ (not_global_blks (ge) (blocks_of_env2 ge e)) /\ (wf_c_nb ge m_c))
             (* (wf_env ge e /\ wf_env_unique_blocks e /\ wf_env_mem ge (comp_of f) e m_c) *)
       | _ => False
       end.
+
+    Definition not_inj_blks (j: meminj) (ebs: list block) :=
+      Forall (fun b => j b = None) ebs.
+
+    Lemma not_global_is_not_inj_bloks
+          ge l
+          (NGB: not_global_blks ge l)
+      :
+      not_inj_blks (meminj_public ge) l.
+    Proof. induction NGB. ss. econs; eauto. unfold meminj_public. des_ifs. Qed.
 
 
 
@@ -2178,8 +2191,9 @@ Section Backtranslation.
     Lemma mem_delta_apply_wf_wunchanged_on
           ge cp d m m'
           (APPD: mem_delta_apply_wf ge cp d (Some m) = Some m')
+          P
       :
-      wunchanged_on (fun b _ => Mem.valid_block m b) m m'.
+      wunchanged_on P m m'.
     Proof.
       revert_until d. induction d; ii; ss.
       { cbn in APPD. clarify. apply wunchanged_on_refl. }
@@ -2189,6 +2203,7 @@ Section Backtranslation.
         ss. des_ifs. ss. eapply wunchanged_on_trans. eapply store_wunchanged_on. eapply ST.
         eapply wunchanged_on_implies. eapply IHd. ss.
       - eauto.
+        Unshelve. all: exact 0%nat.
     Qed.
 
     Lemma alloc_variables_fresh_blocks
@@ -2289,6 +2304,13 @@ Section Backtranslation.
       apply NIB. eapply (in_map (fun x : ident * (block * type) => fst (fst (block_of_binding ge x)))) in H. ss.
     Qed.
 
+    Lemma not_global_blks_get_env
+          (ge: genv) e
+          (NIB: not_global_blks ge (blocks_of_env2 ge e))
+      :
+      forall id b t, e ! id = Some (b, t) -> (meminj_public ge) b = None.
+    Proof. eapply not_inj_blks_get_env. eapply not_global_is_not_inj_bloks. eauto. Qed.
+
     Lemma meminj_public_same_block
           ge
       :
@@ -2330,7 +2352,7 @@ Section Backtranslation.
       Set Nested Proofs Allowed.
 
       unfold wf_c_state in WFC. des_ifs. rename s into stmt, k into k_c, m into m_c.
-      destruct WFC as ((CNT_INJ & WFC0) & (m_freeenv & FREEENV & WFC1) & WFC2 & WFC3 & WFC4).
+      destruct WFC as ((CNT_INJ & WFC0) & (m_freeenv & FREEENV & WFC1) & WFC2 & WFC3 & WFC4 & WFNB).
       unfold match_state in MS. des_ifs. rename i into k_i, b into cur, m into m_i.
       destruct MS as (MS0 & MS1 & MS2 & MS3 & MS4 & MS5).
       move STEP after WFC4. inv STEP.
@@ -2410,26 +2432,47 @@ Section Backtranslation.
                    (Kcall None f e le (Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge_c cnt_cur (comp_of f) (get_id_tr ttr id_cur))) Sskip k0))
                    e_next le_next m_c_next) as cst2.
 
-        assert (ENV_NINJ: not_inj_blks (meminj_public ge_c) (blocks_of_env2 ge_c e_next)).
+        assert (ENV_NGLOB: not_global_blks (ge_c) (blocks_of_env2 ge_c e_next)).
         { clear CUR_SWITCH_STAR. move MS5 after le_next. destruct MS5 as (MP1 & MP2 & MP3).
           apply Forall_forall. i.
           unfold blocks_of_env2, blocks_of_env in H. rewrite map_map in H.
           apply list_in_map_inv in H. des. destruct x0 as (xid & xb & xt).
-          apply PTree.elements_complete in H0.
-          unfold meminj_public. des_ifs. exfalso. simpl in Heq.
-          move MS1 after Heq0. destruct MS1 as (MM1 & MM2 & MM3).
-          erewrite match_symbs_meminj_public in MEMINJ_CNT.
-          2:{ destruct MS0 as (MS0 & _). apply MS0. }
-          hexploit Mem.valid_block_inject_2. 2: eapply MEMINJ_CNT.
-          { unfold meminj_public. setoid_rewrite Heq. rewrite Heq0. eauto. }
-          eapply alloc_variables_one_fresh_block. eapply ENV_ALLOC.
-          { rewrite app_nil_r. eapply MP1. eauto. }
-          ss. eapply H0.
+          apply PTree.elements_complete in H0. move WFNB after H0.
+          destruct (Senv.invert_symbol ge_c x) eqn:CASES; auto. exfalso.
+          unfold wf_c_nb in WFNB. apply Senv.invert_find_symbol in CASES. apply Senv.find_symbol_below in CASES.
+          hexploit alloc_variables_one_fresh_block. eapply ENV_ALLOC.
+          { ss. rewrite app_nil_r. eapply MP1. eauto. }
+          { ss. }
+          eapply H0. intros. apply H1; clear H1. ss. clarify. unfold Mem.valid_block.
+          eapply mem_delta_apply_wf_wunchanged_on in DELTA_C. eapply store_wunchanged_on in CNT_CUR_STORE.
+          eapply wunchanged_on_nextblock in CNT_CUR_STORE, DELTA_C. revert_until H0. clear; i.
+          eapply Plt_Ple_trans. eapply CASES. etransitivity. eapply WFNB. etransitivity; eauto.
+          Unshelve. all: exact (fun _ _ => True).
         }
 
+        assert (ENV_NINJ: not_inj_blks (meminj_public ge_c) (blocks_of_env2 ge_c e_next)).
+        { eapply not_global_is_not_inj_bloks. auto. }
+
+        (* assert (ENV_NINJ: not_inj_blks (meminj_public ge_c) (blocks_of_env2 ge_c e_next)). *)
+        (* { clear CUR_SWITCH_STAR. move MS5 after le_next. destruct MS5 as (MP1 & MP2 & MP3). *)
+        (*   apply Forall_forall. i. *)
+        (*   unfold blocks_of_env2, blocks_of_env in H. rewrite map_map in H. *)
+        (*   apply list_in_map_inv in H. des. destruct x0 as (xid & xb & xt). *)
+        (*   apply PTree.elements_complete in H0. *)
+        (*   unfold meminj_public. des_ifs. exfalso. simpl in Heq. *)
+        (*   move MS1 after Heq0. destruct MS1 as (MM1 & MM2 & MM3). *)
+        (*   erewrite match_symbs_meminj_public in MEMINJ_CNT. *)
+        (*   2:{ destruct MS0 as (MS0 & _). apply MS0. } *)
+        (*   hexploit Mem.valid_block_inject_2. 2: eapply MEMINJ_CNT. *)
+        (*   { unfold meminj_public. setoid_rewrite Heq. rewrite Heq0. eauto. } *)
+        (*   eapply alloc_variables_one_fresh_block. eapply ENV_ALLOC. *)
+        (*   { rewrite app_nil_r. eapply MP1. eauto. } *)
+        (*   ss. eapply H0. *)
+        (* } *)
+
         assert (WFC_NEXT: wf_c_state ge_c (pretr ++ [(id_cur, Bundle_call tr id_next evargs (fn_sig fi_next) d)]) ttr cnts id_next cst2).
-        { subst cst2; ss. splits.
-          - unfold wf_counters. split. auto.
+        { subst cst2; ss. splits; auto.
+          - unfold wf_counters. splits; auto.
             clear CUR_SWITCH_STAR. move WFC0 after le_next.
             ii. specialize (WFC0 _ _ _ H H0). des. exists cnt. splits; auto.
             unfold wf_counter in WFC5. des. unfold wf_counter. splits; auto.
@@ -2501,7 +2544,12 @@ Section Backtranslation.
             eapply alloc_variables_wf_params_of_symb. eapply ENV_ALLOC. eapply MP3.
             rewrite app_nil_r. apply PARS_NEXT.
 
-          - apply ENV_NINJ.
+          - clear CUR_SWITCH_STAR. move WFNB after ENV_NINJ. unfold wf_c_nb in *.
+            eapply bind_parameters_wunchanged_on in ENV_BIND. eapply alloc_variables_wunchanged_on in ENV_ALLOC.
+            eapply mem_delta_apply_wf_wunchanged_on in DELTA_C. eapply store_wunchanged_on in CNT_CUR_STORE.
+            eapply wunchanged_on_nextblock in CNT_CUR_STORE, DELTA_C, ENV_ALLOC, ENV_BIND.
+            clear - CNT_CUR_STORE DELTA_C ENV_ALLOC ENV_BIND WFNB.
+            do 5 (etransitivity; eauto).
         }
 
         assert (MS_NEXT: match_state ge_i ge_c (meminj_public ge_i) ttr cnts pars id_next (Some (b, m2, ir_cont cur :: k_i)) cst2).
@@ -2608,17 +2656,20 @@ Section Backtranslation.
         assert (FIND_FUN_C: Genv.find_funct_ptr ge_c cur = Some (Internal f)).
         { destruct MS2 as (MFUN0 & MFUN1). auto. }
 
-        TODO
-
         exploit WFC0. eapply FIND_CUR_C. eapply FIND_FUN_C. intros (cnt_cur & CNTS_CUR & WF_CNT_CUR).
-        set (Kcall None f e le (Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge_c cnt_cur (comp_of f) (get_id_tr ttr id_cur))) Sskip k0)) as kc_next.
-        assert (CUR_TR: get_id_tr ttr id_cur = (get_id_tr pretr id_cur) ++ (id_cur, Bundle_call tr id_next evargs (fn_sig fi_next) d) :: (get_id_tr btr id_cur)).
+        inv WFC1.
+        { inv MS4. inv IK. inv CK. }
+        assert (CUR_TR: get_id_tr ttr id_cur = (get_id_tr pretr id_cur) ++ (id_cur, Bundle_return tr evretv d) :: (get_id_tr btr id_cur)).
         { subst ttr. clear. rewrite get_id_tr_app. rewrite get_id_tr_cons. ss. rewrite Pos.eqb_refl. auto. }
         assert (BOUND2: Z.of_nat (Datatypes.length (map (fun ib : ident * bundle_event => code_bundle_event ge_i (comp_of f) (snd ib)) (get_id_tr ttr id_cur))) < Int64.modulus).
         { rewrite map_length. etransitivity. 2: eauto. unfold get_id_tr. admit. (* ez *) }
         destruct WF_CNT_CUR as (CNT_CUR_NPUB & cnt_cur_b & FIND_CNT_CUR & CNT_CUR_MEM_VA & CNT_CUR_MEM_LOAD).
         assert (PARSIGS: list_typ_to_list_type (sig_args (fn_sig fi_next)) = map snd params_next).
-        { destruct MS5 as (_ & WFP1 & _). exploit WFP1. apply FINDF. apply FINDB. apply PARS_NEXT. ss. }
+        { destruct MS5 as (_ & WFP1 & _). exploit WFP1. apply INTERNAL. apply Genv.invert_find_symbol. apply INV_ID_NEXT. apply PARS_NEXT. ss. }
+
+        inv MS4.
+        { inv IK. }
+        clarify.
 
         destruct MS2 as (FINDF_C_CUR & (f_i_cur & FINDF_I_CUR) & INV_CUR).
         hexploit cur_fun_def. eapply FINDF_C_CUR. eapply FINDF_I_CUR. eapply INV_CUR. eauto.
@@ -2627,13 +2678,16 @@ Section Backtranslation.
         assert (CP_CUR: (comp_of f) = (Genv.find_comp ge_i (Vptr cur Ptrofs.zero))).
         { unfold Genv.find_comp. setoid_rewrite FINDF_I_CUR. subst f. ss. }
 
+        rename ck'0 into ck_next. rename e1 into e_next. rename le1 into le_next.
         hexploit switch_spec.
         { subst ttr. rewrite CUR_TR in BOUND2. rewrite map_app in BOUND2. ss. eapply BOUND2. }
         { unfold wf_env in WFC3. specialize (WFC3 cnt_cur). des_ifs. eapply WFC3. }
         eapply FIND_CNT_CUR. eapply CNT_CUR_MEM_VA.
         { rewrite CNT_CUR_MEM_LOAD. rewrite map_length. auto. }
         instantiate (1:=le).
-        instantiate (1:=(Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge_c cnt_cur (comp_of f) (get_id_tr ttr id_cur))) Sskip k0)).
+        instantiate (1:= (Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge_c cnt_cur (comp_of f) (get_id_tr ttr id_cur)))
+          Sskip
+          (Kcall None f_next e_next le_next (Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge_c cnt_next (comp_of f_next) (get_id_tr ttr id_next))) Sskip ck_next)))).
         instantiate (1:=Sreturn None).
         intros (m_cu & CNT_CUR_STORE & CUR_SWITCH_STAR).
 
@@ -2652,53 +2706,80 @@ Section Backtranslation.
           rewrite CP_CUR. auto.
         }
         des. rename DELTA_C0 into MEMINJ_CNT.
-        assert (ENV_ALLOC: exists e_next m_c_next0, alloc_variables ge_c (comp_of f_next) empty_env m_c' (fn_params f_next ++ fn_vars f_next) e_next m_c_next0).
-        { eapply alloc_variables_exists. }
-        des.
-        assert (ENV_BIND: exists m_c_next, bind_parameters ge_c (comp_of f_next) e_next m_c_next0 (fn_params f_next) vargs m_c_next).
-        { move PARSIGS after ENV_ALLOC. inv TR; ss.
-          eapply bind_parameters_exists. 2: apply PARSIGS.
-          2:{ eapply match_senv_eventval_list_match. 2: apply H1. destruct MS0 as (MS0 & _); auto. }
-          rewrite app_nil_r in ENV_ALLOC. eapply alloc_variables_forall. apply ENV_ALLOC.
-          { move MS5 after H1. destruct MS5. specialize (H2 _ _ PARS_NEXT). auto. }
-        }
-        des.
-        set (create_undef_temps (fn_temps f_next)) as le_next.
-        set (State f_next (fn_body f_next)
-                   (Kcall None f e le (Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge_c cnt_cur (comp_of f) (get_id_tr ttr id_cur))) Sskip k0))
-                   e_next le_next m_c_next) as cst2.
 
-        assert (ENV_NINJ: not_inj_blks (meminj_public ge_c) (blocks_of_env2 ge_c e_next)).
-        { clear CUR_SWITCH_STAR. move MS5 after le_next. destruct MS5 as (MP1 & MP2 & MP3).
-          apply Forall_forall. i.
-          unfold blocks_of_env2, blocks_of_env in H. rewrite map_map in H.
-          apply list_in_map_inv in H. des. destruct x0 as (xid & xb & xt).
-          apply PTree.elements_complete in H0.
-          unfold meminj_public. des_ifs. exfalso. simpl in Heq.
-          move MS1 after Heq0. destruct MS1 as (MM1 & MM2 & MM3).
-          erewrite match_symbs_meminj_public in MEMINJ_CNT.
-          2:{ destruct MS0 as (MS0 & _). apply MS0. }
-          hexploit Mem.valid_block_inject_2. 2: eapply MEMINJ_CNT.
-          { unfold meminj_public. setoid_rewrite Heq. rewrite Heq0. eauto. }
-          eapply alloc_variables_one_fresh_block. eapply ENV_ALLOC.
-          { rewrite app_nil_r. eapply MP1. eauto. }
-          ss. eapply H0.
+        assert (f1 = f_next).
+        { rewrite <- Genv.find_funct_ptr_iff in FINDF_C. rewrite FINDF_C in FUN. clarify. }
+        subst f1. clear INV_CUR.
+        assert (id = id_next).
+        { apply Genv.invert_find_symbol in INV_ID_NEXT. destruct MS0 as ((_ & MS & _) & _). apply MS in INV_ID_NEXT.
+          apply Senv.find_invert_symbol in INV_ID_NEXT. setoid_rewrite INV_ID_NEXT in ID. clarify.
         }
+        subst id.
+        assert (cnt = cnt_next).
+        { rewrite CNTS_NEXT in CNT. clarify. }
+        subst cnt. clear ID CNT.
 
-        assert (WFC_NEXT: wf_c_state ge_c (pretr ++ [(id_cur, Bundle_call tr id_next evargs (fn_sig fi_next) d)]) ttr cnts id_next cst2).
-        { subst cst2; ss. splits.
+        assert (WCHG1: wunchanged_on (fun b _ => Mem.valid_block m_c b) m_c m_c').
+        { eapply wunchanged_on_trans. eapply store_wunchanged_on. eapply CNT_CUR_STORE.
+          eapply wunchanged_on_implies. eapply mem_delta_apply_wf_wunchanged_on. eapply DELTA_C. ss.
+        }
+        assert (FREENEXT: exists m_c_next, Mem.free_list m_c' (blocks_of_env ge_c e) (comp_of f) = Some m_c_next).
+        { eapply wunchanged_on_exists_mem_free_list. eapply WCHG1. eapply FREEENV. }
+        des.
+
+        set (State f_next (fn_body f_next) ck_next e_next le_next m_c_next) as cst2.
+
+        assert (WFC_NEXT: wf_c_state ge_c (pretr ++ [(id_cur, Bundle_return tr evretv d)]) ttr cnts id_next cst2).
+        { clear CUR_SWITCH_STAR. ss. splits; auto.
           - unfold wf_counters. split. auto.
-            clear CUR_SWITCH_STAR. move WFC0 after le_next.
+            move WFC0 after cst2.
             ii. specialize (WFC0 _ _ _ H H0). des. exists cnt. splits; auto.
-            unfold wf_counter in WFC5. des. unfold wf_counter. splits; auto.
+            unfold wf_counter in WFC1. des. unfold wf_counter. splits; auto.
             exists b1. splits; auto.
-            + eapply bind_parameters_valid_access. eapply ENV_BIND.
-              eapply alloc_variables_valid_access. eapply ENV_ALLOC.
-              eapply mem_delta_apply_wf_valid_access. eapply DELTA_C.
-              eapply Mem.store_valid_access_1. eapply CNT_CUR_STORE.
-              auto.
+            +
+
+              Lemma mem_valid_access_wunchanged_on
+                    m ch b ofs p cp
+                    (MV: Mem.valid_access m ch b ofs p cp)
+                    P m'
+                    (WU: wunchanged_on P m m')
+                    (SAT: forall ofs', P b ofs')
+                :
+                Mem.valid_access m' ch b ofs p cp.
+              Proof.
+                unfold Mem.valid_access in *. des. splits; auto.
+                - unfold Mem.range_perm in *. i. eapply perm_wunchanged_on; eauto.
+                - destruct cp. 2: ss. erewrite <- wunchanged_on_own; eauto. eapply Mem.can_access_block_valid_block; eauto.
+              Qed.
+
+              Lemma mem_free_list_wunchanged_on_2
+                    l m cp m'
+                    (FREE: Mem.free_list m l cp = Some m')
+                :
+                wunchanged_on (fun b _ => ~ In b (map (fun x => fst (fst x)) l)) m m'.
+              Proof.
+                revert_until l. induction l; ii.
+                { ss. clarify. apply wunchanged_on_refl. }
+                ss. des_ifs. eapply wunchanged_on_trans; cycle 1.
+                { eapply wunchanged_on_implies. eapply IHl. eauto. ss. i. apply Classical_Prop.not_or_and in H. des. auto. }
+                ss. eapply free_wunchanged_on. eapply Heq. ii. apply H0; clear H0. left; auto.
+              Qed.
+
+              eapply mem_valid_access_wunchanged_on. eapply WFC6.
+              eapply wunchanged_on_trans; cycle 1. eapply mem_free_list_wunchanged_on_2. eapply FREENEXT.
+              eapply wunchanged_on_trans; cycle 1. eapply mem_delta_apply_wf_wunchanged_on. eapply DELTA_C.
+              eapply store_wunchanged_on. eapply CNT_CUR_STORE. ss. i.
+              move MS5 after H0. destruct MS5 as (MP0 & MP1 & MP). specialize (MP _ _ WFC5). move WFC4 after MP.
+              intros CONTRA. unfold not_global_blks in WFC4. unfold blocks_of_env2, blocks_of_env in *.
+              rewrite map_map in WFC4, CONTRA. rewrite Forall_forall in WFC4. specialize (WFC4 _ CONTRA).
+              apply Genv.find_invert_symbol in WFC5. setoid_rewrite WFC5 in WFC4. inv WFC4.
+
             + destruct (Pos.eq_dec id id_cur).
-              * subst id. clarify. ss. rewrite FIND_CNT_CUR in WFC6. clarify.
+              * subst id. clarify. ss.
+
+                TODO
+
+                rewrite FIND_CNT_CUR in H. clarify.
                 erewrite bind_parameters_mem_load. 2: eapply ENV_BIND.
                 2:{ eapply alloc_variables_old_blocks. eapply ENV_ALLOC. 2: ii; ss. admit. (*ez*) }
                 erewrite alloc_variables_mem_load. 2: eapply ENV_ALLOC.
@@ -2728,124 +2809,73 @@ Section Backtranslation.
                 rewrite get_id_tr_app. ss. apply Pos.eqb_neq in n. rewrite n. rewrite app_nil_r.
                 rewrite WFC8. auto.
 
-          - clear CUR_SWITCH_STAR. move WFC1 after le_next. move WFC4 after WFC1. move FREEENV after WFC4.
-            hexploit alloc_variables_exists_free_list. eapply ENV_ALLOC. ss. ss. ss. intros; des.
-            hexploit wunchanged_on_exists_mem_free_list. 2: eapply H.
-            { eapply wunchanged_on_implies. eapply bind_parameters_wunchanged_on. apply ENV_BIND. ss. }
-            intros (m_f' & FREE).
-            assert (WU: wunchanged_on (fun b _ => Mem.valid_block m_c b) m_c m_f').
-            { eapply wunchanged_on_trans. eapply store_wunchanged_on. eapply CNT_CUR_STORE.
-              eapply wunchanged_on_trans. eapply wunchanged_on_implies. eapply mem_delta_apply_wf_wunchanged_on. eapply DELTA_C. ss.
-              eapply wunchanged_on_trans. eapply wunchanged_on_implies. eapply alloc_variables_wunchanged_on. eapply ENV_ALLOC. ss.
-              eapply wunchanged_on_trans. eapply wunchanged_on_implies. eapply bind_parameters_wunchanged_on. eapply ENV_BIND. ss.
-              eapply mem_free_list_wunchanged_on. eapply FREE.
-              eapply alloc_variables_fresh_blocks. eapply ENV_ALLOC.
-              2:{ unfold blocks_of_env, empty_env. ss. }
-              hexploit mem_delta_apply_wf_wunchanged_on. eapply DELTA_C. i. eapply wunchanged_on_nextblock in H0.
-              etransitivity. 2: eapply H0. erewrite <- Mem.nextblock_store. 2: eapply CNT_CUR_STORE. lia.
-            }
-            hexploit wunchanged_on_exists_mem_free_list. eapply WU. eapply FREEENV. intros (m_freeenv' & FREEENV').
-            exists m_f'. splits; auto. econs. 1,2,3: eauto. eapply FREEENV'.
-            hexploit wunchanged_on_free_list_preserves. eapply WU. eapply FREEENV. eapply FREEENV'. intros WUFREE.
-            move WFC1 after FREEENV'.
-            eapply wf_c_cont_wunchanged_on. eapply WFC1. apply WUFREE.
 
-          - move WFC2 after le_next. unfold wf_c_stmt in *. clear CUR_SWITCH_STAR.
-            i. rewrite CNTS_NEXT in H. inv H. rename cnt into cnt_next.
-            subst f_next. unfold comp_of. ss. apply match_symbs_code_bundle_trace.
-            destruct MS0 as (MS0 & _); auto.
 
-          - clear CUR_SWITCH_STAR. move MS5 after le_next. destruct MS5 as (MP1 & MP2 & MP3).
-            eapply alloc_variables_wf_params_of_symb. eapply ENV_ALLOC. eapply MP3.
-            rewrite app_nil_r. apply PARS_NEXT.
 
-          - apply ENV_NINJ.
-        }
 
-        assert (MS_NEXT: match_state ge_i ge_c (meminj_public ge_i) ttr cnts pars id_next (Some (b, m2, ir_cont cur :: k_i)) cst2).
-        { clear CUR_SWITCH_STAR WFC_NEXT. subst cst2. ss.
-          rewrite app_nil_r in ENV_ALLOC. splits; auto.
-          - unfold match_mem. splits; auto.
-            + eapply bind_parameters_outside_mem_inject. eapply ENV_BIND.
-              2:{ eapply not_inj_blks_get_env. erewrite match_symbs_meminj_public. eapply ENV_NINJ. destruct MS0 as (MS0 & _). apply MS0.
-              }
-              2: apply meminj_public_same_block.
-              eapply alloc_variables_mem_inject. eapply ENV_ALLOC. auto.
-            + move MS1 after ENV_NINJ. destruct MS1 as (MM1 & MM2 & MM3).
-              move DELTA after ENV_NINJ. eapply meminj_not_alloc_delta. eapply MM3. eapply DELTA.
+          TODO
 
-          - unfold match_cur_fun. splits; auto.
-            + rewrite Genv.find_funct_ptr_iff. eapply FINDF_C.
-            + eexists. eapply FINDF.
-            + apply Genv.find_invert_symbol. apply FINDB.
+          admit. }
 
-          - move MS4 after ENV_NINJ. econs 2. 4,5,6: eauto. all: auto.
-            apply Genv.find_invert_symbol. apply FIND_CUR_C.
-        }
+        assert (MS_NEXT: match_state ge_i ge_c (meminj_public ge_i) ttr cnts pars id_next (Some (b, m2, ik')) cst2).
+        { admit. }
+
         exists cst2. split.
         2:{ left. exists id_next. split. apply WFC_NEXT. eexists. eapply MS_NEXT. }
 
         unfold wf_c_stmt in WFC2. specialize (WFC2 _ CNTS_CUR). subst stmt.
         eapply star_trans. eapply code_bundle_trace_spec. 2: ss.
         unfold switch_bundle_events at 1. rewrite CUR_TR at 1. rewrite map_app. simpl.
-        rewrite ! (match_symbs_code_bundle_call ge_i ge_c) in CUR_SWITCH_STAR. rewrite ! (match_symbs_code_bundle_events ge_i ge_c) in CUR_SWITCH_STAR.
-        eapply star_trans. eapply CUR_SWITCH_STAR. 2: ss. 2,3: auto.
+        rewrite ! (match_symbs_code_bundle_return ge_i ge_c) in CUR_SWITCH_STAR. rewrite ! (match_symbs_code_bundle_events ge_i ge_c) in CUR_SWITCH_STAR.
+        eapply star_trans. eapply CUR_SWITCH_STAR. 2: ss. 2,3: destruct MS0 as (MS & _); auto.
         clear BOUND2 CUR_SWITCH_STAR.
-        unfold code_bundle_call. eapply star_trans. eapply code_mem_delta_correct. auto.
-        { erewrite <- match_symbs_mem_delta_apply_wf. eapply DELTA_C.
-          destruct MS0 as (MSYMB & _). auto. }
-        2: ss. 2,3: destruct MS0 as (MSENV & _); apply MSENV.
+        unfold code_bundle_return. eapply star_trans. eapply code_mem_delta_correct. auto.
+        { erewrite <- match_symbs_mem_delta_apply_wf. eapply DELTA_C. destruct MS0 as (MSYMB & _). auto. }
+        2: ss.
         unfold unbundle. simpl. rename b into next.
 
-        assert (CP_NEXT:
-                 (Genv.find_comp ge_c (Vptr next Ptrofs.zero)) =
-                   (comp_of fi_next)).
+        assert (CP_NEXT: (Genv.find_comp ge_c (Vptr next Ptrofs.zero)) = (comp_of fi_next)).
         { unfold Genv.find_comp. apply Genv.find_funct_ptr_iff in FINDF_C. setoid_rewrite FINDF_C. subst f_next. ss. }
-        assert (EVARGS: list_eventval_to_list_val ge_c evargs = vargs).
+        assert (EVRETV: eventval_to_val ge_c evretv = vretv).
         { destruct MS0 as (MSENV & MGENV). inv TR.
-          eapply eventval_list_match_list_eventval_to_list_val. eapply match_symbs_eventval_list_match; eauto.
+          eapply eventval_match_eventval_to_val. eapply match_symbs_eventval_match; eauto.
         }
 
         econs 2.
-        { eapply step_call. ss.
-          { econs. assert (FSN_C: Senv.find_symbol ge_c id_next = Some next).
-            { destruct MS0 as ((MSENV0 & MSENV1 & MSENV2) & MGENV). apply MSENV1. auto. }
-            eapply eval_Evar_global.
-            - unfold wf_env in WFC3. specialize (WFC3 id_next). rewrite FSN_C in WFC3. apply WFC3.
-            - eapply FSN_C.
-            - econs 2. ss.
-          }
-          { eapply list_eventval_to_expr_val_eval. auto. inv TR. eapply eventval_list_match_transl. eapply match_senv_eventval_list_match; eauto. destruct MS0 as (MSENV & _); auto. }
-          { unfold match_find_def in MS3. hexploit MS3.
-            unfold Genv.find_funct in FINDF. rewrite pred_dec_true in FINDF; auto. unfold Genv.find_funct_ptr in FINDF. des_ifs. eapply Heq.
-            eapply Senv.find_invert_symbol; eapply FINDB.
-            rewrite CNTS_NEXT, PARS_NEXT. intros. unfold Genv.find_funct. rewrite pred_dec_true. unfold Genv.find_funct_ptr. rewrite H. ss. ss.
-          }
-          { ss. unfold type_of_function, gen_function. ss. f_equal. apply type_of_params_eq. apply PARSIGS. }
-          { destruct MS0 as ((MSENV0 & MSENV1 & MSENV2) & MGENV).
-            subst f. setoid_rewrite CP_CUR.
-            eapply allowed_call_gen_function; eauto.
-            { setoid_rewrite Genv.find_funct_ptr_iff. rewrite FINDF_C. subst f_next. eauto. }
-          }
-          { move NPTR after MS_NEXT. move TR after NPTR. i.
-            rewrite EVARGS. apply NPTR. unfold crossing_comp. rewrite <- H.
-            setoid_rewrite CP_CUR. rewrite CP_NEXT. auto.
-          }
-          { move TR after MS_NEXT. instantiate (1:=tr). inv TR.
-            setoid_rewrite CP_CUR. rewrite CP_NEXT.
-            econs 2.
-            { rewrite <- H. ss. }
-            eauto.
-            { destruct MS0 as ((MSENV0 & MSENV1 & MSENV2) & MGENV). apply Genv.find_invert_symbol. apply MSENV1. auto. }
-            { eapply eventval_list_match_transl. eapply match_senv_eventval_list_match; eauto. destruct MS0 as (MSENV & _); auto. }
-          }
+        { inv TR. eapply match_senv_eventval_match in H0. 2: destruct MS0 as (MS0 & _); apply MS0.
+          eapply step_return_1.
+          - eapply eventval_to_expr_val_eval. auto. eapply H0.
+          - ss. assert (fd_cur = AST.Internal f_i_cur).
+            { rewrite FINDFD in FINDF_I_CUR; clarify. }
+            subst fd_cur. eapply sem_cast_proj_rettype. ss. eapply H0.
+          - eapply FREENEXT.
         }
-        { econs 2. 2: econs 1. eapply step_internal_function. 2: ss.
-          econs; eauto.
-          { destruct MS5 as (MPARS & _). specialize (MPARS _ _ PARS_NEXT). subst f_next. ss. rewrite app_nil_r. auto. }
-          { rewrite EVARGS. auto. }
+        ss. econs 2.
+        { assert (CPEQ1: comp_of f_next = (Genv.find_comp ge_i (Vptr next Ptrofs.zero))).
+          { subst f_next. unfold comp_of, gen_function. ss. unfold Genv.find_comp. setoid_rewrite INTERNAL. ss. }
+          assert (CPEQ2: (comp_of (gen_function ge_i cnt_cur params_cur (get_id_tr ttr id_cur) f_i_cur)) = (Genv.find_comp ge_i (Vptr cur Ptrofs.zero))).
+          { unfold comp_of, gen_function. ss. unfold Genv.find_comp. setoid_rewrite FINDF_I_CUR. ss. }
+          eapply step_returnstate.
+          - move NPTR after EVRETV. i. rewrite EVRETV. apply NPTR. rr. rewrite CPEQ1 in H. setoid_rewrite CPEQ2 in H. apply H.
+          - move TR after EVRETV. instantiate (1:=tr). inv TR. setoid_rewrite CPEQ2. rewrite CPEQ1. econs; auto.
+            assert (fd_cur = AST.Internal f_i_cur).
+            { rewrite FINDFD in FINDF_I_CUR; clarify. }
+            subst fd_cur. ss. erewrite proj_rettype_to_type_rettype_of_type_eq. 2: eapply H0.
+            eapply match_senv_eventval_match. 2: eapply H0. destruct MS0 as (MS0 & _). auto.
         }
-        traceEq.
+        ss. econs 2.
+        { eapply step_skip_or_continue_loop1. auto. }
+        econs 2.
+        { eapply step_skip_loop2. }
+        { subst cst2. unfold code_bundle_trace. unfold Swhile. destruct MS0 as (MS0 & _).
+          erewrite (match_symbs_switch_bundle_events _ _ MS0).
+          setoid_rewrite <- CP_NEXT. unfold Genv.find_comp. setoid_rewrite FUN.
+          replace (comp_of (Internal f_next)) with (comp_of f_next). econs 1. ss.
+        }
+        all: traceEq. traceEq.
+
+      -
+        
 
 
 
