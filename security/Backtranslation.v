@@ -2329,6 +2329,61 @@ Section Backtranslation.
       apply IHEA. clear IHEA. eapply Mem.alloc_right_inject; eauto.
     Qed.
 
+    Lemma mem_valid_access_wunchanged_on
+          m ch b ofs p cp
+          (MV: Mem.valid_access m ch b ofs p cp)
+          P m'
+          (WU: wunchanged_on P m m')
+          (SAT: forall ofs', P b ofs')
+      :
+      Mem.valid_access m' ch b ofs p cp.
+    Proof.
+      unfold Mem.valid_access in *. des. splits; auto.
+      - unfold Mem.range_perm in *. i. eapply perm_wunchanged_on; eauto.
+      - destruct cp. 2: ss. erewrite <- wunchanged_on_own; eauto. eapply Mem.can_access_block_valid_block; eauto.
+    Qed.
+
+    Lemma mem_free_list_wunchanged_on_2
+          l m cp m'
+          (FREE: Mem.free_list m l cp = Some m')
+      :
+      wunchanged_on (fun b _ => ~ In b (map (fun x => fst (fst x)) l)) m m'.
+    Proof.
+      revert_until l. induction l; ii.
+      { ss. clarify. apply wunchanged_on_refl. }
+      ss. des_ifs. eapply wunchanged_on_trans; cycle 1.
+      { eapply wunchanged_on_implies. eapply IHl. eauto. ss. i. apply Classical_Prop.not_or_and in H. des. auto. }
+      ss. eapply free_wunchanged_on. eapply Heq. ii. apply H0; clear H0. left; auto.
+    Qed.
+
+    Lemma not_global_blks_global_not_in
+          (ge: genv) id b
+          (FIND: Genv.find_symbol ge id = Some b)
+          e
+          (NGB: not_global_blks ge (blocks_of_env2 ge e))
+      :
+      ~ In b (map (fun x : block * Z * Z => fst (fst x)) (blocks_of_env ge e)).
+    Proof.
+      intros CONTRA. unfold not_global_blks in NGB. unfold blocks_of_env2, blocks_of_env in *.
+      rewrite map_map in NGB, CONTRA. rewrite Forall_forall in NGB. specialize (NGB _ CONTRA).
+      apply Genv.find_invert_symbol in FIND. setoid_rewrite FIND in NGB. inv NGB.
+    Qed.
+
+    Lemma mem_free_list_unchanged_on
+          l m cp m'
+          (FREE: Mem.free_list m l cp = Some m')
+      :
+      Mem.unchanged_on (fun b _ => ~ In b (map (fun x => fst (fst x)) l)) m m'.
+    Proof.
+      revert_until l. induction l; ii.
+      { ss. clarify. apply Mem.unchanged_on_refl. }
+      ss. des_ifs. eapply Mem.unchanged_on_trans; cycle 1.
+      { eapply Mem.unchanged_on_implies. eapply IHl. eauto. ss. i. apply Classical_Prop.not_or_and in H. des. auto. }
+      ss. eapply Mem.free_unchanged_on. eapply Heq. ii. apply H0; clear H0. left; auto.
+    Qed.
+
+
+
 
 
     Lemma ir_to_clight_step
@@ -2736,89 +2791,66 @@ Section Backtranslation.
             ii. specialize (WFC0 _ _ _ H H0). des. exists cnt. splits; auto.
             unfold wf_counter in WFC1. des. unfold wf_counter. splits; auto.
             exists b1. splits; auto.
-            +
-
-              Lemma mem_valid_access_wunchanged_on
-                    m ch b ofs p cp
-                    (MV: Mem.valid_access m ch b ofs p cp)
-                    P m'
-                    (WU: wunchanged_on P m m')
-                    (SAT: forall ofs', P b ofs')
-                :
-                Mem.valid_access m' ch b ofs p cp.
-              Proof.
-                unfold Mem.valid_access in *. des. splits; auto.
-                - unfold Mem.range_perm in *. i. eapply perm_wunchanged_on; eauto.
-                - destruct cp. 2: ss. erewrite <- wunchanged_on_own; eauto. eapply Mem.can_access_block_valid_block; eauto.
-              Qed.
-
-              Lemma mem_free_list_wunchanged_on_2
-                    l m cp m'
-                    (FREE: Mem.free_list m l cp = Some m')
-                :
-                wunchanged_on (fun b _ => ~ In b (map (fun x => fst (fst x)) l)) m m'.
-              Proof.
-                revert_until l. induction l; ii.
-                { ss. clarify. apply wunchanged_on_refl. }
-                ss. des_ifs. eapply wunchanged_on_trans; cycle 1.
-                { eapply wunchanged_on_implies. eapply IHl. eauto. ss. i. apply Classical_Prop.not_or_and in H. des. auto. }
-                ss. eapply free_wunchanged_on. eapply Heq. ii. apply H0; clear H0. left; auto.
-              Qed.
-
-              eapply mem_valid_access_wunchanged_on. eapply WFC6.
+            + eapply mem_valid_access_wunchanged_on. eapply WFC6.
               eapply wunchanged_on_trans; cycle 1. eapply mem_free_list_wunchanged_on_2. eapply FREENEXT.
               eapply wunchanged_on_trans; cycle 1. eapply mem_delta_apply_wf_wunchanged_on. eapply DELTA_C.
               eapply store_wunchanged_on. eapply CNT_CUR_STORE. ss. i.
               move MS5 after H0. destruct MS5 as (MP0 & MP1 & MP). specialize (MP _ _ WFC5). move WFC4 after MP.
-              intros CONTRA. unfold not_global_blks in WFC4. unfold blocks_of_env2, blocks_of_env in *.
-              rewrite map_map in WFC4, CONTRA. rewrite Forall_forall in WFC4. specialize (WFC4 _ CONTRA).
-              apply Genv.find_invert_symbol in WFC5. setoid_rewrite WFC5 in WFC4. inv WFC4.
-
-            + destruct (Pos.eq_dec id id_cur).
-              * subst id. clarify. ss.
-
-                TODO
-
-                rewrite FIND_CNT_CUR in H. clarify.
-                erewrite bind_parameters_mem_load. 2: eapply ENV_BIND.
-                2:{ eapply alloc_variables_old_blocks. eapply ENV_ALLOC. 2: ii; ss. admit. (*ez*) }
-                erewrite alloc_variables_mem_load. 2: eapply ENV_ALLOC.
-                2:{ admit. (* same ez *) }
-                erewrite mem_delta_apply_wf_mem_load.
-                2:{ erewrite match_symbs_mem_delta_apply_wf in DELTA_C. apply DELTA_C. destruct MS0 as (MS & _). eauto. }
-                2:{ eapply Genv.find_invert_symbol. eapply FIND_CNT_CUR. }
-                2:{ auto. }
-                erewrite Mem.load_store_same. 2: eapply CNT_CUR_STORE.
+              eapply not_global_blks_global_not_in; eauto.
+            + move WFNB after CP_CUR. move WFC4 after WFNB.
+              eapply Mem.load_unchanged_on. eapply mem_free_list_unchanged_on. eapply FREENEXT.
+              { ss. i. eapply not_global_blks_global_not_in; eauto. }
+              erewrite mem_delta_apply_wf_mem_load; cycle 1.
+              { erewrite match_symbs_mem_delta_apply_wf in DELTA_C. apply DELTA_C. destruct MS0 as (MS & _). eauto. }
+              { eapply Genv.find_invert_symbol. apply WFC5. }
+              { auto. }
+              destruct (Pos.eq_dec id id_cur).
+              * subst id. assert (cnt_cur = cnt).
+                { rewrite WFC0 in CNTS_CUR. clarify. }
+                subst cnt. assert (b1 = cnt_cur_b).
+                { setoid_rewrite WFC5 in FIND_CNT_CUR. clarify. }
+                subst b1. assert (b0 = cur).
+                { rewrite FIND_CUR_C in H. clarify. }
+                subst b0. assert (f0 = f).
+                { rewrite FINDF_C_CUR in H0. clarify. }
+                subst f0. erewrite Mem.load_store_same. 2: eapply CNT_CUR_STORE.
                 ss. rewrite map_length. rewrite get_id_tr_app. ss.
                 rewrite Pos.eqb_refl. rewrite app_length. ss.
                 do 2 f_equal. apply nat64_int64_add_one.
                 admit. (*ez*)
-              * ss. erewrite bind_parameters_mem_load. 2: eapply ENV_BIND.
-                2:{ eapply alloc_variables_old_blocks. eapply ENV_ALLOC. 2: ii; ss. admit. (*ez*) }
-                erewrite alloc_variables_mem_load. 2: eapply ENV_ALLOC.
-                2:{ admit. (* same ez *) }
-                erewrite mem_delta_apply_wf_mem_load.
-                2:{ erewrite match_symbs_mem_delta_apply_wf in DELTA_C. apply DELTA_C. destruct MS0 as (MS & _). eauto. }
-                2:{ eapply Genv.find_invert_symbol. eapply WFC6. }
-                2:{ auto. }
-                erewrite Mem.load_store_other. 2: eapply CNT_CUR_STORE.
-                2:{ left. ii. clarify. apply Genv.find_invert_symbol in FIND_CNT_CUR, WFC6.
-                    rewrite FIND_CNT_CUR in WFC6. clarify. rename cnt into cnt_cur.
+              * ss. erewrite Mem.load_store_other. 2: eapply CNT_CUR_STORE.
+                2:{ left. ii. clarify. apply Genv.find_invert_symbol in FIND_CNT_CUR, WFC5.
+                    rewrite FIND_CNT_CUR in WFC5. clarify. rename cnt into cnt_cur.
                     specialize (CNT_INJ _ _ _ CNTS_CUR WFC0). clarify.
                 }
-                rewrite get_id_tr_app. ss. apply Pos.eqb_neq in n. rewrite n. rewrite app_nil_r.
-                rewrite WFC8. auto.
+                rewrite get_id_tr_app. ss. apply Pos.eqb_neq in n. rewrite n. rewrite app_nil_r. rewrite WFC7. auto.
 
+          - move IND after cst2. move FREE after cst2. move FREEENV after cst2.
+            hexploit wunchanged_on_free_list_preserves. eapply WCHG1. all: eauto. intros WCHG2.
+            hexploit wunchanged_on_exists_mem_free_list. eapply WCHG2. eapply FREE. intros (m_c_next2 & FREE2).
+            exists m_c_next2. splits; auto.
+            hexploit wunchanged_on_free_list_preserves. eapply WCHG2. all: eauto. intros WCHG3.
+            eapply wf_c_cont_wunchanged_on. eapply IND. auto.
 
+          - move WFC2 after cst2. unfold wf_c_stmt in *. i. rewrite CNTS_NEXT in H. inv H. rename cnt into cnt_next.
+            subst f_next. unfold comp_of. ss. apply match_symbs_code_bundle_trace. destruct MS0 as (MS0 & _); auto.
+
+          - move WFNB after cst2. unfold wf_c_nb in *.
+            apply SimplLocalsproof.free_list_nextblock in FREENEXT. rewrite FREENEXT.
+            eapply mem_delta_apply_wf_wunchanged_on in DELTA_C. eapply store_wunchanged_on in CNT_CUR_STORE.
+            eapply wunchanged_on_nextblock in CNT_CUR_STORE, DELTA_C.
+            clear - WFNB CNT_CUR_STORE DELTA_C.
+            do 5 (etransitivity; eauto).
+        }
+
+        assert (MS_NEXT: match_state ge_i ge_c (meminj_public ge_i) ttr cnts pars id_next (Some (b, m2, ik')) cst2).
+        {
 
 
 
           TODO
 
           admit. }
-
-        assert (MS_NEXT: match_state ge_i ge_c (meminj_public ge_i) ttr cnts pars id_next (Some (b, m2, ik')) cst2).
-        { admit. }
 
         exists cst2. split.
         2:{ left. exists id_next. split. apply WFC_NEXT. eexists. eapply MS_NEXT. }
