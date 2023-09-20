@@ -1,6 +1,6 @@
 (* *********************************************************************)
 (*                                                                     *)
-(*                    Lemmas & Tactic form coq-sflib:                  *)
+(*                    Lemmas & Tactic from coq-sflib:                  *)
 (*          https://github.com/snu-sf/sflib/blob/master/sflib.v        *)
 (*                                                                     *)
 (* *********************************************************************)
