@@ -1156,7 +1156,7 @@ Section PROOF.
     { destruct ECKO as [_ OBS]. inv EXTCALL. inv H; simpl in *; clarify. esplits; eauto.
       1,2: econs; econs; eauto. unfold match_mem. splits; auto. 
     }
-    { destruct ECKO as [_ OBS]. inv EXTCALL. inv H; simpl in *; clarify. esplits; eauto.
+    { destruct ECKO as [_ [OBS WCH]]. inv EXTCALL. inv H; simpl in *; clarify. esplits; eauto.
       1,2: econs; econs; eauto. unfold match_mem. splits; auto.
     }
     { destruct ECKO as [_ OBS]. inv EXTCALL. clarify. }
@@ -1262,7 +1262,7 @@ Section PROOF.
         { simpl. unfold senv_invert_symbol_total. erewrite Senv.find_invert_symbol; eauto. }
         splits; auto.
       }
-      { destruct ECKO as [_ OBS]. inv EXTCALL. inv H; simpl in *; clarify.
+      { destruct ECKO as [_ [OBS WCH]]. inv EXTCALL. inv H; simpl in *; clarify.
         exists ([(id_cur, Bundle_call [Event_vstore chunk id ofs ev] ef_id [EVptr_global id ofs; ev] {| sig_args := [Tptr; type_of_chunk chunk]; sig_res := Tvoid; sig_cc := cc_default |} ([]))]).
         exists k, d, m_a0, m_i, m'. simpl. splits; auto. 2: split; auto. 2: eauto.
         econstructor 2. 2: econstructor 1. 2: auto.
@@ -1272,7 +1272,10 @@ Section PROOF.
         { instantiate (2:=[Vptr b0 ofs; Val.load_result chunk v]).
           simpl. econstructor. econstructor 1; eauto. rewrite val_load_result_idem. auto.
         }
-        { simpl. right. split; auto. econs; eauto. econs. econs; eauto. rewrite val_load_result_idem. auto. }
+        { simpl. right. split; auto.
+          splits; ss; auto. econs; eauto. econs; eauto. rewrite val_load_result_idem. auto. des.
+          unfold load_whole_chunk in *. rewrite val_load_result_idem. auto.
+        }
         { simpl. unfold senv_invert_symbol_total. erewrite Senv.find_invert_symbol; eauto.
           f_equal. erewrite eventval_match_val_to_eventval; eauto.
         }
@@ -1429,7 +1432,7 @@ Section PROOF.
         { simpl. unfold senv_invert_symbol_total. erewrite Senv.find_invert_symbol; eauto. }
         splits; auto.
       }
-      { destruct ECKO as [_ OBS]. inv EXTCALL. inv H; simpl in *; clarify.
+      { destruct ECKO as [_ [OBS WCH]]. inv EXTCALL. inv H; simpl in *; clarify.
         exists ([(id_cur, Bundle_builtin [Event_vstore chunk id ofs0 ev] (EF_vstore cp chunk) [EVptr_global id ofs0; ev] [])]).
         exists k, d, m_a0, m_i. simpl. splits; auto. 2: split; auto.
         econstructor 2. 2: econstructor 1. 2: auto.
@@ -1438,7 +1441,9 @@ Section PROOF.
         { instantiate (2:=[Vptr b0 ofs0; Val.load_result chunk v]).
           simpl. econstructor. econstructor 1; eauto. rewrite val_load_result_idem. auto.
         }
-        { simpl. right. split; auto. econs; eauto. econs. econs; eauto. rewrite val_load_result_idem. auto. }
+        { simpl. right. split; auto. splits; eauto. econs. econs; eauto. rewrite val_load_result_idem. auto.
+          unfold load_whole_chunk in *. rewrite val_load_result_idem. auto.
+        }
         { simpl. unfold senv_invert_symbol_total. erewrite Senv.find_invert_symbol; eauto.
           f_equal. erewrite eventval_match_val_to_eventval; eauto.
         }

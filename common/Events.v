@@ -2193,6 +2193,14 @@ Section VISIBLE.
     | _ => True
     end.
 
+  Definition load_whole_chunk (ch: memory_chunk) (v: val) := Val.load_result ch v = v.
+
+  Definition EF_vstore_load_whole_chunk (ch: memory_chunk) (args: list val) :=
+    match args with
+    | _ :: v :: nil => load_whole_chunk ch v
+    | _ => True
+    end.
+
   Definition external_call_conds
              (ef: external_function) (ge: Senv.t) (m: mem) (args: list val) : Prop :=
     match ef with
@@ -2204,6 +2212,7 @@ Section VISIBLE.
                              end
     | EF_inline_asm cp txt sg clb => visible_fo ge m (sig_args sg) args
     | EF_memcpy cp sz al => EF_memcpy_dest_not_pub ge args
+    | EF_vstore cp ch => EF_vstore_load_whole_chunk ch args
     | _ => True
     end.
 
@@ -2226,6 +2235,8 @@ Section VISIBLE.
     | EF_external cp name sg => False
     | EF_builtin cp name sg | EF_runtime cp name sg => False
     | EF_inline_asm cp txt sg clb => False
+    | EF_vstore cp ch =>
+        (external_call ef ge args m tr rv m') /\ (tr <> E0) /\ (EF_vstore_load_whole_chunk ch args)
     | _ => (external_call ef ge args m tr rv m') /\ (tr <> E0)
     end.
 
