@@ -557,6 +557,60 @@ Proof.
   unfold find_def; simpl; intros. rewrite PTree.gempty in H. discriminate.
 Qed.
 
+Theorem fold_left_inv :
+  forall A B (P : list A -> B -> Prop) (f : B -> A -> B),
+    (forall x xs y, P (x :: xs) y -> P xs (f y x)) ->
+    forall xs y0, P xs y0 -> P nil (fold_left f xs y0).
+Proof.
+  intros A B P f step xs.
+  induction xs as [|x xs IH]; simpl; auto.
+Qed.
+
+(* TODO: Clean this up while generalizing add_globals_unique_ensures *)
+
+Theorem find_def_find_symbol_inversion:
+  forall p b g,
+  find_def (globalenv p) b = Some g ->
+  list_norepet (prog_defs_names p) ->
+  exists id, find_symbol (globalenv p) id = Some b.
+Proof.
+  unfold find_def, find_symbol, globalenv, prog_defs_names, add_globals.
+  intros p b g ge_b NOREPET. set (ge0 := empty_genv _ _) in *.
+  pose (P := fun (defs : list (ident * globdef F V)) ge =>
+               list_norepet (map fst defs) /\
+               forall b g, (genv_defs ge) ! b = Some g ->
+               exists id, (genv_symb ge) ! id = Some b /\
+               ~ In id (map fst defs)).
+  enough (P nil (fold_left add_global (prog_defs p) ge0)) as H.
+  { destruct H as [_ H]. destruct (H _ _ ge_b) as (id & ? & _). eauto. }
+  clear b g ge_b.
+  set (defs := prog_defs p) in *.
+  assert (P defs ge0) as inv0.
+  { split; trivial. intros b g. simpl. now rewrite PTree.gempty. }
+  generalize ge0 inv0. clear ge0 inv0. intros ge0 inv0.
+  clear NOREPET. generalize defs inv0. clear p defs inv0.
+  intros defs inv0.
+  apply (fold_left_inv P add_global); eauto.
+  clear defs inv0.
+  intros [id g] defs ge [NOREPET geP].
+  simpl in NOREPET.
+  assert (~ In id (map fst defs) /\ list_norepet (map fst defs))
+    as [id_defs NOREPET'].
+  { inv NOREPET; eauto. }
+  split; trivial. intros b g'. simpl.
+  rewrite PTree.gsspec.
+  destruct peq as [->|b_next_ne].
+  - intros ?; assert (g' = g) by congruence; subst g'.
+    exists id. rewrite PTree.gss. now eauto.
+  - intros ge_b.
+    specialize (geP _ _ ge_b).
+    destruct geP as (id' & ge_id' & fresh). simpl in *.
+    exists id'.
+    rewrite PTree.gso; [split|]; trivial.
+    + intros ?; apply fresh; auto.
+    + intros ?; apply fresh; auto.
+Qed.
+
 Corollary find_funct_ptr_inversion:
   forall p b f,
   find_funct_ptr (globalenv p) b = Some f ->
