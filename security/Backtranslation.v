@@ -3339,27 +3339,43 @@ Section Backtranslation.
             econs 1. all: ss. traceEq.
           }
 
+          clear CUR_SWITCH_STAR BOUND2.
           left. exists id_cur. split.
           { ss. splits; auto.
             - unfold wf_counters. split; auto.
               move WFC0 after COMP_SAME. ii. specialize (WFC0 _ _ _ H H0). des. exists cnt. splits; auto.
               unfold wf_counter in WFC5. des. unfold wf_counter. splits; auto.
+              assert (UCH2: Mem.unchanged_on (fun b _ => forall b0 ofs0, (meminj_public ge_i) b0 <> Some (b, ofs0)) m_next0 m_next).
+              { eapply Mem.unchanged_on_implies. eapply UCH1. ii. eapply H1; eauto. }
               exists b0. splits; auto.
               + move MCNTS after COMP_SAME.
-                assert (UCH2: Mem.unchanged_on (fun b _ => forall b0 ofs0, (meminj_public ge_i) b0 <> Some (b, ofs0)) m_next0 m_next).
-                { eapply Mem.unchanged_on_implies. eapply UCH1. ii. eapply H1; eauto. }
 
-                TODO
-                
-mem_valid_access_wunchanged_on:
-  forall (m : mem) (ch : memory_chunk) (b : block) (ofs : Z) (p : permission)
-    (cp : option compartment),
-  Mem.valid_access m ch b ofs p cp ->
-  forall (P : block -> Z -> Prop) (m' : mem),
-  wunchanged_on P m m' -> (forall ofs' : Z, P b ofs') -> Mem.valid_access m' ch b ofs p cp
+                Lemma mem_unchanged_wunchanged
+                      P m m'
+                      (UCH: Mem.unchanged_on P m m')
+                  :
+                  wunchanged_on P m m'.
+                Proof. inv UCH. econs; eauto. Qed.
 
-                eapply mem_valid_access_wunchanged_on. eapply WFC7.
-                eapply store_wunchanged_on. eapply CNT_CUR_STORE. instantiate (1:= fun _ _ => True). ss.
+                Lemma meminj_public_not_public_not_mapped
+                      ge cnt_cur
+                      (NP: Senv.public_symbol ge cnt_cur = false)
+                      cnt_cur_b
+                      (FIND: Senv.find_symbol ge cnt_cur = Some cnt_cur_b)
+                  :
+                  forall b ofs, meminj_public ge b <> Some (cnt_cur_b, ofs).
+                Proof.
+                  ii. unfold meminj_public in H. des_ifs.
+                  assert (i = cnt_cur).
+                  { eapply Senv.find_symbol_injective; eauto. apply Senv.invert_find_symbol; auto. }
+                  subst i. rewrite NP in Heq0. ss.
+                Qed.
+
+                eapply mem_valid_access_wunchanged_on. 2: eapply mem_unchanged_wunchanged; eapply UCH2.
+                eapply mem_delta_apply_wf_valid_access. eapply DELTA_C.
+                eapply mem_valid_access_wunchanged_on. 2: eapply store_wunchanged_on; eapply CNT_CUR_STORE.
+                auto. instantiate (1:= fun _ _ => True). ss.
+                ss. i. erewrite match_symbs_meminj_public. 2: eapply MS0. eapply meminj_public_not_public_not_mapped; eauto.
               + destruct (Pos.eq_dec id id_cur).
                 * subst id. assert (cnt_cur = cnt).
                   { rewrite WFC0 in CNTS_CUR. clarify. }
@@ -3369,18 +3385,147 @@ mem_valid_access_wunchanged_on:
                   { rewrite FIND_CUR_C in H. clarify. }
                   subst b. assert (f0 = f).
                   { rewrite FINDF_C_CUR in H0. clarify. }
-                  subst f0. ss. erewrite Mem.load_store_same. 2: eapply CNT_CUR_STORE.
-                  ss. rewrite map_length. rewrite get_id_tr_app. ss.
-                  rewrite Pos.eqb_refl. rewrite app_length. ss.
-                  do 2 f_equal. apply nat64_int64_add_one.
-                  admit. (*ez*)
-                * ss. erewrite Mem.load_store_other. 2: eapply CNT_CUR_STORE.
-                  2:{ left. ii. clarify. apply Genv.find_invert_symbol in FIND_CNT_CUR, WFC6.
-                      rewrite FIND_CNT_CUR in WFC6. clarify. rename cnt into cnt_cur.
-                      specialize (CNT_INJ _ _ _ CNTS_CUR WFC0). clarify.
+                  subst f0. ss.
+                  eapply Mem.load_unchanged_on. eapply UCH2.
+                  { ss. i. erewrite match_symbs_meminj_public. 2: eapply MS0. eapply meminj_public_not_public_not_mapped; eauto. }
+                  erewrite mem_delta_apply_wf_mem_load.
+                  2:{ erewrite match_symbs_mem_delta_apply_wf in DELTA_C. eapply DELTA_C. eapply MS0. }
+                  2:{ eapply Genv.find_invert_symbol in WFC6. eapply WFC6. }
+                  2:{ auto. }
+                  erewrite Mem.load_store_same. 2: eapply CNT_CUR_STORE.
+                  { ss. rewrite map_length. rewrite get_id_tr_app. ss. rewrite Pos.eqb_refl. rewrite app_length. ss.
+                    do 2 f_equal. apply nat64_int64_add_one.
+                    admit. (*ez*)
                   }
-                  rewrite get_id_tr_app. ss. apply Pos.eqb_neq in n. rewrite n. rewrite app_nil_r. rewrite WFC8. auto.
-            - hexploit wunchanged_on_exists_mem_free_list.
+                * eapply Mem.load_unchanged_on. eapply UCH2.
+                  { ss. i. erewrite match_symbs_meminj_public. 2: eapply MS0. eapply meminj_public_not_public_not_mapped; eauto. }
+                  erewrite mem_delta_apply_wf_mem_load.
+                  2:{ erewrite match_symbs_mem_delta_apply_wf in DELTA_C. eapply DELTA_C. eapply MS0. }
+                  2:{ eapply Genv.find_invert_symbol in WFC6. eapply WFC6. }
+                  2:{ auto. }
+                  ss. erewrite Mem.load_store_other. 2: eapply CNT_CUR_STORE.
+                  { rewrite WFC8. rewrite get_id_tr_app. ss. apply Pos.eqb_neq in n. rewrite n. rewrite app_nil_r. auto. }
+                  { left. ii. clarify. apply Genv.find_invert_symbol in FIND_CNT_CUR, WFC6.
+                    rewrite FIND_CNT_CUR in WFC6. clarify. rename cnt into cnt_cur.
+                    specialize (CNT_INJ _ _ _ CNTS_CUR WFC0). clarify.
+                  }
+
+            - move FREEENV after COMP_SAME. move WFC1 after FREEENV. move WFC4 after FREEENV.
+              assert (UCH2: Mem.unchanged_on (fun b _ => forall b0 ofs0, (meminj_public ge_i) b0 <> Some (b, ofs0)) m_next0 m_next).
+              { eapply Mem.unchanged_on_implies. eapply UCH1. ii. eapply H; eauto. }
+              assert (UCH3: Mem.unchanged_on (fun b _ => Senv.invert_symbol ge_c b = None) m_next0 m_next).
+              { eapply Mem.unchanged_on_implies. eapply UCH2. ss. i. unfold meminj_public. des_ifs. ii. clarify.
+                apply Senv.invert_find_symbol in Heq. destruct MS0 as ((MSE1 & MSE2 & MSE3) & _). apply MSE2 in Heq.
+                apply Senv.find_invert_symbol in Heq. setoid_rewrite H in Heq. ss.
+              }
+              eapply mem_unchanged_wunchanged in UCH3.
+              hexploit mem_delta_apply_wf_wunchanged_on. eapply DELTA_C. intros UCH4.
+              hexploit wunchanged_on_trans. eapply UCH4. eapply UCH3. intros UCH5.
+              hexploit store_wunchanged_on. eapply CNT_CUR_STORE. intros UCH6.
+              hexploit wunchanged_on_trans. eapply UCH6. eapply UCH5. intros UCH7.
+              clear UCH3 UCH4 UCH5 UCH6.
+
+              Lemma wunchanged_on_exists_mem_free_2
+                    m1 b lo hi cp m2
+                    (FREE: Mem.free m1 b lo hi cp = Some m2)
+                    ge m_c
+                    (WCH: wunchanged_on (fun b _ => Senv.invert_symbol ge b = None) m1 m_c)
+                    (NGB: Senv.invert_symbol ge b = None)
+                :
+                exists m_c', Mem.free m_c b lo hi cp = Some m_c'.
+              Proof.
+                hexploit Mem.free_range_perm; eauto. hexploit Mem.free_can_access_block_1; eauto. i.
+                hexploit Mem.range_perm_free.
+                3:{ intros (m0 & F). eexists; eapply F. }
+                - unfold Mem.range_perm in *. i. eapply perm_wunchanged_on. 3: eauto. eauto. ss.
+                - rewrite <- wunchanged_on_own; eauto. eapply Mem.can_access_block_valid_block. eauto.
+              Qed.
+
+              Lemma wunchanged_on_free_preserves_2
+                    P m m'
+                    (WU : wunchanged_on P m m')
+                    b lo hi cp m1 m1'
+                    (FREE: Mem.free m b lo hi cp = Some m1)
+                    (FREE': Mem.free m' b lo hi cp = Some m1')
+                :
+                wunchanged_on P m1 m1'.
+              Proof.
+                inv WU. econs.
+                - rewrite (Mem.nextblock_free _ _ _ _ _ _ FREE). rewrite (Mem.nextblock_free _ _ _ _ _ _ FREE'). auto.
+                - i. assert (VB: Mem.valid_block m b0).
+                  { eapply Mem.valid_block_free_2; eauto. }
+                  split; i.
+                  + pose proof (Mem.perm_free_3 _ _ _ _ _ _ FREE _ _ _ _ H1). rewrite wunchanged_on_perm in H2; auto.
+                    eapply Mem.perm_free_inv in H2. 2: eauto. des; auto. clarify.
+                    hexploit Mem.perm_free_2. eapply FREE. split; eauto. i. exfalso. apply H2. eapply H1.
+                  + pose proof (Mem.perm_free_3 _ _ _ _ _ _ FREE' _ _ _ _ H1). rewrite <- wunchanged_on_perm in H2; auto.
+                    eapply Mem.perm_free_inv in H2. 2: eauto. des; auto. clarify.
+                    hexploit Mem.perm_free_2. eapply FREE'. split; eauto. i. exfalso. apply H2. eapply H1.
+                - i. assert (VB: Mem.valid_block m b0).
+                  { eapply Mem.valid_block_free_2; eauto. }
+                  split; i.
+                  + eapply Mem.free_can_access_block_inj_1; eauto. apply wunchanged_on_own; auto.
+                    eapply Mem.free_can_access_block_inj_2; eauto.
+                  + eapply Mem.free_can_access_block_inj_1; eauto. apply wunchanged_on_own; auto.
+                    eapply Mem.free_can_access_block_inj_2; eauto.
+              Qed.
+
+              Lemma wunchanged_on_exists_mem_free_list_2
+                    l m1 cp m2
+                    (FREE: Mem.free_list m1 l cp = Some m2)
+                    ge m_c
+                    (WCH: wunchanged_on (fun b _ => Senv.invert_symbol ge b = None) m1 m_c)
+                    (NGB: not_global_blks ge (map (fun x => fst (fst x)) l))
+                :
+                exists m_c', Mem.free_list m_c l cp = Some m_c'.
+              Proof.
+                revert_until l. induction l; i; ss. eauto.
+                destruct a as ((b & lo) & hi). ss. inv NGB. des_ifs; ss.
+                2:{ exfalso. hexploit wunchanged_on_exists_mem_free_2. 2: eapply WCH. all: eauto.
+                    intros. des. rewrite H in Heq; clarify.
+                }
+                hexploit IHl. eapply FREE. 2: eapply H2.
+                { instantiate (1:=m). eapply wunchanged_on_free_preserves_2; eauto. }
+                eauto.
+              Qed.
+
+              Lemma wunchanged_on_free_list_preserves_2
+                    P m m'
+                    (WU: wunchanged_on P m m')
+                    l cp m_f m_f'
+                    (FREE: Mem.free_list m l cp = Some m_f)
+                    (FREE': Mem.free_list m' l cp = Some m_f')
+                :
+                wunchanged_on P m_f m_f'.
+              Proof.
+                move l after m. revert_until l. induction l; ii; ss. clarify.
+                des_ifs. eapply IHl. 2,3: eauto. eapply wunchanged_on_free_preserves_2; eauto.
+              Qed.
+
+              hexploit wunchanged_on_exists_mem_free_list_2. eapply FREEENV. eapply UCH7. ss.
+              intros (m_c' & FREE2). esplits. eapply FREE2.
+
+
+              
+              TODO
+              
+
+wf_c_cont_wunchanged_on:
+  forall (ge : genv) (m : mem) (k : cont),
+  wf_c_cont ge m k -> forall m' : mem, wunchanged_on (fun (b : block) (_ : Z) => Mem.valid_block m b) m m' -> wf_c_cont ge m' k
+
+wunchanged_on_exists_mem_free_list:
+  forall m m' : mem,
+  wunchanged_on (fun (b : block) (_ : Z) => Mem.valid_block m b) m m' ->
+  forall (l : list (block * Z * Z)) (cp : compartment) (m_f : mem),
+  Mem.free_list m l cp = Some m_f -> exists m_f' : mem, Mem.free_list m' l cp = Some m_f'
+
+mem_free_list_wunchanged_on_2:
+  forall (l : list (block * Z * Z)) (m : mem) (cp : compartment) (m' : mem),
+  Mem.free_list m l cp = Some m' ->
+  wunchanged_on (fun (b : block) (_ : Z) => ~ In b (map (fun x : block * Z * Z => fst (fst x)) l)) m m'
+
+              hexploit wunchanged_on_exists_mem_free_list.
               { eapply store_wunchanged_on. eapply CNT_CUR_STORE. }
               eapply FREEENV. intros (m_f & FREE2). esplits. eapply FREE2.
               eapply wf_c_cont_wunchanged_on. eapply WFC1. 
