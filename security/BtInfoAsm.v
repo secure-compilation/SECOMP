@@ -278,6 +278,7 @@ Section IR.
         tr ef evargs
         cp_cur
         (CURCP: cp_cur = Genv.find_comp ge (Vptr cur Ptrofs.zero))
+        (ALLOWED: comp_of ef = cp_cur)
         d m1'
         (MEM: mem_delta_apply_wf ge cp_cur d (Some m1) = Some m1')
         vargs vretv
@@ -1417,6 +1418,9 @@ Section PROOF.
       do 4 eexists. splits; simpl. 3: eapply x3. apply app_nil_r.
       econstructor 2. 2: econstructor 1. 2: eauto.
       eapply ir_step_builtin; eauto.
+      { rewrite ALLOWED. rewrite MTST1, CURPC. ss. unfold Genv.find_comp.
+        setoid_rewrite CURF. ss.
+      }
 
     - (* extcall is known and observable *)
       unfold external_call_known_observables in ECKO.
@@ -1426,6 +1430,9 @@ Section PROOF.
         exists k, d, m_a0, m_i. simpl. splits; auto. 2: split; auto.
         econstructor 2. 2: econstructor 1. 2: auto.
         eapply ir_step_builtin. all: eauto.
+        { rewrite ALLOWED. rewrite MTST1, CURPC. ss. unfold Genv.find_comp.
+          setoid_rewrite CURF. ss.
+        }
         { ss. }
         { simpl. econstructor. econstructor 1; eauto. }
         { simpl. right. split; auto. econs; eauto. econs. econs; eauto. }
@@ -1437,6 +1444,9 @@ Section PROOF.
         exists k, d, m_a0, m_i. simpl. splits; auto. 2: split; auto.
         econstructor 2. 2: econstructor 1. 2: auto.
         eapply ir_step_builtin. all: eauto.
+        { rewrite ALLOWED. rewrite MTST1, CURPC. ss. unfold Genv.find_comp.
+          setoid_rewrite CURF. ss.
+        }
         { ss. }
         { instantiate (2:=[Vptr b0 ofs0; Val.load_result chunk v]).
           simpl. econstructor. econstructor 1; eauto. rewrite val_load_result_idem. auto.
@@ -1457,6 +1467,9 @@ Section PROOF.
         exists k, d, m_a0, m_i. simpl. splits; auto. 2: split; auto.
         econstructor 2. 2: econstructor 1. 2: auto.
         eapply ir_step_builtin. all: eauto.
+        { rewrite ALLOWED. rewrite MTST1, CURPC. ss. unfold Genv.find_comp.
+          setoid_rewrite CURF. ss.
+        }
         { ss. }
         { simpl. econstructor. auto. }
         { simpl. right. split; auto. econs; eauto. econs. auto. }
@@ -1467,6 +1480,9 @@ Section PROOF.
         exists k, d, m_a0, m_i. simpl. splits; auto. 2: split; auto.
         econstructor 2. 2: econstructor 1. 2: auto.
         eapply ir_step_builtin. all: eauto.
+        { rewrite ALLOWED. rewrite MTST1, CURPC. ss. unfold Genv.find_comp.
+          setoid_rewrite CURF. ss.
+        }
         { ss. }
         { simpl. econstructor. eauto. }
         { simpl. right. split; auto. econs; eauto. econs. auto. }

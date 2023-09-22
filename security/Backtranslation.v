@@ -3592,7 +3592,299 @@ Section Backtranslation.
         }
 
       (** Case 4: Builtins *)
-      - 
+      - assert (id = id_cur).
+        { unfold match_cur_fun in MS2. desH MS2. rewrite MS7 in IDCUR. clarify. }
+        subst id.
+
+        set (pretr ++ (id_cur, Bundle_builtin tr ef (vals_to_eventvals ge_i vargs) d) :: btr) as ttr in *.
+        assert (FIND_CUR_C: Genv.find_symbol ge_c id_cur = Some cur).
+        { destruct MS0 as ((MSENV0 & MSENV1 & MSENV2) & MGENV). apply Genv.invert_find_symbol in IDCUR. apply MSENV1 in IDCUR. auto. }
+        assert (FIND_FUN_C: Genv.find_funct_ptr ge_c cur = Some (Internal f)).
+        { destruct MS2 as (MFUN0 & MFUN1). auto. }
+
+        exploit WFC0. eapply FIND_CUR_C. eapply FIND_FUN_C. intros (cnt_cur & CNTS_CUR & WF_CNT_CUR).
+        assert (CUR_TR: get_id_tr ttr id_cur = (get_id_tr pretr id_cur) ++ (id_cur, Bundle_builtin tr ef (vals_to_eventvals ge_i vargs) d) :: (get_id_tr btr id_cur)).
+        { subst ttr. clear. rewrite get_id_tr_app. rewrite get_id_tr_cons. ss. rewrite Pos.eqb_refl. auto. }
+        assert (BOUND2: Z.of_nat (Datatypes.length (map (fun ib : ident * bundle_event => code_bundle_event ge_i (comp_of f) (snd ib)) (get_id_tr ttr id_cur))) < Int64.modulus).
+        { rewrite map_length. etransitivity. 2: eauto. unfold get_id_tr. admit. (* ez *) }
+        destruct WF_CNT_CUR as (CNT_CUR_NPUB & cnt_cur_b & FIND_CNT_CUR & CNT_CUR_MEM_VA & CNT_CUR_MEM_LOAD).
+
+        destruct MS2 as (FINDF_C_CUR & (f_i_cur & FINDF_I_CUR) & INV_CUR).
+        hexploit cur_fun_def. eapply FINDF_C_CUR. eapply FINDF_I_CUR. eapply INV_CUR. eauto.
+        intros (cnt_cur0 & params_cur & CNT_CUR0 & PARAMS_CUR & CUR_F).
+        rewrite CNTS_CUR in CNT_CUR0. inversion CNT_CUR0. subst cnt_cur0. clear CNT_CUR0.
+        assert (CP_CUR: (comp_of f) = (Genv.find_comp ge_i (Vptr cur Ptrofs.zero))).
+        { unfold Genv.find_comp. setoid_rewrite FINDF_I_CUR. subst f. ss. }
+
+        hexploit switch_spec.
+        { subst ttr. rewrite CUR_TR in BOUND2. rewrite map_app in BOUND2. ss. eapply BOUND2. }
+        { unfold wf_env in WFC3. specialize (WFC3 cnt_cur). des_ifs. eapply WFC3. }
+        eapply FIND_CNT_CUR. eapply CNT_CUR_MEM_VA.
+        { rewrite CNT_CUR_MEM_LOAD. rewrite map_length. auto. }
+        instantiate (1:=le).
+        instantiate (1:= (Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge_c cnt_cur (comp_of f) (get_id_tr ttr id_cur))) Sskip k0)).
+        instantiate (1:=Sreturn None).
+        intros (m_cu & CNT_CUR_STORE & CUR_SWITCH_STAR).
+        rename MEM into DELTA. move ECCASES after CUR_SWITCH_STAR.
+
+        assert (COMP_SAME: comp_of f = comp_of ef).
+        {
+          TODO
+
+          rewrite COMP_F_C. unfold Genv.find_comp. rewrite FIND_F_C. ss. }
+        assert (FIND_F_C: Genv.find_funct ge_c (Vptr b_ext Ptrofs.zero) =
+                            Some (External ef (list_typ_to_typelist (sig_args (ef_sig ef))) (rettype_to_type (sig_res (ef_sig ef))) (sig_cc (ef_sig ef)))).
+        { unfold match_find_def in MS3. hexploit MS3.
+          unfold Genv.find_funct in FINDF. rewrite pred_dec_true in FINDF; auto. unfold Genv.find_funct_ptr in FINDF. des_ifs. eapply Heq.
+          eapply Senv.find_invert_symbol; eapply FINDB.
+          intros. des_ifs. ss. rewrite pred_dec_true; auto. rewrite Genv.find_funct_ptr_iff. auto.
+        }
+
+        desH ECCASES; cycle 1.
+
+        (* Case 3-1: observable defined external calls *)
+        { subst d. unfold mem_delta_apply_wf in DELTA. simpl in DELTA. inversion DELTA; clear DELTA. subst m1'.
+          hexploit exists_vargs_vres. eapply MS0. eapply ECCASES. eauto. intros (vargs2 & vretv2 & EVALS & EXT2).
+          eapply star_cut_middle. exists E0.
+          eexists. split.
+          { unfold wf_c_stmt in WFC2. specialize (WFC2 _ CNTS_CUR). subst stmt.
+            eapply star_trans. eapply code_bundle_trace_spec. 2: ss.
+            unfold switch_bundle_events at 1. rewrite CUR_TR at 1. rewrite map_app. simpl.
+            rewrite ! (match_symbs_code_bundle_call ge_i ge_c) in CUR_SWITCH_STAR.
+            rewrite ! (match_symbs_code_bundle_events ge_i ge_c) in CUR_SWITCH_STAR.
+            eapply star_trans. eapply CUR_SWITCH_STAR. 2: ss. 2,3: destruct MS0 as (MS & _); auto.
+            clear BOUND2 CUR_SWITCH_STAR.
+            unfold code_bundle_call. eapply star_trans. eapply code_mem_delta_correct. auto.
+            { unfold mem_delta_apply_wf. simpl. reflexivity. }
+            2: ss. econs 2. 2: econs 1. 2: traceEq.
+            eapply step_call. ss.
+            { econs. assert (FSN_C: Senv.find_symbol ge_c id_next = Some b_ext).
+              { destruct MS0 as ((MSENV0 & MSENV1 & MSENV2) & MGENV). apply MSENV1. auto. }
+              eapply eval_Evar_global.
+              - unfold wf_env in WFC3. specialize (WFC3 id_next). rewrite FSN_C in WFC3. apply WFC3.
+              - eapply FSN_C.
+              - econs 2. ss.
+            }
+            { eapply EVALS. }
+            { eapply FIND_F_C. }
+            { ss. }
+            { left. apply COMP_F_C. }
+            { i. unfold Genv.type_of_call in H. rewrite <- Pos.eqb_eq in COMP_F_C. rewrite COMP_F_C in H. inv H. }
+            { econs 1. ii. unfold Genv.type_of_call in H. rewrite <- Pos.eqb_eq in COMP_F_C. rewrite COMP_F_C in H. inv H. }
+          }
+          clear BOUND2 CUR_SWITCH_STAR.
+          do 2 eexists. split.
+          { econs 2. eapply step_external_function. eapply EXT2.
+            econs 2. eapply step_returnstate.
+            { i. exfalso. unfold Genv.type_of_call in H. rewrite <- Pos.eqb_eq in COMP_SAME. rewrite COMP_SAME in H. ss. }
+            { econs 1. rewrite COMP_SAME. unfold Genv.type_of_call. rewrite Pos.eqb_refl. ss. }
+            econs 2. eapply step_skip_or_continue_loop1. left; auto. econs 2. eapply step_skip_loop2.
+            econs 1. all: ss.
+          }
+          splits.
+          2:{ unfold unbundle. ss. traceEq. }
+
+          left. exists id_cur. split.
+          { ss. splits; auto.
+            - unfold wf_counters. split; auto.
+              move WFC0 after COMP_SAME. ii. specialize (WFC0 _ _ _ H H0). des. exists cnt. splits; auto.
+              unfold wf_counter in WFC5. des. unfold wf_counter. splits; auto.
+              exists b0. splits; auto.
+              + eapply mem_valid_access_wunchanged_on. eapply WFC7.
+                eapply store_wunchanged_on. eapply CNT_CUR_STORE. instantiate (1:= fun _ _ => True). ss.
+              + destruct (Pos.eq_dec id id_cur).
+                * subst id. assert (cnt_cur = cnt).
+                  { rewrite WFC0 in CNTS_CUR. clarify. }
+                  subst cnt. assert (b0 = cnt_cur_b).
+                  { setoid_rewrite WFC6 in FIND_CNT_CUR. clarify. }
+                  subst b0. assert (b = cur).
+                  { rewrite FIND_CUR_C in H. clarify. }
+                  subst b. assert (f0 = f).
+                  { rewrite FINDF_C_CUR in H0. clarify. }
+                  subst f0. ss. erewrite Mem.load_store_same. 2: eapply CNT_CUR_STORE.
+                  ss. rewrite map_length. rewrite get_id_tr_app. ss.
+                  rewrite Pos.eqb_refl. rewrite app_length. ss.
+                  do 2 f_equal. apply nat64_int64_add_one.
+                  admit. (*ez*)
+                * ss. erewrite Mem.load_store_other. 2: eapply CNT_CUR_STORE.
+                  2:{ left. ii. clarify. apply Genv.find_invert_symbol in FIND_CNT_CUR, WFC6.
+                      rewrite FIND_CNT_CUR in WFC6. clarify. rename cnt into cnt_cur.
+                      specialize (CNT_INJ _ _ _ CNTS_CUR WFC0). clarify.
+                  }
+                  rewrite get_id_tr_app. ss. apply Pos.eqb_neq in n. rewrite n. rewrite app_nil_r. rewrite WFC8. auto.
+            - hexploit wunchanged_on_exists_mem_free_list.
+              { eapply store_wunchanged_on. eapply CNT_CUR_STORE. }
+              eapply FREEENV. intros (m_f & FREE2). esplits. eapply FREE2.
+              eapply wf_c_cont_wunchanged_on. eapply WFC1. 
+              hexploit wunchanged_on_free_list_preserves. 2: eapply FREEENV. 2: eapply FREE2. 2: auto.
+              eapply store_wunchanged_on. eapply CNT_CUR_STORE.
+            - move WFC2 after COMP_SAME. unfold wf_c_stmt in *. i. rewrite CNTS_CUR in H. inv H. rename cnt into cnt_cur. ss.
+            - move WFNB after COMP_SAME. unfold wf_c_nb in *. erewrite Mem.nextblock_store. eapply WFNB. eapply CNT_CUR_STORE.
+          }
+          { ss. exists k_c. splits; auto.
+            2:{ unfold match_cur_fun. splits; eauto. }
+            move MS1 after COMP_SAME. move MCNTS after COMP_SAME. destruct MS1 as (MM0 & MM1 & MM2).
+            assert (m2 = m_i).
+            { eapply known_obs_preserves_mem. eapply ECCASES. }
+            subst m2. unfold match_mem. splits; auto.
+            { eapply Mem.store_outside_inject. eapply MM0. 2: eapply CNT_CUR_STORE. ss. i.
+              unfold match_cnts in MCNTS. eapply MCNTS. 3: eapply H. all: eauto.
+            }
+          }
+        }
+
+        (* Case 3-2: observables unknown external calls *)
+        { hexploit external_call_unknowns_fo. eapply ECCASES. intros FO_I.
+          hexploit external_call_unknowns_val_inject_list. eapply ECCASES. intros ARGS_INJ.
+          move MS1 after ARGS_INJ. destruct MS1 as (MM0 & MM1 & MM2).
+          hexploit mem_delta_apply_establish_inject_preprocess2.
+          eapply MM0. eapply CNT_CUR_STORE. 2: eapply MM1. 2: eapply MM2.
+          2: eapply DELTA.
+          2:{ apply meminj_first_order_public_first_order. auto. }
+          { clear CUR_SWITCH_STAR CNT_CUR_STORE. ii. erewrite match_symbs_meminj_public in H.
+            2:{ destruct MS0 as (MS & _). apply MS. }
+            unfold meminj_public in H. des_ifs.
+            eapply Senv.find_invert_symbol in FIND_CNT_CUR. rewrite FIND_CNT_CUR in Heq. clarify.
+          }
+          intros (m_next0 & DELTA_C & INJ0).
+          hexploit external_call_mem_inject_gen.
+          { eapply match_symbs_symbols_inject. destruct MS0 as (MS & _). apply MS. }
+          apply EC. apply INJ0. apply ARGS_INJ.
+          intros (j2 & vres2 & m_next & EC2 & RET_INJ & INJ2 & UCH0 & UCH1 & INCR2 & INJ_SEP).
+          assert (COMP_SAME: comp_of f = comp_of ef).
+          { rewrite COMP_F_C. unfold Genv.find_comp. rewrite FIND_F_C. ss. }
+
+          exists (State f stmt k0 e le m_next). split.
+          { unfold wf_c_stmt in WFC2. specialize (WFC2 _ CNTS_CUR). subst stmt.
+            eapply star_trans. eapply code_bundle_trace_spec. 2: ss.
+            unfold switch_bundle_events at 1. rewrite CUR_TR at 1. rewrite map_app. simpl.
+            rewrite ! (match_symbs_code_bundle_call ge_i ge_c) in CUR_SWITCH_STAR.
+            rewrite ! (match_symbs_code_bundle_events ge_i ge_c) in CUR_SWITCH_STAR.
+            eapply star_trans. eapply CUR_SWITCH_STAR. 2: ss. 2,3: destruct MS0 as (MS & _); auto.
+            clear BOUND2 CUR_SWITCH_STAR CNT_CUR_STORE.
+            unfold code_bundle_call. eapply star_trans. eapply code_mem_delta_correct. auto.
+            { erewrite <- match_symbs_mem_delta_apply_wf. rewrite CP_CUR. eapply DELTA_C.
+              destruct MS0 as (MSYMB & _). auto.
+            }
+            2: ss. unfold unbundle. simpl.
+            econs 2. eapply step_call. ss.
+            { econs. assert (FSN_C: Senv.find_symbol ge_c id_next = Some b_ext).
+              { destruct MS0 as ((MSENV0 & MSENV1 & MSENV2) & MGENV). apply MSENV1. auto. }
+              eapply eval_Evar_global.
+              - unfold wf_env in WFC3. specialize (WFC3 id_next). rewrite FSN_C in WFC3. apply WFC3.
+              - eapply FSN_C.
+              - econs 2. ss.
+            }
+            { eapply match_symbs_vals_public_eval_to_vargs; auto.
+              destruct MS0 as (MS0 & _). auto.
+              eapply extcall_unkowns_vals_public; eauto.
+            }
+            { eapply FIND_F_C. }
+            { ss. }
+            { left. apply COMP_F_C. }
+            { i. unfold Genv.type_of_call in H. rewrite <- Pos.eqb_eq in COMP_F_C. rewrite COMP_F_C in H. inv H. }
+            { econs 1. ii. unfold Genv.type_of_call in H. rewrite <- Pos.eqb_eq in COMP_F_C. rewrite COMP_F_C in H. inv H. }
+
+            econs 2. eapply step_external_function. eapply EC2.
+            econs 2. eapply step_returnstate.
+            { i. exfalso. unfold Genv.type_of_call in H. rewrite <- Pos.eqb_eq in COMP_SAME. rewrite COMP_SAME in H. ss. }
+            { econs 1. rewrite COMP_SAME. unfold Genv.type_of_call. rewrite Pos.eqb_refl. ss. }
+            econs 2. eapply step_skip_or_continue_loop1. left; auto. econs 2. eapply step_skip_loop2.
+            econs 1. all: ss. traceEq.
+          }
+
+          clear CUR_SWITCH_STAR BOUND2.
+          assert (UCH2: Mem.unchanged_on (fun b _ => forall b0 ofs0, (meminj_public ge_i) b0 <> Some (b, ofs0)) m_next0 m_next).
+          { eapply Mem.unchanged_on_implies. eapply UCH1. ii. eapply H; eauto. }
+          assert (UCH3: Mem.unchanged_on (fun b _ => Senv.invert_symbol ge_c b = None) m_next0 m_next).
+          { eapply Mem.unchanged_on_implies. eapply UCH2. ss. i. unfold meminj_public. des_ifs. ii. clarify.
+            apply Senv.invert_find_symbol in Heq. destruct MS0 as ((MSE1 & MSE2 & MSE3) & _). apply MSE2 in Heq.
+            apply Senv.find_invert_symbol in Heq. setoid_rewrite H in Heq. ss.
+          }
+          eapply mem_unchanged_wunchanged in UCH3.
+          hexploit mem_delta_apply_wf_wunchanged_on. eapply DELTA_C. intros UCH4.
+          hexploit wunchanged_on_trans. eapply UCH4. eapply UCH3. intros UCH5.
+          hexploit store_wunchanged_on. eapply CNT_CUR_STORE. intros UCH6.
+          hexploit wunchanged_on_trans. eapply UCH6. eapply UCH5. intros UCH7.
+          clear UCH3 UCH4 UCH5 UCH6.
+          left. exists id_cur. split.
+          { ss. splits; auto.
+            - unfold wf_counters. split; auto.
+              move WFC0 after COMP_SAME. ii. specialize (WFC0 _ _ _ H H0). des. exists cnt. splits; auto.
+              unfold wf_counter in WFC5. des. unfold wf_counter. splits; auto.
+              exists b0. splits; auto.
+              + move MCNTS after COMP_SAME.
+                eapply mem_valid_access_wunchanged_on. 2: eapply mem_unchanged_wunchanged; eapply UCH2.
+                eapply mem_delta_apply_wf_valid_access. eapply DELTA_C.
+                eapply mem_valid_access_wunchanged_on. 2: eapply store_wunchanged_on; eapply CNT_CUR_STORE.
+                auto. instantiate (1:= fun _ _ => True). ss.
+                ss. i. erewrite match_symbs_meminj_public. 2: eapply MS0. eapply meminj_public_not_public_not_mapped; eauto.
+              + destruct (Pos.eq_dec id id_cur).
+                * subst id. assert (cnt_cur = cnt).
+                  { rewrite WFC0 in CNTS_CUR. clarify. }
+                  subst cnt. assert (b0 = cnt_cur_b).
+                  { setoid_rewrite WFC6 in FIND_CNT_CUR. clarify. }
+                  subst b0. assert (b = cur).
+                  { rewrite FIND_CUR_C in H. clarify. }
+                  subst b. assert (f0 = f).
+                  { rewrite FINDF_C_CUR in H0. clarify. }
+                  subst f0. ss.
+                  eapply Mem.load_unchanged_on. eapply UCH2.
+                  { ss. i. erewrite match_symbs_meminj_public. 2: eapply MS0. eapply meminj_public_not_public_not_mapped; eauto. }
+                  erewrite mem_delta_apply_wf_mem_load.
+                  2:{ erewrite match_symbs_mem_delta_apply_wf in DELTA_C. eapply DELTA_C. eapply MS0. }
+                  2:{ eapply Genv.find_invert_symbol in WFC6. eapply WFC6. }
+                  2:{ auto. }
+                  erewrite Mem.load_store_same. 2: eapply CNT_CUR_STORE.
+                  { ss. rewrite map_length. rewrite get_id_tr_app. ss. rewrite Pos.eqb_refl. rewrite app_length. ss.
+                    do 2 f_equal. apply nat64_int64_add_one.
+                    admit. (*ez*)
+                  }
+                * eapply Mem.load_unchanged_on. eapply UCH2.
+                  { ss. i. erewrite match_symbs_meminj_public. 2: eapply MS0. eapply meminj_public_not_public_not_mapped; eauto. }
+                  erewrite mem_delta_apply_wf_mem_load.
+                  2:{ erewrite match_symbs_mem_delta_apply_wf in DELTA_C. eapply DELTA_C. eapply MS0. }
+                  2:{ eapply Genv.find_invert_symbol in WFC6. eapply WFC6. }
+                  2:{ auto. }
+                  ss. erewrite Mem.load_store_other. 2: eapply CNT_CUR_STORE.
+                  { rewrite WFC8. rewrite get_id_tr_app. ss. apply Pos.eqb_neq in n. rewrite n. rewrite app_nil_r. auto. }
+                  { left. ii. clarify. apply Genv.find_invert_symbol in FIND_CNT_CUR, WFC6.
+                    rewrite FIND_CNT_CUR in WFC6. clarify. rename cnt into cnt_cur.
+                    specialize (CNT_INJ _ _ _ CNTS_CUR WFC0). clarify.
+                  }
+
+            - move FREEENV after COMP_SAME. move WFC1 after FREEENV. move WFC4 after FREEENV.
+              hexploit wunchanged_on_exists_mem_free_list_2. eapply FREEENV.
+              instantiate (2:=ge_c). eapply UCH7. ss.
+              intros (m_c' & FREE2). esplits. eapply FREE2.
+              eapply wf_c_cont_wunchanged_on_2. eapply WFC1.
+              eapply wunchanged_on_free_list_preserves_gen. 2,3: eauto. auto.
+            - move WFNB after UCH7. eapply wf_c_nb_wunchanged_on; eauto.
+          }
+          { ss. exists j2. splits; auto.
+            2:{ unfold match_cur_fun. splits; eauto. }
+            { unfold match_mem. splits; auto. move DELTA after UCH7. move EC after UCH7.
+              eapply meminj_not_alloc_delta in MM2. 2: eapply DELTA.
+              eapply meminj_not_alloc_external_call. eapply MM2. eauto.
+            }
+            { ii. assert (NINJP: (meminj_public ge_i) b = None).
+              { move MCNTS after UCH7. specialize (MCNTS _ _ _ H H0 b ofs).
+                destruct (meminj_public ge_i b) eqn:CASES; ss. exfalso.
+                destruct p. move MM1 after UCH7. move INCR2 after UCH7.
+                unfold inject_incr in *. hexploit MM1. apply CASES. hexploit INCR2. apply CASES.
+                i. rewrite H1 in H2. clarify.
+              }
+              specialize (INJ_SEP _ _ _ NINJP H1). des. apply INJ_SEP0.
+              hexploit Genv.genv_symb_range. eapply H0. intros RANGE.
+              move WFNB before RANGE.
+              hexploit mem_delta_apply_wf_wunchanged_on. eapply DELTA_C. intros T1.
+              hexploit store_wunchanged_on. eapply CNT_CUR_STORE. intros T2.
+              eapply wunchanged_on_nextblock in T1, T2. revert_until NINJP. clear. i.
+              unfold wf_c_nb in WFNB. unfold Mem.valid_block. eapply Plt_Ple_trans. eauto.
+              etransitivity. eapply WFNB. etransitivity; eauto.
+            }
+          }
+        }
 
 
         TODO
