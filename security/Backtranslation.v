@@ -2486,6 +2486,87 @@ Section Backtranslation.
           eapply match_senv_eventval_match. eauto. eapply H. eapply match_senv_eventval_match. eauto. eapply H.
     Qed.
 
+    Lemma eventval_list_match_eval_exprlist
+          (ge: genv) args targs vargs
+          (EMS: eventval_list_match ge args targs vargs)
+          e cp le m
+          (WF: wf_env ge e)
+      :
+      eval_exprlist ge e cp le m (list_eventval_to_list_expr args)
+                    (list_eventval_to_typelist args) vargs.
+    Proof.
+      revert_until EMS. induction EMS; i; ss. econs.
+      econs; auto.
+      { clear dependent evl. clear tyl vl. inv H; try (simpl_expr; fail).
+        ss. eapply ptr_of_id_ofs_eval; auto.
+      }
+      { clear dependent evl. clear tyl vl. inv H; ss; try (simpl_expr; fail).
+        rewrite ptr_of_id_ofs_typeof. ss.
+      }
+    Qed.
+
+    Lemma exists_vargs_vres_2
+          (ge1: Senv.t) (ge2: genv)
+          (MS: match_symbs ge1 ge2)
+          ef m1 vargs tr vretv m2
+          (EK: external_call_known_observables ef ge1 m1 vargs tr vretv m2)
+          e cp le m_c
+          (WFE: wf_env ge2 e)
+      :
+      exists vargs2 vretv2,
+        (eval_exprlist ge2 e cp le m_c (list_eventval_to_list_expr (vals_to_eventvals ge1 vargs))
+                       (list_eventval_to_typelist (vals_to_eventvals ge1 vargs)) vargs2) /\
+          (external_call ef ge2 vargs2 m_c tr vretv2 m_c).
+    Proof.
+      pose proof MS as MS0. destruct MS as (MS1 & MS2 & MS3). move MS0 after MS1.
+      unfold external_call_known_observables in *. des_ifs; ss; des. all: try (inv EK; clarify; ss).
+      - inv H; clarify. unfold senv_invert_symbol_total. hexploit Senv.find_invert_symbol; eauto. intros INV. rewrite INV.
+        esplits.
+        + econs. 3: econs. eapply ptr_of_id_ofs_eval; eauto. rewrite ptr_of_id_ofs_typeof. simpl_expr.
+        + econs. econs; auto. rewrite MS3; auto. eapply match_symbs_eventval_match; eauto.
+      - inv H; clarify. unfold senv_invert_symbol_total. hexploit Senv.find_invert_symbol; eauto. intros INV. rewrite INV.
+        esplits.
+        + econs. eapply ptr_of_id_ofs_eval; eauto. rewrite ptr_of_id_ofs_typeof. simpl_expr.
+          econs. 3: econs.
+          { instantiate (1:=v). destruct v; ss; try (econs; fail).
+            - destruct chunk; ss; inv H2; ss.
+            - destruct Archi.ptr64 eqn:ARCH.
+              + destruct chunk; ss; inv H2; ss; des_ifs.
+                * unfold senv_invert_symbol_total. hexploit Senv.find_invert_symbol. eapply H6. intros INV2. rewrite INV2.
+                  eapply ptr_of_id_ofs_eval; eauto.
+                * unfold senv_invert_symbol_total. hexploit Senv.find_invert_symbol. eapply H7. intros INV2. rewrite INV2.
+                  eapply ptr_of_id_ofs_eval; eauto.
+              + destruct chunk; ss; inv H2; ss; des_ifs.
+                * unfold senv_invert_symbol_total. hexploit Senv.find_invert_symbol. eapply H6. intros INV2. rewrite INV2.
+                  eapply ptr_of_id_ofs_eval; eauto.
+                * unfold senv_invert_symbol_total. hexploit Senv.find_invert_symbol. eapply H6. intros INV2. rewrite INV2.
+                  eapply ptr_of_id_ofs_eval; eauto.
+                * unfold senv_invert_symbol_total. hexploit Senv.find_invert_symbol. eapply H7. intros INV2. rewrite INV2.
+                  eapply ptr_of_id_ofs_eval; eauto.
+          }
+          { instantiate (1:=Val.load_result chunk v). rewrite EK1 in H2. rewrite EK1.
+            destruct v; ss.
+            - destruct chunk; ss; inv H2; ss.
+            - destruct chunk; ss. all: simpl_expr.
+            - destruct chunk; ss. all: simpl_expr.
+            - inv H2. unfold senv_invert_symbol_total. hexploit Senv.find_invert_symbol. apply H7. intros INV2. rewrite INV2.
+              rewrite ptr_of_id_ofs_typeof. simpl_expr.
+          }
+        + econs. econs; auto. rewrite MS3; auto. rewrite EK1. eapply match_symbs_eventval_match; eauto.
+      - esplits.
+        + erewrite eventval_list_match_vals_to_eventvals. 2: eapply H.
+          eapply eventval_list_match_eval_exprlist; eauto.
+          eapply match_senv_eventval_list_match; eauto.
+        + econs. eapply match_senv_eventval_list_match; eauto.
+      - esplits.
+        + econs. 3: econs.
+          * erewrite eventval_match_val_to_eventval. 2: eapply H. eapply eventval_to_expr_val_eval; auto.
+            eapply match_senv_eventval_match; eauto.
+          * inv H; ss; try (simpl_expr; fail). apply MS2 in H1. setoid_rewrite H1.
+            rewrite ptr_of_id_ofs_typeof. ss.
+        + econs. eapply match_senv_eventval_match; eauto.
+    Qed.
+
     Lemma known_obs_preserves_mem
           ef ge m vargs tr vretv m'
           (EK: external_call_known_observables ef ge m vargs tr vretv m')
@@ -2528,6 +2609,29 @@ Section Backtranslation.
         rewrite ptr_of_id_ofs_typeof. unfold Tptr. des_ifs; ss.
         + unfold Cop.sem_cast. ss. rewrite Heq. ss.
         + unfold Cop.sem_cast. ss. rewrite Heq. ss.
+    Qed.
+
+    Lemma vals_public_eval_to_vargs_2
+          (ge: genv) ef vargs
+          (VP: vals_public ge (sig_args (ef_sig ef)) vargs)
+          e cp le m
+          (WFE: wf_env ge e)
+      :
+      eval_exprlist ge e cp le m
+                    (list_eventval_to_list_expr (vals_to_eventvals ge vargs))
+                    (list_eventval_to_typelist (vals_to_eventvals ge vargs)) vargs.
+    Proof.
+      induction VP. ss. econs. ss. rename x into ty, y into v. econs. 3: auto.
+      - clear dependent l. clear dependent l'.
+        inv H; ss; try (simpl_expr; fail).
+        destruct H0 as (id & BP1 & BP2).
+        unfold senv_invert_symbol_total. rewrite BP1.
+        apply ptr_of_id_ofs_eval; auto. apply Senv.invert_find_symbol; auto.
+      - clear dependent l. clear dependent l'.
+        inv H; ss; try (simpl_expr; fail).
+        destruct H0 as (id & BP1 & BP2).
+        unfold senv_invert_symbol_total. rewrite BP1.
+        rewrite ptr_of_id_ofs_typeof. ss.
     Qed.
 
     Lemma match_symbs_block_public
@@ -2588,6 +2692,21 @@ Section Backtranslation.
       eapply vals_public_eval_to_vargs; auto. eapply match_symbs_vals_public; eauto.
     Qed.
 
+    Lemma match_symbs_vals_public_eval_to_vargs_2
+          ge1 (ge2: genv)
+          (MS: match_symbs ge1 ge2)
+          ef vargs
+          (VP: vals_public ge1 (sig_args (ef_sig ef)) vargs)
+          e cp le m
+          (WFE: wf_env ge2 e)
+      :
+      eval_exprlist ge2 e cp le m
+                    (list_eventval_to_list_expr (vals_to_eventvals ge1 vargs))
+                    (list_eventval_to_typelist (vals_to_eventvals ge1 vargs)) vargs.
+    Proof.
+      erewrite match_symbs_vals_public_vals_to_eventvals; eauto.
+      eapply vals_public_eval_to_vargs_2; auto. eapply match_symbs_vals_public; eauto.
+    Qed.
 
     Lemma extcall_unkowns_vals_public
           ef ge m vargs
@@ -3625,67 +3744,43 @@ Section Backtranslation.
         instantiate (1:= (Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge_c cnt_cur (comp_of f) (get_id_tr ttr id_cur))) Sskip k0)).
         instantiate (1:=Sreturn None).
         intros (m_cu & CNT_CUR_STORE & CUR_SWITCH_STAR).
-        rename MEM into DELTA. move ECCASES after CUR_SWITCH_STAR.
-
         assert (COMP_SAME: comp_of f = comp_of ef).
-        {
-          TODO
-
-          rewrite COMP_F_C. unfold Genv.find_comp. rewrite FIND_F_C. ss. }
-        assert (FIND_F_C: Genv.find_funct ge_c (Vptr b_ext Ptrofs.zero) =
-                            Some (External ef (list_typ_to_typelist (sig_args (ef_sig ef))) (rettype_to_type (sig_res (ef_sig ef))) (sig_cc (ef_sig ef)))).
-        { unfold match_find_def in MS3. hexploit MS3.
-          unfold Genv.find_funct in FINDF. rewrite pred_dec_true in FINDF; auto. unfold Genv.find_funct_ptr in FINDF. des_ifs. eapply Heq.
-          eapply Senv.find_invert_symbol; eapply FINDB.
-          intros. des_ifs. ss. rewrite pred_dec_true; auto. rewrite Genv.find_funct_ptr_iff. auto.
-        }
+        { rewrite ALLOWED. apply CP_CUR. }
+        rename MEM into DELTA. move ECCASES after CUR_SWITCH_STAR.
 
         desH ECCASES; cycle 1.
 
-        (* Case 3-1: observable defined external calls *)
+        (* Case 4-1: observable defined external calls *)
         { subst d. unfold mem_delta_apply_wf in DELTA. simpl in DELTA. inversion DELTA; clear DELTA. subst m1'.
-          hexploit exists_vargs_vres. eapply MS0. eapply ECCASES. eauto. intros (vargs2 & vretv2 & EVALS & EXT2).
+          hexploit exists_vargs_vres_2. eapply MS0. eapply ECCASES. eauto. intros (vargs2 & vretv2 & EVALS & EXT2).
           eapply star_cut_middle. exists E0.
           eexists. split.
           { unfold wf_c_stmt in WFC2. specialize (WFC2 _ CNTS_CUR). subst stmt.
             eapply star_trans. eapply code_bundle_trace_spec. 2: ss.
             unfold switch_bundle_events at 1. rewrite CUR_TR at 1. rewrite map_app. simpl.
-            rewrite ! (match_symbs_code_bundle_call ge_i ge_c) in CUR_SWITCH_STAR.
+            rewrite ! (match_symbs_code_bundle_builtin ge_i ge_c) in CUR_SWITCH_STAR.
             rewrite ! (match_symbs_code_bundle_events ge_i ge_c) in CUR_SWITCH_STAR.
             eapply star_trans. eapply CUR_SWITCH_STAR. 2: ss. 2,3: destruct MS0 as (MS & _); auto.
             clear BOUND2 CUR_SWITCH_STAR.
-            unfold code_bundle_call. eapply star_trans. eapply code_mem_delta_correct. auto.
+            unfold code_bundle_builtin. eapply star_trans. eapply code_mem_delta_correct. auto.
             { unfold mem_delta_apply_wf. simpl. reflexivity. }
-            2: ss. econs 2. 2: econs 1. 2: traceEq.
-            eapply step_call. ss.
-            { econs. assert (FSN_C: Senv.find_symbol ge_c id_next = Some b_ext).
-              { destruct MS0 as ((MSENV0 & MSENV1 & MSENV2) & MGENV). apply MSENV1. auto. }
-              eapply eval_Evar_global.
-              - unfold wf_env in WFC3. specialize (WFC3 id_next). rewrite FSN_C in WFC3. apply WFC3.
-              - eapply FSN_C.
-              - econs 2. ss.
-            }
-            { eapply EVALS. }
-            { eapply FIND_F_C. }
-            { ss. }
-            { left. apply COMP_F_C. }
-            { i. unfold Genv.type_of_call in H. rewrite <- Pos.eqb_eq in COMP_F_C. rewrite COMP_F_C in H. inv H. }
-            { econs 1. ii. unfold Genv.type_of_call in H. rewrite <- Pos.eqb_eq in COMP_F_C. rewrite COMP_F_C in H. inv H. }
+            econs 1. ss.
           }
           clear BOUND2 CUR_SWITCH_STAR.
-          do 2 eexists. split.
-          { econs 2. eapply step_external_function. eapply EXT2.
-            econs 2. eapply step_returnstate.
-            { i. exfalso. unfold Genv.type_of_call in H. rewrite <- Pos.eqb_eq in COMP_SAME. rewrite COMP_SAME in H. ss. }
-            { econs 1. rewrite COMP_SAME. unfold Genv.type_of_call. rewrite Pos.eqb_refl. ss. }
-            econs 2. eapply step_skip_or_continue_loop1. left; auto. econs 2. eapply step_skip_loop2.
-            econs 1. all: ss.
+          do 2 eexists. split. econs 2.
+          { eapply step_builtin. ss.
+            { eapply EVALS. }
+            { auto. }
+            { eapply EXT2. }
           }
+          econs 2. eapply step_skip_or_continue_loop1. left; auto.
+          econs 2. eapply step_skip_loop2.
+          econs 1. all: ss.
           splits.
           2:{ unfold unbundle. ss. traceEq. }
 
           left. exists id_cur. split.
-          { ss. splits; auto.
+          { splits; auto.
             - unfold wf_counters. split; auto.
               move WFC0 after COMP_SAME. ii. specialize (WFC0 _ _ _ H H0). des. exists cnt. splits; auto.
               unfold wf_counter in WFC5. des. unfold wf_counter. splits; auto.
@@ -3733,7 +3828,7 @@ Section Backtranslation.
           }
         }
 
-        (* Case 3-2: observables unknown external calls *)
+        (* Case 4-2: observables unknown external calls *)
         { hexploit external_call_unknowns_fo. eapply ECCASES. intros FO_I.
           hexploit external_call_unknowns_val_inject_list. eapply ECCASES. intros ARGS_INJ.
           move MS1 after ARGS_INJ. destruct MS1 as (MM0 & MM1 & MM2).
@@ -3751,46 +3846,28 @@ Section Backtranslation.
           { eapply match_symbs_symbols_inject. destruct MS0 as (MS & _). apply MS. }
           apply EC. apply INJ0. apply ARGS_INJ.
           intros (j2 & vres2 & m_next & EC2 & RET_INJ & INJ2 & UCH0 & UCH1 & INCR2 & INJ_SEP).
-          assert (COMP_SAME: comp_of f = comp_of ef).
-          { rewrite COMP_F_C. unfold Genv.find_comp. rewrite FIND_F_C. ss. }
 
           exists (State f stmt k0 e le m_next). split.
           { unfold wf_c_stmt in WFC2. specialize (WFC2 _ CNTS_CUR). subst stmt.
             eapply star_trans. eapply code_bundle_trace_spec. 2: ss.
             unfold switch_bundle_events at 1. rewrite CUR_TR at 1. rewrite map_app. simpl.
-            rewrite ! (match_symbs_code_bundle_call ge_i ge_c) in CUR_SWITCH_STAR.
+            rewrite ! (match_symbs_code_bundle_builtin ge_i ge_c) in CUR_SWITCH_STAR.
             rewrite ! (match_symbs_code_bundle_events ge_i ge_c) in CUR_SWITCH_STAR.
             eapply star_trans. eapply CUR_SWITCH_STAR. 2: ss. 2,3: destruct MS0 as (MS & _); auto.
             clear BOUND2 CUR_SWITCH_STAR CNT_CUR_STORE.
-            unfold code_bundle_call. eapply star_trans. eapply code_mem_delta_correct. auto.
+            unfold code_bundle_builtin. eapply star_trans. eapply code_mem_delta_correct. auto.
             { erewrite <- match_symbs_mem_delta_apply_wf. rewrite CP_CUR. eapply DELTA_C.
               destruct MS0 as (MSYMB & _). auto.
             }
             2: ss. unfold unbundle. simpl.
-            econs 2. eapply step_call. ss.
-            { econs. assert (FSN_C: Senv.find_symbol ge_c id_next = Some b_ext).
-              { destruct MS0 as ((MSENV0 & MSENV1 & MSENV2) & MGENV). apply MSENV1. auto. }
-              eapply eval_Evar_global.
-              - unfold wf_env in WFC3. specialize (WFC3 id_next). rewrite FSN_C in WFC3. apply WFC3.
-              - eapply FSN_C.
-              - econs 2. ss.
+            econs 2. eapply step_builtin.
+            { eapply match_symbs_vals_public_eval_to_vargs_2; auto.
+              destruct MS0 as (MS0 & _). auto. eapply extcall_unkowns_vals_public; eauto.
             }
-            { eapply match_symbs_vals_public_eval_to_vargs; auto.
-              destruct MS0 as (MS0 & _). auto.
-              eapply extcall_unkowns_vals_public; eauto.
-            }
-            { eapply FIND_F_C. }
-            { ss. }
-            { left. apply COMP_F_C. }
-            { i. unfold Genv.type_of_call in H. rewrite <- Pos.eqb_eq in COMP_F_C. rewrite COMP_F_C in H. inv H. }
-            { econs 1. ii. unfold Genv.type_of_call in H. rewrite <- Pos.eqb_eq in COMP_F_C. rewrite COMP_F_C in H. inv H. }
-
-            econs 2. eapply step_external_function. eapply EC2.
-            econs 2. eapply step_returnstate.
-            { i. exfalso. unfold Genv.type_of_call in H. rewrite <- Pos.eqb_eq in COMP_SAME. rewrite COMP_SAME in H. ss. }
-            { econs 1. rewrite COMP_SAME. unfold Genv.type_of_call. rewrite Pos.eqb_refl. ss. }
-            econs 2. eapply step_skip_or_continue_loop1. left; auto. econs 2. eapply step_skip_loop2.
-            econs 1. all: ss. traceEq.
+            { auto. }
+            { eapply EC2. }
+            econs 2. eapply step_skip_or_continue_loop1. left; auto.
+            econs 2. eapply step_skip_loop2. econs 1. all: ss. traceEq.
           }
 
           clear CUR_SWITCH_STAR BOUND2.
@@ -3886,6 +3963,9 @@ Section Backtranslation.
           }
         }
 
+      (** Case 5: Cross Call External 1 *)
+      -
+        
 
         TODO
 
