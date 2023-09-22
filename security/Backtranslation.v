@@ -1171,6 +1171,25 @@ Section Backtranslation.
       eapply FO; eauto.
     Qed.
 
+    Lemma mem_delta_apply_establish_inject_preprocess_gen
+          (ge: Senv.t) (k: meminj) m0 m0'
+          (INJ: Mem.inject k m0 m0')
+          pch pb pofs pv pcp m0''
+          (PRE: Mem.store pch m0' pb pofs pv pcp = Some m0'')
+          (PREB: forall b ofs, (meminj_public ge) b <> Some (pb, ofs))
+          (INCR: inject_incr (meminj_public ge) k)
+          (NALLOC: meminj_not_alloc (meminj_public ge) m0)
+          d cp m1
+          (APPD: mem_delta_apply_wf ge cp d (Some m0) = Some m1)
+      :
+      exists m1', mem_delta_apply_wf ge cp d (Some m0'') = Some m1' /\
+               (meminj_first_order (meminj_public ge) m1 -> Mem.inject (meminj_public ge) m1 m1').
+    Proof.
+      unfold mem_delta_apply_wf in APPD. rewrite mem_delta_apply_wf_get_wf_mem_delta.
+      eapply mem_delta_apply_establish_inject_preprocess_gen; eauto.
+      apply get_wf_mem_delta_is_wf.
+    Qed.
+
     Lemma mem_delta_apply_establish_inject_preprocess2
           (ge: Senv.t) (k: meminj) m0 m0'
           (INJ: Mem.inject k m0 m0')
@@ -1185,35 +1204,10 @@ Section Backtranslation.
       :
       exists m1', mem_delta_apply_wf ge cp d (Some m0'') = Some m1' /\ Mem.inject (meminj_public ge) m1 m1'.
     Proof.
-      unfold mem_delta_apply_wf in APPD. rewrite mem_delta_apply_wf_get_wf_mem_delta.
-      eapply mem_delta_apply_establish_inject_preprocess; eauto.
-      apply get_wf_mem_delta_is_wf.
-      unfold public_first_order in FO. ii. unfold meminj_public in H. des_ifs. apply Senv.invert_find_symbol in Heq.
-      eapply FO; eauto.
+      hexploit mem_delta_apply_establish_inject_preprocess_gen; eauto. i. des.
+      esplits; eauto. apply H0. ii. unfold meminj_public in H1. des_ifs.
+      eapply FO; eauto. apply Senv.invert_find_symbol; auto.
     Qed.
-
-    TODO
-
-    (* Lemma mem_delta_apply_establish_inject_preprocess2 *)
-    (*       (ge: Senv.t) (k: meminj) m0 m0' *)
-    (*       (INJ: Mem.inject k m0 m0') *)
-    (*       pch pb pofs pv pcp m0'' *)
-    (*       (PRE: Mem.store pch m0' pb pofs pv pcp = Some m0'') *)
-    (*       (PREB: forall b ofs, (meminj_public ge) b <> Some (pb, ofs)) *)
-    (*       (INCR: inject_incr (meminj_public ge) k) *)
-    (*       (NALLOC: meminj_not_alloc (meminj_public ge) m0) *)
-    (*       d cp m1 *)
-    (*       (APPD: mem_delta_apply_wf ge cp d (Some m0) = Some m1) *)
-    (*       (FO: public_first_order ge m1) *)
-    (*   : *)
-    (*   exists m1', mem_delta_apply_wf ge cp d (Some m0'') = Some m1' /\ Mem.inject (meminj_public ge) m1 m1'. *)
-    (* Proof. *)
-    (*   unfold mem_delta_apply_wf in APPD. rewrite mem_delta_apply_wf_get_wf_mem_delta. *)
-    (*   eapply mem_delta_apply_establish_inject_preprocess; eauto. *)
-    (*   apply get_wf_mem_delta_is_wf. *)
-    (*   unfold public_first_order in FO. ii. unfold meminj_public in H. des_ifs. apply Senv.invert_find_symbol in Heq. *)
-    (*   eapply FO; eauto. *)
-    (* Qed. *)
 
   End PROOF.
 
@@ -2901,6 +2895,16 @@ Section Backtranslation.
       eapply external_call_nextblock in EC. etransitivity. 2: eapply H. auto.
     Qed.
 
+    Lemma public_first_order_meminj_first_order
+          (ge: Senv.t) m
+          (FO: public_first_order ge m)
+      :
+      meminj_first_order (meminj_public ge) m.
+    Proof.
+      ii. unfold meminj_public in H. des_ifs. eapply FO; eauto.
+      apply Senv.invert_find_symbol; auto.
+    Qed.
+
 
     Lemma ir_to_clight_step_cce_1
           (ge_i: Asm.genv) (ge_c: genv)
@@ -3008,25 +3012,32 @@ Section Backtranslation.
       instantiate (1:=Sreturn None).
       intros (m_cu & CNT_CUR_STORE & CUR_SWITCH_STAR).
 
-      TODO
       assert (DELTA_C: exists m_c',
                  (mem_delta_apply_wf ge_i (comp_of f) d (Some m_cu) = Some m_c') /\
                    (((public_first_order ge_i m2) -> (Mem.inject (meminj_public ge_i) m2 m_c')))).
-      { desH DELTA_CASES.
-
-        move MS1 after CUR_SWITCH_STAR. destruct MS1 as (MINJ & INJINCR & NALLOC).
-        move DELTA after NALLOC. move PUB after NALLOC.
-        hexploit mem_delta_apply_establish_inject_preprocess2.
+      { move MS1 after CUR_SWITCH_STAR. destruct MS1 as (MINJ & INJINCR & NALLOC).
+        move DELTA after NALLOC.
+        hexploit mem_delta_apply_establish_inject_preprocess_gen.
         apply MINJ. eapply CNT_CUR_STORE.
         { instantiate (1:=ge_i). erewrite match_symbs_meminj_public. 2: destruct MS0 as (MS & _); apply MS.
-          ii. unfold meminj_public in H. des_ifs. apply Senv.find_invert_symbol in FIND_CNT_CUR.
-          rewrite FIND_CNT_CUR in Heq. clarify.
+          ii. eapply meminj_public_not_public_not_mapped. 3: apply H. 2: eauto. auto.
         }
-        apply INJINCR. apply NALLOC. apply DELTA. apply PUB.
+        apply INJINCR. apply NALLOC. apply DELTA.
         intros (m_c' & DELTA' & INJ'). exists m_c'. splits; auto.
-        rewrite CP_CUR. auto.
+        rewrite CP_CUR. auto. i. apply INJ'. apply public_first_order_meminj_first_order; auto.
       }
-      des. rename DELTA_C0 into MEMINJ_CNT.
+      desH DELTA_C. rename DELTA_C0 into MEMINJ_CNT.
+
+      exists m_c'. split; cycle 1.
+      { exists m_cu. split; auto. split.
+        - i. subst d. unfold mem_delta_apply_wf in DELTA_C. ss. clarify.
+        - i. split; auto.
+      }
+
+      TODO
+
+
+
       assert (ENV_ALLOC: exists e_next m_c_next0, alloc_variables ge_c (comp_of f_next) empty_env m_c' (fn_params f_next ++ fn_vars f_next) e_next m_c_next0).
       { eapply alloc_variables_exists. }
       des.
