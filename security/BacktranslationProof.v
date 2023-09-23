@@ -1675,16 +1675,44 @@ Section PROOF.
         2:{ unfold unbundle. ss. traceEq. }
         left. assert (id = id_cur).
         { unfold match_cur_fun in MS2. desH MS2. rewrite MS7 in IDCUR. clarify. }
-        subst id. exists id_cur. split.
+        subst id. exists id_cur. clear STAR. split.
 
         - splits; auto.
-          {
+          { unfold wf_counters. split; auto.
+            move WFC0 after COMP_CUR_F. i. specialize (WFC0 _ _ _ H H0). des. exists cnt. splits; auto.
+            unfold wf_counter in WFC5. des. unfold wf_counter. splits; auto.
+            exists b1. splits; auto.
+            + eapply mem_valid_access_wunchanged_on. eapply WFC7.
+              eapply store_wunchanged_on. eapply CNT_CUR_STORE. instantiate (1:= fun _ _ => True). ss.
+            + destruct (Pos.eq_dec id id_cur).
+              * subst id. assert (cnt_cur = cnt).
+                { rewrite WFC0 in CNT_CUR. clarify. }
+                subst cnt. assert (b1 = cnt_cur_b).
+                { setoid_rewrite WFC6 in FIND_CNT. clarify. }
+                subst b1. assert (b0 = cur).
+                { rewrite FIND_CUR_C in H. clarify. }
+                subst b. assert (f0 = f).
+                { rewrite FINDF_C_CUR in H0. clarify. }
+                subst f0. ss. erewrite Mem.load_store_same. 2: eapply CNT_CUR_STORE.
+                ss. rewrite map_length. rewrite get_id_tr_app. ss.
+                rewrite Pos.eqb_refl. rewrite app_length. ss.
+                do 2 f_equal. apply nat64_int64_add_one.
+                admit. (*ez*)
+              * ss. erewrite Mem.load_store_other. 2: eapply CNT_CUR_STORE.
+                2:{ left. ii. clarify. apply Genv.find_invert_symbol in FIND_CNT_CUR, WFC6.
+                    rewrite FIND_CNT_CUR in WFC6. clarify. rename cnt into cnt_cur.
+                    specialize (CNT_INJ _ _ _ CNTS_CUR WFC0). clarify.
+                }
+                rewrite get_id_tr_app. ss. apply Pos.eqb_neq in n. rewrite n. rewrite app_nil_r. rewrite WFC8. auto.
+          - hexploit wunchanged_on_exists_mem_free_list.
+            { eapply store_wunchanged_on. eapply CNT_CUR_STORE. }
+            eapply FREEENV. intros (m_f & FREE2). esplits. eapply FREE2.
+            eapply wf_c_cont_wunchanged_on. eapply WFC1. 
+            hexploit wunchanged_on_free_list_preserves. 2: eapply FREEENV. 2: eapply FREE2. 2: auto.
+            eapply store_wunchanged_on. eapply CNT_CUR_STORE.
 
 
         TODO
-
-
-
             
           3:{ ii. rewrite CNT_CUR in H. inv H. ss. }
 
