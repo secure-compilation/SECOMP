@@ -1570,10 +1570,9 @@ Section PROOF.
         e cp le m_c
         (WFE: wf_env ge2 e)
     :
-    exists vargs2 vretv2,
-      (eval_exprlist ge2 e cp le m_c (list_eventval_to_list_expr (vals_to_eventvals ge1 vargs))
-                     (list_typ_to_typelist (sig_args (ef_sig ef))) vargs2) /\
-        (external_call ef ge2 vargs2 m_c tr vretv2 m_c).
+    (eval_exprlist ge2 e cp le m_c (list_eventval_to_list_expr (vals_to_eventvals ge1 vargs))
+                   (list_typ_to_typelist (sig_args (ef_sig ef))) vargs) /\
+      (external_call ef ge2 vargs m_c tr vretv m_c).
   Proof.
     pose proof MS as MS0. destruct MS as (MS1 & MS2 & MS3). move MS0 after MS1.
     unfold external_call_known_observables in *. des_ifs; ss; des. all: try (inv EK; clarify; ss).
@@ -1601,7 +1600,7 @@ Section PROOF.
               * unfold senv_invert_symbol_total. hexploit Senv.find_invert_symbol. eapply H7. intros INV2. rewrite INV2.
                 eapply ptr_of_id_ofs_eval; eauto.
         }
-        { instantiate (1:=Val.load_result chunk v). rewrite EK1 in H2. rewrite EK1.
+        { rewrite EK1 in H2.
           destruct v; ss.
           - destruct chunk; ss; inv H2; ss.
           - destruct chunk; ss. all: simpl_expr. inv H2.
@@ -1613,21 +1612,24 @@ Section PROOF.
             + unfold Cop.sem_cast. ss. rewrite Heq. auto.
             + unfold Cop.sem_cast. ss. rewrite Heq. auto.
         }
-      + econs. econs; auto. rewrite MS3; auto. rewrite EK1. eapply match_symbs_eventval_match; eauto.
+      + econs. econs; auto. rewrite MS3; auto. rewrite EK1.
+        rewrite EK1 in H2. eapply match_symbs_eventval_match; eauto.
     - esplits.
       + erewrite eventval_list_match_vals_to_eventvals. 2: eapply H.
+        erewrite <- eventval_list_match_list_eventval_to_list_val.
+        2:{ eapply match_senv_eventval_list_match in H; eauto. }
         eapply list_eventval_to_expr_val_eval; auto. eapply eventval_list_match_transl.
         eapply match_senv_eventval_list_match; eauto.
-      + econs. eapply eventval_list_match_transl_val. eapply match_senv_eventval_list_match; eauto.
+      + econs. eapply match_senv_eventval_list_match; eauto.
     - esplits.
       + econs. 3: econs.
         * erewrite eventval_match_val_to_eventval. 2: eapply H. eapply eventval_to_expr_val_eval; auto.
           eapply match_senv_eventval_match; eauto.
-        * erewrite eventval_match_val_to_eventval. 2: eapply H. eapply eventval_match_sem_cast.
+        * erewrite eventval_match_val_to_eventval. 2: eapply H.
           erewrite eventval_match_eventval_to_val.
-          eapply match_senv_eventval_match. eauto. eapply H. eapply match_senv_eventval_match. eauto. eapply H.
-      + econs. erewrite eventval_match_eventval_to_val.
-        eapply match_senv_eventval_match. eauto. eapply H. eapply match_senv_eventval_match. eauto. eapply H.
+          2:{ eapply match_senv_eventval_match; eauto. }
+          eapply eventval_match_sem_cast. eapply match_senv_eventval_match; eauto.
+      + econs. eapply match_senv_eventval_match; eauto.
   Qed.
 
   Lemma eventval_list_match_eval_exprlist

@@ -223,19 +223,19 @@ Section PROOF.
   Lemma ir_to_clight_step_cce_1
         (ge_i: Asm.genv) (ge_c: genv)
         (WFGE : wf_ge ge_i)
-        cnts pars k_i cur m_i pretr btr (tr : trace) id0 evargs ef id_cur d
+        cnts pars k_i cur m_i pretr btr (tr tr' : trace) id0 evargs ef id_cur d
         (BOUND : Z.of_nat
                    (Datatypes.length
-                      (pretr ++ (id_cur, Bundle_call tr id0 evargs (ef_sig ef) d) :: btr)) <
+                      (pretr ++ (id_cur, Bundle_call tr' id0 evargs (ef_sig ef) d) :: btr)) <
                    Int64.modulus)
         k_c id f stmt k0 e le m_c
         (MS0 : match_genv ge_i ge_c)
         (MS1 : match_mem ge_i k_c m_i m_c)
         (MS2 : match_cur_fun ge_i ge_c cur f id)
-        (MS4 : match_cont ge_c (pretr ++ (id_cur, Bundle_call tr id0 evargs (ef_sig ef) d) :: btr) cnts
+        (MS4 : match_cont ge_c (pretr ++ (id_cur, Bundle_call tr' id0 evargs (ef_sig ef) d) :: btr) cnts
                           k0 k_i)
         (MS3 : match_find_def ge_i ge_c cnts pars
-                              (pretr ++ (id_cur, Bundle_call tr id0 evargs (ef_sig ef) d) :: btr))
+                              (pretr ++ (id_cur, Bundle_call tr' id0 evargs (ef_sig ef) d) :: btr))
         (MS5 : match_params pars ge_c ge_i)
         (MCNTS : match_cnts cnts ge_c k_c)
         (CNT_INJ : forall (id0 id1 : positive) (cnt : ident),
@@ -250,7 +250,7 @@ Section PROOF.
         (FREEENV : Mem.free_list m_c (blocks_of_env ge_c e) (comp_of f) = Some m_freeenv)
         (WFC1 : wf_c_cont ge_c m_freeenv k0)
         (WFC2 : wf_c_stmt ge_c (comp_of f) cnts id
-                          (pretr ++ (id_cur, Bundle_call tr id0 evargs (ef_sig ef) d) :: btr) stmt)
+                          (pretr ++ (id_cur, Bundle_call tr' id0 evargs (ef_sig ef) d) :: btr) stmt)
         (WFC3 : wf_env ge_c e)
         (WFC4 : not_global_blks ge_c (blocks_of_env2 ge_c e))
         (WFNB : wf_c_nb ge_c m_c)
@@ -267,16 +267,17 @@ Section PROOF.
         m2
         (DELTA: mem_delta_apply_wf ge_i (Genv.find_comp ge_i (Vptr cur Ptrofs.zero)) d (Some m_i) = Some m2)
         (DELTA_CASES: (public_first_order ge_i m2) \/ (d = []))
+        (TR_APP: exists tr0, tr' = tr ++ tr0)
     :
     exists cnt_cur cnt_cur_b,
-      (cnts ! id_cur = Some cnt_cur /\ Senv.find_symbol ge_c cnt_cur = Some cnt_cur_b) /\
+      (cnts ! id_cur = Some cnt_cur /\ Senv.find_symbol ge_c cnt_cur = Some cnt_cur_b /\ Senv.public_symbol ge_c cnt_cur = false) /\
         let dsg := from_sig_fun_data (ef_sig ef) in
         let fd_next := (External ef (dargs dsg) (dret dsg) (dcc dsg)) in
         exists m_c',
           (star step1 ge_c (State f stmt k0 e le m_c)
-                (unbundle (id_cur, Bundle_call tr id0 evargs (ef_sig ef) d))
+                (tr)
                 (Callstate fd_next vargs
-                           (Kcall None f e le (Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge_c cnt_cur (comp_of f) (get_id_tr (pretr ++ (id_cur, Bundle_call tr id0 evargs (ef_sig ef) d) :: btr) id_cur))) Sskip k0)) m_c'))
+                           (Kcall None f e le (Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge_c cnt_cur (comp_of f) (get_id_tr (pretr ++ (id_cur, Bundle_call tr' id0 evargs (ef_sig ef) d) :: btr) id_cur))) Sskip k0)) m_c'))
           /\
             (exists m_cu,
                 (Mem.storev Mint64 m_c (Vptr cnt_cur_b Ptrofs.zero) (Vlong (Int64.add (nat64 (Datatypes.length (map (fun ib : ident * bundle_event => code_bundle_event ge_i (comp_of f) (snd ib)) (get_id_tr pretr id_cur)))) Int64.one)) (comp_of f) = Some m_cu) /\
@@ -294,7 +295,7 @@ Section PROOF.
     { eapply Genv.find_funct_ptr_iff. erewrite <- Genv.find_funct_find_funct_ptr. eapply FINDF. }
     { eapply Genv.find_invert_symbol; eauto. }
     intros FINDF_C. des_ifs. rename id0 into id_next, i into cnt_next, Heq into CNTS_NEXT, l into params_next, Heq0 into PARS_NEXT. simpl in FINDF_C.
-    set (pretr ++ (id_cur, Bundle_call tr id_next evargs (ef_sig ef) d) :: btr) as ttr in *.
+    set (pretr ++ (id_cur, Bundle_call tr' id_next evargs (ef_sig ef) d) :: btr) as ttr in *.
     assert (FIND_CUR_C: Genv.find_symbol ge_c id_cur = Some cur).
     { destruct MS0 as ((MSENV0 & MSENV1 & MSENV2) & MGENV). apply Genv.invert_find_symbol in IDCUR. apply MSENV1 in IDCUR. auto. }
     assert (FIND_FUN_C: Genv.find_funct_ptr ge_c cur = Some (Internal f)).
@@ -304,7 +305,7 @@ Section PROOF.
     destruct WF_CNT_CUR as (CNT_CUR_NPUB & cnt_cur_b & FIND_CNT_CUR & CNT_CUR_MEM_VA & CNT_CUR_MEM_LOAD).
     exists cnt_cur, cnt_cur_b. split. auto.
     set (Kcall None f e le (Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge_c cnt_cur (comp_of f) (get_id_tr ttr id_cur))) Sskip k0)) as kc_next.
-    assert (CUR_TR: get_id_tr ttr id_cur = (get_id_tr pretr id_cur) ++ (id_cur, Bundle_call tr id_next evargs (ef_sig ef) d) :: (get_id_tr btr id_cur)).
+    assert (CUR_TR: get_id_tr ttr id_cur = (get_id_tr pretr id_cur) ++ (id_cur, Bundle_call tr' id_next evargs (ef_sig ef) d) :: (get_id_tr btr id_cur)).
     { subst ttr. clear. rewrite get_id_tr_app. rewrite get_id_tr_cons. ss. rewrite Pos.eqb_refl. auto. }
     assert (BOUND2: Z.of_nat (Datatypes.length (map (fun ib : ident * bundle_event => code_bundle_event ge_i (comp_of f) (snd ib)) (get_id_tr ttr id_cur))) < Int64.modulus).
     { rewrite map_length. eapply Z.le_lt_trans. 2: eauto. unfold get_id_tr.
@@ -407,6 +408,113 @@ Section PROOF.
     traceEq.
   Qed.
 
+  Lemma ir_to_clight_step_cce_2
+        (ge_i: Asm.genv) (ge_c: genv)
+        (WFGE : wf_ge ge_i)
+        cnts pars k_i cur m_i pretr btr (tr1 tr2 tr' : trace) id0 vargs ef id_cur d
+        (BOUND : Z.of_nat
+                   (Datatypes.length
+                      (pretr ++ (id_cur, Bundle_call tr' id0 (vals_to_eventvals ge_i vargs) (ef_sig ef) d) :: btr)) <
+                   Int64.modulus)
+        k_c id f stmt k0 e le m_c
+        (MS0 : match_genv ge_i ge_c)
+        (MS1 : match_mem ge_i k_c m_i m_c)
+        (MS2 : match_cur_fun ge_i ge_c cur f id)
+        (MS4 : match_cont ge_c (pretr ++ (id_cur, Bundle_call tr' id0 (vals_to_eventvals ge_i vargs) (ef_sig ef) d) :: btr) cnts k0 k_i)
+        (MS3 : match_find_def ge_i ge_c cnts pars (pretr ++ (id_cur, Bundle_call tr' id0 (vals_to_eventvals ge_i vargs) (ef_sig ef) d) :: btr))
+        (MS5 : match_params pars ge_c ge_i)
+        (MCNTS : match_cnts cnts ge_c k_c)
+        (CNT_INJ : forall (id0 id1 : positive) (cnt : ident),
+            cnts ! id0 = Some cnt -> cnts ! id1 = Some cnt -> id0 = id1)
+        (WFC0 : forall (id : ident) (b : block) (f : function),
+            Genv.find_symbol ge_c id = Some b ->
+            Genv.find_funct_ptr ge_c b = Some (Internal f) ->
+            exists cnt : ident,
+              cnts ! id = Some cnt /\
+                wf_counter ge_c m_c (comp_of f) (Datatypes.length (get_id_tr pretr id)) cnt)
+        m_freeenv
+        (FREEENV : Mem.free_list m_c (blocks_of_env ge_c e) (comp_of f) = Some m_freeenv)
+        (WFC1 : wf_c_cont ge_c m_freeenv k0)
+        (WFC2 : wf_c_stmt ge_c (comp_of f) cnts id
+                          (pretr ++ (id_cur, Bundle_call tr' id0 (vals_to_eventvals ge_i vargs) (ef_sig ef) d) :: btr) stmt)
+        (WFC3 : wf_env ge_c e)
+        (WFC4 : not_global_blks ge_c (blocks_of_env2 ge_c e))
+        (WFNB : wf_c_nb ge_c m_c)
+        b
+        (FINDB : Genv.find_symbol ge_i id0 = Some b)
+        (FINDF : Genv.find_funct ge_i (Vptr b Ptrofs.zero) = Some (AST.External ef))
+        (NPTR : crossing_comp ge_i (Genv.find_comp ge_i (Vptr cur Ptrofs.zero)) (comp_of ef) ->
+                Forall not_ptr vargs)
+        (ALLOW : Genv.allowed_call ge_i (Genv.find_comp ge_i (Vptr cur Ptrofs.zero))
+                                   (Vptr b Ptrofs.zero))
+        (m1' m2 : mem)
+        (vretv : val)
+        (DELTA : mem_delta_apply_wf ge_i (Genv.find_comp ge_i (Vptr cur Ptrofs.zero)) d (Some m_i) = Some m1')
+        (TR1 : call_trace_cross ge_i (Genv.find_comp ge_i (Vptr cur Ptrofs.zero))
+                                (comp_of ef) b vargs (sig_args (ef_sig ef)) tr1 id0 (vals_to_eventvals ge_i vargs))
+        (TR2 : external_call ef ge_i vargs m1' tr2 vretv m2)
+        (ECCASES : external_call_unknowns ef ge_i m1' vargs \/
+                     external_call_known_observables ef ge_i m1' vargs tr2 vretv m2 /\ d = [])
+        (IDCUR : Genv.invert_symbol ge_i cur = Some id_cur)
+        (TR_APP: exists tr0, tr' = tr1 ++ tr2 ++ tr0)
+    :
+    exists cnt_cur cnt_cur_b,
+      (cnts ! id_cur = Some cnt_cur /\ Senv.find_symbol ge_c cnt_cur = Some cnt_cur_b /\ Senv.public_symbol ge_c cnt_cur = false) /\
+        let dsg := from_sig_fun_data (ef_sig ef) in
+        exists m_c',
+          (exists vres m_next,
+              (star step1 ge_c (State f stmt k0 e le m_c)
+                    (tr1 ++ tr2)
+                    (Returnstate vres (Kcall None f e le (Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge_c cnt_cur (comp_of f) (get_id_tr (pretr ++ (id_cur, Bundle_call tr' id0 (vals_to_eventvals ge_i vargs) (ef_sig ef) d) :: btr) id_cur))) Sskip k0)) m_next (rettype_of_type (dret dsg)) (comp_of ef))) /\
+                (external_call ef ge_c vargs m_c' tr2 vres m_next))
+          /\
+            (exists m_cu,
+                (Mem.storev Mint64 m_c (Vptr cnt_cur_b Ptrofs.zero) (Vlong (Int64.add (nat64 (Datatypes.length (map (fun ib : ident * bundle_event => code_bundle_event ge_i (comp_of f) (snd ib)) (get_id_tr pretr id_cur)))) Int64.one)) (comp_of f) = Some m_cu) /\
+                  (d = [] -> m_c' = m_cu) /\
+                  ((public_first_order ge_i m1') ->
+                   (mem_delta_apply_wf ge_i (comp_of f) d (Some m_cu) = Some m_c') /\
+                     (Mem.inject (meminj_public ge_i) m1' m_c')))
+  .
+  Proof.
+    hexploit ir_to_clight_step_cce_1; eauto.
+    { desH ECCASES; [left | right; auto]. apply external_call_unknowns_fo in ECCASES.
+      apply meminj_first_order_public_first_order; auto.
+    }
+    { desH TR_APP. eauto. }
+    instantiate (1:=le).
+    intros (cnt_cur & cnt_cur_b & (CNT_CUR & FIND_CNT & CNT_CUR_NP) & m_c' & STAR & MEM).
+    destruct MEM as (m_cu & CNT_CUR_STORE & DELTA_NIL & DELTA_PUB).
+    exists cnt_cur, cnt_cur_b. split; auto. ss. exists m_c'. split.
+    2:{ exists m_cu. splits; auto. }
+    desH ECCASES; cycle 1.
+
+    (* Case 1: observable defined external calls *)
+    { clear DELTA_PUB. subst d. specialize (DELTA_NIL eq_refl). subst m_c'.
+      unfold mem_delta_apply_wf in DELTA. simpl in DELTA. inversion DELTA; clear DELTA. subst m1'.
+      hexploit exists_vargs_vres. eapply MS0. eapply ECCASES. eauto. intros (EVALS & EXT2).
+      esplits. 2: eapply EXT2.
+      eapply star_trans. eapply STAR.
+      { econs 2. eapply step_external_function. eapply EXT2. econs 1. ss. }
+      { traceEq. }
+    }
+
+    (* Case 2: observable defined external calls *)
+    { clear DELTA_NIL.
+      hexploit external_call_unknowns_fo. eapply ECCASES. intros FO_I.
+      hexploit external_call_unknowns_val_inject_list. eapply ECCASES. intros ARGS_INJ.
+      hexploit meminj_first_order_public_first_order. apply FO_I. intros PFO.
+      specialize (DELTA_PUB PFO). desH DELTA_PUB.
+      move MS1 after ARGS_INJ. destruct MS1 as (MM0 & MM1 & MM2).
+      hexploit external_call_mem_inject_gen.
+      { eapply match_symbs_symbols_inject. apply MS0. }
+      apply TR2. apply DELTA_PUB0. apply ARGS_INJ.
+      intros (j2 & vres2 & m_next & EC2 & RET_INJ & INJ2 & UCH0 & UCH1 & INCR2 & INJ_SEP).
+      exists vres2, m_next. split; [|auto]. eapply star_trans. eapply STAR.
+      { econs 2. eapply step_external_function. eapply EC2. econs 1. ss. }
+      traceEq.
+      Unshelve. exact 1%positive. exact le.
+    }
+  Qed.
 
 
   (* WIP *)
@@ -1007,7 +1115,7 @@ Section PROOF.
 
       (* Case 3-1: observable defined external calls *)
       { subst d. unfold mem_delta_apply_wf in DELTA. simpl in DELTA. inversion DELTA; clear DELTA. subst m1'.
-        hexploit exists_vargs_vres. eapply MS0. eapply ECCASES. eauto. intros (vargs2 & vretv2 & EVALS & EXT2).
+        hexploit exists_vargs_vres. eapply MS0. eapply ECCASES. eauto. intros (EVALS & EXT2).
         eapply star_cut_middle. exists E0.
         eexists. split.
         { unfold wf_c_stmt in WFC2. specialize (WFC2 _ CNTS_CUR). subst stmt.
@@ -1509,9 +1617,9 @@ Section PROOF.
     (** Case 5: Cross Call External 1 *)
     - hexploit ir_to_clight_step_cce_1; eauto.
       { unfold mem_delta_apply_wf. ss. }
-      intros (cnt_cur & cnt_cur_b & (CNT_CUR & FIND_CNT) & m_c' & STAR & MEM).
+      { exists []. rewrite app_nil_r. auto. }
+      intros (cnt_cur & cnt_cur_b & (CNT_CUR & FIND_CNT & CNT_CUR_NP) & m_c' & STAR & MEM).
       destruct MEM as (m_cu & CNT_CUR_STORE & DELTA_NIL & DELTA_PUB).
-
       eapply star_cut_middle. esplits.
       { eapply STAR. }
       { econs 1. }
@@ -1519,10 +1627,70 @@ Section PROOF.
       { unfold unbundle. ss. traceEq. }
 
     (** Case 6: Cross Call External 2 *)
-    -
+    - hexploit ir_to_clight_step_cce_2; eauto.
+      { exists []. rewrite app_nil_r. auto. }
+      rename MEM into DELTA.
+      intros (cnt_cur & cnt_cur_b & (CNT_CUR & FIND_CNT & CNT_CUR_NP) & m_c' & STAR & MEM).
+      destruct STAR as (vres & m_next & STAR & EC2).
+      destruct MEM as (m_cu & CNT_CUR_STORE & DELTA_NIL & DELTA_PUB).
+      eapply star_cut_middle. esplits.
+      { eapply STAR. }
+      { econs 1. }
+      { ss. right; auto. }
+      { unfold unbundle. ss. traceEq. }
+
+    (** Case 7: Cross Call External 3 *)
+    - hexploit ir_to_clight_step_cce_2; eauto.
+      rename MEM into DELTA.
+      intros (cnt_cur & cnt_cur_b & (CNT_CUR & FIND_CNT & CNT_CUR_NP) & m_c' & STAR & MEM).
+      destruct STAR as (vres & m_next & STAR & EC2).
+      destruct MEM as (m_cu & CNT_CUR_STORE & DELTA_NIL & DELTA_PUB).
+
+      assert (COMP_CUR_F: (Genv.find_comp ge_i (Vptr cur Ptrofs.zero)) = comp_of f).
+      { destruct MS2 as (FINDF_C_CUR & (f_i_cur & FINDF_I_CUR) & INV_CUR).
+        hexploit cur_fun_def. eapply FINDF_C_CUR. eapply FINDF_I_CUR. eapply INV_CUR. eauto.
+        intros (cnt_cur0 & params_cur & CNT_CUR0 & PARAMS_CUR & CUR_F).
+        unfold Genv.find_comp. setoid_rewrite FINDF_I_CUR. subst f. ss.
+      }
+
+      desH ECCASES; cycle 1.
+      { clear DELTA_PUB. subst d. specialize (DELTA_NIL eq_refl). subst m_c'.
+        hexploit exists_vargs_vres. apply MS0. apply ECCASES. eauto. intros (_ & EC2').
+        hexploit external_call_deterministic. eapply EC2. eapply EC2'. intros (EQ1 & EQ2).
+        subst vres m_cu. clear EC2'.
+        eapply star_cut_middle. esplits. eapply STAR.
+        econs 2.
+        { eapply step_returnstate.
+          - i. apply NPTR0. rewrite COMP_CUR_F. apply H.
+          - move TR3 after COMP_CUR_F. rewrite COMP_CUR_F in TR3. instantiate (1:=tr3).
+            inv TR3. econs; [auto |]. ss.
+            erewrite proj_rettype_to_type_rettype_of_type_eq. 2: apply H0.
+            eapply match_symbs_eventval_match. apply MS0. auto.
+        }
+        ss. econs 2.
+        { eapply step_skip_or_continue_loop1. auto. }
+        econs 2.
+        { eapply step_skip_loop2. }
+        econs 1. all: ss.
+        2:{ unfold unbundle. ss. traceEq. }
+        left. assert (id = id_cur).
+        { unfold match_cur_fun in MS2. desH MS2. rewrite MS7 in IDCUR. clarify. }
+        subst id. exists id_cur. split.
+
+        - splits; auto.
+          {
 
 
-      TODO
+        TODO
+
+
+
+            
+          3:{ ii. rewrite CNT_CUR in H. inv H. ss. }
+
+        
+
+
 
 
 
