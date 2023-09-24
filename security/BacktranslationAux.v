@@ -383,7 +383,12 @@ Section GENV.
     :
     symbols_inject (meminj_public ge1) ge1 ge2.
   Proof.
-  Admitted.
+    destruct MSYMB as (MS0 & MS1 & MS2). unfold symbols_inject. splits; auto.
+    - i. unfold meminj_public in H. des_ifs. split; auto.
+    - i. exists b1. split; auto. unfold meminj_public. apply Senv.find_invert_symbol in H0.
+      rewrite H0. rewrite H. auto.
+    - i. unfold meminj_public in H. des_ifs.
+  Qed.
 
 End GENV.
 

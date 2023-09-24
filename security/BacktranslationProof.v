@@ -57,7 +57,6 @@ Section INVS.
           (exists m_c', Mem.free_list m_c (blocks_of_env ge e) (comp_of f) = Some m_c' /\ wf_c_cont ge m_c' k_c) /\
           wf_c_stmt ge (comp_of f) cnts id ttr stmt /\
           (wf_env ge e /\ (not_global_blks (ge) (blocks_of_env2 ge e)) /\ (wf_c_nb ge m_c))
-    (* (wf_env ge e /\ wf_env_unique_blocks e /\ wf_env_mem ge (comp_of f) e m_c) *)
     | _ => False
     end.
 
@@ -67,7 +66,6 @@ Section INVS.
   Definition match_mem (ge: Senv.t) (k: meminj) (m_i m_c: mem): Prop :=
     let j := meminj_public ge in
     (Mem.inject k m_i m_c) /\ (inject_incr j k) /\ (meminj_not_alloc j m_i).
-  (* /\ (public_rev_perm m_i m_c). *)
 
   Definition match_cur_fun (ge_i: Asm.genv) (ge_c: genv) (cur: block) f (id: ident): Prop :=
     (Genv.find_funct_ptr ge_c cur = Some (Internal f)) /\
@@ -2181,8 +2179,3 @@ Section PROOF.
   Proof. eapply ir_to_clight_aux. eauto. 4,5,6,7: eauto. all: eauto. econs 1. econs 1. Qed.
 
 End PROOF.
-(* Genv.initmem_inject: forall [F V : Type] {CF : has_comp F} (p : AST.program F V) [m : mem], Genv.init_mem p = Some m -> Mem.inject (Mem.flat_inj (Mem.nextblock m)) m m *)
-(* Genv.alloc_globals_neutral: *)
-(*   forall [F V : Type] {CF : has_comp F} (ge : Genv.t F V) [thr : block], *)
-(*   (forall (id : ident) (b : block), Genv.find_symbol ge id = Some b -> Plt b thr) -> *)
-(*   forall (gl : list (ident * globdef F V)) (m m' : mem), Genv.alloc_globals ge m gl = Some m' -> Mem.inject_neutral thr m -> Ple (Mem.nextblock m') thr -> Mem.inject_neutral thr m' *)
