@@ -506,7 +506,10 @@ Section GEN.
 
   (* Generate fresh counter ids with definitions for each global definitions *)
   Definition gen_counter_defs m (gds: list (ident * globdef Asm.fundef unit)): PTree.t (ident * globdef Clight.fundef type) :=
-    fold_left (fun pt '(id, gd) => PTree.set id (Pos.add id m, gen_counter (comp_of gd)) pt) gds (@PTree.empty _).
+    let gds' := map (fun '(id, gd) => (id, (Pos.add id m, gen_counter (comp_of gd)))) gds in
+    PTree_Properties.of_list gds'.
+  (* Definition gen_counter_defs m (gds: list (ident * globdef Asm.fundef unit)): PTree.t (ident * globdef Clight.fundef type) := *)
+  (*   fold_left (fun pt '(id, gd) => PTree.set id (Pos.add id m, gen_counter (comp_of gd)) pt) gds (@PTree.empty _). *)
 
   Definition params_of := PTree.t (list (ident * type)).
 
@@ -526,8 +529,16 @@ Section GEN.
 
   (* Generate fresh parameter ids for each function --- parameter ids for different functions are allowed to be duplicated *)
   Definition gen_params (m: ident) (gds: list (ident * globdef Asm.fundef unit)): params_of :=
-    fold_left (fun pt '(id, gd) =>
-                 match gen_params_one m gd with | Some ps => PTree.set id ps pt | None => pt end) gds (@PTree.empty _).
+    let params' := map (fun '(id, gd) => match gen_params_one m gd with
+                                         | Some ps => (id, ps)
+                                         | None => (id, [])
+                                         end) gds
+    in
+    PTree_Properties.of_list params'.
+  (* Definition gen_params (m: ident) (gds: list (ident * globdef Asm.fundef unit)): params_of := *)
+  (*   fold_left (fun pt '(id, gd) => *)
+  (*                match gen_params_one m gd with | Some ps => PTree.set id ps pt | None => pt end) gds (@PTree.empty _). *)
+
 
   Definition gen_progdef (ge: Senv.t) (tr: bundle_trace) a_gd (ocnt: option (ident * globdef Clight.fundef type)) (oparams: option (list (ident * type))): globdef Clight.fundef type :=
     match ocnt, oparams with
