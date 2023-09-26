@@ -26,6 +26,11 @@ intros ? x y H.
 inv H; auto.
 Qed.
 
+Lemma match_fundef_refl u f : match_fundef u f f.
+Proof.
+destruct u. destruct f as [[]|]; constructor.
+Qed.
+
 Definition match_varinfo (ty1 ty2: type): Prop := ty1 = ty2.
 
 Definition kept_genv (s: split) (ge: genv) (δ: side) (id: ident): bool :=
@@ -73,7 +78,9 @@ Record match_prog (s: split) (p p': program) : Prop := {
     p'.(prog_pol) = p.(prog_pol);
   match_prog_globdefs:
     match_globdefs s (globalenv p) (globalenv p');
-  match_prog_unique:
+  match_prog_unique1:
+    list_norepet (prog_defs_names p);
+  match_prog_unique2:
     list_norepet (prog_defs_names p')
 }.
 
@@ -295,22 +302,6 @@ Section Simulation.
   Proof (Genv.find_symbol_match match_W1_W2).
 *)
 
-  (* FIXME: Move to Globalenv.v *)
-  Lemma find_symbol_find_comp :
-    forall p id,
-      let ge := globalenv p in
-      Genv.find_symbol ge id <> None ->
-      exists cp, Genv.find_comp_of_ident ge id = Some cp.
-  Proof.
-    intros p id ge ge_id.
-    unfold Genv.find_comp_of_ident, Genv.find_comp_of_block.
-    destruct Genv.find_symbol as [b|] eqn:ge_id_b; try congruence.
-    destruct (Genv.find_symbol_find_def_inversion _ _ ge_id_b)
-      as [def ge_b].
-    exists (comp_of def). simpl. unfold ge.
-    unfold fundef in *. now rewrite ge_b.
-  Qed.
-
   Lemma public_symbol_preserved:
     forall id, Genv.public_symbol ge2 id = Genv.public_symbol ge1 id.
   Proof.
@@ -324,7 +315,8 @@ Section Simulation.
     - destruct (Genv.public_symbol_exists _ _ public1) as [b1 ge1_id_b1].
       assert (exists cp, Genv.find_comp_of_ident ge1 id = Some cp)
         as [cp ge1_id_cp].
-      { apply find_symbol_find_comp. congruence. }
+      { apply Genv.find_symbol_find_comp.
+        unfold ge1, fundef in *. simpl in *. congruence. }
       assert (exists b2, Genv.find_symbol ge2 id = Some b2)
         as [b2 ge2_id_b2].
       { exploit match_prog_globdefs; eauto.
@@ -336,7 +328,8 @@ Section Simulation.
       destruct (Genv.find_symbol ge1 id) as [b1|] eqn:ge1_id.
       + assert (exists cp, Genv.find_comp_of_ident ge1 id = Some cp)
           as [cp ge1_id_cp].
-        { apply find_symbol_find_comp. congruence. }
+        { apply Genv.find_symbol_find_comp.
+          unfold ge1, fundef in *. simpl in *. congruence. }
         unfold Genv.public_symbol.
         destruct (Genv.find_symbol ge2 id) as [b2|] eqn:ge2_id; trivial.
         congruence.
@@ -344,7 +337,8 @@ Section Simulation.
         destruct (Genv.public_symbol_exists _ _ public2) as [b2 ge2_id_b2].
         assert (exists cp, Genv.find_comp_of_ident ge2 id = Some cp)
           as [cp ge2_id_cp].
-        { apply find_symbol_find_comp. congruence. }
+        { apply Genv.find_symbol_find_comp.
+          unfold ge1, fundef in *. simpl in *. congruence. }
         exploit match_prog_globdefs; eauto.
         intros (? & _ & ? & _). congruence.
   Qed.
@@ -645,9 +639,7 @@ Section Simulation.
     Val.inject j v v' ->
     symbols_inject j ge1 ge2 ->
     Genv.find_funct ge1 v = Some f ->
-    exists tf,
-      Genv.find_funct ge2 v' = Some tf /\
-        match_fundef tt f tf.
+    Genv.find_funct ge2 v' = Some f.
   Proof.
     unfold Genv.find_funct. intros s_cp v_inj symbs_inj.
     case v_inj; try congruence. clear v_inj.
@@ -655,27 +647,35 @@ Section Simulation.
     destruct Ptrofs.eq_dec as [?|_]; try congruence. subst ofs.
     intros ge1_b.
     apply Genv.find_funct_ptr_iff in ge1_b.
-
-
-    (* Know: b corresponds to some symbol id
-       Genv.find_symbol ge1 id = Some b
-
-*)
-
-
-    pose proof (Genv.find_funct_ptr_inversion _ _ ge1_b) as [id ge1_id].
-    pose proof (Genv.find_symbol_exists _ _ _ id_f) as [b ge1_id].
-
-
-    case v; try congruence. intros b off. simpl.
-    intros s_cp j_inj ge1_v.
-    unfold
-    pose proof (Genv.find_funct_inversion _ _ ge1_v) as [id id_f].
-
-
+    assert (exists id, Genv.find_symbol ge1 id = Some b) as [id ge1_id].
+    { apply (Genv.find_def_find_symbol_inversion _ _ ge1_b).
+      apply (match_prog_unique1 _ _ _ match_W1_W2). }
+    assert (delta = 0 /\ Genv.find_symbol ge2 id = Some b') as [? ge2_id].
+    { destruct symbs_inj as (_ & inj & _); eapply inj; eauto. }
+    subst delta.
+    rewrite Ptrofs.add_zero_l. unfold Ptrofs.zero.
+    destruct Ptrofs.eq_dec as [_|?]; try congruence.
+    assert (Genv.find_comp_of_ident ge1 id = Some (comp_of f)) as ge1_id_comp.
+    { unfold Genv.find_comp_of_ident. rewrite ge1_id.
+      unfold Genv.find_comp_of_block. now rewrite ge1_b. }
     exploit match_prog_globdefs; eauto.
+    intros (b1 & b2 & ge1_id_alt & ge2_id_alt & MATCH).
+    assert (b1 = b) by congruence. subst b1.
+    assert (b2 = b') by congruence. subst b2.
+    rewrite ge1_b, s_cp in MATCH. simpl in MATCH.
+    unfold Genv.find_funct_ptr, ge2. simpl.
+    rewrite <- MATCH. split; trivial.
+  Qed.
 
-
+(* TODO: Figure out exact statement
+  Lemma allowed_call_preserved : forall j cp vf1 vf2,
+      Val.inject j vf1 vf2 ->
+      Genv.allowed_call ge1 cp vf1 ->
+      Genv.allowed_call ge2 cp vf2.
+  Proof.
+    intros j cp vf1 vf2 vf12.
+    case vf12; try easy.
+*)
 
   Lemma parallel_concrete: forall j s1 s2 s1' t,
       right_state_injection s j ge1 ge2 s1 s2 ->
@@ -813,14 +813,33 @@ Section Simulation.
       rename H1 into eval_vargs1.
       rename H2 into find_vf1.
       rename H3 into type_fd1.
+      assert (Genv.find_comp ge1 vf1 = comp_of fd1) as comp_vf1.
+      { unfold Genv.find_comp. now rewrite find_vf1. }
       exploit eval_expr_injection; eauto; eauto.
       intros [vf2 [vf1_vf2 eval_a2]].
       exploit eval_exprlist_injection; eauto; eauto.
       intros [vargs2 [vargs1_vargs2 eval_vargs2]].
-
-
-      exploit (Genv.find_funct_match match_W1_W2); eauto.
-      intros [[] [fd2 [find_vf2 [fd1_fd2 _]]]].
+      destruct (s (comp_of fd1)) eqn:s_fd1.
+      * admit.
+      * rename fd1 into fd.
+        rename type_fd1 into type_fd.
+        rewrite comp_vf1 in *.
+        exploit find_funct_preserved; eauto.
+        { eapply same_symb; eauto. }
+        intros find_vf2.
+        assert (Genv.find_comp ge2 vf2 = comp_of fd) as comp_vf2.
+        { unfold Genv.find_comp. now rewrite find_vf2. }
+        assert (Genv.allowed_call ge2 (comp_of f) vf2) as ALLOWED2.
+        { admit. }
+        exists j.
+        exists (Callstate fd vargs2 (Kcall optid f e2 le2 k2) m2).
+        split.
+        { econstructor; eauto.
+          - admit.
+          - admit. }
+        apply RightControl; trivial.
+        constructor; trivial.
+        now apply right_cont_injection_kcall_right.
       (* Stopped here... *)
       assert (vf = v') by admit. subst v'.
       exists j; eexists; split.

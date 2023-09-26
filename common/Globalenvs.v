@@ -542,6 +542,21 @@ Proof.
   - unfold find_symbol. simpl. now rewrite PTree.gempty.
 Qed.
 
+Lemma find_symbol_find_comp :
+  forall p id,
+    let ge := globalenv p in
+    find_symbol ge id <> None ->
+    exists cp, find_comp_of_ident ge id = Some cp.
+Proof.
+  intros p id ge ge_id.
+  unfold find_comp_of_ident, find_comp_of_block.
+  destruct find_symbol as [b|] eqn:ge_id_b; try congruence.
+  destruct (find_symbol_find_def_inversion _ _ ge_id_b)
+    as [def ge_b].
+  exists (comp_of def). simpl. unfold ge.
+  now rewrite ge_b.
+Qed.
+
 Theorem find_def_inversion:
   forall p b g,
   find_def (globalenv p) b = Some g ->
