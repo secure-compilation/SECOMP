@@ -386,7 +386,7 @@ Proof.
   destruct (Genv.type_of_call tge (call_comp ts) (callee_comp ts)).
   econstructor; eauto with coqlib.
   econstructor; eauto with coqlib.
-  econstructor; eauto with coqlib.
+  (* econstructor; eauto with coqlib. *)
 (* internal function *)
   left; econstructor; split.
   econstructor; simpl; eauto.
@@ -401,7 +401,7 @@ Proof.
   destruct (Genv.type_of_call tge (call_comp ts) (comp_of f)).
   econstructor; eauto with coqlib.
   econstructor; eauto with coqlib.
-  econstructor; eauto with coqlib.
+  (* econstructor; eauto with coqlib. *)
 (* external function *)
   left; econstructor; split.
   econstructor; eauto. eapply external_call_symbols_preserved; eauto. apply senv_preserved.

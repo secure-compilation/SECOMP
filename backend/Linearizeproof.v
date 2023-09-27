@@ -815,7 +815,7 @@ Proof.
   destruct (Genv.type_of_call tge (call_comp ts) (comp_of f)).
   econstructor; eauto. simpl. eapply is_tail_add_branch. constructor.
   econstructor; eauto. simpl. eapply is_tail_add_branch. constructor.
-  econstructor; eauto. simpl. eapply is_tail_add_branch. constructor.
+  (* econstructor; eauto. simpl. eapply is_tail_add_branch. constructor. *)
 
   (* external function *)
   monadInv H9. left; econstructor; split.

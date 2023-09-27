@@ -612,7 +612,7 @@ Proof.
   destruct (Genv.type_of_call tge (call_comp ts) (callee_comp ts)).
   inv TRF; constructor; auto.
   inv TRF; constructor; auto.
-  inv TRF; constructor; auto.
+  (* inv TRF; constructor; auto. *)
 - (* internal function *)
   monadInv H8. rename x into tf.
   assert (MF: match_function f tf) by (apply transf_function_match; auto).
@@ -634,7 +634,7 @@ Proof.
   destruct (Genv.type_of_call tge (call_comp ts) (comp_of f)).
   constructor; auto.
   constructor; auto.
-  constructor; auto.
+  (* constructor; auto. *)
 - (* external function *)
   monadInv H9. econstructor; split.
   apply plus_one. econstructor; eauto.
