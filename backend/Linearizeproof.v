@@ -579,11 +579,11 @@ Inductive match_states: LTL.state -> Linear.state -> Prop :=
       match_states (LTL.Block s f sp bb ls m)
                    (Linear.State ts tf sp (linearize_block bb c) ls m)
   | match_states_call:
-      forall s f ls m tf ts,
+      forall s f ls m tf ts sig,
       list_forall2 match_stackframes s ts ->
       transf_fundef f = OK tf ->
-      match_states (LTL.Callstate s f ls m)
-                   (Linear.Callstate ts tf ls m)
+      match_states (LTL.Callstate s f sig ls m) (* parent_signature ts *)
+                   (Linear.Callstate ts tf sig ls m)
   | match_states_return:
       forall s ls m ts,
       list_forall2 match_stackframes s ts ->
@@ -697,9 +697,15 @@ Proof.
     assert (X: Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall).
     { erewrite find_comp_translated, type_of_call_translated; eauto. rewrite comp_transf_fundef; eauto. }
     specialize (NO_CROSS_PTR X).
+    (* rewrite H1. *)
+    (* rewrite X in NO_CROSS_PTR. *)
     eauto.
   }
   { erewrite <- find_comp_translated, <- comp_transf_fundef; eauto.
+    (* erewrite <- type_of_call_translated, comp_preserved; eauto. *)
+    (* destruct (Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf)) eqn:TY_CALL. *)
+    (* eapply call_trace_eq; eauto using symbols_preserved, senv_preserved. *)
+    (* eapply call_trace_eq; eauto using symbols_preserved, senv_preserved. *)
     eapply call_trace_eq; eauto using symbols_preserved, senv_preserved. }
   econstructor; eauto. constructor; auto.
   rewrite find_comp_translated.
@@ -709,7 +715,8 @@ Proof.
   exploit find_function_translated; eauto. intros [tfd [A B]].
   left; econstructor; split. simpl.
   apply plus_one. econstructor; eauto.
-  rewrite (match_parent_locset _ _ STACKS). eauto.
+  (* rewrite (match_parent_locset _ _ STACKS). eauto. *)
+  (* rewrite (match_parent_locset _ _ STACKS). eauto. *)
   symmetry; eapply sig_preserved; eauto.
   now rewrite <- (comp_transl_partial _ B), <- (comp_transl_partial _ TRF).
   rewrite <- comp_transf_fundef; eauto.
@@ -765,21 +772,53 @@ Proof.
   simpl. apply plus_one. econstructor; eauto.
   rewrite (stacksize_preserved _ _ TRF). erewrite comp_preserved; eauto.
   rewrite (match_parent_locset _ _ STACKS).
+  assert (CALLER: LTL.call_comp s = call_comp ts).
+  { inv STACKS. reflexivity.
+    inv H0. simpl. erewrite comp_preserved; eauto. }
+  assert (CALLEE: LTL.callee_comp s = callee_comp ts).
+  { inv STACKS. reflexivity.
+    inv H0. reflexivity. }
+  assert (SIG: LTL.parent_signature s = parent_signature ts).
+  { inv STACKS. reflexivity.
+    inv H0. reflexivity. }
+  (* rewrite type_of_call_translated, CALLER, CALLEE, SIG. *)
+  rewrite SIG.
+  (* destruct (Genv.type_of_call tge (call_comp ts) (callee_comp ts)). *)
+  (* econstructor; eauto. *)
   econstructor; eauto.
+  (* econstructor; eauto. *)
 
   (* internal functions *)
   assert (REACH: (reachable f)!!(LTL.fn_entrypoint f) = true).
     apply reachable_entrypoint.
-  monadInv H7.
+  monadInv H8.
   left; econstructor; split.
   apply plus_one. eapply exec_function_internal; eauto.
   rewrite (stacksize_preserved _ _ EQ).
   rewrite (comp_preserved _ _ EQ). eauto.
   generalize EQ; intro EQ'; monadInv EQ'. simpl.
+  assert (CALLER: LTL.call_comp s = call_comp ts).
+  { inv H7. reflexivity.
+    inv H0. simpl. erewrite comp_preserved; eauto. }
+  assert (SIG: LTL.parent_signature s = parent_signature ts).
+  { inv H7. reflexivity.
+    inv H0. reflexivity. }
+  (* rewrite type_of_call_translated, CALLER, SIG. *)
+  change (LTL.fn_comp f) with (comp_of f).
+  change (comp_of
+            {|
+              fn_comp := comp_of f;
+              fn_sig := LTL.fn_sig f;
+              fn_stacksize := LTL.fn_stacksize f;
+              fn_code := add_branch (fn_entrypoint f) (linearize_body f x0)
+            |}) with (comp_of f).
+  destruct (Genv.type_of_call tge (call_comp ts) (comp_of f)).
+  econstructor; eauto. simpl. eapply is_tail_add_branch. constructor.
+  econstructor; eauto. simpl. eapply is_tail_add_branch. constructor.
   econstructor; eauto. simpl. eapply is_tail_add_branch. constructor.
 
   (* external function *)
-  monadInv H8. left; econstructor; split.
+  monadInv H9. left; econstructor; split.
   apply plus_one. eapply exec_function_external; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   econstructor; eauto.
@@ -800,7 +839,7 @@ Lemma transf_initial_states:
 Proof.
   intros. inversion H.
   exploit function_ptr_translated; eauto. intros [tf [A B]].
-  exists (Callstate nil tf (Locmap.init Vundef) m0); split.
+  exists (Callstate nil tf signature_main (Locmap.init Vundef) m0); split.
   econstructor; eauto. eapply (Genv.init_mem_transf_partial TRANSF); eauto.
   rewrite (match_program_main TRANSF).
   rewrite symbols_preserved. eauto.
