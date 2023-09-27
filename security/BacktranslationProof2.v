@@ -657,24 +657,134 @@ Section PROOFINIT.
                     (forall (i : ident) (o : ptrofs), In (Init_addrof i o) (gvar_init v) -> exists b : block, Genv.find_symbol ge i = Some b)
               end) (map snd (PTree.elements cnts)).
   Proof.
-    
-                  
-    let cnts := gen_counter_defs m0 gds in
-    let cnt_defs := map snd (PTree.elements cnts) in
-wf_counter = 
-fun (ge : Senv.t) (m : mem) (cp : compartment) (n : nat) (cnt : ident) =>
-Senv.public_symbol ge cnt = false /\
-(exists b : block,
-   Senv.find_symbol ge cnt = Some b /\
-   Mem.valid_access m Mint64 b 0 Writable (Some cp) /\ Mem.loadv Mint64 m (Vptr b Ptrofs.zero) (Some cp) = Some (Vlong (nat64 n)))
-     : Senv.t -> mem -> compartment -> nat -> ident -> Prop
+    apply Forall_forall. intros (idx & gdx) IN. hexploit (gen_counter_defs_props _ _ _ CNTS).
+    intros FA. rewrite Forall_forall in FA. apply list_in_map_inv in IN. des.
+    destruct x as (id & (cnt & gd)). ss. clarify. specialize (FA _ IN0). ss. des.
+    subst. ss. splits; auto. apply Z.divide_0_r. i. des; ss.
+  Qed.
 
-gen_counter_defs = 
-fun (m : positive) (gds : list (ident * globdef Asm.fundef unit)) =>
-fold_left
-  (fun (pt : PTree.tree (positive * globdef fundef type)) '(id, gd) => PTree.set id ((id + m)%positive, gen_counter (comp_of gd)) pt)
-  gds (PTree.empty (positive * globdef fundef type))
-     : positive -> list (ident * globdef Asm.fundef unit) -> PTree.t (ident * globdef fundef type)
+  Lemma genv_store_init_data_eq
+        (ge_a: Asm.genv) (ge_c: Clight.genv)
+        (SF: symbs_find ge_a ge_c)
+        a m b z cp m'
+        (SOME: Genv.store_init_data ge_a m b z a cp = Some m')
+    :
+    Genv.store_init_data ge_c m b z a cp = Some m'.
+  Proof.
+    destruct a; ss. destruct (Genv.find_symbol ge_a i) eqn:FIND; ss.
+    apply SF in FIND. setoid_rewrite FIND. ss.
+  Qed.
+
+  Lemma genv_store_init_data_list_eq
+        (ge_a: Asm.genv) (ge_c: Clight.genv)
+        (SF: symbs_find ge_a ge_c)
+        l m b z cp m'
+        (SOME: Genv.store_init_data_list ge_a m b z l cp = Some m')
+    :
+    Genv.store_init_data_list ge_c m b z l cp = Some m'.
+  Proof.
+    revert_until l. induction l; i; ss.
+    destruct (Genv.store_init_data ge_a m b z a cp) eqn:MEM; ss.
+    eapply genv_store_init_data_eq in MEM; eauto. rewrite MEM. eauto.
+  Qed.
+
+  Lemma gen_progdef_exists_alloc_global
+        (ge_a: Asm.genv) (ge_c: Clight.genv)
+        (SF: symbs_find ge_a ge_c)
+        m0 id gd m1
+        (AG: Genv.alloc_global ge_a m0 (id, gd) = Some m1)
+        btr cnt ps
+    :
+    Genv.alloc_global ge_c m0 (id, gen_progdef ge_a btr gd (Some cnt) (Some ps)) = Some m1.
+  Proof.
+    ss. destruct cnt as (cnt & cnt_def). destruct gd; ss.
+    { replace (comp_of (gen_fundef ge_a cnt ps btr f)) with (comp_of f).
+      2:{ unfold gen_fundef. des_ifs. }
+      ss.
+    }
+    { replace (Genv.perm_globvar (gen_globvar v)) with (Genv.perm_globvar v).
+      2:{ ss. }
+      destruct (Mem.alloc m0 (gvar_comp v) 0 (init_data_list_size (gvar_init v))) as (ma & b).
+      destruct (store_zeros ma b 0 (init_data_list_size (gvar_init v)) (gvar_comp v)); ss.
+      destruct (Genv.store_init_data_list ge_a m b 0 (gvar_init v) (gvar_comp v)) eqn:MEM; ss.
+      hexploit genv_store_init_data_list_eq; eauto. intros EQ. rewrite EQ. ss.
+    }
+  Qed.
+
+  Lemma gen_program_exists_init_mem_1_aux
+        (ge_a: Asm.genv) (ge_c: Clight.genv)
+        (SF: symbs_find ge_a ge_c)
+        (gds: list (ident * globdef Asm.fundef unit))
+        m0 m_a
+        (MEMA : Genv.alloc_globals ge_a m0 gds = Some m_a)
+        btr cnts pars
+        (CNTS: forall id, In id (map fst gds) -> exists cnt, cnts ! id = Some cnt)
+        (PARS: forall id, In id (map fst gds) -> exists ps, pars ! id = Some ps)
+    :
+    Genv.alloc_globals ge_c m0
+                       (map (fun '(id, gd) => (id, gen_progdef ge_a (get_id_tr btr id) gd cnts ! id pars ! id)) gds) = Some m_a.
+  Proof.
+    revert_until gds. induction gds; i; ss. eauto.
+    destruct (Genv.alloc_global ge_a m0 a) eqn:ALLOC; ss.
+    destruct a as (id & gd).
+    hexploit CNTS. left; ss. intros (cnt & GET_CNT).
+    hexploit PARS. left; ss. intros (ps & GET_PS).
+    rewrite GET_CNT, GET_PS.
+    hexploit gen_progdef_exists_alloc_global. 2: eapply ALLOC. eauto.
+    intros ALLOC2. rewrite ALLOC2.
+    eapply IHgds; eauto.
+  Qed.
+
+  Lemma gen_program_exists_init_mem_1
+        p btr
+        p_c ge_a ge_c
+        (P_C: p_c = gen_program btr p)
+        (GE_A: ge_a = Genv.globalenv p)
+        (GE_C: ge_c = globalenv p_c)
+        (NR: list_norepet (map fst (AST.prog_defs p)))
+        m0 m_a
+        (MEMA : Genv.alloc_globals ge_a m0 (AST.prog_defs p) = Some m_a)
+    :
+    Genv.alloc_globals ge_c m0
+                       (map
+                          (fun '(id, gd) =>
+                             (id,
+                               gen_progdef ge_a (get_id_tr btr id) gd
+                                           (gen_counter_defs (next_id (AST.prog_defs p)) (AST.prog_defs p)) ! id
+                                           (gen_params
+                                              (next_id
+                                                 (map snd
+                                                      (PTree.elements
+                                                         (gen_counter_defs (next_id (AST.prog_defs p)) (AST.prog_defs p)))))
+                                              (AST.prog_defs p)) ! id)) (AST.prog_defs p)) = Some m_a.
+  Proof.
+    eapply gen_program_exists_init_mem_1_aux; auto.
+    { subst. eapply gen_program_symbs_find; auto. }
+    eauto.
+    { i. apply PTree_Properties.of_list_dom in H. des.
+      eapply in_gds_exists_cnt in H. des. unfold get_cnt_ids in H. rewrite PTree.gmap in H.
+      unfold option_map in H. des_ifs. eauto.
+    }
+    { i. apply PTree_Properties.of_list_dom in H. des.
+      eapply in_gds_exists_params in H; auto. des. eauto.
+    }
+  Qed.
+
+  Lemma gen_program_exists_init_mem
+        btr (p: Asm.program)
+        m_a
+        (MEMA: Genv.init_mem p = Some m_a)
+        (NR: list_norepet (map fst (AST.prog_defs p)))
+    :
+    exists m_c, Genv.init_mem (gen_program btr p) = Some m_c.
+  Proof.
+    unfold Genv.init_mem in *. ss. unfold gen_prog_defs.
+    hexploit gen_program_exists_init_mem_1; auto. eauto. apply MEMA.
+    intros ALLOC1. erewrite <- Genv.alloc_globals_app.
+    2:{ apply ALLOC1. }
+
+    TODO
+
 
 Genv.alloc_global_exists:
   forall [F V : Type] {CF : has_comp F} (ge : Genv.t F V) (m : mem) (idg : ident * globdef F V),
@@ -686,6 +796,29 @@ Genv.alloc_global_exists:
        (forall (i : ident) (o : ptrofs), In (Init_addrof i o) (gvar_init v) -> exists b : block, Genv.find_symbol ge i = Some b)
    end) -> exists m' : mem, Genv.alloc_global ge m idg = Some m'
 
+  Definition wf_c_state (ge: Clight.genv) (tr ttr: bundle_trace) (cnts: cnt_ids) id (cst: Clight.state) :=
+    match cst with
+    | State f stmt k_c e le m_c =>
+        wf_counters ge m_c tr cnts /\
+          ( (wf_c_nb ge m_c))
+    | _ => False
+    end.
+(forall (id : ident) (b : block) (f : function),
+ Genv.find_symbol ge id = Some b ->
+ Genv.find_funct_ptr ge b = Some (Internal f) ->
+ exists cnt : ident,
+   cnts ! id = Some cnt /\ wf_counter ge m (comp_of f) (Datatypes.length (get_id_tr tr id)) cnt)
+     : genv -> mem -> bundle_trace -> cnt_ids -> Prop
+  Definition match_state (ge_i: Asm.genv) (ge_c: Clight.genv) (k: meminj) tr cnts pars id (ist: ir_state) (cst: Clight.state) :=
+    match ist, cst with
+    | Some (cur, m_i, k_i), State f _ k_c e le m_c =>
+        (match_genv ge_i ge_c) /\ (match_mem ge_i k m_i m_c) /\
+          (match_cur_fun ge_i ge_c cur f id) /\ (match_find_def ge_i ge_c cnts pars tr) /\
+          (match_cont ge_c tr cnts k_c k_i) /\
+          (match_params pars ge_c ge_i) /\
+          (match_cnts cnts ge_c k)
+    | _, _ => False
+    end.
 
 Genv.alloc_globals = 
 fun (F V : Type) (CF : has_comp F) (ge : Genv.t F V) =>
@@ -725,33 +858,16 @@ match gd with
      Some (Genv.bytes_of_init_data_list ge (gvar_init v)))
 end
      : forall F V : Type, Genv.t F V -> Genv.t F V -> mem -> Prop
-  Lemma c_exists_init_mem
-        btr (p: Asm.program)
-        m_a
-        (MEMA: Genv.init_mem p = Some m_a)
-    :
-    exists m_c, Genv.init_mem (gen_program btr p) = Some m_c.
+wf_counter = 
+fun (ge : Senv.t) (m : mem) (cp : compartment) (n : nat) (cnt : ident) =>
+Senv.public_symbol ge cnt = false /\
+(exists b : block,
+   Senv.find_symbol ge cnt = Some b /\
+   Mem.valid_access m Mint64 b 0 Writable (Some cp) /\
+   Mem.loadv Mint64 m (Vptr b Ptrofs.zero) (Some cp) = Some (Vlong (nat64 n)))
+     : Senv.t -> mem -> compartment -> nat -> ident -> Prop
 
 
-
-  Definition gen_prog_defs (a_ge: Senv.t) tr (gds: list (ident * globdef Asm.fundef unit)): list (ident * globdef Clight.fundef type) :=
-    let m0 := next_id gds in
-    let cnts := gen_counter_defs m0 gds in
-    let cnt_defs := map snd (PTree.elements cnts) in
-    let m1 := next_id cnt_defs in
-    let params := gen_params m1 gds in
-    (map (fun '(id, gd) => (id, gen_progdef a_ge (get_id_tr tr id) gd (cnts ! id) (params ! id))) gds) ++ cnt_defs.
-
-  Program Definition gen_program tr (a_p: Asm.program): Clight.program :=
-    let a_ge := Genv.globalenv a_p in
-    @Build_program _
-                   (gen_prog_defs a_ge tr a_p.(AST.prog_defs))
-                   (AST.prog_public a_p)
-                   (AST.prog_main a_p)
-                   (AST.prog_pol a_p)
-                   []
-                   (@PTree.empty composite)
-                   _.
 
 
 
