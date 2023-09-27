@@ -2479,27 +2479,6 @@ Proof.
   intros (j' & rs' & m2' & sp' & m3' & m4' & m5' & A & B & C & D & E & F & SEP & J & K).
   rewrite (sep_comm (globalenv_inject ge j')) in SEP.
   rewrite (sep_swap (minjection j' m')) in SEP.
-  (* assert (TY_CALL: Genv.type_of_call ge (Linear.call_comp s) (comp_of f) *)
-  (*         = Genv.type_of_call tge (call_comp tge cs') (Genv.find_comp tge (Vptr fb Ptrofs.zero))) *)
-  (*   by admit. *)
-  (* destruct (Genv.type_of_call ge (Linear.call_comp s) (comp_of f)). *)
-  (* { *)
-  (* econstructor; split. *)
-  (* eapply plus_left. econstructor; eauto. *)
-  (*   unfold Genv.find_comp; simpl; rewrite FIND; destruct Ptrofs.eq_dec; try congruence. *)
-  (*   unfold comp_of; simpl. eauto. *)
-  (*   unfold Genv.find_comp; simpl; rewrite FIND; destruct Ptrofs.eq_dec; try congruence. *)
-  (*   unfold comp_of; simpl. eauto. *)
-  (*   unfold Genv.find_comp; simpl; rewrite FIND; destruct Ptrofs.eq_dec; try congruence. *)
-  (*   unfold comp_of; simpl. eauto. *)
-  (* rewrite (unfold_transf_function _ _ TRANSL). unfold fn_code. unfold transl_body. *)
-  (* (* rewrite <- TY_CALL. *) *)
-  (* eexact D. traceEq. *)
-  (* eapply match_states_intro with (j := j'); eauto with coqlib. *)
-  (* eapply match_stacks_change_meminj; eauto. *)
-  (* rewrite sep_swap in SEP. rewrite sep_swap. eapply stack_contents_change_meminj; eauto. *)
-  (* rewrite comp_transf_function; eauto. *)
-  (* } *)
   { (* new case *)
   econstructor; split.
   eapply plus_left. econstructor; eauto.
@@ -2511,14 +2490,12 @@ Proof.
     unfold comp_of; simpl. eauto.
   rewrite (unfold_transf_function _ _ TRANSL). unfold fn_code. unfold transl_body.
   (* rewrite <- TY_CALL. *)
-  (* instantiate (2 := cs') in D. instantiate (2 := E0). instantiate (1 := (transl_code (make_env (function_bounds f)) (Linear.fn_code f))) in D. instantiate (1 := (State cs' fb (Vptr sp' Ptrofs.zero) (transl_code (make_env (function_bounds f)) (Linear.fn_code f)) rs' m5')). *)
   eexact D. traceEq.
   eapply match_states_intro with (j := j'); eauto with coqlib.
   eapply match_stacks_change_meminj; eauto.
   rewrite sep_swap in SEP. rewrite sep_swap. eapply stack_contents_change_meminj; eauto.
   rewrite comp_transf_function; eauto.
   }
-  (* { (* same as Genv.InternalCall *) admit. } *)
 
 - (* external function *)
   simpl in TRANSL. inversion TRANSL; subst tf.

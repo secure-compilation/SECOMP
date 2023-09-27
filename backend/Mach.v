@@ -516,10 +516,6 @@ Inductive step: state -> trace -> state -> Prop :=
       Mem.free m stk 0 f.(fn_stacksize) cp = Some m' ->
       forall (RETREGS:
                retrs =
-               (*   match Genv.type_of_call ge (call_comp s) (comp_of f) with *)
-               (*   | Genv.CrossCompartmentCall => undef_non_return_regs_ext rs (parent_signature s) *)
-               (*   | _ => rs *)
-               (*   end), *)
                  undef_non_return_regs_ext rs (parent_signature s)),
       step (State s fb (Vptr stk soff) (Mreturn :: c) rs m)
         E0 (Returnstate s retrs m')
@@ -533,10 +529,6 @@ Inductive step: state -> trace -> state -> Prop :=
       store_stack m2 sp Tptr f.(fn_retaddr_ofs) (parent_ra s) cp = Some m3 ->
       forall (CALLREGS:
                callrs =
-                 (* match Genv.type_of_call ge (call_comp s) (Genv.find_comp ge (Vptr fb Ptrofs.zero)) with *)
-                 (* | Genv.CrossCompartmentCall => undef_caller_save_regs_ext rs (parent_signature s) *)
-                 (* | _ => rs *)
-                 (* end), *)
                  undef_caller_save_regs_ext rs sig),
       rs' = undef_regs destroyed_at_function_entry callrs ->
       step (Callstate s fb sig rs m)

@@ -1344,30 +1344,7 @@ Proof.
   eauto.
 Qed.
 
-Lemma return_regs_agree_callee_save:
-  forall caller callee,
-  agree_callee_save caller (return_regs caller callee).
-Proof.
-  intros; red; intros. unfold return_regs. red in H.
-  destruct l.
-  rewrite H; auto.
-  (* destruct (in_mreg r (regs_of_rpair (loc_result callee_sig))) eqn:IN; *)
-  (*   [| reflexivity]. *)
-  (* unfold loc_result in IN. destruct (proj_sig_res callee_sig) eqn:TY. *)
-  destruct sl; auto || congruence.
-Qed.
-
-(* (* TODO: Relocate *) *)
-(* Definition callee_save_loc_ext (l: loc) (callee_sig: signature) : Prop := *)
-(*   match l with *)
-(*   | R r => in_mreg r (regs_of_rpair (loc_result callee_sig)) = true *)
-(*   | S sl ofs ty => sl <> Outgoing *)
-(*   end. *)
-
-(* (* TODO: Relocate *) *)
-(* Definition agree_callee_save_ext (ls1 ls2: Locmap.t) (callee_sig: signature) : Prop := *)
-(*   forall l, callee_save_loc_ext l callee_sig -> ls1 l = ls2 l. *)
-
+(* TODO: relocate *)
 Lemma return_regs_agree_callee_save_ext:
   forall caller callee,
   agree_callee_save caller (return_regs caller callee).
@@ -1378,6 +1355,7 @@ Proof.
   destruct sl; auto || congruence.
 Qed.
 
+(* TODO: relocate *)
 Lemma return_regs_ext_agree_callee_save_ext:
   forall caller callee callee_sig,
   agree_callee_save caller (return_regs_ext caller callee callee_sig).
@@ -1399,42 +1377,6 @@ Proof.
   hnf. intros. simpl in H1. rewrite H1. auto.
   lazy beta. destruct (eloc q). auto. destruct sl; congruence.
 Qed.
-
-(* TODO: relocate *)
-Definition no_caller_saves_ext (e: eqs) : bool :=
-  EqSet.for_all
-   (fun eq =>
-     match eloc eq with
-       | R r => false
-       | S Outgoing _ _ => false
-       | S _ _ _ => true
-       end)
-    e.
-
-(* TODO: relocate *)
-(* Lemma locmap_get_set_loc_result_callee_save_ext: *)
-(*   forall sg v rs l, *)
-(*   callee_save_loc_ext l -> *)
-(*   Locmap.setpair (loc_result sg) v rs l = rs l. *)
-(* Proof. *)
-(*   intros. *)
-(*   apply locmap_get_set_loc_result_callee_save. *)
-(*   destruct l. *)
-(*   - contradiction. *)
-(*   - assumption. *)
-(* Qed. *)
-
-(* Lemma no_caller_saves_sound_ext: *)
-(*   forall e q, *)
-(*   no_caller_saves_ext e = true -> *)
-(*   EqSet.In q e -> *)
-(*   callee_save_loc_ext (eloc q). *)
-(* Proof. *)
-(*   unfold no_caller_saves_ext, callee_save_loc_ext; intros. *)
-(*   exploit EqSet.for_all_2; eauto. *)
-(*   hnf. intros. simpl in H1. rewrite H1. auto. *)
-(*   lazy beta. destruct (eloc q). discriminate. destruct sl; congruence. *)
-(* Qed. *)
 
 Lemma val_hiword_longofwords:
   forall v1 v2, Val.lessdef (Val.hiword (Val.longofwords v1 v2)) v1.
@@ -1491,48 +1433,6 @@ Proof.
   exploit no_caller_saves_sound; eauto. intros.
   red in H5. rewrite <- H5; auto.
 Qed.
-
-(* Lemma function_return_satisf_ext: *)
-(*   forall rs ls_before ls_after res res' sg e e' v, *)
-(*   res' = loc_result sg -> *)
-(*   remove_equations_res res res' e = Some e' -> *)
-(*   satisf rs ls_before e' -> *)
-(*   forallb (fun l => reg_loc_unconstrained res l e') (map R (regs_of_rpair res')) = true -> *)
-(*   no_caller_saves_ext e' = true -> *)
-(*   Val.lessdef v (Locmap.getpair (map_rpair R res') ls_after) -> *)
-(*   agree_callee_save_ext ls_before ls_after -> *)
-(*   satisf (rs#res <- v) ls_after e. *)
-(* Proof. *)
-(*   intros; red; intros. *)
-(*   functional inversion H0. *)
-(* - (* One register *) *)
-(*   subst. rewrite <- H8 in *. simpl in *. InvBooleans. *)
-(*   set (e' := remove_equation {| ekind := Full; ereg := res; eloc := R mr |} e) in *. *)
-(*   destruct (OrderedEquation.eq_dec q (Eq Full res (R mr))). *)
-(*   subst q; simpl. rewrite Regmap.gss; auto. *)
-(*   assert (EqSet.In q e'). unfold e', remove_equation; simpl. ESD.fsetdec. *)
-(*   exploit reg_loc_unconstrained_sound; eauto. intros [A B]. *)
-(*   rewrite Regmap.gso; auto. *)
-(*   exploit no_caller_saves_sound_ext; eauto. intros. *)
-(*   red in H5. rewrite <- H5; auto. *)
-(* - (* Two 32-bit halves *) *)
-(*   subst. rewrite <- H9 in *. simpl in *. *)
-(*   set (e' := remove_equation {| ekind := Low; ereg := res; eloc := R mr2 |} *)
-(*           (remove_equation {| ekind := High; ereg := res; eloc := R mr1 |} e)) in *. *)
-(*   InvBooleans. *)
-(*   destruct (OrderedEquation.eq_dec q (Eq Low res (R mr2))). *)
-(*   subst q; simpl. rewrite Regmap.gss. *)
-(*   eapply Val.lessdef_trans. apply Val.loword_lessdef. eauto. apply val_loword_longofwords. *)
-(*   destruct (OrderedEquation.eq_dec q (Eq High res (R mr1))). *)
-(*   subst q; simpl. rewrite Regmap.gss. *)
-(*   eapply Val.lessdef_trans. apply Val.hiword_lessdef. eauto. apply val_hiword_longofwords. *)
-(*   assert (EqSet.In q e'). unfold e', remove_equation; simpl; ESD.fsetdec. *)
-(*   exploit reg_loc_unconstrained_sound. eexact H. eauto. intros [A B]. *)
-(*   exploit reg_loc_unconstrained_sound. eexact H2. eauto. intros [C D]. *)
-(*   rewrite Regmap.gso; auto. *)
-(*   exploit no_caller_saves_sound_ext; eauto. intros. *)
-(*   red in H5. rewrite <- H5; auto. *)
-(* Qed. *)
 
 Lemma compat_left_sound:
   forall r l e q,
@@ -1612,7 +1512,6 @@ Qed.
 
 (* TODO related to calling convention, relocate *)
 (* Automate these! *)
-
 Remark in_loc_arguments_parameters_One :
   forall sg r,
   In (One (R r)) (loc_arguments sg) ->
@@ -2253,14 +2152,8 @@ Proof.
   apply Locmap.getpair_exten; intros.
   assert (In l (regs_of_rpairs (loc_arguments sg))) by (eapply in_regs_of_rpairs; eauto).
   exploit loc_arguments_acceptable_2; eauto. exploit H; eauto.
-  destruct l; simpl; intros; try contradiction. (* rewrite H4; *) auto.
+  destruct l; simpl; intros; try contradiction. auto.
 Qed.
-
-(* Lemma return_regs_arg_values: *)
-(*   forall sg ls1 ls2, *)
-(*   tailcall_is_possible sg = true -> *)
-(*   map (fun p => Locmap.getpair p (return_regs ls1 ls2 sg)) (loc_arguments sg) *)
-(*   = map (fun p => Locmap.getpair p ls2) (loc_arguments sg). *)
 
 Lemma find_function_tailcall:
   forall tge ros ls1 ls2,
@@ -2269,14 +2162,7 @@ Lemma find_function_tailcall:
 Proof.
   unfold ros_compatible_tailcall, find_function, find_function_ptr; intros.
   destruct ros as [r|id]; auto.
-  (* unfold return_regs. destruct (is_callee_save r). discriminate. auto. *)
 Qed.
-
-(* Lemma find_function_tailcall: *)
-(*   forall tge ros ls1 ls2 sg, *)
-(*   ros_compatible_tailcall ros = true -> *)
-(*   find_function tge ros (return_regs ls1 ls2 sg) = find_function tge ros ls2. *)
-
 
 Lemma find_function_ptr_tailcall:
   forall tge ros ls1 ls2,
@@ -2285,13 +2171,7 @@ Lemma find_function_ptr_tailcall:
 Proof.
   unfold ros_compatible_tailcall, find_function_ptr; intros.
   destruct ros as [r|id]; auto.
-  (* unfold return_regs. destruct (is_callee_save r). discriminate. auto. *)
 Qed.
-
-(* Lemma find_function_ptr_tailcall: *)
-(*   forall tge ros ls1 ls2 sg, *)
-(*   ros_compatible_tailcall ros = true -> *)
-(*   find_function_ptr tge ros (return_regs ls1 ls2 sg) = find_function_ptr tge ros ls2. *)
 
 Lemma loadv_int64_split:
   forall m a cp v,
@@ -2750,11 +2630,6 @@ Inductive match_stackframes: list RTL.stackframe -> list LTL.stackframe -> signa
         (STEPS: forall v ls1 m,
            Val.lessdef v (Locmap.getpair (map_rpair R (loc_result sg)) ls1) ->
            Val.has_type v (env res) ->
-           (* match Genv.type_of_call ge (call_comp ts) (callee_comp ts (* FIXME *)) with *)
-           (* match Genv.type_of_call ge (comp_of tf) cp with *)
-           (* | Genv.CrossCompartmentCall => agree_callee_save_ext ls ls1 *)
-           (* | _ => agree_callee_save ls ls1 *)
-           (* end -> *)
            agree_callee_save ls ls1 ->
            exists ls2,
            star LTL.step tge (Block ts tf sp bb ls1 m)
@@ -2776,16 +2651,6 @@ Definition cp_of_stack (stk: list RTL.stackframe) :=
   | RTL.Stackframe _ _ cp _ _ _ _ :: _ => cp
   | _ => default_compartment
   end.
-
-(* (* TODO: Relocate *) *)
-(* Definition callee_save_loc_ext (l: loc) (callee_sig: signature) : Prop := *)
-(*   match l with *)
-(*   | R r => in_mreg r (regs_of_rpair (loc_result callee_sig)) = true *)
-(*   | S sl ofs ty => sl <> Outgoing *)
-(*   end. *)
-
-(* Definition agree_callee_save_ext (ls1 ls2: Locmap.t) (callee_sig: signature) : Prop := *)
-(*   forall l, callee_save_loc_ext l callee_sig -> ls1 l = ls2 l. *)
 
 Inductive match_states: RTL.state -> LTL.state -> Prop :=
   | match_states_intro:
@@ -2814,11 +2679,6 @@ Inductive match_states: RTL.state -> LTL.state -> Prop :=
       forall s res m ts ls m' sg
         (STACKS: match_stackframes s ts sg)
         (RES: Val.lessdef res (Locmap.getpair (map_rpair R (loc_result sg)) ls))
-        (* (AG: match Genv.type_of_call ge (call_comp ts) (callee_comp ts) with *)
-        (*      | Genv.CrossCompartmentCall => agree_callee_save_ext (parent_locset ts) ls *)
-        (*      | _ => agree_callee_save (parent_locset ts) ls *)
-        (*      end) *)
-        (* (AG: agree_callee_save_ext (parent_locset ts) ls) *)
         (AG: agree_callee_save (parent_locset ts) ls)
         (MEM: Mem.extends m m')
         (WTRES: Val.has_type res (proj_sig_res sg)),
@@ -3211,7 +3071,6 @@ Proof.
   rewrite <- comp_transf_function; eauto.
   eapply allowed_call_translated; eauto.
   { intros TY_CALL.
-    (* rewrite TY_CALL. *)
     assert (X: Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall).
     { erewrite find_comp_translated, type_of_call_translated; eauto. rewrite comp_transf_function; eauto. }
     specialize (NO_CROSS_PTR X).
@@ -3267,14 +3126,9 @@ Proof.
           specialize (G (Twolong rhi rlo) (rhi) (rlo) (or_introl eq_refl)) as [? [? ?]].
           now destruct rhi; try congruence. }
     rewrite R.
-    (* now eapply Val.lessdef_list_not_ptr; eauto. } *)
-    (* Follows from the goal: [call_regs_ext] is like [call_regs] but with some
-       additional undefined registers. *)
+    (* [call_regs_ext] is like [call_regs] with additional undefined registers *)
     eapply Val.lessdef_list_not_ptr; eauto. }
-  { (* assert (X: Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall). *)
-    (* { erewrite find_comp_translated, type_of_call_translated; eauto. rewrite comp_transf_function; eauto. } *)
-    (* specialize (NO_CROSS_PTR X). *)
-    instantiate (1 := t).
+  { instantiate (1 := t).
     assert (Htype_list: Val.has_type_list rs ## args (sig_args sg)).
     { inv WTI. rewrite <- H7.
       clear -WTRS. eapply wt_regset_list. eauto. }
@@ -3285,53 +3139,9 @@ Proof.
     assert (Heqo2' := Heqo2).
     rewrite <- call_regs_param_values in Heqo2.
     rewrite <- call_regs_ext_param_values in Heqo2'.
-    (* pose proof (Val.lessdef_list_not_ptr _ _ Heqo2 NO_CROSS_PTR) as H. *)
-    (* assert (R: map (fun p : rpair loc => Locmap.getpair p (undef_regs destroyed_at_function_entry (call_regs ls1))) (loc_parameters sg) = *)
-    (*         map (fun p : rpair loc => Locmap.getpair p (call_regs ls1)) (loc_parameters sg)). *)
-    (* { (* TODO: try using [Locmap.getpair_exten] *)
-    (*      TODO: remove the code duplication *) *)
-    (*   assert (G: forall l rhi rlo, In l (loc_parameters sg) -> l <> One (R R30) /\ l <> Twolong (R R30) rlo /\ l <> Twolong rhi (R R30)). *)
-    (*   { clear. *)
-    (*     unfold loc_parameters. *)
-    (*     destruct l as [[] |]; try congruence. *)
-    (*     - pose proof (loc_arguments_acceptable_stronger sg) as G. *)
-    (*       intros rhi rlo IN. *)
-    (*       eapply in_map_iff in IN as [x [Hx' Hx]]. *)
-    (*       eapply G in Hx. *)
-    (*       destruct x; inv Hx'. *)
-    (*       destruct r0 as [| []]; simpl; try congruence. *)
-    (*       simpl in Hx. destruct Hx. inv H0. split; [| split]; congruence. *)
-    (*       contradiction. *)
-    (*       contradiction. *)
-    (*       split; [| split]; congruence. *)
-    (*     - intros. *)
-    (*       split; [| split]; congruence. *)
-    (*     - pose proof (loc_arguments_acceptable_stronger sg) as G. *)
-    (*       intros rhi' rlo' IN. *)
-    (*       eapply in_map_iff in IN as [x [Hx' Hx]]. *)
-    (*       eapply G in Hx. *)
-    (*       destruct x; inv Hx'. *)
-    (*       destruct rhi0 as [| []]; destruct rlo0 as [| []]; *)
-    (*         destruct Hx as [[] []]; simpl; (split; [| split]); try congruence. *)
-    (*   } *)
-    (*   clear -G. revert G. *)
-    (*   generalize (loc_parameters sg). *)
-    (*   induction l; intros. *)
-    (*   - auto. *)
-    (*   - Local Transparent destroyed_at_function_entry. *)
-    (*     simpl in *. rewrite IHl; auto. *)
-    (*     destruct a; simpl. *)
-    (*     + rewrite Locmap.gso; auto. destruct r as [[] |]; try now simpl. *)
-    (*       now specialize (G (One (R R30)) (R R30) (R R30) (or_introl eq_refl)). *)
-    (*     + rewrite Locmap.gso; auto. rewrite Locmap.gso; auto. *)
-    (*       destruct rlo as [[] |]; try now simpl. *)
-    (*       specialize (G (Twolong rhi (R R30)) (rhi) (R R30) (or_introl eq_refl)) as [? [? ?]]. congruence. *)
-    (*       specialize (G (Twolong rhi rlo) (rhi) (rlo) (or_introl eq_refl)) as [? [? ?]]. *)
-    (*       now destruct rhi; try congruence. } *)
     assert (R': map (fun p : rpair loc => Locmap.getpair p (undef_regs destroyed_at_function_entry (call_regs_ext ls1 sg))) (loc_parameters sg) =
                  map (fun p : rpair loc => Locmap.getpair p (call_regs_ext ls1 sg)) (loc_parameters sg)).
     { (* TODO Same proof as R: refactor *)
-      (* clear R. (* Hides the register constructor *) *)
       assert (G: forall l rhi rlo, In l (loc_parameters sg) -> l <> One (R R30) /\ l <> Twolong (R R30) rlo /\ l <> Twolong rhi (R R30)).
       { clear.
         unfold loc_parameters.
@@ -3370,13 +3180,8 @@ Proof.
           specialize (G (Twolong rhi (R R30)) (rhi) (R R30) (or_introl eq_refl)) as [? [? ?]]. congruence.
           specialize (G (Twolong rhi rlo) (rhi) (rlo) (or_introl eq_refl)) as [? [? ?]].
           now destruct rhi; try congruence. }
-    (* destruct (Genv.type_of_call tge (comp_of tf) (Genv.find_comp tge vf)) eqn:TY_CALL. *)
-    (* { rewrite R. rewrite <- find_comp_translated. *)
-    (*   eapply call_trace_lessdef with (ge := ge); eauto using senv_preserved, symbols_preserved. } *)
     { rewrite R'. rewrite <- find_comp_translated.
       eapply call_trace_lessdef with (ge := ge); eauto using senv_preserved, symbols_preserved. }
-    (* { rewrite R. rewrite <- find_comp_translated. *)
-    (*   eapply call_trace_lessdef with (ge := ge); eauto using senv_preserved, symbols_preserved. } *)
   }
   traceEq. traceEq.
   exploit analyze_successors; eauto. simpl. left; eauto. intros [enext [U V]].
@@ -3388,30 +3193,10 @@ Proof.
     unfold Genv.find_comp.
     rewrite H0. now rewrite comp_transf_fundef. }
   rewrite find_comp_translated, SIG.
-  (* destruct (Genv.type_of_call ge (comp_of tf) (Genv.find_comp tge vf)) eqn:TY_CALL. *)
-  (* { *)
-  (* econstructor; eauto. *)
-  (* inv WTI. congruence. *)
-  (* rewrite TY_CALL. *)
-  (* intros. exploit (exec_moves mv2). eauto. eauto. *)
-  (* eapply function_return_satisf with (v := v) (ls_before := ls1) (ls_after := ls0); eauto. *)
-  (* eapply add_equation_ros_satisf; eauto. *)
-  (* eapply add_equations_args_satisf; eauto. *)
-  (* (* rewrite find_comp_translated in R. rewrite <- R in H3. Search tfd. Search fd. *) *)
-  (* (* congruence. *) *)
-  (* (* admit. (* FIXME -- does everything line up later? *) *) *)
-  (* apply wt_regset_assign; auto. *)
-  (* intros [ls2 [A2 B2]]. *)
-  (* exists ls2; split. *)
-  (* eapply star_right. eexact A2. constructor. traceEq. *)
-  (* apply satisf_incr with eafter; auto. *)
-  (* } *)
   { (* new case *)
   econstructor; eauto.
   inv WTI. congruence.
-  (* rewrite TY_CALL. *)
   intros. exploit (exec_moves mv2). eauto. eauto.
-  (* no_caller_saves vs _ext *)
   eapply function_return_satisf with (v := v) (ls_before := ls1) (ls_after := ls0); eauto.
   eapply add_equation_ros_satisf; eauto.
   eapply add_equations_args_satisf; eauto.
@@ -3421,7 +3206,6 @@ Proof.
   eapply star_right. eexact A2. constructor. traceEq.
   apply satisf_incr with eafter; auto.
   }
-  (* { } *)
   rewrite SIG. eapply add_equations_args_lessdef; eauto.
   inv WTI. rewrite <- H7. apply wt_regset_list; auto.
   simpl. red; auto.
@@ -3440,8 +3224,6 @@ Proof.
   econstructor; split.
   eapply plus_left. econstructor; eauto.
   eapply star_right. eexact A1. econstructor; eauto.
-  (* rewrite <- E. apply find_function_tailcall; auto. *)
-  (* rewrite find_function_ptr_tailcall; eauto. *)
   rewrite <- comp_transf_fundef; eauto. rewrite <- comp_transf_function; eauto.
   rewrite <- comp_transf_function; eauto.
   rewrite <- comp_transf_function; eauto. eapply allowed_call_translated; eauto.
@@ -3523,12 +3305,7 @@ Proof.
   rewrite <- comp_transf_function; eauto. eauto. eauto. traceEq.
   simpl.
   econstructor; eauto.
-  (* destruct (Genv.type_of_call tge (call_comp ts) (callee_comp ts)) eqn:TY_CALL; *)
-  (*   rewrite <- type_of_call_translated in TY_CALL; *)
-  (*   rewrite TY_CALL. *)
-  (* { apply return_regs_agree_callee_save. } *)
   { apply return_regs_ext_agree_callee_save_ext. }
-  (* { apply return_regs_agree_callee_save. } *)
   constructor.
 + (* with an argument *)
   exploit (exec_moves mv); eauto. intros [ls1 [A1 B1]].
@@ -3537,22 +3314,6 @@ Proof.
   eapply star_right. eexact A1.
   econstructor.
   rewrite <- comp_transf_function; eauto. eauto. eauto. traceEq.
-  (* destruct (Genv.type_of_call tge (call_comp ts) (callee_comp ts)) eqn:TY_CALL. *)
-  (* { (* original proof *) *)
-  (* simpl. econstructor; eauto. rewrite <- H11. *)
-  (* replace (Locmap.getpair (map_rpair R (loc_result (RTL.fn_sig f))) *)
-  (*                         (return_regs (parent_locset ts) ls1)) *)
-  (* with (Locmap.getpair (map_rpair R (loc_result (RTL.fn_sig f))) ls1). *)
-  (* eapply add_equations_res_lessdef; eauto. *)
-  (* rewrite <- H14. apply WTRS. *)
-  (* generalize (loc_result_caller_save (RTL.fn_sig f)). *)
-  (* destruct (loc_result (RTL.fn_sig f)); simpl. *)
-  (* intros A; rewrite A; auto. *)
-  (* intros [A B]; rewrite A, B; auto. *)
-  (* rewrite <- type_of_call_translated in TY_CALL. rewrite TY_CALL. *)
-  (* apply return_regs_agree_callee_save. *)
-  (* rewrite <- H11, <- H14. apply WTRS. *)
-  (* } *)
   { (* new case *)
   simpl. econstructor; eauto. rewrite <- H11.
   replace (Locmap.getpair (map_rpair R (loc_result (RTL.fn_sig f)))
@@ -3577,7 +3338,6 @@ Proof.
   apply return_regs_ext_agree_callee_save_ext.
   rewrite <- H11, <- H14. apply WTRS.
   }
-  (* { (* same as Genv.InternalCall *) admit. } *)
 
 (* internal function *)
 - monadInv FUN. simpl in *.
@@ -3586,22 +3346,6 @@ Proof.
   intros [m'' [U V]].
   assert (WTRS: wt_regset env (init_regs args (fn_params f))).
   { apply wt_init_regs. inv H0. rewrite wt_params. rewrite H9. auto. }
-  (* destruct (Genv.type_of_call tge (call_comp ts) (comp_of x)) eqn:TY_CALL. *)
-  (* { (* original proof *) *)
-  (* exploit (exec_moves mv). eauto. eauto. *)
-  (*   eapply can_undef_satisf; eauto. eapply compat_entry_satisf; eauto. *)
-  (*   rewrite call_regs_param_values. eexact ARGS. *)
-  (*   exact WTRS. *)
-  (* intros [ls1 [A B]]. *)
-  (* econstructor; split. *)
-  (* eapply plus_left. econstructor; eauto. rewrite <- COMP; eauto. *)
-  (* rewrite TY_CALL. *)
-  (* eapply star_left. econstructor; eauto. *)
-  (* eapply star_right. eexact A. *)
-  (* econstructor; eauto. *)
-  (* eauto. eauto. traceEq. *)
-  (* econstructor; eauto. *)
-  (* } *)
   { (* new case *)
   exploit (exec_moves mv). eauto. eauto.
     eapply can_undef_satisf; eauto. eapply compat_entry_satisf; eauto.
@@ -3610,14 +3354,12 @@ Proof.
   intros [ls1 [A B]].
   econstructor; split.
   eapply plus_left. econstructor; eauto. rewrite <- COMP; eauto.
-  (* rewrite TY_CALL. *)
   eapply star_left. econstructor; eauto.
   eapply star_right. eexact A.
   econstructor; eauto.
   eauto. eauto. traceEq.
   econstructor; eauto.
   }
-  (* { (* same as Genv.InternalCall *) admit. } *)
 
 (* external function *)
 - exploit external_call_mem_extends; eauto. intros [v' [m'' [F [G [J K]]]]].
@@ -3634,14 +3376,6 @@ Proof.
   { rewrite <- B. eapply external_call_well_typed; eauto. }
   rewrite Locmap.gss. rewrite Locmap.gso by (red; auto). rewrite Locmap.gss.
   rewrite val_longofwords_eq_1 by auto. auto.
-  (* destruct (Genv.type_of_call ge (call_comp ts) (callee_comp ts)) eqn:TY_CALL. *)
-  (* { *)
-  (* red; intros. rewrite (AG l H0). *)
-  (* rewrite locmap_get_set_loc_result_callee_save by auto. *)
-  (* unfold undef_caller_save_regs. destruct l; simpl in H0. *)
-  (* rewrite H0; auto. *)
-  (* destruct sl; auto; congruence. *)
-  (* } *)
   { (* new case *)
     red; intros.
     rewrite (AG l H0).
@@ -3651,35 +3385,11 @@ Proof.
     destruct r; discriminate.
     destruct sl; auto; congruence.
   }
-  (* { (* same as Genv.InternalCall *) *)
-  (* red; intros. rewrite (AG l H0). *)
-  (* rewrite locmap_get_set_loc_result_callee_save by auto. *)
-  (* unfold undef_caller_save_regs. destruct l; simpl in H0. *)
-  (* rewrite H0; auto. *)
-  (* destruct sl; auto; congruence. *)
-  (* } *)
   eapply external_call_well_typed; eauto.
 
 (* return *)
 - inv STACKS.
   simpl in AG.
-  (* destruct (Genv.type_of_call ge (comp_of tf) cp) eqn:TY_CALL. *)
-  (* { *)
-  (* exploit STEPS; eauto. rewrite WTRES0; auto. intros [ls2 [A B]]. *)
-  (* econstructor; split. *)
-  (* eapply plus_left. constructor. *)
-  (* destruct (transf_function_inv _ _ FUN). *)
-  (* rewrite <- COMP. rewrite <- type_of_call_translated. *)
-  (* intros G. specialize (NO_CROSS_PTR G). clear -SIG RES NO_CROSS_PTR. *)
-  (* unfold loc_result, proj_sig_res in *. rewrite SIG in *. *)
-  (* now inv RES. *)
-  (* destruct (transf_function_inv _ _ FUN). *)
-  (* unfold loc_result, proj_sig_res in *. rewrite SIG in *. *)
-  (* rewrite <- COMP. eapply return_trace_lessdef; eauto using senv_preserved. *)
-  (* eexact A. traceEq. *)
-  (* econstructor; eauto. *)
-  (* apply wt_regset_assign; auto. rewrite WTRES0; auto. *)
-  (* } *)
   { (* new case, now identical to the others *)
   exploit STEPS; eauto. rewrite WTRES0; auto. intros [ls2 [A B]].
   econstructor; split.
@@ -3696,22 +3406,6 @@ Proof.
   econstructor; eauto.
   apply wt_regset_assign; auto. rewrite WTRES0; auto.
   }
-  (* { (* same as Genv.InternalCall *) *)
-  (* exploit STEPS; eauto. rewrite WTRES0; auto. intros [ls2 [A B]]. *)
-  (* econstructor; split. *)
-  (* eapply plus_left. constructor. *)
-  (* destruct (transf_function_inv _ _ FUN). *)
-  (* rewrite <- COMP. rewrite <- type_of_call_translated. *)
-  (* intros G. specialize (NO_CROSS_PTR G). clear -SIG RES NO_CROSS_PTR. *)
-  (* unfold loc_result, proj_sig_res in *. rewrite SIG in *. *)
-  (* now inv RES. *)
-  (* destruct (transf_function_inv _ _ FUN). *)
-  (* unfold loc_result, proj_sig_res in *. rewrite SIG in *. *)
-  (* rewrite <- COMP. eapply return_trace_lessdef; eauto using senv_preserved. *)
-  (* eexact A. traceEq. *)
-  (* econstructor; eauto. *)
-  (* apply wt_regset_assign; auto. rewrite WTRES0; auto. *)
-  (* } *)
 Qed.
 
 Lemma initial_states_simulation:
