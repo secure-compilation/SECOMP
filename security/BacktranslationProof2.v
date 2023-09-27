@@ -67,6 +67,8 @@ End GENPROOFS.
 Definition wf_program_public {F V} (p: AST.program F V) :=
   forall id, In id (AST.prog_public p) -> In id (map fst (AST.prog_defs p)).
 
+
+
 Section PROOFGENV.
 
   Lemma gen_prog_defs_props_1
@@ -118,7 +120,6 @@ Section PROOFGENV.
         (IN: In (id, gd) gds)
     :
     cnts ! id = Some ((id + x0)%positive, gen_counter (comp_of gd)).
-    (* In (id, ((id + x0)%positive, gen_counter (comp_of gd))) (PTree.elements cnts). *)
   Proof.
     subst. unfold gen_counter_defs. apply PTree_Properties.of_list_norepet.
     { rewrite map_map.
@@ -384,75 +385,193 @@ Section PROOFGENV.
     }
   Qed.
 
-(*   Lemma genv_find_symbol_add_globals_some *)
-(*         F V *)
-(*         (gds: list (ident * globdef F V)) *)
-(*         id *)
-(*         (IN: In id (map (fun x => fst x) gds)) *)
-(*         (ge0: Genv.t F V) b *)
-(*         (FIND: Genv.find_symbol (Genv.add_globals ge0 gds) id = Some b) *)
-(*     : *)
-(*     exists gd id0, (Genv.find_def (Genv.add_globals ge0 gds) b = Some gd) /\ (In (id0, gd) gds). *)
-        
-        
-        
-(* list_in_map_inv: forall [A B : Type] (f : A -> B) (l : list A) (y : B), In y (map f l) -> exists x : A, y = f x /\ In x l *)
-        
-        
-(* Genv.find_def_symbol: *)
-(*   forall [F V : Type] (p : AST.program F V) (id : positive) (g : globdef F V), *)
-(*   (prog_defmap p) ! id = Some g <-> *)
-(*   (exists b : block, Genv.find_symbol (Genv.globalenv p) id = Some b /\ Genv.find_def (Genv.globalenv p) b = Some g) *)
+  Lemma in_gds_exists_cnt
+        gds id gd_i
+        (FD: (PTree_Properties.of_list gds) ! id = Some gd_i)
+        x
+    :
+    exists cnt, (get_cnt_ids (gen_counter_defs x gds)) ! id = Some cnt /\ (x < cnt)%positive.
+  Proof.
+    unfold get_cnt_ids, gen_counter_defs.
+    assert (IN: In id (map fst (map (fun '(id0, gd) => (id0, ((id0 + x)%positive, gen_counter (comp_of gd)))) gds))).
+    { apply PTree_Properties.in_of_list in FD. rewrite map_map.
+      apply (in_map (fun x0 : positive * globdef Asm.fundef unit => fst (let '(id0, gd) := x0 in (id0, ((id0 + x)%positive, gen_counter (comp_of gd)))))) in FD. ss.
+    }
+    apply PTree_Properties.of_list_dom in IN. des. destruct v.
+    rewrite PTree.gmap. setoid_rewrite IN. ss. esplits; eauto.
+    apply PTree_Properties.in_of_list in IN. apply list_in_map_inv in IN. des. des_ifs. lia.
+  Qed.
 
+  Lemma Forall_numbering0
+        A (l: list A)
+    :
+    forall x1 x2, (x1 <= x2)%positive -> Forall (fun '(id, _) => (x1 <= id)%positive) (numbering x2 l).
+  Proof. induction l; i; ss. econs. auto. eapply IHl. lia. Qed.
 
-(*       eapply Genv.find_symbol_find_def_inversion in FIND. des. *)
-(*       apply Genv.find_def_inversion in FIND. des. *)
-      
-(* Genv.find_symbol_find_def_inversion: *)
-(*   forall [F V : Type] (p : AST.program F V) (x : ident) [b : block], *)
-(*   Genv.find_symbol (Genv.globalenv p) x = Some b -> exists g : globdef F V, Genv.find_def (Genv.globalenv p) b = Some g *)
-(* Genv.find_def_inversion: *)
-(*   forall [F V : Type] (p : AST.program F V) (b : block) [g : globdef F V], *)
-(*   Genv.find_def (Genv.globalenv p) b = Some g -> exists id : ident, In (id, g) (AST.prog_defs p) *)
+  Lemma Forall_numbering
+        A (l: list A)
+    :
+    forall x, Forall (fun '(id, _) => (x <= id)%positive) (numbering x l).
+  Proof. i. eapply Forall_numbering0. lia. Qed.
 
-(* Genv.find_symbol_exists: *)
-(*   forall [F V : Type] (p : AST.program F V) (id : ident) (g : globdef F V), *)
-(*   In (id, g) (AST.prog_defs p) -> exists b : block, Genv.find_symbol (Genv.globalenv p) id = Some b *)
-      
-(*     unfold Genv.globalenv, gen_program, gen_prog_defs in FIND; ss. *)
-(*     destruct ( *)
+  Lemma map_snd_numbering
+        A (l: list A)
+    :
+    forall x, l = map snd (numbering x l).
+  Proof. induction l; i; ss. f_equal. eauto. Qed.
 
-        
-(*         apply Genv.find_symbol_inversion in FIND_C. unfold prog_defs_names in FIND_C. apply list_in_map_inv in FIND_C. *)
-(*         des. destruct x as (idx & gd). ss. subst idx. unfold gen_prog_defs in FIND_C0. apply in_app_or in FIND_C0. des. *)
-(*         - left.  *)
+  Lemma in_gds_exists_params
+        gds id gd_i
+        (FD: (PTree_Properties.of_list gds) ! id = Some gd_i)
+        (NR: list_norepet (map fst gds))
+        x
+    :
+    exists ps, (gen_params x gds) ! id = Some ps /\
+            Forall (fun '(id, _) => (x <= id)%positive) ps /\
+            (match gd_i with
+             | Gfun fd => map typ_to_type (sig_args (funsig fd)) = map snd ps
+             | Gvar _ => ps = []
+             end).
+  Proof.
+    unfold gen_params.
+    assert (IN: In id (map fst (map (fun '(id0, gd) =>
+           match gen_params_one x gd with
+           | Some ps0 => (id0, ps0)
+           | None => (id0, [])
+           end) gds))).
+    { apply PTree_Properties.in_of_list in FD. rewrite map_map.
+      apply (in_map (fun x0 : PTree.elt * globdef Asm.fundef unit =>
+                       fst (let '(id0, gd) := x0 in
+            match gen_params_one x gd with
+            | Some ps0 => (id0, ps0)
+            | None => (id0, [])
+            end))) in FD. des_ifs.
+    }
+    apply PTree_Properties.of_list_dom in IN. des. rename v into ps.
+    setoid_rewrite IN. exists ps. split; auto.
+    apply PTree_Properties.in_of_list in IN. apply list_in_map_inv in IN. des. des_ifs; ss.
+    - unfold gen_params_one in Heq. des_ifs. split.
+      apply Forall_numbering; eauto.
+      hexploit PTree_Properties.of_list_norepet. eauto. apply IN0. intros GET.
+      rewrite FD in GET; clarify. eapply map_snd_numbering.
+    - unfold gen_params_one in Heq. des_ifs.
+      hexploit PTree_Properties.of_list_norepet. eauto. apply IN0. intros GET.
+      rewrite FD in GET; clarify.
+    - unfold gen_params_one in Heq. des_ifs.
+      hexploit PTree_Properties.of_list_norepet. eauto. apply IN0. intros GET.
+      rewrite FD in GET; clarify.
+  Qed.
 
-  (*           Lemma genv_find_symbol_only_in_gen *)
-  (*                 (p_a: Asm.program) btr *)
-  (*                 id *)
-  (*                 (FIND_A: Genv.find_symbol (Genv.globalenv p_a) id = None) *)
-  (*                 b *)
-  (*                 (FIND_C: Genv.find_symbol (Genv.globalenv (gen_program btr p_a)) id = Some b) *)
-  (*             : *)
-  (*             exists cp, Genv.find_def (Genv.globalenv (gen_program btr p_a)) b = Some (gen_counter cp). *)
-  (*           Proof. *)
+  Lemma in_asm_in_gen
+        p_a btr
+        p_c ge_a ge_c
+        (P_C: p_c = gen_program btr p_a)
+        (GE_A: ge_a = Genv.globalenv p_a)
+        (GE_C: ge_c = globalenv p_c)
+        id gd_a
+        (FD: (prog_defmap p_a) ! id = Some gd_a)
+        gds
+        (GDS: gds = AST.prog_defs p_a)
+        x0 cnt
+        (X0: x0 = next_id gds)
+        (IN_CNT : (get_cnt_ids (gen_counter_defs x0 gds)) ! id = Some cnt)
+        x1 ps
+        (X1: x1 = next_id (map snd (PTree.elements (gen_counter_defs x0 gds))))
+        (IN_PS : (gen_params x1 gds) ! id = Some ps)
+        (NR_GEN: list_norepet (prog_defs_names p_c))
+    :
+    (prog_defmap p_c) ! id =
+      Some (gen_globdef ge_a cnt ps (get_id_tr btr id) gd_a).
+  Proof.
+    subst. apply in_prog_defmap in FD. eapply in_prog_defs_gen_program in FD; eauto.
+    des. assert (FD': In (id, gd_c) (AST.prog_defs (gen_program btr p_a))).
+    { eapply FD. }
+    hexploit prog_defmap_norepet. 2: eapply FD'. auto.
+    intros EQ. rewrite EQ. clear EQ FD'. ss. subst gd_c.
+    unfold gen_progdef.
+    rewrite IN_PS. unfold get_cnt_ids in IN_CNT. rewrite PTree.gmap in IN_CNT.
+    destruct ((gen_counter_defs (next_id (AST.prog_defs p_a)) (AST.prog_defs p_a)) ! id) eqn:CNT; ss.
+    destruct p. clarify.
+  Qed.
 
-  TODO
-  
-match_find_def = 
-fun (ge_i : Asm.genv) (ge_c : genv) (cnts : cnt_ids) (pars : params_of) (tr : bundle_trace) =>
-forall (b : block) (gd_i : globdef Asm.fundef unit) (id : ident),
-Genv.find_def ge_i b = Some gd_i ->
-Senv.invert_symbol ge_i b = Some id ->
-match cnts ! id with
-| Some cnt =>
-    match pars ! id with
-    | Some params => Genv.find_def ge_c b = Some (gen_globdef ge_i cnt params (get_id_tr tr id) gd_i)
-    | None => False
-    end
-| None => False
-end
-     : Asm.genv -> genv -> cnt_ids -> params_of -> bundle_trace -> Prop
+  Lemma gen_counter_defs_list_norepet
+        x gds
+        (NR: list_norepet (map fst gds))
+    :
+    list_norepet (map (fun x => fst (snd x)) (PTree.elements (gen_counter_defs x gds))).
+  Proof.
+    eapply list_map_norepet.
+    { hexploit PTree.elements_keys_norepet. intros A. apply list_map_norepet_rev in A. eauto. }
+    i. destruct x0 as (idx & (cntx & gdx)). destruct y as (idy & (cnty & gdy)).
+    apply PTree.elements_complete in H, H0. ss.
+    destruct (Pos.eqb_spec idx idy).
+    { subst. rewrite H0 in H. clarify. }
+    { destruct (Pos.eqb_spec cntx cnty); auto.
+      subst. hexploit gen_counter_defs_inj. eauto. 2: apply H. 2: apply H0. eauto.
+      i. des; clarify.
+    }
+  Qed.
+
+  Lemma gen_counter_defs_list_disjoint
+        gds x
+        (BOUND: ((next_id gds) <= x)%positive)
+    :
+    list_disjoint (map fst gds)
+                  (map (fun x => fst (snd x)) (PTree.elements (gen_counter_defs x gds))).
+  Proof.
+    ii. subst. apply list_in_map_inv in H, H0. des. destruct x1, x0. ss. clarify.
+    destruct p0 as (cnt & g_cnt). ss. rename p into id.
+    apply PTree.elements_complete in H1. apply gen_counter_defs_lt in H1.
+    hexploit next_id_lt. apply H2. i. lia.
+  Qed.
+
+  Lemma gen_program_list_norepet
+        p_a btr
+        (NR: list_norepet (prog_defs_names p_a))
+    :
+    list_norepet (prog_defs_names (gen_program btr p_a)).
+  Proof.
+    unfold prog_defs_names, gen_program in *. ss. unfold gen_prog_defs.
+    rewrite map_app. rewrite ! map_map.
+    match goal with
+    | [|- list_norepet (?l ++ _)] => assert (EQ: l = map fst (AST.prog_defs p_a))
+    end.
+    { f_equal. extensionalities x. destruct x; ss. }
+    rewrite EQ. clear EQ. rewrite list_norepet_app. splits; auto.
+    apply gen_counter_defs_list_norepet; auto. 
+    apply gen_counter_defs_list_disjoint; auto.  lia.
+  Qed.
+
+  Lemma gen_program_match_find_def
+        p_a btr
+        p_c ge_a ge_c
+        (P_C: p_c = gen_program btr p_a)
+        (GE_A: ge_a = Genv.globalenv p_a)
+        (GE_C: ge_c = globalenv p_c)
+        gds
+        (GDS: gds = AST.prog_defs p_a)
+        x0 cnts
+        (X0: x0 = next_id gds)
+        (CNTS: cnts = get_cnt_ids (gen_counter_defs x0 gds))
+        x1 pars
+        (X1: x1 = next_id (map snd (PTree.elements (gen_counter_defs x0 gds))))
+        (PARS: pars = gen_params x1 gds)
+        (NR: list_norepet (prog_defs_names p_a))
+    :
+    match_find_def ge_a ge_c cnts pars btr.
+  Proof.
+    subst. ii. assert (FD: (prog_defmap p_a) ! id = Some gd_i).
+    { rewrite Genv.find_def_symbol. apply Senv.invert_find_symbol in H0. ss. esplits; eauto. }
+    unfold prog_defmap in FD. set (AST.prog_defs p_a) as gds in *.
+    hexploit in_gds_exists_cnt. eapply FD. intros (cnt & IN_CNT).
+    hexploit in_gds_exists_params. eapply FD. apply NR. intros (ps & IN_PS).
+    des. rewrite IN_CNT, IN_PS.
+    hexploit in_asm_in_gen. 4: apply FD. 6: apply IN_CNT. 7: apply IN_PS. all: eauto.
+    { apply gen_program_list_norepet. auto. }
+    instantiate (1:=btr). intros FD_C. rewrite Genv.find_def_symbol in FD_C. des.
+    apply Senv.invert_find_symbol in H0. ss. eapply gen_program_symbs_find in H0; eauto.
+    ss. setoid_rewrite FD_C in H0. clarify.
+  Qed.
 
   Lemma gen_program_symbs_volatile
         p_a btr
@@ -469,128 +588,55 @@ end
     { rewrite Genv.find_var_info_iff in VAR_A. hexploit wf_ge_block_to_id. 2: eapply VAR_A.
       { subst ge_a. apply wf_program_wf_ge. ss. }
       intros (id & INV_A).
+      hexploit gen_program_match_find_def; eauto. intros MFD.
+      unfold match_find_def in MFD. specialize (MFD _ _ _ VAR_A INV_A). des_ifs.
+      2:{ ss. rewrite <- Genv.find_var_info_iff in MFD. rewrite MFD in Heq. ss. }
+      ss. rewrite Genv.find_var_info_iff in Heq. rewrite MFD in Heq. clarify.
+    }
+    { des_ifs. rewrite Genv.find_var_info_iff in Heq.
+      hexploit @genv_def_to_ident. 3: eapply Heq. eapply gen_program_list_norepet; eauto. ss.
+      intros (id & INV). apply Genv.invert_find_symbol in INV.
+      hexploit genv_find_symbol_gen_cases. apply INV. intros CASES. des.
+      { exfalso. unfold Genv.find_var_info in VAR_A. des_ifs.
+        2:{ apply Genv.find_symbol_find_def_inversion in CASES. des. clarify. }
+        apply Genv.find_invert_symbol in CASES. hexploit gen_program_match_find_def; eauto.
+        intros MFD. unfold match_find_def in MFD. specialize (MFD _ _ _ Heq0 CASES).
+        des_ifs. rewrite Heq in MFD. ss.
+      }
+      setoid_rewrite Heq in CASES0. clarify.
+    }
+  Qed.
 
-      TODO
-
-      hexploit (genv_def_to_some_ident _ NR). eauto. eauto.
-      i. des. 
-      
-wf_ge_block_to_id:
-  forall (F V : Type) (ge : Genv.t F V),
-  wf_ge ge ->
-  forall (b : block) (gd : globdef F V), Genv.find_def ge b = Some gd -> exists id : ident, Genv.invert_symbol ge b = Some id
-
-    destruct (Genv.find_symbol (Genv.globalenv (gen_program btr p_a))
-
-    hexploit genv_find_symbol_gen_cases. 
-
-Genv.find_symbol_find_def_inversion:
-  forall [F V : Type] (p : AST.program F V) (x : ident) [b : block],
-  Genv.find_symbol (Genv.globalenv p) x = Some b -> exists g : globdef F V, Genv.find_def (Genv.globalenv p) b = Some g
-Genv.find_var_info_iff:
-  forall [F V : Type] (ge : Genv.t F V) (b : block) (v : globvar V),
-  Genv.find_var_info ge b = Some v <-> Genv.find_def ge b = Some (Gvar v)
-genv_def_to_some_ident:
-  forall {F V : Type} (p : AST.program F V),
-  list_norepet (prog_defs_names p) ->
-  forall ge : Genv.t F V,
-  ge = Genv.globalenv p ->
-  forall (b : block) (gd : globdef F V),
-  Genv.find_def ge b = Some gd ->
-  exists (id : ident) (b' : block), Genv.find_symbol ge id = Some b' /\ Genv.find_def ge b' = Some gd
-    
-
-Genv.block_is_volatile = 
-fun (F V : Type) (ge : Genv.t F V) (b : block) =>
-match Genv.find_var_info ge b with
-| Some gv => gvar_volatile gv
-| None => false
-end
-     : forall F V : Type, Genv.t F V -> block -> bool
-  Lemma genv_find_symbol_gen_cases
-        (p_a: Asm.program) btr
-        id b
-        (FIND: Genv.find_symbol (Genv.globalenv (gen_program btr p_a)) id = Some b)
+  Lemma gen_program_eq_policy
+        p_a btr
+        p_c ge_a ge_c
+        (P_C: p_c = gen_program btr p_a)
+        (GE_A: ge_a = Genv.globalenv p_a)
+        (GE_C: ge_c = globalenv p_c)
     :
-    (Genv.find_symbol (Genv.globalenv p_a) id = Some b) \/
-      (Genv.find_symbol (Genv.globalenv p_a) id = None /\
-         exists cp, Genv.find_def (Genv.globalenv (gen_program btr p_a)) b = Some (gen_counter cp)).
+    eq_policy ge_a ge_c.
   Proof.
+    subst. unfold eq_policy. ss. unfold Genv.globalenv. ss.
+    rewrite ! Genv.genv_pol_add_globals. ss.
+  Qed.
 
-    
-Record program (F V : Type) : Type := mkprogram
-  { prog_defs : list (ident * globdef F V);  prog_public : list ident;  prog_main : ident;  prog_pol : Policy.t }.
-
-      unfold gen_program.
-ListDec.In_dec: forall [A : Type], (forall x y : A, {x = y} + {x <> y}) -> forall (a : A) (l : list A), {In a l} + {~ In a l}
-SetoidList.InA_alt:
-  forall [A : Type] (eqA : A -> A -> Prop) (x : A) (l : list A), SetoidList.InA eqA x l <-> (exists y : A, eqA x y /\ In y l)
-in_dec: forall [A : Type], (forall x y : A, {x = y} + {x <> y}) -> forall (a : A) (l : list A), {In a l} + {~ In a l}
-
-Genv.globalenv_public: forall [F V : Type] (p : AST.program F V), Genv.genv_public (Genv.globalenv p) = AST.prog_public p
-
-
-
-wf_counters = 
-fun (ge : genv) (m : mem) (tr : bundle_trace) (cnts : cnt_ids) =>
-(forall (id0 id1 : positive) (cnt : ident),
- cnts ! id0 = Some cnt -> cnts ! id1 = Some cnt -> id0 = id1) /\
-(forall (id : ident) (b : block) (f : function),
- Genv.find_symbol ge id = Some b ->
- Genv.find_funct_ptr ge b = Some (Internal f) ->
- exists cnt : ident,
-   cnts ! id = Some cnt /\
-   wf_counter ge m (comp_of f) (Datatypes.length (get_id_tr tr id)) cnt)
-     : genv -> mem -> bundle_trace -> cnt_ids -> Prop
-  
-Forall_map: forall [A B : Type] (f : A -> B) (P : B -> Prop) (l : list A), Forall P (map f l) <-> Forall (fun x : A => P (f x)) l
-Forall_image:
-  forall [A B : Type] (f : A -> B) (l : list B),
-  Forall (fun y : B => exists x : A, y = f x) l <-> (exists l' : list A, l = map f l')
-
-  Lemma gen_prog_defs_props
-        (a_ge: Senv.t) tr (gds: list (ident * globdef Asm.fundef unit))
-        (gen_gds: list (ident * globdef Clight.fundef type))
-        cnts params
-        (GEN: gen_gds = (map (fun '(id, gd) => (id, gen_progdef a_ge (get_id_tr tr id) gd (cnts ! id) (params ! id))) gds) ++ cnt_defs)
+  Lemma gen_program_match_genv
+        p_a btr
+        p_c ge_a ge_c
+        (P_C: p_c = gen_program btr p_a)
+        (GE_A: ge_a = Genv.globalenv p_a)
+        (GE_C: ge_c = globalenv p_c)
+        (WFPP: wf_program_public p_a)
+        (NR: list_norepet (prog_defs_names p_a))
     :
-    Forall (fun '(id, gd_c) =>
-              ((id < r_cnt) ->
-               exists gd_a, (In (id, gd_a) gds) /\ (gd_c = gen_progdef a_ge (get_id_tr tr id) gd_a (cnts ! id) (params ! id))) /\
-                (r_cnt <= id
-    
-    
-        
-        
-
-  (* Lemma gen_program_genv *)
-  (*       btr (p_a: Asm.program) (p_c: Clight.program) *)
-  (*       (P_C: p_c = gen_program btr p_a) *)
-  (*   : *)
-    
-
-    
-  Definition gen_prog_defs (a_ge: Senv.t) tr (gds: list (ident * globdef Asm.fundef unit)): list (ident * globdef Clight.fundef type) :=
-    let m0 := next_id gds in
-    let cnts := gen_counter_defs m0 gds in
-    let cnt_defs := map snd (PTree.elements cnts) in
-    let m1 := next_id cnt_defs in
-    let params := gen_params m1 gds in
-    (map (fun '(id, gd) => (id, gen_progdef a_ge (get_id_tr tr id) gd (cnts ! id) (params ! id))) gds) ++ cnt_defs.
-
-
-Genv.find_symbol_exists:
-  forall [F V : Type] (p : AST.program F V) (id : ident) (g : globdef F V),
-  In (id, g) (AST.prog_defs p) -> exists b : block, Genv.find_symbol (Genv.globalenv p) id = Some b
-Genv.find_symbol_inversion:
-  forall [F V : Type] (p : AST.program F V) (x : ident) [b : block],
-  Genv.find_symbol (Genv.globalenv p) x = Some b -> In x (prog_defs_names p)
-
-
-Genv.globalenv = 
-fun (F V : Type) (p : AST.program F V) =>
-Genv.add_globals (Genv.empty_genv F V (AST.prog_public p) (AST.prog_pol p)) (AST.prog_defs p)
-     : forall F V : Type, AST.program F V -> Genv.t F V
+    match_genv ge_a ge_c.
+  Proof.
+    unfold match_genv, match_symbs. splits.
+    eapply gen_program_symbs_public; eauto.
+    eapply gen_program_symbs_find; eauto.
+    eapply gen_program_symbs_volatile; eauto.
+    eapply gen_program_eq_policy; eauto.
+  Qed.
 
 End PROOFGENV.
 
