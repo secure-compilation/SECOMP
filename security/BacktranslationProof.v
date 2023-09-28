@@ -57,10 +57,10 @@ Section INVS.
   Definition wf_c_nb (ge: Clight.genv) (m: mem) :=
     (Genv.genv_next ge <= Mem.nextblock m)%positive.
 
-  Definition wf_c_state (ge: Clight.genv) (tr ttr: bundle_trace) (cnts: cnt_ids) id (cst: Clight.state) :=
+  Definition wf_c_state ge_a (ge: Clight.genv) (tr ttr: bundle_trace) (cnts: cnt_ids) id (cst: Clight.state) :=
     match cst with
     | State f stmt k_c e le m_c =>
-        wf_counters ge m_c tr cnts /\
+        wf_counters ge_a ge m_c tr cnts /\
           (exists m_c', Mem.free_list m_c (blocks_of_env ge e) (comp_of f) = Some m_c' /\ wf_c_cont ge m_c' k_c) /\
           wf_c_stmt ge (comp_of f) cnts id ttr stmt /\
           (wf_env ge e /\ (not_global_blks (ge) (blocks_of_env2 ge e)) /\ (wf_c_nb ge m_c))
@@ -174,18 +174,18 @@ Section PROOF.
   Qed.
 
   Lemma star_cut_middle
-        stepk ge_c cst1 ev pretr ttr cnts ge_i pars ist2
+        stepk ge_a ge_c cst1 ev pretr ttr cnts ge_i pars ist2
         (CUT: exists tr1 cst',
             (star stepk ge_c cst1 tr1 cst') /\
               exists tr2 cst2,
                 (star stepk ge_c cst' tr2 cst2) /\
-                  ((exists id', (wf_c_state ge_c (pretr ++ [ev]) ttr cnts id' cst2) /\
+                  ((exists id', (wf_c_state ge_a ge_c (pretr ++ [ev]) ttr cnts id' cst2) /\
                              exists k, (match_state ge_i ge_c k ttr cnts pars id' ist2 cst2))
                    \/ (ist2 = None)) /\
                   (unbundle ev = tr1 ++ tr2))
     :
     exists cst2, (star stepk ge_c cst1 (unbundle ev) cst2) /\
-              ((exists id', (wf_c_state ge_c (pretr ++ [ev]) ttr cnts id' cst2) /\
+              ((exists id', (wf_c_state ge_a ge_c (pretr ++ [ev]) ttr cnts id' cst2) /\
                          exists k, (match_state ge_i ge_c k ttr cnts pars id' ist2 cst2))
                \/ (ist2 = None)).
   Proof.
@@ -254,12 +254,12 @@ Section PROOF.
         (MCNTS : match_cnts cnts ge_c k_c)
         (CNT_INJ : forall (id0 id1 : positive) (cnt : ident),
             cnts ! id0 = Some cnt -> cnts ! id1 = Some cnt -> id0 = id1)
-        (WFC0 : forall (id : ident) (b : block) (f : function),
-            Genv.find_symbol ge_c id = Some b ->
-            Genv.find_funct_ptr ge_c b = Some (Internal f) ->
+        (WFC0 : forall (id : ident) (b : block) gd,
+            Genv.find_symbol ge_i id = Some b ->
+            Genv.find_def ge_i b = Some gd ->
             exists cnt : ident,
               cnts ! id = Some cnt /\
-                wf_counter ge_c m_c (comp_of f) (Datatypes.length (get_id_tr pretr id)) cnt)
+                wf_counter ge_c m_c (comp_of gd) (Datatypes.length (get_id_tr pretr id)) cnt)
         m_freeenv
         (FREEENV : Mem.free_list m_c (blocks_of_env ge_c e) (comp_of f) = Some m_freeenv)
         (WFC1 : wf_c_cont ge_c m_freeenv k0)
@@ -304,18 +304,22 @@ Section PROOF.
     assert (id = id_cur).
     { unfold match_cur_fun in MS2. desH MS2. rewrite MS7 in IDCUR. clarify. }
     subst id.
+    destruct MS2 as (FINDF_C_CUR & (f_i_cur & FINDF_I_CUR) & INV_CUR).
 
     exploit MS3.
     { eapply Genv.find_funct_ptr_iff. erewrite <- Genv.find_funct_find_funct_ptr. eapply FINDF. }
     { eapply Genv.find_invert_symbol; eauto. }
     intros FINDF_C. des_ifs. rename id0 into id_next, i into cnt_next, Heq into CNTS_NEXT, l into params_next, Heq0 into PARS_NEXT. simpl in FINDF_C.
     set (pretr ++ (id_cur, Bundle_call tr' id_next evargs (ef_sig ef) d) :: btr) as ttr in *.
+    assert (FIND_CUR_I: Genv.find_symbol ge_i id_cur = Some cur).
+    { apply Genv.invert_find_symbol in IDCUR. auto. }
     assert (FIND_CUR_C: Genv.find_symbol ge_c id_cur = Some cur).
-    { destruct MS0 as ((MSENV0 & MSENV1 & MSENV2) & MGENV). apply Genv.invert_find_symbol in IDCUR. apply MSENV1 in IDCUR. auto. }
+    { destruct MS0 as ((MSENV0 & MSENV1 & MSENV2) & MGENV). apply MSENV1 in FIND_CUR_I. auto. }
     assert (FIND_FUN_C: Genv.find_funct_ptr ge_c cur = Some (Internal f)).
-    { destruct MS2 as (MFUN0 & MFUN1). auto. }
+    { auto. }
 
-    exploit WFC0. eapply FIND_CUR_C. eapply FIND_FUN_C. intros (cnt_cur & CNTS_CUR & WF_CNT_CUR).
+    exploit WFC0. eapply FIND_CUR_I. rewrite <- Genv.find_funct_ptr_iff; eapply FINDF_I_CUR.
+    intros (cnt_cur & CNTS_CUR & WF_CNT_CUR).
     destruct WF_CNT_CUR as (CNT_CUR_NPUB & cnt_cur_b & FIND_CNT_CUR & CNT_CUR_MEM_VA & CNT_CUR_MEM_LOAD).
     exists cnt_cur, cnt_cur_b. split. auto.
     set (Kcall None f e le (Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge_c cnt_cur (comp_of f) (get_id_tr ttr id_cur))) Sskip k0)) as kc_next.
@@ -326,12 +330,14 @@ Section PROOF.
       apply inj_le. apply list_length_filter_le.
     }
 
-    destruct MS2 as (FINDF_C_CUR & (f_i_cur & FINDF_I_CUR) & INV_CUR).
-    hexploit cur_fun_def. eapply FINDF_C_CUR. eapply FINDF_I_CUR. eapply INV_CUR. eauto.
+    hexploit cur_fun_def. eapply FINDF_C_CUR. eapply FINDF_I_CUR. eapply IDCUR. eauto.
     intros (cnt_cur0 & params_cur & CNT_CUR0 & PARAMS_CUR & CUR_F).
     rewrite CNTS_CUR in CNT_CUR0. inversion CNT_CUR0. subst cnt_cur0. clear CNT_CUR0.
     assert (CP_CUR: (comp_of f) = (Genv.find_comp ge_i (Vptr cur Ptrofs.zero))).
     { unfold Genv.find_comp. setoid_rewrite FINDF_I_CUR. subst f. ss. }
+    assert (COMP_CUR_EQ: comp_of (@Gfun _ unit (AST.Internal f_i_cur)) = comp_of f).
+    { subst f. ss. }
+    setoid_rewrite COMP_CUR_EQ in CNT_CUR_MEM_VA. setoid_rewrite COMP_CUR_EQ in CNT_CUR_MEM_LOAD.
 
     hexploit switch_spec.
     { subst ttr. rewrite CUR_TR in BOUND2. rewrite map_app in BOUND2. ss. eapply BOUND2. }
@@ -440,12 +446,12 @@ Section PROOF.
         (MCNTS : match_cnts cnts ge_c k_c)
         (CNT_INJ : forall (id0 id1 : positive) (cnt : ident),
             cnts ! id0 = Some cnt -> cnts ! id1 = Some cnt -> id0 = id1)
-        (WFC0 : forall (id : ident) (b : block) (f : function),
-            Genv.find_symbol ge_c id = Some b ->
-            Genv.find_funct_ptr ge_c b = Some (Internal f) ->
+        (WFC0 : forall (id : ident) (b : block) gd,
+            Genv.find_symbol ge_i id = Some b ->
+            Genv.find_def ge_i b = Some gd ->
             exists cnt : ident,
               cnts ! id = Some cnt /\
-                wf_counter ge_c m_c (comp_of f) (Datatypes.length (get_id_tr pretr id)) cnt)
+                wf_counter ge_c m_c (comp_of gd) (Datatypes.length (get_id_tr pretr id)) cnt)
         m_freeenv
         (FREEENV : Mem.free_list m_c (blocks_of_env ge_c e) (comp_of f) = Some m_freeenv)
         (WFC1 : wf_c_cont ge_c m_freeenv k0)
@@ -568,12 +574,12 @@ Section PROOF.
         (MCNTS : match_cnts cnts ge_c k_c)
         (CNT_INJ : forall (id0 id1 : positive) (cnt : ident),
             cnts ! id0 = Some cnt -> cnts ! id1 = Some cnt -> id0 = id1)
-        (WFC0 : forall (id : ident) (b : block) (f : function),
-            Genv.find_symbol ge_c id = Some b ->
-            Genv.find_funct_ptr ge_c b = Some (Internal f) ->
+        (WFC0 : forall (id : ident) (b : block) gd,
+            Genv.find_symbol ge_i id = Some b ->
+            Genv.find_def ge_i b = Some gd ->
             exists cnt : ident,
               cnts ! id = Some cnt /\
-                wf_counter ge_c m_c (comp_of f) (Datatypes.length (get_id_tr pretr id)) cnt)
+                wf_counter ge_c m_c (comp_of gd) (Datatypes.length (get_id_tr pretr id)) cnt)
         m_freeenv
         (FREEENV : Mem.free_list m_c (blocks_of_env ge_c e) (comp_of f) = Some m_freeenv)
         (WFC1 : wf_c_cont ge_c m_freeenv k0)
@@ -600,7 +606,7 @@ Section PROOF.
       star step1 ge_c (State f stmt k0 e le m_c)
            (unbundle (id_cur, Bundle_call tr id0 evargs (fn_sig f_next) d)) cst2 /\
         ((exists id' : positive,
-             wf_c_state ge_c (pretr ++ [(id_cur, Bundle_call tr id0 evargs (fn_sig f_next) d)])
+             wf_c_state ge_i ge_c (pretr ++ [(id_cur, Bundle_call tr id0 evargs (fn_sig f_next) d)])
                         (pretr ++ (id_cur, Bundle_call tr id0 evargs (fn_sig f_next) d) :: btr) cnts id' cst2 /\
                (exists k : meminj,
                    match_state ge_i ge_c k
@@ -620,12 +626,15 @@ Section PROOF.
     set (pretr ++ (id_cur, Bundle_call tr id_next evargs (fn_sig fi_next) d) :: btr) as ttr in *.
     set (gen_function ge_i cnt_next params_next (get_id_tr ttr id_next) fi_next) as f_next in *.
     set (fn_body f_next) as stmt_next.
+    hexploit Genv.invert_find_symbol. eapply IDCUR. intros FIND_CUR_I.
+    destruct MS2 as (FINDF_C_CUR & (f_i_cur & FINDF_I_CUR) & INV_CUR).
     assert (FIND_CUR_C: Genv.find_symbol ge_c id_cur = Some cur).
-    { destruct MS0 as ((MSENV0 & MSENV1 & MSENV2) & MGENV). apply Genv.invert_find_symbol in IDCUR. apply MSENV1 in IDCUR. auto. }
+    { destruct MS0 as ((MSENV0 & MSENV1 & MSENV2) & MGENV). apply MSENV1 in FIND_CUR_I. auto. }
     assert (FIND_FUN_C: Genv.find_funct_ptr ge_c cur = Some (Internal f)).
-    { destruct MS2 as (MFUN0 & MFUN1). auto. }
+    { auto. }
 
-    exploit WFC0. eapply FIND_CUR_C. eapply FIND_FUN_C. intros (cnt_cur & CNTS_CUR & WF_CNT_CUR).
+    exploit WFC0. apply FIND_CUR_I. rewrite <- Genv.find_funct_ptr_iff. apply FINDF_I_CUR.
+    intros (cnt_cur & CNTS_CUR & WF_CNT_CUR).
     set (Kcall None f e le (Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge_c cnt_cur (comp_of f) (get_id_tr ttr id_cur))) Sskip k0)) as kc_next.
     assert (CUR_TR: get_id_tr ttr id_cur = (get_id_tr pretr id_cur) ++ (id_cur, Bundle_call tr id_next evargs (fn_sig fi_next) d) :: (get_id_tr btr id_cur)).
     { subst ttr. clear. rewrite get_id_tr_app. rewrite get_id_tr_cons. ss. rewrite Pos.eqb_refl. auto. }
@@ -637,12 +646,14 @@ Section PROOF.
     assert (PARSIGS: list_typ_to_list_type (sig_args (fn_sig fi_next)) = map snd params_next).
     { destruct MS5 as (_ & WFP1 & _). exploit WFP1. apply FINDF. apply FINDB. apply PARS_NEXT. ss. }
 
-    destruct MS2 as (FINDF_C_CUR & (f_i_cur & FINDF_I_CUR) & INV_CUR).
     hexploit cur_fun_def. eapply FINDF_C_CUR. eapply FINDF_I_CUR. eapply INV_CUR. eauto.
     intros (cnt_cur0 & params_cur & CNT_CUR0 & PARAMS_CUR & CUR_F).
     rewrite CNTS_CUR in CNT_CUR0. inversion CNT_CUR0. subst cnt_cur0. clear CNT_CUR0.
     assert (CP_CUR: (comp_of f) = (Genv.find_comp ge_i (Vptr cur Ptrofs.zero))).
     { unfold Genv.find_comp. setoid_rewrite FINDF_I_CUR. subst f. ss. }
+    assert (COMP_CUR_EQ: comp_of (@Gfun _ unit (AST.Internal f_i_cur)) = comp_of f).
+    { subst f. ss. }
+    setoid_rewrite COMP_CUR_EQ in CNT_CUR_MEM_VA. setoid_rewrite COMP_CUR_EQ in CNT_CUR_MEM_LOAD.
 
     hexploit switch_spec.
     { subst ttr. rewrite CUR_TR in BOUND2. rewrite map_app in BOUND2. ss. eapply BOUND2. }
@@ -705,7 +716,7 @@ Section PROOF.
     assert (ENV_NINJ: not_inj_blks (meminj_public ge_c) (blocks_of_env2 ge_c e_next)).
     { eapply not_global_is_not_inj_bloks. auto. }
 
-    assert (WFC_NEXT: wf_c_state ge_c (pretr ++ [(id_cur, Bundle_call tr id_next evargs (fn_sig fi_next) d)]) ttr cnts id_next cst2).
+    assert (WFC_NEXT: wf_c_state ge_i ge_c (pretr ++ [(id_cur, Bundle_call tr id_next evargs (fn_sig fi_next) d)]) ttr cnts id_next cst2).
     { subst cst2; ss. splits; auto.
       - unfold wf_counters. splits; auto.
         clear CUR_SWITCH_STAR. move WFC0 after le_next.
@@ -728,6 +739,12 @@ Section PROOF.
           }
           destruct (Pos.eq_dec id id_cur).
           * subst id. clarify. ss. rewrite FIND_CNT_CUR in WFC6. clarify.
+            replace (comp_of gd) with 
+                    (comp_of
+                       (gen_function ge_i cnt_cur params_cur (get_id_tr ttr id_cur) f_i_cur)).
+            2:{ rewrite Genv.find_funct_ptr_iff in FINDF_I_CUR. rewrite FINDF_I_CUR in H0.
+                clarify.
+            }
             erewrite bind_parameters_mem_load. 2: eapply ENV_BIND.
             2:{ eapply alloc_variables_old_blocks. eapply ENV_ALLOC. 2: ii; ss. auto. }
             erewrite alloc_variables_mem_load. 2: eapply ENV_ALLOC.
@@ -904,12 +921,12 @@ Section PROOF.
         (MCNTS : match_cnts cnts ge_c k_c)
         (CNT_INJ : forall (id0 id1 : positive) (cnt : ident),
             cnts ! id0 = Some cnt -> cnts ! id1 = Some cnt -> id0 = id1)
-        (WFC0 : forall (id : ident) (b : block) (f : function),
-            Genv.find_symbol ge_c id = Some b ->
-            Genv.find_funct_ptr ge_c b = Some (Internal f) ->
+        (WFC0 : forall (id : ident) (b : block) gd,
+            Genv.find_symbol ge_i id = Some b ->
+            Genv.find_def ge_i b = Some gd ->
             exists cnt : ident,
               cnts ! id = Some cnt /\
-                wf_counter ge_c m_c (comp_of f) (Datatypes.length (get_id_tr pretr id)) cnt)
+                wf_counter ge_c m_c (comp_of gd) (Datatypes.length (get_id_tr pretr id)) cnt)
         m_freeenv
         (FREEENV : Mem.free_list m_c (blocks_of_env ge_c e) (comp_of f) = Some m_freeenv)
         (WFC1 : wf_c_cont ge_c m_freeenv k0)
@@ -934,7 +951,7 @@ Section PROOF.
       star step1 ge_c (State f stmt k0 e le m_c) (unbundle (id_cur, Bundle_return tr evretv d))
            cst2 /\
         ((exists id' : positive,
-             wf_c_state ge_c (pretr ++ [(id_cur, Bundle_return tr evretv d)])
+             wf_c_state ge_i ge_c (pretr ++ [(id_cur, Bundle_return tr evretv d)])
                         (pretr ++ (id_cur, Bundle_return tr evretv d) :: btr) cnts id' cst2 /\
                (exists k : meminj,
                    match_state ge_i ge_c k (pretr ++ (id_cur, Bundle_return tr evretv d) :: btr) cnts
@@ -946,6 +963,9 @@ Section PROOF.
     assert (INV_ID_NEXT: exists id_next, Genv.invert_symbol ge_i next = Some id_next).
     { rewrite Genv.find_funct_ptr_iff in INTERNAL. eapply wf_ge_block_to_id. auto. eauto. }
     des.
+    destruct MS2 as (FINDF_C_CUR & (f_i_cur & FINDF_I_CUR) & INV_CUR).
+    assert (FIND_CUR_I: Genv.find_symbol ge_i id_cur = Some cur).
+    { apply Genv.invert_find_symbol; auto. }
 
     exploit MS3.
     { eapply Genv.find_funct_ptr_iff. eapply INTERNAL. }
@@ -957,9 +977,10 @@ Section PROOF.
     assert (FIND_CUR_C: Genv.find_symbol ge_c id_cur = Some cur).
     { destruct MS0 as ((MSENV0 & MSENV1 & MSENV2) & MGENV). apply Genv.invert_find_symbol in IDCUR. apply MSENV1 in IDCUR. auto. }
     assert (FIND_FUN_C: Genv.find_funct_ptr ge_c cur = Some (Internal f)).
-    { destruct MS2 as (MFUN0 & MFUN1). auto. }
+    { auto. }
 
-    exploit WFC0. eapply FIND_CUR_C. eapply FIND_FUN_C. intros (cnt_cur & CNTS_CUR & WF_CNT_CUR).
+    exploit WFC0. eapply FIND_CUR_I. rewrite <- Genv.find_funct_ptr_iff; eauto.
+    intros (cnt_cur & CNTS_CUR & WF_CNT_CUR).
     inv WFC1.
     { inv MS4. inv IK. inv CK. }
     assert (CUR_TR: get_id_tr ttr id_cur = (get_id_tr pretr id_cur) ++ (id_cur, Bundle_return tr evretv d) :: (get_id_tr btr id_cur)).
@@ -976,12 +997,14 @@ Section PROOF.
     { inv IK. }
     clarify.
 
-    destruct MS2 as (FINDF_C_CUR & (f_i_cur & FINDF_I_CUR) & INV_CUR).
-    hexploit cur_fun_def. eapply FINDF_C_CUR. eapply FINDF_I_CUR. eapply INV_CUR. eauto.
+    hexploit cur_fun_def. eapply FIND_FUN_C. eapply FINDFD. eapply IDCUR. eauto.
     intros (cnt_cur0 & params_cur & CNT_CUR0 & PARAMS_CUR & CUR_F).
     rewrite CNTS_CUR in CNT_CUR0. inversion CNT_CUR0. subst cnt_cur0. clear CNT_CUR0.
     assert (CP_CUR: (comp_of f) = (Genv.find_comp ge_i (Vptr cur Ptrofs.zero))).
-    { unfold Genv.find_comp. setoid_rewrite FINDF_I_CUR. subst f. ss. }
+    { unfold Genv.find_comp. setoid_rewrite FINDFD. subst f. ss. }
+    assert (COMP_CUR_EQ: comp_of (@Gfun _ unit (AST.Internal f_i_cur)) = comp_of f).
+    { subst f. ss. }
+    setoid_rewrite COMP_CUR_EQ in CNT_CUR_MEM_VA. setoid_rewrite COMP_CUR_EQ in CNT_CUR_MEM_LOAD.
 
     rename ck'0 into ck_next. rename e1 into e_next. rename le1 into le_next.
     hexploit switch_spec.
@@ -1034,7 +1057,7 @@ Section PROOF.
 
     set (State f_next (fn_body f_next) ck_next e_next le_next m_c_next) as cst2.
 
-    assert (WFC_NEXT: wf_c_state ge_c (pretr ++ [(id_cur, Bundle_return tr evretv d)]) ttr cnts id_next cst2).
+    assert (WFC_NEXT: wf_c_state ge_i ge_c (pretr ++ [(id_cur, Bundle_return tr evretv d)]) ttr cnts id_next cst2).
     { clear CUR_SWITCH_STAR. ss. splits; auto.
       - unfold wf_counters. split. auto.
         move WFC0 after cst2.
@@ -1060,10 +1083,11 @@ Section PROOF.
             subst cnt. assert (b1 = cnt_cur_b).
             { setoid_rewrite WFC5 in FIND_CNT_CUR. clarify. }
             subst b1. assert (b0 = cur).
-            { rewrite FIND_CUR_C in H. clarify. }
-            subst b0. assert (f0 = f).
-            { rewrite FINDF_C_CUR in H0. clarify. }
-            subst f0. erewrite Mem.load_store_same. 2: eapply CNT_CUR_STORE.
+            { rewrite FIND_CUR_I in H. clarify. }
+            subst b0. assert (gd = Gfun (AST.Internal f_i_cur)).
+            { apply Genv.find_funct_ptr_iff in FINDFD. rewrite FINDFD in H0. clarify. }
+            subst gd. erewrite Mem.load_store_same.
+            2: setoid_rewrite COMP_CUR_EQ; eapply CNT_CUR_STORE.
             ss. rewrite map_length. rewrite get_id_tr_app. ss.
             rewrite Pos.eqb_refl. rewrite app_length. ss.
             do 2 f_equal. apply nat64_int64_add_one.
@@ -1139,23 +1163,27 @@ Section PROOF.
     { inv TR. eapply match_senv_eventval_match in H0. 2: destruct MS0 as (MS0 & _); apply MS0.
       eapply step_return_1.
       - eapply eventval_to_expr_val_eval. auto. eapply H0.
-      - ss. assert (fd_cur = AST.Internal f_i_cur).
-        { rewrite FINDFD in FINDF_I_CUR; clarify. }
-        subst fd_cur. eapply sem_cast_proj_rettype. ss. eapply H0.
+      - ss.
+        (* assert (fd_cur = AST.Internal f_i_cur). *)
+        (* { rewrite FINDFD in FINDF_I_CUR; clarify. } *)
+        (* subst fd_cur. *)
+        eapply sem_cast_proj_rettype. eapply H0.
       - eapply FREENEXT.
     }
     ss. econs 2.
     { assert (CPEQ1: comp_of f_next = (Genv.find_comp ge_i (Vptr next Ptrofs.zero))).
       { subst f_next. unfold comp_of, gen_function. ss. unfold Genv.find_comp. setoid_rewrite INTERNAL. ss. }
       assert (CPEQ2: (comp_of (gen_function ge_i cnt_cur params_cur (get_id_tr ttr id_cur) f_i_cur)) = (Genv.find_comp ge_i (Vptr cur Ptrofs.zero))).
-      { unfold comp_of, gen_function. ss. unfold Genv.find_comp. setoid_rewrite FINDF_I_CUR. ss. }
+      { unfold comp_of, gen_function. ss. unfold Genv.find_comp. setoid_rewrite FINDFD. ss. }
       eapply step_returnstate.
       - move NPTR after EVRETV. i. rewrite EVRETV. apply NPTR. rr. rewrite CPEQ1 in H. setoid_rewrite CPEQ2 in H. apply H.
       - move TR after EVRETV. instantiate (1:=tr). inv TR. setoid_rewrite CPEQ2. rewrite CPEQ1. econs; auto.
-        assert (fd_cur = AST.Internal f_i_cur).
-        { rewrite FINDFD in FINDF_I_CUR; clarify. }
-        subst fd_cur. ss. erewrite proj_rettype_to_type_rettype_of_type_eq. 2: eapply H0.
-        eapply match_senv_eventval_match. 2: eapply H0. destruct MS0 as (MS0 & _). auto.
+        (* assert (fd_cur = AST.Internal f_i_cur). *)
+        (* { rewrite FINDFD in FINDF_I_CUR; clarify. } *)
+        (* subst fd_cur. *)
+        (* ss. *)
+        erewrite proj_rettype_to_type_rettype_of_type_eq. 2: eapply H0.
+        eapply match_senv_eventval_match. 2: eapply H0. apply MS0.
     }
     ss. econs 2.
     { eapply step_skip_or_continue_loop1. auto. }
@@ -1193,12 +1221,12 @@ Section PROOF.
         (MCNTS : match_cnts cnts ge_c k_c)
         (CNT_INJ : forall (id0 id1 : positive) (cnt : ident),
             cnts ! id0 = Some cnt -> cnts ! id1 = Some cnt -> id0 = id1)
-        (WFC0 : forall (id : ident) (b : block) (f : function),
-            Genv.find_symbol ge_c id = Some b ->
-            Genv.find_funct_ptr ge_c b = Some (Internal f) ->
+        (WFC0 : forall (id : ident) (b : block) gd,
+            Genv.find_symbol ge_i id = Some b ->
+            Genv.find_def ge_i b = Some gd ->
             exists cnt : ident,
               cnts ! id = Some cnt /\
-                wf_counter ge_c m_c (comp_of f) (Datatypes.length (get_id_tr pretr id)) cnt)
+                wf_counter ge_c m_c (comp_of gd) (Datatypes.length (get_id_tr pretr id)) cnt)
         m_freeenv
         (FREEENV : Mem.free_list m_c (blocks_of_env ge_c e) (comp_of f) = Some m_freeenv)
         (WFC1 : wf_c_cont ge_c m_freeenv k0)
@@ -1225,7 +1253,7 @@ Section PROOF.
     star step1 ge_c (State f stmt k0 e le m_c)
       (unbundle (id_cur, Bundle_call tr id0 (vals_to_eventvals ge_i vargs) (ef_sig ef) d)) cst2 /\
     ((exists id' : positive,
-        wf_c_state ge_c
+        wf_c_state ge_i ge_c
           (pretr ++ [(id_cur, Bundle_call tr id0 (vals_to_eventvals ge_i vargs) (ef_sig ef) d)])
           (pretr ++
            (id_cur, Bundle_call tr id0 (vals_to_eventvals ge_i vargs) (ef_sig ef) d) :: btr) cnts
@@ -1239,14 +1267,18 @@ Section PROOF.
     assert (id = id_cur).
     { unfold match_cur_fun in MS2. desH MS2. rewrite MS7 in IDCUR. clarify. }
     subst id. rename id0 into id_next. 
+    destruct MS2 as (FINDF_C_CUR & (f_i_cur & FINDF_I_CUR) & INV_CUR).
 
     set (pretr ++ (id_cur, Bundle_call tr id_next (vals_to_eventvals ge_i vargs) (ef_sig ef) d) :: btr) as ttr in *.
+    assert (FIND_CUR_I: Genv.find_symbol ge_i id_cur = Some cur).
+    { apply Genv.invert_find_symbol in IDCUR. auto. }
     assert (FIND_CUR_C: Genv.find_symbol ge_c id_cur = Some cur).
-    { destruct MS0 as ((MSENV0 & MSENV1 & MSENV2) & MGENV). apply Genv.invert_find_symbol in IDCUR. apply MSENV1 in IDCUR. auto. }
+    { destruct MS0 as ((MSENV0 & MSENV1 & MSENV2) & MGENV). apply MSENV1 in FIND_CUR_I. auto. }
     assert (FIND_FUN_C: Genv.find_funct_ptr ge_c cur = Some (Internal f)).
-    { destruct MS2 as (MFUN0 & MFUN1). auto. }
+    { auto. }
 
-    exploit WFC0. eapply FIND_CUR_C. eapply FIND_FUN_C. intros (cnt_cur & CNTS_CUR & WF_CNT_CUR).
+    exploit WFC0. eapply FIND_CUR_I. rewrite <- Genv.find_funct_ptr_iff; eapply FINDF_I_CUR.
+    intros (cnt_cur & CNTS_CUR & WF_CNT_CUR).
     assert (CUR_TR: get_id_tr ttr id_cur = (get_id_tr pretr id_cur) ++ (id_cur, Bundle_call tr id_next (vals_to_eventvals ge_i vargs) (ef_sig ef) d) :: (get_id_tr btr id_cur)).
     { subst ttr. clear. rewrite get_id_tr_app. rewrite get_id_tr_cons. ss. rewrite Pos.eqb_refl. auto. }
     assert (BOUND2: Z.of_nat (Datatypes.length (map (fun ib : ident * bundle_event => code_bundle_event ge_i (comp_of f) (snd ib)) (get_id_tr ttr id_cur))) < Int64.modulus).
@@ -1255,12 +1287,15 @@ Section PROOF.
     }
     destruct WF_CNT_CUR as (CNT_CUR_NPUB & cnt_cur_b & FIND_CNT_CUR & CNT_CUR_MEM_VA & CNT_CUR_MEM_LOAD).
 
-    destruct MS2 as (FINDF_C_CUR & (f_i_cur & FINDF_I_CUR) & INV_CUR).
     hexploit cur_fun_def. eapply FINDF_C_CUR. eapply FINDF_I_CUR. eapply INV_CUR. eauto.
     intros (cnt_cur0 & params_cur & CNT_CUR0 & PARAMS_CUR & CUR_F).
     rewrite CNTS_CUR in CNT_CUR0. inversion CNT_CUR0. subst cnt_cur0. clear CNT_CUR0.
     assert (CP_CUR: (comp_of f) = (Genv.find_comp ge_i (Vptr cur Ptrofs.zero))).
     { unfold Genv.find_comp. setoid_rewrite FINDF_I_CUR. subst f. ss. }
+
+    assert (COMP_CUR_EQ: comp_of (@Gfun _ unit (AST.Internal f_i_cur)) = comp_of f).
+    { subst f. ss. }
+    setoid_rewrite COMP_CUR_EQ in CNT_CUR_MEM_VA. setoid_rewrite COMP_CUR_EQ in CNT_CUR_MEM_LOAD.
 
     hexploit switch_spec.
     { subst ttr. rewrite CUR_TR in BOUND2. rewrite map_app in BOUND2. ss. eapply BOUND2. }
@@ -1346,10 +1381,12 @@ Section PROOF.
               subst cnt. assert (b0 = cnt_cur_b).
               { setoid_rewrite WFC6 in FIND_CNT_CUR. clarify. }
               subst b0. assert (b = cur).
-              { rewrite FIND_CUR_C in H. clarify. }
-              subst b. assert (f0 = f).
-              { rewrite FINDF_C_CUR in H0. clarify. }
-              subst f0. ss. erewrite Mem.load_store_same. 2: eapply CNT_CUR_STORE.
+              { rewrite FIND_CUR_I in H. clarify. }
+              subst b. assert (gd = Gfun (AST.Internal f_i_cur)).
+              { apply Genv.find_funct_ptr_iff in FINDF_I_CUR. setoid_rewrite FINDF_I_CUR in H0. clarify. }
+              subst gd.
+              ss. erewrite Mem.load_store_same.
+              2: setoid_rewrite COMP_CUR_EQ; eapply CNT_CUR_STORE.
               ss. rewrite map_length. rewrite get_id_tr_app. ss.
               rewrite Pos.eqb_refl. rewrite app_length. ss.
               do 2 f_equal. apply nat64_int64_add_one.
@@ -1475,17 +1512,18 @@ Section PROOF.
               subst cnt. assert (b0 = cnt_cur_b).
               { setoid_rewrite WFC6 in FIND_CNT_CUR. clarify. }
               subst b0. assert (b = cur).
-              { rewrite FIND_CUR_C in H. clarify. }
-              subst b. assert (f0 = f).
-              { rewrite FINDF_C_CUR in H0. clarify. }
-              subst f0. ss.
-              eapply Mem.load_unchanged_on. eapply UCH2.
+              { rewrite FIND_CUR_I in H. clarify. }
+              subst b. assert (gd = Gfun (AST.Internal f_i_cur)).
+              { apply Genv.find_funct_ptr_iff in FINDF_I_CUR. setoid_rewrite FINDF_I_CUR in H0. clarify. }
+              subst gd.
+              ss. eapply Mem.load_unchanged_on. eapply UCH2.
               { ss. i. erewrite match_symbs_meminj_public. 2: eapply MS0. eapply meminj_public_not_public_not_mapped; eauto. }
               erewrite mem_delta_apply_wf_mem_load.
               2:{ erewrite match_symbs_mem_delta_apply_wf in DELTA_C. eapply DELTA_C. eapply MS0. }
               2:{ eapply Genv.find_invert_symbol in WFC6. eapply WFC6. }
               2:{ auto. }
-              erewrite Mem.load_store_same. 2: eapply CNT_CUR_STORE.
+              erewrite Mem.load_store_same.
+              2: setoid_rewrite COMP_CUR_EQ; eapply CNT_CUR_STORE.
               { ss. rewrite map_length. rewrite get_id_tr_app. ss. rewrite Pos.eqb_refl. rewrite app_length. ss.
                 do 2 f_equal. apply nat64_int64_add_one.
                 subst ttr. clear - BOUND. unfold get_id_tr. eapply Z.le_lt_trans; eauto.
@@ -1562,12 +1600,12 @@ Section PROOF.
         (MCNTS : match_cnts cnts ge_c k_c)
         (CNT_INJ : forall (id0 id1 : positive) (cnt : ident),
             cnts ! id0 = Some cnt -> cnts ! id1 = Some cnt -> id0 = id1)
-        (WFC0 : forall (id : ident) (b : block) (f : function),
-            Genv.find_symbol ge_c id = Some b ->
-            Genv.find_funct_ptr ge_c b = Some (Internal f) ->
+        (WFC0 : forall (id : ident) (b : block) gd,
+            Genv.find_symbol ge_i id = Some b ->
+            Genv.find_def ge_i b = Some gd ->
             exists cnt : ident,
               cnts ! id = Some cnt /\
-                wf_counter ge_c m_c (comp_of f) (Datatypes.length (get_id_tr pretr id)) cnt)
+                wf_counter ge_c m_c (comp_of gd) (Datatypes.length (get_id_tr pretr id)) cnt)
         m_freeenv
         (FREEENV : Mem.free_list m_c (blocks_of_env ge_c e) (comp_of f) = Some m_freeenv)
         (WFC1 : wf_c_cont ge_c m_freeenv k0)
@@ -1589,7 +1627,7 @@ Section PROOF.
     star step1 ge_c (State f stmt k0 e le m_c)
       (unbundle (id_cur, Bundle_builtin tr ef (vals_to_eventvals ge_i vargs) d)) cst2 /\
     ((exists id' : positive,
-        wf_c_state ge_c
+        wf_c_state ge_i ge_c
           (pretr ++ [(id_cur, Bundle_builtin tr ef (vals_to_eventvals ge_i vargs) d)])
           (pretr ++ (id_cur, Bundle_builtin tr ef (vals_to_eventvals ge_i vargs) d) :: btr) cnts
           id' cst2 /\
@@ -1601,14 +1639,18 @@ Section PROOF.
     assert (id = id_cur).
     { unfold match_cur_fun in MS2. desH MS2. rewrite MS7 in IDCUR. clarify. }
     subst id.
+    destruct MS2 as (FINDF_C_CUR & (f_i_cur & FINDF_I_CUR) & INV_CUR).
 
     set (pretr ++ (id_cur, Bundle_builtin tr ef (vals_to_eventvals ge_i vargs) d) :: btr) as ttr in *.
+    assert (FIND_CUR_I: Genv.find_symbol ge_i id_cur = Some cur).
+    { apply Genv.invert_find_symbol in IDCUR. auto. }
     assert (FIND_CUR_C: Genv.find_symbol ge_c id_cur = Some cur).
-    { destruct MS0 as ((MSENV0 & MSENV1 & MSENV2) & MGENV). apply Genv.invert_find_symbol in IDCUR. apply MSENV1 in IDCUR. auto. }
+    { destruct MS0 as ((MSENV0 & MSENV1 & MSENV2) & MGENV). apply MSENV1 in FIND_CUR_I. auto. }
     assert (FIND_FUN_C: Genv.find_funct_ptr ge_c cur = Some (Internal f)).
-    { destruct MS2 as (MFUN0 & MFUN1). auto. }
+    { auto. }
 
-    exploit WFC0. eapply FIND_CUR_C. eapply FIND_FUN_C. intros (cnt_cur & CNTS_CUR & WF_CNT_CUR).
+    exploit WFC0. eapply FIND_CUR_I. rewrite <- Genv.find_funct_ptr_iff; eapply FINDF_I_CUR.
+    intros (cnt_cur & CNTS_CUR & WF_CNT_CUR).
     assert (CUR_TR: get_id_tr ttr id_cur = (get_id_tr pretr id_cur) ++ (id_cur, Bundle_builtin tr ef (vals_to_eventvals ge_i vargs) d) :: (get_id_tr btr id_cur)).
     { subst ttr. clear. rewrite get_id_tr_app. rewrite get_id_tr_cons. ss. rewrite Pos.eqb_refl. auto. }
     assert (BOUND2: Z.of_nat (Datatypes.length (map (fun ib : ident * bundle_event => code_bundle_event ge_i (comp_of f) (snd ib)) (get_id_tr ttr id_cur))) < Int64.modulus).
@@ -1617,16 +1659,18 @@ Section PROOF.
     }
     destruct WF_CNT_CUR as (CNT_CUR_NPUB & cnt_cur_b & FIND_CNT_CUR & CNT_CUR_MEM_VA & CNT_CUR_MEM_LOAD).
 
-    destruct MS2 as (FINDF_C_CUR & (f_i_cur & FINDF_I_CUR) & INV_CUR).
     hexploit cur_fun_def. eapply FINDF_C_CUR. eapply FINDF_I_CUR. eapply INV_CUR. eauto.
     intros (cnt_cur0 & params_cur & CNT_CUR0 & PARAMS_CUR & CUR_F).
     rewrite CNTS_CUR in CNT_CUR0. inversion CNT_CUR0. subst cnt_cur0. clear CNT_CUR0.
     assert (CP_CUR: (comp_of f) = (Genv.find_comp ge_i (Vptr cur Ptrofs.zero))).
     { unfold Genv.find_comp. setoid_rewrite FINDF_I_CUR. subst f. ss. }
+    assert (COMP_CUR_EQ: comp_of (@Gfun _ unit (AST.Internal f_i_cur)) = comp_of f).
+    { subst f. ss. }
+    setoid_rewrite COMP_CUR_EQ in CNT_CUR_MEM_VA. setoid_rewrite COMP_CUR_EQ in CNT_CUR_MEM_LOAD.
 
     hexploit switch_spec.
     { subst ttr. rewrite CUR_TR in BOUND2. rewrite map_app in BOUND2. ss. eapply BOUND2. }
-    { unfold wf_env in WFC3. specialize (WFC3 cnt_cur). des_ifs. eapply WFC3. }
+    { unfold wf_env in WFC3. specialize (WFC3 cnt_cur). des_ifs. eapply WFC3.  }
     eapply FIND_CNT_CUR. eapply CNT_CUR_MEM_VA.
     { rewrite CNT_CUR_MEM_LOAD. rewrite map_length. auto. }
     instantiate (1:=le).
@@ -1682,10 +1726,12 @@ Section PROOF.
               subst cnt. assert (b0 = cnt_cur_b).
               { setoid_rewrite WFC6 in FIND_CNT_CUR. clarify. }
               subst b0. assert (b = cur).
-              { rewrite FIND_CUR_C in H. clarify. }
-              subst b. assert (f0 = f).
-              { rewrite FINDF_C_CUR in H0. clarify. }
-              subst f0. ss. erewrite Mem.load_store_same. 2: eapply CNT_CUR_STORE.
+              { rewrite FIND_CUR_I in H. clarify. }
+              subst b. assert (gd = Gfun (AST.Internal f_i_cur)).
+              { apply Genv.find_funct_ptr_iff in FINDF_I_CUR. setoid_rewrite FINDF_I_CUR in H0. clarify. }
+              subst gd.
+              ss. erewrite Mem.load_store_same.
+              2: setoid_rewrite COMP_CUR_EQ; eapply CNT_CUR_STORE.
               ss. rewrite map_length. rewrite get_id_tr_app. ss.
               rewrite Pos.eqb_refl. rewrite app_length. ss.
               do 2 f_equal. apply nat64_int64_add_one.
@@ -1793,17 +1839,18 @@ Section PROOF.
               subst cnt. assert (b0 = cnt_cur_b).
               { setoid_rewrite WFC6 in FIND_CNT_CUR. clarify. }
               subst b0. assert (b = cur).
-              { rewrite FIND_CUR_C in H. clarify. }
-              subst b. assert (f0 = f).
-              { rewrite FINDF_C_CUR in H0. clarify. }
-              subst f0. ss.
-              eapply Mem.load_unchanged_on. eapply UCH2.
+              { rewrite FIND_CUR_I in H. clarify. }
+              subst b. assert (gd = Gfun (AST.Internal f_i_cur)).
+              { apply Genv.find_funct_ptr_iff in FINDF_I_CUR. setoid_rewrite FINDF_I_CUR in H0. clarify. }
+              subst gd.
+              ss. eapply Mem.load_unchanged_on. eapply UCH2.
               { ss. i. erewrite match_symbs_meminj_public. 2: eapply MS0. eapply meminj_public_not_public_not_mapped; eauto. }
               erewrite mem_delta_apply_wf_mem_load.
               2:{ erewrite match_symbs_mem_delta_apply_wf in DELTA_C. eapply DELTA_C. eapply MS0. }
               2:{ eapply Genv.find_invert_symbol in WFC6. eapply WFC6. }
               2:{ auto. }
-              erewrite Mem.load_store_same. 2: eapply CNT_CUR_STORE.
+              erewrite Mem.load_store_same.
+              2: setoid_rewrite COMP_CUR_EQ; eapply CNT_CUR_STORE.
               { ss. rewrite map_length. rewrite get_id_tr_app. ss. rewrite Pos.eqb_refl. rewrite app_length. ss.
                 do 2 f_equal. apply nat64_int64_add_one.
                 subst ttr. clear - BOUND. unfold get_id_tr. eapply Z.le_lt_trans; eauto.
@@ -1868,11 +1915,11 @@ Section PROOF.
         (BOUND: Z.of_nat (Datatypes.length ttr) < Int64.modulus)
         (TOTAL: ttr = pretr ++ ev :: btr)
         cst1 k id
-        (WFC: wf_c_state ge_c pretr ttr cnts id cst1)
+        (WFC: wf_c_state ge_i ge_c pretr ttr cnts id cst1)
         (MS: match_state ge_i ge_c k ttr cnts pars id ist1 cst1)
     :
     exists cst2, (star step1 ge_c cst1 (unbundle ev) cst2) /\
-              ((exists id', (wf_c_state ge_c (pretr ++ [ev]) ttr cnts id' cst2) /\
+              ((exists id', (wf_c_state ge_i ge_c (pretr ++ [ev]) ttr cnts id' cst2) /\
                          exists k, (match_state ge_i ge_c k ttr cnts pars id' ist2 cst2))
                \/ (ist2 = None)).
   Proof.
@@ -1935,11 +1982,14 @@ Section PROOF.
         intros (cnt_cur0 & params_cur & CNT_CUR0 & PARAMS_CUR & CUR_F).
         unfold Genv.find_comp. setoid_rewrite FINDF_I_CUR. subst f. ss.
       }
+      assert (FIND_CUR_I: Genv.find_symbol ge_i id_cur = Some cur).
+      { apply Genv.invert_find_symbol in IDCUR. auto. }
       assert (FIND_CUR_C: Genv.find_symbol ge_c id_cur = Some cur).
-      { destruct MS0 as ((MSENV0 & MSENV1 & MSENV2) & MGENV).
-        apply Genv.invert_find_symbol in IDCUR. apply MSENV1 in IDCUR. auto. }
+      { destruct MS0 as ((MSENV0 & MSENV1 & MSENV2) & MGENV). apply MSENV1 in FIND_CUR_I. auto. }
       assert (FIND_FUN_C: Genv.find_funct_ptr ge_c cur = Some (Internal f)).
       { destruct MS2 as (MFUN0 & MFUN1). auto. }
+      assert (COMP_CUR_EQ: (comp_of (@Gfun _ unit (AST.Internal f_cur))) = comp_of f).
+      { rewrite <- COMP_CUR_F. unfold Genv.find_comp. setoid_rewrite INTERNAL. ss. }
       desH ECCASES; cycle 1.
 
       (* Case 3-1: observable defined external calls *)
@@ -1977,10 +2027,12 @@ Section PROOF.
                 subst cnt. assert (b1 = cnt_cur_b).
                 { setoid_rewrite WFC6 in FIND_CNT. clarify. }
                 subst b1. assert (b0 = cur).
-                { rewrite FIND_CUR_C in H. clarify. }
-                subst b0. assert (f0 = f).
-                { rewrite FIND_FUN_C in H0. clarify. }
-                subst f0. ss. erewrite Mem.load_store_same. 2: eapply CNT_CUR_STORE.
+                { rewrite FIND_CUR_I in H. clarify. }
+                subst b0. assert (gd = Gfun (AST.Internal f_cur)).
+                { apply Genv.find_funct_ptr_iff in INTERNAL. setoid_rewrite INTERNAL in H0. clarify. }
+                subst gd.
+                ss. erewrite Mem.load_store_same.
+                2: setoid_rewrite COMP_CUR_EQ; eapply CNT_CUR_STORE.
                 ss. rewrite map_length. rewrite get_id_tr_app. ss.
                 rewrite Pos.eqb_refl. rewrite app_length. ss.
                 do 2 f_equal. apply nat64_int64_add_one.
@@ -2080,17 +2132,18 @@ Section PROOF.
                 subst cnt. assert (b1 = cnt_cur_b).
                 { setoid_rewrite WFC6 in FIND_CNT. clarify. }
                 subst b1. assert (b0 = cur).
-                { rewrite FIND_CUR_C in H. clarify. }
-                subst b0. assert (f0 = f).
-                { rewrite FIND_FUN_C in H0. clarify. }
-                subst f0. ss.
-                eapply Mem.load_unchanged_on. eapply UCH2.
+                { rewrite FIND_CUR_I in H. clarify. }
+                subst b0. assert (gd = Gfun (AST.Internal f_cur)).
+                { apply Genv.find_funct_ptr_iff in INTERNAL. setoid_rewrite INTERNAL in H0. clarify. }
+                subst gd.
+                ss. eapply Mem.load_unchanged_on. eapply UCH2.
                 { ss. i. erewrite match_symbs_meminj_public. 2: eapply MS0. eapply meminj_public_not_public_not_mapped; eauto. }
                 erewrite mem_delta_apply_wf_mem_load.
                 2:{ erewrite match_symbs_mem_delta_apply_wf in DELTA_C. eapply DELTA_C. eapply MS0. }
                 2:{ eapply Genv.find_invert_symbol in WFC6. eapply WFC6. }
                 2:{ auto. }
-                erewrite Mem.load_store_same. 2: eapply CNT_CUR_STORE.
+                erewrite Mem.load_store_same.
+                2: setoid_rewrite COMP_CUR_EQ; eapply CNT_CUR_STORE.
                 { ss. rewrite map_length. rewrite get_id_tr_app. ss. rewrite Pos.eqb_refl. rewrite app_length. ss.
                   do 2 f_equal. apply nat64_int64_add_one.
                   clear - BOUND. unfold get_id_tr. eapply Z.le_lt_trans; eauto.
@@ -2156,7 +2209,7 @@ Section PROOF.
         (PREC: star step1 ge_c pcst (unbundle_trace pretr) cst)
         ttr cnts pars k id
         (BOUND: Z.of_nat (Datatypes.length ttr) < Int64.modulus)
-        (WFC: wf_c_state ge_c pretr ttr cnts id cst)
+        (WFC: wf_c_state ge_i ge_c pretr ttr cnts id cst)
         (MS: match_state ge_i ge_c k ttr cnts pars id ist cst)
         btr ist'
         (TOTAL: ttr = pretr ++ btr)
@@ -2186,7 +2239,7 @@ Section PROOF.
           ist cst
           ttr cnts pars k id
           (BOUND: Z.of_nat (Datatypes.length ttr) < Int64.modulus)
-          (WFC: wf_c_state ge_c [] ttr cnts id cst)
+          (WFC: wf_c_state ge_i ge_c [] ttr cnts id cst)
           (MS: match_state ge_i ge_c k ttr cnts pars id ist cst)
           ist'
           (STAR: istar (ir_step) ge_i ist ttr ist')
