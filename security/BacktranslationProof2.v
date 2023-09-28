@@ -941,38 +941,173 @@ Section PROOFINIT.
     eapply genv_alloc_globals_flat_inj; eauto.
   Qed.
 
-  TODO
+  (* Lemma genv_add_globals_map_same_next *)
+  (*       F1 V1 gds (ge_a0 ge_b1: Genv.t F V) *)
+  (*       (GE: ge = Genv.add_globals  *)
 
-  Lemma in_def_
+  (* ge_a := Genv.add_globals (Genv.empty_genv Asm.fundef unit (AST.prog_public p) (AST.prog_pol p)) *)
+  (*           gds : Genv.t Asm.fundef unit *)
+  (* FIND : Genv.find_symbol *)
+  (*          (Genv.add_globals *)
+  (*             (Genv.empty_genv (Ctypes.fundef function) type (AST.prog_public p) (AST.prog_pol p)) *)
+  (*             (map *)
+  (*                (fun '(id, gd) => *)
+  (*                 (id, *)
+  (*                 gen_progdef ge_a (get_id_tr btr id) gd *)
+  (*                   (gen_counter_defs (next_id gds) gds) ! id *)
+  (*                   (gen_params *)
+  (*                      (next_id (map snd (PTree.elements (gen_counter_defs (next_id gds) gds)))) *)
+  (*                      gds) ! id)) gds)) id = Some b *)
+  (* f : Forall (fun id0 : positive => id0 <> id) *)
+  (*       (map fst (map snd (PTree.elements (gen_counter_defs (next_id gds) gds)))) *)
+  (* ============================ *)
+  (* (b < Genv.genv_next ge_a)%positive *)
 
-wf_counters = 
-fun (ge : genv) (m : mem) (tr : bundle_trace) (cnts : cnt_ids) =>
-(forall (id0 id1 : positive) (cnt : ident),
- cnts ! id0 = Some cnt -> cnts ! id1 = Some cnt -> id0 = id1) /\
-(forall (id : ident) (b : block) (f : function),
- Genv.find_symbol ge id = Some b ->
- Genv.find_funct_ptr ge b = Some (Internal f) ->
- exists cnt : ident,
-   cnts ! id = Some cnt /\ wf_counter ge m (comp_of f) (Datatypes.length (get_id_tr tr id)) cnt)
-     : genv -> mem -> bundle_trace -> cnt_ids -> Prop
+  Lemma genv_find_symbol_add_globals_map_inv
+        F0 V0 F1 V1
+        id b l
+        (ge0: Genv.t F0 V0) (ge1: Genv.t F1 V1)
+        (NB: (Genv.genv_next ge0) = (Genv.genv_next ge1))
+        (* (FIND: Genv.find_symbol (Genv.add_globals ge0 l) id = Some b) *)
+        f f'
+        (FUN: f' = fun '(id, x) => (id, f (id, x)))
+        (FIND: Genv.find_symbol (Genv.add_globals ge1 (map f' l)) id = Some b)
+        gd
+        (IN: In (id, gd) (map f' l))
+    :
+    (Genv.find_symbol (Genv.add_globals ge0 l) id = Some b).
+  Proof.
+    subst f'. revert_until l. induction l; i; ss.
+    destruct a as (id0 & gd0); ss. des.
+    { clarify. destruct (in_dec Pos.eq_dec id (map fst l)).
+      { eapply list_in_map_inv in i. des. destruct x as (id' & gd'). ss. subst id'. eapply IHl; eauto.
+        - unfold Genv.genv_next, Genv.add_global. rewrite NB. auto.
+        - eapply (in_map (fun '(id0, x) => (id0, f (id0, x)))) in i0. eapply i0.
+      }
+      { clear IHl. rewrite genv_find_symbol_add_globals_other.
+        - rewrite genv_find_symbol_add_globals_other in FIND.
+          + unfold Genv.find_symbol, Genv.add_global in *. ss. rewrite PTree.gss in *. rewrite NB. auto.
+          + apply Forall_forall. i. des_ifs. ii. subst i. apply n.
+            apply (in_map fst) in H. ss. rewrite map_map in H.
+            assert ((fun x : ident * globdef F0 V0 => fst (let '(id, x0) := x in (id, f (id, x0)))) = fst).
+            { extensionalities. des_ifs. }
+            rewrite H0 in H. auto.
+        - apply Forall_forall. i. des_ifs. ii. subst i. apply n. apply (in_map fst) in H. ss.
+      }
+    }
+    { eapply IHl; eauto. unfold Genv.genv_next, Genv.add_global. rewrite NB. auto. }
+  Qed.
 
-wf_counter = 
-fun (ge : Senv.t) (m : mem) (cp : compartment) (n : nat) (cnt : ident) =>
-Senv.public_symbol ge cnt = false /\
-(exists b : block,
-   Senv.find_symbol ge cnt = Some b /\
-   Mem.valid_access m Mint64 b 0 Writable (Some cp) /\
-   Mem.loadv Mint64 m (Vptr b Ptrofs.zero) (Some cp) = Some (Vlong (nat64 n)))
-     : Senv.t -> mem -> compartment -> nat -> ident -> Prop
-gen_counter_defs = 
-fun (m : positive) (gds : list (ident * globdef Asm.fundef unit)) =>
-let gds' := map (fun '(id, gd) => (id, ((id + m)%positive, gen_counter (comp_of gd)))) gds in
-PTree_Properties.of_list gds'
-     : positive ->
-       list (ident * globdef Asm.fundef unit) -> PTree.t (ident * globdef fundef type)
-Genv.find_symbol_inversion:
-  forall [F V : Type] (p : AST.program F V) (x : ident) [b : block],
-  Genv.find_symbol (Genv.globalenv p) x = Some b -> In x (prog_defs_names p)
+  Lemma genv_find_symbol_add_globals_gt_block
+        F V gds (ge: Genv.t F V) id b
+        (FIND: Genv.find_symbol (Genv.add_globals ge gds) id = Some b)
+        (IN: In id (map fst gds))
+    :
+    (Genv.genv_next ge <= b)%positive.
+  Proof.
+    revert_until gds. induction gds; i; ss. destruct a as (ida & gda); ss; des; clarify.
+    - destruct (in_dec Pos.eq_dec id (map fst gds)).
+      + specialize (IHgds _ id _ FIND i). ss. lia.
+      + clear IHgds. rewrite genv_find_symbol_add_globals_other in FIND.
+        * unfold Genv.find_symbol, Genv.add_global in FIND. ss. rewrite PTree.gss in FIND. clarify. lia.
+        * apply Forall_forall. i. destruct x as (idx & gdx). ii. subst. apply n. apply (in_map fst) in H. ss.
+    - specialize (IHgds _ id _ FIND IN). ss. lia.
+  Qed.
+
+  Lemma genv_advance_next_eq_len
+        F1 V1 F2 V2
+        (gds1: list (ident * globdef F1 V1))
+        (gds2: list (ident * globdef F2 V2))
+        (LEN: length gds1 = length gds2)
+        x
+    :
+    Genv.advance_next gds1 x = Genv.advance_next gds2 x.
+  Proof.
+    revert_until gds1. induction gds1; i; ss.
+    { destruct gds2; ss. }
+    destruct gds2; ss. apply IHgds1; eauto.
+  Qed.
+
+  Lemma genv_find_symbol_gen_program_cases
+        p btr
+        (WFP: wf_program p)
+        id b
+        (FIND: Genv.find_symbol (Genv.globalenv (gen_program btr p)) id = Some b)
+    :
+    ((forall i, (In i (map fst (AST.prog_defs p))) -> (i < id)%positive) /\
+     (Genv.genv_next (Genv.globalenv p) <= b)%positive) \/
+      (In id (map fst (AST.prog_defs p)) /\ (b < Genv.genv_next (Genv.globalenv p))%positive).
+  Proof.
+    unfold gen_program, Genv.globalenv in *. ss.
+    set (Genv.add_globals (Genv.empty_genv Asm.fundef unit (AST.prog_public p) (AST.prog_pol p)) (AST.prog_defs p)) as ge_a in *.
+    unfold gen_prog_defs in FIND. rewrite Genv.add_globals_app in FIND.
+    set (AST.prog_defs p) as gds in *.
+    destruct (Forall_Exists_dec _ (pos_neq_dec id) (map fst (map snd (PTree.elements (gen_counter_defs (next_id gds) gds))))).
+    - right. rewrite genv_find_symbol_add_globals_other in FIND.
+      2:{ rewrite Forall_map in f. eapply Forall_impl; eauto. ss. i. des_ifs. }
+      set ({|
+              prog_defs := (map
+                              (fun '(id, gd) =>
+                                 (id,
+                                   gen_progdef ge_a (get_id_tr btr id) gd
+                                               (gen_counter_defs (next_id gds) gds) ! id
+                                               (gen_params
+                                                  (next_id (map snd (PTree.elements (gen_counter_defs (next_id gds) gds))))
+                                                  gds) ! id)) gds);
+              prog_public := AST.prog_public p;
+              prog_main := AST.prog_main p;
+              prog_pol := AST.prog_pol p;
+              prog_types := [];
+              prog_comp_env := PTree.empty composite;
+              prog_comp_env_eq := (fun (_ : bundle_trace) (_ : Asm.program) => Backtranslation.gen_program_obligation_1) btr p
+            |}) as p_t.
+      (* hexploit Genv.find_symbol_find_def_inversion. *)
+      (* { instantiate (3:=p_t). unfold Genv.globalenv. subst p_t. ss. eapply FIND. } *)
+      hexploit Genv.find_symbol_inversion.
+      { instantiate (3:=p_t). unfold Genv.globalenv. subst p_t. ss. eapply FIND. }
+      intros IN. subst p_t. unfold prog_defs_names in IN. ss. apply list_in_map_inv in IN.
+      des. destruct x. ss; clarify. rename i into id, g into gd.
+      hexploit genv_find_symbol_add_globals_map_inv. 3: eapply FIND.
+      { instantiate (1:=(Genv.empty_genv Asm.fundef unit (AST.prog_public p) (AST.prog_pol p))).
+        ss.
+      }
+      { instantiate (1:= fun '(id0, gd) => 
+   gen_progdef ge_a (get_id_tr btr id0) gd (gen_counter_defs (next_id gds) gds) ! id0
+     (gen_params (next_id (map snd (PTree.elements (gen_counter_defs (next_id gds) gds)))) gds)
+     ! id0). ss.
+      }
+      { eauto. }
+      intros FIND2. split.
+      { apply (in_map fst) in IN0; ss. rewrite map_map in IN0. ss.
+        assert (EQ: ((fun x : ident * globdef Asm.fundef unit =>
+              fst
+                (let
+                 '(id, gd) := x in
+                  (id,
+                  gen_progdef ge_a (get_id_tr btr id) gd
+                    (gen_counter_defs (next_id gds) gds) ! id
+                    (gen_params
+                       (next_id (map snd (PTree.elements (gen_counter_defs (next_id gds) gds))))
+                       gds) ! id)))) = fst).
+        { extensionalities. des_ifs. }
+        setoid_rewrite EQ in IN0. auto.
+      }
+      { hexploit Genv.genv_symb_range. eapply FIND2. ss. }
+    - left. apply Exists_exists in e. des. apply Classical_Prop.NNPP in e0. subst x.
+      hexploit list_in_map_inv. eapply e. intros. des. destruct x. ss; subst.
+      rename i into id, g into gd.
+      hexploit list_in_map_inv. eapply H0. intros. des. destruct x, p1. ss; clarify.
+      rename i into cnt, p0 into id, g into gd.
+      apply PTree.elements_complete in H1. apply gen_counter_defs_lt in H1. split.
+      + i. apply list_in_map_inv in H. des. destruct x; ss; clarify. apply next_id_lt in H2. lia.
+      + etransitivity; cycle 1.
+        { eapply genv_find_symbol_add_globals_gt_block. eapply FIND. ss. }
+        { subst ge_a. rewrite ! Genv.genv_next_add_globals. ss.
+          apply Pos.le_partorder. apply genv_advance_next_eq_len. 
+          apply map_length.
+        }
+  Qed.
+
 
 
   Definition asm_program_does_prefix (p: Asm.program) (t: trace) :=
@@ -1056,7 +1191,32 @@ Genv.find_symbol_inversion:
       instantiate (1:=id_cur).
       instantiate (1:=(get_cnt_ids (gen_counter_defs (next_id (AST.prog_defs p)) (AST.prog_defs p)))).
       instantiate (1:= globalenv (gen_program btr p)). ss. splits.
-      - admit.
+      - unfold wf_counters. split.
+        { eapply gen_counter_defs_cnt_ids_inj; eauto. }
+        i. assert (PDM: (prog_defmap p) ! id = Some gd).
+        { rewrite Genv.find_def_symbol. esplits; eauto. }
+        hexploit gen_counter_defs_inv; eauto. eapply in_prog_defmap; eauto. intros GETCNT.
+        esplits.
+        { unfold get_cnt_ids. rewrite PTree.gmap. rewrite GETCNT. ss. }
+        set (id + next_id (AST.prog_defs p))%positive as id_cnt.
+        unfold wf_counter. splits.
+        { ss. assert (NIN: ~ In id_cnt (Genv.genv_public (Genv.globalenv (gen_program btr p)))).
+          { admit. }
+          unfold Genv.public_symbol. des_ifs.
+          eapply (pred_dec_false (in_dec ident_eq _ _) true false) in NIN. des_ifs.
+        }
+        ss. assert (PDM_C: (prog_defmap (gen_program btr p)) ! id_cnt = Some (gen_counter (comp_of gd))).
+        { apply prog_defmap_norepet. apply gen_program_list_norepet; auto.
+          unfold gen_program. ss. unfold gen_prog_defs. apply in_or_app. right.
+          apply PTree.elements_correct in GETCNT. apply (in_map snd) in GETCNT. ss.
+        }
+        apply Genv.find_def_symbol in PDM_C. des.
+        hexploit Genv.init_mem_characterization_gen. eapply H4.
+        intros GI. specialize (GI _ _ PDM_C0). ss. des.
+        specialize (GI1 eq_refl). specialize (GI2 eq_refl). des.
+        esplits; eauto.
+        unfold Mem.valid_access. splits; auto. 2: apply Z.divide_0_r.
+        eapply Mem.loadbytes_can_access_block_inj; eauto.
       - esplits; eauto. econs.
       - unfold wf_c_stmt. i. subst f_cur. ss. rewrite CNT_CUR in H8. clarify.
         replace (comp_of (gen_function (Genv.globalenv p) cnt [] (get_id_tr btr id_cur) f)) with
@@ -1085,28 +1245,62 @@ Genv.find_symbol_inversion:
       - unfold match_cur_fun. ss. splits; ss. eauto.
       - eapply gen_program_match_find_def; eauto.
       - econs; auto.
-      - admit.
+      - unfold match_params. splits.
+        + apply gen_params_wf.
+        + ii. hexploit in_gds_exists_params. 2: eauto.
+          { setoid_rewrite Genv.find_def_symbol. esplits; eauto.
+            rewrite <- Genv.find_funct_ptr_iff. eauto.
+          }
+          i. des. rewrite H10 in H11. clarify.
+        + ii.
+          TODO
+          
+
+            eapply PTree_Properties.of_list_norepet; auto.
+Genv.find_def_symbol:
+  forall [F V : Type] (p : AST.program F V) (id : positive) (g : globdef F V),
+  (prog_defmap p) ! id = Some g <->
+  (exists b : block,
+     Genv.find_symbol (Genv.globalenv p) id = Some b /\
+     Genv.find_def (Genv.globalenv p) b = Some g)
+            
+            
+Genv.find_symbol_exists:
+  forall [F V : Type] (p : AST.program F V) (id : ident) (g : globdef F V),
+  In (id, g) (AST.prog_defs p) ->
+  exists b : block, Genv.find_symbol (Genv.globalenv p) id = Some b
+
+Genv.find_funct_ptr_inversion:
+  forall [F V : Type] (p : AST.program F V) (b : block) [f : F],
+  Genv.find_funct_ptr (Genv.globalenv p) b = Some f ->
+  exists id : ident, In (id, Gfun f) (AST.prog_defs p)
+            
+  forall [A : Type] (l : list (PTree.elt * A)) (k : PTree.elt) (v : A),
+  list_norepet (map fst l) -> In (k, v) l -> (PTree_Properties.of_list l) ! k = Some v
+
+in_gds_exists_params:
+  forall (gds : list (PTree.elt * globdef Asm.fundef unit)) (id : positive)
+    (gd_i : globdef Asm.fundef unit),
+  (PTree_Properties.of_list gds) ! id = Some gd_i ->
+  list_norepet (map fst gds) ->
+  forall x : ident,
+  exists ps : list (ident * type),
+    (gen_params x gds) ! id = Some ps /\
+    Forall (fun '(id0, _) => (x <= id0)%positive) ps /\
+    match gd_i with
+    | Gfun fd => map typ_to_type (sig_args (funsig fd)) = map snd ps
+    | Gvar _ => ps = []
+    end
+
+        admit.
       - ii. setoid_rewrite PTree.gmap in H8. unfold option_map in H8. des_ifs.
         hexploit gen_counter_defs_lt; eauto. intros LT.
         unfold Mem.flat_inj in H10. des_ifs. erewrite <- Genv.init_mem_genv_next in p0; eauto.
-        apply Genv.find_symbol_inversion in H9.
-
-
-(forall (id : ident) (b : block) (f : function),
- Genv.find_symbol ge id = Some b ->
- Genv.find_funct_ptr ge b = Some (Internal f) ->
- exists cnt : ident,
-   cnts ! id = Some cnt /\ wf_counter ge m (comp_of f) (Datatypes.length (get_id_tr tr id)) cnt)
-wf_counter = 
-fun (ge : Senv.t) (m : mem) (cp : compartment) (n : nat) (cnt : ident) =>
-Senv.public_symbol ge cnt = false /\
-(exists b : block,
-   Senv.find_symbol ge cnt = Some b /\
-   Mem.valid_access m Mint64 b 0 Writable (Some cp) /\
-   Mem.loadv Mint64 m (Vptr b Ptrofs.zero) (Some cp) = Some (Vlong (nat64 n)))
-     : Senv.t -> mem -> compartment -> nat -> ident -> Prop
-
-        admit.
+        hexploit Genv.find_symbol_inversion. apply H9. intros INDEFS.
+        ss. hexploit genv_find_symbol_gen_program_cases. eauto. eapply H9. i. des.
+        + unfold Plt in p0. lia.
+        + clear - LT H3. apply list_in_map_inv in H3. des. destruct x; ss; clarify.
+          hexploit next_id_lt; eauto. i. lia.
     }
     intros (cst' & STAR_C). hexploit state_behaves_exists. intros (beh2 & BEH2).
     esplits; eauto.
