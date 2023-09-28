@@ -820,6 +820,21 @@ Section PROOFINIT.
     i. destruct a as (ida & gda). des_ifs. des. splits; eauto.
   Qed.
 
+  Lemma gen_program_split_init_mem
+        btr (p: Asm.program)
+        m_a
+        (MEMA: Genv.init_mem p = Some m_a)
+        (NR: list_norepet (map fst (AST.prog_defs p)))
+        m_c
+        (MEMC: Genv.init_mem (gen_program btr p) = Some m_c)
+    :
+    Genv.alloc_globals (Genv.globalenv (gen_program btr p)) m_a (map snd (PTree.elements (gen_counter_defs (next_id (AST.prog_defs p)) (AST.prog_defs p)))) = Some m_c.
+  Proof.
+    unfold Genv.init_mem in *. ss. unfold gen_prog_defs in *.
+    hexploit gen_program_exists_init_mem_1; auto. eauto. apply MEMA.
+    intros ALLOC1. erewrite Genv.alloc_globals_app. apply MEMC. apply ALLOC1.
+  Qed.
+
   Lemma gen_program_prog_main_eq
         p btr
     :
@@ -860,8 +875,104 @@ Section PROOFINIT.
     - ss.
   Qed.
 
+  Lemma mem_unchanged_on_inject
+        j m m1
+        (INJ: Mem.inject j m m1)
+        P m2
+        (UCH: Mem.unchanged_on P m1 m2)
+    :
+    (forall b1 b2 ofs delta, j b1 = Some (b2, delta) -> P b2 (ofs + delta)) ->
+    Mem.inject j m m2.
+  Proof.
+    i. inv INJ. inv UCH. econs; eauto.
+    - inv mi_inj. econs; eauto.
+      + i. rewrite <- unchanged_on_perm. all: eauto.
+      + i. rewrite <- unchanged_on_own. all: eauto.
+      + i. rewrite unchanged_on_contents. all: eauto.
+    - i. eapply mi_mappedblocks in H0. clear - H0 unchanged_on_nextblock.
+      unfold Mem.valid_block in *. eapply Plt_Ple_trans; eauto.
+    - i. eapply mi_perm_inv; eauto. rewrite unchanged_on_perm; eauto.
+  Qed.
 
+  Lemma genv_alloc_global_flat_inj
+        F V (CF: has_comp F)
+        (ge: Genv.t F V)
+        m
+        (INJ: Mem.inject (Mem.flat_inj (Mem.nextblock m)) m m)
+        ida gda m_c
+        (ALLOC1 : Genv.alloc_global ge m (ida, gda) = Some m_c)
+    :
+    Mem.inject (Mem.flat_inj (Mem.nextblock m)) m m_c.
+  Proof.
+    eapply mem_unchanged_on_inject. eauto. eapply Genv.alloc_global_unchanged; eauto.
+    instantiate (1:= fun b _ => Plt b (Mem.nextblock m)). i.
+    unfold Mem.flat_inj in H. des_ifs.
+  Qed.
 
+  Lemma genv_alloc_globals_flat_inj
+        F V (CF: has_comp F)
+        (ge: Genv.t F V) (gds: list (ident * globdef F V))
+        m
+        (INJ: Mem.inject (Mem.flat_inj (Mem.nextblock m)) m m)
+        m_c
+        (ALLOC: Genv.alloc_globals ge m gds = Some m_c)
+    :
+    Mem.inject (Mem.flat_inj (Mem.nextblock m)) m m_c.
+  Proof.
+    eapply mem_unchanged_on_inject. eauto. eapply Genv.alloc_globals_unchanged; eauto.
+    instantiate (1:= fun b _ => Plt b (Mem.nextblock m)). i.
+    unfold Mem.flat_inj in H. des_ifs.
+  Qed.
+
+  Lemma genv_init_mem_inj
+        p_a btr p_c
+        (NR: list_norepet (map fst (AST.prog_defs p_a)))
+        (P_C: p_c = gen_program btr p_a)
+        m_a
+        (MEM_A: Genv.init_mem p_a = Some m_a)
+        m_c
+        (MEM_C: Genv.init_mem p_c = Some m_c)
+    :
+    let k := (Mem.flat_inj (Mem.nextblock m_a)) in
+    Mem.inject k m_a m_c.
+  Proof.
+    subst. hexploit gen_program_split_init_mem; eauto. intros ALLOC.
+    ss. hexploit Genv.initmem_inject. eapply MEM_A. intros INJ1.
+    eapply genv_alloc_globals_flat_inj; eauto.
+  Qed.
+
+  TODO
+
+  Lemma in_def_
+
+wf_counters = 
+fun (ge : genv) (m : mem) (tr : bundle_trace) (cnts : cnt_ids) =>
+(forall (id0 id1 : positive) (cnt : ident),
+ cnts ! id0 = Some cnt -> cnts ! id1 = Some cnt -> id0 = id1) /\
+(forall (id : ident) (b : block) (f : function),
+ Genv.find_symbol ge id = Some b ->
+ Genv.find_funct_ptr ge b = Some (Internal f) ->
+ exists cnt : ident,
+   cnts ! id = Some cnt /\ wf_counter ge m (comp_of f) (Datatypes.length (get_id_tr tr id)) cnt)
+     : genv -> mem -> bundle_trace -> cnt_ids -> Prop
+
+wf_counter = 
+fun (ge : Senv.t) (m : mem) (cp : compartment) (n : nat) (cnt : ident) =>
+Senv.public_symbol ge cnt = false /\
+(exists b : block,
+   Senv.find_symbol ge cnt = Some b /\
+   Mem.valid_access m Mint64 b 0 Writable (Some cp) /\
+   Mem.loadv Mint64 m (Vptr b Ptrofs.zero) (Some cp) = Some (Vlong (nat64 n)))
+     : Senv.t -> mem -> compartment -> nat -> ident -> Prop
+gen_counter_defs = 
+fun (m : positive) (gds : list (ident * globdef Asm.fundef unit)) =>
+let gds' := map (fun '(id, gd) => (id, ((id + m)%positive, gen_counter (comp_of gd)))) gds in
+PTree_Properties.of_list gds'
+     : positive ->
+       list (ident * globdef Asm.fundef unit) -> PTree.t (ident * globdef fundef type)
+Genv.find_symbol_inversion:
+  forall [F V : Type] (p : AST.program F V) (x : ident) [b : block],
+  Genv.find_symbol (Genv.globalenv p) x = Some b -> In x (prog_defs_names p)
 
 
   Definition asm_program_does_prefix (p: Asm.program) (t: trace) :=
@@ -959,12 +1070,43 @@ Section PROOFINIT.
     { instantiate (1:= gen_params (next_id (map snd (PTree.elements (gen_counter_defs (next_id (AST.prog_defs p)) (AST.prog_defs p))))) (AST.prog_defs p)).
       ss. splits.
       - auto.
-      - admit.
+      - assert (INCR: inject_incr (meminj_public (Genv.globalenv p)) (Mem.flat_inj (Mem.nextblock m0))).
+        { clear - H1. ii. unfold meminj_public in H. des_ifs. ss.
+          apply Genv.invert_find_symbol in Heq. unfold Genv.find_symbol in Heq.
+          apply Genv.genv_symb_range in Heq. apply Genv.init_mem_genv_next in H1.
+          unfold Mem.flat_inj. rewrite H1 in Heq. des_ifs.
+        }
+        unfold match_mem. splits; eauto.
+        + eapply genv_init_mem_inj; eauto.
+        + clear - INCR. ii. unfold inject_incr in INCR.
+          destruct (meminj_public (Genv.globalenv p) b) eqn:CASES; auto.
+          exfalso. destruct p0. specialize (INCR _ _ _ CASES). unfold Mem.flat_inj in INCR.
+          des_ifs. unfold Plt in *. lia.
       - unfold match_cur_fun. ss. splits; ss. eauto.
       - eapply gen_program_match_find_def; eauto.
       - econs; auto.
       - admit.
-      - admit.
+      - ii. setoid_rewrite PTree.gmap in H8. unfold option_map in H8. des_ifs.
+        hexploit gen_counter_defs_lt; eauto. intros LT.
+        unfold Mem.flat_inj in H10. des_ifs. erewrite <- Genv.init_mem_genv_next in p0; eauto.
+        apply Genv.find_symbol_inversion in H9.
+
+
+(forall (id : ident) (b : block) (f : function),
+ Genv.find_symbol ge id = Some b ->
+ Genv.find_funct_ptr ge b = Some (Internal f) ->
+ exists cnt : ident,
+   cnts ! id = Some cnt /\ wf_counter ge m (comp_of f) (Datatypes.length (get_id_tr tr id)) cnt)
+wf_counter = 
+fun (ge : Senv.t) (m : mem) (cp : compartment) (n : nat) (cnt : ident) =>
+Senv.public_symbol ge cnt = false /\
+(exists b : block,
+   Senv.find_symbol ge cnt = Some b /\
+   Mem.valid_access m Mint64 b 0 Writable (Some cp) /\
+   Mem.loadv Mint64 m (Vptr b Ptrofs.zero) (Some cp) = Some (Vlong (nat64 n)))
+     : Senv.t -> mem -> compartment -> nat -> ident -> Prop
+
+        admit.
     }
     intros (cst' & STAR_C). hexploit state_behaves_exists. intros (beh2 & BEH2).
     esplits; eauto.
