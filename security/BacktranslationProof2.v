@@ -1301,6 +1301,15 @@ Section PROOFINIT.
     des. exists s2, beh. split; auto. eapply star_trans. 2: eauto. eauto. ss.
   Qed.
 
+  Lemma step_fix_fix
+        p s tr s'
+    :
+    star (Asm.step (comp_of_main p)) (Genv.globalenv p) s tr s'
+    -> star (step_fix (comp_of_main p)) (Genv.globalenv p) s tr s'.
+  Proof.
+    (* TODO: FIXME *)
+  Admitted.
+
   Theorem asm_to_clight
           (p: Asm.program) (ast: Asm.state)
           (WFP: wf_program p)
@@ -1323,10 +1332,7 @@ Section PROOFINIT.
     hexploit asm_to_ir.
     { eapply wf_program_wf_ge; eauto. }
     { eapply wf_asm_initial_state; eauto. }
-    { assert (star (step_fix (comp_of_main p)) (Genv.globalenv p) s tr s').
-      { admit. (* fix asm step *) }
-      eapply H.
-    }
+    { eapply step_fix_fix. eauto. }
     { eapply MS_I. }
     intros (btr & ist' & UTR & ISTAR). esplits. 2: eauto.
     eapply semantics_has_initial_trace_cut_implies_prefix.

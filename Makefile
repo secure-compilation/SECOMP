@@ -140,7 +140,7 @@ CFRONTEND=Ctypes.v Cop.v Csyntax.v Csem.v Ctyping.v Cstrategy.v Cexec.v \
 
 # Security proof (in security/)
 
-SECURITY=RSC.v Split.v Blame.v Recomposition.v Tactics.v MemoryWeak.v MemoryDelta.v BtBasics.v BtInfoAsm.v Backtranslation.v BacktranslationAux.v BacktranslationProof.v
+SECURITY=RSC.v Split.v Blame.v Recomposition.v Tactics.v MemoryWeak.v MemoryDelta.v BtBasics.v BtInfoAsm.v BtInfoAsmBound.v Backtranslation.v BacktranslationAux.v BacktranslationProof.v
 
 # Parser
 
