@@ -4,24 +4,12 @@ Require Import AST Linking Smallstep Events Behaviors.
 
 Require Import Split.
 
-(* Record syscall_properties (sem: extcall_sem) (sg: signature) : Prop := *)
-(*   mk_syscall_properties { *)
-(*       sc_args_match: *)
-(*       forall ge cp args m1 name evargs evres res m2, *)
-(*         sem ge cp args m1 (Event_syscall name evargs evres :: nil) res m2 -> *)
-(*         eventval_list_match ge evargs sg.(sig_args) args; *)
-(*     }. *)
-
 
 Section GENV.
 
   Context {F: Type}.
   Context {V: Type}.
 
-  (* For NR, use below: *)
-  (* ::: mkpass Unusedglobproof.match_prog *)
-  (* match_prog_unique: *)
-  (*   list_norepet (prog_defs_names tp) *)
   Lemma genv_def_to_some_ident
         (p: AST.program F V)
         (NR: list_norepet (prog_defs_names p))
@@ -118,13 +106,11 @@ Section MEM.
     forall f b ofs m1 m1' m2'
       (NOTMAP: meminj_notmap f b),
       Mem.perm m1' b ofs Cur Readable ->
-      (* Mem.perm m1' b ofs Cur Writable -> *)
       Mem.unchanged_on (loc_out_of_reach f m1) m1' m2' ->
       ZMap.get ofs (Mem.mem_contents m2') !! b = ZMap.get ofs (Mem.mem_contents m1') !! b.
   Proof.
     intros. destruct H0. apply unchanged_on_contents; eauto.
     unfold loc_out_of_reach. intros. now specialize (NOTMAP _ _ H0).
-    (* eapply Mem.perm_implies; eauto. constructor. *)
   Qed.
 
   Lemma loc_out_of_reach_unchanged_on_perm:
@@ -138,12 +124,6 @@ Section MEM.
     unfold loc_out_of_reach. intros. now specialize (NOTMAP _ _ H0).
     eapply Mem.perm_valid_block; eauto.
   Qed.
-
-  (* Record unchanged_on (P : block -> Z -> Prop) (m_before m_after : mem) : Prop := mk_unchanged_on *)
-  (* { unchanged_on_nextblock : Ple (Mem.nextblock m_before) (Mem.nextblock m_after); *)
-  (*   unchanged_on_perm : forall (b : block) (ofs : Z) (k : perm_kind) (p : permission), P b ofs -> Mem.valid_block m_before b -> Mem.perm m_before b ofs k p <-> Mem.perm m_after b ofs k p; *)
-  (*   unchanged_on_contents : forall (b : block) (ofs : Z), P b ofs -> Mem.perm m_before b ofs Cur Readable -> ZMap.get ofs (Mem.mem_contents m_after) !! b = ZMap.get ofs (Mem.mem_contents m_before) !! b; *)
-  (*   unchanged_on_own : forall (b : block) (cp : option compartment), Mem.valid_block m_before b -> Mem.can_access_block m_before b cp <-> Mem.can_access_block m_after b cp }. *)
 
   Lemma inject_separated_notmap
         f f' m m' b
@@ -160,29 +140,6 @@ Section MEM.
     { destruct p. specialize (INCR _ _ _ FB). rewrite CONTRA in INCR. inversion INCR; clear INCR; subst. congruence. }
     specialize (SEP _ _ _ FB CONTRA). destruct SEP as [NV1 NV2]. congruence.
   Qed.
-
-(*
-forall b, b is the block of one of the counter ->
-     (forall b0 ofs, ~ (f b0 = Some (b, ofs)))
- *)
-
-  (** Events.v **)
-(* (** External calls must commute with memory injections, *)
- (*   in the following sense. *) *)
-  (*   ec_mem_inject: *)
-  (*     forall ge1 ge2 c vargs m1 t vres m2 f m1' vargs', *)
-  (*     symbols_inject f ge1 ge2 -> *)
-  (*     sem ge1 c vargs m1 t vres m2 -> *)
-  (*     Mem.inject f m1 m1' -> *)
-  (*     Val.inject_list f vargs vargs' -> *)
-  (*     exists f', exists vres', exists m2', *)
-  (*        sem ge2 c vargs' m1' t vres' m2' *)
-  (*     /\ Val.inject f' vres vres' *)
-  (*     /\ Mem.inject f' m2 m2' *)
-  (*     /\ Mem.unchanged_on (loc_unmapped f) m1 m2 *)
-  (*     /\ Mem.unchanged_on (loc_out_of_reach f m1) m1' m2' *)
-  (*     /\ inject_incr f f' *)
-  (*     /\ inject_separated f f' m1 m1'; *)
 
 End MEM.
 
@@ -211,9 +168,6 @@ Section HASINIT.
       + econstructor 2. eauto.
       + red. exists (Goes_wrong E0). reflexivity.
   Qed.
-
-  (* semantics_determinate: forall p : program, determinate (Asm.semantics p) *)
-  (* sd_traces: forall [L : semantics], determinate L -> single_events L *)
 
   Lemma state_behaves_app_inv_one
         L s1 beh t beh'
@@ -304,71 +258,3 @@ Section HASINIT.
   Qed.
 
 End HASINIT.
-
-
-(* Section EXTCALL. *)
-
-(*   Variant external_call_event_match_common *)
-(*           (ef: external_function) (ev: event) (ge: Senv.t) (cp: compartment) (m1: mem) *)
-(*     : val -> mem -> Prop := *)
-(*     | ext_match_vload *)
-(*         ch *)
-(*         (EF: ef = EF_vload ch) *)
-(*         id ofs evv *)
-(*         (EV: ev = Event_vload ch id ofs evv) *)
-(*         b res m2 *)
-(*         (SEM: volatile_load_sem ch ge cp (Vptr b ofs :: nil) m1 (ev :: nil) res m2) *)
-(*       : *)
-(*       external_call_event_match_common ef ev ge cp m1 res m2 *)
-(*     | ext_match_vstore *)
-(*         ch *)
-(*         (EF: ef = EF_vstore ch) *)
-(*         id ofs evv *)
-(*         (EV: ev = Event_vstore ch id ofs evv) *)
-(*         b argv m2 *)
-(*         (SEM: volatile_store_sem ch ge cp (Vptr b ofs :: argv :: nil) m1 (ev :: nil) Vundef m2) *)
-(*       : *)
-(*       external_call_event_match_common ef ev ge cp m1 Vundef m2 *)
-(*     | ext_match_annot *)
-(*         len text targs *)
-(*         (EF: ef = EF_annot len text targs) *)
-(*         evargs *)
-(*         (EV: ev = Event_annot text evargs) *)
-(*         vargs m2 *)
-(*         (SEM: extcall_annot_sem text targs ge cp vargs m1 (ev :: nil) Vundef m2) *)
-(*       : *)
-(*       external_call_event_match_common ef ev ge cp m1 Vundef m2 *)
-(*     | ext_match_external *)
-(*         name excp sg *)
-(*         (EF: ef = EF_external name excp sg) *)
-(*         evname evargs evres *)
-(*         (EV: ev = Event_syscall evname evargs evres) *)
-(*         vargs vres m2 *)
-(*         (SEM: external_functions_sem name sg ge cp vargs m1 (ev :: nil) vres m2) *)
-(*         (ARGS: eventval_list_match ge evargs sg.(sig_args) vargs) *)
-(*       : *)
-(*       external_call_event_match_common ef ev ge cp m1 vres m2 *)
-(*     | ext_match_builtin *)
-(*         name sg *)
-(*         (EF: (ef = EF_builtin name sg) \/ (ef = EF_runtime name sg)) *)
-(*         evname evargs evres *)
-(*         (EV: ev = Event_syscall evname evargs evres) *)
-(*         (ISEXT: Builtins.lookup_builtin_function name sg = None) *)
-(*         vargs vres m2 *)
-(*         (SEM: external_functions_sem name sg ge cp vargs m1 (ev :: nil) vres m2) *)
-(*         (ARGS: eventval_list_match ge evargs sg.(sig_args) vargs) *)
-(*       : *)
-(*       external_call_event_match_common ef ev ge cp m1 vres m2 *)
-(*     | ext_match_inline_asm *)
-(*         txt sg strs *)
-(*         (EF: ef = EF_inline_asm txt sg strs) *)
-(*         evname evargs evres *)
-(*         (EV: ev = Event_syscall evname evargs evres) *)
-(*         vargs vres m2 *)
-(*         (SEM: inline_assembly_sem txt sg ge cp vargs m1 (ev :: nil) vres m2) *)
-(*         (ARGS: eventval_list_match ge evargs sg.(sig_args) vargs) *)
-(*       : *)
-(*       external_call_event_match_common ef ev ge cp m1 vres m2 *)
-(*   . *)
-
-(* End EXTCALL. *)

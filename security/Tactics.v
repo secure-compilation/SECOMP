@@ -5,6 +5,13 @@
 (*                                                                     *)
 (* *********************************************************************)
 
+(* *********************************************************************)
+(*                                                                     *)
+(*           Software Foundations Laboratory's Lemmas & Tactic         *)
+(*               based on Viktor and Gil's lemmas & tactic             *)
+(*                                                                     *)
+(* *********************************************************************)
+
 (** This file collects a number of basic lemmas and tactics for better
     proof automation, structuring large proofs, or rewriting.  Most of
     the rewriting support is ported from ssreflect. *)

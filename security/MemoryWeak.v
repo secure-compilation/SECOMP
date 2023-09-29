@@ -1462,19 +1462,6 @@ Section WINJ.
     right; red; intros. elim A. eapply perm_winj; eauto.
   Qed.
 
-  (* Lemma val_lessdef_winject_compose: *)
-  (*   forall f v1 v2 v3, *)
-  (*     Val.lessdef v1 v2 -> Val.inject f v2 v3 -> Val.inject f v1 v3. *)
-  (* Proof. *)
-  (*   intros. inv H. auto. auto. *)
-  (* Qed. *)
-
-  (* Lemma val_inject_lessdef_compose: *)
-  (*   forall f v1 v2 v3, *)
-  (*     Val.inject f v1 v2 -> Val.lessdef v2 v3 -> Val.inject f v1 v3. *)
-  (* Proof. *)
-  (*   intros. inv H0. auto. inv H. auto. *)
-  (* Qed. *)
 
   (** Winjecting a memory into itself. *)
 
@@ -1549,21 +1536,6 @@ Section WINJ.
     rewrite (alloc_result _ _ _ _ _ _ H). auto.
     eapply owned_new_block; eauto.
   Qed.
-
-  (* Theorem store_winject_neutral: *)
-  (*   forall chunk m b ofs v cp m' thr, *)
-  (*     store chunk m b ofs v cp = Some m' -> *)
-  (*     winject_neutral thr m -> *)
-  (*     Plt b thr -> *)
-  (*     Val.inject (flat_winj thr) v v -> *)
-  (*     winject_neutral thr m'. *)
-  (* Proof. *)
-  (*   intros; red. *)
-  (*   exploit store_mapped_winj. eauto. eauto. apply flat_winj_no_overlap. *)
-  (*   unfold flat_winj. apply pred_dec_true; auto. eauto. *)
-  (*   replace (ofs + 0) with ofs by lia. *)
-  (*   intros [m'' [A B]]. congruence. *)
-  (* Qed. *)
 
   Theorem drop_winject_neutral:
     forall m b lo hi p cp m' thr,

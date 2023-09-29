@@ -29,11 +29,6 @@ Section INVS.
           (Genv.find_def ge_a b = Some gd) ->
           (exists cnt, (cnts ! id = Some cnt) /\
                     (wf_counter ge m (comp_of gd) (length (get_id_tr tr id)) cnt))).
-  (* Definition wf_counters (ge: Clight.genv) (m: mem) (tr: bundle_trace) (cnts: cnt_ids) := *)
-  (*   (forall id0 id1 cnt, (cnts ! id0 = Some cnt) -> (cnts ! id1 = Some cnt) -> (id0 = id1)) /\ *)
-  (*     (forall id b (f: function), *)
-  (*         (Genv.find_symbol ge id = Some b) -> (Genv.find_funct_ptr ge b = Some (Internal f)) -> *)
-  (*         (exists cnt, (cnts ! id = Some cnt) /\ (wf_counter ge m (comp_of f) (length (get_id_tr tr id)) cnt))). *)
 
   Inductive wf_c_cont (ge: Clight.genv) : mem -> cont -> Prop :=
   | wf_c_cont_nil
@@ -66,15 +61,6 @@ Section INVS.
           (wf_env ge e /\ (not_global_blks (ge) (blocks_of_env2 ge e)) /\ (wf_c_nb ge m_c))
     | _ => False
     end.
-  (* Definition wf_c_state (ge: Clight.genv) (tr ttr: bundle_trace) (cnts: cnt_ids) id (cst: Clight.state) := *)
-  (*   match cst with *)
-  (*   | State f stmt k_c e le m_c => *)
-  (*       wf_counters ge m_c tr cnts /\ *)
-  (*         (exists m_c', Mem.free_list m_c (blocks_of_env ge e) (comp_of f) = Some m_c' /\ wf_c_cont ge m_c' k_c) /\ *)
-  (*         wf_c_stmt ge (comp_of f) cnts id ttr stmt /\ *)
-  (*         (wf_env ge e /\ (not_global_blks (ge) (blocks_of_env2 ge e)) /\ (wf_c_nb ge m_c)) *)
-  (*   | _ => False *)
-  (*   end. *)
 
   Definition match_genv (ge: Asm.genv) (ge': genv) :=
     (match_symbs ge ge') /\ (eq_policy ge ge').
@@ -1164,9 +1150,6 @@ Section PROOF.
       eapply step_return_1.
       - eapply eventval_to_expr_val_eval. auto. eapply H0.
       - ss.
-        (* assert (fd_cur = AST.Internal f_i_cur). *)
-        (* { rewrite FINDFD in FINDF_I_CUR; clarify. } *)
-        (* subst fd_cur. *)
         eapply sem_cast_proj_rettype. eapply H0.
       - eapply FREENEXT.
     }
@@ -1178,10 +1161,6 @@ Section PROOF.
       eapply step_returnstate.
       - move NPTR after EVRETV. i. rewrite EVRETV. apply NPTR. rr. rewrite CPEQ1 in H. setoid_rewrite CPEQ2 in H. apply H.
       - move TR after EVRETV. instantiate (1:=tr). inv TR. setoid_rewrite CPEQ2. rewrite CPEQ1. econs; auto.
-        (* assert (fd_cur = AST.Internal f_i_cur). *)
-        (* { rewrite FINDFD in FINDF_I_CUR; clarify. } *)
-        (* subst fd_cur. *)
-        (* ss. *)
         erewrite proj_rettype_to_type_rettype_of_type_eq. 2: eapply H0.
         eapply match_senv_eventval_match. 2: eapply H0. apply MS0.
     }

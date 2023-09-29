@@ -538,33 +538,6 @@ Section PROPS.
     Mem.unchanged_on (fun b ofs => mem_delta_unchanged (get_wf_mem_delta ge cp d) b ofs) m m'.
   Proof. eapply mem_delta_unchanged_on; eauto. Qed.
 
-  (* Lemma mem_delta_inj_unchanged_on *)
-  (*       j d m m' *)
-  (*       (STRICT: meminj_strict j) *)
-  (*       (APPD: mem_delta_apply_inj j d (Some m) = Some m') *)
-  (*   : *)
-  (*   Mem.unchanged_on (fun b ofs => (forall b0 ofsd, j b0 <> Some (b, ofsd)) \/ (exists b0 ofsd, j b0 = Some (b, ofsd) /\ mem_delta_unchanged d b0 (ofs - ofsd))) m m'. *)
-  (* Proof. *)
-  (*   revert m m' APPD. induction d; intros; simpl. *)
-  (*   { simpl in APPD. inv APPD. apply Mem.unchanged_on_refl. } *)
-  (*   rewrite mem_delta_apply_inj_cons in APPD. destruct a. *)
-  (*   - destruct d0 as [[[[ch b] ofs] v] cp]. destruct (j b) as [[b' ofs'] |] eqn:JB. *)
-  (*     + exploit mem_delta_apply_inj_some. eauto. intros (mi & MEM). rewrite MEM in APPD. *)
-  (*       specialize (IHd _ _ APPD). eapply Mem.unchanged_on_trans. *)
-  (*       2:{ eapply Mem.unchanged_on_implies. eapply IHd. intros. simpl. inv H; eauto. destruct H1 as (b1 & ofsd & JB1 & UNCHG). inv UNCHG. right. eauto. } *)
-  (*       { simpl in *. eapply Mem.store_unchanged_on. eauto. intros. intros [CC | CC]. *)
-  (*         - specialize (CC b ofs'). congruence. *)
-  (*         - destruct CC as (b1 & ofsd & JB1 & UNCHG). inv UNCHG. simpl in H2. destruct (Pos.eqb_spec b b1). *)
-  (*           + subst b1. rewrite JB in JB1. inv JB1. specialize (H2 eq_refl). lia. *)
-  (*           + specialize (STRICT _ _ _ _ _ JB JB1). subst b1. lia. *)
-  (*       } *)
-  (*     + specialize (IHd _ _ APPD). eapply Mem.unchanged_on_implies. eapply IHd. intros. simpl. inv H; eauto. destruct H1 as (b1 & ofsd & JB1 & UNCHG). inv UNCHG. right. eauto. *)
-  (*   - specialize (IHd _ _ APPD). eapply Mem.unchanged_on_implies. eapply IHd. intros. simpl. inv H; eauto. destruct H1 as (b1 & ofsd & JB1 & UNCHG). inv UNCHG. right. eauto. *)
-  (*   - specialize (IHd _ _ APPD). eapply Mem.unchanged_on_implies. eapply IHd. intros. simpl. inv H; eauto. destruct H1 as (b1 & ofsd & JB1 & UNCHG). inv UNCHG. right. eauto. *)
-  (*   - specialize (IHd _ _ APPD). eapply Mem.unchanged_on_implies. eapply IHd. intros. simpl. inv H; eauto. destruct H1 as (b1 & ofsd & JB1 & UNCHG). inv UNCHG. right. eauto. *)
-  (* Qed. *)
-
-
   Lemma get_from_setN_same_upto_ofs
         ofs0 ofs l ofsd
         (OFS: ofs0 <= ofs < ofs0 + Z.of_nat (Datatypes.length l))

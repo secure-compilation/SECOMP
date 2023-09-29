@@ -6,7 +6,7 @@ Require Import Split.
 
 Require Import Tactics.
 Require Import riscV.Asm.
-Require Import BtBasics BtInfoAsm MemoryDelta MemoryWeak.
+Require Import BtBasics BtInfoAsm BtInfoAsmBound MemoryDelta MemoryWeak.
 Require Import Ctypes Clight.
 Require Import Backtranslation BacktranslationAux BacktranslationProof.
 Require Import RSC.
@@ -237,20 +237,6 @@ Section PROOFGENV.
   Proof.
     eapply (in_map (fun '(id0, gd0) => (id0, gen_progdef a_ge (get_id_tr tr id0) gd0 cnts ! id0 params ! id0))) in IN. clarify.
   Qed.
-
-  (* Lemma gen_counter_defs_props *)
-  (*       (gds: list (ident * globdef Asm.fundef unit)) *)
-  (*       cnts x0 *)
-  (*       (CNTS: cnts = gen_counter_defs x0 gds) *)
-  (*   : *)
-  (*   Forall (fun '(id, (cnt, gd_c)) => *)
-  (*             (cnt = (id + x0)%positive) /\ (exists gd_a, (In (id, gd_a) gds) /\ (gd_c = gen_counter (comp_of gd_a)))) *)
-  (*          (PTree.elements cnts). *)
-  (* Proof. *)
-  (*   subst. rewrite Forall_forall. i. destruct x as (id & (cnt & gd_c)). unfold gen_counter_defs in H. *)
-  (*   apply PTree.elements_complete in H. apply PTree_Properties.in_of_list in H. *)
-  (*   apply list_in_map_inv in H. des. des_ifs. splits; auto. esplits; eauto. *)
-  (* Qed. *)
 
   Lemma gen_counter_defs_inv
         (gds: list (ident * globdef Asm.fundef unit))
@@ -542,66 +528,6 @@ Section PROOFGENV.
     rewrite PTree.gmap. setoid_rewrite IN. ss. esplits; eauto.
     apply PTree_Properties.in_of_list in IN. apply list_in_map_inv in IN. des. des_ifs. lia.
   Qed.
-
-  (* Lemma Forall_numbering0 *)
-  (*       A (l: list A) *)
-  (*   : *)
-  (*   forall x1 x2, (x1 <= x2)%positive -> Forall (fun '(id, _) => (x1 <= id)%positive) (numbering x2 l). *)
-  (* Proof. induction l; i; ss. econs. auto. eapply IHl. lia. Qed. *)
-
-  (* Lemma Forall_numbering *)
-  (*       A (l: list A) *)
-  (*   : *)
-  (*   forall x, Forall (fun '(id, _) => (x <= id)%positive) (numbering x l). *)
-  (* Proof. i. eapply Forall_numbering0. lia. Qed. *)
-
-  (* Lemma map_snd_numbering *)
-  (*       A (l: list A) *)
-  (*   : *)
-  (*   forall x, l = map snd (numbering x l). *)
-  (* Proof. induction l; i; ss. f_equal. eauto. Qed. *)
-
-  (* Lemma in_gds_exists_params *)
-  (*       gds id gd_i *)
-  (*       (FD: (PTree_Properties.of_list gds) ! id = Some gd_i) *)
-  (*       (NR: list_norepet (map fst gds)) *)
-  (*       x *)
-  (*   : *)
-  (*   exists ps, (gen_params x gds) ! id = Some ps /\ *)
-  (*           Forall (fun '(id, _) => (x <= id)%positive) ps /\ *)
-  (*           (match gd_i with *)
-  (*            | Gfun fd => map typ_to_type (sig_args (funsig fd)) = map snd ps *)
-  (*            | Gvar _ => ps = [] *)
-  (*            end). *)
-  (* Proof. *)
-  (*   unfold gen_params. *)
-  (*   assert (IN: In id (map fst (map (fun '(id0, gd) => *)
-  (*          match gen_params_one x gd with *)
-  (*          | Some ps0 => (id0, ps0) *)
-  (*          | None => (id0, []) *)
-  (*          end) gds))). *)
-  (*   { apply PTree_Properties.in_of_list in FD. rewrite map_map. *)
-  (*     apply (in_map (fun x0 : PTree.elt * globdef Asm.fundef unit => *)
-  (*                      fst (let '(id0, gd) := x0 in *)
-  (*           match gen_params_one x gd with *)
-  (*           | Some ps0 => (id0, ps0) *)
-  (*           | None => (id0, []) *)
-  (*           end))) in FD. des_ifs. *)
-  (*   } *)
-  (*   apply PTree_Properties.of_list_dom in IN. des. rename v into ps. *)
-  (*   setoid_rewrite IN. exists ps. split; auto. *)
-  (*   apply PTree_Properties.in_of_list in IN. apply list_in_map_inv in IN. des. des_ifs; ss. *)
-  (*   - unfold gen_params_one in Heq. des_ifs. split. *)
-  (*     apply Forall_numbering; eauto. *)
-  (*     hexploit PTree_Properties.of_list_norepet. eauto. apply IN0. intros GET. *)
-  (*     rewrite FD in GET; clarify. eapply map_snd_numbering. *)
-  (*   - unfold gen_params_one in Heq. des_ifs. *)
-  (*     hexploit PTree_Properties.of_list_norepet. eauto. apply IN0. intros GET. *)
-  (*     rewrite FD in GET; clarify. *)
-  (*   - unfold gen_params_one in Heq. des_ifs. *)
-  (*     hexploit PTree_Properties.of_list_norepet. eauto. apply IN0. intros GET. *)
-  (*     rewrite FD in GET; clarify. *)
-  (* Qed. *)
 
   Lemma in_asm_in_gen
         p_a btr
@@ -1010,7 +936,6 @@ Section PROOFINIT.
     }
     subst. do 2 eexists. split.
     - econs; eauto.
-      (* exists (Callstate (Internal (gen_function (Genv.globalenv p) i l (get_id_tr btr (AST.prog_main p)) f)) nil Kstop m_c). econs; eauto. *)
       { rewrite gen_program_prog_main_eq. eapply gen_program_symbs_find in H; ss; eauto. apply H. }
       { ss. unfold gen_function, type_of_function. ss. rewrite WFMAINSIG in *. ss. }
     - ss.
@@ -1283,13 +1208,6 @@ Section PROOFINIT.
     rewrite (max_id0_base _ _ _ _ H0); auto. apply IHl1; auto. lia.
   Qed.
 
-
-
-  Definition asm_program_does_prefix (p: Asm.program) (t: trace) :=
-    semantics_has_initial_trace_prefix (Asm.semantics p) t.
-  Definition clight_program_does_prefix (p: Clight.program) (t: trace) :=
-    semantics_has_initial_trace_prefix (Clight.semantics1 p) t.
-
   Lemma star_state_behaves_cut
         p s0 tr
         (CUT: exists s1, star step1 (globalenv p) s0 E0 s1 /\
@@ -1301,6 +1219,27 @@ Section PROOFINIT.
     des. exists s2, beh. split; auto. eapply star_trans. 2: eauto. eauto. ss.
   Qed.
 
+End PROOFINIT.
+
+
+
+Definition asm_program_does_prefix (p: Asm.program) (t: trace) :=
+  semantics_has_initial_trace_prefix (Asm.semantics p) t.
+Definition clight_program_does_prefix (p: Clight.program) (t: trace) :=
+  semantics_has_initial_trace_prefix (Clight.semantics1 p) t.
+
+Definition asm_program_is_wf (p: Asm.program) :=
+  (wf_program p) /\
+    (wf_program_public p) /\
+    (exists b, Genv.find_symbol (Genv.globalenv p) (AST.prog_main p) = Some b /\
+            (exists f, Genv.find_funct_ptr (Genv.globalenv p) b = Some (AST.Internal f) /\
+                    (fn_sig f = signature_main))) /\
+    (exists m0, Genv.init_mem p = Some m0).
+
+
+
+Section PROOF.
+
   Lemma step_fix_fix
         p s tr s'
     :
@@ -1310,20 +1249,26 @@ Section PROOFINIT.
     (* TODO: FIXME *)
   Admitted.
 
-  Theorem asm_to_clight
-          (p: Asm.program) (ast: Asm.state)
-          (WFP: wf_program p)
-          (WFPP: wf_program_public p)
-          (WFMAIN: wf_main p)
-          (WFMAINSIG: wf_main_sig p)
-          (WFINIT: exists (s : Asm.state), Asm.initial_state p s)
+  Hypothesis EFO: external_functions_observable.
+  Hypothesis IAO: inline_assembly_observable.
+
+  Lemma asm_to_clight
+        (p: Asm.program)
+        (WFP: wf_program p)
+        (WFPP: wf_program_public p)
+        (WFMAIN: wf_main p)
+        (WFMAINSIG: wf_main_sig p)
+        (WFINIT: exists (s : Asm.state), Asm.initial_state p s)
     :
-    forall tr, asm_program_does_prefix p tr ->
-          exists btr,
-            clight_program_does_prefix (gen_program btr p) tr /\
-              unbundle_trace btr = tr.
+    forall tr,
+      (Z.of_nat (length tr) < Int64.modulus) ->
+      asm_program_does_prefix p tr ->
+      exists btr,
+        clight_program_does_prefix (gen_program btr p) tr /\
+          unbundle_trace btr = tr.
   Proof.
-    i. eapply semantics_has_initial_trace_prefix_implies_cut in H.
+    i. rename H into BOUND, H0 into H.
+    eapply semantics_has_initial_trace_prefix_implies_cut in H.
     2:{ apply sd_traces. apply semantics_determinate. }
     inv H; cycle 1.
     { exfalso. ss. des. eapply H0. eapply WFINIT. }
@@ -1365,7 +1310,7 @@ Section PROOFINIT.
     hexploit ir_to_clight.
     { eapply wf_program_wf_ge; eauto. }
     4: eapply ISTAR.
-    { admit. (* use ISTAR, UTR *) }
+    { hexploit bundle_trace_bounded; auto. apply ISTAR. clear - BOUND. i. lia. }
     { instantiate (1:=State f_cur (fn_body f_cur) Kstop empty_env (PTree.empty val) m_c).
       instantiate (1:=id_cur).
       instantiate (1:=(get_cnt_ids (gen_counter_defs (next_id (AST.prog_defs p)) (AST.prog_defs p)))).
@@ -1481,4 +1426,29 @@ Section PROOFINIT.
     esplits; eauto.
   Qed.
 
-End PROOFINIT.
+End PROOF.
+
+Section BT.
+
+  Hypothesis EFO: external_functions_observable.
+  Hypothesis IAO: inline_assembly_observable.
+
+  Theorem backtranslation_proof
+          (p: Asm.program)
+          (WF: asm_program_is_wf p)
+    :
+    forall tr,
+      (Z.of_nat (length tr) < Int64.modulus) ->
+      asm_program_does_prefix p tr ->
+      exists p_c,
+        clight_program_does_prefix p_c tr.
+  Proof.
+    unfold asm_program_is_wf in WF. des. i.
+    hexploit asm_to_clight; eauto.
+    { rr. esplits; eauto. }
+    { rr. i. rewrite WF1 in H1. clarify. }
+    { eexists. econs; eauto. }
+    i. des. eauto.
+  Qed.
+
+End BT.
