@@ -651,7 +651,7 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
       match_states (Mach.State s fb sp c ms m)
                    (Asm.State s' rs m')
   | match_states_call:
-      forall s s' fb ms m m' rs
+      forall s s' fb ms m m' rs sig
         (STACKS: match_stack ge s)
         (STACKS': match_stacks s s')
         (STACKS_COMP: Genv.find_comp_ignore_offset ge (rs PC) = callee_comp comp_of_main s')
@@ -659,7 +659,7 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
         (AG: agree ms (parent_sp s) rs)
         (ATPC: rs PC = Vptr fb Ptrofs.zero)
         (ATLR: rs RA = parent_ra s),
-      match_states (Mach.Callstate s fb ms m)
+      match_states (Mach.Callstate s fb sig ms m)
                    (Asm.State s' rs m')
   | match_states_return:
     forall s s' ms m m' rs
@@ -839,7 +839,7 @@ Qed.
 Definition measure (s: Mach.state) : nat :=
   match s with
   | Mach.State _ _ _ _ _ _ => 0%nat
-  | Mach.Callstate _ _ _ _ => 2%nat
+  | Mach.Callstate _ _ _ _ _ => 2%nat
   | Mach.Returnstate _ _ _ => 1%nat
   end.
 
@@ -1505,13 +1505,41 @@ Local Transparent destroyed_by_op.
     unfold Genv.find_comp; simpl; rewrite FIND;
       destruct Ptrofs.eq_dec; try congruence. }
   econstructor. traceEq. traceEq.
+  (* destruct (Genv.type_of_call ge (Mach.call_comp ge s) (comp_of f)) eqn:TY_CALL. *)
+  (* { *)
+  (* replace (Mach.fn_sig f) with (fn_sig tf). *)
+  (* econstructor; eauto. *)
+  (* rewrite X; simpl; Simpl; eauto. *)
+
+  (* apply agree_set_other; auto with asmgen. *)
+  (* { monadInv H5. destruct (zlt Ptrofs.max_unsigned (list_length_z (fn_code x0))); try discriminate. *)
+  (*   inv EQ1. monadInv EQ0. reflexivity. } *)
+  (* } *)
+  { (* new case *)
+
   replace (Mach.fn_sig f) with (fn_sig tf).
   econstructor; eauto.
   rewrite X; simpl; Simpl; eauto.
 
   apply agree_set_other; auto with asmgen.
+  { (* An easy lemma to add: more case analysis, but we undefine more so the
+       constructor takes care of the case that is not covered by the assumption
+       in the context *)
+    inv V. constructor; auto.
+    intros r. specialize (agree_mregs r). unfold undef_non_return_regs_ext.
+    destruct (LTL.in_mreg r (regs_of_rpair (loc_result (parent_signature s)))); auto. }
   { monadInv H5. destruct (zlt Ptrofs.max_unsigned (list_length_z (fn_code x0))); try discriminate.
     inv EQ1. monadInv EQ0. reflexivity. }
+  }
+  (* { (* same as Genv.InternalCall *) *)
+  (* replace (Mach.fn_sig f) with (fn_sig tf). *)
+  (* econstructor; eauto. *)
+  (* rewrite X; simpl; Simpl; eauto. *)
+
+  (* apply agree_set_other; auto with asmgen. *)
+  (* { monadInv H5. destruct (zlt Ptrofs.max_unsigned (list_length_z (fn_code x0))); try discriminate. *)
+  (*   inv EQ1. monadInv EQ0. reflexivity. } *)
+  (* } *)
 
 - (* internal function *)
   (* assert (cp = comp_of f). *)
@@ -1560,6 +1588,23 @@ Local Transparent destroyed_by_op.
   left; eexists; split.
   eapply exec_straight_steps_1; eauto. lia. simpl. unfold Genv.find_comp; simpl.
   now rewrite A. constructor.
+(*   destruct (Genv.type_of_call ge (Mach.call_comp ge s) (Genv.find_comp ge (Vptr fb Ptrofs.zero))) eqn:TY_CALL. *)
+(*   { *)
+(*   econstructor; eauto. *)
+(*   { rewrite X, <- STACKS_COMP, ATPC. reflexivity. } *)
+(*   (* rewrite X. rewrite ATPC in STACKS'. eapply match_stacks_same_compartment; eauto. *) *)
+(*   rewrite X; econstructor; eauto. *)
+(*   apply agree_exten with rs2; eauto with asmgen. *)
+(*   unfold rs2. *)
+(*   apply agree_nextinstr. apply agree_set_other; auto with asmgen. *)
+(*   apply agree_change_sp with (parent_sp s). *)
+(*   apply agree_undef_regs with rs0. auto. *)
+(* Local Transparent destroyed_at_function_entry. *)
+(*   simpl; intros; Simpl. *)
+(*   unfold sp; congruence. *)
+(*   intros. rewrite V by auto with asmgen. reflexivity. *)
+(*   } *)
+  { (* new case*)
   econstructor; eauto.
   { rewrite X, <- STACKS_COMP, ATPC. reflexivity. }
   (* rewrite X. rewrite ATPC in STACKS'. eapply match_stacks_same_compartment; eauto. *)
@@ -1568,11 +1613,32 @@ Local Transparent destroyed_by_op.
   unfold rs2.
   apply agree_nextinstr. apply agree_set_other; auto with asmgen.
   apply agree_change_sp with (parent_sp s).
-  apply agree_undef_regs with rs0. auto.
+  apply agree_undef_regs with rs0.
+  { unfold undef_caller_save_regs_ext.
+    inv AG. constructor; auto.
+    intros r. specialize (agree_mregs r).
+    destruct (LTL.in_mreg r (LTL.parameters_mregs sig));
+    auto. }
 Local Transparent destroyed_at_function_entry.
   simpl; intros; Simpl.
   unfold sp; congruence.
   intros. rewrite V by auto with asmgen. reflexivity.
+  }
+(*   { (* same as Genv.InternalCall *) *)
+(*   econstructor; eauto. *)
+(*   { rewrite X, <- STACKS_COMP, ATPC. reflexivity. } *)
+(*   (* rewrite X. rewrite ATPC in STACKS'. eapply match_stacks_same_compartment; eauto. *) *)
+(*   rewrite X; econstructor; eauto. *)
+(*   apply agree_exten with rs2; eauto with asmgen. *)
+(*   unfold rs2. *)
+(*   apply agree_nextinstr. apply agree_set_other; auto with asmgen. *)
+(*   apply agree_change_sp with (parent_sp s). *)
+(*   apply agree_undef_regs with rs0. auto. *)
+(* Local Transparent destroyed_at_function_entry. *)
+(*   simpl; intros; Simpl. *)
+(*   unfold sp; congruence. *)
+(*   intros. rewrite V by auto with asmgen. reflexivity. *)
+(*   } *)
 
 - (* external function *)
   exploit functions_translated; eauto.

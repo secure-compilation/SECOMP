@@ -201,7 +201,7 @@ Lemma record_reg_only: forall u r, only_callee_saves u -> only_callee_saves (rec
 Proof.
   unfold only_callee_saves, record_reg; intros.
   destruct (is_callee_save r) eqn:CS; auto.
-  destruct (mreg_eq r r0). congruence. apply H; eapply RegSet.add_3; eauto.
+  (* destruct (mreg_eq r r0). congruence. apply H; eapply RegSet.add_3; eauto. *)
 Qed.
 
 Lemma record_regs_only: forall rl u, only_callee_saves u -> only_callee_saves (record_regs u rl).
