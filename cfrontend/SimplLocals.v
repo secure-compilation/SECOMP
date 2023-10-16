@@ -299,4 +299,5 @@ Definition transf_program (p: program) : res program :=
         prog_pol := AST.prog_pol p1;
         prog_types := prog_types p;
         prog_comp_env := prog_comp_env p;
-        prog_comp_env_eq := prog_comp_env_eq p |}.
+        prog_comp_env_eq := prog_comp_env_eq p;
+        prog_pol_pub := AST.prog_pol_pub p1; |}.

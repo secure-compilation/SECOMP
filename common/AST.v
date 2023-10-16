@@ -394,6 +394,36 @@ Module Policy.
   Definition in_pub (pol: t) (pubs: list ident) : Prop :=
     in_pub_exports pol pubs /\ in_pub_imports pol pubs.
 
+  (* FIXME: If we run this code every time that we have trouble checking that a
+     policy is well-formed, we might be running spurious filters, which could
+     have performance impacts in compilation.  *)
+  Definition enforce_in_pub (pol: t) (pubs: list ident) :=
+    {| policy_export :=
+        PTree.map1
+          (filter (fun id : ident => in_dec ident_eq id pubs))
+          pol.(policy_export);
+       policy_import :=
+        PTree.map1
+          (filter (fun p : compartment * ident => in_dec ident_eq (snd p) pubs))
+          pol.(policy_import);
+    |}.
+
+  Lemma enforce_in_pub_correct :
+    forall (pol: t) (pubs: list ident),
+      in_pub (enforce_in_pub pol pubs) pubs.
+  Proof.
+    split.
+    - intros cp imps. simpl. rewrite PTree.gmap1.
+      destruct PTree.get as [exps|] eqn:pol_cp; simpl; try congruence.
+      intros e. injection e as e. rewrite <- e. clear e.
+      intros id. rewrite filter_In. intros [_ Hin]. now destruct in_dec.
+    - intros cp exps. simpl. rewrite PTree.gmap1.
+      destruct PTree.get as [imps|] eqn:pol_cp; simpl; try congruence.
+      intros e. injection e as e. rewrite <- e. clear e.
+      intros cp' id. rewrite filter_In. simpl. intros [_ Hin].
+      now destruct in_dec.
+  Qed.
+
   (* The empty policy is the policy where there is no imported procedure and no exported procedure for all compartments *)
   Definition empty_pol: t := mkpolicy (PTree.empty (list ident)) (PTree.empty (list (compartment * ident))).
 

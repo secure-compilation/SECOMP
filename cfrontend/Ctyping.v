@@ -940,7 +940,8 @@ Definition typecheck_program (p: program) : res program :=
         prog_pol := p.(prog_pol);
         prog_types := p.(prog_types);
         prog_comp_env := ce;
-        prog_comp_env_eq := p.(prog_comp_env_eq) |}.
+        prog_comp_env_eq := p.(prog_comp_env_eq);
+        prog_pol_pub := p.(prog_pol_pub) |}.
 
 (** Soundness of the smart constructors.  *)
 
