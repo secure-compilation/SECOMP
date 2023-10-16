@@ -383,9 +383,19 @@ Module Policy.
     policy_import: PTree.t (list (compartment * ident))
   }.
 
+  Definition in_pub_exports (pol: t) (pubs: list ident) : Prop :=
+    forall cp exps, (policy_export pol) ! cp = Some exps ->
+    forall id, In id exps -> In id pubs.
+
+  Definition in_pub_imports (pol: t) (pubs: list ident) : Prop :=
+    forall cp imps, (policy_import pol) ! cp = Some imps ->
+    forall cp' id, In (cp', id) imps -> In id pubs.
+
+  Definition in_pub (pol: t) (pubs: list ident) : Prop :=
+    in_pub_exports pol pubs /\ in_pub_imports pol pubs.
+
   (* The empty policy is the policy where there is no imported procedure and no exported procedure for all compartments *)
   Definition empty_pol: t := mkpolicy (PTree.empty (list ident)) (PTree.empty (list (compartment * ident))).
-
 
   (* Decidable equality for the elements contained in the policies *)
   Definition list_id_eq: forall (x y: list ident),
@@ -518,8 +528,11 @@ Record program (F V: Type) : Type := mkprogram {
   prog_defs: list (ident * globdef F V);
   prog_public: list ident;
   prog_main: ident;
-  prog_pol: Policy.t
+  prog_pol: Policy.t;
+  prog_pol_pub: Policy.in_pub prog_pol prog_public;
 }.
+
+Arguments mkprogram {F V} _ _ _ _ _.
 
 Definition prog_defs_names (F V: Type) (p: program F V) : list ident :=
   List.map fst p.(prog_defs).
@@ -592,7 +605,8 @@ Definition transform_program (p: program A V) : program B V :=
     (List.map transform_program_globdef p.(prog_defs))
     p.(prog_public)
     p.(prog_main)
-    p.(prog_pol).
+    p.(prog_pol)
+    p.(prog_pol_pub).
 
 End TRANSF_PROGRAM.
 
@@ -637,7 +651,7 @@ Fixpoint transf_globdefs (l: list (ident * globdef A V)) : res (list (ident * gl
 
 Definition transform_partial_program2 (p: program A V) : res (program B W) :=
   do gl' <- transf_globdefs p.(prog_defs);
-  OK (mkprogram gl' p.(prog_public) p.(prog_main) p.(prog_pol)).
+  OK (mkprogram gl' p.(prog_public) p.(prog_main) p.(prog_pol) p.(prog_pol_pub)).
 
 End TRANSF_PROGRAM_GEN.
 
