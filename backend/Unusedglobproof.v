@@ -1596,8 +1596,13 @@ Theorem link_match_program:
 Proof.
   intros. destruct H0 as (used1 & A1 & B1). destruct H1 as (used2 & A2 & B2).
   destruct (link_prog_inv _ _ _ H) as (U & V & W' & W).
+  assert (yes : Policy.eqb (prog_pol tp1) (prog_pol tp2) = true).
+  {
+    rewrite (match_prog_pol _ _ _ B1).
+    rewrite (match_prog_pol _ _ _ B2).
+    exact W'. }
   econstructor; split.
-- apply link_prog_succeeds.
+- apply link_prog_succeeds with (yes := yes).
 + rewrite (match_prog_main _ _ _ B1), (match_prog_main _ _ _ B2). auto.
 + intros.
   rewrite (match_prog_def _ _ _ B1) in H0.
@@ -1608,7 +1613,7 @@ Proof.
   split. rewrite (match_prog_public _ _ _ B1); auto.
   split. rewrite (match_prog_public _ _ _ B2); auto.
   congruence.
-+ rewrite (match_prog_pol _ _ _ B1), (match_prog_pol _ _ _ B2). auto.
+(* + rewrite (match_prog_pol _ _ _ B1), (match_prog_pol _ _ _ B2). auto. *)
 - exists (IS.union used1 used2); split.
 + eapply link_valid_used_set; eauto.
 + rewrite W. constructor; simpl; intros.
