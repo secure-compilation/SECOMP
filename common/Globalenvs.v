@@ -147,6 +147,9 @@ Context {CF: has_comp F}.
 
 (** The type of global environments. *)
 
+(* NOTE: The policy contained in a global environment should probably talk
+  about memory blocks instead of identifiers, like it does now. *)
+
 Record t: Type := mkgenv {
   genv_public: list ident;              (**r which symbol names are public *)
   genv_symb: PTree.t block;             (**r mapping symbol -> block *)
