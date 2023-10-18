@@ -215,6 +215,12 @@ Proof.
   now destruct zeq.
 Qed.
 
+Instance external_transf_fundef cenv: is_external_transl (transf_fundef cenv).
+Proof.
+  unfold transf_fundef, transf_function, RTL.transf_function.
+  intros ? [f | ef]; simpl; reflexivity.
+Qed.
+
 Lemma transf_program_match:
   forall p, match_prog p (transf_program p).
 Proof.

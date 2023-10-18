@@ -885,3 +885,4 @@ Proof.
   inv H; simpl; try lia. eapply external_call_trace_length; eauto.
   inv EV; simpl; try lia.
 Qed.
+

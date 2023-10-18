@@ -30,6 +30,14 @@ Proof.
   now destruct ana_function; inv H.
 Qed.
 
+Instance external_transf_function: is_external_transl_partial transf_fundef.
+Proof.
+  unfold transf_fundef, transf_function.
+  intros [f | ef] ? ? H; simpl in *.
+  now destruct ana_function; inv H.
+  now inv H.
+Qed.
+
 Lemma transf_program_match:
   forall p tp, transf_program p = OK tp -> match_prog p tp.
 Proof.

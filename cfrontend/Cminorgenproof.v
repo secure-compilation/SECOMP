@@ -42,6 +42,16 @@ Proof.
   now monadInv H.
 Qed.
 
+Instance external_transl_fundef: is_external_transl_partial transl_fundef.
+Proof.
+  unfold transl_fundef, transl_function, transl_funbody.
+  intros [f | ef] tf ? H; simpl in H.
+  destruct build_compilenv.
+  destruct zle; try easy.
+  now monadInv H.
+  now monadInv H.
+Qed.
+
 Lemma transf_program_match:
   forall p tp, transl_program p = OK tp -> match_prog p tp.
 Proof.

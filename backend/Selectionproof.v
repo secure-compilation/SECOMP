@@ -46,6 +46,11 @@ Proof.
   exact (comp_transl_partial _ EQ).
 Qed.
 
+Instance is_external_match_fundef: is_external_match match_fundef.
+Proof.
+  intros cunit f tf cp (hf & hf_c & G & _ & H).
+  destruct f as [f|ef]; monadInv H; simpl; reflexivity.
+Qed.
 (** Processing of helper functions *)
 
 Lemma record_globdefs_sound:

@@ -25,6 +25,9 @@ Definition match_prog (prog tprog: program) :=
 Instance comp_transf_function rm: has_comp_transl (transf_function rm).
 Proof. now intro. Qed.
 
+Instance external_transf_function rm: is_external_transl (transf_fundef rm).
+Proof. now intros ? []. Qed.
+
 Lemma transf_program_match:
   forall prog, match_prog prog (transf_program prog).
 Proof.

@@ -836,6 +836,66 @@ Proof.
 Defined.
 Global Opaque external_function_eq.
 
+Class is_external (F: Type) := {
+    is_ok: compartment -> F -> Prop;
+    is_ok_b: compartment -> F -> bool;
+    is_ok_reflect: forall cp fd, is_ok cp fd <-> is_ok_b cp fd = true
+  }.
+
+Class is_external_match {C T S: Type} {ET: is_external T} {ES: is_external S}
+                     (R : C -> T -> S -> Prop) :=
+  ok_match:
+    forall c x y cp, R c x y -> is_ok cp x <-> is_ok cp y.
+
+Class is_external_transl {T S: Type}
+                      {CT: is_external T} {CS: is_external S}
+                      (f : T -> S) :=
+  ok_transl:
+    forall cp x, is_ok cp (f x) <-> is_ok cp x.
+
+Instance is_external_transl_match:
+  forall {C T S: Type}
+         {CT: is_external T} {CS: is_external S}
+         (f: T -> S) {Cf: is_external_transl f},
+  is_external_match (fun (c : C) x y => y = f x).
+Proof. now intros C T S ???? c x y cp ->; rewrite ok_transl. Qed.
+
+Class is_external_transl_partial {T S: Type}
+  {ET: is_external T} {ES: is_external S}
+  (f : T -> res S) :=
+  ok_transl_partial:
+    forall x y cp, f x = OK y -> is_ok cp x <-> is_ok cp y.
+
+Instance is_external_transl_partial_match:
+  forall {C T S: Type}
+    {ET: is_external T} {ES: is_external S}
+    (f : T -> res S)
+    {Cf: is_external_transl_partial f},
+  is_external_match (fun (c : C) x y => f x = OK y).
+Proof.
+  intros C T S ???? c. exact ok_transl_partial.
+Qed.
+
+Instance is_external_transl_match_contextual:
+  forall {C D T S: Type}
+         {CT: is_external T} {CS: is_external S}
+         (f: D -> T -> S) {Cf: forall d, is_external_transl (f d)}
+         (g: C -> D),
+  is_external_match (fun (c : C) x y => y = f (g c) x).
+Proof.
+now intros C D T S CT CS f Cf g ???? ->; rewrite ok_transl.
+Qed.
+
+Instance is_external_transl_partial_match_contextual:
+  forall {C D T S: Type}
+         {CT: is_external T} {CS: is_external S}
+         (f: D -> T -> res S) {Cf: forall d, is_external_transl_partial (f d)}
+         (g: C -> D),
+  is_external_match (fun (c : C) x y => f (g c) x = OK y).
+Proof.
+intros C D T S CT CS f Cf g c. exact ok_transl_partial.
+Qed.
+
 (** Function definitions are the union of internal and external functions. *)
 
 Inductive fundef (F: Type): Type :=

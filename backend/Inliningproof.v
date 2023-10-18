@@ -31,6 +31,17 @@ Proof.
   now inv H.
 Qed.
 
+Instance external_transl_fundef fenv: is_external_transl_partial (transf_fundef fenv).
+Proof.
+  unfold transf_fundef, transf_function.
+  intros [f | ef] tf ? H; try now inv H.
+  unfold transf_partial_fundef in H.
+  destruct (expand_function _ _ _).
+  destruct (zlt _ _); try easy.
+  simpl in *.
+  now inv H.
+Qed.
+
 Lemma transf_program_match:
   forall prog tprog, transf_program prog = OK tprog -> match_prog prog tprog.
 Proof.

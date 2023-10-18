@@ -44,6 +44,11 @@ Proof.
   exact (comp_transl_partial _ H).
 Qed.
 
+Instance external_match_fundef: is_external_match match_fundef.
+Proof.
+  intros cu ? ? ? [f tf H|]; reflexivity.
+Qed.
+
 Lemma transf_program_match:
   forall p tp, transl_program p = OK tp -> match_prog p tp.
 Proof.

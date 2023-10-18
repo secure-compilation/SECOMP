@@ -866,7 +866,7 @@ Proof.
         simpl. rewrite A. rewrite H0. subst; now destruct Ptrofs.eq_dec.
       + right.
         unfold Genv.allowed_cross_call in *.
-        destruct H2 as [i [cp' [H21 [H22 [H23 H24]]]]].
+        destruct H2 as [i [cp' [H21 [H22 [H23 [H24 H25]]]]]].
         exists i. exists cp'.
         repeat split.
         * apply Genv.find_invert_symbol.
@@ -875,16 +875,20 @@ Proof.
           specialize (E j H). unfold symbols_inject in E.
           destruct E as [E1 [E2 [E3 E4]]].
           specialize (E2 i _ _ _ H6). simpl in E2. specialize (E2 H21). destruct E2. auto.
-        * rewrite <- H22. unfold Genv.find_comp.
+        * intros. unfold Genv.find_funct in *.
+          destruct (Ptrofs.eq_dec (Ptrofs.add Ptrofs.zero (Ptrofs.repr delta)) Ptrofs.zero); try congruence.
+          assert (fd0 = fd) by congruence; subst fd0.
+          apply H22. eauto.
+        * rewrite <- H23. unfold Genv.find_comp.
           simpl. rewrite A. rewrite H0. subst; now destruct Ptrofs.eq_dec.
         * apply match_prog_pol in TRANSF.
           unfold tge, Genv.globalenv. rewrite TRANSF.
           rewrite Genv.genv_pol_add_globals. simpl.
-          unfold ge, Genv.globalenv in H23. now rewrite Genv.genv_pol_add_globals in H23.
+          unfold ge, Genv.globalenv in H24. now rewrite Genv.genv_pol_add_globals in H24.
         * apply match_prog_pol in TRANSF.
           unfold tge, Genv.globalenv. rewrite TRANSF.
           rewrite Genv.genv_pol_add_globals. simpl.
-          unfold ge, Genv.globalenv in H24. now rewrite Genv.genv_pol_add_globals in H24. }
+          unfold ge, Genv.globalenv in H25. now rewrite Genv.genv_pol_add_globals in H25. }
     { unfold Genv.type_of_call. unfold Genv.find_comp, Genv.find_funct.
       rewrite R, H0, A, B. now destruct Ptrofs.eq_dec. }
     { unfold Genv.find_comp, Genv.find_funct. rewrite R, H0, A, B. reflexivity. }
@@ -913,12 +917,16 @@ Proof.
           specialize (E j H). unfold symbols_inject in E.
           destruct E as [E1 [E2 [E3 E4]]].
           specialize (E2 i _ _ _ Q). simpl in E2. specialize (E2 H21). destruct E2. auto.
-        * rewrite <- H22. unfold Genv.find_comp.
+        * intros. unfold Genv.find_funct in *.
+          destruct Ptrofs.eq_dec; try congruence.
+          assert (fd0 = fd) by congruence; subst fd0.
+          apply H22. eauto.
+        * rewrite <- H23. unfold Genv.find_comp.
           simpl. rewrite A. rewrite H0. reflexivity.
         * apply match_prog_pol in TRANSF.
           unfold tge, Genv.globalenv. rewrite TRANSF.
           rewrite Genv.genv_pol_add_globals. simpl.
-          unfold ge, Genv.globalenv in H23. now rewrite Genv.genv_pol_add_globals in H23.
+          unfold ge, Genv.globalenv in H24. now rewrite Genv.genv_pol_add_globals in H24.
         * apply match_prog_pol in TRANSF.
           unfold tge, Genv.globalenv. rewrite TRANSF.
           rewrite Genv.genv_pol_add_globals. simpl.

@@ -700,6 +700,16 @@ Record extcall_properties (sem: extcall_sem) (sg: signature) : Prop :=
     sem ge vargs m1 t vres m2 ->
     Mem.valid_block m1 b -> Mem.perm m2 b ofs Max p -> Mem.perm m1 b ofs Max p;
 
+(* New property *)
+(** External calls cannot free public blocks without the Max Freeable permission *)
+  ec_public_not_freeable:
+    forall ge vargs m1 t vres m2 b ofs id,
+    sem ge vargs m1 t vres m2 ->
+    Mem.valid_block m1 b ->
+    Senv.invert_symbol ge b = Some id -> Senv.public_symbol ge id = true ->
+    Mem.perm m1 b ofs Max Nonempty -> (~ Mem.perm m1 b ofs Max Freeable) ->
+    Mem.perm m2 b ofs Max Nonempty;
+
 (** External call cannot modify memory unless they have [Max, Writable]
    permissions. *)
   ec_readonly:
@@ -853,6 +863,8 @@ Proof.
 (* accessiblity *)
 - inv H; auto.
 (* max perms *)
+- inv H; auto.
+(* not freeable *)
 - inv H; auto.
 (* readonly *)
 - inv H; auto.
@@ -1025,6 +1037,8 @@ Proof.
 - inv H. inv H1. auto. eapply Mem.store_can_access_block_inj in H2. eapply H2. eauto.
 (* perms *)
 - inv H. inv H2. auto. eauto with mem.
+(* not freeable *)
+- inv H. inv H5; auto. eauto with mem.
 (* readonly *)
 - inv H. eapply unchanged_on_readonly; eauto. eapply volatile_store_readonly; eauto.
 (* mem extends*)
@@ -1092,6 +1106,8 @@ Proof.
 - inv H. exploit Mem.perm_alloc_inv. eauto. eapply Mem.perm_store_2; eauto.
   rewrite dec_eq_false. auto.
   apply Mem.valid_not_valid_diff with m1; eauto with mem.
+(* not freeable *)
+- inv H. eapply Mem.perm_store_1; eauto. eapply Mem.perm_alloc_1; eauto.
 (* readonly *)
 - inv H. eapply unchanged_on_readonly; eauto. 
 (* mem extends *)
@@ -1171,6 +1187,10 @@ Proof.
 - inv H; eauto. eapply Mem.free_can_access_block_inj_1; eauto.
 (* perms *)
 - inv H; eauto using Mem.perm_free_3.
+(* not freeable *)
+- inv H; auto. eapply Mem.perm_free_1; eauto. eapply Mem.free_range_perm in H7. unfold Mem.range_perm in H7. specialize (H7 ofs).
+  destruct (Z.le_gt_cases (Ptrofs.unsigned lo - size_chunk Mptr) ofs); destruct (Z.lt_ge_cases ofs (Ptrofs.unsigned lo + Ptrofs.unsigned sz)); try lia.
+  left. intros EQ. subst b0. apply H4. eapply Mem.perm_max. eapply H7. lia.
 (* readonly *)
 - eapply unchanged_on_readonly; eauto. inv H.
 + eapply Mem.free_unchanged_on; eauto.
@@ -1286,6 +1306,8 @@ Proof.
   intros. inv H. eapply Mem.storebytes_can_access_block_inj_1; eauto.
 - (* perms *)
   intros. inv H. eapply Mem.perm_storebytes_2; eauto.
+- (* not freeable *)
+  intros. inv H. eapply Mem.perm_storebytes_1; eauto.
 - (* readonly *)
   intros. inv H. eapply unchanged_on_readonly; eauto. 
   eapply Mem.storebytes_unchanged_on; eauto.
@@ -1411,6 +1433,8 @@ Proof.
 - inv H; auto.
 (* perms *)
 - inv H; auto.
+(* not freeable *)
+- inv H; auto.
 (* readonly *)
 - inv H; auto.
 (* mem extends *)
@@ -1458,6 +1482,8 @@ Proof.
 - inv H; auto.
 (* perms *)
 - inv H; auto.
+(* not freeable *)
+- inv H; auto.
 (* readonly *)
 - inv H; auto.
 (* mem extends *)
@@ -1502,6 +1528,8 @@ Proof.
 (* accessibility *)
 - inv H; auto.
 (* perms *)
+- inv H; auto.
+(* not freeable *)
 - inv H; auto.
 (* readonly *)
 - inv H; auto.
@@ -1555,6 +1583,8 @@ Proof.
 (* accessibility *)
 - inv H; auto.
 (* perms *)
+- inv H; auto.
+(* not freeable *)
 - inv H; auto.
 (* readonly *)
 - inv H; auto.
@@ -1666,7 +1696,7 @@ Definition external_call (ef: external_function): extcall_sem :=
   | EF_annot cp kind txt targs   => extcall_annot_sem cp txt targs
   | EF_annot_val cp kind txt targ => extcall_annot_val_sem cp txt targ
   | EF_inline_asm cp txt sg clb => inline_assembly_sem cp txt sg
-  | EF_debug kind cp txt targs => extcall_debug_sem cp
+  | EF_debug cp kind txt targs => extcall_debug_sem cp
   end.
 
 Ltac external_call_caller_independent :=
@@ -1741,6 +1771,7 @@ Definition external_call_symbols_preserved ef := ec_symbols_preserved (external_
 Definition external_call_valid_block ef := ec_valid_block (external_call_spec ef).
 Definition external_call_can_access_block ef := ec_can_access_block (external_call_spec ef).
 Definition external_call_max_perm ef := ec_max_perm (external_call_spec ef).
+Definition external_call_public_not_freeable ef := ec_public_not_freeable (external_call_spec ef).
 Definition external_call_readonly ef := ec_readonly (external_call_spec ef).
 Definition external_call_mem_extends ef := ec_mem_extends (external_call_spec ef).
 Definition external_call_mem_inject_gen ef := ec_mem_inject (external_call_spec ef).
@@ -2120,3 +2151,184 @@ Section INFORM_TRACES_PRESERVED.
   Qed.
 
 End INFORM_TRACES_PRESERVED.
+
+
+Section VISIBLE.
+
+  (* Memory location has only sequence of bytes *)
+  Definition loc_first_order (m: mem) (b: block) (ofs: Z) : Prop :=
+    match (ZMap.get ofs (Mem.mem_contents m) !! b) with
+    | Byte _ => True
+    | _ => False
+    end.
+
+  (* Public symbols are visible outside the compilation unit, 
+     so when interacting via external calls, limit them to first-order (if Readable). *)
+  Definition public_first_order (ge: Senv.t) (m: mem) :=
+    forall id b ofs
+      (PUBLIC: Senv.public_symbol ge id = true)
+      (FIND: Senv.find_symbol ge id = Some b)
+      (READABLE: Mem.perm m b ofs Cur Readable),
+      loc_first_order m b ofs.
+
+  Definition block_public (ge: Senv.t) (b: block): Prop :=
+    exists id, Senv.invert_symbol ge b = Some id /\ Senv.public_symbol ge id = true.
+
+  Variant val_public (ge: Senv.t) : typ -> val -> Prop :=
+    | val_public_int: forall i, val_public ge Tint (Vint i)
+    | val_public_long: forall i, val_public ge Tlong (Vlong i)
+    | val_public_float: forall f, val_public ge Tfloat (Vfloat f)
+    | val_public_single: forall f, val_public ge Tsingle (Vsingle f)
+    | val_public_ptr: forall b ofs, block_public ge b -> val_public ge Tptr (Vptr b ofs).
+
+  Definition vals_public (ge: Senv.t) (ts: list typ) (vs: list val): Prop :=
+    Forall2 (val_public ge) ts vs.
+
+  Definition visible_fo (ge: Senv.t) (m: mem) (tys: list typ) (args: list val): Prop :=
+    public_first_order ge m /\ vals_public ge tys args.
+
+  Definition EF_memcpy_dest_not_pub (ge: Senv.t) (args: list val) :=
+    match args with
+    | (Vptr bdst _) :: tl => ~ (block_public ge bdst)
+    | _ => True
+    end.
+
+  Definition load_whole_chunk (ch: memory_chunk) (v: val) := Val.load_result ch v = v.
+
+  Definition EF_vstore_load_whole_chunk (ch: memory_chunk) (args: list val) :=
+    match args with
+    | _ :: v :: nil => load_whole_chunk ch v
+    | _ => True
+    end.
+
+  Definition external_call_conds
+             (ef: external_function) (ge: Senv.t) (m: mem) (args: list val) : Prop :=
+    match ef with
+    | EF_external cp name sg => visible_fo ge m (sig_args sg) args
+    | EF_builtin cp name sg | EF_runtime cp name sg =>
+                             match lookup_builtin_function name sg with
+                             | None => visible_fo ge m (sig_args sg) args
+                             | _ => True
+                             end
+    | EF_inline_asm cp txt sg clb => visible_fo ge m (sig_args sg) args
+    | EF_memcpy cp sz al => EF_memcpy_dest_not_pub ge args
+    | EF_vstore cp ch => EF_vstore_load_whole_chunk ch args
+    | _ => True
+    end.
+
+  Definition external_call_unknowns
+             (ef: external_function) (ge: Senv.t) (m: mem) (args: list val) : Prop :=
+    match ef with
+    | EF_external cp name sg => visible_fo ge m (sig_args sg) args
+    | EF_builtin cp name sg | EF_runtime cp name sg =>
+                             match lookup_builtin_function name sg with
+                             | None => visible_fo ge m (sig_args sg) args
+                             | _ => False
+                             end
+    | EF_inline_asm cp txt sg clb => visible_fo ge m (sig_args sg) args
+    | _ => False
+    end.
+
+  Definition external_call_known_observables
+             (ef: external_function) (ge: Senv.t) (m: mem) (args: list val) tr rv m' : Prop :=
+    match ef with
+    | EF_external cp name sg => False
+    | EF_builtin cp name sg | EF_runtime cp name sg => False
+    | EF_inline_asm cp txt sg clb => False
+    | EF_vstore cp ch =>
+        (external_call ef ge args m tr rv m') /\ (tr <> E0) /\ (EF_vstore_load_whole_chunk ch args)
+    | _ => (external_call ef ge args m tr rv m') /\ (tr <> E0)
+    end.
+
+  Definition external_call_known_silents
+             (ef: external_function) (ge: Senv.t) (m: mem) (args: list val) tr rv m': Prop :=
+    match ef with
+    | EF_external cp name sg => False
+    | EF_builtin cp name sg | EF_runtime cp name sg =>
+                             match lookup_builtin_function name sg with
+                             | None => False
+                             | _ => True
+                             end
+    | EF_inline_asm cp txt sg clb => False
+    | EF_memcpy cp sz al =>
+        (external_call ef ge args m E0 rv m') /\ (tr = E0) /\ (EF_memcpy_dest_not_pub ge args)
+    | _ => (external_call ef ge args m E0 rv m') /\ (tr = E0)
+    end.
+
+
+  (* Remove? *)
+  (* (* Should be ensured by the user *) *)
+  (* Definition unknown_returns_fo_pub *)
+  (*            (ef: external_function) (ge: Senv.t) (m: mem) (args: list val) : Prop := *)
+  (*   match ef with *)
+  (*   | EF_external cp name sg => *)
+  (*       forall ge args m0 tr rv m1, (external_functions_sem name sg ge args m0 tr rv m1) -> public_first_order ge m1 *)
+  (*   | EF_builtin cp name sg *)
+  (*   | EF_runtime cp name sg => *)
+  (*       match lookup_builtin_function name sg with *)
+  (*       | None => forall ge args m0 tr rv m1, (external_functions_sem name sg ge args m0 tr rv m1) -> public_first_order ge m1 *)
+  (*       | _ => True *)
+  (*       end *)
+  (*   | EF_inline_asm cp txt sg clb => *)
+  (*       forall ge args m0 tr rv m1, (inline_assembly_sem cp txt sg ge args m0 tr rv m1) -> public_first_order ge m1 *)
+  (*   | _ => True *)
+  (*   end. *)
+
+End VISIBLE.
+
+Global Program Instance is_external_fundef (F: Type) : is_external (fundef F) :=
+  { is_ok :=
+    fun cp' fd =>
+      match fd with
+      | Internal _ => True
+      | External ef =>
+          match ef with
+          | EF_external cp name sg  => True
+          | EF_builtin cp name sg
+          | EF_runtime cp name sg =>
+              match lookup_builtin_function name sg with
+              | None => True
+              | _ => cp = cp'
+              end
+          | EF_vload cp chunk          => cp = cp'
+          | EF_vstore cp chunk         => cp = cp'
+          | EF_malloc cp                => cp = cp'
+          | EF_free cp                 => cp = cp'
+          | EF_memcpy cp sz al         => cp = cp'
+          | EF_annot cp kind txt targs   => True
+          | EF_annot_val cp kind txt targ => True
+          | EF_inline_asm cp txt sg clb => True
+          | EF_debug cp kind txt targs => cp = cp'
+          end
+      end;
+    is_ok_b :=
+      fun cp' fd =>
+        match fd with
+        | Internal _ => true
+        | External ef =>
+            match ef with
+            | EF_external cp name sg  => true
+            | EF_builtin cp name sg
+            | EF_runtime cp name sg =>
+                match lookup_builtin_function name sg with
+                | None => true
+                | _ => Pos.eqb cp cp'
+                end
+            | EF_vload cp chunk          => Pos.eqb cp cp'
+            | EF_vstore cp chunk         => Pos.eqb cp cp'
+            | EF_malloc cp                => Pos.eqb cp cp'
+            | EF_free cp                 => Pos.eqb cp cp'
+            | EF_memcpy cp sz al         => Pos.eqb cp cp'
+            | EF_annot cp kind txt targs   => true
+            | EF_annot_val cp kind txt targ => true
+            | EF_inline_asm cp txt sg clb => true
+            | EF_debug cp kind txt targs => Pos.eqb cp cp'
+            end
+        end;
+    is_ok_reflect := _;
+  }.
+Next Obligation.
+  destruct fd as [| []]; simpl; try now (symmetry; eauto using Pos.eqb_eq).
+  destruct (lookup_builtin_function name sg); try now (symmetry; eauto using Pos.eqb_eq).
+  destruct (lookup_builtin_function name sg); try now (symmetry; eauto using Pos.eqb_eq).
+Defined.
