@@ -820,7 +820,42 @@ Section Simulation.
       exploit eval_exprlist_injection; eauto; eauto.
       intros [vargs2 [vargs1_vargs2 eval_vargs2]].
       destruct (s (comp_of fd1)) eqn:s_fd1.
-      * admit.
+      * assert (CROSS : Genv.allowed_cross_call ge1 (comp_of f) vf1).
+        { destruct ALLOWED as [CONTRA|CROSS]; trivial.
+          unfold Genv.find_comp in CONTRA.
+          rewrite find_vf1 in CONTRA.
+          congruence. }
+        destruct (Genv.allowed_cross_call_public_symbol
+                    _ _ _ CROSS)
+          as (id & b1 & off1 & evf1 & ge1_id & pub_id1).
+        assert (find_vf1' : Genv.find_def ge1 b1 = Some (Gfun fd1)).
+        { rewrite evf1 in find_vf1. simpl in find_vf1.
+          destruct Ptrofs.eq_dec as [_|_]; try easy.
+          unfold Genv.find_funct_ptr in find_vf1.
+          unfold ge1. simpl.
+          destruct (Genv.find_def _ b1) as [def1|]; try easy.
+          destruct def1 as [fd1'|?]; try easy.
+          now injection find_vf1 as ->. }
+        exploit (@match_prog_globdefs _ _ _ match_W1_W2 id (comp_of fd1)); eauto.
+        { left.
+          unfold Genv.find_comp_of_ident.
+          rewrite ge1_id.
+          unfold Genv.find_comp_of_block. now rewrite find_vf1'. }
+        intros (b1' & b2 & ge1_id' & ge2_id & match_fd).
+        assert (b1' = b1) as -> by congruence. clear ge1_id'.
+        rewrite find_vf1', s_fd1 in match_fd.
+        simpl in match_fd.
+        assert (exists def2,
+                   Genv.find_def ge2 b2 = Some def2 /\
+                     match_globdef (Gfun fd1) def2)
+          as (def2 & ge2_b2 & match_fd').
+        { inv match_fd. eauto. }
+        assert (exists fd2,
+                   def2 = Gfun fd2 /\
+                   match_fundef tt fd1 fd2)
+          as (fd2 & -> & match_fd'').
+        { inv match_fd'. eauto. }
+        exists j, (Callstate fd2 vargs2 (Kcall optid f e2 le2 k2) m2).
       * rename fd1 into fd.
         rename type_fd1 into type_fd.
         rewrite comp_vf1 in *.

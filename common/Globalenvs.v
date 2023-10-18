@@ -156,7 +156,8 @@ Record t: Type := mkgenv {
   genv_symb_range: forall id b, PTree.get id genv_symb = Some b -> Plt b genv_next;
   genv_defs_range: forall b g, PTree.get b genv_defs = Some g -> Plt b genv_next;
   genv_vars_inj: forall id1 id2 b,
-    PTree.get id1 genv_symb = Some b -> PTree.get id2 genv_symb = Some b -> id1 = id2
+    PTree.get id1 genv_symb = Some b -> PTree.get id2 genv_symb = Some b -> id1 = id2;
+  genv_pol_pub: Policy.in_pub genv_policy genv_public;
 }.
 
 (** ** Lookup functions *)
@@ -285,7 +286,7 @@ Program Definition add_global (ge: t) (idg: ident * globdef F V) : t :=
     (PTree.set ge.(genv_next) idg#2 ge.(genv_defs))
     (Pos.succ ge.(genv_next))
     (genv_policy ge)
-    _ _ _.
+    _ _ _ ge.(genv_pol_pub).
 Next Obligation.
   destruct ge; simpl in *.
   rewrite PTree.gsspec in H. destruct (peq id i). inv H. apply Plt_succ.
@@ -317,11 +318,11 @@ Proof.
   intros. apply fold_left_app.
 Qed.
 
-Program Definition empty_genv (pub: list ident) (pol: Policy.t): t :=
+Program Definition empty_genv (pub: list ident) (pol: Policy.t) :=
   @mkgenv pub (PTree.empty _) (PTree.empty _) 1%positive pol _ _ _.
 
 Definition globalenv (p: program F V) :=
-  add_globals (empty_genv p.(prog_public) p.(prog_pol)) p.(prog_defs).
+  add_globals (@empty_genv p.(prog_public) p.(prog_pol) p.(prog_pol_pub)) p.(prog_defs).
 
 (** Proof principles *)
 
@@ -590,7 +591,7 @@ Theorem find_def_find_symbol_inversion:
   exists id, find_symbol (globalenv p) id = Some b.
 Proof.
   unfold find_def, find_symbol, globalenv, prog_defs_names, add_globals.
-  intros p b g ge_b NOREPET. set (ge0 := empty_genv _ _) in *.
+  intros p b g ge_b NOREPET. set (ge0 := @empty_genv _ _ _) in *.
   pose (P := fun (defs : list (ident * globdef F V)) ge =>
                list_norepet (map fst defs) /\
                forall b g, (genv_defs ge) ! b = Some g ->
@@ -1538,7 +1539,7 @@ Proof.
     unfold Mem.valid_block. rewrite Mem.nextblock_empty.
     now destruct b. }
   simpl.
-  set (ge := empty_genv _ _).
+  set (ge := @empty_genv _ _ _).
   change 1%positive with (genv_next ge).
   assert (forall g', (genv_defs ge) ! b = Some g' ->
                      None = Some (comp_of g')) as INV.
@@ -1559,7 +1560,8 @@ Lemma init_mem_genv_next: forall p m,
 Proof.
   unfold init_mem; intros.
   exploit alloc_globals_nextblock; eauto. rewrite Mem.nextblock_empty. intro.
-  generalize (genv_next_add_globals (prog_defs p) (empty_genv (prog_public p) (prog_pol p))).
+  generalize (genv_next_add_globals (prog_defs p)
+                (@empty_genv (prog_public p) (prog_pol p) (prog_pol_pub p))).
   fold (globalenv p). simpl genv_next. intros. congruence.
 Qed.
 
@@ -2092,6 +2094,27 @@ Proof.
     apply proj_sumbool_true in D.
     apply proj_sumbool_true in E. auto.
 Qed.
+
+Lemma allowed_cross_call_public_symbol: forall ge cp vf,
+  allowed_cross_call ge cp vf ->
+  exists id b off,
+    vf = Vptr b off /\
+    find_symbol ge id = Some b /\
+    public_symbol ge id = true.
+Proof.
+  intros ge cp vf H.
+  destruct vf as [|?|?|?|?|b off]; try easy.
+  destruct H as (id & cp' & ge_id & ge_b & imp & exp).
+  apply invert_find_symbol in ge_id.
+  exists id, b, off; split; trivial; split; trivial.
+  destruct (genv_pol_pub ge) as [Hexp Himp].
+  destruct ((Policy.policy_export _) ! cp') as [exps|] eqn:exp_cp'; try easy.
+  specialize (Hexp _ _ exp_cp' _ exp).
+  unfold public_symbol. rewrite ge_id.
+  destruct (in_dec _ _) as [H|contra]; trivial.
+  destruct (contra Hexp).
+Qed.
+
 Section SECURITY.
 
 Definition same_symbols (j: meminj) (ge1: t): Prop :=
@@ -2412,7 +2435,7 @@ Proof.
     destruct EQPOL as [EQPOL1 EQPOL2].
     simpl in *.
     rewrite PTree.beq_correct in EQPOL1.
-    remember (find_comp (add_globals (empty_genv F1 V1 prog_public prog_pol) prog_defs) (Vptr b i)) as cp'.
+    remember (find_comp (add_globals (empty_genv F1 V1 prog_pol_pub) prog_defs) (Vptr b i)) as cp'.
     specialize (EQPOL1 cp').
     destruct ((Policy.policy_export prog_pol0) ! cp');
       destruct ((Policy.policy_export prog_pol) ! cp'); subst cp'; auto; try contradiction.
