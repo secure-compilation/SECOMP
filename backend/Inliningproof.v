@@ -20,6 +20,7 @@ Require Import Inlining Inliningspec.
 Definition match_prog (prog tprog: program) :=
   match_program (fun cunit f tf => transf_fundef (funenv_program cunit) f = OK tf) eq prog tprog.
 
+#[global]
 Instance comp_transl_function fenv:
   has_comp_transl_partial (transf_function fenv).
 Proof.
@@ -80,15 +81,6 @@ Lemma find_comp_translated:
 Proof.
   intros vf.
   eapply (Genv.match_genvs_find_comp TRANSF).
-Qed.
-
-Lemma type_of_call_translated:
-  forall cp cp',
-    Genv.type_of_call ge cp cp' =
-      Genv.type_of_call tge cp cp'.
-Proof.
-  intros cp cp'.
-  eapply (Genv.match_genvs_type_of_call).
 Qed.
 
 Lemma sig_function_translated:
@@ -286,7 +278,7 @@ Qed.
 Lemma call_trace_translated:
   forall cp cp' vf F ctx rs rs' args tyargs t,
     agree_regs F ctx rs rs' ->
-    (Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr (rs##args)) ->
+    (Genv.type_of_call cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr (rs##args)) ->
     call_trace ge cp cp' vf (rs##args) tyargs t ->
     call_trace tge cp cp' vf (rs'##(sregs ctx args)) tyargs t.
 Proof.
@@ -1214,23 +1206,19 @@ Proof.
       + eauto.
   }
   intros CROSS. eapply H1; eauto.
-  eapply NO_CROSS_PTR; eauto. erewrite SAMECOMP, find_comp_translated, type_of_call_translated; eauto.
-  rewrite <- find_comp_translated, <- SAMECOMP.
+  eapply NO_CROSS_PTR; eauto. erewrite SAMECOMP; eauto.
+  now rewrite (comp_transf_partial_fundef _ B).
+  rewrite <- SAMECOMP, <- (comp_transf_partial_fundef _ B).
   eapply call_trace_translated; eauto.
+  rewrite (comp_transf_partial_fundef _ B).
   econstructor; eauto.
-  rewrite find_comp_translated; eapply match_stacks_cons; eauto.
-  (* { red; eauto. } *)
+  eapply match_stacks_cons; eauto.
   eapply agree_val_regs; eauto.
 + (* inlined *)
   assert (EQ: fd = Internal f0) by (eapply find_inlined_function; eauto).
   subst fd.
   right; split. simpl; lia. split.
-  assert (R: comp_of f = Genv.find_comp ge vf).
-  { rewrite SAMECOMP0.
-    clear -H0 FUNPTR. unfold find_function in H0; rewrite FUNPTR in H0.
-    unfold Genv.find_comp.
-    now rewrite H0. }
-  rewrite R in EV. eapply call_trace_same_cp; eauto.
+  eapply call_trace_same_cp; eauto. exact EV.
   econstructor; eauto.
   eapply match_stacks_inside_inlined; eauto.
   { clear -FUNPTR H0 SAMECOMP0.
@@ -1522,7 +1510,7 @@ Proof.
 + (* normal case *)
   left; econstructor; split.
   eapply plus_one. eapply exec_return.
-  rewrite <- SAMECOMP, <- type_of_call_translated.
+  rewrite <- SAMECOMP.
   intros G. specialize (NO_CROSS_PTR G). inv VINJ; auto; contradiction.
   rewrite <- SAMECOMP. eapply return_trace_inj; eauto.
   econstructor; eauto.

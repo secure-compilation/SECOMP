@@ -64,7 +64,6 @@ Lemma eval_helper:
   helper_declared prog id cp name sg ->
   lookup_builtin_function name sg = Some bf ->
   builtin_function_sem bf vargs = Some vres ->
-  (* forall (ALLOWED: allowed_call ge cp vf), *)
   eval_expr ge sp e cp m le (Eexternal id sg args) vres.
 Proof.
   intros.
@@ -73,7 +72,7 @@ Proof.
   econstructor; eauto. 
   simpl. red. rewrite H1. constructor; auto.
   unfold Genv.type_of_call. simpl. unfold ge, Genv.find_comp.
-  setoid_rewrite Q. simpl. rewrite Pos.eqb_refl. congruence.
+  rewrite Pos.eqb_refl. congruence.
 Qed.
 
 Corollary eval_helper_1:

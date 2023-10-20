@@ -667,13 +667,16 @@ Section Simulation.
     rewrite <- MATCH. split; trivial.
   Qed.
 
-(* TODO: Figure out exact statement
-  Lemma allowed_call_preserved : forall j cp vf1 vf2,
+  Lemma allowed_call_preserved : forall j cp m1 m2 vf1 vf2,
+      right_mem_injection s j ge1 ge2 m1 m2 ->
       Val.inject j vf1 vf2 ->
       Genv.allowed_call ge1 cp vf1 ->
       Genv.allowed_call ge2 cp vf2.
   Proof.
-    intros j cp vf1 vf2 vf12.
+    intros j cp m1 m2 vf1 vf2 inj vf12 allowed.
+    destruct allowed as [same_comp|cross]; [left|right].
+    - unfold Genv.find_comp in *.
+
     case vf12; try easy.
 *)
 
@@ -813,6 +816,9 @@ Section Simulation.
       rename H1 into eval_vargs1.
       rename H2 into find_vf1.
       rename H3 into type_fd1.
+      rename ALLOWED into ALLOWED1.
+      rename NO_CROSS_PTR into NO_CROSS_PTR1.
+      rename EV into EV1.
       assert (Genv.find_comp ge1 vf1 = comp_of fd1) as comp_vf1.
       { unfold Genv.find_comp. now rewrite find_vf1. }
       exploit eval_expr_injection; eauto; eauto.
@@ -820,17 +826,20 @@ Section Simulation.
       exploit eval_exprlist_injection; eauto; eauto.
       intros [vargs2 [vargs1_vargs2 eval_vargs2]].
       destruct (s (comp_of fd1)) eqn:s_fd1.
-      * assert (CROSS : Genv.allowed_cross_call ge1 (comp_of f) vf1).
-        { destruct ALLOWED as [CONTRA|CROSS]; trivial.
+      * (* Next function is on the left *)
+        assert (CROSS1 : Genv.allowed_cross_call ge1 (comp_of f) vf1).
+        { destruct ALLOWED1 as [CONTRA|CROSS1]; trivial.
           unfold Genv.find_comp in CONTRA.
           rewrite find_vf1 in CONTRA.
           congruence. }
         destruct (Genv.allowed_cross_call_public_symbol
-                    _ _ _ CROSS)
+                    _ _ _ CROSS1)
           as (id & b1 & off1 & evf1 & ge1_id & pub_id1).
-        assert (find_vf1' : Genv.find_def ge1 b1 = Some (Gfun fd1)).
+        assert (off1 = Ptrofs.zero /\ Genv.find_def ge1 b1 = Some (Gfun fd1))
+          as [-> find_vf1'].
         { rewrite evf1 in find_vf1. simpl in find_vf1.
-          destruct Ptrofs.eq_dec as [_|_]; try easy.
+          destruct Ptrofs.eq_dec as [->|_]; try easy.
+          split; trivial.
           unfold Genv.find_funct_ptr in find_vf1.
           unfold ge1. simpl.
           destruct (Genv.find_def _ b1) as [def1|]; try easy.
@@ -855,7 +864,40 @@ Section Simulation.
                    match_fundef tt fd1 fd2)
           as (fd2 & -> & match_fd'').
         { inv match_fd'. eauto. }
+        assert (vf2 = Vptr b2 Ptrofs.zero) as evf2.
+        { exploit same_symb; eauto. intros (_ & _ & INJ & _).
+          destruct (INJ _ _ pub_id1 ge1_id) as (b2' & j_b1 & ge2_id').
+          assert (b2' = b2) as -> by (simpl in *; congruence).
+          inv vf1_vf2; try congruence.
+          match goal with
+          | [ _ : j b1 = Some (b2, 0),
+              H1 : j ?b1' = Some (?b2', ?delta),
+              H2 : Vptr _ ?ofs1 = Vptr b1 _ |- _ ]
+            => assert (b1' = b1) as -> by congruence;
+               assert (ofs1 = Ptrofs.zero) as -> by congruence;
+               assert (b2' = b2) as -> by congruence;
+               assert (delta = 0) as -> by congruence;
+               clear H1 H2
+          end.
+          now rewrite Ptrofs.add_zero. }
+        assert (Genv.find_funct ge2 vf2 = Some fd2) as find_vf2'.
+        { unfold Genv.find_funct, Genv.find_funct_ptr. rewrite evf2.
+          destruct Ptrofs.eq_dec as [_|?]; try congruence.
+          now rewrite ge2_b2. }
+        assert (type_of_fundef fd2 = Tfunction tyargs tyres cconv)
+          as type_fd2.
+        { inv match_fd''; eauto. }
+        assert (Genv.allowed_call ge2 (comp_of f) vf2) as ALLOWED2.
+        { right. rewrite evf2. simpl. exists id, (comp_of fd2).
+          split.
+          { now apply Genv.find_invert_symbol. }
+          unfold Genv.find_comp. rewrite <- evf2. unfold ge2 in find_vf2'.
+          simpl in find_vf2'. rewrite find_vf2'. split; trivial.
+
+
         exists j, (Callstate fd2 vargs2 (Kcall optid f e2 le2 k2) m2).
+        split.
+        econstructor; eauto.
       * rename fd1 into fd.
         rename type_fd1 into type_fd.
         rewrite comp_vf1 in *.

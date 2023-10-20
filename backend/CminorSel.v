@@ -99,6 +99,7 @@ Record function : Type := mkfunction {
   fn_body: stmt
 }.
 
+#[global]
 Instance has_comp_function : has_comp function := fn_comp.
 
 Definition fundef := AST.fundef function.
@@ -205,12 +206,7 @@ Inductive eval_expr: letenv -> expr -> val -> Prop :=
       ef_sig ef = sg ->
       eval_exprlist le al vl ->
       external_call ef ge vl m E0 v m ->
-      forall (INTRA: Genv.type_of_call ge cp (Genv.find_comp ge (Vptr b Ptrofs.zero)) <> Genv.CrossCompartmentCall),
-      (* forall (ALLOWED: Genv.allowed_call ge cp (Vptr b Ptrofs.zero)), *)
-      (* forall (NO_CROSS_PTR_CALL: Genv.type_of_call ge cp (Genv.find_comp ge (Vptr b Ptrofs.zero)) = Genv.CrossCompartmentCall -> *)
-      (*                  Forall not_ptr vl), *)
-      (* forall (NO_CROSS_PTR_RETURN: Genv.type_of_call ge cp (Genv.find_comp ge (Vptr b Ptrofs.zero)) = Genv.CrossCompartmentCall -> *)
-      (*                  not_ptr v), *)
+      forall (INTRA: Genv.type_of_call cp (comp_of ef) <> Genv.CrossCompartmentCall),
       eval_expr le (Eexternal id sg al) v
 
 with eval_exprlist: letenv -> exprlist -> list val -> Prop :=
@@ -387,8 +383,8 @@ Inductive step: state -> trace -> state -> Prop :=
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
-      forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
-      forall (EV: call_trace ge (comp_of f) (Genv.find_comp ge vf) vf vargs (sig_args sig) t),
+      forall (NO_CROSS_PTR: Genv.type_of_call (comp_of f) (comp_of fd) = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
+      forall (EV: call_trace ge (comp_of f) (comp_of fd) vf vargs (sig_args sig) t),
       step (State f (Scall optid sig a bl) k sp e m)
         t (Callstate fd vargs (Kcall optid f sp e k) m)
 
@@ -399,9 +395,6 @@ Inductive step: state -> trace -> state -> Prop :=
       funsig fd = sig ->
       forall (COMP: comp_of fd = (comp_of f)),
       forall (SIG: sig_res (fn_sig f) = sig_res sig),
-      (* forall (ALLOWED: needs_calling_comp (comp_of f) = false), *)
-      (* forall (ALLOWED': Genv.allowed_call ge (comp_of f) vf), *)
-      (* forall (EV: call_trace ge (comp_of f) (Genv.find_comp ge vf) vf vargs (sig_args sig) t), *)
       Mem.free m sp 0 f.(fn_stackspace) (comp_of f) = Some m' ->
       step (State f (Stailcall sig a bl) k (Vptr sp Ptrofs.zero) e m)
         E0 (Callstate fd vargs (call_cont k) m')
@@ -479,7 +472,7 @@ Inductive step: state -> trace -> state -> Prop :=
          t (Returnstate vres k m' (sig_res (ef_sig ef)) (comp_of ef))
 
   | step_return: forall v optid f sp e cp k m ty t,
-      forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) cp = Genv.CrossCompartmentCall -> not_ptr v),
+      forall (NO_CROSS_PTR: Genv.type_of_call (comp_of f) cp = Genv.CrossCompartmentCall -> not_ptr v),
       forall (EV: return_trace ge (comp_of f) cp v ty t),
       step (Returnstate v (Kcall optid f sp e k) m ty cp)
         t (State f Sskip k sp (set_optvar optid v e) m).

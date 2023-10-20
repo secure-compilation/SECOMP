@@ -33,12 +33,14 @@ Definition match_fundef (cunit: Cminor.program) (f: Cminor.fundef) (tf: CminorSe
 Definition match_prog (p: Cminor.program) (tp: CminorSel.program) :=
   match_program match_fundef eq p tp.
 
+#[global]
 Instance comp_sel_fundef ctx hf: has_comp_transl_partial (sel_function ctx hf).
 Proof.
   unfold sel_function.
   intros f tf H; try monadInv H; trivial.
 Qed.
 
+#[global]
 Instance comp_match_fundef: has_comp_match match_fundef.
 Proof.
   intros cunit f tf (hf & hf_c & G & _ & H).

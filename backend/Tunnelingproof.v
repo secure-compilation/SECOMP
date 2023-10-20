@@ -22,6 +22,7 @@ Require Import Tunneling.
 Definition match_prog (p tp: program) :=
   match_program (fun ctx f tf => tf = tunnel_fundef f) eq p tp.
 
+#[global]
 Instance comp_tunnel_fundef: has_comp_transl tunnel_function.
 Proof. now intro. Qed.
 

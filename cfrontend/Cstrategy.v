@@ -374,8 +374,8 @@ Inductive estep: state -> trace -> state -> Prop :=
       Genv.find_funct ge vf = Some fd ->
       type_of_fundef fd = Tfunction targs tres cconv ->
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
-      forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
-      forall (EV: call_trace ge (comp_of f) (Genv.find_comp ge vf) vf vargs (typlist_of_typelist targs) t),
+      forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) (comp_of fd) = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
+      forall (EV: call_trace ge (comp_of f) (comp_of fd) vf vargs (typlist_of_typelist targs) t),
       estep (ExprState f (C (Ecall rf rargs ty)) k e m)
           t (Callstate fd vargs (Kcall f e C ty k) m)
 
@@ -586,8 +586,8 @@ Definition invert_expr_prop (cp: compartment) (a: expr) (m: mem) : Prop :=
       /\ cast_arguments m rargs tyargs vl
       /\ type_of_fundef fd = Tfunction tyargs tyres cconv
       /\ Genv.allowed_call ge cp vf
-      /\ (Genv.type_of_call ge cp (Genv.find_comp ge vf) = Genv.CrossCompartmentCall -> Forall not_ptr vl)
-      /\ call_trace ge cp (Genv.find_comp ge vf) vf vl (typlist_of_typelist tyargs) t
+      /\ (Genv.type_of_call ge cp (comp_of fd) = Genv.CrossCompartmentCall -> Forall not_ptr vl)
+      /\ call_trace ge cp (comp_of fd) vf vl (typlist_of_typelist tyargs) t
   | Ebuiltin ef tyargs rargs ty =>
       exprlist_all_values rargs ->
       exists vargs, exists t, exists vres, exists m',
@@ -1797,12 +1797,12 @@ with eval_expr: compartment -> env -> mem -> kind -> expr -> trace -> mem -> exp
       type_of_fundef fd = Tfunction targs tres cconv ->
       eval_funcall c m2 fd vargs t3 m3 vres ty ->
       forall (ALLOWED: Genv.allowed_call ge c vf),
-      forall (NO_CROSS_PTR_CALL: Genv.type_of_call ge c (Genv.find_comp ge vf) = Genv.CrossCompartmentCall ->
+      forall (NO_CROSS_PTR_CALL: Genv.type_of_call ge c (comp_of fd) = Genv.CrossCompartmentCall ->
                        Forall not_ptr vargs),
-      forall (NO_CROSS_PTR_RETURN: Genv.type_of_call ge c (Genv.find_comp ge vf) = Genv.CrossCompartmentCall ->
+      forall (NO_CROSS_PTR_RETURN: Genv.type_of_call ge c (comp_of fd) = Genv.CrossCompartmentCall ->
                        not_ptr vres),
-      forall (EV: call_trace ge c (Genv.find_comp ge vf) vf vargs (typlist_of_typelist targs) t),
-      forall (EV': return_trace ge c (Genv.find_comp ge vf) vres (rettype_of_type ty) t'),
+      forall (EV: call_trace ge c (comp_of fd) vf vargs (typlist_of_typelist targs) t),
+      forall (EV': return_trace ge c (comp_of fd) vres (rettype_of_type ty) t'),
       eval_expr c e m RV (Ecall rf rargs ty) (t1**t2**t**t3**t') m3 (Eval vres ty)
 
 with eval_exprlist: compartment -> env -> mem -> exprlist -> trace -> mem -> exprlist -> Prop :=
@@ -2048,8 +2048,8 @@ CoInductive evalinf_expr: compartment -> env -> mem -> kind -> expr -> traceinf 
       type_of_fundef fd = Tfunction targs tres cconv ->
       evalinf_funcall c m2 fd vargs t3 ->
       forall (ALLOWED: Genv.allowed_call ge c vf),
-      forall (NO_CROSS_PTR: Genv.type_of_call ge c (Genv.find_comp ge vf) = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
-      forall (EV: call_trace ge c (Genv.find_comp ge vf) vf vargs (typlist_of_typelist targs) t),
+      forall (NO_CROSS_PTR: Genv.type_of_call ge c (comp_of fd) = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
+      forall (EV: call_trace ge c (comp_of fd) vf vargs (typlist_of_typelist targs) t),
       evalinf_expr c e m RV (Ecall rf rargs ty) (t1***t2***t***t3)
 
 with evalinf_exprlist: compartment -> env -> mem -> exprlist -> traceinf -> Prop :=
@@ -2394,13 +2394,9 @@ Proof.
   eapply star_trans. eexact F.
   eapply star_left. left; eapply step_call; eauto. congruence.
   eapply star_right. eapply H9; simpl; eauto.
-  assert (R: Genv.find_comp ge vf = comp_of fd).
-  { clear -H6.
-    unfold Genv.find_comp. now rewrite H6. }
-  right; constructor.
-  rewrite R in NO_CROSS_PTR_RETURN.
+  right. constructor.
   eapply NO_CROSS_PTR_RETURN.
-  rewrite R in EV'. eassumption.
+  eassumption.
   reflexivity. reflexivity. reflexivity. traceEq.
 (* nil *)
   simpl; intuition. apply star_refl.

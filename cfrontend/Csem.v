@@ -331,9 +331,9 @@ Inductive callred: expr -> mem -> fundef -> list val -> type -> trace -> Prop :=
       type_of_fundef fd = Tfunction tyargs tyres cconv ->
       classify_fun tyf = fun_case_f tyargs tyres cconv ->
       forall (ALLOWED: Genv.allowed_call ge cp vf),
-      forall (NO_CROSS_PTR: Genv.type_of_call ge cp (Genv.find_comp ge vf) = Genv.CrossCompartmentCall ->
+      forall (NO_CROSS_PTR: Genv.type_of_call cp (comp_of fd) = Genv.CrossCompartmentCall ->
                        Forall not_ptr vargs),
-      forall (EV: call_trace ge cp (Genv.find_comp ge vf) vf vargs (typlist_of_typelist tyargs) t),
+      forall (EV: call_trace ge cp (comp_of fd) vf vargs (typlist_of_typelist tyargs) t),
       callred (Ecall (Eval vf tyf) el ty) m
               fd vargs ty t.
 
@@ -828,7 +828,7 @@ Inductive sstep: state -> trace -> state -> Prop :=
           (* sig_res (ef_sig ef) *)
 
   | step_returnstate: forall v f e C ty ty' k m cp t,
-      forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) cp = Genv.CrossCompartmentCall ->
+      forall (NO_CROSS_PTR: Genv.type_of_call (comp_of f) cp = Genv.CrossCompartmentCall ->
                        not_ptr v),
       forall (EV: return_trace ge (comp_of f) cp v ty' t),
         (* TODO: figure out whether this should be the same [ty] or not *)

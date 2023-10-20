@@ -144,6 +144,7 @@ Record function : Type := mkfunction {
   fn_body: statement
 }.
 
+#[global]
 Instance has_comp_function : has_comp function := fn_comp.
 
 Definition var_names (vars: list(ident * type)) : list ident :=

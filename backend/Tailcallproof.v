@@ -208,6 +208,7 @@ Qed.
 Definition match_prog (p tp: RTL.program) :=
   match_program (fun cu f tf => tf = transf_fundef (compenv_program cu) f) eq p tp.
 
+#[global]
 Instance comp_transf_function cenv: has_comp_transl (transf_function cenv).
 Proof.
   unfold transf_function, RTL.transf_function.

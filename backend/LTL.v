@@ -53,6 +53,7 @@ Record function: Type := mkfunction {
   fn_entrypoint: node
 }.
 
+#[global]
 Instance has_comp_function : has_comp function := fn_comp.
 
 Definition fundef := AST.fundef function.
@@ -336,22 +337,16 @@ Inductive step: state -> trace -> state -> Prop :=
       find_function_ptr ros rs = Some vf ->
       funsig fd = sig ->
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
-      forall (CALLREGS:
-               callrs =
-                 (* match Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) with *)
-                 (* | Genv.CrossCompartmentCall => call_regs_ext rs sig *)
-                 (* | _ => call_regs rs *)
-                 (* end), *)
-                 call_regs_ext rs sig),
+      forall (CALLREGS: callrs = call_regs_ext rs sig),
       forall (ARGS: args = map (fun p => Locmap.getpair p
                                    (undef_regs destroyed_at_function_entry callrs))
                         (loc_parameters sig)),
       forall (NO_CROSS_PTR:
-          Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall ->
+          Genv.type_of_call (comp_of f) (comp_of fd) = Genv.CrossCompartmentCall ->
           List.Forall not_ptr args),
-      forall (EV: call_trace ge (comp_of f) (Genv.find_comp ge vf) vf args (sig_args sig) t),
+      forall (EV: call_trace ge (comp_of f) (comp_of fd) vf args (sig_args sig) t),
       step (Block s f sp (Lcall sig ros :: bb) rs m)
-        t (Callstate (Stackframe f (Genv.find_comp ge vf) sig sp rs bb :: s) fd sig rs m)
+        t (Callstate (Stackframe f (comp_of fd) sig sp rs bb :: s) fd sig rs m)
   | exec_Ltailcall: forall s f sp sig ros bb rs m fd rs' m',
       rs' = return_regs (parent_locset s) rs ->
       find_function ros rs' = Some fd ->
@@ -406,7 +401,7 @@ Inductive step: state -> trace -> state -> Prop :=
          t (Returnstate s rs' m')
   | exec_return: forall f sp rs1 bb s rs m cp sig t,
       forall (NO_CROSS_PTR:
-          Genv.type_of_call ge (comp_of f) cp = Genv.CrossCompartmentCall ->
+          Genv.type_of_call (comp_of f) cp = Genv.CrossCompartmentCall ->
           not_ptr (Locmap.getpair (map_rpair R (loc_result sig)) rs)),
       forall (EV: return_trace ge (comp_of f) cp (Locmap.getpair (map_rpair R (loc_result sig)) rs) (sig_res sig) t),
       step (Returnstate (Stackframe f cp sig sp rs1 bb :: s) rs m)

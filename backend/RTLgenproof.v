@@ -350,6 +350,7 @@ Require Import Errors.
 Definition match_prog (p: CminorSel.program) (tp: RTL.program) :=
   match_program (fun cu f tf => transl_fundef f = Errors.OK tf) eq p tp.
 
+#[global]
 Instance comp_transl_function: has_comp_transl_partial transl_function.
 Proof.
   unfold transl_function.
@@ -814,11 +815,10 @@ Lemma transl_expr_Eexternal_correct:
   Genv.find_symbol ge id = Some b ->
   Genv.find_funct_ptr ge b = Some (External ef) ->
   ef_sig ef = sg ->
-  (* comp_of ef = cp -> *)
   eval_exprlist ge sp e cp m le al vl ->
   transl_exprlist_prop le al vl ->
   external_call ef ge vl m E0 v m ->
-  forall (INTRA: Genv.type_of_call ge cp (Genv.find_comp ge (Vptr b Ptrofs.zero)) <> Genv.CrossCompartmentCall),
+  forall (INTRA: Genv.type_of_call ge cp (comp_of ef) <> Genv.CrossCompartmentCall),
   transl_expr_prop le (Eexternal id sg al) v.
 Proof.
   intros; red; intros. inv TE.
@@ -828,35 +828,28 @@ Proof.
   exploit function_ptr_translated; eauto. simpl. intros [tf [P Q]]. inv Q.
   exists (rs1#rd <- v'); exists tm2.
 (* Exec *)
+  rewrite COMP in INTRA.
+  assert (comp_of f = comp_of ef) as e0.
+  { unfold Genv.type_of_call in INTRA.
+    destruct (Pos.eqb_spec (comp_of f) (comp_of ef)) as [e0|]; try congruence. }
   split. eapply star_trans. eexact EX1.
   eapply star_left. eapply exec_Icall; eauto.
   unfold find_function.
   simpl. rewrite symbols_preserved. rewrite H. eauto. auto. simpl. rewrite symbols_preserved. rewrite H. eauto.
-  unfold Genv.type_of_call in INTRA.
   unfold Genv.allowed_call.
-  destruct (Pos.eqb_spec (comp_of f) (Genv.find_comp ge (Vptr b Ptrofs.zero))).
-  rewrite e0. erewrite <- find_comp_translated; eauto.
-  rewrite <- COMP in n. apply Pos.eqb_neq in n. rewrite n in INTRA.
-  congruence.
-  intros CROSS. erewrite <- find_comp_translated with (vf := Vptr b Ptrofs.zero) in CROSS; eauto.
-  rewrite <- CROSS in INTRA. unfold Genv.type_of_call in *.
-  rewrite <- COMP in CROSS. rewrite <- COMP in INTRA.
-  destruct ((cp =? Genv.find_comp ge (Vptr b Ptrofs.zero))%positive) eqn:EQ1;
-    [discriminate |].
-  (* destruct ((Genv.find_comp ge (Vptr b Ptrofs.zero) =? default_compartment)%positive) eqn:EQ2; *)
-  (*   [discriminate |]. *)
-  congruence.
+  rewrite e0.
+  rewrite <- (find_comp_translated (Vptr b Ptrofs.zero) (Vptr b Ptrofs.zero) _ (Val.lessdef_refl _) H0).
+  unfold Genv.find_comp. simpl. rewrite H0.
+  destruct Ptrofs.eq_dec as [_|?]; try congruence. left; eauto.
+  unfold Genv.type_of_call. now rewrite e0, Pos.eqb_refl.
   instantiate (1 := E0).
-  econstructor.
-  rewrite COMP in INTRA.
-  erewrite <- find_comp_translated with (vf := Vptr b Ptrofs.zero); eauto.
+  econstructor. assumption.
   eapply star_left. eapply exec_function_external.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   clear H3; subst cp. eauto.
   apply star_one. apply exec_return.
-  erewrite find_comp_translated in INTRA; eauto. contradiction.
-  econstructor.
-  erewrite find_comp_translated in INTRA; eauto.
+  unfold Genv.type_of_call. now rewrite e0, Pos.eqb_refl.
+  econstructor. assumption.
   reflexivity. reflexivity. reflexivity.
 (* Match-env *)
   split. eauto with rtlg.
@@ -983,7 +976,8 @@ Theorem transl_expr_correct:
   forall le a v,
   eval_expr ge sp e cp m le a v ->
   transl_expr_prop le a v.
-Proof (eval_expr_ind3 ge sp e cp m
+Proof.
+exact (eval_expr_ind3 ge sp e cp m
      transl_expr_prop
      transl_exprlist_prop
      transl_condexpr_prop
@@ -1000,13 +994,14 @@ Proof (eval_expr_ind3 ge sp e cp m
      transl_condexpr_CEcond_correct
      transl_condexpr_CEcondition_correct
      transl_condexpr_CElet_correct).
+Qed.
 
 Theorem transl_exprlist_correct:
   forall le a v,
   eval_exprlist ge sp e cp m le a v ->
   transl_exprlist_prop le a v.
-Proof
-  (eval_exprlist_ind3 ge sp e cp m
+Proof.
+exact (eval_exprlist_ind3 ge sp e cp m
      transl_expr_prop
      transl_exprlist_prop
      transl_condexpr_prop
@@ -1023,13 +1018,14 @@ Proof
      transl_condexpr_CEcond_correct
      transl_condexpr_CEcondition_correct
      transl_condexpr_CElet_correct).
+Qed.
 
 Theorem transl_condexpr_correct:
   forall le a v,
   eval_condexpr ge sp e cp m le a v ->
   transl_condexpr_prop le a v.
-Proof
-  (eval_condexpr_ind3 ge sp e cp m
+Proof.
+exact (eval_condexpr_ind3 ge sp e cp m
      transl_expr_prop
      transl_exprlist_prop
      transl_condexpr_prop
@@ -1046,6 +1042,7 @@ Proof
      transl_condexpr_CEcond_correct
      transl_condexpr_CEcondition_correct
      transl_condexpr_CElet_correct).
+Qed.
 
 (** Exit expressions. *)
 
@@ -1506,8 +1503,8 @@ Proof.
   intros CROSS.
   eapply Val.lessdef_list_not_ptr; eauto.
   eapply NO_CROSS_PTR.
-  erewrite find_comp_translated, type_of_call_translated; eauto. rewrite <- J, COMP; eauto.
-  now left.
+  now rewrite (comp_transf_partial_fundef _ Q), COMP.
+  exact CROSS.
   { erewrite <- find_comp_translated with (vf := vf), <- COMP; eauto.
     eapply call_trace_translated with (vf := vf); eauto.
     rewrite J; eauto. now left.

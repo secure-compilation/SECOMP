@@ -170,6 +170,7 @@ Record function : Type := mkfunction {
   fn_body: stmt
 }.
 
+#[global]
 Instance has_comp_function : has_comp function := fn_comp.
 
 Definition fundef := AST.fundef function.
@@ -476,8 +477,8 @@ Inductive step: state -> trace -> state -> Prop :=
       funsig fd = sig ->
       (* Check that the call to the function pointer is allowed *)
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
-      forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
-      forall (EV: call_trace ge (comp_of f) (Genv.find_comp ge vf) vf vargs (sig_args sig) t),
+      forall (NO_CROSS_PTR: Genv.type_of_call (comp_of f) (comp_of fd) = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
+      forall (EV: call_trace ge (comp_of f) (comp_of fd) vf vargs (sig_args sig) t),
       step (State f (Scall optid sig a bl) k sp e m)
         t (Callstate fd vargs (Kcall optid f sp e k) m)
 
@@ -566,7 +567,7 @@ Inductive step: state -> trace -> state -> Prop :=
          t (Returnstate vres k m' (sig_res (ef_sig ef)) (comp_of ef))
 
   | step_return: forall v optid f sp e cp k m ty t,
-      forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) cp = Genv.CrossCompartmentCall -> not_ptr v),
+      forall (NO_CROSS_PTR: Genv.type_of_call (comp_of f) cp = Genv.CrossCompartmentCall -> not_ptr v),
       forall (EV: return_trace ge (comp_of f) cp v ty t),
       step (Returnstate v (Kcall optid f sp e k) m ty cp)
         t (State f Sskip k sp (set_optvar optid v e) m).
@@ -811,10 +812,10 @@ with exec_stmt:
       Genv.find_funct ge vf = Some fd -> funsig fd = sig -> eval_funcall (comp_of f) m fd vargs t m' vres ->
       e' = set_optvar optid vres e ->
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
-      forall (NO_CROSS_PTR_CALL: Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
-      forall (EV: call_trace ge (comp_of f) (Genv.find_comp ge vf) vf vargs (sig_args sig) t'),
-      forall (NO_CROSS_PTR_RETURN: Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall -> not_ptr vres),
-      forall (EV': return_trace ge (comp_of f) (Genv.find_comp ge vf) vres (sig_res sig) t''),
+      forall (NO_CROSS_PTR_CALL: Genv.type_of_call (comp_of f) (comp_of fd) = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
+      forall (EV: call_trace ge (comp_of f) (comp_of fd) vf vargs (sig_args sig) t'),
+      forall (NO_CROSS_PTR_RETURN: Genv.type_of_call (comp_of f) (comp_of fd) = Genv.CrossCompartmentCall -> not_ptr vres),
+      forall (EV': return_trace ge (comp_of f) (comp_of fd) vres (sig_res sig) t''),
       exec_stmt f sp e m (Scall optid sig a bl) (t' ** t ** t'') e' m' Out_normal
   | exec_Sbuiltin:
       forall f sp e m optid ef bl t m' vargs vres e',
@@ -921,8 +922,8 @@ with execinf_stmt:
       funsig fd = sig ->
       evalinf_funcall m fd vargs t ->
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
-      forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
-      forall (EV: call_trace ge (comp_of f) (Genv.find_comp ge vf) vf vargs (sig_args sig) t'),
+      forall (NO_CROSS_PTR: Genv.type_of_call (comp_of f) (comp_of fd) = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
+      forall (EV: call_trace ge (comp_of f) (comp_of fd) vf vargs (sig_args sig) t'),
       execinf_stmt f sp e m (Scall optid sig a bl) (t' *** t)
   | execinf_Sifthenelse:
       forall f sp e m a s1 s2 v b t,
@@ -1100,23 +1101,12 @@ Proof.
   constructor.
 
 (* call *)
-  econstructor; split.
+  econstructor; split. subst sig.
   eapply star_left. econstructor; eauto.
   eapply star_right. apply H4; simpl; eauto.
   constructor.
-  (* TODO: Move lemma to Globalenvs.v and also find other usages of the same lemma *)
-  assert (Lemma: forall vf fd,
-             Genv.find_funct ge vf = Some fd ->
-             Genv.find_comp ge vf = comp_of fd).
-  { clear. unfold Genv.find_comp.
-    intros. now rewrite H. }
-  erewrite Lemma in NO_CROSS_PTR_RETURN; eauto.
-  assert (Lemma: forall vf fd,
-             Genv.find_funct ge vf = Some fd ->
-             Genv.find_comp ge vf = comp_of fd).
-  { clear. unfold Genv.find_comp.
-    intros. now rewrite H. }
-  subst sig; erewrite Lemma in EV'; eauto.
+  trivial.
+  eauto.
   reflexivity. traceEq.
   subst e'. constructor.
 

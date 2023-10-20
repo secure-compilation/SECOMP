@@ -22,6 +22,7 @@ Require Import CSEdomain CombineOp CombineOpproof CSE.
 Definition match_prog (prog tprog: RTL.program) :=
   match_program (fun cu f tf => transf_fundef (romem_for cu) f = OK tf) eq prog tprog.
 
+#[global]
 Instance comp_transf_function rm:
   has_comp_transl_partial (transf_function rm).
 Proof.
