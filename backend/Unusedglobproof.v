@@ -878,12 +878,14 @@ Proof.
         * rewrite <- H22. unfold Genv.find_comp.
           simpl. rewrite A. rewrite H0. subst; now destruct Ptrofs.eq_dec.
         * apply match_prog_pol in TRANSF.
-          unfold tge, Genv.globalenv. rewrite TRANSF.
+          unfold tge, Genv.globalenv.
           rewrite Genv.genv_pol_add_globals. simpl.
+          rewrite TRANSF.
           unfold ge, Genv.globalenv in H23. now rewrite Genv.genv_pol_add_globals in H23.
         * apply match_prog_pol in TRANSF.
-          unfold tge, Genv.globalenv. rewrite TRANSF.
+          unfold tge, Genv.globalenv.
           rewrite Genv.genv_pol_add_globals. simpl.
+          rewrite TRANSF.
           unfold ge, Genv.globalenv in H24. now rewrite Genv.genv_pol_add_globals in H24. }
     { unfold Genv.type_of_call. unfold Genv.find_comp, Genv.find_funct.
       rewrite R, H0, A, B. now destruct Ptrofs.eq_dec. }
@@ -916,12 +918,14 @@ Proof.
         * rewrite <- H22. unfold Genv.find_comp.
           simpl. rewrite A. rewrite H0. reflexivity.
         * apply match_prog_pol in TRANSF.
-          unfold tge, Genv.globalenv. rewrite TRANSF.
+          unfold tge, Genv.globalenv.
           rewrite Genv.genv_pol_add_globals. simpl.
+          rewrite TRANSF.
           unfold ge, Genv.globalenv in H23. now rewrite Genv.genv_pol_add_globals in H23.
         * apply match_prog_pol in TRANSF.
-          unfold tge, Genv.globalenv. rewrite TRANSF.
+          unfold tge, Genv.globalenv.
           rewrite Genv.genv_pol_add_globals. simpl.
+          rewrite TRANSF.
           unfold ge, Genv.globalenv in H24. now rewrite Genv.genv_pol_add_globals in H24. }
     { unfold Genv.type_of_call. unfold Genv.find_comp, Genv.find_funct.
       rewrite <- Genv.find_funct_ptr_iff in H0.
