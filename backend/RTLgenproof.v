@@ -455,7 +455,7 @@ Qed.
 
 Lemma type_of_call_translated:
   forall cp cp',
-    Genv.type_of_call ge cp cp' = Genv.type_of_call tge cp cp'.
+    Genv.type_of_call cp cp' = Genv.type_of_call cp cp'.
 Proof.
   eapply Genv.match_genvs_type_of_call.
 Qed.
@@ -464,7 +464,7 @@ Lemma call_trace_translated:
   forall cp cp' vf vf' ls ls' tyargs t,
     Val.lessdef vf vf' ->
     Val.lessdef_list ls ls' ->
-    (Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr ls) ->
+    (Genv.type_of_call cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr ls) ->
     call_trace ge cp cp' vf ls tyargs t ->
     call_trace tge cp cp' vf' ls' tyargs t.
 Proof.
@@ -818,7 +818,7 @@ Lemma transl_expr_Eexternal_correct:
   eval_exprlist ge sp e cp m le al vl ->
   transl_exprlist_prop le al vl ->
   external_call ef ge vl m E0 v m ->
-  forall (INTRA: Genv.type_of_call ge cp (comp_of ef) <> Genv.CrossCompartmentCall),
+  forall (INTRA: Genv.type_of_call cp (comp_of ef) <> Genv.CrossCompartmentCall),
   transl_expr_prop le (Eexternal id sg al) v.
 Proof.
   intros; red; intros. inv TE.
@@ -1504,16 +1504,13 @@ Proof.
   eapply Val.lessdef_list_not_ptr; eauto.
   eapply NO_CROSS_PTR.
   now rewrite (comp_transf_partial_fundef _ Q), COMP.
-  exact CROSS.
-  { erewrite <- find_comp_translated with (vf := vf), <- COMP; eauto.
+  { rewrite <- COMP, <- (comp_transl_partial _ Q).
     eapply call_trace_translated with (vf := vf); eauto.
-    rewrite J; eauto. now left.
     rewrite J; eauto. now left. }
   traceEq.
   constructor; auto.
-  erewrite <- find_comp_translated with (vf := vf); eauto. unfold Genv.find_comp; rewrite H2.
+  rewrite <- (comp_transl_partial _ Q).
   econstructor; eauto.
-  rewrite J; eauto. now left.
   (* direct *)
   exploit transl_exprlist_correct; eauto.
   intros [rs'' [tm'' [E [F [G [J Y]]]]]].
@@ -1528,12 +1525,12 @@ Proof.
   intros CROSS.
   eapply Val.lessdef_list_not_ptr; eauto.
   eapply NO_CROSS_PTR.
-  erewrite find_comp_translated, type_of_call_translated; eauto. rewrite COMP; eauto.
-  { erewrite <- find_comp_translated with (vf := (Vptr b Ptrofs.zero)), <- COMP; eauto.
+  rewrite COMP, (comp_transl_partial _ Q); eauto.
+  { rewrite <- COMP, <- (comp_transl_partial _ Q).
     eapply call_trace_translated with (vf := (Vptr b Ptrofs.zero)); eauto. }
   traceEq.
   constructor; auto.
-  erewrite <- find_comp_translated with (vf := (Vptr b Ptrofs.zero)); eauto. unfold Genv.find_comp; rewrite H2.
+  rewrite <- (comp_transl_partial _ Q).
   econstructor; eauto.
 
   (* tailcall *)
@@ -1718,7 +1715,7 @@ Proof.
   inv MS.
   econstructor; split.
   left; apply plus_one; constructor.
-  inv H8. rewrite COMP, <- type_of_call_translated.
+  inv H8. rewrite COMP.
   intros G. specialize (NO_CROSS_PTR G). inv LD; auto; contradiction.
   inv H8. rewrite COMP.
   eapply return_trace_lessdef; eauto using senv_preserved.

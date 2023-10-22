@@ -79,6 +79,12 @@ Proof.
   intros. destruct f; reflexivity.
 Qed.
 
+Lemma comp_function_translated:
+  forall rm f,
+  comp_of (transf_fundef rm f) = comp_of f.
+Proof.
+  intros. destruct f; reflexivity.
+Qed.
 
 Lemma allowed_call_translated:
   forall cp vf,
@@ -95,14 +101,6 @@ Lemma find_comp_translated:
 Proof.
   intros vf.
   eapply (Genv.match_genvs_find_comp TRANSL).
-Qed.
-
-Lemma type_of_call_translated:
-  forall cp cp',
-    Genv.type_of_call ge cp cp' = Genv.type_of_call tge cp cp'.
-Proof.
-  intros cp cp'.
-  eapply Genv.match_genvs_type_of_call.
 Qed.
 
 Lemma init_regs_lessdef:
@@ -557,12 +555,12 @@ Proof.
       + eauto. }
   eapply H2; eauto.
   eapply NO_CROSS_PTR.
-  erewrite find_comp_translated, type_of_call_translated; eauto.
-  rewrite <- find_comp_translated, comp_transf_function.
+  erewrite <- comp_function_translated; eauto.
+  rewrite comp_function_translated.
   eapply call_trace_lessdef; eauto using senv_preserved, symbols_preserved.
   apply regs_lessdef_regs; auto.
   constructor; auto. constructor; auto.
-  rewrite <- find_comp_translated.
+  rewrite comp_function_translated.
   econstructor; eauto.
   apply regs_lessdef_regs; auto.
 

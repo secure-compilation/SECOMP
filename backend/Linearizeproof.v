@@ -136,14 +136,6 @@ Proof.
   eapply (Genv.match_genvs_find_comp TRANSF).
 Qed.
 
-Lemma type_of_call_translated:
-  forall cp cp',
-    Genv.type_of_call ge cp cp' = Genv.type_of_call tge cp cp'.
-Proof.
-  intros cp cp'.
-  eapply Genv.match_genvs_type_of_call.
-Qed.
-
 (** * Correctness of reachability analysis *)
 
 (** The entry point of the function is reachable. *)
@@ -694,21 +686,22 @@ Proof.
   rewrite <- comp_transf_fundef; eauto.
   eapply allowed_call_translated; eauto.
   { intros. subst.
-    assert (X: Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall).
-    { erewrite find_comp_translated, type_of_call_translated; eauto. rewrite comp_transf_fundef; eauto. }
+    assert (X: Genv.type_of_call (comp_of f) (comp_of fd) = Genv.CrossCompartmentCall).
+    { rewrite (comp_transl_partial _ TRF). rewrite (comp_transl_partial _ B). auto. }
     specialize (NO_CROSS_PTR X).
     (* rewrite H1. *)
     (* rewrite X in NO_CROSS_PTR. *)
     eauto.
   }
-  { erewrite <- find_comp_translated, <- comp_transf_fundef; eauto.
+  {
+    rewrite <- (comp_transl_partial _ TRF). rewrite <- (comp_transl_partial _ B).
     (* erewrite <- type_of_call_translated, comp_preserved; eauto. *)
     (* destruct (Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf)) eqn:TY_CALL. *)
     (* eapply call_trace_eq; eauto using symbols_preserved, senv_preserved. *)
     (* eapply call_trace_eq; eauto using symbols_preserved, senv_preserved. *)
     eapply call_trace_eq; eauto using symbols_preserved, senv_preserved. }
   econstructor; eauto. constructor; auto.
-  rewrite find_comp_translated.
+  rewrite <- (comp_transl_partial _ B).
   econstructor; eauto.
 
   (* Ltailcall *)
@@ -812,10 +805,7 @@ Proof.
               fn_stacksize := LTL.fn_stacksize f;
               fn_code := add_branch (fn_entrypoint f) (linearize_body f x0)
             |}) with (comp_of f).
-  destruct (Genv.type_of_call tge (call_comp ts) (comp_of f)).
   econstructor; eauto. simpl. eapply is_tail_add_branch. constructor.
-  econstructor; eauto. simpl. eapply is_tail_add_branch. constructor.
-  (* econstructor; eauto. simpl. eapply is_tail_add_branch. constructor. *)
 
   (* external function *)
   monadInv H9. left; econstructor; split.

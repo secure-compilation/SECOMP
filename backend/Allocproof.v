@@ -2556,14 +2556,6 @@ Proof.
   eapply (Genv.match_genvs_find_comp TRANSF).
 Qed.
 
-Lemma type_of_call_translated:
-  forall cp cp',
-    Genv.type_of_call ge cp cp' = Genv.type_of_call tge cp cp'.
-Proof.
-  intros cp cp'.
-  eapply Genv.match_genvs_type_of_call.
-Qed.
-
 Lemma exec_moves:
   forall mv env rs s f sp bb m e e' ls,
   track_moves env mv e = Some e' ->
@@ -3072,8 +3064,9 @@ Proof.
   rewrite <- comp_transf_function; eauto.
   eapply allowed_call_translated; eauto.
   { intros TY_CALL.
-    assert (X: Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall).
-    { erewrite find_comp_translated, type_of_call_translated; eauto. rewrite comp_transf_function; eauto. }
+    assert (X: Genv.type_of_call (comp_of f) (comp_of fd) = Genv.CrossCompartmentCall).
+    { rewrite comp_transf_function; eauto.
+      rewrite (comp_transl_partial _ F); auto. }
     specialize (NO_CROSS_PTR X).
     assert (Htype_list: Val.has_type_list rs ## args (sig_args sg)).
     { inv WTI. rewrite <- H7.
@@ -3134,7 +3127,7 @@ Proof.
     { inv WTI. rewrite <- H7.
       clear -WTRS. eapply wt_regset_list. eauto. }
     rewrite <- comp_transf_function; eauto.
-    clear -TRANSF NO_CROSS_PTR Heqo2 B1 EV Htype_list.
+    clear -TRANSF NO_CROSS_PTR Heqo2 B1 EV Htype_list F.
     eapply add_equations_args_lessdef with (rs := rs) in Heqo2; eauto.
     unfold args' in Heqo2.
     assert (Heqo2' := Heqo2).
@@ -3181,19 +3174,14 @@ Proof.
           specialize (G (Twolong rhi (R R30)) (rhi) (R R30) (or_introl eq_refl)) as [? [? ?]]. congruence.
           specialize (G (Twolong rhi rlo) (rhi) (rlo) (or_introl eq_refl)) as [? [? ?]].
           now destruct rhi; try congruence. }
-    { rewrite R'. rewrite <- find_comp_translated.
+    { rewrite R'. rewrite <- (comp_transl_partial _ F).
       eapply call_trace_lessdef with (ge := ge); eauto using senv_preserved, symbols_preserved. }
   }
   traceEq. traceEq.
   exploit analyze_successors; eauto. simpl. left; eauto. intros [enext [U V]].
   rewrite <- SIG.
   econstructor; eauto.
-  assert (R: comp_of tfd = Genv.find_comp ge vf).
-  { clear -H0 FUNPTR F.
-    unfold RTL.find_function in H0. rewrite FUNPTR in H0.
-    unfold Genv.find_comp.
-    rewrite H0. now rewrite comp_transf_fundef. }
-  rewrite find_comp_translated, SIG.
+  rewrite <- (comp_transl_partial _ F), SIG.
   { (* new case *)
   econstructor; eauto.
   inv WTI. congruence.
@@ -3392,7 +3380,7 @@ Proof.
   econstructor; split.
   eapply plus_left. constructor.
   destruct (transf_function_inv _ _ FUN).
-  rewrite <- COMP. rewrite <- type_of_call_translated.
+  rewrite <- COMP.
   intros G. specialize (NO_CROSS_PTR G). clear -SIG RES NO_CROSS_PTR.
   unfold loc_result, proj_sig_res in *. rewrite SIG in *.
   now inv RES.

@@ -1218,12 +1218,9 @@ Proof.
   assert (EQ: fd = Internal f0) by (eapply find_inlined_function; eauto).
   subst fd.
   right; split. simpl; lia. split.
-  eapply call_trace_same_cp; eauto. exact EV.
+  eapply call_trace_same_cp; eauto. rewrite SAMECOMP0 in EV. exact EV.
   econstructor; eauto.
   eapply match_stacks_inside_inlined; eauto.
-  { clear -FUNPTR H0 SAMECOMP0.
-    unfold Genv.find_comp, find_function in *.
-    rewrite FUNPTR in H0; rewrite H0. now rewrite SAMECOMP0. }
   red; intros; apply PRIV. inv H14. destruct H17. lia.
   congruence.
   apply agree_val_regs_gen; auto.
@@ -1273,30 +1270,30 @@ Proof.
 + (* turned into a call *)
   exploit (find_function_find_function_ptr ge); eauto. intros (vf & Hvf).
   exploit find_function_ptr_translated; eauto. intros Hvf'.
-  assert (FINDCOMP: Genv.find_comp tge vf = comp_of f).
+  assert (FINDCOMP: Genv.find_comp tge vf = Some (comp_of f)).
   { rewrite <- find_comp_translated.
     unfold Genv.find_comp.
     unfold find_function in *.
     unfold find_function_ptr in *.
     destruct ros; simpl in *.
-    - inv Hvf. rewrite H0. eauto.
+    - inv Hvf. rewrite H0. congruence.
     - destruct (Genv.find_symbol ge i); try discriminate.
-      inv Hvf. rewrite H0. eauto. }
+      inv Hvf. rewrite H0. congruence. }
   left; econstructor; split.
   eapply plus_one. eapply exec_Icall; eauto.
 
   eapply sig_function_translated; eauto.
   rewrite <- SAMECOMP. left; rewrite FINDCOMP; reflexivity.
   (* This is a tailcall, so the type of call is InternalCall *)
-  rewrite <- SAMECOMP, FINDCOMP. unfold Genv.type_of_call. now rewrite Pos.eqb_refl.
+  rewrite <- SAMECOMP, <- (comp_transl_partial _ B), COMP. unfold Genv.type_of_call. now rewrite Pos.eqb_refl.
   econstructor; eauto.
-  rewrite <- SAMECOMP, FINDCOMP. unfold Genv.type_of_call. now rewrite Pos.eqb_refl.
+  rewrite <- SAMECOMP, <- (comp_transl_partial _ B), COMP. unfold Genv.type_of_call. now rewrite Pos.eqb_refl.
   econstructor; eauto.
   eapply match_stacks_untailcall; eauto.
   eapply match_stacks_inside_invariant; eauto.
     intros. eapply Mem.perm_free_3; eauto.
   easy.
-  congruence.
+  rewrite <- (comp_transl_partial _ B). congruence.
   eapply agree_val_regs; eauto.
   eapply Mem.free_left_inject; eauto.
 + (* inlined *)
@@ -1540,9 +1537,9 @@ Proof.
   assert (PRIV': range_private F m m' sp' (dstk ctx' + mstk ctx') f'.(fn_stacksize)).
     red; intros. destruct (zlt ofs (dstk ctx)). apply PAD. lia. apply PRIV. lia.
   assert (t = E0). { rewrite SAMECOMP in EV. pose proof return_trace_intra as G.
-                     assert  (Genv.type_of_call ge (comp_of f') (comp_of f') <> Genv.CrossCompartmentCall) by
+                     assert  (Genv.type_of_call (comp_of f') (comp_of f') <> Genv.CrossCompartmentCall) by
                        (unfold Genv.type_of_call; now rewrite Pos.eqb_refl).
-                     specialize (G _ _ _ (comp_of f') (comp_of f') vres ty H).
+                     specialize (G _ _ ge (comp_of f') (comp_of f') vres ty H).
                      now inv EV; inv G. }
   subst t.
   destruct or.

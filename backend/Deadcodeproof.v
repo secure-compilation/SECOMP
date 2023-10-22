@@ -459,14 +459,6 @@ Proof.
   eapply (Genv.match_genvs_find_comp TRANSF).
 Qed.
 
-Lemma type_of_call_translated:
-  forall cp cp',
-    Genv.type_of_call ge cp cp' = Genv.type_of_call tge cp cp'.
-Proof.
-  intros cp cp'.
-  eapply Genv.match_genvs_type_of_call.
-Qed.
-
 Lemma sig_function_translated:
   forall rm f tf,
   transf_fundef rm f = OK tf ->
@@ -556,7 +548,7 @@ Qed.
 Lemma call_trace_translated:
   forall cp cp' vf ros res ne rs te args tyargs t,
     eagree rs te (add_needs_all args (add_ros_need_all ros (kill res ne))) ->
-    (Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr (rs##args)) ->
+    (Genv.type_of_call cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr (rs##args)) ->
     call_trace ge cp cp' vf (rs##args) tyargs t ->
     call_trace tge cp cp' vf (te##args) tyargs t.
 Proof.
@@ -1001,12 +993,12 @@ Ltac UseTransfer :=
         rewrite <- H0 in H2; inv H2.
       + eapply add_need_all_eagree in AG. eauto. }
   eapply H1; eauto. eapply NO_CROSS_PTR.
-  erewrite find_comp_translated, type_of_call_translated; eauto.
+  rewrite (comp_transl_partial _ B).
   rewrite comp_transf_function; eauto.
-  rewrite <- find_comp_translated, <- comp_transf_function; eauto.
+  rewrite <- (comp_transl_partial _ B), <- comp_transf_function; eauto.
   eapply call_trace_translated; eauto.
   eapply match_call_states with (cu := cu'); eauto.
-  constructor; auto. rewrite <- find_comp_translated. eapply match_stackframes_intro with (cu := cu); eauto.
+  constructor; auto. rewrite <- (comp_transl_partial _ B). eapply match_stackframes_intro with (cu := cu); eauto.
   intros.
   edestruct analyze_successors; eauto. simpl; eauto.
   eapply eagree_ge; eauto. rewrite ANPC. simpl.
@@ -1258,7 +1250,6 @@ Ltac UseTransfer :=
   econstructor; split.
   constructor.
   rewrite <- comp_transf_function; eauto.
-  rewrite <- type_of_call_translated.
   intros G; specialize (NO_CROSS_PTR G); inv RES; auto; contradiction.
   rewrite <- comp_transf_function; eauto.
   now eapply return_trace_lessdef; eauto using senv_preserved.

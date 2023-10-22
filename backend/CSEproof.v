@@ -989,14 +989,6 @@ Proof.
   eapply (Genv.match_genvs_find_comp TRANSF).
 Qed.
 
-Lemma type_of_call_translated:
-  forall cp cp',
-    Genv.type_of_call ge cp cp' = Genv.type_of_call tge cp cp'.
-Proof.
-  intros cp cp'.
-  eapply Genv.match_genvs_type_of_call.
-Qed.
-
 (** The proof of semantic preservation is a simulation argument using
   diagrams of the following form:
 <<
@@ -1220,13 +1212,13 @@ Proof.
         rewrite <- H0 in H2; now simpl in H2.
       + eauto. }
   intros CROSS. eapply H1; eauto.
-  eapply NO_CROSS_PTR. erewrite find_comp_translated, type_of_call_translated; eauto.
-  rewrite <- find_comp_translated, <- comp_transf_function.
+  eapply NO_CROSS_PTR.
+  rewrite (comp_transl_partial _ TRANSF'); auto.
+  rewrite <- (comp_transl_partial _ TRANSF').
   eapply call_trace_lessdef; eauto using senv_preserved, symbols_preserved.
-  apply regs_lessdef_regs; auto.
-  unfold transf_function. unfold analyze in ANALYZE. rewrite ANALYZE. reflexivity.
+  apply regs_lessdef_regs; eauto.
   econstructor; eauto.
-  rewrite <- find_comp_translated. eapply match_stackframes_cons with (cu := cu); eauto.
+  rewrite <- (comp_transl_partial _ TRANSF'). eapply match_stackframes_cons with (cu := cu); eauto.
   intros. eapply analysis_correct_1; eauto. simpl; auto.
   unfold transfer; rewrite H.
   exists (fun _ => Vundef); apply empty_numbering_holds.
@@ -1349,7 +1341,6 @@ Proof.
   econstructor; split.
   eapply exec_return; eauto.
   replace (comp_of (transf_function' f approx)) with (comp_of f) by reflexivity.
-  rewrite <- type_of_call_translated.
   intros G; specialize (NO_CROSS_PTR G); inv RES; auto; contradiction.
   replace (comp_of (transf_function' f approx)) with (comp_of f) by reflexivity.
   now eapply return_trace_lessdef; eauto using senv_preserved.

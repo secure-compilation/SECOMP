@@ -375,14 +375,6 @@ Proof.
   eapply (Genv.match_genvs_find_comp TRANSF).
 Qed.
 
-Lemma type_of_call_translated:
-  forall cp cp',
-    Genv.type_of_call ge cp cp' = Genv.type_of_call tge cp cp'.
-Proof.
-  intros cp cp'.
-  eapply Genv.match_genvs_type_of_call.
-Qed.
-
 (** Evaluation of the debug annotations introduced by the transformation. *)
 
 Lemma can_eval_safe_arg:
@@ -531,19 +523,19 @@ Proof.
   reflexivity.
   reflexivity.
   { intros. subst.
-    assert (X: Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall).
-    { erewrite find_comp_translated, type_of_call_translated; eauto.
+    assert (X: Genv.type_of_call (comp_of f) (comp_of f') = Genv.CrossCompartmentCall).
+    { rewrite (comp_transl_partial _ B).
       inv TRF. eauto. }
     specialize (NO_CROSS_PTR X).
     (* rewrite H1. rewrite X in NO_CROSS_PTR. *)
     eauto.
   }
-  { erewrite <- find_comp_translated.
+  { rewrite <- (comp_transl_partial _ B).
     inv TRF; unfold comp_of; simpl.
     eapply call_trace_eq; eauto using senv_preserved, symbols_preserved. }
   constructor; auto. constructor; auto.
   replace (fn_comp tf) with (fn_comp f) by now inv TRF.
-  rewrite find_comp_translated; constructor; auto.
+  rewrite (comp_transl_partial _ B); constructor; auto.
 - (* tailcall *)
   exploit find_function_translated; eauto. intros (tf' & A & B).
   exploit parent_locset_match; eauto. intros PLS.
@@ -609,7 +601,7 @@ Proof.
     inv H0. reflexivity. }
   (* rewrite type_of_call_translated, CALLEE, CALLER, SIG. *)
   rewrite SIG.
-  destruct (Genv.type_of_call tge (call_comp ts) (callee_comp ts)).
+  destruct (Genv.type_of_call (call_comp ts) (callee_comp ts)).
   inv TRF; constructor; auto.
   inv TRF; constructor; auto.
   (* inv TRF; constructor; auto. *)
@@ -631,7 +623,7 @@ Proof.
   change
     (comp_of {| fn_comp := fn_comp f; fn_sig := fn_sig f; fn_stacksize := fn_stacksize f; fn_code := c |})
     with (comp_of f).
-  destruct (Genv.type_of_call tge (call_comp ts) (comp_of f)).
+  destruct (Genv.type_of_call (call_comp ts) (comp_of f)).
   constructor; auto.
   constructor; auto.
   (* constructor; auto. *)

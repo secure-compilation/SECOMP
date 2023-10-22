@@ -303,20 +303,25 @@ Proof.
   eapply (Genv.match_genvs_find_comp TRANSL).
 Qed.
 
-Lemma type_of_call_translated:
-  forall cp cp',
-    Genv.type_of_call ge cp cp' = Genv.type_of_call tge cp cp'.
-Proof.
-  intros cp cp'.
-  eapply Genv.match_genvs_type_of_call.
-Qed.
-
 Lemma senv_preserved:
   Senv.equiv ge tge.
 Proof (Genv.senv_transf TRANSL).
 
 Lemma sig_preserved:
   forall f, funsig (tunnel_fundef f) = funsig f.
+Proof.
+  destruct f; reflexivity.
+Qed.
+
+Lemma comp_preserved_fundef:
+  forall f, comp_of (tunnel_fundef f) = comp_of f.
+Proof.
+  destruct f; reflexivity.
+Qed.
+
+(* Redundant? *)
+Lemma comp_preserved_function:
+  forall f, comp_of (tunnel_function f) = comp_of f.
 Proof.
   destruct f; reflexivity.
 Qed.
@@ -676,8 +681,8 @@ Proof.
   rewrite sig_preserved. auto.
   eapply allowed_call_translated; eauto.
   { intros. subst.
-    assert (X: Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall).
-    { erewrite find_comp_translated, type_of_call_translated; eauto. }
+    assert (X: Genv.type_of_call (comp_of f) (comp_of fd) = Genv.CrossCompartmentCall).
+    { rewrite comp_preserved_fundef, comp_preserved_function in H1. auto. }
     specialize (NO_CROSS_PTR X).
     (* rewrite X in NO_CROSS_PTR, EV. rewrite H1. *)
     apply Forall_forall. rewrite Forall_forall in NO_CROSS_PTR.
@@ -716,20 +721,17 @@ Proof.
                    )) (Conventions.loc_parameters (funsig fd)))).
   { apply locmap_getpairs_lessdef.
     apply locmap_undef_regs_lessdef.
-    assert (EQ: Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf)
-                = Genv.type_of_call tge (comp_of (tunnel_function f)) (Genv.find_comp ge vf)). {
-      rewrite type_of_call_translated, find_comp_translated. reflexivity. }
     (* rewrite EQ. *)
     (* destruct (Genv.type_of_call tge (comp_of (tunnel_function f)) (Genv.find_comp ge vf)). *)
     (* apply call_regs_lessdef. auto. *)
     apply call_regs_ext_lessdef. auto.
     (* apply call_regs_lessdef. auto. *)
   }
-  rewrite <- find_comp_translated, comp_tunnel_fundef.
+  rewrite comp_preserved_fundef, comp_tunnel_fundef.
   eapply call_trace_lessdef; eauto using symbols_preserved, senv_preserved.
   econstructor; eauto.
   constructor; auto.
-  rewrite find_comp_translated.
+  rewrite comp_preserved_fundef.
   constructor; auto.
 - (* Ltailcall *)
   exploit Mem.free_parallel_extends. eauto. eauto. intros (tm' & FREE & MEM'). 
@@ -823,7 +825,7 @@ Proof.
   inv STK. inv H1.
   left; econstructor; split.
   eapply exec_return; eauto.
-  rewrite comp_tunnel_fundef, <- type_of_call_translated.
+  rewrite comp_tunnel_fundef.
   intros G; specialize (NO_CROSS_PTR G).
   apply locmap_getpair_lessdef with (p := map_rpair R (Conventions1.loc_result sig)) in LS.
   inv LS; auto. now rewrite <- H0 in NO_CROSS_PTR.

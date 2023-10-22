@@ -65,6 +65,12 @@ Proof.
   destruct f; reflexivity.
 Qed.
 
+Lemma comp_preserved:
+  forall f, comp_of (transf_fundef f) = comp_of f.
+Proof.
+  destruct f; reflexivity.
+Qed.
+
 Lemma find_function_ptr_translated:
   forall ros ls vf,
   find_function_ptr ge ros ls = Some vf ->
@@ -102,14 +108,6 @@ Lemma find_comp_translated:
 Proof.
   intros vf.
   eapply (Genv.match_genvs_find_comp TRANSL).
-Qed.
-
-Lemma type_of_call_translated:
-  forall cp cp',
-    Genv.type_of_call ge cp cp' = Genv.type_of_call tge cp cp'.
-Proof.
-  intros cp cp'.
-  eapply Genv.match_genvs_type_of_call.
 Qed.
 
 Lemma call_trace_translated:
@@ -258,12 +256,13 @@ Proof.
     eapply find_function_ptr_translated; eauto.
     eapply allowed_call_translated; eauto.
     intros CROSS. eapply NO_CROSS_PTR.
-    erewrite type_of_call_translated, find_comp_translated; eauto.
-    rewrite <- find_comp_translated, comp_transf_function.
+    rewrite comp_transf_function, comp_preserved in CROSS.
+    eauto.
+    rewrite comp_transf_function, comp_preserved.
     eapply call_trace_translated; eauto.
 
   constructor. constructor; auto.
-  rewrite <- find_comp_translated. constructor. eapply reach_succ; eauto. simpl; auto.
+  rewrite comp_preserved. constructor. eapply reach_succ; eauto. simpl; auto.
 (* tailcall *)
   econstructor; split.
   eapply exec_Itailcall with (fd := transf_fundef fd); eauto.

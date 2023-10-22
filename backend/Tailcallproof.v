@@ -259,6 +259,13 @@ Proof.
   destruct (zeq (fn_stacksize f) 0); auto.
 Qed.
 
+Lemma comp_preserved:
+  forall ce f, comp_of (transf_fundef ce f) = comp_of f.
+Proof.
+  destruct f; auto. simpl. unfold transf_function.
+  destruct (zeq (fn_stacksize f) 0); auto.
+Qed.
+
 Lemma stacksize_preserved:
   forall ce f, fn_stacksize (transf_function ce f) = fn_stacksize f.
 Proof.
@@ -320,18 +327,10 @@ Proof.
   eapply (Genv.match_genvs_find_comp TRANSL).
 Qed.
 
-Lemma type_of_call_translated:
-  forall cp cp',
-    Genv.type_of_call ge cp cp' = Genv.type_of_call tge cp cp'.
-Proof.
-  intros cp cp'.
-  eapply Genv.match_genvs_type_of_call.
-Qed.
-
 Lemma call_trace_translated:
   forall cp cp' vf rs rs' args tyargs t,
     regs_lessdef rs rs' ->
-    (Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr (rs##args)) ->
+    (Genv.type_of_call cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr (rs##args)) ->
     call_trace ge cp cp' vf (rs##args) tyargs t ->
     call_trace tge cp cp' vf (rs'##args) tyargs t.
 Proof.
@@ -652,7 +651,7 @@ Proof.
   assert (t = E0).
   { clear -EV FUNPTR H0 Efd.
     unfold Genv.find_comp, find_function in *. rewrite FUNPTR in H0.
-    rewrite H0, Efd in EV.
+    rewrite Efd in EV.
     now eapply call_trace_same_cp; eauto. }
   subst t.
   eapply exec_Itailcall; eauto.
@@ -674,15 +673,7 @@ Proof.
     - constructor.
     - constructor; auto. eapply Mem.free_can_access_block_inj_1; eauto.
     - constructor; auto. }
-  { clear -FUNPTR H0 Efd.
-    unfold Genv.find_comp, find_function, find_function_ptr in *.
-    destruct ros.
-    - inv FUNPTR. destruct (rs # r); simpl in *; try discriminate.
-      destruct (Ptrofs.eq_dec i Ptrofs.zero); try discriminate.
-      rewrite H0; congruence.
-    - destruct (Genv.find_symbol ge i); try discriminate. inv FUNPTR.
-      rewrite H0; congruence. }
-    apply (cenv_compat_linkorder _ _ _ ORDER (compenv_program_compat _)).
+  apply (cenv_compat_linkorder _ _ _ ORDER (compenv_program_compat _)).
   apply regs_lessdef_regs; auto.
   eapply Mem.free_right_extends; eauto.
   rewrite stacksize_preserved. rewrite H7. intros. extlia.
@@ -709,10 +700,11 @@ Proof.
       + eauto. }
   eapply H1; eauto.
   eapply NO_CROSS_PTR; eauto.
-  erewrite find_comp_translated, type_of_call_translated; eauto.
-  rewrite comp_transl, <- find_comp_translated; eauto.
+  rewrite comp_preserved in CROSS; auto.
+  rewrite comp_transl.
+  rewrite comp_preserved.
   eapply call_trace_translated; eauto.
-  constructor. rewrite <- find_comp_translated.
+  constructor. rewrite comp_transl.
   constructor; auto.
     apply (cenv_compat_linkorder _ _ _ ORDER (compenv_program_compat _)).
   apply regs_lessdef_regs; auto. auto.
@@ -855,7 +847,7 @@ Proof.
 + (* synchronous return in both programs *)
   left. econstructor; split.
   apply exec_return.
-  rewrite comp_transf_function, <- type_of_call_translated.
+  rewrite comp_transf_function.
   { intros G. specialize (NO_CROSS_PTR G).
     inv H4; auto; contradiction. }
   rewrite comp_transf_function.

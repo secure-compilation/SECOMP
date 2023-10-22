@@ -844,7 +844,6 @@ Lemma find_function_ptr_inject:
   exists tvf,
     find_function_ptr tge ros trs = Some tvf /\
     Genv.allowed_call tge cp tvf /\
-    Genv.type_of_call ge cp (Genv.find_comp ge vf) = Genv.type_of_call tge cp (Genv.find_comp tge tvf) /\
     Genv.find_comp ge vf = Genv.find_comp tge tvf /\
     Val.inject j vf tvf.
 Proof.
@@ -859,7 +858,7 @@ Proof.
     rewrite <- Genv.find_funct_ptr_iff in A.
     rewrite <- Genv.find_funct_ptr_iff in H0.
     exists (Vptr b2 (Ptrofs.add Ptrofs.zero (Ptrofs.repr delta))).
-    split; [| split; [| split; [| split]]]; auto.
+    split; [| split; [| split]]; auto.
     { rewrite R in H2.
       destruct H2 as [H2 | H2].
       + left. rewrite H2. unfold Genv.find_comp.
@@ -889,7 +888,6 @@ Proof.
           unfold ge, Genv.globalenv in H24. now rewrite Genv.genv_pol_add_globals in H24. }
     { unfold Genv.type_of_call. unfold Genv.find_comp, Genv.find_funct.
       rewrite R, H0, A, B. now destruct Ptrofs.eq_dec. }
-    { unfold Genv.find_comp, Genv.find_funct. rewrite R, H0, A, B. reflexivity. }
     { rewrite R. eapply Val.inject_ptr; eauto. }
   - destruct (Genv.find_symbol ge id) as [b|] eqn:FS; try discriminate.
     exploit symbols_inject_2; eauto. intros (tb & P & Q). rewrite P.
@@ -898,7 +896,7 @@ Proof.
     exploit defs_inject; eauto. intros (A & B & C).
     rewrite <- Genv.find_funct_ptr_iff in A.
     inv H1.
-    eexists; split; [| split; [| split; [| split]]]; eauto.
+    eexists; split; [| split; [| split]]; eauto.
     { rewrite <- Genv.find_funct_ptr_iff in H0.
       rewrite <- H0 in A.
       destruct H2 as [H2 | H2].
@@ -929,9 +927,6 @@ Proof.
           unfold ge, Genv.globalenv in H24. now rewrite Genv.genv_pol_add_globals in H24. }
     { unfold Genv.type_of_call. unfold Genv.find_comp, Genv.find_funct.
       rewrite <- Genv.find_funct_ptr_iff in H0.
-      rewrite H0, A. reflexivity. }
-    { unfold Genv.find_comp.
-      rewrite <- Genv.find_funct_ptr_iff in H0. unfold Genv.find_comp, Genv.find_funct.
       rewrite H0, A. reflexivity. }
 Qed.
 
@@ -1005,7 +1000,7 @@ Lemma call_trace_translated:
     regset_inject j rs trs ->
     Val.inject j vf tvf ->
     meminj_preserves_globals j ->
-    (Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr (rs##args)) ->
+    (Genv.type_of_call cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr (rs##args)) ->
     (Genv.find_comp ge vf = Genv.find_comp tge tvf) ->
     call_trace ge cp cp' vf (rs##args) tyargs t ->
     call_trace tge cp cp' tvf (trs##args) tyargs t.
@@ -1101,7 +1096,7 @@ Proof.
   eapply match_stacks_preserves_globals; eauto. eauto. apply FUNPTR. eapply ALLOWED.
   destruct ros as [r|id]. eauto. apply KEPT. red. econstructor; econstructor; split; eauto. simpl; auto.
 
-  intros (tvf & C & D & E & F & G).
+  intros (tvf & C & D & F & G).
   econstructor; split. eapply exec_Icall; eauto.
   intros CROSS.
   (* TODO: write a lemma *)
@@ -1119,13 +1114,10 @@ Proof.
         rewrite <- H0 in H2; inv H2.
       + eauto. }
   eapply H1; eauto.
-  eapply NO_CROSS_PTR; eauto.
-  rewrite E; eauto.
-  rewrite <- F.
 eapply call_trace_translated; eauto.
   eapply match_stacks_preserves_globals; eauto.
   econstructor; eauto.
-  rewrite F. econstructor; eauto.
+  econstructor; eauto.
   change (Mem.valid_block m sp0). eapply Mem.valid_block_inject_1; eauto.
   change (Mem.valid_block tm tsp). eapply Mem.valid_block_inject_2; eauto.
   apply regs_inject; auto.

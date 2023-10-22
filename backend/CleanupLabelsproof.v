@@ -69,6 +69,13 @@ Proof.
   intros. destruct f; reflexivity.
 Qed.
 
+Lemma comp_function_translated:
+  forall f,
+  comp_of (transf_fundef f) = comp_of f.
+Proof.
+  intros. destruct f; reflexivity.
+Qed.
+
 Lemma find_function_ptr_translated:
   forall ros ls vf,
   find_function_ptr ge ros ls = Some vf ->
@@ -105,14 +112,6 @@ Lemma find_comp_translated:
 Proof.
   intros vf.
   eapply (Genv.match_genvs_find_comp TRANSL).
-Qed.
-
-Lemma type_of_call_translated:
-  forall cp cp',
-    Genv.type_of_call ge cp cp' = Genv.type_of_call tge cp cp'.
-Proof.
-  intros cp cp'.
-  eapply Genv.match_genvs_type_of_call.
 Qed.
 
 (** Correctness of [labels_branched_to]. *)
@@ -318,17 +317,19 @@ Proof.
   symmetry; apply sig_function_translated.
   eapply allowed_call_translated; eauto. reflexivity. reflexivity.
   { intros. subst.
-    assert (X: Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall).
-    { erewrite find_comp_translated, type_of_call_translated; eauto. }
+    assert (X: Genv.type_of_call (comp_of f) (comp_of f') = Genv.CrossCompartmentCall).
+    { erewrite comp_transl in H1; eauto.
+      unfold transf_fundef in H1. setoid_rewrite comp_transf_fundef in H1; eauto.
+      apply comp_match_prog. }
     specialize (NO_CROSS_PTR X).
     (* rewrite X in NO_CROSS_PTR, EV. rewrite H1. *)
     eauto. }
-  { rewrite <- find_comp_translated, comp_match_prog.
+  { rewrite comp_function_translated, comp_match_prog.
     intros; subst.
     eapply call_trace_eq; eauto using senv_preserved, symbols_preserved.
   }
   econstructor; eauto. constructor; auto.
-  rewrite find_comp_translated; constructor; eauto with coqlib.
+  rewrite comp_function_translated; constructor; eauto with coqlib.
 (* Ltailcall *)
   left; econstructor; split.
   econstructor. erewrite match_parent_locset; eauto. eapply find_function_translated; eauto.
@@ -383,7 +384,7 @@ Proof.
     inv H0. reflexivity. }
   (* rewrite type_of_call_translated, CALLER, CALLEE, SIG. *)
   rewrite SIG.
-  destruct (Genv.type_of_call tge (call_comp ts) (callee_comp ts)).
+  destruct (Genv.type_of_call (call_comp ts) (callee_comp ts)).
   econstructor; eauto with coqlib.
   econstructor; eauto with coqlib.
   (* econstructor; eauto with coqlib. *)
@@ -398,7 +399,7 @@ Proof.
     inv H0. reflexivity. }
   (* rewrite type_of_call_translated, CALLER, SIG. *)
   change (comp_of (transf_function f)) with (comp_of f).
-  destruct (Genv.type_of_call tge (call_comp ts) (comp_of f)).
+  destruct (Genv.type_of_call (call_comp ts) (comp_of f)).
   econstructor; eauto with coqlib.
   econstructor; eauto with coqlib.
   (* econstructor; eauto with coqlib. *)
