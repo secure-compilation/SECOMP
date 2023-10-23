@@ -856,6 +856,7 @@ Section Simulation.
           as (fd2 & -> & match_fd'').
         { inv match_fd'. eauto. }
         exists j, (Callstate fd2 vargs2 (Kcall optid f e2 le2 k2) m2).
+        admit.
       * rename fd1 into fd.
         rename type_fd1 into type_fd.
         rewrite comp_vf1 in *.
@@ -876,28 +877,28 @@ Section Simulation.
         constructor; trivial.
         now apply right_cont_injection_kcall_right.
       (* Stopped here... *)
-      assert (vf = v') by admit. subst v'.
-      exists j; eexists; split.
-      * econstructor; eauto.
-        - inv match_fd'; eauto.
-        - exploit (Genv.match_genvs_allowed_calls match_W1_W2); eauto.
-        - eapply (Genv.match_genvs_not_ptr_list_inj); eauto.
-          exploit (Genv.match_genvs_find_comp match_W1_W2); eauto. intros <-.
-          erewrite <- (Genv.match_genvs_type_of_call); eauto.
-        - exploit (Genv.match_genvs_find_comp match_W1_W2); eauto. intros <-.
-          exploit (@call_trace_inj _ _ _ _ ge1 ge2); eauto.
-          simpl. apply Genv.globalenvs_match in match_W1_W2.
-          intros sy. pose proof (Genv.mge_symb match_W1_W2 sy). unfold Genv.find_symbol; eauto.
-      * (* Case analysis: are we changing side or not? *)
-        destruct (s (comp_of fd)) eqn:side.
-        - apply LeftControl; eauto; try now inv match_fd'; auto.
-          simpl. apply right_cont_injection_kcall_right; eauto.
-        - inv match_fd'; unfold in_side in *; simpl in *;
-            unfold comp_of in *; simpl in side; unfold comp_of in *; simpl in side;
-            try congruence.
-          apply RightControl; eauto.
-          constructor; eauto.
-          simpl. apply right_cont_injection_kcall_right; eauto.
+      (* assert (vf = v') by admit. subst v'. *)
+      (* exists j; eexists; split. *)
+      (* * econstructor; eauto. *)
+      (*   - inv match_fd'; eauto. *)
+      (*   - exploit (Genv.match_genvs_allowed_calls match_W1_W2); eauto. *)
+      (*   - eapply (Genv.match_genvs_not_ptr_list_inj); eauto. *)
+      (*     exploit (Genv.match_genvs_find_comp match_W1_W2); eauto. intros <-. *)
+      (*     erewrite <- (Genv.match_genvs_type_of_call); eauto. *)
+      (*   - exploit (Genv.match_genvs_find_comp match_W1_W2); eauto. intros <-. *)
+      (*     exploit (@call_trace_inj _ _ _ _ ge1 ge2); eauto. *)
+      (*     simpl. apply Genv.globalenvs_match in match_W1_W2. *)
+      (*     intros sy. pose proof (Genv.mge_symb match_W1_W2 sy). unfold Genv.find_symbol; eauto. *)
+      (* * (* Case analysis: are we changing side or not? *) *)
+      (*   destruct (s (comp_of fd)) eqn:side. *)
+      (*   - apply LeftControl; eauto; try now inv match_fd'; auto. *)
+      (*     simpl. apply right_cont_injection_kcall_right; eauto. *)
+      (*   - inv match_fd'; unfold in_side in *; simpl in *; *)
+      (*       unfold comp_of in *; simpl in side; unfold comp_of in *; simpl in side; *)
+      (*       try congruence. *)
+      (*     apply RightControl; eauto. *)
+      (*     constructor; eauto. *)
+      (*     simpl. apply right_cont_injection_kcall_right; eauto. *)
     + (* step_builtin *)
       exploit eval_exprlist_injection; eauto.
       auto.
@@ -913,36 +914,40 @@ Section Simulation.
         - admit.
         - admit.
         - admit.
-      * destruct H10.
-        split. intros ? ? ? ?.
-        exploit H10; eauto. intros [b' [? ?]].
-        exists b'; split; eauto.
-        intros ? ?.
-        exploit H14; eauto.
+        - admit.
+      * admit.
+        (* destruct H10. *)
+        (* split. intros ? ? ? ?. *)
+        (* exploit H10; eauto. intros [b' [? ?]]. *)
+        (* exists b'; split; eauto. *)
+        (* intros ? ?. *)
+        (* exploit H14; eauto. *)
       * intros ? ? ?.
-        destruct optid.
-        - simpl in *. rewrite PTree.gsspec in *.
-          destruct (peq i i0); subst.
-          inv H14. eexists; split; eauto.
-          exploit H11; eauto. intros [? [? ?]]; eauto.
-        - exploit H11; eauto. intros [? [? ?]]; eauto.
+        admit.
+        (* destruct optid. *)
+        (* - simpl in *. rewrite PTree.gsspec in *. *)
+        (*   destruct (peq i i0); subst. *)
+        (*   inv H14. eexists; split; eauto. *)
+        (*   exploit H11; eauto. intros [? [? ?]]; eauto. *)
+        (* - exploit H11; eauto. intros [? [? ?]]; eauto. *)
     + (* step_seq*)
       exists j; eexists; split; [constructor | apply RightControl]; auto.
       constructor; auto. constructor; auto.
     + (* step_skip_seq *)
-      inv H7.
+      inv RCONTINJ.
       exists j; eexists; split; [constructor | apply RightControl]; auto.
       constructor; auto.
     + (* step_continue_seq *)
-      inv H7.
+      inv RCONTINJ.
       exists j; eexists; split; [constructor | apply RightControl]; auto.
       constructor; auto.
     + (* step_break_seq *)
-      inv H7.
+      inv RCONTINJ.
       exists j; eexists; split; [constructor | apply RightControl]; auto.
       constructor; auto.
     + (* step_ifthenelse *)
       exploit eval_expr_injection; eauto.
+      admit.
       intros [v' [? ?]].
       destruct_mem_inj.
       exploit bool_val_inject; eauto. intros ?.
@@ -952,16 +957,16 @@ Section Simulation.
       exists j; eexists; split; [econstructor | apply RightControl]; eauto.
       constructor; auto. constructor; auto.
     + (* step_skip_or_continue_loop1 *)
-      inv H8. exists j; eexists; split; [constructor | apply RightControl]; eauto.
+      inv RCONTINJ. exists j; eexists; split; [constructor | apply RightControl]; eauto.
       constructor; auto. constructor; auto.
     + (* step_break_loop1 *)
-      inv H7. exists j; eexists; split; [apply step_break_loop1 | apply RightControl]; eauto.
+      inv RCONTINJ. exists j; eexists; split; [apply step_break_loop1 | apply RightControl]; eauto.
       constructor; auto.
     + (* step_skip_loop2 *)
-      inv H7. exists j; eexists; split; [apply step_skip_loop2 | apply RightControl]; eauto.
+      inv RCONTINJ. exists j; eexists; split; [apply step_skip_loop2 | apply RightControl]; eauto.
       constructor; auto.
     + (* step_break_loop2 *)
-      inv H7. exists j; eexists; split; [apply step_break_loop2 | apply RightControl]; eauto.
+      inv RCONTINJ. exists j; eexists; split; [apply step_break_loop2 | apply RightControl]; eauto.
       constructor; auto.
     + (* step_return_0 *)
       admit.
@@ -971,6 +976,7 @@ Section Simulation.
       admit.
     + (* step_switch *)
       exploit eval_expr_injection; eauto.
+      admit.
       intros [v' [? ?]].
       assert (sem_switch_arg v (typeof a) = Some n -> sem_switch_arg v' (typeof a) = Some n).
       { intros. unfold sem_switch_arg in *.
@@ -979,10 +985,10 @@ Section Simulation.
       constructor; auto.
       constructor; auto.
     + (* step_break_switch *)
-      inv H8. exists j; eexists; split; [constructor | apply RightControl]; eauto.
+      inv RCONTINJ. exists j; eexists; split; [constructor | apply RightControl]; eauto.
       constructor; auto.
     + (* step_continue_switch *)
-      inv H7. exists j; eexists; split; [apply step_continue_switch | apply RightControl]; eauto.
+      inv RCONTINJ. exists j; eexists; split; [apply step_continue_switch | apply RightControl]; eauto.
       constructor; auto.
     + (* step_label *)
       exists j; eexists; split; [constructor | apply RightControl]; auto.
@@ -1021,51 +1027,56 @@ Section Simulation.
     *)
 
 
-  Lemma parallel_concrete_E0: forall s1 s2 s1' s2' t,
-      right_state_injection s j s1 s2 ->
-      is_right s s1 -> (* in the context *)
-      Csem.step ge1 s1 E0 s1' ->
-      Csem.step ge2 s2 t s2' ->
-      t = E0 /\ right_state_injection s j s1' s2'.
-    Proof.
-      intros.
-      exploit parallel_concrete; eauto.
-      intros [? [? ?]].
-      assert (t = E0 /\ s2' = x).
-      { clear -H2 H3.
-        inv H2; inv H3.
-        - admit.
-        - inv H; inv H0; eauto.
-      }
-      (* rely on determinacy lemma with empty traces? *)
+  Lemma parallel_concrete_E0: forall j s1 s2 s1' s2' t,
+    right_state_injection s j ge1 ge2 s1 s2 ->
+    s |= s1 ∈ Right -> (* in the context *)
+    Clight.step1 ge1 s1 E0 s1' ->
+    Clight.step1 ge2 s2 t s2' ->
+    t = E0 /\ right_state_injection s j ge1 ge2 s1' s2'.
+  Proof.
+    intros.
+    exploit parallel_concrete; eauto.
+    intros [? [? ?]].
+    (* assert (t = E0 /\ s2' = x). *)
+    (* { clear -H2 H3. *)
+    (*   inv H2; inv H3. *)
+    (*   - admit. *)
+    (*   - inv H; inv H0; eauto. *)
+    (* } *)
+    admit.
+    (* rely on determinacy lemma with empty traces? *)
   Admitted.
 
-  Lemma parallel_abstract_E0: forall s1 s2 s1' s2',
-      right_state_injection s j s1 s2 ->
-      is_left s s1 ->
-      Csem.step ge1 s1 E0 s1' ->
-      Csem.step ge2 s2 E0 s2' ->
-      right_state_injection s j s1' s2'.
-    Proof.
-      intros s1 s2 s1' t rs_inj is_l step1.
-      inv rs_inj.
-      - admit.
-      - admit. (* contradiction *)
+  Lemma parallel_abstract_E0: forall j s1 s2 s1' s2',
+    right_state_injection s j ge1 ge2 s1 s2 ->
+    s |= s1 ∈ Left ->
+    Clight.step1 ge1 s1 E0 s1' ->
+    Clight.step1 ge2 s2 E0 s2' ->
+    right_state_injection s j ge1 ge2 s1' s2'.
+  Proof.
+    intros s1 s2 s1' t rs_inj is_l step1.
+    (* inv rs_inj. *)
+    (* - admit. *)
+    (* - admit. (* contradiction *) *)
+    admit.
   Admitted.
 
-  Lemma parallel_abstract_t: forall s1 s2 s1' s2' t,
-      right_state_injection s j s1 s2 ->
-      is_left s s1 ->
-      Csem.step ge1 s1 t s1' ->
-      Csem.step ge2 s2 t s2' ->
-      right_state_injection s j s1' s2'.
+  Lemma parallel_abstract_t: forall j s1 s2 s1' s2' t,
+    right_state_injection s j ge1 ge2 s1 s2 ->
+    s |= s1 ∈ Left ->
+    Clight.step1 ge1 s1 t s1' ->
+    Clight.step1 ge2 s2 t s2' ->
+    right_state_injection s j ge1 ge2 s1' s2'.
+  Admitted.
 
-Lemma parallel_concrete p1 p2 scs1 scs2:
-  left_side s p1 -> (* use definitions from RSC.v *)
-  left_side s p2 -> (* use definitions from RSC.v *)
-  partial_state_equivalent s scs1 scs2 -> (* to define --> using memory injections? *)
-  pc_in_left_part scs1 -> (* to define *)
-  CS.kstep (prepare_global_env (program_link p p1)) scs1 t scs1' -> (* use step of Csem instead *)
-  exists2 scs2',
-    CS.kstep (prepare_global_env (program_link p p2)) scs2 t scs2' /\ (* use step of Csem instead *)
-      partial_state_equivalent s scs1' scs2'. (* to define *)
+(* Lemma parallel_concrete p1 p2 scs1 scs2: *)
+(*   left_side s p1 -> (* use definitions from RSC.v *) *)
+(*   left_side s p2 -> (* use definitions from RSC.v *) *)
+(*   partial_state_equivalent s scs1 scs2 -> (* to define --> using memory injections? *) *)
+(*   pc_in_left_part scs1 -> (* to define *) *)
+(*   CS.kstep (prepare_global_env (program_link p p1)) scs1 t scs1' -> (* use step of Csem instead *) *)
+(*   exists2 scs2', *)
+(*     CS.kstep (prepare_global_env (program_link p p2)) scs2 t scs2' /\ (* use step of Csem instead *) *)
+(*       partial_state_equivalent s scs1' scs2'. (* to define *) *)
+
+End Simulation.

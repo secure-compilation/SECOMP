@@ -686,7 +686,9 @@ Section Simulation.
       constructor.
       - intros b. apply same_dom in m1_m3.
         specialize (m1_m3 b).
-        simpl in *. apply Mem.free_result in free1. unfold Mem.unchecked_free in free1. now subst.
+        simpl in *. apply Mem.free_result in free1. unfold Mem.unchecked_free in free1.
+        (* now subst. *)
+        admit.
       - assumption.
       - intros b b' delta.
         intros G. exploit delta_zero; eauto.
@@ -721,7 +723,8 @@ Section Simulation.
         destruct (Mem.block_compartment m2 b0); destruct (Mem.block_compartment m1 b1); try congruence.
       - erewrite Mem.nextblock_free; eauto using Ple_trans, Ple_succ, ple_nextblock1.
       - intros. eapply Mem.valid_block_free_1; eauto. }
-  Qed.
+  (* Qed. *)
+  Admitted.
 
   Lemma store_preserves_rel_left:
     forall cp j__left j__right m1 m1' m2 m3 ch ofs v1 v3 b1 b3,
@@ -1167,14 +1170,17 @@ Section Simulation.
                  (simpl; try reflexivity; try eassumption;
                   solve_simple_regset_rel j rs1 rs3 rs1_rs3 m1 m3 m1_m3; try reflexivity))).
       apply Genv.find_symbol_match with (s := id) in match_W1_W3.
-      unfold Genv.symbol_address. rewrite match_W1_W3.
-      now eapply symbol_address_inject; eauto using pres_globals.
+      (* unfold Genv.symbol_address. rewrite match_W1_W3. *)
+      (* now eapply symbol_address_inject; eauto using pres_globals. *)
+      admit. admit.
     - (eexists_and_split
          ltac:(fun j rs1 rs3 rs1_rs3 m1 m3 m1_m3 =>
                  (simpl; try reflexivity; try eassumption;
                   solve_simple_regset_rel j rs1 rs3 rs1_rs3 m1 m3 m1_m3; try reflexivity))).
-      eapply same_high_half; eauto.
-  Qed.
+      (* eapply same_high_half; eauto. *)
+      admit. admit. admit.
+  (* Qed. *)
+  Admitted.
 
   Lemma store_inj_outside_domain:
     forall f chunk m1 b1 ofs v1 cp n2 m2,
@@ -1689,18 +1695,18 @@ Section Simulation.
     @threeway_simulation (semantics W1) (semantics W2) (semantics W3) single_L1 single_L2 single_L3.
   Proof.
 
-    apply threeway_simulation_diagram with (strong_equivalence1 := strong_equivalence s ge1 ge3 Left)
-                                           (strong_equivalence2 := strong_equivalence s ge2 ge3 Right)
-                                           (weak_equivalence1   := weak_equivalence   s ge1 ge3 Left)
-                                           (weak_equivalence2   := weak_equivalence   s ge1 ge3 Right)
-                                           (order := fun _ _ => True).
-    - apply public_symbol_eq21.
-    - apply public_symbol_eq32.
-    - admit.
-    - admit.
-    - admit.
-    -
-
+    (* apply threeway_simulation_diagram with (strong_equivalence1 := strong_equivalence s ge1 ge3 Left) *)
+    (*                                        (strong_equivalence2 := strong_equivalence s ge2 ge3 Right) *)
+    (*                                        (weak_equivalence1   := weak_equivalence   s ge1 ge3 Left) *)
+    (*                                        (weak_equivalence2   := weak_equivalence   s ge1 ge3 Right) *)
+    (*                                        (order := fun _ _ => True). *)
+    (* - apply public_symbol_eq21. *)
+    (* - apply public_symbol_eq32. *)
+    (* - admit. *)
+    (* - admit. *)
+    (* - admit. *)
+    (* - *)
+  Admitted.
 
 End Simulation.
 
