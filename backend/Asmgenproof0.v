@@ -932,7 +932,7 @@ Lemma exec_straight_steps_1:
   forall b ofs,
   rs#PC = Vptr b ofs ->
   Genv.find_funct_ptr ge b = Some (Internal fn) ->
-  Genv.find_comp ge (Vptr b Ptrofs.zero) = (comp_of fn) ->
+  Genv.find_comp ge (Vptr b Ptrofs.zero) = Some (comp_of fn) ->
   code_tail (Ptrofs.unsigned ofs) (fn_code fn) c ->
   plus (step comp_of_main) ge (State s rs m) E0 (State s rs' m').
 Proof.

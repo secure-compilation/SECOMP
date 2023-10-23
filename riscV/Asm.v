@@ -1206,7 +1206,10 @@ Definition stack := list stackframe.
 Definition call_comp (s: stack) :=
   match s with
   | nil => default_compartment
-  | Stackframe f _ _ _ _ :: _ => Genv.find_comp ge (Vptr f Ptrofs.zero)
+  | Stackframe f _ _ _ _ :: _ => match Genv.find_comp ge (Vptr f Ptrofs.zero) with
+                                 | Some cp => cp
+                                 | None => default_compartment
+                                 end
   end.
 
 Definition callee_comp (s: stack) :=
@@ -1228,9 +1231,13 @@ Definition update_stack_call (s: stack) (sg: signature) (cp: compartment) rs' :=
   let pc' := rs' # PC in
   let ra' := rs' # RA in
   let sp' := rs' # SP in
+  let cp' := match Genv.find_comp_ignore_offset ge pc' with
+             | Some cp' => cp'
+             | None => default_compartment
+             end in
   (* match Genv.find_comp_ignore_offset ge pc' with *)
   (* | Some cp' => *)
-  if Pos.eqb cp (Genv.find_comp_ignore_offset ge pc') then
+  if Pos.eqb cp cp' then
     (* If we are in the same compartment as previously recorded, we
          don't update the stack *)
     Some s
@@ -1238,14 +1245,19 @@ Definition update_stack_call (s: stack) (sg: signature) (cp: compartment) rs' :=
     (* Otherwise, we simply push a new frame on the stack *)
     match ra' with
     | Vptr f retaddr =>
-        Some (Stackframe f (Genv.find_comp_ignore_offset ge pc') sg sp' retaddr :: s)
+        Some (Stackframe f cp' sg sp' retaddr :: s)
     | _ => None
     end
   .
 
+  
 Definition update_stack_return (s: stack) (cp: compartment) rs' :=
   let pc' := rs' # PC in
-  if Pos.eqb cp (Genv.find_comp_ignore_offset ge pc') then
+  let cp' := match Genv.find_comp_ignore_offset ge pc' with
+             | Some cp' => cp'
+             | None => default_compartment
+             end in
+  if Pos.eqb cp cp' then
     (* If we are in the same compartment as previously recorded, we
          don't update the stack *)
     Some s
@@ -1310,7 +1322,7 @@ Inductive step: state -> trace -> state -> Prop :=
       sig_call i = None ->
       is_return i = false ->
       forall (NEXTPC: rs' PC = Vptr b' ofs'),
-      forall (ALLOWED: cp = Genv.find_comp_ignore_offset ge (Vptr b' ofs')),
+      forall (ALLOWED: Some cp = Genv.find_comp_ignore_offset ge (Vptr b' ofs')),
       step (State st rs m) E0 (State st rs' m')
   | exec_step_internal_call:
       forall b ofs f i sig rs m rs' m' b' ofs' cp st st' args t,
@@ -1321,15 +1333,16 @@ Inductive step: state -> trace -> state -> Prop :=
       sig_call i = Some sig ->
       forall (NEXTPC: rs' PC = Vptr b' ofs'),
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) (Vptr b' Ptrofs.zero)),
-      forall (CURCOMP: Genv.find_comp_ignore_offset ge (Vptr b Ptrofs.zero) = cp),
+      forall (CURCOMP: Genv.find_comp_ignore_offset ge (Vptr b Ptrofs.zero) = Some cp),
+      forall cp' (NEXTCOMP: Genv.find_comp_ignore_offset ge (Vptr b' Ptrofs.zero) = Some cp'),
       (* Is a call, we update the stack *)
       forall (STUPD: update_stack_call st sig cp rs' = Some st'),
       forall (ARGS: call_arguments rs' m' sig args),
       (* Is a call, we check whether we are allowed to pass pointers *)
       forall (NO_CROSS_PTR:
-          Genv.type_of_call ge (comp_of f) (Genv.find_comp_ignore_offset ge (Vptr b' ofs')) = Genv.CrossCompartmentCall ->
+          Genv.type_of_call (comp_of f) cp' = Genv.CrossCompartmentCall ->
           List.Forall not_ptr args),
-      forall (EV: call_trace ge (comp_of f) (Genv.find_comp_ignore_offset ge (Vptr b' ofs')) (Vptr b' ofs')
+      forall (EV: call_trace ge (comp_of f) cp' (Vptr b' ofs')
               args (sig_args sig) t),
       step (State st rs m) t (State st' rs' m')
   | exec_step_internal_return:
@@ -1339,11 +1352,11 @@ Inductive step: state -> trace -> state -> Prop :=
       find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
       exec_instr f i rs m cp = Next rs' m' ->
       is_return i = true ->
-      forall (CURCOMP: Genv.find_comp_ignore_offset ge (rs PC) = cp),
+      forall (CURCOMP: Genv.find_comp_ignore_offset ge (rs PC) = Some cp),
       (* We attempt a return, so we go to a ReturnState*)
       (* The only condition is the following: we are currently in the compartment stored in the callee compartment field
        of the top stack frame*)
-      forall (REC_CURCOMP: Genv.find_comp_ignore_offset ge (rs PC) = callee_comp st),
+      forall (REC_CURCOMP: Genv.find_comp_ignore_offset ge (rs PC) = Some (callee_comp st)),
       (* forall (NEXTCOMP: Genv.find_comp_ignore_offset ge (rs' PC) = cp'), *)
       step (State st rs m) E0 (ReturnState st rs' m')
   | exec_step_return:
@@ -1351,7 +1364,7 @@ Inductive step: state -> trace -> state -> Prop :=
         rs PC <> Vnullptr -> (* this condition is there to stop the execution 1 step earlier, to make the proof easier *)
         forall (REC_CURCOMP: callee_comp st = rec_cp),
         forall (REC_NEXTCOMP: call_comp st = rec_cp'),
-        forall (NEXTCOMP: Genv.find_comp_ignore_offset ge (rs PC) = cp'),
+        forall (NEXTCOMP: Genv.find_comp_ignore_offset ge (rs PC) = Some cp'),
         (* We only impose conditions on when returns can be executed for cross-compartment
            returns. These conditions are that we restore the previous RA and SP *)
         forall (PC_RA: rec_cp <> cp' -> rs PC = asm_parent_ra st),
@@ -1363,7 +1376,7 @@ Inductive step: state -> trace -> state -> Prop :=
         (* We do not return a pointer *)
         forall (SIG_STACK: sig_of_call st = sg),
         forall (NO_CROSS_PTR:
-            (Genv.type_of_call ge cp' rec_cp = Genv.CrossCompartmentCall ->
+            (Genv.type_of_call cp' rec_cp = Genv.CrossCompartmentCall ->
              not_ptr (return_value rs sg))),
         forall (EV: return_trace ge cp' rec_cp (return_value rs sg) (sig_res sg) t),
           step (ReturnState st rs m) t (State st' rs m)
@@ -1389,7 +1402,7 @@ Inductive step: state -> trace -> state -> Prop :=
       extcall_arguments rs m (ef_sig ef) args ->
       rs' = (set_pair (loc_external_result (ef_sig ef)) res (undef_caller_save_regs rs))#PC <- (rs RA) ->
       (* These steps behave like returns. So we do the same as in the [exec_step_internal_return] case. *)
-      forall (REC_CURCOMP: Genv.find_comp_ignore_offset ge (rs PC) = callee_comp st),
+      forall (REC_CURCOMP: Genv.find_comp_ignore_offset ge (rs PC) = Some (callee_comp st)),
       step (State st rs m) t (ReturnState st rs' m').
 
 End RELSEM.
@@ -1417,7 +1430,10 @@ Inductive final_state (p: program): state -> int -> Prop :=
 Definition comp_of_main (p: program) :=
   let ge := Genv.globalenv p in
   match Genv.find_symbol ge (prog_main p) with
-  | Some fb => Genv.find_comp ge (Vptr fb Ptrofs.zero)
+  | Some fb => match Genv.find_comp ge (Vptr fb Ptrofs.zero) with
+               | Some cp => cp
+               | None => default_compartment
+               end
   | _ => default_compartment
   end.
 
@@ -1429,7 +1445,10 @@ Definition semantics (p: program) :=
   fun s => match s with
         | State _ rs _
         | ReturnState _ rs _ =>
-            Genv.find_comp_ignore_offset (Genv.globalenv p) (rs PC)
+            match  Genv.find_comp_ignore_offset (Genv.globalenv p) (rs PC) with
+            | Some cp => cp
+            | None => default_compartment
+            end
         end.
 
 (** Determinacy of the [Asm] semantics. *)
@@ -1639,18 +1658,20 @@ Section ExecSem.
                 match sig_call i, is_return i with
                 | None, false => (* exec_step_internal *)
                     do Vptr b' ofs' <- rs' PC;
-                    check (Pos.eqb (comp_of f) (Genv.find_comp_ignore_offset ge (Vptr b' ofs')));
+                    do cp <- Genv.find_comp_ignore_offset ge (Vptr b' ofs');
+                    check (Pos.eqb (comp_of f) cp);
                     Some (E0, State st rs' m')
                 | Some sig, false => (* exec_step_internal_call *)
                     do Vptr b' ofs' <- rs' PC;
                     check (Genv.allowed_call_b ge (comp_of f) (rs' PC));
                     do st' <- update_stack_call ge st sig (comp_of f) rs';
                     do vargs <- get_call_arguments rs' m' sig;
-                    check (match Genv.type_of_call ge (comp_of f) (Genv.find_comp_ignore_offset ge (rs' PC)) with
+                    do cp <- Genv.find_comp_ignore_offset ge (rs' PC);
+                    check (match Genv.type_of_call (comp_of f) cp with
                            | Genv.CrossCompartmentCall => forallb not_ptr_b vargs
                            | _ => true
                            end);
-                    do t <- get_call_trace _ _ ge (comp_of f) (Genv.find_comp_ignore_offset ge (rs' PC)) (rs' PC) vargs (sig_args sig);
+                    do t <- get_call_trace _ _ ge (comp_of f) cp (rs' PC) vargs (sig_args sig);
                     Some (t, State st' rs' m')
                 | None, true => (* exec_step_internal_return *)
                     check (Genv.allowed_call_b ge (comp_of f) (rs' PC));
@@ -1667,21 +1688,22 @@ Section ExecSem.
             do res_external <- do_external _ _ ge do_external_function do_inline_assembly ef w vargs m;
             let '(w', t, res, m') := res_external in
             let rs' := (set_pair (loc_external_result (ef_sig ef)) res (undef_caller_save_regs rs)) # PC <- (rs X1) in
-            check (Pos.eqb (Genv.find_comp_ignore_offset ge (rs PC)) (callee_comp comp_of_main st));
+            do cp' <- Genv.find_comp_ignore_offset ge (rs PC);
+            check (Pos.eqb cp' (callee_comp comp_of_main st));
             Some (t, ReturnState st rs' m')
         end
     | ReturnState st rs m =>
         check (negb (Val.eq (rs PC) Vnullptr));
         let rec_cp := callee_comp comp_of_main st in
         let rec_cp' := call_comp ge st in
-        let cp' := Genv.find_comp_ignore_offset ge (rs PC) in
+        do cp' <- Genv.find_comp_ignore_offset ge (rs PC);
         check (match Pos.eqb rec_cp cp' with
                | true => true
                | false => andb (Val.eq (rs PC) (asm_parent_ra st)) (Val.eq (rs X2) (asm_parent_sp st))
                end);
         do st' <- update_stack_return ge st rec_cp rs;
         let sg := sig_of_call st in
-        check (match Genv.type_of_call ge cp' rec_cp with
+        check (match Genv.type_of_call cp' rec_cp with
                | Genv.CrossCompartmentCall => not_ptr_b (return_value rs sg)
                | _ => true end);
         do t <- get_return_trace _ _ ge cp' rec_cp (return_value rs sg) (sig_res sg);
