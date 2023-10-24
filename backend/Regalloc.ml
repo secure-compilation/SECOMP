@@ -705,7 +705,7 @@ let add_interfs_instr g instr live =
       | EF_annot_val _, [BA arg], BR res ->
           (* like a move *)
           IRC.add_pref g arg res
-      | EF_inline_asm(txt, sg, clob), _, _ ->
+      | EF_inline_asm(cp, txt, sg, clob), _, _ ->
           let vargs = params_of_builtin_args args in
           (* clobbered regs interfere with res and args for GCC compatibility *)
           List.iter (fun c ->
