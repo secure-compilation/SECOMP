@@ -1373,17 +1373,22 @@ let helper_functions () = [
         [Tlong(Unsigned, noattr); Tlong(Unsigned, noattr)]
 ]
 
-let helper_function_declaration (name, tyres, tyargs) =
+let helper_function_declaration cp (name, tyres, tyargs) =
   let tyargs =
     List.fold_right (fun t tl -> Tcons(t, tl)) tyargs Tnil in
   let ef =
-    AST.EF_runtime(AST.privileged_compartment, coqstring_of_camlstring name, (* NOTE: All in privileged? *)
+    AST.EF_runtime(cp, coqstring_of_camlstring name,
                    signature_of_type tyargs tyres AST.cc_default) in
   (intern_string name,
    AST.Gfun (Ctypes.External(ef, tyargs, tyres, AST.cc_default)))
 
-let add_helper_functions globs =
-  List.map helper_function_declaration (helper_functions()) @ globs
+let add_helper_functions_cp cp globs =
+  List.map (helper_function_declaration cp) (helper_functions()) @ globs
+
+let rec add_helper_functions cps gl2 =
+  match cps with
+  | [] -> []
+  | cp :: cps' -> add_helper_functions cps' (add_helper_functions_cp cp gl2)
 
 (** Build environment of typedefs, structs, unions and enums *)
 
@@ -1523,6 +1528,19 @@ let debug_set_struct_ofs env typs =
           end
         | _ -> ()) typs
 
+let list_comps p =
+  let decls = List.map (fun g -> g.gdesc) p in
+  let get_comp gdecl =
+    match gdecl with
+    | Gdecl (_, _, _, _, cp) -> [cp]
+    | Gfundef fd -> [fd.fd_comp]
+    | _ -> []
+  in
+  let l1 = List.map get_comp decls in
+  let l2 = List.concat l1 in
+  let l3 = List.sort_uniq String.compare l2 in
+  List.map intern_string l3
+
 (** Convert a [C.program] into a [Csyntax.program] *)
 let convertProgram (p, (imports, exports)) =
   Diagnostics.reset();
@@ -1542,7 +1560,8 @@ let convertProgram (p, (imports, exports)) =
         comp_env := ce;
         let gl1 = convertGlobdecls env [] p in
         let gl2 = globals_for_strings gl1 in
-        let gl3 = add_helper_functions gl2 in
+        let cps = list_comps p in
+        let gl3 = add_helper_functions cps gl2 in
         comp_env := Maps.PTree.empty;
         let p' =
           { prog_pol = build_policy imports exports ;
