@@ -2438,6 +2438,7 @@ Proof.
     destruct (Policy.list_id_eq l l0); subst; simpl in *; auto; try discriminate.
 Qed.
 
+(* FIXME: This lemma should not be needed. *)
 Lemma match_genvs_type_of_call:
   forall cp cp',
     type_of_call cp cp' = type_of_call cp cp'.

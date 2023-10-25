@@ -437,6 +437,7 @@ table:  .long   table[0], table[1], ...
 
 Definition code := list instruction.
 Record function : Type := mkfunction { fn_comp: compartment; fn_sig: signature; fn_code: code }.
+#[global]
 Instance has_comp_function: has_comp function := fn_comp.
 Definition fundef := AST.fundef function.
 Definition program := AST.program fundef unit.

@@ -595,8 +595,8 @@ Inductive step: state -> trace -> state -> Prop :=
       Genv.find_funct ge vf = Some fd ->
       type_of_fundef fd = Tfunction tyargs tyres cconv ->
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
-      forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
-      forall (EV: call_trace ge (comp_of f) (Genv.find_comp ge vf) vf vargs (typlist_of_typelist tyargs) t),
+      forall (NO_CROSS_PTR: Genv.type_of_call (comp_of f) (comp_of fd) = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
+      forall (EV: call_trace ge (comp_of f) (comp_of fd) vf vargs (typlist_of_typelist tyargs) t),
       step (State f (Scall optid a al) k e le m)
         t (Callstate fd vargs (Kcall optid f e le k) m)
 
@@ -692,7 +692,7 @@ Inductive step: state -> trace -> state -> Prop :=
          t (Returnstate vres k m' (rettype_of_type tres) (comp_of ef))
 
   | step_returnstate: forall v optid f e le ty cp k m t,
-      forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) cp = Genv.CrossCompartmentCall ->
+      forall (NO_CROSS_PTR: Genv.type_of_call (comp_of f) cp = Genv.CrossCompartmentCall ->
                        not_ptr v),
       forall (EV: return_trace ge (comp_of f) cp v ty t),
       step (Returnstate v (Kcall optid f e le k) m ty cp)

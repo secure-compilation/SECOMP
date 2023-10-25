@@ -401,8 +401,8 @@ Inductive step: state -> trace -> state -> Prop :=
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
-      forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
-      forall (EV: call_trace ge (comp_of f) (Genv.find_comp ge vf) vf vargs (sig_args sig) t),
+      forall (NO_CROSS_PTR: Genv.type_of_call (comp_of f) (comp_of fd) = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
+      forall (EV: call_trace ge (comp_of f) (comp_of fd) vf vargs (sig_args sig) t),
       step (State f (Scall optid sig a bl) k e le m)
         t (Callstate fd vargs (Kcall optid f e le k) m)
 
@@ -480,7 +480,7 @@ Inductive step: state -> trace -> state -> Prop :=
          t (Returnstate vres k m' (sig_res (ef_sig ef)) (comp_of ef))
 
   | step_return: forall v optid f e le cp k m ty t,
-      forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) cp = Genv.CrossCompartmentCall -> not_ptr v),
+      forall (NO_CROSS_PTR: Genv.type_of_call (comp_of f) cp = Genv.CrossCompartmentCall -> not_ptr v),
       forall (EV: return_trace ge (comp_of f) cp v ty t),
       step (Returnstate v (Kcall optid f e le k) m ty cp)
         t (State f Sskip k e (Cminor.set_optvar optid v le) m).

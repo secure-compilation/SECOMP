@@ -23,6 +23,7 @@ Require Import Debugvar.
 Definition match_prog (p tp: program) :=
   match_program (fun _ f tf => transf_fundef f = OK tf) eq p tp.
 
+#[global]
 Instance comp_transf_function: has_comp_transl_partial transf_function.
 Proof.
   unfold transf_function.

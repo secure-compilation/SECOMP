@@ -25,14 +25,7 @@ Definition match_prog (p: Csyntax.program) (tp: Clight.program) :=
     match_program_gen tr_fundef eq p p tp
  /\ prog_types tp = prog_types p.
 
-(* Instance comp_tr_fundef P: *)
-(*   has_comp_match (fun (ctx: P) f tf => tr_fundef f tf). *)
-(* Proof. *)
-(*   intros ctx f tf [? ? []|]; trivial. *)
-(*   symmetry; eauto. *)
-(* Qed. *)
-
-(* Global *) Instance comp_tr_fundef:
+#[global] Instance comp_tr_fundef:
   has_comp_match (fun cu f tf => tr_fundef cu f tf).
 Proof.
   intros ctx f tf [? ? []|]; trivial.
@@ -134,14 +127,6 @@ Lemma find_comp_translated:
 Proof.
   destruct TRANSL.
   eapply (Genv.match_genvs_find_comp H).
-Qed.
-
-Lemma type_of_call_translated:
-  forall cp cp',
-    Genv.type_of_call ge cp cp' = Genv.type_of_call tge cp cp'.
-Proof.
-  intros cp cp'.
-  eapply (Genv.match_genvs_type_of_call).
 Qed.
 
 Lemma call_trace_translated:
@@ -2172,8 +2157,8 @@ Ltac NOTIN :=
   exploit type_of_fundef_preserved; eauto. congruence.
   rewrite CO; eauto.
   eapply allowed_call_translated; eauto.
-  erewrite CO, <- find_comp_translated, <- type_of_call_translated; eauto.
-  erewrite CO, <- find_comp_translated; eapply call_trace_translated; eauto.
+  rewrite CO, <- comp_tr_fundef; eauto.
+  rewrite CO, <- comp_tr_fundef; eauto; eapply call_trace_translated; eauto.
   traceEq.
   econstructor. eexact L. eauto. econstructor. eexact LINK. auto. auto.
   (* rewrite <- find_comp_translated. *)
@@ -2192,8 +2177,8 @@ Ltac NOTIN :=
   rewrite CO; eauto. eauto.
   exploit type_of_fundef_preserved; eauto. congruence.
   eapply allowed_call_translated; eauto. rewrite CO; eauto.
-  erewrite CO, <- find_comp_translated, <- type_of_call_translated; eauto.
-  erewrite CO, <- find_comp_translated; eapply call_trace_translated; eauto.
+  rewrite CO, <- comp_tr_fundef; eauto.
+  rewrite CO, <- comp_tr_fundef; eauto; eapply call_trace_translated; eauto.
   traceEq.
   econstructor. eexact L. eauto. econstructor. eexact LINK. auto. auto.
   (* rewrite <- find_comp_translated. *)
@@ -2560,7 +2545,7 @@ Proof.
   econstructor; split.
   assert (CO : comp_of tf = comp_of f) by (inv H8; assumption). (* NOTE: Intros/tactics? *)
   left; apply plus_one. constructor.
-  rewrite CO. now rewrite type_of_call_translated in NO_CROSS_PTR.
+  now rewrite CO.
   rewrite CO. eapply return_trace_eq; eauto using senv_preserved.
   econstructor; eauto.
 
