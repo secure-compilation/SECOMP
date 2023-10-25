@@ -1204,13 +1204,10 @@ Inductive stackframe: Type :=
 
 Definition stack := list stackframe.
 
-Definition call_comp (s: stack) :=
+Definition caller_comp (s: stack) :=
   match s with
-  | nil => default_compartment
-  | Stackframe f _ _ _ _ :: _ => match Genv.find_comp ge (Vptr f Ptrofs.zero) with
-                                 | Some cp => cp
-                                 | None => default_compartment
-                                 end
+  | nil => None
+  | Stackframe f _ _ _ _ :: _ => Genv.find_comp_of_block ge f
   end.
 
 Definition callee_comp (s: stack) :=
@@ -1232,24 +1229,21 @@ Definition update_stack_call (s: stack) (sg: signature) (cp: compartment) rs' :=
   let pc' := rs' # PC in
   let ra' := rs' # RA in
   let sp' := rs' # SP in
-  let cp' := match Genv.find_comp_ignore_offset ge pc' with
-             | Some cp' => cp'
-             | None => default_compartment
-             end in
-  (* match Genv.find_comp_ignore_offset ge pc' with *)
-  (* | Some cp' => *)
-  if Pos.eqb cp cp' then
-    (* If we are in the same compartment as previously recorded, we
-         don't update the stack *)
-    Some s
-  else
-    (* Otherwise, we simply push a new frame on the stack *)
-    match ra' with
-    | Vptr f retaddr =>
-        Some (Stackframe f cp' sg sp' retaddr :: s)
-    | _ => None
-    end
-  .
+  match Genv.find_comp_ignore_offset ge pc' with
+  | Some cp' =>
+      if Pos.eqb cp cp' then
+        (* If we are in the same compartment as previously recorded, we
+           don't update the stack *)
+        Some s
+      else
+        (* Otherwise, we simply push a new frame on the stack *)
+        match ra' with
+        | Vptr f retaddr =>
+            Some (Stackframe f cp' sg sp' retaddr :: s)
+        | _ => None
+        end
+  | None => None
+  end.
 
   
 Definition update_stack_return (s: stack) (cp: compartment) rs' :=
@@ -1364,7 +1358,7 @@ Inductive step: state -> trace -> state -> Prop :=
       forall st st' rs m sg t rec_cp rec_cp' cp',
         rs PC <> Vnullptr -> (* this condition is there to stop the execution 1 step earlier, to make the proof easier *)
         forall (REC_CURCOMP: callee_comp st = rec_cp),
-        forall (REC_NEXTCOMP: call_comp st = rec_cp'),
+        forall (REC_NEXTCOMP: caller_comp st = rec_cp'),
         forall (NEXTCOMP: Genv.find_comp_ignore_offset ge (rs PC) = Some cp'),
         (* We only impose conditions on when returns can be executed for cross-compartment
            returns. These conditions are that we restore the previous RA and SP *)
@@ -1696,7 +1690,7 @@ Section ExecSem.
     | ReturnState st rs m =>
         check (negb (Val.eq (rs PC) Vnullptr));
         let rec_cp := callee_comp comp_of_main st in
-        let rec_cp' := call_comp ge st in
+        let rec_cp' := caller_comp ge st in
         do cp' <- Genv.find_comp_ignore_offset ge (rs PC);
         check (match Pos.eqb rec_cp cp' with
                | true => true
