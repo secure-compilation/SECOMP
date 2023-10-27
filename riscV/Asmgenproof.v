@@ -522,35 +522,6 @@ Definition val_of_stackframe (f: Mach.stackframe) :=
   | Mach.Stackframe b _ _ _ ofs _ => Vptr b ofs
   end.
 
-(* How are the source and target stack related? *)
-(* There is no reason to inspect the current RA or SP in the source, because they
-   can be modified. *)
-(* Inductive match_stacks: val -> list Mach.stackframe -> stack -> Prop := *)
-(* | match_stacks_nil: *)
-(*     forall pc, *)
-(*       Genv.find_comp_ignore_offset ge pc = default_compartment -> *)
-(*       match_stacks pc nil nil *)
-(* | match_stacks_intra_compartment: *)
-(*     (* Intra-compartment calls create a new frame in the source, not the target *) *)
-(*     forall newpc pc s s' f, *)
-(*     match_stacks pc s s' -> *)
-(*     (* TODO: define function [callee_comp] but for stackframes and use it there *) *)
-(*     Genv.find_comp_ignore_offset ge newpc = callee_comp s' -> *)
-(*     Genv.find_comp_ignore_offset ge (val_of_stackframe f) = Genv.find_comp_ignore_offset ge pc -> *)
-(*     Genv.find_comp_ignore_offset ge (val_of_stackframe f) = Genv.find_comp_ignore_offset ge newpc -> *)
-(*     (* no condition on the frame *) *)
-(*     match_stacks newpc (f :: s) s' *)
-(* | match_stacks_cross_compartment: *)
-(*     (* Cross-compartment calls create a new frame in both the source and the target *) *)
-(*     forall newpc pc s s' f f', *)
-(*     match_stacks pc s s' -> *)
-(*     Genv.find_comp_ignore_offset ge newpc = callee_comp (f' :: s') -> *)
-(*     Genv.find_comp_ignore_offset ge (val_of_stackframe f) = Genv.find_comp_ignore_offset ge pc -> *)
-(*     Genv.find_comp_ignore_offset ge (val_of_stackframe f) <> Genv.find_comp_ignore_offset ge newpc -> *)
-(*     match_stackframe f f' -> *)
-(*     match_stacks newpc (f :: s) (f' :: s') *)
-(* . *)
-
 Inductive match_stacks: list Mach.stackframe -> stack -> Prop :=
 | match_stacks_nil:
       match_stacks nil nil
@@ -584,58 +555,12 @@ Proof.
   - now inv H3; auto.
 Qed.
 
-(* Lemma match_stacks_xx: *)
-(*   forall s s', *)
-(*     match_stacks s s' -> *)
-(*     Mach.call_comp ge s = call_comp tge s'. *)
-(* Proof. *)
-(*   intros. induction H; unfold Mach.call_comp; simpl. *)
-(*   - unfold Vnullptr; destruct Archi.ptr64; auto. *)
-(*   - unfold Mach.call_comp in *. simpl in *. *)
-(*     destruct f; simpl in *.  *)
-(*   reflexivity. *)
-
-(* Inductive match_stacks: list Mach.stackframe -> stack -> Prop := *)
-(* | match_stacks_nil: *)
-(*     match_stacks nil nil *)
-(* | match_stacks_intra_compartment: *)
-(*     (* Intra-compartment calls create a new frame in the source, not the target *) *)
-(*     forall s s' b v ofs c, *)
-(*     match_stacks s s' -> *)
-(*     Genv.find_comp ge (Vptr b Ptrofs.zero) = Mach.call_comp ge s -> *)
-(*     match_stacks (Mach.Stackframe b (Genv.find_comp ge (Vptr b Ptrofs.zero)) v ofs c :: s) s' *)
-(* | match_stacks_cross_compartment: *)
-(*     (* Cross-compartment calls create a new frame in both the source and the target *) *)
-(*     forall s s' f f', *)
-(*     match_stacks s s' -> *)
-(*     Genv.find_comp_ignore_offset ge (val_of_stackframe f) <> Mach.callee_comp f -> *)
-(*     match_stackframe f f' -> *)
-(*     match_stacks (f :: s) (f' :: s') *)
-(* . *)
-
-(* Lemma match_stacks_same_compartment: *)
-(*   forall newpc pc s s', *)
-(*   match_stacks pc s s' -> *)
-(*   Genv.find_comp_ignore_offset ge pc = Genv.find_comp_ignore_offset ge newpc -> *)
-(*   match_stacks newpc s s'. *)
-(* Proof. *)
-(*   intros newpc pc s s' H; revert newpc. *)
-(*   induction H. *)
-(*   - intros. constructor. congruence. *)
-(*   - intros. *)
-(*     eapply match_stacks_intra_compartment; auto. *)
-(*     congruence. congruence. *)
-(*   - intros. *)
-(*     eapply match_stacks_cross_compartment; auto. *)
-(*     congruence. congruence. *)
-(* Qed. *)
-
 Inductive match_states: Mach.state -> Asm.state -> Prop :=
   | match_states_intro:
       forall s s' fb sp c ep ms m m' rs f tf tc
         (STACKS: match_stack ge s)
         (STACKS': match_stacks s s')
-        (STACKS_COMP: Genv.find_comp_ignore_offset ge (rs PC) = Some (callee_comp comp_of_main s'))
+        (STACKS_COMP: comp_of f = callee_comp comp_of_main s')
         (FIND: Genv.find_funct_ptr ge fb = Some (Internal f))
         (MEXT: Mem.extends m m')
         (AT: transl_code_at_pc ge (rs PC) fb f c ep tf tc)
@@ -647,7 +572,7 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
       forall s s' fb ms m m' rs sig
         (STACKS: match_stack ge s)
         (STACKS': match_stacks s s')
-        (STACKS_COMP: Genv.find_comp_ignore_offset ge (rs PC) = Some (callee_comp comp_of_main s'))
+        (STACKS_COMP: Genv.find_comp_of_block ge fb = Some (callee_comp comp_of_main s'))
         (MEXT: Mem.extends m m')
         (AG: agree ms (parent_sp s) rs)
         (ATPC: rs PC = Vptr fb Ptrofs.zero)
@@ -658,7 +583,6 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
     forall s s' ms m m' rs
       (STACKS: match_stack ge s)
       (STACKS': match_stacks s s')
-      (STACKS_COMP: Genv.find_comp_ignore_offset ge (rs PC) = Some (Mach.call_comp ge s))
       (MEXT: Mem.extends m m')
       (AG: agree ms (parent_sp s) rs)
       (ATPC: rs PC = parent_ra s),
@@ -672,7 +596,7 @@ Lemma exec_straight_steps:
   Genv.find_funct_ptr ge fb = Some (Internal f) ->
   transl_code_at_pc ge (rs1 PC) fb f (i :: c) ep tf tc ->
   forall (STACKS: match_stacks s s'),
-  forall (STACKS_COMP: Genv.find_comp_ignore_offset ge (rs1 PC) = Some (callee_comp comp_of_main s')),
+  forall (STACKS_COMP: comp_of f = callee_comp comp_of_main s'),
   (forall k c (TR: transl_instr f i ep k = OK c),
    exists rs2,
        exec_straight tge tf c rs1 m1' k rs2 m2'
@@ -687,22 +611,6 @@ Proof.
   exists (State s' rs2 m2'); split.
   eapply exec_straight_exec; eauto.
   econstructor; eauto.
-  rewrite <- STACKS_COMP.
-  { clear -A H4.
-    rename H4 into PTR. revert fb ofs PTR.
-    induction A; intros.
-    - rewrite H2, <- PTR.
-      now simpl.
-    - erewrite IHA; rewrite H2, <- PTR; now simpl. }
-  (* { clear -A STACKS. *)
-  (*   induction A. *)
-  (*   - rewrite H2. *)
-  (*     eapply match_stacks_same_compartment; eauto. *)
-  (*     now destruct (rs1 PC). *)
-  (*   - eapply IHA. rewrite H2. *)
-  (*     eapply match_stacks_same_compartment; eauto. *)
-  (*     now destruct (rs1 PC). *)
-  (* } *)
   eapply exec_straight_at; eauto.
 Qed.
 
@@ -714,8 +622,8 @@ Lemma exec_straight_steps_goto:
   Mach.find_label lbl f.(Mach.fn_code) = Some c' ->
   transl_code_at_pc ge (rs1 PC) fb f (i :: c) ep tf tc ->
   it1_is_parent ep i = false ->
-  forall (STACKS: match_stacks (* (rs1 PC) *) s s'),
-  forall (STACKS_COMP: Genv.find_comp_ignore_offset ge (rs1 PC) = Some (callee_comp comp_of_main s')),
+  forall (STACKS: match_stacks s s'),
+  forall (STACKS_COMP: comp_of f = callee_comp comp_of_main s'),
   (forall k c (TR: transl_instr f i ep k = OK c),
    exists jmp, exists k', exists rs2,
        exec_straight tge tf c rs1 m1' (jmp :: k') rs2 m2'
@@ -750,8 +658,6 @@ Proof.
   }
   traceEq.
   econstructor; eauto.
-  { rewrite <- H9. rewrite <- H6 in STACKS_COMP.
-    now simpl in *. }
   apply agree_exten with rs2; auto with asmgen.
   congruence.
 Qed.
@@ -764,8 +670,8 @@ Lemma exec_straight_opt_steps_goto:
   Mach.find_label lbl f.(Mach.fn_code) = Some c' ->
   transl_code_at_pc ge (rs1 PC) fb f (i :: c) ep tf tc ->
   it1_is_parent ep i = false ->
-  forall (STACKS: match_stacks (* (rs1 PC) *) s s'),
-  forall (STACKS_COMP: Genv.find_comp_ignore_offset ge (rs1 PC) = Some (callee_comp comp_of_main s')),
+  forall (STACKS: match_stacks s s'),
+  forall (STACKS_COMP: comp_of f = callee_comp comp_of_main s'),
   (forall k c (TR: transl_instr f i ep k = OK c),
    exists jmp, exists k', exists rs2,
        exec_straight_opt tge tf c rs1 m1' (jmp :: k') rs2 m2'
@@ -794,8 +700,6 @@ Proof.
     eauto. simpl. unfold Genv.find_comp; simpl. destruct Ptrofs.eq_dec; try congruence. now rewrite FN.
   }
   econstructor; eauto.
-  { rewrite <- H9. rewrite <- H6 in STACKS_COMP.
-    now simpl in *. }
   apply agree_exten with rs2; auto with asmgen.
   congruence.
 - exploit exec_straight_steps_2; eauto.
@@ -815,8 +719,6 @@ Proof.
   }
   traceEq.
   econstructor; eauto.
-  { rewrite <- H11. rewrite <- H6 in STACKS_COMP.
-    now simpl in *. }
   apply agree_exten with rs2; auto with asmgen.
   congruence.
 Qed.
@@ -842,32 +744,18 @@ Proof.
   exploit preg_of_injective; eauto. intros; subst r; discriminate.
 Qed.
 
+Ltac unfold_find_comp A R :=
+  unfold Genv.find_comp, Genv.find_funct in A; simpl in A; rewrite R in A;
+  destruct Ptrofs.eq_dec; try congruence;
+  injection A as A.
+
 (** This is the simulation diagram.  We prove it by case analysis on the Mach transition. *)
 
 Theorem step_simulation:
-  (* forall S1 t S2, Mach.step return_address_offset ge S1 t S2 -> *)
-  (* forall S1' (MS: match_states S1 S1'), *)
-  (* exists S3, *)
-  (*     star (Mach.step return_address_offset) ge S2 E0 S3 *)
-  (*  /\ ((exists S2', plus step tge S1' t S2' /\ match_states S3 S2') *)
-  (*     \/ (exists S2', star step tge S1' t S2' /\ measure S3 < measure S1 /\ match_states S3 S2'))%nat. *)
-
-  (* forall S1 t S2, Mach.step return_address_offset ge S1 t S2 -> *)
-  (* forall S1' (MS: match_states S1 S1'), *)
-  (* exists S3 S2', *)
-  (*     star (Mach.step return_address_offset) ge S2 E0 S3 *)
-  (*  /\ (plus step tge S1' t S2' \/ (star step tge S1' t S2' /\ measure S3 < measure S1))%nat *)
-  (*  /\ match_states S3 S2'. *)
-
   forall S1 t S2, Mach.step return_address_offset ge S1 t S2 ->
   forall S1' (MS: match_states S1 S1'),
   (exists S2', plus (step comp_of_main) tge S1' t S2' /\ match_states S2 S2')
   \/ (measure S2 < measure S1 /\ t = E0 /\ match_states S2 S1')%nat.
-
-  (* forall s1 t s1', Step L1 s1 t s1' -> *)
-  (* forall s2, match_states s1 s2 -> *)
-  (* exists s1'' s2', Star L1 s1' E0 s1'' /\ Plus L2 s2 t s2' /\ match_states s1'' s2'. *)
-
 Proof.
   induction 1; intros; inv MS.
 
@@ -882,17 +770,6 @@ Proof.
   rewrite (sp_val _ _ _ AG) in A.
   left; eapply exec_straight_steps; eauto. intros. simpl in TR.
   inv AT.
-  (* unfold find_comp_ptr in CURCOMP. rewrite FIND in CURCOMP. inv CURCOMP. *)
-  (* Ltac unfold_find_comp A R := *)
-  (*   unfold Genv.find_comp in A; simpl in A; rewrite R in A; destruct Ptrofs.eq_dec; try congruence. *)
-  (* unfold_find_comp A FIND. *)
-  (* unfold comp_of in A; simpl in A. erewrite (comp_transf_function) in A; eauto. *)
-  Ltac unfold_find_comp A R :=
-    unfold Genv.find_comp, Genv.find_funct in A; simpl in A; rewrite R in A;
-    destruct Ptrofs.eq_dec; try congruence;
-    injection A as A.
-  (* unfold_find_comp A FIND. *)
-  (* unfold comp_of in A; simpl in A. erewrite (comp_transf_function) in A; eauto. *)
   unfold_find_comp CURCOMP FIND.
   rewrite <- CURCOMP in A. setoid_rewrite (comp_transf_function) in A; eauto.
   exploit loadind_correct; eauto with asmgen. intros [rs' [P [Q R]]].

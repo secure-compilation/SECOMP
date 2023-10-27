@@ -1320,18 +1320,17 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (ALLOWED: Some cp = Genv.find_comp_ignore_offset ge (Vptr b' ofs')),
       step (State st rs m) E0 (State st rs' m')
   | exec_step_internal_call:
-      forall b ofs f i sig rs m rs' m' b' ofs' cp st st' args t,
+      forall b ofs f i sig rs m rs' m' b' ofs' st st' args t,
       rs PC = Vptr b ofs ->
       Genv.find_funct_ptr ge b = Some (Internal f) ->
       find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
-      exec_instr f i rs m cp = Next rs' m' ->
+      exec_instr f i rs m (comp_of f) = Next rs' m' ->
       sig_call i = Some sig ->
       forall (NEXTPC: rs' PC = Vptr b' ofs'),
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) (Vptr b' Ptrofs.zero)),
-      forall (CURCOMP: Genv.find_comp_ignore_offset ge (Vptr b Ptrofs.zero) = Some cp),
-      forall cp' (NEXTCOMP: Genv.find_comp_ignore_offset ge (Vptr b' Ptrofs.zero) = Some cp'),
+      forall cp' (NEXTCOMP: Genv.find_comp_of_block ge b' = Some cp'),
       (* Is a call, we update the stack *)
-      forall (STUPD: update_stack_call st sig cp rs' = Some st'),
+      forall (STUPD: update_stack_call st sig (comp_of f) rs' = Some st'),
       forall (ARGS: call_arguments rs' m' sig args),
       (* Is a call, we check whether we are allowed to pass pointers *)
       forall (NO_CROSS_PTR:
@@ -1341,18 +1340,16 @@ Inductive step: state -> trace -> state -> Prop :=
               args (sig_args sig) t),
       step (State st rs m) t (State st' rs' m')
   | exec_step_internal_return:
-      forall b ofs f i rs m rs' cp m' st,
+      forall b ofs f i rs m rs' m' st,
       rs PC = Vptr b ofs ->
       Genv.find_funct_ptr ge b = Some (Internal f) ->
       find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
-      exec_instr f i rs m cp = Next rs' m' ->
+      exec_instr f i rs m (comp_of f) = Next rs' m' ->
       is_return i = true ->
-      forall (CURCOMP: Genv.find_comp_ignore_offset ge (rs PC) = Some cp),
       (* We attempt a return, so we go to a ReturnState*)
       (* The only condition is the following: we are currently in the compartment stored in the callee compartment field
        of the top stack frame*)
       forall (REC_CURCOMP: Genv.find_comp_ignore_offset ge (rs PC) = Some (callee_comp st)),
-      (* forall (NEXTCOMP: Genv.find_comp_ignore_offset ge (rs' PC) = cp'), *)
       step (State st rs m) E0 (ReturnState st rs' m')
   | exec_step_return:
       forall st st' rs m sg t rec_cp rec_cp' cp',
@@ -1397,7 +1394,7 @@ Inductive step: state -> trace -> state -> Prop :=
       extcall_arguments rs m (ef_sig ef) args ->
       rs' = (set_pair (loc_external_result (ef_sig ef)) res (undef_caller_save_regs rs))#PC <- (rs RA) ->
       (* These steps behave like returns. So we do the same as in the [exec_step_internal_return] case. *)
-      forall (REC_CURCOMP: Genv.find_comp_ignore_offset ge (rs PC) = Some (callee_comp st)),
+      forall (REC_CURCOMP: comp_of ef = callee_comp st),
       step (State st rs m) t (ReturnState st rs' m').
 
 End RELSEM.
@@ -1560,12 +1557,9 @@ intros; constructor; simpl; intros.
 - (* initial states *)
   inv H; inv H0. f_equal. congruence.
 - (* final no step *)
-  (* assert (NOTNULL: forall b ofs, Vnullptr <> Vptr b ofs). *)
-  (* { intros; unfold Vnullptr; destruct Archi.ptr64; congruence. } *)
-  inv H. (* unfold Vzero in H0. *)
+  inv H.
   red; intros; red; intros.
   inv H. congruence.
-  (* inv H; rewrite H0 in *; eelim NOTNULL; eauto. *)
 - (* final states *)
   inv H; inv H0. congruence.
 Qed.
