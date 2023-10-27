@@ -1387,7 +1387,7 @@ let add_helper_functions_cp cp globs =
 
 let rec add_helper_functions cps gl2 =
   match cps with
-  | [] -> []
+  | [] -> gl2
   | cp :: cps' -> add_helper_functions cps' (add_helper_functions_cp cp gl2)
 
 (** Build environment of typedefs, structs, unions and enums *)
