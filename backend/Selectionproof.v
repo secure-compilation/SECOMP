@@ -49,10 +49,10 @@ Qed.
 (** Processing of helper functions *)
 
 Lemma record_globdefs_sound:
-  forall dm id gd, (record_globdefs dm)!id = Some gd -> dm!id = Some gd.
+  forall dm cp id gd, (record_globdefs dm cp)!id = Some gd -> dm!id = Some gd.
 Proof.
   intros.
-  set (f := fun m id gd => if globdef_of_interest gd then PTree.set id gd m else m) in *.
+  set (f := fun m id gd => if globdef_of_interest gd cp then PTree.set id gd m else m) in *.
   set (P := fun m m' => m'!id = Some gd -> m!id = Some gd).
   assert (X: P dm (PTree.fold f dm (PTree.empty _))).
   { apply PTree_Properties.fold_rec.
@@ -93,7 +93,7 @@ Qed.
 
 Lemma lookup_helper_correct:
   forall p cp name sg id,
-  lookup_helper (record_globdefs (prog_defmap p)) cp name sg = OK id ->
+  lookup_helper (record_globdefs (prog_defmap p) cp) cp name sg = OK id ->
   helper_declared p id cp name sg.
 Proof.
   intros. apply lookup_helper_correct_1 in H. apply record_globdefs_sound in H. auto.

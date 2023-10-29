@@ -478,15 +478,15 @@ Definition sel_fundef (dm: PTree.t globdef) (hf: compartment -> res helper_funct
   This ensures that the mapping remains small and that [lookup_helper]
   below is efficient. *)
 
-Definition globdef_of_interest (gd: globdef) : bool :=
+Definition globdef_of_interest (gd: globdef) (cp: compartment) : bool :=
   match gd with
-  | Gfun (External (EF_runtime cp name sg)) => true
+  | Gfun (External (EF_runtime cp' name sg)) => Pos.eqb cp cp'
   | _ => false
   end.
 
-Definition record_globdefs (defmap: PTree.t globdef) : PTree.t globdef :=
+Definition record_globdefs (defmap: PTree.t globdef) (cp: compartment) : PTree.t globdef :=
   PTree.fold
-    (fun m id gd => if globdef_of_interest gd then PTree.set id gd m else m)
+    (fun m id gd => if globdef_of_interest gd cp then PTree.set id gd m else m)
     defmap (PTree.empty globdef).
 
 Definition lookup_helper_aux
@@ -510,7 +510,7 @@ Definition lookup_helper (globs: PTree.t globdef)
 Local Open Scope string_scope.
 
 Definition get_helpers (defmap: PTree.t globdef) (cp: compartment): res helper_functions :=
-  let globs := record_globdefs defmap in
+  let globs := record_globdefs defmap cp in
   do i64_dtos <- lookup_helper globs cp "__compcert_i64_dtos" sig_f_l ;
   do i64_dtou <- lookup_helper globs cp "__compcert_i64_dtou" sig_f_l ;
   do i64_stod <- lookup_helper globs cp "__compcert_i64_stod" sig_l_f ;
