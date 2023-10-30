@@ -62,6 +62,13 @@ Lemma functions_translated:
   Genv.find_funct_ptr tge b = Some tf /\ transf_fundef f = OK tf.
 Proof (Genv.find_funct_ptr_transf_partial TRANSF).
 
+Lemma find_comp_of_block_translated:
+  forall b,
+    Genv.find_comp_of_block ge b = Genv.find_comp_of_block tge b.
+Proof.
+  eapply (Genv.find_comp_of_block_transf_partial TRANSF).
+Qed.
+
 Lemma find_comp_translated:
   forall vf,
     Genv.find_comp ge vf = Genv.find_comp tge vf.
@@ -732,8 +739,7 @@ Proof.
 Qed.
 
 Ltac unfold_find_comp A R :=
-  unfold Genv.find_comp, Genv.find_funct in A; simpl in A; rewrite R in A;
-  destruct Ptrofs.eq_dec; try congruence;
+  rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ R) in A;
   injection A as A.
 
 (** This is the simulation diagram.  We prove it by case analysis on the Mach transition. *)
@@ -780,9 +786,6 @@ Proof.
 
 - (* Mgetparam *)
   assert (f0 = f) by congruence; subst f0.
-  (* assert (cp = comp_of f). *)
-  (* unfold find_comp_ptr in CURCOMP. rewrite FIND in CURCOMP. inv CURCOMP. *)
-  (* reflexivity. subst. *)
   unfold load_stack in *.
   exploit Mem.loadv_extends. eauto. eexact H0. auto.
   intros [parent' [A B]]. rewrite (sp_val _ _ _ AG) in A.
@@ -897,14 +900,12 @@ Local Transparent destroyed_by_op.
     Simpl; eauto.
     rewrite <- (comp_transl_partial _ H4).
     eapply allowed_call_translated; eauto.
-    simpl. rewrite find_comp_translated in CURCOMP. eexact CURCOMP. unfold Genv.find_comp_of_block. , Genv.find_funct.
-    rewrite (functions_transl _ _ _ FIND H4).
-    destruct Ptrofs.eq_dec; try congruence; reflexivity.
-    unfold Genv.find_comp_ignore_offset. rewrite <- find_comp_translated. eauto.
+    simpl. rewrite find_comp_of_block_translated in CURCOMP. eexact CURCOMP.
     unfold update_stack_call. Simpl.
     rewrite H7; simpl. unfold Genv.find_comp, Genv.find_funct.
-    unfold tge; rewrite TFIND. destruct Ptrofs.eq_dec; try congruence.
-    unfold comp_of in *; simpl in *. now rewrite Heq.
+    unfold tge.
+    rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ TFIND).
+    unfold comp_of in *; simpl in *; unfold comp_of in *; now rewrite Heq.
     auto.
     (* Not a cross-compartment call *)
     { unfold_find_comp CURCOMP CALLED. subst cp.
@@ -917,9 +918,7 @@ Local Transparent destroyed_by_op.
     econstructor; eauto.
     econstructor; eauto.
     eapply agree_sp_def; eauto.
-    { (* replace (Genv.find_comp ge (Vptr f' Ptrofs.zero)) with *)
-      (*   (Genv.find_comp ge (Vptr fb Ptrofs.zero)). *)
-      Simpl.
+    { Simpl.
       apply match_stacks_intra_compartment. exact STACKS'.
       - unfold Mach.call_comp. simpl.
         unfold Genv.find_comp; simpl. destruct Ptrofs.eq_dec; try congruence.
