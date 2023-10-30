@@ -1192,17 +1192,14 @@ Proof.
   apply match_cont_call_cont with (ce' := ce) in H.
   unfold Csem.call_comp, call_comp.
   destruct H; simpl; trivial.
-  now match goal with H : tr_function _ _ _ |- _ => inv H end.
+  match goal with H : tr_function _ _ _ |- _ => inv H end.
+  congruence.
 Qed.
 
 (** Matching between states *)
 Inductive call_cont_ty : Csem.cont -> type -> Prop :=
 | match_call_cont_ty: forall f e te ty k,
-    call_cont_ty (Csem.Kcall f e te ty k) ty
-.
-(* | match_not_call_cont_ty: forall k ty, *)
-(*     (forall f e te ty' k', k <> Csem.Kcall f e te ty' k') -> *)
-(*     call_cont_ty k ty. *)
+    call_cont_ty (Csem.Kcall f e te ty k) ty.
 
 Inductive match_states: Csem.state -> state -> Prop :=
   | match_exprstates: forall f r k e m tf sl tk le dest a tmps cu

@@ -600,12 +600,8 @@ Proof.
   assert (SIG: parent_signature s = parent_signature ts).
   { inv STACKS. reflexivity.
     inv H0. reflexivity. }
-  (* rewrite type_of_call_translated, CALLEE, CALLER, SIG. *)
   rewrite SIG.
-  destruct (Genv.type_of_call (call_comp ts) (callee_comp ts)).
   inv TRF; constructor; auto.
-  inv TRF; constructor; auto.
-  (* inv TRF; constructor; auto. *)
 - (* internal function *)
   monadInv H8. rename x into tf.
   assert (MF: match_function f tf) by (apply transf_function_match; auto).
@@ -620,14 +616,10 @@ Proof.
   assert (SIG: parent_signature s = parent_signature ts).
   { inv H7. reflexivity.
     inv H1. reflexivity. }
-  (* rewrite type_of_call_translated, CALLER, SIG. *)
   change
     (comp_of {| fn_comp := fn_comp f; fn_sig := fn_sig f; fn_stacksize := fn_stacksize f; fn_code := c |})
     with (comp_of f).
-  destruct (Genv.type_of_call (call_comp ts) (comp_of f)).
   constructor; auto.
-  constructor; auto.
-  (* constructor; auto. *)
 - (* external function *)
   monadInv H9. econstructor; split.
   apply plus_one. econstructor; eauto.

@@ -1715,7 +1715,7 @@ Proof.
   induction H; simpl; trivial.
   match goal with
   | H : transl_funbody _ _ _ = _ |- _ =>
-    apply (comp_transl_partial _ H)
+    now rewrite <- (comp_transl_partial _ H)
   end.
 Qed.
 

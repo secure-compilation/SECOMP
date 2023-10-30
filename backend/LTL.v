@@ -216,16 +216,16 @@ Inductive state : Type :=
              (m: mem),                 (**r memory state *)
       state.
 
-Definition call_comp (stack: list stackframe) : compartment :=
+Definition call_comp (stack: list stackframe) : option compartment :=
   match stack with
-  | nil => default_compartment
-  | Stackframe f _ _ _ _ _ :: _ => (comp_of f)
+  | nil => None
+  | Stackframe f _ _ _ _ _ :: _ => Some (comp_of f)
   end.
 
-Definition callee_comp (stack: list stackframe) : compartment :=
+Definition callee_comp (stack: list stackframe) : option compartment :=
   match stack with
-  | nil => default_compartment (* should not happen *)
-  | Stackframe _ cp _ _ _ _ :: _ => cp
+  | nil => None
+  | Stackframe _ cp _ _ _ _ :: _ => Some cp
   end.
 
 

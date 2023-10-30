@@ -385,10 +385,7 @@ Proof.
     inv H0. reflexivity. }
   (* rewrite type_of_call_translated, CALLER, CALLEE, SIG. *)
   rewrite SIG.
-  destruct (Genv.type_of_call (call_comp ts) (callee_comp ts)).
   econstructor; eauto with coqlib.
-  econstructor; eauto with coqlib.
-  (* econstructor; eauto with coqlib. *)
 (* internal function *)
   left; econstructor; split.
   econstructor; simpl; eauto.
@@ -400,10 +397,7 @@ Proof.
     inv H0. reflexivity. }
   (* rewrite type_of_call_translated, CALLER, SIG. *)
   change (comp_of (transf_function f)) with (comp_of f).
-  destruct (Genv.type_of_call (call_comp ts) (comp_of f)).
   econstructor; eauto with coqlib.
-  econstructor; eauto with coqlib.
-  (* econstructor; eauto with coqlib. *)
 (* external function *)
   left; econstructor; split.
   econstructor; eauto. eapply external_call_symbols_preserved; eauto. apply senv_preserved.

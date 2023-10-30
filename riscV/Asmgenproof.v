@@ -69,14 +69,6 @@ Proof.
   eapply (Genv.find_comp_transf_partial TRANSF).
 Qed.
 
-Lemma find_comp_ignore_offset_translated:
-  forall vf,
-    Genv.find_comp_ignore_offset ge vf = Genv.find_comp_ignore_offset tge vf.
-Proof.
-  unfold Genv.find_comp_ignore_offset.
-  intros. destruct vf; auto. now rewrite find_comp_translated.
-Qed.
-
 Lemma functions_transl:
   forall fb f tf,
   Genv.find_funct_ptr ge fb = Some (Internal f) ->
@@ -117,9 +109,6 @@ Proof.
   eapply exec_straight_steps_1; eauto.
   eapply transf_function_no_overflow; eauto.
   eapply functions_transl; eauto.
-  unfold Genv.find_comp.
-  simpl; erewrite functions_transl; eauto.
-  destruct Ptrofs.eq_dec; try congruence; reflexivity.
 Qed.
 
 Lemma exec_straight_at:
@@ -529,7 +518,7 @@ Inductive match_stacks: list Mach.stackframe -> stack -> Prop :=
     (* Intra-compartment calls create a new frame in the source, not the target *)
     forall s s' f,
     match_stacks s s' ->
-    Mach.call_comp ge (f :: s) = Mach.callee_comp comp_of_main (f :: s) -> (* meaning, we are staying in the same
+    Mach.call_comp ge (f :: s) = Some (Mach.callee_comp comp_of_main (f :: s)) -> (* meaning, we are staying in the same
                                                             compartment *)
     Mach.callee_comp comp_of_main (f :: s) = Mach.callee_comp comp_of_main s ->
     match_stacks (f :: s) s'
@@ -537,9 +526,9 @@ Inductive match_stacks: list Mach.stackframe -> stack -> Prop :=
     (* Cross-compartment calls create a new frame in both the source and the target *)
     forall s s' f f',
     match_stacks s s' ->
-    Mach.call_comp ge (f :: s) <> Mach.callee_comp comp_of_main (f :: s) ->
+    Mach.call_comp ge (f :: s) <> Some (Mach.callee_comp comp_of_main (f :: s)) ->
     Mach.callee_comp comp_of_main (f :: s) <> Mach.callee_comp comp_of_main s ->
-    Mach.call_comp ge (f :: s) = Mach.callee_comp comp_of_main s ->
+    Mach.call_comp ge (f :: s) = Some (Mach.callee_comp comp_of_main s) ->
     match_stackframe f f' ->
     match_stacks (f :: s) (f' :: s')
 .
@@ -647,14 +636,13 @@ Proof.
   exists (State s' rs3 m2'); split.
   eapply plus_right'.
   eapply exec_straight_steps_1; eauto. unfold Genv.find_comp.
-  simpl; erewrite functions_transl; eauto. destruct Ptrofs.eq_dec; try congruence; reflexivity.
   { econstructor. eauto. eauto.
     eapply find_instr_tail. eauto.
     reflexivity.
     rewrite <- comp_transf_function; eauto.
     rewrite C. eexact GOTO. auto. auto.
     eauto.
-    simpl. unfold Genv.find_comp; simpl; destruct Ptrofs.eq_dec; try congruence. now rewrite FN.
+    simpl. now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FN).
   }
   traceEq.
   econstructor; eauto.
@@ -697,7 +685,7 @@ Proof.
     eapply find_instr_tail. eauto.
     reflexivity.
     rewrite C. eexact GOTO. auto. auto.
-    eauto. simpl. unfold Genv.find_comp; simpl. destruct Ptrofs.eq_dec; try congruence. now rewrite FN.
+    eauto. simpl. now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FN).
   }
   econstructor; eauto.
   apply agree_exten with rs2; auto with asmgen.
@@ -710,12 +698,11 @@ Proof.
   exists (State s' rs3 m2'); split.
   eapply plus_right'.
   eapply exec_straight_steps_1; eauto.
-  unfold Genv.find_comp. simpl. rewrite FN. destruct Ptrofs.eq_dec; try congruence. reflexivity.
   { econstructor. eauto. eauto.
     eapply find_instr_tail. eauto.
     reflexivity.
     rewrite C. eexact GOTO. auto. auto.
-    eauto. simpl. unfold Genv.find_comp; simpl; destruct Ptrofs.eq_dec; try congruence. now rewrite FN.
+    eauto. simpl. now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FN).
   }
   traceEq.
   econstructor; eauto.
@@ -910,7 +897,8 @@ Local Transparent destroyed_by_op.
     Simpl; eauto.
     rewrite <- (comp_transl_partial _ H4).
     eapply allowed_call_translated; eauto.
-    simpl. unfold Genv.find_comp, Genv.find_funct. rewrite (functions_transl _ _ _ FIND H4).
+    simpl. rewrite find_comp_translated in CURCOMP. eexact CURCOMP. unfold Genv.find_comp_of_block. , Genv.find_funct.
+    rewrite (functions_transl _ _ _ FIND H4).
     destruct Ptrofs.eq_dec; try congruence; reflexivity.
     unfold Genv.find_comp_ignore_offset. rewrite <- find_comp_translated. eauto.
     unfold update_stack_call. Simpl.

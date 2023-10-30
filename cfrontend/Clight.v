@@ -494,10 +494,10 @@ Definition is_call_cont (k: cont) : Prop :=
   | _ => False
   end.
 
-Definition call_comp (k: cont) : compartment :=
+Definition call_comp (k: cont) : option compartment :=
   match call_cont k with
-  | Kcall _ f _ _ _ => (comp_of f)
-  | _ => default_compartment
+  | Kcall _ f _ _ _ => Some (comp_of f)
+  | _ => None
   end.
 
 (** States *)

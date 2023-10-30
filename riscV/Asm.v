@@ -1229,7 +1229,7 @@ Definition update_stack_call (s: stack) (sg: signature) (cp: compartment) rs' :=
   let pc' := rs' # PC in
   let ra' := rs' # RA in
   let sp' := rs' # SP in
-  match Genv.find_comp_ignore_offset ge pc' with
+  match Genv.find_comp ge pc' with
   | Some cp' =>
       if Pos.eqb cp cp' then
         (* If we are in the same compartment as previously recorded, we
@@ -1248,7 +1248,7 @@ Definition update_stack_call (s: stack) (sg: signature) (cp: compartment) rs' :=
   
 Definition update_stack_return (s: stack) (cp: compartment) rs' :=
   let pc' := rs' # PC in
-  let cp' := match Genv.find_comp_ignore_offset ge pc' with
+  let cp' := match Genv.find_comp ge pc' with
              | Some cp' => cp'
              | None => default_compartment
              end in
@@ -1317,7 +1317,7 @@ Inductive step: state -> trace -> state -> Prop :=
       sig_call i = None ->
       is_return i = false ->
       forall (NEXTPC: rs' PC = Vptr b' ofs'),
-      forall (ALLOWED: Some cp = Genv.find_comp_ignore_offset ge (Vptr b' ofs')),
+      forall (ALLOWED: Some cp = Genv.find_comp_of_block ge b'),
       step (State st rs m) E0 (State st rs' m')
   | exec_step_internal_call:
       forall b ofs f i sig rs m rs' m' b' ofs' st st' args t,
@@ -1349,14 +1349,14 @@ Inductive step: state -> trace -> state -> Prop :=
       (* We attempt a return, so we go to a ReturnState*)
       (* The only condition is the following: we are currently in the compartment stored in the callee compartment field
        of the top stack frame*)
-      forall (REC_CURCOMP: Genv.find_comp_ignore_offset ge (rs PC) = Some (callee_comp st)),
+      forall (REC_CURCOMP: Genv.find_comp ge (rs PC) = Some (callee_comp st)),
       step (State st rs m) E0 (ReturnState st rs' m')
   | exec_step_return:
       forall st st' rs m sg t rec_cp rec_cp' cp',
         rs PC <> Vnullptr -> (* this condition is there to stop the execution 1 step earlier, to make the proof easier *)
         forall (REC_CURCOMP: callee_comp st = rec_cp),
         forall (REC_NEXTCOMP: caller_comp st = rec_cp'),
-        forall (NEXTCOMP: Genv.find_comp_ignore_offset ge (rs PC) = Some cp'),
+        forall (NEXTCOMP: Genv.find_comp ge (rs PC) = Some cp'),
         (* We only impose conditions on when returns can be executed for cross-compartment
            returns. These conditions are that we restore the previous RA and SP *)
         forall (PC_RA: rec_cp <> cp' -> rs PC = asm_parent_ra st),
@@ -1389,7 +1389,6 @@ Inductive step: state -> trace -> state -> Prop :=
       forall b ef args res rs m t rs' m' st,
       rs PC = Vptr b Ptrofs.zero ->
       Genv.find_funct_ptr ge b = Some (External ef) ->
-      (* forall COMP: Genv.find_comp_ignore_offset ge (rs RA) = cp, (* compartment that is calling the external function *) *)
       external_call ef ge args m t res m' ->
       extcall_arguments rs m (ef_sig ef) args ->
       rs' = (set_pair (loc_external_result (ef_sig ef)) res (undef_caller_save_regs rs))#PC <- (rs RA) ->
@@ -1422,7 +1421,7 @@ Inductive final_state (p: program): state -> int -> Prop :=
 Definition comp_of_main (p: program) :=
   let ge := Genv.globalenv p in
   match Genv.find_symbol ge (prog_main p) with
-  | Some fb => match Genv.find_comp ge (Vptr fb Ptrofs.zero) with
+  | Some fb => match Genv.find_comp_of_block ge fb with
                | Some cp => cp
                | None => default_compartment
                end
@@ -1437,7 +1436,7 @@ Definition semantics (p: program) :=
   fun s => match s with
         | State _ rs _
         | ReturnState _ rs _ =>
-            match  Genv.find_comp_ignore_offset (Genv.globalenv p) (rs PC) with
+            match  Genv.find_comp (Genv.globalenv p) (rs PC) with
             | Some cp => cp
             | None => default_compartment
             end
@@ -1647,7 +1646,7 @@ Section ExecSem.
                 match sig_call i, is_return i with
                 | None, false => (* exec_step_internal *)
                     do Vptr b' ofs' <- rs' PC;
-                    do cp <- Genv.find_comp_ignore_offset ge (Vptr b' ofs');
+                    do cp <- Genv.find_comp_of_block ge b';
                     check (Pos.eqb (comp_of f) cp);
                     Some (E0, State st rs' m')
                 | Some sig, false => (* exec_step_internal_call *)
@@ -1655,7 +1654,7 @@ Section ExecSem.
                     check (Genv.allowed_call_b ge (comp_of f) (rs' PC));
                     do st' <- update_stack_call ge st sig (comp_of f) rs';
                     do vargs <- get_call_arguments rs' m' sig;
-                    do cp <- Genv.find_comp_ignore_offset ge (rs' PC);
+                    do cp <- Genv.find_comp ge (rs' PC);
                     check (match Genv.type_of_call (comp_of f) cp with
                            | Genv.CrossCompartmentCall => forallb not_ptr_b vargs
                            | _ => true
@@ -1672,12 +1671,12 @@ Section ExecSem.
             end
         | External ef =>
             check (Ptrofs.eq ofs Ptrofs.zero);
-            let cp := Genv.find_comp_ignore_offset ge (rs X1) in
+            let cp := Genv.find_comp ge (rs X1) in
             do vargs <- get_extcall_arguments rs m (ef_sig ef);
             do res_external <- do_external _ _ ge do_external_function do_inline_assembly ef w vargs m;
             let '(w', t, res, m') := res_external in
             let rs' := (set_pair (loc_external_result (ef_sig ef)) res (undef_caller_save_regs rs)) # PC <- (rs X1) in
-            do cp' <- Genv.find_comp_ignore_offset ge (rs PC);
+            do cp' <- Genv.find_comp ge (rs PC);
             check (Pos.eqb cp' (callee_comp comp_of_main st));
             Some (t, ReturnState st rs' m')
         end
@@ -1685,7 +1684,7 @@ Section ExecSem.
         check (negb (Val.eq (rs PC) Vnullptr));
         let rec_cp := callee_comp comp_of_main st in
         let rec_cp' := caller_comp ge st in
-        do cp' <- Genv.find_comp_ignore_offset ge (rs PC);
+        do cp' <- Genv.find_comp ge (rs PC);
         check (match Pos.eqb rec_cp cp' with
                | true => true
                | false => andb (Val.eq (rs PC) (asm_parent_ra st)) (Val.eq (rs X2) (asm_parent_sp st))

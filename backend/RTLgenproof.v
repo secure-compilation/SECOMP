@@ -839,9 +839,10 @@ Proof.
   unfold Genv.allowed_call.
   rewrite e0.
   rewrite <- (find_comp_translated (Vptr b Ptrofs.zero) (Vptr b Ptrofs.zero) _ (Val.lessdef_refl _) H0).
-  unfold Genv.find_comp. simpl. rewrite H0.
-  destruct Ptrofs.eq_dec as [_|?]; try congruence. left; eauto.
-  unfold Genv.type_of_call. now rewrite e0, Pos.eqb_refl.
+  unfold Genv.find_comp. apply Genv.find_funct_ptr_iff in H0.
+  simpl. unfold Genv.find_comp_of_block. simpl in H0. simpl.
+  unfold CminorSel.fundef. rewrite H0. eauto.
+  intros contra. destruct (INTRA contra).
   instantiate (1 := E0).
   econstructor. assumption.
   eapply star_left. eapply exec_function_external.
@@ -1341,6 +1342,7 @@ Proof.
   | TF : tr_fun _ _ _ _ _ _ |- _ =>
     inv TF; symmetry; eauto
   end.
+  now rewrite COMP.
 Qed.
 
 Inductive match_states: CminorSel.state -> RTL.state -> Prop :=

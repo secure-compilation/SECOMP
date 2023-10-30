@@ -1272,13 +1272,12 @@ Proof.
   exploit find_function_ptr_translated; eauto. intros Hvf'.
   assert (FINDCOMP: Genv.find_comp tge vf = Some (comp_of f)).
   { rewrite <- find_comp_translated.
-    unfold Genv.find_comp.
     unfold find_function in *.
     unfold find_function_ptr in *.
     destruct ros; simpl in *.
-    - inv Hvf. rewrite H0. congruence.
+    - inv Hvf. rewrite (Genv.find_funct_find_comp _ _ H0). congruence.
     - destruct (Genv.find_symbol ge i); try discriminate.
-      inv Hvf. rewrite H0. congruence. }
+      inv Hvf. rewrite (Genv.find_funct_find_comp _ _ H0). congruence. }
   left; econstructor; split.
   eapply plus_one. eapply exec_Icall; eauto.
 

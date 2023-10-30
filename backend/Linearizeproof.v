@@ -607,9 +607,10 @@ Proof.
   | H : match_stackframes _ _ |- _ =>
     destruct H
   end.
-  match goal with
+  simpl.
+  now match goal with
   | H : transf_function _ = _ |- _ =>
-    apply (comp_transl_partial _ H)
+    rewrite (comp_transl_partial _ H)
   end.
 Qed.
 

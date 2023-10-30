@@ -185,10 +185,10 @@ Inductive state : Type :=
              (m: mem),                 (**r memory state *)
       state.
 
-Definition call_comp (stack: list stackframe): compartment :=
+Definition call_comp (stack: list stackframe): option compartment :=
   match stack with
-  | nil => default_compartment
-  | Stackframe _ _ _ f _ _ _ :: _ => (comp_of f)
+  | nil => None
+  | Stackframe _ _ _ f _ _ _ :: _ => Some (comp_of f)
   end.
 
 Section RELSEM.

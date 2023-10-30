@@ -226,22 +226,22 @@ Definition find_comp_of_ident (ge: t) (id: ident) : option compartment :=
     is recorded in [ge]. *)
 
 Definition find_comp (ge: t) (v: val) : option compartment :=
-  match find_funct ge v with
-  | Some f => Some (comp_of f)
-  | None => None
+  match v with
+  | Vptr b _ => find_comp_of_block ge b
+  | _ => None
   end.
 
 Lemma find_funct_find_comp : forall ge v fd,
     find_funct ge v = Some fd ->
     find_comp ge v = Some (comp_of fd).
-Proof. unfold find_comp. now intros ??? ->. Qed.
-
-(* This version of [find_comp] ignores offsets *)
-Definition find_comp_ignore_offset (ge: t) (v: val) : option compartment :=
-  match v with
-  | Vptr b _ => find_comp ge (Vptr b Ptrofs.zero)
-  | _ => None
-  end.
+Proof.
+  unfold find_comp, find_funct, find_comp_of_block, find_funct_ptr.
+  intros ? v fd. destruct v; try easy.
+  destruct Ptrofs.eq_dec as [_|_]; try easy.
+  destruct find_def as [def|]; try easy.
+  destruct def as [fd'|?]; try easy.
+  intros e. now injection e as ->.
+Qed.
 
 Lemma find_comp_null: forall ge, find_comp ge Vnullptr = None.
 Proof.
@@ -452,6 +452,16 @@ Theorem find_funct_ptr_iff:
 Proof.
   intros. unfold find_funct_ptr.
   destruct (find_def ge b) as [[f1|v1]|]; intuition congruence.
+Qed.
+
+Lemma find_funct_ptr_find_comp_of_block:
+  forall ge b fd,
+  find_funct_ptr ge b = Some fd ->
+  find_comp_of_block ge b = Some (comp_of fd).
+Proof.
+  intros ge b fd find.
+  rewrite find_funct_ptr_iff in find.
+  unfold find_comp_of_block. now rewrite find.
 Qed.
 
 Theorem find_var_info_iff:
@@ -2068,7 +2078,7 @@ Proof.
   unfold allowed_call, allowed_call_b, allowed_cross_call.
   destruct vf as [|?|?|?|?|b ofs]; simpl;
     try now intuition (easy || congruence).
-  destruct (find_comp ge _) as [cp'|] eqn:find_vf;
+  destruct (find_comp_of_block ge _) as [cp'|] eqn:find_vf;
     try now intuition (firstorder || congruence).
   split.
   - intros [e | (i' & cp'' & A & B & C & D)].
@@ -2333,20 +2343,6 @@ Proof.
   eapply alloc_globals_match; eauto. apply progmatch.
 Qed.
 
-Lemma match_genvs_find_comp:
-  forall vf,
-    find_comp (globalenv p) vf = find_comp (globalenv tp) vf.
-Proof.
-  intros vf.
-  unfold find_comp.
-  destruct (find_funct (globalenv p) vf) eqn:EQ; auto.
-  - apply find_funct_match in EQ as [? [? [H [? ?]]]].
-    rewrite H, match_fundef_comp; eauto.
-  - destruct (find_funct (globalenv tp) vf) eqn:EQ'.
-    + apply find_funct_match_conv in EQ' as [? [? [H [? ?]]]]; congruence.
-    + reflexivity.
-Qed.
-
 Lemma match_genvs_find_comp_of_block:
   forall b,
     find_comp_of_block (globalenv p) b = find_comp_of_block (globalenv tp) b.
@@ -2357,6 +2353,17 @@ Proof.
   - f_equal. apply (match_fundef_comp MATCH).
   - now inv MATCH.
 Qed.
+
+Lemma match_genvs_find_comp:
+  forall vf,
+    find_comp (globalenv p) vf = find_comp (globalenv tp) vf.
+Proof.
+  intros vf.
+  unfold find_comp.
+  destruct vf; try easy.
+  now rewrite match_genvs_find_comp_of_block.
+Qed.
+
 
 Lemma match_genvs_find_comp_of_ident:
   forall id,
@@ -2556,17 +2563,24 @@ Proof.
   intros (cu & f & P & Q & R); exists f; auto.
 Qed.
 
+Lemma find_comp_of_block_transf_partial:
+  forall b,
+    find_comp_of_block (globalenv p) b = find_comp_of_block (globalenv tp) b.
+Proof.
+  intros b.
+  unfold find_comp_of_block.
+  destruct (find_def_match_2 progmatch) with (b := b) as [|x y xy]; trivial.
+  destruct xy as [p' f1 f2 _ f1f2|v1 v2 v1v2].
+  - unfold comp_of. simpl. now rewrite (CAB f1f2).
+  - now destruct v1v2.
+Qed.
+
 Lemma find_comp_transf_partial:
   forall v,
   find_comp (globalenv p) v = find_comp (globalenv tp) v.
 Proof.
-  unfold find_comp. intros v.
-  destruct (find_funct (globalenv p) v) as [f|] eqn:Ef; try easy.
-  - destruct (find_funct_transf_partial _ Ef) as (tf & H1 & H2).
-    rewrite H1. f_equal. now eauto.
-  - destruct (find_funct (globalenv tp) v) eqn:Etf; auto.
-    destruct (find_funct_transf_partial_conv _ Etf) as (f & H1 & H2).
-    congruence.
+  unfold find_comp. intros v. case v; try easy.
+  intros b _. apply find_comp_of_block_transf_partial.
 Qed.
 
 Theorem find_symbol_transf_partial:
@@ -2715,18 +2729,24 @@ Proof.
   eapply (match_genvs_allowed_calls progmatch).
 Qed.
 
+Lemma find_comp_of_block_transf:
+  forall b,
+    find_comp_of_block (globalenv p) b = find_comp_of_block (globalenv tp) b.
+Proof.
+  intros b.
+  unfold find_comp_of_block.
+  destruct (find_def_match_2 progmatch) with (b := b) as [|x y xy]; trivial.
+  destruct xy as [p' f1 f2 _ f1f2|v1 v2 v1v2].
+  - unfold comp_of. simpl. now rewrite f1f2, CAB.
+  - now destruct v1v2.
+Qed.
+
 Lemma find_comp_transf:
   forall v,
   find_comp (globalenv p) v = find_comp (globalenv tp) v.
 Proof.
-  unfold find_comp. intros v.
-  destruct (find_funct (globalenv p) v) as [f|] eqn:Ef; try easy.
-  (* intros Ecp. *)
-  rewrite (find_funct_transf _ Ef).
-  now rewrite comp_transl.
-  destruct (find_funct (globalenv tp) v) eqn:Etf; auto.
-  eapply (find_funct_match_conv progmatch) in Etf as [? [? [? [? ?]]]].
-  congruence.
+  intros v. case v; simpl; try easy.
+  intros b _. apply find_comp_of_block_transf.
 Qed.
 
 Theorem type_of_call_transf:

@@ -932,7 +932,6 @@ Lemma exec_straight_steps_1:
   forall b ofs,
   rs#PC = Vptr b ofs ->
   Genv.find_funct_ptr ge b = Some (Internal fn) ->
-  Genv.find_comp ge (Vptr b Ptrofs.zero) = Some (comp_of fn) ->
   code_tail (Ptrofs.unsigned ofs) (fn_code fn) c ->
   plus (step comp_of_main) ge (State s rs m) E0 (State s rs' m').
 Proof.
@@ -941,16 +940,14 @@ Proof.
   { econstructor. eauto. eauto.
     eapply find_instr_tail. eauto.
     reflexivity. eauto. eauto. eauto.
-    (* now rewrite H2; simpl; rewrite H3. *)
     now rewrite H2, H4.
-    unfold Genv.find_comp_ignore_offset.
-    now rewrite H6. }
+    now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ H5). }
   eapply plus_left'.
   { econstructor. eauto. eauto.
     eapply find_instr_tail. eauto.
     reflexivity. eauto. eauto. eauto.
     now rewrite H2, H5.
-    simpl. now rewrite H7.
+    now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ H6).
   }
   apply IHexec_straight with b (Ptrofs.add ofs Ptrofs.one).
   auto. rewrite H2. rewrite H5. reflexivity.

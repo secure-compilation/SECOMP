@@ -858,11 +858,13 @@ Proof.
     rewrite <- Genv.find_funct_ptr_iff in A.
     rewrite <- Genv.find_funct_ptr_iff in H0.
     exists (Vptr b2 (Ptrofs.add Ptrofs.zero (Ptrofs.repr delta))).
+    assert (D : Genv.find_comp_of_block ge b = Genv.find_comp_of_block tge b2).
+    { rewrite !Genv.find_funct_ptr_iff in H0, A.
+      unfold Genv.find_comp_of_block. now rewrite H0, A. }
     split; [| split; [| split]]; auto.
     { rewrite R in H2.
       destruct H2 as [H2 | H2].
-      + left. rewrite H2. unfold Genv.find_comp.
-        simpl. rewrite A. rewrite H0. subst; now destruct Ptrofs.eq_dec.
+      + left. now rewrite H2.
       + right.
         unfold Genv.allowed_cross_call in *.
         destruct H2 as [i [cp' [H21 [H22 [H23 H24]]]]].
@@ -874,8 +876,7 @@ Proof.
           specialize (E j H). unfold symbols_inject in E.
           destruct E as [E1 [E2 [E3 E4]]].
           specialize (E2 i _ _ _ H6). simpl in E2. specialize (E2 H21). destruct E2. auto.
-        * rewrite <- H22. unfold Genv.find_comp.
-          simpl. rewrite A. rewrite H0. subst; now destruct Ptrofs.eq_dec.
+        * rewrite <- H22. unfold Genv.find_comp. now rewrite D.
         * apply match_prog_pol in TRANSF.
           unfold tge, Genv.globalenv.
           rewrite Genv.genv_pol_add_globals. simpl.
@@ -887,7 +888,7 @@ Proof.
           rewrite TRANSF.
           unfold ge, Genv.globalenv in H24. now rewrite Genv.genv_pol_add_globals in H24. }
     { unfold Genv.type_of_call. unfold Genv.find_comp, Genv.find_funct.
-      rewrite R, H0, A, B. now destruct Ptrofs.eq_dec. }
+      now rewrite R. }
     { rewrite R. eapply Val.inject_ptr; eauto. }
   - destruct (Genv.find_symbol ge id) as [b|] eqn:FS; try discriminate.
     exploit symbols_inject_2; eauto. intros (tb & P & Q). rewrite P.
@@ -896,12 +897,14 @@ Proof.
     exploit defs_inject; eauto. intros (A & B & C).
     rewrite <- Genv.find_funct_ptr_iff in A.
     inv H1.
+    assert (D : Genv.find_comp_of_block ge b = Genv.find_comp_of_block tge tb).
+    { rewrite !Genv.find_funct_ptr_iff in A.
+      unfold Genv.find_comp_of_block. now rewrite H0, A. }
     eexists; split; [| split; [| split]]; eauto.
     { rewrite <- Genv.find_funct_ptr_iff in H0.
       rewrite <- H0 in A.
       destruct H2 as [H2 | H2].
-      + left. rewrite H2. unfold Genv.find_comp.
-        simpl. rewrite A. rewrite H0. reflexivity.
+      + left. now rewrite H2.
       + right.
         unfold Genv.allowed_cross_call in *.
         destruct H2 as [i [cp' [H21 [H22 [H23 H24]]]]].
@@ -913,8 +916,7 @@ Proof.
           specialize (E j H). unfold symbols_inject in E.
           destruct E as [E1 [E2 [E3 E4]]].
           specialize (E2 i _ _ _ Q). simpl in E2. specialize (E2 H21). destruct E2. auto.
-        * rewrite <- H22. unfold Genv.find_comp.
-          simpl. rewrite A. rewrite H0. reflexivity.
+        * now rewrite <- H22.
         * apply match_prog_pol in TRANSF.
           unfold tge, Genv.globalenv.
           rewrite Genv.genv_pol_add_globals. simpl.
@@ -925,9 +927,6 @@ Proof.
           rewrite Genv.genv_pol_add_globals. simpl.
           rewrite TRANSF.
           unfold ge, Genv.globalenv in H24. now rewrite Genv.genv_pol_add_globals in H24. }
-    { unfold Genv.type_of_call. unfold Genv.find_comp, Genv.find_funct.
-      rewrite <- Genv.find_funct_ptr_iff in H0.
-      rewrite H0, A. reflexivity. }
 Qed.
 
 Lemma eval_builtin_arg_inject:

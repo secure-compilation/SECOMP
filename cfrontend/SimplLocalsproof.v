@@ -1835,7 +1835,7 @@ Proof.
   intros f cenv cp k tk m bound tbound H.
   unfold call_comp.
   induction H; simpl; auto.
-  now apply comp_transl_partial.
+  now rewrite (comp_transl_partial _ H).
 Qed.
 
 (** [match_cont] and freeing of environment blocks *)

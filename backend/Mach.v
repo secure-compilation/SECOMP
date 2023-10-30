@@ -371,14 +371,8 @@ Definition parent_ra (s: list stackframe) : val :=
   | Stackframe f _ _ sp ra c :: s' => Vptr f ra
   end.
 
-Definition call_comp (s: list stackframe): compartment :=
-  match parent_ra s with
-  | Vptr b _ => match Genv.find_comp ge (Vptr b Ptrofs.zero) with
-                | Some cp => cp
-                | None => default_compartment
-                end
-  | _ => default_compartment
-  end.
+Definition call_comp (s: list stackframe): option compartment :=
+  Genv.find_comp ge (parent_ra s).
 
 (* TODO: Better name (also LTL)! *)
 Definition parent_signature (stack: list stackframe) : signature :=
@@ -394,23 +388,22 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State s f sp c rs m)
   | exec_Mgetstack:
       forall s f sp ofs ty dst c rs m v cp,
-      forall (CURCOMP: Genv.find_comp ge (Vptr f Ptrofs.zero) = Some cp),
+      forall (CURCOMP: Genv.find_comp_of_block ge f = Some cp),
       load_stack m sp ty ofs (Some cp) = Some v ->
       step (State s f sp (Mgetstack ofs ty dst :: c) rs m)
         E0 (State s f sp c (rs#dst <- v) m)
   | exec_Msetstack:
       forall s f sp src ofs ty c rs m m' rs' cp,
-      forall (CURCOMP: Genv.find_comp ge (Vptr f Ptrofs.zero) = Some cp),
+      forall (CURCOMP: Genv.find_comp_of_block ge f = Some cp),
       store_stack m sp ty ofs (rs src) cp = Some m' ->
       rs' = undef_regs (destroyed_by_setstack ty) rs ->
       step (State s f sp (Msetstack src ofs ty :: c) rs m)
         E0 (State s f sp c rs' m')
   | exec_Mgetparam:
-      forall s fb f sp ofs ty dst c rs m (* cp' *) v rs' cp,
-      forall (CURCOMP: Genv.find_comp ge (Vptr fb Ptrofs.zero) = Some cp),
+      forall s fb f sp ofs ty dst c rs m v rs' cp,
+      forall (CURCOMP: Genv.find_comp_of_block ge fb = Some cp),
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
       load_stack m sp Tptr f.(fn_link_ofs) (Some cp) = Some (parent_sp s) ->
-      (* forall (COMPSP: call_comp s = Some cp'), *)
       load_stack m (parent_sp s) ty ofs None = Some v -> (* /!\ Privileged!! *)
       rs' = (rs # temp_for_parent_frame <- Vundef # dst <- v) ->
       step (State s fb sp (Mgetparam ofs ty dst :: c) rs m)
@@ -423,7 +416,7 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State s f sp c rs' m)
   | exec_Mload:
       forall s f sp chunk addr args dst c rs m a v rs' cp,
-      forall (CURCOMP: Genv.find_comp ge (Vptr f Ptrofs.zero) = Some cp),
+      forall (CURCOMP: Genv.find_comp_of_block ge f = Some cp),
       eval_addressing ge sp addr rs##args = Some a ->
       Mem.loadv chunk m a (Some cp) = Some v ->
       rs' = ((undef_regs (destroyed_by_load chunk addr) rs)#dst <- v) ->
@@ -431,7 +424,7 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State s f sp c rs' m)
   | exec_Mstore:
       forall s f sp chunk addr args src c rs m m' a rs' cp,
-      forall (CURCOMP: Genv.find_comp ge (Vptr f Ptrofs.zero) = Some cp),
+      forall (CURCOMP: Genv.find_comp_of_block ge f = Some cp),
       eval_addressing ge sp addr rs##args = Some a ->
       Mem.storev chunk m a (rs src) cp = Some m' ->
       rs' = undef_regs (destroyed_by_store chunk addr) rs ->
@@ -444,7 +437,7 @@ Inductive step: state -> trace -> state -> Prop :=
       return_address_offset f c ra ->
       forall (CALLED: Genv.find_funct_ptr ge f' = Some fd),
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) (Vptr f' Ptrofs.zero)),
-      forall cp (CURCOMP: Genv.find_comp ge (Vptr f' Ptrofs.zero) = Some cp),
+      forall cp (CURCOMP: Genv.find_comp_of_block ge f' = Some cp),
       (* call_arguments are never invalidated *)
       forall (ARGS: call_arguments (undef_regs destroyed_at_function_entry rs) m sp sig args),
       forall (NO_CROSS_PTR:
@@ -457,8 +450,8 @@ Inductive step: state -> trace -> state -> Prop :=
                        f' sig rs m)
   | exec_Mtailcall:
       forall s fb stk soff sig ros c rs m f f' m' cp cp',
-      forall (CURCOMP: Genv.find_comp ge (Vptr fb Ptrofs.zero) = Some cp),
-      forall (NEXTCOMP: Genv.find_comp ge (Vptr f' Ptrofs.zero) = Some cp'),
+      forall (CURCOMP: Genv.find_comp_of_block ge fb = Some cp),
+      forall (NEXTCOMP: Genv.find_comp_of_block ge f' = Some cp'),
       find_function_ptr ge ros rs = Some f' ->
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
       load_stack m (Vptr stk soff) Tptr f.(fn_link_ofs) (Some cp) = Some (parent_sp s) ->
@@ -470,7 +463,7 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (Callstate s f' sig rs m')
   | exec_Mbuiltin:
       forall s fb sp rs m ef args res b vargs t vres rs' m' cp,
-      forall (CURCOMP: Genv.find_comp ge (Vptr fb Ptrofs.zero) = Some cp),
+      forall (CURCOMP: Genv.find_comp_of_block ge fb = Some cp),
       eval_builtin_args ge rs sp m args vargs ->
       external_call ef ge vargs m t vres m' ->
       forall ALLOWED: comp_of ef = cp,
@@ -509,7 +502,7 @@ Inductive step: state -> trace -> state -> Prop :=
   | exec_Mreturn:
       (* RB: NOTE: Think about compartment variables, here and in a similar case. *)
       forall s fb stk soff c rs m f m' retrs cp,
-      forall (CURCOMP: Genv.find_comp ge (Vptr fb Ptrofs.zero) = Some cp),
+      forall (CURCOMP: Genv.find_comp_of_block ge fb = Some cp),
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
       load_stack m (Vptr stk soff) Tptr f.(fn_link_ofs) (Some cp) = Some (parent_sp s) ->
       load_stack m (Vptr stk soff) Tptr f.(fn_retaddr_ofs) (Some cp) = Some (parent_ra s) ->
@@ -521,7 +514,7 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (Returnstate s retrs m')
   | exec_function_internal:
       forall s fb rs m f m1 m2 m3 stk callrs rs' cp sig,
-      forall (CURCOMP: Genv.find_comp ge (Vptr fb Ptrofs.zero) = Some cp),
+      forall (CURCOMP: Genv.find_comp_of_block ge fb = Some cp),
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
       Mem.alloc m cp 0 f.(fn_stacksize) = (m1, stk) ->
       let sp := Vptr stk Ptrofs.zero in
@@ -534,17 +527,16 @@ Inductive step: state -> trace -> state -> Prop :=
       step (Callstate s fb sig rs m)
         E0 (State s fb sp f.(fn_code) rs' m3)
   | exec_function_external:
-      forall s fb rs m t rs' ef args res m' cp sig,
+      forall s fb rs m t rs' ef args res m' sig,
       Genv.find_funct_ptr ge fb = Some (External ef) ->
       extcall_arguments rs m (parent_sp s) (ef_sig ef) args ->
-      forall (COMP: call_comp s = cp),
       external_call ef ge args m t res m' ->
       rs' = set_pair (loc_result (ef_sig ef)) res (undef_caller_save_regs rs) ->
       step (Callstate s fb sig rs m)
          t (Returnstate s rs' m')
   | exec_return:
       forall s f sp ra c rs m sg cp t,
-      forall cp' (CURCOMP: Genv.find_comp ge (Vptr f Ptrofs.zero) = Some cp'),
+      forall cp' (CURCOMP: Genv.find_comp_of_block ge f = Some cp'),
       forall (NO_CROSS_PTR:
           Genv.type_of_call cp' cp = Genv.CrossCompartmentCall ->
           not_ptr (return_value rs sg)),

@@ -2700,7 +2700,7 @@ Lemma match_stackframes_call_comp:
 Proof.
   intros s ts sg H.
   destruct H; trivial; simpl.
-  now apply (comp_transl_partial _ FUN).
+  now rewrite (comp_transl_partial _ FUN).
 Qed.
 
 Ltac UseShape :=

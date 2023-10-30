@@ -1728,7 +1728,7 @@ Proof.
   destruct H; trivial.
   all: match goal with
   | H : transl_function _ _ = _ |- _ =>
-    apply (comp_transl_partial _ H)
+    now rewrite (comp_transl_partial _ H)
   end.
 Qed.
 

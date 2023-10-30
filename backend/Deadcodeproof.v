@@ -600,7 +600,7 @@ Proof.
   | H : match_stackframes _ _ |- _ => destruct H
   end.
   simpl.
-  eapply (comp_transl_partial); eauto.
+  now rewrite (comp_transl_partial _ FUN).
 Qed.
 
 Inductive match_states: state -> state -> Prop :=

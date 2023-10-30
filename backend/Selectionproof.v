@@ -1284,8 +1284,9 @@ Lemma match_call_cont_call_comp:
   match_call_cont k k' ->
   Cminor.call_comp k = call_comp k'.
 Proof.
-  intros k k' H.
-  now destruct H.
+  intros k k' H. destruct H; simpl.
+  reflexivity.
+  unfold Cminor.call_comp, call_comp. simpl. now f_equal.
 Qed.
 
 (*
