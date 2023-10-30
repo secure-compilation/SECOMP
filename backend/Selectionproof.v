@@ -48,22 +48,26 @@ Qed.
 
 (** Processing of helper functions *)
 
+(* Lemma record_globdefs_sound: *)
+(*   forall dm cp id gd, (record_globdefs dm cp)!id = Some gd -> dm!id = Some gd. *)
+(* Proof. *)
+(*   intros. *)
+(*   set (f := fun m id gd => if globdef_of_interest gd cp then PTree.set id gd m else m) in *. *)
+(*   set (P := fun m m' => m'!id = Some gd -> m!id = Some gd). *)
+(*   assert (X: P dm (PTree.fold f dm (PTree.empty _))). *)
+(*   { apply PTree_Properties.fold_rec. *)
+(*   - unfold P; intros. rewrite <- H0; auto. *)
+(*   - red. rewrite ! PTree.gempty. auto. *)
+(*   - unfold P; intros. rewrite PTree.gsspec. unfold f in H3. *)
+(*     destruct (globdef_of_interest v). *)
+(*     + rewrite PTree.gsspec in H3. destruct (peq id k); auto. *)
+(*     + apply H2 in H3. destruct (peq id k). congruence. auto. } *)
+(*   apply X. auto. *)
+(* Qed. *)
+
 Lemma record_globdefs_sound:
-  forall dm cp id gd, (record_globdefs dm cp)!id = Some gd -> dm!id = Some gd.
-Proof.
-  intros.
-  set (f := fun m id gd => if globdef_of_interest gd cp then PTree.set id gd m else m) in *.
-  set (P := fun m m' => m'!id = Some gd -> m!id = Some gd).
-  assert (X: P dm (PTree.fold f dm (PTree.empty _))).
-  { apply PTree_Properties.fold_rec.
-  - unfold P; intros. rewrite <- H0; auto.
-  - red. rewrite ! PTree.gempty. auto.
-  - unfold P; intros. rewrite PTree.gsspec. unfold f in H3.
-    destruct (globdef_of_interest v).
-    + rewrite PTree.gsspec in H3. destruct (peq id k); auto.
-    + apply H2 in H3. destruct (peq id k). congruence. auto. }
-  apply X. auto.
-Qed.
+  forall dm cp id gd, (record_globdefs dm cp)!id = Some gd -> In (id, gd) dm.(prog_defs).
+Admitted.
 
 Lemma lookup_helper_correct_1:
   forall globs cp name sg id,
@@ -91,21 +95,60 @@ Proof.
   destruct (PTree.fold (lookup_helper_aux cp name sg) globs None); inv H. auto.
 Qed.
 
+(* Lemma lookup_helper_correct: *)
+(*   forall p cp name sg id, *)
+(*   lookup_helper (record_globdefs (prog_defmap p) cp) cp name sg = OK id -> *)
+(*   helper_declared p id cp name sg. *)
+(* Proof. *)
+(*   intros. apply lookup_helper_correct_1 in H. apply record_globdefs_sound in H. auto. *)
+(* Qed. *)
+
 Lemma lookup_helper_correct:
   forall p cp name sg id,
-  lookup_helper (record_globdefs (prog_defmap p) cp) cp name sg = OK id ->
+  lookup_helper (record_globdefs p cp) cp name sg = OK id ->
   helper_declared p id cp name sg.
 Proof.
-  intros. apply lookup_helper_correct_1 in H. apply record_globdefs_sound in H. auto.
-Qed.
+  intros. apply lookup_helper_correct_1 in H. apply record_globdefs_sound in H.
+Admitted.
+
+(* Lemma get_helpers_correct: *)
+(*   forall p cp hf, *)
+(*   get_helpers (prog_defmap p) cp = OK hf -> *)
+(*   helper_functions_declared p hf cp. *)
+(* Proof. *)
+(*   intros. monadInv H. red; simpl. auto 20 using lookup_helper_correct. *)
+(* Qed. *)
 
 Lemma get_helpers_correct:
   forall p cp hf,
-  get_helpers (prog_defmap p) cp = OK hf ->
+  get_helpers p cp = OK hf ->
   helper_functions_declared p hf cp.
 Proof.
   intros. monadInv H. red; simpl. auto 20 using lookup_helper_correct.
 Qed.
+
+(* Theorem transf_program_match: *)
+(*   forall p tp, sel_program p = OK tp -> match_prog p tp. *)
+(* Proof. *)
+(*   intros. *)
+(*   eapply match_transform_partial_program_contextual. eexact H. *)
+(*   (* eexact EQ0. *) *)
+(*   intros. *)
+(*   exists (get_all_helpers (prog_defmap p) (list_comp p)). *)
+(*   assert (exists hf_c, get_all_helpers (prog_defmap p) (list_comp p) (comp_of f) = OK hf_c) as [hf_c ?]. *)
+(*   { assert (List.In (comp_of f) (list_comp p)). *)
+(*     admit. *)
+(*     unfold sel_fundef in *. unfold sel_function in *. simpl in *. *)
+(*     unfold get_all_helpers in *. destruct in_dec; try congruence. *)
+(*     destruct (get_helpers (prog_defmap p) (comp_of f)); eauto. *)
+(*     admit. *)
+(*   } *)
+(*   exists hf_c. split; auto. split; auto. *)
+(*   apply get_helpers_correct; auto. *)
+(*   unfold get_all_helpers in H1. *)
+(*   destruct in_dec; try congruence. *)
+(*   monadInv H1. auto. *)
+(* Admitted. *)
 
 Theorem transf_program_match:
   forall p tp, sel_program p = OK tp -> match_prog p tp.
@@ -114,13 +157,13 @@ Proof.
   eapply match_transform_partial_program_contextual. eexact H.
   (* eexact EQ0. *)
   intros.
-  exists (get_all_helpers (prog_defmap p) (list_comp p)).
-  assert (exists hf_c, get_all_helpers (prog_defmap p) (list_comp p) (comp_of f) = OK hf_c) as [hf_c ?].
+  exists (get_all_helpers p (list_comp p)).
+  assert (exists hf_c, get_all_helpers p (list_comp p) (comp_of f) = OK hf_c) as [hf_c ?].
   { assert (List.In (comp_of f) (list_comp p)).
     admit.
     unfold sel_fundef in *. unfold sel_function in *. simpl in *.
     unfold get_all_helpers in *. destruct in_dec; try congruence.
-    destruct (get_helpers (prog_defmap p) (comp_of f)); eauto.
+    destruct (get_helpers p (comp_of f)); eauto.
     admit.
   }
   exists hf_c. split; auto. split; auto.

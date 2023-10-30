@@ -484,10 +484,15 @@ Definition globdef_of_interest (gd: globdef) (cp: compartment) : bool :=
   | _ => false
   end.
 
-Definition record_globdefs (defmap: PTree.t globdef) (cp: compartment) : PTree.t globdef :=
-  PTree.fold
-    (fun m id gd => if globdef_of_interest gd cp then PTree.set id gd m else m)
-    defmap (PTree.empty globdef).
+(* Definition record_globdefs (defmap: PTree.t globdef) (cp: compartment) : PTree.t globdef := *)
+(*   PTree.fold *)
+(*     (fun m id gd => if globdef_of_interest gd cp then PTree.set id gd m else m) *)
+(*     defmap (PTree.empty globdef). *)
+
+Definition record_globdefs (defmap: Cminor.program) (cp: compartment) : PTree.t globdef :=
+  List.fold_left
+    (fun m '(id, gd) => if globdef_of_interest gd cp then PTree.set id gd m else m)
+    defmap.(prog_defs) (PTree.empty globdef).
 
 Definition lookup_helper_aux
      (cp: compartment) (name: String.string) (sg: signature) (res: option ident)
@@ -509,7 +514,8 @@ Definition lookup_helper (globs: PTree.t globdef)
 
 Local Open Scope string_scope.
 
-Definition get_helpers (defmap: PTree.t globdef) (cp: compartment): res helper_functions :=
+(* Definition get_helpers (defmap: PTree.t globdef) (cp: compartment): res helper_functions := *)
+Definition get_helpers (defmap: Cminor.program) (cp: compartment): res helper_functions :=
   let globs := record_globdefs defmap cp in
   do i64_dtos <- lookup_helper globs cp "__compcert_i64_dtos" sig_f_l ;
   do i64_dtou <- lookup_helper globs cp "__compcert_i64_dtou" sig_f_l ;
@@ -532,7 +538,8 @@ Definition get_helpers (defmap: PTree.t globdef) (cp: compartment): res helper_f
      i64_shl i64_shr i64_sar
      i64_umulh i64_smulh).
 
-Definition get_all_helpers (defmap: PTree.t globdef) (ls: list compartment): compartment -> res helper_functions :=
+(* Definition get_all_helpers (defmap: PTree.t globdef) (ls: list compartment): compartment -> res helper_functions := *)
+Definition get_all_helpers (defmap: Cminor.program) (ls: list compartment): compartment -> res helper_functions :=
   fun cp =>
     if @in_dec compartment Pos.eq_dec cp ls then
       do hf <- get_helpers defmap cp;
@@ -544,7 +551,12 @@ Definition get_all_helpers (defmap: PTree.t globdef) (ls: list compartment): com
 (** Conversion of programs. *)
 
 Definition sel_program (p: Cminor.program) : res program :=
+  (* FIXME: [prog_defmap] hides the multiple copies of the helper
+     functions, which share a name but live in different
+     compartments. A namespacing fix at that level may be worth
+     looking into. *)
   let dm := prog_defmap p in
-  let hf := get_all_helpers dm (AST.list_comp p) in
+  (* let hf := get_all_helpers dm (AST.list_comp p) in *)
+  let hf := get_all_helpers p (AST.list_comp p) in
   transform_partial_program (sel_fundef dm hf) p.
 
