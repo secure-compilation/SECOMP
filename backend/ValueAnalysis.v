@@ -114,8 +114,8 @@ Definition transfer_builtin
   | EF_annot_val _ _ _ _, v :: nil =>
       let av := abuiltin_arg ae am rm v in
       VA.State (set_builtin_res res av ae) am
-  | EF_builtin _ name sg, _ =>
-      match lookup_builtin_function name sg with
+  | EF_builtin cp name sg, _ =>
+      match lookup_builtin_function name cp sg with
       | Some bf => 
           match eval_static_builtin_function ae am rm bf args with
           | Some av => VA.State (set_builtin_res res av ae) am
@@ -1420,7 +1420,7 @@ Proof.
   unfold transfer_builtin in TR.
   destruct ef; auto.
 + (* builtin function *)
-  destruct (lookup_builtin_function name sg) as [bf|] eqn:LK; auto.
+  destruct (lookup_builtin_function name cp sg) as [bf|] eqn:LK; auto.
   destruct (eval_static_builtin_function ae am rm bf args) as [av|] eqn:ES; auto.
   simpl in H1. red in H1. rewrite LK in H1. inv H1.
   eapply sound_succ_state; eauto. simpl; auto.

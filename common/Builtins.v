@@ -36,8 +36,8 @@ Definition builtin_function_sem (b: builtin_function) : builtin_sem (sig_res (bu
   | BI_platform b => platform_builtin_sem b
   end.
 
-Definition lookup_builtin_function (name: string) (sg: signature) : option builtin_function :=
-  match lookup_builtin standard_builtin_sig name sg standard_builtin_table with
+Definition lookup_builtin_function (name: string) (cp: compartment) (sg: signature) : option builtin_function :=
+  match lookup_builtin standard_builtin_sig (standard_builtin_name name cp) sg (standard_builtin_table cp) with
   | Some b => Some (BI_standard b)
   | None => 
   match lookup_builtin platform_builtin_sig name sg platform_builtin_table with
@@ -46,10 +46,10 @@ Definition lookup_builtin_function (name: string) (sg: signature) : option built
   end end.
 
 Lemma lookup_builtin_function_sig:
-  forall name sg b, lookup_builtin_function name sg = Some b -> builtin_function_sig b = sg.
+  forall name cp sg b, lookup_builtin_function name cp sg = Some b -> builtin_function_sig b = sg.
 Proof.
   unfold lookup_builtin_function; intros.
-  destruct (lookup_builtin standard_builtin_sig name sg standard_builtin_table) as [bs|] eqn:E.
+  destruct (lookup_builtin standard_builtin_sig (standard_builtin_name name cp) sg (standard_builtin_table cp)) as [bs|] eqn:E.
   inv H. simpl. eapply lookup_builtin_sig; eauto.
   destruct (lookup_builtin platform_builtin_sig name sg platform_builtin_table) as [bp|] eqn:E'.
   inv H. simpl. eapply lookup_builtin_sig; eauto.

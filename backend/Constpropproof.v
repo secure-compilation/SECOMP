@@ -605,7 +605,7 @@ Opaque builtin_strength_reduction.
   }
   destruct ef; auto.
   destruct res; auto.
-  destruct (lookup_builtin_function name sg) as [bf|] eqn:LK; auto.
+  destruct (lookup_builtin_function name cp sg) as [bf|] eqn:LK; auto.
   destruct (eval_static_builtin_function ae am rm bf args) as [a|] eqn:ES; auto.
   destruct (const_for_result a) as [cop|] eqn:CR; auto.
   clear DFL. simpl in H1; red in H1; rewrite LK in H1; inv H1.

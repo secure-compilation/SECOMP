@@ -27,21 +27,21 @@ Definition helper_declared {F V: Type} (p: AST.program (AST.fundef F) V) (id: id
   (prog_defmap p)!id = Some (Gfun (External (EF_runtime cp name sg))).
 
 Definition helper_functions_declared {F V: Type} (p: AST.program (AST.fundef F) V) (hf: helper_functions) (cp: compartment): Prop :=
-     helper_declared p i64_dtos cp "__compcert_i64_dtos" sig_f_l
-  /\ helper_declared p i64_dtou  cp "__compcert_i64_dtou" sig_f_l
-  /\ helper_declared p i64_stod  cp "__compcert_i64_stod" sig_l_f
-  /\ helper_declared p i64_utod  cp "__compcert_i64_utod" sig_l_f
-  /\ helper_declared p i64_stof  cp "__compcert_i64_stof" sig_l_s
-  /\ helper_declared p i64_utof  cp "__compcert_i64_utof" sig_l_s
-  /\ helper_declared p i64_sdiv  cp "__compcert_i64_sdiv" sig_ll_l
-  /\ helper_declared p i64_udiv  cp "__compcert_i64_udiv" sig_ll_l
-  /\ helper_declared p i64_smod  cp "__compcert_i64_smod" sig_ll_l
-  /\ helper_declared p i64_umod  cp "__compcert_i64_umod" sig_ll_l
-  /\ helper_declared p i64_shl   cp "__compcert_i64_shl" sig_li_l
-  /\ helper_declared p i64_shr   cp "__compcert_i64_shr" sig_li_l
-  /\ helper_declared p i64_sar   cp "__compcert_i64_sar" sig_li_l
-  /\ helper_declared p i64_umulh cp "__compcert_i64_umulh" sig_ll_l
-  /\ helper_declared p i64_smulh cp "__compcert_i64_smulh" sig_ll_l.
+     helper_declared p i64_dtos cp (standard_builtin_name "__compcert_i64_dtos" cp) sig_f_l
+  /\ helper_declared p i64_dtou  cp (standard_builtin_name "__compcert_i64_dtou" cp) sig_f_l
+  /\ helper_declared p i64_stod  cp (standard_builtin_name "__compcert_i64_stod" cp) sig_l_f
+  /\ helper_declared p i64_utod  cp (standard_builtin_name "__compcert_i64_utod" cp) sig_l_f
+  /\ helper_declared p i64_stof  cp (standard_builtin_name "__compcert_i64_stof" cp) sig_l_s
+  /\ helper_declared p i64_utof  cp (standard_builtin_name "__compcert_i64_utof" cp) sig_l_s
+  /\ helper_declared p i64_sdiv  cp (standard_builtin_name "__compcert_i64_sdiv" cp) sig_ll_l
+  /\ helper_declared p i64_udiv  cp (standard_builtin_name "__compcert_i64_udiv" cp) sig_ll_l
+  /\ helper_declared p i64_smod  cp (standard_builtin_name "__compcert_i64_smod" cp) sig_ll_l
+  /\ helper_declared p i64_umod  cp (standard_builtin_name "__compcert_i64_umod" cp) sig_ll_l
+  /\ helper_declared p i64_shl   cp (standard_builtin_name "__compcert_i64_shl" cp) sig_li_l
+  /\ helper_declared p i64_shr   cp (standard_builtin_name "__compcert_i64_shr" cp) sig_li_l
+  /\ helper_declared p i64_sar   cp (standard_builtin_name "__compcert_i64_sar" cp) sig_li_l
+  /\ helper_declared p i64_umulh cp (standard_builtin_name "__compcert_i64_umulh" cp) sig_ll_l
+  /\ helper_declared p i64_smulh cp (standard_builtin_name "__compcert_i64_smulh" cp) sig_ll_l.
 
 (** * Correctness of the instruction selection functions for 64-bit operators *)
 
@@ -59,10 +59,10 @@ Variable m: mem.
 Ltac DeclHelper := red in HELPERS; decompose [Logic.and] HELPERS; eauto.
 
 Lemma eval_helper:
-  forall bf le id name sg args vargs vres,
+  forall bf le id name cp sg args vargs vres,
   eval_exprlist ge sp e cp m le args vargs ->
   helper_declared prog id cp name sg ->
-  lookup_builtin_function name sg = Some bf ->
+  lookup_builtin_function name cp sg = Some bf ->
   builtin_function_sem bf vargs = Some vres ->
   (* forall (ALLOWED: allowed_call ge cp vf), *)
   eval_expr ge sp e cp m le (Eexternal id sg args) vres.
@@ -77,10 +77,10 @@ Proof.
 Qed.
 
 Corollary eval_helper_1:
-  forall bf le id name sg arg1 varg1 vres,
+  forall bf le id name cp sg arg1 varg1 vres,
   eval_expr ge sp e cp m le arg1 varg1 ->
   helper_declared prog id cp name sg  ->
-  lookup_builtin_function name sg = Some bf ->
+  lookup_builtin_function name cp sg = Some bf ->
   builtin_function_sem bf (varg1 :: nil) = Some vres ->
   (* forall (ALLOWED: Policy.allowed_call cp (External (EF_runtime name sg))), *)
   eval_expr ge sp e cp m le (Eexternal id sg (arg1 ::: Enil)) vres.
@@ -89,11 +89,11 @@ Proof.
 Qed.
 
 Corollary eval_helper_2:
-  forall bf le id name sg arg1 arg2 varg1 varg2 vres,
+  forall bf le id name cp sg arg1 arg2 varg1 varg2 vres,
   eval_expr ge sp e cp m le arg1 varg1 ->
   eval_expr ge sp e cp m le arg2 varg2 ->
   helper_declared prog id cp name sg  ->
-  lookup_builtin_function name sg = Some bf ->
+  lookup_builtin_function name cp sg = Some bf ->
   builtin_function_sem bf (varg1 :: varg2 :: nil) = Some vres ->
   (* forall (ALLOWED: Policy.allowed_call cp (External (EF_runtime name sg))), *)
   eval_expr ge sp e cp m le (Eexternal id sg (arg1 ::: arg2 ::: Enil)) vres.
@@ -102,9 +102,9 @@ Proof.
 Qed.
 
 Remark eval_builtin_1:
-  forall bf le id sg arg1 varg1 vres,
+  forall bf le id cp sg arg1 varg1 vres,
   eval_expr ge sp e cp m le arg1 varg1 ->
-  lookup_builtin_function id sg = Some bf ->
+  lookup_builtin_function id cp sg = Some bf ->
   builtin_function_sem bf (varg1 :: nil) = Some vres ->
   (* forall (ALLOWED: Policy.allowed_call cp (External (EF_builtin id sg))), *)
   eval_expr ge sp e cp m le (Ebuiltin (EF_builtin cp id sg) (arg1 ::: Enil)) vres.
@@ -114,10 +114,10 @@ Proof.
 Qed.
 
 Remark eval_builtin_2:
-  forall bf le id sg arg1 arg2 varg1 varg2 vres,
+  forall bf le id cp sg arg1 arg2 varg1 varg2 vres,
   eval_expr ge sp e cp m le arg1 varg1 ->
   eval_expr ge sp e cp m le arg2 varg2 ->
-  lookup_builtin_function id sg = Some bf ->
+  lookup_builtin_function id cp sg = Some bf ->
   builtin_function_sem bf (varg1 :: varg2 :: nil) = Some vres ->
   eval_expr ge sp e cp m le (Ebuiltin (EF_builtin cp id sg) (arg1 ::: arg2 ::: Enil)) vres.
 Proof.

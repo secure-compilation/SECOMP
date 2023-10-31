@@ -467,7 +467,7 @@ Proof.
   intros. unfold Eselection.
   set (t := typ_of_type ty).
   set (sg := mksignature (AST.Tint :: t :: t :: nil) t cc_default).
-  assert (LK: lookup_builtin_function "__builtin_sel"%string sg = Some (BI_standard (BI_select t))).
+  assert (LK: lookup_builtin_function "__builtin_sel"%string cp sg = Some (BI_standard (BI_select t))).
   { unfold sg, t; destruct ty as   [ | ? ? ? | ? | [] ? | ? ? | ? ? ? | ? ? ? | ? ? | ? ? ];
     simpl; unfold Tptr; destruct Archi.ptr64; reflexivity. }
   set (v' := if b then v2' else v3').

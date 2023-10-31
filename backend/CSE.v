@@ -475,8 +475,8 @@ Definition transfer (f: function) (approx: PMap.t VA.t) (pc: node) (before: numb
               empty_numbering
           | EF_vstore _ _ =>
               set_res_unknown (kill_all_loads before) res
-          | EF_builtin _ name sg =>
-              match lookup_builtin_function name sg with
+          | EF_builtin cp name sg =>
+              match lookup_builtin_function name cp sg with
               | Some bf => set_res_unknown before res
               | None    => set_res_unknown (kill_all_loads before) res
               end

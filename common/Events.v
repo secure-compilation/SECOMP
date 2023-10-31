@@ -1614,17 +1614,17 @@ Axiom inline_assembly_properties:
 
 (** ** Combined semantics of external calls *)
 
-Definition builtin_or_external_sem name sg :=
-  match lookup_builtin_function name sg with
+Definition builtin_or_external_sem name cp sg :=
+  match lookup_builtin_function name cp sg with
   | Some bf => known_builtin_sem bf
   | None => external_functions_sem name sg
   end.
 
-Lemma builtin_or_external_sem_ok: forall name sg,
-  extcall_properties (builtin_or_external_sem name sg) sg.
+Lemma builtin_or_external_sem_ok: forall name cp sg,
+  extcall_properties (builtin_or_external_sem name cp sg) sg.
 Proof.
   unfold builtin_or_external_sem; intros. 
-  destruct (lookup_builtin_function name sg) as [bf|] eqn:L.
+  destruct (lookup_builtin_function name cp sg) as [bf|] eqn:L.
 - exploit lookup_builtin_function_sig; eauto. intros EQ; subst sg.
   apply known_builtin_ok.
 - apply external_functions_properties.
@@ -1656,8 +1656,8 @@ This predicate is used in the semantics of all CompCert languages. *)
 Definition external_call (ef: external_function): extcall_sem :=
   match ef with
   | EF_external cp name sg  => external_functions_sem name sg
-  | EF_builtin cp name sg      => builtin_or_external_sem name sg
-  | EF_runtime cp name sg      => builtin_or_external_sem name sg
+  | EF_builtin cp name sg      => builtin_or_external_sem name cp sg
+  | EF_runtime cp name sg      => builtin_or_external_sem name cp sg
   | EF_vload cp chunk          => volatile_load_sem cp chunk
   | EF_vstore cp chunk         => volatile_store_sem cp chunk
   | EF_malloc cp                => extcall_malloc_sem cp
