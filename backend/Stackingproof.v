@@ -2273,7 +2273,6 @@ Proof.
   eapply exec_Mcall with (args := vl); eauto.
   { rewrite <- (comp_transl_partial _ TRANSL).
     apply (Genv.allowed_call_transf_partial TRANSF ALLOWED). }
-  { now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ B). }
   { simpl in ARGS.
     rewrite <- (comp_transl_partial _ TRANSL), <- (comp_transf_partial_fundef _ C).
     intros G. specialize (NO_CROSS_PTR G).
@@ -2323,12 +2322,10 @@ Proof.
   intros [bf [tf' [A [B C]]]].
   econstructor; split.
   eapply plus_right. eexact S. econstructor; eauto.
-    rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND); eauto.
-    unfold comp_of; simpl. eauto.
-    { rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ B); unfold comp_of; simpl.
-      rewrite <- comp_transf_function; eauto. rewrite <- COMP.
-      destruct f'; auto. monadInv C. unfold comp_of; simpl. rewrite <- (comp_transf_function _ _ EQ); eauto.
-      inv C. reflexivity. }
+    rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ B); unfold comp_of; simpl.
+    rewrite <- comp_transf_function; eauto. rewrite <- COMP.
+    destruct f'; auto. monadInv C. unfold comp_of; simpl. rewrite <- (comp_transf_function _ _ EQ); eauto.
+    inv C. reflexivity.
   traceEq.
   econstructor; eauto.
   apply match_stacks_change_sig with (Linear.fn_sig f); auto.

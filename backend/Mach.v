@@ -223,7 +223,6 @@ Section RELSEM.
 
 Variable return_address_offset: function -> code -> ptrofs -> Prop.
 
-Variable comp_of_main: compartment.
 Variable ge: genv.
 
 Definition find_function_ptr
@@ -328,8 +327,8 @@ Inductive stackframe: Type :=
 
 Definition callee_comp (s: list stackframe) :=
   match s with
-  | nil => comp_of_main
-  | Stackframe _ cp _ _ _ _ :: _ => cp
+  | nil => None
+  | Stackframe _ cp _ _ _ _ :: _ => Some cp
   end.
 
 Definition callee_comp_stackframe (f: stackframe) :=
@@ -437,28 +436,26 @@ Inductive step: state -> trace -> state -> Prop :=
       return_address_offset f c ra ->
       forall (CALLED: Genv.find_funct_ptr ge f' = Some fd),
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) (Vptr f' Ptrofs.zero)),
-      forall cp (CURCOMP: Genv.find_comp_of_block ge f' = Some cp),
       (* call_arguments are never invalidated *)
       forall (ARGS: call_arguments (undef_regs destroyed_at_function_entry rs) m sp sig args),
       forall (NO_CROSS_PTR:
-          Genv.type_of_call (comp_of f) cp = Genv.CrossCompartmentCall ->
+          Genv.type_of_call (comp_of f) (comp_of fd) = Genv.CrossCompartmentCall ->
           List.Forall not_ptr args),
-      forall (EV: call_trace ge (comp_of f) cp (Vptr f' Ptrofs.zero)
+      forall (EV: call_trace ge (comp_of f) (comp_of fd) (Vptr f' Ptrofs.zero)
                args (sig_args sig) t),
       step (State s fb sp (Mcall sig ros :: c) rs m)
-        t (Callstate (Stackframe fb cp sig sp ra c :: s)
+        t (Callstate (Stackframe fb (comp_of fd) sig sp ra c :: s)
                        f' sig rs m)
   | exec_Mtailcall:
-      forall s fb stk soff sig ros c rs m f f' m' cp cp',
-      forall (CURCOMP: Genv.find_comp_of_block ge fb = Some cp),
-      forall (NEXTCOMP: Genv.find_comp_of_block ge f' = Some cp'),
+      forall s fb stk soff sig ros c rs m f f' m',
+      forall (NEXTCOMP: Genv.find_comp_of_block ge f' = Some (comp_of f)),
       find_function_ptr ge ros rs = Some f' ->
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
-      load_stack m (Vptr stk soff) Tptr f.(fn_link_ofs) (Some cp) = Some (parent_sp s) ->
-      load_stack m (Vptr stk soff) Tptr f.(fn_retaddr_ofs) (Some cp) = Some (parent_ra s) ->
-      Mem.free m stk 0 f.(fn_stacksize) cp = Some m' ->
-      (* forall (CALLED: Genv.find_funct_ptr ge f' = Some fd), *)
-      forall (COMP: cp = cp'),
+      load_stack m (Vptr stk soff) Tptr f.(fn_link_ofs) (Some (comp_of f))
+      = Some (parent_sp s) ->
+      load_stack m (Vptr stk soff) Tptr f.(fn_retaddr_ofs) (Some (comp_of f))
+      = Some (parent_ra s) ->
+      Mem.free m stk 0 f.(fn_stacksize) (comp_of f) = Some m' ->
       step (State s fb (Vptr stk soff) (Mtailcall sig ros :: c) rs m)
         E0 (Callstate s f' sig rs m')
   | exec_Mbuiltin:
