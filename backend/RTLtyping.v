@@ -879,12 +879,12 @@ Inductive wt_stackframes: list stackframe -> signature -> Prop :=
       sg.(sig_res) = Tint ->
       wt_stackframes nil sg
   | wt_stackframes_cons:
-      forall s res ty cp f sp pc rs env sg,
+      forall s res ty f sp pc rs env sg,
       wt_function f env ->
       wt_regset env rs ->
       env res = proj_sig_res sg ->
       wt_stackframes s (fn_sig f) ->
-      wt_stackframes (Stackframe res ty cp f sp pc rs :: s) sg.
+      wt_stackframes (Stackframe res ty f sp pc rs :: s) sg.
 
 Inductive wt_state: state -> Prop :=
   | wt_state_intro:
@@ -900,10 +900,10 @@ Inductive wt_state: state -> Prop :=
       Val.has_type_list args (sig_args (funsig f)) ->
       wt_state (Callstate s f args m)
   | wt_state_return:
-      forall s v m sg,
+      forall s v m cp sg,
       wt_stackframes s sg ->
       Val.has_type v (proj_sig_res sg) ->
-      wt_state (Returnstate s v m).
+      wt_state (Returnstate s v m cp).
 
 Remark wt_stackframes_change_sig:
   forall s sg1 sg2,
@@ -987,7 +987,7 @@ Proof.
   eapply external_call_well_typed; eauto.
   (* return *)
   inv H1. econstructor; eauto.
-  apply wt_regset_assign; auto. rewrite H12; auto.
+  apply wt_regset_assign; auto. rewrite H11; auto.
 Qed.
 
 Lemma wt_initial_state:

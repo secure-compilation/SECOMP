@@ -347,12 +347,12 @@ Qed.
 
 Inductive match_stackframes: stackframe -> stackframe -> Prop :=
    match_stackframe_intro:
-      forall res sp pc rs ty cp f rs' cu,
+      forall res sp pc rs ty f rs' cu,
       linkorder cu prog ->
       regs_lessdef rs rs' ->
     match_stackframes
-        (Stackframe res ty cp f sp pc rs)
-        (Stackframe res ty cp (transf_function (romem_for cu) f) sp pc rs').
+        (Stackframe res ty f sp pc rs)
+        (Stackframe res ty (transf_function (romem_for cu) f) sp pc rs').
 
 Inductive match_states: nat -> state -> state -> Prop :=
   | match_states_intro:
@@ -373,13 +373,13 @@ Inductive match_states: nat -> state -> state -> Prop :=
       match_states O (Callstate s f args m)
                      (Callstate s' (transf_fundef (romem_for cu) f) args' m')
   | match_states_return:
-      forall s v m s' v' m'
+      forall s v m cp s' v' m'
            (STACKS: list_forall2 match_stackframes s s')
            (RES: Val.lessdef v v')
            (MEM: Mem.extends m m'),
       list_forall2 match_stackframes s s' ->
-      match_states O (Returnstate s v m)
-                     (Returnstate s' v' m').
+      match_states O (Returnstate s v m cp)
+                     (Returnstate s' v' m' cp).
 
 Lemma match_states_succ:
   forall s f sp pc rs m s' rs' m' cu,
@@ -560,7 +560,6 @@ Proof.
   eapply call_trace_lessdef; eauto using senv_preserved, symbols_preserved.
   apply regs_lessdef_regs; auto.
   constructor; auto. constructor; auto.
-  rewrite comp_function_translated.
   econstructor; eauto.
   apply regs_lessdef_regs; auto.
 
@@ -654,7 +653,8 @@ Opaque builtin_strength_reduction.
 
 - (* Ireturn *)
   exploit Mem.free_parallel_extends; eauto. intros [m2' [A B]].
-  left; exists O; exists (Returnstate s' (regmap_optget or Vundef rs') m2'); split.
+  left; exists O.
+  exists (Returnstate s' (regmap_optget or Vundef rs') m2' (comp_of (transf_function (romem_for cu) f))); split.
   eapply exec_Ireturn; eauto. TransfInstr; auto.
   constructor; auto.
   destruct or; simpl; auto.
@@ -679,7 +679,7 @@ Opaque builtin_strength_reduction.
   constructor; auto.
 
 - (* return *)
-  inv H4. inv H1.
+  inv H5. inv H1.
   left; exists O; econstructor; split.
   eapply exec_return; eauto.
   rewrite comp_transf_function. intros G. specialize (NO_CROSS_PTR G).

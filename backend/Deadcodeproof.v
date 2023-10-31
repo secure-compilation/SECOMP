@@ -578,7 +578,7 @@ Qed.
 
 Inductive match_stackframes: stackframe -> stackframe -> Prop :=
   | match_stackframes_intro:
-      forall res ty cp f sp pc e tf te cu an
+      forall res ty f sp pc e tf te cu an
         (LINK: linkorder cu prog)
         (FUN: transf_function (romem_for cu) f = OK tf)
         (ANL: analyze (vanalyze cu f) f = Some an)
@@ -586,8 +586,8 @@ Inductive match_stackframes: stackframe -> stackframe -> Prop :=
               Val.lessdef v tv ->
               eagree (e#res <- v) (te#res<- tv)
                      (fst (transfer f (vanalyze cu f) pc an!!pc))),
-      match_stackframes (Stackframe res ty cp f (Vptr sp Ptrofs.zero) pc e)
-                        (Stackframe res ty cp tf (Vptr sp Ptrofs.zero) pc te).
+      match_stackframes (Stackframe res ty f (Vptr sp Ptrofs.zero) pc e)
+                        (Stackframe res ty tf (Vptr sp Ptrofs.zero) pc te).
 
 Lemma match_stacks_call_comp:
   forall s s',
@@ -624,12 +624,12 @@ Inductive match_states: state -> state -> Prop :=
       match_states (Callstate s f args m)
                    (Callstate ts tf targs tm)
   | match_return_states:
-      forall s v m ts tv tm
+      forall s v m cp ts tv tm
         (STACKS: list_forall2 match_stackframes s ts)
         (RES: Val.lessdef v tv)
         (MEM: Mem.extends m tm),
-      match_states (Returnstate s v m)
-                   (Returnstate ts tv tm).
+      match_states (Returnstate s v m cp)
+                   (Returnstate ts tv tm cp).
 
 (** [match_states] and CFG successors *)
 
@@ -998,7 +998,7 @@ Ltac UseTransfer :=
   rewrite <- (comp_transl_partial _ B), <- comp_transf_function; eauto.
   eapply call_trace_translated; eauto.
   eapply match_call_states with (cu := cu'); eauto.
-  constructor; auto. rewrite <- (comp_transl_partial _ B). eapply match_stackframes_intro with (cu := cu); eauto.
+  constructor; auto. eapply match_stackframes_intro with (cu := cu); eauto.
   intros.
   edestruct analyze_successors; eauto. simpl; eauto.
   eapply eagree_ge; eauto. rewrite ANPC. simpl.

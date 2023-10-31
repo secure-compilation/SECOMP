@@ -529,13 +529,13 @@ Qed.
 
 Inductive match_stackframes: LTL.stackframe -> Linear.stackframe -> Prop :=
   | match_stackframe_intro:
-      forall f cp sg sp bb ls tf c,
+      forall f sg sp bb ls tf c,
       transf_function f = OK tf ->
       (forall pc, In pc (successors_block bb) -> (reachable f)!!pc = true) ->
       is_tail c tf.(fn_code) ->
       match_stackframes
-        (LTL.Stackframe f cp sg sp ls bb)
-        (Linear.Stackframe tf cp sg sp ls (linearize_block bb c)).
+        (LTL.Stackframe f sg sp ls bb)
+        (Linear.Stackframe tf sg sp ls (linearize_block bb c)).
 
 Inductive match_states: LTL.state -> Linear.state -> Prop :=
   | match_states_add_branch:
@@ -578,10 +578,10 @@ Inductive match_states: LTL.state -> Linear.state -> Prop :=
       match_states (LTL.Callstate s f sig ls m) (* parent_signature ts *)
                    (Linear.Callstate ts tf sig ls m)
   | match_states_return:
-      forall s ls m ts,
+      forall s ls m cp ts,
       list_forall2 match_stackframes s ts ->
-      match_states (LTL.Returnstate s ls m)
-                   (Linear.Returnstate ts ls m).
+      match_states (LTL.Returnstate s ls m cp)
+                   (Linear.Returnstate ts ls m cp).
 
 Definition measure (S: LTL.state) : nat :=
   match S with
@@ -697,13 +697,8 @@ Proof.
   }
   {
     rewrite <- (comp_transl_partial _ TRF). rewrite <- (comp_transl_partial _ B).
-    (* erewrite <- type_of_call_translated, comp_preserved; eauto. *)
-    (* destruct (Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf)) eqn:TY_CALL. *)
-    (* eapply call_trace_eq; eauto using symbols_preserved, senv_preserved. *)
-    (* eapply call_trace_eq; eauto using symbols_preserved, senv_preserved. *)
     eapply call_trace_eq; eauto using symbols_preserved, senv_preserved. }
   econstructor; eauto. constructor; auto.
-  rewrite <- (comp_transl_partial _ B).
   econstructor; eauto.
 
   (* Ltailcall *)
@@ -770,18 +765,12 @@ Proof.
   assert (CALLER: LTL.call_comp s = call_comp ts).
   { inv STACKS. reflexivity.
     inv H0. simpl. erewrite comp_preserved; eauto. }
-  assert (CALLEE: LTL.callee_comp s = callee_comp ts).
-  { inv STACKS. reflexivity.
-    inv H0. reflexivity. }
   assert (SIG: LTL.parent_signature s = parent_signature ts).
   { inv STACKS. reflexivity.
     inv H0. reflexivity. }
-  (* rewrite type_of_call_translated, CALLER, CALLEE, SIG. *)
   rewrite SIG.
-  (* destruct (Genv.type_of_call tge (call_comp ts) (callee_comp ts)). *)
-  (* econstructor; eauto. *)
+  rewrite <- comp_transf_fundef; eauto.
   econstructor; eauto.
-  (* econstructor; eauto. *)
 
   (* internal functions *)
   assert (REACH: (reachable f)!!(LTL.fn_entrypoint f) = true).
@@ -816,7 +805,7 @@ Proof.
   econstructor; eauto.
 
   (* return *)
-  inv H3. inv H1.
+  inv H4. inv H1.
   left; econstructor; split.
   apply plus_one. econstructor.
   erewrite comp_preserved; eauto.
@@ -843,7 +832,7 @@ Lemma transf_final_states:
   forall st1 st2 r,
   match_states st1 st2 -> LTL.final_state st1 r -> Linear.final_state st2 r.
 Proof.
-  intros. inv H0. inv H. inv H5. econstructor; eauto.
+  intros. inv H0. inv H. inv H6. econstructor; eauto.
 Qed.
 
 Theorem transf_program_correct:

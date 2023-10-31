@@ -228,11 +228,11 @@ Qed.
 
 Inductive match_stackframes: stackframe -> stackframe -> Prop :=
   | match_stackframe_intro:
-      forall f cp sg sp ls c,
+      forall f sg sp ls c,
       incl c f.(fn_code) ->
       match_stackframes
-        (Stackframe f cp sg sp ls c)
-        (Stackframe (transf_function f) cp sg sp ls
+        (Stackframe f sg sp ls c)
+        (Stackframe (transf_function f) sg sp ls
           (remove_unused_labels (labels_branched_to f.(fn_code)) c)).
 
 Inductive match_states: state -> state -> Prop :=
@@ -248,10 +248,10 @@ Inductive match_states: state -> state -> Prop :=
       match_states (Callstate s f sig ls m)
                    (Callstate ts (transf_fundef f) sig ls m)
   | match_states_return:
-      forall s ls m ts,
+      forall s ls m ts cp,
       list_forall2 match_stackframes s ts ->
-      match_states (Returnstate s ls m)
-                   (Returnstate ts ls m).
+      match_states (Returnstate s ls m cp)
+                   (Returnstate ts ls m cp).
 
 Definition measure (st: state) : nat :=
   match st with
@@ -330,7 +330,7 @@ Proof.
     eapply call_trace_eq; eauto using senv_preserved, symbols_preserved.
   }
   econstructor; eauto. constructor; auto.
-  rewrite comp_function_translated; constructor; eauto with coqlib.
+  constructor; eauto with coqlib.
 (* Ltailcall *)
   left; econstructor; split.
   econstructor. erewrite match_parent_locset; eauto. eapply find_function_translated; eauto.
@@ -377,13 +377,9 @@ Proof.
   assert (CALLER: call_comp s = call_comp ts).
   { inv STACKS. reflexivity.
     inv H0. reflexivity. }
-  assert (CALLEE: callee_comp s = callee_comp ts).
-  { inv STACKS. reflexivity.
-    inv H0. reflexivity. }
   assert (SIG: parent_signature s = parent_signature ts).
   { inv STACKS. reflexivity.
     inv H0. reflexivity. }
-  (* rewrite type_of_call_translated, CALLER, CALLEE, SIG. *)
   rewrite SIG.
   econstructor; eauto with coqlib.
 (* internal function *)
@@ -403,7 +399,7 @@ Proof.
   econstructor; eauto. eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   econstructor; eauto with coqlib.
 (* return *)
-  inv H3. inv H1. left; econstructor; split.
+  inv H4. inv H1. left; econstructor; split.
   econstructor; eauto.
   rewrite comp_match_prog.
   eapply return_trace_eq; eauto using senv_preserved.
@@ -428,7 +424,7 @@ Lemma transf_final_states:
   forall st1 st2 r,
   match_states st1 st2 -> final_state st1 r -> final_state st2 r.
 Proof.
-  intros. inv H0. inv H. inv H5. econstructor; eauto.
+  intros. inv H0. inv H. inv H6. econstructor; eauto.
 Qed.
 
 Theorem transf_program_correct:

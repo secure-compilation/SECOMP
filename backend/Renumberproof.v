@@ -189,10 +189,10 @@ Proof.
 Qed.
 
 Inductive match_frames: RTL.stackframe -> RTL.stackframe -> Prop :=
-  | match_frames_intro: forall res ty cp f sp pc rs
+  | match_frames_intro: forall res ty f sp pc rs
         (REACH: reach f pc),
-      match_frames (Stackframe res ty cp f sp pc rs)
-                   (Stackframe res ty cp (transf_function f) sp (renum_pc (pnum f) pc) rs).
+      match_frames (Stackframe res ty f sp pc rs)
+                   (Stackframe res ty (transf_function f) sp (renum_pc (pnum f) pc) rs).
 
 Lemma match_stacks_call_comp:
   forall stk1 stk2,
@@ -217,10 +217,10 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
         (STACKS: list_forall2 match_frames stk stk'),
       match_states (Callstate stk f args m)
                    (Callstate stk' (transf_fundef f) args m)
-  | match_returnstates: forall stk v m stk'
+  | match_returnstates: forall stk v m cp stk'
         (STACKS: list_forall2 match_frames stk stk'),
-      match_states (Returnstate stk v m)
-                   (Returnstate stk' v m).
+      match_states (Returnstate stk v m cp)
+                   (Returnstate stk' v m cp).
 
 Lemma step_simulation:
   forall S1 t S2, RTL.step ge S1 t S2 ->
@@ -262,7 +262,7 @@ Proof.
     eapply call_trace_translated; eauto.
 
   constructor. constructor; auto.
-  rewrite comp_preserved. constructor. eapply reach_succ; eauto. simpl; auto.
+  constructor. eapply reach_succ; eauto. simpl; auto.
 (* tailcall *)
   econstructor; split.
   eapply exec_Itailcall with (fd := transf_fundef fd); eauto.

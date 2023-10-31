@@ -1439,7 +1439,7 @@ End FRAME_PROPERTIES.
 Fixpoint stack_contents (j: meminj) (cs: list Linear.stackframe) (cs': list Mach.stackframe): massert :=
   match cs, cs' with
   | nil, nil => pure True
-  | Linear.Stackframe f _ _ _ ls c :: cs, Mach.Stackframe fb _ _ (Vptr sp' _) ra c' :: cs' =>
+  | Linear.Stackframe f _ _ ls c :: cs, Mach.Stackframe fb _ (Vptr sp' _) ra c' :: cs' =>
       frame_contents f j sp' ls (parent_locset cs) (parent_sp cs') (parent_ra cs') (comp_of f)
                      ** stack_contents j cs cs'
   | _, _ => pure False
@@ -1453,7 +1453,7 @@ Inductive match_stacks (j: meminj):
   | match_stacks_empty: forall sg,
       tailcall_possible sg ->
       match_stacks j nil nil sg
-  | match_stacks_cons: forall f cp sp ls c cs fb sp' ra c' cs' sg sg' trf
+  | match_stacks_cons: forall f sp ls c cs fb sp' ra c' cs' sg sg' trf
         (TAIL: is_tail c (Linear.fn_code f))
         (FINDF: Genv.find_funct_ptr tge fb = Some (Internal trf))
         (TRF: transf_function f = OK trf)
@@ -1467,8 +1467,8 @@ Inductive match_stacks (j: meminj):
            slot_within_bounds (function_bounds f) Outgoing ofs ty)
         (STK: match_stacks j cs cs' (Linear.fn_sig f)),
       match_stacks j
-                   (Linear.Stackframe f cp sg' (Vptr sp Ptrofs.zero) ls c :: cs)
-                   (Stackframe fb cp sg' (Vptr sp' Ptrofs.zero) ra c' :: cs')
+                   (Linear.Stackframe f sg' (Vptr sp Ptrofs.zero) ls c :: cs)
+                   (Stackframe fb sg' (Vptr sp' Ptrofs.zero) ra c' :: cs')
                    sg.
 
 (** Invariance with respect to change of memory injection. *)
@@ -2085,14 +2085,14 @@ Inductive match_states: Linear.state -> Mach.state -> Prop :=
       match_states (Linear.Callstate cs f sig ls m)
                    (Mach.Callstate cs' fb sig rs m')
   | match_states_return:
-      forall cs ls m cs' rs m' j sg
+      forall cs ls m cs' rs m' j sg cp
         (STACKS: match_stacks j cs cs' sg)
         (AGREGS: agree_regs j ls rs)
         (SEP: m' |= stack_contents j cs cs'
                  ** minjection j m
                  ** globalenv_inject ge j),
-      match_states (Linear.Returnstate cs ls m)
-                  (Mach.Returnstate cs' rs m').
+      match_states (Linear.Returnstate cs ls m cp)
+                  (Mach.Returnstate cs' rs m' cp).
 
 Theorem transf_step_correct:
   forall s1 t s2, Linear.step ge s1 t s2 ->
@@ -2262,10 +2262,9 @@ Proof.
   econstructor; split.
   apply plus_one.
   assert (H1: agree_incoming_arguments (Linear.funsig f') (LTL.undef_regs destroyed_at_function_entry (call_regs_ext rs (Linear.funsig f')))
-                (parent_locset (Linear.Stackframe f (comp_of f') (Linear.funsig f') (Vptr sp0 Ptrofs.zero) rs b :: s))).
+                (parent_locset (Linear.Stackframe f (Linear.funsig f') (Vptr sp0 Ptrofs.zero) rs b :: s))).
   { red; simpl; auto. }
-  eapply match_stacks_cons with (ra := ra) (cp := comp_of f')
-    in STACKS; eauto. (* NOTE: the fact we have to instantiate [cp] is suspicious *)
+  eapply match_stacks_cons with (ra := ra) in STACKS; eauto.
   assert (AGREGS' := AGREGS).
   apply agree_regs_call_regs_ext with (sg := Linear.funsig f') in AGREGS.
   apply agree_regs_undef_regs with (rl := destroyed_at_function_entry) in AGREGS.
@@ -2304,7 +2303,6 @@ Proof.
       apply Z.le_trans with (size_arguments (Linear.funsig f')); auto.
       apply loc_arguments_bounded; auto. }
   econstructor; eauto.
-  rewrite <- (comp_transf_partial_fundef _ C).
   econstructor; eauto with coqlib.
   apply Val.Vptr_has_type.
   intros; red.
@@ -2345,7 +2343,8 @@ Proof.
   econstructor; split.
   apply plus_one. econstructor; eauto.
     rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND); eauto.
-    unfold comp_of; simpl. erewrite <- transf_function_comp; eauto.
+    change (comp_of (Internal tf)) with (comp_of tf).
+    now erewrite ALLOWED, <- transf_function_comp; eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.  
   eapply match_states_intro with (j := j'); eauto with coqlib.
@@ -2408,10 +2407,9 @@ Proof.
   intros (rs' & m1' & A & B & C & D & E & F & G).
   econstructor; split.
   eapply plus_right. eexact D. econstructor; eauto.
-    rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND); eauto.
-    unfold comp_of; simpl. eauto.
   traceEq.
-  { (* new case*)
+  {
+  rewrite <- comp_transf_function; eauto.
   econstructor; eauto.
   { assert (SIG: Linear.parent_signature s = parent_signature cs')
       by (inv STACKS; auto).
@@ -2442,8 +2440,6 @@ Proof.
   { (* new case *)
   econstructor; split.
   eapply plus_left. econstructor; eauto.
-    rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND); eauto.
-    unfold comp_of; simpl. eauto.
   rewrite (unfold_transf_function _ _ TRANSL). unfold fn_code. unfold transl_body.
   eexact D. traceEq.
   eapply match_states_intro with (j := j'); eauto with coqlib.

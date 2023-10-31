@@ -1012,15 +1012,15 @@ Inductive match_stackframes: list stackframe -> list stackframe -> Prop :=
   | match_stackframes_nil:
       match_stackframes nil nil
   | match_stackframes_cons:
-      forall res sp pc rs ty cp f s rs' s' cu approx
+      forall res sp pc rs ty f s rs' s' cu approx
            (LINK: linkorder cu prog)
            (ANALYZE: analyze cu f = Some approx)
            (SAT: forall v m, exists valu, numbering_holds valu ge sp (rs#res <- v) m approx!!pc)
            (RLD: regs_lessdef rs rs')
            (STACKS: match_stackframes s s'),
     match_stackframes
-      (Stackframe res ty cp f sp pc rs :: s)
-      (Stackframe res ty cp (transf_function' f approx) sp pc rs' :: s').
+      (Stackframe res ty f sp pc rs :: s)
+      (Stackframe res ty (transf_function' f approx) sp pc rs' :: s').
 
 Lemma match_stackframes_call_comp:
   forall s s',
@@ -1051,12 +1051,12 @@ Inductive match_states: state -> state -> Prop :=
       match_states (Callstate s f args m)
                    (Callstate s' tf args' m')
   | match_states_return:
-      forall s s' v v' m m'
+      forall s s' v v' m m' cp
              (STACK: match_stackframes s s')
              (RES: Val.lessdef v v')
              (MEXT: Mem.extends m m'),
-      match_states (Returnstate s v m)
-                   (Returnstate s' v' m').
+      match_states (Returnstate s v m cp)
+                   (Returnstate s' v' m' cp).
 
 Ltac TransfInstr :=
   match goal with
@@ -1218,7 +1218,7 @@ Proof.
   eapply call_trace_lessdef; eauto using senv_preserved, symbols_preserved.
   apply regs_lessdef_regs; eauto.
   econstructor; eauto.
-  rewrite <- (comp_transl_partial _ TRANSF'). eapply match_stackframes_cons with (cu := cu); eauto.
+  eapply match_stackframes_cons with (cu := cu); eauto.
   intros. eapply analysis_correct_1; eauto. simpl; auto.
   unfold transfer; rewrite H.
   exists (fun _ => Vundef); apply empty_numbering_holds.

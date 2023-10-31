@@ -375,11 +375,11 @@ Qed.
 
 Inductive match_stackframes: stackframe -> stackframe -> Prop :=
   | match_stackframes_intro:
-      forall f cp sig sp ls0 bb tls0,
+      forall f sig sp ls0 bb tls0,
       locmap_lessdef ls0 tls0 ->
       match_stackframes
-         (Stackframe f cp sig sp ls0 bb)
-         (Stackframe (tunnel_function f) cp sig sp tls0 (tunneled_block f bb)).
+         (Stackframe f sig sp ls0 bb)
+         (Stackframe (tunnel_function f) sig sp tls0 (tunneled_block f bb)).
 
 Inductive match_states: state -> state -> Prop :=
   | match_states_intro:
@@ -419,12 +419,12 @@ Inductive match_states: state -> state -> Prop :=
       match_states (Callstate s f sig ls m)
                    (Callstate ts (tunnel_fundef f) sig tls tm)
   | match_states_return:
-      forall s ls m ts tls tm
+      forall s ls m cp ts tls tm
         (STK: list_forall2 match_stackframes s ts)
         (LS: locmap_lessdef ls tls)
         (MEM: Mem.extends m tm),
-      match_states (Returnstate s ls m)
-                   (Returnstate ts tls tm).
+      match_states (Returnstate s ls m cp)
+                   (Returnstate ts tls tm cp).
 
 (** Properties of [locmap_lessdef] *)
 
@@ -585,7 +585,7 @@ Definition measure (st: state) : nat :=
   | Block s f sp (Lcond _ _ pc1 pc2 :: _) ls m => (Nat.max (count_gotos f pc1) (count_gotos f pc2) * 2 + 1)%nat
   | Block s f sp bb ls m => 0%nat
   | Callstate s f sig ls m => 0%nat
-  | Returnstate s ls m => 0%nat
+  | Returnstate s ls m cp => 0%nat
   end.
 
 Lemma match_parent_locset:
@@ -731,7 +731,6 @@ Proof.
   eapply call_trace_lessdef; eauto using symbols_preserved, senv_preserved.
   econstructor; eauto.
   constructor; auto.
-  rewrite comp_preserved_fundef.
   constructor; auto.
 - (* Ltailcall *)
   exploit Mem.free_parallel_extends. eauto. eauto. intros (tm' & FREE & MEM'). 
@@ -791,13 +790,7 @@ Proof.
   rewrite SIG.
   assert (CALLER : call_comp s = call_comp ts).
   { inv STK; [reflexivity |]. inv H0; reflexivity. }
-  assert (CALLEE : callee_comp s = callee_comp ts).
-  { inv STK; [reflexivity |]. inv H0; reflexivity. }
-  (* rewrite type_of_call_translated, CALLER, CALLEE. *)
-  (* destruct (Genv.type_of_call tge (call_comp ts) (callee_comp ts)). *)
-  (* constructor; eauto using return_regs_lessdef, match_parent_locset. *)
   constructor; eauto using return_regs_ext_lessdef, match_parent_locset.
-  (* constructor; eauto using return_regs_lessdef, match_parent_locset. *)
 - (* internal function *)
   exploit Mem.alloc_extends. eauto. eauto. apply Z.le_refl. apply Z.le_refl.
   intros (tm' & ALLOC & MEM'). 

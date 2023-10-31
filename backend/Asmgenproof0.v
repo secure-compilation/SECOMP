@@ -938,14 +938,14 @@ Proof.
   induction 1; intros.
   apply plus_one.
   { econstructor. eauto. eauto.
-    eapply find_instr_tail. eauto.
-    reflexivity. eauto. eauto. eauto.
+    eapply find_instr_tail. eauto. eauto.
+    eauto. eauto. eauto.
     now rewrite H2, H4.
     now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ H5). }
   eapply plus_left'.
   { econstructor. eauto. eauto.
     eapply find_instr_tail. eauto.
-    reflexivity. eauto. eauto. eauto.
+    eauto. eauto. eauto.
     now rewrite H2, H5.
     now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ H6).
   }
@@ -1044,12 +1044,12 @@ Variable ge: Mach.genv.
 Inductive match_stack: list Mach.stackframe -> Prop :=
   | match_stack_nil:
       match_stack nil
-  | match_stack_cons: forall fb cp sg sp ra c s f tf tc,
+  | match_stack_cons: forall fb sg sp ra c s f tf tc,
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
       transl_code_at_pc ge (Vptr fb ra) fb f c false tf tc ->
       sp <> Vundef ->
       match_stack s ->
-      match_stack (Mach.Stackframe fb cp sg sp ra c :: s).
+      match_stack (Mach.Stackframe fb sg sp ra c :: s).
 
 Lemma parent_sp_def: forall s, match_stack s -> parent_sp s <> Vundef.
 Proof.

@@ -1195,7 +1195,6 @@ Definition return_value (rs: regset) (sg: signature) :=
 Inductive stackframe: Type :=
 | Stackframe:
     forall (f: block)       (**r pointer to calling function *)
-      (cp: compartment) (**r compartment of the callee *)
       (sg: signature)   (**r signature of the callee *)
       (sp: val)         (**r stack pointer in calling function *)
       (retaddr: ptrofs), (**r Asm return address in calling function *)
@@ -1203,16 +1202,10 @@ Inductive stackframe: Type :=
 
 Definition stack := list stackframe.
 
-Definition caller_comp (s: stack) :=
+Definition call_comp (s: stack) :=
   match s with
   | nil => None
-  | Stackframe f _ _ _ _ :: _ => Genv.find_comp_of_block ge f
-  end.
-
-Definition callee_comp (s: stack) :=
-  match s with
-  | nil => None
-  | Stackframe _ cp _ _ _ :: _ => Some cp
+  | Stackframe f _ _ _ :: _ => Genv.find_comp_of_block ge f
   end.
 
 (* The state of the stack when we start the execution *)
@@ -1238,7 +1231,7 @@ Definition update_stack_call (s: stack) (sg: signature) (cp: compartment) rs' :=
         (* Otherwise, we simply push a new frame on the stack *)
         match ra' with
         | Vptr f retaddr =>
-            Some (Stackframe f cp' sg sp' retaddr :: s)
+            Some (Stackframe f sg sp' retaddr :: s)
         | _ => None
         end
   | None => None
@@ -1265,7 +1258,7 @@ Definition update_stack_return (s: stack) (cp: compartment) rs' :=
 
 Inductive state: Type :=
   | State: stack -> regset -> mem -> state
-  | ReturnState: stack -> regset -> mem -> state.
+  | ReturnState: stack -> regset -> mem -> compartment -> state.
 
 Definition sig_call i :=
   match i with
@@ -1284,33 +1277,32 @@ Definition is_return i :=
 Definition asm_parent_ra s :=
   match s with
   | nil => Vnullptr
-  | Stackframe b _ _ sp retaddr :: _ => Vptr b retaddr
+  | Stackframe b _ sp retaddr :: _ => Vptr b retaddr
   end.
 
 Definition asm_parent_sp s :=
   match s with
   | nil => Vnullptr
-  | Stackframe b _ _ sp retaddr :: _ => sp
+  | Stackframe b _ sp retaddr :: _ => sp
   end.
 
 Definition sig_of_call s :=
   match s with
-  | Stackframe _ _ sg _ _ :: _ => sg
+  | Stackframe _ sg _ _ :: _ => sg
   | _ => signature_main
   end.
 
 Inductive step: state -> trace -> state -> Prop :=
   | exec_step_internal:
-      forall b ofs f i rs m rs' m' b' ofs' st cp,
+      forall b ofs f i rs m rs' m' b' ofs' st,
       rs PC = Vptr b ofs ->
       Genv.find_funct_ptr ge b = Some (Internal f) ->
       find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
-      forall (COMP: comp_of f = cp),
-      exec_instr f i rs m cp = Next rs' m' ->
+      exec_instr f i rs m (comp_of f) = Next rs' m' ->
       sig_call i = None ->
       is_return i = false ->
       forall (NEXTPC: rs' PC = Vptr b' ofs'),
-      forall (ALLOWED: Some cp = Genv.find_comp_of_block ge b'),
+      forall (ALLOWED: Some (comp_of f) = Genv.find_comp_of_block ge b'),
       step (State st rs m) E0 (State st rs' m')
   | exec_step_internal_call:
       forall b ofs f i sig rs m rs' m' b' ofs' st st' args t,
@@ -1340,15 +1332,10 @@ Inductive step: state -> trace -> state -> Prop :=
       exec_instr f i rs m (comp_of f) = Next rs' m' ->
       is_return i = true ->
       (* We attempt a return, so we go to a ReturnState*)
-      (* The only condition is the following: we are currently in the compartment stored in the callee compartment field
-       of the top stack frame*)
-      forall (REC_CURCOMP: Genv.find_comp ge (rs PC) = callee_comp st),
-      step (State st rs m) E0 (ReturnState st rs' m')
+      step (State st rs m) E0 (ReturnState st rs' m' (comp_of f))
   | exec_step_return:
       forall st st' rs m sg t rec_cp cp',
         rs PC <> Vnullptr ->
-        (* this condition is there to stop the execution 1 step earlier, to make the proof easier *)
-        forall (REC_CURCOMP: callee_comp st = Some rec_cp),
         forall (NEXTCOMP: Genv.find_comp ge (rs PC) = Some cp'),
         (* We only impose conditions on when returns can be executed for cross-compartment
            returns. These conditions are that we restore the previous RA and SP *)
@@ -1363,7 +1350,7 @@ Inductive step: state -> trace -> state -> Prop :=
             (Genv.type_of_call cp' rec_cp = Genv.CrossCompartmentCall ->
              not_ptr (return_value rs sg))),
         forall (EV: return_trace ge cp' rec_cp (return_value rs sg) (sig_res sg) t),
-          step (ReturnState st rs m) t (State st' rs m)
+          step (ReturnState st rs m rec_cp) t (State st' rs m)
   | exec_step_builtin:
       forall b ofs f ef args res rs m vargs t vres rs' m' st,
       rs PC = Vptr b ofs ->
@@ -1384,9 +1371,7 @@ Inductive step: state -> trace -> state -> Prop :=
       external_call ef ge args m t res m' ->
       extcall_arguments rs m (ef_sig ef) args ->
       rs' = (set_pair (loc_external_result (ef_sig ef)) res (undef_caller_save_regs rs))#PC <- (rs RA) ->
-      (* These steps behave like returns. So we do the same as in the [exec_step_internal_return] case. *)
-      forall (REC_CURCOMP: Some (comp_of ef) = callee_comp st),
-      step (State st rs m) t (ReturnState st rs' m').
+      step (State st rs m) t (ReturnState st rs' m' (comp_of ef)).
 
 End RELSEM.
 
@@ -1404,10 +1389,10 @@ Inductive initial_state (p: program): state -> Prop :=
       initial_state p (State initial_stack rs0 m0).
 
 Inductive final_state (p: program): state -> int -> Prop :=
-  | final_state_intro: forall rs m r,
+  | final_state_intro: forall rs m r cp,
       rs PC = Vnullptr ->
       rs X10 = Vint r ->
-      final_state p (ReturnState initial_stack rs m) r
+      final_state p (ReturnState initial_stack rs m cp) r
 .
 
 Definition comp_of_main (p: program) :=
@@ -1424,7 +1409,7 @@ Definition semantics (p: program) :=
 #[export] Instance has_comp_state (p: program): has_comp state :=
   fun s => match s with
         | State _ rs _
-        | ReturnState _ rs _ =>
+        | ReturnState _ rs _ _ =>
             match  Genv.find_comp (Genv.globalenv p) (rs PC) with
             | Some cp => cp
             | None => default_compartment
@@ -1652,9 +1637,7 @@ Section ExecSem.
                     Some (t, State st' rs' m')
                 | None, true => (* exec_step_internal_return *)
                     check (Genv.allowed_call_b ge (comp_of f) (rs' PC));
-                    do cp <- callee_comp st;
-                    check (Pos.eqb (comp_of f) cp);
-                    Some (E0, ReturnState st rs' m')
+                    Some (E0, ReturnState st rs' m' (comp_of f))
                 | Some _, true => None
                 end
             | Stuck => None
@@ -1667,14 +1650,11 @@ Section ExecSem.
             let '(w', t, res, m') := res_external in
             let rs' := (set_pair (loc_external_result (ef_sig ef)) res (undef_caller_save_regs rs)) # PC <- (rs X1) in
             do cp' <- Genv.find_comp ge (rs PC);
-            do cp'' <- callee_comp st;
-            check (Pos.eqb cp' cp'');
-            Some (t, ReturnState st rs' m')
+            Some (t, ReturnState st rs' m' cp')
         end
-    | ReturnState st rs m =>
+    | ReturnState st rs m rec_cp =>
         check (negb (Val.eq (rs PC) Vnullptr));
-        do rec_cp <- callee_comp st;
-        let rec_cp' := caller_comp ge st in
+        let rec_cp' := call_comp ge st in
         do cp' <- Genv.find_comp ge (rs PC);
         check (match Pos.eqb rec_cp cp' with
                | true => true

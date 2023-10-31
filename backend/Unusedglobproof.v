@@ -690,15 +690,15 @@ Inductive match_stacks (j: meminj):
       meminj_preserves_globals j ->
       Ple (Genv.genv_next ge) bound -> Ple (Genv.genv_next tge) tbound ->
       match_stacks j nil nil bound tbound
-  | match_stacks_cons: forall res ty cp f sp pc rs s tsp trs ts bound tbound
+  | match_stacks_cons: forall res ty f sp pc rs s tsp trs ts bound tbound
          (STACKS: match_stacks j s ts sp tsp)
          (KEPT: forall id, ref_function f id -> kept id)
          (SPINJ: j sp = Some(tsp, 0))
          (REGINJ: regset_inject j rs trs)
          (BELOW: Plt sp bound)
          (TBELOW: Plt tsp tbound),
-      match_stacks j (Stackframe res ty cp f (Vptr sp Ptrofs.zero) pc rs :: s)
-                     (Stackframe res ty cp f (Vptr tsp Ptrofs.zero) pc trs :: ts)
+      match_stacks j (Stackframe res ty f (Vptr sp Ptrofs.zero) pc rs :: s)
+                     (Stackframe res ty f (Vptr tsp Ptrofs.zero) pc trs :: ts)
                      bound tbound.
 
 Lemma match_stacks_preserves_globals:
@@ -783,12 +783,12 @@ Inductive match_states: state -> state -> Prop :=
          (MEMINJ: Mem.inject j m tm),
       match_states (Callstate s fd args m)
                    (Callstate ts fd targs tm)
-  | match_states_return: forall s res m ts tres tm j
+  | match_states_return: forall s res m cp ts tres tm j
          (STACKS: match_stacks j s ts (Mem.nextblock m) (Mem.nextblock tm))
          (RESINJ: Val.inject j res tres)
          (MEMINJ: Mem.inject j m tm),
-      match_states (Returnstate s res m)
-                   (Returnstate ts tres tm).
+      match_states (Returnstate s res m cp)
+                   (Returnstate ts tres tm cp).
 
 Lemma external_call_inject:
   forall ef vargs m1 t vres m2 f m1' vargs',

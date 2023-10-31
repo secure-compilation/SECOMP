@@ -421,12 +421,12 @@ Qed.
 
 Inductive match_stackframes: Linear.stackframe -> Linear.stackframe -> Prop :=
   | match_stackframe_intro:
-      forall f cp sg sp rs c tf tc before after,
+      forall f sg sp rs c tf tc before after,
       match_function f tf ->
       match_code f.(fn_comp) c tc ->
       match_stackframes
-        (Stackframe f cp sg sp rs c)
-        (Stackframe tf cp sg sp rs (add_delta_ranges f.(fn_comp) before after tc)).
+        (Stackframe f sg sp rs c)
+        (Stackframe tf sg sp rs (add_delta_ranges f.(fn_comp) before after tc)).
 
 Inductive match_states: Linear.state ->  Linear.state -> Prop :=
   | match_states_instr:
@@ -443,10 +443,10 @@ Inductive match_states: Linear.state ->  Linear.state -> Prop :=
       match_states (Callstate s f sig rs m)
                    (Callstate ts tf sig rs m)
   | match_states_return:
-      forall s rs m ts,
+      forall s rs m cp ts,
       list_forall2 match_stackframes s ts ->
-      match_states (Returnstate s rs m)
-                   (Returnstate ts rs m).
+      match_states (Returnstate s rs m cp)
+                   (Returnstate ts rs m cp).
 
 Lemma parent_locset_match:
   forall s ts,
@@ -536,7 +536,7 @@ Proof.
     eapply call_trace_eq; eauto using senv_preserved, symbols_preserved. }
   constructor; auto. constructor; auto.
   replace (fn_comp tf) with (fn_comp f) by now inv TRF.
-  rewrite (comp_transl_partial _ B); constructor; auto.
+  constructor; auto.
 - (* tailcall *)
   exploit find_function_translated; eauto. intros (tf' & A & B).
   exploit parent_locset_match; eauto. intros PLS.
@@ -594,9 +594,6 @@ Proof.
   assert (CALLER: call_comp s = call_comp ts).
   { inv STACKS. reflexivity.
     inv H0. inv H2. reflexivity. }
-  assert (CALLEE: callee_comp s = callee_comp ts).
-  { inv STACKS. reflexivity.
-    inv H0. reflexivity. }
   assert (SIG: parent_signature s = parent_signature ts).
   { inv STACKS. reflexivity.
     inv H0. reflexivity. }
@@ -626,8 +623,7 @@ Proof.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   constructor; auto.
 - (* return *)
-  inv H3. inv H1.
-  inv H8.
+  inv H4. inv H1. inv H7.
   econstructor; split.
   eapply plus_left. econstructor.
   auto.
@@ -656,7 +652,7 @@ Lemma transf_final_states:
   forall st1 st2 r,
   match_states st1 st2 -> final_state st1 r -> final_state st2 r.
 Proof.
-  intros. inv H0. inv H. inv H5. econstructor; eauto.
+  intros. inv H0. inv H. inv H6. econstructor; eauto.
 Qed.
 
 Theorem transf_program_correct:

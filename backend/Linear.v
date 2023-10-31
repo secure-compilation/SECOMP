@@ -118,8 +118,7 @@ Definition find_function (ros: mreg + ident) (rs: locset) : option fundef :=
 Inductive stackframe: Type :=
   | Stackframe:
       forall (f: function)         (**r calling function *)
-             (cp: compartment)     (**r compartment of the callee *)
-             (sg: signature)         (**r callee signature *)
+             (sg: signature)       (**r callee signature *)
              (sp: val)             (**r stack pointer in calling function *)
              (rs: locset)          (**r location state in calling function *)
              (c: code),            (**r program point in calling function *)
@@ -144,19 +143,14 @@ Inductive state: Type :=
   | Returnstate:
       forall (stack: list stackframe) (**r call stack *)
              (rs: locset)             (**r location state at point of return *)
-             (m: mem),                (**r memory state *)
+             (m: mem)                 (**r memory state *)
+             (cp: compartment),       (**r compartment we're returning from *)
       state.
 
 Definition call_comp (stack: list stackframe): option compartment :=
   match stack with
   | nil => None
-  | Stackframe f _ _ _ _ _ :: _ => Some (comp_of f)
-  end.
-
-Definition callee_comp (stack: list stackframe) : option compartment :=
-  match stack with
-  | nil => None
-  | Stackframe _ cp _ _ _ _ :: _ => Some cp
+  | Stackframe f _ _ _ _ :: _ => Some (comp_of f)
   end.
 
 (** [parent_locset cs] returns the mapping of values for locations
@@ -164,13 +158,13 @@ Definition callee_comp (stack: list stackframe) : option compartment :=
 Definition parent_locset (stack: list stackframe) : locset :=
   match stack with
   | nil => Locmap.init Vundef
-  | Stackframe f _ _ sp ls c :: stack' => ls
+  | Stackframe f _ sp ls c :: stack' => ls
   end.
 
 Definition parent_signature (stack: list stackframe) : signature :=
   match stack with
   | nil => signature_main
-  | Stackframe _ _ sig _ _ _ :: _ => sig
+  | Stackframe _ sig _ _ _ :: _ => sig
   end.
 
 Inductive step: state -> trace -> state -> Prop :=
@@ -219,7 +213,7 @@ Inductive step: state -> trace -> state -> Prop :=
           List.Forall not_ptr args),
       forall (EV: call_trace ge (comp_of f) (comp_of f') vf args (sig_args sig) t),
       step (State s f sp (Lcall sig ros :: b) rs m)
-        t (Callstate (Stackframe f (comp_of f') sig sp rs b:: s) f' sig rs m)
+        t (Callstate (Stackframe f sig sp rs b:: s) f' sig rs m)
   | exec_Ltailcall:
       forall s f stk sig ros b rs m rs' f' m',
       rs' = return_regs (parent_locset s) rs ->
@@ -274,7 +268,7 @@ Inductive step: state -> trace -> state -> Prop :=
                retrs =
                  return_regs_ext (parent_locset s) rs (parent_signature s)),
       step (State s f (Vptr stk Ptrofs.zero) (Lreturn :: b) rs m)
-        E0 (Returnstate s retrs m')
+        E0 (Returnstate s retrs m' (comp_of f))
   | exec_function_internal:
       forall s f callrs rs m rs' m' stk sig,
       Mem.alloc m (comp_of f) 0 f.(fn_stacksize) = (m', stk) ->
@@ -290,14 +284,14 @@ Inductive step: state -> trace -> state -> Prop :=
       external_call ef ge args m t res m' ->
       rs2 = Locmap.setpair (loc_result (ef_sig ef)) res (undef_caller_save_regs rs1) ->
       step (Callstate s (External ef) sig rs1 m)
-         t (Returnstate s rs2 m')
+         t (Returnstate s rs2 m' (comp_of ef))
   | exec_return:
       forall s f sp rs0 c rs m sg cp t,
       forall (NO_CROSS_PTR:
           Genv.type_of_call (comp_of f) cp = Genv.CrossCompartmentCall ->
           not_ptr (Locmap.getpair (map_rpair R (loc_result sg)) rs)),
       forall (EV: return_trace ge (comp_of f) cp (Locmap.getpair (map_rpair R (loc_result sg)) rs) (sig_res sg) t),
-      step (Returnstate (Stackframe f cp sg sp rs0 c :: s) rs m)
+      step (Returnstate (Stackframe f sg sp rs0 c :: s) rs m cp)
         t (State s f sp c rs m).
 
 End RELSEM.
@@ -312,9 +306,9 @@ Inductive initial_state (p: program): state -> Prop :=
       initial_state p (Callstate nil f signature_main (Locmap.init Vundef) m0).
 
 Inductive final_state: state -> int -> Prop :=
-  | final_state_intro: forall rs m retcode,
+  | final_state_intro: forall rs m retcode cp,
       Locmap.getpair (map_rpair R (loc_result signature_main)) rs = Vint retcode ->
-      final_state (Returnstate nil rs m) retcode.
+      final_state (Returnstate nil rs m cp) retcode.
 
 Definition semantics (p: program) :=
   Semantics step (initial_state p) final_state (Genv.globalenv p).
