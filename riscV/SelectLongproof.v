@@ -111,7 +111,7 @@ Qed.
 
 Theorem eval_negl: unary_constructor_sound (negl cp) Val.negl.
 Proof.
-  unfold negl. destruct Archi.splitlong eqn:SL. apply SplitLongproof.eval_negl; auto.
+  unfold negl. destruct Archi.splitlong eqn:SL. eapply SplitLongproof.eval_negl; eauto.
   red; intros. destruct (is_longconst a) as [n|] eqn:C.
 - exploit is_longconst_sound; eauto. intros EQ; subst x.
   econstructor; split. apply eval_longconst. auto.
@@ -140,7 +140,7 @@ Qed.
 Theorem eval_addl: binary_constructor_sound (addl cp) Val.addl.
 Proof.
   unfold addl. destruct Archi.splitlong eqn:SL. 
-  apply SplitLongproof.eval_addl. apply Archi.splitlong_ptr32; auto.
+  eapply SplitLongproof.eval_addl; auto. eapply Archi.splitlong_ptr32; eauto.
 (*
   assert (SF: Archi.ptr64 = true).
   { Local Transparent Archi.splitlong. unfold Archi.splitlong in SL. 
@@ -195,7 +195,7 @@ Qed.
 Theorem eval_subl: binary_constructor_sound (subl cp) Val.subl.
 Proof.
   unfold subl. destruct Archi.splitlong eqn:SL.
-  apply SplitLongproof.eval_subl. apply Archi.splitlong_ptr32; auto.
+  eapply SplitLongproof.eval_subl; auto. apply Archi.splitlong_ptr32; auto.
   red; intros; destruct (subl_match a b); InvEval.
 - rewrite Val.subl_addl_opp. apply eval_addlimm; auto.
 - subst. rewrite Val.subl_addl_l. rewrite Val.subl_addl_r.
