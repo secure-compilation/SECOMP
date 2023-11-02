@@ -182,6 +182,8 @@ Qed.
 
 Definition c_program_has_initial_trace (p: Csyntax.program) (t: trace): Prop :=
   forall beh, program_behaves (Csem.semantics p) beh -> behavior_prefix t beh.
+Definition clight_program_has_initial_trace (p: Clight.program) (t: trace): Prop :=
+  forall beh, program_behaves (Clight.semantics1 p) beh -> behavior_prefix t beh.
 Definition asm_program_has_initial_trace (p: Asm.program) (t: trace): Prop :=
   forall beh, program_behaves (Asm.semantics p) beh -> behavior_prefix t beh.
 

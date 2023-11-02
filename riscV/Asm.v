@@ -20,6 +20,7 @@
 Require Import Coqlib.
 Require Import Maps.
 Require Import AST.
+Require Import Split.
 Require Import Integers.
 Require Import Floats.
 Require Import Values.
@@ -30,6 +31,8 @@ Require Import Smallstep.
 Require Import Locations.
 Require Stacklayout.
 Require Import Conventions.
+
+Require Import Exec Determinism.
 
 Notation offset_arg := Stacklayout.offset_arg.
 
@@ -542,16 +545,33 @@ Variable ge: genv.
   actual values into a 20-bit high part [%hi(symbol + offset)] and 
   a 12-bit low part [%lo(symbol + offset)]. *)
 
-Parameter low_half: genv -> ident -> ptrofs -> ptrofs.
-Parameter high_half: genv -> ident -> ptrofs -> val.
+(* Parameter low_half: genv -> ident -> ptrofs -> ptrofs. *)
+(* Parameter high_half: genv -> ident -> ptrofs -> val. *)
+Program Definition low_half: genv -> ident -> ptrofs -> ptrofs :=
+  (fun _ _ _ => Ptrofs.zero).
+Definition high_half: genv -> ident -> ptrofs -> val :=
+  (fun ge id ofs => match Genv.find_symbol ge id with
+                    | Some b => Vptr b ofs
+                    | None => Vundef
+                    end).
 
 (** The fundamental property of these operations is that, when applied
   to the address of a symbol, their results can be recombined by
   addition, rebuilding the original address. *)
 
-Axiom low_high_half:
+(* Axiom low_high_half: *)
+(*   forall id ofs, *)
+(*   Val.offset_ptr (high_half ge id ofs) (low_half ge id ofs) = Genv.symbol_address ge id ofs. *)
+Lemma low_high_half:
   forall id ofs,
   Val.offset_ptr (high_half ge id ofs) (low_half ge id ofs) = Genv.symbol_address ge id ofs.
+Proof.
+  intros id ofs.
+  unfold Val.offset_ptr, high_half, low_half, Genv.symbol_address.
+  unfold Genv.symbol_address.
+  destruct (Genv.find_symbol ge id); [| reflexivity].
+  rewrite Ptrofs.add_zero. reflexivity.
+Qed.
 
 (** The semantics is purely small-step and defined as a function
   from the current state (a register set + a memory state)
@@ -1056,6 +1076,22 @@ Definition undef_caller_save_regs (rs: regset) : regset :=
     then rs r
     else Vundef.
 
+Definition list_option_option_list {A: Type} (l: list (option A)): option (list A) :=
+  List.fold_right (fun a x => match a, x with
+                           | _, None => None
+                           | Some y, Some xs => Some (y :: xs)
+                           | None, _ => None
+                           end) (Some nil) l.
+
+Definition get_loc (rs: regset) (m: mem) (l: loc): option val :=
+  match l with
+  | R r => Some (rs (preg_of r))
+  | S Incoming ofs ty =>
+      let bofs := Stacklayout.fe_ofs_arg + 4 * ofs in
+      Mem.loadv (chunk_of_type ty) m (Val.offset_ptr rs#SP (Ptrofs.repr bofs)) None
+  | _ => None
+  end.
+
 (** Extract the values of the arguments of an external call.
     We exploit the calling conventions from module [Conventions], except that
     we use RISC-V registers instead of locations. *)
@@ -1082,6 +1118,26 @@ Definition extcall_arguments
     (rs: regset) (m: mem) (sg: signature) (args: list val) : Prop :=
   list_forall2 (extcall_arg_pair rs m) (loc_arguments sg) args.
 
+Definition get_extcall_arguments' (rs: regset) (m: mem) (sg: signature) :=
+  List.map (fun x => match x with
+                  | One l => get_loc rs m l
+                  | Twolong hi lo =>
+                      match get_loc rs m hi, get_loc rs m lo with
+                      | Some vhi, Some vlo => Some (Val.longofwords vhi vlo)
+                      | _, _ => None
+                      end
+                  end) (loc_arguments sg).
+
+Definition get_extcall_arguments (rs: regset) (m: mem) (sg: signature) :=
+  list_option_option_list (get_extcall_arguments' rs m sg).
+
+Lemma extcall_arguments_equiv:
+  forall rs m sg args,
+    extcall_arguments rs m sg args <-> get_extcall_arguments rs m sg = Some args.
+Proof.
+  admit.
+Admitted.
+
 (** Extract the values of the arguments to a call. *)
 (* Note the difference: [loc_parameters] vs [loc_arguments] *)
 Inductive call_arg (rs: regset) (m: mem): loc -> val -> Prop :=
@@ -1105,6 +1161,26 @@ Inductive call_arg_pair (rs: regset) (m: mem): rpair loc -> val -> Prop :=
 Definition call_arguments
     (rs: regset) (m: mem) (sg: signature) (args: list val) : Prop :=
   list_forall2 (call_arg_pair rs m) (loc_parameters sg) args.
+
+Definition get_call_arguments' (rs: regset) (m: mem) (sg: signature) :=
+  List.map (fun x => match x with
+                  | One l => get_loc rs m l
+                  | Twolong hi lo =>
+                      match get_loc rs m hi, get_loc rs m lo with
+                      | Some vhi, Some vlo => Some (Val.longofwords vhi vlo)
+                      | _, _ => None
+                      end
+                  end) (loc_parameters sg).
+
+Definition get_call_arguments (rs: regset) (m: mem) (sg: signature) :=
+  list_option_option_list (get_call_arguments' rs m sg).
+
+Lemma call_arguments_equiv:
+  forall rs m sg args,
+    call_arguments rs m sg args <-> get_call_arguments rs m sg = Some args.
+Proof.
+  admit.
+Admitted.
 
 Definition loc_external_result (sg: signature) : rpair preg :=
   map_rpair preg_of (loc_result sg).
@@ -1481,3 +1557,155 @@ Definition data_preg (r: preg) : bool :=
   | FR _   => true
   | PC     => false
   end.
+
+Section ExecSem.
+
+  Declare Scope reducts_monad_scope.
+
+  Notation "'do' U <- A ; B" := (match A with Some U => B | None => None end)
+                                 (at level 200, U ident, A at level 100, B at level 200)
+      : reducts_monad_scope.
+
+  Notation "'do' 'Vptr' U Y <- A ; B" := (match A with Vptr U Y => B | _ => None end)
+                                          (at level 200, U ident, Y ident, A at level 100, B at level 200)
+      : reducts_monad_scope.
+
+  Notation "'do' U , Y <- A ; B" := (match A with Some (U, Y) => B | None => None end)
+                                     (at level 200, U ident, Y ident, A at level 100, B at level 200)
+      : reducts_monad_scope.
+
+  Notation "'do' U , Y , Z <- A ; B" := (match A with Some (U, Y, Z) => B | None => None end)
+                                         (at level 200, U ident, Y ident, Z ident, A at level 100, B at level 200)
+      : reducts_monad_scope.
+
+  Notation "'do' U , Y , Z , W <- A ; B" := (match A with Some (U, Y, Z, W) => B | None => None end)
+                                             (at level 200, U ident, Y ident, Z ident, W ident, A at level 100, B at level 200)
+      : reducts_monad_scope.
+
+  Notation " 'check' A ; B" := (if A then B else None)
+                                 (at level 200, A at level 100, B at level 200)
+      : reducts_monad_scope.
+
+  Local Open Scope reducts_monad_scope.
+
+  Variable do_external_function:
+    string -> signature -> Senv.t -> world -> compartment -> list val -> mem -> option (world * trace * val * mem).
+
+  Hypothesis do_external_function_sound:
+    forall id sg ge cp vargs m t vres m' w w',
+      do_external_function id sg ge w cp vargs m = Some(w', t, vres, m') ->
+      external_functions_sem id sg ge cp vargs m t vres m' /\ possible_trace w t w'.
+
+  Hypothesis do_external_function_complete:
+    forall id sg ge cp vargs m t vres m' w w',
+      external_functions_sem id sg ge cp vargs m t vres m' ->
+      possible_trace w t w' ->
+      do_external_function id sg ge w cp vargs m = Some(w', t, vres, m').
+
+  Variable do_inline_assembly:
+    string -> signature -> Senv.t -> world -> compartment -> list val -> mem -> option (world * trace * val * mem).
+
+  Hypothesis do_inline_assembly_sound:
+    forall txt sg ge cp vargs m t vres m' w w',
+      do_inline_assembly txt sg ge w cp vargs m = Some(w', t, vres, m') ->
+      inline_assembly_sem txt sg ge cp vargs m t vres m' /\ possible_trace w t w'.
+
+  Hypothesis do_inline_assembly_complete:
+    forall txt sg ge cp vargs m t vres m' w w',
+      inline_assembly_sem txt sg ge cp vargs m t vres m' ->
+      possible_trace w t w' ->
+      do_inline_assembly txt sg ge w cp vargs m = Some(w', t, vres, m').
+
+  Definition take_step (p: program) (ge: genv) (w: world) (s: state): option (trace * state) :=
+    let comp_of_main := comp_of_main p in
+    match s with
+    | State st rs m =>
+        do Vptr b ofs <- rs PC;
+        do fd <- Genv.find_funct_ptr ge b;
+        match fd with
+        | Internal f =>
+            do i <- find_instr (Ptrofs.unsigned ofs) (fn_code f);
+            match exec_instr ge f i rs m (comp_of f) with
+            | Next rs' m' =>
+                match sig_call i, is_return i with
+                | None, false => (* exec_step_internal *)
+                    do Vptr b' ofs' <- rs' PC;
+                    check (Pos.eqb (comp_of f) (Genv.find_comp_ignore_offset ge (Vptr b' ofs')));
+                    Some (E0, State st rs' m')
+                | Some sig, false => (* exec_step_internal_call *)
+                    do Vptr b' ofs' <- rs' PC;
+                    check (Genv.allowed_call_b ge (comp_of f) (rs' PC));
+                    do st' <- update_stack_call ge st sig (comp_of f) rs';
+                    do vargs <- get_call_arguments rs' m' sig;
+                    check (match Genv.type_of_call ge (comp_of f) (Genv.find_comp_ignore_offset ge (rs' PC)) with
+                           | Genv.CrossCompartmentCall => forallb not_ptr_b vargs
+                           | _ => true
+                           end);
+                    do t <- get_call_trace _ _ ge (comp_of f) (Genv.find_comp_ignore_offset ge (rs' PC)) (rs' PC) vargs (sig_args sig);
+                    Some (t, State st' rs' m')
+                | None, true => (* exec_step_internal_return *)
+                    check (Genv.allowed_call_b ge (comp_of f) (rs' PC));
+                    check (Pos.eqb (comp_of f) (callee_comp comp_of_main st));
+                    Some (E0, ReturnState st rs' m')
+                | Some _, true => None
+                end
+            | Stuck => None
+            end
+        | External ef =>
+            check (Ptrofs.eq ofs Ptrofs.zero);
+            let cp := Genv.find_comp_ignore_offset ge (rs X1) in
+            do vargs <- get_extcall_arguments rs m (ef_sig ef);
+            do res_external <- do_external _ _ ge do_external_function do_inline_assembly ef w cp vargs m;
+            let '(w', t, res, m') := res_external in
+            let rs' := (set_pair (loc_external_result (ef_sig ef)) res (undef_caller_save_regs rs)) # PC <- (rs X1) in
+            check (Pos.eqb (Genv.find_comp_ignore_offset ge (rs PC)) (callee_comp comp_of_main st));
+            Some (t, ReturnState st rs' m')
+        end
+    | ReturnState st rs m =>
+        check (negb (Val.eq (rs PC) Vnullptr));
+        let rec_cp := callee_comp comp_of_main st in
+        let rec_cp' := call_comp ge st in
+        let cp' := Genv.find_comp_ignore_offset ge (rs PC) in
+        check (match Pos.eqb rec_cp cp' with
+               | true => true
+               | false => andb (Val.eq (rs PC) (asm_parent_ra st)) (Val.eq (rs X2) (asm_parent_sp st))
+               end);
+        do st' <- update_stack_return ge st rec_cp rs;
+        let sg := sig_of_call st in
+        check (match Genv.type_of_call ge cp' rec_cp with
+               | Genv.CrossCompartmentCall => not_ptr_b (return_value rs sg)
+               | _ => true end);
+        do t <- get_return_trace _ _ ge cp' rec_cp (return_value rs sg) (sig_res sg);
+        Some (t, State st' rs m)
+    end.
+
+Definition build_initial_state (p: program): option state :=
+  let ge := Genv.globalenv p in
+  let rs0 :=
+    (Pregmap.init Vundef)
+      # PC <- (Genv.symbol_address ge p.(prog_main) Ptrofs.zero)
+               # SP <- Vnullptr
+                        # RA <- Vnullptr in
+  do m0 <- Genv.init_mem p;
+  Some (State initial_stack rs0 m0).
+
+End ExecSem.
+
+
+Section SECURITY.
+
+Definition asm_in_side (s: split) (lr: side) (p: Asm.program) :=
+  List.Forall (fun '(id, gd) =>
+                 match gd with
+                 | Gfun (Internal f) => s (comp_of f) = lr
+                 | _ => True
+                 end)
+    (prog_defs p).
+
+#[export] Instance asm_has_side: has_side (Asm.program) :=
+  { in_side s := fun p δ => asm_in_side s δ p }.
+
+Definition asm_compatible (s: split) (p p': Asm.program) :=
+  s |= p ∈ Left /\ s |= p' ∈ Right.
+
+End SECURITY.

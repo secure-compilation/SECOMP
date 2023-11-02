@@ -25,6 +25,8 @@ Require Import Integers.
 Require Import Floats.
 Require Import Values.
 Require Import AST.
+Require Import Split.
+Require Import Linking.
 Require Import Memory.
 Require Import Events.
 Require Import Globalenvs.
@@ -782,3 +784,30 @@ Proof.
   (* return *)
   inv EV; auto.
 Qed.
+
+Section SECURITY.
+
+
+Definition clight_in_side (s: split) (lr: side) (p: Clight.program) :=
+  List.Forall (fun '(id, gd) =>
+                 match gd with
+                 | Gfun (Ctypes.Internal f) => s (comp_of f) = lr
+                 | _ => True
+                 end)
+    (Ctypes.prog_defs p).
+
+#[export] Instance clight_has_side: has_side (Clight.program) :=
+  { in_side s := fun p δ => clight_in_side s δ p }.
+
+Definition clight_compatible (s: split) (p p': Clight.program) :=
+  s |= p ∈ Left /\ s |= p' ∈ Right.
+
+Lemma link_compatible: forall s p p',
+    clight_compatible s p p' ->
+    Ctypes.prog_pol p = Ctypes.prog_pol p' ->
+    exists W, link p p' = Some W.
+Proof.
+  admit.
+Admitted.
+
+End SECURITY.
