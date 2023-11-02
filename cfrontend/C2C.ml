@@ -1386,6 +1386,7 @@ let helper_function_declaration cp (name, tyres, tyargs) =
 let add_helper_functions_cp cp globs =
   List.map (helper_function_declaration cp) (helper_functions()) @ globs
 
+(* FIXME: This is only adding declarations, not copying the functions proper! *)
 let rec add_helper_functions cps gl2 =
   match cps with
   | [] -> gl2
