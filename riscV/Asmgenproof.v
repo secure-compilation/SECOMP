@@ -1370,34 +1370,25 @@ Local Transparent destroyed_at_function_entry.
       specialize (NO_CROSS_PTR TYPE).
       (* TODO: factorize into a lemma Val.lessdef_not_ptr *)
       inv LD; auto. now rewrite <- H0 in NO_CROSS_PTR. }
-(* XXX Stopped here *)
   { inv STACKS'; auto.
     - simpl in *. subst. unfold Mach.call_comp in *. simpl in *.
       rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ H3) in H4.
       change (comp_of (Internal f0)) with (comp_of f0) in *.
-      assert (cp = comp_of f0) as -> by congruence. clear H4.
-      constructor.
+      injection H4 as <-.
+      rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ H3) in CURCOMP.
+      injection CURCOMP as <-.
       assert (t = E0).
       { inv EV; auto.
         exfalso. eapply Genv.type_of_call_same_cp. eauto. }
       subst. constructor. now apply Genv.type_of_call_same_cp.
-    - simpl in *. subst. unfold Mach.call_comp in *. simpl in *.
+    - simpl in *. unfold Mach.call_comp in *. simpl in *.
       inv H10.
       eapply return_trace_lessdef with (ge := ge) (v := Mach.return_value rs sg);
         eauto using senv_preserved. }
 
   econstructor; eauto.
-  { unfold update_stack_return in Hs''1.
-    rewrite ATPC in *.
-    simpl in *.
-    inv STACKS'; auto.
-    - simpl in *. unfold Mach.call_comp in H2. simpl in *.
-      apply match_stacks_callee in Hs''2.
-      congruence.
-    - simpl in *. inv H10. unfold Mach.call_comp in *; simpl in *.
-      erewrite <- match_stacks_callee; eauto. }
-  rewrite ATPC; simpl; eauto.
-  congruence.
+  { rewrite ATPC in *. eauto. }
+  easy.
 Qed.
 
 Lemma transf_initial_states:
@@ -1405,16 +1396,18 @@ Lemma transf_initial_states:
   exists st2, Asm.initial_state tprog st2 /\ match_states st1 st2.
 Proof.
   intros. inversion H. unfold ge0 in *.
+  destruct (Genv.find_symbol_find_def_inversion _ _ H1)
+    as [main_def find_main].
   econstructor; split.
   econstructor.
   eapply (Genv.init_mem_transf_partial TRANSF); eauto.
   replace (Genv.symbol_address (Genv.globalenv tprog) (prog_main tprog) Ptrofs.zero)
      with (Vptr fb Ptrofs.zero).
   econstructor; eauto.
-  constructor. constructor.
-  Simpl. simpl. subst comp_of_main. unfold Asm.comp_of_main.
-  rewrite symbols_preserved. rewrite (match_program_main TRANSF). unfold ge. rewrite H1.
-  now rewrite find_comp_translated.
+  constructor.
+  unfold Genv.find_comp_of_block, ge. rewrite find_main. eauto.
+
+  constructor.
   apply Mem.extends_refl.
   split. auto. simpl. unfold Vnullptr; destruct Archi.ptr64; congruence.
   intros. rewrite Regmap.gi. auto.
