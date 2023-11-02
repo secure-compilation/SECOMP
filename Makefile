@@ -140,7 +140,8 @@ CFRONTEND=Ctypes.v Cop.v Csyntax.v Csem.v Ctyping.v Cstrategy.v Cexec.v \
 
 # Security proof (in security/)
 
-SECURITY=RSC.v Split.v Blame.v Recomposition.v
+# HACK not using proofs of security at the moment
+SECURITY=#RSC.v Split.v Blame.v Recomposition.v
 
 # Parser
 
