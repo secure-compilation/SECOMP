@@ -122,6 +122,7 @@ Parameter load: forall (chunk: memory_chunk) (m: mem) (b: block) (ofs: Z) (cp: o
   are not writable, which includes the case where principal compartment [cp]
   does not own block [b]. *)
 Parameter store: forall (chunk: memory_chunk) (m: mem) (b: block) (ofs: Z) (v: val) (cp: compartment), option mem.
+Parameter store': forall (chunk: memory_chunk) (m: mem) (b: block) (ofs: Z) (v: val) (cp: option compartment), option mem.
 
 (** [loadv] and [storev] are variants of [load] and [store] where
   the address being accessed is passed as a value (of the [Vptr] kind). *)

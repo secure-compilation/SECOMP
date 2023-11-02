@@ -274,6 +274,10 @@ module StateMap =
              let compare = compare_state
            end)
 
+(* Implementation of external functions *)
+
+let (>>=) opt f = match opt with None -> None | Some arg -> f arg
+
 (* Extract a string from a global pointer *)
 
 let extract_string m blk ofs =
@@ -334,6 +338,8 @@ let format_value m flags length conv arg =
       Printf.sprintf "<%ld%+ld>" (P.to_int32 blk) (camlint_of_coqint ofs)
   | 'p', "", Vint i ->
       format_int32 (flags ^ "x") (camlint_of_coqint i)
+  | 'p', "", Vlong l ->
+      format_int64 (flags ^ "x") (camlint64_of_coqint l)
   | 'p', "", _ ->
       "<int or pointer argument expected>"
   | _, _, _ ->
@@ -374,9 +380,57 @@ let do_printf m fmt args =
     end
   in scan 0 args; Buffer.contents b
 
-(* Implementation of external functions *)
+(* Emulation of fgets, with assumed stream = stdin. *)
+    
+(* Store bytestring contents into a global pointer *)
+ 
+let store_string m blk ofs buff size =
+  let rec store m i = 
+    if i < size then
+      Mem.store' Mint8unsigned m blk
+       (Z.add ofs (Z.of_sint i))
+	(Vint (Z.of_uint (Char.code (Bytes.get buff i)))) None
+	(* AST.privileged_compartment (* just for now ??? *) *) >>= fun m' -> 
+      store m' (i+1) 
+    else Some m in
+  store m 0 
 
-let (>>=) opt f = match opt with None -> None | Some arg -> f arg
+let do_fgets_aux size =
+
+  let buff = Bytes.create size in 
+
+  let rec get count  =
+    if size = 0 then
+      None
+    else if count = size - 1 then 
+      (Bytes.set buff count '\000'; Some size)
+    else
+      try
+       let c = input_char stdin in
+       begin
+         Bytes.set buff count c; 
+          if c = '\n' then
+            (Bytes.set buff (count + 1) '\000'; Some (count + 2))
+         else
+           get (count + 1)
+        end          
+      with End_of_file ->
+       if count > 0 || size = 1 (* special case to match glibc behavior *) then
+         (Bytes.set buff count '\000'; Some (count + 1))
+       else   
+          None
+  in get 0 >>= fun count -> 
+     Some (buff,count)
+
+let do_fgets m blk ofs size =
+  match do_fgets_aux (Z.to_int size) with
+    None ->
+      Some (coq_Vnullptr, m)
+  | Some (buff,count) ->
+      store_string m blk ofs buff count >>= fun m' ->
+      Some (Vptr(blk,ofs), m')
+
+
 
 (* Like eventval_of_val, but accepts static globals as well *)
 
@@ -408,6 +462,11 @@ let do_external_function id sg ge w cp args m =
       flush stdout;
       convert_external_args ge args sg.sig_args >>= fun eargs ->
       Some(((w, [Event_syscall(id, eargs, EVint len)]), Vint len), m)
+  | "fgets", Vptr(b, ofs) :: Vint siz :: args' ->
+      do_fgets m b ofs siz >>= fun (p,m') ->
+      convert_external_args ge args sg.sig_args >>= fun eargs ->
+      convert_external_arg ge p (proj_rettype sg.sig_res) >>= fun eres -> 
+      Some(((w, [Event_syscall(id, eargs, eres)]), p), m')   (* temporary version *)
   | _ ->
       None
 
