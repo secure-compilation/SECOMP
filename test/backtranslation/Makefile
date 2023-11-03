@@ -6,7 +6,8 @@ DIRS=../../extraction \
 	../../cparser \
 	../../driver \
 	../../export \
-	../../debug 
+	../../debug \
+	../../riscV
 
 INCLUDES=$(patsubst %,-I %,$(DIRS))
 
