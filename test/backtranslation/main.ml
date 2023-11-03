@@ -10,6 +10,14 @@ let test =
 (* we can check right now the property... *)
 let _ = QCheck_runner.run_tests [test]
 
+(* QCheck generators for types *)
+
+let event_val () =
+  let n = QCheck.small_int in
+  let g = QCheck.get_gen n in
+  let rand_state = Random.get_state () in
+  g rand_state
+
 let mk_syscall () =
   let name = [] in
   let args = [] in
