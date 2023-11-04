@@ -280,10 +280,11 @@ let (>>=) opt f = match opt with None -> None | Some arg -> f arg
 
 (* Extract a string from a global pointer *)
 
-let extract_string m blk ofs =
+let extract_string m cp blk ofs =
   let b = Buffer.create 80 in
   let rec extract blk ofs =
-    match Mem.load Mint8unsigned m blk ofs None with
+    match Mem.load Mint8unsigned m blk ofs None (* this should be (Some cp), but string literals break right now  *)
+    with						 
     | Some(Vint n) ->
         let c = Char.chr (Z.to_int n) in
         if c = '\000' then begin
@@ -313,7 +314,7 @@ external format_int32: string -> int32 -> string
 external format_int64: string -> int64 -> string
   = "caml_int64_format"
 
-let format_value m flags length conv arg =
+let format_value m cp flags length conv arg =
   match conv.[0], length, arg with
   | ('d'|'i'|'u'|'o'|'x'|'X'|'c'), (""|"h"|"hh"|"l"|"z"|"t"), Vint i ->
       format_int32 (flags ^ conv) (camlint_of_coqint i)
@@ -328,7 +329,7 @@ let format_value m flags length conv arg =
   | ('f'|'e'|'E'|'g'|'G'|'a'), "", _ ->
       "<float argument expected"
   | 's', "", Vptr(blk, ofs) ->
-      begin match extract_string m blk ofs with
+      begin match extract_string m cp blk ofs with
       | Some s -> s
       | None -> "<bad string>"
       end
@@ -345,7 +346,7 @@ let format_value m flags length conv arg =
   | _, _, _ ->
       "<unrecognized format>"
 
-let do_printf m fmt args =
+let do_printf m cp fmt args =
 
   let b = Buffer.create 80 in
   let len = String.length fmt in
@@ -374,7 +375,7 @@ let do_printf m fmt args =
               Buffer.add_string b "<missing argument>";
               scan pos' []
           | arg :: args' ->
-              Buffer.add_string b (format_value m flags length conv arg);
+              Buffer.add_string b (format_value m cp flags length conv arg);
               scan pos' args'
         end
     end
@@ -384,13 +385,12 @@ let do_printf m fmt args =
     
 (* Store bytestring contents into a global pointer *)
  
-let store_string m blk ofs buff size =
+let store_string m cp blk ofs buff size =
   let rec store m i = 
     if i < size then
-      Mem.store' Mint8unsigned m blk
+      Mem.store Mint8unsigned m blk
        (Z.add ofs (Z.of_sint i))
-	(Vint (Z.of_uint (Char.code (Bytes.get buff i)))) None
-	(* AST.privileged_compartment (* just for now ??? *) *) >>= fun m' -> 
+       (Vint (Z.of_uint (Char.code (Bytes.get buff i)))) cp >>= fun m' -> 
       store m' (i+1) 
     else Some m in
   store m 0 
@@ -422,12 +422,12 @@ let do_fgets_aux size =
   in get 0 >>= fun count -> 
      Some (buff,count)
 
-let do_fgets m blk ofs size =
+let do_fgets m cp blk ofs size =
   match do_fgets_aux (Z.to_int size) with
     None ->
       Some (coq_Vnullptr, m)
   | Some (buff,count) ->
-      store_string m blk ofs buff count >>= fun m' ->
+      store_string m cp blk ofs buff count >>= fun m' ->
       Some (Vptr(blk,ofs), m')
 
 
@@ -455,15 +455,15 @@ let rec convert_external_args ge vl tl =
 let do_external_function id sg ge w cp args m =
   match camlstring_of_coqstring id, args with
   | "printf", Vptr(b, ofs) :: args' ->
-      extract_string m b ofs >>= fun fmt ->
-      let fmt' = do_printf m fmt args' in
+      extract_string m cp b ofs >>= fun fmt ->
+      let fmt' = do_printf m cp fmt args' in
       let len = coqint_of_camlint (Int32.of_int (String.length fmt')) in
       Format.print_string fmt';
       flush stdout;
       convert_external_args ge args sg.sig_args >>= fun eargs ->
       Some(((w, [Event_syscall(id, eargs, EVint len)]), Vint len), m)
   | "fgets", Vptr(b, ofs) :: Vint siz :: args' ->
-      do_fgets m b ofs siz >>= fun (p,m') ->
+      do_fgets m cp b ofs siz >>= fun (p,m') ->
       convert_external_args ge args sg.sig_args >>= fun eargs ->
       convert_external_arg ge p (proj_rettype sg.sig_res) >>= fun eres -> 
       Some(((w, [Event_syscall(id, eargs, eres)]), p), m')   (* temporary version *)
