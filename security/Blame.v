@@ -1079,4 +1079,283 @@ Section Simulation.
 (*     CS.kstep (prepare_global_env (program_link p p2)) scs2 t scs2' /\ (* use step of Csem instead *) *)
 (*       partial_state_equivalent s scs1' scs2'. (* to define *) *)
 
+Require Import Complements.
+
+Definition comp_of_event_or_default (e: event) (cp: compartment) :=
+  match e with
+  | Event_syscall _ _ _ => cp
+  | Event_vload _ _ _ _ => cp
+  | Event_vstore _ _ _ _ => cp
+  | Event_annot _ _ => cp
+  | Event_call _ cp' _ _ => cp'
+  | Event_return _ cp' _ => cp'
+  end.
+
+Fixpoint last_comp_in_trace' (t: trace) (cp: compartment): compartment :=
+  match t with
+  | nil => cp
+  | e :: t' => last_comp_in_trace' t' (comp_of_event_or_default e cp)
+  end.
+
+Definition last_comp_in_trace (t: trace): compartment :=
+  last_comp_in_trace' t default_compartment.
+
+Definition blame_on_program (t: trace) :=
+  s (last_comp_in_trace t) = Left.
+
+(* Lemma blame_last_comp_star scs1 t scs2: *)
+(*   Clight.initial_state W1  scs1 -> *)
+(*   Star (Clight.semantics1 W1) scs1 t scs2 -> *)
+(*   (* CS.s_component scs2 \in domm (prog_interface c) -> *) *)
+(*   blame_on_program t. *)
+
+(** Utilities *)
+
+Lemma star_cons_inv L s1 e t s2 :
+  single_events L ->
+  Star L s1 (e :: t) s2 ->
+  exists s1' s2', Star L s1 E0 s1' /\ Step L s1' (e :: nil) s2' /\ Star L s2' t s2.
+Admitted. (* Easy, proof exists *)
+
+Lemma star_app_inv L :
+  single_events L ->
+  forall s1 t1 t2 s2,
+    Star L s1 (t1 ** t2) s2 ->
+  exists s, Star L s1 t1 s /\ Star L s t2 s2.
+Admitted. (* Easy, proof exists *)
+
+Lemma forever_reactive_app_inv L :
+  single_events L ->
+  forall s1 t T,
+    Forever_reactive L s1 (t *** T) ->
+  exists s2, Star L s1 t s2 /\ Forever_reactive L s2 T.
+Admitted. (* Easy, proof exists *)
+
+(** Traces and prefixes *)
+
+Inductive finpref_behavior : Type :=
+  | FTerminates (t: trace) (n: int)
+  | FGoes_wrong (t: trace)
+  | FTbc (t: trace).
+
+Definition not_wrong_finpref (m:finpref_behavior) : Prop :=
+  match m with
+  | FGoes_wrong _ => False
+  | _             => True
+  end.
+
+Definition prefix (m:finpref_behavior) (b:program_behavior) : Prop :=
+  match m, b with
+  | FTerminates t1 n1, Terminates t2 n2 => n1 = n2 /\ t1 = t2
+  | FGoes_wrong t1, Goes_wrong t2 => t1 = t2
+  | FTbc t1, b => behavior_prefix t1 b
+  | _, _ => False
+  end.
+
+Definition finpref_trace (m : finpref_behavior) : trace :=
+  match m with
+  | FTerminates t _ | FGoes_wrong t | FTbc t => t
+  end.
+
+Definition trace_finpref_prefix (t : trace) (m : finpref_behavior) : Prop :=
+  match m with
+  | FTerminates t' _ | FGoes_wrong t' | FTbc t' => trace_prefix t t'
+  end.
+
+Definition finpref_trace_prefix (m : finpref_behavior) (t : trace) : Prop :=
+  match m with
+  | FTerminates _ t' | FGoes_wrong t' => False
+  | FTbc t' => trace_prefix t' t
+  end.
+
+Definition behavior_improves_finpref (b:program_behavior) (m:finpref_behavior) :=
+  exists t, b = Goes_wrong t /\ trace_finpref_prefix t m.
+
+Definition does_prefix (L: semantics) (m: finpref_behavior) : Prop :=
+  exists b, program_behaves L b /\ prefix m b.
+
+(** New helpers *)
+
+Lemma state_split_decidable:
+  forall st, s |= st ∈ Left \/ s |= st ∈ Right.
+Admitted.
+
+Lemma eval_expr_determinism: forall {ge e cp le m a vf1 vf2},
+  eval_expr ge e cp le m a vf1 ->
+  eval_expr ge e cp le m a vf2 ->
+  vf1 = vf2.
+Proof.
+  clear.
+Admitted.
+
+Lemma eval_exprlist_determinism: forall {ge e cp le m al tyargs vargs1 vargs2},
+  eval_exprlist ge e cp le m al tyargs vargs1 ->
+  eval_exprlist ge e cp le m al tyargs vargs2 ->
+  vargs1 = vargs2.
+Proof.
+  clear.
+Admitted.
+
+(** Standard blame proof components *)
+
+(* Related to old [context_epsilon_star_is_silent'] *)
+Lemma parallel_star_E0: forall {j ge1 ge2 s1 s1' s2 s2'},
+  right_state_injection s j ge1 ge2 s1 s2 ->
+  Star (semantics1 W1) s1 E0 s1' ->
+  Star (semantics1 W2) s2 E0 s2' ->
+  right_state_injection s j ge1 ge2 s1' s2'.
+Admitted. (* Easy, see [parallel_abstract_E0] and [parallel_concrete_E0] *)
+
+(* Related to old [state_determinism'] *)
+Lemma state_determinism: forall {p s s1 s2 e},
+  step1 (globalenv p) s (e :: nil) s1 ->
+  step1 (globalenv p) s (e :: nil) s2 ->
+  s1 = s2.
+Proof.
+  clear. intros p s s1 s2 e STEP1 STEP2.
+  inv STEP1; inv STEP2; simpl in *.
+  - destruct (eval_expr_determinism H0 H15).
+    assert (fd = fd0) as <- by congruence.
+    rewrite H3 in H18. injection H18 as <- <- <-.
+    destruct (eval_exprlist_determinism H1 H16).
+    reflexivity.
+  - destruct (eval_exprlist_determinism H H12).
+    destruct (external_call_determ _ _ _ _ _ _ _ _ _ _ H0 H13) as [_ EQ].
+    specialize (EQ eq_refl) as [<- <-].
+    reflexivity.
+  - destruct (external_call_determ _ _ _ _ _ _ _ _ _ _ H H9) as [_ EQ].
+    specialize (EQ eq_refl) as [<- <-].
+    reflexivity.
+  - reflexivity.
+Qed.
+
+(* - [scs] naming scheme no longer makes sense, retooled
+   - No need for [s |= s1 ∈ Left] type assumption *)
+Lemma parallel_exec1: forall j s1 s2 s1'' s2'' t t1 t2,
+  right_state_injection s j ge1 ge2 s1 s2 ->
+  Star (Clight.semantics1 W1) s1 (t ** t1) s1'' ->
+  Star (Clight.semantics1 W2) s2 (t ** t2) s2'' ->
+  exists s1' s2' j',
+    Star (Clight.semantics1 W1) s1 t s1' /\
+    Star (Clight.semantics1 W2) s2 t s2' /\
+    Star (Clight.semantics1 W1) s1' t1 s1'' /\
+    Star (Clight.semantics1 W2) s2' t2 s2'' /\
+    right_state_injection s j' ge1 ge2 s1' s2'.
+Proof.
+  intros j s1 s2 s1'' s2'' t; revert j s1 s2 s1'' s2''.
+  induction t as [| e t IH];
+    intros j s1 s2 s1'' s2'' t1 t2 RINJ STAR1 STAR2;
+    (* Base case: follows trivially from the assumptions *)
+    [do 3 eexists; now eauto using star_refl |].
+  (* Inductive case *)
+  destruct (star_cons_inv _ _ _ _ _ (sr_traces (semantics_receptive _)) STAR1)
+    as (s1_1 & s1_2 & STAR1_1 & STEP1_2 & STAR1_3).
+  change (_ t t1) with (t ** t1) in STAR1_3. clear STAR1.
+  destruct (star_cons_inv _ _ _ _ _ (sr_traces (semantics_receptive _)) STAR2)
+    as (s2_1 & s2_2 & STAR2_1 & STEP2_2 & STAR2_3).
+  change (_ t t2) with (t ** t2) in STAR2_3. clear STAR2.
+  assert (RINJ' := parallel_star_E0 RINJ STAR1_1 STAR2_1).
+  assert (exists j', right_state_injection s j' ge1 ge2 s1_2 s2_2)
+    as [j'' RINJ'']. { (* This can be made into a helper lemma *)
+    destruct (state_split_decidable s1_1) as [LEFT | RIGHT].
+    - now exploit parallel_abstract_t; eauto.
+    - exploit parallel_concrete; eauto. intros (j'' & s2_2' & STEP2_2' & RINJ'').
+      assert (s2_2 = s2_2') as <- by exact (state_determinism STEP2_2 STEP2_2').
+      now eauto. }
+  destruct (IH _ _ _ _ _ _ _ RINJ'' STAR1_3 STAR2_3)
+    as (s1' & s2' & j''' & STAR1_3_1 & STAR2_3_1 & STAR1_3_2 & STAR2_3_2 & RINJ''').
+  assert (STAR1' := star_trans
+                      (star_trans STAR1_1 (star_one _ _ _ _ _ STEP1_2) eq_refl)
+                      STAR1_3_1 eq_refl).
+  assert (STAR2' := star_trans
+                      (star_trans STAR2_1 (star_one _ _ _ _ _ STEP2_2) eq_refl)
+                      STAR2_3_1 eq_refl).
+  now eauto 8.
+Qed.
+
+(* - Quantify over p vs. W1 *)
+Lemma does_prefix_star
+  (m : finpref_behavior)
+  (Hprefix : does_prefix (Clight.semantics1 W1) m)
+  (NOT_WRONG : not_wrong_finpref m) :
+  exists (sti : Smallstep.state (Clight.semantics1 W1))
+         (stf : Smallstep.state (Clight.semantics1 W1)),
+    Smallstep.initial_state (Clight.semantics1 W1) sti /\
+    Star (Clight.semantics1 W1) sti (finpref_trace m) stf  /\
+    (forall n,
+      (exists t, m = FTerminates t n) ->
+      Smallstep.final_state (Clight.semantics1 W1) stf n).
+Proof.
+  destruct Hprefix as [b [Hb Hmb]].
+  inversion Hb as [s0 beh Hini Hbeh | Hini]; subst.
+  - inversion Hbeh as [? ? ? Hstar | ? ? Hstar | ? Hreact | ? ? Hstar]; subst.
+    (* Matching case. *)
+    + destruct m as [tm | tm | tm].
+      * simpl in *; subst. admit.
+      * contradiction.
+      * (* This is like the contradictory cases below. *)
+        destruct Hmb as [b Hb'].
+        destruct b as [tb | tb | tb | tb];
+          try discriminate.
+        inversion Hb'; subst.
+        destruct (star_app_inv _ (sr_traces (semantics_receptive _)) _ _ _ _ Hstar)
+          as [s1 [Hstar1 Hstar2]].
+        exists s0, s1. split; [| split]; try assumption.
+        now intros ? [t' Hcontra].
+    (* The remaining cases are essentially identical. *)
+    + destruct m as [tm | tm | tm];
+        try contradiction.
+      destruct Hmb as [b Hb'].
+      destruct b as [tb | tb | tb | tb];
+        try discriminate.
+      inversion Hb'; subst.
+      destruct (star_app_inv _ (sr_traces (semantics_receptive _)) _ _ _ _ Hstar)
+        as [s1 [Hstar1 Hstar2]].
+      exists s0, s1. split; [| split]; try assumption.
+      now intros ? [t' Hcontra].
+    + destruct m as [tm | tm | tm];
+        try contradiction.
+      destruct Hmb as [b Hb'].
+      destruct b as [tb | tb | tb | tb];
+        try discriminate.
+      inversion Hb'; subst.
+      (* The only difference in this case is the lemma to be applied here. *)
+      destruct (forever_reactive_app_inv _ (sr_traces (semantics_receptive _)) _ _ _ Hreact)
+        as [s1 [Hstar Hreact']].
+      exists s0, s1. split; [| split]; try assumption.
+      now intros ? [t' Hcontra].
+    + (* Same script as Diverges. *)
+      destruct m as [tm | tm | tm];
+        try contradiction.
+      destruct Hmb as [b Hb'].
+      destruct b as [tb | tb | tb | tb];
+        try discriminate.
+      inversion Hb'; subst.
+      destruct (star_app_inv _ (sr_traces (semantics_receptive _)) _ _ _ _ Hstar)
+        as [s1 [Hstar1 Hstar2]].
+      exists s0, s1. split; [| split]; try assumption.
+      now intros ? [t' Hcontra].
+  - (* Contradiction on the existence of an initial state *)
+    admit.
+Admitted. (* Needs reasoning/assumptions about the initial state *)
+
+(* - What to say about the interfaces of p1 and p2?
+   - Closed, linkable, well-formed *)
+Lemma blame_program (t: trace) (m: finpref_behavior) (t': trace)
+  (HpCs_beh: program_behaves (Clight.semantics1 W1) (Goes_wrong t)):
+  does_prefix (Clight.semantics1 W1) m ->
+  not_wrong_finpref m ->
+  trace_finpref_prefix t' m ->
+  prefix m (Goes_wrong t') \/ blame_on_program t'.
+Proof.
+Abort.
+
+Theorem blame (t m: trace):
+  clight_program_has_initial_trace W2 t ->
+  trace_prefix m t ->
+  m <> t ->
+  program_behaves (Clight.semantics1 W1) (Goes_wrong m) ->
+  blame_on_program m.
+Admitted.
+
 End Simulation.
