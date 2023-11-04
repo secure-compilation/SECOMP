@@ -1103,12 +1103,6 @@ Definition last_comp_in_trace (t: trace): compartment :=
 Definition blame_on_program (t: trace) :=
   s (last_comp_in_trace t) = Left.
 
-(* Lemma blame_last_comp_star scs1 t scs2: *)
-(*   Clight.initial_state W1  scs1 -> *)
-(*   Star (Clight.semantics1 W1) scs1 t scs2 -> *)
-(*   (* CS.s_component scs2 \in domm (prog_interface c) -> *) *)
-(*   blame_on_program t. *)
-
 (** Utilities *)
 
 Lemma star_cons_inv L s1 e t s2 :
@@ -1233,13 +1227,13 @@ Qed.
    - No need for [s |= s1 ∈ Left] type assumption *)
 Lemma parallel_exec1: forall j s1 s2 s1'' s2'' t t1 t2,
   right_state_injection s j ge1 ge2 s1 s2 ->
-  Star (Clight.semantics1 W1) s1 (t ** t1) s1'' ->
-  Star (Clight.semantics1 W2) s2 (t ** t2) s2'' ->
+  Star (semantics1 W1) s1 (t ** t1) s1'' ->
+  Star (semantics1 W2) s2 (t ** t2) s2'' ->
   exists s1' s2' j',
-    Star (Clight.semantics1 W1) s1 t s1' /\
-    Star (Clight.semantics1 W2) s2 t s2' /\
-    Star (Clight.semantics1 W1) s1' t1 s1'' /\
-    Star (Clight.semantics1 W2) s2' t2 s2'' /\
+    Star (semantics1 W1) s1 t s1' /\
+    Star (semantics1 W2) s2 t s2' /\
+    Star (semantics1 W1) s1' t1 s1'' /\
+    Star (semantics1 W2) s2' t2 s2'' /\
     right_state_injection s j' ge1 ge2 s1' s2'.
 Proof.
   intros j s1 s2 s1'' s2'' t; revert j s1 s2 s1'' s2''.
@@ -1273,25 +1267,67 @@ Proof.
   now eauto 8.
 Qed.
 
+(* CS.s_component scs2' \notin domm ctx -> *)
+Lemma parallel_exec j ge1 ge2 s1 s1' s2 s2' n t t':
+  right_state_injection s j ge1 ge2 s1 s2 ->
+  Star (semantics1 W1) s1 (t ** t') s1' ->
+  Star (semantics1 W2) s2  t        s2' ->
+  Nostep (semantics1 W2) s2' ->
+  Smallstep.final_state (semantics1 W1) s1' n ->
+  s |= s2' ∈ Right ->
+  exists n', Smallstep.final_state (semantics1 W2) s2' n'.
+Admitted.
+
+(* CS.s_component scs2' \in domm ctx. *)
+Lemma parallel_exec' j ge1 ge2 s1 s1' s2 s2' t e t':
+  right_state_injection s j ge1 ge2 s1 s2 ->
+  Star (semantics1 W1) s1 (t ** e :: t') s1' ->
+  Star (semantics1 W2) s2  t             s2' ->
+  Nostep (semantics1 W2) s2' ->
+  s |= s2' ∈ Left.
+Admitted.
+
+(* CS.s_component scs2 \in domm (prog_interface c) -> *)
+(* last_comp t \in domm (prog_interface c). *)
+Lemma blame_last_comp_star p s1 t s2:
+  Smallstep.initial_state (semantics1 p) s1 ->
+  Star (semantics1 p) s1 t s2 ->
+  s |= s2 ∈ Left ->
+  blame_on_program t.
+Proof.
+Admitted.
+
+(* - Related to old [partialize_partition]
+   - We may want to be more explicit about the initial injection *)
+Lemma initial_state_injection s1 s2 :
+  Smallstep.initial_state (semantics1 W1) s1 ->
+  Smallstep.initial_state (semantics1 W2) s2 ->
+  exists j,
+    right_state_injection s j ge1 ge2 s1 s2.
+Proof.
+Admitted.
+
 (* - Quantify over p vs. W1 *)
 Lemma does_prefix_star
   (m : finpref_behavior)
-  (Hprefix : does_prefix (Clight.semantics1 W1) m)
+  (Hprefix : does_prefix (semantics1 W1) m)
   (NOT_WRONG : not_wrong_finpref m) :
-  exists (sti : Smallstep.state (Clight.semantics1 W1))
-         (stf : Smallstep.state (Clight.semantics1 W1)),
-    Smallstep.initial_state (Clight.semantics1 W1) sti /\
-    Star (Clight.semantics1 W1) sti (finpref_trace m) stf  /\
+  exists (sti : Smallstep.state (semantics1 W1))
+         (stf : Smallstep.state (semantics1 W1)),
+    Smallstep.initial_state (semantics1 W1) sti /\
+    Star (semantics1 W1) sti (finpref_trace m) stf  /\
     (forall n,
       (exists t, m = FTerminates t n) ->
-      Smallstep.final_state (Clight.semantics1 W1) stf n).
+      Smallstep.final_state (semantics1 W1) stf n).
 Proof.
   destruct Hprefix as [b [Hb Hmb]].
   inversion Hb as [s0 beh Hini Hbeh | Hini]; subst.
   - inversion Hbeh as [? ? ? Hstar | ? ? Hstar | ? Hreact | ? ? Hstar]; subst.
     (* Matching case. *)
     + destruct m as [tm | tm | tm].
-      * simpl in *; subst. admit.
+      * simpl in *. destruct Hmb. subst.
+        exists s0, s'. split; [| split]; try assumption.
+        intros n [? EQ]. injection EQ as ?; subst. assumption.
       * contradiction.
       * (* This is like the contradictory cases below. *)
         destruct Hmb as [b Hb'].
@@ -1341,21 +1377,61 @@ Admitted. (* Needs reasoning/assumptions about the initial state *)
 
 (* - What to say about the interfaces of p1 and p2?
    - Closed, linkable, well-formed *)
-Lemma blame_program (t: trace) (m: finpref_behavior) (t': trace)
-  (HpCs_beh: program_behaves (Clight.semantics1 W1) (Goes_wrong t)):
-  does_prefix (Clight.semantics1 W1) m ->
-  not_wrong_finpref m ->
-  trace_finpref_prefix t' m ->
+Lemma blame_program (m: finpref_behavior) (t': trace)
+  (HpCs_beh: program_behaves (semantics1 W2) (Goes_wrong t'))
+  (HP'_Cs_beh_new: does_prefix (semantics1 W1) m)
+  (Hnot_wrong': not_wrong_finpref m)
+  (K: trace_finpref_prefix t' m):
   prefix m (Goes_wrong t') \/ blame_on_program t'.
 Proof.
-Abort.
+  apply does_prefix_star in HP'_Cs_beh_new; [| easy].
+  destruct HP'_Cs_beh_new as [sini1 [sfin1 [Hini1 [HStar1 Hfinal1']]]].
+  inversion HpCs_beh as [sini2 ? Hini2 Hstbeh2 | Hnot_initial2]; subst.
+  2:{ admit. (* We rely on the existence of an initial state *) }
+  inversion Hstbeh2 as [| | | ? sfin2 HStar2 HNostep2 Hnot_final2]; subst.
+  assert (exists j0, right_state_injection s j0 ge1 ge2 sini1 sini2)
+    as [j0 Hpartialize].
+  { apply initial_state_injection; assumption. }
+  (* Case analysis on m. FGoes_wrong can be ruled out by contradiction,
+     but also solved exactly like the others. *)
+  destruct m as [tm | tm | tm];
+    (destruct K as [tm' Htm']; subst tm;
+     unfold finpref_trace in HStar1).
+  - simpl. right.
+    assert (Hfinal1 : Smallstep.final_state (semantics1 W1) sfin1 n).
+      apply Hfinal1'. eauto.
+    (* A good amount of simplification is possible in the new proof *)
+    assert (HNostep1 : Nostep (semantics1 W1) sfin1).
+    { simpl in Hfinal1. simpl.
+      inv Hfinal1.
+      intros tcon scon Hcontra.
+      inversion Hcontra. }
+    pose proof parallel_exec  _ _ _ _ _ _ _ _ _ _
+      Hpartialize
+      HStar1 HStar2 HNostep2 Hfinal1
+      as Hparallel.
+    destruct (state_split_decidable sfin2) as [Hparallel1 | Hparallel1].
+    + exact (blame_last_comp_star _ _ _ _ Hini2 HStar2 Hparallel1).
+    + specialize (Hparallel Hparallel1) as [n' Hfinal2].
+      specialize (Hnot_final2 n'). contradiction.
+  - simpl in Hnot_wrong'. contradiction.
+  - simpl. destruct tm'.
+    + left. exists (Goes_wrong nil). simpl. repeat rewrite E0_right. reflexivity.
+    + right.
+      pose proof parallel_exec' _ _ _ _ _ _ _ _ _ _
+        Hpartialize
+        HStar1 HStar2 HNostep2
+        as Hparallel.
+      eapply blame_last_comp_star; eassumption.
+Admitted. (* Needs reasoning/assumptions about the initial state *)
 
 Theorem blame (t m: trace):
   clight_program_has_initial_trace W2 t ->
   trace_prefix m t ->
   m <> t ->
-  program_behaves (Clight.semantics1 W1) (Goes_wrong m) ->
+  program_behaves (semantics1 W1) (Goes_wrong m) ->
   blame_on_program m.
+Proof.
 Admitted.
 
 End Simulation.
