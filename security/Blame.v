@@ -1125,6 +1125,13 @@ Lemma forever_reactive_app_inv L :
   exists s2, Star L s1 t s2 /\ Forever_reactive L s2 T.
 Admitted. (* Easy, proof exists *)
 
+Lemma star_E0_ind' L (P : Smallstep.state L -> Smallstep.state L -> Prop) :
+  (forall s, P s s) ->
+  (forall s1 s2 s3, Step L s1 E0 s2 -> Star L s2 E0 s3 -> P s2 s3 -> P s1 s3) ->
+  forall s1 s2, Star L s1 E0 s2 -> P s1 s2.
+Proof.
+Admitted.
+
 (** Traces and prefixes *)
 
 Inductive finpref_behavior : Type :=
@@ -1193,12 +1200,12 @@ Admitted.
 (** Standard blame proof components *)
 
 (* Related to old [context_epsilon_star_is_silent'] *)
-Lemma parallel_star_E0: forall {j ge1 ge2 s1 s1' s2 s2'},
+Lemma parallel_star_E0: forall {j s1 s1' s2 s2'},
   right_state_injection s j ge1 ge2 s1 s2 ->
   Star (semantics1 W1) s1 E0 s1' ->
   Star (semantics1 W2) s2 E0 s2' ->
   right_state_injection s j ge1 ge2 s1' s2'.
-Admitted. (* Easy, see [parallel_abstract_E0] and [parallel_concrete_E0] *)
+Admitted. (* Related to [parallel_abstract_E0] and [parallel_concrete_E0] *)
 
 (* Related to old [state_determinism'] *)
 Lemma state_determinism: forall {p s s1 s2 e},
@@ -1268,7 +1275,7 @@ Proof.
 Qed.
 
 (* CS.s_component scs2' \notin domm ctx -> *)
-Lemma parallel_exec j ge1 ge2 s1 s1' s2 s2' n t t':
+Lemma parallel_exec j s1 s1' s2 s2' n t t':
   right_state_injection s j ge1 ge2 s1 s2 ->
   Star (semantics1 W1) s1 (t ** t') s1' ->
   Star (semantics1 W2) s2  t        s2' ->
@@ -1276,15 +1283,65 @@ Lemma parallel_exec j ge1 ge2 s1 s1' s2 s2' n t t':
   Smallstep.final_state (semantics1 W1) s1' n ->
   s |= s2' ∈ Right ->
   exists n', Smallstep.final_state (semantics1 W2) s2' n'.
+Proof.
+  rewrite <- (E0_right t) at 2.
+  intros part star1 star2.
+  exploit parallel_exec1; eauto.
+  clear j star1 star2 part. intros (s1'' & s2'' & (j' & _ & _ & star1 & star2 & part)).
+  (* rewrite (CS.star_component star2) /=. *)
+  clear s1 s2 t. revert s2'' s2' j' n star2 part. rename s1'' into s1. induction star1.
+  - rename s0 into s1. intros s2 s2' j n star2 part nostep2 final1 in_prog.
+    assert (exists n', Smallstep.final_state (semantics1 W2) s2 n') as [n' final2]. {
+      (* inv final1. *)
+      (* destruct s2. *)
+      (* - inv part. inv H1. inv H2. simpl in *. subst. inv star2. *)
+      (*   + congruence. *)
+      (*   +  *)
+      (* destruct s2. simpl in *. *)
+      (* simpl. simpl in nostep2. unfold nostep2 in nostep2.  unfold final_state. *)
+      (* inv star2. *)
+      (* - eauto. *)
+      admit.
+    }
 Admitted.
 
 (* CS.s_component scs2' \in domm ctx. *)
-Lemma parallel_exec' j ge1 ge2 s1 s1' s2 s2' t e t':
+Lemma parallel_exec' j s1 s1' s2 s2' t e t':
   right_state_injection s j ge1 ge2 s1 s2 ->
   Star (semantics1 W1) s1 (t ** e :: t') s1' ->
   Star (semantics1 W2) s2  t             s2' ->
   Nostep (semantics1 W2) s2' ->
   s |= s2' ∈ Left.
+Proof.
+  rewrite <- (E0_right t) at 2.
+  intros part star1 star2.
+  exploit parallel_exec1; eauto.
+  clear j star1 star2 part.
+  intros (s1'' & s2'' & (j' & _ & _ & star1 & star2 & part)) nostep2.
+  (* rewrite (CS.star_component star2) /=. *)
+  clear s1 s2 t. rename s1'' into s1. rename s2'' into s2. rename j' into j.
+  assert (X: s |= s2 ∈ Left -> s |= s2' ∈ Left) by admit; apply X; clear X.
+  assert (in_prog2: s |= s2 ∈ Right) by admit; exfalso.
+  destruct (star_cons_inv _ _ _ _ _ (sr_traces (semantics_receptive _)) star1)
+    as (s1a & s1b & star1a & step1b & _).
+  clear star1.
+  revert s1 star1a part nostep2 in_prog2. elim star2 using star_E0_ind';
+    clear s2 s2' star2.
+  - intros s2 s1 star1a.
+    assert (exists t s1a', Step (semantics1 W1) s1 t s1a') as (t & s1a' & step). {
+      revert step1b. elim star1a using star_E0_ind'; now eauto. }
+    intros part nostep2 in_prog2.
+    clear in_prog2; assert (in_prog2: s |= s1 ∈ Right) by admit.
+    exploit parallel_concrete; eauto. intros (j' & s2' & step2 & part').
+    specialize (nostep2 _ _ step2). contradiction.
+  - intros s2 s2' s2'' step2 star2 IH s1 star1 part nostep2 in_prog2.
+    revert step1b IH part. elim star1 using star_E0_ind'; clear s1 s1a star1.
+    + intros s1 step1b _ part.
+      clear in_prog2; assert (in_prog2: s |= s1 ∈ Right) by admit.
+      admit. (* Requires parallel_concrete' *)
+    + intros s1 s1a s1a' step1a star1 _ step1b IH part.
+      assert (in_prog1: s |= s1 ∈ Right) by admit.
+      admit. (* Requires parallel_concrete' *)
 Admitted.
 
 (* CS.s_component scs2 \in domm (prog_interface c) -> *)
@@ -1406,7 +1463,7 @@ Proof.
       inv Hfinal1.
       intros tcon scon Hcontra.
       inversion Hcontra. }
-    pose proof parallel_exec  _ _ _ _ _ _ _ _ _ _
+    pose proof parallel_exec _ _ _ _ _ _ _ _
       Hpartialize
       HStar1 HStar2 HNostep2 Hfinal1
       as Hparallel.
