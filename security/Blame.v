@@ -1195,9 +1195,88 @@ Lemma eval_exprlist_determinism: forall {ge e cp le m al tyargs vargs1 vargs2},
   vargs1 = vargs2.
 Proof.
   clear.
+  intros ge e cp le m.
+  induction al as [| a al IH]; intros tyargs vargs1 vargs2 EVAL1 EVAL2;
+    inv EVAL1; inv EVAL2.
+  - reflexivity.
+  - f_equal.
+    + destruct (eval_expr_determinism H1 H6). congruence.
+    + now eapply IH; eauto.
+Qed.
+
+Lemma eventval_list_match_determinism (ge: genv): forall {vl1 vl2 ty vargs},
+  eventval_list_match ge vl1 ty vargs ->
+  eventval_list_match ge vl2 ty vargs ->
+  vl1 = vl2.
+Proof.
+  clear.
+  induction vl1 as [| v1 vl1 IH];
+    intros vl2 ty vargs MATCH1 MATCH2.
+  - inv MATCH1. inv MATCH2. reflexivity.
+  - inv MATCH1. inv MATCH2.
+    f_equal.
+    + (* This could be its own lemma, added assumptions needed? *)
+      inv H1; inv H5; try reflexivity.
+      (* rewrite <- H in H6. *)
+      (* rewrite <- H0 in H8. *)
+      admit.
+    + eapply IH; eassumption.
+Admitted.
+
+Lemma call_trace_determinism (ge: genv): forall {cp cp' vf vargs ty t1 t2},
+  call_trace ge cp cp' vf vargs ty t1 ->
+  call_trace ge cp cp' vf vargs ty t2 ->
+  t1 = t2.
+Proof.
+  clear.
+  intros cp cp' vf vargs ty t1 t2 CALL1 CALL2.
+  inv CALL1; inv CALL2.
+  - reflexivity.
+  - contradiction.
+  - contradiction.
+  - injection H3 as <- <-.
+    rewrite H1 in H4. injection H4 as <-.
+    destruct (eventval_list_match_determinism _ H2 H5).
+    reflexivity.
+Qed.
+
+Lemma return_trace_determinism (ge: genv): forall {cp cp' v ty t1 t2},
+ return_trace ge cp cp' v ty t1 ->
+ return_trace ge cp cp' v ty t2 ->
+ t1 = t2.
+Proof.
+  clear.
+  intros cp cp' v ty t1 t2 RET1 RET2.
+  inv RET1; inv RET2.
+  - reflexivity.
+  - contradiction.
+  - contradiction.
+  - inv H0; inv H2; try reflexivity.
+    admit.
 Admitted.
 
 (** Standard blame proof components *)
+
+(* CS.s_component scs1 \notin domm ctx *)
+Lemma parallel_concrete' j s1 t1 s1' s2 t2 s2':
+  right_state_injection s j ge1 ge2 s1 s2 ->
+  s |= s1 ∈ Right ->
+  Step (semantics1 W1) s1 t1 s1' ->
+  Step (semantics1 W2) s2 t2 s2' ->
+  t1 = t2 /\ right_state_injection s j ge1 ge2 s1' s2'.
+(* different j, plus may want to add hypothesis on match_traces *)
+Proof.
+  intros part in_prog1 step1 step2.
+  destruct (parallel_concrete _ _ _ _ _ part in_prog1 step1)
+    as (j' & s2'' & step2' & part').
+  assert (s2 = s2'') as <-. {
+    clear -step2 step2'.
+    destruct t1 as [| e [| e' t]].
+    - admit.
+    - admit.
+    - admit.
+  }
+Admitted.
 
 (* Related to old [context_epsilon_star_is_silent'] *)
 Lemma parallel_star_E0: forall {j s1 s1' s2 s2'},
@@ -1229,6 +1308,11 @@ Proof.
     reflexivity.
   - reflexivity.
 Qed.
+
+(* Lemma state_determinism': forall {p s s1 s2 e1 e2}, *)
+(*   step1 (globalenv p) s (e1 :: nil) s1 -> *)
+(*   step1 (globalenv p) s (e2 :: nil) s2 -> *)
+(*   e1 = e2 /\ s1 = s2. *)
 
 (* - [scs] naming scheme no longer makes sense, retooled
    - No need for [s |= s1 ∈ Left] type assumption *)
@@ -1338,10 +1422,70 @@ Proof.
     revert step1b IH part. elim star1 using star_E0_ind'; clear s1 s1a star1.
     + intros s1 step1b _ part.
       clear in_prog2; assert (in_prog2: s |= s1 ∈ Right) by admit.
-      admit. (* Requires parallel_concrete' *)
+      destruct (parallel_concrete _ _ _ _ _ part in_prog2 step1b)
+        as (j' & s2a & step2' & part').
+      {
+        inv step2; inv step2'.
+        - match goal with
+          | H1: classify_fun ?X = _,
+            H2: classify_fun ?X = _ |- _ =>
+            rewrite H1 in H2; injection H2; intros; subst; clear H1
+          end.
+          match goal with
+          | H1: eval_expr ?GE ?E ?CP ?LE ?M ?A ?VF1,
+            H2: eval_expr ?GE ?E ?CP ?LE ?M ?A ?VF2 |- _ =>
+            pose proof eval_expr_determinism H1 H2; subst VF2; clear H2
+          end.
+          match goal with
+          | H1: eval_exprlist ?GE ?E ?CP ?LE ?M ?AL ?TYARGS ?VARGS1,
+            H2: eval_exprlist ?GE ?E ?CP ?LE ?M ?AL ?TYARGS ?VARGS2 |- _ =>
+            pose proof eval_exprlist_determinism H1 H2; subst VARGS2; clear H2
+          end.
+          match goal with
+          | H1: call_trace ?GE ?CP ?CP' ?VP ?VARGS ?TY ?T1,
+            H2: call_trace ?GE ?CP ?CP' ?VP ?VARGS ?TY ?T2 |- _ =>
+            pose proof call_trace_determinism _ H1 H2; try discriminate
+          end.
+        - match goal with
+          | H1: eval_exprlist ?GE ?E ?CP ?LE ?M ?AL ?TYARGS ?VARGS1,
+            H2: eval_exprlist ?GE ?E ?CP ?LE ?M ?AL ?TYARGS ?VARGS2 |- _ =>
+            pose proof eval_exprlist_determinism H1 H2; subst VARGS2; clear H2
+          end.
+          match goal with
+          | H1: external_call ?EF ?GE ?VARGS ?M ?T1 ?VRES1 ?M1,
+            H2: external_call ?EF ?GE ?VARGS ?M ?T2 ?VRES2 ?M2 |- _ =>
+            pose proof (external_call_determ _ _ _ _ _ _ _ _ _ _ H1 H2) as (? & ?)
+          end.
+          inv H1.
+        - destruct H; discriminate.
+        - destruct H; discriminate.
+        - destruct H; discriminate.
+        - destruct H; discriminate.
+        - match goal with
+          | H1: external_call ?EF ?GE ?VARGS ?M ?T1 ?VRES1 ?M1,
+            H2: external_call ?EF ?GE ?VARGS ?M ?T2 ?VRES2 ?M2 |- _ =>
+            pose proof (external_call_determ _ _ _ _ _ _ _ _ _ _ H1 H2) as (? & ?)
+          end.
+          inv H0.
+        - match goal with
+          | H1: return_trace ?GE ?CP ?CP' ?V ?TY ?T1,
+            H2: return_trace ?GE ?CP ?CP' ?V ?TY ?T2 |- _ =>
+            pose proof return_trace_determinism _ H1 H2; try discriminate
+          end.
+      }
+      admit. (* Requires parallel_concrete', or:
+                - noting that s1 and s2 are related
+                - they are on the right (the context is executing)
+                - s1 takes a visible step and s2 takes a silent step
+                - this should be a contradiction *)
     + intros s1 s1a s1a' step1a star1 _ step1b IH part.
       assert (in_prog1: s |= s1 ∈ Right) by admit.
-      admit. (* Requires parallel_concrete' *)
+      admit. (* Requires parallel_concrete', or:
+                - noting that s1 and s2 are related
+                - they are on the right (the context is executing)
+                - s1 takes a silent step to s1a, and s2 to s2'
+                - therefore, s1a and s2' should be related
+                - with side preservation by E0, the IH should apply *)
 Admitted.
 
 (* CS.s_component scs2 \in domm (prog_interface c) -> *)
