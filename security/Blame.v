@@ -1255,6 +1255,93 @@ Proof.
     admit.
 Admitted.
 
+Lemma eval_lvalue_determinism:
+  forall {ge e cp le m a loc1 loc2 ofs1 ofs2 bf1 bf2},
+    eval_lvalue ge e cp le m a loc1 ofs1 bf1 ->
+    eval_lvalue ge e cp le m a loc2 ofs2 bf2 ->
+    loc1 = loc2 /\ ofs1 = ofs2 /\ bf1 = bf2.
+Proof.
+  clear.
+  intros until bf2; intros EVAL1 EVAL2.
+  inv EVAL1; inv EVAL2.
+  - rewrite H in H5. injection H5 as <-. now auto.
+  - congruence.
+  - congruence.
+  - rewrite H0 in H5. injection H5 as <-. now auto.
+  - injection (eval_expr_determinism H H5) as <- <-. now auto.
+  - injection (eval_expr_determinism H H6) as <- <-.
+    rewrite H0 in H7. injection H7 as <-.
+    rewrite H1 in H11. injection H11 as <-.
+    rewrite H2 in H12. injection H12 as <- <-. now auto.
+  - congruence.
+  - congruence.
+  - injection (eval_expr_determinism H H6) as <- <-.
+    rewrite H0 in H7. injection H7 as <-.
+    rewrite H1 in H11. injection H11 as <-.
+    rewrite H2 in H12. injection H12 as <- <-. now auto.
+Qed.
+
+Lemma assign_loc_determinism: forall {ce cp ty m b ofs bf v m1 m2},
+  assign_loc ce cp ty m b ofs bf v m1 ->
+  assign_loc ce cp ty m b ofs bf v m2 ->
+  m1 = m2.
+Proof.
+  intros until m2; intros AL1 AL2.
+  inv AL1; inv AL2;
+    try congruence.
+  inv H; inv H6. congruence.
+Qed.
+
+Lemma alloc_variables_determinism: forall {ge cp e m vars e1 e2 m1 m2},
+  alloc_variables ge cp e m vars e1 m1 ->
+  alloc_variables ge cp e m vars e2 m2 ->
+  e1 = e2 /\ m1 = m2.
+Proof.
+  clear.
+  intros ge cp e m vars; revert ge cp e m.
+  induction vars; intros ge cp e m e1 e2 m1 m2 ALLOC1 ALLOC2.
+  - inv ALLOC1. inv ALLOC2.
+    now auto.
+  - inv ALLOC1. inv ALLOC2.
+    rewrite H3 in H8. injection H8 as <- <-.
+    now eauto.
+Qed.
+
+Lemma bind_parameters_determinism: forall {ge cp e m params vargs m1 m2},
+  bind_parameters ge cp e m params vargs m1 ->
+  bind_parameters ge cp e m params vargs m2 ->
+  m1 = m2.
+Proof.
+  clear.
+  intros ge cp e m params. revert ge cp e m.
+  induction params; intros ge cp e m vargs m1 m2 BIND1 BIND2.
+  - inv BIND1. inv BIND2. reflexivity.
+  - inv BIND1. inv BIND2.
+    rewrite H1 in H9. injection H9 as <-.
+    destruct (assign_loc_determinism H3 H10).
+    now eauto.
+Qed.
+
+Lemma function_entry1_determinism: forall {ge f vargs m e1 e2 le1 le2 m1 m2},
+  function_entry1 ge f vargs m e1 le1 m1 ->
+  function_entry1 ge f vargs m e2 le2 m2 ->
+  e1 = e2 /\ le1 = le2 /\ m1 = m2.
+Proof.
+  clear.
+  intros until m2; intros FE1 FE2.
+  inv FE1; inv FE2.
+  inv H0; inv H3.
+  - destruct (bind_parameters_determinism H1 H4).
+    now auto.
+  - congruence.
+  - congruence.
+  - rewrite <- H0 in H5. injection H5 as <- <- <-.
+    rewrite H6 in H7. injection H7 as <- <-.
+    destruct (alloc_variables_determinism H9 H11); subst.
+    destruct (bind_parameters_determinism H1 H4).
+    now auto.
+Qed.
+
 (** Standard blame proof components *)
 
 (* CS.s_component scs1 \notin domm ctx *)
@@ -1373,8 +1460,12 @@ Proof.
   exploit parallel_exec1; eauto.
   clear j star1 star2 part. intros (s1'' & s2'' & (j' & _ & _ & star1 & star2 & part)).
   (* rewrite (CS.star_component star2) /=. *)
-  clear s1 s2 t. revert s2'' s2' j' n star2 part. rename s1'' into s1. induction star1.
-  - rename s0 into s1. intros s2 s2' j n star2 part nostep2 final1 in_prog.
+  clear s1 s2 t. rename s1'' into s1. rename s2'' into s2. rename j' into j.
+  intros nostep2 final1 in_prog.
+  clear in_prog; assert (in_prog: s |= s2 ∈ Right) by admit.
+  revert j s2 part star2 nostep2 final1 in_prog.
+  induction star1 as [s1 | s1 t1 s1' t2 s1'' t step1 t1_t2 IH].
+  - intros j s2 part star2 nostep2 final1 in_prog.
     assert (exists n', Smallstep.final_state (semantics1 W2) s2 n') as [n' final2]. {
       (* inv final1. *)
       (* destruct s2. *)
@@ -1387,6 +1478,182 @@ Proof.
       (* - eauto. *)
       admit.
     }
+    admit.
+  - intros j s2 part star2 nostep2 final1 in_prog2.
+    assert (in_prog1: s |= s1 ∈ Right) by admit.
+    pose proof parallel_concrete _ _ _ _ _ part in_prog1 step1 as pc.
+    revert part nostep2 in_prog2 IH pc.
+    elim star2 using star_E0_ind'; clear s2 s2' star2.
+    + intros s2 _ nostep2 _ _ (_ & s2' & step2 & _).
+      apply nostep2 in step2. contradiction.
+    + intros s2 s21' s2'' step21 star2 ? part nostep2 in_prog2 IH (j' & s22' & step22 & part').
+      clear in_prog2; assert (in_prog2: s |= s21' ∈ Right) by admit.
+      assert (s21' = s22') as <-. {
+        destruct t1 as [| e1 [| e1' t1]].
+        - { clear -step21 step22. (* Posit another result of the below sort *)
+
+Local Ltac parallel_statements :=
+  match goal with
+  | H: ?S = Sskip \/ ?S = Scontinue |- _ =>
+    destruct H; discriminate
+  | H: ?S = Sskip \/ ?S = Sbreak |- _ =>
+    destruct H; discriminate
+  end.
+
+inv step21; inv step22;
+  try parallel_statements;
+  try easy;
+  auto.
+Local Ltac parallel_classify_fun :=
+  match goal with
+  | H1: classify_fun ?X = _,
+    H2: classify_fun ?X = _ |- _ =>
+    rewrite H1 in H2; injection H2; intros; subst; clear H1
+  end.
+Local Ltac parallel_eval_expr :=
+  match goal with
+  | H1: eval_expr ?GE ?E ?CP ?LE ?M ?A ?VF1,
+    H2: eval_expr ?GE ?E ?CP ?LE ?M ?A ?VF2 |- _ =>
+    pose proof eval_expr_determinism H1 H2; subst VF2; clear H2
+  end.
+Local Ltac parallel_eval_exprlist :=
+  match goal with
+  | H1: eval_exprlist ?GE ?E ?CP ?LE ?M ?AL ?TYARGS ?VARGS1,
+    H2: eval_exprlist ?GE ?E ?CP ?LE ?M ?AL ?TYARGS ?VARGS2 |- _ =>
+    pose proof eval_exprlist_determinism H1 H2; subst VARGS2; clear H2
+  end.
+Local Ltac parallel_call_trace :=
+  match goal with
+  | H1: call_trace ?GE ?CP ?CP' ?VP ?VARGS ?TY ?T1,
+    H2: call_trace ?GE ?CP ?CP' ?VP ?VARGS ?TY ?T2 |- _ =>
+    pose proof call_trace_determinism _ H1 H2; try discriminate
+  end.
+Local Ltac parallel_sem_cast :=
+  match goal with
+  | H1: sem_cast ?V ?T1 ?T2 ?M = Some ?V1,
+    H2: sem_cast ?V ?T1 ?T2 ?M = Some ?V2 |- _ =>
+    rewrite H1 in H2; injection H2; intros; subst V2; clear H1
+  end.
+Local Ltac parallel_eval_lvalue :=
+  match goal with
+  | H1: eval_lvalue ?GE ?E ?CP ?LE ?M ?A ?LOC1 ?OFS1 ?BF1,
+    H2: eval_lvalue ?GE ?E ?CP ?LE ?M ?A ?LOC2 ?OFS2 ?BF2 |- _ =>
+    pose proof eval_lvalue_determinism H1 H2 as [? [? ?]];
+      subst LOC2 OFS2 BF2; clear H2
+  end.
+Local Ltac parallel_assign_loc :=
+  match goal with
+  | H1: assign_loc ?CE ?CP ?TY ?M ?B ?OFS ?BF ?V ?M1,
+    H2: assign_loc ?CE ?CP ?TY ?M ?B ?OFS ?BF ?V ?M2 |- _ =>
+    pose proof assign_loc_determinism H1 H2; subst M2; clear H2
+  end.
+Local Ltac parallel_function_entry1 :=
+  match goal with
+  | H1: function_entry1 ?GE ?F ?VARGS ?M ?E1 ?LE1 ?M1,
+    H2: function_entry1 ?GE ?F ?VARGS ?M ?E2 ?LE2 ?M2 |- _ =>
+    pose proof function_entry1_determinism H1 H2 as [? [? ?]];
+      subst E2 LE2 M2; clear H2
+  end.
+Local Ltac parallel_find_funct :=
+  match goal with
+  | H1: Genv.find_funct ?GE ?VF = Some ?FD1,
+    H2: Genv.find_funct ?GE ?VF = Some ?FD2 |- _ =>
+    setoid_rewrite H1 in H2; injection H2 as <-
+  end.
+
+- parallel_eval_expr.
+  parallel_sem_cast.
+  parallel_eval_lvalue.
+  parallel_assign_loc.
+  reflexivity.
+- parallel_eval_expr.
+  reflexivity.
+- parallel_classify_fun.
+  parallel_eval_expr.
+  parallel_eval_exprlist.
+  parallel_find_funct.
+  reflexivity.
+- parallel_eval_exprlist.
+  destruct (external_call_determ _ _ _ _ _ _ _ _ _ _ H0 H13) as (_ & EQ).
+  specialize (EQ eq_refl) as [<- <-].
+  reflexivity.
+- parallel_eval_expr.
+  rewrite H0 in H11. injection H11 as <-.
+  reflexivity.
+- setoid_rewrite H in H6. injection H6 as <-.
+  reflexivity.
+- parallel_eval_expr.
+  rewrite H0 in H10. injection H10 as <-.
+  setoid_rewrite H1 in H11. injection H11 as <-.
+  reflexivity.
+- setoid_rewrite H0 in H8. injection H8 as <-.
+  reflexivity.
+- parallel_eval_expr.
+  rewrite H0 in H10. injection H10 as <-.
+  reflexivity.
+- rewrite H in H7. injection H7 as <- <-.
+  reflexivity.
+- parallel_function_entry1.
+  reflexivity.
+- destruct (external_call_determ _ _ _ _ _ _ _ _ _ _ H H9) as (_ & EQ).
+  specialize (EQ eq_refl) as [<- <-].
+  reflexivity.
+          }
+
+        - { clear -step21 step22. (* This is a general lemma *)
+        inv step21; inv step22.
+        - match goal with
+          | H1: classify_fun ?X = _,
+            H2: classify_fun ?X = _ |- _ =>
+            rewrite H1 in H2; injection H2; intros; subst; clear H1
+          end.
+          match goal with
+          | H1: eval_expr ?GE ?E ?CP ?LE ?M ?A ?VF1,
+            H2: eval_expr ?GE ?E ?CP ?LE ?M ?A ?VF2 |- _ =>
+            pose proof eval_expr_determinism H1 H2; subst VF2; clear H2
+          end.
+          match goal with
+          | H1: eval_exprlist ?GE ?E ?CP ?LE ?M ?AL ?TYARGS ?VARGS1,
+            H2: eval_exprlist ?GE ?E ?CP ?LE ?M ?AL ?TYARGS ?VARGS2 |- _ =>
+            pose proof eval_exprlist_determinism H1 H2; subst VARGS2; clear H2
+          end.
+          match goal with
+          | H1: call_trace ?GE ?CP ?CP' ?VP ?VARGS ?TY ?T1,
+            H2: call_trace ?GE ?CP ?CP' ?VP ?VARGS ?TY ?T2 |- _ =>
+            pose proof call_trace_determinism _ H1 H2; try discriminate
+          end.
+        - match goal with
+          | H1: eval_exprlist ?GE ?E ?CP ?LE ?M ?AL ?TYARGS ?VARGS1,
+            H2: eval_exprlist ?GE ?E ?CP ?LE ?M ?AL ?TYARGS ?VARGS2 |- _ =>
+            pose proof eval_exprlist_determinism H1 H2; subst VARGS2; clear H2
+          end.
+          match goal with
+          | H1: external_call ?EF ?GE ?VARGS ?M ?T1 ?VRES1 ?M1,
+            H2: external_call ?EF ?GE ?VARGS ?M ?T2 ?VRES2 ?M2 |- _ =>
+            pose proof (external_call_determ _ _ _ _ _ _ _ _ _ _ H1 H2) as (? & ?)
+          end.
+          inv H1.
+        - destruct H; discriminate.
+        - destruct H; discriminate.
+        - destruct H; discriminate.
+        - destruct H; discriminate.
+        - match goal with
+          | H1: external_call ?EF ?GE ?VARGS ?M ?T1 ?VRES1 ?M1,
+            H2: external_call ?EF ?GE ?VARGS ?M ?T2 ?VRES2 ?M2 |- _ =>
+            pose proof (external_call_determ _ _ _ _ _ _ _ _ _ _ H1 H2) as (? & ?)
+          end.
+          inv H0.
+        - match goal with
+          | H1: return_trace ?GE ?CP ?CP' ?V ?TY ?T1,
+            H2: return_trace ?GE ?CP ?CP' ?V ?TY ?T2 |- _ =>
+            pose proof return_trace_determinism _ H1 H2; try discriminate
+          end.
+          }
+
+        - exfalso. admit.
+      }
+      clear step21 step22.
+      exact (IH _ _ part' star2 nostep2 final1 in_prog2).
 Admitted.
 
 (* CS.s_component scs2' \in domm ctx. *)
@@ -1424,7 +1691,7 @@ Proof.
       clear in_prog2; assert (in_prog2: s |= s1 ∈ Right) by admit.
       destruct (parallel_concrete _ _ _ _ _ part in_prog2 step1b)
         as (j' & s2a & step2' & part').
-      {
+      { (* Lemma *)
         inv step2; inv step2'.
         - match goal with
           | H1: classify_fun ?X = _,
@@ -1473,19 +1740,12 @@ Proof.
             pose proof return_trace_determinism _ H1 H2; try discriminate
           end.
       }
-      admit. (* Requires parallel_concrete', or:
-                - noting that s1 and s2 are related
-                - they are on the right (the context is executing)
-                - s1 takes a visible step and s2 takes a silent step
-                - this should be a contradiction *)
     + intros s1 s1a s1a' step1a star1 _ step1b IH part.
       assert (in_prog1: s |= s1 ∈ Right) by admit.
-      admit. (* Requires parallel_concrete', or:
-                - noting that s1 and s2 are related
-                - they are on the right (the context is executing)
-                - s1 takes a silent step to s1a, and s2 to s2'
-                - therefore, s1a and s2' should be related
-                - with side preservation by E0, the IH should apply *)
+      destruct (parallel_concrete_E0 _ _ _ _ _ _ part in_prog1 step1a step2)
+        as [_ part'].
+      clear in_prog2; assert (in_prog2: s |= s2' ∈ Right) by admit.
+      exact (IH _ star1 part' nostep2 in_prog2).
 Admitted.
 
 (* CS.s_component scs2 \in domm (prog_interface c) -> *)
