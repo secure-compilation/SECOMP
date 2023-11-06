@@ -94,8 +94,12 @@ let gen_return src_compartment trgt_compartment : Events.event QCheck.Gen.t =
   let* ret_val = eventval in
   return (Events.Event_return (src_compartment, trgt_compartment, ret_val))
 
-let gen_trace size rand_state =
+(* QCheck generator for an event trace *)
+
+let gen_trace rand_state =
   let open QCheck.Gen in
+  (* ensure that no empty traces are generated *)
+  let size = small_nat rand_state + 1 in
   let rec gen_trace_aux = function
     | 0 -> []
     | n -> (
@@ -126,22 +130,17 @@ let gen_trace size rand_state =
   in
   gen_trace_aux size
 
-let test =
-  QCheck.Test.make ~count:1000 ~name:"list_rev_is_involutive"
-    QCheck.(list small_nat)
-    (fun l -> List.rev (List.rev l) = l)
-
-(* we can check right now the property... *)
-let _ = QCheck_runner.run_tests [ test ]
-
 let event_to_string e =
   ignore (Format.flush_str_formatter ());
   Interp.print_event Format.str_formatter e;
   Format.flush_str_formatter ()
 
-let () =
-  let rand_state = Random.get_state () in
-  (* +1 to ensure that no empty traces are generated *)
-  let size = QCheck.Gen.small_nat rand_state + 1 in
-  gen_trace size rand_state |> List.map event_to_string |> String.concat "\n"
-  |> print_endline
+let print_trace t = String.concat "\n" (List.map event_to_string t)
+let trace = QCheck.make ~print:print_trace gen_trace
+
+(* Run QCheck testing *)
+let test_backtranslation =
+  QCheck.Test.make ~count:1 ~name:"backtranslation is correct" trace (fun _ ->
+      false)
+
+let _ = QCheck_runner.run_tests [ test_backtranslation ]
