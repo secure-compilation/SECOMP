@@ -44,8 +44,8 @@ let binary_float : Floats.float QCheck.Gen.t =
 let eventval : Events.eventval QCheck.Gen.t =
   let open QCheck.Gen in
   let open Events in
-  let evint = map (fun i -> EVint (Camlcoq.Z.of_sint i)) small_signed_int in
-  let evlong = map (fun i -> EVlong (Camlcoq.Z.of_sint i)) small_signed_int in
+  let evint = map (fun i -> EVint i) coq_Z in
+  let evlong = map (fun i -> EVlong i) coq_Z in
   let evfloat = map (fun f -> EVfloat f) binary_float in
   let evsingle = map (fun f -> EVfloat f) binary_float in
   let evptr_global =
@@ -54,11 +54,10 @@ let eventval : Events.eventval QCheck.Gen.t =
   frequency
     [ (1, evint); (1, evlong); (1, evfloat); (1, evsingle); (1, evptr_global) ]
 
-let gen_syscall : Events.event QCheck.Gen.t =
+let gen_syscall size : Events.event QCheck.Gen.t =
   let open QCheck.Gen in
   let* name = name in
-  let arg_count = int_bound 5 in
-  let* args = list_size arg_count eventval in
+  let* args = list_size size eventval in
   let* ret_val = eventval in
   return (Events.Event_syscall (name, args, ret_val))
 
@@ -78,18 +77,16 @@ let gen_vstore : Events.event QCheck.Gen.t =
   let* value = eventval in
   return (Events.Event_vstore (mem_chunk, ident, ptr, value))
 
-let gen_annot : Events.event QCheck.Gen.t =
+let gen_annot size : Events.event QCheck.Gen.t =
   let open QCheck.Gen in
   let* name = name in
-  let len = int_bound 5 in
-  let* values = list_size len eventval in
+  let* values = list_size size eventval in
   return (Events.Event_annot (name, values))
 
-let gen_call src_compartment trgt_compartment : Events.event QCheck.Gen.t =
+let gen_call src_compartment trgt_compartment size : Events.event QCheck.Gen.t =
   let open QCheck.Gen in
   let* ident = ident in
-  let arg_count = int_bound 5 in
-  let* args = list_size arg_count eventval in
+  let* args = list_size size eventval in
   return (Events.Event_call (src_compartment, trgt_compartment, ident, args))
 
 let gen_return src_compartment trgt_compartment : Events.event QCheck.Gen.t =
@@ -97,10 +94,8 @@ let gen_return src_compartment trgt_compartment : Events.event QCheck.Gen.t =
   let* ret_val = eventval in
   return (Events.Event_return (src_compartment, trgt_compartment, ret_val))
 
-let gen_trace rand_state =
+let gen_trace size rand_state =
   let open QCheck.Gen in
-  let len = small_nat rand_state + 1 in
-  (* no empty traces will be generated *)
   let rec gen_trace_aux = function
     | 0 -> []
     | n -> (
@@ -110,8 +105,9 @@ let gen_trace rand_state =
             let n1, n2 = nat_split2 (n - 1) rand_state in
             let src_compartment = compartment rand_state in
             let trgt_compartment = compartment rand_state in
+            let arg_count = int_bound 5 in
             let call =
-              [ gen_call src_compartment trgt_compartment rand_state ]
+              [ gen_call src_compartment trgt_compartment arg_count rand_state ]
             in
             let between = gen_trace_aux n1 in
             let ret =
@@ -119,12 +115,16 @@ let gen_trace rand_state =
             in
             let after = gen_trace_aux n2 in
             List.concat [ call; between; ret; after ]
-        | _ when f < 0.7 -> gen_syscall rand_state :: gen_trace_aux (n - 1)
+        | _ when f < 0.7 ->
+            let arg_count = int_bound 5 in
+            gen_syscall arg_count rand_state :: gen_trace_aux (n - 1)
         | _ when f < 0.8 -> gen_vload rand_state :: gen_trace_aux (n - 1)
         | _ when f < 0.9 -> gen_vstore rand_state :: gen_trace_aux (n - 1)
-        | _ -> gen_annot rand_state :: gen_trace_aux (n - 1))
+        | _ ->
+            let size = int_bound 5 in
+            gen_annot size rand_state :: gen_trace_aux (n - 1))
   in
-  gen_trace_aux len
+  gen_trace_aux size
 
 let test =
   QCheck.Test.make ~count:1000 ~name:"list_rev_is_involutive"
@@ -140,5 +140,8 @@ let event_to_string e =
   Format.flush_str_formatter ()
 
 let () =
-  Random.get_state () |> gen_trace |> List.map event_to_string
-  |> String.concat "\n" |> print_endline
+  let rand_state = Random.get_state () in
+  (* +1 to ensure that no empty traces are generated *)
+  let size = QCheck.Gen.small_nat rand_state + 1 in
+  gen_trace size rand_state |> List.map event_to_string |> String.concat "\n"
+  |> print_endline
