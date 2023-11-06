@@ -1179,6 +1179,38 @@ Definition does_prefix (L: semantics) (m: finpref_behavior) : Prop :=
 
 Lemma state_split_decidable:
   forall st, s |= st ∈ Left \/ s |= st ∈ Right.
+Proof.
+  clear.
+Admitted.
+
+Lemma state_split_contra:
+  forall st, s |= st ∈ Left -> s |= st ∈ Right -> False.
+Proof.
+  clear.
+Admitted.
+
+Lemma star_E0_same_side_left: forall {p s1 s2 sd},
+  Star (semantics1 p) s1 E0 s2 ->
+  s |= s2 ∈ sd ->
+  s |= s1 ∈ sd.
+Proof.
+  clear.
+Admitted.
+
+Lemma star_E0_same_side_right: forall {p s1 s2 sd},
+  Star (semantics1 p) s1 E0 s2 ->
+  s |= s1 ∈ sd ->
+  s |= s2 ∈ sd.
+Proof.
+  clear.
+Admitted.
+
+Lemma right_state_injection_same_side_left: forall {j ge1 ge2 s1 s2 sd},
+  right_state_injection s j ge1 ge2 s1 s2 ->
+  s |= s2 ∈ sd ->
+  s |= s1 ∈ sd.
+Proof.
+  clear.
 Admitted.
 
 Lemma eval_expr_determinism: forall {ge e cp le m a vf1 vf2},
@@ -1187,7 +1219,7 @@ Lemma eval_expr_determinism: forall {ge e cp le m a vf1 vf2},
   vf1 = vf2.
 Proof.
   clear.
-Admitted.
+Admitted. (* Mutual recursion *)
 
 Lemma eval_exprlist_determinism: forall {ge e cp le m al tyargs vargs1 vargs2},
   eval_exprlist ge e cp le m al tyargs vargs1 ->
@@ -1215,13 +1247,11 @@ Proof.
   - inv MATCH1. inv MATCH2. reflexivity.
   - inv MATCH1. inv MATCH2.
     f_equal.
-    + (* This could be its own lemma, added assumptions needed? *)
+    + (* This could be its own lemma *)
       inv H1; inv H5; try reflexivity.
-      (* rewrite <- H in H6. *)
-      (* rewrite <- H0 in H8. *)
-      admit.
+      destruct (Senv.find_symbol_injective _ _ _ H0 H8). reflexivity.
     + eapply IH; eassumption.
-Admitted.
+Qed.
 
 Lemma call_trace_determinism (ge: genv): forall {cp cp' vf vargs ty t1 t2},
   call_trace ge cp cp' vf vargs ty t1 ->
@@ -1252,8 +1282,8 @@ Proof.
   - contradiction.
   - contradiction.
   - inv H0; inv H2; try reflexivity.
-    admit.
-Admitted.
+    destruct (Senv.find_symbol_injective _ _ _ H6 H10). reflexivity.
+Qed.
 
 Lemma eval_lvalue_determinism:
   forall {ge e cp le m a loc1 loc2 ofs1 ofs2 bf1 bf2},
@@ -1344,26 +1374,7 @@ Qed.
 
 (** Standard blame proof components *)
 
-(* CS.s_component scs1 \notin domm ctx *)
-Lemma parallel_concrete' j s1 t1 s1' s2 t2 s2':
-  right_state_injection s j ge1 ge2 s1 s2 ->
-  s |= s1 ∈ Right ->
-  Step (semantics1 W1) s1 t1 s1' ->
-  Step (semantics1 W2) s2 t2 s2' ->
-  t1 = t2 /\ right_state_injection s j ge1 ge2 s1' s2'.
-(* different j, plus may want to add hypothesis on match_traces *)
-Proof.
-  intros part in_prog1 step1 step2.
-  destruct (parallel_concrete _ _ _ _ _ part in_prog1 step1)
-    as (j' & s2'' & step2' & part').
-  assert (s2 = s2'') as <-. {
-    clear -step2 step2'.
-    destruct t1 as [| e [| e' t]].
-    - admit.
-    - admit.
-    - admit.
-  }
-Admitted.
+(* parallel_concrete' goes away *)
 
 (* Related to old [context_epsilon_star_is_silent'] *)
 Lemma parallel_star_E0: forall {j s1 s1' s2 s2'},
@@ -1524,25 +1535,22 @@ Proof.
     inv CONTRA. inv H0.
 Qed.
 
-Lemma step_event_E0: forall {p s s1 s2 e},
-  step1 (globalenv p) s (e :: nil) s1 ->
-  step1 (globalenv p) s E0 s2 ->
+Lemma step_E0_event: forall {p s s1 s2 e},
+  step1 (globalenv p) s E0 s1 ->
+  step1 (globalenv p) s (e :: nil) s2 ->
   False.
 Proof.
   clear.
   intros p s s1 s2 e STEP1 STEP2.
-  inv STEP1; inv STEP2.
+  inv STEP1; inv STEP2;
+    try parallel_statements.
   - parallel_classify_fun.
     parallel_eval_expr.
     parallel_eval_exprlist.
     parallel_call_trace.
-  - parallel_statements.
-  - parallel_statements.
   - parallel_eval_exprlist.
     destruct (external_call_determ _ _ _ _ _ _ _ _ _ _ H0 H13) as (? & ?).
     inv H1.
-  - parallel_statements.
-  - parallel_statements.
   - destruct (external_call_determ _ _ _ _ _ _ _ _ _ _ H H9) as (? & ?).
     inv H0.
   - pose proof return_trace_determinism _ EV EV0; discriminate.
@@ -1598,7 +1606,6 @@ Proof.
   now eauto 8.
 Qed.
 
-(* CS.s_component scs2' \notin domm ctx -> *)
 Lemma parallel_exec j s1 s1' s2 s2' n t t':
   right_state_injection s j ge1 ge2 s1 s2 ->
   Star (semantics1 W1) s1 (t ** t') s1' ->
@@ -1606,66 +1613,49 @@ Lemma parallel_exec j s1 s1' s2 s2' n t t':
   Nostep (semantics1 W2) s2' ->
   Smallstep.final_state (semantics1 W1) s1' n ->
   s |= s2' ∈ Right ->
-  exists n', Smallstep.final_state (semantics1 W2) s2' n'.
+  Smallstep.final_state (semantics1 W2) s2' n.
 Proof.
   rewrite <- (E0_right t) at 2.
   intros part star1 star2.
   exploit parallel_exec1; eauto.
   clear j star1 star2 part. intros (s1'' & s2'' & (j' & _ & _ & star1 & star2 & part)).
-  (* rewrite (CS.star_component star2) /=. *)
   clear s1 s2 t. rename s1'' into s1. rename s2'' into s2. rename j' into j.
   intros nostep2 final1 in_prog.
-  clear in_prog; assert (in_prog: s |= s2 ∈ Right) by admit.
+  apply (star_E0_same_side_left star2) in in_prog.
   revert j s2 part star2 nostep2 final1 in_prog.
-  induction star1 as [s1 | s1 t1 s1' t2 s1'' t step1 t1_t2 IH].
+  induction star1 as [s1 | s1 t1 s1' t2 s1'' t step1 _ IH].
   - intros j s2 part star2 nostep2 final1 in_prog.
-    assert (exists n', Smallstep.final_state (semantics1 W2) s2 n') as [n' final2]. {
-      (* inv final1. *)
-      (* destruct s2. *)
-      (* - inv part. inv H1. inv H2. simpl in *. subst. inv star2. *)
-      (*   + congruence. *)
-      (*   +  *)
-      (* destruct s2. simpl in *. *)
-      (* simpl. simpl in nostep2. unfold nostep2 in nostep2.  unfold final_state. *)
-      (* inv star2. *)
-      (* - eauto. *)
-      inv final1.
+    assert (final2: Smallstep.final_state (semantics1 W2) s2 n). {
       inv part.
-      - exfalso. admit.
-      - inv H1.
-        inv RCONTINJ.
-        inv RVALINJ.
-        revert H H0 RMEMINJ nostep2 in_prog.
-        remember (Returnstate (Vint n) Kstop m2 ty cp) as s2 eqn:Heqs2.
-        revert Heqs2.
+      - exfalso. eapply state_split_contra; now eauto.
+      - inv final1.
+        inv H1. inv RCONTINJ. inv RVALINJ.
         inv star2.
-        + intros. subst. exists n. now constructor.
-        + intros. subst. inv H.
-    }
-    revert n s1 j part nostep2 final1 in_prog n' final2.
+        + now constructor.
+        + now inv H1. }
+    inv final2.
     inv star2.
-    + intros. inv final2. exists n'. constructor.
-    + intros. inv final2. inv H.
+    + now constructor.
+    + now inv H.
   - intros j s2 part star2 nostep2 final1 in_prog2.
-    assert (in_prog1: s |= s1 ∈ Right) by admit.
+    pose proof right_state_injection_same_side_left part in_prog2 as in_prog1.
     pose proof parallel_concrete _ _ _ _ _ part in_prog1 step1 as pc.
     revert part nostep2 in_prog2 IH pc.
     elim star2 using star_E0_ind'; clear s2 s2' star2.
     + intros s2 _ nostep2 _ _ (_ & s2' & step2 & _).
       apply nostep2 in step2. contradiction.
     + intros s2 s21' s2'' step21 star2 ? part nostep2 in_prog2 IH (j' & s22' & step22 & part').
-      clear in_prog2; assert (in_prog2: s |= s21' ∈ Right) by admit.
+      apply (star_E0_same_side_right (star_one _ _ _ _ _ step21)) in in_prog2.
       assert (s21' = s22') as <-. {
         destruct t1 as [| e1 [| e1' t1]].
         - exact (state_determinism_E0 step21 step22).
-        - now destruct (step_event_E0 step22 step21).
+        - now destruct (step_E0_event step21 step22).
         - apply (sr_traces (semantics_receptive _)) in step22.
           inv step22. now inv H2. }
       clear step21 step22.
       exact (IH _ _ part' star2 nostep2 final1 in_prog2).
-Admitted.
+Qed.
 
-(* CS.s_component scs2' \in domm ctx. *)
 Lemma parallel_exec' j s1 s1' s2 s2' t e t':
   right_state_injection s j ge1 ge2 s1 s2 ->
   Star (semantics1 W1) s1 (t ** e :: t') s1' ->
@@ -1680,8 +1670,10 @@ Proof.
   intros (s1'' & s2'' & (j' & _ & _ & star1 & star2 & part)) nostep2.
   (* rewrite (CS.star_component star2) /=. *)
   clear s1 s2 t. rename s1'' into s1. rename s2'' into s2. rename j' into j.
-  assert (X: s |= s2 ∈ Left -> s |= s2' ∈ Left) by admit; apply X; clear X.
-  assert (in_prog2: s |= s2 ∈ Right) by admit; exfalso.
+  apply (star_E0_same_side_right star2).
+  destruct (state_split_decidable s2) as [in_prog2 | in_prog2];
+    [exact in_prog2 |].
+  exfalso.
   destruct (star_cons_inv _ _ _ _ _ (sr_traces (semantics_receptive _)) star1)
     as (s1a & s1b & star1a & step1b & _).
   clear star1.
@@ -1691,71 +1683,23 @@ Proof.
     assert (exists t s1a', Step (semantics1 W1) s1 t s1a') as (t & s1a' & step). {
       revert step1b. elim star1a using star_E0_ind'; now eauto. }
     intros part nostep2 in_prog2.
-    clear in_prog2; assert (in_prog2: s |= s1 ∈ Right) by admit.
+    apply (right_state_injection_same_side_left part) in in_prog2.
     exploit parallel_concrete; eauto. intros (j' & s2' & step2 & part').
     specialize (nostep2 _ _ step2). contradiction.
   - intros s2 s2' s2'' step2 star2 IH s1 star1 part nostep2 in_prog2.
     revert step1b IH part. elim star1 using star_E0_ind'; clear s1 s1a star1.
     + intros s1 step1b _ part.
-      clear in_prog2; assert (in_prog2: s |= s1 ∈ Right) by admit.
+      apply (right_state_injection_same_side_left part) in in_prog2.
       destruct (parallel_concrete _ _ _ _ _ part in_prog2 step1b)
         as (j' & s2a & step2' & part').
-      { (* Lemma *)
-        inv step2; inv step2'.
-        - match goal with
-          | H1: classify_fun ?X = _,
-            H2: classify_fun ?X = _ |- _ =>
-            rewrite H1 in H2; injection H2; intros; subst; clear H1
-          end.
-          match goal with
-          | H1: eval_expr ?GE ?E ?CP ?LE ?M ?A ?VF1,
-            H2: eval_expr ?GE ?E ?CP ?LE ?M ?A ?VF2 |- _ =>
-            pose proof eval_expr_determinism H1 H2; subst VF2; clear H2
-          end.
-          match goal with
-          | H1: eval_exprlist ?GE ?E ?CP ?LE ?M ?AL ?TYARGS ?VARGS1,
-            H2: eval_exprlist ?GE ?E ?CP ?LE ?M ?AL ?TYARGS ?VARGS2 |- _ =>
-            pose proof eval_exprlist_determinism H1 H2; subst VARGS2; clear H2
-          end.
-          match goal with
-          | H1: call_trace ?GE ?CP ?CP' ?VP ?VARGS ?TY ?T1,
-            H2: call_trace ?GE ?CP ?CP' ?VP ?VARGS ?TY ?T2 |- _ =>
-            pose proof call_trace_determinism _ H1 H2; try discriminate
-          end.
-        - match goal with
-          | H1: eval_exprlist ?GE ?E ?CP ?LE ?M ?AL ?TYARGS ?VARGS1,
-            H2: eval_exprlist ?GE ?E ?CP ?LE ?M ?AL ?TYARGS ?VARGS2 |- _ =>
-            pose proof eval_exprlist_determinism H1 H2; subst VARGS2; clear H2
-          end.
-          match goal with
-          | H1: external_call ?EF ?GE ?VARGS ?M ?T1 ?VRES1 ?M1,
-            H2: external_call ?EF ?GE ?VARGS ?M ?T2 ?VRES2 ?M2 |- _ =>
-            pose proof (external_call_determ _ _ _ _ _ _ _ _ _ _ H1 H2) as (? & ?)
-          end.
-          inv H1.
-        - destruct H; discriminate.
-        - destruct H; discriminate.
-        - destruct H; discriminate.
-        - destruct H; discriminate.
-        - match goal with
-          | H1: external_call ?EF ?GE ?VARGS ?M ?T1 ?VRES1 ?M1,
-            H2: external_call ?EF ?GE ?VARGS ?M ?T2 ?VRES2 ?M2 |- _ =>
-            pose proof (external_call_determ _ _ _ _ _ _ _ _ _ _ H1 H2) as (? & ?)
-          end.
-          inv H0.
-        - match goal with
-          | H1: return_trace ?GE ?CP ?CP' ?V ?TY ?T1,
-            H2: return_trace ?GE ?CP ?CP' ?V ?TY ?T2 |- _ =>
-            pose proof return_trace_determinism _ H1 H2; try discriminate
-          end.
-      }
+      exact (step_E0_event step2 step2').
     + intros s1 s1a s1a' step1a star1 _ step1b IH part.
-      assert (in_prog1: s |= s1 ∈ Right) by admit.
+      pose proof right_state_injection_same_side_left part in_prog2 as in_prog1.
       destruct (parallel_concrete_E0 _ _ _ _ _ _ part in_prog1 step1a step2)
         as [_ part'].
-      clear in_prog2; assert (in_prog2: s |= s2' ∈ Right) by admit.
+      apply (star_E0_same_side_right (star_one _ _ _ _ _ step2)) in in_prog2.
       exact (IH _ star1 part' nostep2 in_prog2).
-Admitted.
+Qed.
 
 (* CS.s_component scs2 \in domm (prog_interface c) -> *)
 (* last_comp t \in domm (prog_interface c). *)
