@@ -1,37 +1,37 @@
-(* QCheck arbitrary "instances" for relevant base types *)
+(* QCheck generators for relevant base types *)
 
-let memory_chunk : AST.memory_chunk QCheck.arbitrary =
-  QCheck.oneofl
+let memory_chunk : AST.memory_chunk QCheck.Gen.t =
+  QCheck.Gen.frequencyl
     AST.
       [
-        Mint8signed;
-        Mint8unsigned;
-        Mint16signed;
-        Mint16unsigned;
-        Mint32;
-        Mint64;
-        Mfloat32;
-        Mfloat64;
-        Many32;
-        Many64;
+        (1, Mint8signed);
+        (1, Mint8unsigned);
+        (1, Mint16signed);
+        (1, Mint16unsigned);
+        (1, Mint32);
+        (1, Mint64);
+        (1, Mfloat32);
+        (1, Mfloat64);
+        (1, Many32);
+        (1, Many64);
       ]
 
-let positive : BinNums.positive QCheck.arbitrary =
-  QCheck.(map (fun i -> Camlcoq.P.of_int (i + 1)) small_int)
+let positive : BinNums.positive QCheck.Gen.t =
+  QCheck.Gen.(map (fun i -> Camlcoq.P.of_int (i + 1)) small_nat)
 
-let coq_Z : BinNums.coq_Z QCheck.arbitrary =
-  QCheck.(map (fun i -> Camlcoq.Z.of_sint i) small_int)
+let coq_Z : BinNums.coq_Z QCheck.Gen.t =
+  QCheck.Gen.(map (fun i -> Camlcoq.Z.of_sint i) small_signed_int)
 
-let ident : AST.ident QCheck.arbitrary = positive
-let compartment : AST.compartment QCheck.arbitrary = positive
+let ident : AST.ident QCheck.Gen.t = positive
+let compartment : AST.compartment QCheck.Gen.t = positive
 
-let ptrofs : Integers.Ptrofs.int QCheck.arbitrary =
-  QCheck.map (fun i -> Integers.Ptrofs.of_int i) coq_Z
+let ptrofs : Integers.Ptrofs.int QCheck.Gen.t =
+  QCheck.Gen.map (fun i -> Integers.Ptrofs.of_int i) coq_Z
 
-let name : char list QCheck.arbitrary = QCheck.(small_list printable_char)
+let name : char list QCheck.Gen.t = QCheck.Gen.(small_list (char_range 'a' 'z'))
 
-let binary_float : Floats.float QCheck.arbitrary =
-  let open QCheck in
+let binary_float : Floats.float QCheck.Gen.t =
+  let open QCheck.Gen in
   let open Binary in
   let zero = map (fun b -> B754_zero b) bool in
   let infinity = map (fun b -> B754_infinity b) bool in
@@ -39,61 +39,56 @@ let binary_float : Floats.float QCheck.arbitrary =
   let finite =
     map (fun (b, p, z) -> B754_finite (b, p, z)) (triple bool positive coq_Z)
   in
-  oneof [ zero; infinity; nan; finite ]
+  frequency [ (1, zero); (1, infinity); (1, nan); (1, finite) ]
 
-let eventval : Events.eventval QCheck.arbitrary =
-  let open QCheck in
+let eventval : Events.eventval QCheck.Gen.t =
+  let open QCheck.Gen in
   let open Events in
-  let evint = map (fun i -> EVint (Camlcoq.Z.of_sint i)) small_int in
-  let evlong = map (fun i -> EVlong (Camlcoq.Z.of_sint i)) small_int in
+  let evint = map (fun i -> EVint (Camlcoq.Z.of_sint i)) small_signed_int in
+  let evlong = map (fun i -> EVlong (Camlcoq.Z.of_sint i)) small_signed_int in
   let evfloat = map (fun f -> EVfloat f) binary_float in
   let evsingle = map (fun f -> EVfloat f) binary_float in
   let evptr_global =
     map (fun (i, p) -> EVptr_global (i, p)) (pair ident ptrofs)
   in
-  oneof [ evint; evlong; evfloat; evsingle; evptr_global ]
+  frequency
+    [ (1, evint); (1, evlong); (1, evfloat); (1, evsingle); (1, evptr_global) ]
 
 let gen_syscall rand_state =
-  let open QCheck in
-  let name = get_gen name rand_state in
+  let name = name rand_state in
   let arg_count = QCheck.Gen.int_bound 5 in
-  let args = get_gen (list_of_size arg_count eventval) rand_state in
-  let ret_val = get_gen eventval rand_state in
+  let args = QCheck.Gen.list_size arg_count eventval rand_state in
+  let ret_val = eventval rand_state in
   Events.Event_syscall (name, args, ret_val)
 
 let gen_vload rand_state =
-  let open QCheck in
-  let mem_chunk = get_gen memory_chunk rand_state in
-  let ident = get_gen ident rand_state in
-  let ptr = get_gen ptrofs rand_state in
-  let value = get_gen eventval rand_state in
+  let mem_chunk = memory_chunk rand_state in
+  let ident = ident rand_state in
+  let ptr = ptrofs rand_state in
+  let value = eventval rand_state in
   Events.Event_vload (mem_chunk, ident, ptr, value)
 
 let gen_vstore rand_state =
-  let open QCheck in
-  let mem_chunk = get_gen memory_chunk rand_state in
-  let ident = get_gen ident rand_state in
-  let ptr = get_gen ptrofs rand_state in
-  let value = get_gen eventval rand_state in
+  let mem_chunk = memory_chunk rand_state in
+  let ident = ident rand_state in
+  let ptr = ptrofs rand_state in
+  let value = eventval rand_state in
   Events.Event_vstore (mem_chunk, ident, ptr, value)
 
 let gen_annot rand_state =
-  let open QCheck in
-  let name = get_gen name rand_state in
+  let name = name rand_state in
   let len = QCheck.Gen.int_bound 5 in
-  let values = get_gen (list_of_size len eventval) rand_state in
+  let values = QCheck.Gen.list_size len eventval rand_state in
   Events.Event_annot (name, values)
 
 let gen_call src_compartment trgt_compartment rand_state =
-  let open QCheck in
-  let ident = get_gen ident rand_state in
+  let ident = ident rand_state in
   let arg_count = QCheck.Gen.int_bound 5 in
-  let args = get_gen (list_of_size arg_count eventval) rand_state in
+  let args = QCheck.Gen.list_size arg_count eventval rand_state in
   Events.Event_call (src_compartment, trgt_compartment, ident, args)
 
 let gen_return src_compartment trgt_compartment rand_state =
-  let open QCheck in
-  let ret_val = get_gen eventval rand_state in
+  let ret_val = eventval rand_state in
   Events.Event_return (src_compartment, trgt_compartment, ret_val)
 
 let gen_trace rand_state =
@@ -107,8 +102,8 @@ let gen_trace rand_state =
         match f with
         | _ when f < 0.6 ->
             let n1, n2 = nat_split2 (n - 1) rand_state in
-            let src_compartment = QCheck.get_gen compartment rand_state in
-            let trgt_compartment = QCheck.get_gen compartment rand_state in
+            let src_compartment = compartment rand_state in
+            let trgt_compartment = compartment rand_state in
             let call =
               [ gen_call src_compartment trgt_compartment rand_state ]
             in
