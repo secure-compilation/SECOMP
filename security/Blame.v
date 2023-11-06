@@ -1181,29 +1181,50 @@ Lemma state_split_decidable:
   forall st, s |= st ∈ Left \/ s |= st ∈ Right.
 Proof.
   clear.
-Admitted.
+  intros [].
+  - simpl. destruct (s (comp_of f)); auto.
+  - simpl. destruct (s (comp_of fd)); auto.
+  - simpl. destruct (s cp); auto.
+Qed.
 
 Lemma state_split_contra:
   forall st, s |= st ∈ Left -> s |= st ∈ Right -> False.
 Proof.
   clear.
-Admitted.
+  intros [].
+  - simpl. destruct (s (comp_of f)); discriminate.
+  - simpl. destruct (s (comp_of fd)); discriminate.
+  - simpl. destruct (s cp); discriminate.
+Qed.
 
-Lemma star_E0_same_side_left: forall {p s1 s2 sd},
-  Star (semantics1 p) s1 E0 s2 ->
-  s |= s2 ∈ sd ->
-  s |= s1 ∈ sd.
+Lemma step_E0_same_side: forall {p s1 s2 sd},
+  Step (semantics1 p) s1 E0 s2 ->
+  s |= s1 ∈ sd <-> s |= s2 ∈ sd.
 Proof.
   clear.
-Admitted.
+  intros p s1 s2 sd STEP.
+  inv STEP; try easy.
+  - inv EV. unfold Genv.type_of_call in H4.
+    destruct (_ =? _)%positive eqn:EQ; [| contradiction].
+    simpl. apply Pos.eqb_eq in EQ. rewrite EQ.
+    unfold Genv.find_comp. rewrite H2. easy.
+  - inv EV. unfold Genv.type_of_call in H.
+    destruct (_ =? _)%positive eqn:EQ; [| contradiction].
+    simpl. apply Pos.eqb_eq in EQ. rewrite EQ. easy.
+Qed.
 
-Lemma star_E0_same_side_right: forall {p s1 s2 sd},
+Lemma star_E0_same_side: forall {p s1 s2 sd},
   Star (semantics1 p) s1 E0 s2 ->
-  s |= s1 ∈ sd ->
-  s |= s2 ∈ sd.
+  s |= s1 ∈ sd <-> s |= s2 ∈ sd.
 Proof.
   clear.
-Admitted.
+  intros p s1 s2 sd STAR.
+  elim STAR using star_E0_ind; clear s1 s2 STAR.
+  - easy.
+  - intros s1 s2 s3 STEP12 IH.
+    rewrite (step_E0_same_side STEP12).
+    auto.
+Qed.
 
 Lemma right_state_injection_same_side_left: forall {j ge1 ge2 s1 s2 sd},
   right_state_injection s j ge1 ge2 s1 s2 ->
@@ -1212,6 +1233,13 @@ Lemma right_state_injection_same_side_left: forall {j ge1 ge2 s1 s2 sd},
 Proof.
   clear.
 Admitted.
+  intros j ge1 ge2 s1 s2 sd RINJ SIDE.
+  destruct sd; inv RINJ.
+  - assumption.
+  - exfalso. eapply state_split_contra; eauto.
+  - exfalso. eapply state_split_contra; eauto.
+  - assumption.
+Qed.
 
 Lemma eval_expr_determinism: forall {ge e cp le m a vf1 vf2},
   eval_expr ge e cp le m a vf1 ->
@@ -1219,7 +1247,7 @@ Lemma eval_expr_determinism: forall {ge e cp le m a vf1 vf2},
   vf1 = vf2.
 Proof.
   clear.
-Admitted. (* Mutual recursion *)
+Admitted. (* Mutual induction *)
 
 Lemma eval_exprlist_determinism: forall {ge e cp le m al tyargs vargs1 vargs2},
   eval_exprlist ge e cp le m al tyargs vargs1 ->
@@ -1621,7 +1649,7 @@ Proof.
   clear j star1 star2 part. intros (s1'' & s2'' & (j' & _ & _ & star1 & star2 & part)).
   clear s1 s2 t. rename s1'' into s1. rename s2'' into s2. rename j' into j.
   intros nostep2 final1 in_prog.
-  apply (star_E0_same_side_left star2) in in_prog.
+  apply (star_E0_same_side star2) in in_prog.
   revert j s2 part star2 nostep2 final1 in_prog.
   induction star1 as [s1 | s1 t1 s1' t2 s1'' t step1 _ IH].
   - intros j s2 part star2 nostep2 final1 in_prog.
@@ -1645,7 +1673,7 @@ Proof.
     + intros s2 _ nostep2 _ _ (_ & s2' & step2 & _).
       apply nostep2 in step2. contradiction.
     + intros s2 s21' s2'' step21 star2 ? part nostep2 in_prog2 IH (j' & s22' & step22 & part').
-      apply (star_E0_same_side_right (star_one _ _ _ _ _ step21)) in in_prog2.
+      apply (star_E0_same_side (star_one _ _ _ _ _ step21)) in in_prog2.
       assert (s21' = s22') as <-. {
         destruct t1 as [| e1 [| e1' t1]].
         - exact (state_determinism_E0 step21 step22).
@@ -1668,9 +1696,8 @@ Proof.
   exploit parallel_exec1; eauto.
   clear j star1 star2 part.
   intros (s1'' & s2'' & (j' & _ & _ & star1 & star2 & part)) nostep2.
-  (* rewrite (CS.star_component star2) /=. *)
   clear s1 s2 t. rename s1'' into s1. rename s2'' into s2. rename j' into j.
-  apply (star_E0_same_side_right star2).
+  apply (star_E0_same_side star2).
   destruct (state_split_decidable s2) as [in_prog2 | in_prog2];
     [exact in_prog2 |].
   exfalso.
@@ -1697,7 +1724,7 @@ Proof.
       pose proof right_state_injection_same_side_left part in_prog2 as in_prog1.
       destruct (parallel_concrete_E0 _ _ _ _ _ _ part in_prog1 step1a step2)
         as [_ part'].
-      apply (star_E0_same_side_right (star_one _ _ _ _ _ step2)) in in_prog2.
+      apply (star_E0_same_side (star_one _ _ _ _ _ step2)) in in_prog2.
       exact (IH _ star1 part' nostep2 in_prog2).
 Qed.
 
@@ -1826,13 +1853,13 @@ Proof.
       as Hparallel.
     destruct (state_split_decidable sfin2) as [Hparallel1 | Hparallel1].
     + exact (blame_last_comp_star _ _ _ _ Hini2 HStar2 Hparallel1).
-    + specialize (Hparallel Hparallel1) as [n' Hfinal2].
-      specialize (Hnot_final2 n'). contradiction.
+    + specialize (Hparallel Hparallel1) as Hfinal2.
+      specialize (Hnot_final2 n). contradiction.
   - simpl in Hnot_wrong'. contradiction.
   - simpl. destruct tm'.
     + left. exists (Goes_wrong nil). simpl. repeat rewrite E0_right. reflexivity.
     + right.
-      pose proof parallel_exec' _ _ _ _ _ _ _ _ _ _
+      pose proof parallel_exec' _ _ _ _ _ _ _ _
         Hpartialize
         HStar1 HStar2 HNostep2
         as Hparallel.
