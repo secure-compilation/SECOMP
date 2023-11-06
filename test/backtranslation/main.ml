@@ -54,42 +54,48 @@ let eventval : Events.eventval QCheck.Gen.t =
   frequency
     [ (1, evint); (1, evlong); (1, evfloat); (1, evsingle); (1, evptr_global) ]
 
-let gen_syscall rand_state =
-  let name = name rand_state in
-  let arg_count = QCheck.Gen.int_bound 5 in
-  let args = QCheck.Gen.list_size arg_count eventval rand_state in
-  let ret_val = eventval rand_state in
-  Events.Event_syscall (name, args, ret_val)
+let gen_syscall : Events.event QCheck.Gen.t =
+  let open QCheck.Gen in
+  let* name = name in
+  let arg_count = int_bound 5 in
+  let* args = list_size arg_count eventval in
+  let* ret_val = eventval in
+  return (Events.Event_syscall (name, args, ret_val))
 
-let gen_vload rand_state =
-  let mem_chunk = memory_chunk rand_state in
-  let ident = ident rand_state in
-  let ptr = ptrofs rand_state in
-  let value = eventval rand_state in
-  Events.Event_vload (mem_chunk, ident, ptr, value)
+let gen_vload : Events.event QCheck.Gen.t =
+  let open QCheck.Gen in
+  let* mem_chunk = memory_chunk in
+  let* ident = ident in
+  let* ptr = ptrofs in
+  let* value = eventval in
+  return (Events.Event_vload (mem_chunk, ident, ptr, value))
 
-let gen_vstore rand_state =
-  let mem_chunk = memory_chunk rand_state in
-  let ident = ident rand_state in
-  let ptr = ptrofs rand_state in
-  let value = eventval rand_state in
-  Events.Event_vstore (mem_chunk, ident, ptr, value)
+let gen_vstore : Events.event QCheck.Gen.t =
+  let open QCheck.Gen in
+  let* mem_chunk = memory_chunk in
+  let* ident = ident in
+  let* ptr = ptrofs in
+  let* value = eventval in
+  return (Events.Event_vstore (mem_chunk, ident, ptr, value))
 
-let gen_annot rand_state =
-  let name = name rand_state in
-  let len = QCheck.Gen.int_bound 5 in
-  let values = QCheck.Gen.list_size len eventval rand_state in
-  Events.Event_annot (name, values)
+let gen_annot : Events.event QCheck.Gen.t =
+  let open QCheck.Gen in
+  let* name = name in
+  let len = int_bound 5 in
+  let* values = list_size len eventval in
+  return (Events.Event_annot (name, values))
 
-let gen_call src_compartment trgt_compartment rand_state =
-  let ident = ident rand_state in
-  let arg_count = QCheck.Gen.int_bound 5 in
-  let args = QCheck.Gen.list_size arg_count eventval rand_state in
-  Events.Event_call (src_compartment, trgt_compartment, ident, args)
+let gen_call src_compartment trgt_compartment : Events.event QCheck.Gen.t =
+  let open QCheck.Gen in
+  let* ident = ident in
+  let arg_count = int_bound 5 in
+  let* args = list_size arg_count eventval in
+  return (Events.Event_call (src_compartment, trgt_compartment, ident, args))
 
-let gen_return src_compartment trgt_compartment rand_state =
-  let ret_val = eventval rand_state in
-  Events.Event_return (src_compartment, trgt_compartment, ret_val)
+let gen_return src_compartment trgt_compartment : Events.event QCheck.Gen.t =
+  let open QCheck.Gen in
+  let* ret_val = eventval in
+  return (Events.Event_return (src_compartment, trgt_compartment, ret_val))
 
 let gen_trace rand_state =
   let open QCheck.Gen in
@@ -134,6 +140,5 @@ let event_to_string e =
   Format.flush_str_formatter ()
 
 let () =
-  let rand_state = Random.get_state () in
-  let t = gen_trace rand_state in
-  print_endline (String.concat "\n" (List.map event_to_string t))
+  Random.get_state () |> gen_trace |> List.map event_to_string
+  |> String.concat "\n" |> print_endline
