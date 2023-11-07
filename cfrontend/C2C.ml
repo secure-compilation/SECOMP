@@ -1377,7 +1377,8 @@ let helper_function_declaration cp (name, tyres, tyargs) =
   let tyargs =
     List.fold_right (fun t tl -> Tcons(t, tl)) tyargs Tnil in
   let ef =
-    AST.EF_runtime(cp, coqstring_of_camlstring name,
+    (* AST.EF_runtime(cp, coqstring_of_camlstring name, *)
+    AST.EF_runtime(cp, Builtins0.standard_builtin_name (coqstring_of_camlstring name) cp,
                    signature_of_type tyargs tyres AST.cc_default) in
   (intern_string name,
    AST.Gfun (Ctypes.External(ef, tyargs, tyres, AST.cc_default)))
@@ -1385,6 +1386,7 @@ let helper_function_declaration cp (name, tyres, tyargs) =
 let add_helper_functions_cp cp globs =
   List.map (helper_function_declaration cp) (helper_functions()) @ globs
 
+(* FIXME: This is only adding declarations, not copying the functions proper! *)
 let rec add_helper_functions cps gl2 =
   match cps with
   | [] -> gl2
