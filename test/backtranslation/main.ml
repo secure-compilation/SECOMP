@@ -130,7 +130,127 @@ let gen_trace rand_state =
   in
   gen_trace_aux size
 
-let event_to_string e =
+let gen_graph max_size rand_state : (int * int) list = 
+  let open QCheck.Gen in
+  let n = int_bound max_size rand_state + 1 in
+  let adjacency = Array.make_matrix n n 0 in
+  for i = 0 to (n - 1) do 
+    let row = int_bound (n - 1) rand_state in
+    let col = int_bound (n - 1) rand_state in
+    let () = adjacency.(row).(col) <- 1 in
+    let () = adjacency.(col).(row) <- 1 in
+    ()
+  done;
+  let result = ref [] in
+  for row = 0 to n - 1 do
+    for col = 0 to n - 1 do
+      if adjacency.(row).(col) <> 0
+        then result := (Int.min row col, Int.max row col) :: !result
+        else ()
+    done
+  done;
+  let compare (x1, x2) (y1, y2) = if Int.compare x1 y1 = 0 then Int.compare x2 y2 else Int.compare x1 y1 in
+  List.sort_uniq compare !result
+
+let make_consecutive edge_list : (int * int) list =
+  let vertices = List.sort_uniq (Int.compare) (List.map fst edge_list @ List.map snd edge_list) in
+  let new_idcs = List.mapi (fun idx elt -> (elt, idx)) vertices in
+  List.map (fun (src, trgt) -> (List.assoc src new_idcs, List.assoc trgt new_idcs)) edge_list
+
+let scc edge_list : (int * int) list =
+  match edge_list with
+  | [] -> []
+  | (root, _) :: es ->
+    let did_update = ref true in
+    let reachable = ref [root] in
+    while !did_update do
+      did_update := false;
+      for i = 0 to List.length edge_list - 1 do
+        let (src, trgt) = List.nth edge_list i in
+          if List.mem src !reachable && not (List.mem trgt !reachable)
+            then
+            (reachable := trgt :: !reachable; did_update := true)
+          else
+            (if List.mem trgt !reachable && not (List.mem src !reachable)
+              then
+            (reachable := src :: !reachable;
+            did_update := true)
+           else
+              ())
+      done;
+    done;
+    List.filter (fun (src, trgt) -> List.exists (fun n -> n = src || n = trgt) !reachable) edge_list
+
+type graph = (int * (int list)) list
+
+let convert_graph edge_list =
+  let vertices = List.sort_uniq Int.compare (List.map fst edge_list @ List.map snd edge_list) in
+  let neighbors v = List.sort_uniq Int.compare (List.filter_map (fun (w1, w2) -> 
+    if w1 = v && not (w2 = v)
+    then Option.some w2
+    else 
+      (if not (w1 = v) && w2 = v
+        then Option.some w1
+        else Option.none))
+ edge_list) in
+  List.map (fun v -> (v, neighbors v)) vertices
+
+let sample_exports graph rand_state =
+  let open QCheck.Gen in
+  let n = List.length graph in
+  (* map succ to ensure that each compartment exports at least one function *)
+  let sample = list_size (map succ (int_bound 15)) small_nat in
+  Array.init n (fun _ -> List.sort_uniq Int.compare (sample rand_state))
+
+let sample_sublist list rand_state =
+  match list with
+  | [] -> []
+  | [x] -> [x]
+  | xs ->
+    let open QCheck.Gen in
+    let len = List.length xs in
+    let len_sublist = int_bound (len - 1) rand_state + 1 in
+    (* len sublist is random in [1,len] *)
+    let shuffled_list = shuffle_l xs rand_state in
+    List.of_seq (Seq.take len_sublist (List.to_seq shuffled_list))
+
+let sample_imports graph exports rand_state =
+  let open QCheck.Gen in
+  let vertices = List.map fst graph in
+  let has_neighbor v w = List.mem w (List.assoc v graph) in
+  let n = List.length vertices in
+  let imports = Array.make_matrix n n [] in
+  (* imports.(self).(other) contains a list of all functions that compartment self imports from compartment other *)
+  for self = 0 to n - 1 do
+    for other = 0 to n - 1 do
+      if has_neighbor self other
+      then begin
+        let all_exports = exports.(other) in
+        imports.(self).(other) <- List.sort Int.compare (sample_sublist all_exports rand_state)
+      end
+      else ()
+    done
+  done;
+  imports
+
+let sample_env rand_state =
+  let max_graph_size = 10 in
+  let edge_list = gen_graph max_graph_size rand_state in
+  let scc = make_consecutive (scc edge_list) in
+  let adj_list = convert_graph scc in
+  let exports = sample_exports adj_list rand_state in
+  let imports = sample_imports adj_list exports rand_state in
+  (adj_list, exports, imports)
+
+let graph_to_dot adj_list =
+  let fmt = Printf.sprintf in
+  let edges = List.concat_map (fun (src, trgts) -> List.map (fun t -> if src < t then (src, t) else (t, src)) trgts) adj_list in
+  let compare (x1, y1) (x2, y2) = if Int.compare x1 x2 = 0 then Int.compare y1 y2 else Int.compare x1 x2 in
+  let edges = List.sort_uniq compare edges in
+  let string_of_edge (src, trgt) = fmt "  %d -- %d;" src trgt in
+  fmt "graph {\n%s\n}" (String.concat "\n" (List.map string_of_edge edges))
+
+(* let event_to_string e =
   ignore (Format.flush_str_formatter ());
   Interp.print_event Format.str_formatter e;
   Format.flush_str_formatter ()
@@ -143,4 +263,30 @@ let test_backtranslation =
   QCheck.Test.make ~count:1 ~name:"backtranslation is correct" trace (fun _ ->
       false)
 
-let _ = QCheck_runner.run_tests [ test_backtranslation ]
+let _ = QCheck_runner.run_tests [ test_backtranslation ] *)
+
+let dump_exports exports =
+  let open Printf in
+  printf "Exports:\n";
+  Array.iteri (fun i es -> printf "%i --> [%s]\n" i (String.concat "," (List.map (sprintf "%i") es))) exports
+
+let dump_imports imports =
+  let open Printf in
+  printf "Imports:\n";
+  for self = 0 to Array.length imports - 1 do
+    for other = 0 to Array.length imports - 1 do
+      if List.length imports.(self).(other) = 0
+        then ()
+    else 
+      printf "%i <-- %i: [%s]\n" self other (String.concat "," (List.map (fun f -> sprintf "%d" f) imports.(self).(other)))
+    done
+  done
+
+let () =
+    let () = Random.self_init () in
+    let rand_state = Random.get_state () in
+    let (graph, exports, imports) = sample_env rand_state in
+    let () = Out_channel.with_open_text "graph.dot" (fun f -> output_string f (graph_to_dot graph)) in
+    let _ = Unix.system "dot -Tpng graph.dot > graph.png" in
+    let () = print_endline "Generated graph.png" in
+    dump_exports exports; dump_imports imports
