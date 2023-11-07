@@ -1101,35 +1101,6 @@ Definition last_comp_in_trace (t: trace): compartment :=
 Definition blame_on_program (t: trace) :=
   s (last_comp_in_trace t) = Left.
 
-(** Utilities *)
-
-Lemma star_cons_inv L s1 e t s2 :
-  single_events L ->
-  Star L s1 (e :: t) s2 ->
-  exists s1' s2', Star L s1 E0 s1' /\ Step L s1' (e :: nil) s2' /\ Star L s2' t s2.
-Admitted. (* Easy, proof exists *)
-
-Lemma star_app_inv L :
-  single_events L ->
-  forall s1 t1 t2 s2,
-    Star L s1 (t1 ** t2) s2 ->
-  exists s, Star L s1 t1 s /\ Star L s t2 s2.
-Admitted. (* Easy, proof exists *)
-
-Lemma forever_reactive_app_inv L :
-  single_events L ->
-  forall s1 t T,
-    Forever_reactive L s1 (t *** T) ->
-  exists s2, Star L s1 t s2 /\ Forever_reactive L s2 T.
-Admitted. (* Easy, proof exists *)
-
-Lemma star_E0_ind' L (P : Smallstep.state L -> Smallstep.state L -> Prop) :
-  (forall s, P s s) ->
-  (forall s1 s2 s3, Step L s1 E0 s2 -> Star L s2 E0 s3 -> P s2 s3 -> P s1 s3) ->
-  forall s1 s2, Star L s1 E0 s2 -> P s1 s2.
-Proof.
-Admitted.
-
 (** Traces and prefixes *)
 
 Inductive finpref_behavior : Type :=
@@ -1178,7 +1149,6 @@ Definition does_prefix (L: semantics) (m: finpref_behavior) : Prop :=
 Lemma state_split_decidable:
   forall st, s |= st ∈ Left \/ s |= st ∈ Right.
 Proof.
-  clear.
   intros [].
   - simpl. destruct (s (comp_of f)); auto.
   - simpl. destruct (s (comp_of fd)); auto.
@@ -1188,7 +1158,6 @@ Qed.
 Lemma state_split_contra:
   forall st, s |= st ∈ Left -> s |= st ∈ Right -> False.
 Proof.
-  clear.
   intros [].
   - simpl. destruct (s (comp_of f)); discriminate.
   - simpl. destruct (s (comp_of fd)); discriminate.
@@ -1199,7 +1168,6 @@ Lemma step_E0_same_side: forall {p s1 s2 sd},
   Step (semantics1 p) s1 E0 s2 ->
   s |= s1 ∈ sd <-> s |= s2 ∈ sd.
 Proof.
-  clear.
   intros p s1 s2 sd STEP.
   inv STEP; try easy.
   - inv EV. unfold Genv.type_of_call in H4.
@@ -1215,7 +1183,6 @@ Lemma star_E0_same_side: forall {p s1 s2 sd},
   Star (semantics1 p) s1 E0 s2 ->
   s |= s1 ∈ sd <-> s |= s2 ∈ sd.
 Proof.
-  clear.
   intros p s1 s2 sd STAR.
   elim STAR using star_E0_ind; clear s1 s2 STAR.
   - easy.
@@ -1229,7 +1196,6 @@ Lemma right_state_injection_same_side_left: forall {j ge1 ge2 s1 s2 sd},
   s |= s2 ∈ sd ->
   s |= s1 ∈ sd.
 Proof.
-  clear.
   intros j ge1 ge2 s1 s2 sd RINJ SIDE.
   destruct sd; inv RINJ.
   - assumption.
@@ -1274,10 +1240,10 @@ Proof.
     (* Base case: follows trivially from the assumptions *)
     [do 3 eexists; now eauto using star_refl |].
   (* Inductive case *)
-  destruct (star_cons_inv _ _ _ _ _ (sr_traces (semantics_receptive _)) STAR1)
+  destruct (star_cons_inv (sr_traces (semantics_receptive _)) STAR1)
     as (s1_1 & s1_2 & STAR1_1 & STEP1_2 & STAR1_3).
   change (_ t t1) with (t ** t1) in STAR1_3. clear STAR1.
-  destruct (star_cons_inv _ _ _ _ _ (sr_traces (semantics_receptive _)) STAR2)
+  destruct (star_cons_inv (sr_traces (semantics_receptive _)) STAR2)
     as (s2_1 & s2_2 & STAR2_1 & STEP2_2 & STAR2_3).
   change (_ t t2) with (t ** t2) in STAR2_3. clear STAR2.
   assert (RINJ' := parallel_star_E0 RINJ STAR1_1 STAR2_1).
@@ -1367,7 +1333,7 @@ Proof.
   destruct (state_split_decidable s2) as [in_prog2 | in_prog2];
     [exact in_prog2 |].
   exfalso.
-  destruct (star_cons_inv _ _ _ _ _ (sr_traces (semantics_receptive _)) star1)
+  destruct (star_cons_inv (sr_traces (semantics_receptive _)) star1)
     as (s1a & s1b & star1a & step1b & _).
   clear star1.
   revert s1 star1a part nostep2 in_prog2. elim star2 using star_E0_ind';
@@ -1412,7 +1378,7 @@ Lemma initial_state_injection s1 s2 :
   exists j,
     right_state_injection s j ge1 ge2 s1 s2.
 Proof.
-Admitted.
+Admitted. (* Another standard assumption about initial states *)
 
 (* - Quantify over p vs. W1 *)
 Lemma does_prefix_star
@@ -1441,7 +1407,7 @@ Proof.
         destruct b as [tb | tb | tb | tb];
           try discriminate.
         inversion Hb'; subst.
-        destruct (star_app_inv _ (sr_traces (semantics_receptive _)) _ _ _ _ Hstar)
+        destruct (star_app_inv (sr_traces (semantics_receptive _)) _ _ Hstar)
           as [s1 [Hstar1 Hstar2]].
         exists s0, s1. split; [| split]; try assumption.
         now intros ? [t' Hcontra].
@@ -1452,7 +1418,7 @@ Proof.
       destruct b as [tb | tb | tb | tb];
         try discriminate.
       inversion Hb'; subst.
-      destruct (star_app_inv _ (sr_traces (semantics_receptive _)) _ _ _ _ Hstar)
+      destruct (star_app_inv (sr_traces (semantics_receptive _)) _ _ Hstar)
         as [s1 [Hstar1 Hstar2]].
       exists s0, s1. split; [| split]; try assumption.
       now intros ? [t' Hcontra].
@@ -1463,7 +1429,7 @@ Proof.
         try discriminate.
       inversion Hb'; subst.
       (* The only difference in this case is the lemma to be applied here. *)
-      destruct (forever_reactive_app_inv _ (sr_traces (semantics_receptive _)) _ _ _ Hreact)
+      destruct (forever_reactive_app_inv (sr_traces (semantics_receptive _)) _ _ Hreact)
         as [s1 [Hstar Hreact']].
       exists s0, s1. split; [| split]; try assumption.
       now intros ? [t' Hcontra].
@@ -1474,7 +1440,7 @@ Proof.
       destruct b as [tb | tb | tb | tb];
         try discriminate.
       inversion Hb'; subst.
-      destruct (star_app_inv _ (sr_traces (semantics_receptive _)) _ _ _ _ Hstar)
+      destruct (star_app_inv (sr_traces (semantics_receptive _)) _ _ Hstar)
         as [s1 [Hstar1 Hstar2]].
       exists s0, s1. split; [| split]; try assumption.
       now intros ? [t' Hcontra].
