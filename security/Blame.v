@@ -1047,6 +1047,7 @@ Section Simulation.
     (* rely on determinacy lemma with empty traces? *)
   Admitted.
 
+  (* NOTE: Currently unused by proofs below (useful for E0 star?) *)
   Lemma parallel_abstract_E0: forall j s1 s2 s1' s2',
     right_state_injection s j ge1 ge2 s1 s2 ->
     s |= s1 ∈ Left ->
@@ -1232,7 +1233,6 @@ Lemma right_state_injection_same_side_left: forall {j ge1 ge2 s1 s2 sd},
   s |= s1 ∈ sd.
 Proof.
   clear.
-Admitted.
   intros j ge1 ge2 s1 s2 sd RINJ SIDE.
   destruct sd; inv RINJ.
   - assumption.
@@ -1241,13 +1241,99 @@ Admitted.
   - assumption.
 Qed.
 
+Lemma deref_loc_determ: forall {cp ty m v ofs bf v1 v2},
+  deref_loc cp ty m v ofs bf v1 ->
+  deref_loc cp ty m v ofs bf v2 ->
+  v1 = v2.
+Proof.
+  intros until v2; intros DEREF1 DEREF2.
+  inv DEREF1; inv DEREF2; try congruence.
+  inv H. inv H5. congruence. (* lemma for load_bitfield_determ? *)
+Qed.
+
+Lemma eval_expr_lvalue_determ ge e cp le m:
+  (forall a vf1,
+     eval_expr ge e cp le m a vf1 ->
+   forall vf2,
+     eval_expr ge e cp le m a vf2 ->
+     vf1 = vf2)
+/\(forall a loc1 ofs1 bf1,
+     eval_lvalue ge e cp le m a loc1 ofs1 bf1 ->
+   forall loc2 ofs2 bf2,
+     eval_lvalue ge e cp le m a loc2 ofs2 bf2 ->
+     loc1 = loc2 /\ ofs1 = ofs2 /\ bf1 = bf2).
+Proof.
+  clear.
+  apply eval_expr_lvalue_ind; intros.
+  - inv H.
+    + reflexivity.
+    + inv H0.
+  - inv H.
+    + reflexivity.
+    + inv H0.
+  - inv H.
+    + reflexivity.
+    + inv H0.
+  - inv H.
+    + reflexivity.
+    + inv H0.
+  - inv H. inv H0.
+    + congruence.
+    + inv H.
+  - inv H1.
+    + apply H0 in H5 as (? & ? & _). congruence.
+    + inv H2.
+  - inv H2.
+    + apply H0 in H7. congruence.
+    + inv H3.
+  - inv H4.
+    + apply H0 in H10. apply H2 in H11. congruence.
+    + inv H5.
+  - inv H2.
+    + apply H0 in H5. congruence.
+    + inv H3.
+  - inv H.
+    + reflexivity.
+    + inv H0.
+  - inv H.
+    + reflexivity.
+    + inv H0.
+  - inv H2; try now inv H.
+    apply H0 in H3 as (<- & <- & <-).
+    eapply deref_loc_determ; eauto.
+  - inv H0.
+    + rewrite H in H6. injection H6 as <-. auto.
+    + congruence.
+  - inv H2.
+    + congruence.
+    + rewrite H0 in H6. injection H6 as <-. auto.
+  - inv H1. apply H0 in H7. injection H7 as <- <-. auto.
+  - inv H4.
+    + apply H0 in H8. injection H8 as <- <-.
+      rewrite H1 in H9. injection H9 as <- <-.
+      rewrite H2 in H13. injection H13 as <-.
+      rewrite H3 in H14. injection H14 as <- <-.
+      auto.
+    + congruence.
+  - inv H4. (* symmetric case *)
+    + congruence.
+    + apply H0 in H8. injection H8 as <- <-.
+      rewrite H1 in H9. injection H9 as <- <-.
+      rewrite H2 in H13. injection H13 as <-.
+      rewrite H3 in H14. injection H14 as <- <-.
+      auto.
+Qed.
+
 Lemma eval_expr_determinism: forall {ge e cp le m a vf1 vf2},
   eval_expr ge e cp le m a vf1 ->
   eval_expr ge e cp le m a vf2 ->
   vf1 = vf2.
 Proof.
   clear.
-Admitted. (* Mutual induction *)
+  intros until m.
+  pose proof proj1 (eval_expr_lvalue_determ ge e cp le m).
+  eauto.
+Qed.
 
 Lemma eval_exprlist_determinism: forall {ge e cp le m al tyargs vargs1 vargs2},
   eval_exprlist ge e cp le m al tyargs vargs1 ->
@@ -1320,23 +1406,9 @@ Lemma eval_lvalue_determinism:
     loc1 = loc2 /\ ofs1 = ofs2 /\ bf1 = bf2.
 Proof.
   clear.
-  intros until bf2; intros EVAL1 EVAL2.
-  inv EVAL1; inv EVAL2.
-  - rewrite H in H5. injection H5 as <-. now auto.
-  - congruence.
-  - congruence.
-  - rewrite H0 in H5. injection H5 as <-. now auto.
-  - injection (eval_expr_determinism H H5) as <- <-. now auto.
-  - injection (eval_expr_determinism H H6) as <- <-.
-    rewrite H0 in H7. injection H7 as <-.
-    rewrite H1 in H11. injection H11 as <-.
-    rewrite H2 in H12. injection H12 as <- <-. now auto.
-  - congruence.
-  - congruence.
-  - injection (eval_expr_determinism H H6) as <- <-.
-    rewrite H0 in H7. injection H7 as <-.
-    rewrite H1 in H11. injection H11 as <-.
-    rewrite H2 in H12. injection H12 as <- <-. now auto.
+  intros until m.
+  pose proof proj2 (eval_expr_lvalue_determ ge e cp le m).
+  eauto.
 Qed.
 
 Lemma assign_loc_determinism: forall {ce cp ty m b ofs bf v m1 m2},
@@ -1736,7 +1808,7 @@ Lemma blame_last_comp_star p s1 t s2:
   s |= s2 ∈ Left ->
   blame_on_program t.
 Proof.
-Admitted.
+Admitted. (* With default_compartment gone, needs minor adjustments *)
 
 (* - Related to old [partialize_partition]
    - We may want to be more explicit about the initial injection *)
