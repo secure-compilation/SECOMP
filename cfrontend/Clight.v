@@ -787,8 +787,365 @@ Proof.
   inv EV; auto.
 Qed.
 
-Section SECURITY.
+Section DETERMINISM.
 
+Lemma deref_loc_determ: forall {cp ty m v ofs bf v1 v2},
+  deref_loc cp ty m v ofs bf v1 ->
+  deref_loc cp ty m v ofs bf v2 ->
+  v1 = v2.
+Proof.
+  intros until v2; intros DEREF1 DEREF2.
+  inv DEREF1; inv DEREF2; try congruence.
+  inv H. inv H5. congruence. (* lemma for load_bitfield_determ? *)
+Qed.
+
+Lemma assign_loc_determ: forall {ce cp ty m b ofs bf v m1 m2},
+  assign_loc ce cp ty m b ofs bf v m1 ->
+  assign_loc ce cp ty m b ofs bf v m2 ->
+  m1 = m2.
+Proof.
+  intros until m2; intros AL1 AL2.
+  inv AL1; inv AL2;
+    try congruence.
+  inv H; inv H6. congruence.
+Qed.
+
+Lemma alloc_variables_determ: forall {ge cp e m vars e1 e2 m1 m2},
+  alloc_variables ge cp e m vars e1 m1 ->
+  alloc_variables ge cp e m vars e2 m2 ->
+  e1 = e2 /\ m1 = m2.
+Proof.
+  intros ge cp e m vars; revert ge cp e m.
+  induction vars; intros ge cp e m e1 e2 m1 m2 ALLOC1 ALLOC2.
+  - inv ALLOC1. inv ALLOC2.
+    now auto.
+  - inv ALLOC1. inv ALLOC2.
+    rewrite H3 in H8. injection H8 as <- <-.
+    now eauto.
+Qed.
+
+Lemma bind_parameters_determ: forall {ge cp e m params vargs m1 m2},
+  bind_parameters ge cp e m params vargs m1 ->
+  bind_parameters ge cp e m params vargs m2 ->
+  m1 = m2.
+Proof.
+  intros ge cp e m params. revert ge cp e m.
+  induction params; intros ge cp e m vargs m1 m2 BIND1 BIND2.
+  - inv BIND1. inv BIND2. reflexivity.
+  - inv BIND1. inv BIND2.
+    rewrite H1 in H9. injection H9 as <-.
+    destruct (assign_loc_determ H3 H10).
+    now eauto.
+Qed.
+
+Lemma eval_expr_lvalue_determ ge e cp le m:
+  (forall a vf1,
+     eval_expr ge e cp le m a vf1 ->
+   forall vf2,
+     eval_expr ge e cp le m a vf2 ->
+     vf1 = vf2)
+/\(forall a loc1 ofs1 bf1,
+     eval_lvalue ge e cp le m a loc1 ofs1 bf1 ->
+   forall loc2 ofs2 bf2,
+     eval_lvalue ge e cp le m a loc2 ofs2 bf2 ->
+     loc1 = loc2 /\ ofs1 = ofs2 /\ bf1 = bf2).
+Proof.
+  apply eval_expr_lvalue_ind; intros.
+  - inv H.
+    + reflexivity.
+    + inv H0.
+  - inv H.
+    + reflexivity.
+    + inv H0.
+  - inv H.
+    + reflexivity.
+    + inv H0.
+  - inv H.
+    + reflexivity.
+    + inv H0.
+  - inv H. inv H0.
+    + congruence.
+    + inv H.
+  - inv H1.
+    + apply H0 in H5 as (? & ? & _). congruence.
+    + inv H2.
+  - inv H2.
+    + apply H0 in H7. congruence.
+    + inv H3.
+  - inv H4.
+    + apply H0 in H10. apply H2 in H11. congruence.
+    + inv H5.
+  - inv H2.
+    + apply H0 in H5. congruence.
+    + inv H3.
+  - inv H.
+    + reflexivity.
+    + inv H0.
+  - inv H.
+    + reflexivity.
+    + inv H0.
+  - inv H2; try now inv H.
+    apply H0 in H3 as (<- & <- & <-).
+    eapply deref_loc_determ; eauto.
+  - inv H0.
+    + rewrite H in H6. injection H6 as <-. auto.
+    + congruence.
+  - inv H2.
+    + congruence.
+    + rewrite H0 in H6. injection H6 as <-. auto.
+  - inv H1. apply H0 in H7. injection H7 as <- <-. auto.
+  - inv H4.
+    + apply H0 in H8. injection H8 as <- <-.
+      rewrite H1 in H9. injection H9 as <- <-.
+      rewrite H2 in H13. injection H13 as <-.
+      rewrite H3 in H14. injection H14 as <- <-.
+      auto.
+    + congruence.
+  - inv H4. (* symmetric case *)
+    + congruence.
+    + apply H0 in H8. injection H8 as <- <-.
+      rewrite H1 in H9. injection H9 as <- <-.
+      rewrite H2 in H13. injection H13 as <-.
+      rewrite H3 in H14. injection H14 as <- <-.
+      auto.
+Qed.
+
+Lemma eval_expr_determ: forall {ge e cp le m a vf1 vf2},
+  eval_expr ge e cp le m a vf1 ->
+  eval_expr ge e cp le m a vf2 ->
+  vf1 = vf2.
+Proof.
+  intros until m.
+  pose proof proj1 (eval_expr_lvalue_determ ge e cp le m).
+  eauto.
+Qed.
+
+Lemma eval_lvalue_determ:
+  forall {ge e cp le m a loc1 loc2 ofs1 ofs2 bf1 bf2},
+    eval_lvalue ge e cp le m a loc1 ofs1 bf1 ->
+    eval_lvalue ge e cp le m a loc2 ofs2 bf2 ->
+    loc1 = loc2 /\ ofs1 = ofs2 /\ bf1 = bf2.
+Proof.
+  intros until m.
+  pose proof proj2 (eval_expr_lvalue_determ ge e cp le m).
+  eauto.
+Qed.
+
+Lemma eval_exprlist_determ: forall {ge e cp le m al tyargs vargs1 vargs2},
+  eval_exprlist ge e cp le m al tyargs vargs1 ->
+  eval_exprlist ge e cp le m al tyargs vargs2 ->
+  vargs1 = vargs2.
+Proof.
+  intros ge e cp le m.
+  induction al as [| a al IH]; intros tyargs vargs1 vargs2 EVAL1 EVAL2;
+    inv EVAL1; inv EVAL2.
+  - reflexivity.
+  - f_equal.
+    + destruct (eval_expr_determ H1 H6). congruence.
+    + now eapply IH; eauto.
+Qed.
+
+Lemma function_entry1_determ: forall {ge f vargs m e1 e2 le1 le2 m1 m2},
+  function_entry1 ge f vargs m e1 le1 m1 ->
+  function_entry1 ge f vargs m e2 le2 m2 ->
+  e1 = e2 /\ le1 = le2 /\ m1 = m2.
+Proof.
+  intros until m2; intros FE1 FE2.
+  inv FE1; inv FE2.
+  inv H0; inv H3.
+  - destruct (bind_parameters_determ H1 H4).
+    now auto.
+  - congruence.
+  - congruence.
+  - rewrite <- H0 in H5. injection H5 as <- <- <-.
+    rewrite H6 in H7. injection H7 as <- <-.
+    destruct (alloc_variables_determ H9 H11); subst.
+    destruct (bind_parameters_determ H1 H4).
+    now auto.
+Qed.
+
+Local Ltac parallel_statements :=
+  match goal with
+  | H: ?S = Sskip \/ ?S = Scontinue |- _ =>
+    destruct H; discriminate
+  | H: ?S = Sskip \/ ?S = Sbreak |- _ =>
+    destruct H; discriminate
+  end.
+
+Local Ltac parallel_classify_fun :=
+  match goal with
+  | H1: classify_fun ?X = _,
+    H2: classify_fun ?X = _ |- _ =>
+    rewrite H1 in H2; injection H2; intros; subst; clear H1
+  end.
+
+Local Ltac parallel_eval_expr :=
+  match goal with
+  | H1: eval_expr ?GE ?E ?CP ?LE ?M ?A ?VF1,
+    H2: eval_expr ?GE ?E ?CP ?LE ?M ?A ?VF2 |- _ =>
+    pose proof eval_expr_determ H1 H2; subst VF2; clear H2
+  end.
+
+Local Ltac parallel_eval_exprlist :=
+  match goal with
+  | H1: eval_exprlist ?GE ?E ?CP ?LE ?M ?AL ?TYARGS ?VARGS1,
+    H2: eval_exprlist ?GE ?E ?CP ?LE ?M ?AL ?TYARGS ?VARGS2 |- _ =>
+    pose proof eval_exprlist_determ H1 H2; subst VARGS2; clear H2
+  end.
+
+Local Ltac parallel_call_trace :=
+  match goal with
+  | H1: call_trace ?GE ?CP ?CP' ?VP ?VARGS ?TY ?T1,
+    H2: call_trace ?GE ?CP ?CP' ?VP ?VARGS ?TY ?T2 |- _ =>
+    pose proof call_trace_determ H1 H2; try discriminate
+  end.
+
+Local Ltac parallel_sem_cast :=
+  match goal with
+  | H1: sem_cast ?V ?T1 ?T2 ?M = Some ?V1,
+    H2: sem_cast ?V ?T1 ?T2 ?M = Some ?V2 |- _ =>
+    rewrite H1 in H2; injection H2; intros; subst V2; clear H1
+  end.
+
+Local Ltac parallel_eval_lvalue :=
+  match goal with
+  | H1: eval_lvalue ?GE ?E ?CP ?LE ?M ?A ?LOC1 ?OFS1 ?BF1,
+    H2: eval_lvalue ?GE ?E ?CP ?LE ?M ?A ?LOC2 ?OFS2 ?BF2 |- _ =>
+    pose proof eval_lvalue_determ H1 H2 as [? [? ?]];
+      subst LOC2 OFS2 BF2; clear H2
+  end.
+
+Local Ltac parallel_assign_loc :=
+  match goal with
+  | H1: assign_loc ?CE ?CP ?TY ?M ?B ?OFS ?BF ?V ?M1,
+    H2: assign_loc ?CE ?CP ?TY ?M ?B ?OFS ?BF ?V ?M2 |- _ =>
+    pose proof assign_loc_determ H1 H2; subst M2; clear H2
+  end.
+
+Local Ltac parallel_function_entry1 :=
+  match goal with
+  | H1: function_entry1 ?GE ?F ?VARGS ?M ?E1 ?LE1 ?M1,
+    H2: function_entry1 ?GE ?F ?VARGS ?M ?E2 ?LE2 ?M2 |- _ =>
+    pose proof function_entry1_determ H1 H2 as [? [? ?]];
+      subst E2 LE2 M2; clear H2
+  end.
+
+Local Ltac parallel_find_funct :=
+  match goal with
+  | H1: Genv.find_funct ?GE ?VF = Some ?FD1,
+    H2: Genv.find_funct ?GE ?VF = Some ?FD2 |- _ =>
+    setoid_rewrite H1 in H2; injection H2 as <-
+  end.
+
+Lemma step1_E0_determ: forall {ge s s1 s2},
+  step1 ge s E0 s1 ->
+  step1 ge s E0 s2 ->
+  s1 = s2.
+Proof.
+  intros ge s s1 s2 STEP1 STEP2.
+  inv STEP1; inv STEP2;
+    try parallel_statements;
+    try easy;
+    auto.
+  - parallel_eval_expr.
+    parallel_sem_cast.
+    parallel_eval_lvalue.
+    parallel_assign_loc.
+    reflexivity.
+  - parallel_eval_expr.
+    reflexivity.
+  - parallel_classify_fun.
+    parallel_eval_expr.
+    parallel_eval_exprlist.
+    parallel_find_funct.
+    reflexivity.
+  - parallel_eval_exprlist.
+    destruct (external_call_determ _ _ _ _ _ _ _ _ _ _ H0 H13) as (_ & EQ).
+    specialize (EQ eq_refl) as [<- <-].
+    reflexivity.
+  - parallel_eval_expr.
+    rewrite H0 in H11. injection H11 as <-.
+    reflexivity.
+  - setoid_rewrite H in H6. injection H6 as <-.
+    reflexivity.
+  - parallel_eval_expr.
+    rewrite H0 in H10. injection H10 as <-.
+    setoid_rewrite H1 in H11. injection H11 as <-.
+    reflexivity.
+  - setoid_rewrite H0 in H8. injection H8 as <-.
+    reflexivity.
+  - parallel_eval_expr.
+    rewrite H0 in H10. injection H10 as <-.
+    reflexivity.
+  - rewrite H in H7. injection H7 as <- <-.
+    reflexivity.
+  - parallel_function_entry1.
+    reflexivity.
+  - destruct (external_call_determ _ _ _ _ _ _ _ _ _ _ H H9) as (_ & EQ).
+    specialize (EQ eq_refl) as [<- <-].
+    reflexivity.
+Qed.
+
+(* Related to old [state_determinism'] *)
+Lemma step1_event_determ: forall {ge s s1 s2 e},
+  step1 ge s (e :: nil) s1 ->
+  step1 ge s (e :: nil) s2 ->
+  s1 = s2.
+Proof.
+  intros ge s s1 s2 e STEP1 STEP2.
+  inv STEP1; inv STEP2; simpl in *.
+  - destruct (eval_expr_determ H0 H15).
+    assert (fd = fd0) as <- by congruence.
+    rewrite H3 in H18. injection H18 as <- <- <-.
+    destruct (eval_exprlist_determ H1 H16).
+    reflexivity.
+  - destruct (eval_exprlist_determ H H12).
+    destruct (external_call_determ _ _ _ _ _ _ _ _ _ _ H0 H13) as [_ EQ].
+    specialize (EQ eq_refl) as [<- <-].
+    reflexivity.
+  - destruct (external_call_determ _ _ _ _ _ _ _ _ _ _ H H9) as [_ EQ].
+    specialize (EQ eq_refl) as [<- <-].
+    reflexivity.
+  - reflexivity.
+Qed.
+
+Lemma step1_determ: forall {p s s1 s2 t},
+  step1 (globalenv p) s t s1 ->
+  step1 (globalenv p) s t s2 ->
+  s1 = s2.
+Proof.
+  clear.
+  intros p s s1 s2 [| e1 [| e2 t]].
+  - now apply step1_E0_determ.
+  - now apply step1_event_determ.
+  - intros CONTRA.
+    apply (sr_traces (semantics_receptive p)) in CONTRA.
+    inv CONTRA. inv H0.
+Qed.
+
+Lemma step1_E0_event_False: forall {ge s s1 s2 e},
+  step1 ge s E0 s1 ->
+  step1 ge s (e :: nil) s2 ->
+  False.
+Proof.
+  intros ge s s1 s2 e STEP1 STEP2.
+  inv STEP1; inv STEP2;
+    try parallel_statements.
+  - parallel_classify_fun.
+    parallel_eval_expr.
+    parallel_eval_exprlist.
+    parallel_call_trace.
+  - parallel_eval_exprlist.
+    destruct (external_call_determ _ _ _ _ _ _ _ _ _ _ H0 H13) as (? & ?).
+    inv H1.
+  - destruct (external_call_determ _ _ _ _ _ _ _ _ _ _ H H9) as (? & ?).
+    inv H0.
+  - pose proof return_trace_determ EV EV0; discriminate.
+Qed.
+
+End DETERMINISM.
+
+Section SECURITY.
 
 Definition clight_in_side (s: split) (lr: side) (p: Clight.program) :=
   List.Forall (fun '(id, gd) =>
