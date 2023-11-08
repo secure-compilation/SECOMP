@@ -19,7 +19,7 @@ main: $(MAIN_OBJS)
 	ocamlfind ocamlopt -package qcheck -linkpkg $(INCLUDES) -o main $(LIBS) $+
 
 %.cmi: %.mli
-	ocamlc $(INCLUDES) -c $<
+	ocamlfind ocamlc -package qcheck $(INCLUDES) -c $<
 
 %.cmo: %ml
 	ocamlc $(INCLUDES) -c $<
@@ -28,9 +28,9 @@ main: $(MAIN_OBJS)
 	ocamlfind ocamlopt -package qcheck $(INCLUDES) -c $<
 
 depend:
-	ocamldep $(INCLUDES) *.mli *.ml > .depend
-	ocamldep $(INCLUDES) $(foreach d,$(DIRS),$(wildcard $(d)/*.ml)) >> .depend
-	ocamldep $(INCLUDES) $(foreach d,$(DIRS),$(wildcard $(d)/*.mli)) >> .depend
+	ocamlfind ocamldep $(INCLUDES) *.mli *.ml > .depend
+	ocamlfind ocamldep $(INCLUDES) $(foreach d,$(DIRS),$(wildcard $(d)/*.ml)) >> .depend
+	ocamlfind ocamldep $(INCLUDES) $(foreach d,$(DIRS),$(wildcard $(d)/*.mli)) >> .depend
 
 include .depend
 
