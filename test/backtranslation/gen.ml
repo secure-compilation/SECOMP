@@ -240,7 +240,11 @@ let imports graph exports rand_state =
 
 let definitions = QCheck.Gen.return []
 let public = QCheck.Gen.return []
-let main = ident
+
+let main graph =
+  let open QCheck.Gen in
+  let vertices = Graph.vertices graph in
+  map Camlcoq.P.of_int (oneofl vertices)
 
 let policy graph =
   let open QCheck.Gen in
@@ -276,6 +280,6 @@ let asm_program =
   let* graph = Graph.random max_graph_size in
   let* prog_defs = definitions in
   let* prog_public = public in
-  let* prog_main = main in
+  let* prog_main = main graph in
   let* prog_pol = policy graph in
   return ({ prog_defs; prog_public; prog_main; prog_pol } : Asm.program)

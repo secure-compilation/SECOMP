@@ -14,10 +14,7 @@
          - code = instruction list
          - AST.fundef = external function | internal coq_function
          - external function = <"primitive" enum>
-
-       - we definitely need a policy object (--> from my graph approach)
-       -
-     *)
+*)
 
 (* Run QCheck testing *)
 
