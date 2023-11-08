@@ -1209,10 +1209,12 @@ Qed.
 (* parallel_concrete' goes away *)
 
 (* Related to old [context_epsilon_star_is_silent'] *)
-Lemma parallel_star_E0: forall {j s1 s1' s2 s2'},
+Lemma parallel_star_E0: forall {j s1 s1' s1'' s2 s2' s2'' e},
   right_state_injection s j ge1 ge2 s1 s2 ->
   Star (semantics1 W1) s1 E0 s1' ->
+  Step (semantics1 W1) s1' (e :: nil) s1'' ->
   Star (semantics1 W2) s2 E0 s2' ->
+  Step (semantics1 W2) s2' (e :: nil) s2'' ->
   right_state_injection s j ge1 ge2 s1' s2'.
 Admitted. (* Related to [parallel_abstract_E0] and [parallel_concrete_E0] *)
 
@@ -1246,7 +1248,7 @@ Proof.
   destruct (star_cons_inv (sr_traces (semantics_receptive _)) STAR2)
     as (s2_1 & s2_2 & STAR2_1 & STEP2_2 & STAR2_3).
   change (_ t t2) with (t ** t2) in STAR2_3. clear STAR2.
-  assert (RINJ' := parallel_star_E0 RINJ STAR1_1 STAR2_1).
+  assert (RINJ' := parallel_star_E0 RINJ STAR1_1 STEP1_2 STAR2_1 STEP2_2).
   assert (exists j', right_state_injection s j' ge1 ge2 s1_2 s2_2)
     as [j'' RINJ'']. { (* This can be made into a helper lemma *)
     destruct (state_split_decidable s1_1) as [LEFT | RIGHT].
