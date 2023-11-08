@@ -24,11 +24,11 @@ let gen_graph max_size rand_state : (int * int) list =
   in
   List.sort_uniq compare !result
 
-let make_consecutive edge_list : (int * int) list =
+let normalize edge_list : (int * int) list =
   let vertices =
     List.sort_uniq Int.compare (List.map fst edge_list @ List.map snd edge_list)
   in
-  let new_idcs = List.mapi (fun idx elt -> (elt, idx)) vertices in
+  let new_idcs = List.mapi (fun idx elt -> (elt, idx + 1)) vertices in
   List.map
     (fun (src, trgt) -> (List.assoc src new_idcs, List.assoc trgt new_idcs))
     edge_list
@@ -73,7 +73,7 @@ let convert_graph edge_list =
   List.map (fun v -> (v, neighbors v)) vertices
 
 let random size rand_state =
-  rand_state |> gen_graph size |> scc |> make_consecutive |> convert_graph
+  rand_state |> gen_graph size |> scc |> normalize |> convert_graph
 
 let size = List.length
 let vertices = List.map fst

@@ -214,36 +214,68 @@ let bundle_trace =
 
 let exports graph rand_state =
   let open QCheck.Gen in
-  let n = Graph.size graph in
-  (* map succ to ensure that each compartment exports at least one function *)
-  let sample = list_size (map succ (int_bound 15)) small_nat in
-  Array.init n (fun _ -> List.sort_uniq Int.compare (sample rand_state))
+  let vertices = Graph.vertices graph in
+  let sample = list_size (map succ (int_bound 15)) (map succ small_nat) in
+  List.map (fun v -> (v, sample rand_state)) vertices
 
 let imports graph exports rand_state =
   let open QCheck.Gen in
-  let n = Graph.size graph in
-  let imports = Array.make_matrix n n [] in
-  (* imports.(self).(other) contains a list of all functions that compartment self imports from compartment other *)
-  for self = 0 to n - 1 do
-    for other = 0 to n - 1 do
-      if Graph.is_adjacent self other graph then
-        let all_exports = exports.(other) in
-        imports.(self).(other) <-
-          List.sort Int.compare (sublist all_exports rand_state)
-      else ()
-    done
-  done;
-  imports
+  let vertices = Graph.vertices graph in
+  let imports = ref [] in
+  List.iter
+    (fun self ->
+      List.iter
+        (fun other ->
+          if Graph.is_adjacent self other graph then
+            let all_exports = List.assoc other exports in
+            let selection =
+              List.sort Int.compare (sublist all_exports rand_state)
+            in
+            imports :=
+              (self, List.map (fun f -> (other, f)) selection) :: !imports
+          else ())
+        vertices)
+    vertices;
+  !imports
 
 let definitions = QCheck.Gen.return []
 let public = QCheck.Gen.return []
 let main = ident
-let policy = QCheck.Gen.return AST.Policy.empty_pol
+
+let policy graph =
+  let open QCheck.Gen in
+  let open Maps in
+  let* exports = exports graph in
+  let* imports = imports graph exports in
+  let policy_export = ref PTree.empty in
+  List.iter
+    (fun (comp, funcs) ->
+      let funcs = List.map Camlcoq.P.of_int (List.assoc comp exports) in
+      let comp = Camlcoq.P.of_int comp in
+      policy_export := PTree.set comp funcs !policy_export)
+    exports;
+  let policy_import = ref PTree.empty in
+  List.iter
+    (fun (comp, imps) ->
+      let imps =
+        List.map (fun (c, f) -> (Camlcoq.P.of_int c, Camlcoq.P.of_int f)) imps
+      in
+      let comp = Camlcoq.P.of_int comp in
+      if imps <> [] then policy_import := PTree.set comp imps !policy_import
+      else ())
+    imports;
+  let policy =
+    ({ policy_export = !policy_export; policy_import = !policy_import }
+      : AST.Policy.t)
+  in
+  return policy
 
 let asm_program =
   let open QCheck.Gen in
+  let max_graph_size = 10 in
+  let* graph = Graph.random max_graph_size in
   let* prog_defs = definitions in
   let* prog_public = public in
   let* prog_main = main in
-  let* prog_pol = policy in
+  let* prog_pol = policy graph in
   return ({ prog_defs; prog_public; prog_main; prog_pol } : Asm.program)
