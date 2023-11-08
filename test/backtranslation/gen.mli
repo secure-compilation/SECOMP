@@ -21,8 +21,19 @@ val event_call :
 val event_return :
   AST.compartment -> AST.compartment -> Events.event QCheck.Gen.t
 
+val typ : AST.typ QCheck.Gen.t
+val rettype : AST.rettype QCheck.Gen.t
+val calling_convention : AST.calling_convention QCheck.Gen.t
+val signature : AST.signature QCheck.Gen.t
+val mem_delta : MemoryDelta.mem_delta QCheck.Gen.t
 val trace : Events.event list QCheck.Gen.t
 val sublist : 'a list -> 'a list QCheck.Gen.t
+val external_function : AST.external_function QCheck.Gen.t
+val bundle_call : BtInfoAsm.bundle_event QCheck.Gen.t
+val bundle_return : BtInfoAsm.bundle_event QCheck.Gen.t
+val bundle_builtin : BtInfoAsm.bundle_event QCheck.Gen.t
+val bundle_event : BtInfoAsm.bundle_event QCheck.Gen.t
+val bundle_trace : BtInfoAsm.bundle_trace QCheck.Gen.t
 
 val policy :
   (Graph.t * int list Array.t * int list Array.t Array.t) QCheck.Gen.t

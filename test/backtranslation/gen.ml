@@ -85,6 +85,45 @@ let event_return src_compartment trgt_compartment =
   let* ret_val = eventval in
   return (Events.Event_return (src_compartment, trgt_compartment, ret_val))
 
+let typ =
+  QCheck.Gen.frequencyl
+    AST.
+      [
+        (1, Tint);
+        (1, Tfloat);
+        (1, Tlong);
+        (1, Tsingle);
+        (1, Tany32);
+        (1, Tany64);
+      ]
+
+let rettype =
+  let open QCheck.Gen in
+  let* f = float_range 0.0 1.0 in
+  if f < 1.0 /. 6.0 then map (fun t -> AST.Tret t) typ
+  else
+    frequencyl
+      AST.
+        [
+          (1, Tint8signed);
+          (1, Tint8unsigned);
+          (1, Tint16signed);
+          (1, Tint16unsigned);
+        ]
+
+(* TODO: also generate other calling conventions *)
+let calling_convention = QCheck.Gen.return AST.cc_default
+
+let signature =
+  let open QCheck.Gen in
+  let* arg_types = list_size (int_bound 5) typ in
+  let* ret_type = rettype in
+  let* cc = calling_convention in
+  return AST.{ sig_args = arg_types; sig_res = ret_type; sig_cc = cc }
+
+(* TODO: also generate other mem_deltas *)
+let mem_delta = QCheck.Gen.return []
+
 (* QCheck generator for an event trace *)
 
 let trace rand_state =
@@ -134,6 +173,44 @@ let sublist list rand_state =
       (* len sublist is random in [1,len] *)
       let shuffled_list = shuffle_l xs rand_state in
       List.of_seq (Seq.take len_sublist (List.to_seq shuffled_list))
+
+(* TODO: also generate other external functions *)
+let external_function =
+  let open QCheck.Gen in
+  let* compartment = compartment in
+  return (AST.EF_malloc compartment)
+
+let bundle_call =
+  let open QCheck.Gen in
+  let* trace = trace in
+  let* ident = ident in
+  let* args = list_size (int_bound 5) eventval in
+  let* sign = signature in
+  let* mem_delta = mem_delta in
+  return (BtInfoAsm.Bundle_call (trace, ident, args, sign, mem_delta))
+
+let bundle_return =
+  let open QCheck.Gen in
+  let* trace = trace in
+  let* ret_val = eventval in
+  let* mem_delta = mem_delta in
+  return (BtInfoAsm.Bundle_return (trace, ret_val, mem_delta))
+
+let bundle_builtin =
+  let open QCheck.Gen in
+  let* trace = trace in
+  let* ext_fun = external_function in
+  let* args = list_size (int_bound 5) eventval in
+  let* mem_delta = mem_delta in
+  return (BtInfoAsm.Bundle_builtin (trace, ext_fun, args, mem_delta))
+
+let bundle_event =
+  QCheck.Gen.frequency
+    [ (1, bundle_call); (1, bundle_return); (1, bundle_builtin) ]
+
+let bundle_trace =
+  let open QCheck.Gen in
+  list_size small_nat (pair ident bundle_event)
 
 let exports graph rand_state =
   let open QCheck.Gen in

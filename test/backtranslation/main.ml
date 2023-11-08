@@ -1,13 +1,3 @@
-let event_to_string _ =
-  ignore (Format.flush_str_formatter ());
-  (* TODO: reenable this once the build issues are resolved and we can depend on Interp (and its transitive
-     dependecies) again *)
-  (* Interp.print_event Format.str_formatter e; *)
-  Format.flush_str_formatter ()
-
-let print_trace t = String.concat "\n" (List.map event_to_string t)
-let trace = QCheck.make ~print:print_trace Gen.trace
-
 let dump_exports exports =
   let open Printf in
   printf "Exports:\n";
@@ -59,30 +49,36 @@ let () =
        - fundef = coq_function AST.fundef
          - coq_function = compartment * signature * code
          - code = instruction list
-         - signature = typ list * rettype * calling_convention
-         - calling_convention = <primitive struct>
-         - typ = <primitive enum>
-         - rettype = <primitive enum>
          - AST.fundef = external function | internal coq_function
          - external function = <"primitive" enum>
 
        - we definitely need a policy object (--> from my graph approach)
        -
      *)
-     let prog_defs = failwith "TODO: implement me" in
-     let prog_public = failwith "TODO: implement me" in
-     let prog_main = failwith "TODO: implement me" in
-     let prog_pol = failwith "TODO: implement me" in
-     let asm_prog = { prog_defs; prog_public; prog_main; prog_pol } : ASM.program in
-     let src_program = Backtranslation.gen_program bundled_trace asm_prog in
-     match Compiler.trans_clight_program src_program with
-     | Errors.Error _ -> false
-     | Errors.Ok _ -> true
 *)
 
 (* Run QCheck testing *)
-(* let test_backtranslation =
-     QCheck.Test.make ~count:1 ~name:"backtranslation is correct" trace (fun _ ->
-         false)
 
-   let _ = QCheck_runner.run_tests [ test_backtranslation ] *)
+let property_under_test bundled_trace =
+  let prog_defs = failwith "TODO: implement me" in
+  let prog_public = failwith "TODO: implement me" in
+  let prog_main = failwith "TODO: implement me" in
+  let prog_pol = failwith "TODO: implement me" in
+  let asm_prog =
+    ({ prog_defs; prog_public; prog_main; prog_pol } : Asm.program)
+  in
+  let src_program = Backtranslation.gen_program bundled_trace asm_prog in
+  match Compiler.transf_clight_program src_program with
+  | Errors.Error _ -> false
+  | Errors.OK _ -> true
+
+let print_bundle_trace t =
+  String.concat "\n" (List.map (fun _ -> "TODO: implement me") t)
+
+let bundle_trace = QCheck.make ~print:print_bundle_trace Gen.bundle_trace
+
+let test_backtranslation =
+  QCheck.Test.make ~count:1 ~name:"backtranslation" bundle_trace
+    property_under_test
+
+let _ = QCheck_runner.run_tests [ test_backtranslation ]

@@ -36,4 +36,4 @@ include .depend
 
 clean:
 	-rm -f *.cm[ix]
-	-rm -f main.o
+	-rm -f *.o
