@@ -404,7 +404,8 @@ let raise_on_errors () =
     raise Abort
 
 let crash exn =
-  if Version.buildnr <> "" && Version.tag <> "" && Version.branch <> "" then begin
+  if false then begin
+  (* if Version.buildnr <> "" && Version.tag <> "" && Version.branch <> "" then begin
     let backtrace = Printexc.get_backtrace () in
     eprintf "%tThis is CompCert, Release %s, Build:%s, Tag:%s, Branch:%s%t\n"
       bc Version.version Version.buildnr Version.tag Version.branch rsc;
@@ -413,7 +414,7 @@ let crash exn =
     eprintf "%tUncaught exception: %s.\n\
 \    Please report this problem to our support.\n\
 \    Error occurred in Build: %s, Tag: %s, Branch %s.\n%t"
-      rc (Printexc.to_string exn) Version.buildnr Version.tag Version.branch rsc;
+      rc (Printexc.to_string exn) Version.buildnr Version.tag Version.branch rsc; *)
     exit 2
   end else begin
     let backtrace = Printexc.get_backtrace ()
