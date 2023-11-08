@@ -246,11 +246,9 @@ let main graph =
   let vertices = Graph.vertices graph in
   map Camlcoq.P.of_int (oneofl vertices)
 
-let policy graph =
+let policy exports imports =
   let open QCheck.Gen in
   let open Maps in
-  let* exports = exports graph in
-  let* imports = imports graph exports in
   let policy_export = ref PTree.empty in
   List.iter
     (fun (comp, funcs) ->
@@ -274,12 +272,22 @@ let policy graph =
   in
   return policy
 
+let function_signatures exports rand_state =
+  (* (compartment * (func_ident * sig) list) list *)
+  List.map
+    (fun (comp, funcs) ->
+      (comp, List.map (fun f -> (f, signature rand_state)) funcs))
+    exports
+
 let asm_program =
   let open QCheck.Gen in
   let max_graph_size = 10 in
   let* graph = Graph.random max_graph_size in
+  let* exports = exports graph in
+  let* imports = imports graph exports in
+  let* function_signatures = function_signatures exports in
   let* prog_defs = definitions in
   let* prog_public = public in
   let* prog_main = main graph in
-  let* prog_pol = policy graph in
+  let* prog_pol = policy exports imports in
   return ({ prog_defs; prog_public; prog_main; prog_pol } : Asm.program)
