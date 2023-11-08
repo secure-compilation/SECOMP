@@ -235,9 +235,15 @@ let imports graph exports rand_state =
   done;
   imports
 
-let policy rand_state =
-  let max_graph_size = 10 in
-  let adj_list = Graph.random max_graph_size rand_state in
-  let exports = exports adj_list rand_state in
-  let imports = imports adj_list exports rand_state in
-  (adj_list, exports, imports)
+let definitions = QCheck.Gen.return []
+let public = QCheck.Gen.return []
+let main = ident
+let policy = QCheck.Gen.return AST.Policy.empty_pol
+
+let asm_program =
+  let open QCheck.Gen in
+  let* prog_defs = definitions in
+  let* prog_public = public in
+  let* prog_main = main in
+  let* prog_pol = policy in
+  return ({ prog_defs; prog_public; prog_main; prog_pol } : Asm.program)

@@ -35,5 +35,6 @@ val bundle_builtin : BtInfoAsm.bundle_event QCheck.Gen.t
 val bundle_event : BtInfoAsm.bundle_event QCheck.Gen.t
 val bundle_trace : BtInfoAsm.bundle_trace QCheck.Gen.t
 
-val policy :
-  (Graph.t * int list Array.t * int list Array.t Array.t) QCheck.Gen.t
+val policy : AST.Policy.t QCheck.Gen.t
+
+val asm_program : Asm.program QCheck.Gen.t
