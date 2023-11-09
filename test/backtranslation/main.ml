@@ -32,7 +32,16 @@ let print_bundle_trace _ = "printing not implemented"
 let property_under_test asm_prog bundled_trace =
   let src_program = Backtranslation.gen_program bundled_trace asm_prog in
   match Compiler.transf_clight_program src_program with
-  | Errors.Error _ -> false
+  | Errors.Error error_list ->
+      let open Errors in
+      let fmt = Printf.printf in
+      List.iter (fun e -> 
+        match e with
+        | CTX p | POS p -> fmt "%d" (Camlcoq.P.to_int p)
+        | MSG chars ->
+          List.iter (fun c -> fmt "%c" c) chars
+      ) error_list;
+    false
   | Errors.OK _ -> true
 
 let bundle_trace = QCheck.make ~print:print_bundle_trace Gen.bundle_trace
