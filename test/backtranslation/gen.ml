@@ -232,19 +232,42 @@ let imports graph exports rand_state =
               List.sort Int.compare (sublist all_exports rand_state)
             in
             imports :=
+              (* TODO: check whether this really adds all relevant imports *)
               (self, List.map (fun f -> (other, f)) selection) :: !imports
           else ())
         vertices)
     vertices;
   !imports
 
-let definitions = QCheck.Gen.return []
-let public = QCheck.Gen.return []
+let definitions func_sigs =
+  let gvars = [] in
+  let gfuns =
+    List.concat_map
+      (fun (comp, funcs_and_sigs) ->
+        List.map (fun (f, s) -> (comp, f, s)) funcs_and_sigs)
+      func_sigs
+  in
+  let gfuns =
+    List.map
+      (fun (c, f, s) ->
+        let coq_func =
+          ({ fn_comp = Camlcoq.P.of_int c; fn_sig = s; fn_code = [] }
+            : Asm.coq_function)
+        in
+        let fundef = AST.Internal coq_func in
+        (Camlcoq.P.of_int f, AST.Gfun fundef))
+      gfuns
+  in
+  gvars @ gfuns
 
-let main graph =
+let public exports =
+  List.concat_map (fun (_, funcs) -> List.map Camlcoq.P.of_int funcs) exports
+
+let main exports =
   let open QCheck.Gen in
-  let vertices = Graph.vertices graph in
-  map Camlcoq.P.of_int (oneofl vertices)
+  (* TODO: check whether function identifiers across compartments need to be disjoint *)
+  let* _, funcs = oneofl exports in
+  map Camlcoq.P.of_int (oneofl funcs)
 
 let policy exports imports =
   let open QCheck.Gen in
@@ -285,9 +308,20 @@ let asm_program =
   let* graph = Graph.random max_graph_size in
   let* exports = exports graph in
   let* imports = imports graph exports in
-  let* function_signatures = function_signatures exports in
-  let* prog_defs = definitions in
-  let* prog_public = public in
-  let* prog_main = main graph in
+  let* func_sigs = function_signatures exports in
+  let prog_defs = definitions func_sigs in
+  let prog_public = public exports in
+  let* prog_main = main exports in
   let* prog_pol = policy exports imports in
   return ({ prog_defs; prog_public; prog_main; prog_pol } : Asm.program)
+
+(*
+
+  GVar related to vstore and vload events
+
+  ----
+
+  args to external call and return value need to match in bundled calls
+
+  bundle builtin is generated on same-compartment syscalls
+*)

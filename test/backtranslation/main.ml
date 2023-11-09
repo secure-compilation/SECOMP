@@ -42,7 +42,8 @@ let print_bundle_event e =
   | id, Bundle_return (trace, ret_val, mem_delta) -> "bundle return"
   | id, Bundle_builtin (trace, ext_fun, args, mem_delta) -> "bundle builtin"
 
-let print_bundle_trace t = String.concat "\n" (List.map print_bundle_event t)
+let print_bundle_trace _ = "printing not implemented"
+(* String.concat "\n" (List.map print_bundle_event t) *)
 
 (* Run QCheck testing *)
 
