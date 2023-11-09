@@ -315,7 +315,7 @@ let exports graph rand_state =
   let drop n l = List.of_seq (Seq.drop n (List.to_seq l)) in
   List.map
     (fun v ->
-      let n = int_bound 15 rand_state in
+      let n = map succ (int_bound (max_num_per_comp - 1)) rand_state in
       let fs = take n !func_idents in
       func_idents := drop n !func_idents;
       (v, fs))
@@ -335,7 +335,6 @@ let imports graph exports rand_state =
               List.sort Int.compare (sublist all_exports rand_state)
             in
             imports :=
-              (* TODO: check whether this really adds all relevant imports *)
               (self, List.map (fun f -> (other, f)) selection) :: !imports
           else ())
         vertices)
@@ -404,13 +403,28 @@ let function_signatures exports rand_state =
       (comp, List.map (fun f -> (f, signature rand_state)) funcs))
     exports
 
+let dump_exports exports =
+  print_endline "Exports:";
+  List.iter (fun (comp, funcs) ->
+    Printf.printf "%d -> [%s]\n" comp (String.concat ", " (List.map string_of_int funcs))
+  ) exports
+
+let dump_imports imports =
+  let fmt = Printf.sprintf in
+  print_endline "Imports:";
+  List.iter (fun (comp, imps) ->
+    Printf.printf "%d <- [%s]\n" comp (String.concat ", " (List.map (fun (c, f) -> fmt "%d.%d" c f) imps))
+  ) imports
+
 let asm_program =
   let open QCheck.Gen in
   let max_graph_size = 10 in
   let* graph = Graph.random max_graph_size in
   let () = Graph.dump graph in
   let* exports = exports graph in
+  let () = dump_exports exports in
   let* imports = imports graph exports in
+  let () = dump_imports imports in
   let* func_sigs = function_signatures exports in
   let prog_defs = definitions func_sigs in
   let prog_public = public exports in
