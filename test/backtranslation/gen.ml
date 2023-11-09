@@ -109,10 +109,15 @@ let rettype =
           (1, Tint8unsigned);
           (1, Tint16signed);
           (1, Tint16unsigned);
+          (1, Tvoid);
         ]
 
-(* TODO: also generate other calling conventions *)
-let calling_convention = QCheck.Gen.return AST.cc_default
+let calling_convention =
+  let open QCheck.Gen in
+  let* cc_vararg = option ~ratio:0.1 (map Camlcoq.Z.of_uint small_nat) in
+  let* cc_unproto = map (fun f -> f <= 0.1) (float_range 0.0 1.0) in
+  let* cc_structret = map (fun f -> f <= 0.1) (float_range 0.0 1.0) in
+  return ({ cc_vararg; cc_unproto; cc_structret } : AST.calling_convention)
 
 let signature =
   let open QCheck.Gen in
@@ -174,11 +179,97 @@ let sublist list rand_state =
       let shuffled_list = shuffle_l xs rand_state in
       List.of_seq (Seq.take len_sublist (List.to_seq shuffled_list))
 
-(* TODO: also generate other external functions *)
-let external_function =
+let ef_external =
   let open QCheck.Gen in
   let* compartment = compartment in
-  return (AST.EF_malloc compartment)
+  let* name = char_list in
+  let* signature = signature in
+  return (AST.EF_external (compartment, name, signature))
+
+let ef_builtin =
+  let open QCheck.Gen in
+  let* compartment = compartment in
+  let* name = char_list in
+  let* signature = signature in
+  return (AST.EF_builtin (compartment, name, signature))
+
+let ef_runtime =
+  let open QCheck.Gen in
+  let* compartment = compartment in
+  let* name = char_list in
+  let* signature = signature in
+  return (AST.EF_runtime (compartment, name, signature))
+
+let ef_vload =
+  let open QCheck.Gen in
+  let* compartment = compartment in
+  let* memory_chunk = memory_chunk in
+  return (AST.EF_vload (compartment, memory_chunk))
+
+let ef_vstore =
+  let open QCheck.Gen in
+  let* compartment = compartment in
+  let* memory_chunk = memory_chunk in
+  return (AST.EF_vload (compartment, memory_chunk))
+
+let ef_malloc = QCheck.Gen.map (fun c -> AST.EF_malloc c) compartment
+let ef_free = QCheck.Gen.map (fun c -> AST.EF_free c) compartment
+
+let ef_memcpy =
+  let open QCheck.Gen in
+  let* compartment = compartment in
+  let* z1 = coq_Z in
+  let* z2 = coq_Z in
+  return (AST.EF_memcpy (compartment, z1, z2))
+
+let ef_annot =
+  let open QCheck.Gen in
+  let* compartment = compartment in
+  let* p = positive in
+  let* text = char_list in
+  let* type_list = list_size small_nat typ in
+  return (AST.EF_annot (compartment, p, text, type_list))
+
+let ef_annot_val =
+  let open QCheck.Gen in
+  let* compartment = compartment in
+  let* p = positive in
+  let* text = char_list in
+  let* typ = typ in
+  return (AST.EF_annot_val (compartment, p, text, typ))
+
+let ef_inline_asm =
+  let open QCheck.Gen in
+  let* compartment = compartment in
+  let* text = char_list in
+  let* signature = signature in
+  let* code = list_size small_nat char_list in
+  return (AST.EF_inline_asm (compartment, text, signature, code))
+
+let ef_debug =
+  let open QCheck.Gen in
+  let* compartment = compartment in
+  let* p = positive in
+  let* ident = ident in
+  let* type_list = list_size small_nat typ in
+  return (AST.EF_debug (compartment, p, ident, type_list))
+
+let external_function =
+  QCheck.Gen.frequency
+    [
+      (1, ef_external);
+      (1, ef_builtin);
+      (1, ef_runtime);
+      (1, ef_vload);
+      (1, ef_vstore);
+      (1, ef_malloc);
+      (1, ef_free);
+      (1, ef_memcpy);
+      (1, ef_annot);
+      (1, ef_annot_val);
+      (1, ef_inline_asm);
+      (1, ef_debug);
+    ]
 
 let bundle_call =
   let open QCheck.Gen in
