@@ -374,6 +374,7 @@ Fixpoint step_expr (cp: compartment) (k: kind) (a: expr) (m: mem): reducts expr 
           topred (Lred "red_var_local" (Eloc b Ptrofs.zero Full ty) m)
       | None =>
           do b <- Genv.find_symbol ge x;
+          check Genv.allowed_addrof_b ge cp x;
           topred (Lred "red_var_global" (Eloc b Ptrofs.zero Full ty) m)
       end
   | LV, Ederef r ty =>
@@ -545,10 +546,10 @@ Fixpoint step_expr (cp: compartment) (k: kind) (a: expr) (m: mem): reducts expr 
               check (Genv.allowed_call_b ge cp vf);
               do vargs <- sem_cast_arguments vtl tyargs m;
               check type_eq (type_of_fundef fd) (Tfunction tyargs tyres cconv);
-              check (match Genv.type_of_call ge cp (Genv.find_comp ge vf) with
+              check (match Genv.type_of_call cp (comp_of fd) with
                      | Genv.CrossCompartmentCall => forallb not_ptr_b vargs
                      | _ => true end);
-              do t <- get_call_trace _ _ ge cp (Genv.find_comp ge vf) vf vargs (typlist_of_typelist tyargs);
+              do t <- get_call_trace _ _ ge cp (comp_of fd) vf vargs (typlist_of_typelist tyargs);
               topred (Callred "red_call" fd vargs ty t m)
           | _ => stuck
           end
@@ -588,7 +589,7 @@ Inductive imm_safe_t (cp: compartment): kind -> expr -> mem -> Prop :=
   | imm_safe_t_loc: forall b ofs ty bf m,
       imm_safe_t cp LV (Eloc b ofs bf ty) m
   | imm_safe_t_lred: forall to C l m l' m',
-      lred ge e l m l' m' ->
+      lred ge e cp l m l' m' ->
       context LV to C ->
       imm_safe_t cp to (C l) m
   | imm_safe_t_rred: forall to C r m t r' m' w',
@@ -624,7 +625,8 @@ Definition invert_expr_prop (cp: compartment) (a: expr) (m: mem) : Prop :=
   | Evar x ty =>
       exists b,
       e!x = Some(b, ty)
-      \/ (e!x = None /\ Genv.find_symbol ge x = Some b)
+      \/ (e!x = None /\ Genv.find_symbol ge x = Some b /\
+            Genv.allowed_addrof ge cp x)
   | Ederef (Eval v ty1) ty =>
       exists b, exists ofs, v = Vptr b ofs
   | Eaddrof (Eloc b ofs bf ty1) ty =>
@@ -672,8 +674,8 @@ Definition invert_expr_prop (cp: compartment) (a: expr) (m: mem) : Prop :=
       /\ cast_arguments m rargs tyargs vl
       /\ type_of_fundef fd = Tfunction tyargs tyres cconv
       /\ Genv.allowed_call ge cp vf
-      /\ (Genv.type_of_call ge cp (Genv.find_comp ge vf) = Genv.CrossCompartmentCall -> Forall not_ptr vl)
-      /\ call_trace ge cp (Genv.find_comp ge vf) vf vl (typlist_of_typelist tyargs) t
+      /\ (Genv.type_of_call cp (comp_of fd) = Genv.CrossCompartmentCall -> Forall not_ptr vl)
+      /\ call_trace ge cp (comp_of fd) vf vl (typlist_of_typelist tyargs) t
   | Ebuiltin ef tyargs rargs ty =>
       exprlist_all_values rargs ->
       exists vargs t vres m' w',
@@ -685,7 +687,7 @@ Definition invert_expr_prop (cp: compartment) (a: expr) (m: mem) : Prop :=
   end.
 
 Lemma lred_invert:
-  forall cp l m l' m', lred ge e l m l' m' -> invert_expr_prop cp l m.
+  forall cp l m l' m', lred ge e cp l m l' m' -> invert_expr_prop cp l m.
 Proof.
   induction 1; red; auto.
   exists b; auto.
@@ -810,7 +812,7 @@ Local Hint Resolve context_compose contextlist_compose : core.
 
 Definition reduction_ok (cp: compartment) (k: kind) (a: expr) (m: mem) (rd: reduction) : Prop :=
   match k, rd with
-  | LV, Lred _ l' m' => lred ge e a m l' m'
+  | LV, Lred _ l' m' => lred ge e cp a m l' m'
   | RV, Rred _ r' m' t => rred ge cp a m t r' m' /\ exists w', possible_trace w t w'
   | RV, Callred _ fd args tyres t m' => callred ge cp a m fd args tyres t /\ m' = m
   | LV, Stuckred => ~imm_safe_t cp k a m
@@ -1027,7 +1029,12 @@ Proof with (try (apply not_invert_ok; simpl; intro; myinv; intuition congruence;
   destruct (type_eq ty ty')...
   subst. apply topred_ok; auto. apply red_var_local; auto.
   destruct (Genv.find_symbol ge x) as [b|] eqn:?...
-  apply topred_ok; auto. apply red_var_global; auto.
+  destruct Genv.allowed_addrof_b eqn:CHECK...
+  { apply topred_ok; auto. apply red_var_global; auto.
+    now apply Genv.allowed_addrof_b_reflect. }
+  apply not_invert_ok. simpl. rewrite Heqo.
+  intros (? & [?|(_ & _ & CONTRA)]); try easy.
+  apply Genv.allowed_addrof_b_reflect in CONTRA. congruence.
 (* Efield *)
   destruct (is_val a) as [[v ty'] | ] eqn:?.
   rewrite (is_val_inv _ _ _ Heqo).
@@ -1171,8 +1178,8 @@ Proof with (try (apply not_invert_ok; simpl; intro; myinv; intuition congruence;
   destruct (Genv.allowed_call_b ge cp vf) eqn:ALLOWED...
   destruct (sem_cast_arguments vtl tyargs m) as [vargs|] eqn:?...
   destruct (type_eq (type_of_fundef fd) (Tfunction tyargs tyres cconv))...
-  destruct (Genv.type_of_call ge cp (Genv.find_comp ge vf)) eqn:?...
-  destruct (get_call_trace _ _ ge cp (Genv.find_comp ge vf) vf vargs (typlist_of_typelist tyargs)) eqn:?...
+  destruct (Genv.type_of_call cp (comp_of fd)) eqn:?...
+  destruct (get_call_trace _ _ ge cp (comp_of fd) vf vargs (typlist_of_typelist tyargs)) eqn:?...
   apply topred_ok; auto. red. split; auto. eapply red_call; eauto.
   eapply sem_cast_arguments_sound; eauto.
   (* Use Heqb *)
@@ -1185,20 +1192,22 @@ Proof with (try (apply not_invert_ok; simpl; intro; myinv; intuition congruence;
   exploit sem_cast_arguments_complete; eauto. intros [vtl' [P Q]]. rewrite Heqo0 in P. inv P.
   rewrite Heqo2 in Q; inv Q. congruence.
   destruct (forallb not_ptr_b vargs) eqn:?...
-  destruct (get_call_trace _ _ ge cp (Genv.find_comp ge vf) vf vargs (typlist_of_typelist tyargs)) eqn:?...
+  destruct (get_call_trace _ _ ge cp (comp_of fd) vf vargs (typlist_of_typelist tyargs)) eqn:?...
   apply topred_ok; auto. red. split; auto. eapply red_call; eauto.
   eapply sem_cast_arguments_sound; eauto.
   eapply Genv.allowed_call_reflect; eauto.
   intros. pose proof (proj1 (forallb_forall _ _) Heqb). eapply Forall_forall. intros; eapply not_ptr_reflect; eauto.
   eapply get_call_trace_eq; eauto.
   apply not_invert_ok; simpl; intros; myinv. specialize (H ALLVAL). myinv.
-  (* apply Genv.cross_call_reflect in Heqb. *) specialize (H4 Heqc0).
+  (* apply Genv.cross_call_reflect in Heqb. *)
+  assert (x2 = fd) as -> by congruence. specialize (H4 Heqc0).
   rewrite Heqc in H; inv H.
   rewrite Heqo1 in H0; inv H0.
   exploit sem_cast_arguments_complete; eauto. intros [vtl' [P Q]]. rewrite Heqo0 in P. inv P.
   rewrite Heqo2 in Q; inv Q. eapply get_call_trace_eq in H5; congruence.
   apply not_invert_ok; simpl; intros; myinv. specialize (H ALLVAL). myinv.
-  (* apply Genv.cross_call_reflect in Heqb. *) specialize (H4 Heqc0).
+  (* apply Genv.cross_call_reflect in Heqb. *)
+  assert (x2 = fd) as -> by congruence. specialize (H4 Heqc0).
   rewrite Heqc in H; inv H.
   rewrite Heqo1 in H0; inv H0.
   exploit sem_cast_arguments_complete; eauto. intros [vtl' [P Q]]. rewrite Heqo0 in P. inv P.
@@ -1206,7 +1215,7 @@ Proof with (try (apply not_invert_ok; simpl; intro; myinv; intuition congruence;
   pose proof (proj1 (Forall_forall _ _) H4).
   eapply eq_true_false_abs with (b := forallb not_ptr_b x3); [| auto].
   eapply forallb_forall. intros. eapply not_ptr_reflect; eauto.
-  destruct (get_call_trace _ _ ge cp (Genv.find_comp ge vf) vf vargs (typlist_of_typelist tyargs)) eqn:?...
+  destruct (get_call_trace _ _ ge cp (comp_of fd) vf vargs (typlist_of_typelist tyargs)) eqn:?...
   (* apply topred_ok; auto. red. split; auto. eapply red_call; eauto. *)
   (* eapply sem_cast_arguments_sound; eauto. *)
   (* eapply Genv.allowed_call_reflect; eauto. congruence. *)
@@ -1285,14 +1294,17 @@ Qed.
 
 Lemma lred_topred:
   forall cp l1 m1 l2 m2,
-  lred ge e l1 m1 l2 m2 ->
+  lred ge e cp l1 m1 l2 m2 ->
   exists rule, step_expr cp LV l1 m1 = topred (Lred rule l2 m2).
 Proof.
   induction 1; simpl.
 (* var local *)
   rewrite H. rewrite dec_eq_true. econstructor; eauto.
 (* var global *)
-  rewrite H; rewrite H0. econstructor; eauto.
+  rewrite H; rewrite H0.
+  assert (Genv.allowed_addrof_b ge cp x = true) as ->
+    by now rewrite <- Genv.allowed_addrof_b_reflect.
+  econstructor; eauto.
 (* deref *)
   econstructor; eauto.
 (* field struct *)
@@ -1361,7 +1373,7 @@ Proof.
   eapply Genv.allowed_call_reflect in ALLOWED.
   rewrite ALLOWED.
   econstructor; eauto.
-  destruct (Genv.type_of_call ge cp (Genv.find_comp ge vf)) eqn:?; try reflexivity.
+  destruct (Genv.type_of_call cp (comp_of fd)) eqn:?; try reflexivity.
   eapply get_call_trace_eq in EV; rewrite EV; eauto.
   specialize (NO_CROSS_PTR eq_refl).
   pose proof (proj1 (Forall_forall _ _) NO_CROSS_PTR) as G.
@@ -1809,7 +1821,7 @@ Definition do_step (w: world) (s: state) : list transition :=
       end
 
   | Returnstate v (Kcall f e C ty k) m ty' cp =>
-      check (match Genv.type_of_call ge (comp_of f) cp with
+      check (match Genv.type_of_call (comp_of f) cp with
              | Genv.CrossCompartmentCall => not_ptr_b v
              | _ => true end);
       do t <- get_return_trace _ _ ge (comp_of f) cp v ty';
@@ -1914,7 +1926,7 @@ Proof with (unfold ret; eauto with coqlib).
   inversion H; subst; exploit estep_not_val; eauto; intro NOTVAL.
 (* lred *)
   unfold do_step; rewrite NOTVAL.
-  exploit lred_topred; eauto. instantiate (1 := (comp_of f)). instantiate (1 := w). intros (rule & STEP).
+  exploit lred_topred; eauto. instantiate (1 := w). intros (rule & STEP).
   exists rule. change (TR rule E0 (ExprState f (C a') k e m')) with (expr_final_state f k e (C, Lred rule a' m')).
   apply in_map.
   generalize (step_expr_context e w _ _ _ H1 (comp_of f) a m). unfold reducts_incl.
@@ -1984,11 +1996,11 @@ Proof with (unfold ret; eauto with coqlib).
   rewrite (sem_bind_parameters_complete _ _ _ _ _ _ _ H2)...
   constructor; auto.
   exploit do_ef_external_complete; eauto. intro EQ; rewrite EQ. auto with coqlib.
-  assert (match Genv.type_of_call ge (comp_of f) cp with
+  assert (match Genv.type_of_call (comp_of f) cp with
            | Genv.CrossCompartmentCall => not_ptr_b v
            | _ => true
            end = true).
-  { destruct (Genv.type_of_call ge (comp_of f) cp) eqn:eq_type_of_call;
+  { destruct (Genv.type_of_call (comp_of f) cp) eqn:eq_type_of_call;
       [reflexivity | ].
     apply not_ptr_reflect; auto. }
   rewrite H. apply get_return_trace_eq in EV; rewrite EV. simpl.

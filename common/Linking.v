@@ -16,12 +16,22 @@
 
 (** Separate compilation and syntactic linking *)
 
+Require Import Coq.Bool.Sumbool.
 Require Import Coqlib Maps Errors AST.
 
 (** This file follows "approach A" from the paper
        "Lightweight Verification of Separate Compilation"
     by Kang, Kim, Hur, Dreyer and Vafeiadis, POPL 2016. *)
 
+Lemma sumbool_of_bool_true :
+  forall (b: bool) (H : b = true),
+    sumbool_of_bool b = left H.
+Proof.
+  intros b. unfold sumbool_of_bool.
+  destruct b; try discriminate.
+  intros H. f_equal.
+  apply Zaux.eqbool_irrelevance.
+Qed.
 
 (** * Syntactic linking *)
 
@@ -296,14 +306,25 @@ Definition link_prog_merge (o1 o2: option (globdef F V)) :=
   | Some gd1, Some gd2 => link gd1 gd2
   end.
 
+Lemma link_prog_subproof :
+  Policy.eqb p1.(prog_pol) p2.(prog_pol) = true ->
+  Policy.in_pub p1.(prog_pol) (p1.(prog_public) ++ p2.(prog_public)).
+Proof.
+Admitted.
+
 Definition link_prog :=
   if ident_eq p1.(prog_main) p2.(prog_main)
-     && PTree_Properties.for_all dm1 link_prog_check
-     && Policy.eqb p1.(prog_pol) p2.(prog_pol) then (* The policies of the two linked programs must be equal *)
-    Some {| prog_main := p1.(prog_main);
-            prog_public := p1.(prog_public) ++ p2.(prog_public);
-            prog_defs := PTree.elements (PTree.combine link_prog_merge dm1 dm2);
-            prog_pol := p1.(prog_pol); |}
+     && PTree_Properties.for_all dm1 link_prog_check then
+    (* The policies of the two linked programs must be equal *)
+    match sumbool_of_bool (Policy.eqb p1.(prog_pol) p2.(prog_pol)) with
+    | left yes =>
+        Some {| prog_main := p1.(prog_main);
+                prog_public := p1.(prog_public) ++ p2.(prog_public);
+                prog_defs := PTree.elements (PTree.combine link_prog_merge dm1 dm2);
+                prog_pol := p1.(prog_pol);
+                prog_pol_pub := link_prog_subproof yes; |}
+    | right _ => None
+    end
   else
     None.
 
@@ -314,17 +335,20 @@ Lemma link_prog_inv:
    /\ (forall id gd1 gd2,
          dm1!id = Some gd1 -> dm2!id = Some gd2 ->
          In id p1.(prog_public) /\ In id p2.(prog_public) /\ exists gd, link gd1 gd2 = Some gd)
-   /\ Policy.eqb p1.(prog_pol) p2.(prog_pol) = true (* If one can link two programs, then their policies where the same *)
-   /\ p = {| prog_main := p1.(prog_main);
+   /\ exists yes : Policy.eqb p1.(prog_pol) p2.(prog_pol) = true,
+    (* If one can link two programs, then their policies where the same *)
+      p = {| prog_main := p1.(prog_main);
             prog_public := p1.(prog_public) ++ p2.(prog_public);
             prog_defs := PTree.elements (PTree.combine link_prog_merge dm1 dm2);
-            prog_pol := p1.(prog_pol) |}.
+            prog_pol := p1.(prog_pol);
+            prog_pol_pub := link_prog_subproof yes |}.
 Proof.
   unfold link_prog; intros p E.
   destruct (ident_eq (prog_main p1) (prog_main p2)); try discriminate.
   destruct (PTree_Properties.for_all dm1 link_prog_check) eqn:C;
-    destruct (Policy.eqb p1.(prog_pol) p2.(prog_pol)) eqn:D;
-    inv E.
+  simpl in E; try congruence.
+  destruct (sumbool_of_bool (Policy.eqb p1.(prog_pol) p2.(prog_pol))) as [D|_];
+  simpl in E; try congruence.
   rewrite PTree_Properties.for_all_correct in C.
   split; auto. split; auto.
   intros. exploit C; eauto. unfold link_prog_check. rewrite H0. intros.
@@ -332,6 +356,7 @@ Proof.
   destruct (in_dec peq id (prog_public p2)); try discriminate.
   destruct (link gd1 gd2) eqn:L; try discriminate.
   intuition auto. exists g; auto.
+  exists D; congruence.
 Qed.
 
 Lemma link_prog_succeeds:
@@ -339,16 +364,18 @@ Lemma link_prog_succeeds:
   (forall id gd1 gd2,
       dm1!id = Some gd1 -> dm2!id = Some gd2 ->
       In id p1.(prog_public) /\ In id p2.(prog_public) /\ link gd1 gd2 <> None) ->
-  Policy.eqb p1.(prog_pol) p2.(prog_pol) = true ->
+  forall yes : Policy.eqb p1.(prog_pol) p2.(prog_pol) = true,
   link_prog =
     Some {| prog_main := p1.(prog_main);
             prog_public := p1.(prog_public) ++ p2.(prog_public);
             prog_defs := PTree.elements (PTree.combine link_prog_merge dm1 dm2);
-            prog_pol := p1.(prog_pol) |}.
+            prog_pol := p1.(prog_pol);
+            prog_pol_pub := link_prog_subproof yes;
+         |}.
 Proof.
   intros. unfold link_prog. unfold proj_sumbool. rewrite H, dec_eq_true. simpl.
   replace (PTree_Properties.for_all dm1 link_prog_check) with true; auto.
-  rewrite H1; auto.
+  rewrite (sumbool_of_bool_true _ yes); trivial.
   symmetry. apply PTree_Properties.for_all_correct; intros. rename a into gd1.
   unfold link_prog_check. destruct dm2!x as [gd2|] eqn:G2; auto.
   exploit H0; eauto. intros (P & Q & R). unfold proj_sumbool; rewrite ! pred_dec_true by auto.
@@ -356,8 +383,8 @@ Proof.
 Qed.
 
 Lemma prog_defmap_elements:
-  forall (m: PTree.t (globdef F V)) pub mn pol x,
-  (prog_defmap {| prog_defs := PTree.elements m; prog_public := pub; prog_main := mn; prog_pol := pol |})!x = m!x.
+  forall (m: PTree.t (globdef F V)) pub mn pol H x,
+  (prog_defmap {| prog_defs := PTree.elements m; prog_public := pub; prog_main := mn; prog_pol := pol; prog_pol_pub := H |})!x = m!x.
 Proof.
   intros. unfold prog_defmap; simpl. apply PTree_Properties.of_list_elements.
 Qed.
@@ -686,8 +713,12 @@ Proof.
   intros. destruct (link_prog_inv _ _ _ H) as (P & Q & S & R).
   generalize H0; intros (A1 & B1 & C1 & D1).
   generalize H1; intros (A2 & B2 & C2 & D2).
+  assert (yes : Policy.eqb (prog_pol tp1) (prog_pol tp2) = true).
+  { apply (Policy.eqb_trans _ _ _ D1).
+    apply (Policy.eqb_trans _ _ _ S).
+    now apply Policy.eqb_comm. }
   econstructor; split.
-- apply link_prog_succeeds.
+- apply (link_prog_succeeds tp1 tp2) with (yes := yes).
 + congruence.
 + intros.
   generalize (match_program_defmap _ _ _ _ _ H0 id) (match_program_defmap _ _ _ _ _ H1 id).
@@ -695,7 +726,6 @@ Proof.
   exploit Q; eauto. intros (X & Y & gd & Z).
   exploit link_match_globdef. eexact H2. eexact H3. eauto. eauto. eauto.
   intros (tg & TL & _). intuition congruence.
-+ eauto using Policy.eqb_comm, Policy.eqb_trans. (* JT: NOTE: could this automation be risky, since it uses transitivity? *)
 - split; [|split].
 + rewrite R. apply PTree.elements_canonical_order'. intros id.
   rewrite ! PTree.gcombine by auto.

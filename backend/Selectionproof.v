@@ -33,12 +33,14 @@ Definition match_fundef (cunit: Cminor.program) (f: Cminor.fundef) (tf: CminorSe
 Definition match_prog (p: Cminor.program) (tp: CminorSel.program) :=
   match_program match_fundef eq p tp.
 
+#[global]
 Instance comp_sel_fundef ctx hf: has_comp_transl_partial (sel_function ctx hf).
 Proof.
   unfold sel_function.
   intros f tf H; try monadInv H; trivial.
 Qed.
 
+#[global]
 Instance comp_match_fundef: has_comp_match match_fundef.
 Proof.
   intros cunit f tf (hf & hf_c & G & _ & H).
@@ -245,7 +247,7 @@ Qed.
 
 Lemma type_of_call_translated:
   forall cp cp',
-    Genv.type_of_call ge cp cp' = Genv.type_of_call tge cp cp'.
+    Genv.type_of_call cp cp' = Genv.type_of_call cp cp'.
 Proof.
   intros cp cp'.
   eapply Genv.match_genvs_type_of_call.
@@ -255,7 +257,7 @@ Lemma call_trace_translated:
   forall cp cp' vf vf' vargs tvargs tyargs t,
     Val.lessdef_list vargs tvargs ->
     Val.lessdef vf vf' ->
-    (Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr vargs) ->
+    (Genv.type_of_call cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr vargs) ->
     call_trace ge cp cp' vf vargs tyargs t ->
     call_trace tge cp cp' vf' tvargs tyargs t.
 Proof.
@@ -1282,8 +1284,9 @@ Lemma match_call_cont_call_comp:
   match_call_cont k k' ->
   Cminor.call_comp k = call_comp k'.
 Proof.
-  intros k k' H.
-  now destruct H.
+  intros k k' H. destruct H; simpl.
+  reflexivity.
+  unfold Cminor.call_comp, call_comp. simpl. now f_equal.
 Qed.
 
 (*
@@ -1465,8 +1468,8 @@ Proof.
   intros CROSS.
   eapply Val.lessdef_list_not_ptr; eauto.
   eapply NO_CROSS_PTR.
-  erewrite find_comp_translated, type_of_call_translated; eauto.
-  erewrite <- CPT, <- find_comp_translated; eauto.
+  erewrite comp_function_translated; eauto.
+  erewrite <- CPT, <- comp_function_translated; eauto.
   eapply call_trace_translated; eauto.
   eapply match_callstate with (cunit := cunit'); eauto.
   eapply match_cont_call with (cunit := cunit) (hf := hf); eauto.
@@ -1484,9 +1487,9 @@ Proof.
   intros CROSS.
   eapply Val.lessdef_list_not_ptr; eauto.
   eapply NO_CROSS_PTR.
-  erewrite find_comp_translated, type_of_call_translated; eauto.
+  erewrite comp_function_translated; eauto.
   subst vf.
-  rewrite <- CPT, <- (find_comp_translated _ _ _ (Val.lessdef_refl _) H1).
+  rewrite <- CPT, <- (comp_function_translated _ _ _ Y).
   apply call_trace_translated with (vf := Vptr b Ptrofs.zero) (vargs := vargs); auto.
   eapply match_callstate with (cunit := cunit'); eauto.
   eapply match_cont_call with (cunit := cunit) (hf := hf); eauto.
@@ -1498,7 +1501,7 @@ Proof.
   simpl in *.
   unfold Genv.find_comp, Genv.find_funct in *.
   destruct (Ptrofs.eq_dec ofs Ptrofs.zero); try congruence.
-  rewrite H1. rewrite H1 in H2. unfold comp_of in H2. simpl in H2. rewrite EQ' in H2.
+  rewrite <- EQ' in H2.
   eapply Genv.type_of_call_same_cp in H2; contradiction.
   econstructor; eauto.
 - (* Stailcall *)

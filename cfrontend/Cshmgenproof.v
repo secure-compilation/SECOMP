@@ -33,11 +33,13 @@ Definition match_varinfo (v: type) (tv: unit) := True.
 Definition match_prog (p: Clight.program) (tp: Csharpminor.program) : Prop :=
   match_program_gen match_fundef match_varinfo p p tp.
 
+#[global]
 Instance comp_transl_function ctx: has_comp_transl_partial (transl_function ctx).
 Proof.
   unfold transl_function. now intros ?? H; monadInv H.
 Qed.
 
+#[global]
 Instance comp_match_fundef: has_comp_match match_fundef.
 Proof.
   intros cu ? ? [f tf H|]; trivial.
@@ -1132,8 +1134,8 @@ Qed.
 Lemma type_of_call_translated:
   forall cp f (cu: Clight.program) tf,
     transl_function (prog_comp_env cu) f = OK tf ->
-    Genv.type_of_call ge (comp_of f) cp =
-      Genv.type_of_call tge (comp_of tf) cp.
+    Genv.type_of_call (comp_of f) cp =
+      Genv.type_of_call (comp_of tf) cp.
 Proof.
   intros cp f ce tf TRF.
   erewrite <- (comp_transl_partial _ TRF).
@@ -1726,7 +1728,7 @@ Proof.
   destruct H; trivial.
   all: match goal with
   | H : transl_function _ _ = _ |- _ =>
-    apply (comp_transl_partial _ H)
+    now rewrite (comp_transl_partial _ H)
   end.
 Qed.
 
@@ -1799,10 +1801,13 @@ Proof.
     rewrite <- (comp_transl_function _ _ _ TRF). eauto.
     eauto. eauto.
     eapply allowed_call_translated; eauto.
-    erewrite <- find_comp_translated, <- type_of_call_translated; eauto.
+    rewrite <- comp_match_fundef; eauto.
+    erewrite <- type_of_call_translated; eauto.
     unfold sg; simpl. erewrite typlist_of_arglist_eq; eauto.
-    rewrite <- (comp_transl_function _ _ _ TRF), <- find_comp_translated; eauto.
+    rewrite <- (comp_transl_function _ _ _ TRF); eauto.
+    rewrite <- comp_match_fundef; eauto.
     eapply call_trace_translated; eauto.
+
     econstructor; eauto.
     eapply match_Kcall with (ce := prog_comp_env cu') (cu := cu); eauto.
     exact I.
@@ -1816,9 +1821,11 @@ Proof.
     rewrite <- (comp_transl_function _ _ _ TRF). eauto.
     eauto. eauto.
     eapply allowed_call_translated; eauto.
-    erewrite <- find_comp_translated, <- type_of_call_translated; eauto.
+    rewrite <- comp_match_fundef; eauto.
+    rewrite <- comp_transl_function; eauto.
+    rewrite <- comp_match_fundef; eauto.
+    rewrite <- comp_transl_function; eauto.
     unfold sg; simpl. erewrite typlist_of_arglist_eq; eauto.
-    rewrite <- (comp_transl_function _ _ _ TRF), <- find_comp_translated; eauto.
     eapply call_trace_translated; eauto.
     traceEq.
     econstructor; eauto.

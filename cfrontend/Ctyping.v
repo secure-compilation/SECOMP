@@ -940,7 +940,8 @@ Definition typecheck_program (p: program) : res program :=
         prog_pol := p.(prog_pol);
         prog_types := p.(prog_types);
         prog_comp_env := ce;
-        prog_comp_env_eq := p.(prog_comp_env_eq) |}.
+        prog_comp_env_eq := p.(prog_comp_env_eq);
+        prog_pol_pub := p.(prog_pol_pub) |}.
 
 (** Soundness of the smart constructors.  *)
 
@@ -1849,8 +1850,8 @@ Proof.
 Qed.
 
 Lemma wt_lred:
-  forall tenv ge e a m a' m',
-  lred ge e a m a' m' -> wt_lvalue ge tenv a -> wt_lvalue ge tenv a'.
+  forall tenv ge e cp a m a' m',
+  lred ge e cp a m a' m' -> wt_lvalue ge tenv a -> wt_lvalue ge tenv a'.
 Proof.
   induction 1; intros WT; constructor.
 Qed.
@@ -1863,8 +1864,8 @@ Proof.
 Qed.
 
 Lemma lred_same_type:
-  forall ge e a m a' m',
-  lred ge e a m a' m' -> typeof a' = typeof a.
+  forall ge e cp a m a' m',
+  lred ge e cp a m a' m' -> typeof a' = typeof a.
 Proof.
   induction 1; auto.
 Qed.

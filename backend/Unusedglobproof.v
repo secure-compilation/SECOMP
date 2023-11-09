@@ -690,15 +690,15 @@ Inductive match_stacks (j: meminj):
       meminj_preserves_globals j ->
       Ple (Genv.genv_next ge) bound -> Ple (Genv.genv_next tge) tbound ->
       match_stacks j nil nil bound tbound
-  | match_stacks_cons: forall res ty cp f sp pc rs s tsp trs ts bound tbound
+  | match_stacks_cons: forall res ty f sp pc rs s tsp trs ts bound tbound
          (STACKS: match_stacks j s ts sp tsp)
          (KEPT: forall id, ref_function f id -> kept id)
          (SPINJ: j sp = Some(tsp, 0))
          (REGINJ: regset_inject j rs trs)
          (BELOW: Plt sp bound)
          (TBELOW: Plt tsp tbound),
-      match_stacks j (Stackframe res ty cp f (Vptr sp Ptrofs.zero) pc rs :: s)
-                     (Stackframe res ty cp f (Vptr tsp Ptrofs.zero) pc trs :: ts)
+      match_stacks j (Stackframe res ty f (Vptr sp Ptrofs.zero) pc rs :: s)
+                     (Stackframe res ty f (Vptr tsp Ptrofs.zero) pc trs :: ts)
                      bound tbound.
 
 Lemma match_stacks_preserves_globals:
@@ -783,12 +783,12 @@ Inductive match_states: state -> state -> Prop :=
          (MEMINJ: Mem.inject j m tm),
       match_states (Callstate s fd args m)
                    (Callstate ts fd targs tm)
-  | match_states_return: forall s res m ts tres tm j
+  | match_states_return: forall s res m cp ts tres tm j
          (STACKS: match_stacks j s ts (Mem.nextblock m) (Mem.nextblock tm))
          (RESINJ: Val.inject j res tres)
          (MEMINJ: Mem.inject j m tm),
-      match_states (Returnstate s res m)
-                   (Returnstate ts tres tm).
+      match_states (Returnstate s res m cp)
+                   (Returnstate ts tres tm cp).
 
 Lemma external_call_inject:
   forall ef vargs m1 t vres m2 f m1' vargs',
@@ -844,7 +844,6 @@ Lemma find_function_ptr_inject:
   exists tvf,
     find_function_ptr tge ros trs = Some tvf /\
     Genv.allowed_call tge cp tvf /\
-    Genv.type_of_call ge cp (Genv.find_comp ge vf) = Genv.type_of_call tge cp (Genv.find_comp tge tvf) /\
     Genv.find_comp ge vf = Genv.find_comp tge tvf /\
     Val.inject j vf tvf.
 Proof.
@@ -859,11 +858,13 @@ Proof.
     rewrite <- Genv.find_funct_ptr_iff in A.
     rewrite <- Genv.find_funct_ptr_iff in H0.
     exists (Vptr b2 (Ptrofs.add Ptrofs.zero (Ptrofs.repr delta))).
-    split; [| split; [| split; [| split]]]; auto.
+    assert (D : Genv.find_comp_of_block ge b = Genv.find_comp_of_block tge b2).
+    { rewrite !Genv.find_funct_ptr_iff in H0, A.
+      unfold Genv.find_comp_of_block. now rewrite H0, A. }
+    split; [| split; [| split]]; auto.
     { rewrite R in H2.
       destruct H2 as [H2 | H2].
-      + left. rewrite H2. unfold Genv.find_comp.
-        simpl. rewrite A. rewrite H0. subst; now destruct Ptrofs.eq_dec.
+      + left. now rewrite H2.
       + right.
         unfold Genv.allowed_cross_call in *.
         destruct H2 as [i [cp' [H21 [H22 [H23 H24]]]]].
@@ -875,19 +876,19 @@ Proof.
           specialize (E j H). unfold symbols_inject in E.
           destruct E as [E1 [E2 [E3 E4]]].
           specialize (E2 i _ _ _ H6). simpl in E2. specialize (E2 H21). destruct E2. auto.
-        * rewrite <- H22. unfold Genv.find_comp.
-          simpl. rewrite A. rewrite H0. subst; now destruct Ptrofs.eq_dec.
+        * rewrite <- H22. unfold Genv.find_comp. now rewrite D.
         * apply match_prog_pol in TRANSF.
-          unfold tge, Genv.globalenv. rewrite TRANSF.
+          unfold tge, Genv.globalenv.
           rewrite Genv.genv_pol_add_globals. simpl.
+          rewrite TRANSF.
           unfold ge, Genv.globalenv in H23. now rewrite Genv.genv_pol_add_globals in H23.
         * apply match_prog_pol in TRANSF.
-          unfold tge, Genv.globalenv. rewrite TRANSF.
+          unfold tge, Genv.globalenv.
           rewrite Genv.genv_pol_add_globals. simpl.
+          rewrite TRANSF.
           unfold ge, Genv.globalenv in H24. now rewrite Genv.genv_pol_add_globals in H24. }
     { unfold Genv.type_of_call. unfold Genv.find_comp, Genv.find_funct.
-      rewrite R, H0, A, B. now destruct Ptrofs.eq_dec. }
-    { unfold Genv.find_comp, Genv.find_funct. rewrite R, H0, A, B. reflexivity. }
+      now rewrite R. }
     { rewrite R. eapply Val.inject_ptr; eauto. }
   - destruct (Genv.find_symbol ge id) as [b|] eqn:FS; try discriminate.
     exploit symbols_inject_2; eauto. intros (tb & P & Q). rewrite P.
@@ -896,12 +897,14 @@ Proof.
     exploit defs_inject; eauto. intros (A & B & C).
     rewrite <- Genv.find_funct_ptr_iff in A.
     inv H1.
-    eexists; split; [| split; [| split; [| split]]]; eauto.
+    assert (D : Genv.find_comp_of_block ge b = Genv.find_comp_of_block tge tb).
+    { rewrite !Genv.find_funct_ptr_iff in A.
+      unfold Genv.find_comp_of_block. now rewrite H0, A. }
+    eexists; split; [| split; [| split]]; eauto.
     { rewrite <- Genv.find_funct_ptr_iff in H0.
       rewrite <- H0 in A.
       destruct H2 as [H2 | H2].
-      + left. rewrite H2. unfold Genv.find_comp.
-        simpl. rewrite A. rewrite H0. reflexivity.
+      + left. now rewrite H2.
       + right.
         unfold Genv.allowed_cross_call in *.
         destruct H2 as [i [cp' [H21 [H22 [H23 H24]]]]].
@@ -913,22 +916,17 @@ Proof.
           specialize (E j H). unfold symbols_inject in E.
           destruct E as [E1 [E2 [E3 E4]]].
           specialize (E2 i _ _ _ Q). simpl in E2. specialize (E2 H21). destruct E2. auto.
-        * rewrite <- H22. unfold Genv.find_comp.
-          simpl. rewrite A. rewrite H0. reflexivity.
+        * now rewrite <- H22.
         * apply match_prog_pol in TRANSF.
-          unfold tge, Genv.globalenv. rewrite TRANSF.
+          unfold tge, Genv.globalenv.
           rewrite Genv.genv_pol_add_globals. simpl.
+          rewrite TRANSF.
           unfold ge, Genv.globalenv in H23. now rewrite Genv.genv_pol_add_globals in H23.
         * apply match_prog_pol in TRANSF.
-          unfold tge, Genv.globalenv. rewrite TRANSF.
+          unfold tge, Genv.globalenv.
           rewrite Genv.genv_pol_add_globals. simpl.
+          rewrite TRANSF.
           unfold ge, Genv.globalenv in H24. now rewrite Genv.genv_pol_add_globals in H24. }
-    { unfold Genv.type_of_call. unfold Genv.find_comp, Genv.find_funct.
-      rewrite <- Genv.find_funct_ptr_iff in H0.
-      rewrite H0, A. reflexivity. }
-    { unfold Genv.find_comp.
-      rewrite <- Genv.find_funct_ptr_iff in H0. unfold Genv.find_comp, Genv.find_funct.
-      rewrite H0, A. reflexivity. }
 Qed.
 
 Lemma eval_builtin_arg_inject:
@@ -1001,7 +999,7 @@ Lemma call_trace_translated:
     regset_inject j rs trs ->
     Val.inject j vf tvf ->
     meminj_preserves_globals j ->
-    (Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr (rs##args)) ->
+    (Genv.type_of_call cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr (rs##args)) ->
     (Genv.find_comp ge vf = Genv.find_comp tge tvf) ->
     call_trace ge cp cp' vf (rs##args) tyargs t ->
     call_trace tge cp cp' tvf (trs##args) tyargs t.
@@ -1097,7 +1095,7 @@ Proof.
   eapply match_stacks_preserves_globals; eauto. eauto. apply FUNPTR. eapply ALLOWED.
   destruct ros as [r|id]. eauto. apply KEPT. red. econstructor; econstructor; split; eauto. simpl; auto.
 
-  intros (tvf & C & D & E & F & G).
+  intros (tvf & C & D & F & G).
   econstructor; split. eapply exec_Icall; eauto.
   intros CROSS.
   (* TODO: write a lemma *)
@@ -1115,13 +1113,10 @@ Proof.
         rewrite <- H0 in H2; inv H2.
       + eauto. }
   eapply H1; eauto.
-  eapply NO_CROSS_PTR; eauto.
-  rewrite E; eauto.
-  rewrite <- F.
 eapply call_trace_translated; eauto.
   eapply match_stacks_preserves_globals; eauto.
   econstructor; eauto.
-  rewrite F. econstructor; eauto.
+  econstructor; eauto.
   change (Mem.valid_block m sp0). eapply Mem.valid_block_inject_1; eauto.
   change (Mem.valid_block tm tsp). eapply Mem.valid_block_inject_2; eauto.
   apply regs_inject; auto.
@@ -1596,8 +1591,13 @@ Theorem link_match_program:
 Proof.
   intros. destruct H0 as (used1 & A1 & B1). destruct H1 as (used2 & A2 & B2).
   destruct (link_prog_inv _ _ _ H) as (U & V & W' & W).
+  assert (yes : Policy.eqb (prog_pol tp1) (prog_pol tp2) = true).
+  {
+    rewrite (match_prog_pol _ _ _ B1).
+    rewrite (match_prog_pol _ _ _ B2).
+    exact W'. }
   econstructor; split.
-- apply link_prog_succeeds.
+- apply link_prog_succeeds with (yes := yes).
 + rewrite (match_prog_main _ _ _ B1), (match_prog_main _ _ _ B2). auto.
 + intros.
   rewrite (match_prog_def _ _ _ B1) in H0.
@@ -1608,7 +1608,7 @@ Proof.
   split. rewrite (match_prog_public _ _ _ B1); auto.
   split. rewrite (match_prog_public _ _ _ B2); auto.
   congruence.
-+ rewrite (match_prog_pol _ _ _ B1), (match_prog_pol _ _ _ B2). auto.
+(* + rewrite (match_prog_pol _ _ _ B1), (match_prog_pol _ _ _ B2). auto. *)
 - exists (IS.union used1 used2); split.
 + eapply link_valid_used_set; eauto.
 + rewrite W. constructor; simpl; intros.

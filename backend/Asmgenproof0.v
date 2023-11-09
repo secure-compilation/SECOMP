@@ -324,13 +324,14 @@ Proof.
   intros. destruct H. unfold Mach.undef_caller_save_regs, Asm.undef_caller_save_regs; split.
 - unfold proj_sumbool; rewrite dec_eq_true. auto.
 - auto.
-- intros. unfold proj_sumbool. rewrite dec_eq_false by (apply preg_of_not_SP). 
-  destruct (in_dec preg_eq (preg_of r) (List.map preg_of (List.filter is_callee_save all_mregs))); simpl.
-+ apply list_in_map_inv in i. destruct i as (mr & A & B). 
-  assert (r = mr) by (apply preg_of_injective; auto). subst mr; clear A.
-  apply List.filter_In in B. destruct B as [C D]. rewrite D. auto.
-+ destruct (is_callee_save r) eqn:CS; auto.
-  elim n. apply List.in_map. apply List.filter_In. auto using all_mregs_complete. 
+- auto.
+(*   intros. unfold proj_sumbool. rewrite dec_eq_false by (apply preg_of_not_SP). *)
+(*   destruct (in_dec preg_eq (preg_of r) (List.map preg_of (List.filter is_callee_save all_mregs))); simpl. *)
+(* + apply list_in_map_inv in i. destruct i as (mr & A & B).  *)
+(*   assert (r = mr) by (apply preg_of_injective; auto). subst mr; clear A. *)
+(*   apply List.filter_In in B. destruct B as [C D]. rewrite D. auto. *)
+(* + destruct (is_callee_save r) eqn:CS; auto. *)
+(*   elim n. apply List.in_map. apply List.filter_In. auto using all_mregs_complete.  *)
 Qed.
 
 Lemma agree_change_sp:
@@ -931,25 +932,22 @@ Lemma exec_straight_steps_1:
   forall b ofs,
   rs#PC = Vptr b ofs ->
   Genv.find_funct_ptr ge b = Some (Internal fn) ->
-  Genv.find_comp ge (Vptr b Ptrofs.zero) = (comp_of fn) ->
   code_tail (Ptrofs.unsigned ofs) (fn_code fn) c ->
-  plus (step comp_of_main) ge (State s rs m) E0 (State s rs' m').
+  plus step ge (State s rs m) E0 (State s rs' m').
 Proof.
   induction 1; intros.
   apply plus_one.
   { econstructor. eauto. eauto.
-    eapply find_instr_tail. eauto.
-    reflexivity. eauto. eauto. eauto.
-    (* now rewrite H2; simpl; rewrite H3. *)
+    eapply find_instr_tail. eauto. eauto.
+    eauto. eauto. eauto.
     now rewrite H2, H4.
-    unfold Genv.find_comp_ignore_offset.
-    now rewrite H6. }
+    now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ H5). }
   eapply plus_left'.
   { econstructor. eauto. eauto.
     eapply find_instr_tail. eauto.
-    reflexivity. eauto. eauto. eauto.
+    eauto. eauto. eauto.
     now rewrite H2, H5.
-    simpl. now rewrite H7.
+    now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ H6).
   }
   apply IHexec_straight with b (Ptrofs.add ofs Ptrofs.one).
   auto. rewrite H2. rewrite H5. reflexivity.
@@ -1046,12 +1044,12 @@ Variable ge: Mach.genv.
 Inductive match_stack: list Mach.stackframe -> Prop :=
   | match_stack_nil:
       match_stack nil
-  | match_stack_cons: forall fb cp sg sp ra c s f tf tc,
+  | match_stack_cons: forall fb sg sp ra c s f tf tc,
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
       transl_code_at_pc ge (Vptr fb ra) fb f c false tf tc ->
       sp <> Vundef ->
       match_stack s ->
-      match_stack (Mach.Stackframe fb cp sg sp ra c :: s).
+      match_stack (Mach.Stackframe fb sg sp ra c :: s).
 
 Lemma parent_sp_def: forall s, match_stack s -> parent_sp s <> Vundef.
 Proof.

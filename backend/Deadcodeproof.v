@@ -22,6 +22,7 @@ Require Import ValueDomain ValueAnalysis NeedDomain NeedOp Deadcode.
 Definition match_prog (prog tprog: RTL.program) :=
   match_program (fun cu f tf => transf_fundef (romem_for cu) f = OK tf) eq prog tprog.
 
+#[global]
 Instance comp_transf_function rm: has_comp_transl_partial (transf_function rm).
 Proof.
   unfold transf_function.
@@ -458,14 +459,6 @@ Proof.
   eapply (Genv.match_genvs_find_comp TRANSF).
 Qed.
 
-Lemma type_of_call_translated:
-  forall cp cp',
-    Genv.type_of_call ge cp cp' = Genv.type_of_call tge cp cp'.
-Proof.
-  intros cp cp'.
-  eapply Genv.match_genvs_type_of_call.
-Qed.
-
 Lemma sig_function_translated:
   forall rm f tf,
   transf_fundef rm f = OK tf ->
@@ -555,7 +548,7 @@ Qed.
 Lemma call_trace_translated:
   forall cp cp' vf ros res ne rs te args tyargs t,
     eagree rs te (add_needs_all args (add_ros_need_all ros (kill res ne))) ->
-    (Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr (rs##args)) ->
+    (Genv.type_of_call cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr (rs##args)) ->
     call_trace ge cp cp' vf (rs##args) tyargs t ->
     call_trace tge cp cp' vf (te##args) tyargs t.
 Proof.
@@ -585,7 +578,7 @@ Qed.
 
 Inductive match_stackframes: stackframe -> stackframe -> Prop :=
   | match_stackframes_intro:
-      forall res ty cp f sp pc e tf te cu an
+      forall res ty f sp pc e tf te cu an
         (LINK: linkorder cu prog)
         (FUN: transf_function (romem_for cu) f = OK tf)
         (ANL: analyze (vanalyze cu f) f = Some an)
@@ -593,8 +586,8 @@ Inductive match_stackframes: stackframe -> stackframe -> Prop :=
               Val.lessdef v tv ->
               eagree (e#res <- v) (te#res<- tv)
                      (fst (transfer f (vanalyze cu f) pc an!!pc))),
-      match_stackframes (Stackframe res ty cp f (Vptr sp Ptrofs.zero) pc e)
-                        (Stackframe res ty cp tf (Vptr sp Ptrofs.zero) pc te).
+      match_stackframes (Stackframe res ty f (Vptr sp Ptrofs.zero) pc e)
+                        (Stackframe res ty tf (Vptr sp Ptrofs.zero) pc te).
 
 Lemma match_stacks_call_comp:
   forall s s',
@@ -607,7 +600,7 @@ Proof.
   | H : match_stackframes _ _ |- _ => destruct H
   end.
   simpl.
-  eapply (comp_transl_partial); eauto.
+  now rewrite (comp_transl_partial _ FUN).
 Qed.
 
 Inductive match_states: state -> state -> Prop :=
@@ -631,12 +624,12 @@ Inductive match_states: state -> state -> Prop :=
       match_states (Callstate s f args m)
                    (Callstate ts tf targs tm)
   | match_return_states:
-      forall s v m ts tv tm
+      forall s v m cp ts tv tm
         (STACKS: list_forall2 match_stackframes s ts)
         (RES: Val.lessdef v tv)
         (MEM: Mem.extends m tm),
-      match_states (Returnstate s v m)
-                   (Returnstate ts tv tm).
+      match_states (Returnstate s v m cp)
+                   (Returnstate ts tv tm cp).
 
 (** [match_states] and CFG successors *)
 
@@ -1000,12 +993,12 @@ Ltac UseTransfer :=
         rewrite <- H0 in H2; inv H2.
       + eapply add_need_all_eagree in AG. eauto. }
   eapply H1; eauto. eapply NO_CROSS_PTR.
-  erewrite find_comp_translated, type_of_call_translated; eauto.
+  rewrite (comp_transl_partial _ B).
   rewrite comp_transf_function; eauto.
-  rewrite <- find_comp_translated, <- comp_transf_function; eauto.
+  rewrite <- (comp_transl_partial _ B), <- comp_transf_function; eauto.
   eapply call_trace_translated; eauto.
   eapply match_call_states with (cu := cu'); eauto.
-  constructor; auto. rewrite <- find_comp_translated. eapply match_stackframes_intro with (cu := cu); eauto.
+  constructor; auto. eapply match_stackframes_intro with (cu := cu); eauto.
   intros.
   edestruct analyze_successors; eauto. simpl; eauto.
   eapply eagree_ge; eauto. rewrite ANPC. simpl.
@@ -1257,7 +1250,6 @@ Ltac UseTransfer :=
   econstructor; split.
   constructor.
   rewrite <- comp_transf_function; eauto.
-  rewrite <- type_of_call_translated.
   intros G; specialize (NO_CROSS_PTR G); inv RES; auto; contradiction.
   rewrite <- comp_transf_function; eauto.
   now eapply return_trace_lessdef; eauto using senv_preserved.

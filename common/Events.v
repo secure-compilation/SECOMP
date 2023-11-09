@@ -1979,10 +1979,10 @@ Variable ge: Genv.t F V.
 
 Inductive call_trace: compartment -> compartment -> val -> list val -> list typ -> trace -> Prop :=
   | call_trace_intra: forall cp cp' vf vargs ty,
-    Genv.type_of_call ge cp cp' <> Genv.CrossCompartmentCall ->
+    Genv.type_of_call cp cp' <> Genv.CrossCompartmentCall ->
     call_trace cp cp' vf vargs ty E0
   | call_trace_cross: forall cp cp' vf vargs vl ty b ofs i,
-      Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall ->
+      Genv.type_of_call cp cp' = Genv.CrossCompartmentCall ->
       vf = Vptr b ofs ->
       Genv.invert_symbol ge b = Some i ->
       eventval_list_match ge vl ty vargs ->
@@ -1999,10 +1999,10 @@ Qed.
 
 Inductive return_trace: compartment -> compartment -> val -> rettype -> trace -> Prop :=
 | return_trace_intra: forall cp cp' v ty,
-    Genv.type_of_call ge cp cp' <> Genv.CrossCompartmentCall ->
+    Genv.type_of_call cp cp' <> Genv.CrossCompartmentCall ->
     return_trace cp cp' v ty E0
 | return_trace_cross: forall cp cp' res v ty,
-    Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall ->
+    Genv.type_of_call cp cp' = Genv.CrossCompartmentCall ->
     eventval_match ge res (proj_rettype ty) v ->
     return_trace cp cp' v ty (Event_return cp cp' res :: nil)
 .
@@ -2021,7 +2021,7 @@ Section INFORM_TRACES_INJECT.
   Lemma call_trace_inj (symbols_preserved: forall (s: ident), Genv.find_symbol ge' s = Genv.find_symbol ge s):
     forall cp cp' vf vs vs' tys t,
       Val.inject_list j vs vs' ->
-      (Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr vs) ->
+      (Genv.type_of_call cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr vs) ->
       call_trace ge cp cp' vf vs tys t ->
       call_trace ge' cp cp' vf vs' tys t.
   Proof.
@@ -2044,7 +2044,7 @@ Section INFORM_TRACES_INJECT.
   Lemma return_trace_inj:
     forall cp cp' v v' ty t,
       Val.inject j v v' ->
-      (Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall -> not_ptr v) ->
+      (Genv.type_of_call cp cp' = Genv.CrossCompartmentCall -> not_ptr v) ->
       return_trace ge cp cp' v ty t ->
       return_trace ge' cp cp' v' ty t.
   Proof.

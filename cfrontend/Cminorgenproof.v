@@ -25,6 +25,7 @@ Local Open Scope error_monad_scope.
 Definition match_prog (p: Csharpminor.program) (tp: Cminor.program) :=
   match_program (fun cu f tf => transl_fundef f = OK tf) eq p tp.
 
+#[global]
 Instance comp_transl_funbody ce stacksize:
   has_comp_transl_partial (transl_funbody ce stacksize).
 Proof.
@@ -33,6 +34,7 @@ Proof.
   now monadInv H.
 Qed.
 
+#[global]
 Instance comp_transl_function: has_comp_transl_partial transl_function.
 Proof.
   unfold transl_function, transl_funbody.
@@ -81,7 +83,7 @@ Proof (Genv.find_funct_transf_partial TRANSL).
 Lemma call_trace_translated:
   forall j cp cp' vf vargs tvargs tyargs t,
     Val.inject_list j vargs tvargs ->
-    (Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr vargs) ->
+    (Genv.type_of_call cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr vargs) ->
     call_trace ge cp cp' vf vargs tyargs t ->
     call_trace tge cp cp' vf tvargs tyargs t.
 Proof.
@@ -1713,7 +1715,7 @@ Proof.
   induction H; simpl; trivial.
   match goal with
   | H : transl_funbody _ _ _ = _ |- _ =>
-    apply (comp_transl_partial _ H)
+    now rewrite <- (comp_transl_partial _ H)
   end.
 Qed.
 
@@ -2011,6 +2013,15 @@ Proof.
   eapply (Genv.allowed_call_transf_partial TRANSL) in ALLOWED. eauto.
 Qed.
 
+Lemma comp_of_fun_transl: forall {f tf},
+  transl_fundef f = OK tf ->
+  comp_of f = comp_of tf.
+Proof.
+  intros f tf.
+  eapply has_comp_transl_partial_match; eauto.
+  apply _.
+Qed.
+
 Lemma find_comp_transl: forall vf,
     Genv.find_comp ge vf = Genv.find_comp tge vf.
 Proof.
@@ -2019,7 +2030,7 @@ Qed.
 
 Lemma type_of_call_transl: forall cenv f cp sz tfn,
   transl_funbody cenv sz f = OK tfn ->
-  Genv.type_of_call ge (comp_of f) cp = Genv.type_of_call tge (comp_of tfn) cp.
+  Genv.type_of_call (comp_of f) cp = Genv.type_of_call (comp_of tfn) cp.
 Proof.
   intros cenv f vf sz tfn TRF.
   erewrite <- (comp_transl_partial _ TRF).
@@ -2124,8 +2135,8 @@ Proof.
   eapply allowed_call_transl; eauto.
   erewrite <- type_of_call_transl; eauto.
   intros CROSS. eapply Val.inject_list_not_ptr; eauto. eapply NO_CROSS_PTR.
-  now rewrite find_comp_transl.
-  rewrite <- find_comp_transl. monadInv TRF; unfold comp_of; simpl.
+  now rewrite (comp_of_fun_transl TRANS).
+  rewrite <- (comp_of_fun_transl TRANS). monadInv TRF; unfold comp_of; simpl.
   eapply call_trace_translated; eauto.
   econstructor; eauto.
   eapply match_Kcall with (cenv' := cenv); eauto.

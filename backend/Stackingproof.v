@@ -26,6 +26,7 @@ Local Open Scope sep_scope.
 Definition match_prog (p: Linear.program) (tp: Mach.program) :=
   match_program (fun _ f tf => transf_fundef f = OK tf) eq p tp.
 
+#[global]
 Instance comp_transf_function: has_comp_transl_partial transf_function.
 Proof.
   unfold transf_function.
@@ -428,7 +429,6 @@ we have full access rights on the stack frame, except the part that
 represents the Linear stack data. *)
 
 Definition frame_contents_1 (j: meminj) (sp: block) (ls ls0: locset) (parent retaddr: val) (cp: compartment) :=
-  (* let cp := default_compartment in *)
     contains_locations j sp fe.(fe_ofs_local) b.(bound_local) Local ls (Some cp) cp
  ** contains_locations j sp fe_ofs_arg b.(bound_outgoing) Outgoing ls (Some cp) cp
  ** hasvalue Mptr sp fe.(fe_ofs_link) cp parent
@@ -437,7 +437,6 @@ Definition frame_contents_1 (j: meminj) (sp: block) (ls ls0: locset) (parent ret
 
 (* TODO: can we modify [frame_contents] to not take [cp] as argument but instead use [comp_of f]? *)
 Definition frame_contents (j: meminj) (sp: block) (ls ls0: locset) (parent retaddr: val) (cp: compartment) :=
-  (* let cp := default_compartment in *)
   mconj (frame_contents_1 j sp ls ls0 parent retaddr cp)
         (range sp 0 fe.(fe_stack_data) **
          range sp (fe.(fe_stack_data) + b.(bound_stack_data)) fe.(fe_size)).
@@ -762,6 +761,16 @@ Proof.
   unfold call_regs; intros; red; intros; auto.
 Qed.
 
+Lemma agree_regs_call_regs_ext:
+  forall j ls rs sg,
+  agree_regs j ls rs ->
+  agree_regs j (call_regs_ext ls sg) rs.
+Proof.
+  intros.
+  unfold call_regs_ext; intros; red; intros.
+  destruct (in_mreg r (parameters_mregs sg)); auto.
+Qed.
+
 (** ** Properties of [agree_locs] *)
 
 (** Preservation under assignment of machine register. *)
@@ -837,10 +846,6 @@ Lemma agree_locs_undef_locs:
   agree_locs (LTL.undef_regs regs ls) ls0.
 Proof.
   intros. eapply agree_locs_undef_locs_1; eauto.
-  intros. destruct (is_callee_save r) eqn:CS; auto.
-  assert (existsb is_callee_save regs = true).
-  { apply existsb_exists. exists r; auto. }
-  congruence.
 Qed.
 
 (** Preservation by assignment to local slot *)
@@ -972,7 +977,7 @@ Lemma save_callee_save_rec_correct:
   (forall r, In r l -> is_callee_save r = true) ->
   m |= range sp pos (size_callee_save_area_rec l pos) ** P ->
   forall ACC : Mem.can_access_block m sp (Some cp),
-  forall COMP : Genv.find_comp tge (Vptr fb Ptrofs.zero) = cp,
+  forall COMP : Genv.find_comp_of_block tge fb = Some cp,
   agree_regs j ls rs ->
   exists rs', exists m',
      star step tge
@@ -1062,16 +1067,29 @@ Proof.
   destruct (Loc.diff_dec (R a) l); auto. red; auto.
 Qed.
 
+(* TODO relocate *)
+Lemma agree_regs_ext :
+  forall j ls rs sg,
+  agree_regs j ls rs ->
+  agree_regs j (call_regs_ext ls sg) (undef_caller_save_regs_ext rs sg).
+Proof.
+  intros j ls rs sg AGREGS r.
+  unfold call_regs_ext, undef_caller_save_regs_ext.
+  destruct (in_mreg r (parameters_mregs sg)) eqn:IN.
+  - apply AGREGS.
+  - constructor.
+Qed.
+
 Lemma save_callee_save_correct:
-  forall j ls ls0 rs sp cs fb k cp m P,
+  forall j ls ls0 rs sp cs fb k sig cp m P,
   m |= range sp fe.(fe_ofs_callee_save) (size_callee_save_area b fe.(fe_ofs_callee_save)) ** P ->
   (forall r, Val.has_type (ls (R r)) (mreg_type r)) ->
   forall ACC : Mem.can_access_block m sp (Some cp),
-  forall COMP : Genv.find_comp tge (Vptr fb Ptrofs.zero) = cp,
+  forall COMP : Genv.find_comp_of_block tge fb = Some cp,
   agree_callee_save ls ls0 ->
   agree_regs j ls rs ->
-  let ls1 := LTL.undef_regs destroyed_at_function_entry (LTL.call_regs ls) in
-  let rs1 := undef_regs destroyed_at_function_entry rs in
+  let ls1 := LTL.undef_regs destroyed_at_function_entry (LTL.call_regs_ext ls sig) in
+  let rs1 := undef_regs destroyed_at_function_entry (undef_caller_save_regs_ext rs sig) in
   exists rs', exists m',
      star step tge
         (State cs fb (Vptr sp Ptrofs.zero) (save_callee_save fe k) rs1 m)
@@ -1083,25 +1101,23 @@ Proof.
   intros until P; intros SEP TY ACC COMP AGCS AG; intros ls1 rs1.
   exploit (save_callee_save_rec_correct j cs fb sp ls1).
 - intros. unfold ls1. apply LTL_undef_regs_same. eapply destroyed_by_setstack_function_entry; eauto.
-- intros. unfold ls1. apply undef_regs_type. apply TY.
+- intros. unfold ls1. apply undef_regs_type.
+  unfold call_regs_ext. destruct (in_mreg r (parameters_mregs sig)) eqn:IN.
+  + apply TY.
+  + constructor.
 - exact b.(used_callee_save_prop).
 - eexact SEP.
 - eexact ACC.
 - eexact COMP.
-- instantiate (1 := rs1). apply agree_regs_undef_regs. apply agree_regs_call_regs. auto.
+- instantiate (1 := rs1).
+  unfold ls1, rs1.
+  apply agree_regs_undef_regs. apply agree_regs_ext. auto.
 - clear SEP. intros (rs' & m' & EXEC & SEP & PERMS & AG').
   exists rs', m'.
   split. eexact EXEC.
   split. rewrite (contains_callee_saves_exten j sp ls0 ls1). exact SEP.
   intros. apply b.(used_callee_save_prop) in H.
-    unfold ls1. rewrite LTL_undef_regs_others. unfold call_regs.
-    apply AGCS; auto.
-    red; intros.
-    assert (existsb is_callee_save destroyed_at_function_entry = false)
-       by  (apply destroyed_at_function_entry_caller_save).
-    assert (existsb is_callee_save destroyed_at_function_entry = true).
-    { apply existsb_exists. exists r; auto. }
-    congruence.
+    discriminate H.
   split. exact PERMS. exact AG'.
 Qed.
 
@@ -1123,14 +1139,14 @@ Proof.
 Qed.
 
 Lemma function_prologue_correct:
-  forall j ls ls0 ls1 rs rs1 m1 m1' m2 sp parent ra cs fb k P,
+  forall j ls ls0 ls1 rs rs1 m1 m1' m2 sp parent ra cs sig fb k P,
   forall (FUNPTR: Genv.find_funct_ptr tge fb = Some (Internal tf)),
   agree_regs j ls rs ->
   agree_callee_save ls ls0 ->
   agree_outgoing_arguments (Linear.fn_sig f) ls ls0 ->
   (forall r, Val.has_type (ls (R r)) (mreg_type r)) ->
-  ls1 = LTL.undef_regs destroyed_at_function_entry (LTL.call_regs ls) ->
-  rs1 = undef_regs destroyed_at_function_entry rs ->
+  ls1 = LTL.undef_regs destroyed_at_function_entry (LTL.call_regs_ext ls sig) -> (* XXX *)
+  rs1 = undef_regs destroyed_at_function_entry (undef_caller_save_regs_ext rs sig) -> (* XXX *)
   Mem.alloc m1 f.(Linear.fn_comp) 0 f.(Linear.fn_stacksize) = (m2, sp) ->
   Val.has_type parent Tptr -> Val.has_type ra Tptr ->
   m1' |= minjection j m1 ** globalenv_inject ge j ** P ->
@@ -1195,14 +1211,14 @@ Local Opaque b fe.
   exploit (save_callee_save_correct j' ls ls0 rs sp' cs fb); eauto.
   { unfold store_stack in STORE_RETADDR. simpl in STORE_RETADDR.
     eapply Mem.store_can_access_block_2 in STORE_RETADDR.
-    unfold Genv.find_comp; simpl in *; rewrite FUNPTR; destruct Ptrofs.eq_dec; try congruence.
     unfold comp_of in *; simpl in *. rewrite transf_function_comp in STORE_RETADDR.
     eapply STORE_RETADDR. }
-  (* { unfold find_comp_ptr. rewrite FUNPTR. eauto. *)
-  (*   rewrite transf_function_comp. reflexivity. } *)
+  { unfold Genv.find_comp, Genv.find_comp_of_block.
+    apply Genv.find_funct_ptr_iff in FUNPTR.
+    unfold fundef. now rewrite FUNPTR. }
   apply agree_regs_inject_incr with j; auto.
-  replace (LTL.undef_regs destroyed_at_function_entry (call_regs ls)) with ls1 by auto.
-  replace (undef_regs destroyed_at_function_entry rs) with rs1 by auto.
+  replace (LTL.undef_regs destroyed_at_function_entry (call_regs_ext ls sig)) with ls1 by auto.
+  replace (undef_regs destroyed_at_function_entry (undef_caller_save_regs_ext rs sig)) with rs1 by auto.
   clear SEP; intros (rs2 & m5' & SAVE_CS & SEP & PERMS & AGREGS').
   rewrite sep_swap5 in SEP.
   (* Materializing the Local and Outgoing locations *)
@@ -1226,8 +1242,6 @@ Local Opaque b fe.
   { eapply frame_mconj. eexact SEPCONJ.
     rewrite chunk_of_Tptr in SEP.
     unfold frame_contents_1; rewrite ! sep_assoc.
-    (* TODO: clean *)
-    unfold Genv.find_comp in SEP; simpl in SEP; rewrite FUNPTR in SEP; destruct Ptrofs.eq_dec; try congruence.
     unfold comp_of in SEP; simpl in SEP.
     rewrite transf_function_comp in SEP. replace (comp_of tf) with (fn_comp tf) in SEP by reflexivity.
     exact SEP.
@@ -1250,9 +1264,8 @@ Local Opaque b fe.
   split. eexact SAVE_CS.
   split. exact AGREGS'.
   split. rewrite LS1. apply agree_locs_undef_locs; [|reflexivity].
-    constructor; intros. unfold call_regs. apply AGCS.
-    unfold mreg_within_bounds in H; tauto.
-    unfold call_regs. apply AGARGS. apply incoming_slot_in_parameters; auto.
+    constructor; intros. exfalso. apply H. discriminate.
+    unfold call_regs_ext. apply AGARGS. apply incoming_slot_in_parameters; auto.
   split. exact SEPFINAL.
   split. exact SAME. exact INCR.
 Qed.
@@ -1311,8 +1324,7 @@ Proof.
   intros (rs' & A & B & C & D).
   exists rs'.
   split. eapply star_step; eauto.
-  econstructor. unfold Genv.find_comp; simpl; destruct Ptrofs.eq_dec; try congruence.
-  now rewrite FUNPTR.
+  econstructor. now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FUNPTR).
   unfold comp_of. simpl. rewrite COMP. exact LOAD. traceEq.
   split. intros.
     destruct (In_dec mreg_eq r0 l). auto.
@@ -1427,7 +1439,7 @@ End FRAME_PROPERTIES.
 Fixpoint stack_contents (j: meminj) (cs: list Linear.stackframe) (cs': list Mach.stackframe): massert :=
   match cs, cs' with
   | nil, nil => pure True
-  | Linear.Stackframe f _ _ _ ls c :: cs, Mach.Stackframe fb _ _ (Vptr sp' _) ra c' :: cs' =>
+  | Linear.Stackframe f _ _ ls c :: cs, Mach.Stackframe fb _ (Vptr sp' _) ra c' :: cs' =>
       frame_contents f j sp' ls (parent_locset cs) (parent_sp cs') (parent_ra cs') (comp_of f)
                      ** stack_contents j cs cs'
   | _, _ => pure False
@@ -1441,7 +1453,7 @@ Inductive match_stacks (j: meminj):
   | match_stacks_empty: forall sg,
       tailcall_possible sg ->
       match_stacks j nil nil sg
-  | match_stacks_cons: forall f cp sp ls c cs fb sp' ra c' cs' sg sg' trf
+  | match_stacks_cons: forall f sp ls c cs fb sp' ra c' cs' sg sg' trf
         (TAIL: is_tail c (Linear.fn_code f))
         (FINDF: Genv.find_funct_ptr tge fb = Some (Internal trf))
         (TRF: transf_function f = OK trf)
@@ -1455,8 +1467,8 @@ Inductive match_stacks (j: meminj):
            slot_within_bounds (function_bounds f) Outgoing ofs ty)
         (STK: match_stacks j cs cs' (Linear.fn_sig f)),
       match_stacks j
-                   (Linear.Stackframe f cp sg' (Vptr sp Ptrofs.zero) ls c :: cs)
-                   (Stackframe fb cp sg' (Vptr sp' Ptrofs.zero) ra c' :: cs')
+                   (Linear.Stackframe f sg' (Vptr sp Ptrofs.zero) ls c :: cs)
+                   (Stackframe fb sg' (Vptr sp' Ptrofs.zero) ra c' :: cs')
                    sg.
 
 (** Invariance with respect to change of memory injection. *)
@@ -1527,9 +1539,8 @@ Proof.
   destruct H; simpl.
 - unfold Vnullptr; destruct Archi.ptr64; reflexivity.
 - unfold Genv.find_comp, Genv.find_funct.
-  destruct Ptrofs.eq_dec; try congruence.
-  rewrite FINDF. symmetry.
-  apply (comp_transl_partial _ TRF).
+  rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FINDF). symmetry.
+  now rewrite (comp_transl_partial _ TRF).
 Qed.
 
 (** * Syntactic properties of the translation *)
@@ -1548,6 +1559,13 @@ Qed.
 Remark find_label_restore_callee_save:
   forall lbl l ofs k,
   Mach.find_label lbl (restore_callee_save_rec l ofs k) = Mach.find_label lbl k.
+Proof.
+  induction l; simpl; auto.
+Qed.
+
+Remark find_label_invalidate_regs:
+  forall lbl l k,
+  Mach.find_label lbl (invalidate_regs l k) = Mach.find_label lbl k.
 Proof.
   induction l; simpl; auto.
 Qed.
@@ -1730,8 +1748,7 @@ Lemma find_function_translated:
      find_function_ptr tge ros rs = Some bf
   /\ Genv.find_funct_ptr tge bf = Some tf
   /\ transf_fundef f = OK tf
-  /\ Genv.allowed_call tge cp (Vptr bf Ptrofs.zero)
-  /\ Genv.type_of_call tge cp (Genv.find_comp tge (Vptr bf Ptrofs.zero)) = Genv.type_of_call ge cp (Genv.find_comp ge vf)
+  /\ Genv.allowed_call ge cp (Vptr bf Ptrofs.zero)
   /\ vf = Vptr bf Ptrofs.zero. (* TODO: adding this conjunct is not the cleanest way to go, maybe try to find a cleaner solution? *)
 Proof.
   unfold find_function.
@@ -1750,10 +1767,6 @@ Proof.
   { unfold find_function_ptr in H.
     inv H. rewrite EQ. eauto. }
   rewrite <- H1. split; auto.
-  now eapply (Genv.match_genvs_allowed_calls TRANSF).
-  split; auto.
-  rewrite (Genv.match_genvs_find_comp TRANSF).
-  now apply Genv.match_genvs_type_of_call.
 
 - destruct (Genv.find_symbol ge i) as [b|] eqn:?; try discriminate.
   unfold Genv.find_funct in FF; destruct Ptrofs.eq_dec; try congruence.
@@ -1767,10 +1780,6 @@ Proof.
   { unfold Linear.find_function_ptr in H.
     rewrite Heqo in H. inv H. eauto. }
   rewrite <- H1. split; auto.
-  now eapply (Genv.match_genvs_allowed_calls TRANSF).
-  split; auto.
-  rewrite (Genv.match_genvs_find_comp TRANSF).
-  now apply Genv.match_genvs_type_of_call.
 Qed.
 
 (** Preservation of the arguments to an external call. *)
@@ -2065,7 +2074,7 @@ Inductive match_states: Linear.state -> Mach.state -> Prop :=
       match_states (Linear.State cs f (Vptr sp Ptrofs.zero) c ls m)
                    (Mach.State cs' fb (Vptr sp' Ptrofs.zero) (transl_code (make_env (function_bounds f)) c) rs m')
   | match_states_call:
-      forall cs f ls m cs' fb rs m' j tf
+      forall cs f ls m cs' fb rs m' j tf sig
         (STACKS: match_stacks j cs cs' (Linear.funsig f))
         (TRANSL: transf_fundef f = OK tf)
         (FIND: Genv.find_funct_ptr tge fb = Some (tf))
@@ -2073,17 +2082,17 @@ Inductive match_states: Linear.state -> Mach.state -> Prop :=
         (SEP: m' |= stack_contents j cs cs'
                  ** minjection j m
                  ** globalenv_inject ge j),
-      match_states (Linear.Callstate cs f ls m)
-                   (Mach.Callstate cs' fb rs m')
+      match_states (Linear.Callstate cs f sig ls m)
+                   (Mach.Callstate cs' fb sig rs m')
   | match_states_return:
-      forall cs ls m cs' rs m' j sg
+      forall cs ls m cs' rs m' j sg cp
         (STACKS: match_stacks j cs cs' sg)
         (AGREGS: agree_regs j ls rs)
         (SEP: m' |= stack_contents j cs cs'
                  ** minjection j m
                  ** globalenv_inject ge j),
-      match_states (Linear.Returnstate cs ls m)
-                  (Mach.Returnstate cs' rs m').
+      match_states (Linear.Returnstate cs ls m cp)
+                  (Mach.Returnstate cs' rs m' cp).
 
 Theorem transf_step_correct:
   forall s1 t s2, Linear.step ge s1 t s2 ->
@@ -2105,9 +2114,8 @@ Proof.
   exploit frame_get_local; eauto. intros (v & A & B).
   econstructor; split.
   apply plus_one. eapply exec_Mgetstack.
-  unfold Genv.find_comp; simpl; rewrite FIND; destruct Ptrofs.eq_dec; try congruence.
+  rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND); eauto.
   unfold comp_of; simpl. erewrite <- transf_function_comp; eauto.
-  exact A.
   econstructor; eauto with coqlib.
   apply agree_regs_set_reg; auto.
   apply agree_locs_set_reg; auto.
@@ -2124,7 +2132,7 @@ Proof.
   intros (v & A & B).
   econstructor; split.
   apply plus_one. eapply exec_Mgetparam; eauto.
-  unfold Genv.find_comp; simpl; rewrite FIND; destruct Ptrofs.eq_dec; try congruence.
+  rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND); eauto.
   unfold comp_of; simpl. erewrite <- transf_function_comp; eauto.
   rewrite (unfold_transf_function _ _ TRANSL). unfold fn_link_ofs.
   eapply frame_get_parent. eexact SEP. unfold call_comp. simpl.
@@ -2140,9 +2148,8 @@ Proof.
   exploit frame_get_outgoing; eauto. intros (v & A & B).
   econstructor; split.
   apply plus_one. eapply exec_Mgetstack.
-  unfold Genv.find_comp; simpl; rewrite FIND; destruct Ptrofs.eq_dec; try congruence.
+  rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND); eauto.
   unfold comp_of; simpl. erewrite <- transf_function_comp; eauto.
-  exact A.
   econstructor; eauto with coqlib.
   apply agree_regs_set_reg; auto.
   apply agree_locs_set_reg; auto.
@@ -2168,13 +2175,13 @@ Proof.
   econstructor; split.
   apply plus_one. destruct sl; try discriminate.
     econstructor.
-    unfold Genv.find_comp; simpl; rewrite FIND; destruct Ptrofs.eq_dec; try congruence.
+    rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND); eauto.
     unfold comp_of; simpl. erewrite <- transf_function_comp; eauto.
-    eexact STORE. eauto.
+    eauto.
     econstructor.
-    unfold Genv.find_comp; simpl; rewrite FIND; destruct Ptrofs.eq_dec; try congruence.
+    rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND); eauto.
     unfold comp_of; simpl. erewrite <- transf_function_comp; eauto.
-    eexact STORE. eauto.
+    eauto.
   econstructor. eauto. eauto. eauto.
   apply agree_regs_set_slot. apply agree_regs_undef_regs. auto.
   apply agree_locs_set_slot. apply agree_locs_undef_locs. auto. apply destroyed_by_setstack_caller_save. auto.
@@ -2213,10 +2220,10 @@ Proof.
   intros [v' [C D]].
   econstructor; split.
   apply plus_one. econstructor.
-    unfold Genv.find_comp; simpl; rewrite FIND; destruct Ptrofs.eq_dec; try congruence.
-    unfold comp_of; simpl. erewrite <- transf_function_comp; eauto.
+    rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND); eauto.
   instantiate (1 := a'). rewrite <- A. apply eval_addressing_preserved. exact symbols_preserved.
-  eexact C. eauto.
+  unfold comp_of; simpl. erewrite <- transf_function_comp; eauto.
+  eauto.
   econstructor; eauto with coqlib.
   apply agree_regs_set_reg. rewrite transl_destroyed_by_load. apply agree_regs_undef_regs; auto. auto.
   apply agree_locs_set_reg. apply agree_locs_undef_locs. auto. apply destroyed_by_load_caller_save. auto.
@@ -2235,10 +2242,10 @@ Proof.
   rewrite sep_swap3 in SEP.
   econstructor; split.
   apply plus_one. econstructor.
-    unfold Genv.find_comp; simpl; rewrite FIND; destruct Ptrofs.eq_dec; try congruence.
-    unfold comp_of; simpl. erewrite <- transf_function_comp; eauto.
+    rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND); eauto.
   instantiate (1 := a'). rewrite <- A. apply eval_addressing_preserved. exact symbols_preserved.
-  eexact C. eauto.
+  unfold comp_of; simpl. erewrite <- transf_function_comp; eauto.
+  eauto.
   econstructor. eauto. eauto. eauto.
   rewrite transl_destroyed_by_store. apply agree_regs_undef_regs; auto.
   apply agree_locs_undef_locs. auto. apply destroyed_by_store_caller_save.
@@ -2248,35 +2255,33 @@ Proof.
 - (* Lcall *)
   exploit find_function_translated; eauto.
     eapply sep_proj2. eapply sep_proj2. eapply sep_proj2. eexact SEP.
-  intros [bf [tf' [A [B [C [D [E F]]]]]]]. subst vf.
+  intros [bf [tf' [A [B [C [D F]]]]]]. subst vf.
   exploit is_tail_transf_function; eauto. intros IST.
   rewrite transl_code_eq in IST. simpl in IST.
   exploit return_address_offset_exists. eexact IST. intros [ra F].
   econstructor; split.
   apply plus_one.
-  (* assert (H1: agree_callee_save rs (parent_locset (Linear.Stackframe f (Vptr sp0 Ptrofs.zero) rs b :: s))). *)
-  (* { red; simpl; auto. } *)
-  assert (H1: agree_incoming_arguments (Linear.funsig f') (LTL.undef_regs destroyed_at_function_entry (call_regs rs))
-                (parent_locset (Linear.Stackframe f (Genv.find_comp ge (Vptr bf Ptrofs.zero)) (Linear.funsig f') (Vptr sp0 Ptrofs.zero) rs b :: s))).
+  assert (H1: agree_incoming_arguments (Linear.funsig f') (LTL.undef_regs destroyed_at_function_entry (call_regs_ext rs (Linear.funsig f')))
+                (parent_locset (Linear.Stackframe f (Linear.funsig f') (Vptr sp0 Ptrofs.zero) rs b :: s))).
   { red; simpl; auto. }
-  eapply match_stacks_cons with (ra := ra) (cp := Genv.find_comp ge (Vptr bf Ptrofs.zero))
-    in STACKS; eauto. (* NOTE: the fact we have to instantiate [cp] is suspicious *)
+  eapply match_stacks_cons with (ra := ra) in STACKS; eauto.
   assert (AGREGS' := AGREGS).
-  apply agree_regs_call_regs in AGREGS.
+  apply agree_regs_call_regs_ext with (sg := Linear.funsig f') in AGREGS.
   apply agree_regs_undef_regs with (rl := destroyed_at_function_entry) in AGREGS.
   exploit (fun x2 x3 x4 x5 => transl_arguments _ x2 x3 x4 x5 _ _ AGREGS); eauto. simpl. simpl. apply sep_assoc in SEP. apply sep_proj1 in SEP; eauto. intros [vl [ARGS VINJ]].
   eapply exec_Mcall with (args := vl); eauto.
-  now rewrite <- (comp_transl_partial _ TRANSL).
+  { rewrite <- (comp_transl_partial _ TRANSL).
+    apply (Genv.allowed_call_transf_partial TRANSF ALLOWED). }
   { simpl in ARGS.
-    rewrite <- (comp_transl_partial _ TRANSL), E.
+    rewrite <- (comp_transl_partial _ TRANSL), <- (comp_transf_partial_fundef _ C).
     intros G. specialize (NO_CROSS_PTR G).
     eapply Val.inject_list_not_ptr; eauto.
      clear -NO_CROSS_PTR.
      unfold loc_parameters in NO_CROSS_PTR.
      now rewrite map_map in NO_CROSS_PTR. }
-  { rewrite <- comp_transf_function, <- find_comp_translated; eauto.
+  {
+    rewrite <- comp_transf_function; eauto. rewrite <- (comp_transf_partial_fundef _ C).
     eapply call_trace_inj with (ge := ge); eauto using symbols_preserved.
-  (* eapply call_trace_translated. exact VINJ. *)
   clear -H0 A NO_CROSS_PTR AGREGS'.
   unfold loc_parameters in NO_CROSS_PTR.
   rewrite map_map in NO_CROSS_PTR.
@@ -2298,7 +2303,6 @@ Proof.
       apply Z.le_trans with (size_arguments (Linear.funsig f')); auto.
       apply loc_arguments_bounded; auto. }
   econstructor; eauto.
-  rewrite find_comp_translated.
   econstructor; eauto with coqlib.
   apply Val.Vptr_has_type.
   intros; red.
@@ -2316,17 +2320,10 @@ Proof.
   intros [bf [tf' [A [B C]]]].
   econstructor; split.
   eapply plus_right. eexact S. econstructor; eauto.
-    unfold Genv.find_comp; simpl; rewrite FIND; destruct Ptrofs.eq_dec; try congruence.
-    unfold comp_of; simpl. eauto.
-    unfold Genv.find_comp; simpl; rewrite FIND; destruct Ptrofs.eq_dec; try congruence.
-    unfold comp_of; simpl. eauto.
-    unfold Genv.find_comp; simpl; rewrite FIND; destruct Ptrofs.eq_dec; try congruence.
-    unfold comp_of; simpl. eauto.
-    { unfold Genv.find_comp; simpl; rewrite FIND; destruct Ptrofs.eq_dec; try congruence.
-      rewrite B; unfold comp_of; simpl.
-      rewrite <- comp_transf_function; eauto. rewrite <- COMP.
-      destruct f'; auto. monadInv C. unfold comp_of; simpl. rewrite <- (comp_transf_function _ _ EQ); eauto.
-      inv C. reflexivity. }
+    rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ B); unfold comp_of; simpl.
+    rewrite <- comp_transf_function; eauto. rewrite <- COMP.
+    destruct f'; auto. monadInv C. unfold comp_of; simpl. rewrite <- (comp_transf_function _ _ EQ); eauto.
+    inv C. reflexivity.
   traceEq.
   econstructor; eauto.
   apply match_stacks_change_sig with (Linear.fn_sig f); auto.
@@ -2345,10 +2342,11 @@ Proof.
   rewrite <- sep_assoc, sep_comm, sep_assoc in SEP.
   econstructor; split.
   apply plus_one. econstructor; eauto.
+    rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND); eauto.
+    change (comp_of (Internal tf)) with (comp_of tf).
+    now erewrite ALLOWED, <- transf_function_comp; eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
-  eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-    unfold Genv.find_comp; simpl; rewrite FIND; destruct Ptrofs.eq_dec; try congruence.
-    unfold comp_of; simpl. erewrite <- transf_function_comp; eauto.
+  eapply external_call_symbols_preserved; eauto. apply senv_preserved.  
   eapply match_states_intro with (j := j'); eauto with coqlib.
   eapply match_stacks_change_meminj; eauto.
   apply agree_regs_set_res; auto. apply agree_regs_undef_regs; auto. eapply agree_regs_inject_incr; eauto.
@@ -2409,15 +2407,21 @@ Proof.
   intros (rs' & m1' & A & B & C & D & E & F & G).
   econstructor; split.
   eapply plus_right. eexact D. econstructor; eauto.
-    unfold Genv.find_comp; simpl; rewrite FIND; destruct Ptrofs.eq_dec; try congruence.
-    unfold comp_of; simpl. eauto.
-    unfold Genv.find_comp; simpl; rewrite FIND; destruct Ptrofs.eq_dec; try congruence.
-    unfold comp_of; simpl. eauto.
-    unfold Genv.find_comp; simpl; rewrite FIND; destruct Ptrofs.eq_dec; try congruence.
-    unfold comp_of; simpl. eauto.
   traceEq.
+  {
+  rewrite <- comp_transf_function; eauto.
   econstructor; eauto.
+  { assert (SIG: Linear.parent_signature s = parent_signature cs')
+      by (inv STACKS; auto).
+    rewrite <- SIG.
+    intros r. specialize (E r).
+    unfold undef_non_return_regs_ext. simpl.
+    destruct (in_mreg r (regs_of_rpair (loc_result (Linear.parent_signature s)))) eqn:RES.
+    - exact E.
+    - constructor.
+  }
   rewrite sep_swap; exact G.
+  }
 
 - (* internal function *)
   revert TRANSL. unfold transf_fundef, transf_partial_fundef.
@@ -2433,20 +2437,16 @@ Proof.
   intros (j' & rs' & m2' & sp' & m3' & m4' & m5' & A & B & C & D & E & F & SEP & J & K).
   rewrite (sep_comm (globalenv_inject ge j')) in SEP.
   rewrite (sep_swap (minjection j' m')) in SEP.
+  { (* new case *)
   econstructor; split.
   eapply plus_left. econstructor; eauto.
-    unfold Genv.find_comp; simpl; rewrite FIND; destruct Ptrofs.eq_dec; try congruence.
-    unfold comp_of; simpl. eauto.
-    unfold Genv.find_comp; simpl; rewrite FIND; destruct Ptrofs.eq_dec; try congruence.
-    unfold comp_of; simpl. eauto.
-    unfold Genv.find_comp; simpl; rewrite FIND; destruct Ptrofs.eq_dec; try congruence.
-    unfold comp_of; simpl. eauto.
   rewrite (unfold_transf_function _ _ TRANSL). unfold fn_code. unfold transl_body.
   eexact D. traceEq.
   eapply match_states_intro with (j := j'); eauto with coqlib.
   eapply match_stacks_change_meminj; eauto.
   rewrite sep_swap in SEP. rewrite sep_swap. eapply stack_contents_change_meminj; eauto.
   rewrite comp_transf_function; eauto.
+  }
 
 - (* external function *)
   simpl in TRANSL. inversion TRANSL; subst tf.
@@ -2470,13 +2470,11 @@ Proof.
   inv STACKS. exploit wt_returnstate_agree; eauto. intros [AGCS OUTU].
   simpl in AGCS. simpl in SEP. rewrite sep_assoc in SEP.
   econstructor; split.
-  apply plus_one. apply exec_return.
-  { intros. unfold Genv.find_comp in H.
-    simpl in H; destruct Ptrofs.eq_dec; try congruence.
-    (* apply agree_regs_call_regs in AGREGS. *)
-    (* apply agree_regs_undef_regs with (rl := destroyed_at_function_entry) in AGREGS. *)
-    simpl in H; rewrite FINDF in H. unfold comp_of in H; simpl in H.
-    rewrite <- (comp_transl_partial _ TRF) in H.
+  apply plus_one. eapply exec_return.
+  { rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FINDF).
+    reflexivity. }
+  { intros.
+    rewrite (comp_transl_partial _ TRF) in NO_CROSS_PTR.
     specialize (NO_CROSS_PTR H).
     clear -AGREGS NO_CROSS_PTR.
     unfold return_value.
@@ -2492,9 +2490,9 @@ Proof.
       now rewrite <- H1 in NO_CROSS_PTR.
     (* TODO: write a lemma about that *)
   }
-  { unfold Genv.find_comp. simpl. destruct Ptrofs.eq_dec; try congruence.
-    simpl. rewrite FINDF. unfold comp_of; simpl.
-    rewrite <- (comp_transl_partial _ TRF).
+  { assert (SAMECOMP: comp_of (Internal trf) = comp_of f) by
+      (rewrite (comp_transl_partial _ TRF); reflexivity).
+    setoid_rewrite SAMECOMP.
     eapply return_trace_inj with (j := j) (v := (Locmap.getpair (map_rpair R (loc_result sg)) rs)); eauto.
     unfold return_value.
     destruct (loc_result sg); simpl in *.

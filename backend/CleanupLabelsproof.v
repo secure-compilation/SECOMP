@@ -24,6 +24,7 @@ Module LabelsetFacts := FSetFacts.Facts(Labelset).
 Definition match_prog (p tp: Linear.program) :=
   match_program (fun ctx f tf => tf = transf_fundef f) eq p tp.
 
+#[global]
 Instance comp_match_prog: has_comp_transl transf_function.
 Proof. now intros f. Qed.
 
@@ -69,6 +70,13 @@ Proof.
   intros. destruct f; reflexivity.
 Qed.
 
+Lemma comp_function_translated:
+  forall f,
+  comp_of (transf_fundef f) = comp_of f.
+Proof.
+  intros. destruct f; reflexivity.
+Qed.
+
 Lemma find_function_ptr_translated:
   forall ros ls vf,
   find_function_ptr ge ros ls = Some vf ->
@@ -105,14 +113,6 @@ Lemma find_comp_translated:
 Proof.
   intros vf.
   eapply (Genv.match_genvs_find_comp TRANSL).
-Qed.
-
-Lemma type_of_call_translated:
-  forall cp cp',
-    Genv.type_of_call ge cp cp' = Genv.type_of_call tge cp cp'.
-Proof.
-  intros cp cp'.
-  eapply Genv.match_genvs_type_of_call.
 Qed.
 
 (** Correctness of [labels_branched_to]. *)
@@ -228,11 +228,11 @@ Qed.
 
 Inductive match_stackframes: stackframe -> stackframe -> Prop :=
   | match_stackframe_intro:
-      forall f cp sg sp ls c,
+      forall f sg sp ls c,
       incl c f.(fn_code) ->
       match_stackframes
-        (Stackframe f cp sg sp ls c)
-        (Stackframe (transf_function f) cp sg sp ls
+        (Stackframe f sg sp ls c)
+        (Stackframe (transf_function f) sg sp ls
           (remove_unused_labels (labels_branched_to f.(fn_code)) c)).
 
 Inductive match_states: state -> state -> Prop :=
@@ -243,15 +243,15 @@ Inductive match_states: state -> state -> Prop :=
       match_states (State s f sp c ls m)
                    (State ts (transf_function f) sp (remove_unused_labels (labels_branched_to f.(fn_code)) c) ls m)
   | match_states_call:
-      forall s f ls m ts,
+      forall s f ls m ts sig,
       list_forall2 match_stackframes s ts ->
-      match_states (Callstate s f ls m)
-                   (Callstate ts (transf_fundef f) ls m)
+      match_states (Callstate s f sig ls m)
+                   (Callstate ts (transf_fundef f) sig ls m)
   | match_states_return:
-      forall s ls m ts,
+      forall s ls m ts cp,
       list_forall2 match_stackframes s ts ->
-      match_states (Returnstate s ls m)
-                   (Returnstate ts ls m).
+      match_states (Returnstate s ls m cp)
+                   (Returnstate ts ls m cp).
 
 Definition measure (st: state) : nat :=
   match st with
@@ -316,18 +316,21 @@ Proof.
   econstructor. eapply find_function_translated; eauto.
   eapply find_function_ptr_translated; eauto.
   symmetry; apply sig_function_translated.
-  eapply allowed_call_translated; eauto. reflexivity.
+  eapply allowed_call_translated; eauto. reflexivity. reflexivity.
   { intros. subst.
-    assert (X: Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall).
-    { erewrite find_comp_translated, type_of_call_translated; eauto. }
+    assert (X: Genv.type_of_call (comp_of f) (comp_of f') = Genv.CrossCompartmentCall).
+    { erewrite comp_transl in H1; eauto.
+      unfold transf_fundef in H1. setoid_rewrite comp_transf_fundef in H1; eauto.
+      apply comp_match_prog. }
     specialize (NO_CROSS_PTR X).
+    (* rewrite X in NO_CROSS_PTR, EV. rewrite H1. *)
     eauto. }
-  { rewrite <- find_comp_translated, comp_match_prog.
+  { rewrite comp_function_translated, comp_match_prog.
     intros; subst.
     eapply call_trace_eq; eauto using senv_preserved, symbols_preserved.
   }
   econstructor; eauto. constructor; auto.
-  rewrite find_comp_translated; constructor; eauto with coqlib.
+  constructor; eauto with coqlib.
 (* Ltailcall *)
   left; econstructor; split.
   econstructor. erewrite match_parent_locset; eauto. eapply find_function_translated; eauto.
@@ -371,17 +374,32 @@ Proof.
   left; econstructor; split.
   econstructor; eauto.
   erewrite <- match_parent_locset; eauto.
+  assert (CALLER: call_comp s = call_comp ts).
+  { inv STACKS. reflexivity.
+    inv H0. reflexivity. }
+  assert (SIG: parent_signature s = parent_signature ts).
+  { inv STACKS. reflexivity.
+    inv H0. reflexivity. }
+  rewrite SIG.
   econstructor; eauto with coqlib.
 (* internal function *)
   left; econstructor; split.
   econstructor; simpl; eauto.
+  assert (CALLER: call_comp s = call_comp ts).
+  { inv H7. reflexivity.
+    inv H0. reflexivity. }
+  assert (SIG: parent_signature s = parent_signature ts).
+  { inv H7. reflexivity.
+    inv H0. reflexivity. }
+  (* rewrite type_of_call_translated, CALLER, SIG. *)
+  change (comp_of (transf_function f)) with (comp_of f).
   econstructor; eauto with coqlib.
 (* external function *)
   left; econstructor; split.
   econstructor; eauto. eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   econstructor; eauto with coqlib.
 (* return *)
-  inv H3. inv H1. left; econstructor; split.
+  inv H4. inv H1. left; econstructor; split.
   econstructor; eauto.
   rewrite comp_match_prog.
   eapply return_trace_eq; eauto using senv_preserved.
@@ -406,7 +424,7 @@ Lemma transf_final_states:
   forall st1 st2 r,
   match_states st1 st2 -> final_state st1 r -> final_state st2 r.
 Proof.
-  intros. inv H0. inv H. inv H5. econstructor; eauto.
+  intros. inv H0. inv H. inv H6. econstructor; eauto.
 Qed.
 
 Theorem transf_program_correct:

@@ -91,6 +91,7 @@ Record function: Type := mkfunction {
   fn_entrypoint: node
 }.
 
+#[global]
 Instance has_comp_function : has_comp function := fn_comp.
 
 (** A function description comprises a control-flow graph (CFG) [fn_code]
@@ -155,8 +156,7 @@ a function call in progress.
 Inductive stackframe : Type :=
   | Stackframe:
       forall (res: reg)            (**r where to store the result *)
-        (ty: rettype)         (**r the type of the result *)
-        (cp: compartment)     (**r compartment of the callee *)
+             (ty: rettype)         (**r the type of the result *)
              (f: function)         (**r calling function *)
              (sp: val)             (**r stack pointer in calling function *)
              (pc: node)            (**r program point in calling function *)
@@ -181,29 +181,19 @@ Inductive state : Type :=
   | Returnstate:
       forall (stack: list stackframe) (**r call stack *)
              (v: val)                 (**r return value for the call *)
-             (m: mem),                 (**r memory state *)
+             (m: mem)                 (**r memory state *)
+             (cp: compartment),       (**r compartment we're returning from *)
       state.
 
-Definition call_comp (stack: list stackframe): compartment :=
+Definition call_comp (stack: list stackframe): option compartment :=
   match stack with
-  | nil => default_compartment
-  | Stackframe _ _ _ f _ _ _ :: _ => (comp_of f)
+  | nil => None
+  | Stackframe _ _ f _ _ _ :: _ => Some (comp_of f)
   end.
 
 Section RELSEM.
 
 Variable ge: genv.
-
-(* Definition find_function *)
-(*       (ros: reg + ident) (rs: regset) : option fundef := *)
-(*   match ros with *)
-(*   | inl r => Genv.find_funct ge rs#r *)
-(*   | inr symb => *)
-(*       match Genv.find_symbol ge symb with *)
-(*       | None => None *)
-(*       | Some b => Genv.find_funct_ptr ge b *)
-(*       end *)
-(*   end. *)
 
 Definition find_function_ptr ros rs :=
   match ros with
@@ -272,10 +262,10 @@ Inductive step: state -> trace -> state -> Prop :=
       funsig fd = sig ->
       forall (FUNPTR: find_function_ptr ros rs = Some vf),
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
-      forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall -> Forall not_ptr (rs##args)),
-      forall (EV: call_trace ge (comp_of f) (Genv.find_comp ge vf) vf (rs##args) (sig_args sig) t),
+      forall (NO_CROSS_PTR: Genv.type_of_call (comp_of f) (comp_of fd) = Genv.CrossCompartmentCall -> Forall not_ptr (rs##args)),
+      forall (EV: call_trace ge (comp_of f) (comp_of fd) vf (rs##args) (sig_args sig) t),
       step (State s f sp pc rs m)
-        t (Callstate (Stackframe res (sig_res sig) (Genv.find_comp ge vf) f sp pc' rs :: s) fd rs##args m)
+        t (Callstate (Stackframe res (sig_res sig) f sp pc' rs :: s) fd rs##args m)
   | exec_Itailcall:
       forall s f stk pc rs m sig ros args fd m',
       (fn_code f)!pc = Some(Itailcall sig ros args) ->
@@ -312,7 +302,7 @@ Inductive step: state -> trace -> state -> Prop :=
       (fn_code f)!pc = Some(Ireturn or) ->
       Mem.free m stk 0 f.(fn_stacksize) (comp_of f) = Some m' ->
       step (State s f (Vptr stk Ptrofs.zero) pc rs m)
-        E0 (Returnstate s (regmap_optget or Vundef rs) m' (* (sig_res (fn_sig f)) *) (* (comp_of f) *))
+        E0 (Returnstate s (regmap_optget or Vundef rs) m' (comp_of f))
   | exec_function_internal:
       forall s f args m m' stk,
       Mem.alloc m (comp_of f) 0 f.(fn_stacksize) = (m', stk) ->
@@ -327,13 +317,13 @@ Inductive step: state -> trace -> state -> Prop :=
       forall s ef args res t m m',
       external_call ef ge args m t res m' ->
       step (Callstate s (External ef) args m)
-         t (Returnstate s res m' (* (sig_res (ef_sig ef)) *) (* (comp_of ef) *))
+         t (Returnstate s res m' (comp_of ef))
   | exec_return:
       forall res f cp sp pc rs s vres m ty t,
-      forall (NO_CROSS_PTR: Genv.type_of_call ge (comp_of f) cp = Genv.CrossCompartmentCall ->
+      forall (NO_CROSS_PTR: Genv.type_of_call (comp_of f) cp = Genv.CrossCompartmentCall ->
                        not_ptr vres),
       forall (EV: return_trace ge (comp_of f) cp vres ty t),
-      step (Returnstate (Stackframe res ty cp f sp pc rs :: s) vres m)
+      step (Returnstate (Stackframe res ty f sp pc rs :: s) vres m cp)
         t (State s f sp pc (rs#res <- vres) m).
 
 Lemma exec_Iop':
@@ -378,8 +368,8 @@ Inductive initial_state (p: program): state -> Prop :=
 (** A final state is a [Returnstate] with an empty call stack. *)
 
 Inductive final_state: state -> int -> Prop :=
-  | final_state_intro: forall r m,
-      final_state (Returnstate nil (Vint r) m) r.
+  | final_state_intro: forall r m cp,
+      final_state (Returnstate nil (Vint r) m cp) r.
 
 (** The small-step semantics for a program. *)
 
@@ -400,7 +390,7 @@ Proof.
   exploit external_call_receptive; eauto. intros [vres2 [m2 EC2]].
   exists (State s0 f sp pc' (regmap_setres res vres2 rs) m2). eapply exec_Ibuiltin; eauto.
   exploit external_call_receptive; eauto. intros [vres2 [m2 EC2]].
-  exists (Returnstate s0 vres2 m2 (* (sig_res (ef_sig ef)) *)). econstructor; eauto.
+  exists (Returnstate s0 vres2 m2 (comp_of ef)). econstructor; eauto.
   inv EV; inv H0; eauto.
 (* trace length *)
   red; intros; inv H; simpl; try lia.

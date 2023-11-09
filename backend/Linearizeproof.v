@@ -24,6 +24,7 @@ Module NodesetFacts := FSetFacts.Facts(Nodeset).
 Definition match_prog (p: LTL.program) (tp: Linear.program) :=
   match_program (fun ctx f tf => transf_fundef f = OK tf) eq p tp.
 
+#[global]
 Instance comp_transf_fundef: has_comp_transl_partial transf_function.
 Proof.
   unfold transf_function.
@@ -134,14 +135,6 @@ Lemma find_comp_translated:
     Genv.find_comp ge vf = Genv.find_comp tge vf.
 Proof.
   eapply (Genv.match_genvs_find_comp TRANSF).
-Qed.
-
-Lemma type_of_call_translated:
-  forall cp cp',
-    Genv.type_of_call ge cp cp' = Genv.type_of_call tge cp cp'.
-Proof.
-  intros cp cp'.
-  eapply Genv.match_genvs_type_of_call.
 Qed.
 
 (** * Correctness of reachability analysis *)
@@ -536,13 +529,13 @@ Qed.
 
 Inductive match_stackframes: LTL.stackframe -> Linear.stackframe -> Prop :=
   | match_stackframe_intro:
-      forall f cp sg sp bb ls tf c,
+      forall f sg sp bb ls tf c,
       transf_function f = OK tf ->
       (forall pc, In pc (successors_block bb) -> (reachable f)!!pc = true) ->
       is_tail c tf.(fn_code) ->
       match_stackframes
-        (LTL.Stackframe f cp sg sp ls bb)
-        (Linear.Stackframe tf cp sg sp ls (linearize_block bb c)).
+        (LTL.Stackframe f sg sp ls bb)
+        (Linear.Stackframe tf sg sp ls (linearize_block bb c)).
 
 Inductive match_states: LTL.state -> Linear.state -> Prop :=
   | match_states_add_branch:
@@ -579,16 +572,16 @@ Inductive match_states: LTL.state -> Linear.state -> Prop :=
       match_states (LTL.Block s f sp bb ls m)
                    (Linear.State ts tf sp (linearize_block bb c) ls m)
   | match_states_call:
-      forall s f ls m tf ts,
+      forall s f ls m tf ts sig,
       list_forall2 match_stackframes s ts ->
       transf_fundef f = OK tf ->
-      match_states (LTL.Callstate s f ls m)
-                   (Linear.Callstate ts tf ls m)
+      match_states (LTL.Callstate s f sig ls m) (* parent_signature ts *)
+                   (Linear.Callstate ts tf sig ls m)
   | match_states_return:
-      forall s ls m ts,
+      forall s ls m cp ts,
       list_forall2 match_stackframes s ts ->
-      match_states (LTL.Returnstate s ls m)
-                   (Linear.Returnstate ts ls m).
+      match_states (LTL.Returnstate s ls m cp)
+                   (Linear.Returnstate ts ls m cp).
 
 Definition measure (S: LTL.state) : nat :=
   match S with
@@ -614,9 +607,10 @@ Proof.
   | H : match_stackframes _ _ |- _ =>
     destruct H
   end.
-  match goal with
+  simpl.
+  now match goal with
   | H : transf_function _ = _ |- _ =>
-    apply (comp_transl_partial _ H)
+    rewrite (comp_transl_partial _ H)
   end.
 Qed.
 
@@ -694,22 +688,25 @@ Proof.
   rewrite <- comp_transf_fundef; eauto.
   eapply allowed_call_translated; eauto.
   { intros. subst.
-    assert (X: Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall).
-    { erewrite find_comp_translated, type_of_call_translated; eauto. rewrite comp_transf_fundef; eauto. }
+    assert (X: Genv.type_of_call (comp_of f) (comp_of fd) = Genv.CrossCompartmentCall).
+    { rewrite (comp_transl_partial _ TRF). rewrite (comp_transl_partial _ B). auto. }
     specialize (NO_CROSS_PTR X).
+    (* rewrite H1. *)
+    (* rewrite X in NO_CROSS_PTR. *)
     eauto.
   }
-  { erewrite <- find_comp_translated, <- comp_transf_fundef; eauto.
+  {
+    rewrite <- (comp_transl_partial _ TRF). rewrite <- (comp_transl_partial _ B).
     eapply call_trace_eq; eauto using symbols_preserved, senv_preserved. }
   econstructor; eauto. constructor; auto.
-  rewrite find_comp_translated.
   econstructor; eauto.
 
   (* Ltailcall *)
   exploit find_function_translated; eauto. intros [tfd [A B]].
   left; econstructor; split. simpl.
   apply plus_one. econstructor; eauto.
-  rewrite (match_parent_locset _ _ STACKS). eauto.
+  (* rewrite (match_parent_locset _ _ STACKS). eauto. *)
+  (* rewrite (match_parent_locset _ _ STACKS). eauto. *)
   symmetry; eapply sig_preserved; eauto.
   now rewrite <- (comp_transl_partial _ B), <- (comp_transl_partial _ TRF).
   rewrite <- comp_transf_fundef; eauto.
@@ -765,27 +762,50 @@ Proof.
   simpl. apply plus_one. econstructor; eauto.
   rewrite (stacksize_preserved _ _ TRF). erewrite comp_preserved; eauto.
   rewrite (match_parent_locset _ _ STACKS).
+  assert (CALLER: LTL.call_comp s = call_comp ts).
+  { inv STACKS. reflexivity.
+    inv H0. simpl. erewrite comp_preserved; eauto. }
+  assert (SIG: LTL.parent_signature s = parent_signature ts).
+  { inv STACKS. reflexivity.
+    inv H0. reflexivity. }
+  rewrite SIG.
+  rewrite <- comp_transf_fundef; eauto.
   econstructor; eauto.
 
   (* internal functions *)
   assert (REACH: (reachable f)!!(LTL.fn_entrypoint f) = true).
     apply reachable_entrypoint.
-  monadInv H7.
+  monadInv H8.
   left; econstructor; split.
   apply plus_one. eapply exec_function_internal; eauto.
   rewrite (stacksize_preserved _ _ EQ).
   rewrite (comp_preserved _ _ EQ). eauto.
   generalize EQ; intro EQ'; monadInv EQ'. simpl.
+  assert (CALLER: LTL.call_comp s = call_comp ts).
+  { inv H7. reflexivity.
+    inv H0. simpl. erewrite comp_preserved; eauto. }
+  assert (SIG: LTL.parent_signature s = parent_signature ts).
+  { inv H7. reflexivity.
+    inv H0. reflexivity. }
+  (* rewrite type_of_call_translated, CALLER, SIG. *)
+  change (LTL.fn_comp f) with (comp_of f).
+  change (comp_of
+            {|
+              fn_comp := comp_of f;
+              fn_sig := LTL.fn_sig f;
+              fn_stacksize := LTL.fn_stacksize f;
+              fn_code := add_branch (fn_entrypoint f) (linearize_body f x0)
+            |}) with (comp_of f).
   econstructor; eauto. simpl. eapply is_tail_add_branch. constructor.
 
   (* external function *)
-  monadInv H8. left; econstructor; split.
+  monadInv H9. left; econstructor; split.
   apply plus_one. eapply exec_function_external; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   econstructor; eauto.
 
   (* return *)
-  inv H3. inv H1.
+  inv H4. inv H1.
   left; econstructor; split.
   apply plus_one. econstructor.
   erewrite comp_preserved; eauto.
@@ -800,7 +820,7 @@ Lemma transf_initial_states:
 Proof.
   intros. inversion H.
   exploit function_ptr_translated; eauto. intros [tf [A B]].
-  exists (Callstate nil tf (Locmap.init Vundef) m0); split.
+  exists (Callstate nil tf signature_main (Locmap.init Vundef) m0); split.
   econstructor; eauto. eapply (Genv.init_mem_transf_partial TRANSF); eauto.
   rewrite (match_program_main TRANSF).
   rewrite symbols_preserved. eauto.
@@ -812,7 +832,7 @@ Lemma transf_final_states:
   forall st1 st2 r,
   match_states st1 st2 -> LTL.final_state st1 r -> Linear.final_state st2 r.
 Proof.
-  intros. inv H0. inv H. inv H5. econstructor; eauto.
+  intros. inv H0. inv H. inv H6. econstructor; eauto.
 Qed.
 
 Theorem transf_program_correct:

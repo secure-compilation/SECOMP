@@ -1529,14 +1529,16 @@ Record program : Type := {
   prog_pol: Policy.t;
   prog_types: list composite_definition;
   prog_comp_env: composite_env;
-  prog_comp_env_eq: build_composite_env prog_types = OK prog_comp_env
+  prog_comp_env_eq: build_composite_env prog_types = OK prog_comp_env;
+  prog_pol_pub: Policy.in_pub prog_pol prog_public;
 }.
 
 Definition program_of_program (p: program) : AST.program fundef type :=
   {| AST.prog_defs := p.(prog_defs);
      AST.prog_public := p.(prog_public);
      AST.prog_main := p.(prog_main);
-     AST.prog_pol := p.(prog_pol) |}.
+     AST.prog_pol := p.(prog_pol);
+     AST.prog_pol_pub := p.(prog_pol_pub) |}.
 
 Coercion program_of_program: program >-> AST.program.
 
@@ -1550,10 +1552,11 @@ Program Definition make_program (types: list composite_definition)
       OK {| prog_defs := defs;
             prog_public := public;
             prog_main := main;
-            prog_pol := pol;
+            prog_pol := Policy.enforce_in_pub pol public;
             prog_types := types;
             prog_comp_env := ce;
-            prog_comp_env_eq := _ |}
+            prog_comp_env_eq := _;
+            prog_pol_pub := Policy.enforce_in_pub_correct pol public; |}
   end.
 
 End PROGRAMS.
@@ -1876,7 +1879,9 @@ Definition link_program {F:Type} {CF: has_comp F} (p1 p2: program F): option (pr
                       prog_pol := p.(AST.prog_pol);
                       prog_types := typs;
                       prog_comp_env := env;
-                      prog_comp_env_eq := P |}
+                      prog_comp_env_eq := P;
+                      prog_pol_pub := p.(AST.prog_pol_pub);
+                   |}
           end
       end
   end.

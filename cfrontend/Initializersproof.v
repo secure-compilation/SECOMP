@@ -159,13 +159,13 @@ Definition compat_eval (k: kind) (e: env) (a a': expr) (m: mem) : Prop :=
   end.
 
 Lemma lred_simple:
-  forall e l m l' m', lred ge e l m l' m' -> simple l -> simple l'.
+  forall e cp l m l' m', lred ge e cp l m l' m' -> simple l -> simple l'.
 Proof.
   induction 1; simpl; tauto.
 Qed.
 
 Lemma lred_compat:
-  forall e l m l' m', lred ge e l m l' m' ->
+  forall e cp l m l' m', lred ge e cp l m l' m' ->
   m = m' /\ compat_eval LV e l l' m.
 Proof.
   induction 1; simpl; split; auto; split; auto; intros bx ofsx bf' EV; inv EV.

@@ -25,12 +25,14 @@ Definition match_prog (p tp: program) : Prop :=
     match_program (fun ctx f tf => transf_fundef f = OK tf) eq p tp
  /\ prog_types tp = prog_types p.
 
+#[global]
 Instance comp_transf_function: has_comp_transl_partial transf_function.
 Proof.
   unfold transf_function.
   intros f ? H; monadInv H; trivial.
 Qed.
 
+#[global]
 Instance comp_transf_fundef: has_comp_transl_partial transf_fundef.
 Proof.
   unfold transf_fundef, transf_function.
@@ -87,6 +89,17 @@ Proof.
   monadInv EQ. simpl; unfold type_of_function; simpl. auto.
 Qed.
 
+Lemma allowed_addrof_translated:
+  forall cp id,
+    Genv.allowed_addrof ge cp id ->
+    Genv.allowed_addrof tge cp id.
+Proof.
+  intros cp id.
+  destruct TRANSF as [H _].
+  unfold ge, tge.
+  now rewrite (Genv.match_genvs_allowed_addrof H).
+Qed.
+
 Lemma allowed_call_translated:
   forall f tf vf,
     Genv.allowed_call ge (comp_of f) vf ->
@@ -110,8 +123,8 @@ Qed.
 Lemma type_of_call_translated:
   forall f tf cp,
     transf_function f = OK tf ->
-    Genv.type_of_call ge (comp_of f) cp =
-      Genv.type_of_call tge (comp_of tf) cp.
+    Genv.type_of_call (comp_of f) cp =
+      Genv.type_of_call (comp_of tf) cp.
 Proof.
   intros f tf cp TRF.
   erewrite <- (comp_transl_partial _ TRF).
@@ -121,7 +134,7 @@ Qed.
 Lemma call_trace_translated:
   forall j cp cp' vf vargs tvargs tyargs t,
     Val.inject_list j vargs tvargs ->
-    (Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr vargs) ->
+    (Genv.type_of_call cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr vargs) ->
     call_trace ge cp cp' vf vargs tyargs t ->
     call_trace tge cp cp' vf tvargs tyargs t.
 Proof.
@@ -1622,10 +1635,11 @@ Proof.
   apply eval_Evar_local; auto.
   econstructor; eauto.
 (* global var *)
-  rewrite H2.
+  rewrite H3.
   exploit me_vars; eauto. instantiate (1 := id). intros MV. inv MV; try congruence.
   exists l; exists Ptrofs.zero; split.
   apply eval_Evar_global. auto. rewrite <- H0. apply symbols_preserved.
+  { now apply allowed_addrof_translated. }
   destruct GLOB as [bound GLOB1]. inv GLOB1.
   econstructor; eauto.
 (* deref *)
@@ -1821,7 +1835,7 @@ Proof.
   intros f cenv cp k tk m bound tbound H.
   unfold call_comp.
   induction H; simpl; auto.
-  now apply comp_transl_partial.
+  now rewrite (comp_transl_partial _ H).
 Qed.
 
 (** [match_cont] and freeing of environment blocks *)
@@ -2245,13 +2259,14 @@ Proof.
   eapply allowed_call_translated; eauto.
   erewrite <- type_of_call_translated; eauto.
   intros. eapply Val.inject_list_not_ptr; eauto. eapply NO_CROSS_PTR.
-  rewrite find_comp_translated; auto.
-  rewrite <- (comp_transl_partial _ TRF), <- find_comp_translated.
+  rewrite comp_transf_fundef; eauto.
+  rewrite <- comp_transf_fundef; eauto.
   eapply call_trace_translated; eauto.
+  rewrite <- comp_transf_function; eauto.
+  rewrite <- comp_transf_function; eauto.
+
   econstructor; eauto.
-  intros.
-  (* rewrite find_comp_translated. *)
-  econstructor; eauto.
+  intros ??. econstructor; eauto.
 
 (* builtin *)
   exploit eval_simpl_exprlist; eauto with compat. intros [CASTED [tvargs [C D]]].

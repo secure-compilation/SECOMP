@@ -150,7 +150,7 @@ Proof.
 Qed.
 
 Definition get_call_trace (cp cp': compartment) (vf: val) (vargs: list val) (tyargs: list typ): option trace :=
-  match Genv.type_of_call ge cp cp' with
+  match Genv.type_of_call cp cp' with
   | Genv.CrossCompartmentCall =>
       match vf with
       | Vptr b ofs =>
@@ -173,11 +173,11 @@ Lemma get_call_trace_eq:
 Proof.
   intros. split.
   - intros H. unfold get_call_trace.
-    inv H; simpl. destruct (Genv.type_of_call ge cp cp'); try congruence.
+    inv H; simpl. destruct (Genv.type_of_call cp cp'); try congruence.
     erewrite H0, H2, list_eventval_of_val_complete; eauto.
   - unfold get_call_trace.
     intros H.
-    destruct (Genv.type_of_call ge cp cp') eqn:TOC;
+    destruct (Genv.type_of_call cp cp') eqn:TOC;
       inv H; [constructor; auto; congruence |].
     destruct vf; try congruence.
     destruct (Genv.invert_symbol ge b) eqn:IS; [| congruence].
@@ -187,7 +187,7 @@ Proof.
 Qed.
 
 Definition get_return_trace (cp cp': compartment) (vres: val) (ty: rettype): option trace :=
-  match Genv.type_of_call ge cp cp' with
+  match Genv.type_of_call cp cp' with
   | Genv.CrossCompartmentCall =>
       match eventval_of_val vres (proj_rettype ty) with
       | Some v => Some (Event_return cp cp' v :: E0)
@@ -203,11 +203,11 @@ Lemma get_return_trace_eq:
 Proof.
   intros. split.
   - intros H. unfold get_return_trace.
-    inv H; simpl. destruct (Genv.type_of_call ge cp cp'); try congruence.
+    inv H; simpl. destruct (Genv.type_of_call cp cp'); try congruence.
     rewrite H0. rewrite (eventval_of_val_complete res); auto.
   - unfold get_return_trace.
     intros H.
-    destruct (Genv.type_of_call ge cp cp') eqn:TOC;
+    destruct (Genv.type_of_call cp cp') eqn:TOC;
       inv H; [constructor; auto; congruence |].
     destruct (eventval_of_val vres (proj_rettype ty)) eqn:LEOV; [| congruence].
     inv H1. unfold E0. econstructor; eauto.
