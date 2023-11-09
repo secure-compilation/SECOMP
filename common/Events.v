@@ -656,12 +656,15 @@ Definition loc_out_of_reach (f: meminj) (m: mem) (b: block) (ofs: Z): Prop :=
   forall b0 delta,
   f b0 = Some(b, delta) -> ~Mem.perm m b0 (ofs - delta) Max Nonempty.
 
+Definition loc_not_in_compartment (cp: compartment) (m: mem) (b: block) (ofs: Z): Prop :=
+  Mem.block_compartment m b <> Some cp.
+
 Definition inject_separated (f f': meminj) (m1 m2: mem): Prop :=
   forall b1 b2 delta,
   f b1 = None -> f' b1 = Some(b2, delta) ->
   ~Mem.valid_block m1 b1 /\ ~Mem.valid_block m2 b2.
 
-Record extcall_properties (sem: extcall_sem) (sg: signature) : Prop :=
+Record extcall_properties (sem: extcall_sem) (cp: compartment) (sg: signature) : Prop :=
   mk_extcall_properties {
 
 (** The return value of an external call must agree with its signature. *)
@@ -710,11 +713,19 @@ Record extcall_properties (sem: extcall_sem) (sg: signature) : Prop :=
     (forall i, ofs <= i < ofs + n -> ~Mem.perm m1 b i Max Writable) ->
     Mem.loadbytes m1 b ofs n cp = Some bytes;
 
-      (** TODO: External call should not be able to modify other compartment's memory *)
-  (* ec_mem_outside_compartment: *)
-  (*   forall ge c vargs m1 t vres m2, *)
-  (*   sem ge c vargs m1 t vres m2 -> *)
-  (*   Mem.unchanged_on (loc_not_in_compartment c m1) m1 m2; *)
+(** External call can only allocate in the calling compartment *)
+  ec_new_valid:
+    forall ge vargs m1 t vres m2 b,
+    sem ge vargs m1 t vres m2 ->
+    ~ Mem.valid_block m1 b ->
+    Mem.valid_block m2 b ->
+    Mem.block_compartment m2 b = Some cp;
+
+(** TODO: External call should not be able to modify other compartment's memory *)
+  ec_mem_outside_compartment:
+    forall ge vargs m1 t vres m2,
+    sem ge vargs m1 t vres m2 ->
+    Mem.unchanged_on (loc_not_in_compartment cp m1) m1 m2;
 
 (** External calls must commute with memory extensions, in the
   following sense. *)
@@ -744,7 +755,13 @@ Record extcall_properties (sem: extcall_sem) (sg: signature) : Prop :=
     /\ Mem.unchanged_on (loc_unmapped f) m1 m2
     /\ Mem.unchanged_on (loc_out_of_reach f m1) m1' m2'
     /\ inject_incr f f'
-    /\ inject_separated f f' m1 m1';
+    /\ inject_separated f f' m1 m1' /\
+         (* TODO: redundancy with [ec_new_valid]? *)
+         (forall b,
+    ~ Mem.valid_block m1 b ->
+    Mem.valid_block m2 b ->
+   exists b', f' b = Some (b', 0) /\ Mem.block_compartment m2 b = Some cp);
+
 
 (** External calls produce at most one event. *)
   ec_trace_length:
@@ -761,7 +778,17 @@ Record extcall_properties (sem: extcall_sem) (sg: signature) : Prop :=
   ec_determ:
     forall ge vargs m t1 vres1 m1 t2 vres2 m2,
     sem ge vargs m t1 vres1 m1 -> sem ge vargs m t2 vres2 m2 ->
-    match_traces ge t1 t2 /\ (t1 = t2 -> vres1 = vres2 /\ m1 = m2)
+    match_traces ge t1 t2 /\ (t1 = t2 -> vres1 = vres2 /\ m1 = m2);
+
+(** External calls cannot produce [Event_call] or [Event_return] events *)
+  ec_no_crossing:
+    forall ge vargs m t vres m',
+    sem ge vargs m t vres m' ->
+    match t with
+    | Event_call _ _ _ _ :: _
+    | Event_return _ _ _ :: _ => False
+    | _ => True
+    end
 }.
 
 (** ** Semantics of volatile loads *)
@@ -840,7 +867,7 @@ Qed.
 Lemma volatile_load_ok:
   forall chunk cp,
   extcall_properties (volatile_load_sem cp chunk)
-                     (mksignature (Tptr :: nil) (rettype_of_chunk chunk) cc_default).
+                     cp (mksignature (Tptr :: nil) (rettype_of_chunk chunk) cc_default).
 Proof.
   intros; constructor; intros.
 (* well typed *)
@@ -856,6 +883,10 @@ Proof.
 - inv H; auto.
 (* readonly *)
 - inv H; auto.
+(* mem alloc *)
+- inv H; congruence.
+(* outside cp *)
+- inv H; apply Mem.unchanged_on_refl.
 (* mem extends *)
 - inv H. inv H1. inv H6. inv H4.
   exploit volatile_load_extends; eauto. intros [v' [A B]].
@@ -881,6 +912,8 @@ Proof.
   assert (v = v0) by (eapply eventval_match_determ_1; eauto). subst v0.
   auto.
   split. constructor. intuition congruence.
+(* no cross *)
+- inv H; inv H0; simpl; auto.
 Qed.
 
 (** ** Semantics of volatile stores *)
@@ -1012,7 +1045,7 @@ Qed.
 Lemma volatile_store_ok:
   forall cp chunk,
   extcall_properties (volatile_store_sem cp chunk)
-                     (mksignature (Tptr :: type_of_chunk chunk :: nil) Tvoid cc_default).
+                     cp (mksignature (Tptr :: type_of_chunk chunk :: nil) Tvoid cc_default).
 Proof.
   intros; constructor; intros.
 (* well typed *)
@@ -1027,6 +1060,12 @@ Proof.
 - inv H. inv H2. auto. eauto with mem.
 (* readonly *)
 - inv H. eapply unchanged_on_readonly; eauto. eapply volatile_store_readonly; eauto.
+(* mem alloc *)
+- inv H. inv H2. congruence.
+  exploit Mem.store_valid_block_2; eauto. congruence.
+(* outside cp *)
+- inv H. inv H0. apply Mem.unchanged_on_refl.
+  eapply Mem.store_unchanged_on; eauto.
 (* mem extends*)
 - inv H. inv H1. inv H6. inv H7. inv H4.
   exploit volatile_store_extends; eauto. intros [m2' [A [B C]]].
@@ -1035,6 +1074,7 @@ Proof.
 - inv H0. inv H2. inv H7. inv H8. inversion H5; subst.
   exploit volatile_store_inject; eauto. intros [m2' [A [B [C D]]]].
   exists f; exists Vundef; exists m2'; intuition. constructor; auto. red; intros; congruence.
+  inv H3. congruence. eapply Mem.store_valid_block_2 in H2; eauto. congruence.
 (* trace length *)
 - inv H; inv H0; simpl; lia.
 (* receptive *)
@@ -1046,6 +1086,8 @@ Proof.
   assert (ev = ev0) by (eapply eventval_match_determ_2; eauto). subst ev0.
   split. constructor. auto.
   split. constructor. intuition congruence.
+(* no cross *)
+- inv H; inv H0; simpl; auto.
 Qed.
 
 (** ** Semantics of dynamic memory allocation (malloc) *)
@@ -1062,7 +1104,7 @@ Inductive extcall_malloc_sem (cp: compartment) (ge: Senv.t):
 Lemma extcall_malloc_ok:
   forall cp,
   extcall_properties (extcall_malloc_sem cp)
-                     (mksignature (Tptr :: nil) Tptr cc_default).
+                     cp (mksignature (Tptr :: nil) Tptr cc_default).
 Proof.
   intros.
   assert (UNCHANGED:
@@ -1094,6 +1136,16 @@ Proof.
   apply Mem.valid_not_valid_diff with m1; eauto with mem.
 (* readonly *)
 - inv H. eapply unchanged_on_readonly; eauto. 
+(* mem alloc *)
+- inv H.
+  destruct (eq_block b0 b).
+  subst b0.
+  { erewrite Mem.store_block_compartment; eauto.
+    erewrite Mem.alloc_block_compartment; eauto. rewrite peq_true. eauto. }
+  exploit Mem.store_valid_block_2; eauto. intros ?.
+  exploit Mem.valid_block_alloc_inv; eauto. intros [|]; congruence.
+(* outside cp *)
+- inv H. eapply UNCHANGED; eauto.
 (* mem extends *)
 - inv H. inv H1. inv H7.
   assert (SZ: v2 = Vptrofs sz).
@@ -1124,6 +1176,12 @@ Proof.
   red; intros. destruct (eq_block b1 b).
   subst b1. rewrite C in H2. inv H2. eauto with mem.
   rewrite D in H2 by auto. congruence.
+  destruct (eq_block b0 b); subst.
+  { erewrite Mem.store_block_compartment; eauto.
+    erewrite Mem.alloc_block_compartment; eauto. rewrite peq_true. eauto. }
+  eapply Mem.store_valid_block_2 in H2; eauto.
+  clear ALLOC.
+  exploit Mem.valid_block_alloc_inv; eauto. intros [ | ]; congruence.
 (* trace length *)
 - inv H; simpl; lia.
 (* receptive *)
@@ -1138,6 +1196,8 @@ Proof.
   }
   subst.
   split. constructor. intuition congruence.
+(* no cross *)
+- inv H; inv H0; simpl; auto.
 Qed.
 
 (** ** Semantics of dynamic memory deallocation (free) *)
@@ -1157,7 +1217,7 @@ Inductive extcall_free_sem (cp: compartment) (ge: Senv.t):
 Lemma extcall_free_ok:
   forall cp,
   extcall_properties (extcall_free_sem cp)
-                     (mksignature (Tptr :: nil) Tvoid cc_default).
+                     cp (mksignature (Tptr :: nil) Tvoid cc_default).
 Proof.
   intros.
   constructor; intros.
@@ -1178,6 +1238,14 @@ Proof.
   apply Mem.perm_cur_max. apply Mem.perm_implies with Freeable; auto with mem.
   eapply Mem.free_range_perm; eauto.
 + apply Mem.unchanged_on_refl.
+(* mem alloc *)
+- inv H; try congruence.
+  exploit Mem.valid_block_free_2; eauto. congruence.
+(* outside cp *)
+- inv H.
+  eapply Mem.free_unchanged_on; eauto. intros. unfold loc_not_in_compartment.
+  exploit Mem.free_can_access_block_1; eauto.
+  eapply Mem.unchanged_on_refl.
 (* mem extends *)
 - inv H.
 + inv H1. inv H8. inv H6.
@@ -1226,8 +1294,10 @@ Proof.
     intros. red; intros. eelim H2; eauto.
     apply Mem.perm_cur_max. apply Mem.perm_implies with Freeable; auto with mem.
     apply P. lia.
-  split. auto.
+  split. auto. split.
   red; intros. congruence.
+  intros. clear C.
+  exploit Mem.nextblock_free; eauto; congruence.
 + inv H2. inv H6. replace v' with Vnullptr.
   exists f, Vundef, m1'; intuition auto using Mem.unchanged_on_refl.
   constructor.
@@ -1249,6 +1319,8 @@ Proof.
   subst sz0.
   split. constructor. intuition congruence.
 + split. constructor. intuition auto.
+(* no cross *)
+- inv H; simpl; auto.
 Qed.
 
 (** ** Semantics of [memcpy] operations. *)
@@ -1273,7 +1345,7 @@ Inductive extcall_memcpy_sem (cp: compartment) (sz al: Z) (ge: Senv.t):
 Lemma extcall_memcpy_ok:
   forall cp sz al,
   extcall_properties (extcall_memcpy_sem cp sz al)
-                     (mksignature (Tptr :: Tptr :: nil) Tvoid cc_default).
+                     cp (mksignature (Tptr :: Tptr :: nil) Tvoid cc_default).
 Proof.
   intros. constructor.
 - (* return type *)
@@ -1291,6 +1363,14 @@ Proof.
   eapply Mem.storebytes_unchanged_on; eauto.
   intros; red; intros. elim H11.
   apply Mem.perm_cur_max. eapply Mem.storebytes_range_perm; eauto.
+- (* new blocks *)
+  intros.
+  inv H.
+  exploit Mem.storebytes_valid_block_2; eauto. congruence.
+(* outside cp *)
+- intros. inv H.
+  eapply Mem.storebytes_unchanged_on; eauto. intros. unfold loc_not_in_compartment.
+  exploit Mem.storebytes_can_access_block_1; eauto.
 - (* extensions *)
   intros. inv H.
   inv H1. inv H13. inv H14. inv H10. inv H11.
@@ -1336,7 +1416,9 @@ Proof.
   split. eapply Mem.storebytes_unchanged_on; eauto.
   simpl; intros; extlia.
   split. apply inject_incr_refl.
-  red; intros; congruence.
+  split. red; intros; congruence.
+  intros. clear SB.
+  exploit Mem.nextblock_storebytes; eauto; congruence.
 + (* general case sz > 0 *)
   exploit Mem.loadbytes_length; eauto. intros LEN.
   assert (RPSRC: Mem.range_perm m1 bsrc (Ptrofs.unsigned osrc) (Ptrofs.unsigned osrc + sz) Cur Nonempty).
@@ -1373,7 +1455,9 @@ Proof.
   erewrite list_forall2_length; eauto.
   lia.
   split. apply inject_incr_refl.
-  red; intros; congruence.
+  split. red; intros; congruence.
+  intros. clear C.
+  exploit Mem.nextblock_storebytes; eauto; congruence.
 - (* trace length *)
   intros; inv H. simpl; lia.
 - (* receptive *)
@@ -1382,6 +1466,8 @@ Proof.
   exists vres1; exists m1; auto.
 - (* determ *)
   intros; inv H; inv H0. split. constructor. intros; split; congruence.
+(* no cross *)
+- intros; inv H; simpl; auto.
 Qed.
 
 (** ** Semantics of annotations. *)
@@ -1397,7 +1483,7 @@ Inductive extcall_annot_sem (cp: compartment) (text: string) (targs: list typ) (
 Lemma extcall_annot_ok:
   forall cp text targs,
   extcall_properties (extcall_annot_sem cp text targs)
-                     (mksignature targs Tvoid cc_default).
+                     cp (mksignature targs Tvoid cc_default).
 Proof.
   intros; constructor; intros.
 (* well typed *)
@@ -1413,6 +1499,11 @@ Proof.
 - inv H; auto.
 (* readonly *)
 - inv H; auto.
+(* mem alloc *)
+- inv H. congruence.
+(* outside cp *)
+- intros. inv H.
+  eapply Mem.unchanged_on_refl.
 (* mem extends *)
 - inv H.
   exists Vundef; exists m1'; intuition.
@@ -1433,6 +1524,8 @@ Proof.
 - inv H; inv H0.
   assert (args = args0). eapply eventval_list_match_determ_2; eauto. subst args0.
   split. constructor. auto.
+(* no cross *)
+- inv H; simpl; auto.
 Qed.
 
 Inductive extcall_annot_val_sem (cp: compartment) (text: string) (targ: typ) (ge: Senv.t):
@@ -1444,7 +1537,7 @@ Inductive extcall_annot_val_sem (cp: compartment) (text: string) (targ: typ) (ge
 Lemma extcall_annot_val_ok:
   forall cp text targ,
   extcall_properties (extcall_annot_val_sem cp text targ)
-                     (mksignature (targ :: nil) targ cc_default).
+                     cp (mksignature (targ :: nil) targ cc_default).
 Proof.
   intros; constructor; intros.
 (* well typed *)
@@ -1460,6 +1553,11 @@ Proof.
 - inv H; auto.
 (* readonly *)
 - inv H; auto.
+(* mem alloc *)
+- inv H; congruence.
+(* outside cp *)
+- intros. inv H.
+  eapply Mem.unchanged_on_refl.
 (* mem extends *)
 - inv H. inv H1. inv H6.
   exists v2; exists m1'; intuition.
@@ -1480,6 +1578,8 @@ Proof.
 - inv H; inv H0.
   assert (arg = arg0). eapply eventval_match_determ_2; eauto. subst arg0.
   split. constructor. auto.
+(* no cross *)
+- inv H; simpl; auto.
 Qed.
 
 Inductive extcall_debug_sem (cp: compartment) (ge: Senv.t):
@@ -1490,7 +1590,7 @@ Inductive extcall_debug_sem (cp: compartment) (ge: Senv.t):
 Lemma extcall_debug_ok:
   forall cp targs,
   extcall_properties (extcall_debug_sem cp)
-                     (mksignature targs Tvoid cc_default).
+                     cp (mksignature targs Tvoid cc_default).
 Proof.
   intros; constructor; intros.
 (* well typed *)
@@ -1505,6 +1605,11 @@ Proof.
 - inv H; auto.
 (* readonly *)
 - inv H; auto.
+(* mem alloc *)
+- inv H; congruence.
+(* outside cp *)
+- intros. inv H.
+  eapply Mem.unchanged_on_refl.
 (* mem extends *)
 - inv H.
   exists Vundef; exists m1'; intuition.
@@ -1521,6 +1626,8 @@ Proof.
 (* determ *)
 - inv H; inv H0.
   split. constructor. auto.
+(* no cross *)
+- inv H; simpl; auto.
 Qed.
 
 (** ** Semantics of known built-in functions. *)
@@ -1539,8 +1646,8 @@ Inductive known_builtin_sem (bf: builtin_function) (ge: Senv.t):
       builtin_function_sem bf vargs = Some vres ->
       known_builtin_sem bf ge vargs m E0 vres m.
 
-Lemma known_builtin_ok: forall bf,
-  extcall_properties (known_builtin_sem bf) (builtin_function_sig bf).
+Lemma known_builtin_ok: forall bf cp,
+  extcall_properties (known_builtin_sem bf) cp (builtin_function_sig bf).
 Proof.
   intros. set (bsem := builtin_function_sem bf). constructor; intros.
 (* well typed *)
@@ -1558,6 +1665,11 @@ Proof.
 - inv H; auto.
 (* readonly *)
 - inv H; auto.
+(* mem alloc *)
+- inv H; congruence.
+(* outside cp *)
+- intros. inv H.
+  eapply Mem.unchanged_on_refl.
 (* mem extends *)
 - inv H. fold bsem in H2. apply val_inject_list_lessdef in H1.
   specialize (bs_inject _ bsem _ _ _ H1).
@@ -1581,6 +1693,8 @@ Proof.
 (* determ *)
 - inv H; inv H0.
   split. constructor. intuition congruence. 
+(* no cross *)
+- inv H; simpl; auto.
 Qed.
 
 (** ** Semantics of external functions. *)
@@ -1595,7 +1709,7 @@ Qed.
 Parameter external_functions_sem: String.string -> signature -> extcall_sem.
 
 Axiom external_functions_properties:
-  forall id sg, extcall_properties (external_functions_sem id sg) sg.
+  forall id sg cp, extcall_properties (external_functions_sem id sg) cp sg.
 
 (* Axiom external_functions_caller_independent: *)
 (*   forall cp id sg, extcall_caller_independent cp (external_functions_sem id sg). *)
@@ -1606,7 +1720,7 @@ Axiom external_functions_properties:
 Parameter inline_assembly_sem: compartment -> String.string -> signature -> extcall_sem.
 
 Axiom inline_assembly_properties:
-  forall cp id sg, extcall_properties (inline_assembly_sem cp id sg) sg.
+  forall cp id sg, extcall_properties (inline_assembly_sem cp id sg) cp sg.
 
 (* Axiom inline_assembly_caller_independent: *)
 (*   forall cp id sg, extcall_caller_independent cp (inline_assembly_sem id sg). *)
@@ -1620,8 +1734,8 @@ Definition builtin_or_external_sem name sg :=
   | None => external_functions_sem name sg
   end.
 
-Lemma builtin_or_external_sem_ok: forall name sg,
-  extcall_properties (builtin_or_external_sem name sg) sg.
+Lemma builtin_or_external_sem_ok: forall name sg cp,
+  extcall_properties (builtin_or_external_sem name sg) cp sg.
 Proof.
   unfold builtin_or_external_sem; intros. 
   destruct (lookup_builtin_function name sg) as [bf|] eqn:L.
@@ -1666,7 +1780,7 @@ Definition external_call (ef: external_function): extcall_sem :=
   | EF_annot cp kind txt targs   => extcall_annot_sem cp txt targs
   | EF_annot_val cp kind txt targ => extcall_annot_val_sem cp txt targ
   | EF_inline_asm cp txt sg clb => inline_assembly_sem cp txt sg
-  | EF_debug kind cp txt targs => extcall_debug_sem cp
+  | EF_debug cp kind txt targs => extcall_debug_sem cp
   end.
 
 Ltac external_call_caller_independent :=
@@ -1719,7 +1833,7 @@ Ltac external_call_caller_independent :=
 
 Theorem external_call_spec:
   forall ef,
-  extcall_properties (external_call ef) (ef_sig ef).
+  extcall_properties (external_call ef) (comp_of ef) (ef_sig ef).
 Proof.
   intros. unfold external_call, ef_sig; destruct ef.
   apply external_functions_properties.
@@ -1791,7 +1905,11 @@ Lemma external_call_mem_inject:
     /\ Mem.unchanged_on (loc_unmapped f) m1 m2
     /\ Mem.unchanged_on (loc_out_of_reach f m1) m1' m2'
     /\ inject_incr f f'
-    /\ inject_separated f f' m1 m1'.
+    /\ inject_separated f f' m1 m1'
+   /\ (forall b : block,
+         ~ Mem.valid_block m1 b ->
+         Mem.valid_block m2 b ->
+         exists b' : block, f' b = Some (b', 0) /\ Mem.block_compartment m2 b = Some (comp_of ef)).
 Proof.
   intros. destruct H as (A & B & C). eapply external_call_mem_inject_gen with (ge1 := ge); eauto.
   repeat split; intros.
@@ -2017,7 +2135,7 @@ Section INFORM_TRACES_INJECT.
 
   Variable j: meminj.
 
-  (* I couldn't find a way to prove that with using [symbols_preserved]. *)
+  (* I couldn't find a way to prove that without using [symbols_preserved]. *)
   Lemma call_trace_inj (symbols_preserved: forall (s: ident), Genv.find_symbol ge' s = Genv.find_symbol ge s):
     forall cp cp' vf vs vs' tys t,
       Val.inject_list j vs vs' ->
