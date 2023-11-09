@@ -1706,10 +1706,10 @@ Qed.
   are not described in [Builtins].
 *)
 
-Parameter external_functions_sem: String.string -> signature -> extcall_sem.
+Parameter external_functions_sem: compartment -> String.string -> signature -> extcall_sem.
 
 Axiom external_functions_properties:
-  forall id sg cp, extcall_properties (external_functions_sem id sg) cp sg.
+  forall id sg cp, extcall_properties (external_functions_sem cp id sg) cp sg.
 
 (* Axiom external_functions_caller_independent: *)
 (*   forall cp id sg, extcall_caller_independent cp (external_functions_sem id sg). *)
@@ -1728,14 +1728,14 @@ Axiom inline_assembly_properties:
 
 (** ** Combined semantics of external calls *)
 
-Definition builtin_or_external_sem name sg :=
+Definition builtin_or_external_sem cp name sg :=
   match lookup_builtin_function name sg with
   | Some bf => known_builtin_sem bf
-  | None => external_functions_sem name sg
+  | None => external_functions_sem cp name sg
   end.
 
 Lemma builtin_or_external_sem_ok: forall name sg cp,
-  extcall_properties (builtin_or_external_sem name sg) cp sg.
+  extcall_properties (builtin_or_external_sem cp name sg) cp sg.
 Proof.
   unfold builtin_or_external_sem; intros. 
   destruct (lookup_builtin_function name sg) as [bf|] eqn:L.
@@ -1769,9 +1769,9 @@ This predicate is used in the semantics of all CompCert languages. *)
 
 Definition external_call (ef: external_function): extcall_sem :=
   match ef with
-  | EF_external cp name sg  => external_functions_sem name sg
-  | EF_builtin cp name sg      => builtin_or_external_sem name sg
-  | EF_runtime cp name sg      => builtin_or_external_sem name sg
+  | EF_external cp name sg  => external_functions_sem cp name sg
+  | EF_builtin cp name sg      => builtin_or_external_sem cp name sg
+  | EF_runtime cp name sg      => builtin_or_external_sem cp name sg
   | EF_vload cp chunk          => volatile_load_sem cp chunk
   | EF_vstore cp chunk         => volatile_store_sem cp chunk
   | EF_malloc cp                => extcall_malloc_sem cp

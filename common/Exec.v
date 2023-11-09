@@ -301,18 +301,18 @@ Qed.
 (** External calls *)
 
 Variable do_external_function:
-  string -> signature -> Senv.t -> world -> list val -> mem -> option (world * trace * val * mem).
+  compartment -> string -> signature -> Senv.t -> world -> list val -> mem -> option (world * trace * val * mem).
 
 Hypothesis do_external_function_sound:
-  forall id sg ge vargs m t vres m' w w',
-  do_external_function id sg ge w vargs m = Some(w', t, vres, m') ->
-  external_functions_sem id sg ge vargs m t vres m' /\ possible_trace w t w'.
+  forall cp id sg ge vargs m t vres m' w w',
+  do_external_function cp id sg ge w vargs m = Some(w', t, vres, m') ->
+  external_functions_sem cp id sg ge vargs m t vres m' /\ possible_trace w t w'.
 
 Hypothesis do_external_function_complete:
-  forall id sg ge vargs m t vres m' w w',
-  external_functions_sem id sg ge vargs m t vres m' ->
+  forall cp id sg ge vargs m t vres m' w w',
+  external_functions_sem cp id sg ge vargs m t vres m' ->
   possible_trace w t w' ->
-  do_external_function id sg ge w vargs m = Some(w', t, vres, m').
+  do_external_function cp id sg ge w vargs m = Some(w', t, vres, m').
 
 Variable do_inline_assembly:
   compartment -> string -> signature -> Senv.t -> world -> list val -> mem -> option (world * trace * val * mem).
@@ -426,19 +426,19 @@ Definition do_ef_debug (cp: compartment) (kind: positive) (text: ident) (targs: 
        (w: world) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
   Some(w, E0, Vundef, m).
 
-Definition do_builtin_or_external (name: string) (sg: signature)
+Definition do_builtin_or_external (cp: compartment) (name: string) (sg: signature)
        (w: world) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
   match lookup_builtin_function name sg with
   | Some bf => match builtin_function_sem bf vargs with Some v => Some(w, E0, v, m) | None => None end
-  | None    => do_external_function name sg ge w vargs m
+  | None    => do_external_function cp name sg ge w vargs m
   end.
 
 Definition do_external (ef: external_function):
        world -> list val -> mem -> option (world * trace * val * mem) :=
   match ef with
-  | EF_external cp name sg => do_external_function name sg ge
-  | EF_builtin cp name sg => do_builtin_or_external name sg
-  | EF_runtime cp name sg => do_builtin_or_external name sg
+  | EF_external cp name sg => do_external_function cp name sg ge
+  | EF_builtin cp name sg => do_builtin_or_external cp name sg
+  | EF_runtime cp name sg => do_builtin_or_external cp name sg
   | EF_vload cp chunk => do_ef_volatile_load cp chunk
   | EF_vstore cp chunk => do_ef_volatile_store cp chunk
   | EF_malloc cp => do_ef_malloc cp
@@ -459,9 +459,9 @@ Proof with try congruence.
   assert (SIZE: forall v sz, do_alloc_size v = Some sz -> v = Vptrofs sz).
   { intros until sz; unfold Vptrofs; destruct v; simpl; destruct Archi.ptr64 eqn:SF;
     intros EQ; inv EQ; f_equal; symmetry; eauto with ptrofs. }
-  assert (BF_EX: forall name sg,
-    do_builtin_or_external name sg w vargs m = Some (w', t, vres, m') ->
-    builtin_or_external_sem name sg ge vargs m t vres m' /\ possible_trace w t w').
+  assert (BF_EX: forall cp name sg,
+    do_builtin_or_external cp name sg w vargs m = Some (w', t, vres, m') ->
+    builtin_or_external_sem cp name sg ge vargs m t vres m' /\ possible_trace w t w').
   { unfold do_builtin_or_external, builtin_or_external_sem; intros.
     destruct (lookup_builtin_function name sg ) as [bf|].
   - destruct (builtin_function_sem bf vargs) as [vres1|] eqn:BF; inv H.
@@ -527,9 +527,9 @@ Proof.
   { unfold Vptrofs, do_alloc_size; intros; destruct Archi.ptr64 eqn:SF.
     rewrite Ptrofs.of_int64_to_int64; auto.
     rewrite Ptrofs.of_int_to_int; auto. }
-  assert (BF_EX: forall name sg,
-    builtin_or_external_sem name sg ge vargs m t vres m' ->
-    do_builtin_or_external name sg w vargs m = Some (w', t, vres, m')).
+  assert (BF_EX: forall cp name sg,
+    builtin_or_external_sem cp name sg ge vargs m t vres m' ->
+    do_builtin_or_external cp name sg w vargs m = Some (w', t, vres, m')).
   { unfold do_builtin_or_external, builtin_or_external_sem; intros.
     destruct (lookup_builtin_function name sg) as [bf|].
   - inv H1. inv H0. rewrite H2. auto.

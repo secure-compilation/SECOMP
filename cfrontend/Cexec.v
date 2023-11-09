@@ -268,18 +268,18 @@ Proof.
 Qed.
 
 Variable do_external_function:
-  string -> signature -> Senv.t -> world -> list val -> mem -> option (world * trace * val * mem).
+  compartment -> string -> signature -> Senv.t -> world -> list val -> mem -> option (world * trace * val * mem).
 
 Hypothesis do_external_function_sound:
-  forall id sg ge vargs m t vres m' w w',
-  do_external_function id sg ge w vargs m = Some(w', t, vres, m') ->
-  external_functions_sem id sg ge vargs m t vres m' /\ possible_trace w t w'.
+  forall cp id sg ge vargs m t vres m' w w',
+  do_external_function cp id sg ge w vargs m = Some(w', t, vres, m') ->
+  external_functions_sem cp id sg ge vargs m t vres m' /\ possible_trace w t w'.
 
 Hypothesis do_external_function_complete:
-  forall id sg ge vargs m t vres m' w w',
-  external_functions_sem id sg ge vargs m t vres m' ->
+  forall cp id sg ge vargs m t vres m' w w',
+  external_functions_sem cp id sg ge vargs m t vres m' ->
   possible_trace w t w' ->
-  do_external_function id sg ge w vargs m = Some(w', t, vres, m').
+  do_external_function cp id sg ge w vargs m = Some(w', t, vres, m').
 
 Variable do_inline_assembly:
   compartment -> string -> signature -> Senv.t -> world -> list val -> mem -> option (world * trace * val * mem).
