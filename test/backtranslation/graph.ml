@@ -100,3 +100,9 @@ let to_dot adj_list =
   fmt "graph {\n%s\n%s\n}"
     (String.concat "\n" (List.map string_of_vertex (vertices adj_list)))
     (String.concat "\n" (List.map string_of_edge edges))
+
+let dump graph =
+  Out_channel.with_open_text "graph.dot" (fun f ->
+      output_string f (to_dot graph));
+  let _ = Unix.system "dot -Tpng graph.dot > graph.png" in
+  print_endline "Generated graph.png"

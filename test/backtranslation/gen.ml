@@ -306,8 +306,20 @@ let bundle_trace =
 let exports graph rand_state =
   let open QCheck.Gen in
   let vertices = Graph.vertices graph in
-  let sample = list_size (map succ (int_bound 15)) (map succ small_nat) in
-  List.map (fun v -> (v, sample rand_state)) vertices
+  let max_num_per_comp = 15 in
+  let max_num_func_idents = max_num_per_comp * Graph.size graph in
+  let func_idents =
+    ref (shuffle_l (List.init max_num_func_idents succ) rand_state)
+  in
+  let take n l = List.of_seq (Seq.take n (List.to_seq l)) in
+  let drop n l = List.of_seq (Seq.drop n (List.to_seq l)) in
+  List.map
+    (fun v ->
+      let n = int_bound 15 rand_state in
+      let fs = take n !func_idents in
+      func_idents := drop n !func_idents;
+      (v, fs))
+    vertices
 
 let imports graph exports rand_state =
   let open QCheck.Gen in
@@ -356,7 +368,6 @@ let public exports =
 
 let main exports =
   let open QCheck.Gen in
-  (* TODO: check whether function identifiers across compartments need to be disjoint *)
   let* _, funcs = oneofl exports in
   map Camlcoq.P.of_int (oneofl funcs)
 
@@ -397,6 +408,7 @@ let asm_program =
   let open QCheck.Gen in
   let max_graph_size = 10 in
   let* graph = Graph.random max_graph_size in
+  let () = Graph.dump graph in
   let* exports = exports graph in
   let* imports = imports graph exports in
   let* func_sigs = function_signatures exports in

@@ -1,21 +1,3 @@
-(*
-  - call and return should be easy to get from regular trace
-  - generation of builtin should also be possible, effectively <primitive enum>
-  - mem_delta = mem_delta_kind list
-    - perhaps for the beginning we can set everything to empty list?
-  - mem_delta_kind = <primitive enum>
-*)
-
-(*
-       For asm_prog we need
-       - (fundef, unit) AST.program
-       - fundef = coq_function AST.fundef
-         - coq_function = compartment * signature * code
-         - code = instruction list
-         - AST.fundef = external function | internal coq_function
-         - external function = <"primitive" enum>
-*)
-
 (* Format failing test cases for output *)
 let print_ident i = Printf.sprintf "%d" (Camlcoq.P.to_int i)
 
