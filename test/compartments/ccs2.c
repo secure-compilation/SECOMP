@@ -13,15 +13,14 @@
 §C0§ « §C1§[parse]
 §C0§ « §C2§[process]
 
-§C0§ char c[100];
+§C0§ char x[100];
 
 §C0§ int valid(int data) { return 1; }
 
 §C0§ int main() {
   init();
-  char *x  = fgets(c,100,stdin);
-  if (x != NULL) {
-    int y = parse(x[0]);
+  if (fgets(x,100,stdin) != NULL) {
+    int y = parse(x[0]); /* can only pass single char here */
     int data = process(y);
     if (valid(data)) {
       printf("<%d,%s>\n",data,x);

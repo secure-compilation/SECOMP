@@ -1,14 +1,8 @@
 #include <stdio.h>
 
-/* component C0 */
-
 §C0§ » valid
 
-§C0§ int valid(int data) {
-  return data % 2;
-}
-
-/* component C2 */
+§C0§ int valid(int data) { return data % 2; }
 
 /* §C2§ imports_syscall [printf] */
 §C2§ « §C0§[valid]
@@ -17,20 +11,11 @@
 
 §C2§ int initialized = 0;
 
-§C2§ int init() {
-  initialized = 1;
-  return 0;
-}
+§C2§ int init() { return initialized = 1; }
 
-// can yield Undef if not initialized
-§C2§ int prepare() {
-  return 77 / initialized;
-}
+§C2§ int prepare() { return 77 / initialized; } // can yield Undef if not initialized
 
-// can yield Undef for some y
-§C2§ int handle(int y) {
-  return (y + 1) / y;
-}
+§C2§ int handle(int y) { return (y + 1) / y; } // can yield Undef for some y
 
 §C2§ int process(int y) {
   int data;
@@ -40,8 +25,6 @@
   else { printf("invalid data\n"); }
   return 0;
 }
-
-/* component C1 */
 
 /* §C1§ imports_syscall [fgets] */
 §C1§ « §C2§[init]
