@@ -67,3 +67,18 @@ let _ =
   let asm_prog, ctx = Gen.asm_program rand_state in
   let () = PrintAsm.print_program_asm Out_channel.stdout asm_prog in
   QCheck_runner.run_tests [ test_backtranslation asm_prog ctx ]
+
+let () =
+  let sourcename = "fib.c" in
+  let ifile = "../c/fib.c" in
+  let ifile' = "../c/fib.c.p" in
+  let () = Frontend.init () in
+  let () = Frontend.preprocess ifile ifile' in
+  let csyntax = Frontend.parse_c_file sourcename ifile' in
+  match
+    Compiler.apply_partial
+      (Compiler.transf_c_program csyntax)
+      Asmexpand.expand_program
+  with
+  | Errors.OK _ -> print_endline "ok"
+  | Errors.Error _ -> print_endline "error"
