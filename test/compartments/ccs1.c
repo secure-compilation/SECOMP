@@ -10,7 +10,7 @@
 }
 
 §E§ int write(int data, int x) {
-  return NULL;
+  return 0;
 }
 
 /* component C0 */
@@ -18,27 +18,7 @@
 §C0§ » valid
 
 §C0§ int valid(int data) {
-  return 0;
-}
-
-/* component C1 */
-
-§C1§ « §E§[read]
-§C1§ « §C2§[init]
-§C1§ « §C2§[process]
-
-§C1§ int main() {
-  int x, y;
-  init();
-  x = read();
-  y = parse(x);
-  process(x, y);
-  return NULL;
-}
-
-// can yield Undef for some x
-§C1§ int parse(int x) {
-  return 0;
+  return 1;
 }
 
 /* component C2 */
@@ -49,7 +29,17 @@
 §C2§ » process
 
 §C2§ int init() {
-  return NULL;
+  return 0;
+}
+
+// can yield Undef if not initialized
+§C2§ int prepare() {
+  return 0;
+}
+
+// can yield Undef for some y
+§C2§ int handle(int y) {
+  return 0;
 }
 
 §C2§ int process(int x, int y) {
@@ -59,15 +49,25 @@
   if (valid(data)) {
     write(data, x);
   }
-  return NULL;
+  return 0;
 }
 
-// can yield Undef if not initialized
-§C2§ int prepare() {
-  return NULL;
+/* component C1 */
+
+§C1§ « §E§[read]
+§C1§ « §C2§[init]
+§C1§ « §C2§[process]
+
+// can yield Undef for some x
+§C1§ int parse(int x) {
+  return x;
 }
 
-// can yield Undef for some y
-§C2§ int handle(int y) {
+§C1§ int main() {
+  int x, y;
+  init();
+  x = read();
+  y = parse(x);
+  process(x, y);
   return 0;
 }
