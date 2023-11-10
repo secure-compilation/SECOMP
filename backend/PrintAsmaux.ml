@@ -295,7 +295,7 @@ let print_inline_asm print_preg oc txt sg args res =
 (** Print CompCert version and command-line as asm comment *)
 
 let print_version_and_options oc comment =
-  (* let version_string =
+  let version_string =
     if Version.buildnr <> "" && Version.tag <> "" && Version.branch <> "" then
       sprintf "Release: %s, Build: %s, Tag: %s, Branch: %s" Version.version Version.buildnr Version.tag Version.branch
     else
@@ -304,7 +304,7 @@ let print_version_and_options oc comment =
   fprintf oc "%s Command line:" comment;
   for i = 1 to Array.length Commandline.argv - 1 do
     fprintf oc " %s" Commandline.argv.(i)
-  done; *)
+  done;
   fprintf oc "\n"
 
 (** Determine the name of the section to use for a variable.
