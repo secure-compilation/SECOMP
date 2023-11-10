@@ -27,20 +27,30 @@ let print_bundle_event e =
 let print_bundle_trace _ = "printing not implemented"
 (* String.concat "\n" (List.map print_bundle_event t) *)
 
+let print_c_light_program prog =
+  let version = PrintClight.Clight1 in
+  ignore (Format.flush_str_formatter ());
+  PrintClight.print_program version Format.str_formatter prog;
+  print_endline (Format.flush_str_formatter ())
+
+let print_compiler_errors errors =
+  let open Errors in
+  let fmt = Printf.printf in
+  List.iter
+    (fun e ->
+      match e with
+      | CTX p | POS p -> fmt "%d" (Camlcoq.P.to_int p)
+      | MSG chars -> List.iter (fun c -> fmt "%c" c) chars)
+    errors
+
 (* Run QCheck testing *)
 
 let property_under_test asm_prog bundled_trace =
   let src_program = Backtranslation.gen_program bundled_trace asm_prog in
+  let () = print_c_light_program src_program in
   match Compiler.transf_clight_program src_program with
   | Errors.Error error_list ->
-      let open Errors in
-      let fmt = Printf.printf in
-      List.iter
-        (fun e ->
-          match e with
-          | CTX p | POS p -> fmt "%d" (Camlcoq.P.to_int p)
-          | MSG chars -> List.iter (fun c -> fmt "%c" c) chars)
-        error_list;
+      print_compiler_errors error_list;
       false
   | Errors.OK _ -> true
 
