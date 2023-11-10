@@ -1046,6 +1046,14 @@ Section Simulation.
     (* rely on determinacy lemma with empty traces? *)
   Admitted.
 
+  Lemma parallel_concrete_E0': forall j s1 s2 s1' s2' t,
+    right_state_injection s j ge1 ge2 s1 s2 ->
+    s |= s1 ∈ Right -> (* in the context *)
+    Clight.step1 ge2 s2 E0 s2' ->
+    Clight.step1 ge1 s1 t s1' ->
+    t = E0 /\ right_state_injection s j ge1 ge2 s1' s2'.
+  Admitted.
+
   Lemma parallel_abstract_E0_1: forall j s1 s2 s1',
     right_state_injection s j ge1 ge2 s1 s2 ->
     s |= s1 ∈ Left ->
