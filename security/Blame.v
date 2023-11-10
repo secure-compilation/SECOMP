@@ -1046,6 +1046,20 @@ Section Simulation.
     (* rely on determinacy lemma with empty traces? *)
   Admitted.
 
+  Lemma parallel_abstract_E0_1: forall j s1 s2 s1',
+    right_state_injection s j ge1 ge2 s1 s2 ->
+    s |= s1 ∈ Left ->
+    Clight.step1 ge1 s1 E0 s1' ->
+    right_state_injection s j ge1 ge2 s1' s2.
+  Admitted.
+
+  Lemma parallel_abstract_E0_2: forall j s1 s2 s2',
+    right_state_injection s j ge1 ge2 s1 s2 ->
+    s |= s1 ∈ Left ->
+    Clight.step1 ge2 s2 E0 s2' ->
+    right_state_injection s j ge1 ge2 s1 s2'.
+  Admitted.
+
   (* NOTE: Currently unused by proofs below (useful for E0 star?) *)
   Lemma parallel_abstract_E0: forall j s1 s2 s1' s2',
     right_state_injection s j ge1 ge2 s1 s2 ->
