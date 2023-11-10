@@ -71,7 +71,7 @@ let _ =
 let () =
   let sourcename = "fib.c" in
   let ifile = "../c/fib.c" in
-  let ifile' = "../c/fib.c.p" in
+  let ifile' = Driveraux.tmp_file ".p" in
   let () = Frontend.init () in
   let () = Frontend.preprocess ifile ifile' in
   let csyntax = Frontend.parse_c_file sourcename ifile' in
@@ -81,4 +81,4 @@ let () =
       Asmexpand.expand_program
   with
   | Errors.OK _ -> print_endline "ok"
-  | Errors.Error _ -> print_endline "error"
+  | Errors.Error errors -> print_compiler_errors errors; print_newline ()
