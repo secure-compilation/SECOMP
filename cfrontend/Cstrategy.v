@@ -1472,7 +1472,7 @@ Qed.
 Remark deref_loc_receptive:
   forall ge cp ty m b ofs bf ev1 t1 v ev2,
   deref_loc ge cp ty m b ofs bf (ev1 :: t1) v ->
-  match_traces ge (ev1 :: nil) (ev2 :: nil) ->
+  match_traces wf_syscall_event ge (ev1 :: nil) (ev2 :: nil) ->
   t1 = nil /\ exists v', deref_loc ge cp ty m b ofs bf (ev2 :: nil) v'.
 Proof.
   intros.
@@ -1492,7 +1492,7 @@ Qed.
 Remark assign_loc_receptive:
   forall ge cp ty m b ofs bf ev1 t1 v m' v' ev2,
   assign_loc ge cp ty m b ofs bf v (ev1 :: t1) m' v' ->
-  match_traces ge (ev1 :: nil) (ev2 :: nil) ->
+  match_traces wf_syscall_event ge (ev1 :: nil) (ev2 :: nil) ->
   ev1 :: t1 = ev2 :: nil.
 Proof.
   intros.

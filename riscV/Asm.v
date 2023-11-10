@@ -1584,11 +1584,11 @@ Section ExecSem.
   Hypothesis do_external_function_sound:
     forall cp id sg ge vargs m t vres m' w w',
       do_external_function cp id sg ge w vargs m = Some(w', t, vres, m') ->
-      external_functions_sem cp id sg ge vargs m t vres m' /\ possible_trace w t w'.
+      external_functions_sem id sg cp ge vargs m t vres m' /\ possible_trace w t w'.
 
   Hypothesis do_external_function_complete:
     forall cp id sg ge vargs m t vres m' w w',
-      external_functions_sem cp id sg ge vargs m t vres m' ->
+      external_functions_sem id sg cp ge vargs m t vres m' ->
       possible_trace w t w' ->
       do_external_function cp id sg ge w vargs m = Some(w', t, vres, m').
 

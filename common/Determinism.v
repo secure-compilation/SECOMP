@@ -42,13 +42,13 @@ Require Import Behaviors.
   the world to [w]. *)
 
 CoInductive world: Type :=
-  World (io: string -> list eventval -> option (eventval * world))
+  World (io: string -> list eventval -> list (list byte) -> option (eventval * list (list byte) * world))
         (vload: memory_chunk -> ident -> ptrofs -> option (eventval * world))
         (vstore: memory_chunk -> ident -> ptrofs -> eventval -> option world).
 
-Definition nextworld_io (w: world) (evname: string) (evargs: list eventval) :
-                     option (eventval * world) :=
-  match w with World io vl vs => io evname evargs end.
+Definition nextworld_io (w: world) (evname: string) (evargs: list eventval) (reads : list (list byte)) :
+                     option (eventval * list (list byte) * world) :=
+  match w with World io vl vs => io evname evargs reads end.
 
 Definition nextworld_vload (w: world) (chunk: memory_chunk) (id: ident) (ofs: ptrofs) :
                      option (eventval * world) :=
@@ -69,9 +69,9 @@ Definition nextworld_vstore (w: world) (chunk: memory_chunk) (id: ident) (ofs: p
 *)
 
 Inductive possible_event: world -> event -> world -> Prop :=
-  | possible_event_syscall: forall w1 evname evargs evres w2,
-      nextworld_io w1 evname evargs = Some (evres, w2) ->
-      possible_event w1 (Event_syscall evname evargs evres) w2
+  | possible_event_syscall: forall w1 evname evargs reads evres writes w2,
+      nextworld_io w1 evname evargs reads = Some (evres, writes, w2) ->
+      possible_event w1 (Event_syscall evname evargs reads evres writes) w2
   | possible_event_vload: forall w1 chunk id ofs evres w2,
       nextworld_vload w1 chunk id ofs = Some (evres, w2) ->
       possible_event w1 (Event_vload chunk id ofs evres) w2
@@ -111,12 +111,12 @@ Qed.
 
 Lemma match_possible_traces:
   forall ge t1 t2 w0 w1 w2,
-  match_traces ge t1 t2 -> possible_trace w0 t1 w1 -> possible_trace w0 t2 w2 ->
+  match_traces wf_syscall_event ge t1 t2 -> possible_trace w0 t1 w1 -> possible_trace w0 t2 w2 ->
   t1 = t2 /\ w1 = w2.
 Proof.
   intros. inv H; inv H1; inv H0.
   auto.
-  inv H7; inv H6. inv H9; inv H10. split; congruence.
+  inv H6; inv H5. inv H8; inv H9.   split; congruence. 
   inv H7; inv H6. inv H9; inv H10. split; congruence.
   inv H4; inv H3. inv H6; inv H7. split; congruence.
   inv H4; inv H3. inv H7; inv H6. auto.
