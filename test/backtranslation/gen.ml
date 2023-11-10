@@ -85,47 +85,6 @@ let event_return src_compartment trgt_compartment =
   let* ret_val = eventval in
   return (Events.Event_return (src_compartment, trgt_compartment, ret_val))
 
-let typ =
-  QCheck.Gen.frequencyl
-    AST.
-      [
-        (1, Tint);
-        (1, Tfloat);
-        (1, Tlong);
-        (1, Tsingle);
-        (1, Tany32);
-        (1, Tany64);
-      ]
-
-let rettype =
-  let open QCheck.Gen in
-  let* f = float_range 0.0 1.0 in
-  if f < 1.0 /. 6.0 then map (fun t -> AST.Tret t) typ
-  else
-    frequencyl
-      AST.
-        [
-          (1, Tint8signed);
-          (1, Tint8unsigned);
-          (1, Tint16signed);
-          (1, Tint16unsigned);
-          (1, Tvoid);
-        ]
-
-let calling_convention =
-  let open QCheck.Gen in
-  let* cc_vararg = option ~ratio:0.1 (map Camlcoq.Z.of_uint small_nat) in
-  let* cc_unproto = map (fun f -> f <= 0.1) (float_range 0.0 1.0) in
-  let* cc_structret = map (fun f -> f <= 0.1) (float_range 0.0 1.0) in
-  return ({ cc_vararg; cc_unproto; cc_structret } : AST.calling_convention)
-
-let signature =
-  let open QCheck.Gen in
-  let* arg_types = list_size (int_bound 5) typ in
-  let* ret_type = rettype in
-  let* cc = calling_convention in
-  return AST.{ sig_args = arg_types; sig_res = ret_type; sig_cc = cc }
-
 (* TODO: also generate other mem_deltas *)
 let mem_delta = QCheck.Gen.return []
 
@@ -167,220 +126,163 @@ let trace rand_state =
   in
   gen_trace_aux size
 
-let sublist list rand_state =
-  match list with
-  | [] -> []
-  | [ x ] -> [ x ]
-  | xs ->
-      let open QCheck.Gen in
-      let len = List.length xs in
-      let len_sublist = int_bound (len - 1) rand_state + 1 in
-      (* len sublist is random in [1,len] *)
-      let shuffled_list = shuffle_l xs rand_state in
-      List.of_seq (Seq.take len_sublist (List.to_seq shuffled_list))
+(* let ef_external =
+   let open QCheck.Gen in
+   let* compartment = compartment in
+   let* name = char_list in
+   let* signature = signature in
+   return (AST.EF_external (compartment, name, signature)) *)
 
-let ef_external =
-  let open QCheck.Gen in
-  let* compartment = compartment in
-  let* name = char_list in
-  let* signature = signature in
-  return (AST.EF_external (compartment, name, signature))
+(* let ef_builtin =
+   let open QCheck.Gen in
+   let* compartment = compartment in
+   let* name = char_list in
+   let* signature = signature in
+   return (AST.EF_builtin (compartment, name, signature)) *)
 
-let ef_builtin =
-  let open QCheck.Gen in
-  let* compartment = compartment in
-  let* name = char_list in
-  let* signature = signature in
-  return (AST.EF_builtin (compartment, name, signature))
+(* let ef_runtime =
+   let open QCheck.Gen in
+   let* compartment = compartment in
+   let* name = char_list in
+   let* signature = signature in
+   return (AST.EF_runtime (compartment, name, signature)) *)
 
-let ef_runtime =
-  let open QCheck.Gen in
-  let* compartment = compartment in
-  let* name = char_list in
-  let* signature = signature in
-  return (AST.EF_runtime (compartment, name, signature))
+(* let ef_vload =
+   let open QCheck.Gen in
+   let* compartment = compartment in
+   let* memory_chunk = memory_chunk in
+   return (AST.EF_vload (compartment, memory_chunk)) *)
 
-let ef_vload =
-  let open QCheck.Gen in
-  let* compartment = compartment in
-  let* memory_chunk = memory_chunk in
-  return (AST.EF_vload (compartment, memory_chunk))
+(* let ef_vstore =
+   let open QCheck.Gen in
+   let* compartment = compartment in
+   let* memory_chunk = memory_chunk in
+   return (AST.EF_vload (compartment, memory_chunk)) *)
 
-let ef_vstore =
-  let open QCheck.Gen in
-  let* compartment = compartment in
-  let* memory_chunk = memory_chunk in
-  return (AST.EF_vload (compartment, memory_chunk))
+(* let ef_malloc = QCheck.Gen.map (fun c -> AST.EF_malloc c) compartment *)
+(* let ef_free = QCheck.Gen.map (fun c -> AST.EF_free c) compartment *)
 
-let ef_malloc = QCheck.Gen.map (fun c -> AST.EF_malloc c) compartment
-let ef_free = QCheck.Gen.map (fun c -> AST.EF_free c) compartment
+(* let ef_memcpy =
+   let open QCheck.Gen in
+   let* compartment = compartment in
+   let* z1 = coq_Z in
+   let* z2 = coq_Z in
+   return (AST.EF_memcpy (compartment, z1, z2)) *)
 
-let ef_memcpy =
-  let open QCheck.Gen in
-  let* compartment = compartment in
-  let* z1 = coq_Z in
-  let* z2 = coq_Z in
-  return (AST.EF_memcpy (compartment, z1, z2))
+(* let ef_annot =
+   let open QCheck.Gen in
+   let* compartment = compartment in
+   let* p = positive in
+   let* text = char_list in
+   let* type_list = list_size small_nat typ in
+   return (AST.EF_annot (compartment, p, text, type_list)) *)
 
-let ef_annot =
-  let open QCheck.Gen in
-  let* compartment = compartment in
-  let* p = positive in
-  let* text = char_list in
-  let* type_list = list_size small_nat typ in
-  return (AST.EF_annot (compartment, p, text, type_list))
+(* let ef_annot_val =
+   let open QCheck.Gen in
+   let* compartment = compartment in
+   let* p = positive in
+   let* text = char_list in
+   let* typ = typ in
+   return (AST.EF_annot_val (compartment, p, text, typ)) *)
 
-let ef_annot_val =
-  let open QCheck.Gen in
-  let* compartment = compartment in
-  let* p = positive in
-  let* text = char_list in
-  let* typ = typ in
-  return (AST.EF_annot_val (compartment, p, text, typ))
+(* let ef_inline_asm =
+   let open QCheck.Gen in
+   let* compartment = compartment in
+   let* text = char_list in
+   let* signature = signature in
+   let* code = list_size small_nat char_list in
+   return (AST.EF_inline_asm (compartment, text, signature, code)) *)
 
-let ef_inline_asm =
-  let open QCheck.Gen in
-  let* compartment = compartment in
-  let* text = char_list in
-  let* signature = signature in
-  let* code = list_size small_nat char_list in
-  return (AST.EF_inline_asm (compartment, text, signature, code))
+(* let ef_debug =
+   let open QCheck.Gen in
+   let* compartment = compartment in
+   let* p = positive in
+   let* ident = ident in
+   let* type_list = list_size small_nat typ in
+   return (AST.EF_debug (compartment, p, ident, type_list)) *)
 
-let ef_debug =
-  let open QCheck.Gen in
-  let* compartment = compartment in
-  let* p = positive in
-  let* ident = ident in
-  let* type_list = list_size small_nat typ in
-  return (AST.EF_debug (compartment, p, ident, type_list))
+(* let external_function =
+   QCheck.Gen.frequency
+     [
+       (1, ef_external);
+       (1, ef_builtin);
+       (1, ef_runtime);
+       (1, ef_vload);
+       (1, ef_vstore);
+       (1, ef_malloc);
+       (1, ef_free);
+       (1, ef_memcpy);
+       (1, ef_annot);
+       (1, ef_annot_val);
+       (1, ef_inline_asm);
+       (1, ef_debug);
+     ] *)
 
-let external_function =
-  QCheck.Gen.frequency
-    [
-      (1, ef_external);
-      (1, ef_builtin);
-      (1, ef_runtime);
-      (1, ef_vload);
-      (1, ef_vstore);
-      (1, ef_malloc);
-      (1, ef_free);
-      (1, ef_memcpy);
-      (1, ef_annot);
-      (1, ef_annot_val);
-      (1, ef_inline_asm);
-      (1, ef_debug);
-    ]
+(* let bundle_call =
+   let open QCheck.Gen in
+   let* trace = trace in
+   let* ident = ident in
+   let* args = list_size (int_bound 5) eventval in
+   let* sign = signature in
+   let* mem_delta = mem_delta in
+   return (BtInfoAsm.Bundle_call (trace, ident, args, sign, mem_delta)) *)
 
-let bundle_call =
-  let open QCheck.Gen in
-  let* trace = trace in
-  let* ident = ident in
-  let* args = list_size (int_bound 5) eventval in
-  let* sign = signature in
-  let* mem_delta = mem_delta in
-  return (BtInfoAsm.Bundle_call (trace, ident, args, sign, mem_delta))
+(* let bundle_return =
+   let open QCheck.Gen in
+   let* trace = trace in
+   let* ret_val = eventval in
+   let* mem_delta = mem_delta in
+   return (BtInfoAsm.Bundle_return (trace, ret_val, mem_delta)) *)
 
-let bundle_return =
-  let open QCheck.Gen in
-  let* trace = trace in
-  let* ret_val = eventval in
-  let* mem_delta = mem_delta in
-  return (BtInfoAsm.Bundle_return (trace, ret_val, mem_delta))
+(* let bundle_builtin =
+   let open QCheck.Gen in
+   let* trace = trace in
+   let* ext_fun = external_function in
+   let* args = list_size (int_bound 5) eventval in
+   let* mem_delta = mem_delta in
+   return (BtInfoAsm.Bundle_builtin (trace, ext_fun, args, mem_delta)) *)
 
-let bundle_builtin =
-  let open QCheck.Gen in
-  let* trace = trace in
-  let* ext_fun = external_function in
-  let* args = list_size (int_bound 5) eventval in
-  let* mem_delta = mem_delta in
-  return (BtInfoAsm.Bundle_builtin (trace, ext_fun, args, mem_delta))
+(* let bundle_event =
+   QCheck.Gen.frequency
+     [ (1, bundle_call); (1, bundle_return); (1, bundle_builtin) ] *)
 
-let bundle_event =
-  QCheck.Gen.frequency
-    [ (1, bundle_call); (1, bundle_return); (1, bundle_builtin) ]
+let bundle_trace _ = QCheck.Gen.return []
+(* let open QCheck.Gen in
+   list_size small_nat (pair ident bundle_event) *)
 
-let bundle_trace =
-  let open QCheck.Gen in
-  list_size small_nat (pair ident bundle_event)
-
-let exports graph rand_state =
-  let open QCheck.Gen in
-  let vertices = Graph.vertices graph in
-  let max_num_per_comp = 15 in
-  let max_num_func_idents = max_num_per_comp * Graph.size graph in
-  let func_idents =
-    ref (shuffle_l (List.init max_num_func_idents succ) rand_state)
-  in
-  let take n l = List.of_seq (Seq.take n (List.to_seq l)) in
-  let drop n l = List.of_seq (Seq.drop n (List.to_seq l)) in
-  List.map
-    (fun v ->
-      let n = map succ (int_bound (max_num_per_comp - 1)) rand_state in
-      let fs = take n !func_idents in
-      func_idents := drop n !func_idents;
-      (v, fs))
-    vertices
-
-let imports graph exports rand_state =
-  let open QCheck.Gen in
-  let vertices = Graph.vertices graph in
-  let imports = ref [] in
-  List.iter
-    (fun self ->
-      List.iter
-        (fun other ->
-          if Graph.is_adjacent self other graph then
-            let all_exports = List.assoc other exports in
-            let selection =
-              List.sort Int.compare (sublist all_exports rand_state)
-            in
-            imports :=
-              (self, List.map (fun f -> (other, f)) selection) :: !imports
-          else ())
-        vertices)
-    vertices;
-  !imports
-
-let definitions func_sigs =
+let build_prog_defs ctx =
   let gvars = [] in
-  let gfuns =
-    List.concat_map
-      (fun (comp, funcs_and_sigs) ->
-        List.map (fun (f, s) -> (comp, f, s)) funcs_and_sigs)
-      func_sigs
-  in
+  let raw_defs = Gen_ctx.def_list ctx in
   let gfuns =
     List.map
-      (fun (c, f, s) ->
+      (fun (f, c, s) ->
         let coq_func =
           ({ fn_comp = Camlcoq.P.of_int c; fn_sig = s; fn_code = [] }
             : Asm.coq_function)
         in
         let fundef = AST.Internal coq_func in
         (Camlcoq.P.of_int f, AST.Gfun fundef))
-      gfuns
+      raw_defs
   in
   gvars @ gfuns
 
-let public exports =
-  List.concat_map (fun (_, funcs) -> List.map Camlcoq.P.of_int funcs) exports
+let build_prog_public ctx =
+  List.map Camlcoq.P.of_int (Gen_ctx.function_list ctx)
 
-let main exports =
-  let open QCheck.Gen in
-  let* _, funcs = oneofl exports in
-  map Camlcoq.P.of_int (oneofl funcs)
+let build_prog_main ctx = Camlcoq.P.of_int (Gen_ctx.main ctx)
 
-let policy exports imports =
-  let open QCheck.Gen in
+let build_prog_pol ctx =
   let open Maps in
   let policy_export = ref PTree.empty in
+  let exports = Gen_ctx.export_list ctx in
   List.iter
-    (fun (comp, funcs) ->
-      let funcs = List.map Camlcoq.P.of_int (List.assoc comp exports) in
-      let comp = Camlcoq.P.of_int comp in
+    (fun (raw_comp, raw_funcs) ->
+      let funcs = List.map Camlcoq.P.of_int raw_funcs in
+      let comp = Camlcoq.P.of_int raw_comp in
       policy_export := PTree.set comp funcs !policy_export)
     exports;
   let policy_import = ref PTree.empty in
+  let imports = Gen_ctx.import_list ctx in
   List.iter
     (fun (comp, imps) ->
       let imps =
@@ -394,51 +296,26 @@ let policy exports imports =
     ({ policy_export = !policy_export; policy_import = !policy_import }
       : AST.Policy.t)
   in
-  return policy
-
-let function_signatures exports rand_state =
-  (* (compartment * (func_ident * sig) list) list *)
-  List.map
-    (fun (comp, funcs) ->
-      (comp, List.map (fun f -> (f, signature rand_state)) funcs))
-    exports
-
-let dump_exports exports =
-  print_endline "Exports:";
-  List.iter (fun (comp, funcs) ->
-    Printf.printf "%d -> [%s]\n" comp (String.concat ", " (List.map string_of_int funcs))
-  ) exports
-
-let dump_imports imports =
-  let fmt = Printf.sprintf in
-  print_endline "Imports:";
-  List.iter (fun (comp, imps) ->
-    Printf.printf "%d <- [%s]\n" comp (String.concat ", " (List.map (fun (c, f) -> fmt "%d.%d" c f) imps))
-  ) imports
+  policy
 
 let asm_program =
   let open QCheck.Gen in
-  let max_graph_size = 10 in
-  let* graph = Graph.random max_graph_size in
-  let () = Graph.dump graph in
-  let* exports = exports graph in
-  let () = dump_exports exports in
-  let* imports = imports graph exports in
-  let () = dump_imports imports in
-  let* func_sigs = function_signatures exports in
-  let prog_defs = definitions func_sigs in
-  let prog_public = public exports in
-  let* prog_main = main exports in
-  let* prog_pol = policy exports imports in
-  return ({ prog_defs; prog_public; prog_main; prog_pol } : Asm.program)
-
-(*
-
-  GVar related to vstore and vload events
-
-  ----
-
-  args to external call and return value need to match in bundled calls
-
-  bundle builtin is generated on same-compartment syscalls
-*)
+  let config =
+    Gen_ctx.
+      {
+        num_compartments = 3;
+        num_exported_funcs = 3;
+        num_imported_funcs = 3;
+        max_arg_count = 3;
+        debug = true;
+      }
+  in
+  let* ctx = Gen_ctx.random config in
+  let prog_defs = build_prog_defs ctx in
+  let prog_public = build_prog_public ctx in
+  let prog_main = build_prog_main ctx in
+  let prog_pol = build_prog_pol ctx in
+  let asm_prog =
+    ({ prog_defs; prog_public; prog_main; prog_pol } : Asm.program)
+  in
+  return (asm_prog, ctx)

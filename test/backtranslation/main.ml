@@ -35,24 +35,25 @@ let property_under_test asm_prog bundled_trace =
   | Errors.Error error_list ->
       let open Errors in
       let fmt = Printf.printf in
-      List.iter (fun e -> 
-        match e with
-        | CTX p | POS p -> fmt "%d" (Camlcoq.P.to_int p)
-        | MSG chars ->
-          List.iter (fun c -> fmt "%c" c) chars
-      ) error_list;
-    false
+      List.iter
+        (fun e ->
+          match e with
+          | CTX p | POS p -> fmt "%d" (Camlcoq.P.to_int p)
+          | MSG chars -> List.iter (fun c -> fmt "%c" c) chars)
+        error_list;
+      false
   | Errors.OK _ -> true
 
-let bundle_trace = QCheck.make ~print:print_bundle_trace Gen.bundle_trace
+let bundle_trace ctx =
+  QCheck.make ~print:print_bundle_trace (Gen.bundle_trace ctx)
 
-let test_backtranslation asm_prog =
-  QCheck.Test.make ~count:1 ~name:"backtranslation" bundle_trace
+let test_backtranslation asm_prog ctx =
+  QCheck.Test.make ~count:1 ~name:"backtranslation" (bundle_trace ctx)
     (property_under_test asm_prog)
 
 let _ =
   let () = Random.self_init () in
   let rand_state = Random.get_state () in
-  let asm_prog = Gen.asm_program rand_state in
+  let asm_prog, ctx = Gen.asm_program rand_state in
   let () = PrintAsm.print_program_asm Out_channel.stdout asm_prog in
-  QCheck_runner.run_tests [ test_backtranslation asm_prog ]
+  QCheck_runner.run_tests [ test_backtranslation asm_prog ctx ]
