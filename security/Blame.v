@@ -123,6 +123,29 @@ Section Equivalence.
     erewrite Mem.storebytes_block_compartment; eauto.
   Qed.
 
+  Lemma same_blocks_free m b lo hi cp m' ge
+    (FREE : Mem.free m b lo hi cp = Some m')
+    (BLOCKS : same_blocks ge m) :
+    same_blocks ge m'.
+  Proof.
+    intros b' cp' FIND. specialize (BLOCKS b' cp' FIND).
+    exact (Mem.free_can_access_block_inj_1 _ _ _ _ _ _ FREE _ (Some _) BLOCKS).
+  Qed.
+
+  Lemma same_blocks_free_list m bs cp m' ge
+    (FREE : Mem.free_list m bs cp = Some m')
+    (BLOCKS : same_blocks ge m) :
+    same_blocks ge m'.
+  Proof.
+    revert m cp m' ge FREE BLOCKS.
+    induction bs as [| [[b lo] hi] ? IH]; intros.
+    - now inv FREE.
+    - simpl in FREE.
+      destruct (Mem.free m b lo hi cp) as [m1 |] eqn:FREE1; [| discriminate].
+      eapply same_blocks_free in FREE1; [| exact BLOCKS].
+      now eapply IH; eauto.
+  Qed.
+
   Record right_mem_injection (ge1 ge2: genv) (m1 m2: mem) : Prop :=
     { same_dom: same_domain ge1 ge2 m1 m2;
       partial_mem_inject: Mem.inject j m1 m2;
@@ -362,7 +385,34 @@ Proof.
   - assumption.
 Qed.
 
-(** *)
+  (** More invariant helpers *)
+
+  Lemma same_blocks_step1 s1 s1'
+    (BLKS : same_blocks ge1 (memory_of s1))
+    (STEP : step1 ge1 s1 E0 s1'):
+    same_blocks ge1 (memory_of s1').
+  Proof.
+    inv STEP; auto.
+    - admit.
+    - intros b cp FIND.
+      specialize (BLKS b cp FIND).
+      simpl in *.
+      change (Mem.block_compartment m b = Some cp)
+        with (Mem.can_access_block m b (Some cp)) in BLKS.
+      exploit external_call_can_access_block; eauto.
+    - eapply same_blocks_free_list; eauto.
+    - eapply same_blocks_free_list; eauto.
+    - eapply same_blocks_free_list; eauto.
+    - admit.
+    - intros b cp FIND.
+      specialize (BLKS b cp FIND).
+      simpl in *.
+      change (Mem.block_compartment m b = Some cp)
+        with (Mem.can_access_block m b (Some cp)) in BLKS.
+      exploit external_call_can_access_block; eauto.
+  Admitted.
+
+  (** *)
 
   Lemma public_symbol_preserved:
     forall id, Genv.public_symbol ge2 id = Genv.public_symbol ge1 id.
