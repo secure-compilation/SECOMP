@@ -88,7 +88,7 @@ Section Equivalence.
   Variable s: split.
   Variable j: meminj.
 
-  Definition same_domain (ge1 ge2: genv) (m1 m2: mem) :=
+  Definition same_domain (ge1: genv) (m1: mem) :=
     let H := Mem.has_side_block in
     forall b,
       match Genv.invert_symbol ge1 b with
@@ -100,6 +100,55 @@ Section Equivalence.
       | None =>
           j b <> None <-> (s, m1) |= b ∈ Right
       end.
+
+  Lemma same_domain_free m b lo hi cp m' ge
+    (FREE : Mem.free m b lo hi cp = Some m')
+    (BLOCKS : same_domain ge m) :
+    same_domain ge m'.
+  Proof.
+    intros b'. specialize (BLOCKS b').
+    destruct Genv.invert_symbol as [id |] eqn:INVSYM.
+    - destruct Senv.public_symbol eqn:PUBSYM;
+        [assumption |].
+      split.
+      + intros j_b'. destruct BLOCKS as [BLOCKS _]. specialize (BLOCKS j_b').
+        simpl in *. destruct (Mem.block_compartment m b') as [cp' |] eqn:COMP;
+          [| contradiction].
+        rewrite (Mem.free_can_access_block_inj_1 _ _ _ _ _ _ FREE _ (Some _) COMP).
+        assumption.
+      + intros RIGHT. destruct BLOCKS as [_ BLOCKS]. simpl in *.
+        destruct (Mem.block_compartment m' b') as [cp' |] eqn:COMP';
+          [| contradiction].
+        rewrite (Mem.free_can_access_block_inj_2 _ _ _ _ _ _ FREE _ (Some _) COMP')
+          in BLOCKS.
+        exact (BLOCKS RIGHT).
+    - split. (* Same proof as above *)
+      + intros j_b'. destruct BLOCKS as [BLOCKS _]. specialize (BLOCKS j_b').
+        simpl in *. destruct (Mem.block_compartment m b') as [cp' |] eqn:COMP;
+          [| contradiction].
+        rewrite (Mem.free_can_access_block_inj_1 _ _ _ _ _ _ FREE _ (Some _) COMP).
+        assumption.
+      + intros RIGHT. destruct BLOCKS as [_ BLOCKS]. simpl in *.
+        destruct (Mem.block_compartment m' b') as [cp' |] eqn:COMP';
+          [| contradiction].
+        rewrite (Mem.free_can_access_block_inj_2 _ _ _ _ _ _ FREE _ (Some _) COMP')
+          in BLOCKS.
+        exact (BLOCKS RIGHT).
+  Qed.
+
+  Lemma same_domain_free_list m bs cp m' ge
+    (FREE : Mem.free_list m bs cp = Some m')
+    (BLOCKS : same_domain ge m) :
+    same_domain ge m'.
+  Proof.
+    revert m cp m' ge FREE BLOCKS.
+    induction bs as [| [[b lo] hi] ? IH]; intros.
+    - now inv FREE.
+    - simpl in FREE.
+      destruct (Mem.free m b lo hi cp) as [m1 |] eqn:FREE1; [| discriminate].
+      eapply same_domain_free in FREE1; [| exact BLOCKS].
+      now eapply IH; eauto.
+  Qed.
 
   Definition same_blocks (ge: genv) (m: mem) :=
     forall b cp, Genv.find_comp_of_block ge b = Some cp ->
@@ -147,7 +196,7 @@ Section Equivalence.
   Qed.
 
   Record right_mem_injection (ge1 ge2: genv) (m1 m2: mem) : Prop :=
-    { same_dom: same_domain ge1 ge2 m1 m2;
+    { same_dom: same_domain ge1 m1;
       partial_mem_inject: Mem.inject j m1 m2;
       j_delta_zero: Mem.delta_zero j;
       same_symb: symbols_inject j ge1 ge2;
