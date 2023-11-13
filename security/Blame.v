@@ -628,12 +628,6 @@ Section Simulation.
         destruct H as [same_dom mem_inject delta_zero same_symb injective SAMEBLKS]
     end.
 
-(*
-  Lemma same_domain_store j m1 m2 chunk v :
-    same_domain s j ge1 ge2 m1 m2 ->
-    Mem.store
-*)
-
   Lemma find_funct_preserved j f v v' :
     s (comp_of f) = Right ->
     Val.inject j v v' ->
@@ -676,9 +670,18 @@ Section Simulation.
     intros j cp m1 m2 vf1 vf2 inj vf12 allowed.
     destruct allowed as [same_comp|cross]; [left|right].
     - unfold Genv.find_comp in *.
-
-    case vf12; try easy.
-*)
+      revert same_comp. case vf12; try easy.
+      intros b1 _ b2 ofs2 delta j_b1 _ ge1_b1.
+      assert (exists id, Genv.find_symbol ge1 id = Some b1) as (id & ge1_id).
+      { unfold Genv.find_comp_of_block in ge1_b1.
+        destruct (Genv.find_def ge1 b1) as [d1|] eqn:ge1_b1'; try easy.
+        eapply Genv.find_def_find_symbol_inversion; eauto.
+        exploit match_prog_unique1; eauto. }
+      assert (ge1_id_cp : Genv.find_comp_of_ident ge1 id = Some cp).
+      { unfold Genv.find_comp_of_ident. now rewrite ge1_id, ge1_b1. }
+      admit.
+    - admit.
+  Admitted.
 
   Lemma parallel_concrete: forall j s1 s2 s1' t,
       right_state_injection s j ge1 ge2 s1 s2 ->
