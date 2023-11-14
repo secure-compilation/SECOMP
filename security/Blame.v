@@ -853,7 +853,8 @@ Qed.
     intros j s1 s2 s1' MEMINJ LEFT STEP.
     exists j. (* FIXME: this falls back to the old form of the lemma *)
     destruct MEMINJ as [DOM MEMINJ ZERO SYMB INJ BLKS].
-    constructor; try assumption.
+    constructor; try assumption;
+      [| | eapply same_blocks_step1; eassumption].
     { (* NOTE: Essentially identical sub-cases *)
       clear MEMINJ ZERO SYMB INJ BLKS.
       inv STEP; try assumption.
@@ -960,7 +961,6 @@ Qed.
         admit.
       }
     }
-    { eapply same_blocks_step1; eassumption. }
   Admitted.
 
   Lemma right_cont_injection_left_step_E0_1: forall s1 s2 s1',
