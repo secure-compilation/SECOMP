@@ -841,6 +841,148 @@ Qed.
     case vf12; try easy.
 *)
 
+  (** Sub-invariant lemmas, mostly on injections *)
+
+  Lemma right_mem_injection_left_step_E0_1: forall j s1 s2 s1',
+    right_mem_injection s j ge1 ge2 (memory_of s1) (memory_of s2) ->
+    s |= s1 ∈ Left ->
+    step1 ge1 s1 E0 s1' ->
+  exists j',
+    right_mem_injection s j' ge1 ge2 (memory_of s1') (memory_of s2).
+  Proof.
+    intros j s1 s2 s1' MEMINJ LEFT STEP.
+    exists j. (* FIXME: this falls back to the old form of the lemma *)
+    destruct MEMINJ as [DOM MEMINJ ZERO SYMB INJ BLKS].
+    constructor; try assumption.
+    { (* NOTE: Essentially identical sub-cases *)
+      clear MEMINJ ZERO SYMB INJ BLKS.
+      inv STEP; try assumption.
+      - intros b. specialize (DOM b).
+        destruct Genv.invert_symbol as [id |] eqn:INVSYM.
+        + destruct Senv.public_symbol eqn:PUBSYM; [assumption |].
+          simpl. simpl in DOM. split.
+          * intros j_b. destruct DOM as [DOM _]. specialize (DOM j_b).
+            destruct (Mem.block_compartment m b) as [cp |] eqn:COMP;
+              [| contradiction].
+            admit. (* Easy *)
+          * intros RIGHT. destruct DOM as [_ DOM].
+            destruct (Mem.block_compartment m' b) as [cp' |] eqn:COMP';
+              [| contradiction].
+            destruct (Mem.block_compartment m b) as [cp |] eqn:COMP.
+            -- assert (cp = cp') as <- by admit. (* Easy *)
+               exact (DOM RIGHT).
+            -- admit. (* Easy, contra on COMP and COMP' with [assign_loc] *)
+        + simpl. simpl in DOM. split.
+          * intros j_b. destruct DOM as [DOM _]. specialize (DOM j_b).
+            destruct (Mem.block_compartment m b) as [cp |] eqn:COMP;
+              [| contradiction].
+            admit. (* Easy *)
+          * simpl. simpl in DOM. intros RIGHT. destruct DOM as [_ DOM].
+            destruct (Mem.block_compartment m' b) as [cp' |] eqn:COMP';
+              [| contradiction].
+            destruct (Mem.block_compartment m b) as [cp |] eqn:COMP.
+            -- assert (cp = cp') as <- by admit. (* Easy *)
+               exact (DOM RIGHT).
+            -- admit. (* Easy, contra on COMP and COMP' with [assign_loc] *)
+      - intros b; specialize (DOM b).
+        destruct Genv.invert_symbol as [id |] eqn:INVSYM.
+        + admit.
+        + simpl. simpl in DOM. split.
+          * intros j_b. destruct DOM as [DOM _]. specialize (DOM j_b).
+            destruct (Mem.block_compartment m b) as [cp |] eqn:COMP;
+              [| contradiction].
+            admit. (* Easy *)
+          * intros RIGHT. destruct DOM as [_ DOM].
+            destruct (Mem.block_compartment m' b) as [cp' |] eqn:COMP';
+              [| contradiction].
+            destruct (Mem.block_compartment m b) as [cp |] eqn:COMP.
+            -- assert (cp = cp') as <- by admit. (* Easy *)
+               exact (DOM RIGHT).
+            -- admit. (* If any newly allocated [b] belongs to [comp_of ef] = [comp_of f]
+                         (which is on the left), and since [b] belongs to [cp'] (which is
+                         on the right), this is a contradiction. *)
+      - eapply same_domain_free_list; eauto.
+      - eapply same_domain_free_list; eauto.
+      - eapply same_domain_free_list; eauto.
+      - inv H.
+        intros b. specialize (DOM b).
+        destruct Genv.invert_symbol as [id |] eqn:INVSYM.
+        + destruct Senv.public_symbol eqn:PUBSYM; [assumption |].
+          simpl. simpl in DOM. split.
+          * intros j_b. destruct DOM as [DOM _]. specialize (DOM j_b).
+            destruct (Mem.block_compartment m b) as [cp |] eqn:COMP;
+              [| contradiction].
+            admit. (* Easy *)
+          * intros RIGHT. destruct DOM as [_ DOM].
+            destruct (Mem.block_compartment m1 b) as [cp' |] eqn:COMP';
+              [| contradiction].
+            destruct (Mem.block_compartment m b) as [cp |] eqn:COMP.
+            -- assert (cp = cp') as <- by admit. (* Easy *)
+               exact (DOM RIGHT).
+            -- admit. (* Easy, contra on LEFT and RIGHT with H1 and H2 *)
+        + simpl. simpl in DOM. split.
+          * intros j_b. destruct DOM as [DOM _]. specialize (DOM j_b).
+            destruct (Mem.block_compartment m b) as [cp |] eqn:COMP;
+              [| contradiction].
+            admit. (* Easy *)
+          * intros RIGHT. destruct DOM as [_ DOM].
+            destruct (Mem.block_compartment m1 b) as [cp' |] eqn:COMP';
+              [| contradiction].
+            destruct (Mem.block_compartment m b) as [cp |] eqn:COMP.
+            -- assert (cp = cp') as <- by admit. (* Easy *)
+               exact (DOM RIGHT).
+            -- admit. (* Same as above sub-case *)
+      - admit. (* See [external_call] above *)
+    }
+    { clear DOM ZERO SYMB INJ BLKS.
+      inv STEP; try assumption.
+      {
+        inv MEMINJ.
+        constructor; auto.
+        admit. (* assign_loc *)
+        { intros b NOTVALID. specialize (mi_freeblocks b). simpl in *.
+          Search Mem.valid_block Mem.free_list. admit.
+        }
+        { intros b1 b1' delta1 b2 b2' delta2 ofs1 ofs2 b1_b2 j_b1 j_b2 PERM1 PERM2.
+          specialize (mi_no_overlap b1 b1' delta1 b2 b2' delta2 ofs1 ofs2 b1_b2 j_b1 j_b2).
+          simpl in *. admit.
+        }
+        admit. admit.
+      }
+      { (* New injection *)
+        admit.
+      }
+      eapply Mem.free_list_left_inject; eauto.
+      eapply Mem.free_list_left_inject; eauto.
+      eapply Mem.free_list_left_inject; eauto.
+      { admit. (* injection probably OK *) }
+      { (* New injection *)
+        admit.
+      }
+    }
+    { eapply same_blocks_step1; eassumption. }
+  Admitted.
+
+  Lemma right_cont_injection_left_step_E0_1: forall s1 s2 s1',
+    right_cont_injection s (cont_of s1) (cont_of s2) ->
+    s |= s1 ∈ Left ->
+    step1 ge1 s1 E0 s1' ->
+    right_cont_injection s (cont_of s1') (cont_of s2).
+  Admitted.
+
+  Lemma right_cont_injection_left_step_E0_2: forall s1 s2 s1',
+    right_cont_injection s (cont_of s1) (cont_of s2) ->
+    s |= s1 ∈ Left ->
+    step1 ge1 s1 E0 s1' ->
+    right_cont_injection s (cont_of s1') (cont_of s2).
+  Admitted. (* Symmetric *)
+
+  (* WIP *)
+  Definition abstract_step_inj (j: meminj): meminj :=
+    j.
+
+  (** Step diagram lemmas *)
+
   Lemma parallel_concrete: forall j s1 s2 s1' t,
       right_state_injection s j ge1 ge2 s1 s2 ->
       s |= s1 ∈ Right ->
@@ -1230,119 +1372,10 @@ Qed.
     inversion INJ as [? ? SIDE1 SIDE2 MEMINJ CONTINJ |]; subst; clear INJ;
       [| exfalso; eapply state_split_contra; eassumption].
     apply (step_E0_same_side STEP) in LEFT.
-    exists j. (* FIXME: this falls back to the old form of the lemma *)
-    apply LeftControl; try assumption.
-    - destruct MEMINJ as [DOM MEMINJ ZERO SYMB INJ BLKS].
-      constructor; try assumption.
-      { (* NOTE: Essentially identical sub-cases *)
-        clear MEMINJ ZERO SYMB INJ BLKS CONTINJ.
-        inv STEP; try assumption.
-        - intros b. specialize (DOM b).
-          destruct Genv.invert_symbol as [id |] eqn:INVSYM.
-          + destruct Senv.public_symbol eqn:PUBSYM; [assumption |].
-            simpl. simpl in DOM. split.
-            * intros j_b. destruct DOM as [DOM _]. specialize (DOM j_b).
-              destruct (Mem.block_compartment m b) as [cp |] eqn:COMP;
-                [| contradiction].
-              admit. (* Easy *)
-            * intros RIGHT. destruct DOM as [_ DOM].
-              destruct (Mem.block_compartment m' b) as [cp' |] eqn:COMP';
-                [| contradiction].
-              destruct (Mem.block_compartment m b) as [cp |] eqn:COMP.
-              -- assert (cp = cp') as <- by admit. (* Easy *)
-                 exact (DOM RIGHT).
-              -- admit. (* Easy, contra on COMP and COMP' with [assign_loc] *)
-          + simpl. simpl in DOM. split.
-            * intros j_b. destruct DOM as [DOM _]. specialize (DOM j_b).
-              destruct (Mem.block_compartment m b) as [cp |] eqn:COMP;
-                [| contradiction].
-              admit. (* Easy *)
-            * simpl. simpl in DOM. intros RIGHT. destruct DOM as [_ DOM].
-              destruct (Mem.block_compartment m' b) as [cp' |] eqn:COMP';
-                [| contradiction].
-              destruct (Mem.block_compartment m b) as [cp |] eqn:COMP.
-              -- assert (cp = cp') as <- by admit. (* Easy *)
-                 exact (DOM RIGHT).
-              -- admit. (* Easy, contra on COMP and COMP' with [assign_loc] *)
-        - intros b; specialize (DOM b).
-          destruct Genv.invert_symbol as [id |] eqn:INVSYM.
-          + admit.
-          + simpl. simpl in DOM. split.
-            * intros j_b. destruct DOM as [DOM _]. specialize (DOM j_b).
-              destruct (Mem.block_compartment m b) as [cp |] eqn:COMP;
-                [| contradiction].
-              admit. (* Easy *)
-            * intros RIGHT. destruct DOM as [_ DOM].
-              destruct (Mem.block_compartment m' b) as [cp' |] eqn:COMP';
-                [| contradiction].
-              destruct (Mem.block_compartment m b) as [cp |] eqn:COMP.
-              -- assert (cp = cp') as <- by admit. (* Easy *)
-                 exact (DOM RIGHT).
-              -- admit. (* If any newly allocated [b] belongs to [comp_of ef] = [comp_of f]
-                           (which is on the left), and since [b] belongs to [cp'] (which is
-                           on the right), this is a contradiction. *)
-        - eapply same_domain_free_list; eauto.
-        - eapply same_domain_free_list; eauto.
-        - eapply same_domain_free_list; eauto.
-        - inv H.
-          intros b. specialize (DOM b).
-          destruct Genv.invert_symbol as [id |] eqn:INVSYM.
-          + destruct Senv.public_symbol eqn:PUBSYM; [assumption |].
-            simpl. simpl in DOM. split.
-            * intros j_b. destruct DOM as [DOM _]. specialize (DOM j_b).
-              destruct (Mem.block_compartment m b) as [cp |] eqn:COMP;
-                [| contradiction].
-              admit. (* Easy *)
-            * intros RIGHT. destruct DOM as [_ DOM].
-              destruct (Mem.block_compartment m1 b) as [cp' |] eqn:COMP';
-                [| contradiction].
-              destruct (Mem.block_compartment m b) as [cp |] eqn:COMP.
-              -- assert (cp = cp') as <- by admit. (* Easy *)
-                 exact (DOM RIGHT).
-              -- admit. (* Easy, contra on LEFT and RIGHT with H1 and H2 *)
-          + simpl. simpl in DOM. split.
-            * intros j_b. destruct DOM as [DOM _]. specialize (DOM j_b).
-              destruct (Mem.block_compartment m b) as [cp |] eqn:COMP;
-                [| contradiction].
-              admit. (* Easy *)
-            * intros RIGHT. destruct DOM as [_ DOM].
-              destruct (Mem.block_compartment m1 b) as [cp' |] eqn:COMP';
-                [| contradiction].
-              destruct (Mem.block_compartment m b) as [cp |] eqn:COMP.
-              -- assert (cp = cp') as <- by admit. (* Easy *)
-                 exact (DOM RIGHT).
-              -- admit. (* Same as above sub-case *)
-        - admit. (* See [external_call] above *)
-      }
-      { clear DOM ZERO SYMB INJ BLKS CONTINJ.
-        inv STEP; try assumption.
-        {
-          inv MEMINJ.
-          constructor; auto.
-          admit. (* assign_loc *)
-          { intros b NOTVALID. specialize (mi_freeblocks b). simpl in *.
-            Search Mem.valid_block Mem.free_list. admit.
-          }
-          { intros b1 b1' delta1 b2 b2' delta2 ofs1 ofs2 b1_b2 j_b1 j_b2 PERM1 PERM2.
-            specialize (mi_no_overlap b1 b1' delta1 b2 b2' delta2 ofs1 ofs2 b1_b2 j_b1 j_b2).
-            simpl in *. admit.
-          }
-          admit. admit.
-        }
-        { (* New injection *)
-          admit.
-        }
-        eapply Mem.free_list_left_inject; eauto.
-        eapply Mem.free_list_left_inject; eauto.
-        eapply Mem.free_list_left_inject; eauto.
-        { admit. (* injection probably OK *) }
-        { (* New injection *)
-        admit.
-        }
-      }
-      { eapply same_blocks_step1; eassumption. }
-    - admit.
-  Admitted.
+    exploit right_mem_injection_left_step_E0_1; eauto. intros [j' MEMINJ'].
+    exploit right_cont_injection_left_step_E0_1; eauto. intros CONTINJ'.
+    exists j'. constructor; assumption.
+  Qed.
 
   Lemma parallel_abstract_E0_2: forall j s1 s2 s2',
     right_state_injection s j ge1 ge2 s1 s2 ->
