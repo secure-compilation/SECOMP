@@ -365,6 +365,9 @@ Section Simulation.
 
   Hypothesis match_W1_W2: match_prog s W1 W2.
 
+  Hypothesis W1_ini: exists s, Smallstep.initial_state (semantics1 W1) s.
+  Hypothesis W2_ini: exists s, Smallstep.initial_state (semantics1 W2) s.
+
   (* Context (ge1 ge2: genv). *)
   Notation ge1 := (globalenv W1).
   Notation ge2 := (globalenv W2).
@@ -1759,8 +1762,8 @@ Proof.
       exists s0, s1. split; [| split]; try assumption.
       now intros ? [t' Hcontra].
   - (* Contradiction on the existence of an initial state *)
-    admit.
-Admitted. (* Needs reasoning/assumptions about the initial state *)
+    destruct W1_ini as [s1 initial_s1]. specialize (Hini s1). contradiction.
+Qed.
 
 (* - What to say about the interfaces of p1 and p2?
    - Closed, linkable, well-formed *)
@@ -1773,8 +1776,10 @@ Lemma blame_program (m: finpref_behavior) (t': trace)
 Proof.
   apply does_prefix_star in HP'_Cs_beh_new; [| easy].
   destruct HP'_Cs_beh_new as [sini1 [sfin1 [Hini1 [HStar1 Hfinal1']]]].
-  inversion HpCs_beh as [sini2 ? Hini2 Hstbeh2 | Hnot_initial2]; subst.
-  2:{ admit. (* We rely on the existence of an initial state *) }
+  inversion HpCs_beh as [sini2 ? Hini2 Hstbeh2 | Hnot_initial2]; subst;
+    [| destruct W2_ini as [s2 initial_s2];
+       specialize (Hnot_initial2 s2);
+       contradiction].
   inversion Hstbeh2 as [| | | ? sfin2 HStar2 HNostep2 Hnot_final2]; subst.
   assert (exists j0, right_state_injection s j0 ge1 ge2 sini1 sini2)
     as [j0 Hpartialize].
@@ -1810,7 +1815,7 @@ Proof.
         HStar1 HStar2 HNostep2
         as Hparallel.
       eapply blame_last_comp_star; eassumption.
-Admitted. (* Needs reasoning/assumptions about the initial state *)
+Qed.
 
 Require Import Complements.
 
