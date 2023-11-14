@@ -1314,7 +1314,32 @@ Qed.
               -- admit. (* Same as above sub-case *)
         - admit. (* See [external_call] above *)
       }
-      { admit. }
+      { clear DOM ZERO SYMB INJ BLKS CONTINJ.
+        inv STEP; try assumption.
+        {
+          inv MEMINJ.
+          constructor; auto.
+          admit. (* assign_loc *)
+          { intros b NOTVALID. specialize (mi_freeblocks b). simpl in *.
+            Search Mem.valid_block Mem.free_list. admit.
+          }
+          { intros b1 b1' delta1 b2 b2' delta2 ofs1 ofs2 b1_b2 j_b1 j_b2 PERM1 PERM2.
+            specialize (mi_no_overlap b1 b1' delta1 b2 b2' delta2 ofs1 ofs2 b1_b2 j_b1 j_b2).
+            simpl in *. admit.
+          }
+          admit. admit.
+        }
+        { (* New injection *)
+          admit.
+        }
+        eapply Mem.free_list_left_inject; eauto.
+        eapply Mem.free_list_left_inject; eauto.
+        eapply Mem.free_list_left_inject; eauto.
+        { admit. (* injection probably OK *) }
+        { (* New injection *)
+        admit.
+        }
+      }
       { eapply same_blocks_step1; eassumption. }
     - admit.
   Admitted.
