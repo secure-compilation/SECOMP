@@ -196,15 +196,14 @@ Inductive eval_expr: letenv -> expr -> val -> Prop :=
       eval_expr le (Eletvar n) v
   | eval_Ebuiltin: forall le ef al vl v,
       eval_exprlist le al vl ->
-      external_call ef ge vl m E0 v m ->
-      comp_of ef = cp ->
+      external_call ef ge cp vl m E0 v m ->
       eval_expr le (Ebuiltin ef al) v
   | eval_Eexternal: forall le id sg al b ef vl v,
       Genv.find_symbol ge id = Some b ->
       Genv.find_funct_ptr ge b = Some (External ef) ->
       ef_sig ef = sg ->
       eval_exprlist le al vl ->
-      external_call ef ge vl m E0 v m ->
+      external_call ef ge cp vl m E0 v m ->
       forall (INTRA: Genv.type_of_call ge cp (Genv.find_comp ge (Vptr b Ptrofs.zero)) <> Genv.CrossCompartmentCall),
       (* forall (ALLOWED: Genv.allowed_call ge cp (Vptr b Ptrofs.zero)), *)
       (* forall (NO_CROSS_PTR_CALL: Genv.type_of_call ge cp (Genv.find_comp ge (Vptr b Ptrofs.zero)) = Genv.CrossCompartmentCall -> *)
@@ -399,17 +398,17 @@ Inductive step: state -> trace -> state -> Prop :=
       funsig fd = sig ->
       forall (COMP: comp_of fd = (comp_of f)),
       forall (SIG: sig_res (fn_sig f) = sig_res sig),
-      (* forall (ALLOWED: needs_calling_comp (comp_of f) = false), *)
-      (* forall (ALLOWED': Genv.allowed_call ge (comp_of f) vf), *)
+      forall (ALLOWED: needs_calling_comp (comp_of f) = false),
+      forall (ALLOWED': Genv.allowed_call ge (comp_of f) vf),
       (* forall (EV: call_trace ge (comp_of f) (Genv.find_comp ge vf) vf vargs (sig_args sig) t), *)
       Mem.free m sp 0 f.(fn_stackspace) (comp_of f) = Some m' ->
       step (State f (Stailcall sig a bl) k (Vptr sp Ptrofs.zero) e m)
         E0 (Callstate fd vargs (call_cont k) m')
 
-  | step_builtin: forall f res ef al k sp e m vl t v m',
-      comp_of ef = comp_of f ->
-      list_forall2 (eval_builtin_arg sp e (comp_of f) m) al vl ->
-      external_call ef ge vl m t v m' ->
+  | step_builtin: forall f cp res ef al k sp e m vl t v m',
+      cp = (comp_of f) ->
+      list_forall2 (eval_builtin_arg sp e cp m) al vl ->
+      external_call ef ge cp vl m t v m' ->
       step (State f (Sbuiltin res ef al) k sp e m)
          t (State f Sskip k sp (set_builtin_res res v e) m')
 
@@ -474,7 +473,7 @@ Inductive step: state -> trace -> state -> Prop :=
       step (Callstate (Internal f) vargs k m)
         E0 (State f f.(fn_body) k (Vptr sp Ptrofs.zero) e m')
   | step_external_function: forall ef vargs k m t vres m',
-      external_call ef ge vargs m t vres m' ->
+      external_call ef ge (call_comp k) vargs m t vres m' ->
       step (Callstate (External ef) vargs k m)
          t (Returnstate vres k m' (sig_res (ef_sig ef)) (comp_of ef))
 

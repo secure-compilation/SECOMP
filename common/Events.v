@@ -626,20 +626,20 @@ in extcall_caller_independent.
 *)
 
 Definition extcall_sem : Type :=
-  Senv.t -> list val -> mem -> trace -> val -> mem -> Prop.
+  Senv.t -> compartment -> list val -> mem -> trace -> val -> mem -> Prop.
 
-(* (** This invariant guarantees that external calls performed to [cp] can *)
-(*   correctly use either [cp1] or [cp2] to find out who the calling compartment *)
-(*   is. *) *)
-(* Definition uptodate_caller (cp cp1 cp2: compartment) := *)
-(*   needs_calling_comp cp = true -> *)
-(*   cp1 = cp2. *)
+(** This invariant guarantees that external calls performed to [cp] can
+  correctly use either [cp1] or [cp2] to find out who the calling compartment
+  is. *)
+Definition uptodate_caller (cp cp1 cp2: compartment) :=
+  needs_calling_comp cp = true ->
+  cp1 = cp2.
 
-(* Definition extcall_caller_independent (cp: compartment) (sem: extcall_sem) := *)
-(*   forall ge cp1 cp2 args m t v m', *)
-(*   uptodate_caller cp cp1 cp2 -> *)
-(*   sem ge cp1 args m t v m' -> *)
-(*   sem ge cp2 args m t v m'. *)
+Definition extcall_caller_independent (cp: compartment) (sem: extcall_sem) :=
+  forall ge cp1 cp2 args m t v m',
+  uptodate_caller cp cp1 cp2 ->
+  sem ge cp1 args m t v m' ->
+  sem ge cp2 args m t v m'.
 
 (** We now specify the expected properties of this predicate. *)
 
@@ -666,22 +666,22 @@ Record extcall_properties (sem: extcall_sem) (sg: signature) : Prop :=
 
 (** The return value of an external call must agree with its signature. *)
   ec_well_typed:
-    forall ge vargs m1 t vres m2,
-    sem ge vargs m1 t vres m2 ->
+    forall ge c vargs m1 t vres m2,
+    sem ge c vargs m1 t vres m2 ->
     Val.has_rettype vres sg.(sig_res);
 
 (** The semantics is invariant under change of global environment that preserves symbols. *)
   ec_symbols_preserved:
-    forall ge1 ge2 vargs m1 t vres m2,
+    forall ge1 ge2 c vargs m1 t vres m2,
     Senv.equiv ge1 ge2 ->
-    sem ge1 vargs m1 t vres m2 ->
-    sem ge2 vargs m1 t vres m2;
+    sem ge1 c vargs m1 t vres m2 ->
+    sem ge2 c vargs m1 t vres m2;
 
 (** External calls cannot invalidate memory blocks.  (Remember that
   freeing a block does not invalidate its block identifier.) *)
   ec_valid_block:
-    forall ge vargs m1 t vres m2 b,
-    sem ge vargs m1 t vres m2 ->
+    forall ge c vargs m1 t vres m2 b,
+    sem ge c vargs m1 t vres m2 ->
     Mem.valid_block m1 b -> Mem.valid_block m2 b;
 
 (** External calls cannot change the ownership of memory blocks.
@@ -689,52 +689,38 @@ Record extcall_properties (sem: extcall_sem) (sg: signature) : Prop :=
       notion of [can_access_block] must be completely changed anyway
  *)
   ec_can_access_block:
-    forall ge vargs m1 t vres m2 b cp,
-    sem ge vargs m1 t vres m2 ->
+    forall ge c vargs m1 t vres m2 b cp,
+    sem ge c vargs m1 t vres m2 ->
     Mem.can_access_block m1 b cp -> Mem.can_access_block m2 b cp;
 
 (** External calls cannot increase the max permissions of a valid block.
     They can decrease the max permissions, e.g. by freeing. *)
   ec_max_perm:
-    forall ge vargs m1 t vres m2 b ofs p,
-    sem ge vargs m1 t vres m2 ->
+    forall ge c vargs m1 t vres m2 b ofs p,
+    sem ge c vargs m1 t vres m2 ->
     Mem.valid_block m1 b -> Mem.perm m2 b ofs Max p -> Mem.perm m1 b ofs Max p;
-
-(* New property *)
-(** External calls cannot free public blocks without the Max Freeable permission *)
-  ec_public_not_freeable:
-    forall ge vargs m1 t vres m2 b ofs id,
-    sem ge vargs m1 t vres m2 ->
-    Mem.valid_block m1 b ->
-    Senv.invert_symbol ge b = Some id -> Senv.public_symbol ge id = true ->
-    Mem.perm m1 b ofs Max Nonempty -> (~ Mem.perm m1 b ofs Max Freeable) ->
-    Mem.perm m2 b ofs Max Nonempty;
 
 (** External call cannot modify memory unless they have [Max, Writable]
    permissions. *)
   ec_readonly:
-    forall ge vargs m1 t vres m2 b ofs n bytes cp,
-    sem ge vargs m1 t vres m2 ->
+    forall ge c vargs m1 t vres m2 b ofs n bytes cp,
+    sem ge c vargs m1 t vres m2 ->
     Mem.valid_block m1 b ->
     Mem.loadbytes m2 b ofs n cp = Some bytes ->
     (forall i, ofs <= i < ofs + n -> ~Mem.perm m1 b i Max Writable) ->
     Mem.loadbytes m1 b ofs n cp = Some bytes;
 
       (** TODO: External call should not be able to modify other compartment's memory *)
-  (* ec_mem_outside_compartment: *)
-  (*   forall ge c vargs m1 t vres m2, *)
-  (*   sem ge c vargs m1 t vres m2 -> *)
-  (*   Mem.unchanged_on (loc_not_in_compartment c m1) m1 m2; *)
 
 (** External calls must commute with memory extensions, in the
   following sense. *)
   ec_mem_extends:
-    forall ge vargs m1 t vres m2 m1' vargs',
-    sem ge vargs m1 t vres m2 ->
+    forall ge c vargs m1 t vres m2 m1' vargs',
+    sem ge c vargs m1 t vres m2 ->
     Mem.extends m1 m1' ->
     Val.lessdef_list vargs vargs' ->
     exists vres', exists m2',
-       sem ge vargs' m1' t vres' m2'
+       sem ge c vargs' m1' t vres' m2'
     /\ Val.lessdef vres vres'
     /\ Mem.extends m2 m2'
     /\ Mem.unchanged_on (loc_out_of_bounds m1) m1' m2';
@@ -742,13 +728,13 @@ Record extcall_properties (sem: extcall_sem) (sg: signature) : Prop :=
 (** External calls must commute with memory injections,
   in the following sense. *)
   ec_mem_inject:
-    forall ge1 ge2 vargs m1 t vres m2 f m1' vargs',
+    forall ge1 ge2 c vargs m1 t vres m2 f m1' vargs',
     symbols_inject f ge1 ge2 ->
-    sem ge1 vargs m1 t vres m2 ->
+    sem ge1 c vargs m1 t vres m2 ->
     Mem.inject f m1 m1' ->
     Val.inject_list f vargs vargs' ->
     exists f', exists vres', exists m2',
-       sem ge2 vargs' m1' t vres' m2'
+       sem ge2 c vargs' m1' t vres' m2'
     /\ Val.inject f' vres vres'
     /\ Mem.inject f' m2 m2'
     /\ Mem.unchanged_on (loc_unmapped f) m1 m2
@@ -758,29 +744,29 @@ Record extcall_properties (sem: extcall_sem) (sg: signature) : Prop :=
 
 (** External calls produce at most one event. *)
   ec_trace_length:
-    forall ge vargs m t vres m',
-    sem ge vargs m t vres m' -> (length t <= 1)%nat;
+    forall ge c vargs m t vres m',
+    sem ge c vargs m t vres m' -> (length t <= 1)%nat;
 
 (** External calls must be receptive to changes of traces by another, matching trace. *)
   ec_receptive:
-    forall ge vargs m t1 vres1 m1 t2,
-    sem ge vargs m t1 vres1 m1 -> match_traces ge t1 t2 ->
-    exists vres2, exists m2, sem ge vargs m t2 vres2 m2;
+    forall ge c vargs m t1 vres1 m1 t2,
+    sem ge c vargs m t1 vres1 m1 -> match_traces ge t1 t2 ->
+    exists vres2, exists m2, sem ge c vargs m t2 vres2 m2;
 
 (** External calls must be deterministic up to matching between traces. *)
   ec_determ:
-    forall ge vargs m t1 vres1 m1 t2 vres2 m2,
-    sem ge vargs m t1 vres1 m1 -> sem ge vargs m t2 vres2 m2 ->
+    forall ge c vargs m t1 vres1 m1 t2 vres2 m2,
+    sem ge c vargs m t1 vres1 m1 -> sem ge c vargs m t2 vres2 m2 ->
     match_traces ge t1 t2 /\ (t1 = t2 -> vres1 = vres2 /\ m1 = m2)
 }.
 
 (** ** Semantics of volatile loads *)
 
-Inductive volatile_load_sem (cp: compartment) (chunk: memory_chunk) (ge: Senv.t) :
+Inductive volatile_load_sem (chunk: memory_chunk) (ge: Senv.t) (cp: compartment):
               list val -> mem -> trace -> val -> mem -> Prop :=
   | volatile_load_sem_intro: forall b ofs m t v,
       volatile_load ge cp chunk m b ofs t v ->
-      volatile_load_sem cp chunk ge (Vptr b ofs :: nil) m t v m.
+      volatile_load_sem chunk ge cp (Vptr b ofs :: nil) m t v m.
 
 Lemma volatile_load_preserved:
   forall ge1 ge2 cp chunk m b ofs t v,
@@ -848,8 +834,8 @@ Proof.
 Qed.
 
 Lemma volatile_load_ok:
-  forall chunk cp,
-  extcall_properties (volatile_load_sem cp chunk)
+  forall chunk,
+  extcall_properties (volatile_load_sem chunk)
                      (mksignature (Tptr :: nil) (rettype_of_chunk chunk) cc_default).
 Proof.
   intros; constructor; intros.
@@ -863,8 +849,6 @@ Proof.
 (* accessiblity *)
 - inv H; auto.
 (* max perms *)
-- inv H; auto.
-(* not freeable *)
 - inv H; auto.
 (* readonly *)
 - inv H; auto.
@@ -899,11 +883,11 @@ Qed.
 
 (* JT: Note: Same remarks as for volatile loads *)
 
-Inductive volatile_store_sem (cp: compartment) (chunk: memory_chunk)(ge: Senv.t):
+Inductive volatile_store_sem (chunk: memory_chunk) (ge: Senv.t) (cp: compartment):
               list val -> mem -> trace -> val -> mem -> Prop :=
   | volatile_store_sem_intro: forall b ofs m1 v t m2,
       volatile_store ge cp chunk m1 b ofs v t m2 ->
-      volatile_store_sem cp chunk ge (Vptr b ofs :: v :: nil) m1 t Vundef m2.
+      volatile_store_sem chunk ge cp (Vptr b ofs :: v :: nil) m1 t Vundef m2.
 
 Lemma volatile_store_preserved:
   forall ge1 ge2 cp chunk m1 b ofs v t m2,
@@ -1022,8 +1006,8 @@ Proof.
 Qed.
 
 Lemma volatile_store_ok:
-  forall cp chunk,
-  extcall_properties (volatile_store_sem cp chunk)
+  forall chunk,
+  extcall_properties (volatile_store_sem chunk)
                      (mksignature (Tptr :: type_of_chunk chunk :: nil) Tvoid cc_default).
 Proof.
   intros; constructor; intros.
@@ -1037,8 +1021,6 @@ Proof.
 - inv H. inv H1. auto. eapply Mem.store_can_access_block_inj in H2. eapply H2. eauto.
 (* perms *)
 - inv H. inv H2. auto. eauto with mem.
-(* not freeable *)
-- inv H. inv H5; auto. eauto with mem.
 (* readonly *)
 - inv H. eapply unchanged_on_readonly; eauto. eapply volatile_store_readonly; eauto.
 (* mem extends*)
@@ -1066,19 +1048,17 @@ Qed.
 
 (* JT: NOTE: Same remarks as for volatile loads and stores *)
 
-Inductive extcall_malloc_sem (cp: compartment) (ge: Senv.t):
+Inductive extcall_malloc_sem (ge: Senv.t) (cp: compartment):
               list val -> mem -> trace -> val -> mem -> Prop :=
   | extcall_malloc_sem_intro: forall sz m m' b m'',
       Mem.alloc m cp (- size_chunk Mptr) (Ptrofs.unsigned sz) = (m', b) ->
       Mem.store Mptr m' b (- size_chunk Mptr) (Vptrofs sz) cp = Some m'' ->
-      extcall_malloc_sem cp ge (Vptrofs sz :: nil) m E0 (Vptr b Ptrofs.zero) m''.
+      extcall_malloc_sem ge cp (Vptrofs sz :: nil) m E0 (Vptr b Ptrofs.zero) m''.
 
 Lemma extcall_malloc_ok:
-  forall cp,
-  extcall_properties (extcall_malloc_sem cp)
+  extcall_properties extcall_malloc_sem
                      (mksignature (Tptr :: nil) Tptr cc_default).
 Proof.
-  intros.
   assert (UNCHANGED:
     forall (P: block -> Z -> Prop) cp m lo hi v m' b m'',
     Mem.alloc m cp lo hi = (m', b) ->
@@ -1106,8 +1086,6 @@ Proof.
 - inv H. exploit Mem.perm_alloc_inv. eauto. eapply Mem.perm_store_2; eauto.
   rewrite dec_eq_false. auto.
   apply Mem.valid_not_valid_diff with m1; eauto with mem.
-(* not freeable *)
-- inv H. eapply Mem.perm_store_1; eauto. eapply Mem.perm_alloc_1; eauto.
 (* readonly *)
 - inv H. eapply unchanged_on_readonly; eauto. 
 (* mem extends *)
@@ -1160,22 +1138,20 @@ Qed.
 
 (* JT: NOTE: Same remarks as before. *)
 
-Inductive extcall_free_sem (cp: compartment) (ge: Senv.t):
-              list val -> mem -> trace -> val -> mem -> Prop :=
-  | extcall_free_sem_ptr: forall b lo sz m m',
-      Mem.load Mptr m b (Ptrofs.unsigned lo - size_chunk Mptr) (Some cp) = Some (Vptrofs sz) ->
+Inductive extcall_free_sem (ge: Senv.t):
+              compartment -> list val -> mem -> trace -> val -> mem -> Prop :=
+  | extcall_free_sem_ptr: forall c b lo sz m m',
+      Mem.load Mptr m b (Ptrofs.unsigned lo - size_chunk Mptr) (Some c) = Some (Vptrofs sz) ->
       Ptrofs.unsigned sz > 0 ->
-      Mem.free m b (Ptrofs.unsigned lo - size_chunk Mptr) (Ptrofs.unsigned lo + Ptrofs.unsigned sz) cp = Some m' ->
-      extcall_free_sem cp ge (Vptr b lo :: nil) m E0 Vundef m'
-  | extcall_free_sem_null: forall m,
-      extcall_free_sem cp ge (Vnullptr :: nil) m E0 Vundef m.
+      Mem.free m b (Ptrofs.unsigned lo - size_chunk Mptr) (Ptrofs.unsigned lo + Ptrofs.unsigned sz) c = Some m' ->
+      extcall_free_sem ge c (Vptr b lo :: nil) m E0 Vundef m'
+  | extcall_free_sem_null: forall c m,
+      extcall_free_sem ge c (Vnullptr :: nil) m E0 Vundef m.
 
 Lemma extcall_free_ok:
-  forall cp,
-  extcall_properties (extcall_free_sem cp)
+  extcall_properties extcall_free_sem
                      (mksignature (Tptr :: nil) Tvoid cc_default).
 Proof.
-  intros.
   constructor; intros.
 (* well typed *)
 - inv H; simpl; auto.
@@ -1187,10 +1163,6 @@ Proof.
 - inv H; eauto. eapply Mem.free_can_access_block_inj_1; eauto.
 (* perms *)
 - inv H; eauto using Mem.perm_free_3.
-(* not freeable *)
-- inv H; auto. eapply Mem.perm_free_1; eauto. eapply Mem.free_range_perm in H7. unfold Mem.range_perm in H7. specialize (H7 ofs).
-  destruct (Z.le_gt_cases (Ptrofs.unsigned lo - size_chunk Mptr) ofs); destruct (Z.lt_ge_cases ofs (Ptrofs.unsigned lo + Ptrofs.unsigned sz)); try lia.
-  left. intros EQ. subst b0. apply H4. eapply Mem.perm_max. eapply H7. lia.
 (* readonly *)
 - eapply unchanged_on_readonly; eauto. inv H.
 + eapply Mem.free_unchanged_on; eauto.
@@ -1277,22 +1249,22 @@ Qed.
 (* RB: NOTE: This operation seems particularly interesting in the sense that it
    copies between two blocks, and their respective ownerships must agree. *)
 
-Inductive extcall_memcpy_sem (cp: compartment) (sz al: Z) (ge: Senv.t):
-                        list val -> mem -> trace -> val -> mem -> Prop :=
-  | extcall_memcpy_sem_intro: forall bdst odst bsrc osrc m bytes m',
+Inductive extcall_memcpy_sem (sz al: Z) (ge: Senv.t):
+                        compartment -> list val -> mem -> trace -> val -> mem -> Prop :=
+  | extcall_memcpy_sem_intro: forall c bdst odst bsrc osrc m bytes m',
       al = 1 \/ al = 2 \/ al = 4 \/ al = 8 -> sz >= 0 -> (al | sz) ->
       (sz > 0 -> (al | Ptrofs.unsigned osrc)) ->
       (sz > 0 -> (al | Ptrofs.unsigned odst)) ->
       bsrc <> bdst \/ Ptrofs.unsigned osrc = Ptrofs.unsigned odst
                    \/ Ptrofs.unsigned osrc + sz <= Ptrofs.unsigned odst
                    \/ Ptrofs.unsigned odst + sz <= Ptrofs.unsigned osrc ->
-      Mem.loadbytes m bsrc (Ptrofs.unsigned osrc) sz (Some cp) = Some bytes ->
-      Mem.storebytes m bdst (Ptrofs.unsigned odst) bytes cp = Some m' ->
-      extcall_memcpy_sem cp sz al ge (Vptr bdst odst :: Vptr bsrc osrc :: nil) m E0 Vundef m'.
+      Mem.loadbytes m bsrc (Ptrofs.unsigned osrc) sz (Some c) = Some bytes ->
+      Mem.storebytes m bdst (Ptrofs.unsigned odst) bytes c = Some m' ->
+      extcall_memcpy_sem sz al ge c (Vptr bdst odst :: Vptr bsrc osrc :: nil) m E0 Vundef m'.
 
 Lemma extcall_memcpy_ok:
-  forall cp sz al,
-  extcall_properties (extcall_memcpy_sem cp sz al)
+  forall sz al,
+  extcall_properties (extcall_memcpy_sem sz al)
                      (mksignature (Tptr :: Tptr :: nil) Tvoid cc_default).
 Proof.
   intros. constructor.
@@ -1306,8 +1278,6 @@ Proof.
   intros. inv H. eapply Mem.storebytes_can_access_block_inj_1; eauto.
 - (* perms *)
   intros. inv H. eapply Mem.perm_storebytes_2; eauto.
-- (* not freeable *)
-  intros. inv H. eapply Mem.perm_storebytes_1; eauto.
 - (* readonly *)
   intros. inv H. eapply unchanged_on_readonly; eauto. 
   eapply Mem.storebytes_unchanged_on; eauto.
@@ -1334,11 +1304,11 @@ Proof.
   destruct (zeq sz 0).
 + (* special case sz = 0 *)
   assert (bytes = nil).
-  { exploit (Mem.loadbytes_empty m1 bsrc (Ptrofs.unsigned osrc) sz (Some cp)). lia.
+  { exploit (Mem.loadbytes_empty m1 bsrc (Ptrofs.unsigned osrc) sz (Some c)). lia.
     eapply Mem.loadbytes_can_access_block_inj; eauto.
     congruence. }
   subst.
-  destruct (Mem.range_perm_storebytes m1' b0 (Ptrofs.unsigned (Ptrofs.add odst (Ptrofs.repr delta0))) nil cp)
+  destruct (Mem.range_perm_storebytes m1' b0 (Ptrofs.unsigned (Ptrofs.add odst (Ptrofs.repr delta0))) nil c)
   as [m2' SB].
   simpl. red; intros; extlia.
   eapply Mem.mi_own; eauto. eapply Mem.mi_inj; eauto.
@@ -1410,15 +1380,15 @@ Qed.
 
 (* JT: NOTE: Same as before *)
 
-Inductive extcall_annot_sem (cp: compartment) (text: string) (targs: list typ) (ge: Senv.t):
-              list val -> mem -> trace -> val -> mem -> Prop :=
-  | extcall_annot_sem_intro: forall vargs m args,
+Inductive extcall_annot_sem (text: string) (targs: list typ) (ge: Senv.t):
+              compartment -> list val -> mem -> trace -> val -> mem -> Prop :=
+  | extcall_annot_sem_intro: forall c vargs m args,
       eventval_list_match ge args targs vargs ->
-      extcall_annot_sem cp text targs ge vargs m (Event_annot text args :: E0) Vundef m.
+      extcall_annot_sem text targs ge c vargs m (Event_annot text args :: E0) Vundef m.
 
 Lemma extcall_annot_ok:
-  forall cp text targs,
-  extcall_properties (extcall_annot_sem cp text targs)
+  forall text targs,
+  extcall_properties (extcall_annot_sem text targs)
                      (mksignature targs Tvoid cc_default).
 Proof.
   intros; constructor; intros.
@@ -1432,8 +1402,6 @@ Proof.
 (* accessibility *)
 - inv H; auto.
 (* perms *)
-- inv H; auto.
-(* not freeable *)
 - inv H; auto.
 (* readonly *)
 - inv H; auto.
@@ -1459,15 +1427,15 @@ Proof.
   split. constructor. auto.
 Qed.
 
-Inductive extcall_annot_val_sem (cp: compartment) (text: string) (targ: typ) (ge: Senv.t):
-              list val -> mem -> trace -> val -> mem -> Prop :=
-  | extcall_annot_val_sem_intro: forall varg m arg,
+Inductive extcall_annot_val_sem (text: string) (targ: typ) (ge: Senv.t):
+              compartment -> list val -> mem -> trace -> val -> mem -> Prop :=
+  | extcall_annot_val_sem_intro: forall c varg m arg,
       eventval_match ge arg targ varg ->
-      extcall_annot_val_sem cp text targ ge (varg :: nil) m (Event_annot text (arg :: nil) :: E0) varg m.
+      extcall_annot_val_sem text targ ge c (varg :: nil) m (Event_annot text (arg :: nil) :: E0) varg m.
 
 Lemma extcall_annot_val_ok:
-  forall cp text targ,
-  extcall_properties (extcall_annot_val_sem cp text targ)
+  forall text targ,
+  extcall_properties (extcall_annot_val_sem text targ)
                      (mksignature (targ :: nil) targ cc_default).
 Proof.
   intros; constructor; intros.
@@ -1481,8 +1449,6 @@ Proof.
 (* accessibility *)
 - inv H; auto.
 (* perms *)
-- inv H; auto.
-(* not freeable *)
 - inv H; auto.
 (* readonly *)
 - inv H; auto.
@@ -1508,14 +1474,14 @@ Proof.
   split. constructor. auto.
 Qed.
 
-Inductive extcall_debug_sem (cp: compartment) (ge: Senv.t):
-              list val -> mem -> trace -> val -> mem -> Prop :=
-  | extcall_debug_sem_intro: forall vargs m,
-      extcall_debug_sem cp ge vargs m E0 Vundef m.
+Inductive extcall_debug_sem (ge: Senv.t):
+              compartment -> list val -> mem -> trace -> val -> mem -> Prop :=
+  | extcall_debug_sem_intro: forall c vargs m,
+      extcall_debug_sem ge c vargs m E0 Vundef m.
 
 Lemma extcall_debug_ok:
-  forall cp targs,
-  extcall_properties (extcall_debug_sem cp)
+  forall targs,
+  extcall_properties extcall_debug_sem
                      (mksignature targs Tvoid cc_default).
 Proof.
   intros; constructor; intros.
@@ -1528,8 +1494,6 @@ Proof.
 (* accessibility *)
 - inv H; auto.
 (* perms *)
-- inv H; auto.
-(* not freeable *)
 - inv H; auto.
 (* readonly *)
 - inv H; auto.
@@ -1562,10 +1526,10 @@ Qed.
   These built-in functions have no observable effects and do not access memory. *)
 
 Inductive known_builtin_sem (bf: builtin_function) (ge: Senv.t):
-              list val -> mem -> trace -> val -> mem -> Prop :=
-  | known_builtin_sem_intro: forall vargs vres m,
+              compartment -> list val -> mem -> trace -> val -> mem -> Prop :=
+  | known_builtin_sem_intro: forall c vargs vres m,
       builtin_function_sem bf vargs = Some vres ->
-      known_builtin_sem bf ge vargs m E0 vres m.
+      known_builtin_sem bf ge c vargs m E0 vres m.
 
 Lemma known_builtin_ok: forall bf,
   extcall_properties (known_builtin_sem bf) (builtin_function_sig bf).
@@ -1583,8 +1547,6 @@ Proof.
 (* accessibility *)
 - inv H; auto.
 (* perms *)
-- inv H; auto.
-(* not freeable *)
 - inv H; auto.
 (* readonly *)
 - inv H; auto.
@@ -1627,20 +1589,20 @@ Parameter external_functions_sem: String.string -> signature -> extcall_sem.
 Axiom external_functions_properties:
   forall id sg, extcall_properties (external_functions_sem id sg) sg.
 
-(* Axiom external_functions_caller_independent: *)
-(*   forall cp id sg, extcall_caller_independent cp (external_functions_sem id sg). *)
-(* Hint Resolve external_functions_caller_independent : caller_independent. *)
+Axiom external_functions_caller_independent:
+  forall cp id sg, extcall_caller_independent cp (external_functions_sem id sg).
+Hint Resolve external_functions_caller_independent : caller_independent.
 
 (** We treat inline assembly similarly. *)
 
-Parameter inline_assembly_sem: compartment -> String.string -> signature -> extcall_sem.
+Parameter inline_assembly_sem: String.string -> signature -> extcall_sem.
 
 Axiom inline_assembly_properties:
-  forall cp id sg, extcall_properties (inline_assembly_sem cp id sg) sg.
+  forall id sg, extcall_properties (inline_assembly_sem id sg) sg.
 
-(* Axiom inline_assembly_caller_independent: *)
-(*   forall cp id sg, extcall_caller_independent cp (inline_assembly_sem id sg). *)
-(* Hint Resolve inline_assembly_caller_independent : caller_independent. *)
+Axiom inline_assembly_caller_independent:
+  forall cp id sg, extcall_caller_independent cp (inline_assembly_sem id sg).
+Hint Resolve inline_assembly_caller_independent : caller_independent.
 
 (** ** Combined semantics of external calls *)
 
@@ -1660,17 +1622,17 @@ Proof.
 - apply external_functions_properties.
 Qed.
 
-(* Lemma builtin_or_external_caller_independent: *)
-(*   forall cp name sg, *)
-(*   extcall_caller_independent cp (builtin_or_external_sem name sg). *)
-(* Proof. *)
-(*   unfold builtin_or_external_sem. *)
-(*   intros cp name sg. *)
-(*   destruct (lookup_builtin_function name sg). *)
-(*   - now intros ????????? H; inv H; constructor. *)
-(*   - now apply external_functions_caller_independent. *)
-(* Qed. *)
-(* Hint Resolve builtin_or_external_caller_independent : caller_independent. *)
+Lemma builtin_or_external_caller_independent:
+  forall cp name sg,
+  extcall_caller_independent cp (builtin_or_external_sem name sg).
+Proof.
+  unfold builtin_or_external_sem.
+  intros cp name sg.
+  destruct (lookup_builtin_function name sg).
+  - now intros ????????? H; inv H; constructor.
+  - now apply external_functions_caller_independent.
+Qed.
+Hint Resolve builtin_or_external_caller_independent : caller_independent.
 
 (** Combining the semantics given above for the various kinds of external calls,
   we define the predicate [external_call] that relates:
@@ -1685,18 +1647,18 @@ This predicate is used in the semantics of all CompCert languages. *)
 
 Definition external_call (ef: external_function): extcall_sem :=
   match ef with
-  | EF_external cp name sg  => external_functions_sem name sg
-  | EF_builtin cp name sg      => builtin_or_external_sem name sg
-  | EF_runtime cp name sg      => builtin_or_external_sem name sg
-  | EF_vload cp chunk          => volatile_load_sem cp chunk
-  | EF_vstore cp chunk         => volatile_store_sem cp chunk
-  | EF_malloc cp                => extcall_malloc_sem cp
-  | EF_free cp                 => extcall_free_sem cp
-  | EF_memcpy cp sz al         => extcall_memcpy_sem cp sz al
-  | EF_annot cp kind txt targs   => extcall_annot_sem cp txt targs
-  | EF_annot_val cp kind txt targ => extcall_annot_val_sem cp txt targ
-  | EF_inline_asm cp txt sg clb => inline_assembly_sem cp txt sg
-  | EF_debug cp kind txt targs => extcall_debug_sem cp
+  | EF_external name cp sg  => external_functions_sem name sg
+  | EF_builtin name sg      => builtin_or_external_sem name sg
+  | EF_runtime name sg      => builtin_or_external_sem name sg
+  | EF_vload chunk          => volatile_load_sem chunk
+  | EF_vstore chunk         => volatile_store_sem chunk
+  | EF_malloc               => extcall_malloc_sem
+  | EF_free                 => extcall_free_sem
+  | EF_memcpy sz al         => extcall_memcpy_sem sz al
+  | EF_annot kind txt targs   => extcall_annot_sem txt targs
+  | EF_annot_val kind txt targ => extcall_annot_val_sem txt targ
+  | EF_inline_asm txt sg clb => inline_assembly_sem txt sg
+  | EF_debug kind txt targs => extcall_debug_sem
   end.
 
 Ltac external_call_caller_independent :=
@@ -1705,47 +1667,47 @@ Ltac external_call_caller_independent :=
   econstructor;
   eauto.
 
-(* Lemma external_call_caller_independent: *)
-(*   forall ef: external_function, *)
-(*   extcall_caller_independent (comp_of ef) (external_call ef). *)
-(* Proof. *)
-(*   destruct ef; simpl; try easy; *)
-(*   eauto with caller_independent; *)
-(*   try solve [external_call_caller_independent]. *)
-(*   { *)
-(*   intros ge cp1 cp2 args m t v m'. *)
-(*   unfold uptodate_caller, needs_calling_comp, needs_calling_comp_map. simpl. *)
-(*   rewrite PMap.gsspec, PMap.gi. *)
-(*   destruct (peq cp default_compartment) as [|neq]; try easy. *)
-(*   intros E. rewrite E; trivial. *)
-(*   } *)
-(*   { *)
-(*   intros ge cp1 cp2 args m t v m'. *)
-(*   unfold uptodate_caller, needs_calling_comp, needs_calling_comp_map. simpl. *)
-(*   rewrite PMap.gsspec, PMap.gi. *)
-(*   destruct (peq (comp_of (EF_vstore chunk)) privileged_compartment) as [|neq]; try easy. *)
-(*   intros E. rewrite E; trivial. *)
-(*   } *)
-(*   intros ge cp1 cp2 args m t v m'. *)
-(*   unfold uptodate_caller, needs_calling_comp, needs_calling_comp_map. simpl. *)
-(*   rewrite PMap.gsspec, PMap.gi. *)
-(*   destruct (peq (comp_of EF_malloc) privileged_compartment) as [|neq]; try easy. *)
-(*   intros E. rewrite E; trivial. *)
-(*   (* RB: NOTE: Two new goals left to solve. One of them can be solved by an *)
-(*      identical procedure. *) *)
-(*   intros ge cp1 cp2 args m t v m'. *)
-(*   unfold uptodate_caller, needs_calling_comp, needs_calling_comp_map. simpl. *)
-(*   rewrite PMap.gsspec, PMap.gi. *)
-(*   destruct (peq (comp_of EF_free) privileged_compartment) as [|neq]; try easy. *)
-(*   intros E. rewrite E; trivial. *)
-(*   (* RB: NOTE: The last goal, on EF_memcpy, cannot be solved by means of this *)
-(*      strategy, and needs a closer look. *) *)
-(*   intros ge cp1 cp2 args m t v m'. *)
-(*   unfold uptodate_caller, needs_calling_comp, needs_calling_comp_map. simpl. *)
-(*   rewrite PMap.gsspec, PMap.gi. *)
-(*   destruct (peq (comp_of (EF_memcpy sz al)) privileged_compartment) as [|neq]; try easy. *)
-(*   intros E. rewrite E; trivial. *)
-(* Qed. *)
+Lemma external_call_caller_independent:
+  forall ef: external_function,
+  extcall_caller_independent (comp_of ef) (external_call ef).
+Proof.
+  destruct ef; simpl; try easy;
+  eauto with caller_independent;
+  try solve [external_call_caller_independent].
+  {
+  intros ge cp1 cp2 args m t v m'.
+  unfold uptodate_caller, needs_calling_comp, needs_calling_comp_map. simpl.
+  rewrite PMap.gsspec, PMap.gi.
+  destruct (peq (comp_of (EF_vload chunk)) privileged_compartment) as [|neq]; try easy.
+  intros E. rewrite E; trivial.
+  }
+  {
+  intros ge cp1 cp2 args m t v m'.
+  unfold uptodate_caller, needs_calling_comp, needs_calling_comp_map. simpl.
+  rewrite PMap.gsspec, PMap.gi.
+  destruct (peq (comp_of (EF_vstore chunk)) privileged_compartment) as [|neq]; try easy.
+  intros E. rewrite E; trivial.
+  }
+  intros ge cp1 cp2 args m t v m'.
+  unfold uptodate_caller, needs_calling_comp, needs_calling_comp_map. simpl.
+  rewrite PMap.gsspec, PMap.gi.
+  destruct (peq (comp_of EF_malloc) privileged_compartment) as [|neq]; try easy.
+  intros E. rewrite E; trivial.
+  (* RB: NOTE: Two new goals left to solve. One of them can be solved by an
+     identical procedure. *)
+  intros ge cp1 cp2 args m t v m'.
+  unfold uptodate_caller, needs_calling_comp, needs_calling_comp_map. simpl.
+  rewrite PMap.gsspec, PMap.gi.
+  destruct (peq (comp_of EF_free) privileged_compartment) as [|neq]; try easy.
+  intros E. rewrite E; trivial.
+  (* RB: NOTE: The last goal, on EF_memcpy, cannot be solved by means of this
+     strategy, and needs a closer look. *)
+  intros ge cp1 cp2 args m t v m'.
+  unfold uptodate_caller, needs_calling_comp, needs_calling_comp_map. simpl.
+  rewrite PMap.gsspec, PMap.gi.
+  destruct (peq (comp_of (EF_memcpy sz al)) privileged_compartment) as [|neq]; try easy.
+  intros E. rewrite E; trivial.
+Qed.
 
 Theorem external_call_spec:
   forall ef,
@@ -1771,7 +1733,6 @@ Definition external_call_symbols_preserved ef := ec_symbols_preserved (external_
 Definition external_call_valid_block ef := ec_valid_block (external_call_spec ef).
 Definition external_call_can_access_block ef := ec_can_access_block (external_call_spec ef).
 Definition external_call_max_perm ef := ec_max_perm (external_call_spec ef).
-Definition external_call_public_not_freeable ef := ec_public_not_freeable (external_call_spec ef).
 Definition external_call_readonly ef := ec_readonly (external_call_spec ef).
 Definition external_call_mem_extends ef := ec_mem_extends (external_call_spec ef).
 Definition external_call_mem_inject_gen ef := ec_mem_inject (external_call_spec ef).
@@ -1782,8 +1743,8 @@ Definition external_call_determ ef := ec_determ (external_call_spec ef).
 (** Corollary of [external_call_well_typed_gen]. *)
 
 Lemma external_call_well_typed:
-  forall ef ge vargs m1 t vres m2,
-  external_call ef ge vargs m1 t vres m2 ->
+  forall ef cp ge vargs m1 t vres m2,
+  external_call ef cp ge vargs m1 t vres m2 ->
   Val.has_type vres (proj_sig_res (ef_sig ef)).
 Proof.
   intros. apply Val.has_proj_rettype. eapply external_call_well_typed_gen; eauto.
@@ -1792,8 +1753,8 @@ Qed.
 (** Corollary of [external_call_valid_block]. *)
 
 Lemma external_call_nextblock:
-  forall ef ge vargs m1 t vres m2,
-  external_call ef ge vargs m1 t vres m2 ->
+  forall ef ge c vargs m1 t vres m2,
+  external_call ef ge c vargs m1 t vres m2 ->
   Ple (Mem.nextblock m1) (Mem.nextblock m2).
 Proof.
   intros. destruct (plt (Mem.nextblock m2) (Mem.nextblock m1)).
@@ -1810,13 +1771,13 @@ Definition meminj_preserves_globals (F V: Type) (ge: Genv.t F V) (f: block -> op
   /\ (forall b1 b2 delta gv, Genv.find_var_info ge b2 = Some gv -> f b1 = Some(b2, delta) -> b2 = b1).
 
 Lemma external_call_mem_inject:
-  forall ef F V (ge: Genv.t F V) vargs m1 t vres m2 f m1' vargs',
+  forall ef F V (ge: Genv.t F V) c vargs m1 t vres m2 f m1' vargs',
   meminj_preserves_globals ge f ->
-  external_call ef ge vargs m1 t vres m2 ->
+  external_call ef ge c vargs m1 t vres m2 ->
   Mem.inject f m1 m1' ->
   Val.inject_list f vargs vargs' ->
   exists f', exists vres', exists m2',
-     external_call ef ge vargs' m1' t vres' m2'
+     external_call ef ge c vargs' m1' t vres' m2'
     /\ Val.inject f' vres vres'
     /\ Mem.inject f' m2 m2'
     /\ Mem.unchanged_on (loc_unmapped f) m1 m2
@@ -1839,18 +1800,18 @@ Qed.
 (** Corollaries of [external_call_determ]. *)
 
 Lemma external_call_match_traces:
-  forall ef ge vargs m t1 vres1 m1 t2 vres2 m2,
-  external_call ef ge vargs m t1 vres1 m1 ->
-  external_call ef ge vargs m t2 vres2 m2 ->
+  forall ef ge c vargs m t1 vres1 m1 t2 vres2 m2,
+  external_call ef ge c vargs m t1 vres1 m1 ->
+  external_call ef ge c vargs m t2 vres2 m2 ->
   match_traces ge t1 t2.
 Proof.
   intros. exploit external_call_determ. eexact H. eexact H0. tauto.
 Qed.
 
 Lemma external_call_deterministic:
-  forall ef ge vargs m t vres1 m1 vres2 m2,
-  external_call ef ge vargs m t vres1 m1 ->
-  external_call ef ge vargs m t vres2 m2 ->
+  forall ef ge c vargs m t vres1 m1 vres2 m2,
+  external_call ef ge c vargs m t vres1 m1 ->
+  external_call ef ge c vargs m t vres2 m2 ->
   vres1 = vres2 /\ m1 = m2.
 Proof.
   intros. exploit external_call_determ. eexact H. eexact H0. intuition.
@@ -2151,184 +2112,3 @@ Section INFORM_TRACES_PRESERVED.
   Qed.
 
 End INFORM_TRACES_PRESERVED.
-
-
-Section VISIBLE.
-
-  (* Memory location has only sequence of bytes *)
-  Definition loc_first_order (m: mem) (b: block) (ofs: Z) : Prop :=
-    match (ZMap.get ofs (Mem.mem_contents m) !! b) with
-    | Byte _ => True
-    | _ => False
-    end.
-
-  (* Public symbols are visible outside the compilation unit, 
-     so when interacting via external calls, limit them to first-order (if Readable). *)
-  Definition public_first_order (ge: Senv.t) (m: mem) :=
-    forall id b ofs
-      (PUBLIC: Senv.public_symbol ge id = true)
-      (FIND: Senv.find_symbol ge id = Some b)
-      (READABLE: Mem.perm m b ofs Cur Readable),
-      loc_first_order m b ofs.
-
-  Definition block_public (ge: Senv.t) (b: block): Prop :=
-    exists id, Senv.invert_symbol ge b = Some id /\ Senv.public_symbol ge id = true.
-
-  Variant val_public (ge: Senv.t) : typ -> val -> Prop :=
-    | val_public_int: forall i, val_public ge Tint (Vint i)
-    | val_public_long: forall i, val_public ge Tlong (Vlong i)
-    | val_public_float: forall f, val_public ge Tfloat (Vfloat f)
-    | val_public_single: forall f, val_public ge Tsingle (Vsingle f)
-    | val_public_ptr: forall b ofs, block_public ge b -> val_public ge Tptr (Vptr b ofs).
-
-  Definition vals_public (ge: Senv.t) (ts: list typ) (vs: list val): Prop :=
-    Forall2 (val_public ge) ts vs.
-
-  Definition visible_fo (ge: Senv.t) (m: mem) (tys: list typ) (args: list val): Prop :=
-    public_first_order ge m /\ vals_public ge tys args.
-
-  Definition EF_memcpy_dest_not_pub (ge: Senv.t) (args: list val) :=
-    match args with
-    | (Vptr bdst _) :: tl => ~ (block_public ge bdst)
-    | _ => True
-    end.
-
-  Definition load_whole_chunk (ch: memory_chunk) (v: val) := Val.load_result ch v = v.
-
-  Definition EF_vstore_load_whole_chunk (ch: memory_chunk) (args: list val) :=
-    match args with
-    | _ :: v :: nil => load_whole_chunk ch v
-    | _ => True
-    end.
-
-  Definition external_call_conds
-             (ef: external_function) (ge: Senv.t) (m: mem) (args: list val) : Prop :=
-    match ef with
-    | EF_external cp name sg => visible_fo ge m (sig_args sg) args
-    | EF_builtin cp name sg | EF_runtime cp name sg =>
-                             match lookup_builtin_function name sg with
-                             | None => visible_fo ge m (sig_args sg) args
-                             | _ => True
-                             end
-    | EF_inline_asm cp txt sg clb => visible_fo ge m (sig_args sg) args
-    | EF_memcpy cp sz al => EF_memcpy_dest_not_pub ge args
-    | EF_vstore cp ch => EF_vstore_load_whole_chunk ch args
-    | _ => True
-    end.
-
-  Definition external_call_unknowns
-             (ef: external_function) (ge: Senv.t) (m: mem) (args: list val) : Prop :=
-    match ef with
-    | EF_external cp name sg => visible_fo ge m (sig_args sg) args
-    | EF_builtin cp name sg | EF_runtime cp name sg =>
-                             match lookup_builtin_function name sg with
-                             | None => visible_fo ge m (sig_args sg) args
-                             | _ => False
-                             end
-    | EF_inline_asm cp txt sg clb => visible_fo ge m (sig_args sg) args
-    | _ => False
-    end.
-
-  Definition external_call_known_observables
-             (ef: external_function) (ge: Senv.t) (m: mem) (args: list val) tr rv m' : Prop :=
-    match ef with
-    | EF_external cp name sg => False
-    | EF_builtin cp name sg | EF_runtime cp name sg => False
-    | EF_inline_asm cp txt sg clb => False
-    | EF_vstore cp ch =>
-        (external_call ef ge args m tr rv m') /\ (tr <> E0) /\ (EF_vstore_load_whole_chunk ch args)
-    | _ => (external_call ef ge args m tr rv m') /\ (tr <> E0)
-    end.
-
-  Definition external_call_known_silents
-             (ef: external_function) (ge: Senv.t) (m: mem) (args: list val) tr rv m': Prop :=
-    match ef with
-    | EF_external cp name sg => False
-    | EF_builtin cp name sg | EF_runtime cp name sg =>
-                             match lookup_builtin_function name sg with
-                             | None => False
-                             | _ => True
-                             end
-    | EF_inline_asm cp txt sg clb => False
-    | EF_memcpy cp sz al =>
-        (external_call ef ge args m E0 rv m') /\ (tr = E0) /\ (EF_memcpy_dest_not_pub ge args)
-    | _ => (external_call ef ge args m E0 rv m') /\ (tr = E0)
-    end.
-
-
-  (* Remove? *)
-  (* (* Should be ensured by the user *) *)
-  (* Definition unknown_returns_fo_pub *)
-  (*            (ef: external_function) (ge: Senv.t) (m: mem) (args: list val) : Prop := *)
-  (*   match ef with *)
-  (*   | EF_external cp name sg => *)
-  (*       forall ge args m0 tr rv m1, (external_functions_sem name sg ge args m0 tr rv m1) -> public_first_order ge m1 *)
-  (*   | EF_builtin cp name sg *)
-  (*   | EF_runtime cp name sg => *)
-  (*       match lookup_builtin_function name sg with *)
-  (*       | None => forall ge args m0 tr rv m1, (external_functions_sem name sg ge args m0 tr rv m1) -> public_first_order ge m1 *)
-  (*       | _ => True *)
-  (*       end *)
-  (*   | EF_inline_asm cp txt sg clb => *)
-  (*       forall ge args m0 tr rv m1, (inline_assembly_sem cp txt sg ge args m0 tr rv m1) -> public_first_order ge m1 *)
-  (*   | _ => True *)
-  (*   end. *)
-
-End VISIBLE.
-
-Global Program Instance is_external_fundef (F: Type) : is_external (fundef F) :=
-  { is_ok :=
-    fun cp' fd =>
-      match fd with
-      | Internal _ => True
-      | External ef =>
-          match ef with
-          | EF_external cp name sg  => True
-          | EF_builtin cp name sg
-          | EF_runtime cp name sg =>
-              match lookup_builtin_function name sg with
-              | None => True
-              | _ => cp = cp'
-              end
-          | EF_vload cp chunk          => cp = cp'
-          | EF_vstore cp chunk         => cp = cp'
-          | EF_malloc cp                => cp = cp'
-          | EF_free cp                 => cp = cp'
-          | EF_memcpy cp sz al         => cp = cp'
-          | EF_annot cp kind txt targs   => True
-          | EF_annot_val cp kind txt targ => True
-          | EF_inline_asm cp txt sg clb => True
-          | EF_debug cp kind txt targs => cp = cp'
-          end
-      end;
-    is_ok_b :=
-      fun cp' fd =>
-        match fd with
-        | Internal _ => true
-        | External ef =>
-            match ef with
-            | EF_external cp name sg  => true
-            | EF_builtin cp name sg
-            | EF_runtime cp name sg =>
-                match lookup_builtin_function name sg with
-                | None => true
-                | _ => Pos.eqb cp cp'
-                end
-            | EF_vload cp chunk          => Pos.eqb cp cp'
-            | EF_vstore cp chunk         => Pos.eqb cp cp'
-            | EF_malloc cp                => Pos.eqb cp cp'
-            | EF_free cp                 => Pos.eqb cp cp'
-            | EF_memcpy cp sz al         => Pos.eqb cp cp'
-            | EF_annot cp kind txt targs   => true
-            | EF_annot_val cp kind txt targ => true
-            | EF_inline_asm cp txt sg clb => true
-            | EF_debug cp kind txt targs => Pos.eqb cp cp'
-            end
-        end;
-    is_ok_reflect := _;
-  }.
-Next Obligation.
-  destruct fd as [| []]; simpl; try now (symmetry; eauto using Pos.eqb_eq).
-  destruct (lookup_builtin_function name sg); try now (symmetry; eauto using Pos.eqb_eq).
-  destruct (lookup_builtin_function name sg); try now (symmetry; eauto using Pos.eqb_eq).
-Defined.

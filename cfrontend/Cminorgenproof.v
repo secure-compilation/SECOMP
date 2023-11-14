@@ -42,16 +42,6 @@ Proof.
   now monadInv H.
 Qed.
 
-Instance external_transl_fundef: is_external_transl_partial transl_fundef.
-Proof.
-  unfold transl_fundef, transl_function, transl_funbody.
-  intros [f | ef] tf ? H; simpl in H.
-  destruct build_compilenv.
-  destruct zle; try easy.
-  now monadInv H.
-  now monadInv H.
-Qed.
-
 Lemma transf_program_match:
   forall p tp, transl_program p = OK tp -> match_prog p tp.
 Proof.
@@ -127,7 +117,7 @@ Lemma sig_preserved:
 Proof.
   intros until tf; destruct f; simpl.
   unfold transl_function. destruct (build_compilenv f).
-  case (zle z Ptrofs.max_unsigned); simpl err_bind; try congruence.
+  case (zle z Ptrofs.max_unsigned); simpl bind; try congruence.
   intros. monadInv H. simpl. eapply sig_preserved_body; eauto.
   intro. inv H. reflexivity.
 Qed.
@@ -2151,9 +2141,8 @@ Proof.
   intros [f' [vres' [tm' [EC [VINJ [MINJ' [UNMAPPED [OUTOFREACH [INCR SEPARATED]]]]]]]]].
   left; econstructor; split.
   apply plus_one. econstructor. eauto.
-  (* rewrite <- (comp_transl_partial _ TRF). *)
+  rewrite <- (comp_transl_partial _ TRF).
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  monadInv TRF; auto.
   assert (MCS': match_callstack f' m' tm'
                  (Frame cenv tfn e le te sp lo hi :: cs)
                  (Mem.nextblock m') (Mem.nextblock tm')).
@@ -2319,6 +2308,7 @@ Opaque PTree.set.
   left; econstructor; split.
   apply plus_one. econstructor.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  erewrite <- match_cont_call_comp; eauto.
   econstructor; eauto.
   apply match_callstack_incr_bound with (Mem.nextblock m) (Mem.nextblock tm).
   eapply match_callstack_external_call; eauto.

@@ -107,8 +107,7 @@ Inductive exec_stmt: env -> compartment -> temp_env ->
                 (t' ** t ** t'') (set_opttemp optid vres le) m' Out_normal
   | exec_Sbuiltin:   forall e c le m optid ef al tyargs vargs t m' vres,
       eval_exprlist ge e c le m al tyargs vargs ->
-      external_call ef ge vargs m t vres m' ->
-      forall ALLOWED: comp_of ef = c,
+      external_call ef ge c vargs m t vres m' ->
       exec_stmt e c le m (Sbuiltin optid ef tyargs al)
                 t (set_opttemp optid vres le) m' Out_normal
   | exec_Sseq_1:   forall e c le m s1 s2 t1 le1 m1 t2 le2 m2 out,
@@ -180,7 +179,7 @@ with eval_funcall: compartment -> mem -> fundef -> list val -> trace -> mem -> v
       Mem.free_list m3 (blocks_of_env ge e) (comp_of f) = Some m4 ->
       eval_funcall c m (Internal f) vargs t m4 vres
   | eval_funcall_external: forall c m ef targs tres cconv vargs t vres m',
-      external_call ef ge vargs m t vres m' ->
+      external_call ef ge c vargs m t vres m' ->
       eval_funcall c m (External ef targs tres cconv) vargs t m' vres.
 
 Scheme exec_stmt_ind2 := Minimality for exec_stmt Sort Prop
@@ -358,7 +357,6 @@ Proof.
   constructor.
 
 (* builtin *)
-  rewrite H1 in *.
   econstructor; split. apply star_one; econstructor; eauto.
   econstructor.
 

@@ -205,7 +205,7 @@ Fixpoint update_labels (lbls: list label) (s: avail) (lm: labelmap) :
 
 Definition is_debug_setvar (ef: external_function) :=
   match ef with
-  | EF_debug _ 2%positive txt targs => Some txt
+  | EF_debug 2%positive txt targs => Some txt
   | _ => None
   end.
 
@@ -316,17 +316,17 @@ Definition delta_state (before after: option avail) : avail * avail :=
 (** Insert debug annotations at the beginning and end of live ranges
     of locations that correspond to source local variables. *)
 
-Definition add_start_range (cp: compartment) (vi: ident * debuginfo) (c: code) : code :=
+Definition add_start_range (vi: ident * debuginfo) (c: code) : code :=
   let (v, i) := vi in
-  Lbuiltin (EF_debug cp 3%positive v nil) (proj1_sig i :: nil) BR_none :: c.
+  Lbuiltin (EF_debug 3%positive v nil) (proj1_sig i :: nil) BR_none :: c.
 
-Definition add_end_range (cp: compartment) (vi: ident * debuginfo) (c: code) : code :=
+Definition add_end_range (vi: ident * debuginfo) (c: code) : code :=
   let (v, i) := vi in
-  Lbuiltin (EF_debug cp 4%positive v nil) nil BR_none :: c.
+  Lbuiltin (EF_debug 4%positive v nil) nil BR_none :: c.
 
-Definition add_delta_ranges (cp: compartment) (before after: option avail) (c: code) : code :=
+Definition add_delta_ranges (before after: option avail) (c: code) : code :=
   let (killed, born) := delta_state before after in
-  List.fold_right (add_end_range cp) (List.fold_right (add_start_range cp) c born) killed.
+  List.fold_right add_end_range (List.fold_right add_start_range c born) killed.
 
 Fixpoint skip_debug_setvar (lm: labelmap) (before: option avail) (c: code) :=
   match c with
@@ -338,17 +338,17 @@ Fixpoint skip_debug_setvar (lm: labelmap) (before: option avail) (c: code) :=
       end
   end.
 
-Fixpoint transf_code (cp: compartment) (lm: labelmap) (before: option avail) (c: code) : code :=
+Fixpoint transf_code (lm: labelmap) (before: option avail) (c: code) : code :=
   match c with
   | nil => nil
   | Lgoto lbl1 :: Llabel lbl2 :: c' =>
       (* This special case avoids some redundant start/end annotations *)
       let after := get_label lbl2 lm in
       Lgoto lbl1 :: Llabel lbl2 ::
-      add_delta_ranges cp before after (transf_code cp lm after c')
+      add_delta_ranges before after (transf_code lm after c')
   | i :: c' =>
       let after := skip_debug_setvar lm (snd (transfer lm before i)) c' in
-      i :: add_delta_ranges cp before after (transf_code cp lm after c')
+      i :: add_delta_ranges before after (transf_code lm after c')
   end.
 
 Local Open Scope string_scope.
@@ -358,7 +358,7 @@ Definition transf_function (f: function) : res function :=
   | None => Error (msg "Debugvar: analysis diverges")
   | Some lm =>
       OK (mkfunction f.(fn_comp) f.(fn_sig) f.(fn_stacksize)
-                     (transf_code f.(fn_comp) lm (Some top) f.(fn_code)))
+                     (transf_code lm (Some top) f.(fn_code)))
   end.
 
 Definition transf_fundef (fd: fundef) : res fundef :=

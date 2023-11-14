@@ -50,35 +50,35 @@ Section SWITCH.
                 (* if false *)
                 s_else.
 
-  Ltac simpl_expr' :=
-    unfold type_counter; unfold type_bool; simpl; simpl_expr.
+  (* Ltac simpl_expr' := *)
+  (*   unfold type_counter; unfold type_bool; simpl; simpl_expr. *)
 
-  Ltac take_step' := econstructor; [econstructor; simpl_expr' | | traceEq]; simpl.
+  (* Ltac take_step' := econstructor; [econstructor; simpl_expr' | | traceEq]; simpl. *)
 
-  Lemma switch_clause_spec (ge: genv) (cnt: ident) f e le m b k (n: int64) (n': Z) s_then s_else:
-    let cp := comp_of f in
-    e ! cnt = None ->
-    Genv.find_symbol ge cnt = Some b ->
-    Mem.valid_access m Mint64 b 0 Writable (Some cp) ->
-    Mem.loadv Mint64 m (Vptr b Ptrofs.zero) (Some cp) = Some (Vlong n) ->
-    if Int64.eq n (Int64.repr n') then
-      exists m',
-        Mem.storev Mint64 m (Vptr b Ptrofs.zero) (Vlong (Int64.add n Int64.one)) cp = Some m' /\
-          star (step1) ge (State f (switch_clause cnt n' s_then s_else) k e le m) E0 (State f s_then k e le m')
-    else
-      star (step1) ge (State f (switch_clause cnt n' s_then s_else) k e le m) E0 (State f s_else k e le m).
-  Proof.
-    intros; subst cp.
-    destruct (Int64.eq n (Int64.repr n')) eqn:eq_n_n'.
-    - simpl.
-      destruct (Mem.valid_access_store m Mint64 b 0%Z (comp_of f) (Vlong (Int64.add n Int64.one))) as [m' m_m']; try assumption.
-      exists m'. split; eauto.
-      do 4 take_step'.
-      now apply star_refl.
-    - (* take_steps. *)
-      take_step'. rewrite Int.eq_true; simpl.
-      now apply star_refl.
-  Qed.
+  (* Lemma switch_clause_spec (ge: genv) (cnt: ident) f e le m b k (n: int64) (n': Z) s_then s_else: *)
+  (*   let cp := comp_of f in *)
+  (*   e ! cnt = None -> *)
+  (*   Genv.find_symbol ge cnt = Some b -> *)
+  (*   Mem.valid_access m Mint64 b 0 Writable (Some cp) -> *)
+  (*   Mem.loadv Mint64 m (Vptr b Ptrofs.zero) (Some cp) = Some (Vlong n) -> *)
+  (*   if Int64.eq n (Int64.repr n') then *)
+  (*     exists m', *)
+  (*       Mem.storev Mint64 m (Vptr b Ptrofs.zero) (Vlong (Int64.add n Int64.one)) cp = Some m' /\ *)
+  (*         star (step1) ge (State f (switch_clause cnt n' s_then s_else) k e le m) E0 (State f s_then k e le m') *)
+  (*   else *)
+  (*     star (step1) ge (State f (switch_clause cnt n' s_then s_else) k e le m) E0 (State f s_else k e le m). *)
+  (* Proof. *)
+  (*   intros; subst cp. *)
+  (*   destruct (Int64.eq n (Int64.repr n')) eqn:eq_n_n'. *)
+  (*   - simpl. *)
+  (*     destruct (Mem.valid_access_store m Mint64 b 0%Z (comp_of f) (Vlong (Int64.add n Int64.one))) as [m' m_m']; try assumption. *)
+  (*     exists m'. split; eauto. *)
+  (*     do 4 take_step'. *)
+  (*     now apply star_refl. *)
+  (*   - (* take_steps. *) *)
+  (*     take_step'. rewrite Int.eq_true; simpl. *)
+  (*     now apply star_refl. *)
+  (* Qed. *)
 
 
   Definition switch_add_statement cnt s res :=
@@ -87,95 +87,95 @@ Section SWITCH.
   Definition switch (cnt: ident) (ss: list statement) (s_else: statement): statement :=
     snd (fold_right (switch_add_statement cnt) (Z.of_nat (length ss), s_else) ss).
 
-  Lemma fst_switch (cnt: ident) n (s_else: statement) (ss : list statement) :
-    fst (fold_right (switch_add_statement cnt) (n, s_else) ss) = (n - Z.of_nat (length ss))%Z.
-  Proof.
-    induction ss as [|s' ss IH]; try now rewrite Z.sub_0_r.
-    simpl; lia.
-  Qed.
+  (* Lemma fst_switch (cnt: ident) n (s_else: statement) (ss : list statement) : *)
+  (*   fst (fold_right (switch_add_statement cnt) (n, s_else) ss) = (n - Z.of_nat (length ss))%Z. *)
+  (* Proof. *)
+  (*   induction ss as [|s' ss IH]; try now rewrite Z.sub_0_r. *)
+  (*   simpl; lia. *)
+  (* Qed. *)
 
-  Lemma switch_spec_else
-        (ge: genv) (cnt: ident) f (e: env) le m b k (n: Z) ss s_else
-        (WF: Z.of_nat (length ss) < Int64.modulus)
-        (RANGE: Z.of_nat (length ss) <= n < Int64.modulus)
-    :
-    let cp := comp_of f in
-    e ! cnt = None ->
-    Genv.find_symbol ge cnt = Some b ->
-    Mem.loadv Mint64 m (Vptr b Ptrofs.zero) (Some cp) = Some (Vlong (Int64.repr n)) ->
-    star (step1) ge
-         (State f (switch cnt ss s_else) k e le m)
-         E0
-         (State f s_else k e le m).
-  Proof.
-    intros; subst cp. unfold switch. destruct RANGE as [RA1 RA2].
-    assert (G: forall n',
-               (Z.of_nat (length ss)) <= n' ->
-               n' <= n ->
-               star (step1) ge
-                    (State f (snd (fold_right (switch_add_statement cnt) (n', s_else) ss)) k e le m)
-                    E0
-                    (State f s_else k e le m)).
-    { intros n' LE1 LE2.
-      induction ss as [|s ss IH]; try apply star_refl.
-      simpl. simpl in RA1, LE1. rewrite fst_switch, <- Z.sub_succ_r.
-      take_step'.
-      { rewrite Int64.eq_false. reflexivity. clear - WF RA1 RA2 LE1 LE2.
-        destruct (Z.eqb_spec n (n' - Z.of_nat (S (length ss)))) as [n_eq_0|?]; simpl.
-        - lia.
-        - intros EQ. apply n0; clear n0.
-          rewrite <- (Int64.unsigned_repr n).
-          rewrite EQ. rewrite Int64.unsigned_repr. lia.
-          1: split.
-          all: unfold Int64.max_unsigned; try lia.
-      }
-      rewrite Int.eq_true; simpl.
-      eapply IH; lia.
-    }
-    now apply G; lia.
-  Qed.
+  (* Lemma switch_spec_else *)
+  (*       (ge: genv) (cnt: ident) f (e: env) le m b k (n: Z) ss s_else *)
+  (*       (WF: Z.of_nat (length ss) < Int64.modulus) *)
+  (*       (RANGE: Z.of_nat (length ss) <= n < Int64.modulus) *)
+  (*   : *)
+  (*   let cp := comp_of f in *)
+  (*   e ! cnt = None -> *)
+  (*   Genv.find_symbol ge cnt = Some b -> *)
+  (*   Mem.loadv Mint64 m (Vptr b Ptrofs.zero) (Some cp) = Some (Vlong (Int64.repr n)) -> *)
+  (*   star (step1) ge *)
+  (*        (State f (switch cnt ss s_else) k e le m) *)
+  (*        E0 *)
+  (*        (State f s_else k e le m). *)
+  (* Proof. *)
+  (*   intros; subst cp. unfold switch. destruct RANGE as [RA1 RA2]. *)
+  (*   assert (G: forall n', *)
+  (*              (Z.of_nat (length ss)) <= n' -> *)
+  (*              n' <= n -> *)
+  (*              star (step1) ge *)
+  (*                   (State f (snd (fold_right (switch_add_statement cnt) (n', s_else) ss)) k e le m) *)
+  (*                   E0 *)
+  (*                   (State f s_else k e le m)). *)
+  (*   { intros n' LE1 LE2. *)
+  (*     induction ss as [|s ss IH]; try apply star_refl. *)
+  (*     simpl. simpl in RA1, LE1. rewrite fst_switch, <- Z.sub_succ_r. *)
+  (*     take_step'. *)
+  (*     { rewrite Int64.eq_false. reflexivity. clear - WF RA1 RA2 LE1 LE2. *)
+  (*       destruct (Z.eqb_spec n (n' - Z.of_nat (S (length ss)))) as [n_eq_0|?]; simpl. *)
+  (*       - lia. *)
+  (*       - intros EQ. apply n0; clear n0. *)
+  (*         rewrite <- (Int64.unsigned_repr n). *)
+  (*         rewrite EQ. rewrite Int64.unsigned_repr. lia. *)
+  (*         1: split. *)
+  (*         all: unfold Int64.max_unsigned; try lia. *)
+  (*     } *)
+  (*     rewrite Int.eq_true; simpl. *)
+  (*     eapply IH; lia. *)
+  (*   } *)
+  (*   now apply G; lia. *)
+  (* Qed. *)
 
   Definition nat64 n := Int64.repr (Z.of_nat n).
 
-  Lemma switch_spec
-        (ge: genv) (cnt: ident) f (e: env) le m b k
-        ss s ss' s_else
-        (WF: Z.of_nat (length (ss ++ s :: ss')) < Int64.modulus)
-    :
-    let cp := comp_of f in
-    e ! cnt = None ->
-    Genv.find_symbol ge cnt = Some b ->
-    Mem.valid_access m Mint64 b 0 Writable (Some cp) ->
-    Mem.loadv Mint64 m (Vptr b Ptrofs.zero) (Some cp) = Some (Vlong (nat64 (length ss))) ->
-    exists m',
-      Mem.storev Mint64 m (Vptr b Ptrofs.zero) (Vlong (Int64.add (nat64 (length ss)) Int64.one)) cp = Some m' /\
-        star (step1) ge
-             (State f (switch cnt (ss ++ s :: ss') s_else) k e le m)
-             E0
-             (State f s k e le m').
-  Proof.
-    intros.
-    assert (Eswitch :
-             exists s_else',
-               switch cnt (ss ++ s :: ss') s_else =
-                 switch cnt ss (switch_clause cnt (Z.of_nat (length ss)) s s_else')).
-    { unfold switch. rewrite fold_right_app, app_length. simpl.
-      exists (snd (fold_right (switch_add_statement cnt) (Z.of_nat (length ss + S (length ss')), s_else) ss')).
-      repeat f_equal. rewrite -> surjective_pairing at 1. simpl.
-      rewrite fst_switch, Nat.add_succ_r.
-      assert (A: Z.pred (Z.of_nat (S (Datatypes.length ss + Datatypes.length ss')) - Z.of_nat (Datatypes.length ss')) = Z.of_nat (Datatypes.length ss)) by lia.
-      rewrite A. reflexivity.
-    }
-    destruct Eswitch as [s_else' ->]. clear s_else. rename s_else' into s_else.
-    exploit (switch_clause_spec ge cnt f e le m b k (nat64 (length ss)) (Z.of_nat (length ss)) s s_else); auto.
-    unfold nat64. rewrite Int64.eq_true. intro Hcont.
-    destruct Hcont as (m' & Hstore & Hstar2).
-    exists m'. split; trivial.
-    apply (fun H => @star_trans _ _ _ _ _ E0 _ H E0 _ _ Hstar2); trivial.
-    assert (WF2: Z.of_nat (Datatypes.length ss) < Int64.modulus).
-    { clear - WF. rewrite app_length in WF. lia. }
-    eapply switch_spec_else; eauto. split; auto. reflexivity.
-  Qed.
+  (* Lemma switch_spec *)
+  (*       (ge: genv) (cnt: ident) f (e: env) le m b k *)
+  (*       ss s ss' s_else *)
+  (*       (WF: Z.of_nat (length (ss ++ s :: ss')) < Int64.modulus) *)
+  (*   : *)
+  (*   let cp := comp_of f in *)
+  (*   e ! cnt = None -> *)
+  (*   Genv.find_symbol ge cnt = Some b -> *)
+  (*   Mem.valid_access m Mint64 b 0 Writable (Some cp) -> *)
+  (*   Mem.loadv Mint64 m (Vptr b Ptrofs.zero) (Some cp) = Some (Vlong (nat64 (length ss))) -> *)
+  (*   exists m', *)
+  (*     Mem.storev Mint64 m (Vptr b Ptrofs.zero) (Vlong (Int64.add (nat64 (length ss)) Int64.one)) cp = Some m' /\ *)
+  (*       star (step1) ge *)
+  (*            (State f (switch cnt (ss ++ s :: ss') s_else) k e le m) *)
+  (*            E0 *)
+  (*            (State f s k e le m'). *)
+  (* Proof. *)
+  (*   intros. *)
+  (*   assert (Eswitch : *)
+  (*            exists s_else', *)
+  (*              switch cnt (ss ++ s :: ss') s_else = *)
+  (*                switch cnt ss (switch_clause cnt (Z.of_nat (length ss)) s s_else')). *)
+  (*   { unfold switch. rewrite fold_right_app, app_length. simpl. *)
+  (*     exists (snd (fold_right (switch_add_statement cnt) (Z.of_nat (length ss + S (length ss')), s_else) ss')). *)
+  (*     repeat f_equal. rewrite -> surjective_pairing at 1. simpl. *)
+  (*     rewrite fst_switch, Nat.add_succ_r. *)
+  (*     assert (A: Z.pred (Z.of_nat (S (Datatypes.length ss + Datatypes.length ss')) - Z.of_nat (Datatypes.length ss')) = Z.of_nat (Datatypes.length ss)) by lia. *)
+  (*     rewrite A. reflexivity. *)
+  (*   } *)
+  (*   destruct Eswitch as [s_else' ->]. clear s_else. rename s_else' into s_else. *)
+  (*   exploit (switch_clause_spec ge cnt f e le m b k (nat64 (length ss)) (Z.of_nat (length ss)) s s_else); auto. *)
+  (*   unfold nat64. rewrite Int64.eq_true. intro Hcont. *)
+  (*   destruct Hcont as (m' & Hstore & Hstar2). *)
+  (*   exists m'. split; trivial. *)
+  (*   apply (fun H => @star_trans _ _ _ _ _ E0 _ H E0 _ _ Hstar2); trivial. *)
+  (*   assert (WF2: Z.of_nat (Datatypes.length ss) < Int64.modulus). *)
+  (*   { clear - WF. rewrite app_length in WF. lia. } *)
+  (*   eapply switch_spec_else; eauto. split; auto. reflexivity. *)
+  (* Qed. *)
 
 End SWITCH.
 
@@ -185,13 +185,13 @@ Section CONV.
 
   Variable ge: Senv.t.
 
-  Definition not_in_env (e: env) id := e ! id = None.
+  (* Definition not_in_env (e: env) id := e ! id = None. *)
 
-  Definition wf_env (e: env) :=
-    forall id, match Senv.find_symbol ge id with
-          | Some _ => not_in_env e id
-          | _ => True
-          end.
+  (* Definition wf_env (e: env) := *)
+  (*   forall id, match Senv.find_symbol ge id with *)
+  (*         | Some _ => not_in_env e id *)
+  (*         | _ => True *)
+  (*         end. *)
 
   Definition eventval_to_val (v: eventval): val :=
     match v with
@@ -237,11 +237,11 @@ Section CONV.
              (Econst_int (Ptrofs.to_int ofs) (Tint I32 Signed noattr))
              (Tpointer Tvoid noattr).
 
-  Lemma ptr_of_id_ofs_typeof
-        i i0
-    :
-    typeof (ptr_of_id_ofs i i0) = Tpointer Tvoid noattr.
-  Proof. unfold ptr_of_id_ofs. destruct Archi.ptr64; simpl; auto. Qed.
+  (* Lemma ptr_of_id_ofs_typeof *)
+  (*       i i0 *)
+  (*   : *)
+  (*   typeof (ptr_of_id_ofs i i0) = Tpointer Tvoid noattr. *)
+  (* Proof. unfold ptr_of_id_ofs. destruct Archi.ptr64; simpl; auto. Qed. *)
 
   Definition eventval_to_expr (v: eventval): expr :=
     match v with
@@ -255,17 +255,17 @@ Section CONV.
   Definition list_eventval_to_list_expr (vs: list eventval): list expr :=
     List.map eventval_to_expr vs.
 
-  Lemma typeof_eventval_to_expr_type
-        v
-    :
-    typeof (eventval_to_expr v) = eventval_to_type v.
-  Proof. destruct v; simpl; auto. apply ptr_of_id_ofs_typeof. Qed.
+  (* Lemma typeof_eventval_to_expr_type *)
+  (*       v *)
+  (*   : *)
+  (*   typeof (eventval_to_expr v) = eventval_to_type v. *)
+  (* Proof. destruct v; simpl; auto. apply ptr_of_id_ofs_typeof. Qed. *)
 
-  Definition wf_eventval_pub (v: eventval): Prop :=
-    match v with
-    | EVptr_global id _ => (Senv.public_symbol ge id = true)
-    | _ => True
-    end.
+  (* Definition wf_eventval_pub (v: eventval): Prop := *)
+  (*   match v with *)
+  (*   | EVptr_global id _ => (Senv.public_symbol ge id = true) *)
+  (*   | _ => True *)
+  (*   end. *)
 
 End CONV.
 
@@ -300,21 +300,21 @@ Section CODEAUX.
       | Tret t => typ_to_type t
       end.
 
-  Lemma proj_rettype_to_type_rettype_of_type_eq
-        ge evres rt res
-        (EVM: eventval_match ge evres (proj_rettype rt) res)
-    :
-    proj_rettype (rettype_of_type (rettype_to_type rt)) = proj_rettype rt.
-  Proof.
-    inv EVM; destruct rt; simpl; auto.
-    destruct t; simpl in *; auto; try congruence.
-    destruct t; simpl in *; auto; try congruence.
-    destruct t; simpl in *; auto; try congruence.
-    destruct t; simpl in *; auto; try congruence.
-    unfold Tptr in *. destruct Archi.ptr64 eqn:ARCH.
-    destruct t; simpl in *; auto; try congruence.
-    destruct t; simpl in *; auto; try congruence.
-  Qed.
+  (* Lemma proj_rettype_to_type_rettype_of_type_eq *)
+  (*       ge evres rt res *)
+  (*       (EVM: eventval_match ge evres (proj_rettype rt) res) *)
+  (*   : *)
+  (*   proj_rettype (rettype_of_type (rettype_to_type rt)) = proj_rettype rt. *)
+  (* Proof. *)
+  (*   inv EVM; destruct rt; simpl; auto. *)
+  (*   destruct t; simpl in *; auto; try congruence. *)
+  (*   destruct t; simpl in *; auto; try congruence. *)
+  (*   destruct t; simpl in *; auto; try congruence. *)
+  (*   destruct t; simpl in *; auto; try congruence. *)
+  (*   unfold Tptr in *. destruct Archi.ptr64 eqn:ARCH. *)
+  (*   destruct t; simpl in *; auto; try congruence. *)
+  (*   destruct t; simpl in *; auto; try congruence. *)
+  (* Qed. *)
 
   (* Wanted internal function data from signature *)
   Record fun_data : Type := mkfundata { dargs: typelist; dret: type; dcc: calling_convention }.
@@ -371,12 +371,12 @@ Section CONV.
     | Many64 => None
     end.
 
-  Lemma access_mode_chunk_to_type_wf
-        ch ty
-        (CT: chunk_to_type ch = Some ty)
-    :
-    access_mode ty = By_value ch.
-  Proof. destruct ch; inv CT; ss. Qed.
+  (* Lemma access_mode_chunk_to_type_wf *)
+  (*       ch ty *)
+  (*       (CT: chunk_to_type ch = Some ty) *)
+  (*   : *)
+  (*   access_mode ty = By_value ch. *)
+  (* Proof. destruct ch; inv CT; ss. Qed. *)
 
   Definition chunk_val_to_expr (ch: memory_chunk) (v: val) : option expr :=
     match chunk_to_type ch with
@@ -412,7 +412,7 @@ Section CODE.
         | Some id =>
             match chunk_to_type ch, chunk_val_to_expr ge ch v with
             | Some ty, Some ve =>
-                if ((Senv.public_symbol ge id) && (wf_chunk_val_b ch v) && (cp0 =? cp)%positive)
+                if ((Senv.public_symbol ge id) && (cp0 =? cp)%positive)
                 then Sassign (Ederef (expr_of_addr id ofs) ty) ve
                 else Sskip
             | _, _ => Sskip
@@ -516,6 +516,12 @@ Section GEN.
     | hd :: tl => (i, hd) :: (numbering (Pos.succ i) tl)
     end.
 
+  Definition funsig (fd: Asm.fundef) :=
+    match fd with
+    | AST.Internal f => fn_sig f
+    | AST.External ef => ef_sig ef
+    end.
+
   Definition gen_params_one (m: ident) (gd: globdef Asm.fundef unit): option (list (ident * type)) :=
     match gd with
     | Gvar _ => None
@@ -591,40 +597,40 @@ Section AUX.
     get_id_tr (tr1 ++ tr2) id = (get_id_tr tr1 id) ++ (get_id_tr tr2 id).
   Proof. unfold get_id_tr. rewrite filter_app. auto. Qed.
 
-  Lemma alloc_variables_wf_params_of_symb0
-        ge cp e m params e' m'
-        (AE: alloc_variables ge cp e m params e' m')
-        (WFE: wf_env ge e)
-        (pars: params_of)
-        (WFP: wf_params_of_symb pars ge)
-        fid vars
-        (PAR: pars ! fid = Some vars)
-        (INCL: forall x, In x params -> In x vars)
-    :
-    wf_env ge e'.
-  Proof.
-    revert_until AE. induction AE; ii.
-    { eapply WFE. }
-    eapply IHAE. 3: eapply PAR.
-    3:{ i. eapply INCL. ss. right; auto. }
-    2: auto.
-    clear IHAE id0. unfold wf_env in *. i. specialize (WFE id0). des_ifs.
-    unfold not_in_env in *. specialize (WFP _ _ Heq _ _ PAR).
-    destruct (Pos.eqb_spec id id0).
-    2:{ rewrite PTree.gso; auto. }
-    subst id0. exfalso. apply WFP; clear WFP. specialize (INCL (id, ty)).
-    replace id with (fst (id, ty)). 2: ss. apply in_map. apply INCL. ss. left; auto.
-  Qed.
+  (* Lemma alloc_variables_wf_params_of_symb0 *)
+  (*       ge cp e m params e' m' *)
+  (*       (AE: alloc_variables ge cp e m params e' m') *)
+  (*       (WFE: wf_env ge e) *)
+  (*       (pars: params_of) *)
+  (*       (WFP: wf_params_of_symb pars ge) *)
+  (*       fid vars *)
+  (*       (PAR: pars ! fid = Some vars) *)
+  (*       (INCL: forall x, In x params -> In x vars) *)
+  (*   : *)
+  (*   wf_env ge e'. *)
+  (* Proof. *)
+  (*   revert_until AE. induction AE; ii. *)
+  (*   { eapply WFE. } *)
+  (*   eapply IHAE. 3: eapply PAR. *)
+  (*   3:{ i. eapply INCL. ss. right; auto. } *)
+  (*   2: auto. *)
+  (*   clear IHAE id0. unfold wf_env in *. i. specialize (WFE id0). des_ifs. *)
+  (*   unfold not_in_env in *. specialize (WFP _ _ Heq _ _ PAR). *)
+  (*   destruct (Pos.eqb_spec id id0). *)
+  (*   2:{ rewrite PTree.gso; auto. } *)
+  (*   subst id0. exfalso. apply WFP; clear WFP. specialize (INCL (id, ty)). *)
+  (*   replace id with (fst (id, ty)). 2: ss. apply in_map. apply INCL. ss. left; auto. *)
+  (* Qed. *)
 
-  Lemma alloc_variables_wf_params_of_symb
-        ge cp m params e' m'
-        (AE: alloc_variables ge cp empty_env m params e' m')
-        (pars: params_of)
-        (WFP: wf_params_of_symb pars ge)
-        fid
-        (PAR: pars ! fid = Some params)
-    :
-    wf_env ge e'.
-  Proof. eapply alloc_variables_wf_params_of_symb0; eauto. ii. des_ifs. Qed.
+  (* Lemma alloc_variables_wf_params_of_symb *)
+  (*       ge cp m params e' m' *)
+  (*       (AE: alloc_variables ge cp empty_env m params e' m') *)
+  (*       (pars: params_of) *)
+  (*       (WFP: wf_params_of_symb pars ge) *)
+  (*       fid *)
+  (*       (PAR: pars ! fid = Some params) *)
+  (*   : *)
+  (*   wf_env ge e'. *)
+  (* Proof. eapply alloc_variables_wf_params_of_symb0; eauto. ii. des_ifs. Qed. *)
 
 End AUX.

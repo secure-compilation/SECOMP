@@ -25,9 +25,6 @@ Definition match_prog (p tp: program) :=
 Instance comp_tunnel_fundef: has_comp_transl tunnel_function.
 Proof. now intro. Qed.
 
-Instance external_tunnel_fundef: is_external_transl tunnel_fundef.
-Proof. now intros ? []. Qed.
-
 Lemma transf_program_match:
   forall p, match_prog p (tunnel_program p).
 Proof.
@@ -738,8 +735,10 @@ Proof.
   left; simpl; econstructor; split.
   eapply exec_Ltailcall with (fd := tunnel_fundef fd); eauto.
   eapply find_function_translated; eauto using return_regs_lessdef, match_parent_locset.
+  eapply find_function_ptr_translated; eauto using return_regs_lessdef, match_parent_locset.
   apply sig_preserved.
   unfold tunnel_fundef. now rewrite comp_tunnel_fundef, comp_transl.
+  eapply allowed_call_translated; eauto.
   econstructor; eauto using return_regs_lessdef, match_parent_locset.
 - (* Lbuiltin *)
   exploit eval_builtin_args_lessdef. eexact LS. eauto. eauto. intros (tvargs & EVA & LDA).
@@ -820,6 +819,7 @@ Proof.
   left; simpl; econstructor; split.
   eapply exec_function_external; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  rewrite <- (match_stackframes_call_comp _ _ STK); eauto.
   simpl. econstructor; eauto using locmap_setpair_lessdef, locmap_undef_caller_save_regs_lessdef.
 - (* return *)
   inv STK. inv H1.

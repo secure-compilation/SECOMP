@@ -27,9 +27,6 @@ Definition match_prog (p tp: Linear.program) :=
 Instance comp_match_prog: has_comp_transl transf_function.
 Proof. now intros f. Qed.
 
-Instance external_transf_fundef: is_external_transl transf_fundef.
-Proof. now intros ? [f | ef]. Qed.
-
 Lemma transf_program_match:
   forall p, match_prog p (transf_program p).
 Proof.
@@ -335,8 +332,10 @@ Proof.
 (* Ltailcall *)
   left; econstructor; split.
   econstructor. erewrite match_parent_locset; eauto. eapply find_function_translated; eauto.
+  eapply find_function_ptr_translated; eauto.
   symmetry; apply sig_function_translated.
   now rewrite ! comp_transl. simpl; eauto.
+  eapply allowed_call_translated; eauto.
   eauto.
   econstructor; eauto.
 (* Lbuiltin *)
@@ -344,7 +343,7 @@ Proof.
   econstructor.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  eauto. rewrite comp_transl; eauto.
+  eauto.
   econstructor; eauto with coqlib.
 (* Llabel *)
   case_eq (Labelset.mem lbl (labels_branched_to (fn_code f))); intros.
@@ -389,6 +388,7 @@ Proof.
   destruct (Genv.type_of_call tge (call_comp ts) (callee_comp ts)).
   econstructor; eauto with coqlib.
   econstructor; eauto with coqlib.
+  econstructor; eauto with coqlib.
 (* internal function *)
   left; econstructor; split.
   econstructor; simpl; eauto.
@@ -403,9 +403,11 @@ Proof.
   destruct (Genv.type_of_call tge (call_comp ts) (comp_of f)).
   econstructor; eauto with coqlib.
   econstructor; eauto with coqlib.
+  econstructor; eauto with coqlib.
 (* external function *)
   left; econstructor; split.
   econstructor; eauto. eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  erewrite <- match_stacks_call_comp; eauto.
   econstructor; eauto with coqlib.
 (* return *)
   inv H3. inv H1. left; econstructor; split.

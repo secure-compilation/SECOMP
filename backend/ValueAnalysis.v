@@ -91,30 +91,30 @@ Definition transfer_builtin
               (ae: aenv) (am: amem) (rm: romem) (ef: external_function)
               (args: list (builtin_arg reg)) (res: builtin_res reg) :=
   match ef, args with
-  | EF_vload _ chunk, addr :: nil =>
+  | EF_vload chunk, addr :: nil =>
       let aaddr := abuiltin_arg ae am rm addr in
       let a :=
         if va_strict tt
         then vlub (loadv chunk rm am aaddr) (vnormalize chunk (Ifptr Glob))
         else vnormalize chunk Vtop in
       VA.State (set_builtin_res res a ae) am
-  | EF_vstore _ chunk, addr :: v :: nil =>
+  | EF_vstore chunk, addr :: v :: nil =>
       let aaddr := abuiltin_arg ae am rm addr in
       let av := abuiltin_arg ae am rm v in
       let am' := storev chunk am aaddr av in
       VA.State (set_builtin_res res ntop ae) (mlub am am')
-  | EF_memcpy _ sz al, dst :: src :: nil =>
+  | EF_memcpy sz al, dst :: src :: nil =>
       let adst := abuiltin_arg ae am rm dst in
       let asrc := abuiltin_arg ae am rm src in
       let p := loadbytes am rm (aptr_of_aval asrc) in
       let am' := storebytes am (aptr_of_aval adst) sz p in
       VA.State (set_builtin_res res ntop ae) am'
-  | (EF_annot _ _ _ _ | EF_debug _ _ _ _), _ =>
+  | (EF_annot _ _ _ | EF_debug _ _ _), _ =>
       VA.State (set_builtin_res res ntop ae) am
-  | EF_annot_val _ _ _ _, v :: nil =>
+  | EF_annot_val _ _ _, v :: nil =>
       let av := abuiltin_arg ae am rm v in
       VA.State (set_builtin_res res av ae) am
-  | EF_builtin _ name sg, _ =>
+  | EF_builtin name sg, _ =>
       match lookup_builtin_function name sg with
       | Some bf => 
           match eval_static_builtin_function ae am rm bf args with
@@ -935,8 +935,8 @@ Qed.
 (** Construction 6: external call *)
 
 Theorem external_call_match:
-  forall ef (ge: genv) vargs m t vres m' bc rm am,
-  external_call ef ge vargs m t vres m' ->
+  forall ef (ge: genv) cp vargs m t vres m' bc rm am,
+  external_call ef ge cp vargs m t vres m' ->
   genv_match bc ge ->
   (forall v, In v vargs -> vmatch bc v Vtop) ->
   romatch bc m rm ->
@@ -958,7 +958,7 @@ Theorem external_call_match:
 Proof.
   intros until am; intros EC GENV ARGS RO MM NOSTACK.
   (* Part 1: using ec_mem_inject *)
-  exploit (@external_call_mem_inject ef _ _ ge vargs m t vres m' (inj_of_bc bc) m vargs).
+  exploit (@external_call_mem_inject ef _ _ ge cp vargs m t vres m' (inj_of_bc bc) m vargs).
   apply inj_of_bc_preserves_globals; auto.
   exact EC.
   eapply mmatch_inj; eauto. eapply mmatch_below; eauto.
@@ -1065,10 +1065,10 @@ Proof.
   destruct (j' b); congruence.
 - (* unmapped blocks are invariant *)
   intros.
-  destruct (Mem.can_access_block_dec m b cp) eqn:e.
+  destruct (Mem.can_access_block_dec m b cp0) eqn:e.
   eapply Mem.loadbytes_unchanged_on_1; auto.
   apply UNCH1; auto. intros; red. unfold inj_of_bc; rewrite H0; auto.
-  destruct (Mem.can_access_block_dec m' b cp) eqn:e'.
+  destruct (Mem.can_access_block_dec m' b cp0) eqn:e'.
   eapply Mem.unchanged_on_own in UNCH1; eauto. clear e'. eapply (proj2 UNCH1) in c. contradiction.
   Local Transparent Mem.loadbytes. unfold Mem.loadbytes.
   rewrite e, e'. simpl. rewrite 2!andb_false_r. reflexivity.

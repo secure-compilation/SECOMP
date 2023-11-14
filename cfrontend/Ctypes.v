@@ -17,7 +17,7 @@
 (** Type expressions for the Compcert C and Clight languages *)
 
 Require Import Axioms Coqlib Maps Errors.
-Require Import AST Linking Builtins.
+Require Import AST Linking.
 Require Archi.
 
 Set Asymmetric Patterns.
@@ -1791,14 +1791,14 @@ Definition link_fundef {F: Type} {CF: has_comp F} (fd1 fd2: fundef F) :=
       else None
   | Internal f, External ef targs tres cc =>
       match ef with
-      | EF_external cp id sg =>
+      | EF_external id cp sg =>
         if eq_compartment cp (comp_of f) then Some (Internal f)
         else None
       | _ => None
       end
   | External ef targs tres cc, Internal f =>
       match ef with
-      | EF_external cp id sg =>
+      | EF_external id cp sg =>
         if eq_compartment cp (comp_of f) then Some (Internal f)
         else None
       | _ => None
@@ -1809,7 +1809,7 @@ Inductive linkorder_fundef {F: Type} {CF: has_comp F}: fundef F -> fundef F -> P
   | linkorder_fundef_refl: forall fd,
       linkorder_fundef fd fd
   | linkorder_fundef_ext_int: forall f id sg targs tres cc,
-      linkorder_fundef (External (EF_external (comp_of f) id sg) targs tres cc) (Internal f).
+      linkorder_fundef (External (EF_external id (comp_of f) sg) targs tres cc) (Internal f).
 
 Global Program Instance Linker_fundef (F: Type) {CF: has_comp F}: Linker (fundef F) := {
   link := link_fundef;
@@ -2021,60 +2021,3 @@ Qed.
 
 End LINK_MATCH_PROGRAM.
 
-
-Global Program Instance is_external_fundef_ctypes f : is_external (fundef f) :=
-  { is_ok :=
-    fun cp' fd =>
-      match fd with
-      | Internal _ => True
-      | External ef _ _ _ =>
-          match ef with
-          | EF_external cp name sg  => True
-          | EF_builtin cp name sg
-          | EF_runtime cp name sg =>
-              match Builtins.lookup_builtin_function name sg with
-              | None => True
-              | _ => cp = cp'
-              end
-          | EF_vload cp chunk          => cp = cp'
-          | EF_vstore cp chunk         => cp = cp'
-          | EF_malloc cp                => cp = cp'
-          | EF_free cp                 => cp = cp'
-          | EF_memcpy cp sz al         => cp = cp'
-          | EF_annot cp kind txt targs   => True
-          | EF_annot_val cp kind txt targ => True
-          | EF_inline_asm cp txt sg clb => True
-          | EF_debug cp kind txt targs => cp = cp'
-          end
-      end;
-    is_ok_b :=
-      fun cp' fd =>
-        match fd with
-        | Internal _ => true
-        | External ef _ _ _ =>
-            match ef with
-            | EF_external cp name sg  => true
-            | EF_builtin cp name sg
-            | EF_runtime cp name sg =>
-                match lookup_builtin_function name sg with
-                | None => true
-                | _ => Pos.eqb cp cp'
-                end
-            | EF_vload cp chunk          => Pos.eqb cp cp'
-            | EF_vstore cp chunk         => Pos.eqb cp cp'
-            | EF_malloc cp                => Pos.eqb cp cp'
-            | EF_free cp                 => Pos.eqb cp cp'
-            | EF_memcpy cp sz al         => Pos.eqb cp cp'
-            | EF_annot cp kind txt targs   => true
-            | EF_annot_val cp kind txt targ => true
-            | EF_inline_asm cp txt sg clb => true
-            | EF_debug cp kind txt targs => Pos.eqb cp cp'
-            end
-        end;
-    is_ok_reflect := _;
-  }.
-Next Obligation.
-  destruct fd as [| []]; simpl; try now (symmetry; eauto using Pos.eqb_eq).
-  destruct (lookup_builtin_function name sg); try now (symmetry; eauto using Pos.eqb_eq).
-  destruct (lookup_builtin_function name sg); try now (symmetry; eauto using Pos.eqb_eq).
-Defined.

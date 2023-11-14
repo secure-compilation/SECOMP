@@ -393,7 +393,7 @@ Inductive wt_rvalue : expr -> Prop :=
       classify_fun (typeof r1) = fun_case_f tyargs tyres cconv ->
       wt_arguments rargs tyargs ->
       wt_rvalue (Ecall r1 rargs tyres)
-  | wt_Ebuiltin: forall ef cp tyargs rargs ty,
+  | wt_Ebuiltin: forall ef tyargs rargs ty,
       wt_exprlist rargs ->
       wt_arguments rargs tyargs ->
       (* This typing rule is specialized to the builtin invocations generated
@@ -402,7 +402,7 @@ Inductive wt_rvalue : expr -> Prop :=
       \/ (tyargs = Tcons type_bool (Tcons ty (Tcons ty Tnil))
           /\ let t := typ_of_type ty in
              let sg := mksignature (AST.Tint :: t :: t :: nil) t cc_default in
-             ef = EF_builtin cp "__builtin_sel"%string sg) ->
+             ef = EF_builtin "__builtin_sel"%string sg) ->
       wt_rvalue (Ebuiltin ef tyargs rargs ty)
   | wt_Eparen: forall r tycast ty,
       wt_rvalue r ->
@@ -759,11 +759,11 @@ Definition ebuiltin (ef: external_function) (tyargs: typelist) (args: exprlist) 
   then OK (Ebuiltin ef tyargs args tyres)
   else Error (msg "builtin: wrong type decoration").
 
-Definition eselection (cp: compartment) (r1 r2 r3: expr) : res expr :=
+Definition eselection (r1 r2 r3: expr) : res expr :=
   do x1 <- check_rval r1; do x2 <- check_rval r2; do x3 <- check_rval r3;
   do y1 <- check_bool (typeof r1);
   do ty <- type_conditional (typeof r2) (typeof r3);
-  OK (Eselection cp r1 r2 r3 ty).
+  OK (Eselection r1 r2 r3 ty).
 
 Definition sdo (a: expr) : res statement :=
   do x <- check_rval a; OK (Sdo a).
@@ -1257,11 +1257,10 @@ Proof.
   destruct (type_eq tyres Tvoid); simpl in EQ2; try discriminate.
   destruct (rettype_eq (sig_res (ef_sig ef)) AST.Tvoid); inv EQ2.
   econstructor; eauto. eapply check_arguments_sound; eauto.
-  Unshelve. exact default_compartment.
 Qed.
 
 Lemma eselection_sound:
-  forall cp r1 r2 r3 a, eselection cp r1 r2 r3 = OK a ->
+  forall r1 r2 r3 a, eselection r1 r2 r3 = OK a ->
   wt_expr ce e r1 -> wt_expr ce e r2 -> wt_expr ce e r3 -> wt_expr ce e a.
 Proof.
   intros. monadInv H. apply type_conditional_cast in EQ3. destruct EQ3.
@@ -1825,22 +1824,22 @@ Proof.
   constructor; auto.
 - (* comma *) auto.
 - (* paren *) inv H3. constructor. apply H5. eapply pres_sem_cast; eauto.
-- (* builtin *) subst. destruct H8 as [(A & B) | (A & B)].
+- (* builtin *) subst. destruct H7 as [(A & B) | (A & B)].
 + subst ty. auto with ty.
 + simpl in B. set (T := typ_of_type ty) in *. 
   set (sg := mksignature (AST.Tint :: T :: T :: nil) T cc_default) in *.
   assert (LK: lookup_builtin_function "__builtin_sel"%string sg = Some (BI_standard (BI_select T))).
   { unfold sg, T; destruct ty as   [ | ? ? ? | ? | [] ? | ? ? | ? ? ? | ? ? ? | ? ? | ? ? ];
     simpl; unfold Tptr; destruct Archi.ptr64; reflexivity. }
-  subst ef. red in H1. red in H1. rewrite LK in H1. inv H1.
-  inv H. inv H8. inv H9. inv H10. simpl in H0.
+  subst ef. red in H0. red in H0. rewrite LK in H0. inv H0. 
+  inv H. inv H8. inv H9. inv H10. simpl in H1.
   assert (A: val_casted v1 type_bool) by (eapply cast_val_is_casted; eauto).
   inv A. 
   set (v' := if Int.eq n Int.zero then v4 else v2) in *.
   constructor.
   destruct (type_eq ty Tvoid).
   subst. constructor.
-  inv H0.
+  inv H1.
   assert (C: val_casted v' ty).
   { unfold v'; destruct (Int.eq n Int.zero); eapply cast_val_is_casted; eauto. }
   assert (EQ: Val.normalize v' T = v').

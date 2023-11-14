@@ -17,7 +17,7 @@
 (** Abstract syntax for the Compcert C language *)
 
 Require Import Coqlib Maps Integers Floats Errors.
-Require Import AST Linking Values Builtins.
+Require Import AST Linking Values.
 Require Import Ctypes Cop.
 
 (** ** Expressions *)
@@ -105,10 +105,10 @@ Definition Epreincr (id: incr_or_decr) (l: expr) (ty: type) :=
   and can be implemented by "conditional move" instructions.
   It is expressed as an invocation of a builtin function. *)
 
-Definition Eselection (cp: compartment) (r1 r2 r3: expr) (ty: type) :=
+Definition Eselection (r1 r2 r3: expr) (ty: type) :=
   let t := typ_of_type ty in
   let sg := mksignature (AST.Tint :: t :: t :: nil) t cc_default in
-  Ebuiltin (EF_builtin cp "__builtin_sel"%string sg)
+  Ebuiltin (EF_builtin "__builtin_sel"%string sg)
            (Tcons type_bool (Tcons ty (Tcons ty Tnil)))
            (Econs r1 (Econs r2 (Econs r3 Enil)))
            ty.
@@ -227,4 +227,3 @@ Definition type_of_fundef (f: fundef) : type :=
 - a proof that this environment is consistent with the definitions. *)
 
 Definition program := Ctypes.program function.
-

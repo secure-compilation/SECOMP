@@ -398,8 +398,7 @@ Ltac ArgsInv :=
   repeat (match goal with
   | [ H: Error _ = OK _ |- _ ] => discriminate
   | [ H: match ?args with nil => _ | _ :: _ => _ end = OK _ |- _ ] => destruct args
-  | [ H: bind _ _ = OK _ |- _ ] => monadInv H (* NOTE not needed? *)
-  | [ H: err_bind _ _ = OK _ |- _ ] => monadInv H
+  | [ H: bind _ _ = OK _ |- _ ] => monadInv H
   | [ H: match _ with left _ => _ | right _ => assertion_failed end = OK _ |- _ ] => monadInv H; ArgsInv
   | [ H: match _ with true => _ | false => assertion_failed end = OK _ |- _ ] => monadInv H; ArgsInv
   end);

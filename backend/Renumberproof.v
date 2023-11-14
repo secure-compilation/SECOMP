@@ -23,9 +23,6 @@ Definition match_prog (p tp: RTL.program) :=
 Instance comp_transf_function: has_comp_transl transf_function.
 Proof. now intros. Qed.
 
-Instance is_external_transf_function: is_external_transl transf_fundef.
-Proof. unfold transf_fundef. intros ? [f | ef]; reflexivity. Qed.
-
 Lemma transf_program_match:
   forall p, match_prog p (transf_program p).
 Proof.
@@ -272,6 +269,8 @@ Proof.
     eapply find_function_translated; eauto.
     apply sig_preserved.
     rewrite comp_transl, COMP. eauto.
+    eapply find_function_ptr_translated; eauto.
+    eapply allowed_call_translated; eauto.
   constructor. auto.
 (* builtin *)
   econstructor; split.
@@ -303,6 +302,7 @@ Proof.
   eapply exec_function_external; eauto.
     eapply external_call_symbols_preserved; eauto.
      apply senv_preserved.
+    rewrite <- (match_stacks_call_comp _ _ STACKS); eauto.
   constructor; auto.
 (* return *)
   inv STACKS. inv H1.

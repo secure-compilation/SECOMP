@@ -455,24 +455,25 @@ Inductive step: state -> trace -> state -> Prop :=
         t (Callstate (Stackframe fb (Genv.find_comp ge (Vptr f' Ptrofs.zero)) sig sp ra c :: s)
                        f' sig rs m)
   | exec_Mtailcall:
-      forall s fb stk soff sig ros c rs m f f' m' cp cp',
+      forall s fb stk soff sig ros c rs m f f' m' fd cp,
       forall (CURCOMP: Genv.find_comp ge (Vptr fb Ptrofs.zero) = cp),
-      forall (NEXTCOMP: Genv.find_comp ge (Vptr f' Ptrofs.zero) = cp'),
       find_function_ptr ge ros rs = Some f' ->
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
       load_stack m (Vptr stk soff) Tptr f.(fn_link_ofs) (Some cp) = Some (parent_sp s) ->
       load_stack m (Vptr stk soff) Tptr f.(fn_retaddr_ofs) (Some cp) = Some (parent_ra s) ->
       Mem.free m stk 0 f.(fn_stacksize) cp = Some m' ->
-      (* forall (CALLED: Genv.find_funct_ptr ge f' = Some fd), *)
-      forall (COMP: cp = cp'),
+      forall (CALLED: Genv.find_funct_ptr ge f' = Some fd),
+      forall (COMP: comp_of fd = comp_of f),
+      forall (ALLOWED: needs_calling_comp cp = false),
+      forall (ALLOWED': Genv.allowed_call ge cp (Vptr f' Ptrofs.zero)),
       step (State s fb (Vptr stk soff) (Mtailcall sig ros :: c) rs m)
         E0 (Callstate s f' sig rs m')
   | exec_Mbuiltin:
-      forall s fb sp rs m ef args res b vargs t vres rs' m' cp,
+      forall s fb f sp rs m ef args res b vargs t vres rs' m' cp,
       forall (CURCOMP: Genv.find_comp ge (Vptr fb Ptrofs.zero) = cp),
       eval_builtin_args ge rs sp m args vargs ->
-      external_call ef ge vargs m t vres m' ->
-      forall ALLOWED: comp_of ef = cp,
+      forall (FUN: Genv.find_funct_ptr ge fb = Some (Internal f)),
+      external_call ef ge cp vargs m t vres m' ->
       rs' = set_res res vres (undef_regs (destroyed_by_builtin ef) rs) ->
       step (State s fb sp (Mbuiltin ef args res :: b) rs m)
          t (State s fb sp b rs' m')
@@ -537,7 +538,7 @@ Inductive step: state -> trace -> state -> Prop :=
       Genv.find_funct_ptr ge fb = Some (External ef) ->
       extcall_arguments rs m (parent_sp s) (ef_sig ef) args ->
       forall (COMP: call_comp s = cp),
-      external_call ef ge args m t res m' ->
+      external_call ef ge cp args m t res m' ->
       rs' = set_pair (loc_result (ef_sig ef)) res (undef_caller_save_regs rs) ->
       step (Callstate s fb sig rs m)
          t (Returnstate s rs' m')

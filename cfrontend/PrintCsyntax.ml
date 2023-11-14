@@ -234,7 +234,7 @@ let rec expr p (prec, e) =
                  expr (prec1, a1) (name_binop op) expr (prec2, a2)
   | Ecast(a1, ty) ->
       fprintf p "(%s) %a" (name_type ty) expr (prec', a1)
-  | Eassign(res, Ebuiltin(EF_inline_asm(_cp, txt, sg, clob), _, args, _), _) ->
+  | Eassign(res, Ebuiltin(EF_inline_asm(txt, sg, clob), _, args, _), _) ->
       extended_asm p txt (Some res) args clob
   | Eassign(a1, a2, _) ->
       fprintf p "%a =@ %a" expr (prec1, a1) expr (prec2, a2)
@@ -250,26 +250,26 @@ let rec expr p (prec, e) =
       fprintf p "%a,@ %a" expr (prec1, a1) expr (prec2, a2)
   | Ecall(a1, al, _) ->
       fprintf p "%a@[<hov 1>(%a)@]" expr (prec', a1) exprlist (true, al)
-  | Ebuiltin(EF_memcpy(_cp, sz, al), _, args, _) ->
+  | Ebuiltin(EF_memcpy(sz, al), _, args, _) ->
       fprintf p "__builtin_memcpy_aligned@[<hov 1>(%ld,@ %ld,@ %a)@]"
                 (camlint_of_coqint sz) (camlint_of_coqint al)
                 exprlist (true, args)
-  | Ebuiltin(EF_annot(_cp,_,txt, _), _, args, _) ->
+  | Ebuiltin(EF_annot(_,txt, _), _, args, _) ->
       fprintf p "__builtin_annot@[<hov 1>(%S%a)@]"
                 (camlstring_of_coqstring txt) exprlist (false, args)
-  | Ebuiltin(EF_annot_val(_cp,_,txt, _), _, args, _) ->
+  | Ebuiltin(EF_annot_val(_,txt, _), _, args, _) ->
       fprintf p "__builtin_annot_intval@[<hov 1>(%S%a)@]"
                 (camlstring_of_coqstring txt) exprlist (false, args)
-  | Ebuiltin(EF_external(_cp, id, sg), _, args, _) ->
+  | Ebuiltin(EF_external(id, _, sg), _, args, _) ->
       fprintf p "%s@[<hov 1>(%a)@]" (camlstring_of_coqstring id) exprlist (true, args)
-  | Ebuiltin(EF_runtime(_cp, id, sg), _, args, _) ->
+  | Ebuiltin(EF_runtime(id, sg), _, args, _) ->
       fprintf p "%s@[<hov 1>(%a)@]" (camlstring_of_coqstring id) exprlist (true, args)
-  | Ebuiltin(EF_inline_asm(_cp, txt, sg, clob), _, args, _) ->
+  | Ebuiltin(EF_inline_asm(txt, sg, clob), _, args, _) ->
       extended_asm p txt None args clob
-  | Ebuiltin(EF_debug(_cp,kind,txt,_),_,args,_) ->
+  | Ebuiltin(EF_debug(kind,txt,_),_,args,_) ->
       fprintf p "__builtin_debug@[<hov 1>(%d,%S%a)@]"
         (P.to_int kind) (extern_atom txt) exprlist (false,args)
-  | Ebuiltin(EF_builtin(_cp,name, _), _, args, _) ->
+  | Ebuiltin(EF_builtin(name, _), _, args, _) ->
       fprintf p "%s@[<hov 1>(%a)@]"
                 (camlstring_of_coqstring name) exprlist (true, args)
   | Ebuiltin(_, _, args, _) ->
@@ -430,7 +430,7 @@ let print_function p id f =
 
 let print_fundef p id fd =
   match fd with
-  | Ctypes.External((EF_external _ | EF_runtime _| EF_malloc _ | EF_free _), args, res, cconv) ->
+  | Ctypes.External((EF_external _ | EF_runtime _| EF_malloc | EF_free), args, res, cconv) ->
       fprintf p "extern %s;@ @ "
                 (name_cdecl (extern_atom id) (Tfunction(args, res, cconv)))
   | Ctypes.External(_, _, _, _) ->

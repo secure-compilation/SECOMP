@@ -25,9 +25,6 @@ Definition match_prog (prog tprog: program) :=
 Instance comp_transf_function rm: has_comp_transl (transf_function rm).
 Proof. now intro. Qed.
 
-Instance external_transf_function rm: is_external_transl (transf_fundef rm).
-Proof. now intros ? []. Qed.
-
 Lemma transf_program_match:
   forall prog, match_prog prog (transf_program prog).
 Proof.
@@ -302,19 +299,19 @@ Proof.
 Qed.
 
 Lemma builtin_strength_reduction_correct:
-  forall sp bc ae rs ef args vargs m t vres m',
+  forall cp sp bc ae rs ef args vargs m t vres m',
   ematch bc rs ae ->
   eval_builtin_args ge (fun r => rs#r) sp m args vargs ->
-  external_call ef ge vargs m t vres m' ->
+  external_call ef ge cp vargs m t vres m' ->
   exists vargs',
      eval_builtin_args ge (fun r => rs#r) sp m (builtin_strength_reduction ae ef args) vargs'
-  /\ external_call ef ge vargs' m t vres m'.
+  /\ external_call ef ge cp vargs' m t vres m'.
 Proof.
   intros.
   assert (DEFAULT: forall cl,
     exists vargs',
        eval_builtin_args ge (fun r => rs#r) sp m (builtin_args_strength_reduction ae args cl) vargs'
-    /\ external_call ef ge  vargs' m t vres m').
+    /\ external_call ef ge cp vargs' m t vres m').
   { exists vargs; split; auto. eapply builtin_args_strength_reduction_correct; eauto. }
   unfold builtin_strength_reduction.
   destruct ef; auto.
@@ -572,12 +569,12 @@ Proof.
   exploit Mem.free_parallel_extends; eauto. intros [m2' [A B]].
   exploit transf_ros_correct; eauto. intros (cu' & FIND & LINK').
   TransfInstr; intro.
-  (* exploit transf_ros_correct_ptr; eauto. intros FUNPTR'. *)
+  exploit transf_ros_correct_ptr; eauto. intros FUNPTR'.
   left; econstructor; econstructor; split.
   eapply exec_Itailcall; eauto. apply sig_function_translated; auto.
     rewrite comp_transl, COMP. symmetry. now apply (comp_transl f).
-  (* rewrite comp_transf_function. *)
-  (* eapply allowed_call_translated; eauto. *)
+  rewrite comp_transf_function.
+  eapply allowed_call_translated; eauto.
   constructor; auto.
   apply regs_lessdef_regs; auto.
 
@@ -679,7 +676,7 @@ Opaque builtin_strength_reduction.
   simpl. left; econstructor; econstructor; split.
   eapply exec_function_external; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  (* erewrite <- match_stacks_call_comp; eauto. *)
+  erewrite <- match_stacks_call_comp; eauto.
   constructor; auto.
 
 - (* return *)

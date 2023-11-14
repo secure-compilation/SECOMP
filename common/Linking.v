@@ -52,7 +52,7 @@ Definition link_fundef {F: Type} {CF: has_comp F} (fd1 fd2: fundef F) :=
       if external_function_eq ef1 ef2 then Some (External ef1) else None
   | Internal f, External ef =>
       match ef with
-      | EF_external cp id sg =>
+      | EF_external id cp sg =>
         if eq_compartment cp (comp_of f)
         then Some (Internal f)
         else None
@@ -60,7 +60,7 @@ Definition link_fundef {F: Type} {CF: has_comp F} (fd1 fd2: fundef F) :=
       end
   | External ef, Internal f =>
       match ef with
-      | EF_external cp id sg =>
+      | EF_external id cp sg =>
         if eq_compartment cp (comp_of f)
         then Some (Internal f)
         else None
@@ -70,7 +70,7 @@ Definition link_fundef {F: Type} {CF: has_comp F} (fd1 fd2: fundef F) :=
 
 Inductive linkorder_fundef {F: Type} {CF: has_comp F} : fundef F -> fundef F -> Prop :=
   | linkorder_fundef_refl: forall fd, linkorder_fundef fd fd
-  | linkorder_fundef_ext_int: forall f id sg, linkorder_fundef (External (EF_external (comp_of f) id sg)) (Internal f).
+  | linkorder_fundef_ext_int: forall f id sg, linkorder_fundef (External (EF_external id (comp_of f) sg)) (Internal f).
 
 Global Program Instance Linker_fundef (F: Type) {CP: has_comp F}: Linker (fundef F) := {
   link := link_fundef;
