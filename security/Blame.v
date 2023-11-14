@@ -1192,20 +1192,19 @@ Qed.
     s |= s1 ∈ Right -> (* in the context *)
     step1 ge1 s1 E0 s1' ->
     step1 ge2 s2 t s2' ->
-    t = E0 /\ right_state_injection s j ge1 ge2 s1' s2'.
+  exists j',
+    t = E0 /\ right_state_injection s j' ge1 ge2 s1' s2'.
   Proof.
-    intros.
+    intros j s1 s2 s1' s2' t INJ RIGHT STEP1 STEP2.
     exploit parallel_concrete; eauto.
-    intros [? [? ?]].
-    (* assert (t = E0 /\ s2' = x). *)
-    (* { clear -H2 H3. *)
-    (*   inv H2; inv H3. *)
-    (*   - admit. *)
-    (*   - inv H; inv H0; eauto. *)
-    (* } *)
-    admit.
-    (* rely on determinacy lemma with empty traces? *)
-  Admitted.
+    intros [j' [s2'' [STEP2' INJ']]].
+    destruct t as [| e [| e' t]].
+    - destruct (step1_E0_determ STEP2 STEP2').
+      eauto.
+    - exfalso. eapply step1_E0_event_False; eassumption.
+    - apply (sr_traces (semantics_receptive _)) in STEP2.
+      inv STEP2. inv H0.
+  Qed.
 
   (* Can get rid of uses of this? *)
   Lemma parallel_concrete_E0': forall j s1 s2 s1' s2' t,
@@ -1213,23 +1212,27 @@ Qed.
     s |= s1 ∈ Right -> (* in the context *)
     step1 ge2 s2 E0 s2' ->
     step1 ge1 s1 t s1' ->
-    t = E0 /\ right_state_injection s j ge1 ge2 s1' s2'.
+  exists j',
+    t = E0 /\ right_state_injection s j' ge1 ge2 s1' s2'.
   Admitted.
 
   Lemma parallel_abstract_E0_1: forall j s1 s2 s1',
     right_state_injection s j ge1 ge2 s1 s2 ->
     s |= s1 ∈ Left ->
     step1 ge1 s1 E0 s1' ->
-    right_state_injection s j ge1 ge2 s1' s2.
+  exists j',
+    right_state_injection s j' ge1 ge2 s1' s2.
   Proof.
     intros j s1 s2 s1' INJ LEFT STEP.
     inversion INJ as [? ? SIDE1 SIDE2 MEMINJ CONTINJ |]; subst; clear INJ;
       [| exfalso; eapply state_split_contra; eassumption].
     apply (step_E0_same_side STEP) in LEFT.
+    exists j. (* FIXME: this falls back to the old form of the lemma *)
     apply LeftControl; try assumption.
     - destruct MEMINJ as [DOM MEMINJ ZERO SYMB INJ BLKS].
       constructor; try assumption.
-      { clear MEMINJ ZERO SYMB INJ BLKS CONTINJ.
+      { (* NOTE: Essentially identical sub-cases *)
+        clear MEMINJ ZERO SYMB INJ BLKS CONTINJ.
         inv STEP; try assumption.
         - intros b. specialize (DOM b).
           destruct Genv.invert_symbol as [id |] eqn:INVSYM.
@@ -1317,30 +1320,32 @@ Qed.
     right_state_injection s j ge1 ge2 s1 s2 ->
     s |= s1 ∈ Left ->
     step1 ge2 s2 E0 s2' ->
-    right_state_injection s j ge1 ge2 s1 s2'.
-  Admitted.
+  exists j',
+    right_state_injection s j' ge1 ge2 s1 s2'.
+  Admitted. (* Symmetric *)
 
   (* NOTE: Currently unused by proofs below (useful for E0 star?) *)
-  Lemma parallel_abstract_E0: forall j s1 s2 s1' s2',
-    right_state_injection s j ge1 ge2 s1 s2 ->
-    s |= s1 ∈ Left ->
-    step1 ge1 s1 E0 s1' ->
-    step1 ge2 s2 E0 s2' ->
-    right_state_injection s j ge1 ge2 s1' s2'.
-  Proof.
-    intros s1 s2 s1' t rs_inj is_l step1.
-    (* inv rs_inj. *)
-    (* - admit. *)
-    (* - admit. (* contradiction *) *)
-    admit.
-  Admitted.
+  (* Lemma parallel_abstract_E0: forall j s1 s2 s1' s2', *)
+  (*   right_state_injection s j ge1 ge2 s1 s2 -> *)
+  (*   s |= s1 ∈ Left -> *)
+  (*   step1 ge1 s1 E0 s1' -> *)
+  (*   step1 ge2 s2 E0 s2' -> *)
+  (*   right_state_injection s j ge1 ge2 s1' s2'. *)
+  (* Proof. *)
+  (*   intros s1 s2 s1' t rs_inj is_l step1. *)
+  (*   (* inv rs_inj. *) *)
+  (*   (* - admit. *) *)
+  (*   (* - admit. (* contradiction *) *) *)
+  (*   admit. *)
+  (* Admitted. *)
 
   Lemma parallel_abstract_t: forall j s1 s2 s1' s2' t,
     right_state_injection s j ge1 ge2 s1 s2 ->
     s |= s1 ∈ Left ->
     step1 ge1 s1 t s1' ->
     step1 ge2 s2 t s2' ->
-    right_state_injection s j ge1 ge2 s1' s2'.
+  exists j',
+    right_state_injection s j' ge1 ge2 s1' s2'.
   Admitted.
 
 (* Lemma parallel_concrete p1 p2 scs1 scs2: *)
@@ -1429,7 +1434,8 @@ Lemma parallel_concrete_star_E0: forall {j s1 s1' s1'' s2 s2' s2'' e},
   Step (semantics1 W1) s1' (e :: nil) s1'' ->
   Star (semantics1 W2) s2 E0 s2' ->
   Step (semantics1 W2) s2' (e :: nil) s2'' ->
-  right_state_injection s j ge1 ge2 s1' s2'.
+exists j',
+  right_state_injection s j' ge1 ge2 s1' s2'.
 Proof.
   intros j s1 s1' s1'' s2 s2' s2'' e INJ RIGHT STAR1.
   revert j s1'' s2 s2' s2'' e INJ RIGHT.
@@ -1439,12 +1445,11 @@ Proof.
     revert s1' j s1'' s2'' e INJ RIGHT STEP1 STEP2.
     remember E0 as t eqn:SILENT. revert SILENT.
     induction STAR2 as [s2' | s2 t1 s2' t2 s2'' ? STEP2 STAR2 IH SILENT];
-      [now trivial |].
+      [now eauto |].
     intros -> s1' j s1'' s2''' e INJ RIGHT STEP1 STEP2'.
     symmetry in SILENT. apply Eapp_E0_inv in SILENT as [-> ->].
-    eapply IH; eauto.
     destruct (parallel_concrete_E0' _ _ _ _ _ _ INJ RIGHT STEP2 STEP1)
-      as [CONTRA _].
+      as (_ & CONTRA & _).
     discriminate.
   - intros -> j s1''' s2 s2' s2'' e INJ RIGHT STEP1' STAR2 STEP2.
     symmetry in SILENT. apply Eapp_E0_inv in SILENT as [-> ->].
@@ -1453,12 +1458,12 @@ Proof.
     induction STAR2 as [s2' | s2 t1 s2' t2 s2'' ? STEP2 STAR2 IH' SILENT].
     + intros _ j s1 s1' s1'' STEP1 STAR1 IH s1''' s2'' e INJ RIGHT STEP1' STEP2.
       destruct (parallel_concrete_E0 _ _ _ _ _ _ INJ RIGHT STEP1 STEP2)
-        as [CONTRA _].
+        as (_ & CONTRA & _).
       discriminate.
     + intros -> j s1 s1' s1'' STEP1 STAR1 IH s1''' s2''' e INJ RIGHT STEP1' STEP2'.
       symmetry in SILENT. apply Eapp_E0_inv in SILENT as [-> ->].
       destruct (parallel_concrete_E0  _ _ _ _ _ _ INJ RIGHT STEP1 STEP2)
-        as [_ INJ'].
+        as (j' & _ & INJ').
       apply (step_E0_same_side STEP1) in RIGHT.
       exact (IH eq_refl
                _ _ _ _ _ _
@@ -1472,7 +1477,8 @@ Lemma parallel_abstract_star_E0: forall {j s1 s1' s1'' s2 s2' s2'' e},
   Step (semantics1 W1) s1' (e :: nil) s1'' ->
   Star (semantics1 W2) s2 E0 s2' ->
   Step (semantics1 W2) s2' (e :: nil) s2'' ->
-  right_state_injection s j ge1 ge2 s1' s2'.
+exists j',
+  right_state_injection s j' ge1 ge2 s1' s2'.
 Proof.
   intros j s1 s1' s1'' s2 s2' s2'' e INJ LEFT STAR1.
   revert j s1'' s2 s2' s2'' e INJ LEFT.
@@ -1482,26 +1488,26 @@ Proof.
     revert s1' j s1'' s2'' e INJ LEFT STEP1 STEP2.
     remember E0 as t eqn:SILENT. revert SILENT.
     induction STAR2 as [s2' | s2 t1 s2' t2 s2'' ? STEP2 STAR2 IH SILENT];
-      [now trivial |].
+      [now eauto |].
     intros -> s1' j s1'' s2''' e INJ LEFT STEP1 STEP2'.
     symmetry in SILENT. apply Eapp_E0_inv in SILENT as [-> ->].
-    eapply IH; eauto.
-    now eapply parallel_abstract_E0_2; eauto.
+    exploit parallel_abstract_E0_2; eauto. intros [j' INJ'].
+    now eapply IH; eauto.
   - intros -> j s1''' s2 s2' s2'' e INJ LEFT STEP1' STAR2 STEP2.
     symmetry in SILENT. apply Eapp_E0_inv in SILENT as [-> ->].
     remember E0 as t eqn:SILENT.
     revert SILENT j s1''' s2'' e INJ LEFT STEP1' STEP2.
     induction STAR2 as [s2' | s2 t1 s2' t2 s2'' ? STEP2 STAR2 IH' SILENT].
     + intros _ j s1''' s2'' e INJ LEFT STEP1' STEP2.
-      assert (INJ': right_state_injection s j ge1 ge2 s1' s2') by
-        (eapply parallel_abstract_E0_1; eauto).
+      assert (exists j', right_state_injection s j' ge1 ge2 s1' s2')
+        as [j' INJ'] by (eapply parallel_abstract_E0_1; eauto).
       apply (step_E0_same_side STEP1) in LEFT.
       exact (IH eq_refl _ _ _ _ _ _
                INJ' LEFT STEP1' (star_refl _ _ _) STEP2).
     + intros -> j s1''' s2''' e INJ LEFT STEP1' STEP2'.
       symmetry in SILENT. apply Eapp_E0_inv in SILENT as [-> ->].
-      assert (INJ': right_state_injection s j ge1 ge2 s1 s2') by
-        (eapply parallel_abstract_E0_2; eauto).
+      assert (exists j', right_state_injection s j' ge1 ge2 s1 s2')
+        as [j' INJ'] by (eapply parallel_abstract_E0_2; eauto).
       exact (IH'
                STEP1 STAR1 IH eq_refl
                _ _ _ _
@@ -1515,7 +1521,8 @@ Lemma parallel_star_E0: forall {j s1 s1' s1'' s2 s2' s2'' e},
   Step (semantics1 W1) s1' (e :: nil) s1'' ->
   Star (semantics1 W2) s2 E0 s2' ->
   Step (semantics1 W2) s2' (e :: nil) s2'' ->
-  right_state_injection s j ge1 ge2 s1' s2'.
+exists j',
+  right_state_injection s j' ge1 ge2 s1' s2'.
 Proof.
   intros j s1.
   destruct (state_split_decidable s1) as [LEFT | RIGHT].
@@ -1553,11 +1560,11 @@ Proof.
   destruct (star_cons_inv (sr_traces (semantics_receptive _)) STAR2)
     as (s2_1 & s2_2 & STAR2_1 & STEP2_2 & STAR2_3).
   change (_ t t2) with (t ** t2) in STAR2_3. clear STAR2.
-  assert (RINJ' := parallel_star_E0 RINJ STAR1_1 STEP1_2 STAR2_1 STEP2_2).
+  pose proof parallel_star_E0 RINJ STAR1_1 STEP1_2 STAR2_1 STEP2_2 as [j' RINJ'].
   assert (exists j', right_state_injection s j' ge1 ge2 s1_2 s2_2)
     as [j'' RINJ'']. { (* This can be made into a helper lemma *)
     destruct (state_split_decidable s1_1) as [LEFT | RIGHT].
-    - now exploit parallel_abstract_t; eauto.
+    - exploit parallel_abstract_t; eauto.
     - exploit parallel_concrete; eauto. intros (j'' & s2_2' & STEP2_2' & RINJ'').
       assert (s2_2 = s2_2') as <-
         by exact (step1_event_determ STEP2_2 STEP2_2').
@@ -1643,16 +1650,16 @@ Proof.
   destruct (star_cons_inv (sr_traces (semantics_receptive _)) star1)
     as (s1a & s1b & star1a & step1b & _).
   clear star1.
-  revert s1 star1a part nostep2 in_prog2. elim star2 using star_E0_ind';
+  revert j s1 star1a part nostep2 in_prog2. elim star2 using star_E0_ind';
     clear s2 s2' star2.
-  - intros s2 s1 star1a.
+  - intros s2 j s1 star1a.
     assert (exists t s1a', Step (semantics1 W1) s1 t s1a') as (t & s1a' & step). {
       revert step1b. elim star1a using star_E0_ind'; now eauto. }
     intros part nostep2 in_prog2.
     apply (right_state_injection_same_side_left part) in in_prog2.
     exploit parallel_concrete; eauto. intros (j' & s2' & step2 & part').
     specialize (nostep2 _ _ step2). contradiction.
-  - intros s2 s2' s2'' step2 star2 IH s1 star1 part nostep2 in_prog2.
+  - intros s2 s2' s2'' step2 star2 IH j s1 star1 part nostep2 in_prog2.
     revert step1b IH part. elim star1 using star_E0_ind'; clear s1 s1a star1.
     + intros s1 step1b _ part.
       apply (right_state_injection_same_side_left part) in in_prog2.
@@ -1662,9 +1669,9 @@ Proof.
     + intros s1 s1a s1a' step1a star1 _ step1b IH part.
       pose proof right_state_injection_same_side_left part in_prog2 as in_prog1.
       destruct (parallel_concrete_E0 _ _ _ _ _ _ part in_prog1 step1a step2)
-        as [_ part'].
+        as (j' & _ & part').
       apply (star_E0_same_side (star_one _ _ _ _ _ step2)) in in_prog2.
-      exact (IH _ star1 part' nostep2 in_prog2).
+      exact (IH _ _ star1 part' nostep2 in_prog2).
 Qed.
 
 (* CS.s_component scs2 \in domm (prog_interface c) -> *)
