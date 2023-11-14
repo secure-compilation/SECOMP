@@ -415,7 +415,7 @@ let print_coq_function_asm p Asm.{ fn_comp; fn_sig; fn_code } =
 
 (* TODO cases *)
 let print_external_function_asm p = function
-  | EF_external (str, comp, fsig) ->
+  | EF_external (comp, str, fsig) ->
       Format.fprintf p "EF_external@ (";
       print_string_asm p str;
       Format.fprintf p ",@ ";
@@ -423,15 +423,19 @@ let print_external_function_asm p = function
       Format.fprintf p ",@ ";
       print_signature_asm p fsig;
       Format.fprintf p ")"
-  | EF_builtin (str, fsig) ->
+  | EF_builtin (comp, str, fsig) ->
       Format.fprintf p "EF_builtin@ (";
       print_string_asm p str;
       Format.fprintf p ",@ ";
+      print_ident_asm p comp;
+      Format.fprintf p ",@ ";
       print_signature_asm p fsig;
       Format.fprintf p ")"
-  | EF_runtime (str, fsig) ->
+  | EF_runtime (comp, str, fsig) ->
       Format.fprintf p "EF_runtime@ (";
       print_string_asm p str;
+      Format.fprintf p ",@ ";
+      print_ident_asm p comp;
       Format.fprintf p ",@ ";
       print_signature_asm p fsig;
       Format.fprintf p ")"

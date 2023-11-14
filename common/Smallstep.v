@@ -2644,3 +2644,100 @@ Proof.
 Qed.
 
 End THREEWAY_SIMU_DIAGRAM.
+
+Section EXTRA.
+
+(* NOTE: Can we make do with [star_E0_ind], or define this right after
+   it, without fancy notations? *)
+Lemma star_E0_ind' L (P : state L -> state L -> Prop) :
+  (forall s, P s s) ->
+  (forall s1 s2 s3, Step L s1 E0 s2 -> Star L s2 E0 s3 -> P s2 s3 -> P s1 s3) ->
+  forall s1 s2, Star L s1 E0 s2 -> P s1 s2.
+Proof.
+  intros H0 H1 s1 s2 Hstar. remember E0 as t eqn:e_t.
+  revert e_t.
+  induction Hstar as [s | s1 t1 s2 t2 s3 t Hstep Hstar IH ->].
+  - auto.
+  - intros Ht.
+    apply Eapp_E0_inv in Ht as [? ?]; subst t1 t2.
+    eapply H1; eauto.
+Qed.
+
+(* NOTE: Similarly, after [star_inv] *)
+Lemma star_app_inv L :
+  single_events L ->
+  forall s1 t1 t2 s2,
+    Star L s1 (t1 ** t2) s2 ->
+  exists s, Star L s1 t1 s /\ Star L s t2 s2.
+Proof.
+  intros Hsingle s1 t1 t2 s2 Hstar.
+  remember (t1 ** t2) as t eqn:E.
+  revert t1 t2 E.
+  induction Hstar as [s|s1 t1' s1' t2' s t' Hstep Hstar IH e].
+  - intros t1 t2 E.
+    assert (E' : t1 = E0 /\ t2 = E0).
+    { destruct t1 as [|??]; try discriminate.
+      split; eauto. }
+    destruct E'; subst t1 t2; clear E.
+    exists s; split; apply star_refl.
+  - intros t1 t2 E.
+    specialize (Hsingle _ _ _ Hstep).
+    destruct t1' as [|ev [|??]]; simpl in Hsingle; try lia; clear Hsingle.
+    + simpl in e. subst t2'.
+      destruct (IH _ _ E) as [s' [H1 H2]].
+      exists s'.
+      split; trivial.
+      now eapply star_step; eauto.
+    + simpl in e.
+      destruct t1 as [|ev' t1'].
+      * simpl in E. subst t' t2.
+        exists s1.
+        split; try apply star_refl.
+        eapply star_step; eauto.
+      * simpl in E. subst t'.
+        inv E.
+        destruct (IH _ _ eq_refl) as [s' [Hstar1 Hstar2]].
+        exists s'.
+        split; trivial.
+        eapply star_step; eauto.
+Qed.
+
+Lemma star_cons_inv L s1 e t s2 :
+  single_events L ->
+  Star L s1 (e :: t) s2 ->
+  exists s1' s2', Star L s1 E0 s1' /\ Step L s1' (e :: nil) s2' /\ Star L s2' t s2.
+Proof.
+  intros Hsingle Hstar.
+  change (e :: t) with ((e :: nil) ** t) in Hstar.
+  destruct (@star_app_inv _ Hsingle _ _ _ _ Hstar) as [s2'' [Hstar1 Hstar2]].
+  destruct (star_non_E0_split _ Hstar1 eq_refl) as [s1' [s2' [A [B C]]]].
+  exists s1', s2'. eauto using star_trans.
+Qed.
+
+(* NOTE: Similarly, after [star_forever_reactive] *)
+Lemma forever_reactive_app_inv L :
+  single_events L ->
+  forall s1 t T,
+    Forever_reactive L s1 (t *** T) ->
+  exists s2, Star L s1 t s2 /\ Forever_reactive L s2 T.
+Proof.
+  intros Hsingle s1 t T Hforever.
+  remember (t *** T) as T' eqn:E.
+  revert s1 T' E Hforever.
+  induction t as [|ev t IH]; simpl.
+  - intros s1 T' -> Hforever.
+    now exists s1; split; try apply star_refl.
+  - intros s1 T' E Hforever.
+    destruct Hforever as [s1 s2 t' T' Hstar NN Hforever].
+    unfold E0 in NN.
+    destruct t' as [|ev' t']; try congruence.
+    clear NN. inv E.
+    destruct (@star_app_inv _ Hsingle s1 (ev :: nil) t' s2 Hstar) as [s' [Hstar1 Hstar2]].
+    assert (Hforever' : Forever_reactive L s' (t' *** T')).
+    { eapply star_forever_reactive; eauto. }
+    destruct (IH _ _ H1 Hforever') as [s'' [Hstar3 Hforever'']].
+    exists s''; split; eauto.
+    eapply star_trans; eauto.
+Qed.
+
+End EXTRA.

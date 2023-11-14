@@ -270,7 +270,7 @@ Definition sel_builtin (optid: option ident) (ef: external_function)
                                (args: list Cminor.expr) :=
   match ef with
   | EF_builtin cp name sg =>
-      match lookup_builtin_function name sg with
+      match lookup_builtin_function name cp sg with
       | Some bf =>
           match optid with
           | Some id =>
@@ -478,16 +478,22 @@ Definition sel_fundef (dm: PTree.t globdef) (hf: compartment -> res helper_funct
   This ensures that the mapping remains small and that [lookup_helper]
   below is efficient. *)
 
-Definition globdef_of_interest (gd: globdef) : bool :=
+(* NOTE: [cp] argument and check should not be needed at the moment *)
+Definition globdef_of_interest (gd: globdef) (cp: compartment) : bool :=
   match gd with
-  | Gfun (External (EF_runtime cp name sg)) => true
+  | Gfun (External (EF_runtime cp' name sg)) => Pos.eqb cp cp'
   | _ => false
   end.
 
-Definition record_globdefs (defmap: PTree.t globdef) : PTree.t globdef :=
+Definition record_globdefs (defmap: PTree.t globdef) (cp: compartment) : PTree.t globdef :=
   PTree.fold
-    (fun m id gd => if globdef_of_interest gd then PTree.set id gd m else m)
+    (fun m id gd => if globdef_of_interest gd cp then PTree.set id gd m else m)
     defmap (PTree.empty globdef).
+
+(* Definition record_globdefs (defmap: Cminor.program) (cp: compartment) : PTree.t globdef := *)
+(*   List.fold_left *)
+(*     (fun m '(id, gd) => if globdef_of_interest gd cp then PTree.set id gd m else m) *)
+(*     defmap.(prog_defs) (PTree.empty globdef). *)
 
 Definition lookup_helper_aux
      (cp: compartment) (name: String.string) (sg: signature) (res: option ident)
@@ -510,22 +516,23 @@ Definition lookup_helper (globs: PTree.t globdef)
 Local Open Scope string_scope.
 
 Definition get_helpers (defmap: PTree.t globdef) (cp: compartment): res helper_functions :=
-  let globs := record_globdefs defmap in
-  do i64_dtos <- lookup_helper globs cp "__compcert_i64_dtos" sig_f_l ;
-  do i64_dtou <- lookup_helper globs cp "__compcert_i64_dtou" sig_f_l ;
-  do i64_stod <- lookup_helper globs cp "__compcert_i64_stod" sig_l_f ;
-  do i64_utod <- lookup_helper globs cp "__compcert_i64_utod" sig_l_f ;
-  do i64_stof <- lookup_helper globs cp "__compcert_i64_stof" sig_l_s ;
-  do i64_utof <- lookup_helper globs cp "__compcert_i64_utof" sig_l_s ;
-  do i64_sdiv <- lookup_helper globs cp "__compcert_i64_sdiv" sig_ll_l ;
-  do i64_udiv <- lookup_helper globs cp "__compcert_i64_udiv" sig_ll_l ;
-  do i64_smod <- lookup_helper globs cp "__compcert_i64_smod" sig_ll_l ;
-  do i64_umod <- lookup_helper globs cp "__compcert_i64_umod" sig_ll_l ;
-  do i64_shl <- lookup_helper globs cp "__compcert_i64_shl" sig_li_l ;
-  do i64_shr <- lookup_helper globs cp "__compcert_i64_shr" sig_li_l ;
-  do i64_sar <- lookup_helper globs cp "__compcert_i64_sar" sig_li_l ;
-  do i64_umulh <- lookup_helper globs cp "__compcert_i64_umulh" sig_ll_l ;
-  do i64_smulh <- lookup_helper globs cp "__compcert_i64_smulh" sig_ll_l ;
+(* Definition get_helpers (defmap: Cminor.program) (cp: compartment): res helper_functions := *)
+  let globs := record_globdefs defmap cp in
+  do i64_dtos <- lookup_helper globs cp (standard_builtin_name "__compcert_i64_dtos" cp) sig_f_l ;
+  do i64_dtou <- lookup_helper globs cp (standard_builtin_name "__compcert_i64_dtou" cp) sig_f_l ;
+  do i64_stod <- lookup_helper globs cp (standard_builtin_name "__compcert_i64_stod" cp) sig_l_f ;
+  do i64_utod <- lookup_helper globs cp (standard_builtin_name "__compcert_i64_utod" cp) sig_l_f ;
+  do i64_stof <- lookup_helper globs cp (standard_builtin_name "__compcert_i64_stof" cp) sig_l_s ;
+  do i64_utof <- lookup_helper globs cp (standard_builtin_name "__compcert_i64_utof" cp) sig_l_s ;
+  do i64_sdiv <- lookup_helper globs cp (standard_builtin_name "__compcert_i64_sdiv" cp) sig_ll_l ;
+  do i64_udiv <- lookup_helper globs cp (standard_builtin_name "__compcert_i64_udiv" cp) sig_ll_l ;
+  do i64_smod <- lookup_helper globs cp (standard_builtin_name "__compcert_i64_smod" cp) sig_ll_l ;
+  do i64_umod <- lookup_helper globs cp (standard_builtin_name "__compcert_i64_umod" cp) sig_ll_l ;
+  do i64_shl <- lookup_helper globs cp (standard_builtin_name "__compcert_i64_shl" cp) sig_li_l ;
+  do i64_shr <- lookup_helper globs cp (standard_builtin_name "__compcert_i64_shr" cp) sig_li_l ;
+  do i64_sar <- lookup_helper globs cp (standard_builtin_name "__compcert_i64_sar" cp) sig_li_l ;
+  do i64_umulh <- lookup_helper globs cp (standard_builtin_name "__compcert_i64_umulh" cp) sig_ll_l ;
+  do i64_smulh <- lookup_helper globs cp (standard_builtin_name "__compcert_i64_smulh" cp) sig_ll_l ;
   OK (mk_helper_functions
      i64_dtos i64_dtou i64_stod i64_utod i64_stof i64_utof
      i64_sdiv i64_udiv i64_smod i64_umod
@@ -533,6 +540,7 @@ Definition get_helpers (defmap: PTree.t globdef) (cp: compartment): res helper_f
      i64_umulh i64_smulh).
 
 Definition get_all_helpers (defmap: PTree.t globdef) (ls: list compartment): compartment -> res helper_functions :=
+(* Definition get_all_helpers (defmap: Cminor.program) (ls: list compartment): compartment -> res helper_functions := *)
   fun cp =>
     if @in_dec compartment Pos.eq_dec cp ls then
       do hf <- get_helpers defmap cp;
@@ -544,7 +552,12 @@ Definition get_all_helpers (defmap: PTree.t globdef) (ls: list compartment): com
 (** Conversion of programs. *)
 
 Definition sel_program (p: Cminor.program) : res program :=
+  (* FIXME: [prog_defmap] hides the multiple copies of the helper
+     functions, which share a name but live in different
+     compartments. A namespacing fix at that level may be worth
+     looking into. *)
   let dm := prog_defmap p in
   let hf := get_all_helpers dm (AST.list_comp p) in
+  (* let hf := get_all_helpers p (AST.list_comp p) in *)
   transform_partial_program (sel_fundef dm hf) p.
 

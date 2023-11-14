@@ -1728,17 +1728,17 @@ Axiom inline_assembly_properties:
 
 (** ** Combined semantics of external calls *)
 
-Definition builtin_or_external_sem cp name sg :=
-  match lookup_builtin_function name sg with
+Definition builtin_or_external_sem name cp sg :=
+  match lookup_builtin_function name cp sg with
   | Some bf => known_builtin_sem bf
   | None => external_functions_sem cp name sg
   end.
 
 Lemma builtin_or_external_sem_ok: forall name sg cp,
-  extcall_properties (builtin_or_external_sem cp name sg) cp sg.
+  extcall_properties (builtin_or_external_sem name cp sg) cp sg.
 Proof.
   unfold builtin_or_external_sem; intros. 
-  destruct (lookup_builtin_function name sg) as [bf|] eqn:L.
+  destruct (lookup_builtin_function name cp sg) as [bf|] eqn:L.
 - exploit lookup_builtin_function_sig; eauto. intros EQ; subst sg.
   apply known_builtin_ok.
 - apply external_functions_properties.
@@ -1770,8 +1770,8 @@ This predicate is used in the semantics of all CompCert languages. *)
 Definition external_call (ef: external_function): extcall_sem :=
   match ef with
   | EF_external cp name sg  => external_functions_sem cp name sg
-  | EF_builtin cp name sg      => builtin_or_external_sem cp name sg
-  | EF_runtime cp name sg      => builtin_or_external_sem cp name sg
+  | EF_builtin cp name sg      => builtin_or_external_sem name cp sg
+  | EF_runtime cp name sg      => builtin_or_external_sem name cp sg
   | EF_vload cp chunk          => volatile_load_sem cp chunk
   | EF_vstore cp chunk         => volatile_store_sem cp chunk
   | EF_malloc cp                => extcall_malloc_sem cp
@@ -2238,3 +2238,55 @@ Section INFORM_TRACES_PRESERVED.
   Qed.
 
 End INFORM_TRACES_PRESERVED.
+
+Section DETERMINISM.
+
+  Lemma eventval_list_match_determ: forall {ge vl1 vl2 ty vargs},
+    eventval_list_match ge vl1 ty vargs ->
+    eventval_list_match ge vl2 ty vargs ->
+    vl1 = vl2.
+  Proof.
+    induction vl1 as [| v1 vl1 IH];
+      intros vl2 ty vargs MATCH1 MATCH2.
+    - inv MATCH1. inv MATCH2. reflexivity.
+    - inv MATCH1. inv MATCH2.
+      f_equal.
+      + (* This could be its own lemma *)
+        inv H1; inv H5; try reflexivity.
+        destruct (Senv.find_symbol_injective _ _ _ H0 H8). reflexivity.
+      + eapply IH; eassumption.
+  Qed.
+
+  Lemma call_trace_determ:
+    forall {F V} {ge: Genv.t F V} {cp cp' vf vargs ty t1 t2},
+      call_trace ge cp cp' vf vargs ty t1 ->
+      call_trace ge cp cp' vf vargs ty t2 ->
+      t1 = t2.
+  Proof.
+    intros F V ge cp cp' vf vargs ty t1 t2 CALL1 CALL2.
+    inv CALL1; inv CALL2.
+    - reflexivity.
+    - contradiction.
+    - contradiction.
+    - injection H3 as <- <-.
+      rewrite H1 in H4. injection H4 as <-.
+      destruct (eventval_list_match_determ H2 H5).
+      reflexivity.
+  Qed.
+
+  Lemma return_trace_determ:
+    forall {F V} {ge: Genv.t F V} {cp cp' v ty t1 t2},
+      return_trace ge cp cp' v ty t1 ->
+      return_trace ge cp cp' v ty t2 ->
+      t1 = t2.
+  Proof.
+  intros F V ge cp cp' v ty t1 t2 RET1 RET2.
+  inv RET1; inv RET2.
+  - reflexivity.
+  - contradiction.
+  - contradiction.
+  - inv H0; inv H2; try reflexivity.
+    destruct (Senv.find_symbol_injective _ _ _ H6 H10). reflexivity.
+  Qed.
+
+End DETERMINISM.

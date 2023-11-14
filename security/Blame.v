@@ -88,7 +88,7 @@ Section Equivalence.
   Variable s: split.
   Variable j: meminj.
 
-  Definition same_domain (ge1 ge2: genv) (m1 m2: mem) :=
+  Definition same_domain (ge1: genv) (m1: mem) :=
     let H := Mem.has_side_block in
     forall b,
       match Genv.invert_symbol ge1 b with
@@ -100,6 +100,55 @@ Section Equivalence.
       | None =>
           j b <> None <-> (s, m1) |= b ∈ Right
       end.
+
+  Lemma same_domain_free m b lo hi cp m' ge
+    (FREE : Mem.free m b lo hi cp = Some m')
+    (BLOCKS : same_domain ge m) :
+    same_domain ge m'.
+  Proof.
+    intros b'. specialize (BLOCKS b').
+    destruct Genv.invert_symbol as [id |] eqn:INVSYM.
+    - destruct Senv.public_symbol eqn:PUBSYM;
+        [assumption |].
+      split.
+      + intros j_b'. destruct BLOCKS as [BLOCKS _]. specialize (BLOCKS j_b').
+        simpl in *. destruct (Mem.block_compartment m b') as [cp' |] eqn:COMP;
+          [| contradiction].
+        rewrite (Mem.free_can_access_block_inj_1 _ _ _ _ _ _ FREE _ (Some _) COMP).
+        assumption.
+      + intros RIGHT. destruct BLOCKS as [_ BLOCKS]. simpl in *.
+        destruct (Mem.block_compartment m' b') as [cp' |] eqn:COMP';
+          [| contradiction].
+        rewrite (Mem.free_can_access_block_inj_2 _ _ _ _ _ _ FREE _ (Some _) COMP')
+          in BLOCKS.
+        exact (BLOCKS RIGHT).
+    - split. (* Same proof as above *)
+      + intros j_b'. destruct BLOCKS as [BLOCKS _]. specialize (BLOCKS j_b').
+        simpl in *. destruct (Mem.block_compartment m b') as [cp' |] eqn:COMP;
+          [| contradiction].
+        rewrite (Mem.free_can_access_block_inj_1 _ _ _ _ _ _ FREE _ (Some _) COMP).
+        assumption.
+      + intros RIGHT. destruct BLOCKS as [_ BLOCKS]. simpl in *.
+        destruct (Mem.block_compartment m' b') as [cp' |] eqn:COMP';
+          [| contradiction].
+        rewrite (Mem.free_can_access_block_inj_2 _ _ _ _ _ _ FREE _ (Some _) COMP')
+          in BLOCKS.
+        exact (BLOCKS RIGHT).
+  Qed.
+
+  Lemma same_domain_free_list m bs cp m' ge
+    (FREE : Mem.free_list m bs cp = Some m')
+    (BLOCKS : same_domain ge m) :
+    same_domain ge m'.
+  Proof.
+    revert m cp m' ge FREE BLOCKS.
+    induction bs as [| [[b lo] hi] ? IH]; intros.
+    - now inv FREE.
+    - simpl in FREE.
+      destruct (Mem.free m b lo hi cp) as [m1 |] eqn:FREE1; [| discriminate].
+      eapply same_domain_free in FREE1; [| exact BLOCKS].
+      now eapply IH; eauto.
+  Qed.
 
   Definition same_blocks (ge: genv) (m: mem) :=
     forall b cp, Genv.find_comp_of_block ge b = Some cp ->
@@ -123,8 +172,31 @@ Section Equivalence.
     erewrite Mem.storebytes_block_compartment; eauto.
   Qed.
 
+  Lemma same_blocks_free m b lo hi cp m' ge
+    (FREE : Mem.free m b lo hi cp = Some m')
+    (BLOCKS : same_blocks ge m) :
+    same_blocks ge m'.
+  Proof.
+    intros b' cp' FIND. specialize (BLOCKS b' cp' FIND).
+    exact (Mem.free_can_access_block_inj_1 _ _ _ _ _ _ FREE _ (Some _) BLOCKS).
+  Qed.
+
+  Lemma same_blocks_free_list m bs cp m' ge
+    (FREE : Mem.free_list m bs cp = Some m')
+    (BLOCKS : same_blocks ge m) :
+    same_blocks ge m'.
+  Proof.
+    revert m cp m' ge FREE BLOCKS.
+    induction bs as [| [[b lo] hi] ? IH]; intros.
+    - now inv FREE.
+    - simpl in FREE.
+      destruct (Mem.free m b lo hi cp) as [m1 |] eqn:FREE1; [| discriminate].
+      eapply same_blocks_free in FREE1; [| exact BLOCKS].
+      now eapply IH; eauto.
+  Qed.
+
   Record right_mem_injection (ge1 ge2: genv) (m1 m2: mem) : Prop :=
-    { same_dom: same_domain ge1 ge2 m1 m2;
+    { same_dom: same_domain ge1 m1;
       partial_mem_inject: Mem.inject j m1 m2;
       j_delta_zero: Mem.delta_zero j;
       same_symb: symbols_inject j ge1 ge2;
@@ -294,6 +366,9 @@ Section Simulation.
 
   Hypothesis match_W1_W2: match_prog s W1 W2.
 
+  Hypothesis W1_ini: exists s, Smallstep.initial_state (semantics1 W1) s.
+  Hypothesis W2_ini: exists s, Smallstep.initial_state (semantics1 W2) s.
+
   (* Context (ge1 ge2: genv). *)
   Notation ge1 := (globalenv W1).
   Notation ge2 := (globalenv W2).
@@ -302,6 +377,95 @@ Section Simulation.
     forall (s: ident), Genv.find_symbol ge2 s = Genv.find_symbol ge1 s.
   Proof (Genv.find_symbol_match match_W1_W2).
 *)
+
+(** New helpers *)
+
+Lemma state_split_decidable:
+  forall st, s |= st ∈ Left \/ s |= st ∈ Right.
+Proof.
+  intros [].
+  - simpl. destruct (s (comp_of f)); auto.
+  - simpl. destruct (s (comp_of fd)); auto.
+  - simpl. destruct (s cp); auto.
+Qed.
+
+Lemma state_split_contra:
+  forall st, s |= st ∈ Left -> s |= st ∈ Right -> False.
+Proof.
+  intros [].
+  - simpl. destruct (s (comp_of f)); discriminate.
+  - simpl. destruct (s (comp_of fd)); discriminate.
+  - simpl. destruct (s cp); discriminate.
+Qed.
+
+Lemma step_E0_same_side: forall {p s1 s2 sd},
+  Step (semantics1 p) s1 E0 s2 ->
+  s |= s1 ∈ sd <-> s |= s2 ∈ sd.
+Proof.
+  intros p s1 s2 sd STEP.
+  inv STEP; try easy.
+  - inv EV. unfold Genv.type_of_call in H4.
+    destruct (_ =? _)%positive eqn:EQ; [| contradiction].
+    simpl. apply Pos.eqb_eq in EQ. rewrite EQ.
+    easy.
+  - inv EV. unfold Genv.type_of_call in H.
+    destruct (_ =? _)%positive eqn:EQ; [| contradiction].
+    simpl. apply Pos.eqb_eq in EQ. rewrite EQ. easy.
+Qed.
+
+Lemma star_E0_same_side: forall {p s1 s2 sd},
+  Star (semantics1 p) s1 E0 s2 ->
+  s |= s1 ∈ sd <-> s |= s2 ∈ sd.
+Proof.
+  intros p s1 s2 sd STAR.
+  elim STAR using star_E0_ind; clear s1 s2 STAR.
+  - easy.
+  - intros s1 s2 s3 STEP12 IH.
+    rewrite (step_E0_same_side STEP12).
+    auto.
+Qed.
+
+Lemma right_state_injection_same_side_left: forall {j ge1 ge2 s1 s2 sd},
+  right_state_injection s j ge1 ge2 s1 s2 ->
+  s |= s2 ∈ sd ->
+  s |= s1 ∈ sd.
+Proof.
+  intros j ge1 ge2 s1 s2 sd RINJ SIDE.
+  destruct sd; inv RINJ.
+  - assumption.
+  - exfalso. eapply state_split_contra; eauto.
+  - exfalso. eapply state_split_contra; eauto.
+  - assumption.
+Qed.
+
+  (** More invariant helpers *)
+
+  Lemma same_blocks_step1 s1 s1'
+    (BLKS : same_blocks ge1 (memory_of s1))
+    (STEP : step1 ge1 s1 E0 s1'):
+    same_blocks ge1 (memory_of s1').
+  Proof.
+    inv STEP; auto.
+    - admit.
+    - intros b cp FIND.
+      specialize (BLKS b cp FIND).
+      simpl in *.
+      change (Mem.block_compartment m b = Some cp)
+        with (Mem.can_access_block m b (Some cp)) in BLKS.
+      exploit external_call_can_access_block; eauto.
+    - eapply same_blocks_free_list; eauto.
+    - eapply same_blocks_free_list; eauto.
+    - eapply same_blocks_free_list; eauto.
+    - admit.
+    - intros b cp FIND.
+      specialize (BLKS b cp FIND).
+      simpl in *.
+      change (Mem.block_compartment m b = Some cp)
+        with (Mem.can_access_block m b (Some cp)) in BLKS.
+      exploit external_call_can_access_block; eauto.
+  Admitted.
+
+  (** *)
 
   Lemma public_symbol_preserved:
     forall id, Genv.public_symbol ge2 id = Genv.public_symbol ge1 id.
@@ -709,12 +873,154 @@ Section Simulation.
 
   Admitted.
 
+  (** Sub-invariant lemmas, mostly on injections *)
+
+  Lemma right_mem_injection_left_step_E0_1: forall j s1 s2 s1',
+    right_mem_injection s j ge1 ge2 (memory_of s1) (memory_of s2) ->
+    s |= s1 ∈ Left ->
+    step1 ge1 s1 E0 s1' ->
+  exists j',
+    right_mem_injection s j' ge1 ge2 (memory_of s1') (memory_of s2).
+  Proof.
+    intros j s1 s2 s1' MEMINJ LEFT STEP.
+    exists j. (* FIXME: this falls back to the old form of the lemma *)
+    destruct MEMINJ as [DOM MEMINJ ZERO SYMB INJ BLKS].
+    constructor; try assumption;
+      [| | eapply same_blocks_step1; eassumption].
+    { (* NOTE: Essentially identical sub-cases *)
+      clear MEMINJ ZERO SYMB INJ BLKS.
+      inv STEP; try assumption.
+      - intros b. specialize (DOM b).
+        destruct Genv.invert_symbol as [id |] eqn:INVSYM.
+        + destruct Senv.public_symbol eqn:PUBSYM; [assumption |].
+          simpl. simpl in DOM. split.
+          * intros j_b. destruct DOM as [DOM _]. specialize (DOM j_b).
+            destruct (Mem.block_compartment m b) as [cp |] eqn:COMP;
+              [| contradiction].
+            admit. (* Easy *)
+          * intros RIGHT. destruct DOM as [_ DOM].
+            destruct (Mem.block_compartment m' b) as [cp' |] eqn:COMP';
+              [| contradiction].
+            destruct (Mem.block_compartment m b) as [cp |] eqn:COMP.
+            -- assert (cp = cp') as <- by admit. (* Easy *)
+               exact (DOM RIGHT).
+            -- admit. (* Easy, contra on COMP and COMP' with [assign_loc] *)
+        + simpl. simpl in DOM. split.
+          * intros j_b. destruct DOM as [DOM _]. specialize (DOM j_b).
+            destruct (Mem.block_compartment m b) as [cp |] eqn:COMP;
+              [| contradiction].
+            admit. (* Easy *)
+          * simpl. simpl in DOM. intros RIGHT. destruct DOM as [_ DOM].
+            destruct (Mem.block_compartment m' b) as [cp' |] eqn:COMP';
+              [| contradiction].
+            destruct (Mem.block_compartment m b) as [cp |] eqn:COMP.
+            -- assert (cp = cp') as <- by admit. (* Easy *)
+               exact (DOM RIGHT).
+            -- admit. (* Easy, contra on COMP and COMP' with [assign_loc] *)
+      - intros b; specialize (DOM b).
+        destruct Genv.invert_symbol as [id |] eqn:INVSYM.
+        + admit.
+        + simpl. simpl in DOM. split.
+          * intros j_b. destruct DOM as [DOM _]. specialize (DOM j_b).
+            destruct (Mem.block_compartment m b) as [cp |] eqn:COMP;
+              [| contradiction].
+            admit. (* Easy *)
+          * intros RIGHT. destruct DOM as [_ DOM].
+            destruct (Mem.block_compartment m' b) as [cp' |] eqn:COMP';
+              [| contradiction].
+            destruct (Mem.block_compartment m b) as [cp |] eqn:COMP.
+            -- assert (cp = cp') as <- by admit. (* Easy *)
+               exact (DOM RIGHT).
+            -- admit. (* If any newly allocated [b] belongs to [comp_of ef] = [comp_of f]
+                         (which is on the left), and since [b] belongs to [cp'] (which is
+                         on the right), this is a contradiction. *)
+      - eapply same_domain_free_list; eauto.
+      - eapply same_domain_free_list; eauto.
+      - eapply same_domain_free_list; eauto.
+      - inv H.
+        intros b. specialize (DOM b).
+        destruct Genv.invert_symbol as [id |] eqn:INVSYM.
+        + destruct Senv.public_symbol eqn:PUBSYM; [assumption |].
+          simpl. simpl in DOM. split.
+          * intros j_b. destruct DOM as [DOM _]. specialize (DOM j_b).
+            destruct (Mem.block_compartment m b) as [cp |] eqn:COMP;
+              [| contradiction].
+            admit. (* Easy *)
+          * intros RIGHT. destruct DOM as [_ DOM].
+            destruct (Mem.block_compartment m1 b) as [cp' |] eqn:COMP';
+              [| contradiction].
+            destruct (Mem.block_compartment m b) as [cp |] eqn:COMP.
+            -- assert (cp = cp') as <- by admit. (* Easy *)
+               exact (DOM RIGHT).
+            -- admit. (* Easy, contra on LEFT and RIGHT with H1 and H2 *)
+        + simpl. simpl in DOM. split.
+          * intros j_b. destruct DOM as [DOM _]. specialize (DOM j_b).
+            destruct (Mem.block_compartment m b) as [cp |] eqn:COMP;
+              [| contradiction].
+            admit. (* Easy *)
+          * intros RIGHT. destruct DOM as [_ DOM].
+            destruct (Mem.block_compartment m1 b) as [cp' |] eqn:COMP';
+              [| contradiction].
+            destruct (Mem.block_compartment m b) as [cp |] eqn:COMP.
+            -- assert (cp = cp') as <- by admit. (* Easy *)
+               exact (DOM RIGHT).
+            -- admit. (* Same as above sub-case *)
+      - admit. (* See [external_call] above *)
+    }
+    { clear DOM ZERO SYMB INJ BLKS.
+      inv STEP; try assumption.
+      {
+        inv MEMINJ.
+        constructor; auto.
+        admit. (* assign_loc *)
+        { intros b NOTVALID. specialize (mi_freeblocks b). simpl in *.
+          Search Mem.valid_block Mem.free_list. admit.
+        }
+        { intros b1 b1' delta1 b2 b2' delta2 ofs1 ofs2 b1_b2 j_b1 j_b2 PERM1 PERM2.
+          specialize (mi_no_overlap b1 b1' delta1 b2 b2' delta2 ofs1 ofs2 b1_b2 j_b1 j_b2).
+          simpl in *. admit.
+        }
+        admit. admit.
+      }
+      { (* New injection *)
+        admit.
+      }
+      eapply Mem.free_list_left_inject; eauto.
+      eapply Mem.free_list_left_inject; eauto.
+      eapply Mem.free_list_left_inject; eauto.
+      { admit. (* injection probably OK *) }
+      { (* New injection *)
+        admit.
+      }
+    }
+  Admitted.
+
+  Lemma right_cont_injection_left_step_E0_1: forall s1 s2 s1',
+    right_cont_injection s (cont_of s1) (cont_of s2) ->
+    s |= s1 ∈ Left ->
+    step1 ge1 s1 E0 s1' ->
+    right_cont_injection s (cont_of s1') (cont_of s2).
+  Admitted.
+
+  Lemma right_cont_injection_left_step_E0_2: forall s1 s2 s1',
+    right_cont_injection s (cont_of s1) (cont_of s2) ->
+    s |= s1 ∈ Left ->
+    step1 ge1 s1 E0 s1' ->
+    right_cont_injection s (cont_of s1') (cont_of s2).
+  Admitted. (* Symmetric *)
+
+  (* WIP *)
+  Definition abstract_step_inj (j: meminj): meminj :=
+    j.
+
+  (** Step diagram lemmas *)
+
   Lemma parallel_concrete: forall j s1 s2 s1' t,
       right_state_injection s j ge1 ge2 s1 s2 ->
       s |= s1 ∈ Right ->
-      Clight.step1 ge1 s1 t s1' ->
+      step1 ge1 s1 t s1' ->
       exists j' s2',
-        Clight.step1 ge2 s2 t s2' /\
+        step1 ge2 s2 t s2' /\
           right_state_injection s j' ge1 ge2 s1' s2'.
   Proof.
     intros j s1 s2 s1' t rs_inj is_r1 step1.
@@ -764,6 +1070,10 @@ Section Simulation.
              intros b cp b_cp.
              specialize (SAMEBLKS b cp b_cp).
              erewrite Mem.store_block_compartment; eauto.
+          ++ unfold same_blocks in *.
+             intros b cp b_cp.
+             specialize (same_blks3 b cp b_cp).
+             erewrite Mem.store_block_compartment; eauto.
       * rename b' into b1'. rename ofs' into ofs1'.
         rename H into ACCESS.
         rename H0 into align_lhs1'.
@@ -798,6 +1108,7 @@ Section Simulation.
              erewrite Mem.storebytes_block_compartment; eauto.
              exact (same_dom b).
           ++ eapply same_blocks_storebytes; eauto.
+          ++ eapply same_blocks_storebytes; eauto.
       * inv H.
         exploit Mem.load_inject; eauto using Mem.mi_inj.
         intros [? [? ?]].
@@ -820,6 +1131,7 @@ Section Simulation.
              erewrite Mem.store_block_compartment; eauto.
              exact (same_dom b).
           ++ now constructor.
+          ++ eapply same_blocks_store; eauto.
           ++ eapply same_blocks_store; eauto.
     + (* step_set *)
       exploit eval_expr_injection; eauto.
@@ -919,21 +1231,23 @@ Section Simulation.
         { right. rewrite evf2. simpl. exists id, (comp_of fd2).
           split.
           { now apply Genv.find_invert_symbol. }
-          unfold Genv.find_comp. rewrite <- evf2. unfold ge2 in find_vf2'.
-          simpl in find_vf2'. rewrite find_vf2'. split; trivial.
-
+          (* unfold Genv.find_comp. rewrite <- evf2. unfold ge2 in find_vf2'. *)
+          (* simpl in find_vf2'. rewrite find_vf2'. split; trivial. *)
+          admit.
+        }
 
         exists j, (Callstate fd2 vargs2 (Kcall optid f e2 le2 k2) m2).
-        split.
-        econstructor; eauto.
+        (* split. *)
+        (* econstructor; eauto. *)
+        admit.
       * rename fd1 into fd.
         rename type_fd1 into type_fd.
-        rewrite comp_vf1 in *.
+        (* rewrite comp_vf1 in *. *)
         exploit find_funct_preserved; eauto.
         { eapply same_symb; eauto. }
         intros find_vf2.
-        assert (Genv.find_comp ge2 vf2 = comp_of fd) as comp_vf2.
-        { unfold Genv.find_comp. now rewrite find_vf2. }
+        (* assert (Genv.find_comp ge2 vf2 = comp_of fd) as comp_vf2. *)
+        (* { unfold Genv.find_comp. now rewrite find_vf2. } *)
         assert (Genv.allowed_call ge2 (comp_of f) vf2) as ALLOWED2.
         { admit. }
         exists j.
@@ -946,28 +1260,28 @@ Section Simulation.
         constructor; trivial.
         now apply right_cont_injection_kcall_right.
       (* Stopped here... *)
-      assert (vf = v') by admit. subst v'.
-      exists j; eexists; split.
-      * econstructor; eauto.
-        - inv match_fd'; eauto.
-        - exploit (Genv.match_genvs_allowed_calls match_W1_W2); eauto.
-        - eapply (Genv.match_genvs_not_ptr_list_inj); eauto.
-          exploit (Genv.match_genvs_find_comp match_W1_W2); eauto. intros <-.
-          erewrite <- (Genv.match_genvs_type_of_call); eauto.
-        - exploit (Genv.match_genvs_find_comp match_W1_W2); eauto. intros <-.
-          exploit (@call_trace_inj _ _ _ _ ge1 ge2); eauto.
-          simpl. apply Genv.globalenvs_match in match_W1_W2.
-          intros sy. pose proof (Genv.mge_symb match_W1_W2 sy). unfold Genv.find_symbol; eauto.
-      * (* Case analysis: are we changing side or not? *)
-        destruct (s (comp_of fd)) eqn:side.
-        - apply LeftControl; eauto; try now inv match_fd'; auto.
-          simpl. apply right_cont_injection_kcall_right; eauto.
-        - inv match_fd'; unfold in_side in *; simpl in *;
-            unfold comp_of in *; simpl in side; unfold comp_of in *; simpl in side;
-            try congruence.
-          apply RightControl; eauto.
-          constructor; eauto.
-          simpl. apply right_cont_injection_kcall_right; eauto.
+      (* assert (vf = v') by admit. subst v'. *)
+      (* exists j; eexists; split. *)
+      (* * econstructor; eauto. *)
+      (*   - inv match_fd'; eauto. *)
+      (*   - exploit (Genv.match_genvs_allowed_calls match_W1_W2); eauto. *)
+      (*   - eapply (Genv.match_genvs_not_ptr_list_inj); eauto. *)
+      (*     exploit (Genv.match_genvs_find_comp match_W1_W2); eauto. intros <-. *)
+      (*     erewrite <- (Genv.match_genvs_type_of_call); eauto. *)
+      (*   - exploit (Genv.match_genvs_find_comp match_W1_W2); eauto. intros <-. *)
+      (*     exploit (@call_trace_inj _ _ _ _ ge1 ge2); eauto. *)
+      (*     simpl. apply Genv.globalenvs_match in match_W1_W2. *)
+      (*     intros sy. pose proof (Genv.mge_symb match_W1_W2 sy). unfold Genv.find_symbol; eauto. *)
+      (* * (* Case analysis: are we changing side or not? *) *)
+      (*   destruct (s (comp_of fd)) eqn:side. *)
+      (*   - apply LeftControl; eauto; try now inv match_fd'; auto. *)
+      (*     simpl. apply right_cont_injection_kcall_right; eauto. *)
+      (*   - inv match_fd'; unfold in_side in *; simpl in *; *)
+      (*       unfold comp_of in *; simpl in side; unfold comp_of in *; simpl in side; *)
+      (*       try congruence. *)
+      (*     apply RightControl; eauto. *)
+      (*     constructor; eauto. *)
+      (*     simpl. apply right_cont_injection_kcall_right; eauto. *)
     + (* step_builtin *)
       exploit eval_exprlist_injection; eauto.
       auto.
@@ -983,36 +1297,41 @@ Section Simulation.
         - admit.
         - admit.
         - admit.
-      * destruct H10.
-        split. intros ? ? ? ?.
-        exploit H10; eauto. intros [b' [? ?]].
-        exists b'; split; eauto.
-        intros ? ?.
-        exploit H14; eauto.
+        - admit.
+        - admit.
+      * admit.
+        (* destruct H10. *)
+        (* split. intros ? ? ? ?. *)
+        (* exploit H10; eauto. intros [b' [? ?]]. *)
+        (* exists b'; split; eauto. *)
+        (* intros ? ?. *)
+        (* exploit H14; eauto. *)
       * intros ? ? ?.
-        destruct optid.
-        - simpl in *. rewrite PTree.gsspec in *.
-          destruct (peq i i0); subst.
-          inv H14. eexists; split; eauto.
-          exploit H11; eauto. intros [? [? ?]]; eauto.
-        - exploit H11; eauto. intros [? [? ?]]; eauto.
+        admit.
+        (* destruct optid. *)
+        (* - simpl in *. rewrite PTree.gsspec in *. *)
+        (*   destruct (peq i i0); subst. *)
+        (*   inv H14. eexists; split; eauto. *)
+        (*   exploit H11; eauto. intros [? [? ?]]; eauto. *)
+        (* - exploit H11; eauto. intros [? [? ?]]; eauto. *)
     + (* step_seq*)
       exists j; eexists; split; [constructor | apply RightControl]; auto.
       constructor; auto. constructor; auto.
     + (* step_skip_seq *)
-      inv H7.
+      inv RCONTINJ.
       exists j; eexists; split; [constructor | apply RightControl]; auto.
       constructor; auto.
     + (* step_continue_seq *)
-      inv H7.
+      inv RCONTINJ.
       exists j; eexists; split; [constructor | apply RightControl]; auto.
       constructor; auto.
     + (* step_break_seq *)
-      inv H7.
+      inv RCONTINJ.
       exists j; eexists; split; [constructor | apply RightControl]; auto.
       constructor; auto.
     + (* step_ifthenelse *)
       exploit eval_expr_injection; eauto.
+      admit.
       intros [v' [? ?]].
       destruct_mem_inj.
       exploit bool_val_inject; eauto. intros ?.
@@ -1022,16 +1341,16 @@ Section Simulation.
       exists j; eexists; split; [econstructor | apply RightControl]; eauto.
       constructor; auto. constructor; auto.
     + (* step_skip_or_continue_loop1 *)
-      inv H8. exists j; eexists; split; [constructor | apply RightControl]; eauto.
+      inv RCONTINJ. exists j; eexists; split; [constructor | apply RightControl]; eauto.
       constructor; auto. constructor; auto.
     + (* step_break_loop1 *)
-      inv H7. exists j; eexists; split; [apply step_break_loop1 | apply RightControl]; eauto.
+      inv RCONTINJ. exists j; eexists; split; [apply step_break_loop1 | apply RightControl]; eauto.
       constructor; auto.
     + (* step_skip_loop2 *)
-      inv H7. exists j; eexists; split; [apply step_skip_loop2 | apply RightControl]; eauto.
+      inv RCONTINJ. exists j; eexists; split; [apply step_skip_loop2 | apply RightControl]; eauto.
       constructor; auto.
     + (* step_break_loop2 *)
-      inv H7. exists j; eexists; split; [apply step_break_loop2 | apply RightControl]; eauto.
+      inv RCONTINJ. exists j; eexists; split; [apply step_break_loop2 | apply RightControl]; eauto.
       constructor; auto.
     + (* step_return_0 *)
       admit.
@@ -1041,6 +1360,7 @@ Section Simulation.
       admit.
     + (* step_switch *)
       exploit eval_expr_injection; eauto.
+      admit.
       intros [v' [? ?]].
       assert (sem_switch_arg v (typeof a) = Some n -> sem_switch_arg v' (typeof a) = Some n).
       { intros. unfold sem_switch_arg in *.
@@ -1049,10 +1369,10 @@ Section Simulation.
       constructor; auto.
       constructor; auto.
     + (* step_break_switch *)
-      inv H8. exists j; eexists; split; [constructor | apply RightControl]; eauto.
+      inv RCONTINJ. exists j; eexists; split; [constructor | apply RightControl]; eauto.
       constructor; auto.
     + (* step_continue_switch *)
-      inv H7. exists j; eexists; split; [apply step_continue_switch | apply RightControl]; eauto.
+      inv RCONTINJ. exists j; eexists; split; [apply step_continue_switch | apply RightControl]; eauto.
       constructor; auto.
     + (* step_label *)
       exists j; eexists; split; [constructor | apply RightControl]; auto.
@@ -1090,52 +1410,558 @@ Section Simulation.
     (* execution 2: call first:       x = 0 we take the else branch *)
     *)
 
+  Lemma parallel_concrete_E0: forall j s1 s2 s1' s2' t,
+    right_state_injection s j ge1 ge2 s1 s2 ->
+    s |= s1 ∈ Right -> (* in the context *)
+    step1 ge1 s1 E0 s1' ->
+    step1 ge2 s2 t s2' ->
+  exists j',
+    t = E0 /\ right_state_injection s j' ge1 ge2 s1' s2'.
+  Proof.
+    intros j s1 s2 s1' s2' t INJ RIGHT STEP1 STEP2.
+    exploit parallel_concrete; eauto.
+    intros [j' [s2'' [STEP2' INJ']]].
+    destruct t as [| e [| e' t]].
+    - destruct (step1_E0_determ STEP2 STEP2').
+      eauto.
+    - exfalso. eapply step1_E0_event_False; eassumption.
+    - apply (sr_traces (semantics_receptive _)) in STEP2.
+      inv STEP2. inv H0.
+  Qed.
 
-  Lemma parallel_concrete_E0: forall s1 s2 s1' s2' t,
-      right_state_injection s j s1 s2 ->
-      is_right s s1 -> (* in the context *)
-      Csem.step ge1 s1 E0 s1' ->
-      Csem.step ge2 s2 t s2' ->
-      t = E0 /\ right_state_injection s j s1' s2'.
-    Proof.
-      intros.
-      exploit parallel_concrete; eauto.
-      intros [? [? ?]].
-      assert (t = E0 /\ s2' = x).
-      { clear -H2 H3.
-        inv H2; inv H3.
-        - admit.
-        - inv H; inv H0; eauto.
-      }
-      (* rely on determinacy lemma with empty traces? *)
+  (* Can get rid of uses of this? *)
+  Lemma parallel_concrete_E0': forall j s1 s2 s1' s2' t,
+    right_state_injection s j ge1 ge2 s1 s2 ->
+    s |= s1 ∈ Right -> (* in the context *)
+    step1 ge2 s2 E0 s2' ->
+    step1 ge1 s1 t s1' ->
+  exists j',
+    t = E0 /\ right_state_injection s j' ge1 ge2 s1' s2'.
   Admitted.
 
-  Lemma parallel_abstract_E0: forall s1 s2 s1' s2',
-      right_state_injection s j s1 s2 ->
-      is_left s s1 ->
-      Csem.step ge1 s1 E0 s1' ->
-      Csem.step ge2 s2 E0 s2' ->
-      right_state_injection s j s1' s2'.
-    Proof.
-      intros s1 s2 s1' t rs_inj is_l step1.
-      inv rs_inj.
-      - admit.
-      - admit. (* contradiction *)
+  Lemma parallel_abstract_E0_1: forall j s1 s2 s1',
+    right_state_injection s j ge1 ge2 s1 s2 ->
+    s |= s1 ∈ Left ->
+    step1 ge1 s1 E0 s1' ->
+  exists j',
+    right_state_injection s j' ge1 ge2 s1' s2.
+  Proof.
+    intros j s1 s2 s1' INJ LEFT STEP.
+    inversion INJ as [? ? SIDE1 SIDE2 MEMINJ CONTINJ |]; subst; clear INJ;
+      [| exfalso; eapply state_split_contra; eassumption].
+    apply (step_E0_same_side STEP) in LEFT.
+    exploit right_mem_injection_left_step_E0_1; eauto. intros [j' MEMINJ'].
+    exploit right_cont_injection_left_step_E0_1; eauto. intros CONTINJ'.
+    exists j'. constructor; assumption.
+  Qed.
+
+  Lemma parallel_abstract_E0_2: forall j s1 s2 s2',
+    right_state_injection s j ge1 ge2 s1 s2 ->
+    s |= s1 ∈ Left ->
+    step1 ge2 s2 E0 s2' ->
+  exists j',
+    right_state_injection s j' ge1 ge2 s1 s2'.
+  Admitted. (* Symmetric *)
+
+  (* NOTE: Currently unused by proofs below (useful for E0 star?) *)
+  (* Lemma parallel_abstract_E0: forall j s1 s2 s1' s2', *)
+  (*   right_state_injection s j ge1 ge2 s1 s2 -> *)
+  (*   s |= s1 ∈ Left -> *)
+  (*   step1 ge1 s1 E0 s1' -> *)
+  (*   step1 ge2 s2 E0 s2' -> *)
+  (*   right_state_injection s j ge1 ge2 s1' s2'. *)
+  (* Proof. *)
+  (*   intros s1 s2 s1' t rs_inj is_l step1. *)
+  (*   (* inv rs_inj. *) *)
+  (*   (* - admit. *) *)
+  (*   (* - admit. (* contradiction *) *) *)
+  (*   admit. *)
+  (* Admitted. *)
+
+  Lemma parallel_abstract_t: forall j s1 s2 s1' s2' t,
+    right_state_injection s j ge1 ge2 s1 s2 ->
+    s |= s1 ∈ Left ->
+    step1 ge1 s1 t s1' ->
+    step1 ge2 s2 t s2' ->
+  exists j',
+    right_state_injection s j' ge1 ge2 s1' s2'.
   Admitted.
 
-  Lemma parallel_abstract_t: forall s1 s2 s1' s2' t,
-      right_state_injection s j s1 s2 ->
-      is_left s s1 ->
-      Csem.step ge1 s1 t s1' ->
-      Csem.step ge2 s2 t s2' ->
-      right_state_injection s j s1' s2'.
+(* Lemma parallel_concrete p1 p2 scs1 scs2: *)
+(*   left_side s p1 -> (* use definitions from RSC.v *) *)
+(*   left_side s p2 -> (* use definitions from RSC.v *) *)
+(*   partial_state_equivalent s scs1 scs2 -> (* to define --> using memory injections? *) *)
+(*   pc_in_left_part scs1 -> (* to define *) *)
+(*   CS.kstep (prepare_global_env (program_link p p1)) scs1 t scs1' -> (* use step of Csem instead *) *)
+(*   exists2 scs2', *)
+(*     CS.kstep (prepare_global_env (program_link p p2)) scs2 t scs2' /\ (* use step of Csem instead *) *)
+(*       partial_state_equivalent s scs1' scs2'. (* to define *) *)
 
-Lemma parallel_concrete p1 p2 scs1 scs2:
-  left_side s p1 -> (* use definitions from RSC.v *)
-  left_side s p2 -> (* use definitions from RSC.v *)
-  partial_state_equivalent s scs1 scs2 -> (* to define --> using memory injections? *)
-  pc_in_left_part scs1 -> (* to define *)
-  CS.kstep (prepare_global_env (program_link p p1)) scs1 t scs1' -> (* use step of Csem instead *)
-  exists2 scs2',
-    CS.kstep (prepare_global_env (program_link p p2)) scs2 t scs2' /\ (* use step of Csem instead *)
-      partial_state_equivalent s scs1' scs2'. (* to define *)
+Definition comp_of_event_or_default (e: event) (cp: compartment) :=
+  match e with
+  | Event_syscall _ _ _ => cp
+  | Event_vload _ _ _ _ => cp
+  | Event_vstore _ _ _ _ => cp
+  | Event_annot _ _ => cp
+  | Event_call _ cp' _ _ => cp'
+  | Event_return _ cp' _ => cp'
+  end.
+
+Fixpoint last_comp_in_trace' (t: trace) (cp: compartment): compartment :=
+  match t with
+  | nil => cp
+  | e :: t' => last_comp_in_trace' t' (comp_of_event_or_default e cp)
+  end.
+
+Definition last_comp_in_trace (t: trace): compartment :=
+  last_comp_in_trace' t default_compartment.
+
+Definition blame_on_program (t: trace) :=
+  s (last_comp_in_trace t) = Left.
+
+(** Traces and prefixes *)
+
+Inductive finpref_behavior : Type :=
+  | FTerminates (t: trace) (n: int)
+  | FGoes_wrong (t: trace)
+  | FTbc (t: trace).
+
+Definition not_wrong_finpref (m:finpref_behavior) : Prop :=
+  match m with
+  | FGoes_wrong _ => False
+  | _             => True
+  end.
+
+Definition prefix (m:finpref_behavior) (b:program_behavior) : Prop :=
+  match m, b with
+  | FTerminates t1 n1, Terminates t2 n2 => n1 = n2 /\ t1 = t2
+  | FGoes_wrong t1, Goes_wrong t2 => t1 = t2
+  | FTbc t1, b => behavior_prefix t1 b
+  | _, _ => False
+  end.
+
+Definition finpref_trace (m : finpref_behavior) : trace :=
+  match m with
+  | FTerminates t _ | FGoes_wrong t | FTbc t => t
+  end.
+
+Definition trace_finpref_prefix (t : trace) (m : finpref_behavior) : Prop :=
+  match m with
+  | FTerminates t' _ | FGoes_wrong t' | FTbc t' => trace_prefix t t'
+  end.
+
+Definition finpref_trace_prefix (m : finpref_behavior) (t : trace) : Prop :=
+  match m with
+  | FTerminates _ t' | FGoes_wrong t' => False
+  | FTbc t' => trace_prefix t' t
+  end.
+
+Definition behavior_improves_finpref (b:program_behavior) (m:finpref_behavior) :=
+  exists t, b = Goes_wrong t /\ trace_finpref_prefix t m.
+
+Definition does_prefix (L: semantics) (m: finpref_behavior) : Prop :=
+  exists b, program_behaves L b /\ prefix m b.
+
+(** Standard blame proof components *)
+
+(* parallel_concrete' goes away *)
+
+Lemma parallel_concrete_star_E0: forall {j s1 s1' s1'' s2 s2' s2'' e},
+  right_state_injection s j ge1 ge2 s1 s2 ->
+  s |= s1 ∈ Right ->
+  Star (semantics1 W1) s1 E0 s1' ->
+  Step (semantics1 W1) s1' (e :: nil) s1'' ->
+  Star (semantics1 W2) s2 E0 s2' ->
+  Step (semantics1 W2) s2' (e :: nil) s2'' ->
+exists j',
+  right_state_injection s j' ge1 ge2 s1' s2'.
+Proof.
+  intros j s1 s1' s1'' s2 s2' s2'' e INJ RIGHT STAR1.
+  revert j s1'' s2 s2' s2'' e INJ RIGHT.
+  remember E0 as t eqn:SILENT. revert SILENT.
+  induction STAR1 as [s1' | s1 t1 s1' t2 s1'' ? STEP1 STAR1 IH SILENT].
+  - intros _ j s1'' s2 s2' s2'' e INJ RIGHT STEP1 STAR2 STEP2.
+    revert s1' j s1'' s2'' e INJ RIGHT STEP1 STEP2.
+    remember E0 as t eqn:SILENT. revert SILENT.
+    induction STAR2 as [s2' | s2 t1 s2' t2 s2'' ? STEP2 STAR2 IH SILENT];
+      [now eauto |].
+    intros -> s1' j s1'' s2''' e INJ RIGHT STEP1 STEP2'.
+    symmetry in SILENT. apply Eapp_E0_inv in SILENT as [-> ->].
+    destruct (parallel_concrete_E0' _ _ _ _ _ _ INJ RIGHT STEP2 STEP1)
+      as (_ & CONTRA & _).
+    discriminate.
+  - intros -> j s1''' s2 s2' s2'' e INJ RIGHT STEP1' STAR2 STEP2.
+    symmetry in SILENT. apply Eapp_E0_inv in SILENT as [-> ->].
+    remember E0 as t eqn:SILENT.
+    revert SILENT j s1 s1' s1'' STEP1 STAR1 IH s1''' s2'' e INJ RIGHT STEP1' STEP2.
+    induction STAR2 as [s2' | s2 t1 s2' t2 s2'' ? STEP2 STAR2 IH' SILENT].
+    + intros _ j s1 s1' s1'' STEP1 STAR1 IH s1''' s2'' e INJ RIGHT STEP1' STEP2.
+      destruct (parallel_concrete_E0 _ _ _ _ _ _ INJ RIGHT STEP1 STEP2)
+        as (_ & CONTRA & _).
+      discriminate.
+    + intros -> j s1 s1' s1'' STEP1 STAR1 IH s1''' s2''' e INJ RIGHT STEP1' STEP2'.
+      symmetry in SILENT. apply Eapp_E0_inv in SILENT as [-> ->].
+      destruct (parallel_concrete_E0  _ _ _ _ _ _ INJ RIGHT STEP1 STEP2)
+        as (j' & _ & INJ').
+      apply (step_E0_same_side STEP1) in RIGHT.
+      exact (IH eq_refl
+               _ _ _ _ _ _
+               INJ' RIGHT STEP1' STAR2 STEP2').
+Qed.
+
+Lemma parallel_abstract_star_E0: forall {j s1 s1' s1'' s2 s2' s2'' e},
+  right_state_injection s j ge1 ge2 s1 s2 ->
+  s |= s1 ∈ Left ->
+  Star (semantics1 W1) s1 E0 s1' ->
+  Step (semantics1 W1) s1' (e :: nil) s1'' ->
+  Star (semantics1 W2) s2 E0 s2' ->
+  Step (semantics1 W2) s2' (e :: nil) s2'' ->
+exists j',
+  right_state_injection s j' ge1 ge2 s1' s2'.
+Proof.
+  intros j s1 s1' s1'' s2 s2' s2'' e INJ LEFT STAR1.
+  revert j s1'' s2 s2' s2'' e INJ LEFT.
+  remember E0 as t eqn:SILENT. revert SILENT.
+  induction STAR1 as [s1' | s1 t1 s1' t2 s1'' ? STEP1 STAR1 IH SILENT].
+  - intros _ j s1'' s2 s2' s2'' e INJ LEFT STEP1 STAR2 STEP2.
+    revert s1' j s1'' s2'' e INJ LEFT STEP1 STEP2.
+    remember E0 as t eqn:SILENT. revert SILENT.
+    induction STAR2 as [s2' | s2 t1 s2' t2 s2'' ? STEP2 STAR2 IH SILENT];
+      [now eauto |].
+    intros -> s1' j s1'' s2''' e INJ LEFT STEP1 STEP2'.
+    symmetry in SILENT. apply Eapp_E0_inv in SILENT as [-> ->].
+    exploit parallel_abstract_E0_2; eauto. intros [j' INJ'].
+    now eapply IH; eauto.
+  - intros -> j s1''' s2 s2' s2'' e INJ LEFT STEP1' STAR2 STEP2.
+    symmetry in SILENT. apply Eapp_E0_inv in SILENT as [-> ->].
+    remember E0 as t eqn:SILENT.
+    revert SILENT j s1''' s2'' e INJ LEFT STEP1' STEP2.
+    induction STAR2 as [s2' | s2 t1 s2' t2 s2'' ? STEP2 STAR2 IH' SILENT].
+    + intros _ j s1''' s2'' e INJ LEFT STEP1' STEP2.
+      assert (exists j', right_state_injection s j' ge1 ge2 s1' s2')
+        as [j' INJ'] by (eapply parallel_abstract_E0_1; eauto).
+      apply (step_E0_same_side STEP1) in LEFT.
+      exact (IH eq_refl _ _ _ _ _ _
+               INJ' LEFT STEP1' (star_refl _ _ _) STEP2).
+    + intros -> j s1''' s2''' e INJ LEFT STEP1' STEP2'.
+      symmetry in SILENT. apply Eapp_E0_inv in SILENT as [-> ->].
+      assert (exists j', right_state_injection s j' ge1 ge2 s1 s2')
+        as [j' INJ'] by (eapply parallel_abstract_E0_2; eauto).
+      exact (IH'
+               STEP1 STAR1 IH eq_refl
+               _ _ _ _
+               INJ' LEFT STEP1' STEP2').
+Qed.
+
+(* Related to old [context_epsilon_star_is_silent'] *)
+Lemma parallel_star_E0: forall {j s1 s1' s1'' s2 s2' s2'' e},
+  right_state_injection s j ge1 ge2 s1 s2 ->
+  Star (semantics1 W1) s1 E0 s1' ->
+  Step (semantics1 W1) s1' (e :: nil) s1'' ->
+  Star (semantics1 W2) s2 E0 s2' ->
+  Step (semantics1 W2) s2' (e :: nil) s2'' ->
+exists j',
+  right_state_injection s j' ge1 ge2 s1' s2'.
+Proof.
+  intros j s1.
+  destruct (state_split_decidable s1) as [LEFT | RIGHT].
+  - intros; eapply parallel_abstract_star_E0; eassumption.
+  - intros; eapply parallel_concrete_star_E0; eassumption.
+Qed.
+
+(* Lemma state_determinism': forall {p s s1 s2 e1 e2}, *)
+(*   step1 (globalenv p) s (e1 :: nil) s1 -> *)
+(*   step1 (globalenv p) s (e2 :: nil) s2 -> *)
+(*   e1 = e2 /\ s1 = s2. *)
+
+(* - [scs] naming scheme no longer makes sense, retooled
+   - No need for [s |= s1 ∈ Left] type assumption *)
+Lemma parallel_exec1: forall j s1 s2 s1'' s2'' t t1 t2,
+  right_state_injection s j ge1 ge2 s1 s2 ->
+  Star (semantics1 W1) s1 (t ** t1) s1'' ->
+  Star (semantics1 W2) s2 (t ** t2) s2'' ->
+  exists s1' s2' j',
+    Star (semantics1 W1) s1 t s1' /\
+    Star (semantics1 W2) s2 t s2' /\
+    Star (semantics1 W1) s1' t1 s1'' /\
+    Star (semantics1 W2) s2' t2 s2'' /\
+    right_state_injection s j' ge1 ge2 s1' s2'.
+Proof.
+  intros j s1 s2 s1'' s2'' t; revert j s1 s2 s1'' s2''.
+  induction t as [| e t IH];
+    intros j s1 s2 s1'' s2'' t1 t2 RINJ STAR1 STAR2;
+    (* Base case: follows trivially from the assumptions *)
+    [do 3 eexists; now eauto using star_refl |].
+  (* Inductive case *)
+  destruct (star_cons_inv (sr_traces (semantics_receptive _)) STAR1)
+    as (s1_1 & s1_2 & STAR1_1 & STEP1_2 & STAR1_3).
+  change (_ t t1) with (t ** t1) in STAR1_3. clear STAR1.
+  destruct (star_cons_inv (sr_traces (semantics_receptive _)) STAR2)
+    as (s2_1 & s2_2 & STAR2_1 & STEP2_2 & STAR2_3).
+  change (_ t t2) with (t ** t2) in STAR2_3. clear STAR2.
+  pose proof parallel_star_E0 RINJ STAR1_1 STEP1_2 STAR2_1 STEP2_2 as [j' RINJ'].
+  assert (exists j', right_state_injection s j' ge1 ge2 s1_2 s2_2)
+    as [j'' RINJ'']. { (* This can be made into a helper lemma *)
+    destruct (state_split_decidable s1_1) as [LEFT | RIGHT].
+    - exploit parallel_abstract_t; eauto.
+    - exploit parallel_concrete; eauto. intros (j'' & s2_2' & STEP2_2' & RINJ'').
+      assert (s2_2 = s2_2') as <-
+        by exact (step1_event_determ STEP2_2 STEP2_2').
+      now eauto. }
+  destruct (IH _ _ _ _ _ _ _ RINJ'' STAR1_3 STAR2_3)
+    as (s1' & s2' & j''' & STAR1_3_1 & STAR2_3_1 & STAR1_3_2 & STAR2_3_2 & RINJ''').
+  assert (STAR1' := star_trans
+                      (star_trans STAR1_1 (star_one _ _ _ _ _ STEP1_2) eq_refl)
+                      STAR1_3_1 eq_refl).
+  assert (STAR2' := star_trans
+                      (star_trans STAR2_1 (star_one _ _ _ _ _ STEP2_2) eq_refl)
+                      STAR2_3_1 eq_refl).
+  now eauto 8.
+Qed.
+
+Lemma parallel_exec j s1 s1' s2 s2' n t t':
+  right_state_injection s j ge1 ge2 s1 s2 ->
+  Star (semantics1 W1) s1 (t ** t') s1' ->
+  Star (semantics1 W2) s2  t        s2' ->
+  Nostep (semantics1 W2) s2' ->
+  Smallstep.final_state (semantics1 W1) s1' n ->
+  s |= s2' ∈ Right ->
+  Smallstep.final_state (semantics1 W2) s2' n.
+Proof.
+  rewrite <- (E0_right t) at 2.
+  intros part star1 star2.
+  exploit parallel_exec1; eauto.
+  clear j star1 star2 part. intros (s1'' & s2'' & (j' & _ & _ & star1 & star2 & part)).
+  clear s1 s2 t. rename s1'' into s1. rename s2'' into s2. rename j' into j.
+  intros nostep2 final1 in_prog.
+  apply (star_E0_same_side star2) in in_prog.
+  revert j s2 part star2 nostep2 final1 in_prog.
+  induction star1 as [s1 | s1 t1 s1' t2 s1'' t step1 _ IH].
+  - intros j s2 part star2 nostep2 final1 in_prog.
+    assert (final2: Smallstep.final_state (semantics1 W2) s2 n). {
+      inv part.
+      - exfalso. eapply state_split_contra; now eauto.
+      - inv final1.
+        inv H1. inv RCONTINJ. inv RVALINJ.
+        inv star2.
+        + now constructor.
+        + now inv H1. }
+    inv final2.
+    inv star2.
+    + now constructor.
+    + now inv H.
+  - intros j s2 part star2 nostep2 final1 in_prog2.
+    pose proof right_state_injection_same_side_left part in_prog2 as in_prog1.
+    pose proof parallel_concrete _ _ _ _ _ part in_prog1 step1 as pc.
+    revert part nostep2 in_prog2 IH pc.
+    elim star2 using star_E0_ind'; clear s2 s2' star2.
+    + intros s2 _ nostep2 _ _ (_ & s2' & step2 & _).
+      apply nostep2 in step2. contradiction.
+    + intros s2 s21' s2'' step21 star2 ? part nostep2 in_prog2 IH (j' & s22' & step22 & part').
+      apply (star_E0_same_side (star_one _ _ _ _ _ step21)) in in_prog2.
+      assert (s21' = s22') as <-. {
+        destruct t1 as [| e1 [| e1' t1]].
+        - exact (step1_E0_determ step21 step22).
+        - now destruct (step1_E0_event_False step21 step22).
+        - apply (sr_traces (semantics_receptive _)) in step22.
+          inv step22. now inv H2. }
+      clear step21 step22.
+      exact (IH _ _ part' star2 nostep2 final1 in_prog2).
+Qed.
+
+Lemma parallel_exec' j s1 s1' s2 s2' t e t':
+  right_state_injection s j ge1 ge2 s1 s2 ->
+  Star (semantics1 W1) s1 (t ** e :: t') s1' ->
+  Star (semantics1 W2) s2  t             s2' ->
+  Nostep (semantics1 W2) s2' ->
+  s |= s2' ∈ Left.
+Proof.
+  rewrite <- (E0_right t) at 2.
+  intros part star1 star2.
+  exploit parallel_exec1; eauto.
+  clear j star1 star2 part.
+  intros (s1'' & s2'' & (j' & _ & _ & star1 & star2 & part)) nostep2.
+  clear s1 s2 t. rename s1'' into s1. rename s2'' into s2. rename j' into j.
+  apply (star_E0_same_side star2).
+  destruct (state_split_decidable s2) as [in_prog2 | in_prog2];
+    [exact in_prog2 |].
+  exfalso.
+  destruct (star_cons_inv (sr_traces (semantics_receptive _)) star1)
+    as (s1a & s1b & star1a & step1b & _).
+  clear star1.
+  revert j s1 star1a part nostep2 in_prog2. elim star2 using star_E0_ind';
+    clear s2 s2' star2.
+  - intros s2 j s1 star1a.
+    assert (exists t s1a', Step (semantics1 W1) s1 t s1a') as (t & s1a' & step). {
+      revert step1b. elim star1a using star_E0_ind'; now eauto. }
+    intros part nostep2 in_prog2.
+    apply (right_state_injection_same_side_left part) in in_prog2.
+    exploit parallel_concrete; eauto. intros (j' & s2' & step2 & part').
+    specialize (nostep2 _ _ step2). contradiction.
+  - intros s2 s2' s2'' step2 star2 IH j s1 star1 part nostep2 in_prog2.
+    revert step1b IH part. elim star1 using star_E0_ind'; clear s1 s1a star1.
+    + intros s1 step1b _ part.
+      apply (right_state_injection_same_side_left part) in in_prog2.
+      destruct (parallel_concrete _ _ _ _ _ part in_prog2 step1b)
+        as (j' & s2a & step2' & part').
+      exact (step1_E0_event_False step2 step2').
+    + intros s1 s1a s1a' step1a star1 _ step1b IH part.
+      pose proof right_state_injection_same_side_left part in_prog2 as in_prog1.
+      destruct (parallel_concrete_E0 _ _ _ _ _ _ part in_prog1 step1a step2)
+        as (j' & _ & part').
+      apply (star_E0_same_side (star_one _ _ _ _ _ step2)) in in_prog2.
+      exact (IH _ _ star1 part' nostep2 in_prog2).
+Qed.
+
+(* CS.s_component scs2 \in domm (prog_interface c) -> *)
+(* last_comp t \in domm (prog_interface c). *)
+Lemma blame_last_comp_star p s1 t s2:
+  Smallstep.initial_state (semantics1 p) s1 ->
+  Star (semantics1 p) s1 t s2 ->
+  s |= s2 ∈ Left ->
+  blame_on_program t.
+Proof.
+Admitted. (* With default_compartment gone, needs minor adjustments *)
+
+(* - Related to old [partialize_partition]
+   - We may want to be more explicit about the initial injection *)
+Lemma initial_state_injection s1 s2 :
+  Smallstep.initial_state (semantics1 W1) s1 ->
+  Smallstep.initial_state (semantics1 W2) s2 ->
+  exists j,
+    right_state_injection s j ge1 ge2 s1 s2.
+Proof.
+Admitted. (* Another standard assumption about initial states *)
+
+(* - Quantify over p vs. W1 *)
+Lemma does_prefix_star
+  (m : finpref_behavior)
+  (Hprefix : does_prefix (semantics1 W1) m)
+  (NOT_WRONG : not_wrong_finpref m) :
+  exists (sti : Smallstep.state (semantics1 W1))
+         (stf : Smallstep.state (semantics1 W1)),
+    Smallstep.initial_state (semantics1 W1) sti /\
+    Star (semantics1 W1) sti (finpref_trace m) stf  /\
+    (forall n,
+      (exists t, m = FTerminates t n) ->
+      Smallstep.final_state (semantics1 W1) stf n).
+Proof.
+  destruct Hprefix as [b [Hb Hmb]].
+  inversion Hb as [s0 beh Hini Hbeh | Hini]; subst.
+  - inversion Hbeh as [? ? ? Hstar | ? ? Hstar | ? Hreact | ? ? Hstar]; subst.
+    (* Matching case. *)
+    + destruct m as [tm | tm | tm].
+      * simpl in *. destruct Hmb. subst.
+        exists s0, s'. split; [| split]; try assumption.
+        intros n [? EQ]. injection EQ as ?; subst. assumption.
+      * contradiction.
+      * (* This is like the contradictory cases below. *)
+        destruct Hmb as [b Hb'].
+        destruct b as [tb | tb | tb | tb];
+          try discriminate.
+        inversion Hb'; subst.
+        destruct (star_app_inv (sr_traces (semantics_receptive _)) _ _ Hstar)
+          as [s1 [Hstar1 Hstar2]].
+        exists s0, s1. split; [| split]; try assumption.
+        now intros ? [t' Hcontra].
+    (* The remaining cases are essentially identical. *)
+    + destruct m as [tm | tm | tm];
+        try contradiction.
+      destruct Hmb as [b Hb'].
+      destruct b as [tb | tb | tb | tb];
+        try discriminate.
+      inversion Hb'; subst.
+      destruct (star_app_inv (sr_traces (semantics_receptive _)) _ _ Hstar)
+        as [s1 [Hstar1 Hstar2]].
+      exists s0, s1. split; [| split]; try assumption.
+      now intros ? [t' Hcontra].
+    + destruct m as [tm | tm | tm];
+        try contradiction.
+      destruct Hmb as [b Hb'].
+      destruct b as [tb | tb | tb | tb];
+        try discriminate.
+      inversion Hb'; subst.
+      (* The only difference in this case is the lemma to be applied here. *)
+      destruct (forever_reactive_app_inv (sr_traces (semantics_receptive _)) _ _ Hreact)
+        as [s1 [Hstar Hreact']].
+      exists s0, s1. split; [| split]; try assumption.
+      now intros ? [t' Hcontra].
+    + (* Same script as Diverges. *)
+      destruct m as [tm | tm | tm];
+        try contradiction.
+      destruct Hmb as [b Hb'].
+      destruct b as [tb | tb | tb | tb];
+        try discriminate.
+      inversion Hb'; subst.
+      destruct (star_app_inv (sr_traces (semantics_receptive _)) _ _ Hstar)
+        as [s1 [Hstar1 Hstar2]].
+      exists s0, s1. split; [| split]; try assumption.
+      now intros ? [t' Hcontra].
+  - (* Contradiction on the existence of an initial state *)
+    destruct W1_ini as [s1 initial_s1]. specialize (Hini s1). contradiction.
+Qed.
+
+(* - What to say about the interfaces of p1 and p2?
+   - Closed, linkable, well-formed *)
+Lemma blame_program (m: finpref_behavior) (t': trace)
+  (HpCs_beh: program_behaves (semantics1 W2) (Goes_wrong t'))
+  (HP'_Cs_beh_new: does_prefix (semantics1 W1) m)
+  (Hnot_wrong': not_wrong_finpref m)
+  (K: trace_finpref_prefix t' m):
+  prefix m (Goes_wrong t') \/ blame_on_program t'.
+Proof.
+  apply does_prefix_star in HP'_Cs_beh_new; [| easy].
+  destruct HP'_Cs_beh_new as [sini1 [sfin1 [Hini1 [HStar1 Hfinal1']]]].
+  inversion HpCs_beh as [sini2 ? Hini2 Hstbeh2 | Hnot_initial2]; subst;
+    [| destruct W2_ini as [s2 initial_s2];
+       specialize (Hnot_initial2 s2);
+       contradiction].
+  inversion Hstbeh2 as [| | | ? sfin2 HStar2 HNostep2 Hnot_final2]; subst.
+  assert (exists j0, right_state_injection s j0 ge1 ge2 sini1 sini2)
+    as [j0 Hpartialize].
+  { apply initial_state_injection; assumption. }
+  (* Case analysis on m. FGoes_wrong can be ruled out by contradiction,
+     but also solved exactly like the others. *)
+  destruct m as [tm | tm | tm];
+    (destruct K as [tm' Htm']; subst tm;
+     unfold finpref_trace in HStar1).
+  - simpl. right.
+    assert (Hfinal1 : Smallstep.final_state (semantics1 W1) sfin1 n).
+      apply Hfinal1'. eauto.
+    (* A good amount of simplification is possible in the new proof *)
+    assert (HNostep1 : Nostep (semantics1 W1) sfin1).
+    { simpl in Hfinal1. simpl.
+      inv Hfinal1.
+      intros tcon scon Hcontra.
+      inversion Hcontra. }
+    pose proof parallel_exec _ _ _ _ _ _ _ _
+      Hpartialize
+      HStar1 HStar2 HNostep2 Hfinal1
+      as Hparallel.
+    destruct (state_split_decidable sfin2) as [Hparallel1 | Hparallel1].
+    + exact (blame_last_comp_star _ _ _ _ Hini2 HStar2 Hparallel1).
+    + specialize (Hparallel Hparallel1) as Hfinal2.
+      specialize (Hnot_final2 n). contradiction.
+  - simpl in Hnot_wrong'. contradiction.
+  - simpl. destruct tm'.
+    + left. exists (Goes_wrong nil). simpl. repeat rewrite E0_right. reflexivity.
+    + right.
+      pose proof parallel_exec' _ _ _ _ _ _ _ _
+        Hpartialize
+        HStar1 HStar2 HNostep2
+        as Hparallel.
+      eapply blame_last_comp_star; eassumption.
+Qed.
+
+Require Import Complements.
+
+Theorem blame (t m: trace):
+  clight_program_has_initial_trace W2 t ->
+  trace_prefix m t ->
+  m <> t ->
+  program_behaves (semantics1 W1) (Goes_wrong m) ->
+  blame_on_program m.
+Proof.
+Admitted.
+
+End Simulation.

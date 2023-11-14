@@ -202,8 +202,8 @@ Definition transf_instr (f: function) (an: PMap.t VA.t) (rm: romem)
       | Ibuiltin ef args res s =>
           let dfl := Ibuiltin ef (builtin_strength_reduction ae ef args) res s in
           match ef, res with
-          | EF_builtin _ name sg, BR rd =>
-              match lookup_builtin_function name sg with
+          | EF_builtin cp name sg, BR rd =>
+              match lookup_builtin_function name cp sg with
               | Some bf => 
                   match eval_static_builtin_function ae am rm bf args with
                   | Some a =>

@@ -140,8 +140,8 @@ let fixup_function_entry sg =
 
 (* Handling of annotations *)
 
-let expand_annot_val kind txt targ args res =
-  emit (Pbuiltin (EF_annot(kind,txt,[targ]), args, BR_none));
+let expand_annot_val cp kind txt targ args res =
+  emit (Pbuiltin (EF_annot(cp,kind,txt,[targ]), args, BR_none));
   match args, res with
   | [BA(IR src)], BR(IR dst) ->
      if dst <> src then emit (Pmv (dst, src))
@@ -734,15 +734,15 @@ let expand_instruction instr =
 
   | Pbuiltin (ef,args,res) ->
      begin match ef with
-     | EF_builtin (name,sg) ->
+     | EF_builtin (_cp,name,sg) ->
         expand_builtin_inline (camlstring_of_coqstring name) args res
-     | EF_vload chunk ->
+     | EF_vload (_cp,chunk) ->
         expand_builtin_vload chunk args res
-     | EF_vstore chunk ->
+     | EF_vstore (_cp,chunk) ->
         expand_builtin_vstore chunk args
-     | EF_annot_val (kind,txt,targ) ->
-        expand_annot_val kind txt targ args res
-     | EF_memcpy(sz, al) ->
+     | EF_annot_val (cp,kind,txt,targ) ->
+        expand_annot_val cp kind txt targ args res
+     | EF_memcpy(_cp,sz, al) ->
         expand_builtin_memcpy (Z.to_int sz) (Z.to_int al) args
      | EF_annot _ | EF_debug _ | EF_inline_asm _ ->
         emit instr

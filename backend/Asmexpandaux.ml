@@ -95,10 +95,10 @@ let translate_annot sp preg_to_dwarf annot =
   | [] -> None
   | a::_ -> aux a)
 
-let builtin_nop =
+let builtin_nop cp =
   let signature ={sig_args = []; sig_res = Tvoid; sig_cc = cc_default} in
   let name = coqstring_of_camlstring "__builtin_nop" in
-  Pbuiltin(EF_builtin(name,signature),[],BR_none)
+  Pbuiltin(EF_builtin(cp,name,signature),[],BR_none)
 
 let rec lbl_follows = function
   | Pbuiltin (EF_debug _, _, _):: rest ->
@@ -115,7 +115,7 @@ let expand_debug id sp preg simple l =
     | Some lbl -> lbl in
   let rec  aux lbl scopes = function
     | [] -> ()
-    | (Pbuiltin(EF_debug (kind,txt,_x),args,_) as i)::rest ->
+    | (Pbuiltin(EF_debug (_cp,kind,txt,_x),args,_) as i)::rest ->
         let kind = (P.to_int kind) in
         begin
           match kind with
@@ -152,16 +152,16 @@ let expand_debug id sp preg simple l =
           | _ ->
               aux None scopes rest
         end
-    | (Pbuiltin(EF_annot (kind, _, _),_,_) as annot)::rest ->
+    | (Pbuiltin(EF_annot (cp, kind, _, _),_,_) as annot)::rest ->
       simple annot;
       if P.to_int kind = 2 && lbl_follows rest then
-        simple builtin_nop;
+        simple (builtin_nop cp);
       aux None scopes rest
     | (Plabel lbl)::rest -> simple (Plabel lbl); aux (Some lbl) scopes rest
     | i::rest -> simple i; aux None scopes rest in
   (* We need to move all closing debug annotations before the last real statement *)
   let rec move_debug acc bcc = function
-    | (Pbuiltin(EF_debug (kind,_,_),_,_) as i)::rest ->
+    | (Pbuiltin(EF_debug (_cp,kind,_,_),_,_) as i)::rest ->
         let kind = (P.to_int kind) in
         if kind = 1 then
           move_debug acc (i::bcc) rest (* Do not move debug line *)
@@ -173,10 +173,10 @@ let expand_debug id sp preg simple l =
 
 let expand_simple simple l =
   let rec aux = function
-   | (Pbuiltin(EF_annot (kind, _, _),_,_) as annot)::rest ->
+   | (Pbuiltin(EF_annot (cp, kind, _, _),_,_) as annot)::rest ->
      simple annot;
      if P.to_int kind = 2 && lbl_follows rest then
-       simple builtin_nop;
+       simple (builtin_nop cp);
      aux rest
    | i::rest -> simple i; aux rest
    | [] -> () in

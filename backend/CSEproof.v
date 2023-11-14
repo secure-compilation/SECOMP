@@ -1258,7 +1258,7 @@ Proof.
   { exists valu. apply set_res_unknown_holds. eapply kill_all_loads_hold; eauto. }
   destruct ef.
   + apply CASE1.
-  + destruct (lookup_builtin_function name sg) as [bf|] eqn:LK.
+  + destruct (lookup_builtin_function name cp sg) as [bf|] eqn:LK.
     ++ apply CASE2. simpl in H1; red in H1; rewrite LK in H1; inv H1. auto.
     ++ apply CASE3.
   + apply CASE1.
