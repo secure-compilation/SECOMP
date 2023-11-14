@@ -180,4 +180,6 @@ Separate Extraction
    Globalenvs.Senv.invert_symbol
    Parser.translation_unit_file
    (* Back-translation code *)
-   Backtranslation.gen_program.
+   Backtranslation.gen_program
+   Values.Vnullptr
+   Memory.Mem.store'.

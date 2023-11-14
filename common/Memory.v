@@ -730,6 +730,28 @@ Next Obligation.
   eapply nextblock_compartments.
 Qed.
 
+Program Definition store' (chunk: memory_chunk) (m: mem) (b: block) (ofs: Z) (v: val) (cp : option compartment): option mem :=
+  if valid_access_dec m chunk b ofs Writable cp then
+    Some (mkmem (PMap.set b
+                          (setN (encode_val chunk v) ofs (m.(mem_contents)#b))
+                          m.(mem_contents))
+                m.(mem_access)
+                m.(mem_compartments)
+                m.(nextblock)
+                _ _ _ _)
+  else
+    None.
+Next Obligation. apply access_max. Qed.
+Next Obligation. apply nextblock_noaccess; auto. Qed.
+Next Obligation.
+  rewrite PMap.gsspec. destruct (peq b0 b).
+  rewrite setN_default. apply contents_default.
+  apply contents_default.
+Qed.
+Next Obligation.
+  eapply nextblock_compartments.
+Qed.
+
 (** [storev chunk m addr v cp] is similar, but the address and offset are given
   as a single value [addr], which must be a pointer value. *)
 
@@ -5432,7 +5454,7 @@ End Mem.
 
 Notation mem := Mem.mem.
 
-Global Opaque Mem.alloc Mem.free Mem.store Mem.load Mem.storebytes Mem.loadbytes.
+Global Opaque Mem.alloc Mem.free Mem.store Mem.store' Mem.load Mem.storebytes Mem.loadbytes.
 
 Global Hint Resolve
   Mem.valid_not_valid_diff

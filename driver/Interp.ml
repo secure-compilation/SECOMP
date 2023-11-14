@@ -274,12 +274,17 @@ module StateMap =
              let compare = compare_state
            end)
 
+(* Implementation of external functions *)
+
+let (>>=) opt f = match opt with None -> None | Some arg -> f arg
+
 (* Extract a string from a global pointer *)
 
-let extract_string m blk ofs =
+let extract_string m cp blk ofs =
   let b = Buffer.create 80 in
   let rec extract blk ofs =
-    match Mem.load Mint8unsigned m blk ofs None with
+    match Mem.load Mint8unsigned m blk ofs None (* this should be (Some cp), but string literals break right now  *)
+    with						 
     | Some(Vint n) ->
         let c = Char.chr (Z.to_int n) in
         if c = '\000' then begin
@@ -309,7 +314,7 @@ external format_int32: string -> int32 -> string
 external format_int64: string -> int64 -> string
   = "caml_int64_format"
 
-let format_value m flags length conv arg =
+let format_value m cp flags length conv arg =
   match conv.[0], length, arg with
   | ('d'|'i'|'u'|'o'|'x'|'X'|'c'), (""|"h"|"hh"|"l"|"z"|"t"), Vint i ->
       format_int32 (flags ^ conv) (camlint_of_coqint i)
@@ -324,7 +329,7 @@ let format_value m flags length conv arg =
   | ('f'|'e'|'E'|'g'|'G'|'a'), "", _ ->
       "<float argument expected"
   | 's', "", Vptr(blk, ofs) ->
-      begin match extract_string m blk ofs with
+      begin match extract_string m cp blk ofs with
       | Some s -> s
       | None -> "<bad string>"
       end
@@ -334,12 +339,14 @@ let format_value m flags length conv arg =
       Printf.sprintf "<%ld%+ld>" (P.to_int32 blk) (camlint_of_coqint ofs)
   | 'p', "", Vint i ->
       format_int32 (flags ^ "x") (camlint_of_coqint i)
+  | 'p', "", Vlong l ->
+      format_int64 (flags ^ "x") (camlint64_of_coqint l)
   | 'p', "", _ ->
       "<int or pointer argument expected>"
   | _, _, _ ->
       "<unrecognized format>"
 
-let do_printf m fmt args =
+let do_printf m cp fmt args =
 
   let b = Buffer.create 80 in
   let len = String.length fmt in
@@ -368,15 +375,62 @@ let do_printf m fmt args =
               Buffer.add_string b "<missing argument>";
               scan pos' []
           | arg :: args' ->
-              Buffer.add_string b (format_value m flags length conv arg);
+              Buffer.add_string b (format_value m cp flags length conv arg);
               scan pos' args'
         end
     end
   in scan 0 args; Buffer.contents b
 
-(* Implementation of external functions *)
+(* Emulation of fgets, with assumed stream = stdin. *)
+    
+(* Store bytestring contents into a global pointer *)
+ 
+let store_string m cp blk ofs buff size =
+  let rec store m i = 
+    if i < size then
+      Mem.store Mint8unsigned m blk
+       (Z.add ofs (Z.of_sint i))
+       (Vint (Z.of_uint (Char.code (Bytes.get buff i)))) cp >>= fun m' -> 
+      store m' (i+1) 
+    else Some m in
+  store m 0 
 
-let (>>=) opt f = match opt with None -> None | Some arg -> f arg
+let do_fgets_aux size =
+
+  let buff = Bytes.create size in 
+
+  let rec get count  =
+    if size = 0 then
+      None
+    else if count = size - 1 then 
+      (Bytes.set buff count '\000'; Some size)
+    else
+      try
+       let c = input_char stdin in
+       begin
+         Bytes.set buff count c; 
+          if c = '\n' then
+            (Bytes.set buff (count + 1) '\000'; Some (count + 2))
+         else
+           get (count + 1)
+        end          
+      with End_of_file ->
+       if count > 0 || size = 1 (* special case to match glibc behavior *) then
+         (Bytes.set buff count '\000'; Some (count + 1))
+       else   
+          None
+  in get 0 >>= fun count -> 
+     Some (buff,count)
+
+let do_fgets m cp blk ofs size =
+  match do_fgets_aux (Z.to_int size) with
+    None ->
+      Some (coq_Vnullptr, m)
+  | Some (buff,count) ->
+      store_string m cp blk ofs buff count >>= fun m' ->
+      Some (Vptr(blk,ofs), m')
+
+
 
 (* Like eventval_of_val, but accepts static globals as well *)
 
@@ -398,16 +452,21 @@ let rec convert_external_args ge vl tl =
       convert_external_args ge vl tl >>= fun el -> Some (e1 :: el)
   | _, _ -> None
 
-let do_external_function id sg ge w (* cp <- NOTE *) args m =
+let do_external_function cp id sg ge w (* cp <- NOTE *) args m =
   match camlstring_of_coqstring id, args with
   | "printf", Vptr(b, ofs) :: args' ->
-      extract_string m b ofs >>= fun fmt ->
-      let fmt' = do_printf m fmt args' in
+      extract_string m cp b ofs >>= fun fmt ->
+      let fmt' = do_printf m cp fmt args' in
       let len = coqint_of_camlint (Int32.of_int (String.length fmt')) in
       Format.print_string fmt';
       flush stdout;
       convert_external_args ge args sg.sig_args >>= fun eargs ->
       Some(((w, [Event_syscall(id, eargs, EVint len)]), Vint len), m)
+  | "fgets", Vptr(b, ofs) :: Vint siz :: args' ->
+      do_fgets m cp b ofs siz >>= fun (p,m') ->
+      convert_external_args ge args sg.sig_args >>= fun eargs ->
+      convert_external_arg ge p (proj_rettype sg.sig_res) >>= fun eres -> 
+      Some(((w, [Event_syscall(id, eargs, eres)]), p), m')   (* temporary version *)
   | _ ->
       None
 
@@ -478,7 +537,8 @@ let diagnose_stuck_expr p ge w f a kont e m =
     | RV, Ebuiltin(ef, tyargs, rargs, ty) -> diagnose_list rargs
     | _, _ -> false in
   if found then true else begin
-    let l = Cexec.step_expr ge do_external_function do_inline_assembly e w f.fn_comp k a m in
+    let l = Cexec.step_expr ge (do_external_function f.fn_comp)
+        do_inline_assembly e w f.fn_comp k a m in
     if List.exists (fun (ctx,red) -> red = Cexec.Stuckred) l then begin
       PrintCsyntax.print_pointer_hook := print_pointer ge.genv_genv e;
       fprintf p "@[<hov 2>Stuck subexpression:@ %a@]@."
@@ -512,7 +572,7 @@ let do_step p prog ge time s w =
       | First | Random -> exit (Int32.to_int (camlint_of_coqint r))
       end
   | None ->
-      let l = Cexec.do_step ge do_external_function do_inline_assembly w s in
+      let l = Cexec.do_step ge (do_external_function AST.privileged_compartment) do_inline_assembly w s in
       if l = []
       || List.exists (fun (Cexec.TR(r,t,s)) -> s = Stuckstate) l
       then begin
@@ -718,7 +778,7 @@ let do_step_asm p prog ge time s w =
       (* exit 0 *)
       None
     end else
-    match Asm.take_step do_external_function do_inline_assembly prog ge w s with
+    match Asm.take_step (do_external_function AST.privileged_compartment) do_inline_assembly prog ge w s with
     | None ->
         if !trace >= 1 then
           fprintf p "Time %d: program terminated (machine stuck)@."

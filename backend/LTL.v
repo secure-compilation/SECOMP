@@ -83,10 +83,34 @@ Definition locset := Locmap.t.
 - Local and outgoing stack slots are initialized to undefined values.
 *)
 
+Fixpoint filter_mregs rs : list mreg :=
+  match rs with
+  | nil => nil
+  | (R r) :: rs' => r :: filter_mregs rs'
+  | (S _ _ _) :: rs' => filter_mregs rs'
+  end.
+
+Definition parameters_mregs (sig: signature) : list mreg :=
+  filter_mregs (regs_of_rpairs (loc_parameters sig)).
+
+Definition in_mreg (r: mreg) (rs: list mreg) : bool :=
+  existsb (fun r' => DecidableClass.decide (r = r')) rs.
+
 Definition call_regs (caller: locset) : locset :=
   fun (l: loc) =>
     match l with
     | R r => caller (R r)
+    | S Local ofs ty => Vundef
+    | S Incoming ofs ty => caller (S Outgoing ofs ty)
+    | S Outgoing ofs ty => Vundef
+    end.
+
+Definition call_regs_ext (caller: locset) (callee_sig: signature) : locset :=
+  fun (l: loc) =>
+    match l with
+    | R r => if in_mreg r (parameters_mregs callee_sig)
+             then caller (R r)
+             else Vundef
     | S Local ofs ty => Vundef
     | S Incoming ofs ty => caller (S Outgoing ofs ty)
     | S Outgoing ofs ty => Vundef
@@ -112,6 +136,16 @@ Definition return_regs (caller callee: locset) : locset :=
     | S sl ofs ty => caller (S sl ofs ty)
     end.
 
+Definition return_regs_ext (caller callee: locset) (callee_sig: signature) : locset :=
+  fun (l: loc) =>
+    match l with
+    | R r => if in_mreg r (regs_of_rpair (loc_result callee_sig))
+             then callee (R r)
+             else Vundef (* caller (R r) *)
+    | S Outgoing ofs ty => Vundef
+    | S sl ofs ty => caller (S sl ofs ty)
+    end.
+
 (** [undef_caller_save_regs ls] models the effect of calling
     an external function: caller-save registers and outgoing locations
     can change unpredictably, hence we set them to [Vundef]. *)
@@ -123,6 +157,21 @@ Definition undef_caller_save_regs (ls: locset) : locset :=
     | S Outgoing ofs ty => Vundef
     | S sl ofs ty => ls (S sl ofs ty)
     end.
+
+(* TODO: Relocate "external" calling convention *)
+
+(* No registers are callee save in the external case (we would turn all
+   non-signature registers into caller-save, but registers for arguments and
+   return values are always caller-save already -- TODO establish formally for
+   the calling convention *)
+(* Definition callee_save_loc_ext (l: loc) := *)
+(*   match l with *)
+(*   | R r => False *)
+(*   | S sl ofs ty => sl <> Outgoing *)
+(*   end. *)
+
+(* Definition agree_callee_save_ext (ls1 ls2: Locmap.t) : Prop := *)
+(*   forall l, callee_save_loc_ext l -> ls1 l = ls2 l. *)
 
 (** LTL execution states. *)
 
@@ -156,6 +205,7 @@ Inductive state : Type :=
   | Callstate:
       forall (stack: list stackframe) (**r call stack *)
              (f: fundef)              (**r function to call *)
+             (sig: signature)         (**r signature of function to call *)
              (ls: locset)             (**r location state of caller *)
              (m: mem),                (**r memory state *)
       state
@@ -169,6 +219,12 @@ Definition call_comp (stack: list stackframe) : compartment :=
   match stack with
   | nil => default_compartment
   | Stackframe f _ _ _ _ _ :: _ => (comp_of f)
+  end.
+
+Definition callee_comp (stack: list stackframe) : compartment :=
+  match stack with
+  | nil => default_compartment (* should not happen *)
+  | Stackframe _ cp _ _ _ _ :: _ => cp
   end.
 
 
@@ -239,6 +295,12 @@ Definition parent_locset (stack: list stackframe) : locset :=
   | Stackframe f _ _ sp ls bb :: stack' => ls
   end.
 
+Definition parent_signature (stack: list stackframe) : signature :=
+  match stack with
+  | nil => signature_main
+  | Stackframe _ _ sig _ _ _ :: stack' => sig
+  end.
+
 Inductive step: state -> trace -> state -> Prop :=
   | exec_start_block: forall s f sp pc rs m bb,
       (fn_code f)!pc = Some bb ->
@@ -269,20 +331,27 @@ Inductive step: state -> trace -> state -> Prop :=
       rs' = undef_regs (destroyed_by_store chunk addr) rs ->
       step (Block s f sp (Lstore chunk addr args src :: bb) rs m)
         E0 (Block s f sp bb rs' m')
-  | exec_Lcall: forall s f sp sig ros bb rs m fd vf args t,
+  | exec_Lcall: forall s f sp sig ros bb rs m fd vf callrs args t,
       find_function ros rs = Some fd ->
       find_function_ptr ros rs = Some vf ->
       funsig fd = sig ->
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
+      forall (CALLREGS:
+               callrs =
+                 (* match Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) with *)
+                 (* | Genv.CrossCompartmentCall => call_regs_ext rs sig *)
+                 (* | _ => call_regs rs *)
+                 (* end), *)
+                 call_regs_ext rs sig),
       forall (ARGS: args = map (fun p => Locmap.getpair p
-                                   (undef_regs destroyed_at_function_entry (call_regs rs)))
+                                   (undef_regs destroyed_at_function_entry callrs))
                         (loc_parameters sig)),
       forall (NO_CROSS_PTR:
           Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) = Genv.CrossCompartmentCall ->
           List.Forall not_ptr args),
       forall (EV: call_trace ge (comp_of f) (Genv.find_comp ge vf) vf args (sig_args sig) t),
       step (Block s f sp (Lcall sig ros :: bb) rs m)
-        t (Callstate (Stackframe f (Genv.find_comp ge vf) sig sp rs bb :: s) fd rs m)
+        t (Callstate (Stackframe f (Genv.find_comp ge vf) sig sp rs bb :: s) fd sig rs m)
   | exec_Ltailcall: forall s f sp sig ros bb rs m fd rs' m',
       rs' = return_regs (parent_locset s) rs ->
       find_function ros rs' = Some fd ->
@@ -291,7 +360,7 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (COMP: comp_of fd = (comp_of f)),
       Mem.free m sp 0 f.(fn_stacksize) (comp_of f) = Some m' ->
       step (Block s f (Vptr sp Ptrofs.zero) (Ltailcall sig ros :: bb) rs m)
-        E0 (Callstate s fd rs' m')
+        E0 (Callstate s fd sig rs' m')
   | exec_Lbuiltin: forall s f sp ef args res bb rs m vargs t vres rs' m',
       eval_builtin_args ge rs sp m args vargs ->
       external_call ef ge vargs m t vres m' ->
@@ -314,20 +383,26 @@ Inductive step: state -> trace -> state -> Prop :=
       rs' = undef_regs (destroyed_by_jumptable) rs ->
       step (Block s f sp (Ljumptable arg tbl :: bb) rs m)
         E0 (State s f sp pc rs' m)
-  | exec_Lreturn: forall s f sp bb rs m m',
+  | exec_Lreturn: forall s f retrs sp bb rs m m',
       Mem.free m sp 0 f.(fn_stacksize) (comp_of f) = Some m' ->
+      forall (RETREGS:
+               retrs =
+                 return_regs_ext (parent_locset s) rs (parent_signature s)),
       step (Block s f (Vptr sp Ptrofs.zero) (Lreturn :: bb) rs m)
-        E0 (Returnstate s (return_regs (parent_locset s) rs) m')
-  | exec_function_internal: forall s f rs m m' sp rs',
+        E0 (Returnstate s retrs m')
+  | exec_function_internal: forall s f rs m m' sp callrs sig rs',
       Mem.alloc m (comp_of f) 0 f.(fn_stacksize) = (m', sp) ->
-      rs' = undef_regs destroyed_at_function_entry (call_regs rs) ->
-      step (Callstate s (Internal f) rs m)
+      forall (CALLREGS:
+               callrs =
+                 call_regs_ext rs sig),
+      rs' = undef_regs destroyed_at_function_entry callrs ->
+      step (Callstate s (Internal f) sig rs m)
         E0 (State s f (Vptr sp Ptrofs.zero) f.(fn_entrypoint) rs' m')
-  | exec_function_external: forall s ef t args res rs m rs' m',
+  | exec_function_external: forall s ef t args res rs m rs' sig m',
       args = map (fun p => Locmap.getpair p rs) (loc_arguments (ef_sig ef)) ->
       external_call ef ge args m t res m' ->
       rs' = Locmap.setpair (loc_result (ef_sig ef)) res (undef_caller_save_regs rs) ->
-      step (Callstate s (External ef) rs m)
+      step (Callstate s (External ef) sig rs m)
          t (Returnstate s rs' m')
   | exec_return: forall f sp rs1 bb s rs m cp sig t,
       forall (NO_CROSS_PTR:
@@ -351,7 +426,7 @@ Inductive initial_state (p: program): state -> Prop :=
       Genv.find_symbol ge p.(prog_main) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
       funsig f = signature_main ->
-      initial_state p (Callstate nil f (Locmap.init Vundef) m0).
+      initial_state p (Callstate nil f signature_main (Locmap.init Vundef) m0).
 
 Inductive final_state: state -> int -> Prop :=
   | final_state_intro: forall rs m retcode,

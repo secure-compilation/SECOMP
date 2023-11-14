@@ -60,6 +60,18 @@ Fixpoint restore_callee_save_rec (rl: list mreg) (ofs: Z) (k: Mach.code) :=
 Definition restore_callee_save (fe: frame_env) (k: Mach.code) :=
   restore_callee_save_rec fe.(fe_used_callee_save) fe.(fe_ofs_callee_save) k.
 
+(** Invalidate registers *)
+
+Definition invalidate_op (r: mreg) :=
+  if is_float_reg r then Ofloatconst Floats.Float.zero else Ointconst Int.zero.
+
+Fixpoint invalidate_regs (rl: list mreg) (k: Mach.code) :=
+  match rl with
+  | nil => k
+  | r :: rl =>
+      Mop (invalidate_op r) nil r :: invalidate_regs rl k
+  end.
+
 (** * Code transformation. *)
 
 (** Translation of operations and addressing mode.
