@@ -129,7 +129,8 @@ Section Equivalence.
       j_delta_zero: Mem.delta_zero j;
       same_symb: symbols_inject j ge1 ge2;
       jinjective: Mem.meminj_injective j;
-      same_blks: same_blocks ge1 m1;
+      same_blks1: same_blocks ge1 m1;
+      same_blks2: same_blocks ge2 m2;
     }.
 
 Fixpoint remove_until_right (k: cont) :=
@@ -679,8 +680,33 @@ Section Simulation.
         exploit match_prog_unique1; eauto. }
       assert (ge1_id_cp : Genv.find_comp_of_ident ge1 id = Some cp).
       { unfold Genv.find_comp_of_ident. now rewrite ge1_id, ge1_b1. }
-      admit.
-    - admit.
+      exploit same_symb; eauto.
+      intros (H1 & H2 & H3 & H4).
+      exploit H2; eauto. intros (-> & ge2_id). simpl in ge2_id.
+      unfold Genv.find_comp_of_block.
+      exploit Genv.find_symbol_find_def_inversion; eauto.
+      intros (d2 & ge2_b2). unfold ge2. simpl. unfold fundef in *. rewrite ge2_b2.
+      exploit partial_mem_inject; eauto. intros INJ.
+      exploit Mem.mi_inj; eauto. intros INJ'.
+      assert (access : Mem.can_access_block m1 b1 (Some cp)).
+      { simpl. exploit same_blks1; eauto. }
+      assert (ge2_b2' : Genv.find_comp_of_block ge2 b2 = Some (comp_of d2)).
+      { unfold Genv.find_comp_of_block, ge2. simpl. unfold fundef in *.
+        now rewrite ge2_b2. }
+      exploit same_blks2; eauto. intros m2_b2.
+      exploit Mem.mi_own; eauto. simpl. intros ?.
+      congruence.
+    - unfold Genv.allowed_cross_call in *.
+      revert cross. case vf12; try easy.
+      simpl. intros b1 _ b2 ofs2 delta j_b1 _.
+      intros (id & cp' & ge1_b1 & ge1_b1' & imp & exp).
+      exists id, cp'.
+      exploit same_symb; eauto. intros (H1 & H2 & H3 & H4). simpl in *.
+      exploit Genv.invert_find_symbol; eauto. intros ge1_id.
+      exploit H2; eauto. intros (-> & ge2_id).
+      split; [now apply Genv.find_invert_symbol|].
+
+
   Admitted.
 
   Lemma parallel_concrete: forall j s1 s2 s1' t,
@@ -822,8 +848,8 @@ Section Simulation.
       rename ALLOWED into ALLOWED1.
       rename NO_CROSS_PTR into NO_CROSS_PTR1.
       rename EV into EV1.
-      assert (Genv.find_comp ge1 vf1 = comp_of fd1) as comp_vf1.
-      { unfold Genv.find_comp. now rewrite find_vf1. }
+      assert (Genv.find_comp ge1 vf1 = Some (comp_of fd1)) as comp_vf1.
+      { now apply Genv.find_funct_find_comp. }
       exploit eval_expr_injection; eauto; eauto.
       intros [vf2 [vf1_vf2 eval_a2]].
       exploit eval_exprlist_injection; eauto; eauto.
@@ -832,8 +858,7 @@ Section Simulation.
       * (* Next function is on the left *)
         assert (CROSS1 : Genv.allowed_cross_call ge1 (comp_of f) vf1).
         { destruct ALLOWED1 as [CONTRA|CROSS1]; trivial.
-          unfold Genv.find_comp in CONTRA.
-          rewrite find_vf1 in CONTRA.
+          rewrite (Genv.find_funct_find_comp _ _ find_vf1) in CONTRA.
           congruence. }
         destruct (Genv.allowed_cross_call_public_symbol
                     _ _ _ CROSS1)
