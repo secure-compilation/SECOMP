@@ -18,11 +18,14 @@ MAIN_OBJS:=$(shell ../../tools/modorder .depend test_backtranslation.cmx)
 test_backtranslation: $(MAIN_OBJS)
 	ocamlfind ocamlopt -package qcheck,menhirLib -linkpkg $(INCLUDES) -o test_backtranslation $(LIBS) $+
 
+test_backtranslation.byte: $(MAIN_OBJS:.cmx=.cmo)
+	ocamlfind ocamlc -g -package qcheck,menhirLib -linkpkg $(INCLUDES) -o test_backtranslation.byte $(LIBS:.cmxa=.cma) $+
+
 %.cmi: %.mli
 	ocamlfind ocamlc -package qcheck,menhirLib -linkpkg $(INCLUDES) -c $<
 
-%.cmo: %ml
-	ocamlc $(INCLUDES) -c $<
+%.cmo: %.ml
+	ocamlfind ocamlc -g -package qcheck,menhirLib -linkpkg $(INCLUDES) -c $<
 
 %.cmx: %.ml
 	ocamlfind ocamlopt -package qcheck,menhirLib -linkpkg $(INCLUDES) -c $<
