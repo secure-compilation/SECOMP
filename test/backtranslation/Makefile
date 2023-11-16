@@ -41,3 +41,4 @@ clean:
 	-rm -f *.cm[ixo]
 	-rm -f *.o
 	-rm test_backtranslation
+	-rm test_backtranslation.byte

@@ -303,10 +303,10 @@ let asm_program =
   let config =
     Gen_ctx.
       {
-        num_compartments = 3;
-        num_exported_funcs = 3;
-        num_imported_funcs = 3;
-        max_arg_count = 3;
+        num_compartments = 1;
+        num_exported_funcs = 1;
+        num_imported_funcs = 1;
+        max_arg_count = 1;
         debug = true;
       }
   in

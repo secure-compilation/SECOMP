@@ -82,3 +82,5 @@
 .nia.cache
 .nra.cache
 .csdp.cache
+
+dune-project
