@@ -723,80 +723,71 @@ Qed.
   and associated operations. *)
 
 Inductive external_function : Type :=
-  | EF_external (cp: compartment) (name: string) (sg: signature)
+  | EF_external (name: string) (sg: signature)
      (** A system call or library function.  Produces an event
          in the trace. *)
-  | EF_builtin (cp: compartment) (name: string) (sg: signature)
+  | EF_builtin (name: string) (sg: signature)
      (** A compiler built-in function.  Behaves like an external, but
          can be inlined by the compiler. *)
-  | EF_runtime (cp: compartment) (name: string) (sg: signature)
+  | EF_runtime (name: string) (sg: signature)
      (** A function from the run-time library.  Behaves like an
          external, but must not be redefined. *)
-  | EF_vload (cp: compartment) (chunk: memory_chunk)
+  | EF_vload (chunk: memory_chunk)
      (** A volatile read operation.  If the address given as first argument
          points within a volatile global variable, generate an
          event and return the value found in this event.  Otherwise,
          produce no event and behave like a regular memory load. *)
-  | EF_vstore (cp: compartment) (chunk: memory_chunk)
+  | EF_vstore (chunk: memory_chunk)
      (** A volatile store operation.   If the address given as first argument
          points within a volatile global variable, generate an event.
          Otherwise, produce no event and behave like a regular memory store. *)
-  | EF_malloc (cp: compartment)
+  | EF_malloc
      (** Dynamic memory allocation.  Takes the requested size in bytes
          as argument; returns a pointer to a fresh block of the given size.
          Produces no observable event. *)
-  | EF_free (cp: compartment)
+  | EF_free
      (** Dynamic memory deallocation.  Takes a pointer to a block
          allocated by an [EF_malloc] external call and frees the
          corresponding block.
          Produces no observable event. *)
-  | EF_memcpy (cp: compartment) (sz: Z) (al: Z)
+  | EF_memcpy (sz: Z) (al: Z)
      (** Block copy, of [sz] bytes, between addresses that are [al]-aligned. *)
-  | EF_annot (cp: compartment) (kind: positive) (text: string) (targs: list typ)
+  | EF_annot (kind: positive) (text: string) (targs: list typ)
      (** A programmer-supplied annotation.  Takes zero, one or several arguments,
          produces an event carrying the text and the values of these arguments,
          and returns no value. *)
-  | EF_annot_val (cp: compartment) (kind: positive) (text: string) (targ: typ)
+  | EF_annot_val (kind: positive) (text: string) (targ: typ)
      (** Another form of annotation that takes one argument, produces
          an event carrying the text and the value of this argument,
          and returns the value of the argument. *)
-  | EF_inline_asm (cp: compartment) (text: string) (sg: signature) (clobbers: list string)
+  | EF_inline_asm (text: string) (sg: signature) (clobbers: list string)
      (** Inline [asm] statements.  Semantically, treated like an
          annotation with no parameters ([EF_annot text nil]).  To be
          used with caution, as it can invalidate the semantic
          preservation theorem.  Generated only if [-finline-asm] is
          given. *)
-  | EF_debug (cp: compartment) (kind: positive) (text: ident) (targs: list typ).
+  | EF_debug (kind: positive) (text: ident) (targs: list typ).
      (** Transport debugging information from the front-end to the generated
          assembly.  Takes zero, one or several arguments like [EF_annot].
          Unlike [EF_annot], produces no observable event. *)
 
 
-Instance has_comp_external_function : has_comp (external_function) :=
-  fun ef =>
-    match ef with
-    | EF_external cp _ _ | EF_builtin cp _ _ | EF_runtime cp _ _
-    | EF_malloc cp| EF_free cp | EF_vload cp _ | EF_vstore cp _ | EF_memcpy cp _ _
-    | EF_annot cp _ _ _ | EF_annot_val cp _ _ _ | EF_inline_asm cp _ _ _
-    | EF_debug cp _ _ _ => cp
-    end.
-
 (** The type signature of an external function. *)
 
 Definition ef_sig (ef: external_function): signature :=
   match ef with
-  | EF_external _ name sg => sg
-  | EF_builtin _ name sg => sg
-  | EF_runtime _ name sg => sg
-  | EF_vload _ chunk => mksignature (Tptr :: nil) (rettype_of_chunk chunk) cc_default
-  | EF_vstore _ chunk => mksignature (Tptr :: type_of_chunk chunk :: nil) Tvoid cc_default
-  | EF_malloc _ => mksignature (Tptr :: nil) Tptr cc_default
-  | EF_free _ => mksignature (Tptr :: nil) Tvoid cc_default
-  | EF_memcpy _ sz al => mksignature (Tptr :: Tptr :: nil) Tvoid cc_default
-  | EF_annot _ kind text targs => mksignature targs Tvoid cc_default
-  | EF_annot_val _ kind text targ => mksignature (targ :: nil) targ cc_default
-  | EF_inline_asm _ text sg clob => sg
-  | EF_debug _ kind text targs => mksignature targs Tvoid cc_default
+  | EF_external name sg => sg
+  | EF_builtin name sg => sg
+  | EF_runtime name sg => sg
+  | EF_vload chunk => mksignature (Tptr :: nil) (rettype_of_chunk chunk) cc_default
+  | EF_vstore chunk => mksignature (Tptr :: type_of_chunk chunk :: nil) Tvoid cc_default
+  | EF_malloc => mksignature (Tptr :: nil) Tptr cc_default
+  | EF_free => mksignature (Tptr :: nil) Tvoid cc_default
+  | EF_memcpy sz al => mksignature (Tptr :: Tptr :: nil) Tvoid cc_default
+  | EF_annot kind text targs => mksignature targs Tvoid cc_default
+  | EF_annot_val kind text targ => mksignature (targ :: nil) targ cc_default
+  | EF_inline_asm text sg clob => sg
+  | EF_debug kind text targs => mksignature targs Tvoid cc_default
   end.
 
 
@@ -804,26 +795,26 @@ Definition ef_sig (ef: external_function): signature :=
 
 Definition ef_inline (ef: external_function) : bool :=
   match ef with
-  | EF_external _ name sg => false
-  | EF_builtin _ name sg => true
-  | EF_runtime _ name sg => false
-  | EF_vload _ chunk => true
-  | EF_vstore _ chunk => true
-  | EF_malloc _ => false
-  | EF_free _ => false
-  | EF_memcpy _ sz al => true
-  | EF_annot _ kind text targs => true
-  | EF_annot_val _ kind Text rg => true
-  | EF_inline_asm _ text sg clob => true
-  | EF_debug _ kind text targs => true
+  | EF_external name sg => false
+  | EF_builtin name sg => true
+  | EF_runtime name sg => false
+  | EF_vload chunk => true
+  | EF_vstore chunk => true
+  | EF_malloc => false
+  | EF_free => false
+  | EF_memcpy sz al => true
+  | EF_annot kind text targs => true
+  | EF_annot_val kind Text rg => true
+  | EF_inline_asm text sg clob => true
+  | EF_debug kind text targs => true
   end.
 
 (** Whether an external function must reload its arguments. *)
 
-Definition ef_reloads(ef: external_function) : bool :=
+Definition ef_reloads (ef: external_function) : bool :=
   match ef with
-  | EF_annot _ kind text targs => false
-  | EF_debug _ kind text targs => false
+  | EF_annot kind text targs => false
+  | EF_debug kind text targs => false
   | _ => true
   end.
 
@@ -844,13 +835,6 @@ Inductive fundef (F: Type): Type :=
 
 Arguments External [F].
 
-Instance has_comp_fundef F {CF: has_comp F} : has_comp (fundef F) :=
-  fun fd =>
-    match fd with
-    | Internal f => comp_of f
-    | External ef => comp_of ef
-    end.
-
 Section TRANSF_FUNDEF.
 
 Variable A B: Type.
@@ -861,14 +845,6 @@ Definition transf_fundef (fd: fundef A): fundef B :=
   | Internal f => Internal (transf f)
   | External ef => External ef
   end.
-
-Global Instance comp_transf_fundef:
-  forall {CA: has_comp A} {CB: has_comp B}
-         {CAB: has_comp_transl transf},
-  has_comp_transl transf_fundef.
-Proof.
-  intros CA CB CAB [f|ef]; simpl; eauto using comp_transl.
-Qed.
 
 End TRANSF_FUNDEF.
 
@@ -882,15 +858,6 @@ Definition transf_partial_fundef (fd: fundef A): res (fundef B) :=
   | Internal f => do f' <- transf_partial f; OK (Internal f')
   | External ef => OK (External ef)
   end.
-
-Global Instance comp_transf_partial_fundef:
-  forall {CA: has_comp A} {CB: has_comp B}
-         {CAB: has_comp_transl_partial transf_partial},
-  has_comp_transl_partial transf_partial_fundef.
-Proof.
-  intros CA CB CAB [f|ef] tf H; simpl in *; monadInv H; trivial.
-  eauto using comp_transl_partial.
-Qed.
 
 End TRANSF_PARTIAL_FUNDEF.
 
