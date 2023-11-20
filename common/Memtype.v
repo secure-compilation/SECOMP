@@ -114,7 +114,7 @@ Parameter free: forall (m: mem) (b: block) (lo hi: Z) (cp: compartment), option 
   addresses [b, ofs] to [b, ofs + size_chunk chunk - 1] belonging to
   compartment [cp] in memory state [m].  Returns the value read, or
   [None] if the accessed addresses are not readable. *)
-Parameter load: forall (chunk: memory_chunk) (m: mem) (b: block) (ofs: Z) (cp: option compartment), option val.
+Parameter load: forall (chunk: memory_chunk) (m: mem) (b: block) (ofs: Z) (cp: compartment), option val.
 
 (** [store chunk m b ofs v cp] writes value [v] as memory quantity [chunk]
   from addresses [b, ofs] to [b, ofs + size_chunk chunk - 1] in memory state
@@ -126,7 +126,7 @@ Parameter store: forall (chunk: memory_chunk) (m: mem) (b: block) (ofs: Z) (v: v
 (** [loadv] and [storev] are variants of [load] and [store] where
   the address being accessed is passed as a value (of the [Vptr] kind). *)
 
-Definition loadv (chunk: memory_chunk) (m: mem) (addr: val) (cp: option compartment) : option val :=
+Definition loadv (chunk: memory_chunk) (m: mem) (addr: val) (cp: compartment) : option val :=
   match addr with
   | Vptr b ofs => load chunk m b (Ptrofs.unsigned ofs) cp
   | _ => None
@@ -144,7 +144,7 @@ Definition storev (chunk: memory_chunk) (m: mem) (addr v: val) (cp: compartment)
   [None] is returned if the accessed addresses are not readable,
   which includes the case where the reading compartment [cp] does not
   own block [b]. *)
-Parameter loadbytes: forall (m: mem) (b: block) (ofs n: Z) (cp: option compartment), option (list memval).
+Parameter loadbytes: forall (m: mem) (b: block) (ofs n: Z) (cp: compartment), option (list memval).
 
 (** [storebytes m b ofs bytes cp] stores the given list of bytes [bytes]
   starting at location [(b, ofs)].  Returns updated memory state
@@ -192,17 +192,17 @@ Axiom valid_not_valid_diff:
 (** [block_compartment m b] returns the compartment associated with the block
   [b] in the memory [m], or [None] if [b] is not allocated in [m]. *)
 
-Parameter block_compartment: forall (m: mem) (b: block), option compartment.
+Parameter block_compartment: forall (m: mem) (b: block), compartment.
 
 Axiom block_compartment_valid_block:
   forall (m: mem) (b: block),
-  ~valid_block m b <->
-  block_compartment m b = None.
+  ~valid_block m b ->
+  block_compartment m b = top.
 
-Definition val_compartment (m: mem) (v: val): option compartment :=
+Definition val_compartment (m: mem) (v: val): compartment :=
   match v with
   | Vptr b _ => block_compartment m b
-  | _ => None
+  | _ => top
   end.
 
 (** [perm m b ofs k p] holds if the address [b, ofs] in memory state [m]
@@ -248,18 +248,15 @@ Axiom range_perm_implies:
 
 (** [can_access_block m b (Some cp)] holds if block [b] is mapped to compartment [cp]
     in memory [m]. *)
-Definition can_access_block (m: mem) (b: block) (cp: option compartment): Prop :=
-  match cp with
-  | None => True
-  | Some cp => block_compartment m b = Some cp
-  end.
+Definition can_access_block (m: mem) (b: block) (cp: compartment): Prop :=
+  block_compartment m b ⊆ cp.
 
 (** An access to a memory quantity [chunk] at address [b, ofs] with
   permission [p] is valid in [m] if the accessed addresses all have
   current permission [p] and moreover the offset is properly aligned
   and the block, [b], belongs to compartment [cp]. *)
 Definition valid_access (m: mem) (chunk: memory_chunk) (b: block) (ofs: Z)
-           (p: permission) (cp: option compartment): Prop :=
+           (p: permission) (cp: compartment): Prop :=
   range_perm m b ofs (ofs + size_chunk chunk) Cur p
   /\ can_access_block m b cp
   /\ (align_chunk chunk | ofs).
@@ -450,7 +447,7 @@ Axiom perm_store_2:
 
 Axiom valid_access_store:
   forall m1 chunk b ofs cp v,
-  valid_access m1 chunk b ofs Writable (Some cp) ->
+  valid_access m1 chunk b ofs Writable cp ->
   { m2: mem | store chunk m1 b ofs v cp = Some m2 }.
 Axiom store_valid_access_1:
   forall chunk m1 b ofs v cp m2, store chunk m1 b ofs v cp = Some m2 ->
@@ -462,7 +459,7 @@ Axiom store_valid_access_2:
   valid_access m2 chunk' b' ofs' p cp' -> valid_access m1 chunk' b' ofs' p cp'.
 Axiom store_valid_access_3:
   forall chunk m1 b ofs v cp m2, store chunk m1 b ofs v cp = Some m2 ->
-  valid_access m1 chunk b ofs Writable (Some cp).
+  valid_access m1 chunk b ofs Writable cp.
 
 Axiom store_block_compartment:
   forall chunk m1 b ofs v cp m2, store chunk m1 b ofs v cp = Some m2 ->
@@ -476,11 +473,11 @@ Axiom load_store_similar:
   forall chunk',
   size_chunk chunk' = size_chunk chunk ->
   align_chunk chunk' <= align_chunk chunk ->
-  exists v', load chunk' m2 b ofs (Some cp) = Some v' /\ decode_encode_val v chunk chunk' v'.
+  exists v', load chunk' m2 b ofs cp = Some v' /\ decode_encode_val v chunk chunk' v'.
 
 Axiom load_store_same:
   forall chunk m1 b ofs v cp m2, store chunk m1 b ofs v cp = Some m2 ->
-  load chunk m2 b ofs (Some cp) = Some (Val.load_result chunk v).
+  load chunk m2 b ofs cp = Some (Val.load_result chunk v).
 
 Axiom load_store_other:
   forall chunk m1 b ofs v cp m2, store chunk m1 b ofs v cp = Some m2 ->
@@ -524,7 +521,7 @@ Axiom load_pointer_store:
 
 Axiom loadbytes_store_same:
   forall chunk m1 b ofs v cp m2, store chunk m1 b ofs v cp = Some m2 ->
-  loadbytes m2 b ofs (size_chunk chunk) (Some cp) = Some(encode_val chunk v).
+  loadbytes m2 b ofs (size_chunk chunk) cp = Some(encode_val chunk v).
 Axiom loadbytes_store_other:
   forall chunk m1 b ofs v cp m2, store chunk m1 b ofs v cp = Some m2 ->
   forall b' ofs' n cp',
@@ -567,7 +564,7 @@ Axiom store_int16_sign_ext:
 Axiom range_perm_storebytes:
   forall m1 b ofs bytes cp,
   range_perm m1 b ofs (ofs + Z.of_nat (length bytes)) Cur Writable ->
-  can_access_block m1 b (Some cp) ->
+  can_access_block m1 b cp ->
   { m2 : mem | storebytes m1 b ofs bytes cp = Some m2 }.
 Axiom storebytes_range_perm:
   forall m1 b ofs bytes cp m2, storebytes m1 b ofs bytes cp = Some m2 ->
@@ -613,7 +610,7 @@ Axiom store_storebytes:
 
 Axiom loadbytes_storebytes_same:
   forall m1 b ofs bytes cp m2, storebytes m1 b ofs bytes cp = Some m2 ->
-  loadbytes m2 b ofs (Z.of_nat (length bytes)) (Some cp) = Some bytes.
+  loadbytes m2 b ofs (Z.of_nat (length bytes)) cp = Some bytes.
 Axiom loadbytes_storebytes_other:
   forall m1 b ofs bytes cp m2, storebytes m1 b ofs bytes cp = Some m2 ->
   forall b' ofs' len cp',
@@ -697,7 +694,7 @@ Axiom perm_alloc_inv:
 Axiom alloc_block_compartment:
   forall m1 c lo hi m2 b, alloc m1 c lo hi = (m2, b) ->
   forall b', block_compartment m2 b' =
-  if eq_block b' b then Some c else block_compartment m1 b'.
+  if eq_block b' b then c else block_compartment m1 b'.
 
 (** Effect of [alloc] on access validity. *)
 
@@ -710,7 +707,7 @@ Axiom valid_access_alloc_same:
   forall m1 c lo hi m2 b, alloc m1 c lo hi = (m2, b) ->
   forall chunk ofs,
   lo <= ofs -> ofs + size_chunk chunk <= hi -> (align_chunk chunk | ofs) ->
-  valid_access m2 chunk b ofs Freeable (Some c).
+  valid_access m2 chunk b ofs Freeable c.
 Axiom valid_access_alloc_inv:
   forall m1 c lo hi m2 b, alloc m1 c lo hi = (m2, b) ->
   forall chunk b' ofs p c',
@@ -740,9 +737,9 @@ Axiom load_alloc_same':
   forall m1 c lo hi m2 b, alloc m1 c lo hi = (m2, b) ->
   forall chunk ofs,
   lo <= ofs -> ofs + size_chunk chunk <= hi ->
-  can_access_block m2 b (Some c) ->
+  can_access_block m2 b c ->
   (align_chunk chunk | ofs) ->
-  load chunk m2 b ofs (Some c) = Some Vundef.
+  load chunk m2 b ofs c = Some Vundef.
 
 (** ** Properties of [free]. *)
 
@@ -752,7 +749,7 @@ Axiom load_alloc_same':
 Axiom range_perm_free:
   forall m1 b lo hi cp,
   range_perm m1 b lo hi Cur Freeable ->
-  can_access_block m1 b (Some cp) ->
+  can_access_block m1 b cp ->
   { m2: mem | free m1 b lo hi cp = Some m2 }.
 Axiom free_range_perm:
   forall m1 bf lo hi cp m2, free m1 bf lo hi cp = Some m2 ->
@@ -840,7 +837,7 @@ Axiom range_perm_drop_1:
 Axiom range_perm_drop_2:
   forall m b lo hi cp p,
   range_perm m b lo hi Cur Freeable ->
-  can_access_block m b (Some cp) ->
+  can_access_block m b cp ->
   { m' | drop_perm m b lo hi p cp = Some m' }.
 
 Axiom perm_drop_1:
@@ -1209,7 +1206,7 @@ Axiom alloc_left_mapped_inject:
   inject f m1 m2 ->
   alloc m1 c lo hi = (m1', b1) ->
   valid_block m2 b2 ->
-  can_access_block m2 b2 (Some c) ->
+  can_access_block m2 b2 c ->
   0 <= delta <= Ptrofs.max_unsigned ->
   (forall ofs k p, perm m2 b2 ofs k p -> delta = 0 \/ 0 <= ofs < Ptrofs.max_unsigned) ->
   (forall ofs k p, lo <= ofs < hi -> perm m2 b2 (ofs + delta) k p) ->

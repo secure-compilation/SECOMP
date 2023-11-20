@@ -35,22 +35,77 @@ Definition ident_eq := peq.
 (** Programs entities can be grouped into compartments, which remain isolated
   from each other during execution. *)
 
-Definition compartment : Type := positive.
-Definition privileged_compartment : compartment := 1%positive.
-Notation default_compartment := privileged_compartment. (* TODO: fix this *)
-Definition eq_compartment (c1 c2: compartment) :=
-  peq c1 c2.
+(* Definition compartment : Type := positive. *)
+(* Definition privileged_compartment : compartment := 1%positive. *)
+(* Notation default_compartment := privileged_compartment. (* TODO: fix this *) *)
+(* Definition eq_compartment (c1 c2: compartment) := *)
+(*   peq c1 c2. *)
 
-(** Calls into certain compartments cannot be inlined or transformed into tail
-  calls because they need to know who the calling compartment is.  These
-  compartments are recorded in the following map. *)
+Parameter compartment: Type.
+Parameters top bottom: compartment.
+Parameter flowsto: compartment -> compartment -> Prop.
+Notation "c '⊆' c'" := (flowsto c c') (no associativity, at level 95).
+Notation "c '⊈' c'" := (not (flowsto c c')) (no associativity, at level 95).
+Axiom flowsto_dec: forall cp cp', {cp ⊆ cp'} + {cp ⊈ cp'}.
+Axiom flowsto_refl: forall cp, cp ⊆ cp.
+Axiom flowsto_antisym: forall cp cp', cp ⊆ cp' -> cp' ⊆ cp -> cp = cp'.
+Axiom flowsto_trans: forall cp cp' cp'', cp ⊆ cp' -> cp' ⊆ cp'' -> cp ⊆ cp''.
 
-Definition needs_calling_comp_map : PMap.t bool :=
-  let comps := privileged_compartment :: nil in
-  fold_left (fun m cp => PMap.set cp true m) comps (PMap.init false).
+Lemma cp_eq_dec: forall (cp cp': compartment), {cp = cp'} + {cp <> cp'}.
+  intros cp cp'.
+  destruct (flowsto_dec cp cp') as [f1 | n1]; destruct (flowsto_dec cp' cp) as [f2 | n2].
+  - left; eapply flowsto_antisym; eauto.
+  - right; intros ?; subst cp'; contradiction.
+  - right; intros ?; subst cp'; contradiction.
+  - right; intros ?; subst cp'; apply n1; now eapply flowsto_refl.
+Qed.
 
-Definition needs_calling_comp (cp: compartment) : bool :=
-  PMap.get cp needs_calling_comp_map.
+Parameter comp_to_pos: compartment -> positive.
+Axiom comp_to_pos_inj: forall x y: compartment, comp_to_pos x = comp_to_pos y -> x = y.
+
+Module COMPARTMENT_INDEXED_TYPE <: INDEXED_TYPE.
+  Definition t := compartment.
+  Definition index := comp_to_pos.
+  Definition index_inj := comp_to_pos_inj.
+  Definition eq := cp_eq_dec.
+End COMPARTMENT_INDEXED_TYPE.
+
+Module CompTree := ITree (COMPARTMENT_INDEXED_TYPE).
+
+Axiom bottom_flowsto: forall cp, bottom ⊆ cp.
+Axiom flowsto_top: forall cp, cp ⊆ top.
+
+Parameters join meet: compartment -> compartment -> compartment.
+Notation "c '∪' c'" := (join c c') (left associativity, at level 40).
+Notation "c '∩' c'" := (meet c c') (left associativity, at level 40).
+Axiom join_comm: forall cp cp', cp ∪ cp' = cp' ∪ cp.
+Axiom meet_comm: forall cp cp', cp ∩ cp' = cp' ∩ cp.
+Axiom join_assoc: forall cp cp' cp'', cp ∪ (cp' ∪ cp'') = (cp ∪ cp') ∪ cp''.
+Axiom meet_assoc: forall cp cp' cp'', cp ∩ (cp' ∩ cp'') = (cp ∩ cp') ∩ cp''.
+Axiom join_absorbs_meet: forall cp cp', cp ∪ (cp ∩ cp') = cp.
+Axiom meet_absorbs_join: forall cp cp', cp ∩ (cp ∪ cp') = cp.
+
+Lemma join_idempotent: forall cp, cp ∪ cp = cp.
+Proof.
+  intros cp.
+  rewrite <- (meet_absorbs_join cp cp) at 2; rewrite join_absorbs_meet; reflexivity.
+Qed.
+
+Lemma meet_idempotent: forall cp, cp ∩ cp = cp.
+Proof.
+  intros cp.
+  rewrite <- (join_absorbs_meet cp cp) at 2; rewrite meet_absorbs_join; reflexivity.
+Qed.
+
+Axiom flowsto_join1: forall cp cp', cp ⊆ cp ∪ cp'.
+Axiom flowsto_join2: forall cp cp', cp' ⊆ cp ∪ cp'.
+Axiom meet_flowsto1: forall cp cp', cp ∩ cp' ⊆ cp.
+Axiom meet_flowsto2: forall cp cp', cp ∩ cp' ⊆ cp'.
+
+Create HintDb comps.
+#[export] Hint Resolve flowsto_refl flowsto_antisym flowsto_trans bottom_flowsto flowsto_top
+  join_comm meet_comm join_assoc meet_assoc flowsto_join1 flowsto_join2 meet_flowsto1 meet_flowsto2: comps.
+#[export] Hint Rewrite join_idempotent meet_idempotent join_absorbs_meet meet_absorbs_join: comps.
 
 Set Typeclasses Strict Resolution.
 (** An instance of [has_comp] represents a syntactic entity that belongs to a
@@ -58,6 +113,8 @@ Set Typeclasses Strict Resolution.
   triggering when the type parameter is still unknown.  *)
 Class has_comp (T: Type) := comp_of: T -> compartment.
 Unset Typeclasses Strict Resolution.
+
+Arguments comp_of _ _ !_ /.
 
 Class has_comp_transl {T S: Type}
                       {CT: has_comp T} {CS: has_comp S}
@@ -379,16 +436,16 @@ Instance has_comp_globvar V : has_comp (globvar V) := @gvar_comp _.
 Module Policy.
 
   Record t: Type := mkpolicy {
-    policy_export: PTree.t (list ident);
-    policy_import: PTree.t (list (compartment * ident))
+    policy_export: CompTree.t (list ident);
+    policy_import: CompTree.t (list (compartment * ident))
   }.
 
   Definition in_pub_exports (pol: t) (pubs: list ident) : Prop :=
-    forall cp exps, (policy_export pol) ! cp = Some exps ->
+    forall cp exps, CompTree.get cp (policy_export pol) = Some exps ->
     forall id, In id exps -> In id pubs.
 
   Definition in_pub_imports (pol: t) (pubs: list ident) : Prop :=
-    forall cp imps, (policy_import pol) ! cp = Some imps ->
+    forall cp imps, CompTree.get cp (policy_import pol) = Some imps ->
     forall cp' id, In (cp', id) imps -> In id pubs.
 
   Definition in_pub (pol: t) (pubs: list ident) : Prop :=
@@ -399,11 +456,11 @@ Module Policy.
      have performance impacts in compilation.  *)
   Definition enforce_in_pub (pol: t) (pubs: list ident) :=
     {| policy_export :=
-        PTree.map1
+        CompTree.map1
           (filter (fun id : ident => in_dec ident_eq id pubs))
           pol.(policy_export);
        policy_import :=
-        PTree.map1
+        CompTree.map1
           (filter (fun p : compartment * ident => in_dec ident_eq (snd p) pubs))
           pol.(policy_import);
     |}.
@@ -413,19 +470,19 @@ Module Policy.
       in_pub (enforce_in_pub pol pubs) pubs.
   Proof.
     split.
-    - intros cp imps. simpl. rewrite PTree.gmap1.
-      destruct PTree.get as [exps|] eqn:pol_cp; simpl; try congruence.
+    - intros cp imps. simpl. rewrite CompTree.gmap1.
+      destruct CompTree.get as [exps|] eqn:pol_cp; simpl; try congruence.
       intros e. injection e as e. rewrite <- e. clear e.
       intros id. rewrite filter_In. intros [_ Hin]. now destruct in_dec.
-    - intros cp exps. simpl. rewrite PTree.gmap1.
-      destruct PTree.get as [imps|] eqn:pol_cp; simpl; try congruence.
+    - intros cp exps. simpl. rewrite CompTree.gmap1.
+      destruct CompTree.get as [imps|] eqn:pol_cp; simpl; try congruence.
       intros e. injection e as e. rewrite <- e. clear e.
       intros cp' id. rewrite filter_In. simpl. intros [_ Hin].
       now destruct in_dec.
   Qed.
 
   (* The empty policy is the policy where there is no imported procedure and no exported procedure for all compartments *)
-  Definition empty_pol: t := mkpolicy (PTree.empty (list ident)) (PTree.empty (list (compartment * ident))).
+  Definition empty_pol: t := mkpolicy (CompTree.empty (list ident)) (CompTree.empty (list (compartment * ident))).
 
   (* Decidable equality for the elements contained in the policies *)
   Definition list_id_eq: forall (x y: list ident),
@@ -443,14 +500,14 @@ Module Policy.
     decide equality.
     decide equality.
     apply Pos.eq_dec.
-    apply Pos.eq_dec.
+    apply cp_eq_dec.
   Qed.
 
   (* Defines an equivalence between two policies: two policies are equivalent iff for each compartment,
      they define the same exported and imported procedures *)
   Definition eqb (t1 t2: t): bool :=
-    PTree.beq list_id_eq t1.(policy_export) t2.(policy_export) &&
-    PTree.beq list_cpt_id_eq t1.(policy_import) t2.(policy_import).
+    CompTree.beq list_id_eq t1.(policy_export) t2.(policy_export) &&
+    CompTree.beq list_cpt_id_eq t1.(policy_import) t2.(policy_import).
 
   (* Properties of an equivalence relation: reflexivity, commutativity, transitivity *)
   Lemma eqb_refl: forall pol, eqb pol pol = true.
@@ -461,6 +518,7 @@ Module Policy.
     rewrite PTree.beq_correct.
     intros x. destruct ((policy_export pol) ! x); auto.
     destruct (list_id_eq l l); auto.
+    unfold CompTree.beq.
     rewrite H. simpl.
     rewrite PTree.beq_correct.
     intros x. destruct ((policy_import pol) ! x); auto.
@@ -486,6 +544,7 @@ Module Policy.
     destruct (list_cpt_id_eq l0 l); subst.
     destruct (list_cpt_id_eq l l); auto.
     destruct (list_cpt_id_eq l l0); auto.
+    unfold CompTree.beq.
     rewrite H1', H2'. auto.
   Qed.
 
@@ -521,6 +580,7 @@ Module Policy.
         destruct (list_cpt_id_eq l l1); auto.
       now subst.
     }
+    unfold CompTree.beq.
     rewrite H3, H3'. auto.
   Qed.
 
@@ -573,8 +633,9 @@ Definition prog_defs_names (F V: Type) (p: program F V) : list ident :=
 Definition prog_defmap (F V: Type) (p: program F V) : PTree.t (globdef F V) :=
   PTree_Properties.of_list p.(prog_defs).
 
-Definition list_comp (F V: Type) (p: program F V) {CF: has_comp F}: list compartment :=
-  List.map (fun x => comp_of (snd x)) p.(prog_defs). (* TODO: filter out duplicate compartments from this list *)
+(* FIXME: I don't think this is needed anymore *)
+(* Definition list_comp (F V: Type) (p: program F V) {CF: has_comp F}: list compartment := *)
+(*   List.map (fun x => comp_of (snd x)) p.(prog_defs). *)
 
 Section DEFMAP.
 
@@ -770,6 +831,10 @@ Inductive external_function : Type :=
      (** Transport debugging information from the front-end to the generated
          assembly.  Takes zero, one or several arguments like [EF_annot].
          Unlike [EF_annot], produces no observable event. *)
+
+
+(** External functions don't have compartment *)
+Instance has_comp_external_function : has_comp (external_function) := fun _ => bottom.
 
 
 (** The type signature of an external function. *)

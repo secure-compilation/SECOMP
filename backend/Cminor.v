@@ -239,7 +239,8 @@ Inductive state: Type :=
       forall (f: fundef)                (**r function to invoke *)
              (args: list val)           (**r arguments provided by caller *)
              (k: cont)                  (**r what to do next  *)
-             (m: mem),                  (**r memory state *)
+             (m: mem)                   (**r memory state *)
+             (cp: option compartment),  (**r optionally, the compartment that lead to this [Callstate]. /!\ This is not necessary [call_comp k] *)
       state
   | Returnstate:                (**r Return from a function *)
       forall (v: val)                   (**r Return value *)
@@ -476,30 +477,26 @@ Inductive step: state -> trace -> state -> Prop :=
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
       (* Check that the call to the function pointer is allowed *)
-      forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
+      forall (ALLOWED: Genv.allowed_call ge (comp_of f) ()),
       forall (NO_CROSS_PTR: Genv.type_of_call (comp_of f) (comp_of fd) = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
       forall (EV: call_trace ge (comp_of f) (comp_of fd) vf vargs (sig_args sig) t),
       step (State f (Scall optid sig a bl) k sp e m)
-        t (Callstate fd vargs (Kcall optid f sp e k) m)
+        t (Callstate fd vargs (Kcall optid f sp e k) m (Some (comp_of f)))
 
   | step_tailcall: forall f sig a bl k sp e m vf vargs fd m',
       eval_expr (Vptr sp Ptrofs.zero) e m (comp_of f) a vf ->
       eval_exprlist (Vptr sp Ptrofs.zero) e m (comp_of f) bl vargs ->
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
-      forall (COMP: comp_of fd = (comp_of f)),
+      forall (COMP: comp_of fd = comp_of f),
       forall (SIG: sig_res (fn_sig f) = sig_res sig),
-      (* forall (ALLOWED: needs_calling_comp (comp_of f) = false), *)
-      (* forall (ALLOWED': Genv.allowed_call ge (comp_of f) vf), *) (* Not needed: call is allowed because we don't change compartment (hypothesis COMP) *)
       Mem.free m sp 0 f.(fn_stackspace) (comp_of f) = Some m' ->
-      (* forall (EV: call_trace ge (comp_of f) (Genv.find_comp ge vf) vf vargs (sig_args sig) t), *)
       step (State f (Stailcall sig a bl) k (Vptr sp Ptrofs.zero) e m)
-        E0 (Callstate fd vargs (call_cont k) m')
+        E0 (Callstate fd vargs (call_cont k) m' (Some (comp_of f)))
 
   | step_builtin: forall f optid ef bl k sp e m vargs t vres m',
       eval_exprlist sp e m (comp_of f) bl vargs ->
-      external_call ef ge vargs m t vres m' ->
-      forall ALLOWED: comp_of ef = comp_of f,
+      external_call ef ge (comp_of f) vargs m t vres m' ->
       step (State f (Sbuiltin optid ef bl) k sp e m)
          t (State f Sskip k sp (set_optvar optid vres e) m')
 
@@ -556,14 +553,14 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Sgoto lbl) k sp e m)
         E0 (State f s' k' sp e m)
 
-  | step_internal_function: forall f vargs k m m' sp e,
+  | step_internal_function: forall f vargs k m cp m' sp e,
       Mem.alloc m (comp_of f) 0 f.(fn_stackspace) = (m', sp) ->
       set_locals f.(fn_vars) (set_params vargs f.(fn_params)) = e ->
-      step (Callstate (Internal f) vargs k m)
+      step (Callstate (Internal f) vargs k m cp)
         E0 (State f f.(fn_body) k (Vptr sp Ptrofs.zero) e m')
-  | step_external_function: forall ef vargs k m t vres m',
-      external_call ef ge vargs m t vres m' ->
-      step (Callstate (External ef) vargs k m)
+  | step_external_function: forall ef vargs k m cp t vres m',
+      external_call ef ge cp vargs m t vres m' ->
+      step (Callstate (External ef) vargs k m (Some cp))
          t (Returnstate vres k m' (sig_res (ef_sig ef)) (comp_of ef))
 
   | step_return: forall v optid f sp e cp k m ty t,

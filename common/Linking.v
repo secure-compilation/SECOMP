@@ -166,7 +166,7 @@ Definition link_vardef {V: Type} {LV: Linker V} (v1 v2: globvar V) :=
       match link v1.(gvar_init) v2.(gvar_init) with
       | None => None
       | Some init =>
-          if eq_compartment v1.(gvar_comp) v2.(gvar_comp)
+          if cp_eq_dec v1.(gvar_comp) v2.(gvar_comp) (* FIXME: use the meet or join!! (figure out which one makes sense) *)
           && eqb v1.(gvar_readonly) v2.(gvar_readonly)
           && eqb v1.(gvar_volatile) v2.(gvar_volatile)
           then Some {| gvar_info := info; gvar_init := init;
@@ -198,7 +198,7 @@ Next Obligation.
   destruct x as [f1 c1 i1 r1 v1], y as [f2 c2 i2 r2 v2]; simpl.
   destruct (link f1 f2) as [f|] eqn:LF; try discriminate.
   destruct (link i1 i2) as [i|] eqn:LI; try discriminate.
-  destruct (eq_compartment c1 c2) eqn:EC; try discriminate.
+  destruct (cp_eq_dec c1 c2) eqn:EC; try discriminate.
   destruct (eqb r1 r2) eqn:ER; try discriminate.
   destruct (eqb v1 v2) eqn:EV; intros EQ; inv EQ.
   apply eqb_prop in ER; apply eqb_prop in EV; subst r2 v2.
@@ -649,7 +649,7 @@ Proof.
   simpl; intros. unfold link_vardef in *. inv H0; inv H1; simpl in *.
   destruct (link i1 i0) as [info'|] eqn:LINFO; try discriminate.
   destruct (link init init0) as [init'|] eqn:LINIT; try discriminate.
-  destruct (eq_compartment c c0 && eqb ro ro0 && eqb vo vo0); inv H.
+  destruct (cp_eq_dec c c0 && eqb ro ro0 && eqb vo vo0); inv H.
   exploit link_match_varinfo; eauto. intros (tinfo & P & Q). rewrite P.
   econstructor; split. eauto. constructor. auto.
 Qed.
