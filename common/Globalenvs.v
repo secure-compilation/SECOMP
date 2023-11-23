@@ -2028,9 +2028,12 @@ Variant call_type :=
   | InternalCall
   | CrossCompartmentCall.
 
+(* A call is internal if the callee has strictly less privilege than the caller *)
 Definition type_of_call (cp: compartment) (cp': compartment): call_type :=
-  if flowsto_dec cp cp' then InternalCall
+  if flowsto_dec cp' cp then InternalCall
   else CrossCompartmentCall.
+
+#[global] Arguments type_of_call /.
 
 (* Lemma type_of_call_cp_default: *)
 (*   forall ge cp, type_of_call ge cp default_compartment <> CrossCompartmentCall. *)
@@ -2445,6 +2448,7 @@ Proof.
     eapply CompTree.beq_sound with (x := cp) in EQPOL2.
     (* rewrite PTree.beq_correct in EQPOL2. *)
     (* specialize (EQPOL2 cp). *)
+    simpl in *.
     destruct (CompTree.get cp (Policy.policy_import prog_pol0));
       destruct (CompTree.get cp (Policy.policy_import prog_pol)); auto.
     destruct (Policy.list_cpt_id_eq l l0); subst; simpl in *; auto; try discriminate. contradiction.
@@ -2457,20 +2461,16 @@ Proof.
     rewrite genv_pol_add_globals in H2.
     unfold Policy.eqb in EQPOL. apply andb_prop in EQPOL.
     destruct EQPOL as [EQPOL1 EQPOL2].
+    set (cp := find_comp_of_block (add_globals (empty_genv F1 V1 prog_pol_pub) prog_defs) b).
+    fold cp in H2.
+    eapply CompTree.beq_sound with (x := cp) in EQPOL1.
+    eapply CompTree.beq_sound with (x := cp) in EQPOL2.
+    (* rewrite PTree.beq_correct in EQPOL2. *)
+    (* specialize (EQPOL2 cp). *)
     simpl in *.
-    rewrite PTree.beq_correct in EQPOL1.
-    specialize (EQPOL1 cp').
-    destruct ((Policy.policy_export prog_pol0) ! cp');
-      destruct ((Policy.policy_export prog_pol) ! cp'); auto; try contradiction.
-    destruct (Policy.list_id_eq l l0); subst; simpl in *; auto; try discriminate.
-Qed.
-
-(* FIXME: This lemma should not be needed. *)
-Lemma match_genvs_type_of_call:
-  forall cp cp',
-    type_of_call cp cp' = type_of_call cp cp'.
-Proof.
-  intros. reflexivity.
+    destruct (CompTree.get cp (Policy.policy_export prog_pol0));
+      destruct (CompTree.get cp (Policy.policy_export prog_pol)); auto.
+    destruct (Policy.list_id_eq l l0); subst; simpl in *; auto; try discriminate. contradiction.
 Qed.
 
 Lemma match_genvs_not_ptr_inj:
@@ -2599,7 +2599,7 @@ Lemma find_comp_transf_partial:
   forall v,
   find_comp_in_genv (globalenv p) v = find_comp_in_genv (globalenv tp) v.
 Proof.
-  unfold find_comp. intros v. case v; try easy.
+  unfold find_comp_in_genv. intros v. case v; try easy.
   intros b _. apply find_comp_of_block_transf_partial.
 Qed.
 
@@ -2627,13 +2627,6 @@ Theorem allowed_call_transf_partial:
     allowed_call (globalenv p) cp vf -> allowed_call (globalenv tp) cp vf.
 Proof.
   eapply (match_genvs_allowed_calls progmatch).
-Qed.
-
-Theorem type_of_call_transf_partial:
-  forall cp cp',
-    type_of_call cp cp' = type_of_call cp cp'.
-Proof.
-  eapply (match_genvs_type_of_call).
 Qed.
 
 Lemma not_ptr_transf_partial_inj:
@@ -2767,13 +2760,6 @@ Lemma find_comp_transf:
 Proof.
   intros v. case v; simpl; try easy.
   intros b _. apply find_comp_of_block_transf.
-Qed.
-
-Theorem type_of_call_transf:
-  forall cp cp',
-    type_of_call cp cp' = type_of_call cp cp'.
-Proof.
-  eapply (match_genvs_type_of_call).
 Qed.
 
 Lemma not_ptr_transf_inj:

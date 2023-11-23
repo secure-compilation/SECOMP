@@ -29,7 +29,6 @@ Local Open Scope string_scope.
 Section SELECT.
 
 Context {hf: helper_functions}.
-Context (cp: compartment).
 
 Definition longconst (n: int64) : expr :=
   if Archi.splitlong then SplitLong.longconst n else Eop (Olongconst n) Enil.
@@ -75,7 +74,7 @@ Nondetfunction addlimm (n: int64) (e: expr) :=
   end.
 
 Nondetfunction addl (e1: expr) (e2: expr) :=
-  if Archi.splitlong then SplitLong.addl cp e1 e2 else
+  if Archi.splitlong then SplitLong.addl e1 e2 else
   match e1, e2 with
   | Eop (Olongconst n1) Enil, t2 => addlimm n1 t2
   | t1, Eop (Olongconst n2) Enil => addlimm n2 t1
@@ -95,7 +94,7 @@ Nondetfunction addl (e1: expr) (e2: expr) :=
 (** ** Integer and pointer subtraction *)
 
 Nondetfunction subl (e1: expr) (e2: expr) :=
-  if Archi.splitlong then SplitLong.subl cp e1 e2 else
+  if Archi.splitlong then SplitLong.subl e1 e2 else
   match e1, e2 with
   | t1, Eop (Olongconst n2) Enil =>
       addlimm (Int64.neg n2) t1
@@ -109,7 +108,7 @@ Nondetfunction subl (e1: expr) (e2: expr) :=
   end.
 
 Definition negl (e: expr) :=
-  if Archi.splitlong then SplitLong.negl cp e else
+  if Archi.splitlong then SplitLong.negl e else
   match is_longconst e with
   | Some n => longconst (Int64.neg n)
   | None =>  Eop Onegl (e ::: Enil)
@@ -204,7 +203,7 @@ Definition mullimm_base (n1: int64) (e2: expr) :=
   end.
 
 Nondetfunction mullimm (n1: int64) (e2: expr) :=
-  if Archi.splitlong then SplitLong.mullimm cp n1 e2
+  if Archi.splitlong then SplitLong.mullimm n1 e2
   else if Int64.eq n1 Int64.zero then longconst Int64.zero
   else if Int64.eq n1 Int64.one then e2
   else match e2 with
@@ -214,7 +213,7 @@ Nondetfunction mullimm (n1: int64) (e2: expr) :=
   end.
 
 Nondetfunction mull (e1: expr) (e2: expr) :=
-  if Archi.splitlong then SplitLong.mull cp e1 e2 else
+  if Archi.splitlong then SplitLong.mull e1 e2 else
   match e1, e2 with
   | Eop (Olongconst n1) Enil, t2 => mullimm n1 t2
   | t1, Eop (Olongconst n2) Enil => mullimm n2 t1
@@ -303,7 +302,7 @@ Definition modls_base (e1: expr) (e2: expr) :=
   if Archi.splitlong then SplitLong.modls_base e1 e2 else Eop Omodl (e1:::e2:::Enil).
 
 Definition shrxlimm (e: expr) (n: int) :=
-  if Archi.splitlong then SplitLong.shrxlimm cp e n else
+  if Archi.splitlong then SplitLong.shrxlimm e n else
   if Int.eq n Int.zero then e else Eop (Oshrxlimm n) (e ::: Enil).
 
 (** ** Comparisons *)

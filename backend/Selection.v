@@ -70,7 +70,6 @@ Section SELECTION.
 Definition globdef := AST.globdef Cminor.fundef unit.
 Variable defmap: PTree.t globdef.
 Context {hf: helper_functions}.
-Context (cp: compartment).
 
 Definition sel_constant (cst: Cminor.constant) : expr :=
   match cst with
@@ -104,7 +103,7 @@ Definition sel_unop (op: Cminor.unary_operation) (arg: expr) : expr :=
   | Cminor.Ointuofsingle => intuofsingle arg
   | Cminor.Osingleofint => singleofint arg
   | Cminor.Osingleofintu => singleofintu arg
-  | Cminor.Onegl => negl cp arg
+  | Cminor.Onegl => negl arg
   | Cminor.Onotl => notl arg
   | Cminor.Ointoflong => intoflong arg
   | Cminor.Olongofint => longofint arg
@@ -142,13 +141,13 @@ Definition sel_binop (op: Cminor.binary_operation) (arg1 arg2: expr) : expr :=
   | Cminor.Osubfs => subfs arg1 arg2
   | Cminor.Omulfs => mulfs arg1 arg2
   | Cminor.Odivfs => divfs arg1 arg2
-  | Cminor.Oaddl => addl cp arg1 arg2
-  | Cminor.Osubl => subl cp arg1 arg2
-  | Cminor.Omull => mull cp arg1 arg2
-  | Cminor.Odivl => divls cp arg1 arg2
+  | Cminor.Oaddl => addl arg1 arg2
+  | Cminor.Osubl => subl arg1 arg2
+  | Cminor.Omull => mull arg1 arg2
+  | Cminor.Odivl => divls arg1 arg2
   | Cminor.Odivlu => divlu arg1 arg2
-  | Cminor.Omodl => modls cp arg1 arg2
-  | Cminor.Omodlu => modlu cp arg1 arg2
+  | Cminor.Omodl => modls arg1 arg2
+  | Cminor.Omodlu => modlu arg1 arg2
   | Cminor.Oandl => andl arg1 arg2
   | Cminor.Oorl => orl arg1 arg2
   | Cminor.Oxorl => xorl arg1 arg2
@@ -211,7 +210,7 @@ Definition classify_call (e: Cminor.expr) : call_kind :=
   | None => Call_default
   | Some id =>
       match defmap!id with
-      | Some(Gfun (External ef)) => if ef_inline ef && Pos.eq_dec (comp_of ef) cp then Call_builtin ef else Call_imm id
+      | Some(Gfun (External ef)) => if ef_inline ef then Call_builtin ef else Call_imm id
       | _ => Call_imm id
       end
   end.
@@ -269,8 +268,8 @@ Definition sel_builtin_default (optid: option ident) (ef: external_function)
 Definition sel_builtin (optid: option ident) (ef: external_function)
                                (args: list Cminor.expr) :=
   match ef with
-  | EF_builtin cp name sg =>
-      match lookup_builtin_function name cp sg with
+  | EF_builtin name sg =>
+      match lookup_builtin_function name sg with
       | Some bf =>
           match optid with
           | Some id =>
@@ -330,7 +329,7 @@ Definition sel_switch_long :=
   sel_switch
     (fun arg n => cmpl Ceq arg (longconst (Int64.repr n)))
     (fun arg n => cmplu Clt arg (longconst (Int64.repr n)))
-    (fun arg ofs => subl cp arg (longconst (Int64.repr ofs)))
+    (fun arg ofs => subl arg (longconst (Int64.repr ofs)))
     lowlong.
 
 (** "If conversion": conversion of certain if-then-else statements
@@ -350,7 +349,7 @@ Fixpoint classify_stmt (s: Cminor.stmt) : stmt_class :=
   match s with
   | Cminor.Sskip => SCskip
   | Cminor.Sassign id a => SCassign id a
-  | Cminor.Sbuiltin None (EF_debug _ _ _ _) _ => SCskip
+  | Cminor.Sbuiltin None (EF_debug _ _ _) _ => SCskip
   | Cminor.Sseq s1 s2 =>
       match classify_stmt s1, classify_stmt s2 with
       | SCskip, c2 => c2
@@ -453,11 +452,10 @@ Definition known_id (f: Cminor.function) : known_idents :=
   List.fold_left add f.(Cminor.fn_vars)
       (List.fold_left add f.(Cminor.fn_params) (PTree.empty unit)).
 
-Definition sel_function (dm: PTree.t globdef) (hf: compartment -> res helper_functions) (f: Cminor.function) : res function :=
+Definition sel_function (dm: PTree.t globdef) (hf: helper_functions) (f: Cminor.function) : res function :=
   let ki := known_id f in
   do env <- Cminortyping.type_function f;
-  do hf_c <- hf f.(Cminor.fn_comp);
-  do body' <- sel_stmt dm f.(Cminor.fn_comp) ki env f.(Cminor.fn_body);
+  do body' <- sel_stmt dm ki env f.(Cminor.fn_body);
   OK (mkfunction
         f.(Cminor.fn_comp)
         f.(Cminor.fn_sig)
@@ -466,7 +464,7 @@ Definition sel_function (dm: PTree.t globdef) (hf: compartment -> res helper_fun
         f.(Cminor.fn_stackspace)
         body').
 
-Definition sel_fundef (dm: PTree.t globdef) (hf: compartment -> res helper_functions) (f: Cminor.fundef) : res fundef :=
+Definition sel_fundef (dm: PTree.t globdef) (hf: helper_functions) (f: Cminor.fundef) : res fundef :=
   transf_partial_fundef (sel_function dm hf) f.
 
 (** Setting up the helper functions. *)
@@ -478,86 +476,64 @@ Definition sel_fundef (dm: PTree.t globdef) (hf: compartment -> res helper_funct
   This ensures that the mapping remains small and that [lookup_helper]
   below is efficient. *)
 
-(* NOTE: [cp] argument and check should not be needed at the moment *)
-Definition globdef_of_interest (gd: globdef) (cp: compartment) : bool :=
+Definition globdef_of_interest (gd: globdef) : bool :=
   match gd with
-  | Gfun (External (EF_runtime cp' name sg)) => Pos.eqb cp cp'
+  | Gfun (External (EF_runtime name sg)) => true
   | _ => false
   end.
 
-Definition record_globdefs (defmap: PTree.t globdef) (cp: compartment) : PTree.t globdef :=
+Definition record_globdefs (defmap: PTree.t globdef) : PTree.t globdef :=
   PTree.fold
-    (fun m id gd => if globdef_of_interest gd cp then PTree.set id gd m else m)
+    (fun m id gd => if globdef_of_interest gd then PTree.set id gd m else m)
     defmap (PTree.empty globdef).
 
-(* Definition record_globdefs (defmap: Cminor.program) (cp: compartment) : PTree.t globdef := *)
-(*   List.fold_left *)
-(*     (fun m '(id, gd) => if globdef_of_interest gd cp then PTree.set id gd m else m) *)
-(*     defmap.(prog_defs) (PTree.empty globdef). *)
-
 Definition lookup_helper_aux
-     (cp: compartment) (name: String.string) (sg: signature) (res: option ident)
+     (name: String.string) (sg: signature) (res: option ident)
      (id: ident) (gd: globdef) :=
   match gd with
-  | Gfun (External (EF_runtime cp' name' sg')) =>
-      if Pos.eqb cp cp' && String.string_dec name name' && signature_eq sg sg'
+  | Gfun (External (EF_runtime name' sg')) =>
+      if String.string_dec name name' && signature_eq sg sg'
       then Some id
       else res
   | _ => res
   end.
 
 Definition lookup_helper (globs: PTree.t globdef)
-                         (cp: compartment) (name: String.string) (sg: signature) : res (ident) :=
-  match PTree.fold (lookup_helper_aux cp name sg) globs None with
+                         (name: String.string) (sg: signature) : res ident :=
+  match PTree.fold (lookup_helper_aux name sg) globs None with
   | Some id => OK id
   | None    => Error (MSG name :: MSG ": missing or incorrect declaration" :: nil)
   end.
 
 Local Open Scope string_scope.
 
-Definition get_helpers (defmap: PTree.t globdef) (cp: compartment): res helper_functions :=
-(* Definition get_helpers (defmap: Cminor.program) (cp: compartment): res helper_functions := *)
-  let globs := record_globdefs defmap cp in
-  do i64_dtos <- lookup_helper globs cp (standard_builtin_name "__compcert_i64_dtos" cp) sig_f_l ;
-  do i64_dtou <- lookup_helper globs cp (standard_builtin_name "__compcert_i64_dtou" cp) sig_f_l ;
-  do i64_stod <- lookup_helper globs cp (standard_builtin_name "__compcert_i64_stod" cp) sig_l_f ;
-  do i64_utod <- lookup_helper globs cp (standard_builtin_name "__compcert_i64_utod" cp) sig_l_f ;
-  do i64_stof <- lookup_helper globs cp (standard_builtin_name "__compcert_i64_stof" cp) sig_l_s ;
-  do i64_utof <- lookup_helper globs cp (standard_builtin_name "__compcert_i64_utof" cp) sig_l_s ;
-  do i64_sdiv <- lookup_helper globs cp (standard_builtin_name "__compcert_i64_sdiv" cp) sig_ll_l ;
-  do i64_udiv <- lookup_helper globs cp (standard_builtin_name "__compcert_i64_udiv" cp) sig_ll_l ;
-  do i64_smod <- lookup_helper globs cp (standard_builtin_name "__compcert_i64_smod" cp) sig_ll_l ;
-  do i64_umod <- lookup_helper globs cp (standard_builtin_name "__compcert_i64_umod" cp) sig_ll_l ;
-  do i64_shl <- lookup_helper globs cp (standard_builtin_name "__compcert_i64_shl" cp) sig_li_l ;
-  do i64_shr <- lookup_helper globs cp (standard_builtin_name "__compcert_i64_shr" cp) sig_li_l ;
-  do i64_sar <- lookup_helper globs cp (standard_builtin_name "__compcert_i64_sar" cp) sig_li_l ;
-  do i64_umulh <- lookup_helper globs cp (standard_builtin_name "__compcert_i64_umulh" cp) sig_ll_l ;
-  do i64_smulh <- lookup_helper globs cp (standard_builtin_name "__compcert_i64_smulh" cp) sig_ll_l ;
+Definition get_helpers (defmap: PTree.t globdef) : res helper_functions :=
+  let globs := record_globdefs defmap in
+  do i64_dtos <- lookup_helper globs "__compcert_i64_dtos" sig_f_l ;
+  do i64_dtou <- lookup_helper globs "__compcert_i64_dtou" sig_f_l ;
+  do i64_stod <- lookup_helper globs "__compcert_i64_stod" sig_l_f ;
+  do i64_utod <- lookup_helper globs "__compcert_i64_utod" sig_l_f ;
+  do i64_stof <- lookup_helper globs "__compcert_i64_stof" sig_l_s ;
+  do i64_utof <- lookup_helper globs "__compcert_i64_utof" sig_l_s ;
+  do i64_sdiv <- lookup_helper globs "__compcert_i64_sdiv" sig_ll_l ;
+  do i64_udiv <- lookup_helper globs "__compcert_i64_udiv" sig_ll_l ;
+  do i64_smod <- lookup_helper globs "__compcert_i64_smod" sig_ll_l ;
+  do i64_umod <- lookup_helper globs "__compcert_i64_umod" sig_ll_l ;
+  do i64_shl <- lookup_helper globs "__compcert_i64_shl" sig_li_l ;
+  do i64_shr <- lookup_helper globs "__compcert_i64_shr" sig_li_l ;
+  do i64_sar <- lookup_helper globs "__compcert_i64_sar" sig_li_l ;
+  do i64_umulh <- lookup_helper globs "__compcert_i64_umulh" sig_ll_l ;
+  do i64_smulh <- lookup_helper globs "__compcert_i64_smulh" sig_ll_l ;
   OK (mk_helper_functions
      i64_dtos i64_dtou i64_stod i64_utod i64_stof i64_utof
      i64_sdiv i64_udiv i64_smod i64_umod
      i64_shl i64_shr i64_sar
      i64_umulh i64_smulh).
 
-Definition get_all_helpers (defmap: PTree.t globdef) (ls: list compartment): compartment -> res helper_functions :=
-(* Definition get_all_helpers (defmap: Cminor.program) (ls: list compartment): compartment -> res helper_functions := *)
-  fun cp =>
-    if @in_dec compartment Pos.eq_dec cp ls then
-      do hf <- get_helpers defmap cp;
-      OK hf
-    else
-      Error (MSG "Error: missing or incorrect declaration - [get_all_helpers]" :: nil)
-.
-
 (** Conversion of programs. *)
 
 Definition sel_program (p: Cminor.program) : res program :=
-  (* FIXME: [prog_defmap] hides the multiple copies of the helper
-     functions, which share a name but live in different
-     compartments. A namespacing fix at that level may be worth
-     looking into. *)
   let dm := prog_defmap p in
-  let hf := get_all_helpers dm (AST.list_comp p) in
-  (* let hf := get_all_helpers p (AST.list_comp p) in *)
+  do hf <- get_helpers dm;
   transform_partial_program (sel_fundef dm hf) p.
 

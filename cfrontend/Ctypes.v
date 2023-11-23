@@ -1794,16 +1794,14 @@ Definition link_fundef {F: Type} {CF: has_comp F} (fd1 fd2: fundef F) :=
       else None
   | Internal f, External ef targs tres cc =>
       match ef with
-      | EF_external cp id sg =>
-        if eq_compartment cp (comp_of f) then Some (Internal f)
-        else None
+      | EF_external id sg =>
+        Some (Internal f)
       | _ => None
       end
   | External ef targs tres cc, Internal f =>
       match ef with
-      | EF_external cp id sg =>
-        if eq_compartment cp (comp_of f) then Some (Internal f)
-        else None
+      | EF_external id sg =>
+        Some (Internal f)
       | _ => None
       end
   end.
@@ -1812,7 +1810,7 @@ Inductive linkorder_fundef {F: Type} {CF: has_comp F}: fundef F -> fundef F -> P
   | linkorder_fundef_refl: forall fd,
       linkorder_fundef fd fd
   | linkorder_fundef_ext_int: forall f id sg targs tres cc,
-      linkorder_fundef (External (EF_external (comp_of f) id sg) targs tres cc) (Internal f).
+      linkorder_fundef (External (EF_external id sg) targs tres cc) (Internal f).
 
 Global Program Instance Linker_fundef (F: Type) {CF: has_comp F}: Linker (fundef F) := {
   link := link_fundef;
@@ -1828,12 +1826,10 @@ Next Obligation.
   destruct x, y; simpl in H.
 + discriminate.
 + destruct e; try easy.
-  destruct eq_compartment; try easy.
-  subst cp. inv H.
+  inv H.
   split; constructor.
 + destruct e; try easy.
-  destruct eq_compartment; try easy.
-  subst cp. inv H.
+  inv H.
   split; constructor.
 + destruct (external_function_eq e e0 && typelist_eq t t1 && type_eq t0 t2 && calling_convention_eq c c0) eqn:A; inv H.
   InvBooleans. subst. split; constructor.
@@ -1844,11 +1840,9 @@ Remark link_fundef_either:
 Proof.
   simpl; intros. unfold link_fundef in H. destruct f1, f2; try discriminate.
 - destruct e; try easy.
-  destruct eq_compartment; try easy.
-  subst cp. inv H; eauto.
+  inv H; eauto.
 - destruct e; try easy.
-  destruct eq_compartment; try easy.
-  subst cp. inv H; eauto.
+  inv H; eauto.
 - destruct (external_function_eq e e0 && typelist_eq t t1 && type_eq t0 t2 && calling_convention_eq c c0); inv H; auto.
 Qed.
 

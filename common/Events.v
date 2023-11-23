@@ -591,8 +591,8 @@ Inductive volatile_load (ge: Senv.t) (cp: compartment):
                       (Val.load_result chunk v)
   | volatile_load_nonvol: forall chunk m b ofs v,
       Senv.block_is_volatile ge b = false ->
-      forall OWN : Mem.can_access_block m b (Some cp),
-      Mem.load chunk m b (Ptrofs.unsigned ofs) (Some cp) = Some v ->
+      forall OWN : Mem.can_access_block m b cp,
+      Mem.load chunk m b (Ptrofs.unsigned ofs) cp = Some v ->
       volatile_load ge cp chunk m b ofs E0 v.
 
 Inductive volatile_store (ge: Senv.t) (cp: compartment):
@@ -606,7 +606,7 @@ Inductive volatile_store (ge: Senv.t) (cp: compartment):
                       m
   | volatile_store_nonvol: forall chunk m b ofs v m',
       Senv.block_is_volatile ge b = false ->
-      forall OWN : Mem.can_access_block m b (Some cp),
+      forall OWN : Mem.can_access_block m b cp,
       Mem.store chunk m b (Ptrofs.unsigned ofs) v cp = Some m' ->
       volatile_store ge cp chunk m b ofs v E0 m'.
 
@@ -657,7 +657,7 @@ Definition loc_out_of_reach (f: meminj) (m: mem) (b: block) (ofs: Z): Prop :=
   f b0 = Some(b, delta) -> ~Mem.perm m b0 (ofs - delta) Max Nonempty.
 
 Definition loc_not_in_compartment (cp: compartment) (m: mem) (b: block) (ofs: Z): Prop :=
-  Mem.block_compartment m b <> Some cp.
+  Mem.block_compartment m b <> cp.
 
 Definition inject_separated (f f': meminj) (m1 m2: mem): Prop :=
   forall b1 b2 delta,
@@ -709,24 +709,25 @@ Record extcall_properties (sem: extcall_sem) (cp: compartment) (sg: signature) :
     forall ge vargs m1 t vres m2 b ofs n bytes ocp,
     sem ge cp vargs m1 t vres m2 ->
     Mem.valid_block m1 b ->
+    Mem.can_access_block m1 b ocp ->
     Mem.loadbytes m2 b ofs n ocp = Some bytes ->
     (forall i, ofs <= i < ofs + n -> ~Mem.perm m1 b i Max Writable) ->
     Mem.loadbytes m1 b ofs n ocp = Some bytes;
 
-(** External call can only allocate in the calling compartment *)
-  ec_new_valid:
-    forall ge vargs m1 t vres m2 b,
-    sem ge cp vargs m1 t vres m2 ->
-    ~ Mem.valid_block m1 b ->
-    Mem.valid_block m2 b ->
-    Mem.block_compartment m2 b = Some cp;
+(* (** External call can only allocate in the calling compartment *) *)
+(*   ec_new_valid: *)
+(*     forall ge vargs m1 t vres m2 b, *)
+(*     sem ge cp vargs m1 t vres m2 -> *)
+(*     ~ Mem.valid_block m1 b -> *)
+(*     Mem.valid_block m2 b -> *)
+(*     Mem.block_compartment m2 b = cp; *)
 
-(** TODO: External call should not be able to modify other compartment's memory *)
-(** TODO: Is this an acceptable axiom? *)
-  ec_mem_outside_compartment:
-    forall ge vargs m1 t vres m2,
-    sem ge cp vargs m1 t vres m2 ->
-    Mem.unchanged_on (loc_not_in_compartment cp m1) m1 m2;
+(* (** TODO: External call should not be able to modify other compartment's memory *) *)
+(* (** TODO: Is this an acceptable axiom? *) *)
+(*   ec_mem_outside_compartment: *)
+(*     forall ge vargs m1 t vres m2, *)
+(*     sem ge cp vargs m1 t vres m2 -> *)
+(*     Mem.unchanged_on (loc_not_in_compartment cp m1) m1 m2; *)
 
 (** External calls must commute with memory extensions, in the
   following sense. *)
@@ -756,12 +757,13 @@ Record extcall_properties (sem: extcall_sem) (cp: compartment) (sg: signature) :
     /\ Mem.unchanged_on (loc_unmapped f) m1 m2
     /\ Mem.unchanged_on (loc_out_of_reach f m1) m1' m2'
     /\ inject_incr f f'
-    /\ inject_separated f f' m1 m1' /\
-         (* TODO: is this a redundancy with [ec_new_valid]? *)
-         (forall b,
-    ~ Mem.valid_block m1 b ->
-    Mem.valid_block m2 b ->
-   exists b', f' b = Some (b', 0) /\ Mem.block_compartment m2 b = Some cp);
+    /\ inject_separated f f' m1 m1';
+   (*    /\ *)
+   (*       (* TODO: is this a redundancy with [ec_new_valid]? *) *)
+   (*       (forall b, *)
+   (*  ~ Mem.valid_block m1 b -> *)
+   (*  Mem.valid_block m2 b -> *)
+   (* exists b', f' b = Some (b', 0) /\ Mem.block_compartment m2 b = cp); *)
 
 
 (** External calls produce at most one event. *)
@@ -821,7 +823,7 @@ Proof.
   econstructor; split; eauto. econstructor; eauto.
   exploit Mem.load_extends; eauto. intros [v' [A B]]. exists v'; split; auto. econstructor; eauto.
   Local Transparent Mem.load.
-  unfold Mem.load in A. destruct (Mem.valid_access_dec m' chunk b (Ptrofs.unsigned ofs) Readable (Some cp)); try discriminate.
+  unfold Mem.load in A. destruct (Mem.valid_access_dec m' chunk b (Ptrofs.unsigned ofs) Readable cp); try discriminate.
   Local Opaque Mem.load.
   inv v0. intuition.
 Qed.
@@ -849,7 +851,7 @@ Proof.
   econstructor; eauto.
   inv VI. erewrite D; eauto.
   Local Transparent Mem.load.
-  unfold Mem.load in X. destruct (Mem.valid_access_dec m' chunk b' (Ptrofs.unsigned ofs') Readable (Some cp)); try discriminate.
+  unfold Mem.load in X. destruct (Mem.valid_access_dec m' chunk b' (Ptrofs.unsigned ofs') Readable cp); try discriminate.
   Local Opaque Mem.load.
   inv v0. intuition.
 Qed.
@@ -884,10 +886,10 @@ Proof.
 - inv H; auto.
 (* readonly *)
 - inv H; auto.
-(* mem alloc *)
-- inv H; congruence.
-(* outside cp *)
-- inv H; apply Mem.unchanged_on_refl.
+(* (* mem alloc *) *)
+(* - inv H; congruence. *)
+(* (* outside cp *) *)
+(* - inv H; apply Mem.unchanged_on_refl. *)
 (* mem extends *)
 - inv H. inv H1. inv H6. inv H4.
   exploit volatile_load_extends; eauto. intros [v' [A B]].
@@ -942,15 +944,14 @@ Lemma unchanged_on_readonly:
   forall m1 m2 b ofs n cp bytes,
   Mem.unchanged_on (loc_not_writable m1) m1 m2 ->
   Mem.valid_block m1 b ->
+  Mem.can_access_block m1 b cp ->
   Mem.loadbytes m2 b ofs n cp = Some bytes ->
   (forall i, ofs <= i < ofs + n -> ~Mem.perm m1 b i Max Writable) ->
   Mem.loadbytes m1 b ofs n cp = Some bytes.
 Proof.
   intros.
-  rewrite <- H1. symmetry.
+  rewrite <- H2. symmetry.
   apply Mem.loadbytes_unchanged_on_1 with (P := loc_not_writable m1); auto.
-  eapply Mem.unchanged_on_own; eauto.
-  eapply Mem.loadbytes_can_access_block_inj ; eauto.
 Qed.
 
 Lemma volatile_store_readonly:
@@ -1061,12 +1062,14 @@ Proof.
 - inv H. inv H2. auto. eauto with mem.
 (* readonly *)
 - inv H. eapply unchanged_on_readonly; eauto. eapply volatile_store_readonly; eauto.
-(* mem alloc *)
-- inv H. inv H2. congruence.
-  exploit Mem.store_valid_block_2; eauto. congruence.
-(* outside cp *)
-- inv H. inv H0. apply Mem.unchanged_on_refl.
-  eapply Mem.store_unchanged_on; eauto.
+
+(* (* mem alloc *) *)
+(* - inv H. inv H2. congruence. *)
+(*   exploit Mem.store_valid_block_2; eauto. congruence. *)
+(* (* outside cp *) *)
+(* - inv H. inv H0. apply Mem.unchanged_on_refl. *)
+(*   eapply Mem.store_unchanged_on; eauto. *)
+
 (* mem extends*)
 - inv H. inv H1. inv H6. inv H7. inv H4.
   exploit volatile_store_extends; eauto. intros [m2' [A [B C]]].
@@ -1075,7 +1078,7 @@ Proof.
 - inv H0. inv H2. inv H7. inv H8. inversion H5; subst.
   exploit volatile_store_inject; eauto. intros [m2' [A [B [C D]]]].
   exists f; exists Vundef; exists m2'; intuition. constructor; auto. red; intros; congruence.
-  inv H3. congruence. eapply Mem.store_valid_block_2 in H2; eauto. congruence.
+  (* inv H3. congruence. eapply Mem.store_valid_block_2 in H2; eauto. congruence. *)
 (* trace length *)
 - inv H; inv H0; simpl; lia.
 (* receptive *)
@@ -1136,17 +1139,18 @@ Proof.
   rewrite dec_eq_false. auto.
   apply Mem.valid_not_valid_diff with m1; eauto with mem.
 (* readonly *)
-- inv H. eapply unchanged_on_readonly; eauto. 
-(* mem alloc *)
-- inv H.
-  destruct (eq_block b0 b).
-  subst b0.
-  { erewrite Mem.store_block_compartment; eauto.
-    erewrite Mem.alloc_block_compartment; eauto. rewrite peq_true. eauto. }
-  exploit Mem.store_valid_block_2; eauto. intros ?.
-  exploit Mem.valid_block_alloc_inv; eauto. intros [|]; congruence.
-(* outside cp *)
-- inv H. eapply UNCHANGED; eauto.
+- inv H. eapply unchanged_on_readonly; eauto.
+
+(* (* mem alloc *) *)
+(* - inv H. *)
+(*   destruct (eq_block b0 b). *)
+(*   subst b0. *)
+(*   { erewrite Mem.store_block_compartment; eauto. *)
+(*     erewrite Mem.alloc_block_compartment; eauto. rewrite peq_true. eauto. } *)
+(*   exploit Mem.store_valid_block_2; eauto. intros ?. *)
+(*   exploit Mem.valid_block_alloc_inv; eauto. intros [|]; congruence. *)
+(* (* outside cp *) *)
+(* - inv H. eapply UNCHANGED; eauto. *)
 (* mem extends *)
 - inv H. inv H1. inv H7.
   assert (SZ: v2 = Vptrofs sz).
@@ -1177,12 +1181,12 @@ Proof.
   red; intros. destruct (eq_block b1 b).
   subst b1. rewrite C in H2. inv H2. eauto with mem.
   rewrite D in H2 by auto. congruence.
-  destruct (eq_block b0 b); subst.
-  { erewrite Mem.store_block_compartment; eauto.
-    erewrite Mem.alloc_block_compartment; eauto. rewrite peq_true. eauto. }
-  eapply Mem.store_valid_block_2 in H2; eauto.
-  clear ALLOC.
-  exploit Mem.valid_block_alloc_inv; eauto. intros [ | ]; congruence.
+  (* destruct (eq_block b0 b); subst. *)
+  (* { erewrite Mem.store_block_compartment; eauto. *)
+  (*   erewrite Mem.alloc_block_compartment; eauto. rewrite peq_true. eauto. } *)
+  (* eapply Mem.store_valid_block_2 in H2; eauto. *)
+  (* clear ALLOC. *)
+  (* exploit Mem.valid_block_alloc_inv; eauto. intros [ | ]; congruence. *)
 (* trace length *)
 - inv H; simpl; lia.
 (* receptive *)
@@ -1208,7 +1212,7 @@ Qed.
 Inductive extcall_free_sem (ge: Senv.t) (cp: compartment):
               list val -> mem -> trace -> val -> mem -> Prop :=
   | extcall_free_sem_ptr: forall b lo sz m m',
-      Mem.load Mptr m b (Ptrofs.unsigned lo - size_chunk Mptr) (Some cp) = Some (Vptrofs sz) ->
+      Mem.load Mptr m b (Ptrofs.unsigned lo - size_chunk Mptr) cp = Some (Vptrofs sz) ->
       Ptrofs.unsigned sz > 0 ->
       Mem.free m b (Ptrofs.unsigned lo - size_chunk Mptr) (Ptrofs.unsigned lo + Ptrofs.unsigned sz) cp = Some m' ->
       extcall_free_sem ge cp (Vptr b lo :: nil) m E0 Vundef m'
@@ -1235,18 +1239,18 @@ Proof.
 (* readonly *)
 - eapply unchanged_on_readonly; eauto. inv H.
 + eapply Mem.free_unchanged_on; eauto.
-  intros. red; intros. elim H6.
+  intros. red; intros. elim H7.
   apply Mem.perm_cur_max. apply Mem.perm_implies with Freeable; auto with mem.
   eapply Mem.free_range_perm; eauto.
 + apply Mem.unchanged_on_refl.
-(* mem alloc *)
-- inv H; try congruence.
-  exploit Mem.valid_block_free_2; eauto. congruence.
-(* outside cp *)
-- inv H.
-  eapply Mem.free_unchanged_on; eauto. intros. unfold loc_not_in_compartment.
-  exploit Mem.free_can_access_block_1; eauto.
-  eapply Mem.unchanged_on_refl.
+(* (* mem alloc *) *)
+(* - inv H; try congruence. *)
+(*   exploit Mem.valid_block_free_2; eauto. congruence. *)
+(* (* outside cp *) *)
+(* - inv H. *)
+(*   eapply Mem.free_unchanged_on; eauto. intros. unfold loc_not_in_compartment. *)
+(*   exploit Mem.free_can_access_block_1; eauto. *)
+(*   eapply Mem.unchanged_on_refl. *)
 (* mem extends *)
 - inv H.
 + inv H1. inv H8. inv H6.
@@ -1339,7 +1343,7 @@ Inductive extcall_memcpy_sem (sz al: Z) (ge: Senv.t) (cp: compartment):
       bsrc <> bdst \/ Ptrofs.unsigned osrc = Ptrofs.unsigned odst
                    \/ Ptrofs.unsigned osrc + sz <= Ptrofs.unsigned odst
                    \/ Ptrofs.unsigned odst + sz <= Ptrofs.unsigned osrc ->
-      Mem.loadbytes m bsrc (Ptrofs.unsigned osrc) sz (Some cp) = Some bytes ->
+      Mem.loadbytes m bsrc (Ptrofs.unsigned osrc) sz cp = Some bytes ->
       Mem.storebytes m bdst (Ptrofs.unsigned odst) bytes cp = Some m' ->
       extcall_memcpy_sem sz al ge cp (Vptr bdst odst :: Vptr bsrc osrc :: nil) m E0 Vundef m'.
 
@@ -1362,16 +1366,16 @@ Proof.
 - (* readonly *)
   intros. inv H. eapply unchanged_on_readonly; eauto. 
   eapply Mem.storebytes_unchanged_on; eauto.
-  intros; red; intros. elim H11.
+  intros; red; intros. elim H12.
   apply Mem.perm_cur_max. eapply Mem.storebytes_range_perm; eauto.
-- (* new blocks *)
-  intros.
-  inv H.
-  exploit Mem.storebytes_valid_block_2; eauto. congruence.
-(* outside cp *)
-- intros. inv H.
-  eapply Mem.storebytes_unchanged_on; eauto. intros. unfold loc_not_in_compartment.
-  exploit Mem.storebytes_can_access_block_1; eauto.
+(* - (* new blocks *) *)
+(*   intros. *)
+(*   inv H. *)
+(*   exploit Mem.storebytes_valid_block_2; eauto. congruence. *)
+(* (* outside cp *) *)
+(* - intros. inv H. *)
+(*   eapply Mem.storebytes_unchanged_on; eauto. intros. unfold loc_not_in_compartment. *)
+(*   exploit Mem.storebytes_can_access_block_1; eauto. *)
 - (* extensions *)
   intros. inv H.
   inv H1. inv H13. inv H14. inv H10. inv H11.
@@ -1393,7 +1397,7 @@ Proof.
   destruct (zeq sz 0).
 + (* special case sz = 0 *)
   assert (bytes = nil).
-  { exploit (Mem.loadbytes_empty m1 bsrc (Ptrofs.unsigned osrc) sz (Some cp)). lia.
+  { exploit (Mem.loadbytes_empty m1 bsrc (Ptrofs.unsigned osrc) sz cp). lia.
     eapply Mem.loadbytes_can_access_block_inj; eauto.
     congruence. }
   subst.
@@ -1500,11 +1504,11 @@ Proof.
 - inv H; auto.
 (* readonly *)
 - inv H; auto.
-(* mem alloc *)
-- inv H. congruence.
-(* outside cp *)
-- intros. inv H.
-  eapply Mem.unchanged_on_refl.
+(* (* mem alloc *) *)
+(* - inv H. congruence. *)
+(* (* outside cp *) *)
+(* - intros. inv H. *)
+(*   eapply Mem.unchanged_on_refl. *)
 (* mem extends *)
 - inv H.
   exists Vundef; exists m1'; intuition.
@@ -1554,11 +1558,11 @@ Proof.
 - inv H; auto.
 (* readonly *)
 - inv H; auto.
-(* mem alloc *)
-- inv H; congruence.
-(* outside cp *)
-- intros. inv H.
-  eapply Mem.unchanged_on_refl.
+(* (* mem alloc *) *)
+(* - inv H; congruence. *)
+(* (* outside cp *) *)
+(* - intros. inv H. *)
+(*   eapply Mem.unchanged_on_refl. *)
 (* mem extends *)
 - inv H. inv H1. inv H6.
   exists v2; exists m1'; intuition.
@@ -1606,11 +1610,11 @@ Proof.
 - inv H; auto.
 (* readonly *)
 - inv H; auto.
-(* mem alloc *)
-- inv H; congruence.
-(* outside cp *)
-- intros. inv H.
-  eapply Mem.unchanged_on_refl.
+(* (* mem alloc *) *)
+(* - inv H; congruence. *)
+(* (* outside cp *) *)
+(* - intros. inv H. *)
+(*   eapply Mem.unchanged_on_refl. *)
 (* mem extends *)
 - inv H.
   exists Vundef; exists m1'; intuition.
@@ -1666,11 +1670,11 @@ Proof.
 - inv H; auto.
 (* readonly *)
 - inv H; auto.
-(* mem alloc *)
-- inv H; congruence.
-(* outside cp *)
-- intros. inv H.
-  eapply Mem.unchanged_on_refl.
+(* (* mem alloc *) *)
+(* - inv H; congruence. *)
+(* (* outside cp *) *)
+(* - intros. inv H. *)
+(*   eapply Mem.unchanged_on_refl. *)
 (* mem extends *)
 - inv H. fold bsem in H2. apply val_inject_list_lessdef in H1.
   specialize (bs_inject _ bsem _ _ _ H1).
@@ -1886,11 +1890,11 @@ Lemma external_call_mem_inject:
     /\ Mem.unchanged_on (loc_unmapped f) m1 m2
     /\ Mem.unchanged_on (loc_out_of_reach f m1) m1' m2'
     /\ inject_incr f f'
-    /\ inject_separated f f' m1 m1'
-   /\ (forall b : block,
-         ~ Mem.valid_block m1 b ->
-         Mem.valid_block m2 b ->
-         exists b' : block, f' b = Some (b', 0) /\ Mem.block_compartment m2 b = Some cp).
+    /\ inject_separated f f' m1 m1'.
+   (* /\ (forall b : block, *)
+   (*       ~ Mem.valid_block m1 b -> *)
+   (*       Mem.valid_block m2 b -> *)
+   (*       exists b' : block, f' b = Some (b', 0) /\ Mem.block_compartment m2 b = cp). *)
 Proof.
   intros. destruct H as (A & B & C). eapply external_call_mem_inject_gen with (ge1 := ge); eauto.
   repeat split; intros.
@@ -2094,7 +2098,7 @@ Lemma call_trace_same_cp:
     t = E0.
 Proof.
   intros. inv H; auto.
-  now apply Genv.type_of_call_same_cp in H0.
+  now rewrite Genv.type_of_call_same_cp in H0.
 Qed.
 
 Inductive return_trace: compartment -> compartment -> val -> rettype -> trace -> Prop :=

@@ -833,8 +833,8 @@ Inductive external_function : Type :=
          Unlike [EF_annot], produces no observable event. *)
 
 
-(** External functions don't have compartment *)
-Instance has_comp_external_function : has_comp (external_function) := fun _ => bottom.
+(* (** External functions don't have compartment *) *)
+(* Instance has_comp_external_function : has_comp (external_function) := fun _ => bottom. *)
 
 
 (** The type signature of an external function. *)
@@ -899,6 +899,12 @@ Inductive fundef (F: Type): Type :=
   | External: external_function -> fundef F.
 
 Arguments External [F].
+#[export] Instance has_comp_fundef F {CF: has_comp F}: has_comp (fundef F) :=
+  fun fd =>
+    match fd with
+    | Internal f => comp_of f
+    | External ef => bottom
+    end.
 
 Section TRANSF_FUNDEF.
 

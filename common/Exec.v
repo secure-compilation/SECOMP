@@ -173,7 +173,7 @@ Lemma get_call_trace_eq:
 Proof.
   intros. split.
   - intros H. unfold get_call_trace.
-    inv H; simpl. destruct (Genv.type_of_call cp cp'); try congruence.
+    inv H. destruct (Genv.type_of_call cp cp'); try congruence.
     erewrite H0, H2, list_eventval_of_val_complete; eauto.
   - unfold get_call_trace.
     intros H.
@@ -203,7 +203,7 @@ Lemma get_return_trace_eq:
 Proof.
   intros. split.
   - intros H. unfold get_return_trace.
-    inv H; simpl. destruct (Genv.type_of_call cp cp'); try congruence.
+    inv H. destruct (Genv.type_of_call cp cp'); try congruence.
     rewrite H0. rewrite (eventval_of_val_complete res); auto.
   - unfold get_return_trace.
     intros H.
@@ -229,7 +229,7 @@ Definition do_volatile_load (w: world) (chunk: memory_chunk) (cp: compartment) (
         Some(w', Event_vload chunk id ofs res :: nil, Val.load_result chunk vres)
     end
   else
-    do v <- Mem.load chunk m b (Ptrofs.unsigned ofs) (Some cp);
+    do v <- Mem.load chunk m b (Ptrofs.unsigned ofs) cp;
     Some(w, E0, v).
 
 Definition do_volatile_store (w: world) (chunk: memory_chunk) (cp: compartment) (m: mem) (b: block) (ofs: ptrofs) (v: val)
@@ -261,7 +261,8 @@ Proof.
 Qed.
 
 Lemma do_volatile_load_complete:
-  forall w chunk cp m b ofs w' t v,
+  forall w chunk cp m b ofs w' t v
+,
   volatile_load ge cp chunk m b ofs t v -> possible_trace w t w' ->
   do_volatile_load w chunk cp m b ofs = Some(w', t, v).
 Proof.
@@ -372,7 +373,7 @@ Definition do_ef_free (cp: compartment)
        (w: world) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
   match vargs with
   | Vptr b lo :: nil =>
-      do vsz <- Mem.load Mptr m b (Ptrofs.unsigned lo - size_chunk Mptr) (Some cp);
+      do vsz <- Mem.load Mptr m b (Ptrofs.unsigned lo - size_chunk Mptr) cp;
       do sz <- do_alloc_size vsz;
       check (zlt 0 (Ptrofs.unsigned sz));
       do m' <- Mem.free m b (Ptrofs.unsigned lo - size_chunk Mptr) (Ptrofs.unsigned lo + Ptrofs.unsigned sz) cp;
@@ -401,7 +402,7 @@ Definition do_ef_memcpy (sz al: Z)
   match vargs with
   | Vptr bdst odst :: Vptr bsrc osrc :: nil =>
       if decide (memcpy_args_ok sz al bdst (Ptrofs.unsigned odst) bsrc (Ptrofs.unsigned osrc)) then
-        do bytes <- Mem.loadbytes m bsrc (Ptrofs.unsigned osrc) sz (Some cp);
+        do bytes <- Mem.loadbytes m bsrc (Ptrofs.unsigned osrc) sz cp;
         do m' <- Mem.storebytes m bdst (Ptrofs.unsigned odst) bytes cp;
         Some(w, E0, Vundef, m')
       else None
