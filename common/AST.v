@@ -133,14 +133,14 @@ Class has_comp_match {C T S: Type} {CT: has_comp T} {CS: has_comp S}
   comp_match:
     forall c x y, R c x y -> comp_of x = comp_of y.
 
-Instance has_comp_transl_match:
+#[export] Instance has_comp_transl_match:
   forall {C T S: Type}
          {CT: has_comp T} {CS: has_comp S}
          (f: T -> S) {Cf: has_comp_transl f},
   has_comp_match (fun (c : C) x y => y = f x).
 Proof. now intros C T S ???? c x y ->; rewrite comp_transl. Qed.
 
-Instance has_comp_transl_partial_match:
+#[export] Instance has_comp_transl_partial_match:
   forall {C T S: Type}
          {CT: has_comp T} {CS: has_comp S}
          (f: T -> res S) {Cf: has_comp_transl_partial f},
@@ -149,7 +149,7 @@ Proof.
   intros C T S ???? c. exact comp_transl_partial.
 Qed.
 
-Instance has_comp_transl_match_contextual:
+#[export] Instance has_comp_transl_match_contextual:
   forall {C D T S: Type}
          {CT: has_comp T} {CS: has_comp S}
          (f: D -> T -> S) {Cf: forall d, has_comp_transl (f d)}
@@ -159,7 +159,7 @@ Proof.
 now intros C D T S CT CS f Cf g ??? ->; rewrite comp_transl.
 Qed.
 
-Instance has_comp_transl_partial_match_contextual:
+#[export] Instance has_comp_transl_partial_match_contextual:
   forall {C D T S: Type}
          {CT: has_comp T} {CS: has_comp S}
          (f: D -> T -> res S) {Cf: forall d, has_comp_transl_partial (f d)}

@@ -1214,7 +1214,7 @@ Inductive match_states: Cminor.state -> CminorSel.state -> Prop :=
       match_states
         (Cminor.Callstate (External ef) args (Cminor.Kcall optid f sp e k) m (comp_of f))
         (State f' (sel_builtin optid ef al) k' sp e' m')
-  | match_builtin_2: forall cunit hf v v' optid f sp e k m f' e' m' k' env ty
+  | match_builtin_2: forall cunit hf v v' optid f sp e k m f' e' m' k' env ty cp
         (LINK: linkorder cunit prog)
         (HF: helper_functions_declared cunit hf)
         (TF: sel_function (prog_defmap cunit) hf f = OK f')
@@ -1223,9 +1223,10 @@ Inductive match_states: Cminor.state -> CminorSel.state -> Prop :=
         (LDV: Val.lessdef v v')
         (LDE: env_lessdef (set_optvar optid v e) e')
         (ME: Mem.extends m m')
-        (CPT: comp_of f = comp_of f'),
+        (CPT: comp_of f = comp_of f')
+        (CPT_RET: cp ⊆ comp_of f),
       match_states
-        (Cminor.Returnstate v (Cminor.Kcall optid f sp e k) m ty (comp_of f))
+        (Cminor.Returnstate v (Cminor.Kcall optid f sp e k) m ty cp)
         (State f' Sskip k' sp e' m').
 
 Remark call_cont_commut:
@@ -1618,8 +1619,7 @@ Proof.
   rewrite <- CPT; eauto.
   intros (e2' & m2' & P & Q & R).
   left; econstructor; split. eexact P.
-  replace bottom with (@comp_of _ (@has_comp_fundef function has_comp_function) (External ef)).
-  econstructor; eauto.
+  econstructor; eauto. apply bottom_flowsto.
 - (* return *)
   inv MC.
   left; econstructor; split.
@@ -1634,7 +1634,7 @@ Proof.
   econstructor; eauto. destruct optid; simpl; auto. apply set_var_lessdef; auto.
 - (* return of an external call turned into a Sbuiltin *)
   right; left; split. simpl; lia. split.
-  { inv EV; auto. eapply Genv.type_of_call_same_cp in H; contradiction. }
+  { inv EV; auto. simpl in H. destruct (flowsto_dec cp (comp_of f)) eqn:?; now auto. }
   econstructor; eauto.
 Qed.
 
@@ -1693,19 +1693,15 @@ Global Instance TransfSelectionLink : TransfLink match_prog.
 Proof.
   red; intros. destruct (link_linkorder _ _ _ H) as [LO1 LO2].
   eapply link_match_program; eauto.
-  intros. elim H3. intros hf1 [hf_c1 [HF_C1 [A1 B1]]]. elim H4; intros hf2 [hf_c2 [HF_C2 [A2 B2]]].
+  intros. elim H3. intros hf [A1 B1]. elim H4; intros hf' [A2 B2].
 Local Transparent Linker_fundef.
   simpl in *. destruct f1, f2; simpl in *; monadInv B1; monadInv B2; simpl.
 - discriminate.
 - destruct e; try easy.
-  destruct eq_compartment; try easy.
-  subst cp. inv H2.
-  rewrite <- (comp_transl_partial _ EQ), dec_eq_true.
+  inv H2.
   econstructor; eauto.
 - destruct e; try easy.
-  destruct eq_compartment; try easy.
-  subst cp. inv H2.
-  rewrite <- (comp_transl_partial _ EQ), dec_eq_true.
+  inv H2.
   econstructor; eauto.
 - destruct (external_function_eq e e0); inv H2. econstructor; eauto.
 Qed.

@@ -350,7 +350,7 @@ Require Import Errors.
 Definition match_prog (p: CminorSel.program) (tp: RTL.program) :=
   match_program (fun cu f tf => transl_fundef f = Errors.OK tf) eq p tp.
 
-#[global]
+#[export]
 Instance comp_transl_function: has_comp_transl_partial transl_function.
 Proof.
   unfold transl_function.
@@ -424,6 +424,8 @@ Lemma allowed_call_translated_same:
 Proof.
   intros cp vf H.
   eapply (Genv.match_genvs_allowed_calls TRANSL). eauto.
+  Unshelve.
+  eauto. eapply has_comp_transl_match.
 Qed.
 
 
