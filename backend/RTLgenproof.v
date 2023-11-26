@@ -424,10 +424,7 @@ Lemma allowed_call_translated_same:
 Proof.
   intros cp vf H.
   eapply (Genv.match_genvs_allowed_calls TRANSL). eauto.
-  Unshelve.
-  eauto. eapply has_comp_transl_match.
 Qed.
-
 
 
 Lemma allowed_call_translated:
@@ -447,19 +444,12 @@ Lemma find_comp_translated:
   forall vf vf' fd,
     Val.lessdef vf vf' ->
     Genv.find_funct ge vf = Some fd ->
-    Genv.find_comp ge vf = Genv.find_comp  tge vf'.
+    Genv.find_comp_in_genv ge vf = Genv.find_comp_in_genv tge vf'.
 Proof.
   intros vf vf' fd LESSDEF FIND.
   inv LESSDEF.
-  - eapply (Genv.match_genvs_find_comp TRANSL).
+  - eapply (Genv.match_genvs_find_comp_in_genv TRANSL).
   - inv FIND.
-Qed.
-
-Lemma type_of_call_translated:
-  forall cp cp',
-    Genv.type_of_call cp cp' = Genv.type_of_call cp cp'.
-Proof.
-  eapply Genv.match_genvs_type_of_call.
 Qed.
 
 Lemma call_trace_translated:
@@ -661,7 +651,7 @@ Lemma transl_expr_Eload_correct:
   eval_exprlist ge sp e cp m le args vargs ->
   transl_exprlist_prop le args vargs ->
   Op.eval_addressing ge sp addr vargs = Some vaddr ->
-  Mem.loadv chunk m vaddr (Some cp) = Some v ->
+  Mem.loadv chunk m vaddr cp = Some v ->
   transl_expr_prop le (Eload chunk addr args) v.
 Proof.
   intros; red; intros.
@@ -786,8 +776,7 @@ Lemma transl_expr_Ebuiltin_correct:
   forall le ef al vl v,
   eval_exprlist ge sp e cp m le al vl ->
   transl_exprlist_prop le al vl ->
-  external_call ef ge vl m E0 v m ->
-  comp_of ef = cp ->
+  external_call ef ge cp vl m E0 v m ->
   transl_expr_prop le (Ebuiltin ef al) v.
 Proof.
   intros; red; intros. inv TE.
@@ -798,8 +787,9 @@ Proof.
 (* Exec *)
   split. eapply star_right. eexact EX1.
   change (rs1#rd <- v') with (regmap_setres (BR rd) v' rs1).
-  eapply exec_Ibuiltin; eauto. congruence.
+  eapply exec_Ibuiltin; eauto.
   eapply eval_builtin_args_trivial.
+  rewrite <- COMP.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   traceEq.
 (* Match-env *)
@@ -819,8 +809,8 @@ Lemma transl_expr_Eexternal_correct:
   ef_sig ef = sg ->
   eval_exprlist ge sp e cp m le al vl ->
   transl_exprlist_prop le al vl ->
-  external_call ef ge vl m E0 v m ->
-  forall (INTRA: Genv.type_of_call cp (comp_of ef) <> Genv.CrossCompartmentCall),
+  external_call ef ge cp vl m E0 v m ->
+  (* forall (INTRA: Genv.type_of_call cp (comp_of ef) <> Genv.CrossCompartmentCall), *)
   transl_expr_prop le (Eexternal id sg al) v.
 Proof.
   intros; red; intros. inv TE.
@@ -830,29 +820,34 @@ Proof.
   exploit function_ptr_translated; eauto. simpl. intros [tf [P Q]]. inv Q.
   exists (rs1#rd <- v'); exists tm2.
 (* Exec *)
-  rewrite COMP in INTRA.
-  assert (comp_of f = comp_of ef) as e0.
-  { unfold Genv.type_of_call in INTRA.
-    destruct (Pos.eqb_spec (comp_of f) (comp_of ef)) as [e0|]; try congruence. }
   split. eapply star_trans. eexact EX1.
   eapply star_left. eapply exec_Icall; eauto.
   unfold find_function.
   simpl. rewrite symbols_preserved. rewrite H. eauto. auto. simpl. rewrite symbols_preserved. rewrite H. eauto.
   unfold Genv.allowed_call.
-  rewrite e0.
+  (* rewrite e0. *)
   rewrite <- (find_comp_translated (Vptr b Ptrofs.zero) (Vptr b Ptrofs.zero) _ (Val.lessdef_refl _) H0).
-  unfold Genv.find_comp. apply Genv.find_funct_ptr_iff in H0.
+  unfold Genv.find_comp_in_genv. apply Genv.find_funct_ptr_iff in H0.
   simpl. unfold Genv.find_comp_of_block. simpl in H0. simpl.
-  unfold CminorSel.fundef. rewrite H0. eauto.
-  intros contra. destruct (INTRA contra).
+  unfold CminorSel.fundef. rewrite H0. left; auto with comps.
+  intros contra. simpl in contra.
+  destruct (flowsto_dec bottom (comp_of f)); try congruence.
+  pose proof (bottom_flowsto (comp_of f)). contradiction.
   instantiate (1 := E0).
-  econstructor. assumption.
+  econstructor.
+  intros contra. simpl in contra.
+  destruct (flowsto_dec bottom (comp_of f)); try congruence.
+  pose proof (bottom_flowsto (comp_of f)). contradiction.
   eapply star_left. eapply exec_function_external.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   clear H3; subst cp. eauto.
   apply star_one. apply exec_return.
-  unfold Genv.type_of_call. now rewrite e0, Pos.eqb_refl.
-  econstructor. assumption.
+  unfold Genv.type_of_call.
+  destruct (flowsto_dec bottom (comp_of f)); try congruence.
+  pose proof (bottom_flowsto (comp_of f)). contradiction.
+  econstructor. simpl.
+  destruct (flowsto_dec bottom (comp_of f)); try congruence.
+  pose proof (bottom_flowsto (comp_of f)). contradiction.
   reflexivity. reflexivity. reflexivity.
 (* Match-env *)
   split. eauto with rtlg.
@@ -1344,7 +1339,6 @@ Proof.
   | TF : tr_fun _ _ _ _ _ _ |- _ =>
     inv TF; symmetry; eauto
   end.
-  now rewrite COMP.
 Qed.
 
 Inductive match_states: CminorSel.state -> RTL.state -> Prop :=
@@ -1359,13 +1353,13 @@ Inductive match_states: CminorSel.state -> RTL.state -> Prop :=
       match_states (CminorSel.State f s k sp e m)
                    (RTL.State cs tf sp ns rs tm)
   | match_callstate:
-      forall f args targs k m tm cs tf
+      forall f args targs k m tm cs tf cp
         (TF: transl_fundef f = OK tf)
         (MS: match_stacks (sig_res (CminorSel.funsig f)) k cs)
         (LD: Val.lessdef_list args targs)
         (MEXT: Mem.extends m tm),
-      match_states (CminorSel.Callstate f args k m)
-                   (RTL.Callstate cs tf targs tm)
+      match_states (CminorSel.Callstate f args k m cp)
+                   (RTL.Callstate cs tf targs tm cp)
   | match_returnstate:
       forall v tv k m tm cs ty cp
         (MS: match_stacks ty k cs)
@@ -1512,6 +1506,7 @@ Proof.
     eapply call_trace_translated with (vf := vf); eauto.
     rewrite J; eauto. now left. }
   traceEq.
+  rewrite COMP.
   constructor; auto.
   econstructor; eauto.
   (* direct *)
@@ -1532,6 +1527,7 @@ Proof.
   { rewrite <- COMP, <- (comp_transl_partial _ Q).
     eapply call_trace_translated with (vf := (Vptr b Ptrofs.zero)); eauto. }
   traceEq.
+  rewrite COMP.
   constructor; auto.
   econstructor; eauto.
 
@@ -1554,6 +1550,7 @@ Proof.
     rewrite <- (comp_transl_partial fd Q), COMP. inv TF; congruence.
   rewrite H, <- COMP'; eauto.
   traceEq.
+  rewrite COMP'.
   constructor; auto. rewrite SIG in U. auto.
   (* direct *)
   exploit transl_exprlist_correct; eauto.
@@ -1570,6 +1567,7 @@ Proof.
   rewrite <- (comp_transl_partial _ Q), COMP. inv TF; congruence.
   rewrite H, <- COMP'; eauto.
   traceEq.
+  rewrite COMP'.
   constructor; auto. rewrite SIG in U. auto.
 
   (* builtin *)
@@ -1586,8 +1584,9 @@ Proof.
   edestruct external_call_mem_extends as [tv [tm'' [A [B [C D]]]]]; eauto.
   econstructor; split.
   left. eapply plus_right. eexact E.
-  eapply exec_Ibuiltin; eauto. congruence.
+  eapply exec_Ibuiltin; eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
+  rewrite <- COMP.
   eapply external_call_symbols_preserved. apply senv_preserved. eauto.
   traceEq.
   econstructor; eauto. constructor.

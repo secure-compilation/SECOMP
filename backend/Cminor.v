@@ -414,10 +414,10 @@ Definition is_call_cont (k: cont) : Prop :=
   | _ => False
   end.
 
-Definition call_comp (k: cont) : option compartment :=
+Definition call_comp (k: cont) : compartment :=
   match call_cont k with
-  | Kcall _ f _ _ _ => Some (comp_of f)
-  | _ => None
+  | Kcall _ f _ _ _ => comp_of f
+  | _ => top
   end.
 
 (** Find the statement and manufacture the continuation
