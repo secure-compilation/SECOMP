@@ -1008,13 +1008,13 @@ Definition kind_second_word := if Archi.big_endian then Low else High.
   equations that must hold "before" these instructions, or [None] if
   impossible. *)
 
-(* FIXME A [Genv.type_of_call]-like function that closely mimics it but does not
-   take a global environment as a parameter and only distinguishes between
-   cross-compartment calls and everything else. Can be made cleaner. *)
-Definition is_external_call (cp: compartment) (cp': compartment): bool :=
-  if Pos.eqb cp cp' then false
-  else if Pos.eqb cp' default_compartment then false
-       else true.
+(* (* FIXME A [Genv.type_of_call]-like function that closely mimics it but does not *)
+(*    take a global environment as a parameter and only distinguishes between *)
+(*    cross-compartment calls and everything else. Can be made cleaner. *) *)
+(* Definition is_external_call (cp: compartment) (cp': compartment): bool := *)
+(*   if Pos.eqb cp cp' then false *)
+(*   else if Pos.eqb cp' default_compartment then false *)
+(*        else true. *)
 
 Definition transfer_aux (f: RTL.function) (env: regenv)
                         (shape: block_shape) (e: eqs) : option eqs :=
@@ -1120,7 +1120,7 @@ Definition transfer_aux (f: RTL.function) (env: regenv)
       assertion (can_undef (destroyed_by_builtin ef) e2);
       do e3 <-
         match ef with
-        | EF_debug _ _ _ _ => add_equations_debug_args env args args' e2
+        | EF_debug _ _ _ => add_equations_debug_args env args args' e2
         | _              => add_equations_builtin_args env args args' e2
         end;
       track_moves env mv1 e3
@@ -1365,7 +1365,7 @@ Definition check_function (rtl: RTL.function) (ltl: LTL.function) (env: regenv):
   match analyze rtl env bsh with
   | None => Error (msg "allocation analysis diverges")
   | Some a =>
-    if eq_compartment rtl.(RTL.fn_comp) ltl.(LTL.fn_comp) then
+    if cp_eq_dec rtl.(RTL.fn_comp) ltl.(LTL.fn_comp) then
       check_entrypoints rtl ltl env bsh a
     else Error (msg "register allocation changed the function compartment")
   end.

@@ -297,10 +297,10 @@ Qed.
 
 Lemma find_comp_translated:
   forall vf,
-    Genv.find_comp ge vf = Genv.find_comp tge vf.
+    Genv.find_comp_in_genv ge vf = Genv.find_comp_in_genv tge vf.
 Proof.
   intros vf.
-  eapply (Genv.match_genvs_find_comp TRANSL).
+  eapply (Genv.match_genvs_find_comp_in_genv TRANSL).
 Qed.
 
 Lemma senv_preserved:
@@ -703,7 +703,7 @@ Proof.
                    (fun p : rpair loc =>
                     Locmap.getpair p
                       (undef_regs destroyed_at_function_entry
-                         (* match Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) with *)
+                         (* match Genv.type_of_call ge (comp_of f) (Genv.find_comp_in_genv ge vf) with *)
                          (* | Genv.CrossCompartmentCall => call_regs_ext rs (funsig fd) *)
                          (* | _ => call_regs rs *)
                          (* end *)
@@ -713,7 +713,7 @@ Proof.
                    (fun p : rpair loc =>
                     Locmap.getpair p
                       (undef_regs destroyed_at_function_entry
-                         (* match Genv.type_of_call tge (comp_of (tunnel_function f)) (Genv.find_comp ge vf) with *)
+                         (* match Genv.type_of_call tge (comp_of (tunnel_function f)) (Genv.find_comp_in_genv ge vf) with *)
                          (* | Genv.CrossCompartmentCall => call_regs_ext tls (funsig fd) *)
                          (* | _ => call_regs tls *)
                          (* end *)
@@ -722,7 +722,7 @@ Proof.
   { apply locmap_getpairs_lessdef.
     apply locmap_undef_regs_lessdef.
     (* rewrite EQ. *)
-    (* destruct (Genv.type_of_call tge (comp_of (tunnel_function f)) (Genv.find_comp ge vf)). *)
+    (* destruct (Genv.type_of_call tge (comp_of (tunnel_function f)) (Genv.find_comp_in_genv ge vf)). *)
     (* apply call_regs_lessdef. auto. *)
     apply call_regs_ext_lessdef. auto.
     (* apply call_regs_lessdef. auto. *)
@@ -812,8 +812,10 @@ Proof.
   intros (tvres & tm' & A & B & C & D).
   left; simpl; econstructor; split.
   eapply exec_function_external; eauto.
+  replace (call_comp ts) with (call_comp s) by (inv STK; auto; inv H; auto).
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  simpl. econstructor; eauto using locmap_setpair_lessdef, locmap_undef_caller_save_regs_lessdef.
+  replace (call_comp ts) with (call_comp s) by (inv STK; auto; inv H; auto).
+  econstructor; eauto using locmap_setpair_lessdef, locmap_undef_caller_save_regs_lessdef.
 - (* return *)
   inv STK. inv H1.
   left; econstructor; split.

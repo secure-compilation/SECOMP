@@ -91,31 +91,31 @@ Definition transfer_builtin
               (ae: aenv) (am: amem) (rm: romem) (ef: external_function)
               (args: list (builtin_arg reg)) (res: builtin_res reg) :=
   match ef, args with
-  | EF_vload _ chunk, addr :: nil =>
+  | EF_vload chunk, addr :: nil =>
       let aaddr := abuiltin_arg ae am rm addr in
       let a :=
         if va_strict tt
         then vlub (loadv chunk rm am aaddr) (vnormalize chunk (Ifptr Glob))
         else vnormalize chunk Vtop in
       VA.State (set_builtin_res res a ae) am
-  | EF_vstore _ chunk, addr :: v :: nil =>
+  | EF_vstore chunk, addr :: v :: nil =>
       let aaddr := abuiltin_arg ae am rm addr in
       let av := abuiltin_arg ae am rm v in
       let am' := storev chunk am aaddr av in
       VA.State (set_builtin_res res ntop ae) (mlub am am')
-  | EF_memcpy _ sz al, dst :: src :: nil =>
+  | EF_memcpy sz al, dst :: src :: nil =>
       let adst := abuiltin_arg ae am rm dst in
       let asrc := abuiltin_arg ae am rm src in
       let p := loadbytes am rm (aptr_of_aval asrc) in
       let am' := storebytes am (aptr_of_aval adst) sz p in
       VA.State (set_builtin_res res ntop ae) am'
-  | (EF_annot _ _ _ _ | EF_debug _ _ _ _), _ =>
+  | (EF_annot _ _ _ | EF_debug _ _ _), _ =>
       VA.State (set_builtin_res res ntop ae) am
-  | EF_annot_val _ _ _ _, v :: nil =>
+  | EF_annot_val _ _ _, v :: nil =>
       let av := abuiltin_arg ae am rm v in
       VA.State (set_builtin_res res av ae) am
-  | EF_builtin cp name sg, _ =>
-      match lookup_builtin_function name cp sg with
+  | EF_builtin name sg, _ =>
+      match lookup_builtin_function name sg with
       | Some bf => 
           match eval_static_builtin_function ae am rm bf args with
           | Some av => VA.State (set_builtin_res res av ae) am
@@ -935,8 +935,8 @@ Qed.
 (** Construction 6: external call *)
 
 Theorem external_call_match:
-  forall ef (ge: genv) vargs m t vres m' bc rm am,
-  external_call ef ge vargs m t vres m' ->
+  forall ef (ge: genv) cp vargs m t vres m' bc rm am,
+  external_call ef ge cp vargs m t vres m' ->
   genv_match bc ge ->
   (forall v, In v vargs -> vmatch bc v Vtop) ->
   romatch bc m rm ->
@@ -952,20 +952,20 @@ Theorem external_call_match:
   /\ bc_nostack bc'
   /\ (forall b ofs n cp,
       Mem.valid_block m b ->
-      (* forall OWN : Mem.can_access_block m b cp, *)
+      Mem.can_access_block m b cp ->
       bc b = BCinvalid ->
       Mem.loadbytes m' b ofs n cp = Mem.loadbytes m b ofs n cp).
 Proof.
   intros until am; intros EC GENV ARGS RO MM NOSTACK.
   (* Part 1: using ec_mem_inject *)
-  exploit (@external_call_mem_inject ef _ _ ge vargs m t vres m' (inj_of_bc bc) m vargs).
+  exploit (@external_call_mem_inject ef _ _ ge cp vargs m t vres m' (inj_of_bc bc) m vargs).
   apply inj_of_bc_preserves_globals; auto.
   exact EC.
   eapply mmatch_inj; eauto. eapply mmatch_below; eauto.
   revert ARGS. generalize vargs.
   induction vargs0; simpl; intros; constructor.
   eapply vmatch_inj; eauto. auto.
-  intros (j' & vres' & m'' & EC' & IRES & IMEM & UNCH1 & UNCH2 & IINCR & ISEP & _).
+  intros (j' & vres' & m'' & EC' & IRES & IMEM & UNCH1 & UNCH2 & IINCR & ISEP).
   assert (JBELOW: forall b, Plt b (Mem.nextblock m) -> j' b = inj_of_bc bc b).
   {
     intros. destruct (inj_of_bc bc b) as [[b' delta] | ] eqn:EQ.
@@ -1065,14 +1065,16 @@ Proof.
   destruct (j' b); congruence.
 - (* unmapped blocks are invariant *)
   intros.
-  destruct (Mem.can_access_block_dec m b cp) eqn:e.
+  destruct (Mem.can_access_block_dec m b cp0) eqn:e.
   eapply Mem.loadbytes_unchanged_on_1; auto.
-  apply UNCH1; auto. intros; red. unfold inj_of_bc; rewrite H0; auto.
-  destruct (Mem.can_access_block_dec m' b cp) eqn:e'.
-  eapply Mem.unchanged_on_own in UNCH1; eauto. clear e'. eapply (proj2 UNCH1) in c. contradiction.
-  Local Transparent Mem.loadbytes. unfold Mem.loadbytes.
-  rewrite e, e'. simpl. rewrite 2!andb_false_r. reflexivity.
-  Local Opaque Mem.loadbytes.
+  apply UNCH1; auto. intros; red. unfold inj_of_bc; rewrite H1; auto.
+  contradiction.
+  (* destruct (Mem.can_access_block_dec m' b cp0) eqn:e'. *)
+  (* eapply Mem.unchanged_on_own in UNCH1; eauto. clear e'. *)
+  (* eapply (proj2 UNCH1) in c. contradiction. *)
+  (* Local Transparent Mem.loadbytes. unfold Mem.loadbytes. *)
+  (* rewrite e, e'. simpl. rewrite 2!andb_false_r. reflexivity. *)
+  (* Local Opaque Mem.loadbytes. *)
 Qed.
 
 (** ** Semantic invariant *)
@@ -1098,7 +1100,7 @@ Inductive sound_stack: block_classification -> list stackframe -> mem -> block -
         (GE: genv_match bc' ge)
         (AN: VA.ge (analyze rm f)!!pc (VA.State (AE.set res Vtop ae) mafter_public_call))
         (EM: ematch bc' e ae)
-        (ACC: Mem.can_access_block m sp (Some (comp_of f))),
+        (ACC: Mem.can_access_block m sp (comp_of f)),
       sound_stack bc (Stackframe res ty f (Vptr sp Ptrofs.zero) pc e :: stk) m bound
   | sound_stack_private_call:
      forall (bc: block_classification) res ty f sp pc e stk m bound bc' bound' ae am
@@ -1111,7 +1113,7 @@ Inductive sound_stack: block_classification -> list stackframe -> mem -> block -
         (GE: genv_match bc' ge)
         (AN: VA.ge (analyze rm f)!!pc (VA.State (AE.set res (Ifptr Nonstack) ae) (mafter_private_call am)))
         (EM: ematch bc' e ae)
-        (ACC: Mem.can_access_block m sp (Some (comp_of f)))
+        (ACC: Mem.can_access_block m sp (comp_of f))
         (CONTENTS: bmatch bc' m sp am.(am_stack)),
       sound_stack bc (Stackframe res ty f (Vptr sp Ptrofs.zero) pc e :: stk) m bound.
 
@@ -1125,17 +1127,17 @@ Inductive sound_state_base: state -> Prop :=
         (MM: mmatch bc m am)
         (GE: genv_match bc ge)
         (SP: bc sp = BCstack)
-        (ACC: Mem.can_access_block m sp (Some (comp_of f))),
+        (ACC: Mem.can_access_block m sp (comp_of f)),
       sound_state_base (State s f (Vptr sp Ptrofs.zero) pc e m)
   | sound_call_state:
-      forall s fd args m bc
+      forall s fd args m cp bc
         (STK: sound_stack bc s m (Mem.nextblock m))
         (ARGS: forall v, In v args -> vmatch bc v Vtop)
         (RO: romatch bc m rm)
         (MM: mmatch bc m mtop)
         (GE: genv_match bc ge)
         (NOSTK: bc_nostack bc),
-      sound_state_base (Callstate s fd args m)
+      sound_state_base (Callstate s fd args m cp)
   | sound_return_state:
       forall s v m cp bc
         (STK: sound_stack bc s m (Mem.nextblock m))
@@ -1273,7 +1275,7 @@ Lemma sound_succ_state:
   genv_match bc ge ->
   bc sp = BCstack ->
   sound_stack bc s m' sp ->
-  Mem.can_access_block m' sp (Some (comp_of f)) ->
+  Mem.can_access_block m' sp (comp_of f) ->
   sound_state_base (State s f (Vptr sp Ptrofs.zero) pc' e' m').
 Proof.
   intros. exploit analyze_succ; eauto. intros (ae'' & am'' & AN & EM & MM).
@@ -1383,7 +1385,7 @@ Proof.
   rewrite K; auto.
   intros. rewrite K; auto. rewrite C; auto.
   apply bmatch_inv with m. eapply mmatch_stack; eauto.
-  intros. apply Q; auto.
+  intros. apply Q; eauto.
   eapply external_call_nextblock; eauto.
   intros (bc3 & U & V & W & X & Y & Z & AA).
   eapply sound_succ_state with (bc := bc3); eauto. simpl; auto.

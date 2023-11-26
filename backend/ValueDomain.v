@@ -3317,22 +3317,7 @@ Proof.
 - right. rewrite <- H0. symmetry. eapply Mem.loadbytes_storebytes_other; eauto. lia.
 - subst b'. left.
   eapply loadbytes_provenance; eauto.
-  destruct cp' as [cp' |].
-  + assert (cp = cp').
-    { Local Transparent Mem.storebytes Mem.loadbytes.
-      unfold Mem.storebytes, Mem.loadbytes in *.
-      destruct (Mem.range_perm_dec m b ofs (ofs + Z.of_nat (Datatypes.length bytes)) Cur Writable);
-        try discriminate.
-      destruct (Mem.can_access_block_dec m b (Some cp)) as [ACC | ACC]; try discriminate.
-      destruct (Mem.range_perm_dec m' b ofs' (ofs' + 1) Cur Readable);
-        try discriminate.
-      destruct (Mem.can_access_block_dec m' b (Some cp')) as [ACC' | ACC']; try discriminate.
-      simpl in *. inv H. unfold Mem.block_compartment in ACC'. simpl in ACC'.
-      unfold Mem.block_compartment in ACC. congruence.
-      Local Opaque Mem.storebytes Mem.loadbytes. }
-    subst.
-    eapply Mem.loadbytes_storebytes_same; eauto.
-  + eapply Mem.loadbytes_storebytes_same_None; eauto.
+  exploit Mem.loadbytes_change_comp; eauto. lia.
 Qed.
 
 Lemma store_provenance:
@@ -4436,10 +4421,13 @@ Proof.
   intros. exploit inj_of_bc_inv; eauto. intros (A & B & C); subst.
   rewrite Z.add_0_r.
   set (mv := ZMap.get ofs (PMap.get b1 (Mem.mem_contents m))).
-  assert (Mem.loadbytes m b1 ofs 1 None = Some (mv :: nil)).
+  assert (Mem.loadbytes m b1 ofs 1 top = Some (mv :: nil)).
   {
     Local Transparent Mem.loadbytes.
-    unfold Mem.loadbytes. simpl. rewrite andb_true_r.
+    unfold Mem.loadbytes. simpl.
+    destruct (Mem.can_access_block_dec) as [E | NE]; simpl in *;
+      pose proof (flowsto_top (Mem.block_compartment m b1)); try congruence.
+    rewrite andb_true_r.
     destruct ((Mem.range_perm_dec m b1 ofs (ofs + 1) Cur Readable)); try reflexivity.
     exfalso; apply n.
     red; intros. replace ofs0 with ofs by lia. auto.

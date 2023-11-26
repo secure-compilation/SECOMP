@@ -1953,6 +1953,21 @@ Proof.
   apply storebytes_can_access_block_inj_1; eassumption.
 Qed.
 
+Theorem loadbytes_change_comp:
+  forall ofs' z cp' v',
+    0 < z ->
+    loadbytes m2 b ofs' z cp' = Some v' ->
+    loadbytes m2 b ofs (Z.of_nat (length bytes)) cp' = Some bytes.
+Proof.
+  intros ofs' z cp' v' z0 H.
+  pose proof loadbytes_storebytes_same as G.
+  unfold loadbytes in *.
+  destruct andb eqn:E1; try congruence. apply andb_prop in E1 as [E1 E1'].
+  destruct andb eqn:E2; try congruence. apply andb_prop in E2 as [E2 E2'].
+  destruct andb eqn:E3; try congruence. apply andb_false_iff in E3 as [E3 | E3];
+    congruence.
+Qed.
+
 Theorem loadbytes_storebytes_same_None:
   loadbytes m2 b ofs (Z.of_nat (length bytes)) top = Some bytes.
 Proof.

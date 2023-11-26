@@ -709,7 +709,7 @@ Record extcall_properties (sem: extcall_sem) (cp: compartment) (sg: signature) :
     forall ge vargs m1 t vres m2 b ofs n bytes ocp,
     sem ge cp vargs m1 t vres m2 ->
     Mem.valid_block m1 b ->
-    Mem.can_access_block m1 b ocp ->
+    (* Mem.can_access_block m1 b ocp -> *)
     Mem.loadbytes m2 b ofs n ocp = Some bytes ->
     (forall i, ofs <= i < ofs + n -> ~Mem.perm m1 b i Max Writable) ->
     Mem.loadbytes m1 b ofs n ocp = Some bytes;
@@ -1062,6 +1062,10 @@ Proof.
 - inv H. inv H2. auto. eauto with mem.
 (* readonly *)
 - inv H. eapply unchanged_on_readonly; eauto. eapply volatile_store_readonly; eauto.
+  inv H3; eauto.
+  + eapply Mem.loadbytes_can_access_block_inj; eauto.
+  + simpl. erewrite <- Mem.store_block_compartment; eauto.
+    eapply Mem.loadbytes_can_access_block_inj; eauto.
 
 (* (* mem alloc *) *)
 (* - inv H. inv H2. congruence. *)
@@ -1140,6 +1144,12 @@ Proof.
   apply Mem.valid_not_valid_diff with m1; eauto with mem.
 (* readonly *)
 - inv H. eapply unchanged_on_readonly; eauto.
+  assert (b <> b0).
+  { intros ?; subst b0.
+    exploit Mem.fresh_block_alloc; eauto. }
+  eapply Mem.alloc_can_access_block_other_inj_2; eauto.
+  simpl. erewrite <- Mem.store_block_compartment; eauto.
+  eapply Mem.loadbytes_can_access_block_inj; eauto.
 
 (* (* mem alloc *) *)
 (* - inv H. *)
@@ -1239,10 +1249,14 @@ Proof.
 (* readonly *)
 - eapply unchanged_on_readonly; eauto. inv H.
 + eapply Mem.free_unchanged_on; eauto.
-  intros. red; intros. elim H7.
+  intros. red; intros. elim H6.
   apply Mem.perm_cur_max. apply Mem.perm_implies with Freeable; auto with mem.
   eapply Mem.free_range_perm; eauto.
 + apply Mem.unchanged_on_refl.
++ inv H.
+  * eapply Mem.free_can_access_block_inj_2; eauto.
+    eapply Mem.loadbytes_can_access_block_inj; eauto.
+  * eapply Mem.loadbytes_can_access_block_inj; eauto.
 (* (* mem alloc *) *)
 (* - inv H; try congruence. *)
 (*   exploit Mem.valid_block_free_2; eauto. congruence. *)
@@ -1366,8 +1380,10 @@ Proof.
 - (* readonly *)
   intros. inv H. eapply unchanged_on_readonly; eauto. 
   eapply Mem.storebytes_unchanged_on; eauto.
-  intros; red; intros. elim H12.
+  intros; red; intros. elim H11.
   apply Mem.perm_cur_max. eapply Mem.storebytes_range_perm; eauto.
+  eapply Mem.storebytes_can_access_block_inj_2; eauto.
+  eapply Mem.loadbytes_can_access_block_inj; eauto.
 (* - (* new blocks *) *)
 (*   intros. *)
 (*   inv H. *)
