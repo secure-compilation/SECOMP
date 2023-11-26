@@ -78,8 +78,8 @@ Definition compenv := PTree.t compartment.
 
 Definition add_globdef (ce: compenv) (idg: ident * globdef fundef unit): compenv :=
   match idg with
-  | (id, Gfun f) => PTree.set id (comp_of f) ce
-  | (id, Gvar _) => PTree.remove id ce
+  | (id, Gfun (Internal f)) => PTree.set id (comp_of f) ce
+  | (id, _) => PTree.remove id ce
   end.
 
 Definition compenv_program (p: program): compenv :=
@@ -89,7 +89,7 @@ Definition intra_compartment_call (ce: compenv) (ros: reg + ident) (cp: compartm
   match ros with
   | inr id =>
     match ce!id with
-    | Some cp' => eq_compartment cp cp'
+    | Some cp' => cp_eq_dec cp' cp
     | None     => false
     end
   | _ => false
@@ -111,7 +111,6 @@ Definition transf_instr (ce: compenv) (f: function) (pc: node) (instr: instructi
       && tailcall_is_possible sig
       && rettype_eq sig.(sig_res) f.(fn_sig).(sig_res)
       && intra_compartment_call ce ros (comp_of f)
-      && negb (needs_calling_comp (comp_of f))
       then Itailcall sig ros args
       else instr
   | _ => instr

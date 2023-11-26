@@ -2101,6 +2101,16 @@ Proof.
   now rewrite Genv.type_of_call_same_cp in H0.
 Qed.
 
+Lemma call_trace_internal_call:
+  forall cp cp' vf vargs tyargs t,
+    Genv.type_of_call cp cp' = Genv.InternalCall ->
+    call_trace cp cp' vf vargs tyargs t ->
+    t = E0.
+Proof.
+  intros. inv H0; auto.
+  congruence.
+Qed.
+
 Inductive return_trace: compartment -> compartment -> val -> rettype -> trace -> Prop :=
 | return_trace_intra: forall cp cp' v ty,
     Genv.type_of_call cp cp' <> Genv.CrossCompartmentCall ->
