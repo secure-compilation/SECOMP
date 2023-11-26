@@ -291,7 +291,7 @@ Variable rec: forall fenv', (size_fenv fenv' < size_fenv fenv)%nat -> context ->
 
 Inductive inline_decision cp (ros: reg + ident) : Type :=
   | Cannot_inline
-  | Can_inline (id: ident) (f: function) (P: ros = inr reg id) (Q: fenv!id = Some f) (R: cp = (comp_of f)).
+  | Can_inline (id: ident) (f: function) (P: ros = inr reg id) (Q: fenv!id = Some f) (R: cp = comp_of f).
 
 Arguments Cannot_inline {cp} {ros}.
 Arguments Can_inline {cp} {ros}.
@@ -302,7 +302,7 @@ Program Definition can_inline (cp: compartment) (ros: reg + ident): inline_decis
   | inr id =>
     match fenv!id with
     | Some f =>
-      if eq_compartment cp (comp_of f) then
+      if cp_eq_dec cp (comp_of f) then
         Can_inline id f _ _ _
       else Cannot_inline
     | None => Cannot_inline
