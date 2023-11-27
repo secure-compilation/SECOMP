@@ -532,9 +532,8 @@ Proof.
   { rewrite <- (comp_transl_partial _ B).
     inv TRF; unfold comp_of; simpl.
     eapply call_trace_eq; eauto using senv_preserved, symbols_preserved. }
-  rewrite (comp_transl_partial _ B).
+  replace (comp_of tf) with (comp_of f) by now inv TRF.
   constructor; auto. constructor; auto.
-  replace (fn_comp tf) with (fn_comp f) by now inv TRF.
   constructor; auto.
 - (* tailcall *)
   exploit find_function_translated; eauto. intros (tf' & A & B).
@@ -546,7 +545,9 @@ Proof.
   symmetry; apply sig_preserved; auto.
   now rewrite <- (comp_transl_partial _ B).
   eauto.
-  rewrite PLS. constructor; auto.
+  rewrite PLS.
+  replace (comp_of tf) with (comp_of f) by now inv TRF.
+  constructor; auto.
 - (* builtin *)
   econstructor; split.
   eapply plus_left.
@@ -599,7 +600,7 @@ Proof.
   rewrite SIG.
   inv TRF; constructor; auto.
 - (* internal function *)
-  monadInv H8. rename x into tf.
+  monadInv H9. rename x into tf.
   assert (MF: match_function f tf) by (apply transf_function_match; auto).
   inversion MF; subst.
   econstructor; split.
@@ -607,17 +608,17 @@ Proof.
   apply plus_one. eapply exec_function_internal. simpl; eauto. reflexivity. reflexivity.
 
   assert (CALLER: call_comp s = call_comp ts).
-  { inv H7. reflexivity.
+  { inv H8. reflexivity.
     inv H1. inv H3. reflexivity. }
   assert (SIG: parent_signature s = parent_signature ts).
-  { inv H7. reflexivity.
+  { inv H8. reflexivity.
     inv H1. reflexivity. }
   change
     (comp_of {| fn_comp := fn_comp f; fn_sig := fn_sig f; fn_stacksize := fn_stacksize f; fn_code := c |})
     with (comp_of f).
   constructor; auto.
 - (* external function *)
-  monadInv H9. econstructor; split.
+  monadInv H10. econstructor; split.
   apply plus_one. econstructor; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   constructor; auto.
@@ -631,7 +632,7 @@ Proof.
     (fn_comp {| fn_comp := fn_comp f; fn_sig := fn_sig f; fn_stacksize := fn_stacksize f; fn_code := c0 |})
     by reflexivity.
   apply eval_add_delta_ranges. traceEq.
-  constructor; auto. constructor; auto.
+  constructor; auto. simpl. constructor; auto.
 Qed.
 
 Lemma transf_initial_states:
@@ -640,7 +641,7 @@ Lemma transf_initial_states:
 Proof.
   intros. inversion H.
   exploit function_ptr_translated; eauto. intros [tf [A B]].
-  exists (Callstate nil tf signature_main (Locmap.init Vundef) m0); split.
+  exists (Callstate nil tf signature_main (Locmap.init Vundef) m0 AST.top); split.
   econstructor; eauto. eapply (Genv.init_mem_transf_partial TRANSF); eauto.
   rewrite (match_program_main TRANSF), symbols_preserved. auto.
   rewrite <- H3. apply sig_preserved. auto.
