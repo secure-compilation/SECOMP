@@ -109,10 +109,10 @@ Qed.
 
 Lemma find_comp_translated:
   forall vf,
-    Genv.find_comp ge vf = Genv.find_comp tge vf.
+    Genv.find_comp_in_genv ge vf = Genv.find_comp_in_genv tge vf.
 Proof.
   intros vf.
-  eapply (Genv.match_genvs_find_comp TRANSL).
+  eapply (Genv.match_genvs_find_comp_in_genv TRANSL).
 Qed.
 
 (** Correctness of [labels_branched_to]. *)
@@ -243,10 +243,10 @@ Inductive match_states: state -> state -> Prop :=
       match_states (State s f sp c ls m)
                    (State ts (transf_function f) sp (remove_unused_labels (labels_branched_to f.(fn_code)) c) ls m)
   | match_states_call:
-      forall s f ls m ts sig,
+      forall s f ls m ts sig cp,
       list_forall2 match_stackframes s ts ->
-      match_states (Callstate s f sig ls m)
-                   (Callstate ts (transf_fundef f) sig ls m)
+      match_states (Callstate s f sig ls m cp)
+                   (Callstate ts (transf_fundef f) sig ls m cp)
   | match_states_return:
       forall s ls m ts cp,
       list_forall2 match_stackframes s ts ->
@@ -342,8 +342,10 @@ Proof.
   left; econstructor; split.
   econstructor.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
+  rewrite comp_transl; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  eauto. rewrite comp_transl; eauto.
+  eauto.
+  (* rewrite comp_transl; eauto. *)
   econstructor; eauto with coqlib.
 (* Llabel *)
   case_eq (Labelset.mem lbl (labels_branched_to (fn_code f))); intros.
@@ -386,10 +388,10 @@ Proof.
   left; econstructor; split.
   econstructor; simpl; eauto.
   assert (CALLER: call_comp s = call_comp ts).
-  { inv H7. reflexivity.
+  { inv H8. reflexivity.
     inv H0. reflexivity. }
   assert (SIG: parent_signature s = parent_signature ts).
-  { inv H7. reflexivity.
+  { inv H8. reflexivity.
     inv H0. reflexivity. }
   (* rewrite type_of_call_translated, CALLER, SIG. *)
   change (comp_of (transf_function f)) with (comp_of f).
