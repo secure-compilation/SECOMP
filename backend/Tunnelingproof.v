@@ -412,12 +412,12 @@ Inductive match_states: state -> state -> Prop :=
       match_states (Block s f sp (Lcond cond args pc1 pc2 :: bb) ls m)
                    (State ts (tunnel_function f) sp (branch_target f pc1) tls tm)
   | match_states_call:
-      forall s f ls m ts tls tm sig
+      forall s f ls m ts tls tm sig cp
         (STK: list_forall2 match_stackframes s ts)
         (LS: locmap_lessdef ls tls)
         (MEM: Mem.extends m tm),
-      match_states (Callstate s f sig ls m)
-                   (Callstate ts (tunnel_fundef f) sig tls tm)
+      match_states (Callstate s f sig ls m cp)
+                   (Callstate ts (tunnel_fundef f) sig tls tm cp)
   | match_states_return:
       forall s ls m cp ts tls tm
         (STK: list_forall2 match_stackframes s ts)
@@ -584,7 +584,7 @@ Definition measure (st: state) : nat :=
   | Block s f sp (Lbranch pc :: _) ls m => (count_gotos f pc * 2 + 1)%nat
   | Block s f sp (Lcond _ _ pc1 pc2 :: _) ls m => (Nat.max (count_gotos f pc1) (count_gotos f pc2) * 2 + 1)%nat
   | Block s f sp bb ls m => 0%nat
-  | Callstate s f sig ls m => 0%nat
+  | Callstate s f sig ls m cp => 0%nat
   | Returnstate s ls m cp => 0%nat
   end.
 
@@ -835,7 +835,7 @@ Lemma transf_initial_states:
   exists st2, initial_state tprog st2 /\ match_states st1 st2.
 Proof.
   intros. inversion H.
-  exists (Callstate nil (tunnel_fundef f) signature_main (Locmap.init Vundef) m0); split.
+  exists (Callstate nil (tunnel_fundef f) signature_main (Locmap.init Vundef) m0 top); split.
   econstructor; eauto.
   apply (Genv.init_mem_transf TRANSL); auto.
   rewrite (match_program_main TRANSL).
