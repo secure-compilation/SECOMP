@@ -1024,7 +1024,7 @@ Lemma make_memcpy_correct:
   eval_expr ge e (comp_of f) le m src v ->
   assign_loc prog.(prog_comp_env) (comp_of f) ty m b ofs Full v m' ->
   access_mode ty = By_copy ->
-  make_memcpy cunit.(prog_comp_env) (comp_of f) dst src ty = OK s ->
+  make_memcpy cunit.(prog_comp_env) dst src ty = OK s ->
   step ge (State f s k e le m) E0 (State f Sskip k e le m').
 Proof.
   intros. inv H1; try congruence.
@@ -1033,7 +1033,7 @@ Proof.
   change le with (set_optvar None Vundef le) at 2.
   econstructor.
   econstructor.
-  eauto. econstructor. eauto. constructor. reflexivity.
+  eauto. econstructor. eauto. constructor.
   econstructor; eauto.
   apply alignof_blockcopy_1248.
   apply sizeof_pos.
@@ -1042,7 +1042,7 @@ Qed.
 
 Lemma make_store_correct:
   forall addr ty bf rhs code e le m b ofs v m' f k,
-  make_store cunit.(prog_comp_env) (comp_of f) addr ty bf rhs = OK code ->
+  make_store cunit.(prog_comp_env) addr ty bf rhs = OK code ->
   eval_expr ge e (comp_of f) le m addr (Vptr b ofs) ->
   eval_expr ge e (comp_of f) le m rhs v ->
   assign_loc prog.(prog_comp_env) (comp_of f) ty m b ofs bf v m' ->
@@ -1126,9 +1126,9 @@ Qed.
 
 Lemma find_comp_translated:
   forall vf,
-    Genv.find_comp ge vf = Genv.find_comp tge vf.
+    Genv.find_comp_in_genv ge vf = Genv.find_comp_in_genv tge vf.
 Proof.
-  eapply (Genv.match_genvs_find_comp TRANSL).
+  eapply (Genv.match_genvs_find_comp_in_genv TRANSL).
 Qed.
 
 Lemma type_of_call_translated:
@@ -1139,7 +1139,7 @@ Lemma type_of_call_translated:
 Proof.
   intros cp f ce tf TRF.
   erewrite <- (comp_transl_partial _ TRF).
-  eapply Genv.match_genvs_type_of_call.
+  reflexivity.
 Qed.
 
 Lemma call_trace_translated:
@@ -1757,8 +1757,6 @@ Proof.
   econstructor; split.
   apply plus_one. eapply make_store_correct; eauto.
   rewrite <- (comp_transl_function _ _ _ TRF); eauto.
-  eapply transl_lvalue_correct; eauto.
-  rewrite <- (comp_transl_function _ _ _ TRF); eauto.
   eapply make_cast_correct; eauto.
   eapply transl_expr_correct; eauto.
   rewrite <- (comp_transl_function _ _ _ TRF); eauto.
@@ -2034,6 +2032,7 @@ Proof.
   exploit match_cont_is_call_cont; eauto. intros [A B].
   econstructor; split.
   apply plus_one. constructor.
+  exploit match_cont_call_comp; eauto. intros <-.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   replace (rettype_of_type tres) with (sig_res (ef_sig ef)) by now rewrite H5.
   eapply match_returnstate with (ce := ce); eauto.
@@ -2118,17 +2117,14 @@ Local Transparent Linker_fundef Linking.Linker_fundef.
   inv H3; inv H4; simpl in H2.
 + discriminate.
 + destruct ef; try easy.
-  destruct eq_compartment; try easy.
-  subst cp. inv H2.
-  econstructor; split.
-* simpl. rewrite (comp_transl_partial _ H5), dec_eq_true; eauto.
-* left; constructor; auto.
+  (* destruct eq_compartment; try easy. *)
+  inv H2.
+  econstructor; split; simpl; auto.
+  left; constructor; auto.
 + destruct ef; try easy.
-  destruct eq_compartment; try easy.
-  subst cp. inv H2.
-  econstructor; split.
-* simpl. rewrite (comp_transl_partial _ H3), dec_eq_true; eauto.
-* right; constructor; auto.
+  inv H2.
+  econstructor; split; simpl; auto.
+  right; constructor; auto.
 + destruct (external_function_eq ef ef0 && typelist_eq args args0 &&
          type_eq res res0 && calling_convention_eq cc cc0) eqn:E'; inv H2.
   InvBooleans. subst ef0. econstructor; split.

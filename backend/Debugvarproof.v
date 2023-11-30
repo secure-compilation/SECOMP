@@ -641,7 +641,7 @@ Lemma transf_initial_states:
 Proof.
   intros. inversion H.
   exploit function_ptr_translated; eauto. intros [tf [A B]].
-  exists (Callstate nil tf signature_main (Locmap.init Vundef) m0 AST.top); split.
+  exists (Callstate nil tf signature_main (Locmap.init Vundef) m0 AST.COMP.top); split.
   econstructor; eauto. eapply (Genv.init_mem_transf_partial TRANSF); eauto.
   rewrite (match_program_main TRANSF), symbols_preserved. auto.
   rewrite <- H3. apply sig_preserved. auto.

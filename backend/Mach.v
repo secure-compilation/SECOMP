@@ -77,8 +77,7 @@ Record function: Type := mkfunction
     fn_link_ofs: ptrofs;
     fn_retaddr_ofs: ptrofs }.
 
-#[global]
-Instance has_comp_function: has_comp function := fn_comp.
+#[global] Instance has_comp_function: has_comp function := fn_comp.
 
 Definition fundef := AST.fundef function.
 

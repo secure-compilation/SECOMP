@@ -189,10 +189,10 @@ Definition is_call_cont (k: cont) : Prop :=
   | _ => False
   end.
 
-Definition call_comp (k: cont) : option compartment :=
+Definition call_comp (k: cont) : compartment :=
   match call_cont k with
-  | Kcall _ f _ _ _ => Some f.(fn_comp)
-  | _ => None
+  | Kcall _ f _ _ _ => comp_of f
+  | _ => top
   end.
 
 (** Resolve [switch] statements. *)
@@ -349,7 +349,7 @@ Inductive eval_expr: expr -> val -> Prop :=
       eval_expr (Ebinop op a1 a2) v
   | eval_Eload: forall chunk a v1 v,
       eval_expr a v1 ->
-      Mem.loadv chunk m v1 (Some cp) = Some v ->
+      Mem.loadv chunk m v1 cp = Some v ->
       eval_expr (Eload chunk a) v.
 
 (** Evaluation of a list of expressions:
@@ -408,8 +408,7 @@ Inductive step: state -> trace -> state -> Prop :=
 
   | step_builtin: forall f optid ef bl k e le m vargs t vres m',
       eval_exprlist e (comp_of f) le m bl vargs ->
-      forall ALLOWED: comp_of ef = comp_of f,
-      external_call ef ge vargs m t vres m' ->
+      external_call ef ge (comp_of f) vargs m t vres m' ->
       step (State f (Sbuiltin optid ef bl) k e le m)
          t (State f Sskip k e (Cminor.set_optvar optid vres le) m')
 
@@ -475,9 +474,9 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State f f.(fn_body) k e le m1)
 
   | step_external_function: forall ef vargs k m t vres m',
-      external_call ef ge vargs m t vres m' ->
+      external_call ef ge (call_comp k) vargs m t vres m' ->
       step (Callstate (External ef) vargs k m)
-         t (Returnstate vres k m' (sig_res (ef_sig ef)) (comp_of ef))
+         t (Returnstate vres k m' (sig_res (ef_sig ef)) bottom)
 
   | step_return: forall v optid f e le cp k m ty t,
       forall (NO_CROSS_PTR: Genv.type_of_call (comp_of f) cp = Genv.CrossCompartmentCall -> not_ptr v),

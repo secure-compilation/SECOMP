@@ -454,7 +454,8 @@ Theorem valid_block_can_access_block_priv:
   valid_block m b ->
   can_access_block m b top.
 Proof.
-  unfold can_access_block. simpl; trivial with comps.
+  unfold can_access_block. intros. simpl; auto with comps.
+  Print HintDb comps.
 Qed.
 
 (* Theorem can_access_block_valid_block: *)

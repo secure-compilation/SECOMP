@@ -266,6 +266,12 @@ let print_Z_asm p n =
 let print_ident_asm p id =
   Format.fprintf p "%ld" (P.to_int32 id)
 
+let print_comp_asm p c =
+  match c with
+  | COMP.Coq_bottom' -> Format.fprintf p "CompBottom"
+  | COMP.Coq_top' -> Format.fprintf p "CompTop"
+  | COMP.Comp id -> Format.fprintf p "Comp%ld" (P.to_int32 id)
+
 let print_string_asm p s =
   Format.fprintf p "\"%s\"%%string" (camlstring_of_coqstring s)
 
@@ -406,7 +412,7 @@ let print_instruction_asm p = function
 
 let print_coq_function_asm p Asm.{ fn_comp; fn_sig; fn_code } =
   Format.fprintf p "{|@ fn_comp@ :=@ ";
-  print_ident_asm p fn_comp;
+  print_comp_asm p fn_comp;
   Format.fprintf p ";@ fn_sig@ :=@ ";
   print_signature_asm p fn_sig;
   Format.fprintf p ";@ fn_code@ :=@ ";
@@ -415,27 +421,21 @@ let print_coq_function_asm p Asm.{ fn_comp; fn_sig; fn_code } =
 
 (* TODO cases *)
 let print_external_function_asm p = function
-  | EF_external (comp, str, fsig) ->
+  | EF_external (str, fsig) ->
       Format.fprintf p "EF_external@ (";
       print_string_asm p str;
       Format.fprintf p ",@ ";
-      print_ident_asm p comp;
-      Format.fprintf p ",@ ";
       print_signature_asm p fsig;
       Format.fprintf p ")"
-  | EF_builtin (comp, str, fsig) ->
+  | EF_builtin (str, fsig) ->
       Format.fprintf p "EF_builtin@ (";
       print_string_asm p str;
       Format.fprintf p ",@ ";
-      print_ident_asm p comp;
-      Format.fprintf p ",@ ";
       print_signature_asm p fsig;
       Format.fprintf p ")"
-  | EF_runtime (comp, str, fsig) ->
+  | EF_runtime (str, fsig) ->
       Format.fprintf p "EF_runtime@ (";
       print_string_asm p str;
-      Format.fprintf p ",@ ";
-      print_ident_asm p comp;
       Format.fprintf p ",@ ";
       print_signature_asm p fsig;
       Format.fprintf p ")"
@@ -495,7 +495,7 @@ let print_globvar_asm
   (* TODO unit *)
   Format.fprintf p "{|@ gvar_info@ := tt;@ ";
   Format.fprintf p ";@ gvar_comp@ :=@ ";
-  print_ident_asm p gvar_comp;
+  print_comp_asm p gvar_comp;
   Format.fprintf p ";@ gvar_init@ :=@ ";
   print_list_asm p print_init_data_asm gvar_init;
   Format.fprintf p ";@ gvar_readonly@ :=@ ";

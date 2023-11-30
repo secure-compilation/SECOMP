@@ -57,6 +57,12 @@ let print_eventval_list p = function
       print_eventval p v1;
       List.iter (fun v -> fprintf p ",@ %a" print_eventval v) vl
 
+let string_of_comp c =
+  match c with
+  | COMP.Coq_bottom' -> Format.sprintf "CompBottom"
+  | COMP.Coq_top' -> Format.sprintf "CompTop"
+  | COMP.Comp id -> Format.sprintf "Comp%ld" (P.to_int32 id)
+
 let print_event p = function
   | Event_syscall(id, args, res) ->
       fprintf p "extcall %s(%a) -> %a"
@@ -78,16 +84,16 @@ let print_event p = function
                 (camlstring_of_coqstring text)
                 print_eventval_list args
   | Event_call(caller, callee, f, args) ->
-      fprintf p "Call %ld -[%a]-> %ld.%ld"
-                (P.to_int32 caller)
+      fprintf p "Call %s -[%a]-> %s.%ld"
+                (string_of_comp caller)
                 print_eventval_list args
-                (P.to_int32 callee)
+                (string_of_comp callee)
                 (P.to_int32 f)
   | Event_return(caller, callee, ret) ->
-      fprintf p "Return %ld <-[%a]- %ld"
-                (P.to_int32 caller)
+      fprintf p "Return %s <-[%a]- %s"
+                (string_of_comp caller)
                 print_eventval ret
-                (P.to_int32 callee)
+                (string_of_comp callee)
 
 (* Printing states *)
 
@@ -279,7 +285,7 @@ module StateMap =
 let extract_string m blk ofs =
   let b = Buffer.create 80 in
   let rec extract blk ofs =
-    match Mem.load Mint8unsigned m blk ofs None with
+    match Mem.load Mint8unsigned m blk ofs COMP.top with
     | Some(Vint n) ->
         let c = Char.chr (Z.to_int n) in
         if c = '\000' then begin
@@ -398,7 +404,7 @@ let rec convert_external_args ge vl tl =
       convert_external_args ge vl tl >>= fun el -> Some (e1 :: el)
   | _, _ -> None
 
-let do_external_function cp id sg ge w (* cp <- NOTE *) args m =
+let do_external_function id sg ge cp w args m =
   match camlstring_of_coqstring id, args with
   | "printf", Vptr(b, ofs) :: args' ->
       extract_string m b ofs >>= fun fmt ->
@@ -423,15 +429,14 @@ and world_io ge m id args =
 
 and world_vload ge m chunk id ofs =
   Genv.find_symbol ge.genv_genv id >>= fun b ->
-  Mem.load chunk m b ofs None >>= fun v ->
+  Mem.load chunk m b ofs COMP.top >>= fun v ->
   Exec.eventval_of_val ge.genv_genv v (type_of_chunk chunk) >>= fun ev ->
   Some(ev, world ge m)
 
 and world_vstore ge m chunk id ofs ev =
   Genv.find_symbol ge.genv_genv id >>= fun b ->
   Exec.val_of_eventval ge.genv_genv ev (type_of_chunk chunk) >>= fun v ->
-  Mem.block_compartment m b >>= fun cp ->
-  Mem.store chunk m b ofs v cp >>= fun m' ->
+  Mem.store chunk m b ofs v (Mem.block_compartment m b) >>= fun m' ->
   Some(world ge m')
 
 let do_event p ge time w ev =
@@ -619,7 +624,7 @@ let call_main3_function main_id main_ty =
   let body =
     Sreturn(Some(Ecall(main_var, Econs(arg1, Econs(arg2, Enil)), type_int32s)))
   in
-  { fn_comp = AST.privileged_compartment;
+  { fn_comp = COMP.top;
     fn_return = type_int32s; fn_callconv = cc_default;
     fn_params = []; fn_vars = []; fn_body = body }
 
@@ -629,7 +634,7 @@ let call_other_main_function main_id main_ty main_ty_res =
     Ssequence(Sdo(Ecall(main_var, Enil, main_ty_res)),
               Sreturn(Some(Eval(Vint(coqint_of_camlint 0l), type_int32s)))) in
   { fn_return = type_int32s; fn_callconv = cc_default;
-    fn_comp = AST.privileged_compartment;
+    fn_comp = COMP.top;
     fn_params = []; fn_vars = []; fn_body = body }
 (* FIXME? *)
 
@@ -700,15 +705,14 @@ and world_io_asm ge m id args =
 
 and world_vload_asm ge m chunk id ofs =
   Genv.find_symbol ge id >>= fun b ->
-  Mem.load chunk m b ofs None >>= fun v ->
+  Mem.load chunk m b ofs COMP.top >>= fun v ->
   Exec.eventval_of_val ge v (type_of_chunk chunk) >>= fun ev ->
   Some(ev, world_asm ge m)
 
 and world_vstore_asm ge m chunk id ofs ev =
   Genv.find_symbol ge id >>= fun b ->
   Exec.val_of_eventval ge ev (type_of_chunk chunk) >>= fun v ->
-  Mem.block_compartment m b >>= fun cp ->
-  Mem.store chunk m b ofs v cp >>= fun m' ->
+  Mem.store chunk m b ofs v (Mem.block_compartment m b) >>= fun m' ->
   Some(world_asm ge m')
 
 let do_step_asm p prog ge time s w =

@@ -2035,14 +2035,6 @@ Definition type_of_call (cp: compartment) (cp': compartment): call_type :=
 
 #[global] Arguments type_of_call /.
 
-(* Lemma type_of_call_cp_default: *)
-(*   forall ge cp, type_of_call ge cp default_compartment <> CrossCompartmentCall. *)
-(* Proof. *)
-(*   intros ge cp; unfold type_of_call. *)
-(*   destruct (cp =? default_compartment)%positive; [congruence |]. *)
-(*   rewrite Pos.eqb_refl; congruence. *)
-(* Qed. *)
-
 Lemma type_of_call_same_cp:
   forall cp, type_of_call cp cp = InternalCall.
 Proof.
@@ -2097,8 +2089,9 @@ Lemma allowed_call_reflect: forall ge cp vf,
 Proof.
   intros ge cp vf.
   unfold allowed_call, allowed_call_b, allowed_cross_call.
+  Local Opaque flowsto_dec.
   destruct vf as [|?|?|?|?|b ofs]; simpl;
-    try now split; intuition; destruct (flowsto_dec); auto.
+    try (now split; intuition; edestruct (flowsto_dec); auto with comps).
   split.
   - intros [e | (i' & cp'' & A & B & C & D)].
     + destruct flowsto_dec; auto.
@@ -2121,6 +2114,7 @@ Proof.
     rewrite C.
     apply proj_sumbool_true in D.
     apply proj_sumbool_true in E. auto.
+    Local Transparent flowsto_dec.
 Qed.
 
 Lemma allowed_cross_call_public_symbol: forall ge cp vf,

@@ -91,7 +91,7 @@ Record function: Type := mkfunction {
   fn_entrypoint: node
 }.
 
-#[export] Instance has_comp_function : has_comp function := fn_comp.
+#[global] Instance has_comp_function : has_comp function := fn_comp.
 
 (** A function description comprises a control-flow graph (CFG) [fn_code]
     (a partial finite mapping from nodes to instructions).  As in Cminor,

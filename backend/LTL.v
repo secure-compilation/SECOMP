@@ -53,8 +53,7 @@ Record function: Type := mkfunction {
   fn_entrypoint: node
 }.
 
-#[global]
-Instance has_comp_function : has_comp function := fn_comp.
+#[global] Instance has_comp_function : has_comp function := fn_comp.
 
 Definition fundef := AST.fundef function.
 

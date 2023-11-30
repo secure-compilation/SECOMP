@@ -40,6 +40,7 @@ Definition ident_eq := peq.
 (* Notation default_compartment := privileged_compartment. (* TODO: fix this *) *)
 (* Definition eq_compartment (c1 c2: compartment) := *)
 (*   peq c1 c2. *)
+Module Type COMPTYPE.
 
 Parameter compartment: Type.
 Parameters top bottom: compartment.
@@ -102,10 +103,147 @@ Axiom flowsto_join2: forall cp cp', cp' ⊆ cp ∪ cp'.
 Axiom meet_flowsto1: forall cp cp', cp ∩ cp' ⊆ cp.
 Axiom meet_flowsto2: forall cp cp', cp ∩ cp' ⊆ cp'.
 
+End COMPTYPE.
+
+Module COMP <: COMPTYPE.
+
+  Variant compartment' :=
+    | bottom': compartment'
+    | top': compartment'
+    | Comp: ident -> compartment'
+  .
+
+  Definition compartment := compartment'.
+  Definition bottom := bottom'.
+  Definition top := top'.
+  (* Parameters top bottom: compartment. *)
+  Variant flowsto': compartment -> compartment -> Prop :=
+    | bottom_flowsto': forall cp, flowsto' bottom cp
+    | flowsto_top': forall cp, flowsto' cp top
+    | flowsto_refl': forall cp, flowsto' cp cp.
+
+  Definition flowsto := flowsto'.
+
+  Lemma bottom_flowsto: forall cp, flowsto bottom cp.
+  Proof. exact bottom_flowsto'. Qed.
+
+  Lemma flowsto_top: forall cp, flowsto cp top.
+  Proof. exact flowsto_top'. Qed.
+  Lemma flowsto_refl: forall cp, flowsto cp cp.
+  Proof. exact flowsto_refl'. Qed.
+
+Notation "c '⊆' c'" := (flowsto c c') (no associativity, at level 95).
+Notation "c '⊈' c'" := (not (flowsto c c')) (no associativity, at level 95).
+
+
+Lemma flowsto_dec: forall cp cp', {cp ⊆ cp'} + {cp ⊈ cp'}.
+Proof.
+  destruct cp as [] eqn:?, cp' as [] eqn:?; try (now left; constructor).
+  now right; intros H; inv H.
+  now right; intros H; inv H.
+  now right; intros H; inv H.
+  subst. destruct (Pos.eq_dec i i0); subst.
+  - left; constructor.
+  - now right; intros H; inv H.
+Defined.
+
+Lemma flowsto_antisym: forall cp cp', cp ⊆ cp' -> cp' ⊆ cp -> cp = cp'.
+Proof.
+  intros ? ? H1 H2;
+    inv H1; inv H2; auto.
+Qed.
+
+Lemma flowsto_trans: forall cp cp' cp'', cp ⊆ cp' -> cp' ⊆ cp'' -> cp ⊆ cp''.
+Proof.
+  intros ? ? ? H1 H2.
+  inv H1; inv H2; try now constructor.
+Qed.
+
+Lemma cp_eq_dec: forall (cp cp': compartment), {cp = cp'} + {cp <> cp'}.
+  intros cp cp'.
+  destruct (flowsto_dec cp cp') as [f1 | n1]; destruct (flowsto_dec cp' cp) as [f2 | n2].
+  - left; eapply flowsto_antisym; eauto.
+  - right; intros ?; subst cp'; contradiction.
+  - right; intros ?; subst cp'; contradiction.
+  - right; intros ?; subst cp'; apply n1; now eapply flowsto_refl.
+Qed.
+
+Definition comp_to_pos: compartment -> positive :=
+  fun c => match c with
+        | bottom' => Z.to_pos 0
+        | top' => Z.to_pos 1
+        | Comp i => (Z.to_pos 2 + i)%positive
+        end.
+
+Axiom comp_to_pos_inj: forall x y: compartment, comp_to_pos x = comp_to_pos y -> x = y.
+
+Module COMPARTMENT_INDEXED_TYPE <: INDEXED_TYPE.
+  Definition t := compartment.
+  Definition index := comp_to_pos.
+  Definition index_inj := comp_to_pos_inj.
+  Definition eq := cp_eq_dec.
+End COMPARTMENT_INDEXED_TYPE.
+
+Module CompTree := ITree (COMPARTMENT_INDEXED_TYPE).
+
+(* Axiom bottom_flowsto: forall cp, bottom ⊆ cp. *)
+(* Axiom flowsto_top: forall cp, cp ⊆ top. *)
+
+
+Definition join (c1 c2: compartment): compartment :=
+  match c1, c2 with
+  | bottom', c2 => c2
+  | c1, bottom' => c1
+  | Comp i1, Comp i2 => if (Pos.eq_dec i1 i2) then Comp i1 else top
+  | _, _ => top
+  end.
+
+Definition meet (c1 c2: compartment): compartment :=
+  match c1, c2 with
+  | top', c2 => c2
+  | c1, top' => c1
+  | Comp i1, Comp i2 => if (Pos.eq_dec i1 i2) then Comp i1 else bottom
+  | _, _ => bottom
+  end.
+
+Notation "c '∪' c'" := (join c c') (left associativity, at level 40).
+Notation "c '∩' c'" := (meet c c') (left associativity, at level 40).
+Axiom join_comm: forall cp cp', cp ∪ cp' = cp' ∪ cp.
+Axiom meet_comm: forall cp cp', cp ∩ cp' = cp' ∩ cp.
+Axiom join_assoc: forall cp cp' cp'', cp ∪ (cp' ∪ cp'') = (cp ∪ cp') ∪ cp''.
+Axiom meet_assoc: forall cp cp' cp'', cp ∩ (cp' ∩ cp'') = (cp ∩ cp') ∩ cp''.
+Axiom join_absorbs_meet: forall cp cp', cp ∪ (cp ∩ cp') = cp.
+Axiom meet_absorbs_join: forall cp cp', cp ∩ (cp ∪ cp') = cp.
+
+Lemma join_idempotent: forall cp, cp ∪ cp = cp.
+Proof.
+  intros cp.
+  rewrite <- (meet_absorbs_join cp cp) at 2; rewrite join_absorbs_meet; reflexivity.
+Qed.
+
+Lemma meet_idempotent: forall cp, cp ∩ cp = cp.
+Proof.
+  intros cp.
+  rewrite <- (join_absorbs_meet cp cp) at 2; rewrite meet_absorbs_join; reflexivity.
+Qed.
+
+Axiom flowsto_join1: forall cp cp', cp ⊆ cp ∪ cp'.
+Axiom flowsto_join2: forall cp cp', cp' ⊆ cp ∪ cp'.
+Axiom meet_flowsto1: forall cp cp', cp ∩ cp' ⊆ cp.
+Axiom meet_flowsto2: forall cp cp', cp ∩ cp' ⊆ cp'.
+
+End COMP.
+Export COMP.
+Global Opaque flowsto_dec.
+
+
 Create HintDb comps.
 #[export] Hint Resolve flowsto_refl flowsto_antisym flowsto_trans bottom_flowsto flowsto_top
   join_comm meet_comm join_assoc meet_assoc flowsto_join1 flowsto_join2 meet_flowsto1 meet_flowsto2: comps.
 #[export] Hint Rewrite join_idempotent meet_idempotent join_absorbs_meet meet_absorbs_join: comps.
+
+Print HintDb comps.
+
 
 Set Typeclasses Strict Resolution.
 (** An instance of [has_comp] represents a syntactic entity that belongs to a

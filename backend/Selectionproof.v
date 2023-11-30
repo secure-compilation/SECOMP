@@ -65,10 +65,6 @@ Proof.
   apply X. auto.
 Qed.
 
-(* Lemma record_globdefs_sound: *)
-(*   forall dm cp id gd, (record_globdefs dm cp)!id = Some gd -> In (id, gd) dm.(prog_defs). *)
-(* Admitted. *)
-
 Lemma lookup_helper_correct_1:
   forall globs name sg id,
   lookup_helper globs name sg = OK id ->
@@ -1330,6 +1326,7 @@ Remark find_label_commut:
   | _, _ => False
   end.
 Proof.
+  Local Opaque flowsto_dec.
   induction s; intros until k'; simpl; intros MC SE; try (monadInv SE); simpl; auto.
 (* store *)
   unfold store. destruct (addressing m (sel_expr e)); simpl; auto.
@@ -1468,7 +1465,7 @@ Proof.
   destruct (Ptrofs.eq_dec ofs Ptrofs.zero); try congruence.
   (* rewrite <- EQ' in H2. *)
   destruct (flowsto_dec bottom (comp_of f)); try now auto.
-  pose proof (bottom_flowsto (comp_of f)); contradiction.
+  pose proof (bottom_flowsto (comp_of f)); try contradiction.
   econstructor; eauto.
 - (* Stailcall *)
   exploit Mem.free_parallel_extends; eauto. intros [m2' [P Q]].

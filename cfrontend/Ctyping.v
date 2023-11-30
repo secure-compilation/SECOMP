@@ -393,7 +393,7 @@ Inductive wt_rvalue : expr -> Prop :=
       classify_fun (typeof r1) = fun_case_f tyargs tyres cconv ->
       wt_arguments rargs tyargs ->
       wt_rvalue (Ecall r1 rargs tyres)
-  | wt_Ebuiltin: forall ef cp tyargs rargs ty,
+  | wt_Ebuiltin: forall ef tyargs rargs ty,
       wt_exprlist rargs ->
       wt_arguments rargs tyargs ->
       (* This typing rule is specialized to the builtin invocations generated
@@ -402,7 +402,7 @@ Inductive wt_rvalue : expr -> Prop :=
       \/ (tyargs = Tcons type_bool (Tcons ty (Tcons ty Tnil))
           /\ let t := typ_of_type ty in
              let sg := mksignature (AST.Tint :: t :: t :: nil) t cc_default in
-             ef = EF_builtin cp "__builtin_sel"%string sg) ->
+             ef = EF_builtin "__builtin_sel"%string sg) ->
       wt_rvalue (Ebuiltin ef tyargs rargs ty)
   | wt_Eparen: forall r tycast ty,
       wt_rvalue r ->
@@ -1258,7 +1258,6 @@ Proof.
   destruct (type_eq tyres Tvoid); simpl in EQ2; try discriminate.
   destruct (rettype_eq (sig_res (ef_sig ef)) AST.Tvoid); inv EQ2.
   econstructor; eauto. eapply check_arguments_sound; eauto.
-  Unshelve. exact default_compartment.
 Qed.
 
 Lemma eselection_sound:
@@ -1826,30 +1825,28 @@ Proof.
   constructor; auto.
 - (* comma *) auto.
 - (* paren *) inv H3. constructor. apply H5. eapply pres_sem_cast; eauto.
-- (* builtin *) subst. destruct H8 as [(A & B) | (A & B)].
+- (* builtin *) subst. destruct H7 as [(A & B) | (A & B)].
 + subst ty. auto with ty.
 + simpl in B. set (T := typ_of_type ty) in *. 
   set (sg := mksignature (AST.Tint :: T :: T :: nil) T cc_default) in *.
-  assert (LK: lookup_builtin_function "__builtin_sel"%string cp0 sg = Some (BI_standard (BI_select T))).
-  (* { unfold sg, T; destruct ty as   [ | ? ? ? | ? | [] ? | ? ? | ? ? ? | ? ? ? | ? ? | ? ? ]; *)
-  (*   simpl; unfold Tptr; destruct Archi.ptr64; reflexivity. } *)
-  { admit. }
-  subst ef. red in H1. red in H1. rewrite LK in H1. inv H1.
-  inv H. inv H8. inv H9. inv H10. simpl in H0.
+  assert (LK: lookup_builtin_function "__builtin_sel"%string sg = Some (BI_standard (BI_select T))).
+  { unfold sg, T; destruct ty as   [ | ? ? ? | ? | [] ? | ? ? | ? ? ? | ? ? ? | ? ? | ? ? ];
+    simpl; unfold Tptr; destruct Archi.ptr64; reflexivity. }
+  subst ef. red in H0. red in H0. rewrite LK in H0. inv H0.
+  inv H. inv H8. inv H9. inv H10. simpl in H1.
   assert (A: val_casted v1 type_bool) by (eapply cast_val_is_casted; eauto).
   inv A. 
   set (v' := if Int.eq n Int.zero then v4 else v2) in *.
   constructor.
   destruct (type_eq ty Tvoid).
   subst. constructor.
-  inv H0.
+  inv H1.
   assert (C: val_casted v' ty).
   { unfold v'; destruct (Int.eq n Int.zero); eapply cast_val_is_casted; eauto. }
   assert (EQ: Val.normalize v' T = v').
   { apply Val.normalize_idem. apply val_casted_has_type; auto. }
   rewrite EQ. apply wt_val_casted; auto.
-(* Qed. *)
-Admitted.
+Qed.
 
 Lemma wt_lred:
   forall tenv ge e cp a m a' m',

@@ -350,8 +350,7 @@ Require Import Errors.
 Definition match_prog (p: CminorSel.program) (tp: RTL.program) :=
   match_program (fun cu f tf => transl_fundef f = Errors.OK tf) eq p tp.
 
-#[export]
-Instance comp_transl_function: has_comp_transl_partial transl_function.
+#[global] Instance comp_transl_function: has_comp_transl_partial transl_function.
 Proof.
   unfold transl_function.
   intros f tf H; simpl in *.
@@ -813,6 +812,7 @@ Lemma transl_expr_Eexternal_correct:
   (* forall (INTRA: Genv.type_of_call cp (comp_of ef) <> Genv.CrossCompartmentCall), *)
   transl_expr_prop le (Eexternal id sg al) v.
 Proof.
+  Local Opaque flowsto_dec.
   intros; red; intros. inv TE.
   exploit H3; eauto. intros [rs1 [tm1 [EX1 [ME1 [RR1 [RO1 EXT1]]]]]].
   exploit external_call_mem_extends; eauto.
