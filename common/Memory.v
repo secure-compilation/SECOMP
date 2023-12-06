@@ -455,7 +455,6 @@ Theorem valid_block_can_access_block_priv:
   can_access_block m b top.
 Proof.
   unfold can_access_block. intros. simpl; auto with comps.
-  Print HintDb comps.
 Qed.
 
 (* Theorem can_access_block_valid_block: *)
@@ -3427,13 +3426,6 @@ Proof.
   assert (valid_block m2 b0) by eauto with mem.
   rewrite <- MEM; simpl. rewrite PMap.gso. eauto with mem.
   rewrite NEXT. eauto with mem.
-Qed.
-
-(* RB: NOTE: Move up, use in previous proofs. *)
-Remark can_access_block_component :
-  forall m b cp cp', can_access_block m b cp -> can_access_block m b cp' -> can_access_block m b (cp ∪ cp').
-Proof.
-  simpl. intros. eapply flowsto_trans; eauto with comps.
 Qed.
 
 Lemma alloc_left_unmapped_inj:

@@ -35,11 +35,6 @@ Definition ident_eq := peq.
 (** Programs entities can be grouped into compartments, which remain isolated
   from each other during execution. *)
 
-(* Definition compartment : Type := positive. *)
-(* Definition privileged_compartment : compartment := 1%positive. *)
-(* Notation default_compartment := privileged_compartment. (* TODO: fix this *) *)
-(* Definition eq_compartment (c1 c2: compartment) := *)
-(*   peq c1 c2. *)
 Module Type COMPTYPE.
 
 Parameter compartment: Type.
@@ -75,33 +70,6 @@ Module CompTree := ITree (COMPARTMENT_INDEXED_TYPE).
 
 Axiom bottom_flowsto: forall cp, bottom ⊆ cp.
 Axiom flowsto_top: forall cp, cp ⊆ top.
-
-Parameters join meet: compartment -> compartment -> compartment.
-Notation "c '∪' c'" := (join c c') (left associativity, at level 40).
-Notation "c '∩' c'" := (meet c c') (left associativity, at level 40).
-Axiom join_comm: forall cp cp', cp ∪ cp' = cp' ∪ cp.
-Axiom meet_comm: forall cp cp', cp ∩ cp' = cp' ∩ cp.
-Axiom join_assoc: forall cp cp' cp'', cp ∪ (cp' ∪ cp'') = (cp ∪ cp') ∪ cp''.
-Axiom meet_assoc: forall cp cp' cp'', cp ∩ (cp' ∩ cp'') = (cp ∩ cp') ∩ cp''.
-Axiom join_absorbs_meet: forall cp cp', cp ∪ (cp ∩ cp') = cp.
-Axiom meet_absorbs_join: forall cp cp', cp ∩ (cp ∪ cp') = cp.
-
-Lemma join_idempotent: forall cp, cp ∪ cp = cp.
-Proof.
-  intros cp.
-  rewrite <- (meet_absorbs_join cp cp) at 2; rewrite join_absorbs_meet; reflexivity.
-Qed.
-
-Lemma meet_idempotent: forall cp, cp ∩ cp = cp.
-Proof.
-  intros cp.
-  rewrite <- (join_absorbs_meet cp cp) at 2; rewrite meet_absorbs_join; reflexivity.
-Qed.
-
-Axiom flowsto_join1: forall cp cp', cp ⊆ cp ∪ cp'.
-Axiom flowsto_join2: forall cp cp', cp' ⊆ cp ∪ cp'.
-Axiom meet_flowsto1: forall cp cp', cp ∩ cp' ⊆ cp.
-Axiom meet_flowsto2: forall cp cp', cp ∩ cp' ⊆ cp'.
 
 End COMPTYPE.
 
@@ -186,63 +154,13 @@ End COMPARTMENT_INDEXED_TYPE.
 
 Module CompTree := ITree (COMPARTMENT_INDEXED_TYPE).
 
-(* Axiom bottom_flowsto: forall cp, bottom ⊆ cp. *)
-(* Axiom flowsto_top: forall cp, cp ⊆ top. *)
-
-
-Definition join (c1 c2: compartment): compartment :=
-  match c1, c2 with
-  | bottom', c2 => c2
-  | c1, bottom' => c1
-  | Comp i1, Comp i2 => if (Pos.eq_dec i1 i2) then Comp i1 else top
-  | _, _ => top
-  end.
-
-Definition meet (c1 c2: compartment): compartment :=
-  match c1, c2 with
-  | top', c2 => c2
-  | c1, top' => c1
-  | Comp i1, Comp i2 => if (Pos.eq_dec i1 i2) then Comp i1 else bottom
-  | _, _ => bottom
-  end.
-
-Notation "c '∪' c'" := (join c c') (left associativity, at level 40).
-Notation "c '∩' c'" := (meet c c') (left associativity, at level 40).
-Axiom join_comm: forall cp cp', cp ∪ cp' = cp' ∪ cp.
-Axiom meet_comm: forall cp cp', cp ∩ cp' = cp' ∩ cp.
-Axiom join_assoc: forall cp cp' cp'', cp ∪ (cp' ∪ cp'') = (cp ∪ cp') ∪ cp''.
-Axiom meet_assoc: forall cp cp' cp'', cp ∩ (cp' ∩ cp'') = (cp ∩ cp') ∩ cp''.
-Axiom join_absorbs_meet: forall cp cp', cp ∪ (cp ∩ cp') = cp.
-Axiom meet_absorbs_join: forall cp cp', cp ∩ (cp ∪ cp') = cp.
-
-Lemma join_idempotent: forall cp, cp ∪ cp = cp.
-Proof.
-  intros cp.
-  rewrite <- (meet_absorbs_join cp cp) at 2; rewrite join_absorbs_meet; reflexivity.
-Qed.
-
-Lemma meet_idempotent: forall cp, cp ∩ cp = cp.
-Proof.
-  intros cp.
-  rewrite <- (join_absorbs_meet cp cp) at 2; rewrite meet_absorbs_join; reflexivity.
-Qed.
-
-Axiom flowsto_join1: forall cp cp', cp ⊆ cp ∪ cp'.
-Axiom flowsto_join2: forall cp cp', cp' ⊆ cp ∪ cp'.
-Axiom meet_flowsto1: forall cp cp', cp ∩ cp' ⊆ cp.
-Axiom meet_flowsto2: forall cp cp', cp ∩ cp' ⊆ cp'.
-
 End COMP.
 Export COMP.
 Global Opaque flowsto_dec.
 
 
 Create HintDb comps.
-#[export] Hint Resolve flowsto_refl flowsto_antisym flowsto_trans bottom_flowsto flowsto_top
-  join_comm meet_comm join_assoc meet_assoc flowsto_join1 flowsto_join2 meet_flowsto1 meet_flowsto2: comps.
-#[export] Hint Rewrite join_idempotent meet_idempotent join_absorbs_meet meet_absorbs_join: comps.
-
-Print HintDb comps.
+#[export] Hint Resolve flowsto_refl flowsto_antisym flowsto_trans bottom_flowsto flowsto_top: comps.
 
 
 Set Typeclasses Strict Resolution.
