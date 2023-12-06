@@ -230,10 +230,15 @@ Next Obligation.
             | Z.pos y' => Z.pos y'~0~0
             | Z.neg y' => Z.neg y'~0~0
             end) with (4 * bound) in *.
-    eapply Mem.unchanged_on_own with (b := sp) in H0.
-    eauto with comps.
-    (* eapply H0. eauto. *)
-    (* eapply Mem.can_access_block_valid_block; eauto. *)
+    simpl. destruct (plt sp (Mem.nextblock m)).
+    + eapply Mem.unchanged_on_own with (b := sp) in H0.
+      simpl; rewrite H0.
+      eauto with comps. auto.
+    + assert (cp = top).
+      { exploit Mem.block_compartment_valid_block; eauto. simpl in H4.
+        intros R; rewrite R in H4.
+        inv H4; auto. }
+      subst; auto with comps.
   - exploit H5; eauto. intros (v & A & B). exists v; split; auto.
     change (match ofs with | 0 => 0
                             | Z.pos y' => Z.pos y'~0~0

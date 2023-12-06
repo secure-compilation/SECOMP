@@ -428,9 +428,15 @@ Next Obligation.
 - destruct H1; split; auto. red; intros; eapply Mem.perm_unchanged_on; eauto. simpl; auto.
   destruct H2.
   split.
-  simpl.
-  simpl; eapply flowsto_trans; eapply Mem.unchanged_on_own with (b := b) in H0; eauto.
-  easy.
+  + simpl. destruct (plt b (Mem.nextblock m)).
+    * simpl; eapply flowsto_trans; eapply Mem.unchanged_on_own with (b := b) in H0; eauto.
+      rewrite H0; eauto with comps.
+    * assert (cp = top).
+      { exploit Mem.block_compartment_valid_block; eauto. simpl in H2.
+        intros R; rewrite R in H2.
+        inv H2; auto. }
+      subst; auto with comps.
+   + easy.
 - exists v. split; auto. eapply Mem.load_unchanged_on; eauto. simpl; auto.
 Qed.
 Next Obligation.
@@ -640,7 +646,9 @@ Next Obligation.
 - destruct mi_inj. constructor; intros.
 + eapply Mem.perm_unchanged_on; eauto.
 + eapply (Mem.unchanged_on_own) with (b := b2) in H0.
-  eapply flowsto_trans; eauto. eapply mi_own; eauto.
+  simpl; rewrite H0.
+  eapply flowsto_trans; eauto. eapply mi_own; simpl; eauto with comps.
+  exploit mi_mappedblocks; eauto.
 + eauto.
 + rewrite (Mem.unchanged_on_contents _ _ _ H0); eauto.
 - assumption.

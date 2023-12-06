@@ -952,7 +952,7 @@ Theorem external_call_match:
   /\ bc_nostack bc'
   /\ (forall b ofs n cp,
       Mem.valid_block m b ->
-      Mem.can_access_block m b cp ->
+      (* Mem.can_access_block m b cp -> *)
       bc b = BCinvalid ->
       Mem.loadbytes m' b ofs n cp = Mem.loadbytes m b ofs n cp).
 Proof.
@@ -1065,16 +1065,8 @@ Proof.
   destruct (j' b); congruence.
 - (* unmapped blocks are invariant *)
   intros.
-  destruct (Mem.can_access_block_dec m b cp0) eqn:e.
   eapply Mem.loadbytes_unchanged_on_1; auto.
-  apply UNCH1; auto. intros; red. unfold inj_of_bc; rewrite H1; auto.
-  contradiction.
-  (* destruct (Mem.can_access_block_dec m' b cp0) eqn:e'. *)
-  (* eapply Mem.unchanged_on_own in UNCH1; eauto. clear e'. *)
-  (* eapply (proj2 UNCH1) in c. contradiction. *)
-  (* Local Transparent Mem.loadbytes. unfold Mem.loadbytes. *)
-  (* rewrite e, e'. simpl. rewrite 2!andb_false_r. reflexivity. *)
-  (* Local Opaque Mem.loadbytes. *)
+  apply UNCH1; auto. intros; red. unfold inj_of_bc; rewrite H0; auto.
 Qed.
 
 (** ** Semantic invariant *)
@@ -1386,7 +1378,6 @@ Proof.
   intros. rewrite K; auto. rewrite C; auto.
   apply bmatch_inv with m. eapply mmatch_stack; eauto.
   intros. apply Q; eauto.
-  admit.
   eapply external_call_nextblock; eauto.
   intros (bc3 & U & V & W & X & Y & Z & AA).
   eapply sound_succ_state with (bc := bc3); eauto. simpl; auto.
@@ -1394,7 +1385,6 @@ Proof.
   apply sound_stack_exten with bc.
   apply sound_stack_inv with m. auto.
   intros. apply Q. red. eapply Plt_trans; eauto.
-  admit.
   rewrite C; auto with ordered_type.
   intros. eapply external_call_can_access_block; eauto.
   exact AA.
@@ -1416,7 +1406,6 @@ Proof.
   apply sound_stack_exten with bc.
   apply sound_stack_inv with m. auto.
   intros. apply Q. red. eapply Plt_trans; eauto.
-  admit.
   rewrite C; auto with ordered_type.
   intros. eapply external_call_can_access_block; eauto.
   exact AA.
@@ -1530,7 +1519,6 @@ Proof.
   apply sound_stack_new_bound with (Mem.nextblock m).
   apply sound_stack_exten with bc; auto.
   apply sound_stack_inv with m; auto.
-  intros. eapply K; eauto. admit.
   intros. eapply external_call_can_access_block; eauto.
   eapply external_call_nextblock; eauto.
 
@@ -1552,7 +1540,7 @@ Proof.
    eapply sound_regular_state with (bc := bc1); eauto.
    apply sound_stack_exten with bc'; auto.
    eapply ematch_ge; eauto. apply ematch_update. auto. auto.
-Admitted.
+Qed.
 
 End SOUNDNESS.
 
