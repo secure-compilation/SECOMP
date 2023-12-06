@@ -84,7 +84,7 @@ Module COMP <: COMPTYPE.
   Definition compartment := compartment'.
   Definition bottom := bottom'.
   Definition top := top'.
-  (* Parameters top bottom: compartment. *)
+
   Variant flowsto': compartment -> compartment -> Prop :=
     | bottom_flowsto': forall cp, flowsto' bottom cp
     | flowsto_top': forall cp, flowsto' cp top
