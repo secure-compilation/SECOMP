@@ -1,4 +1,5 @@
 Require Import String.
+Require Import Coqlib Maps Errors.
 Require Import AST.
 Require Import Values.
 
@@ -27,3 +28,5 @@ Class has_side {ctx: Type} (A: Type) :=
   { in_side s :=  fun a δ => s (comp_of a) = δ }.
 
 Notation "s '|=' a '∈' δ " := (in_side s a δ) (no associativity, at level 75).
+
+
