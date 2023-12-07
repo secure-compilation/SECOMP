@@ -43,14 +43,16 @@ let print_compiler_errors errors =
       | MSG chars -> List.iter (fun c -> fmt "%c" c) chars)
     errors
 
-let export_c_light_program prog file_name =
+let export_c_light_program prog main file_name =
   let version = PrintClight.Clight1 in
   let code =
     ignore (Format.flush_str_formatter ());
     PrintClight.print_program version Format.str_formatter prog;
     Format.flush_str_formatter () in
+  let regex_main = Str.regexp ("\\$" ^ string_of_int main ^ "(") in
+  let code_with_main = Str.global_replace regex_main "main(" code in
   let regex = Str.regexp "\\$\\([0-9]+\\)" in
-  let clean_code = Str.global_replace regex "ident_\\1" code in
+  let clean_code = Str.global_replace regex "ident_\\1" code_with_main in
   Out_channel.with_open_text file_name (fun c -> output_string c clean_code)
 
 (* Run QCheck testing *)
@@ -58,7 +60,8 @@ let export_c_light_program prog file_name =
 let property_under_test asm_prog bundled_trace =
   let source_name = "out.c_light" in
   let src_program = Backtranslation.gen_program bundled_trace asm_prog in
-  let () = export_c_light_program src_program source_name in
+  let main = Camlcoq.P.to_int asm_prog.prog_main in
+  let () = export_c_light_program src_program main source_name in
   let ifile = "./" ^ source_name in
   let ifile' = Driveraux.tmp_file ".p" in
   let () = Frontend.init () in
