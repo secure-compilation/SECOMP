@@ -664,7 +664,7 @@ Lemma store_init_data_loadbytes:
   forall m b p i cp m',
   Genv.store_init_data ge m b p i cp = Some m' ->
   match i with Init_space _ => False | _ => True end ->
-  Mem.loadbytes m' b p (init_data_size i) (Some cp) = Some (boid i).
+  Mem.loadbytes m' b p (init_data_size i) cp = Some (boid i).
 Proof.
   intros; destruct i; simpl in H; try apply (Mem.loadbytes_store_same _ _ _ _ _ _ H).
 - change (init_data_size (Init_int8 i)) with (size_chunk Mint8unsigned).
@@ -786,7 +786,7 @@ Qed.
 (** ** Memory areas that are initialized to zeros *)
 
 Definition reads_as_zeros (m: mem) (b: block) (from to: Z) (cp: compartment) : Prop :=
-  forall i, from <= i < to -> Mem.loadbytes m b i 1 (Some cp) = Some (Byte Byte.zero :: nil).
+  forall i, from <= i < to -> Mem.loadbytes m b i 1 cp = Some (Byte Byte.zero :: nil).
 
 Lemma reads_as_zeros_mono: forall m b from1 from2 to1 to2 cp,
   reads_as_zeros m b from1 to1 cp -> from1 <= from2 -> to2 <= to1 ->
@@ -809,8 +809,8 @@ Qed.
 Lemma reads_as_zeros_loadbytes: forall m cp b from to,
   reads_as_zeros m b from to cp ->
   forall len pos, from <= pos -> pos + len <= to -> 0 <= len ->
-  forall (OWN: Mem.can_access_block m b (Some cp)),
-  Mem.loadbytes m b pos len (Some cp) = Some (repeat (Byte Byte.zero) (Z.to_nat len)).
+  forall (OWN: Mem.can_access_block m b cp),
+  Mem.loadbytes m b pos len cp = Some (repeat (Byte Byte.zero) (Z.to_nat len)).
 Proof.
   intros until to; intros RZ.
   induction len using (well_founded_induction (Zwf_well_founded 0)).
@@ -827,8 +827,8 @@ Proof.
 Qed.
 
 Lemma reads_as_zeros_equiv: forall m b from to cp,
-  forall (OWN: Mem.can_access_block m b (Some cp)),
-  reads_as_zeros m b from to cp <-> Genv.readbytes_as_zero m b from (to - from) (Some cp).
+  forall (OWN: Mem.can_access_block m b cp),
+  reads_as_zeros m b from to cp <-> Genv.readbytes_as_zero m b from (to - from) cp.
 Proof.
   intros; split; intros.
 - red; intros. set (len := Z.of_nat n).
@@ -845,13 +845,13 @@ Record match_state (s: state) (m: mem) (b: block) (cp: compartment) : Prop := {
   match_range:
     0 <= s.(curr) <= s.(total_size);
   match_contents:
-    Mem.loadbytes m b 0 s.(curr) (Some cp) = Some (boidl (rev s.(init)));
+    Mem.loadbytes m b 0 s.(curr) cp = Some (boidl (rev s.(init)));
   match_valid:
     idlvalid 0 (rev s.(init));
   match_uninitialized:
     reads_as_zeros m b s.(curr) s.(total_size) cp;
   match_own:
-    Mem.can_access_block m b (Some cp)
+    Mem.can_access_block m b cp
 }.
 
 Lemma match_size: forall s m b cp,
@@ -896,9 +896,9 @@ Lemma trisection_correct: forall s m b cp pos sz bytes1 bytes2 il,
   match_state s m b cp ->
   trisection s.(init) (s.(curr) - (pos + sz)) sz = OK (bytes1, bytes2, il) ->
   0 <= pos -> pos + sz <= s.(curr) -> 0 <= sz ->
-  Mem.loadbytes m b 0 pos (Some cp) = Some (boidl (rev il))
-  /\ Mem.loadbytes m b pos sz (Some cp) = Some (inj_bytes bytes2)
-  /\ Mem.loadbytes m b (pos + sz) (s.(curr) - (pos + sz)) (Some cp) = Some (inj_bytes bytes1).
+  Mem.loadbytes m b 0 pos cp = Some (boidl (rev il))
+  /\ Mem.loadbytes m b pos sz cp = Some (inj_bytes bytes2)
+  /\ Mem.loadbytes m b (pos + sz) (s.(curr) - (pos + sz)) cp = Some (inj_bytes bytes1).
 Proof.
   intros. apply trisection_boidl in H0. destruct H0 as (A & B & C).
   set (depth := curr s - (pos + sz)) in *.
@@ -939,7 +939,7 @@ Qed.
 Theorem load_int_correct: forall s m b cp pos isz i v,
   match_state s m b cp ->
   load_int s pos isz = OK i ->
-  Mem.load (chunk_for_carrier isz) m b pos (Some cp) = Some v ->
+  Mem.load (chunk_for_carrier isz) m b pos cp = Some v ->
   v = Vint i.
 Proof.
   intros until v; intros MS RI LD.
@@ -1031,7 +1031,7 @@ Proof.
   + eapply reads_as_zeros_unchanged; eauto.
     eapply reads_as_zeros_mono. eapply match_uninitialized; eauto. lia. lia.
     intros. simpl. lia.
-  + apply Mem.loadbytes_can_access_block_inj in D. congruence.
+  + apply Mem.loadbytes_can_access_block_inj in D. simpl in *. congruence.
 - monadInv ST. destruct x as [[bytes1 bytes2] il]. inv EQ0.
   assert (pos + sz <= curr s1) by (apply curr_pad_to).
   assert (MS': match_state s1 m b cp) by (apply pad_to_correct; auto).
@@ -1055,7 +1055,7 @@ Proof.
       rewrite Z2Nat.id by lia. simpl. tauto.
   + eapply reads_as_zeros_unchanged; eauto. eapply match_uninitialized; eauto.
     intros. simpl. lia.
-  + apply Mem.loadbytes_can_access_block_inj in D. congruence.
+  + apply Mem.loadbytes_can_access_block_inj in D. simpl in *. congruence.
 Qed.
 
 Corollary store_int_correct: forall s m b cp pos isz n s' m',
@@ -1073,11 +1073,11 @@ Theorem init_data_list_of_state_correct: forall s m b cp il b' m1,
   match_state s m b cp ->
   init_data_list_of_state s = OK il ->
   Mem.range_perm m1 b' 0 s.(total_size) Cur Writable ->
-  forall (OWN: Mem.can_access_block m1 b' (Some cp)),
+  forall (OWN: Mem.can_access_block m1 b' cp),
   reads_as_zeros m1 b' 0 s.(total_size) cp ->
   exists m2,
      Genv.store_init_data_list ge m1 b' 0 il cp = Some m2
-  /\ Mem.loadbytes m2 b' 0 (init_data_list_size il) (Some cp) = Mem.loadbytes m b 0 s.(total_size) (Some cp).
+  /\ Mem.loadbytes m2 b' 0 (init_data_list_size il) cp = Mem.loadbytes m b 0 s.(total_size) cp.
 Proof.
   intros. unfold init_data_list_of_state in H0; monadInv H0. rename l into LE.
   set (s1 := pad_to s s.(total_size)) in *.
@@ -1163,7 +1163,7 @@ Inductive exec_assign: mem -> block -> Z -> bitfield -> type -> val -> compartme
       type_is_volatile ty = false ->
       0 <= pos -> 0 < width -> pos + width <= bitsize_intsize sz ->
       sg1 = (if zlt width (bitsize_intsize sz) then Signed else sg) ->
-      Mem.load (chunk_for_carrier sz) m b ofs (Some cp) = Some (Vint c) ->
+      Mem.load (chunk_for_carrier sz) m b ofs cp = Some (Vint c) ->
       Mem.store (chunk_for_carrier sz) m b ofs
                 (Vint (Int.bitfield_insert (first_bit sz pos width) width c n)) cp = Some m' ->
       exec_assign m b ofs (Bits sz sg pos width) (Tint sz sg1 attr) (Vint n) cp m'.
@@ -1219,7 +1219,7 @@ Qed.
 
 (** A semantics for general initializers *)
 
-Definition dummy_function := mkfunction default_compartment Tvoid cc_default nil nil Sskip.
+Definition dummy_function := mkfunction bottom Tvoid cc_default nil nil Sskip.
 
 Fixpoint initialized_fields_of_struct (ms: members) (pos: Z) : res (list (Z * bitfield * type)) :=
   match ms with
@@ -1354,12 +1354,12 @@ Theorem transl_init_sound:
   let sz := sizeof (prog_comp_env p) ty in
   Mem.range_perm m b 0 sz Cur Writable ->
   reads_as_zeros m b 0 sz cp ->
-  forall (OWN: Mem.can_access_block m b (Some cp)),
+  forall (OWN: Mem.can_access_block m b cp),
   exec_init (globalenv p) m b 0 Full ty i cp m1 ->
   transl_init (prog_comp_env p) ty i = OK data ->
   exists m2,
      Genv.store_init_data_list (globalenv p) m b 0 data cp = Some m2
-  /\ Mem.loadbytes m2 b 0 (init_data_list_size data) (Some cp) = Mem.loadbytes m1 b 0 sz (Some cp).
+  /\ Mem.loadbytes m2 b 0 (init_data_list_size data) cp = Mem.loadbytes m1 b 0 sz cp.
 Proof.
   intros.
   set (ge := globalenv p) in *.
@@ -1373,7 +1373,7 @@ Proof.
     assumption.
   - auto.
   - assumption.
-  - rewrite OWN. reflexivity.
+  - simpl in OWN. apply OWN.
   }
   assert (match_state ge x m1 b cp).
   { eapply (proj1 (transl_init_rec_sound ge)); eauto. }

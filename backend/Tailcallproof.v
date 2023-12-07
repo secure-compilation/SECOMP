@@ -147,7 +147,6 @@ Inductive transf_instr_spec (ce: compenv) (f: function): instruction -> instruct
       f.(fn_stacksize) = 0 ->
       is_return_spec f s res ->
       forall INTRA: intra_compartment_call ce ros (comp_of f) = true,
-      forall ALLOWED: needs_calling_comp (comp_of f) = false,
       forall SIGRES: sig_res sig = sig_res (fn_sig f),
       transf_instr_spec ce f (Icall sig ros args res s) (Itailcall sig ros args)
   | transf_instr_default: forall i,
@@ -161,11 +160,10 @@ Proof.
   intros. unfold transf_instr. destruct instr; try constructor.
   destruct (is_return niter f n r && tailcall_is_possible s &&
             rettype_eq (sig_res s) (sig_res (fn_sig f)) &&
-            intra_compartment_call ce _ (comp_of f) &&
-            negb (needs_calling_comp _)) eqn:B.
+            intra_compartment_call ce _ (comp_of f))
+            eqn:B.
 - InvBooleans. eapply transf_instr_tailcall; eauto.
-+ eapply is_return_charact; eauto.
-+ destruct (needs_calling_comp _); easy.
+  eapply is_return_charact; eauto.
 - constructor.
 Qed.
 
@@ -321,10 +319,10 @@ Qed.
 
 Lemma find_comp_translated:
   forall vf,
-    Genv.find_comp ge vf = Genv.find_comp tge vf.
+    Genv.find_comp_in_genv ge vf = Genv.find_comp_in_genv tge vf.
 Proof.
   intros vf.
-  eapply (Genv.match_genvs_find_comp TRANSL).
+  eapply (Genv.match_genvs_find_comp_in_genv TRANSL).
 Qed.
 
 Lemma call_trace_translated:
@@ -361,7 +359,7 @@ generalized and unified. *)
 Definition cenv_compat (p: program) (ce: compenv) : Prop :=
   forall id cp,
   ce!id = Some cp ->
-  exists f, (prog_defmap p)!id = Some (Gfun f) /\ cp = comp_of f.
+  exists f, (prog_defmap p)!id = Some (Gfun (Internal f)) /\ (cp = comp_of f).
 
 Lemma compenv_program_compat:
   forall p, cenv_compat p (compenv_program p).
@@ -369,7 +367,7 @@ Proof.
   set (P := fun (dm: PTree.t (globdef fundef unit)) (cenv: compenv) =>
               forall id cp,
               cenv!id = Some cp ->
-              exists f, dm!id = Some (Gfun f) /\ cp = comp_of f).
+              exists f, dm!id = Some (Gfun (Internal f)) /\ (cp = comp_of f)).
   assert (REMOVE: forall dm fenv id g,
              P dm fenv ->
              P (PTree.set id g dm) (PTree.remove id fenv)).
@@ -381,9 +379,9 @@ Proof.
              P dm cenv ->
              P (PTree.set (fst idg) (snd idg) dm) (add_globdef cenv idg)).
   { intros dm fenv [id g]; simpl; intros.
-    destruct g as [f | v]; auto.
+    destruct g as [[f | ?] | v]; auto.
     red; intros. rewrite ! PTree.gsspec in *.
-    destruct (peq id0 id); auto. inv H0; eauto.
+    destruct (peq id0 id); auto. inv H0; eauto with comps.
   }
   assert (REC: forall l dm cenv,
             P dm cenv ->
@@ -401,27 +399,30 @@ Lemma cenv_compat_linkorder:
   linkorder cunit prog -> cenv_compat cunit cenv -> cenv_compat prog cenv.
 Proof.
   intros; red; intros. apply H0 in H1.
-  destruct H1 as (f & GET & Ecp). subst cp.
+  destruct H1 as (f & GET & Ecp).
   destruct (prog_defmap_linkorder _ _ _ _ H GET) as (gd' & P & Q).
-  inv Q. inv H2; eauto.
+  inv Q. inv H2; eauto with comps.
 Qed.
 
 Lemma find_function_intra_compartment_call ce ros rs fd cp:
   cenv_compat prog ce ->
   find_function ge ros rs = Some fd ->
   intra_compartment_call ce ros cp = true ->
-  comp_of fd = cp.
+  cp = comp_of fd.
 Proof.
   unfold find_function.
   destruct ros as [?|id]; try easy.
   simpl. destruct (ce ! id) as [cp'|] eqn:GETce; try easy.
   intros COMPAT. specialize (COMPAT _ _ GETce).
-  destruct COMPAT as (f & GETprog & ?). subst cp'.
+  destruct COMPAT as (f & GETprog & ?). 
   apply Genv.find_def_symbol in GETprog.
   destruct GETprog as (b & FIND1 & FIND2).
-  unfold ge. rewrite FIND1.
-  unfold Genv.find_funct, Genv.find_funct_ptr. rewrite FIND2.
-  intros ? EQ. apply proj_sumbool_true in EQ. destruct Ptrofs.eq_dec; congruence.
+  unfold ge. setoid_rewrite FIND1.
+  unfold Genv.find_funct, Genv.find_funct_ptr.
+  destruct Ptrofs.eq_dec; try congruence.
+  setoid_rewrite FIND2.
+  intros ? EQ. apply proj_sumbool_true in EQ.
+  inv H0; auto.
 Qed.
 
 (** Consider an execution of a call/move/nop/return sequence in the
@@ -464,7 +465,7 @@ Inductive match_stackframes (m: mem) (cp: compartment) : list stackframe -> list
   | match_stackframes_normal: forall stk stk' res sp pc rs rs' ce f ty,
       match_stackframes m (comp_of f) stk stk' ->
       forall (COMPAT: cenv_compat prog ce),
-      forall (ACC: Mem.can_access_block m sp (Some (comp_of f))),
+      forall (ACC: Mem.can_access_block m sp (comp_of f)),
       regs_lessdef rs rs' ->
       match_stackframes m cp
         (Stackframe res ty f (Vptr sp Ptrofs.zero) pc rs :: stk)
@@ -505,17 +506,17 @@ Inductive match_states: state -> state -> Prop :=
              (RLD: regs_lessdef rs rs')
              (MLD: Mem.extends m m')
              (* (UPD: uptodate_caller (comp_of f) (call_comp s) (call_comp s')) *)
-             (ACC: Mem.can_access_block m' sp (Some (comp_of f))),
+             (ACC: Mem.can_access_block m' sp (comp_of f)),
       match_states (State s f (Vptr sp Ptrofs.zero) pc rs m)
                    (State s' (transf_function ce f) (Vptr sp Ptrofs.zero) pc rs' m')
   | match_states_call:
-      forall s ce f args m s' args' m',
+      forall s ce f cp args m s' args' m',
       match_stackframes m' (comp_of f) s s' ->
       forall (COMPAT: cenv_compat prog ce),
       Val.lessdef_list args args' ->
       Mem.extends m m' ->
-      match_states (Callstate s f args m)
-                   (Callstate s' (transf_fundef ce f) args' m')
+      match_states (Callstate s f args m cp)
+                   (Callstate s' (transf_fundef ce f) args' m' cp)
   | match_states_return:
       forall s v m s' v' m' cp,
       match_stackframes m' cp s s' ->
@@ -553,7 +554,7 @@ Inductive match_states: state -> state -> Prop :=
 Definition measure (st: state) : nat :=
   match st with
   | State s f sp pc rs m => (List.length s * (niter + 2) + return_measure f.(fn_code) pc + 1)%nat
-  | Callstate s f args m => 0%nat
+  | Callstate s f args m cp => 0%nat
   | Returnstate s v m cp => (List.length s * (niter + 2))%nat
   end.
 
@@ -654,16 +655,18 @@ Proof.
     red; intros; extlia.
     eauto.
   destruct X as [m'' FREE].
-  assert (Efd: comp_of fd = (comp_of f)).
+  assert (Efd: comp_of f = comp_of fd).
   { exploit find_function_intra_compartment_call; eauto. }
   left.
-  exists (Callstate s' (transf_fundef (compenv_program cu) fd) (rs'##args) m''); split.
+  exists (Callstate s' (transf_fundef (compenv_program cu) fd) (rs'##args) m'' (comp_of f)); split.
   assert (t = E0).
   { clear -EV FUNPTR H0 Efd.
-    unfold Genv.find_comp, find_function in *. rewrite FUNPTR in H0.
-    rewrite Efd in EV.
-    now eapply call_trace_same_cp; eauto. }
+    unfold Genv.find_comp_in_genv, find_function in *. rewrite FUNPTR in H0.
+    inv EV; auto. rewrite Efd in H.
+    now rewrite Genv.type_of_call_same_cp in H. }
   subst t.
+  (* rewrite <- Efd. *)
+  erewrite <- @comp_transl with (f := transf_function ce); eauto using comp_transf_function.
   eapply exec_Itailcall; eauto.
   { apply sig_preserved. }
   { now rewrite comp_transl, comp_transl. }
@@ -674,7 +677,7 @@ Proof.
   constructor.
   eapply match_stackframes_tail; eauto.
   (* TODO: Should be a lemma? *)
-  { rewrite Efd.
+  { rewrite <- Efd.
     clear -FREE STACKS.
     revert STACKS. generalize (comp_of f).
     intros cp STACKS.
@@ -687,8 +690,10 @@ Proof.
   eapply Mem.free_right_extends; eauto.
   rewrite stacksize_preserved. rewrite H7. intros. extlia.
 + (* call that remains a call *)
-  left. eexists (Callstate (Stackframe res _ (transf_function ce f) (Vptr sp0 Ptrofs.zero) pc' rs' :: s')
-                          (transf_fundef (compenv_program cu) fd) (rs'##args) m'); split.
+  left.
+  eexists (Callstate (Stackframe res _ (transf_function ce f) (Vptr sp0 Ptrofs.zero) pc' rs' :: s')
+                          (transf_fundef (compenv_program cu) fd) (rs'##args) m' (comp_of f)); split.
+  erewrite <- @comp_transl with (f := transf_function ce); eauto using comp_transf_function.
   eapply exec_Icall; eauto. apply sig_preserved.
   eapply find_function_ptr_translated; eauto.
   rewrite comp_transl. eapply allowed_call_translated; eauto.
@@ -723,8 +728,9 @@ Proof.
   intros (cu & tf & FIND' & Etf & ORDER). subst tf.
   exploit Mem.free_parallel_extends; eauto. intros [m'1 [FREE EXT]].
   TransfInstr.
-  assert (Ef: (comp_of f) = comp_of (transf_function ce f)) by now symmetry; apply comp_transl.
-  left. exists (Callstate s' (transf_fundef (compenv_program cu) fd) (rs'##args) m'1); split.
+  assert (Ef: comp_of f = comp_of (transf_function ce f)) by now symmetry; apply comp_transl.
+  left. exists (Callstate s' (transf_fundef (compenv_program cu) fd) (rs'##args) m'1 (comp_of f)); split.
+  rewrite Ef.
   eapply exec_Itailcall; eauto. apply sig_preserved.
     now rewrite comp_transl, COMP.
   rewrite stacksize_preserved; auto.
@@ -742,15 +748,17 @@ Proof.
   intros [v' [m'1 [A [B [C D]]]]].
   left. exists (State s' (transf_function ce f) (Vptr sp0 Ptrofs.zero) pc' (regmap_setres res v' rs') m'1); split.
   eapply exec_Ibuiltin; eauto.
-  rewrite comp_transf_function; eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  rewrite comp_transf_function; eauto.
   econstructor; eauto.
   (* TODO: Should be a lemma! *)
   { clear -A STACKS.
-    induction STACKS.
+    revert STACKS.
+    generalize (comp_of f).
+    induction 1.
     - constructor.
-    - constructor; auto. eapply external_call_can_access_block; eauto.
+    - constructor; eauto. eapply external_call_can_access_block; eauto.
     - constructor; auto. }
   apply set_res_lessdef; auto.
   eapply external_call_can_access_block; eauto.
@@ -810,27 +818,27 @@ Proof.
   simpl. eapply exec_function_internal; eauto. rewrite EQ1, EQ4; eauto.
   rewrite EQ2. rewrite EQ3. constructor; auto.
   (* TODO: Should be a lemma? *)
-  { clear -ALLOC H5. unfold comp_of in H5; simpl in H5.
-    revert H5. generalize (comp_of f). intros cp STACKS.
+  { clear -ALLOC H6. simpl in H6.
+    revert H6. generalize (comp_of f). intros cp STACKS.
     induction STACKS.
     - constructor.
     - constructor; auto.
       eapply Mem.alloc_can_access_block_other_inj_1; eauto.
     - constructor; auto. }
   apply regs_lessdef_init_regs. auto.
-  eapply Mem.owned_new_block; eauto.
+  simpl. erewrite Mem.owned_new_block; eauto. apply flowsto_refl.
 
 - (* external call *)
   exploit external_call_mem_extends; eauto.
   intros [res' [m2' [A [B [C D]]]]].
-  left. exists (Returnstate s' res' m2' (comp_of ef)); split.
+  left. exists (Returnstate s' res' m2' bottom); split.
   simpl. econstructor; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   constructor; auto.
   (* TODO: Should be a lemma? *)
-  { clear -A H5.
-    remember (call_comp s) as cp. clear Heqcp. unfold comp_of in H5; simpl in H5.
-    induction H5.
+  { clear -A H6.
+    simpl in H6.
+    induction H6.
     - constructor.
     - constructor; auto. eapply external_call_can_access_block; eauto.
     - constructor; auto. }
@@ -851,8 +859,9 @@ Proof.
   change (S (length s) * (niter + 2))%nat
    with ((niter + 2) + (length s) * (niter + 2))%nat.
   generalize (return_measure_bounds (fn_code f) pc). lia.
-  split. auto.
-  inv EV; auto. unfold Genv.type_of_call in H; rewrite Pos.eqb_refl in H; congruence.
+  split.
+  inv EV; auto. simpl in H; destruct (flowsto_dec (comp_of f) (comp_of f));
+    pose proof (flowsto_refl (comp_of f)); congruence.
   econstructor; eauto.
   rewrite Regmap.gss. auto.
 Qed.
@@ -864,7 +873,7 @@ Proof.
   intros. inv H.
   exploit funct_ptr_translated; eauto.
   intros (cu & tf & FIND & Etf & ORDER). subst tf.
-  exists (Callstate nil (transf_fundef (compenv_program cu) f) nil m0); split.
+  exists (Callstate nil (transf_fundef (compenv_program cu) f) nil m0 top); split.
   econstructor; eauto.
   eapply (Genv.init_mem_match TRANSL); eauto.
   replace (prog_main tprog) with (prog_main prog).

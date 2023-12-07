@@ -556,7 +556,7 @@ module Target : TARGET =
         fprintf oc "	nop\n"
       | Pbuiltin(ef, args, res) ->
          begin match ef with
-           | EF_annot(_cp, kind,txt, targs) ->
+           | EF_annot(kind,txt, targs) ->
              begin match (P.to_int kind) with
                | 1 -> let annot = annot_text preg_annot "x2" (camlstring_of_coqstring txt) args  in
                  fprintf oc "%s annotation: %S\n" comment annot
@@ -565,10 +565,10 @@ module Target : TARGET =
                  add_ais_annot lbl preg_annot "x2" (camlstring_of_coqstring txt) args
                | _ -> assert false
              end
-          | EF_debug(_cp, kind, txt, targs) ->
+          | EF_debug(kind, txt, targs) ->
               print_debug_info comment print_file_line preg_annot "sp" oc
                                (P.to_int kind) (extern_atom txt) args
-          | EF_inline_asm(_cp, txt, sg, clob) ->
+          | EF_inline_asm(txt, sg, clob) ->
               fprintf oc "%s begin inline assembly\n\t" comment;
               print_inline_asm preg_asm oc (camlstring_of_coqstring txt) sg args res;
               fprintf oc "%s end inline assembly\n" comment

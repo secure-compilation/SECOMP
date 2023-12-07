@@ -418,8 +418,8 @@ Qed.
 Program Definition contains (chunk: memory_chunk) (b: block) (ofs: Z) (cp: compartment) (spec: val -> Prop) : massert := {|
   m_pred := fun m =>
        0 <= ofs <= Ptrofs.max_unsigned
-    /\ Mem.valid_access m chunk b ofs Freeable (Some cp)
-    /\ exists v, Mem.load chunk m b ofs (Some cp) = Some v /\ spec v;
+    /\ Mem.valid_access m chunk b ofs Freeable cp
+    /\ exists v, Mem.load chunk m b ofs cp = Some v /\ spec v;
   m_footprint := fun b' ofs' => b' = b /\ ofs <= ofs' < ofs + size_chunk chunk
 |}.
 Next Obligation.
@@ -428,9 +428,15 @@ Next Obligation.
 - destruct H1; split; auto. red; intros; eapply Mem.perm_unchanged_on; eauto. simpl; auto.
   destruct H2.
   split.
-  eapply (Mem.unchanged_on_own _ _ _ H0); eauto.
-  eapply @Mem.can_access_block_valid_block; eauto.
-  easy.
+  + simpl. destruct (plt b (Mem.nextblock m)).
+    * simpl; eapply flowsto_trans; eapply Mem.unchanged_on_own with (b := b) in H0; eauto.
+      rewrite H0; eauto with comps.
+    * assert (cp = top).
+      { exploit Mem.block_compartment_valid_block; eauto. simpl in H2.
+        intros R; rewrite R in H2.
+        inv H2; auto. }
+      subst; auto with comps.
+   + easy.
 - exists v. split; auto. eapply Mem.load_unchanged_on; eauto. simpl; auto.
 Qed.
 Next Obligation.
@@ -447,7 +453,7 @@ Qed.
 
 Lemma contains_valid_access: forall spec m chunk b ofs cp,
     m |= contains chunk b ofs cp spec ->
-    Mem.valid_access m chunk b ofs Freeable (Some cp).
+    Mem.valid_access m chunk b ofs Freeable cp.
 Proof.
   intros. destruct H as (D & E & v & F & G).
   assumption.
@@ -456,7 +462,7 @@ Qed.
 Lemma load_rule:
   forall spec m chunk b cp ofs,
   m |= contains chunk b ofs cp spec ->
-  exists v, Mem.load chunk m b ofs (Some cp) = Some v /\ spec v.
+  exists v, Mem.load chunk m b ofs cp = Some v /\ spec v.
 Proof.
   intros. destruct H as (D & E & v & F & G).
   exists v; auto.
@@ -465,7 +471,7 @@ Qed.
 Lemma loadv_rule:
   forall spec m chunk b ofs cp,
   m |= contains chunk b ofs cp spec ->
-  exists v, Mem.loadv chunk m (Vptr b (Ptrofs.repr ofs)) (Some cp) = Some v /\ spec v.
+  exists v, Mem.loadv chunk m (Vptr b (Ptrofs.repr ofs)) cp = Some v /\ spec v.
 Proof.
   intros. exploit load_rule; eauto. intros (v & A & B). exists v; split; auto.
   simpl. rewrite Ptrofs.unsigned_repr; auto. eapply contains_no_overflow; eauto.
@@ -479,7 +485,7 @@ Lemma store_rule:
   Mem.store chunk m b ofs v cp = Some m' /\ m' |= contains chunk b ofs cp spec ** P.
 Proof.
   intros. destruct H as (A & B & C). destruct A as (D & E & v0 & F & G).
-  assert (H: Mem.valid_access m chunk b ofs Writable (Some cp)) by eauto with mem.
+  assert (H: Mem.valid_access m chunk b ofs Writable cp) by eauto with mem.
   destruct (Mem.valid_access_store _ _ _ _ _ v H) as [m' STORE].
   exists m'; split; auto. simpl. intuition auto.
 - eapply Mem.store_valid_access_1; eauto.
@@ -504,16 +510,16 @@ Lemma range_contains:
   forall chunk b ofs cp P m,
   m |= range b ofs (ofs + size_chunk chunk) ** P ->
   (align_chunk chunk | ofs) ->
-  forall OWN : Mem.can_access_block m b (Some cp),
+  forall OWN : Mem.can_access_block m b cp,
   m |= contains chunk b ofs cp (fun v => True) ** P.
 Proof.
   intros. destruct H as (A & B & C). destruct A as (D & E & F).
   split; [|split].
-- assert (Mem.valid_access m chunk b ofs Freeable (Some cp)).
+- assert (Mem.valid_access m chunk b ofs Freeable cp).
   { split; auto. red; auto. }
   split. generalize (size_chunk_pos chunk). unfold Ptrofs.max_unsigned. lia.
   split. auto.
-+ destruct (Mem.valid_access_load m chunk b ofs (Some cp)) as [v LOAD].
++ destruct (Mem.valid_access_load m chunk b ofs cp) as [v LOAD].
   eauto with mem.
   exists v; auto.
 - auto.
@@ -639,7 +645,10 @@ Next Obligation.
   destruct H. constructor.
 - destruct mi_inj. constructor; intros.
 + eapply Mem.perm_unchanged_on; eauto.
-+ eapply (Mem.unchanged_on_own _ _ _ H0); eauto.
++ eapply (Mem.unchanged_on_own) with (b := b2) in H0.
+  simpl; rewrite H0.
+  eapply flowsto_trans; eauto. eapply mi_own; simpl; eauto with comps.
+  exploit mi_mappedblocks; eauto.
 + eauto.
 + rewrite (Mem.unchanged_on_contents _ _ _ H0); eauto.
 - assumption.
@@ -675,7 +684,7 @@ Proof.
   intros. destruct H as (A & B & C). simpl in A.
   exploit Mem.storev_mapped_inject; eauto. intros (m2' & STORE & INJ).
   inv H1; simpl in STORE; try discriminate.
-  assert (VALID: Mem.valid_access m1 chunk b1 (Ptrofs.unsigned ofs1) Writable (Some cp))
+  assert (VALID: Mem.valid_access m1 chunk b1 (Ptrofs.unsigned ofs1) Writable cp)
     by eauto with mem.
   assert (EQ: Ptrofs.unsigned (Ptrofs.add ofs1 (Ptrofs.repr delta)) = Ptrofs.unsigned ofs1 + delta).
   { eapply Mem.address_inject'; eauto with mem. }
@@ -717,7 +726,7 @@ Proof.
 - eapply Mem.alloc_right_inject; eauto.
 - eexact ALLOC1.
 - instantiate (1 := b2). eauto with mem.
-- eapply Mem.owned_new_block; eauto.
+- eapply Mem.owned_new_block in ALLOC2; subst; simpl; auto with comps.
 - instantiate (1 := delta). extlia.
 - intros. assert (0 <= ofs < sz2) by (eapply Mem.perm_alloc_3; eauto). lia.
 - intros. apply Mem.perm_implies with Freeable; auto with mem.
@@ -870,12 +879,12 @@ Proof.
 Qed.
 
 Lemma external_call_parallel_rule:
-  forall (F V: Type) ef (ge: Genv.t F V) vargs1 m1 t vres1 m1' m2 j P vargs2,
-  external_call ef ge vargs1 m1 t vres1 m1' ->
+  forall (F V: Type) ef (ge: Genv.t F V) cp vargs1 m1 t vres1 m1' m2 j P vargs2,
+  external_call ef ge cp vargs1 m1 t vres1 m1' ->
   m2 |= minjection j m1 ** globalenv_inject ge j ** P ->
   Val.inject_list j vargs1 vargs2 ->
   exists j' vres2 m2',
-     external_call ef ge vargs2 m2 t vres2 m2'
+     external_call ef ge cp vargs2 m2 t vres2 m2'
   /\ Val.inject j' vres1 vres2
   /\ m2' |= minjection j' m1' ** globalenv_inject ge j' ** P
   /\ inject_incr j j'
@@ -885,7 +894,7 @@ Proof.
   destruct SEP as (A & B & C). simpl in A.
   exploit external_call_mem_inject; eauto.
   eapply globalenv_inject_preserves_globals. eapply sep_pick1; eauto.
-  intros (j' & vres2 & m2' & CALL' & RES & INJ' & UNCH1 & UNCH2 & INCR & ISEP & _).
+  intros (j' & vres2 & m2' & CALL' & RES & INJ' & UNCH1 & UNCH2 & INCR & ISEP).
   assert (MAXPERMS: forall b ofs p,
             Mem.valid_block m1 b -> Mem.perm m1' b ofs Max p -> Mem.perm m1 b ofs Max p).
   { intros. eapply external_call_max_perm; eauto. }

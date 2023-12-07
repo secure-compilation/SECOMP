@@ -146,7 +146,8 @@ Inductive state: Type :=
       forall (f: fundef)                (**r fundef to invoke *)
              (args: list val)           (**r arguments provided by caller *)
              (k: cont)                  (**r what to do next  *)
-             (m: mem),                  (**r memory state *)
+             (m: mem)                   (**r memory state *)
+             (cp: compartment),         (**r calling compartment (cf comment in Cminor.v) *)
       state
   | Returnstate:
       forall (v: val)                   (**r return value *)
@@ -182,7 +183,7 @@ Inductive eval_expr: letenv -> expr -> val -> Prop :=
   | eval_Eload: forall le chunk addr al vl vaddr v,
       eval_exprlist le al vl ->
       eval_addressing ge sp addr vl = Some vaddr ->
-      Mem.loadv chunk m vaddr (Some cp) = Some v ->
+      Mem.loadv chunk m vaddr cp = Some v ->
       eval_expr le (Eload chunk addr al) v
   | eval_Econdition: forall le a b c va v,
       eval_condexpr le a va ->
@@ -197,16 +198,14 @@ Inductive eval_expr: letenv -> expr -> val -> Prop :=
       eval_expr le (Eletvar n) v
   | eval_Ebuiltin: forall le ef al vl v,
       eval_exprlist le al vl ->
-      external_call ef ge vl m E0 v m ->
-      comp_of ef = cp ->
+      external_call ef ge cp vl m E0 v m ->
       eval_expr le (Ebuiltin ef al) v
   | eval_Eexternal: forall le id sg al b ef vl v,
       Genv.find_symbol ge id = Some b ->
       Genv.find_funct_ptr ge b = Some (External ef) ->
       ef_sig ef = sg ->
       eval_exprlist le al vl ->
-      external_call ef ge vl m E0 v m ->
-      forall (INTRA: Genv.type_of_call cp (comp_of ef) <> Genv.CrossCompartmentCall),
+      external_call ef ge cp vl m E0 v m ->
       eval_expr le (Eexternal id sg al) v
 
 with eval_exprlist: letenv -> exprlist -> list val -> Prop :=
@@ -314,10 +313,10 @@ Definition is_call_cont (k: cont) : Prop :=
   | _ => False
   end.
 
-Definition call_comp (k: cont) : option compartment :=
+Definition call_comp (k: cont) : compartment :=
   match call_cont k with
-  | Kcall _ f _ _ _ => Some (comp_of f)
-  | _ => None
+  | Kcall _ f _ _ _ => comp_of f
+  | _ => top
   end.
 
 (** Find the statement and manufacture the continuation
@@ -386,7 +385,7 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (NO_CROSS_PTR: Genv.type_of_call (comp_of f) (comp_of fd) = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
       forall (EV: call_trace ge (comp_of f) (comp_of fd) vf vargs (sig_args sig) t),
       step (State f (Scall optid sig a bl) k sp e m)
-        t (Callstate fd vargs (Kcall optid f sp e k) m)
+        t (Callstate fd vargs (Kcall optid f sp e k) m (comp_of f))
 
   | step_tailcall: forall f sig a bl k sp e m vf vargs fd m',
       eval_expr_or_symbol (Vptr sp Ptrofs.zero) e (comp_of f) m nil a vf ->
@@ -397,12 +396,11 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (SIG: sig_res (fn_sig f) = sig_res sig),
       Mem.free m sp 0 f.(fn_stackspace) (comp_of f) = Some m' ->
       step (State f (Stailcall sig a bl) k (Vptr sp Ptrofs.zero) e m)
-        E0 (Callstate fd vargs (call_cont k) m')
+        E0 (Callstate fd vargs (call_cont k) m' (comp_of f))
 
   | step_builtin: forall f res ef al k sp e m vl t v m',
-      comp_of ef = comp_of f ->
       list_forall2 (eval_builtin_arg sp e (comp_of f) m) al vl ->
-      external_call ef ge vl m t v m' ->
+      external_call ef ge (comp_of f) vl m t v m' ->
       step (State f (Sbuiltin res ef al) k sp e m)
          t (State f Sskip k sp (set_builtin_res res v e) m')
 
@@ -461,15 +459,15 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Sgoto lbl) k sp e m)
         E0 (State f s' k' sp e m)
 
-  | step_internal_function: forall f vargs k m m' sp e,
+  | step_internal_function: forall f vargs k m cp m' sp e,
       Mem.alloc m (comp_of f) 0 f.(fn_stackspace) = (m', sp) ->
       set_locals f.(fn_vars) (set_params vargs f.(fn_params)) = e ->
-      step (Callstate (Internal f) vargs k m)
+      step (Callstate (Internal f) vargs k m cp)
         E0 (State f f.(fn_body) k (Vptr sp Ptrofs.zero) e m')
-  | step_external_function: forall ef vargs k m t vres m',
-      external_call ef ge vargs m t vres m' ->
-      step (Callstate (External ef) vargs k m)
-         t (Returnstate vres k m' (sig_res (ef_sig ef)) (comp_of ef))
+  | step_external_function: forall ef vargs k m cp t vres m',
+      external_call ef ge cp vargs m t vres m' ->
+      step (Callstate (External ef) vargs k m cp)
+         t (Returnstate vres k m' (sig_res (ef_sig ef)) bottom)
 
   | step_return: forall v optid f sp e cp k m ty t,
       forall (NO_CROSS_PTR: Genv.type_of_call (comp_of f) cp = Genv.CrossCompartmentCall -> not_ptr v),
@@ -486,7 +484,7 @@ Inductive initial_state (p: program): state -> Prop :=
       Genv.find_symbol ge p.(prog_main) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
       funsig f = signature_main ->
-      initial_state p (Callstate f nil Kstop m0).
+      initial_state p (Callstate f nil Kstop m0 top).
 
 Inductive final_state: state -> int -> Prop :=
   | final_state_intro: forall r m sg cp,

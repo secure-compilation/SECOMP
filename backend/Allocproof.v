@@ -25,21 +25,19 @@ Require Import Allocation.
 Definition match_prog (p: RTL.program) (tp: LTL.program) :=
   match_program (fun _ f tf => transf_fundef f = OK tf) eq p tp.
 
-#[global]
-Instance comp_transf_function: has_comp_transl_partial transf_function.
+#[global] Instance comp_transf_function: has_comp_transl_partial transf_function.
 Proof.
   unfold transf_function, check_function.
   intros f ? H.
   destruct type_function; try easy.
   destruct regalloc; try easy.
   destruct analyze; try easy.
-  destruct eq_compartment as [e|?]; try easy.
+  destruct cp_eq_dec as [e|?]; try easy.
   monadInv H.
   exact e.
 Qed.
 
-#[global]
-Instance comp_transf_fundef: has_comp_transl_partial transf_fundef.
+#[global] Instance comp_transf_fundef: has_comp_transl_partial transf_fundef.
 Proof.
   unfold transf_fundef, transf_partial_fundef, transf_function, check_function.
   intros f ? H.
@@ -47,7 +45,7 @@ Proof.
   - destruct type_function; try easy.
     destruct regalloc; try easy.
     destruct analyze; try easy.
-    destruct eq_compartment as [e|?]; try easy.
+    destruct cp_eq_dec as [e|?]; try easy.
     monadInv H. monadInv EQ.
     exact e.
   - now inv H.
@@ -2297,20 +2295,20 @@ Proof.
 Qed.
 
 Lemma add_equations_builtin_eval:
-  forall ef env args args' e1 e2 m1 m1' rs ls (ge: RTL.genv) sp vargs t vres m2,
+  forall ef cp env args args' e1 e2 m1 m1' rs ls (ge: RTL.genv) sp vargs t vres m2,
   wt_regset env rs ->
   match ef with
-  | EF_debug _ _ _ _ => add_equations_debug_args env args args' e1
+  | EF_debug _ _ _ => add_equations_debug_args env args args' e1
   | _              => add_equations_builtin_args env args args' e1
   end = Some e2 ->
   Mem.extends m1 m1' ->
   satisf rs ls e2 ->
   eval_builtin_args ge (fun r => rs # r) sp m1 args vargs ->
-  external_call ef ge vargs m1 t vres m2 ->
+  external_call ef ge cp vargs m1 t vres m2 ->
   satisf rs ls e1 /\
   exists vargs' vres' m2',
      eval_builtin_args ge ls sp m1' args' vargs'
-  /\ external_call ef ge vargs' m1' t vres' m2'
+  /\ external_call ef ge cp vargs' m1' t vres' m2'
   /\ Val.lessdef vres vres'
   /\ Mem.extends m2 m2'.
 Proof.
@@ -2319,7 +2317,7 @@ Proof.
     satisf rs ls e1 /\
     exists vargs' vres' m2',
        eval_builtin_args ge ls sp m1' args' vargs'
-    /\ external_call ef ge vargs' m1' t vres' m2'
+    /\ external_call ef ge cp vargs' m1' t vres' m2'
     /\ Val.lessdef vres vres'
     /\ Mem.extends m2 m2').
   {
@@ -2428,7 +2426,7 @@ Proof.
   destruct (check_function f f0 env) as [] eqn:?; inv H.
   unfold check_function in Heqr.
   destruct (analyze f env (pair_codes f tf)) as [an|] eqn:?; try discriminate.
-  destruct eq_compartment as [e|]; try discriminate.
+  destruct cp_eq_dec as [e|]; try discriminate.
   monadInv Heqr.
   destruct (check_entrypoints_aux f tf env x) as [y|] eqn:?; try discriminate.
   unfold check_entrypoints_aux, pair_entrypoints in Heqo0. MonadInv.
@@ -2551,9 +2549,9 @@ Qed.
 
 Lemma find_comp_translated:
   forall vf,
-    Genv.find_comp ge vf = Genv.find_comp tge vf.
+    Genv.find_comp_in_genv ge vf = Genv.find_comp_in_genv tge vf.
 Proof.
-  eapply (Genv.match_genvs_find_comp TRANSF).
+  eapply (Genv.match_genvs_find_comp_in_genv TRANSF).
 Qed.
 
 Lemma exec_moves:
@@ -2653,15 +2651,15 @@ Inductive match_states: RTL.state -> LTL.state -> Prop :=
       match_states (RTL.State s f sp pc rs m)
                    (LTL.State ts tf sp pc ls m')
   | match_states_call:
-      forall s f args m ts tf ls m'
+      forall s f args m ts tf ls m' cp
         (STACKS: match_stackframes s ts (funsig tf))
         (FUN: transf_fundef f = OK tf)
         (ARGS: Val.lessdef_list args (map (fun p => Locmap.getpair p ls) (loc_arguments (funsig tf))))
         (AG: agree_callee_save (parent_locset ts) ls)
         (MEM: Mem.extends m m')
         (WTARGS: Val.has_type_list args (sig_args (funsig tf))),
-      match_states (RTL.Callstate s f args m)
-                   (LTL.Callstate ts tf (funsig tf) ls m')
+      match_states (RTL.Callstate s f args m cp)
+                   (LTL.Callstate ts tf (funsig tf) ls m' cp)
   | match_states_return:
       forall s res m ts ls m' sg cp
         (STACKS: match_stackframes s ts sg)
@@ -2864,7 +2862,7 @@ Proof.
   exploit eval_addressing_lessdef. eexact LD3.
   eapply eval_offset_addressing; eauto; apply Archi.splitlong_ptr32; auto.
   intros [a2' [F2 G2]].
-  assert (LOADX: exists v2'', Mem.loadv Mint32 m' a2' (Some (comp_of f)) = Some v2'' /\ Val.lessdef v2' v2'').
+  assert (LOADX: exists v2'', Mem.loadv Mint32 m' a2' (comp_of f) = Some v2'' /\ Val.lessdef v2' v2'').
   { discriminate || (eapply Mem.loadv_extends; [eauto|eexact LOAD2|eexact G2]). }
   destruct LOADX as (v2'' & LOAD2' & LD4).
   set (ls4 := Locmap.set (R dst2') v2'' (undef_regs (destroyed_by_load Mint32 addr2) ls3)).
@@ -2935,7 +2933,7 @@ Proof.
   exploit eval_addressing_lessdef. eexact LD1.
   eapply eval_offset_addressing; eauto; apply Archi.splitlong_ptr32; auto.
   intros [a1' [F1 G1]].
-  assert (LOADX: exists v2'', Mem.loadv Mint32 m' a1' (Some (comp_of f)) = Some v2'' /\ Val.lessdef v2' v2'').
+  assert (LOADX: exists v2'', Mem.loadv Mint32 m' a1' (comp_of f) = Some v2'' /\ Val.lessdef v2' v2'').
   { discriminate || (eapply Mem.loadv_extends; [eauto|eexact LOAD2|eexact G1]). }
   destruct LOADX as (v2'' & LOAD2' & LD2).
   set (ls2 := Locmap.set (R dst') v2'' (undef_regs (destroyed_by_load Mint32 addr2) ls1)).
@@ -3173,7 +3171,7 @@ Proof.
   }
   traceEq. traceEq.
   exploit analyze_successors; eauto. simpl. left; eauto. intros [enext [U V]].
-  rewrite <- SIG.
+  rewrite <- SIG. rewrite comp_transf_function; eauto.
   econstructor; eauto.
   {
   econstructor; eauto.
@@ -3210,7 +3208,7 @@ Proof.
   rewrite <- comp_transf_function; eauto.
   destruct (transf_function_inv _ _ FUN); auto.
   eauto. traceEq.
-  rewrite <- SIG'.
+  rewrite <- SIG'. rewrite comp_transf_function; eauto.
   econstructor; eauto.
   eapply match_stackframes_change_sig; eauto. rewrite SIG'. rewrite e0. decEq.
   destruct (transf_function_inv _ _ FUN); auto.
@@ -3234,8 +3232,9 @@ Proof.
   eapply star_trans. eexact A1.
   eapply star_left. econstructor.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
+  rewrite <- comp_transf_function; eauto.
   eapply external_call_symbols_preserved. apply senv_preserved. eauto.
-  eauto. rewrite <- comp_transf_function; eauto.
+  eauto.
   eapply star_right. eexact A3.
   econstructor.
   reflexivity. reflexivity. reflexivity. traceEq.
@@ -3395,7 +3394,7 @@ Proof.
   intros. inv H.
   exploit function_ptr_translated; eauto. intros [tf [FIND TR]].
   exploit sig_function_translated; eauto. intros SIG.
-  exists (LTL.Callstate nil tf signature_main (Locmap.init Vundef) m0); split.
+  exists (LTL.Callstate nil tf signature_main (Locmap.init Vundef) m0 top); split.
   econstructor; eauto.
   eapply (Genv.init_mem_transf_partial TRANSF); eauto.
   rewrite symbols_preserved.

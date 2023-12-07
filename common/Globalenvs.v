@@ -193,8 +193,8 @@ Definition public_symbol (ge: t) (id: ident) : bool :=
 Definition find_def (ge: t) (b: block) : option (globdef F V) :=
   PTree.get b ge.(genv_defs).
 
-(** [find_funct_ptr ge b] returns the function description associated with
-    the given address. *)
+(** [find_funct_ptr ge b] returns the function description associated with *)
+(*     the given address. *)
 
 Definition find_funct_ptr (ge: t) (b: block) : option F :=
   match find_def ge b with Some (Gfun f) => Some f | _ => None end.
@@ -210,32 +210,43 @@ Definition find_funct (ge: t) (v: val) : option F :=
 
 (** [find_comp_of_block ge b] *)
 
-Definition find_comp_of_block (ge: t) (b: block) : option compartment :=
+Definition find_comp_of_block (ge: t) (b: block) : compartment :=
   match find_def ge b with
-  | Some def => Some (comp_of def)
-  | None => None
+  | Some def => comp_of def
+  | None => bottom
   end.
 
-Definition find_comp_of_ident (ge: t) (id: ident) : option compartment :=
+(* We do not define an instance of [comp_of] for [block], because there is two ways of
+   getting the compartment of a block: through the global environment and through the
+   memory. We do not want to mix the two by mistake. *)
+
+
+Definition find_comp_of_ident (ge: t) (id: ident) : compartment :=
   match find_symbol ge id with
   | Some b => find_comp_of_block ge b
-  | None => None
+  | None => bottom
   end.
 
-(** [find_comp ge v] finds the compartment associated with the pointer [v] as it
+Global Instance has_comp_ident (ge: t): has_comp ident :=
+  find_comp_of_ident ge.
+
+(** [find_comp_in_genv ge v] finds the compartment associated with the pointer [v] as it
     is recorded in [ge]. *)
 
-Definition find_comp (ge: t) (v: val) : option compartment :=
+(* We also do not define an instance of [comp_of] for [value], because there is two ways of
+   getting the compartment of a block: through the global environment and through the
+   memory. We do not want to mix the two by mistake. *)
+Definition find_comp_in_genv (ge: t) (v: val) : compartment :=
   match v with
   | Vptr b _ => find_comp_of_block ge b
-  | _ => None
+  | _ => bottom
   end.
 
-Lemma find_funct_find_comp : forall ge v fd,
+Lemma find_funct_find_comp_in_genv : forall ge v fd,
     find_funct ge v = Some fd ->
-    find_comp ge v = Some (comp_of fd).
+    find_comp_in_genv ge v = comp_of fd.
 Proof.
-  unfold find_comp, find_funct, find_comp_of_block, find_funct_ptr.
+  unfold find_comp_in_genv, find_funct, find_comp_of_block, find_funct_ptr.
   intros ? v fd. destruct v; try easy.
   destruct Ptrofs.eq_dec as [_|_]; try easy.
   destruct find_def as [def|]; try easy.
@@ -243,9 +254,9 @@ Proof.
   intros e. now injection e as ->.
 Qed.
 
-Lemma find_comp_null: forall ge, find_comp ge Vnullptr = None.
+Lemma find_comp_in_genv_null: forall ge, find_comp_in_genv ge Vnullptr = bottom.
 Proof.
-  unfold find_comp, Vnullptr.
+  unfold find_comp_in_genv, Vnullptr.
   now destruct Archi.ptr64.
 Qed.
 
@@ -457,7 +468,7 @@ Qed.
 Lemma find_funct_ptr_find_comp_of_block:
   forall ge b fd,
   find_funct_ptr ge b = Some fd ->
-  find_comp_of_block ge b = Some (comp_of fd).
+  find_comp_of_block ge b = comp_of fd.
 Proof.
   intros ge b fd find.
   rewrite find_funct_ptr_iff in find.
@@ -547,20 +558,20 @@ Proof.
   - unfold find_symbol. simpl. now rewrite PTree.gempty.
 Qed.
 
-Lemma find_symbol_find_comp :
-  forall p id,
-    let ge := globalenv p in
-    find_symbol ge id <> None ->
-    exists cp, find_comp_of_ident ge id = Some cp.
-Proof.
-  intros p id ge ge_id.
-  unfold find_comp_of_ident, find_comp_of_block.
-  destruct find_symbol as [b|] eqn:ge_id_b; try congruence.
-  destruct (find_symbol_find_def_inversion _ _ ge_id_b)
-    as [def ge_b].
-  exists (comp_of def). simpl. unfold ge.
-  now rewrite ge_b.
-Qed.
+(* Lemma find_symbol_find_comp_in_genv : *)
+(*   forall p id, *)
+(*     let ge := globalenv p in *)
+(*     find_symbol ge id <> None -> *)
+(*     exists cp, find_comp_of_ident ge id = Some cp. *)
+(* Proof. *)
+(*   intros p id ge ge_id. *)
+(*   unfold find_comp_of_ident, find_comp_of_block. *)
+(*   destruct find_symbol as [b|] eqn:ge_id_b; try congruence. *)
+(*   destruct (find_symbol_find_def_inversion _ _ ge_id_b) *)
+(*     as [def ge_b]. *)
+(*   exists (comp_of def). simpl. unfold ge. *)
+(*   now rewrite ge_b. *)
+(* Qed. *)
 
 Theorem find_def_inversion:
   forall p b g,
@@ -812,8 +823,9 @@ Definition perm_globvar (gv: globvar V) : permission :=
 Definition alloc_global (m: mem) (idg: ident * globdef F V): option mem :=
   match idg with
   | (id, Gfun f) =>
-      let (m1, b) := Mem.alloc m (comp_of f) 0 1 in
-      Mem.drop_perm m1 b 0 1 Nonempty (comp_of f)
+      let cp := comp_of f in
+      let (m1, b) := Mem.alloc m cp 0 1 in
+      Mem.drop_perm m1 b 0 1 Nonempty cp
   | (id, Gvar v) =>
       let init := v.(gvar_init) in
       let comp := v.(gvar_comp) in
@@ -882,7 +894,8 @@ Proof.
   unfold alloc_global. intros.
   destruct g as [id [f|v]].
 - (* function *)
-  destruct (Mem.alloc m _ 0 1) as [m1 b] eqn:?.
+  (* destruct (comp_of f); try discriminate; simpl in H. *)
+  destruct (Mem.alloc m (comp_of f) 0 1) as [m1 b] eqn:?.
   erewrite Mem.nextblock_drop; eauto.
   now erewrite Mem.nextblock_alloc; eauto.
 - (* variable *)
@@ -953,7 +966,7 @@ Remark alloc_global_block_compartment:
   forall m idg m' b,
   alloc_global m idg = Some m' ->
   Mem.block_compartment m' b =
-  if eq_block b (Mem.nextblock m) then Some (comp_of idg#2)
+  if eq_block b (Mem.nextblock m) then comp_of idg#2
   else Mem.block_compartment m b.
 Proof.
 intros m [id [v|f]] m' b ALLOCGLOB; simpl in *.
@@ -972,11 +985,11 @@ intros m [id [v|f]] m' b ALLOCGLOB; simpl in *.
 Qed.
 
 Fixpoint alloc_globals_block_compartment_spec
-         dflt b0 (gl : list (ident * globdef F V)) b : option block :=
+         dflt b0 (gl : list (ident * globdef F V)) b : compartment :=
   match gl with
   | nil => dflt
   | g :: gl =>
-    let dflt' := if eq_block b b0 then Some (comp_of g#2)
+    let dflt' := if eq_block b b0 then comp_of g#2
                  else dflt in
     alloc_globals_block_compartment_spec dflt' (Pos.succ b0) gl b
   end.
@@ -1128,16 +1141,16 @@ Qed.
 
 (** Properties related to [loadbytes] *)
 
-Definition readbytes_as_zero (m: mem) (b: block) (ofs len: Z) (cp: option compartment) : Prop :=
+Definition readbytes_as_zero (m: mem) (b: block) (ofs len: Z) (cp: compartment) : Prop :=
   forall p n,
   ofs <= p -> p + Z.of_nat n <= ofs + len ->
   Mem.loadbytes m b p (Z.of_nat n) cp = Some (List.repeat (Byte Byte.zero) n).
 
 Lemma store_zeros_loadbytes:
   forall m b p n cp m',
-    Mem.can_access_block m b (Some cp) ->
+    Mem.can_access_block m b cp ->
   store_zeros m b p n cp = Some m' ->
-  readbytes_as_zero m' b p n (Some cp) /\ Mem.can_access_block m' b (Some cp).
+  readbytes_as_zero m' b p n cp /\ Mem.can_access_block m' b cp.
 Proof.
   intros until cp.
   functional induction (store_zeros m b p n cp).
@@ -1199,8 +1212,8 @@ Qed.
 Lemma store_init_data_loadbytes:
   forall m b p i cp m',
   store_init_data m b p i cp = Some m' ->
-  readbytes_as_zero m b p (init_data_size i) (Some cp) ->
-  Mem.loadbytes m' b p (init_data_size i) (Some cp) = Some (bytes_of_init_data i).
+  readbytes_as_zero m b p (init_data_size i) cp ->
+  Mem.loadbytes m' b p (init_data_size i) cp = Some (bytes_of_init_data i).
 Proof.
   intros; destruct i; simpl in H; try apply (Mem.loadbytes_store_same _ _ _ _ _ _ _ H).
 - inv H. simpl.
@@ -1221,10 +1234,10 @@ Fixpoint bytes_of_init_data_list (il: list init_data): list memval :=
 
 Lemma store_init_data_list_loadbytes:
   forall b il m p cp m',
-    Mem.can_access_block m b (Some cp) ->
+    Mem.can_access_block m b cp ->
   store_init_data_list m b p il cp = Some m' ->
-  readbytes_as_zero m b p (init_data_list_size il) (Some cp) ->
-  Mem.loadbytes m' b p (init_data_list_size il) (Some cp) = Some (bytes_of_init_data_list il).
+  readbytes_as_zero m b p (init_data_list_size il) cp ->
+  Mem.loadbytes m' b p (init_data_list_size il) cp = Some (bytes_of_init_data_list il).
 Proof.
   induction il as [ | i1 il]; simpl; intros.
 - apply Mem.loadbytes_empty. lia. inv H0; eauto.
@@ -1252,7 +1265,7 @@ Qed.
 
 (** Properties related to [load] *)
 
-Definition read_as_zero (m: mem) (b: block) (ofs len: Z) (cp: option compartment) : Prop :=
+Definition read_as_zero (m: mem) (b: block) (ofs len: Z) (cp: compartment) : Prop :=
   forall chunk p,
   ofs <= p -> p + size_chunk chunk <= ofs + len ->
   (align_chunk chunk | p) ->
@@ -1278,9 +1291,9 @@ Qed.
 
 Lemma store_zeros_read_as_zero:
   forall m b p n cp m',
-    Mem.can_access_block m b (Some cp) ->
+    Mem.can_access_block m b cp ->
   store_zeros m b p n cp = Some m' ->
-  read_as_zero m' b p n (Some cp).
+  read_as_zero m' b p n cp.
 Proof.
   intros; red; intros.
   transitivity (Some(decode_val chunk (List.repeat (Byte Byte.zero) (size_chunk_nat chunk)))).
@@ -1289,7 +1302,7 @@ Proof.
   f_equal. destruct chunk; unfold decode_val; unfold decode_int; unfold rev_if_be; destruct Archi.big_endian; reflexivity.
 Qed.
 
-Fixpoint load_store_init_data (m: mem) (b: block) (p: Z) (il: list init_data) (cp: option compartment) {struct il} : Prop :=
+Fixpoint load_store_init_data (m: mem) (b: block) (p: Z) (il: list init_data) (cp: compartment) {struct il} : Prop :=
   match il with
   | nil => True
   | Init_int8 n :: il' =>
@@ -1321,13 +1334,13 @@ Fixpoint load_store_init_data (m: mem) (b: block) (p: Z) (il: list init_data) (c
 Lemma store_init_data_list_charact:
   forall b il m p cp m',
   store_init_data_list m b p il cp = Some m' ->
-  read_as_zero m b p (init_data_list_size il) (Some cp) ->
-  load_store_init_data m' b p il (Some cp).
+  read_as_zero m b p (init_data_list_size il) cp ->
+  load_store_init_data m' b p il cp.
 Proof.
   assert (A: forall chunk v m b p m1 il cp m',
     Mem.store chunk m b p v cp = Some m1 ->
     store_init_data_list m1 b (p + size_chunk chunk) il cp = Some m' ->
-    Mem.load chunk m' b p (Some cp) = Some(Val.load_result chunk v)).
+    Mem.load chunk m' b p cp = Some(Val.load_result chunk v)).
   {
     intros.
     eapply Mem.load_unchanged_on with (P := fun b' ofs' => ofs' < p + size_chunk chunk).
@@ -1417,13 +1430,15 @@ Qed.
 
 Remark load_store_init_data_invariant:
   forall m m' b,
-  (forall chunk ofs cp, Mem.load chunk m' b ofs cp = Mem.load chunk m b ofs cp) ->
+  (forall chunk ofs cp v, Mem.load chunk m b ofs cp = Some v ->
+                   Mem.load chunk m' b ofs cp = Some v) ->
   forall il p cp,
   load_store_init_data m b p il cp -> load_store_init_data m' b p il cp.
 Proof.
   induction il; intro p; simpl.
   auto.
-  intros. rewrite ! H. destruct a; intuition. red; intros; rewrite H; auto.
+  intros. destruct a; intuition. red; intros; intuition.
+  destruct H1 as [b' [? ?]]. exists b'; intuition.
 Qed.
 
 Definition globals_initialized (g: t) (m: mem) :=
@@ -1437,8 +1452,8 @@ Definition globals_initialized (g: t) (m: mem) :=
          Mem.range_perm m b 0 (init_data_list_size v.(gvar_init)) Cur (perm_globvar v)
       /\ (forall ofs k p, Mem.perm m b ofs k p ->
             0 <= ofs < init_data_list_size v.(gvar_init) /\ perm_order (perm_globvar v) p)
-      /\ (v.(gvar_volatile) = false -> load_store_init_data m b 0 v.(gvar_init) (Some v.(gvar_comp)))
-      /\ (v.(gvar_volatile) = false -> Mem.loadbytes m b 0 (init_data_list_size v.(gvar_init)) (Some v.(gvar_comp)) = Some (bytes_of_init_data_list v.(gvar_init)))
+      /\ (v.(gvar_volatile) = false -> load_store_init_data m b 0 v.(gvar_init) v.(gvar_comp))
+      /\ (v.(gvar_volatile) = false -> Mem.loadbytes m b 0 (init_data_list_size v.(gvar_init)) v.(gvar_comp) = Some (bytes_of_init_data_list v.(gvar_init)))
   end.
 
 Lemma alloc_global_initialized:
@@ -1480,17 +1495,20 @@ Proof.
   split; auto.
   eapply Mem.perm_drop_2; eauto.
   split. intros NOTVOL. apply load_store_init_data_invariant with m3.
-  intros. eapply Mem.load_drop; eauto. right; right; right.
+  intros. erewrite Mem.load_drop; eauto. right; right; right.
   unfold perm_globvar. rewrite NOTVOL. destruct (gvar_readonly v); auto with mem.
   eapply store_init_data_list_charact; eauto.
-  eapply store_zeros_read_as_zero; eauto. eapply Mem.owned_new_block; eauto.
+  eapply store_zeros_read_as_zero; eauto.
+  simpl. erewrite Mem.owned_new_block; eauto using flowsto_refl.
   intros NOTVOL.
-  transitivity (Mem.loadbytes m3 b 0 sz (Some v.(gvar_comp))).
+  transitivity (Mem.loadbytes m3 b 0 sz v.(gvar_comp)).
   eapply Mem.loadbytes_drop; eauto. right; right; right.
   unfold perm_globvar. rewrite NOTVOL. destruct (gvar_readonly v); auto with mem.
   eapply store_init_data_list_loadbytes; eauto.
-  eapply store_zeros_loadbytes; eauto. eapply Mem.owned_new_block; eauto.
-  eapply store_zeros_loadbytes; eauto. eapply Mem.owned_new_block; eauto.
+  eapply store_zeros_loadbytes; eauto.
+  simpl; erewrite Mem.owned_new_block; eauto using flowsto_refl.
+  eapply store_zeros_loadbytes; eauto.
+  simpl; erewrite Mem.owned_new_block; eauto using flowsto_refl.
 + assert (U: Mem.unchanged_on (fun _ _ => True) m m') by (eapply alloc_global_unchanged; eauto).
   assert (VALID: Mem.valid_block m b).
   { red. rewrite <- H. eapply genv_defs_range; eauto. }
@@ -1503,7 +1521,8 @@ Proof.
   red; intros. eapply Mem.perm_unchanged_on; eauto. exact I.
   intros. eapply B. eapply Mem.perm_unchanged_on_2; eauto. exact I.
   intros. apply load_store_init_data_invariant with m; auto.
-  intros. eapply Mem.load_unchanged_on_1; eauto. intros; exact I.
+  intros. eapply Mem.load_unchanged_on; eauto.
+  intros; exact I.
   intros. eapply Mem.loadbytes_unchanged_on; eauto. intros; exact I.
 - simpl. congruence.
 Qed.
@@ -1531,29 +1550,29 @@ Lemma init_mem_find_def:
   forall p m b g,
   init_mem p = Some m ->
   find_def (globalenv p) b = Some g ->
-  Mem.block_compartment m b = Some (comp_of g).
+  Mem.block_compartment m b = comp_of g.
 Proof.
   intros p m b g.
   unfold init_mem, find_def.
   intros ALLOC.
   rewrite (alloc_globals_block_compartment _ _ _ ALLOC). clear ALLOC.
   unfold globalenv.
-  assert (Mem.block_compartment Mem.empty b = None) as ->.
-  { rewrite <- Mem.block_compartment_valid_block.
+  assert (Mem.block_compartment Mem.empty b = top) as ->.
+  { erewrite <- Mem.block_compartment_valid_block. reflexivity.
     unfold Mem.valid_block. rewrite Mem.nextblock_empty.
     now destruct b. }
   simpl.
   set (ge := @empty_genv _ _ _).
   change 1%positive with (genv_next ge).
   assert (forall g', (genv_defs ge) ! b = Some g' ->
-                     None = Some (comp_of g')) as INV.
+                     top = comp_of g') as INV.
   { intros g'. unfold ge. simpl. now rewrite PTree.gempty. }
-  generalize ge (@None compartment) INV. clear ge INV.
+  generalize ge top INV. clear ge INV.
   generalize (prog_defs p). clear p. intros idgl.
   induction idgl as [|idg idgl IH]; simpl.
-  - eauto.
+  - intros. exploit INV; eauto.
   - intros ge o INV. apply IH. clear IH g.
-    intros g. simpl. destruct eq_block as [->|neq].
+    intros g. simpl. edestruct eq_block as [->|neq].
     + rewrite PTree.gss. intros H. now injection H as <-.
     + rewrite PTree.gso; trivial. apply INV.
 Qed.
@@ -1622,9 +1641,9 @@ Theorem init_mem_characterization:
   /\ (forall ofs k p, Mem.perm m b ofs k p ->
         0 <= ofs < init_data_list_size gv.(gvar_init) /\ perm_order (perm_globvar gv) p)
   /\ (gv.(gvar_volatile) = false ->
-      load_store_init_data (globalenv p) m b 0 gv.(gvar_init) (Some gv.(gvar_comp)))
+      load_store_init_data (globalenv p) m b 0 gv.(gvar_init) gv.(gvar_comp))
   /\ (gv.(gvar_volatile) = false ->
-      Mem.loadbytes m b 0 (init_data_list_size gv.(gvar_init)) (Some gv.(gvar_comp)) = Some (bytes_of_init_data_list (globalenv p) gv.(gvar_init))).
+      Mem.loadbytes m b 0 (init_data_list_size gv.(gvar_init)) gv.(gvar_comp) = Some (bytes_of_init_data_list (globalenv p) gv.(gvar_init))).
 Proof.
   intros. rewrite find_var_info_iff in H.
   exploit init_mem_characterization_gen; eauto.
@@ -1855,7 +1874,7 @@ Variable ge: t.
 Lemma store_zeros_exists:
   forall m b p n cp,
     Mem.range_perm m b p (p + n) Cur Writable ->
-    Mem.can_access_block m b (Some cp) ->
+    Mem.can_access_block m b cp ->
   exists m', store_zeros m b p n cp = Some m'.
 Proof.
   intros until cp. functional induction (store_zeros m b p n cp); intros PERM ACC.
@@ -1871,7 +1890,7 @@ Qed.
 Lemma store_init_data_exists:
   forall m b p i cp,
   Mem.range_perm m b p (p + init_data_size i) Cur Writable ->
-  forall OWN : Mem.can_access_block m b (Some cp),
+  forall OWN : Mem.can_access_block m b cp,
   (init_data_alignment i | p) ->
   (forall id ofs, i = Init_addrof id ofs -> exists b, find_symbol ge id = Some b) ->
   exists m', store_init_data ge m b p i cp = Some m'.
@@ -1894,7 +1913,7 @@ Qed.
 Lemma store_init_data_list_exists:
   forall b il m p cp,
   Mem.range_perm m b p (p + init_data_list_size il) Cur Writable ->
-  forall OWN : Mem.can_access_block m b (Some cp),
+  forall OWN : Mem.can_access_block m b cp,
   init_data_list_aligned p il ->
   (forall id ofs, In (Init_addrof id ofs) il -> exists b, find_symbol ge id = Some b) ->
   exists m', store_init_data_list ge m b p il cp = Some m'.
@@ -1928,7 +1947,7 @@ Proof.
 - destruct (Mem.alloc m _ 0 1) as [m1 b] eqn:ALLOC.
   destruct (Mem.range_perm_drop_2 m1 b 0 1 (comp_of f) Nonempty) as [m2 DROP].
   red; intros; eapply Mem.perm_alloc_2; eauto.
-  eapply Mem.owned_new_block; eauto.
+  simpl; erewrite Mem.owned_new_block; eauto. now apply flowsto_refl.
   exists m2; auto.
 - destruct H as [P Q].
   set (sz := init_data_list_size (gvar_init v)).
@@ -1936,21 +1955,23 @@ Proof.
   assert (P1: Mem.range_perm m1 b 0 sz Cur Freeable) by (red; intros; eapply Mem.perm_alloc_2; eauto).
   destruct (@store_zeros_exists m1 b 0 sz (gvar_comp v)) as [m2 ZEROS].
   red; intros. apply Mem.perm_implies with Freeable; auto with mem.
-  eapply Mem.owned_new_block; eauto.
+  simpl; erewrite Mem.owned_new_block; eauto. now apply flowsto_refl.
   rewrite ZEROS.
   assert (P2: Mem.range_perm m2 b 0 sz Cur Freeable).
   { red; intros. erewrite <- store_zeros_perm by eauto. eauto. }
   destruct (@store_init_data_list_exists b (gvar_init v) m2 0 (gvar_comp v)) as [m3 STORE]; auto.
   red; intros. apply Mem.perm_implies with Freeable; auto with mem.
   eapply store_zeros_block_compartment with (b' := b) in ZEROS.
-  unfold Mem.can_access_block.  rewrite ZEROS. eapply Mem.owned_new_block. eauto.
+  unfold Mem.can_access_block.  rewrite ZEROS.
+  simpl; erewrite Mem.owned_new_block; eauto. now apply flowsto_refl.
   rewrite STORE.
   assert (P3: Mem.range_perm m3 b 0 sz Cur Freeable).
   { red; intros. erewrite <- store_init_data_list_perm by eauto. eauto. }
   destruct (Mem.range_perm_drop_2 m3 b 0 sz (gvar_comp v) (perm_globvar v)) as [m4 DROP]; auto.
   eapply store_init_data_list_block_compartment with (b' := b) in STORE.
   eapply store_zeros_block_compartment with (b' := b) in ZEROS.
-  unfold Mem.can_access_block.  rewrite STORE, ZEROS. eapply Mem.owned_new_block. eauto.
+  unfold Mem.can_access_block.  rewrite STORE, ZEROS.
+  simpl; erewrite Mem.owned_new_block; eauto. now apply flowsto_refl.
   exists m4; auto.
 Qed.
 
@@ -1978,12 +1999,12 @@ Definition allowed_cross_call (ge: t) (cp: compartment) (vf: val) :=
   | Vptr b _ =>
     exists i cp',
     invert_symbol ge b = Some i /\
-    find_comp ge vf = Some cp' /\
-    match (Policy.policy_import ge.(genv_policy)) ! cp with
+    find_comp_in_genv ge vf = cp' /\
+    match CompTree.get cp (Policy.policy_import ge.(genv_policy)) with
     | Some l => In (cp', i) l
     | None => False
     end /\
-    match (Policy.policy_export ge.(genv_policy)) ! cp' with
+    match CompTree.get cp' (Policy.policy_export ge.(genv_policy)) with
     | Some l => In i l
     | None => False
     end
@@ -1991,14 +2012,11 @@ Definition allowed_cross_call (ge: t) (cp: compartment) (vf: val) :=
   end.
 
 Definition allowed_addrof (ge: t) (cp: compartment) (id: ident) :=
-  find_comp_of_ident ge id = Some cp \/
+  (find_comp_of_ident ge id ⊆ cp) \/
   public_symbol ge id = true.
 
 Definition allowed_addrof_b (ge: t) (cp: compartment) (id: ident) : bool :=
-  match find_comp_of_ident ge id with
-  | Some cp' => eq_compartment cp cp' : bool
-  | None => false
-  end || public_symbol ge id.
+  flowsto_dec (find_comp_of_ident ge id) cp || public_symbol ge id.
 
 Lemma allowed_addrof_b_reflect :
   forall ge cp id,
@@ -2010,33 +2028,30 @@ Variant call_type :=
   | InternalCall
   | CrossCompartmentCall.
 
+(* A call is internal if the callee has strictly less privilege than the caller *)
 Definition type_of_call (cp: compartment) (cp': compartment): call_type :=
-  if Pos.eqb cp cp' then InternalCall
+  if flowsto_dec cp' cp then InternalCall
   else CrossCompartmentCall.
 
-(* Lemma type_of_call_cp_default: *)
-(*   forall ge cp, type_of_call ge cp default_compartment <> CrossCompartmentCall. *)
-(* Proof. *)
-(*   intros ge cp; unfold type_of_call. *)
-(*   destruct (cp =? default_compartment)%positive; [congruence |]. *)
-(*   rewrite Pos.eqb_refl; congruence. *)
-(* Qed. *)
+#[global] Arguments type_of_call /.
 
 Lemma type_of_call_same_cp:
-  forall cp, type_of_call cp cp <> CrossCompartmentCall.
+  forall cp, type_of_call cp cp = InternalCall.
 Proof.
   intros; unfold type_of_call.
-  now rewrite Pos.eqb_refl.
+  destruct flowsto_dec; auto.
+  exfalso; apply n; auto with comps.
 Qed.
 
+(* TODO: documentaton *)
 (* A call is allowed if any of these 3 cases holds:
 (1) the procedure being called belongs to the default compartment
 (2) the procedure being called belongs to the same compartment as the caller
 (3) the call is an inter-compartment call and is allowed by the policy
 *)
 Definition allowed_call (ge: t) (cp: compartment) (vf: val) :=
-  (* default_compartment = find_comp ge vf \/ (* TODO: does this mean we allow all compartment to perform IO calls? *) *)
-  Some cp = find_comp ge vf \/
+  (* default_compartment = find_comp_in_genv ge vf \/ (* TODO: does this mean we allow all compartment to perform IO calls? *) *)
+  (find_comp_in_genv ge vf ⊆ cp) \/
   allowed_cross_call ge cp vf.
 
 Lemma comp_ident_eq_dec: forall (x y: compartment * ident),
@@ -2045,30 +2060,28 @@ Proof.
   intros x y.
   decide equality.
   eapply Pos.eq_dec.
-  eapply Pos.eq_dec.
+  eapply cp_eq_dec.
 Qed.
 
 Definition allowed_call_b (ge: t) (cp: compartment) (vf: val): bool :=
-  match find_comp ge vf with
-  | Some c => Pos.eqb c cp
-        || match vf with
-        | Vptr b _ => match invert_symbol ge b with
-                     | Some i =>
-                         match (Policy.policy_import ge.(genv_policy)) ! cp with
-                         | Some imps =>
-                             match (Policy.policy_export ge.(genv_policy)) ! c with
-                             | Some exps =>
-                                 in_dec comp_ident_eq_dec (c, i) imps &&
-                                   in_dec Pos.eq_dec i exps
-                             | None => false
-                             end
-                         | None => false
-                         end
-                     | None => false
-                     end
-        | _ => false
-        end
-  | None => false
+  let c := find_comp_in_genv ge vf in
+  flowsto_dec c cp
+  || match vf with
+  | Vptr b _ => match invert_symbol ge b with
+               | Some i =>
+                   match CompTree.get cp (Policy.policy_import ge.(genv_policy)) with
+                   | Some imps =>
+                       match CompTree.get c (Policy.policy_export ge.(genv_policy)) with
+                       | Some exps =>
+                           in_dec comp_ident_eq_dec (c, i) imps &&
+                             in_dec Pos.eq_dec i exps
+                       | None => false
+                       end
+                   | None => false
+                   end
+               | None => false
+               end
+  | _ => false
   end.
 
 Lemma allowed_call_reflect: forall ge cp vf,
@@ -2076,30 +2089,32 @@ Lemma allowed_call_reflect: forall ge cp vf,
 Proof.
   intros ge cp vf.
   unfold allowed_call, allowed_call_b, allowed_cross_call.
+  Local Opaque flowsto_dec.
   destruct vf as [|?|?|?|?|b ofs]; simpl;
-    try now intuition (easy || congruence).
-  destruct (find_comp_of_block ge _) as [cp'|] eqn:find_vf;
-    try now intuition (firstorder || congruence).
+    try (now split; intuition; edestruct (flowsto_dec); auto with comps).
   split.
   - intros [e | (i' & cp'' & A & B & C & D)].
-    + injection e as <-. now rewrite Pos.eqb_refl.
-    + assert (cp'' = cp') as -> by congruence. clear B.
-      rewrite A.
-      destruct ((Policy.policy_import (genv_policy ge)) ! cp) as [imps |]; auto.
-      destruct ((Policy.policy_export (genv_policy ge)) ! cp') as [exps |]; auto.
-      destruct (in_dec comp_ident_eq_dec (cp', i') imps);
+    + destruct flowsto_dec; auto.
+    + rewrite B, A.
+      (* assert (cp'' = cp') as -> by congruence. clear B. *)
+      (* rewrite A. *)
+      destruct (CompTree.get cp (Policy.policy_import (genv_policy ge))) as [imps |]; auto.
+      destruct (CompTree.get cp'' (Policy.policy_export (genv_policy ge))) as [exps |]; auto.
+      destruct (in_dec comp_ident_eq_dec (cp'', i') imps);
         destruct (in_dec Pos.eq_dec i' exps); simpl; auto.
       now rewrite orb_true_r.
-  - destruct (Pos.eqb_spec cp' cp) as [->|ne]; eauto.
+  - destruct flowsto_dec as [| n]; auto.
+    (* destruct (Pos.eqb_spec cp' cp) as [->|ne]; eauto. *)
     simpl.
     destruct (invert_symbol ge b) eqn:A; try discriminate.
-    destruct ((Policy.policy_import (genv_policy ge)) ! cp) eqn:B; try discriminate.
-    destruct ((Policy.policy_export (genv_policy ge)) ! cp') eqn:C; try discriminate.
+    destruct (CompTree.get cp (Policy.policy_import (genv_policy ge))) eqn:B; try discriminate.
+    destruct (CompTree.get _ (Policy.policy_export (genv_policy ge))) eqn:C; try discriminate.
     intros H. apply andb_prop in H. destruct H as (D & E). right.
     eexists; eexists; split; [reflexivity | split; [reflexivity |]].
     rewrite C.
     apply proj_sumbool_true in D.
     apply proj_sumbool_true in E. auto.
+    Local Transparent flowsto_dec.
 Qed.
 
 Lemma allowed_cross_call_public_symbol: forall ge cp vf,
@@ -2115,7 +2130,7 @@ Proof.
   apply invert_find_symbol in ge_id.
   exists id, b, off; split; trivial; split; trivial.
   destruct (genv_pol_pub ge) as [Hexp Himp].
-  destruct ((Policy.policy_export _) ! cp') as [exps|] eqn:exp_cp'; try easy.
+  destruct (CompTree.get cp' (Policy.policy_export _)) as [exps|] eqn:exp_cp'; try easy.
   specialize (Hexp _ _ exp_cp' _ exp).
   unfold public_symbol. rewrite ge_id.
   destruct (in_dec _ _) as [H|contra]; trivial.
@@ -2354,12 +2369,12 @@ Proof.
   - now inv MATCH.
 Qed.
 
-Lemma match_genvs_find_comp:
+Lemma match_genvs_find_comp_in_genv:
   forall vf,
-    find_comp (globalenv p) vf = find_comp (globalenv tp) vf.
+    find_comp_in_genv (globalenv p) vf = find_comp_in_genv (globalenv tp) vf.
 Proof.
   intros vf.
-  unfold find_comp.
+  unfold find_comp_in_genv.
   destruct vf; try easy.
   now rewrite match_genvs_find_comp_of_block.
 Qed.
@@ -2403,11 +2418,11 @@ Lemma match_genvs_allowed_calls:
 Proof.
   intros cp vf.
   unfold allowed_call.
-  rewrite !match_genvs_find_comp.
+  rewrite !match_genvs_find_comp_in_genv.
   intros [H1 | H1]; auto.
   right.
   unfold allowed_cross_call in *.
-  rewrite match_genvs_find_comp in H1.
+  rewrite match_genvs_find_comp_in_genv in H1.
   destruct vf; auto.
   destruct H1 as [i0 [cp' [? [? [? ?]]]]].
   exists i0; exists cp'; split; [| split; [| split]].
@@ -2423,13 +2438,16 @@ Proof.
     rewrite genv_pol_add_globals in H1.
     unfold Policy.eqb in EQPOL. apply andb_prop in EQPOL.
     destruct EQPOL as [EQPOL1 EQPOL2].
+    eapply CompTree.beq_sound with (x := cp) in EQPOL1.
+    eapply CompTree.beq_sound with (x := cp) in EQPOL2.
+    (* rewrite PTree.beq_correct in EQPOL2. *)
+    (* specialize (EQPOL2 cp). *)
     simpl in *.
-    rewrite PTree.beq_correct in EQPOL2. specialize (EQPOL2 cp).
-    destruct ((Policy.policy_import prog_pol0) ! cp);
-      destruct ((Policy.policy_import prog_pol) ! cp); auto.
+    destruct (CompTree.get cp (Policy.policy_import prog_pol0));
+      destruct (CompTree.get cp (Policy.policy_import prog_pol)); auto.
     destruct (Policy.list_cpt_id_eq l l0); subst; simpl in *; auto; try discriminate. contradiction.
   - destruct progmatch as [? [? [? EQPOL]]].
-    rewrite <- match_genvs_find_comp in H0.
+    rewrite <- match_genvs_find_comp_in_genv in H0.
     destruct p, tp; simpl in *; subst.
     unfold globalenv. unfold globalenv in H2.
     simpl in *. clear -H2 EQPOL CF2.
@@ -2437,20 +2455,16 @@ Proof.
     rewrite genv_pol_add_globals in H2.
     unfold Policy.eqb in EQPOL. apply andb_prop in EQPOL.
     destruct EQPOL as [EQPOL1 EQPOL2].
+    set (cp := find_comp_of_block (add_globals (empty_genv F1 V1 prog_pol_pub) prog_defs) b).
+    fold cp in H2.
+    eapply CompTree.beq_sound with (x := cp) in EQPOL1.
+    eapply CompTree.beq_sound with (x := cp) in EQPOL2.
+    (* rewrite PTree.beq_correct in EQPOL2. *)
+    (* specialize (EQPOL2 cp). *)
     simpl in *.
-    rewrite PTree.beq_correct in EQPOL1.
-    specialize (EQPOL1 cp').
-    destruct ((Policy.policy_export prog_pol0) ! cp');
-      destruct ((Policy.policy_export prog_pol) ! cp'); auto; try contradiction.
-    destruct (Policy.list_id_eq l l0); subst; simpl in *; auto; try discriminate.
-Qed.
-
-(* FIXME: This lemma should not be needed. *)
-Lemma match_genvs_type_of_call:
-  forall cp cp',
-    type_of_call cp cp' = type_of_call cp cp'.
-Proof.
-  intros. reflexivity.
+    destruct (CompTree.get cp (Policy.policy_export prog_pol0));
+      destruct (CompTree.get cp (Policy.policy_export prog_pol)); auto.
+    destruct (Policy.list_id_eq l l0); subst; simpl in *; auto; try discriminate. contradiction.
 Qed.
 
 Lemma match_genvs_not_ptr_inj:
@@ -2577,9 +2591,9 @@ Qed.
 
 Lemma find_comp_transf_partial:
   forall v,
-  find_comp (globalenv p) v = find_comp (globalenv tp) v.
+  find_comp_in_genv (globalenv p) v = find_comp_in_genv (globalenv tp) v.
 Proof.
-  unfold find_comp. intros v. case v; try easy.
+  unfold find_comp_in_genv. intros v. case v; try easy.
   intros b _. apply find_comp_of_block_transf_partial.
 Qed.
 
@@ -2607,13 +2621,6 @@ Theorem allowed_call_transf_partial:
     allowed_call (globalenv p) cp vf -> allowed_call (globalenv tp) cp vf.
 Proof.
   eapply (match_genvs_allowed_calls progmatch).
-Qed.
-
-Theorem type_of_call_transf_partial:
-  forall cp cp',
-    type_of_call cp cp' = type_of_call cp cp'.
-Proof.
-  eapply (match_genvs_type_of_call).
 Qed.
 
 Lemma not_ptr_transf_partial_inj:
@@ -2743,17 +2750,10 @@ Qed.
 
 Lemma find_comp_transf:
   forall v,
-  find_comp (globalenv p) v = find_comp (globalenv tp) v.
+  find_comp_in_genv (globalenv p) v = find_comp_in_genv (globalenv tp) v.
 Proof.
   intros v. case v; simpl; try easy.
   intros b _. apply find_comp_of_block_transf.
-Qed.
-
-Theorem type_of_call_transf:
-  forall cp cp',
-    type_of_call cp cp' = type_of_call cp cp'.
-Proof.
-  eapply (match_genvs_type_of_call).
 Qed.
 
 Lemma not_ptr_transf_inj:

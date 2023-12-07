@@ -16,6 +16,7 @@ open Datatypes
 open Camlcoq
 open Maps
 open AST
+open COMP
 open Registers
 open Machregs
 open Locations

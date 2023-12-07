@@ -297,10 +297,10 @@ Qed.
 
 Lemma find_comp_translated:
   forall vf,
-    Genv.find_comp ge vf = Genv.find_comp tge vf.
+    Genv.find_comp_in_genv ge vf = Genv.find_comp_in_genv tge vf.
 Proof.
   intros vf.
-  eapply (Genv.match_genvs_find_comp TRANSL).
+  eapply (Genv.match_genvs_find_comp_in_genv TRANSL).
 Qed.
 
 Lemma senv_preserved:
@@ -412,12 +412,12 @@ Inductive match_states: state -> state -> Prop :=
       match_states (Block s f sp (Lcond cond args pc1 pc2 :: bb) ls m)
                    (State ts (tunnel_function f) sp (branch_target f pc1) tls tm)
   | match_states_call:
-      forall s f ls m ts tls tm sig
+      forall s f ls m ts tls tm sig cp
         (STK: list_forall2 match_stackframes s ts)
         (LS: locmap_lessdef ls tls)
         (MEM: Mem.extends m tm),
-      match_states (Callstate s f sig ls m)
-                   (Callstate ts (tunnel_fundef f) sig tls tm)
+      match_states (Callstate s f sig ls m cp)
+                   (Callstate ts (tunnel_fundef f) sig tls tm cp)
   | match_states_return:
       forall s ls m cp ts tls tm
         (STK: list_forall2 match_stackframes s ts)
@@ -584,7 +584,7 @@ Definition measure (st: state) : nat :=
   | Block s f sp (Lbranch pc :: _) ls m => (count_gotos f pc * 2 + 1)%nat
   | Block s f sp (Lcond _ _ pc1 pc2 :: _) ls m => (Nat.max (count_gotos f pc1) (count_gotos f pc2) * 2 + 1)%nat
   | Block s f sp bb ls m => 0%nat
-  | Callstate s f sig ls m => 0%nat
+  | Callstate s f sig ls m cp => 0%nat
   | Returnstate s ls m cp => 0%nat
   end.
 
@@ -703,7 +703,7 @@ Proof.
                    (fun p : rpair loc =>
                     Locmap.getpair p
                       (undef_regs destroyed_at_function_entry
-                         (* match Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) with *)
+                         (* match Genv.type_of_call ge (comp_of f) (Genv.find_comp_in_genv ge vf) with *)
                          (* | Genv.CrossCompartmentCall => call_regs_ext rs (funsig fd) *)
                          (* | _ => call_regs rs *)
                          (* end *)
@@ -713,7 +713,7 @@ Proof.
                    (fun p : rpair loc =>
                     Locmap.getpair p
                       (undef_regs destroyed_at_function_entry
-                         (* match Genv.type_of_call tge (comp_of (tunnel_function f)) (Genv.find_comp ge vf) with *)
+                         (* match Genv.type_of_call tge (comp_of (tunnel_function f)) (Genv.find_comp_in_genv ge vf) with *)
                          (* | Genv.CrossCompartmentCall => call_regs_ext tls (funsig fd) *)
                          (* | _ => call_regs tls *)
                          (* end *)
@@ -722,7 +722,7 @@ Proof.
   { apply locmap_getpairs_lessdef.
     apply locmap_undef_regs_lessdef.
     (* rewrite EQ. *)
-    (* destruct (Genv.type_of_call tge (comp_of (tunnel_function f)) (Genv.find_comp ge vf)). *)
+    (* destruct (Genv.type_of_call tge (comp_of (tunnel_function f)) (Genv.find_comp_in_genv ge vf)). *)
     (* apply call_regs_lessdef. auto. *)
     apply call_regs_ext_lessdef. auto.
     (* apply call_regs_lessdef. auto. *)
@@ -812,8 +812,10 @@ Proof.
   intros (tvres & tm' & A & B & C & D).
   left; simpl; econstructor; split.
   eapply exec_function_external; eauto.
+  replace (call_comp ts) with (call_comp s) by (inv STK; auto; inv H; auto).
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  simpl. econstructor; eauto using locmap_setpair_lessdef, locmap_undef_caller_save_regs_lessdef.
+  replace (call_comp ts) with (call_comp s) by (inv STK; auto; inv H; auto).
+  econstructor; eauto using locmap_setpair_lessdef, locmap_undef_caller_save_regs_lessdef.
 - (* return *)
   inv STK. inv H1.
   left; econstructor; split.
@@ -833,7 +835,7 @@ Lemma transf_initial_states:
   exists st2, initial_state tprog st2 /\ match_states st1 st2.
 Proof.
   intros. inversion H.
-  exists (Callstate nil (tunnel_fundef f) signature_main (Locmap.init Vundef) m0); split.
+  exists (Callstate nil (tunnel_fundef f) signature_main (Locmap.init Vundef) m0 top); split.
   econstructor; eauto.
   apply (Genv.init_mem_transf TRANSL); auto.
   rewrite (match_program_main TRANSL).

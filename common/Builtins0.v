@@ -325,9 +325,6 @@ Qed.
 
 (** Looking up builtins by name and signature *)
 
-(* NOTE: Here we have a choice to parameterize everything by a
-compartment, or just the bare minimum. Currently we go with the former *)
-
 Section LOOKUP.
 
 Context {A: Type} (sig_of: A -> signature).
@@ -386,14 +383,7 @@ Inductive standard_builtin : Type :=
 
 Local Open Scope string_scope.
 
-Fixpoint builtin_suffix (p: positive) : string :=
-  match p with
-  | xI p' => String (Ascii.ascii_of_nat 73) (builtin_suffix p')
-  | xO p' => String (Ascii.ascii_of_nat 79) (builtin_suffix p')
-  | xH    => String (Ascii.ascii_of_nat 72) EmptyString
-  end.
-
-Definition standard_builtin_table' : list (string * standard_builtin) :=
+Definition standard_builtin_table : list (string * standard_builtin) :=
     ("__builtin_sel", BI_select Tint)
  :: ("__builtin_sel", BI_select Tlong)
  :: ("__builtin_sel", BI_select Tfloat)
@@ -427,15 +417,6 @@ Definition standard_builtin_table' : list (string * standard_builtin) :=
  :: ("__compcert_i64_stof", BI_i64_stof)
  :: ("__compcert_i64_utof", BI_i64_utof)
  :: nil.
-
-Definition standard_builtin_name (name: string) (cp: compartment) : string :=
-  name ++ "_" ++ builtin_suffix cp.
-                                 
-Definition standard_builtin_table (cp: compartment)
-  : list (string * standard_builtin) :=
-  List.map
-    (fun '(s, b) => (standard_builtin_name s cp, b))
-    standard_builtin_table'.
 
 Definition standard_builtin_sig (b: standard_builtin) : signature :=
   match b with

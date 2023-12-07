@@ -525,7 +525,7 @@ Inductive match_callstack (f: meminj) (m: mem) (tm: mem):
         (MTMP: match_temps f le te)
         (MENV: match_env f cenv e sp lo hi)
         (BOUND: match_bounds e m)
-        (COMP: Mem.can_access_block tm sp (Some (comp_of tf)))
+        (COMP: Mem.can_access_block tm sp (comp_of tf))
         (* (COMP: Mem.block_compartment tm sp = Some (comp_of tf)) *)
         (PERM: padding_freeable f e tm sp tf.(fn_stackspace))
         (MCS: match_callstack f m tm cs lo sp),
@@ -745,7 +745,7 @@ Proof.
     eelim Mem.fresh_block_alloc; eauto. eapply Mem.valid_block_inject_2; eauto.
     rewrite RES. change (Mem.valid_block tm tb). eapply Mem.valid_block_inject_2; eauto.
   red; intros. rewrite PTree.gempty in H4. discriminate.
-  subst. eapply Mem.owned_new_block. eauto.
+  subst. simpl. erewrite Mem.owned_new_block; eauto. apply flowsto_refl.
   red; intros. left. eapply Mem.perm_alloc_2; eauto.
   eapply match_callstack_invariant with (tm1 := tm); eauto.
   rewrite RES; auto.
@@ -1674,7 +1674,7 @@ Inductive match_states: Csharpminor.state -> Cminor.state -> Prop :=
       (ISCC: Csharpminor.is_call_cont k)
       (ARGSINJ: Val.inject_list f args targs),
       match_states (Csharpminor.Callstate fd args k m)
-                   (Callstate tfd targs tk tm)
+                   (Callstate tfd targs tk tm (Csharpminor.call_comp k))
   | match_returnstate:
       forall v k m tv tk tm cp f cs cenv sg
       (MINJ: Mem.inject f m tm)
@@ -2023,7 +2023,7 @@ Proof.
 Qed.
 
 Lemma find_comp_transl: forall vf,
-    Genv.find_comp ge vf = Genv.find_comp tge vf.
+    Genv.find_comp_in_genv ge vf = Genv.find_comp_in_genv tge vf.
 Proof.
   apply (Genv.find_comp_transf_partial TRANSL).
 Qed.
@@ -2034,7 +2034,7 @@ Lemma type_of_call_transl: forall cenv f cp sz tfn,
 Proof.
   intros cenv f vf sz tfn TRF.
   erewrite <- (comp_transl_partial _ TRF).
-  eapply (Genv.type_of_call_transf_partial).
+  reflexivity.
 Qed.
 
 (** The simulation diagram. *)
@@ -2138,9 +2138,12 @@ Proof.
   now rewrite (comp_of_fun_transl TRANS).
   rewrite <- (comp_of_fun_transl TRANS). monadInv TRF; unfold comp_of; simpl.
   eapply call_trace_translated; eauto.
+  replace (comp_of tfn) with (Csharpminor.call_comp (Csharpminor.Kcall optid f e le k)).
   econstructor; eauto.
   eapply match_Kcall with (cenv' := cenv); eauto.
   red; auto.
+  unfold Csharpminor.call_comp. simpl.
+  rewrite comp_transl_funbody; eauto.
 
 (* builtin *)
   monadInv TR.
@@ -2149,12 +2152,12 @@ Proof.
   exploit match_callstack_match_globalenvs; eauto. intros [hi' MG].
   exploit external_call_mem_inject; eauto.
   eapply inj_preserves_globals; eauto.
-  intros [f' [vres' [tm' [EC [VINJ [MINJ' [UNMAPPED [OUTOFREACH [INCR [SEPARATED COMPNEW]]]]]]]]]].
+  intros [f' [vres' [tm' [EC [VINJ [MINJ' [UNMAPPED [OUTOFREACH [INCR SEPARATED]]]]]]]]].
   left; econstructor; split.
   apply plus_one. econstructor. eauto.
-  (* rewrite <- (comp_transl_partial _ TRF). *)
+  rewrite <- (comp_transl_partial _ TRF).
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  monadInv TRF; auto.
+  (* monadInv TRF; auto. *)
   assert (MCS': match_callstack f' m' tm'
                  (Frame cenv tfn e le te sp lo hi :: cs)
                  (Mem.nextblock m') (Mem.nextblock tm')).
@@ -2316,7 +2319,7 @@ Opaque PTree.set.
   exploit match_callstack_match_globalenvs; eauto. intros [hi MG].
   exploit external_call_mem_inject; eauto.
   eapply inj_preserves_globals; eauto.
-  intros [f' [vres' [tm' [EC [VINJ [MINJ' [UNMAPPED [OUTOFREACH [INCR [SEPARATED COMPNEW]]]]]]]]]].
+  intros [f' [vres' [tm' [EC [VINJ [MINJ' [UNMAPPED [OUTOFREACH [INCR SEPARATED]]]]]]]]].
   left; econstructor; split.
   apply plus_one. econstructor.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved. econstructor; eauto.

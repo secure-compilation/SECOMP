@@ -776,13 +776,13 @@ Inductive match_states: state -> state -> Prop :=
          (MEMINJ: Mem.inject j m tm),
       match_states (State s f (Vptr sp Ptrofs.zero) pc rs m)
                    (State ts f (Vptr tsp Ptrofs.zero) pc trs tm)
-  | match_states_call: forall s fd args m ts targs tm j
+  | match_states_call: forall s fd args m ts targs tm cp j
          (STACKS: match_stacks j s ts (Mem.nextblock m) (Mem.nextblock tm))
          (KEPT: forall id, ref_fundef fd id -> kept id)
          (ARGINJ: Val.inject_list j args targs)
          (MEMINJ: Mem.inject j m tm),
-      match_states (Callstate s fd args m)
-                   (Callstate ts fd targs tm)
+      match_states (Callstate s fd args m cp)
+                   (Callstate ts fd targs tm cp)
   | match_states_return: forall s res m cp ts tres tm j
          (STACKS: match_stacks j s ts (Mem.nextblock m) (Mem.nextblock tm))
          (RESINJ: Val.inject j res tres)
@@ -791,23 +791,23 @@ Inductive match_states: state -> state -> Prop :=
                    (Returnstate ts tres tm cp).
 
 Lemma external_call_inject:
-  forall ef vargs m1 t vres m2 f m1' vargs',
+  forall ef cp vargs m1 t vres m2 f m1' vargs',
   meminj_preserves_globals f ->
-  external_call ef ge vargs m1 t vres m2 ->
+  external_call ef ge cp vargs m1 t vres m2 ->
   Mem.inject f m1 m1' ->
   Val.inject_list f vargs vargs' ->
   exists f', exists vres', exists m2',
-    external_call ef tge vargs' m1' t vres' m2'
+    external_call ef tge cp vargs' m1' t vres' m2'
     /\ Val.inject f' vres vres'
     /\ Mem.inject f' m2 m2'
     /\ Mem.unchanged_on (loc_unmapped f) m1 m2
     /\ Mem.unchanged_on (loc_out_of_reach f m1) m1' m2'
     /\ inject_incr f f'
-    /\ inject_separated f f' m1 m1'
-    /\ (forall b : block,
-          ~ Mem.valid_block m1 b ->
-          Mem.valid_block m2 b ->
-          exists b' : block, f' b = Some (b', 0) /\ Mem.block_compartment m2 b = Some (comp_of ef)).
+    /\ inject_separated f f' m1 m1'.
+    (* /\ (forall b : block, *)
+    (*       ~ Mem.valid_block m1 b -> *)
+    (*       Mem.valid_block m2 b -> *)
+    (*       exists b' : block, f' b = Some (b', 0) /\ Mem.block_compartment m2 b = Some (comp_of ef)). *)
 Proof.
   intros. eapply external_call_mem_inject_gen; eauto.
   apply globals_symbols_inject; auto.
@@ -848,7 +848,7 @@ Lemma find_function_ptr_inject:
   exists tvf,
     find_function_ptr tge ros trs = Some tvf /\
     Genv.allowed_call tge cp tvf /\
-    Genv.find_comp ge vf = Genv.find_comp tge tvf /\
+    Genv.find_comp_in_genv ge vf = Genv.find_comp_in_genv tge tvf /\
     Val.inject j vf tvf.
 Proof.
   unfold find_function.
@@ -868,7 +868,7 @@ Proof.
     split; [| split; [| split]]; auto.
     { rewrite R in H2.
       destruct H2 as [H2 | H2].
-      + left. now rewrite H2.
+      + left. simpl. setoid_rewrite <- D. now apply H2.
       + right.
         unfold Genv.allowed_cross_call in *.
         destruct H2 as [i [cp' [H21 [H22 [H23 H24]]]]].
@@ -880,7 +880,7 @@ Proof.
           specialize (E j H). unfold symbols_inject in E.
           destruct E as [E1 [E2 [E3 E4]]].
           specialize (E2 i _ _ _ H6). simpl in E2. specialize (E2 H21). destruct E2. auto.
-        * rewrite <- H22. unfold Genv.find_comp. now rewrite D.
+        * rewrite <- H22. unfold Genv.find_comp_in_genv. now rewrite D.
         * apply match_prog_pol in TRANSF.
           unfold tge, Genv.globalenv.
           rewrite Genv.genv_pol_add_globals. simpl.
@@ -891,7 +891,7 @@ Proof.
           rewrite Genv.genv_pol_add_globals. simpl.
           rewrite TRANSF.
           unfold ge, Genv.globalenv in H24. now rewrite Genv.genv_pol_add_globals in H24. }
-    { unfold Genv.type_of_call. unfold Genv.find_comp, Genv.find_funct.
+    { unfold Genv.type_of_call. unfold Genv.find_comp_in_genv, Genv.find_funct.
       now rewrite R. }
     { rewrite R. eapply Val.inject_ptr; eauto. }
   - destruct (Genv.find_symbol ge id) as [b|] eqn:FS; try discriminate.
@@ -908,7 +908,7 @@ Proof.
     { rewrite <- Genv.find_funct_ptr_iff in H0.
       rewrite <- H0 in A.
       destruct H2 as [H2 | H2].
-      + left. now rewrite H2.
+      + left. simpl. setoid_rewrite <- D. now apply H2.
       + right.
         unfold Genv.allowed_cross_call in *.
         destruct H2 as [i [cp' [H21 [H22 [H23 H24]]]]].
@@ -1004,7 +1004,7 @@ Lemma call_trace_translated:
     Val.inject j vf tvf ->
     meminj_preserves_globals j ->
     (Genv.type_of_call cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr (rs##args)) ->
-    (Genv.find_comp ge vf = Genv.find_comp tge tvf) ->
+    (Genv.find_comp_in_genv ge vf = Genv.find_comp_in_genv tge tvf) ->
     call_trace ge cp cp' vf (rs##args) tyargs t ->
     call_trace tge cp cp' tvf (trs##args) tyargs t.
 Proof.
@@ -1152,7 +1152,7 @@ eapply call_trace_translated; eauto.
   intros (vargs' & P & Q).
   exploit external_call_inject; eauto.
   eapply match_stacks_preserves_globals; eauto.
-  intros (j' & tv & tm' & A & B & C & D & E & F & G & I).
+  intros (j' & tv & tm' & A & B & C & D & E & F & G).
   econstructor; split.
   eapply exec_Ibuiltin; eauto.
   eapply match_states_regular with (j := j'); eauto.
@@ -1207,7 +1207,7 @@ eapply call_trace_translated; eauto.
 - (* external function *)
   exploit external_call_inject; eauto.
   eapply match_stacks_preserves_globals; eauto.
-  intros (j' & tres & tm' & A & B & C & D & E & F & G & I).
+  intros (j' & tres & tm' & A & B & C & D & E & F & G).
   econstructor; split.
   eapply exec_function_external; eauto.
   (* { rewrite <- (match_stacks_call_comp _ _ _ _ _ STACKS); eauto. } *)
@@ -1327,7 +1327,7 @@ Proof.
   apply P2. lia.
 - exploit init_meminj_invert; eauto. intros (A & id & B & C).
   subst delta.
-  destruct cp as [cp|]; simpl in *; trivial.
+  (* destruct cp as [cp|]; simpl in *; trivial. *)
   destruct (Genv.find_symbol_find_def_inversion _ _ B) as [g B'].
   assert ((prog_defmap p) ! id = Some g) as DEF1.
   { apply Genv.find_def_symbol. eauto. }
@@ -1338,6 +1338,7 @@ Proof.
   destruct (IS.mem id used); try congruence.
   rewrite DEF1, DEF2 in DEF2'.
   injection DEF2' as ->.
+  simpl in *.
   rewrite (Genv.init_mem_find_def _ _ IM B') in *.
   now rewrite (Genv.init_mem_find_def _ _ TIM C') in *.
 - exploit init_meminj_invert; eauto. intros (A & id & B & C).
@@ -1432,7 +1433,7 @@ Proof.
   exploit defs_inject. eauto. eexact Q. exact H2.
   intros (R & S & T).
   rewrite <- Genv.find_funct_ptr_iff in R.
-  exists (Callstate nil f nil tm); split.
+  exists (Callstate nil f nil tm top); split.
   econstructor; eauto.
   fold tge. erewrite match_prog_main by eauto. auto.
   econstructor; eauto.
@@ -1480,10 +1481,10 @@ Local Transparent Linker_def Linker_fundef Linker_varinit Linker_vardef Linker_u
   simpl.
   destruct f1 as [f1|ef1], f2 as [f2|ef2]; simpl...
   + destruct ef2; try easy.
-    destruct eq_compartment; try easy. subst cp.
+    (* destruct eq_compartment; try easy. subst cp. *)
     intros H. inv H. auto.
   + destruct ef1; try easy.
-    destruct eq_compartment; try easy. subst cp.
+    (* destruct eq_compartment; try easy. subst cp. *)
     intros H. inv H. auto.
   + destruct (external_function_eq ef1 ef2); intuition congruence.
 - (* Two vardefs *)
@@ -1491,7 +1492,7 @@ Local Transparent Linker_def Linker_fundef Linker_varinit Linker_vardef Linker_u
   unfold link_vardef.
   destruct v1 as [info1 c1 init1 ro1 vo1], v2 as [info2 c2 init2 ro2 vo2]; simpl.
   destruct (link_varinit init1 init2) as [init|] eqn:LI...
-  destruct eq_compartment...
+  destruct cp_eq_dec...
   destruct (eqb ro1 ro2) eqn:RO...
   destruct (eqb vo1 vo2) eqn:VO...
   simpl.

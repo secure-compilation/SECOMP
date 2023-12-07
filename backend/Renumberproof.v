@@ -104,10 +104,10 @@ Qed.
 
 Lemma find_comp_translated:
   forall vf,
-    Genv.find_comp ge vf = Genv.find_comp tge vf.
+    Genv.find_comp_in_genv ge vf = Genv.find_comp_in_genv tge vf.
 Proof.
   intros vf.
-  eapply (Genv.match_genvs_find_comp TRANSL).
+  eapply (Genv.match_genvs_find_comp_in_genv TRANSL).
 Qed.
 
 Lemma call_trace_translated:
@@ -213,10 +213,10 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
         (REACH: reach f pc),
       match_states (State stk f sp pc rs m)
                    (State stk' (transf_function f) sp (renum_pc (pnum f) pc) rs m)
-  | match_callstates: forall stk f args m stk'
+  | match_callstates: forall stk f args m cp stk'
         (STACKS: list_forall2 match_frames stk stk'),
-      match_states (Callstate stk f args m)
-                   (Callstate stk' (transf_fundef f) args m)
+      match_states (Callstate stk f args m cp)
+                   (Callstate stk' (transf_fundef f) args m cp)
   | match_returnstates: forall stk v m cp stk'
         (STACKS: list_forall2 match_frames stk stk'),
       match_states (Returnstate stk v m cp)

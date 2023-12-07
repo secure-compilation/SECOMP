@@ -215,7 +215,7 @@ Inductive deref_loc (cp: compartment) (ty: type) (m: mem) (b: block) (ofs: ptrof
                                              bitfield -> val -> Prop :=
   | deref_loc_value: forall chunk v,
       access_mode ty = By_value chunk ->
-      Mem.loadv chunk m (Vptr b ofs) (Some cp) = Some v ->
+      Mem.loadv chunk m (Vptr b ofs) cp = Some v ->
       deref_loc cp ty m b ofs Full v
   | deref_loc_reference:
       access_mode ty = By_reference ->
@@ -224,7 +224,7 @@ Inductive deref_loc (cp: compartment) (ty: type) (m: mem) (b: block) (ofs: ptrof
       access_mode ty = By_copy ->
       deref_loc cp ty m b ofs Full (Vptr b ofs)
   | deref_loc_bitfield: forall sz sg pos width v,
-      load_bitfield ty sz sg pos width m (Vptr b ofs) v (Some cp) ->
+      load_bitfield ty sz sg pos width m (Vptr b ofs) v cp ->
       deref_loc cp ty m b ofs (Bits sz sg pos width) v.
 
 (** Symmetrically, [assign_loc ty m b ofs bf v m'] returns the
@@ -247,7 +247,7 @@ Inductive assign_loc (ce: composite_env) (cp: compartment) (ty: type) (m: mem) (
       b' <> b \/ Ptrofs.unsigned ofs' = Ptrofs.unsigned ofs
               \/ Ptrofs.unsigned ofs' + sizeof ce ty <= Ptrofs.unsigned ofs
               \/ Ptrofs.unsigned ofs + sizeof ce ty <= Ptrofs.unsigned ofs' ->
-      Mem.loadbytes m b' (Ptrofs.unsigned ofs') (sizeof ce ty) (Some cp) = Some bytes ->
+      Mem.loadbytes m b' (Ptrofs.unsigned ofs') (sizeof ce ty) cp = Some bytes ->
       Mem.storebytes m b (Ptrofs.unsigned ofs) bytes cp = Some m' ->
       assign_loc ce cp ty m b ofs Full (Vptr b' ofs') m'
   | assign_loc_bitfield: forall sz sg pos width v m' v',
@@ -494,10 +494,10 @@ Definition is_call_cont (k: cont) : Prop :=
   | _ => False
   end.
 
-Definition call_comp (k: cont) : option compartment :=
+Definition call_comp (k: cont) : compartment :=
   match call_cont k with
-  | Kcall _ f _ _ _ => Some (comp_of f)
-  | _ => None
+  | Kcall _ f _ _ _ => comp_of f
+  | _ => top
   end.
 
 (** States *)
@@ -602,8 +602,7 @@ Inductive step: state -> trace -> state -> Prop :=
 
   | step_builtin:   forall f optid ef tyargs al k e le m vargs t vres m',
       eval_exprlist e (comp_of f) le m al tyargs vargs ->
-      forall ALLOWED: comp_of ef = comp_of f,
-      external_call ef ge vargs m t vres m' ->
+      external_call ef ge (comp_of f) vargs m t vres m' ->
       step (State f (Sbuiltin optid ef tyargs al) k e le m)
          t (State f Sskip k e (set_opttemp optid vres le) m')
 
@@ -687,9 +686,9 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State f f.(fn_body) k e le m1)
 
   | step_external_function: forall ef targs tres cconv vargs k m vres t m',
-      external_call ef ge vargs m t vres m' ->
+      external_call ef ge (call_comp k) vargs m t vres m' ->
       step (Callstate (External ef targs tres cconv) vargs k m)
-         t (Returnstate vres k m' (rettype_of_type tres) (comp_of ef))
+         t (Returnstate vres k m' (rettype_of_type tres) bottom)
 
   | step_returnstate: forall v optid f e le ty cp k m t,
       forall (NO_CROSS_PTR: Genv.type_of_call (comp_of f) cp = Genv.CrossCompartmentCall ->
@@ -1061,7 +1060,7 @@ Proof.
     parallel_find_funct.
     reflexivity.
   - parallel_eval_exprlist.
-    destruct (external_call_determ _ _ _ _ _ _ _ _ _ _ H0 H13) as (_ & EQ).
+    destruct (external_call_determ _ _ _ _ _ _ _ _ _ _ _ H0 H13) as (_ & EQ).
     specialize (EQ eq_refl) as [<- <-].
     reflexivity.
   - parallel_eval_expr.
@@ -1082,7 +1081,7 @@ Proof.
     reflexivity.
   - parallel_function_entry1.
     reflexivity.
-  - destruct (external_call_determ _ _ _ _ _ _ _ _ _ _ H H9) as (_ & EQ).
+  - destruct (external_call_determ _ _ _ _ _ _ _ _ _ _ _ H H9) as (_ & EQ).
     specialize (EQ eq_refl) as [<- <-].
     reflexivity.
 Qed.
@@ -1101,10 +1100,10 @@ Proof.
     destruct (eval_exprlist_determ H1 H16).
     reflexivity.
   - destruct (eval_exprlist_determ H H12).
-    destruct (external_call_determ _ _ _ _ _ _ _ _ _ _ H0 H13) as [_ EQ].
+    destruct (external_call_determ _ _ _ _ _ _ _ _ _ _ _ H0 H13) as [_ EQ].
     specialize (EQ eq_refl) as [<- <-].
     reflexivity.
-  - destruct (external_call_determ _ _ _ _ _ _ _ _ _ _ H H9) as [_ EQ].
+  - destruct (external_call_determ _ _ _ _ _ _ _ _ _ _ _ H H9) as [_ EQ].
     specialize (EQ eq_refl) as [<- <-].
     reflexivity.
   - reflexivity.
@@ -1138,9 +1137,9 @@ Proof.
     rewrite H2 in H17. injection H17 as <-.
     parallel_call_trace.
   - parallel_eval_exprlist.
-    destruct (external_call_determ _ _ _ _ _ _ _ _ _ _ H0 H13) as (? & ?).
+    destruct (external_call_determ _ _ _ _ _ _ _ _ _ _ _ H0 H13) as (? & ?).
     inv H1.
-  - destruct (external_call_determ _ _ _ _ _ _ _ _ _ _ H H9) as (? & ?).
+  - destruct (external_call_determ _ _ _ _ _ _ _ _ _ _ _ H H9) as (? & ?).
     inv H0.
   - pose proof return_trace_determ EV EV0; discriminate.
 Qed.

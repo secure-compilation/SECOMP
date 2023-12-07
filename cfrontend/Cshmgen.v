@@ -426,9 +426,9 @@ Definition make_store_bitfield (sz: intsize) (sg: signedness) (pos width: Z)
 (** [make_memcpy dst src ty] returns a [memcpy] builtin appropriate for
   by-copy assignment of a value of Clight type [ty]. *)
 
-Definition make_memcpy (ce: composite_env) (cp: compartment) (dst src: expr) (ty: type) :=
+Definition make_memcpy (ce: composite_env) (dst src: expr) (ty: type) :=
   do sz <- sizeof ce ty;
-  OK (Sbuiltin None (EF_memcpy cp sz (Ctypes.alignof_blockcopy ce ty))
+  OK (Sbuiltin None (EF_memcpy sz (Ctypes.alignof_blockcopy ce ty))
                     (dst :: src :: nil)).
 
 (** [make_store addr ty bf rhs] stores the value of the
@@ -436,12 +436,12 @@ Definition make_memcpy (ce: composite_env) (cp: compartment) (dst src: expr) (ty
    Csharpminor expression [addr].
    [ty] is the type of the memory location and [bf] a bitfield designator. *)
 
-Definition make_store (ce: composite_env) (cp: compartment) (addr: expr) (ty: type) (bf: bitfield) (rhs: expr) :=
+Definition make_store (ce: composite_env) (addr: expr) (ty: type) (bf: bitfield) (rhs: expr) :=
   match bf with
   | Full =>
       match access_mode ty with
       | By_value chunk => OK (Sstore chunk addr rhs)
-      | By_copy => make_memcpy ce cp addr rhs ty
+      | By_copy => make_memcpy ce addr rhs ty
       | _ => Error (msg "Cshmgen.make_store")
       end
   | Bits sz sg pos width =>
@@ -672,7 +672,7 @@ Fixpoint transl_statement (ce: composite_env) (cp: compartment) (tyret: type) (n
       do (tb, bf) <- transl_lvalue ce b;
       do tc <- transl_expr ce c;
       do tc' <- make_cast (typeof c) (typeof b) tc;
-      make_store ce cp tb (typeof b) bf tc'
+      make_store ce tb (typeof b) bf tc'
   | Clight.Sset x b =>
       do tb <- transl_expr ce b;
       OK(Sset x tb)

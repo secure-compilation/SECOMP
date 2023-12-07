@@ -486,11 +486,11 @@ Section CMCONSTRS.
 
 Variable prog: program.
 Variable hf: helper_functions.
+Hypothesis HELPERS: helper_functions_declared prog hf.
 Let ge := Genv.globalenv prog.
 Variable sp: val.
 Variable e: env.
 Variable cp: compartment.
-Hypothesis HELPERS: helper_functions_declared prog hf cp.
 Variable m: mem.
 
 Lemma is_intconst_sound:
@@ -746,7 +746,7 @@ Lemma eval_modl_from_divl:
   forall le a n x y,
   eval_expr ge sp e cp m le a (Vlong y) ->
   nth_error le O = Some (Vlong x) ->
-  eval_expr ge sp e cp m le (modl_from_divl cp a n) (Vlong (Int64.sub x (Int64.mul y n))).
+  eval_expr ge sp e cp m le (modl_from_divl a n) (Vlong (Int64.sub x (Int64.mul y n))).
 Proof.
   unfold modl_from_divl; intros.
   exploit eval_mullimm; eauto. instantiate (1 := n). intros (v1 & A1 & B1).
@@ -802,7 +802,7 @@ Theorem eval_modlu:
   eval_expr ge sp e cp m le a x ->
   eval_expr ge sp e cp m le b y ->
   Val.modlu x y = Some z ->
-  exists v, eval_expr ge sp e cp m le (modlu cp a b) v /\ Val.lessdef z v.
+  exists v, eval_expr ge sp e cp m le (modlu a b) v /\ Val.lessdef z v.
 Proof.
   unfold modlu; intros.
   destruct (is_longconst b) as [n2|] eqn:N2.
@@ -830,22 +830,22 @@ Lemma eval_divls_mull:
   forall le x y p M,
   divls_mul_params (Int64.signed y) = Some(p, M) ->
   nth_error le O = Some (Vlong x) ->
-  eval_expr ge sp e cp m le (divls_mull cp p M) (Vlong (Int64.divs x y)).
+  eval_expr ge sp e cp m le (divls_mull p M) (Vlong (Int64.divs x y)).
 Proof.
   intros. unfold divls_mull.
   assert (A0: eval_expr ge sp e cp m le (Eletvar O) (Vlong x)).
   { constructor; auto. }
   exploit eval_mullhs. try apply HELPERS. eexact A0. instantiate (1 := Int64.repr M).  intros (v1 & A1 & B1).
-  exploit eval_addl. eauto. eexact A1. eexact A0. intros (v2 & A2 & B2).
+  exploit eval_addl. auto. eexact A1. eexact A0. intros (v2 & A2 & B2).
   exploit eval_shrluimm. try apply HELPERS. eexact A0. instantiate (1 := Int.repr 63). intros (v3 & A3 & B3).
   set (a4 := if zlt M Int64.half_modulus
              then mullhs (Eletvar 0) (Int64.repr M)
-             else addl cp (mullhs (Eletvar 0) (Int64.repr M)) (Eletvar 0)).
+             else addl (mullhs (Eletvar 0) (Int64.repr M)) (Eletvar 0)).
   set (v4 := if zlt M Int64.half_modulus then v1 else v2).
   assert (A4: eval_expr ge sp e cp m le a4 v4).
   { unfold a4, v4; destruct (zlt M Int64.half_modulus); auto. }
   exploit eval_shrlimm. try apply HELPERS. eexact A4. instantiate (1 := Int.repr p). intros (v5 & A5 & B5).
-  exploit eval_addl. eauto. eexact A5. eexact A3. intros (v6 & A6 & B6).
+  exploit eval_addl. auto. eexact A5. eexact A3. intros (v6 & A6 & B6).
   assert (RANGE: forall x, 0 <= x < 64 -> Int.ltu (Int.repr x) Int64.iwordsize' = true).
   { intros. unfold Int.ltu. rewrite Int.unsigned_repr. rewrite zlt_true by tauto. auto.
     assert (64 < Int.max_unsigned) by (compute; auto). lia. }
@@ -868,7 +868,7 @@ Theorem eval_divls:
   eval_expr ge sp e cp m le a x ->
   eval_expr ge sp e cp m le b y ->
   Val.divls x y = Some z ->
-  exists v, eval_expr ge sp e cp m le (divls cp a b) v /\ Val.lessdef z v.
+  exists v, eval_expr ge sp e cp m le (divls a b) v /\ Val.lessdef z v.
 Proof.
   unfold divls; intros.
   destruct (is_longconst b) as [n2|] eqn:N2.
@@ -899,7 +899,7 @@ Theorem eval_modls:
   eval_expr ge sp e cp m le a x ->
   eval_expr ge sp e cp m le b y ->
   Val.modls x y = Some z ->
-  exists v, eval_expr ge sp e cp m le (modls cp a b) v /\ Val.lessdef z v.
+  exists v, eval_expr ge sp e cp m le (modls a b) v /\ Val.lessdef z v.
 Proof.
   unfold modls; intros.
   destruct (is_longconst b) as [n2|] eqn:N2.

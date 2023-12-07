@@ -1120,7 +1120,7 @@ Definition bitfield_normalize (sz: intsize) (sg: signedness) (width: Z) (n: int)
   then Int.zero_ext width n
   else Int.sign_ext width n.
 
-Inductive load_bitfield: type -> intsize -> signedness -> Z -> Z -> mem -> val -> val -> option compartment -> Prop :=
+Inductive load_bitfield: type -> intsize -> signedness -> Z -> Z -> mem -> val -> val -> compartment -> Prop :=
   | load_bitfield_intro: forall sz sg1 attr sg pos width m addr c cp,
       0 <= pos -> 0 < width <= bitsize_intsize sz -> pos + width <= bitsize_carrier sz ->
       sg1 = (if zlt width (bitsize_intsize sz) then Signed else sg) ->
@@ -1132,7 +1132,7 @@ Inductive store_bitfield: type -> intsize -> signedness -> Z -> Z -> mem -> val 
   | store_bitfield_intro: forall sz sg1 attr sg pos width m addr c n m' cp,
       0 <= pos -> 0 < width <= bitsize_intsize sz -> pos + width <= bitsize_carrier sz ->
       sg1 = (if zlt width (bitsize_intsize sz) then Signed else sg) ->
-      Mem.loadv (chunk_for_carrier sz) m addr (Some cp) = Some (Vint c) ->
+      Mem.loadv (chunk_for_carrier sz) m addr cp = Some (Vint c) ->
       Mem.storev (chunk_for_carrier sz) m addr
                  (Vint (Int.bitfield_insert (first_bit sz pos width) width c n)) cp = Some m' ->
       store_bitfield (Tint sz sg1 attr) sz sg pos width m addr (Vint n)
@@ -1834,8 +1834,4 @@ Proof.
 Qed.
 
 End ArithConv.
-
-
-
-
 

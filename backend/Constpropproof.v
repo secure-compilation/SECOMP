@@ -97,10 +97,10 @@ Qed.
 
 Lemma find_comp_translated:
   forall vf,
-    Genv.find_comp ge vf = Genv.find_comp tge vf.
+    Genv.find_comp_in_genv ge vf = Genv.find_comp_in_genv tge vf.
 Proof.
   intros vf.
-  eapply (Genv.match_genvs_find_comp TRANSL).
+  eapply (Genv.match_genvs_find_comp_in_genv TRANSL).
 Qed.
 
 Lemma init_regs_lessdef:
@@ -298,19 +298,19 @@ Proof.
 Qed.
 
 Lemma builtin_strength_reduction_correct:
-  forall sp bc ae rs ef args vargs m t vres m',
+  forall cp sp bc ae rs ef args vargs m t vres m',
   ematch bc rs ae ->
   eval_builtin_args ge (fun r => rs#r) sp m args vargs ->
-  external_call ef ge vargs m t vres m' ->
+  external_call ef ge cp vargs m t vres m' ->
   exists vargs',
      eval_builtin_args ge (fun r => rs#r) sp m (builtin_strength_reduction ae ef args) vargs'
-  /\ external_call ef ge vargs' m t vres m'.
+  /\ external_call ef ge cp vargs' m t vres m'.
 Proof.
   intros.
   assert (DEFAULT: forall cl,
     exists vargs',
        eval_builtin_args ge (fun r => rs#r) sp m (builtin_args_strength_reduction ae args cl) vargs'
-    /\ external_call ef ge  vargs' m t vres m').
+    /\ external_call ef ge cp vargs' m t vres m').
   { exists vargs; split; auto. eapply builtin_args_strength_reduction_correct; eauto. }
   unfold builtin_strength_reduction.
   destruct ef; auto.
@@ -365,13 +365,13 @@ Inductive match_states: nat -> state -> state -> Prop :=
       match_states n (State s f sp pc rs m)
                     (State s' (transf_function (romem_for cu) f) sp pc' rs' m')
   | match_states_call:
-      forall s f args m s' args' m' cu
+      forall s f args m cp s' args' m' cu
            (LINK: linkorder cu prog)
            (STACKS: list_forall2 match_stackframes s s')
            (ARGS: Val.lessdef_list args args')
            (MEM: Mem.extends m m'),
-      match_states O (Callstate s f args m)
-                     (Callstate s' (transf_fundef (romem_for cu) f) args' m')
+      match_states O (Callstate s f args m cp)
+                     (Callstate s' (transf_fundef (romem_for cu) f) args' m' cp)
   | match_states_return:
       forall s v m cp s' v' m'
            (STACKS: list_forall2 match_stackframes s s')
@@ -603,7 +603,7 @@ Opaque builtin_strength_reduction.
   }
   destruct ef; auto.
   destruct res; auto.
-  destruct (lookup_builtin_function name cp sg) as [bf|] eqn:LK; auto.
+  destruct (lookup_builtin_function name sg) as [bf|] eqn:LK; auto.
   destruct (eval_static_builtin_function ae am rm bf args) as [a|] eqn:ES; auto.
   destruct (const_for_result a) as [cop|] eqn:CR; auto.
   clear DFL. simpl in H1; red in H1; rewrite LK in H1; inv H1.
@@ -695,7 +695,7 @@ Lemma transf_initial_states:
 Proof.
   intros. inversion H.
   exploit function_ptr_translated; eauto. intros (cu & FIND & LINK).
-  exists O; exists (Callstate nil (transf_fundef (romem_for cu) f) nil m0); split.
+  exists O; exists (Callstate nil (transf_fundef (romem_for cu) f) nil m0 top); split.
   econstructor; eauto.
   apply (Genv.init_mem_match TRANSL); auto.
   replace (prog_main tprog) with (prog_main prog).

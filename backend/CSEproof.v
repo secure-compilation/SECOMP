@@ -542,7 +542,7 @@ Proof.
   eapply Pos.lt_le_trans; eauto.
   red; simpl; intros. auto.
 + destruct H4; eauto with cse. subst eq. apply eq_holds_lessdef with (Val.load_result chunk rs#src).
-  apply load_eval_to with a (Some cp). rewrite <- Q; auto.
+  apply load_eval_to with a cp. rewrite <- Q; auto.
   destruct a; try discriminate. simpl. eapply Mem.load_store_same; eauto.
   rewrite B. rewrite R by auto. apply store_normalized_range_sound with bc.
   rewrite <- B. eapply vmatch_ge. apply vincl_ge; eauto. apply H2.
@@ -587,7 +587,7 @@ Lemma load_memcpy:
   Mem.load chunk m b1 i cp1 = Some v ->
   ofs1 <= i -> i + size_chunk chunk <= ofs1 + sz ->
   (align_chunk chunk | ofs2 - ofs1) ->
-  Mem.load chunk m' b2 (i + (ofs2 - ofs1)) (Some cp2) = Some v.
+  Mem.load chunk m' b2 (i + (ofs2 - ofs1)) cp2 = Some v.
 Proof.
   intros.
   generalize (size_chunk_pos chunk); intros SPOS.
@@ -618,9 +618,9 @@ Proof.
   assert (L2: Z.of_nat (length bytes2) = n2).
   { erewrite Mem.loadbytes_length by eauto. apply Z2Nat.id. unfold n2; lia. }
   rewrite L1 in *. rewrite L2 in *.
-  assert (LB': Mem.loadbytes m2 b2 (ofs2 + n1) n2 (Some cp2) = Some bytes2).
+  assert (LB': Mem.loadbytes m2 b2 (ofs2 + n1) n2 cp2 = Some bytes2).
   { rewrite <- L2. eapply Mem.loadbytes_storebytes_same; eauto. }
-  assert (LB'': Mem.loadbytes m' b2 (ofs2 + n1) n2 (Some cp2) = Some bytes2).
+  assert (LB'': Mem.loadbytes m' b2 (ofs2 + n1) n2 cp2 = Some bytes2).
   { rewrite <- LB'. eapply Mem.loadbytes_storebytes_other; eauto.
     unfold n2; lia.
     right; left; lia. }
@@ -650,7 +650,7 @@ Qed.
 Lemma shift_memcpy_eq_holds:
   forall src dst sz cp e e' m sp bytes m' valu ge,
   shift_memcpy_eq src sz (dst - src) e = Some e' ->
-  Mem.loadbytes m sp src sz (Some cp) = Some bytes ->
+  Mem.loadbytes m sp src sz cp = Some bytes ->
   Mem.storebytes m sp dst bytes cp = Some m' ->
   equation_holds valu ge (Vptr sp Ptrofs.zero) m e ->
   equation_holds valu ge (Vptr sp Ptrofs.zero) m' e'.
@@ -668,8 +668,8 @@ Proof with (try discriminate).
   destruct (zle j Ptrofs.max_unsigned)...
   simpl in H; inv H.
   assert (LD: forall v,
-    Mem.loadv chunk m (Vptr sp ofs) (Some cp) = Some v ->
-    Mem.loadv chunk m' (Vptr sp (Ptrofs.repr j)) (Some cp) = Some v).
+    Mem.loadv chunk m (Vptr sp ofs) cp = Some v ->
+    Mem.loadv chunk m' (Vptr sp (Ptrofs.repr j)) cp = Some v).
   {
     simpl; intros. rewrite Ptrofs.unsigned_repr by lia.
     unfold j, delta. eapply load_memcpy; eauto.
@@ -685,7 +685,7 @@ Proof with (try discriminate).
   simpl. simpl in H7.
   Local Transparent Mem.load. Local Transparent Mem.loadbytes.
   unfold Mem.load. unfold Mem.load in H7.  unfold Mem.loadbytes in H0.
-  destruct (Mem.valid_access_dec m chunk sp (Ptrofs.unsigned ofs) Readable (Some cp)).
+  destruct (Mem.valid_access_dec m chunk sp (Ptrofs.unsigned ofs) Readable cp).
   * destruct v as [v1 [v2 v3]].
     destruct (Mem.valid_access_dec m chunk sp (Ptrofs.unsigned ofs) Readable cp0);
       try discriminate.
@@ -696,7 +696,7 @@ Proof with (try discriminate).
          try discriminate.
        destruct v as [v1 [v2 v3]]; contradiction.
     -- apply Classical_Prop.not_and_or in n as [n | n].
-       ++ destruct (Mem.can_access_block_dec m sp (Some cp)); try contradiction.
+       ++ destruct (Mem.can_access_block_dec m sp cp); try contradiction.
           simpl in H0. rewrite andb_false_r in H0. discriminate.
        ++ destruct (Mem.valid_access_dec m chunk sp (Ptrofs.unsigned ofs) Readable cp0);
             try discriminate.
@@ -711,7 +711,7 @@ Proof with (try discriminate).
   simpl. simpl in H8.
   Local Transparent Mem.load. Local Transparent Mem.loadbytes.
   unfold Mem.load. unfold Mem.load in H8.  unfold Mem.loadbytes in H0.
-  destruct (Mem.valid_access_dec m chunk sp (Ptrofs.unsigned ofs) Readable (Some cp)).
+  destruct (Mem.valid_access_dec m chunk sp (Ptrofs.unsigned ofs) Readable cp).
   * destruct v0 as [v1 [v2 v3]].
     destruct (Mem.valid_access_dec m chunk sp (Ptrofs.unsigned ofs) Readable cp0);
       try discriminate.
@@ -722,7 +722,7 @@ Proof with (try discriminate).
          try discriminate.
        destruct v0 as [v1 [v2 v3]]; contradiction.
     -- apply Classical_Prop.not_and_or in n as [n | n].
-       ++ destruct (Mem.can_access_block_dec m sp (Some cp)); try contradiction.
+       ++ destruct (Mem.can_access_block_dec m sp cp); try contradiction.
           simpl in H0. rewrite andb_false_r in H0. discriminate.
        ++ destruct (Mem.valid_access_dec m chunk sp (Ptrofs.unsigned ofs) Readable cp0);
             try discriminate.
@@ -745,7 +745,7 @@ Qed.
 
 Lemma add_memcpy_holds:
   forall m bsrc osrc sz cp bytes bdst odst (* cp' *) m' valu ge sp rs n1 n2 bc asrc adst,
-  Mem.loadbytes m bsrc (Ptrofs.unsigned osrc) sz (Some cp) = Some bytes ->
+  Mem.loadbytes m bsrc (Ptrofs.unsigned osrc) sz cp = Some bytes ->
   Mem.storebytes m bdst (Ptrofs.unsigned odst) bytes cp = Some m' ->
   numbering_holds valu ge (Vptr sp Ptrofs.zero) rs m n1 ->
   numbering_holds valu ge (Vptr sp Ptrofs.zero) rs m' n2 ->
@@ -983,10 +983,10 @@ Qed.
 
 Lemma find_comp_translated:
   forall vf,
-    Genv.find_comp ge vf = Genv.find_comp tge vf.
+    Genv.find_comp_in_genv ge vf = Genv.find_comp_in_genv tge vf.
 Proof.
   intros vf.
-  eapply (Genv.match_genvs_find_comp TRANSF).
+  eapply (Genv.match_genvs_find_comp_in_genv TRANSF).
 Qed.
 
 (** The proof of semantic preservation is a simulation argument using
@@ -1042,14 +1042,14 @@ Inductive match_states: state -> state -> Prop :=
       match_states (State s f sp pc rs m)
                    (State s' (transf_function' f approx) sp pc rs' m')
   | match_states_call:
-      forall s f tf args m s' args' m' cu
+      forall s f tf args m cp s' args' m' cu
              (LINK: linkorder cu prog)
              (STACKS: match_stackframes s s')
              (TFD: transf_fundef (romem_for cu) f = OK tf)
              (ARGS: Val.lessdef_list args args')
              (MEXT: Mem.extends m m'),
-      match_states (Callstate s f args m)
-                   (Callstate s' tf args' m')
+      match_states (Callstate s f args m cp)
+                   (Callstate s' tf args' m' cp)
   | match_states_return:
       forall s s' v v' m m' cp
              (STACK: match_stackframes s s')
@@ -1258,7 +1258,7 @@ Proof.
   { exists valu. apply set_res_unknown_holds. eapply kill_all_loads_hold; eauto. }
   destruct ef.
   + apply CASE1.
-  + destruct (lookup_builtin_function name cp sg) as [bf|] eqn:LK.
+  + destruct (lookup_builtin_function name sg) as [bf|] eqn:LK.
     ++ apply CASE2. simpl in H1; red in H1; rewrite LK in H1; inv H1. auto.
     ++ apply CASE3.
   + apply CASE1.
@@ -1354,7 +1354,7 @@ Lemma transf_initial_states:
 Proof.
   intros. inversion H.
   exploit funct_ptr_translated; eauto. intros (cu & tf & A & B & C).
-  exists (Callstate nil tf nil m0); split.
+  exists (Callstate nil tf nil m0 top); split.
   econstructor; eauto.
   eapply (Genv.init_mem_match TRANSF); eauto.
   replace (prog_main tprog) with (prog_main prog).

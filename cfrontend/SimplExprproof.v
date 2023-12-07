@@ -123,10 +123,10 @@ Qed.
 
 Lemma find_comp_translated:
   forall vf,
-    Genv.find_comp ge vf = Genv.find_comp tge vf.
+    Genv.find_comp_in_genv ge vf = Genv.find_comp_in_genv tge vf.
 Proof.
   destruct TRANSL.
-  eapply (Genv.match_genvs_find_comp H).
+  eapply (Genv.match_genvs_find_comp_in_genv H).
 Qed.
 
 Lemma call_trace_translated:
@@ -2199,7 +2199,8 @@ Ltac NOTIN :=
   econstructor; split.
   left. eapply plus_left. constructor.  apply star_one.
   econstructor; eauto.
-  rewrite CO; eauto. congruence.
+  rewrite CO; eauto.
+  rewrite CO; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   traceEq.
   econstructor; eauto.
@@ -2210,7 +2211,8 @@ Ltac NOTIN :=
   econstructor; split.
   left. eapply plus_left. constructor. apply star_one.
   econstructor; eauto.
-  rewrite CO; eauto. congruence.
+  rewrite CO; eauto.
+  rewrite CO; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   traceEq.
   econstructor; eauto.
@@ -2534,6 +2536,8 @@ Proof.
   inv TR.
   econstructor; split.
   left; apply plus_one. econstructor; eauto.
+  specialize (MK (prog_comp_env cu)).
+  exploit match_cont_call_comp; eauto. intros <-.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   apply match_returnstates. auto.
 
@@ -2545,7 +2549,6 @@ Proof.
   now rewrite CO.
   rewrite CO. eapply return_trace_eq; eauto using senv_preserved.
   econstructor; eauto.
-
 Qed.
 
 (** Semantic preservation *)
@@ -2610,19 +2613,13 @@ Proof.
 Local Transparent Linker_fundef.
   simpl in *; unfold link_fundef in *. inv H3; inv H4; try discriminate.
   destruct ef; inv H2.
-  destruct (eq_compartment cp (comp_of f0)); [| discriminate].
-  injection H4 as ?; subst f cp.
   exists (Internal tf); split.
-  inv H5. rewrite H2.
-  destruct (eq_compartment (comp_of f0) (comp_of f0)); [| contradiction].
+  inv H5.
   reflexivity.
   left; constructor; auto.
   destruct ef; inv H2.
-  destruct (eq_compartment cp (comp_of f0)); [| discriminate].
-  injection H5 as ?; subst f cp.
   exists (Internal tf); split.
-  inv H3. rewrite H2.
-  destruct (eq_compartment (comp_of f0) (comp_of f0)); [| contradiction].
+  inv H3.
   reflexivity.
   right; constructor; auto.
   destruct (external_function_eq ef ef0 && typelist_eq targs targs0 &&

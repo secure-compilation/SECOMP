@@ -382,8 +382,7 @@ Inductive estep: state -> trace -> state -> Prop :=
   | step_builtin: forall f C ef tyargs rargs ty k e m vargs t vres m',
       leftcontext RV RV C ->
       eval_simple_list e (comp_of f) m rargs tyargs vargs ->
-      external_call ef ge vargs m t vres m' ->
-      forall ALLOWED: comp_of ef = comp_of f,
+      external_call ef ge (comp_of f) vargs m t vres m' ->
       estep (ExprState f (C (Ebuiltin ef tyargs rargs ty)) k e m)
           t (ExprState f (C (Eval vres ty)) k e m').
 
@@ -592,8 +591,7 @@ Definition invert_expr_prop (cp: compartment) (a: expr) (m: mem) : Prop :=
       exprlist_all_values rargs ->
       exists vargs, exists t, exists vres, exists m',
          cast_arguments m rargs tyargs vargs
-      /\ external_call ef ge vargs m t vres m'
-      /\ comp_of ef = cp
+      /\ external_call ef ge cp vargs m t vres m'
   | _ => True
   end.
 
@@ -1404,7 +1402,7 @@ Proof.
   eapply safe_steps. eexact H.
   apply (eval_simple_list_steps f k e m rargs vl E C'); auto.
   simpl. intros X. exploit X. eapply rval_list_all_values.
-  intros [vargs [t [vres [m' [U [V W]]]]]].
+  intros [vargs [t [vres [m' [U V]]]]].
   econstructor; econstructor; eapply step_builtin; eauto.
   eapply can_eval_simple_list; eauto.
 + (* paren *)
@@ -1583,7 +1581,7 @@ Proof.
   inv H1.
   exploit external_call_trace_length; eauto. destruct t1; simpl; intros.
   exploit external_call_receptive; eauto. intros [vres2 [m2 EC2]].
-  exists (Returnstate vres2 k m2 (rettype_of_type tres) (comp_of ef)); exists E0; right; econstructor; eauto.
+  exists (Returnstate vres2 k m2 (rettype_of_type tres) bottom); exists E0; right; econstructor; eauto.
   extlia.
   inv EV; inv H0. eexists; eexists; right; econstructor; eauto.
   econstructor; eauto.
@@ -1795,7 +1793,7 @@ with eval_expr: compartment -> env -> mem -> kind -> expr -> trace -> mem -> exp
       classify_fun (typeof rf) = fun_case_f targs tres cconv ->
       Genv.find_funct ge vf = Some fd ->
       type_of_fundef fd = Tfunction targs tres cconv ->
-      eval_funcall m2 fd vargs t3 m3 vres ty ->
+      eval_funcall c m2 fd vargs t3 m3 vres ty ->
       forall (ALLOWED: Genv.allowed_call ge c vf),
       forall (NO_CROSS_PTR_CALL: Genv.type_of_call c (comp_of fd) = Genv.CrossCompartmentCall ->
                        Forall not_ptr vargs),
@@ -1932,18 +1930,18 @@ with exec_stmt: compartment -> env -> mem -> statement -> trace -> mem -> outcom
   function [fd] with arguments [args].  [res] is the value returned
   by the call and [ty] its type.  *)
 
-with eval_funcall: mem -> fundef -> list val -> trace -> mem -> val -> type -> Prop :=
-  | eval_funcall_internal: forall m f vargs t e m1 m2 m3 out vres m4,
+with eval_funcall: compartment -> mem -> fundef -> list val -> trace -> mem -> val -> type -> Prop :=
+  | eval_funcall_internal: forall cp m f vargs t e m1 m2 m3 out vres m4,
       list_norepet (var_names f.(fn_params) ++ var_names f.(fn_vars)) ->
       alloc_variables ge (comp_of f) empty_env m (f.(fn_params) ++ f.(fn_vars)) e m1 ->
       bind_parameters ge (comp_of f) e m1 f.(fn_params) vargs m2 ->
       exec_stmt (comp_of f) e m2 f.(fn_body) t m3 out ->
       outcome_result_value out f.(fn_return) vres m3 ->
       Mem.free_list m3 (blocks_of_env ge e) (comp_of f) = Some m4 ->
-      eval_funcall m (Internal f) vargs t m4 vres f.(fn_return)
-  | eval_funcall_external: forall m ef targs tres cconv vargs t vres m',
-      external_call ef ge vargs m t vres m' ->
-      eval_funcall m (External ef targs tres cconv) vargs t m' vres tres.
+      eval_funcall cp m (Internal f) vargs t m4 vres f.(fn_return)
+  | eval_funcall_external: forall cp m ef targs tres cconv vargs t vres m',
+      external_call ef ge cp vargs m t vres m' ->
+      eval_funcall cp m (External ef targs tres cconv) vargs t m' vres tres.
 
 Scheme eval_expression_ind5 := Minimality for eval_expression Sort Prop
   with eval_expr_ind5 := Minimality for eval_expr Sort Prop
@@ -2245,10 +2243,11 @@ Lemma bigstep_to_steps:
    forall (COMP: c = comp_of f),
    exists S,
    star step ge (State f s k e m) t S /\ outcome_state_match e m' f k out S)
-/\(forall m fd args t m' res ty,
-   eval_funcall m fd args t m' res ty ->
+/\(forall c m fd args t m' res ty,
+   eval_funcall c m fd args t m' res ty ->
    forall k,
    is_call_cont k ->
+   forall (COMP: c = call_comp k),
    star step ge (Callstate fd args k m) t (Returnstate res k m' (rettype_of_type ty) (comp_of fd))).
 Proof.
   apply bigstep_induction; intros; try subst c.
@@ -2658,6 +2657,7 @@ Proof.
 
 (* call external *)
   apply star_one. right; apply step_external_function; auto.
+  subst; auto.
   (* congruence. *)
 Qed.
 
@@ -2694,10 +2694,11 @@ Lemma exec_stmt_to_steps:
 Proof. exact (proj1 (proj2 (proj2 (proj2 bigstep_to_steps)))). Qed.
 
 Lemma eval_funcall_to_steps:
-  forall m fd args t m' res ty,
-  eval_funcall m fd args t m' res ty ->
+  forall c m fd args t m' res ty,
+  eval_funcall c m fd args t m' res ty ->
   forall k,
   is_call_cont k ->
+  forall (COMP: c = call_comp k),
   star step ge (Callstate fd args k m) t (Returnstate res k m' (rettype_of_type ty) (comp_of fd)).
 Proof (proj2 (proj2 (proj2 (proj2 bigstep_to_steps)))).
 
@@ -3079,7 +3080,7 @@ Inductive bigstep_program_terminates (p: program): trace -> int -> Prop :=
       Genv.find_symbol ge p.(prog_main) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
       type_of_fundef f = Tfunction Tnil type_int32s cc_default ->
-      eval_funcall ge m0 f nil t m1 (Vint r) ty ->
+      eval_funcall ge top m0 f nil t m1 (Vint r) ty ->
       bigstep_program_terminates p t r.
 
 Inductive bigstep_program_diverges (p: program): traceinf -> Prop :=
@@ -3102,7 +3103,7 @@ Proof.
 (* termination *)
   inv H. econstructor; econstructor.
   split. econstructor; eauto.
-  split. apply (eval_funcall_to_steps _); simpl; eauto.
+  split. apply (eval_funcall_to_steps _ top); simpl; eauto.
   econstructor.
 (* divergence *)
   inv H. econstructor.

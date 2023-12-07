@@ -16,6 +16,7 @@
 
 open C
 
+open AST.COMP
 open Camlcoq
 open! Floats
 open Values
@@ -311,7 +312,7 @@ let make_builtin_memcpy cp args =
       if not (Z.eq (Z.modulo sz1 al1) Z.zero) then
         error "alignment argument of '__builtin_memcpy_aligned' must be a divisor of the size";
       (* Issue #28: must decay array types to pointer types *)
-      Ebuiltin( AST.EF_memcpy(cp, sz1, al1),
+      Ebuiltin( AST.EF_memcpy( sz1, al1),
                Tcons(typeconv(typeof dst),
                      Tcons(typeconv(typeof src), Tnil)),
                Econs(dst, Econs(src, Enil)), Tvoid)
@@ -605,8 +606,8 @@ let global_for_string s id =
     init := AST.Init_int8(Z.of_uint(Char.code c)) :: !init in
   add_char '\000';
   for i = String.length s - 1 downto 0 do add_char s.[i] done;
-  AST.(id, Gvar { gvar_comp = privileged_compartment;
-                   (* FIXME: this is incorrect *)
+  AST.(id, Gvar { gvar_comp = bottom;
+                   (* FIXME: this is very likely incorrect *)
       gvar_info = typeStringLiteral s;  gvar_init = !init;
                   gvar_readonly = true;  gvar_volatile = false})
 
@@ -647,7 +648,7 @@ let global_for_wide_string (s, ik) id =
     init := init_of_char(Z.of_uint64 c) :: !init in
   List.iter add_char s;
   add_char 0L;
-  AST.(id, Gvar { gvar_comp = privileged_compartment; (* FIXME: incorrect *)
+  AST.(id, Gvar { gvar_comp = bottom; (* FIXME: incorrect *)
       gvar_info = typeWideStringLiteral s ik;
                   gvar_init = List.rev !init;
                   gvar_readonly = true; gvar_volatile = false})
@@ -874,7 +875,7 @@ let rec convertExpr cp env e =
         | [] -> assert false (* catched earlier *) in
       let targs2 = convertTypAnnotArgs env args2 in
       Ebuiltin(
-         AST.EF_debug(cp, P.of_int64 kind, intern_string text,
+         AST.EF_debug(P.of_int64 kind, intern_string text,
                  typlist_of_typelist targs2),
         targs2, convertExprList cp env args2, convertTyp env e.etyp)
 
@@ -883,7 +884,7 @@ let rec convertExpr cp env e =
       | {edesc = C.EConst(CStr txt)} :: args1 ->
           let targs1 = convertTypAnnotArgs env args1 in
           Ebuiltin(
-             AST.EF_annot(cp, P.of_int 1,coqstring_of_camlstring txt, typlist_of_typelist targs1),
+             AST.EF_annot(P.of_int 1,coqstring_of_camlstring txt, typlist_of_typelist targs1),
             targs1, convertExprList cp env args1, convertTyp env e.etyp)
       | _ ->
           error "argument 1 of '__builtin_annot' must be a string literal";
@@ -895,7 +896,7 @@ let rec convertExpr cp env e =
       | [ {edesc = C.EConst(CStr txt)}; arg ] ->
           let targ = convertTyp env
                          (Cutil.default_argument_conversion env arg.etyp) in
-          Ebuiltin(AST.EF_annot_val(cp, P.of_int 1,coqstring_of_camlstring txt, typ_of_type targ),
+          Ebuiltin(AST.EF_annot_val(P.of_int 1,coqstring_of_camlstring txt, typ_of_type targ),
                    Tcons(targ, Tnil), convertExprList cp env [arg],
                    convertTyp env e.etyp)
       | _ ->
@@ -912,7 +913,7 @@ let rec convertExpr cp env e =
         let targs1 = convertTypAnnotArgs env args1 in
         AisAnnot.validate_ais_annot env !currentLocation txt args1;
           Ebuiltin(
-             AST.EF_annot(cp, P.of_int 2,coqstring_of_camlstring (loc_string ^ txt), typlist_of_typelist targs1),
+             AST.EF_annot(P.of_int 2,coqstring_of_camlstring (loc_string ^ txt), typlist_of_typelist targs1),
             targs1, convertExprList cp env args1, convertTyp env e.etyp)
       | _ ->
           error "argument 1 of '__builtin_ais_annot' must be a string literal";
@@ -939,7 +940,7 @@ let rec convertExpr cp env e =
   | C.ECall({edesc = C.EVar {name = "__builtin_va_copy"}}, [arg1; arg2]) ->
       let dst = convertExpr cp env arg1 in
       let src = convertExpr cp env arg2 in
-      Ebuiltin( AST.EF_memcpy(cp, Z.of_uint CBuiltins.size_va_list, Z.of_uint 4),
+      Ebuiltin( AST.EF_memcpy(Z.of_uint CBuiltins.size_va_list, Z.of_uint 4),
                Tcons(Tpointer(Tvoid, noattr),
                  Tcons(Tpointer(Tvoid, noattr), Tnil)),
                Econs(va_list_ptr dst, Econs(va_list_ptr src, Enil)),
@@ -959,7 +960,7 @@ let rec convertExpr cp env e =
       let sg =
         signature_of_type targs tres
            { AST.cc_vararg = Some (coqint_of_camlint 1l); cc_unproto = false; cc_structret = false} in
-      Ebuiltin( AST.EF_external(cp, coqstring_of_camlstring "printf", sg), (* NOTE old: privileged_compartment *)
+      Ebuiltin( AST.EF_external(coqstring_of_camlstring "printf", sg), (* NOTE old: privileged_compartment *)
                targs, convertExprList cp env args, tres)
 
   | C.ECall(fn, args) ->
@@ -1020,7 +1021,7 @@ let convertAsm cp loc env txt outputs inputs clobber =
   let e =
     let tinputs = convertTypAnnotArgs env inputs' in
     let toutput = convertTyp env ty_res in
-    Ebuiltin( AST.EF_inline_asm(cp, coqstring_of_camlstring txt',
+    Ebuiltin( AST.EF_inline_asm(coqstring_of_camlstring txt',
                            signature_of_type tinputs toutput  AST.cc_default,
                            clobber'),
              tinputs,
@@ -1140,7 +1141,7 @@ let convertFundef loc env fd =
         Debug.atom_local_variable id id';
         (id', convertTyp env ty))
       fd.fd_locals in
-  let body' = convertStmt (intern_string fd.fd_comp) env fd.fd_body in
+  let body' = convertStmt (Comp (intern_string fd.fd_comp)) env fd.fd_body in
   let id' = intern_string fd.fd_name.name in
   let noinline =  Cutil.find_custom_attributes ["noinline";"__noinline__"] fd.fd_attrib <> [] in
   let inline = if noinline || fd.fd_vararg then (* PR#15 *)
@@ -1150,7 +1151,7 @@ let convertFundef loc env fd =
     else
       No_specifier in
   let cp =
-    intern_string fd.fd_comp in
+    Comp (intern_string fd.fd_comp) in
   Debug.atom_global fd.fd_name id';
   Hashtbl.add decl_atom id'
     { a_storage = fd.fd_storage;
@@ -1183,14 +1184,13 @@ let convertFundecl env (sto, id, ty, optinit, comp) =
   let sg = signature_of_type args res cconv in
   (* TODO: should we check that the [comp] we have is indeed the compartment of the predefined *)
   (* functions such as [EF_malloc] or [EF_free]? *)
-  let cp = intern_string comp in
   let ef =
-    if id.name = "malloc" then AST.EF_malloc cp else
-    if id.name = "free" then AST.EF_free cp else
+    if id.name = "malloc" then AST.EF_malloc else
+    if id.name = "free" then AST.EF_free else
     if Str.string_match re_builtin id.name 0
     && List.mem_assoc id.name builtins.builtin_functions
-    then AST.EF_builtin(cp, id'', sg)
-    else AST.EF_external(cp, id'', sg) in
+    then AST.EF_builtin(id'', sg)
+    else AST.EF_external(id'', sg) in
   (id',  AST.Gfun(Ctypes.External(ef, args, res, cconv)))
 
 (** Initializers *)
@@ -1224,7 +1224,7 @@ let convertInitializer cp env ty i =
 
 let convertGlobvar loc env (sto, id, ty, optinit, comp) =
   let id' = intern_string id.name in
-  let cp = intern_string comp in
+  let cp = Comp (intern_string comp) in
   Debug.atom_global id id';
   let ty' = convertTyp env ty in
   let sz = Ctypes.sizeof !comp_env ty' in
@@ -1378,7 +1378,7 @@ let helper_function_declaration cp (name, tyres, tyargs) =
     List.fold_right (fun t tl -> Tcons(t, tl)) tyargs Tnil in
   let ef =
     (* AST.EF_runtime(cp, coqstring_of_camlstring name, *)
-    AST.EF_runtime(cp, Builtins0.standard_builtin_name (coqstring_of_camlstring name) cp,
+    AST.EF_runtime((coqstring_of_camlstring name),
                    signature_of_type tyargs tyres AST.cc_default) in
   (intern_string name,
    AST.Gfun (Ctypes.External(ef, tyargs, tyres, AST.cc_default)))
@@ -1475,21 +1475,22 @@ let public_globals gl =
 (*   List.fold_left f l (T.empty _). *)
 
 let add_to_tree = fun m k_v ->
-  match Maps.PTree.get (fst k_v) m with
-  | None -> Maps.PTree.set (fst k_v) [snd k_v] m
-  | Some s -> Maps.PTree.set (fst k_v) (snd k_v :: s) m
+  match CompTree.get (fst k_v) m with
+  | None -> CompTree.set (fst k_v) [snd k_v] m
+  | Some s -> CompTree.set (fst k_v) (snd k_v :: s) m
 
 let of_list' l =
-  List.fold_left add_to_tree Maps.PTree.empty l
+  List.fold_left add_to_tree CompTree.empty l
 
 (* FIXME: this is very ad-hoc. I'm worried that by generating new names using "intern_string", we might be doing something bad. Ideally, we should inspect *)
 (* the rest of the file and figure out how the translation between C.ident and AST.ident works. *)
 let build_policy (imports: C.import list) (exports: C.export list): AST.Policy.t =
   let open AST.Policy in
-  let exports' = List.map (function Export(id1, id2) -> (intern_string id1.name, intern_string id2.name)) exports in
-  let exports'': AST.ident list Maps.PTree.t = of_list' exports' in
-  let imports' = List.map (function Import(id1, id2, id3) -> (intern_string id1.name, (intern_string id2.name, intern_string id3.name))) imports in
-  let imports'': (AST.compartment * AST.ident) list Maps.PTree.t = of_list' imports' in
+  let exports' = List.map (function Export(id1, id2) -> (Comp (intern_string id1.name), intern_string id2.name)) exports in
+  let exports'': AST.ident list CompTree.t = of_list' exports' in
+  let imports' = List.map (function Import(id1, id2, id3) ->
+      (Comp (intern_string id1.name), (Comp (intern_string id2.name), intern_string id3.name))) imports in
+  let imports'': (compartment * AST.ident) list Maps.PTree.t = of_list' imports' in
   (* let imports'': (AST.compartment * AST.ident) list Maps.PTree.t = Maps.PTree_Properties.of_list [] in *)
   let p = { policy_export = exports'';
             policy_import = imports'' } in

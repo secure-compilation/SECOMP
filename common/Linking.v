@@ -62,25 +62,19 @@ Definition link_fundef {F: Type} {CF: has_comp F} (fd1 fd2: fundef F) :=
       if external_function_eq ef1 ef2 then Some (External ef1) else None
   | Internal f, External ef =>
       match ef with
-      | EF_external cp id sg =>
-        if eq_compartment cp (comp_of f)
-        then Some (Internal f)
-        else None
+      | EF_external id sg => Some (Internal f)
       | _ => None
       end
   | External ef, Internal f =>
       match ef with
-      | EF_external cp id sg =>
-        if eq_compartment cp (comp_of f)
-        then Some (Internal f)
-        else None
+      | EF_external id sg => Some (Internal f)
       | _ => None
       end
   end.
 
 Inductive linkorder_fundef {F: Type} {CF: has_comp F} : fundef F -> fundef F -> Prop :=
   | linkorder_fundef_refl: forall fd, linkorder_fundef fd fd
-  | linkorder_fundef_ext_int: forall f id sg, linkorder_fundef (External (EF_external (comp_of f) id sg)) (Internal f).
+  | linkorder_fundef_ext_int: forall f id sg, linkorder_fundef (External (EF_external id sg)) (Internal f).
 
 Global Program Instance Linker_fundef (F: Type) {CP: has_comp F}: Linker (fundef F) := {
   link := link_fundef;
@@ -96,12 +90,8 @@ Next Obligation.
   destruct x, y; simpl in H.
 + discriminate.
 + destruct e; inv H.
-  destruct eq_compartment; try easy.
-  subst cp. inv H1.
   split; constructor.
 + destruct e; inv H.
-  destruct eq_compartment; try easy.
-  subst cp. inv H1.
   split; constructor.
 + destruct (external_function_eq e e0); inv H. split; constructor.
 Defined.
@@ -176,7 +166,7 @@ Definition link_vardef {V: Type} {LV: Linker V} (v1 v2: globvar V) :=
       match link v1.(gvar_init) v2.(gvar_init) with
       | None => None
       | Some init =>
-          if eq_compartment v1.(gvar_comp) v2.(gvar_comp)
+          if cp_eq_dec v1.(gvar_comp) v2.(gvar_comp) (* FIXME: use the meet or join!! (figure out which one makes sense) *)
           && eqb v1.(gvar_readonly) v2.(gvar_readonly)
           && eqb v1.(gvar_volatile) v2.(gvar_volatile)
           then Some {| gvar_info := info; gvar_init := init;
@@ -208,7 +198,7 @@ Next Obligation.
   destruct x as [f1 c1 i1 r1 v1], y as [f2 c2 i2 r2 v2]; simpl.
   destruct (link f1 f2) as [f|] eqn:LF; try discriminate.
   destruct (link i1 i2) as [i|] eqn:LI; try discriminate.
-  destruct (eq_compartment c1 c2) eqn:EC; try discriminate.
+  destruct (cp_eq_dec c1 c2) eqn:EC; try discriminate.
   destruct (eqb r1 r2) eqn:ER; try discriminate.
   destruct (eqb v1 v2) eqn:EV; intros EQ; inv EQ.
   apply eqb_prop in ER; apply eqb_prop in EV; subst r2 v2.
@@ -659,7 +649,7 @@ Proof.
   simpl; intros. unfold link_vardef in *. inv H0; inv H1; simpl in *.
   destruct (link i1 i0) as [info'|] eqn:LINFO; try discriminate.
   destruct (link init init0) as [init'|] eqn:LINIT; try discriminate.
-  destruct (eq_compartment c c0 && eqb ro ro0 && eqb vo vo0); inv H.
+  destruct (cp_eq_dec c c0 && eqb ro ro0 && eqb vo vo0); inv H.
   exploit link_match_varinfo; eauto. intros (tinfo & P & Q). rewrite P.
   econstructor; split. eauto. constructor. auto.
 Qed.
@@ -768,16 +758,12 @@ Local Transparent Linker_fundef.
   simpl; intros. destruct f1 as [f1|ef1], f2 as [f2|ef2]; simpl in *; monadInv H0; monadInv H1.
 - discriminate.
 - destruct ef2; inv H.
-  destruct eq_compartment; try easy.
-  subst cp. inv H1.
   exists (Internal x); split.
-    rewrite (CAB1 _ _ EQ). simpl. now rewrite dec_eq_true.
+    reflexivity.
   left; simpl; rewrite EQ; auto.
 - destruct ef1; inv H.
-  destruct eq_compartment; try easy.
-  subst cp. inv H1.
   exists (Internal x). split.
-    rewrite (CAB2 _ _ EQ). simpl. now rewrite dec_eq_true.
+    reflexivity.
   right; simpl; rewrite EQ; auto.
 - destruct (external_function_eq ef1 ef2); inv H. exists (External ef2); split; auto. simpl. rewrite dec_eq_true; auto.
 Qed.
@@ -831,14 +817,10 @@ Proof.
 - intros. subst. destruct f1, f2; simpl in *.
 + discriminate.
 + destruct e; try easy.
-  destruct eq_compartment; try easy.
-  subst cp. inv H2.
-  rewrite CAB, dec_eq_true.
+  inv H2.
   econstructor; eauto.
 + destruct e; try easy.
-  destruct eq_compartment; try easy.
-  subst cp. inv H2.
-  rewrite CAB, dec_eq_true.
+  inv H2.
   econstructor; eauto.
 + destruct (external_function_eq e e0); inv H2. econstructor; eauto.
 - intros; subst. exists v; auto.
@@ -859,14 +841,10 @@ Proof.
 - intros. subst. destruct f1, f2; simpl in *.
 + discriminate.
 + destruct e; try easy.
-  destruct eq_compartment; try easy.
-  subst cp. inv H2.
-  rewrite CAB, dec_eq_true.
+  inv H2.
   econstructor; eauto.
 + destruct e; try easy.
-  destruct eq_compartment; try easy.
-  subst cp. inv H2.
-  rewrite CAB, dec_eq_true.
+  inv H2.
   econstructor; eauto.
 + destruct (external_function_eq e e0); inv H2. econstructor; eauto.
 - intros; subst. exists v; auto.
