@@ -37,3 +37,6 @@ test_backtranslation
 # Ignore generated visualizations of graphs
 *.dot
 *.png
+
+# Ignore backtranslated code
+out.c_light
