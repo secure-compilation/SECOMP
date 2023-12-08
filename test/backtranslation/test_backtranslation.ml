@@ -60,32 +60,25 @@ let export_c_light_program prog main file_name =
 
 let property_under_test asm_prog bundled_trace =
   let source_name = "out.c" in
+  let ccomp_cmd = "../../ccomp -quiet" in
   let src_program = Backtranslation.gen_program bundled_trace asm_prog in
   let main = Camlcoq.P.to_int asm_prog.prog_main in
   let () = export_c_light_program src_program main source_name in
-  let ifile = "./" ^ source_name in
-  let ifile' = Driveraux.tmp_file ".p" in
-  let () = Frontend.init () in
-  let () = Frontend.preprocess ifile ifile' in
-  let csyntax = Frontend.parse_c_file source_name ifile' in
-  match
-    Compiler.apply_partial
-      (Compiler.transf_c_program csyntax)
-      Asmexpand.expand_program
-  with
-  | Errors.OK _ -> true
-  | Errors.Error errors -> print_compiler_errors errors; print_newline (); false
+  let status = Unix.system (ccomp_cmd ^ " " ^ source_name) in
+  match status with
+  | WEXITED code -> code = 0
+  | WSIGNALED _ | WSTOPPED _ -> false
 
 let bundle_trace ctx =
   QCheck.make ~print:print_bundle_trace (Gen.bundle_trace ctx)
 
 let test_backtranslation asm_prog ctx =
-  QCheck.Test.make ~count:1 ~name:"backtranslation" (bundle_trace ctx)
+  QCheck.Test.make ~count:10 ~name:"backtranslation" (bundle_trace ctx)
     (property_under_test asm_prog)
 
 let _ =
   let () = Random.self_init () in
   let rand_state = Random.get_state () in
   let asm_prog, ctx = Gen.asm_program rand_state in
-  let () = PrintAsm.print_program_asm Out_channel.stdout asm_prog in
+  (*let () = PrintAsm.print_program_asm Out_channel.stdout asm_prog in*)
   QCheck_runner.run_tests [ test_backtranslation asm_prog ctx ]
