@@ -49,9 +49,12 @@ let sample_rettype =
           (1, Tvoid);
         ]
 
-let sample_calling_convention =
+let sample_calling_convention allow_vararg =
   let open QCheck.Gen in
-  let* cc_vararg = option ~ratio:0.1 (map Camlcoq.Z.of_uint small_nat) in
+  let* cc_vararg =
+    if allow_vararg
+    then option ~ratio:0.1 (map Camlcoq.Z.of_uint small_nat)
+    else return Option.none in
   let* cc_unproto = map (fun f -> f <= 0.1) (float_range 0.0 1.0) in
   let* cc_structret = map (fun f -> f <= 0.1) (float_range 0.0 1.0) in
   return ({ cc_vararg; cc_unproto; cc_structret } : AST.calling_convention)
@@ -60,7 +63,7 @@ let sample_signature config =
   let open QCheck.Gen in
   let* arg_types = list_size (int_bound config.max_arg_count) sample_typ in
   let* ret_type = sample_rettype in
-  let* cc = sample_calling_convention in
+  let* cc = sample_calling_convention (List.length arg_types > 0) in
   return AST.{ sig_args = arg_types; sig_res = ret_type; sig_cc = cc }
 
 let sample_exports config graph =
