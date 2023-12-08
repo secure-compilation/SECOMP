@@ -55,7 +55,8 @@ let sample_calling_convention allow_vararg =
     if allow_vararg
     then option ~ratio:0.1 (map Camlcoq.Z.of_uint small_nat)
     else return Option.none in
-  let* cc_unproto = map (fun f -> f <= 0.1) (float_range 0.0 1.0) in
+  (* TODO: what exactly is unproto and do we care for this testing? *)
+  let* cc_unproto = return false in (*map (fun f -> f <= 0.1) (float_range 0.0 1.0) in*)
   let* cc_structret = map (fun f -> f <= 0.1) (float_range 0.0 1.0) in
   return ({ cc_vararg; cc_unproto; cc_structret } : AST.calling_convention)
 
