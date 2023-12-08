@@ -9,23 +9,27 @@ let print_event e =
 let print_trace t =
   Printf.sprintf "[\n%s\n  ]" (String.concat "\n" (List.map print_event t))
 
+let print_eventval ev =
+  ignore (Format.flush_str_formatter());
+  Interp.print_eventval Format.str_formatter ev;
+  Format.flush_str_formatter ()
+
 let print_eventval_list el =
   ignore (Format.flush_str_formatter ());
   Interp.print_eventval_list Format.str_formatter el;
-  "  " ^ Format.flush_str_formatter ()
+  Format.flush_str_formatter ()
 
 let print_bundle_event e =
   let open BtInfoAsm in
   let fmt = Printf.sprintf in
   match e with
-  | id, Bundle_call (trace, ident, args, sign, mem_delta) ->
-      fmt "%s:\n  %s\n  %s\n  %s" (print_ident id) (print_trace trace)
-        (print_ident ident) (print_eventval_list args)
-  | id, Bundle_return (trace, ret_val, mem_delta) -> "bundle return"
-  | id, Bundle_builtin (trace, ext_fun, args, mem_delta) -> "bundle builtin"
+  | _, Bundle_call (_, ident, args, _, _) ->
+      fmt "call %s(%s)\n" (print_ident ident) (print_eventval_list args)
+  | _, Bundle_return (_, ret_val, _) ->
+     fmt "ret %s\n" (print_eventval ret_val)
+  | _, Bundle_builtin (_, _, _, _) -> "bundle builtin"
 
-let print_bundle_trace _ = "printing not implemented"
-(* String.concat "\n" (List.map print_bundle_event t) *)
+let print_bundle_trace t = String.concat "\n" (List.map print_bundle_event t)
 
 let print_c_light_program prog =
   let version = PrintClight.Clight1 in

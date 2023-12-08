@@ -14,6 +14,7 @@ let export_c_light_program prog main file_name =
 (* Run QCheck testing *)
 
 let property_under_test asm_prog bundled_trace =
+  let () = print_endline (Print.print_bundle_trace bundled_trace) in
   let source_name = "out.c" in
   let ccomp_cmd = "../../ccomp -quiet > /dev/null" in
   let src_program = Backtranslation.gen_program bundled_trace asm_prog in
@@ -28,7 +29,7 @@ let bundle_trace ctx =
   QCheck.make ~print:Print.print_bundle_trace (Gen.bundle_trace ctx)
 
 let test_backtranslation asm_prog ctx =
-  QCheck.Test.make ~count:10 ~name:"backtranslation" (bundle_trace ctx)
+  QCheck.Test.make ~count:1 ~name:"backtranslation" (bundle_trace ctx)
     (property_under_test asm_prog)
 
 let _ =

@@ -13,6 +13,7 @@
         (1, Many32);
         (1, Many64);
       ]
+*)
 
 let positive = QCheck.Gen.(map (fun i -> Camlcoq.P.of_int (i + 1)) small_nat)
 let coq_Z = QCheck.Gen.(map (fun i -> Camlcoq.Z.of_sint i) small_signed_int)
@@ -32,6 +33,7 @@ let binary_float =
   in
   frequency [ (1, zero); (1, infinity); (1, nan); (1, finite) ]
 
+(*
 let eventval =
   let open QCheck.Gen in
   let open Events in
@@ -242,13 +244,78 @@ let trace rand_state =
    let* mem_delta = mem_delta in
    return (BtInfoAsm.Bundle_builtin (trace, ext_fun, args, mem_delta)) *)
 
-(* let bundle_event =
+let bundle_event =
    QCheck.Gen.frequency
-     [ (1, bundle_call); (1, bundle_return); (1, bundle_builtin) ] *)
+     [ (1, bundle_call); (1, bundle_return); (1, bundle_builtin) ]
 *)
-let bundle_trace _ = QCheck.Gen.return []
-(* let open QCheck.Gen in
-   list_size small_nat (pair ident bundle_event) *)
+
+(* TODO: perhaps differentiate between signed/unsigned and positive/negative values? *)
+let ev_int = QCheck.Gen.map (fun i -> Events.EVint i) coq_Z
+let ev_float = QCheck.Gen.map (fun f -> Events.EVfloat f) binary_float
+let ev_long = QCheck.Gen.map (fun l -> Events.EVlong l) coq_Z
+let ev_single = QCheck.Gen.map (fun f -> Events.EVfloat f) binary_float
+
+let value_of_typ t =
+  let open QCheck.Gen in
+  let open AST in
+  match t with
+  | Tint -> ev_int
+  | Tfloat -> ev_float
+  | Tlong -> ev_long
+  | Tsingle -> ev_single
+  (* TODO: are ev_int and ev_long the correct values for these *)
+  | Tany32 -> ev_int
+  | Tany64 -> ev_long
+
+let args_for_sig sign rand_state =
+  List.map (fun t -> value_of_typ t rand_state) sign.AST.sig_args
+
+let ret_val_for_sig sign =
+  let open AST in
+  (* TODO: implement me properly *)
+  match sign.sig_res with
+  | Tint8signed -> ev_int
+  | Tint8unsigned -> ev_int
+  | Tint16signed -> ev_int
+  | Tint16unsigned -> ev_int
+  (* TODO: what is actually a valid value of type void? *)
+  | Tvoid -> ev_int
+  | Tret t -> value_of_typ t
+
+let bundle_trace ctx rand_state =
+  let open QCheck.Gen in
+  let size = small_nat rand_state in
+  let rec bundle_trace_aux curr_comp = function
+    | 0 -> []
+    | n -> (
+      let pool = ctx
+                 |> Gen_ctx.import_list
+                 |> List.assoc curr_comp in
+      match pool with
+      | [] -> [] (* there is no imported function we could possibly call => end trace *)
+      | _ ->
+         let trgt_comp, trgt_func = oneofl pool rand_state in
+         let sign = (match
+                      (List.find_map
+                         (fun (f, c, s) ->
+                           if f = trgt_func && c = trgt_comp then Option.some s else Option.none)
+                         (Gen_ctx.def_list ctx)) with
+           | Option.None -> failwith "Cannot lookup signature for imported function"
+           | Option.Some s -> s) in
+         let args = args_for_sig sign rand_state in
+         let ret_val = ret_val_for_sig sign rand_state in
+         let subtrace_call = [] in
+         let subtrace_ret = [] in
+         let mdelta_call = [] in
+         let mdelta_ret = [] in
+         let call = BtInfoAsm.Bundle_call (subtrace_call, Camlcoq.P.of_int trgt_func, args, sign, mdelta_call) in
+         let ret = BtInfoAsm.Bundle_return (subtrace_ret, ret_val, mdelta_ret) in
+         let between = bundle_trace_aux trgt_comp (n-1) in
+         List.concat [[call]; between; [ret]]
+    )
+  in
+  let main_comp = 1 in (* TODO: get the compartment of the main function *)
+  List.mapi (fun i be -> (Camlcoq.P.of_int (i+1), be)) (bundle_trace_aux main_comp size)
 
 let build_prog_defs ctx =
   let gvars = [] in
