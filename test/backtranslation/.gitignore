@@ -39,4 +39,6 @@ test_backtranslation
 *.png
 
 # Ignore backtranslated code
-out.c_light
+out.c
+out.c.raw
+a.out

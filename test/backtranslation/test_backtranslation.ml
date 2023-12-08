@@ -49,6 +49,7 @@ let export_c_light_program prog main file_name =
     ignore (Format.flush_str_formatter ());
     PrintClight.print_program version Format.str_formatter prog;
     Format.flush_str_formatter () in
+  Out_channel.with_open_text (file_name ^ ".raw") (fun c -> output_string c code);
   let regex_main = Str.regexp ("\\$" ^ string_of_int main ^ "(") in
   let code_with_main = Str.global_replace regex_main "main(" code in
   let regex = Str.regexp "\\$\\([0-9]+\\)" in
@@ -58,7 +59,7 @@ let export_c_light_program prog main file_name =
 (* Run QCheck testing *)
 
 let property_under_test asm_prog bundled_trace =
-  let source_name = "out.c_light" in
+  let source_name = "out.c" in
   let src_program = Backtranslation.gen_program bundled_trace asm_prog in
   let main = Camlcoq.P.to_int asm_prog.prog_main in
   let () = export_c_light_program src_program main source_name in
