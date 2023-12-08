@@ -32,7 +32,7 @@ type mode = First | Random | All
 
 let mode = ref First
 
-let emulate_backend = ref true
+let emulate_backend = ref false
 
 let emulate_fuel = ref 10000
 
