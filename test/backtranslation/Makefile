@@ -38,7 +38,7 @@ depend:
 include .depend
 
 clean:
-	-rm -f *.cm[ixo]
-	-rm -f *.o
-	-rm test_backtranslation
-	-rm test_backtranslation.byte
+	-@rm -f *.cm[ixo] 2>/dev/null || true
+	-@rm -f *.o 2>/dev/null || true
+	-@rm test_backtranslation 2>/dev/null || true
+	-@rm test_backtranslation.byte 2>/dev/null || true
