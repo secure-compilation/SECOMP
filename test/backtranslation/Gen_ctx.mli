@@ -6,6 +6,9 @@ type gen_config = {
   num_compartments : int;
   num_exported_funcs : int;
   num_imported_funcs : int;
+  num_external_funcs : int;
+  num_builtins : int;
+  num_runtime_funcs : int;
   max_arg_count : int;
   debug : bool;
 }
@@ -20,3 +23,7 @@ val compartment_list : t -> comp list
 val export_list : t -> (comp * func list) list
 val import_list : t -> (comp * (comp * func) list) list
 val def_list : t -> (func * comp * AST.signature) list
+
+val external_funcs : t -> AST.external_function list
+val builtins : t -> AST.external_function list
+val runtime_funcs : t -> AST.external_function list

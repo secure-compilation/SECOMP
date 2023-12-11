@@ -1,19 +1,18 @@
-(*let memory_chunk =
+let memory_chunk =
   QCheck.Gen.frequencyl
     AST.
-      [
-        (1, Mint8signed);
-        (1, Mint8unsigned);
-        (1, Mint16signed);
-        (1, Mint16unsigned);
-        (1, Mint32);
-        (1, Mint64);
-        (1, Mfloat32);
-        (1, Mfloat64);
-        (1, Many32);
-        (1, Many64);
-      ]
-*)
+  [
+    (1, Mint8signed);
+    (1, Mint8unsigned);
+    (1, Mint16signed);
+    (1, Mint16unsigned);
+    (1, Mint32);
+    (1, Mint64);
+    (1, Mfloat32);
+    (1, Mfloat64);
+    (1, Many32);
+    (1, Many64);
+  ]
 
 let positive = QCheck.Gen.(map (fun i -> Camlcoq.P.of_int (i + 1)) small_nat)
 let coq_Z = QCheck.Gen.(map (fun i -> Camlcoq.Z.of_sint i) small_signed_int)
@@ -128,126 +127,61 @@ let trace rand_state =
   in
   gen_trace_aux size
 
-(* let ef_external =
-   let open QCheck.Gen in
-   let* compartment = compartment in
-   let* name = char_list in
-   let* signature = signature in
-   return (AST.EF_external (compartment, name, signature)) *)
-
-(* let ef_builtin =
-   let open QCheck.Gen in
-   let* compartment = compartment in
-   let* name = char_list in
-   let* signature = signature in
-   return (AST.EF_builtin (compartment, name, signature)) *)
-
-(* let ef_runtime =
-   let open QCheck.Gen in
-   let* compartment = compartment in
-   let* name = char_list in
-   let* signature = signature in
-   return (AST.EF_runtime (compartment, name, signature)) *)
-
-(* let ef_vload =
-   let open QCheck.Gen in
-   let* compartment = compartment in
-   let* memory_chunk = memory_chunk in
-   return (AST.EF_vload (compartment, memory_chunk)) *)
-
-(* let ef_vstore =
-   let open QCheck.Gen in
-   let* compartment = compartment in
-   let* memory_chunk = memory_chunk in
-   return (AST.EF_vload (compartment, memory_chunk)) *)
-
-(* let ef_malloc = QCheck.Gen.map (fun c -> AST.EF_malloc c) compartment *)
-(* let ef_free = QCheck.Gen.map (fun c -> AST.EF_free c) compartment *)
-
-(* let ef_memcpy =
-   let open QCheck.Gen in
-   let* compartment = compartment in
-   let* z1 = coq_Z in
-   let* z2 = coq_Z in
-   return (AST.EF_memcpy (compartment, z1, z2)) *)
-
-(* let ef_annot =
-   let open QCheck.Gen in
-   let* compartment = compartment in
-   let* p = positive in
-   let* text = char_list in
-   let* type_list = list_size small_nat typ in
-   return (AST.EF_annot (compartment, p, text, type_list)) *)
-
-(* let ef_annot_val =
-   let open QCheck.Gen in
-   let* compartment = compartment in
-   let* p = positive in
-   let* text = char_list in
-   let* typ = typ in
-   return (AST.EF_annot_val (compartment, p, text, typ)) *)
-
-(* let ef_inline_asm =
-   let open QCheck.Gen in
-   let* compartment = compartment in
-   let* text = char_list in
-   let* signature = signature in
-   let* code = list_size small_nat char_list in
-   return (AST.EF_inline_asm (compartment, text, signature, code)) *)
-
-(* let ef_debug =
-   let open QCheck.Gen in
-   let* compartment = compartment in
-   let* p = positive in
-   let* ident = ident in
-   let* type_list = list_size small_nat typ in
-   return (AST.EF_debug (compartment, p, ident, type_list)) *)
-
-(* let external_function =
-   QCheck.Gen.frequency
-     [
-       (1, ef_external);
-       (1, ef_builtin);
-       (1, ef_runtime);
-       (1, ef_vload);
-       (1, ef_vstore);
-       (1, ef_malloc);
-       (1, ef_free);
-       (1, ef_memcpy);
-       (1, ef_annot);
-       (1, ef_annot_val);
-       (1, ef_inline_asm);
-       (1, ef_debug);
-     ] *)
-
-(* let bundle_call =
-   let open QCheck.Gen in
-   let* trace = trace in
-   let* ident = ident in
-   let* args = list_size (int_bound 5) eventval in
-   let* sign = signature in
-   let* mem_delta = mem_delta in
-   return (BtInfoAsm.Bundle_call (trace, ident, args, sign, mem_delta)) *)
-
-(* let bundle_return =
-   let open QCheck.Gen in
-   let* trace = trace in
-   let* ret_val = eventval in
-   let* mem_delta = mem_delta in
-   return (BtInfoAsm.Bundle_return (trace, ret_val, mem_delta)) *)
-
-(* let bundle_builtin =
-   let open QCheck.Gen in
-   let* trace = trace in
-   let* ext_fun = external_function in
-   let* args = list_size (int_bound 5) eventval in
-   let* mem_delta = mem_delta in
-   return (BtInfoAsm.Bundle_builtin (trace, ext_fun, args, mem_delta)) *)
-
-let bundle_event =
-   QCheck.Gen.frequency
-     [ (1, bundle_call); (1, bundle_return); (1, bundle_builtin) ]
 *)
+
+let ef_external ctx = QCheck.Gen.oneofl (Gen_ctx.external_funcs ctx)
+
+let ef_builtin ctx = QCheck.Gen.oneofl (Gen_ctx.builtins ctx)
+
+let ef_runtime ctx = QCheck.Gen.oneofl (Gen_ctx.runtime_funcs ctx)
+
+let ef_vload _ =
+  let open QCheck.Gen in
+  (* TODO: are there any requirement we must meet? *)
+  let* memory_chunk = memory_chunk in
+  return (AST.EF_vload (memory_chunk))
+
+let ef_vstore _ =
+  let open QCheck.Gen in
+  (* TODO: are there any requirements we must meet? *)
+  let* memory_chunk = memory_chunk in
+  return (AST.EF_vstore (memory_chunk))
+
+let ef_malloc _ = QCheck.Gen.return AST.EF_malloc
+let ef_free _ = QCheck.Gen.return AST.EF_free
+
+let ef_memcpy _ =
+  let open QCheck.Gen in
+  (* TODO: are there any requirements we must meet? *)
+  let* z1 = coq_Z in
+  let* z2 = coq_Z in
+  return (AST.EF_memcpy (z1, z2))
+
+let ef_annot _ = failwith "ef_annot is not implemented"
+
+let ef_annot_val _ = failwith "ef_annot_val is not implemented"
+
+let ef_inline_asm _ = failwith "ef_inline_asm is not implemented"
+
+let ef_debug _ = failwith "ef_debug is not implemented"
+
+let external_function ctx =
+  QCheck.Gen.frequency
+    [
+      (1, ef_external ctx);
+      (1, ef_builtin ctx);
+      (1, ef_runtime ctx);
+      (1, ef_vload ctx);
+      (1, ef_vstore ctx);
+      (1, ef_malloc ctx);
+      (1, ef_free ctx);
+      (1, ef_memcpy ctx);
+      (* TODO: enable these after the corresponding functions are implemented *)
+      (* (0, ef_annot ctx);
+      (0, ef_annot_val ctx);
+      (0, ef_inline_asm ctx);
+      (0, ef_debug ctx);*)
+    ]
 
 (* TODO: perhaps differentiate between signed/unsigned and positive/negative values? *)
 let ev_int = QCheck.Gen.map (fun i -> Events.EVint i) coq_Z
@@ -282,36 +216,58 @@ let ret_val_for_sig sign =
   | Tvoid -> ev_int
   | Tret t -> value_of_typ t
 
+let bundle_call_ret ctx curr_comp rand_state =
+  let open QCheck.Gen in
+  let pool = ctx
+             |> Gen_ctx.import_list
+             |> List.assoc curr_comp in
+  match pool with
+  | [] -> Option.none (* there is no imported function we could possibly call *)
+  | _ ->
+     let trgt_comp, trgt_func = oneofl pool rand_state in
+     let sign = (match
+                   (List.find_map
+                      (fun (f, c, s) ->
+                        if f = trgt_func && c = trgt_comp then Option.some s else Option.none)
+                      (Gen_ctx.def_list ctx)) with
+                 | Option.None -> failwith "Cannot lookup signature for imported function"
+                 | Option.Some s -> s) in
+     let args = args_for_sig sign rand_state in
+     let ret_val = ret_val_for_sig sign rand_state in
+     let subtrace_call = [] in
+     let subtrace_ret = [] in
+     let mdelta_call = [] in
+     let mdelta_ret = [] in
+     let call = BtInfoAsm.Bundle_call (subtrace_call, Camlcoq.P.of_int trgt_func, args, sign, mdelta_call) in
+     let ret = BtInfoAsm.Bundle_return (subtrace_ret, ret_val, mdelta_ret) in
+     Option.some (call, ret, trgt_comp)
+
+let bundle_builtin ctx rand_state =
+  let open QCheck.Gen in
+  let subtrace = [] in
+  let func = external_function ctx rand_state in
+  let sign = AST.ef_sig func in
+  let args = args_for_sig sign rand_state in
+  let mdelta = [] in
+  BtInfoAsm.Bundle_builtin (subtrace, func, args, mdelta)
+
 let bundle_trace ctx rand_state =
   let open QCheck.Gen in
   let size = small_nat rand_state in
   let rec bundle_trace_aux curr_comp = function
     | 0 -> []
     | n -> (
-      let pool = ctx
-                 |> Gen_ctx.import_list
-                 |> List.assoc curr_comp in
-      match pool with
-      | [] -> [] (* there is no imported function we could possibly call => end trace *)
+      let f = float_range 0.0 1.0 rand_state in
+      match f with
+      | _ when f < 0.8 -> (
+        match bundle_call_ret ctx curr_comp rand_state with
+        | Option.None -> []
+        | Option.Some (call, ret, trgt_comp) ->
+           let between = bundle_trace_aux trgt_comp (n-1) in
+           List.concat [[call]; between; [ret]])
       | _ ->
-         let trgt_comp, trgt_func = oneofl pool rand_state in
-         let sign = (match
-                      (List.find_map
-                         (fun (f, c, s) ->
-                           if f = trgt_func && c = trgt_comp then Option.some s else Option.none)
-                         (Gen_ctx.def_list ctx)) with
-           | Option.None -> failwith "Cannot lookup signature for imported function"
-           | Option.Some s -> s) in
-         let args = args_for_sig sign rand_state in
-         let ret_val = ret_val_for_sig sign rand_state in
-         let subtrace_call = [] in
-         let subtrace_ret = [] in
-         let mdelta_call = [] in
-         let mdelta_ret = [] in
-         let call = BtInfoAsm.Bundle_call (subtrace_call, Camlcoq.P.of_int trgt_func, args, sign, mdelta_call) in
-         let ret = BtInfoAsm.Bundle_return (subtrace_ret, ret_val, mdelta_ret) in
-         let between = bundle_trace_aux trgt_comp (n-1) in
-         List.concat [[call]; between; [ret]]
+         let b = bundle_builtin ctx rand_state in
+         b :: bundle_trace_aux curr_comp (n-1)
     )
   in
   let main_comp = 1 in (* TODO: get the compartment of the main function *)
@@ -373,6 +329,9 @@ let asm_program =
         num_compartments = 3;
         num_exported_funcs = 5;
         num_imported_funcs = 3;
+        num_external_funcs = 4;
+        num_builtins = 4;
+        num_runtime_funcs = 4;
         max_arg_count = 2;
         debug = true;
       }

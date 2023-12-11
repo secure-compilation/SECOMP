@@ -3,18 +3,25 @@ module Map = Map.Make (Int)
 type exports = int list Map.t
 type imports = (int * int) list Map.t
 type func_sigs = AST.signature Map.t
+type extern = AST.external_function
 
 type t = {
   exports : exports;
   imports : imports;
   func_sigs : func_sigs;
   main : int;
+  external_funcs : extern list;
+  builtins: extern list;
+  runtime_funcs : extern list;
 }
 
 type gen_config = {
   num_compartments : int;
   num_exported_funcs : int;
   num_imported_funcs : int;
+  num_external_funcs : int;
+  num_builtins : int;
+  num_runtime_funcs: int;
   max_arg_count : int;
   debug : bool;
 }
@@ -106,6 +113,30 @@ let sample_func_sigs config exports =
   in
   return (main, Map.add main main_sig sig_map)
 
+let sample_external_funcs config =
+  let open QCheck.Gen in
+  let gen =
+    let* name = small_list (char_range 'a' 'z') in
+    let* sign = sample_signature config in
+    return (AST.EF_external (name, sign)) in
+  list_repeat config.num_external_funcs gen
+
+let sample_builtins config =
+  let open QCheck.Gen in
+  let gen =
+    let* name = small_list (char_range 'a' 'z') in
+    let* sign = sample_signature config in
+    return (AST.EF_builtin (name, sign)) in
+  list_repeat config.num_builtins gen
+
+let sample_runtime_funcs config =
+  let open QCheck.Gen in
+  let gen =
+    let* name = small_list (char_range 'a' 'z') in
+    let* sign = sample_signature config in
+    return (AST.EF_runtime (name, sign)) in
+  list_repeat config.num_runtime_funcs gen
+
 let dump_exports exports =
   print_endline "Exports:";
   Map.iter
@@ -128,13 +159,16 @@ let random config =
   let* graph = Graph.random config.num_compartments in
   let* exports = sample_exports config graph in
   let* imports = sample_imports graph exports in
+  let* external_funcs = sample_external_funcs config in
+  let* builtins = sample_builtins config in
+  let* runtime_funcs = sample_runtime_funcs config in
   let* main, func_sigs = sample_func_sigs config exports in
   if config.debug then (
     Graph.dump graph;
     dump_exports exports;
     dump_imports imports)
   else ();
-  return { exports; imports; func_sigs; main }
+  return { exports; imports; func_sigs; main; external_funcs; builtins; runtime_funcs }
 
 let main ctx = ctx.main
 let function_list ctx = List.concat_map snd (Map.bindings ctx.exports)
@@ -147,3 +181,7 @@ let def_list ctx =
   List.concat_map
     (fun (c, fs) -> List.map (fun f -> (f, c, sig_of f)) fs)
     (export_list ctx)
+
+let external_funcs ctx = ctx.external_funcs
+let builtins ctx = ctx.builtins
+let runtime_funcs ctx = ctx.runtime_funcs
