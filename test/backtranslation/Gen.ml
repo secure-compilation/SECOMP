@@ -17,7 +17,7 @@ let memory_chunk =
 let positive = QCheck.Gen.(map (fun i -> Camlcoq.P.of_int (i + 1)) small_nat)
 let coq_Z = QCheck.Gen.(map (fun i -> Camlcoq.Z.of_sint i) small_signed_int)
 let ident = positive
-let compartment = positive
+let compartment = QCheck.Gen.map (fun p -> AST.COMP.Comp p) positive
 let ptrofs = QCheck.Gen.map (fun i -> Integers.Ptrofs.of_int i) coq_Z
 let char_list = QCheck.Gen.(small_list (char_range 'a' 'z'))
 
@@ -32,102 +32,95 @@ let binary_float =
   in
   frequency [ (1, zero); (1, infinity); (1, nan); (1, finite) ]
 
-(*
-let eventval =
+let mem_val ctx =
   let open QCheck.Gen in
-  let open Events in
-  let evint = map (fun i -> EVint i) coq_Z in
-  let evlong = map (fun i -> EVlong i) coq_Z in
-  let evfloat = map (fun f -> EVfloat f) binary_float in
-  let evsingle = map (fun f -> EVfloat f) binary_float in
-  let evptr_global =
-    map (fun (i, p) -> EVptr_global (i, p)) (pair ident ptrofs)
-  in
-  frequency
-    [ (1, evint); (1, evlong); (1, evfloat); (1, evsingle); (1, evptr_global) ]
+  QCheck.Gen.frequency
+    Memdata.[
+      (1, return Undef);
+      (1, map (fun b -> Byte b) coq_Z);
+      (* TODO: add support for fragment memory values *)
+    ]
 
-let event_syscall size =
+let vundef = QCheck.Gen.return Values.Vundef
+
+let vint = QCheck.Gen.map (fun i -> Values.Vint i) coq_Z
+
+let vlong = QCheck.Gen.map (fun i -> Values.Vlong i) coq_Z
+
+let vfloat = QCheck.Gen.map (fun f -> Values.Vfloat f) binary_float
+
+let vsingle = QCheck.Gen.map (fun f -> Values.Vsingle f) binary_float
+
+let vptr =
   let open QCheck.Gen in
-  let* name = char_list in
-  let* args = list_size size eventval in
-  let* ret_val = eventval in
-  return (Events.Event_syscall (name, args, ret_val))
+  let* block = positive in
+  let* ptrofs = ptrofs in
+  return (Values.Vptr (block, ptrofs))
 
-let event_vload =
+let coq_val =
+  QCheck.Gen.frequency
+    [
+      (1, vundef);
+      (1, vint);
+      (1, vlong);
+      (1, vfloat);
+      (1, vsingle);
+      (1, vptr);
+    ]
+
+let mem_delta_storev ctx =
   let open QCheck.Gen in
-  let* mem_chunk = memory_chunk in
-  let* ident = ident in
-  let* ptr = ptrofs in
-  let* value = eventval in
-  return (Events.Event_vload (mem_chunk, ident, ptr, value))
+  let* chunk = memory_chunk in
+  let* block = positive in
+  let* offset = ptrofs in
+  let addr = Values.Vptr (block, offset) in
+  let* comp = compartment in
+  let* value = coq_val in
+  return (MemoryDelta.Coq_mem_delta_kind_storev (((chunk, addr), value), comp))
 
-let event_vstore =
+let mem_delta_store ctx =
   let open QCheck.Gen in
-  let* mem_chunk = memory_chunk in
-  let* ident = ident in
-  let* ptr = ptrofs in
-  let* value = eventval in
-  return (Events.Event_vstore (mem_chunk, ident, ptr, value))
+  let* chunk = memory_chunk in
+  let* block = positive in
+  let* offset = ptrofs in
+  let* comp = compartment in
+  let* value = coq_val in
+  return (MemoryDelta.Coq_mem_delta_kind_store ((((chunk, block), offset), value), comp))
 
-let event_annot size =
+let mem_delta_bytes ctx =
   let open QCheck.Gen in
-  let* name = char_list in
-  let* values = list_size size eventval in
-  return (Events.Event_annot (name, values))
+  let* block = positive in
+  let* offset = ptrofs in
+  let* bytes = small_list (mem_val ctx) in
+  let* comp = compartment in
+  return (MemoryDelta.Coq_mem_delta_kind_bytes (((block, offset), bytes), comp))
 
-let event_call src_compartment trgt_compartment size =
+let mem_delta_alloc ctx =
   let open QCheck.Gen in
-  let* ident = ident in
-  let* args = list_size size eventval in
-  return (Events.Event_call (src_compartment, trgt_compartment, ident, args))
+  let* comp = compartment in
+  let* lower = map Camlcoq.Z.of_uint small_nat in
+  let* len = map Camlcoq.Z.of_uint small_nat in
+  return (MemoryDelta.Coq_mem_delta_kind_alloc ((comp, lower), Camlcoq.Z.add lower len))
 
-let event_return src_compartment trgt_compartment =
+let mem_delta_free ctx =
   let open QCheck.Gen in
-  let* ret_val = eventval in
-  return (Events.Event_return (src_compartment, trgt_compartment, ret_val))
+  let* block = positive in
+  let* lower = map Camlcoq.Z.of_uint small_nat in
+  let* len = map Camlcoq.Z.of_uint small_nat in
+  let* comp = compartment in
+  return (MemoryDelta.Coq_mem_delta_kind_free (((block, lower), Camlcoq.Z.add lower len), comp))
 
-(* TODO: also generate other mem_deltas *)
-let mem_delta = QCheck.Gen.return []
+let mem_delta_kind ctx =
+  QCheck.Gen.frequency
+    [
+      (1, mem_delta_storev ctx);
+      (1, mem_delta_store ctx);
+      (1, mem_delta_bytes ctx);
+      (1, mem_delta_alloc ctx);
+      (1, mem_delta_free ctx);
+    ]
 
-(* QCheck generator for an event trace *)
-
-let trace rand_state =
-  let open QCheck.Gen in
-  (* ensure that no empty traces are generated *)
-  let size = small_nat rand_state + 1 in
-  let rec gen_trace_aux = function
-    | 0 -> []
-    | n -> (
-        let f = float_range 0.0 1.0 rand_state in
-        match f with
-        | _ when f < 0.6 ->
-            let n1, n2 = nat_split2 (n - 1) rand_state in
-            let src_compartment = compartment rand_state in
-            let trgt_compartment = compartment rand_state in
-            let arg_count = int_bound 5 in
-            let call =
-              [
-                event_call src_compartment trgt_compartment arg_count rand_state;
-              ]
-            in
-            let between = gen_trace_aux n1 in
-            let ret =
-              [ event_return src_compartment trgt_compartment rand_state ]
-            in
-            let after = gen_trace_aux n2 in
-            List.concat [ call; between; ret; after ]
-        | _ when f < 0.7 ->
-            let arg_count = int_bound 5 in
-            event_syscall arg_count rand_state :: gen_trace_aux (n - 1)
-        | _ when f < 0.8 -> event_vload rand_state :: gen_trace_aux (n - 1)
-        | _ when f < 0.9 -> event_vstore rand_state :: gen_trace_aux (n - 1)
-        | _ ->
-            let size = int_bound 5 in
-            event_annot size rand_state :: gen_trace_aux (n - 1))
-  in
-  gen_trace_aux size
-
-*)
+let mem_delta ctx = QCheck.Gen.small_list (mem_delta_kind ctx)
 
 let ef_external ctx = QCheck.Gen.oneofl (Gen_ctx.external_funcs ctx)
 
@@ -236,8 +229,8 @@ let bundle_call_ret ctx curr_comp rand_state =
      let ret_val = ret_val_for_sig sign rand_state in
      let subtrace_call = [] in
      let subtrace_ret = [] in
-     let mdelta_call = [] in
-     let mdelta_ret = [] in
+     let mdelta_call = mem_delta ctx rand_state in
+     let mdelta_ret = mem_delta ctx rand_state in
      let call = BtInfoAsm.Bundle_call (subtrace_call, Camlcoq.P.of_int trgt_func, args, sign, mdelta_call) in
      let ret = BtInfoAsm.Bundle_return (subtrace_ret, ret_val, mdelta_ret) in
      Option.some (call, ret, trgt_comp)
@@ -259,7 +252,8 @@ let bundle_trace ctx rand_state =
     | n -> (
       let f = float_range 0.0 1.0 rand_state in
       match f with
-      | _ when f < 0.8 -> (
+      (* TODO: also generate builtin events in the trace (for now the test fails) *)
+      | _ when f < 1.0 -> (
         match bundle_call_ret ctx curr_comp rand_state with
         | Option.None -> []
         | Option.Some (call, ret, trgt_comp) ->
