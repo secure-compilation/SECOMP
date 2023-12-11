@@ -9,26 +9,35 @@ let rename_main main code =
   let regex_main = Str.regexp ("\\$" ^ string_of_int main ^ "(") in
   Str.global_replace regex_main "main(" code
 
-let rename_funcs code =
+let rename_idents code =
   let regex = Str.regexp "\\$\\([0-9]+\\)" in
   Str.global_replace regex "ident_\\1" code
 
 let prepend_header code =
   "#include <math.h>\n" ^ code
 
-let export_c_light_program prog main file_name =
+let export_c_light_program prog file_name =
   let version = PrintClight.Clight1 in
+  let vars_before_funcs (_, def1) (_, def2) =
+    let open AST in
+    match (def1, def2) with
+    | (Gfun _, Gvar _) -> 1
+    | (Gvar _, Gfun _) -> -1
+    | _ -> 0
+  in
+  let prog = Ctypes.{ prog with prog_defs = List.sort vars_before_funcs prog.prog_defs } in
   let raw_code =
     ignore (Format.flush_str_formatter ());
     PrintClight.print_program version Format.str_formatter prog;
     Format.flush_str_formatter () in
-  Out_channel.with_open_text (file_name ^ ".raw") (fun c -> output_string c raw_code);
+  let main = Camlcoq.P.to_int prog.prog_main in
   let code =
     raw_code
     |> rename_main main
-    |> rename_funcs
+    |> rename_idents
     |> rename_special_floating_point_values
     |> prepend_header in
+  Out_channel.with_open_text (file_name ^ ".raw") (fun c -> output_string c raw_code);
   Out_channel.with_open_text file_name (fun c -> output_string c code)
 
 (* Run QCheck testing *)
@@ -38,8 +47,7 @@ let property_under_test asm_prog bundled_trace =
   let source_name = "out.c" in
   let ccomp_cmd = "../../ccomp -quiet > /dev/null" in
   let src_program = Backtranslation.gen_program bundled_trace asm_prog in
-  let main = Camlcoq.P.to_int asm_prog.prog_main in
-  let () = export_c_light_program src_program main source_name in
+  let () = export_c_light_program src_program source_name in
   let status = Unix.system (ccomp_cmd ^ " " ^ source_name) in
   match status with
   | WEXITED code -> code = 0
