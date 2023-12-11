@@ -43,9 +43,9 @@ let export_c_light_program prog file_name =
 (* Run QCheck testing *)
 
 let property_under_test asm_prog bundled_trace =
-  let () = print_endline (Print.print_bundle_trace bundled_trace) in
+  (* let () = print_endline (Print.print_bundle_trace bundled_trace) in *)
   let source_name = "out.c" in
-  let ccomp_cmd = "../../ccomp -quiet > /dev/null" in
+  let ccomp_cmd = "../../ccomp -quiet > /dev/null 2> /dev/null" in
   let src_program = Backtranslation.gen_program bundled_trace asm_prog in
   let () = export_c_light_program src_program source_name in
   let status = Unix.system (ccomp_cmd ^ " " ^ source_name) in
@@ -57,7 +57,7 @@ let bundle_trace ctx =
   QCheck.make ~print:Print.print_bundle_trace (Gen.bundle_trace ctx)
 
 let test_backtranslation asm_prog ctx =
-  QCheck.Test.make ~count:1 ~name:"backtranslation" (bundle_trace ctx)
+  QCheck.Test.make ~count:50 ~name:"backtranslation" (bundle_trace ctx)
     (property_under_test asm_prog)
 
 let _ =
@@ -65,4 +65,4 @@ let _ =
   let rand_state = Random.get_state () in
   let asm_prog, ctx = Gen.asm_program rand_state in
   (*let () = PrintAsm.print_program_asm Out_channel.stdout asm_prog in*)
-  QCheck_runner.run_tests [ test_backtranslation asm_prog ctx ]
+  QCheck_runner.run_tests ~verbose:true [ test_backtranslation asm_prog ctx ]
