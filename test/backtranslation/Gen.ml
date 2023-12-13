@@ -115,9 +115,9 @@ let mem_delta_kind ctx =
     [
       (1, mem_delta_storev ctx);
       (1, mem_delta_store ctx);
-      (1, mem_delta_bytes ctx);
+      (*(1, mem_delta_bytes ctx);
       (1, mem_delta_alloc ctx);
-      (1, mem_delta_free ctx);
+      (1, mem_delta_free ctx);*)
     ]
 
 let mem_delta ctx = QCheck.Gen.small_list (mem_delta_kind ctx)
@@ -211,12 +211,14 @@ let ret_val_for_sig sign =
 
 let bundle_call_ret ctx curr_comp rand_state =
   let open QCheck.Gen in
+  Printf.printf "bundle_call_ret was called\n";
   let pool = ctx
              |> Gen_ctx.import_list
              |> List.assoc curr_comp in
   match pool with
   | [] -> Option.none (* there is no imported function we could possibly call *)
   | _ ->
+     Printf.printf "sampling from pool\n";
      let trgt_comp, trgt_func = oneofl pool rand_state in
      let sign = (match
                    (List.find_map
@@ -230,6 +232,7 @@ let bundle_call_ret ctx curr_comp rand_state =
      let subtrace_call = [] in
      let subtrace_ret = [] in
      let mdelta_call = mem_delta ctx rand_state in
+     Printf.printf "generated mdelta_call of length %d\n" (List.length mdelta_call);
      let mdelta_ret = mem_delta ctx rand_state in
      let call = BtInfoAsm.Bundle_call (subtrace_call, Camlcoq.P.of_int trgt_func, args, sign, mdelta_call) in
      let ret = BtInfoAsm.Bundle_return (subtrace_ret, ret_val, mdelta_ret) in
@@ -315,21 +318,8 @@ let build_prog_pol ctx =
   in
   policy
 
-let asm_program =
+let asm_program config =
   let open QCheck.Gen in
-  let config =
-    Gen_ctx.
-      {
-        num_compartments = 3;
-        num_exported_funcs = 5;
-        num_imported_funcs = 3;
-        num_external_funcs = 4;
-        num_builtins = 4;
-        num_runtime_funcs = 4;
-        max_arg_count = 2;
-        debug = true;
-      }
-  in
   let* ctx = Gen_ctx.random config in
   let prog_defs = build_prog_defs ctx in
   let prog_public = build_prog_public ctx in
