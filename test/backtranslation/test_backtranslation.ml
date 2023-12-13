@@ -1,6 +1,6 @@
 (* QCheck testing *)
 let property_under_test asm_prog bundled_trace =
-  let () = print_endline (Print.print_bundle_trace bundled_trace) in
+  let () = print_endline (Show.show_bundle_trace bundled_trace) in
   let source_name = "out.c" in
   let ccomp_cmd = "../../ccomp -quiet > /dev/null 2> /dev/null" in
   let ccomp_cmd = "../../ccomp" in
@@ -12,7 +12,7 @@ let property_under_test asm_prog bundled_trace =
   | WSIGNALED _ | WSTOPPED _ -> false
 
 let bundle_trace ctx =
-  QCheck.make ~print:Print.print_bundle_trace (Gen.bundle_trace ctx)
+  QCheck.make ~print:Show.show_bundle_trace (Gen.bundle_trace ctx)
 
 let test_backtranslation asm_prog ctx =
   QCheck.Test.make ~count:1 ~name:"backtranslation" (bundle_trace ctx)

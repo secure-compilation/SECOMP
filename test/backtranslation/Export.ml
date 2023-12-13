@@ -17,7 +17,6 @@ let prepend_header code =
   "#include <math.h>\n" ^ code
 
 let c_light_prog prog file_name =
-  let version = PrintClight.Clight1 in
   let vars_before_funcs (_, def1) (_, def2) =
     let open AST in
     match (def1, def2) with
@@ -26,10 +25,7 @@ let c_light_prog prog file_name =
     | _ -> 0
   in
   let prog = Ctypes.{ prog with prog_defs = List.sort vars_before_funcs prog.prog_defs } in
-  let raw_code =
-    ignore (Format.flush_str_formatter ());
-    PrintClight.print_program version Format.str_formatter prog;
-    Format.flush_str_formatter () in
+  let raw_code = Show.show_c_light_program prog in
   let main = Camlcoq.P.to_int prog.prog_main in
   let code =
     raw_code

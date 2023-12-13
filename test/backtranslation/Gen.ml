@@ -211,14 +211,12 @@ let ret_val_for_sig sign =
 
 let bundle_call_ret ctx curr_comp rand_state =
   let open QCheck.Gen in
-  Printf.printf "bundle_call_ret was called\n";
   let pool = ctx
              |> Gen_ctx.import_list
              |> List.assoc curr_comp in
   match pool with
   | [] -> Option.none (* there is no imported function we could possibly call *)
   | _ ->
-     Printf.printf "sampling from pool\n";
      let trgt_comp, trgt_func = oneofl pool rand_state in
      let sign = (match
                    (List.find_map
@@ -232,7 +230,6 @@ let bundle_call_ret ctx curr_comp rand_state =
      let subtrace_call = [] in
      let subtrace_ret = [] in
      let mdelta_call = mem_delta ctx rand_state in
-     Printf.printf "generated mdelta_call of length %d\n" (List.length mdelta_call);
      let mdelta_ret = mem_delta ctx rand_state in
      let call = BtInfoAsm.Bundle_call (subtrace_call, Camlcoq.P.of_int trgt_func, args, sign, mdelta_call) in
      let ret = BtInfoAsm.Bundle_return (subtrace_ret, ret_val, mdelta_ret) in
@@ -256,7 +253,7 @@ let bundle_trace ctx rand_state =
       let f = float_range 0.0 1.0 rand_state in
       match f with
       (* TODO: also generate builtin events in the trace (for now the test fails) *)
-      | _ when f < 1.0 -> (
+      | _ when f < 0.6 -> (
         match bundle_call_ret ctx curr_comp rand_state with
         | Option.None -> []
         | Option.Some (call, ret, trgt_comp) ->
