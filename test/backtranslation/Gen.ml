@@ -303,7 +303,8 @@ let build_prog_defs ctx =
   gvars @ gfuns
 
 let build_prog_public ctx =
-  List.map Camlcoq.P.of_int (Gen_ctx.function_list ctx)
+  List.map Camlcoq.P.of_int (Gen_ctx.function_list ctx) @
+  List.map (fun (_, v, _, _, _) -> Camlcoq.P.of_int v) (Gen_ctx.var_list ctx)
 
 let build_prog_main ctx = Camlcoq.P.of_int (Gen_ctx.main ctx)
 
