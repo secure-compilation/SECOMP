@@ -16,6 +16,13 @@ let rename_idents code =
 let prepend_header code =
   "#include <math.h>\n" ^ code
 
+let fix_incomplete_types code =
+  let r_internal = Str.regexp "^void \\(ident_[0-9]+ = {\\)" in
+  let r_external = Str.regexp "^extern void" in
+  code
+  |> Str.global_replace r_internal "void* \\1"
+  |> Str.global_replace r_external "extern void*"
+
 let c_light_prog prog file_name =
   let vars_before_funcs (_, def1) (_, def2) =
     let open AST in
@@ -32,6 +39,7 @@ let c_light_prog prog file_name =
     |> rename_main main
     |> rename_idents
     |> rename_special_floating_point_values
-    |> prepend_header in
+    |> prepend_header
+    |> fix_incomplete_types in
   Out_channel.with_open_text (file_name ^ ".raw") (fun c -> output_string c raw_code);
   Out_channel.with_open_text file_name (fun c -> output_string c code)
