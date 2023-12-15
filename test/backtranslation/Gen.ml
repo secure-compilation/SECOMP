@@ -69,59 +69,62 @@ let coq_val =
       (1, vptr);
     ]
 
-let mem_delta_storev ctx =
+let mem_delta_storev curr_comp ctx =
   let open QCheck.Gen in
   let* chunk = memory_chunk in
-  let* block = positive in
+  let glob_vars = List.map (fun (_, v, _, _, _) -> v) (Gen_ctx.var_list ctx) in
+  let* block = map Camlcoq.P.of_int (oneofl glob_vars) in
   let* offset = ptrofs in
   let addr = Values.Vptr (block, offset) in
-  let* comp = compartment in
   let* value = coq_val in
+  let comp = AST.COMP.Comp (Camlcoq.P.of_int curr_comp) in
   return (MemoryDelta.Coq_mem_delta_kind_storev (((chunk, addr), value), comp))
 
-let mem_delta_store ctx =
+let mem_delta_store curr_comp ctx =
   let open QCheck.Gen in
   let* chunk = memory_chunk in
-  let* block = positive in
+  let glob_vars = List.map (fun (_, v, _, _, _) -> v) (Gen_ctx.var_list ctx) in
+  let* block = map Camlcoq.P.of_int (oneofl glob_vars) in
   let* offset = ptrofs in
-  let* comp = compartment in
   let* value = coq_val in
+  let comp = AST.COMP.Comp (Camlcoq.P.of_int curr_comp) in
   return (MemoryDelta.Coq_mem_delta_kind_store ((((chunk, block), offset), value), comp))
 
-let mem_delta_bytes ctx =
+let mem_delta_bytes curr_comp ctx =
   let open QCheck.Gen in
   let* block = positive in
   let* offset = ptrofs in
   let* bytes = small_list (mem_val ctx) in
-  let* comp = compartment in
+  let comp = AST.COMP.Comp (Camlcoq.P.of_int curr_comp) in
   return (MemoryDelta.Coq_mem_delta_kind_bytes (((block, offset), bytes), comp))
 
-let mem_delta_alloc ctx =
+let mem_delta_alloc curr_comp ctx =
   let open QCheck.Gen in
-  let* comp = compartment in
   let* lower = map Camlcoq.Z.of_uint small_nat in
   let* len = map Camlcoq.Z.of_uint small_nat in
+  let comp = AST.COMP.Comp (Camlcoq.P.of_int curr_comp) in
   return (MemoryDelta.Coq_mem_delta_kind_alloc ((comp, lower), Camlcoq.Z.add lower len))
 
-let mem_delta_free ctx =
+let mem_delta_free curr_comp ctx =
   let open QCheck.Gen in
   let* block = positive in
   let* lower = map Camlcoq.Z.of_uint small_nat in
   let* len = map Camlcoq.Z.of_uint small_nat in
-  let* comp = compartment in
+  let comp = AST.COMP.Comp (Camlcoq.P.of_int curr_comp) in
   return (MemoryDelta.Coq_mem_delta_kind_free (((block, lower), Camlcoq.Z.add lower len), comp))
 
-let mem_delta_kind ctx =
+let mem_delta_kind curr_comp ctx =
   QCheck.Gen.frequency
     [
-      (1, mem_delta_storev ctx);
-      (1, mem_delta_store ctx);
-      (*(1, mem_delta_bytes ctx);
-      (1, mem_delta_alloc ctx);
-      (1, mem_delta_free ctx);*)
+      (* TODO: actually, only storev deltas are considered in BT. Check this and simplify the code *)
+      (1, mem_delta_storev curr_comp ctx);
+      (1, mem_delta_store curr_comp ctx);
+      (*(1, mem_delta_bytes curr_comp ctx);
+      (1, mem_delta_alloc curr_comp ctx);
+      (1, mem_delta_free curr_comp ctx);*)
     ]
 
-let mem_delta ctx = QCheck.Gen.small_list (mem_delta_kind ctx)
+let mem_delta curr_comp ctx = QCheck.Gen.small_list (mem_delta_kind curr_comp ctx)
 
 let ef_external ctx = QCheck.Gen.oneofl (Gen_ctx.external_funcs ctx)
 
@@ -230,8 +233,8 @@ let bundle_call_ret ctx curr_comp rand_state =
      let ret_val = ret_val_for_sig sign rand_state in
      let subtrace_call = [] in
      let subtrace_ret = [] in
-     let mdelta_call = mem_delta ctx rand_state in
-     let mdelta_ret = mem_delta ctx rand_state in
+     let mdelta_call = mem_delta curr_comp ctx rand_state in
+     let mdelta_ret = mem_delta trgt_comp ctx rand_state in
      let call = BtInfoAsm.Bundle_call (subtrace_call, Camlcoq.P.of_int trgt_func, args, sign, mdelta_call) in
      let ret = BtInfoAsm.Bundle_return (subtrace_ret, ret_val, mdelta_ret) in
      Option.some (call, ret, trgt_comp)
