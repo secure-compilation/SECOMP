@@ -1,6 +1,6 @@
 let rename_special_floating_point_values code =
-  let r_inf = Str.regexp "inf" in
-  let r_nan = Str.regexp "nan" in
+  let r_inf = Str.regexp "\\(inf \| inff\\)" in
+  let r_nan = Str.regexp "\\(nan \| nanf\\)" in
   code
   |> Str.global_replace r_inf "INFINITY"
   |> Str.global_replace r_nan "NAN"
