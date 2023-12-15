@@ -14,6 +14,7 @@ let memory_chunk =
     (1, Many64);
   ]
 
+(* TODO: move these and others to a common file because they are also needed in Gen_ctx *)
 let positive = QCheck.Gen.(map (fun i -> Camlcoq.P.of_int (i + 1)) small_nat)
 let coq_Z = QCheck.Gen.(map (fun i -> Camlcoq.Z.of_sint i) small_signed_int)
 let ident = positive
@@ -253,7 +254,7 @@ let bundle_trace ctx rand_state =
       let f = float_range 0.0 1.0 rand_state in
       match f with
       (* TODO: also generate builtin events in the trace (for now the test fails) *)
-      | _ when f < 0.6 -> (
+      | _ when f <= 1.0 -> (
         match bundle_call_ret ctx curr_comp rand_state with
         | Option.None -> []
         | Option.Some (call, ret, trgt_comp) ->
@@ -268,7 +269,22 @@ let bundle_trace ctx rand_state =
   List.mapi (fun i be -> (Camlcoq.P.of_int (i+1), be)) (bundle_trace_aux main_comp size)
 
 let build_prog_defs ctx =
-  let gvars = [] in
+  let raw_gvars = Gen_ctx.var_list ctx in
+  let gvars =
+    List.map
+      (fun (c, v, init, read_only, volatile) ->
+        let globvar = AST.{
+          gvar_info = ();
+          gvar_comp = AST.COMP.Comp (Camlcoq.P.of_int c);
+          gvar_init = init;
+          gvar_readonly = read_only;
+          gvar_volatile = volatile;
+        }
+        in
+        (Camlcoq.P.of_int v, AST.Gvar globvar)
+      )
+      raw_gvars
+  in
   let raw_defs = Gen_ctx.def_list ctx in
   let gfuns =
     List.map

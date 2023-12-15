@@ -43,6 +43,8 @@ let _ =
         num_external_funcs = 4;
         num_builtins = 4;
         num_runtime_funcs = 4;
+        num_global_vars = 4;
+        global_var_max_size = 4;
         max_arg_count = 2;
         debug = debug;
       }

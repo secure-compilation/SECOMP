@@ -10,6 +10,7 @@ type t = {
   imports : imports;
   func_sigs : func_sigs;
   main : int;
+  glob_vars : (int * AST.init_data list * bool * bool) list Map.t;
   external_funcs : extern list;
   builtins: extern list;
   runtime_funcs : extern list;
@@ -22,12 +23,15 @@ type gen_config = {
   num_external_funcs : int;
   num_builtins : int;
   num_runtime_funcs: int;
+  num_global_vars : int;
+  global_var_max_size : int;
   max_arg_count : int;
   debug : bool;
 }
 
 type comp = int
 type func = int
+type var = int
 
 let sample_typ =
   QCheck.Gen.frequencyl
@@ -81,6 +85,62 @@ let sample_exports config graph =
   let pool = List.init (n * config.num_exported_funcs) succ in
   let* funcs = Util.choose_disjoint n config.num_exported_funcs pool in
   return (Map.of_seq (List.to_seq (List.combine compartments funcs)))
+
+(* TODO: implement me properly *)
+let sample_init_data config =
+  let open QCheck.Gen in
+  let positive = QCheck.Gen.(map (fun i -> Camlcoq.P.of_int (i + 1)) small_nat) in
+  let coq_Z = map (fun i -> Camlcoq.Z.of_sint i) small_signed_int in
+  let binary_float =
+    let open Binary in
+    let zero = map (fun b -> B754_zero b) bool in
+    let infinity = map (fun b -> B754_infinity b) bool in
+    let nan = map (fun (b, p) -> B754_nan (b, p)) (pair bool positive) in
+    let finite =
+      map (fun (b, p, z) -> B754_finite (b, p, z)) (triple bool positive coq_Z)
+    in frequency [ (1, zero); (1, infinity); (1, nan); (1, finite) ]
+  in
+  let int8 = map (fun i -> AST.Init_int8 (Camlcoq.Z.of_sint i)) small_int in
+  let int16 = map (fun i -> AST.Init_int16 (Camlcoq.Z.of_sint i)) small_int in
+  let int32 = map (fun i -> AST.Init_int32 (Camlcoq.Z.of_sint i)) small_int in
+  let int64 = map (fun i -> AST.Init_int64 (Camlcoq.Z.of_sint i)) small_int in
+  let float32 = map (fun f -> AST.Init_float32 f) binary_float in
+  let float64 = map (fun f -> AST.Init_float64 f) binary_float in
+  let space = map (fun i -> AST.Init_space (Camlcoq.Z.of_uint i)) small_nat in
+  let addrof =
+    (* TODO: only use valid global variables as ids here? *)
+    let* id = map (fun i -> Camlcoq.P.of_int (i + 1)) small_nat in
+    let* offset = map (fun i -> Integers.Ptrofs.of_int (Camlcoq.Z.of_sint i)) small_signed_int in
+    return (AST.Init_addrof (id, offset))
+  in
+  QCheck.Gen.frequency
+  [
+    (1, int8);
+    (1, int16);
+    (1, int32);
+    (1, int64);
+    (* TODO: actually generate the variants below as soon as they are implemented in PrintAsm.ml *)
+    (* (1, float32);
+    (1, float64);
+    (1, space);
+    (1, addrof);*)
+  ]
+
+let sample_init_data_list config =
+  QCheck.Gen.(list_size (int_bound config.global_var_max_size) (sample_init_data config))
+
+let sample_global_vars config graph exports rand_state =
+  let open QCheck.Gen in
+  let compartments = Graph.vertices graph in
+  let n = Graph.size graph in
+  let all_funcs = List.concat_map snd (Map.bindings exports) in
+  let max_func_ident = List.fold_left Int.max 0 all_funcs in
+  let pool = List.init (n * config.num_global_vars) (fun i -> i + 1 + max_func_ident) in
+  let read_only = (map (fun f -> f <= 0.3) (float_range 0.0 1.0)) rand_state in
+  let volatile = (map (fun f -> f <= 0.3) (float_range 0.0 1.0)) rand_state in
+  let pool_with_init_data = List.map (fun g -> (g, sample_init_data_list config rand_state, read_only, volatile)) pool in
+  let glob_vars = Util.choose_disjoint n config.num_global_vars pool_with_init_data rand_state in
+  Map.of_seq (List.to_seq (List.combine compartments glob_vars))
 
 let sample_imports graph exports rand_state =
   let open QCheck.Gen in
@@ -163,12 +223,13 @@ let random config =
   let* builtins = sample_builtins config in
   let* runtime_funcs = sample_runtime_funcs config in
   let* main, func_sigs = sample_func_sigs config exports in
+  let* glob_vars = sample_global_vars config graph exports in
   if config.debug then (
     Graph.dump graph;
     dump_exports exports;
     dump_imports imports)
   else ();
-  return { exports; imports; func_sigs; main; external_funcs; builtins; runtime_funcs }
+  return { exports; imports; func_sigs; main; glob_vars; external_funcs; builtins; runtime_funcs }
 
 let main ctx = ctx.main
 let function_list ctx = List.concat_map snd (Map.bindings ctx.exports)
@@ -181,6 +242,13 @@ let def_list ctx =
   List.concat_map
     (fun (c, fs) -> List.map (fun f -> (f, c, sig_of f)) fs)
     (export_list ctx)
+
+let var_list ctx =
+  List.concat_map
+    (fun (comp, vars) -> List.map
+      (fun (id, init_datas, read_only, volatile) -> (comp, id, init_datas, read_only, volatile))
+      vars)
+    (Map.bindings ctx.glob_vars)
 
 let external_funcs ctx = ctx.external_funcs
 let builtins ctx = ctx.builtins
