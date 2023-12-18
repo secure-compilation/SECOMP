@@ -86,44 +86,21 @@ let sample_exports config graph =
   let* funcs = Util.choose_disjoint n config.num_exported_funcs pool in
   return (Map.of_seq (List.to_seq (List.combine compartments funcs)))
 
-(* TODO: implement me properly *)
 let sample_init_data config =
+  (* TODO: currently only ints are supported as init data in PrintAsm.ml.
+     Once this is fixed, the code below can be extended to also generate
+     the missing types of init data. *)
   let open QCheck.Gen in
-  let positive = QCheck.Gen.(map (fun i -> Camlcoq.P.of_int (i + 1)) small_nat) in
-  let coq_Z = map (fun i -> Camlcoq.Z.of_sint i) small_signed_int in
-  let binary_float =
-    let open Binary in
-    let zero = map (fun b -> B754_zero b) bool in
-    let infinity = map (fun b -> B754_infinity b) bool in
-    let nan = map (fun (b, p) -> B754_nan (b, p)) (pair bool positive) in
-    let finite =
-      map (fun (b, p, z) -> B754_finite (b, p, z)) (triple bool positive coq_Z)
-    in frequency [ (1, zero); (1, infinity); (1, nan); (1, finite) ]
-  in
   let int8 = map (fun i -> AST.Init_int8 (Camlcoq.Z.of_sint i)) small_int in
   let int16 = map (fun i -> AST.Init_int16 (Camlcoq.Z.of_sint i)) small_int in
   let int32 = map (fun i -> AST.Init_int32 (Camlcoq.Z.of_sint i)) small_int in
   let int64 = map (fun i -> AST.Init_int64 (Camlcoq.Z.of_sint i)) small_int in
-  let float32 = map (fun f -> AST.Init_float32 f) binary_float in
-  let float64 = map (fun f -> AST.Init_float64 f) binary_float in
-  let space = map (fun i -> AST.Init_space (Camlcoq.Z.of_uint i)) small_nat in
-  let addrof =
-    (* TODO: only use valid global variables as ids here? *)
-    let* id = map (fun i -> Camlcoq.P.of_int (i + 1)) small_nat in
-    let* offset = map (fun i -> Integers.Ptrofs.of_int (Camlcoq.Z.of_sint i)) small_signed_int in
-    return (AST.Init_addrof (id, offset))
-  in
   QCheck.Gen.frequency
   [
     (1, int8);
     (1, int16);
     (1, int32);
     (1, int64);
-    (* TODO: actually generate the variants below as soon as they are implemented in PrintAsm.ml *)
-    (* (1, float32);
-    (1, float64);
-    (1, space);
-    (1, addrof);*)
   ]
 
 let sample_init_data_list config =

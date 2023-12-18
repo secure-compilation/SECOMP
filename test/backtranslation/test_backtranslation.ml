@@ -3,7 +3,6 @@ let property_under_test asm_prog bundled_trace =
   let () = print_endline (Show.show_bundle_trace bundled_trace) in
   let source_name = "out.c" in
   let ccomp_cmd = "../../ccomp -quiet -c > /dev/null 2> /dev/null" in
-  let ccomp_cmd = "../../ccomp -c" in
   let src_program = Backtranslation.gen_program bundled_trace asm_prog in
   let () = Export.c_light_prog src_program source_name in
   let status = Unix.system (ccomp_cmd ^ " " ^ source_name) in
