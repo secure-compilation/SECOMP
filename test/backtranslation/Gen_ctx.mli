@@ -32,3 +32,5 @@ val var_list : t -> (comp * var * AST.init_data list * bool * bool) list
 val external_funcs : t -> AST.external_function list
 val builtins : t -> AST.external_function list
 val runtime_funcs : t -> AST.external_function list
+
+val get_asm_prog : t -> Asm.program

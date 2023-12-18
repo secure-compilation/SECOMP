@@ -51,6 +51,7 @@ let _ =
   in
   let () = if seed = 0 then Random.self_init () else Random.init seed in
   let rand_state = Random.get_state () in
-  let asm_prog, ctx = Gen.asm_program config rand_state in
+  let ctx = Gen_ctx.random config rand_state in
+  let asm_prog = Gen_ctx.get_asm_prog ctx in
   if debug then PrintAsm.print_program_asm Out_channel.stdout asm_prog else ();
   QCheck_runner.run_tests ~verbose:true ~rand:rand_state [ test_backtranslation asm_prog ctx ]

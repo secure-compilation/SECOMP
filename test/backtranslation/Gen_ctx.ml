@@ -253,3 +253,75 @@ let var_list ctx =
 let external_funcs ctx = ctx.external_funcs
 let builtins ctx = ctx.builtins
 let runtime_funcs ctx = ctx.runtime_funcs
+
+let build_prog_defs ctx =
+  let raw_gvars = var_list ctx in
+  let gvars =
+    List.map
+      (fun (c, v, init, read_only, volatile) ->
+        let globvar = AST.{
+          gvar_info = ();
+          gvar_comp = AST.COMP.Comp (Camlcoq.P.of_int c);
+          gvar_init = init;
+          gvar_readonly = read_only;
+          gvar_volatile = volatile;
+        }
+        in
+        (Camlcoq.P.of_int v, AST.Gvar globvar)
+      )
+      raw_gvars
+  in
+  let raw_defs = def_list ctx in
+  let gfuns =
+    List.map
+      (fun (f, c, s) ->
+        let coq_func =
+          ({ fn_comp = AST.COMP.Comp (Camlcoq.P.of_int c); fn_sig = s; fn_code = [] }
+            : Asm.coq_function)
+        in
+        let fundef = AST.Internal coq_func in
+        (Camlcoq.P.of_int f, AST.Gfun fundef))
+      raw_defs
+  in
+  gvars @ gfuns
+
+let build_prog_public ctx =
+  List.map Camlcoq.P.of_int (function_list ctx) @
+  List.map (fun (_, v, _, _, _) -> Camlcoq.P.of_int v) (var_list ctx)
+
+let build_prog_main ctx = Camlcoq.P.of_int (main ctx)
+
+let build_prog_pol ctx =
+  let open Maps in
+  let policy_export = ref PTree.empty in
+  let exports = export_list ctx in
+  List.iter
+    (fun (raw_comp, raw_funcs) ->
+      let funcs = List.map Camlcoq.P.of_int raw_funcs in
+      let comp = Camlcoq.P.of_int raw_comp in
+      policy_export := PTree.set comp funcs !policy_export)
+    exports;
+  let policy_import = ref PTree.empty in
+  let imports = import_list ctx in
+  List.iter
+    (fun (comp, imps) ->
+      let imps =
+        List.map (fun (c, f) -> (AST.COMP.Comp (Camlcoq.P.of_int c), Camlcoq.P.of_int f)) imps
+      in
+      let comp = Camlcoq.P.of_int comp in
+      if imps <> [] then policy_import := PTree.set comp imps !policy_import
+      else ())
+    imports;
+  let policy =
+    ({ policy_export = !policy_export; policy_import = !policy_import }
+      : AST.Policy.t)
+  in
+  policy
+
+let get_asm_prog ctx =
+  let prog_defs = build_prog_defs ctx in
+  let prog_public = build_prog_public ctx in
+  let prog_main = build_prog_main ctx in
+  let prog_pol = build_prog_pol ctx in
+  AST.{ prog_defs; prog_public; prog_main; prog_pol }
+
