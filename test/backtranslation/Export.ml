@@ -21,9 +21,9 @@ let fix_incomplete_types code =
   let r_internal = Str.regexp "^void \\(ident_[0-9]+ = {\\)" in
   let r_external = Str.regexp "^extern void" in
   code
-  |> Str.global_replace r_internal_const "void* const \\1"
-  |> Str.global_replace r_internal "void* \\1"
-  |> Str.global_replace r_external "extern void*"
+  |> Str.global_replace r_internal_const "int const \\1"
+  |> Str.global_replace r_internal "int \\1"
+  |> Str.global_replace r_external "extern int"
 
 let fix_floating_point_literals code =
   let regex = Str.regexp "\\([0-9]+\\)f" in
@@ -31,6 +31,10 @@ let fix_floating_point_literals code =
   code
   |> Str.global_replace regex "\\1.0f"
   |> Str.global_replace regex_exp "e\\1\\2"
+
+let fix_missing_derefs code =
+  let regex = Str.regexp "= &\\([^;]+\\);" in
+  Str.global_replace regex "= *(&\\1);" code
 
 let c_light_prog prog file_name =
   let vars_before_funcs (_, def1) (_, def2) =
@@ -50,6 +54,7 @@ let c_light_prog prog file_name =
     |> rename_special_floating_point_values
     |> prepend_header
     |> fix_incomplete_types
-    |> fix_floating_point_literals in
+    |> fix_floating_point_literals
+    |> fix_missing_derefs in
   Out_channel.with_open_text (file_name ^ ".raw") (fun c -> output_string c raw_code);
   Out_channel.with_open_text file_name (fun c -> output_string c code)
