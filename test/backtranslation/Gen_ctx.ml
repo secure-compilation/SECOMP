@@ -136,9 +136,9 @@ let sample_global_vars config graph exports rand_state =
   let all_funcs = List.concat_map snd (Map.bindings exports) in
   let max_func_ident = List.fold_left Int.max 0 all_funcs in
   let pool = List.init (n * config.num_global_vars) (fun i -> i + 1 + max_func_ident) in
-  let read_only = (map (fun f -> f <= 0.3) (float_range 0.0 1.0)) rand_state in
-  let volatile = (map (fun f -> f <= 0.3) (float_range 0.0 1.0)) rand_state in
-  let pool_with_init_data = List.map (fun g -> (g, sample_init_data_list config rand_state, read_only, volatile)) pool in
+  let read_only = (map (fun f -> f <= 0.3) (float_range 0.0 1.0)) in
+  let volatile = (map (fun f -> f <= 0.3) (float_range 0.0 1.0)) in
+  let pool_with_init_data = List.map (fun g -> (g, sample_init_data_list config rand_state, read_only rand_state, volatile rand_state)) pool in
   let glob_vars = Util.choose_disjoint n config.num_global_vars pool_with_init_data rand_state in
   Map.of_seq (List.to_seq (List.combine compartments glob_vars))
 

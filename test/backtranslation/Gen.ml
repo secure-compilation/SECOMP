@@ -79,7 +79,7 @@ let coq_val ctx =
 let mem_delta_storev curr_comp ctx =
   let open QCheck.Gen in
   let* chunk = memory_chunk in
-  let glob_vars = List.map (fun (_, v, _, _, _) -> v) (Gen_ctx.var_list ctx) in
+  let glob_vars = List.filter_map (fun (_, v, _, read_only, _) -> if read_only then Option.none else Option.some v) (Gen_ctx.var_list ctx) in
   let* ident = map Camlcoq.P.of_int (oneofl glob_vars) in
 
   let asm_prog = Gen_ctx.get_asm_prog ctx in
@@ -97,7 +97,7 @@ let mem_delta_storev curr_comp ctx =
 let mem_delta_store curr_comp ctx =
   let open QCheck.Gen in
   let* chunk = memory_chunk in
-  let glob_vars = List.map (fun (_, v, _, _, _) -> v) (Gen_ctx.var_list ctx) in
+  let glob_vars = List.filter_map (fun (_, v, _, read_only, _) -> if read_only then Option.none else Option.some v) (Gen_ctx.var_list ctx) in
   let* block = map Camlcoq.P.of_int (oneofl glob_vars) in
   let* offset = ptrofs in
   let* value = coq_val ctx in
