@@ -49,7 +49,15 @@ let _ =
         debug = debug;
       }
   in
-  let () = if seed = 0 then Random.self_init () else Random.init seed in
+  let () =
+    if seed = 0
+    then
+      (Random.self_init ();
+      let s = Random.full_int 10000 in
+      Printf.printf "seed = %d\n" s;
+      Random.init s)
+    else Random.init seed
+  in
   let rand_state = Random.get_state () in
   let ctx = Gen_ctx.random config rand_state in
   let asm_prog = Gen_ctx.get_asm_prog ctx in
