@@ -1,6 +1,6 @@
 let rename_special_floating_point_values code =
-  let r_inf = Str.regexp "\\(inf \| inff\\)" in
-  let r_nan = Str.regexp "\\(nan \| nanf\\)" in
+  let r_inf = Str.regexp "\\(inff\\|inf\\)" in
+  let r_nan = Str.regexp "\\(nanf\\|nan\\)" in
   code
   |> Str.global_replace r_inf "INFINITY"
   |> Str.global_replace r_nan "NAN"
@@ -17,11 +17,20 @@ let prepend_header code =
   "#include <math.h>\n" ^ code
 
 let fix_incomplete_types code =
+  let r_internal_const = Str.regexp "^void const \\(ident_[0-9]+ = {\\)" in
   let r_internal = Str.regexp "^void \\(ident_[0-9]+ = {\\)" in
   let r_external = Str.regexp "^extern void" in
   code
+  |> Str.global_replace r_internal_const "void* const \\1"
   |> Str.global_replace r_internal "void* \\1"
   |> Str.global_replace r_external "extern void*"
+
+let fix_floating_point_literals code =
+  let regex = Str.regexp "\\([0-9]+\\)f" in
+  let regex_exp = Str.regexp "e\\(-?\\)\\([0-9]+\\)\\.0f" in
+  code
+  |> Str.global_replace regex "\\1.0f"
+  |> Str.global_replace regex_exp "e\\1\\2"
 
 let c_light_prog prog file_name =
   let vars_before_funcs (_, def1) (_, def2) =
@@ -40,6 +49,7 @@ let c_light_prog prog file_name =
     |> rename_idents
     |> rename_special_floating_point_values
     |> prepend_header
-    |> fix_incomplete_types in
+    |> fix_incomplete_types
+    |> fix_floating_point_literals in
   Out_channel.with_open_text (file_name ^ ".raw") (fun c -> output_string c raw_code);
   Out_channel.with_open_text file_name (fun c -> output_string c code)
