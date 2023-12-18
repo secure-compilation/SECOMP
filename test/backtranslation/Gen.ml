@@ -42,31 +42,38 @@ let mem_val ctx =
       (* TODO: add support for fragment memory values *)
     ]
 
-let vundef = QCheck.Gen.return Values.Vundef
+let vundef _ = QCheck.Gen.return Values.Vundef
 
-let vint = QCheck.Gen.map (fun i -> Values.Vint i) coq_Z
+let vint _ = QCheck.Gen.map (fun i -> Values.Vint i) coq_Z
 
-let vlong = QCheck.Gen.map (fun i -> Values.Vlong i) coq_Z
+let vlong _ = QCheck.Gen.map (fun i -> Values.Vlong i) coq_Z
 
-let vfloat = QCheck.Gen.map (fun f -> Values.Vfloat f) binary_float
+let vfloat _ = QCheck.Gen.map (fun f -> Values.Vfloat f) binary_float
 
-let vsingle = QCheck.Gen.map (fun f -> Values.Vsingle f) binary_float
+let vsingle _ = QCheck.Gen.map (fun f -> Values.Vsingle f) binary_float
 
-let vptr =
+let vptr ctx =
   let open QCheck.Gen in
-  let* block = positive in
+  let glob_vars = List.map (fun (_, v, _, _, _) -> v) (Gen_ctx.var_list ctx) in
+  let* ident = map Camlcoq.P.of_int (oneofl glob_vars) in
+  let asm_prog = Gen_ctx.get_asm_prog ctx in
+  let genv = Globalenvs.Genv.globalenv asm_prog in
+  let block = match Globalenvs.Genv.find_symbol genv ident with
+    | None -> failwith "Fatal error: cannot find block for symbol for vptr."
+    | Some b -> b
+  in
   let* ptrofs = ptrofs in
   return (Values.Vptr (block, ptrofs))
 
-let coq_val =
+let coq_val ctx =
   QCheck.Gen.frequency
     [
-      (1, vundef);
-      (1, vint);
-      (1, vlong);
-      (1, vfloat);
-      (1, vsingle);
-      (1, vptr);
+      (1, vundef ctx);
+      (1, vint ctx);
+      (1, vlong ctx);
+      (1, vfloat ctx);
+      (1, vsingle ctx);
+      (1, vptr ctx);
     ]
 
 let mem_delta_storev curr_comp ctx =
@@ -83,7 +90,7 @@ let mem_delta_storev curr_comp ctx =
   in
   let* offset = ptrofs in
   let addr = Values.Vptr (block, offset) in
-  let* value = coq_val in
+  let* value = coq_val ctx in
   let comp = AST.COMP.Comp (Camlcoq.P.of_int curr_comp) in
   return (MemoryDelta.Coq_mem_delta_kind_storev (((chunk, addr), value), comp))
 
@@ -93,7 +100,7 @@ let mem_delta_store curr_comp ctx =
   let glob_vars = List.map (fun (_, v, _, _, _) -> v) (Gen_ctx.var_list ctx) in
   let* block = map Camlcoq.P.of_int (oneofl glob_vars) in
   let* offset = ptrofs in
-  let* value = coq_val in
+  let* value = coq_val ctx in
   let comp = AST.COMP.Comp (Camlcoq.P.of_int curr_comp) in
   return (MemoryDelta.Coq_mem_delta_kind_store ((((chunk, block), offset), value), comp))
 
@@ -125,7 +132,7 @@ let mem_delta_kind curr_comp ctx =
     [
       (* TODO: actually, only storev deltas are considered in BT. Check this and simplify the code *)
       (1, mem_delta_storev curr_comp ctx);
-      (1, mem_delta_store curr_comp ctx);
+      (*(1, mem_delta_store curr_comp ctx);*)
       (*(1, mem_delta_bytes curr_comp ctx);
       (1, mem_delta_alloc curr_comp ctx);
       (1, mem_delta_free curr_comp ctx);*)
