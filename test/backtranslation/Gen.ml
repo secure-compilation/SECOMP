@@ -182,16 +182,17 @@ let external_function ctx =
       (1, ef_external ctx);
       (1, ef_builtin ctx);
       (1, ef_runtime ctx);
-      (1, ef_vload ctx);
+      (* TODO: perhaps enable these if they are required
+      (1000, ef_vload ctx);
       (1, ef_vstore ctx);
       (1, ef_malloc ctx);
       (1, ef_free ctx);
       (1, ef_memcpy ctx);
-      (* TODO: enable these after the corresponding functions are implemented *)
-      (* (0, ef_annot ctx);
+      (0, ef_annot ctx);
       (0, ef_annot_val ctx);
       (0, ef_inline_asm ctx);
-      (0, ef_debug ctx);*)
+      (0, ef_debug ctx);
+       *)
     ]
 
 (* TODO: perhaps differentiate between signed/unsigned and positive/negative values? *)
@@ -271,7 +272,7 @@ let bundle_trace ctx rand_state =
       let f = float_range 0.0 1.0 rand_state in
       match f with
       (* TODO: also generate builtin events in the trace (for now the test fails) *)
-      | _ when f <= 1.0 -> (
+      | _ when f <= 0.7 -> (
         match bundle_call_ret ctx curr_comp rand_state with
         | Option.None -> []
         | Option.Some (call, ret, trgt_comp) ->

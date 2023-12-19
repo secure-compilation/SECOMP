@@ -36,6 +36,10 @@ let fix_missing_derefs code =
   let regex = Str.regexp "= &\\([^;]+\\);" in
   Str.global_replace regex "= *(&\\1);" code
 
+let fix_syntax_of_builtins code =
+  let regex = Str.regexp "builtin \\(runtime\\|extern\\|builtin\\) \\\"\\([a-zA-Z]+\\)\\\"[ \\\t\\\n]*\\([^;]+\\);" in
+  Str.global_replace regex "\\2\\3;" code
+
 let c_light_prog prog file_name =
   let vars_before_funcs (_, def1) (_, def2) =
     let open AST in
@@ -55,6 +59,7 @@ let c_light_prog prog file_name =
     |> prepend_header
     |> fix_incomplete_types
     |> fix_floating_point_literals
-    |> fix_missing_derefs in
+    |> fix_missing_derefs
+    |> fix_syntax_of_builtins in
   Out_channel.with_open_text (file_name ^ ".raw") (fun c -> output_string c raw_code);
   Out_channel.with_open_text file_name (fun c -> output_string c code)

@@ -153,7 +153,7 @@ let sample_func_sigs config exports =
 let sample_external_funcs config =
   let open QCheck.Gen in
   let gen =
-    let* name = small_list (char_range 'a' 'z') in
+    let* name = list_size (map Int.succ small_nat) (char_range 'a' 'z') in
     let* sign = sample_signature config in
     return (AST.EF_external (name, sign)) in
   list_repeat config.num_external_funcs gen
@@ -161,7 +161,7 @@ let sample_external_funcs config =
 let sample_builtins config =
   let open QCheck.Gen in
   let gen =
-    let* name = small_list (char_range 'a' 'z') in
+    let* name = list_size (map Int.succ small_nat) (char_range 'a' 'z') in
     let* sign = sample_signature config in
     return (AST.EF_builtin (name, sign)) in
   list_repeat config.num_builtins gen
@@ -169,7 +169,7 @@ let sample_builtins config =
 let sample_runtime_funcs config =
   let open QCheck.Gen in
   let gen =
-    let* name = small_list (char_range 'a' 'z') in
+    let* name = list_size (map Int.succ small_nat) (char_range 'a' 'z') in
     let* sign = sample_signature config in
     return (AST.EF_runtime (name, sign)) in
   list_repeat config.num_runtime_funcs gen
