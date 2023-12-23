@@ -195,6 +195,29 @@ Section Equivalence.
       now eapply IH; eauto.
   Qed.
 
+  Lemma same_blocks_assign_loc {ce cp ty m b ofs bf v m' ge}
+    (ASSIGN : assign_loc ce cp ty m b ofs bf v m')
+    (BLOCKS : same_blocks ge m) :
+    same_blocks ge m'.
+  Proof.
+    inv ASSIGN.
+    - eapply same_blocks_store; eauto.
+    - eapply same_blocks_storebytes; eauto.
+    - inv H.
+      eapply same_blocks_store; eauto.
+  Qed.
+
+  Lemma same_blocks_function_entry1 ge f vargs m e le m'
+    (ENTRY : function_entry1 ge f vargs m e le m')
+    (BLOCKS : same_blocks ge m) :
+    same_blocks ge m'.
+  Proof.
+    clear j.
+    intros b cp FIND. specialize (BLOCKS b cp FIND).
+    inv ENTRY.
+    (* Search Mem.alloc Mem.block_compartment. *)
+  Admitted.
+
   Record right_mem_injection (ge1 ge2: genv) (m1 m2: mem) : Prop :=
     { same_dom: same_domain ge1 m1;
       partial_mem_inject: Mem.inject j m1 m2;
@@ -446,7 +469,7 @@ Qed.
     same_blocks ge1 (memory_of s1').
   Proof.
     inv STEP; auto.
-    - admit.
+    - eapply same_blocks_assign_loc; eauto.
     - intros b cp FIND.
       specialize (BLKS b cp FIND).
       simpl in *.
@@ -456,14 +479,40 @@ Qed.
     - eapply same_blocks_free_list; eauto.
     - eapply same_blocks_free_list; eauto.
     - eapply same_blocks_free_list; eauto.
-    - admit.
+    - eapply same_blocks_function_entry1; eauto.
     - intros b cp FIND.
       specialize (BLKS b cp FIND).
       simpl in *.
       change (Mem.block_compartment m b = Some cp)
         with (Mem.can_access_block m b (Some cp)) in BLKS.
       exploit external_call_can_access_block; eauto.
+  Qed.
+
+  Lemma assign_loc_left_inject f m1 m2 m1' ce cp ty b ofs bf v
+    (INJ: Mem.inject f m1 m2)
+    (ASGN: assign_loc ce cp ty m1 b ofs bf v m1'):
+    Mem.inject f m1' m2.
   Admitted.
+
+  Lemma assign_loc_block_compartment {m m' b b' cp ce ty ofs bf v}
+    (ASGN: assign_loc ce cp ty m b ofs bf v m'):
+    Mem.block_compartment m b' = Mem.block_compartment m' b'.
+  Proof.
+    inv ASGN.
+    - rewrite (Mem.store_block_compartment _ _ _ _ _ _ _ H0). reflexivity.
+    - rewrite (Mem.storebytes_block_compartment _ _ _ _ _ _ H4). reflexivity.
+    - inv H. rewrite (Mem.store_block_compartment _ _ _ _ _ _ _ H5). reflexivity.
+  Qed.
+
+  Remark assign_block_block_compartment_eq {m m' b b' cp cp' cp'' ce ty ofs bf v}
+    (ASGN: assign_loc ce cp ty m b ofs bf v m')
+    (COMP: Mem.block_compartment m b' = Some cp')
+    (COMP': Mem.block_compartment m' b' = Some cp''):
+    cp' = cp''.
+  Proof.
+    rewrite (assign_loc_block_compartment ASGN) in COMP.
+    congruence.
+  Qed.
 
   (** *)
 
@@ -897,39 +946,68 @@ Qed.
           * intros j_b. destruct DOM as [DOM _]. specialize (DOM j_b).
             destruct (Mem.block_compartment m b) as [cp |] eqn:COMP;
               [| contradiction].
-            admit. (* Easy *)
+            rewrite (assign_loc_block_compartment H2) in COMP.
+            rewrite COMP. assumption.
           * intros RIGHT. destruct DOM as [_ DOM].
             destruct (Mem.block_compartment m' b) as [cp' |] eqn:COMP';
               [| contradiction].
             destruct (Mem.block_compartment m b) as [cp |] eqn:COMP.
-            -- assert (cp = cp') as <- by admit. (* Easy *)
+            -- assert (cp = cp') as <-
+                 by (eapply assign_block_block_compartment_eq; eauto).
                exact (DOM RIGHT).
-            -- admit. (* Easy, contra on COMP and COMP' with [assign_loc] *)
+            -- rewrite (assign_loc_block_compartment H2) in COMP. congruence.
         + simpl. simpl in DOM. split.
           * intros j_b. destruct DOM as [DOM _]. specialize (DOM j_b).
             destruct (Mem.block_compartment m b) as [cp |] eqn:COMP;
               [| contradiction].
-            admit. (* Easy *)
+            rewrite <- (assign_loc_block_compartment H2), COMP. assumption.
           * simpl. simpl in DOM. intros RIGHT. destruct DOM as [_ DOM].
             destruct (Mem.block_compartment m' b) as [cp' |] eqn:COMP';
               [| contradiction].
             destruct (Mem.block_compartment m b) as [cp |] eqn:COMP.
-            -- assert (cp = cp') as <- by admit. (* Easy *)
+            -- assert (cp = cp') as <-
+                 by (eapply assign_block_block_compartment_eq; eauto).
                exact (DOM RIGHT).
-            -- admit. (* Easy, contra on COMP and COMP' with [assign_loc] *)
+            -- rewrite (assign_loc_block_compartment H2) in COMP. congruence.
       - intros b; specialize (DOM b).
         destruct Genv.invert_symbol as [id |] eqn:INVSYM.
-        + admit.
-        + simpl. simpl in DOM. split.
+        + destruct Senv.public_symbol eqn:PUBSYM; [assumption |].
+          simpl. simpl in DOM. split.
           * intros j_b. destruct DOM as [DOM _]. specialize (DOM j_b).
             destruct (Mem.block_compartment m b) as [cp |] eqn:COMP;
               [| contradiction].
-            admit. (* Easy *)
+            change (Mem.block_compartment _ _ = _ )
+              with (Mem.can_access_block m b (Some cp)) in COMP.
+            rewrite (external_call_can_access_block _ _ _ _ _ _ _ _ _ H0 COMP).
+            assumption.
           * intros RIGHT. destruct DOM as [_ DOM].
             destruct (Mem.block_compartment m' b) as [cp' |] eqn:COMP';
               [| contradiction].
             destruct (Mem.block_compartment m b) as [cp |] eqn:COMP.
-            -- assert (cp = cp') as <- by admit. (* Easy *)
+            -- assert (cp = cp') as <-. {
+                 change (Mem.block_compartment _ _ = _ )
+                   with (Mem.can_access_block m b (Some cp)) in COMP.
+                 rewrite (external_call_can_access_block _ _ _ _ _ _ _ _ _ H0 COMP) in COMP'.
+                 congruence. }
+               exact (DOM RIGHT).
+            -- admit. (* Easy, contra on LEFT and RIGHT with H0 *)
+        + simpl. simpl in DOM. split.
+          * intros j_b. destruct DOM as [DOM _]. specialize (DOM j_b).
+            destruct (Mem.block_compartment m b) as [cp |] eqn:COMP;
+              [| contradiction].
+            change (Mem.block_compartment _ _ = _ )
+              with (Mem.can_access_block m b (Some cp)) in COMP.
+            rewrite (external_call_can_access_block _ _ _ _ _ _ _ _ _ H0 COMP).
+            assumption.
+          * intros RIGHT. destruct DOM as [_ DOM].
+            destruct (Mem.block_compartment m' b) as [cp' |] eqn:COMP';
+              [| contradiction].
+            destruct (Mem.block_compartment m b) as [cp |] eqn:COMP.
+            -- assert (cp = cp') as <-. {
+                 change (Mem.block_compartment _ _ = _ )
+                   with (Mem.can_access_block m b (Some cp)) in COMP.
+                 rewrite (external_call_can_access_block _ _ _ _ _ _ _ _ _ H0 COMP) in COMP'.
+                 congruence. }
                exact (DOM RIGHT).
             -- admit. (* If any newly allocated [b] belongs to [comp_of ef] = [comp_of f]
                          (which is on the left), and since [b] belongs to [cp'] (which is
@@ -972,7 +1050,11 @@ Qed.
       {
         inv MEMINJ.
         constructor; auto.
-        admit. (* assign_loc *)
+        { (* assign_loc *)
+          (* eapply assign_loc_left_inject; eauto. now constructor. *)
+          simpl in *. inv H2.
+          all:admit.
+        }
         { intros b NOTVALID. specialize (mi_freeblocks b). simpl in *.
           Search Mem.valid_block Mem.free_list. admit.
         }
@@ -1478,6 +1560,142 @@ Qed.
   (*   admit. *)
   (* Admitted. *)
 
+  Lemma parallel_abstract_ev: forall j s1 s2 s1' s2' e,
+    right_state_injection s j ge1 ge2 s1 s2 ->
+    s |= s1 ∈ Left ->
+    step1 ge1 s1 (e :: nil) s1' ->
+    step1 ge2 s2 (e :: nil) s2' ->
+  exists j',
+    right_state_injection s j' ge1 ge2 s1' s2'.
+  Proof.
+    intros j s1 s2 s1' s2' e INJ LEFT STEP1 STEP2.
+    inv STEP1.
+    - (* step_call *)
+      inv EV. inv STEP2.
+      + (* matching case *)
+        inv EV.
+        simpl in H2. destruct Ptrofs.eq_dec; [| discriminate]. subst ofs.
+        simpl in H9. destruct Ptrofs.eq_dec; [| discriminate]. subst ofs0.
+        inv INJ; [| congruence].
+        destruct (state_split_decidable (Callstate fd vargs (Kcall optid f e0 le k) m))
+          as [LEFT' | RIGHT'].
+        * exists j. apply LeftControl.
+          -- assumption.
+          -- congruence.
+          -- assumption.
+          -- apply right_cont_injection_kcall_left; try assumption.
+             admit. (* remove_until_right from raw continuation *)
+        * exists j. apply RightControl.
+          -- assumption.
+          -- congruence.
+          -- assert (fd = fd0) as <-. {
+               admit. }
+             apply inject_callstates.
+             ++ assumption.
+             ++ apply right_cont_injection_kcall_left; try assumption.
+                admit. (* remove_until_right from raw continuation *)
+             ++ specialize (NO_CROSS_PTR H5).
+                specialize (NO_CROSS_PTR0 H21).
+                admit. (* easy *)
+      + destruct (ec_no_crossing (external_call_spec ef) _ _ _ _ _ _ H6).
+      + destruct (ec_no_crossing (external_call_spec ef) _ _ _ _ _ _ H4).
+      + inv EV.
+    - (* step_builtin *)
+      inv INJ; [| congruence]. inv STEP2.
+      (* inv H3. simpl in *. *)
+      (* admit. *)
+      + admit.
+      + (* matching case *) admit.
+      + admit.
+      + inv EV. simpl in *. inv H4.
+        * simpl in *. admit.
+        * admit.
+    - (* step_external_function *)
+      inv INJ; [| congruence]. inv STEP2.
+      + inv EV. admit. (* contra? *)
+      + admit. (* contra? *)
+      + (* matching case *)
+        simpl in *.
+        assert (ARGS: Val.inject_list j vargs vargs0) by admit.
+        destruct (external_call_spec ef).
+        specialize (ec_mem_inject _ _ _ _ _ _ _ _ _ _
+                      (same_symb _ _ _ _ _ _ H2) H
+                      (partial_mem_inject _ _ _ _ _ _ H2) ARGS)
+          as (j' & vres' & m2' & EXT & VINJ & MINJ & MAPPED & REACH & INCR & SEP & BLOCKS).
+        exists j'. apply LeftControl; try assumption.
+        assert (vres0 = vres' /\ m'0 = m2') as [<- <-]. {
+          (* Assuming [ef0] corresponds to the original [ef], we can
+             use [external_call_deterministic] to yield this. *)
+          admit.
+        }
+        constructor.
+        * destruct H2 as [DOM _ _ _ _ _ _].
+          admit. (* see comments *)
+        * exact MINJ.
+        * destruct H2 as [_ _ DELTA _ _ _ _].
+          admit. (* should follow from the properties of external calls, like INCR *)
+        * destruct H2 as [_ _ _ (SINJ1 & SINJ2 & SINJ3 & SINJ4) _ _ _]. simpl.
+          split; [assumption |].
+          split.
+          { (* external calls don't modify the global environment, so any mapped block
+               after the call should also be mapped before the call, making the property
+               invariant *)
+            intros id b1 b2 delta b1_b2 FIND. specialize (SINJ2 id b1 b2 delta).
+            apply SINJ2; [| assumption].
+            admit. }
+          split.
+          { intros id b1 PUB FIND.
+            specialize (SINJ3 id b1 PUB FIND) as (b2 & b1_b2 & FIND').
+            exists b2. split; [| assumption].
+            apply INCR. assumption. }
+          { (* volatile global variables aren't modifed by external calls, so new
+               mappings to those shouldn't be added, making the property invariant *)
+            intros b1 b2 delta b1_b2. admit. }
+        * destruct H2 as [_ _ _ _ INJ _ _]. simpl.
+          intros b1 b2 b1' b2' ofs1 ofs2 NEQ b1_b1' b2_b2'.
+          specialize (INJ b1 b2 b1' b2' ofs1 ofs2 NEQ).
+          admit.
+        * destruct H2 as [_ _ _ _ _ SAME _]. simpl.
+          intros b cp' FIND. specialize (SAME b cp' FIND).
+          change (Mem.block_compartment m b = Some cp')
+            with (Mem.can_access_block m b (Some cp')) in SAME.
+          exact (external_call_can_access_block _ _ _ _ _ _ _ _ _ H SAME).
+        * destruct H2 as [_ _ _ _ _ _ SAME]. simpl.
+          intros b cp' FIND. specialize (SAME b cp' FIND).
+          change (Mem.block_compartment m0 b = Some cp')
+            with (Mem.can_access_block m0 b (Some cp')) in SAME.
+          exact (external_call_can_access_block _ _ _ _ _ _ _ _ _ H4 SAME).
+      + inv EV. admit.  (* contra? *)
+    - (* step_returnstate *)
+      inv EV. inv STEP2.
+      + inv EV.
+      + destruct (ec_no_crossing (external_call_spec ef) _ _ _ _ _ _ H1).
+      + destruct (ec_no_crossing (external_call_spec ef) _ _ _ _ _ _ H).
+      + (* matching case *)
+        inv EV.
+        inv INJ; [| congruence].
+        simpl in *.
+        destruct (state_split_decidable (State f Sskip k e0 (set_opttemp optid v le) m))
+          as [LEFT' | RIGHT'].
+        * exists j. apply LeftControl.
+          -- assumption.
+          -- congruence.
+          -- assumption.
+          -- inv H4; [| assumption].
+             simpl. admit.
+        * exists j. apply RightControl.
+          -- assumption.
+          -- congruence.
+          -- assert (f = f0) as <-. {
+               admit. }
+             apply inject_states.
+             ++ assumption.
+             ++ inv H4; [| assumption].
+                admit.
+             ++ admit.
+             ++ admit.
+  Admitted.
+
   Lemma parallel_abstract_t: forall j s1 s2 s1' s2' t,
     right_state_injection s j ge1 ge2 s1 s2 ->
     s |= s1 ∈ Left ->
@@ -1485,7 +1703,17 @@ Qed.
     step1 ge2 s2 t s2' ->
   exists j',
     right_state_injection s j' ge1 ge2 s1' s2'.
-  Admitted.
+  Proof.
+    intros j s1 s2 s1' s2' t RINJ LEFT STEP1 STEP2.
+    destruct t as [| e1 [| e2 t]].
+    - destruct (parallel_abstract_E0_1 _ _ _ _ RINJ LEFT STEP1) as [j' RINJ'].
+      apply (step_E0_same_side STEP1) in LEFT.
+      destruct (parallel_abstract_E0_2 _ _ _ _ RINJ' LEFT STEP2) as [j'' RINJ''].
+      exists j''. assumption.
+    - eapply parallel_abstract_ev; eauto.
+    - assert (CONTRA := sr_traces (semantics_receptive _) _ _ _ STEP1).
+      inv CONTRA. inv H0.
+  Qed.
 
 (* Lemma parallel_concrete p1 p2 scs1 scs2: *)
 (*   left_side s p1 -> (* use definitions from RSC.v *) *)
