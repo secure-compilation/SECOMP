@@ -612,6 +612,60 @@ Qed.
       auto.
   Qed.
 
+  Lemma bind_parameters_perm_1 {ge cp e m1 params vl m2 b ofs k p}
+    (BIND: bind_parameters ge cp e m1 params vl m2)
+    (PERM: Mem.perm m1 b ofs k p):
+    Mem.perm m2 b ofs k p.
+  Proof.
+    revert b ofs k p PERM.
+    induction BIND; intros;
+      [assumption |].
+    apply (perm_assign_loc_1 H0) in PERM.
+    now auto.
+  Qed.
+
+  Lemma bind_parameters_perm_2 {ge cp e m1 params vl m2 b ofs k p}
+    (BIND: bind_parameters ge cp e m1 params vl m2)
+    (PERM: Mem.perm m2 b ofs k p):
+    Mem.perm m1 b ofs k p.
+  Proof.
+    revert b ofs k p PERM.
+    induction BIND; intros;
+      [assumption |].
+    apply (perm_assign_loc_2 H0).
+    now auto.
+  Qed.
+
+  Lemma alloc_variables_perm_1 {ge cp e1 m1 vars e2 m2 b ofs k p}
+    (ALLOC: alloc_variables ge cp e1 m1 vars e2 m2)
+    (PERM : Mem.perm m1 b ofs k p):
+    Mem.perm m2 b ofs k p.
+  Proof.
+    revert b ofs k p PERM.
+    induction ALLOC; intros;
+      [assumption |].
+    apply (Mem.perm_alloc_1 _ _ _ _ _ _ H) in PERM.
+    now auto.
+  Qed.
+
+  Lemma alloc_variables_perm_2 {ge cp e1 m1 vars e2 m2 b ofs k p}
+    (ALLOC: alloc_variables ge cp e1 m1 vars e2 m2)
+    (VALID: Mem.valid_block m1 b)
+    (PERM : Mem.perm m2 b ofs k p):
+    Mem.perm m1 b ofs k p.
+  Proof.
+    revert b ofs k p VALID PERM.
+    induction ALLOC; intros;
+      [assumption |].
+    destruct (Pos.eq_dec b b1) as [<- | NEQ].
+    - apply Mem.fresh_block_alloc in H. contradiction.
+    - assert (VALID': Mem.valid_block m1 b)
+        by (eapply Mem.valid_block_alloc; eauto).
+      specialize (IHALLOC _ _ _ _ VALID' PERM).
+      eapply Mem.perm_alloc_4; eauto.
+  Qed.
+
+
   (** *)
 
   Lemma public_symbol_preserved:
@@ -1198,7 +1252,63 @@ Qed.
       eapply Mem.free_list_left_inject; eauto.
       eapply Mem.free_list_left_inject; eauto.
       eapply Mem.free_list_left_inject; eauto.
-      { admit. (* injection probably OK *) }
+      { inv H. inv MEMINJ.
+        constructor.
+        - { (* Factor out lemma *)
+          inv mi_inj. constructor.
+          - intros b1 b2 delta ofs' k' p' b1_b2 PERM.
+            admit.
+          - admit.
+          - admit.
+          - admit.
+          }
+        - intros b VALID. specialize (mi_freeblocks b).
+          admit. (* easy, lift results to alloc_variables and bind_parameters*)
+        - auto.
+        - intros b1 b1' delta1 b2 b2' delta2 ofs1 ofs2 b1_b2 b1_b1' b2_b2' PERM1 PERM2.
+          specialize (mi_no_overlap
+                        b1 b1' delta1 b2 b2' delta2 ofs1 ofs2 b1_b2 b1_b1' b2_b2').
+
+          simpl.
+
+          admit. (* easy: b1 and b2 are valid in m, and permissions are preserved *)
+        - intros b b' delta ofs b_b' PERM.
+          specialize (mi_representable b b' delta ofs b_b').
+          apply mi_representable.
+          destruct PERM as [PERM | PERM].
+          + left.
+            assert (VALID: Mem.valid_block m b). {
+              destruct (plt b (Mem.nextblock m)) as [LT | GE];
+                [exact LT |].
+              specialize (mi_freeblocks _ GE).
+              congruence. }
+            apply (alloc_variables_perm_2 H1); eauto.
+            apply (bind_parameters_perm_2 H2); eauto.
+          + right.
+            (* exactly the same script as the previous case *)
+            assert (VALID: Mem.valid_block m b). {
+              destruct (plt b (Mem.nextblock m)) as [LT | GE];
+                [exact LT |].
+              specialize (mi_freeblocks _ GE).
+              congruence. }
+            apply (alloc_variables_perm_2 H1); eauto.
+            apply (bind_parameters_perm_2 H2); eauto.
+        - intros b1 ofs b2 delta k' p' b1_b2 PERM.
+          specialize (mi_perm_inv b1 ofs b2 delta k' p' b1_b2 PERM)
+            as [PERM' | PERM'].
+          + left.
+            eapply bind_parameters_perm_1; eauto.
+            eapply alloc_variables_perm_1; eauto.
+          + right. intros CONTRA. apply PERM'.
+            (* see cases above *)
+            assert (VALID: Mem.valid_block m b1). {
+              destruct (plt b1 (Mem.nextblock m)) as [LT | GE];
+                [exact LT |].
+              specialize (mi_freeblocks _ GE).
+              congruence. }
+            apply (alloc_variables_perm_2 H1); eauto.
+            apply (bind_parameters_perm_2 H2); eauto.
+      }
       { (* New injection *)
         (* destruct (external_call_spec ef). *)
         (* specialize (ec_mem_inject _ _ _ _ _ _ _ _ _ _ *)
