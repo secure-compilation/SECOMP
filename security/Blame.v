@@ -514,6 +514,104 @@ Qed.
     congruence.
   Qed.
 
+  Lemma perm_assign_loc_1 {m m' b b' cp ce ty ofs ofs' bf v k p}
+    (ASGN: assign_loc ce cp ty m b ofs bf v m')
+    (PERM: Mem.perm m b' ofs' k p):
+    Mem.perm m' b' ofs' k p.
+  Proof.
+    inv ASGN.
+    - eapply Mem.perm_store_1; eauto.
+    - eapply Mem.perm_storebytes_1; eauto.
+    - inv H.
+      eapply Mem.perm_store_1; eauto.
+  Qed.
+
+  Lemma perm_assign_loc_2 {m m' b b' cp ce ty ofs ofs' bf v k p}
+    (ASGN: assign_loc ce cp ty m b ofs bf v m')
+    (PERM: Mem.perm m' b' ofs' k p):
+    Mem.perm m b' ofs' k p.
+  Proof.
+    inv ASGN.
+    - eapply Mem.perm_store_2; eauto.
+    - eapply Mem.perm_storebytes_2; eauto.
+    - inv H.
+      eapply Mem.perm_store_2; eauto.
+  Qed.
+
+  Lemma assign_loc_valid_block_1 {m m' b b' cp ce ty ofs bf v}
+    (ASGN: assign_loc ce cp ty m b ofs bf v m')
+    (VALID: Mem.valid_block m b'):
+    Mem.valid_block m' b'.
+  Proof.
+    inv ASGN.
+    - eapply Mem.store_valid_block_1; eauto.
+    - eapply Mem.storebytes_valid_block_1; eauto.
+    - inv H.
+      eapply Mem.store_valid_block_1; eauto.
+  Qed.
+
+  Lemma assign_loc_valid_block_2 {m m' b b' cp ce ty ofs bf v}
+    (ASGN: assign_loc ce cp ty m b ofs bf v m')
+    (VALID: Mem.valid_block m' b'):
+    Mem.valid_block m b'.
+  Proof.
+    inv ASGN.
+    - eapply Mem.store_valid_block_2; eauto.
+    - eapply Mem.storebytes_valid_block_2; eauto.
+    - inv H.
+      eapply Mem.store_valid_block_2; eauto.
+  Qed.
+
+    (* TODO: move, remove transparency hacks, add other direction *)
+  Lemma assign_loc_perm {ce cp ty m b b' ofs ofs' k p bf v m'}
+    (ASGN: assign_loc ce cp ty m b ofs bf v m')
+    (PERM: Mem.perm m' b' ofs' k p):
+    Mem.perm m b' ofs' k p.
+  Proof.
+    inv ASGN.
+    - unfold Mem.storev in H0.
+      Local Transparent Mem.store. unfold Mem.store in H0. Local Opaque Mem.store.
+      destruct Mem.valid_access_dec eqn:VALID; [| discriminate].
+      injection H0 as <-.
+      auto.
+    - Local Transparent Mem.storebytes. unfold Mem.storebytes in H4. Local Opaque Mem.storebytes.
+      destruct Mem.range_perm_dec eqn:RANGE; [| discriminate].
+      destruct Mem.can_access_block_dec eqn:ACC; [| discriminate].
+      injection H4 as <-.
+      auto.
+    - inv H.
+      unfold Mem.storev in H5.
+      Local Transparent Mem.store. unfold Mem.store in H5. Local Opaque Mem.store.
+      destruct Mem.valid_access_dec eqn:VALID; [| discriminate].
+      injection H5 as <-.
+      auto.
+  Qed.
+
+  (* TODO: move, remove transparency hacks, add other direction *)
+  Lemma assign_loc_range_perm {ce cp ty m b b' ofs lo hi k p bf v m'}
+    (ASGN: assign_loc ce cp ty m b ofs bf v m')
+    (PERM: Mem.range_perm m' b' lo hi k p):
+    Mem.range_perm m b' lo hi k p.
+  Proof.
+    inv ASGN.
+    - unfold Mem.storev in H0.
+      Local Transparent Mem.store. unfold Mem.store in H0. Local Opaque Mem.store.
+      destruct Mem.valid_access_dec eqn:VALID; [| discriminate].
+      injection H0 as <-.
+      auto.
+    - Local Transparent Mem.storebytes. unfold Mem.storebytes in H4. Local Opaque Mem.storebytes.
+      destruct Mem.range_perm_dec eqn:RANGE; [| discriminate].
+      destruct Mem.can_access_block_dec eqn:ACC; [| discriminate].
+      injection H4 as <-.
+      auto.
+    - inv H.
+      unfold Mem.storev in H5.
+      Local Transparent Mem.store. unfold Mem.store in H5. Local Opaque Mem.store.
+      destruct Mem.valid_access_dec eqn:VALID; [| discriminate].
+      injection H5 as <-.
+      auto.
+  Qed.
+
   (** *)
 
   Lemma public_symbol_preserved:
@@ -931,9 +1029,9 @@ Qed.
   exists j',
     right_mem_injection s j' ge1 ge2 (memory_of s1') (memory_of s2).
   Proof.
-    intros j s1 s2 s1' MEMINJ LEFT STEP.
+    intros j s1 s2 s1' RMEMINJ LEFT STEP.
     exists j. (* FIXME: this falls back to the old form of the lemma *)
-    destruct MEMINJ as [DOM MEMINJ ZERO SYMB INJ BLKS].
+    inversion RMEMINJ as [DOM MEMINJ ZERO SYMB INJ BLKS].
     constructor; try assumption;
       [| | eapply same_blocks_step1; eassumption].
     { (* NOTE: Essentially identical sub-cases *)
@@ -1045,24 +1143,54 @@ Qed.
             -- admit. (* Same as above sub-case *)
       - admit. (* See [external_call] above *)
     }
-    { clear DOM ZERO SYMB INJ BLKS.
+    { (* clear DOM ZERO SYMB INJ BLKS. *)
       inv STEP; try assumption.
-      {
-        inv MEMINJ.
+      { inv MEMINJ.
         constructor; auto.
-        { (* assign_loc *)
-          (* eapply assign_loc_left_inject; eauto. now constructor. *)
-          simpl in *. inv H2.
-          all:admit.
+        { (* Factor out lemma *)
+          inv mi_inj. constructor.
+          - intros b1 b2 delta ofs' k' p' b1_b2 PERM.
+            apply (perm_assign_loc_2 H2) in PERM.
+            exact (mi_perm b1 b2 delta ofs' k' p' b1_b2 PERM).
+          - intros b1 b2 delta [cp |] b1_b2 ACC; [| reflexivity].
+            change (Mem.can_access_block _ _ _)
+              with (Mem.block_compartment m' b1 = Some cp) in ACC.
+            rewrite <- (assign_loc_block_compartment H2) in ACC.
+            exact (mi_own b1 b2 delta (Some cp) b1_b2 ACC).
+          - intros b1 b2 delta chunk ofs' p b1_b2 PERM.
+            apply (assign_loc_range_perm H2) in PERM.
+            exact (mi_align b1 b2 delta chunk ofs' p b1_b2 PERM).
+          - intros b1 ofs' b2 delta b1_b2 PERM.
+            apply (assign_loc_perm H2) in PERM.
+            specialize (mi_memval b1 ofs' b2 delta b1_b2 PERM).
+            (* b1 is in the injection so it is either
+               - a public symbol
+               - a non-public symbol on the right
+                 (contra, impossible to get ahold of from the left, where we are)
+               - a non-symbol on the right
+                 (contra, impossible to get ahold of from the left, where we are) *)
+            admit.
         }
-        { intros b NOTVALID. specialize (mi_freeblocks b). simpl in *.
-          Search Mem.valid_block Mem.free_list. admit.
+        { intros b NOTVALID. specialize (mi_freeblocks b).
+          apply mi_freeblocks. intro CONTRA. apply NOTVALID.
+          eapply assign_loc_valid_block_1; eauto.
         }
         { intros b1 b1' delta1 b2 b2' delta2 ofs1 ofs2 b1_b2 j_b1 j_b2 PERM1 PERM2.
           specialize (mi_no_overlap b1 b1' delta1 b2 b2' delta2 ofs1 ofs2 b1_b2 j_b1 j_b2).
-          simpl in *. admit.
+          apply mi_no_overlap.
+          - exact (perm_assign_loc_2 H2 PERM1).
+          - exact (perm_assign_loc_2 H2 PERM2).
         }
-        admit. admit.
+        { intros b b' delta ofs' b_b' PERM.
+          specialize (mi_representable b b' delta ofs' b_b').
+          apply mi_representable. destruct PERM as [PERM | PERM].
+          - left. exact (perm_assign_loc_2 H2 PERM).
+          - right. exact (perm_assign_loc_2 H2 PERM). }
+        { intros b1 ofs' b2 delta k' p b1_b2 PERM.
+          specialize (mi_perm_inv b1 ofs' b2 delta k' p b1_b2 PERM).
+          destruct mi_perm_inv as [PERM' | PERM'].
+          - left. exact (perm_assign_loc_1 H2 PERM').
+          - right. intros CONTRA. apply PERM'. exact (perm_assign_loc_2 H2 CONTRA). }
       }
       { (* New injection *)
         admit.
@@ -1072,7 +1200,12 @@ Qed.
       eapply Mem.free_list_left_inject; eauto.
       { admit. (* injection probably OK *) }
       { (* New injection *)
-        admit.
+        (* destruct (external_call_spec ef). *)
+        (* specialize (ec_mem_inject _ _ _ _ _ _ _ _ _ _ *)
+        (*               (same_symb _ _ _ _ _ _ RMEMINJ) H *)
+        (*               (partial_mem_inject _ _ _ _ _ _ RMEMINJ) ARGS) *)
+        (*   as (j' & vres' & m2' & EXT & VINJ & MINJ & MAPPED & REACH & INCR & SEP & BLOCKS). *)
+         admit.
       }
     }
   Admitted.
@@ -1089,7 +1222,7 @@ Qed.
     s |= s1 ∈ Left ->
     step1 ge1 s1 E0 s1' ->
     right_cont_injection s (cont_of s1') (cont_of s2).
-  Admitted. (* Symmetric *)
+  Admitted. (* Symmetric, unused? *)
 
   (* WIP *)
   Definition abstract_step_inj (j: meminj): meminj :=
