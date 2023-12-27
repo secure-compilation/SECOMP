@@ -788,6 +788,30 @@ Qed.
       eapply Mem.alloc_can_access_block_other_inj_2; eauto.
   Qed.
 
+  (* nicer variants of this? *)
+  Lemma alloc_variables_can_access_block_fresh {ge cp e1 m1 vars e2 m2 b cp'}
+    (ALLOC: alloc_variables ge cp e1 m1 vars e2 m2)
+    (VALID: ~ Mem.valid_block m1 b)
+    (ACC : Mem.can_access_block m2 b (Some cp')):
+    cp = cp'.
+  Proof.
+    revert b cp' VALID ACC.
+    induction ALLOC; intros.
+    - apply Mem.can_access_block_valid_block in ACC.
+      contradiction.
+    - destruct (Pos.eq_dec b b1) as [<- | NEQ].
+      (* Search Mem.alloc compartment. *)
+      + apply Mem.owned_new_block in H.
+        apply (alloc_variables_can_access_block_1 ALLOC) in H.
+        congruence.
+      + eapply IHALLOC; [| eassumption].
+        intros CONTRA. apply VALID; clear VALID.
+        destruct (Mem.valid_block_alloc_inv _ _ _ _ _ _ H _ CONTRA) as [EQ | VALID];
+          [contradiction |].
+        destruct (plt b (Mem.nextblock m)) as [LT | GE];
+          [exact LT | contradiction].
+  Qed.
+
   (** *)
 
   Lemma public_symbol_preserved:
@@ -1264,7 +1288,17 @@ Qed.
                  rewrite (external_call_can_access_block _ _ _ _ _ _ _ _ _ H0 COMP) in COMP'.
                  congruence. }
                exact (DOM RIGHT).
-            -- admit. (* Easy, contra on LEFT and RIGHT with H0 *)
+            -- (* Easy, contra on LEFT and RIGHT with H0 *)
+               apply Mem.block_compartment_valid_block in COMP.
+               assert (VALID: Mem.valid_block m' b). {
+                 destruct (plt b (Mem.nextblock m')) as [G | CONTRA];
+                   [exact G |].
+                 apply Mem.block_compartment_valid_block in CONTRA.
+                 congruence. }
+               rewrite (ec_new_valid (external_call_spec ef) _ _ _ _ H0 COMP VALID)
+                 in COMP'.
+               injection COMP' as <-.
+               congruence.
         + simpl. simpl in DOM. split.
           * intros j_b. destruct DOM as [DOM _]. specialize (DOM j_b).
             destruct (Mem.block_compartment m b) as [cp |] eqn:COMP;
@@ -1283,9 +1317,20 @@ Qed.
                  rewrite (external_call_can_access_block _ _ _ _ _ _ _ _ _ H0 COMP) in COMP'.
                  congruence. }
                exact (DOM RIGHT).
-            -- admit. (* If any newly allocated [b] belongs to [comp_of ef] = [comp_of f]
-                         (which is on the left), and since [b] belongs to [cp'] (which is
-                         on the right), this is a contradiction. *)
+            -- (* If any newly allocated [b] belongs to [comp_of ef] = [comp_of f]
+                  (which is on the left), and since [b] belongs to [cp'] (which is
+                  on the right), this is a contradiction. *)
+               (* same as contra above *)
+               apply Mem.block_compartment_valid_block in COMP.
+               assert (VALID: Mem.valid_block m' b). {
+                 destruct (plt b (Mem.nextblock m')) as [G | CONTRA];
+                   [exact G |].
+                 apply Mem.block_compartment_valid_block in CONTRA.
+                 congruence. }
+               rewrite (ec_new_valid (external_call_spec ef) _ _ _ _ H0 COMP VALID)
+                 in COMP'.
+               injection COMP' as <-.
+               congruence.
       - eapply same_domain_free_list; eauto.
       - eapply same_domain_free_list; eauto.
       - eapply same_domain_free_list; eauto.
@@ -1297,26 +1342,61 @@ Qed.
           * intros j_b. destruct DOM as [DOM _]. specialize (DOM j_b).
             destruct (Mem.block_compartment m b) as [cp |] eqn:COMP;
               [| contradiction].
-            admit. (* Easy *)
+            change (Mem.block_compartment _ _ = _)
+              with (Mem.can_access_block m b (Some cp)) in COMP.
+            apply (alloc_variables_can_access_block_1 H1) in COMP.
+            apply (bind_parameters_can_access_block_1 H2) in COMP.
+            rewrite COMP. assumption.
           * intros RIGHT. destruct DOM as [_ DOM].
             destruct (Mem.block_compartment m1 b) as [cp' |] eqn:COMP';
               [| contradiction].
             destruct (Mem.block_compartment m b) as [cp |] eqn:COMP.
-            -- assert (cp = cp') as <- by admit. (* Easy *)
+            -- assert (cp = cp') as <-. {
+                 change (Mem.block_compartment _ _ = _)
+                   with (Mem.can_access_block m b (Some cp)) in COMP.
+                 apply (alloc_variables_can_access_block_1 H1) in COMP.
+                 apply (bind_parameters_can_access_block_1 H2) in COMP.
+                 congruence. }
                exact (DOM RIGHT).
-            -- admit. (* Easy, contra on LEFT and RIGHT with H1 and H2 *)
+            -- (* Easy, contra on LEFT and RIGHT with H1 and H2 *)
+               apply Mem.block_compartment_valid_block in COMP.
+               change (Mem.block_compartment _ _ = _)
+                 with (Mem.can_access_block m1 b (Some cp')) in COMP'.
+               apply (bind_parameters_can_access_block_2 H2) in COMP'.
+               rewrite <- (alloc_variables_can_access_block_fresh H1 COMP COMP')
+                 in RIGHT.
+               simpl in LEFT. unfold comp_of in LEFT. simpl in LEFT.
+               congruence.
         + simpl. simpl in DOM. split.
           * intros j_b. destruct DOM as [DOM _]. specialize (DOM j_b).
             destruct (Mem.block_compartment m b) as [cp |] eqn:COMP;
               [| contradiction].
-            admit. (* Easy *)
+            (* same as above *)
+            change (Mem.block_compartment _ _ = _)
+              with (Mem.can_access_block m b (Some cp)) in COMP.
+            apply (alloc_variables_can_access_block_1 H1) in COMP.
+            apply (bind_parameters_can_access_block_1 H2) in COMP.
+            rewrite COMP. assumption.
           * intros RIGHT. destruct DOM as [_ DOM].
             destruct (Mem.block_compartment m1 b) as [cp' |] eqn:COMP';
               [| contradiction].
             destruct (Mem.block_compartment m b) as [cp |] eqn:COMP.
-            -- assert (cp = cp') as <- by admit. (* Easy *)
+            -- assert (cp = cp') as <-.  {
+                 change (Mem.block_compartment _ _ = _)
+                   with (Mem.can_access_block m b (Some cp)) in COMP.
+                 apply (alloc_variables_can_access_block_1 H1) in COMP.
+                 apply (bind_parameters_can_access_block_1 H2) in COMP.
+                 congruence. }
                exact (DOM RIGHT).
-            -- admit. (* Same as above sub-case *)
+            -- (* Same as above sub-case *)
+               apply Mem.block_compartment_valid_block in COMP.
+               change (Mem.block_compartment _ _ = _)
+                 with (Mem.can_access_block m1 b (Some cp')) in COMP'.
+               apply (bind_parameters_can_access_block_2 H2) in COMP'.
+               rewrite <- (alloc_variables_can_access_block_fresh H1 COMP COMP')
+                 in RIGHT.
+               simpl in LEFT. unfold comp_of in LEFT. simpl in LEFT.
+               congruence.
       - admit. (* See [external_call] above *)
     }
     { (* clear DOM ZERO SYMB INJ BLKS. *)
