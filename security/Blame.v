@@ -1397,7 +1397,76 @@ Qed.
                  in RIGHT.
                simpl in LEFT. unfold comp_of in LEFT. simpl in LEFT.
                congruence.
-      - admit. (* See [external_call] above *)
+      - (* See [external_call] above (second sub-case) *)
+        (* identical, except H0 is H,
+           and LEFT requires simplification in a couple of places:
+             [simpl in LEFT. unfold comp_of in LEFT. simpl in LEFT.] *)
+        intros b; specialize (DOM b).
+        destruct Genv.invert_symbol as [id |] eqn:INVSYM.
+        + destruct Senv.public_symbol eqn:PUBSYM; [assumption |].
+          simpl. simpl in DOM. split.
+          * intros j_b. destruct DOM as [DOM _]. specialize (DOM j_b).
+            destruct (Mem.block_compartment m b) as [cp |] eqn:COMP;
+              [| contradiction].
+            change (Mem.block_compartment _ _ = _ )
+              with (Mem.can_access_block m b (Some cp)) in COMP.
+            rewrite (external_call_can_access_block _ _ _ _ _ _ _ _ _ H COMP).
+            assumption.
+          * intros RIGHT. destruct DOM as [_ DOM].
+            destruct (Mem.block_compartment m' b) as [cp' |] eqn:COMP';
+              [| contradiction].
+            destruct (Mem.block_compartment m b) as [cp |] eqn:COMP.
+            -- assert (cp = cp') as <-. {
+                 change (Mem.block_compartment _ _ = _ )
+                   with (Mem.can_access_block m b (Some cp)) in COMP.
+                 rewrite (external_call_can_access_block _ _ _ _ _ _ _ _ _ H COMP) in COMP'.
+                 congruence. }
+               exact (DOM RIGHT).
+            -- (* Easy, contra on LEFT and RIGHT with H0 *)
+               apply Mem.block_compartment_valid_block in COMP.
+               assert (VALID: Mem.valid_block m' b). {
+                 destruct (plt b (Mem.nextblock m')) as [G | CONTRA];
+                   [exact G |].
+                 apply Mem.block_compartment_valid_block in CONTRA.
+                 congruence. }
+               rewrite (ec_new_valid (external_call_spec ef) _ _ _ _ H COMP VALID)
+                 in COMP'.
+               injection COMP' as <-.
+               simpl in LEFT. unfold comp_of in LEFT. simpl in LEFT.
+               congruence.
+        + simpl. simpl in DOM. split.
+          * intros j_b. destruct DOM as [DOM _]. specialize (DOM j_b).
+            destruct (Mem.block_compartment m b) as [cp |] eqn:COMP;
+              [| contradiction].
+            change (Mem.block_compartment _ _ = _ )
+              with (Mem.can_access_block m b (Some cp)) in COMP.
+            rewrite (external_call_can_access_block _ _ _ _ _ _ _ _ _ H COMP).
+            assumption.
+          * intros RIGHT. destruct DOM as [_ DOM].
+            destruct (Mem.block_compartment m' b) as [cp' |] eqn:COMP';
+              [| contradiction].
+            destruct (Mem.block_compartment m b) as [cp |] eqn:COMP.
+            -- assert (cp = cp') as <-. {
+                 change (Mem.block_compartment _ _ = _ )
+                   with (Mem.can_access_block m b (Some cp)) in COMP.
+                 rewrite (external_call_can_access_block _ _ _ _ _ _ _ _ _ H COMP) in COMP'.
+                 congruence. }
+               exact (DOM RIGHT).
+            -- (* If any newly allocated [b] belongs to [comp_of ef] = [comp_of f]
+                  (which is on the left), and since [b] belongs to [cp'] (which is
+                  on the right), this is a contradiction. *)
+               (* same as contra above *)
+               apply Mem.block_compartment_valid_block in COMP.
+               assert (VALID: Mem.valid_block m' b). {
+                 destruct (plt b (Mem.nextblock m')) as [G | CONTRA];
+                   [exact G |].
+                 apply Mem.block_compartment_valid_block in CONTRA.
+                 congruence. }
+               rewrite (ec_new_valid (external_call_spec ef) _ _ _ _ H COMP VALID)
+                 in COMP'.
+               injection COMP' as <-.
+               simpl in LEFT. unfold comp_of in LEFT. simpl in LEFT.
+               congruence.
     }
     { (* clear DOM ZERO SYMB INJ BLKS. *)
       inv STEP; try assumption.
@@ -2094,13 +2163,11 @@ Qed.
       + inv EV.
     - (* step_builtin *)
       inv INJ; [| congruence]. inv STEP2.
-      (* inv H3. simpl in *. *)
-      (* admit. *)
       + admit.
       + (* matching case *) admit.
       + admit.
       + inv EV. simpl in *. inv H4.
-        * simpl in *. admit.
+        * admit.
         * admit.
     - (* step_external_function *)
       inv INJ; [| congruence]. inv STEP2.
@@ -2143,10 +2210,37 @@ Qed.
           { (* volatile global variables aren't modifed by external calls, so new
                mappings to those shouldn't be added, making the property invariant *)
             intros b1 b2 delta b1_b2. admit. }
-        * destruct H2 as [_ _ _ _ INJ _ _]. simpl.
+        * destruct H2 as [_ MEMINJ _ _ INJ _ _].
           intros b1 b2 b1' b2' ofs1 ofs2 NEQ b1_b1' b2_b2'.
           specialize (INJ b1 b2 b1' b2' ofs1 ofs2 NEQ).
-          admit.
+          destruct (j b1) as [[b1'' ofs1']|] eqn:b1_b1''.
+          -- rewrite (INCR _ _ _ b1_b1'') in b1_b1'. injection b1_b1' as -> ->.
+             destruct (j b2) as [[b2'' ofs2']|] eqn:b2_b2''.
+             ++ rewrite (INCR _ _ _ b2_b2'') in b2_b2'. injection b2_b2' as -> ->.
+                apply INJ; reflexivity.
+             ++ destruct (SEP _ _ _ b2_b2'' b2_b2') as [m_b2 m0_b2'].
+                assert (m'_b2: Mem.valid_block m' b2). {
+                  destruct (plt b2 (Mem.nextblock m')) as [LT | GE];
+                    [exact LT |].
+                  rewrite (Mem.mi_freeblocks _ _ _ MINJ _ GE) in b2_b2'.
+                  discriminate. }
+                assert (m'0_b2' := Mem.mi_mappedblocks _ _ _ MINJ _ _ _ b2_b2').
+                Check b1_b1''.
+                Check b2_b2''.
+                (* - [b2] is not valid in [m] (before the external call) but
+                     it is valid in [m'] (after the call)
+                   - same for [b2'] between [m0] and [m'0] *)
+                clear ec_well_typed ec_max_perm ec_symbols_preserved ec_valid_block ec_can_access_block ec_readonly ec_trace_length ec_receptive ec_determ ec_no_crossing.
+                Check Mem.mi_mappedblocks _ _ _ MEMINJ _ _ _ b1_b1''.
+                Check BLOCKS _ m_b2 m'_b2.
+                Check INCR _ _ _ b1_b1''.
+                admit.
+          -- destruct (SEP _ _ _ b1_b1'' b1_b1') as [m_b1 m0_b1'].
+             destruct (j b2) as [[b2'' ofs2']|] eqn:b2_b2''.
+             ++ rewrite (INCR _ _ _ b2_b2'') in b2_b2'. injection b2_b2' as -> ->.
+                admit.
+             ++ destruct (SEP _ _ _ b2_b2'' b2_b2') as [m_b2 m0_b2'].
+                admit.
         * destruct H2 as [_ _ _ _ _ SAME _]. simpl.
           intros b cp' FIND. specialize (SAME b cp' FIND).
           change (Mem.block_compartment m b = Some cp')
