@@ -562,7 +562,7 @@ Qed.
       eapply Mem.store_valid_block_2; eauto.
   Qed.
 
-    (* TODO: move, remove transparency hacks, add other direction *)
+  (* TODO: move, remove transparency hacks, add other direction *)
   Lemma assign_loc_perm {ce cp ty m b b' ofs ofs' k p bf v m'}
     (ASGN: assign_loc ce cp ty m b ofs bf v m')
     (PERM: Mem.perm m' b' ofs' k p):
@@ -612,6 +612,18 @@ Qed.
       auto.
   Qed.
 
+  Lemma bind_parameters_valid_block_1 {ge cp e m1 params vl m2 b }
+    (BIND: bind_parameters ge cp e m1 params vl m2)
+    (VALID : Mem.valid_block m1 b):
+    Mem.valid_block m2 b.
+  Proof.
+    revert b VALID.
+    induction BIND; intros;
+      [assumption |].
+    apply IHBIND.
+    eapply assign_loc_valid_block_1; eauto.
+  Qed.
+
   Lemma bind_parameters_perm_1 {ge cp e m1 params vl m2 b ofs k p}
     (BIND: bind_parameters ge cp e m1 params vl m2)
     (PERM: Mem.perm m1 b ofs k p):
@@ -634,6 +646,69 @@ Qed.
       [assumption |].
     apply (perm_assign_loc_2 H0).
     now auto.
+  Qed.
+
+  Lemma bind_parameters_range_perm_1 {ge cp e m1 params vl m2 b hi lo k p}
+    (BIND: bind_parameters ge cp e m1 params vl m2)
+    (PERM: Mem.range_perm m1 b hi lo k p):
+    Mem.range_perm m2 b hi lo k p.
+  Proof.
+    intros delta RANGE.
+    eapply bind_parameters_perm_1; eauto.
+  Qed.
+
+  Lemma bind_parameters_range_perm_2 {ge cp e m1 params vl m2 b hi lo k p}
+    (BIND: bind_parameters ge cp e m1 params vl m2)
+    (PERM: Mem.range_perm m2 b hi lo k p):
+    Mem.range_perm m1 b hi lo k p.
+  Proof.
+    intros delta RANGE.
+    eapply bind_parameters_perm_2; eauto.
+  Qed.
+
+  Lemma bind_parameters_can_access_block_1 {ge cp e m1 params vl m2 b cp'}
+    (BIND: bind_parameters ge cp e m1 params vl m2)
+    (ACC : Mem.can_access_block m1 b cp'):
+    Mem.can_access_block m2 b cp'.
+  Proof.
+    destruct cp' as [cp' |];
+      [| reflexivity].
+    revert b cp' ACC.
+    induction BIND; intros;
+      [assumption |].
+    change (Mem.can_access_block _ _ _)
+      with (Mem.block_compartment m b0 = Some cp') in ACC.
+    rewrite (assign_loc_block_compartment H0) in ACC.
+    eauto.
+  Qed.
+
+  Lemma bind_parameters_can_access_block_2 {ge cp e m1 params vl m2 b cp'}
+    (BIND: bind_parameters ge cp e m1 params vl m2)
+    (ACC : Mem.can_access_block m2 b cp'):
+    Mem.can_access_block m1 b cp'.
+  Proof.
+    destruct cp' as [cp' |];
+      [| reflexivity].
+    revert b cp' ACC.
+    induction BIND; intros;
+      [assumption |].
+    apply IHBIND in ACC.
+    change (Mem.can_access_block _ _ _)
+      with (Mem.block_compartment m1 b0 = Some cp') in ACC.
+    rewrite <- (assign_loc_block_compartment H0) in ACC.
+    auto.
+  Qed.
+
+  Lemma alloc_variables_valid_block_1 {ge cp e1 m1 vars e2 m2 b}
+    (ALLOC: alloc_variables ge cp e1 m1 vars e2 m2)
+    (VALID : Mem.valid_block m1 b):
+    Mem.valid_block m2 b.
+  Proof.
+    revert b VALID.
+    induction ALLOC; intros;
+      [assumption |].
+    apply IHALLOC.
+    eapply Mem.valid_block_alloc; eauto.
   Qed.
 
   Lemma alloc_variables_perm_1 {ge cp e1 m1 vars e2 m2 b ofs k p}
@@ -665,6 +740,53 @@ Qed.
       eapply Mem.perm_alloc_4; eauto.
   Qed.
 
+  Lemma alloc_variables_range_perm_1 {ge cp e1 m1 vars e2 m2 b hi lo k p}
+    (ALLOC: alloc_variables ge cp e1 m1 vars e2 m2)
+    (PERM : Mem.range_perm m1 b hi lo k p):
+    Mem.range_perm m2 b hi lo k p.
+  Proof.
+    intros delta RANGE.
+    eapply alloc_variables_perm_1; eauto.
+  Qed.
+
+  Lemma alloc_variables_range_perm_2 {ge cp e1 m1 vars e2 m2 b hi lo k p}
+    (ALLOC: alloc_variables ge cp e1 m1 vars e2 m2)
+    (VALID: Mem.valid_block m1 b)
+    (PERM : Mem.range_perm m2 b hi lo k p):
+    Mem.range_perm m1 b hi lo k p.
+  Proof.
+    intros delta RANGE.
+    eapply alloc_variables_perm_2; eauto.
+  Qed.
+
+  Lemma alloc_variables_can_access_block_1 {ge cp e1 m1 vars e2 m2 b cp'}
+    (ALLOC: alloc_variables ge cp e1 m1 vars e2 m2)
+    (ACC : Mem.can_access_block m1 b cp'):
+    Mem.can_access_block m2 b cp'.
+  Proof.
+    revert b cp' ACC.
+    induction ALLOC; intros;
+      [assumption |].
+    apply IHALLOC.
+    eapply Mem.alloc_can_access_block_other_inj_1; eauto.
+  Qed.
+
+  Lemma alloc_variables_can_access_block_2 {ge cp e1 m1 vars e2 m2 b cp'}
+    (ALLOC: alloc_variables ge cp e1 m1 vars e2 m2)
+    (VALID: Mem.valid_block m1 b)
+    (ACC : Mem.can_access_block m2 b cp'):
+    Mem.can_access_block m1 b cp'.
+  Proof.
+    revert b cp' VALID ACC.
+    induction ALLOC; intros;
+      [assumption |].
+    destruct (Pos.eq_dec b b1) as [<- | NEQ].
+    - apply Mem.fresh_block_alloc in H. contradiction.
+    - assert (VALID': Mem.valid_block m1 b)
+        by (eapply Mem.valid_block_alloc; eauto).
+      specialize (IHALLOC _ _ VALID' ACC).
+      eapply Mem.alloc_can_access_block_other_inj_2; eauto.
+  Qed.
 
   (** *)
 
@@ -1257,27 +1379,74 @@ Qed.
         - { (* Factor out lemma *)
           inv mi_inj. constructor.
           - intros b1 b2 delta ofs' k' p' b1_b2 PERM.
+            assert (VALID: Mem.valid_block m b1). { (* extract lemma *)
+              destruct (plt b1 (Mem.nextblock m)) as [LT | GE];
+                [exact LT |].
+              specialize (mi_freeblocks _ GE).
+              congruence. }
+            specialize (mi_perm b1 b2 delta ofs' k' p' b1_b2).
+            apply (bind_parameters_perm_2 H2) in PERM.
+            apply (alloc_variables_perm_2 H1) in PERM; auto.
+          - intros b1 b2 delta cp b1_b2 ACC.
+            assert (VALID: Mem.valid_block m b1). { (* extract lemma *)
+              destruct (plt b1 (Mem.nextblock m)) as [LT | GE];
+                [exact LT |].
+              specialize (mi_freeblocks _ GE).
+              congruence. }
+            specialize (mi_own b1 b2 delta cp b1_b2). apply mi_own.
+            apply (bind_parameters_can_access_block_2 H2) in ACC.
+            apply (alloc_variables_can_access_block_2 H1) in ACC; auto.
+          - intros b1 b2 delta chunk ofs p b1_b2 PERM.
+            assert (VALID: Mem.valid_block m b1). { (* extract lemma *)
+              destruct (plt b1 (Mem.nextblock m)) as [LT | GE];
+                [exact LT |].
+              specialize (mi_freeblocks _ GE).
+              congruence. }
+            specialize (mi_align b1 b2 delta chunk ofs p b1_b2). apply mi_align.
+            apply (bind_parameters_range_perm_2 H2) in PERM.
+            apply (alloc_variables_range_perm_2 H1) in PERM; eauto.
+          - intros b1 ofs b2 delta b1_b2 PERM.
+            assert (VALID: Mem.valid_block m b1). { (* extract lemma *)
+              destruct (plt b1 (Mem.nextblock m)) as [LT | GE];
+                [exact LT |].
+              specialize (mi_freeblocks _ GE).
+              congruence. }
+            (* easy: [b1] is already present in [m] and consequently its
+               contents are not affected by either [alloc_variables] or
+               [bind_parameters] *)
+            apply (bind_parameters_perm_2 H2) in PERM.
+            apply (alloc_variables_perm_2 H1) in PERM; auto.
+            specialize (mi_memval b1 ofs b2 delta b1_b2 PERM).
+            simpl. simpl in mi_memval.
             admit.
-          - admit.
-          - admit.
-          - admit.
           }
         - intros b VALID. specialize (mi_freeblocks b).
-          admit. (* easy, lift results to alloc_variables and bind_parameters*)
+          apply mi_freeblocks. intros CONTRA. apply VALID.
+          simpl in *.
+          eapply bind_parameters_valid_block_1; eauto.
+          eapply alloc_variables_valid_block_1; eauto.
         - auto.
         - intros b1 b1' delta1 b2 b2' delta2 ofs1 ofs2 b1_b2 b1_b1' b2_b2' PERM1 PERM2.
           specialize (mi_no_overlap
                         b1 b1' delta1 b2 b2' delta2 ofs1 ofs2 b1_b2 b1_b1' b2_b2').
-
-          simpl.
-
-          admit. (* easy: b1 and b2 are valid in m, and permissions are preserved *)
+          assert (VALID1: Mem.valid_block m b1). { (* extract lemma *)
+            destruct (plt b1 (Mem.nextblock m)) as [LT | GE];
+              [exact LT |].
+            specialize (mi_freeblocks _ GE).
+            congruence. }
+          assert (VALID2: Mem.valid_block m b2). { (* extract lemma *)
+            destruct (plt b2 (Mem.nextblock m)) as [LT | GE];
+              [exact LT |].
+            specialize (mi_freeblocks _ GE).
+            congruence. }
+          apply (bind_parameters_perm_2 H2) in PERM1, PERM2.
+          apply (alloc_variables_perm_2 H1) in PERM1, PERM2; eauto.
         - intros b b' delta ofs b_b' PERM.
           specialize (mi_representable b b' delta ofs b_b').
           apply mi_representable.
           destruct PERM as [PERM | PERM].
           + left.
-            assert (VALID: Mem.valid_block m b). {
+            assert (VALID: Mem.valid_block m b). { (* extract lemma *)
               destruct (plt b (Mem.nextblock m)) as [LT | GE];
                 [exact LT |].
               specialize (mi_freeblocks _ GE).
@@ -1286,7 +1455,7 @@ Qed.
             apply (bind_parameters_perm_2 H2); eauto.
           + right.
             (* exactly the same script as the previous case *)
-            assert (VALID: Mem.valid_block m b). {
+            assert (VALID: Mem.valid_block m b). { (* extract lemma *)
               destruct (plt b (Mem.nextblock m)) as [LT | GE];
                 [exact LT |].
               specialize (mi_freeblocks _ GE).
@@ -1301,7 +1470,7 @@ Qed.
             eapply alloc_variables_perm_1; eauto.
           + right. intros CONTRA. apply PERM'.
             (* see cases above *)
-            assert (VALID: Mem.valid_block m b1). {
+            assert (VALID: Mem.valid_block m b1). { (* extract lemma *)
               destruct (plt b1 (Mem.nextblock m)) as [LT | GE];
                 [exact LT |].
               specialize (mi_freeblocks _ GE).
