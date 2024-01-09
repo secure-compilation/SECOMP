@@ -207,17 +207,6 @@ Section Equivalence.
       eapply same_blocks_store; eauto.
   Qed.
 
-  Lemma same_blocks_function_entry1 ge f vargs m e le m'
-    (ENTRY : function_entry1 ge f vargs m e le m')
-    (BLOCKS : same_blocks ge m) :
-    same_blocks ge m'.
-  Proof.
-    clear j.
-    intros b cp FIND. specialize (BLOCKS b cp FIND).
-    inv ENTRY.
-    (* Search Mem.alloc Mem.block_compartment. *)
-  Admitted.
-
   Record right_mem_injection (ge1 ge2: genv) (m1 m2: mem) : Prop :=
     { same_dom: same_domain ge1 m1;
       partial_mem_inject: Mem.inject j m1 m2;
@@ -462,31 +451,6 @@ Proof.
 Qed.
 
   (** More invariant helpers *)
-
-  Lemma same_blocks_step1 s1 s1'
-    (BLKS : same_blocks ge1 (memory_of s1))
-    (STEP : step1 ge1 s1 E0 s1'):
-    same_blocks ge1 (memory_of s1').
-  Proof.
-    inv STEP; auto.
-    - eapply same_blocks_assign_loc; eauto.
-    - intros b cp FIND.
-      specialize (BLKS b cp FIND).
-      simpl in *.
-      change (Mem.block_compartment m b = Some cp)
-        with (Mem.can_access_block m b (Some cp)) in BLKS.
-      exploit external_call_can_access_block; eauto.
-    - eapply same_blocks_free_list; eauto.
-    - eapply same_blocks_free_list; eauto.
-    - eapply same_blocks_free_list; eauto.
-    - eapply same_blocks_function_entry1; eauto.
-    - intros b cp FIND.
-      specialize (BLKS b cp FIND).
-      simpl in *.
-      change (Mem.block_compartment m b = Some cp)
-        with (Mem.can_access_block m b (Some cp)) in BLKS.
-      exploit external_call_can_access_block; eauto.
-  Qed.
 
   Lemma assign_loc_left_inject f m1 m2 m1' ce cp ty b ofs bf v
     (INJ: Mem.inject f m1 m2)
@@ -810,6 +774,44 @@ Qed.
           [contradiction |].
         destruct (plt b (Mem.nextblock m)) as [LT | GE];
           [exact LT | contradiction].
+  Qed.
+
+  Lemma same_blocks_function_entry1 ge f vargs m e le m'
+    (ENTRY : function_entry1 ge f vargs m e le m')
+    (BLOCKS : same_blocks ge m) :
+    same_blocks ge m'.
+  Proof.
+    intros b cp FIND. specialize (BLOCKS b cp FIND).
+    inv ENTRY.
+    change (Mem.block_compartment _ _ = _)
+      with (Mem.can_access_block m' b (Some cp)).
+    eapply bind_parameters_can_access_block_1; eauto.
+    eapply alloc_variables_can_access_block_1; eauto.
+  Qed.
+
+  Lemma same_blocks_step1 s1 s1'
+    (BLKS : same_blocks ge1 (memory_of s1))
+    (STEP : step1 ge1 s1 E0 s1'):
+    same_blocks ge1 (memory_of s1').
+  Proof.
+    inv STEP; auto.
+    - eapply same_blocks_assign_loc; eauto.
+    - intros b cp FIND.
+      specialize (BLKS b cp FIND).
+      simpl in *.
+      change (Mem.block_compartment m b = Some cp)
+        with (Mem.can_access_block m b (Some cp)) in BLKS.
+      exploit external_call_can_access_block; eauto.
+    - eapply same_blocks_free_list; eauto.
+    - eapply same_blocks_free_list; eauto.
+    - eapply same_blocks_free_list; eauto.
+    - eapply same_blocks_function_entry1; eauto.
+    - intros b cp FIND.
+      specialize (BLKS b cp FIND).
+      simpl in *.
+      change (Mem.block_compartment m b = Some cp)
+        with (Mem.can_access_block m b (Some cp)) in BLKS.
+      exploit external_call_can_access_block; eauto.
   Qed.
 
   (** *)
@@ -1518,7 +1520,7 @@ Qed.
           - right. intros CONTRA. apply PERM'. exact (perm_assign_loc_2 H2 CONTRA). }
       }
       { (* New injection *)
-        admit.
+        admit. (* see last case on external calls below *)
       }
       eapply Mem.free_list_left_inject; eauto.
       eapply Mem.free_list_left_inject; eauto.
@@ -1567,7 +1569,7 @@ Qed.
             apply (alloc_variables_perm_2 H1) in PERM; auto.
             specialize (mi_memval b1 ofs b2 delta b1_b2 PERM).
             simpl. simpl in mi_memval.
-            admit.
+            admit. (* easy, see above *)
           }
         - intros b VALID. specialize (mi_freeblocks b).
           apply mi_freeblocks. intros CONTRA. apply VALID.
@@ -1628,12 +1630,15 @@ Qed.
             apply (bind_parameters_perm_2 H2); eauto.
       }
       { (* New injection *)
+        (* external call on the left, isolate effects on injection according to DOM *)
         (* destruct (external_call_spec ef). *)
+        (* assert (ARGS: Val.inject_list j vargs vargs) by admit. *)
         (* specialize (ec_mem_inject _ _ _ _ _ _ _ _ _ _ *)
         (*               (same_symb _ _ _ _ _ _ RMEMINJ) H *)
         (*               (partial_mem_inject _ _ _ _ _ _ RMEMINJ) ARGS) *)
         (*   as (j' & vres' & m2' & EXT & VINJ & MINJ & MAPPED & REACH & INCR & SEP & BLOCKS). *)
-         admit.
+        (* assert (HACK: j = j') by admit; rewrite HACK; clear HACK. (* what we actually want to prove *) *)
+        admit.
       }
     }
   Admitted.
@@ -2278,8 +2283,8 @@ Qed.
              ++ assumption.
              ++ inv H4; [| assumption].
                 admit.
-             ++ admit.
-             ++ admit.
+             ++ admit. (* right_env_injection *)
+             ++ admit. (* right_tenv_injection *)
   Admitted.
 
   Lemma parallel_abstract_t: forall j s1 s2 s1' s2' t,
