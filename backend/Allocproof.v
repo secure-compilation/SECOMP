@@ -25,32 +25,6 @@ Require Import Allocation.
 Definition match_prog (p: RTL.program) (tp: LTL.program) :=
   match_program (fun _ f tf => transf_fundef f = OK tf) eq p tp.
 
-#[global] Instance comp_transf_function: has_comp_transl_partial transf_function.
-Proof.
-  unfold transf_function, check_function.
-  intros f ? H.
-  destruct type_function; try easy.
-  destruct regalloc; try easy.
-  destruct analyze; try easy.
-  destruct cp_eq_dec as [e|?]; try easy.
-  monadInv H.
-  exact e.
-Qed.
-
-#[global] Instance comp_transf_fundef: has_comp_transl_partial transf_fundef.
-Proof.
-  unfold transf_fundef, transf_partial_fundef, transf_function, check_function.
-  intros f ? H.
-  destruct f.
-  - destruct type_function; try easy.
-    destruct regalloc; try easy.
-    destruct analyze; try easy.
-    destruct cp_eq_dec as [e|?]; try easy.
-    monadInv H. monadInv EQ.
-    exact e.
-  - now inv H.
-Qed.
-
 Lemma transf_program_match:
   forall p tp, transf_program p = OK tp -> match_prog p tp.
 Proof.
@@ -3436,6 +3410,7 @@ Theorem transf_program_correct:
 Proof.
   set (ms := fun s s' => wt_state s /\ match_states s s').
   eapply forward_simulation_plus with (match_states := ms).
+- apply senv_preserved.
 - apply senv_preserved.
 - intros. exploit initial_states_simulation; eauto. intros [st2 [A B]].
   exists st2; split; auto. split; auto.

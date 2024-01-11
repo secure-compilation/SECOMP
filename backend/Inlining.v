@@ -472,6 +472,17 @@ Definition transf_function (fenv: funenv) (f: function) : Errors.res function :=
 Definition transf_fundef (fenv: funenv) (fd: fundef) : Errors.res fundef :=
   AST.transf_partial_fundef (transf_function fenv) fd.
 
+#[global] Instance comp_transl_function fenv:
+  has_comp_transl_partial (transf_function fenv).
+Proof.
+  unfold transf_function.
+  intros f tf H; try now inv H.
+  destruct (expand_function _ _ _).
+  destruct (zlt _ _); try easy.
+  simpl in *.
+  now inv H.
+Qed.
+
 Definition transf_program (p: program): Errors.res program :=
   let fenv := funenv_program p in
   AST.transform_partial_program (transf_fundef fenv) p.

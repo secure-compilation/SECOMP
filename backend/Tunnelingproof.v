@@ -22,10 +22,6 @@ Require Import Tunneling.
 Definition match_prog (p tp: program) :=
   match_program (fun ctx f tf => tf = tunnel_fundef f) eq p tp.
 
-#[global]
-Instance comp_tunnel_fundef: has_comp_transl tunnel_function.
-Proof. now intro. Qed.
-
 Lemma transf_program_match:
   forall p, match_prog p (tunnel_program p).
 Proof.
@@ -859,6 +855,7 @@ Theorem transf_program_correct:
   forward_simulation (LTL.semantics prog) (LTL.semantics tprog).
 Proof.
   eapply forward_simulation_opt.
+  apply senv_preserved.
   apply senv_preserved.
   eexact transf_initial_states.
   eexact transf_final_states.

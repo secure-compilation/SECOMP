@@ -933,6 +933,15 @@ Definition transf_function (f: Mach.function) : res Asm.function :=
 Definition transf_fundef (f: Mach.fundef) : res Asm.fundef :=
   transf_partial_fundef transf_function f.
 
+#[global] Instance comp_transf_function: has_comp_transl_partial transf_function.
+Proof.
+  unfold transf_function, transl_function.
+  intros f ? H; monadInv H; trivial.
+  destruct transl_code'; simpl in *; try easy.
+  inv EQ. destruct zlt; try easy.
+  now inv EQ0.
+Qed.
+
 Definition transf_program (p: Mach.program) : res Asm.program :=
   transform_partial_program transf_fundef p.
 

@@ -20,10 +20,6 @@ Require Import Op Registers RTL Renumber.
 Definition match_prog (p tp: RTL.program) :=
   match_program (fun ctx f tf => tf = transf_fundef f) eq p tp.
 
-#[global]
-Instance comp_transf_function: has_comp_transl transf_function.
-Proof. now intros. Qed.
-
 Lemma transf_program_match:
   forall p, match_prog p (transf_program p).
 Proof.
@@ -56,7 +52,7 @@ Lemma symbols_preserved:
 Proof (Genv.find_symbol_transf TRANSL).
 
 Lemma senv_preserved:
-  Senv.equiv ge tge.
+  Senv.equiv (Genv.to_senv ge) (Genv.to_senv tge).
 Proof (Genv.senv_transf TRANSL).
 
 Lemma sig_preserved:
@@ -333,6 +329,7 @@ Theorem transf_program_correct:
   forward_simulation (RTL.semantics prog) (RTL.semantics tprog).
 Proof.
   eapply forward_simulation_step.
+  apply senv_preserved.
   apply senv_preserved.
   eexact transf_initial_states.
   eexact transf_final_states.

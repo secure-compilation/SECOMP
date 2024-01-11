@@ -33,14 +33,7 @@ Definition match_varinfo (v: type) (tv: unit) := True.
 Definition match_prog (p: Clight.program) (tp: Csharpminor.program) : Prop :=
   match_program_gen match_fundef match_varinfo p p tp.
 
-#[global]
-Instance comp_transl_function ctx: has_comp_transl_partial (transl_function ctx).
-Proof.
-  unfold transl_function. now intros ?? H; monadInv H.
-Qed.
-
-#[global]
-Instance comp_match_fundef: has_comp_match match_fundef.
+#[global] Instance comp_match_fundef: has_comp_match match_fundef.
 Proof.
   intros cu ? ? [f tf H|]; trivial.
   exact (comp_transl_partial _ H).
@@ -2089,6 +2082,7 @@ Theorem transl_program_correct:
   forward_simulation (Clight.semantics2 prog) (Csharpminor.semantics tprog).
 Proof.
   eapply forward_simulation_plus.
+  apply senv_preserved.
   apply senv_preserved.
   eexact transl_initial_states.
   eexact transl_final_states.

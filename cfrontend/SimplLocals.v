@@ -291,6 +291,21 @@ Definition transf_fundef (fd: fundef) : res fundef :=
   | External ef targs tres cconv => OK (External ef targs tres cconv)
   end.
 
+#[global]
+Instance comp_transf_function: has_comp_transl_partial transf_function.
+Proof.
+  unfold transf_function.
+  intros f ? H; monadInv H; trivial.
+Qed.
+
+#[global]
+Instance comp_transf_fundef: has_comp_transl_partial transf_fundef.
+Proof.
+  unfold transf_fundef, transf_function.
+  intros [f|ef] ? H; monadInv H; trivial.
+  now monadInv EQ.
+Qed.
+
 Definition transf_program (p: program) : res program :=
   do p1 <- AST.transform_partial_program transf_fundef p;
   OK {| prog_defs := AST.prog_defs p1;
@@ -300,4 +315,5 @@ Definition transf_program (p: program) : res program :=
         prog_types := prog_types p;
         prog_comp_env := prog_comp_env p;
         prog_comp_env_eq := prog_comp_env_eq p;
-        prog_pol_pub := AST.prog_pol_pub p1; |}.
+        prog_pol_pub := AST.prog_pol_pub p1;
+        prog_agr_comps := AST.prog_agr_comps p1; |}.

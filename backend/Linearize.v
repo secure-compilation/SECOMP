@@ -214,5 +214,11 @@ Definition transf_function (f: LTL.function) : res Linear.function :=
 Definition transf_fundef (f: LTL.fundef) : res Linear.fundef :=
   AST.transf_partial_fundef transf_function f.
 
+#[global] Instance comp_transf_fundef: has_comp_transl_partial transf_function.
+Proof.
+  unfold transf_function.
+  intros f ? H; now monadInv H.
+Qed.
+
 Definition transf_program (p: LTL.program) : res Linear.program :=
   transform_partial_program transf_fundef p.

@@ -22,10 +22,6 @@ Require Import ConstpropOp ConstpropOpproof Constprop.
 Definition match_prog (prog tprog: program) :=
   match_program (fun cu f tf => tf = transf_fundef (romem_for cu) f) eq prog tprog.
 
-#[global]
-Instance comp_transf_function rm: has_comp_transl (transf_function rm).
-Proof. now intro. Qed.
-
 Lemma transf_program_match:
   forall prog, match_prog prog (transf_program prog).
 Proof.
@@ -51,7 +47,7 @@ Lemma symbols_preserved:
 Proof (Genv.find_symbol_match TRANSL).
 
 Lemma senv_preserved:
-  Senv.equiv ge tge.
+  Senv.equiv (Genv.to_senv ge) (Genv.to_senv tge).
 Proof (Genv.senv_match TRANSL).
 
 Lemma functions_translated:
@@ -243,8 +239,8 @@ Qed.
 Lemma builtin_arg_reduction_correct:
   forall bc sp m rs ae, ematch bc rs ae ->
   forall a v,
-  eval_builtin_arg ge (fun r => rs#r) sp m a v ->
-  eval_builtin_arg ge (fun r => rs#r) sp m (builtin_arg_reduction ae a) v.
+  eval_builtin_arg (Genv.to_senv ge) (fun r => rs#r) sp m a v ->
+  eval_builtin_arg (Genv.to_senv ge) (fun r => rs#r) sp m (builtin_arg_reduction ae a) v.
 Proof.
   induction 2; simpl; eauto with barg.
 - specialize (H x). unfold areg. destruct (AE.get x ae); try constructor.
@@ -260,8 +256,8 @@ Qed.
 Lemma builtin_arg_strength_reduction_correct:
   forall bc sp m rs ae a v c,
   ematch bc rs ae ->
-  eval_builtin_arg ge (fun r => rs#r) sp m a v ->
-  eval_builtin_arg ge (fun r => rs#r) sp m (builtin_arg_strength_reduction ae a c) v.
+  eval_builtin_arg (Genv.to_senv ge) (fun r => rs#r) sp m a v ->
+  eval_builtin_arg (Genv.to_senv ge) (fun r => rs#r) sp m (builtin_arg_strength_reduction ae a c) v.
 Proof.
   intros. unfold builtin_arg_strength_reduction.
   destruct (builtin_arg_ok (builtin_arg_reduction ae a) c).
@@ -272,9 +268,9 @@ Qed.
 Lemma builtin_args_strength_reduction_correct:
   forall bc sp m rs ae, ematch bc rs ae ->
   forall al vl,
-  eval_builtin_args ge (fun r => rs#r) sp m al vl ->
+  eval_builtin_args (Genv.to_senv ge) (fun r => rs#r) sp m al vl ->
   forall cl,
-  eval_builtin_args ge (fun r => rs#r) sp m (builtin_args_strength_reduction ae al cl) vl.
+  eval_builtin_args (Genv.to_senv ge) (fun r => rs#r) sp m (builtin_args_strength_reduction ae al cl) vl.
 Proof.
   induction 2; simpl; constructor.
   eapply builtin_arg_strength_reduction_correct; eauto.
@@ -284,13 +280,13 @@ Qed.
 Lemma debug_strength_reduction_correct:
   forall bc sp m rs ae, ematch bc rs ae ->
   forall al vl,
-  eval_builtin_args ge (fun r => rs#r) sp m al vl ->
-  exists vl', eval_builtin_args ge (fun r => rs#r) sp m (debug_strength_reduction ae al) vl'.
+  eval_builtin_args (Genv.to_senv ge) (fun r => rs#r) sp m al vl ->
+  exists vl', eval_builtin_args (Genv.to_senv ge) (fun r => rs#r) sp m (debug_strength_reduction ae al) vl'.
 Proof.
   induction 2; simpl.
 - exists (@nil val); constructor.
 - destruct IHlist_forall2 as (vl' & A).
-  assert (eval_builtin_args ge (fun r => rs#r) sp m
+  assert (eval_builtin_args (Genv.to_senv ge) (fun r => rs#r) sp m
              (a1 :: debug_strength_reduction ae al) (b1 :: vl'))
   by (constructor; eauto).
   destruct a1; try (econstructor; eassumption).
@@ -300,17 +296,17 @@ Qed.
 Lemma builtin_strength_reduction_correct:
   forall cp sp bc ae rs ef args vargs m t vres m',
   ematch bc rs ae ->
-  eval_builtin_args ge (fun r => rs#r) sp m args vargs ->
-  external_call ef ge cp vargs m t vres m' ->
+  eval_builtin_args (Genv.to_senv ge) (fun r => rs#r) sp m args vargs ->
+  external_call ef (Genv.to_senv ge) cp vargs m t vres m' ->
   exists vargs',
-     eval_builtin_args ge (fun r => rs#r) sp m (builtin_strength_reduction ae ef args) vargs'
-  /\ external_call ef ge cp vargs' m t vres m'.
+     eval_builtin_args (Genv.to_senv ge) (fun r => rs#r) sp m (builtin_strength_reduction ae ef args) vargs'
+  /\ external_call ef (Genv.to_senv ge) cp vargs' m t vres m'.
 Proof.
   intros.
   assert (DEFAULT: forall cl,
     exists vargs',
-       eval_builtin_args ge (fun r => rs#r) sp m (builtin_args_strength_reduction ae args cl) vargs'
-    /\ external_call ef ge cp vargs' m t vres m').
+       eval_builtin_args (Genv.to_senv ge) (fun r => rs#r) sp m (builtin_args_strength_reduction ae args cl) vargs'
+    /\ external_call ef (Genv.to_senv ge) cp vargs' m t vres m').
   { exists vargs; split; auto. eapply builtin_args_strength_reduction_correct; eauto. }
   unfold builtin_strength_reduction.
   destruct ef; auto.
@@ -589,7 +585,7 @@ Opaque builtin_strength_reduction.
              (State s f (Vptr sp0 Ptrofs.zero) pc' (regmap_setres res vres rs) m') s2').
   {
     exploit builtin_strength_reduction_correct; eauto. intros (vargs' & P & Q).
-    exploit (@eval_builtin_args_lessdef _ ge (fun r => rs#r) (fun r => rs'#r)).
+    exploit (@eval_builtin_args_lessdef _ (Genv.to_senv ge) (fun r => rs#r) (fun r => rs'#r)).
     apply REGS. eauto. eexact P.
     intros (vargs'' & U & V).
     exploit external_call_mem_extends; eauto.
@@ -730,6 +726,7 @@ Proof.
   intros [ [n2 [s2' [A B]]] | [n2 [A [B C]]]].
   exists n2; exists s2'; split; auto. left; apply plus_one; auto.
   exists n2; exists s2; split; auto. right; split; auto. subst t; apply star_refl.
+- apply senv_preserved.
 - apply senv_preserved.
 Qed.
 

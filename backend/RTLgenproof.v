@@ -350,18 +350,10 @@ Require Import Errors.
 Definition match_prog (p: CminorSel.program) (tp: RTL.program) :=
   match_program (fun cu f tf => transl_fundef f = Errors.OK tf) eq p tp.
 
-#[global] Instance comp_transl_function: has_comp_transl_partial transl_function.
-Proof.
-  unfold transl_function.
-  intros f tf H; simpl in *.
-  destruct (transl_fun _ _) as [|[??] ? ?]; try discriminate.
-  now inv H.
-Qed.
-
 Lemma transf_program_match:
   forall p tp, transl_program p = OK tp -> match_prog p tp.
 Proof.
-  intros. apply match_transform_partial_program; auto.
+  intros. eapply match_transform_partial_program; auto.
 Qed.
 
 
@@ -1755,6 +1747,7 @@ Theorem transf_program_correct:
   forward_simulation (CminorSel.semantics prog) (RTL.semantics tprog).
 Proof.
   eapply forward_simulation_star_wf with (order := lt_state).
+  apply senv_preserved.
   apply senv_preserved.
   eexact transl_initial_states.
   eexact transl_final_states.

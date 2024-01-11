@@ -945,11 +945,11 @@ Proof.
   (* Icall *)
   assert (wt_fundef fd).
     destruct ros; simpl in H0.
-    pattern fd. apply Genv.find_funct_prop with unit p (rs#r).
+    pattern fd. apply Genv.find_funct_prop with unit _ p (rs#r).
     exact wt_p. exact H0.
     unfold find_function in H0. simpl in H0.
     caseEq (Genv.find_symbol ge i); intros; rewrite H1 in H0.
-    pattern fd. apply Genv.find_funct_ptr_prop with unit p b.
+    pattern fd. apply Genv.find_funct_ptr_prop with unit _ p b.
     exact wt_p. exact H0.
     discriminate.
   econstructor; eauto.
@@ -958,11 +958,11 @@ Proof.
   (* Itailcall *)
   assert (wt_fundef fd).
     destruct ros; simpl in H0.
-    pattern fd. apply Genv.find_funct_prop with unit p (rs#r).
+    pattern fd. apply Genv.find_funct_prop with unit _ p (rs#r).
     exact wt_p. now eauto.
     unfold find_function in H0. simpl in H0.
     caseEq (Genv.find_symbol ge i); intros; rewrite H1 in H0.
-    pattern fd. apply Genv.find_funct_ptr_prop with unit p b.
+    pattern fd. apply Genv.find_funct_ptr_prop with unit _ p b.
     exact wt_p. now eauto.
     discriminate.
   econstructor; eauto.
@@ -993,7 +993,7 @@ Lemma wt_initial_state:
   forall S, initial_state p S -> wt_state S.
 Proof.
   intros. inv H. constructor. constructor. rewrite H3; auto.
-  pattern f. apply Genv.find_funct_ptr_prop with unit p b.
+  pattern f. apply Genv.find_funct_ptr_prop with unit _ p b.
   exact wt_p. exact H2.
   rewrite H3. constructor.
 Qed.

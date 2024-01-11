@@ -7,7 +7,7 @@ Require Import Split.
 
 Section GENV.
 
-  Context {F: Type}.
+  Context {F: Type} {CF: has_comp F}.
   Context {V: Type}.
 
   Lemma genv_def_to_some_ident
@@ -44,55 +44,60 @@ Section GENV.
       rewrite PTree.gso in ADD; auto.
   Qed.
 
-  (* Lemma genv_def_to_ident *)
-  (*       (p: AST.program F V) *)
-  (*       (NR: list_norepet (prog_defs_names p)) *)
-  (*       ge *)
-  (*       (GE: ge = Genv.globalenv p) *)
-  (*       b gd *)
-  (*       (DEF: Genv.find_def ge b = Some gd) *)
-  (*   : *)
-  (*   exists id, Genv.invert_symbol ge b = Some id. *)
-  (* Proof. *)
-  (*   subst ge. unfold Genv.globalenv, Genv.add_globals, prog_defs_names in *. *)
-  (*   destruct p; simpl in *. clear - NR DEF. *)
-  (*   remember (Genv.empty_genv F V prog_public prog_pol) as ge. *)
-  (*   replace (fold_left (Genv.add_global (V:=V)) prog_defs ge) with *)
-  (*     (fold_right (fun ig g => Genv.add_global g ig) ge (rev prog_defs)) in *. *)
-  (*   2:{ rewrite fold_left_rev_right. f_equal. } *)
-  (*   remember (rev prog_defs) as rev_prog_defs. *)
-  (*   assert (RNR: list_norepet (map fst rev_prog_defs)). *)
-  (*   { subst. rewrite map_rev. apply list_norepet_rev; auto. } *)
-  (*   clear prog_defs NR Heqrev_prog_defs. subst ge. *)
-  (*   revert prog_public prog_pol b gd DEF RNR. *)
-  (*   induction rev_prog_defs; intros. *)
-  (*   { unfold Genv.find_def in DEF. simpl in DEF. rewrite PTree.gempty in DEF. congruence. } *)
-  (*   destruct a as [id0 gd0]. *)
-  (*   simpl in *. specialize (IHrev_prog_defs prog_public prog_pol). *)
-  (*   remember (fold_right (fun (ig : ident * globdef F V) (g : Genv.t F V) => Genv.add_global g ig) (Genv.empty_genv F V prog_public prog_pol) rev_prog_defs) as ge. *)
-  (*   assert (GE: ge = Genv.globalenv (AST.mkprogram (rev rev_prog_defs) prog_public id0 prog_pol)). *)
-  (*   { subst ge. unfold Genv.globalenv. unfold Genv.add_globals. simpl. *)
-  (*     rewrite <- fold_left_rev_right. rewrite rev_involutive. auto. } *)
-  (*   apply genv_find_def_add_global_spec in DEF. *)
-  (*   { destruct DEF as [[BLK GD] | [BLK GD]]. *)
-  (*     - subst b gd0. exists id0. *)
-  (*       apply Genv.find_invert_symbol. unfold Genv.find_symbol, Genv.add_global; simpl. *)
-  (*       rewrite PTree.gss. auto. *)
-  (*     - inversion RNR; clear RNR. subst hd tl. specialize (IHrev_prog_defs _ _ GD H2). *)
-  (*       destruct IHrev_prog_defs as [id' INV]. exists id'. *)
-  (*       apply Genv.find_invert_symbol. unfold Genv.find_symbol, Genv.add_global; simpl. *)
-  (*       rewrite PTree.gso. apply Genv.invert_find_symbol in INV. auto. *)
-  (*       clear - H1 Heqge INV GE. apply Genv.invert_find_symbol in INV. *)
-  (*       rewrite GE in INV. apply Genv.find_symbol_inversion in INV. *)
-  (*       unfold prog_defs_names in INV. simpl in INV. *)
-  (*       rewrite map_rev in INV. apply in_rev in INV. intros CONTRA. subst id'. auto. *)
-  (*   } *)
-  (*   { destruct (Genv.find_symbol ge id0) eqn:CASE; auto. exfalso. *)
-  (*     rewrite GE in CASE. apply Genv.find_symbol_inversion in CASE. *)
-  (*     unfold prog_defs_names in CASE. simpl in CASE. rewrite map_rev in CASE. apply in_rev in CASE. *)
-  (*     clear - CASE RNR. inversion RNR. auto. *)
-  (*   } *)
-  (* Qed. *)
+  Lemma genv_def_to_ident
+        (p: AST.program F V)
+        (NR: list_norepet (prog_defs_names p))
+        (AGR: agr_comps p.(prog_pol) (rev (prog_defs p)))
+        ge
+        (GE: ge = Genv.globalenv p)
+        b gd
+        (DEF: Genv.find_def ge b = Some gd)
+    :
+    exists id, Genv.invert_symbol ge b = Some id.
+  Proof.
+    subst ge. unfold Genv.globalenv, Genv.add_globals, prog_defs_names in *.
+    destruct p; simpl in *. clear - NR AGR DEF.
+    remember (Genv.empty_genv F V prog_pol_pub) as ge.
+    replace (fold_left (Genv.add_global (V:=V)) prog_defs ge) with
+      (fold_right (fun ig g => Genv.add_global g ig) ge (rev prog_defs)) in *.
+    2:{ rewrite fold_left_rev_right. f_equal. }
+    remember (rev prog_defs) as rev_prog_defs.
+    assert (RNR: list_norepet (map fst rev_prog_defs)).
+    { subst. rewrite map_rev. apply list_norepet_rev; auto. }
+    clear prog_defs NR Heqrev_prog_defs. subst ge.
+    revert prog_public prog_pol prog_pol_pub b gd DEF AGR RNR.
+    induction rev_prog_defs; intros.
+    { unfold Genv.find_def in DEF. simpl in DEF. rewrite PTree.gempty in DEF. congruence. }
+    destruct a as [id0 gd0].
+    simpl in *. specialize (IHrev_prog_defs prog_public prog_pol prog_pol_pub).
+    remember (fold_right (fun (ig : ident * globdef F V) (g : Genv.t F V) => Genv.add_global g ig)
+                (Genv.empty_genv F V prog_pol_pub) rev_prog_defs) as ge.
+    assert (AGR': agr_comps prog_pol (rev rev_prog_defs)) by admit.
+    assert (GE: ge = Genv.globalenv (AST.mkprogram (rev rev_prog_defs) prog_public id0 prog_pol prog_pol_pub AGR')).
+    { subst ge. unfold Genv.globalenv. unfold Genv.add_globals. simpl.
+      rewrite <- fold_left_rev_right. rewrite rev_involutive. auto. }
+    apply genv_find_def_add_global_spec in DEF.
+    { destruct DEF as [[BLK GD] | [BLK GD]].
+      - subst b gd0. exists id0.
+        apply Genv.find_invert_symbol. unfold Genv.find_symbol, Genv.add_global; simpl.
+        rewrite PTree.gss. auto.
+      - inversion RNR; clear RNR. subst hd tl.
+        assert (AGR'': agr_comps prog_pol rev_prog_defs) by admit.
+        specialize (IHrev_prog_defs _ _ GD AGR'' H2).
+        destruct IHrev_prog_defs as [id' INV]. exists id'.
+        apply Genv.find_invert_symbol. unfold Genv.find_symbol, Genv.add_global; simpl.
+        rewrite PTree.gso. apply Genv.invert_find_symbol in INV. auto.
+        clear - H1 Heqge INV GE. apply Genv.invert_find_symbol in INV.
+        rewrite GE in INV. apply Genv.find_symbol_inversion in INV.
+        unfold prog_defs_names in INV. simpl in INV.
+        rewrite map_rev in INV. apply in_rev in INV. intros CONTRA. subst id'. auto.
+    }
+    { destruct (Genv.find_symbol ge id0) eqn:CASE; auto. exfalso.
+      rewrite GE in CASE. apply Genv.find_symbol_inversion in CASE.
+      unfold prog_defs_names in CASE. simpl in CASE. rewrite map_rev in CASE. apply in_rev in CASE.
+      clear - CASE RNR. inversion RNR. auto.
+    }
+  Admitted.
 
 End GENV.
 

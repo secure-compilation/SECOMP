@@ -206,14 +206,6 @@ Qed.
 Definition match_prog (p tp: RTL.program) :=
   match_program (fun cu f tf => tf = transf_fundef (compenv_program cu) f) eq p tp.
 
-#[global]
-Instance comp_transf_function cenv: has_comp_transl (transf_function cenv).
-Proof.
-  unfold transf_function, RTL.transf_function.
-  intros f; simpl; trivial.
-  now destruct zeq.
-Qed.
-
 Lemma transf_program_match:
   forall p, match_prog p (transf_program p).
 Proof.
@@ -247,7 +239,7 @@ Lemma funct_ptr_translated:
 Proof (Genv.find_funct_ptr_match TRANSL).
 
 Lemma senv_preserved:
-  Senv.equiv ge tge.
+  Senv.equiv (Genv.to_senv ge) (Genv.to_senv tge).
 Proof (Genv.senv_match TRANSL).
 
 Lemma sig_preserved:
@@ -742,7 +734,7 @@ Proof.
 
 - (* builtin *)
   TransfInstr.
-  exploit (@eval_builtin_args_lessdef _ ge (fun r => rs#r) (fun r => rs'#r)); eauto.
+  exploit (@eval_builtin_args_lessdef _ (Genv.to_senv ge) (fun r => rs#r) (fun r => rs'#r)); eauto.
   intros (vargs' & P & Q).
   exploit external_call_mem_extends; eauto.
   intros [v' [m'1 [A [B [C D]]]]].
@@ -901,6 +893,7 @@ Theorem transf_program_correct:
   forward_simulation (RTL.semantics prog) (RTL.semantics tprog).
 Proof.
   eapply forward_simulation_opt with (measure := measure); eauto.
+  apply senv_preserved.
   apply senv_preserved.
   eexact transf_initial_states.
   eexact transf_final_states.

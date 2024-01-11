@@ -690,6 +690,15 @@ Definition transl_function (f: CminorSel.function) : Errors.res RTL.function :=
                    nentry)
   end.
 
+#[global] Instance comp_transl_function: has_comp_transl_partial transl_function.
+Proof.
+  intros f y H.
+  destruct (transl_function f) eqn:EQ; simpl in H; try congruence. inv H.
+  unfold transl_function in EQ.
+  destruct (transl_fun f init_state) as [|[] ? ?] eqn:?; simpl in EQ; try congruence. inv EQ.
+  reflexivity.
+Qed.
+
 Definition transl_fundef := transf_partial_fundef transl_function.
 
 (** Translation of a whole program. *)

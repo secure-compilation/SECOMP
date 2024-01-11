@@ -272,6 +272,7 @@ Section EVENTVAL.
 
 (** Symbol environment used to translate between global variable names and their block identifiers. *)
 Variable ge: Senv.t.
+Variable cp: compartment.
 
 (** Translation between values and event values. *)
 
@@ -287,6 +288,7 @@ Inductive eventval_match: eventval -> typ -> val -> Prop :=
   | ev_match_ptr: forall id b ofs,
       Senv.public_symbol ge id = true ->
       Senv.find_symbol ge id = Some b ->
+      (* Senv.find_comp ge id ⊆ cp -> *)
       eventval_match (EVptr_global id ofs) Tptr (Vptr b ofs).
 
 Inductive eventval_list_match: list eventval -> list typ -> list val -> Prop :=
@@ -371,10 +373,18 @@ Definition eventval_type (ev: eventval) : typ :=
   | EVptr_global id ofs => Tptr
   end.
 
+Definition eventval_comp (ev: eventval) : compartment :=
+  match ev with
+  | EVint _ | EVlong _ | EVfloat _ | EVsingle _ => bottom
+  | EVptr_global id ofs => Senv.find_comp ge id
+  end.
+
 Lemma eventval_match_receptive:
   forall ev1 ty v1 ev2,
   eventval_match ev1 ty v1 ->
-  eventval_valid ev1 -> eventval_valid ev2 -> eventval_type ev1 = eventval_type ev2 ->
+  eventval_valid ev1 -> eventval_valid ev2 ->
+  eventval_type ev1 = eventval_type ev2 ->
+  (* eventval_comp ev1 = eventval_comp ev2 -> *)
   exists v2, eventval_match ev2 ty v2.
 Proof.
   intros. unfold eventval_type, Tptr in H2. remember Archi.ptr64 as ptr64.
@@ -382,9 +392,11 @@ Proof.
 - exists (Vint i0); constructor.
 - simpl in H1; exploit Senv.public_symbol_exists; eauto. intros [b FS].
   exists (Vptr b i1); rewrite H3. constructor; auto.
+  (* simpl in H3. rewrite <- H3. auto with comps. *)
 - exists (Vlong i0); constructor.
 - simpl in H1; exploit Senv.public_symbol_exists; eauto. intros [b FS].
   exists (Vptr b i1); rewrite H3; constructor; auto.
+  (* simpl in H3. rewrite <- H3. auto with comps. *)
 - exists (Vfloat f0); constructor.
 - destruct Archi.ptr64; discriminate.
 - exists (Vsingle f0); constructor; auto.
@@ -395,6 +407,7 @@ Proof.
 - destruct Archi.ptr64; discriminate.
 - exploit Senv.public_symbol_exists. eexact H1. intros [b' FS].
   exists (Vptr b' i0); constructor; auto.
+  (* simpl in H3. rewrite <- H3. assumption. *)
 Qed.
 
 Lemma eventval_match_valid:
@@ -417,6 +430,7 @@ End EVENTVAL.
 Section EVENTVAL_INV.
 
 Variables ge1 ge2: Senv.t.
+Variable cp: compartment.
 
 Hypothesis public_preserved:
   forall id, Senv.public_symbol ge2 id = Senv.public_symbol ge1 id.
@@ -430,6 +444,29 @@ Qed.
 Hypothesis symbols_preserved:
   forall id, Senv.find_symbol ge2 id = Senv.find_symbol ge1 id.
 
+Hypothesis comp_preserved:
+  forall id, Senv.find_comp ge2 id = Senv.find_comp ge1 id.
+
+Lemma eventval_comp_preserved:
+  forall ev, eventval_comp ge2 ev = eventval_comp ge1 ev.
+Proof.
+  intros. destruct ev; simpl in *; auto with comps.
+Qed.
+
+Lemma eventval_list_comp_preserved:
+  forall args, Forall (fun ev => eventval_comp ge1 ev ⊆ cp) args ->
+          Forall (fun ev => eventval_comp ge2 ev ⊆ cp) args.
+Proof.
+  intros args H.
+  induction H.
+  - constructor.
+  - constructor; eauto.
+    destruct x; auto.
+    simpl in *.
+    (* now eapply flowsto_trans. *)
+    now rewrite comp_preserved.
+Qed.
+
 Lemma eventval_match_preserved:
   forall ev ty v,
   eventval_match ge1 ev ty v -> eventval_match ge2 ev ty v.
@@ -437,6 +474,7 @@ Proof.
   induction 1; constructor; auto.
   rewrite public_preserved; auto.
   rewrite symbols_preserved; auto.
+  (* rewrite comp_preserved; auto. *)
 Qed.
 
 Lemma eventval_list_match_preserved:
@@ -454,6 +492,7 @@ Section EVENTVAL_INJECT.
 
 Variable f: block -> option (block * Z).
 Variable ge1 ge2: Senv.t.
+Variable cp: compartment.
 
 Definition symbols_inject : Prop :=
    (forall id, Senv.public_symbol ge2 id = Senv.public_symbol ge1 id)
@@ -462,39 +501,48 @@ Definition symbols_inject : Prop :=
      delta = 0 /\ Senv.find_symbol ge2 id = Some b2)
 /\ (forall id b1,
      Senv.public_symbol ge1 id = true -> Senv.find_symbol ge1 id = Some b1 ->
+     Senv.find_comp ge1 id ⊆ cp ->
      exists b2, f b1 = Some(b2, 0) /\ Senv.find_symbol ge2 id = Some b2)
 /\ (forall b1 b2 delta,
      f b1 = Some(b2, delta) ->
-     Senv.block_is_volatile ge2 b2 = Senv.block_is_volatile ge1 b1).
-
+     Senv.block_is_volatile ge2 b2 = Senv.block_is_volatile ge1 b1)
+/\ (forall id,
+     (* f b1 = Some(b2, delta) -> Senv.find_symbol ge1 id = Some b1 -> *)
+      Senv.find_comp ge1 id = Senv.find_comp ge2 id).
 Hypothesis symb_inj: symbols_inject.
 
 Lemma eventval_match_inject:
   forall ev ty v1 v2,
+  forall (COMP: eventval_comp ge1 ev ⊆ cp),
   eventval_match ge1 ev ty v1 -> Val.inject f v1 v2 -> eventval_match ge2 ev ty v2.
 Proof.
   intros. inv H; inv H0; try constructor; auto.
-  destruct symb_inj as (A & B & C & D). exploit C; eauto. intros [b3 [EQ FS]]. rewrite H4 in EQ; inv EQ.
+  destruct symb_inj as (A & B & C & D & E). exploit C; eauto. intros [b3 [EQ FS]].
+  rewrite H4 in EQ; inv EQ.
   rewrite Ptrofs.add_zero. constructor; auto. rewrite A; auto.
 Qed.
 
 Lemma eventval_match_inject_2:
   forall ev ty v1,
+  forall (COMP: eventval_comp ge1 ev ⊆ cp),
   eventval_match ge1 ev ty v1 ->
   exists v2, eventval_match ge2 ev ty v2 /\ Val.inject f v1 v2.
 Proof.
   intros. inv H; try (econstructor; split; eauto; constructor; fail).
-  destruct symb_inj as (A & B & C & D). exploit C; eauto. intros [b2 [EQ FS]].
-  exists (Vptr b2 ofs); split. econstructor; eauto.
-  econstructor; eauto. rewrite Ptrofs.add_zero; auto.
+  destruct symb_inj as (A & B & C & D & E). exploit C; eauto. intros [b2 [EQ FS]].
+  exists (Vptr b2 ofs); split. econstructor; eauto. econstructor; eauto. rewrite Ptrofs.add_zero; auto.
 Qed.
 
 Lemma eventval_list_match_inject:
   forall evl tyl vl1, eventval_list_match ge1 evl tyl vl1 ->
+  forall (COMP: Forall (fun ev => eventval_comp ge1 ev ⊆ cp) evl),
   forall vl2, Val.inject_list f vl1 vl2 -> eventval_list_match ge2 evl tyl vl2.
 Proof.
   induction 1; intros. inv H; constructor.
-  inv H1. constructor. eapply eventval_match_inject; eauto. eauto.
+  inv H1.
+  inv COMP.
+  constructor. eapply eventval_match_inject; eauto.
+  eauto.
 Qed.
 
 End EVENTVAL_INJECT.
@@ -515,18 +563,22 @@ Inductive match_traces: trace -> trace -> Prop :=
       match_traces nil nil
   | match_traces_syscall: forall id args res1 res2,
       eventval_valid ge res1 -> eventval_valid ge res2 -> eventval_type res1 = eventval_type res2 ->
+      (* eventval_comp ge res1 = eventval_comp ge res2 -> *)
+      eventval_comp ge res1 = eventval_comp ge res2 ->
       match_traces (Event_syscall id args res1 :: nil) (Event_syscall id args res2 :: nil)
   | match_traces_vload: forall chunk id ofs res1 res2,
       eventval_valid ge res1 -> eventval_valid ge res2 -> eventval_type res1 = eventval_type res2 ->
+      eventval_comp ge res1 ⊆ Senv.find_comp ge id ->
+      eventval_comp ge res2 ⊆ Senv.find_comp ge id ->
       match_traces (Event_vload chunk id ofs res1 :: nil) (Event_vload chunk id ofs res2 :: nil)
   | match_traces_vstore: forall chunk id ofs arg,
       match_traces (Event_vstore chunk id ofs arg :: nil) (Event_vstore chunk id ofs arg :: nil)
   | match_traces_annot: forall id args,
       match_traces (Event_annot id args :: nil) (Event_annot id args :: nil)
-  | match_traces_call: forall cp cp' id args,
-      match_traces (Event_call cp cp' id args :: nil) (Event_call cp cp' id args :: nil)
-  | match_traces_return: forall cp cp' res,
-      match_traces (Event_return cp cp' res :: nil) (Event_return cp cp' res :: nil).
+  | match_traces_call: forall cp1 cp2 id args,
+      match_traces (Event_call cp1 cp2 id args :: nil) (Event_call cp1 cp2 id args :: nil)
+  | match_traces_return: forall cp1 cp2 res,
+      match_traces (Event_return cp1 cp2 res :: nil) (Event_return cp1 cp2 res :: nil).
 
 End MATCH_TRACES.
 
@@ -535,14 +587,24 @@ End MATCH_TRACES.
 Section MATCH_TRACES_INV.
 
 Variables ge1 ge2: Senv.t.
+Variable cp: compartment.
 
 Hypothesis public_preserved:
   forall id, Senv.public_symbol ge2 id = Senv.public_symbol ge1 id.
+Hypothesis comp_preserved:
+  forall id, Senv.find_comp ge2 id = Senv.find_comp ge1 id.
 
 Lemma match_traces_preserved:
   forall t1 t2, match_traces ge1 t1 t2 -> match_traces ge2 t1 t2.
 Proof.
-  induction 1; constructor; auto; eapply eventval_valid_preserved; eauto.
+  induction 1; constructor; auto;
+    try (match goal with
+    | |- eventval_valid _ _ => eapply eventval_valid_preserved
+    | |- eventval_comp _ _ ⊆ _ =>
+        destruct res1, res2; simpl in *; auto; rewrite !comp_preserved; auto
+    | |- eventval_comp _ _ = eventval_comp _ _ =>
+        destruct res1, res2; simpl in *; auto; rewrite !comp_preserved; auto
+    end; eauto).
 Qed.
 
 End MATCH_TRACES_INV.
@@ -585,7 +647,11 @@ Inductive volatile_load (ge: Senv.t) (cp: compartment):
   | volatile_load_vol: forall chunk m b ofs id ev v,
       Senv.block_is_volatile ge b = true ->
       Senv.find_symbol ge id = Some b ->
+      (* Condition: we're doing a volatile load to a location [cp] is allowed to access *)
+      Senv.find_comp ge id ⊆ cp ->
       eventval_match ge ev (type_of_chunk chunk) v ->
+      (* we load a value (that might be a pointer) that is allowed to be stored inside this location *)
+      eventval_comp ge ev ⊆ Senv.find_comp ge id ->
       volatile_load ge cp chunk m b ofs
                       (Event_vload chunk id ofs ev :: nil)
                       (Val.load_result chunk v)
@@ -600,7 +666,11 @@ Inductive volatile_store (ge: Senv.t) (cp: compartment):
   | volatile_store_vol: forall chunk m b ofs id ev v,
       Senv.block_is_volatile ge b = true ->
       Senv.find_symbol ge id = Some b ->
+      (* Condition: we're doing a volatile store to a location [cp] is allowed to access *)
+      Senv.find_comp ge id ⊆ cp ->
       eventval_match ge ev (type_of_chunk chunk) (Val.load_result chunk v) ->
+      (* Condition: what we're storing can be stored in this location *)
+      eventval_comp ge ev ⊆ Senv.find_comp ge id ->
       volatile_store ge cp chunk m b ofs v
                       (Event_vstore chunk id ofs ev :: nil)
                       m
@@ -627,19 +697,6 @@ in extcall_caller_independent.
 
 Definition extcall_sem : Type :=
   Senv.t -> compartment -> list val -> mem -> trace -> val -> mem -> Prop.
-
-(* (** This invariant guarantees that external calls performed to [cp] can *)
-(*   correctly use either [cp1] or [cp2] to find out who the calling compartment *)
-(*   is. *) *)
-(* Definition uptodate_caller (cp cp1 cp2: compartment) := *)
-(*   needs_calling_comp cp = true -> *)
-(*   cp1 = cp2. *)
-
-(* Definition extcall_caller_independent (cp: compartment) (sem: extcall_sem) := *)
-(*   forall ge cp1 cp2 args m t v m', *)
-(*   uptodate_caller cp cp1 cp2 -> *)
-(*   sem ge cp1 args m t v m' -> *)
-(*   sem ge cp2 args m t v m'. *)
 
 (** We now specify the expected properties of this predicate. *)
 
@@ -746,7 +803,7 @@ Record extcall_properties (sem: extcall_sem) (cp: compartment) (sg: signature) :
   in the following sense. *)
   ec_mem_inject:
     forall ge1 ge2 vargs m1 t vres m2 f m1' vargs',
-    symbols_inject f ge1 ge2 ->
+    symbols_inject f ge1 ge2 cp ->
     sem ge1 cp vargs m1 t vres m2 ->
     Mem.inject f m1 m1' ->
     Val.inject_list f vargs vargs' ->
@@ -808,9 +865,13 @@ Lemma volatile_load_preserved:
   volatile_load ge1 cp chunk m b ofs t v ->
   volatile_load ge2 cp chunk m b ofs t v.
 Proof.
-  intros. destruct H as (A & B & C). inv H0; econstructor; eauto.
-  rewrite A; auto.
+  intros. destruct H as (A & B & C & D). inv H0; econstructor; eauto.
+  rewrite A; auto. rewrite D; auto.
   eapply eventval_match_preserved; eauto.
+  rewrite D; auto with comps.
+  eapply flowsto_trans; eauto.
+  erewrite eventval_comp_preserved; eauto with comps.
+  (* intros; rewrite D; auto with comps. *)
 Qed.
 
 Lemma volatile_load_extends:
@@ -830,20 +891,26 @@ Qed.
 
 Lemma volatile_load_inject:
   forall ge1 ge2 cp f chunk m b ofs t v b' ofs' m',
-  symbols_inject f ge1 ge2 ->
+  symbols_inject f ge1 ge2 cp ->
   volatile_load ge1 cp chunk m b ofs t v ->
   Val.inject f (Vptr b ofs) (Vptr b' ofs') ->
   Mem.inject f m m' ->
   exists v', volatile_load ge2 cp chunk m' b' ofs' t v' /\ Val.inject f v v'.
 Proof.
-  intros until m'; intros SI VL VI MI. generalize SI; intros (A & B & C & D).
+  intros until m'; intros SI VL VI MI. generalize SI; intros (A & B & C & D & E).
   inv VL.
 - (* volatile load *)
   inv VI. exploit B; eauto. intros [U V]. subst delta.
-  exploit eventval_match_inject_2; eauto. intros (v2 & X & Y).
+  exploit eventval_match_inject_2; eauto.
+  eapply flowsto_trans; eauto.
+  intros (v2 & X & Y).
   rewrite Ptrofs.add_zero. exists (Val.load_result chunk v2); split.
   constructor; auto.
   erewrite D; eauto.
+
+  erewrite <- E; eauto.
+  { erewrite <- E; eauto.
+    erewrite <- eventval_comp_preserved; eauto. }
   apply Val.load_result_inject. auto.
 - (* normal load *)
   exploit Mem.loadv_inject; eauto. simpl; eauto. simpl; intros (v2 & X & Y).
@@ -886,10 +953,6 @@ Proof.
 - inv H; auto.
 (* readonly *)
 - inv H; auto.
-(* (* mem alloc *) *)
-(* - inv H; congruence. *)
-(* (* outside cp *) *)
-(* - inv H; apply Mem.unchanged_on_refl. *)
 (* mem extends *)
 - inv H. inv H1. inv H6. inv H4.
   exploit volatile_load_extends; eauto. intros [v' [A B]].
@@ -911,6 +974,7 @@ Proof.
   eapply eventval_match_valid; eauto.
   eapply eventval_match_valid; eauto.
   eapply eventval_match_same_type; eauto.
+  auto. auto.
   intros EQ; inv EQ.
   assert (v = v0) by (eapply eventval_match_determ_1; eauto). subst v0.
   auto.
@@ -935,9 +999,11 @@ Lemma volatile_store_preserved:
   volatile_store ge1 cp chunk m1 b ofs v t m2 ->
   volatile_store ge2 cp chunk m1 b ofs v t m2.
 Proof.
-  intros. destruct H as (A & B & C). inv H0; econstructor; eauto.
+  intros. destruct H as (A & B & C & D). inv H0; econstructor; eauto.
   rewrite A; auto.
+  rewrite D; auto.
   eapply eventval_match_preserved; eauto.
+  erewrite <- eventval_comp_preserved, D; eauto.
 Qed.
 
 Lemma unchanged_on_readonly:
@@ -996,7 +1062,7 @@ Qed.
 
 Lemma volatile_store_inject:
   forall ge1 ge2 cp f chunk m1 b ofs v t m2 m1' b' ofs' v',
-  symbols_inject f ge1 ge2 ->
+  symbols_inject f ge1 ge2 cp ->
   volatile_store ge1 cp chunk m1 b ofs v t m2 ->
   Val.inject f (Vptr b ofs) (Vptr b' ofs') ->
   Val.inject f v v' ->
@@ -1008,13 +1074,17 @@ Lemma volatile_store_inject:
     /\ Mem.unchanged_on (loc_out_of_reach f m1) m1' m2'.
 Proof.
   intros until v'; intros SI VS AI VI MI.
-  generalize SI; intros (P & Q & R & S).
+  generalize SI; intros (P & Q & R & S & T).
   inv VS.
 - (* volatile store *)
   inv AI. exploit Q; eauto. intros [A B]. subst delta.
   rewrite Ptrofs.add_zero. exists m1'; split.
   constructor; auto. erewrite S; eauto.
-  eapply eventval_match_inject; eauto. apply Val.load_result_inject. auto.
+  rewrite <- T; auto.
+  eapply eventval_match_inject; eauto.
+  eapply flowsto_trans; eauto.
+  apply Val.load_result_inject. auto.
+  erewrite <- eventval_comp_preserved, <- T; eauto.
   intuition auto with mem.
 - (* normal store *)
   inversion AI; subst.
@@ -1066,14 +1136,6 @@ Proof.
   + eapply Mem.loadbytes_can_access_block_inj; eauto.
   + simpl. erewrite <- Mem.store_block_compartment; eauto.
     eapply Mem.loadbytes_can_access_block_inj; eauto.
-
-(* (* mem alloc *) *)
-(* - inv H. inv H2. congruence. *)
-(*   exploit Mem.store_valid_block_2; eauto. congruence. *)
-(* (* outside cp *) *)
-(* - inv H. inv H0. apply Mem.unchanged_on_refl. *)
-(*   eapply Mem.store_unchanged_on; eauto. *)
-
 (* mem extends*)
 - inv H. inv H1. inv H6. inv H7. inv H4.
   exploit volatile_store_extends; eauto. intros [m2' [A [B C]]].
@@ -1082,7 +1144,6 @@ Proof.
 - inv H0. inv H2. inv H7. inv H8. inversion H5; subst.
   exploit volatile_store_inject; eauto. intros [m2' [A [B [C D]]]].
   exists f; exists Vundef; exists m2'; intuition. constructor; auto. red; intros; congruence.
-  (* inv H3. congruence. eapply Mem.store_valid_block_2 in H2; eauto. congruence. *)
 (* trace length *)
 - inv H; inv H0; simpl; lia.
 (* receptive *)
@@ -1150,17 +1211,6 @@ Proof.
   eapply Mem.alloc_can_access_block_other_inj_2; eauto.
   simpl. erewrite <- Mem.store_block_compartment; eauto.
   eapply Mem.loadbytes_can_access_block_inj; eauto.
-
-(* (* mem alloc *) *)
-(* - inv H. *)
-(*   destruct (eq_block b0 b). *)
-(*   subst b0. *)
-(*   { erewrite Mem.store_block_compartment; eauto. *)
-(*     erewrite Mem.alloc_block_compartment; eauto. rewrite peq_true. eauto. } *)
-(*   exploit Mem.store_valid_block_2; eauto. intros ?. *)
-(*   exploit Mem.valid_block_alloc_inv; eauto. intros [|]; congruence. *)
-(* (* outside cp *) *)
-(* - inv H. eapply UNCHANGED; eauto. *)
 (* mem extends *)
 - inv H. inv H1. inv H7.
   assert (SZ: v2 = Vptrofs sz).
@@ -1191,12 +1241,6 @@ Proof.
   red; intros. destruct (eq_block b1 b).
   subst b1. rewrite C in H2. inv H2. eauto with mem.
   rewrite D in H2 by auto. congruence.
-  (* destruct (eq_block b0 b); subst. *)
-  (* { erewrite Mem.store_block_compartment; eauto. *)
-  (*   erewrite Mem.alloc_block_compartment; eauto. rewrite peq_true. eauto. } *)
-  (* eapply Mem.store_valid_block_2 in H2; eauto. *)
-  (* clear ALLOC. *)
-  (* exploit Mem.valid_block_alloc_inv; eauto. intros [ | ]; congruence. *)
 (* trace length *)
 - inv H; simpl; lia.
 (* receptive *)
@@ -1257,14 +1301,6 @@ Proof.
   * eapply Mem.free_can_access_block_inj_2; eauto.
     eapply Mem.loadbytes_can_access_block_inj; eauto.
   * eapply Mem.loadbytes_can_access_block_inj; eauto.
-(* (* mem alloc *) *)
-(* - inv H; try congruence. *)
-(*   exploit Mem.valid_block_free_2; eauto. congruence. *)
-(* (* outside cp *) *)
-(* - inv H. *)
-(*   eapply Mem.free_unchanged_on; eauto. intros. unfold loc_not_in_compartment. *)
-(*   exploit Mem.free_can_access_block_1; eauto. *)
-(*   eapply Mem.unchanged_on_refl. *)
 (* mem extends *)
 - inv H.
 + inv H1. inv H8. inv H6.
@@ -1384,14 +1420,6 @@ Proof.
   apply Mem.perm_cur_max. eapply Mem.storebytes_range_perm; eauto.
   eapply Mem.storebytes_can_access_block_inj_2; eauto.
   eapply Mem.loadbytes_can_access_block_inj; eauto.
-(* - (* new blocks *) *)
-(*   intros. *)
-(*   inv H. *)
-(*   exploit Mem.storebytes_valid_block_2; eauto. congruence. *)
-(* (* outside cp *) *)
-(* - intros. inv H. *)
-(*   eapply Mem.storebytes_unchanged_on; eauto. intros. unfold loc_not_in_compartment. *)
-(*   exploit Mem.storebytes_can_access_block_1; eauto. *)
 - (* extensions *)
   intros. inv H.
   inv H1. inv H13. inv H14. inv H10. inv H11.
@@ -1499,6 +1527,8 @@ Inductive extcall_annot_sem (text: string) (targs: list typ) (ge: Senv.t) (cp: c
               list val -> mem -> trace -> val -> mem -> Prop :=
   | extcall_annot_sem_intro: forall vargs m args,
       eventval_list_match ge args targs vargs ->
+      (* Condition: only output from the current compartment *)
+      Forall (fun ev : eventval => eventval_comp ge ev ⊆ cp) args ->
       extcall_annot_sem text targs ge cp vargs m (Event_annot text args :: E0) Vundef m.
 
 Lemma extcall_annot_ok:
@@ -1510,8 +1540,9 @@ Proof.
 (* well typed *)
 - inv H. simpl. auto.
 (* symbols *)
-- destruct H as (A & B & C). inv H0. econstructor; eauto.
+- destruct H as (A & B & C & D). inv H0. econstructor; eauto.
   eapply eventval_list_match_preserved; eauto.
+  eapply eventval_list_comp_preserved; eauto.
 (* valid blocks *)
 - inv H; auto.
 (* accessibility *)
@@ -1520,11 +1551,6 @@ Proof.
 - inv H; auto.
 (* readonly *)
 - inv H; auto.
-(* (* mem alloc *) *)
-(* - inv H. congruence. *)
-(* (* outside cp *) *)
-(* - intros. inv H. *)
-(*   eapply Mem.unchanged_on_refl. *)
 (* mem extends *)
 - inv H.
   exists Vundef; exists m1'; intuition.
@@ -1535,6 +1561,8 @@ Proof.
   exists f; exists Vundef; exists m1'; intuition.
   econstructor; eauto.
   eapply eventval_list_match_inject; eauto.
+  destruct H as (A & B & C & D & E).
+  eapply eventval_list_comp_preserved with (ge1 := ge1); eauto.
   red; intros; congruence.
 (* trace length *)
 - inv H; simpl; lia.
@@ -1553,6 +1581,8 @@ Inductive extcall_annot_val_sem (text: string) (targ: typ) (ge: Senv.t) (cp: com
               list val -> mem -> trace -> val -> mem -> Prop :=
   | extcall_annot_val_sem_intro: forall varg m arg,
       eventval_match ge arg targ varg ->
+      (* Condition: only output from the current compartment *)
+      eventval_comp ge arg ⊆ cp ->
       extcall_annot_val_sem text targ ge cp (varg :: nil) m (Event_annot text (arg :: nil) :: E0) varg m.
 
 Lemma extcall_annot_val_ok:
@@ -1564,8 +1594,9 @@ Proof.
 (* well typed *)
 - inv H. eapply eventval_match_type; eauto.
 (* symbols *)
-- destruct H as (A & B & C). inv H0. econstructor; eauto.
+- destruct H as (A & B & C & D). inv H0. econstructor; eauto.
   eapply eventval_match_preserved; eauto.
+  erewrite eventval_comp_preserved; eauto.
 (* valid blocks *)
 - inv H; auto.
 (* accessibility *)
@@ -1574,21 +1605,18 @@ Proof.
 - inv H; auto.
 (* readonly *)
 - inv H; auto.
-(* (* mem alloc *) *)
-(* - inv H; congruence. *)
-(* (* outside cp *) *)
-(* - intros. inv H. *)
-(*   eapply Mem.unchanged_on_refl. *)
 (* mem extends *)
-- inv H. inv H1. inv H6.
+- inv H. inv H1. inv H7.
   exists v2; exists m1'; intuition.
   econstructor; eauto.
   eapply eventval_match_lessdef; eauto.
 (* mem inject *)
-- inv H0. inv H2. inv H7.
+- inv H0. inv H2. inv H8.
   exists f; exists v'; exists m1'; intuition.
   econstructor; eauto.
   eapply eventval_match_inject; eauto.
+  destruct H as (A & B & C & D & E).
+  erewrite eventval_comp_preserved; eauto.
   red; intros; congruence.
 (* trace length *)
 - inv H; simpl; lia.
@@ -1790,48 +1818,6 @@ Ltac external_call_caller_independent :=
   econstructor;
   eauto.
 
-(* Lemma external_call_caller_independent: *)
-(*   forall ef: external_function, *)
-(*   extcall_caller_independent (comp_of ef) (external_call ef). *)
-(* Proof. *)
-(*   destruct ef; simpl; try easy; *)
-(*   eauto with caller_independent; *)
-(*   try solve [external_call_caller_independent]. *)
-(*   { *)
-(*   intros ge cp1 cp2 args m t v m'. *)
-(*   unfold uptodate_caller, needs_calling_comp, needs_calling_comp_map. simpl. *)
-(*   rewrite PMap.gsspec, PMap.gi. *)
-(*   destruct (peq cp default_compartment) as [|neq]; try easy. *)
-(*   intros E. rewrite E; trivial. *)
-(*   } *)
-(*   { *)
-(*   intros ge cp1 cp2 args m t v m'. *)
-(*   unfold uptodate_caller, needs_calling_comp, needs_calling_comp_map. simpl. *)
-(*   rewrite PMap.gsspec, PMap.gi. *)
-(*   destruct (peq (comp_of (EF_vstore chunk)) privileged_compartment) as [|neq]; try easy. *)
-(*   intros E. rewrite E; trivial. *)
-(*   } *)
-(*   intros ge cp1 cp2 args m t v m'. *)
-(*   unfold uptodate_caller, needs_calling_comp, needs_calling_comp_map. simpl. *)
-(*   rewrite PMap.gsspec, PMap.gi. *)
-(*   destruct (peq (comp_of EF_malloc) privileged_compartment) as [|neq]; try easy. *)
-(*   intros E. rewrite E; trivial. *)
-(*   (* RB: NOTE: Two new goals left to solve. One of them can be solved by an *)
-(*      identical procedure. *) *)
-(*   intros ge cp1 cp2 args m t v m'. *)
-(*   unfold uptodate_caller, needs_calling_comp, needs_calling_comp_map. simpl. *)
-(*   rewrite PMap.gsspec, PMap.gi. *)
-(*   destruct (peq (comp_of EF_free) privileged_compartment) as [|neq]; try easy. *)
-(*   intros E. rewrite E; trivial. *)
-(*   (* RB: NOTE: The last goal, on EF_memcpy, cannot be solved by means of this *)
-(*      strategy, and needs a closer look. *) *)
-(*   intros ge cp1 cp2 args m t v m'. *)
-(*   unfold uptodate_caller, needs_calling_comp, needs_calling_comp_map. simpl. *)
-(*   rewrite PMap.gsspec, PMap.gi. *)
-(*   destruct (peq (comp_of (EF_memcpy sz al)) privileged_compartment) as [|neq]; try easy. *)
-(*   intros E. rewrite E; trivial. *)
-(* Qed. *)
-
 Theorem external_call_spec:
   forall ef cp,
   extcall_properties (external_call ef) cp (ef_sig ef).
@@ -1892,27 +1878,24 @@ Definition meminj_preserves_globals (F V: Type) (ge: Genv.t F V) (f: block -> op
      (forall id b, Genv.find_symbol ge id = Some b -> f b = Some(b, 0))
   /\ (forall b gv, Genv.find_var_info ge b = Some gv -> f b = Some(b, 0))
   /\ (forall b1 b2 delta gv, Genv.find_var_info ge b2 = Some gv -> f b1 = Some(b2, delta) -> b2 = b1).
+  (* /\ (forall id, Genv.find_comp_of_ident ge id = Genv.find_comp_) *)
 
 Lemma external_call_mem_inject:
-  forall ef F V (ge: Genv.t F V) cp vargs m1 t vres m2 f m1' vargs',
+  forall ef F V (ge: Genv.t F V) {CF: has_comp F} cp vargs m1 t vres m2 f m1' vargs',
   meminj_preserves_globals ge f ->
-  external_call ef ge cp vargs m1 t vres m2 ->
+  external_call ef (Genv.to_senv ge) cp vargs m1 t vres m2 ->
   Mem.inject f m1 m1' ->
   Val.inject_list f vargs vargs' ->
   exists f', exists vres', exists m2',
-     external_call ef ge cp vargs' m1' t vres' m2'
+     external_call ef (Genv.to_senv ge) cp vargs' m1' t vres' m2'
     /\ Val.inject f' vres vres'
     /\ Mem.inject f' m2 m2'
     /\ Mem.unchanged_on (loc_unmapped f) m1 m2
     /\ Mem.unchanged_on (loc_out_of_reach f m1) m1' m2'
     /\ inject_incr f f'
     /\ inject_separated f f' m1 m1'.
-   (* /\ (forall b : block, *)
-   (*       ~ Mem.valid_block m1 b -> *)
-   (*       Mem.valid_block m2 b -> *)
-   (*       exists b' : block, f' b = Some (b', 0) /\ Mem.block_compartment m2 b = cp). *)
 Proof.
-  intros. destruct H as (A & B & C). eapply external_call_mem_inject_gen with (ge1 := ge); eauto.
+  intros. destruct H as (A & B & C). eapply external_call_mem_inject_gen with (ge1 := (Genv.to_senv ge)); eauto.
   repeat split; intros.
   + simpl in H3. exploit A; eauto. intros EQ; rewrite EQ in H; inv H. auto.
   + simpl in H3. exploit A; eauto. intros EQ; rewrite EQ in H; inv H. auto.
@@ -2020,23 +2003,29 @@ Section EVAL_BUILTIN_ARG_PRESERVED.
 Variables A F1 V1 F2 V2: Type.
 Variable ge1: Genv.t F1 V1.
 Variable ge2: Genv.t F2 V2.
+Context {CF1: has_comp F1} {CF2: has_comp F2}.
 Variable e: A -> val.
 Variable sp: val.
 Variable m: mem.
 
+Let se1 := Genv.to_senv ge1.
+Let se2 := Genv.to_senv ge2.
+
 Hypothesis symbols_preserved:
   forall id, Genv.find_symbol ge2 id = Genv.find_symbol ge1 id.
+Hypothesis comp_preserved:
+  forall id, Genv.find_comp_of_ident ge2 id = Genv.find_comp_of_ident ge1 id.
 
 Lemma eval_builtin_arg_preserved:
-  forall a v, eval_builtin_arg ge1 e sp m a v -> eval_builtin_arg ge2 e sp m a v.
+  forall a v, eval_builtin_arg se1 e sp m a v -> eval_builtin_arg se2 e sp m a v.
 Proof.
-  assert (EQ: forall id ofs, Senv.symbol_address ge2 id ofs = Senv.symbol_address ge1 id ofs).
+  assert (EQ: forall id ofs, Senv.symbol_address se2 id ofs = Senv.symbol_address se1 id ofs).
   { unfold Senv.symbol_address; simpl; intros. rewrite symbols_preserved; auto. }
   induction 1; eauto with barg. rewrite <- EQ in H; eauto with barg. rewrite <- EQ; eauto with barg.
 Qed.
 
 Lemma eval_builtin_args_preserved:
-  forall al vl, eval_builtin_args ge1 e sp m al vl -> eval_builtin_args ge2 e sp m al vl.
+  forall al vl, eval_builtin_args se1 e sp m al vl -> eval_builtin_args se2 e sp m al vl.
 Proof.
   induction 1; constructor; auto; eapply eval_builtin_arg_preserved; eauto.
 Qed.
@@ -2096,6 +2085,7 @@ Section INFORM_TRACES.
 
 Variable F V: Type.
 Variable ge: Genv.t F V.
+Context {CF: has_comp F}.
 
 Inductive call_trace: compartment -> compartment -> val -> list val -> list typ -> trace -> Prop :=
   | call_trace_intra: forall cp cp' vf vargs ty,
@@ -2105,7 +2095,7 @@ Inductive call_trace: compartment -> compartment -> val -> list val -> list typ 
       Genv.type_of_call cp cp' = Genv.CrossCompartmentCall ->
       vf = Vptr b ofs ->
       Genv.invert_symbol ge b = Some i ->
-      eventval_list_match ge vl ty vargs ->
+      eventval_list_match (Genv.to_senv ge) vl ty vargs ->
       call_trace cp cp' vf vargs ty (Event_call cp cp' i vl :: nil).
 
 Lemma call_trace_same_cp:
@@ -2133,7 +2123,7 @@ Inductive return_trace: compartment -> compartment -> val -> rettype -> trace ->
     return_trace cp cp' v ty E0
 | return_trace_cross: forall cp cp' res v ty,
     Genv.type_of_call cp cp' = Genv.CrossCompartmentCall ->
-    eventval_match ge res (proj_rettype ty) v ->
+    eventval_match (Genv.to_senv ge) res (proj_rettype ty) v ->
     return_trace cp cp' v ty (Event_return cp cp' res :: nil)
 .
 
@@ -2144,6 +2134,7 @@ Section INFORM_TRACES_INJECT.
   Variable F' V': Type.
   Variable ge: Genv.t F V.
   Variable ge': Genv.t F' V'.
+  Context {CF: has_comp F} {CF': has_comp F'}.
 
   Variable j: meminj.
 
@@ -2194,9 +2185,10 @@ Section INFORM_TRACES_PRESERVED.
   Variable F' V': Type.
   Variable ge: Genv.t F V.
   Variable ge': Genv.t F' V'.
+  Context {CF: has_comp F} {CF': has_comp F'}.
 
   Variable symbols_preserved: forall (s: ident), Genv.find_symbol ge' s = Genv.find_symbol ge s.
-  Variable senv_preserved: Senv.equiv ge ge'.
+  Variable senv_preserved: Senv.equiv (Genv.to_senv ge) (Genv.to_senv ge').
 
   Lemma call_trace_lessdef:
     forall cp cp' vf vs vs' tys t,
@@ -2212,7 +2204,7 @@ Section INFORM_TRACES_PRESERVED.
       apply Genv.find_invert_symbol.
       now rewrite symbols_preserved.
       eapply eventval_list_match_lessdef; eauto.
-      eapply eventval_list_match_preserved with (ge1 := ge); try eapply senv_preserved; eauto.
+      eapply eventval_list_match_preserved with (ge1 := Genv.to_senv ge); try eapply senv_preserved; eauto.
   Qed.
 
   Lemma call_trace_eq:
@@ -2237,7 +2229,7 @@ Section INFORM_TRACES_PRESERVED.
     - constructor; auto.
     - constructor; auto.
       eapply eventval_match_lessdef; eauto.
-      eapply eventval_match_preserved with (ge1 := ge); try eapply senv_preserved; eauto.
+      eapply eventval_match_preserved with (ge1 := Genv.to_senv ge); try eapply senv_preserved; eauto.
   Qed.
 
   Lemma return_trace_eq:
@@ -2270,12 +2262,12 @@ Section DETERMINISM.
   Qed.
 
   Lemma call_trace_determ:
-    forall {F V} {ge: Genv.t F V} {cp cp' vf vargs ty t1 t2},
+    forall {F V} {ge: Genv.t F V} {CF: has_comp F} {cp cp' vf vargs ty t1 t2},
       call_trace ge cp cp' vf vargs ty t1 ->
       call_trace ge cp cp' vf vargs ty t2 ->
       t1 = t2.
   Proof.
-    intros F V ge cp cp' vf vargs ty t1 t2 CALL1 CALL2.
+    intros F V ge CF cp cp' vf vargs ty t1 t2 CALL1 CALL2.
     inv CALL1; inv CALL2.
     - reflexivity.
     - contradiction.
@@ -2287,12 +2279,12 @@ Section DETERMINISM.
   Qed.
 
   Lemma return_trace_determ:
-    forall {F V} {ge: Genv.t F V} {cp cp' v ty t1 t2},
+    forall {F V} {ge: Genv.t F V} {CF: has_comp F} {cp cp' v ty t1 t2},
       return_trace ge cp cp' v ty t1 ->
       return_trace ge cp cp' v ty t2 ->
       t1 = t2.
   Proof.
-  intros F V ge cp cp' v ty t1 t2 RET1 RET2.
+  intros F V ge CF cp cp' v ty t1 t2 RET1 RET2.
   inv RET1; inv RET2.
   - reflexivity.
   - contradiction.

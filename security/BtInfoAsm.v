@@ -14,40 +14,40 @@ Require Import BtBasics.
 
 
 
-(* Section AUX. *)
+Section AUX.
 
-(*   Lemma val_load_result_idem chunk v: *)
-(*     Val.load_result chunk (Val.load_result chunk v) = Val.load_result chunk v. *)
-(*   Proof. *)
-(*     destruct chunk, v; ss. *)
-(*     all: try (rewrite Int.sign_ext_idem; auto; lia). *)
-(*     all: try (rewrite Int.zero_ext_idem; auto; lia). *)
-(*     all: des_ifs. *)
-(*   Qed. *)
+  Lemma val_load_result_idem chunk v:
+    Val.load_result chunk (Val.load_result chunk v) = Val.load_result chunk v.
+  Proof.
+    destruct chunk, v; ss.
+    all: try (rewrite Int.sign_ext_idem; auto; lia).
+    all: try (rewrite Int.zero_ext_idem; auto; lia).
+    all: des_ifs.
+  Qed.
 
-(*   Lemma extcall_cases *)
-(*         ef ge m args *)
-(*         (ECC: external_call_conds ef ge m args) *)
-(*         tr rv m' *)
-(*         (ECALL: external_call ef ge args m tr rv m') *)
-(*     : *)
-(*     (external_call_unknowns ef ge m args) \/ *)
-(*       (external_call_known_observables ef ge m args tr rv m') \/ *)
-(*       (external_call_known_silents ef ge m args tr rv m'). *)
-(*   Proof. *)
-(*     destruct ef; ss; auto. des_ifs; auto. des_ifs; auto. *)
-(*     - destruct tr; ss; eauto. right; left. esplits; eauto. ss. *)
-(*     - destruct tr; ss; eauto. right; left. esplits; eauto. ss. *)
-(*     - inv ECALL. right; right. esplits; eauto. econs; eauto. *)
-(*     - inv ECALL. right; right. esplits; eauto. econs; eauto. *)
-(*       right; right. esplits; eauto. econs; eauto. *)
-(*     - inv ECALL. right; right. esplits; eauto. econs; eauto. *)
-(*     - destruct tr; ss; eauto. right; left. esplits; eauto. ss. *)
-(*     - destruct tr; ss; eauto. right; left. esplits; eauto. ss. *)
-(*     - inv ECALL. right; right. esplits; eauto. econs; eauto. *)
-(*   Qed. *)
+  (* Lemma extcall_cases *)
+  (*       ef ge m args *)
+  (*       (ECC: external_call_conds ef ge m args) *)
+  (*       tr rv m' *)
+  (*       (ECALL: external_call ef ge args m tr rv m') *)
+  (*   : *)
+  (*   (external_call_unknowns ef ge m args) \/ *)
+  (*     (external_call_known_observables ef ge m args tr rv m') \/ *)
+  (*     (external_call_known_silents ef ge m args tr rv m'). *)
+  (* Proof. *)
+  (*   destruct ef; ss; auto. des_ifs; auto. des_ifs; auto. *)
+  (*   - destruct tr; ss; eauto. right; left. esplits; eauto. ss. *)
+  (*   - destruct tr; ss; eauto. right; left. esplits; eauto. ss. *)
+  (*   - inv ECALL. right; right. esplits; eauto. econs; eauto. *)
+  (*   - inv ECALL. right; right. esplits; eauto. econs; eauto. *)
+  (*     right; right. esplits; eauto. econs; eauto. *)
+  (*   - inv ECALL. right; right. esplits; eauto. econs; eauto. *)
+  (*   - destruct tr; ss; eauto. right; left. esplits; eauto. ss. *)
+  (*   - destruct tr; ss; eauto. right; left. esplits; eauto. ss. *)
+  (*   - inv ECALL. right; right. esplits; eauto. econs; eauto. *)
+  (* Qed. *)
 
-(* End AUX. *)
+End AUX.
 
 
 
@@ -82,47 +82,47 @@ Section BUNDLE.
     | nil => nil
     end.
 
-  (* Lemma unbundle_trace_cons *)
-  (*       be btr *)
-  (*   : *)
-  (*   unbundle_trace (be :: btr) = (unbundle be) ++ (unbundle_trace btr). *)
-  (* Proof. simpl. auto. Qed. *)
+  Lemma unbundle_trace_cons
+        be btr
+    :
+    unbundle_trace (be :: btr) = (unbundle be) ++ (unbundle_trace btr).
+  Proof. simpl. auto. Qed.
 
-  (* Lemma unbundle_trace_app *)
-  (*       btr1 btr2 *)
-  (*   : *)
-  (*   unbundle_trace (btr1 ++ btr2) = (unbundle_trace btr1) ++ (unbundle_trace btr2). *)
-  (* Proof. *)
-  (*   revert btr2. induction btr1; intros. *)
-  (*   { simpl. auto. } *)
-  (*   rewrite <- app_comm_cons. rewrite ! unbundle_trace_cons. rewrite <- app_assoc. f_equal. *)
-  (*   eauto. *)
-  (* Qed. *)
+  Lemma unbundle_trace_app
+        btr1 btr2
+    :
+    unbundle_trace (btr1 ++ btr2) = (unbundle_trace btr1) ++ (unbundle_trace btr2).
+  Proof.
+    revert btr2. induction btr1; intros.
+    { simpl. auto. }
+    rewrite <- app_comm_cons. rewrite ! unbundle_trace_cons. rewrite <- app_assoc. f_equal.
+    eauto.
+  Qed.
 
-  (* Inductive istar {genv state : Type} *)
-  (*           (step : genv -> state -> (ident * bundle_event) -> state -> Prop) (ge : genv) : *)
-  (*   state -> bundle_trace -> state -> Prop := *)
-  (*   istar_refl : forall s : state, istar step ge s nil s *)
-  (* | istar_step : forall (s1 : state) ev (s2 : state) (t2 : bundle_trace) (s3 : state) (t : bundle_trace), *)
-  (*     step ge s1 ev s2 -> istar step ge s2 t2 s3 -> t = ev :: t2 -> istar step ge s1 t s3. *)
+  Inductive istar {genv state : Type}
+            (step : genv -> state -> (ident * bundle_event) -> state -> Prop) (ge : genv) :
+    state -> bundle_trace -> state -> Prop :=
+    istar_refl : forall s : state, istar step ge s nil s
+  | istar_step : forall (s1 : state) ev (s2 : state) (t2 : bundle_trace) (s3 : state) (t : bundle_trace),
+      step ge s1 ev s2 -> istar step ge s2 t2 s3 -> t = ev :: t2 -> istar step ge s1 t s3.
 
-  (* Lemma istar_trans *)
-  (*       genv state (step: genv -> state -> _ -> state -> Prop) ge *)
-  (*       s1 t1 s2 *)
-  (*       (ISTAR1: istar step ge s1 t1 s2) *)
-  (*       t2 s3 *)
-  (*       (ISTAR2: istar step ge s2 t2 s3) *)
-  (*       t *)
-  (*       (TR: t = t1 ++ t2) *)
-  (*   : *)
-  (*   istar step ge s1 t s3. *)
-  (* Proof. *)
-  (*   revert_until ISTAR1. induction ISTAR1; intros. *)
-  (*   { simpl in *. subst; auto. } *)
-  (*   subst. rewrite <- app_comm_cons. econstructor 2. eapply H. *)
-  (*   { eapply IHISTAR1. eapply ISTAR2. eauto. } *)
-  (*   auto. *)
-  (* Qed. *)
+  Lemma istar_trans
+        genv state (step: genv -> state -> _ -> state -> Prop) ge
+        s1 t1 s2
+        (ISTAR1: istar step ge s1 t1 s2)
+        t2 s3
+        (ISTAR2: istar step ge s2 t2 s3)
+        t
+        (TR: t = t1 ++ t2)
+    :
+    istar step ge s1 t s3.
+  Proof.
+    revert_until ISTAR1. induction ISTAR1; intros.
+    { simpl in *. subst; auto. }
+    subst. rewrite <- app_comm_cons. econstructor 2. eapply H.
+    { eapply IHISTAR1. eapply ISTAR2. eauto. }
+    auto.
+  Qed.
 
 End BUNDLE.
 
@@ -141,18 +141,18 @@ Section EVENT.
 
   Definition typ_to_eventvals (ty: list typ): list eventval := map typ_to_eventval ty.
 
-  (* Inductive call_trace_cross {F V : Type} (ge : Genv.t F V) : compartment -> compartment -> block -> list val -> list typ -> trace -> ident -> list eventval -> Prop := *)
-  (* | call_trace_cross_cross : forall (cp cp' : compartment) (b : block) (vargs : list val) (vl : list eventval) (ty : list typ) (i : ident) tr, *)
-  (*     Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall -> *)
-  (*     Genv.invert_symbol ge b = Some i -> eventval_list_match ge vl ty vargs -> *)
-  (*     (tr = Event_call cp cp' i vl :: nil) -> *)
-  (*     call_trace_cross ge cp cp' b vargs ty tr i vl. *)
+  Inductive call_trace_cross {F V : Type} (ge : Genv.t F V) : compartment -> compartment -> block -> list val -> list typ -> trace -> ident -> list eventval -> Prop :=
+  | call_trace_cross_cross : forall (cp cp' : compartment) (b : block) (vargs : list val) (vl : list eventval) (ty : list typ) (i : ident) tr,
+      Genv.type_of_call cp cp' = Genv.CrossCompartmentCall ->
+      Genv.invert_symbol ge b = Some i -> eventval_list_match ge vl ty vargs ->
+      (tr = Event_call cp cp' i vl :: nil) ->
+      call_trace_cross ge cp cp' b vargs ty tr i vl.
 
-  (* Inductive return_trace_cross {F V : Type} (ge : Genv.t F V) : compartment -> compartment -> val -> rettype -> trace -> eventval -> Prop := *)
-  (* | return_trace_cross_cross : forall (cp cp' : compartment) (res : eventval) (v : val) (ty : rettype) tr, *)
-  (*     Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall -> eventval_match ge res (proj_rettype ty) v -> *)
-  (*     (tr = Event_return cp cp' res :: nil) -> *)
-  (*     return_trace_cross ge cp cp' v ty tr res. *)
+  Inductive return_trace_cross {F V : Type} (ge : Genv.t F V) : compartment -> compartment -> val -> rettype -> trace -> eventval -> Prop :=
+  | return_trace_cross_cross : forall (cp cp' : compartment) (res : eventval) (v : val) (ty : rettype) tr,
+      Genv.type_of_call cp cp' = Genv.CrossCompartmentCall -> eventval_match ge res (proj_rettype ty) v ->
+      (tr = Event_return cp cp' res :: nil) ->
+      return_trace_cross ge cp cp' v ty tr res.
 
   (* external call *)
   Definition senv_invert_symbol_total (ge: Senv.t) (b: block) : ident :=
@@ -173,123 +173,125 @@ Section EVENT.
 
   Definition vals_to_eventvals (ge: Senv.t) (vs: list val): list eventval := map (val_to_eventval ge) vs.
 
-  (* Lemma eventval_match_val_to_eventval *)
-  (*       ge ev ty v *)
-  (*       (EVM: eventval_match ge ev ty v) *)
-  (*   : *)
-  (*   val_to_eventval ge v = ev. *)
-  (* Proof. *)
-  (*   inv EVM; simpl; auto. *)
-  (*   unfold senv_invert_symbol_total. erewrite Senv.find_invert_symbol; eauto. *)
-  (* Qed. *)
+  Lemma eventval_match_val_to_eventval
+        ge ev ty v
+        (EVM: eventval_match ge ev ty v)
+    :
+    val_to_eventval ge v = ev.
+  Proof.
+    inv EVM; simpl; auto.
+    unfold senv_invert_symbol_total. erewrite Senv.find_invert_symbol; eauto.
+  Qed.
 
-  (* Lemma eventval_list_match_vals_to_eventvals *)
-  (*       ge evs tys vs *)
-  (*       (EVM: eventval_list_match ge evs tys vs) *)
-  (*   : *)
-  (*   vals_to_eventvals ge vs = evs. *)
-  (* Proof. *)
-  (*   induction EVM; simpl; auto. *)
-  (*   rewrite IHEVM. f_equal. eapply eventval_match_val_to_eventval; eauto. *)
-  (* Qed. *)
+  Lemma eventval_list_match_vals_to_eventvals
+        ge evs tys vs
+        (EVM: eventval_list_match ge evs tys vs)
+    :
+    vals_to_eventvals ge vs = evs.
+  Proof.
+    induction EVM; simpl; auto.
+    rewrite IHEVM. f_equal. eapply eventval_match_val_to_eventval; eauto.
+  Qed.
 
 End EVENT.
 
 
 
-(* Section IR. *)
+Section IR.
 
-(*   Variant ir_cont_type : Type := | ir_cont: block -> ir_cont_type. *)
-(*   Definition ir_conts := list ir_cont_type. *)
+  Variant ir_cont_type : Type := | ir_cont: block -> ir_cont_type.
+  Definition ir_conts := list ir_cont_type.
 
-(*   Definition crossing_comp {F V} (ge: Genv.t F V) (cp cp': compartment) := *)
-(*     Genv.type_of_call ge cp cp' = Genv.CrossCompartmentCall. *)
+  Definition crossing_comp {F V} (ge: Genv.t F V) (cp cp': compartment) :=
+    Genv.type_of_call cp cp' = Genv.CrossCompartmentCall.
 
-(*   Definition ir_state := option (block * mem * ir_conts)%type. *)
+  Definition ir_state := option (block * mem * ir_conts)%type.
 
-(*   Variant ir_step (ge: Asm.genv) : ir_state -> (ident * bundle_event) -> ir_state -> Prop := *)
-(*     | ir_step_cross_call_internal *)
-(*         cur m1 ik *)
-(*         tr id evargs sg *)
-(*         cp cp' vargs *)
-(*         (CURCP: cp = Genv.find_comp ge (Vptr cur Ptrofs.zero)) *)
-(*         b f_next *)
-(*         (FINDB: Genv.find_symbol ge id = Some b) *)
-(*         (FINDF: Genv.find_funct ge (Vptr b Ptrofs.zero) = Some (AST.Internal f_next)) *)
-(*         (CP': cp' = comp_of f_next) *)
-(*         (ALLOW: Genv.allowed_call ge cp (Vptr b Ptrofs.zero)) *)
-(*         (NPTR: crossing_comp ge cp cp' -> Forall not_ptr vargs) *)
-(*         (SIG: sg = Asm.fn_sig f_next) *)
-(*         (TR: call_trace_cross ge cp cp' b vargs (sig_args sg) tr id evargs) *)
-(*         d m2 *)
-(*         (DELTA: mem_delta_apply_wf ge cp d (Some m1) = Some m2) *)
-(*         (PUB: public_first_order ge m2) *)
-(*         id_cur *)
-(*         (IDCUR: Genv.invert_symbol ge cur = Some id_cur) *)
-(*       : *)
-(*       ir_step ge (Some (cur, m1, ik)) (id_cur, Bundle_call tr id evargs sg d) (Some (b, m2, (ir_cont cur) :: ik)) *)
-(*     | ir_step_cross_return_internal *)
-(*         cur m1 next ik ik_tl *)
-(*         tr evretv *)
-(*         cp_cur cp_next vretv *)
-(*         (CURCP: cp_cur = Genv.find_comp ge (Vptr cur Ptrofs.zero)) *)
-(*         sg fd_cur *)
-(*         (FINDFD: Genv.find_funct_ptr ge cur = Some (fd_cur)) *)
-(*         (* in Asm, stack has the sig *) *)
-(*         (SIG: sg = Asm.funsig fd_cur) *)
-(*         (NPTR: crossing_comp ge cp_next cp_cur -> not_ptr vretv) *)
-(*         (NEXTCP: cp_next = Genv.find_comp ge (Vptr next Ptrofs.zero)) *)
-(*         f_next *)
-(*         (INTERNAL: Genv.find_funct_ptr ge next = Some (AST.Internal f_next)) *)
-(*         (* internal return: memory changes in Clight-side, so need inj-relation *) *)
-(*         (TR: return_trace_cross ge cp_next cp_cur vretv (sig_res sg) tr evretv) *)
-(*         (CONT: ik = (ir_cont next) :: ik_tl) *)
-(*         d m2 *)
-(*         (DELTA: mem_delta_apply_wf ge cp_cur d (Some m1) = Some m2) *)
-(*         (PUB: public_first_order ge m2) *)
-(*         id_cur *)
-(*         (IDCUR: Genv.invert_symbol ge cur = Some id_cur) *)
-(*       : *)
-(*       ir_step ge (Some (cur, m1, ik)) (id_cur, Bundle_return tr evretv d) (Some (next, m2, ik_tl)) *)
-(*     | ir_step_intra_call_external *)
-(*         cur m1 m2 ik *)
-(*         tr id evargs sg *)
-(*         cp_cur *)
-(*         (CURCP: cp_cur = Genv.find_comp ge (Vptr cur Ptrofs.zero)) *)
-(*         b_ext ef cp_ext *)
-(*         (FINDB: Genv.find_symbol ge id = Some b_ext) *)
-(*         (FINDF: Genv.find_funct ge (Vptr b_ext Ptrofs.zero) = Some (AST.External ef)) *)
-(*         (EXTCP: cp_ext = comp_of ef) *)
-(*         (INTRA: Genv.type_of_call ge cp_cur cp_ext = Genv.InternalCall) *)
-(*         (SIG: sg = ef_sig ef) *)
-(*         d m1' *)
-(*         (MEM: mem_delta_apply_wf ge cp_cur d (Some m1) = Some m1') *)
-(*         vargs vretv *)
-(*         (EC: external_call ef ge vargs m1' tr vretv m2) *)
-(*         (ECCASES: (external_call_unknowns ef ge m1' vargs) \/ *)
-(*                     (external_call_known_observables ef ge m1' vargs tr vretv m2 /\ d = [])) *)
-(*         (ARGS: evargs = vals_to_eventvals ge vargs) *)
-(*         id_cur *)
-(*         (IDCUR: Genv.invert_symbol ge cur = Some id_cur) *)
-(*       : *)
-(*       ir_step ge (Some (cur, m1, ik)) (id_cur, Bundle_call tr id evargs sg d) (Some (cur, m2, ik)) *)
-(*     | ir_step_builtin *)
-(*         cur m1 m2 ik *)
-(*         tr ef evargs *)
-(*         cp_cur *)
-(*         (CURCP: cp_cur = Genv.find_comp ge (Vptr cur Ptrofs.zero)) *)
-(*         (ALLOWED: comp_of ef = cp_cur) *)
-(*         d m1' *)
-(*         (MEM: mem_delta_apply_wf ge cp_cur d (Some m1) = Some m1') *)
-(*         vargs vretv *)
-(*         (EC: external_call ef ge vargs m1' tr vretv m2) *)
-(*         (ECCASES: (external_call_unknowns ef ge m1' vargs) \/ *)
-(*                     (external_call_known_observables ef ge m1' vargs tr vretv m2 /\ d = [])) *)
-(*         (ARGS: evargs = vals_to_eventvals ge vargs) *)
-(*         id_cur *)
-(*         (IDCUR: Genv.invert_symbol ge cur = Some id_cur) *)
-(*       : *)
-(*       ir_step ge (Some (cur, m1, ik)) (id_cur, Bundle_builtin tr ef evargs d) (Some (cur, m2, ik)) *)
+  Instance has_comp_fundef: has_comp Asm.fundef.
+  Proof.
+    eapply has_comp_fundef. eapply has_comp_function.
+  Qed.
+
+  Variant ir_step (ge: Asm.genv) : ir_state -> (ident * bundle_event) -> ir_state -> Prop :=
+    | ir_step_cross_call_internal
+        cur m1 ik
+        tr id evargs sg
+        cp cp' vargs
+        (CURCP: cp = Genv.find_comp_in_genv ge (Vptr cur Ptrofs.zero))
+        b f_next
+        (FINDB: Genv.find_symbol ge id = Some b)
+        (FINDF: Genv.find_funct ge (Vptr b Ptrofs.zero) = Some (AST.Internal f_next))
+        (CP': cp' = comp_of f_next)
+        (ALLOW: Genv.allowed_call ge cp (Vptr b Ptrofs.zero))
+        (NPTR: crossing_comp ge cp cp' -> Forall not_ptr vargs)
+        (SIG: sg = Asm.fn_sig f_next)
+        (TR: call_trace_cross ge cp cp' b vargs (sig_args sg) tr id evargs)
+        d m2
+        (DELTA: mem_delta_apply_wf ge cp d (Some m1) = Some m2)
+        (* (PUB: public_first_order ge m2) *)
+        id_cur
+        (IDCUR: Genv.invert_symbol ge cur = Some id_cur)
+      :
+      ir_step ge (Some (cur, m1, ik)) (id_cur, Bundle_call tr id evargs sg d) (Some (b, m2, (ir_cont cur) :: ik))
+    | ir_step_cross_return_internal
+        cur m1 next ik ik_tl
+        tr evretv
+        cp_cur cp_next vretv
+        (CURCP: cp_cur = Genv.find_comp_in_genv ge (Vptr cur Ptrofs.zero))
+        sg fd_cur
+        (FINDFD: Genv.find_funct_ptr ge cur = Some (fd_cur))
+        (* in Asm, stack has the sig *)
+        (* (SIG: sg = Asm.funsig fd_cur) *)
+        (NPTR: crossing_comp ge cp_next cp_cur -> not_ptr vretv)
+        (NEXTCP: cp_next = Genv.find_comp_in_genv ge (Vptr next Ptrofs.zero))
+        f_next
+        (INTERNAL: Genv.find_funct_ptr ge next = Some (AST.Internal f_next))
+        (* internal return: memory changes in Clight-side, so need inj-relation *)
+        (TR: return_trace_cross ge cp_next cp_cur vretv (sig_res sg) tr evretv)
+        (CONT: ik = (ir_cont next) :: ik_tl)
+        d m2
+        (DELTA: mem_delta_apply_wf ge cp_cur d (Some m1) = Some m2)
+        (* (PUB: public_first_order ge m2) *)
+        id_cur
+        (IDCUR: Genv.invert_symbol ge cur = Some id_cur)
+      :
+      ir_step ge (Some (cur, m1, ik)) (id_cur, Bundle_return tr evretv d) (Some (next, m2, ik_tl))
+    | ir_step_intra_call_external
+        cur m1 m2 ik
+        tr id evargs sg
+        cp_cur
+        (CURCP: cp_cur = Genv.find_comp_in_genv ge (Vptr cur Ptrofs.zero))
+        b_ext ef
+        (FINDB: Genv.find_symbol ge id = Some b_ext)
+        (FINDF: Genv.find_funct ge (Vptr b_ext Ptrofs.zero) = Some (AST.External ef))
+        (SIG: sg = ef_sig ef)
+        d m1'
+        (MEM: mem_delta_apply_wf ge cp_cur d (Some m1) = Some m1')
+        vargs vretv
+        (EC: external_call ef ge cp_cur vargs m1' tr vretv m2)
+        (* (ECCASES: (external_call_unknowns ef ge m1' vargs) \/ *)
+        (*             (external_call_known_observables ef ge m1' vargs tr vretv m2 /\ d = [])) *)
+        (ARGS: evargs = vals_to_eventvals ge vargs)
+        id_cur
+        (IDCUR: Genv.invert_symbol ge cur = Some id_cur)
+      :
+      ir_step ge (Some (cur, m1, ik)) (id_cur, Bundle_call tr id evargs sg d) (Some (cur, m2, ik))
+    | ir_step_builtin
+        cur m1 m2 ik
+        tr ef evargs
+        cp_cur
+        (CURCP: cp_cur = Genv.find_comp_in_genv ge (Vptr cur Ptrofs.zero))
+        d m1'
+        (MEM: mem_delta_apply_wf ge cp_cur d (Some m1) = Some m1')
+        vargs vretv
+        (EC: external_call ef ge cp_cur vargs m1' tr vretv m2)
+        (* (ECCASES: (external_call_unknowns ef ge m1' vargs) \/ *)
+        (*             (external_call_known_observables ef ge m1' vargs tr vretv m2 /\ d = [])) *)
+        (ARGS: evargs = vals_to_eventvals ge vargs)
+        id_cur
+        (IDCUR: Genv.invert_symbol ge cur = Some id_cur)
+      :
+      ir_step ge (Some (cur, m1, ik)) (id_cur, Bundle_builtin tr ef evargs d) (Some (cur, m2, ik))
 (*     | ir_step_cross_call_external1 *)
 (*         (* early cut at call *) *)
 (*         cur m1 ik *)
@@ -366,59 +368,61 @@ End EVENT.
 (*         (IDCUR: Genv.invert_symbol ge cur = Some id_cur) *)
 (*       : *)
 (*       ir_step ge (Some (cur, m1, ik)) (id_cur, Bundle_call (tr1 ++ tr2 ++ tr3) id evargs sg d) (Some (cur, m2, ik)). *)
-
-(* End IR. *)
-
-
-(* Section AUX. *)
-
-(*   Definition wf_ge {F V} (ge: Genv.t F V) := exists (p: AST.program F V), (list_norepet (prog_defs_names p)) /\ (ge = Genv.globalenv p). *)
-
-(*   Lemma wf_ge_block_to_id *)
-(*         F V (ge: Genv.t F V) *)
-(*         (WF: wf_ge ge) *)
-(*         b gd *)
-(*         (DEF: Genv.find_def ge b = Some gd) *)
-(*     : *)
-(*     exists id, Genv.invert_symbol ge b = Some id. *)
-(*   Proof. destruct WF as (p & A & B). eapply genv_def_to_ident; eauto. Qed. *)
-
-(*   Lemma val_is_ptr_or_not *)
-(*         (v: val) *)
-(*     : *)
-(*     (forall b o, v <> Vptr b o) \/ (exists b o, v = Vptr b o). *)
-(*   Proof. destruct v; eauto. all: left; intros; intros F; inv F. Qed. *)
-
-(* End AUX. *)
+  .
+End IR.
 
 
-(* Section MEASURE. *)
+Section AUX.
 
-(*   Inductive star_measure {genv state : Type} (step : genv -> state -> trace -> state -> Prop) (ge : genv) : nat -> state -> trace -> state -> Prop := *)
-(*     star_measure_refl : forall s : state, star_measure step ge O s E0 s *)
-(*   | star_step : forall n (s1 : state) (t1 : trace) (s2 : state) (t2 : trace) (s3 : state) (t : trace), *)
-(*       step ge s1 t1 s2 -> star_measure step ge n s2 t2 s3 -> t = t1 ** t2 -> star_measure step ge (S n) s1 t s3. *)
+  Definition wf_ge {F V} {CF: has_comp F}
+    (ge: Genv.t F V) := exists (p: AST.program F V), (list_norepet (prog_defs_names p)) /\ (ge = Genv.globalenv p) /\
+        (agr_comps p.(prog_pol) (rev (prog_defs p))).
 
-(*   Lemma measure_star *)
-(*         genv state *)
-(*         (step : genv -> state -> trace -> state -> Prop) *)
-(*         (ge : genv) *)
-(*         s0 tr s1 *)
-(*         (STAR: star step ge s0 tr s1) *)
-(*     : *)
-(*     exists n, star_measure step ge n s0 tr s1. *)
-(*   Proof. *)
-(*     induction STAR. *)
-(*     { exists O. constructor 1. } *)
-(*     destruct IHSTAR as (n & NEXT). exists (S n). econstructor 2. eapply H. eapply NEXT. auto. *)
-(*   Qed. *)
+  Lemma wf_ge_block_to_id
+        F V {CF: has_comp F} (ge: Genv.t F V)
+        (WF: wf_ge ge)
+        b gd
+        (DEF: Genv.find_def ge b = Some gd)
+    :
+    exists id, Genv.invert_symbol ge b = Some id.
+  Proof. destruct WF as (p & A & B & C). eapply genv_def_to_ident; eauto. Qed.
 
-(* End MEASURE. *)
+  Lemma val_is_ptr_or_not
+        (v: val)
+    :
+    (forall b o, v <> Vptr b o) \/ (exists b o, v = Vptr b o).
+  Proof. destruct v; eauto. all: left; intros; intros F; inv F. Qed.
+
+End AUX.
+
+
+Section MEASURE.
+
+  Inductive star_measure {genv state : Type} (step : genv -> state -> trace -> state -> Prop) (ge : genv) : nat -> state -> trace -> state -> Prop :=
+    star_measure_refl : forall s : state, star_measure step ge O s E0 s
+  | star_step : forall n (s1 : state) (t1 : trace) (s2 : state) (t2 : trace) (s3 : state) (t : trace),
+      step ge s1 t1 s2 -> star_measure step ge n s2 t2 s3 -> t = t1 ** t2 -> star_measure step ge (S n) s1 t s3.
+
+  Lemma measure_star
+        genv state
+        (step : genv -> state -> trace -> state -> Prop)
+        (ge : genv)
+        s0 tr s1
+        (STAR: star step ge s0 tr s1)
+    :
+    exists n, star_measure step ge n s0 tr s1.
+  Proof.
+    induction STAR.
+    { exists O. constructor 1. }
+    destruct IHSTAR as (n & NEXT). exists (S n). econstructor 2. eapply H. eapply NEXT. auto.
+  Qed.
+
+End MEASURE.
 
 
 (* Section CONDS. *)
 
-(*   Definition public_not_freeable ge m := forall b, (meminj_public ge b <> None) -> (forall ofs, ~ Mem.perm m b ofs Max Freeable). *)
+  (* Definition public_not_freeable ge m := forall b, (meminj_public ge b <> None) -> (forall ofs, ~ Mem.perm m b ofs Max Freeable). *)
 
 (*   Definition public_rev_perm ge m1 m2 := *)
 (*     forall b, match meminj_public ge b with *)
@@ -429,248 +433,248 @@ End EVENT.
 (* End CONDS. *)
 
 
-(* Section FROMASM. *)
+Section FROMASM.
 
-(*   Import ListNotations. *)
+  Import ListNotations.
 
-(*   Ltac Simplif_all := *)
-(*     ((rewrite Asmgenproof0.nextinstr_inv in * by eauto with asmgen) *)
-(*      || (rewrite Asmgenproof0.nextinstr_inv1 in * by eauto with asmgen) *)
-(*      || (rewrite Pregmap.gss in *)
-(*      || (rewrite Asmgenproof0.nextinstr_pc in *)
-(*      || (rewrite Pregmap.gso in * by eauto with asmgen)); auto with asmgen. *)
+  Ltac Simplif_all :=
+    ((rewrite Asmgenproof0.nextinstr_inv in * by eauto with asmgen)
+     || (rewrite Asmgenproof0.nextinstr_inv1 in * by eauto with asmgen)
+     || (rewrite Pregmap.gss in *)
+     || (rewrite Asmgenproof0.nextinstr_pc in *)
+     || (rewrite Pregmap.gso in * by eauto with asmgen)); auto with asmgen.
 
-(*   Ltac Simpl_all := repeat Simplif_all. *)
+  Ltac Simpl_all := repeat Simplif_all.
 
-(*   Ltac simpl_before_exists := *)
-(*     repeat (Simpl_all; *)
-(*             match goal with *)
-(*             (* Goto *) *)
-(*             | _: goto_label _ _ ?rs _ = Next _ _ |- _ => *)
-(*                 unfold goto_label in *; destruct label_pos; try congruence *)
-(*             | _: eval_branch _ _ ?rs _ _ = Next _ _ |- _ => *)
-(*                 unfold eval_branch in *; simpl in * *)
-(*             | _: exec_load _ _ _ _ _ _ _ _ _ = Next _ _ |- _ => *)
-(*                 unfold exec_load in *; simpl in * *)
-(*             | _: exec_store _ _ _ _ _ _ _ _ = Next _ _ |- _ => *)
-(*                 unfold exec_store in *; simpl in * *)
-(*             | _: context [Val.cmp_bool] |- _ => *)
-(*                 unfold Val.cmp_bool in *; simpl in * *)
-(*             | _: context [Val.cmpl_bool] |- _ => *)
-(*                 unfold Val.cmpl_bool in *; simpl in * *)
-(*             | _: context [eval_offset _ ?ofs] |- _ => *)
-(*                 destruct ofs; simpl in * *)
+  Ltac simpl_before_exists :=
+    repeat (Simpl_all;
+            match goal with
+            (* Goto *)
+            | _: goto_label _ _ ?rs _ = Next _ _ |- _ =>
+                unfold goto_label in *; destruct label_pos; try congruence
+            | _: eval_branch _ _ ?rs _ _ = Next _ _ |- _ =>
+                unfold eval_branch in *; simpl in *
+            | _: exec_load _ _ _ _ _ _ _ _ _ = Next _ _ |- _ =>
+                unfold exec_load in *; simpl in *
+            | _: exec_store _ _ _ _ _ _ _ _ = Next _ _ |- _ =>
+                unfold exec_store in *; simpl in *
+            | _: context [Val.cmp_bool] |- _ =>
+                unfold Val.cmp_bool in *; simpl in *
+            | _: context [Val.cmpl_bool] |- _ =>
+                unfold Val.cmpl_bool in *; simpl in *
+            | _: context [eval_offset _ ?ofs] |- _ =>
+                destruct ofs; simpl in *
 
-(*             | |- context [Ptrofs.repr 0] => replace (Ptrofs.repr 0) with Ptrofs.zero by reflexivity; auto *)
-(*             | H: context [Ptrofs.repr 0] |- _ => replace (Ptrofs.repr 0) with Ptrofs.zero in H by reflexivity; auto *)
-(*             | |- context [Ptrofs.add _ Ptrofs.zero] => rewrite Ptrofs.add_zero; auto *)
-(*             | H: context [Ptrofs.add _ Ptrofs.zero] |- _ => rewrite Ptrofs.add_zero in H; simpl in *; try congruence *)
-(*             | |- context [Ptrofs.sub _ Ptrofs.zero] => rewrite Ptrofs.sub_zero_l; auto *)
-(*             | H: context [Ptrofs.sub _ Ptrofs.zero] |- _ => rewrite Ptrofs.sub_zero_l in H; simpl in *; try congruence *)
+            | |- context [Ptrofs.repr 0] => replace (Ptrofs.repr 0) with Ptrofs.zero by reflexivity; auto
+            | H: context [Ptrofs.repr 0] |- _ => replace (Ptrofs.repr 0) with Ptrofs.zero in H by reflexivity; auto
+            | |- context [Ptrofs.add _ Ptrofs.zero] => rewrite Ptrofs.add_zero; auto
+            | H: context [Ptrofs.add _ Ptrofs.zero] |- _ => rewrite Ptrofs.add_zero in H; simpl in *; try congruence
+            | |- context [Ptrofs.sub _ Ptrofs.zero] => rewrite Ptrofs.sub_zero_l; auto
+            | H: context [Ptrofs.sub _ Ptrofs.zero] |- _ => rewrite Ptrofs.sub_zero_l in H; simpl in *; try congruence
 
-(*             (* hypothesis manipulation *) *)
-(*             | _: context [match ?rs1 ?i with | _ => _ end] |- _ => *)
-(*                 destruct (rs1 i) eqn:?; try congruence; simpl in *; eauto *)
+            (* hypothesis manipulation *)
+            | _: context [match ?rs1 ?i with | _ => _ end] |- _ =>
+                destruct (rs1 i) eqn:?; try congruence; simpl in *; eauto
 
-(*             | _: context [Val.offset_ptr (?rs1 ?i) _] |- _ => *)
-(*                 destruct (rs1 i) eqn:?; try congruence; simpl in *; eauto *)
+            | _: context [Val.offset_ptr (?rs1 ?i) _] |- _ =>
+                destruct (rs1 i) eqn:?; try congruence; simpl in *; eauto
 
-(*             | H: Next _ _ = Next _ _ |- _ => inv H *)
-(*             | H: Some _ = Some _ |- _ => inv H *)
-(*             | H: Some _ = None |- _ => inv H *)
-(*             | H: None = Some _ |- _ => inv H *)
-(*             | H: Stuck = Next _ _ |- _ => inv H *)
-(*             | H: Next _ _ = Stuck |- _ => inv H *)
-(*             | H: negb _ = true |- _ => apply negb_true_iff in H *)
-(*             | H: negb _ = false |- _ => apply negb_false_iff in H *)
-(*             | H: Int.eq ?x ?x = false |- _ => rewrite Int.eq_true in H *)
-(*             | H: Int64.eq ?x ?x = false |- _ => rewrite Int64.eq_true in H *)
-(*             | H: false = true |- _ => congruence *)
-(*             | H: true = false |- _ => congruence *)
-(*             | H: ?x = false, H': ?x = true |- _ => congruence *)
-(*             | H: match ?x with | _ => _ end = Next _ _ |- _ => *)
-(*                 let eq := fresh "eq" in *)
-(*                 destruct x eqn:eq; simpl in *; try congruence *)
-(*             | _: context [?rs1 ### ?rs] |- context [?rs3 ### ?rs] => *)
-(*                 let i := fresh "i" in destruct rs as [| i]; simpl in * *)
-(*             | _: context [?rs1 ## ?rs] |- context [?rs3 ## ?rs] => *)
-(*                 let i := fresh "i" in destruct rs as [| i]; simpl in * *)
-(*             | H: ?x = _ |- context [if ?x then _ else _] => *)
-(*                 rewrite H; simpl *)
-(*             | H: ?x = _ |- context [match ?x with | _ => _ end] => *)
-(*                 rewrite H; simpl *)
-(*             | |- context [(if ?x then _ else _) = Next _ _] => *)
-(*                 let eq := fresh "eq" in destruct x eqn:eq; simpl in * *)
-(*             | |- context [(match ?x with | _ => _ end) = Next _ _] => *)
-(*                 let eq := fresh "eq" in destruct x eqn:eq; simpl in * *)
+            | H: Next _ _ = Next _ _ |- _ => inv H
+            | H: Some _ = Some _ |- _ => inv H
+            | H: Some _ = None |- _ => inv H
+            | H: None = Some _ |- _ => inv H
+            | H: Stuck = Next _ _ |- _ => inv H
+            | H: Next _ _ = Stuck |- _ => inv H
+            | H: negb _ = true |- _ => apply negb_true_iff in H
+            | H: negb _ = false |- _ => apply negb_false_iff in H
+            | H: Int.eq ?x ?x = false |- _ => rewrite Int.eq_true in H
+            | H: Int64.eq ?x ?x = false |- _ => rewrite Int64.eq_true in H
+            | H: false = true |- _ => congruence
+            | H: true = false |- _ => congruence
+            | H: ?x = false, H': ?x = true |- _ => congruence
+            | H: match ?x with | _ => _ end = Next _ _ |- _ =>
+                let eq := fresh "eq" in
+                destruct x eqn:eq; simpl in *; try congruence
+            | _: context [?rs1 ### ?rs] |- context [?rs3 ### ?rs] =>
+                let i := fresh "i" in destruct rs as [| i]; simpl in *
+            | _: context [?rs1 ## ?rs] |- context [?rs3 ## ?rs] =>
+                let i := fresh "i" in destruct rs as [| i]; simpl in *
+            | H: ?x = _ |- context [if ?x then _ else _] =>
+                rewrite H; simpl
+            | H: ?x = _ |- context [match ?x with | _ => _ end] =>
+                rewrite H; simpl
+            | |- context [(if ?x then _ else _) = Next _ _] =>
+                let eq := fresh "eq" in destruct x eqn:eq; simpl in *
+            | |- context [(match ?x with | _ => _ end) = Next _ _] =>
+                let eq := fresh "eq" in destruct x eqn:eq; simpl in *
 
-(*             end); *)
-(*     simpl. *)
+            end);
+    simpl.
 
-(*   Lemma public_not_freeable_free_inj_none *)
-(*         ge m *)
-(*         (NFREE: public_not_freeable ge m) *)
-(*         b lo hi cp m' *)
-(*         (FREE: Mem.free m b lo hi cp = Some m') *)
-(*         (BOUND: (lo < hi)%Z) *)
-(*     : *)
-(*     meminj_public ge b = None. *)
-(*   Proof. *)
-(*     destruct (meminj_public ge b) eqn:INJPUB; auto. exfalso. *)
-(*     eapply Mem.free_range_perm in FREE. unfold Mem.range_perm in FREE. *)
-(*     eapply NFREE. erewrite INJPUB. congruence. eapply Mem.perm_cur_max; apply FREE. *)
-(*     instantiate (1:=lo). lia. *)
-(*   Qed. *)
+  (* Lemma public_not_freeable_free_inj_none *)
+  (*       ge m *)
+  (*       (NFREE: public_not_freeable ge m) *)
+  (*       b lo hi cp m' *)
+  (*       (FREE: Mem.free m b lo hi cp = Some m') *)
+  (*       (BOUND: (lo < hi)%Z) *)
+  (*   : *)
+  (*   meminj_public ge b = None. *)
+  (* Proof. *)
+  (*   destruct (meminj_public ge b) eqn:INJPUB; auto. exfalso. *)
+  (*   eapply Mem.free_range_perm in FREE. unfold Mem.range_perm in FREE. *)
+  (*   eapply NFREE. erewrite INJPUB. congruence. eapply Mem.perm_cur_max; apply FREE. *)
+  (*   instantiate (1:=lo). lia. *)
+  (* Qed. *)
 
-(*   Lemma public_not_freeable_store *)
-(*         ge m1 *)
-(*         (NFREE: public_not_freeable ge m1) *)
-(*         chunk b ofs v cp m2 *)
-(*         (STORE: Mem.store chunk m1 b ofs v cp = Some m2) *)
-(*     : *)
-(*     public_not_freeable ge m2. *)
-(*   Proof. *)
-(*     unfold public_not_freeable in *; intros b' H' ofs' CC; specialize (NFREE _ H' ofs'). *)
-(*     apply NFREE; eapply Mem.perm_store_2; eauto. *)
-(*   Qed. *)
+  (* Lemma public_not_freeable_store *)
+  (*       ge m1 *)
+  (*       (NFREE: public_not_freeable ge m1) *)
+  (*       chunk b ofs v cp m2 *)
+  (*       (STORE: Mem.store chunk m1 b ofs v cp = Some m2) *)
+  (*   : *)
+  (*   public_not_freeable ge m2. *)
+  (* Proof. *)
+  (*   unfold public_not_freeable in *; intros b' H' ofs' CC; specialize (NFREE _ H' ofs'). *)
+  (*   apply NFREE; eapply Mem.perm_store_2; eauto. *)
+  (* Qed. *)
 
-(*   Lemma public_not_freeable_bytes *)
-(*         ge m1 *)
-(*         (NFREE: public_not_freeable ge m1) *)
-(*         b ofs mvs cp m2 *)
-(*         (STORE: Mem.storebytes m1 b ofs mvs cp = Some m2) *)
-(*     : *)
-(*     public_not_freeable ge m2. *)
-(*   Proof. *)
-(*     unfold public_not_freeable in *; intros b' H' ofs' CC; specialize (NFREE _ H' ofs'). *)
-(*     apply NFREE; eapply Mem.perm_storebytes_2; eauto. *)
-(*   Qed. *)
+  (* Lemma public_not_freeable_bytes *)
+  (*       ge m1 *)
+  (*       (NFREE: public_not_freeable ge m1) *)
+  (*       b ofs mvs cp m2 *)
+  (*       (STORE: Mem.storebytes m1 b ofs mvs cp = Some m2) *)
+  (*   : *)
+  (*   public_not_freeable ge m2. *)
+  (* Proof. *)
+  (*   unfold public_not_freeable in *; intros b' H' ofs' CC; specialize (NFREE _ H' ofs'). *)
+  (*   apply NFREE; eapply Mem.perm_storebytes_2; eauto. *)
+  (* Qed. *)
 
-(*   Lemma public_not_freeable_alloc *)
-(*         ge m1 *)
-(*         (NALLOC: meminj_not_alloc (meminj_public ge) m1) *)
-(*         (NFREE: public_not_freeable ge m1) *)
-(*         cp lo hi m2 bn *)
-(*         (STORE: Mem.alloc m1 cp lo hi = (m2, bn)) *)
-(*     : *)
-(*     public_not_freeable ge m2. *)
-(*   Proof. *)
-(*     unfold public_not_freeable in *; intros b' H' ofs' CC; specialize (NFREE _ H' ofs'). *)
-(*     apply NFREE. eapply Mem.perm_alloc_4; eauto. *)
-(*     intros EQ; subst b'. apply H'. apply NALLOC. erewrite Mem.alloc_result; eauto. lia. *)
-(*   Qed. *)
+  (* Lemma public_not_freeable_alloc *)
+  (*       ge m1 *)
+  (*       (NALLOC: meminj_not_alloc (meminj_public ge) m1) *)
+  (*       (NFREE: public_not_freeable ge m1) *)
+  (*       cp lo hi m2 bn *)
+  (*       (STORE: Mem.alloc m1 cp lo hi = (m2, bn)) *)
+  (*   : *)
+  (*   public_not_freeable ge m2. *)
+  (* Proof. *)
+  (*   unfold public_not_freeable in *; intros b' H' ofs' CC; specialize (NFREE _ H' ofs'). *)
+  (*   apply NFREE. eapply Mem.perm_alloc_4; eauto. *)
+  (*   intros EQ; subst b'. apply H'. apply NALLOC. erewrite Mem.alloc_result; eauto. lia. *)
+  (* Qed. *)
 
-(*   Lemma public_not_freeable_free *)
-(*         ge m1 *)
-(*         (NFREE: public_not_freeable ge m1) *)
-(*         b lo hi cp m2 *)
-(*         (STORE: Mem.free m1 b lo hi cp = Some m2) *)
-(*     : *)
-(*     public_not_freeable ge m2. *)
-(*   Proof. *)
-(*     unfold public_not_freeable in *; intros b' H' ofs' CC; specialize (NFREE _ H' ofs'). *)
-(*     apply NFREE. eapply Mem.perm_free_3; eauto. *)
-(*   Qed. *)
+  (* Lemma public_not_freeable_free *)
+  (*       ge m1 *)
+  (*       (NFREE: public_not_freeable ge m1) *)
+  (*       b lo hi cp m2 *)
+  (*       (STORE: Mem.free m1 b lo hi cp = Some m2) *)
+  (*   : *)
+  (*   public_not_freeable ge m2. *)
+  (* Proof. *)
+  (*   unfold public_not_freeable in *; intros b' H' ofs' CC; specialize (NFREE _ H' ofs'). *)
+  (*   apply NFREE. eapply Mem.perm_free_3; eauto. *)
+  (* Qed. *)
 
-(*   Lemma public_not_freeable_exec_instr *)
-(*         (ge: genv) f i rs m cp rs' m' *)
-(*         (NFREE: public_not_freeable ge m) *)
-(*         (NALLOC: meminj_not_alloc (meminj_public ge) m) *)
-(*         (EXEC: exec_instr ge f i rs m cp = Next rs' m') *)
-(*     : *)
-(*     public_not_freeable ge m'. *)
-(*   Proof. *)
-(*     destruct i; simpl in EXEC. *)
-(*     all: try (inv EXEC; eauto). *)
-(*     all: simpl_before_exists; eauto. *)
-(*     all: try *)
-(*            (match goal with *)
-(*             | H: context [Mem.alloc] |- _ => idtac *)
-(*             | H: context [Mem.free] |- _ => idtac *)
-(*             | H: Mem.store ?ch ?m ?b ?ofs ?v ?cp = _ |-  _ => *)
-(*                 eapply public_not_freeable_store; eauto *)
-(*             end). *)
-(*     { eapply public_not_freeable_store. eapply public_not_freeable_alloc; eauto. eauto. } *)
-(*     { eapply public_not_freeable_free; eauto. } *)
-(*   Qed. *)
+  (* Lemma public_not_freeable_exec_instr *)
+  (*       (ge: genv) f i rs m cp rs' m' *)
+  (*       (NFREE: public_not_freeable ge m) *)
+  (*       (NALLOC: meminj_not_alloc (meminj_public ge) m) *)
+  (*       (EXEC: exec_instr ge f i rs m cp = Next rs' m') *)
+  (*   : *)
+  (*   public_not_freeable ge m'. *)
+  (* Proof. *)
+  (*   destruct i; simpl in EXEC. *)
+  (*   all: try (inv EXEC; eauto). *)
+  (*   all: simpl_before_exists; eauto. *)
+  (*   all: try *)
+  (*          (match goal with *)
+  (*           | H: context [Mem.alloc] |- _ => idtac *)
+  (*           | H: context [Mem.free] |- _ => idtac *)
+  (*           | H: Mem.store ?ch ?m ?b ?ofs ?v ?cp = _ |-  _ => *)
+  (*               eapply public_not_freeable_store; eauto *)
+  (*           end). *)
+  (*   { eapply public_not_freeable_store. eapply public_not_freeable_alloc; eauto. eauto. } *)
+  (*   { eapply public_not_freeable_free; eauto. } *)
+  (* Qed. *)
 
-(*   Lemma public_rev_perm_store *)
-(*         ge m1 m' *)
-(*         (PRP: public_rev_perm ge m1 m') *)
-(*         chunk b ofs v cp m2 *)
-(*         (STORE: Mem.store chunk m1 b ofs v cp = Some m2) *)
-(*     : *)
-(*     public_rev_perm ge m2 m'. *)
-(*   Proof. *)
-(*     unfold public_rev_perm in *; intros. specialize (PRP b0). des_ifs. intros. *)
-(*     exploit PRP; eauto. intros. eapply Mem.perm_store_1; eauto. *)
-(*   Qed. *)
+  (* Lemma public_rev_perm_store *)
+  (*       ge m1 m' *)
+  (*       (PRP: public_rev_perm ge m1 m') *)
+  (*       chunk b ofs v cp m2 *)
+  (*       (STORE: Mem.store chunk m1 b ofs v cp = Some m2) *)
+  (*   : *)
+  (*   public_rev_perm ge m2 m'. *)
+  (* Proof. *)
+  (*   unfold public_rev_perm in *; intros. specialize (PRP b0). des_ifs. intros. *)
+  (*   exploit PRP; eauto. intros. eapply Mem.perm_store_1; eauto. *)
+  (* Qed. *)
 
-(*   Lemma public_rev_perm_bytes *)
-(*         ge m1 m' *)
-(*         (PRP: public_rev_perm ge m1 m') *)
-(*         b ofs mvs cp m2 *)
-(*         (STORE: Mem.storebytes m1 b ofs mvs cp = Some m2) *)
-(*     : *)
-(*     public_rev_perm ge m2 m'. *)
-(*   Proof. *)
-(*     unfold public_rev_perm in *; intros. specialize (PRP b0). des_ifs. intros. *)
-(*     exploit PRP; eauto. intros. eapply Mem.perm_storebytes_1; eauto. *)
-(*   Qed. *)
+  (* Lemma public_rev_perm_bytes *)
+  (*       ge m1 m' *)
+  (*       (PRP: public_rev_perm ge m1 m') *)
+  (*       b ofs mvs cp m2 *)
+  (*       (STORE: Mem.storebytes m1 b ofs mvs cp = Some m2) *)
+  (*   : *)
+  (*   public_rev_perm ge m2 m'. *)
+  (* Proof. *)
+  (*   unfold public_rev_perm in *; intros. specialize (PRP b0). des_ifs. intros. *)
+  (*   exploit PRP; eauto. intros. eapply Mem.perm_storebytes_1; eauto. *)
+  (* Qed. *)
 
-(*   Lemma public_rev_perm_alloc *)
-(*         ge m1 m' *)
-(*         (PRP: public_rev_perm ge m1 m') *)
-(*         cp lo hi m2 bn *)
-(*         (STORE: Mem.alloc m1 cp lo hi = (m2, bn)) *)
-(*     : *)
-(*     public_rev_perm ge m2 m'. *)
-(*   Proof. *)
-(*     unfold public_rev_perm in *; intros. specialize (PRP b). des_ifs. intros. *)
-(*     exploit PRP; eauto. intros. eapply Mem.perm_alloc_1; eauto. *)
-(*   Qed. *)
+  (* Lemma public_rev_perm_alloc *)
+  (*       ge m1 m' *)
+  (*       (PRP: public_rev_perm ge m1 m') *)
+  (*       cp lo hi m2 bn *)
+  (*       (STORE: Mem.alloc m1 cp lo hi = (m2, bn)) *)
+  (*   : *)
+  (*   public_rev_perm ge m2 m'. *)
+  (* Proof. *)
+  (*   unfold public_rev_perm in *; intros. specialize (PRP b). des_ifs. intros. *)
+  (*   exploit PRP; eauto. intros. eapply Mem.perm_alloc_1; eauto. *)
+  (* Qed. *)
 
-(*   Lemma public_rev_perm_free *)
-(*         ge m1 m' *)
-(*         (NFREE: public_not_freeable ge m1) *)
-(*         (PRP: public_rev_perm ge m1 m') *)
-(*         b lo hi cp m2 *)
-(*         (STORE: Mem.free m1 b lo hi cp = Some m2) *)
-(*     : *)
-(*     public_rev_perm ge m2 m'. *)
-(*   Proof. *)
-(*     unfold public_rev_perm in *; intros. specialize (PRP b0). des_ifs; clarify. intros. *)
-(*     exploit Mem.free_result; eauto. intros RES. unfold Mem.unchecked_free in RES. des_ifs. *)
-(*     { eapply PRP; eauto. } *)
-(*     exploit PRP; eauto. intros. eapply Mem.perm_free_1; eauto. *)
-(*     exploit Mem.free_range_perm; eauto. instantiate (1:=lo). lia. *)
-(*     intros PF. destruct (Pos.eqb_spec b b0); auto. subst b0. right. *)
-(*     unfold public_not_freeable in NFREE. exploit NFREE. rewrite Heq. congruence. 2: clarify. *)
-(*     eapply Mem.perm_max; eauto. *)
-(*   Qed. *)
+  (* Lemma public_rev_perm_free *)
+  (*       ge m1 m' *)
+  (*       (NFREE: public_not_freeable ge m1) *)
+  (*       (PRP: public_rev_perm ge m1 m') *)
+  (*       b lo hi cp m2 *)
+  (*       (STORE: Mem.free m1 b lo hi cp = Some m2) *)
+  (*   : *)
+  (*   public_rev_perm ge m2 m'. *)
+  (* Proof. *)
+  (*   unfold public_rev_perm in *; intros. specialize (PRP b0). des_ifs; clarify. intros. *)
+  (*   exploit Mem.free_result; eauto. intros RES. unfold Mem.unchecked_free in RES. des_ifs. *)
+  (*   { eapply PRP; eauto. } *)
+  (*   exploit PRP; eauto. intros. eapply Mem.perm_free_1; eauto. *)
+  (*   exploit Mem.free_range_perm; eauto. instantiate (1:=lo). lia. *)
+  (*   intros PF. destruct (Pos.eqb_spec b b0); auto. subst b0. right. *)
+  (*   unfold public_not_freeable in NFREE. exploit NFREE. rewrite Heq. congruence. 2: clarify. *)
+  (*   eapply Mem.perm_max; eauto. *)
+  (* Qed. *)
 
-(*   Lemma public_rev_perm_exec_instr *)
-(*         (ge: genv) f i rs m cp rs' m' *)
-(*         (NFREE: public_not_freeable ge m) *)
-(*         m0 *)
-(*         (PRP: public_rev_perm ge m m0) *)
-(*         (EXEC: exec_instr ge f i rs m cp = Next rs' m') *)
-(*     : *)
-(*     public_rev_perm ge m' m0. *)
-(*   Proof. *)
-(*     destruct i; simpl in EXEC. *)
-(*     all: try (inv EXEC; eauto). *)
-(*     all: simpl_before_exists; eauto. *)
-(*     all: try *)
-(*            (match goal with *)
-(*             | H: context [Mem.alloc] |- _ => idtac *)
-(*             | H: context [Mem.free] |- _ => idtac *)
-(*             | H: Mem.store ?ch ?m ?b ?ofs ?v ?cp = _ |-  _ => *)
-(*                 eapply public_rev_perm_store; eauto *)
-(*             end). *)
-(*     { eapply public_rev_perm_store. eapply public_rev_perm_alloc; eauto. eauto. } *)
-(*     { eapply public_rev_perm_free; eauto. } *)
-(*   Qed. *)
+  (* Lemma public_rev_perm_exec_instr *)
+  (*       (ge: genv) f i rs m cp rs' m' *)
+  (*       (NFREE: public_not_freeable ge m) *)
+  (*       m0 *)
+  (*       (PRP: public_rev_perm ge m m0) *)
+  (*       (EXEC: exec_instr ge f i rs m cp = Next rs' m') *)
+  (*   : *)
+  (*   public_rev_perm ge m' m0. *)
+  (* Proof. *)
+  (*   destruct i; simpl in EXEC. *)
+  (*   all: try (inv EXEC; eauto). *)
+  (*   all: simpl_before_exists; eauto. *)
+  (*   all: try *)
+  (*          (match goal with *)
+  (*           | H: context [Mem.alloc] |- _ => idtac *)
+  (*           | H: context [Mem.free] |- _ => idtac *)
+  (*           | H: Mem.store ?ch ?m ?b ?ofs ?v ?cp = _ |-  _ => *)
+  (*               eapply public_rev_perm_store; eauto *)
+  (*           end). *)
+  (*   { eapply public_rev_perm_store. eapply public_rev_perm_alloc; eauto. eauto. } *)
+  (*   { eapply public_rev_perm_free; eauto. } *)
+  (* Qed. *)
 
 (*   Lemma meminj_not_alloc_delta *)
 (*         j m0 *)
@@ -759,93 +763,93 @@ End EVENT.
 (*     } *)
 (*   Qed. *)
 
-(* End FROMASM. *)
+End FROMASM.
 
 
-(* Section INVS. *)
+Section INVS.
 
-(*   Import ListNotations. *)
+  Import ListNotations.
 
-(*   Definition wf_stackframe (ge: Asm.genv) (fr: stackframe) := *)
-(*     match fr with *)
-(*     | Stackframe b _ _ _ _ => match Genv.find_funct_ptr ge b with *)
-(*                              | Some (Internal f) => True *)
-(*                              | _ => False *)
-(*                              end *)
-(*     end. *)
-(*   Definition wf_stack (ge: Asm.genv) (sk: stack) := Forall (wf_stackframe ge) sk. *)
+  Definition wf_stackframe (ge: Asm.genv) (fr: stackframe) :=
+    match fr with
+    | Stackframe b _ _ _ => match Genv.find_funct_ptr ge b with
+                             | Some (Internal f) => True
+                             | _ => False
+                             end
+    end.
+  Definition wf_stack (ge: Asm.genv) (sk: stack) := Forall (wf_stackframe ge) sk.
 
-(*   Definition wf_regset (ge: Asm.genv) (rs: regset) := *)
-(*     match rs PC with *)
-(*     | Vptr b _ => match Genv.find_funct_ptr ge b with *)
-(*                  | Some (Internal f) => True *)
-(*                  | _ => False *)
-(*                  end *)
-(*     | _ => False *)
-(*     end. *)
+  Definition wf_regset (ge: Asm.genv) (rs: regset) :=
+    match rs PC with
+    | Vptr b _ => match Genv.find_funct_ptr ge b with
+                 | Some (Internal f) => True
+                 | _ => False
+                 end
+    | _ => False
+    end.
 
-(*   Definition wf_asm (ge: Asm.genv) (ast: Asm.state) := *)
-(*     match ast with *)
-(*     | State sk rs m => (wf_stack ge sk) /\ (wf_regset ge rs) *)
-(*     | _ => False *)
-(*     end. *)
-
-
-(*   Definition wf_ir_cur (ge: Asm.genv) (cur: block) := *)
-(*     match Genv.find_funct_ptr ge cur with *)
-(*     | Some (Internal f) => True *)
-(*     | _ => False *)
-(*     end. *)
-
-(*   Definition wf_ir_cont (ge: Asm.genv) (ik: ir_cont_type) := *)
-(*     match ik with *)
-(*     | ir_cont b => match Genv.find_funct_ptr ge b with *)
-(*                   | Some (Internal f) => True *)
-(*                   | _ => False *)
-(*                   end *)
-(*     end. *)
-(*   Definition wf_ir_conts (ge: Asm.genv) (ik: ir_conts) := Forall (wf_ir_cont ge) ik. *)
+  Definition wf_asm (ge: Asm.genv) (ast: Asm.state) :=
+    match ast with
+    | State sk rs m _ => (wf_stack ge sk) /\ (wf_regset ge rs)
+    | _ => False
+    end.
 
 
-(*   Definition match_cur_stack_sig (cur: block) (ge: Asm.genv) (sk: stack) := *)
-(*     match Genv.find_funct_ptr ge cur with *)
-(*     | Some fd => Asm.funsig fd = sig_of_call sk *)
-(*     | _ => False *)
-(*     end. *)
+  Definition wf_ir_cur (ge: Asm.genv) (cur: block) :=
+    match Genv.find_funct_ptr ge cur with
+    | Some (Internal f) => True
+    | _ => False
+    end.
 
-(*   Definition match_cur_regset (cur: block) (ge: Asm.genv) (rs: regset) := *)
-(*     Genv.find_comp ge (Vptr cur Ptrofs.zero) = Genv.find_comp_ignore_offset ge (rs PC). *)
+  Definition wf_ir_cont (ge: Asm.genv) (ik: ir_cont_type) :=
+    match ik with
+    | ir_cont b => match Genv.find_funct_ptr ge b with
+                  | Some (Internal f) => True
+                  | _ => False
+                  end
+    end.
+  Definition wf_ir_conts (ge: Asm.genv) (ik: ir_conts) := Forall (wf_ir_cont ge) ik.
 
-(*   Inductive match_stack (ge: Asm.genv): ir_conts -> stack -> Prop := *)
-(*   | match_stack_nil *)
-(*     : *)
-(*     match_stack ge [] [] *)
-(*   | match_stack_cons *)
-(*       next ik_tl *)
-(*       b cp sg v ofs sk_tl *)
-(*       (COMP: Genv.find_comp ge (Vptr next Ptrofs.zero) = Genv.find_comp ge (Vptr b Ptrofs.zero)) *)
-(*       (SIG: match_cur_stack_sig next ge sk_tl) *)
-(*       (TL: match_stack ge ik_tl sk_tl) *)
-(*     : *)
-(*     match_stack ge (ir_cont next :: ik_tl) (Stackframe b cp sg v ofs :: sk_tl). *)
 
-(*   Definition match_mem (ge: Senv.t) cp (k: meminj) (d: mem_delta) (m_a0 m_i m_a1: mem): Prop := *)
-(*     let j := meminj_public ge in *)
-(*     (Mem.inject k m_a0 m_i) /\ (inject_incr j k) /\ *)
-(*       (meminj_not_alloc j m_a0) /\ (public_not_freeable ge m_a1) /\ *)
-(*       (mem_delta_inj_wf cp j d) /\ (mem_delta_apply d (Some m_a0) = Some m_a1) /\ *)
-(*       (public_rev_perm ge m_a1 m_i). *)
+  (* Definition match_cur_stack_sig (cur: block) (ge: Asm.genv) (sk: stack) := *)
+  (*   match Genv.find_funct_ptr ge cur with *)
+  (*   | Some fd => Asm.funsig fd = sig_of_call sk *)
+  (*   | _ => False *)
+  (*   end. *)
 
-(*   Definition match_state (ge: Asm.genv) (k: meminj) (m_a0: mem) (d: mem_delta) (ast: Asm.state) (ist: ir_state): Prop := *)
-(*     match ast, ist with *)
-(*     | State sk rs m_a, Some (cur, m_i, ik) => *)
-(*         (wf_ir_cur ge cur) /\ (wf_ir_conts ge ik) /\ *)
-(*           (match_cur_stack_sig cur ge sk) /\ (match_cur_regset cur ge rs) /\ *)
-(*           (match_stack ge ik sk) /\ (match_mem ge (Genv.find_comp ge (Vptr cur Ptrofs.zero)) k d m_a0 m_i m_a) *)
-(*     | _, _ => False *)
-(*     end. *)
+  Definition match_cur_regset (cur: block) (ge: Asm.genv) (rs: regset) :=
+    Genv.find_comp_in_genv ge (Vptr cur Ptrofs.zero) = Genv.find_comp_in_genv ge (rs PC).
 
-(* End INVS. *)
+  Inductive match_stack (ge: Asm.genv): ir_conts -> stack -> Prop :=
+  | match_stack_nil
+    :
+    match_stack ge [] []
+  | match_stack_cons
+      next ik_tl
+      b sg v ofs sk_tl
+      (COMP: Genv.find_comp_in_genv ge (Vptr next Ptrofs.zero) = Genv.find_comp_in_genv ge (Vptr b Ptrofs.zero))
+      (* (SIG: match_cur_stack_sig next ge sk_tl) *)
+      (TL: match_stack ge ik_tl sk_tl)
+    :
+    match_stack ge (ir_cont next :: ik_tl) (Stackframe b sg v ofs :: sk_tl).
+
+  Definition match_mem (ge: Senv.t) cp (k: meminj) (d: mem_delta) (m_a0 m_i m_a1: mem): Prop :=
+    let j := meminj_public ge in
+    (Mem.inject k m_a0 m_i) /\ (inject_incr j k) /\
+      (meminj_not_alloc j m_a0) /\ (* (public_not_freeable ge m_a1) /\ *)
+      (mem_delta_inj_wf cp j d) /\ (mem_delta_apply d (Some m_a0) = Some m_a1).
+      (* (public_rev_perm ge m_a1 m_i). *)
+
+  Definition match_state (ge: Asm.genv) (k: meminj) (m_a0: mem) (d: mem_delta) (ast: Asm.state) (ist: ir_state): Prop :=
+    match ast, ist with
+    | State sk rs m_a _, Some (cur, m_i, ik) =>
+        (wf_ir_cur ge cur) /\ (wf_ir_conts ge ik) /\
+          (* (match_cur_stack_sig cur ge sk) *) (* /\  *)(match_cur_regset cur ge rs) /\
+          (match_stack ge ik sk) /\ (match_mem ge (Genv.find_comp_in_genv ge (Vptr cur Ptrofs.zero)) k d m_a0 m_i m_a)
+    | _, _ => False
+    end.
+
+End INVS.
 
 
 (* Section PROOF. *)

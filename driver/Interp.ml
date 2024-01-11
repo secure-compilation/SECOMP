@@ -681,7 +681,8 @@ let execute prog =
   | Some prog1 ->
       let wprog = world_program prog1 in
       let wge = globalenv wprog in
-      match Genv.init_mem (Ctypes.has_comp_fundef has_comp_function) (program_of_program wprog) with
+      match Genv.init_mem (Ctypes.has_comp_fundef has_comp_function)
+              (program_of_program has_comp_function wprog) with
       | None ->
           fprintf p "ERROR: World memory state undefined@."; exit 126
       | Some wm ->
@@ -764,7 +765,7 @@ let execute_asm prog =
   pp_set_max_indent p 30;
   pp_set_max_boxes p 10;
   let wprog = world_program_asm prog in
-  let wge = Genv.globalenv wprog in
+  let wge = Genv.globalenv (AST.has_comp_fundef Asm.has_comp_function) wprog in
    match Genv.init_mem (AST.has_comp_fundef Asm.has_comp_function) wprog with
    | None ->
        fprintf p "ERROR: World memory state undefined@."; exit 126

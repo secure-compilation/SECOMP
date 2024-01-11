@@ -25,29 +25,10 @@ Local Open Scope error_monad_scope.
 Definition match_prog (p: Csharpminor.program) (tp: Cminor.program) :=
   match_program (fun cu f tf => transl_fundef f = OK tf) eq p tp.
 
-#[global]
-Instance comp_transl_funbody ce stacksize:
-  has_comp_transl_partial (transl_funbody ce stacksize).
-Proof.
-  unfold transl_funbody.
-  intros f tf H.
-  now monadInv H.
-Qed.
-
-#[global]
-Instance comp_transl_function: has_comp_transl_partial transl_function.
-Proof.
-  unfold transl_function, transl_funbody.
-  intros f tf H.
-  destruct build_compilenv.
-  destruct zle; try easy.
-  now monadInv H.
-Qed.
-
 Lemma transf_program_match:
   forall p tp, transl_program p = OK tp -> match_prog p tp.
 Proof.
-  intros. apply match_transform_partial_program; auto.
+  intros. eapply match_transform_partial_program; auto.
 Qed.
 
 Section TRANSLATION.
@@ -2151,6 +2132,8 @@ Proof.
   intros [tvargs [EVAL2 VINJ2]].
   exploit match_callstack_match_globalenvs; eauto. intros [hi' MG].
   exploit external_call_mem_inject; eauto.
+  (* TODO: why can't Coq find this on its own? *)
+  eapply has_comp_fundef. eapply Csharpminor.has_comp_function.
   eapply inj_preserves_globals; eauto.
   intros [f' [vres' [tm' [EC [VINJ [MINJ' [UNMAPPED [OUTOFREACH [INCR SEPARATED]]]]]]]]].
   left; econstructor; split.
@@ -2318,6 +2301,7 @@ Opaque PTree.set.
   monadInv TR.
   exploit match_callstack_match_globalenvs; eauto. intros [hi MG].
   exploit external_call_mem_inject; eauto.
+  eapply has_comp_fundef. eapply Csharpminor.has_comp_function.
   eapply inj_preserves_globals; eauto.
   intros [f' [vres' [tm' [EC [VINJ [MINJ' [UNMAPPED [OUTOFREACH [INCR SEPARATED]]]]]]]]].
   left; econstructor; split.
@@ -2391,6 +2375,7 @@ Theorem transl_program_correct:
   forward_simulation (Csharpminor.semantics prog) (Cminor.semantics tprog).
 Proof.
   eapply forward_simulation_star; eauto.
+  apply senv_preserved.
   apply senv_preserved.
   eexact transl_initial_states.
   eexact transl_final_states.

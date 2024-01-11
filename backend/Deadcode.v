@@ -212,6 +212,14 @@ Definition transf_function (rm: romem) (f: function) : res function :=
       Error (msg "Neededness analysis failed")
   end.
 
+#[global] Instance comp_transf_function rm: has_comp_transl_partial (transf_function rm).
+Proof.
+  unfold transf_function.
+  intros f ? H.
+  destruct analyze; try easy.
+  now inv H.
+Qed.
+
 Definition transf_fundef (rm: romem) (fd: fundef) : res fundef :=
   AST.transf_partial_fundef (transf_function rm) fd.
 

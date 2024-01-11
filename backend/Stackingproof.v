@@ -26,16 +26,6 @@ Local Open Scope sep_scope.
 Definition match_prog (p: Linear.program) (tp: Mach.program) :=
   match_program (fun _ f tf => transf_fundef f = OK tf) eq p tp.
 
-#[global]
-Instance comp_transf_function: has_comp_transl_partial transf_function.
-Proof.
-  unfold transf_function.
-  intros f tf H.
-  destruct negb; try easy.
-  destruct zlt; try easy.
-  now monadInv H.
-Qed.
-
 Lemma transf_program_match:
   forall p tp, transf_program p = OK tp -> match_prog p tp.
 Proof.
@@ -2349,6 +2339,8 @@ Proof.
   intros [vargs' [P Q]].
   rewrite <- sep_assoc, sep_comm, sep_assoc in SEP.
   exploit external_call_parallel_rule; eauto.
+  (* TODO: why can't Coq find the instance automatically?? *)
+  eapply has_comp_fundef. eapply Linear.has_comp_function.
   clear SEP; intros (j' & res' & m1' & EC & RES & SEP & INCR & ISEP).
   rewrite <- sep_assoc, sep_comm, sep_assoc in SEP.
   econstructor; split.
@@ -2468,6 +2460,7 @@ Proof.
   exploit transl_external_arguments; eauto. apply sep_proj1 in SEP; eauto. intros [vl [ARGS VINJ]].
   rewrite sep_comm, sep_assoc in SEP.
   exploit external_call_parallel_rule; eauto.
+  eapply has_comp_fundef. eapply Linear.has_comp_function.
   intros (j' & res' & m1' & A & B & C & D & E).
   econstructor; split.
   apply plus_one. eapply exec_function_external; eauto.
@@ -2582,6 +2575,7 @@ Theorem transf_program_correct:
 Proof.
   set (ms := fun s s' => wt_state s /\ match_states s s').
   eapply forward_simulation_plus with (match_states := ms).
+- apply senv_preserved.
 - apply senv_preserved.
 - intros. exploit transf_initial_states; eauto. intros [st2 [A B]].
   exists st2; split; auto. split; auto.

@@ -277,5 +277,24 @@ Definition transl_function (f: Csharpminor.function): res function :=
 Definition transl_fundef (f: Csharpminor.fundef): res fundef :=
   transf_partial_fundef transl_function f.
 
+#[global]
+Instance comp_transl_funbody ce stacksize:
+  has_comp_transl_partial (transl_funbody ce stacksize).
+Proof.
+  unfold transl_funbody.
+  intros f tf H.
+  now monadInv H.
+Qed.
+
+#[global]
+Instance comp_transl_function: has_comp_transl_partial transl_function.
+Proof.
+  unfold transl_function, transl_funbody.
+  intros f tf H.
+  destruct build_compilenv.
+  destruct zle; try easy.
+  now monadInv H.
+Qed.
+
 Definition transl_program (p: Csharpminor.program) : res program :=
   transform_partial_program transl_fundef p.

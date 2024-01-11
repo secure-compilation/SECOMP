@@ -127,5 +127,12 @@ Definition transf_function (ce: compenv) (f: function) : function :=
 Definition transf_fundef (ce: compenv) (fd: fundef) : fundef :=
   AST.transf_fundef (transf_function ce) fd.
 
+#[global] Instance comp_transf_function cenv: has_comp_transl (transf_function cenv).
+Proof.
+  unfold transf_function, RTL.transf_function.
+  intros f; simpl; trivial.
+  now destruct zeq.
+Qed.
+
 Definition transf_program (p: program) : program :=
   transform_program (transf_fundef (compenv_program p)) p.

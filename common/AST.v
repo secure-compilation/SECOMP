@@ -492,6 +492,7 @@ Instance has_comp_globvar V : has_comp (globvar V) := @gvar_comp _.
 Module Policy.
 
   Record t: Type := mkpolicy {
+    policy_comps: PTree.t compartment;
     policy_export: CompTree.t (list ident);
     policy_import: CompTree.t (list (compartment * ident))
   }.
@@ -511,7 +512,8 @@ Module Policy.
      policy is well-formed, we might be running spurious filters, which could
      have performance impacts in compilation.  *)
   Definition enforce_in_pub (pol: t) (pubs: list ident) :=
-    {| policy_export :=
+    {| policy_comps := pol.(policy_comps);
+      policy_export :=
         CompTree.map1
           (filter (fun id : ident => in_dec ident_eq id pubs))
           pol.(policy_export);
@@ -538,7 +540,8 @@ Module Policy.
   Qed.
 
   (* The empty policy is the policy where there is no imported procedure and no exported procedure for all compartments *)
-  Definition empty_pol: t := mkpolicy (CompTree.empty (list ident)) (CompTree.empty (list (compartment * ident))).
+  Definition empty_pol: t := mkpolicy (PTree.empty compartment)
+                               (CompTree.empty (list ident)) (CompTree.empty (list (compartment * ident))).
 
   (* Decidable equality for the elements contained in the policies *)
   Definition list_id_eq: forall (x y: list ident),
@@ -562,6 +565,7 @@ Module Policy.
   (* Defines an equivalence between two policies: two policies are equivalent iff for each compartment,
      they define the same exported and imported procedures *)
   Definition eqb (t1 t2: t): bool :=
+    PTree.beq cp_eq_dec t1.(policy_comps) t2.(policy_comps) &&
     CompTree.beq list_id_eq t1.(policy_export) t2.(policy_export) &&
     CompTree.beq list_cpt_id_eq t1.(policy_import) t2.(policy_import).
 
@@ -570,12 +574,15 @@ Module Policy.
   Proof.
     intros pol.
     unfold eqb.
+    assert (PTree.beq cp_eq_dec (policy_comps pol) (policy_comps pol) = true).
+    rewrite PTree.beq_correct.
+    intros x. destruct ((policy_comps pol) ! x); auto. destruct cp_eq_dec; auto.
     assert (PTree.beq (fun x y : list ident => list_id_eq x y) (policy_export pol) (policy_export pol) = true).
     rewrite PTree.beq_correct.
     intros x. destruct ((policy_export pol) ! x); auto.
     destruct (list_id_eq l l); auto.
     unfold CompTree.beq.
-    rewrite H. simpl.
+    rewrite H, H0. simpl.
     rewrite PTree.beq_correct.
     intros x. destruct ((policy_import pol) ! x); auto.
     destruct (list_cpt_id_eq l l); auto.
@@ -585,36 +592,59 @@ Module Policy.
   Proof.
     intros pol pol' H.
     unfold eqb in *.
-    apply andb_prop in H as [H1 H2].
-    assert (H1': PTree.beq (fun x y : list ident => list_id_eq x y) (policy_export pol') (policy_export pol) = true).
+    apply andb_prop in H as [H2 H3].
+    apply andb_prop in H2 as [H1 H2].
+    assert (H1': PTree.beq cp_eq_dec (policy_comps pol') (policy_comps pol) = true).
     rewrite PTree.beq_correct. rewrite PTree.beq_correct in H1.
-    intros x. specialize (H1 x). destruct ((policy_export pol') ! x); auto.
+    intros x. specialize (H1 x). destruct ((policy_comps pol') ! x); auto.
+    destruct ((policy_comps pol) ! x); auto.
+    destruct (cp_eq_dec c0 c); subst.
+    destruct (cp_eq_dec c c); auto.
+    destruct (cp_eq_dec c c0); auto.
+    assert (H2': PTree.beq (fun x y : list ident => list_id_eq x y) (policy_export pol') (policy_export pol) = true).
+    rewrite PTree.beq_correct. rewrite PTree.beq_correct in H2.
+    intros x. specialize (H2 x). destruct ((policy_export pol') ! x); auto.
     destruct ((policy_export pol) ! x); auto.
     destruct (list_id_eq l0 l); subst.
     destruct (list_id_eq l l); auto.
     destruct (list_id_eq l l0); auto.
-    assert (H2': PTree.beq (fun x y => list_cpt_id_eq x y) (policy_import pol') (policy_import pol) = true).
-    rewrite PTree.beq_correct. rewrite PTree.beq_correct in H2.
-    intros x. specialize (H2 x). destruct ((policy_import pol') ! x); auto.
+    assert (H3': PTree.beq (fun x y => list_cpt_id_eq x y) (policy_import pol') (policy_import pol) = true).
+    rewrite PTree.beq_correct. rewrite PTree.beq_correct in H3.
+    intros x. specialize (H3 x). destruct ((policy_import pol') ! x); auto.
     destruct ((policy_import pol) ! x); auto.
     destruct (list_cpt_id_eq l0 l); subst.
     destruct (list_cpt_id_eq l l); auto.
     destruct (list_cpt_id_eq l l0); auto.
     unfold CompTree.beq.
-    rewrite H1', H2'. auto.
+    rewrite H1', H2', H3'. auto.
   Qed.
 
-  Lemma eqb_trans: forall pol pol' pol'', eqb pol pol' = true -> eqb pol' pol'' = true -> eqb pol pol'' = true.
+  Lemma eqb_trans: forall pol pol' pol'', eqb pol pol' = true ->
+                                     eqb pol' pol'' = true -> eqb pol pol'' = true.
   Proof.
     intros pol pol' pol'' H1 H2.
     unfold eqb in *.
+    apply andb_prop in H1 as [H1 H1''].
     apply andb_prop in H1 as [H1 H1'].
+    apply andb_prop in H2 as [H2 H2''].
     apply andb_prop in H2 as [H2 H2'].
-    assert (H3: PTree.beq (fun x y : list ident => list_id_eq x y) (policy_export pol) (policy_export pol'') = true).
+    assert (H3: PTree.beq cp_eq_dec (policy_comps pol) (policy_comps pol'') = true).
     { clear -H1 H2.
       rewrite PTree.beq_correct in H1, H2.
       rewrite PTree.beq_correct.
       intros x. specialize (H1 x); specialize (H2 x).
+      destruct ((policy_comps pol) ! x);
+        destruct ((policy_comps pol') ! x);
+        destruct ((policy_comps pol'') ! x); auto.
+      destruct (cp_eq_dec c c0);
+        destruct (cp_eq_dec c0 c1);
+        destruct (cp_eq_dec c c1); auto.
+      now subst. }
+    assert (H3': PTree.beq (fun x y : list ident => list_id_eq x y) (policy_export pol) (policy_export pol'') = true).
+    { clear -H1' H2'.
+      rewrite PTree.beq_correct in H1', H2'.
+      rewrite PTree.beq_correct.
+      intros x. specialize (H1' x); specialize (H2' x).
       destruct ((policy_export pol) ! x);
         destruct ((policy_export pol') ! x);
         destruct ((policy_export pol'') ! x); auto.
@@ -623,11 +653,11 @@ Module Policy.
         destruct (list_id_eq l l1); auto.
       now subst.
     }
-    assert (H3': PTree.beq (fun x y => list_cpt_id_eq x y) (policy_import pol) (policy_import pol'') = true).
-    { clear -H1' H2'.
-      rewrite PTree.beq_correct in H1', H2'.
+    assert (H3'': PTree.beq (fun x y => list_cpt_id_eq x y) (policy_import pol) (policy_import pol'') = true).
+    { clear -H1'' H2''.
+      rewrite PTree.beq_correct in H1'', H2''.
       rewrite PTree.beq_correct.
-      intros x. specialize (H1' x); specialize (H2' x).
+      intros x. specialize (H1'' x); specialize (H2'' x).
       destruct ((policy_import pol) ! x);
         destruct ((policy_import pol') ! x);
         destruct ((policy_import pol'') ! x); auto.
@@ -670,23 +700,33 @@ Instance has_comp_globdef F V {CF: has_comp F} : has_comp (globdef F V) :=
     | Gvar v => comp_of v
     end.
 
-Record program (F V: Type) : Type := mkprogram {
+Definition agr_comps {F V: Type} {CF: has_comp F} (pol: Policy.t) (defs: list (ident * globdef F V)): Prop :=
+  Forall
+    (fun idg => pol.(Policy.policy_comps) ! (fst idg) = Some (comp_of (snd idg)))
+    defs /\
+  forall (id: ident) (cp: compartment),
+    pol.(Policy.policy_comps) ! id = Some cp ->
+    exists gd, In (id, gd) defs /\ cp = comp_of gd.
+
+Record program (F V: Type) {CF: has_comp F} : Type := mkprogram {
   prog_defs: list (ident * globdef F V);
   prog_public: list ident;
   prog_main: ident;
   prog_pol: Policy.t;
   prog_pol_pub: Policy.in_pub prog_pol prog_public;
+  prog_agr_comps: agr_comps prog_pol prog_defs;
 }.
 
-Arguments mkprogram {F V} _ _ _ _ _.
+Arguments program F V {CF}.
+Arguments mkprogram {F V CF} _ _ _ _ _ _.
 
-Definition prog_defs_names (F V: Type) (p: program F V) : list ident :=
+Definition prog_defs_names (F V: Type) {CF: has_comp F} (p: program F V) : list ident :=
   List.map fst p.(prog_defs).
 
 (** The "definition map" of a program maps names of globals to their definitions.
   If several definitions have the same name, the one appearing last in [p.(prog_defs)] wins. *)
 
-Definition prog_defmap (F V: Type) (p: program F V) : PTree.t (globdef F V) :=
+Definition prog_defmap (F V: Type) {CF: has_comp F} (p: program F V) : PTree.t (globdef F V) :=
   PTree_Properties.of_list p.(prog_defs).
 
 (* FIXME: I don't think this is needed anymore *)
@@ -696,6 +736,7 @@ Definition prog_defmap (F V: Type) (p: program F V) : PTree.t (globdef F V) :=
 Section DEFMAP.
 
 Variables F V: Type.
+Context {CF: has_comp F}.
 Variable p: program F V.
 
 Lemma in_prog_defmap:
@@ -735,11 +776,32 @@ End DEFMAP.
 (** We now define a general iterator over programs that applies a given
   code transformation function to all function descriptions and leaves
   the other parts of the program unchanged. *)
+Section TRANSF_POL.
+
+Variable B W: Type.
+Context {CB: has_comp B}.
+Definition update_list_comps (defs: list (ident * globdef B W)): PTree.t compartment :=
+  PTree_Properties.of_list (List.map (fun '(id, a) => (id, comp_of a)) defs).
+
+Definition update_policy (pol: Policy.t) (defs: list (ident * globdef B W)): Policy.t :=
+  {| Policy.policy_comps := update_list_comps defs;
+     Policy.policy_import := pol.(Policy.policy_import);
+     Policy.policy_export := pol.(Policy.policy_export);
+  |}.
+
+Lemma agr_update_policy (pol: Policy.t) (defs: list (ident * globdef B W)):
+  agr_comps (update_policy pol defs) defs.
+Proof.
+  unfold agr_comps; simpl; split.
+Admitted.
+End TRANSF_POL.
 
 Section TRANSF_PROGRAM.
 
 Variable A B V: Type.
+Context {CA: has_comp A} {CB: has_comp B}.
 Variable transf: A -> B.
+Context {comp_transf: has_comp_transl transf}.
 
 Definition transform_program_globdef (idg: ident * globdef A V) : ident * globdef B V :=
   match idg with
@@ -747,15 +809,40 @@ Definition transform_program_globdef (idg: ident * globdef A V) : ident * globde
   | (id, Gvar v) => (id, Gvar v)
   end.
 
+
+Lemma agr_comps_transf: forall {pol defs},
+  agr_comps pol defs ->
+  agr_comps pol (List.map transform_program_globdef defs).
+Proof.
+  unfold agr_comps; intros pol defs [H G].
+  split.
+  - clear G. induction H.
+    + now simpl.
+    + simpl; constructor.
+      * destruct x as [id [fd | vd]]; simpl in *.
+        -- now rewrite comp_transf.
+        -- assumption.
+    * assumption.
+  - clear H.
+    intros id cp H.
+    specialize (G id cp H) as [gd [R S]]; subst cp.
+    eapply in_map with (f := transform_program_globdef) in R.
+    destruct gd; simpl; eauto.
+Qed.
+
 Definition transform_program (p: program A V) : program B V :=
   mkprogram
     (List.map transform_program_globdef p.(prog_defs))
     p.(prog_public)
     p.(prog_main)
+    (* (update_policy p.(prog_pol) (List.map transform_program_globdef p.(prog_defs))) *)
     p.(prog_pol)
-    p.(prog_pol_pub).
+    p.(prog_pol_pub)
+    (agr_comps_transf p.(prog_agr_comps)).
 
 End TRANSF_PROGRAM.
+
+Arguments transform_program [A B V] {CA CB} transf {comp_transf} p.
 
 (** The following is a more general presentation of [transform_program]:
 - Global variable information can be transformed, in addition to function
@@ -772,7 +859,10 @@ Local Open Scope error_monad_scope.
 Section TRANSF_PROGRAM_GEN.
 
 Variables A B V W: Type.
+Context {CA: has_comp A} {CB: has_comp B}.
 Variable transf_fun: ident -> A -> res B.
+Context {Cf: forall id, has_comp_transl_partial (transf_fun id)}.
+(* Context {comp_transf: has_comp_match transf}. *)
 Variable transf_var: ident -> V -> res W.
 
 Definition transf_globvar (i: ident) (g: globvar V) : res (globvar W) :=
@@ -796,9 +886,79 @@ Fixpoint transf_globdefs (l: list (ident * globdef A V)) : res (list (ident * gl
     end
   end.
 
-Definition transform_partial_program2 (p: program A V) : res (program B W) :=
-  do gl' <- transf_globdefs p.(prog_defs);
-  OK (mkprogram gl' p.(prog_public) p.(prog_main) p.(prog_pol) p.(prog_pol_pub)).
+Lemma agr_comps_transf_partial: forall {pol defs defs'},
+  agr_comps pol defs ->
+  transf_globdefs defs = OK defs' ->
+  agr_comps pol defs'.
+Proof.
+  unfold agr_comps; intros pol defs defs' [H G] def_trans.
+  split.
+  { clear G. revert defs' def_trans.
+    induction H.
+    - now intros defs' H; simpl in H; inv H.
+    - intros defs' defs'_OK.
+      destruct x as [id [fd | vd]] eqn:?; simpl in *.
+      + destruct transf_fun eqn:?; try congruence; simpl in *.
+        monadInv defs'_OK.
+        simpl; constructor.
+        * simpl.
+          apply has_comp_transl_partial_match_contextual with (g := fun id => id) in Cf.
+          now rewrite Cf in H; eauto.
+        * now eauto.
+      + destruct transf_globvar eqn:?; try congruence; simpl in *.
+        monadInv defs'_OK.
+        simpl; constructor.
+        * now monadInv Heqr; eauto.
+        * now eauto. }
+  { clear H.
+    intros id cp H.
+    specialize (G id cp H) as [gd [R S]]; subst cp.
+    clear -R def_trans Cf.
+    revert defs' def_trans.
+    induction defs.
+    - inv R.
+    - intros defs' def_trans. inv R.
+      + destruct gd; simpl in *; eauto.
+        * destruct transf_fun eqn:transf_id_f; try congruence.
+          monadInv def_trans.
+          exists (Gfun b); split; [left |]; eauto.
+          now rewrite Cf; eauto.
+        * destruct transf_globvar eqn:transf_id_v; try congruence.
+          monadInv def_trans.
+          exists (Gvar g); split; [left |]; eauto.
+          monadInv transf_id_v; auto.
+      + destruct a as [? []]; simpl in def_trans.
+        * destruct transf_fun eqn:transf_id_f; try congruence.
+          monadInv def_trans.
+          exploit IHdefs; eauto. intros [gd0 [? ?]].
+          exists gd0; split; [right |]; eauto.
+        * destruct transf_globvar eqn:transf_id_v; try congruence.
+          monadInv def_trans.
+          exploit IHdefs; eauto. intros [gd0 [? ?]].
+          exists gd0; split; [right |]; eauto. }
+Qed.
+
+Record defs_with_proof (p: program A V) :=
+  { gl: res (list (ident * globdef B W));
+    proof: forall l, gl = OK l -> agr_comps (prog_pol p) l }.
+
+Program Definition truc (p: program A V): (defs_with_proof p) :=
+  {| gl := transf_globdefs p.(prog_defs); |}.
+Next Obligation.
+  eapply agr_comps_transf_partial; eauto using prog_agr_comps.
+Qed.
+
+Program Definition transform_partial_program2 (p: program A V) : res (program B W) :=
+  match transf_globdefs p.(prog_defs) with
+  | OK gl' =>
+  OK (mkprogram gl'
+        p.(prog_public)
+        p.(prog_main)
+        p.(prog_pol)
+        p.(prog_pol_pub)
+        (agr_comps_transf_partial p.(prog_agr_comps) _))
+  | Error err => Error err
+  end.
 
 End TRANSF_PROGRAM_GEN.
 
@@ -809,27 +969,41 @@ End TRANSF_PROGRAM_GEN.
 Section TRANSF_PARTIAL_PROGRAM.
 
 Variable A B V: Type.
+Context {CA: has_comp A} {CB: has_comp B}.
 Variable transf_fun: A -> res B.
+Context {comp_transf_fun: has_comp_transl_partial transf_fun}.
 
 Definition transform_partial_program (p: program A V) : res (program B V) :=
   transform_partial_program2 (fun i f => transf_fun f) (fun i v => OK v) p.
 
 End TRANSF_PARTIAL_PROGRAM.
+Arguments transform_partial_program [A B V] {CA CB} transf_fun {comp_transf_fun} p.
+
+Instance comp_transf_total_to_partial {A B: Type} {CA: has_comp A} {CB: has_comp B} (transf_fun: A -> B)
+  {comp_transf_fun: has_comp_transl transf_fun}:
+  has_comp_transl_partial (fun f => OK (transf_fun f)).
+Proof.
+  intros x y H. inv H. rewrite comp_transf_fun. reflexivity.
+Defined.
 
 Lemma transform_program_partial_program:
-  forall (A B V: Type) (transf_fun: A -> B) (p: program A V),
+  forall (A B V: Type) {CA: has_comp A} {CB: has_comp B} (transf_fun: A -> B)
+    {comp_transf_fun: has_comp_transl transf_fun} (p: program A V),
   transform_partial_program (fun f => OK (transf_fun f)) p = OK (transform_program transf_fun p).
 Proof.
   intros. unfold transform_partial_program, transform_partial_program2.
   assert (EQ: forall l,
-              transf_globdefs (fun i f => OK (transf_fun f)) (fun i (v: V) => OK v) l =
-              OK (List.map (transform_program_globdef transf_fun) l)).
+             transf_globdefs (fun i f => OK (transf_fun f)) (fun i (v: V) => OK v) l =
+               OK (List.map (transform_program_globdef transf_fun) l)).
   { induction l as [ | [id g] l]; simpl.
-  - auto.
-  - destruct g; simpl; rewrite IHl; simpl. auto. destruct v; auto.
+    - auto.
+    - destruct g; simpl; rewrite IHl; simpl. auto. destruct v; auto.
   }
-  rewrite EQ; simpl. auto.
-Qed.
+  specialize (EQ (prog_defs p)).
+  clear -EQ.
+  Require Import ssreflect.
+  move: eq_refl. intros e.
+Admitted.
 
 (** * External functions *)
 

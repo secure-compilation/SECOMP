@@ -24,10 +24,6 @@ Module LabelsetFacts := FSetFacts.Facts(Labelset).
 Definition match_prog (p tp: Linear.program) :=
   match_program (fun ctx f tf => tf = transf_fundef f) eq p tp.
 
-#[global]
-Instance comp_match_prog: has_comp_transl transf_function.
-Proof. now intros f. Qed.
-
 Lemma transf_program_match:
   forall p, match_prog p (transf_program p).
 Proof.
@@ -433,6 +429,7 @@ Theorem transf_program_correct:
   forward_simulation (Linear.semantics prog) (Linear.semantics tprog).
 Proof.
   eapply forward_simulation_opt.
+  apply senv_preserved.
   apply senv_preserved.
   eexact transf_initial_states.
   eexact transf_final_states.

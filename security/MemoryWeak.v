@@ -13,8 +13,7 @@ Require Export Memdata.
 Require Export Memtype.
 Require Import Memory.
 
-(* To avoid useless definitions of inductors in extracted code. *)
-Local Unset Elimination Schemes.
+(* To avoid useless definitions of inductors in extracted code. *) Local Unset Elimination Schemes.
 Local Unset Case Analysis Schemes.
 
 Local Notation "a # b" := (PMap.get b a) (at level 1).
@@ -359,34 +358,35 @@ Section WINJ.
       forall OWN : can_access_block m2 b2 c,
         mem_winj f m1' m2.
   Proof.
-  Admitted.
-  (*   intros. inversion H. constructor. *)
-  (*   (* perm *) *)
-  (*   intros. *)
-  (*   exploit perm_alloc_inv; eauto. intros. destruct (eq_block b0 b1). subst b0. *)
-  (*   rewrite H4 in H5; inv H5. eauto. eauto. *)
-  (*   (* own *) *)
-  (*   intros. destruct cp as [cp |]; [| trivial]. destruct (eq_block b0 b1). *)
-  (*   { *)
-  (*     subst b0. rewrite H4 in H5. inv H5. *)
-  (*     apply owned_new_block in H0. *)
-  (*     unfold can_access_block in *. rewrite H0 in H6. inv H6. *)
-  (*     exact OWN. *)
-  (*   } *)
-  (*   { *)
-  (*     eapply mwi_own0; eauto. eapply alloc_can_access_block_other_inj_2; eassumption. *)
-  (*   } *)
-  (*   (* align *) *)
-  (*   intros. destruct (eq_block b0 b1). *)
-  (*   subst b0. assert (delta0 = delta) by congruence. subst delta0. *)
-  (*   assert (lo <= ofs < hi). *)
-  (*   { eapply perm_alloc_3; eauto. apply H6. generalize (size_chunk_pos chunk); lia. } *)
-  (*   assert (lo <= ofs + size_chunk chunk - 1 < hi). *)
-  (*   { eapply perm_alloc_3; eauto. apply H6. generalize (size_chunk_pos chunk); lia. } *)
-  (*   apply H2. lia. *)
-  (*   eapply mwi_align0 with (ofs := ofs) (p := p); eauto. *)
-  (*   red; intros. eapply perm_alloc_4; eauto. *)
-  (* Qed. *)
+    intros. inversion H. constructor.
+    (* perm *)
+    intros.
+    exploit perm_alloc_inv; eauto. intros. destruct (eq_block b0 b1). subst b0.
+    rewrite H4 in H5; inv H5. eauto. eauto.
+    (* own *)
+    intros. (* destruct cp as [cp |]; [| trivial]. *) destruct (eq_block b0 b1).
+    {
+      subst b0. rewrite H4 in H5. inv H5.
+      apply owned_new_block in H0.
+      unfold can_access_block in *. rewrite H0 in H6. inv H6.
+      eapply flowsto_trans; eauto with comps. rewrite <- H5; auto with comps.
+      auto with comps.
+      exact OWN.
+    }
+    {
+      eapply mwi_own0; eauto. eapply alloc_can_access_block_other_inj_2; eassumption.
+    }
+    (* align *)
+    intros. destruct (eq_block b0 b1).
+    subst b0. assert (delta0 = delta) by congruence. subst delta0.
+    assert (lo <= ofs < hi).
+    { eapply perm_alloc_3; eauto. apply H6. generalize (size_chunk_pos chunk); lia. }
+    assert (lo <= ofs + size_chunk chunk - 1 < hi).
+    { eapply perm_alloc_3; eauto. apply H6. generalize (size_chunk_pos chunk); lia. }
+    apply H2. lia.
+    eapply mwi_align0 with (ofs := ofs) (p := p); eauto.
+    red; intros. eapply perm_alloc_4; eauto.
+  Qed.
 
   Lemma free_left_winj:
     forall f m1 m2 b lo hi cp m1',
@@ -638,13 +638,13 @@ Section WINJ.
   (*     valid_pointer m1 b1 ofs = true -> *)
   (*     valid_pointer m2 b2 (ofs + delta) = true. *)
   (* Proof. *)
-  (*   intros. *)
-  (*   pose proof valid_pointer_can_access_block _ _ _ H1 as [cp Hown]. *)
-  (*   unfold can_access_block in Hown. *)
-  (*   rewrite (valid_pointer_valid_access_nonpriv _ _ _ _ Hown) in H1. *)
-  (*   rewrite valid_pointer_valid_access_nonpriv. *)
-  (*   eapply valid_access_winject; eauto. *)
-  (*   inv H0. inv mwi_inj0. eapply mwi_own0 with (cp := Some cp); eauto. *)
+    (* intros. *)
+    (* pose proof valid_pointer_can_access_block _ _ _ H1 as [cp Hown]. *)
+    (* unfold can_access_block in Hown. *)
+    (* rewrite (valid_pointer_valid_access_nonpriv _ _ _ _ Hown) in H1. *)
+    (* rewrite valid_pointer_valid_access_nonpriv. *)
+    (* eapply valid_access_winject; eauto. *)
+    (* inv H0. inv mwi_inj0. eapply mwi_own0 with (cp := Some cp); eauto. *)
   (* Qed. *)
 
   (* Theorem weak_valid_pointer_winject: *)
@@ -844,466 +844,467 @@ Section WINJ.
 
   (* (** Preservation of stores *) *)
 
-  (* Theorem store_mapped_winject: *)
-  (*   forall f chunk m1 b1 ofs v1 cp n1 m2 b2 delta v2, *)
-  (*     winject f m1 m2 -> *)
-  (*     store chunk m1 b1 ofs v1 cp = Some n1 -> *)
-  (*     f b1 = Some (b2, delta) -> *)
-  (*     exists n2, *)
-  (*       store chunk m2 b2 (ofs + delta) v2 cp = Some n2 *)
-  (*       /\ winject f n1 n2. *)
-  (* Proof. *)
-  (*   intros. inversion H. *)
-  (*   exploit store_mapped_winj; eauto. intros [n2 [STORE MI]]. *)
-  (*   exists n2; split. eauto. constructor. *)
-  (*   (* winj *) *)
-  (*   auto. *)
-  (*   (* freeblocks *) *)
-  (*   eauto with mem. *)
-  (*   (* mappedblocks *) *)
-  (*   eauto with mem. *)
-  (*   (* no overlap *) *)
-  (*   red; intros. eauto with mem. *)
-  (*   (* representable *) *)
-  (*   intros. eapply mwi_representable; try eassumption. *)
-  (*   destruct H3; eauto with mem. *)
-  (*   (* perm inv *) *)
-  (*   intros. exploit mwi_perm_inv0; eauto using perm_store_2. *)
-  (*   intuition eauto using perm_store_1, perm_store_2. *)
-  (* Qed. *)
+  Theorem store_mapped_winject:
+    forall f chunk m1 b1 ofs v1 cp n1 m2 b2 delta v2,
+      winject f m1 m2 ->
+      store chunk m1 b1 ofs v1 cp = Some n1 ->
+      f b1 = Some (b2, delta) ->
+      exists n2,
+        store chunk m2 b2 (ofs + delta) v2 cp = Some n2
+        /\ winject f n1 n2.
+  Proof.
+    intros. inversion H.
+    exploit store_mapped_winj; eauto. intros [n2 [STORE MI]].
+    exists n2; split. eauto. constructor.
+    (* winj *)
+    auto.
+    (* freeblocks *)
+    eauto with mem.
+    (* mappedblocks *)
+    eauto with mem.
+    (* no overlap *)
+    red; intros. eauto with mem.
+    (* representable *)
+    intros. eapply mwi_representable; try eassumption.
+    destruct H3; eauto with mem.
+    (* perm inv *)
+    intros. exploit mwi_perm_inv0; eauto using perm_store_2.
+    intuition eauto using perm_store_1, perm_store_2.
+  Qed.
 
-  (* Theorem store_unmapped_winject: *)
-  (*   forall f chunk m1 b1 ofs v1 cp n1 m2, *)
-  (*     winject f m1 m2 -> *)
-  (*     store chunk m1 b1 ofs v1 cp = Some n1 -> *)
-  (*     f b1 = None -> *)
-  (*     winject f n1 m2. *)
-  (* Proof. *)
-  (*   intros. inversion H. *)
-  (*   constructor. *)
-  (*   (* winj *) *)
-  (*   eapply store_unmapped_winj; eauto. *)
-  (*   (* freeblocks *) *)
-  (*   eauto with mem. *)
-  (*   (* mappedblocks *) *)
-  (*   eauto with mem. *)
-  (*   (* no overlap *) *)
-  (*   red; intros. eauto with mem. *)
-  (*   (* representable *) *)
-  (*   intros. eapply mwi_representable; try eassumption. *)
-  (*   destruct H3; eauto with mem. *)
-  (*   (* perm inv *) *)
-  (*   intros. exploit mwi_perm_inv0; eauto using perm_store_2. *)
-  (*   intuition eauto using perm_store_1, perm_store_2. *)
-  (* Qed. *)
+  Theorem store_unmapped_winject:
+    forall f chunk m1 b1 ofs v1 cp n1 m2,
+      winject f m1 m2 ->
+      store chunk m1 b1 ofs v1 cp = Some n1 ->
+      f b1 = None ->
+      winject f n1 m2.
+  Proof.
+    intros. inversion H.
+    constructor.
+    (* winj *)
+    eapply store_unmapped_winj; eauto.
+    (* freeblocks *)
+    eauto with mem.
+    (* mappedblocks *)
+    eauto with mem.
+    (* no overlap *)
+    red; intros. eauto with mem.
+    (* representable *)
+    intros. eapply mwi_representable; try eassumption.
+    destruct H3; eauto with mem.
+    (* perm inv *)
+    intros. exploit mwi_perm_inv0; eauto using perm_store_2.
+    intuition eauto using perm_store_1, perm_store_2.
+  Qed.
 
-  (* Theorem store_outside_winject: *)
-  (*   forall f m1 m2 chunk b ofs v cp m2', *)
-  (*     winject f m1 m2 -> *)
-  (*     (forall b' delta ofs', *)
-  (*         f b' = Some(b, delta) -> *)
-  (*         perm m1 b' ofs' Cur Readable -> *)
-  (*         ofs <= ofs' + delta < ofs + size_chunk chunk -> False) -> *)
-  (*     store chunk m2 b ofs v cp = Some m2' -> *)
-  (*     winject f m1 m2'. *)
-  (* Proof. *)
-  (*   intros. inversion H. constructor. *)
-  (*   (* winj *) *)
-  (*   eapply store_outside_winj; eauto. *)
-  (*   (* freeblocks *) *)
-  (*   auto. *)
-  (*   (* mappedblocks *) *)
-  (*   eauto with mem. *)
-  (*   (* no overlap *) *)
-  (*   auto. *)
-  (*   (* representable *) *)
-  (*   eauto with mem. *)
-  (*   (* perm inv *) *)
-  (*   intros. eauto using perm_store_2. *)
-  (* Qed. *)
+  Theorem store_outside_winject:
+    forall f m1 m2 chunk b ofs v cp m2',
+      winject f m1 m2 ->
+      (forall b' delta ofs',
+          f b' = Some(b, delta) ->
+          perm m1 b' ofs' Cur Readable ->
+          ofs <= ofs' + delta < ofs + size_chunk chunk -> False) ->
+      store chunk m2 b ofs v cp = Some m2' ->
+      winject f m1 m2'.
+  Proof.
+    intros. inversion H. constructor.
+    (* winj *)
+    eapply store_outside_winj; eauto.
+    (* freeblocks *)
+    auto.
+    (* mappedblocks *)
+    eauto with mem.
+    (* no overlap *)
+    auto.
+    (* representable *)
+    eauto with mem.
+    (* perm inv *)
+    intros. eauto using perm_store_2.
+  Qed.
 
-  (* Theorem storev_mapped_winject: *)
-  (*   forall f chunk m1 a1 v1 cp n1 m2 a2 v2, *)
-  (*     winject f m1 m2 -> *)
-  (*     storev chunk m1 a1 v1 cp = Some n1 -> *)
-  (*     Val.inject f a1 a2 -> *)
-  (*     Val.inject f v1 v2 -> *)
-  (*     exists n2, *)
-  (*       storev chunk m2 a2 v2 cp = Some n2 /\ winject f n1 n2. *)
-  (* Proof. *)
-  (*   intros. inv H1; simpl in H0; try discriminate. *)
-  (*   unfold storev. *)
-  (*   replace (Ptrofs.unsigned (Ptrofs.add ofs1 (Ptrofs.repr delta))) *)
-  (*     with (Ptrofs.unsigned ofs1 + delta). *)
-  (*   eapply store_mapped_winject; eauto. *)
-  (*   symmetry. eapply address_winject'; eauto with mem. *)
-  (* Qed. *)
+  Theorem storev_mapped_winject:
+    forall f chunk m1 a1 v1 cp n1 m2 a2 v2,
+      winject f m1 m2 ->
+      storev chunk m1 a1 v1 cp = Some n1 ->
+      Val.inject f a1 a2 ->
+      Val.inject f v1 v2 ->
+      exists n2,
+        storev chunk m2 a2 v2 cp = Some n2 /\ winject f n1 n2.
+  Proof.
+    intros. inv H1; simpl in H0; try discriminate.
+    unfold storev.
+    replace (Ptrofs.unsigned (Ptrofs.add ofs1 (Ptrofs.repr delta)))
+      with (Ptrofs.unsigned ofs1 + delta).
+    eapply store_mapped_winject; eauto.
+    symmetry. eapply address_winject'; eauto with mem.
+  Qed.
 
-  (* Theorem storebytes_mapped_winject: *)
-  (*   forall f m1 b1 ofs bytes1 cp n1 m2 b2 delta bytes2, *)
-  (*     winject f m1 m2 -> *)
-  (*     storebytes m1 b1 ofs bytes1 cp = Some n1 -> *)
-  (*     f b1 = Some (b2, delta) -> *)
-  (*     list_forall2 (memval_inject f) bytes1 bytes2 -> *)
-  (*     exists n2, *)
-  (*       storebytes m2 b2 (ofs + delta) bytes2 cp = Some n2 *)
-  (*       /\ winject f n1 n2. *)
-  (* Proof. *)
-  (*   intros. inversion H. *)
-  (*   exploit storebytes_mapped_winj; eauto. intros [n2 [STORE MI]]. *)
-  (*   exists n2; split. eauto. constructor. *)
-  (*   (* winj *) *)
-  (*   auto. *)
-  (*   (* freeblocks *) *)
-  (*   intros. apply mi_freeblocks0. red; intros; elim H3; eapply storebytes_valid_block_1; eauto. *)
-  (*   (* mappedblocks *) *)
-  (*   intros. eapply storebytes_valid_block_1; eauto. *)
-  (*   (* no overlap *) *)
-  (*   red; intros. eapply mwi_no_overlap0; eauto; eapply perm_storebytes_2; eauto. *)
-  (*   (* representable *) *)
-  (*   intros. eapply mwi_representable0; eauto. *)
-  (*   destruct H4; eauto using perm_storebytes_2. *)
-  (*   (* perm inv *) *)
-  (*   intros. exploit mwi_perm_inv0; eauto using perm_storebytes_2. *)
-  (*   intuition eauto using perm_storebytes_1, perm_storebytes_2. *)
-  (* Qed. *)
+  Theorem storebytes_mapped_winject:
+    forall f m1 b1 ofs bytes1 cp n1 m2 b2 delta bytes2,
+      winject f m1 m2 ->
+      storebytes m1 b1 ofs bytes1 cp = Some n1 ->
+      f b1 = Some (b2, delta) ->
+      list_forall2 (memval_inject f) bytes1 bytes2 ->
+      exists n2,
+        storebytes m2 b2 (ofs + delta) bytes2 cp = Some n2
+        /\ winject f n1 n2.
+  Proof.
+    intros. inversion H.
+    exploit storebytes_mapped_winj; eauto. intros [n2 [STORE MI]].
+    exists n2; split. eauto. constructor.
+    (* winj *)
+    auto.
+    (* freeblocks *)
+    intros. apply mi_freeblocks0. red; intros; elim H3; eapply storebytes_valid_block_1; eauto.
+    (* mappedblocks *)
+    intros. eapply storebytes_valid_block_1; eauto.
+    (* no overlap *)
+    red; intros. eapply mwi_no_overlap0; eauto; eapply perm_storebytes_2; eauto.
+    (* representable *)
+    intros. eapply mwi_representable0; eauto.
+    destruct H4; eauto using perm_storebytes_2.
+    (* perm inv *)
+    intros. exploit mwi_perm_inv0; eauto using perm_storebytes_2.
+    intuition eauto using perm_storebytes_1, perm_storebytes_2.
+  Qed.
 
-  (* Theorem storebytes_unmapped_winject: *)
-  (*   forall f m1 b1 ofs bytes1 cp n1 m2, *)
-  (*     winject f m1 m2 -> *)
-  (*     storebytes m1 b1 ofs bytes1 cp = Some n1 -> *)
-  (*     f b1 = None -> *)
-  (*     winject f n1 m2. *)
-  (* Proof. *)
-  (*   intros. inversion H. *)
-  (*   constructor. *)
-  (*   (* winj *) *)
-  (*   eapply storebytes_unmapped_winj; eauto. *)
-  (*   (* freeblocks *) *)
-  (*   intros. apply mi_freeblocks0. red; intros; elim H2; eapply storebytes_valid_block_1; eauto. *)
-  (*   (* mappedblocks *) *)
-  (*   eauto with mem. *)
-  (*   (* no overlap *) *)
-  (*   red; intros. eapply mwi_no_overlap0; eauto; eapply perm_storebytes_2; eauto. *)
-  (*   (* representable *) *)
-  (*   intros. eapply mwi_representable0; eauto. *)
-  (*   destruct H3; eauto using perm_storebytes_2. *)
-  (*   (* perm inv *) *)
-  (*   intros. exploit mwi_perm_inv0; eauto. *)
-  (*   intuition eauto using perm_storebytes_1, perm_storebytes_2. *)
-  (* Qed. *)
+  Theorem storebytes_unmapped_winject:
+    forall f m1 b1 ofs bytes1 cp n1 m2,
+      winject f m1 m2 ->
+      storebytes m1 b1 ofs bytes1 cp = Some n1 ->
+      f b1 = None ->
+      winject f n1 m2.
+  Proof.
+    intros. inversion H.
+    constructor.
+    (* winj *)
+    eapply storebytes_unmapped_winj; eauto.
+    (* freeblocks *)
+    intros. apply mi_freeblocks0. red; intros; elim H2; eapply storebytes_valid_block_1; eauto.
+    (* mappedblocks *)
+    eauto with mem.
+    (* no overlap *)
+    red; intros. eapply mwi_no_overlap0; eauto; eapply perm_storebytes_2; eauto.
+    (* representable *)
+    intros. eapply mwi_representable0; eauto.
+    destruct H3; eauto using perm_storebytes_2.
+    (* perm inv *)
+    intros. exploit mwi_perm_inv0; eauto.
+    intuition eauto using perm_storebytes_1, perm_storebytes_2.
+  Qed.
 
-  (* Theorem storebytes_outside_winject: *)
-  (*   forall f m1 m2 b ofs bytes2 cp m2', *)
-  (*     winject f m1 m2 -> *)
-  (*     (forall b' delta ofs', *)
-  (*         f b' = Some(b, delta) -> *)
-  (*         perm m1 b' ofs' Cur Readable -> *)
-  (*         ofs <= ofs' + delta < ofs + Z.of_nat (length bytes2) -> False) -> *)
-  (*     storebytes m2 b ofs bytes2 cp = Some m2' -> *)
-  (*     winject f m1 m2'. *)
-  (* Proof. *)
-  (*   intros. inversion H. constructor. *)
-  (*   (* winj *) *)
-  (*   eapply storebytes_outside_winj; eauto. *)
-  (*   (* freeblocks *) *)
-  (*   auto. *)
-  (*   (* mappedblocks *) *)
-  (*   intros. eapply storebytes_valid_block_1; eauto. *)
-  (*   (* no overlap *) *)
-  (*   auto. *)
-  (*   (* representable *) *)
-  (*   auto. *)
-  (*   (* perm inv *) *)
-  (*   intros. eapply mwi_perm_inv0; eauto using perm_storebytes_2. *)
-  (* Qed. *)
+  Theorem storebytes_outside_winject:
+    forall f m1 m2 b ofs bytes2 cp m2',
+      winject f m1 m2 ->
+      (forall b' delta ofs',
+          f b' = Some(b, delta) ->
+          perm m1 b' ofs' Cur Readable ->
+          ofs <= ofs' + delta < ofs + Z.of_nat (length bytes2) -> False) ->
+      storebytes m2 b ofs bytes2 cp = Some m2' ->
+      winject f m1 m2'.
+  Proof.
+    intros. inversion H. constructor.
+    (* winj *)
+    eapply storebytes_outside_winj; eauto.
+    (* freeblocks *)
+    auto.
+    (* mappedblocks *)
+    intros. eapply storebytes_valid_block_1; eauto.
+    (* no overlap *)
+    auto.
+    (* representable *)
+    auto.
+    (* perm inv *)
+    intros. eapply mwi_perm_inv0; eauto using perm_storebytes_2.
+  Qed.
 
-  (* Theorem storebytes_empty_winject: *)
-  (*   forall f m1 b1 ofs1 cp1 m1' m2 b2 ofs2 cp2 m2', *)
-  (*     winject f m1 m2 -> *)
-  (*     storebytes m1 b1 ofs1 nil cp1 = Some m1' -> *)
-  (*     storebytes m2 b2 ofs2 nil cp2 = Some m2' -> *)
-  (*     winject f m1' m2'. *)
-  (* Proof. *)
-  (*   intros. inversion H. constructor; intros. *)
-  (*   (* winj *) *)
-  (*   eapply storebytes_empty_winj; eauto. *)
-  (*   (* freeblocks *) *)
-  (*   intros. apply mi_freeblocks0. red; intros; elim H2; eapply storebytes_valid_block_1; eauto. *)
-  (*   (* mappedblocks *) *)
-  (*   intros. eapply storebytes_valid_block_1; eauto. *)
-  (*   (* no overlap *) *)
-  (*   red; intros. eapply mwi_no_overlap0; eauto; eapply perm_storebytes_2; eauto. *)
-  (*   (* representable *) *)
-  (*   intros. eapply mwi_representable0; eauto. *)
-  (*   destruct H3; eauto using perm_storebytes_2. *)
-  (*   (* perm inv *) *)
-  (*   intros. exploit mwi_perm_inv0; eauto using perm_storebytes_2. *)
-  (*   intuition eauto using perm_storebytes_1, perm_storebytes_2. *)
-  (* Qed. *)
+  Theorem storebytes_empty_winject:
+    forall f m1 b1 ofs1 cp1 m1' m2 b2 ofs2 cp2 m2',
+      winject f m1 m2 ->
+      storebytes m1 b1 ofs1 nil cp1 = Some m1' ->
+      storebytes m2 b2 ofs2 nil cp2 = Some m2' ->
+      winject f m1' m2'.
+  Proof.
+    intros. inversion H. constructor; intros.
+    (* winj *)
+    eapply storebytes_empty_winj; eauto.
+    (* freeblocks *)
+    intros. apply mi_freeblocks0. red; intros; elim H2; eapply storebytes_valid_block_1; eauto.
+    (* mappedblocks *)
+    intros. eapply storebytes_valid_block_1; eauto.
+    (* no overlap *)
+    red; intros. eapply mwi_no_overlap0; eauto; eapply perm_storebytes_2; eauto.
+    (* representable *)
+    intros. eapply mwi_representable0; eauto.
+    destruct H3; eauto using perm_storebytes_2.
+    (* perm inv *)
+    intros. exploit mwi_perm_inv0; eauto using perm_storebytes_2.
+    intuition eauto using perm_storebytes_1, perm_storebytes_2.
+  Qed.
 
-  (* (* Preservation of allocations *) *)
+  (* Preservation of allocations *)
 
-  (* Theorem alloc_right_winject: *)
-  (*   forall f m1 m2 c lo hi b2 m2', *)
-  (*     winject f m1 m2 -> *)
-  (*     alloc m2 c lo hi = (m2', b2) -> *)
-  (*     winject f m1 m2'. *)
-  (* Proof. *)
-  (*   intros. injection H0. intros NEXT MEM. *)
-  (*   inversion H. constructor. *)
-  (*   (* winj *) *)
-  (*   eapply alloc_right_winj; eauto. *)
-  (*   (* freeblocks *) *)
-  (*   auto. *)
-  (*   (* mappedblocks *) *)
-  (*   eauto with mem. *)
-  (*   (* no overlap *) *)
-  (*   auto. *)
-  (*   (* representable *) *)
-  (*   auto. *)
-  (*   (* perm inv *) *)
-  (*   intros. eapply perm_alloc_inv in H2; eauto. destruct (eq_block b0 b2). *)
-  (*   subst b0. eelim fresh_block_alloc; eauto. *)
-  (*   eapply mwi_perm_inv0; eauto. *)
-  (* Qed. *)
+  Theorem alloc_right_winject:
+    forall f m1 m2 c lo hi b2 m2',
+      winject f m1 m2 ->
+      alloc m2 c lo hi = (m2', b2) ->
+      winject f m1 m2'.
+  Proof.
+    intros. injection H0. intros NEXT MEM.
+    inversion H. constructor.
+    (* winj *)
+    eapply alloc_right_winj; eauto.
+    (* freeblocks *)
+    auto.
+    (* mappedblocks *)
+    eauto with mem.
+    (* no overlap *)
+    auto.
+    (* representable *)
+    auto.
+    (* perm inv *)
+    intros. eapply perm_alloc_inv in H2; eauto. destruct (eq_block b0 b2).
+    subst b0. eelim fresh_block_alloc; eauto.
+    eapply mwi_perm_inv0; eauto.
+  Qed.
 
-  (* Theorem alloc_left_unmapped_winject: *)
-  (*   forall f m1 m2 c lo hi m1' b1, *)
-  (*     winject f m1 m2 -> *)
-  (*     alloc m1 c lo hi = (m1', b1) -> *)
-  (*     exists f', *)
-  (*       winject f' m1' m2 *)
-  (*       /\ inject_incr f f' *)
-  (*       /\ f' b1 = None *)
-  (*       /\ (forall b, b <> b1 -> f' b = f b). *)
-  (* Proof. *)
-  (*   intros. inversion H. *)
-  (*   set (f' := fun b => if eq_block b b1 then None else f b). *)
-  (*   assert (inject_incr f f'). *)
-  (*   red; unfold f'; intros. destruct (eq_block b b1). subst b. *)
-  (*   assert (f b1 = None). eauto with mem. congruence. *)
-  (*   auto. *)
-  (*   assert (mem_winj f' m1 m2). *)
-  (*   inversion mwi_inj0; constructor; eauto with mem. *)
-  (*   unfold f'; intros. destruct (eq_block b0 b1). congruence. eauto. *)
-  (*   unfold f'; intros. destruct (eq_block b0 b1). congruence. eauto. *)
-  (*   unfold f'; intros. destruct (eq_block b0 b1). congruence. *)
-  (*   unfold f'; intros. destruct (eq_block b0 b1). congruence. *)
-  (*   eapply mwi_align0; eauto. *)
-  (*   exists f'; split. constructor. *)
-  (*   (* winj *) *)
-  (*   eapply alloc_left_unmapped_winj; eauto. unfold f'; apply dec_eq_true. *)
-  (*   (* freeblocks *) *)
-  (*   intros. unfold f'. destruct (eq_block b b1). auto. *)
-  (*   apply mi_freeblocks0. red; intro; elim H3. eauto with mem. *)
-  (*   (* mappedblocks *) *)
-  (*   unfold f'; intros. destruct (eq_block b b1). congruence. eauto. *)
-  (*   (* no overlap *) *)
-  (*   unfold f'; red; intros. *)
-  (*   destruct (eq_block b0 b1); destruct (eq_block b2 b1); try congruence. *)
-  (*   eapply mwi_no_overlap0. eexact H3. eauto. eauto. *)
-  (*   exploit perm_alloc_inv. eauto. eexact H6. rewrite dec_eq_false; auto. *)
-  (*   exploit perm_alloc_inv. eauto. eexact H7. rewrite dec_eq_false; auto. *)
-  (*   (* representable *) *)
-  (*   unfold f'; intros. *)
-  (*   destruct (eq_block b b1); try discriminate. *)
-  (*   eapply mwi_representable0; try eassumption. *)
-  (*   destruct H4; eauto using perm_alloc_4. *)
-  (*   (* perm inv *) *)
-  (*   intros. unfold f' in H3; destruct (eq_block b0 b1); try discriminate. *)
-  (*   exploit mwi_perm_inv0; eauto. *)
-  (*   intuition eauto using perm_alloc_1, perm_alloc_4. *)
-  (*   (* incr *) *)
-  (*   split. auto. *)
-  (*   (* image *) *)
-  (*   split. unfold f'; apply dec_eq_true. *)
-  (*   (* incr *) *)
-  (*   intros; unfold f'; apply dec_eq_false; auto. *)
-  (* Qed. *)
+  Theorem alloc_left_unmapped_winject:
+    forall f m1 m2 c lo hi m1' b1,
+      winject f m1 m2 ->
+      alloc m1 c lo hi = (m1', b1) ->
+      exists f',
+        winject f' m1' m2
+        /\ inject_incr f f'
+        /\ f' b1 = None
+        /\ (forall b, b <> b1 -> f' b = f b).
+  Proof.
+    intros. inversion H.
+    set (f' := fun b => if eq_block b b1 then None else f b).
+    assert (inject_incr f f').
+    red; unfold f'; intros. destruct (eq_block b b1). subst b.
+    assert (f b1 = None). eauto with mem. congruence.
+    auto.
+    assert (mem_winj f' m1 m2).
+    inversion mwi_inj0; constructor; eauto with mem.
+    unfold f'; intros. destruct (eq_block b0 b1). congruence. eauto.
+    unfold f'; intros. destruct (eq_block b0 b1). congruence. eauto.
+    unfold f'; intros. destruct (eq_block b0 b1). congruence.
+    unfold f'; intros. destruct (eq_block b0 b1). congruence.
+    eapply mwi_align0; eauto.
+    exists f'; split. constructor.
+    (* winj *)
+    eapply alloc_left_unmapped_winj; eauto. unfold f'; apply dec_eq_true.
+    (* freeblocks *)
+    intros. unfold f'. destruct (eq_block b b1). auto.
+    apply mi_freeblocks0. red; intro; elim H3. eauto with mem.
+    (* mappedblocks *)
+    unfold f'; intros. destruct (eq_block b b1). congruence. eauto.
+    (* no overlap *)
+    unfold f'; red; intros.
+    destruct (eq_block b0 b1); destruct (eq_block b2 b1); try congruence.
+    eapply mwi_no_overlap0. eexact H3. eauto. eauto.
+    exploit perm_alloc_inv. eauto. eexact H6. rewrite dec_eq_false; auto.
+    exploit perm_alloc_inv. eauto. eexact H7. rewrite dec_eq_false; auto.
+    (* representable *)
+    unfold f'; intros.
+    destruct (eq_block b b1); try discriminate.
+    eapply mwi_representable0; try eassumption.
+    destruct H4; eauto using perm_alloc_4.
+    (* perm inv *)
+    intros. unfold f' in H3; destruct (eq_block b0 b1); try discriminate.
+    exploit mwi_perm_inv0; eauto.
+    intuition eauto using perm_alloc_1, perm_alloc_4.
+    (* incr *)
+    split. auto.
+    (* image *)
+    split. unfold f'; apply dec_eq_true.
+    (* incr *)
+    intros; unfold f'; apply dec_eq_false; auto.
+  Qed.
 
-  (* Theorem alloc_left_mapped_winject: *)
-  (*   forall f m1 m2 c lo hi m1' b1 b2 delta, *)
-  (*     winject f m1 m2 -> *)
-  (*     alloc m1 c lo hi = (m1', b1) -> *)
-  (*     valid_block m2 b2 -> *)
-  (*     forall OWN : can_access_block m2 b2 (Some c), *)
-  (*       0 <= delta <= Ptrofs.max_unsigned -> *)
-  (*       (forall ofs k p, perm m2 b2 ofs k p -> delta = 0 \/ 0 <= ofs < Ptrofs.max_unsigned) -> *)
-  (*       (forall ofs k p, lo <= ofs < hi -> perm m2 b2 (ofs + delta) k p) -> *)
-  (*       winj_offset_aligned delta (hi-lo) -> *)
-  (*       (forall b delta' ofs k p, *)
-  (*           f b = Some (b2, delta') -> *)
-  (*           perm m1 b ofs k p -> *)
-  (*           lo + delta <= ofs + delta' < hi + delta -> False) -> *)
-  (*       exists f', *)
-  (*         winject f' m1' m2 *)
-  (*         /\ inject_incr f f' *)
-  (*         /\ f' b1 = Some(b2, delta) *)
-  (*         /\ (forall b, b <> b1 -> f' b = f b). *)
-  (* Proof. *)
-  (*   intros. inversion H. *)
-  (*   set (f' := fun b => if eq_block b b1 then Some(b2, delta) else f b). *)
-  (*   assert (inject_incr f f'). *)
-  (*   red; unfold f'; intros. destruct (eq_block b b1). subst b. *)
-  (*   assert (f b1 = None). eauto with mem. congruence. *)
-  (*   auto. *)
-  (*   assert (mem_winj f' m1 m2). *)
-  (*   inversion mwi_inj0; constructor; eauto with mem. *)
-  (*   unfold f'; intros. destruct (eq_block b0 b1). *)
-  (*   inversion H8. subst b0 b3 delta0. *)
-  (*   elim (fresh_block_alloc _ _ _ _ _ _ H0). eauto with mem. *)
-  (*   eauto. *)
-  (*   unfold f'; intros. destruct cp as [cp |]; [| trivial]. destruct (eq_block b0 b1). *)
-  (*   inversion H8. subst b0 b3 delta0. *)
-  (*   apply unowned_fresh_block with (c' := cp) in H0. contradiction. *)
-  (*   eapply mwi_own0; eauto. *)
-  (*   unfold f'; intros. destruct (eq_block b0 b1). *)
-  (*   inversion H8. subst b0 b3 delta0. *)
-  (*   elim (fresh_block_alloc _ _ _ _ _ _ H0). *)
-  (*   eapply perm_valid_block with (ofs := ofs). apply H9. generalize (size_chunk_pos chunk); lia. *)
-  (*   eauto. *)
-  (*   exists f'. split. constructor. *)
-  (*   (* winj *) *)
-  (*   eapply alloc_left_mapped_winj; eauto. unfold f'; apply dec_eq_true. *)
-  (*   (* freeblocks *) *)
-  (*   unfold f'; intros. destruct (eq_block b b1). subst b. *)
-  (*   elim H9. eauto with mem. *)
-  (*   eauto with mem. *)
-  (*   (* mappedblocks *) *)
-  (*   unfold f'; intros. destruct (eq_block b b1). congruence. eauto. *)
-  (*   (* overlap *) *)
-  (*   unfold f'; red; intros. *)
-  (*   exploit perm_alloc_inv. eauto. eexact H12. intros P1. *)
-  (*   exploit perm_alloc_inv. eauto. eexact H13. intros P2. *)
-  (*   destruct (eq_block b0 b1); destruct (eq_block b3 b1). *)
-  (*   congruence. *)
-  (*   inversion H10; subst b0 b1' delta1. *)
-  (*   destruct (eq_block b2 b2'); auto. subst b2'. right; red; intros. *)
-  (*   eapply H6; eauto. lia. *)
-  (*   inversion H11; subst b3 b2' delta2. *)
-  (*   destruct (eq_block b1' b2); auto. subst b1'. right; red; intros. *)
-  (*   eapply H6; eauto. lia. *)
-  (*   eauto. *)
-  (*   (* representable *) *)
-  (*   unfold f'; intros. *)
-  (*   destruct (eq_block b b1). *)
-  (*   subst. injection H9; intros; subst b' delta0. destruct H10. *)
-  (*   exploit perm_alloc_inv; eauto; rewrite dec_eq_true; intro. *)
-  (*   exploit H3. apply H4 with (k := Max) (p := Nonempty); eauto. *)
-  (*   generalize (Ptrofs.unsigned_range_2 ofs). lia. *)
-  (*   exploit perm_alloc_inv; eauto; rewrite dec_eq_true; intro. *)
-  (*   exploit H3. apply H4 with (k := Max) (p := Nonempty); eauto. *)
-  (*   generalize (Ptrofs.unsigned_range_2 ofs). lia. *)
-  (*   eapply mwi_representable0; try eassumption. *)
-  (*   destruct H10; eauto using perm_alloc_4. *)
-  (*   (* perm inv *) *)
-  (*   intros. unfold f' in H9; destruct (eq_block b0 b1). *)
-  (*   inversion H9; clear H9; subst b0 b3 delta0. *)
-  (*   assert (EITHER: lo <= ofs < hi \/ ~(lo <= ofs < hi)) by lia. *)
-  (*   destruct EITHER. *)
-  (*   left. apply perm_implies with Freeable; auto with mem. eapply perm_alloc_2; eauto. *)
-  (*   right; intros A. eapply perm_alloc_inv in A; eauto. rewrite dec_eq_true in A. tauto. *)
-  (*   exploit mwi_perm_inv0; eauto. intuition eauto using perm_alloc_1, perm_alloc_4. *)
-  (*   (* incr *) *)
-  (*   split. auto. *)
-  (*   (* image of b1 *) *)
-  (*   split. unfold f'; apply dec_eq_true. *)
-  (*   (* image of others *) *)
-  (*   intros. unfold f'; apply dec_eq_false; auto. *)
-  (* Qed. *)
+  Theorem alloc_left_mapped_winject:
+    forall f m1 m2 c lo hi m1' b1 b2 delta,
+      winject f m1 m2 ->
+      alloc m1 c lo hi = (m1', b1) ->
+      valid_block m2 b2 ->
+      forall OWN : can_access_block m2 b2 c,
+        0 <= delta <= Ptrofs.max_unsigned ->
+        (forall ofs k p, perm m2 b2 ofs k p -> delta = 0 \/ 0 <= ofs < Ptrofs.max_unsigned) ->
+        (forall ofs k p, lo <= ofs < hi -> perm m2 b2 (ofs + delta) k p) ->
+        winj_offset_aligned delta (hi-lo) ->
+        (forall b delta' ofs k p,
+            f b = Some (b2, delta') ->
+            perm m1 b ofs k p ->
+            lo + delta <= ofs + delta' < hi + delta -> False) ->
+        exists f',
+          winject f' m1' m2
+          /\ inject_incr f f'
+          /\ f' b1 = Some(b2, delta)
+          /\ (forall b, b <> b1 -> f' b = f b).
+  Proof.
+    intros. inversion H.
+    set (f' := fun b => if eq_block b b1 then Some(b2, delta) else f b).
+    assert (inject_incr f f').
+    red; unfold f'; intros. destruct (eq_block b b1). subst b.
+    assert (f b1 = None). eauto with mem. congruence.
+    auto.
+    assert (mem_winj f' m1 m2).
+    inversion mwi_inj0; constructor; eauto with mem.
+    unfold f'; intros. destruct (eq_block b0 b1).
+    inversion H8. subst b0 b3 delta0.
+    elim (fresh_block_alloc _ _ _ _ _ _ H0). eauto with mem.
+    eauto.
+    unfold f'; intros. (* destruct cp as [cp |]; [| trivial]. *) destruct (eq_block b0 b1).
+    inversion H8. subst b0 b3 delta0.
+    apply unowned_fresh_block with (c' := cp) in H0.
+    subst; auto with comps. auto.
+    eapply mwi_own0; eauto.
+    unfold f'; intros. destruct (eq_block b0 b1).
+    inversion H8. subst b0 b3 delta0.
+    elim (fresh_block_alloc _ _ _ _ _ _ H0).
+    eapply perm_valid_block with (ofs := ofs). apply H9. generalize (size_chunk_pos chunk); lia.
+    eauto.
+    exists f'. split. constructor.
+    (* winj *)
+    eapply alloc_left_mapped_winj; eauto. unfold f'; apply dec_eq_true.
+    (* freeblocks *)
+    unfold f'; intros. destruct (eq_block b b1). subst b.
+    elim H9. eauto with mem.
+    eauto with mem.
+    (* mappedblocks *)
+    unfold f'; intros. destruct (eq_block b b1). congruence. eauto.
+    (* overlap *)
+    unfold f'; red; intros.
+    exploit perm_alloc_inv. eauto. eexact H12. intros P1.
+    exploit perm_alloc_inv. eauto. eexact H13. intros P2.
+    destruct (eq_block b0 b1); destruct (eq_block b3 b1).
+    congruence.
+    inversion H10; subst b0 b1' delta1.
+    destruct (eq_block b2 b2'); auto. subst b2'. right; red; intros.
+    eapply H6; eauto. lia.
+    inversion H11; subst b3 b2' delta2.
+    destruct (eq_block b1' b2); auto. subst b1'. right; red; intros.
+    eapply H6; eauto. lia.
+    eauto.
+    (* representable *)
+    unfold f'; intros.
+    destruct (eq_block b b1).
+    subst. injection H9; intros; subst b' delta0. destruct H10.
+    exploit perm_alloc_inv; eauto; rewrite dec_eq_true; intro.
+    exploit H3. apply H4 with (k := Max) (p := Nonempty); eauto.
+    generalize (Ptrofs.unsigned_range_2 ofs). lia.
+    exploit perm_alloc_inv; eauto; rewrite dec_eq_true; intro.
+    exploit H3. apply H4 with (k := Max) (p := Nonempty); eauto.
+    generalize (Ptrofs.unsigned_range_2 ofs). lia.
+    eapply mwi_representable0; try eassumption.
+    destruct H10; eauto using perm_alloc_4.
+    (* perm inv *)
+    intros. unfold f' in H9; destruct (eq_block b0 b1).
+    inversion H9; clear H9; subst b0 b3 delta0.
+    assert (EITHER: lo <= ofs < hi \/ ~(lo <= ofs < hi)) by lia.
+    destruct EITHER.
+    left. apply perm_implies with Freeable; auto with mem. eapply perm_alloc_2; eauto.
+    right; intros A. eapply perm_alloc_inv in A; eauto. rewrite dec_eq_true in A. tauto.
+    exploit mwi_perm_inv0; eauto. intuition eauto using perm_alloc_1, perm_alloc_4.
+    (* incr *)
+    split. auto.
+    (* image of b1 *)
+    split. unfold f'; apply dec_eq_true.
+    (* image of others *)
+    intros. unfold f'; apply dec_eq_false; auto.
+  Qed.
 
-  (* Theorem alloc_parallel_winject: *)
-  (*   forall f m1 m2 c lo1 hi1 m1' b1 lo2 hi2, *)
-  (*     winject f m1 m2 -> *)
-  (*     alloc m1 c lo1 hi1 = (m1', b1) -> *)
-  (*     lo2 <= lo1 -> hi1 <= hi2 -> *)
-  (*     exists f', exists m2', exists b2, *)
-  (*       alloc m2 c lo2 hi2 = (m2', b2) *)
-  (*       /\ winject f' m1' m2' *)
-  (*       /\ inject_incr f f' *)
-  (*       /\ f' b1 = Some(b2, 0) *)
-  (*       /\ (forall b, b <> b1 -> f' b = f b). *)
-  (* Proof. *)
-  (*   intros. *)
-  (*   case_eq (alloc m2 c lo2 hi2). intros m2' b2 ALLOC. *)
-  (*   exploit alloc_left_mapped_winject. *)
-  (*   eapply alloc_right_winject; eauto. *)
-  (*   eauto. *)
-  (*   instantiate (1 := b2). eauto with mem. *)
-  (*   eapply owned_new_block; eauto. *)
-  (*   instantiate (1 := 0). unfold Ptrofs.max_unsigned. generalize Ptrofs.modulus_pos; lia. *)
-  (*   auto. *)
-  (*   intros. apply perm_implies with Freeable; auto with mem. *)
-  (*   eapply perm_alloc_2; eauto. lia. *)
-  (*   red; intros. apply Z.divide_0_r. *)
-  (*   intros. apply (valid_not_valid_diff m2 b2 b2); eauto with mem. *)
-  (*   intros [f' [A [B [C D]]]]. *)
-  (*   exists f'; exists m2'; exists b2; auto. *)
-  (* Qed. *)
+  Theorem alloc_parallel_winject:
+    forall f m1 m2 c lo1 hi1 m1' b1 lo2 hi2,
+      winject f m1 m2 ->
+      alloc m1 c lo1 hi1 = (m1', b1) ->
+      lo2 <= lo1 -> hi1 <= hi2 ->
+      exists f', exists m2', exists b2,
+        alloc m2 c lo2 hi2 = (m2', b2)
+        /\ winject f' m1' m2'
+        /\ inject_incr f f'
+        /\ f' b1 = Some(b2, 0)
+        /\ (forall b, b <> b1 -> f' b = f b).
+  Proof.
+    intros.
+    case_eq (alloc m2 c lo2 hi2). intros m2' b2 ALLOC.
+    exploit alloc_left_mapped_winject.
+    eapply alloc_right_winject; eauto.
+    eauto.
+    instantiate (1 := b2). eauto with mem.
+    unfold can_access_block; erewrite (owned_new_block _ _ _ _ _ _ ALLOC); eauto with comps.
+    instantiate (1 := 0). unfold Ptrofs.max_unsigned. generalize Ptrofs.modulus_pos; lia.
+    auto.
+    intros. apply perm_implies with Freeable; auto with mem.
+    eapply perm_alloc_2; eauto. lia.
+    red; intros. apply Z.divide_0_r.
+    intros. apply (valid_not_valid_diff m2 b2 b2); eauto with mem.
+    intros [f' [A [B [C D]]]].
+    exists f'; exists m2'; exists b2; auto.
+  Qed.
 
-  (* (** Preservation of [free] operations *) *)
+  (** Preservation of [free] operations *)
 
-  (* Lemma free_left_winject: *)
-  (*   forall f m1 m2 b lo hi cp m1', *)
-  (*     winject f m1 m2 -> *)
-  (*     free m1 b lo hi cp = Some m1' -> *)
-  (*     winject f m1' m2. *)
-  (* Proof. *)
-  (*   intros. inversion H. constructor. *)
-  (*   (* winj *) *)
-  (*   eapply free_left_winj; eauto. *)
-  (*   (* freeblocks *) *)
-  (*   eauto with mem. *)
-  (*   (* mappedblocks *) *)
-  (*   auto. *)
-  (*   (* no overlap *) *)
-  (*   red; intros. eauto with mem. *)
-  (*   (* representable *) *)
-  (*   intros. eapply mwi_representable0; try eassumption. *)
-  (*   destruct H2; eauto with mem. *)
-  (*   (* perm inv *) *)
-  (*   intros. exploit mwi_perm_inv0; eauto. intuition eauto using perm_free_3. *)
-  (*   eapply perm_free_inv in H4; eauto. destruct H4 as [[A B] | A]; auto. *)
-  (*   subst b1. right; eapply perm_free_2; eauto. *)
-  (* Qed. *)
+  Lemma free_left_winject:
+    forall f m1 m2 b lo hi cp m1',
+      winject f m1 m2 ->
+      free m1 b lo hi cp = Some m1' ->
+      winject f m1' m2.
+  Proof.
+    intros. inversion H. constructor.
+    (* winj *)
+    eapply free_left_winj; eauto.
+    (* freeblocks *)
+    eauto with mem.
+    (* mappedblocks *)
+    auto.
+    (* no overlap *)
+    red; intros. eauto with mem.
+    (* representable *)
+    intros. eapply mwi_representable0; try eassumption.
+    destruct H2; eauto with mem.
+    (* perm inv *)
+    intros. exploit mwi_perm_inv0; eauto. intuition eauto using perm_free_3.
+    eapply perm_free_inv in H4; eauto. destruct H4 as [[A B] | A]; auto.
+    subst b1. right; eapply perm_free_2; eauto.
+  Qed.
 
-  (* Lemma free_list_left_winject: *)
-  (*   forall f m2 l cp m1 m1', *)
-  (*     winject f m1 m2 -> *)
-  (*     free_list m1 l cp = Some m1' -> *)
-  (*     winject f m1' m2. *)
-  (* Proof. *)
-  (*   induction l; simpl; intros. *)
-  (*   inv H0. auto. *)
-  (*   destruct a as [[b lo] hi]. *)
-  (*   destruct (free m1 b lo hi) as [m11|] eqn:E; try discriminate. *)
-  (*   apply IHl with cp m11; auto. eapply free_left_winject; eauto. *)
-  (* Qed. *)
+  Lemma free_list_left_winject:
+    forall f m2 l cp m1 m1',
+      winject f m1 m2 ->
+      free_list m1 l cp = Some m1' ->
+      winject f m1' m2.
+  Proof.
+    induction l; simpl; intros.
+    inv H0. auto.
+    destruct a as [[b lo] hi].
+    destruct (free m1 b lo hi) as [m11|] eqn:E; try discriminate.
+    apply IHl with cp m11; auto. eapply free_left_winject; eauto.
+  Qed.
 
-  (* Lemma free_right_winject: *)
-  (*   forall f m1 m2 b lo hi cp m2', *)
-  (*     winject f m1 m2 -> *)
-  (*     free m2 b lo hi cp = Some m2' -> *)
-  (*     (forall b1 delta ofs k p, *)
-  (*         f b1 = Some(b, delta) -> perm m1 b1 ofs k p -> *)
-  (*         lo <= ofs + delta < hi -> False) -> *)
-  (*     winject f m1 m2'. *)
-  (* Proof. *)
-  (*   intros. inversion H. constructor. *)
-  (*   (* winj *) *)
-  (*   eapply free_right_winj; eauto. *)
-  (*   (* freeblocks *) *)
-  (*   auto. *)
-  (*   (* mappedblocks *) *)
-  (*   eauto with mem. *)
-  (*   (* no overlap *) *)
-  (*   auto. *)
-  (*   (* representable *) *)
-  (*   auto. *)
-  (*   (* perm inv *) *)
-  (*   intros. eauto using perm_free_3. *)
-  (* Qed. *)
+  Lemma free_right_winject:
+    forall f m1 m2 b lo hi cp m2',
+      winject f m1 m2 ->
+      free m2 b lo hi cp = Some m2' ->
+      (forall b1 delta ofs k p,
+          f b1 = Some(b, delta) -> perm m1 b1 ofs k p ->
+          lo <= ofs + delta < hi -> False) ->
+      winject f m1 m2'.
+  Proof.
+    intros. inversion H. constructor.
+    (* winj *)
+    eapply free_right_winj; eauto.
+    (* freeblocks *)
+    auto.
+    (* mappedblocks *)
+    eauto with mem.
+    (* no overlap *)
+    auto.
+    (* representable *)
+    auto.
+    (* perm inv *)
+    intros. eauto using perm_free_3.
+  Qed.
 
   (* Lemma perm_free_list: *)
   (*   forall l m cp m' b ofs k p, *)

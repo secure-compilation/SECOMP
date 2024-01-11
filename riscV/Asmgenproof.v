@@ -21,16 +21,6 @@ Require Import Asmgen Asmgenproof0 Asmgenproof1.
 Definition match_prog (p: Mach.program) (tp: Asm.program) :=
   match_program (fun _ f tf => transf_fundef f = OK tf) eq p tp.
 
-#[global]
-Instance comp_transf_function: has_comp_transl_partial transf_function.
-Proof.
-  unfold transf_function, transl_function.
-  intros f ? H; monadInv H; trivial.
-  destruct transl_code'; simpl in *; try easy.
-  inv EQ. destruct zlt; try easy.
-  now inv EQ0.
-Qed.
-
 Lemma transf_program_match:
   forall p tp, transf_program p = OK tp -> match_prog p tp.
 Proof.
@@ -1663,6 +1653,7 @@ Theorem transf_program_correct:
   forward_simulation (Mach.semantics return_address_offset prog) (Asm.semantics tprog).
 Proof.
   eapply forward_simulation_star with (measure := measure).
+  apply senv_preserved.
   apply senv_preserved.
   eexact transf_initial_states.
   eexact transf_final_states.

@@ -22,19 +22,10 @@ Require Import CSEdomain CombineOp CombineOpproof CSE.
 Definition match_prog (prog tprog: RTL.program) :=
   match_program (fun cu f tf => transf_fundef (romem_for cu) f = OK tf) eq prog tprog.
 
-#[global]
-Instance comp_transf_function rm:
-  has_comp_transl_partial (transf_function rm).
-Proof.
-  unfold transf_function.
-  intros f ? H.
-  destruct analyze; try easy.
-  now inv H.
-Qed.
-
 Lemma transf_program_match:
   forall prog tprog, transf_program prog = OK tprog -> match_prog prog tprog.
 Proof.
+  unfold transf_program, transf_fundef.
   intros. eapply match_transform_partial_program_contextual; eauto.
 Qed.
 
@@ -879,7 +870,7 @@ Lemma symbols_preserved:
 Proof (Genv.find_symbol_match TRANSF).
 
 Lemma senv_preserved:
-  Senv.equiv ge tge.
+  Senv.equiv (Genv.to_senv ge) (Genv.to_senv tge).
 Proof (Genv.senv_match TRANSF).
 
 Lemma functions_translated:
@@ -1237,7 +1228,7 @@ Proof.
   apply regs_lessdef_regs; auto.
 
 - (* Ibuiltin *)
-  exploit (@eval_builtin_args_lessdef _ ge (fun r => rs#r) (fun r => rs'#r)); eauto.
+  exploit (@eval_builtin_args_lessdef _ (Genv.to_senv ge) (fun r => rs#r) (fun r => rs'#r)); eauto.
   intros (vargs' & A & B).
   exploit external_call_mem_extends; eauto.
   intros (v' & m1' & P & Q & R & S).
@@ -1376,6 +1367,7 @@ Theorem transf_program_correct:
 Proof.
   eapply forward_simulation_step with
     (match_states := fun s1 s2 => sound_state prog s1 /\ match_states s1 s2).
+- apply senv_preserved.
 - apply senv_preserved.
 - intros. exploit transf_initial_states; eauto. intros [s2 [A B]].
   exists s2. split. auto. split. apply sound_initial; auto. auto.

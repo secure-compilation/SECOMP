@@ -930,6 +930,28 @@ Definition retype_fundef (ce: composite_env) (e: typenv) (fd: fundef) : res fund
       assertion (rettype_eq (ef_sig ef).(sig_res) (rettype_of_type res)); OK fd
   end.
 
+Lemma todo_fix: forall (tp: AST.program fundef type) (p: program),
+  agr_comps (AST.prog_pol tp) (AST.prog_defs tp) ->
+    agr_comps (prog_pol p) (AST.prog_defs tp).
+Proof.
+  Admitted.
+
+Instance has_comp_retype_function (ce: composite_env) (e: typenv):
+  has_comp_transl_partial (retype_function ce e).
+Proof.
+  intros f tf.
+  unfold retype_function. intros H.
+  monadInv H. reflexivity.
+Qed.
+
+Instance has_comp_retype_fundef (ce: composite_env) (e: typenv):
+  has_comp_transl_partial (retype_fundef ce e).
+Proof.
+  intros f tf.
+  destruct f; simpl; intros H; monadInv H; auto.
+  exploit has_comp_retype_function; eauto.
+Qed.
+
 Definition typecheck_program (p: program) : res program :=
   let e := bind_globdef (PTree.empty _) p.(prog_defs) in
   let ce := p.(prog_comp_env) in
@@ -941,7 +963,9 @@ Definition typecheck_program (p: program) : res program :=
         prog_types := p.(prog_types);
         prog_comp_env := ce;
         prog_comp_env_eq := p.(prog_comp_env_eq);
-        prog_pol_pub := p.(prog_pol_pub) |}.
+        prog_pol_pub := p.(prog_pol_pub);
+        prog_agr_comps := todo_fix tp p tp.(AST.prog_agr_comps)
+     |}.
 
 (** Soundness of the smart constructors.  *)
 

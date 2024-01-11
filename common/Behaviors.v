@@ -567,6 +567,7 @@ Proof.
   set (ms := fun (s: state L) (ts: state (atomic L)) => ts = (E0,s)).
   apply forward_simulation_plus with ms; intros.
   auto.
+  auto.
   exists (E0,s1); split. simpl; auto. red; auto.
   red in H. subst s2. simpl; auto.
   red in H0. subst s2. exists (E0,s1'); split.

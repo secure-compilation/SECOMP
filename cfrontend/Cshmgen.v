@@ -775,6 +775,19 @@ Definition transl_fundef (ce: composite_env) (id: ident) (f: Clight.fundef) : re
 
 Definition transl_globvar (id: ident) (ty: type) := OK tt.
 
+#[global] Instance comp_transl_function ctx: has_comp_transl_partial (transl_function ctx).
+Proof.
+  unfold transl_function. now intros ?? H; monadInv H.
+Qed.
+
+Instance comp_transl_fundef ctx: forall id, has_comp_transl_partial (transl_fundef ctx id).
+Proof.
+  intros id f tf.
+  destruct f; simpl; intros H; try monadInv H.
+  - exploit comp_transl_function; eauto.
+  - destruct signature_eq; try congruence. inv H; auto.
+Qed.
+
 Definition transl_program (p: Clight.program) : res program :=
   transform_partial_program2 (transl_fundef p.(prog_comp_env)) transl_globvar p.
 

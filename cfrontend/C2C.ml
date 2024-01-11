@@ -1484,7 +1484,8 @@ let of_list' l =
 
 (* FIXME: this is very ad-hoc. I'm worried that by generating new names using "intern_string", we might be doing something bad. Ideally, we should inspect *)
 (* the rest of the file and figure out how the translation between C.ident and AST.ident works. *)
-let build_policy (imports: C.import list) (exports: C.export list): AST.Policy.t =
+let build_policy (gl: (AST.ident * ('f Ctypes.fundef, Ctypes.coq_type) AST.globdef) list)
+    (imports: C.import list) (exports: C.export list): AST.Policy.t =
   let open AST.Policy in
   let exports' = List.map (function Export(id1, id2) -> (Comp (intern_string id1.name), intern_string id2.name)) exports in
   let exports'': AST.ident list CompTree.t = of_list' exports' in
@@ -1492,8 +1493,10 @@ let build_policy (imports: C.import list) (exports: C.export list): AST.Policy.t
       (Comp (intern_string id1.name), (Comp (intern_string id2.name), intern_string id3.name))) imports in
   let imports'': (compartment * AST.ident) list Maps.PTree.t = of_list' imports' in
   (* let imports'': (AST.compartment * AST.ident) list Maps.PTree.t = Maps.PTree_Properties.of_list [] in *)
-  let p = { policy_export = exports'';
-            policy_import = imports'' } in
+  let p = { policy_comps = Maps.PTree_Properties.of_list (List.map (function (id, gd) ->
+      (id, AST.comp_of (AST.comp_of (AST.has_comp_globdef (Ctypes.has_comp_fundef Csyntax.has_comp_function))) gd)) gl);
+      policy_export = exports'';
+      policy_import = imports'' } in
   p
 
 (** Complete the debug information of struct/unions *)
@@ -1567,7 +1570,7 @@ let convertProgram (p, (imports, exports)) =
         let gl3 = add_helper_functions cps gl2 in
         comp_env := Maps.PTree.empty;
         let p' =
-          { prog_pol = build_policy imports exports ;
+          { prog_pol = build_policy gl3 imports exports ;
             prog_defs = gl3;
             prog_public = public_globals gl3;
             prog_main = intern_string !Clflags.main_function_name;

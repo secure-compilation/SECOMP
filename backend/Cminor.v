@@ -190,6 +190,8 @@ Definition funsig (fd: fundef) :=
 *)
 
 Definition genv := Genv.t fundef unit.
+(* Let to_senv: genv -> Senv.t := (@Genv.to_senv _ _ (@has_comp_fundef _ has_comp_function)). *)
+(* Coercion to_senv: genv >-> Senv.t. *)
 Definition env := PTree.t val.
 
 (** The following functions build the initial local environment at

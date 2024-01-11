@@ -116,8 +116,8 @@ Lemma match_possible_traces:
 Proof.
   intros. inv H; inv H1; inv H0.
   auto.
-  inv H7; inv H6. inv H9; inv H10. split; congruence.
-  inv H7; inv H6. inv H9; inv H10. split; congruence.
+  inv H8; inv H7. inv H10; inv H11. split; congruence.
+  inv H9; inv H8. inv H11; inv H12. split; congruence.
   inv H4; inv H3. inv H6; inv H7. split; congruence.
   inv H4; inv H3. inv H7; inv H6. auto.
   inv H4; inv H3.

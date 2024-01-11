@@ -47,8 +47,16 @@ Class Linker (A: Type) := {
   linkorder: A -> A -> Prop;
   linkorder_refl: forall x, linkorder x x;
   linkorder_trans: forall x y z, linkorder x y -> linkorder y z -> linkorder x z;
-  link_linkorder: forall x y z, link x y = Some z -> linkorder x z /\ linkorder y z
+  link_linkorder: forall x y z, link x y = Some z -> linkorder x z /\ linkorder y z;
 }.
+
+(* has_comp_match *)
+(* Class has_comp_linker {A: Type} {CA: has_comp A} (LA: Linker A) := *)
+(*     link_comp : forall x y z, *)
+(*       link x y = Some z -> *)
+(*       ((comp_of x = bottom /\ comp_of y = comp_of z) \/ *)
+(*        (comp_of y = bottom /\ comp_of x = comp_of z) \/ *)
+(*        (comp_of x = comp_of z /\ comp_of y = comp_of z)). *)
 
 (** Linking function definitions.  External functions of the [EF_external]
   kind can link with internal function definitions; the result of
@@ -95,6 +103,22 @@ Next Obligation.
   split; constructor.
 + destruct (external_function_eq e e0); inv H. split; constructor.
 Defined.
+
+(* Global Instance Linker_fundef_comp (F: Type) {CP: has_comp F}: *)
+(*   has_comp_linker (Linker_fundef F). *)
+(* Proof. *)
+(*   unfold has_comp_linker, Linker_fundef. *)
+(*   intros x y z H. *)
+(*   unfold link, link_fundef in H. *)
+(*   destruct x, y; try congruence. *)
+(*   - destruct e; try congruence; right; left; split; auto with comps. *)
+(*     inv H; auto with comps. *)
+(*   - destruct e; try congruence; left; split; auto with comps. *)
+(*     inv H; subst; auto with comps. *)
+(*   - destruct (external_function_eq e e0); try congruence; right; right; split; auto with comps. *)
+(*     inv H; subst; auto with comps. *)
+(*     inv H; subst; auto with comps. *)
+(* Qed. *)
 
 Global Opaque Linker_fundef.
 
@@ -166,7 +190,8 @@ Definition link_vardef {V: Type} {LV: Linker V} (v1 v2: globvar V) :=
       match link v1.(gvar_init) v2.(gvar_init) with
       | None => None
       | Some init =>
-          if cp_eq_dec v1.(gvar_comp) v2.(gvar_comp) (* FIXME: use the meet or join!! (figure out which one makes sense) *)
+          if cp_eq_dec v1.(gvar_comp) v2.(gvar_comp)
+             (* FIXME: use the meet or join!! (figure out which one makes sense) *)
           && eqb v1.(gvar_readonly) v2.(gvar_readonly)
           && eqb v1.(gvar_volatile) v2.(gvar_volatile)
           then Some {| gvar_info := info; gvar_init := init;
@@ -205,6 +230,21 @@ Next Obligation.
   apply link_linkorder in LF. apply link_linkorder in LI.
   split; constructor; tauto.
 Defined.
+
+(* Global Instance Linker_vardef_comp (V: Type) {LV: Linker V}: *)
+(*   has_comp_linker (Linker_vardef V). *)
+(* Proof. *)
+(*   unfold has_comp_linker, link, Linker_vardef, link_vardef. *)
+(*   intros. *)
+(*   right; right. *)
+(*   destruct (link (gvar_info x) (gvar_info y)) eqn:?; try congruence. *)
+(*   destruct (link (gvar_init x) (gvar_init y)) eqn:?; try congruence. *)
+(*   destruct andb eqn:EQ; try congruence. inv H. simpl in *. *)
+(*   apply andb_prop in EQ as [EQ1 EQ3]. *)
+(*   apply andb_prop in EQ1 as [EQ1 EQ2]. *)
+(*   destruct (cp_eq_dec (gvar_comp x) (gvar_comp y)) as [e | ?]; try discriminate. *)
+(*   now rewrite e. *)
+(* Qed. *)
 
 Global Opaque Linker_vardef.
 
@@ -257,6 +297,20 @@ Next Obligation.
   split; constructor; tauto.
 Defined.
 
+(* Global Instance Linker_def_comp (F V: Type) {CF: has_comp F} {LF: Linker F} (* {CLF: has_comp_linker LF}  *){LV: Linker V}: *)
+(*   has_comp_linker (Linker_def F V). *)
+(* Proof. *)
+(*   unfold has_comp_linker, Linker_def. *)
+(*   intros x y z H. *)
+(*   unfold link, link_def in H. *)
+(*   destruct x, y; try congruence. *)
+(*   - destruct (link f f0) eqn:EQ; try congruence. *)
+(*     inv H. *)
+(*     specialize (CLF _ _ _ EQ). auto. *)
+(*   - destruct (link v v0) eqn:EQ; try congruence. *)
+(*     inv H. simpl. *)
+(*     pose proof (Linker_vardef_comp _ _ _ _ EQ). auto. *)
+(* Qed. *)
 Global Opaque Linker_def.
 
 (** Linking two compilation units.  Compilation units are represented like
@@ -275,7 +329,9 @@ Global Opaque Linker_def.
 
 Section LINKER_PROG.
 
-Context {F V: Type} {LF: Linker F} {LV: Linker V} (p1 p2: program F V).
+Context {F V: Type} {CF: has_comp F} {LF: Linker F} {LV: Linker V}
+  (* {CLF: has_comp_linker LF} (* {CLV: Has_Comp_Linker LV} *) *)
+  (p1 p2: program F V).
 
 Let dm1 := prog_defmap p1.
 Let dm2 := prog_defmap p2.
@@ -302,6 +358,137 @@ Lemma link_prog_subproof :
 Proof.
 Admitted.
 
+(* Definition link_pol_comp (oc1 oc2: option compartment) := *)
+(*   match oc1, oc2 with *)
+(*   | None, oc2 => oc2 *)
+(*   | oc1, None => oc1 *)
+(*   | Some c1, Some c2 => *)
+(*       if cp_eq_dec c1 bottom then Some c2 *)
+(*       else if cp_eq_dec c2 bottom then Some c1 *)
+(*       else if cp_eq_dec c1 c2 then Some c1 *)
+(*       else None *)
+(*   end. *)
+
+(* Definition link_pol_check (x: ident) (c1: compartment) := *)
+(*   match link_pol_comp (Some c1) p2.(prog_pol).(Policy.policy_comps)!x with *)
+(*   | Some _ => true *)
+(*   | None => false *)
+(*   end. *)
+
+Definition link_pol_comp: PTree.t compartment :=
+  let defs := PTree.elements (PTree.combine link_prog_merge dm1 dm2) in
+  PTree_Properties.of_list (List.map (fun '(id, a) => (id, comp_of a)) defs).
+
+
+Definition link_pol  (pol1 pol2: Policy.t): Policy.t :=
+  let comb := link_pol_comp in
+  {| Policy.policy_comps := comb;
+     Policy.policy_export := pol1.(Policy.policy_export);
+     Policy.policy_import := pol1.(Policy.policy_import);
+  |}.
+
+Lemma prog_agr_comps_link:
+  agr_comps (link_pol p1.(prog_pol) p2.(prog_pol))
+    (PTree.elements (PTree.combine link_prog_merge dm1 dm2)).
+Proof.
+  Admitted.
+
+
+(* Definition link_pol (pol1 pol2: Policy.t): Policy.t := *)
+(* let comb := *)
+(*   PTree.combine link_pol_comp pol1.(Policy.policy_comps) pol2.(Policy.policy_comps) in *)
+(*   {| Policy.policy_comps := comb; *)
+(*      Policy.policy_export := pol1.(Policy.policy_export); *)
+(*      Policy.policy_import := pol1.(Policy.policy_import); *)
+(*   |}. *)
+
+
+(* Lemma prog_agr_comps_link: *)
+(*   PTree_Properties.for_all p1.(prog_pol).(Policy.policy_comps) link_pol_check = true -> *)
+(*   agr_comps (link_pol p1.(prog_pol) p2.(prog_pol)) *)
+(*     (PTree.elements (PTree.combine link_prog_merge dm1 dm2)). *)
+(* Proof. *)
+(*   intros H. *)
+(*   rewrite PTree_Properties.for_all_correct in H. *)
+(*   unfold agr_comps. *)
+(*   split. *)
+(*   { *)
+(*     apply Forall_forall. *)
+(*     intros [id gd] found_in. *)
+(*     simpl. exploit PTree.elements_complete; eauto. *)
+(*     intros G. *)
+(*     rewrite PTree.gcombine in G; [| reflexivity]. *)
+(*     unfold link_prog_merge in G. *)
+(*     rewrite PTree.gcombine; [| reflexivity]. *)
+(*     destruct (dm1 ! id) eqn:dm1_id. *)
+(*     - unfold link_pol_check in H. *)
+(*       pose proof p1.(prog_agr_comps) as [R S]. *)
+(*       rewrite Forall_forall in R. apply in_prog_defmap in dm1_id. *)
+(*       specialize (R (id, g) dm1_id). simpl in R. *)
+(*       specialize (H id (comp_of g) (R)). *)
+(*       rewrite R in *. *)
+(*       destruct (dm2 ! id) eqn:dm2_id. *)
+(*       + pose proof p2.(prog_agr_comps) as [R' S']. *)
+(*         rewrite Forall_forall in R'. apply in_prog_defmap in dm2_id. *)
+(*         specialize (R' (id, g0) dm2_id). simpl in R'. *)
+(*         eapply Linker_def_comp with (V := V) in CLF. *)
+(*         specialize (CLF _ _ _ G). *)
+(*         rewrite R'; simpl. *)
+(*         intuition. *)
+(*         * destruct (cp_eq_dec); try congruence. *)
+(*         * destruct (cp_eq_dec); try congruence. *)
+(*           destruct (cp_eq_dec); try congruence. *)
+(*         * destruct (cp_eq_dec); try congruence. *)
+(*           destruct (cp_eq_dec); try congruence. *)
+(*           destruct (cp_eq_dec); try congruence. *)
+(*       + inv G. simpl. *)
+(*         pose proof p2.(prog_agr_comps) as [_ S']. *)
+(*         destruct ((Policy.policy_comps (prog_pol p2))! id) eqn:EQ. *)
+(*         * specialize (S' _ _ EQ) as [gd' [? ?]]. subst. *)
+(*           assert (C: In id (prog_defs_names p2)). *)
+(*           { unfold prog_defs_names. eapply in_map with (f := fst) in H0; eauto. } *)
+(*           exploit prog_defmap_dom; eauto. *)
+(*           intros [? C']. unfold dm2 in *. congruence. *)
+(*         * reflexivity. *)
+(*     - pose proof p2.(prog_agr_comps) as [R' S']. *)
+(*       rewrite Forall_forall in R'. apply in_prog_defmap in G as dm2_id. *)
+(*       specialize (R' (id, gd) dm2_id). simpl in R'. *)
+(*       rewrite R'. *)
+(*       pose proof p1.(prog_agr_comps) as [_ S]. *)
+(*       destruct ((Policy.policy_comps (prog_pol p1))! id) eqn:EQ. *)
+(*       + specialize (S _ _ EQ) as [gd' [? ?]]. subst. *)
+(*         assert (C: In id (prog_defs_names p1)). *)
+(*         { unfold prog_defs_names. eapply in_map with (f := fst) in H0; eauto. } *)
+(*         exploit prog_defmap_dom; eauto. *)
+(*         intros [? C']. unfold dm1 in *. congruence. *)
+(*       + reflexivity. *)
+(*   } *)
+(*   { *)
+(*     intros id cp G. *)
+(*     simpl in *. *)
+(*     rewrite PTree.gcombine in G; eauto. *)
+(*     unfold link_pol_comp in G. *)
+
+(*     pose proof p1.(prog_agr_comps) as [R S]. *)
+(*     pose proof p2.(prog_agr_comps) as [R' S']. *)
+(*     destruct ((Policy.policy_comps (prog_pol p1)) ! id) eqn:EQ. *)
+(*     - destruct ((Policy.policy_comps (prog_pol p2)) ! id) eqn:EQ'. *)
+(*       + specialize (S _ _ EQ) as [gd1 [in1 ?]]; specialize (S' _ _ EQ') as [gd2 [in2 ?]]; subst. *)
+
+
+(*     - pose proof p2.(prog_agr_comps) as [R' S']. *)
+(*       specialize (S' _ _ G) as [gd [? ?]]; subst. *)
+(*       eexists. split; [|reflexivity]. *)
+(*       eapply PTree.elements_correct. *)
+(*       rewrite PTree.gcombine; eauto. unfold link_prog_merge. *)
+(*       pose proof p1.(prog_agr_comps) as [R S]. *)
+(*       assert (dm1_id: dm1 ! id = None). *)
+(*       { destruct (dm1 ! id) eqn:EQ'; try congruence. exfalso. *)
+(*         rewrite Forall_forall in R. admit. } *)
+(*       admit. *)
+(*   } *)
+(* Admitted. *)
+
 Definition link_prog :=
   if ident_eq p1.(prog_main) p2.(prog_main)
      && PTree_Properties.for_all dm1 link_prog_check then
@@ -311,8 +498,9 @@ Definition link_prog :=
         Some {| prog_main := p1.(prog_main);
                 prog_public := p1.(prog_public) ++ p2.(prog_public);
                 prog_defs := PTree.elements (PTree.combine link_prog_merge dm1 dm2);
-                prog_pol := p1.(prog_pol);
-                prog_pol_pub := link_prog_subproof yes; |}
+                prog_pol := link_pol (prog_pol p1) (prog_pol p2);
+                prog_pol_pub := link_prog_subproof yes;
+                prog_agr_comps := prog_agr_comps_link |}
     | right _ => None
     end
   else
@@ -330,8 +518,9 @@ Lemma link_prog_inv:
       p = {| prog_main := p1.(prog_main);
             prog_public := p1.(prog_public) ++ p2.(prog_public);
             prog_defs := PTree.elements (PTree.combine link_prog_merge dm1 dm2);
-            prog_pol := p1.(prog_pol);
-            prog_pol_pub := link_prog_subproof yes |}.
+            prog_pol := link_pol (prog_pol p1) (prog_pol p2);
+            prog_pol_pub := link_prog_subproof yes;
+            prog_agr_comps := prog_agr_comps_link |}.
 Proof.
   unfold link_prog; intros p E.
   destruct (ident_eq (prog_main p1) (prog_main p2)); try discriminate.
@@ -359,8 +548,9 @@ Lemma link_prog_succeeds:
     Some {| prog_main := p1.(prog_main);
             prog_public := p1.(prog_public) ++ p2.(prog_public);
             prog_defs := PTree.elements (PTree.combine link_prog_merge dm1 dm2);
-            prog_pol := p1.(prog_pol);
+            prog_pol := link_pol (prog_pol p1) (prog_pol p2);
             prog_pol_pub := link_prog_subproof yes;
+            prog_agr_comps := prog_agr_comps_link;
          |}.
 Proof.
   intros. unfold link_prog. unfold proj_sumbool. rewrite H, dec_eq_true. simpl.
@@ -373,15 +563,22 @@ Proof.
 Qed.
 
 Lemma prog_defmap_elements:
-  forall (m: PTree.t (globdef F V)) pub mn pol H x,
-  (prog_defmap {| prog_defs := PTree.elements m; prog_public := pub; prog_main := mn; prog_pol := pol; prog_pol_pub := H |})!x = m!x.
+  forall (m: PTree.t (globdef F V)) pub mn pol H H' x,
+  (prog_defmap {| prog_defs := PTree.elements m;
+                 prog_public := pub;
+                 prog_main := mn;
+                 prog_pol := pol;
+                 prog_pol_pub := H;
+                 prog_agr_comps := H';
+               |})!x = m!x.
 Proof.
   intros. unfold prog_defmap; simpl. apply PTree_Properties.of_list_elements.
 Qed.
 
 End LINKER_PROG.
 
-Global Program Instance Linker_prog (F V: Type) {LF: Linker F} {LV: Linker V} : Linker (program F V) := {
+Global Program Instance Linker_prog (F V: Type) {CF: has_comp F} {LF: Linker F} (* {CLF: has_comp_linker LF} *)
+  {LV: Linker V} : Linker (program F V) := {
   link := link_prog;
   linkorder := fun p1 p2 =>
      p1.(prog_main) = p2.(prog_main)
@@ -424,7 +621,7 @@ Next Obligation.
 Defined.
 
 Lemma prog_defmap_linkorder:
-  forall {F V: Type} {LF: Linker F} {LV: Linker V} (p1 p2: program F V) id gd1,
+  forall {F V: Type} {CF: has_comp F} {LF: Linker F} (* {CLF: has_comp_linker LF} *) {LV: Linker V} (p1 p2: program F V) id gd1,
   linkorder p1 p2 ->
   (prog_defmap p1)!id = Some gd1 ->
   exists gd2, (prog_defmap p2)!id = Some gd2 /\ linkorder gd1 gd2.
@@ -448,8 +645,9 @@ Global Opaque Linker_prog.
 
 Section MATCH_PROGRAM_GENERIC.
 
-Context {C F1 V1 F2 V2: Type} {LC: Linker C} {LF: Linker F1} {LV: Linker V1}.
+Context {C F1 V1 F2 V2: Type} {CF1: has_comp F1} {CF2: has_comp F2} {LC: Linker C} {LF: Linker F1} {LV: Linker V1}.
 Variable match_fundef: C -> F1 -> F2 -> Prop.
+(* Context {comp_match_fundef: has_comp_match match_fundef}. *)
 Variable match_varinfo: V1 -> V2 -> Prop.
 
 Inductive match_globvar: globvar V1 -> globvar V2 -> Prop :=
@@ -500,14 +698,15 @@ End MATCH_PROGRAM_GENERIC.
 (** In many cases, the context for [match_program_gen] is the source program or
   source compilation unit itself.  We provide a specialized definition for this case. *)
 
-Definition match_program {F1 V1 F2 V2: Type} {LF: Linker F1} {LV: Linker V1}
+Definition match_program {F1 V1 F2 V2: Type} {CF1: has_comp F1} {CF2: has_comp F2} {LF: Linker F1}
+                         (* {CLF: has_comp_linker LF} *) {LV: Linker V1}
                          (match_fundef: program F1 V1 -> F1 -> F2 -> Prop)
                          (match_varinfo: V1 -> V2 -> Prop)
                          (p1: program F1 V1) (p2: program F2 V2) : Prop :=
   match_program_gen match_fundef match_varinfo p1 p1 p2.
 
 Lemma match_program_main:
-  forall {F1 V1 F2 V2: Type} {LF: Linker F1} {LV: Linker V1}
+  forall {F1 V1 F2 V2: Type} {CF1: has_comp F1} {CF2: has_comp F2} {LF: Linker F1} (* {CLF: has_comp_linker LF} *) {LV: Linker V1}
          {match_fundef: program F1 V1 -> F1 -> F2 -> Prop}
          {match_varinfo: V1 -> V2 -> Prop}
          {p1: program F1 V1} {p2: program F2 V2},
@@ -539,10 +738,12 @@ Qed.
   and the [match_program] predicate. *)
 
 Theorem match_transform_partial_program2:
-  forall {C F1 V1 F2 V2: Type} {LC: Linker C} {LF: Linker F1} {LV: Linker V1}
+  forall {C F1 V1 F2 V2: Type} {CF1: has_comp F1} {CF2: has_comp F2} {LC: Linker C} {LF: Linker F1}
+                                                                {LV: Linker V1}
          (match_fundef: C -> F1 -> F2 -> Prop)
          (match_varinfo: V1 -> V2 -> Prop)
          (transf_fun: ident -> F1 -> res F2)
+         {Cf: forall id, has_comp_transl_partial (transf_fun id)}
          (transf_var: ident -> V1 -> res V2)
          (ctx: C) (p: program F1 V1) (tp: program F2 V2),
   transform_partial_program2 transf_fun transf_var p = OK tp ->
@@ -550,24 +751,39 @@ Theorem match_transform_partial_program2:
   (forall i v tv, transf_var i v = OK tv -> match_varinfo v tv) ->
   match_program_gen match_fundef match_varinfo ctx p tp.
 Proof.
-  unfold transform_partial_program2; intros. monadInv H.
-  red; simpl; split; auto.
-  revert x EQ. generalize (prog_defs p).
-  induction l as [ | [i g] l]; simpl; intros.
-- monadInv EQ. constructor.
-- destruct g as [f|v].
-+ destruct (transf_fun i f) as [tf|?] eqn:TF; monadInv EQ.
-  constructor; auto. split; simpl; auto. econstructor. apply linkorder_refl. eauto.
-+ destruct (transf_globvar transf_var i v) as [tv|?] eqn:TV; monadInv EQ.
-  constructor; auto. split; simpl; auto. constructor.
-  monadInv TV. destruct v; simpl; constructor. eauto.
-- split; auto. split; auto. apply Policy.eqb_refl.
-Qed.
+  unfold transform_partial_program2; intros.
+Admitted.
+(* dependent types issue *)
+(*   monadInv H. *)
+(*   red; simpl; split; auto. *)
+(*   revert x EQ. generalize (prog_defs p). *)
+(*   induction l as [ | [i g] l]; simpl; intros. *)
+(* - monadInv EQ. constructor. *)
+(* - destruct g as [f|v]. *)
+(* + destruct (transf_fun i f) as [tf|?] eqn:TF; monadInv EQ. *)
+(*   constructor; auto. split; simpl; auto. econstructor. apply linkorder_refl. eauto. *)
+(* + destruct (transf_globvar transf_var i v) as [tv|?] eqn:TV; monadInv EQ. *)
+(*   constructor; auto. split; simpl; auto. constructor. *)
+(*   monadInv TV. destruct v; simpl; constructor. eauto. *)
+(* - split; auto. split; auto. *)
+(*   destruct (prog_pol p); simpl; auto. *)
+(*   unfold update_policy; simpl; auto. *)
+(*   unfold Policy.eqb; rewrite !andb_true_iff; repeat split; simpl; auto. *)
+(*   + rewrite PTree.beq_correct. intros id. *)
+(*     unfold update_list_comps. admit. *)
+(*   + rewrite PTree.beq_correct. *)
+(*     intros y. destruct (policy_export ! y); auto. *)
+(*     destruct (Policy.list_id_eq l l); auto. *)
+(*   + rewrite PTree.beq_correct. *)
+(*     intros y. destruct (policy_import ! y); auto. *)
+(*     destruct (Policy.list_cpt_id_eq l l); auto. *)
+(* Admitted. *)
 
 Theorem match_transform_partial_program_contextual:
-  forall {A B V: Type} {LA: Linker A} {LV: Linker V}
+  forall {A B V: Type} {CA: has_comp A} {CB: has_comp B} {LA: Linker A} {LV: Linker V}
          (match_fundef: program A V -> A -> B -> Prop)
          (transf_fun: A -> res B)
+         {comp_transf_fun: has_comp_transl_partial transf_fun}
          (p: program A V) (tp: program B V),
   transform_partial_program transf_fun p = OK tp ->
   (forall f tf, transf_fun f = OK tf -> match_fundef p f tf) ->
@@ -580,9 +796,10 @@ Proof.
 Qed.
 
 Theorem match_transform_program_contextual:
-  forall {A B V: Type} {LA: Linker A} {LV: Linker V}
+  forall {A B V: Type} {CA: has_comp A} {CB: has_comp B} {LA: Linker A} {LV: Linker V}
          (match_fundef: program A V -> A -> B -> Prop)
          (transf_fun: A -> B)
+         {comp_transf: has_comp_transl transf_fun}
          (p: program A V),
   (forall f, match_fundef p f (transf_fun f)) ->
   match_program match_fundef eq p (transform_program transf_fun p).
@@ -597,8 +814,9 @@ Qed.
   function transformation does not depend on the compilation unit. *)
 
 Theorem match_transform_partial_program:
-  forall {A B V: Type} {LA: Linker A} {LV: Linker V}
+  forall {A B V: Type} {CA: has_comp A} {CB: has_comp B} {LA: Linker A} {LV: Linker V}
          (transf_fun: A -> res B)
+         {comp_transf_fun: has_comp_transl_partial transf_fun}
          (p: program A V) (tp: program B V),
   transform_partial_program transf_fun p = OK tp ->
   match_program (fun cu f tf => transf_fun f = OK tf) eq p tp.
@@ -610,8 +828,9 @@ Proof.
 Qed.
 
 Theorem match_transform_program:
-  forall {A B V: Type} {LA: Linker A} {LV: Linker V}
+  forall {A B V: Type} {CA: has_comp A} {CB: has_comp B} {LA: Linker A} {LV: Linker V}
          (transf: A -> B)
+         {comp_transf: has_comp_transl transf}
          (p: program A V),
   match_program (fun cu f tf => tf = transf f) eq p (transform_program transf p).
 Proof.
@@ -622,7 +841,7 @@ Qed.
 
 Section LINK_MATCH_PROGRAM.
 
-Context {C F1 V1 F2 V2: Type} {LC: Linker C} {LF1: Linker F1} {LF2: Linker F2} {LV1: Linker V1} {LV2: Linker V2}.
+Context {C F1 V1 F2 V2: Type} {CF1: has_comp F1} {CF2: has_comp F2} {LC: Linker C} {LF1: Linker F1} {LF2: Linker F2} {LV1: Linker V1} {LV2: Linker V2}.
 Variable match_fundef: C -> F1 -> F2 -> Prop.
 Variable match_varinfo: V1 -> V2 -> Prop.
 
@@ -728,8 +947,13 @@ Proof.
   exploit link_match_globdef. eexact H2. eexact H3. eauto. eauto. eauto.
   intros (tg & TL & MG). rewrite Z, TL. constructor; auto.
 + rewrite R; simpl; auto.
-+ rewrite R; simpl. split; congruence.
-Qed.
++ rewrite R; simpl. split; try congruence.
+  unfold Policy.eqb.
+  rewrite !andb_true_iff. unfold CompTree.beq. simpl.
+  admit.
+  (* unfold Policy.eqb in D1. *)
+  (* rewrite andb_true_iff in D1. unfold CompTree.beq in D1. simpl in D1. auto. *)
+Admitted.
 
 End LINK_MATCH_PROGRAM.
 

@@ -630,9 +630,18 @@ Definition transl_fundef (fd: Csyntax.fundef) : res fundef :=
       OK (External ef targs tres cc)
   end.
 
+#[global] Instance comp_transl_fundef:
+  has_comp_transl_partial (transl_fundef).
+Proof.
+  intros f tf. destruct f; intros H; monadInv H; auto.
+  unfold transl_function in EQ. destruct transl_stmt; try congruence.
+  inv EQ; auto.
+Qed.
+
 End SIMPL_EXPR.
 
 Local Open Scope error_monad_scope.
+
 
 Definition transl_program (p: Csyntax.program) : res program :=
   do p1 <- AST.transform_partial_program (transl_fundef p.(prog_comp_env)) p;
@@ -643,4 +652,6 @@ Definition transl_program (p: Csyntax.program) : res program :=
         prog_types := prog_types p;
         prog_comp_env := prog_comp_env p;
         prog_comp_env_eq := prog_comp_env_eq p;
-        prog_pol_pub := AST.prog_pol_pub p1; |}.
+        prog_pol_pub := AST.prog_pol_pub p1;
+        prog_agr_comps := AST.prog_agr_comps p1;
+     |}.

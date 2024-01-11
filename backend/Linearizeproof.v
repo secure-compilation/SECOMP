@@ -24,13 +24,6 @@ Module NodesetFacts := FSetFacts.Facts(Nodeset).
 Definition match_prog (p: LTL.program) (tp: Linear.program) :=
   match_program (fun ctx f tf => transf_fundef f = OK tf) eq p tp.
 
-#[global]
-Instance comp_transf_fundef: has_comp_transl_partial transf_function.
-Proof.
-  unfold transf_function.
-  intros f ? H; now monadInv H.
-Qed.
-
 Lemma transf_program_match:
   forall p tp, transf_program p = OK tp -> match_prog p tp.
 Proof.
@@ -841,6 +834,7 @@ Theorem transf_program_correct:
   forward_simulation (LTL.semantics prog) (Linear.semantics tprog).
 Proof.
   eapply forward_simulation_star.
+  apply senv_preserved.
   apply senv_preserved.
   eexact transf_initial_states.
   eexact transf_final_states.

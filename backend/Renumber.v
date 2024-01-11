@@ -15,7 +15,7 @@
 Require Import Coqlib.
 Require Import Maps.
 Require Import Postorder.
-Require Import RTL.
+Require Import AST RTL.
 
 (** CompCert's dataflow analyses (module [Kildall]) are more precise
   and run faster when the sequence [1, 2, 3, ...]  is a postorder
@@ -76,6 +76,9 @@ Definition transf_function (f: function) : function :=
 
 Definition transf_fundef (fd: fundef) : fundef :=
   AST.transf_fundef transf_function fd.
+
+#[global] Instance comp_transf_function: has_comp_transl transf_function.
+Proof. now intros. Qed.
 
 Definition transf_program (p: program) : program :=
   AST.transform_program transf_fundef p.

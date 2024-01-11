@@ -1390,6 +1390,32 @@ Definition transf_function (f: RTL.function) : res LTL.function :=
 Definition transf_fundef (fd: RTL.fundef) : res LTL.fundef :=
   AST.transf_partial_fundef transf_function fd.
 
+#[global] Instance comp_transf_function: has_comp_transl_partial transf_function.
+Proof.
+  unfold transf_function, check_function.
+  intros f ? H.
+  destruct type_function; try easy.
+  destruct regalloc; try easy.
+  destruct analyze; try easy.
+  destruct cp_eq_dec as [e|?]; try easy.
+  monadInv H.
+  exact e.
+Qed.
+
+#[global] Instance comp_transf_fundef: has_comp_transl_partial transf_fundef.
+Proof.
+  unfold transf_fundef, transf_partial_fundef, transf_function, check_function.
+  intros f ? H.
+  destruct f.
+  - destruct type_function; try easy.
+    destruct regalloc; try easy.
+    destruct analyze; try easy.
+    destruct cp_eq_dec as [e|?]; try easy.
+    monadInv H. monadInv EQ.
+    exact e.
+  - now inv H.
+Qed.
+
 Definition transf_program (p: RTL.program) : res LTL.program :=
   transform_partial_program transf_fundef p.
 

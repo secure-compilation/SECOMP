@@ -936,7 +936,7 @@ Hypothesis HF: helper_functions_declared cunit hf.
 Lemma sel_builtin_default_correct:
   forall optid ef al sp e1 m1 vl t v m2 e1' m1' k,
   Cminor.eval_exprlist ge sp e1 m1 (comp_of f) al vl ->
-  external_call ef ge (comp_of f) vl m1 t v m2 ->
+  external_call ef (Genv.to_senv ge) (comp_of f) vl m1 t v m2 ->
   env_lessdef e1 e1' -> Mem.extends m1 m1' ->
   exists e2' m2',
      plus step tge (State f (sel_builtin_default optid ef al) k sp e1' m1')
@@ -958,7 +958,7 @@ Qed.
 Lemma sel_builtin_correct:
   forall optid ef al sp e1 m1 vl t v m2 e1' m1' k,
   Cminor.eval_exprlist ge sp e1 m1 (comp_of f) al vl ->
-  external_call ef ge (comp_of f) vl m1 t v m2 ->
+  external_call ef (Genv.to_senv ge) (comp_of f) vl m1 t v m2 ->
   env_lessdef e1 e1' -> Mem.extends m1 m1' ->
   (* forall ALLOWED: Policy.allowed_call (comp_of f) (External ef), *)
   exists e2' m2',
@@ -1662,6 +1662,7 @@ Theorem transf_program_correct:
 Proof.
   set (MS := fun S T => match_states S T /\ wt_state S).
   apply forward_simulation_eventually_star with (measure := measure) (match_states := MS).
+- apply senv_preserved.
 - apply senv_preserved.
 - intros S INIT. exploit sel_initial_states; eauto. intros (T & P & Q).
   assert (W: wt_state S). { eapply wt_initial_state. eexact wt_prog. auto. }

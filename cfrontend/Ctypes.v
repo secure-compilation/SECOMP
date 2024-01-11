@@ -1499,6 +1499,7 @@ Set Implicit Arguments.
 Section PROGRAMS.
 
 Variable F: Type.
+Context {CF: has_comp F}.
 
 (** Functions can either be defined ([Internal]) or declared as
   external functions ([External]). *)
@@ -1507,7 +1508,7 @@ Inductive fundef : Type :=
   | Internal: F -> fundef
   | External: external_function -> typelist -> type -> calling_convention -> fundef.
 
-#[export] Instance has_comp_fundef {CF: has_comp F} : has_comp fundef :=
+#[export] Instance has_comp_fundef : has_comp fundef :=
   fun fd =>
     match fd with
     | Internal f => comp_of f
@@ -1531,6 +1532,7 @@ Record program : Type := {
   prog_comp_env: composite_env;
   prog_comp_env_eq: build_composite_env prog_types = OK prog_comp_env;
   prog_pol_pub: Policy.in_pub prog_pol prog_public;
+  prog_agr_comps : agr_comps prog_pol prog_defs;
 }.
 
 Definition program_of_program (p: program) : AST.program fundef type :=
@@ -1538,9 +1540,21 @@ Definition program_of_program (p: program) : AST.program fundef type :=
      AST.prog_public := p.(prog_public);
      AST.prog_main := p.(prog_main);
      AST.prog_pol := p.(prog_pol);
-     AST.prog_pol_pub := p.(prog_pol_pub) |}.
+     AST.prog_pol_pub := p.(prog_pol_pub);
+     AST.prog_agr_comps := p.(prog_agr_comps);
+  |}.
 
 Coercion program_of_program: program >-> AST.program.
+
+Lemma agr_enforce_update_policy:
+  forall (pol : Policy.t) (defs : list (ident * globdef fundef type))
+                                (public: list ident),
+    agr_comps (Policy.enforce_in_pub (update_policy pol defs) public) defs.
+Proof.
+  intros.
+  unfold Policy.enforce_in_pub.
+  exploit agr_update_policy; eauto.
+Qed.
 
 Program Definition make_program (types: list composite_definition)
                                 (defs: list (ident * globdef fundef type))
@@ -1552,15 +1566,17 @@ Program Definition make_program (types: list composite_definition)
       OK {| prog_defs := defs;
             prog_public := public;
             prog_main := main;
-            prog_pol := Policy.enforce_in_pub pol public;
+            prog_pol := Policy.enforce_in_pub (update_policy pol defs) public;
             prog_types := types;
             prog_comp_env := ce;
             prog_comp_env_eq := _;
-            prog_pol_pub := Policy.enforce_in_pub_correct pol public; |}
+            prog_pol_pub := Policy.enforce_in_pub_correct pol public;
+            prog_agr_comps := (agr_enforce_update_policy _ _ _) |}
   end.
 
 End PROGRAMS.
 
+Arguments program F {CF}.
 Arguments External {F} _ _ _ _.
 
 Unset Implicit Arguments.
@@ -1875,6 +1891,7 @@ Definition link_program {F:Type} {CF: has_comp F} (p1 p2: program F): option (pr
                       prog_comp_env := env;
                       prog_comp_env_eq := P;
                       prog_pol_pub := p.(AST.prog_pol_pub);
+                      prog_agr_comps := p.(AST.prog_agr_comps);
                    |}
           end
       end

@@ -20,18 +20,6 @@ Require Import Inlining Inliningspec.
 Definition match_prog (prog tprog: program) :=
   match_program (fun cunit f tf => transf_fundef (funenv_program cunit) f = OK tf) eq prog tprog.
 
-#[global]
-Instance comp_transl_function fenv:
-  has_comp_transl_partial (transf_function fenv).
-Proof.
-  unfold transf_function.
-  intros f tf H; try now inv H.
-  destruct (expand_function _ _ _).
-  destruct (zlt _ _); try easy.
-  simpl in *.
-  now inv H.
-Qed.
-
 Lemma transf_program_match:
   forall prog tprog, transf_program prog = OK tprog -> match_prog prog tprog.
 Proof.
@@ -46,12 +34,14 @@ Hypothesis TRANSF: match_prog prog tprog.
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
 
+Let HYPOTHESIS := @has_comp_fundef function _.
+
 Lemma symbols_preserved:
   forall (s: ident), Genv.find_symbol tge s = Genv.find_symbol ge s.
 Proof (Genv.find_symbol_match TRANSF).
 
 Lemma senv_preserved:
-  Senv.equiv ge tge.
+  Senv.equiv (Genv.to_senv ge) (Genv.to_senv tge).
 Proof (Genv.senv_match TRANSF).
 
 Lemma functions_translated:
@@ -493,8 +483,8 @@ Lemma tr_builtin_arg:
   F sp = Some(sp', ctx.(dstk)) ->
   Mem.inject F m m' ->
   forall a v,
-  eval_builtin_arg ge (fun r => rs#r) (Vptr sp Ptrofs.zero) m a v ->
-  exists v', eval_builtin_arg tge (fun r => rs'#r) (Vptr sp' Ptrofs.zero) m' (sbuiltinarg ctx a) v'
+  eval_builtin_arg (Genv.to_senv ge) (fun r => rs#r) (Vptr sp Ptrofs.zero) m a v ->
+  exists v', eval_builtin_arg (Genv.to_senv tge) (fun r => rs'#r) (Vptr sp' Ptrofs.zero) m' (sbuiltinarg ctx a) v'
           /\ Val.inject F v v'.
 Proof.
   intros until m'; intros MG AG SP MI. induction 1; simpl.
@@ -508,7 +498,7 @@ Proof.
   simpl. econstructor; eauto. rewrite Ptrofs.add_zero_l; auto.
   intros (v' & A & B). exists v'; split; auto. econstructor. simpl. rewrite Ptrofs.add_zero_l; eauto.
 - econstructor; split. constructor. simpl. econstructor; eauto. rewrite ! Ptrofs.add_zero_l; auto.
-- assert (Val.inject F (Senv.symbol_address ge id ofs) (Senv.symbol_address tge id ofs)).
+- assert (Val.inject F (Senv.symbol_address (Genv.to_senv ge) id ofs) (Senv.symbol_address (Genv.to_senv tge) id ofs)).
   { unfold Senv.symbol_address; simpl; unfold Genv.symbol_address.
     rewrite symbols_preserved. destruct (Genv.find_symbol ge id) as [b|] eqn:FS; auto.
     inv MG. econstructor. eauto. rewrite Ptrofs.add_zero; auto. }
@@ -534,8 +524,8 @@ Lemma tr_builtin_args:
   F sp = Some(sp', ctx.(dstk)) ->
   Mem.inject F m m' ->
   forall al vl,
-  eval_builtin_args ge (fun r => rs#r) (Vptr sp Ptrofs.zero) m al vl ->
-  exists vl', eval_builtin_args tge (fun r => rs'#r) (Vptr sp' Ptrofs.zero) m' (map (sbuiltinarg ctx) al) vl'
+  eval_builtin_args (Genv.to_senv ge) (fun r => rs#r) (Vptr sp Ptrofs.zero) m al vl ->
+  exists vl', eval_builtin_args (Genv.to_senv tge) (fun r => rs'#r) (Vptr sp' Ptrofs.zero) m' (map (sbuiltinarg ctx) al) vl'
           /\ Val.inject_list F vl vl'.
 Proof.
   induction 5; simpl.
@@ -1605,6 +1595,7 @@ Theorem transf_program_correct:
   forward_simulation (semantics prog) (semantics tprog).
 Proof.
   eapply forward_simulation_star.
+  apply senv_preserved.
   apply senv_preserved.
   eexact transf_initial_states.
   eexact transf_final_states.

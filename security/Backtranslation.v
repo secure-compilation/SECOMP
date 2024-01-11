@@ -558,7 +558,7 @@ Section GEN.
 
   Program Definition gen_program tr (a_p: Asm.program): Clight.program :=
     let a_ge := Genv.globalenv a_p in
-    @Build_program _
+    @Build_program _ _
                    (gen_prog_defs a_ge tr a_p.(AST.prog_defs))
                    (AST.prog_public a_p)
                    (AST.prog_main a_p)
@@ -566,7 +566,9 @@ Section GEN.
                    []
                    (@PTree.empty composite)
                    _
-                   _.
+                   _ _.
+  Next Obligation.
+    Admitted.
   Next Obligation.
     Admitted.
 

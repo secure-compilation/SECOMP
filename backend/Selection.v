@@ -467,6 +467,16 @@ Definition sel_function (dm: PTree.t globdef) (hf: helper_functions) (f: Cminor.
 Definition sel_fundef (dm: PTree.t globdef) (hf: helper_functions) (f: Cminor.fundef) : res fundef :=
   transf_partial_fundef (sel_function dm hf) f.
 
+Instance sel_fundef_comp dm hf: has_comp_transl_partial (sel_fundef dm hf).
+Proof.
+  unfold has_comp_transl_partial.
+  intros. unfold sel_fundef in H.
+  destruct x; auto.
+  - simpl in H. monadInv H. unfold sel_function in EQ.
+    monadInv EQ. reflexivity.
+  - simpl in H. inv H. reflexivity.
+Qed.
+
 (** Setting up the helper functions. *)
 
 (** We build a partial mapping from global identifiers to their definitions,

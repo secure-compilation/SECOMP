@@ -798,4 +798,5 @@ let expand_fundef id = function
       Errors.OK (External ef)
 
 let expand_program (p: Asm.program) : Asm.program Errors.res =
-  AST.transform_partial_program2 expand_fundef (fun id v -> Errors.OK v) p
+  AST.transform_partial_program2 (AST.has_comp_fundef Asm.has_comp_function) (AST.has_comp_fundef Asm.has_comp_function)
+    expand_fundef (fun id v -> Errors.OK v) p

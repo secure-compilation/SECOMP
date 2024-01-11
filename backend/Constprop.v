@@ -250,6 +250,10 @@ Definition transf_function (rm: romem) (f: function) : function :=
     (PTree.map (transf_instr f an rm) f.(fn_code))
     f.(fn_entrypoint).
 
+#[global]
+Instance comp_transf_function rm: has_comp_transl (transf_function rm).
+Proof. now intro. Qed.
+
 Definition transf_fundef (rm: romem) (fd: fundef) : fundef :=
   AST.transf_fundef (transf_function rm) fd.
 

@@ -25,26 +25,11 @@ Definition match_prog (p tp: program) : Prop :=
     match_program (fun ctx f tf => transf_fundef f = OK tf) eq p tp
  /\ prog_types tp = prog_types p.
 
-#[global]
-Instance comp_transf_function: has_comp_transl_partial transf_function.
-Proof.
-  unfold transf_function.
-  intros f ? H; monadInv H; trivial.
-Qed.
-
-#[global]
-Instance comp_transf_fundef: has_comp_transl_partial transf_fundef.
-Proof.
-  unfold transf_fundef, transf_function.
-  intros [f|ef] ? H; monadInv H; trivial.
-  now monadInv EQ.
-Qed.
-
 Lemma match_transf_program:
   forall p tp, transf_program p = OK tp -> match_prog p tp.
 Proof.
-  unfold transf_program; intros. monadInv H. 
-  split; auto. apply match_transform_partial_program. rewrite EQ. destruct x; auto.
+  unfold transf_program; intros. monadInv H.
+  split; auto. eapply match_transform_partial_program. rewrite EQ. destruct x; auto.
 Qed.
 
 Section PRESERVATION.
@@ -2268,7 +2253,10 @@ Proof.
 
 (* builtin *)
   exploit eval_simpl_exprlist; eauto with compat. intros [CASTED [tvargs [C D]]].
-  exploit external_call_mem_inject; eauto. apply match_globalenvs_preserves_globals; eauto with compat.
+  exploit external_call_mem_inject; eauto.
+  (* TODO: why can't Coq find the instance automatically? *)
+  eapply has_comp_fundef. eapply has_comp_function.
+  apply match_globalenvs_preserves_globals; eauto with compat.
   intros [j' [tvres [tm' [P [Q [R [S [T [U V]]]]]]]]].
   econstructor; split.
   apply plus_one. econstructor; eauto.
@@ -2457,7 +2445,9 @@ Proof.
 
 (* external function *)
   monadInv TRFD. inv FUNTY.
-  exploit external_call_mem_inject; eauto. apply match_globalenvs_preserves_globals.
+  exploit external_call_mem_inject; eauto.
+  eapply has_comp_fundef. eapply has_comp_function.
+  apply match_globalenvs_preserves_globals.
   eapply match_cont_globalenv. eexact (MCONT VSet.empty top).
   intros [j' [tvres [tm' [P [Q [R [S [T [U V]]]]]]]]].
   econstructor; split.
@@ -2527,6 +2517,7 @@ Theorem transf_program_correct:
   forward_simulation (semantics1 prog) (semantics2 tprog).
 Proof.
   eapply forward_simulation_plus.
+  apply senv_preserved.
   apply senv_preserved.
   eexact initial_states_simulation.
   eexact final_states_simulation.

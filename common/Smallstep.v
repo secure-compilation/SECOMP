@@ -537,7 +537,7 @@ Record semantics : Type := Semantics_gen {
 
 (** The form used in earlier CompCert versions, for backward compatibility. *)
 
-Definition Semantics {state funtype vartype: Type}
+Definition Semantics {state funtype vartype: Type} {CF: AST.has_comp funtype}
                      (step: Genv.t funtype vartype -> state -> trace -> state -> Prop)
                      (initial_state: state -> Prop)
                      (final_state: state -> int -> Prop)
@@ -584,7 +584,9 @@ Record fsim_properties (L1 L2: semantics) (index: Type)
          (Plus L2 s2 t s2' \/ (Star L2 s2 t s2' /\ order i' i))
       /\ match_states i' s1' s2';
     fsim_public_preserved:
-      forall id, Senv.public_symbol (symbolenv L2) id = Senv.public_symbol (symbolenv L1) id
+      forall id, Senv.public_symbol (symbolenv L2) id = Senv.public_symbol (symbolenv L1) id;
+    fsim_comp_preserved:
+      forall id, Senv.find_comp (symbolenv L2) id = Senv.find_comp (symbolenv L1) id
   }.
 
 Arguments fsim_properties: clear implicits.
@@ -625,6 +627,8 @@ Variable L2: semantics.
 
 Hypothesis public_preserved:
   forall id, Senv.public_symbol (symbolenv L2) id = Senv.public_symbol (symbolenv L1) id.
+Hypothesis comp_preserved:
+  forall id, Senv.find_comp (symbolenv L2) id = Senv.find_comp (symbolenv L1) id.
 
 Variable match_states: state L1 -> state L2 -> Prop.
 
@@ -670,6 +674,7 @@ Proof.
 - intros. destruct H. eapply match_final_states; eauto.
 - intros. destruct H0. subst i. exploit simulation; eauto. intros [s2' [A B]].
   exists s1'; exists s2'; intuition auto.
+- auto.
 - auto.
 Qed.
 
@@ -793,6 +798,8 @@ Hypothesis simulation:
   /\ Eventually L1 n s1' (fun s1'' => match_states i' s1'' s2').
 Hypothesis public_preserved:
   forall id, Senv.public_symbol (symbolenv L2) id = Senv.public_symbol (symbolenv L1) id.
+Hypothesis comp_preserved:
+  forall id, Senv.find_comp (symbolenv L2) id = Senv.find_comp (symbolenv L1) id.
 
 Lemma forward_simulation_eventually: forward_simulation L1 L2.
 Proof.
@@ -816,6 +823,7 @@ Proof.
     right; split. apply star_refl. apply lex_ord_right; lia.
     exact B.
 - apply public_preserved.
+- apply comp_preserved.
 Qed.
 
 End FORWARD_SIMU_EVENTUALLY.
@@ -830,6 +838,8 @@ Variable match_states: state L1 -> state L2 -> Prop.
 
 Hypothesis public_preserved:
   forall id, Senv.public_symbol (symbolenv L2) id = Senv.public_symbol (symbolenv L1) id.
+Hypothesis comp_preserved:
+  forall id, Senv.find_comp (symbolenv L2) id = Senv.find_comp (symbolenv L1) id.
 Hypothesis initial_states:
   forall s1, initial_state L1 s1 ->
   exists s2, initial_state L2 s2 /\ match_states s1 s2.
@@ -856,6 +866,7 @@ Proof.
 - intros. eapply final_states; eauto.
 - intros. exploit simulation; eauto. intros (n & s2' & A & B).
   exists n, O, s2'; auto.
+- auto.
 - auto.
 Qed.
 
@@ -901,6 +912,7 @@ Proof.
     exists (n0, s1'), s2; split.
     right; split. apply star_refl. apply lex_ord_left; lia.
     auto.
+- auto.
 - auto.
 Qed.
 
@@ -1044,6 +1056,8 @@ Proof.
   exists s3; auto.
 - (* symbols *)
   intros. transitivity (Senv.public_symbol (symbolenv L2) id); eapply fsim_public_preserved; eauto.
+- (* comps *)
+  intros. transitivity (Senv.find_comp (symbolenv L2) id); eapply fsim_comp_preserved; eauto.
 Qed.
 
 (** * Receptiveness and determinacy *)
@@ -1159,6 +1173,8 @@ Hypothesis simulation:
 
 Hypothesis public_preserved:
   forall id, Senv.public_symbol (symbolenv L2) id = Senv.public_symbol (symbolenv L1) id.
+Hypothesis comp_preserved:
+  forall id, Senv.find_comp (symbolenv L2) id = Senv.find_comp (symbolenv L1) id.
 
 Lemma star_match_eventually:
   forall s1 s1', Star L1 s1 E0 s1' ->
@@ -1198,6 +1214,8 @@ Variable match_states: state L1 -> state L2 -> Prop.
 
 Hypothesis public_preserved:
   forall id, Senv.public_symbol (symbolenv L2) id = Senv.public_symbol (symbolenv L1) id.
+Hypothesis comp_preserved:
+  forall id, Senv.find_comp (symbolenv L2) id = Senv.find_comp (symbolenv L1) id.
 
 Hypothesis match_initial_states:
   forall s1, initial_state L1 s1 ->
@@ -1234,6 +1252,7 @@ Proof.
 - intros. destruct H0; subst i. 
   exploit simulation; eauto. intros (s1'' & s2' & A & B & C).
   exists s1'', s1'', s2'. auto.
+- assumption.
 - assumption.
 Qed.
 
@@ -1356,6 +1375,8 @@ Variable L2: semantics.
 
 Hypothesis public_preserved:
   forall id, Senv.public_symbol (symbolenv L2) id = Senv.public_symbol (symbolenv L1) id.
+Hypothesis comp_preserved:
+  forall id, Senv.find_comp (symbolenv L2) id = Senv.find_comp (symbolenv L1) id.
 
 Variable match_states: state L1 -> state L2 -> Prop.
 
@@ -1698,6 +1719,7 @@ Proof.
   right; intuition.
   eapply match_traces_preserved with (ge1 := (symbolenv L2)); auto.
   intros; symmetry; apply (fsim_public_preserved FS).
+  intros; symmetry; apply (fsim_comp_preserved FS).
 Qed.
 
 Lemma f2b_determinacy_star:
@@ -2026,6 +2048,8 @@ Proof.
   eapply ffs_simulation; eauto.
 - (* symbols preserved *)
   simpl. exact (fsim_public_preserved sim).
+- (* comp preserved *)
+  simpl. exact (fsim_comp_preserved sim).
 Qed.
 
 (** Likewise, a backward simulation from a single-event semantics [L1] to a semantics [L2]
@@ -2525,9 +2549,13 @@ Context {single_L1: single_events L1} {single_L2: single_events L2} {single_L3: 
 
 Hypothesis public_preserved:
   forall id, Senv.public_symbol (symbolenv L2) id = Senv.public_symbol (symbolenv L1) id.
+Hypothesis comp_preserved:
+  forall id, Senv.find_comp (symbolenv L2) id = Senv.find_comp (symbolenv L1) id.
 
 Hypothesis public_preserved':
   forall id, Senv.public_symbol (symbolenv L3) id = Senv.public_symbol (symbolenv L2) id.
+Hypothesis comp_preserved':
+  forall id, Senv.find_comp (symbolenv L3) id = Senv.find_comp (symbolenv L2) id.
 
 Variable strong_equivalence1: state L1 -> state L3 -> Prop.
 Variable strong_equivalence2: state L2 -> state L3 -> Prop.

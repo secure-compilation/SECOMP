@@ -69,6 +69,7 @@ Local Unset Case Analysis Schemes.
 (** Symbol environments are a restricted view of global environments,
   focusing on symbol names and their associated blocks.  They do not
   contain mappings from blocks to function or variable definitions. *)
+(* Symbol environments now also contain compartment information. *)
 
 Module Senv.
 
@@ -79,6 +80,7 @@ Record t: Type := mksenv {
   invert_symbol: block -> option ident;
   block_is_volatile: block -> bool;
   nextblock: block;
+  find_comp: ident -> compartment;
   (** Properties *)
   find_symbol_injective:
     forall id1 id2 b, find_symbol id1 = Some b -> find_symbol id2 = Some b -> id1 = id2;
@@ -130,7 +132,8 @@ Qed.
 Definition equiv (se1 se2: t) : Prop :=
      (forall id, find_symbol se2 id = find_symbol se1 id)
   /\ (forall id, public_symbol se2 id = public_symbol se1 id)
-  /\ (forall b, block_is_volatile se2 b = block_is_volatile se1 b).
+  /\ (forall b, block_is_volatile se2 b = block_is_volatile se1 b)
+  /\ (forall id, find_comp se2 id = find_comp se1 id).
 
 End Senv.
 
@@ -767,6 +770,13 @@ Qed.
 
 (** ** Coercing a global environment into a symbol environment *)
 
+Definition to_map_ident (p: PTree.t compartment): ident -> compartment :=
+  fun id =>
+    match p ! id with
+    | Some cp => cp
+    | None => bottom
+    end.
+
 Definition to_senv (ge: t) : Senv.t :=
  @Senv.mksenv
     (find_symbol ge)
@@ -774,6 +784,7 @@ Definition to_senv (ge: t) : Senv.t :=
     (invert_symbol ge)
     (block_is_volatile ge)
     ge.(genv_next)
+    (to_map_ident ge.(genv_policy).(Policy.policy_comps))
     ge.(genv_vars_inj)
     (invert_find_symbol ge)
     (find_invert_symbol ge)
@@ -2298,6 +2309,21 @@ Proof.
   intros. destruct globalenvs_match. apply mge_symb0.
 Qed.
 
+Theorem find_comp_match:
+  forall (s : ident),
+  find_comp_of_ident (globalenv tp) s = find_comp_of_ident (globalenv p) s.
+Proof.
+  intros. destruct globalenvs_match. unfold find_comp_of_ident.
+  rewrite find_symbol_match.
+  destruct (find_symbol (globalenv p) s); try reflexivity.
+  unfold find_comp_of_block.
+  unfold find_def. specialize (mge_defs0 b).
+  inv mge_defs0; auto.
+  inv H1; auto.
+  - exploit match_fundef_comp; eauto.
+  - inv H2; auto.
+Qed.
+
 Theorem senv_match:
   Senv.equiv (to_senv (globalenv p)) (to_senv (globalenv tp)).
 Proof.
@@ -2312,6 +2338,18 @@ Proof.
   inv R; auto.
   inv H1; auto.
   inv H2; auto.
+- intros.
+  destruct progmatch as (P & Q & R & S).
+  unfold globalenv. rewrite !genv_pol_add_globals.
+  simpl. apply andb_prop in S as [S _].
+  apply andb_prop in S as [S _].
+  unfold to_map_ident.
+  rewrite PTree.beq_correct in S.
+  specialize (S id).
+  destruct ((Policy.policy_comps (prog_pol tp)) ! id) eqn:?;
+    destruct ((Policy.policy_comps (prog_pol p)) ! id) eqn:?; try contradiction.
+  destruct cp_eq_dec; auto; try discriminate.
+  reflexivity.
 Qed.
 
 Lemma store_init_data_list_match:
@@ -2436,10 +2474,11 @@ Proof.
     clear -H1 EQPOL.
     rewrite genv_pol_add_globals.
     rewrite genv_pol_add_globals in H1.
-    unfold Policy.eqb in EQPOL. apply andb_prop in EQPOL.
-    destruct EQPOL as [EQPOL1 EQPOL2].
-    eapply CompTree.beq_sound with (x := cp) in EQPOL1.
+    unfold Policy.eqb in EQPOL.
+    apply andb_prop in EQPOL. destruct EQPOL as [EQPOL EQPOL3].
+    apply andb_prop in EQPOL. destruct EQPOL as [EQPOL1 EQPOL2].
     eapply CompTree.beq_sound with (x := cp) in EQPOL2.
+    eapply CompTree.beq_sound with (x := cp) in EQPOL3.
     (* rewrite PTree.beq_correct in EQPOL2. *)
     (* specialize (EQPOL2 cp). *)
     simpl in *.
@@ -2453,12 +2492,13 @@ Proof.
     simpl in *. clear -H2 EQPOL CF2.
     rewrite genv_pol_add_globals.
     rewrite genv_pol_add_globals in H2.
-    unfold Policy.eqb in EQPOL. apply andb_prop in EQPOL.
-    destruct EQPOL as [EQPOL1 EQPOL2].
+    unfold Policy.eqb in EQPOL.
+    apply andb_prop in EQPOL. destruct EQPOL as [EQPOL EQPOL3].
+    apply andb_prop in EQPOL. destruct EQPOL as [EQPOL1 EQPOL2].
     set (cp := find_comp_of_block (add_globals (empty_genv F1 V1 prog_pol_pub) prog_defs) b).
     fold cp in H2.
-    eapply CompTree.beq_sound with (x := cp) in EQPOL1.
     eapply CompTree.beq_sound with (x := cp) in EQPOL2.
+    eapply CompTree.beq_sound with (x := cp) in EQPOL3.
     (* rewrite PTree.beq_correct in EQPOL2. *)
     (* specialize (EQPOL2 cp). *)
     simpl in *.
@@ -2816,3 +2856,6 @@ End TRANSFORM_TOTAL.
 End Genv.
 
 Coercion Genv.to_senv: Genv.t >-> Senv.t.
+
+(* Try to see if this solves the coercion problem. We need Coq 8.16 for that*)
+(* #[reversible] Coercion Genv.to_senv. *)

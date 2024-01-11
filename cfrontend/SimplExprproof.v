@@ -2596,6 +2596,7 @@ Theorem transl_program_correct:
 Proof.
   eapply forward_simulation_star_wf with (order := ltof _ measure).
   eapply senv_preserved.
+  eapply senv_preserved.
   eexact transl_initial_states.
   eexact transl_final_states.
   apply well_founded_ltof.

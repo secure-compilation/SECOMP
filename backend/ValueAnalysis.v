@@ -958,7 +958,7 @@ Theorem external_call_match:
 Proof.
   intros until am; intros EC GENV ARGS RO MM NOSTACK.
   (* Part 1: using ec_mem_inject *)
-  exploit (@external_call_mem_inject ef _ _ ge cp vargs m t vres m' (inj_of_bc bc) m vargs).
+  exploit (@external_call_mem_inject ef _ _ ge _ cp vargs m t vres m' (inj_of_bc bc) m vargs).
   apply inj_of_bc_preserves_globals; auto.
   exact EC.
   eapply mmatch_inj; eauto. eapply mmatch_below; eauto.
@@ -1428,7 +1428,7 @@ Proof.
   inv H2.
   * (* true volatile access *)
     assert (V: vmatch bc v (Ifptr Glob)).
-    { inv H3; simpl in *; constructor. econstructor. eapply GE; eauto. }
+    { inv H4; simpl in *; constructor. econstructor. eapply GE; eauto. }
     destruct (va_strict tt). apply vmatch_lub_r. apply vnormalize_sound. auto.
     apply vnormalize_sound. eapply vmatch_ge; eauto. constructor. constructor.
   * (* normal memory access *)
@@ -2051,7 +2051,7 @@ Lemma aaddr_arg_sound:
   forall cunit prog s f sp pc e m a b ofs,
   sound_state prog (State s f (Vptr sp Ptrofs.zero) pc e m) ->
   linkorder cunit prog ->
-  eval_builtin_arg (Genv.globalenv prog) (fun r => e#r) (Vptr sp Ptrofs.zero) m a (Vptr b ofs) ->
+  eval_builtin_arg (Genv.to_senv (Genv.globalenv prog)) (fun r => e#r) (Vptr sp Ptrofs.zero) m a (Vptr b ofs) ->
   exists bc,
      pmatch bc b ofs (aaddr_arg (analyze (romem_for cunit) f)!!pc a)
   /\ genv_match bc (Genv.globalenv prog)

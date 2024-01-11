@@ -22,7 +22,7 @@
 
 Require Import FSets FSetAVL.
 Require Import Coqlib Ordered.
-Require Import Linear.
+Require Import AST Linear.
 
 Module Labelset := FSetAVL.Make(OrderedPositive).
 
@@ -67,6 +67,9 @@ Definition transf_function (f: function) : function :=
 
 Definition transf_fundef (f: fundef) : fundef :=
   AST.transf_fundef transf_function f.
+
+#[global] Instance comp_match_prog: has_comp_transl transf_function.
+Proof. now intros f. Qed.
 
 Definition transf_program (p: program) : program :=
   AST.transform_program transf_fundef p.

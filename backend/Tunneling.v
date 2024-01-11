@@ -189,5 +189,9 @@ Definition tunnel_function (f: LTL.function) : LTL.function :=
 Definition tunnel_fundef (f: LTL.fundef) : LTL.fundef :=
   transf_fundef tunnel_function f.
 
+#[global]
+Instance comp_tunnel_fundef: has_comp_transl tunnel_function.
+Proof. now intro. Qed.
+
 Definition tunnel_program (p: LTL.program) : LTL.program :=
   transform_program tunnel_fundef p.

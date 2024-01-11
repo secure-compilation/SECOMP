@@ -364,6 +364,13 @@ Definition transf_function (f: function) : res function :=
 Definition transf_fundef (fd: fundef) : res fundef :=
   AST.transf_partial_fundef transf_function fd.
 
+#[global] Instance comp_transf_function: has_comp_transl_partial transf_function.
+Proof.
+  unfold transf_function.
+  intros f ? H.
+  now destruct ana_function; inv H.
+Qed.
+
 Definition transf_program (p: program) : res program :=
   transform_partial_program transf_fundef p.
 
