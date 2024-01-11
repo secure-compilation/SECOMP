@@ -1995,6 +1995,43 @@ Inductive final_state: state -> int -> Prop :=
       rs X10 = OCVint r ->
       final_state (State rs m) r.
 
+(* EXPERIMENT: Try to write a tiny program and execute an instruction
+   inside proof mode
+
+Definition test1_program : program :=
+  ... (* e.g. a single instruction *)
+
+Definition test1_gstart : ptrofs :=
+  ...
+
+Definition test1_gend : ptrofs :=
+  ...
+
+Definition test1_sstart : ptrofs :=
+  ...
+
+Definition test1_send : ptrofs :=
+  ...
+
+Definition test1_initial_state : state :=
+  ...
+
+(* Do we need this property for the example, really? *)
+Theorem test1_is_initial_state :
+  initial_state
+    test1_program
+    test1_gstart test1_gend test1_sstart test1_send
+    test1_initial_state.
+
+Theorem test1_step:
+  exists t st', step test1_initial_state t st'.
+Proof.
+  eexists. eexists.
+  eapply exec_step_internal. (* for "standard" internal instructions *)
+  ... (* proof obligations *)
+Abort.
+ *)
+
 Print Globalenvs.Genv.t. Locate Globalenvs.Genv.t
 Print Genv.t.
 Print genv. Locate genv.
