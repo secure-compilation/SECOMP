@@ -559,7 +559,7 @@ Inductive instruction : Type :=
   | Pfcvtsd  (rd: freg) (rs: freg)                  (**r float   -> float32 *)
 
   (* Pseudo-instructions *)
-  (* | Pallocframe (sz: Z) (pos: ptrofs)               (**r allocate new stack frame *) *)
+  | Pallocframe (sz: Z) (pos: ptrofs)               (**r allocate new stack frame *)
   (* | Pfreeframe  (sz: Z) (pos: ptrofs)               (**r deallocate stack frame and restore previous frame *) *)
   | Plabel  (lbl: label)                            (**r define a code label *)
   | Pptrbr  (rd: ireg) (lbl1 lbl2: label)           (**r branches to lbl1 if rd contains a heap ptr, lbl2 if rd contains a stack ptr *)

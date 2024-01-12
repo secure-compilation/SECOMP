@@ -1408,7 +1408,8 @@ Definition make_return (k: asm_code) :=
 (*   loadind_ptr SP f.(fn_retaddr_ofs) RA *)
 (*     (Pfreeframe f.(fn_stacksize) f.(fn_link_ofs) >> k) false. *)
 
-(** Translation of a Mach instruction. *)
+(* Translation helpers, these move from the world of Mach and standard
+   Compcert to the world of CapAsm and capabilities *)
 
 Definition transl_mreg (r: Machregs.mreg): mreg :=
   R5. (* FIXME priority 1 *)
@@ -1442,6 +1443,8 @@ Definition transl_builtin_res (arg: builtin_res Machregs.mreg): (builtin_res mre
 
 Definition transl_condition (r: Op.condition): condition :=
   Ccomp Ceq. (* FIXME priority 1 *)
+
+(** Translation of a Mach instruction. *)
 
 Definition transl_instr (f: Mach.function) (i: Mach.instruction)
                         (ep: bool) (k: asm_code) :=
@@ -1512,7 +1515,7 @@ Definition it1_is_parent (before: bool) (i: Mach.instruction) : bool :=
 Fixpoint transl_code_rec (f: Mach.function) (il: list Mach.instruction)
                          (it1p: bool) (k: asm_code -> res asm_code) :=
   match il with
-  | nil => k nil
+  | nil => k (mkAsmCode 1%positive nil Ptrofs.zero) (* FIXME validate argument *)
   | i1 :: il' =>
       transl_code_rec f il' (it1_is_parent it1p i1)
         (fun c1 => do c2 <- transl_instr f i1 it1p c1; k c2)
@@ -1526,22 +1529,26 @@ Definition transl_code' (f: Mach.function) (il: list Mach.instruction) (it1p: bo
   otherwise the offset part of the [PC] code pointer could wrap
   around, leading to incorrect executions. *)
 
+(* TODO: check wrapper vs. code division, storeind_ptr is_heap flag, uses of c *)
 Definition transl_function (f: Mach.function) :=
   do c <- transl_code' f f.(Mach.fn_code) true;
   OK (mkfunction f.(Mach.fn_comp) f.(Mach.fn_sig)
+        (* fn_wrapper *)
+        nil
+        (* fn_code *)
         (Pallocframe f.(fn_stacksize) f.(fn_link_ofs) >>
-         storeind_ptr RA SP f.(fn_retaddr_ofs) c)).
+         (storeind_ptr RAC SPC f.(fn_retaddr_ofs) c false)).(ac_code)).
 
-Definition transf_function (f: Mach.function) : res Asm.function :=
+Definition transf_function (f: Mach.function) : res CapAsm.function :=
   do tf <- transl_function f;
   if zlt Ptrofs.max_unsigned (list_length_z tf.(fn_code))
   then Error (msg "code size exceeded")
   else OK tf.
 
-Definition transf_fundef (f: Mach.fundef) : res Asm.fundef :=
-  transf_partial_fundef transf_function f.
+Definition transf_fundef (f: Mach.fundef) : res CapAsm.fundef :=
+  AST.transf_partial_fundef transf_function f. (* TODO: not transf_partial_fundef? *)
 
-Definition transf_program (p: Mach.program) : res Asm.program :=
+Definition transf_program (p: Mach.program) : res CapAsm.program :=
   transform_partial_program transf_fundef p.
 
 Lemma transf_function_comp :
