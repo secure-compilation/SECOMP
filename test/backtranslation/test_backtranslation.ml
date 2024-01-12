@@ -61,6 +61,22 @@ let _ =
     else Random.init seed
   in
   let discard_out = Out_channel.open_text "/dev/null" in
+  let failure_seeds = ref [] in
+  let pass_counter = ref 0 in
+  let fail_counter = ref 0 in
+  let num_tests = num_asm_progs * num_traces in
+  let print_results () =
+    Printf.printf "\n%d/%d passed\n%d/%d failed\n" !pass_counter num_tests !fail_counter num_tests;
+    if List.length !failure_seeds = 0
+    then ()
+    else (Printf.printf "Failures:\n";
+          List.iter (fun (a_s, t_s) -> Printf.printf "\tasm_seed = %d, trace_seed = %d\n" a_s t_s) !failure_seeds) in
+  let handle_abort _ =
+    print_results ();
+    Out_channel.flush Out_channel.stdout;
+    exit (~-1) in
+  Sys.set_signal Sys.sigint (Sys.Signal_handle handle_abort);
+  Sys.set_signal Sys.sigquit (Sys.Signal_handle handle_abort);
   for i = 0 to num_asm_progs - 1 do
     let bound = Int.shift_left 1 32 in
     let asm_seed = Random.full_int bound in
@@ -69,16 +85,17 @@ let _ =
     let rand_state = Random.get_state () in
     let ctx = Gen_ctx.random config rand_state in
     let asm_prog = Gen_ctx.get_asm_prog ctx in
-    let () = Printf.printf "Testing traces for ASM program (asm_seed = %d)\n" asm_seed in
     for j = 0 to num_traces - 1 do
+      Printf.printf "\rTesting %d / %d asm_progs, %d / %d traces" (i+1) num_asm_progs (j+1) num_traces; Out_channel.flush Out_channel.stdout;
       let () = Random.init (trace_root_seed + j) in
       let trace_seed = Random.full_int bound in
       let () = Random.init trace_seed in
       let name = Printf.sprintf "\ttest_backtranslation (trace_seed = %d)" trace_seed in
       if 0 = QCheck_runner.run_tests ~out:discard_out ~rand:rand_state [ test_backtranslation name asm_prog ctx ]
-      then Printf.printf "%s: passed\n" name
-      else Printf.printf "%s: failed\n" name;
+      then pass_counter := !pass_counter + 1
+      else (failure_seeds := (asm_seed, trace_seed) :: !failure_seeds; fail_counter := !fail_counter + 1);
       Out_channel.flush Out_channel.stdout
     done
   done;
+  print_results();
   Out_channel.close discard_out
