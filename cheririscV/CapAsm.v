@@ -314,9 +314,9 @@ Inductive instruction : Type :=
   (* | Pj_s    (symb: ident)           (sg: signature)           (**r jump to symbol *) *)
   | Pj_r    (r: ireg)               (* (sg: signature) (iscl: bool) jump is no longer a return event marker *) (**r jump register *)
   (* | Pjal_s  (symb: ident)           (sg: signature) (iscl: bool) (**r jump-and-link symbol *) *)
-  | Pjal_r  (r: ireg)               (sg: signature) (iscl: bool) (**r jump-and-link register *)
+  | Pjal_r  (r: ireg)               (sg: capsignature) (iscl: bool) (**r jump-and-link register *)
   (* | PCjal_s (symb: ident) (s: ireg) (sg: signature) (iscl: bool) (**r jump-and-sealed-link symbol *) *)
-  | PCjal_r (r s: ireg)             (sg: signature) (iscl: bool) (**r jump-and-sealed-link register *)
+  | PCjal_r (r s: ireg)             (sg: capsignature) (iscl: bool) (**r jump-and-sealed-link register *)
             
   (* Conditional branches, 32-bit comparisons *)
   | Pbeqw   (rs1 rs2: ireg0) (l: label)             (**r branch-if-equal *)

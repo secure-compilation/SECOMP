@@ -21,7 +21,7 @@ Require Archi.
 Require Import Coqlib Errors.
 Require Import Zwf.
 Require Import CapAST Integers Floats CapMemdata CapGlobalenvs.
-Require Import Op Locations Mach Asm Conventions.
+Require Import CapOp CapLocations Mach CapAsm CapConventions.
 
 Local Open Scope string_scope.
 Local Open Scope error_monad_scope.
@@ -1201,7 +1201,7 @@ Definition create_idxlist_int (regs: list ireg) : list Z :=
 Definition create_idxlist_float (regs: list freg) : list Z :=
   option_list_filter (List.map (fun r => option_map Z.of_nat (find_index (freg_eq r) float_regs)) regs).
 
-Fixpoint get_iregs_from_loc (l: list loc) : (list ireg) :=
+Fixpoint get_iregs_from_loc (l: list caploc) : (list ireg) :=
   match l with
   | nil => nil
   | S _ _ _ :: l' => get_iregs_from_loc l'
@@ -1210,7 +1210,7 @@ Fixpoint get_iregs_from_loc (l: list loc) : (list ireg) :=
              | _ => get_iregs_from_loc l'
              end
   end.
-Fixpoint get_fregs_from_loc (l: list loc) : (list freg) :=
+Fixpoint get_fregs_from_loc (l: list caploc) : (list freg) :=
   match l with
   | nil => nil
   | S _ _ _ :: l' => get_fregs_from_loc l'
@@ -1226,11 +1226,11 @@ Fixpoint list_difference {A: Type} (adec: forall (a b : A), {a = b} + {a <> b}) 
 Definition int_iregs (rs: list ireg) : int := Int.repr (2 * (Zbits.powerserie (create_idxlist_int rs))).
 Definition int_fregs (rs: list freg) : int := Int.repr (Zbits.powerserie (create_idxlist_float rs)).
 
-Definition clear_regs_int (sig: signature) (extra: list ireg) :=
-  let iregs_params := get_iregs_from_loc (regs_of_rpairs (loc_parameters sig)) in
+Definition clear_regs_int (sig: capsignature) (extra: list ireg) :=
+  let iregs_params := get_iregs_from_loc (CapAST.regs_of_rpairs (loc_parameters sig)) in
   let iregs := list_difference ireg_eq int_regs (extra ++ iregs_params) in
   PCCclear (int_iregs iregs).
-Definition clear_regs_float (sig: signature) :=
+Definition clear_regs_float (sig: capsignature) :=
   let fregs_params := get_fregs_from_loc (regs_of_rpairs (loc_parameters sig)) in
   let fregs := list_difference freg_eq float_regs (fregs_params) in
   PCCclearf (int_fregs fregs).
@@ -1244,7 +1244,7 @@ Function store_zeros_routine (cap: ireg) (zero: ireg) (size: Z) {wf (Zwf 0) size
     PCUsb zero cap X31 (Ofsimm Ptrofs.zero) false ::
     store_zeros_routine cap zero (size - 1).
 Proof.
-  intros. red. omega.
+  intros. red. lia.
   apply Zwf_well_founded.
 Qed.
 
@@ -1261,11 +1261,12 @@ Qed.
     - RAC contains the sealed return capability
     - X30 contains a RO Directed capability pointing to spilled parameters
 *)
-Definition make_entry_wrapper (sig: signature) (f: Mach.function) (next_label: label) :=
+Definition make_entry_wrapper (sig: capsignature) (f: Mach.function) (next_label: label) :=
   let lbl1 := next_label in
   let lbl2 := (next_label + 1)%positive in
   let outgoing_size := Ptrofs.unsigned f.(fn_link_ofs) in
-  let local_frame_size := f.(fn_stacksize) - Ptrofs.unsigned f.(fn_param_link_ofs) in
+  (* let local_frame_size := f.(fn_stacksize) - Ptrofs.unsigned f.(fn_param_link_ofs) in *)
+  let local_frame_size := f.(fn_stacksize) - Ptrofs.unsigned f.(fn_link_ofs) in (* FIXME doublecheck *)
   
   (* SECURITY *)
   (* load return wrapper capability *)
@@ -1283,7 +1284,8 @@ Definition make_entry_wrapper (sig: signature) (f: Mach.function) (next_label: l
   PCseal RAC RAC X3 ::
   (* check that param cap is RO *)
   PCgp X31 X30 ::
-  Paddiw X5 X0 (encode_perm_int OCapValues.RO) ::
+  (* Paddiw X5 X0 (encode_perm_int OCapValues.RO) :: *) (* FIXME priority 1 *)
+  Paddiw X5 X0 Int.zero (* <- permission value is wrong! *) ::
   Pbeqw X5 X31 lbl1 ::
   Pfail ::
   Plabel lbl1 ::
@@ -1329,7 +1331,7 @@ Definition ireg_of_inl {A: Type} (t: mreg + A) :=
 (** The prologue fetches the function target, creates the seal
   capability to point to the next call_site. The call then
   jumps-and-link to the target *)
-Definition make_call (sig: signature) (call_site: ptrofs) (t: ireg + ident) (f: Mach.function) (k: asm_code) :=
+Definition make_call (sig: capsignature) (call_site: ptrofs) (t: ireg + ident) (f: Mach.function) (k: asm_code) :=
   let outgoing_size := f.(fn_link_ofs) in
   
   (* fetch function target *)
@@ -1343,7 +1345,8 @@ Definition make_call (sig: signature) (call_site: ptrofs) (t: ireg + ident) (f: 
   addptrofs X31 X31 outgoing_size
   (PCsaddr_w X30 X30 X31 >>
   PCpromote X30 X30 >>
-  Paddiw X31 X0 (encode_perm_int OCapValues.RO) >>
+  (* Paddiw X31 X0 (encode_perm_int OCapValues.RO) >> (* FIXME priority 1*) *)
+  Paddiw X31 X0 Int.zero >> (* <- permission value is wrong! *)
   PCpermand X30 X30 X31 >>
   PCgb_s X31 X30 >>
   PCsaddr_w X30 X30 X31 >>
@@ -1407,42 +1410,75 @@ Definition make_return (k: asm_code) :=
 
 (** Translation of a Mach instruction. *)
 
+Definition transl_mreg (r: Machregs.mreg): mreg :=
+  R5. (* FIXME priority 1 *)
+
+Definition transl_mregs (r: list Machregs.mreg): list mreg :=
+  nil. (* FIXME priority 1 *)
+
+Definition transl_operation (r: Op.operation): operation :=
+  Omove. (* FIXME priority 1 *)
+
+Definition transl_addressing (r: Op.addressing): addressing :=
+  Aindexed Ptrofs.zero. (* FIXME priority 1 *)
+
+Definition transl_ireg_of_inl (t: (Machregs.mreg + ident)%type): (mreg + ident)%type :=
+  match t with
+  | inl m => inl (transl_mreg m)
+  | inr a => inr a
+  end.
+
+Definition transl_signature (sig: signature): capsignature :=
+  capsignature_main. (* FIXME priority 1 *)
+
+Definition transl_builtin_arg (arg: builtin_arg Machregs.mreg): (builtin_arg mreg) :=
+  BA R5. (* FIXME priority 1 *)
+
+Definition transl_builtin_args (args: list (builtin_arg Machregs.mreg)): list (builtin_arg mreg) :=
+  List.map transl_builtin_arg args.
+
+Definition transl_builtin_res (arg: builtin_res Machregs.mreg): (builtin_res mreg) :=
+  BR R5. (* FIXME priority 1 *)
+
+Definition transl_condition (r: Op.condition): condition :=
+  Ccomp Ceq. (* FIXME priority 1 *)
+
 Definition transl_instr (f: Mach.function) (i: Mach.instruction)
                         (ep: bool) (k: asm_code) :=
   match i with
   | Mgetstack ofs ty dst =>
-      loadind_stack_ofs ofs ty dst k
+      loadind_stack_ofs ofs ty (transl_mreg dst) k
   | Msetstack src ofs ty =>
-      storeind_stack_ofs src ofs ty k
+      storeind_stack_ofs (transl_mreg src) ofs ty k
   | Mgetparam ofs ty dst =>
       (* load via the frame pointer if it is valid *)
-      do c <- loadind_direct X30 ofs ty dst k false true ;
+      do c <- loadind_direct X30 ofs ty (transl_mreg dst) k false true ;
       OK (if ep then c
                 else loadind_ptr_stk f.(fn_link_ofs) X30 c true)
   | Mop op args res =>
-      transl_op op args res k
+      transl_op (transl_operation op) (transl_mregs args) (transl_mreg res) k
   | Mload chunk addr args dst =>
-      transl_load chunk addr args dst true k
+      transl_load chunk (transl_addressing addr) (transl_mregs args) (transl_mreg dst) true k
   | Mstore chunk addr args src =>
-      transl_store chunk addr args src true k
+      transl_store chunk (transl_addressing addr) (transl_mregs args) (transl_mreg src) true k
   | Mcall sig t =>
-      do r1 <- ireg_of_inl t;
-      make_call sig k.(ac_call_site_count) r1 f (incr_callsite k)
+      do r1 <- ireg_of_inl (transl_ireg_of_inl t);
+      make_call (transl_signature sig) k.(ac_call_site_count) r1 f (incr_callsite k)
   | Mtailcall sig (inl r) =>
-      do r1 <- ireg_of r;
+      do r1 <- ireg_of (transl_mreg r);
       OK (make_epilogue f (Pj_r r1 >> k))
   | Mtailcall sig (inr symb) =>
       load_symbol X30 symb Ptrofs.zero (make_epilogue f (Pj_r X30 >> k))
   | Mbuiltin ef args res =>
-      OK (Pbuiltin ef (List.map (map_builtin_arg preg_of) args) (map_builtin_res preg_of res) >> k)
+      OK (Pbuiltin ef (List.map (map_builtin_arg preg_of) (transl_builtin_args args)) (map_builtin_res preg_of (transl_builtin_res res)) >> k)
   | Mlabel lbl =>
       OK (Plabel lbl >> k)
   | Mgoto lbl =>
       OK (Pj_l lbl >> k)
   | Mcond cond args lbl =>
-      transl_cbranch cond args lbl k
+      transl_cbranch (transl_condition cond) (transl_mregs args) lbl k
   | Mjumptable arg tbl =>
-      do r <- ireg_of arg;
+      do r <- ireg_of (transl_mreg arg);
       OK (Pbtbl r tbl >> k)
   | Mreturn =>
       OK (make_epilogue f (make_return k))
@@ -1453,23 +1489,22 @@ Definition transl_instr (f: Mach.function) (i: Mach.instruction)
 Definition it1_is_parent (before: bool) (i: Mach.instruction) : bool :=
   match i with
   | Msetstack src ofs ty => before
-  | Mgetparam ofs ty dst => negb (mreg_eq dst R30)
-  | Mop op args res => before && negb (mreg_eq res R30)
+  | Mgetparam ofs ty dst => negb (mreg_eq (transl_mreg dst) R30)
+  | Mop op args res => before && negb (mreg_eq (transl_mreg res) R30)
   | _ => false
   end.
 
 (** This is the naive definition that we no longer use because it
   is not tail-recursive.  It is kept as specification. *)
 
-Fixpoint
-
-Fixpoint transl_code (f: Mach.function) (il: list Mach.instruction) (it1p: bool) : asm_code :=
-  match il with
-  | nil => OK nil
-  | i1 :: il' =>
-      do k <- transl_code f il' (it1_is_parent it1p i1);
-      transl_instr f i1 it1p k
-  end.
+(* FIXME *)
+(* Fixpoint transl_code (f: Mach.function) (il: list Mach.instruction) (it1p: bool) : asm_code := *)
+(*   match il with *)
+(*   | nil => OK nil *)
+(*   | i1 :: il' => *)
+(*       do k <- transl_code f il' (it1_is_parent it1p i1); *)
+(*       transl_instr f i1 it1p k *)
+(*   end. *)
 
 (** This is an equivalent definition in continuation-passing style
   that runs in constant stack space. *)
