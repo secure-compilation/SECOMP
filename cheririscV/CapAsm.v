@@ -2032,17 +2032,18 @@ Proof.
 Abort.
  *)
 
-Print Globalenvs.Genv.t. Locate Globalenvs.Genv.t
-Print Genv.t.
-Print genv. Locate genv.
-Check step : (Genv.t fundef unit -> state -> trace -> state -> Prop).
-(* disagreement between Globalenv and CapGlobal env, and older versions as well, + missing data *)
-Check Semantics step (initial_state _ _ _ _ _) final_state.
-Definition semantics (p: program) (gstart gend sstart send : ptrofs) :=
-  do X <- (globalenv p gstart gend (* sstart send *));
-  (* FIXME *)
-  (* Some (Semantics_alt Genv.to_senv step (initial_state p gstart gend sstart send) final_state X). *)
-  Some (Semantics_alt Genv.to_senv step (initial_state p gstart gend sstart send) final_state X).
+(* FIXME priority 1 -- this one is potentially very important, needs some propagation *)
+(* Print Globalenvs.Genv.t. Locate Globalenvs.Genv.t. *)
+(* Print Genv.t. *)
+(* Print genv. Locate genv. *)
+(* Check step : (Genv.t fundef unit -> state -> trace -> state -> Prop). *)
+(* (* disagreement between Globalenv and CapGlobal env, and older versions as well, + missing data *) *)
+(* Check Semantics step (initial_state _ _ _ _ _) final_state. *)
+(* Definition semantics (p: program) (gstart gend sstart send : ptrofs) := *)
+(*   do X <- (globalenv p gstart gend (* sstart send *)); *)
+(*   (* FIXME *) *)
+(*   (* Some (Semantics_alt Genv.to_senv step (initial_state p gstart gend sstart send) final_state X). *) *)
+(*   Some (Semantics_alt Genv.to_senv step (initial_state p gstart gend sstart send) final_state X). *)
 
 (** Determinacy of the [Asm] semantics. *)
 
