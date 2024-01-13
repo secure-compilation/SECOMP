@@ -450,6 +450,17 @@ Proof.
   - assumption.
 Qed.
 
+Lemma right_cont_injection_call_cont: forall k1 k2,
+  right_cont_injection s k1 k2 ->
+  right_cont_injection s (call_cont k1) (call_cont k2).
+Proof.
+  intros k1 k2 RCONTINJ.
+  induction RCONTINJ; auto.
+  - constructor.
+  - apply right_cont_injection_kcall_left; auto.
+  - apply right_cont_injection_kcall_right; auto.
+Qed.
+
   (** More invariant helpers *)
 
   Lemma assign_loc_left_inject f m1 m2 m1' ce cp ty b ofs bf v
@@ -2001,7 +2012,17 @@ Qed.
       inv RCONTINJ. exists j; eexists; split; [apply step_break_loop2 | apply RightControl]; eauto.
       constructor; auto.
     + (* step_return_0 *)
-      admit.
+      assert (exists m2', Mem.free_list m2 (blocks_of_env ge2 e2) (comp_of f) = Some m2')
+        as (m2' & FREE). {
+        admit. }
+      inv RMEMINJ. exists j; eexists; split; [apply step_return_0 | apply RightControl]; eauto.
+      constructor; auto.
+      * constructor; auto.
+        -- eapply same_domain_free_list; eauto.
+        -- admit.
+        -- eapply same_blocks_free_list; eauto.
+        -- eapply same_blocks_free_list; eauto.
+      * apply right_cont_injection_call_cont; auto.
     + (* step_return_1 *)
       admit.
     + (* step_skip_call *)
@@ -2026,9 +2047,42 @@ Qed.
       exists j; eexists; split; [constructor | apply RightControl]; auto.
       constructor; auto.
     + (* step_goto *)
-      admit.
+      assert (exists k2',
+                 find_label lbl (fn_body f) (call_cont k2) = Some (s', k2') /\
+                 right_cont_injection s k' k2')
+        as (k2' & LABEL & RCONTINJ'). {
+        clear -H RCONTINJ.
+        remember (fn_body f) as stmt eqn:BODY. clear BODY.
+        admit.
+      }
+      exists j; eexists; split; [constructor | apply RightControl]; eauto.
+      constructor; auto.
     + (* step_internal_function *)
-      admit.
+      inversion H as [m' NOREPET ALLOC BIND TEMPS].
+      assert (exists m2',
+                 alloc_variables ge2 (comp_of f) empty_env m2 (fn_params f ++ fn_vars f) e m2')
+        as [m2' ALLOC'].
+      { admit. }
+      assert (exists m2'',
+                 bind_parameters ge2 (comp_of f) e m2' (fn_params f) vs' m2'')
+        as [m2'' BIND'].
+      { admit. }
+      exists j. eexists. split.
+      {
+        (* constructor; econstructor; eauto. *)
+        apply step_internal_function.
+        eapply function_entry1_intro; eauto. }
+      { apply RightControl; auto.
+        constructor; auto.
+        - destruct RMEMINJ.
+          constructor; auto.
+          + admit.
+          + admit.
+          + eapply same_blocks_function_entry1; eauto.
+          + admit.
+        - admit. (* build e2 above *)
+        - admit. (* build le2 above *)
+      }
     + (* step_external_function *)
       admit.
     + (* step_returnstate *)
@@ -2085,7 +2139,17 @@ Qed.
     step1 ge1 s1 t s1' ->
   exists j',
     t = E0 /\ right_state_injection s j' ge1 ge2 s1' s2'.
-  Admitted.
+  Proof.
+    intros j s1 s2 s1' s2' t INJ RIGHT STEP1 STEP2.
+    exploit parallel_concrete; eauto.
+    intros [j' [s2'' [STEP2' INJ']]].
+    destruct t as [| e [| e' t]].
+    - destruct (step1_E0_determ STEP1 STEP2').
+      eauto.
+    - exfalso. eapply step1_E0_event_False; eassumption.
+    - apply (sr_traces (semantics_receptive _)) in STEP2.
+      inv STEP2. inv H0.
+  Qed.
 
   Lemma parallel_abstract_E0_1: forall j s1 s2 s1',
     right_state_injection s j ge1 ge2 s1 s2 ->
