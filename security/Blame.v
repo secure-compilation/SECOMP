@@ -1989,8 +1989,7 @@ Qed.
       exists j; eexists; split; [constructor | apply RightControl]; auto.
       constructor; auto.
     + (* step_ifthenelse *)
-      exploit eval_expr_injection; eauto.
-      admit.
+      exploit eval_expr_injection; simpl in is_r1; eauto.
       intros [v' [? ?]].
       destruct_mem_inj.
       exploit bool_val_inject; eauto. intros ?.
@@ -2014,6 +2013,7 @@ Qed.
     + (* step_return_0 *)
       assert (exists m2', Mem.free_list m2 (blocks_of_env ge2 e2) (comp_of f) = Some m2')
         as (m2' & FREE). {
+        clear -RMEMINJ RENVINJ H.
         admit. }
       inv RMEMINJ. exists j; eexists; split; [apply step_return_0 | apply RightControl]; eauto.
       constructor; auto.
@@ -2024,12 +2024,30 @@ Qed.
         -- eapply same_blocks_free_list; eauto.
       * apply right_cont_injection_call_cont; auto.
     + (* step_return_1 *)
-      admit.
+      assert (exists m2', Mem.free_list m2 (blocks_of_env ge2 e2) (comp_of f) = Some m2')
+        as (m2' & FREE). {
+        admit. } (* same as above *)
+      exploit eval_expr_injection; simpl in is_r1; eauto. intros (v2 & VINJ2 & EVAL2).
+      exploit sem_cast_inject; eauto; [inv RMEMINJ; eauto |]. intros (v2' & CAST2' & VINJ2').
+      exists j. eexists. split.
+      * eapply step_return_1; eauto.
+      * apply RightControl; auto.
+        constructor; auto.
+        -- admit. (* same as above, right_mem_injection preserved by pair of Mem.free_list *)
+        -- apply right_cont_injection_call_cont; auto.
     + (* step_skip_call *)
-      admit.
+      assert (exists m2', Mem.free_list m2 (blocks_of_env ge2 e2) (comp_of f) = Some m2')
+        as (m2' & FREE). {
+        admit. } (* same as above *)
+      exists j. eexists. split.
+      { apply step_skip_call; eauto.
+        destruct k; try contradiction H;
+          inv RCONTINJ; reflexivity. }
+      apply RightControl; auto.
+      constructor; auto.
+      admit. (* same as above, right_mem_injection preserved by pair of Mem.free_list *)
     + (* step_switch *)
-      exploit eval_expr_injection; eauto.
-      admit.
+      exploit eval_expr_injection; simpl in is_r1; eauto.
       intros [v' [? ?]].
       assert (sem_switch_arg v (typeof a) = Some n -> sem_switch_arg v' (typeof a) = Some n).
       { intros. unfold sem_switch_arg in *.
