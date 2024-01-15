@@ -28,7 +28,20 @@ let num_asm_progs = ref 10
 let mode = ref "test"
 
 let parse_args () =
-  let usage_msg = "test_backtranslation [-root_seed n] [-asm_seed n] [-trace_seed n] [-num_traces n] [-num_asm_progs n] [-vebose]" in
+  let usage_msg =
+"test_backtranslation [-root_seed n] [-asm_seed n] [-trace_seed n] [-num_traces n] [-num_asm_progs n] [-vebose]
+
+This tool generates a bunch of random ASM programs and traces and tests whether the backtranslated C code
+compiles with CompCert.
+
+By default the tool runs in testing mode. In this case multiple random input value are generated to test the
+given property. If any tests fail, the corresponding seeds are printed to stdout.
+The corresponding options work \"as one would expect\"
+
+If, however, a `root_seed', an `asm_seed` and a `trace_seed` are specified, the tool runs in reproduction mode.
+In this case, only one specific test is exectued (corresponding to the seeds) to facilitate debugging.
+This also allows one to inspect `out.c` which is the generated C code.
+" in
   let anon_fun _ = failwith "Unnamed arguments are not supported" in
   let speclist =
     [
