@@ -1243,7 +1243,7 @@ Admitted.
 
   Admitted.
 
-  Lemma right_mem_injection_function_entry1 : forall {j f m1 m2 vargs1 vargs2 e1 le1 m1'},
+  Lemma right_mem_injection_function_entry1: forall {j f m1 m2 vargs1 vargs2 e1 le1 m1'},
     right_mem_injection s j ge1 ge2 m1 m2 ->
     Val.inject_list j vargs1 vargs2 ->
     s |= f ∈ Right ->
@@ -1252,6 +1252,18 @@ Admitted.
       function_entry1 ge2 f vargs2 m2 e2 le2 m2' /\
       right_env_injection j e1 e2 /\
       right_tenv_injection j le1 le2.
+  Admitted.
+
+  Lemma memval_inject_alloc {j m1 m2 b1 b2 ofs delta cp lo hi m1' m2' b1' b2'}
+    (INJ: memval_inject j
+            (ZMap.get ofs (Mem.mem_contents m1) !! b1)
+            (ZMap.get (ofs + delta) (Mem.mem_contents m2) !! b2))
+    (b1_b2: j b1 = Some (b2, delta))
+    (ALLOC1: Mem.alloc m1 cp lo hi = (m1', b1'))
+    (ALLOC2: Mem.alloc m2 cp lo hi = (m2', b2')):
+    memval_inject j
+      (ZMap.get ofs (Mem.mem_contents m1') !! b1)
+      (ZMap.get (ofs + delta) (Mem.mem_contents m2') !! b2).
   Admitted.
 
   (** Sub-invariant lemmas, mostly on injections *)
@@ -2226,6 +2238,9 @@ Admitted.
             apply (alloc_variables_perm_2 H1); eauto.
             apply (bind_parameters_perm_2 H2); eauto.
       }
+          + eapply same_blocks_function_entry1; eauto.
+          + eapply same_blocks_function_entry1; eauto.
+      }
     + (* step_external_function *)
       (* very similar to step_builtin *)
       exploit ec_mem_inject; eauto.
@@ -2245,7 +2260,38 @@ Admitted.
       - admit.
       - admit.
     + (* step_returnstate *)
-      admit.
+      inv RCONTINJ.
+      * assert (COMP: comp_of f = comp_of f2) by admit. (* need to know this at least *)
+        rewrite COMP in *.
+        exists j. eexists. split.
+        { apply step_returnstate.
+          - intros CALLTYPE. specialize (NO_CROSS_PTR CALLTYPE).
+            destruct v; try contradiction; inv RVALINJ; reflexivity.
+          - inv EV.
+            + apply return_trace_intra; auto.
+            + apply return_trace_cross; auto.
+              specialize (NO_CROSS_PTR H).
+              destruct v; try contradiction; inv RVALINJ; inv H0; constructor.
+        }
+        { apply LeftControl; auto.
+          simpl. admit.
+        }
+      * assert (f = f2) as <- by admit. (* here the injection needs more *)
+        exists j. eexists. split.
+        { apply step_returnstate.
+          - intros CALLTYPE. specialize (NO_CROSS_PTR CALLTYPE).
+            destruct v; try contradiction; inv RVALINJ; reflexivity.
+          - inv EV.
+            + apply return_trace_intra; auto.
+            + apply return_trace_cross; auto.
+              specialize (NO_CROSS_PTR H).
+              destruct v; try contradiction; inv RVALINJ; inv H0; constructor.
+        }
+        { apply RightControl; auto.
+          constructor; auto.
+          - admit. (* missing information about e and en2 *)
+          - admit. (* missing information about le and le2 *)
+        }
   Admitted.
 
 
