@@ -13,6 +13,7 @@ type gen_config = {
   global_var_max_size : int;
   max_arg_count : int;
   debug : bool;
+  max_trace_len : int;
 }
 
 type comp = int
@@ -34,3 +35,5 @@ val builtins : t -> AST.external_function list
 val runtime_funcs : t -> AST.external_function list
 
 val get_asm_prog : t -> Asm.program
+
+val get_config : t -> gen_config

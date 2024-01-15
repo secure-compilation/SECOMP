@@ -1,5 +1,8 @@
 (* QCheck testing *)
 let property_under_test asm_prog bundled_trace =
+  (* Collect some statistics *)
+  let () = Stats.register_trace bundled_trace in
+  let () = Stats.register_asm_prog asm_prog in
   let source_name = "out.c" in
   let ccomp_cmd = "../../ccomp -quiet -c > /dev/null 2> /dev/null" in
   let src_program = Backtranslation.gen_program bundled_trace asm_prog in
@@ -12,9 +15,8 @@ let property_under_test asm_prog bundled_trace =
 let bundle_trace ctx =
   QCheck.make ~print:Show.show_bundle_trace (Gen.bundle_trace ctx)
 
-let test_backtranslation name asm_prog ctx =
-  QCheck.Test.make ~count:1 ~name:name (bundle_trace ctx)
-    (property_under_test asm_prog)
+let test_backtranslation asm_prog ctx =
+  QCheck.Test.make ~count:1 (bundle_trace ctx) (property_under_test asm_prog)
 
 let parse_args () =
   let usage_msg = "test_backtranslation [-seed n] [-verbose] [-num_traces n] [-num_asm_progs n]" in
@@ -36,30 +38,34 @@ let parse_args () =
 (* Main *)
 let _ =
   let (seed, debug, num_traces, num_asm_progs) = parse_args () in
-  let config =
-    Gen_ctx.
-      {
-        num_compartments = 3;
-        num_exported_funcs = 5;
-        num_imported_funcs = 3;
-        num_external_funcs = 4;
-        num_builtins = 4;
-        num_runtime_funcs = 4;
-        num_global_vars = 4;
-        global_var_max_size = 4;
-        max_arg_count = 2;
-        debug = debug;
-      }
-  in
   let () =
     if seed = 0
     then
       (Random.self_init ();
-      let s = Random.full_int (Int.shift_left 1 32) in
-      Printf.printf "Root seed = %d\n" s;
-      Random.init s)
+       let s = Random.full_int (Int.shift_left 1 32) in
+       Printf.printf "Root seed = %d\n" s;
+       Random.init s)
     else Random.init seed
   in
+  let gen_config () =
+    let open QCheck in
+    let rand_state = Random.get_state () in
+    Gen_ctx.
+    {
+      num_compartments = Gen.int_range 3 100 rand_state;
+      num_exported_funcs = Gen.int_range 5 100 rand_state;
+      num_imported_funcs = Gen.int_range 3 100 rand_state;
+      num_external_funcs = Gen.int_range 2 100 rand_state;
+      num_builtins = Gen.int_range 2 50 rand_state;
+      num_runtime_funcs = Gen.int_range 2 50 rand_state;
+      num_global_vars = Gen.int_range 2 50 rand_state;
+      global_var_max_size = Gen.int_range 4 100 rand_state;
+      max_arg_count = 10;
+      debug = debug;
+      max_trace_len = 10;
+    }
+  in
+  let config = gen_config () in
   let discard_out = Out_channel.open_text "/dev/null" in
   let failure_seeds = ref [] in
   let pass_counter = ref 0 in
@@ -67,6 +73,7 @@ let _ =
   let num_tests = num_asm_progs * num_traces in
   let print_results () =
     Printf.printf "\n%d/%d passed\n%d/%d failed\n" !pass_counter num_tests !fail_counter num_tests;
+    Stats.print_stats ();
     if List.length !failure_seeds = 0
     then ()
     else (Printf.printf "Failures:\n";
@@ -90,8 +97,8 @@ let _ =
       let () = Random.init (trace_root_seed + j) in
       let trace_seed = Random.full_int bound in
       let () = Random.init trace_seed in
-      let name = Printf.sprintf "\ttest_backtranslation (trace_seed = %d)" trace_seed in
-      if 0 = QCheck_runner.run_tests ~out:discard_out ~rand:rand_state [ test_backtranslation name asm_prog ctx ]
+      let rand_state = Random.get_state () in
+      if 0 = QCheck_runner.run_tests ~out:discard_out ~rand:rand_state [ test_backtranslation asm_prog ctx ]
       then pass_counter := !pass_counter + 1
       else (failure_seeds := (asm_seed, trace_seed) :: !failure_seeds; fail_counter := !fail_counter + 1);
       Out_channel.flush Out_channel.stdout

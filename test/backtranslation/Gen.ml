@@ -138,7 +138,9 @@ let mem_delta_kind curr_comp ctx =
       (1, mem_delta_free curr_comp ctx);*)
     ]
 
-let mem_delta curr_comp ctx = QCheck.Gen.small_list (mem_delta_kind curr_comp ctx)
+let mem_delta curr_comp ctx rand_state =
+  let mem_delta = QCheck.Gen.small_list (mem_delta_kind curr_comp ctx) rand_state in
+  Stats.register_mem_delta mem_delta; mem_delta
 
 let ef_external ctx = QCheck.Gen.oneofl (Gen_ctx.external_funcs ctx)
 
@@ -258,6 +260,7 @@ let bundle_builtin ctx rand_state =
   let open QCheck.Gen in
   let subtrace = [] in
   let func = external_function ctx rand_state in
+  let () = Stats.register_external_function func in
   let sign = AST.ef_sig func in
   let args = args_for_sig sign rand_state in
   let mdelta = [] in
@@ -265,7 +268,7 @@ let bundle_builtin ctx rand_state =
 
 let bundle_trace ctx rand_state =
   let open QCheck.Gen in
-  let size = small_nat rand_state in
+  let size = int_range 0 ((Gen_ctx.get_config ctx).max_trace_len / 2) rand_state in
   let rec bundle_trace_aux curr_comp = function
     | 0 -> []
     | n -> (

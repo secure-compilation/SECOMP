@@ -5,17 +5,6 @@ type imports = (int * int) list Map.t
 type func_sigs = AST.signature Map.t
 type extern = AST.external_function
 
-type t = {
-  exports : exports;
-  imports : imports;
-  func_sigs : func_sigs;
-  main : int;
-  glob_vars : (int * AST.init_data list * bool * bool) list Map.t;
-  external_funcs : extern list;
-  builtins: extern list;
-  runtime_funcs : extern list;
-}
-
 type gen_config = {
   num_compartments : int;
   num_exported_funcs : int;
@@ -27,6 +16,19 @@ type gen_config = {
   global_var_max_size : int;
   max_arg_count : int;
   debug : bool;
+  max_trace_len : int;
+}
+
+type t = {
+  exports : exports;
+  imports : imports;
+  func_sigs : func_sigs;
+  main : int;
+  glob_vars : (int * AST.init_data list * bool * bool) list Map.t;
+  external_funcs : extern list;
+  builtins: extern list;
+  runtime_funcs : extern list;
+  config : gen_config;
 }
 
 type comp = int
@@ -206,7 +208,7 @@ let random config =
     dump_exports exports;
     dump_imports imports)
   else ();
-  return { exports; imports; func_sigs; main; glob_vars; external_funcs; builtins; runtime_funcs }
+  return { exports; imports; func_sigs; main; glob_vars; external_funcs; builtins; runtime_funcs; config }
 
 let main ctx = ctx.main
 let function_list ctx = List.concat_map snd (Map.bindings ctx.exports)
@@ -302,3 +304,4 @@ let get_asm_prog ctx =
   let prog_pol = build_prog_pol ctx in
   AST.{ prog_defs; prog_public; prog_main; prog_pol }
 
+let get_config ctx = ctx.config
