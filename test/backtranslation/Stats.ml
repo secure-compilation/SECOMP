@@ -77,10 +77,10 @@ let print_mem_delta_stats out_channel =
   Printf.fprintf out_channel "  Min length: %d\n" !mem_delta_len_min;
   Printf.fprintf out_channel "  Max length: %d\n" !mem_delta_len_max;
   Printf.fprintf out_channel "  StoreV: %d\n" !mem_delta_storev;
-  Printf.fprintf out_channel "  Store: %d\n" !mem_delta_store;
-  Printf.fprintf out_channel "  Bytes: %d\n" !mem_delta_bytes;
-  Printf.fprintf out_channel "  Alloc: %d\n" !mem_delta_alloc;
-  Printf.fprintf out_channel "  Free: %d\n" !mem_delta_free
+  Printf.fprintf out_channel "  Store*: %d\n" !mem_delta_store;
+  Printf.fprintf out_channel "  Bytes*: %d\n" !mem_delta_bytes;
+  Printf.fprintf out_channel "  Alloc*: %d\n" !mem_delta_alloc;
+  Printf.fprintf out_channel "  Free*: %d\n" !mem_delta_free
 
 let ef_external = ref 0
 let ef_builtin = ref 0
@@ -123,7 +123,8 @@ let print_ef_stats out_channel =
   Printf.fprintf out_channel "  EF_annot: %d\n" !ef_annot;
   Printf.fprintf out_channel "  EF_annot_val: %d\n" !ef_annot_val;
   Printf.fprintf out_channel "  EF_inline_asm: %d\n" !ef_inline_asm;
-  Printf.fprintf out_channel "  EF_debug: %d\n" !ef_debug
+  Printf.fprintf out_channel "  EF_debug: %d\n" !ef_debug;
+  Printf.fprintf out_channel "\n\nNote: the entries marked with * are ignored (or trivial) in the backtranslation."
 
 let print_stats out_channel =
   print_trace_stats out_channel;
