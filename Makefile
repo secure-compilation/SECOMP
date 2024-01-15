@@ -148,7 +148,9 @@ SECURITY=RSC.v Split.v
 
 # Low-level backend (in cheririscV/)
 
-SECARCH=CapArchi.v CapAST.v OCapValues.v CapMemdata.v CapMemtype.v CapMemory.v CapGlobalenvs.v CapOp.v CapMachregs.v CapLocations.v CapAsm.v CapConventions1.v CapConventions.v
+SECARCH=CapArchi.v CapAST.v OCapValues.v CapMemdata.v CapMemtype.v \
+  CapMemory.v CapGlobalenvs.v CapOp.v CapMachregs.v CapLocations.v CapAsm.v \
+  CapConventions1.v CapConventions.v CapAsmgen.v
 
 # Parser
 
