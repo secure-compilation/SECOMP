@@ -17,13 +17,13 @@ let register_trace trace =
   in
   List.iter (fun (_, event) -> analyse_event event) trace
 
-let print_trace_stats () =
-  Printf.printf "Traces:\n";
-  Printf.printf "  Min length: %d\n" !trace_len_min;
-  Printf.printf "  Max length: %d\n" !trace_len_max;
-  Printf.printf "  Calls: %d\n" !trace_calls;
-  Printf.printf "  Returns: %d\n" !trace_rets;
-  Printf.printf "  Builtins: %d\n" !trace_builtins
+let print_trace_stats out_channel =
+  Printf.fprintf out_channel "Traces:\n";
+  Printf.fprintf out_channel "  Min length: %d\n" !trace_len_min;
+  Printf.fprintf out_channel "  Max length: %d\n" !trace_len_max;
+  Printf.fprintf out_channel "  Calls: %d\n" !trace_calls;
+  Printf.fprintf out_channel "  Returns: %d\n" !trace_rets;
+  Printf.fprintf out_channel "  Builtins: %d\n" !trace_builtins
 
 let min_comps = ref Int.max_int
 let max_comps = ref Int.min_int
@@ -44,12 +44,12 @@ let register_asm_prog asm_prog =
   min_glob_vars := Int.min num_glob_vars !min_glob_vars;
   max_glob_vars := Int.max num_glob_vars !max_glob_vars
 
-let print_asm_prog_stats () =
-  Printf.printf "ASM Programs:\n";
-  Printf.printf "  Min compartments: %d\n" !min_comps;
-  Printf.printf "  Max compartments: %d\n" !max_comps;
-  Printf.printf "  Min global vars: %d\n" !min_glob_vars;
-  Printf.printf "  Max global vars: %d\n" !max_glob_vars
+let print_asm_prog_stats out_channel =
+  Printf.fprintf out_channel "ASM Programs:\n";
+  Printf.fprintf out_channel "  Min compartments: %d\n" !min_comps;
+  Printf.fprintf out_channel "  Max compartments: %d\n" !max_comps;
+  Printf.fprintf out_channel "  Min global vars: %d\n" !min_glob_vars;
+  Printf.fprintf out_channel "  Max global vars: %d\n" !max_glob_vars
 
 let mem_delta_len_max = ref Int.min_int
 let mem_delta_len_min = ref Int.max_int
@@ -71,16 +71,16 @@ let register_mem_delta md =
   in
   List.iter analyse_kinds md
 
-let print_mem_delta_stats () =
-  Printf.printf "Memory Deltas:\n";
-  Printf.printf "  Total: %d\n" (sum_refs [mem_delta_storev; mem_delta_store; mem_delta_bytes; mem_delta_alloc; mem_delta_free]);
-  Printf.printf "  Min length: %d\n" !mem_delta_len_min;
-  Printf.printf "  Max length: %d\n" !mem_delta_len_max;
-  Printf.printf "  StoreV: %d\n" !mem_delta_storev;
-  Printf.printf "  Store: %d\n" !mem_delta_store;
-  Printf.printf "  Bytes: %d\n" !mem_delta_bytes;
-  Printf.printf "  Alloc: %d\n" !mem_delta_alloc;
-  Printf.printf "  Free: %d\n" !mem_delta_free
+let print_mem_delta_stats out_channel =
+  Printf.fprintf out_channel "Memory Deltas:\n";
+  Printf.fprintf out_channel "  Total: %d\n" (sum_refs [mem_delta_storev; mem_delta_store; mem_delta_bytes; mem_delta_alloc; mem_delta_free]);
+  Printf.fprintf out_channel "  Min length: %d\n" !mem_delta_len_min;
+  Printf.fprintf out_channel "  Max length: %d\n" !mem_delta_len_max;
+  Printf.fprintf out_channel "  StoreV: %d\n" !mem_delta_storev;
+  Printf.fprintf out_channel "  Store: %d\n" !mem_delta_store;
+  Printf.fprintf out_channel "  Bytes: %d\n" !mem_delta_bytes;
+  Printf.fprintf out_channel "  Alloc: %d\n" !mem_delta_alloc;
+  Printf.fprintf out_channel "  Free: %d\n" !mem_delta_free
 
 let ef_external = ref 0
 let ef_builtin = ref 0
@@ -109,25 +109,25 @@ let register_external_function = function
   | AST.EF_inline_asm _ -> inc_ref ef_inline_asm
   | AST.EF_debug _ -> inc_ref ef_debug
 
-let print_ef_stats () =
-  Printf.printf "External Functions:\n";
-  Printf.printf "  Total: %d\n" (sum_refs [ef_external; ef_builtin; ef_runtime; ef_vload; ef_vstore; ef_malloc; ef_free; ef_memcpy; ef_annot; ef_annot_val; ef_inline_asm; ef_debug]);
-  Printf.printf "  EF_external: %d\n" !ef_external;
-  Printf.printf "  EF_builtin: %d\n" !ef_builtin;
-  Printf.printf "  EF_runtime: %d\n" !ef_runtime;
-  Printf.printf "  EF_vload: %d\n" !ef_vload;
-  Printf.printf "  EF_vstore: %d\n" !ef_vstore;
-  Printf.printf "  EF_malloc: %d\n" !ef_malloc;
-  Printf.printf "  EF_free: %d\n" !ef_free;
-  Printf.printf "  EF_memcpy: %d\n" !ef_memcpy;
-  Printf.printf "  EF_annot: %d\n" !ef_annot;
-  Printf.printf "  EF_annot_val: %d\n" !ef_annot_val;
-  Printf.printf "  EF_inline_asm: %d\n" !ef_inline_asm;
-  Printf.printf "  EF_debug: %d\n" !ef_debug
+let print_ef_stats out_channel =
+  Printf.fprintf out_channel "External Functions:\n";
+  Printf.fprintf out_channel "  Total: %d\n" (sum_refs [ef_external; ef_builtin; ef_runtime; ef_vload; ef_vstore; ef_malloc; ef_free; ef_memcpy; ef_annot; ef_annot_val; ef_inline_asm; ef_debug]);
+  Printf.fprintf out_channel "  EF_external: %d\n" !ef_external;
+  Printf.fprintf out_channel "  EF_builtin: %d\n" !ef_builtin;
+  Printf.fprintf out_channel "  EF_runtime: %d\n" !ef_runtime;
+  Printf.fprintf out_channel "  EF_vload: %d\n" !ef_vload;
+  Printf.fprintf out_channel "  EF_vstore: %d\n" !ef_vstore;
+  Printf.fprintf out_channel "  EF_malloc: %d\n" !ef_malloc;
+  Printf.fprintf out_channel "  EF_free: %d\n" !ef_free;
+  Printf.fprintf out_channel "  EF_memcpy: %d\n" !ef_memcpy;
+  Printf.fprintf out_channel "  EF_annot: %d\n" !ef_annot;
+  Printf.fprintf out_channel "  EF_annot_val: %d\n" !ef_annot_val;
+  Printf.fprintf out_channel "  EF_inline_asm: %d\n" !ef_inline_asm;
+  Printf.fprintf out_channel "  EF_debug: %d\n" !ef_debug
 
-let print_stats () =
-  print_trace_stats ();
-  print_asm_prog_stats ();
-  print_mem_delta_stats ();
-  print_ef_stats ()
+let print_stats out_channel =
+  print_trace_stats out_channel;
+  print_asm_prog_stats out_channel;
+  print_mem_delta_stats out_channel;
+  print_ef_stats out_channel
 

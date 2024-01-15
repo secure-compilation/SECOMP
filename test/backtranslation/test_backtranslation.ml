@@ -26,6 +26,7 @@ let debug = ref false
 let num_traces = ref 10
 let num_asm_progs = ref 10
 let mode = ref "test"
+let out_file = ref ""
 
 let parse_args () =
   let usage_msg =
@@ -50,6 +51,7 @@ This also allows one to inspect `out.c` which is the generated C code.
       ("-trace_seed", Arg.Set_int trace_seed, "Seed for a trace (implies -num_traces = 1)");
       ("-num_traces", Arg.Set_int num_traces, "Set the number of traces tested per ASM program (default = 10)");
       ("-num_asm_progs", Arg.Set_int num_asm_progs, "Set the number of ASM programs (default = 10)");
+      ("-out_file", Arg.Set_string out_file, "Set the output file to print the results and statstics in test mode (default = stdout)");
       ("-verbose", Arg.Set debug, "Provide more verbose debug output")
     ] in
   let () = Arg.parse speclist anon_fun usage_msg in
@@ -76,13 +78,18 @@ let gen_config rand_state =
 
 (* Test mode: runs multiple (random) tests to find possible bugs *)
 let test_mode _ =
-  let () = Printf.printf "*************\n* Test Mode *\n*************\n" in
+  let out_channel =
+    if !out_file = ""
+    then Out_channel.stdout
+    else Out_channel.open_text !out_file
+  in
+  let () = Printf.fprintf out_channel "*************\n* Test Mode *\n*************\n" in
   let () =
     if !root_seed = 0
     then (Random.self_init (); root_seed := Random.bits ())
   in
   let () = Random.init !root_seed in
-  let () = Printf.printf "Root seed = %d\n\n" !root_seed in
+  let () = Printf.fprintf out_channel "Root seed = %d\n\n" !root_seed in
   let config = gen_config (Random.get_state ()) in
   let discard_out = Out_channel.open_text "/dev/null" in
   let failure_seeds = ref [] in
@@ -90,15 +97,16 @@ let test_mode _ =
   let fail_counter = ref 0 in
   let num_tests = !num_asm_progs * !num_traces in
   let print_results () =
-    Printf.printf "\n%d/%d passed\n%d/%d failed\n" !pass_counter num_tests !fail_counter num_tests;
-    Stats.print_stats ();
+    Printf.fprintf out_channel "\n%d/%d passed\n%d/%d failed\n" !pass_counter num_tests !fail_counter num_tests;
+    Stats.print_stats out_channel;
     if List.length !failure_seeds = 0
     then ()
-    else (Printf.printf "Failures:\n";
-          List.iter (fun (a_s, t_s) -> Printf.printf "\tasm_seed = %d, trace_seed = %d\n" a_s t_s) !failure_seeds) in
+    else (Printf.fprintf out_channel "Failures:\n";
+          List.iter (fun (a_s, t_s) -> Printf.fprintf out_channel "\tasm_seed = %d, trace_seed = %d\n" a_s t_s) !failure_seeds) in
   let handle_abort _ =
     print_results ();
-    Out_channel.flush Out_channel.stdout;
+    Out_channel.flush out_channel;
+    Out_channel.close out_channel;
     exit (~-1) in
   Sys.set_signal Sys.sigint (Sys.Signal_handle handle_abort);
   Sys.set_signal Sys.sigquit (Sys.Signal_handle handle_abort);
@@ -113,7 +121,11 @@ let test_mode _ =
     let ctx = Gen_ctx.random config rand_state in
     let asm_prog = Gen_ctx.get_asm_prog ctx in
     for j = 0 to !num_traces - 1 do
-      Printf.printf "\rTesting %d / %d asm_progs, %d / %d traces" (i+1) !num_asm_progs (j+1) !num_traces; Out_channel.flush Out_channel.stdout;
+      (* This intentionally always prints to stdout even if -out_file is set *)
+      Printf.printf "\rTesting %d / %d asm_progs, %d / %d traces" (i+1) !num_asm_progs (j+1) !num_traces;
+      if j = !num_traces - 1
+      then Printf.printf "\n";
+      Out_channel.flush Out_channel.stdout;
       let trace_seed =
         if !trace_seed = 0
         then Random.bits ()
@@ -124,11 +136,12 @@ let test_mode _ =
       if 0 = QCheck_runner.run_tests ~out:discard_out ~rand:rand_state [ test_backtranslation asm_prog ctx ]
       then pass_counter := !pass_counter + 1
       else (failure_seeds := (asm_seed, trace_seed) :: !failure_seeds; fail_counter := !fail_counter + 1);
-      Out_channel.flush Out_channel.stdout
+      Out_channel.flush out_channel
     done
   done;
   print_results();
-  Out_channel.close discard_out
+  Out_channel.close discard_out;
+  Out_channel.close out_channel
 
 (* Reproduction mode: reproduces a single (failing) tests for debugging and analysis *)
 let reproduction_mode _ =
@@ -145,7 +158,7 @@ let reproduction_mode _ =
   let num_tests = 1 in
   let print_results () =
     Printf.printf "\n%d/%d passed\n%d/%d failed\n" !pass_counter num_tests !fail_counter num_tests;
-    Stats.print_stats ()
+    Stats.print_stats Out_channel.stdout
   in
   let () = Random.init !asm_seed in
   let rand_state = Random.get_state () in
