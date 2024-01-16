@@ -1565,3 +1565,77 @@ Proof.
   inv Hf'.
   reflexivity.
 Qed.
+
+Section Examples.
+
+(* Instruction translation in proof mode *)
+Goal Archi.ptr64 = true -> exists x y, OK x =
+  transl_instr
+    (Mach.mkfunction 1%positive signature_main nil 0 Ptrofs.zero Ptrofs.zero)
+    (Mcall signature_main (inl Machregs.R30))
+    true
+    (mkAsmCode 1 nil Ptrofs.zero)
+  /\ x.(ac_code) = y.
+Proof.
+  intros ARCHI.
+  simpl. eexists. eexists. split. f_equal.
+  simpl.
+  unfold addcapofs. rewrite ARCHI.
+  destruct Ptrofs.eq_dec as [_ |]; [| contradiction].
+  simpl.
+  unfold addptrofs.
+  destruct Ptrofs.eq_dec as [_ |]; [| contradiction].
+  simpl.
+  unfold transl_signature.
+  unfold opldc. rewrite ARCHI.
+  reflexivity.
+Qed.
+
+(* A tiny compartmentalized Mach program *)
+Definition test_program_1 :=
+  let main_id := 10%positive in
+  let main_cp := 1%positive in
+  let twice_id := 20%positive in
+  let twice_cp := 2%positive in
+  let twice_sig := AST.mksignature (Tint :: nil) Tint cc_default in
+  let main :=
+    Mach.mkfunction
+      main_cp
+      signature_main
+      (Mop (Op.Ointconst Int.one) nil Machregs.R10 ::
+         Mcall twice_sig (inr twice_id) ::
+         Mop (Op.Ointconst Int.zero) nil Machregs.R10 ::
+         Mreturn ::
+         nil)
+      0 (* ... *)
+      Ptrofs.zero (* ... *)
+      Ptrofs.zero (* ... *)
+  in
+  let twice :=
+    Mach.mkfunction
+      twice_cp
+      twice_sig
+      (Mop Op.Oadd (Machregs.R10 :: Machregs.R10 :: nil) Machregs.R10 :: Mreturn :: nil)
+      0 (* ... *)
+      Ptrofs.zero (* ... *)
+      Ptrofs.zero (* ... *)
+  in
+  mkprogram
+    ((main_id, Gfun (Internal main)) :: (twice_id, Gfun (Internal twice)) :: nil)
+    (main_id :: twice_id :: nil)
+    main_id
+    (Policy.mkpolicy
+       (Maps.PTree.set twice_cp (twice_id :: nil)
+          (Maps.PTree.set main_cp nil (Maps.PTree.empty _)))
+       (Maps.PTree.set twice_cp nil
+          (Maps.PTree.set main_cp ((twice_cp, twice_id) :: nil) (Maps.PTree.empty _))))
+    : Mach.program.
+
+(* Program transformation in proof mode *)
+Goal exists x, x = transf_program test_program_1.
+Proof.
+  unfold transf_program, transform_partial_program, transform_partial_program2.
+  simpl. (* Fix operation translation, then proceed *)
+Abort.
+
+End Examples.
