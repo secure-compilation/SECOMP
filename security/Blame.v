@@ -355,7 +355,7 @@ Variant right_state_injection (ge1 ge2: genv): state -> state -> Prop :=
 
     (* we forget about program parts of the continuation but require injection of
        context continuation *)
-    right_cont_injection (cont_of st1) (cont_of st2) ->
+    right_cont_injection (remove_until_right (cont_of st1)) (remove_until_right (cont_of st2)) ->
 
     right_state_injection ge1 ge2 st1 st2
 | RightControl: forall st1 st2,
@@ -1688,10 +1688,10 @@ Admitted.
   Admitted.
 
   Lemma right_cont_injection_left_step_E0_1: forall s1 s2 s1',
-    right_cont_injection s (cont_of s1) (cont_of s2) ->
+    right_cont_injection s (remove_until_right s (cont_of s1)) (remove_until_right s (cont_of s2)) ->
     s |= s1 ∈ Left ->
     step1 ge1 s1 E0 s1' ->
-    right_cont_injection s (cont_of s1') (cont_of s2).
+    right_cont_injection s (remove_until_right s (cont_of s1')) (remove_until_right s (cont_of s2)).
   Admitted.
 
   Lemma right_cont_injection_left_step_E0_2: forall s1 s2 s1',
@@ -2274,7 +2274,7 @@ Admitted.
               destruct v; try contradiction; inv RVALINJ; inv H0; constructor.
         }
         { apply LeftControl; auto.
-          simpl. admit.
+          (* simpl. admit. *)
         }
       * assert (f = f2) as <- by admit. (* here the injection needs more *)
         exists j. eexists. split.
@@ -2418,8 +2418,7 @@ Admitted.
           -- assumption.
           -- congruence.
           -- assumption.
-          -- apply right_cont_injection_kcall_left; try assumption.
-             admit. (* remove_until_right from raw continuation *)
+          -- simpl. rewrite H14, H15. assumption.
         * exists j. apply RightControl.
           -- assumption.
           -- congruence.
@@ -2428,7 +2427,6 @@ Admitted.
              apply inject_callstates.
              ++ assumption.
              ++ apply right_cont_injection_kcall_left; try assumption.
-                admit. (* remove_until_right from raw continuation *)
              ++ specialize (NO_CROSS_PTR H5).
                 specialize (NO_CROSS_PTR0 H21).
                 admit. (* easy *)
@@ -2440,9 +2438,10 @@ Admitted.
       + admit.
       + (* matching case *) admit.
       + admit.
-      + inv EV. simpl in *. inv H4.
-        * admit.
-        * admit.
+      + admit.
+        (* inv EV. simpl in *. inv H4. *)
+        (* * admit. *)
+        (* * admit. *)
     - (* step_external_function *)
       inv INJ; [| congruence]. inv STEP2.
       + inv EV. admit. (* contra? *)
@@ -2541,8 +2540,7 @@ Admitted.
           -- assumption.
           -- congruence.
           -- assumption.
-          -- inv H4; [| assumption].
-             simpl. admit.
+          -- rewrite H, LEFT' in H4. assumption.
         * exists j. apply RightControl.
           -- assumption.
           -- congruence.
@@ -2550,8 +2548,9 @@ Admitted.
                admit. }
              apply inject_states.
              ++ assumption.
-             ++ inv H4; [| assumption].
-                admit.
+             ++ rewrite RIGHT' in H4. inv H4.
+                ** congruence.
+                ** assumption.
              ++ admit. (* right_env_injection *)
              ++ admit. (* right_tenv_injection *)
   Admitted.
