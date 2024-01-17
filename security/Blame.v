@@ -1701,6 +1701,72 @@ Admitted.
     right_cont_injection s (cont_of s1') (cont_of s2).
   Admitted. (* Symmetric, unused? *)
 
+Scheme statement_ind2 := Induction for statement Sort Prop
+  with labeled_statements_ind2 := Induction for labeled_statements Sort Prop.
+Combined Scheme statement_labeled_statements_ind from statement_ind2, labeled_statements_ind2.
+
+Lemma right_cont_injection_find_label:
+  (forall stmt lbl stmt' k1 k1' k2
+          (LABEL : find_label lbl stmt k1 = Some (stmt', k1'))
+          (RCONTINJ : right_cont_injection s k1 k2),
+    exists k2',
+      find_label lbl stmt k2 = Some (stmt', k2') /\
+      right_cont_injection s k1' k2')
+  /\
+  (forall sl lbl stmt' k1 k1' k2
+          (LABEL_LS : find_label_ls lbl sl k1 = Some (stmt', k1'))
+          (RCONTINJ : right_cont_injection s k1 k2),
+    exists k2',
+      find_label_ls lbl sl k2 = Some (stmt', k2') /\
+      right_cont_injection s k1' k2').
+Proof.
+  apply statement_labeled_statements_ind;
+    try discriminate;
+    simpl; intros.
+  - destruct find_label eqn:LABEL_s1_Kseq.
+    + injection LABEL as ->.
+      specialize (H _ _ _ _ _ LABEL_s1_Kseq
+                    (right_cont_injection_kseq _ _ _ _ RCONTINJ))
+        as (k2' & LABEL_s1_Kseq' & RCONTINJ').
+      rewrite LABEL_s1_Kseq'.
+      eauto.
+    + admit.
+  - destruct find_label eqn:LABEL_s0_k1.
+    + injection LABEL as ->.
+      specialize (H _ _ _ _ _ LABEL_s0_k1 RCONTINJ)
+        as (k2' & LABEL_s0_k2 & RCONTINJ').
+      rewrite LABEL_s0_k2.
+      eauto.
+    + admit.
+  - destruct find_label eqn:LABEL_s0_Kloop1.
+    + injection LABEL as ->.
+      specialize (H _ _ _ _ _ LABEL_s0_Kloop1
+                    (right_cont_injection_kloop1 _ _ _ _ _ RCONTINJ))
+        as (k2' & LABEL_s0_Kloop1' & RCONTINJ').
+      rewrite LABEL_s0_Kloop1'.
+      eauto.
+    + admit.
+  - specialize (H _ _ _ _ _ LABEL
+                  (right_cont_injection_kswitch _ _ _ RCONTINJ))
+      as (k2' & LABEL_Kswitch & RCONTINJ').
+      rewrite LABEL_Kswitch.
+      eauto.
+  - destruct ident_eq eqn:IDENT.
+    + injection LABEL as -> ->.
+      eauto.
+    + specialize (H _ _ _ _ _ LABEL RCONTINJ)
+        as (k2' & LABEL' & RCONTINJ').
+      eauto.
+  - destruct find_label eqn:FIND.
+    + injection LABEL_LS as ->.
+      specialize (H _ _ _ _ _ FIND
+                    (right_cont_injection_kseq _ _ _ _ RCONTINJ))
+        as (k2' & LABEL' & RCONTINJ').
+      rewrite LABEL'.
+      eauto.
+    + admit.
+Admitted.
+
   (* WIP *)
   Definition abstract_step_inj (j: meminj): meminj :=
     j.
