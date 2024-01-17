@@ -1631,6 +1631,122 @@ Definition test_program_1 :=
           (Maps.PTree.set main_cp ((twice_cp, twice_id) :: nil) (Maps.PTree.empty _))))
     : Mach.program.
 
+
+(* A more elaborate compartmentalized Mach program with conditions *)
+Definition test_program_2 :=
+  let main_id := 10%positive in
+  let main_cp := 1%positive in
+  let maximum_id := 20%positive in
+  let minimum_id := 30%positive in
+  let minmax_cp := 2%positive in
+  let clip_id := 40%positive in
+  let clip_cp := 4%positive in
+  let maximum_sig := AST.mksignature (Tint :: Tint :: nil) Tint cc_default in
+  let minimum_sig := AST.mksignature (Tint :: Tint :: nil) Tint cc_default in
+  (* clip(lower, upper, x) an integer x to an interval *)
+  let clip_sig := AST.mksignature (Tint :: Tint :: Tint :: nil) Tint cc_default in
+  let main :=
+    Mach.mkfunction
+      main_cp
+      signature_main
+      ( (* R10 <- 0 *)
+        Mop (Op.Ointconst Int.zero) nil Machregs.R10 ::
+          (* R11 <- 1 *)
+          Mop (Op.Ointconst Int.one) nil Machregs.R11 ::
+          (* R12 <- 1 *)
+          Mop (Op.Ointconst Int.one) nil Machregs.R12 ::
+          (* R8 <- clip(R10, R11, R12) *)
+          Mcall clip_sig (inr clip_id) ::
+          (* R10 <- R8 *)
+          Mop Op.Omove (Machregs.R8 :: nil) Machregs.R10 ::
+          Mreturn ::
+          nil)
+      0 (* ... *)
+      Ptrofs.zero (* ... *)
+      Ptrofs.zero (* ... *)
+  in
+  let clip :=
+    Mach.mkfunction
+      clip_cp
+      clip_sig
+      (* R10 <- lower *)
+      (* R11 <- upper *)
+      (* R12 <- x (to clip) *)
+      (* R8 <- min(upper, max(lower x)) *)
+      ( (* R13 <- lower *)
+        Mop Op.Omove (Machregs.R10 :: nil) Machregs.R13 ::
+          (* R14 <- x *)
+          Mop Op.Omove (Machregs.R12 :: nil) Machregs.R13 ::
+                    (* R13 <- max(R13, R14) *)
+                    Mcall maximum_sig (inr maximum_id) ::
+                    (* R15 <- upper *)
+                    Mop Op.Omove (Machregs.R11 :: nil) Machregs.R15 ::
+                    (* R16 <- max(lower, x) *)
+                    Mop Op.Omove (Machregs.R13 :: nil) Machregs.R16 ::
+                    (* R15 <- min(upper, max(lower, x)) *)
+                    Mcall minimum_sig (inr minimum_id) ::
+                    (* R8 <- min(upper, max(lower, x)) *)
+                    nil)
+      0 (* ... *)
+      Ptrofs.zero (* ... *)
+      Ptrofs.zero (* ... *)
+  in
+  let maximum :=
+    Mach.mkfunction
+      minmax_cp
+      maximum_sig
+      (* R13 <- a *)
+      (* R14 <- b *)
+      (* R13 <- max(a, b) *)
+      (
+        Mcond (Op.Ccomp Cge) (Machregs.R13 :: Machregs.R14 :: nil) 100%positive ::
+          (* R13 <- b *)
+          Mop Op.Omove (Machregs.R14 :: nil) Machregs.R13 ::
+          (* jump here if a >= b *)
+          Mlabel 100%positive ::
+          Mreturn ::
+          nil)
+      0 (* ... *)
+      Ptrofs.zero (* ... *)
+      Ptrofs.zero (* ... *)
+  in
+  let minimum :=
+    Mach.mkfunction
+      minmax_cp
+      minimum_sig
+      (* R15 <- a *)
+      (* R16 <- b *)
+      (* R15 <- min(a, b) *)
+      (
+        Mcond (Op.Ccomp Cle) (Machregs.R15 :: Machregs.R16 :: nil) 200%positive ::
+          (* R15 <- b *)
+          Mop Op.Omove (Machregs.R15 :: nil) Machregs.R16 ::
+          (* jump here if a >= b *)
+          Mlabel 200%positive ::
+          Mreturn ::
+          nil)
+      0 (* ... *)
+      Ptrofs.zero (* ... *)
+      Ptrofs.zero (* ... *)
+  in
+  mkprogram
+    ((main_id, Gfun (Internal main)) :: (maximum_id, Gfun (Internal maximum)) :: (minimum_id, Gfun (Internal minimum)) :: (clip_id, Gfun (Internal clip)) :: nil)
+    (main_id :: maximum_id :: minimum_id :: clip_id :: nil)
+    main_id
+    (Policy.mkpolicy
+       (Maps.PTree.set clip_cp (clip_id :: nil)
+          (Maps.PTree.set minmax_cp (minimum_id :: maximum_id :: nil)
+             (Maps.PTree.set main_cp nil
+                (Maps.PTree.empty _))))
+       (Maps.PTree.set minmax_cp nil
+          (Maps.PTree.set clip_cp ((minmax_cp, minimum_id) :: (minmax_cp, maximum_id) :: nil)
+             (Maps.PTree.set main_cp ((clip_cp, clip_id) :: nil)
+                (Maps.PTree.empty _)))))
+    : Mach.program.
+
+(* A Mach program with stack usage and recursive function calls *)
+(* TODO: implment a recursive summation from 1 to n *)
+
 (* Program transformation in proof mode *)
 Goal exists x, x = transf_program test_program_1.
 Proof.
