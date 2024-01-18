@@ -737,8 +737,113 @@ Section PROOFS.
   Definition mem_delta_inj_wf cp (j: meminj): mem_delta -> Prop :=
     fun d => Forall (fun data => mem_delta_kind_inj_wf cp j data) d.
 
-  (* Definition meminj_first_order (j: meminj) (m: mem) := *)
-  (*   forall b ofs, (j b <> None) -> (Mem.perm m b ofs Cur Readable) -> loc_first_order m b ofs. *)
+  Section VISIBLE.
+
+  (* Memory location has only sequence of bytes *)
+  Definition loc_first_order (m: mem) (b: block) (ofs: Z) : Prop :=
+    match (ZMap.get ofs (Mem.mem_contents m) !! b) with
+    | Byte _ => True
+    | _ => False
+    end.
+
+  (* Public symbols are visible outside the compilation unit,
+     so when interacting via external calls, limit them to first-order (if Readable). *)
+  Definition public_first_order (ge: Senv.t) (m: mem) :=
+    forall id b ofs
+      (PUBLIC: Senv.public_symbol ge id = true)
+      (FIND: Senv.find_symbol ge id = Some b)
+      (READABLE: Mem.perm m b ofs Cur Readable),
+      loc_first_order m b ofs.
+
+  Definition block_public (ge: Senv.t) (b: block): Prop :=
+    exists id, Senv.invert_symbol ge b = Some id /\ Senv.public_symbol ge id = true.
+
+  Variant val_public (ge: Senv.t) : typ -> val -> Prop :=
+    | val_public_int: forall i, val_public ge Tint (Vint i)
+    | val_public_long: forall i, val_public ge Tlong (Vlong i)
+    | val_public_float: forall f, val_public ge Tfloat (Vfloat f)
+    | val_public_single: forall f, val_public ge Tsingle (Vsingle f)
+    | val_public_ptr: forall b ofs, block_public ge b -> val_public ge Tptr (Vptr b ofs).
+
+  Definition vals_public (ge: Senv.t) (ts: list typ) (vs: list val): Prop :=
+    Forall2 (val_public ge) ts vs.
+
+  Definition visible_fo (ge: Senv.t) (m: mem) (tys: list typ) (args: list val): Prop :=
+    public_first_order ge m /\ vals_public ge tys args.
+
+  Definition EF_memcpy_dest_not_pub (ge: Senv.t) (args: list val) :=
+    match args with
+    | (Vptr bdst _) :: tl => ~ (block_public ge bdst)
+    | _ => True
+    end.
+
+  Definition load_whole_chunk (ch: memory_chunk) (v: val) := Val.load_result ch v = v.
+
+  Definition EF_vstore_load_whole_chunk (ch: memory_chunk) (args: list val) :=
+    match args with
+    | _ :: v :: nil => load_whole_chunk ch v
+    | _ => True
+    end.
+
+  Definition external_call_conds
+             (ef: external_function) (ge: Senv.t) (m: mem) (args: list val) : Prop :=
+    match ef with
+    | EF_external name sg => visible_fo ge m (sig_args sg) args
+    | EF_builtin name sg | EF_runtime name sg =>
+                             match Builtins.lookup_builtin_function name sg with
+                             | None => visible_fo ge m (sig_args sg) args
+                             | _ => True
+                             end
+    | EF_inline_asm txt sg clb => visible_fo ge m (sig_args sg) args
+    | EF_memcpy sz al => EF_memcpy_dest_not_pub ge args
+    | EF_vstore ch => EF_vstore_load_whole_chunk ch args
+    | _ => True
+    end.
+
+  Definition external_call_unknowns
+             (ef: external_function) (ge: Senv.t) (m: mem) (args: list val) : Prop :=
+    match ef with
+    | EF_external name sg => visible_fo ge m (sig_args sg) args
+    | EF_builtin name sg | EF_runtime name sg =>
+                             match Builtins.lookup_builtin_function name sg with
+                             | None => visible_fo ge m (sig_args sg) args
+                             | _ => False
+                             end
+    | EF_inline_asm txt sg clb => visible_fo ge m (sig_args sg) args
+    | _ => False
+    end.
+
+  Definition external_call_known_observables
+             (ef: external_function) (ge: Senv.t) (cp: compartment) (m: mem) (args: list val) tr rv m' : Prop :=
+    match ef with
+    | EF_external name sg => False
+    | EF_builtin name sg | EF_runtime name sg => False
+    | EF_inline_asm txt sg clb => False
+    | EF_vstore ch =>
+        (external_call ef ge cp args m tr rv m') /\ (tr <> E0) /\ (EF_vstore_load_whole_chunk ch args)
+    | _ => (external_call ef ge cp args m tr rv m') /\ (tr <> E0)
+    end.
+
+  Definition external_call_known_silents
+             (ef: external_function) (ge: Senv.t) (cp: compartment) (m: mem) (args: list val) tr rv m': Prop :=
+    match ef with
+    | EF_external name sg => False
+    | EF_builtin name sg | EF_runtime name sg =>
+                             match Builtins.lookup_builtin_function name sg with
+                             | None => False
+                             | _ => True
+                             end
+    | EF_inline_asm txt sg clb => False
+    | EF_memcpy sz al =>
+        (external_call ef ge cp args m E0 rv m') /\ (tr = E0) /\ (EF_memcpy_dest_not_pub ge args)
+    | _ => (external_call ef ge cp args m E0 rv m') /\ (tr = E0)
+    end.
+
+
+
+End VISIBLE.
+  Definition meminj_first_order (j: meminj) (m: mem) :=
+    forall b ofs, (j b <> None) -> (Mem.perm m b ofs Cur Readable) -> loc_first_order m b ofs.
 
   Definition meminj_not_alloc (j: meminj) (m: mem) := forall b, (Mem.nextblock m <= b)%positive -> j b = None.
 
@@ -747,25 +852,24 @@ Section PROOFS.
         ch m b i v cp m'
         (MEM: Mem.storev ch m (Vptr b i) v cp = Some m')
         ofs
-        (* (FO: loc_first_order m' b ofs) *)
+        (FO: loc_first_order m' b ofs)
         (CHG: Ptrofs.unsigned i <= ofs < Ptrofs.unsigned i + size_chunk ch)
     :
     wf_chunk_val_b ch v.
   Proof.
-    (* unfold loc_first_order in FO. *)
+    unfold loc_first_order in FO.
     ss. exploit Mem.store_mem_contents; eauto. intros CNT.
-    (* rewrite CNT in FO. *)
+    rewrite CNT in FO.
     remember (Ptrofs.unsigned i) as ofs0.
-    (* rewrite PMap.gss in FO. *)
-    remember ((Mem.mem_contents m) !! b) as mcv. clear - mcv (* FO *) CHG.
+    rewrite PMap.gss in FO.
+    remember ((Mem.mem_contents m) !! b) as mcv. clear - FO CHG.
     assert (IN: In (ZMap.get ofs (Mem.setN (encode_val ch v) ofs0 mcv)) (encode_val ch v)).
     { eapply Mem.setN_in. rewrite encode_val_length. rewrite <- size_chunk_conv. auto. }
     remember (ZMap.get ofs (Mem.setN (encode_val ch v) ofs0 mcv)) as mv.
-    clear -  IN.
+    clear - FO IN.
     destruct ch; destruct v; ss; des; clarify.
     1,2: des_ifs; ss; des; clarify.
-    all: admit. (* very bad break? *)
-  Admitted.
+  Qed.
 
   Lemma list_forall_filter
         A (P: A -> Prop) l B
@@ -791,11 +895,11 @@ Section PROOFS.
         (APPD2: mem_delta_apply_wf ge cp d (Some m2) = Some m2')
         (PERM1: Mem.perm m1 b ofs Cur Readable)
         (PERM2: Mem.perm m2 b ofs Cur Readable)
-        (* (FO: loc_first_order m1' b ofs) *)
+        (FO: loc_first_order m1' b ofs)
     :
     ZMap.get ofs (Mem.mem_contents m1') !! b = ZMap.get ofs (Mem.mem_contents m2') !! b.
   Proof.
-    revert WF CHG m1 m1' m2 m2' APPD1 APPD2 PERM1 PERM2 (* FO *). induction d; intros.
+    revert WF CHG m1 m1' m2 m2' APPD1 APPD2 PERM1 PERM2 FO. induction d; intros.
     { inv CHG. }
     rewrite mem_delta_apply_cons in APPD1. rewrite mem_delta_apply_wf_cons in APPD2. inv WF. rename H1 into WF1, H2 into WF2. inv CHG.
     (* not chagned by the head *)
@@ -850,8 +954,8 @@ Section PROOFS.
       { eapply Mem.perm_store_1; eauto. }
       intros H. rewrite H.
       ss.
-      (* assert (FO2: loc_first_order mi1 b ofs). *)
-      (* { unfold loc_first_order in *. rewrite <- H. auto. } *)
+      assert (FO2: loc_first_order mi1 b ofs).
+      { unfold loc_first_order in *. rewrite <- H. auto. }
       exploit mem_storev_first_order_wf_chunk_val. 2,3: eauto. ss. eauto.
       intros WFCV. rewrite WFCV in APPD2.
       destruct (cp_eq_dec cp cp); try contradiction.
@@ -1026,20 +1130,18 @@ Section PROOFS.
       eapply Mem.perm_free_3; eauto. eapply IHd. erewrite Mem.nextblock_free; eauto.
   Qed.
 
-  (* Lemma loc_first_order_always_memval_inject *)
-  (*       m b ofs *)
-  (* (FO: loc_first_order m b ofs) *)
-  (*       j v *)
-  (*       (VINJ: memval_inject j (ZMap.get ofs (Mem.mem_contents m) !! b) v) *)
-  (*   : *)
-  (*   forall k, memval_inject k (ZMap.get ofs (Mem.mem_contents m) !! b) v. *)
-  (* Proof. *)
-  (*   (* unfold loc_first_order in FO. *) *)
-  (*   destruct (ZMap.get ofs (Mem.mem_contents m) !! b) eqn:MV; try contradiction. *)
-  (*   inv VINJ. intros. constructor. *)
-  (*   inv VINJ. intros. constructor. *)
-  (*   inv VINJ. intros. constructor. *)
-  (* Qed. *)
+  Lemma loc_first_order_always_memval_inject
+        m b ofs
+  (FO: loc_first_order m b ofs)
+        j v
+        (VINJ: memval_inject j (ZMap.get ofs (Mem.mem_contents m) !! b) v)
+    :
+    forall k, memval_inject k (ZMap.get ofs (Mem.mem_contents m) !! b) v.
+  Proof.
+    unfold loc_first_order in FO.
+    destruct (ZMap.get ofs (Mem.mem_contents m) !! b) eqn:MV; try contradiction.
+    inv VINJ. intros. constructor.
+  Qed.
 
   Lemma mem_delta_apply_establish_inject
         (ge: Senv.t) (k: meminj) m0 m0'
@@ -1050,7 +1152,7 @@ Section PROOFS.
         (DWF: mem_delta_inj_wf cp (meminj_public ge) d)
         m1
         (APPD: mem_delta_apply d (Some m0) = Some m1)
-        (* (FO: meminj_first_order (meminj_public ge) m1) *)
+        (FO: meminj_first_order (meminj_public ge) m1)
     :
     exists m1', (mem_delta_apply_wf ge cp d (Some m0') = Some m1') /\ (Mem.inject (meminj_public ge) m1 m1').
   Proof.
@@ -1067,25 +1169,23 @@ Section PROOFS.
     - exploit mem_delta_unchanged_on. eapply APPD. intros UNCHG1. exploit mem_delta_wf_unchanged_on. eapply APPD'. intros UNCHG2.
       erewrite (Mem.unchanged_on_contents _ _ _ UNCHG1). erewrite (Mem.unchanged_on_contents _ _ _ UNCHG2). all: eauto.
       { inv INJ. inv mi_inj. specialize (mi_memval _ _ _ _ (INCR _ _ _ INJPUB) PERM0).
-        (* eapply loc_first_order_always_memval_inject; eauto. *)
-        (* exploit FO. *)
-        (* erewrite INJPUB. *)
-        (* congruence. eauto. unfold loc_first_order; intros. *)
+        eapply loc_first_order_always_memval_inject; eauto.
+        exploit FO.
+        erewrite INJPUB.
+        congruence. eauto. unfold loc_first_order; intros.
         destruct (ZMap.get ofs (Mem.mem_contents m1) !! b1) eqn:MEMV1; try contradiction.
-        admit. admit. admit.
-        (* erewrite (Mem.unchanged_on_contents _ _ _ UNCHG1) in MEMV1; eauto. rewrite MEMV1. auto. *)
+        erewrite (Mem.unchanged_on_contents _ _ _ UNCHG1) in MEMV1; eauto. rewrite MEMV1. auto.
       }
       { eapply mem_delta_unchanged_implies_wf_unchanged; eauto. rewrite Z.add_0_r. auto. }
       { inv WINJ. inv mwi_inj. rewrite <- (Z.add_0_r ofs). eapply mwi_perm; eauto. rewrite Z.add_0_r. auto. }
     - rename H into CHG. exploit mem_delta_changed_only_by_storev. eauto. rewrite INJPUB; ss. eauto. eapply APPD. eapply APPD'. auto.
       { inv WINJ. inv mwi_inj. rewrite <- (Z.add_0_r ofs). eapply mwi_perm; eauto. }
-      (* { exploit FO; eauto. rewrite INJPUB. congruence. } *)
+      { exploit FO; eauto. rewrite INJPUB. congruence. }
       intros. rewrite Z.add_0_r, <- x0.
-      (* exploit FO; eauto. *)
-      (* rewrite INJPUB; ss. intros. unfold loc_first_order in x1. *)
+      exploit FO; eauto.
+      rewrite INJPUB; ss. intros. unfold loc_first_order in x1.
       destruct (ZMap.get ofs (Mem.mem_contents m1) !! b1); try contradiction. constructor.
-      admit. admit.
-  Admitted.
+  Qed.
 
   Import Mem.
 
@@ -1101,7 +1201,7 @@ Section PROOFS.
         (DWF: mem_delta_inj_wf cp (meminj_public ge) d)
         m1
         (APPD: mem_delta_apply d (Some m0) = Some m1)
-        (* (FO: meminj_first_order (meminj_public ge) m1) *)
+        (FO: meminj_first_order (meminj_public ge) m1)
     :
     exists m1', (mem_delta_apply_wf ge cp d (Some m0'') = Some m1') /\ (Mem.inject (meminj_public ge) m1 m1').
   Proof.
@@ -1124,22 +1224,20 @@ Section PROOFS.
     - exploit mem_delta_unchanged_on. eapply APPD. intros UNCHG1. exploit mem_delta_wf_unchanged_on. eapply APPD'. intros UNCHG2.
       erewrite (Mem.unchanged_on_contents _ _ _ UNCHG1). erewrite (Mem.unchanged_on_contents _ _ _ UNCHG2). all: eauto.
       { inv INJ. inv mi_inj0. specialize (mi_memval0 _ _ _ _ (INCR _ _ _ INJPUB) PERM0).
-        admit.
-        (* eapply loc_first_order_always_memval_inject; eauto. *)
-        (* - exploit FO. erewrite INJPUB. congruence. eauto. unfold loc_first_order; intros. destruct (ZMap.get ofs (Mem.mem_contents m1) !! b1) eqn:MEMV1; try contradiction. *)
-        (*   erewrite (Mem.unchanged_on_contents _ _ _ UNCHG1) in MEMV1; eauto. rewrite MEMV1. auto. *)
-        (* - erewrite (store_mem_contents _ m0' _ _ _ _ m0''). 2: eapply PRE. rewrite PMap.gso. 2: auto. eauto. *)
+        eapply loc_first_order_always_memval_inject; eauto.
+        - exploit FO. erewrite INJPUB. congruence. eauto. unfold loc_first_order; intros. destruct (ZMap.get ofs (Mem.mem_contents m1) !! b1) eqn:MEMV1; try contradiction.
+          erewrite (Mem.unchanged_on_contents _ _ _ UNCHG1) in MEMV1; eauto. rewrite MEMV1. auto.
+        - erewrite (store_mem_contents _ m0' _ _ _ _ m0''). 2: eapply PRE. rewrite PMap.gso. 2: auto. eauto.
       }
       { eapply mem_delta_unchanged_implies_wf_unchanged; eauto. rewrite Z.add_0_r. auto. }
       { inv WINJ. inv mwi_inj. rewrite <- (Z.add_0_r ofs). eapply mwi_perm; eauto. rewrite Z.add_0_r. auto. }
     - rename H into CHG. exploit mem_delta_changed_only_by_storev. eauto. rewrite INJPUB; ss. eauto. eapply APPD. eapply APPD'. auto.
       { inv WINJ. inv mwi_inj. rewrite <- (Z.add_0_r ofs). eapply mwi_perm; eauto. }
-      (* { exploit FO; eauto. rewrite INJPUB. congruence. } *)
+      { exploit FO; eauto. rewrite INJPUB. congruence. }
       intros. rewrite Z.add_0_r, <- x0.
-      (* exploit FO; eauto. rewrite INJPUB; ss. intros. unfold loc_first_order in x1. *)
+      exploit FO; eauto. rewrite INJPUB; ss. intros. unfold loc_first_order in x1.
       destruct (ZMap.get ofs (Mem.mem_contents m1) !! b1); try contradiction. constructor.
-      admit. admit.
-  Admitted.
+  Qed.
 
   Lemma mem_delta_apply_establish_inject_preprocess_gen
         (ge: Senv.t) (k: meminj) m0 m0'
@@ -1155,14 +1253,14 @@ Section PROOFS.
         (APPD: mem_delta_apply d (Some m0) = Some m1)
     :
     exists m1', (mem_delta_apply_wf ge cp d (Some m0'') = Some m1') /\
-             ((* (meminj_first_order (meminj_public ge) m1) ->  *)Mem.inject (meminj_public ge) m1 m1').
+             ((meminj_first_order (meminj_public ge) m1) -> Mem.inject (meminj_public ge) m1 m1').
   Proof.
     exploit inject_implies_winject; eauto. intros WINJ. exploit winject_inj_incr; eauto. clear WINJ; intro WINJ.
     hexploit store_outside_winject. eauto.
     { intros. eapply PREB. rewrite H. eauto. }
     eapply PRE. clear WINJ. intros WINJ.
     exploit mem_delta_apply_preserves_winject. eapply WINJ. eauto. intros (m1' & APPD' & WINJ'). exists m1'. split; eauto.
-    (* intros FO. *)
+    intros FO.
     apply winject_to_inject; auto. unfold mem_inj_val. intros.
     exploit mem_delta_apply_keeps_perm; eauto. congruence.
     { destruct (Pos.ltb_spec0 b1 (Mem.nextblock m0)); auto. exfalso. assert ((meminj_public ge) b1 = None).
@@ -1177,21 +1275,19 @@ Section PROOFS.
     - exploit mem_delta_unchanged_on. eapply APPD. intros UNCHG1. exploit mem_delta_wf_unchanged_on. eapply APPD'. intros UNCHG2.
       erewrite (Mem.unchanged_on_contents _ _ _ UNCHG1). erewrite (Mem.unchanged_on_contents _ _ _ UNCHG2). all: eauto.
       { inv INJ. inv mi_inj0. specialize (mi_memval0 _ _ _ _ (INCR _ _ _ INJPUB) PERM0).
-        admit.
-        (* eapply loc_first_order_always_memval_inject; eauto. *)
-        (* - exploit FO. erewrite INJPUB. congruence. eauto. unfold loc_first_order; intros. destruct (ZMap.get ofs (Mem.mem_contents m1) !! b1) eqn:MEMV1; try contradiction. *)
-        (*   erewrite (Mem.unchanged_on_contents _ _ _ UNCHG1) in MEMV1; eauto. rewrite MEMV1. auto. *)
-        (* - erewrite (store_mem_contents _ m0' _ _ _ _ m0''). 2: eapply PRE. rewrite PMap.gso. 2: auto. eauto. *)
+        eapply loc_first_order_always_memval_inject; eauto.
+        - exploit FO. erewrite INJPUB. congruence. eauto. unfold loc_first_order; intros. destruct (ZMap.get ofs (Mem.mem_contents m1) !! b1) eqn:MEMV1; try contradiction.
+          erewrite (Mem.unchanged_on_contents _ _ _ UNCHG1) in MEMV1; eauto. rewrite MEMV1. auto.
+        - erewrite (store_mem_contents _ m0' _ _ _ _ m0''). 2: eapply PRE. rewrite PMap.gso. 2: auto. eauto.
       }
       { eapply mem_delta_unchanged_implies_wf_unchanged; eauto. rewrite Z.add_0_r. auto. }
       { inv WINJ. inv mwi_inj. rewrite <- (Z.add_0_r ofs). eapply mwi_perm; eauto. rewrite Z.add_0_r. auto. }
     - rename H into CHG. exploit mem_delta_changed_only_by_storev. eauto. rewrite INJPUB; ss. eauto. eapply APPD. eapply APPD'. auto.
       { inv WINJ. inv mwi_inj. rewrite <- (Z.add_0_r ofs). eapply mwi_perm; eauto. }
-      (* { exploit FO; eauto. rewrite INJPUB. congruence. } *)
+      { exploit FO; eauto. rewrite INJPUB. congruence. }
       intros. rewrite Z.add_0_r, <- x0.
-      (* exploit FO; eauto. rewrite INJPUB; ss. intros. unfold loc_first_order in x1. *)
+      exploit FO; eauto. rewrite INJPUB; ss. intros. unfold loc_first_order in x1.
       destruct (ZMap.get ofs (Mem.mem_contents m1) !! b1); try contradiction. constructor.
-      admit. admit.
-  Admitted.
+  Qed.
 
 End PROOFS.
