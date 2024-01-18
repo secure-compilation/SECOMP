@@ -1418,7 +1418,20 @@ Definition transl_mregs (r: list Machregs.mreg): list mreg :=
   nil. (* FIXME priority 1 *)
 
 Definition transl_condition (r: Op.condition): condition :=
-  Ccomp Ceq. (* FIXME priority 1 *)
+  match r with
+  | Op.Ccomp cmp => Ccomp cmp
+  | Op.Ccompu cmp => Ccompu cmp
+  | Op.Ccompimm imm cmp => Ccompimm imm cmp
+  | Op.Ccompuimm imm cmp => Ccompuimm imm cmp
+  | Op.Ccompl cmp => Ccompl cmp
+  | Op.Ccomplu cmp => Ccomplu cmp
+  | Op.Ccomplimm imm cmp => Ccomplimm imm cmp
+  | Op.Ccompluimm imm cmp => Ccompluimm imm cmp
+  | Op.Ccompf cmp => Ccompf cmp
+  | Op.Cnotcompf cmp => Cnotcompf cmp
+  | Op.Ccompfs cmp => Ccompfs cmp
+  | Op.Cnotcompfs cmp => Cnotcompfs cmp
+  end.
 
 Definition transl_operation (r: Op.operation): operation :=
   match r with
