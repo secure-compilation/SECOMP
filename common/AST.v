@@ -886,12 +886,13 @@ Fixpoint transf_globdefs (l: list (ident * globdef A V)) : res (list (ident * gl
     end
   end.
 
-Lemma agr_comps_transf_partial: forall {pol defs defs'},
+Lemma agr_comps_transf_partial: forall {pol defs},
   agr_comps pol defs ->
-  transf_globdefs defs = OK defs' ->
-  agr_comps pol defs'.
+  forall defs',
+    transf_globdefs defs = OK defs' ->
+    agr_comps pol defs'.
 Proof.
-  unfold agr_comps; intros pol defs defs' [H G] def_trans.
+  unfold agr_comps; intros pol defs [H G] defs' def_trans.
   split.
   { clear G. revert defs' def_trans.
     induction H.
@@ -938,27 +939,19 @@ Proof.
           exists gd0; split; [right |]; eauto. }
 Qed.
 
-Record defs_with_proof (p: program A V) :=
-  { gl: res (list (ident * globdef B W));
-    proof: forall l, gl = OK l -> agr_comps (prog_pol p) l }.
-
-Program Definition truc (p: program A V): (defs_with_proof p) :=
-  {| gl := transf_globdefs p.(prog_defs); |}.
-Next Obligation.
-  eapply agr_comps_transf_partial; eauto using prog_agr_comps.
-Qed.
-
-Program Definition transform_partial_program2 (p: program A V) : res (program B W) :=
-  match transf_globdefs p.(prog_defs) with
+Definition transform_partial_program2 (p: program A V) : res (program B W) :=
+  match transf_globdefs p.(prog_defs) as x
+        return (transf_globdefs p.(prog_defs) = x ->
+                res (program B W)) with
   | OK gl' =>
-  OK (mkprogram gl'
+  fun e => OK (mkprogram gl'
         p.(prog_public)
         p.(prog_main)
         p.(prog_pol)
         p.(prog_pol_pub)
-        (agr_comps_transf_partial p.(prog_agr_comps) _))
-  | Error err => Error err
-  end.
+        (agr_comps_transf_partial p.(prog_agr_comps) e))
+  | Error err => fun e => Error err
+  end eq_refl.
 
 End TRANSF_PROGRAM_GEN.
 
@@ -1000,10 +993,17 @@ Proof.
     - destruct g; simpl; rewrite IHl; simpl. auto. destruct v; auto.
   }
   specialize (EQ (prog_defs p)).
-  clear -EQ.
-  Require Import ssreflect.
-  move: eq_refl. intros e.
-Admitted.
+  generalize (agr_comps_transf_partial
+                (fun (_ : ident) (f : A) => OK (transf_fun f))
+                (fun (_ : ident) (v : V) => OK v)
+            (prog_agr_comps p)).
+  rewrite EQ. intros a.
+  unfold transform_program.
+  replace (agr_comps_transf (prog_agr_comps p)) with
+  (a (map (transform_program_globdef transf_fun) (prog_defs p)) eq_refl).
+  reflexivity.
+  apply Classical_Prop.proof_irrelevance.
+Qed.
 
 (** * External functions *)
 
