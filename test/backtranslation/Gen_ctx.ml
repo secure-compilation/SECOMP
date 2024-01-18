@@ -156,8 +156,10 @@ let sample_external_funcs config =
   let open QCheck.Gen in
   let gen =
     let* name = list_size (map Int.succ small_nat) (char_range 'a' 'z') in
+    let* suffix = list_size (return 4) (char_range '0' '9') in
+    let unique_name = name @ ['_'] @ suffix in
     let* sign = sample_signature config in
-    return (AST.EF_external (name, sign)) in
+    return (AST.EF_external (unique_name, sign)) in
   list_repeat config.num_external_funcs gen
 
 let sample_builtins config =

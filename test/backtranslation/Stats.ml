@@ -124,7 +124,7 @@ let print_ef_stats out_channel =
   Printf.fprintf out_channel "  EF_annot_val: %d\n" !ef_annot_val;
   Printf.fprintf out_channel "  EF_inline_asm: %d\n" !ef_inline_asm;
   Printf.fprintf out_channel "  EF_debug: %d\n" !ef_debug;
-  Printf.fprintf out_channel "\n\nNote: the entries marked with * are ignored (or trivial) in the backtranslation."
+  Printf.fprintf out_channel "\n\nNote: the entries marked with * are ignored (or trivial) in the backtranslation.\n"
 
 let print_stats out_channel =
   print_trace_stats out_channel;

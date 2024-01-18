@@ -37,7 +37,7 @@ let fix_missing_derefs code =
   Str.global_replace regex "= *(&\\1);" code
 
 let fix_syntax_of_builtins code =
-  let regex = Str.regexp "builtin \\(runtime\\|extern\\|builtin\\) \\\"\\([a-zA-Z]+\\)\\\"[ \\\t\\\n]*\\([^;]+\\);" in
+  let regex = Str.regexp "builtin \\(runtime\\|extern\\|builtin\\) \\\"\\([a-zA-Z_0-9]+\\)\\\"[ \\\t\\\n]*\\([^;]+\\);" in
   Str.global_replace regex "\\2\\3;" code
 
 let c_light_prog prog file_name =
