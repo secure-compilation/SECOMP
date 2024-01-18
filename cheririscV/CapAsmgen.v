@@ -1593,7 +1593,11 @@ Definition transl_operation (r: Op.operation): operation :=
 end.
 
 Definition transl_addressing (r: Op.addressing): addressing :=
-  Aindexed Ptrofs.zero. (* FIXME priority 1 *)
+  match r with
+  | Op.Aindexed ptrofs => Aindexed ptrofs
+  | Op.Aglobal ident ptrofs => Aglobal ident ptrofs
+  | Op.Ainstack ptrofs => Ainstack ptrofs
+  end.
 
 Definition transl_ireg_of_inl (t: (Machregs.mreg + ident)%type): (mreg + ident)%type :=
   match t with
