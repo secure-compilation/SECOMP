@@ -1604,8 +1604,20 @@ Definition transl_ireg_of_inl (t: (Machregs.mreg + ident)%type): (mreg + ident)%
 Definition transl_signature (sig: signature): capsignature :=
   capsignature_main. (* FIXME priority 1 *)
 
-Definition transl_builtin_arg (arg: builtin_arg Machregs.mreg): (builtin_arg mreg) :=
-  BA R5. (* FIXME priority 1 *)
+Fixpoint transl_builtin_arg (arg: builtin_arg Machregs.mreg): (builtin_arg mreg) :=
+  match arg with
+  | BA a => BA (transl_mreg a)
+  | BA_int n => BA_int n
+  | BA_long n => BA_long n
+  | BA_float f => BA_float f
+  | BA_single f => BA_single f
+  | BA_loadstack mem_chunk ptrofs => BA_loadstack mem_chunk ptrofs
+  | BA_addrstack ptrofs => BA_addrstack ptrofs
+  | BA_loadglobal mem_chunk ident ptrofs => BA_loadglobal mem_chunk ident ptrofs
+  | BA_addrglobal ident ptrofs => BA_addrglobal ident ptrofs
+  | BA_splitlong a1 a2 => BA_splitlong (transl_builtin_arg a1) (transl_builtin_arg a2)
+  | BA_addptr a1 a2 => BA_addptr (transl_builtin_arg a1) (transl_builtin_arg a2)
+  end.
 
 Definition transl_builtin_args (args: list (builtin_arg Machregs.mreg)): list (builtin_arg mreg) :=
   List.map transl_builtin_arg args.
