@@ -1412,10 +1412,72 @@ Definition make_return (k: asm_code) :=
    Compcert to the world of CapAsm and capabilities *)
 
 Definition transl_mreg (r: Machregs.mreg): mreg :=
-  R5. (* FIXME priority 1 *)
+  match r with
+  | Machregs.R5 => R5
+  | Machregs.R6 => R6
+  | Machregs.R7 => R7
+  | Machregs.R8 => R8
+  | Machregs.R9 => R9
+  | Machregs.R10 => R10
+  | Machregs.R11 => R11
+  | Machregs.R12 => R12
+  | Machregs.R13 => R13
+  | Machregs.R14 => R14
+  | Machregs.R15 => R15
+  | Machregs.R16 => R16
+  | Machregs.R17 => R17
+  | Machregs.R18 => R18
+  | Machregs.R19 => R19
+  | Machregs.R20 => R20
+  | Machregs.R21 => R21
+  | Machregs.R22 => R22
+  | Machregs.R23 => R23
+  | Machregs.R24 => R24
+  | Machregs.R25 => R25
+  | Machregs.R26 => R26
+  | Machregs.R27 => R27
+  | Machregs.R28 => R28
+  | Machregs.R29 => R29
+  | Machregs.R30 => R30
+  | _ => R30
+  (* FIXME priority 1 *)
+  (* How can I tell Coq that F0 is from mreg and not from freg? *)
+  (*| Machregs.F0 => F0
+  | Machregs.F1 => F1
+  | Machregs.F2 => F2
+  | Machregs.F3 => F3
+  | Machregs.F4 => F4
+  | Machregs.F5 => F5
+  | Machregs.F6 => F6
+  | Machregs.F7 => F7
+  | Machregs.F8 => F8
+  | Machregs.F9 => F9
+  | Machregs.F10 => F10
+  | Machregs.F11 => F11
+  | Machregs.F12 => F12
+  | Machregs.F13 => F13
+  | Machregs.F14 => F14
+  | Machregs.F15 => F15
+  | Machregs.F16 => F16
+  | Machregs.F17 => F17
+  | Machregs.F18 => F18
+  | Machregs.F19 => F19
+  | Machregs.F20 => F20
+  | Machregs.F21 => F21
+  | Machregs.F22 => F22
+  | Machregs.F23 => F23
+  | Machregs.F24 => F24
+  | Machregs.F25 => F25
+  | Machregs.F26 => F26
+  | Machregs.F27 => F27
+  | Machregs.F28 => F28
+  | Machregs.F29 => F29
+  | Machregs.F30 => F30
+  | Machregs.F31 => F31*)
+  end.
 
 Definition transl_mregs (r: list Machregs.mreg): list mreg :=
-  nil. (* FIXME priority 1 *)
+  List.map transl_mreg r.
 
 Definition transl_condition (r: Op.condition): condition :=
   match r with
