@@ -1417,11 +1417,105 @@ Definition transl_mreg (r: Machregs.mreg): mreg :=
 Definition transl_mregs (r: list Machregs.mreg): list mreg :=
   nil. (* FIXME priority 1 *)
 
+Definition transl_condition (r: Op.condition): condition :=
+  Ccomp Ceq. (* FIXME priority 1 *)
+
 Definition transl_operation (r: Op.operation): operation :=
   match r with
+  | Op.Omove => Omove
   | Op.Ointconst n => Ointconst n
-  | _ => Omove (* FIXME priority 1 *)
-  end.
+  | Op.Olongconst n => Olongconst n
+  | Op.Ofloatconst f => Ofloatconst f
+  | Op.Osingleconst f => Osingleconst f
+  | Op.Oaddrsymbol ident ptrofs => Oaddrsymbol ident ptrofs
+  | Op.Oaddrstack ptrofs => Oaddrstack ptrofs
+  | Op.Ocast8signed => Ocast8signed
+  | Op.Ocast16signed => Ocast16signed
+  | Op.Oadd => Oadd
+  | Op.Oaddimm imm => Oaddimm imm
+  | Op.Oneg => Oneg
+  | Op.Osub => Osub
+  | Op.Omul => Omul
+  | Op.Omulhs => Omulhs
+  | Op.Omulhu => Omulhu
+  | Op.Odiv => Odiv
+  | Op.Odivu => Odivu
+  | Op.Omod => Omod
+  | Op.Omodu => Omodu
+  | Op.Oand => Oand
+  | Op.Oandimm imm => Oandimm imm
+  | Op.Oor => Oor
+  | Op.Oorimm imm => Oorimm imm
+  | Op.Oxor => Oxor
+  | Op.Oxorimm imm => Oxorimm imm
+  | Op.Oshl => Oshl
+  | Op.Oshlimm imm => Oshlimm imm
+  | Op.Oshr => Oshr
+  | Op.Oshrimm imm => Oshrimm imm
+  | Op.Oshru => Oshru
+  | Op.Oshruimm imm => Oshruimm imm
+  | Op.Oshrximm imm => Oshrximm imm
+  | Op.Omakelong => Omakelong
+  | Op.Olowlong => Olowlong
+  | Op.Ohighlong => Ohighlong
+  | Op.Ocast32signed => Ocast32signed
+  | Op.Ocast32unsigned => Ocast32unsigned
+  | Op.Oaddl => Oaddl
+  | Op.Oaddlimm imm => Oaddlimm imm
+  | Op.Onegl => Onegl
+  | Op.Osubl => Osubl
+  | Op.Omull => Omull
+  | Op.Omullhs => Omullhs
+  | Op.Omullhu => Omullhu
+  | Op.Odivl => Odivl
+  | Op.Odivlu => Odivlu
+  | Op.Omodl => Omodl
+  | Op.Omodlu => Omodlu
+  | Op.Oandl => Oandl
+  | Op.Oandlimm imm => Oandlimm imm
+  | Op.Oorl => Oorl
+  | Op.Oorlimm imm => Oorlimm imm
+  | Op.Oxorl => Oxorl
+  | Op.Oxorlimm imm => Oxorlimm imm
+  | Op.Oshll => Oshll
+  | Op.Oshllimm imm => Oshllimm imm
+  | Op.Oshrl => Oshrl
+  | Op.Oshrlimm imm => Oshrlimm imm
+  | Op.Oshrlu => Oshrlu
+  | Op.Oshrluimm imm => Oshrluimm imm
+  | Op.Oshrxlimm imm => Oshrxlimm imm
+  | Op.Onegf => Onegf
+  | Op.Oabsf => Oabsf
+  | Op.Oaddf => Oaddf
+  | Op.Osubf => Osubf
+  | Op.Omulf => Omulf
+  | Op.Odivf => Odivf
+  | Op.Onegfs => Onegfs
+  | Op.Oabsfs => Oabsfs
+  | Op.Oaddfs => Oaddfs
+  | Op.Osubfs => Osubfs
+  | Op.Omulfs => Omulfs
+  | Op.Odivfs => Odivfs
+  | Op.Osingleoffloat => Osingleoffloat
+  | Op.Ofloatofsingle => Ofloatofsingle
+  | Op.Ointoffloat => Ointoffloat
+  | Op.Ointuoffloat => Ointuoffloat
+  | Op.Ofloatofint => Ofloatofint
+  | Op.Ofloatofintu => Ofloatofintu
+  | Op.Ointofsingle => Ointofsingle
+  | Op.Ointuofsingle => Ointuofsingle
+  | Op.Osingleofint => Osingleofint
+  | Op.Osingleofintu => Osingleofintu
+  | Op.Olongoffloat => Olongoffloat
+  | Op.Olonguoffloat => Olonguoffloat
+  | Op.Ofloatoflong => Ofloatoflong
+  | Op.Ofloatoflongu => Ofloatoflongu
+  | Op.Olongofsingle => Olongofsingle
+  | Op.Olonguofsingle => Olonguofsingle
+  | Op.Osingleoflong => Osingleoflong
+  | Op.Osingleoflongu => Osingleoflongu
+  | Op.Ocmp cond => Ocmp (transl_condition cond)
+end.
 
 Definition transl_addressing (r: Op.addressing): addressing :=
   Aindexed Ptrofs.zero. (* FIXME priority 1 *)
@@ -1443,9 +1537,6 @@ Definition transl_builtin_args (args: list (builtin_arg Machregs.mreg)): list (b
 
 Definition transl_builtin_res (arg: builtin_res Machregs.mreg): (builtin_res mreg) :=
   BR R5. (* FIXME priority 1 *)
-
-Definition transl_condition (r: Op.condition): condition :=
-  Ccomp Ceq. (* FIXME priority 1 *)
 
 (** Translation of a Mach instruction. *)
 
