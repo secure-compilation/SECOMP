@@ -1610,8 +1610,12 @@ Definition transl_builtin_arg (arg: builtin_arg Machregs.mreg): (builtin_arg mre
 Definition transl_builtin_args (args: list (builtin_arg Machregs.mreg)): list (builtin_arg mreg) :=
   List.map transl_builtin_arg args.
 
-Definition transl_builtin_res (arg: builtin_res Machregs.mreg): (builtin_res mreg) :=
-  BR R5. (* FIXME priority 1 *)
+Fixpoint transl_builtin_res (arg: builtin_res Machregs.mreg): (builtin_res mreg) :=
+  match arg with
+  | BR r => BR (transl_mreg r)
+  | BR_none => BR_none
+  | BR_splitlong r1 r2 => BR_splitlong (transl_builtin_res r1) (transl_builtin_res r2)
+  end.
 
 (** Translation of a Mach instruction. *)
 
