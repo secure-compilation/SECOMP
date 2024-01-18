@@ -1605,8 +1605,31 @@ Definition transl_ireg_of_inl (t: (Machregs.mreg + ident)%type): (mreg + ident)%
   | inr a => inr a
   end.
 
+Definition transl_typ (t : typ) : captyp :=
+  match t with
+  | Tint => CTint
+  | Tfloat => CTfloat
+  | Tlong => CTlong
+  | Tsingle => CTsingle
+  | Tany32 => CTany32
+  | Tany64 => CTany64
+  end.
+
+Definition transl_rettype (t : rettype) : caprettype :=
+  match t with
+  | Tret r => CTret (transl_typ r)
+  | Tint8signed => CTint8signed
+  | Tint8unsigned => CTint8unsigned
+  | Tint16signed => CTint16signed
+  | Tint16unsigned => CTint16unsigned
+  | Tvoid => CTvoid
+  end.
+
 Definition transl_signature (sig: signature): capsignature :=
-  capsignature_main. (* FIXME priority 1 *)
+  let arg_types := AST.sig_args sig in
+  let ret_type := AST.sig_res sig in
+  let cc := AST.sig_cc sig in
+  mksignature (List.map transl_typ arg_types) (transl_rettype ret_type) cc.
 
 Fixpoint transl_builtin_arg (arg: builtin_arg Machregs.mreg): (builtin_arg mreg) :=
   match arg with
