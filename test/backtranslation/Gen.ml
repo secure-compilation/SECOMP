@@ -170,13 +170,68 @@ let ef_memcpy _ =
   let* z2 = coq_Z in
   return (AST.EF_memcpy (z1, z2))
 
-let ef_annot _ = failwith "ef_annot is not implemented"
 
-let ef_annot_val _ = failwith "ef_annot_val is not implemented"
+let sample_typ =
+  QCheck.Gen.frequencyl
+    AST.
+      [
+        (1, Tint);
+        (1, Tfloat);
+        (1, Tlong);
+        (1, Tsingle);
+        (1, Tany32);
+        (1, Tany64);
+      ]
 
-let ef_inline_asm _ = failwith "ef_inline_asm is not implemented"
+let sample_rettype =
+  let open QCheck.Gen in
+  let* f = float_range 0.0 1.0 in
+  if f < 1.0 /. 6.0 then map (fun t -> AST.Tret t) sample_typ
+  else
+    frequencyl
+      AST.
+        [
+          (1, Tint8signed);
+          (1, Tint8unsigned);
+          (1, Tint16signed);
+          (1, Tint16unsigned);
+          (1, Tvoid);
+        ]
 
-let ef_debug _ = failwith "ef_debug is not implemented"
+let ef_annot _ =
+  let open QCheck.Gen in
+  let* pos = positive in
+  let* text = list_size (map Int.succ small_nat) (char_range 'a' 'z') in
+  let* types = list_size (int_range 0 10) sample_typ in
+  return (AST.EF_annot (pos, text, types))
+
+let ef_annot_val _ =
+  let open QCheck.Gen in
+  let* pos = positive in
+  let* text = list_size (map Int.succ small_nat) (char_range 'a' 'z') in
+  let* typ = sample_typ in
+  return (AST.EF_annot_val (pos, text, typ))
+
+let ef_inline_asm _ =
+  let open QCheck.Gen in
+  let* text = list_size (int_range 0 10) (char_range 'a' 'z') in
+  let cc_vararg = Option.none in
+  let cc_unproto = false in
+  let cc_structret = false in
+  let cc = ({ cc_vararg; cc_unproto; cc_structret } : AST.calling_convention) in
+  let* arg_types = list_size (int_range 0 10) sample_typ in
+  let* ret_type = sample_rettype in
+  let sign = AST.{ sig_args = arg_types; sig_res = ret_type; sig_cc = cc } in
+  let* code = list_size (int_range 0 10) (list_size (int_range 1 10) (char_range 'a' 'z')) in
+  return (AST.EF_inline_asm (text, sign, code))
+
+let ef_debug _ =
+  let open QCheck.Gen in
+  let* pos = positive in
+  (* TODO: does this need to be a "known" identifier? *)
+  let* ident = map Camlcoq.P.of_int small_nat in
+  let* types = list_size (int_range 0 10) sample_typ in
+  return (AST.EF_debug (pos, ident, types))
 
 let external_function ctx =
   QCheck.Gen.frequency
@@ -184,17 +239,15 @@ let external_function ctx =
       (1, ef_external ctx);
       (1, ef_builtin ctx);
       (1, ef_runtime ctx);
-      (* TODO: perhaps enable these if they are required
-      (1000, ef_vload ctx);
-      (1, ef_vstore ctx);
-      (1, ef_malloc ctx);
-      (1, ef_free ctx);
-      (1, ef_memcpy ctx);
-      (0, ef_annot ctx);
-      (0, ef_annot_val ctx);
-      (0, ef_inline_asm ctx);
-      (0, ef_debug ctx);
-       *)
+      (* (1, ef_vload ctx); *)
+      (* (1, ef_vstore ctx); *)
+      (* (1, ef_malloc ctx); *)
+      (* (1, ef_free ctx); *)
+      (* (1, ef_memcpy ctx); *)
+      (* (1, ef_annot ctx); *)
+      (* (1, ef_annot_val ctx); *)
+      (* (1, ef_inline_asm ctx); *)
+      (* (1, ef_debug ctx); *)
     ]
 
 (* TODO: perhaps differentiate between signed/unsigned and positive/negative values? *)
