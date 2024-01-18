@@ -1,0 +1,118 @@
+*************
+* Test Mode *
+*************
+Root seed = 517733517
+
+
+999927/1000000 passed
+73/1000000 failed
+Traces:
+  Min length: 0
+  Max length: 10
+  Calls: 1612110
+  Returns: 1612110
+  Builtins: 724267
+ASM Programs:
+  Min compartments: 1
+  Max compartments: 24
+  Min global vars: 2
+  Max global vars: 627
+Memory Deltas:
+  Total: 50690988
+  Min length: 0
+  Max length: 99
+  StoreV: 50690988
+  Store*: 0
+  Bytes*: 0
+  Alloc*: 0
+  Free*: 0
+External Functions:
+  Total: 724267
+  EF_external: 240602
+  EF_builtin: 241137
+  EF_runtime: 242528
+  EF_vload: 0
+  EF_vstore: 0
+  EF_malloc: 0
+  EF_free: 0
+  EF_memcpy: 0
+  EF_annot: 0
+  EF_annot_val: 0
+  EF_inline_asm: 0
+  EF_debug: 0
+
+
+Note: the entries marked with * are ignored (or trivial) in the backtranslation.Failures:
+	asm_seed = 397449245, trace_seed = 488841949
+	asm_seed = 397449245, trace_seed = 564249778
+	asm_seed = 397449245, trace_seed = 214829454
+	asm_seed = 397449245, trace_seed = 89621070
+	asm_seed = 397449245, trace_seed = 982269779
+	asm_seed = 397449245, trace_seed = 813113391
+	asm_seed = 397449245, trace_seed = 837155495
+	asm_seed = 397449245, trace_seed = 392575445
+	asm_seed = 397449245, trace_seed = 621117354
+	asm_seed = 397449245, trace_seed = 661218624
+	asm_seed = 397449245, trace_seed = 45336383
+	asm_seed = 397449245, trace_seed = 53399730
+	asm_seed = 397449245, trace_seed = 873359396
+	asm_seed = 397449245, trace_seed = 811943474
+	asm_seed = 397449245, trace_seed = 957773353
+	asm_seed = 1003417912, trace_seed = 106788653
+	asm_seed = 1003417912, trace_seed = 190882773
+	asm_seed = 1003417912, trace_seed = 381994887
+	asm_seed = 1003417912, trace_seed = 771535828
+	asm_seed = 1003417912, trace_seed = 32833442
+	asm_seed = 1003417912, trace_seed = 330964550
+	asm_seed = 1003417912, trace_seed = 294676395
+	asm_seed = 1003417912, trace_seed = 1061570004
+	asm_seed = 1003417912, trace_seed = 1055674716
+	asm_seed = 1003417912, trace_seed = 164098231
+	asm_seed = 1003417912, trace_seed = 605170217
+	asm_seed = 1003417912, trace_seed = 154020437
+	asm_seed = 1003417912, trace_seed = 988917360
+	asm_seed = 1003417912, trace_seed = 371326361
+	asm_seed = 1003417912, trace_seed = 906362579
+	asm_seed = 342771610, trace_seed = 624524808
+	asm_seed = 342771610, trace_seed = 846098449
+	asm_seed = 342771610, trace_seed = 713247464
+	asm_seed = 342771610, trace_seed = 392985148
+	asm_seed = 342771610, trace_seed = 816867532
+	asm_seed = 342771610, trace_seed = 864059500
+	asm_seed = 342771610, trace_seed = 1002536726
+	asm_seed = 342771610, trace_seed = 949844794
+	asm_seed = 342771610, trace_seed = 527576543
+	asm_seed = 342771610, trace_seed = 601586724
+	asm_seed = 342771610, trace_seed = 554444683
+	asm_seed = 342771610, trace_seed = 325143823
+	asm_seed = 342771610, trace_seed = 102090687
+	asm_seed = 342771610, trace_seed = 936341561
+	asm_seed = 342771610, trace_seed = 1018142530
+	asm_seed = 342771610, trace_seed = 605266788
+	asm_seed = 342771610, trace_seed = 575571132
+	asm_seed = 342771610, trace_seed = 320202164
+	asm_seed = 342771610, trace_seed = 1068377831
+	asm_seed = 342771610, trace_seed = 671626998
+	asm_seed = 342771610, trace_seed = 532769297
+	asm_seed = 342771610, trace_seed = 90532869
+	asm_seed = 342771610, trace_seed = 346007173
+	asm_seed = 342771610, trace_seed = 598446692
+	asm_seed = 967102271, trace_seed = 962331503
+	asm_seed = 967102271, trace_seed = 49174791
+	asm_seed = 967102271, trace_seed = 403063614
+	asm_seed = 967102271, trace_seed = 424412267
+	asm_seed = 967102271, trace_seed = 874125652
+	asm_seed = 967102271, trace_seed = 654996055
+	asm_seed = 967102271, trace_seed = 21084877
+	asm_seed = 967102271, trace_seed = 371255259
+	asm_seed = 967102271, trace_seed = 851046520
+	asm_seed = 967102271, trace_seed = 397400406
+	asm_seed = 967102271, trace_seed = 593796741
+	asm_seed = 967102271, trace_seed = 634998877
+	asm_seed = 967102271, trace_seed = 749975924
+	asm_seed = 967102271, trace_seed = 929421922
+	asm_seed = 967102271, trace_seed = 983564238
+	asm_seed = 967102271, trace_seed = 886760683
+	asm_seed = 967102271, trace_seed = 829395051
+	asm_seed = 967102271, trace_seed = 852527047
+	asm_seed = 967102271, trace_seed = 418001167
