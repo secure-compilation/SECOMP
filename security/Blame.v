@@ -1706,66 +1706,161 @@ Scheme statement_ind2 := Induction for statement Sort Prop
 Combined Scheme statement_labeled_statements_ind from statement_ind2, labeled_statements_ind2.
 
 Lemma right_cont_injection_find_label:
-  (forall stmt lbl stmt' k1 k1' k2
-          (LABEL : find_label lbl stmt k1 = Some (stmt', k1'))
+  (forall stmt lbl k1 k2
           (RCONTINJ : right_cont_injection s k1 k2),
-    exists k2',
-      find_label lbl stmt k2 = Some (stmt', k2') /\
-      right_cont_injection s k1' k2')
+      ((forall stmt' k1'
+               (LABEL : find_label lbl stmt k1 = Some (stmt', k1')),
+         exists k2',
+           find_label lbl stmt k2 = Some (stmt', k2') /\
+             right_cont_injection s k1' k2') /\
+       (forall (LABEL: find_label lbl stmt k1 = None),
+                   find_label lbl stmt k2 = None)))
   /\
-  (forall sl lbl stmt' k1 k1' k2
-          (LABEL_LS : find_label_ls lbl sl k1 = Some (stmt', k1'))
-          (RCONTINJ : right_cont_injection s k1 k2),
-    exists k2',
-      find_label_ls lbl sl k2 = Some (stmt', k2') /\
-      right_cont_injection s k1' k2').
+    (forall sl lbl k1 k2
+            (RCONTINJ : right_cont_injection s k1 k2),
+        ((forall stmt' k1'
+          (LABEL_LS : find_label_ls lbl sl k1 = Some (stmt', k1')),
+           exists k2',
+             find_label_ls lbl sl k2 = Some (stmt', k2') /\
+               right_cont_injection s k1' k2') /\
+        (forall (LABEL_LS : find_label_ls lbl sl k1 = None),
+             find_label_ls lbl sl k2 = None))).
 Proof.
   apply statement_labeled_statements_ind;
-    try discriminate;
+    try easy;
     simpl; intros.
-  - destruct find_label eqn:LABEL_s1_Kseq.
-    + injection LABEL as ->.
-      specialize (H _ _ _ _ _ LABEL_s1_Kseq
-                    (right_cont_injection_kseq _ _ _ _ RCONTINJ))
-        as (k2' & LABEL_s1_Kseq' & RCONTINJ').
-      rewrite LABEL_s1_Kseq'.
+  - split; intros.
+    + destruct find_label eqn:LABEL_s1_Kseq.
+      * injection LABEL as ->.
+        specialize (H lbl _ _ (right_cont_injection_kseq _ s1 _ _ RCONTINJ)) as [H _].
+        specialize (H _ _ LABEL_s1_Kseq) as (k2' & LABEL_s1_Kseq' & RCONTINJ').
+        rewrite LABEL_s1_Kseq'.
+        eauto.
+      * specialize (H lbl _ _ (right_cont_injection_kseq _ s1 _ _ RCONTINJ)) as [_ H].
+        specialize (H LABEL_s1_Kseq).
+        rewrite H.
+Abort.
+
+Lemma right_cont_injection_find_label: forall lbl,
+  (forall stmt k1 k2 res
+          (RCONTINJ : right_cont_injection s k1 k2)
+          (LABEL : find_label lbl stmt k1 = res),
+     match res with
+     | Some (stmt', k1') =>
+         exists k2', find_label lbl stmt k2 = Some (stmt', k2') /\
+                     right_cont_injection s k1' k2'
+     | None =>
+         find_label lbl stmt k2 = None
+     end)
+  /\
+  (forall sl k1 k2 res
+          (RCONTINJ : right_cont_injection s k1 k2)
+          (LABEL_LS : find_label_ls lbl sl k1 = res),
+     match res with
+     | Some (stmt', k1') =>
+         exists k2', find_label_ls lbl sl k2 = Some (stmt', k2') /\
+                     right_cont_injection s k1' k2'
+     | None =>
+         find_label_ls lbl sl k2 = None
+     end).
+Proof.
+  intros lbl.
+  apply statement_labeled_statements_ind;
+    simpl; intros; subst;
+    try reflexivity.
+  - assert (RCONTINJ' := right_cont_injection_kseq _ s1 _ _ RCONTINJ).
+    destruct find_label as [[stmt' k1'] |] eqn:LABEL_s0_Kseq.
+    + specialize (H _ _ _ RCONTINJ' LABEL_s0_Kseq)
+        as (k2' & LABEL_s0_Kseq' & RCONTINJ'').
+      rewrite LABEL_s0_Kseq'.
       eauto.
-    + admit.
-  - destruct find_label eqn:LABEL_s0_k1.
-    + injection LABEL as ->.
-      specialize (H _ _ _ _ _ LABEL_s0_k1 RCONTINJ)
-        as (k2' & LABEL_s0_k2 & RCONTINJ').
-      rewrite LABEL_s0_k2.
-      eauto.
-    + admit.
-  - destruct find_label eqn:LABEL_s0_Kloop1.
-    + injection LABEL as ->.
-      specialize (H _ _ _ _ _ LABEL_s0_Kloop1
-                    (right_cont_injection_kloop1 _ _ _ _ _ RCONTINJ))
-        as (k2' & LABEL_s0_Kloop1' & RCONTINJ').
-      rewrite LABEL_s0_Kloop1'.
-      eauto.
-    + admit.
-  - specialize (H _ _ _ _ _ LABEL
-                  (right_cont_injection_kswitch _ _ _ RCONTINJ))
-      as (k2' & LABEL_Kswitch & RCONTINJ').
-      rewrite LABEL_Kswitch.
-      eauto.
-  - destruct ident_eq eqn:IDENT.
-    + injection LABEL as -> ->.
-      eauto.
-    + specialize (H _ _ _ _ _ LABEL RCONTINJ)
-        as (k2' & LABEL' & RCONTINJ').
-      eauto.
-  - destruct find_label eqn:FIND.
-    + injection LABEL_LS as ->.
-      specialize (H _ _ _ _ _ FIND
-                    (right_cont_injection_kseq _ _ _ _ RCONTINJ))
-        as (k2' & LABEL' & RCONTINJ').
+    + destruct (find_label lbl s1 k1) as [[stmt' k1'] |] eqn:LABEL.
+      * specialize (H _ _ _ RCONTINJ' LABEL_s0_Kseq).
+        rewrite H.
+        specialize (H0 _ _ _ RCONTINJ LABEL)
+          as (k2' & LABEL_s0_Kseq' & RCONTINJ'').
+        eauto.
+      * specialize (H _ _ _ RCONTINJ' LABEL_s0_Kseq).
+        rewrite H.
+        specialize (H0 _ _ _ RCONTINJ LABEL).
+        eauto.
+  - destruct (find_label lbl s0 k1) as [[stmt' k1'] |] eqn:LABEL.
+    + specialize (H _ _ _ RCONTINJ LABEL) as (k2' & LABEL' & RCONTINJ').
       rewrite LABEL'.
       eauto.
-    + admit.
-Admitted.
+    + specialize (H _ _ _ RCONTINJ LABEL). rewrite H.
+      destruct (find_label lbl s1 k1) as [[stmt'' k1''] |] eqn:LABEL'.
+      * specialize (H0 _ _ _ RCONTINJ LABEL') as (k2' & LABEL'' & RCONTINJ').
+        eauto.
+      * specialize (H0 _ _ _ RCONTINJ LABEL').
+        eauto.
+  -  assert (RCONTINJ' := right_cont_injection_kloop1 _ s0 s1 _ _ RCONTINJ).
+     destruct find_label as [[stmt' k1'] |] eqn:LABEL.
+     + specialize (H _ _ _ RCONTINJ' LABEL)
+         as (k2' & LABEL' & RCONTINJ'').
+       rewrite LABEL'.
+       eauto.
+     + destruct (find_label lbl s1 (Kloop2 s0 s1 k1)) as [[stmt' k1'] |] eqn:LABEL'.
+       * assert (RCONTINJ'' := right_cont_injection_kloop2 _ s0 s1 _ _ RCONTINJ).
+         specialize (H _ _ _ RCONTINJ' LABEL).
+         rewrite H.
+         apply (H0 _ _ _ RCONTINJ'' LABEL').
+Abort.
+
+Inductive right_cont_injection_find_label_spec:
+  option (statement * cont) -> option (statement * cont) -> Prop :=
+| rcifls_Some: forall stmt k1 k2,
+    right_cont_injection s k1 k2 ->
+    right_cont_injection_find_label_spec (Some (stmt, k1)) (Some (stmt, k2))
+| rcifls1_None:
+  right_cont_injection_find_label_spec None None
+.
+
+Lemma right_cont_injection_find_label_aux: forall lbl,
+  (forall stmt k1 k2
+          (RCONTINJ : right_cont_injection s k1 k2),
+     right_cont_injection_find_label_spec (find_label lbl stmt k1) (find_label lbl stmt k2))
+  /\
+  (forall sl k1 k2
+          (RCONTINJ : right_cont_injection s k1 k2),
+     right_cont_injection_find_label_spec (find_label_ls lbl sl k1) (find_label_ls lbl sl k2)).
+Proof.
+  intros lbl.
+  apply statement_labeled_statements_ind;
+    simpl; intros; subst;
+    eauto using right_cont_injection_find_label_spec.
+  - assert (RCONTINJ' := right_cont_injection_kseq _ s1 _ _ RCONTINJ).
+    specialize (H _ _ RCONTINJ') as [? ? ? ? |];
+      eauto using right_cont_injection_find_label_spec.
+  - specialize (H _ _ RCONTINJ) as [? ? ? ? |];
+      eauto using right_cont_injection_find_label_spec.
+  - assert (RCONTINJ' := right_cont_injection_kloop1 _ s0 s1 _ _ RCONTINJ).
+    specialize (H _ _ RCONTINJ') as [? ? ? ? |];
+      eauto using right_cont_injection_find_label_spec, right_cont_injection.
+  - assert (RCONTINJ' := right_cont_injection_kswitch _ _ _ RCONTINJ).
+    specialize (H _ _ RCONTINJ') as [? ? ? ? |];
+      eauto using right_cont_injection_find_label_spec.
+  - destruct (ident_eq lbl l) as [-> |] eqn:IDEQ;
+      specialize (H _ _ RCONTINJ) as [? ? ? ? |];
+      eauto using right_cont_injection_find_label_spec.
+  - assert (RCONTINJ' := right_cont_injection_kseq _ (seq_of_labeled_statement l) _ _ RCONTINJ).
+    specialize (H _ _ RCONTINJ') as [? ? ? ? |];
+      eauto using right_cont_injection_find_label_spec.
+Qed.
+
+Lemma right_cont_injection_find_label:
+  forall stmt lbl k1 k2 stmt' k1'
+         (RCONTINJ : right_cont_injection s k1 k2)
+         (LABEL : find_label lbl stmt k1 = Some (stmt', k1')),
+  exists k2',
+    find_label lbl stmt k2 = Some (stmt', k2') /\
+    right_cont_injection s k1' k2'.
+Proof.
+  intros.
+  destruct (proj1 (right_cont_injection_find_label_aux lbl) stmt _ _ RCONTINJ);
+    [| discriminate].
+  injection LABEL as -> ->. eauto.
+Qed.
 
   (* WIP *)
   Definition abstract_step_inj (j: meminj): meminj :=
@@ -2159,8 +2254,8 @@ Admitted.
                  right_cont_injection s k' k2')
         as (k2' & LABEL & RCONTINJ'). {
         clear -H RCONTINJ.
-        remember (fn_body f) as stmt eqn:BODY. clear BODY.
-        admit.
+        eapply right_cont_injection_find_label; eauto.
+        apply right_cont_injection_call_cont; auto.
       }
       exists j; eexists; split; [constructor | apply RightControl]; eauto.
       constructor; auto.
