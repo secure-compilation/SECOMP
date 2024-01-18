@@ -1745,7 +1745,70 @@ Definition test_program_2 :=
     : Mach.program.
 
 (* A Mach program with stack usage and recursive function calls *)
-(* TODO: implment a recursive summation from 1 to n *)
+Definition test_program_3 :=
+  let main_id := 10%positive in
+  let main_cp := 1%positive in
+  let sum_id := 20%positive in
+  let sum_cp := 2%positive in
+  (* sum(n) *recursively* computes the sum from 0 to n *)
+  let sum_sig := AST.mksignature (Tint ::  nil) Tint cc_default in
+  let main :=
+    Mach.mkfunction
+      main_cp
+      signature_main
+      ( (* R10 <- 13 *)
+        Mop (Op.Ointconst (Int.repr 13%Z)) nil Machregs.R10 ::
+          (* M10 <- sum of 0 to 13) *)
+          Mcall sum_sig (inr sum_id) ::
+          Mreturn ::
+          nil)
+      0 (* ... *)
+      Ptrofs.zero (* ... *)
+      Ptrofs.zero (* ... *)
+  in
+  let sum :=
+    Mach.mkfunction
+      sum_cp
+      sum_sig
+      (* R10 = x *)
+      (* R10 <- sum from 0 to x *)
+      (
+        (* R11 <- 0 *)
+        Mop (Op.Ointconst Int.zero) nil Machregs.R11 ::
+          (* test if x == 0 *)
+          Mcond (Op.Ccomp Ceq) (Machregs.R10 :: Machregs.R11 :: nil) 100%positive ::
+          (* Push R10 onto the stack *)
+          Msetstack Machregs.R10 Ptrofs.zero Tint ::
+          (* R11 <- 1 *)
+          Mop (Op.Ointconst Int.one) nil Machregs.R11 ::
+          (* R10 <- R10 - 1 *)
+          Mop Op.Osub (Machregs.R10 :: Machregs.R11 :: nil) Machregs.R10 ::
+          (* R10 <- sum from 0 to R10 - 1 *)
+          Mcall sum_sig (inr sum_id) ::
+          (* Pop R11 from the stack *)
+          Mgetstack Ptrofs.zero Tint Machregs.R11 ::
+          (* R10 <- R10 + R11 *)
+          Mop Op.Oadd (Machregs.R10 :: Machregs.R11 :: nil) Machregs.R10 ::
+          (* jump here if R10 = 0 (base case of recursion) *)
+          Mlabel 100%positive ::
+          Mreturn ::
+          nil)
+      4 (* TODO: what unit is this? Bytes? How can I get the size? *)
+      Ptrofs.zero (* ... *)
+      Ptrofs.zero (* ... *)
+  in
+  mkprogram
+    ((main_id, Gfun (Internal main)) :: (sum_id, Gfun (Internal sum)) :: nil)
+    (main_id :: sum_id :: nil)
+    main_id
+    (Policy.mkpolicy
+       (Maps.PTree.set sum_cp (sum_id :: nil)
+          (Maps.PTree.set main_cp nil
+             (Maps.PTree.empty _)))
+       (Maps.PTree.set sum_cp nil
+          (Maps.PTree.set main_cp ((sum_cp, sum_id) :: nil)
+             (Maps.PTree.empty _))))
+    : Mach.program.
 
 (* Program transformation in proof mode *)
 Goal exists x, x = transf_program test_program_1.
