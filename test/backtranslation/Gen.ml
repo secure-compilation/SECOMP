@@ -244,8 +244,8 @@ let external_function ctx =
       (* (1, ef_malloc ctx); *)
       (* (1, ef_free ctx); *)
       (* (1, ef_memcpy ctx); *)
-      (* (1, ef_annot ctx); *)
-      (* (1, ef_annot_val ctx); *)
+      (1, ef_annot ctx);
+      (1, ef_annot_val ctx);
       (* (1, ef_inline_asm ctx); *)
       (* (1, ef_debug ctx); *)
     ]

@@ -40,6 +40,17 @@ let fix_syntax_of_builtins code =
   let regex = Str.regexp "builtin \\(runtime\\|extern\\|builtin\\) \\\"\\([a-zA-Z_0-9]+\\)\\\"[ \\\t\\\n]*\\([^;]+\\);" in
   Str.global_replace regex "\\2\\3;" code
 
+let fix_annotations code =
+  let regex_annot_with_args = Str.regexp "builtin annot \\\"\\([a-zA-Z]+\\)\\\"[^(]*(\\([^)]+\\));" in
+  let regex_annot_no_args = Str.regexp "builtin annot \\\"\\([a-zA-Z]+\\)\\\"[^(]*();" in
+  let regex_annot_val_with_args = Str.regexp "builtin annot_val \\\"\\([a-zA-Z]+\\)\\\"[^(]*(\\([^)]+\\));" in
+  let regex_annot_val_no_args = Str.regexp "builtin annot_val \\\"\\([a-zA-Z]+\\)\\\"[^(]*();" in
+  code
+  |> Str.global_replace regex_annot_with_args "__builtin_ais_annot(\"\\1\", \\2);"
+  |> Str.global_replace regex_annot_no_args "__builtin_ais_annot(\"\\1\");"
+  |> Str.global_replace regex_annot_val_with_args "__builtin_ais_annot(\"\\1\", \\2);"
+  |> Str.global_replace regex_annot_val_no_args "__builtin_ais_annot(\"\\1\");"
+
 let c_light_prog prog file_name =
   let vars_before_funcs (_, def1) (_, def2) =
     let open AST in
@@ -60,6 +71,7 @@ let c_light_prog prog file_name =
     |> fix_incomplete_types
     |> fix_floating_point_literals
     |> fix_missing_derefs
-    |> fix_syntax_of_builtins in
+    |> fix_syntax_of_builtins
+    |> fix_annotations in
   Out_channel.with_open_text (file_name ^ ".raw") (fun c -> output_string c raw_code);
   Out_channel.with_open_text file_name (fun c -> output_string c code)
