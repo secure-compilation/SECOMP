@@ -1418,7 +1418,10 @@ Definition transl_mregs (r: list Machregs.mreg): list mreg :=
   nil. (* FIXME priority 1 *)
 
 Definition transl_operation (r: Op.operation): operation :=
-  Omove. (* FIXME priority 1 *)
+  match r with
+  | Op.Ointconst n => Ointconst n
+  | _ => Omove (* FIXME priority 1 *)
+  end.
 
 Definition transl_addressing (r: Op.addressing): addressing :=
   Aindexed Ptrofs.zero. (* FIXME priority 1 *)
@@ -1814,7 +1817,7 @@ Definition test_program_3 :=
 Goal exists x, x = transf_program test_program_1.
 Proof.
   unfold transf_program, transform_partial_program, transform_partial_program2.
-  simpl. (* Fix operation translation, then proceed *)
+  simpl. (* Continue fixes, proceed incrementally *)
 Abort.
 
 End Examples.
