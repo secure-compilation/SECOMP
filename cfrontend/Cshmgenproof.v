@@ -2106,6 +2106,7 @@ Local Transparent Ctypes.Linker_program.
            (prog_comp_env_eq p2) EQ) as (env & P & Q).
   intros E.
   eapply Linking.link_match_program; eauto.
+- exact comp_match_fundef.
 - intros.
 Local Transparent Linker_fundef Linking.Linker_fundef.
   inv H3; inv H4; simpl in H2.

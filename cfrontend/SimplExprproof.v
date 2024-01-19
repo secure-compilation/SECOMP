@@ -2610,6 +2610,7 @@ End PRESERVATION.
 Global Instance TransfSimplExprLink : TransfLink match_prog.
 Proof.
   red; intros. eapply Ctypes.link_match_program_gen; eauto.
+- eapply comp_tr_fundef.
 - intros.
 Local Transparent Linker_fundef.
   simpl in *; unfold link_fundef in *. inv H3; inv H4; try discriminate.

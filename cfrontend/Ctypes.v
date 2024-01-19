@@ -1933,6 +1933,7 @@ Section LINK_MATCH_PROGRAM_GEN.
 Context {F G: Type}.
 Context {CF: has_comp F} {CG: has_comp G}.
 Variable match_fundef: program F -> fundef F -> fundef G -> Prop.
+Context {comp_match_fundef: has_comp_match match_fundef}.
 
 Hypothesis link_match_fundef:
   forall ctx1 ctx2 f1 tf1 f2 tf2 f,
@@ -1985,6 +1986,8 @@ Section LINK_MATCH_PROGRAM.
 Context {F G: Type}.
 Context {CF: has_comp F} {CG: has_comp G}.
 Variable match_fundef: fundef F -> fundef G -> Prop.
+Context {comp_match_fundef: has_comp_match (fun (_ : AST.program (fundef F) type) f g => match_fundef f g)}.
+
 
 Hypothesis link_match_fundef:
   forall f1 tf1 f2 tf2 f,
@@ -2008,7 +2011,8 @@ Local Transparent Linker_program.
   assert (A: exists tpp,
                link (program_of_program tp1) (program_of_program tp2) = Some tpp
              /\ Linking.match_program (fun ctx f tf => match_fundef f tf) eq pp tpp).
-  { eapply Linking.link_match_program. 
+  { eapply Linking.link_match_program.
+  - exact comp_match_fundef.
   - intros. exploit link_match_fundef; eauto. intros (tf & A & B). exists tf; auto.
   - intros.
     Local Transparent Linker_types.

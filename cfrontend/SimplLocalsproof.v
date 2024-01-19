@@ -2530,7 +2530,8 @@ End PRESERVATION.
 
 Global Instance TransfSimplLocalsLink : TransfLink match_prog.
 Proof.
-  red; intros. eapply Ctypes.link_match_program; eauto. 
+  red; intros. eapply Ctypes.link_match_program; eauto.
+  eapply has_comp_transl_partial_match. eapply comp_transf_fundef.
   intros.
 Local Transparent Linker_fundef.
   simpl in *; unfold link_fundef in *.
