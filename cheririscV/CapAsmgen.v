@@ -2026,7 +2026,15 @@ Definition test_program_3 :=
 Goal exists x, x = transf_program test_program_1.
 Proof.
   unfold transf_program, transform_partial_program, transform_partial_program2.
+  simpl.
+  unfold transf_function, transl_function, transl_code', transl_code_rec.
+  simpl.
+
+  unfold load_symbol.
+  simpl.
+
   simpl. (* Continue fixes, proceed incrementally *)
+
 Abort.
 
 End Examples.
