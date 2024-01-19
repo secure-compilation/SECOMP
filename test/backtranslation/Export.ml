@@ -51,6 +51,14 @@ let fix_annotations code =
   |> Str.global_replace regex_annot_val_with_args "__builtin_ais_annot(\"\\1\", \\2);"
   |> Str.global_replace regex_annot_val_no_args "__builtin_ais_annot(\"\\1\");"
 
+let fix_vstore code =
+  let regex = Str.regexp "builtin volatile store [^(]+(\\([^,]+\\), \\([^)]+\\));" in
+  Str.global_replace regex "*(\\1) = \\2;" code
+
+let fix_vload code =
+  let regex = Str.regexp "builtin volatile load [^(]+(\\([^)]+\\));" in
+  Str.global_replace regex "*(\\1);" code
+
 let c_light_prog prog file_name =
   let vars_before_funcs (_, def1) (_, def2) =
     let open AST in
@@ -72,6 +80,8 @@ let c_light_prog prog file_name =
     |> fix_floating_point_literals
     |> fix_missing_derefs
     |> fix_syntax_of_builtins
-    |> fix_annotations in
+    |> fix_annotations
+    |> fix_vstore
+    |> fix_vload in
   Out_channel.with_open_text (file_name ^ ".raw") (fun c -> output_string c raw_code);
   Out_channel.with_open_text file_name (fun c -> output_string c code)

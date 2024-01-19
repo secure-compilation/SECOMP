@@ -239,8 +239,8 @@ let external_function ctx =
       (1, ef_external ctx);
       (1, ef_builtin ctx);
       (1, ef_runtime ctx);
-      (* (1, ef_vload ctx); *)
-      (* (1, ef_vstore ctx); *)
+      (1, ef_vload ctx);
+      (1, ef_vstore ctx);
       (* (1, ef_malloc ctx); *)
       (* (1, ef_free ctx); *)
       (* (1, ef_memcpy ctx); *)
@@ -315,7 +315,14 @@ let bundle_builtin ctx rand_state =
   let func = external_function ctx rand_state in
   let () = Stats.register_external_function func in
   let sign = AST.ef_sig func in
-  let args = args_for_sig sign rand_state in
+  let args = match func with
+    | AST.EF_vload _ | AST.EF_vstore _ ->
+       let xs = args_for_sig sign rand_state in
+       let vars = List.filter_map (fun (_, v, _, is_const, _) -> if is_const then None else Some v) (Gen_ctx.var_list ctx) in
+       let x = Events.EVptr_global (Camlcoq.P.of_int (oneofl vars rand_state), (Camlcoq.Z.of_sint 0)) in
+       x :: List.tl xs
+    | _ -> args_for_sig sign rand_state
+  in
   let mdelta = [] in
   BtInfoAsm.Bundle_builtin (subtrace, func, args, mdelta)
 

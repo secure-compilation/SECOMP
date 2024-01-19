@@ -117,14 +117,14 @@ let print_ef_stats out_channel =
   Printf.fprintf out_channel "  EF_runtime: %d\n" !ef_runtime;
   Printf.fprintf out_channel "  EF_vload: %d\n" !ef_vload;
   Printf.fprintf out_channel "  EF_vstore: %d\n" !ef_vstore;
-  Printf.fprintf out_channel "  EF_malloc: %d\n" !ef_malloc;
-  Printf.fprintf out_channel "  EF_free: %d\n" !ef_free;
-  Printf.fprintf out_channel "  EF_memcpy: %d\n" !ef_memcpy;
+  Printf.fprintf out_channel "  EF_malloc*: %d\n" !ef_malloc;
+  Printf.fprintf out_channel "  EF_free*: %d\n" !ef_free;
+  Printf.fprintf out_channel "  EF_memcpy*: %d\n" !ef_memcpy;
   Printf.fprintf out_channel "  EF_annot: %d\n" !ef_annot;
   Printf.fprintf out_channel "  EF_annot_val: %d\n" !ef_annot_val;
-  Printf.fprintf out_channel "  EF_inline_asm: %d\n" !ef_inline_asm;
-  Printf.fprintf out_channel "  EF_debug: %d\n" !ef_debug;
-  Printf.fprintf out_channel "\n\nNote: the entries marked with * are ignored (or trivial) in the backtranslation.\n"
+  Printf.fprintf out_channel "  EF_inline_asm*: %d\n" !ef_inline_asm;
+  Printf.fprintf out_channel "  EF_debug*: %d\n" !ef_debug;
+  Printf.fprintf out_channel "\n\nNote: the entries marked with * are not generated.\n"
 
 let print_stats out_channel =
   print_trace_stats out_channel;
