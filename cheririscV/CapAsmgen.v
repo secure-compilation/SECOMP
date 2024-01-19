@@ -2021,12 +2021,11 @@ Definition test_program_3 :=
     : Mach.program.
 
 (* Program transformation in proof mode *)
-Goal exists x, (forall y, find_symbol_offset y = Some Ptrofs.zero) ->
-               (forall (T : Type) (zs : list T), list_length_z zs = 1) ->
-               (Archi.ptr64 = true) ->
-               OK x = transf_program test_program_1.
+Goal (forall y, exists off, find_symbol_offset y = Some off) ->
+     (forall (T : Type) (zs : list T), list_length_z zs = 1) ->
+     (Archi.ptr64 = true) ->
+     exists x, OK x = transf_program test_program_1.
 Proof.
-  eexists.
   intros H G I.
   unfold transf_program, transform_partial_program, transform_partial_program2.
   simpl.
@@ -2035,7 +2034,9 @@ Proof.
 
   unfold load_symbol.
   simpl.
-  rewrite (H 20%positive).
+
+  destruct (H 20%positive) as [off H1].
+  rewrite H1.
   simpl.
   unfold zlt, Z_lt_dec.
   simpl.
@@ -2050,15 +2051,15 @@ Proof.
   simpl.
   rewrite G.
   simpl.
+  eexists.
   reflexivity.
 Qed.
 
-Goal exists x, (forall y, find_symbol_offset y = Some Ptrofs.zero) ->
-               (forall (T : Type) (zs : list T), list_length_z zs = 1) ->
-               (Archi.ptr64 = true) ->
-               OK x = transf_program test_program_2.
+Goal (forall y, exists off, find_symbol_offset y = Some off) ->
+     (forall (T : Type) (zs : list T), list_length_z zs = 1) ->
+     (Archi.ptr64 = true) ->
+     exists x, OK x = transf_program test_program_2.
 Proof.
-  eexists.
   intros H G I.
   unfold transf_program, transform_partial_program, transform_partial_program2.
   simpl.
@@ -2067,7 +2068,8 @@ Proof.
 
   unfold load_symbol.
   simpl.
-  rewrite (H 40%positive).
+  destruct (H 40%positive) as [off1 H1].
+  rewrite H1.
   simpl.
   unfold zlt, Z_lt_dec.
   simpl.
@@ -2085,20 +2087,23 @@ Proof.
   rewrite G.
   simpl.
 
-  rewrite (H 30%positive).
+  destruct (H 30%positive) as [off2 H2].
+  rewrite H2.
   simpl.
-  rewrite (H 20%positive).
+  destruct (H 20%positive) as [off3 H3].
+  rewrite H3.
   simpl.
   rewrite G.
   simpl.
-Abort.
-
-Goal exists x, (forall y, find_symbol_offset y = Some Ptrofs.zero) ->
-               (forall (T : Type) (zs : list T), list_length_z zs = 1) ->
-               (Archi.ptr64 = true) ->
-               OK x = transf_program test_program_3.
-Proof.
   eexists.
+  reflexivity.
+Qed.
+
+Goal (forall y, exists off, find_symbol_offset y = Some off) ->
+     (forall (T : Type) (zs : list T), list_length_z zs = 1) ->
+     (Archi.ptr64 = true) ->
+     exists x, OK x = transf_program test_program_3.
+Proof.
   intros H G I.
   unfold transf_program, transform_partial_program, transform_partial_program2.
   simpl.
@@ -2107,7 +2112,8 @@ Proof.
 
   unfold load_symbol.
   simpl.
-  rewrite (H 20%positive).
+  destruct (H 20%positive) as [off1 H1].
+  rewrite H1.
   simpl.
   unfold zlt, Z_lt_dec.
   simpl.
@@ -2122,6 +2128,7 @@ Proof.
   simpl.
   rewrite G.
   simpl.
+  eexists.
   reflexivity.
 Qed.
 
