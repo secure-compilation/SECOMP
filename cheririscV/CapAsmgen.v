@@ -2021,8 +2021,13 @@ Definition test_program_3 :=
     : Mach.program.
 
 (* Program transformation in proof mode *)
-Goal exists x, x = transf_program test_program_1.
+Goal exists x, (forall y, find_symbol_offset y = Some Ptrofs.zero) ->
+               (forall (T : Type) (zs : list T), list_length_z zs = 1) ->
+               (Archi.ptr64 = true) ->
+               OK x = transf_program test_program_1.
 Proof.
+  eexists.
+  intros H G I.
   unfold transf_program, transform_partial_program, transform_partial_program2.
   simpl.
   unfold transf_function, transl_function, transl_code', transl_code_rec.
@@ -2030,9 +2035,94 @@ Proof.
 
   unfold load_symbol.
   simpl.
+  rewrite (H 20%positive).
+  simpl.
+  unfold zlt, Z_lt_dec.
+  simpl.
 
-  simpl. (* Continue fixes, proceed incrementally *)
+  rewrite G.
+  simpl.
+  unfold Ptrofs.max_unsigned.
+  simpl.
+  unfold shift_nat, Ptrofs.wordsize, Wordsize_Ptrofs.wordsize.
+  simpl.
+  rewrite I.
+  simpl.
+  rewrite G.
+  simpl.
+  reflexivity.
+Qed.
 
+Goal exists x, (forall y, find_symbol_offset y = Some Ptrofs.zero) ->
+               (forall (T : Type) (zs : list T), list_length_z zs = 1) ->
+               (Archi.ptr64 = true) ->
+               OK x = transf_program test_program_2.
+Proof.
+  eexists.
+  intros H G I.
+  unfold transf_program, transform_partial_program, transform_partial_program2.
+  simpl.
+  unfold transf_function, transl_function, transl_code', transl_code_rec.
+  simpl.
+
+  unfold load_symbol.
+  simpl.
+  rewrite (H 40%positive).
+  simpl.
+  unfold zlt, Z_lt_dec.
+  simpl.
+
+  rewrite G.
+  simpl.
+  unfold Ptrofs.max_unsigned.
+  simpl.
+  unfold shift_nat, Ptrofs.wordsize, Wordsize_Ptrofs.wordsize.
+  simpl.
+  rewrite I.
+  simpl.
+  rewrite G.
+  simpl.
+  rewrite G.
+  simpl.
+
+  rewrite (H 30%positive).
+  simpl.
+  rewrite (H 20%positive).
+  simpl.
+  rewrite G.
+  simpl.
 Abort.
+
+Goal exists x, (forall y, find_symbol_offset y = Some Ptrofs.zero) ->
+               (forall (T : Type) (zs : list T), list_length_z zs = 1) ->
+               (Archi.ptr64 = true) ->
+               OK x = transf_program test_program_3.
+Proof.
+  eexists.
+  intros H G I.
+  unfold transf_program, transform_partial_program, transform_partial_program2.
+  simpl.
+  unfold transf_function, transl_function, transl_code', transl_code_rec.
+  simpl.
+
+  unfold load_symbol.
+  simpl.
+  rewrite (H 20%positive).
+  simpl.
+  unfold zlt, Z_lt_dec.
+  simpl.
+
+  rewrite G.
+  simpl.
+  unfold Ptrofs.max_unsigned.
+  simpl.
+  unfold shift_nat, Ptrofs.wordsize, Wordsize_Ptrofs.wordsize.
+  simpl.
+  rewrite I.
+  simpl.
+  rewrite G.
+  simpl.
+  reflexivity.
+Qed.
 
 End Examples.
