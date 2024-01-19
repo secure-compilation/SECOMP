@@ -1243,7 +1243,155 @@ Admitted.
 
   Admitted.
 
-  Lemma right_mem_injection_function_entry1: forall {j f m1 m2 vargs1 vargs2 e1 le1 m1'},
+  Lemma right_mem_injection_alloc {j f m1 m2 e1 e2 le1 le2 m1' b1 ty} id
+    (RMEMINJ: right_mem_injection s j ge1 ge2 m1 m2)
+    (RENVINJ: right_env_injection j e1 e2)
+    (RTENVINJ: right_tenv_injection j le1 le2)
+    (RIGHT: s |= (f: function) ∈ Right)
+    (ALLOC: Mem.alloc m1 (comp_of f) 0 (sizeof ge1 ty) = (m1', b1)):
+    exists j' m2' b2,
+      Mem.alloc m2 (comp_of f) 0 (sizeof ge2 ty) = (m2', b2) /\
+      right_mem_injection s j' ge1 ge2 m1' m2' /\
+      right_env_injection j' (PTree.set id (b1, ty) e1) (PTree.set id (b2, ty) e2) /\
+      right_tenv_injection j' le1 le2.
+  Proof.
+    (* We need to go a bit further in relating ge1 and ge2 *)
+    assert (SIZE: forall ty, sizeof ge1 ty = sizeof ge2 ty) by admit.
+    destruct (Mem.alloc_parallel_inject _ _ _ _ _ _ _ _ _ _
+                (partial_mem_inject _ _ _ _ _ _ RMEMINJ)
+                ALLOC (Z.le_refl _) (Z.le_refl _))
+      as (j' & m2' & b2 & ALLOC2' & INJ & INCR & ZERO & EXT).
+    exists j', m2', b2.
+    split; [| split; [| split]].
+    - rewrite <- SIZE. assumption.
+    - destruct RMEMINJ. constructor; auto.
+      + intros b. specialize (same_dom0 b).
+        destruct Genv.invert_symbol as [id' |] eqn:INVERT.
+        * (* Same as below, [b] must already be in the memory *)
+          assert (NEQ: b <> b1) by admit.
+          simpl.
+          rewrite (EXT _ NEQ), (Mem.alloc_block_compartment _ _ _ _ _ _ ALLOC).
+          destruct eq_block as [| _]; [contradiction |].
+          auto.
+        * destruct (peq b b1) as [-> | NEQ].
+          -- split.
+             ++ intros _.
+                simpl. rewrite (Mem.owned_new_block _ _ _ _ _ _ ALLOC).
+                auto.
+             ++ intros _ CONTRA.
+                congruence.
+          -- split.
+             ++ intros j'_b. simpl.
+                rewrite (Mem.alloc_block_compartment _ _ _ _ _ _ ALLOC).
+                destruct eq_block as [| _]; [contradiction |].
+                apply same_dom0.
+                rewrite (EXT _ NEQ) in j'_b.
+                auto.
+             ++ intros RIGHT' j'_b.
+                rewrite (EXT _ NEQ) in j'_b.
+                apply same_dom0; [| assumption].
+                simpl in RIGHT'.
+                rewrite (Mem.alloc_block_compartment _ _ _ _ _ _ ALLOC) in RIGHT'.
+                destruct eq_block as [| _]; [contradiction |].
+                auto.
+      + intros b1' b2' delta j'_b1. specialize (j_delta_zero0 b1' b2' delta).
+        destruct (peq b1' b1) as [-> | NEQ].
+        * rewrite ZERO in j'_b1. injection j'_b1 as <- <-.
+          reflexivity.
+        * specialize (EXT b1' NEQ). rewrite EXT in j'_b1.
+          auto.
+      + destruct same_symb0 as (PUB & FIND & PUB_FIND & VOL).
+        split; [| split; [| split]].
+        * auto.
+        * intros id' b1' b2' delta b1'_b2' id'_b1'. specialize (FIND id' b1' b2' delta).
+          (* [id] must already be found in the initial state from
+             which the execution originates, so its assigned block
+             cannot be newly allocated -- even if this information
+             is not readily available in the invariant. See
+             [Genv.find_symbol_not_fresh] *)
+          assert (NEQ: b1' <> b1) by admit.
+          specialize (EXT _ NEQ). rewrite EXT in b1'_b2'.
+          auto.
+        * intros id' b1' PUB_id id_b1'.
+          specialize (PUB_FIND id' b1' PUB_id id_b1') as (b2' & b1'_b2' & id'_b2').
+          destruct (peq b1' b1) as [-> | NEQ].
+          -- eauto.
+          -- specialize (EXT _ NEQ). rewrite <- EXT in b1'_b2'.
+             eauto.
+        * intros b1' b2' delta b1'_b2'.
+          (* Like symbols, volatile blocks are declared and defined at
+             the outset and this property is invariant throughout
+             program execution. See e.g. [Senv.block_is_volatile] and
+             connections between pSenv.nextblock], [Genv.genv_next]
+             and the initial program memory
+             i.e. [Genv.init_mem_genv_next] *)
+          destruct (peq b1' b1) as [-> | NEQ].
+          --  admit.
+          -- rewrite (EXT _ NEQ) in b1'_b2'.
+             exact (VOL _ _ _ b1'_b2').
+      + intros b1' b2' b1'' b2'' ofs1 ofs2 b1'_b2' b1'_b1'' b2'_b2''.
+        (* inv INJ. Check mi_no_overlap. *)
+        specialize (jinjective0 b1' b2' b1'' b2'' ofs1 ofs2 b1'_b2').
+        destruct (peq b1' b1) as [-> | NEQ1].
+        * admit.
+        * rewrite (EXT _ NEQ1) in b1'_b1''.
+          destruct (peq b2' b1) as [-> | NEQ2].
+          -- admit.
+          -- rewrite (EXT _ NEQ2) in b2'_b2''.
+             auto.
+      + intros b cp' FIND. specialize (same_blks3 b cp' FIND).
+        change (Mem.block_compartment _ _ = _)
+          with (Mem.can_access_block m1' b (Some cp')).
+        eapply Mem.alloc_can_access_block_other_inj_1; eauto.
+      + intros b cp' FIND. specialize (same_blks4 b cp' FIND).
+        change (Mem.block_compartment _ _ = _)
+          with (Mem.can_access_block m2' b (Some cp')).
+        eapply Mem.alloc_can_access_block_other_inj_1; eauto.
+    - destruct RENVINJ as [ENVSOME ENDNONE]. split.
+      + intros id' b ty' GET.
+        destruct (peq id' id) as [-> | NEQ].
+        * rewrite PTree.gss. rewrite PTree.gss in GET.
+          injection GET as <- <-.
+          eauto.
+        * rewrite PTree.gso; [| assumption].
+          rewrite PTree.gso in GET; [| assumption].
+          specialize (ENVSOME id' b ty' GET) as (b' & b_b' & id'_b').
+          eauto.
+      + intros id' GET.
+        destruct (peq id' id) as [-> | NEQ].
+        * rewrite PTree.gss in GET.
+          discriminate.
+        * rewrite PTree.gso; [| assumption].
+          rewrite PTree.gso in GET; [| assumption].
+          specialize (ENDNONE id' GET). auto.
+    - intros id' v GET. specialize (RTENVINJ id' v GET) as (v' & INJ' & GET').
+      inv INJ'; eauto.
+  Admitted.
+
+  Lemma right_mem_injection_alloc_variables {j f m1 m1' m2 e1 e1' e2 le1 le2 vars}
+    (RMEMINJ: right_mem_injection s j ge1 ge2 m1 m2)
+    (RENVINJ: right_env_injection j e1 e2)
+    (RTENVINJ: right_tenv_injection j le1 le2)
+    (RIGHT: s |= (f: function) ∈ Right)
+    (ALLOC: alloc_variables ge1 (comp_of f) e1 m1 vars e1' m1'):
+    exists j' e2' m2',
+      alloc_variables ge2 (comp_of f) e2 m2 vars e2' m2' /\
+      right_mem_injection s j' ge1 ge2 m1' m2' /\
+      right_env_injection j' e1' e2' /\
+      right_tenv_injection j' le1 le2.
+  Proof.
+    revert j m2 e2 le1 le2 RMEMINJ RENVINJ RTENVINJ RIGHT.
+    induction ALLOC;
+      intros.
+    - exists j, e2, m2. split; [constructor | auto].
+    - destruct (right_mem_injection_alloc id RMEMINJ RENVINJ RTENVINJ RIGHT H)
+        as (j' & m2' & b2 & ALLOC' & RMEMINJ' & RENVINJ' & RTENVINJ').
+      specialize (IHALLOC _ _ _ _ _ RMEMINJ' RENVINJ' RTENVINJ' RIGHT)
+        as (j'' & e2' & m2'' & ALLOC2 & RMEMINJ'' & RENVINJ'' & RTENVINJ'').
+      exists j'', e2', m2''. split; [| split; [| split]]; auto.
+      econstructor; eauto.
+  Qed.
+
     right_mem_injection s j ge1 ge2 m1 m2 ->
     Val.inject_list j vargs1 vargs2 ->
     s |= f ∈ Right ->
@@ -1830,21 +1978,21 @@ Proof.
     simpl; intros; subst;
     eauto using right_cont_injection_find_label_spec.
   - assert (RCONTINJ' := right_cont_injection_kseq _ s1 _ _ RCONTINJ).
-    specialize (H _ _ RCONTINJ') as [? ? ? ? |];
+    specialize (H _ _ RCONTINJ') as [|];
       eauto using right_cont_injection_find_label_spec.
-  - specialize (H _ _ RCONTINJ) as [? ? ? ? |];
+  - specialize (H _ _ RCONTINJ) as [|];
       eauto using right_cont_injection_find_label_spec.
   - assert (RCONTINJ' := right_cont_injection_kloop1 _ s0 s1 _ _ RCONTINJ).
-    specialize (H _ _ RCONTINJ') as [? ? ? ? |];
+    specialize (H _ _ RCONTINJ') as [|];
       eauto using right_cont_injection_find_label_spec, right_cont_injection.
   - assert (RCONTINJ' := right_cont_injection_kswitch _ _ _ RCONTINJ).
-    specialize (H _ _ RCONTINJ') as [? ? ? ? |];
+    specialize (H _ _ RCONTINJ') as [|];
       eauto using right_cont_injection_find_label_spec.
   - destruct (ident_eq lbl l) as [-> |] eqn:IDEQ;
-      specialize (H _ _ RCONTINJ) as [? ? ? ? |];
+      specialize (H _ _ RCONTINJ) as [|];
       eauto using right_cont_injection_find_label_spec.
   - assert (RCONTINJ' := right_cont_injection_kseq _ (seq_of_labeled_statement l) _ _ RCONTINJ).
-    specialize (H _ _ RCONTINJ') as [? ? ? ? |];
+    specialize (H _ _ RCONTINJ') as [|];
       eauto using right_cont_injection_find_label_spec.
 Qed.
 
@@ -2263,10 +2411,7 @@ Qed.
       destruct (right_mem_injection_function_entry1 RMEMINJ ARGINJ is_r1 H)
         as (e2 & le2 & m2' & ENTRY' & RENVINJ' & RTENVINJ').
       exists j. eexists. split.
-      {
-        (* constructor; econstructor; eauto. *)
-        apply step_internal_function; eauto.
-      }
+      { apply step_internal_function; eauto. }
       { apply RightControl; auto.
         constructor; auto.
         - inversion RMEMINJ.
