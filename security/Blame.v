@@ -1411,6 +1411,21 @@ Admitted.
       e2 ! id = Some (b2, ty) /\
       assign_loc ge2 (comp_of f) ty m2 b2 Ptrofs.zero Full v2 m2' /\
       right_mem_injection s j ge1 ge2 m1' m2'.
+  Proof.
+    inv ASSIGN.
+    - destruct (proj1 RENVINJ _ _ _ LOOKUP) as (b2 & b1_b2 & LOOKUP').
+      inversion RMEMINJ.
+      exploit Mem.store_mapped_inject; eauto.
+      intros (m2' & STORE' & INJ').
+      exists m2', b2. split; [| split].
+      + assumption.
+      + eapply assign_loc_value; eauto.
+      + constructor; auto.
+        * admit. (* easy *)
+        * eapply same_blocks_store; eauto.
+        * eapply same_blocks_store; eauto.
+    - destruct (proj1 RENVINJ _ _ _ LOOKUP) as (b2 & b1_b2 & LOOKUP').
+      admit. (* similar *)
   Admitted.
 
   Lemma right_mem_injection_bind_parameters
@@ -1424,7 +1439,20 @@ Admitted.
     exists m2',
       bind_parameters ge2 (comp_of f) e2 m2 params vargs2 m2' /\
       right_mem_injection s j ge1 ge2 m1' m2'.
-  Admitted.
+  Proof.
+    revert m2 vargs2 RMEMINJ VALINJ.
+    induction BIND; intros.
+    - exists m2. split.
+      + inv VALINJ. constructor.
+      + assumption.
+    - inv VALINJ.
+      destruct (right_mem_injection_assign_loc RMEMINJ RENVINJ RTENVINJ RIGHT H H3 H0)
+        as (m2' & b2 & LOOKUP' & ASSIGN' & RMEMINJ').
+      destruct (IHBIND _ _ RMEMINJ' H5) as (m2'' & BIND' & RMEMINJ'').
+      exists m2''. split.
+      + econstructor; eauto.
+      + assumption.
+  Qed.
 
   Lemma right_mem_injection_function_entry1: forall
     {j f m1 m2 vargs1 vargs2 e1 e2 le1 le2 m1'},
@@ -1433,33 +1461,22 @@ Admitted.
     right_tenv_injection j le1 le2 ->
     Val.inject_list j vargs1 vargs2 ->
     s |= f ∈ Right ->
-    function_entry1 ge1 f vargs1 m1 e1 le1 m1' ->
-    exists j' e2 le2 m2',
-      function_entry1 ge2 f vargs2 m2 e2 le2 m2' /\
+    function_entry1 ge1 f vargs1 m1 e1 (create_undef_temps (fn_temps f)) m1' ->
+    exists j' e2' m2',
+      function_entry1 ge2 f vargs2 m2 e2' (create_undef_temps (fn_temps f)) m2' /\
       right_mem_injection s j' ge1 ge2 m1' m2' /\
-      right_env_injection j' e1 e2 /\
-      right_tenv_injection j' le1 le2.
+      right_env_injection j' e1 e2' /\
+      right_tenv_injection
+        j' (create_undef_temps (fn_temps f)) (create_undef_temps (fn_temps f)).
   Proof.
     intros until m1'; intros RMEMINJ RENVINJ RTENVINJ VALINJ RIGHT ENTRY.
     inv ENTRY.
     assert (RENVINJ0: right_env_injection j empty_env empty_env) by easy.
-    destruct (right_mem_injection_alloc_variables RMEMINJ RENVINJ0 RTENVINJ RIGHT H0)
-      as (j' & e2' & m2' & ALLOC2 & RMEMINJ' & INCR & RENVINJ' & RTENVINJ').
-    assert (VALINJ': Val.inject_list j' vargs1 vargs2). {
-      clear -VALINJ INCR.
-      induction VALINJ; [constructor |].
-      constructor; [| assumption].
-      inv H; try constructor.
-      eapply Val.inject_ptr; [| reflexivity].
-      auto. }
-    destruct (right_mem_injection_bind_parameters
-                RMEMINJ' RENVINJ' RTENVINJ' RIGHT VALINJ' H1)
-      as (m2'' & BIND2 & MEMINJ'').
-    exists j', e2', (create_undef_temps (fn_temps f)), m2''.
-    split; [| split; [| split]]; auto.
-    - econstructor; eauto.
-    - (* Little helper lemma *)
-      clear. remember (fn_temps f) as temps eqn:DUMMY. clear DUMMY.
+    assert (RTENVINJ0:
+             forall j,
+               right_tenv_injection
+                 j (create_undef_temps (fn_temps f)) (create_undef_temps (fn_temps f))). {
+      clear. intros j. remember (fn_temps f) as temps eqn:DUMMY. clear DUMMY.
       induction temps as [| [id ty] temps IHtemps].
       + intros id v GET.
         rewrite PTree.gempty in GET.
@@ -1472,7 +1489,22 @@ Admitted.
           exists Vundef. auto.
         * simpl. rewrite PTree.gso; [| assumption].
           simpl in GET. rewrite PTree.gso in GET; [| assumption].
-          eapply IHtemps; eauto.
+          eapply IHtemps; eauto. }
+    destruct (right_mem_injection_alloc_variables RMEMINJ RENVINJ0 (RTENVINJ0 j) RIGHT H0)
+      as (j' & e2' & m2' & ALLOC2 & RMEMINJ' & INCR & RENVINJ' & RTENVINJ').
+    assert (VALINJ': Val.inject_list j' vargs1 vargs2). {
+      clear -VALINJ INCR.
+      induction VALINJ; [constructor |].
+      constructor; [| assumption].
+      inv H; try constructor.
+      eapply Val.inject_ptr; [| reflexivity].
+      auto. }
+    destruct (right_mem_injection_bind_parameters
+                RMEMINJ' RENVINJ' RTENVINJ' RIGHT VALINJ' H1)
+      as (m2'' & BIND2 & MEMINJ'').
+    exists j', e2', m2''.
+    split; [| split; [| split]]; auto.
+    econstructor; eauto.
   Qed.
 
   Lemma memval_inject_alloc {j m1 m2 b1 b2 ofs delta cp lo hi m1' m2' b1' b2'}
