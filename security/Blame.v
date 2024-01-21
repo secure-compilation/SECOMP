@@ -1514,6 +1514,32 @@ Admitted.
     econstructor; eauto.
   Qed.
 
+  Lemma right_mem_injection_external_call {j ef vargs1 vargs2 vres1 t m1 m1' m2}
+    (RMEMINJ : right_mem_injection s j ge1 ge2 m1 m2)
+    (EXTCALL: external_call ef ge1 vargs1 m1 t vres1 m1')
+    (ARGINJ: Val.inject_list j vargs1 vargs2):
+    exists j' m2' vres2,
+      external_call ef ge2 vargs2 m2 t vres2 m2' /\
+      right_mem_injection s j' ge1 ge2 m1' m2' /\
+      inject_incr j j' /\
+      Val.inject j' vres1 vres2.
+  Proof.
+    exploit ec_mem_inject; eauto.
+    { apply external_call_spec. }
+    { eapply same_symb; eauto. }
+    { eapply partial_mem_inject; eauto. }
+    intros (j' & vres2 & m2' & ? & ? & ?  & ? & ? & ? & ? & ?).
+    exists j', m2', vres2.
+    split; [| split; [| split]]; auto.
+    constructor; eauto.
+    - admit.
+    - admit.
+    - admit.
+    - admit.
+    - admit.
+    - admit.
+  Admitted.
+
   Lemma memval_inject_alloc {j m1 m2 b1 b2 ofs delta cp lo hi m1' m2' b1' b2'}
     (INJ: memval_inject j
             (ZMap.get ofs (Mem.mem_contents m1) !! b1)
@@ -2396,39 +2422,32 @@ Qed.
       (*     constructor; eauto. *)
       (*     simpl. apply right_cont_injection_kcall_right; eauto. *)
     + (* step_builtin *)
+      (* prefix *)
       exploit eval_exprlist_injection; eauto.
       auto.
       intros [vs' [? ?]].
-      exploit ec_mem_inject; eauto.
-      { apply external_call_spec. }
-      { eapply same_symb; eauto. }
-      { eapply partial_mem_inject; eauto. }
-      intros [j' [? [m2' [? [? [? [? [? [? ?]]]]]]]]].
+      (* same as step_external_function *)
+      destruct (right_mem_injection_external_call RMEMINJ H0 H1)
+        as (j' & m2' & vres' & EXTCALL' & RMEMINJ' & INCR & RESINJ).
       exists j'; eexists; split.
       econstructor; eauto.
       apply RightControl; eauto.
       constructor; eauto.
-      * constructor; eauto.
-        - admit.
-        - admit.
-        - admit.
-        - admit.
-        - admit.
-        - admit.
+      (* suffix *)
       * destruct RENVINJ as [RENVINJ_SOME RENVINJ_NONE].
         split.
         { intros ? ? ? ?.
           exploit RENVINJ_SOME; eauto. intros [b' [? ?]].
           exists b'; split; eauto. }
         { intros ? ?.
-          specialize (RENVINJ_NONE _ H10); eauto. }
+          specialize (RENVINJ_NONE _ H3); eauto. }
       * intros ? ? ?.
         destruct optid.
         - simpl in *. rewrite PTree.gsspec in *.
           destruct (peq i i0); subst.
-          { inv H10. eexists; split; eauto. }
-          { specialize (RTENVINJ _ _ H10) as [? [? ?]]; eauto. }
-        - specialize (RTENVINJ _ _ H10) as [? [? ?]]; eauto.
+          { inv H3. eexists; split; eauto. }
+          { specialize (RTENVINJ _ _ H3) as [? [? ?]]; eauto. }
+        - specialize (RTENVINJ _ _ H3) as [? [? ?]]; eauto.
     + (* step_seq*)
       exists j; eexists; split; [constructor | apply RightControl]; auto.
       constructor; auto. constructor; auto.
@@ -2658,22 +2677,12 @@ Qed.
       (* } *)
     + (* step_external_function *)
       (* very similar to step_builtin *)
-      exploit ec_mem_inject; eauto.
-      { apply external_call_spec. }
-      { eapply same_symb; eauto. }
-      { eapply partial_mem_inject; eauto. }
-      intros [j' [? [m2' [? [? [? [? [? [? ?]]]]]]]]].
+      destruct (right_mem_injection_external_call RMEMINJ H ARGINJ)
+        as (j' & m2' & vres' & EXTCALL' & RMEMINJ' & INCR & RESINJ).
       exists j'; eexists; split.
       econstructor; eauto.
       apply RightControl; eauto.
       constructor; eauto.
-      constructor; eauto.
-      - admit.
-      - admit.
-      - admit.
-      - admit.
-      - admit.
-      - admit.
     + (* step_returnstate *)
       inv RCONTINJ.
       * assert (COMP: comp_of f = comp_of f2) by admit. (* need to know this at least *)
