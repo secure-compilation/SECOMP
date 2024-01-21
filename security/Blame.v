@@ -1243,6 +1243,60 @@ Admitted.
 
   Admitted.
 
+  Lemma inject_list_not_ptr: forall j vl1 vl2,
+    Val.inject_list j vl1 vl2 ->
+    Forall not_ptr vl1 ->
+    Forall not_ptr vl2.
+  Proof.
+    intros j vl1 vl2 INJ.
+    induction INJ.
+    - now constructor.
+    - intros PTR.
+      inv PTR.
+      specialize (IHINJ H3).
+      constructor; [| assumption].
+      inv H; inv H2; constructor.
+  Qed.
+
+  (* Symbols are present in the program memory from the very beginning
+     (cf. [Genv.init_mem] and the correspondence should also be
+     reflected in and preserved by the memory injection. *)
+  Lemma right_mem_injection_find_symbol: forall j m1 m2 id b1 b2 delta,
+    right_mem_injection s j ge1 ge2 m1 m2 ->
+    Genv.find_symbol ge1 id = Some b1 ->
+    j b1 = Some (b2, delta) ->
+    Genv.find_symbol ge2 id = Some b2.
+  Admitted.
+
+  (* This lemma relies on just one of the properties of
+     [right_mem_injection], except for the appeal to (what is now
+     known as) [right_mem_inj_find_symbol], namely Mem.delta_zero. *)
+  Lemma right_mem_injection_list_match: forall j m1 m2 vargs1 vargs2 vl tyl,
+    right_mem_injection s j ge1 ge2 m1 m2 ->
+    (* Mem.delta_zero j -> *)
+    Val.inject_list j vargs1 vargs2 ->
+    eventval_list_match ge1 vl tyl vargs1 ->
+    eventval_list_match ge2 vl tyl vargs2.
+  Proof.
+    intros j m1 m2 vargs1 vargs2 vl tyl RMEMINJ INJ. revert vl tyl.
+    induction INJ; intros ? ? MATCH.
+    - inv MATCH. constructor.
+    - inv MATCH. constructor.
+      + inv H; inv H4; try constructor.
+        assert (delta = 0) as -> by (inv RMEMINJ; eauto).
+        rewrite Ptrofs.add_zero.
+        apply ev_match_ptr.
+        * assert (PUBLIC: Genv.public_symbol ge1 id = true) by trivial.
+          rewrite <- public_symbol_preserved in PUBLIC.
+          auto.
+        * (* Symbols are present in the program memory from the very
+             beginning (cf. [Genv.init_mem] and the correspondence
+             should also be reflected in and preserved by the memory
+             injection. *)
+          eapply right_mem_injection_find_symbol; eauto.
+      + eauto.
+  Qed.
+
   Remark right_env_injection_empty_env j:
     right_env_injection j empty_env empty_env.
   Proof.
@@ -2367,18 +2421,41 @@ Qed.
           as type_fd2.
         { inv match_fd''; eauto. }
         assert (Genv.allowed_call ge2 (comp_of f) vf2) as ALLOWED2.
-        { right. rewrite evf2. simpl. exists id, (comp_of fd2).
-          split.
-          { now apply Genv.find_invert_symbol. }
-          (* unfold Genv.find_comp. rewrite <- evf2. unfold ge2 in find_vf2'. *)
-          (* simpl in find_vf2'. rewrite find_vf2'. split; trivial. *)
-          admit.
+        { eapply allowed_call_preserved; eauto.
+        (*   right. rewrite evf2. simpl. exists id, (comp_of fd2). *)
+        (*   split. *)
+        (*   { now apply Genv.find_invert_symbol. } *)
+        (*   (* unfold Genv.find_comp. rewrite <- evf2. unfold ge2 in find_vf2'. *) *)
+        (*   (* simpl in find_vf2'. rewrite find_vf2'. split; trivial. *) *)
+        (*   admit. *)
         }
 
+        assert (COMP_fd1_fd2: comp_of fd1 = comp_of fd2)
+              by (inv match_fd''; auto).
         exists j, (Callstate fd2 vargs2 (Kcall optid f e2 le2 k2) m2).
-        (* split. *)
-        (* econstructor; eauto. *)
-        admit.
+        (*  This proof is nearly identical to the sub-case immediately below *)
+        split.
+        { econstructor; eauto.
+          - rewrite <- COMP_fd1_fd2. intros CROSS. specialize (NO_CROSS_PTR1 CROSS).
+            eapply inject_list_not_ptr; eauto.
+          - rewrite <- COMP_fd1_fd2.
+            inv EV1.
+            + apply call_trace_intra. assumption.
+            + inv vf1_vf2.
+              eapply call_trace_cross.
+              * assumption.
+              * reflexivity.
+              * injection H0 as <- <-.
+                apply Genv.find_invert_symbol.
+                apply Genv.invert_find_symbol in H1.
+                eapply right_mem_injection_find_symbol; eauto.
+              * eapply right_mem_injection_list_match; eauto. }
+        { apply LeftControl.
+          - assumption.
+          - simpl. rewrite <- COMP_fd1_fd2. assumption.
+          - assumption.
+          - simpl. rewrite is_r1.
+            now apply right_cont_injection_kcall_right. }
       * rename fd1 into fd.
         rename type_fd1 into type_fd.
         (* rewrite comp_vf1 in *. *)
@@ -2388,13 +2465,23 @@ Qed.
         (* assert (Genv.find_comp ge2 vf2 = comp_of fd) as comp_vf2. *)
         (* { unfold Genv.find_comp. now rewrite find_vf2. } *)
         assert (Genv.allowed_call ge2 (comp_of f) vf2) as ALLOWED2.
-        { admit. }
+        { eapply allowed_call_preserved; eauto. }
         exists j.
         exists (Callstate fd vargs2 (Kcall optid f e2 le2 k2) m2).
         split.
         { econstructor; eauto.
-          - admit.
-          - admit. }
+          - intros CROSS. specialize (NO_CROSS_PTR1 CROSS).
+            eapply inject_list_not_ptr; eauto.
+          - inv EV1.
+            + apply call_trace_intra. assumption.
+            + inv vf1_vf2.
+              eapply call_trace_cross.
+              * assumption.
+              * reflexivity.
+              * apply Genv.find_invert_symbol.
+                apply Genv.invert_find_symbol in H1.
+                eapply right_mem_injection_find_symbol; eauto.
+              * eapply right_mem_injection_list_match; eauto. }
         apply RightControl; trivial.
         constructor; trivial.
         now apply right_cont_injection_kcall_right.
