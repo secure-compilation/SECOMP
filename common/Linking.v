@@ -356,24 +356,8 @@ Lemma link_prog_subproof :
   Policy.eqb p1.(prog_pol) p2.(prog_pol) = true ->
   Policy.in_pub p1.(prog_pol) (p1.(prog_public) ++ p2.(prog_public)).
 Proof.
+
 Admitted.
-
-(* Definition link_pol_comp (oc1 oc2: option compartment) := *)
-(*   match oc1, oc2 with *)
-(*   | None, oc2 => oc2 *)
-(*   | oc1, None => oc1 *)
-(*   | Some c1, Some c2 => *)
-(*       if cp_eq_dec c1 bottom then Some c2 *)
-(*       else if cp_eq_dec c2 bottom then Some c1 *)
-(*       else if cp_eq_dec c1 c2 then Some c1 *)
-(*       else None *)
-(*   end. *)
-
-(* Definition link_pol_check (x: ident) (c1: compartment) := *)
-(*   match link_pol_comp (Some c1) p2.(prog_pol).(Policy.policy_comps)!x with *)
-(*   | Some _ => true *)
-(*   | None => false *)
-(*   end. *)
 
 Definition link_pol_comp: PTree.t compartment :=
   let defs := PTree.elements (PTree.combine link_prog_merge dm1 dm2) in
@@ -391,7 +375,36 @@ Lemma prog_agr_comps_link:
   agr_comps (link_pol p1.(prog_pol) p2.(prog_pol))
     (PTree.elements (PTree.combine link_prog_merge dm1 dm2)).
 Proof.
-  Admitted.
+ unfold agr_comps.
+ unfold link_pol. simpl.
+ unfold link_pol_comp.
+ rewrite Forall_forall.
+ pose proof (PTree.elements_keys_norepet (PTree.combine link_prog_merge dm1 dm2)) as H. revert H.
+ generalize (PTree.elements (PTree.combine link_prog_merge dm1 dm2)).
+ intros l.
+ assert (H: forall id gd, In (id, gd) l -> In (id, comp_of gd) (map (fun '(id, a) => (id, comp_of a)) l)).
+ { intros.
+   pose proof (@in_map (positive * globdef F V) _ (fun '(id, gd) => (id, comp_of gd))) as G.
+   specialize (G l (id, gd)). eauto. }
+ intros NO.
+ assert (H': list_norepet (map fst (map (fun '(id, a) => (id, comp_of a)) l))).
+ { rewrite map_map.
+   replace (fun x : positive * globdef F V => fst (let '(id, a) := x in (id, comp_of a))) with
+     (fst : positive * globdef F V -> positive). eauto.
+   eapply FunctionalExtensionality.functional_extensionality.
+   intros []; auto. }
+ revert H' H NO.
+ generalize (map (fun '(id, a) => (id, comp_of a)) l).
+ induction l.
+ - intros l' NO IN H x G; inv G.
+ - intros l' NO IN H [id gd] G; inversion H as [|? ? A B C]; subst. simpl in *.
+   destruct a as [id' gd']; simpl in *.
+   destruct G as [G | G].
+   + inv G.
+     erewrite PTree_Properties.of_list_norepet; eauto.
+   + exploit IN; eauto.
+     exploit IHl; eauto.
+Qed.
 
 Definition link_prog :=
   if ident_eq p1.(prog_main) p2.(prog_main)

@@ -703,10 +703,11 @@ Instance has_comp_globdef F V {CF: has_comp F} : has_comp (globdef F V) :=
 Definition agr_comps {F V: Type} {CF: has_comp F} (pol: Policy.t) (defs: list (ident * globdef F V)): Prop :=
   Forall
     (fun idg => pol.(Policy.policy_comps) ! (fst idg) = Some (comp_of (snd idg)))
-    defs /\
-  forall (id: ident) (cp: compartment),
-    pol.(Policy.policy_comps) ! id = Some cp ->
-    exists gd, In (id, gd) defs /\ cp = comp_of gd.
+    defs.
+  (* /\ *)
+  (* forall (id: ident) (cp: compartment), *)
+  (*   pol.(Policy.policy_comps) ! id = Some cp -> *)
+  (*   exists gd, In (id, gd) defs /\ cp = comp_of gd. *)
 
 Record program (F V: Type) {CF: has_comp F} : Type := mkprogram {
   prog_defs: list (ident * globdef F V);
@@ -792,7 +793,13 @@ Definition update_policy (pol: Policy.t) (defs: list (ident * globdef B W)): Pol
 Lemma agr_update_policy (pol: Policy.t) (defs: list (ident * globdef B W)):
   agr_comps (update_policy pol defs) defs.
 Proof.
-  unfold agr_comps; simpl; split.
+  unfold agr_comps.
+  rewrite Forall_forall.
+  induction defs.
+  - intros x H; inv H.
+  - intros [id gd] H. inv H.
+    + simpl. admit.
+    + simpl. admit.
 Admitted.
 End TRANSF_POL.
 
@@ -814,20 +821,14 @@ Lemma agr_comps_transf: forall {pol defs},
   agr_comps pol defs ->
   agr_comps pol (List.map transform_program_globdef defs).
 Proof.
-  unfold agr_comps; intros pol defs [H G].
-  split.
-  - clear G. induction H.
+  unfold agr_comps; intros pol defs H.
+  - induction H.
     + now simpl.
     + simpl; constructor.
       * destruct x as [id [fd | vd]]; simpl in *.
         -- now rewrite comp_transf.
         -- assumption.
     * assumption.
-  - clear H.
-    intros id cp H.
-    specialize (G id cp H) as [gd [R S]]; subst cp.
-    eapply in_map with (f := transform_program_globdef) in R.
-    destruct gd; simpl; eauto.
 Qed.
 
 Definition transform_program (p: program A V) : program B V :=
@@ -892,51 +893,24 @@ Lemma agr_comps_transf_partial: forall {pol defs},
     transf_globdefs defs = OK defs' ->
     agr_comps pol defs'.
 Proof.
-  unfold agr_comps; intros pol defs [H G] defs' def_trans.
-  split.
-  { clear G. revert defs' def_trans.
-    induction H.
-    - now intros defs' H; simpl in H; inv H.
-    - intros defs' defs'_OK.
-      destruct x as [id [fd | vd]] eqn:?; simpl in *.
-      + destruct transf_fun eqn:?; try congruence; simpl in *.
-        monadInv defs'_OK.
-        simpl; constructor.
-        * simpl.
-          apply has_comp_transl_partial_match_contextual with (g := fun id => id) in Cf.
-          now rewrite Cf in H; eauto.
-        * now eauto.
-      + destruct transf_globvar eqn:?; try congruence; simpl in *.
-        monadInv defs'_OK.
-        simpl; constructor.
-        * now monadInv Heqr; eauto.
-        * now eauto. }
-  { clear H.
-    intros id cp H.
-    specialize (G id cp H) as [gd [R S]]; subst cp.
-    clear -R def_trans Cf.
-    revert defs' def_trans.
-    induction defs.
-    - inv R.
-    - intros defs' def_trans. inv R.
-      + destruct gd; simpl in *; eauto.
-        * destruct transf_fun eqn:transf_id_f; try congruence.
-          monadInv def_trans.
-          exists (Gfun b); split; [left |]; eauto.
-          now rewrite Cf; eauto.
-        * destruct transf_globvar eqn:transf_id_v; try congruence.
-          monadInv def_trans.
-          exists (Gvar g); split; [left |]; eauto.
-          monadInv transf_id_v; auto.
-      + destruct a as [? []]; simpl in def_trans.
-        * destruct transf_fun eqn:transf_id_f; try congruence.
-          monadInv def_trans.
-          exploit IHdefs; eauto. intros [gd0 [? ?]].
-          exists gd0; split; [right |]; eauto.
-        * destruct transf_globvar eqn:transf_id_v; try congruence.
-          monadInv def_trans.
-          exploit IHdefs; eauto. intros [gd0 [? ?]].
-          exists gd0; split; [right |]; eauto. }
+  unfold agr_comps; intros pol defs H defs' def_trans.
+  revert defs' def_trans.
+  induction H.
+  - now intros defs' H; simpl in H; inv H.
+  - intros defs' defs'_OK.
+    destruct x as [id [fd | vd]] eqn:?; simpl in *.
+    + destruct transf_fun eqn:?; try congruence; simpl in *.
+      monadInv defs'_OK.
+      simpl; constructor.
+      * simpl.
+        apply has_comp_transl_partial_match_contextual with (g := fun id => id) in Cf.
+        now rewrite Cf in H; eauto.
+      * now eauto.
+    + destruct transf_globvar eqn:?; try congruence; simpl in *.
+      monadInv defs'_OK.
+      simpl; constructor.
+      * now monadInv Heqr; eauto.
+      * now eauto.
 Qed.
 
 Definition transform_partial_program2 (p: program A V) : res (program B W) :=

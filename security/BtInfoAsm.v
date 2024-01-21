@@ -207,10 +207,10 @@ Section IR.
 
   Definition ir_state := option (block * mem * ir_conts)%type.
 
-  Instance has_comp_fundef: has_comp Asm.fundef.
-  Proof.
-    eapply has_comp_fundef. eapply has_comp_function.
-  Qed.
+  (* Instance has_comp_fundef: has_comp Asm.fundef. *)
+  (* Proof. *)
+  (*   eapply has_comp_fundef. eapply has_comp_function. *)
+  (* Qed. *)
 
   Definition funsig fd :=
     match fd with
@@ -1271,12 +1271,6 @@ Section PROOF.
       2:{ exists res. auto. }
       econstructor 2. 2: econstructor 1. 2: eauto.
       eapply ir_step_intra_call_external; eauto.
-      (* exact x0. *) (* this one should work trivially *)
-      admit.
-      admit. (* idem *)
-      (* { unfold Genv.type_of_call in *. rewrite CURCOMP, <- REC_CURCOMP. rewrite NEXTPC. simpl. *)
-      (*   unfold Genv.find_comp. setoid_rewrite NEXTF. rewrite Pos.eqb_refl. auto. *)
-      (* } *)
 
     - (* extcall is known and observable *)
       rename H7 into EXTCALL, H8 into EXTARGS. unfold external_call_known_observables in ECKO.
@@ -1288,11 +1282,8 @@ Section PROOF.
         eapply ir_step_intra_call_external. all: eauto.
         (* { rewrite CURCOMP, <- REC_CURCOMP, NEXTPC. simpl. unfold Genv.find_comp. setoid_rewrite NEXTF. unfold Genv.type_of_call. rewrite Pos.eqb_refl. auto. } *)
         { ss. }
-        { simpl. econstructor. econstructor 1; eauto. unfold Senv.find_comp. simpl.
-          admit. (* wrong typeclass instance *)
-          (* exact H2. *)
-        }
-        { simpl. right. split; auto. econs; eauto. econs. econs; eauto. admit. (* same problem *)}
+        { simpl. econstructor. econstructor 1; eauto. }
+        { simpl. right. split; auto. econs; eauto. econs. econs; eauto. }
         { simpl. unfold senv_invert_symbol_total. erewrite Senv.find_invert_symbol; eauto. }
         splits; auto.
       }
@@ -1305,12 +1296,10 @@ Section PROOF.
         { ss. }
         { instantiate (2:=[Vptr b0 ofs; Val.load_result chunk v]).
           simpl. econstructor. econstructor 1; eauto.
-          admit. (* idem*)
           rewrite val_load_result_idem. auto.
         }
         { simpl. right. split; auto.
           splits; ss; auto. econs; eauto. econs; eauto.
-          admit. (* idem *)
           rewrite val_load_result_idem. auto. des.
           unfold load_whole_chunk in *. rewrite val_load_result_idem. auto.
         }
@@ -1329,8 +1318,8 @@ Section PROOF.
         eapply ir_step_intra_call_external. all: eauto.
         (* { rewrite CURCOMP, <- REC_CURCOMP, NEXTPC. simpl. unfold Genv.find_comp. setoid_rewrite NEXTF. unfold Genv.type_of_call. rewrite Pos.eqb_refl. auto. } *)
         { ss. }
-        { simpl. econstructor. auto. admit. (* idem *) }
-        { simpl. right. split; auto. econs; eauto. econs. auto. admit. (* idem *) }
+        { simpl. econstructor. auto. auto. }
+        { simpl. right. split; auto. econs; eauto. econs. auto. auto. }
         splits; auto.
       }
       { destruct ECKO as [_ OBS]. inv EXTCALL; simpl in *; clarify.
@@ -1338,10 +1327,9 @@ Section PROOF.
         exists k, d, m_a0, m_i, m'. simpl. splits; auto. 2: split; auto. 2: eauto.
         econstructor 2. 2: econstructor 1. 2: auto.
         eapply ir_step_intra_call_external. all: eauto.
-        (* { rewrite CURCOMP, <- REC_CURCOMP, NEXTPC. simpl. unfold Genv.find_comp. setoid_rewrite NEXTF. unfold Genv.type_of_call. rewrite Pos.eqb_refl. auto. } *)
         { ss. }
-        { simpl. econstructor. auto. eauto. admit. (* idem *) }
-        { simpl. right. split; auto. econs; eauto. econs. auto. admit. (* idem *) }
+        { simpl. econstructor. auto. eauto. auto. }
+        { simpl. right. split; auto. econs; eauto. econs. auto. auto. }
         { simpl. auto. }
         splits; auto.
       }
@@ -1453,9 +1441,6 @@ Section PROOF.
       do 4 eexists. splits; simpl. 3: eapply x3. apply app_nil_r.
       econstructor 2. 2: econstructor 1. 2: eauto.
       eapply ir_step_builtin; eauto.
-      { simpl in *.
-        admit. (* same problem *) }
-      { simpl in *. admit. (* same *) }
 
     - (* extcall is known and observable *)
       unfold external_call_known_observables in ECKO.
@@ -1466,8 +1451,8 @@ Section PROOF.
         econstructor 2. 2: econstructor 1. 2: auto.
         eapply ir_step_builtin. all: eauto.
         { ss. }
-        { simpl. econstructor. econstructor 1; eauto. admit. }
-        { simpl. right. split; auto. econs; eauto. econs. econs; eauto. admit. }
+        { simpl. econstructor. econstructor 1; eauto. }
+        { simpl. right. split; auto. econs; eauto. econs. econs; eauto. }
         { simpl. unfold senv_invert_symbol_total. erewrite Senv.find_invert_symbol; eauto. }
         splits; auto.
       }
@@ -1481,9 +1466,11 @@ Section PROOF.
         (* } *)
         { ss. }
         { instantiate (2:=[Vptr b0 ofs0; Val.load_result chunk v]).
-          simpl. econstructor. econstructor 1; eauto. admit. rewrite val_load_result_idem. auto.
+          simpl. econstructor. econstructor 1; eauto.
+          rewrite val_load_result_idem. auto.
         }
-        { simpl. right. split; auto. splits; eauto. econs. econs; eauto. admit. rewrite val_load_result_idem. auto.
+        { simpl. right. split; auto. splits; eauto. econs. econs; eauto.
+          rewrite val_load_result_idem. auto.
           unfold load_whole_chunk in *. rewrite val_load_result_idem. auto.
         }
         { simpl. unfold senv_invert_symbol_total. erewrite Senv.find_invert_symbol; eauto.
@@ -1503,8 +1490,8 @@ Section PROOF.
         (*   setoid_rewrite CURF. ss. *)
         (* } *)
         { ss. }
-        { simpl. econstructor. auto. admit. }
-        { simpl. right. split; auto. econs; eauto. econs. auto. admit. }
+        { simpl. econstructor. auto. auto. }
+        { simpl. right. split; auto. econs; eauto. econs. auto. auto. }
         splits; auto.
       }
       { destruct ECKO as [_ OBS]. inv EXTCALL; simpl in *; clarify.
@@ -1516,8 +1503,8 @@ Section PROOF.
         (*   setoid_rewrite CURF. ss. *)
         (* } *)
         { ss. }
-        { simpl. econstructor. eauto. admit. }
-        { simpl. right. split; auto. econs; eauto. econs. auto. admit. }
+        { simpl. econstructor. eauto. auto. }
+        { simpl. right. split; auto. econs; eauto. econs. auto. auto. }
         { simpl. auto. }
         splits; auto.
       }
@@ -1590,8 +1577,7 @@ Section PROOF.
       { destruct ECKS as [_ OBS]. inv EXTCALL.
         exists [], k, d, m_a0, m_i. simpl. splits; auto. 2: rr; splits; auto. econstructor 1.
       }
-
-  Admitted.
+  Qed.
 
 
   Lemma asm_to_ir_returnstate_undef_nccc_external

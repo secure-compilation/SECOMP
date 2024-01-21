@@ -848,7 +848,16 @@ Record extcall_properties (sem: extcall_sem) (cp: compartment) (sg: signature) :
     | Event_call _ _ _ _ :: _
     | Event_return _ _ _ :: _ => False
     | _ => True
-    end
+    end;
+
+(** External calls cannot free public blocks without the Max Freeable permission *)
+  ec_public_not_freeable:
+    forall ge vargs m1 t vres m2 b ofs id,
+    sem ge cp vargs m1 t vres m2 ->
+    Mem.valid_block m1 b ->
+    Senv.invert_symbol ge b = Some id -> Senv.public_symbol ge id = true ->
+    Mem.perm m1 b ofs Max Nonempty -> (~ Mem.perm m1 b ofs Max Freeable) ->
+    Mem.perm m2 b ofs Max Nonempty;
 }.
 
 (** ** Semantics of volatile loads *)
@@ -981,6 +990,8 @@ Proof.
   split. constructor. intuition congruence.
 (* no cross *)
 - inv H; inv H0; simpl; auto.
+(* not freeable *)
+- inv H; eauto.
 Qed.
 
 (** ** Semantics of volatile stores *)
@@ -1157,6 +1168,8 @@ Proof.
   split. constructor. intuition congruence.
 (* no cross *)
 - inv H; inv H0; simpl; auto.
+(* not freeable *)
+- inv H. inv H5; auto. eauto with mem.
 Qed.
 
 (** ** Semantics of dynamic memory allocation (malloc) *)
@@ -1257,6 +1270,8 @@ Proof.
   split. constructor. intuition congruence.
 (* no cross *)
 - inv H; inv H0; simpl; auto.
+(* not freeable *)
+- inv H. eapply Mem.perm_store_1; eauto. eapply Mem.perm_alloc_1; eauto.
 Qed.
 
 (** ** Semantics of dynamic memory deallocation (free) *)
@@ -1376,6 +1391,13 @@ Proof.
 + split. constructor. intuition auto.
 (* no cross *)
 - inv H; simpl; auto.
+(* not freeable *)
+- inv H; auto. eapply Mem.perm_free_1; eauto.
+  eapply Mem.free_range_perm in H7. unfold Mem.range_perm in H7.
+  specialize (H7 ofs).
+  destruct (Z.le_gt_cases (Ptrofs.unsigned lo - size_chunk Mptr) ofs);
+    destruct (Z.lt_ge_cases ofs (Ptrofs.unsigned lo + Ptrofs.unsigned sz)); try lia.
+  left; intros EQ; subst b0. apply H4. eapply Mem.perm_max. eapply H7. lia.
 Qed.
 
 (** ** Semantics of [memcpy] operations. *)
@@ -1517,6 +1539,8 @@ Proof.
   intros; inv H; inv H0. split. constructor. intros; split; congruence.
 (* no cross *)
 - intros; inv H; simpl; auto.
+(* not freeable *)
+- intros. inv H. eapply Mem.perm_storebytes_1; eauto.
 Qed.
 
 (** ** Semantics of annotations. *)
@@ -1575,6 +1599,8 @@ Proof.
   split. constructor. auto.
 (* no cross *)
 - inv H; simpl; auto.
+(* not freeable *)
+- inv H; auto.
 Qed.
 
 Inductive extcall_annot_val_sem (text: string) (targ: typ) (ge: Senv.t) (cp: compartment):
@@ -1629,6 +1655,8 @@ Proof.
   split. constructor. auto.
 (* no cross *)
 - inv H; simpl; auto.
+(* not freeable *)
+- inv H; auto.
 Qed.
 
 Inductive extcall_debug_sem (ge: Senv.t) (cp: compartment):
@@ -1677,6 +1705,8 @@ Proof.
   split. constructor. auto.
 (* no cross *)
 - inv H; simpl; auto.
+(* not freeable *)
+- inv H; auto.
 Qed.
 
 (** ** Semantics of known built-in functions. *)
@@ -1744,6 +1774,8 @@ Proof.
   split. constructor. intuition congruence. 
 (* no cross *)
 - inv H; simpl; auto.
+(* not freeable *)
+- inv H; auto.
 Qed.
 
 (** ** Semantics of external functions. *)
