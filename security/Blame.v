@@ -1258,15 +1258,355 @@ Admitted.
       now rewrite (match_prog_pol _ _ _ match_W1_W2); split.
   Qed.
 
-  Lemma right_mem_injection_function_entry1: forall {j f m1 m2 vargs1 vargs2 e1 le1 m1'},
+  Lemma inject_list_not_ptr: forall j vl1 vl2,
+    Val.inject_list j vl1 vl2 ->
+    Forall not_ptr vl1 ->
+    Forall not_ptr vl2.
+  Proof.
+    intros j vl1 vl2 INJ.
+    induction INJ.
+    - now constructor.
+    - intros PTR.
+      inv PTR.
+      specialize (IHINJ H3).
+      constructor; [| assumption].
+      inv H; inv H2; constructor.
+  Qed.
+
+  (* Symbols are present in the program memory from the very beginning
+     (cf. [Genv.init_mem] and the correspondence should also be
+     reflected in and preserved by the memory injection. *)
+  Lemma right_mem_injection_find_symbol: forall j m1 m2 id b1 b2 delta,
+    right_mem_injection s j ge1 ge2 m1 m2 ->
+    Genv.find_symbol ge1 id = Some b1 ->
+    j b1 = Some (b2, delta) ->
+    Genv.find_symbol ge2 id = Some b2.
+  Admitted.
+
+  (* This lemma relies on just one of the properties of
+     [right_mem_injection], except for the appeal to (what is now
+     known as) [right_mem_inj_find_symbol], namely Mem.delta_zero. *)
+  Lemma right_mem_injection_list_match: forall j m1 m2 vargs1 vargs2 vl tyl,
+    right_mem_injection s j ge1 ge2 m1 m2 ->
+    (* Mem.delta_zero j -> *)
+    Val.inject_list j vargs1 vargs2 ->
+    eventval_list_match ge1 vl tyl vargs1 ->
+    eventval_list_match ge2 vl tyl vargs2.
+  Proof.
+    intros j m1 m2 vargs1 vargs2 vl tyl RMEMINJ INJ. revert vl tyl.
+    induction INJ; intros ? ? MATCH.
+    - inv MATCH. constructor.
+    - inv MATCH. constructor.
+      + inv H; inv H4; try constructor.
+        assert (delta = 0) as -> by (inv RMEMINJ; eauto).
+        rewrite Ptrofs.add_zero.
+        apply ev_match_ptr.
+        * assert (PUBLIC: Genv.public_symbol ge1 id = true) by trivial.
+          rewrite <- public_symbol_preserved in PUBLIC.
+          auto.
+        * (* Symbols are present in the program memory from the very
+             beginning (cf. [Genv.init_mem] and the correspondence
+             should also be reflected in and preserved by the memory
+             injection. *)
+          eapply right_mem_injection_find_symbol; eauto.
+      + eauto.
+  Qed.
+
+  Remark right_env_injection_empty_env j:
+    right_env_injection j empty_env empty_env.
+  Proof.
+    easy.
+  Qed.
+
+  Lemma right_tenv_injection_create_undef_temps j temps:
+    right_tenv_injection
+      j (create_undef_temps temps) (create_undef_temps temps).
+  Proof.
+    induction temps as [| [id ty] temps IHtemps].
+    - intros id v GET.
+      rewrite PTree.gempty in GET.
+      discriminate.
+    - intros id' v GET.
+      destruct (peq id' id) as [-> | NEQ].
+      + simpl. rewrite PTree.gss.
+        simpl in GET. rewrite PTree.gss in GET.
+        injection GET as <-.
+        exists Vundef. auto.
+      + simpl. rewrite PTree.gso; [| assumption].
+        simpl in GET. rewrite PTree.gso in GET; [| assumption].
+        eapply IHtemps; eauto.
+  Qed.
+
+  Lemma right_mem_injection_alloc {j f m1 m2 e1 e2 le1 le2 m1' b1 ty} id
+    (RMEMINJ: right_mem_injection s j ge1 ge2 m1 m2)
+    (RENVINJ: right_env_injection j e1 e2)
+    (RTENVINJ: right_tenv_injection j le1 le2)
+    (RIGHT: s |= (f: function) ∈ Right)
+    (ALLOC: Mem.alloc m1 (comp_of f) 0 (sizeof ge1 ty) = (m1', b1)):
+    exists j' m2' b2,
+      Mem.alloc m2 (comp_of f) 0 (sizeof ge2 ty) = (m2', b2) /\
+      right_mem_injection s j' ge1 ge2 m1' m2' /\
+      inject_incr j j' /\
+      right_env_injection j' (PTree.set id (b1, ty) e1) (PTree.set id (b2, ty) e2) /\
+      right_tenv_injection j' le1 le2.
+  Proof.
+    (* We need to go a bit further in relating ge1 and ge2 *)
+    assert (SIZE: forall ty, sizeof ge1 ty = sizeof ge2 ty) by admit.
+    destruct (Mem.alloc_parallel_inject _ _ _ _ _ _ _ _ _ _
+                (partial_mem_inject _ _ _ _ _ _ RMEMINJ)
+                ALLOC (Z.le_refl _) (Z.le_refl _))
+      as (j' & m2' & b2 & ALLOC2' & INJ & INCR & ZERO & EXT).
+    exists j', m2', b2.
+    split; [| split; [| split; [| split]]].
+    - rewrite <- SIZE. assumption.
+    - destruct RMEMINJ. constructor; auto.
+      + intros b. specialize (same_dom0 b).
+        destruct Genv.invert_symbol as [id' |] eqn:INVERT.
+        * (* Same as below, [b] must already be in the memory *)
+          assert (NEQ: b <> b1) by admit.
+          simpl.
+          rewrite (EXT _ NEQ), (Mem.alloc_block_compartment _ _ _ _ _ _ ALLOC).
+          destruct eq_block as [| _]; [contradiction |].
+          auto.
+        * destruct (peq b b1) as [-> | NEQ].
+          -- split.
+             ++ intros _.
+                simpl. rewrite (Mem.owned_new_block _ _ _ _ _ _ ALLOC).
+                auto.
+             ++ intros _ CONTRA.
+                congruence.
+          -- split.
+             ++ intros j'_b. simpl.
+                rewrite (Mem.alloc_block_compartment _ _ _ _ _ _ ALLOC).
+                destruct eq_block as [| _]; [contradiction |].
+                apply same_dom0.
+                rewrite (EXT _ NEQ) in j'_b.
+                auto.
+             ++ intros RIGHT' j'_b.
+                rewrite (EXT _ NEQ) in j'_b.
+                apply same_dom0; [| assumption].
+                simpl in RIGHT'.
+                rewrite (Mem.alloc_block_compartment _ _ _ _ _ _ ALLOC) in RIGHT'.
+                destruct eq_block as [| _]; [contradiction |].
+                auto.
+      + intros b1' b2' delta j'_b1. specialize (j_delta_zero0 b1' b2' delta).
+        destruct (peq b1' b1) as [-> | NEQ].
+        * rewrite ZERO in j'_b1. injection j'_b1 as <- <-.
+          reflexivity.
+        * specialize (EXT b1' NEQ). rewrite EXT in j'_b1.
+          auto.
+      + destruct same_symb0 as (PUB & FIND & PUB_FIND & VOL).
+        split; [| split; [| split]].
+        * auto.
+        * intros id' b1' b2' delta b1'_b2' id'_b1'. specialize (FIND id' b1' b2' delta).
+          (* [id] must already be found in the initial state from
+             which the execution originates, so its assigned block
+             cannot be newly allocated -- even if this information
+             is not readily available in the invariant. See
+             [Genv.find_symbol_not_fresh] *)
+          assert (NEQ: b1' <> b1) by admit.
+          specialize (EXT _ NEQ). rewrite EXT in b1'_b2'.
+          auto.
+        * intros id' b1' PUB_id id_b1'.
+          specialize (PUB_FIND id' b1' PUB_id id_b1') as (b2' & b1'_b2' & id'_b2').
+          destruct (peq b1' b1) as [-> | NEQ].
+          -- eauto.
+          -- specialize (EXT _ NEQ). rewrite <- EXT in b1'_b2'.
+             eauto.
+        * intros b1' b2' delta b1'_b2'.
+          (* Like symbols, volatile blocks are declared and defined at
+             the outset and this property is invariant throughout
+             program execution. See e.g. [Senv.block_is_volatile] and
+             connections between pSenv.nextblock], [Genv.genv_next]
+             and the initial program memory
+             i.e. [Genv.init_mem_genv_next] *)
+          destruct (peq b1' b1) as [-> | NEQ].
+          --  admit.
+          -- rewrite (EXT _ NEQ) in b1'_b2'.
+             exact (VOL _ _ _ b1'_b2').
+      + intros b1' b2' b1'' b2'' ofs1 ofs2 b1'_b2' b1'_b1'' b2'_b2''.
+        (* inv INJ. Check mi_no_overlap. *)
+        specialize (jinjective0 b1' b2' b1'' b2'' ofs1 ofs2 b1'_b2').
+        destruct (peq b1' b1) as [-> | NEQ1].
+        * admit.
+        * rewrite (EXT _ NEQ1) in b1'_b1''.
+          destruct (peq b2' b1) as [-> | NEQ2].
+          -- admit.
+          -- rewrite (EXT _ NEQ2) in b2'_b2''.
+             auto.
+      + intros b cp' FIND. specialize (same_blks3 b cp' FIND).
+        change (Mem.block_compartment _ _ = _)
+          with (Mem.can_access_block m1' b (Some cp')).
+        eapply Mem.alloc_can_access_block_other_inj_1; eauto.
+      + intros b cp' FIND. specialize (same_blks4 b cp' FIND).
+        change (Mem.block_compartment _ _ = _)
+          with (Mem.can_access_block m2' b (Some cp')).
+        eapply Mem.alloc_can_access_block_other_inj_1; eauto.
+    - assumption.
+    - destruct RENVINJ as [ENVSOME ENDNONE]. split.
+      + intros id' b ty' GET.
+        destruct (peq id' id) as [-> | NEQ].
+        * rewrite PTree.gss. rewrite PTree.gss in GET.
+          injection GET as <- <-.
+          eauto.
+        * rewrite PTree.gso; [| assumption].
+          rewrite PTree.gso in GET; [| assumption].
+          specialize (ENVSOME id' b ty' GET) as (b' & b_b' & id'_b').
+          eauto.
+      + intros id' GET.
+        destruct (peq id' id) as [-> | NEQ].
+        * rewrite PTree.gss in GET.
+          discriminate.
+        * rewrite PTree.gso; [| assumption].
+          rewrite PTree.gso in GET; [| assumption].
+          specialize (ENDNONE id' GET). auto.
+    - intros id' v GET. specialize (RTENVINJ id' v GET) as (v' & INJ' & GET').
+      inv INJ'; eauto.
+  Admitted.
+
+  Lemma right_mem_injection_alloc_variables {j f m1 m1' m2 e1 e1' e2 le1 le2 vars}
+    (RMEMINJ: right_mem_injection s j ge1 ge2 m1 m2)
+    (RENVINJ: right_env_injection j e1 e2)
+    (RTENVINJ: right_tenv_injection j le1 le2)
+    (RIGHT: s |= (f: function) ∈ Right)
+    (ALLOC: alloc_variables ge1 (comp_of f) e1 m1 vars e1' m1'):
+    exists j' e2' m2',
+      alloc_variables ge2 (comp_of f) e2 m2 vars e2' m2' /\
+      right_mem_injection s j' ge1 ge2 m1' m2' /\
+      inject_incr j j' /\
+      right_env_injection j' e1' e2' /\
+      right_tenv_injection j' le1 le2.
+  Proof.
+    revert j m2 e2 le1 le2 RMEMINJ RENVINJ RTENVINJ RIGHT.
+    induction ALLOC;
+      intros.
+    - exists j, e2, m2. split; [constructor | auto].
+    - destruct (right_mem_injection_alloc id RMEMINJ RENVINJ RTENVINJ RIGHT H)
+        as (j' & m2' & b2 & ALLOC' & RMEMINJ' & INCR & RENVINJ' & RTENVINJ').
+      specialize (IHALLOC _ _ _ _ _ RMEMINJ' RENVINJ' RTENVINJ' RIGHT)
+        as (j'' & e2' & m2'' & ALLOC2 & RMEMINJ'' & INCR' & RENVINJ'' & RTENVINJ'').
+      exists j'', e2', m2''. split; [| split; [| split; [| split]]]; auto.
+      + econstructor; eauto.
+      + intros b b' delta b_b'.
+        specialize (INCR _ _ _ b_b').
+        specialize (INCR' _ _ _ INCR).
+        auto.
+  Qed.
+
+  Lemma right_mem_injection_assign_loc {j f m1 m1' m2 e1 e2 le1 le2 v1 v2 id ty b1}
+    (RMEMINJ: right_mem_injection s j ge1 ge2 m1 m2)
+    (RENVINJ: right_env_injection j e1 e2)
+    (RTENVINJ: right_tenv_injection j le1 le2)
+    (RIGHT: s |= (f: function) ∈ Right)
+    (LOOKUP: e1 ! id = Some (b1, ty))
+    (VALINJ: Val.inject j v1 v2)
+    (ASSIGN: assign_loc ge1 (comp_of f) ty m1 b1 Ptrofs.zero Full v1 m1'):
+    exists m2' b2,
+      e2 ! id = Some (b2, ty) /\
+      assign_loc ge2 (comp_of f) ty m2 b2 Ptrofs.zero Full v2 m2' /\
+      right_mem_injection s j ge1 ge2 m1' m2'.
+  Proof.
+    inv ASSIGN.
+    - destruct (proj1 RENVINJ _ _ _ LOOKUP) as (b2 & b1_b2 & LOOKUP').
+      inversion RMEMINJ.
+      exploit Mem.store_mapped_inject; eauto.
+      intros (m2' & STORE' & INJ').
+      exists m2', b2. split; [| split].
+      + assumption.
+      + eapply assign_loc_value; eauto.
+      + constructor; auto.
+        * admit. (* easy *)
+        * eapply same_blocks_store; eauto.
+        * eapply same_blocks_store; eauto.
+    - destruct (proj1 RENVINJ _ _ _ LOOKUP) as (b2 & b1_b2 & LOOKUP').
+      inversion RMEMINJ.
+      admit. (* similar *)
+  Admitted.
+
+  Lemma right_mem_injection_bind_parameters
+    {j f m1 m1' m2 e1 e2 le1 le2 vargs1 vargs2 params}
+    (RMEMINJ: right_mem_injection s j ge1 ge2 m1 m2)
+    (RENVINJ: right_env_injection j e1 e2)
+    (RTENVINJ: right_tenv_injection j le1 le2)
+    (RIGHT: s |= (f: function) ∈ Right)
+    (VALINJ: Val.inject_list j vargs1 vargs2)
+    (BIND: bind_parameters ge1 (comp_of f) e1 m1 params vargs1 m1'):
+    exists m2',
+      bind_parameters ge2 (comp_of f) e2 m2 params vargs2 m2' /\
+      right_mem_injection s j ge1 ge2 m1' m2'.
+  Proof.
+    revert m2 vargs2 RMEMINJ VALINJ.
+    induction BIND; intros.
+    - exists m2. split.
+      + inv VALINJ. constructor.
+      + assumption.
+    - inv VALINJ.
+      destruct (right_mem_injection_assign_loc RMEMINJ RENVINJ RTENVINJ RIGHT H H3 H0)
+        as (m2' & b2 & LOOKUP' & ASSIGN' & RMEMINJ').
+      destruct (IHBIND _ _ RMEMINJ' H5) as (m2'' & BIND' & RMEMINJ'').
+      exists m2''. split.
+      + econstructor; eauto.
+      + assumption.
+  Qed.
+
+  Lemma right_mem_injection_function_entry1: forall
+    {j f m1 m2 vargs1 vargs2 e1 le1 m1'},
     right_mem_injection s j ge1 ge2 m1 m2 ->
     Val.inject_list j vargs1 vargs2 ->
     s |= f ∈ Right ->
     function_entry1 ge1 f vargs1 m1 e1 le1 m1' ->
-    exists e2 le2 m2',
+    exists j' e2 le2 m2',
       function_entry1 ge2 f vargs2 m2 e2 le2 m2' /\
-      right_env_injection j e1 e2 /\
-      right_tenv_injection j le1 le2.
+      right_mem_injection s j' ge1 ge2 m1' m2' /\
+      right_env_injection j' e1 e2 /\
+      right_tenv_injection
+        j' (create_undef_temps (fn_temps f)) (create_undef_temps (fn_temps f)).
+  Proof.
+    intros until m1'; intros RMEMINJ VALINJ RIGHT ENTRY.
+    inversion ENTRY; subst.
+    assert (RENVINJ0 := right_env_injection_empty_env j).
+    assert (RTENVINJ0 := right_tenv_injection_create_undef_temps j (fn_temps f)).
+    destruct (right_mem_injection_alloc_variables RMEMINJ RENVINJ0 RTENVINJ0 RIGHT H0)
+      as (j' & e2 & m2' & ALLOC2 & RMEMINJ' & INCR & RENVINJ' & RTENVINJ').
+    assert (VALINJ': Val.inject_list j' vargs1 vargs2). {
+      clear -VALINJ INCR.
+      induction VALINJ; [constructor |].
+      constructor; [| assumption].
+      inv H; try constructor.
+      eapply Val.inject_ptr; [| reflexivity].
+      auto. }
+    destruct (right_mem_injection_bind_parameters
+                RMEMINJ' RENVINJ' RTENVINJ' RIGHT VALINJ' H1)
+      as (m2'' & BIND2 & MEMINJ'').
+    exists j', e2, (create_undef_temps (fn_temps f)), m2''.
+    split; [| split; [| split]]; auto.
+    econstructor; eauto.
+  Qed.
+
+  Lemma right_mem_injection_external_call {j ef vargs1 vargs2 vres1 t m1 m1' m2}
+    (RMEMINJ : right_mem_injection s j ge1 ge2 m1 m2)
+    (EXTCALL: external_call ef ge1 vargs1 m1 t vres1 m1')
+    (ARGINJ: Val.inject_list j vargs1 vargs2):
+    exists j' m2' vres2,
+      external_call ef ge2 vargs2 m2 t vres2 m2' /\
+      right_mem_injection s j' ge1 ge2 m1' m2' /\
+      inject_incr j j' /\
+      Val.inject j' vres1 vres2.
+  Proof.
+    exploit ec_mem_inject; eauto.
+    { apply external_call_spec. }
+    { eapply same_symb; eauto. }
+    { eapply partial_mem_inject; eauto. }
+    intros (j' & vres2 & m2' & ? & ? & ?  & ? & ? & ? & ? & ?).
+    exists j', m2', vres2.
+    split; [| split; [| split]]; auto.
+    constructor; eauto.
+    - admit.
+    - admit.
+    - admit.
+    - admit.
+    - admit.
+    - admit.
   Admitted.
 
   Lemma memval_inject_alloc {j m1 m2 b1 b2 ofs delta cp lo hi m1' m2' b1' b2'}
@@ -1845,21 +2185,21 @@ Proof.
     simpl; intros; subst;
     eauto using right_cont_injection_find_label_spec.
   - assert (RCONTINJ' := right_cont_injection_kseq _ s1 _ _ RCONTINJ).
-    specialize (H _ _ RCONTINJ') as [? ? ? ? |];
+    specialize (H _ _ RCONTINJ') as [|];
       eauto using right_cont_injection_find_label_spec.
-  - specialize (H _ _ RCONTINJ) as [? ? ? ? |];
+  - specialize (H _ _ RCONTINJ) as [|];
       eauto using right_cont_injection_find_label_spec.
   - assert (RCONTINJ' := right_cont_injection_kloop1 _ s0 s1 _ _ RCONTINJ).
-    specialize (H _ _ RCONTINJ') as [? ? ? ? |];
+    specialize (H _ _ RCONTINJ') as [|];
       eauto using right_cont_injection_find_label_spec, right_cont_injection.
   - assert (RCONTINJ' := right_cont_injection_kswitch _ _ _ RCONTINJ).
-    specialize (H _ _ RCONTINJ') as [? ? ? ? |];
+    specialize (H _ _ RCONTINJ') as [|];
       eauto using right_cont_injection_find_label_spec.
   - destruct (ident_eq lbl l) as [-> |] eqn:IDEQ;
-      specialize (H _ _ RCONTINJ) as [? ? ? ? |];
+      specialize (H _ _ RCONTINJ) as [|];
       eauto using right_cont_injection_find_label_spec.
   - assert (RCONTINJ' := right_cont_injection_kseq _ (seq_of_labeled_statement l) _ _ RCONTINJ).
-    specialize (H _ _ RCONTINJ') as [? ? ? ? |];
+    specialize (H _ _ RCONTINJ') as [|];
       eauto using right_cont_injection_find_label_spec.
 Qed.
 
@@ -2095,17 +2435,42 @@ Qed.
         assert (type_of_fundef fd2 = Tfunction tyargs tyres cconv)
           as type_fd2.
         { inv match_fd''; eauto. }
-        exploit allowed_call_preserved; eauto. intros ALLOWED2.
+        assert (Genv.allowed_call ge2 (comp_of f) vf2) as ALLOWED2.
+        { eapply allowed_call_preserved; eauto.
+        (*   right. rewrite evf2. simpl. exists id, (comp_of fd2). *)
+        (*   split. *)
+        (*   { now apply Genv.find_invert_symbol. } *)
+        (*   (* unfold Genv.find_comp. rewrite <- evf2. unfold ge2 in find_vf2'. *) *)
+        (*   (* simpl in find_vf2'. rewrite find_vf2'. split; trivial. *) *)
+        (*   admit. *)
+        }
+
+        assert (COMP_fd1_fd2: comp_of fd1 = comp_of fd2)
+              by (inv match_fd''; auto).
         exists j, (Callstate fd2 vargs2 (Kcall optid f e2 le2 k2) m2).
+        (*  This proof is nearly identical to the sub-case immediately below *)
         split.
-        { assert (comp_of fd1 = comp_of fd2) as E.
-          { now inv match_fd''. }
-          econstructor; eauto.
-          - rewrite <- E.
-            now eapply Genv.not_ptr_list_transf_partial_inj; eauto.
-          - rewrite <- E.
-            admit. }
-        admit.
+        { econstructor; eauto.
+          - rewrite <- COMP_fd1_fd2. intros CROSS. specialize (NO_CROSS_PTR1 CROSS).
+            eapply inject_list_not_ptr; eauto.
+          - rewrite <- COMP_fd1_fd2.
+            inv EV1.
+            + apply call_trace_intra. assumption.
+            + inv vf1_vf2.
+              eapply call_trace_cross.
+              * assumption.
+              * reflexivity.
+              * injection H0 as <- <-.
+                apply Genv.find_invert_symbol.
+                apply Genv.invert_find_symbol in H1.
+                eapply right_mem_injection_find_symbol; eauto.
+              * eapply right_mem_injection_list_match; eauto. }
+        { apply LeftControl.
+          - assumption.
+          - simpl. rewrite <- COMP_fd1_fd2. assumption.
+          - assumption.
+          - simpl. rewrite is_r1.
+            now apply right_cont_injection_kcall_right. }
       * rename fd1 into fd.
         rename type_fd1 into type_fd.
         (* rewrite comp_vf1 in *. *)
@@ -2115,13 +2480,23 @@ Qed.
         (* assert (Genv.find_comp ge2 vf2 = comp_of fd) as comp_vf2. *)
         (* { unfold Genv.find_comp. now rewrite find_vf2. } *)
         assert (Genv.allowed_call ge2 (comp_of f) vf2) as ALLOWED2.
-        { admit. }
+        { eapply allowed_call_preserved; eauto. }
         exists j.
         exists (Callstate fd vargs2 (Kcall optid f e2 le2 k2) m2).
         split.
         { econstructor; eauto.
-          - admit.
-          - admit. }
+          - intros CROSS. specialize (NO_CROSS_PTR1 CROSS).
+            eapply inject_list_not_ptr; eauto.
+          - inv EV1.
+            + apply call_trace_intra. assumption.
+            + inv vf1_vf2.
+              eapply call_trace_cross.
+              * assumption.
+              * reflexivity.
+              * apply Genv.find_invert_symbol.
+                apply Genv.invert_find_symbol in H1.
+                eapply right_mem_injection_find_symbol; eauto.
+              * eapply right_mem_injection_list_match; eauto. }
         apply RightControl; trivial.
         constructor; trivial.
         now apply right_cont_injection_kcall_right.
@@ -2149,39 +2524,32 @@ Qed.
       (*     constructor; eauto. *)
       (*     simpl. apply right_cont_injection_kcall_right; eauto. *)
     + (* step_builtin *)
+      (* prefix *)
       exploit eval_exprlist_injection; eauto.
       auto.
       intros [vs' [? ?]].
-      exploit ec_mem_inject; eauto.
-      { apply external_call_spec. }
-      { eapply same_symb; eauto. }
-      { eapply partial_mem_inject; eauto. }
-      intros [j' [? [m2' [? [? [? [? [? [? ?]]]]]]]]].
+      (* same as step_external_function *)
+      destruct (right_mem_injection_external_call RMEMINJ H0 H1)
+        as (j' & m2' & vres' & EXTCALL' & RMEMINJ' & INCR & RESINJ).
       exists j'; eexists; split.
       econstructor; eauto.
       apply RightControl; eauto.
       constructor; eauto.
-      * constructor; eauto.
-        - admit.
-        - admit.
-        - admit.
-        - admit.
-        - admit.
-        - admit.
+      (* suffix *)
       * destruct RENVINJ as [RENVINJ_SOME RENVINJ_NONE].
         split.
         { intros ? ? ? ?.
           exploit RENVINJ_SOME; eauto. intros [b' [? ?]].
           exists b'; split; eauto. }
         { intros ? ?.
-          specialize (RENVINJ_NONE _ H10); eauto. }
+          specialize (RENVINJ_NONE _ H3); eauto. }
       * intros ? ? ?.
         destruct optid.
         - simpl in *. rewrite PTree.gsspec in *.
           destruct (peq i i0); subst.
-          { inv H10. eexists; split; eauto. }
-          { specialize (RTENVINJ _ _ H10) as [? [? ?]]; eauto. }
-        - specialize (RTENVINJ _ _ H10) as [? [? ?]]; eauto.
+          { inv H3. eexists; split; eauto. }
+          { specialize (RTENVINJ _ _ H3) as [? [? ?]]; eauto. }
+        - specialize (RTENVINJ _ _ H3) as [? [? ?]]; eauto.
     + (* step_seq*)
       exists j; eexists; split; [constructor | apply RightControl]; auto.
       constructor; auto. constructor; auto.
@@ -2274,165 +2642,149 @@ Qed.
       constructor; auto.
     + (* step_internal_function *)
       destruct (right_mem_injection_function_entry1 RMEMINJ ARGINJ is_r1 H)
-        as (e2 & le2 & m2' & ENTRY' & RENVINJ' & RTENVINJ').
-      exists j. eexists. split.
-      {
-        (* constructor; econstructor; eauto. *)
-        apply step_internal_function; eauto.
-      }
+        as (j' & e2 & le2 & m2' & ENTRY' & RMEMINJ' & RENVINJ' & RTENVINJ').
+      exists j'. eexists. split.
+      { apply step_internal_function; eauto. }
       { apply RightControl; auto.
         constructor; auto.
-        - inversion RMEMINJ.
-          constructor; auto.
-          + admit.
-          +
-      { (* Factor out lemma *) (* see original instance below *)
-        inversion H. inversion ENTRY'.
-        inv partial_mem_inject0. constructor.
-        - {
-          inv mi_inj. constructor.
-          - intros b1 b2 delta ofs' k' p' b1_b2 PERM.
-            assert (VALID: Mem.valid_block m b1). { (* extract lemma *)
-              destruct (plt b1 (Mem.nextblock m)) as [LT | GE];
-                [exact LT |].
-              specialize (mi_freeblocks _ GE).
-              congruence. }
-            specialize (mi_perm b1 b2 delta ofs' k' p' b1_b2).
-            apply (bind_parameters_perm_2 H2) in PERM.
-            apply (alloc_variables_perm_2 H1) in PERM; auto.
-            (* new sub-proof *)
-            specialize (mi_perm PERM).
-            apply (alloc_variables_perm_1 H5) in mi_perm.
-            apply (bind_parameters_perm_1 H6) in mi_perm.
-            exact mi_perm.
-          - intros b1 b2 delta cp b1_b2 ACC.
-            assert (VALID: Mem.valid_block m b1). { (* extract lemma *)
-              destruct (plt b1 (Mem.nextblock m)) as [LT | GE];
-                [exact LT |].
-              specialize (mi_freeblocks _ GE).
-              congruence. }
-            specialize (mi_own b1 b2 delta cp b1_b2).
-            (* apply mi_own. *)
-            apply (bind_parameters_can_access_block_2 H2) in ACC.
-            apply (alloc_variables_can_access_block_2 H1) in ACC; auto.
-            (* new sub-proof *)
-            specialize (mi_own ACC).
-            apply (alloc_variables_can_access_block_1 H5) in mi_own.
-            apply (bind_parameters_can_access_block_1 H6) in mi_own.
-            exact mi_own.
-          - intros b1 b2 delta chunk ofs p b1_b2 PERM.
-            assert (VALID: Mem.valid_block m b1). { (* extract lemma *)
-              destruct (plt b1 (Mem.nextblock m)) as [LT | GE];
-                [exact LT |].
-              specialize (mi_freeblocks _ GE).
-              congruence. }
-            specialize (mi_align b1 b2 delta chunk ofs p b1_b2). apply mi_align.
-            apply (bind_parameters_range_perm_2 H2) in PERM.
-            apply (alloc_variables_range_perm_2 H1) in PERM; eauto.
-          - intros b1 ofs b2 delta b1_b2 PERM.
-            assert (VALID: Mem.valid_block m b1). { (* extract lemma *)
-              destruct (plt b1 (Mem.nextblock m)) as [LT | GE];
-                [exact LT |].
-              specialize (mi_freeblocks _ GE).
-              congruence. }
-            (* easy: [b1] is already present in [m] and consequently its
-               contents are not affected by either [alloc_variables] or
-               [bind_parameters] *)
-            apply (bind_parameters_perm_2 H2) in PERM.
-            apply (alloc_variables_perm_2 H1) in PERM; auto.
-            specialize (mi_memval b1 ofs b2 delta b1_b2 PERM).
-            simpl. simpl in mi_memval.
-            admit. (* easy, see above *) (* document proof variant *)
-          }
-        - intros b VALID. specialize (mi_freeblocks b).
-          apply mi_freeblocks. intros CONTRA. apply VALID.
-          simpl in *.
-          eapply bind_parameters_valid_block_1; eauto.
-          eapply alloc_variables_valid_block_1; eauto.
-        - (* new sub-case *)
-          intros b b' delta b_b'. specialize (mi_mappedblocks b b' delta b_b').
-          eapply bind_parameters_valid_block_1; eauto.
-          eapply alloc_variables_valid_block_1; eauto.
-        - intros b1 b1' delta1 b2 b2' delta2 ofs1 ofs2 b1_b2 b1_b1' b2_b2' PERM1 PERM2.
-          specialize (mi_no_overlap
-                        b1 b1' delta1 b2 b2' delta2 ofs1 ofs2 b1_b2 b1_b1' b2_b2').
-          assert (VALID1: Mem.valid_block m b1). { (* extract lemma *)
-            destruct (plt b1 (Mem.nextblock m)) as [LT | GE];
-              [exact LT |].
-            specialize (mi_freeblocks _ GE).
-            congruence. }
-          assert (VALID2: Mem.valid_block m b2). { (* extract lemma *)
-            destruct (plt b2 (Mem.nextblock m)) as [LT | GE];
-              [exact LT |].
-            specialize (mi_freeblocks _ GE).
-            congruence. }
-          apply (bind_parameters_perm_2 H2) in PERM1, PERM2.
-          apply (alloc_variables_perm_2 H1) in PERM1, PERM2; eauto.
-        - intros b b' delta ofs b_b' PERM.
-          specialize (mi_representable b b' delta ofs b_b').
-          apply mi_representable.
-          destruct PERM as [PERM | PERM].
-          + left.
-            assert (VALID: Mem.valid_block m b). { (* extract lemma *)
-              destruct (plt b (Mem.nextblock m)) as [LT | GE];
-                [exact LT |].
-              specialize (mi_freeblocks _ GE).
-              congruence. }
-            apply (alloc_variables_perm_2 H1); eauto.
-            apply (bind_parameters_perm_2 H2); eauto.
-          + right.
-            (* exactly the same script as the previous case *)
-            assert (VALID: Mem.valid_block m b). { (* extract lemma *)
-              destruct (plt b (Mem.nextblock m)) as [LT | GE];
-                [exact LT |].
-              specialize (mi_freeblocks _ GE).
-              congruence. }
-            apply (alloc_variables_perm_2 H1); eauto.
-            apply (bind_parameters_perm_2 H2); eauto.
-        - intros b1 ofs b2 delta k' p' b1_b2 PERM.
-          (* early sub-proof changes *)
-          specialize (mi_perm_inv b1 ofs b2 delta k' p' b1_b2).
-          assert (VALID':  Mem.valid_block m2 b2). {
-            exact (mi_mappedblocks _ _ _ b1_b2). }
-          apply (bind_parameters_perm_2 H6) in PERM.
-          apply (alloc_variables_perm_2 H5) in PERM; auto.
-          (* former proof resumes *)
-          specialize (mi_perm_inv PERM)
-            as [PERM' | PERM'].
-          + left.
-            eapply bind_parameters_perm_1; eauto.
-            eapply alloc_variables_perm_1; eauto.
-          + right. intros CONTRA. apply PERM'.
-            (* see cases above *)
-            assert (VALID: Mem.valid_block m b1). { (* extract lemma *)
-              destruct (plt b1 (Mem.nextblock m)) as [LT | GE];
-                [exact LT |].
-              specialize (mi_freeblocks _ GE).
-              congruence. }
-            apply (alloc_variables_perm_2 H1); eauto.
-            apply (bind_parameters_perm_2 H2); eauto.
-      }
-          + eapply same_blocks_function_entry1; eauto.
-          + eapply same_blocks_function_entry1; eauto.
-      }
+        inv H. inv ENTRY'. apply right_tenv_injection_create_undef_temps. }
+      (* { (* Factor out lemma *) (* see original instance below *) *)
+      (*   inversion H. inversion ENTRY'. *)
+      (*   inv partial_mem_inject0. constructor. *)
+      (*   - { *)
+      (*     inv mi_inj. constructor. *)
+      (*     - intros b1 b2 delta ofs' k' p' b1_b2 PERM. *)
+      (*       assert (VALID: Mem.valid_block m b1). { (* extract lemma *) *)
+      (*         destruct (plt b1 (Mem.nextblock m)) as [LT | GE]; *)
+      (*           [exact LT |]. *)
+      (*         specialize (mi_freeblocks _ GE). *)
+      (*         congruence. } *)
+      (*       specialize (mi_perm b1 b2 delta ofs' k' p' b1_b2). *)
+      (*       apply (bind_parameters_perm_2 H2) in PERM. *)
+      (*       apply (alloc_variables_perm_2 H1) in PERM; auto. *)
+      (*       (* new sub-proof *) *)
+      (*       specialize (mi_perm PERM). *)
+      (*       apply (alloc_variables_perm_1 H1) in mi_perm. *)
+      (*       apply (bind_parameters_perm_1 H6) in mi_perm. *)
+      (*       exact mi_perm. *)
+      (*     - intros b1 b2 delta cp b1_b2 ACC. *)
+      (*       assert (VALID: Mem.valid_block m b1). { (* extract lemma *) *)
+      (*         destruct (plt b1 (Mem.nextblock m)) as [LT | GE]; *)
+      (*           [exact LT |]. *)
+      (*         specialize (mi_freeblocks _ GE). *)
+      (*         congruence. } *)
+      (*       specialize (mi_own b1 b2 delta cp b1_b2). *)
+      (*       (* apply mi_own. *) *)
+      (*       apply (bind_parameters_can_access_block_2 H2) in ACC. *)
+      (*       apply (alloc_variables_can_access_block_2 H1) in ACC; auto. *)
+      (*       (* new sub-proof *) *)
+      (*       specialize (mi_own ACC). *)
+      (*       apply (alloc_variables_can_access_block_1 H5) in mi_own. *)
+      (*       apply (bind_parameters_can_access_block_1 H6) in mi_own. *)
+      (*       exact mi_own. *)
+      (*     - intros b1 b2 delta chunk ofs p b1_b2 PERM. *)
+      (*       assert (VALID: Mem.valid_block m b1). { (* extract lemma *) *)
+      (*         destruct (plt b1 (Mem.nextblock m)) as [LT | GE]; *)
+      (*           [exact LT |]. *)
+      (*         specialize (mi_freeblocks _ GE). *)
+      (*         congruence. } *)
+      (*       specialize (mi_align b1 b2 delta chunk ofs p b1_b2). apply mi_align. *)
+      (*       apply (bind_parameters_range_perm_2 H2) in PERM. *)
+      (*       apply (alloc_variables_range_perm_2 H1) in PERM; eauto. *)
+      (*     - intros b1 ofs b2 delta b1_b2 PERM. *)
+      (*       assert (VALID: Mem.valid_block m b1). { (* extract lemma *) *)
+      (*         destruct (plt b1 (Mem.nextblock m)) as [LT | GE]; *)
+      (*           [exact LT |]. *)
+      (*         specialize (mi_freeblocks _ GE). *)
+      (*         congruence. } *)
+      (*       (* easy: [b1] is already present in [m] and consequently its *)
+      (*          contents are not affected by either [alloc_variables] or *)
+      (*          [bind_parameters] *) *)
+      (*       apply (bind_parameters_perm_2 H2) in PERM. *)
+      (*       apply (alloc_variables_perm_2 H1) in PERM; auto. *)
+      (*       specialize (mi_memval b1 ofs b2 delta b1_b2 PERM). *)
+      (*       simpl. simpl in mi_memval. *)
+      (*       admit. (* easy, see above *) (* document proof variant *) *)
+      (*     } *)
+      (*   - intros b VALID. specialize (mi_freeblocks b). *)
+      (*     apply mi_freeblocks. intros CONTRA. apply VALID. *)
+      (*     simpl in *. *)
+      (*     eapply bind_parameters_valid_block_1; eauto. *)
+      (*     eapply alloc_variables_valid_block_1; eauto. *)
+      (*   - (* new sub-case *) *)
+      (*     intros b b' delta b_b'. specialize (mi_mappedblocks b b' delta b_b'). *)
+      (*     eapply bind_parameters_valid_block_1; eauto. *)
+      (*     eapply alloc_variables_valid_block_1; eauto. *)
+      (*   - intros b1 b1' delta1 b2 b2' delta2 ofs1 ofs2 b1_b2 b1_b1' b2_b2' PERM1 PERM2. *)
+      (*     specialize (mi_no_overlap *)
+      (*                   b1 b1' delta1 b2 b2' delta2 ofs1 ofs2 b1_b2 b1_b1' b2_b2'). *)
+      (*     assert (VALID1: Mem.valid_block m b1). { (* extract lemma *) *)
+      (*       destruct (plt b1 (Mem.nextblock m)) as [LT | GE]; *)
+      (*         [exact LT |]. *)
+      (*       specialize (mi_freeblocks _ GE). *)
+      (*       congruence. } *)
+      (*     assert (VALID2: Mem.valid_block m b2). { (* extract lemma *) *)
+      (*       destruct (plt b2 (Mem.nextblock m)) as [LT | GE]; *)
+      (*         [exact LT |]. *)
+      (*       specialize (mi_freeblocks _ GE). *)
+      (*       congruence. } *)
+      (*     apply (bind_parameters_perm_2 H2) in PERM1, PERM2. *)
+      (*     apply (alloc_variables_perm_2 H1) in PERM1, PERM2; eauto. *)
+      (*   - intros b b' delta ofs b_b' PERM. *)
+      (*     specialize (mi_representable b b' delta ofs b_b'). *)
+      (*     apply mi_representable. *)
+      (*     destruct PERM as [PERM | PERM]. *)
+      (*     + left. *)
+      (*       assert (VALID: Mem.valid_block m b). { (* extract lemma *) *)
+      (*         destruct (plt b (Mem.nextblock m)) as [LT | GE]; *)
+      (*           [exact LT |]. *)
+      (*         specialize (mi_freeblocks _ GE). *)
+      (*         congruence. } *)
+      (*       apply (alloc_variables_perm_2 H1); eauto. *)
+      (*       apply (bind_parameters_perm_2 H2); eauto. *)
+      (*     + right. *)
+      (*       (* exactly the same script as the previous case *) *)
+      (*       assert (VALID: Mem.valid_block m b). { (* extract lemma *) *)
+      (*         destruct (plt b (Mem.nextblock m)) as [LT | GE]; *)
+      (*           [exact LT |]. *)
+      (*         specialize (mi_freeblocks _ GE). *)
+      (*         congruence. } *)
+      (*       apply (alloc_variables_perm_2 H1); eauto. *)
+      (*       apply (bind_parameters_perm_2 H2); eauto. *)
+      (*   - intros b1 ofs b2 delta k' p' b1_b2 PERM. *)
+      (*     (* early sub-proof changes *) *)
+      (*     specialize (mi_perm_inv b1 ofs b2 delta k' p' b1_b2). *)
+      (*     assert (VALID':  Mem.valid_block m2 b2). { *)
+      (*       exact (mi_mappedblocks _ _ _ b1_b2). } *)
+      (*     apply (bind_parameters_perm_2 H6) in PERM. *)
+      (*     apply (alloc_variables_perm_2 H5) in PERM; auto. *)
+      (*     (* former proof resumes *) *)
+      (*     specialize (mi_perm_inv PERM) *)
+      (*       as [PERM' | PERM']. *)
+      (*     + left. *)
+      (*       eapply bind_parameters_perm_1; eauto. *)
+      (*       eapply alloc_variables_perm_1; eauto. *)
+      (*     + right. intros CONTRA. apply PERM'. *)
+      (*       (* see cases above *) *)
+      (*       assert (VALID: Mem.valid_block m b1). { (* extract lemma *) *)
+      (*         destruct (plt b1 (Mem.nextblock m)) as [LT | GE]; *)
+      (*           [exact LT |]. *)
+      (*         specialize (mi_freeblocks _ GE). *)
+      (*         congruence. } *)
+      (*       apply (alloc_variables_perm_2 H1); eauto. *)
+      (*       apply (bind_parameters_perm_2 H2); eauto. *)
+      (* } *)
+      (*     + eapply same_blocks_function_entry1; eauto. *)
+      (*     + eapply same_blocks_function_entry1; eauto. *)
+      (* } *)
     + (* step_external_function *)
       (* very similar to step_builtin *)
-      exploit ec_mem_inject; eauto.
-      { apply external_call_spec. }
-      { eapply same_symb; eauto. }
-      { eapply partial_mem_inject; eauto. }
-      intros [j' [? [m2' [? [? [? [? [? [? ?]]]]]]]]].
+      destruct (right_mem_injection_external_call RMEMINJ H ARGINJ)
+        as (j' & m2' & vres' & EXTCALL' & RMEMINJ' & INCR & RESINJ).
       exists j'; eexists; split.
       econstructor; eauto.
       apply RightControl; eauto.
       constructor; eauto.
-      constructor; eauto.
-      - admit.
-      - admit.
-      - admit.
-      - admit.
-      - admit.
-      - admit.
     + (* step_returnstate *)
       inv RCONTINJ.
       * assert (COMP: comp_of f = comp_of f2) by admit. (* need to know this at least *)
