@@ -1196,6 +1196,31 @@ Admitted.
     rewrite <- MATCH. split; trivial.
   Qed.
 
+  Lemma find_comp_of_block_preserved j m1 m2 b1 b2 delta id cp :
+    right_mem_injection s j ge1 ge2 m1 m2 ->
+    j b1 = Some (b2, delta) ->
+    Genv.find_comp_of_block ge1 b1 = Some cp ->
+    Genv.find_symbol ge1 id = Some b1 ->
+    Genv.find_symbol ge2 id = Some b2 ->
+    Genv.find_comp_of_block ge2 b2 = Some cp.
+  Proof.
+    intros inj j_b1 ge1_b1 ge1_id ge2_id.
+    unfold Genv.find_comp_of_block in *.
+    exploit Genv.find_symbol_find_def_inversion.
+    { simpl in ge2_id. eauto. }
+    intros (d2 & ge2_b2). unfold ge2. simpl. unfold fundef in *. rewrite ge2_b2.
+    exploit partial_mem_inject; eauto. intros INJ.
+    exploit Mem.mi_inj; eauto. intros INJ'.
+    assert (access : Mem.can_access_block m1 b1 (Some cp)).
+    { simpl. exploit same_blks1; eauto. }
+    assert (ge2_b2' : Genv.find_comp_of_block ge2 b2 = Some (comp_of d2)).
+    { unfold Genv.find_comp_of_block, ge2. simpl. unfold fundef in *.
+      now rewrite ge2_b2. }
+    exploit same_blks2; eauto. intros m2_b2.
+    exploit Mem.mi_own; eauto. simpl. intros ?.
+    congruence.
+  Qed.
+
   Lemma allowed_call_preserved : forall j cp m1 m2 vf1 vf2,
       right_mem_injection s j ge1 ge2 m1 m2 ->
       Val.inject j vf1 vf2 ->
@@ -1207,29 +1232,17 @@ Admitted.
     - unfold Genv.find_comp in *.
       revert same_comp. case vf12; try easy.
       intros b1 _ b2 ofs2 delta j_b1 _ ge1_b1.
+      symmetry in ge1_b1. symmetry.
       assert (exists id, Genv.find_symbol ge1 id = Some b1) as (id & ge1_id).
       { unfold Genv.find_comp_of_block in ge1_b1.
         destruct (Genv.find_def ge1 b1) as [d1|] eqn:ge1_b1'; try easy.
         eapply Genv.find_def_find_symbol_inversion; eauto.
         exploit match_prog_unique1; eauto. }
-      assert (ge1_id_cp : Genv.find_comp_of_ident ge1 id = Some cp).
-      { unfold Genv.find_comp_of_ident. now rewrite ge1_id, ge1_b1. }
-      exploit same_symb; eauto.
-      intros (H1 & H2 & H3 & H4).
-      exploit H2; eauto. intros (-> & ge2_id). simpl in ge2_id.
-      unfold Genv.find_comp_of_block.
-      exploit Genv.find_symbol_find_def_inversion; eauto.
-      intros (d2 & ge2_b2). unfold ge2. simpl. unfold fundef in *. rewrite ge2_b2.
-      exploit partial_mem_inject; eauto. intros INJ.
-      exploit Mem.mi_inj; eauto. intros INJ'.
-      assert (access : Mem.can_access_block m1 b1 (Some cp)).
-      { simpl. exploit same_blks1; eauto. }
-      assert (ge2_b2' : Genv.find_comp_of_block ge2 b2 = Some (comp_of d2)).
-      { unfold Genv.find_comp_of_block, ge2. simpl. unfold fundef in *.
-        now rewrite ge2_b2. }
-      exploit same_blks2; eauto. intros m2_b2.
-      exploit Mem.mi_own; eauto. simpl. intros ?.
-      congruence.
+      assert (Genv.find_symbol ge2 id = Some b2).
+      { exploit same_symb; eauto.
+        intros (H1 & H2 & H3 & H4).
+        exploit H2; eauto. intros (-> & ge2_id). now simpl in ge2_id. }
+      now exploit find_comp_of_block_preserved; eauto.
     - unfold Genv.allowed_cross_call in *.
       revert cross. case vf12; try easy.
       simpl. intros b1 _ b2 ofs2 delta j_b1 _.
@@ -1239,23 +1252,8 @@ Admitted.
       exploit Genv.invert_find_symbol; eauto. intros ge1_id.
       exploit H2; eauto. intros (-> & ge2_id).
       split; [now apply Genv.find_invert_symbol|].
-      (* TODO: Find out what this has in common with previous case and refactor. *)
-      pose proof (Genv.find_symbol_find_def_inversion _ _ ge2_id)
-        as [d ge2_b2].
-      assert (Genv.find_comp_of_block (Genv.globalenv W2) b2
-              = Some (comp_of d))
-        as ge2_b2'.
-      { unfold Genv.find_comp_of_block. fold fundef. now rewrite ge2_b2. }
-      assert (Mem.can_access_block m2 b2 (Some cp')) as ge2_b2''.
-      { exploit same_blks1; eauto. intros m1_b1.
-        exploit partial_mem_inject; eauto. intros ?.
-        exploit Mem.mi_inj; eauto. intros ?.
-        exploit Mem.mi_own; eauto. simpl. eauto. }
-      simpl in ge2_b2''.
-      exploit same_blks2; eauto. intros m2_b2.
-      assert (comp_of d = cp') as E by congruence. rewrite E in *.
-      split; trivial.
-      clear ge2_b2''.
+      split.
+      { exploit find_comp_of_block_preserved; eauto. }
       rewrite Genv.globalenv_policy in *. simpl in *.
       now rewrite (match_prog_pol _ _ _ match_W1_W2); split.
   Qed.
