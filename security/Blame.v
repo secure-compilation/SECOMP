@@ -2095,18 +2095,16 @@ Qed.
         assert (type_of_fundef fd2 = Tfunction tyargs tyres cconv)
           as type_fd2.
         { inv match_fd''; eauto. }
-        assert (Genv.allowed_call ge2 (comp_of f) vf2) as ALLOWED2.
-        { right. rewrite evf2. simpl. exists id, (comp_of fd2).
-          split.
-          { now apply Genv.find_invert_symbol. }
-          (* unfold Genv.find_comp. rewrite <- evf2. unfold ge2 in find_vf2'. *)
-          (* simpl in find_vf2'. rewrite find_vf2'. split; trivial. *)
-          admit.
-        }
-
+        exploit allowed_call_preserved; eauto. intros ALLOWED2.
         exists j, (Callstate fd2 vargs2 (Kcall optid f e2 le2 k2) m2).
-        (* split. *)
-        (* econstructor; eauto. *)
+        split.
+        { assert (comp_of fd1 = comp_of fd2) as E.
+          { now inv match_fd''. }
+          econstructor; eauto.
+          - rewrite <- E.
+            now eapply Genv.not_ptr_list_transf_partial_inj; eauto.
+          - rewrite <- E.
+            admit. }
         admit.
       * rename fd1 into fd.
         rename type_fd1 into type_fd.
