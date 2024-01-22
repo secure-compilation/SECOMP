@@ -242,17 +242,25 @@ Inductive right_cont_injection: cont -> cont -> Prop :=
 | right_cont_injection_kswitch: forall k1 k2,
     right_cont_injection k1 k2 ->
     right_cont_injection (Kswitch k1) (Kswitch k2)
-| right_cont_injection_kcall_left: forall id1 id2 f1 f2 en1 en2 le1 le2 k1 k2,
-    s |= f1 ∈ Left ->
-    s |= f2 ∈ Left ->
+(* | right_cont_injection_kcall_left: forall id1 id2 f1 f2 en1 en2 le1 le2 k1 k2, *)
+(*     s |= f1 ∈ Left -> *)
+(*     s |= f2 ∈ Left -> *)
+(*     right_cont_injection (remove_until_right k1) (remove_until_right k2) -> *)
+(*     right_cont_injection (Kcall id1 f1 en1 le1 k1) (Kcall id2 f2 en2 le2 k2) *)
+| right_cont_injection_kcall_left: forall id f en1 en2 le1 le2 k1 k2,
+    s |= f ∈ Left ->
     right_cont_injection (remove_until_right k1) (remove_until_right k2) ->
-    right_cont_injection (Kcall id1 f1 en1 le1 k1) (Kcall id2 f2 en2 le2 k2)
+    right_cont_injection (Kcall id f en1 le1 k1) (Kcall id f en2 le2 k2)
 (* TODO: is it correct to add [right_cont_injection_kcall_right]? *)
-| right_cont_injection_kcall_right: forall id1 id2 f1 f2 en1 en2 le1 le2 k1 k2,
-    s |= f1 ∈ Right ->
-    s |= f2 ∈ Right ->
+(* | right_cont_injection_kcall_right: forall id1 id2 f1 f2 en1 en2 le1 le2 k1 k2, *)
+(*     s |= f1 ∈ Right -> *)
+(*     s |= f2 ∈ Right -> *)
+(*     right_cont_injection k1 k2 -> *)
+(*     right_cont_injection (Kcall id1 f1 en1 le1 k1) (Kcall id2 f2 en2 le2 k2) *)
+| right_cont_injection_kcall_right: forall id f en1 en2 le1 le2 k1 k2,
+    s |= f ∈ Right ->
     right_cont_injection k1 k2 ->
-    right_cont_injection (Kcall id1 f1 en1 le1 k1) (Kcall id2 f2 en2 le2 k2)
+    right_cont_injection (Kcall id f en1 le1 k1) (Kcall id f en2 le2 k2)
 .
 
 Definition right_env_injection_some (e1 e2: env): Prop :=
@@ -2787,8 +2795,8 @@ Qed.
       constructor; eauto.
     + (* step_returnstate *)
       inv RCONTINJ.
-      * assert (COMP: comp_of f = comp_of f2) by admit. (* need to know this at least *)
-        rewrite COMP in *.
+      * (* assert (COMP: comp_of f = comp_of f2) by admit. (* need to know this at least *) *)
+        (* rewrite COMP in *. *)
         exists j. eexists. split.
         { apply step_returnstate.
           - intros CALLTYPE. specialize (NO_CROSS_PTR CALLTYPE).
@@ -2802,7 +2810,7 @@ Qed.
         { apply LeftControl; auto.
           (* simpl. admit. *)
         }
-      * assert (f = f2) as <- by admit. (* here the injection needs more *)
+      * (* assert (f = f2) as <- by admit. (* here the injection needs more *) *)
         exists j. eexists. split.
         { apply step_returnstate.
           - intros CALLTYPE. specialize (NO_CROSS_PTR CALLTYPE).
@@ -2952,7 +2960,8 @@ Qed.
                admit. }
              apply inject_callstates.
              ++ assumption.
-             ++ apply right_cont_injection_kcall_left; try assumption.
+             ++ (* apply right_cont_injection_kcall_left; try assumption. *)
+                admit.
              ++ specialize (NO_CROSS_PTR H5).
                 specialize (NO_CROSS_PTR0 H21).
                 admit. (* easy *)
