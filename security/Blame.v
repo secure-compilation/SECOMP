@@ -1253,10 +1253,12 @@ Admitted.
         exploit Mem.mi_own; eauto. simpl. eauto. }
       simpl in ge2_b2''.
       exploit same_blks2; eauto. intros m2_b2.
-      assert (comp_of d = cp') by congruence. rewrite H in ge2_b2'.
+      assert (comp_of d = cp') as E by congruence. rewrite E in *.
       split; trivial.
-
-  Admitted.
+      clear ge2_b2''.
+      rewrite Genv.globalenv_policy in *. simpl in *.
+      now rewrite (match_prog_pol _ _ _ match_W1_W2); split.
+  Qed.
 
   Lemma right_mem_injection_function_entry1: forall {j f m1 m2 vargs1 vargs2 e1 le1 m1'},
     right_mem_injection s j ge1 ge2 m1 m2 ->

@@ -746,6 +746,12 @@ Proof.
   unfold globalenv; intros. rewrite genv_public_add_globals. auto.
 Qed.
 
+Theorem globalenv_policy:
+  forall p, genv_policy (globalenv p) = prog_pol p.
+Proof.
+  intros p. unfold globalenv. now rewrite genv_pol_add_globals.
+Qed.
+
 Theorem block_is_volatile_below:
   forall ge b, block_is_volatile ge b = true ->  Plt b ge.(genv_next).
 Proof.
