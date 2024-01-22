@@ -1661,11 +1661,13 @@ Admitted.
     s |= s1 ∈ Left ->
     step1 ge1 s1 E0 s1' ->
   exists j',
-    right_mem_injection s j' ge1 ge2 (memory_of s1') (memory_of s2).
+    right_mem_injection s j' ge1 ge2 (memory_of s1') (memory_of s2) /\
+    inject_incr j j' .
   Proof.
     intros j s1 s2 s1' RMEMINJ LEFT STEP.
     exists j. (* FIXME: this falls back to the old form of the lemma *)
     inversion RMEMINJ as [DOM MEMINJ ZERO SYMB INJ BLKS].
+    split; [| now apply inject_incr_refl]. (* Integrate with other tweaks *)
     constructor; try assumption;
       [| | eapply same_blocks_step1; eassumption].
     { (* NOTE: Essentially identical sub-cases *)
@@ -2936,9 +2938,13 @@ Qed.
     inversion INJ as [? ? SIDE1 SIDE2 MEMINJ CONTINJ |]; subst; clear INJ;
       [| exfalso; eapply state_split_contra; eassumption].
     apply (step_E0_same_side STEP) in LEFT.
-    exploit right_mem_injection_left_step_E0_1; eauto. intros [j' MEMINJ'].
-    exploit right_cont_injection_left_step_E0_1; eauto. intros CONTINJ'.
-    exists j'. constructor; assumption.
+    exploit right_mem_injection_left_step_E0_1; eauto.
+    intros (j' & MEMINJ' & INCR).
+    exploit right_cont_injection_left_step_E0_1; eauto.
+    intros CONTINJ'.
+    exists j'.
+    constructor; try assumption.
+    eapply right_cont_injection_inject_incr; eauto.
   Qed.
 
   Lemma parallel_abstract_E0_2: forall j s1 s2 s2',
@@ -3094,6 +3100,7 @@ Qed.
           change (Mem.block_compartment m0 b = Some cp')
             with (Mem.can_access_block m0 b (Some cp')) in SAME.
           exact (external_call_can_access_block _ _ _ _ _ _ _ _ _ H4 SAME).
+        * eapply right_cont_injection_inject_incr; eauto.
       + inv EV. admit.  (* contra? *)
     - (* step_returnstate *)
       inv EV. inv STEP2.
