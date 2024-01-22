@@ -336,7 +336,9 @@ Section WFDELTA.
     let '(ch, ptr, v, cp) := d in
     match ptr with
     | Vptr b ofs => match Senv.invert_symbol ge b with
-                   | Some id => (Senv.public_symbol ge id) && (wf_chunk_val_b ch v) && (cp_eq_dec cp0 cp)
+                   | Some id => (Senv.public_symbol ge id) &&
+                               (wf_chunk_val_b ch v) &&
+                               cp_eq_dec cp0 cp
                    | _ => false
                    end
     | _ => false

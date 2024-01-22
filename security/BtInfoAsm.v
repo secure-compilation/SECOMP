@@ -824,7 +824,7 @@ Section INVS.
     end.
 
   Definition match_cur_regset (cur: block) (ge: Asm.genv) (rs: regset) :=
-    Genv.find_comp_in_genv ge (Vptr cur Ptrofs.zero) = Genv.find_comp_in_genv ge (rs PC).
+    Genv.find_comp_in_genv ge (Vptr cur Ptrofs.zero) ⊆ Genv.find_comp_in_genv ge (rs PC).
 
   Inductive match_stack (ge: Asm.genv): ir_conts -> stack -> Prop :=
   | match_stack_nil
@@ -1072,13 +1072,12 @@ Section PROOF.
           exploit NALLOC; eauto. intros. clarify.
         }
         exfalso. apply PERM.
-        admit.
-        (* eapply external_call_public_not_freeable; eauto. *)
-        (* { eapply PRP2. eapply external_call_max_perm. eauto. *)
-        (*   { eapply Mem.valid_block_inject_2; eauto. } *)
-        (*   eapply Mem.perm_max. eapply mem_perm_any_to_nonempty. eauto. *)
-        (* } *)
-        (* { unfold public_not_freeable in MEM3. eapply MEM3. rewrite Heq. congruence. } *)
+        eapply (ec_public_not_freeable (external_call_spec ef cp)); eauto.
+        { eapply PRP2. eapply external_call_max_perm. eauto.
+          { eapply Mem.valid_block_inject_2; eauto. }
+          eapply Mem.perm_max. eapply mem_perm_any_to_nonempty. eauto.
+        }
+        { unfold public_not_freeable in MEM3. eapply MEM3. rewrite Heq. congruence. }
       }
     }
     exists m_i', m_i'', vres'. splits; eauto.
@@ -1086,7 +1085,7 @@ Section PROOF.
       { eapply public_rev_perm_delta_apply_inj; eauto. }
       clear - ECC MEMINJ' PRP. eapply external_call_unknowns_mem_inj; eauto.
     }
-  Admitted.
+  Qed.
 
 
   Lemma asm_to_ir_returnstate_nccc_internal
@@ -1140,26 +1139,25 @@ Section PROOF.
     { simpl. split.
       - unfold Genv.type_of_call in NCCC.
         unfold update_stack_return in STUPD.
-        admit.
-        (* destruct (flowsto_dec); try congruence. *)
-        (* rewrite Pos.eqb_sym, Heq in STUPD. inv STUPD. auto. *)
+        destruct flowsto_dec; try congruence.
       - unfold wf_regset in *. rewrite NEXTPC, NEXTF. auto.
     }
-    { instantiate (4:=k). instantiate (3:=m_a0). instantiate (2:=d). instantiate (1:=Some (cur, m_i, ik)).
+    { instantiate (4:=k). instantiate (3:=m_a0).
+      instantiate (2:=d). instantiate (1:=Some (cur, m_i, ik)).
       assert (st' = st).
       { unfold Genv.type_of_call in NCCC. des_ifs. unfold update_stack_return in STUPD.
-        admit. }
-        (* rewrite Pos.eqb_sym, Heq in STUPD. inv STUPD. auto. } *)
+        destruct flowsto_dec; try congruence. }
       subst st'. simpl. split; auto. split; auto. split; auto. split.
       { unfold match_cur_regset in *.
-        admit. }
-        (* rewrite CURCOMP. unfold Genv.type_of_call in NCCC. des_ifs. apply Pos.eqb_eq in Heq. auto. } *)
+        unfold Genv.type_of_call in NCCC.
+        unfold update_stack_return in STUPD.
+        des_ifs. }
       split; auto.
       { unfold match_mem. splits; auto. }
     }
     intros (btr & ist' & UTR & ISTAR').
     exists btr, ist'. split; auto.
-  Admitted.
+  Qed.
 
   Lemma match_mem_external_call_establish2
         ge cp k d m_a0 m_i m
@@ -1261,6 +1259,7 @@ Section PROOF.
     admit. (* ?? *)
     eauto.
     (* previous script *)(* eapply ECC. eauto. clear ECC. *)
+
     intros [ECU | [ECKO | ECKS]].
 
     - (* extcall is unknown *)
@@ -1401,7 +1400,6 @@ Section PROOF.
       { destruct ECKS as [_ OBS]. inv EXTCALL.
         exists [], k, d, m_a0, m_i, m'. simpl. splits; auto. 2: unfold match_mem; splits; auto. 2: eauto. econstructor 1.
       }
-
   Admitted.
 
   Lemma asm_to_ir_builtin
@@ -1630,8 +1628,7 @@ Section PROOF.
 
     assert (st' = st).
     { unfold Genv.type_of_call in NCCC. des_ifs. unfold update_stack_return in STUPD.
-      admit. }
-      (* rewrite Pos.eqb_sym, Heq in STUPD. inv STUPD. auto. } *)
+      destruct flowsto_dec; try congruence. }
     subst st'.
     exploit asm_to_ir_step_external.
     12: eapply STAR. 11: eapply NEXTF. 10: eapply NEXTPC. 9: eapply STEP.
@@ -1655,14 +1652,8 @@ Section PROOF.
       (* return is NCCC - silent *)
       { exists []. simpl. eexists. split; auto. econstructor 1. }
       (* return is CCC - return event *)
-      { unfold Genv.type_of_call in H. des_ifs. unfold update_stack_return in STUPD0.
-        clear H. rewrite Pregmap.gss in *.
-        admit.
-        (* rewrite Pos.eqb_sym in Heq. rewrite Heq in STUPD0. des_ifs. *)
-        (* pose proof Heq as NEQ. eapply Pos.eqb_neq in NEQ. specialize (PC_RA0 NEQ). *)
-        (* (* stuck --- return PC is Vundef *) *)
-        (* rewrite STUCK in PC_RA0. clear - PC_RA0. exfalso. simpl in PC_RA0. des_ifs. *)
-      }
+      { unfold Genv.type_of_call in H. des_ifs.
+        exfalso; apply n0; auto with comps. }
     }
     (* stuck case *)
     inv H; simpl in *; rewrite Pregmap.gss in *; rewrite STUCK in H6; inv H6.
@@ -1859,13 +1850,16 @@ Section PROOF.
 
     assert (st' = st).
     { unfold Genv.type_of_call in NCCC. des_ifs. unfold update_stack_return in STUPD.
-      admit. }
-      (* rewrite Pos.eqb_sym, Heq in STUPD. inv STUPD. auto. } *)
+      des_ifs. }
     subst st'.
     exploit asm_to_ir_step_external.
     12: eapply STAR. 11: eapply NEXTF. 10: eapply NEXTPC. 9: eapply STEP.
     all: eauto.
-    admit.
+    { des_ifs. rewrite NEXTPC in f. rewrite NEXTPC.
+      simpl in *.
+    eapply Genv.find_funct_ptr_find_comp_of_block with (fd := External ef) in NEXTF; eauto.
+    rewrite NEXTF in f. setoid_rewrite NEXTF.
+    destruct (Genv.find_comp_of_block ge cur); try inv f; auto. }
     { rr; splits; eauto. }
     clear STEP STAR.
     intros (btr1 & k' & d' & m_a0' & m_i' & m_a' & UTR1 & ISTAR1 & MM' & (res & STAR)).
@@ -1876,9 +1870,15 @@ Section PROOF.
     { exists []. eexists. split; auto. econstructor 1. }
     (* now at Returnstate *)
     eapply asm_to_ir_returnstate_undef. 2: eapply IH. 12: eapply H0. 11: eapply H.
-    all: eauto. lia. admit.
+    all: eauto. lia.
+    { des_ifs.
+    rewrite NEXTPC in f. simpl in f.
+    eapply Genv.find_funct_ptr_find_comp_of_block with (fd := External ef) in NEXTF; eauto.
+    rewrite NEXTF in f. simpl in f.
+    simpl.
+    destruct (Genv.find_comp_of_block ge cur); try inv f; auto. }
     { clear. rewrite Pregmap.gso. 2: congruence. unfold loc_external_result. unfold Conventions1.loc_result. des_ifs. }
-  Admitted.
+  Qed.
 
   Lemma asm_to_ir_returnstate
         (ge: genv) cur_comp n n0
@@ -1982,8 +1982,9 @@ Section PROOF.
     destruct MTST as (WFIR0 & WFIR1 & MTST0 & MTST1 & MTST2 & MTST3). destruct MTST3 as (MEM0 & MEM1 & MEM2 & MEM3 & MEM4 & MEM5 & MEM6).
     exploit mem_delta_exec_instr. eapply MEM3. eapply H3.
     { replace (comp_of f) with (Genv.find_comp_in_genv ge (Vptr cur Ptrofs.zero)). eapply MEM4.
-      rewrite MTST1. rewrite H0. ss. unfold Genv.find_comp_in_genv.
       admit. }
+      (* rewrite MTST1. rewrite H0. ss. *)
+      (* erewrite Genv.find_funct_ptr_find_comp_of_block; eauto. reflexivity. } *)
     eapply MEM5. auto. intros (d' & MEM4' & MEM5').
     destruct f0.
 
@@ -1994,20 +1995,18 @@ Section PROOF.
       }
       assert (MTST': match_state ge k m_a0 d' (State st rs' m' cur_comp) (Some (cur, m_i, ik))).
       { clear IH. split. auto. split. auto. split. auto. split.
-        { unfold match_cur_regset in *. rewrite NEXTPC. rewrite <- ALLOWED. rewrite MTST1.
-          unfold Genv.find_comp_in_genv. rewrite H0.
-          admit.
-          (* unfold Genv.find_comp. rewrite Genv.find_funct_find_funct_ptr. *)
-          (* rewrite H1. auto. *)
-        }
+        { unfold match_cur_regset in *. rewrite NEXTPC. rewrite <- ALLOWED.
+          admit. }
+          (* rewrite MTST1. *)
+          (* unfold Genv.find_comp_in_genv. rewrite H0. ss. *)
+          (* erewrite Genv.find_funct_ptr_find_comp_of_block; eauto. reflexivity. } *)
         split. auto.
         { unfold match_mem. splits; auto.
           eapply public_not_freeable_exec_instr. 3: eapply H3. all: auto. eapply meminj_not_alloc_delta; eauto.
           { replace (Genv.find_comp_in_genv ge (Vptr cur Ptrofs.zero)) with (comp_of f); auto.
-            rewrite MTST1. rewrite H0. ss. unfold Genv.find_comp_in_genv.
-            admit.
-            (* setoid_rewrite H1. auto. *)
-          }
+            admit. }
+            (* rewrite MTST1. rewrite H0. ss. unfold Genv.find_comp_in_genv. *)
+            (* erewrite Genv.find_funct_ptr_find_comp_of_block; eauto. reflexivity. } *)
           eapply public_rev_perm_exec_instr. 3: eapply H3. all: auto.
         }
       }
@@ -2025,18 +2024,16 @@ Section PROOF.
         1,2,3,4: rewrite NEXTPC in H9; inv H9; rewrite NEXTF in H10; inv H10.
         (* rewrite <- REC_CURCOMP. *)
         (* rewrite H9. *)
-        rewrite MTST1, H0. simpl in *. rewrite NEXTPC in H9; inv H9.
-        admit.
-        (* rewrite <- ALLOWED. *)
-        (* unfold Genv.find_comp. setoid_rewrite H1. auto. *)
-      }
+        admit. }
+        (* rewrite MTST1, H0. simpl in *. rewrite NEXTPC in H9; inv H9. *)
+        (* erewrite Genv.find_funct_ptr_find_comp_of_block; eauto. *)
+        (* admit. } *)
       { instantiate (4:=k). instantiate (3:=d'). unfold match_mem. splits; eauto.
         eapply public_not_freeable_exec_instr; eauto. eapply meminj_not_alloc_delta; eauto.
         { replace (Genv.find_comp_in_genv ge (Vptr cur Ptrofs.zero)) with (comp_of f); auto.
-          rewrite MTST1. rewrite H0. ss.
-          admit.
-          (* unfold Genv.find_comp. setoid_rewrite H1. auto. *)
-        }
+          admit. }
+          (* rewrite MTST1. rewrite H0. ss. *)
+          (* erewrite Genv.find_funct_ptr_find_comp_of_block; eauto. reflexivity. } *)
         eapply public_rev_perm_exec_instr; eauto.
       }
       intros (btr' & k' & d'0 & m_a0' & m_i' & m_a' & UTR' & ISTAR' & MM' & (res' & STAR')).
@@ -2052,11 +2049,10 @@ Section PROOF.
         1,2,3,4: rewrite NEXTPC in H9; inv H9; rewrite NEXTF in H10; inv H10.
         (* rewrite <- REC_CURCOMP. *)
         (* rewrite H9. *)
-        rewrite MTST1, H0. simpl in *. rewrite NEXTPC in H9; inv H9.
-        (* rewrite <- ALLOWED. *)
-        admit.
-        (* unfold Genv.find_comp. setoid_rewrite H1. auto. *)
-      }
+        admit. }
+        (* rewrite MTST1, H0. simpl in *. rewrite NEXTPC in H9; inv H9. *)
+        (*   erewrite Genv.find_funct_ptr_find_comp_of_block; eauto. *)
+        (*   simpl; rewrite ALLOWED. admit. } *)
       { clear. rewrite Pregmap.gso. 2: congruence. unfold loc_external_result. unfold Conventions1.loc_result. des_ifs. }
     }
   Admitted.
@@ -2448,7 +2444,7 @@ Section INIT.
     - econs.
     - unfold match_cur_stack_sig. rewrite H1. ss.
     - unfold match_cur_regset. subst rs0. rewrite Pregmap.gso; ss. rewrite Pregmap.gso; ss. rewrite Pregmap.gss.
-      unfold Genv.symbol_address. subst ge0. rewrite H0. ss.
+      unfold Genv.symbol_address. subst ge0. rewrite H0. ss. auto with comps.
     - econs.
     - unfold match_mem.
       assert (MNA: meminj_not_alloc (meminj_public (Genv.globalenv p)) m0).

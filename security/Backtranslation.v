@@ -10,7 +10,6 @@ Require Import BtBasics BtInfoAsm MemoryDelta MemoryWeak.
 Require Import Ctypes Clight.
 
 
-
 Ltac simpl_expr :=
   repeat (match goal with
           | |- eval_expr _ _ _ _ _ _ _ => econstructor
@@ -71,7 +70,7 @@ Section SWITCH.
   (*   intros; subst cp. *)
   (*   destruct (Int64.eq n (Int64.repr n')) eqn:eq_n_n'. *)
   (*   - simpl. *)
-  (*     destruct (Mem.valid_access_store m Mint64 b 0%Z (comp_of f) (Vlong (Int64.add n Int64.one))) as [m' m_m']; try assumption. *)
+  (*     destruct (Mem.valid_access_store mMint64 b 0%Z (comp_of f) (Vlong (Int64.add n Int64.one))) as [m' m_m']; try assumption. *)
   (*     exists m'. split; eauto. *)
   (*     do 4 take_step'. *)
   (*     now apply star_refl. *)
@@ -185,13 +184,13 @@ Section CONV.
 
   Variable ge: Senv.t.
 
-  (* Definition not_in_env (e: env) id := e ! id = None. *)
+  Definition not_in_env (e: env) id := e ! id = None.
 
-  (* Definition wf_env (e: env) := *)
-  (*   forall id, match Senv.find_symbol ge id with *)
-  (*         | Some _ => not_in_env e id *)
-  (*         | _ => True *)
-  (*         end. *)
+  Definition wf_env (e: env) :=
+    forall id, match Senv.find_symbol ge id with
+          | Some _ => not_in_env e id
+          | _ => True
+          end.
 
   Definition eventval_to_val (v: eventval): val :=
     match v with
@@ -371,12 +370,12 @@ Section CONV.
     | Many64 => None
     end.
 
-  (* Lemma access_mode_chunk_to_type_wf *)
-  (*       ch ty *)
-  (*       (CT: chunk_to_type ch = Some ty) *)
-  (*   : *)
-  (*   access_mode ty = By_value ch. *)
-  (* Proof. destruct ch; inv CT; ss. Qed. *)
+  Lemma access_mode_chunk_to_type_wf
+        ch ty
+        (CT: chunk_to_type ch = Some ty)
+    :
+    access_mode ty = By_value ch.
+  Proof. destruct ch; inv CT; ss. Qed.
 
   Definition chunk_val_to_expr (ch: memory_chunk) (v: val) : option expr :=
     match chunk_to_type ch with
@@ -602,40 +601,40 @@ Section AUX.
     get_id_tr (tr1 ++ tr2) id = (get_id_tr tr1 id) ++ (get_id_tr tr2 id).
   Proof. unfold get_id_tr. rewrite filter_app. auto. Qed.
 
-  (* Lemma alloc_variables_wf_params_of_symb0 *)
-  (*       ge cp e m params e' m' *)
-  (*       (AE: alloc_variables ge cp e m params e' m') *)
-  (*       (WFE: wf_env ge e) *)
-  (*       (pars: params_of) *)
-  (*       (WFP: wf_params_of_symb pars ge) *)
-  (*       fid vars *)
-  (*       (PAR: pars ! fid = Some vars) *)
-  (*       (INCL: forall x, In x params -> In x vars) *)
-  (*   : *)
-  (*   wf_env ge e'. *)
-  (* Proof. *)
-  (*   revert_until AE. induction AE; ii. *)
-  (*   { eapply WFE. } *)
-  (*   eapply IHAE. 3: eapply PAR. *)
-  (*   3:{ i. eapply INCL. ss. right; auto. } *)
-  (*   2: auto. *)
-  (*   clear IHAE id0. unfold wf_env in *. i. specialize (WFE id0). des_ifs. *)
-  (*   unfold not_in_env in *. specialize (WFP _ _ Heq _ _ PAR). *)
-  (*   destruct (Pos.eqb_spec id id0). *)
-  (*   2:{ rewrite PTree.gso; auto. } *)
-  (*   subst id0. exfalso. apply WFP; clear WFP. specialize (INCL (id, ty)). *)
-  (*   replace id with (fst (id, ty)). 2: ss. apply in_map. apply INCL. ss. left; auto. *)
-  (* Qed. *)
+  Lemma alloc_variables_wf_params_of_symb0
+        ge cp e m params e' m'
+        (AE: alloc_variables ge cp e m params e' m')
+        (WFE: wf_env ge e)
+        (pars: params_of)
+        (WFP: wf_params_of_symb pars ge)
+        fid vars
+        (PAR: pars ! fid = Some vars)
+        (INCL: forall x, In x params -> In x vars)
+    :
+    wf_env ge e'.
+  Proof.
+    revert_until AE. induction AE; ii.
+    { eapply WFE. }
+    eapply IHAE. 3: eapply PAR.
+    3:{ i. eapply INCL. ss. right; auto. }
+    2: auto.
+    clear IHAE id0. unfold wf_env in *. i. specialize (WFE id0). des_ifs.
+    unfold not_in_env in *. specialize (WFP _ _ Heq _ _ PAR).
+    destruct (Pos.eqb_spec id id0).
+    2:{ rewrite PTree.gso; auto. }
+    subst id0. exfalso. apply WFP; clear WFP. specialize (INCL (id, ty)).
+    replace id with (fst (id, ty)). 2: ss. apply in_map. apply INCL. ss. left; auto.
+  Qed.
 
-  (* Lemma alloc_variables_wf_params_of_symb *)
-  (*       ge cp m params e' m' *)
-  (*       (AE: alloc_variables ge cp empty_env m params e' m') *)
-  (*       (pars: params_of) *)
-  (*       (WFP: wf_params_of_symb pars ge) *)
-  (*       fid *)
-  (*       (PAR: pars ! fid = Some params) *)
-  (*   : *)
-  (*   wf_env ge e'. *)
-  (* Proof. eapply alloc_variables_wf_params_of_symb0; eauto. ii. des_ifs. Qed. *)
+  Lemma alloc_variables_wf_params_of_symb
+        ge cp m params e' m'
+        (AE: alloc_variables ge cp empty_env m params e' m')
+        (pars: params_of)
+        (WFP: wf_params_of_symb pars ge)
+        fid
+        (PAR: pars ! fid = Some params)
+    :
+    wf_env ge e'.
+  Proof. eapply alloc_variables_wf_params_of_symb0; eauto. ii. des_ifs. Qed.
 
 End AUX.

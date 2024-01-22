@@ -511,23 +511,24 @@ Definition val_of_stackframe (f: Mach.stackframe) :=
   | Mach.Stackframe b _ _ ofs _ => Vptr b ofs
   end.
 
-Inductive match_stacks cp : list Mach.stackframe -> stack -> Prop :=
-| match_stacks_nil:
+Inductive match_stacks: compartment -> list Mach.stackframe -> stack -> Prop :=
+| match_stacks_nil: forall cp,
       match_stacks cp nil nil
 | match_stacks_intra_compartment:
     (* Intra-compartment calls create a new frame in the source, but not the target *)
-    forall s s' f,
+    forall cp cp' s s' f,
     match_stacks cp s s' ->
     Mach.call_comp ge (f :: s) = cp -> (* meaning, we are staying in the same
                                                compartment *)
-    match_stacks cp (f :: s) s'
+    cp' ⊆ cp ->
+    match_stacks cp' (f :: s) s'
 | match_stacks_cross_compartment:
     (* Cross-compartment calls create a new frame in both the source and the target *)
-    forall cp' s s' f f',
+    forall cp cp' s s' f f',
     match_stacks cp' s s' ->
     Mach.call_comp ge (f :: s) = cp' ->
     call_comp tge (f' :: s') = cp' ->
-    cp <> cp' ->
+    cp ⊈ cp' ->
     match_stackframe f f' ->
     match_stacks cp (f :: s) (f' :: s')
 .
@@ -874,7 +875,7 @@ Local Transparent destroyed_by_op.
   instantiate (1 := (rs0 # PC <- (rs0 x0)) # X1 <- (Val.offset_ptr (rs0 PC) Ptrofs.one)).
   simpl. eapply agree_exten. eapply agree_undef_regs; eauto. intros. Simpl.
   intros [args' [ARGS' LDARGS]].
-  destruct (cp_eq_dec (comp_of tf') (comp_of tf)) eqn:Heq.
+  destruct (flowsto_dec (comp_of tf') (comp_of tf)) eqn:Heq.
   * left; econstructor; split.
     apply plus_one.
     rewrite comp_transf_function.
@@ -892,187 +893,34 @@ Local Transparent destroyed_by_op.
     rewrite H7; simpl.
     unfold tge.
     rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ TFIND).
-    rewrite e; destruct (cp_eq_dec (comp_of tf) (comp_of tf)); try now auto.
+    rewrite Heq; try now auto.
     auto.
-    rewrite e, Genv.type_of_call_same_cp; now auto.
-    (* Not a cross-compartment call *)
-    (* { destruct (cp_eq_dec (comp_of tf) (comp_of tf)); try now auto. } *)
-    (* pose proof (flowsto_refl (comp_of tf)); try now auto. } *)
+    simpl; rewrite Heq; now auto.
     { rewrite <- comp_transf_function; eauto.
       rewrite <- (comp_transl_partial _ TTRANSF); eauto.
       eapply call_trace_lessdef; eauto using senv_preserved, symbols_preserved. }
     eauto.
-    (* replace (comp_of f) with (comp_of tf'). *)
-    (* replace (comp_of f) with (Genv.find_comp_in_genv ge (Vptr fb (Ptrofs.add ofs Ptrofs.one))). *)
     rewrite comp_transf_function; eauto.
     econstructor; eauto.
     econstructor; eauto.
     eapply agree_sp_def; eauto.
-    (* { rewrite find_comp_translated. unfold tge. *)
-    (*   unfold Genv.find_comp_in_genv. simpl. *)
-    (*   exploit functions_transl; eauto. intros G. *)
-    (*   rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ G). *)
-    (*   rewrite comp_transf_function; simpl; eauto. } *)
     { Simpl.
       change (comp_of (Internal tf)) with (comp_of tf) in Heq.
       rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ CALLED).
-      apply match_stacks_intra_compartment; trivial.
-      replace (comp_of fd) with (comp_of f). auto.
-      { rewrite comp_transf_function; eauto.
-        unfold transf_fundef, transf_partial_fundef in TTRANSF.
-        destruct fd.
-        - monadInv TTRANSF. simpl in *.
-          rewrite comp_transf_function. rewrite e; eauto.
-          eauto.
-        - inv TTRANSF. simpl in *. auto. }
-      unfold Mach.call_comp. simpl.
-      rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND).
+      eapply match_stacks_intra_compartment; trivial.
+      simpl; eauto.
+      rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND); auto.
+      (* replace (comp_of fd) with (comp_of f). auto. *)
       { simpl.
-        rewrite comp_transf_function; eauto.
+        rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND); auto.
         unfold transf_fundef, transf_partial_fundef in TTRANSF.
         destruct fd.
         - monadInv TTRANSF. simpl in *.
-          rewrite comp_transf_function. rewrite e; eauto.
-          eauto.
-        - inv TTRANSF. simpl in *. auto. }
+          rewrite !comp_transf_function; eauto.
+        - inv TTRANSF. simpl in *. auto with comps. }
     }
     simpl. eapply agree_exten; eauto. intros. Simpl.
     Simpl. rewrite <- H2. auto.
-    (* simpl. *)
-    (* now rewrite e, comp_transf_function. *)
-  * destruct (flowsto_dec (comp_of tf') (comp_of tf)) eqn:?.
-    -- left; econstructor; split.
-       rewrite comp_transf_function.
-       apply plus_one. eapply exec_step_internal_call.
-       rewrite <- H2; simpl; eauto.
-       eapply functions_transl; eauto.
-       eapply find_instr_tail; eauto.
-       simpl; eauto.
-       simpl; eauto.
-       Simpl; eauto.
-       rewrite <- (comp_transl_partial _ H4).
-       eapply allowed_call_translated; eauto.
-       simpl.
-       now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ TFIND).
-       unfold update_stack_call. Simpl.
-       rewrite H7; simpl.
-       simpl.
-       unfold tge; rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ TFIND).
-       rewrite <- H2. simpl. rewrite Heq.
-       reflexivity.
-       eauto.
-       { simpl.
-         intros.
-         rewrite <- (comp_transl_partial _ H4) in H8.
-         rewrite <- (comp_transl_partial _ TTRANSF) in H8.
-         specialize (NO_CROSS_PTR H8).
-         now eapply Val.lessdef_list_not_ptr; eauto. }
-       { simpl. rewrite <- comp_transf_function; eauto.
-         rewrite <- (comp_transl_partial _ TTRANSF).
-         eapply call_trace_lessdef; eauto using senv_preserved, symbols_preserved. }
-       eauto.
-       (* replace (comp_of f) *)
-       (*   with (Genv.find_comp_in_genv ge (Vptr fb (Ptrofs.add ofs Ptrofs.one))). *)
-       rewrite comp_transf_function; eauto.
-       econstructor; eauto.
-       econstructor; eauto.
-       eapply agree_sp_def; eauto.
-       (* TODO: clean *)
-       { eapply match_stacks_cross_compartment. exact STACKS'.
-         - unfold Mach.call_comp. simpl.
-           now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND).
-         - simpl.
-           rewrite <- find_comp_of_block_translated.
-           now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ H3).
-         - rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ CALLED).
-           simpl.
-           rewrite comp_transf_function; eauto.
-           unfold transf_fundef, transf_partial_fundef in TTRANSF.
-           destruct fd.
-           + monadInv TTRANSF. simpl in *.
-             rewrite comp_transf_function; eauto.
-           + inv TTRANSF. simpl in *. auto.
-         - erewrite agree_sp; eauto.
-           constructor.
-       }
-       simpl. eapply agree_exten; eauto. intros. Simpl.
-       Simpl. rewrite <- H2. auto.
-       (* simpl. *)
-       (* now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ H3). *)
-    -- left; econstructor; split.
-       rewrite comp_transf_function; eauto.
-       apply plus_one. eapply exec_step_internal_call.
-       rewrite <- H2; simpl; eauto.
-       eapply functions_transl; eauto.
-       eapply find_instr_tail; eauto.
-       simpl; eauto.
-       simpl; eauto.
-       Simpl; eauto.
-       rewrite <- (comp_transl_partial _ H4).
-       eapply allowed_call_translated; eauto.
-       simpl.
-       now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ TFIND).
-       unfold update_stack_call. Simpl.
-       rewrite H7; simpl.
-       simpl.
-       unfold tge; rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ TFIND).
-       rewrite <- H2. simpl. rewrite Heq.
-       reflexivity.
-       eauto.
-       { simpl.
-         intros.
-         rewrite <- (comp_transl_partial _ H4) in H8.
-         rewrite <- (comp_transl_partial _ TTRANSF) in H8.
-         specialize (NO_CROSS_PTR H8).
-         now eapply Val.lessdef_list_not_ptr; eauto. }
-       { simpl. rewrite <- comp_transf_function; eauto.
-         rewrite <- (comp_transl_partial _ TTRANSF).
-         eapply call_trace_lessdef; eauto using senv_preserved, symbols_preserved. }
-       (* replace (comp_of f) *)
-       (*   with (Genv.find_comp_in_genv ge (Vptr fb (Ptrofs.add ofs Ptrofs.one))). *)
-       rewrite comp_transf_function; eauto.
-       econstructor; eauto.
-       econstructor; eauto.
-       eapply agree_sp_def; eauto.
-       (* { rewrite find_comp_translated. unfold tge. *)
-       (*   unfold Genv.find_comp_in_genv. simpl. *)
-       (*   exploit functions_transl; eauto. intros G. *)
-       (*   rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ G). *)
-       (*   rewrite comp_transf_function; simpl; eauto. } *)
-       (* TODO: clean *)
-       { eapply match_stacks_cross_compartment. exact STACKS'.
-         - unfold Mach.call_comp. simpl.
-           now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND).
-         - simpl.
-           rewrite <- find_comp_of_block_translated.
-           now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ H3).
-         (* - rewrite (comp_transl_partial _ TTRANSF). *)
-         (*   rewrite (comp_transl_partial _ H4). *)
-         (*   intros contra. now rewrite contra, Pos.eqb_refl in Heq. *)
-         - rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ CALLED).
-           simpl.
-           rewrite comp_transf_function; eauto.
-           unfold transf_fundef, transf_partial_fundef in TTRANSF.
-           destruct fd.
-           + monadInv TTRANSF. simpl in *.
-             rewrite comp_transf_function; eauto.
-           + inv TTRANSF. simpl in *. auto.
-         - erewrite agree_sp; eauto.
-           constructor.
-       }
-       simpl. eapply agree_exten; eauto. intros. Simpl.
-       Simpl. rewrite <- H2. auto.
-       (* simpl. now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ H3). *)
-+ (* Direct call *)
-  generalize (code_tail_next_int _ _ _ _ NOOV H6). intro CT1.
-  assert (TCA: transl_code_at_pc ge (Vptr fb (Ptrofs.add ofs Ptrofs.one)) fb f c false tf x).
-    econstructor; eauto.
-  exploit return_address_offset_correct; eauto. intros; subst ra.
-  exploit (call_arguments_match (Mach.undef_regs destroyed_at_function_entry rs)); eauto.
-  instantiate (1 := (rs0 # PC <- (Genv.symbol_address tge fid Ptrofs.zero)) # X1 <- (Val.offset_ptr (rs0 PC) Ptrofs.one)).
-  simpl. eapply agree_exten. eapply agree_undef_regs; eauto. intros. Simpl.
-  intros [args' [ARGS' LDARGS]].
-  destruct (cp_eq_dec (comp_of tf') (comp_of tf)) eqn:Heq.
   * left; econstructor; split.
     rewrite comp_transf_function; eauto.
     apply plus_one. eapply exec_step_internal_call.
@@ -1082,215 +930,187 @@ Local Transparent destroyed_by_op.
     simpl; eauto.
     simpl; eauto.
     Simpl; eauto.
-    unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H. eauto.
-    rewrite <- (comp_transl_partial _ H4).
-    eapply allowed_call_translated; eauto.
-    simpl.
-    now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ TFIND).
-    unfold update_stack_call. Simpl.
-    unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H.
-    simpl.
-    simpl; unfold tge; rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ TFIND).
-    unfold comp_of in *; simpl in *. unfold comp_of in *. now rewrite Heq.
-    eauto.
-    (* Not a cross-compartment call *)
-    rewrite e, Genv.type_of_call_same_cp; now auto.
-    (* { unfold Genv.type_of_call; simpl in *. *)
-    (*   unfold comp_of. unfold comp_of in Heq. now setoid_rewrite Heq. } *)
-    { simpl. rewrite <- comp_transf_function; eauto.
-      rewrite <- (comp_transl_partial _ TTRANSF).
-      eapply call_trace_lessdef; eauto using senv_preserved, symbols_preserved. }
-    (* replace (comp_of f) with (Genv.find_comp_in_genv ge (Vptr fb (Ptrofs.add ofs Ptrofs.one))). *)
-    rewrite comp_transf_function; eauto.
-    econstructor; eauto.
-    econstructor; eauto.
-    eapply agree_sp_def; eauto.
-    (* { rewrite find_comp_translated. unfold tge. *)
-    (*   unfold Genv.find_comp_in_genv. simpl. *)
-    (*   exploit functions_transl; eauto. intros G. *)
-    (*   rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ G). *)
-    (*   rewrite comp_transf_function; simpl; eauto. } *)
-    { Simpl.
-      change (comp_of (Internal tf)) with (comp_of tf) in Heq.
-      rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ CALLED).
-      apply match_stacks_intra_compartment; trivial.
-      replace (comp_of fd) with (comp_of f). auto.
-      { rewrite comp_transf_function; eauto.
-        unfold transf_fundef, transf_partial_fundef in TTRANSF.
-        destruct fd.
-        - monadInv TTRANSF. simpl in *.
-          rewrite comp_transf_function. rewrite e; eauto.
-          eauto.
-        - inv TTRANSF. simpl in *. auto. }
-      unfold Mach.call_comp. simpl.
-      rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND).
-      { simpl.
-        rewrite comp_transf_function; eauto.
-        unfold transf_fundef, transf_partial_fundef in TTRANSF.
-        destruct fd.
-        - monadInv TTRANSF. simpl in *.
-          rewrite comp_transf_function. rewrite e; eauto.
-          eauto.
-        - inv TTRANSF. simpl in *. auto. }
-    }
-    simpl. eapply agree_exten; eauto. intros. Simpl.
-    Simpl. unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H. eauto.
-    Simpl. rewrite <- H2. auto.
-    (* simpl. now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND). *)
-  * destruct (flowsto_dec (comp_of tf') (comp_of tf)) eqn:?.
-    -- left; econstructor; split.
-       rewrite comp_transf_function; eauto.
-       apply plus_one. eapply exec_step_internal_call.
-       rewrite <- H2; simpl; eauto.
-       eapply functions_transl; eauto.
-       eapply find_instr_tail; eauto.
-       simpl; eauto.
-       simpl; eauto.
-       Simpl; eauto.
-       unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H. eauto.
-       rewrite <- (comp_transl_partial _ H4).
-       eapply allowed_call_translated; eauto.
-       simpl.
-       now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ TFIND).
-       unfold update_stack_call. Simpl.
-       (* rewrite H7; simpl. *)
-       (* simpl. *)
-       unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H. simpl.
-       unfold tge; rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ TFIND).
-       rewrite <- H2. simpl. rewrite Heq.
-       reflexivity.
-       eauto.
-       { simpl.
-         intros.
-         rewrite <- (comp_transl_partial _ H4) in H5.
-         rewrite <- (comp_transl_partial _ TTRANSF) in H5.
-         specialize (NO_CROSS_PTR H5).
-         now eapply Val.lessdef_list_not_ptr; eauto. }
-       { simpl. rewrite <- comp_transf_function; eauto.
-         rewrite <- (comp_transl_partial _ TTRANSF).
-         eapply call_trace_lessdef; eauto using senv_preserved, symbols_preserved. }
-       (* replace (comp_of f) *)
-       (*   with (Genv.find_comp_in_genv ge (Vptr fb (Ptrofs.add ofs Ptrofs.one))). *)
-       rewrite comp_transf_function; eauto.
-       econstructor; eauto.
-       econstructor; eauto.
-       eapply agree_sp_def; eauto.
-       (* TODO: clean *)
-       { eapply match_stacks_cross_compartment. exact STACKS'.
-         - unfold Mach.call_comp. simpl.
-           now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND).
-         - simpl.
-           rewrite <- find_comp_of_block_translated.
-           now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ H3).
-         - rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ CALLED).
-           simpl.
-           rewrite comp_transf_function; eauto.
-           unfold transf_fundef, transf_partial_fundef in TTRANSF.
-           destruct fd.
-           + monadInv TTRANSF. simpl in *.
-             rewrite comp_transf_function; eauto.
-           + inv TTRANSF. simpl in *. auto.
-         - erewrite agree_sp; eauto.
-           constructor.
-       }
-       simpl. eapply agree_exten; eauto. intros. Simpl.
-       unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H. simpl.
-       Simpl. rewrite <- H2. auto.
-       (* simpl. *)
-       (* now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ H3). *)
-    -- left; econstructor; split.
-       rewrite comp_transf_function; eauto.
-       apply plus_one. eapply exec_step_internal_call.
-       rewrite <- H2; simpl; eauto.
-       eapply functions_transl; eauto.
-       eapply find_instr_tail; eauto.
-       simpl; eauto.
-       simpl; eauto.
-       Simpl; eauto.
-       unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H. auto.
-       rewrite <- (comp_transl_partial _ H4).
-       eapply allowed_call_translated; eauto.
-       simpl.
-       now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ TFIND).
-       unfold update_stack_call. Simpl.
-       unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H. simpl.
-       unfold tge; rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ TFIND).
-       rewrite <- H2. simpl. rewrite Heq.
-       reflexivity.
-       eauto.
-       { simpl.
-         intros.
-         rewrite <- (comp_transl_partial _ H4) in H5.
-         rewrite <- (comp_transl_partial _ TTRANSF) in H5.
-         specialize (NO_CROSS_PTR H5).
-         now eapply Val.lessdef_list_not_ptr; eauto. }
-       { simpl. rewrite <- comp_transf_function; eauto.
-         rewrite <- (comp_transl_partial _ TTRANSF).
-         eapply call_trace_lessdef; eauto using senv_preserved, symbols_preserved. }
-       (* replace (comp_of f) *)
-       (*   with (Genv.find_comp_in_genv ge (Vptr fb (Ptrofs.add ofs Ptrofs.one))). *)
-       rewrite comp_transf_function; eauto.
-       econstructor; eauto.
-       econstructor; eauto.
-       eapply agree_sp_def; eauto.
-       (* { rewrite find_comp_translated. unfold tge. *)
-       (*   unfold Genv.find_comp_in_genv. simpl. *)
-       (*   exploit functions_transl; eauto. intros G. *)
-       (*   rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ G). *)
-       (*   rewrite comp_transf_function; simpl; eauto. } *)
-       (* TODO: clean *)
-       { eapply match_stacks_cross_compartment. exact STACKS'.
-         - unfold Mach.call_comp. simpl.
-           now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND).
-         - simpl.
-           rewrite <- find_comp_of_block_translated.
-           now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ H3).
-         (* - rewrite (comp_transl_partial _ TTRANSF). *)
-         (*   rewrite (comp_transl_partial _ H4). *)
-         (*   intros contra. now rewrite contra, Pos.eqb_refl in Heq. *)
-         - rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ CALLED).
-           simpl.
-           rewrite comp_transf_function; eauto.
-           unfold transf_fundef, transf_partial_fundef in TTRANSF.
-           destruct fd.
-           + monadInv TTRANSF. simpl in *.
-             rewrite comp_transf_function; eauto.
-           + inv TTRANSF. simpl in *. auto.
-         - erewrite agree_sp; eauto.
-           constructor.
-       }
-       simpl. eapply agree_exten; eauto. intros. Simpl.
-       unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H. simpl.
-       Simpl. rewrite <- H2. auto.
-       (* simpl. now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ H3). *)
-
-- (* Mtailcall *)
-  assert (f0 = f) by congruence.  subst f0.
-  inversion AT; subst.
-  assert (NOOV: list_length_z tf.(fn_code) <= Ptrofs.max_unsigned).
-    eapply transf_function_no_overflow; eauto.
-  exploit Mem.loadv_extends. eauto. eexact H1. auto. simpl.
-  intros [parent' [A B]].
-  destruct ros as [rf|fid]; simpl in H; monadInv H7.
-+ (* Indirect call *)
-  assert (rs rf = Vptr f' Ptrofs.zero).
-    destruct (rs rf); try discriminate.
-    revert H; predSpec Ptrofs.eq Ptrofs.eq_spec i Ptrofs.zero; intros; congruence.
-  assert (rs0 x0 = Vptr f' Ptrofs.zero).
-    exploit ireg_val; eauto. rewrite H7; intros LD; inv LD; auto.
-  exploit make_epilogue_correct; eauto using (comp_transl_partial _ H6).
-  intros (rs1 & m1 & U & V & W & X & Y & Z).
-  exploit exec_straight_steps_2; eauto using functions_transl.
-  intros (ofs' & P & Q).
-  left; econstructor; split.
-  (* execution *)
-  eapply plus_right'. eapply exec_straight_exec; eauto.
-  now rewrite <- H4; simpl; erewrite Genv.find_funct_ptr_find_comp_of_block; eauto.
-  rewrite comp_transf_function; eauto.
-  econstructor. eexact P. eapply functions_transl; eauto. eapply find_instr_tail. eexact Q.
+  rewrite <- (comp_transl_partial _ H4).
+  eapply allowed_call_translated; eauto.
+  simpl.
+  now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ TFIND).
+  unfold update_stack_call. Simpl.
+  rewrite H7; simpl.
+  simpl.
+  unfold tge; rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ TFIND).
+  rewrite <- H2. simpl. rewrite Heq.
   reflexivity.
-  simpl. reflexivity. eauto. eauto.
-  Simpl; eauto.
+  eauto.
+  { simpl.
+    intros.
+    rewrite <- (comp_transl_partial _ H4) in H8.
+    rewrite <- (comp_transl_partial _ TTRANSF) in H8.
+    specialize (NO_CROSS_PTR H8).
+    now eapply Val.lessdef_list_not_ptr; eauto. }
+  { simpl. rewrite <- comp_transf_function; eauto.
+    rewrite <- (comp_transl_partial _ TTRANSF).
+    eapply call_trace_lessdef; eauto using senv_preserved, symbols_preserved. }
+  rewrite comp_transf_function; eauto.
+  econstructor; eauto.
+  econstructor; eauto.
+  eapply agree_sp_def; eauto.
+  { eapply match_stacks_cross_compartment. exact STACKS'.
+    - unfold Mach.call_comp. simpl.
+      now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND).
+    - simpl.
+      rewrite <- find_comp_of_block_translated.
+      now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ H3).
+    - rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ CALLED).
+      simpl.
+      rewrite comp_transf_function; eauto.
+      unfold transf_fundef, transf_partial_fundef in TTRANSF.
+      destruct fd.
+      + monadInv TTRANSF. simpl in *.
+        rewrite comp_transf_function; eauto.
+      + inv TTRANSF. simpl in *. auto.
+    - erewrite agree_sp; eauto.
+      constructor.
+  }
+  simpl. eapply agree_exten; eauto. intros. Simpl.
+  Simpl. rewrite <- H2. auto.
+  + (* Direct call *)
+    generalize (code_tail_next_int _ _ _ _ NOOV H6). intro CT1.
+    assert (TCA: transl_code_at_pc ge (Vptr fb (Ptrofs.add ofs Ptrofs.one)) fb f c false tf x).
+    econstructor; eauto.
+    exploit return_address_offset_correct; eauto. intros; subst ra.
+    exploit (call_arguments_match (Mach.undef_regs destroyed_at_function_entry rs)); eauto.
+    instantiate (1 := (rs0 # PC <- (Genv.symbol_address tge fid Ptrofs.zero)) # X1 <- (Val.offset_ptr (rs0 PC) Ptrofs.one)).
+    simpl. eapply agree_exten. eapply agree_undef_regs; eauto. intros. Simpl.
+    intros [args' [ARGS' LDARGS]].
+    destruct (flowsto_dec (comp_of tf') (comp_of tf)) eqn:Heq.
+    * left; econstructor; split.
+      rewrite comp_transf_function; eauto.
+      apply plus_one. eapply exec_step_internal_call.
+      rewrite <- H2; simpl; eauto.
+      eapply functions_transl; eauto.
+      eapply find_instr_tail; eauto.
+      simpl; eauto.
+      simpl; eauto.
+      Simpl; eauto.
+  unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H. eauto.
+  rewrite <- (comp_transl_partial _ H4).
+  eapply allowed_call_translated; eauto.
+  simpl.
+  now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ TFIND).
+  unfold update_stack_call. Simpl.
+  unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H.
+  simpl.
+  simpl; unfold tge; rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ TFIND).
+  unfold comp_of in *; simpl in *. unfold comp_of in *. now rewrite Heq.
+  eauto.
+  (* Not a cross-compartment call *)
+  simpl; rewrite Heq; now auto.
+  { simpl. rewrite <- comp_transf_function; eauto.
+    rewrite <- (comp_transl_partial _ TTRANSF).
+    eapply call_trace_lessdef; eauto using senv_preserved, symbols_preserved. }
+  rewrite comp_transf_function; eauto.
+  econstructor; eauto.
+  econstructor; eauto.
+  eapply agree_sp_def; eauto.
+  { Simpl.
+    change (comp_of (Internal tf)) with (comp_of tf) in Heq.
+    rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ CALLED).
+    eapply match_stacks_intra_compartment; trivial.
+    simpl; eauto.
+    rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND); auto.
+    (* replace (comp_of fd) with (comp_of f). auto. *)
+    { simpl.
+      rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND); auto.
+      unfold transf_fundef, transf_partial_fundef in TTRANSF.
+      destruct fd.
+      - monadInv TTRANSF. simpl in *.
+        rewrite !comp_transf_function; eauto.
+      - inv TTRANSF. simpl in *. auto with comps. }
+  }
+  simpl. eapply agree_exten; eauto. intros. Simpl.
+  Simpl. unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H. eauto.
+  Simpl. rewrite <- H2. auto.
+  * left; econstructor; split.
+    rewrite comp_transf_function; eauto.
+    apply plus_one. eapply exec_step_internal_call.
+    rewrite <- H2; simpl; eauto.
+    eapply functions_transl; eauto.
+    eapply find_instr_tail; eauto.
+    simpl; eauto.
+    simpl; eauto.
+    Simpl; eauto.
+  unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H. auto.
+  rewrite <- (comp_transl_partial _ H4).
+  eapply allowed_call_translated; eauto.
+  simpl.
+  now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ TFIND).
+  unfold update_stack_call. Simpl.
+  unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H. simpl.
+  unfold tge; rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ TFIND).
+  rewrite <- H2. simpl. rewrite Heq.
+  reflexivity.
+  eauto.
+  { simpl.
+    intros.
+    rewrite <- (comp_transl_partial _ H4) in H5.
+    rewrite <- (comp_transl_partial _ TTRANSF) in H5.
+    specialize (NO_CROSS_PTR H5).
+    now eapply Val.lessdef_list_not_ptr; eauto. }
+  { simpl. rewrite <- comp_transf_function; eauto.
+    rewrite <- (comp_transl_partial _ TTRANSF).
+    eapply call_trace_lessdef; eauto using senv_preserved, symbols_preserved. }
+  rewrite comp_transf_function; eauto.
+  econstructor; eauto.
+  econstructor; eauto.
+  eapply agree_sp_def; eauto.
+  { eapply match_stacks_cross_compartment. exact STACKS'.
+    - unfold Mach.call_comp. simpl.
+      now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND).
+    - simpl.
+      rewrite <- find_comp_of_block_translated.
+      now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ H3).
+    - rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ CALLED).
+      simpl.
+      rewrite comp_transf_function; eauto.
+      unfold transf_fundef, transf_partial_fundef in TTRANSF.
+      destruct fd.
+      + monadInv TTRANSF. simpl in *.
+        rewrite comp_transf_function; eauto.
+      + inv TTRANSF. simpl in *. auto.
+    - erewrite agree_sp; eauto.
+      constructor.
+  }
+  simpl. eapply agree_exten; eauto. intros. Simpl.
+  unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H. simpl.
+  Simpl. rewrite <- H2. auto.
+
+  - (* Mtailcall *)
+    assert (f0 = f) by congruence.  subst f0.
+    inversion AT; subst.
+    assert (NOOV: list_length_z tf.(fn_code) <= Ptrofs.max_unsigned).
+    eapply transf_function_no_overflow; eauto.
+    exploit Mem.loadv_extends. eauto. eexact H1. auto. simpl.
+    intros [parent' [A B]].
+    destruct ros as [rf|fid]; simpl in H; monadInv H7.
+    + (* Indirect call *)
+      assert (rs rf = Vptr f' Ptrofs.zero).
+      destruct (rs rf); try discriminate.
+      revert H; predSpec Ptrofs.eq Ptrofs.eq_spec i Ptrofs.zero; intros; congruence.
+      assert (rs0 x0 = Vptr f' Ptrofs.zero).
+      exploit ireg_val; eauto. rewrite H7; intros LD; inv LD; auto.
+      exploit make_epilogue_correct; eauto using (comp_transl_partial _ H6).
+      intros (rs1 & m1 & U & V & W & X & Y & Z).
+      exploit exec_straight_steps_2; eauto using functions_transl.
+      intros (ofs' & P & Q).
+      left; econstructor; split.
+      (* execution *)
+      eapply plus_right'. eapply exec_straight_exec; eauto.
+      now rewrite <- H4; simpl; erewrite Genv.find_funct_ptr_find_comp_of_block; eauto.
+      rewrite comp_transf_function; eauto.
+      econstructor. eexact P. eapply functions_transl; eauto. eapply find_instr_tail. eexact Q.
+      reflexivity.
+      simpl. reflexivity. eauto. eauto.
+      Simpl; eauto.
   rewrite Z by (rewrite <- (ireg_of_eq _ _ EQ1); eauto with asmgen). eauto.
   rewrite <- (comp_transl_partial _ H6).
   now rewrite <- find_comp_of_block_translated, NEXTCOMP.
@@ -1300,21 +1120,21 @@ Local Transparent destroyed_by_op.
   econstructor; eauto.
   apply agree_set_other; auto with asmgen.
   Simpl. rewrite Z by (rewrite <- (ireg_of_eq _ _ EQ1); eauto with asmgen). assumption.
-+ (* Direct call *)
-  exploit make_epilogue_correct; eauto using (comp_transl_partial _ H6).
-  intros (rs1 & m1 & U & V & W & X & Y & Z).
-  exploit exec_straight_steps_2; eauto using functions_transl.
-  intros (ofs' & P & Q).
-  left; econstructor; split.
-  (* execution *)
-  rewrite comp_transf_function; eauto.
-  eapply plus_right'. eapply exec_straight_exec; eauto.
-  rewrite <- comp_transf_function; eauto.
-  now rewrite <- H4; simpl; erewrite Genv.find_funct_ptr_find_comp_of_block; eauto.
-  econstructor. eexact P. eapply functions_transl; eauto. eapply find_instr_tail. eexact Q.
-  reflexivity.
-  simpl. reflexivity. eauto. eauto.
-  Simpl; eauto.
+  + (* Direct call *)
+    exploit make_epilogue_correct; eauto using (comp_transl_partial _ H6).
+    intros (rs1 & m1 & U & V & W & X & Y & Z).
+    exploit exec_straight_steps_2; eauto using functions_transl.
+    intros (ofs' & P & Q).
+    left; econstructor; split.
+    (* execution *)
+    rewrite comp_transf_function; eauto.
+    eapply plus_right'. eapply exec_straight_exec; eauto.
+    rewrite <- comp_transf_function; eauto.
+    now rewrite <- H4; simpl; erewrite Genv.find_funct_ptr_find_comp_of_block; eauto.
+    econstructor. eexact P. eapply functions_transl; eauto. eapply find_instr_tail. eexact Q.
+    reflexivity.
+    simpl. reflexivity. eauto. eauto.
+    Simpl; eauto.
   unfold Genv.symbol_address. now rewrite symbols_preserved, H.
   rewrite <- (comp_transl_partial _ H6).
   simpl. now rewrite <- find_comp_of_block_translated.
@@ -1545,21 +1365,22 @@ Local Transparent destroyed_at_function_entry.
     rewrite <- find_comp_of_block_translated.
     rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ H3).
     change (comp_of (Internal f0)) with (comp_of f0).
-    destruct (cp_eq_dec cp (comp_of f0)) eqn:e.
-    - subst cp.
-      (* apply Pos.eqb_eq in e. subst cp. *)
-      eexists; split; auto.
+    destruct (flowsto_dec cp (comp_of f0)) eqn:e.
+    - eexists; split; auto.
       inv STACKS'; auto.
-      unfold Mach.call_comp in *; simpl in *.
+      { simpl in H1.
+        rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ H3) in H1; auto.
+      }
+      { unfold Mach.call_comp in *; simpl in *.
       rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ H3) in H4.
       simpl in *.
-      inv H10.
-      rewrite find_comp_of_block_translated in H5. congruence.
+      inv H11.
+      rewrite find_comp_of_block_translated in H9. congruence. }
     - inv STACKS'; auto.
       + unfold Mach.call_comp in *. simpl in *.
-        clear e.
-        rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ H3) in n. simpl in n.
-        congruence.
+        rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ H3) in H9.
+        now auto.
+
       + unfold Mach.call_comp in *. simpl in *.
         rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ H3) in H1. eauto. }
 
@@ -1579,30 +1400,36 @@ Local Transparent destroyed_at_function_entry.
   { rewrite ATPC. simpl.
     intros diff.
     inv STACKS'; auto.
-    - simpl in diff. erewrite Genv.find_funct_ptr_find_comp_of_block in diff; eauto. now simpl in diff.
-    - inv H10. reflexivity. }
-  { intros diff.
+    - simpl in *.
+      erewrite Genv.find_funct_ptr_find_comp_of_block in H9; eauto. now auto.
+    - inv H11. reflexivity. }
+  {
+    intros diff.
     inv STACKS'; auto.
-    - simpl in diff. erewrite Genv.find_funct_ptr_find_comp_of_block in diff; eauto. now simpl in diff.
-    - inv H10. eapply agree_sp; eauto. }
+    - simpl in *.
+      erewrite Genv.find_funct_ptr_find_comp_of_block in H9; eauto. now auto.
+    - inv H11. eapply agree_sp; eauto. }
+
   { intros TYPE.
     inv STACKS'; auto.
-    - simpl in *. erewrite Genv.find_funct_ptr_find_comp_of_block in TYPE; eauto. simpl in TYPE.
-      pose proof (flowsto_refl (comp_of f0)); now destruct (flowsto_dec (comp_of f0) (comp_of f0)).
+    - simpl in *.
+      erewrite Genv.find_funct_ptr_find_comp_of_block in H9; eauto. simpl in H9.
+      now destruct (flowsto_dec cp (comp_of f0)).
     - simpl in *. erewrite Genv.find_funct_ptr_find_comp_of_block in NO_CROSS_PTR; eauto. simpl in *.
       specialize (NO_CROSS_PTR TYPE).
-      inv H10.
+      inv H11.
       (* TODO: factorize into a lemma Val.lessdef_not_ptr *)
       inv LD; auto. now rewrite <- H0 in NO_CROSS_PTR. }
   { inv STACKS'; auto.
     - simpl in *.
-      rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ H3) in *. simpl in *.
       assert (t = E0).
-      { inv EV; auto. rewrite Genv.type_of_call_same_cp in H; now auto. }
+      { inv EV; auto. simpl in H.
+        now destruct flowsto_dec. }
       subst.
-      constructor.
-      rewrite Genv.type_of_call_same_cp; now auto.
-    - simpl in *. inv H10.
+      constructor. simpl.
+      erewrite Genv.find_funct_ptr_find_comp_of_block in H9; eauto. simpl in H9.
+      now destruct (flowsto_dec cp (comp_of f0)).
+    - simpl in *. inv H11.
       erewrite Genv.find_funct_ptr_find_comp_of_block in EV; eauto.
       eapply return_trace_lessdef with (ge := ge) (v := Mach.return_value rs sg);
         eauto using senv_preserved. }

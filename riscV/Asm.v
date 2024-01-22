@@ -1222,7 +1222,7 @@ Definition update_stack_call (s: stack) (sg: signature) (cp: compartment) rs' :=
   let ra' := rs' # RA in
   let sp' := rs' # SP in
   let cp' := Genv.find_comp_in_genv ge pc' in
-  if cp_eq_dec cp' cp then
+  if flowsto_dec cp' cp then
     (* If we are in the same compartment as previously recorded, we
            don't update the stack *)
     Some s
@@ -1239,7 +1239,7 @@ Definition update_stack_call (s: stack) (sg: signature) (cp: compartment) rs' :=
 Definition update_stack_return (s: stack) (cp: compartment) rs' :=
   let pc' := rs' # PC in
   let cp' := Genv.find_comp_in_genv ge pc' in
-  if cp_eq_dec cp cp' then
+  if flowsto_dec cp cp' then
     (* If we are in the same compartment as previously recorded, we
          don't update the stack *)
     Some s
@@ -1334,8 +1334,8 @@ Inductive step: state -> trace -> state -> Prop :=
         forall (NEXTCOMP: Genv.find_comp_in_genv ge (rs PC) = cp'),
         (* We only impose conditions on when returns can be executed for cross-compartment
            returns. These conditions are that we restore the previous RA and SP *)
-        forall (PC_RA: rec_cp <> cp' -> rs PC = asm_parent_ra st),
-        forall (RESTORE_SP: rec_cp <> cp' -> rs SP = asm_parent_sp st),
+        forall (PC_RA: rec_cp ⊈ cp' -> rs PC = asm_parent_ra st),
+        forall (RESTORE_SP: rec_cp ⊈ cp' -> rs SP = asm_parent_sp st),
         (* Note that in the same manner, this definition only updates the stack when doing
          cross-compartment returns *)
         forall (STUPD: update_stack_return st rec_cp rs = Some st'),
