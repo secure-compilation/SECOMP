@@ -1284,8 +1284,7 @@ Definition make_entry_wrapper (sig: capsignature) (f: Mach.function) (next_label
   PCseal RAC RAC X3 ::
   (* check that param cap is RO *)
   PCgp X31 X30 ::
-  (* Paddiw X5 X0 (encode_perm_int OCapValues.RO) :: *) (* FIXME priority 1 *)
-  Paddiw X5 X0 Int.zero (* <- permission value is wrong! *) ::
+  Paddiw X5 X0 (OCapValues.encode_permission OCapValues.RO) ::
   Pbeqw X5 X31 lbl1 ::
   Pfail ::
   Plabel lbl1 ::
@@ -1345,8 +1344,7 @@ Definition make_call (sig: capsignature) (call_site: ptrofs) (t: ireg + ident) (
   addptrofs X31 X31 outgoing_size
   (PCsaddr_w X30 X30 X31 >>
   PCpromote X30 X30 >>
-  (* Paddiw X31 X0 (encode_perm_int OCapValues.RO) >> (* FIXME priority 1*) *)
-  Paddiw X31 X0 Int.zero >> (* <- permission value is wrong! *)
+  Paddiw X31 X0 (OCapValues.encode_permission OCapValues.RO) >>
   PCpermand X30 X30 X31 >>
   PCgb_s X31 X30 >>
   PCsaddr_w X30 X30 X31 >>

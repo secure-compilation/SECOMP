@@ -1392,7 +1392,7 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) (cp: 
       exec_capability_outcome (Val.seal_capability rs#r1 rs#r2) (fun b => Next (rs#d <- b) m)
   | PCunseal d r1 r2 =>
       exec_capability_outcome (Val.unseal_capability rs#r1 rs#r2) (fun b => Next (rs#d <- b) m)
-  (* FIXME decode_permit_int undefined *)
+  (* FIXME decode_permit_int undefined, use decode_permission *)
   (* | PCpermand d r1 r2 => *)
   (*     exec_capability_outcome (Val.restrict_perm decode_perm_int rs#r1 rs#r2) (fun b => Next (rs#d <- b) m) *)
   | PCsaddr_w d r1 r2 =>
@@ -1421,6 +1421,7 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) (cp: 
   (* FIXME conditional_seal_capability undefined *)
   (* | PCCseal d r1 r2 => *)
   (*     exec_capability_outcome (Val.conditional_seal_capability rs#r1 rs#r2) (fun b => Next (rs#d <- b) m) *)
+  (* FIXME use encode_permission and decode_permission *)
   (* | PCseal_e d r => *)
   (*     exec_capability_outcome (Val.restrict_perm decode_perm_int rs#r (OCVint (encode_perm_int E))) *)
   (*                             (fun b => Next (rs#d <- b) m) *)
