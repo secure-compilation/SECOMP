@@ -1239,7 +1239,22 @@ Admitted.
       exploit Genv.invert_find_symbol; eauto. intros ge1_id.
       exploit H2; eauto. intros (-> & ge2_id).
       split; [now apply Genv.find_invert_symbol|].
-
+      (* TODO: Find out what this has in common with previous case and refactor. *)
+      pose proof (Genv.find_symbol_find_def_inversion _ _ ge2_id)
+        as [d ge2_b2].
+      assert (Genv.find_comp_of_block (Genv.globalenv W2) b2
+              = Some (comp_of d))
+        as ge2_b2'.
+      { unfold Genv.find_comp_of_block. fold fundef. now rewrite ge2_b2. }
+      assert (Mem.can_access_block m2 b2 (Some cp')) as ge2_b2''.
+      { exploit same_blks1; eauto. intros m1_b1.
+        exploit partial_mem_inject; eauto. intros ?.
+        exploit Mem.mi_inj; eauto. intros ?.
+        exploit Mem.mi_own; eauto. simpl. eauto. }
+      simpl in ge2_b2''.
+      exploit same_blks2; eauto. intros m2_b2.
+      assert (comp_of d = cp') by congruence. rewrite H in ge2_b2'.
+      split; trivial.
 
   Admitted.
 
