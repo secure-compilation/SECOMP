@@ -1438,6 +1438,42 @@ Qed.
         eapply IHtemps; eauto.
   Qed.
 
+  Lemma find_symbol_valid_block p m id b :
+    same_blocks (globalenv p) m ->
+    Genv.find_symbol (globalenv p) id = Some b ->
+    Mem.valid_block m b.
+  Proof.
+    intros BLKS FIND.
+    assert (exists cp, Genv.find_comp_of_block (globalenv p) b = Some cp)
+      as (cp & ge_b).
+    { unfold Genv.find_comp_of_block.
+      destruct (Genv.find_symbol_find_def_inversion _ _ FIND)
+        as [def ge_b].
+      simpl; unfold program, fundef in *. rewrite ge_b; eauto. }
+    apply BLKS in ge_b.
+    apply Classical_Prop.NNPP. (* FIXME *)
+    rewrite Mem.block_compartment_valid_block. congruence.
+  Qed.
+
+  Lemma block_is_volatile_valid_block p m b :
+    same_blocks (globalenv p) m ->
+    Genv.block_is_volatile (globalenv p) b = true ->
+    Mem.valid_block m b.
+  Proof.
+    intros BLKS VOL.
+    assert (exists cp, Genv.find_comp_of_block (globalenv p) b = Some cp)
+      as (cp & ge_b).
+    { unfold Genv.block_is_volatile, Genv.find_var_info in *.
+      destruct Genv.find_def as [[|var]|] eqn:ge_b; try congruence.
+      unfold Genv.find_comp_of_block.
+      rewrite ge_b; eauto. }
+    apply BLKS in ge_b.
+    apply Classical_Prop.NNPP. (* FIXME *)
+    rewrite Mem.block_compartment_valid_block. congruence.
+  Qed.
+
+
+
   Lemma right_mem_injection_alloc {j f m1 m2 e1 e2 le1 le2 m1' b1 ty} id
     (RMEMINJ: right_mem_injection s j ge1 ge2 m1 m2)
     (RENVINJ: right_env_injection j e1 e2)
@@ -1463,7 +1499,10 @@ Qed.
       + intros b. specialize (DOM b).
         destruct Genv.invert_symbol as [id' |] eqn:INVERT.
         * (* Same as below, [b] must already be in the memory *)
-          assert (NEQ: b <> b1) by admit.
+          assert (NEQ: b <> b1).
+          { eapply Mem.valid_block_alloc_inv'; eauto.
+            clear -INVERT BLKS1. exploit find_symbol_valid_block; eauto.
+            apply Genv.invert_find_symbol in INVERT. eauto. }
           simpl.
           rewrite (EXT _ NEQ), (Mem.alloc_block_compartment _ _ _ _ _ _ ALLOC).
           destruct eq_block as [| _]; [contradiction |].
@@ -1498,13 +1537,17 @@ Qed.
       + destruct SYMB as (PUB & FIND & PUB_FIND & VOL).
         split; [| split; [| split]].
         * auto.
-        * intros id' b1' b2' delta b1'_b2' id'_b1'. specialize (FIND id' b1' b2' delta).
+        * intros id' b1' b2' delta b1'_b2' id'_b1'.
+          specialize (FIND id' b1' b2' delta).
           (* [id] must already be found in the initial state from
              which the execution originates, so its assigned block
              cannot be newly allocated -- even if this information
              is not readily available in the invariant. See
              [Genv.find_symbol_not_fresh] *)
-          assert (NEQ: b1' <> b1) by admit.
+          assert (NEQ: b1' <> b1).
+          { eapply Mem.valid_block_alloc_inv'; eauto.
+            clear -id'_b1' BLKS1. simpl in *.
+            exploit find_symbol_valid_block; eauto. }
           specialize (EXT _ NEQ). rewrite EXT in b1'_b2'.
           auto.
         * intros id' b1' PUB_id id_b1'.
@@ -1521,17 +1564,41 @@ Qed.
              and the initial program memory
              i.e. [Genv.init_mem_genv_next] *)
           destruct (peq b1' b1) as [-> | NEQ].
-          --  admit.
+          -- assert (b2' = b2) as -> by congruence.
+             assert (~ Mem.valid_block m1 b1).
+             { eapply Mem.fresh_block_alloc; eauto. }
+             assert (~ Mem.valid_block m2 b2).
+             { eapply Mem.fresh_block_alloc; eauto. }
+             assert (Senv.block_is_volatile ge1 b1 = false) as ->.
+             { destruct Senv.block_is_volatile eqn:vol_b1; trivial.
+               simpl in *. clear BLKS2.
+               exploit block_is_volatile_valid_block; eauto. intros m1_b1.
+               tauto. }
+             assert (Senv.block_is_volatile ge2 b2 = false) as ->.
+             { destruct Senv.block_is_volatile eqn:vol_b2; trivial.
+               simpl in *. clear BLKS1.
+               exploit block_is_volatile_valid_block; eauto. intros m2_b2.
+               tauto. }
+             reflexivity.
           -- rewrite (EXT _ NEQ) in b1'_b2'.
              exact (VOL _ _ _ b1'_b2').
       + intros b1' b2' b1'' b2'' ofs1 ofs2 b1'_b2' b1'_b1'' b2'_b2''.
-        (* inv INJ. Check mi_no_overlap. *)
         specialize (MI_INJ b1' b2' b1'' b2'' ofs1 ofs2 b1'_b2').
         destruct (peq b1' b1) as [-> | NEQ1].
-        * admit.
+        * left. intros <-.
+          assert (b1'' = b2) as -> by congruence.
+          clear b1'_b1''.
+          assert (j b2' = Some (b2, ofs2)) as j_b2'.
+          { rewrite <- EXT; congruence. }
+          pose proof (Mem.mi_mappedblocks _ _ _ MI _ _ _ j_b2').
+          clear ALLOC. exploit Mem.fresh_block_alloc; eauto.
         * rewrite (EXT _ NEQ1) in b1'_b1''.
           destruct (peq b2' b1) as [-> | NEQ2].
-          -- admit.
+          -- assert (b2'' = b2) as -> by congruence.
+             left. intros ->.
+             clear NEQ1.
+             pose proof (Mem.mi_mappedblocks _ _ _ MI _ _ _ b1'_b1'').
+             clear ALLOC. exploit Mem.fresh_block_alloc; eauto.
           -- rewrite (EXT _ NEQ2) in b2'_b2''.
              auto.
       + intros b cp' FIND. specialize (BLKS1 b cp' FIND).
@@ -1562,7 +1629,7 @@ Qed.
           specialize (ENDNONE id' GET). auto.
     - intros id' v GET. specialize (RTENVINJ id' v GET) as (v' & INJ' & GET').
       inv INJ'; eauto.
-  Admitted.
+  Qed.
 
   Lemma right_mem_injection_alloc_variables {j f m1 m1' m2 e1 e1' e2 le1 le2 vars}
     (RMEMINJ: right_mem_injection s j ge1 ge2 m1 m2)
