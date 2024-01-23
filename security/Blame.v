@@ -493,15 +493,6 @@ Proof.
     eauto.
 Qed.
 
-Lemma right_mem_injection_free_list: forall {j ge1 ge2 m1 m2 e1 e2 cp m1'},
-  right_mem_injection s j ge1 ge2 m1 m2 ->
-  right_env_injection j e1 e2 ->
-  Mem.free_list m1 (blocks_of_env ge1 e1) cp = Some m1' ->
-  s cp = Right ->
-  exists m2',
-    Mem.free_list m2 (blocks_of_env ge2 e2) cp = Some m2' /\
-    right_mem_injection s j ge1 ge2 m1' m2'.
-Admitted.
 
   (** More invariant helpers *)
 
@@ -935,6 +926,56 @@ Admitted.
     rewrite (match_prog_types _ _ _ match_W1_W2) in H2.
     congruence.
   Qed.
+
+Lemma right_mem_injection_free: forall {j ge1 ge2 m1 m2 b1 b2 lo hi cp m1'},
+  right_mem_injection s j ge1 ge2 m1 m2 ->
+  Mem.free m1 b1 lo hi cp = Some m1' ->
+  j b1 = Some (b2, 0) ->
+  exists m2',
+    Mem.free m2 b2 lo hi cp = Some m2' /\
+    right_mem_injection s j ge1 ge2 m1' m2'.
+Proof.
+Admitted.
+
+Lemma right_mem_injection_free_list: forall {j m1 m2 e1 e2 cp m1'},
+  right_mem_injection s j ge1 ge2 m1 m2 ->
+  right_env_injection j e1 e2 ->
+  Mem.free_list m1 (blocks_of_env ge1 e1) cp = Some m1' ->
+  s cp = Right ->
+  exists m2',
+    Mem.free_list m2 (blocks_of_env ge2 e2) cp = Some m2' /\
+    right_mem_injection s j ge1 ge2 m1' m2'.
+Proof.
+  intros j m1 m2 e1 e2 cp m1' MEMINJ ENVINJ FREE s_cp.
+  (* TODO: Separate lemma? *)
+  assert (forall id,
+      option_rel (fun '(b1, ty1) '(b2, ty2) =>
+          j b1 = Some (b2, 0) /\ ty1 = ty2)
+        e1!id e2!id) as ENVINJ'.
+  { destruct ENVINJ as [EI1 EI2].
+    intros id.
+    destruct e1!id as [[b1 ty]|] eqn:e1_id.
+    - destruct (EI1 _ _ _ e1_id) as (b2 & j_b1 & e2_id).
+      rewrite e2_id; constructor; eauto.
+    - rewrite (EI2 _ e1_id); constructor. }
+  unfold blocks_of_env in *.
+  pose proof (PTree.elements_canonical_order' _ _ ENVINJ') as ENVINJ''.
+  clear ENVINJ ENVINJ'. revert ENVINJ'' m1 m2 MEMINJ FREE.
+  generalize (PTree.elements e1) (PTree.elements e2). clear e1 e2.
+  intros e1 e2 EI.
+  induction EI as [|(id & b1 & ty) e1 (id' & b2 & ty') e2 (? & j_b1 & ?) _ IH].
+  { intros. simpl in *; exists m2; split; congruence. }
+  intros m1 m2 MEMINJ FREELIST1. simpl in *. subst id' ty'.
+  destruct (Mem.free m1 b1) as [m1''|] eqn:FREE1; try congruence.
+  destruct (right_mem_injection_free MEMINJ FREE1 j_b1)
+    as (m2'' & FREE2 & MEMINJ'').
+  destruct (IH _ _ MEMINJ'' FREELIST1)
+    as (m2' & FREELIST2 & MEMINJ').
+  assert (sizeof ge2 ty = sizeof ge1 ty) as E.
+  { now rewrite genv_cenv_preserved. }
+  simpl in E. rewrite E.
+  exists m2'. now rewrite FREE2; split.
+Qed.
 
   (* AAA: [2023-08-08: This next part is not true anymore because left symbols
      can be covered by a memory injection] Right now, this statement is forcing
