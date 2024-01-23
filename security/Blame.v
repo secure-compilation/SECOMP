@@ -1376,7 +1376,12 @@ Qed.
     Genv.find_symbol ge1 id = Some b1 ->
     j b1 = Some (b2, delta) ->
     Genv.find_symbol ge2 id = Some b2.
-  Admitted.
+  Proof.
+    intros j m1 m2 id b1 b2 delta INJ FIND1 j_b1.
+    exploit same_symb; eauto.
+    intros (_ & H & ?).
+    now destruct (H id b1 b2 delta j_b1 FIND1) as [??].
+  Qed.
 
   (* This lemma relies on just one of the properties of
      [right_mem_injection], except for the appeal to (what is now
