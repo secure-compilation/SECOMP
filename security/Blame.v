@@ -150,6 +150,24 @@ Section Equivalence.
       now eapply IH; eauto.
   Qed.
 
+  Lemma same_domain_store chunk m b off v cp m' ge :
+    Mem.store chunk m b off v cp = Some m' ->
+    same_domain ge m ->
+    same_domain ge m'.
+  Proof.
+    intros STORE DOM b'. specialize (DOM b'). simpl in *.
+    now rewrite (Mem.store_block_compartment _ _ _ _ _ _ _ STORE).
+  Qed.
+
+  Lemma same_domain_storebytes m b ofs sz ocp m' ge :
+    Mem.storebytes m b ofs sz ocp = Some m' ->
+    same_domain ge m ->
+    same_domain ge m'.
+  Proof.
+    intros STORE DOM b'. specialize (DOM b'). simpl in *.
+    now rewrite (Mem.storebytes_block_compartment _ _ _ _ _ _ STORE).
+  Qed.
+
   Definition same_blocks (ge: genv) (m: mem) :=
     forall b cp, Genv.find_comp_of_block ge b = Some cp ->
                  Mem.block_compartment m b = Some cp.
@@ -1673,22 +1691,46 @@ Qed.
       assign_loc ge2 (comp_of f) ty m2 b2 Ptrofs.zero Full v2 m2' /\
       right_mem_injection s j ge1 ge2 m1' m2'.
   Proof.
+    destruct RMEMINJ as [DOM MI D0 SYMB MI_INJ BLKS1 BLKS2].
     inv ASSIGN.
     - destruct (proj1 RENVINJ _ _ _ LOOKUP) as (b2 & b1_b2 & LOOKUP').
-      inversion RMEMINJ.
       exploit Mem.store_mapped_inject; eauto.
       intros (m2' & STORE' & INJ').
       exists m2', b2. split; [| split].
       + assumption.
       + eapply assign_loc_value; eauto.
       + constructor; auto.
-        * admit. (* easy *)
+        * simpl in *. clear STORE'.
+          eapply (same_domain_store _ _ _ _ _ _ _ _ _ _ H0 DOM).
         * eapply same_blocks_store; eauto.
         * eapply same_blocks_store; eauto.
     - destruct (proj1 RENVINJ _ _ _ LOOKUP) as (b2 & b1_b2 & LOOKUP').
-      inversion RMEMINJ.
-      admit. (* similar *)
-  Admitted.
+      rename b' into b1'.
+      rename ofs' into ofs1.
+      rename H2 into BOUNDS1.
+      assert (exists b2' delta,
+         j b1' = Some (b2', delta) /\
+          v2 = Vptr b2' (Ptrofs.add ofs1 (Ptrofs.repr delta)))
+        as (b2' & delta & b1'_b2' & ->).
+      { inv VALINJ; eauto. }
+      pose proof (D0 _ _ _ b1'_b2') as ->.
+      rewrite Ptrofs.add_zero.
+      exploit Mem.loadbytes_inject; eauto. intros (bytes2 & LOAD2 & INJ).
+      rewrite Z.add_0_r in LOAD2.
+      exploit Mem.storebytes_mapped_inject; eauto.
+      intros (m2' & STORE2 & INJ').
+      exists m2', b2. split; trivial; split.
+      + rewrite genv_cenv_preserved.
+        eapply assign_loc_copy; eauto.
+        destruct BOUNDS1 as [NEQ1|BOUNDS1]; [|now right].
+        left.
+        destruct (MI_INJ _ _ _ _ _ _ NEQ1 b1'_b2' b1_b2); congruence.
+      + constructor; eauto.
+        * simpl in *. clear STORE2.
+          eapply (same_domain_storebytes _ _ _ _ _ _ _ _ _ H4 DOM).
+        * eapply same_blocks_storebytes; eauto.
+        * eapply same_blocks_storebytes; eauto.
+  Qed.
 
   Lemma right_mem_injection_bind_parameters
     {j f m1 m1' m2 e1 e2 le1 le2 vargs1 vargs2 params}
