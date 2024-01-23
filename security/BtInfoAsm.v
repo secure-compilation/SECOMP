@@ -745,8 +745,9 @@ Section FROMASM.
             end;
             [apply Forall_app; split; [auto | constructor; ss; auto]
             | rewrite mem_delta_apply_app; (match goal with | H: mem_delta_apply _ _ = Some _ |- _ => rewrite H end; simpl; auto) ]).
+
     all: try (match goal with
-         | |- _ /\ _ => admit end).
+         | |- _ ⊆ _ => admit end).
     { match goal with
       | _: Mem.alloc _ ?cp1 ?lo ?hi = _, _: Mem.store ?ch _ ?b ?ofs ?v ?cp2 = _ |- _ =>
           exists (d ++ ([mem_delta_kind_alloc (cp1, lo, hi)] ++ [mem_delta_kind_store (ch, b, ofs, v, cp2)]))
@@ -841,11 +842,11 @@ Section INVS.
     :
     match_stack ge (ir_cont next :: ik_tl) (Stackframe b sg v ofs :: sk_tl).
 
-  Definition match_mem (ge: Senv.t) cp (k: meminj) (d: mem_delta) (m_a0 m_i m_a1: mem): Prop :=
+  Definition match_mem (ge: Asm.genv) (k: meminj) (d: mem_delta) (m_a0 m_i m_a1: mem): Prop :=
     let j := meminj_public ge in
     (Mem.inject k m_a0 m_i) /\ (inject_incr j k) /\
       (meminj_not_alloc j m_a0) /\ (public_not_freeable ge m_a1) /\
-      (mem_delta_inj_wf cp j d) /\ (mem_delta_apply d (Some m_a0) = Some m_a1) /\
+      (mem_delta_inj_wf ge j d) /\ (mem_delta_apply d (Some m_a0) = Some m_a1) /\
       (public_rev_perm ge m_a1 m_i).
 
   Definition match_state (ge: Asm.genv) (k: meminj) (m_a0: mem) (d: mem_delta) (ast: Asm.state) (ist: ir_state): Prop :=
@@ -853,7 +854,7 @@ Section INVS.
     | State sk rs m_a _, Some (cur, m_i, ik) =>
         (wf_ir_cur ge cur) /\ (wf_ir_conts ge ik) /\
           (match_cur_stack_sig cur ge sk) /\ (match_cur_regset cur ge rs) /\
-          (match_stack ge ik sk) /\ (match_mem ge (Genv.find_comp_in_genv ge (Vptr cur Ptrofs.zero)) k d m_a0 m_i m_a)
+          (match_stack ge ik sk) /\ (match_mem ge k d m_a0 m_i m_a)
     | _, _ => False
     end.
 
@@ -953,7 +954,7 @@ Section PROOF.
   Qed.
 
   Lemma public_rev_perm_delta_apply_inj
-        d ge m m_i m_i'
+        d (ge: genv) m m_i m_i'
         (PRP: public_rev_perm ge m m_i)
         (APPD: mem_delta_apply_wf ge d (Some m_i) = Some m_i')
     :
@@ -1022,7 +1023,7 @@ Section PROOF.
 
   Lemma match_mem_external_call_establish1
         (ge: genv) cp k d m_a0 m_i m
-        (MEM: match_mem ge cp k d m_a0 m_i m)
+        (MEM: match_mem ge k d m_a0 m_i m)
         ef args t res m'
         (EXTCALL: external_call ef ge cp args m t res m')
         (ECC: external_call_unknowns ef ge m args)
@@ -1031,7 +1032,7 @@ Section PROOF.
       (mem_delta_apply_wf ge d (Some m_i) = Some m1) /\
         (external_call ef ge cp args m1 t res' m2) /\
         (external_call_unknowns ef ge m1 args) /\
-        (exists k2, match_mem ge cp k2 [] m' m2 m' /\ Val.inject k2 res res')
+        (exists k2, match_mem ge k2 [] m' m2 m' /\ Val.inject k2 res res')
   .
   Proof.
     destruct MEM as (MEM0 & MEM1 & MEM2 & MEM3 & MEM4 & MEM5 & MEM6).
@@ -1045,7 +1046,7 @@ Section PROOF.
     { instantiate (1:=ge). apply symbols_inject_meminj_public. }
     { instantiate (1:=args). eapply external_call_unknowns_val_inject_list; eauto. }
     intros (f' & vres' & m_i'' & EXTCALL' & VALINJ' & MEMINJ'' & _ & _ & INCRINJ' & _).
-    assert (MM': match_mem ge cp f' [] m' m_i'' m').
+    assert (MM': match_mem ge f' [] m' m_i'' m').
     { unfold match_mem. simpl.
       assert (PNF: public_not_freeable ge m').
       { pose proof (meminj_not_alloc_delta _ _ MEM2 _ _ MEM5) as NALLOC.
@@ -1112,7 +1113,7 @@ Section PROOF.
         (CURCOMP : Genv.find_comp_in_genv ge (Vptr cur Ptrofs.zero) = cur_comp)
         (MTST2 : match_stack ge ik st)
         k d m_a0 m_i m_a
-        (MEM: match_mem ge (Genv.find_comp_in_genv ge (Vptr cur Ptrofs.zero)) k d m_a0 m_i m_a)
+        (MEM: match_mem ge k d m_a0 m_i m_a)
         t' ast'
         (STEP: step ge (ReturnState st rs m_a cur_comp) t' ast')
         t'' ast''
@@ -1163,14 +1164,14 @@ Section PROOF.
 
   Lemma match_mem_external_call_establish2
         ge cp k d m_a0 m_i m
-        (MEM: match_mem ge cp k d m_a0 m_i m)
+        (MEM: match_mem ge k d m_a0 m_i m)
         ef args t res m'
         (EXTCALL: external_call ef ge cp args m t res m')
         (ECKO: external_call_known_observables ef ge cp m args t res m')
     :
     (external_call ef ge cp args m_i t res m_i) /\
       (external_call_known_observables ef ge cp m_i args t res m_i) /\
-      (match_mem ge cp k d m_a0 m_i m')
+      (match_mem ge k d m_a0 m_i m')
   .
   Proof.
     destruct MEM as (MEM0 & MEM1 & MEM2 & MEM3 & MEM4 & MEM5 & MEM6).
@@ -1196,7 +1197,7 @@ Section PROOF.
 
   Lemma match_mem_external_call_establish
         (ge: genv) cp k d m_a0 m_i m
-        (MEM: match_mem ge cp k d m_a0 m_i m)
+        (MEM: match_mem ge k d m_a0 m_i m)
         ef args t res m'
         (EXTCALL: external_call ef ge cp args m t res m')
         (ECC: external_call_unknowns ef ge m args \/ external_call_known_observables ef ge cp m args t res m')
@@ -1205,7 +1206,7 @@ Section PROOF.
       (mem_delta_apply_wf ge d' (Some m_i) = Some m1) /\
         (external_call ef ge cp args m1 t res' m2) /\
         ((external_call_unknowns ef ge m1 args) \/ (external_call_known_observables ef ge cp m1 args t res' m2 /\ d' = [])) /\
-        (exists k2 d2 m_a02, match_mem ge cp k2 d2 m_a02 m2 m' /\ (Val.inject k2 res res' \/ (res = res')))
+        (exists k2 d2 m_a02, match_mem ge k2 d2 m_a02 m2 m' /\ (Val.inject k2 res res' \/ (res = res')))
   .
   Proof.
     destruct ECC as [ECC | ECC].
@@ -1225,7 +1226,7 @@ Section PROOF.
         (CURCOMP : Genv.find_comp_in_genv ge (Vptr cur Ptrofs.zero) = (* callee_comp cpm st *) cur_comp)
         (MTST2 : match_stack ge ik st)
         k d m_a0 m_i m_a
-        (MEM: match_mem ge (Genv.find_comp_in_genv ge (Vptr cur Ptrofs.zero)) k d m_a0 m_i m_a)
+        (MEM: match_mem ge k d m_a0 m_i m_a)
         t ast'
         (STEP: step ge (State st rs m_a cur_comp) t ast')
         b1 ofs1
@@ -1238,7 +1239,7 @@ Section PROOF.
     exists (btr : bundle_trace) k' d' m_a0' m_i' m_a',
       (unbundle_trace btr = t) /\
         (istar ir_step ge (Some (cur, m_i, ik)) btr (Some (cur, m_i', ik))) /\
-        (match_mem ge (Genv.find_comp_in_genv ge (Vptr cur Ptrofs.zero)) k' d' m_a0' m_i' m_a') /\
+        (match_mem ge k' d' m_a0' m_i' m_a') /\
         (exists res, star_measure step ge n
                              (ReturnState st
                                 (set_pair (loc_external_result (ef_sig ef)) res (undef_caller_save_regs rs)) # PC <- (rs X1) m_a' bottom) t' ast'').
@@ -1351,7 +1352,7 @@ Section PROOF.
       { destruct ECKS as [_ OBS]. inv EXTCALL. inv H; simpl in *; clarify.
         exists [], k, (d ++ [mem_delta_kind_storev (chunk, Vptr b0 ofs, v, (Genv.find_comp_of_block ge cur))]), m_a0, m_i, m'. simpl. splits; auto. econstructor 1. 2: eauto. unfold match_mem. splits; auto.
         { eapply public_not_freeable_store; eauto. }
-        { setoid_rewrite Forall_app. split; auto. econs; auto. ss. }
+        { setoid_rewrite Forall_app. split; auto. econs; auto. ss. admit. }
         { rewrite mem_delta_apply_app. rewrite MEM5. simpl. auto. }
         { eapply public_rev_perm_store; eauto. }
       }
@@ -1422,7 +1423,7 @@ Section PROOF.
     exists (btr : bundle_trace) k' d' m_a0' m_i',
       (unbundle_trace btr = t1) /\
         (istar ir_step ge (Some (cur, m_i, ik)) btr (Some (cur, m_i', ik))) /\
-        (match_mem ge (Genv.find_comp_in_genv ge (Vptr cur Ptrofs.zero)) k' d' m_a0' m_i' m').
+        (match_mem ge k' d' m_a0' m_i' m').
   Proof.
     ss. destruct MTST as (WFIR0 & WFIR1 & MTST0 & MTST1 & MTST2 & MTST3).
     destruct MTST3 as (MEM0 & MEM1 & MEM2 & MEM3 & MEM4 & MEM5 & MEM6).
@@ -1525,7 +1526,7 @@ Section PROOF.
         exists [], k, (d ++ [mem_delta_kind_storev (chunk, Vptr b0 ofs0, v, Genv.find_comp_of_block ge cur)]), m_a0, m_i. simpl. splits; auto. econstructor 1. unfold match_mem. splits; auto.
         { eapply public_not_freeable_store; eauto. }
         { setoid_rewrite Forall_app. split; auto. econs; auto. ss.
-          (* rewrite MTST1. rewrite CURPC. ss. unfold Genv.find_comp. setoid_rewrite CURF. auto. *)
+          admit.
         }
         { rewrite mem_delta_apply_app. rewrite MEM5. simpl. auto. }
         { eapply public_rev_perm_store; eauto. }
@@ -1577,7 +1578,7 @@ Section PROOF.
       { destruct ECKS as [_ OBS]. inv EXTCALL.
         exists [], k, d, m_a0, m_i. simpl. splits; auto. 2: rr; splits; auto. econstructor 1.
       }
-  Qed.
+  Admitted.
 
 
   Lemma asm_to_ir_returnstate_undef_nccc_external
@@ -1602,7 +1603,7 @@ Section PROOF.
         (CURCOMP : Genv.find_comp_in_genv ge (Vptr cur Ptrofs.zero) = cur_comp)
         (MTST2 : match_stack ge ik st)
         k d m_a0 m_i m_a
-        (MEM: match_mem ge (Genv.find_comp_in_genv ge (Vptr cur Ptrofs.zero)) k d m_a0 m_i m_a)
+        (MEM: match_mem ge k d m_a0 m_i m_a)
         (RSX: rs X1 = Vundef)
         t' ast'
         (STEP: step ge (ReturnState st rs m_a cur_comp) t' ast')
@@ -1683,7 +1684,7 @@ Section PROOF.
         (CURCOMP : Genv.find_comp_in_genv ge (Vptr cur Ptrofs.zero) = cur_comp)
         (MTST2 : match_stack ge ik st)
         k d m_a0 m_i m_a
-        (MEM: match_mem ge (Genv.find_comp_in_genv ge (Vptr cur Ptrofs.zero)) k d m_a0 m_i m_a)
+        (MEM: match_mem ge k d m_a0 m_i m_a)
         t' ast'
         (STEP: step ge (ReturnState st rs m_a cur_comp) t' ast')
         t'' ast''
@@ -1768,7 +1769,7 @@ Section PROOF.
         (CURCOMP : Genv.find_comp_in_genv ge (Vptr cur Ptrofs.zero) = cur_comp)
         (MTST2 : match_stack ge ik st)
         k d m_a0 m_i m_a
-        (MEM: match_mem ge (Genv.find_comp_in_genv ge (Vptr cur Ptrofs.zero)) k d m_a0 m_i m_a)
+        (MEM: match_mem ge k d m_a0 m_i m_a)
         (RSX: rs X1 = Vundef)
         t' ast'
         (STEP: step ge (ReturnState st rs m_a cur_comp) t' ast')
@@ -1825,7 +1826,7 @@ Section PROOF.
         (CURCOMP : Genv.find_comp_in_genv ge (Vptr cur Ptrofs.zero) = cur_comp)
         (MTST2 : match_stack ge ik st)
         k d m_a0 m_i m_a
-        (MEM: match_mem ge (Genv.find_comp_in_genv ge (Vptr cur Ptrofs.zero)) k d m_a0 m_i m_a)
+        (MEM: match_mem ge k d m_a0 m_i m_a)
         t' ast'
         (STEP: step ge (ReturnState st rs m_a cur_comp) t' ast')
         t'' ast''
@@ -1904,7 +1905,7 @@ Section PROOF.
         (CURCOMP : Genv.find_comp_in_genv ge (Vptr cur Ptrofs.zero) = cur_comp)
         (MTST2 : match_stack ge ik st)
         k d m_a0 m_i m_a
-        (MEM: match_mem ge (Genv.find_comp_in_genv ge (Vptr cur Ptrofs.zero)) k d m_a0 m_i m_a)
+        (MEM: match_mem ge k d m_a0 m_i m_a)
         t' ast'
         (STEP: step ge (ReturnState st rs m_a cur_comp) t' ast')
         t'' ast''
@@ -1983,10 +1984,7 @@ Section PROOF.
     2:{ inv MTST. }
     destruct MTST as (WFIR0 & WFIR1 & MTST0 & MTST1 & MTST2 & MTST3). destruct MTST3 as (MEM0 & MEM1 & MEM2 & MEM3 & MEM4 & MEM5 & MEM6).
     exploit mem_delta_exec_instr. eapply MEM3. eapply H3.
-    { replace (comp_of f) with (Genv.find_comp_in_genv ge (Vptr cur Ptrofs.zero)). eapply MEM4.
-      admit. }
-      (* rewrite MTST1. rewrite H0. ss. *)
-      (* erewrite Genv.find_funct_ptr_find_comp_of_block; eauto. reflexivity. } *)
+    { eapply MEM4. }
     eapply MEM5. auto. intros (d' & MEM4' & MEM5').
     destruct f0.
 
@@ -1998,17 +1996,13 @@ Section PROOF.
       assert (MTST': match_state ge k m_a0 d' (State st rs' m' cur_comp) (Some (cur, m_i, ik))).
       { clear IH. split. auto. split. auto. split. auto. split.
         { unfold match_cur_regset in *. rewrite NEXTPC. rewrite <- ALLOWED.
-          admit. }
           (* rewrite MTST1. *)
-          (* unfold Genv.find_comp_in_genv. rewrite H0. ss. *)
-          (* erewrite Genv.find_funct_ptr_find_comp_of_block; eauto. reflexivity. } *)
+          unfold Genv.find_comp_in_genv. ss.
+          rewrite H0 in MTST1. ss.
+          rewrite Genv.find_funct_ptr_find_comp_of_block with (b := b) (fd := Internal f) in MTST1; eauto. }
         split. auto.
         { unfold match_mem. splits; auto.
           eapply public_not_freeable_exec_instr. 3: eapply H3. all: auto. eapply meminj_not_alloc_delta; eauto.
-          { replace (Genv.find_comp_in_genv ge (Vptr cur Ptrofs.zero)) with (comp_of f); auto.
-            admit. }
-            (* rewrite MTST1. rewrite H0. ss. unfold Genv.find_comp_in_genv. *)
-            (* erewrite Genv.find_funct_ptr_find_comp_of_block; eauto. reflexivity. } *)
           eapply public_rev_perm_exec_instr. 3: eapply H3. all: auto.
         }
       }
@@ -2032,10 +2026,6 @@ Section PROOF.
         (* admit. } *)
       { instantiate (4:=k). instantiate (3:=d'). unfold match_mem. splits; eauto.
         eapply public_not_freeable_exec_instr; eauto. eapply meminj_not_alloc_delta; eauto.
-        { replace (Genv.find_comp_in_genv ge (Vptr cur Ptrofs.zero)) with (comp_of f); auto.
-          admit. }
-          (* rewrite MTST1. rewrite H0. ss. *)
-          (* erewrite Genv.find_funct_ptr_find_comp_of_block; eauto. reflexivity. } *)
         eapply public_rev_perm_exec_instr; eauto.
       }
       intros (btr' & k' & d'0 & m_a0' & m_i' & m_a' & UTR' & ISTAR' & MM' & (res' & STAR')).

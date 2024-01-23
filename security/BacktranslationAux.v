@@ -35,14 +35,14 @@ Section CODEPROOFS.
   Qed.
 
   Lemma code_mem_delta_cons
-        (ge: Senv.t) k d sn
+        (ge: genv) k d sn
     :
     code_mem_delta ge (k :: d) sn =
       Ssequence (code_mem_delta_kind ge k) (code_mem_delta ge d sn).
   Proof. unfold code_mem_delta. ss. Qed.
 
   Lemma code_mem_delta_app
-        (ge: Senv.t) d1 d2 sn
+        (ge: genv) d1 d2 sn
     :
     code_mem_delta ge (d1 ++ d2) sn = (code_mem_delta ge d1 (code_mem_delta ge d2 sn)).
   Proof.
@@ -51,7 +51,7 @@ Section CODEPROOFS.
   Qed.
 
   Lemma type_of_chunk_val_to_expr
-        (ge: Senv.t) ch ty v e
+        (ge: genv) ch ty v e
         (WF: wf_chunk_val_b ch v)
         (CT: chunk_to_type ch = Some ty)
         (CVE: chunk_val_to_expr ge ch v = Some e)
@@ -66,7 +66,7 @@ Section CODEPROOFS.
   Proof. destruct v; ss; auto. Qed.
 
   Lemma sem_cast_chunk_val
-        (ge: Senv.t) m ch ty v e
+        (ge: genv) m ch ty v e
         (WF: wf_chunk_val_b ch v)
         (CT: chunk_to_type ch = Some ty)
         (CVE: chunk_val_to_expr ge ch v = Some e)
@@ -150,9 +150,6 @@ Section CODEPROOFS.
         (* + rewrite Mem.store_int16_sign_ext. auto. *)
         (* + rewrite Mem.store_int16_zero_ext. auto. *)
     }
-      (* - apply andb_false_iff in Heq0 as [G | G]; try now inv G. *)
-      (*   destruct cp_eq_dec; inv WF. *)
-      (*   exfalso. pose proof (flowsto_refl (comp_of f)). now destruct flowsto_dec. } *)
     {
       (* assert (G: flowsto_dec c (comp_of f)). *)
       (* { destruct cp_eq_dec; inv WF. *)
@@ -169,10 +166,10 @@ Section CODEPROOFS.
   Admitted.
 
   Lemma wf_mem_delta_storev_false_is_skip
-        (ge: Senv.t) cp d
-        (NWF: wf_mem_delta_storev_b ge cp d = false)
+        (ge: genv) d
+        (NWF: wf_mem_delta_storev_b ge d = false)
     :
-    code_mem_delta_storev ge cp d = Sskip.
+    code_mem_delta_storev ge d = Sskip.
   Proof. destruct d as [[[ch ptr] v] cp0]. ss. des_ifs.
          admit.
   Admitted.
@@ -182,9 +179,9 @@ Section CODEPROOFS.
         f k e le m m'
         d snext
         (WFE: wf_env ge e)
-        (APPD: mem_delta_apply_wf ge (comp_of f) d (Some m) = Some m')
+        (APPD: mem_delta_apply_wf ge d (Some m) = Some m')
     :
-    (star step1 ge (State f (code_mem_delta ge (comp_of f) d snext) k e le m)
+    (star step1 ge (State f (code_mem_delta ge d snext) k e le m)
           E0 (State f snext k e le m')).
   Proof.
     revert m m' snext APPD. induction d; intros.
@@ -203,14 +200,14 @@ Section CODEPROOFS.
   Qed.
 
   Lemma code_bundle_trace_spec
-        (ge: genv) cp cnt tr
+        (ge: genv) cnt tr
         f e le m k
     :
     star step1 ge
-         (State f (code_bundle_trace ge cp cnt tr) k e le m)
+         (State f (code_bundle_trace ge cnt tr) k e le m)
          E0
-         (State f (switch_bundle_events ge cnt cp tr)
-                (Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge cnt cp tr)) Sskip k)
+         (State f (switch_bundle_events ge cnt tr)
+                (Kloop1 (Ssequence (Sifthenelse one_expr Sskip Sbreak) (switch_bundle_events ge cnt tr)) Sskip k)
                 e le m).
   Proof.
     econs 2.
@@ -229,153 +226,173 @@ End CODEPROOFS.
 
 Section GENV.
 
-  Definition symbs_public (ge1 ge2: Senv.t) := (forall id : ident, Senv.public_symbol ge2 id = Senv.public_symbol ge1 id).
-  Definition symbs_find (ge1 ge2: Senv.t) := forall id b, Senv.find_symbol ge1 id = Some b -> Senv.find_symbol ge2 id = Some b.
-  Definition symbs_volatile (ge1 ge2: Senv.t) := forall b, Senv.block_is_volatile ge2 b = Senv.block_is_volatile ge1 b.
+  Definition symbs_public (ge1: Asm.genv) (ge2: genv):=
+    (forall id : ident, Genv.public_symbol ge2 id = Genv.public_symbol ge1 id).
+  Definition symbs_find (ge1: Asm.genv) (ge2: genv):=
+    forall id b, Genv.find_symbol ge1 id = Some b -> Genv.find_symbol ge2 id = Some b.
+  Definition symbs_volatile (ge1: Asm.genv) (ge2: genv):=
+    forall b, Genv.block_is_volatile ge2 b = Genv.block_is_volatile ge1 b.
+  Definition symbs_comp (ge1: Asm.genv) (ge2: genv):=
+    forall id, Genv.find_comp_of_ident ge2 id = Genv.find_comp_of_ident ge1 id.
 
-  Definition match_symbs (ge1 ge2: Senv.t) := symbs_public ge1 ge2 /\ symbs_find ge1 ge2 /\ symbs_volatile ge1 ge2.
+  Definition match_symbs (ge1: Asm.genv) (ge2: genv):=
+    symbs_public ge1 ge2 /\ symbs_find ge1 ge2 /\
+      symbs_volatile ge1 ge2 /\ symbs_comp ge1 ge2.
 
   Lemma match_symbs_meminj_public
-        ge1 ge2
+        (ge1: Asm.genv) (ge2: genv)
         (MSYMB: match_symbs ge1 ge2)
     :
     meminj_public ge1 = meminj_public ge2.
   Proof.
-    destruct MSYMB as (MSYMB1 & MSYMB2 & MSYMB3). unfold meminj_public. extensionalities b. des_ifs.
-    - exfalso. apply Senv.invert_find_symbol in Heq. exploit MSYMB2; eauto. intros.
-      apply Senv.find_invert_symbol in x0. rewrite x0 in Heq1. inv Heq1. specialize (MSYMB1 i0). clarify.
-    - exfalso. apply Senv.invert_find_symbol in Heq. exploit MSYMB2; eauto. intros.
-      apply Senv.find_invert_symbol in x0. clarify.
-    - exfalso. apply Senv.invert_find_symbol in Heq. exploit MSYMB2; eauto. intros.
-      apply Senv.find_invert_symbol in x0. rewrite x0 in Heq1. inv Heq1. specialize (MSYMB1 i0). clarify.
-    - exfalso. rewrite MSYMB1 in Heq1. apply Senv.public_symbol_exists in Heq1. des.
-      exploit MSYMB2; eauto. intros. apply Senv.invert_find_symbol in Heq0. clarify.
-      apply Senv.find_invert_symbol in Heq1. clarify.
+    destruct MSYMB as (MSYMB1 & MSYMB2 & MSYMB3 & MSYMB4). unfold meminj_public. extensionalities b.
+    simpl. des_ifs.
+    - exfalso. apply Genv.invert_find_symbol in Heq. exploit MSYMB2; eauto. intros.
+      apply Genv.find_invert_symbol in x0. rewrite x0 in Heq1. inv Heq1. specialize (MSYMB1 i0). clarify.
+    - exfalso. apply Genv.invert_find_symbol in Heq. exploit MSYMB2; eauto. intros.
+      apply Genv.find_invert_symbol in x0. clarify.
+    - exfalso. apply Genv.invert_find_symbol in Heq. exploit MSYMB2; eauto. intros.
+      apply Genv.find_invert_symbol in x0. rewrite x0 in Heq1. inv Heq1. specialize (MSYMB1 i0). clarify.
+    - exfalso. rewrite MSYMB1 in Heq1. apply Genv.public_symbol_exists in Heq1. des.
+      exploit MSYMB2; eauto. intros. apply Genv.invert_find_symbol in Heq0. clarify.
+      apply Genv.find_invert_symbol in Heq1. clarify.
   Qed.
 
   Lemma match_symbs_wf_mem_delta_storev
-        ge1 ge2
+        (ge1: Asm.genv) (ge2: genv)
         (MSYMB: match_symbs ge1 ge2)
-        cp0 d
+        d
     :
-    wf_mem_delta_storev_b ge1 cp0 d = wf_mem_delta_storev_b ge2 cp0 d.
+    wf_mem_delta_storev_b ge1 d = wf_mem_delta_storev_b ge2 d.
   Proof.
-    destruct MSYMB as (MSYMB1 & MSYMB2 & MSYMB3).
+    destruct MSYMB as (MSYMB1 & MSYMB2 & MSYMB3 & MSYMB4).
+    unfold symbs_public, symbs_find, symbs_volatile, symbs_comp in *. simpl in *.
     destruct d as [[[ch ptr] v] cp]. ss. des_ifs.
-    - do 2 f_equal. apply Senv.invert_find_symbol, MSYMB2, Senv.find_invert_symbol in Heq. clarify.
-    - exfalso. apply Senv.invert_find_symbol, MSYMB2, Senv.find_invert_symbol in Heq. clarify.
-    - destruct (Senv.public_symbol ge2 i0) eqn:PUB; ss.
-      exfalso. rewrite MSYMB1 in PUB. apply Senv.public_symbol_exists in PUB. des.
-      exploit MSYMB2; eauto. intros. apply Senv.invert_find_symbol in Heq0. clarify.
-      apply Senv.find_invert_symbol in PUB. clarify.
+    - do 2 f_equal.
+      apply Genv.invert_find_symbol, MSYMB2, Genv.find_invert_symbol in Heq. clarify.
+      apply Genv.invert_find_symbol, MSYMB2, Genv.find_invert_symbol in Heq. clarify.
+      now rewrite MSYMB4.
+    - exfalso. apply Genv.invert_find_symbol, MSYMB2, Genv.find_invert_symbol in Heq. clarify.
+    - destruct (Genv.public_symbol ge2 i0) eqn:PUB; ss.
+      exfalso. rewrite MSYMB1 in PUB. apply Genv.public_symbol_exists in PUB. des.
+      exploit MSYMB2; eauto. intros. apply Genv.invert_find_symbol in Heq0. clarify.
+      apply Genv.find_invert_symbol in PUB. clarify.
   Qed.
 
   Lemma match_symbs_wf_mem_delta_kind
-        ge1 ge2
+        (ge1: Asm.genv) (ge2: genv)
         (MSYMB: match_symbs ge1 ge2)
-        cp
     :
-    wf_mem_delta_kind_b ge1 cp = wf_mem_delta_kind_b ge2 cp.
-  Proof. unfold wf_mem_delta_kind_b. extensionalities d. des_ifs. apply match_symbs_wf_mem_delta_storev; auto. Qed.
+    wf_mem_delta_kind_b ge1 = wf_mem_delta_kind_b ge2.
+  Proof. unfold wf_mem_delta_kind_b. extensionalities d. des_ifs.
+         apply match_symbs_wf_mem_delta_storev; auto. Qed.
 
   Lemma match_symbs_get_wf_mem_delta
         ge1 ge2
         (MSYMB: match_symbs ge1 ge2)
-        cp d
+        d
     :
-    get_wf_mem_delta ge1 cp d = get_wf_mem_delta ge2 cp d.
+    get_wf_mem_delta ge1 d = get_wf_mem_delta ge2 d.
   Proof. unfold get_wf_mem_delta. erewrite match_symbs_wf_mem_delta_kind; eauto. Qed.
 
   Lemma match_symbs_mem_delta_apply_wf
         ge1 ge2
         (MSYMB: match_symbs ge1 ge2)
-        cp d m
+        d m
     :
-    mem_delta_apply_wf ge1 cp d m = mem_delta_apply_wf ge2 cp d m.
+    mem_delta_apply_wf ge1 d m = mem_delta_apply_wf ge2 d m.
   Proof. unfold mem_delta_apply_wf. erewrite match_symbs_get_wf_mem_delta; eauto. Qed.
 
   Lemma match_symbs_code_mem_delta_kind
         ge1 ge2
         (MSYMB: match_symbs ge1 ge2)
-        cp
+       
     :
-    code_mem_delta_kind ge1 cp = code_mem_delta_kind ge2 cp.
+    code_mem_delta_kind ge1 = code_mem_delta_kind ge2 .
   Proof.
     extensionalities k. unfold code_mem_delta_kind. des_ifs.
     destruct d as [[[ch ptr] v] cp0]. ss. destruct ptr; ss.
-    destruct MSYMB as (MSYMB1 & MSYMB2 & MSYMB3).
-    destruct (Senv.invert_symbol ge1 b) eqn:INV1.
-    { exploit Senv.invert_find_symbol; eauto. intros FIND1.
-      exploit MSYMB2; eauto. intros FIND2. exploit Senv.find_invert_symbol; eauto. intros INV2.
+    destruct MSYMB as (MSYMB1 & MSYMB2 & MSYMB3 & MSYMB4).
+    destruct (Genv.invert_symbol ge1 b) eqn:INV1.
+    { exploit Genv.invert_find_symbol; eauto. intros FIND1.
+      exploit MSYMB2; eauto. intros FIND2. exploit Genv.find_invert_symbol; eauto. intros INV2.
       rewrite INV2. destruct (chunk_to_type ch) eqn:CHTY; auto.
       des_ifs.
       - apply andb_prop in Heq0, Heq2. des.
-        (* apply andb_prop in Heq0, Heq2. des. *)
         assert (chunk_val_to_expr ge2 ch v = chunk_val_to_expr ge1 ch v).
-        { unfold chunk_val_to_expr. rewrite CHTY.
+        { unfold chunk_val_to_expr in *.
+          unfold chunk_val_to_expr. rewrite CHTY in *. simpl in *.
           des_ifs.
-          - admit.
-          - congruence.
-          (* clear - Heq6. *)
-          (* unfold wf_chunk_val_b in Heq6. *)
-          des_ifs.
+          - apply Genv.invert_find_symbol in Heq5, Heq1.
+            apply MSYMB2 in Heq1.
+            apply Genv.find_invert_symbol in Heq5, Heq1. congruence.
         }
         rewrite Heq, Heq1 in H. clarify.
-      - exfalso. apply andb_prop in Heq0. des. apply andb_prop in Heq0. des.
-        clarify. rewrite ! andb_true_r in Heq2. rewrite MSYMB1 in Heq2. clarify.
-      - exfalso. apply andb_prop in Heq0. des. apply andb_prop in Heq0. des.
-        apply (wf_chunk_val_chunk_val_to_expr (ge2)) in Heq3; eauto. des; clarify.
-      - exfalso. apply andb_prop in Heq2. des. apply andb_prop in Heq2. des.
-        clarify. rewrite ! andb_true_r in Heq0. rewrite MSYMB1 in Heq2; clarify.
-      - exfalso. apply andb_prop in Heq1. des. apply andb_prop in Heq1. des.
-        apply (wf_chunk_val_chunk_val_to_expr (ge1)) in Heq3; eauto. des; clarify.
+      - exfalso. apply andb_prop in Heq0. des.
+        apply andb_false_iff in Heq2 as [G | G].
+        + rewrite MSYMB1 in G. clarify.
+        + rewrite MSYMB4 in G. clarify.
+      - exfalso. apply andb_prop in Heq0. des.
+        assert (chunk_val_to_expr ge2 ch v = chunk_val_to_expr ge1 ch v).
+        { unfold chunk_val_to_expr in *.
+          unfold chunk_val_to_expr. rewrite CHTY in *. simpl in *.
+          des_ifs.
+          apply Genv.invert_find_symbol in Heq4.
+          apply MSYMB2 in Heq4.
+          apply Genv.find_invert_symbol in Heq4. congruence. }
+        congruence.
+      - exfalso. apply andb_prop in Heq2. des.
+        apply andb_false_iff in Heq0 as [G | G].
+        + rewrite <- MSYMB1 in G. clarify.
+        + rewrite <- MSYMB4 in G. clarify.
+      - admit.
     }
     { des_ifs.
-      exfalso. apply andb_prop in Heq2. des. apply andb_prop in Heq2. des.
-      rewrite MSYMB1 in Heq2. eapply Senv.public_symbol_exists in Heq2. des.
-      exploit MSYMB2. eapply Heq2. intros FIND4. eapply Senv.invert_find_symbol in Heq. clarify.
-      exploit Senv.find_invert_symbol. apply Heq2. intros INV3. clarify.
+      exfalso. apply andb_prop in Heq2. des.
+      rewrite MSYMB1 in Heq2. eapply Genv.public_symbol_exists in Heq2. des.
+      exploit MSYMB2. eapply Heq2. intros FIND4. eapply Genv.invert_find_symbol in Heq. clarify.
+      exploit Genv.find_invert_symbol. apply Heq2. intros INV3. clarify.
     }
-  Qed.
+  Admitted.
 
   Lemma match_symbs_code_mem_delta
         ge1 ge2
         (MSYMB: match_symbs ge1 ge2)
-        cp d s
+        d s
     :
-    code_mem_delta ge1 cp d s = code_mem_delta ge2 cp d s.
+    code_mem_delta ge1 d s = code_mem_delta ge2 d s.
   Proof. unfold code_mem_delta. erewrite match_symbs_code_mem_delta_kind; eauto. Qed.
 
   Lemma match_symbs_code_bundle_call
         ge1 ge2
         (MSYMB: match_symbs ge1 ge2)
-        cp tr id evargs sg d
+        tr id evargs sg d
     :
-    code_bundle_call ge1 cp tr id evargs sg d = code_bundle_call ge2 cp tr id evargs sg d.
+    code_bundle_call ge1 tr id evargs sg d = code_bundle_call ge2 tr id evargs sg d.
   Proof. unfold code_bundle_call. erewrite match_symbs_code_mem_delta; eauto. Qed.
 
   Lemma match_symbs_code_bundle_return
         ge1 ge2
         (MSYMB: match_symbs ge1 ge2)
-        cp tr evr d
+        tr evr d
     :
-    code_bundle_return ge1 cp tr evr d = code_bundle_return ge2 cp tr evr d.
+    code_bundle_return ge1 tr evr d = code_bundle_return ge2 tr evr d.
   Proof. unfold code_bundle_return. erewrite match_symbs_code_mem_delta; eauto. Qed.
 
   Lemma match_symbs_code_bundle_builtin
         ge1 ge2
         (MSYMB: match_symbs ge1 ge2)
-        cp tr ef evargs d
+        tr ef evargs d
     :
-    code_bundle_builtin ge1 cp tr ef evargs d = code_bundle_builtin ge2 cp tr ef evargs d.
+    code_bundle_builtin ge1 tr ef evargs d = code_bundle_builtin ge2 tr ef evargs d.
   Proof. unfold code_bundle_builtin. erewrite match_symbs_code_mem_delta; eauto. Qed.
 
   Lemma match_symbs_code_bundle_events
         ge1 ge2
         (MSYMB: match_symbs ge1 ge2)
-        cp
+
     :
-    code_bundle_event ge1 cp = code_bundle_event ge2 cp.
+    code_bundle_event ge1 = code_bundle_event ge2.
   Proof.
     extensionalities be. unfold code_bundle_event. des_ifs.
     eapply match_symbs_code_bundle_call; auto. eapply match_symbs_code_bundle_return; auto. eapply match_symbs_code_bundle_builtin; auto.
@@ -384,37 +401,43 @@ Section GENV.
   Lemma match_symbs_switch_bundle_events
         ge1 ge2
         (MSYMB: match_symbs ge1 ge2)
-        cp cnt tr
+        cnt tr
     :
-    switch_bundle_events ge1 cnt cp tr = switch_bundle_events ge2 cnt cp tr.
+    switch_bundle_events ge1 cnt tr = switch_bundle_events ge2 cnt tr.
   Proof. unfold switch_bundle_events. erewrite match_symbs_code_bundle_events; eauto. Qed.
 
   Lemma match_symbs_code_bundle_trace
         ge1 ge2
         (MSYMB: match_symbs ge1 ge2)
-        cp cnt tr
+        cnt tr
     :
-    code_bundle_trace ge1 cp cnt tr = code_bundle_trace ge2 cp cnt tr.
+    code_bundle_trace ge1 cnt tr = code_bundle_trace ge2 cnt tr.
   Proof. unfold code_bundle_trace. erewrite match_symbs_switch_bundle_events; eauto. Qed.
 
 
   Lemma match_symbs_symbols_inject
         ge1 ge2
         (MSYMB: match_symbs ge1 ge2)
+        cp
     :
-    symbols_inject (meminj_public ge1) ge1 ge2.
+    symbols_inject (meminj_public ge1) ge1 ge2 cp.
   Proof.
-    destruct MSYMB as (MS0 & MS1 & MS2). unfold symbols_inject. splits; auto.
+    destruct MSYMB as (MS0 & MS1 & MS2 & MS3). unfold symbols_inject.
+    simpl. splits; auto.
     - i. unfold meminj_public in H. des_ifs. split; auto.
-    - i. exists b1. split; auto. unfold meminj_public. apply Senv.find_invert_symbol in H0.
+    - i. exists b1. split; auto. unfold meminj_public. apply Genv.find_invert_symbol in H0.
+      simpl.
       rewrite H0. rewrite H. auto.
     - i. unfold meminj_public in H. des_ifs.
-  Qed.
+    - admit.
+  Admitted.
 
 End GENV.
 
 
 Section PROOF.
+
+  Context {F V: Type} {CF: has_comp F}.
 
   Lemma filter_filter
         A (l: list A) (p q: A -> bool)
@@ -426,40 +449,45 @@ Section PROOF.
   Qed.
 
   Lemma get_wf_mem_delta_idem
-        ge cp d
+        (ge: Genv.t F V) d
     :
-    get_wf_mem_delta ge cp (get_wf_mem_delta ge cp d) = get_wf_mem_delta ge cp d.
+    get_wf_mem_delta ge (get_wf_mem_delta ge d) = get_wf_mem_delta ge d.
   Proof. unfold get_wf_mem_delta. rewrite filter_filter. f_equal. extensionalities k. apply andb_diag. Qed.
 
   Lemma mem_delta_apply_wf_get_wf_mem_delta
-        ge cp d m
+        (ge: Genv.t F V) d m
     :
-    mem_delta_apply_wf ge cp d m = mem_delta_apply_wf ge cp (get_wf_mem_delta ge cp d) m.
+    mem_delta_apply_wf ge d m = mem_delta_apply_wf ge (get_wf_mem_delta ge d) m.
   Proof. unfold mem_delta_apply_wf. rewrite get_wf_mem_delta_idem. auto. Qed.
 
   Lemma wf_mem_delta_kind_is_wf
-        ge cp k
-        (WF: wf_mem_delta_kind_b ge cp k)
+        (ge: Genv.t F V) k
+        (WF: wf_mem_delta_kind_b ge k)
     :
-    mem_delta_kind_inj_wf cp (meminj_public ge) k.
-  Proof. unfold wf_mem_delta_kind_b in WF. des_ifs. unfold wf_mem_delta_storev_b in WF. ss. des_ifs. apply Pos.eqb_eq in WF. auto. Qed.
+    mem_delta_kind_inj_wf ge (meminj_public ge) k.
+  Proof. unfold wf_mem_delta_kind_b in WF. des_ifs. unfold wf_mem_delta_storev_b in WF. ss.
+         des_ifs. simpl in *.
+         unfold Genv.find_comp_of_ident in WF. apply Genv.invert_find_symbol in Heq.
+         rewrite Heq in WF.
+         now destruct flowsto_dec.
+  Qed.
 
   Lemma get_wf_mem_delta_is_wf
-        cp ge d
+        (ge: Genv.t F V) d
     :
-    mem_delta_inj_wf cp (meminj_public ge) (get_wf_mem_delta ge cp d).
+    mem_delta_inj_wf ge (meminj_public ge) (get_wf_mem_delta ge d).
   Proof. induction d; ss. des_ifs. econs; auto. apply wf_mem_delta_kind_is_wf; auto. Qed.
 
   Lemma mem_delta_apply_establish_inject2
-        (ge: Senv.t) k m0 m0'
+        (ge: Genv.t F V) k m0 m0'
         (INJ: Mem.inject k m0 m0')
         (INCR: inject_incr (meminj_public ge) k)
         (NALLOC: meminj_not_alloc (meminj_public ge) m0)
-        d cp m1
-        (APPD: mem_delta_apply_wf ge cp d (Some m0) = Some m1)
+        d m1
+        (APPD: mem_delta_apply_wf ge d (Some m0) = Some m1)
         (FO: public_first_order ge m1)
     :
-    exists m1', mem_delta_apply_wf ge cp d (Some m0') = Some m1' /\ Mem.inject (meminj_public ge) m1 m1'.
+    exists m1', mem_delta_apply_wf ge d (Some m0') = Some m1' /\ Mem.inject (meminj_public ge) m1 m1'.
   Proof.
     unfold mem_delta_apply_wf in APPD. rewrite mem_delta_apply_wf_get_wf_mem_delta. eapply mem_delta_apply_establish_inject; eauto.
     apply get_wf_mem_delta_is_wf.
@@ -476,9 +504,9 @@ Section PROOF.
         (INCR: inject_incr (meminj_public ge) k)
         (NALLOC: meminj_not_alloc (meminj_public ge) m0)
         d cp m1
-        (APPD: mem_delta_apply_wf ge cp d (Some m0) = Some m1)
+        (APPD: mem_delta_apply_wf ge d (Some m0) = Some m1)
     :
-    exists m1', mem_delta_apply_wf ge cp d (Some m0'') = Some m1' /\
+    exists m1', mem_delta_apply_wf ge d (Some m0'') = Some m1' /\
              (meminj_first_order (meminj_public ge) m1 -> Mem.inject (meminj_public ge) m1 m1').
   Proof.
     unfold mem_delta_apply_wf in APPD. rewrite mem_delta_apply_wf_get_wf_mem_delta.
@@ -495,10 +523,10 @@ Section PROOF.
         (INCR: inject_incr (meminj_public ge) k)
         (NALLOC: meminj_not_alloc (meminj_public ge) m0)
         d cp m1
-        (APPD: mem_delta_apply_wf ge cp d (Some m0) = Some m1)
+        (APPD: mem_delta_apply_wf ge d (Some m0) = Some m1)
         (FO: public_first_order ge m1)
     :
-    exists m1', mem_delta_apply_wf ge cp d (Some m0'') = Some m1' /\ Mem.inject (meminj_public ge) m1 m1'.
+    exists m1', mem_delta_apply_wf ge d (Some m0'') = Some m1' /\ Mem.inject (meminj_public ge) m1 m1'.
   Proof.
     hexploit mem_delta_apply_establish_inject_preprocess_gen; eauto. i. des.
     esplits; eauto. apply H0. ii. unfold meminj_public in H1. des_ifs.

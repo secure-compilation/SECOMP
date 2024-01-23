@@ -400,18 +400,19 @@ End CONV.
 
 Section CODE.
   (** converting *informative* trace to code **)
+  Context {F V: Type} {CF: has_comp F}.
 
-  Variable ge: Senv.t.
+  Variable ge: Genv.t F V.
 
   Definition code_mem_delta_storev (d: mem_delta_storev): statement :=
     let '(ch, ptr, v, cp) := d in
     match ptr with
     | Vptr b ofs =>
-        match Senv.invert_symbol ge b with
+        match Genv.invert_symbol ge b with
         | Some id =>
             match chunk_to_type ch, chunk_val_to_expr ge ch v with
             | Some ty, Some ve =>
-                if (Senv.public_symbol ge id) (* TODO: check direction *)
+                if (Genv.public_symbol ge id) && (flowsto_dec (Genv.find_comp_of_ident ge id) cp) (* TODO: check direction *)
                 then Sassign (Ederef (expr_of_addr id ofs) ty) ve
                 else Sskip
             | _, _ => Sskip
@@ -462,7 +463,7 @@ Section GEN.
 
   Definition list_typ_to_list_type (ts: list typ): list type := map typ_to_type ts.
 
-  Definition gen_function (ge: Senv.t) (cnt: ident) (params: list (ident * type)) (tr: bundle_trace) (a_f: Asm.function): function :=
+  Definition gen_function (ge: Asm.genv) (cnt: ident) (params: list (ident * type)) (tr: bundle_trace) (a_f: Asm.function): function :=
     let a_sg := Asm.fn_sig a_f in
     let tret := rettype_to_type a_sg.(sig_res) in
     let cc := a_sg.(sig_cc) in
@@ -475,7 +476,7 @@ Section GEN.
                []
                (code_bundle_trace ge cnt tr).
 
-  Definition gen_fundef (ge: Senv.t) (cnt: ident) params (tr: bundle_trace) (a_fd: Asm.fundef): Clight.fundef :=
+  Definition gen_fundef (ge: Asm.genv) (cnt: ident) params (tr: bundle_trace) (a_fd: Asm.fundef): Clight.fundef :=
     match a_fd with
     | AST.Internal a_f => Internal (gen_function ge cnt params tr a_f)
     | AST.External ef =>
@@ -539,7 +540,7 @@ Section GEN.
     PTree_Properties.of_list params'.
 
 
-  Definition gen_progdef (ge: Senv.t) (tr: bundle_trace) a_gd (ocnt: option (ident * globdef Clight.fundef type)) (oparams: option (list (ident * type))): globdef Clight.fundef type :=
+  Definition gen_progdef (ge: Asm.genv) (tr: bundle_trace) a_gd (ocnt: option (ident * globdef Clight.fundef type)) (oparams: option (list (ident * type))): globdef Clight.fundef type :=
     match ocnt, oparams with
     | Some (cnt, _), Some params => gen_globdef ge cnt params tr a_gd
     | _, _ => Gvar default_globvar
@@ -547,7 +548,7 @@ Section GEN.
 
   Definition get_id_tr (tr: bundle_trace) (id0: ident): bundle_trace := filter (fun '(id, _) => Pos.eqb id0 id) tr.
 
-  Definition gen_prog_defs (a_ge: Senv.t) tr (gds: list (ident * globdef Asm.fundef unit)): list (ident * globdef Clight.fundef type) :=
+  Definition gen_prog_defs (a_ge: Asm.genv) tr (gds: list (ident * globdef Asm.fundef unit)): list (ident * globdef Clight.fundef type) :=
     let m0 := next_id gds in
     let cnts := gen_counter_defs m0 gds in
     let cnt_defs := map snd (PTree.elements cnts) in

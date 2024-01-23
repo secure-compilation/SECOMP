@@ -340,7 +340,7 @@ Section WFDELTA.
     | Vptr b ofs => match Senv.invert_symbol ge b with
                    | Some id => (Senv.public_symbol ge id) &&
                                (wf_chunk_val_b ch v) &&
-                               (flowsto_dec (Genv.find_comp_in_genv ge v) (Genv.find_comp_of_ident ge id)) &&
+                               (* (flowsto_dec (Genv.find_comp_in_genv ge v) (Genv.find_comp_of_ident ge id)) && *)
                                (flowsto_dec (Genv.find_comp_of_ident ge id) cp)
                    | _ => false
                    end
@@ -737,8 +737,7 @@ Section PROOFS.
   Definition mem_delta_kind_inj_wf (ge: Genv.t F V) (j: meminj): mem_delta_kind -> Prop :=
     fun data =>
       match data with
-      | mem_delta_kind_storev (ch, ptr, v, cp) => (Genv.find_comp_in_genv ge v ⊆ Genv.find_comp_in_genv ge ptr) /\
-                                                 (Genv.find_comp_in_genv ge ptr ⊆ cp)
+      | mem_delta_kind_storev (ch, ptr, v, cp) => (Genv.find_comp_in_genv ge ptr ⊆ cp)
       | mem_delta_kind_store (ch, b, ofs, v, cp) => (j b) = None
       | mem_delta_kind_bytes (b, ofs, mvs, cp) => (j b) = None
       | mem_delta_kind_free (b, lo, hi, cp) => (j b) = None
@@ -971,7 +970,7 @@ End VISIBLE.
       intros WFCV. rewrite WFCV in APPD2.
       unfold Genv.find_comp_of_ident in APPD2.
       apply Genv.invert_find_symbol in INV. rewrite INV in APPD2.
-      do 2 destruct (flowsto_dec); try congruence. simpl in APPD2.
+      do 1 destruct (flowsto_dec); try congruence. simpl in APPD2.
       exploit mem_delta_apply_wf_some. eapply APPD2. intros (mi2 & MEM2). rewrite MEM2 in APPD2.
       eapply mem_delta_wf_unchanged_on in APPD2; auto. exploit (Mem.unchanged_on_contents _ _ _ APPD2 b ofs); auto.
       { eapply mem_delta_unchanged_implies_wf_unchanged; eauto. }
