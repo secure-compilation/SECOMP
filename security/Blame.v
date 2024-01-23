@@ -935,7 +935,29 @@ Lemma right_mem_injection_free: forall {j ge1 ge2 m1 m2 b1 b2 lo hi cp m1'},
     Mem.free m2 b2 lo hi cp = Some m2' /\
     right_mem_injection s j ge1 ge2 m1' m2'.
 Proof.
-Admitted.
+  intros j ge1 ge2 m1 m2 b1 b2 lo hi cp m1' MEMINJ FREE1 j_b1.
+  destruct MEMINJ
+    as [DOM MI D0 SYMB MI_INJ BLKS1 BLKS2].
+  pose proof (Mem.free_range_perm _ _ _ _ _ _ FREE1) as RANGE1.
+  pose proof (Mem.free_can_access_block_1 _ _ _ _ _ _ FREE1) as ACCESS1.
+  assert (Mem.range_perm m2 b2 lo hi Cur Freeable) as RANGE2.
+  { intros x BOUNDS.
+    specialize (RANGE1 x BOUNDS).
+    exploit Mem.mi_inj; eauto. intros ?.
+    exploit Mem.mi_perm; eauto.
+    now rewrite Z.add_0_r. }
+  assert (Mem.can_access_block m2 b2 (Some cp)) as ACCESS2.
+  { exploit Mem.mi_inj; eauto. intros ?.
+    exploit Mem.mi_own; eauto. }
+  destruct (Mem.range_perm_free _ _ _ _ _ RANGE2 ACCESS2)
+    as (m2' & FREE2).
+  exists m2'; split; trivial; split; trivial.
+  - eauto using same_domain_free.
+  - exploit Mem.free_parallel_inject; eauto.
+    rewrite !Z.add_0_r. intros (? & ? & ?). congruence.
+  - eapply same_blocks_free; eauto.
+  - eapply same_blocks_free; eauto.
+Qed.
 
 Lemma right_mem_injection_free_list: forall {j m1 m2 e1 e2 cp m1'},
   right_mem_injection s j ge1 ge2 m1 m2 ->
