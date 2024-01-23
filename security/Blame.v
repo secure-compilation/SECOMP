@@ -1864,7 +1864,7 @@ Qed.
   Proof.
     intros j s1 s2 s1' RMEMINJ LEFT STEP.
     (* exists j. (* FIXME: this falls back to the old form of the lemma *) *)
-    inversion RMEMINJ as [DOM MEMINJ ZERO SYMB INJ BLKS].
+    inversion RMEMINJ as [DOM MI D0 SYMB MI_INJ BLKS1 BLKS2].
     inversion STEP; subst; try eauto.
     - (* assign *)
       exists j. split; [| now apply inject_incr_refl].
@@ -1902,7 +1902,7 @@ Qed.
                exact (DOM RIGHT).
             -- rewrite (assign_loc_block_compartment H2) in COMP. congruence.
       }
-      { inv MEMINJ.
+      { inv MI.
         constructor; auto.
         { (* Factor out lemma *)
           inv mi_inj. constructor.
@@ -2022,7 +2022,7 @@ Qed.
       }
       { (* New injection *)
         simpl in *.
-        inversion MEMINJ.
+        inversion MI.
         constructor.
         - admit.
         - intros b VALID.
@@ -2163,7 +2163,7 @@ Qed.
                simpl in LEFT. unfold comp_of in LEFT. simpl in LEFT.
                congruence.
       }
-      { inv H. inv MEMINJ.
+      { inv H. inv MI.
         constructor.
         - { (* Factor out lemma *)
           inv mi_inj. constructor.
@@ -2353,7 +2353,7 @@ Qed.
            (the external call doesn't produce an observable event either) *)
         (* destruct (external_call_spec ef). *)
         simpl in *.
-        inversion MEMINJ.
+        inversion MI.
         constructor.
         - admit.
         - intros b VALID.
