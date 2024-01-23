@@ -927,6 +927,9 @@ Qed.
     congruence.
   Qed.
 
+  Lemma sizeof_preserved : forall ty, sizeof ge2 ty = sizeof ge1 ty.
+  Proof. intros ty. now rewrite genv_cenv_preserved. Qed.
+
 Lemma right_mem_injection_free: forall {j ge1 ge2 m1 m2 b1 b2 lo hi cp m1'},
   right_mem_injection s j ge1 ge2 m1 m2 ->
   Mem.free m1 b1 lo hi cp = Some m1' ->
@@ -993,9 +996,7 @@ Proof.
     as (m2'' & FREE2 & MEMINJ'').
   destruct (IH _ _ MEMINJ'' FREELIST1)
     as (m2' & FREELIST2 & MEMINJ').
-  assert (sizeof ge2 ty = sizeof ge1 ty) as E.
-  { now rewrite genv_cenv_preserved. }
-  simpl in E. rewrite E.
+  pose proof (sizeof_preserved ty) as E. simpl in E. rewrite E.
   exists m2'. now rewrite FREE2; split.
 Qed.
 
@@ -1450,17 +1451,16 @@ Qed.
       right_env_injection j' (PTree.set id (b1, ty) e1) (PTree.set id (b2, ty) e2) /\
       right_tenv_injection j' le1 le2.
   Proof.
-    (* We need to go a bit further in relating ge1 and ge2 *)
-    assert (SIZE: forall ty, sizeof ge1 ty = sizeof ge2 ty) by admit.
     destruct (Mem.alloc_parallel_inject _ _ _ _ _ _ _ _ _ _
                 (partial_mem_inject _ _ _ _ _ _ RMEMINJ)
                 ALLOC (Z.le_refl _) (Z.le_refl _))
       as (j' & m2' & b2 & ALLOC2' & INJ & INCR & ZERO & EXT).
     exists j', m2', b2.
     split; [| split; [| split; [| split]]].
-    - rewrite <- SIZE. assumption.
-    - destruct RMEMINJ. constructor; auto.
-      + intros b. specialize (same_dom0 b).
+    - rewrite sizeof_preserved. assumption.
+    - destruct RMEMINJ as [DOM MI D0 SYMB MI_INJ BLKS1 BLKS2].
+      constructor; auto.
+      + intros b. specialize (DOM b).
         destruct Genv.invert_symbol as [id' |] eqn:INVERT.
         * (* Same as below, [b] must already be in the memory *)
           assert (NEQ: b <> b1) by admit.
@@ -1479,23 +1479,23 @@ Qed.
              ++ intros j'_b. simpl.
                 rewrite (Mem.alloc_block_compartment _ _ _ _ _ _ ALLOC).
                 destruct eq_block as [| _]; [contradiction |].
-                apply same_dom0.
+                apply DOM.
                 rewrite (EXT _ NEQ) in j'_b.
                 auto.
              ++ intros RIGHT' j'_b.
                 rewrite (EXT _ NEQ) in j'_b.
-                apply same_dom0; [| assumption].
+                apply DOM; [| assumption].
                 simpl in RIGHT'.
                 rewrite (Mem.alloc_block_compartment _ _ _ _ _ _ ALLOC) in RIGHT'.
                 destruct eq_block as [| _]; [contradiction |].
                 auto.
-      + intros b1' b2' delta j'_b1. specialize (j_delta_zero0 b1' b2' delta).
+      + intros b1' b2' delta j'_b1. specialize (D0 b1' b2' delta).
         destruct (peq b1' b1) as [-> | NEQ].
         * rewrite ZERO in j'_b1. injection j'_b1 as <- <-.
           reflexivity.
         * specialize (EXT b1' NEQ). rewrite EXT in j'_b1.
           auto.
-      + destruct same_symb0 as (PUB & FIND & PUB_FIND & VOL).
+      + destruct SYMB as (PUB & FIND & PUB_FIND & VOL).
         split; [| split; [| split]].
         * auto.
         * intros id' b1' b2' delta b1'_b2' id'_b1'. specialize (FIND id' b1' b2' delta).
@@ -1526,7 +1526,7 @@ Qed.
              exact (VOL _ _ _ b1'_b2').
       + intros b1' b2' b1'' b2'' ofs1 ofs2 b1'_b2' b1'_b1'' b2'_b2''.
         (* inv INJ. Check mi_no_overlap. *)
-        specialize (jinjective0 b1' b2' b1'' b2'' ofs1 ofs2 b1'_b2').
+        specialize (MI_INJ b1' b2' b1'' b2'' ofs1 ofs2 b1'_b2').
         destruct (peq b1' b1) as [-> | NEQ1].
         * admit.
         * rewrite (EXT _ NEQ1) in b1'_b1''.
@@ -1534,11 +1534,11 @@ Qed.
           -- admit.
           -- rewrite (EXT _ NEQ2) in b2'_b2''.
              auto.
-      + intros b cp' FIND. specialize (same_blks3 b cp' FIND).
+      + intros b cp' FIND. specialize (BLKS1 b cp' FIND).
         change (Mem.block_compartment _ _ = _)
           with (Mem.can_access_block m1' b (Some cp')).
         eapply Mem.alloc_can_access_block_other_inj_1; eauto.
-      + intros b cp' FIND. specialize (same_blks4 b cp' FIND).
+      + intros b cp' FIND. specialize (BLKS2 b cp' FIND).
         change (Mem.block_compartment _ _ = _)
           with (Mem.can_access_block m2' b (Some cp')).
         eapply Mem.alloc_can_access_block_other_inj_1; eauto.
