@@ -540,6 +540,22 @@ Qed.
     congruence.
   Qed.
 
+  Lemma assign_loc_can_access_block ce cp ty m b ofs bf v m' :
+    assign_loc ce cp ty m b ofs bf v m' ->
+    Mem.block_compartment m b = Some cp.
+  Proof.
+    intros A. case A; clear.
+    - simpl. intros v chunk m' _ STORE.
+      exploit Mem.store_valid_access_3; eauto.
+      now intros (_ & ? & _).
+    - simpl. intros _ _ bytes m' _ _ _ _ _ STORE.
+      exploit Mem.storebytes_can_access_block_1; eauto.
+    - intros sz sg pos width v m' v' STORE.
+      inv STORE. simpl in *.
+      exploit Mem.store_valid_access_3; eauto.
+      now intros (_ & ? & _).
+  Qed.
+
   Lemma perm_assign_loc_1 {m m' b b' cp ce ty ofs ofs' bf v k p}
     (ASGN: assign_loc ce cp ty m b ofs bf v m')
     (PERM: Mem.perm m b' ofs' k p):
@@ -1902,52 +1918,24 @@ Qed.
                exact (DOM RIGHT).
             -- rewrite (assign_loc_block_compartment H2) in COMP. congruence.
       }
-      { inv MI.
-        constructor; auto.
-        { (* Factor out lemma *)
-          inv mi_inj. constructor.
-          - intros b1 b2 delta ofs' k' p' b1_b2 PERM.
-            apply (perm_assign_loc_2 H2) in PERM.
-            exact (mi_perm b1 b2 delta ofs' k' p' b1_b2 PERM).
-          - intros b1 b2 delta [cp |] b1_b2 ACC; [| reflexivity].
-            change (Mem.can_access_block _ _ _)
-              with (Mem.block_compartment m' b1 = Some cp) in ACC.
-            rewrite <- (assign_loc_block_compartment H2) in ACC.
-            exact (mi_own b1 b2 delta (Some cp) b1_b2 ACC).
-          - intros b1 b2 delta chunk ofs' p b1_b2 PERM.
-            apply (assign_loc_range_perm H2) in PERM.
-            exact (mi_align b1 b2 delta chunk ofs' p b1_b2 PERM).
-          - intros b1 ofs' b2 delta b1_b2 PERM.
-            apply (assign_loc_perm H2) in PERM.
-            specialize (mi_memval b1 ofs' b2 delta b1_b2 PERM).
-            (* b1 is in the injection so it is either
-               - a public symbol
-               - a non-public symbol on the right
-                 (contra, impossible to get ahold of from the left, where we are)
-               - a non-symbol on the right
-                 (contra, impossible to get ahold of from the left, where we are) *)
-            admit.
-        }
-        { intros b NOTVALID. specialize (mi_freeblocks b).
-          apply mi_freeblocks. intro CONTRA. apply NOTVALID.
-          eapply assign_loc_valid_block_1; eauto.
-        }
-        { intros b1 b1' delta1 b2 b2' delta2 ofs1 ofs2 b1_b2 j_b1 j_b2 PERM1 PERM2.
-          specialize (mi_no_overlap b1 b1' delta1 b2 b2' delta2 ofs1 ofs2 b1_b2 j_b1 j_b2).
-          apply mi_no_overlap.
-          - exact (perm_assign_loc_2 H2 PERM1).
-          - exact (perm_assign_loc_2 H2 PERM2).
-        }
-        { intros b b' delta ofs' b_b' PERM.
-          specialize (mi_representable b b' delta ofs' b_b').
-          apply mi_representable. destruct PERM as [PERM | PERM].
-          - left. exact (perm_assign_loc_2 H2 PERM).
-          - right. exact (perm_assign_loc_2 H2 PERM). }
-        { intros b1 ofs' b2 delta k' p b1_b2 PERM.
-          specialize (mi_perm_inv b1 ofs' b2 delta k' p b1_b2 PERM).
-          destruct mi_perm_inv as [PERM' | PERM'].
-          - left. exact (perm_assign_loc_1 H2 PERM').
-          - right. intros CONTRA. apply PERM'. exact (perm_assign_loc_2 H2 CONTRA). }
+      { exploit assign_loc_can_access_block; eauto. intros block_loc.
+        simpl. simpl in MI.
+        (* FIXME: Currently, this property *does not* hold, because the memory
+           injection j is allowed to relate blocks on the left (including
+           loc). Unfortunately, this condition is probably needed to apply the
+           *_unmapped_inject lemmas below (i.e., they probably wouldn't hold if
+           we weakened the condition even a tiny bit). *)
+        assert (j loc = None) as j_loc by admit.
+        destruct H2
+          as [ v chunk m' ACCESS STORE
+             | b' ofs' bytes m' _ _ _ _ LOAD STORE
+             | sz sg pos width v m' v' STORE ].
+        - simpl in STORE, LEFT.
+          exploit Mem.store_unmapped_inject; eauto.
+        - simpl in STORE, LEFT.
+          exploit Mem.storebytes_unmapped_inject; eauto.
+        - inv STORE. simpl in *.
+          exploit Mem.store_unmapped_inject; eauto.
       }
     - (* builtin *)
       (* FIXME *)
