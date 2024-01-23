@@ -941,15 +941,14 @@ Qed.
       Genv.allowed_addrof ge1 cp id ->
       Genv.allowed_addrof ge2 cp id.
   Proof.
-    intros cp id RIGHT [H|H].
-    - left.
-      exploit match_prog_globdefs; eauto. rewrite RIGHT. simpl.
-      intros (b1 & b2 & ge1_id & ge2_id & MATCH).
-      unfold Genv.find_comp_of_ident in *.
-      simpl in H. rewrite ge1_id in H.
-      rewrite ge2_id.
-      unfold Genv.find_comp_of_block in *. now rewrite <- MATCH.
-    - right. now rewrite public_symbol_preserved.
+    unfold Genv.allowed_addrof.
+    intros cp id RIGHT H.
+    exploit match_prog_globdefs; eauto. rewrite RIGHT. simpl.
+    intros (b1 & b2 & ge1_id & ge2_id & MATCH).
+    unfold Genv.find_comp_of_ident in *.
+    simpl in H. rewrite ge1_id in H.
+    rewrite ge2_id.
+    unfold Genv.find_comp_of_block in *. now rewrite <- MATCH.
   Qed.
 
   Lemma genv_cenv_preserved : ge2 = ge1 :> composite_env.
@@ -1191,10 +1190,7 @@ Qed.
         now apply allowed_addrof_translated.
       + (* private symbol *)
         assert (id_cp : Genv.find_comp_of_ident ge1 id = Some cp).
-        { destruct ALLOWED; trivial.
-          unfold Genv.to_senv in public_id. simpl in public_id.
-          unfold globalenv in H. simpl in H.
-          congruence. }
+        { trivial. }
         assert (b_right : (s, m1) |= b ∈ Right).
         { unfold Mem.has_side_block. simpl.
           unfold Genv.find_comp_of_ident in id_cp.

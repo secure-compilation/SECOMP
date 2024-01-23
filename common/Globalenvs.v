@@ -1997,14 +1997,13 @@ Definition allowed_cross_call (ge: t) (cp: compartment) (vf: val) :=
   end.
 
 Definition allowed_addrof (ge: t) (cp: compartment) (id: ident) :=
-  find_comp_of_ident ge id = Some cp \/
-  public_symbol ge id = true.
+  find_comp_of_ident ge id = Some cp.
 
 Definition allowed_addrof_b (ge: t) (cp: compartment) (id: ident) : bool :=
   match find_comp_of_ident ge id with
   | Some cp' => eq_compartment cp cp' : bool
   | None => false
-  end || public_symbol ge id.
+  end.
 
 Lemma allowed_addrof_b_reflect :
   forall ge cp id,
@@ -2399,7 +2398,7 @@ Lemma match_genvs_allowed_addrof:
 Proof.
   unfold allowed_addrof.
   intros cp id.
-  now rewrite match_genvs_find_comp_of_ident, match_genvs_public_symbol.
+  now rewrite match_genvs_find_comp_of_ident.
 Qed.
 
 Lemma match_genvs_allowed_calls:
