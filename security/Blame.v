@@ -1665,14 +1665,14 @@ Admitted.
     inject_incr j j' .
   Proof.
     intros j s1 s2 s1' RMEMINJ LEFT STEP.
-    exists j. (* FIXME: this falls back to the old form of the lemma *)
+    (* exists j. (* FIXME: this falls back to the old form of the lemma *) *)
     inversion RMEMINJ as [DOM MEMINJ ZERO SYMB INJ BLKS].
-    split; [| now apply inject_incr_refl]. (* Integrate with other tweaks *)
-    constructor; try assumption;
-      [| | eapply same_blocks_step1; eassumption].
-    { (* NOTE: Essentially identical sub-cases *)
-      clear MEMINJ ZERO SYMB INJ BLKS.
-      inv STEP; try assumption.
+    inversion STEP; subst; try eauto.
+    - (* assign *)
+      exists j. split; [| now apply inject_incr_refl].
+      constructor; try assumption;
+        [| | eapply same_blocks_step1; eassumption].
+      {
       - intros b. specialize (DOM b).
         destruct Genv.invert_symbol as [id |] eqn:INVSYM.
         + destruct Senv.public_symbol eqn:PUBSYM; [assumption |].
@@ -1703,6 +1703,60 @@ Admitted.
                  by (eapply assign_block_block_compartment_eq; eauto).
                exact (DOM RIGHT).
             -- rewrite (assign_loc_block_compartment H2) in COMP. congruence.
+      }
+      { inv MEMINJ.
+        constructor; auto.
+        { (* Factor out lemma *)
+          inv mi_inj. constructor.
+          - intros b1 b2 delta ofs' k' p' b1_b2 PERM.
+            apply (perm_assign_loc_2 H2) in PERM.
+            exact (mi_perm b1 b2 delta ofs' k' p' b1_b2 PERM).
+          - intros b1 b2 delta [cp |] b1_b2 ACC; [| reflexivity].
+            change (Mem.can_access_block _ _ _)
+              with (Mem.block_compartment m' b1 = Some cp) in ACC.
+            rewrite <- (assign_loc_block_compartment H2) in ACC.
+            exact (mi_own b1 b2 delta (Some cp) b1_b2 ACC).
+          - intros b1 b2 delta chunk ofs' p b1_b2 PERM.
+            apply (assign_loc_range_perm H2) in PERM.
+            exact (mi_align b1 b2 delta chunk ofs' p b1_b2 PERM).
+          - intros b1 ofs' b2 delta b1_b2 PERM.
+            apply (assign_loc_perm H2) in PERM.
+            specialize (mi_memval b1 ofs' b2 delta b1_b2 PERM).
+            (* b1 is in the injection so it is either
+               - a public symbol
+               - a non-public symbol on the right
+                 (contra, impossible to get ahold of from the left, where we are)
+               - a non-symbol on the right
+                 (contra, impossible to get ahold of from the left, where we are) *)
+            admit.
+        }
+        { intros b NOTVALID. specialize (mi_freeblocks b).
+          apply mi_freeblocks. intro CONTRA. apply NOTVALID.
+          eapply assign_loc_valid_block_1; eauto.
+        }
+        { intros b1 b1' delta1 b2 b2' delta2 ofs1 ofs2 b1_b2 j_b1 j_b2 PERM1 PERM2.
+          specialize (mi_no_overlap b1 b1' delta1 b2 b2' delta2 ofs1 ofs2 b1_b2 j_b1 j_b2).
+          apply mi_no_overlap.
+          - exact (perm_assign_loc_2 H2 PERM1).
+          - exact (perm_assign_loc_2 H2 PERM2).
+        }
+        { intros b b' delta ofs' b_b' PERM.
+          specialize (mi_representable b b' delta ofs' b_b').
+          apply mi_representable. destruct PERM as [PERM | PERM].
+          - left. exact (perm_assign_loc_2 H2 PERM).
+          - right. exact (perm_assign_loc_2 H2 PERM). }
+        { intros b1 ofs' b2 delta k' p b1_b2 PERM.
+          specialize (mi_perm_inv b1 ofs' b2 delta k' p b1_b2 PERM).
+          destruct mi_perm_inv as [PERM' | PERM'].
+          - left. exact (perm_assign_loc_1 H2 PERM').
+          - right. intros CONTRA. apply PERM'. exact (perm_assign_loc_2 H2 CONTRA). }
+      }
+    - (* builtin *)
+      (* FIXME *)
+      exists j. split; [| now apply inject_incr_refl].
+      constructor; try assumption;
+        [| | eapply same_blocks_step1; eassumption].
+      {
       - intros b; specialize (DOM b).
         destruct Genv.invert_symbol as [id |] eqn:INVSYM.
         + destruct Senv.public_symbol eqn:PUBSYM; [assumption |].
@@ -1767,9 +1821,45 @@ Admitted.
                  in COMP'.
                injection COMP' as <-.
                congruence.
+      }
+      { (* New injection *)
+        admit. (* see last case on external calls below *)
+      }
+    - (* return 0 *)
+      exists j. split; [| now apply inject_incr_refl].
+      constructor; try assumption;
+        [| | eapply same_blocks_step1; eassumption].
+      {
       - eapply same_domain_free_list; eauto.
+      }
+      {
+      eapply Mem.free_list_left_inject; eauto.
+      }
+    - (* return 1 *)
+      exists j. split; [| now apply inject_incr_refl].
+      constructor; try assumption;
+        [| | eapply same_blocks_step1; eassumption].
+      {
       - eapply same_domain_free_list; eauto.
+      }
+      {
+      eapply Mem.free_list_left_inject; eauto.
+      }
+    - (* skip call *)
+      exists j. split; [| now apply inject_incr_refl].
+      constructor; try assumption;
+        [| | eapply same_blocks_step1; eassumption].
+      {
       - eapply same_domain_free_list; eauto.
+      }
+      {
+      eapply Mem.free_list_left_inject; eauto.
+      }
+    - (* internal function *)
+      exists j. split; [| now apply inject_incr_refl].
+      constructor; try assumption;
+        [| | eapply same_blocks_step1; eassumption].
+      {
       - inv H.
         intros b. specialize (DOM b).
         destruct Genv.invert_symbol as [id |] eqn:INVSYM.
@@ -1833,132 +1923,7 @@ Admitted.
                  in RIGHT.
                simpl in LEFT. unfold comp_of in LEFT. simpl in LEFT.
                congruence.
-      - (* See [external_call] above (second sub-case) *)
-        (* identical, except H0 is H,
-           and LEFT requires simplification in a couple of places:
-             [simpl in LEFT. unfold comp_of in LEFT. simpl in LEFT.] *)
-        intros b; specialize (DOM b).
-        destruct Genv.invert_symbol as [id |] eqn:INVSYM.
-        + destruct Senv.public_symbol eqn:PUBSYM; [assumption |].
-          simpl. simpl in DOM. split.
-          * intros j_b. destruct DOM as [DOM _]. specialize (DOM j_b).
-            destruct (Mem.block_compartment m b) as [cp |] eqn:COMP;
-              [| contradiction].
-            change (Mem.block_compartment _ _ = _ )
-              with (Mem.can_access_block m b (Some cp)) in COMP.
-            rewrite (external_call_can_access_block _ _ _ _ _ _ _ _ _ H COMP).
-            assumption.
-          * intros RIGHT. destruct DOM as [_ DOM].
-            destruct (Mem.block_compartment m' b) as [cp' |] eqn:COMP';
-              [| contradiction].
-            destruct (Mem.block_compartment m b) as [cp |] eqn:COMP.
-            -- assert (cp = cp') as <-. {
-                 change (Mem.block_compartment _ _ = _ )
-                   with (Mem.can_access_block m b (Some cp)) in COMP.
-                 rewrite (external_call_can_access_block _ _ _ _ _ _ _ _ _ H COMP) in COMP'.
-                 congruence. }
-               exact (DOM RIGHT).
-            -- (* Easy, contra on LEFT and RIGHT with H0 *)
-               apply Mem.block_compartment_valid_block in COMP.
-               assert (VALID: Mem.valid_block m' b). {
-                 destruct (plt b (Mem.nextblock m')) as [G | CONTRA];
-                   [exact G |].
-                 apply Mem.block_compartment_valid_block in CONTRA.
-                 congruence. }
-               rewrite (ec_new_valid (external_call_spec ef) _ _ _ _ H COMP VALID)
-                 in COMP'.
-               injection COMP' as <-.
-               simpl in LEFT. unfold comp_of in LEFT. simpl in LEFT.
-               congruence.
-        + simpl. simpl in DOM. split.
-          * intros j_b. destruct DOM as [DOM _]. specialize (DOM j_b).
-            destruct (Mem.block_compartment m b) as [cp |] eqn:COMP;
-              [| contradiction].
-            change (Mem.block_compartment _ _ = _ )
-              with (Mem.can_access_block m b (Some cp)) in COMP.
-            rewrite (external_call_can_access_block _ _ _ _ _ _ _ _ _ H COMP).
-            assumption.
-          * intros RIGHT. destruct DOM as [_ DOM].
-            destruct (Mem.block_compartment m' b) as [cp' |] eqn:COMP';
-              [| contradiction].
-            destruct (Mem.block_compartment m b) as [cp |] eqn:COMP.
-            -- assert (cp = cp') as <-. {
-                 change (Mem.block_compartment _ _ = _ )
-                   with (Mem.can_access_block m b (Some cp)) in COMP.
-                 rewrite (external_call_can_access_block _ _ _ _ _ _ _ _ _ H COMP) in COMP'.
-                 congruence. }
-               exact (DOM RIGHT).
-            -- (* If any newly allocated [b] belongs to [comp_of ef] = [comp_of f]
-                  (which is on the left), and since [b] belongs to [cp'] (which is
-                  on the right), this is a contradiction. *)
-               (* same as contra above *)
-               apply Mem.block_compartment_valid_block in COMP.
-               assert (VALID: Mem.valid_block m' b). {
-                 destruct (plt b (Mem.nextblock m')) as [G | CONTRA];
-                   [exact G |].
-                 apply Mem.block_compartment_valid_block in CONTRA.
-                 congruence. }
-               rewrite (ec_new_valid (external_call_spec ef) _ _ _ _ H COMP VALID)
-                 in COMP'.
-               injection COMP' as <-.
-               simpl in LEFT. unfold comp_of in LEFT. simpl in LEFT.
-               congruence.
-    }
-    { (* clear DOM ZERO SYMB INJ BLKS. *)
-      inv STEP; try assumption.
-      { inv MEMINJ.
-        constructor; auto.
-        { (* Factor out lemma *)
-          inv mi_inj. constructor.
-          - intros b1 b2 delta ofs' k' p' b1_b2 PERM.
-            apply (perm_assign_loc_2 H2) in PERM.
-            exact (mi_perm b1 b2 delta ofs' k' p' b1_b2 PERM).
-          - intros b1 b2 delta [cp |] b1_b2 ACC; [| reflexivity].
-            change (Mem.can_access_block _ _ _)
-              with (Mem.block_compartment m' b1 = Some cp) in ACC.
-            rewrite <- (assign_loc_block_compartment H2) in ACC.
-            exact (mi_own b1 b2 delta (Some cp) b1_b2 ACC).
-          - intros b1 b2 delta chunk ofs' p b1_b2 PERM.
-            apply (assign_loc_range_perm H2) in PERM.
-            exact (mi_align b1 b2 delta chunk ofs' p b1_b2 PERM).
-          - intros b1 ofs' b2 delta b1_b2 PERM.
-            apply (assign_loc_perm H2) in PERM.
-            specialize (mi_memval b1 ofs' b2 delta b1_b2 PERM).
-            (* b1 is in the injection so it is either
-               - a public symbol
-               - a non-public symbol on the right
-                 (contra, impossible to get ahold of from the left, where we are)
-               - a non-symbol on the right
-                 (contra, impossible to get ahold of from the left, where we are) *)
-            admit.
-        }
-        { intros b NOTVALID. specialize (mi_freeblocks b).
-          apply mi_freeblocks. intro CONTRA. apply NOTVALID.
-          eapply assign_loc_valid_block_1; eauto.
-        }
-        { intros b1 b1' delta1 b2 b2' delta2 ofs1 ofs2 b1_b2 j_b1 j_b2 PERM1 PERM2.
-          specialize (mi_no_overlap b1 b1' delta1 b2 b2' delta2 ofs1 ofs2 b1_b2 j_b1 j_b2).
-          apply mi_no_overlap.
-          - exact (perm_assign_loc_2 H2 PERM1).
-          - exact (perm_assign_loc_2 H2 PERM2).
-        }
-        { intros b b' delta ofs' b_b' PERM.
-          specialize (mi_representable b b' delta ofs' b_b').
-          apply mi_representable. destruct PERM as [PERM | PERM].
-          - left. exact (perm_assign_loc_2 H2 PERM).
-          - right. exact (perm_assign_loc_2 H2 PERM). }
-        { intros b1 ofs' b2 delta k' p b1_b2 PERM.
-          specialize (mi_perm_inv b1 ofs' b2 delta k' p b1_b2 PERM).
-          destruct mi_perm_inv as [PERM' | PERM'].
-          - left. exact (perm_assign_loc_1 H2 PERM').
-          - right. intros CONTRA. apply PERM'. exact (perm_assign_loc_2 H2 CONTRA). }
       }
-      { (* New injection *)
-        admit. (* see last case on external calls below *)
-      }
-      eapply Mem.free_list_left_inject; eauto.
-      eapply Mem.free_list_left_inject; eauto.
-      eapply Mem.free_list_left_inject; eauto.
       { inv H. inv MEMINJ.
         constructor.
         - { (* Factor out lemma *)
@@ -2063,6 +2028,83 @@ Admitted.
             apply (alloc_variables_perm_2 H1); eauto.
             apply (bind_parameters_perm_2 H2); eauto.
       }
+    - (* external call *)
+      (* FIXME *)
+      exists j. split; [| now apply inject_incr_refl].
+      constructor; try assumption;
+        [| | eapply same_blocks_step1; eassumption].
+      {
+      - (* See [external_call] above (second sub-case) *)
+        (* identical, except H0 is H,
+           and LEFT requires simplification in a couple of places:
+             [simpl in LEFT. unfold comp_of in LEFT. simpl in LEFT.] *)
+        intros b; specialize (DOM b).
+        destruct Genv.invert_symbol as [id |] eqn:INVSYM.
+        + destruct Senv.public_symbol eqn:PUBSYM; [assumption |].
+          simpl. simpl in DOM. split.
+          * intros j_b. destruct DOM as [DOM _]. specialize (DOM j_b).
+            destruct (Mem.block_compartment m b) as [cp |] eqn:COMP;
+              [| contradiction].
+            change (Mem.block_compartment _ _ = _ )
+              with (Mem.can_access_block m b (Some cp)) in COMP.
+            rewrite (external_call_can_access_block _ _ _ _ _ _ _ _ _ H COMP).
+            assumption.
+          * intros RIGHT. destruct DOM as [_ DOM].
+            destruct (Mem.block_compartment m' b) as [cp' |] eqn:COMP';
+              [| contradiction].
+            destruct (Mem.block_compartment m b) as [cp |] eqn:COMP.
+            -- assert (cp = cp') as <-. {
+                 change (Mem.block_compartment _ _ = _ )
+                   with (Mem.can_access_block m b (Some cp)) in COMP.
+                 rewrite (external_call_can_access_block _ _ _ _ _ _ _ _ _ H COMP) in COMP'.
+                 congruence. }
+               exact (DOM RIGHT).
+            -- (* Easy, contra on LEFT and RIGHT with H0 *)
+               apply Mem.block_compartment_valid_block in COMP.
+               assert (VALID: Mem.valid_block m' b). {
+                 destruct (plt b (Mem.nextblock m')) as [G | CONTRA];
+                   [exact G |].
+                 apply Mem.block_compartment_valid_block in CONTRA.
+                 congruence. }
+               rewrite (ec_new_valid (external_call_spec ef) _ _ _ _ H COMP VALID)
+                 in COMP'.
+               injection COMP' as <-.
+               simpl in LEFT. unfold comp_of in LEFT. simpl in LEFT.
+               congruence.
+        + simpl. simpl in DOM. split.
+          * intros j_b. destruct DOM as [DOM _]. specialize (DOM j_b).
+            destruct (Mem.block_compartment m b) as [cp |] eqn:COMP;
+              [| contradiction].
+            change (Mem.block_compartment _ _ = _ )
+              with (Mem.can_access_block m b (Some cp)) in COMP.
+            rewrite (external_call_can_access_block _ _ _ _ _ _ _ _ _ H COMP).
+            assumption.
+          * intros RIGHT. destruct DOM as [_ DOM].
+            destruct (Mem.block_compartment m' b) as [cp' |] eqn:COMP';
+              [| contradiction].
+            destruct (Mem.block_compartment m b) as [cp |] eqn:COMP.
+            -- assert (cp = cp') as <-. {
+                 change (Mem.block_compartment _ _ = _ )
+                   with (Mem.can_access_block m b (Some cp)) in COMP.
+                 rewrite (external_call_can_access_block _ _ _ _ _ _ _ _ _ H COMP) in COMP'.
+                 congruence. }
+               exact (DOM RIGHT).
+            -- (* If any newly allocated [b] belongs to [comp_of ef] = [comp_of f]
+                  (which is on the left), and since [b] belongs to [cp'] (which is
+                  on the right), this is a contradiction. *)
+               (* same as contra above *)
+               apply Mem.block_compartment_valid_block in COMP.
+               assert (VALID: Mem.valid_block m' b). {
+                 destruct (plt b (Mem.nextblock m')) as [G | CONTRA];
+                   [exact G |].
+                 apply Mem.block_compartment_valid_block in CONTRA.
+                 congruence. }
+               rewrite (ec_new_valid (external_call_spec ef) _ _ _ _ H COMP VALID)
+                 in COMP'.
+               injection COMP' as <-.
+               simpl in LEFT. unfold comp_of in LEFT. simpl in LEFT.
+               congruence.
+      }
       { (* New injection *)
         (* external call on the left, isolate effects on injection according to DOM *)
         (* destruct (external_call_spec ef). *)
@@ -2074,7 +2116,6 @@ Admitted.
         (* assert (HACK: j = j') by admit; rewrite HACK; clear HACK. (* what we actually want to prove *) *)
         admit.
       }
-    }
   Admitted.
 
   Lemma right_cont_injection_left_step_E0_1: forall j s1 s2 s1',
