@@ -1793,6 +1793,18 @@ Qed.
     econstructor; eauto.
   Qed.
 
+  (* FIXME: Move to Genv. *)
+  Lemma invert_symbol_find_comp_of_block p b id :
+    Genv.invert_symbol (globalenv p) b = Some id ->
+    exists cp, Genv.find_comp_of_block (globalenv p) b = Some cp.
+  Proof.
+    intros ge_b.
+    apply Genv.invert_find_symbol in ge_b.
+    destruct (Genv.find_symbol_find_def_inversion _ _ ge_b) as [def def_ge_b].
+    unfold Genv.find_comp_of_block. simpl.
+    unfold program, fundef in *. rewrite def_ge_b. eauto.
+  Qed.
+
   Lemma right_mem_injection_external_call {j ef vargs1 vargs2 vres1 t m1 m1' m2}
     (RMEMINJ : right_mem_injection s j ge1 ge2 m1 m2)
     (EXTCALL: external_call ef ge1 vargs1 m1 t vres1 m1')
@@ -1807,11 +1819,20 @@ Qed.
     { apply external_call_spec. }
     { eapply same_symb; eauto. }
     { eapply partial_mem_inject; eauto. }
-    intros (j' & vres2 & m2' & ? & ? & ?  & ? & ? & ? & ? & ?).
+    intros (j' & vres2 & m2' & is_ext & inj_res & inj' & unchanged1 & unchanged2 &
+              incr & j_j'_sep & comps_m1').
     exists j', m2', vres2.
     split; [| split; [| split]]; auto.
+    destruct RMEMINJ as [DOM MI D0 SYMB MI_INJ BLKS1 BLKS2].
     constructor; eauto.
-    - admit.
+    - intros b. specialize (DOM b). simpl in *.
+      destruct (Genv.invert_symbol _ b) as [id|] eqn:ge1_b.
+      + exploit invert_symbol_find_comp_of_block; simpl; eauto.
+        intros (cp' & comp_b_1).
+        apply BLKS1 in comp_b_1.
+        rewrite comp_b_1 in DOM.
+        admit.
+      + admit.
     - admit.
     - admit.
     - admit.
