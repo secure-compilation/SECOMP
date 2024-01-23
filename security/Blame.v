@@ -1,7 +1,7 @@
 Require Import String.
 Require Import Coqlib Maps Errors Integers.
 Require Import AST Globalenvs Linking Smallstep Events Behaviors Memory Values.
-
+Require Import Complements.
 Require Import Ctypes Cop Clight.
 Require Import Split.
 
@@ -3657,8 +3657,6 @@ Proof.
         as Hparallel.
       eapply blame_last_comp_star; eassumption.
 Qed.
-
-Require Import Complements.
 
 Theorem blame (t m: trace):
   clight_program_has_initial_trace W2 t ->
