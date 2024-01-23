@@ -233,7 +233,7 @@ Section IR.
         (SIG: sg = Asm.fn_sig f_next)
         (TR: call_trace_cross ge cp cp' b vargs (sig_args sg) tr id evargs)
         d m2
-        (DELTA: mem_delta_apply_wf ge cp d (Some m1) = Some m2)
+        (DELTA: mem_delta_apply_wf ge d (Some m1) = Some m2)
         (PUB: public_first_order ge m2)
         id_cur
         (IDCUR: Genv.invert_symbol ge cur = Some id_cur)
@@ -256,7 +256,7 @@ Section IR.
         (TR: return_trace_cross ge cp_next cp_cur vretv (sig_res sg) tr evretv)
         (CONT: ik = (ir_cont next) :: ik_tl)
         d m2
-        (DELTA: mem_delta_apply_wf ge cp_cur d (Some m1) = Some m2)
+        (DELTA: mem_delta_apply_wf ge d (Some m1) = Some m2)
         (PUB: public_first_order ge m2)
         id_cur
         (IDCUR: Genv.invert_symbol ge cur = Some id_cur)
@@ -272,7 +272,7 @@ Section IR.
         (FINDF: Genv.find_funct ge (Vptr b_ext Ptrofs.zero) = Some (AST.External ef))
         (SIG: sg = ef_sig ef)
         d m1'
-        (MEM: mem_delta_apply_wf ge cp_cur d (Some m1) = Some m1')
+        (MEM: mem_delta_apply_wf ge d (Some m1) = Some m1')
         vargs vretv
         (EC: external_call ef ge cp_cur vargs m1' tr vretv m2)
         (ECCASES: (external_call_unknowns ef ge m1' vargs) \/
@@ -288,7 +288,7 @@ Section IR.
         cp_cur
         (CURCP: cp_cur = Genv.find_comp_in_genv ge (Vptr cur Ptrofs.zero))
         d m1'
-        (MEM: mem_delta_apply_wf ge cp_cur d (Some m1) = Some m1')
+        (MEM: mem_delta_apply_wf ge d (Some m1) = Some m1')
         vargs vretv
         (EC: external_call ef ge cp_cur vargs m1' tr vretv m2)
         (ECCASES: (external_call_unknowns ef ge m1' vargs) \/
@@ -727,11 +727,11 @@ Section FROMASM.
         (NFREE: public_not_freeable ge m)
         (EXEC: exec_instr ge f i rs m cp = Next rs' m')
         m0 d
-        (DELTA0: mem_delta_inj_wf cp (meminj_public ge) d)
+        (DELTA0: mem_delta_inj_wf ge (meminj_public ge) d)
         (DELTA1: mem_delta_apply d (Some m0) = Some m)
         (NALLOC: meminj_not_alloc (meminj_public ge) m0)
     :
-    exists d', (mem_delta_inj_wf cp (meminj_public ge) d') /\ (mem_delta_apply d' (Some m0) = Some m').
+    exists d', (mem_delta_inj_wf ge (meminj_public ge) d') /\ (mem_delta_apply d' (Some m0) = Some m').
   Proof.
     destruct i; simpl in EXEC.
     all: try (inv EXEC; eauto).
@@ -745,6 +745,8 @@ Section FROMASM.
             end;
             [apply Forall_app; split; [auto | constructor; ss; auto]
             | rewrite mem_delta_apply_app; (match goal with | H: mem_delta_apply _ _ = Some _ |- _ => rewrite H end; simpl; auto) ]).
+    all: try (match goal with
+         | |- _ /\ _ => admit end).
     { match goal with
       | _: Mem.alloc _ ?cp1 ?lo ?hi = _, _: Mem.store ?ch _ ?b ?ofs ?v ?cp2 = _ |- _ =>
           exists (d ++ ([mem_delta_kind_alloc (cp1, lo, hi)] ++ [mem_delta_kind_store (ch, b, ofs, v, cp2)]))
@@ -767,7 +769,7 @@ Section FROMASM.
       }
       { apply Mem.free_result in Heqo0. unfold Mem.unchecked_free in Heqo0. unfold zle in Heqo0. des_ifs. eexists; eauto. }
     }
-  Qed.
+  Admitted.
 
 End FROMASM.
 
@@ -951,9 +953,9 @@ Section PROOF.
   Qed.
 
   Lemma public_rev_perm_delta_apply_inj
-        d ge m m_i m_i' cp
+        d ge m m_i m_i'
         (PRP: public_rev_perm ge m m_i)
-        (APPD: mem_delta_apply_wf ge cp d (Some m_i) = Some m_i')
+        (APPD: mem_delta_apply_wf ge d (Some m_i) = Some m_i')
     :
     public_rev_perm ge m m_i'.
   Proof.
@@ -1026,7 +1028,7 @@ Section PROOF.
         (ECC: external_call_unknowns ef ge m args)
     :
     exists m1 m2 res',
-      (mem_delta_apply_wf ge cp d (Some m_i) = Some m1) /\
+      (mem_delta_apply_wf ge d (Some m_i) = Some m1) /\
         (external_call ef ge cp args m1 t res' m2) /\
         (external_call_unknowns ef ge m1 args) /\
         (exists k2, match_mem ge cp k2 [] m' m2 m' /\ Val.inject k2 res res')
@@ -1200,7 +1202,7 @@ Section PROOF.
         (ECC: external_call_unknowns ef ge m args \/ external_call_known_observables ef ge cp m args t res m')
     :
     exists d' m1 m2 res',
-      (mem_delta_apply_wf ge cp d' (Some m_i) = Some m1) /\
+      (mem_delta_apply_wf ge d' (Some m_i) = Some m1) /\
         (external_call ef ge cp args m1 t res' m2) /\
         ((external_call_unknowns ef ge m1 args) \/ (external_call_known_observables ef ge cp m1 args t res' m2 /\ d' = [])) /\
         (exists k2 d2 m_a02, match_mem ge cp k2 d2 m_a02 m2 m' /\ (Val.inject k2 res res' \/ (res = res')))

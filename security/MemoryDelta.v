@@ -297,6 +297,8 @@ End MEMDELTA.
 Section WFDELTA.
   (** only wf delta is applied for back transltation *)
 
+  Context {F V: Type} {CF: has_comp F}.
+
   (* Refer to encode_val *)
   Definition wf_chunk_val_b (ch: memory_chunk) (v: val) :=
     match v with
@@ -332,64 +334,66 @@ Section WFDELTA.
     | Vptr _ _ => false
     end.
 
-  Definition wf_mem_delta_storev_b (ge: Senv.t) (cp0: compartment) (d: mem_delta_storev) :=
+  Definition wf_mem_delta_storev_b (ge: Genv.t F V) (d: mem_delta_storev) :=
     let '(ch, ptr, v, cp) := d in
     match ptr with
     | Vptr b ofs => match Senv.invert_symbol ge b with
                    | Some id => (Senv.public_symbol ge id) &&
                                (wf_chunk_val_b ch v) &&
-                               cp_eq_dec cp0 cp
+                               (flowsto_dec (Genv.find_comp_in_genv ge v) (Genv.find_comp_of_ident ge id)) &&
+                               (flowsto_dec (Genv.find_comp_of_ident ge id) cp)
                    | _ => false
                    end
     | _ => false
     end.
 
-  Definition wf_mem_delta_kind_b (ge: Senv.t) cp0 (d: mem_delta_kind) :=
-    match d with | mem_delta_kind_storev dd => wf_mem_delta_storev_b ge cp0 dd | _ => false end.
+  Definition wf_mem_delta_kind_b (ge: Genv.t F V) (d: mem_delta_kind) :=
+    match d with | mem_delta_kind_storev dd => wf_mem_delta_storev_b ge dd | _ => false end.
 
-  Definition get_wf_mem_delta (ge: Senv.t) cp0 (d: mem_delta): mem_delta :=
-    filter (wf_mem_delta_kind_b ge cp0) d.
+  Definition get_wf_mem_delta (ge: Genv.t F V) (d: mem_delta): mem_delta :=
+    filter (wf_mem_delta_kind_b ge) d.
 
   Lemma get_wf_mem_delta_cons
-        ge cp0 d k
+        ge d k
     :
-    get_wf_mem_delta ge cp0 (k :: d) =
-      if (wf_mem_delta_kind_b ge cp0 k) then k :: (get_wf_mem_delta ge cp0 d) else (get_wf_mem_delta ge cp0 d).
+    get_wf_mem_delta ge (k :: d) =
+      if (wf_mem_delta_kind_b ge k) then k :: (get_wf_mem_delta ge d) else (get_wf_mem_delta ge d).
   Proof. ss. Qed.
 
+
   Lemma get_wf_mem_delta_app
-        ge cp0 d0 d1
+        ge d0 d1
     :
-    get_wf_mem_delta ge cp0 (d0 ++ d1) = (get_wf_mem_delta ge cp0 d0) ++ (get_wf_mem_delta ge cp0 d1).
+    get_wf_mem_delta ge (d0 ++ d1) = (get_wf_mem_delta ge d0) ++ (get_wf_mem_delta ge d1).
   Proof. apply filter_app. Qed.
 
 
-  Definition mem_delta_apply_wf ge cp0 (d: mem_delta) (om0: option mem): option mem :=
-    mem_delta_apply (get_wf_mem_delta ge cp0 d) om0.
+  Definition mem_delta_apply_wf ge (d: mem_delta) (om0: option mem): option mem :=
+    mem_delta_apply (get_wf_mem_delta ge d) om0.
 
   Lemma mem_delta_apply_wf_cons
-        ge cp0 d m0 k
+        ge d m0 k
     :
-    mem_delta_apply_wf ge cp0 (k :: d) m0 =
-      if (wf_mem_delta_kind_b ge cp0 k) then mem_delta_apply_wf ge cp0 d (mem_delta_apply_kind k m0) else mem_delta_apply_wf ge cp0 d m0.
+    mem_delta_apply_wf ge (k :: d) m0 =
+      if (wf_mem_delta_kind_b ge k) then mem_delta_apply_wf ge d (mem_delta_apply_kind k m0) else mem_delta_apply_wf ge d m0.
   Proof. unfold mem_delta_apply_wf at 1. rewrite get_wf_mem_delta_cons. des_ifs. Qed.
 
   Lemma mem_delta_apply_wf_app
-        ge cp0 d0 d1 m0
+        ge d0 d1 m0
     :
-    mem_delta_apply_wf ge cp0 (d0 ++ d1) m0 =
-      mem_delta_apply_wf ge cp0 d1 (mem_delta_apply_wf ge cp0 d0 m0).
+    mem_delta_apply_wf ge (d0 ++ d1) m0 =
+      mem_delta_apply_wf ge d1 (mem_delta_apply_wf ge d0 m0).
   Proof. unfold mem_delta_apply_wf. rewrite get_wf_mem_delta_app. apply mem_delta_apply_app. Qed.
 
   Lemma mem_delta_apply_wf_none
-        ge cp0 d
+        ge d
     :
-    mem_delta_apply_wf ge cp0 d None = None.
+    mem_delta_apply_wf ge d None = None.
   Proof. unfold mem_delta_apply_wf. apply mem_delta_apply_none. Qed.
 
   Lemma mem_delta_apply_wf_some
-        ge cp0 d m0 m1
-        (APPD: mem_delta_apply_wf ge cp0 d m0 = Some m1)
+        ge d m0 m1
+        (APPD: mem_delta_apply_wf ge d m0 = Some m1)
     :
     exists m, m0 = Some m.
   Proof. unfold mem_delta_apply_wf in APPD. exploit mem_delta_apply_some; eauto. Qed.
@@ -398,6 +402,8 @@ End WFDELTA.
 
 
 Section PROPS.
+
+  Context {F V: Type} {CF: has_comp F}.
 
   (** Delta and location relations *)
 
@@ -534,10 +540,10 @@ Section PROPS.
   Qed.
 
   Lemma mem_delta_wf_unchanged_on
-        ge cp d m m'
-        (APPD: mem_delta_apply_wf ge cp d (Some m) = Some m')
+        (ge: Genv.t F V) d m m'
+        (APPD: mem_delta_apply_wf ge d (Some m) = Some m')
     :
-    Mem.unchanged_on (fun b ofs => mem_delta_unchanged (get_wf_mem_delta ge cp d) b ofs) m m'.
+    Mem.unchanged_on (fun b ofs => mem_delta_unchanged (get_wf_mem_delta ge d) b ofs) m m'.
   Proof. eapply mem_delta_unchanged_on; eauto. Qed.
 
   Lemma get_from_setN_same_upto_ofs
@@ -726,18 +732,21 @@ End PROPS.
 Section PROOFS.
   (** Props for proofs *)
 
-  Definition mem_delta_kind_inj_wf (cp0: compartment) (j: meminj): mem_delta_kind -> Prop :=
+  Context {F V: Type} {CF: has_comp F}.
+
+  Definition mem_delta_kind_inj_wf (ge: Genv.t F V) (j: meminj): mem_delta_kind -> Prop :=
     fun data =>
       match data with
-      | mem_delta_kind_storev (ch, ptr, v, cp) => cp = cp0
+      | mem_delta_kind_storev (ch, ptr, v, cp) => (Genv.find_comp_in_genv ge v ⊆ Genv.find_comp_in_genv ge ptr) /\
+                                                 (Genv.find_comp_in_genv ge ptr ⊆ cp)
       | mem_delta_kind_store (ch, b, ofs, v, cp) => (j b) = None
       | mem_delta_kind_bytes (b, ofs, mvs, cp) => (j b) = None
       | mem_delta_kind_free (b, lo, hi, cp) => (j b) = None
       | _ => True
       end.
 
-  Definition mem_delta_inj_wf cp (j: meminj): mem_delta -> Prop :=
-    fun d => Forall (fun data => mem_delta_kind_inj_wf cp j data) d.
+  Definition mem_delta_inj_wf ge (j: meminj): mem_delta -> Prop :=
+    fun d => Forall (fun data => mem_delta_kind_inj_wf ge j data) d.
 
   Section VISIBLE.
 
@@ -881,20 +890,20 @@ End VISIBLE.
   Proof. induction FA; ss. des_ifs. econs; eauto. Qed.
 
   Lemma mem_delta_unchanged_implies_wf_unchanged
-        ge cp d b ofs
+        (ge: Genv.t F V) d b ofs
         (UNCHG: mem_delta_unchanged d b ofs)
     :
-    mem_delta_unchanged (get_wf_mem_delta ge cp d) b ofs.
+    mem_delta_unchanged (get_wf_mem_delta ge d) b ofs.
   Proof. eapply list_forall_filter; eauto. Qed.
 
   Lemma mem_delta_changed_only_by_storev
-        ge cp d b ofs
-        (WF: mem_delta_inj_wf cp (meminj_public ge) d)
+        (ge: Genv.t F V) d b ofs
+        (WF: mem_delta_inj_wf ge (meminj_public ge) d)
         (INJ: (meminj_public ge) b <> None)
         (CHG: mem_delta_changed d b ofs)
         m1 m1' m2 m2'
         (APPD1: mem_delta_apply d (Some m1) = Some m1')
-        (APPD2: mem_delta_apply_wf ge cp d (Some m2) = Some m2')
+        (APPD2: mem_delta_apply_wf ge d (Some m2) = Some m2')
         (PERM1: Mem.perm m1 b ofs Cur Readable)
         (PERM2: Mem.perm m2 b ofs Cur Readable)
         (FO: loc_first_order m1' b ofs)
@@ -950,7 +959,7 @@ End VISIBLE.
       destruct d0 as [[[ch0 ptr0] v0] cp0]. ss. destruct ptr0; ss. des; clarify.
       assert (exists id, Senv.invert_symbol ge b = Some id /\ Senv.public_symbol ge id).
       { clear - INJ. unfold meminj_public in INJ. des_ifs. eauto. }
-      des. rename H into INV, H0 into PUB. rewrite INV, PUB in APPD2.
+      des. rename H into INV, H0 into PUB. simpl in INV, PUB. rewrite INV, PUB in APPD2.
       exploit mem_delta_apply_some. eapply APPD1. intros (mi1 & MEM1). rewrite MEM1 in APPD1.
       eapply mem_delta_unchanged_on in APPD1. exploit (Mem.unchanged_on_contents _ _ _ APPD1 b ofs); auto.
       { eapply Mem.perm_store_1; eauto. }
@@ -960,10 +969,9 @@ End VISIBLE.
       { unfold loc_first_order in *. rewrite <- H. auto. }
       exploit mem_storev_first_order_wf_chunk_val. 2,3: eauto. ss. eauto.
       intros WFCV. rewrite WFCV in APPD2.
-      destruct (cp_eq_dec cp cp); try contradiction.
-      ss.
-      (* rewrite Pos.eqb_refl in APPD2. *)
-      des_ifs.
+      unfold Genv.find_comp_of_ident in APPD2.
+      apply Genv.invert_find_symbol in INV. rewrite INV in APPD2.
+      do 2 destruct (flowsto_dec); try congruence. simpl in APPD2.
       exploit mem_delta_apply_wf_some. eapply APPD2. intros (mi2 & MEM2). rewrite MEM2 in APPD2.
       eapply mem_delta_wf_unchanged_on in APPD2; auto. exploit (Mem.unchanged_on_contents _ _ _ APPD2 b ofs); auto.
       { eapply mem_delta_unchanged_implies_wf_unchanged; eauto. }
@@ -1079,13 +1087,13 @@ End VISIBLE.
   Qed.
 
   Lemma mem_delta_apply_preserves_winject
-        ge cp0 m0 m0'
+        (ge: Genv.t F V) m0 m0'
         (WINJ0: winject (meminj_public ge) m0 m0')
         (d: mem_delta)
         m1
         (APPD: mem_delta_apply d (Some m0) = Some m1)
     :
-    exists m1', (mem_delta_apply_wf ge cp0 d (Some m0') = Some m1') /\ (winject (meminj_public ge) m1 m1').
+    exists m1', (mem_delta_apply_wf ge d (Some m0') = Some m1') /\ (winject (meminj_public ge) m1 m1').
   Proof.
     revert m0 m0' WINJ0 m1 APPD. induction d; intros.
     { inv APPD. exists m0'. ss. }
@@ -1095,6 +1103,8 @@ End VISIBLE.
         * exploit store_mapped_winject; eauto. instantiate (1:=v). intros (mi0 & MEM' & WINJ1). specialize (IHd _ _ WINJ1 _ APPD). destruct IHd as (m1' & APPD' & WINJ').
           unfold meminj_public in JB. des_ifs. rewrite Z.add_0_r in MEM'. rewrite MEM'. eauto.
         * exploit store_unmapped_winject; eauto. unfold meminj_public in JB. des_ifs.
+          simpl in *. rewrite Heq2 in Heq0; inv Heq0. rewrite Heq1 in Heq; now simpl in Heq.
+          simpl in *. rewrite Heq1 in Heq0; inv Heq0.
       + destruct d0 as (((ch & ptr) & v) & cp). destruct ptr; ss. exploit store_left_winject; eauto.
     - destruct d0 as ((((ch & b) & ofs) & v) & cp). ss. exploit mem_delta_apply_some. eauto. intros (mi & MEM). rewrite MEM in APPD.
       exploit store_left_winject; eauto.
@@ -1146,17 +1156,17 @@ End VISIBLE.
   Qed.
 
   Lemma mem_delta_apply_establish_inject
-        (ge: Senv.t) (k: meminj) m0 m0'
+        (ge: Genv.t F V) (k: meminj) m0 m0'
         (INJ: Mem.inject k m0 m0')
         (INCR: inject_incr (meminj_public ge) k)
         (NALLOC: meminj_not_alloc (meminj_public ge) m0)
-        (d: mem_delta) cp
-        (DWF: mem_delta_inj_wf cp (meminj_public ge) d)
+        (d: mem_delta)
+        (DWF: mem_delta_inj_wf ge (meminj_public ge) d)
         m1
         (APPD: mem_delta_apply d (Some m0) = Some m1)
         (FO: meminj_first_order (meminj_public ge) m1)
     :
-    exists m1', (mem_delta_apply_wf ge cp d (Some m0') = Some m1') /\ (Mem.inject (meminj_public ge) m1 m1').
+    exists m1', (mem_delta_apply_wf ge d (Some m0') = Some m1') /\ (Mem.inject (meminj_public ge) m1 m1').
   Proof.
     exploit inject_implies_winject; eauto. intros WINJ. exploit winject_inj_incr; eauto. clear WINJ; intro WINJ.
     exploit mem_delta_apply_preserves_winject; eauto. intros (m1' & APPD' & WINJ'). exists m1'. split; eauto.
@@ -1180,7 +1190,8 @@ End VISIBLE.
       }
       { eapply mem_delta_unchanged_implies_wf_unchanged; eauto. rewrite Z.add_0_r. auto. }
       { inv WINJ. inv mwi_inj. rewrite <- (Z.add_0_r ofs). eapply mwi_perm; eauto. rewrite Z.add_0_r. auto. }
-    - rename H into CHG. exploit mem_delta_changed_only_by_storev. eauto. rewrite INJPUB; ss. eauto. eapply APPD. eapply APPD'. auto.
+    - rename H into CHG. exploit mem_delta_changed_only_by_storev. eauto.
+      rewrite INJPUB; ss. eauto. eapply APPD. eapply APPD'. auto.
       { inv WINJ. inv mwi_inj. rewrite <- (Z.add_0_r ofs). eapply mwi_perm; eauto. }
       { exploit FO; eauto. rewrite INJPUB. congruence. }
       intros. rewrite Z.add_0_r, <- x0.
@@ -1192,20 +1203,20 @@ End VISIBLE.
   Import Mem.
 
   Lemma mem_delta_apply_establish_inject_preprocess
-        (ge: Senv.t) (k: meminj) m0 m0'
+        (ge: Genv.t F V) (k: meminj) m0 m0'
         (INJ: Mem.inject k m0 m0')
         pch pb pofs pv pcp m0''
         (PRE: store pch m0' pb pofs pv pcp = Some m0'')
         (PREB: forall b ofs, (meminj_public ge) b <> Some (pb, ofs))
         (INCR: inject_incr (meminj_public ge) k)
         (NALLOC: meminj_not_alloc (meminj_public ge) m0)
-        (d: mem_delta) cp
-        (DWF: mem_delta_inj_wf cp (meminj_public ge) d)
+        (d: mem_delta)
+        (DWF: mem_delta_inj_wf ge (meminj_public ge) d)
         m1
         (APPD: mem_delta_apply d (Some m0) = Some m1)
         (FO: meminj_first_order (meminj_public ge) m1)
     :
-    exists m1', (mem_delta_apply_wf ge cp d (Some m0'') = Some m1') /\ (Mem.inject (meminj_public ge) m1 m1').
+    exists m1', (mem_delta_apply_wf ge d (Some m0'') = Some m1') /\ (Mem.inject (meminj_public ge) m1 m1').
   Proof.
     exploit inject_implies_winject; eauto. intros WINJ. exploit winject_inj_incr; eauto. clear WINJ; intro WINJ.
     hexploit store_outside_winject. eauto.
@@ -1242,19 +1253,19 @@ End VISIBLE.
   Qed.
 
   Lemma mem_delta_apply_establish_inject_preprocess_gen
-        (ge: Senv.t) (k: meminj) m0 m0'
+        (ge: Genv.t F V) (k: meminj) m0 m0'
         (INJ: Mem.inject k m0 m0')
         pch pb pofs pv pcp m0''
         (PRE: store pch m0' pb pofs pv pcp = Some m0'')
         (PREB: forall b ofs, (meminj_public ge) b <> Some (pb, ofs))
         (INCR: inject_incr (meminj_public ge) k)
         (NALLOC: meminj_not_alloc (meminj_public ge) m0)
-        (d: mem_delta) cp
-        (DWF: mem_delta_inj_wf cp (meminj_public ge) d)
+        (d: mem_delta)
+        (DWF: mem_delta_inj_wf ge (meminj_public ge) d)
         m1
         (APPD: mem_delta_apply d (Some m0) = Some m1)
     :
-    exists m1', (mem_delta_apply_wf ge cp d (Some m0'') = Some m1') /\
+    exists m1', (mem_delta_apply_wf ge d (Some m0'') = Some m1') /\
              ((meminj_first_order (meminj_public ge) m1) -> Mem.inject (meminj_public ge) m1 m1').
   Proof.
     exploit inject_implies_winject; eauto. intros WINJ. exploit winject_inj_incr; eauto. clear WINJ; intro WINJ.

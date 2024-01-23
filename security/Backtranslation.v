@@ -403,7 +403,7 @@ Section CODE.
 
   Variable ge: Senv.t.
 
-  Definition code_mem_delta_storev cp0 (d: mem_delta_storev): statement :=
+  Definition code_mem_delta_storev (d: mem_delta_storev): statement :=
     let '(ch, ptr, v, cp) := d in
     match ptr with
     | Vptr b ofs =>
@@ -411,7 +411,7 @@ Section CODE.
         | Some id =>
             match chunk_to_type ch, chunk_val_to_expr ge ch v with
             | Some ty, Some ve =>
-                if ((Senv.public_symbol ge id) && (flowsto_dec cp cp0)) (* TODO: check direction *)
+                if (Senv.public_symbol ge id) (* TODO: check direction *)
                 then Sassign (Ederef (expr_of_addr id ofs) ty) ve
                 else Sskip
             | _, _ => Sskip
@@ -421,40 +421,40 @@ Section CODE.
     | _ => Sskip
     end.
 
-  Definition code_mem_delta_kind cp (d: mem_delta_kind): statement :=
+  Definition code_mem_delta_kind (d: mem_delta_kind): statement :=
     match d with
-    | mem_delta_kind_storev dd => code_mem_delta_storev cp dd
+    | mem_delta_kind_storev dd => code_mem_delta_storev dd
     | _ => Sskip
     end.
 
-  Definition code_mem_delta cp (d: mem_delta) (snext: statement): statement :=
-    fold_right Ssequence snext (map (code_mem_delta_kind cp) d).
+  Definition code_mem_delta (d: mem_delta) (snext: statement): statement :=
+    fold_right Ssequence snext (map (code_mem_delta_kind) d).
 
-  Definition code_bundle_call cp (tr: trace) (id: ident) (evargs: list eventval) (sg: signature) (d: mem_delta): statement :=
+  Definition code_bundle_call (tr: trace) (id: ident) (evargs: list eventval) (sg: signature) (d: mem_delta): statement :=
     let tys := from_sig_fun_data sg in
-    code_mem_delta cp d (Scall None (Evar id (Tfunction tys.(dargs) tys.(dret) tys.(dcc))) (list_eventval_to_list_expr evargs)).
+    code_mem_delta d (Scall None (Evar id (Tfunction tys.(dargs) tys.(dret) tys.(dcc))) (list_eventval_to_list_expr evargs)).
 
-  Definition code_bundle_return cp (tr: trace) (evr: eventval) (d: mem_delta): statement :=
-    code_mem_delta cp d (Sreturn (Some (eventval_to_expr evr))).
+  Definition code_bundle_return (tr: trace) (evr: eventval) (d: mem_delta): statement :=
+    code_mem_delta d (Sreturn (Some (eventval_to_expr evr))).
 
-  Definition code_bundle_builtin cp (tr: trace) (ef: external_function) (evargs: list eventval) (d: mem_delta): statement :=
-    code_mem_delta cp d (Sbuiltin None ef (list_eventval_to_typelist evargs) (list_eventval_to_list_expr evargs)).
+  Definition code_bundle_builtin (tr: trace) (ef: external_function) (evargs: list eventval) (d: mem_delta): statement :=
+    code_mem_delta d (Sbuiltin None ef (list_eventval_to_typelist evargs) (list_eventval_to_list_expr evargs)).
 
-  Definition code_bundle_event cp (be: bundle_event): statement :=
+  Definition code_bundle_event (be: bundle_event): statement :=
     match be with
-    | Bundle_call tr id evargs sg d => code_bundle_call cp tr id evargs sg d
-    | Bundle_return tr evr d => code_bundle_return cp tr evr d
-    | Bundle_builtin tr ef evargs d => code_bundle_builtin cp tr ef evargs d
+    | Bundle_call tr id evargs sg d => code_bundle_call tr id evargs sg d
+    | Bundle_return tr evr d => code_bundle_return tr evr d
+    | Bundle_builtin tr ef evargs d => code_bundle_builtin tr ef evargs d
     end.
 
   Definition one_expr: expr := Econst_int Int.one (Tint I32 Signed noattr).
 
-  Definition switch_bundle_events cnt cp (tr: bundle_trace) :=
-    switch cnt (map (fun ib => code_bundle_event cp (snd ib)) tr) (Sreturn None).
+  Definition switch_bundle_events cnt (tr: bundle_trace) :=
+    switch cnt (map (fun ib => code_bundle_event (snd ib)) tr) (Sreturn None).
 
   (* A while(1)-loop with big if-then-elses inside it *)
-  Definition code_bundle_trace cp (cnt: ident) (tr: bundle_trace): statement :=
-    Swhile one_expr (switch_bundle_events cnt cp tr).
+  Definition code_bundle_trace (cnt: ident) (tr: bundle_trace): statement :=
+    Swhile one_expr (switch_bundle_events cnt tr).
 
 End CODE.
 
@@ -473,7 +473,7 @@ Section GEN.
                params
                []
                []
-               (code_bundle_trace ge cp cnt tr).
+               (code_bundle_trace ge cnt tr).
 
   Definition gen_fundef (ge: Senv.t) (cnt: ident) params (tr: bundle_trace) (a_fd: Asm.fundef): Clight.fundef :=
     match a_fd with

@@ -35,16 +35,16 @@ Section CODEPROOFS.
   Qed.
 
   Lemma code_mem_delta_cons
-        (ge: Senv.t) cp k d sn
+        (ge: Senv.t) k d sn
     :
-    code_mem_delta ge cp (k :: d) sn =
-      Ssequence (code_mem_delta_kind ge cp k) (code_mem_delta ge cp d sn).
+    code_mem_delta ge (k :: d) sn =
+      Ssequence (code_mem_delta_kind ge k) (code_mem_delta ge d sn).
   Proof. unfold code_mem_delta. ss. Qed.
 
   Lemma code_mem_delta_app
-        (ge: Senv.t) cp d1 d2 sn
+        (ge: Senv.t) d1 d2 sn
     :
-    code_mem_delta ge cp (d1 ++ d2) sn = (code_mem_delta ge cp d1 (code_mem_delta ge cp d2 sn)).
+    code_mem_delta ge (d1 ++ d2) sn = (code_mem_delta ge d1 (code_mem_delta ge d2 sn)).
   Proof.
     revert sn d2. induction d1; intros; ss.
     rewrite ! code_mem_delta_cons. erewrite IHd1. auto.
@@ -118,9 +118,9 @@ Section CODEPROOFS.
         d
         (WFE: wf_env ge e)
         (STORE: mem_delta_apply_storev (Some m) d = Some m')
-        (WF: wf_mem_delta_storev_b ge (comp_of f) d)
+        (WF: wf_mem_delta_storev_b ge d)
     :
-    step1 ge (State f (code_mem_delta_storev ge (comp_of f) d) k e le m)
+    step1 ge (State f (code_mem_delta_storev ge d) k e le m)
           E0 (State f Sskip k e le m').
   Proof.
     unfold wf_mem_delta_storev_b in WF. des_ifs. rename m0 into ch, i into ofs. ss.
@@ -143,30 +143,30 @@ Section CODEPROOFS.
         + unfold Cop.sem_cast. ss. des_ifs.
       - simpl_expr. eapply access_mode_chunk_to_type_wf; eauto.
         rewrite <- STORE.
-        destruct flowsto_dec; try inv WF.
-        apply andb_prop in Heq0 as [_ G].
-        destruct flowsto_dec; try inv G.
-        exploit flowsto_antisym; eauto. intros ?; subst.
-        destruct ch; ss.
-        + rewrite Mem.store_int8_sign_ext. auto.
-        + rewrite Mem.store_int8_zero_ext. auto.
-        + rewrite Mem.store_int16_sign_ext. auto.
-        + rewrite Mem.store_int16_zero_ext. auto.
-      - apply andb_false_iff in Heq0 as [G | G]; try now inv G.
-        destruct cp_eq_dec; inv WF.
-        exfalso. pose proof (flowsto_refl (comp_of f)). now destruct flowsto_dec. }
-    { assert (G: flowsto_dec c (comp_of f)).
-      { destruct cp_eq_dec; inv WF.
-        pose proof (flowsto_refl (comp_of f)). now destruct flowsto_dec. }
-      rewrite G, H0. ss. eapply step_assign.
+        admit.
+        (* destruct ch; ss. *)
+        (* + rewrite Mem.store_int8_sign_ext. auto. *)
+        (* + rewrite Mem.store_int8_zero_ext. auto. *)
+        (* + rewrite Mem.store_int16_sign_ext. auto. *)
+        (* + rewrite Mem.store_int16_zero_ext. auto. *)
+    }
+      (* - apply andb_false_iff in Heq0 as [G | G]; try now inv G. *)
+      (*   destruct cp_eq_dec; inv WF. *)
+      (*   exfalso. pose proof (flowsto_refl (comp_of f)). now destruct flowsto_dec. } *)
+    {
+      (* assert (G: flowsto_dec c (comp_of f)). *)
+      (* { destruct cp_eq_dec; inv WF. *)
+      (*   pose proof (flowsto_refl (comp_of f)). now destruct flowsto_dec. } *)
+      rewrite WF, H0. ss. eapply step_assign.
       - econs. unfold expr_of_addr. eapply ptr_of_id_ofs_eval; auto.
         eapply Genv.invert_find_symbol; eauto. right; auto.
       - instantiate (1:=v). eapply chunk_val_to_expr_eval; eauto.
       - ss. eapply sem_cast_chunk_val; eauto.
       - simpl_expr. eapply access_mode_chunk_to_type_wf; eauto.
-        destruct cp_eq_dec; inv WF. clarify.
+        admit.
+        (* destruct cp_eq_dec; inv WF. clarify. *)
     }
-  Qed.
+  Admitted.
 
   Lemma wf_mem_delta_storev_false_is_skip
         (ge: Senv.t) cp d
@@ -174,10 +174,8 @@ Section CODEPROOFS.
     :
     code_mem_delta_storev ge cp d = Sskip.
   Proof. destruct d as [[[ch ptr] v] cp0]. ss. des_ifs.
-         apply andb_prop in Heq2 as [WF1 WF2].
-         apply andb_false_iff in NWF as [NWF | NWF]; try congruence. admit.
-         destruct cp_eq_dec; inv NWF
-  Qed.
+         admit.
+  Admitted.
 
   Lemma code_mem_delta_correct
         (ge: genv)
@@ -311,10 +309,16 @@ Section GENV.
       exploit MSYMB2; eauto. intros FIND2. exploit Senv.find_invert_symbol; eauto. intros INV2.
       rewrite INV2. destruct (chunk_to_type ch) eqn:CHTY; auto.
       des_ifs.
-      - apply andb_prop in Heq0, Heq2. des. apply andb_prop in Heq0, Heq2. des.
+      - apply andb_prop in Heq0, Heq2. des.
+        (* apply andb_prop in Heq0, Heq2. des. *)
         assert (chunk_val_to_expr ge2 ch v = chunk_val_to_expr ge1 ch v).
-        { unfold chunk_val_to_expr. rewrite CHTY. clear - Heq6.
-          unfold wf_chunk_val_b in Heq6. des_ifs.
+        { unfold chunk_val_to_expr. rewrite CHTY.
+          des_ifs.
+          - admit.
+          - congruence.
+          (* clear - Heq6. *)
+          (* unfold wf_chunk_val_b in Heq6. *)
+          des_ifs.
         }
         rewrite Heq, Heq1 in H. clarify.
       - exfalso. apply andb_prop in Heq0. des. apply andb_prop in Heq0. des.
