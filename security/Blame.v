@@ -1891,7 +1891,48 @@ Qed.
                congruence.
       }
       { (* New injection *)
-        admit. (* see last case on external calls below *)
+        simpl in *.
+        inversion MEMINJ.
+        constructor.
+        - admit.
+        - intros b VALID.
+          apply mi_freeblocks.
+          intros CONTRA. apply VALID.
+          eapply (ec_valid_block (external_call_spec ef)); eassumption.
+        - intros b b' delta b_b'.
+          specialize (mi_mappedblocks b b' delta b_b').
+          assumption.
+        - intros b1 b1' delta1 b2 b2' delta2 ofs1 ofs2 b1_b2 b1_b1' b2_b2' PERM1 PERM2.
+          assert (VALID1 : Mem.valid_block m b1). { (* lemma *)
+            unfold Mem.valid_block. destruct (plt b1 (Mem.nextblock m)) as [| INVALID];
+              [assumption |].
+            eapply Mem.mi_freeblocks in INVALID; try eassumption.
+            congruence. }
+          assert (VALID2 : Mem.valid_block m b2). { (* lemma *)
+            unfold Mem.valid_block. destruct (plt b2 (Mem.nextblock m)) as [| INVALID];
+              [assumption |].
+            eapply Mem.mi_freeblocks in INVALID; try eassumption.
+            congruence. }
+          assert (PERM1' :=
+                    ec_max_perm (external_call_spec ef) _ _ _ _ _ _ _ H0 VALID1 PERM1).
+          assert (PERM2' :=
+                    ec_max_perm (external_call_spec ef) _ _ _ _ _ _ _ H0 VALID2 PERM2).
+          eapply mi_no_overlap; eassumption.
+        - intros b b' delta ofs b_b' PERM.
+          assert (VALID1 : Mem.valid_block m b). { (* lemma *)
+            unfold Mem.valid_block. destruct (plt b (Mem.nextblock m)) as [| INVALID];
+              [assumption |].
+            eapply Mem.mi_freeblocks in INVALID; try eassumption.
+            congruence. }
+          assert (PERM': Mem.perm m b (Ptrofs.unsigned ofs) Max Nonempty \/
+                         Mem.perm m b (Ptrofs.unsigned ofs - 1) Max Nonempty). {
+            destruct PERM as [PERM | PERM].
+            - left. eapply (ec_max_perm (external_call_spec ef)); eassumption.
+            - right. eapply (ec_max_perm (external_call_spec ef)); eassumption. }
+          eapply mi_representable; eassumption.
+        - intros b1 ofs b2 delta k' p b1_b2 PERM.
+          specialize (mi_perm_inv b1 ofs b2 delta k' p b1_b2 PERM).
+          admit.
       }
     - (* return 0 *)
       exists j. split; [| now apply inject_incr_refl].
@@ -2176,13 +2217,53 @@ Qed.
       { (* New injection *)
         (* external call on the left, isolate effects on injection according to DOM *)
         (* destruct (external_call_spec ef). *)
-        (* assert (ARGS: Val.inject_list j vargs vargs) by admit. *)
-        (* specialize (ec_mem_inject _ _ _ _ _ _ _ _ _ _ *)
-        (*               (same_symb _ _ _ _ _ _ RMEMINJ) H *)
-        (*               (partial_mem_inject _ _ _ _ _ _ RMEMINJ) ARGS) *)
-        (*   as (j' & vres' & m2' & EXT & VINJ & MINJ & MAPPED & REACH & INCR & SEP & BLOCKS). *)
-        (* assert (HACK: j = j') by admit; rewrite HACK; clear HACK. (* what we actually want to prove *) *)
-        admit.
+        (* any new blocks belong to [ef]'s compartment, so they are on the left
+           those new blocks do not correspond to any symbol names
+           so because they are not on the right, they are not in the injection
+           (the external call doesn't produce an observable event either) *)
+        (* destruct (external_call_spec ef). *)
+        simpl in *.
+        inversion MEMINJ.
+        constructor.
+        - admit.
+        - intros b VALID.
+          apply mi_freeblocks.
+          intros CONTRA. apply VALID.
+          eapply (ec_valid_block (external_call_spec ef)); eassumption.
+        - intros b b' delta b_b'.
+          specialize (mi_mappedblocks b b' delta b_b').
+          assumption.
+        - intros b1 b1' delta1 b2 b2' delta2 ofs1 ofs2 b1_b2 b1_b1' b2_b2' PERM1 PERM2.
+          assert (VALID1 : Mem.valid_block m b1). { (* lemma *)
+            unfold Mem.valid_block. destruct (plt b1 (Mem.nextblock m)) as [| INVALID];
+              [assumption |].
+            eapply Mem.mi_freeblocks in INVALID; try eassumption.
+            congruence. }
+          assert (VALID2 : Mem.valid_block m b2). { (* lemma *)
+            unfold Mem.valid_block. destruct (plt b2 (Mem.nextblock m)) as [| INVALID];
+              [assumption |].
+            eapply Mem.mi_freeblocks in INVALID; try eassumption.
+            congruence. }
+          assert (PERM1' :=
+                    ec_max_perm (external_call_spec ef) _ _ _ _ _ _ _ H VALID1 PERM1).
+          assert (PERM2' :=
+                    ec_max_perm (external_call_spec ef) _ _ _ _ _ _ _ H VALID2 PERM2).
+          eapply mi_no_overlap; eassumption.
+        - intros b b' delta ofs b_b' PERM.
+          assert (VALID1 : Mem.valid_block m b). { (* lemma *)
+            unfold Mem.valid_block. destruct (plt b (Mem.nextblock m)) as [| INVALID];
+              [assumption |].
+            eapply Mem.mi_freeblocks in INVALID; try eassumption.
+            congruence. }
+          assert (PERM': Mem.perm m b (Ptrofs.unsigned ofs) Max Nonempty \/
+                         Mem.perm m b (Ptrofs.unsigned ofs - 1) Max Nonempty). {
+            destruct PERM as [PERM | PERM].
+            - left. eapply (ec_max_perm (external_call_spec ef)); eassumption.
+            - right. eapply (ec_max_perm (external_call_spec ef)); eassumption. }
+          eapply mi_representable; eassumption.
+        - intros b1 ofs b2 delta k' p b1_b2 PERM.
+          specialize (mi_perm_inv b1 ofs b2 delta k' p b1_b2 PERM).
+          admit.
       }
   Admitted.
 
