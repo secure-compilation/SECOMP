@@ -73,6 +73,7 @@ let gen_config rand_state =
     global_var_max_size = Gen.int_range 4 100 rand_state;
     max_arg_count = 10;
     debug = !debug;
+    min_trace_len = 10;
     max_trace_len = 10;
   }
 
