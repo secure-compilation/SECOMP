@@ -26,9 +26,18 @@ Require Import CapOp CapLocations Mach CapAsm CapConventions.
 Local Open Scope string_scope.
 Local Open Scope error_monad_scope.
 
-
 (** each identifier is associated with an environment offset for the compartment under compilation *)
-Parameter find_symbol_offset: ident -> option ptrofs.
+(* Parameter find_symbol_offset: ident -> option ptrofs. *)
+(* FIXME: As a quick fix that works around offset setup, simply return
+   the ptrofs/machine integer representation of the identifier, which
+   should normally be unique. Alternatively, assume a range of
+   identifiers, divide the memory into even memory segments and
+   allocate offsets statically, for ease of inspection. These offsets
+   are nonsensical in practice, but we can treat them as symbolic
+   values to be substituted later for the purpose of inspecting the
+   compilation results.  *)
+Definition find_symbol_offset (id: ident): option ptrofs :=
+  Some (Ptrofs.repr (Zpos id)).
 
 Record asm_code: Type := mkAsmCode {
   ac_nextlabel: positive;
@@ -2048,12 +2057,12 @@ Definition test_program_3 :=
     : Mach.program.
 
 (* Program transformation in proof mode *)
-Goal (forall y, exists off, find_symbol_offset y = Some off) ->
+Goal (* (forall y, exists off, find_symbol_offset y = Some off) -> *)
      (forall (T : Type) (zs : list T), list_length_z zs = 1) ->
      (Archi.ptr64 = true) ->
      exists x, OK x = transf_program test_program_1.
 Proof.
-  intros H G I.
+  intros (* H *) G I.
   unfold transf_program, transform_partial_program, transform_partial_program2.
   simpl.
   unfold transf_function, transl_function, transl_code', transl_code_rec.
@@ -2062,9 +2071,9 @@ Proof.
   unfold load_symbol.
   simpl.
 
-  destruct (H 20%positive) as [off H1].
-  rewrite H1.
-  simpl.
+  (* destruct (H 20%positive) as [off H1]. *)
+  (* rewrite H1. *)
+  (* simpl. *)
   unfold zlt, Z_lt_dec.
   simpl.
 
@@ -2082,12 +2091,12 @@ Proof.
   reflexivity.
 Qed.
 
-Goal (forall y, exists off, find_symbol_offset y = Some off) ->
+Goal (* (forall y, exists off, find_symbol_offset y = Some off) -> *)
      (forall (T : Type) (zs : list T), list_length_z zs = 1) ->
      (Archi.ptr64 = true) ->
      exists x, OK x = transf_program test_program_2.
 Proof.
-  intros H G I.
+  intros (* H *) G I.
   unfold transf_program, transform_partial_program, transform_partial_program2.
   simpl.
   unfold transf_function, transl_function, transl_code', transl_code_rec.
@@ -2095,9 +2104,9 @@ Proof.
 
   unfold load_symbol.
   simpl.
-  destruct (H 40%positive) as [off1 H1].
-  rewrite H1.
-  simpl.
+  (* destruct (H 40%positive) as [off1 H1]. *)
+  (* rewrite H1. *)
+  (* simpl. *)
   unfold zlt, Z_lt_dec.
   simpl.
 
@@ -2114,24 +2123,24 @@ Proof.
   rewrite G.
   simpl.
 
-  destruct (H 30%positive) as [off2 H2].
-  rewrite H2.
-  simpl.
-  destruct (H 20%positive) as [off3 H3].
-  rewrite H3.
-  simpl.
+  (* destruct (H 30%positive) as [off2 H2]. *)
+  (* rewrite H2. *)
+  (* simpl. *)
+  (* destruct (H 20%positive) as [off3 H3]. *)
+  (* rewrite H3. *)
+  (* simpl. *)
   rewrite G.
   simpl.
   eexists.
   reflexivity.
 Qed.
 
-Goal (forall y, exists off, find_symbol_offset y = Some off) ->
+Goal (* (forall y, exists off, find_symbol_offset y = Some off) -> *)
      (forall (T : Type) (zs : list T), list_length_z zs = 1) ->
      (Archi.ptr64 = true) ->
      exists x, OK x = transf_program test_program_3.
 Proof.
-  intros H G I.
+  intros (* H *) G I.
   unfold transf_program, transform_partial_program, transform_partial_program2.
   simpl.
   unfold transf_function, transl_function, transl_code', transl_code_rec.
@@ -2139,9 +2148,9 @@ Proof.
 
   unfold load_symbol.
   simpl.
-  destruct (H 20%positive) as [off1 H1].
-  rewrite H1.
-  simpl.
+  (* destruct (H 20%positive) as [off1 H1]. *)
+  (* rewrite H1. *)
+  (* simpl. *)
   unfold zlt, Z_lt_dec.
   simpl.
 
