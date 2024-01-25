@@ -1191,6 +1191,13 @@ Axiom alloc_right_inject:
   alloc m2 c lo hi = (m2', b2) ->
   inject f m1 m2'.
 
+(* FIXME: If this result holds, why do we need alloc_left_unmapped_inject? *)
+Axiom alloc_left_unmapped_inject_strong:
+  forall f m1 m2 c lo hi m1' b1,
+  inject f m1 m2 ->
+  alloc m1 c lo hi = (m1', b1) ->
+  inject f m1' m2.
+
 Axiom alloc_left_unmapped_inject:
   forall f m1 m2 c lo hi m1' b1,
   inject f m1 m2 ->

@@ -4536,6 +4536,43 @@ Proof.
   eapply mi_perm_inv0; eauto.
 Qed.
 
+Theorem alloc_left_unmapped_inject_strong:
+  forall f m1 m2 c lo hi m1' b1,
+  inject f m1 m2 ->
+  alloc m1 c lo hi = (m1', b1) ->
+  inject f m1' m2.
+Proof.
+  intros. inversion H.
+  assert (f b1 = None) as f_b1.
+  { apply mi_freeblocks0.
+    eapply fresh_block_alloc; eauto. }
+  constructor.
+(* inj *)
+{ eapply alloc_left_unmapped_inj; eauto. }
+(* freeblocks *)
+{ intros.
+  apply mi_freeblocks0. red; intro; elim H1. eauto with mem. }
+(* mappedblocks *)
+{ eauto. }
+(* no overlap *)
+{ intros b11 b11' delta1 b12 b12' delta2 ofs1 ofs2 neq f_b11 f_b12 perm1 perm2.
+  eapply mi_no_overlap0; try eexact neq; eauto.
+  - pose proof (perm_alloc_inv _ _ _ _ _ _ H0 _ _ _ _ perm1) as perm1'.
+    rewrite dec_eq_false in perm1'; trivial. congruence.
+  - pose proof (perm_alloc_inv _ _ _ _ _ _ H0 _ _ _ _ perm2) as perm2'.
+    rewrite dec_eq_false in perm2'; trivial. congruence. }
+(* representable *)
+{ intros b b' delta ofs f_b perm_m1'.
+  assert (b <> b1) by congruence.
+  eapply mi_representable0; try eassumption.
+  destruct perm_m1'; eauto using perm_alloc_4. }
+(* perm inv *)
+{ intros.
+  assert (b0 <> b1) by congruence.
+  exploit mi_perm_inv0; eauto.
+  intuition eauto using perm_alloc_1, perm_alloc_4. }
+Qed.
+
 Theorem alloc_left_unmapped_inject:
   forall f m1 m2 c lo hi m1' b1,
   inject f m1 m2 ->
