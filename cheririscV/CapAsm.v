@@ -518,6 +518,8 @@ Inductive instruction : Type :=
   | Pfcvtsl  (rd: freg) (rs: ireg0)                 (**r int64 -> float32 conversion *)
   | Pfcvtslu (rd: freg) (rs: ireg0)                 (**r unsigned int 64-> float32 conversion *)
 
+(* HOTFIX: These are commented out, because OCaml only supports up to 246 non-constant constructors! *)
+(*
   (* 64-bit (double-precision) floating point *)
   | Pfld     (rd: freg) (ra: ireg) (ofs: offset) (priv: bool)    (**r load 64-bit float *)
   | Pfld_a   (rd: freg) (ra: ireg) (ofs: offset) (priv: bool)   (**r load any64 *)
@@ -557,6 +559,7 @@ Inductive instruction : Type :=
 
   | Pfcvtds  (rd: freg) (rs: freg)                  (**r float32 -> float   *)
   | Pfcvtsd  (rd: freg) (rs: freg)                  (**r float   -> float32 *)
+*)
 
   (* Pseudo-instructions *)
   | Pallocframe (sz: Z) (pos: ptrofs)               (**r allocate new stack frame *)
@@ -1511,6 +1514,8 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) (cp: 
   | Pfcvtslu d s =>
        (nextinstr (rs#d <- (Val.maketotal (Val.singleoflongu rs###s)))) m
 
+(* HOTFIX: These are commented out, because OCaml only supports up to 246 non-constant constructors! *)
+(*
 (** 64-bit (double-precision) floating point *)
   | Pfld d a ofs b =>
       exec_load_ddc CMfloat64 rs m d a ofs cp b
@@ -1563,6 +1568,7 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) (cp: 
        (nextinstr (rs#d <- (Val.floatofsingle rs#s))) m
   | Pfcvtsd d s =>
        (nextinstr (rs#d <- (Val.singleoffloat rs#s))) m
+*)
 
 (** Pseudo-instructions *)
   (* | Pallocframe sz pos => *)
@@ -1628,6 +1634,8 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) (cp: 
   | Pfnmadds _ _ _ _
   | Pfnmsubs _ _ _ _
 
+(* HOTFIX: These are commented out, because OCaml only supports up to 246 non-constant constructors! *)
+(*
   | Pfmind _ _ _
   | Pfmaxd _ _ _
   | Pfsqrtd _ _
@@ -1635,6 +1643,7 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) (cp: 
   | Pfmsubd _ _ _ _
   | Pfnmaddd _ _ _ _
   | Pfnmsubd _ _ _ _
+*)
   | Pnop
     => Stuck
   | _ => Stuck (* FIXME commented out operations *)

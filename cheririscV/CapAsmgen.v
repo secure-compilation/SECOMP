@@ -261,7 +261,9 @@ Definition transl_cbranch_int64u (cmp: comparison) (r1 r2: ireg0) (lbl: label) :
   | Cge => Pbgeul r1 r2 lbl
   end.
 
-Definition transl_cond_float (cmp: comparison) (rd: ireg) (fs1 fs2: freg) :=
+Definition transl_cond_float (cmp: comparison) (rd: ireg) (fs1 fs2: freg) := (Pnop, false).
+(* HOTFIX: These are commented out, because OCaml only supports up to 246 non-constant constructors! *)
+(*
   match cmp with
   | Ceq => (Pfeqd rd fs1 fs2, true)
   | Cne => (Pfeqd rd fs1 fs2, false)
@@ -270,6 +272,7 @@ Definition transl_cond_float (cmp: comparison) (rd: ireg) (fs1 fs2: freg) :=
   | Cgt => (Pfltd rd fs2 fs1, true)
   | Cge => (Pfled rd fs2 fs1, true)
   end.
+*)
   
 Definition transl_cond_single (cmp: comparison) (rd: ireg) (fs1 fs2: freg) :=
   match cmp with
@@ -509,7 +512,9 @@ Definition transl_op
   | Ofloatconst f, nil =>
       do rd <- freg_of res;
       OK (if Float.eq_dec f Float.zero
-          then Pfcvtdw rd X0 >> k
+          (* HOTFIX: These are commented out, because OCaml only supports up to 246 non-constant constructors! *)
+          (* then Pfcvtdw rd X0 >> k*)
+          then Pnop >> k
           else Ploadfi rd f >> k)
   | Osingleconst f, nil =>
       do rd <- freg_of res;
@@ -696,6 +701,8 @@ Definition transl_op
           Paddl X31 rs X31 >>
           Psrail rd X31 n >> k)  
 
+(* HOTFIX: These are commented out, because OCaml only supports up to 246 non-constant constructors! *)
+(*
   | Onegf, a1 :: nil =>
       do rd <- freg_of res; do rs <- freg_of a1;
       OK (Pfnegd rd rs >> k)
@@ -790,6 +797,7 @@ Definition transl_op
   | Osingleoflongu, a1 :: nil =>
       do rd <- freg_of res; do rs <- ireg_of a1;
       OK (Pfcvtslu rd rs >> k)
+ *)
 
   | Ocmp cmp, _ =>
       do rd <- ireg_of res;
@@ -952,21 +960,28 @@ Definition loadind (base: ireg) (ofs: ptrofs) (ty: typ) (dst: mreg) (k: asm_code
   | Tlong,   IR rd => OK (indexed_memory_access (fun i o => PCld rd i o is_heap priv)
                                                (fun i o => Pld rd i o priv)
                                                (fun i r o => PCUld rd i r o is_heap priv) base ofs k)
+
+(* HOTFIX: These are commented out, because OCaml only supports up to 246 non-constant constructors! *)
+(*
   | Tsingle, FR rd => OK (indexed_memory_access (fun i o => PCfls rd i o is_heap priv)
                                                (fun i o => Pfls rd i o priv)
                                                (fun i r o => PCUfls rd i r o is_heap priv) base ofs k)
   | Tfloat,  FR rd => OK (indexed_memory_access (fun i o => PCfld rd i o is_heap priv)
                                                (fun i o => Pfld rd i o priv)
                                                (fun i r o => PCUfld rd i r o is_heap priv) base ofs k)
+*)
   | Tany32,  IR rd => OK (indexed_memory_access (fun i o => PClw_a rd i o is_heap priv)
                                                (fun i o => Plw_a rd i o priv)
                                                (fun i r o => PCUlw_a rd i r o is_heap priv) base ofs k)
   | Tany64,  IR rd => OK (indexed_memory_access (fun i o => PCld_a rd i o is_heap priv)
                                                (fun i o => Pld_a rd i o priv)
                                                (fun i r o => PCUld_a rd i r o is_heap priv) base ofs k)
+(* HOTFIX: These are commented out, because OCaml only supports up to 246 non-constant constructors! *)
+(*
   | Tany64,  FR rd => OK (indexed_memory_access (fun i o => PCfld_a rd i o is_heap priv)
                                                (fun i o => Pfld_a rd i o priv)
                                                (fun i r o => PCUfld_a rd i r o is_heap priv) base ofs k)
+*)
   | _, _           => Error (msg "Asmgen.loadind")
   end.
 
@@ -978,21 +993,27 @@ Definition storeind (src: mreg) (base: ireg) (ofs: ptrofs) (ty: typ) (k: asm_cod
   | Tlong,   IR rd => OK (indexed_memory_access (fun i o => PCsd rd i o is_heap)
                                                (Psd rd)
                                                (fun i r o => PCUsd rd i r o is_heap) base ofs k)
+(* HOTFIX: These are commented out, because OCaml only supports up to 246 non-constant constructors! *)
+(*
   | Tsingle, FR rd => OK (indexed_memory_access (fun i o => PCfss rd i o is_heap)
                                                (Pfss rd)
                                                (fun i r o => PCUfss rd i r o is_heap) base ofs k)
   | Tfloat,  FR rd => OK (indexed_memory_access (fun i o => PCfsd rd i o is_heap)
                                                (Pfsd rd)
                                                (fun i r o => PCUfsd rd i r o is_heap) base ofs k)
+*)
   | Tany32,  IR rd => OK (indexed_memory_access (fun i o => PCsw_a rd i o is_heap)
                                                (Psw_a rd)
                                                (fun i r o => PCUsw_a rd i r o is_heap) base ofs k)
   | Tany64,  IR rd => OK (indexed_memory_access (fun i o => PCsd_a rd i o is_heap)
                                                (Psd_a rd)
                                                (fun i r o => PCUsd_a rd i r o is_heap) base ofs k)
+(* HOTFIX: These are commented out, because OCaml only supports up to 246 non-constant constructors! *)
+(*
   | Tany64,  FR rd => OK (indexed_memory_access (fun i o => PCfsd_a rd i o is_heap)
                                                (Pfsd_a rd)
                                                (fun i r o => PCUfsd_a rd i r o is_heap) base ofs k)
+*)
   | _, _           => Error (msg "Asmgen.storeind")
   end.
 
@@ -1126,6 +1147,8 @@ Definition transl_load (chunk: memory_chunk) (addr: addressing)
         (fun i o => Pfls r i o false)
         (fun r1 r2 o => PCUfls r r1 r2 o is_heap false)
         addr args k
+(* HOTFIX: These are commented out, because OCaml only supports up to 246 non-constant constructors! *)
+(*
   | Mfloat64 =>
       do r <- freg_of dst;
       transl_memory_access
@@ -1133,6 +1156,7 @@ Definition transl_load (chunk: memory_chunk) (addr: addressing)
         (fun i o => Pfld r i o false)
         (fun r1 r2 o => PCUfld r r1 r2 o is_heap false)
         addr args k
+*)
   | _ =>
       Error (msg "Asmgen.transl_load")
   end.
@@ -1175,6 +1199,8 @@ Definition transl_store (chunk: memory_chunk) (addr: addressing)
         (Pfss r)
         (fun r1 r2 o => PCUfss r r1 r2 o is_heap)
         addr args k
+(* HOTFIX: These are commented out, because OCaml only supports up to 246 non-constant constructors! *)
+(*
   | Mfloat64 =>
       do r <- freg_of src;
       transl_memory_access
@@ -1182,6 +1208,7 @@ Definition transl_store (chunk: memory_chunk) (addr: addressing)
         (Pfsd r)
         (fun r1 r2 o => PCUfsd r r1 r2 o is_heap)
         addr args k
+*)
   | _ =>
       Error (msg "Asmgen.transl_store")
   end.
