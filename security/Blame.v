@@ -2145,20 +2145,6 @@ Qed.
       exploit right_mem_injection_external_call_left; eauto.
   Qed.
 
-  Lemma right_cont_injection_left_step_E0_1: forall j s1 s2 s1',
-    right_cont_injection s j (remove_until_right s (cont_of s1)) (remove_until_right s (cont_of s2)) ->
-    s |= s1 ∈ Left ->
-    step1 ge1 s1 E0 s1' ->
-    right_cont_injection s j (remove_until_right s (cont_of s1')) (remove_until_right s (cont_of s2)).
-  Admitted.
-
-  Lemma right_cont_injection_left_step_E0_2: forall j s1 s2 s1',
-    right_cont_injection s j (cont_of s1) (cont_of s2) ->
-    s |= s1 ∈ Left ->
-    step1 ge1 s1 E0 s1' ->
-    right_cont_injection s j (cont_of s1') (cont_of s2).
-  Admitted. (* Symmetric, unused? *)
-
 Scheme statement_ind2 := Induction for statement Sort Prop
   with labeled_statements_ind2 := Induction for labeled_statements Sort Prop.
 Combined Scheme statement_labeled_statements_ind from statement_ind2, labeled_statements_ind2.
@@ -2168,7 +2154,7 @@ Inductive right_cont_injection_find_label_spec j:
 | rcifls_Some: forall stmt k1 k2,
     right_cont_injection s j k1 k2 ->
     right_cont_injection_find_label_spec j (Some (stmt, k1)) (Some (stmt, k2))
-| rcifls1_None:
+| rcifls_None:
   right_cont_injection_find_label_spec j None None
 .
 
@@ -2204,6 +2190,12 @@ Proof.
       eauto using right_cont_injection_find_label_spec.
 Qed.
 
+Lemma remove_until_right_call_cont k:
+  remove_until_right s k = remove_until_right s (call_cont k).
+Proof.
+  induction k; auto.
+Qed.
+
 Lemma right_cont_injection_find_label:
   forall j stmt lbl k1 k2 stmt' k1'
          (RCONTINJ : right_cont_injection s j k1 k2)
@@ -2217,6 +2209,75 @@ Proof.
     [| discriminate].
   injection LABEL as -> ->. eauto.
 Qed.
+
+(* We can drop [call_cont] and prove a more general helper more
+   easily. *)
+Lemma find_label_remove_until_right:
+  (forall stmt lbl k,
+     ((forall stmt' k'
+              (LABEL : find_label lbl stmt k = Some (stmt', k')),
+         remove_until_right s k = remove_until_right s k')
+  ))
+  /\
+  (forall sl lbl k,
+     ((forall stmt' k'
+              (LABEL_LS : find_label_ls lbl sl k = Some (stmt', k')),
+         remove_until_right s k = remove_until_right s k')
+  )).
+Proof.
+  apply statement_labeled_statements_ind;
+    try easy;
+    simpl; intros.
+  - destruct find_label eqn:FIND.
+    + injection LABEL as ->.
+      exact (H _ _ _ _ FIND).
+    + eapply H0; eauto.
+  - destruct find_label eqn:FIND.
+    + injection LABEL as ->.
+      exact (H _ _ _ _ FIND).
+    + eapply H0; eauto.
+  - destruct find_label eqn:FIND.
+    + injection LABEL as ->.
+      exact (H _ _ _ _ FIND).
+    + exact (H0 _ _ _ _ LABEL).
+  - exact (H _ _ _ _ LABEL).
+  - destruct (ident_eq lbl l) as [<- | NEQ].
+    + injection LABEL as -> ->.
+      reflexivity.
+    + exact (H _ _ _ _ LABEL).
+  - destruct find_label eqn:FIND.
+    + injection LABEL_LS as ->.
+      exact (H _ _ _ _ FIND).
+    + eapply H0; eauto.
+Qed.
+
+Lemma right_cont_injection_left_step_E0_1: forall j s1 s2 s1',
+  right_cont_injection s j (remove_until_right s (cont_of s1)) (remove_until_right s (cont_of s2)) ->
+  s |= s1 ∈ Left ->
+  step1 ge1 s1 E0 s1' ->
+  right_cont_injection s j (remove_until_right s (cont_of s1')) (remove_until_right s (cont_of s2)).
+Proof.
+  intros j s1 s2 s1' RCONTINJ (* <- needed? *) LEFT STEP.
+  assert (REMOVE: remove_until_right s (cont_of s1) = remove_until_right s (cont_of s1')). {
+    inv STEP; auto; simpl.
+    - rewrite LEFT. reflexivity.
+    - rewrite remove_until_right_call_cont. reflexivity.
+    - rewrite remove_until_right_call_cont. reflexivity.
+    - rewrite <- (proj1 find_label_remove_until_right _ _ _ _ _ H).
+      rewrite remove_until_right_call_cont. reflexivity.
+    - inv EV. unfold Genv.type_of_call in H.
+      destruct (Pos.eqb_spec (comp_of f) cp) as [<- | NEQ].
+      + rewrite LEFT. reflexivity.
+      + contradiction. }
+  congruence.
+Qed.
+
+Lemma right_cont_injection_left_step_E0_2: forall j s1 s2 s1',
+  right_cont_injection s j (cont_of s1) (cont_of s2) ->
+  s |= s1 ∈ Left ->
+  step1 ge1 s1 E0 s1' ->
+  right_cont_injection s j (cont_of s1') (cont_of s2).
+Admitted. (* Symmetric, unused? *)
 
   (* WIP *)
   Definition abstract_step_inj (j: meminj): meminj :=
