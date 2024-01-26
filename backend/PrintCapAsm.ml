@@ -285,14 +285,24 @@ let print_prog_def_asm p (id, glob) =
   print_globdef_asm p glob;
   Format.fprintf p ")@]@,"
 
-(* TODO list vs tree *)
+let print_policy_exports_capasm p (comp_id, funcs) =
+  Format.fprintf p "@[(%ld, " (P.to_int32 comp_id);
+  print_list_capasm p print_ident_capasm funcs;
+  Format.fprintf p ")@]"
+
+let print_policy_imports_capasm p (comp_id, imports) =
+  let print_aux p' (comp_id, func) = Format.fprintf p' "(%ld, %ld)" (P.to_int32 comp_id) (P.to_int32 func) in
+  Format.fprintf p "@[(%ld, " (P.to_int32 comp_id);
+  print_list_capasm p print_aux imports;
+  Format.fprintf p ")@]"
+
 let print_policy_asm p Policy.{ policy_export; policy_import } =
-  (* let _ = Maps.PTree.elements policy_export in
-   * let _ = Maps.PTree.elements policy_import in *)
-  Format.fprintf p "{|@ policy_export@ :=@ nil";
-  (* TODO *)
-  Format.fprintf p ";@ policy_import@ :=@ nil";
-  (* TODO *)
+  let exports = Maps.PTree.elements policy_export in
+  let imports = Maps.PTree.elements policy_import in
+  Format.fprintf p "{|@ policy_export@ :=@ ";
+  print_list_capasm p print_policy_exports_capasm exports;
+  Format.fprintf p ";@ policy_import@ :=@ ";
+  print_list_capasm p print_policy_imports_capasm imports;
   Format.fprintf p "|}@,"
 
 let print_program_asm oc prog =
