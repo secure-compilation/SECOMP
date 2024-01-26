@@ -33,6 +33,11 @@ let print_Z_capasm p n =
 let print_ident_capasm p id =
   Format.fprintf p "%ld" (P.to_int32 id)
 
+let print_bool_capasm p b =
+  if b
+  then Format.fprintf p "true"
+  else Format.fprintf p "false"
+
 let print_string_capasm p s =
   Format.fprintf p "\"%s\"%%string" (camlstring_of_coqstring s)
 
@@ -95,7 +100,15 @@ let print_ireg0_capasm p = function
      print_ireg_capasm p r;
      Format.fprintf p ")@,"
 
-let print_offset_asm p = function
+let print_creg_capasm p = function
+  | CapAsm.IRcap ir ->
+     Format.fprintf p "(IRCap@ (";
+     print_ireg_capasm p ir;
+     Format.fprintf p "))"
+  | CapAsm.PCcap -> Format.fprintf p "PCcap"
+  | CapAsm.DDcap -> Format.fprintf p "DDcap"
+
+let print_offset_capasm p = function
   | CapAsm.Ofsimm ofs ->
      Format.fprintf p "Ofsimm@ ";
      print_Z_capasm p ofs
@@ -141,7 +154,7 @@ let print_instruction_capasm p = function
      Format.fprintf p "@ ";
      print_ireg_capasm p ra;
      Format.fprintf p "@ (";
-     print_offset_asm p ofs;
+     print_offset_capasm p ofs;
      Format.fprintf p ")@ ";
      Format.pp_print_bool p priv
   | CapAsm.Psw (rs, ra, ofs) ->
@@ -150,7 +163,7 @@ let print_instruction_capasm p = function
      Format.fprintf p "@ ";
      print_ireg_capasm p ra;
      Format.fprintf p "@ (";
-     print_offset_asm p ofs;
+     print_offset_capasm p ofs;
      Format.fprintf p ")@ ";
   | CapAsm.Psd (rs, ra, ofs) ->
      Format.fprintf p "Psd@ ";
@@ -158,7 +171,7 @@ let print_instruction_capasm p = function
      Format.fprintf p "@ ";
      print_ireg_capasm p ra;
      Format.fprintf p "@ (";
-     print_offset_asm p ofs;
+     print_offset_capasm p ofs;
      Format.fprintf p ")@ "
   (* TODO: this instruction is not defined in CapAsm *)
   (*   | CapAsm.Ploadsymbol_high (rd, s, ofs) ->
@@ -170,7 +183,11 @@ let print_instruction_capasm p = function
        print_Z_capasm p ofs;
        Format.fprintf p "@ "; *)
 
-  | CapAsm.Pmv (d, s) -> Format.fprintf p "TODO: __Pmv__"
+  | CapAsm.Pmv (d, s) ->
+     Format.fprintf p "Pmv@ ";
+     print_creg_capasm p d;
+     Format.fprintf p "@ ";
+     print_creg_capasm p s
   | CapAsm.Psltiw (d, s, i) -> Format.fprintf p "TODO: __Psltiw__"
   | CapAsm.Psltiuw (d, s, i) -> Format.fprintf p "TODO: __Psltiuw__"
   | CapAsm.Pandiw (d, s, i) -> Format.fprintf p "TODO: __Pandiw__"
@@ -180,7 +197,13 @@ let print_instruction_capasm p = function
   | CapAsm.Psrliw (d, s, i) -> Format.fprintf p "TODO: __Psrliw__"
   | CapAsm.Psraiw (d, s, i) -> Format.fprintf p "TODO: __Psraiw__"
   | CapAsm.Pluiw (d, i) -> Format.fprintf p "TODO: __Pluiw__"
-  | CapAsm.Paddw (d, s1, s2) -> Format.fprintf p "TODO: __Paddw__"
+  | CapAsm.Paddw (d, s1, s2) ->
+     Format.fprintf p "Paddw@ ";
+     print_ireg_capasm p d;
+     Format.fprintf p "@ ";
+     print_ireg0_capasm p s1;
+     Format.fprintf p "@ ";
+     print_ireg0_capasm p s2
   | CapAsm.Psubw (d, s1, s2) -> Format.fprintf p "TODO: __Psubw__"
   | CapAsm.Pmulw (d, s1, s2) -> Format.fprintf p "TODO: __Pmulw__"
   | CapAsm.Pmulhw (d, s1, s2) -> Format.fprintf p "TODO: __Pmulhw__"
@@ -199,7 +222,13 @@ let print_instruction_capasm p = function
   | CapAsm.Psllw (d, s1, s2) -> Format.fprintf p "TODO: __Psllw__"
   | CapAsm.Psrlw (d, s1, s2) -> Format.fprintf p "TODO: __Psrlw__"
   | CapAsm.Psraw (d, s1, s2) -> Format.fprintf p "TODO: __Psraw__"
-  | CapAsm.Paddil (d, s, i) -> Format.fprintf p "TODO: __Paddil__"
+  | CapAsm.Paddil (d, s, i) ->
+     Format.fprintf p "Paddil@ ";
+     print_ireg_capasm p d;
+     Format.fprintf p "@ ";
+     print_ireg0_capasm p s;
+     Format.fprintf p "@ ";
+     print_Z_capasm p i
   | CapAsm.Psltil (d, s, i) -> Format.fprintf p "TODO: __Psltil__"
   | CapAsm.Psltiul (d, s, i) -> Format.fprintf p "TODO: __Psltiul__"
   | CapAsm.Pandil (d, s, i) -> Format.fprintf p "TODO: __Pandil__"
@@ -230,12 +259,33 @@ let print_instruction_capasm p = function
   | CapAsm.Psral (d, s1, s2) -> Format.fprintf p "TODO: __Psral__"
   | CapAsm.Pcvtl2w (d, s) -> Format.fprintf p "TODO: __Pcvtl2w__"
   | CapAsm.Pcvtw2l (r) -> Format.fprintf p "TODO: __Pcvtw2l__"
-  | CapAsm.Pj_l (l) -> Format.fprintf p "TODO: __Pj_l__"
-  | CapAsm.Pj_r (r) -> Format.fprintf p "TODO: __Pj_r__"
-  | CapAsm.Pjal_r (r, sg, _) -> Format.fprintf p "TODO: __Pjal_r__"
+  | CapAsm.Pj_l l ->
+     Format.fprintf p "Pj_l@ ";
+     print_ident_capasm p l
+  | CapAsm.Pj_r r ->
+     Format.fprintf p "Pj_r@ ";
+     print_ireg_capasm p r
+  | CapAsm.Pjal_r (r, sg, b) ->
+     Format.fprintf p "Pjal_r@ ";
+     print_ireg_capasm p r;
+     Format.fprintf p "@ ";
+     (* TODO: fix the clashing imports from CapAST and AST to print the signature here *)
+     (* print_signature_capasm p sg; *)
+     Format.fprintf p "@ ";
+     print_bool_capasm p b
   | CapAsm.PCjal_r (r, s, _, _) -> Format.fprintf p "TODO: __PCjal_r__"
-  | CapAsm.PCinvoke (r, s, _) -> Format.fprintf p "TODO: __PCinvoke__"
-  | CapAsm.Pbeqw (s1, s2, l) -> Format.fprintf p "TODO: __Pbeqw__"
+  | CapAsm.PCinvoke (r, s, b) ->
+     Format.fprintf p "PCinvoke@ ";
+     print_ireg0_capasm p r;
+     Format.fprintf p "@ ";
+     print_ireg0_capasm p s;
+     Format.fprintf p "@ ";
+     print_bool_capasm p b
+  | CapAsm.Pbeqw (s1, s2, l) ->
+     Format.fprintf p "Pbeqw@ ";
+     print_ireg0_capasm p s1;
+     Format.fprintf p "@ ";
+     print_ireg0_capasm p s2
   | CapAsm.Pbnew (s1, s2, l) -> Format.fprintf p "TODO: __Pbnew__"
   | CapAsm.Pbltw (s1, s2, l) -> Format.fprintf p "TODO: __Pbltw__"
   | CapAsm.Pbltuw (s1, s2, l) -> Format.fprintf p "TODO: __Pbltuw__"
@@ -273,13 +323,31 @@ let print_instruction_capasm p = function
   | CapAsm.PCld (d, a, ofs, h, priv) -> Format.fprintf p "TODO: __PCld__"
   | CapAsm.PCld_a (d, a, ofs, h, priv) -> Format.fprintf p "TODO: __PCld_a__"
   | CapAsm.PClwc (d, a, ofs, h, priv) -> Format.fprintf p "TODO: __PClwc__"
-  | CapAsm.PClcd (d, a, ofs, h, priv) -> Format.fprintf p "TODO: __PClcd__"
+  | CapAsm.PClcd (d, a, ofs, h, priv) ->
+     Format.fprintf p "PClcd@ ";
+     print_ireg_capasm p a;
+     Format.fprintf p "@ ";
+     print_ireg_capasm p a;
+     Format.fprintf p "@ ";
+     print_offset_capasm p ofs;
+     Format.fprintf p "@ ";
+     print_bool_capasm p h;
+     Format.fprintf p "@ ";
+     print_bool_capasm p priv
   | CapAsm.PClcd_a (d, a, ofs, h, priv) -> Format.fprintf p "TODO: __PClcd_a__"
   | CapAsm.PCsb (s, a, ofs, h) -> Format.fprintf p "TODO: __PCsb__"
   | CapAsm.PCsh (s, a, ofs, h) -> Format.fprintf p "TODO: __PCsh__"
   | CapAsm.PCsw (s, a, ofs, h) -> Format.fprintf p "TODO: __PCsw__"
   | CapAsm.PCsw_a (s, a, ofs, h) -> Format.fprintf p "TODO: __PCsw_a__"
-  | CapAsm.PCsd (s, a, ofs, h) -> Format.fprintf p "TODO: __PCsd__"
+  | CapAsm.PCsd (s, a, ofs, h) ->
+     Format.fprintf p "PCsd@ ";
+     print_ireg_capasm p s;
+     Format.fprintf p "@ ";
+     print_ireg_capasm p a;
+     Format.fprintf p "@ ";
+     print_offset_capasm p ofs;
+     Format.fprintf p "@ ";
+     print_bool_capasm p h;
   | CapAsm.PCsd_a (s, a, ofs, h) -> Format.fprintf p "TODO: __PCsd_a__"
   | CapAsm.PCscw (s, a, ofs, h) -> Format.fprintf p "TODO: __PCscw__"
   | CapAsm.PCscd (s, a, ofs, h) -> Format.fprintf p "TODO: __PCscd__"
@@ -296,7 +364,19 @@ let print_instruction_capasm p = function
   | CapAsm.PCUlhu (d, a, rofs, ofs, h, priv) -> Format.fprintf p "TODO: __PCUlhu__"
   | CapAsm.PCUlw (d, a, rofs, ofs, h, priv) -> Format.fprintf p "TODO: __PCUlw__"
   | CapAsm.PCUlw_a (d, a, rofs, ofs, h, priv) -> Format.fprintf p "TODO: __PCUlw_a__"
-  | CapAsm.PCUld (d, a, rofs, ofs, h, priv) -> Format.fprintf p "TODO: __PCUld__"
+  | CapAsm.PCUld (d, a, rofs, ofs, h, priv) ->
+     Format.fprintf p "PCUld@ ";
+     print_ireg_capasm p d;
+     Format.fprintf p "@ ";
+     print_ireg_capasm p a;
+     Format.fprintf p "@ ";
+     print_ireg_capasm p rofs;
+     Format.fprintf p "@ ";
+     print_offset_capasm p ofs;
+     Format.fprintf p "@ ";
+     print_bool_capasm p h;
+     Format.fprintf p "@ ";
+     print_bool_capasm p priv
   | CapAsm.PCUld_a (d, a, rofs, ofs, h, priv) -> Format.fprintf p "TODO: __PCUld_a__"
   | CapAsm.PCUlwc (d, a, rofs, ofs, h, priv) -> Format.fprintf p "TODO: __PCUlwc__"
   | CapAsm.PCUlcd (d, a, rofs, ofs, h, priv) -> Format.fprintf p "TODO: __PCUlcd__"
@@ -305,7 +385,17 @@ let print_instruction_capasm p = function
   | CapAsm.PCUsh (s, a, rofs, ofs, h) -> Format.fprintf p "TODO: __PCUsh__"
   | CapAsm.PCUsw (s, a, rofs, ofs, h) -> Format.fprintf p "TODO: __PCUsw__"
   | CapAsm.PCUsw_a (s, a, rofs, ofs, h) -> Format.fprintf p "TODO: __PCUsw_a__"
-  | CapAsm.PCUsd (s, a, rofs, ofs, h) -> Format.fprintf p "TODO: __PCUsd__"
+  | CapAsm.PCUsd (s, a, rofs, ofs, h) ->
+     Format.fprintf p "PCUsd@ ";
+     print_ireg_capasm p s;
+     Format.fprintf p "@ ";
+     print_ireg_capasm p a;
+     Format.fprintf p "@ ";
+     print_ireg_capasm p rofs;
+     Format.fprintf p "@ ";
+     print_offset_capasm p ofs;
+     Format.fprintf p "@ ";
+     print_bool_capasm p h
   | CapAsm.PCUsd_a (s, a, rofs, ofs, h) -> Format.fprintf p "TODO: __PCUsd_a__"
   | CapAsm.PCUscw (s, a, rofs, ofs, h) -> Format.fprintf p "TODO: __PCUscw__"
   | CapAsm.PCUscd (s, a, rofs, ofs, h) -> Format.fprintf p "TODO: __PCUscd__"
@@ -320,29 +410,63 @@ let print_instruction_capasm p = function
   | CapAsm.PCgt (d, s) -> Format.fprintf p "TODO: __PCgt__"
   | CapAsm.PCgb_h (d, s) -> Format.fprintf p "TODO: __PCgb_h__"
   | CapAsm.PCge_h (d, s) -> Format.fprintf p "TODO: __PCge_h__"
-  | CapAsm.PCgb_s (d, s) -> Format.fprintf p "TODO: __PCgb_s__"
+  | CapAsm.PCgb_s (d, s) ->
+     Format.fprintf p "PCgb_s@ ";
+     print_ireg_capasm p d;
+     Format.fprintf p "@ ";
+     print_ireg_capasm p s
   | CapAsm.PCge_s (d, s) -> Format.fprintf p "TODO: __PCge_s__"
   | CapAsm.PCgg (d, s) -> Format.fprintf p "TODO: __PCgg__"
-  | CapAsm.PCgs (d, s) -> Format.fprintf p "TODO: __PCgs__"
+  | CapAsm.PCgs (d, s) ->
+     Format.fprintf p "PCgs@ ";
+     print_ireg_capasm p d;
+     Format.fprintf p "@ ";
+     print_ireg_capasm p s
   | CapAsm.PCga_h (d, s) -> Format.fprintf p "TODO: __PCga_h__"
   | CapAsm.PCga_s (d, s) -> Format.fprintf p "TODO: __PCga_s__"
   | CapAsm.PCgl_h (d, s) -> Format.fprintf p "TODO: __PCgl_h__"
-  | CapAsm.PCgl_s (d, s) -> Format.fprintf p "TODO: __PCgl_s__"
+  | CapAsm.PCgl_s (d, s) ->
+     Format.fprintf p "PCgl_s";
+     print_ireg_capasm p d;
+     Format.fprintf p "@ ";
+     print_ireg_capasm p s
   | CapAsm.PCseal (d, r1, r2) -> Format.fprintf p "TODO: __PCseal__"
   | CapAsm.PCunseal (d, r1, r2) -> Format.fprintf p "TODO: __PCunseal__"
-  | CapAsm.PCpermand (d, r1, r2) -> Format.fprintf p "TODO: __PCpermand__"
-  | CapAsm.PCsaddr_w (d, r1, r2) -> Format.fprintf p "TODO: __PCsaddr_w__"
+  | CapAsm.PCpermand (d, r1, r2) ->
+     Format.fprintf p "PCpermand@ ";
+     print_ireg_capasm p d;
+     Format.fprintf p "@ ";
+     print_ireg_capasm p r1;
+     Format.fprintf p "@ ";
+     print_ireg_capasm p r2
+  | CapAsm.PCsaddr_w (d, r1, r2) ->
+     Format.fprintf p "PCsaddr_w@ ";
+     print_ireg_capasm p d;
+     Format.fprintf p "@ ";
+     print_ireg_capasm p r1;
+     Format.fprintf p "@ ";
+     print_ireg_capasm p r2
   | CapAsm.PCsaddr_l (d, r1, r2) -> Format.fprintf p "TODO: __PCsaddr_l__"
   | CapAsm.PCiaddr_w (d, r1, r2) -> Format.fprintf p "TODO: __PCiaddr_w__"
   | CapAsm.PCiaddr_l (d, r1, r2) -> Format.fprintf p "TODO: __PCiaddr_l__"
-  | CapAsm.PCiaddr_il (d, r1, imm) -> Format.fprintf p "TODO: __PCiaddr_il__"
+  | CapAsm.PCiaddr_il (d, r1, imm) ->
+     Format.fprintf p "PCiaddr_il@ ";
+     print_ireg_capasm p d;
+     Format.fprintf p "@ ";
+     print_ireg0_capasm p r1;
+     Format.fprintf p "@ ";
+     print_Z_capasm p imm
   | CapAsm.PCiaddr_iw (d, r1, imm) -> Format.fprintf p "TODO: __PCiaddr_iw__"
   | CapAsm.PCsbase (d, r1, r2) -> Format.fprintf p "TODO: __PCsbase__"
   | CapAsm.PCsbase_il (d, r1, imm) -> Format.fprintf p "TODO: __PCsbase_il__"
   | CapAsm.PCsbase_iw (d, r1, imm) -> Format.fprintf p "TODO: __PCsbase_iw__"
   | CapAsm.PCCseal (d, r1, r2) -> Format.fprintf p "TODO: __PCCseal__"
   | CapAsm.PCseal_e (d, r) -> Format.fprintf p "TODO: __PCseal_e__"
-  | CapAsm.PCpromote (d, r1) -> Format.fprintf p "TODO: __PCpromote__"
+  | CapAsm.PCpromote (d, r1) ->
+     Format.fprintf p "PCpromote@ ";
+     print_ireg_capasm p d;
+     Format.fprintf p "@ ";
+     print_ireg_capasm p r1
   | CapAsm.PCtoPtr_h (d, r1, r2) -> Format.fprintf p "TODO: __PCtoPtr_h__"
   | CapAsm.PCsub_h (d, r1, r2) -> Format.fprintf p "TODO: __PCsub_h__"
   | CapAsm.PCtoPtr_s (d, r1, r2) -> Format.fprintf p "TODO: __PCtoPtr_s__"
@@ -399,8 +523,16 @@ let print_instruction_capasm p = function
   | CapAsm.Pfcvtds (d, s) -> Format.fprintf p "TODO: __Pfcvtds__"
   | CapAsm.Pfcvtsd (d, s) -> Format.fprintf p "TODO: __Pfcvtsd__"
 *)
-  | CapAsm.Plabel lbl -> Format.fprintf p "TODO: __Plabel__"
-  | CapAsm.Pptrbr (r, lbl1, lbl2) -> Format.fprintf p "TODO: __Pptrbr__"
+  | CapAsm.Plabel lbl ->
+     Format.fprintf p "Plabel@ ";
+     print_ident_capasm p lbl;
+  | CapAsm.Pptrbr (r, lbl1, lbl2) ->
+     Format.fprintf p "Pptrbr@ ";
+     print_ireg_capasm p r;
+     Format.fprintf p "@ ";
+     print_ident_capasm p lbl1;
+     Format.fprintf p "@ ";
+     print_ident_capasm p lbl2
   | CapAsm.Ploadli (rd, i) -> Format.fprintf p "TODO: __Ploadli__"
   | CapAsm.Ploadfi (rd, f) -> Format.fprintf p "TODO: __Ploadfi__"
   | CapAsm.Ploadsi (rd, f) -> Format.fprintf p "TODO: __Ploadsi__"
