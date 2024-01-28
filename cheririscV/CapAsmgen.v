@@ -21,14 +21,23 @@ Require Archi.
 Require Import Coqlib Errors.
 Require Import Zwf.
 Require Import CapAST Integers Floats CapMemdata CapGlobalenvs.
-Require Import Op Locations Mach Asm Conventions.
+Require Import CapOp CapLocations Mach CapAsm CapConventions.
 
 Local Open Scope string_scope.
 Local Open Scope error_monad_scope.
 
-
 (** each identifier is associated with an environment offset for the compartment under compilation *)
-Parameter find_symbol_offset: ident -> option ptrofs.
+(* Parameter find_symbol_offset: ident -> option ptrofs. *)
+(* FIXME: As a quick fix that works around offset setup, simply return
+   the ptrofs/machine integer representation of the identifier, which
+   should normally be unique. Alternatively, assume a range of
+   identifiers, divide the memory into even memory segments and
+   allocate offsets statically, for ease of inspection. These offsets
+   are nonsensical in practice, but we can treat them as symbolic
+   values to be substituted later for the purpose of inspecting the
+   compilation results.  *)
+Definition find_symbol_offset (id: ident): option ptrofs :=
+  Some (Ptrofs.repr (Zpos id)).
 
 Record asm_code: Type := mkAsmCode {
   ac_nextlabel: positive;
@@ -261,7 +270,9 @@ Definition transl_cbranch_int64u (cmp: comparison) (r1 r2: ireg0) (lbl: label) :
   | Cge => Pbgeul r1 r2 lbl
   end.
 
-Definition transl_cond_float (cmp: comparison) (rd: ireg) (fs1 fs2: freg) :=
+Definition transl_cond_float (cmp: comparison) (rd: ireg) (fs1 fs2: freg) := (Pnop, false).
+(* HOTFIX: These are commented out, because OCaml only supports up to 246 non-constant constructors! *)
+(*
   match cmp with
   | Ceq => (Pfeqd rd fs1 fs2, true)
   | Cne => (Pfeqd rd fs1 fs2, false)
@@ -270,6 +281,7 @@ Definition transl_cond_float (cmp: comparison) (rd: ireg) (fs1 fs2: freg) :=
   | Cgt => (Pfltd rd fs2 fs1, true)
   | Cge => (Pfled rd fs2 fs1, true)
   end.
+*)
   
 Definition transl_cond_single (cmp: comparison) (rd: ireg) (fs1 fs2: freg) :=
   match cmp with
@@ -509,7 +521,9 @@ Definition transl_op
   | Ofloatconst f, nil =>
       do rd <- freg_of res;
       OK (if Float.eq_dec f Float.zero
-          then Pfcvtdw rd X0 >> k
+          (* HOTFIX: These are commented out, because OCaml only supports up to 246 non-constant constructors! *)
+          (* then Pfcvtdw rd X0 >> k*)
+          then Pnop >> k
           else Ploadfi rd f >> k)
   | Osingleconst f, nil =>
       do rd <- freg_of res;
@@ -696,6 +710,8 @@ Definition transl_op
           Paddl X31 rs X31 >>
           Psrail rd X31 n >> k)  
 
+(* HOTFIX: These are commented out, because OCaml only supports up to 246 non-constant constructors! *)
+(*
   | Onegf, a1 :: nil =>
       do rd <- freg_of res; do rs <- freg_of a1;
       OK (Pfnegd rd rs >> k)
@@ -790,6 +806,7 @@ Definition transl_op
   | Osingleoflongu, a1 :: nil =>
       do rd <- freg_of res; do rs <- ireg_of a1;
       OK (Pfcvtslu rd rs >> k)
+ *)
 
   | Ocmp cmp, _ =>
       do rd <- ireg_of res;
@@ -952,21 +969,28 @@ Definition loadind (base: ireg) (ofs: ptrofs) (ty: typ) (dst: mreg) (k: asm_code
   | Tlong,   IR rd => OK (indexed_memory_access (fun i o => PCld rd i o is_heap priv)
                                                (fun i o => Pld rd i o priv)
                                                (fun i r o => PCUld rd i r o is_heap priv) base ofs k)
+
+(* HOTFIX: These are commented out, because OCaml only supports up to 246 non-constant constructors! *)
+(*
   | Tsingle, FR rd => OK (indexed_memory_access (fun i o => PCfls rd i o is_heap priv)
                                                (fun i o => Pfls rd i o priv)
                                                (fun i r o => PCUfls rd i r o is_heap priv) base ofs k)
   | Tfloat,  FR rd => OK (indexed_memory_access (fun i o => PCfld rd i o is_heap priv)
                                                (fun i o => Pfld rd i o priv)
                                                (fun i r o => PCUfld rd i r o is_heap priv) base ofs k)
+*)
   | Tany32,  IR rd => OK (indexed_memory_access (fun i o => PClw_a rd i o is_heap priv)
                                                (fun i o => Plw_a rd i o priv)
                                                (fun i r o => PCUlw_a rd i r o is_heap priv) base ofs k)
   | Tany64,  IR rd => OK (indexed_memory_access (fun i o => PCld_a rd i o is_heap priv)
                                                (fun i o => Pld_a rd i o priv)
                                                (fun i r o => PCUld_a rd i r o is_heap priv) base ofs k)
+(* HOTFIX: These are commented out, because OCaml only supports up to 246 non-constant constructors! *)
+(*
   | Tany64,  FR rd => OK (indexed_memory_access (fun i o => PCfld_a rd i o is_heap priv)
                                                (fun i o => Pfld_a rd i o priv)
                                                (fun i r o => PCUfld_a rd i r o is_heap priv) base ofs k)
+*)
   | _, _           => Error (msg "Asmgen.loadind")
   end.
 
@@ -978,21 +1002,27 @@ Definition storeind (src: mreg) (base: ireg) (ofs: ptrofs) (ty: typ) (k: asm_cod
   | Tlong,   IR rd => OK (indexed_memory_access (fun i o => PCsd rd i o is_heap)
                                                (Psd rd)
                                                (fun i r o => PCUsd rd i r o is_heap) base ofs k)
+(* HOTFIX: These are commented out, because OCaml only supports up to 246 non-constant constructors! *)
+(*
   | Tsingle, FR rd => OK (indexed_memory_access (fun i o => PCfss rd i o is_heap)
                                                (Pfss rd)
                                                (fun i r o => PCUfss rd i r o is_heap) base ofs k)
   | Tfloat,  FR rd => OK (indexed_memory_access (fun i o => PCfsd rd i o is_heap)
                                                (Pfsd rd)
                                                (fun i r o => PCUfsd rd i r o is_heap) base ofs k)
+*)
   | Tany32,  IR rd => OK (indexed_memory_access (fun i o => PCsw_a rd i o is_heap)
                                                (Psw_a rd)
                                                (fun i r o => PCUsw_a rd i r o is_heap) base ofs k)
   | Tany64,  IR rd => OK (indexed_memory_access (fun i o => PCsd_a rd i o is_heap)
                                                (Psd_a rd)
                                                (fun i r o => PCUsd_a rd i r o is_heap) base ofs k)
+(* HOTFIX: These are commented out, because OCaml only supports up to 246 non-constant constructors! *)
+(*
   | Tany64,  FR rd => OK (indexed_memory_access (fun i o => PCfsd_a rd i o is_heap)
                                                (Pfsd_a rd)
                                                (fun i r o => PCUfsd_a rd i r o is_heap) base ofs k)
+*)
   | _, _           => Error (msg "Asmgen.storeind")
   end.
 
@@ -1126,6 +1156,8 @@ Definition transl_load (chunk: memory_chunk) (addr: addressing)
         (fun i o => Pfls r i o false)
         (fun r1 r2 o => PCUfls r r1 r2 o is_heap false)
         addr args k
+(* HOTFIX: These are commented out, because OCaml only supports up to 246 non-constant constructors! *)
+(*
   | Mfloat64 =>
       do r <- freg_of dst;
       transl_memory_access
@@ -1133,6 +1165,7 @@ Definition transl_load (chunk: memory_chunk) (addr: addressing)
         (fun i o => Pfld r i o false)
         (fun r1 r2 o => PCUfld r r1 r2 o is_heap false)
         addr args k
+*)
   | _ =>
       Error (msg "Asmgen.transl_load")
   end.
@@ -1175,6 +1208,8 @@ Definition transl_store (chunk: memory_chunk) (addr: addressing)
         (Pfss r)
         (fun r1 r2 o => PCUfss r r1 r2 o is_heap)
         addr args k
+(* HOTFIX: These are commented out, because OCaml only supports up to 246 non-constant constructors! *)
+(*
   | Mfloat64 =>
       do r <- freg_of src;
       transl_memory_access
@@ -1182,6 +1217,7 @@ Definition transl_store (chunk: memory_chunk) (addr: addressing)
         (Pfsd r)
         (fun r1 r2 o => PCUfsd r r1 r2 o is_heap)
         addr args k
+*)
   | _ =>
       Error (msg "Asmgen.transl_store")
   end.
@@ -1201,7 +1237,7 @@ Definition create_idxlist_int (regs: list ireg) : list Z :=
 Definition create_idxlist_float (regs: list freg) : list Z :=
   option_list_filter (List.map (fun r => option_map Z.of_nat (find_index (freg_eq r) float_regs)) regs).
 
-Fixpoint get_iregs_from_loc (l: list loc) : (list ireg) :=
+Fixpoint get_iregs_from_loc (l: list caploc) : (list ireg) :=
   match l with
   | nil => nil
   | S _ _ _ :: l' => get_iregs_from_loc l'
@@ -1210,7 +1246,7 @@ Fixpoint get_iregs_from_loc (l: list loc) : (list ireg) :=
              | _ => get_iregs_from_loc l'
              end
   end.
-Fixpoint get_fregs_from_loc (l: list loc) : (list freg) :=
+Fixpoint get_fregs_from_loc (l: list caploc) : (list freg) :=
   match l with
   | nil => nil
   | S _ _ _ :: l' => get_fregs_from_loc l'
@@ -1226,11 +1262,11 @@ Fixpoint list_difference {A: Type} (adec: forall (a b : A), {a = b} + {a <> b}) 
 Definition int_iregs (rs: list ireg) : int := Int.repr (2 * (Zbits.powerserie (create_idxlist_int rs))).
 Definition int_fregs (rs: list freg) : int := Int.repr (Zbits.powerserie (create_idxlist_float rs)).
 
-Definition clear_regs_int (sig: signature) (extra: list ireg) :=
-  let iregs_params := get_iregs_from_loc (regs_of_rpairs (loc_parameters sig)) in
+Definition clear_regs_int (sig: capsignature) (extra: list ireg) :=
+  let iregs_params := get_iregs_from_loc (CapAST.regs_of_rpairs (loc_parameters sig)) in
   let iregs := list_difference ireg_eq int_regs (extra ++ iregs_params) in
   PCCclear (int_iregs iregs).
-Definition clear_regs_float (sig: signature) :=
+Definition clear_regs_float (sig: capsignature) :=
   let fregs_params := get_fregs_from_loc (regs_of_rpairs (loc_parameters sig)) in
   let fregs := list_difference freg_eq float_regs (fregs_params) in
   PCCclearf (int_fregs fregs).
@@ -1244,7 +1280,7 @@ Function store_zeros_routine (cap: ireg) (zero: ireg) (size: Z) {wf (Zwf 0) size
     PCUsb zero cap X31 (Ofsimm Ptrofs.zero) false ::
     store_zeros_routine cap zero (size - 1).
 Proof.
-  intros. red. omega.
+  intros. red. lia.
   apply Zwf_well_founded.
 Qed.
 
@@ -1261,11 +1297,12 @@ Qed.
     - RAC contains the sealed return capability
     - X30 contains a RO Directed capability pointing to spilled parameters
 *)
-Definition make_entry_wrapper (sig: signature) (f: Mach.function) (next_label: label) :=
+Definition make_entry_wrapper (sig: capsignature) (f: Mach.function) (next_label: label) :=
   let lbl1 := next_label in
   let lbl2 := (next_label + 1)%positive in
   let outgoing_size := Ptrofs.unsigned f.(fn_link_ofs) in
-  let local_frame_size := f.(fn_stacksize) - Ptrofs.unsigned f.(fn_param_link_ofs) in
+  (* let local_frame_size := f.(fn_stacksize) - Ptrofs.unsigned f.(fn_param_link_ofs) in *)
+  let local_frame_size := f.(fn_stacksize) - Ptrofs.unsigned f.(fn_link_ofs) in (* FIXME doublecheck *)
   
   (* SECURITY *)
   (* load return wrapper capability *)
@@ -1283,7 +1320,7 @@ Definition make_entry_wrapper (sig: signature) (f: Mach.function) (next_label: l
   PCseal RAC RAC X3 ::
   (* check that param cap is RO *)
   PCgp X31 X30 ::
-  Paddiw X5 X0 (encode_perm_int OCapValues.RO) ::
+  Paddiw X5 X0 (OCapValues.encode_permission OCapValues.RO) ::
   Pbeqw X5 X31 lbl1 ::
   Pfail ::
   Plabel lbl1 ::
@@ -1329,7 +1366,7 @@ Definition ireg_of_inl {A: Type} (t: mreg + A) :=
 (** The prologue fetches the function target, creates the seal
   capability to point to the next call_site. The call then
   jumps-and-link to the target *)
-Definition make_call (sig: signature) (call_site: ptrofs) (t: ireg + ident) (f: Mach.function) (k: asm_code) :=
+Definition make_call (sig: capsignature) (call_site: ptrofs) (t: ireg + ident) (f: Mach.function) (k: asm_code) :=
   let outgoing_size := f.(fn_link_ofs) in
   
   (* fetch function target *)
@@ -1343,7 +1380,7 @@ Definition make_call (sig: signature) (call_site: ptrofs) (t: ireg + ident) (f: 
   addptrofs X31 X31 outgoing_size
   (PCsaddr_w X30 X30 X31 >>
   PCpromote X30 X30 >>
-  Paddiw X31 X0 (encode_perm_int OCapValues.RO) >>
+  Paddiw X31 X0 (OCapValues.encode_permission OCapValues.RO) >>
   PCpermand X30 X30 X31 >>
   PCgb_s X31 X30 >>
   PCsaddr_w X30 X30 X31 >>
@@ -1405,44 +1442,292 @@ Definition make_return (k: asm_code) :=
 (*   loadind_ptr SP f.(fn_retaddr_ofs) RA *)
 (*     (Pfreeframe f.(fn_stacksize) f.(fn_link_ofs) >> k) false. *)
 
+(* Translation helpers, these move from the world of Mach and standard
+   Compcert to the world of CapAsm and capabilities *)
+
+Definition transl_mreg (r: Machregs.mreg): mreg :=
+  match r with
+  | Machregs.R5 => R5
+  | Machregs.R6 => R6
+  | Machregs.R7 => R7
+  | Machregs.R8 => R8
+  | Machregs.R9 => R9
+  | Machregs.R10 => R10
+  | Machregs.R11 => R11
+  | Machregs.R12 => R12
+  | Machregs.R13 => R13
+  | Machregs.R14 => R14
+  | Machregs.R15 => R15
+  | Machregs.R16 => R16
+  | Machregs.R17 => R17
+  | Machregs.R18 => R18
+  | Machregs.R19 => R19
+  | Machregs.R20 => R20
+  | Machregs.R21 => R21
+  | Machregs.R22 => R22
+  | Machregs.R23 => R23
+  | Machregs.R24 => R24
+  | Machregs.R25 => R25
+  | Machregs.R26 => R26
+  | Machregs.R27 => R27
+  | Machregs.R28 => R28
+  | Machregs.R29 => R29
+  | Machregs.R30 => R30
+  | _ => R30
+  (* FIXME priority 1 *)
+  (* How can I tell Coq that F0 is from mreg and not from freg? *)
+  (*| Machregs.F0 => F0
+  | Machregs.F1 => F1
+  | Machregs.F2 => F2
+  | Machregs.F3 => F3
+  | Machregs.F4 => F4
+  | Machregs.F5 => F5
+  | Machregs.F6 => F6
+  | Machregs.F7 => F7
+  | Machregs.F8 => F8
+  | Machregs.F9 => F9
+  | Machregs.F10 => F10
+  | Machregs.F11 => F11
+  | Machregs.F12 => F12
+  | Machregs.F13 => F13
+  | Machregs.F14 => F14
+  | Machregs.F15 => F15
+  | Machregs.F16 => F16
+  | Machregs.F17 => F17
+  | Machregs.F18 => F18
+  | Machregs.F19 => F19
+  | Machregs.F20 => F20
+  | Machregs.F21 => F21
+  | Machregs.F22 => F22
+  | Machregs.F23 => F23
+  | Machregs.F24 => F24
+  | Machregs.F25 => F25
+  | Machregs.F26 => F26
+  | Machregs.F27 => F27
+  | Machregs.F28 => F28
+  | Machregs.F29 => F29
+  | Machregs.F30 => F30
+  | Machregs.F31 => F31*)
+  end.
+
+Definition transl_mregs (r: list Machregs.mreg): list mreg :=
+  List.map transl_mreg r.
+
+Definition transl_condition (r: Op.condition): condition :=
+  match r with
+  | Op.Ccomp cmp => Ccomp cmp
+  | Op.Ccompu cmp => Ccompu cmp
+  | Op.Ccompimm imm cmp => Ccompimm imm cmp
+  | Op.Ccompuimm imm cmp => Ccompuimm imm cmp
+  | Op.Ccompl cmp => Ccompl cmp
+  | Op.Ccomplu cmp => Ccomplu cmp
+  | Op.Ccomplimm imm cmp => Ccomplimm imm cmp
+  | Op.Ccompluimm imm cmp => Ccompluimm imm cmp
+  | Op.Ccompf cmp => Ccompf cmp
+  | Op.Cnotcompf cmp => Cnotcompf cmp
+  | Op.Ccompfs cmp => Ccompfs cmp
+  | Op.Cnotcompfs cmp => Cnotcompfs cmp
+  end.
+
+Definition transl_operation (r: Op.operation): operation :=
+  match r with
+  | Op.Omove => Omove
+  | Op.Ointconst n => Ointconst n
+  | Op.Olongconst n => Olongconst n
+  | Op.Ofloatconst f => Ofloatconst f
+  | Op.Osingleconst f => Osingleconst f
+  | Op.Oaddrsymbol ident ptrofs => Oaddrsymbol ident ptrofs
+  | Op.Oaddrstack ptrofs => Oaddrstack ptrofs
+  | Op.Ocast8signed => Ocast8signed
+  | Op.Ocast16signed => Ocast16signed
+  | Op.Oadd => Oadd
+  | Op.Oaddimm imm => Oaddimm imm
+  | Op.Oneg => Oneg
+  | Op.Osub => Osub
+  | Op.Omul => Omul
+  | Op.Omulhs => Omulhs
+  | Op.Omulhu => Omulhu
+  | Op.Odiv => Odiv
+  | Op.Odivu => Odivu
+  | Op.Omod => Omod
+  | Op.Omodu => Omodu
+  | Op.Oand => Oand
+  | Op.Oandimm imm => Oandimm imm
+  | Op.Oor => Oor
+  | Op.Oorimm imm => Oorimm imm
+  | Op.Oxor => Oxor
+  | Op.Oxorimm imm => Oxorimm imm
+  | Op.Oshl => Oshl
+  | Op.Oshlimm imm => Oshlimm imm
+  | Op.Oshr => Oshr
+  | Op.Oshrimm imm => Oshrimm imm
+  | Op.Oshru => Oshru
+  | Op.Oshruimm imm => Oshruimm imm
+  | Op.Oshrximm imm => Oshrximm imm
+  | Op.Omakelong => Omakelong
+  | Op.Olowlong => Olowlong
+  | Op.Ohighlong => Ohighlong
+  | Op.Ocast32signed => Ocast32signed
+  | Op.Ocast32unsigned => Ocast32unsigned
+  | Op.Oaddl => Oaddl
+  | Op.Oaddlimm imm => Oaddlimm imm
+  | Op.Onegl => Onegl
+  | Op.Osubl => Osubl
+  | Op.Omull => Omull
+  | Op.Omullhs => Omullhs
+  | Op.Omullhu => Omullhu
+  | Op.Odivl => Odivl
+  | Op.Odivlu => Odivlu
+  | Op.Omodl => Omodl
+  | Op.Omodlu => Omodlu
+  | Op.Oandl => Oandl
+  | Op.Oandlimm imm => Oandlimm imm
+  | Op.Oorl => Oorl
+  | Op.Oorlimm imm => Oorlimm imm
+  | Op.Oxorl => Oxorl
+  | Op.Oxorlimm imm => Oxorlimm imm
+  | Op.Oshll => Oshll
+  | Op.Oshllimm imm => Oshllimm imm
+  | Op.Oshrl => Oshrl
+  | Op.Oshrlimm imm => Oshrlimm imm
+  | Op.Oshrlu => Oshrlu
+  | Op.Oshrluimm imm => Oshrluimm imm
+  | Op.Oshrxlimm imm => Oshrxlimm imm
+  | Op.Onegf => Onegf
+  | Op.Oabsf => Oabsf
+  | Op.Oaddf => Oaddf
+  | Op.Osubf => Osubf
+  | Op.Omulf => Omulf
+  | Op.Odivf => Odivf
+  | Op.Onegfs => Onegfs
+  | Op.Oabsfs => Oabsfs
+  | Op.Oaddfs => Oaddfs
+  | Op.Osubfs => Osubfs
+  | Op.Omulfs => Omulfs
+  | Op.Odivfs => Odivfs
+  | Op.Osingleoffloat => Osingleoffloat
+  | Op.Ofloatofsingle => Ofloatofsingle
+  | Op.Ointoffloat => Ointoffloat
+  | Op.Ointuoffloat => Ointuoffloat
+  | Op.Ofloatofint => Ofloatofint
+  | Op.Ofloatofintu => Ofloatofintu
+  | Op.Ointofsingle => Ointofsingle
+  | Op.Ointuofsingle => Ointuofsingle
+  | Op.Osingleofint => Osingleofint
+  | Op.Osingleofintu => Osingleofintu
+  | Op.Olongoffloat => Olongoffloat
+  | Op.Olonguoffloat => Olonguoffloat
+  | Op.Ofloatoflong => Ofloatoflong
+  | Op.Ofloatoflongu => Ofloatoflongu
+  | Op.Olongofsingle => Olongofsingle
+  | Op.Olonguofsingle => Olonguofsingle
+  | Op.Osingleoflong => Osingleoflong
+  | Op.Osingleoflongu => Osingleoflongu
+  | Op.Ocmp cond => Ocmp (transl_condition cond)
+end.
+
+Definition transl_addressing (r: Op.addressing): addressing :=
+  match r with
+  | Op.Aindexed ptrofs => Aindexed ptrofs
+  | Op.Aglobal ident ptrofs => Aglobal ident ptrofs
+  | Op.Ainstack ptrofs => Ainstack ptrofs
+  end.
+
+Definition transl_ireg_of_inl (t: (Machregs.mreg + ident)%type): (mreg + ident)%type :=
+  match t with
+  | inl m => inl (transl_mreg m)
+  | inr a => inr a
+  end.
+
+Definition transl_typ (t : typ) : captyp :=
+  match t with
+  | Tint => CTint
+  | Tfloat => CTfloat
+  | Tlong => CTlong
+  | Tsingle => CTsingle
+  | Tany32 => CTany32
+  | Tany64 => CTany64
+  end.
+
+Definition transl_rettype (t : rettype) : caprettype :=
+  match t with
+  | Tret r => CTret (transl_typ r)
+  | Tint8signed => CTint8signed
+  | Tint8unsigned => CTint8unsigned
+  | Tint16signed => CTint16signed
+  | Tint16unsigned => CTint16unsigned
+  | Tvoid => CTvoid
+  end.
+
+Definition transl_signature (sig: signature): capsignature :=
+  let arg_types := AST.sig_args sig in
+  let ret_type := AST.sig_res sig in
+  let cc := AST.sig_cc sig in
+  mksignature (List.map transl_typ arg_types) (transl_rettype ret_type) cc.
+
+Fixpoint transl_builtin_arg (arg: builtin_arg Machregs.mreg): (builtin_arg mreg) :=
+  match arg with
+  | BA a => BA (transl_mreg a)
+  | BA_int n => BA_int n
+  | BA_long n => BA_long n
+  | BA_float f => BA_float f
+  | BA_single f => BA_single f
+  | BA_loadstack mem_chunk ptrofs => BA_loadstack mem_chunk ptrofs
+  | BA_addrstack ptrofs => BA_addrstack ptrofs
+  | BA_loadglobal mem_chunk ident ptrofs => BA_loadglobal mem_chunk ident ptrofs
+  | BA_addrglobal ident ptrofs => BA_addrglobal ident ptrofs
+  | BA_splitlong a1 a2 => BA_splitlong (transl_builtin_arg a1) (transl_builtin_arg a2)
+  | BA_addptr a1 a2 => BA_addptr (transl_builtin_arg a1) (transl_builtin_arg a2)
+  end.
+
+Definition transl_builtin_args (args: list (builtin_arg Machregs.mreg)): list (builtin_arg mreg) :=
+  List.map transl_builtin_arg args.
+
+Fixpoint transl_builtin_res (arg: builtin_res Machregs.mreg): (builtin_res mreg) :=
+  match arg with
+  | BR r => BR (transl_mreg r)
+  | BR_none => BR_none
+  | BR_splitlong r1 r2 => BR_splitlong (transl_builtin_res r1) (transl_builtin_res r2)
+  end.
+
 (** Translation of a Mach instruction. *)
 
 Definition transl_instr (f: Mach.function) (i: Mach.instruction)
                         (ep: bool) (k: asm_code) :=
   match i with
   | Mgetstack ofs ty dst =>
-      loadind_stack_ofs ofs ty dst k
+      loadind_stack_ofs ofs ty (transl_mreg dst) k
   | Msetstack src ofs ty =>
-      storeind_stack_ofs src ofs ty k
+      storeind_stack_ofs (transl_mreg src) ofs ty k
   | Mgetparam ofs ty dst =>
       (* load via the frame pointer if it is valid *)
-      do c <- loadind_direct X30 ofs ty dst k false true ;
+      do c <- loadind_direct X30 ofs ty (transl_mreg dst) k false true ;
       OK (if ep then c
                 else loadind_ptr_stk f.(fn_link_ofs) X30 c true)
   | Mop op args res =>
-      transl_op op args res k
+      transl_op (transl_operation op) (transl_mregs args) (transl_mreg res) k
   | Mload chunk addr args dst =>
-      transl_load chunk addr args dst true k
+      transl_load chunk (transl_addressing addr) (transl_mregs args) (transl_mreg dst) true k
   | Mstore chunk addr args src =>
-      transl_store chunk addr args src true k
+      transl_store chunk (transl_addressing addr) (transl_mregs args) (transl_mreg src) true k
   | Mcall sig t =>
-      do r1 <- ireg_of_inl t;
-      make_call sig k.(ac_call_site_count) r1 f (incr_callsite k)
+      do r1 <- ireg_of_inl (transl_ireg_of_inl t);
+      make_call (transl_signature sig) k.(ac_call_site_count) r1 f (incr_callsite k)
   | Mtailcall sig (inl r) =>
-      do r1 <- ireg_of r;
+      do r1 <- ireg_of (transl_mreg r);
       OK (make_epilogue f (Pj_r r1 >> k))
   | Mtailcall sig (inr symb) =>
       load_symbol X30 symb Ptrofs.zero (make_epilogue f (Pj_r X30 >> k))
   | Mbuiltin ef args res =>
-      OK (Pbuiltin ef (List.map (map_builtin_arg preg_of) args) (map_builtin_res preg_of res) >> k)
+      OK (Pbuiltin ef (List.map (map_builtin_arg preg_of) (transl_builtin_args args)) (map_builtin_res preg_of (transl_builtin_res res)) >> k)
   | Mlabel lbl =>
       OK (Plabel lbl >> k)
   | Mgoto lbl =>
       OK (Pj_l lbl >> k)
   | Mcond cond args lbl =>
-      transl_cbranch cond args lbl k
+      transl_cbranch (transl_condition cond) (transl_mregs args) lbl k
   | Mjumptable arg tbl =>
-      do r <- ireg_of arg;
+      do r <- ireg_of (transl_mreg arg);
       OK (Pbtbl r tbl >> k)
   | Mreturn =>
       OK (make_epilogue f (make_return k))
@@ -1453,23 +1738,22 @@ Definition transl_instr (f: Mach.function) (i: Mach.instruction)
 Definition it1_is_parent (before: bool) (i: Mach.instruction) : bool :=
   match i with
   | Msetstack src ofs ty => before
-  | Mgetparam ofs ty dst => negb (mreg_eq dst R30)
-  | Mop op args res => before && negb (mreg_eq res R30)
+  | Mgetparam ofs ty dst => negb (mreg_eq (transl_mreg dst) R30)
+  | Mop op args res => before && negb (mreg_eq (transl_mreg res) R30)
   | _ => false
   end.
 
 (** This is the naive definition that we no longer use because it
   is not tail-recursive.  It is kept as specification. *)
 
-Fixpoint
-
-Fixpoint transl_code (f: Mach.function) (il: list Mach.instruction) (it1p: bool) : asm_code :=
-  match il with
-  | nil => OK nil
-  | i1 :: il' =>
-      do k <- transl_code f il' (it1_is_parent it1p i1);
-      transl_instr f i1 it1p k
-  end.
+(* FIXME *)
+(* Fixpoint transl_code (f: Mach.function) (il: list Mach.instruction) (it1p: bool) : asm_code := *)
+(*   match il with *)
+(*   | nil => OK nil *)
+(*   | i1 :: il' => *)
+(*       do k <- transl_code f il' (it1_is_parent it1p i1); *)
+(*       transl_instr f i1 it1p k *)
+(*   end. *)
 
 (** This is an equivalent definition in continuation-passing style
   that runs in constant stack space. *)
@@ -1477,7 +1761,7 @@ Fixpoint transl_code (f: Mach.function) (il: list Mach.instruction) (it1p: bool)
 Fixpoint transl_code_rec (f: Mach.function) (il: list Mach.instruction)
                          (it1p: bool) (k: asm_code -> res asm_code) :=
   match il with
-  | nil => k nil
+  | nil => k (mkAsmCode 1%positive nil Ptrofs.zero) (* FIXME validate argument *)
   | i1 :: il' =>
       transl_code_rec f il' (it1_is_parent it1p i1)
         (fun c1 => do c2 <- transl_instr f i1 it1p c1; k c2)
@@ -1491,22 +1775,26 @@ Definition transl_code' (f: Mach.function) (il: list Mach.instruction) (it1p: bo
   otherwise the offset part of the [PC] code pointer could wrap
   around, leading to incorrect executions. *)
 
+(* TODO: check wrapper vs. code division, storeind_ptr is_heap flag, uses of c *)
 Definition transl_function (f: Mach.function) :=
   do c <- transl_code' f f.(Mach.fn_code) true;
   OK (mkfunction f.(Mach.fn_comp) f.(Mach.fn_sig)
+        (* fn_wrapper *)
+        nil
+        (* fn_code *)
         (Pallocframe f.(fn_stacksize) f.(fn_link_ofs) >>
-         storeind_ptr RA SP f.(fn_retaddr_ofs) c)).
+         (storeind_ptr RAC SPC f.(fn_retaddr_ofs) c false)).(ac_code)).
 
-Definition transf_function (f: Mach.function) : res Asm.function :=
+Definition transf_function (f: Mach.function) : res CapAsm.function :=
   do tf <- transl_function f;
   if zlt Ptrofs.max_unsigned (list_length_z tf.(fn_code))
   then Error (msg "code size exceeded")
   else OK tf.
 
-Definition transf_fundef (f: Mach.fundef) : res Asm.fundef :=
-  transf_partial_fundef transf_function f.
+Definition transf_fundef (f: Mach.fundef) : res CapAsm.fundef :=
+  AST.transf_partial_fundef transf_function f. (* TODO: not transf_partial_fundef? *)
 
-Definition transf_program (p: Mach.program) : res Asm.program :=
+Definition transf_program (p: Mach.program) : res CapAsm.program :=
   transform_partial_program transf_fundef p.
 
 Lemma transf_function_comp :
@@ -1523,3 +1811,367 @@ Proof.
   inv Hf'.
   reflexivity.
 Qed.
+
+Section Examples.
+
+(* Instruction translation in proof mode *)
+Goal Archi.ptr64 = true -> exists x y, OK x =
+  transl_instr
+    (Mach.mkfunction 1%positive signature_main nil 0 Ptrofs.zero Ptrofs.zero)
+    (Mcall signature_main (inl Machregs.R30))
+    true
+    (mkAsmCode 1 nil Ptrofs.zero)
+  /\ x.(ac_code) = y.
+Proof.
+  intros ARCHI.
+  simpl. eexists. eexists. split. f_equal.
+  simpl.
+  unfold addcapofs. rewrite ARCHI.
+  destruct Ptrofs.eq_dec as [_ |]; [| contradiction].
+  simpl.
+  unfold addptrofs.
+  destruct Ptrofs.eq_dec as [_ |]; [| contradiction].
+  simpl.
+  unfold transl_signature.
+  unfold opldc. rewrite ARCHI.
+  reflexivity.
+Qed.
+
+(* A tiny compartmentalized Mach program *)
+Program Definition test_program_1 :=
+  let main_id := 10%positive in
+  let main_cp := 1%positive in
+  let twice_id := 20%positive in
+  let twice_cp := 2%positive in
+  let twice_sig := AST.mksignature (Tint :: nil) Tint cc_default in
+  let main :=
+    Mach.mkfunction
+      main_cp
+      signature_main
+      (Mop (Op.Ointconst Int.one) nil Machregs.R10 ::
+         Mcall twice_sig (inr twice_id) ::
+         Mop (Op.Ointconst Int.zero) nil Machregs.R10 ::
+         Mreturn ::
+         nil)
+      0 (* ... *)
+      Ptrofs.zero (* ... *)
+      Ptrofs.zero (* ... *)
+  in
+  let twice :=
+    Mach.mkfunction
+      twice_cp
+      twice_sig
+      (Mop Op.Oadd (Machregs.R10 :: Machregs.R10 :: nil) Machregs.R10 :: Mreturn :: nil)
+      0 (* ... *)
+      Ptrofs.zero (* ... *)
+      Ptrofs.zero (* ... *)
+  in
+  mkprogram
+    ((main_id, Gfun (Internal main)) :: (twice_id, Gfun (Internal twice)) :: nil)
+    (main_id :: twice_id :: nil)
+    main_id
+    (Policy.mkpolicy
+       (Maps.PTree.set twice_cp (twice_id :: nil)
+          (Maps.PTree.set main_cp nil (Maps.PTree.empty _)))
+       (Maps.PTree.set twice_cp nil
+          (Maps.PTree.set main_cp ((twice_cp, twice_id) :: nil) (Maps.PTree.empty _))))
+    _
+    : Mach.program.
+Next Obligation. Admitted.
+
+
+(* A more elaborate compartmentalized Mach program with conditions *)
+Program Definition test_program_2 :=
+  let main_id := 10%positive in
+  let main_cp := 1%positive in
+  let maximum_id := 20%positive in
+  let minimum_id := 30%positive in
+  let minmax_cp := 2%positive in
+  let clip_id := 40%positive in
+  let clip_cp := 4%positive in
+  let maximum_sig := AST.mksignature (Tint :: Tint :: nil) Tint cc_default in
+  let minimum_sig := AST.mksignature (Tint :: Tint :: nil) Tint cc_default in
+  (* clip(lower, upper, x) an integer x to an interval *)
+  let clip_sig := AST.mksignature (Tint :: Tint :: Tint :: nil) Tint cc_default in
+  let main :=
+    Mach.mkfunction
+      main_cp
+      signature_main
+      ( (* R10 <- 0 *)
+        Mop (Op.Ointconst Int.zero) nil Machregs.R10 ::
+          (* R11 <- 1 *)
+          Mop (Op.Ointconst Int.one) nil Machregs.R11 ::
+          (* R12 <- 1 *)
+          Mop (Op.Ointconst Int.one) nil Machregs.R12 ::
+          (* R8 <- clip(R10, R11, R12) *)
+          Mcall clip_sig (inr clip_id) ::
+          (* R10 <- R8 *)
+          Mop Op.Omove (Machregs.R8 :: nil) Machregs.R10 ::
+          Mreturn ::
+          nil)
+      0 (* ... *)
+      Ptrofs.zero (* ... *)
+      Ptrofs.zero (* ... *)
+  in
+  let clip :=
+    Mach.mkfunction
+      clip_cp
+      clip_sig
+      (* R10 <- lower *)
+      (* R11 <- upper *)
+      (* R12 <- x (to clip) *)
+      (* R8 <- min(upper, max(lower x)) *)
+      ( (* R13 <- lower *)
+        Mop Op.Omove (Machregs.R10 :: nil) Machregs.R13 ::
+          (* R14 <- x *)
+          Mop Op.Omove (Machregs.R12 :: nil) Machregs.R13 ::
+                    (* R13 <- max(R13, R14) *)
+                    Mcall maximum_sig (inr maximum_id) ::
+                    (* R15 <- upper *)
+                    Mop Op.Omove (Machregs.R11 :: nil) Machregs.R15 ::
+                    (* R16 <- max(lower, x) *)
+                    Mop Op.Omove (Machregs.R13 :: nil) Machregs.R16 ::
+                    (* R15 <- min(upper, max(lower, x)) *)
+                    Mcall minimum_sig (inr minimum_id) ::
+                    (* R8 <- min(upper, max(lower, x)) *)
+                    nil)
+      0 (* ... *)
+      Ptrofs.zero (* ... *)
+      Ptrofs.zero (* ... *)
+  in
+  let maximum :=
+    Mach.mkfunction
+      minmax_cp
+      maximum_sig
+      (* R13 <- a *)
+      (* R14 <- b *)
+      (* R13 <- max(a, b) *)
+      (
+        Mcond (Op.Ccomp Cge) (Machregs.R13 :: Machregs.R14 :: nil) 100%positive ::
+          (* R13 <- b *)
+          Mop Op.Omove (Machregs.R14 :: nil) Machregs.R13 ::
+          (* jump here if a >= b *)
+          Mlabel 100%positive ::
+          Mreturn ::
+          nil)
+      0 (* ... *)
+      Ptrofs.zero (* ... *)
+      Ptrofs.zero (* ... *)
+  in
+  let minimum :=
+    Mach.mkfunction
+      minmax_cp
+      minimum_sig
+      (* R15 <- a *)
+      (* R16 <- b *)
+      (* R15 <- min(a, b) *)
+      (
+        Mcond (Op.Ccomp Cle) (Machregs.R15 :: Machregs.R16 :: nil) 200%positive ::
+          (* R15 <- b *)
+          Mop Op.Omove (Machregs.R15 :: nil) Machregs.R16 ::
+          (* jump here if a >= b *)
+          Mlabel 200%positive ::
+          Mreturn ::
+          nil)
+      0 (* ... *)
+      Ptrofs.zero (* ... *)
+      Ptrofs.zero (* ... *)
+  in
+  mkprogram
+    ((main_id, Gfun (Internal main)) :: (maximum_id, Gfun (Internal maximum)) :: (minimum_id, Gfun (Internal minimum)) :: (clip_id, Gfun (Internal clip)) :: nil)
+    (main_id :: maximum_id :: minimum_id :: clip_id :: nil)
+    main_id
+    (Policy.mkpolicy
+       (Maps.PTree.set clip_cp (clip_id :: nil)
+          (Maps.PTree.set minmax_cp (minimum_id :: maximum_id :: nil)
+             (Maps.PTree.set main_cp nil
+                (Maps.PTree.empty _))))
+       (Maps.PTree.set minmax_cp nil
+          (Maps.PTree.set clip_cp ((minmax_cp, minimum_id) :: (minmax_cp, maximum_id) :: nil)
+             (Maps.PTree.set main_cp ((clip_cp, clip_id) :: nil)
+                (Maps.PTree.empty _))))) _
+    : Mach.program.
+Next Obligation.
+Admitted.
+
+(* A Mach program with stack usage and recursive function calls *)
+Program Definition test_program_3 :=
+  let main_id := 10%positive in
+  let main_cp := 1%positive in
+  let sum_id := 20%positive in
+  let sum_cp := 2%positive in
+  (* sum(n) *recursively* computes the sum from 0 to n *)
+  let sum_sig := AST.mksignature (Tint ::  nil) Tint cc_default in
+  let main :=
+    Mach.mkfunction
+      main_cp
+      signature_main
+      ( (* R10 <- 13 *)
+        Mop (Op.Ointconst (Int.repr 13%Z)) nil Machregs.R10 ::
+          (* M10 <- sum of 0 to 13) *)
+          Mcall sum_sig (inr sum_id) ::
+          Mreturn ::
+          nil)
+      0 (* ... *)
+      Ptrofs.zero (* ... *)
+      Ptrofs.zero (* ... *)
+  in
+  let sum :=
+    Mach.mkfunction
+      sum_cp
+      sum_sig
+      (* R10 = x *)
+      (* R10 <- sum from 0 to x *)
+      (
+        (* R11 <- 0 *)
+        Mop (Op.Ointconst Int.zero) nil Machregs.R11 ::
+          (* test if x == 0 *)
+          Mcond (Op.Ccomp Ceq) (Machregs.R10 :: Machregs.R11 :: nil) 100%positive ::
+          (* Push R10 onto the stack *)
+          Msetstack Machregs.R10 Ptrofs.zero Tint ::
+          (* R11 <- 1 *)
+          Mop (Op.Ointconst Int.one) nil Machregs.R11 ::
+          (* R10 <- R10 - 1 *)
+          Mop Op.Osub (Machregs.R10 :: Machregs.R11 :: nil) Machregs.R10 ::
+          (* R10 <- sum from 0 to R10 - 1 *)
+          Mcall sum_sig (inr sum_id) ::
+          (* Pop R11 from the stack *)
+          Mgetstack Ptrofs.zero Tint Machregs.R11 ::
+          (* R10 <- R10 + R11 *)
+          Mop Op.Oadd (Machregs.R10 :: Machregs.R11 :: nil) Machregs.R10 ::
+          (* jump here if R10 = 0 (base case of recursion) *)
+          Mlabel 100%positive ::
+          Mreturn ::
+          nil)
+      4 (* TODO: what unit is this? Bytes? How can I get the size? *)
+      Ptrofs.zero (* ... *)
+      Ptrofs.zero (* ... *)
+  in
+  mkprogram
+    ((main_id, Gfun (Internal main)) :: (sum_id, Gfun (Internal sum)) :: nil)
+    (main_id :: sum_id :: nil)
+    main_id
+    (Policy.mkpolicy
+       (Maps.PTree.set sum_cp (sum_id :: nil)
+          (Maps.PTree.set main_cp nil
+             (Maps.PTree.empty _)))
+       (Maps.PTree.set sum_cp nil
+          (Maps.PTree.set main_cp ((sum_cp, sum_id) :: nil)
+             (Maps.PTree.empty _)))) _
+    : Mach.program.
+Next Obligation.
+  Admitted.
+
+(* Program transformation in proof mode *)
+Goal (* (forall y, exists off, find_symbol_offset y = Some off) -> *)
+     (forall (T : Type) (zs : list T), list_length_z zs = 1) ->
+     (Archi.ptr64 = true) ->
+     exists x, OK x = transf_program test_program_1.
+Proof.
+  intros (* H *) G I.
+  unfold transf_program, transform_partial_program, transform_partial_program2.
+  simpl.
+  unfold transf_function, transl_function, transl_code', transl_code_rec.
+  simpl.
+
+  unfold load_symbol.
+  simpl.
+
+  (* destruct (H 20%positive) as [off H1]. *)
+  (* rewrite H1. *)
+  (* simpl. *)
+  unfold zlt, Z_lt_dec.
+  simpl.
+
+  rewrite G.
+  simpl.
+  unfold Ptrofs.max_unsigned.
+  simpl.
+  unfold shift_nat, Ptrofs.wordsize, Wordsize_Ptrofs.wordsize.
+  simpl.
+  rewrite I.
+  simpl.
+  rewrite G.
+  simpl.
+  eexists.
+  reflexivity.
+Qed.
+
+Goal (* (forall y, exists off, find_symbol_offset y = Some off) -> *)
+     (forall (T : Type) (zs : list T), list_length_z zs = 1) ->
+     (Archi.ptr64 = true) ->
+     exists x, OK x = transf_program test_program_2.
+Proof.
+  intros (* H *) G I.
+  unfold transf_program, transform_partial_program, transform_partial_program2.
+  simpl.
+  unfold transf_function, transl_function, transl_code', transl_code_rec.
+  simpl.
+
+  unfold load_symbol.
+  simpl.
+  (* destruct (H 40%positive) as [off1 H1]. *)
+  (* rewrite H1. *)
+  (* simpl. *)
+  unfold zlt, Z_lt_dec.
+  simpl.
+
+  rewrite G.
+  simpl.
+  unfold Ptrofs.max_unsigned.
+  simpl.
+  unfold shift_nat, Ptrofs.wordsize, Wordsize_Ptrofs.wordsize.
+  simpl.
+  rewrite I.
+  simpl.
+  rewrite G.
+  simpl.
+  rewrite G.
+  simpl.
+
+  (* destruct (H 30%positive) as [off2 H2]. *)
+  (* rewrite H2. *)
+  (* simpl. *)
+  (* destruct (H 20%positive) as [off3 H3]. *)
+  (* rewrite H3. *)
+  (* simpl. *)
+  rewrite G.
+  simpl.
+  eexists.
+  reflexivity.
+Qed.
+
+Goal (* (forall y, exists off, find_symbol_offset y = Some off) -> *)
+     (forall (T : Type) (zs : list T), list_length_z zs = 1) ->
+     (Archi.ptr64 = true) ->
+     exists x, OK x = transf_program test_program_3.
+Proof.
+  intros (* H *) G I.
+  unfold transf_program, transform_partial_program, transform_partial_program2.
+  simpl.
+  unfold transf_function, transl_function, transl_code', transl_code_rec.
+  simpl.
+
+  unfold load_symbol.
+  simpl.
+  (* destruct (H 20%positive) as [off1 H1]. *)
+  (* rewrite H1. *)
+  (* simpl. *)
+  unfold zlt, Z_lt_dec.
+  simpl.
+
+  rewrite G.
+  simpl.
+  unfold Ptrofs.max_unsigned.
+  simpl.
+  unfold shift_nat, Ptrofs.wordsize, Wordsize_Ptrofs.wordsize.
+  simpl.
+  rewrite I.
+  simpl.
+  rewrite G.
+  simpl.
+  eexists.
+  reflexivity.
+Qed.
+
+End Examples.

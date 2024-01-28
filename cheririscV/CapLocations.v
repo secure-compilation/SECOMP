@@ -19,8 +19,8 @@ Require Import Maps.
 Require Import Ordered.
 Require Import CapAST.
 Require Import OCapValues.
-Require Export Machregs.
 Require Export Locations.
+Require Export CapMachregs.
 
 (** * Representation of locations *)
 
