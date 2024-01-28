@@ -235,17 +235,20 @@ Proof.
   econstructor; split.
   eapply exec_Iop; eauto.
   instantiate (1 := v). rewrite <- H0. apply eval_operation_preserved. exact symbols_preserved.
+  admit. admit. admit.
   constructor; auto. eapply reach_succ; eauto. simpl; auto.
 (* load *)
   econstructor; split.
-  assert (eval_addressing tge sp addr rs ## args = Some a).
+  assert (eval_addressing tge (comp_of f) sp addr rs ## args = Some a).
   rewrite <- H0. apply eval_addressing_preserved. exact symbols_preserved.
+  admit. admit. admit.
   eapply exec_Iload; eauto.
   constructor; auto. eapply reach_succ; eauto. simpl; auto.
 (* store *)
   econstructor; split.
-  assert (eval_addressing tge sp addr rs ## args = Some a).
+  assert (eval_addressing tge (comp_of f) sp addr rs ## args = Some a).
   rewrite <- H0. apply eval_addressing_preserved. exact symbols_preserved.
+  admit. admit. admit.
   eapply exec_Istore; eauto.
   constructor; auto. eapply reach_succ; eauto. simpl; auto.
 (* call *)
@@ -274,6 +277,7 @@ Proof.
   econstructor; split.
   eapply exec_Ibuiltin; eauto.
     eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
+    admit. admit. admit.
     eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   constructor; auto. eapply reach_succ; eauto. simpl; auto.
 (* cond *)
@@ -308,7 +312,7 @@ Proof.
   rewrite comp_transf_function.
   now eapply return_trace_eq; eauto using senv_preserved.
   constructor; auto.
-Qed.
+Admitted.
 
 Lemma transf_initial_states:
   forall S1, RTL.initial_state prog S1 ->

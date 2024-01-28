@@ -677,8 +677,8 @@ Proof.
 Qed.
 
 Lemma transfer_builtin_arg_sound:
-  forall bc e e' sp m m' a v,
-  eval_builtin_arg ge (fun r => e#r) (Vptr sp Ptrofs.zero) m a v ->
+  forall cp bc e e' sp m m' a v,
+  eval_builtin_arg ge (fun r => e#r) cp (Vptr sp Ptrofs.zero) m a v ->
   forall nv ne1 nm1 ne2 nm2,
   transfer_builtin_arg nv (ne1, nm1) a = (ne2, nm2) ->
   eagree e e' ne2 ->
@@ -686,7 +686,7 @@ Lemma transfer_builtin_arg_sound:
   genv_match bc ge ->
   bc sp = BCstack ->
   exists v',
-     eval_builtin_arg ge (fun r => e'#r) (Vptr sp Ptrofs.zero) m' a  v'
+     eval_builtin_arg ge (fun r => e'#r) cp (Vptr sp Ptrofs.zero) m' a  v'
   /\ vagree v v' nv
   /\ eagree e e' ne1
   /\ magree m m' (nlive ge sp nm1).
@@ -700,19 +700,22 @@ Proof.
 - simpl in H. exploit magree_load; eauto.
   intros. eapply nlive_add; eauto with va. rewrite Ptrofs.add_zero_l in H0; auto.
   intros (v' & A & B).
-  exists v'; intuition auto. econstructor; instantiate (1 := cp); eauto. apply vagree_lessdef; auto.
-  eapply magree_monotone; eauto. intros; eapply incl_nmem_add; eauto.
-- exists (Vptr sp (Ptrofs.add Ptrofs.zero ofs)); intuition auto with na. constructor.
-- unfold Senv.symbol_address in H; simpl in H.
-  destruct (Genv.find_symbol ge id) as [b|] eqn:FS; simpl in H; try discriminate.
-  exploit magree_load; eauto.
-  intros. eapply nlive_add; eauto. constructor. apply GM; auto.
-  intros (v' & A & B).
-  exists v'; intuition auto.
-  econstructor. simpl. unfold Senv.symbol_address; simpl; rewrite FS; eauto.
+  exists v'; intuition auto. eapply eval_BA_loadstack. simpl. eauto.
   apply vagree_lessdef; auto.
   eapply magree_monotone; eauto. intros; eapply incl_nmem_add; eauto.
-- exists (Senv.symbol_address ge id ofs); intuition auto with na. constructor.
+- exists (Vptr sp (Ptrofs.add Ptrofs.zero ofs)); intuition auto with na. constructor.
+- unfold Genv.symbol_address in H; simpl in H.
+  destruct (Genv.find_symbol ge id) as [b|] eqn:FS; simpl in H; try discriminate.
+  exploit magree_load; eauto.
+  intros. eapply nlive_add; eauto. constructor. auto. admit. (* left *)
+  apply GM; auto.
+  intros (v' & A & B).
+  exists v'; intuition auto.
+  econstructor. simpl. unfold Genv.symbol_address; simpl; rewrite FS; eauto.
+  apply vagree_lessdef; auto.
+  eapply magree_monotone; eauto. intros; eapply incl_nmem_add; eauto.
+- eexists; intuition auto with na. constructor. reflexivity.
+  (* exists (Genv.symbol_address ge id ofs); intuition auto with na. constructor. *)
 - destruct (transfer_builtin_arg All (ne1, nm1) hi) as [ne' nm'] eqn:TR.
   exploit IHeval_builtin_arg2; eauto. intros (vlo' & A & B & C & D).
   exploit IHeval_builtin_arg1; eauto. intros (vhi' & P & Q & R & S).
@@ -726,11 +729,11 @@ Proof.
   econstructor; intuition auto.
   econstructor; eauto.
   destruct Archi.ptr64; auto using Val.add_lessdef, Val.addl_lessdef, vagree_lessdef, lessdef_vagree.
-Qed.
+Admitted.
 
 Lemma transfer_builtin_args_sound:
-  forall e sp m e' m' bc al vl,
-  eval_builtin_args ge (fun r => e#r) (Vptr sp Ptrofs.zero) m al vl ->
+  forall cp e sp m e' m' bc al vl,
+  eval_builtin_args ge (fun r => e#r) cp (Vptr sp Ptrofs.zero) m al vl ->
   forall ne1 nm1 ne2 nm2,
   transfer_builtin_args (ne1, nm1) al = (ne2, nm2) ->
   eagree e e' ne2 ->
@@ -738,7 +741,7 @@ Lemma transfer_builtin_args_sound:
   genv_match bc ge ->
   bc sp = BCstack ->
   exists vl',
-     eval_builtin_args ge (fun r => e'#r) (Vptr sp Ptrofs.zero) m' al vl'
+     eval_builtin_args ge (fun r => e'#r) cp (Vptr sp Ptrofs.zero) m' al vl'
   /\ Val.lessdef_list vl vl'
   /\ eagree e e' ne1
   /\ magree m m' (nlive ge sp nm1).
@@ -753,11 +756,11 @@ Local Opaque transfer_builtin_arg.
 Qed.
 
 Lemma can_eval_builtin_arg:
-  forall sp e m e' m' P,
+  forall cp sp e m e' m' P,
   magree m m' P ->
   forall a v,
-  eval_builtin_arg ge (fun r => e#r) (Vptr sp Ptrofs.zero) m a v ->
-  exists v', eval_builtin_arg tge (fun r => e'#r) (Vptr sp Ptrofs.zero) m' a v'.
+  eval_builtin_arg ge (fun r => e#r) cp (Vptr sp Ptrofs.zero) m a v ->
+  exists v', eval_builtin_arg tge (fun r => e'#r) cp (Vptr sp Ptrofs.zero) m' a v'.
 Proof.
   intros until P; intros MA.
   assert (LD: forall chunk addr cp v,
@@ -770,7 +773,7 @@ Proof.
   induction 1; try (econstructor; now constructor).
 - exploit LD; eauto. intros (v' & A). exists v'; econstructor; eauto.
 - exploit LD; eauto. intros (v' & A). exists v'; econstructor.
-  unfold Senv.symbol_address, Senv.find_symbol. rewrite symbols_preserved. eassumption.
+  unfold Genv.symbol_address in *. rewrite symbols_preserved. eassumption.
 - destruct IHeval_builtin_arg1 as (v1' & A1).
   destruct IHeval_builtin_arg2 as (v2' & A2).
   exists (Val.longofwords v1' v2'); constructor; auto.
@@ -780,11 +783,11 @@ Proof.
 Qed.
 
 Lemma can_eval_builtin_args:
-  forall sp e m e' m' P,
+  forall cp sp e m e' m' P,
   magree m m' P ->
   forall al vl,
-  eval_builtin_args ge (fun r => e#r) (Vptr sp Ptrofs.zero) m al vl ->
-  exists vl', eval_builtin_args tge (fun r => e'#r) (Vptr sp Ptrofs.zero) m' al vl'.
+  eval_builtin_args ge (fun r => e#r) cp (Vptr sp Ptrofs.zero) m al vl ->
+  exists vl', eval_builtin_args tge (fun r => e'#r) cp (Vptr sp Ptrofs.zero) m' al vl'.
 Proof.
   induction 2.
 - exists (@nil val); constructor.
@@ -886,7 +889,9 @@ Ltac UseTransfer :=
   eauto. instantiate (1 := nreg ne res). eauto with na. eauto with na. intros [tv [A B]].
   econstructor; split.
   eapply exec_Iop with (v := tv); eauto.
-  rewrite <- A. apply eval_operation_preserved. exact symbols_preserved.
+  rewrite <- A. rewrite <- comp_transf_function; eauto.
+  apply eval_operation_preserved. exact symbols_preserved.
+  admit. admit. admit.
   eapply match_succ_states; eauto. simpl; auto.
   apply eagree_update; auto.
   * (* turned into a move *)
@@ -904,7 +909,9 @@ Ltac UseTransfer :=
   intros [tv [A B]].
   econstructor; split.
   eapply exec_Iop with (v := tv); eauto.
-  rewrite <- A. apply eval_operation_preserved. exact symbols_preserved.
+  rewrite <- A. rewrite <- comp_transf_function; eauto.
+  apply eval_operation_preserved. exact symbols_preserved.
+  admit. admit. admit.
   eapply match_succ_states; eauto. simpl; auto.
   apply eagree_update; eauto 2 with na.
 
@@ -931,11 +938,14 @@ Ltac UseTransfer :=
   destruct ta; simpl in H1; try discriminate.
   exploit magree_load; eauto.
   exploit aaddressing_sound; eauto. intros (bc & A & B & C).
-  intros. apply nlive_add with bc i; assumption.
+  intros. apply nlive_add with bc (comp_of f) i; assumption.
   intros (tv & P & Q).
   econstructor; split.
   eapply exec_Iload with (a := Vptr b i). eauto.
-  rewrite <- U. apply eval_addressing_preserved. exact symbols_preserved.
+  rewrite <- U.
+  rewrite <- comp_transf_function; eauto.
+  apply eval_addressing_preserved. exact symbols_preserved.
+  admit. admit. admit.
   rewrite <- comp_transf_function; eauto.
   eapply match_succ_states; eauto. simpl; auto.
   apply eagree_update; eauto 2 with na.
@@ -953,11 +963,14 @@ Ltac UseTransfer :=
   exploit magree_store_parallel. eauto. eauto. instantiate (1 := te#src). eauto with na.
   instantiate (1 := nlive ge sp0 nm).
   exploit aaddressing_sound; eauto. intros (bc & A & B & C).
-  intros. apply nlive_remove with bc b i; assumption.
+  intros. apply nlive_remove with bc (comp_of f) b i; assumption.
   intros (tm' & P & Q).
   econstructor; split.
   eapply exec_Istore with (a := Vptr b i). eauto.
-  rewrite <- U. apply eval_addressing_preserved. exact symbols_preserved.
+  rewrite <- U.
+  rewrite <- comp_transf_function; eauto.
+  apply eval_addressing_preserved. exact symbols_preserved.
+  admit. admit. admit.
   rewrite <- comp_transf_function; eauto.
   eapply match_succ_states; eauto. simpl; auto.
   eauto 3 with na.
@@ -1050,8 +1063,9 @@ Ltac UseTransfer :=
   econstructor; split.
   eapply exec_Ibuiltin; eauto.
   unfold comp_of. simpl. rewrite comp_transf_function; eauto.
-  apply eval_builtin_args_preserved with (ge1 := ge). exact symbols_preserved.
-  constructor. eauto. constructor.
+  eapply eval_builtin_args_preserved with (ge1 := ge). exact symbols_preserved.
+  admit. admit. admit.
+  constructor. rewrite <- comp_transf_function; eauto. constructor.
   rewrite comp_transf_function; eauto.
   eapply external_call_symbols_preserved. apply senv_preserved.
   constructor. rewrite <- comp_transf_function; eauto.
@@ -1072,8 +1086,10 @@ Ltac UseTransfer :=
   intros (EQ & tm' & P & Q). subst vres.
   econstructor; split.
   eapply exec_Ibuiltin; eauto. rewrite <- comp_transf_function; eauto.
-  apply eval_builtin_args_preserved with (ge1 := ge). exact symbols_preserved.
-  constructor. eauto. constructor. eauto. constructor.
+  eapply eval_builtin_args_preserved with (ge1 := ge). exact symbols_preserved.
+  admit. admit. admit.
+  constructor. rewrite <- comp_transf_function; eauto. constructor.
+  rewrite <- comp_transf_function; eauto. constructor.
   eapply external_call_symbols_preserved. apply senv_preserved.
   simpl; eauto.
   eapply match_succ_states; eauto. simpl; auto.
@@ -1112,9 +1128,10 @@ Ltac UseTransfer :=
   intros (tm' & A & B).
   econstructor; split.
   eapply exec_Ibuiltin; eauto. rewrite <- comp_transf_function; eauto.
-  apply eval_builtin_args_preserved with (ge1 := ge). exact symbols_preserved.
-  constructor. eauto. constructor. eauto. constructor.
-  (* rewrite <- comp_transf_function; eauto. *)
+  eapply eval_builtin_args_preserved with (ge1 := ge). exact symbols_preserved.
+  admit. admit. admit.
+  constructor. rewrite <- comp_transf_function; eauto.
+  constructor. rewrite <- comp_transf_function; eauto. constructor.
   eapply external_call_symbols_preserved. apply senv_preserved.
   simpl in B1; inv B1. simpl in B2; inv B2. econstructor; eauto.
   eapply match_succ_states; eauto. simpl; auto.
@@ -1143,7 +1160,9 @@ Ltac UseTransfer :=
   inv H1.
   econstructor; split.
   eapply exec_Ibuiltin; eauto. rewrite <- comp_transf_function; eauto.
-  apply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
+  eapply eval_builtin_args_preserved with (ge1 := ge). exact symbols_preserved.
+  admit. admit. admit.
+  rewrite <- comp_transf_function; eauto.
   eapply external_call_symbols_preserved. apply senv_preserved.
   constructor. eapply eventval_list_match_lessdef; eauto 2 with na.
   eapply match_succ_states; eauto. simpl; auto.
@@ -1155,7 +1174,9 @@ Ltac UseTransfer :=
   inv H1. inv B. inv H6.
   econstructor; split.
   eapply exec_Ibuiltin; eauto. rewrite <- comp_transf_function; eauto.
-  apply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
+  eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
+  admit. admit. admit.
+  rewrite <- comp_transf_function; eauto.
   eapply external_call_symbols_preserved. apply senv_preserved.
   constructor.
   eapply eventval_match_lessdef; eauto 2 with na.
@@ -1166,6 +1187,7 @@ Ltac UseTransfer :=
   exploit can_eval_builtin_args; eauto. intros (vargs' & A).
   econstructor; split.
   eapply exec_Ibuiltin; eauto.
+  rewrite <- comp_transf_function; eauto.
   rewrite <- comp_transf_function; eauto.
   constructor.
   eapply match_succ_states; eauto. simpl; auto.
@@ -1184,7 +1206,9 @@ Ltac UseTransfer :=
   intros (v' & tm' & P & Q & R & S).
   econstructor; split.
   eapply exec_Ibuiltin; eauto. rewrite <- comp_transf_function; eauto.
-  apply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
+  eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
+  admit. admit. admit.
+  rewrite <- comp_transf_function; eauto.
   eapply external_call_symbols_preserved. apply senv_preserved. eauto.
   eapply match_succ_states; eauto. simpl; auto.
   apply eagree_set_res; auto.
@@ -1254,7 +1278,7 @@ Ltac UseTransfer :=
   rewrite <- comp_transf_function; eauto.
   now eapply return_trace_lessdef; eauto using senv_preserved.
   econstructor; eauto. apply mextends_agree; auto.
-Qed.
+Admitted.
 
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 ->

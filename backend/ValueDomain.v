@@ -114,6 +114,10 @@ Proof.
   destruct 1; constructor.
 Qed.
 
+Section WithGenvCp.
+
+Variable ge: genv.
+Variable cp: compartment.
 (** * Abstracting pointers *)
 
 Inductive aptr : Type :=
@@ -133,6 +137,9 @@ Defined.
 
 Inductive pmatch (b: block) (ofs: ptrofs): aptr -> Prop :=
   | pmatch_gl: forall id,
+      Genv.find_symbol ge id = Some b ->
+      (Genv.find_comp_of_block ge b = Some cp \/
+         exists fd, Genv.find_def ge b = Some (Gfun fd)) ->
       bc b = BCglob id ->
       pmatch b ofs (Gl id ofs)
   | pmatch_glo: forall id,
@@ -1113,29 +1120,47 @@ Qed.
 
 (** Loading constants *)
 
-Definition genv_match (ge: genv) : Prop :=
+Definition genv_match : Prop :=
   (forall id b, Genv.find_symbol ge id = Some b <-> bc b = BCglob id)
 /\(forall b, Plt b (Genv.genv_next ge) -> bc b <> BCinvalid /\ bc b <> BCstack).
 
 Lemma symbol_address_sound:
-  forall ge id ofs,
-  genv_match ge ->
-  vmatch (Genv.symbol_address ge id ofs) (Ptr (Gl id ofs)).
+  forall id ofs,
+  genv_match ->
+  vmatch (match Genv.symbol_address ge id ofs with
+    | Vptr b ofs0 =>
+        match Genv.find_comp_of_block ge b with
+        | Some cp' =>
+            if (cp =? cp')%positive
+            then Vptr b ofs0
+            else match Genv.find_def ge b with
+                 | Some (Gfun _) => Vptr b ofs0
+                 | _ => Vundef
+                 end
+        | None => Vundef
+        end
+    | _ => Vundef
+    end) (Ptr (Gl id ofs)).
 Proof.
-  intros. unfold Genv.symbol_address. destruct (Genv.find_symbol ge id) as [b|] eqn:F.
-  constructor. constructor. apply H; auto.
-  constructor.
+  intros. unfold Genv.symbol_address.
+  destruct (Genv.find_symbol ge id) as [b|] eqn:F;
+    try now constructor.
+  destruct (Genv.find_comp_of_block ge b) eqn:?; try now constructor.
+  destruct (cp =? c)%positive eqn:?; try now constructor.
+  constructor. constructor. eauto. left. apply Pos.eqb_eq in Heqb0. subst c; auto.
+  apply H; auto.
+  destruct (Genv.find_def ge b) as [[] |] eqn:?; try now constructor.
+  constructor. constructor. auto. right; eauto. apply H; auto.
 Qed.
 
 Lemma vmatch_ptr_gl:
-  forall ge v id ofs,
-  genv_match ge ->
+  forall v id ofs,
+  genv_match ->
   vmatch v (Ptr (Gl id ofs)) ->
   Val.lessdef v (Genv.symbol_address ge id ofs).
 Proof.
   intros. unfold Genv.symbol_address. inv H0.
 - inv H3. replace (Genv.find_symbol ge id) with (Some b). constructor.
-  symmetry. apply H; auto.
 - constructor.
 Qed.
 
@@ -3098,6 +3123,11 @@ Proof.
   intros v a E; destruct v; simpl in E; inv E; constructor.
 Qed.
 
+End WithGenvCp.
+
+Section WithGenv.
+  Variable (ge: genv).
+
 (** * Abstracting memory blocks *)
 
 Inductive acontent : Type :=
@@ -3190,14 +3220,14 @@ Definition ablock_storebytes (ab: ablock) (p: aptr) (ofs: Z) (sz: Z) :=
 Definition ablock_storebytes_anywhere (ab: ablock) (p: aptr) :=
   ablock_init (plub p ab.(ab_summary)).
 
-Definition smatch (m: mem) (b: block) (p: aptr) : Prop :=
-  (forall chunk ofs cp v, Mem.load chunk m b ofs cp = Some v -> vmatch v (Ifptr p))
-/\(forall ofs cp b' ofs' q i, Mem.loadbytes m b ofs 1 cp = Some (Fragment (Vptr b' ofs') q i :: nil) -> pmatch b' ofs' p).
+Definition smatch (cp: compartment) (m: mem) (b: block) (p: aptr) : Prop :=
+  (forall cp' chunk ofs v, Mem.load chunk m b ofs cp' = Some v -> vmatch ge cp v (Ifptr p))
+/\(forall cp' ofs b' ofs' q i, Mem.loadbytes m b ofs 1 cp' = Some (Fragment (Vptr b' ofs') q i :: nil) -> pmatch ge cp b' ofs' p).
 
 Remark loadbytes_load_ext:
   forall b m m',
-  (forall ofs n cp bytes, Mem.loadbytes m' b ofs n cp = Some bytes -> n >= 0 -> Mem.loadbytes m b ofs n cp = Some bytes) ->
-  forall chunk ofs cp v, Mem.load chunk m' b ofs cp = Some v -> Mem.load chunk m b ofs cp = Some v.
+  (forall cp ofs n bytes, Mem.loadbytes m' b ofs n cp = Some bytes -> n >= 0 -> Mem.loadbytes m b ofs n cp = Some bytes) ->
+  forall cp chunk ofs v, Mem.load chunk m' b ofs cp = Some v -> Mem.load chunk m b ofs cp = Some v.
 Proof.
   intros. exploit Mem.load_loadbytes; eauto. intros [bytes [A B]].
   exploit Mem.load_valid_access; eauto. intros [C [D E]].
@@ -3205,10 +3235,10 @@ Proof.
 Qed.
 
 Lemma smatch_ext:
-  forall m b p m',
-  smatch m b p ->
-  (forall ofs n cp bytes, Mem.loadbytes m' b ofs n cp = Some bytes -> n >= 0 -> Mem.loadbytes m b ofs n cp = Some bytes) ->
-  smatch m' b p.
+  forall cp m b p m',
+  smatch cp m b p ->
+  (forall cp' ofs n bytes, Mem.loadbytes m' b ofs n cp' = Some bytes -> n >= 0 -> Mem.loadbytes m b ofs n cp' = Some bytes) ->
+  smatch cp m' b p.
 Proof.
   intros. destruct H. split; intros.
   eapply H; eauto. eapply loadbytes_load_ext; eauto.
@@ -3216,17 +3246,53 @@ Proof.
 Qed.
 
 Lemma smatch_inv:
-  forall m b p m',
-  smatch m b p ->
-  (forall ofs n cp, n >= 0 -> Mem.loadbytes m' b ofs n cp = Mem.loadbytes m b ofs n cp) ->
-  smatch m' b p.
+  forall cp m b p m',
+  smatch cp  m b p ->
+  (forall cp' ofs n, n >= 0 -> Mem.loadbytes m' b ofs n cp' = Mem.loadbytes m b ofs n cp') ->
+  smatch cp m' b p.
 Proof.
   intros. eapply smatch_ext; eauto.
   intros. rewrite <- H0; eauto.
 Qed.
 
+Print HintDb va.
+
+Hint Constructors cmatch : va.
+Hint Constructors pmatch: va.
+Hint Constructors vmatch: va.
+Hint Constructors vge: va.
+Hint Constructors pge: va.
+Hint Resolve cnot_sound symbol_address_sound
+       shl_sound shru_sound shr_sound
+       and_sound or_sound xor_sound notint_sound
+       ror_sound rolm_sound
+       neg_sound add_sound sub_sound
+       mul_sound mulhs_sound mulhu_sound
+       divs_sound divu_sound mods_sound modu_sound shrx_sound
+       shll_sound shrl_sound shrlu_sound
+       andl_sound orl_sound xorl_sound notl_sound roll_sound rorl_sound
+       negl_sound addl_sound subl_sound
+       mull_sound mullhs_sound mullhu_sound
+       divls_sound divlu_sound modls_sound modlu_sound shrxl_sound
+       offset_ptr_sound
+       negf_sound absf_sound
+       addf_sound subf_sound mulf_sound divf_sound
+       negfs_sound absfs_sound
+       addfs_sound subfs_sound mulfs_sound divfs_sound
+       zero_ext_sound sign_ext_sound longofint_sound longofintu_sound
+       zero_ext_l_sound sign_ext_l_sound
+       singleoffloat_sound floatofsingle_sound
+       intoffloat_sound intuoffloat_sound floatofint_sound floatofintu_sound
+       intofsingle_sound intuofsingle_sound singleofint_sound singleofintu_sound
+       longoffloat_sound longuoffloat_sound floatoflong_sound floatoflongu_sound
+       longofsingle_sound longuofsingle_sound singleoflong_sound singleoflongu_sound
+       longofwords_sound loword_sound hiword_sound
+       cmpu_bool_sound cmp_bool_sound cmplu_bool_sound cmpl_bool_sound
+       cmpf_bool_sound cmpfs_bool_sound
+       maskzero_sound : va.
+
 Lemma smatch_ge:
-  forall m b p q, smatch m b p -> pge q p -> smatch m b q.
+  forall cp m b p q, smatch cp m b p -> pge q p -> smatch cp m b q.
 Proof.
   intros. destruct H as [A B]. split; intros.
   apply vmatch_ge with (Ifptr p); eauto with va.
@@ -3234,7 +3300,7 @@ Proof.
 Qed.
 
 Lemma In_loadbytes:
-  forall m b byte n ofs cp bytes,
+  forall cp m b byte n ofs bytes,
   Mem.loadbytes m b ofs n cp = Some bytes ->
   In byte bytes ->
   exists ofs', ofs <= ofs' < ofs + n /\ Mem.loadbytes m b ofs' 1 cp = Some(byte :: nil).
@@ -3242,7 +3308,7 @@ Proof.
   intros until n. pattern n.
   apply well_founded_ind with (R := Zwf 0).
 - apply Zwf_well_founded.
-- intros sz REC ofs cp bytes LOAD IN.
+- intros sz REC ofs bytes LOAD IN.
   destruct (zle sz 0).
   + rewrite (Mem.loadbytes_empty m b ofs sz cp) in LOAD; try auto;
       [| eapply Mem.loadbytes_can_access_block_inj; eauto].
@@ -3264,11 +3330,11 @@ Proof.
 Qed.
 
 Lemma smatch_loadbytes:
-  forall m b p b' ofs' q i n ofs cp bytes,
-  Mem.loadbytes m b ofs n cp = Some bytes ->
-  smatch m b p ->
+  forall cp cp' m b p b' ofs' q i n ofs bytes,
+  Mem.loadbytes m b ofs n cp' = Some bytes ->
+  smatch cp m b p ->
   In (Fragment (Vptr b' ofs') q i) bytes ->
-  pmatch b' ofs' p.
+  pmatch ge cp b' ofs' p.
 Proof.
   intros. exploit In_loadbytes; eauto. intros (ofs1 & A & B).
   eapply H0; eauto.
@@ -3276,7 +3342,7 @@ Qed.
 
 (* RB: NOTE: Could use separate compartment variables. *)
 Lemma loadbytes_provenance:
-  forall m b ofs' byte n ofs cp bytes,
+  forall cp m b ofs' byte n ofs bytes,
   Mem.loadbytes m b ofs n cp = Some bytes ->
   Mem.loadbytes m b ofs' 1 cp = Some (byte :: nil) ->
   ofs <= ofs' < ofs + n ->
@@ -3285,7 +3351,7 @@ Proof.
   intros until n. pattern n.
   apply well_founded_ind with (R := Zwf 0).
 - apply Zwf_well_founded.
-- intros sz REC ofs cp bytes LOAD LOAD1 IN.
+- intros sz REC ofs bytes LOAD LOAD1 IN.
   exploit (Mem.loadbytes_split m b ofs 1 (sz - 1) cp bytes).
   replace (1 + (sz - 1)) with sz by lia. auto.
   lia.
@@ -3357,22 +3423,22 @@ Proof.
 Qed.
 
 Lemma smatch_store:
-  forall chunk m b ofs v cp m' b' p av,
-  Mem.store chunk m b ofs v cp = Some m' ->
-  smatch m b' p ->
-  vmatch v av ->
-  smatch m' b' (vplub av p).
+  forall cp chunk m b ofs v cp' m' b' p av,
+  Mem.store chunk m b ofs v cp' = Some m' ->
+  smatch cp m b' p ->
+  vmatch ge cp v av ->
+  smatch cp m' b' (vplub av p).
 Proof.
   intros. destruct H0 as [A B]. split.
-- intros chunk' ofs' cp' v' LOAD. destruct v'; auto with va.
+- intros cp'' chunk' ofs' v' LOAD. destruct v'; auto with va.
   exploit Mem.load_pointer_store; eauto.
   intros [(P & Q & R & S) | DISJ].
 + subst. apply vmatch_vplub_l. auto.
-+ apply vmatch_vplub_r. apply A with (chunk := chunk') (ofs := ofs') (cp := cp').
++ apply vmatch_vplub_r. apply A with (chunk := chunk') (ofs := ofs') (cp' := cp'').
   rewrite <- LOAD. symmetry. eapply Mem.load_store_other; eauto.
 - intros. exploit store_provenance; eauto. intros [[P Q] | P].
 + subst.
-  assert (V: vmatch (Vptr b'0 ofs') (Ifptr (vplub av p))).
+  assert (V: vmatch ge cp (Vptr b'0 ofs') (Ifptr (vplub av p))).
   {
     apply vmatch_vplub_l. auto.
   }
@@ -3381,11 +3447,11 @@ Proof.
 Qed.
 
 Lemma smatch_storebytes:
-  forall m b ofs bytes cp m' b' p p',
-  Mem.storebytes m b ofs bytes cp = Some m' ->
-  smatch m b' p ->
-  (forall b' ofs' q i, In (Fragment (Vptr b' ofs') q i) bytes -> pmatch b' ofs' p') ->
-  smatch m' b' (plub p' p).
+  forall m b ofs bytes cp cp' m' b' p p',
+  Mem.storebytes m b ofs bytes cp' = Some m' ->
+  smatch cp m b' p ->
+  (forall b' ofs' q i, In (Fragment (Vptr b' ofs') q i) bytes -> pmatch ge cp b' ofs' p') ->
+  smatch cp m' b' (plub p' p).
 Proof.
   intros. destruct H0 as [A B]. split.
 - intros. apply vmatch_ifptr. intros bx ofsx EQ; subst v.
@@ -3407,15 +3473,15 @@ Proof.
   apply pmatch_lub_r. eauto.
 Qed.
 
-Definition bmatch (m: mem) (b: block) (ab: ablock) : Prop :=
-  smatch m b ab.(ab_summary) /\
-  forall chunk ofs cp v, Mem.load chunk m b ofs cp = Some v -> vmatch v (ablock_load chunk ab ofs).
+Definition bmatch (cp: compartment) (m: mem) (b: block) (ab: ablock) : Prop :=
+  smatch cp m b ab.(ab_summary) /\
+  forall cp' chunk ofs v, Mem.load chunk m b ofs cp' = Some v -> vmatch ge cp v (ablock_load chunk ab ofs).
 
 Lemma bmatch_ext:
-  forall m b ab m',
-  bmatch m b ab ->
-  (forall ofs n cp bytes, Mem.loadbytes m' b ofs n cp = Some bytes -> n >= 0 -> Mem.loadbytes m b ofs n cp = Some bytes) ->
-  bmatch m' b ab.
+  forall cp m b ab m',
+  bmatch cp m b ab ->
+  (forall cp' ofs n bytes, Mem.loadbytes m' b ofs n cp' = Some bytes -> n >= 0 -> Mem.loadbytes m b ofs n cp' = Some bytes) ->
+  bmatch cp m' b ab.
 Proof.
   intros. destruct H as [A B]. split; intros.
   apply smatch_ext with m; auto.
@@ -3423,36 +3489,36 @@ Proof.
 Qed.
 
 Lemma bmatch_inv:
-  forall m b ab m',
-  bmatch m b ab ->
-  (forall ofs n cp, n >= 0 -> Mem.loadbytes m' b ofs n cp = Mem.loadbytes m b ofs n cp) ->
-  bmatch m' b ab.
+  forall cp m b ab m',
+  bmatch cp m b ab ->
+  (forall cp' ofs n, n >= 0 -> Mem.loadbytes m' b ofs n cp' = Mem.loadbytes m b ofs n cp') ->
+  bmatch cp m' b ab.
 Proof.
   intros. eapply bmatch_ext; eauto.
   intros. rewrite <- H0; eauto.
 Qed.
 
 Lemma ablock_load_sound:
-  forall chunk m b ofs cp v ab,
-  Mem.load chunk m b ofs cp = Some v ->
-  bmatch m b ab ->
-  vmatch v (ablock_load chunk ab ofs).
+  forall chunk m b ofs cp cp' v ab,
+  Mem.load chunk m b ofs cp' = Some v ->
+  bmatch cp m b ab ->
+  vmatch ge cp v (ablock_load chunk ab ofs).
 Proof.
   intros. destruct H0. eauto.
 Qed.
 
 Lemma ablock_load_anywhere_sound:
-  forall chunk m b ofs cp v ab,
-  Mem.load chunk m b ofs cp = Some v ->
-  bmatch m b ab ->
-  vmatch v (ablock_load_anywhere chunk ab).
+  forall chunk m b ofs cp cp' v ab,
+  Mem.load chunk m b ofs cp' = Some v ->
+  bmatch cp m b ab ->
+  vmatch ge cp v (ablock_load_anywhere chunk ab).
 Proof.
   intros. destruct H0. destruct H0. unfold ablock_load_anywhere.
   eapply vnormalize_cast; eauto.
 Qed.
 
 Lemma ablock_init_sound:
-  forall m b p, smatch m b p -> bmatch m b (ablock_init p).
+  forall cp m b p, smatch cp m b p -> bmatch cp m b (ablock_init p).
 Proof.
   intros; split; auto; intros.
   unfold ablock_load, ablock_init; simpl.
@@ -3460,11 +3526,11 @@ Proof.
 Qed.
 
 Lemma ablock_store_anywhere_sound:
-  forall chunk m b ofs v cp m' b' ab av,
-  Mem.store chunk m b ofs v cp = Some m' ->
-  bmatch m b' ab ->
-  vmatch v av ->
-  bmatch m' b' (ablock_store_anywhere chunk ab av).
+  forall chunk m b ofs v cp cp' m' b' ab av,
+  Mem.store chunk m b ofs v cp' = Some m' ->
+  bmatch cp m b' ab ->
+  vmatch ge cp v av ->
+  bmatch cp m' b' (ablock_store_anywhere chunk ab av).
 Proof.
   intros. destruct H0 as [A B]. unfold ablock_store_anywhere.
   apply ablock_init_sound. eapply smatch_store; eauto.
@@ -3563,16 +3629,16 @@ Proof.
 Qed.
 
 Lemma ablock_store_sound:
-  forall chunk m b ofs v cp m' ab av,
-  Mem.store chunk m b ofs v cp = Some m' ->
-  bmatch m b ab ->
-  vmatch v av ->
-  bmatch m' b (ablock_store chunk ab ofs av).
+  forall chunk m b ofs v cp cp' m' ab av,
+  Mem.store chunk m b ofs v cp' = Some m' ->
+  bmatch cp m b ab ->
+  vmatch ge cp v av ->
+  bmatch cp m' b (ablock_store chunk ab ofs av).
 Proof.
   intros until av; intros STORE BIN VIN. destruct BIN as [BIN1 BIN2]. split.
   eapply smatch_store; eauto.
-  intros chunk' ofs' cp' v' LOAD.
-  assert (SUMMARY: vmatch v' (vnormalize chunk' (Ifptr (vplub av ab.(ab_summary))))).
+  intros cp'' chunk' ofs' v' LOAD.
+  assert (SUMMARY: vmatch ge cp v' (vnormalize chunk' (Ifptr (vplub av ab.(ab_summary))))).
   { exploit smatch_store; eauto. intros [A B]. eapply vnormalize_cast; eauto. }
   unfold ablock_load.
   destruct ((ab_contents (ablock_store chunk ab ofs av)) ## ofs') as [[chunk1 av1]|] eqn:C; auto.
@@ -3587,28 +3653,28 @@ Proof.
     apply Mem.load_result in LOAD. apply Mem.load_result in LOAD'. congruence. }
   subst v'. apply vnormalize_sound; auto.
 - (* disjoint load/store *)
-  assert (Mem.load chunk' m b ofs' cp' = Some v').
+  assert (Mem.load chunk' m b ofs' cp'' = Some v').
   { rewrite <- LOAD. symmetry. eapply Mem.load_store_other; eauto.
     rewrite U. auto. }
   exploit BIN2; eauto. unfold ablock_load. rewrite P. rewrite COMPAT. auto.
 Qed.
 
 Lemma ablock_loadbytes_sound:
-  forall m b ab b' ofs' q i n ofs cp bytes,
-  Mem.loadbytes m b ofs n cp = Some bytes ->
-  bmatch m b ab ->
+  forall m b ab b' ofs' q i n ofs cp cp' bytes,
+  Mem.loadbytes m b ofs n cp' = Some bytes ->
+  bmatch cp m b ab ->
   In (Fragment (Vptr b' ofs') q i) bytes ->
-  pmatch b' ofs' (ablock_loadbytes ab).
+  pmatch ge cp b' ofs' (ablock_loadbytes ab).
 Proof.
   intros. destruct H0. eapply smatch_loadbytes; eauto.
 Qed.
 
 Lemma ablock_storebytes_anywhere_sound:
-  forall m b ofs bytes cp p m' b' ab,
-  Mem.storebytes m b ofs bytes cp = Some m' ->
-  (forall b' ofs' q i, In (Fragment (Vptr b' ofs') q i) bytes -> pmatch b' ofs' p) ->
-  bmatch m b' ab ->
-  bmatch m' b' (ablock_storebytes_anywhere ab p).
+  forall m b ofs bytes cp cp' p m' b' ab,
+  Mem.storebytes m b ofs bytes cp' = Some m' ->
+  (forall b' ofs' q i, In (Fragment (Vptr b' ofs') q i) bytes -> pmatch ge cp b' ofs' p) ->
+  bmatch cp m b' ab ->
+  bmatch cp m' b' (ablock_storebytes_anywhere ab p).
 Proof.
   intros. destruct H1 as [A B]. apply ablock_init_sound.
   eapply smatch_storebytes; eauto.
@@ -3627,24 +3693,24 @@ Proof.
 Qed.
 
 Lemma ablock_storebytes_sound:
-  forall m b ofs bytes cp m' p ab sz,
-  Mem.storebytes m b ofs bytes cp = Some m' ->
+  forall m b ofs bytes cp cp' m' p ab sz,
+  Mem.storebytes m b ofs bytes cp' = Some m' ->
   length bytes = Z.to_nat sz ->
-  (forall b' ofs' q i, In (Fragment (Vptr b' ofs') q i) bytes -> pmatch b' ofs' p) ->
-  bmatch m b ab ->
-  bmatch m' b (ablock_storebytes ab p ofs sz).
+  (forall b' ofs' q i, In (Fragment (Vptr b' ofs') q i) bytes -> pmatch ge cp b' ofs' p) ->
+  bmatch cp m b ab ->
+  bmatch cp m' b (ablock_storebytes ab p ofs sz).
 Proof.
   intros until sz; intros STORE LENGTH CONTENTS BM. destruct BM as [BM1 BM2]. split.
   eapply smatch_storebytes; eauto.
-  intros chunk' ofs' cp' v' LOAD'.
-  assert (SUMMARY: vmatch v' (vnormalize chunk' (Ifptr (plub p ab.(ab_summary))))).
+  intros cp'' chunk' ofs' v' LOAD'.
+  assert (SUMMARY: vmatch ge cp v' (vnormalize chunk' (Ifptr (plub p ab.(ab_summary))))).
   { exploit smatch_storebytes; eauto. intros [A B]. eapply vnormalize_cast; eauto. }
   unfold ablock_load.
   destruct (ab_contents (ablock_storebytes ab p ofs sz))##ofs' as [[chunk av]|] eqn:C; auto.
   destruct (chunk_compat chunk' chunk) eqn:COMPAT; auto.
   exploit chunk_compat_true; eauto. intros (U & V & W).
   exploit ablock_storebytes_contents; eauto. intros [A B].
-  assert (Mem.load chunk' m b ofs' cp' = Some v').
+  assert (Mem.load chunk' m b ofs' cp'' = Some v').
   { rewrite <- LOAD'; symmetry. eapply Mem.load_storebytes_other; eauto.
     rewrite U. rewrite LENGTH. rewrite Z_to_nat_max. right; lia. }
   exploit BM2; eauto. unfold ablock_load. rewrite A. rewrite COMPAT. auto.
@@ -3677,7 +3743,7 @@ Qed.
 Lemma bbeq_sound:
   forall ab1 ab2,
   bbeq ab1 ab2 = true ->
-  forall m b, bmatch m b ab1 <-> bmatch m b ab2.
+  forall cp m b, bmatch cp m b ab1 <-> bmatch cp m b ab2.
 Proof.
   intros. exploit bbeq_load; eauto. intros [A B].
   unfold bmatch. rewrite A. intuition. rewrite <- B; eauto. rewrite B; eauto.
@@ -3698,28 +3764,28 @@ Definition blub (ab1 ab2: ablock) : ablock :=
      ab_summary := plub ab1.(ab_summary) ab2.(ab_summary) |}.
 
 Lemma smatch_lub_l:
-  forall m b p q, smatch m b p -> smatch m b (plub p q).
+  forall cp m b p q, smatch cp m b p -> smatch cp m b (plub p q).
 Proof.
   intros. destruct H as [A B]. split; intros.
-  change (vmatch v (vlub (Ifptr p) (Ifptr q))). apply vmatch_lub_l. eapply A; eauto.
+  change (vmatch ge cp v (vlub (Ifptr p) (Ifptr q))). apply vmatch_lub_l. eapply A; eauto.
   apply pmatch_lub_l. eapply B; eauto.
 Qed.
 
 Lemma smatch_lub_r:
-  forall m b p q, smatch m b q -> smatch m b (plub p q).
+  forall cp m b p q, smatch cp m b q -> smatch cp m b (plub p q).
 Proof.
   intros. destruct H as [A B]. split; intros.
-  change (vmatch v (vlub (Ifptr p) (Ifptr q))). apply vmatch_lub_r. eapply A; eauto.
+  change (vmatch ge cp v (vlub (Ifptr p) (Ifptr q))). apply vmatch_lub_r. eapply A; eauto.
   apply pmatch_lub_r. eapply B; eauto.
 Qed.
 
 Lemma bmatch_lub_l:
-  forall m b x y, bmatch m b x -> bmatch m b (blub x y).
+  forall cp m b x y, bmatch cp m b x -> bmatch cp m b (blub x y).
 Proof.
   intros. destruct H as [BM1 BM2]. split; unfold blub; simpl.
 - apply smatch_lub_l; auto.
 - intros.
-  assert (SUMMARY: vmatch v (vnormalize chunk (Ifptr (plub (ab_summary x) (ab_summary y))))
+  assert (SUMMARY: vmatch ge cp v (vnormalize chunk (Ifptr (plub (ab_summary x) (ab_summary y))))
 ).
   { exploit smatch_lub_l; eauto. instantiate (1 := ab_summary y).
     intros [SUMM _]. eapply vnormalize_cast; eauto. }
@@ -3733,12 +3799,12 @@ Proof.
 Qed.
 
 Lemma bmatch_lub_r:
-  forall m b x y, bmatch m b y -> bmatch m b (blub x y).
+  forall cp m b x y, bmatch cp m b y -> bmatch cp m b (blub x y).
 Proof.
   intros. destruct H as [BM1 BM2]. split; unfold blub; simpl.
 - apply smatch_lub_r; auto.
 - intros.
-  assert (SUMMARY: vmatch v (vnormalize chunk (Ifptr (plub (ab_summary x) (ab_summary y))))
+  assert (SUMMARY: vmatch ge cp v (vnormalize chunk (Ifptr (plub (ab_summary x) (ab_summary y))))
 ).
   { exploit smatch_lub_r; eauto. instantiate (1 := ab_summary x).
     intros [SUMM _]. eapply vnormalize_cast; eauto. }
@@ -3755,19 +3821,19 @@ Qed.
 
 Definition romem := PTree.t ablock.
 
-Definition romatch  (m: mem) (rm: romem) : Prop :=
+Definition romatch (cp: compartment) (m: mem) (rm: romem) : Prop :=
   forall b id ab,
   bc b = BCglob id ->
   rm!id = Some ab ->
   pge Glob ab.(ab_summary)
-  /\ bmatch m b ab
+  /\ bmatch cp m b ab
   /\ forall ofs, ~Mem.perm m b ofs Max Writable.
 
 Lemma romatch_store:
-  forall chunk m b ofs v cp m' rm,
-  Mem.store chunk m b ofs v cp = Some m' ->
-  romatch m rm ->
-  romatch m' rm.
+  forall chunk m b ofs v cp cp' m' rm,
+  Mem.store chunk m b ofs v cp' = Some m' ->
+  romatch cp m rm ->
+  romatch cp m' rm.
 Proof.
   intros; red; intros. exploit H0; eauto. intros (A & B & C). split; auto. split.
 - exploit Mem.store_valid_access_3; eauto. intros [P _].
@@ -3779,10 +3845,10 @@ Proof.
 Qed.
 
 Lemma romatch_storebytes:
-  forall m b ofs bytes cp m' rm,
-  Mem.storebytes m b ofs bytes cp = Some m' ->
-  romatch m rm ->
-  romatch m' rm.
+  forall m b ofs bytes cp cp' m' rm,
+  Mem.storebytes m b ofs bytes cp' = Some m' ->
+  romatch cp m rm ->
+  romatch cp m' rm.
 Proof.
   intros; red; intros. exploit H0; eauto. intros (A & B & C). split; auto. split.
 - apply bmatch_inv with m; auto.
@@ -3793,11 +3859,11 @@ Proof.
 Qed.
 
 Lemma romatch_ext:
-  forall m rm m',
-  romatch m rm ->
-  (forall b id ofs n cp bytes, bc b = BCglob id -> Mem.loadbytes m' b ofs n cp = Some bytes -> Mem.loadbytes m b ofs n cp = Some bytes) ->
+  forall cp m rm m',
+  romatch cp m rm ->
+  (forall cp' b id ofs n bytes, bc b = BCglob id -> Mem.loadbytes m' b ofs n cp' = Some bytes -> Mem.loadbytes m b ofs n cp' = Some bytes) ->
   (forall b id ofs p, bc b = BCglob id -> Mem.perm m' b ofs Max p -> Mem.perm m b ofs Max p) ->
-  romatch m' rm.
+  romatch cp m' rm.
 Proof.
   intros; red; intros. exploit H; eauto. intros (A & B & C).
   split. auto.
@@ -3806,10 +3872,10 @@ Proof.
 Qed.
 
 Lemma romatch_free:
-  forall m b lo hi cp m' rm,
-  Mem.free m b lo hi cp = Some m' ->
-  romatch m rm ->
-  romatch m' rm.
+  forall m b lo hi cp cp' m' rm,
+  Mem.free m b lo hi cp' = Some m' ->
+  romatch cp m rm ->
+  romatch cp m' rm.
 Proof.
   intros. apply romatch_ext with m; auto.
   intros. eapply Mem.loadbytes_free_2; eauto.
@@ -3817,11 +3883,11 @@ Proof.
 Qed.
 
 Lemma romatch_alloc:
-  forall m c b lo hi m' rm,
-  Mem.alloc m c lo hi = (m', b) ->
+  forall cp cp' m b lo hi m' rm,
+  Mem.alloc m cp' lo hi = (m', b) ->
   bc_below bc (Mem.nextblock m) ->
-  romatch m rm ->
-  romatch m' rm.
+  romatch cp m rm ->
+  romatch cp m' rm.
 Proof.
   intros. apply romatch_ext with m; auto.
   intros. rewrite <- H3; symmetry. eapply Mem.loadbytes_alloc_unchanged; eauto.
@@ -3839,20 +3905,20 @@ Record amem : Type := AMem {
   am_top: aptr
 }.
 
-Record mmatch (m: mem) (am: amem) : Prop := mk_mem_match {
+Record mmatch (cp: compartment) (m: mem) (am: amem) : Prop := mk_mem_match {
   mmatch_stack: forall b,
     bc b = BCstack ->
-    bmatch m b am.(am_stack);
+    bmatch cp m b am.(am_stack);
   mmatch_glob: forall id ab b,
     bc b = BCglob id ->
     am.(am_glob)!id = Some ab ->
-    bmatch m b ab;
+    bmatch cp m b ab;
   mmatch_nonstack: forall b,
     bc b <> BCstack -> bc b <> BCinvalid ->
-    smatch m b am.(am_nonstack);
+    smatch cp m b am.(am_nonstack);
   mmatch_top: forall b,
     bc b <> BCinvalid ->
-    smatch m b am.(am_top);
+    smatch cp m b am.(am_top);
   mmatch_below:
     bc_below bc (Mem.nextblock m)
 }.
@@ -3969,12 +4035,12 @@ Definition storebytes (m: amem) (dst: aptr) (sz: Z) (p: aptr) : amem :=
   |}.
 
 Theorem load_sound:
-  forall chunk m b ofs cp v rm am p,
-  Mem.load chunk m b (Ptrofs.unsigned ofs) cp = Some v ->
-  romatch m rm ->
-  mmatch m am ->
-  pmatch b ofs p ->
-  vmatch v (load chunk rm am p).
+  forall chunk m b ofs cp cp' v rm am p,
+  Mem.load chunk m b (Ptrofs.unsigned ofs) cp' = Some v ->
+  romatch cp m rm ->
+  mmatch cp m am ->
+  pmatch ge cp b ofs p ->
+  vmatch ge cp v (load chunk rm am p).
 Proof.
   intros. unfold load. inv H2.
 - (* Gl id ofs *)
@@ -4002,29 +4068,29 @@ Proof.
 Qed.
 
 Theorem loadv_sound:
-  forall chunk m addr v rm am aaddr cp,
-  Mem.loadv chunk m addr cp = Some v ->
-  romatch m rm ->
-  mmatch m am ->
-  vmatch addr aaddr ->
-  vmatch v (loadv chunk rm am aaddr).
+  forall chunk m addr v rm am aaddr cp cp',
+  Mem.loadv chunk m addr cp' = Some v ->
+  romatch cp m rm ->
+  mmatch cp m am ->
+  vmatch ge cp addr aaddr ->
+  vmatch ge cp v (loadv chunk rm am aaddr).
 Proof.
   intros. destruct addr; simpl in H; try discriminate.
   eapply load_sound; eauto. apply match_aptr_of_aval; auto.
 Qed.
 
 Theorem store_sound:
-  forall chunk m b ofs v cp m' am p av,
-  Mem.store chunk m b (Ptrofs.unsigned ofs) v cp = Some m' ->
-  mmatch m am ->
-  pmatch b ofs p ->
-  vmatch v av ->
-  mmatch m' (store chunk am p av).
+  forall chunk m b ofs v cp cp' m' am p av,
+  Mem.store chunk m b (Ptrofs.unsigned ofs) v cp' = Some m' ->
+  mmatch cp m am ->
+  pmatch ge cp b ofs p ->
+  vmatch ge cp v av ->
+  mmatch cp m' (store chunk am p av).
 Proof.
   intros until av; intros STORE MM PM VM.
   unfold store; constructor; simpl; intros.
 - (* Stack *)
-  assert (DFL: bc b <> BCstack -> bmatch m' b0 (am_stack am)).
+  assert (DFL: bc b <> BCstack -> bmatch cp m' b0 (am_stack am)).
   { intros. apply bmatch_inv with m. eapply mmatch_stack; eauto.
     intros. eapply Mem.loadbytes_store_other; eauto. left; congruence. }
   inv PM; try (apply DFL; congruence).
@@ -4037,7 +4103,7 @@ Proof.
 - (* Globals *)
   rename b0 into b'.
   assert (DFL: bc b <> BCglob id -> (am_glob am)!id = Some ab ->
-               bmatch m' b' ab).
+               bmatch cp m' b' ab).
   { intros. apply bmatch_inv with m. eapply mmatch_glob; eauto.
     intros. eapply Mem.loadbytes_store_other; eauto. left; congruence. }
   inv PM.
@@ -4064,9 +4130,9 @@ Proof.
   + rewrite PTree.gempty in H0; congruence.
 
 - (* Nonstack *)
-  assert (DFL: smatch m' b0 (vplub av (am_nonstack am))).
+  assert (DFL: smatch cp m' b0 (vplub av (am_nonstack am))).
   { eapply smatch_store; eauto. eapply mmatch_nonstack; eauto. }
-  assert (STK: bc b = BCstack -> smatch m' b0 (am_nonstack am)).
+  assert (STK: bc b = BCstack -> smatch cp m' b0 (am_nonstack am)).
   { intros. apply smatch_inv with m. eapply mmatch_nonstack; eauto; congruence.
     intros. eapply Mem.loadbytes_store_other; eauto. left. congruence. }
   inv PM; (apply DFL || apply STK; congruence).
@@ -4079,24 +4145,24 @@ Proof.
 Qed.
 
 Theorem storev_sound:
-  forall chunk m addr v cp m' am aaddr av,
-  Mem.storev chunk m addr v cp = Some m' ->
-  mmatch m am ->
-  vmatch addr aaddr ->
-  vmatch v av ->
-  mmatch m' (storev chunk am aaddr av).
+  forall chunk m addr v cp cp' m' am aaddr av,
+  Mem.storev chunk m addr v cp' = Some m' ->
+  mmatch cp m am ->
+  vmatch ge cp addr aaddr ->
+  vmatch ge cp v av ->
+  mmatch cp m' (storev chunk am aaddr av).
 Proof.
   intros. destruct addr; simpl in H; try discriminate.
   eapply store_sound; eauto. apply match_aptr_of_aval; auto.
 Qed.
 
 Theorem loadbytes_sound:
-  forall m b ofs sz cp bytes am rm p,
-  Mem.loadbytes m b (Ptrofs.unsigned ofs) sz cp = Some bytes ->
-  romatch m rm ->
-  mmatch m am ->
-  pmatch b ofs p ->
-  forall  b' ofs' q i, In (Fragment (Vptr b' ofs') q i) bytes -> pmatch b' ofs' (loadbytes am rm p).
+  forall m b ofs sz cp cp' bytes am rm p,
+  Mem.loadbytes m b (Ptrofs.unsigned ofs) sz cp' = Some bytes ->
+  romatch cp m rm ->
+  mmatch cp m am ->
+  pmatch ge cp b ofs p ->
+  forall  b' ofs' q i, In (Fragment (Vptr b' ofs') q i) bytes -> pmatch ge cp b' ofs' (loadbytes am rm p).
 Proof.
   intros. unfold loadbytes; inv H2.
 - (* Gl id ofs *)
@@ -4124,18 +4190,18 @@ Proof.
 Qed.
 
 Theorem storebytes_sound:
-  forall m b ofs bytes cp m' am p sz q,
-  Mem.storebytes m b (Ptrofs.unsigned ofs) bytes cp = Some m' ->
-  mmatch m am ->
-  pmatch b ofs p ->
+  forall m b ofs bytes cp cp' m' am p sz q,
+  Mem.storebytes m b (Ptrofs.unsigned ofs) bytes cp' = Some m' ->
+  mmatch cp m am ->
+  pmatch ge cp b ofs p ->
   length bytes = Z.to_nat sz ->
-  (forall b' ofs' qt i, In (Fragment (Vptr b' ofs') qt i) bytes -> pmatch b' ofs' q) ->
-  mmatch m' (storebytes am p sz q).
+  (forall b' ofs' qt i, In (Fragment (Vptr b' ofs') qt i) bytes -> pmatch ge cp b' ofs' q) ->
+  mmatch cp m' (storebytes am p sz q).
 Proof.
   intros until q; intros STORE MM PM LENGTH BYTES.
   unfold storebytes; constructor; simpl; intros.
 - (* Stack *)
-  assert (DFL: bc b <> BCstack -> bmatch m' b0 (am_stack am)).
+  assert (DFL: bc b <> BCstack -> bmatch cp m' b0 (am_stack am)).
   { intros. apply bmatch_inv with m. eapply mmatch_stack; eauto.
     intros. eapply Mem.loadbytes_storebytes_other; eauto. left; congruence. }
   inv PM; try (apply DFL; congruence).
@@ -4148,7 +4214,7 @@ Proof.
 - (* Globals *)
   rename b0 into b'.
   assert (DFL: bc b <> BCglob id -> (am_glob am)!id = Some ab ->
-               bmatch m' b' ab).
+               bmatch cp m' b' ab).
   { intros. apply bmatch_inv with m. eapply mmatch_glob; eauto.
     intros. eapply Mem.loadbytes_storebytes_other; eauto. left; congruence. }
   inv PM.
@@ -4175,9 +4241,9 @@ Proof.
   + rewrite PTree.gempty in H0; congruence.
 
 - (* Nonstack *)
-  assert (DFL: smatch m' b0 (plub q (am_nonstack am))).
+  assert (DFL: smatch cp m' b0 (plub q (am_nonstack am))).
   { eapply smatch_storebytes; eauto. eapply mmatch_nonstack; eauto. }
-  assert (STK: bc b = BCstack -> smatch m' b0 (am_nonstack am)).
+  assert (STK: bc b = BCstack -> smatch cp m' b0 (am_nonstack am)).
   { intros. apply smatch_inv with m. eapply mmatch_nonstack; eauto; congruence.
     intros. eapply Mem.loadbytes_storebytes_other; eauto. left. congruence. }
   inv PM; (apply DFL || apply STK; congruence).
@@ -4190,11 +4256,11 @@ Proof.
 Qed.
 
 Lemma mmatch_ext:
-  forall m am m',
-  mmatch m am ->
-  (forall b ofs n cp bytes, bc b <> BCinvalid -> n >= 0 -> Mem.loadbytes m' b ofs n cp = Some bytes -> Mem.loadbytes m b ofs n cp = Some bytes) ->
+  forall cp m am m',
+  mmatch cp m am ->
+  (forall cp' b ofs n bytes, bc b <> BCinvalid -> n >= 0 -> Mem.loadbytes m' b ofs n cp' = Some bytes -> Mem.loadbytes m b ofs n cp' = Some bytes) ->
   Ple (Mem.nextblock m) (Mem.nextblock m') ->
-  mmatch m' am.
+  mmatch cp m' am.
 Proof.
   intros. inv H. constructor; intros.
 - apply bmatch_ext with m; auto with va.
@@ -4207,8 +4273,8 @@ Qed.
 Lemma mmatch_free:
   forall m b lo hi cp m' am,
   Mem.free m b lo hi cp = Some m' ->
-  mmatch m am ->
-  mmatch m' am.
+  mmatch cp m am ->
+  mmatch cp m' am.
 Proof.
   intros. apply mmatch_ext with m; auto.
   intros. eapply Mem.loadbytes_free_2; eauto.
@@ -4216,7 +4282,7 @@ Proof.
 Qed.
 
 Lemma mmatch_top':
-  forall m am, mmatch m am -> mmatch m mtop.
+  forall cp m am, mmatch cp m am -> mmatch cp m mtop.
 Proof.
   intros. constructor; simpl; intros.
 - apply ablock_init_sound. apply smatch_ge with (ab_summary (am_stack am)).
@@ -4236,7 +4302,7 @@ Definition mbeq (m1 m2: amem) : bool :=
   && PTree.beq bbeq m1.(am_glob) m2.(am_glob).
 
 Lemma mbeq_sound:
-  forall m1 m2, mbeq m1 m2 = true -> forall m, mmatch m m1 <-> mmatch m m2.
+  forall cp m1 m2, mbeq m1 m2 = true -> forall m, mmatch cp m m1 <-> mmatch cp m m2.
 Proof.
   unfold mbeq; intros. InvBooleans. rewrite PTree.beq_correct in H1.
   split; intros M; inv M; constructor; intros.
@@ -4269,7 +4335,7 @@ Definition mlub (m1 m2: amem) : amem :=
    am_top := plub m1.(am_top) m2.(am_top) |}.
 
 Lemma mmatch_lub_l:
-  forall m x y, mmatch m x -> mmatch m (mlub x y).
+  forall cp m x y, mmatch cp m x -> mmatch cp m (mlub x y).
 Proof.
   intros. inv H. constructor; simpl; intros.
 - apply bmatch_lub_l; auto.
@@ -4284,7 +4350,7 @@ Proof.
 Qed.
 
 Lemma mmatch_lub_r:
-  forall m x y, mmatch m y -> mmatch m (mlub x y).
+  forall cp m x y, mmatch cp m y -> mmatch cp m (mlub x y).
 Proof.
   intros. inv H. constructor; simpl; intros.
 - apply bmatch_lub_r; auto.
@@ -4298,6 +4364,7 @@ Proof.
 - auto.
 Qed.
 
+End WithGenv.
 End MATCH.
 
 (** * Monotonicity properties when the block classification changes. *)
@@ -4319,22 +4386,22 @@ Proof.
 Qed.
 
 Lemma romatch_exten:
-  forall (bc1 bc2: block_classification) m rm,
-  romatch bc1 m rm ->
+  forall ge cp (bc1 bc2: block_classification) m rm,
+  romatch bc1 ge cp m rm ->
   (forall b id, bc2 b = BCglob id <-> bc1 b = BCglob id) ->
-  romatch bc2 m rm.
+  romatch bc2 ge cp m rm.
 Proof.
   intros; red; intros. rewrite H0 in H1. exploit H; eauto. intros (A & B & C).
   split; auto. split; auto.
-  assert (PM: forall b ofs p, pmatch bc1 b ofs p -> pmatch bc1 b ofs (ab_summary ab) -> pmatch bc2 b ofs p).
+  assert (PM: forall b ofs p, pmatch bc1 ge cp b ofs p -> pmatch bc1 ge cp b ofs (ab_summary ab) -> pmatch bc2 ge cp b ofs p).
   {
     intros.
-    assert (pmatch bc1 b0 ofs Glob) by (eapply pmatch_ge; eauto).
+    assert (pmatch bc1 ge cp b0 ofs Glob) by (eapply pmatch_ge; eauto).
     inv H5.
     assert (bc2 b0 = BCglob id0) by (rewrite H0; auto).
     inv H3; econstructor; eauto with va.
   }
-  assert (VM: forall v x, vmatch bc1 v x -> vmatch bc1 v (Ifptr (ab_summary ab)) -> vmatch bc2 v x).
+  assert (VM: forall v x, vmatch bc1 ge cp v x -> vmatch bc1 ge cp v (Ifptr (ab_summary ab)) -> vmatch bc2 ge cp v x).
   {
     intros. inv H3; constructor; auto; inv H4; eapply PM; eauto.
   }
@@ -4352,26 +4419,26 @@ Section MATCH_INCR.
 Variables bc1 bc2: block_classification.
 Hypothesis INCR: bc_incr bc1 bc2.
 
-Lemma pmatch_incr: forall b ofs p, pmatch bc1 b ofs p -> pmatch bc2 b ofs p.
+Lemma pmatch_incr: forall ge cp b ofs p, pmatch bc1 ge cp b ofs p -> pmatch bc2 ge cp b ofs p.
 Proof.
   induction 1;
   assert (bc2 b = bc1 b) by (apply INCR; congruence);
   econstructor; eauto with va. rewrite H0; eauto.
 Qed.
 
-Lemma vmatch_incr: forall v x, vmatch bc1 v x -> vmatch bc2 v x.
+Lemma vmatch_incr: forall ge cp v x, vmatch bc1 ge cp v x -> vmatch bc2 ge cp v x.
 Proof.
   induction 1; constructor; auto; apply pmatch_incr; auto.
 Qed.
 
-Lemma smatch_incr: forall m b p, smatch bc1 m b p -> smatch bc2 m b p.
+Lemma smatch_incr: forall ge cp m b p, smatch bc1 ge cp m b p -> smatch bc2 ge cp m b p.
 Proof.
   intros. destruct H as [A B]. split; intros.
   apply vmatch_incr; eauto.
   apply pmatch_incr; eauto.
 Qed.
 
-Lemma bmatch_incr: forall m b ab, bmatch bc1 m b ab -> bmatch bc2 m b ab.
+Lemma bmatch_incr: forall ge cp m b ab, bmatch bc1 ge cp m b ab -> bmatch bc2 ge cp m b ab.
 Proof.
   intros. destruct H as [B1 B2]. split.
   apply smatch_incr; auto.
@@ -4399,13 +4466,13 @@ Proof.
 Qed.
 
 Lemma pmatch_inj:
-  forall bc b ofs p, pmatch bc b ofs p -> inj_of_bc bc b = Some(b, 0).
+  forall bc ge cp b ofs p, pmatch bc ge cp b ofs p -> inj_of_bc bc b = Some(b, 0).
 Proof.
   intros. apply inj_of_bc_valid. inv H; congruence.
 Qed.
 
 Lemma vmatch_inj:
-  forall bc v x, vmatch bc v x -> Val.inject (inj_of_bc bc) v v.
+  forall ge cp bc v x, vmatch bc ge cp v x -> Val.inject (inj_of_bc bc) v v.
 Proof.
   induction 1; econstructor.
   eapply pmatch_inj; eauto. rewrite Ptrofs.add_zero; auto.
@@ -4413,13 +4480,14 @@ Proof.
 Qed.
 
 Lemma vmatch_list_inj:
-  forall bc vl xl, list_forall2 (vmatch bc) vl xl -> Val.inject_list (inj_of_bc bc) vl vl.
+  forall ge cp bc vl xl, list_forall2 (vmatch bc ge cp) vl xl -> Val.inject_list (inj_of_bc bc) vl vl.
 Proof.
   induction 1; constructor. eapply vmatch_inj; eauto. auto.
 Qed.
 
 Lemma mmatch_inj:
-  forall bc m am, mmatch bc m am -> bc_below bc (Mem.nextblock m) -> Mem.inject (inj_of_bc bc) m m.
+  forall bc ge cp m am, mmatch bc ge cp m am ->
+                   bc_below bc (Mem.nextblock m) -> Mem.inject (inj_of_bc bc) m m.
 Proof.
   intros. constructor. constructor.
 - (* perms *)
@@ -4446,7 +4514,7 @@ Proof.
   }
   destruct mv; econstructor. destruct v; econstructor.
   apply inj_of_bc_valid.
-  assert (PM: pmatch bc b i Ptop).
+  assert (PM: pmatch bc ge cp b i Ptop).
   { exploit mmatch_top; eauto. intros [P Q].
     eapply pmatch_top'. eapply Q; eauto. }
   inv PM; auto.
@@ -4480,22 +4548,22 @@ Proof.
 Qed.
 
 Lemma pmatch_inj_top:
-  forall bc b b' delta ofs, inj_of_bc bc b = Some(b', delta) -> pmatch bc b ofs Ptop.
+  forall bc ge cp b b' delta ofs, inj_of_bc bc b = Some(b', delta) -> pmatch bc ge cp b ofs Ptop.
 Proof.
   intros. exploit inj_of_bc_inv; eauto. intros (A & B & C). constructor; auto.
 Qed.
 
 Lemma vmatch_inj_top:
-  forall bc v v', Val.inject (inj_of_bc bc) v v' -> vmatch bc v Vtop.
+  forall bc ge cp v v', Val.inject (inj_of_bc bc) v v' -> vmatch bc ge cp v Vtop.
 Proof.
   intros. inv H; constructor. eapply pmatch_inj_top; eauto.
 Qed.
 
 Lemma mmatch_inj_top:
-  forall bc m m', Mem.inject (inj_of_bc bc) m m' -> mmatch bc m mtop.
+  forall bc ge cp m m', Mem.inject (inj_of_bc bc) m m' -> mmatch bc ge cp m mtop.
 Proof.
   intros.
-  assert (SM: forall b, bc b <> BCinvalid -> smatch bc m b Ptop).
+  assert (SM: forall b, bc b <> BCinvalid -> smatch bc ge cp m b Ptop).
   {
     intros; split; intros.
     - exploit Mem.load_inject. eauto. eauto. apply inj_of_bc_valid; auto.
@@ -4548,9 +4616,11 @@ Definition aenv := AE.t.
 Section MATCHENV.
 
 Variable bc: block_classification.
+Variable ge: genv.
+Variable cp: compartment.
 
 Definition ematch (e: regset) (ae: aenv) : Prop :=
-  forall r, vmatch bc e#r (AE.get r ae).
+  forall r, vmatch bc ge cp e#r (AE.get r ae).
 
 Lemma ematch_ge:
   forall e ae1 ae2,
@@ -4561,7 +4631,7 @@ Qed.
 
 Lemma ematch_update:
   forall e ae v av r,
-  ematch e ae -> vmatch bc v av -> ematch (e#r <- v) (AE.set r av ae).
+  ematch e ae -> vmatch bc ge cp v av -> ematch (e#r <- v) (AE.set r av ae).
 Proof.
   intros; red; intros. rewrite AE.gsspec. rewrite PMap.gsspec.
   destruct (peq r0 r); auto.
@@ -4577,7 +4647,7 @@ Fixpoint einit_regs (rl: list reg) : aenv :=
 
 Lemma ematch_init:
   forall rl vl,
-  (forall v, In v vl -> vmatch bc v (Ifptr Nonstack)) ->
+  (forall v, In v vl -> vmatch bc ge cp v (Ifptr Nonstack)) ->
   ematch (init_regs vl rl) (einit_regs rl).
 Proof.
   induction rl; simpl; intros.
@@ -4628,7 +4698,7 @@ Qed.
 End MATCHENV.
 
 Lemma ematch_incr:
-  forall bc bc' e ae, ematch bc e ae -> bc_incr bc bc' -> ematch bc' e ae.
+  forall bc bc' ge cp e ae, ematch bc ge cp e ae -> bc_incr bc bc' -> ematch bc' ge cp e ae.
 Proof.
   intros; red; intros. apply vmatch_incr with bc; auto.
 Qed.
@@ -4644,7 +4714,7 @@ Module VA <: SEMILATTICE.
     match x, y with
     | Bot, Bot => True
     | State ae1 am1, State ae2 am2 =>
-        AE.eq ae1 ae2 /\ forall bc m, mmatch bc m am1 <-> mmatch bc m am2
+        AE.eq ae1 ae2 /\ forall bc ge cp m, mmatch bc ge cp m am1 <-> mmatch bc ge cp m am2
     | _, _ => False
     end.
 
@@ -4686,7 +4756,7 @@ Module VA <: SEMILATTICE.
     match x, y with
     | _, Bot => True
     | Bot, _ => False
-    | State ae1 am1, State ae2 am2 => AE.ge ae1 ae2 /\ forall bc m, mmatch bc m am2 -> mmatch bc m am1
+    | State ae1 am1, State ae2 am2 => AE.ge ae1 ae2 /\ forall bc ge cp m, mmatch bc ge cp m am2 -> mmatch bc ge cp m am1
     end.
 
   Lemma ge_refl: forall x y, eq x y -> ge x y.

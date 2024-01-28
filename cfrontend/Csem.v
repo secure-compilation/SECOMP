@@ -220,7 +220,8 @@ Inductive lred: expr -> mem -> expr -> mem -> Prop :=
   | red_var_global: forall x ty m b,
       e!x = None ->
       Genv.find_symbol ge x = Some b ->
-      Genv.allowed_addrof ge cp x ->
+      (Genv.find_comp_of_block ge b = Some cp \/
+       (exists fd : fundef, Genv.find_def ge b = Some (Gfun fd))) ->
       lred (Evar x ty) m
            (Eloc b Ptrofs.zero Full ty) m
   | red_deref: forall b ofs ty1 ty m,

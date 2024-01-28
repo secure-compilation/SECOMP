@@ -1487,7 +1487,7 @@ Qed.
 Lemma var_addr_correct:
   forall cenv id f tf e le te sp lo hi m cs tm b,
   match_callstack f m tm (Frame cenv tf e le te sp lo hi :: cs) (Mem.nextblock m) (Mem.nextblock tm) ->
-  eval_var_addr ge e id b ->
+  eval_var_addr ge (comp_of tf) e id b ->
   exists tv,
      eval_expr tge (Vptr sp Ptrofs.zero) te tm (comp_of tf) (var_addr cenv id) tv
   /\ Val.inject f (Vptr b Ptrofs.zero) tv.
@@ -1504,8 +1504,18 @@ Proof.
   exploit match_callstack_match_globalenvs; eauto. intros [bnd MG]. inv MG.
   exists (Vptr b Ptrofs.zero); split.
   constructor. simpl. unfold Genv.symbol_address. 
-  rewrite symbols_preserved. rewrite H2. auto.
-  econstructor; eauto.
+  rewrite symbols_preserved. rewrite H2.
+  destruct H5.
+  - unfold ge, tge. rewrite <- (Genv.match_genvs_find_comp_of_block TRANSL).
+    unfold ge in H0. rewrite H0, Pos.eqb_refl. reflexivity.
+  - destruct H0.
+    destruct (Genv.find_comp_of_block tge b) eqn:?.
+    + destruct (comp_of tf =? c)%positive; auto.
+      unfold ge, tge in *. pose proof (Genv.find_def_match_2 TRANSL b).
+      inv H5; try congruence. inv H8; try congruence.
+    + unfold ge, tge in *. rewrite <- (Genv.match_genvs_find_comp_of_block TRANSL) in Heqo.
+      unfold Genv.find_comp_of_block in Heqo; rewrite H0 in Heqo. congruence.
+  - econstructor; eauto.
 Qed.
 
 (** * Semantic preservation for the translation *)
@@ -1542,10 +1552,10 @@ Proof.
 Qed.
 
 Lemma transl_constant_correct:
-  forall f sp cst v,
+  forall f cp sp cst v,
   Csharpminor.eval_constant cst = Some v ->
   exists tv,
-     eval_constant tge sp (transl_constant cst) = Some tv
+     eval_constant tge cp sp (transl_constant cst) = Some tv
   /\ Val.inject f v tv.
 Proof.
   destruct cst; simpl; intros; inv H.
@@ -2149,7 +2159,7 @@ Proof.
   exploit match_callstack_match_globalenvs; eauto. intros [hi' MG].
   exploit external_call_mem_inject; eauto.
   eapply inj_preserves_globals; eauto.
-  intros [f' [vres' [tm' [EC [VINJ [MINJ' [UNMAPPED [OUTOFREACH [INCR SEPARATED]]]]]]]]].
+  intros [f' [vres' [tm' [EC [VINJ [MINJ' [UNMAPPED [OUTOFREACH [INCR [SEPARATED COMPNEW]]]]]]]]]].
   left; econstructor; split.
   apply plus_one. econstructor. eauto.
   (* rewrite <- (comp_transl_partial _ TRF). *)
@@ -2316,11 +2326,10 @@ Opaque PTree.set.
   exploit match_callstack_match_globalenvs; eauto. intros [hi MG].
   exploit external_call_mem_inject; eauto.
   eapply inj_preserves_globals; eauto.
-  intros [f' [vres' [tm' [EC [VINJ [MINJ' [UNMAPPED [OUTOFREACH [INCR SEPARATED]]]]]]]]].
+  intros [f' [vres' [tm' [EC [VINJ [MINJ' [UNMAPPED [OUTOFREACH [INCR [SEPARATED COMPNEW]]]]]]]]]].
   left; econstructor; split.
   apply plus_one. econstructor.
-  eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  econstructor; eauto.
+  eapply external_call_symbols_preserved; eauto. apply senv_preserved. econstructor; eauto.
   apply match_callstack_incr_bound with (Mem.nextblock m) (Mem.nextblock tm).
   eapply match_callstack_external_call; eauto.
   intros. eapply external_call_max_perm; eauto.

@@ -1022,7 +1022,7 @@ Ltac TranslOpSimpl :=
 Lemma transl_op_correct:
   forall op args res k (rs: regset) m v c,
   transl_op op args res k = OK c ->
-  eval_operation ge (rs#SP) op (map rs (map preg_of args)) m = Some v ->
+  eval_operation ge (comp_of fn) (rs#SP) op (map rs (map preg_of args)) m = Some v ->
   exists rs',
      exec_straight ge fn c rs m k rs' m
   /\ Val.lessdef v rs'#(preg_of res)
@@ -1058,16 +1058,36 @@ Opaque Int.eq.
   split; intros; Simpl. 
 - (* addrsymbol *)
   destruct (Archi.pic_code tt && negb (Ptrofs.eq ofs Ptrofs.zero)).
-+ set (rs1 := nextinstr (rs#x <- (Genv.symbol_address ge id Ptrofs.zero))).
++ set (rs1 := (nextinstr
+       rs # x <-
+       match Genv.symbol_address ge id Ptrofs.zero with
+       | Vptr b ofs0 =>
+           match Genv.find_comp_of_block ge b with
+           | Some cp' =>
+               if (comp_of fn =? cp')%positive
+               then Vptr b ofs0
+               else match Genv.find_def ge b with
+                    | Some (Gfun _) => Vptr b ofs0
+                    | _ => Vundef
+                    end
+           | None => Vundef
+           end
+       | _ => Vundef
+       end)).
+  (* set (rs1 := nextinstr (rs#x <- (Genv.symbol_address ge id Ptrofs.zero))). *)
   exploit (addptrofs_correct x x ofs k rs1 m); eauto with asmgen. 
   intros (rs2 & A & B & C).
   exists rs2; split. 
   eapply exec_straight_step with (rs2 := rs1) (m2 := m); eauto.
+  simpl.
   split. replace ofs with (Ptrofs.add Ptrofs.zero ofs) by (apply Ptrofs.add_zero_l). 
   rewrite Genv.shift_symbol_address.
-  replace (rs1 x) with (Genv.symbol_address ge id Ptrofs.zero) in B by (unfold rs1; Simpl).
-  exact B.
-  intros. rewrite C by eauto with asmgen. unfold rs1; Simpl.  
+  unfold rs1 in B. revert B. Simpl. intros B.
+  destruct (Genv.symbol_address ge id Ptrofs.zero) eqn:?; simpl; eauto.
+  destruct (Genv.find_comp_of_block ge b) eqn:?; simpl; eauto.
+  destruct (comp_of fn =? c)%positive eqn:?; simpl; eauto.
+  destruct (Genv.find_def ge b) as [[] |] eqn:?; simpl; eauto.
+  intros. rewrite C by eauto with asmgen. unfold rs1; Simpl.
 + TranslOpSimpl.
 - (* stackoffset *)
   exploit addptrofs_correct. instantiate (1 := X2); auto with asmgen. intros (rs' & A & B & C).
@@ -1384,7 +1404,7 @@ Qed.
 Lemma transl_memory_access_correct:
   forall mk_instr addr args k c (rs: regset) m v,
   transl_memory_access mk_instr addr args k = OK c ->
-  eval_addressing ge rs#SP addr (map rs (map preg_of args)) = Some v ->
+  eval_addressing ge (comp_of fn) rs#SP addr (map rs (map preg_of args)) = Some v ->
   exists base ofs rs',
      exec_straight_opt ge fn c rs m (mk_instr base ofs :: k) rs' m
   /\ Val.offset_ptr rs'#base (eval_offset ge ofs) = v
@@ -1397,7 +1417,16 @@ Proof.
 - (* global *)
   simpl in EV. inv EV. inv TR.  econstructor; econstructor; econstructor; split.
   constructor. eapply exec_straight_one. simpl; eauto. auto. auto. auto.
-  split; intros; Simpl. unfold eval_offset. apply low_high_half.
+  split; intros; Simpl. unfold eval_offset.
+  unfold high_half, Genv.symbol_address.
+  destruct (Genv.find_symbol ge i) eqn:?; try auto.
+  destruct (Genv.find_comp_of_block ge b); try auto.
+  destruct (comp_of fn =? c)%positive; auto.
+  replace (Vptr b i0) with (high_half ge i i0). apply low_high_half.
+  unfold high_half. rewrite Heqo. reflexivity.
+  destruct (Genv.find_def ge b) as [[] |]; auto.
+  replace (Vptr b i0) with (high_half ge i i0). apply low_high_half.
+  unfold high_half. rewrite Heqo. reflexivity.
 - (* stack *)
   inv TR. inv EV. apply indexed_memory_access_correct; eauto with asmgen.
 Qed.
@@ -1408,7 +1437,7 @@ Lemma transl_load_access_correct:
      exec_instr ge fn (mk_instr base ofs) rs m (comp_of fn) = exec_load ge chunk rs m rd base ofs (comp_of fn) false) ->
   (forall base ofs, sig_call (mk_instr base ofs) = None /\ is_return (mk_instr base ofs) = false) ->
   transl_memory_access mk_instr addr args k = OK c ->
-  eval_addressing ge rs#SP addr (map rs (map preg_of args)) = Some v ->
+  eval_addressing ge (comp_of fn) rs#SP addr (map rs (map preg_of args)) = Some v ->
   Mem.loadv chunk m v (Some (comp_of fn)) = Some v' ->
   rd <> PC ->
   exists rs',
@@ -1431,7 +1460,7 @@ Lemma transl_store_access_correct:
      exec_instr ge fn (mk_instr base ofs) rs m = exec_store ge chunk rs m r1 base ofs) ->
   (forall base ofs, sig_call (mk_instr base ofs) = None /\ is_return (mk_instr base ofs) = false) ->
   transl_memory_access mk_instr addr args k = OK c ->
-  eval_addressing ge rs#SP addr (map rs (map preg_of args)) = Some v ->
+  eval_addressing ge (comp_of fn) rs#SP addr (map rs (map preg_of args)) = Some v ->
   Mem.storev chunk m v rs#r1 (comp_of fn) = Some m' ->
   r1 <> PC -> r1 <> X31 ->
   exists rs',
@@ -1450,7 +1479,7 @@ Qed.
 Lemma transl_load_correct:
   forall chunk addr args dst k c (rs: regset) m a v,
   transl_load chunk addr args dst k = OK c ->
-  eval_addressing ge rs#SP addr (map rs (map preg_of args)) = Some a ->
+  eval_addressing ge (comp_of fn) rs#SP addr (map rs (map preg_of args)) = Some a ->
   Mem.loadv chunk m a (Some (comp_of fn)) = Some v ->
   exists rs',
      exec_straight ge fn c rs m k rs' m
@@ -1471,7 +1500,7 @@ Qed.
 Lemma transl_store_correct:
   forall chunk addr args src k c (rs: regset) m a m',
   transl_store chunk addr args src k = OK c ->
-  eval_addressing ge rs#SP addr (map rs (map preg_of args)) = Some a ->
+  eval_addressing ge (comp_of fn) rs#SP addr (map rs (map preg_of args)) = Some a ->
   Mem.storev chunk m a rs#(preg_of src) (comp_of fn) = Some m' ->
   exists rs',
      exec_straight ge fn c rs m k rs' m'

@@ -2957,6 +2957,71 @@ Record mem_inj (f: meminj) (m1 m2: mem) : Prop :=
       memval_inject f (ZMap.get ofs m1.(mem_contents)#b1) (ZMap.get (ofs+delta) m2.(mem_contents)#b2)
   }.
 
+Lemma mem_inj_disjoint_union (f f': meminj) (m1 m2: mem):
+  mem_inj f m1 m2 ->
+  mem_inj f' m1 m2 ->
+  (forall b, f b <> None -> f' b <> None -> False) ->
+  exists f'', mem_inj f'' m1 m2 /\
+           (forall b, f'' b <> None <-> f b <> None \/ f' b <> None).
+Proof.
+  intros mem_inj1 mem_inj2 disj.
+  exists (fun b => match f b with
+           | Some (b', delta) => Some (b', delta)
+           | None => match f' b with
+                    |  Some (b', delta) => Some (b', delta)
+                    | _ => None
+                    end
+           end).
+  split.
+  - constructor.
+    + intros.
+      destruct (f b1) as [[] |] eqn:f_b1.
+      inv H; exploit (mi_perm f); eauto.
+      destruct (f' b1) as [[] |] eqn:f'_b1.
+      inv H; exploit (mi_perm f'); eauto.
+      congruence.
+    + intros.
+      destruct (f b1) as [[] |] eqn:f_b1.
+      inv H; exploit (mi_own f); eauto.
+      destruct (f' b1) as [[] |] eqn:f'_b1.
+      inv H; exploit (mi_own f'); eauto.
+      congruence.
+    + intros.
+      destruct (f b1) as [[] |] eqn:f_b1.
+      inv H; exploit (mi_align f); eauto.
+      destruct (f' b1) as [[] |] eqn:f'_b1.
+      inv H; exploit (mi_align f'); eauto.
+      congruence.
+    + intros.
+      destruct (f b1) as [[] |] eqn:f_b1.
+      * inv H; exploit (mi_memval f); eauto.
+        intros ?. inv H.
+        constructor; eauto. constructor; eauto.
+        { inv H3; econstructor.
+          rewrite H. eauto. eauto. }
+        constructor; eauto.
+      * destruct (f' b1) as [[] |] eqn:f'_b1.
+        inv H; exploit (mi_memval f'); eauto.
+        intros ?. inv H.
+        constructor; eauto. constructor; eauto.
+        { inv H3; econstructor.
+          rewrite H. assert (f b0 = None) as ->.
+          { destruct (f b0) eqn:?; auto.
+            exploit (disj b0); try congruence. contradiction. }
+          eauto. eauto. }
+        constructor; eauto.
+        congruence.
+  - intros b.
+    destruct (f b) as [[] |] eqn:f_b;
+      destruct (f' b) as [[] |] eqn:f'_b.
+    + split; auto; congruence.
+    + split; auto; congruence.
+    + split; auto; congruence.
+    + split; intros H.
+      congruence.
+      destruct H; congruence.
+Qed.
+
 (** Preservation of permissions *)
 
 Lemma perm_inj:
@@ -5410,12 +5475,6 @@ Section SECURITY.
                                 | Vptr b _=> (s, m) |= b ∈ δ
                                 | _ => False
                                 end |}.
-
-Definition same_domain (s: split) (j: meminj) (δ: side) (m: mem): Prop :=
-  forall b, (j b <> None <-> (s, m) |= b ∈ δ).
-
-Definition delta_zero (j: meminj): Prop :=
-  forall loc loc' delta, j loc = Some (loc', delta) -> delta = 0.
 
 Definition meminj_injective (j: meminj): Prop :=
   forall b1 b2 b1' b2' ofs1 ofs2,

@@ -535,6 +535,26 @@ Proof.
   exploit expr_is_addrof_ident_correct; eauto. intros EQ; subst a.
   inv H0. inv H3. unfold Genv.symbol_address in *.
   destruct (Genv.find_symbol ge id) as [b|] eqn:FS; try discriminate.
+  destruct (Genv.find_comp_of_block ge b) eqn:FB; try discriminate.
+  destruct (cp =? c)%positive eqn:EQCP; try discriminate.
+  {
+  rewrite Genv.find_funct_find_funct_ptr in H1.
+  assert (DFL: exists b1, Genv.find_symbol ge id = Some b1 /\ Vptr b Ptrofs.zero = Vptr b1 Ptrofs.zero) by (exists b; auto).
+  unfold globdef; destruct (prog_defmap unit)!id as [[[f|ef] |gv] |] eqn:G; auto.
+  destruct (ef_inline ef) eqn:INLINE;
+    destruct (Pos.eq_dec (comp_of ef) cp) as [eq | neq];
+    simpl;
+    auto.
+  destruct (prog_defmap_linkorder _ _ _ _ H G) as (gd & P & Q).
+  inv Q. inv H2.
+- apply Genv.find_def_symbol in P. destruct P as (b' & X & Y). fold ge in X, Y.
+  rewrite <- Genv.find_funct_ptr_iff in Y. assert (fd = External ef) by congruence; subst.
+  auto.
+- simpl in INLINE. discriminate.
+
+  }
+  destruct (Genv.find_def ge b) as [[fd' | ] |] eqn:FD; try discriminate.
+
   rewrite Genv.find_funct_find_funct_ptr in H1.
   assert (DFL: exists b1, Genv.find_symbol ge id = Some b1 /\ Vptr b Ptrofs.zero = Vptr b1 Ptrofs.zero) by (exists b; auto).
   unfold globdef; destruct (prog_defmap unit)!id as [[[f|ef] |gv] |] eqn:G; auto.
@@ -852,7 +872,19 @@ Proof.
   exists (Vfloat f); split; auto. econstructor. constructor. auto.
   exists (Vsingle f); split; auto. econstructor. constructor. auto.
   exists (Vlong i); split; auto. apply eval_longconst.
-  unfold Genv.symbol_address; rewrite <- symbols_preserved; fold (Genv.symbol_address tge i i0). apply eval_addrsymbol.
+  unfold Genv.symbol_address; rewrite <- symbols_preserved; fold (Genv.symbol_address tge i i0).
+  { pose proof (eval_addrsymbol tge sp e' cp m' le i i0) as
+      [v [G1 G2]].
+    exists v; split; eauto.
+    destruct (Genv.symbol_address tge i i0) eqn:?; auto.
+    erewrite (Genv.match_genvs_find_comp_of_block TRANSF). unfold tge in G2.
+    destruct (Genv.find_comp_of_block _ b) eqn:A; auto.
+    destruct (cp =? c)%positive; auto.
+    pose proof (Genv.find_def_match_2 TRANSF b). inv H.
+    unfold ge, tge in *. rewrite <- H3, <- H4 in *. auto.
+    unfold ge, tge in *. rewrite <- H2, <- H3 in *. auto.
+    inv H4; auto. }
+  (* apply eval_addrsymbol. *)
   apply eval_addrstack.
   (* Eunop *)
   exploit IHeval_expr; eauto. intros [v1' [A B]].

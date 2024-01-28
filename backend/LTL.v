@@ -113,8 +113,8 @@ Definition call_regs_ext (caller: locset) (callee_sig: signature) : locset :=
              then caller (R r)
              else Vundef
     | S Local ofs ty => Vundef
-    | S Incoming ofs ty => caller (S Outgoing ofs ty)
-    | S Outgoing ofs ty => Vundef
+    | S Incoming ofs ty => Vundef
+    | S Outgoing ofs ty => caller (S Outgoing ofs ty)
     end.
 
 (** [return_regs caller callee] returns the location set after
@@ -137,14 +137,15 @@ Definition return_regs (caller callee: locset) : locset :=
     | S sl ofs ty => caller (S sl ofs ty)
     end.
 
-Definition return_regs_ext (caller callee: locset) (callee_sig: signature) : locset :=
+Definition return_regs_ext (callee: locset) (callee_sig: signature) : locset :=
   fun (l: loc) =>
     match l with
     | R r => if in_mreg r (regs_of_rpair (loc_result callee_sig))
              then callee (R r)
-             else Vundef (* caller (R r) *)
+             else Vundef
     | S Outgoing ofs ty => Vundef
-    | S sl ofs ty => caller (S sl ofs ty)
+    | S sl ofs ty => (* callee (S sl ofs ty) *) Vundef
+                      (* (* caller (S sl ofs ty) *) Vundef *)
     end.
 
 (** [undef_caller_save_regs ls] models the effect of calling
@@ -301,12 +302,12 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State s f sp pc rs m)
         E0 (Block s f sp bb rs m)
   | exec_Lop: forall s f sp op args res bb rs m v rs',
-      eval_operation ge sp op (reglist rs args) m = Some v ->
+      eval_operation ge (comp_of f) sp op (reglist rs args) m = Some v ->
       rs' = Locmap.set (R res) v (undef_regs (destroyed_by_op op) rs) ->
       step (Block s f sp (Lop op args res :: bb) rs m)
         E0 (Block s f sp bb rs' m)
   | exec_Lload: forall s f sp chunk addr args dst bb rs m a v rs',
-      eval_addressing ge sp addr (reglist rs args) = Some a ->
+      eval_addressing ge (comp_of f) sp addr (reglist rs args) = Some a ->
       Mem.loadv chunk m a (Some (comp_of f)) = Some v ->
       rs' = Locmap.set (R dst) v (undef_regs (destroyed_by_load chunk addr) rs) ->
       step (Block s f sp (Lload chunk addr args dst :: bb) rs m)
@@ -320,7 +321,7 @@ Inductive step: state -> trace -> state -> Prop :=
       step (Block s f sp (Lsetstack src sl ofs ty :: bb) rs m)
         E0 (Block s f sp bb rs' m)
   | exec_Lstore: forall s f sp chunk addr args src bb rs m a rs' m',
-      eval_addressing ge sp addr (reglist rs args) = Some a ->
+      eval_addressing ge (comp_of f) sp addr (reglist rs args) = Some a ->
       Mem.storev chunk m a (rs (R src)) (comp_of f) = Some m' ->
       rs' = undef_regs (destroyed_by_store chunk addr) rs ->
       step (Block s f sp (Lstore chunk addr args src :: bb) rs m)
@@ -332,14 +333,14 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
       forall (CALLREGS: callrs = call_regs_ext rs sig),
       forall (ARGS: args = map (fun p => Locmap.getpair p
-                                   (undef_regs destroyed_at_function_entry callrs))
+                                   (undef_regs destroyed_at_function_entry (call_regs callrs)))
                         (loc_parameters sig)),
       forall (NO_CROSS_PTR:
           Genv.type_of_call (comp_of f) (comp_of fd) = Genv.CrossCompartmentCall ->
           List.Forall not_ptr args),
       forall (EV: call_trace ge (comp_of f) (comp_of fd) vf args (sig_args sig) t),
       step (Block s f sp (Lcall sig ros :: bb) rs m)
-        t (Callstate (Stackframe f sig sp rs bb :: s) fd sig rs m)
+        t (Callstate (Stackframe f sig sp rs bb :: s) fd sig callrs m)
   | exec_Ltailcall: forall s f sp sig ros bb rs m fd rs' m',
       rs' = return_regs (parent_locset s) rs ->
       find_function ros rs' = Some fd ->
@@ -350,7 +351,7 @@ Inductive step: state -> trace -> state -> Prop :=
       step (Block s f (Vptr sp Ptrofs.zero) (Ltailcall sig ros :: bb) rs m)
         E0 (Callstate s fd sig rs' m')
   | exec_Lbuiltin: forall s f sp ef args res bb rs m vargs t vres rs' m',
-      eval_builtin_args ge rs sp m args vargs ->
+      eval_builtin_args ge rs (comp_of f) sp m args vargs ->
       external_call ef ge vargs m t vres m' ->
       rs' = Locmap.setres res vres (undef_regs (destroyed_by_builtin ef) rs) ->
       forall ALLOWED: comp_of f = comp_of ef,
@@ -373,16 +374,12 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State s f sp pc rs' m)
   | exec_Lreturn: forall s f retrs sp bb rs m m',
       Mem.free m sp 0 f.(fn_stacksize) (comp_of f) = Some m' ->
-      forall (RETREGS:
-               retrs =
-                 return_regs_ext (parent_locset s) rs (parent_signature s)),
+      forall (RETREGS: retrs = return_regs (parent_locset s) rs),
       step (Block s f (Vptr sp Ptrofs.zero) (Lreturn :: bb) rs m)
         E0 (Returnstate s retrs m' (comp_of f))
   | exec_function_internal: forall s f rs m m' sp callrs sig rs',
       Mem.alloc m (comp_of f) 0 f.(fn_stacksize) = (m', sp) ->
-      forall (CALLREGS:
-               callrs =
-                 call_regs_ext rs sig),
+      forall (CALLREGS: callrs = call_regs rs),
       rs' = undef_regs destroyed_at_function_entry callrs ->
       step (Callstate s (Internal f) sig rs m)
         E0 (State s f (Vptr sp Ptrofs.zero) f.(fn_entrypoint) rs' m')
@@ -392,13 +389,14 @@ Inductive step: state -> trace -> state -> Prop :=
       rs' = Locmap.setpair (loc_result (ef_sig ef)) res (undef_caller_save_regs rs) ->
       step (Callstate s (External ef) sig rs m)
          t (Returnstate s rs' m' (comp_of ef))
-  | exec_return: forall f sp rs1 bb s rs m cp sig t,
+  | exec_return: forall f sp rs1 bb s rs m cp sig t retrs,
       forall (NO_CROSS_PTR:
           Genv.type_of_call (comp_of f) cp = Genv.CrossCompartmentCall ->
           not_ptr (Locmap.getpair (map_rpair R (loc_result sig)) rs)),
       forall (EV: return_trace ge (comp_of f) cp (Locmap.getpair (map_rpair R (loc_result sig)) rs) (sig_res sig) t),
+      forall (RETREGS: retrs = return_regs_ext rs sig),
       step (Returnstate (Stackframe f sig sp rs1 bb :: s) rs m cp)
-        t (Block s f sp bb rs m).
+        t (Block s f sp bb retrs m).
 
 End RELSEM.
 

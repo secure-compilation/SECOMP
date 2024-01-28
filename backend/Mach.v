@@ -397,15 +397,16 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State s fb sp (Mgetparam ofs ty dst :: c) rs m)
         E0 (State s fb sp c rs' m)
   | exec_Mop:
-      forall s f sp op args res c rs m v rs',
-      eval_operation ge sp op rs##args m = Some v ->
+      forall s f sp op args res c rs m v rs' cp,
+      forall (CURCOMP: Genv.find_comp_of_block ge f = Some cp),
+      eval_operation ge cp sp op rs##args m = Some v ->
       rs' = ((undef_regs (destroyed_by_op op) rs)#res <- v) ->
       step (State s f sp (Mop op args res :: c) rs m)
         E0 (State s f sp c rs' m)
   | exec_Mload:
       forall s f sp chunk addr args dst c rs m a v rs' cp,
       forall (CURCOMP: Genv.find_comp_of_block ge f = Some cp),
-      eval_addressing ge sp addr rs##args = Some a ->
+      eval_addressing ge cp sp addr rs##args = Some a ->
       Mem.loadv chunk m a (Some cp) = Some v ->
       rs' = ((undef_regs (destroyed_by_load chunk addr) rs)#dst <- v) ->
       step (State s f sp (Mload chunk addr args dst :: c) rs m)
@@ -413,28 +414,32 @@ Inductive step: state -> trace -> state -> Prop :=
   | exec_Mstore:
       forall s f sp chunk addr args src c rs m m' a rs' cp,
       forall (CURCOMP: Genv.find_comp_of_block ge f = Some cp),
-      eval_addressing ge sp addr rs##args = Some a ->
+      eval_addressing ge cp sp addr rs##args = Some a ->
       Mem.storev chunk m a (rs src) cp = Some m' ->
       rs' = undef_regs (destroyed_by_store chunk addr) rs ->
       step (State s f sp (Mstore chunk addr args src :: c) rs m)
         E0 (State s f sp c rs' m')
   | exec_Mcall:
-      forall s fb sp sig ros c rs m f f' ra fd args t,
+      forall s fb sp sig ros c rs m f f' ra fd args t callrs,
       find_function_ptr ge ros rs = Some f' ->
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
       return_address_offset f c ra ->
       forall (CALLED: Genv.find_funct_ptr ge f' = Some fd),
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) (Vptr f' Ptrofs.zero)),
-      (* call_arguments are never invalidated *)
+      forall (SIG: funsig fd = sig),
       forall (ARGS: call_arguments (undef_regs destroyed_at_function_entry rs) m sp sig args),
       forall (NO_CROSS_PTR:
           Genv.type_of_call (comp_of f) (comp_of fd) = Genv.CrossCompartmentCall ->
           List.Forall not_ptr args),
       forall (EV: call_trace ge (comp_of f) (comp_of fd) (Vptr f' Ptrofs.zero)
                args (sig_args sig) t),
+        (* register invalidation *)
+      forall (CALLREGS:
+               callrs =
+                 undef_caller_save_regs_ext rs sig),
       step (State s fb sp (Mcall sig ros :: c) rs m)
         t (Callstate (Stackframe fb sig sp ra c :: s)
-                       f' sig rs m)
+                       f' sig callrs m)
   | exec_Mtailcall:
       forall s fb stk soff sig ros c rs m f f' m',
       forall (NEXTCOMP: Genv.find_comp_of_block ge f' = Some (comp_of f)),
@@ -450,7 +455,7 @@ Inductive step: state -> trace -> state -> Prop :=
   | exec_Mbuiltin:
       forall s fb sp rs m ef args res b vargs t vres rs' m',
       forall (CURCOMP: Genv.find_comp_of_block ge fb = Some (comp_of ef)),
-      eval_builtin_args ge rs sp m args vargs ->
+      eval_builtin_args ge rs (comp_of ef) sp m args vargs ->
       external_call ef ge vargs m t vres m' ->
       rs' = set_res res vres (undef_regs (destroyed_by_builtin ef) rs) ->
       step (State s fb sp (Mbuiltin ef args res :: b) rs m)
@@ -485,31 +490,21 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State s fb sp (Mjumptable arg tbl :: c) rs m)
         E0 (State s fb sp c' rs' m)
   | exec_Mreturn:
-      forall s fb stk soff c rs m f m' retrs,
+      forall s fb stk soff c rs m f m',
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
-      load_stack m (Vptr stk soff) Tptr f.(fn_link_ofs) (Some (comp_of f))
-      = Some (parent_sp s) ->
-      load_stack m (Vptr stk soff) Tptr f.(fn_retaddr_ofs) (Some (comp_of f))
-      = Some (parent_ra s) ->
+      load_stack m (Vptr stk soff) Tptr f.(fn_link_ofs) (Some (comp_of f)) = Some (parent_sp s) ->
+      load_stack m (Vptr stk soff) Tptr f.(fn_retaddr_ofs) (Some (comp_of f)) = Some (parent_ra s) ->
       Mem.free m stk 0 f.(fn_stacksize) (comp_of f) = Some m' ->
-      forall (RETREGS:
-               retrs =
-                 undef_non_return_regs_ext rs (parent_signature s)),
       step (State s fb (Vptr stk soff) (Mreturn :: c) rs m)
-        E0 (Returnstate s retrs m' (comp_of f))
+        E0 (Returnstate s rs m' (comp_of f))
   | exec_function_internal:
-      forall s fb rs m f m1 m2 m3 stk callrs rs' sig,
+      forall s fb rs m f m1 m2 m3 stk rs' sig,
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
       Mem.alloc m (comp_of f) 0 f.(fn_stacksize) = (m1, stk) ->
       let sp := Vptr stk Ptrofs.zero in
-      store_stack m1 sp Tptr f.(fn_link_ofs) (parent_sp s) (comp_of f)
-      = Some m2 ->
-      store_stack m2 sp Tptr f.(fn_retaddr_ofs) (parent_ra s) (comp_of f)
-      = Some m3 ->
-      forall (CALLREGS:
-               callrs =
-                 undef_caller_save_regs_ext rs sig),
-      rs' = undef_regs destroyed_at_function_entry callrs ->
+      store_stack m1 sp Tptr f.(fn_link_ofs) (parent_sp s) (comp_of f) = Some m2 ->
+      store_stack m2 sp Tptr f.(fn_retaddr_ofs) (parent_ra s) (comp_of f) = Some m3 ->
+      rs' = undef_regs destroyed_at_function_entry rs ->
       step (Callstate s fb sig rs m)
         E0 (State s fb sp f.(fn_code) rs' m3)
   | exec_function_external:
@@ -521,14 +516,17 @@ Inductive step: state -> trace -> state -> Prop :=
       step (Callstate s fb sig rs m)
          t (Returnstate s rs' m' (comp_of ef))
   | exec_return:
-      forall s f sp ra c rs m sg cp t,
+      forall s f sp ra c rs m sg cp t retrs,
       forall cp' (CURCOMP: Genv.find_comp_of_block ge f = Some cp'),
       forall (NO_CROSS_PTR:
           Genv.type_of_call cp' cp = Genv.CrossCompartmentCall ->
           not_ptr (return_value rs sg)),
       forall (EV: return_trace ge cp' cp (return_value rs sg) (sig_res sg) t),
+      forall (RETREGS:
+               retrs =
+                 undef_non_return_regs_ext rs sg),
       step (Returnstate (Stackframe f sg sp ra c :: s) rs m cp)
-        t (State s f sp c rs m).
+        t (State s f sp c retrs m).
 
 End RELSEM.
 
@@ -596,7 +594,7 @@ Proof.
   constructor; auto. econstructor; eauto with coqlib.
   destruct (is_leaf_function f) eqn:E; auto.
   unfold is_leaf_function in E; rewrite forallb_forall in E.
-  symmetry. apply (E (Mcall sig ros)). eapply is_tail_in; eauto.
+  symmetry. apply (E (Mcall (funsig fd) ros)). eapply is_tail_in; eauto.
 - (* goto *)
   assert (f0 = f) by congruence. subst f0.
   econstructor; eauto using find_label_tail.

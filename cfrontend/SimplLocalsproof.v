@@ -89,16 +89,16 @@ Proof.
   monadInv EQ. simpl; unfold type_of_function; simpl. auto.
 Qed.
 
-Lemma allowed_addrof_translated:
-  forall cp id,
-    Genv.allowed_addrof ge cp id ->
-    Genv.allowed_addrof tge cp id.
-Proof.
-  intros cp id.
-  destruct TRANSF as [H _].
-  unfold ge, tge.
-  now rewrite (Genv.match_genvs_allowed_addrof H).
-Qed.
+(* Lemma allowed_addrof_translated: *)
+(*   forall cp id, *)
+(*     Genv.allowed_addrof ge cp id -> *)
+(*     Genv.allowed_addrof tge cp id. *)
+(* Proof. *)
+(*   intros cp id. *)
+(*   destruct TRANSF as [H _]. *)
+(*   unfold ge, tge. *)
+(*   now rewrite (Genv.match_genvs_allowed_addrof H). *)
+(* Qed. *)
 
 Lemma allowed_call_translated:
   forall f tf vf,
@@ -1639,7 +1639,15 @@ Proof.
   exploit me_vars; eauto. instantiate (1 := id). intros MV. inv MV; try congruence.
   exists l; exists Ptrofs.zero; split.
   apply eval_Evar_global. auto. rewrite <- H0. apply symbols_preserved.
-  { now apply allowed_addrof_translated. }
+  destruct H1.
+    left. rewrite <- (Genv.match_genvs_find_comp_of_block (proj1 TRANSF)). auto.
+    right. destruct H1 as [fd ?].
+    pose proof (Genv.find_def_match_2 (proj1 TRANSF) l) as J.
+    simpl in *. Local Transparent ge tge.
+    unfold ge, tge in *. setoid_rewrite H1 in J.
+    inv J. setoid_rewrite <- H5. inv H6; eauto.
+    Local Opaque ge tge.
+  (* { now apply allowed_addrof_translated. } *)
   destruct GLOB as [bound GLOB1]. inv GLOB1.
   econstructor; eauto.
 (* deref *)
@@ -2271,7 +2279,7 @@ Proof.
 (* builtin *)
   exploit eval_simpl_exprlist; eauto with compat. intros [CASTED [tvargs [C D]]].
   exploit external_call_mem_inject; eauto. apply match_globalenvs_preserves_globals; eauto with compat.
-  intros [j' [tvres [tm' [P [Q [R [S [T [U V]]]]]]]]].
+  intros [j' [tvres [tm' [P [Q [R [S [T [U [V W]]]]]]]]]].
   econstructor; split.
   apply plus_one. econstructor; eauto.
   rewrite <- (comp_transl_partial _ TRF). eauto.
@@ -2461,7 +2469,7 @@ Proof.
   monadInv TRFD. inv FUNTY.
   exploit external_call_mem_inject; eauto. apply match_globalenvs_preserves_globals.
   eapply match_cont_globalenv. eexact (MCONT VSet.empty (comp_of ef)).
-  intros [j' [tvres [tm' [P [Q [R [S [T [U V]]]]]]]]].
+  intros [j' [tvres [tm' [P [Q [R [S [T [U [V W]]]]]]]]]].
   econstructor; split.
   apply plus_one. econstructor; eauto. eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   econstructor; eauto.

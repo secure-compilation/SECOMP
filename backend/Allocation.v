@@ -883,8 +883,8 @@ Definition no_caller_saves (e: eqs) : bool :=
    (fun eq =>
      match eloc eq with
        | R r => is_callee_save r
-       | S Outgoing _ _ => false
-       | S _ _ _ => true
+       (* | S Outgoing _ _ => false *)
+       | S _ _ _ => false
        end)
     e.
 
@@ -893,8 +893,8 @@ Definition no_caller_saves_ext (e: eqs) : bool :=
    (fun eq =>
      match eloc eq with
        | R r => false
-       | S Outgoing _ _ => false
-       | S _ _ _ => true
+       (* | S Outgoing _ _ => false *)
+       | S _ _ _ => false
        end)
     e.
 

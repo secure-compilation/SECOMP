@@ -51,13 +51,13 @@ Ltac InvEval1 :=
 
 Ltac InvEval2 :=
   match goal with
-  | [ H: (eval_operation _ _ _ nil _ = Some _) |- _ ] =>
+  | [ H: (eval_operation _ _ _ _ nil _ = Some _) |- _ ] =>
       simpl in H; inv H
-  | [ H: (eval_operation _ _ _ (_ :: nil) _ = Some _) |- _ ] =>
+  | [ H: (eval_operation _ _ _ _ (_ :: nil) _ = Some _) |- _ ] =>
       simpl in H; FuncInv
-  | [ H: (eval_operation _ _ _ (_ :: _ :: nil) _ = Some _) |- _ ] =>
+  | [ H: (eval_operation _ _ _ _ (_ :: _ :: nil) _ = Some _) |- _ ] =>
       simpl in H; FuncInv
-  | [ H: (eval_operation _ _ _ (_ :: _ :: _ :: nil) _ = Some _) |- _ ] =>
+  | [ H: (eval_operation _ _ _ _ (_ :: _ :: _ :: nil) _ = Some _) |- _ ] =>
       simpl in H; FuncInv
   | _ =>
       idtac
@@ -113,7 +113,21 @@ Definition binary_constructor_sound (cstr: expr -> expr -> expr) (sem: val -> va
 
 Theorem eval_addrsymbol:
   forall le id ofs,
-  exists v, eval_expr ge sp e cp m le (addrsymbol id ofs) v /\ Val.lessdef (Genv.symbol_address ge id ofs) v.
+  exists v, eval_expr ge sp e cp m le (addrsymbol id ofs) v /\
+         Val.lessdef (match Genv.symbol_address ge id ofs with
+                      | Vptr b ofs0 =>
+                          match Genv.find_comp_of_block ge b with
+                          | Some cp' =>
+                              if (cp =? cp')%positive
+                              then Vptr b ofs0
+                              else match Genv.find_def ge b with
+                                   | Some (Gfun _) => Vptr b ofs0
+                                   | _ => Vundef
+                                   end
+                          | None => Vundef
+                          end
+                      | _ => Vundef
+                      end) v.
 Proof.
   intros. unfold addrsymbol. econstructor; split.
   EvalOp. simpl; eauto.
@@ -142,6 +156,10 @@ Proof.
     + TrivialExists; simpl. rewrite Int.add_commut. auto.
     + econstructor; split. EvalOp. simpl; eauto.
       unfold Genv.symbol_address. destruct (Genv.find_symbol ge s); simpl; auto.
+      destruct (Genv.find_comp_of_block); eauto.
+      destruct (cp =? c)%positive; simpl; auto.
+      destruct Archi.ptr64; auto. rewrite Ptrofs.add_commut; auto.
+      destruct (Genv.find_def ge b) as [[] |]; simpl; auto.
       destruct Archi.ptr64; auto. rewrite Ptrofs.add_commut; auto.
     + econstructor; split. EvalOp. simpl; eauto.
       destruct sp; simpl; auto. destruct Archi.ptr64; auto.
@@ -887,7 +905,7 @@ Theorem eval_addressing:
   match addressing chunk a with (mode, args) =>
     exists vl,
     eval_exprlist ge sp e cp m le args vl /\
-    eval_addressing ge sp mode vl = Some v
+    eval_addressing ge cp sp mode vl = Some v
   end.
 Proof.
   intros until v. unfold addressing; case (addressing_match a); intros; InvEval.
@@ -896,6 +914,11 @@ Proof.
   + exists (Vptr b ofs0 :: nil); split.
     constructor. EvalOp. simpl. congruence. constructor. simpl. rewrite Ptrofs.add_zero. congruence.
   + exists (@nil val); split. constructor. simpl; auto.
+    (* (* rewrite H0. *) *)
+    (* destruct (Genv.symbol_address ge id ofs); try congruence. *)
+    (* destruct (Genv.find_comp_of_block ge b0); try congruence. *)
+    (* destruct (cp =? c)%positive; try congruence. *)
+    (* destruct (Genv.find_def ge b0) as [[] |]; try congruence. *)
   - exists (v1 :: nil); split. eauto with evalexpr. simpl.
     destruct v1; simpl in H; try discriminate. destruct Archi.ptr64 eqn:SF; inv H. 
     simpl. auto.
@@ -912,11 +935,13 @@ Theorem eval_builtin_arg:
 Proof.
   intros until v. unfold builtin_arg; case (builtin_arg_match a); intros.
 - InvEval. constructor.
+- InvEval. constructor. reflexivity.
 - InvEval. constructor.
-- InvEval. constructor.
+(* - InvEval. constructor. *)
 - InvEval. simpl in H5. inv H5. constructor.
 - InvEval. subst v. constructor; auto.
 - inv H. InvEval. simpl in H6; inv H6. econstructor; eauto.
+(* - inv H. InvEval. simpl in H6; inv H6. econstructor; eauto. *)
 - destruct Archi.ptr64 eqn:SF.
 + constructor; auto.
 + InvEval. replace v with (if Archi.ptr64 then Val.addl v1 (Vint n) else Val.add v1 (Vint n)).

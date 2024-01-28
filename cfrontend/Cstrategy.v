@@ -96,7 +96,9 @@ Inductive eval_simple_lvalue: expr -> block -> ptrofs -> bitfield -> Prop :=
   | esl_var_global: forall x ty b,
       e!x = None ->
       Genv.find_symbol ge x = Some b ->
-      Genv.allowed_addrof ge cp x ->
+      Genv.find_comp_of_block ge b = Some cp \/
+        (exists fd : fundef, Genv.find_def ge b = Some (Gfun fd)) ->
+      (* Genv.allowed_addrof ge cp x -> *)
       eval_simple_lvalue (Evar x ty) b Ptrofs.zero Full
   | esl_deref: forall r ty b ofs,
       eval_simple_rvalue r (Vptr b ofs) ->
@@ -536,7 +538,9 @@ Definition invert_expr_prop (cp: compartment) (a: expr) (m: mem) : Prop :=
   | Evar x ty =>
       exists b,
       e!x = Some(b, ty)
-      \/ (e!x = None /\ Genv.find_symbol ge x = Some b /\ Genv.allowed_addrof ge cp x)
+      \/ (e!x = None /\ Genv.find_symbol ge x = Some b /\
+           (Genv.find_comp_of_block ge b = Some cp \/
+                  (exists fd : fundef, Genv.find_def ge b = Some (Gfun fd))))
   | Ederef (Eval v ty1) ty =>
       exists b, exists ofs, v = Vptr b ofs
   | Eaddrof (Eloc b ofs bf ty) ty' =>
@@ -602,7 +606,7 @@ Lemma lred_invert:
 Proof.
   induction 1; red; auto.
   exists b; auto.
-  exists b; auto.
+  exists b; right. split; [| split]; auto.
   exists b; exists ofs; auto.
   exists b; exists ofs; split; auto. exists co, delta, bf; auto.
   exists b; exists ofs; split; auto. exists co, delta, bf; auto.
@@ -836,6 +840,7 @@ Ltac StepR REC C' a :=
   exploit safe_inv; eauto; simpl. intros [b A].
   exists b, Ptrofs.zero, Full.
   intuition. apply esl_var_local; auto. apply esl_var_global; auto.
+  apply esl_var_global; auto.
 - (* field *)
   StepR IHa (fun x => C(Efield x f0 ty)) a.
   exploit safe_inv. eexact SAFE0. eauto. simpl.

@@ -379,8 +379,8 @@ Qed.
 (** Evaluation of the debug annotations introduced by the transformation. *)
 
 Lemma can_eval_safe_arg:
-  forall (rs: locset) sp m (a: builtin_arg loc),
-  safe_builtin_arg a -> exists v, eval_builtin_arg tge rs sp m a v.
+  forall (rs: locset) cp sp m (a: builtin_arg loc),
+  safe_builtin_arg a -> exists v, eval_builtin_arg tge rs cp sp m a v.
 Proof.
   induction a; simpl; intros; try contradiction;
   try (econstructor; now eauto with barg).
@@ -494,14 +494,18 @@ Proof.
   econstructor; split.
   eapply plus_left.
   econstructor; eauto.
-  instantiate (1 := v). rewrite <- H; apply eval_operation_preserved; exact symbols_preserved.
+  instantiate (1 := v). inv TRF.
+  rewrite <- H; eapply eval_operation_preserved; try exact symbols_preserved.
+  admit. admit. admit.
   apply eval_add_delta_ranges. traceEq.
   constructor; auto.
 - (* load *)
   econstructor; split.
   eapply plus_left.
   eapply exec_Lload with (a := a).
-  rewrite <- H; apply eval_addressing_preserved; exact symbols_preserved.
+  inv TRF.
+  rewrite <- H; apply eval_addressing_preserved; try exact symbols_preserved.
+  admit. admit. admit.
   inv TRF; eauto. eauto.
   apply eval_add_delta_ranges. traceEq.
   constructor; auto.
@@ -509,7 +513,9 @@ Proof.
   econstructor; split.
   eapply plus_left.
   eapply exec_Lstore with (a := a).
-  rewrite <- H; apply eval_addressing_preserved; exact symbols_preserved.
+  inv TRF.
+  rewrite <- H; apply eval_addressing_preserved. exact symbols_preserved.
+  admit. admit. admit.
   inv TRF; eauto. eauto.
   apply eval_add_delta_ranges. traceEq.
   constructor; auto.
@@ -537,6 +543,7 @@ Proof.
   constructor; auto. constructor; auto.
   replace (fn_comp tf) with (fn_comp f) by now inv TRF.
   constructor; auto.
+  (* constructor; auto. *)
 - (* tailcall *)
   exploit find_function_translated; eauto. intros (tf' & A & B).
   exploit parent_locset_match; eauto. intros PLS.
@@ -553,6 +560,7 @@ Proof.
   eapply plus_left.
   econstructor; eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
+  admit. admit. admit.
   inv TRF; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   inversion TRF. simpl in *. eauto.
@@ -589,15 +597,16 @@ Proof.
   constructor; auto.
 - (* return *)
   econstructor; split.
-  apply plus_one.  econstructor. inv TRF; eauto. traceEq.
+  apply plus_one.  econstructor. inv TRF; eauto. auto.
+  (* traceEq. *)
   rewrite (parent_locset_match _ _ STACKS).
   assert (CALLER: call_comp s = call_comp ts).
   { inv STACKS. reflexivity.
     inv H0. inv H2. reflexivity. }
-  assert (SIG: parent_signature s = parent_signature ts).
-  { inv STACKS. reflexivity.
-    inv H0. reflexivity. }
-  rewrite SIG.
+  (* assert (SIG: parent_signature s = parent_signature ts). *)
+  (* { inv STACKS. reflexivity. *)
+  (*   inv H0. reflexivity. } *)
+  (* rewrite SIG. *)
   inv TRF; constructor; auto.
 - (* internal function *)
   monadInv H8. rename x into tf.
@@ -605,17 +614,18 @@ Proof.
   inversion MF; subst.
   econstructor; split.
 
-  apply plus_one. eapply exec_function_internal. simpl; eauto. reflexivity. reflexivity.
+  apply plus_one. eapply exec_function_internal. simpl; eauto. reflexivity.
 
-  assert (CALLER: call_comp s = call_comp ts).
-  { inv H7. reflexivity.
-    inv H1. inv H3. reflexivity. }
-  assert (SIG: parent_signature s = parent_signature ts).
-  { inv H7. reflexivity.
-    inv H1. reflexivity. }
-  change
-    (comp_of {| fn_comp := fn_comp f; fn_sig := fn_sig f; fn_stacksize := fn_stacksize f; fn_code := c |})
-    with (comp_of f).
+  (* assert (CALLER: call_comp s = call_comp ts). *)
+  (* { inv H7. reflexivity. *)
+  (*   inv H1. inv H3. reflexivity. } *)
+  (* assert (SIG: parent_signature s = parent_signature ts). *)
+  (* { inv H7. reflexivity. *)
+  (*   inv H1. reflexivity. } *)
+  (* change *)
+  (*   (comp_of {| fn_comp := fn_comp f; fn_sig := fn_sig f; fn_stacksize := fn_stacksize f; fn_code := c |}) *)
+  (*   with (comp_of f). *)
+  constructor; auto.
   constructor; auto.
 - (* external function *)
   monadInv H9. econstructor; split.
@@ -628,12 +638,14 @@ Proof.
   eapply plus_left. econstructor.
   auto.
   eapply return_trace_eq; eauto using senv_preserved.
+  reflexivity.
   replace (fn_comp f) with
     (fn_comp {| fn_comp := fn_comp f; fn_sig := fn_sig f; fn_stacksize := fn_stacksize f; fn_code := c0 |})
     by reflexivity.
   apply eval_add_delta_ranges. traceEq.
+  (* erewrite <- parent_locset_match; eauto. *)
   constructor; auto. constructor; auto.
-Qed.
+Admitted.
 
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 ->

@@ -94,6 +94,7 @@ Record t: Type := mksenv {
     forall b, block_is_volatile b = true -> Plt b nextblock
 }.
 
+
 Definition symbol_address (ge: t) (id: ident) (ofs: ptrofs) : val :=
   match find_symbol ge id with
   | Some b => Vptr b ofs
@@ -464,6 +465,15 @@ Proof.
   unfold find_comp_of_block. now rewrite find.
 Qed.
 
+Lemma find_def_find_comp_of_block:
+  forall ge b gd,
+  find_def ge b = Some gd ->
+  find_comp_of_block ge b = Some (comp_of gd).
+Proof.
+  intros ge b fd find.
+  unfold find_comp_of_block. now rewrite find.
+Qed.
+
 Theorem find_var_info_iff:
   forall ge b v,
   find_var_info ge b = Some v <->
@@ -769,6 +779,66 @@ Definition to_senv (ge: t) : Senv.t :=
     (public_symbol_exists ge)
     ge.(genv_symb_range)
     (block_is_volatile_below ge).
+
+
+Local Coercion to_senv: t >-> Senv.t.
+Definition symbol_address_check (ge: t) (cp: compartment) (id: ident) (ofs: ptrofs) :=
+  match symbol_address ge id ofs with
+  | Vptr b ofs0 =>
+      match find_comp_of_block ge b with
+      | Some cp' =>
+          if (cp =? cp')%positive
+          then Vptr b ofs0
+          else match find_def ge b with
+               | Some (Gfun _) => Vptr b ofs0
+               | _ => Vundef
+               end
+      | None => Vundef
+      end
+  | _ => Vundef
+  end.
+
+Theorem shift_symbol_address_check:
+  forall ge cp id ofs delta,
+  symbol_address_check ge cp id (Ptrofs.add ofs delta) =
+    Val.offset_ptr (symbol_address_check ge cp id ofs) delta.
+Proof.
+  intros. unfold symbol_address_check.
+  rewrite (shift_symbol_address ge).
+  destruct (symbol_address ge id ofs); auto.
+  simpl. destruct (find_comp_of_block ge b); auto.
+  destruct (cp =? c)%positive; auto.
+  destruct (find_def ge b) as [[]|]; auto.
+Qed.
+
+
+Theorem shift_symbol_address_check_32:
+  forall ge cp id ofs n,
+  Archi.ptr64 = false ->
+  symbol_address_check ge cp id (Ptrofs.add ofs (Ptrofs.of_int n)) = Val.add (symbol_address_check ge cp id ofs) (Vint n).
+Proof.
+  intros. unfold symbol_address_check.
+  erewrite shift_symbol_address_32; eauto.
+  destruct (symbol_address ge id ofs); auto.
+  simpl. rewrite H.
+  destruct (find_comp_of_block ge b); auto.
+  destruct (cp =? c)%positive; auto. simpl; rewrite H; auto.
+  destruct (find_def ge b) as [[]|]; auto; simpl; rewrite H; auto.
+Qed.
+
+Theorem shift_symbol_address_check_64:
+  forall ge cp id ofs n,
+  Archi.ptr64 = true ->
+  symbol_address_check ge cp id (Ptrofs.add ofs (Ptrofs.of_int64 n)) = Val.addl (symbol_address_check ge cp id ofs) (Vlong n).
+Proof.
+  intros. unfold symbol_address_check.
+  rewrite shift_symbol_address_64; eauto.
+  destruct (symbol_address ge id ofs); auto.
+  simpl. rewrite H.
+  destruct (find_comp_of_block ge b); auto.
+  destruct (cp =? c)%positive; auto. simpl; rewrite H; auto.
+  destruct (find_def ge b) as [[]|]; auto; simpl; rewrite H; auto.
+Qed.
 
 (** * Construction of the initial memory state *)
 
@@ -1990,19 +2060,32 @@ Definition allowed_cross_call (ge: t) (cp: compartment) (vf: val) :=
   | _ => False
   end.
 
-Definition allowed_addrof (ge: t) (cp: compartment) (id: ident) :=
-  find_comp_of_ident ge id = Some cp \/
-  public_symbol ge id = true.
+(* Definition allowed_addrof (ge: t) (cp: compartment) (id: ident) := *)
+(*   Genv.find_comp_of_block ge b = Some cp \/ *)
+(*   (exists fd : fundef, Genv.find_def ge b = Some (Gfun fd)) *)
+(*   find_comp_of_ident ge id = Some cp \/ *)
+(*   public_symbol ge id = true. *)
 
+(*   Genv.find_comp_of_block ge b = Some cp \/ *)
+(*   (exists fd : fundef, Genv.find_def ge b = Some (Gfun fd)) *)
 Definition allowed_addrof_b (ge: t) (cp: compartment) (id: ident) : bool :=
-  match find_comp_of_ident ge id with
-  | Some cp' => eq_compartment cp cp' : bool
-  | None => false
-  end || public_symbol ge id.
+  match find_symbol ge id with
+  | Some b => match find_comp_of_block ge b with
+             | Some cp' => eq_compartment cp cp' : bool
+             | None => false
+             end || match find_def ge b with
+               | Some (Gfun _) => true
+               | _ => false
+               end
+  | _ => false
+  end.
 
 Lemma allowed_addrof_b_reflect :
   forall ge cp id,
-    allowed_addrof ge cp id <->
+    (exists b, find_symbol ge id = Some b /\
+            (find_comp_of_block ge b = Some cp \/
+            (exists fd, find_def ge b = Some (Gfun fd))))
+      <->
       allowed_addrof_b ge cp id = true.
 Proof. Admitted.
 
@@ -2386,15 +2469,15 @@ Proof.
   now destruct progmatch as (_ & _ & -> & _).
 Qed.
 
-Lemma match_genvs_allowed_addrof:
-  forall cp id,
-    allowed_addrof (globalenv p) cp id <->
-    allowed_addrof (globalenv tp) cp id.
-Proof.
-  unfold allowed_addrof.
-  intros cp id.
-  now rewrite match_genvs_find_comp_of_ident, match_genvs_public_symbol.
-Qed.
+(* Lemma match_genvs_allowed_addrof: *)
+(*   forall cp id, *)
+(*     allowed_addrof (globalenv p) cp id <-> *)
+(*     allowed_addrof (globalenv tp) cp id. *)
+(* Proof. *)
+(*   unfold allowed_addrof. *)
+(*   intros cp id. *)
+(*   now rewrite match_genvs_find_comp_of_ident, match_genvs_public_symbol. *)
+(* Qed. *)
 
 Lemma match_genvs_allowed_calls:
   forall cp vf,
@@ -2541,6 +2624,30 @@ Theorem find_funct_ptr_transf_partial_conv:
 Proof.
   intros. exploit (find_funct_ptr_match_conv progmatch); eauto.
   intros (cu & f & P & Q & R); exists f; auto.
+Qed.
+
+Theorem find_def_transf_partial:
+  forall b f,
+  find_def (globalenv p) b = Some (Gfun f) ->
+  exists tf,
+  find_def (globalenv tp) b = Some (Gfun tf) /\ transf f = OK tf.
+Proof.
+  intros. exploit (find_def_match progmatch); eauto.
+  intros ([tf | ] & P & Q).
+  exists tf; inv Q; auto.
+  inv Q.
+Qed.
+
+Theorem find_def_transf_partial_conv:
+  forall b tf,
+  find_def (globalenv tp) b = Some (Gfun tf) ->
+  exists f,
+  find_def (globalenv p) b = Some (Gfun f) /\ transf f = OK tf.
+Proof.
+  intros. exploit (find_def_match_conv progmatch); eauto.
+  intros ([f | ] & P & Q).
+  exists f; inv Q; auto.
+  inv Q.
 Qed.
 
 Theorem find_funct_transf_partial:
@@ -2812,7 +2919,7 @@ Proof.
 Qed.
 
 End TRANSFORM_TOTAL.
-
 End Genv.
 
 Coercion Genv.to_senv: Genv.t >-> Senv.t.
+

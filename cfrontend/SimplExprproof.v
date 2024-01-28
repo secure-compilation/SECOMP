@@ -100,16 +100,16 @@ Proof.
   intros. inv H; auto.
 Qed.
 
-Lemma allowed_addrof_translated:
-  forall cp id,
-    Genv.allowed_addrof ge cp id ->
-    Genv.allowed_addrof tge cp id.
-Proof.
-  intros cp id.
-  destruct TRANSL as [H _].
-  unfold ge, tge.
-  now rewrite (Genv.match_genvs_allowed_addrof H).
-Qed.
+(* Lemma allowed_addrof_translated: *)
+(*   forall cp id, *)
+(*     Genv.allowed_addrof ge cp id -> *)
+(*     Genv.allowed_addrof tge cp id. *)
+(* Proof. *)
+(*   intros cp id. *)
+(*   destruct TRANSL as [H _]. *)
+(*   unfold ge, tge. *)
+(*   now rewrite (Genv.match_genvs_allowed_addrof H). *)
+(* Qed. *)
 
 Lemma allowed_call_translated:
   forall cp vf,
@@ -426,7 +426,17 @@ Opaque makeif.
 - (* var global *)
   split; auto. split; auto. apply eval_Evar_global; auto.
   + rewrite symbols_preserved; auto.
-  + now apply allowed_addrof_translated.
+  + destruct H1.
+    left.
+    unfold ge, tge in *.
+    destruct TRANSL as [G _].
+    rewrite <- (Genv.match_genvs_find_comp_of_block G). auto.
+    right. destruct H1 as [fd ?].
+    unfold ge, tge in *.
+    destruct TRANSL as [G _].
+    pose proof (Genv.find_def_match_2 G b) as J.
+    simpl in *. setoid_rewrite H1 in J.
+    inv J. setoid_rewrite <- H3. inv H4; eauto.
 - (* deref *)
   exploit H0; eauto. intros [A [B C]]. subst sl1.
   split; auto. split. rewrite typeof_Ederef'; auto. apply eval_Ederef'; auto. 

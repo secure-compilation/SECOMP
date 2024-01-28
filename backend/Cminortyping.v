@@ -580,8 +580,8 @@ Ltac VHT' :=
   | _ => idtac
   end.
 
-Lemma type_constant_sound: forall sp cst v,
-  eval_constant ge sp cst = Some v ->
+Lemma type_constant_sound: forall cp sp cst v,
+  eval_constant ge cp sp cst = Some v ->
   Val.has_type v (type_constant cst).
 Proof.
   intros until v; intros EV. destruct cst; simpl in *; inv EV; VHT.
@@ -784,7 +784,7 @@ Proof.
   - apply known_id_sound_2 in H0.
     destruct (H i H0) as [v E].
     exists v; constructor; auto.
-  - destruct (eval_constant ge sp c) as [v|] eqn:E.
+  - destruct (eval_constant ge cp sp c) as [v|] eqn:E.
     exists v; constructor; auto.
     destruct c; discriminate.
   - InvBooleans. destruct IHa as [v1 E1]; auto.

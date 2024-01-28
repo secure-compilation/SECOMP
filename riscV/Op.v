@@ -222,7 +222,7 @@ Definition eval_condition (cond: condition) (vl: list val) (m: mem): option bool
   end.
 
 Definition eval_operation
-    (F V: Type) (genv: Genv.t F V) (sp: val)
+    (F V: Type) (genv: Genv.t F V) {CF: has_comp F} (cp: compartment) (sp: val)
     (op: operation) (vl: list val) (m: mem): option val :=
   match op, vl with
   | Omove, v1::nil => Some v1
@@ -230,7 +230,23 @@ Definition eval_operation
   | Olongconst n, nil => Some (Vlong n)
   | Ofloatconst n, nil => Some (Vfloat n)
   | Osingleconst n, nil => Some (Vsingle n)
-  | Oaddrsymbol s ofs, nil => Some (Genv.symbol_address genv s ofs)
+  | Oaddrsymbol s ofs, nil =>
+      let res :=
+        match Genv.symbol_address genv s ofs with
+        | Vptr b ofs =>
+            match Genv.find_comp_of_block genv b with
+            | Some cp' => if (cp =? cp')%positive then
+                           Vptr b ofs
+                         else
+                           match Genv.find_def genv b with
+                           | Some (Gfun _) => Vptr b ofs
+                           | _ => Vundef
+                           end
+            | None => Vundef
+            end
+        | _ => Vundef
+        end in
+      Some res
   | Oaddrstack ofs, nil => Some (Val.offset_ptr sp ofs)
   | Ocast8signed, v1 :: nil => Some (Val.sign_ext 8 v1)
   | Ocast16signed, v1 :: nil => Some (Val.sign_ext 16 v1)
@@ -322,25 +338,38 @@ Definition eval_operation
   end.
 
 Definition eval_addressing
-    (F V: Type) (genv: Genv.t F V) (sp: val)
+    (F V: Type) (genv: Genv.t F V) {CF: has_comp F} (cp: compartment) (sp: val)
     (addr: addressing) (vl: list val) : option val :=
   match addr, vl with
   | Aindexed n, v1 :: nil => Some (Val.offset_ptr v1 n)
-  | Aglobal s ofs, nil => Some (Genv.symbol_address genv s ofs)
+  | Aglobal s ofs, nil =>
+      Some (match  (Genv.symbol_address genv s ofs) with
+            | Vptr b ofs =>
+                match Genv.find_comp_of_block genv b with
+                | Some cp' =>
+                    if (cp =? cp')%positive
+                    then Vptr b ofs
+                    else match Genv.find_def genv b with
+                         | Some (Gfun _) => Vptr b ofs
+                         | _ => Vundef
+                         end
+                | None => Vundef
+                end
+            | _ => Vundef end)
   | Ainstack n, nil => Some (Val.offset_ptr sp n)
   | _, _ => None
   end.
 
 Remark eval_addressing_Ainstack:
-  forall (F V: Type) (genv: Genv.t F V) sp ofs,
-  eval_addressing genv sp (Ainstack ofs) nil = Some (Val.offset_ptr sp ofs).
+  forall (F V: Type) (genv: Genv.t F V) {CF: has_comp F} cp sp ofs,
+  eval_addressing genv cp sp (Ainstack ofs) nil = Some (Val.offset_ptr sp ofs).
 Proof.
   intros. reflexivity.
 Qed.
 
 Remark eval_addressing_Ainstack_inv:
-  forall (F V: Type) (genv: Genv.t F V) sp ofs vl v,
-  eval_addressing genv sp (Ainstack ofs) vl = Some v -> vl = nil /\ v = Val.offset_ptr sp ofs.
+  forall (F V: Type) (genv: Genv.t F V) {CF: has_comp F} cp sp ofs vl v,
+  eval_addressing genv cp sp (Ainstack ofs) vl = Some v -> vl = nil /\ v = Val.offset_ptr sp ofs.
 Proof.
   unfold eval_addressing; intros; destruct vl; inv H; auto.
 Qed.
@@ -491,6 +520,7 @@ Section SOUNDNESS.
 
 Variable A V: Type.
 Variable genv: Genv.t A V.
+Context {CA: has_comp A}.
 
 Remark type_add:
   forall v1 v2, Val.has_type (Val.add v1 v2) Tint.
@@ -505,9 +535,9 @@ Proof.
 Qed.
 
 Lemma type_of_operation_sound:
-  forall op vl sp v m,
+  forall op cp vl sp v m,
   op <> Omove ->
-  eval_operation genv sp op vl m = Some v ->
+  eval_operation genv cp sp op vl m = Some v ->
   Val.has_type v (snd (type_of_operation op)).
 Proof with (try exact I; try reflexivity; auto using Val.Vptr_has_type).
   intros.
@@ -521,6 +551,9 @@ Proof with (try exact I; try reflexivity; auto using Val.Vptr_has_type).
   - exact I.
   (* addrsymbol *)
   - unfold Genv.symbol_address. destruct (Genv.find_symbol genv id)...
+    destruct (Genv.find_comp_of_block genv b)...
+    destruct (cp =? c)%positive...
+    destruct Genv.find_def as [[]|]...
   (* addrstack *)
   - destruct sp... apply Val.Vptr_has_type.
   (* castsigned *)
@@ -756,18 +789,18 @@ Proof.
 Qed.
 
 Lemma eval_shift_stack_addressing:
-  forall F V (ge: Genv.t F V) sp addr vl delta,
-  eval_addressing ge (Vptr sp Ptrofs.zero) (shift_stack_addressing delta addr) vl =
-  eval_addressing ge (Vptr sp (Ptrofs.repr delta)) addr vl.
+  forall F V (ge: Genv.t F V) {CF: has_comp F} cp sp addr vl delta,
+  eval_addressing ge cp (Vptr sp Ptrofs.zero) (shift_stack_addressing delta addr) vl =
+  eval_addressing ge cp (Vptr sp (Ptrofs.repr delta)) addr vl.
 Proof.
   intros. destruct addr; simpl; auto. destruct vl; auto.
   rewrite Ptrofs.add_zero_l, Ptrofs.add_commut; auto.
 Qed.
 
 Lemma eval_shift_stack_operation:
-  forall F V (ge: Genv.t F V) sp op vl m delta,
-  eval_operation ge (Vptr sp Ptrofs.zero) (shift_stack_operation delta op) vl m =
-  eval_operation ge (Vptr sp (Ptrofs.repr delta)) op vl m.
+  forall F V (ge: Genv.t F V) {CF: has_comp F} cp sp op vl m delta,
+  eval_operation ge cp (Vptr sp Ptrofs.zero) (shift_stack_operation delta op) vl m =
+  eval_operation ge cp (Vptr sp (Ptrofs.repr delta)) op vl m.
 Proof.
   intros. destruct op; simpl; auto. destruct vl; auto.
   rewrite Ptrofs.add_zero_l, Ptrofs.add_commut; auto.
@@ -785,11 +818,11 @@ Definition offset_addressing (addr: addressing) (delta: Z) : option addressing :
   end.
 
 Lemma eval_offset_addressing:
-  forall (F V: Type) (ge: Genv.t F V) sp addr args delta addr' v,
+  forall (F V: Type) (ge: Genv.t F V) {CF: has_comp F} cp sp addr args delta addr' v,
   offset_addressing addr delta = Some addr' ->
-  eval_addressing ge sp addr args = Some v ->
+  eval_addressing ge cp sp addr args = Some v ->
   Archi.ptr64 = false ->
-  eval_addressing ge sp addr' args = Some(Val.add v (Vint (Int.repr delta))).
+  eval_addressing ge cp sp addr' args = Some(Val.add v (Vint (Int.repr delta))).
 Proof.
   intros.
   assert (A: forall x n,
@@ -799,7 +832,12 @@ Proof.
     rewrite Ptrofs.add_assoc. f_equal; f_equal; f_equal. symmetry; auto with ptrofs. }
   destruct addr; simpl in H; inv H; simpl in *; FuncInv; subst.
 - rewrite A; auto.
-- unfold Genv.symbol_address. destruct (Genv.find_symbol ge i); auto. 
+- rewrite Genv.shift_symbol_address.
+  destruct (Genv.symbol_address ge i i0) eqn:?; simpl; try now constructor.
+  destruct (Genv.find_comp_of_block ge b) eqn:?; try now constructor.
+  destruct (cp =? c)%positive eqn:?; try now constructor.
+  simpl. rewrite H1. f_equal; f_equal; f_equal. symmetry; auto with ptrofs.
+  destruct (Genv.find_def ge b) as [[] |] eqn:?; try now constructor.
   simpl. rewrite H1. f_equal; f_equal; f_equal. symmetry; auto with ptrofs.
 - rewrite A; auto.
 Qed.
@@ -827,9 +865,9 @@ Definition op_depends_on_memory (op: operation) : bool :=
   end.
 
 Lemma op_depends_on_memory_correct:
-  forall (F V: Type) (ge: Genv.t F V) sp op args m1 m2,
+  forall (F V: Type) (ge: Genv.t F V) {CF: has_comp F} cp sp op args m1 m2,
   op_depends_on_memory op = false ->
-  eval_operation ge sp op args m1 = eval_operation ge sp op args m2.
+  eval_operation ge cp sp op args m1 = eval_operation ge cp sp op args m2.
 Proof.
   intros until m2. destruct op; simpl; try congruence.
   destruct cond; simpl; intros SF; auto; rewrite ? negb_false_iff in SF;
@@ -860,27 +898,60 @@ Definition globals_operation (op: operation) : list ident :=
 Section GENV_TRANSF.
 
 Variable F1 F2 V1 V2: Type.
+Context {CF1: has_comp F1} {CF2: has_comp F2}.
 Variable ge1: Genv.t F1 V1.
 Variable ge2: Genv.t F2 V2.
 Hypothesis agree_on_symbols:
   forall (s: ident), Genv.find_symbol ge2 s = Genv.find_symbol ge1 s.
+Hypothesis agree_on_comp:
+  forall b, Genv.find_comp_of_ident ge2 b = Genv.find_comp_of_ident ge1 b.
+Hypothesis agree_on_defs:
+  forall b fd', Genv.find_def ge2 b = Some (Gfun fd') ->
+       exists fd, Genv.find_def ge1 b = Some (Gfun fd).
+Hypothesis agree_on_defs':
+  forall b fd, Genv.find_def ge1 b = Some (Gfun fd) ->
+       exists fd', Genv.find_def ge2 b = Some (Gfun fd').
 
 Lemma eval_addressing_preserved:
-  forall sp addr vl,
-  eval_addressing ge2 sp addr vl = eval_addressing ge1 sp addr vl.
+  forall cp sp addr vl,
+  eval_addressing ge2 cp sp addr vl = eval_addressing ge1 cp sp addr vl.
 Proof.
   intros.
   unfold eval_addressing; destruct addr; auto. destruct vl; auto. 
   unfold Genv.symbol_address. rewrite agree_on_symbols; auto.
+  unfold Genv.find_comp_of_ident in agree_on_comp.
+  destruct (Genv.find_symbol ge1 i) eqn:?; auto.
+  specialize (agree_on_comp i). rewrite agree_on_symbols in agree_on_comp.
+  rewrite Heqo in agree_on_comp; auto. rewrite agree_on_comp.
+  destruct (Genv.find_comp_of_block ge1 b) eqn:?; auto.
+  destruct (cp =? c)%positive; auto.
+  destruct (Genv.find_def ge2 b) as [[] |] eqn:?; auto;
+    destruct (Genv.find_def ge1 b) as [[] |] eqn:?; auto.
+  exploit agree_on_defs; eauto. intros [? ?]; congruence.
+  exploit agree_on_defs; eauto. intros [? ?]; congruence.
+  exploit agree_on_defs'; eauto. intros [? ?]; congruence.
+  exploit agree_on_defs'; eauto. intros [? ?]; congruence.
 Qed.
 
 Lemma eval_operation_preserved:
-  forall sp op vl m,
-  eval_operation ge2 sp op vl m = eval_operation ge1 sp op vl m.
+  forall cp sp op vl m,
+  eval_operation ge2 cp sp op vl m = eval_operation ge1 cp sp op vl m.
 Proof.
   intros.
   unfold eval_operation; destruct op; auto. destruct vl; auto.
   unfold Genv.symbol_address. rewrite agree_on_symbols; auto.
+  unfold Genv.find_comp_of_ident in agree_on_comp.
+  destruct (Genv.find_symbol ge1 id) eqn:?; auto.
+  specialize (agree_on_comp id). rewrite agree_on_symbols in agree_on_comp.
+  rewrite Heqo in agree_on_comp; auto. rewrite agree_on_comp.
+  destruct (Genv.find_comp_of_block ge1 b) eqn:?; auto.
+  destruct (cp =? c)%positive; auto.
+  destruct (Genv.find_def ge2 b) as [[] |] eqn:?; auto;
+    destruct (Genv.find_def ge1 b) as [[] |] eqn:?; auto.
+  exploit agree_on_defs; eauto. intros [? ?]; congruence.
+  exploit agree_on_defs; eauto. intros [? ?]; congruence.
+  exploit agree_on_defs'; eauto. intros [? ?]; congruence.
+  exploit agree_on_defs'; eauto. intros [? ?]; congruence.
 Qed.
 
 End GENV_TRANSF.
@@ -892,6 +963,7 @@ Section EVAL_COMPAT.
 Variable F1 F2 V1 V2: Type.
 Variable ge1: Genv.t F1 V1.
 Variable ge2: Genv.t F2 V2.
+Context {CF1: has_comp F1} {CF2: has_comp F2}.
 Variable f: meminj.
 
 Variable m1: mem.
@@ -968,15 +1040,31 @@ Ltac TrivialExists :=
   | _ => idtac
   end.
 
+Let symb_addr_check {F V: Type} {CF: has_comp F} (ge1: Genv.t F V) cp id ofs :=
+      match Genv.symbol_address ge1 id ofs with
+      | Vptr b ofs0 =>
+          match Genv.find_comp_of_block ge1 b with
+          | Some cp' =>
+              if (cp =? cp')%positive
+              then Vptr b ofs0
+              else match Genv.find_def ge1 b with
+                   | Some (Gfun _) => Vptr b ofs0
+                   | _ => Vundef
+                   end
+          | None => Vundef
+          end
+      | _ => Vundef
+      end.
+
 Lemma eval_operation_inj:
-  forall op sp1 vl1 sp2 vl2 v1,
+  forall cp op sp1 vl1 sp2 vl2 v1,
   (forall id ofs,
       In id (globals_operation op) ->
-      Val.inject f (Genv.symbol_address ge1 id ofs) (Genv.symbol_address ge2 id ofs)) ->
+      Val.inject f (symb_addr_check ge1 cp id ofs) (symb_addr_check ge2 cp id ofs)) ->
   Val.inject f sp1 sp2 ->
   Val.inject_list f vl1 vl2 ->
-  eval_operation ge1 sp1 op vl1 m1 = Some v1 ->
-  exists v2, eval_operation ge2 sp2 op vl2 m2 = Some v2 /\ Val.inject f v1 v2.
+  eval_operation ge1 cp sp1 op vl1 m1 = Some v1 ->
+  exists v2, eval_operation ge2 cp sp2 op vl2 m2 = Some v2 /\ Val.inject f v1 v2.
 Proof.
   intros until v1; intros GL; intros. destruct op; simpl in H1; simpl; FuncInv; InvInject; TrivialExists.
   (* addrsymbol *)
@@ -1144,14 +1232,14 @@ Proof.
 Qed.
 
 Lemma eval_addressing_inj:
-  forall addr sp1 vl1 sp2 vl2 v1,
+  forall addr cp sp1 vl1 sp2 vl2 v1,
   (forall id ofs,
       In id (globals_addressing addr) ->
-      Val.inject f (Genv.symbol_address ge1 id ofs) (Genv.symbol_address ge2 id ofs)) ->
+      Val.inject f (symb_addr_check ge1 cp id ofs) (symb_addr_check ge2 cp id ofs)) ->
   Val.inject f sp1 sp2 ->
   Val.inject_list f vl1 vl2 ->
-  eval_addressing ge1 sp1 addr vl1 = Some v1 ->
-  exists v2, eval_addressing ge2 sp2 addr vl2 = Some v2 /\ Val.inject f v1 v2.
+  eval_addressing ge1 cp sp1 addr vl1 = Some v1 ->
+  exists v2, eval_addressing ge2 cp sp2 addr vl2 = Some v2 /\ Val.inject f v1 v2.
 Proof.
   intros. destruct addr; simpl in H2; simpl; FuncInv; InvInject; TrivialExists.
   apply Val.offset_ptr_inject; auto.
@@ -1166,6 +1254,7 @@ End EVAL_COMPAT.
 Section EVAL_LESSDEF.
 
 Variable F V: Type.
+Context {CF: has_comp F}.
 Variable genv: Genv.t F V.
 
 Remark valid_pointer_extends:
@@ -1226,15 +1315,15 @@ Proof.
 Qed.
 
 Lemma eval_operation_lessdef:
-  forall sp op vl1 vl2 v1 m1 m2,
+  forall cp sp op vl1 vl2 v1 m1 m2,
   Val.lessdef_list vl1 vl2 ->
   Mem.extends m1 m2 ->
-  eval_operation genv sp op vl1 m1 = Some v1 ->
-  exists v2, eval_operation genv sp op vl2 m2 = Some v2 /\ Val.lessdef v1 v2.
+  eval_operation genv cp sp op vl1 m1 = Some v1 ->
+  exists v2, eval_operation genv cp sp op vl2 m2 = Some v2 /\ Val.lessdef v1 v2.
 Proof.
   intros. rewrite val_inject_list_lessdef in H.
   assert (exists v2 : val,
-          eval_operation genv sp op vl2 m2 = Some v2
+          eval_operation genv cp sp op vl2 m2 = Some v2
           /\ Val.inject (fun b => Some(b, 0)) v1 v2).
   eapply eval_operation_inj with (m1 := m1) (sp1 := sp).
   apply valid_pointer_extends; auto.
@@ -1249,14 +1338,14 @@ Proof.
 Qed.
 
 Lemma eval_addressing_lessdef:
-  forall sp addr vl1 vl2 v1,
+  forall cp sp addr vl1 vl2 v1,
   Val.lessdef_list vl1 vl2 ->
-  eval_addressing genv sp addr vl1 = Some v1 ->
-  exists v2, eval_addressing genv sp addr vl2 = Some v2 /\ Val.lessdef v1 v2.
+  eval_addressing genv cp sp addr vl1 = Some v1 ->
+  exists v2, eval_addressing genv cp sp addr vl2 = Some v2 /\ Val.lessdef v1 v2.
 Proof.
   intros. rewrite val_inject_list_lessdef in H.
   assert (exists v2 : val,
-          eval_addressing genv sp addr vl2 = Some v2
+          eval_addressing genv cp sp addr vl2 = Some v2
           /\ Val.inject (fun b => Some(b, 0)) v1 v2).
   eapply eval_addressing_inj with (sp1 := sp).
   intros. rewrite <- val_inject_lessdef; auto.
@@ -1272,6 +1361,7 @@ End EVAL_LESSDEF.
 Section EVAL_INJECT.
 
 Variable F V: Type.
+Context {CF: has_comp F}.
 Variable genv: Genv.t F V.
 Variable f: meminj.
 Hypothesis globals: meminj_preserves_globals genv f.
@@ -1303,27 +1393,35 @@ Proof.
 Qed.
 
 Lemma eval_addressing_inject:
-  forall addr vl1 vl2 v1,
+  forall cp addr vl1 vl2 v1,
   Val.inject_list f vl1 vl2 ->
-  eval_addressing genv (Vptr sp1 Ptrofs.zero) addr vl1 = Some v1 ->
+  eval_addressing genv cp (Vptr sp1 Ptrofs.zero) addr vl1 = Some v1 ->
   exists v2,
-     eval_addressing genv (Vptr sp2 Ptrofs.zero) (shift_stack_addressing delta addr) vl2 = Some v2
+     eval_addressing genv cp (Vptr sp2 Ptrofs.zero) (shift_stack_addressing delta addr) vl2 = Some v2
   /\ Val.inject f v1 v2.
 Proof.
   intros.
   rewrite eval_shift_stack_addressing.
   eapply eval_addressing_inj with (sp1 := Vptr sp1 Ptrofs.zero); eauto.
-  intros. apply symbol_address_inject.
-  econstructor; eauto. rewrite Ptrofs.add_zero_l; auto. 
+
+  intros. destruct (Genv.symbol_address genv id ofs) eqn:?; auto.
+  destruct (Genv.find_comp_of_block genv b); auto.
+  destruct (Pos.eqb cp c); auto.
+  pose proof (symbol_address_inject id ofs) as inj.
+  rewrite Heqv in inj; auto.
+  destruct (Genv.find_def genv b) as [[] |]; auto.
+  pose proof (symbol_address_inject id ofs) as inj.
+  rewrite Heqv in inj; auto.
+  econstructor; eauto. rewrite Ptrofs.add_zero_l; auto.
 Qed.
 
 Lemma eval_operation_inject:
-  forall op vl1 vl2 v1 m1 m2,
+  forall cp op vl1 vl2 v1 m1 m2,
   Val.inject_list f vl1 vl2 ->
   Mem.inject f m1 m2 ->
-  eval_operation genv (Vptr sp1 Ptrofs.zero) op vl1 m1 = Some v1 ->
+  eval_operation genv cp (Vptr sp1 Ptrofs.zero) op vl1 m1 = Some v1 ->
   exists v2,
-     eval_operation genv (Vptr sp2 Ptrofs.zero) (shift_stack_operation delta op) vl2 m2 = Some v2
+     eval_operation genv cp (Vptr sp2 Ptrofs.zero) (shift_stack_operation delta op) vl2 m2 = Some v2
   /\ Val.inject f v1 v2.
 Proof.
   intros.
@@ -1333,8 +1431,15 @@ Proof.
   intros; eapply Mem.weak_valid_pointer_inject_val; eauto.
   intros; eapply Mem.weak_valid_pointer_inject_no_overflow; eauto.
   intros; eapply Mem.different_pointers_inject; eauto.
-  intros. apply symbol_address_inject.
-  econstructor; eauto. rewrite Ptrofs.add_zero_l; auto. 
+  intros. destruct (Genv.symbol_address genv id ofs) eqn:?; auto.
+  destruct (Genv.find_comp_of_block genv b); auto.
+  destruct (Pos.eqb cp c); auto.
+  pose proof (symbol_address_inject id ofs) as inj.
+  rewrite Heqv in inj; auto.
+  destruct (Genv.find_def genv b) as [[] |]; auto.
+  pose proof (symbol_address_inject id ofs) as inj.
+  rewrite Heqv in inj; auto.
+  econstructor; eauto. rewrite Ptrofs.add_zero_l; auto.
 Qed.
 
 End EVAL_INJECT.

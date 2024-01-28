@@ -1402,6 +1402,14 @@ Proof.
   split; auto. econstructor. eapply eval_var_addr_global.
   eapply match_env_globals; eauto.
   rewrite symbols_preserved. auto.
+  destruct H1.
+  rewrite <- (Genv.match_genvs_find_comp_of_block TRANSL); eauto.
+  right. destruct H1 as [fd H1].
+  pose proof (Genv.find_def_match_2 TRANSL l).
+  unfold ge, tge in *.
+  inv H2; eauto. setoid_rewrite H1 in H4; discriminate.
+  setoid_rewrite H4. inv H5; eauto.
+  setoid_rewrite H1 in H3; discriminate.
 - (* deref *)
   eauto.
 - (* field struct *)

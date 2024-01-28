@@ -57,10 +57,10 @@ Proof (Genv.senv_match TRANSF).
 
 Lemma functions_translated:
   forall b f,
-  Genv.find_funct_ptr ge b = Some f ->
+  Genv.find_def ge b = Some (Gfun f) ->
   exists tf,
-  Genv.find_funct_ptr tge b = Some tf /\ transf_fundef f = OK tf.
-Proof (Genv.find_funct_ptr_transf_partial TRANSF).
+  Genv.find_def tge b = Some (Gfun tf) /\ transf_fundef f = OK tf.
+Proof (Genv.find_def_transf_partial TRANSF).
 
 Lemma find_comp_of_block_translated:
   forall b,
@@ -78,9 +78,9 @@ Qed.
 
 Lemma functions_transl:
   forall fb f tf,
-  Genv.find_funct_ptr ge fb = Some (Internal f) ->
+  Genv.find_def ge fb = Some (Gfun (Internal f)) ->
   transf_function f = OK tf ->
-  Genv.find_funct_ptr tge fb = Some (Internal tf).
+  Genv.find_def tge fb = Some (Gfun (Internal tf)).
 Proof.
   intros. exploit functions_translated; eauto. intros [tf' [A B]].
   monadInv B. rewrite H0 in EQ; inv EQ; auto.
@@ -451,7 +451,7 @@ End TRANSL_LABEL.
 
 Lemma find_label_goto_label:
   forall f tf lbl rs m c' b ofs,
-  Genv.find_funct_ptr ge b = Some (Internal f) ->
+  Genv.find_def ge b = Some (Gfun (Internal f)) ->
   transf_function f = OK tf ->
   rs PC = Vptr b ofs ->
   Mach.find_label lbl f.(Mach.fn_code) = Some c' ->
@@ -633,7 +633,7 @@ Proof.
     rewrite <- comp_transf_function; eauto.
     rewrite C. eexact GOTO. auto. auto.
     eauto.
-    simpl. now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FN).
+    simpl. now rewrite (Genv.find_def_find_comp_of_block _ _ FN).
   }
   traceEq.
   econstructor; eauto.
@@ -674,7 +674,7 @@ Proof.
   { econstructor. eauto. eauto.
     eapply find_instr_tail. eauto.
     rewrite C. eexact GOTO. auto. auto.
-    eauto. simpl. now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FN).
+    eauto. simpl. now rewrite (Genv.find_def_find_comp_of_block _ _ FN).
   }
   econstructor; eauto.
   apply agree_exten with rs2; auto with asmgen.
@@ -690,7 +690,7 @@ Proof.
   { econstructor. eauto. eauto.
     eapply find_instr_tail. eauto.
     rewrite C. eexact GOTO. auto. auto.
-    eauto. simpl. now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FN).
+    eauto. simpl. now rewrite (Genv.find_def_find_comp_of_block _ _ FN).
   }
   traceEq.
   econstructor; eauto.
@@ -803,23 +803,27 @@ Opaque loadind.
   apply preg_of_not_X30; auto.
 
 - (* Mop *)
-  assert (eval_operation tge sp op (map rs args) m = Some v).
+  assert (eval_operation tge cp sp op (map rs args) m = Some v).
     rewrite <- H. apply eval_operation_preserved. exact symbols_preserved.
-  exploit eval_operation_lessdef. eapply preg_vals; eauto. eauto. eexact H0.
+    admit. admit. admit.
+  exploit eval_operation_lessdef. eapply preg_vals; eauto. eauto.
+  eexact H0.
   intros [v' [A B]]. rewrite (sp_val _ _ _ AG) in A.
   left; eapply exec_straight_steps; eauto; intros. simpl in TR.
-  exploit transl_op_correct; eauto. intros [rs2 [P [Q R]]].
+  exploit transl_op_correct; eauto. admit. (* issue with [comp_of] *)
+  intros [rs2 [P [Q R]]].
   exists rs2; split. eauto. split. auto.
   apply agree_set_undef_mreg with rs0; auto. 
-  apply Val.lessdef_trans with v'; auto.
+  apply Val.lessdef_trans with v'; eauto.
   simpl; intros. destruct (andb_prop _ _ H1); clear H1.
   rewrite R; auto. apply preg_of_not_X30; auto.
 Local Transparent destroyed_by_op.
   destruct op; simpl; auto; congruence.
 
 - (* Mload *)
-  assert (eval_addressing tge sp addr (map rs args) = Some a).
+  assert (eval_addressing tge cp sp addr (map rs args) = Some a).
     rewrite <- H. apply eval_addressing_preserved. exact symbols_preserved.
+    admit. admit. admit.
   exploit eval_addressing_lessdef. eapply preg_vals; eauto. eexact H1.
   intros [a' [A B]]. rewrite (sp_val _ _ _ AG) in A.
   exploit Mem.loadv_extends; eauto. intros [v' [C D]].
@@ -827,15 +831,19 @@ Local Transparent destroyed_by_op.
   inv AT.
   unfold_find_comp CURCOMP FIND.
   setoid_rewrite <- CURCOMP in C. setoid_rewrite (comp_transf_function) in C; eauto.
-  exploit transl_load_correct; eauto. intros [rs2 [P [Q R]]].
+  subst cp.
+  exploit transl_load_correct; eauto. replace (comp_of tf) with (comp_of (Internal f0)). eauto.
+  rewrite <- comp_transf_function; eauto. reflexivity.
+  intros [rs2 [P [Q R]]].
   exists rs2; split. eauto.
   split. eapply agree_set_undef_mreg; eauto. congruence.
   intros; auto with asmgen.
   simpl; congruence.
 
 - (* Mstore *)
-  assert (eval_addressing tge sp addr (map rs args) = Some a).
+  assert (eval_addressing tge cp sp addr (map rs args) = Some a).
     rewrite <- H. apply eval_addressing_preserved. exact symbols_preserved.
+    admit. admit. admit.
   exploit eval_addressing_lessdef. eapply preg_vals; eauto. eexact H1.
   intros [a' [A B]]. rewrite (sp_val _ _ _ AG) in A.
   assert (Val.lessdef (rs src) (rs0 (preg_of src))). eapply preg_val; eauto.
@@ -844,7 +852,11 @@ Local Transparent destroyed_by_op.
   inv AT.
   unfold_find_comp CURCOMP FIND.
   setoid_rewrite <- CURCOMP in C. setoid_rewrite (comp_transf_function) in C; eauto.
-  intros. simpl in TR. exploit transl_store_correct; eauto. intros [rs2 [P Q]].
+  subst cp.
+  intros. simpl in TR. exploit transl_store_correct; eauto.
+  replace (comp_of tf) with (comp_of (Internal f0)). eauto.
+  rewrite <- comp_transf_function; eauto. reflexivity.
+  intros [rs2 [P Q]].
   exists rs2; split. eauto.
   split. eapply agree_undef_regs; eauto with asmgen.
   simpl; congruence.
@@ -891,9 +903,13 @@ Local Transparent destroyed_by_op.
     (* Not a cross-compartment call *)
     { unfold Genv.type_of_call; simpl in *.
       unfold comp_of. unfold comp_of in Heq. now setoid_rewrite Heq. }
+    { unfold Genv.type_of_call; simpl in *.
+      unfold comp_of. unfold comp_of in Heq. now setoid_rewrite Heq. }
     { rewrite <- comp_transf_function; eauto.
       rewrite <- (comp_transl_partial _ TTRANSF); eauto.
       eapply call_trace_lessdef; eauto using senv_preserved, symbols_preserved. }
+    reflexivity.
+    reflexivity.
     econstructor; eauto.
     econstructor; eauto.
     eapply agree_sp_def; eauto.
@@ -906,8 +922,16 @@ Local Transparent destroyed_by_op.
       apply match_stacks_intra_compartment; trivial.
       unfold Mach.call_comp. simpl.
       now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND). }
-    simpl. eapply agree_exten; eauto. intros. Simpl.
-    Simpl. rewrite <- H2. auto.
+    simpl.
+    assert (agree_undef_caller: forall rs sp rs0 sig,
+             agree rs sp rs0 ->
+             agree (undef_caller_save_regs_ext rs sig) sp
+               (invalidate_call rs0 sig)).
+    { clear. intros. admit. }
+
+    (* eapply agree_undef_caller. *) admit. admit.
+    (* eapply agree_exten; eauto. intros. Simpl. *)
+    Simpl. rewrite <- H2. auto. admit.
   * left; econstructor; split.
     apply plus_one. eapply exec_step_internal_call.
     rewrite <- H2; simpl; eauto.
@@ -925,9 +949,22 @@ Local Transparent destroyed_by_op.
     simpl.
     unfold tge; rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ TFIND).
     rewrite <- H2. simpl.
+    (* replace (comp_of (Internal tf) =? comp_of tf')%positive with false. *)
+    (* unfold comp_of in *; simpl in *; unfold comp_of in *; simpl in *. rewrite Heq. *)
     replace (comp_of tf =? comp_of tf')%positive with false.
     reflexivity.
     eauto.
+    { simpl. intros. unfold Genv.find_funct_ptr in TFIND.
+      destruct (Genv.find_def (Genv.globalenv tprog) f') as [[] |] eqn:?; try congruence.
+      inv TFIND.
+      exists tf'; split; eauto.
+      clear -TTRANSF. unfold transf_fundef in TTRANSF. unfold transf_partial_fundef in TTRANSF.
+      destruct fd.
+      - monadInv TTRANSF.
+        simpl in EQ. monadInv EQ.
+        destruct zlt; try congruence. inv EQ1; auto.
+        monadInv EQ0; auto.
+      - inv TTRANSF; auto. }
     { simpl.
       intros.
       rewrite <- (comp_transl_partial _ H4) in H8.
@@ -937,6 +974,7 @@ Local Transparent destroyed_by_op.
     { simpl. rewrite <- comp_transf_function; eauto.
       rewrite <- (comp_transl_partial _ TTRANSF).
       eapply call_trace_lessdef; eauto using senv_preserved, symbols_preserved. }
+    reflexivity. reflexivity.
     econstructor; eauto.
     econstructor; eauto.
     eapply agree_sp_def; eauto.
@@ -948,22 +986,44 @@ Local Transparent destroyed_by_op.
         now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND).
       - simpl.
         rewrite <- find_comp_of_block_translated.
-        now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ H3).
+        now rewrite (Genv.find_def_find_comp_of_block _ _ H3).
       - rewrite (comp_transl_partial _ TTRANSF).
         rewrite (comp_transl_partial _ H4).
         intros contra. now rewrite contra, Pos.eqb_refl in Heq.
       - erewrite agree_sp; eauto.
         constructor.
     }
-    simpl. eapply agree_exten; eauto. intros. Simpl.
-    Simpl. rewrite <- H2. auto.
+    assert (agree_undef_caller: forall rs sp rs0 sig,
+             agree rs sp rs0 ->
+             agree (undef_caller_save_regs_ext rs sig) sp
+               (invalidate_call rs0 sig)).
+    { clear. intros. admit. }
+    (* eapply agree_undef_caller. admit. *) admit.
+    simpl. admit.
+    (* eapply agree_exten; eauto. intros. Simpl. *)
+    Simpl. rewrite <- H2. auto. admit.
 + (* Direct call *)
   generalize (code_tail_next_int _ _ _ _ NOOV H6). intro CT1.
   assert (TCA: transl_code_at_pc ge (Vptr fb (Ptrofs.add ofs Ptrofs.one)) fb f c false tf x).
     econstructor; eauto.
   exploit return_address_offset_correct; eauto. intros; subst ra.
   exploit (call_arguments_match (Mach.undef_regs destroyed_at_function_entry rs)); eauto.
-  instantiate (1 := (rs0 # PC <- (Genv.symbol_address tge fid Ptrofs.zero)) # X1 <- (Val.offset_ptr (rs0 PC) Ptrofs.one)).
+  instantiate (1 := (rs0 # PC <-
+   match Genv.symbol_address tge fid Ptrofs.zero with
+   | Vptr b ofs0 =>
+       match Genv.find_comp_of_block tge b with
+       | Some cp' =>
+           if (comp_of tf =? cp')%positive
+           then Vptr b ofs0
+           else match Genv.find_def tge b with
+                | Some (Gfun _) => Vptr b ofs0
+                | _ => Vundef
+                end
+       | None => Vundef
+       end
+   | _ => Vundef
+   end) # X1 <- (Val.offset_ptr (rs0 PC) Ptrofs.one)).
+  (* instantiate (1 := (rs0 # PC <- (Genv.symbol_address tge fid Ptrofs.zero)) # X1 <- (Val.offset_ptr (rs0 PC) Ptrofs.one)). *)
   simpl. eapply agree_exten. eapply agree_undef_regs; eauto. intros. Simpl.
   intros [args' [ARGS' LDARGS]].
   destruct (comp_of (Internal tf) =? comp_of tf')%positive eqn:Heq.
@@ -974,8 +1034,21 @@ Local Transparent destroyed_by_op.
     eapply find_instr_tail; eauto.
     simpl; eauto.
     simpl; eauto.
+    { unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H.
+      rewrite <- find_comp_of_block_translated; eauto.
+      destruct (Genv.find_comp_of_block ge f') eqn:?.
+      destruct (comp_of tf =? c0)%positive; try Simpl; eauto.
+      unfold Genv.find_funct_ptr in CALLED.
+      pose proof (Genv.find_def_match_2 TRANSF f') as G.
+      unfold ge, tge in *. inv G.
+      { unfold ge, tge in *.
+        rewrite <- H7 in CALLED. try congruence. }
+      { inv H8. congruence. rewrite <- H5 in CALLED. congruence. }
+      Simpl; eauto. unfold Genv.find_comp_of_block in Heqo.
+      unfold Genv.find_funct_ptr in CALLED.
+      destruct (Genv.find_def ge f'); try congruence. }
     Simpl; eauto.
-    unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H. eauto.
+    (* unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H. eauto. *)
     rewrite <- (comp_transl_partial _ H4).
     eapply allowed_call_translated; eauto.
     simpl.
@@ -984,14 +1057,29 @@ Local Transparent destroyed_by_op.
     unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H.
     simpl.
     simpl; unfold tge; rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ TFIND).
+    unfold comp_of in *; simpl in *. unfold comp_of in *. rewrite Heq.
+    simpl; unfold tge; rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ TFIND).
     unfold comp_of in *; simpl in *. unfold comp_of in *. now rewrite Heq.
     eauto.
     (* Not a cross-compartment call *)
+    { simpl. intros. unfold Genv.find_funct_ptr in TFIND.
+      destruct (Genv.find_def (Genv.globalenv tprog) f') as [[] |] eqn:?;
+                                                              try congruence.
+      inv TFIND.
+      exists tf'; split; eauto.
+      clear -TTRANSF. unfold transf_fundef in TTRANSF. unfold transf_partial_fundef in TTRANSF.
+      destruct fd.
+      - monadInv TTRANSF.
+        simpl in EQ. monadInv EQ.
+        destruct zlt; try congruence. inv EQ1; auto.
+        monadInv EQ0; auto.
+      - inv TTRANSF; auto. }
     { unfold Genv.type_of_call; simpl in *.
       unfold comp_of. unfold comp_of in Heq. now setoid_rewrite Heq. }
     { simpl. rewrite <- comp_transf_function; eauto.
       rewrite <- (comp_transl_partial _ TTRANSF).
       eapply call_trace_lessdef; eauto using senv_preserved, symbols_preserved. }
+    reflexivity. reflexivity.
     econstructor; eauto.
     econstructor; eauto.
     eapply agree_sp_def; eauto.
@@ -1005,9 +1093,17 @@ Local Transparent destroyed_by_op.
       apply match_stacks_intra_compartment. exact STACKS'.
       unfold Mach.call_comp. simpl.
       now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND). }
-    simpl. eapply agree_exten; eauto. intros. Simpl.
+    assert (agree_undef_caller: forall rs sp rs0 sig,
+             agree rs sp rs0 ->
+             agree (undef_caller_save_regs_ext rs sig) sp
+               (invalidate_call rs0 sig)).
+    { clear. intros. admit. }
+    admit.
+    (* eapply agree_undef_caller. *)
+    admit.
+    (* simpl. eapply agree_exten; eauto. intros. Simpl. *)
     Simpl. unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H. eauto.
-    Simpl. rewrite <- H2. auto.
+    Simpl. rewrite <- H2. auto. admit.
   * left; econstructor; split.
     apply plus_one. eapply exec_step_internal_call.
     rewrite <- H2; simpl; eauto.
@@ -1015,8 +1111,21 @@ Local Transparent destroyed_by_op.
     eapply find_instr_tail; eauto.
     simpl; eauto.
     simpl; eauto.
-    Simpl; eauto.
-    unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H. eauto.
+    { unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H.
+      rewrite <- find_comp_of_block_translated; eauto.
+      destruct (Genv.find_comp_of_block ge f') eqn:?.
+      destruct (comp_of tf =? c0)%positive; try Simpl; eauto.
+      unfold Genv.find_funct_ptr in CALLED.
+      pose proof (Genv.find_def_match_2 TRANSF f') as G.
+      unfold ge, tge in *. inv G.
+      { unfold ge, tge in *.
+        rewrite <- H7 in CALLED. try congruence. }
+      { inv H8. congruence. rewrite <- H5 in CALLED. congruence. }
+      Simpl; eauto. unfold Genv.find_comp_of_block in Heqo.
+      unfold Genv.find_funct_ptr in CALLED.
+      destruct (Genv.find_def ge f'); try congruence. }
+    (* Simpl; eauto. *)
+    (* unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H. eauto. *)
     rewrite <- (comp_transl_partial _ H4).
     eapply allowed_call_translated; eauto.
     rewrite <- find_comp_of_block_translated.
@@ -1025,13 +1134,26 @@ Local Transparent destroyed_by_op.
     unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H.
     simpl; unfold tge. rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ TFIND).
     replace (comp_of tf =? comp_of tf')%positive with false.
-    rewrite <- H2. simpl. eauto. eauto.
+    rewrite <- H2. simpl. admit. eauto.
+    { simpl. intros. unfold Genv.find_funct_ptr in TFIND.
+      destruct (Genv.find_def (Genv.globalenv tprog) f') as [[] |] eqn:?;
+                                                              try congruence.
+      inv TFIND.
+      exists tf'; split; eauto.
+      clear -TTRANSF. unfold transf_fundef in TTRANSF. unfold transf_partial_fundef in TTRANSF.
+      destruct fd.
+      - monadInv TTRANSF.
+        simpl in EQ. monadInv EQ.
+        destruct zlt; try congruence. inv EQ1; auto.
+        monadInv EQ0; auto.
+      - inv TTRANSF; auto. }
     { simpl. intros.
       rewrite <- (comp_transl_partial _ H4) in H5.
       specialize (NO_CROSS_PTR H5).
       now eapply Val.lessdef_list_not_ptr; eauto. }
     { simpl. rewrite <- comp_transf_function; eauto.
       eapply call_trace_lessdef; eauto using senv_preserved, symbols_preserved. }
+    reflexivity. reflexivity.
     econstructor; eauto.
     econstructor; eauto.
     eapply agree_sp_def; eauto.
@@ -1043,16 +1165,25 @@ Local Transparent destroyed_by_op.
       eapply match_stacks_cross_compartment. exact STACKS'.
       - unfold Mach.call_comp. simpl.
         now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND).
-      - simpl.
-        rewrite <- find_comp_of_block_translated.
-        now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND).
+      - simpl. admit.
+      (* - simpl. rewrite <- find_comp_of_block_translated. *)
+      (*   now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND). *)
       - rewrite (comp_transl_partial _ H4).
         intros contra. now rewrite contra, Pos.eqb_refl in Heq.
-      - erewrite agree_sp; eauto.
-        constructor. }
-    simpl. eapply agree_exten; eauto. intros. Simpl.
+      - admit. }
+      (* - erewrite agree_sp; eauto. *)
+      (*   constructor. } *)
+    assert (agree_undef_caller: forall rs sp rs0 sig,
+             agree rs sp rs0 ->
+             agree (undef_caller_save_regs_ext rs sig) sp
+               (invalidate_call rs0 sig)).
+    { clear. intros. admit. }
+    admit.
+    (* eapply agree_undef_caller. *)
+    admit.
+    (* simpl. eapply agree_exten; eauto. intros. Simpl. *)
     Simpl. unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H. eauto.
-    Simpl. rewrite <- H2. auto.
+    Simpl. rewrite <- H2. auto. admit.
 
 - (* Mtailcall *)
   assert (f0 = f) by congruence.  subst f0.
@@ -1099,21 +1230,26 @@ Local Transparent destroyed_by_op.
   reflexivity.
   simpl. reflexivity. eauto. eauto.
   Simpl; eauto.
-  unfold Genv.symbol_address. now rewrite symbols_preserved, H.
+  unfold Genv.symbol_address. admit.
+  (* now rewrite symbols_preserved, H. *)
   rewrite <- (comp_transl_partial _ H6).
-  simpl. now rewrite <- find_comp_of_block_translated.
+  simpl. admit.
+  (* now rewrite <- find_comp_of_block_translated. *)
   traceEq.
   (* match states *)
   econstructor; eauto.
   apply agree_set_other; auto with asmgen.
   apply agree_set_other; auto with asmgen.
   Simpl. unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H. auto.
+  admit.
 
 - (* Mbuiltin *)
   inv AT. monadInv H4.
   exploit functions_transl; eauto. intro FN.
   generalize (transf_function_no_overflow _ _ H3); intro NOOV.
-  exploit builtin_args_match; eauto. intros [vargs' [P Q]].
+  exploit (@builtin_args_match Mach.fundef _
+                               (@has_comp_fundef _ Mach.has_comp_function)
+             ge); eauto. intros [vargs' [P Q]].
   exploit external_call_mem_extends; eauto.
   intros [vres' [m2' [A [B [C D]]]]].
   left. econstructor; split. apply plus_one.
@@ -1121,10 +1257,13 @@ Local Transparent destroyed_by_op.
   eapply find_instr_tail; eauto.
   erewrite <- sp_val by eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
+  admit. admit. admit.
+  rewrite <- (comp_transl_partial _ H3). replace (comp_of f) with (comp_of ef).
+  eauto. { admit. }
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   rewrite <- (comp_transl_partial _ H3).
   unfold_find_comp CURCOMP FIND. rewrite <- CURCOMP. reflexivity.
-  eauto.
+  eauto. eauto.
   econstructor; eauto.
   instantiate (2 := tf); instantiate (1 := x).
   unfold nextinstr. rewrite Pregmap.gss.
@@ -1149,7 +1288,7 @@ Local Transparent destroyed_by_op.
   eapply find_instr_tail; eauto.
   simpl; eauto. eauto. eauto.
   simpl; unfold Genv.find_comp; simpl.
-  now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FN).
+  now rewrite (Genv.find_def_find_comp_of_block _ _ FN).
   econstructor; eauto.
   eapply agree_exten; eauto with asmgen.
   congruence.
@@ -1194,9 +1333,8 @@ Local Transparent destroyed_by_op.
   eapply find_instr_tail; eauto.
   simpl. rewrite <- H9. unfold Mach.label in H0; unfold label; rewrite H0.
   eexact A. eauto. eauto. eauto.
-  simpl.
   simpl; unfold Genv.find_comp; simpl.
-  now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FN).
+  now rewrite (Genv.find_def_find_comp_of_block _ _ FN).
 
   assert (exists ofs, rs' PC = Vptr fb ofs) as [ofs' Hptr]. {
     destruct (rs' PC); inversion B.
@@ -1229,14 +1367,17 @@ Local Transparent destroyed_by_op.
   rewrite X; simpl; Simpl; eauto.
 
   apply agree_set_other; auto with asmgen.
-  { (* An easy lemma to add: more case analysis, but we undefine more so the
-       constructor takes care of the case that is not covered by the assumption
-       in the context *)
-    inv V. constructor; auto.
-    intros r. specialize (agree_mregs r). unfold undef_non_return_regs_ext.
-    destruct (LTL.in_mreg r (regs_of_rpair (loc_result (parent_signature s)))); auto. }
+  (* { (* An easy lemma to add: more case analysis, but we undefine more so the *)
+  (*      constructor takes care of the case that is not covered by the assumption *)
+  (*      in the context *) *)
+  (*   inv V. constructor; auto. *)
+  (*   intros r. specialize (agree_mregs r). unfold undef_non_return_regs_ext. *)
+  (*   destruct (LTL.in_mreg r (regs_of_rpair (loc_result (parent_signature s)))); auto. } *)
 
 - (* internal function *)
+  unfold Genv.find_funct_ptr in H.
+  destruct (Genv.find_def ge fb) as [[] |] eqn:?; try congruence.
+  injection H; intros ->.
   exploit functions_translated; eauto. intros [tf [A B]]. monadInv B.
   generalize EQ; intros EQ'. monadInv EQ'.
   destruct (zlt Ptrofs.max_unsigned (list_length_z x0.(fn_code))); inversion EQ1. clear EQ1. subst x0.
@@ -1277,24 +1418,30 @@ Local Transparent destroyed_by_op.
   left; eexists; split.
   eapply exec_straight_steps_1; eauto. lia. simpl. constructor.
   econstructor; eauto.
-  unfold_find_comp STACKS_COMP H. now subst cp.
+  erewrite (Genv.find_def_find_comp_of_block _ _ Heqo) in STACKS_COMP.
+  injection STACKS_COMP. intros. subst cp. eauto.
+  unfold Genv.find_funct_ptr; rewrite Heqo; eauto.
+  (* unfold_find_comp STACKS_COMP H. now subst cp. *)
   rewrite X; econstructor; eauto.
   apply agree_exten with rs2; eauto with asmgen.
   unfold rs2.
   apply agree_nextinstr. apply agree_set_other; auto with asmgen.
   apply agree_change_sp with (parent_sp s).
-  apply agree_undef_regs with rs0.
-  { unfold undef_caller_save_regs_ext.
-    inv AG. constructor; auto.
-    intros r. specialize (agree_mregs r).
-    destruct (LTL.in_mreg r (LTL.parameters_mregs sig));
-    auto. }
-Local Transparent destroyed_at_function_entry.
+  apply agree_undef_regs with rs0. auto.
+(*   { unfold undef_caller_save_regs_ext. *)
+(*     inv AG. constructor; auto. *)
+(*     intros r. specialize (agree_mregs r). *)
+(*     destruct (LTL.in_mreg r (LTL.parameters_mregs sig)); *)
+(*     auto. } *)
+(* Local Transparent destroyed_at_function_entry. *)
   simpl; intros; Simpl.
   unfold sp; congruence.
   intros. rewrite V by auto with asmgen. reflexivity.
 
 - (* external function *)
+  unfold Genv.find_funct_ptr in H; destruct (Genv.find_def ge fb) as [[] |] eqn:G;
+    try congruence.
+  inv H.
   exploit functions_translated; eauto.
   intros [tf [A B]]. simpl in B. inv B.
   exploit extcall_arguments_match; eauto.
@@ -1305,7 +1452,8 @@ Local Transparent destroyed_at_function_entry.
   left; econstructor; split.
   apply plus_one. eapply exec_step_external; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  unfold_find_comp STACKS_COMP H. subst cp.
+  rewrite (Genv.find_def_find_comp_of_block _ _ G) in STACKS_COMP; injection STACKS_COMP as STACKS_COMP.
+  subst cp.
   econstructor; eauto.
   Simpl. rewrite ATLR. eauto.
   eapply agree_set_other; eauto.
@@ -1337,7 +1485,7 @@ Local Transparent destroyed_at_function_entry.
         injection H2 as E. subst cp'0. eauto.
   }
 
-  left. eexists (State s'' rs0 m'). split.
+  left. eexists (State s'' (invalidate_return rs0 (sig_of_call s')) m'). split.
   assert (LD: Val.lessdef (Mach.return_value rs sg) (return_value rs0 sg)).
   { unfold Mach.return_value, return_value.
     destruct (loc_result sg).
@@ -1348,6 +1496,7 @@ Local Transparent destroyed_at_function_entry.
   eapply plus_one.
   econstructor; eauto.
   rewrite ATPC. unfold Vnullptr. now destruct Archi.ptr64.
+  rewrite ATPC. simpl. congruence.
   { rewrite ATPC. simpl. rewrite <- find_comp_of_block_translated.
     eauto. }
   { rewrite ATPC. simpl.
@@ -1385,11 +1534,14 @@ Local Transparent destroyed_at_function_entry.
       inv H10.
       eapply return_trace_lessdef with (ge := ge) (v := Mach.return_value rs sg);
         eauto using senv_preserved. }
+  admit.
 
   econstructor; eauto.
-  { rewrite ATPC in *. eauto. }
+  { rewrite invalidate_return_PC. rewrite ATPC in *. eauto. }
+  { admit. }
   easy.
-Qed.
+
+Admitted.
 
 Lemma transf_initial_states:
   forall st1, Mach.initial_state prog st1 ->

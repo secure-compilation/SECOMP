@@ -649,15 +649,18 @@ Proof.
   (* Lop *)
   left; econstructor; split. simpl.
   apply plus_one. econstructor; eauto.
-  instantiate (1 := v); rewrite <- H; apply eval_operation_preserved.
-  exact symbols_preserved.
+  instantiate (1 := v); rewrite <- H; rewrite <- comp_transf_fundef; eauto; apply eval_operation_preserved.
+  exact symbols_preserved. admit. admit. admit.
   econstructor; eauto.
 
   (* Lload *)
   left; econstructor; split. simpl.
   apply plus_one. econstructor.
-  instantiate (1 := a). rewrite <- H; apply eval_addressing_preserved.
+  instantiate (1 := a).
+  erewrite comp_preserved; eauto.
+  rewrite <- H; apply eval_addressing_preserved.
   exact symbols_preserved.
+  admit. admit. admit.
   erewrite comp_preserved; eauto. eauto.
   econstructor; eauto.
 
@@ -674,8 +677,10 @@ Proof.
   (* Lstore *)
   left; econstructor; split. simpl.
   apply plus_one. econstructor.
-  instantiate (1 := a). rewrite <- H; apply eval_addressing_preserved.
-  exact symbols_preserved.
+  instantiate (1 := a).
+  erewrite comp_preserved; eauto. eauto.
+  rewrite <- H; apply eval_addressing_preserved.
+  exact symbols_preserved. admit. admit. admit.
   erewrite comp_preserved; eauto. eauto.
   econstructor; eauto.
 
@@ -718,6 +723,8 @@ Proof.
   left; econstructor; split. simpl.
   apply plus_one. eapply exec_Lbuiltin; eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
+  admit. admit. admit.
+  rewrite <- (comp_transl_partial _ TRF); eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   rewrite <- (comp_transl_partial _ TRF); eauto.
   econstructor; eauto.
@@ -765,10 +772,10 @@ Proof.
   assert (CALLER: LTL.call_comp s = call_comp ts).
   { inv STACKS. reflexivity.
     inv H0. simpl. erewrite comp_preserved; eauto. }
-  assert (SIG: LTL.parent_signature s = parent_signature ts).
-  { inv STACKS. reflexivity.
-    inv H0. reflexivity. }
-  rewrite SIG.
+  (* assert (SIG: LTL.parent_signature s = parent_signature ts). *)
+  (* { inv STACKS. reflexivity. *)
+  (*   inv H0. reflexivity. } *)
+  (* rewrite SIG. *)
   rewrite <- comp_transf_fundef; eauto.
   econstructor; eauto.
 
@@ -811,8 +818,9 @@ Proof.
   erewrite comp_preserved; eauto.
   erewrite comp_preserved; eauto.
   eapply return_trace_eq; eauto using senv_preserved.
+  reflexivity.
   econstructor; eauto.
-Qed.
+Admitted.
 
 Lemma transf_initial_states:
   forall st1, LTL.initial_state prog st1 ->

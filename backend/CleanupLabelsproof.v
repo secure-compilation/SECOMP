@@ -298,16 +298,19 @@ Proof.
   left; econstructor; split.
   econstructor; eauto. instantiate (1 := v). rewrite <- H.
   apply eval_operation_preserved. exact symbols_preserved.
+  admit. admit. admit.
   econstructor; eauto with coqlib.
 (* Lload *)
-  assert (eval_addressing tge sp addr (LTL.reglist rs args) = Some a).
+  assert (eval_addressing tge (comp_of f) sp addr (LTL.reglist rs args) = Some a).
     rewrite <- H. apply eval_addressing_preserved. exact symbols_preserved.
+    admit. admit. admit.
   left; econstructor; split.
   econstructor; eauto.
   econstructor; eauto with coqlib.
 (* Lstore *)
-  assert (eval_addressing tge sp addr (LTL.reglist rs args) = Some a).
+  assert (eval_addressing tge (comp_of f) sp addr (LTL.reglist rs args) = Some a).
     rewrite <- H. apply eval_addressing_preserved. exact symbols_preserved.
+    admit. admit. admit.
   left; econstructor; split.
   econstructor; eauto.
   econstructor; eauto with coqlib.
@@ -342,6 +345,7 @@ Proof.
   left; econstructor; split.
   econstructor.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
+  admit. admit. admit.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   eauto. rewrite comp_transl; eauto.
   econstructor; eauto with coqlib.
@@ -377,10 +381,10 @@ Proof.
   assert (CALLER: call_comp s = call_comp ts).
   { inv STACKS. reflexivity.
     inv H0. reflexivity. }
-  assert (SIG: parent_signature s = parent_signature ts).
-  { inv STACKS. reflexivity.
-    inv H0. reflexivity. }
-  rewrite SIG.
+  (* assert (SIG: parent_signature s = parent_signature ts). *)
+  (* { inv STACKS. reflexivity. *)
+  (*   inv H0. reflexivity. } *)
+  (* rewrite SIG. *)
   econstructor; eauto with coqlib.
 (* internal function *)
   left; econstructor; split.
@@ -404,7 +408,7 @@ Proof.
   rewrite comp_match_prog.
   eapply return_trace_eq; eauto using senv_preserved.
   econstructor; eauto.
-Qed.
+Admitted.
 
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 ->

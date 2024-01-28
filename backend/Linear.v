@@ -180,20 +180,20 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State s f sp b rs' m)
   | exec_Lop:
       forall s f sp op args res b rs m v rs',
-      eval_operation ge sp op (reglist rs args) m = Some v ->
+      eval_operation ge (comp_of f) sp op (reglist rs args) m = Some v ->
       rs' = Locmap.set (R res) v (undef_regs (destroyed_by_op op) rs) ->
       step (State s f sp (Lop op args res :: b) rs m)
         E0 (State s f sp b rs' m)
   | exec_Lload:
       forall s f sp chunk addr args dst b rs m a v rs',
-      eval_addressing ge sp addr (reglist rs args) = Some a ->
+      eval_addressing ge (comp_of f) sp addr (reglist rs args) = Some a ->
       Mem.loadv chunk m a (Some (comp_of f)) = Some v ->
       rs' = Locmap.set (R dst) v (undef_regs (destroyed_by_load chunk addr) rs) ->
       step (State s f sp (Lload chunk addr args dst :: b) rs m)
         E0 (State s f sp b rs' m)
   | exec_Lstore:
       forall s f sp chunk addr args src b rs m m' a rs',
-      eval_addressing ge sp addr (reglist rs args) = Some a ->
+      eval_addressing ge (comp_of f) sp addr (reglist rs args) = Some a ->
       Mem.storev chunk m a (rs (R src)) (comp_of f) = Some m' ->
       rs' = undef_regs (destroyed_by_store chunk addr) rs ->
       step (State s f sp (Lstore chunk addr args src :: b) rs m)
@@ -206,14 +206,14 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
       forall (CALLREGS: callrs = call_regs_ext rs sig),
       forall (ARGS: args = map (fun p => Locmap.getpair p
-                                   (undef_regs destroyed_at_function_entry callrs))
+                                   (undef_regs destroyed_at_function_entry (call_regs callrs)))
                         (loc_parameters sig)),
       forall (NO_CROSS_PTR:
           Genv.type_of_call (comp_of f) (comp_of f') = Genv.CrossCompartmentCall ->
           List.Forall not_ptr args),
       forall (EV: call_trace ge (comp_of f) (comp_of f') vf args (sig_args sig) t),
       step (State s f sp (Lcall sig ros :: b) rs m)
-        t (Callstate (Stackframe f sig sp rs b:: s) f' sig rs m)
+        t (Callstate (Stackframe f sig sp rs  b:: s) f' sig callrs m)
   | exec_Ltailcall:
       forall s f stk sig ros b rs m rs' f' m',
       rs' = return_regs (parent_locset s) rs ->
@@ -225,7 +225,7 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (Callstate s f' sig rs' m')
   | exec_Lbuiltin:
       forall s f sp rs m ef args res b vargs t vres rs' m',
-      eval_builtin_args ge rs sp m args vargs ->
+      eval_builtin_args ge rs (comp_of f) sp m args vargs ->
       external_call ef ge vargs m t vres m' ->
       rs' = Locmap.setres res vres (undef_regs (destroyed_by_builtin ef) rs) ->
       forall ALLOWED: comp_of ef = comp_of f,
@@ -262,11 +262,9 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State s f sp (Ljumptable arg tbl :: b) rs m)
         E0 (State s f sp b' rs' m)
   | exec_Lreturn:
-      forall s f retrs stk  b rs m m',
+      forall s f stk retrs b rs m m',
       Mem.free m stk 0 f.(fn_stacksize) (comp_of f) = Some m' ->
-      forall (RETREGS:
-               retrs =
-                 return_regs_ext (parent_locset s) rs (parent_signature s)),
+      forall (RETREGS: retrs = return_regs (parent_locset s) rs),
       step (State s f (Vptr stk Ptrofs.zero) (Lreturn :: b) rs m)
         E0 (Returnstate s retrs m' (comp_of f))
   | exec_function_internal:
@@ -274,7 +272,7 @@ Inductive step: state -> trace -> state -> Prop :=
       Mem.alloc m (comp_of f) 0 f.(fn_stacksize) = (m', stk) ->
       forall (CALLREGS:
                callrs =
-                 call_regs_ext rs sig),
+                 call_regs rs),
       rs' = undef_regs destroyed_at_function_entry callrs ->
       step (Callstate s (Internal f) sig rs m)
         E0 (State s f (Vptr stk Ptrofs.zero) f.(fn_code) rs' m')
@@ -286,13 +284,14 @@ Inductive step: state -> trace -> state -> Prop :=
       step (Callstate s (External ef) sig rs1 m)
          t (Returnstate s rs2 m' (comp_of ef))
   | exec_return:
-      forall s f sp rs0 c rs m sg cp t,
+      forall s f sp rs0 c rs m sg cp t retrs,
       forall (NO_CROSS_PTR:
           Genv.type_of_call (comp_of f) cp = Genv.CrossCompartmentCall ->
           not_ptr (Locmap.getpair (map_rpair R (loc_result sg)) rs)),
       forall (EV: return_trace ge (comp_of f) cp (Locmap.getpair (map_rpair R (loc_result sg)) rs) (sig_res sg) t),
+      forall (RETREGS: retrs = return_regs_ext rs sg),
       step (Returnstate (Stackframe f sg sp rs0 c :: s) rs m cp)
-        t (State s f sp c rs m).
+        t (State s f sp c retrs m).
 
 End RELSEM.
 

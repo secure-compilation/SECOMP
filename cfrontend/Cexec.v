@@ -626,7 +626,8 @@ Definition invert_expr_prop (cp: compartment) (a: expr) (m: mem) : Prop :=
       exists b,
       e!x = Some(b, ty)
       \/ (e!x = None /\ Genv.find_symbol ge x = Some b /\
-            Genv.allowed_addrof ge cp x)
+           (Genv.find_comp_of_block ge b = Some cp \/
+       (exists fd : fundef, Genv.find_def ge b = Some (Gfun fd))))
   | Ederef (Eval v ty1) ty =>
       exists b, exists ofs, v = Vptr b ofs
   | Eaddrof (Eloc b ofs bf ty1) ty =>
@@ -691,7 +692,7 @@ Lemma lred_invert:
 Proof.
   induction 1; red; auto.
   exists b; auto.
-  exists b; auto.
+  exists b; right. split; auto.
   exists b; exists ofs; auto.
   exists b; exists ofs; split; auto. exists co, delta, bf; auto.
   exists b; exists ofs; split; auto. exists co, delta, bf; auto.
@@ -1031,10 +1032,16 @@ Proof with (try (apply not_invert_ok; simpl; intro; myinv; intuition congruence;
   destruct (Genv.find_symbol ge x) as [b|] eqn:?...
   destruct Genv.allowed_addrof_b eqn:CHECK...
   { apply topred_ok; auto. apply red_var_global; auto.
-    now apply Genv.allowed_addrof_b_reflect. }
+    eapply Genv.allowed_addrof_b_reflect in CHECK.
+    destruct CHECK as (b' & ? & ?). assert (b' = b) by congruence. subst b'.
+    eauto. }
   apply not_invert_ok. simpl. rewrite Heqo.
-  intros (? & [?|(_ & _ & CONTRA)]); try easy.
-  apply Genv.allowed_addrof_b_reflect in CONTRA. congruence.
+  intros (? & [?|(_ & ? & CONTRA)]); try easy.
+  assert (CONTRA': (exists b : block,
+     Genv.find_symbol ge x = Some b /\
+     (Genv.find_comp_of_block ge b = Some cp \/
+      (exists fd , Genv.find_def ge b = Some (Gfun fd))))). { eexists; split; eauto. }
+  apply Genv.allowed_addrof_b_reflect in CONTRA'. congruence.
 (* Efield *)
   destruct (is_val a) as [[v ty'] | ] eqn:?.
   rewrite (is_val_inv _ _ _ Heqo).
@@ -1302,8 +1309,13 @@ Proof.
   rewrite H. rewrite dec_eq_true. econstructor; eauto.
 (* var global *)
   rewrite H; rewrite H0.
-  assert (Genv.allowed_addrof_b ge cp x = true) as ->
-    by now rewrite <- Genv.allowed_addrof_b_reflect.
+  assert (Genv.allowed_addrof_b ge cp x = true) as ->.
+  { assert (OK: (exists b : block,
+     Genv.find_symbol ge x = Some b /\
+     (Genv.find_comp_of_block ge b = Some cp \/
+      (exists fd , Genv.find_def ge b = Some (Gfun fd))))). { eexists; split; eauto. }
+  apply Genv.allowed_addrof_b_reflect in OK. congruence. }
+    (* by now rewrite <- Genv.allowed_addrof_b_reflect. *)
   econstructor; eauto.
 (* deref *)
   econstructor; eauto.

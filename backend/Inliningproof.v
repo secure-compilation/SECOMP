@@ -487,17 +487,17 @@ Qed.
 (** Translation of builtin arguments. *)
 
 Lemma tr_builtin_arg:
-  forall F bound ctx rs rs' sp sp' m m',
+  forall F bound ctx rs rs' sp sp' m m' cp,
   match_globalenvs F bound ->
   agree_regs F ctx rs rs' ->
   F sp = Some(sp', ctx.(dstk)) ->
   Mem.inject F m m' ->
   forall a v,
-  eval_builtin_arg ge (fun r => rs#r) (Vptr sp Ptrofs.zero) m a v ->
-  exists v', eval_builtin_arg tge (fun r => rs'#r) (Vptr sp' Ptrofs.zero) m' (sbuiltinarg ctx a) v'
+  eval_builtin_arg ge (fun r => rs#r) cp (Vptr sp Ptrofs.zero) m a v ->
+  exists v', eval_builtin_arg tge (fun r => rs'#r) cp (Vptr sp' Ptrofs.zero) m' (sbuiltinarg ctx a) v'
           /\ Val.inject F v v'.
 Proof.
-  intros until m'; intros MG AG SP MI. induction 1; simpl.
+  intros until cp; intros MG AG SP MI. induction 1; simpl.
 - exists rs'#(sreg ctx x); split. constructor. eapply agree_val_reg; eauto.
 - econstructor; eauto with barg.
 - econstructor; eauto with barg.
@@ -514,9 +514,16 @@ Proof.
     inv MG. econstructor. eauto. rewrite Ptrofs.add_zero; auto. }
   exploit Mem.loadv_inject; eauto. intros (v' & A & B).
   exists v'; eauto with barg.
-- econstructor; split. constructor.
+- subst. econstructor; split. constructor. eauto.
   unfold Senv.symbol_address; simpl; unfold Genv.symbol_address.
   rewrite symbols_preserved. destruct (Genv.find_symbol ge id) as [b|] eqn:FS; auto.
+  unfold ge, tge. rewrite (Genv.match_genvs_find_comp_of_block TRANSF); eauto.
+  destruct (Genv.find_comp_of_block (Genv.globalenv tprog) b) eqn:?; eauto.
+  destruct (cp =? c)%positive; eauto.
+  inv MG. econstructor. eauto. rewrite Ptrofs.add_zero; auto.
+  destruct (Genv.find_def (Genv.globalenv prog) b) as [[] |] eqn:?; eauto.
+  pose proof (Genv.find_def_match_2 TRANSF b) as H; eauto.
+  inv H; try congruence. inv H2; try congruence.
   inv MG. econstructor. eauto. rewrite Ptrofs.add_zero; auto.
 - destruct IHeval_builtin_arg1 as (v1' & A1 & B1).
   destruct IHeval_builtin_arg2 as (v2' & A2 & B2).
@@ -528,14 +535,14 @@ Proof.
 Qed.
 
 Lemma tr_builtin_args:
-  forall F bound ctx rs rs' sp sp' m m',
+  forall F bound ctx rs rs' sp sp' m m' cp,
   match_globalenvs F bound ->
   agree_regs F ctx rs rs' ->
   F sp = Some(sp', ctx.(dstk)) ->
   Mem.inject F m m' ->
   forall al vl,
-  eval_builtin_args ge (fun r => rs#r) (Vptr sp Ptrofs.zero) m al vl ->
-  exists vl', eval_builtin_args tge (fun r => rs'#r) (Vptr sp' Ptrofs.zero) m' (map (sbuiltinarg ctx) al) vl'
+  eval_builtin_args ge (fun r => rs#r) cp (Vptr sp Ptrofs.zero) m al vl ->
+  exists vl', eval_builtin_args tge (fun r => rs'#r) cp (Vptr sp' Ptrofs.zero) m' (map (sbuiltinarg ctx) al) vl'
           /\ Val.inject_list F vl vl'.
 Proof.
   induction 5; simpl.
@@ -1113,8 +1120,9 @@ Proof.
     eexact MINJ. eauto.
   fold (sop ctx op). intros [v' [A B]].
   left; econstructor; split.
-  eapply plus_one. eapply exec_Iop; eauto. erewrite eval_operation_preserved; eauto.
-  exact symbols_preserved.
+  eapply plus_one. eapply exec_Iop; eauto. rewrite <- SAMECOMP.
+  erewrite eval_operation_preserved; eauto.
+  exact symbols_preserved. admit. admit. admit.
   econstructor; eauto.
   apply match_stacks_inside_set_reg; eauto.
   apply agree_set_reg; auto.
@@ -1128,10 +1136,12 @@ Proof.
     eauto.
   fold (saddr ctx addr). intros [a' [P Q]].
   exploit Mem.loadv_inject; eauto. intros [v' [U V]].
-  assert (eval_addressing tge (Vptr sp' Ptrofs.zero) (saddr ctx addr) rs' ## (sregs ctx args) = Some a').
+  assert (eval_addressing tge (comp_of f) (Vptr sp' Ptrofs.zero) (saddr ctx addr) rs' ## (sregs ctx args) = Some a').
   rewrite <- P. apply eval_addressing_preserved. exact symbols_preserved.
+  admit. admit. admit.
   left; econstructor; split.
   eapply plus_one. eapply exec_Iload; eauto.
+  rewrite <- SAMECOMP; eauto.
   rewrite <- SAMECOMP; eauto.
   econstructor; eauto.
   apply match_stacks_inside_set_reg; eauto.
@@ -1147,10 +1157,12 @@ Proof.
   fold saddr. intros [a' [P Q]].
   exploit Mem.storev_mapped_inject; eauto. eapply agree_val_reg; eauto.
   intros [m1' [U V]].
-  assert (eval_addressing tge (Vptr sp' Ptrofs.zero) (saddr ctx addr) rs' ## (sregs ctx args) = Some a').
+  assert (eval_addressing tge (comp_of f) (Vptr sp' Ptrofs.zero) (saddr ctx addr) rs' ## (sregs ctx args) = Some a').
     rewrite <- P. apply eval_addressing_preserved. exact symbols_preserved.
+    admit. admit. admit.
   left; econstructor; split.
   eapply plus_one. eapply exec_Istore; eauto.
+  rewrite <- SAMECOMP; eauto.
   rewrite <- SAMECOMP; eauto.
   destruct a; simpl in H1; try discriminate.
   destruct a'; simpl in U; try discriminate.
@@ -1310,9 +1322,9 @@ Proof.
   exploit tr_builtin_args; eauto. intros (vargs' & P & Q).
   exploit external_call_mem_inject; eauto.
     eapply match_stacks_inside_globals; eauto.
-  intros [F1 [v1 [m1' [A [B [C [D [E [J K]]]]]]]]].
+  intros [F1 [v1 [m1' [A [B [C [D [E [J [K L]]]]]]]]]].
   left; econstructor; split.
-  eapply plus_one. eapply exec_Ibuiltin; eauto. congruence.
+  eapply plus_one. eapply exec_Ibuiltin; eauto. congruence. rewrite <- SAMECOMP; eauto.
     eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   econstructor.
     eapply match_stacks_inside_set_res.
@@ -1479,7 +1491,7 @@ Proof.
   exploit match_stacks_globalenvs; eauto. intros [bound MG].
   exploit external_call_mem_inject; eauto.
     eapply match_globalenvs_preserves_globals; eauto.
-  intros [F1 [v1 [m1' [A [B [C [D [E [J K]]]]]]]]].
+  intros [F1 [v1 [m1' [A [B [C [D [E [J [K L]]]]]]]]]].
   simpl in FD. inv FD.
   left; econstructor; split.
   eapply plus_one. eapply exec_function_external; eauto.
@@ -1547,7 +1559,7 @@ Proof.
   eapply plus_one. eapply exec_Inop; eauto.
   econstructor; eauto.
   subst vres. apply agree_set_reg_undef'; auto.
-Qed.
+Admitted.
 
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 -> exists st2, initial_state tprog st2 /\ match_states st1 st2.

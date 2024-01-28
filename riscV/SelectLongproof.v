@@ -128,8 +128,12 @@ Proof.
   destruct (addlimm_match a); InvEval.
 - econstructor; split. apply eval_longconst. rewrite Int64.add_commut; auto.
 - econstructor; split. EvalOp. simpl; eauto. 
-  unfold Genv.symbol_address. destruct (Genv.find_symbol ge s); simpl; auto. 
-  destruct Archi.ptr64; auto. rewrite Ptrofs.add_commut; auto. 
+  unfold Genv.symbol_address. destruct (Genv.find_symbol ge s); simpl; auto.
+  destruct (Genv.find_comp_of_block ge b); auto.
+  destruct (cp =? c)%positive; simpl; auto.
+  destruct Archi.ptr64; auto. rewrite Ptrofs.add_commut; auto.
+  destruct Genv.find_def as [[] |]; simpl; auto.
+  destruct Archi.ptr64; auto. rewrite Ptrofs.add_commut; auto.
 - econstructor; split. EvalOp. simpl; eauto. 
   destruct sp; simpl; auto. destruct Archi.ptr64; auto. 
   rewrite Ptrofs.add_assoc, (Ptrofs.add_commut m0). auto. 

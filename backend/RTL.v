@@ -238,20 +238,20 @@ Inductive step: state -> trace -> state -> Prop :=
   | exec_Iop:
       forall s f sp pc rs m op args res pc' v,
       (fn_code f)!pc = Some(Iop op args res pc') ->
-      eval_operation ge sp op rs##args m = Some v ->
+      eval_operation ge (comp_of f) sp op rs##args m = Some v ->
       step (State s f sp pc rs m)
         E0 (State s f sp pc' (rs#res <- v) m)
   | exec_Iload:
       forall s f sp pc rs m chunk addr args dst pc' a v,
       (fn_code f)!pc = Some(Iload chunk addr args dst pc') ->
-      eval_addressing ge sp addr rs##args = Some a ->
+      eval_addressing ge (comp_of f) sp addr rs##args = Some a ->
       Mem.loadv chunk m a (Some (comp_of f)) = Some v ->
       step (State s f sp pc rs m)
         E0 (State s f sp pc' (rs#dst <- v) m)
   | exec_Istore:
       forall s f sp pc rs m chunk addr args src pc' a m',
       (fn_code f)!pc = Some(Istore chunk addr args src pc') ->
-      eval_addressing ge sp addr rs##args = Some a ->
+      eval_addressing ge (comp_of f) sp addr rs##args = Some a ->
       Mem.storev chunk m a rs#src (comp_of f) = Some m' ->
       step (State s f sp pc rs m)
         E0 (State s f sp pc' rs m')
@@ -279,7 +279,7 @@ Inductive step: state -> trace -> state -> Prop :=
       forall s f sp pc rs m ef args res pc' vargs t vres m',
       forall ALLOWED: comp_of ef = comp_of f,
       (fn_code f)!pc = Some(Ibuiltin ef args res pc') ->
-      eval_builtin_args ge (fun r => rs#r) sp m args vargs ->
+      eval_builtin_args ge (fun r => rs#r) (comp_of f) sp m args vargs ->
       external_call ef ge vargs m t vres m' ->
       step (State s f sp pc rs m)
          t (State s f sp pc' (regmap_setres res vres rs) m')
@@ -329,7 +329,7 @@ Inductive step: state -> trace -> state -> Prop :=
 Lemma exec_Iop':
   forall s f sp pc rs m op args res pc' rs' v,
   (fn_code f)!pc = Some(Iop op args res pc') ->
-  eval_operation ge sp op rs##args m = Some v ->
+  eval_operation ge (comp_of f) sp op rs##args m = Some v ->
   rs' = (rs#res <- v) ->
   step (State s f sp pc rs m)
     E0 (State s f sp pc' rs' m).
@@ -340,7 +340,7 @@ Qed.
 Lemma exec_Iload':
   forall s f sp pc rs m chunk addr args dst pc' rs' a v,
   (fn_code f)!pc = Some(Iload chunk addr args dst pc') ->
-  eval_addressing ge sp addr rs##args = Some a ->
+  eval_addressing ge (comp_of f) sp addr rs##args = Some a ->
   Mem.loadv chunk m a (Some (comp_of f)) = Some v ->
   rs' = (rs#dst <- v) ->
   step (State s f sp pc rs m)

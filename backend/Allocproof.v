@@ -1352,19 +1352,20 @@ Lemma return_regs_agree_callee_save_ext:
 Proof.
   intros; red; intros. unfold return_regs. red in H.
   destruct l.
-  destruct r; discriminate.
-  destruct sl; auto || congruence.
+  destruct r; discriminate. contradiction.
+  (* destruct sl; auto || congruence. *)
 Qed.
 
 (* TODO: relocate *)
 Lemma return_regs_ext_agree_callee_save_ext:
   forall caller callee callee_sig,
-  agree_callee_save caller (return_regs_ext caller callee callee_sig).
+  agree_callee_save caller callee ->
+  agree_callee_save caller (return_regs_ext callee callee_sig).
 Proof.
   intros; red; intros. unfold return_regs_ext. red in H.
   destruct l.
-  destruct r; discriminate.
-  destruct sl; auto || congruence.
+  destruct r; discriminate. contradiction.
+  (* destruct sl; auto || congruence. *)
 Qed.
 
 Lemma no_caller_saves_sound:
@@ -1376,7 +1377,8 @@ Proof.
   unfold no_caller_saves, callee_save_loc; intros.
   exploit EqSet.for_all_2; eauto.
   hnf. intros. simpl in H1. rewrite H1. auto.
-  lazy beta. destruct (eloc q). auto. destruct sl; congruence.
+  lazy beta. destruct (eloc q). auto.
+  destruct sl; congruence.
 Qed.
 
 Lemma val_hiword_longofwords:
@@ -2112,11 +2114,11 @@ Qed.
 
 Lemma call_regs_ext_param_values:
   forall sg ls,
-  map (fun p => Locmap.getpair p (call_regs_ext ls sg)) (loc_parameters sg)
+  map (fun p => Locmap.getpair p (call_regs_ext ls sg)) (loc_arguments sg)
   = map (fun p => Locmap.getpair p ls) (loc_arguments sg).
 Proof.
   intros sg ls.
-  unfold loc_parameters. rewrite list_map_compose.
+  (* unfold loc_arguments. rewrite list_map_compose. *)
   apply list_map_exten; intros l ARG.
   destruct l as [r | rhi rlo].
   - destruct r; simpl.
@@ -2201,13 +2203,13 @@ Proof.
 Qed.
 
 Lemma add_equations_builtin_arg_lessdef:
-  forall env (ge: RTL.genv) sp rs ls m arg v,
-  eval_builtin_arg ge (fun r => rs#r) sp m arg v ->
+  forall env (ge: RTL.genv) cp sp rs ls m arg v,
+  eval_builtin_arg ge (fun r => rs#r) cp sp m arg v ->
   forall e e' arg',
   add_equations_builtin_arg env arg arg' e = Some e' ->
   satisf rs ls e' ->
   wt_regset env rs ->
-  exists v', eval_builtin_arg ge ls sp m arg' v' /\ Val.lessdef v v'.
+  exists v', eval_builtin_arg ge ls cp sp m arg' v' /\ Val.lessdef v v'.
 Proof.
   induction 1; simpl; intros e e' arg' AE SAT WT; destruct arg'; MonadInv.
 - exploit add_equation_lessdef; eauto. simpl; intros.
@@ -2246,21 +2248,21 @@ Proof.
 Qed.
 
 Lemma add_equations_builtin_args_lessdef:
-  forall env (ge: RTL.genv) sp rs ls m tm arg vl,
-  eval_builtin_args ge (fun r => rs#r) sp m arg vl ->
+  forall env (ge: RTL.genv) cp sp rs ls m tm arg vl,
+  eval_builtin_args ge (fun r => rs#r) cp sp m arg vl ->
   forall arg' e e',
   add_equations_builtin_args env arg arg' e = Some e' ->
   satisf rs ls e' ->
   wt_regset env rs ->
   Mem.extends m tm ->
-  exists vl', eval_builtin_args ge ls sp tm arg' vl' /\ Val.lessdef_list vl vl'.
+  exists vl', eval_builtin_args ge ls cp sp tm arg' vl' /\ Val.lessdef_list vl vl'.
 Proof.
   induction 1; simpl; intros; destruct arg'; MonadInv.
 - exists (@nil val); split; constructor.
 - exploit IHlist_forall2; eauto. intros (vl' & A & B).
   exploit add_equations_builtin_arg_lessdef; eauto.
   eapply add_equations_builtin_args_satisf; eauto. intros (v1' & C & D).
-  exploit (@eval_builtin_arg_lessdef _ ge ls ls); eauto. intros (v1'' & E & F).
+  exploit (@eval_builtin_arg_lessdef _ _ _ _ ge ls ls); eauto. intros (v1'' & E & F).
   exists (v1'' :: vl'); split; constructor; auto. eapply Val.lessdef_trans; eauto.
 Qed.
 
@@ -2275,14 +2277,14 @@ Proof.
 Qed.
 
 Lemma add_equations_debug_args_eval:
-  forall env (ge: RTL.genv) sp rs ls m tm arg vl,
-  eval_builtin_args ge (fun r => rs#r) sp m arg vl ->
+  forall env (ge: RTL.genv) cp sp rs ls m tm arg vl,
+  eval_builtin_args ge (fun r => rs#r) cp sp m arg vl ->
   forall arg' e e',
   add_equations_debug_args env arg arg' e = Some e' ->
   satisf rs ls e' ->
   wt_regset env rs ->
   Mem.extends m tm ->
-  exists vl', eval_builtin_args ge ls sp tm arg' vl'.
+  exists vl', eval_builtin_args ge ls cp sp tm arg' vl'.
 Proof.
   induction 1; simpl; intros; destruct arg'; MonadInv.
 - exists (@nil val); constructor.
@@ -2291,13 +2293,13 @@ Proof.
 + exploit IHlist_forall2; eauto. intros (vl' & B).
   exploit add_equations_builtin_arg_lessdef; eauto.
   eapply add_equations_debug_args_satisf; eauto. intros (v1' & C & D).
-  exploit (@eval_builtin_arg_lessdef _ ge ls ls); eauto. intros (v1'' & E & F).
+  exploit (@eval_builtin_arg_lessdef _ _ _ _ ge ls ls); eauto. intros (v1'' & E & F).
   exists (v1'' :: vl'); constructor; auto.
 + eauto.
 Qed.
 
 Lemma add_equations_builtin_eval:
-  forall ef env args args' e1 e2 m1 m1' rs ls (ge: RTL.genv) sp vargs t vres m2,
+  forall ef env args args' e1 e2 m1 m1' rs ls (ge: RTL.genv) cp sp vargs t vres m2,
   wt_regset env rs ->
   match ef with
   | EF_debug _ _ _ _ => add_equations_debug_args env args args' e1
@@ -2305,11 +2307,11 @@ Lemma add_equations_builtin_eval:
   end = Some e2 ->
   Mem.extends m1 m1' ->
   satisf rs ls e2 ->
-  eval_builtin_args ge (fun r => rs # r) sp m1 args vargs ->
+  eval_builtin_args ge (fun r => rs # r) cp sp m1 args vargs ->
   external_call ef ge vargs m1 t vres m2 ->
   satisf rs ls e1 /\
   exists vargs' vres' m2',
-     eval_builtin_args ge ls sp m1' args' vargs'
+     eval_builtin_args ge ls cp sp m1' args' vargs'
   /\ external_call ef ge vargs' m1' t vres' m2'
   /\ Val.lessdef vres vres'
   /\ Mem.extends m2 m2'.
@@ -2318,7 +2320,7 @@ Proof.
   assert (DEFAULT: add_equations_builtin_args env args args' e1 = Some e2 ->
     satisf rs ls e1 /\
     exists vargs' vres' m2',
-       eval_builtin_args ge ls sp m1' args' vargs'
+       eval_builtin_args ge ls cp sp m1' args' vargs'
     /\ external_call ef ge vargs' m1' t vres' m2'
     /\ Val.lessdef vres vres'
     /\ Mem.extends m2 m2').
@@ -2799,7 +2801,9 @@ Proof.
   eapply plus_left. econstructor; eauto.
   eapply star_trans. eexact A1.
   eapply star_left. econstructor. instantiate (1 := v'). rewrite <- F.
+  rewrite <- comp_transf_function; eauto.
   apply eval_operation_preserved. exact symbols_preserved.
+  admit. admit. admit.
   eauto. eapply star_right. eexact A2. constructor.
   eauto. eauto. eauto. traceEq.
   exploit satisf_successors; eauto. simpl; eauto. intros [enext [U V]].
@@ -2828,7 +2832,9 @@ Proof.
   eapply plus_left. econstructor; eauto.
   eapply star_trans. eexact A1.
   eapply star_left. econstructor. instantiate (1 := a'). rewrite <- F.
+  rewrite <- comp_transf_function; eauto.
   apply eval_addressing_preserved. exact symbols_preserved.
+  admit. admit. admit.
   rewrite <- comp_transf_function; eauto.
   eauto.
   eapply star_right. eexact A2. constructor.
@@ -2879,12 +2885,18 @@ Proof.
   eapply plus_left. econstructor; eauto.
   eapply star_trans. eexact A1.
   eapply star_left. econstructor.
-  instantiate (1 := a1'). rewrite <- F1. apply eval_addressing_preserved. exact symbols_preserved.
+  instantiate (1 := a1'). rewrite <- F1.
+  rewrite <- comp_transf_function; eauto.
+  apply eval_addressing_preserved. exact symbols_preserved.
+  admit. admit. admit.
   rewrite <- comp_transf_function; eauto.
   eauto.
   eapply star_trans. eexact A3.
   eapply star_left. econstructor.
-  instantiate (1 := a2'). rewrite <- F2. apply eval_addressing_preserved. exact symbols_preserved.
+  instantiate (1 := a2'). rewrite <- F2.
+  rewrite <- comp_transf_function; eauto.
+  apply eval_addressing_preserved. exact symbols_preserved.
+  admit. admit. admit.
   rewrite <- comp_transf_function; eauto.
   eauto.
   eapply star_right. eexact A5.
@@ -2915,7 +2927,10 @@ Proof.
   eapply plus_left. econstructor; eauto.
   eapply star_trans. eexact A1.
   eapply star_left. econstructor.
-  instantiate (1 := a1'). rewrite <- F1. apply eval_addressing_preserved. exact symbols_preserved.
+  instantiate (1 := a1'). rewrite <- F1.
+  rewrite <- comp_transf_function; eauto.
+  apply eval_addressing_preserved. exact symbols_preserved.
+  admit. admit. admit.
   rewrite <- comp_transf_function; eauto.
   eauto.
   eapply star_right. eexact A3.
@@ -2949,7 +2964,10 @@ Proof.
   eapply plus_left. econstructor; eauto.
   eapply star_trans. eexact A1.
   eapply star_left. econstructor.
-  instantiate (1 := a1'). rewrite <- F1. apply eval_addressing_preserved. exact symbols_preserved.
+  instantiate (1 := a1'). rewrite <- F1.
+  rewrite <- comp_transf_function; eauto.
+  apply eval_addressing_preserved. exact symbols_preserved.
+  admit. admit. admit.
   rewrite <- comp_transf_function; eauto.
   eauto.
   eapply star_right. eexact A3.
@@ -2979,7 +2997,9 @@ Proof.
   eapply plus_left. econstructor; eauto.
   eapply star_trans. eexact X.
   eapply star_two. econstructor. instantiate (1 := a'). rewrite <- F.
+  rewrite <- comp_transf_function; eauto.
   apply eval_addressing_preserved. exact symbols_preserved.
+  admit. admit. admit.
   rewrite <- comp_transf_function; eauto.
   eauto.
   constructor. eauto. eauto. traceEq.
@@ -3006,8 +3026,9 @@ Proof.
     eapply can_undef_satisf. eauto.
     eapply add_equation_satisf. eapply add_equations_satisf; eauto.
   exploit eval_addressing_lessdef. eexact LD1. eauto. intros [a1' [F1 G1]].
-  assert (F1': eval_addressing tge sp addr (reglist ls1 args1') = Some a1').
+  assert (F1': eval_addressing tge (comp_of f) sp addr (reglist ls1 args1') = Some a1').
     rewrite <- F1. apply eval_addressing_preserved. exact symbols_preserved.
+    admit. admit. admit.
   exploit Mem.storev_extends. eauto. eexact STORE1. eexact G1. eauto.
   intros [m1' [STORE1' EXT1]].
   exploit (exec_moves mv2); eauto. intros [ls3 [U V]].
@@ -3015,8 +3036,9 @@ Proof.
   exploit add_equation_lessdef. eapply add_equations_satisf. eexact Heqo. eexact V.
   simpl. intros LD4.
   exploit eval_addressing_lessdef. eexact LD3. eauto. intros [a2' [F2 G2]].
-  assert (F2': eval_addressing tge sp addr (reglist ls3 args2') = Some a2').
+  assert (F2': eval_addressing tge (comp_of f) sp addr (reglist ls3 args2') = Some a2').
     rewrite <- F2. apply eval_addressing_preserved. exact symbols_preserved.
+    admit. admit. admit.
   exploit (eval_offset_addressing tge); eauto. intros F2''.
   assert (STOREX: exists m2', Mem.storev Mint32 m1' (Val.add a2' (Vint (Int.repr 4))) (ls3 (R src2')) (comp_of f) = Some m2' /\ Mem.extends m' m2').
   { try discriminate;
@@ -3027,12 +3049,14 @@ Proof.
   eapply plus_left. econstructor; eauto.
   eapply star_trans. eexact X.
   eapply star_left.
-  econstructor. eexact F1'.
+  econstructor.
+  rewrite <- comp_transf_function; eauto.
   rewrite <- comp_transf_function; eauto.
   eauto.
   eapply star_trans. eexact U.
   eapply star_two.
-  eapply exec_Lstore with (m' := m2'). eexact F2''.
+  eapply exec_Lstore with (m' := m2').
+  discriminate||(rewrite <- comp_transf_function; eauto).
   discriminate||(rewrite <- comp_transf_function; eauto).
   eauto.
   constructor. eauto. eauto. eauto. eauto. traceEq.
@@ -3072,8 +3096,8 @@ Proof.
     rewrite <- call_regs_param_values in Heqo2.
     rewrite <- call_regs_ext_param_values in Heqo2'.
     pose proof (Val.lessdef_list_not_ptr _ _ Heqo2 NO_CROSS_PTR) as H.
-    assert (R: map (fun p : rpair loc => Locmap.getpair p (undef_regs destroyed_at_function_entry (call_regs_ext ls1 sg))) (loc_parameters sg) =
-            map (fun p : rpair loc => Locmap.getpair p (call_regs_ext ls1 sg)) (loc_parameters sg)).
+    assert (R: map (fun p : rpair loc => Locmap.getpair p (undef_regs destroyed_at_function_entry (call_regs (call_regs_ext ls1 sg)))) (loc_parameters sg) =
+            map (fun p : rpair loc => Locmap.getpair p (call_regs (call_regs_ext ls1 sg))) (loc_parameters sg)).
     { (* TODO: try using [Locmap.getpair_exten] *)
       assert (G: forall l rhi rlo, In l (loc_parameters sg) -> l <> One (R R30) /\ l <> Twolong (R R30) rlo /\ l <> Twolong rhi (R R30)).
       { clear.
@@ -3114,6 +3138,7 @@ Proof.
           specialize (G (Twolong rhi rlo) (rhi) (rlo) (or_introl eq_refl)) as [? [? ?]].
           now destruct rhi; try congruence. }
     rewrite R.
+    rewrite call_regs_param_values; eauto.
     (* [call_regs_ext] is like [call_regs] with additional undefined registers *)
     eapply Val.lessdef_list_not_ptr; eauto. }
   { instantiate (1 := t).
@@ -3127,8 +3152,8 @@ Proof.
     assert (Heqo2' := Heqo2).
     rewrite <- call_regs_param_values in Heqo2.
     rewrite <- call_regs_ext_param_values in Heqo2'.
-    assert (R': map (fun p : rpair loc => Locmap.getpair p (undef_regs destroyed_at_function_entry (call_regs_ext ls1 sg))) (loc_parameters sg) =
-                 map (fun p : rpair loc => Locmap.getpair p (call_regs_ext ls1 sg)) (loc_parameters sg)).
+    assert (R': map (fun p : rpair loc => Locmap.getpair p (undef_regs destroyed_at_function_entry (call_regs (call_regs_ext ls1 sg)))) (loc_parameters sg) =
+                 map (fun p : rpair loc => Locmap.getpair p (call_regs (call_regs_ext ls1 sg))) (loc_parameters sg)).
     { (* TODO Same proof as R: refactor *)
       assert (G: forall l rhi rlo, In l (loc_parameters sg) -> l <> One (R R30) /\ l <> Twolong (R R30) rlo /\ l <> Twolong rhi (R R30)).
       { clear.
@@ -3169,6 +3194,7 @@ Proof.
           specialize (G (Twolong rhi rlo) (rhi) (rlo) (or_introl eq_refl)) as [? [? ?]].
           now destruct rhi; try congruence. }
     { rewrite R'. rewrite <- (comp_transl_partial _ F).
+      rewrite call_regs_param_values.
       eapply call_trace_lessdef with (ge := ge); eauto using senv_preserved, symbols_preserved. }
   }
   traceEq. traceEq.
@@ -3189,10 +3215,16 @@ Proof.
   eapply star_right. eexact A2. constructor. traceEq.
   apply satisf_incr with eafter; auto.
   }
-  rewrite SIG. eapply add_equations_args_lessdef; eauto.
+  rewrite SIG. rewrite call_regs_ext_param_values.
+  eapply add_equations_args_lessdef; eauto.
   inv WTI. rewrite <- H7. apply wt_regset_list; auto.
-  simpl. red; auto.
-  inv WTI. rewrite SIG. rewrite <- H7. apply wt_regset_list; auto.
+  simpl.
+  intros; red; intros. unfold call_regs_ext. red in H1.
+  destruct l.
+  destruct r; discriminate. contradiction.
+
+  inv WTI. rewrite SIG.
+  rewrite <- H7. apply wt_regset_list; auto.
 
 (* tailcall *)
 - set (sg := RTL.funsig fd) in *.
@@ -3234,6 +3266,7 @@ Proof.
   eapply star_trans. eexact A1.
   eapply star_left. econstructor.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
+  admit. admit. admit. rewrite <- comp_transf_function; eauto.
   eapply external_call_symbols_preserved. apply senv_preserved. eauto.
   eauto. rewrite <- comp_transf_function; eauto.
   eapply star_right. eexact A3.
@@ -3285,7 +3318,8 @@ Proof.
   simpl.
   rewrite COMP.
   econstructor; eauto.
-  { apply return_regs_ext_agree_callee_save_ext. }
+  (* { admit. } *)
+  { apply return_regs_agree_callee_save_ext. }
   constructor.
 + (* with an argument *)
   exploit (exec_moves mv); eauto. intros [ls1 [A1 B1]].
@@ -3297,11 +3331,12 @@ Proof.
   {
   simpl. rewrite COMP. econstructor; eauto. rewrite <- H11.
   replace (Locmap.getpair (map_rpair R (loc_result (RTL.fn_sig f)))
-                          (return_regs_ext (parent_locset ts) ls1 (parent_signature ts)))
+                          (return_regs_ext ls1 (parent_signature ts)))
   with (Locmap.getpair (map_rpair R (loc_result (RTL.fn_sig f))) ls1).
-  eapply add_equations_res_lessdef; eauto.
-  rewrite <- H14. apply WTRS.
-  assert (SIG: return_regs_ext (parent_locset ts) ls1 (parent_signature ts) = return_regs_ext (parent_locset ts) ls1 (fn_sig tf)). {
+  eapply add_equations_res_lessdef; eauto. admit.
+  rewrite <- H14.
+  apply WTRS.
+  assert (SIG: return_regs_ext ls1 (parent_signature ts) = return_regs_ext ls1 (fn_sig tf)). {
     clear -STACKS.
     unfold return_regs_ext, loc_result, proj_sig_res.
     inv STACKS.
@@ -3315,7 +3350,7 @@ Proof.
     destruct (mreg_eq rhi rhi); [| contradiction].
     destruct (mreg_eq rlo rlo); [| contradiction].
     simpl. rewrite orb_true_r. reflexivity. }
-  apply return_regs_ext_agree_callee_save_ext.
+  apply return_regs_agree_callee_save_ext.
   rewrite <- H11, <- H14. apply WTRS.
   }
 
@@ -3326,10 +3361,9 @@ Proof.
   intros [m'' [U V]].
   assert (WTRS: wt_regset env (init_regs args (fn_params f))).
   { apply wt_init_regs. inv H0. rewrite wt_params. rewrite H9. auto. }
-  { (* new case *)
   exploit (exec_moves mv). eauto. eauto.
     eapply can_undef_satisf; eauto. eapply compat_entry_satisf; eauto.
-    rewrite call_regs_ext_param_values. eexact ARGS.
+    erewrite call_regs_param_values. eexact ARGS.
     exact WTRS.
   intros [ls1 [A B]].
   econstructor; split.
@@ -3339,7 +3373,6 @@ Proof.
   econstructor; eauto.
   eauto. eauto. traceEq.
   econstructor; eauto.
-  }
 
 (* external function *)
 - exploit external_call_mem_extends; eauto. intros [v' [m'' [F [G [J K]]]]].
@@ -3362,8 +3395,7 @@ Proof.
     rewrite locmap_get_set_loc_result_callee_save by auto.
     (* rewrite locmap_get_set_loc_result_callee_save by auto. *)
     unfold undef_caller_save_regs. destruct l; simpl in H0.
-    destruct r; discriminate.
-    destruct sl; auto; congruence.
+    destruct r; discriminate. contradiction.
   }
   eapply external_call_well_typed; eauto.
 
@@ -3371,7 +3403,11 @@ Proof.
 - inv STACKS.
   simpl in AG.
   { (* new case, now identical to the others *)
-  exploit STEPS; eauto. rewrite WTRES0; auto. intros [ls2 [A B]].
+  exploit (STEPS vres (return_regs_ext ls sg')); eauto.
+  unfold return_regs_ext, loc_result, proj_sig_res. rewrite SIG. admit.
+  rewrite WTRES0; auto.
+  eapply return_regs_ext_agree_callee_save_ext; eauto.
+  intros [ls2 [A B]].
   econstructor; split.
   eapply plus_left. constructor.
   destruct (transf_function_inv _ _ FUN).
@@ -3382,11 +3418,12 @@ Proof.
   destruct (transf_function_inv _ _ FUN).
   unfold loc_result, proj_sig_res in *. rewrite SIG in *.
   rewrite <- COMP. eapply return_trace_lessdef; eauto using senv_preserved.
+  reflexivity.
   eexact A. traceEq.
   econstructor; eauto.
   apply wt_regset_assign; auto. rewrite WTRES0; auto.
   }
-Qed.
+Admitted.
 
 Lemma initial_states_simulation:
   forall st1, RTL.initial_state prog st1 ->
