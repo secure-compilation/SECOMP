@@ -858,6 +858,7 @@ Record extcall_properties (sem: extcall_sem) (cp: compartment) (sg: signature) :
     Senv.invert_symbol ge b = Some id -> Senv.public_symbol ge id = true ->
     Mem.perm m1 b ofs Max Nonempty -> (~ Mem.perm m1 b ofs Max Freeable) ->
     Mem.perm m2 b ofs Max Nonempty;
+
 }.
 
 (** ** Semantics of volatile loads *)
@@ -1154,7 +1155,8 @@ Proof.
 (* mem inject *)
 - inv H0. inv H2. inv H7. inv H8. inversion H5; subst.
   exploit volatile_store_inject; eauto. intros [m2' [A [B [C D]]]].
-  exists f; exists Vundef; exists m2'; intuition. constructor; auto. red; intros; congruence.
+  exists f; exists Vundef; exists m2'; intuition. constructor; auto.
+  red; intros; congruence.
 (* trace length *)
 - inv H; inv H0; simpl; lia.
 (* receptive *)
@@ -1603,6 +1605,7 @@ Proof.
 - inv H; auto.
 Qed.
 
+
 Inductive extcall_annot_val_sem (text: string) (targ: typ) (ge: Senv.t) (cp: compartment):
               list val -> mem -> trace -> val -> mem -> Prop :=
   | extcall_annot_val_sem_intro: forall varg m arg,
@@ -1817,6 +1820,7 @@ Proof.
 - apply external_functions_properties.
 Qed.
 
+
 (** Combining the semantics given above for the various kinds of external calls,
   we define the predicate [external_call] that relates:
 - the external function being invoked
@@ -1843,6 +1847,19 @@ Definition external_call (ef: external_function): extcall_sem :=
   | EF_inline_asm txt sg clb => inline_assembly_sem txt sg
   | EF_debug kind txt targs => extcall_debug_sem
   end.
+
+Definition has_fo (ef: external_function) :=
+  match ef with
+  | EF_external _ _ | EF_builtin _ _ | EF_runtime _ _ | EF_inline_asm _ _ _ => True
+  | _ => False
+  end.
+
+(** External calls fail if public symbols are not first order *)
+Axiom ec_public_first_order: forall (ef: external_function),
+    has_fo ef ->
+    forall (ge: Senv.t) cp vargs m1 t vres m2,
+      external_call ef ge cp vargs m1 t vres m2 ->
+      Senv.public_first_order ge m1 cp.
 
 Ltac external_call_caller_independent :=
   intros ????????? CALL;

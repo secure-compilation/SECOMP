@@ -10,6 +10,7 @@ Require Import BtBasics BtInfoAsm MemoryDelta MemoryWeak.
 Require Import Ctypes Clight.
 
 
+
 Ltac simpl_expr :=
   repeat (match goal with
           | |- eval_expr _ _ _ _ _ _ _ => econstructor
@@ -70,7 +71,7 @@ Section SWITCH.
   (*   intros; subst cp. *)
   (*   destruct (Int64.eq n (Int64.repr n')) eqn:eq_n_n'. *)
   (*   - simpl. *)
-  (*     destruct (Mem.valid_access_store mMint64 b 0%Z (comp_of f) (Vlong (Int64.add n Int64.one))) as [m' m_m']; try assumption. *)
+  (*     destruct (Mem.valid_access_store m Mint64 b 0%Z (comp_of f) (Vlong (Int64.add n Int64.one))) as [m' m_m']; try assumption. *)
   (*     exists m'. split; eauto. *)
   (*     do 4 take_step'. *)
   (*     now apply star_refl. *)
@@ -184,13 +185,13 @@ Section CONV.
 
   Variable ge: Senv.t.
 
-  Definition not_in_env (e: env) id := e ! id = None.
+  (* Definition not_in_env (e: env) id := e ! id = None. *)
 
-  Definition wf_env (e: env) :=
-    forall id, match Senv.find_symbol ge id with
-          | Some _ => not_in_env e id
-          | _ => True
-          end.
+  (* Definition wf_env (e: env) := *)
+  (*   forall id, match Senv.find_symbol ge id with *)
+  (*         | Some _ => not_in_env e id *)
+  (*         | _ => True *)
+  (*         end. *)
 
   Definition eventval_to_val (v: eventval): val :=
     match v with
@@ -370,12 +371,12 @@ Section CONV.
     | Many64 => None
     end.
 
-  Lemma access_mode_chunk_to_type_wf
-        ch ty
-        (CT: chunk_to_type ch = Some ty)
-    :
-    access_mode ty = By_value ch.
-  Proof. destruct ch; inv CT; ss. Qed.
+  (* Lemma access_mode_chunk_to_type_wf *)
+  (*       ch ty *)
+  (*       (CT: chunk_to_type ch = Some ty) *)
+  (*   : *)
+  (*   access_mode ty = By_value ch. *)
+  (* Proof. destruct ch; inv CT; ss. Qed. *)
 
   Definition chunk_val_to_expr (ch: memory_chunk) (v: val) : option expr :=
     match chunk_to_type ch with
@@ -400,19 +401,18 @@ End CONV.
 
 Section CODE.
   (** converting *informative* trace to code **)
-  Context {F V: Type} {CF: has_comp F}.
 
-  Variable ge: Genv.t F V.
+  Variable ge: Senv.t.
 
-  Definition code_mem_delta_storev (d: mem_delta_storev): statement :=
+  Definition code_mem_delta_storev cp0 (d: mem_delta_storev): statement :=
     let '(ch, ptr, v, cp) := d in
     match ptr with
     | Vptr b ofs =>
-        match Genv.invert_symbol ge b with
+        match Senv.invert_symbol ge b with
         | Some id =>
             match chunk_to_type ch, chunk_val_to_expr ge ch v with
             | Some ty, Some ve =>
-                if (Genv.public_symbol ge id) && (flowsto_dec (Genv.find_comp_of_ident ge id) cp) (* TODO: check direction *)
+                if ((Senv.public_symbol ge id) && (flowsto_dec cp cp0)) (* TODO: check direction *)
                 then Sassign (Ederef (expr_of_addr id ofs) ty) ve
                 else Sskip
             | _, _ => Sskip
@@ -422,40 +422,40 @@ Section CODE.
     | _ => Sskip
     end.
 
-  Definition code_mem_delta_kind (d: mem_delta_kind): statement :=
+  Definition code_mem_delta_kind cp (d: mem_delta_kind): statement :=
     match d with
-    | mem_delta_kind_storev dd => code_mem_delta_storev dd
+    | mem_delta_kind_storev dd => code_mem_delta_storev cp dd
     | _ => Sskip
     end.
 
-  Definition code_mem_delta (d: mem_delta) (snext: statement): statement :=
-    fold_right Ssequence snext (map (code_mem_delta_kind) d).
+  Definition code_mem_delta cp (d: mem_delta) (snext: statement): statement :=
+    fold_right Ssequence snext (map (code_mem_delta_kind cp) d).
 
-  Definition code_bundle_call (tr: trace) (id: ident) (evargs: list eventval) (sg: signature) (d: mem_delta): statement :=
+  Definition code_bundle_call cp (tr: trace) (id: ident) (evargs: list eventval) (sg: signature) (d: mem_delta): statement :=
     let tys := from_sig_fun_data sg in
-    code_mem_delta d (Scall None (Evar id (Tfunction tys.(dargs) tys.(dret) tys.(dcc))) (list_eventval_to_list_expr evargs)).
+    code_mem_delta cp d (Scall None (Evar id (Tfunction tys.(dargs) tys.(dret) tys.(dcc))) (list_eventval_to_list_expr evargs)).
 
-  Definition code_bundle_return (tr: trace) (evr: eventval) (d: mem_delta): statement :=
-    code_mem_delta d (Sreturn (Some (eventval_to_expr evr))).
+  Definition code_bundle_return cp (tr: trace) (evr: eventval) (d: mem_delta): statement :=
+    code_mem_delta cp d (Sreturn (Some (eventval_to_expr evr))).
 
-  Definition code_bundle_builtin (tr: trace) (ef: external_function) (evargs: list eventval) (d: mem_delta): statement :=
-    code_mem_delta d (Sbuiltin None ef (list_eventval_to_typelist evargs) (list_eventval_to_list_expr evargs)).
+  Definition code_bundle_builtin cp (tr: trace) (ef: external_function) (evargs: list eventval) (d: mem_delta): statement :=
+    code_mem_delta cp d (Sbuiltin None ef (list_eventval_to_typelist evargs) (list_eventval_to_list_expr evargs)).
 
-  Definition code_bundle_event (be: bundle_event): statement :=
+  Definition code_bundle_event cp (be: bundle_event): statement :=
     match be with
-    | Bundle_call tr id evargs sg d => code_bundle_call tr id evargs sg d
-    | Bundle_return tr evr d => code_bundle_return tr evr d
-    | Bundle_builtin tr ef evargs d => code_bundle_builtin tr ef evargs d
+    | Bundle_call tr id evargs sg d => code_bundle_call cp tr id evargs sg d
+    | Bundle_return tr evr d => code_bundle_return cp tr evr d
+    | Bundle_builtin tr ef evargs d => code_bundle_builtin cp tr ef evargs d
     end.
 
   Definition one_expr: expr := Econst_int Int.one (Tint I32 Signed noattr).
 
-  Definition switch_bundle_events cnt (tr: bundle_trace) :=
-    switch cnt (map (fun ib => code_bundle_event (snd ib)) tr) (Sreturn None).
+  Definition switch_bundle_events cnt cp (tr: bundle_trace) :=
+    switch cnt (map (fun ib => code_bundle_event cp (snd ib)) tr) (Sreturn None).
 
   (* A while(1)-loop with big if-then-elses inside it *)
-  Definition code_bundle_trace (cnt: ident) (tr: bundle_trace): statement :=
-    Swhile one_expr (switch_bundle_events cnt tr).
+  Definition code_bundle_trace cp (cnt: ident) (tr: bundle_trace): statement :=
+    Swhile one_expr (switch_bundle_events cnt cp tr).
 
 End CODE.
 
@@ -463,7 +463,7 @@ Section GEN.
 
   Definition list_typ_to_list_type (ts: list typ): list type := map typ_to_type ts.
 
-  Definition gen_function (ge: Asm.genv) (cnt: ident) (params: list (ident * type)) (tr: bundle_trace) (a_f: Asm.function): function :=
+  Definition gen_function (ge: Senv.t) (cnt: ident) (params: list (ident * type)) (tr: bundle_trace) (a_f: Asm.function): function :=
     let a_sg := Asm.fn_sig a_f in
     let tret := rettype_to_type a_sg.(sig_res) in
     let cc := a_sg.(sig_cc) in
@@ -474,9 +474,9 @@ Section GEN.
                params
                []
                []
-               (code_bundle_trace ge cnt tr).
+               (code_bundle_trace ge cp cnt tr).
 
-  Definition gen_fundef (ge: Asm.genv) (cnt: ident) params (tr: bundle_trace) (a_fd: Asm.fundef): Clight.fundef :=
+  Definition gen_fundef (ge: Senv.t) (cnt: ident) params (tr: bundle_trace) (a_fd: Asm.fundef): Clight.fundef :=
     match a_fd with
     | AST.Internal a_f => Internal (gen_function ge cnt params tr a_f)
     | AST.External ef =>
@@ -540,7 +540,7 @@ Section GEN.
     PTree_Properties.of_list params'.
 
 
-  Definition gen_progdef (ge: Asm.genv) (tr: bundle_trace) a_gd (ocnt: option (ident * globdef Clight.fundef type)) (oparams: option (list (ident * type))): globdef Clight.fundef type :=
+  Definition gen_progdef (ge: Senv.t) (tr: bundle_trace) a_gd (ocnt: option (ident * globdef Clight.fundef type)) (oparams: option (list (ident * type))): globdef Clight.fundef type :=
     match ocnt, oparams with
     | Some (cnt, _), Some params => gen_globdef ge cnt params tr a_gd
     | _, _ => Gvar default_globvar
@@ -548,7 +548,7 @@ Section GEN.
 
   Definition get_id_tr (tr: bundle_trace) (id0: ident): bundle_trace := filter (fun '(id, _) => Pos.eqb id0 id) tr.
 
-  Definition gen_prog_defs (a_ge: Asm.genv) tr (gds: list (ident * globdef Asm.fundef unit)): list (ident * globdef Clight.fundef type) :=
+  Definition gen_prog_defs (a_ge: Senv.t) tr (gds: list (ident * globdef Asm.fundef unit)): list (ident * globdef Clight.fundef type) :=
     let m0 := next_id gds in
     let cnts := gen_counter_defs m0 gds in
     let cnt_defs := map snd (PTree.elements cnts) in
@@ -602,40 +602,40 @@ Section AUX.
     get_id_tr (tr1 ++ tr2) id = (get_id_tr tr1 id) ++ (get_id_tr tr2 id).
   Proof. unfold get_id_tr. rewrite filter_app. auto. Qed.
 
-  Lemma alloc_variables_wf_params_of_symb0
-        ge cp e m params e' m'
-        (AE: alloc_variables ge cp e m params e' m')
-        (WFE: wf_env ge e)
-        (pars: params_of)
-        (WFP: wf_params_of_symb pars ge)
-        fid vars
-        (PAR: pars ! fid = Some vars)
-        (INCL: forall x, In x params -> In x vars)
-    :
-    wf_env ge e'.
-  Proof.
-    revert_until AE. induction AE; ii.
-    { eapply WFE. }
-    eapply IHAE. 3: eapply PAR.
-    3:{ i. eapply INCL. ss. right; auto. }
-    2: auto.
-    clear IHAE id0. unfold wf_env in *. i. specialize (WFE id0). des_ifs.
-    unfold not_in_env in *. specialize (WFP _ _ Heq _ _ PAR).
-    destruct (Pos.eqb_spec id id0).
-    2:{ rewrite PTree.gso; auto. }
-    subst id0. exfalso. apply WFP; clear WFP. specialize (INCL (id, ty)).
-    replace id with (fst (id, ty)). 2: ss. apply in_map. apply INCL. ss. left; auto.
-  Qed.
+  (* Lemma alloc_variables_wf_params_of_symb0 *)
+  (*       ge cp e m params e' m' *)
+  (*       (AE: alloc_variables ge cp e m params e' m') *)
+  (*       (WFE: wf_env ge e) *)
+  (*       (pars: params_of) *)
+  (*       (WFP: wf_params_of_symb pars ge) *)
+  (*       fid vars *)
+  (*       (PAR: pars ! fid = Some vars) *)
+  (*       (INCL: forall x, In x params -> In x vars) *)
+  (*   : *)
+  (*   wf_env ge e'. *)
+  (* Proof. *)
+  (*   revert_until AE. induction AE; ii. *)
+  (*   { eapply WFE. } *)
+  (*   eapply IHAE. 3: eapply PAR. *)
+  (*   3:{ i. eapply INCL. ss. right; auto. } *)
+  (*   2: auto. *)
+  (*   clear IHAE id0. unfold wf_env in *. i. specialize (WFE id0). des_ifs. *)
+  (*   unfold not_in_env in *. specialize (WFP _ _ Heq _ _ PAR). *)
+  (*   destruct (Pos.eqb_spec id id0). *)
+  (*   2:{ rewrite PTree.gso; auto. } *)
+  (*   subst id0. exfalso. apply WFP; clear WFP. specialize (INCL (id, ty)). *)
+  (*   replace id with (fst (id, ty)). 2: ss. apply in_map. apply INCL. ss. left; auto. *)
+  (* Qed. *)
 
-  Lemma alloc_variables_wf_params_of_symb
-        ge cp m params e' m'
-        (AE: alloc_variables ge cp empty_env m params e' m')
-        (pars: params_of)
-        (WFP: wf_params_of_symb pars ge)
-        fid
-        (PAR: pars ! fid = Some params)
-    :
-    wf_env ge e'.
-  Proof. eapply alloc_variables_wf_params_of_symb0; eauto. ii. des_ifs. Qed.
+  (* Lemma alloc_variables_wf_params_of_symb *)
+  (*       ge cp m params e' m' *)
+  (*       (AE: alloc_variables ge cp empty_env m params e' m') *)
+  (*       (pars: params_of) *)
+  (*       (WFP: wf_params_of_symb pars ge) *)
+  (*       fid *)
+  (*       (PAR: pars ! fid = Some params) *)
+  (*   : *)
+  (*   wf_env ge e'. *)
+  (* Proof. eapply alloc_variables_wf_params_of_symb0; eauto. ii. des_ifs. Qed. *)
 
 End AUX.

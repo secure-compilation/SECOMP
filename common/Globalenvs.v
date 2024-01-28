@@ -135,6 +135,23 @@ Definition equiv (se1 se2: t) : Prop :=
   /\ (forall b, block_is_volatile se2 b = block_is_volatile se1 b)
   /\ (forall id, find_comp se2 id = find_comp se1 id).
 
+  (* Memory location has only sequence of bytes *)
+  Definition loc_first_order (m: mem) (b: block) (ofs: Z) : Prop :=
+    match (ZMap.get ofs (Mem.mem_contents m) !! b) with
+    | Byte _ => True
+    | _ => False
+    end.
+
+  (* Public symbols are visible outside the compilation unit,
+     so when interacting via external calls, limit them to first-order (if Readable). *)
+  Definition public_first_order (ge: t) (m: mem) (cp: compartment) :=
+    forall id b ofs
+      (PUBLIC: public_symbol ge id = true)
+      (FIND: find_symbol ge id = Some b)
+      (COMP: find_comp ge id = cp)
+      (READABLE: Mem.perm m b ofs Cur Readable),
+      loc_first_order m b ofs.
+
 End Senv.
 
 Module Genv.
