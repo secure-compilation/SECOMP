@@ -652,7 +652,7 @@ Qed.
 Ltac Determ :=
   try congruence;
   match goal with
-  | [ |- match_traces _ E0 E0 /\ (_ -> _) ]  =>
+  | [ |- match_traces _ _ E0 E0 /\ (_ -> _) ]  =>
           split; [constructor|intros _; Determ]
   | [ H: is_call_cont ?k |- _ ] =>
           contradiction || (clear H; Determ)

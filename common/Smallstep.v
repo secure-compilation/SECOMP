@@ -1068,7 +1068,7 @@ Definition single_events (L: semantics) : Prop :=
 Record receptive (L: semantics) : Prop :=
   Receptive {
     sr_receptive: forall s t1 s1 t2,
-      Step L s t1 s1 -> match_traces (symbolenv L) t1 t2 -> exists s2, Step L s t2 s2;
+      Step L s t1 s1 -> match_traces wf_syscall_event (symbolenv L) t1 t2 -> exists s2, Step L s t2 s2;
     sr_traces:
       single_events L
   }.
@@ -1077,7 +1077,7 @@ Record determinate (L: semantics) : Prop :=
   Determinate {
     sd_determ: forall s t1 s1 t2 s2,
       Step L s t1 s1 -> Step L s t2 s2 ->
-      match_traces (symbolenv L) t1 t2 /\ (t1 = t2 -> s1 = s2);
+      match_traces wf_syscall_event (symbolenv L) t1 t2 /\ (t1 = t2 -> s1 = s2);
     sd_traces:
       single_events L;
     sd_initial_determ: forall s1 s2,
@@ -1095,7 +1095,7 @@ Hypothesis DET: determinate L.
 
 Lemma sd_determ_1:
   forall s t1 s1 t2 s2,
-  Step L s t1 s1 -> Step L s t2 s2 -> match_traces (symbolenv L) t1 t2.
+  Step L s t1 s1 -> Step L s t2 s2 -> match_traces wf_syscall_event (symbolenv L) t1 t2.
 Proof.
   intros. eapply sd_determ; eauto.
 Qed.
@@ -1706,10 +1706,10 @@ Lemma f2b_determinacy_inv:
   forall s2 t' s2' t'' s2'',
   Step L2 s2 t' s2' -> Step L2 s2 t'' s2'' ->
   (t' = E0 /\ t'' = E0 /\ s2' = s2'')
-  \/ (t' <> E0 /\ t'' <> E0 /\ match_traces (symbolenv L1) t' t'').
+  \/ (t' <> E0 /\ t'' <> E0 /\ match_traces wf_syscall_event (symbolenv L1) t' t'').
 Proof.
   intros.
-  assert (match_traces (symbolenv L2) t' t'').
+  assert (match_traces wf_syscall_event (symbolenv L2) t' t'').
     eapply sd_determ_1; eauto.
   destruct (silent_or_not_silent t').
   subst. inv H1.
@@ -2159,7 +2159,7 @@ Record strongly_receptive (L: semantics) : Prop :=
   Strongly_receptive {
     ssr_receptive: forall s ev1 t1 s1 ev2,
       Step L s (ev1 :: t1) s1 ->
-      match_traces (symbolenv L) (ev1 :: nil) (ev2 :: nil) ->
+      match_traces wf_syscall_event (symbolenv L) (ev1 :: nil) (ev2 :: nil) ->
       exists s2, exists t2, Step L s (ev2 :: t2) s2;
     ssr_well_behaved:
       well_behaved_traces L

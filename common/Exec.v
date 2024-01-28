@@ -320,6 +320,15 @@ Hypothesis do_external_function_sound:
 Hypothesis do_external_function_complete:
   forall id sg ge cp vargs m t vres m' w w',
   external_functions_sem id sg ge cp vargs m t vres m' ->
+(* ======= *)
+(*   forall cp id sg ge vargs m t vres m' w w', *)
+(*   do_external_function cp id sg ge w vargs m = Some(w', t, vres, m') -> *)
+(*   external_functions_sem id sg cp ge vargs m t vres m' /\ possible_trace w t w'. *)
+
+(* Hypothesis do_external_function_complete: *)
+(*   forall cp id sg ge vargs m t vres m' w w', *)
+(*   external_functions_sem id sg cp ge vargs m t vres m' -> *)
+(* >>>>>>> origin/apt_io_events *)
   possible_trace w t w' ->
   do_external_function id sg ge cp w vargs m = Some(w', t, vres, m').
 

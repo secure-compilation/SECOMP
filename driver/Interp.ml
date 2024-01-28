@@ -64,7 +64,7 @@ let string_of_comp c =
   | COMP.Comp id -> Format.sprintf "Comp%ld" (P.to_int32 id)
 
 let print_event p = function
-  | Event_syscall(id, args, res) ->
+  | Event_syscall(id, args, _, res, _) ->
       fprintf p "extcall %s(%a) -> %a"
                 (camlstring_of_coqstring id)
                 print_eventval_list args
@@ -413,7 +413,7 @@ let do_external_function id sg ge cp w args m =
       Format.print_string fmt';
       flush stdout;
       convert_external_args ge args sg.sig_args >>= fun eargs ->
-      Some(((w, [Event_syscall(id, eargs, EVint len)]), Vint len), m)
+      Some(((w, [Event_syscall(id, eargs, [], EVint len, [])]), Vint len), m)
   | _ ->
       None
 
@@ -424,7 +424,7 @@ let do_inline_assembly txt sg ge w cp args m = None
 let rec world ge m =
   lazy (Determinism.World(world_io ge m, world_vload ge m, world_vstore ge m))
 
-and world_io ge m id args =
+and world_io ge m id args x =
   None
 
 and world_vload ge m chunk id ofs =
@@ -701,7 +701,7 @@ let execute prog =
 let rec world_asm ge m =
   lazy (Determinism.World(world_io_asm ge m, world_vload_asm ge m, world_vstore_asm ge m))
 
-and world_io_asm ge m id args =
+and world_io_asm ge m id args x =
   None
 
 and world_vload_asm ge m chunk id ofs =
