@@ -1,12 +1,6 @@
 ## Overview
 
-This supplementary material contains a snapshot of the SECOMP formally secure
-compiler as of 2024-01-29.
-
-## Latest snapshot
-
-The latest snapshot of SECOMP is available in anonymous form at
-https://secomp-anonymous.github.io/secomp.zip
+This repository contains the SECOMP formally secure compiler.
 
 ## Requirements
 
