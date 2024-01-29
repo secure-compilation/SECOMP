@@ -3648,13 +3648,52 @@ Proof.
       eapply blame_last_comp_star; eassumption.
 Qed.
 
+(* Theorem blame (t m: trace): *)
+(*   clight_program_has_initial_trace W2 t -> *)
+(*   trace_prefix m t -> *)
+(*   m <> t -> *)
+(*   program_behaves (semantics1 W1) (Goes_wrong m) -> *)
+(*   blame_on_program m. *)
+(* Proof. *)
+
+(* The mirror form of the above statement (W1 <-> W2), to avoid
+   dealing with symmetry here. *)
 Theorem blame (t m: trace):
-  clight_program_has_initial_trace W2 t ->
+  clight_program_has_initial_trace W1 t ->
   trace_prefix m t ->
   m <> t ->
-  program_behaves (semantics1 W1) (Goes_wrong m) ->
+  program_behaves (semantics1 W2) (Goes_wrong m) ->
   blame_on_program m.
 Proof.
-Admitted. (* A slightly different formulation of blame *)
+  intros INI PREFIX NEQ WRONG.
+  inversion WRONG as [s2 b _ s2_m | CONTRA];
+    [| destruct W2_ini as (s2 & INI2); specialize (CONTRA s2); contradiction];
+    subst b.
+  inversion s2_m as [| | | t' s2' STAR NOSTEP NOTFINAL EQ];
+    subst t'.
+  destruct PREFIX as (tm & ->).
+  destruct tm as [| e tm];
+    [rewrite E0_right in NEQ; contradiction |].
+  destruct (program_behaves_exists (semantics1 W1)) as (b & W1_b).
+  specialize (INI _ W1_b) as (b' & ->).
+  inversion W1_b as [s1 b _ s1_m | CONTRA];
+    [| destruct W1_ini as (s1 & INI1); specialize (CONTRA s1); contradiction];
+    subst b.
+  assert (PREFIX: does_prefix (semantics1 W1) (FTbc (m ** e :: tm))). {
+    exists (behavior_app (m ** e :: tm) b'). split; [assumption | ].
+    exists b'. reflexivity.
+  }
+  assert (FINPREF: trace_finpref_prefix m (FTbc (m ** e :: tm))). {
+    exists (e :: tm). reflexivity.
+  }
+  destruct (blame_program _ _ WRONG PREFIX I FINPREF) as [[b CONTRA] | G];
+    [| assumption].
+  destruct b; try discriminate.
+  injection CONTRA as CONTRA.
+  { clear -CONTRA. exfalso.
+    induction m.
+    - discriminate.
+    - injection CONTRA as Hm. eauto. }
+Qed.
 
 End Simulation.
