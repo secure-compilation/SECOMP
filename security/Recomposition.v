@@ -848,6 +848,12 @@ Proof.
     intros. eapply same_high_half in m1_m3; eauto.
 Qed.
 
+Axiom extcall_perm_fundef: forall (ge1: genv) b1 m1 m1' ofs k p ef vargs t vres,
+  (exists fd:fundef, Genv.find_def ge1 b1 = Some (Gfun fd)) ->
+  Mem.perm m1' b1 ofs k p ->
+  external_call ef ge1 vargs m1 t vres m1' ->
+  Mem.perm m1 b1 ofs k p.
+
 Lemma extcall_preserves_mem_rel_opp_side1: forall s ge1 ge3 j δ m1 m1' m3 ef vargs t vres,
     s (comp_of ef) = opposite δ ->
     mem_rel s ge1 ge3 j δ m1 m3 ->
@@ -889,8 +895,9 @@ Proof.
     + apply Mem.mi_inj in m1_m3 as mi_inj_m1_m3.
       constructor.
       * intros b1 b2 delta ofs k p j_b1 perm1.
-        assert (loc_not_in_compartment (comp_of ef) m1 b1 ofs).
-        { unfold loc_not_in_compartment.
+        assert (~(exists fd : fundef, Genv.find_def ge1 b1 = Some (Gfun fd)) ->
+                loc_not_in_compartment (comp_of ef) m1 b1 ofs).
+        { unfold loc_not_in_compartment. intros contr.
           assert (G: j b1 <> None) by congruence.
           apply dom_j_m1 in G. simpl in G.
           destruct (Mem.block_compartment m1 b1) eqn:?; try congruence.
@@ -899,7 +906,10 @@ Proof.
           simpl. intros ?.
           destruct G.
           - intros ?. destruct δ; simpl in *; congruence.
-          - admit. }
+          - contradiction. }
+        destruct (Classical_Prop.classic (exists fd : fundef, Genv.find_def ge1 b1 = Some (Gfun fd))).
+        exploit extcall_perm_fundef; eauto.
+        intros ?. now eapply Mem.perm_inject; eauto.
         eapply Mem.mi_perm; eauto.
         eapply Mem.perm_unchanged_on_2; eauto.
         eapply Mem.valid_block_inject_1; eauto.
@@ -908,9 +918,24 @@ Proof.
         rewrite Mem.unchanged_on_own; eauto.
         eapply Mem.valid_block_inject_1; eauto.
       * intros b1 b2 delta chunk ofs p j_b1 range_perm.
-        eapply Mem.mi_align; eauto.
+        eapply Mem.mi_align; eauto. intros x G.
+        specialize (range_perm x G).
+        eapply external_call_max_perm; eauto.
+        eapply Mem.valid_block_inject_1; eauto.
+      * intros.
+        assert (~(exists fd : fundef, Genv.find_def ge1 b1 = Some (Gfun fd)) ->
+                loc_not_in_compartment (comp_of ef) m1 b1 ofs).
+        { unfold loc_not_in_compartment. intros contr.
+          assert (G: j b1 <> None) by congruence.
+          apply dom_j_m1 in G. simpl in G.
+          destruct (Mem.block_compartment m1 b1) eqn:?; try congruence.
+          fold (Mem.can_access_block m1 b1 (Some c)) in Heqo.
+          exploit Mem.can_access_block_inj; eauto.
+          simpl. intros ?.
+          destruct G.
+          - intros ?. destruct δ; simpl in *; congruence.
+          - contradiction. }
         admit.
-      * admit.
     + intros b not_valid_m1.
       eapply Mem.mi_freeblocks; eauto. intros ?.
       exploit ec_valid_block; eauto using external_call_spec.
