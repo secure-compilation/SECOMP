@@ -1460,86 +1460,87 @@ Local Transparent destroyed_by_op.
   eapply agree_set_pair; eauto. eapply agree_undef_caller_save_regs; eauto.
 
 - inv STACKS.
-  assert (exists s'', update_stack_return tge s' cp rs0 = Some s'' /\
-         match_stacks (comp_of f0) s s'') as [s'' [Hs''1 Hs''2]].
-  { unfold update_stack_return.
-    rewrite ATPC in *. simpl in *.
-    rewrite <- find_comp_of_block_translated.
-    rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ H3).
-    change (comp_of (Internal f0)) with (comp_of f0).
-    destruct (cp =? comp_of f0)%positive eqn:e.
-    - apply Pos.eqb_eq in e. subst cp.
-      eexists; split; auto.
-      inv STACKS'; auto.
-      unfold Mach.call_comp in *; simpl in *.
-      rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ H3) in H2.
-      change (comp_of (Internal f0)) with (comp_of f0) in *.
-      congruence.
-    - inv STACKS'; auto.
-      + unfold Mach.call_comp in *. simpl in *.
-        rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ H3) in H4.
-        injection H4 as E. subst cp.
-        now rewrite Pos.eqb_refl in e.
-      + unfold Mach.call_comp in *. simpl in *.
-        rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ H3) in H2.
-        injection H2 as E. subst cp'0. eauto.
-  }
-
-  left. eexists (State s'' (invalidate_return rs0 (sig_of_call s')) m'). split.
-  assert (LD: Val.lessdef (Mach.return_value rs sg) (return_value rs0 sg)).
-  { unfold Mach.return_value, return_value.
-    destruct (loc_result sg).
-    - eapply agree_mregs; eauto.
-    - eapply Val.longofwords_lessdef.
-      eapply agree_mregs; eauto.
-      eapply agree_mregs; eauto. }
-  eapply plus_one.
-  econstructor; eauto.
-  rewrite ATPC. unfold Vnullptr. now destruct Archi.ptr64.
-  rewrite ATPC. simpl. congruence.
-  { rewrite ATPC. simpl. rewrite <- find_comp_of_block_translated.
-    eauto. }
-  { rewrite ATPC. simpl.
-    intros diff.
-    inv STACKS'; auto.
-    - simpl in *. subst. unfold Mach.call_comp in *. simpl in *. congruence.
-    - inv H10. reflexivity. }
-  { intros diff.
-    inv STACKS'; auto.
-    - simpl in *. subst. unfold Mach.call_comp in *. simpl in *.
-      congruence.
-    - inv H10. eapply agree_sp; eauto. }
-  { intros TYPE.
-    inv STACKS'; auto.
-    - simpl in *. subst. unfold Mach.call_comp in *. simpl in *.
-      assert (cp' = cp) by congruence. subst cp'.
-      now eapply Genv.type_of_call_same_cp in TYPE.
-    - simpl in *. subst. unfold Mach.call_comp in *. simpl in *.
-      inv H10.
-      specialize (NO_CROSS_PTR TYPE).
-      (* TODO: factorize into a lemma Val.lessdef_not_ptr *)
-      inv LD; auto. now rewrite <- H0 in NO_CROSS_PTR. }
-  { inv STACKS'; auto.
-    - simpl in *. subst. unfold Mach.call_comp in *. simpl in *.
-      rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ H3) in H4.
-      change (comp_of (Internal f0)) with (comp_of f0) in *.
-      injection H4 as <-.
-      rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ H3) in CURCOMP.
-      injection CURCOMP as <-.
-      assert (t = E0).
-      { inv EV; auto.
-        exfalso. eapply Genv.type_of_call_same_cp. eauto. }
-      subst. constructor. now apply Genv.type_of_call_same_cp.
-    - simpl in *. unfold Mach.call_comp in *. simpl in *.
-      inv H10.
-      eapply return_trace_lessdef with (ge := ge) (v := Mach.return_value rs sg);
-        eauto using senv_preserved. }
   admit.
+  (* assert (exists s'', update_stack_return tge s' cp rs0 = Some s'' /\ *)
+  (*        match_stacks (comp_of f0) s s'') as [s'' [Hs''1 Hs''2]]. *)
+  (* { unfold update_stack_return. *)
+  (*   rewrite ATPC in *. simpl in *. *)
+  (*   rewrite <- find_comp_of_block_translated. *)
+  (*   rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ H3). *)
+  (*   change (comp_of (Internal f0)) with (comp_of f0). *)
+  (*   destruct (cp =? comp_of f0)%positive eqn:e. *)
+  (*   - apply Pos.eqb_eq in e. subst cp. *)
+  (*     eexists; split; auto. *)
+  (*     inv STACKS'; auto. *)
+  (*     unfold Mach.call_comp in *; simpl in *. *)
+  (*     rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ H3) in H2. *)
+  (*     change (comp_of (Internal f0)) with (comp_of f0) in *. *)
+  (*     congruence. *)
+  (*   - inv STACKS'; auto. *)
+  (*     + unfold Mach.call_comp in *. simpl in *. *)
+  (*       rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ H3) in H4. *)
+  (*       injection H4 as E. subst cp. *)
+  (*       now rewrite Pos.eqb_refl in e. *)
+  (*     + unfold Mach.call_comp in *. simpl in *. *)
+  (*       rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ H3) in H2. *)
+  (*       injection H2 as E. subst cp'0. eauto. *)
+  (* } *)
 
-  econstructor; eauto.
-  { rewrite invalidate_return_PC. rewrite ATPC in *. eauto. }
-  { admit. }
-  easy.
+  (* left. eexists (State s'' (invalidate_return rs0 (sig_of_call s')) m'). split. *)
+  (* assert (LD: Val.lessdef (Mach.return_value rs sg) (return_value rs0 sg)). *)
+  (* { unfold Mach.return_value, return_value. *)
+  (*   destruct (loc_result sg). *)
+  (*   - eapply agree_mregs; eauto. *)
+  (*   - eapply Val.longofwords_lessdef. *)
+  (*     eapply agree_mregs; eauto. *)
+  (*     eapply agree_mregs; eauto. } *)
+  (* eapply plus_one. *)
+  (* econstructor; eauto. *)
+  (* rewrite ATPC. unfold Vnullptr. now destruct Archi.ptr64. *)
+  (* rewrite ATPC. simpl. congruence. *)
+  (* { rewrite ATPC. simpl. rewrite <- find_comp_of_block_translated. *)
+  (*   eauto. } *)
+  (* { rewrite ATPC. simpl. *)
+  (*   intros diff. *)
+  (*   inv STACKS'; auto. *)
+  (*   - simpl in *. subst. unfold Mach.call_comp in *. simpl in *. congruence. *)
+  (*   - inv H10. reflexivity. } *)
+  (* { intros diff. *)
+  (*   inv STACKS'; auto. *)
+  (*   - simpl in *. subst. unfold Mach.call_comp in *. simpl in *. *)
+  (*     congruence. *)
+  (*   - inv H10. eapply agree_sp; eauto. } *)
+  (* { intros TYPE. *)
+  (*   inv STACKS'; auto. *)
+  (*   - simpl in *. subst. unfold Mach.call_comp in *. simpl in *. *)
+  (*     assert (cp' = cp) by congruence. subst cp'. *)
+  (*     now eapply Genv.type_of_call_same_cp in TYPE. *)
+  (*   - simpl in *. subst. unfold Mach.call_comp in *. simpl in *. *)
+  (*     inv H10. *)
+  (*     specialize (NO_CROSS_PTR TYPE). *)
+  (*     (* TODO: factorize into a lemma Val.lessdef_not_ptr *) *)
+  (*     inv LD; auto. now rewrite <- H0 in NO_CROSS_PTR. } *)
+  (* { inv STACKS'; auto. *)
+  (*   - simpl in *. subst. unfold Mach.call_comp in *. simpl in *. *)
+  (*     rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ H3) in H4. *)
+  (*     change (comp_of (Internal f0)) with (comp_of f0) in *. *)
+  (*     injection H4 as <-. *)
+  (*     rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ H3) in CURCOMP. *)
+  (*     injection CURCOMP as <-. *)
+  (*     assert (t = E0). *)
+  (*     { inv EV; auto. *)
+  (*       exfalso. eapply Genv.type_of_call_same_cp. eauto. } *)
+  (*     subst. constructor. now apply Genv.type_of_call_same_cp. *)
+  (*   - simpl in *. unfold Mach.call_comp in *. simpl in *. *)
+  (*     inv H10. *)
+  (*     eapply return_trace_lessdef with (ge := ge) (v := Mach.return_value rs sg); *)
+  (*       eauto using senv_preserved. } *)
+  (* admit. *)
+
+  (* econstructor; eauto. *)
+  (* { rewrite invalidate_return_PC. rewrite ATPC in *. eauto. } *)
+  (* { admit. } *)
+  (* easy. *)
 
 Admitted.
 
