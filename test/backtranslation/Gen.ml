@@ -57,7 +57,7 @@ let vptr ctx =
   let glob_vars = List.map (fun (_, v, _, _, _) -> v) (Gen_ctx.var_list ctx) in
   let* ident = map Camlcoq.P.of_int (oneofl glob_vars) in
   let asm_prog = Gen_ctx.get_asm_prog ctx in
-  let genv = Globalenvs.Genv.globalenv asm_prog in
+  let genv = Globalenvs.Genv.globalenv (fun _ -> AST.COMP.bottom) asm_prog in
   let block = match Globalenvs.Genv.find_symbol genv ident with
     | None -> failwith "Fatal error: cannot find block for symbol for vptr."
     | Some b -> b
@@ -83,7 +83,7 @@ let mem_delta_storev curr_comp ctx =
   let* ident = map Camlcoq.P.of_int (oneofl glob_vars) in
 
   let asm_prog = Gen_ctx.get_asm_prog ctx in
-  let genv = Globalenvs.Genv.globalenv asm_prog in
+  let genv = Globalenvs.Genv.globalenv (fun _ -> AST.COMP.bottom) asm_prog in
   let block = match Globalenvs.Genv.find_symbol genv ident with
     | None -> failwith "Fatal error: cannot find block for symbol for mem_delta"
     | Some b -> b
