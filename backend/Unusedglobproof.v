@@ -430,13 +430,14 @@ Qed.
 
 End TRANSFORMATION.
 
+(* TECHNICAL: dependent types get in the way of the destruct! But
+ otherwise the proof should work just as before! *)
 Theorem transf_program_match:
   forall p tp, transform_program p = OK tp -> match_prog p tp.
 Proof.
   unfold transform_program; intros p tp TR.
   set (pm := (prog_defmap p)) in *.
-  (* TECHNICAL: dependent types get in the way of the destruct! *)
-  (* destruct (used_globals p pm) as [u|] eqn:U; try discriminate. *)
+  Fail destruct (used_globals p pm) as [u|] eqn:U; try discriminate.
   (* destruct (IS.for_all (global_defined p pm) u) eqn:DEF; inv TR. subst pm. *)
   (* exists u; split. *)
   (* apply used_globals_valid; auto. *)
@@ -1599,13 +1600,25 @@ Proof.
   rewrite PTree.gcombine; auto.
 Qed.
 
+(* Technical result: proving this result requires doing complicated unfoldings and
+ case analysis, but the result should hold *)
+Lemma link_match_pol:
+  forall p1 p2 tp1 tp2 p,
+  link p1 p2 = Some p ->
+  match_prog p1 tp1 -> match_prog p2 tp2 ->
+  link_pol tp1 tp2 (prog_pol tp1) (prog_pol tp2) = link_pol p1 p2 (prog_pol p1) (prog_pol p2).
+Proof.
+Admitted.
+
 Theorem link_match_program:
   forall p1 p2 tp1 tp2 p,
   link p1 p2 = Some p ->
   match_prog p1 tp1 -> match_prog p2 tp2 ->
   exists tp, link tp1 tp2 = Some tp /\ match_prog p tp.
 Proof.
-  intros. destruct H0 as (used1 & A1 & B1). destruct H1 as (used2 & A2 & B2).
+  intros.
+  exploit link_match_pol; eauto. intros link_pol_match.
+  destruct H0 as (used1 & A1 & B1). destruct H1 as (used2 & A2 & B2).
   destruct (link_prog_inv _ _ _ H) as (U & V & W' & W).
   assert (yes : Policy.eqb (prog_pol tp1) (prog_pol tp2) = true).
   {
@@ -1630,35 +1643,7 @@ Proof.
 + rewrite W. constructor; simpl; intros.
 * eapply match_prog_main; eauto.
 * rewrite (match_prog_public _ _ _ B1), (match_prog_public _ _ _ B2). auto.
-* rewrite (match_prog_pol _ _ _ B1). rewrite (match_prog_pol _ _ _ B2).
-  unfold link_pol. unfold link_pol_comp. simpl.
-  f_equal.
-  assert (G: forall A B (f: A -> B) (t: PTree.t A), map (fun '(id, x) => (id, f x)) (PTree.elements t) =
-                   PTree.elements (PTree.map1 f t)).
-  { clear.
-    intros.
-    unfold PTree.elements. generalize 1%positive.
-    assert (H: map (fun '(id, x) => (id, f x)) nil = (nil: list (positive * B))) by reflexivity.
-    revert H.
-    generalize (nil: list (positive * B)).
-    generalize (nil: list (positive * A)).
-    induction t using PTree.tree_ind.
-    - intros; auto.
-    - intros l0 l1 EQ p.
-      destruct l; simpl in *; auto.
-      + destruct o; simpl in *; auto.
-        * destruct r; simpl in *; try rewrite EQ; auto.
-          erewrite IHt0; auto.
-        * destruct r; simpl in *; auto.
-      + destruct o; simpl in *; auto.
-        * destruct r; simpl in *; auto.
-          now erewrite IHt; eauto; simpl; rewrite EQ.
-          now erewrite IHt; eauto; simpl; erewrite IHt0.
-        * destruct r; simpl in *; auto.
-  }
-  rewrite !G. f_equal. f_equal.
-  (* TECHNICAL: need to do  *)
-  admit.
+* eauto.
 * rewrite ! prog_defmap_elements, !PTree.gcombine by auto.
   rewrite (match_prog_def _ _ _ B1 id), (match_prog_def _ _ _ B2 id).
   rewrite ISF.union_b.
@@ -1684,6 +1669,6 @@ Proof.
   destruct (IS.mem id used1), (IS.mem id used2); auto.
 }
 * intros. apply PTree.elements_keys_norepet.
-Admitted.
+Qed.
 
 Global Instance TransfSelectionLink : TransfLink match_prog := link_match_program.

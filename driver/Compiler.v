@@ -538,6 +538,7 @@ Proof.
   intros. apply c_semantic_preservation. apply transf_c_program_match; auto.
 Qed.
 
+
 (** Here is the separate compilation case.  Consider a nonempty list [c_units]
   of C source files (compilation units), [C1 ,,, Cn].  Assume that every
   C compilation unit [Ci] is successfully compiled by CompCert, obtaining

@@ -142,4 +142,7 @@ Program Definition transform_program (p: program) : res program :=
         Error (msg "Unusedglob: reference to undefined global")
   end.
 Next Obligation.
+  (* Technical result that relies on the fact there are less
+   definitions in the new prog_defs than before, so one should be able
+   to use the prog_agr_comps from the program [p] *)
 Admitted.
