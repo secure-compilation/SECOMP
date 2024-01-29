@@ -433,17 +433,17 @@ End TRANSFORMATION.
 Theorem transf_program_match:
   forall p tp, transform_program p = OK tp -> match_prog p tp.
 Proof.
-  unfold transform_program; intros p tp TR. set (pm := prog_defmap p) in *.
-  admit.
+  unfold transform_program; intros p tp TR.
+  set (pm := (prog_defmap p)) in *.
+  (* TECHNICAL: dependent types get in the way of the destruct! *)
+  (* destruct (used_globals p pm) as [u|] eqn:U; try discriminate. *)
+  (* destruct (IS.for_all (global_defined p pm) u) eqn:DEF; inv TR. subst pm. *)
+  (* exists u; split. *)
+  (* apply used_globals_valid; auto. *)
+  (* constructor; simpl; auto. *)
+  (* intros. unfold prog_defmap; simpl. apply filter_globdefs_map. *)
+  (* apply filter_globdefs_unique_names. *)
 Admitted.
-(*   destruct (used_globals p pm) as [u|] eqn:U; try discriminate. *)
-(*   destruct (IS.for_all (global_defined p pm) u) eqn:DEF; inv TR. *)
-(*   exists u; split. *)
-(*   apply used_globals_valid; auto. *)
-(*   constructor; simpl; auto. *)
-(*   intros. unfold prog_defmap; simpl. apply filter_globdefs_map. *)
-(*   apply filter_globdefs_unique_names. *)
-(* Qed. *)
 
 
 (** * Semantic preservation *)
@@ -1631,6 +1631,33 @@ Proof.
 * eapply match_prog_main; eauto.
 * rewrite (match_prog_public _ _ _ B1), (match_prog_public _ _ _ B2). auto.
 * rewrite (match_prog_pol _ _ _ B1). rewrite (match_prog_pol _ _ _ B2).
+  unfold link_pol. unfold link_pol_comp. simpl.
+  f_equal.
+  assert (G: forall A B (f: A -> B) (t: PTree.t A), map (fun '(id, x) => (id, f x)) (PTree.elements t) =
+                   PTree.elements (PTree.map1 f t)).
+  { clear.
+    intros.
+    unfold PTree.elements. generalize 1%positive.
+    assert (H: map (fun '(id, x) => (id, f x)) nil = (nil: list (positive * B))) by reflexivity.
+    revert H.
+    generalize (nil: list (positive * B)).
+    generalize (nil: list (positive * A)).
+    induction t using PTree.tree_ind.
+    - intros; auto.
+    - intros l0 l1 EQ p.
+      destruct l; simpl in *; auto.
+      + destruct o; simpl in *; auto.
+        * destruct r; simpl in *; try rewrite EQ; auto.
+          erewrite IHt0; auto.
+        * destruct r; simpl in *; auto.
+      + destruct o; simpl in *; auto.
+        * destruct r; simpl in *; auto.
+          now erewrite IHt; eauto; simpl; rewrite EQ.
+          now erewrite IHt; eauto; simpl; erewrite IHt0.
+        * destruct r; simpl in *; auto.
+  }
+  rewrite !G. f_equal. f_equal.
+  (* TECHNICAL: need to do  *)
   admit.
 * rewrite ! prog_defmap_elements, !PTree.gcombine by auto.
   rewrite (match_prog_def _ _ _ B1 id), (match_prog_def _ _ _ B2 id).

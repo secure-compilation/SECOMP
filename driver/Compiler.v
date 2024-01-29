@@ -422,7 +422,6 @@ Remark forward_simulation_identity:
 Proof.
   intros. apply forward_simulation_step with (fun s1 s2 => s2 = s1); intros.
 - auto.
-- auto.
 - exists s1; auto.
 - subst s2; auto.
 - subst s2. exists s1'; auto.

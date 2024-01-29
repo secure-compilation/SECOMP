@@ -356,8 +356,19 @@ Lemma link_prog_subproof :
   Policy.eqb p1.(prog_pol) p2.(prog_pol) = true ->
   Policy.in_pub p1.(prog_pol) (p1.(prog_public) ++ p2.(prog_public)).
 Proof.
-
-Admitted.
+  intros.
+  split. unfold Policy.in_pub_exports.
+  intros. assert (In id (prog_public p1)).
+  { exploit prog_pol_pub; eauto. intros [G1 G2].
+    unfold Policy.in_pub_exports in G1. eauto. }
+  eapply in_or_app; eauto.
+  unfold Policy.in_pub_imports.
+  intros.
+  { exploit prog_pol_pub; eauto. intros [G1 G2].
+    unfold Policy.in_pub_imports in G2.
+    exploit G2; eauto. intros ?.
+  eapply in_or_app; eauto. }
+Qed.
 
 Definition link_pol_comp: PTree.t compartment :=
   let defs := PTree.elements (PTree.combine link_prog_merge dm1 dm2) in
