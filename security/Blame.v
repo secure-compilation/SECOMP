@@ -519,7 +519,7 @@ Qed.
     (INJ: Mem.inject f m1 m2)
     (ASGN: assign_loc ce cp ty m1 b ofs bf v m1'):
     Mem.inject f m1' m2.
-  Admitted.
+  Admitted. (* Unused *)
 
   Lemma assign_loc_block_compartment {m m' b b' cp ce ty ofs bf v}
     (ASGN: assign_loc ce cp ty m b ofs bf v m'):
@@ -2049,7 +2049,10 @@ Qed.
     - admit.
     - admit.
     - admit.
-  Admitted.
+  Admitted. (* The axiomatization of external calls needs to be
+               extended to account for details required explicitly by
+               the memory invariants, the theorem should follow easily
+               from those.  *)
 
   Lemma right_mem_injection_external_call_left :
     forall j ef vargs1 vres1 t m1 m1' m2
@@ -2087,7 +2090,7 @@ Qed.
       enough (Mem.can_access_block m1' b (Some cp)) by easy.
       eapply ec_can_access_block; eauto.
       { apply external_call_spec. }
-  Admitted.
+  Admitted. (* Similar to the lemma on the right, immediately above *)
 
   Lemma memval_inject_alloc {j m1 m2 b1 b2 ofs delta cp lo hi m1' m2' b1' b2'}
     (INJ: memval_inject j
@@ -2099,7 +2102,8 @@ Qed.
     memval_inject j
       (ZMap.get ofs (Mem.mem_contents m1') !! b1)
       (ZMap.get (ofs + delta) (Mem.mem_contents m2') !! b2).
-  Admitted.
+  Admitted. (* Currently unused, a variation on this lemma is likely
+               needed while proving preservation on external calls*)
 
   (** Sub-invariant lemmas, mostly on injections *)
 
@@ -2277,7 +2281,7 @@ Lemma right_cont_injection_left_step_E0_2: forall j s1 s2 s1',
   s |= s1 ∈ Left ->
   step1 ge1 s1 E0 s1' ->
   right_cont_injection s j (cont_of s1') (cont_of s2).
-Admitted. (* Symmetric, unused? *)
+Admitted. (* Symmetric *)
 
   (* WIP *)
   Definition abstract_step_inj (j: meminj): meminj :=
@@ -3520,7 +3524,9 @@ Lemma initial_state_injection s1 s2 :
   exists j,
     right_state_injection s j ge1 ge2 s1 s2.
 Proof.
-Admitted. (* Another standard assumption about initial states *)
+Admitted. (* Standard assumption about initial states, easy but
+             cumbersome technical lemma about them (construction of
+             initial injection) *)
 
 (* - Quantify over p vs. W1 *)
 Lemma does_prefix_star
@@ -3649,6 +3655,6 @@ Theorem blame (t m: trace):
   program_behaves (semantics1 W1) (Goes_wrong m) ->
   blame_on_program m.
 Proof.
-Admitted.
+Admitted. (* A slightly different formulation of blame *)
 
 End Simulation.
