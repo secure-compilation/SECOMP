@@ -281,15 +281,16 @@ Inductive right_cont_injection: cont -> cont -> Prop :=
 | right_cont_injection_kswitch: forall k1 k2,
     right_cont_injection k1 k2 ->
     right_cont_injection (Kswitch k1) (Kswitch k2)
-(* | right_cont_injection_kcall_left: forall id1 id2 f1 f2 en1 en2 le1 le2 k1 k2, *)
-(*     s |= f1 ∈ Left -> *)
-(*     s |= f2 ∈ Left -> *)
-(*     right_cont_injection (remove_until_right k1) (remove_until_right k2) -> *)
-(*     right_cont_injection (Kcall id1 f1 en1 le1 k1) (Kcall id2 f2 en2 le2 k2) *)
-| right_cont_injection_kcall_left: forall id f en1 en2 le1 le2 k1 k2,
-    s |= f ∈ Left ->
+| right_cont_injection_kcall_left: forall id1 id2 f1 f2 en1 en2 le1 le2 k1 k2,
+    s |= f1 ∈ Left ->
+    (* s |= f2 ∈ Left -> *)
+    comp_of f1 = comp_of f2 ->
     right_cont_injection (remove_until_right k1) (remove_until_right k2) ->
-    right_cont_injection (Kcall id f en1 le1 k1) (Kcall id f en2 le2 k2)
+    right_cont_injection (Kcall id1 f1 en1 le1 k1) (Kcall id2 f2 en2 le2 k2)
+(* | right_cont_injection_kcall_left: forall id f en1 en2 le1 le2 k1 k2, *)
+(*     s |= f ∈ Left -> *)
+(*     right_cont_injection (remove_until_right k1) (remove_until_right k2) -> *)
+(*     right_cont_injection (Kcall id f en1 le1 k1) (Kcall id f en2 le2 k2) *)
 (* TODO: is it correct to add [right_cont_injection_kcall_right]? *)
 (* | right_cont_injection_kcall_right: forall id1 id2 f1 f2 en1 en2 le1 le2 k1 k2, *)
 (*     s |= f1 ∈ Right -> *)
@@ -2933,15 +2934,18 @@ Admitted. (* Symmetric *)
         (* rewrite COMP in *. *)
         exists j. eexists. split.
         { apply step_returnstate.
-          - intros CALLTYPE. specialize (NO_CROSS_PTR CALLTYPE).
+          - rewrite <- H6.
+            intros CALLTYPE. specialize (NO_CROSS_PTR CALLTYPE).
             destruct v; try contradiction; inv RVALINJ; reflexivity.
-          - inv EV.
+          - rewrite <- H6.
+            inv EV.
             + apply return_trace_intra; auto.
             + apply return_trace_cross; auto.
               specialize (NO_CROSS_PTR H).
               destruct v; try contradiction; inv RVALINJ; inv H0; constructor.
         }
         { apply LeftControl; auto.
+          congruence.
           (* simpl. admit. *)
         }
       * (* assert (f = f2) as <- by admit. (* here the injection needs more *) *)
@@ -3105,8 +3109,8 @@ Admitted. (* Symmetric *)
                by (eapply find_funct_ptr_right; eassumption).
              apply inject_callstates.
              ++ assumption.
-             ++ (* apply right_cont_injection_kcall_left; try assumption. *)
-                admit.
+             ++ apply right_cont_injection_kcall_left; try assumption.
+                congruence.
              ++ specialize (NO_CROSS_PTR H5).
                 specialize (NO_CROSS_PTR0 H21).
                 admit. (* easy *)
