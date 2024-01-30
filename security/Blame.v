@@ -228,6 +228,9 @@ Section Equivalence.
     { same_dom: same_domain_right m1;
       partial_mem_inject: Mem.inject j m1 m2;
       j_delta_zero: Mem.delta_zero j;
+      (* FIXME: The condition below contradicts same_domain_right when the left
+         side has a public symbol.  This is because symbols_inject says that any
+         public symbol must be covered by the memory injection. *)
       same_symb: symbols_inject j ge1 ge2;
       (* FIXME: Do we really need the condition below? Why isn't
          Mem.meminj_no_overlap enough? *)
