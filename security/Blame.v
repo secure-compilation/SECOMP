@@ -1986,7 +1986,7 @@ Qed.
     exploit @right_mem_injection_bind_parameters_right; eauto.
     intros (m2'' & BIND2 & MEMINJ'').
     exists j', e2, (create_undef_temps (fn_temps f)), m2''.
-    split; [| split; [| split]]; auto.
+    split; [| split; [| split; [| split]]]; auto.
     econstructor; eauto.
   Qed.
 
@@ -2152,6 +2152,33 @@ Qed.
       (ZMap.get (ofs + delta) (Mem.mem_contents m2') !! b2).
   Admitted. (* Currently unused, a variation on this lemma is likely
                needed while proving preservation on external calls*)
+
+  Lemma find_funct_ptr_right id fd1 fd2 b1 b2
+    (RIGHT: s (comp_of fd1) = Right)
+    (SYM1: Genv.invert_symbol (Genv.globalenv W1) b1 = Some id)
+    (SYM2: Genv.invert_symbol (Genv.globalenv W2) b2 = Some id)
+    (FUN1: Genv.find_funct_ptr (Genv.globalenv W1) b1 = Some fd1)
+    (FUN2: Genv.find_funct_ptr (Genv.globalenv W2) b2 = Some fd2):
+    fd1 = fd2.
+  Proof.
+    apply Genv.invert_find_symbol in SYM1.
+    apply Genv.invert_find_symbol in SYM2.
+    assert (COMP1: Genv.find_comp_of_ident ge1 id = Some (comp_of fd1)). {
+      unfold Genv.find_comp_of_ident. setoid_rewrite SYM1.
+      eapply Genv.find_funct_ptr_find_comp_of_block in FUN1.
+      exact FUN1. }
+    destruct (match_prog_globdefs _ _ _ match_W1_W2
+                                  _ _ (or_introl COMP1) (or_introl RIGHT))
+      as (b1' & b2' & SYM1' & SYM2' & MATCH).
+    setoid_rewrite SYM1 in SYM1'. injection SYM1' as <-.
+    setoid_rewrite SYM2 in SYM2'. injection SYM2' as <-.
+    unfold match_opt_globdefs in MATCH. rewrite RIGHT in MATCH.
+    unfold Genv.find_funct_ptr in FUN1, FUN2.
+    setoid_rewrite <- MATCH in FUN2.
+    destruct (Genv.find_def _ b1) as [f |] eqn:DEF; [| discriminate].
+    destruct f; [| discriminate].
+    congruence.
+  Qed.
 
   (** Sub-invariant lemmas, mostly on injections *)
 
@@ -3074,8 +3101,8 @@ Admitted. (* Symmetric *)
         * exists j. apply RightControl.
           -- assumption.
           -- congruence.
-          -- assert (fd = fd0) as <-. {
-               admit. }
+          -- assert (fd = fd0) as <-
+               by (eapply find_funct_ptr_right; eassumption).
              apply inject_callstates.
              ++ assumption.
              ++ (* apply right_cont_injection_kcall_left; try assumption. *)
@@ -3195,18 +3222,24 @@ Admitted. (* Symmetric *)
           -- congruence.
           -- assumption.
           -- rewrite H, LEFT' in H4. assumption.
-        * exists j. apply RightControl.
+        * rewrite H, RIGHT' in H4.
+          inv H4; [congruence |].
+          exists j. apply RightControl.
           -- assumption.
           -- congruence.
-          -- assert (f = f0) as <-. {
-               admit. }
-             apply inject_states.
-             ++ assumption.
-             ++ rewrite RIGHT' in H4. inv H4.
-                ** congruence.
-                ** assumption.
-             ++ admit. (* right_env_injection *)
-             ++ admit. (* right_tenv_injection *)
+          -- apply inject_states; try assumption.
+             destruct optid0 as [id |]; [| assumption].
+             intros id' v' GET.
+             destruct (peq id' id) as [-> | NEQ].
+             ++ simpl in GET. rewrite PTree.gss in GET. injection GET as <-.
+                simpl. rewrite PTree.gss.
+                exists v0. split; [| reflexivity].
+                specialize (NO_CROSS_PTR H0). specialize (NO_CROSS_PTR0 H0).
+                inv H5; inv H9; try constructor.
+                contradiction.
+             ++ simpl in GET. rewrite PTree.gso in GET; [| assumption].
+                simpl. rewrite PTree.gso; [| assumption].
+                specialize (H20 id' v' GET). assumption.
   Admitted.
 
   Lemma parallel_abstract_t: forall j s1 s2 s1' s2' t,
@@ -3729,11 +3762,9 @@ Proof.
     subst b.
   assert (PREFIX: does_prefix (semantics1 W1) (FTbc (m ** e :: tm))). {
     exists (behavior_app (m ** e :: tm) b'). split; [assumption | ].
-    exists b'. reflexivity.
-  }
+    exists b'. reflexivity. }
   assert (FINPREF: trace_finpref_prefix m (FTbc (m ** e :: tm))). {
-    exists (e :: tm). reflexivity.
-  }
+    exists (e :: tm). reflexivity. }
   destruct (blame_program _ _ WRONG PREFIX I FINPREF) as [[b CONTRA] | G];
     [| assumption].
   destruct b; try discriminate.
@@ -3741,7 +3772,7 @@ Proof.
   { clear -CONTRA. exfalso.
     induction m.
     - discriminate.
-    - injection CONTRA as Hm. eauto. }
+    - injection CONTRA as Hm. exact (IHm Hm). }
 Qed.
 
 End Simulation.
