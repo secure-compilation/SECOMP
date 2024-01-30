@@ -2027,8 +2027,8 @@ Qed.
       inject_incr j j' /\
       Val.inject j' vres1 vres2.
   Proof.
+    pose proof (external_call_spec ef) as ef_props.
     exploit ec_mem_inject; eauto.
-    { apply external_call_spec. }
     { eapply same_symb; eauto. }
     { eapply partial_mem_inject; eauto. }
     intros (j' & vres2 & m2' & is_ext & inj_res & inj' & unchanged1 & unchanged2 &
@@ -2037,7 +2037,42 @@ Qed.
     split; [| split; [| split]]; auto.
     destruct RMEMINJ as [DOM MI D0 SYMB MI_INJ BLKS1 BLKS2].
     constructor; eauto.
-    - intros b. specialize (DOM b). simpl in *. admit.
+    - intros b. specialize (DOM b). simpl in *.
+      destruct (Mem.block_compartment m1 b) as [cp|] eqn:block_m1_b.
+      + assert (Mem.valid_block m1 b) as valid_m1_b.
+        { eapply Mem.can_access_block_valid_block; simpl; eauto. }
+        assert (Mem.can_access_block m1' b (Some cp)) as block_m1'_b.
+        { apply (Mem.unchanged_on_own _ _ _ unchanged1); eauto. }
+        simpl in block_m1'_b. rewrite block_m1'_b.
+        destruct (j b) as [[b' ofs]|] eqn:j_b.
+        * assert (s cp = Right) as cp_right by (apply DOM; congruence).
+          rewrite (incr _ _ _ j_b). intuition.
+        * rewrite <- DOM. split; eauto.
+          destruct (j' b) as [[b'' ofs']|] eqn:j'_b; try congruence.
+          exploit j_j'_sep; eauto.
+          rewrite Mem.block_compartment_valid_block, block_m1_b.
+          intuition.
+      + destruct (Mem.block_compartment m1' b) as [cp|] eqn:block_m1'_b.
+        * assert (~ Mem.valid_block m1 b) as invalid_m1_b.
+          { apply Mem.block_compartment_valid_block. eauto. }
+          assert (Mem.valid_block m1' b) as valid_m1_b.
+          { eapply Mem.can_access_block_valid_block; simpl; eauto. }
+          exploit comps_m1'; eauto.
+          intros (b' & -> & block_m1'_b_alt).
+          assert (cp = comp_of ef) as -> by congruence.
+          clear block_m1'_b_alt.
+          split; try congruence. intros _. clear b'.
+          admit.
+          (* AAA: At this point, we know that b is a new block that was
+             allocated by the call to ef. Our goal is to prove that the ef's
+             compartment is on the right.  However, I believe that there is
+             nothing that allows us to conclude that, since it is perfectly
+             possible to call an external function defined on the left.  We
+             probably need to adjust the new memory injection j' to remove any
+             block on the left. *)
+        * split; eauto.
+          rewrite <- Mem.block_compartment_valid_block in block_m1'_b.
+          eapply Mem.mi_freeblocks in block_m1'_b; eauto.
     - admit.
     - admit.
     - admit.
