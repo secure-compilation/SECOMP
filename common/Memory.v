@@ -5418,6 +5418,61 @@ Proof.
   eapply can_access_block_drop_2; eauto.
 Qed.
 
+Lemma unchanged_on_inject f m1 m1' m2 :
+  inject f m1 m2 ->
+  unchanged_on m1 m1' ->
+  (forall b off, f b <> None -> P b off) ->
+  inject f m1' m2.
+Proof.
+  intros [inj_m1 freeblocks_m1 mappedblocks_m1 no_overlap_m1
+            representable_m1 perm_inv_m1] unchanged_m1 weak.
+  destruct inj_m1 as [perm_m1 own_m1 align_m1 memval_m1].
+  assert (forall b b' ofs, f b = Some (b', ofs) -> valid_block m1 b)
+    as freeblocks_m1_alt.
+  { intros ????.
+    apply Classical_Prop.NNPP. (* FIXME *)
+    intros ?%freeblocks_m1. congruence. }
+  assert (forall b b' ofs ofs', f b = Some (b', ofs') -> P b ofs) as weak'.
+  { intros ?????; apply weak; congruence. }
+  split; [split|..]; eauto.
+  - intros b1 b2 delta ofs k p j_b1 m1'_b1.
+    apply (perm_m1 _ _ _ _ _ _ j_b1).
+    rewrite (unchanged_on_perm _ _ unchanged_m1); eauto.
+  - intros b1 b2 delta [cp|] j_b1 m1'_b1; simpl in *; trivial.
+    apply (own_m1 _ _ _ (Some cp) j_b1). simpl.
+    apply (unchanged_on_own _ _ unchanged_m1 b1 (Some cp)); trivial.
+    eauto.
+  - intros b1 b2 delta chunk ofs p j_b1 range.
+    eapply align_m1; eauto.
+    intros ofs' ?%range.
+    apply (unchanged_on_perm _ _ unchanged_m1); eauto.
+  - intros b1 ofs b2 delta j_b1 perm_m1'.
+    apply (unchanged_on_perm _ _ unchanged_m1) in perm_m1';
+      eauto.
+    rewrite (unchanged_on_contents _ _ unchanged_m1); eauto.
+  - intros b invalid_m1'. apply freeblocks_m1.
+    intros valid_b. apply invalid_m1'.
+    eauto using valid_block_unchanged_on.
+  - intros b1 b1' delta1 b2 b2' delta2 orfs1 ofs2
+      b1_b2 j_b1 j_b2 perm_b1 perm_b2.
+    apply (unchanged_on_perm _ _ unchanged_m1) in perm_b1; eauto.
+    apply (unchanged_on_perm _ _ unchanged_m1) in perm_b2; eauto.
+  - intros b1 b2 delta ofs j_b1 perm_b1.
+    eapply representable_m1; eauto.
+    destruct perm_b1 as [perm_b1|perm_b1]; [left|right];
+      apply (unchanged_on_perm _ _ unchanged_m1) in perm_b1; eauto;
+      apply (unchanged_on_perm _ _ unchanged_m1).
+  - intros b1 ofs b2 delta k p j_b1 perm_b2.
+    exploit perm_inv_m1; eauto.
+    intros [perm_b1|perm_b1].
+    + left.
+      apply (unchanged_on_perm _ _ unchanged_m1) in perm_b1; eauto;
+        apply (unchanged_on_perm _ _ unchanged_m1).
+    + right. intros contra. apply perm_b1.
+      apply (unchanged_on_perm _ _ unchanged_m1) in contra; eauto;
+        apply (unchanged_on_perm _ _ unchanged_m1).
+Qed.
+
 End UNCHANGED_ON.
 
 Lemma unchanged_on_implies:

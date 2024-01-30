@@ -2048,62 +2048,6 @@ Qed.
                the memory invariants, the theorem should follow easily
                from those.  *)
 
-  (* FIXME: Move to Memory.v? *)
-  Lemma unchanged_on_inject j m1 m1' P m2 :
-    Mem.inject j m1 m2 ->
-    Mem.unchanged_on P m1 m1' ->
-    (forall b off, j b <> None -> P b off) ->
-    Mem.inject j m1' m2.
-  Proof.
-    intros [inj_m1 freeblocks_m1 mappedblocks_m1 no_overlap_m1
-            representable_m1 perm_inv_m1] unchanged_m1 weak.
-    destruct inj_m1 as [perm_m1 own_m1 align_m1 memval_m1].
-    assert (forall b b' ofs, j b = Some (b', ofs) -> Mem.valid_block m1 b)
-      as freeblocks_m1_alt.
-    { intros ????.
-      apply Classical_Prop.NNPP. (* FIXME *)
-      intros ?%freeblocks_m1. congruence. }
-    assert (forall b b' ofs ofs', j b = Some (b', ofs') -> P b ofs) as weak'.
-    { intros ?????; apply weak; congruence. }
-    split; [split|..]; eauto.
-    - intros b1 b2 delta ofs k p j_b1 m1'_b1.
-      apply (perm_m1 _ _ _ _ _ _ j_b1).
-      rewrite (Mem.unchanged_on_perm _ _ _ unchanged_m1); eauto.
-    - intros b1 b2 delta [cp|] j_b1 m1'_b1; simpl in *; trivial.
-      apply (own_m1 _ _ _ (Some cp) j_b1). simpl.
-      apply (Mem.unchanged_on_own _ _ _ unchanged_m1 b1 (Some cp)); trivial.
-      eauto.
-    - intros b1 b2 delta chunk ofs p j_b1 range.
-      eapply align_m1; eauto.
-      intros ofs' ?%range.
-      apply (Mem.unchanged_on_perm _ _ _ unchanged_m1); eauto.
-    - intros b1 ofs b2 delta j_b1 perm_m1'.
-      apply (Mem.unchanged_on_perm _ _ _ unchanged_m1) in perm_m1';
-        eauto.
-      rewrite (Mem.unchanged_on_contents _ _ _ unchanged_m1); eauto.
-    - intros b invalid_m1'. apply freeblocks_m1.
-      intros valid_b. apply invalid_m1'.
-      eauto using Mem.valid_block_unchanged_on.
-    - intros b1 b1' delta1 b2 b2' delta2 orfs1 ofs2
-        b1_b2 j_b1 j_b2 perm_b1 perm_b2.
-      apply (Mem.unchanged_on_perm _ _ _ unchanged_m1) in perm_b1; eauto.
-      apply (Mem.unchanged_on_perm _ _ _ unchanged_m1) in perm_b2; eauto.
-    - intros b1 b2 delta ofs j_b1 perm_b1.
-      eapply representable_m1; eauto.
-      destruct perm_b1 as [perm_b1|perm_b1]; [left|right];
-      apply (Mem.unchanged_on_perm _ _ _ unchanged_m1) in perm_b1; eauto;
-      apply (Mem.unchanged_on_perm _ _ _ unchanged_m1).
-    - intros b1 ofs b2 delta k p j_b1 perm_b2.
-      exploit perm_inv_m1; eauto.
-      intros [perm_b1|perm_b1].
-      + left.
-        apply (Mem.unchanged_on_perm _ _ _ unchanged_m1) in perm_b1; eauto;
-        apply (Mem.unchanged_on_perm _ _ _ unchanged_m1).
-      + right. intros contra. apply perm_b1.
-        apply (Mem.unchanged_on_perm _ _ _ unchanged_m1) in contra; eauto;
-        apply (Mem.unchanged_on_perm _ _ _ unchanged_m1).
-  Qed.
-
   Lemma right_mem_injection_external_call_left :
     forall j ef vargs1 vres1 t m1 m1' m2
            (RMEMINJ: right_mem_injection s j ge1 ge2 m1 m2)
@@ -2132,13 +2076,15 @@ Qed.
     - exploit ec_mem_outside_compartment; eauto.
       { apply external_call_spec. }
       intros m1_m1'.
-      exploit unchanged_on_inject; eauto.
-      admit.
+      exploit Mem.unchanged_on_inject; eauto.
+      intros b off j_b_undef m1_b.
+      apply DOM in j_b_undef. simpl in j_b_undef.
+      rewrite m1_b in j_b_undef. congruence.
     - intros b cp ge_b. specialize (BLKS1 _ _ ge_b).
       enough (Mem.can_access_block m1' b (Some cp)) by easy.
       eapply ec_can_access_block; eauto.
       { apply external_call_spec. }
-  Admitted. (* Similar to the lemma on the right, immediately above *)
+  Qed.
 
   Lemma memval_inject_alloc {j m1 m2 b1 b2 ofs delta cp lo hi m1' m2' b1' b2'}
     (INJ: memval_inject j
