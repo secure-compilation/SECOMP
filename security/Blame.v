@@ -3097,22 +3097,37 @@ Admitted. (* Symmetric *)
                 congruence.
              ++ specialize (NO_CROSS_PTR H5).
                 specialize (NO_CROSS_PTR0 H21).
-                admit. (* easy *)
+                rewrite H3 in H10.
+                injection H10 as <- <- <-.
+                { (* Lemma *)
+                  clear -H1 H8 H13 H24 NO_CROSS_PTR NO_CROSS_PTR0.
+                  revert al al0 tyargs vargs vargs0 H1 H8 H13 H24 NO_CROSS_PTR NO_CROSS_PTR0.
+                  induction vl; intros.
+                  - inv H13. inv H24. constructor.
+                  - inv H13. inv H24.
+                    destruct tyargs; [discriminate |].
+                    inv H2. inv H4.
+                    inv H1. inv H8.
+                    inv NO_CROSS_PTR. inv NO_CROSS_PTR0.
+                    constructor.
+                    + inv H3; inv H6; try constructor.
+                      inv H1.
+                    + eapply IHvl; eassumption. }
       + destruct (ec_no_crossing (external_call_spec ef) _ _ _ _ _ _ H6).
       + destruct (ec_no_crossing (external_call_spec ef) _ _ _ _ _ _ H4).
       + inv EV.
     - (* step_builtin *)
       inv INJ; [| congruence]. inv STEP2.
-      + admit.
+      + inv EV.
+        destruct (ec_no_crossing (external_call_spec ef) _ _ _ _ _ _ H0).
       + (* matching case *) admit.
       + admit.
-      + admit.
-        (* inv EV. simpl in *. inv H4. *)
-        (* * admit. *)
-        (* * admit. *)
+      + inv EV.
+        destruct (ec_no_crossing (external_call_spec ef) _ _ _ _ _ _ H0).
     - (* step_external_function *)
       inv INJ; [| congruence]. inv STEP2.
-      + inv EV. admit. (* contra? *)
+      + inv EV.
+        destruct (ec_no_crossing (external_call_spec ef) _ _ _ _ _ _ H).
       + admit. (* contra? *)
       + (* matching case *)
         simpl in *.
@@ -3193,7 +3208,8 @@ Admitted. (* Symmetric *)
             with (Mem.can_access_block m0 b (Some cp')) in SAME.
           exact (external_call_can_access_block _ _ _ _ _ _ _ _ _ H4 SAME).
         * eapply right_cont_injection_inject_incr; eauto.
-      + inv EV. admit.  (* contra? *)
+      + inv EV.
+        destruct (ec_no_crossing (external_call_spec ef) _ _ _ _ _ _ H).
     - (* step_returnstate *)
       inv EV. inv STEP2.
       + inv EV.
