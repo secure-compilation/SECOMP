@@ -2336,12 +2336,12 @@ Proof.
   congruence.
 Qed.
 
-Lemma right_cont_injection_left_step_E0_2: forall j s1 s2 s1',
+Lemma right_cont_injection_left_step_E0_2: forall j s1 s2 s2',
   right_cont_injection s j (cont_of s1) (cont_of s2) ->
   s |= s1 ∈ Left ->
-  step1 ge1 s1 E0 s1' ->
-  right_cont_injection s j (cont_of s1') (cont_of s2).
-Admitted. (* Symmetric *)
+  step1 ge2 s2 E0 s2' ->
+  right_cont_injection s j (remove_until_right s (cont_of s1)) (remove_until_right s (cont_of s2')).
+Admitted. (* Symmetric -- can we be smart about these? *)
 
   (* WIP *)
   Definition abstract_step_inj (j: meminj): meminj :=
