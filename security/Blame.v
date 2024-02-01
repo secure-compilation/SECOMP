@@ -3609,6 +3609,52 @@ Lemma initial_state_injection s1 s2 :
   exists j,
     right_state_injection s j ge1 ge2 s1 s2.
 Proof.
+  intros [b1 main1 m1 ge1 MEM1 MAINSYM1 MAINBLOCK1 MAINTYPE1]
+         [b2 main2 m2 ge2 MEM2 MAINSYM2 MAINBLOCK2 MAINTYPE2].
+  assert (exists j,
+            right_mem_injection s j Simulation.ge1 Simulation.ge2 m1 m2)
+    as (j & RMEMINJ). {
+    admit. }
+  assert (RCONTINJ: right_cont_injection s j Kstop Kstop) by constructor.
+  assert (VALINJ: Val.inject_list j nil nil) by constructor.
+  rewrite (match_prog_main _ _ _ match_W1_W2) in MAINSYM2.
+  assert (MAINSYM1': Genv.find_symbol ge1 (prog_main W1) <> None) by congruence.
+  assert (COMP1 := Genv.find_funct_ptr_find_comp_of_block _ _ MAINBLOCK1).
+  assert (COMP1': Genv.find_comp_of_ident ge1 (prog_main W1) =
+                  Some (comp_of main1)). {
+    unfold Genv.find_comp_of_ident. rewrite MAINSYM1. assumption. }
+  exploit (@match_prog_globdefs _ _ _ match_W1_W2 (prog_main W1) (comp_of main1)); eauto.
+  { admit. (* Not quite right at the moment *) }
+  intros (b1' & b2' & MAINSYM1'' & MAINSYM2'' & MATCHDEFS).
+  unfold Simulation.ge1 in MAINSYM1''. unfold ge1 in MAINSYM1.
+  setoid_rewrite MAINSYM1 in MAINSYM1''.
+  injection MAINSYM1'' as <-.
+  unfold Simulation.ge2 in MAINSYM2''. unfold ge2 in MAINSYM2.
+  setoid_rewrite MAINSYM2 in MAINSYM2''.
+  injection MAINSYM2'' as <-.
+  unfold match_opt_globdefs in MATCHDEFS. destruct (s (comp_of main1)) eqn:SIDE.
+  - assert (COMP2: comp_of main1 = comp_of main2). {
+      apply Genv.find_funct_ptr_iff in MAINBLOCK1, MAINBLOCK2.
+      unfold Simulation.ge1 in MATCHDEFS. simpl in MATCHDEFS.
+      unfold ge1 in MAINBLOCK1. unfold ge2 in MAINBLOCK2.
+      setoid_rewrite MAINBLOCK1 in MATCHDEFS.
+      setoid_rewrite MAINBLOCK2 in MATCHDEFS.
+      inversion MATCHDEFS as [| f1 f2 MATCHGLOBS EQ1 EQ2];
+        subst f1 f2; clear MATCHDEFS.
+      inversion MATCHGLOBS as [f1 f2 MATCHDEFS EQ1 EQ2 |];
+        subst f1 f2; clear MATCHGLOBS.
+      inversion MATCHDEFS; reflexivity. }
+    exists j.
+    apply LeftControl; try easy.
+    simpl. setoid_rewrite <- COMP2. assumption.
+  - apply Genv.find_funct_ptr_iff in MAINBLOCK1, MAINBLOCK2.
+    simpl in MATCHDEFS. unfold ge2 in MAINBLOCK2.
+    setoid_rewrite <- MATCHDEFS in MAINBLOCK2.
+    unfold ge1 in MAINBLOCK1. setoid_rewrite MAINBLOCK1 in MAINBLOCK2.
+    injection MAINBLOCK2 as <-.
+    exists j.
+    apply RightControl; try assumption.
+    constructor; assumption.
 Admitted. (* Standard assumption about initial states, easy but
              cumbersome technical lemma about them (construction of
              initial injection) *)
