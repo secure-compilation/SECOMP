@@ -2315,35 +2315,45 @@ Proof.
     + eapply H0; eauto.
 Qed.
 
+Lemma remove_until_right_step: forall ge s1 s1',
+  s |= s1 ∈ Left ->
+  step1 ge s1 E0 s1' ->
+  remove_until_right s (cont_of s1') = remove_until_right s (cont_of s1).
+Proof.
+  intros ge s1 s1' LEFT STEP. inv STEP; auto; simpl.
+  - rewrite LEFT. reflexivity.
+  - symmetry. rewrite remove_until_right_call_cont. reflexivity.
+  - symmetry. rewrite remove_until_right_call_cont. reflexivity.
+  - rewrite <- (proj1 find_label_remove_until_right _ _ _ _ _ H).
+    symmetry. rewrite remove_until_right_call_cont. reflexivity.
+  - inv EV. unfold Genv.type_of_call in H.
+    destruct (Pos.eqb_spec (comp_of f) cp) as [<- | NEQ].
+    + rewrite LEFT. reflexivity.
+    + contradiction.
+Qed.
+
 Lemma right_cont_injection_left_step_E0_1: forall j s1 s2 s1',
   right_cont_injection s j (remove_until_right s (cont_of s1)) (remove_until_right s (cont_of s2)) ->
   s |= s1 ∈ Left ->
   step1 ge1 s1 E0 s1' ->
   right_cont_injection s j (remove_until_right s (cont_of s1')) (remove_until_right s (cont_of s2)).
 Proof.
-  intros j s1 s2 s1' RCONTINJ (* <- needed? *) LEFT STEP.
-  assert (REMOVE: remove_until_right s (cont_of s1) = remove_until_right s (cont_of s1')). {
-    inv STEP; auto; simpl.
-    - rewrite LEFT. reflexivity.
-    - rewrite remove_until_right_call_cont. reflexivity.
-    - rewrite remove_until_right_call_cont. reflexivity.
-    - rewrite <- (proj1 find_label_remove_until_right _ _ _ _ _ H).
-      rewrite remove_until_right_call_cont. reflexivity.
-    - inv EV. unfold Genv.type_of_call in H.
-      destruct (Pos.eqb_spec (comp_of f) cp) as [<- | NEQ].
-      + rewrite LEFT. reflexivity.
-      + contradiction. }
-  congruence.
+  intros j s1 s2 s1' RCONTINJ LEFT STEP.
+  now rewrite (remove_until_right_step _ _ _ LEFT STEP).
 Qed.
 
 Lemma right_cont_injection_left_step_E0_2: forall j s1 s2 s2',
-  right_cont_injection s j (cont_of s1) (cont_of s2) ->
-  s |= s1 ∈ Left ->
+  right_cont_injection s j (remove_until_right s (cont_of s1)) (remove_until_right s (cont_of s2)) ->
+  s |= s2 ∈ Left ->
   step1 ge2 s2 E0 s2' ->
   right_cont_injection s j (remove_until_right s (cont_of s1)) (remove_until_right s (cont_of s2')).
-Admitted. (* Symmetric -- can we be smart about these? *)
+Proof.
+  intros j s1 s2 s2' RCONTINJ LEFT STEP.
+  now rewrite (remove_until_right_step _ _ _ LEFT STEP).
+Qed.
 
   (* WIP *)
+  (* FIXME: Is this needed? *)
   Definition abstract_step_inj (j: meminj): meminj :=
     j.
 
