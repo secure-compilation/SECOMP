@@ -2171,14 +2171,12 @@ Qed.
     right_mem_injection s j ge1 ge2 (memory_of s1) (memory_of s2) ->
     s |= s1 ∈ Left ->
     step1 ge1 s1 E0 s1' ->
-  exists j',
-    right_mem_injection s j' ge1 ge2 (memory_of s1') (memory_of s2) /\
-    inject_incr j j' .
+    right_mem_injection s j ge1 ge2 (memory_of s1') (memory_of s2).
   Proof.
     intros j s1 s2 s1' RMEMINJ LEFT STEP.
     inversion STEP; subst; try eauto.
     - (* assign *)
-      exists j. split; [| now apply inject_incr_refl]. simpl in *.
+      simpl in *.
       assert (j loc = None).
       { exploit assign_loc_can_access_block; eauto.
         intros m_loc. destruct RMEMINJ as [DOM].
@@ -2187,24 +2185,22 @@ Qed.
         enough (Left = Right) by easy. now apply DOM. }
       exploit @right_mem_injection_assign_loc_unmapped; eauto.
     - (* builtin *)
-      exists j. split; [| now apply inject_incr_refl].
       simpl in *.
       exploit right_mem_injection_external_call_left; eauto.
       congruence.
     - (* return 0 *)
-      exists j. simpl in *.
-      split; eauto using right_mem_injection_free_list_left, inject_incr_refl.
+      simpl in *.
+      eauto using right_mem_injection_free_list_left.
     - (* return 1 *)
-      exists j. simpl in *.
-      split; eauto using right_mem_injection_free_list_left, inject_incr_refl.
+      simpl in *.
+      eauto using right_mem_injection_free_list_left.
     - (* skip call *)
-      exists j. simpl in *.
-      eauto using right_mem_injection_free_list_left, inject_incr_refl.
+      simpl in *.
+      eauto using right_mem_injection_free_list_left.
     - (* internal function *)
-      exists j. simpl in *.
-      split; eauto using right_mem_injection_function_entry1_left, inject_incr_refl.
+      simpl in *.
+      eauto using right_mem_injection_function_entry1_left.
     - (* external call *)
-      exists j. split; [| now apply inject_incr_refl].
       simpl in *.
       exploit right_mem_injection_external_call_left; eauto.
   Qed.
