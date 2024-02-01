@@ -5105,7 +5105,7 @@ Proof.
   unfold flat_inj; intros. destruct (plt b1 thr); inv H.
   replace (ofs + 0) with ofs by lia; auto.
 (* own *)
-  intros. destruct cp as [cp| ]; [| trivial].
+  intros. destruct cp as [cp|]; [| trivial].
   unfold can_access_block, block_compartment in H0.
   now rewrite PTree.gempty in H0.
 (* align *)
