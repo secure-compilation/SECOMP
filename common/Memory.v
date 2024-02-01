@@ -5473,6 +5473,28 @@ Proof.
         apply (unchanged_on_perm _ _ unchanged_m1).
 Qed.
 
+Lemma unchanged_on_inject' f m1 m2 m2' :
+  inject f m1 m2 ->
+  unchanged_on m2 m2' ->
+  (forall b1 b2 delta ofs, f b1 = Some (b2, delta) -> P b2 ofs) ->
+  inject f m1 m2'.
+Proof.
+  intros [inj_m1 freeblocks_m1 mappedblocks_m1 no_overlap_m1
+            representable_m1 perm_inv_m1] unchanged_m2 weak.
+  destruct inj_m1 as [perm_m1 own_m1 align_m1 memval_m1].
+  split; [split|..]; eauto.
+  - intros b1 b2 delta ofs k p j_b1 m1'_b1.
+    rewrite <- (unchanged_on_perm _ _ unchanged_m2); eauto.
+  - intros b1 b2 delta cp j_b1 m1'_b1; simpl in *; trivial.
+    apply (unchanged_on_own _ _ unchanged_m2 b2 cp); eauto.
+  - intros b1 ofs b2 delta j_b1 perm_m1'.
+    rewrite (unchanged_on_contents _ _ unchanged_m2); eauto.
+  - intros b1 b2' delta f_b1.
+    eapply valid_block_unchanged_on; eauto.
+  - intros b1 ofs b2 delta k p j_b1 perm_b2.
+    rewrite <- (unchanged_on_perm _ _ unchanged_m2) in perm_b2; eauto.
+Qed.
+
 End UNCHANGED_ON.
 
 Lemma unchanged_on_implies:
