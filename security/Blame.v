@@ -3275,10 +3275,10 @@ Qed.
   Proof.
     intros j s1 s2 s1' s2' t RINJ LEFT STEP1 STEP2.
     destruct t as [| e1 [| e2 t]].
-    - destruct (parallel_abstract_E0_1 _ _ _ _ RINJ LEFT STEP1) as [j' RINJ'].
+    - pose proof (parallel_abstract_E0_1 _ _ _ _ RINJ LEFT STEP1) as RINJ'.
       apply (step_E0_same_side STEP1) in LEFT.
-      destruct (parallel_abstract_E0_2 _ _ _ _ RINJ' LEFT STEP2) as [j'' RINJ''].
-      exists j''. assumption.
+      pose proof (parallel_abstract_E0_2 _ _ _ _ RINJ' LEFT STEP2) as RINJ''.
+      exists j. assumption.
     - eapply parallel_abstract_ev; eauto.
     - assert (CONTRA := sr_traces (semantics_receptive _) _ _ _ STEP1).
       inv CONTRA. inv H0.
