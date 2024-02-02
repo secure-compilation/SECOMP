@@ -5395,6 +5395,33 @@ Proof.
   eapply free_can_access_block_inj_2; eauto.
 Qed.
 
+Lemma free_list_unchanged_on m blks cp m' :
+  free_list m blks cp = Some m' ->
+  Forall (fun '(b, lo, hi) =>
+            can_access_block m b (Some cp) ->
+            forall i, lo <= i < hi -> ~ P b i) blks ->
+  unchanged_on m m'.
+Proof.
+  revert m.
+  induction blks as [|[[b lo] hi] blks IH]; simpl.
+  { intros m E _.
+    pose proof (unchanged_on_refl m). congruence. }
+  rename m' into m''. intros m FREELIST WEAK.
+  destruct (Mem.free m b lo hi cp) as [m'|] eqn:FREE; try congruence.
+  rewrite List.Forall_cons_iff in WEAK. destruct WEAK as [WEAK1 WEAK2].
+  assert (Mem.can_access_block m b (Some cp)) as ACCESS.
+  { eauto using free_can_access_block_1. }
+  specialize (WEAK1 ACCESS).
+  assert (unchanged_on m m') as m_m'.
+  { eauto using free_unchanged_on. }
+  enough (unchanged_on m' m'') by eauto using unchanged_on_trans.
+  exploit IH; eauto. clear ACCESS.
+  pose proof (free_can_access_block_inj_2 _ _ _ _ _ _ FREE)
+    as ACCESS.
+  eapply List.Forall_impl; try eassumption. clear - m_m' ACCESS.
+  intros [[b lo] hi] WEAK H%ACCESS; eauto.
+Qed.
+
 Lemma drop_perm_unchanged_on:
   forall m b lo hi p cp m',
   drop_perm m b lo hi p cp = Some m' ->

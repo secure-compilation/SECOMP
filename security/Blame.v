@@ -1061,34 +1061,6 @@ Proof.
   - eauto using same_blocks_free_list.
 Qed.
 
-(* FIXME: Move to Memory *)
-Lemma free_list_unchanged_on P m blks cp m' :
-  Mem.free_list m blks cp = Some m' ->
-  Forall (fun '(b, lo, hi) =>
-            Mem.can_access_block m b (Some cp) ->
-            forall i, lo <= i < hi -> ~ P b i) blks ->
-  Mem.unchanged_on P m m'.
-Proof.
-  revert m P.
-  induction blks as [|[[b lo] hi] blks IH]; simpl.
-  { intros m P E _.
-    pose proof (Mem.unchanged_on_refl P m). congruence. }
-  rename m' into m''. intros m P FREELIST WEAK.
-  destruct (Mem.free m b lo hi cp) as [m'|] eqn:FREE; try congruence.
-  rewrite List.Forall_cons_iff in WEAK. destruct WEAK as [WEAK1 WEAK2].
-  assert (Mem.can_access_block m b (Some cp)) as ACCESS.
-  { eauto using Mem.free_can_access_block_1. }
-  specialize (WEAK1 ACCESS).
-  assert (Mem.unchanged_on P m m') as m_m'.
-  { eauto using Mem.free_unchanged_on. }
-  enough (Mem.unchanged_on P m' m'') by eauto using Mem.unchanged_on_trans.
-  exploit IH; eauto. clear ACCESS.
-  pose proof (Mem.free_can_access_block_inj_2 _ _ _ _ _ _ FREE)
-    as ACCESS.
-  eapply List.Forall_impl; try eassumption. clear - m_m' ACCESS.
-  intros [[b lo] hi] WEAK H%ACCESS; eauto.
-Qed.
-
 Lemma right_mem_injection_free_list_left':
   forall {j m1 m2 blks cp m2'}
          (RMEMINJ : right_mem_injection s j ge1 ge2 m1 m2)
@@ -1100,7 +1072,7 @@ Proof.
   split; try now destruct RMEMINJ.
   - assert (Mem.unchanged_on (loc_not_in_compartment cp m2) m2 m2')
       as UNCHANGED.
-    { exploit free_list_unchanged_on; eauto.
+    { exploit Mem.free_list_unchanged_on; eauto.
       apply Forall_forall. simpl. unfold loc_not_in_compartment.
       intros [[b lo] hi] _ m2_b _ _ ?. congruence. }
     exploit Mem.unchanged_on_inject'; eauto using partial_mem_inject.
