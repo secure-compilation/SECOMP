@@ -3615,7 +3615,19 @@ Admitted. (* With default_compartment gone, needs minor adjustments *)
 (* WIP *)
 Definition init_meminj_block (b: block): option block :=
   match Genv.invert_symbol ge1 b with
-  | Some id => Some b
+  | Some id =>
+    match Genv.find_comp_of_ident ge1 id with
+    | Some cp =>
+      match s cp with
+      | Left => None (* WIP *)
+      | Right =>
+        match Genv.find_symbol ge2 id with (* compact match *)
+        | Some b' => Some b'
+        | None => None (* should not happen *)
+        end
+      end
+    | None => None (* should not happen *)
+    end
   | None => None
   end.
 
@@ -3652,7 +3664,32 @@ Proof.
   destruct (init_meminj_block b2) eqn:b2_b2'; [| discriminate].
   injection INJ2 as -> <-.
   left.
-Admitted. (* This one should be fairly easy *)
+  unfold init_meminj_block in b1_b1', b2_b2'.
+  destruct (Genv.invert_symbol ge1 b1) as [id1 |] eqn:SYM1; [| discriminate].
+  assert (NONE1: Genv.find_symbol ge1 id1 <> None). {
+    apply Genv.invert_find_symbol in SYM1. congruence. }
+  destruct (Genv.find_symbol_find_comp _ _ NONE1) as (cp1 & COMP1).
+  setoid_rewrite COMP1 in b1_b1'.
+  destruct (s cp1) eqn:RIGHT1; [discriminate |].
+  destruct (Genv.find_symbol ge2 id1) as [b1'' |] eqn:SYM1'; [| discriminate].
+  injection b1_b1' as ->.
+  destruct (Genv.invert_symbol ge1 b2) as [id2 |] eqn:SYM2; [| discriminate].
+  (* Same processing as above, can be automated *)
+  assert (NONE2: Genv.find_symbol ge1 id2 <> None). {
+    apply Genv.invert_find_symbol in SYM2. congruence. }
+  destruct (Genv.find_symbol_find_comp _ _ NONE2) as (cp2 & COMP2).
+  setoid_rewrite COMP2 in b2_b2'.
+  destruct (s cp2) eqn:RIGHT2; [discriminate |].
+  destruct (Genv.find_symbol ge2 id2) as [b2'' |] eqn:SYM2'; [| discriminate].
+  injection b2_b2' as ->.
+  destruct (peq id1 id2) as [<- | NEQ].
+  - apply Genv.invert_find_symbol in SYM1, SYM2.
+    rewrite SYM1 in SYM2. injection SYM2 as <-.
+    contradiction.
+  - intros <-.
+    destruct (Genv.genv_vars_inj _ _ _ SYM1' SYM2').
+    contradiction.
+Qed. (* This one should be fairly easy *)
 
 Lemma initial_mem_injection m1 m2
       (MEM1: Genv.init_mem W1 = Some m1)
