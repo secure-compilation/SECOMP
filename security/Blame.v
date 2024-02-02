@@ -239,6 +239,21 @@ Section Equivalence.
       same_blks2: same_blocks ge2 m2;
     }.
 
+
+Lemma right_mem_injection_right ge1 ge2 m1 m2 b1 b2 delta :
+  right_mem_injection ge1 ge2 m1 m2 ->
+  j b1 = Some (b2, delta) ->
+  exists cp, Mem.block_compartment m2 b2 = Some cp /\ s cp = Right.
+Proof.
+  intros [DOM MI _ _ _ _ _] j_b1.
+  assert (j b1 <> None) as j_b1_def by congruence.
+  apply DOM in j_b1_def. simpl in j_b1_def.
+  destruct (Mem.block_compartment m1 b1) as [cp|] eqn:m1_b1;
+    try easy.
+  enough (Mem.can_access_block m2 b2 (Some cp)) by (simpl in *; eauto).
+  eauto using Mem.mi_inj, Mem.mi_own.
+Qed.
+
 Fixpoint remove_until_right (k: cont) :=
   match k with
   | Kstop => Kstop
@@ -1044,6 +1059,55 @@ Proof.
   - eauto using same_domain_right_free_list.
   - eauto using Mem.free_list_left_inject.
   - eauto using same_blocks_free_list.
+Qed.
+
+(* FIXME: Move to Memory *)
+Lemma free_list_unchanged_on P m blks cp m' :
+  Mem.free_list m blks cp = Some m' ->
+  Forall (fun '(b, lo, hi) =>
+            Mem.can_access_block m b (Some cp) ->
+            forall i, lo <= i < hi -> ~ P b i) blks ->
+  Mem.unchanged_on P m m'.
+Proof.
+  revert m P.
+  induction blks as [|[[b lo] hi] blks IH]; simpl.
+  { intros m P E _.
+    pose proof (Mem.unchanged_on_refl P m). congruence. }
+  rename m' into m''. intros m P FREELIST WEAK.
+  destruct (Mem.free m b lo hi cp) as [m'|] eqn:FREE; try congruence.
+  rewrite List.Forall_cons_iff in WEAK. destruct WEAK as [WEAK1 WEAK2].
+  assert (Mem.can_access_block m b (Some cp)) as ACCESS.
+  { eauto using Mem.free_can_access_block_1. }
+  specialize (WEAK1 ACCESS).
+  assert (Mem.unchanged_on P m m') as m_m'.
+  { eauto using Mem.free_unchanged_on. }
+  enough (Mem.unchanged_on P m' m'') by eauto using Mem.unchanged_on_trans.
+  exploit IH; eauto. clear ACCESS.
+  pose proof (Mem.free_can_access_block_inj_2 _ _ _ _ _ _ FREE)
+    as ACCESS.
+  eapply List.Forall_impl; try eassumption. clear - m_m' ACCESS.
+  intros [[b lo] hi] WEAK H%ACCESS; eauto.
+Qed.
+
+Lemma right_mem_injection_free_list_left':
+  forall {j m1 m2 blks cp m2'}
+         (RMEMINJ : right_mem_injection s j ge1 ge2 m1 m2)
+         (LEFT : s cp = Left)
+         (FREE2 : Mem.free_list m2 blks cp = Some m2'),
+    right_mem_injection s j ge1 ge2 m1 m2'.
+Proof.
+  intros.
+  split; try now destruct RMEMINJ.
+  - assert (Mem.unchanged_on (loc_not_in_compartment cp m2) m2 m2')
+      as UNCHANGED.
+    { exploit free_list_unchanged_on; eauto.
+      apply Forall_forall. simpl. unfold loc_not_in_compartment.
+      intros [[b lo] hi] _ m2_b _ _ ?. congruence. }
+    exploit Mem.unchanged_on_inject'; eauto using partial_mem_inject.
+    intros b1 b2 delta ofs j_b1 m2_b2.
+    exploit right_mem_injection_right; eauto.
+    intros (? & ? & ?); congruence.
+  - destruct RMEMINJ; eauto using same_blocks_free_list.
 Qed.
 
   (* AAA: [2023-08-08: This next part is not true anymore because left symbols
@@ -2290,10 +2354,44 @@ Qed.
   Lemma right_mem_injection_left_step_E0_2: forall j s1 s2 s2',
     right_mem_injection s j ge1 ge2 (memory_of s1) (memory_of s2) ->
     s |= s2 ∈ Left ->
-    step1 ge1 s2 E0 s2' ->
+    step1 ge2 s2 E0 s2' ->
     right_mem_injection s j ge1 ge2 (memory_of s1) (memory_of s2').
   Proof.
-  Admitted.
+    intros j s1 s2 s2' RMEMINJ LEFT STEP.
+    inversion STEP; subst; try eauto.
+    - (* assign *)
+      simpl in *.
+      assert (forall b delta, j b <> Some (loc, delta)).
+      { exploit assign_loc_can_access_block; eauto.
+        intros m_loc b delta j_b. destruct RMEMINJ as [DOM].
+        assert (j b <> None) as j_b_def by congruence.
+        apply DOM in j_b_def. simpl in j_b_def.
+        destruct (Mem.block_compartment (memory_of s1) b) as [cp|] eqn:s1_b;
+          try easy.
+        enough (Mem.can_access_block m loc (Some cp))
+          by (simpl in *; congruence).
+        eapply Mem.mi_own; eauto. now eapply Mem.mi_inj. }
+      exploit @right_mem_injection_assign_loc_outside; eauto.
+    - (* builtin *)
+      simpl in *.
+      exploit right_mem_injection_external_call_left'; eauto.
+      congruence.
+    - (* return 0 *)
+      simpl in *.
+      eauto using right_mem_injection_free_list_left'.
+    - (* return 1 *)
+      simpl in *.
+      eauto using right_mem_injection_free_list_left'.
+    - (* skip call *)
+      simpl in *.
+      eauto using right_mem_injection_free_list_left'.
+    - (* internal function *)
+      simpl in *.
+      eauto using right_mem_injection_function_entry1_left'.
+    - (* external call *)
+      simpl in *.
+      exploit right_mem_injection_external_call_left'; eauto.
+  Qed.
 
 Scheme statement_ind2 := Induction for statement Sort Prop
   with labeled_statements_ind2 := Induction for labeled_statements Sort Prop.
@@ -2952,8 +3050,7 @@ Qed.
     right_state_injection s j ge1 ge2 s1 s2 ->
     s |= s1 ∈ Left ->
     step1 ge1 s1 E0 s1' ->
-  exists j',
-    right_state_injection s j' ge1 ge2 s1' s2.
+    right_state_injection s j ge1 ge2 s1' s2.
   Proof.
     intros j s1 s2 s1' INJ LEFT STEP.
     inversion INJ as [? ? SIDE1 SIDE2 MEMINJ CONTINJ |]; subst; clear INJ;
@@ -2963,7 +3060,6 @@ Qed.
     intros MEMINJ'.
     exploit right_cont_injection_left_step_E0_1; eauto.
     intros CONTINJ'.
-    exists j.
     constructor; try assumption.
   Qed.
 
@@ -2971,25 +3067,19 @@ Qed.
     right_state_injection s j ge1 ge2 s1 s2 ->
     s |= s1 ∈ Left ->
     step1 ge2 s2 E0 s2' ->
-  exists j',
-    right_state_injection s j' ge1 ge2 s1 s2'.
+    right_state_injection s j ge1 ge2 s1 s2'.
   Proof.
-  Admitted. (* Symmetric *)
-
-  (* NOTE: Currently unused by proofs below (useful for E0 star?) *)
-  (* Lemma parallel_abstract_E0: forall j s1 s2 s1' s2', *)
-  (*   right_state_injection s j ge1 ge2 s1 s2 -> *)
-  (*   s |= s1 ∈ Left -> *)
-  (*   step1 ge1 s1 E0 s1' -> *)
-  (*   step1 ge2 s2 E0 s2' -> *)
-  (*   right_state_injection s j ge1 ge2 s1' s2'. *)
-  (* Proof. *)
-  (*   intros s1 s2 s1' t rs_inj is_l step1. *)
-  (*   (* inv rs_inj. *) *)
-  (*   (* - admit. *) *)
-  (*   (* - admit. (* contradiction *) *) *)
-  (*   admit. *)
-  (* Admitted. *)
+    intros j s1 s2 s2' INJ LEFT STEP.
+    inversion INJ as [? ? SIDE1 SIDE2 MEMINJ CONTINJ |]; subst; clear INJ;
+      [| exfalso; eapply state_split_contra; eassumption].
+    assert (s |= s2' ∈ Left) as SIDE2'.
+    { now apply (step_E0_same_side STEP). }
+    exploit right_mem_injection_left_step_E0_2; eauto.
+    intros MEMINJ'.
+    exploit right_cont_injection_left_step_E0_2; eauto.
+    intros CONTINJ'.
+    constructor; try assumption.
+  Qed.
 
   Lemma parallel_abstract_ev: forall j s1 s2 s1' s2' e,
     right_state_injection s j ge1 ge2 s1 s2 ->
