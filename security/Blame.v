@@ -3385,8 +3385,7 @@ Lemma parallel_abstract_star_E0: forall {j s1 s1' s1'' s2 s2' s2'' e},
   Step (semantics1 W1) s1' (e :: nil) s1'' ->
   Star (semantics1 W2) s2 E0 s2' ->
   Step (semantics1 W2) s2' (e :: nil) s2'' ->
-exists j',
-  right_state_injection s j' ge1 ge2 s1' s2'.
+  right_state_injection s j ge1 ge2 s1' s2'.
 Proof.
   intros j s1 s1' s1'' s2 s2' s2'' e INJ LEFT STAR1.
   revert j s1'' s2 s2' s2'' e INJ LEFT.
@@ -3399,23 +3398,22 @@ Proof.
       [now eauto |].
     intros -> s1' j s1'' s2''' e INJ LEFT STEP1 STEP2'.
     symmetry in SILENT. apply Eapp_E0_inv in SILENT as [-> ->].
-    exploit parallel_abstract_E0_2; eauto. intros [j' INJ'].
-    now eapply IH; eauto.
+    exploit parallel_abstract_E0_2; eauto.
   - intros -> j s1''' s2 s2' s2'' e INJ LEFT STEP1' STAR2 STEP2.
     symmetry in SILENT. apply Eapp_E0_inv in SILENT as [-> ->].
     remember E0 as t eqn:SILENT.
     revert SILENT j s1''' s2'' e INJ LEFT STEP1' STEP2.
     induction STAR2 as [s2' | s2 t1 s2' t2 s2'' ? STEP2 STAR2 IH' SILENT].
     + intros _ j s1''' s2'' e INJ LEFT STEP1' STEP2.
-      assert (exists j', right_state_injection s j' ge1 ge2 s1' s2')
-        as [j' INJ'] by (eapply parallel_abstract_E0_1; eauto).
+      assert (right_state_injection s j ge1 ge2 s1' s2')
+        as INJ' by (eapply parallel_abstract_E0_1; eauto).
       apply (step_E0_same_side STEP1) in LEFT.
       exact (IH eq_refl _ _ _ _ _ _
                INJ' LEFT STEP1' (star_refl _ _ _) STEP2).
     + intros -> j s1''' s2''' e INJ LEFT STEP1' STEP2'.
       symmetry in SILENT. apply Eapp_E0_inv in SILENT as [-> ->].
-      assert (exists j', right_state_injection s j' ge1 ge2 s1 s2')
-        as [j' INJ'] by (eapply parallel_abstract_E0_2; eauto).
+      assert (right_state_injection s j ge1 ge2 s1 s2')
+        as INJ' by (eapply parallel_abstract_E0_2; eauto).
       exact (IH'
                STEP1 STAR1 IH eq_refl
                _ _ _ _
@@ -3434,7 +3432,7 @@ exists j',
 Proof.
   intros j s1.
   destruct (state_split_decidable s1) as [LEFT | RIGHT].
-  - intros; eapply parallel_abstract_star_E0; eassumption.
+  - intros; eauto using parallel_abstract_star_E0.
   - intros; eapply parallel_concrete_star_E0; eassumption.
 Qed.
 
