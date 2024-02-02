@@ -891,6 +891,17 @@ Qed.
       exploit external_call_can_access_block; eauto.
   Qed.
 
+  Lemma init_mem_same_blocks (p: program) m1
+        (MEM: Genv.init_mem p = Some m1):
+    same_blocks (globalenv p) m1.
+  Proof.
+    intros b cp COMP.
+    unfold Genv.find_comp_of_block in COMP.
+    destruct Genv.find_def eqn:DEF; [| discriminate].
+    injection COMP as <-.
+    exact (Genv.init_mem_find_def _ _ MEM DEF).
+  Qed.
+
   (** *)
 
   Lemma public_symbol_preserved:
@@ -3601,6 +3612,64 @@ Lemma blame_last_comp_star p s1 t s2:
 Proof.
 Admitted. (* With default_compartment gone, needs minor adjustments *)
 
+(* WIP *)
+Definition init_meminj_block (b: block): option block :=
+  match Genv.invert_symbol ge1 b with
+  | Some id => Some b
+  | None => None
+  end.
+
+Definition init_meminj: meminj :=
+  fun b =>
+    match init_meminj_block b with
+    | Some b' => Some (b', 0)
+    | None => None
+    end.
+
+(* Genv.initmem_inject *)
+Lemma delta_zero_inject m1 m2
+      (MEM1: Genv.init_mem W1 = Some m1)
+      (MEM2: Genv.init_mem W2 = Some m2):
+  Mem.inject init_meminj m1 m2.
+Admitted.
+
+Lemma delta_zero_init_meminj:
+  Mem.delta_zero init_meminj.
+Proof.
+  unfold init_meminj. intros loc loc' delta INJ.
+  destruct init_meminj_block; [| discriminate].
+  injection INJ as <- <-.
+  reflexivity.
+Qed.
+
+Lemma meminj_injective_init_meminj:
+  Mem.meminj_injective init_meminj.
+Proof.
+  unfold init_meminj.
+  intros b1 b2 b1' b2' ofs1 ofs2 b1_b2 INJ1 INJ2.
+  destruct (init_meminj_block b1) eqn:b1_b1'; [| discriminate].
+  injection INJ1 as -> <-.
+  destruct (init_meminj_block b2) eqn:b2_b2'; [| discriminate].
+  injection INJ2 as -> <-.
+  left.
+Admitted. (* This one should be fairly easy *)
+
+Lemma initial_mem_injection m1 m2
+      (MEM1: Genv.init_mem W1 = Some m1)
+      (MEM2: Genv.init_mem W2 = Some m2):
+  right_mem_injection s init_meminj ge1 ge2 m1 m2.
+Proof.
+  unfold init_meminj.
+  constructor.
+  - admit.
+  - apply delta_zero_inject; assumption.
+  - apply delta_zero_init_meminj.
+  - admit.
+  - apply meminj_injective_init_meminj.
+  - apply init_mem_same_blocks; assumption.
+  - apply init_mem_same_blocks; assumption.
+Admitted.
+
 (* - Related to old [partialize_partition]
    - We may want to be more explicit about the initial injection *)
 Lemma initial_state_injection s1 s2 :
@@ -3611,12 +3680,16 @@ Lemma initial_state_injection s1 s2 :
 Proof.
   intros [b1 main1 m1 ge1 MEM1 MAINSYM1 MAINBLOCK1 MAINTYPE1]
          [b2 main2 m2 ge2 MEM2 MAINSYM2 MAINBLOCK2 MAINTYPE2].
-  assert (exists j,
-            right_mem_injection s j Simulation.ge1 Simulation.ge2 m1 m2)
-    as (j & RMEMINJ). {
-    admit. }
-  assert (RCONTINJ: right_cont_injection s j Kstop Kstop) by constructor.
-  assert (VALINJ: Val.inject_list j nil nil) by constructor.
+  exists init_meminj.
+  assert (RMEMINJ := initial_mem_injection _ _ MEM1 MEM2).
+  (* assert (exists j, *)
+  (*           right_mem_injection s j Simulation.ge1 Simulation.ge2 m1 m2) *)
+  (*   as (j & RMEMINJ). { *)
+  (*   clear s1 s2 b1 b2 main1 main2 *)
+  (*         MAINSYM1 MAINSYM2 MAINBLOCK1 MAINBLOCK2 MAINTYPE1 MAINTYPE2. *)
+  (*   admit. } *)
+  assert (RCONTINJ: right_cont_injection s init_meminj Kstop Kstop) by constructor.
+  assert (VALINJ: Val.inject_list init_meminj nil nil) by constructor.
   rewrite (match_prog_main _ _ _ match_W1_W2) in MAINSYM2.
   assert (MAINSYM1': Genv.find_symbol ge1 (prog_main W1) <> None) by congruence.
   assert (COMP1 := Genv.find_funct_ptr_find_comp_of_block _ _ MAINBLOCK1).
@@ -3644,7 +3717,6 @@ Proof.
       inversion MATCHGLOBS as [f1 f2 MATCHDEFS EQ1 EQ2 |];
         subst f1 f2; clear MATCHGLOBS.
       inversion MATCHDEFS; reflexivity. }
-    exists j.
     apply LeftControl; try easy.
     simpl. setoid_rewrite <- COMP2. assumption.
   - apply Genv.find_funct_ptr_iff in MAINBLOCK1, MAINBLOCK2.
@@ -3652,7 +3724,6 @@ Proof.
     setoid_rewrite <- MATCHDEFS in MAINBLOCK2.
     unfold ge1 in MAINBLOCK1. setoid_rewrite MAINBLOCK1 in MAINBLOCK2.
     injection MAINBLOCK2 as <-.
-    exists j.
     apply RightControl; try assumption.
     constructor; assumption.
 Admitted. (* Standard assumption about initial states, easy but
