@@ -3638,13 +3638,6 @@ Definition init_meminj: meminj :=
     | None => None
     end.
 
-(* Genv.initmem_inject *)
-Lemma delta_zero_inject m1 m2
-      (MEM1: Genv.init_mem W1 = Some m1)
-      (MEM2: Genv.init_mem W2 = Some m2):
-  Mem.inject init_meminj m1 m2.
-Admitted.
-
 Lemma delta_zero_init_meminj:
   Mem.delta_zero init_meminj.
 Proof.
@@ -3654,42 +3647,104 @@ Proof.
   reflexivity.
 Qed.
 
+(* This one should always be fairly easy *)
 Lemma meminj_injective_init_meminj:
   Mem.meminj_injective init_meminj.
 Proof.
   unfold init_meminj.
-  intros b1 b2 b1' b2' ofs1 ofs2 b1_b2 INJ1 INJ2.
-  destruct (init_meminj_block b1) eqn:b1_b1'; [| discriminate].
+  intros b1 b2 b' b'' ofs1 ofs2 b1_b2 INJ1 INJ2.
+  destruct (init_meminj_block b1) eqn:b1_b'; [| discriminate].
   injection INJ1 as -> <-.
-  destruct (init_meminj_block b2) eqn:b2_b2'; [| discriminate].
+  destruct (init_meminj_block b2) eqn:b2_b'; [| discriminate].
   injection INJ2 as -> <-.
-  left.
-  unfold init_meminj_block in b1_b1', b2_b2'.
+  left. intros <-.
+  unfold init_meminj_block in b1_b', b2_b'.
   destruct (Genv.invert_symbol ge1 b1) as [id1 |] eqn:SYM1; [| discriminate].
   assert (NONE1: Genv.find_symbol ge1 id1 <> None). {
     apply Genv.invert_find_symbol in SYM1. congruence. }
   destruct (Genv.find_symbol_find_comp _ _ NONE1) as (cp1 & COMP1).
-  setoid_rewrite COMP1 in b1_b1'.
+  setoid_rewrite COMP1 in b1_b'.
   destruct (s cp1) eqn:RIGHT1; [discriminate |].
-  destruct (Genv.find_symbol ge2 id1) as [b1'' |] eqn:SYM1'; [| discriminate].
-  injection b1_b1' as ->.
+  destruct (Genv.find_symbol ge2 id1) as [b1' |] eqn:SYM1'; [| discriminate].
+  injection b1_b' as ->.
   destruct (Genv.invert_symbol ge1 b2) as [id2 |] eqn:SYM2; [| discriminate].
   (* Same processing as above, can be automated *)
   assert (NONE2: Genv.find_symbol ge1 id2 <> None). {
     apply Genv.invert_find_symbol in SYM2. congruence. }
   destruct (Genv.find_symbol_find_comp _ _ NONE2) as (cp2 & COMP2).
-  setoid_rewrite COMP2 in b2_b2'.
+  setoid_rewrite COMP2 in b2_b'.
   destruct (s cp2) eqn:RIGHT2; [discriminate |].
-  destruct (Genv.find_symbol ge2 id2) as [b2'' |] eqn:SYM2'; [| discriminate].
-  injection b2_b2' as ->.
+  destruct (Genv.find_symbol ge2 id2) as [b2' |] eqn:SYM2'; [| discriminate].
+  injection b2_b' as ->.
   destruct (peq id1 id2) as [<- | NEQ].
   - apply Genv.invert_find_symbol in SYM1, SYM2.
     rewrite SYM1 in SYM2. injection SYM2 as <-.
     contradiction.
-  - intros <-.
-    destruct (Genv.genv_vars_inj _ _ _ SYM1' SYM2').
+  - destruct (Genv.genv_vars_inj _ _ _ SYM1' SYM2').
     contradiction.
-Qed. (* This one should be fairly easy *)
+Qed.
+
+(* Genv.initmem_inject *)
+Lemma inject_init_meminj m1 m2
+      (MEM1: Genv.init_mem W1 = Some m1)
+      (MEM2: Genv.init_mem W2 = Some m2):
+  Mem.inject init_meminj m1 m2.
+Proof.
+  constructor.
+  - constructor.
+    + unfold init_meminj, init_meminj_block.
+      intros b1 b2 delta ofs k p INJ PERM.
+      destruct (Genv.invert_symbol ge1 b1) as [id |] eqn:SYM1; [| discriminate].
+      assert (NONE: Genv.find_symbol ge1 id <> None). {
+        apply Genv.invert_find_symbol in SYM1. congruence. }
+      destruct (Genv.find_symbol_find_comp _ _ NONE) as (cp & COMP).
+      setoid_rewrite COMP in INJ.
+      destruct (s cp) eqn:RIGHT; [discriminate |].
+      destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [| discriminate].
+      injection INJ as -> <-.
+      (* Post standard processing *)
+      (* apply Genv.invert_find_symbol in SYM2. *)
+      apply Genv.find_symbol_find_def_inversion in SYM2 as ([f | v] & SYM2).
+      * apply Genv.invert_find_symbol in SYM1.
+        apply Genv.find_symbol_find_def_inversion in SYM1 as ([f1 | v1] & SYM1).
+        -- destruct (Genv.init_mem_characterization_gen _ MEM1 _ SYM1) as (_ & PERM1).
+           specialize (PERM1 _ _ _ PERM) as [-> ->].
+           apply Genv.find_funct_ptr_iff in SYM2.
+           destruct (Genv.init_mem_characterization_2 _ _ SYM2 MEM2) as (PERM2 & _).
+        admit.
+      * apply Genv.find_var_info_iff in SYM2.
+        destruct (Genv.init_mem_characterization _ _ SYM2 MEM2)
+          as (? & ? & ? & ?).
+        admit.
+    + admit.
+    + admit.
+    + admit.
+  - intros b VALID. unfold init_meminj, init_meminj_block.
+    destruct Genv.invert_symbol as [id |] eqn:SYM; [| reflexivity].
+    apply Genv.invert_find_symbol in SYM.
+    assert (CONTRA := Genv.find_symbol_not_fresh _ _ MEM1 SYM).
+    contradiction.
+  - unfold init_meminj, init_meminj_block. intros b b' delta INJ.
+    destruct (Genv.invert_symbol ge1 b) as [id |] eqn:SYM1; [| discriminate].
+    assert (NONE: Genv.find_symbol ge1 id <> None). {
+      apply Genv.invert_find_symbol in SYM1. congruence. }
+    destruct (Genv.find_symbol_find_comp _ _ NONE) as (cp & COMP).
+    setoid_rewrite COMP in INJ.
+    destruct (s cp) eqn:RIGHT; [discriminate |].
+    destruct (Genv.find_symbol ge2 id) as [b'' |] eqn:SYM2; [| discriminate].
+    injection INJ as -> <-.
+    exact (Genv.find_symbol_not_fresh _ _ MEM2 SYM2).
+  - intros b1 b1' delta1 b2 b2' delta2 ofs1 ofs2 b1_b2 INJ1 INJ2 PERM1 PERM2.
+    left.
+    exploit meminj_injective_init_meminj; eauto; [].
+    intros [b1'_b2' | CONTRA]; [assumption |].
+    rewrite (delta_zero_init_meminj _ _ _ INJ1) in CONTRA.
+    rewrite (delta_zero_init_meminj _ _ _ INJ2) in CONTRA.
+    contradiction.
+  - admit.
+  - intros b1 ofs b2 delta k p INJ PERM.
+    admit.
+Admitted.
 
 Lemma initial_mem_injection m1 m2
       (MEM1: Genv.init_mem W1 = Some m1)
@@ -3699,7 +3754,7 @@ Proof.
   unfold init_meminj.
   constructor.
   - admit.
-  - apply delta_zero_inject; assumption.
+  - apply inject_init_meminj; assumption.
   - apply delta_zero_init_meminj.
   - admit.
   - apply meminj_injective_init_meminj.
