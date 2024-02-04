@@ -702,7 +702,8 @@ Instance has_comp_globdef F V {CF: has_comp F} : has_comp (globdef F V) :=
 
 Definition agr_comps {F V: Type} {CF: has_comp F} (pol: Policy.t) (defs: list (ident * globdef F V)): Prop :=
   Forall
-    (fun idg => pol.(Policy.policy_comps) ! (fst idg) = Some (comp_of (snd idg)))
+    (fun idg => forall cp, pol.(Policy.policy_comps) ! (fst idg) = Some cp ->
+                   (comp_of (snd idg)) ⊆ cp)
     defs.
   (* /\ *)
   (* forall (id: ident) (cp: compartment), *)
@@ -904,7 +905,7 @@ Proof.
       simpl; constructor.
       * simpl.
         apply has_comp_transl_partial_match_contextual with (g := fun id => id) in Cf.
-        now rewrite Cf in H; eauto.
+        now erewrite Cf in H; eauto.
       * now eauto.
     + destruct transf_globvar eqn:?; try congruence; simpl in *.
       monadInv defs'_OK.

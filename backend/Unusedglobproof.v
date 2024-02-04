@@ -26,6 +26,12 @@ Module ISP := FSetProperties.Properties(IS).
 (** The transformed program is obtained from the original program
   by keeping only the global definitions that belong to a given
   set [u] of names.  *)
+Definition match_pol (pol tpol: Policy.t): Prop :=
+  (forall id cp, tpol.(Policy.policy_comps) ! id = Some cp ->
+            pol.(Policy.policy_comps) ! id = Some cp) /\
+    pol.(Policy.policy_export) = tpol.(Policy.policy_export) /\
+    pol.(Policy.policy_import) = tpol.(Policy.policy_import).
+
 
 Record match_prog_1 (u: IS.t) (p tp: program) : Prop := {
   match_prog_main:
@@ -33,6 +39,7 @@ Record match_prog_1 (u: IS.t) (p tp: program) : Prop := {
   match_prog_public:
     tp.(prog_public) = p.(prog_public);
   match_prog_pol:
+    (* match_pol p.(prog_pol) tp.(prog_pol); *)
     tp.(prog_pol) = p.(prog_pol);
   match_prog_def:
     forall id,
@@ -430,22 +437,23 @@ Qed.
 
 End TRANSFORMATION.
 
-(* TECHNICAL: dependent types get in the way of the destruct! But
- otherwise the proof should work just as before! *)
 Theorem transf_program_match:
   forall p tp, transform_program p = OK tp -> match_prog p tp.
 Proof.
   unfold transform_program; intros p tp TR.
   set (pm := (prog_defmap p)) in *.
-  Fail destruct (used_globals p pm) as [u|] eqn:U; try discriminate.
-  (* destruct (IS.for_all (global_defined p pm) u) eqn:DEF; inv TR. subst pm. *)
-  (* exists u; split. *)
-  (* apply used_globals_valid; auto. *)
-  (* constructor; simpl; auto. *)
-  (* intros. unfold prog_defmap; simpl. apply filter_globdefs_map. *)
-  (* apply filter_globdefs_unique_names. *)
-Admitted.
-
+  revert TR.
+  generalize (Unusedglob.transform_program_obligation_1 p).
+  simpl. fold pm. intros a TR.
+  destruct (used_globals p pm) as [u|] eqn:U; try discriminate.
+  destruct (IS.for_all (global_defined p pm) u) eqn:DEF; inv TR. subst pm.
+  exists u; split.
+  apply used_globals_valid; auto.
+  constructor; simpl; auto.
+  unfold match_pol; eauto.
+  intros. unfold prog_defmap; simpl. apply filter_globdefs_map.
+  apply filter_globdefs_unique_names.
+Qed.
 
 (** * Semantic preservation *)
 
@@ -594,7 +602,8 @@ Proof.
 Qed.
 
 Lemma globals_symbols_inject:
-  forall j cp, meminj_preserves_globals j -> symbols_inject j (Genv.to_senv ge) (Genv.to_senv tge) cp.
+  forall j cp, meminj_preserves_globals j ->
+          symbols_inject j (Genv.to_senv ge) (Genv.to_senv tge) cp.
 Proof.
   intros.
   assert (E1: Genv.genv_public ge = p.(prog_public)).
@@ -1600,15 +1609,16 @@ Proof.
   rewrite PTree.gcombine; auto.
 Qed.
 
-(* Technical result: proving this result requires doing complicated unfoldings and
- case analysis, but the result should hold *)
-Lemma link_match_pol:
-  forall p1 p2 tp1 tp2 p,
-  link p1 p2 = Some p ->
-  match_prog p1 tp1 -> match_prog p2 tp2 ->
-  link_pol tp1 tp2 (prog_pol tp1) (prog_pol tp2) = link_pol p1 p2 (prog_pol p1) (prog_pol p2).
-Proof.
-Admitted.
+(* (* Technical result: proving this result requires doing complicated unfoldings and *)
+(*  case analysis, but the result should hold *) *)
+(* Lemma link_match_pol: *)
+(*   forall p1 p2 tp1 tp2 p, *)
+(*   link p1 p2 = Some p -> *)
+(*   match_prog p1 tp1 -> match_prog p2 tp2 -> *)
+(*   link_pol tp1 tp2 (prog_pol tp1) (prog_pol tp2) = *)
+(*     link_pol p1 p2 (prog_pol p1) (prog_pol p2). *)
+(* Proof. *)
+(* Admitted. *)
 
 Theorem link_match_program:
   forall p1 p2 tp1 tp2 p,
@@ -1617,7 +1627,7 @@ Theorem link_match_program:
   exists tp, link tp1 tp2 = Some tp /\ match_prog p tp.
 Proof.
   intros.
-  exploit link_match_pol; eauto. intros link_pol_match.
+  (* exploit link_match_pol; eauto. intros link_pol_match. clear link_pol_match. *)
   destruct H0 as (used1 & A1 & B1). destruct H1 as (used2 & A2 & B2).
   destruct (link_prog_inv _ _ _ H) as (U & V & W' & W).
   assert (yes : Policy.eqb (prog_pol tp1) (prog_pol tp2) = true).
@@ -1643,7 +1653,7 @@ Proof.
 + rewrite W. constructor; simpl; intros.
 * eapply match_prog_main; eauto.
 * rewrite (match_prog_public _ _ _ B1), (match_prog_public _ _ _ B2). auto.
-* eauto.
+* eapply match_prog_pol; eauto.
 * rewrite ! prog_defmap_elements, !PTree.gcombine by auto.
   rewrite (match_prog_def _ _ _ B1 id), (match_prog_def _ _ _ B2 id).
   rewrite ISF.union_b.

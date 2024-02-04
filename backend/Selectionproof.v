@@ -1691,7 +1691,7 @@ Global Instance TransfSelectionLink : TransfLink match_prog.
 Proof.
   red; intros. destruct (link_linkorder _ _ _ H) as [LO1 LO2].
   eapply link_match_program; eauto.
-  exact comp_match_fundef.
+  (* exact comp_match_fundef. *)
   intros. elim H3. intros hf [A1 B1]. elim H4; intros hf' [A2 B2].
 Local Transparent Linker_fundef.
   simpl in *. destruct f1, f2; simpl in *; monadInv B1; monadInv B2; simpl.

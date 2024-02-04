@@ -1798,7 +1798,7 @@ Qed.
 
 (** ** Linking function definitions *)
 
-Definition link_fundef {F: Type} {CF: has_comp F} (fd1 fd2: fundef F) :=
+Definition link_fundef {F: Type} (fd1 fd2: fundef F) :=
   match fd1, fd2 with
   | Internal _, Internal _ => None
   | External ef1 targs1 tres1 cc1, External ef2 targs2 tres2 cc2 =>
@@ -1822,13 +1822,13 @@ Definition link_fundef {F: Type} {CF: has_comp F} (fd1 fd2: fundef F) :=
       end
   end.
 
-Inductive linkorder_fundef {F: Type} {CF: has_comp F}: fundef F -> fundef F -> Prop :=
+Inductive linkorder_fundef {F: Type}: fundef F -> fundef F -> Prop :=
   | linkorder_fundef_refl: forall fd,
       linkorder_fundef fd fd
   | linkorder_fundef_ext_int: forall f id sg targs tres cc,
       linkorder_fundef (External (EF_external id sg) targs tres cc) (Internal f).
 
-Global Program Instance Linker_fundef (F: Type) {CF: has_comp F}: Linker (fundef F) := {
+Global Program Instance Linker_fundef (F: Type): Linker (fundef F) := {
   link := link_fundef;
   linkorder := linkorder_fundef
 }.
@@ -1850,6 +1850,21 @@ Next Obligation.
 + destruct (external_function_eq e e0 && typelist_eq t t1 && type_eq t0 t2 && calling_convention_eq c c0) eqn:A; inv H.
   InvBooleans. subst. split; constructor.
 Defined.
+
+Global Instance Linker_Side_fundef {F: Type}: Linker_Side (Linker_fundef F).
+Proof.
+  intros f f0 g. simpl. unfold link_fundef.
+  destruct f, f0; try congruence.
+  - destruct e; try congruence.
+    intros H; inv H; eauto.
+  - destruct e; try congruence.
+    intros H; inv H; eauto.
+  - destruct external_function_eq; simpl; try congruence;
+      destruct typelist_eq; simpl; try congruence;
+      destruct type_eq; simpl; try congruence;
+      destruct calling_convention_eq; simpl; try congruence.
+    intros H; inv H; eauto.
+Qed.
 
 Remark link_fundef_either:
   forall (F: Type) {CF: has_comp F} (f1 f2 f: fundef F), link f1 f2 = Some f -> f = f1 \/ f = f2.
@@ -2012,7 +2027,7 @@ Local Transparent Linker_program.
                link (program_of_program tp1) (program_of_program tp2) = Some tpp
              /\ Linking.match_program (fun ctx f tf => match_fundef f tf) eq pp tpp).
   { eapply Linking.link_match_program.
-  - exact comp_match_fundef.
+  (* - exact comp_match_fundef. *)
   - intros. exploit link_match_fundef; eauto. intros (tf & A & B). exists tf; auto.
   - intros.
     Local Transparent Linker_types.

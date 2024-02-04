@@ -142,7 +142,29 @@ Program Definition transform_program (p: program) : res program :=
         Error (msg "Unusedglob: reference to undefined global")
   end.
 Next Obligation.
-  (* Technical result that relies on the fact there are less
-   definitions in the new prog_defs than before, so one should be able
-   to use the prog_agr_comps from the program [p] *)
-Admitted.
+  unfold agr_comps.
+  apply Forall_forall.
+  intros [id gd] IN.
+  assert (H: In (id, gd) (rev (prog_defs p))).
+  { clear Heq_anonymous.
+    revert used IN.
+    assert (G: ~ In (id, gd) (nil: list (ident * globdef fundef unit))) by eauto.
+    revert G.
+    generalize (nil: list (ident * globdef fundef unit)) as acc.
+    generalize (rev (prog_defs p)).
+    induction l.
+    - intros acc NOTIN; eauto.
+    - intros acc NOTIN used IN. simpl in IN.
+      destruct (Classical_Prop.classic (a = (id, gd))); try now left.
+      right.
+      destruct a as [id' gd']; destruct (IS.mem id' used) eqn:is_used; simpl in IN.
+      + eapply IHl with (acc := (id', gd') :: acc).
+        * intros contra. inv contra; eauto.
+        * eauto.
+      + eapply IHl with (acc := acc); eauto. }
+  rewrite in_rev in H. rewrite rev_involutive in H.
+  pose proof (prog_agr_comps p) as G.
+  unfold agr_comps in G.
+  rewrite Forall_forall in G.
+  now eapply G.
+Qed.
