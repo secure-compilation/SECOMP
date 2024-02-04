@@ -3684,6 +3684,50 @@ Proof.
     contradiction.
 Qed.
 
+
+Lemma init_mem_characterization_rel:
+  forall (p1 p2: program) id gd m1 m2 b1 b2,
+    In (id, gd) (prog_defs p1) ->
+    In (id, gd) (prog_defs p2) ->
+    Genv.init_mem p1 = Some m1 ->
+    Genv.init_mem p2 = Some m2 ->
+    Genv.find_symbol (globalenv p1) id = Some b1 ->
+    Genv.find_symbol (globalenv p2) id = Some b2 ->
+    Genv.find_def (globalenv p1) b1 = Some gd ->
+    Genv.find_def (globalenv p2) b2 = Some gd ->
+    (forall ofs k p, Mem.perm m1 b1 ofs k p = Mem.perm m2 b2 ofs k p) /\
+    True.
+Admitted.
+
+Lemma init_mem_characterization_rel' sp (pr1 pr2: program) id gd m1 m2 b1 b2
+    (MATCH: match_prog sp pr1 pr2)
+    (PROGDEFS1: In (id, gd) (prog_defs pr1))
+    (PROGDEFS2: In (id, gd) (prog_defs pr2))
+    (MEM1: Genv.init_mem pr1 = Some m1)
+    (MEM2: Genv.init_mem pr2 = Some m2)
+    (SYM1: Genv.find_symbol (globalenv pr1) id = Some b1)
+    (SYM2: Genv.find_symbol (globalenv pr2) id = Some b2)
+    (DEF1: Genv.find_def (globalenv pr1) b1 = Some gd)
+    (DEF2: Genv.find_def (globalenv pr2) b2 = Some gd):
+    (forall ofs k p, Mem.perm m1 b1 ofs k p = Mem.perm m2 b2 ofs k p) /\
+    True.
+Proof.
+  change (In _ _)
+    with (In (id, gd) (AST.prog_defs (program_of_program pr1)))
+    in PROGDEFS1.
+  change (In _ _)
+    with (In (id, gd) (AST.prog_defs (program_of_program pr2)))
+    in PROGDEFS2.
+  destruct (Genv.find_symbol_exists _ _ _ PROGDEFS1) as (b1' & SYM1').
+  destruct (Genv.find_symbol_exists _ _ _ PROGDEFS2) as (b2' & SYM2').
+  setoid_rewrite SYM1 in SYM1'. injection SYM1' as <-.
+  setoid_rewrite SYM2 in SYM2'. injection SYM2' as <-.
+  assert (DEFMAP1 := prog_defmap_norepet _ _ _ (match_prog_unique1 _ _ _ MATCH) PROGDEFS1).
+  assert (DEFMAP2 := prog_defmap_norepet _ _ _ (match_prog_unique2 _ _ _ MATCH) PROGDEFS2).
+  apply Genv.find_def_symbol in DEFMAP1 as (b1' & SYM1' & DEF1').
+  apply Genv.find_def_symbol in DEFMAP2 as (b2' & SYM2' & DEF2').
+Abort.
+
 (* Genv.initmem_inject *)
 Lemma inject_init_meminj m1 m2
       (MEM1: Genv.init_mem W1 = Some m1)
@@ -3704,8 +3748,18 @@ Proof.
       injection INJ as -> <-.
       (* Post standard processing *)
       (* apply Genv.invert_find_symbol in SYM2. *)
-      apply Genv.find_symbol_find_def_inversion in SYM2 as ([f | v] & SYM2).
-      * apply Genv.invert_find_symbol in SYM1.
+      apply Genv.invert_find_symbol in SYM1.
+      destruct (Genv.find_symbol_find_def_inversion _ _ SYM1) as (gd1 & DEF1).
+      assert (CHAR1 := Genv.init_mem_characterization_gen _ MEM1 _ DEF1).
+      destruct (Genv.find_symbol_find_def_inversion _ _ SYM2) as (gd2 & DEF2).
+      assert (gd1 = gd2) as <- by admit.
+      assert (CHAR2 := Genv.init_mem_characterization_gen _ MEM2 _ DEF2).
+      destruct gd1 as [f1 | v1]; destruct gd2 as [f2 | v2].
+      * destruct CHAR1 as [_ CHAR1]. specialize (CHAR1 _ _ _ PERM) as [-> ->].
+        admit.
+      * admit. (* contra *)
+      * admit. (* contra *)
+      * admit.
         apply Genv.find_symbol_find_def_inversion in SYM1 as ([f1 | v1] & SYM1).
         -- destruct (Genv.init_mem_characterization_gen _ MEM1 _ SYM1) as (_ & PERM1).
            specialize (PERM1 _ _ _ PERM) as [-> ->].
