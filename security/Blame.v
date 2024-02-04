@@ -3641,6 +3641,20 @@ Definition init_meminj: meminj :=
 Lemma same_domain_right_init_meminj m1
       (MEM1: Genv.init_mem W1 = Some m1):
   same_domain_right s init_meminj m1.
+Proof.
+  intros b. split.
+  - unfold init_meminj, init_meminj_block. intros INJ.
+    (* Slight variation on standard processing *)
+    destruct (Genv.invert_symbol ge1 b) as [id |] eqn:SYM; [| contradiction].
+    assert (NONE: Genv.find_symbol ge1 id <> None). {
+      apply Genv.invert_find_symbol in SYM. congruence. }
+    destruct (Genv.find_symbol_find_comp _ _ NONE) as (cp & COMP).
+    setoid_rewrite COMP in INJ.
+    destruct (s cp) eqn:RIGHT; [contradiction |].
+    destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [| contradiction].
+    (* injection INJ as -> <-. *)
+    admit.
+  - intros RIGHT. admit.
 Admitted. (* Should be easy *)
 
 Lemma delta_zero_init_meminj:
@@ -3690,20 +3704,8 @@ Proof.
 Qed.
 
 
-Lemma init_mem_characterization_rel:
-  forall (p1 p2: program) id gd m1 m2 b1 b2,
-    In (id, gd) (prog_defs p1) ->
-    In (id, gd) (prog_defs p2) ->
-    Genv.init_mem p1 = Some m1 ->
-    Genv.init_mem p2 = Some m2 ->
-    Genv.find_symbol (globalenv p1) id = Some b1 ->
-    Genv.find_symbol (globalenv p2) id = Some b2 ->
-    Genv.find_def (globalenv p1) b1 = Some gd ->
-    Genv.find_def (globalenv p2) b2 = Some gd ->
-    (forall ofs k p, Mem.perm m1 b1 ofs k p = Mem.perm m2 b2 ofs k p) /\
-    True.
-Abort.
-
+(* These characterizations need to be a bit more general to be
+   independent of init_meminj in particular *)
 Lemma init_mem_characterization_rel sp (pr1 pr2: program) id gd m1 m2 b1 b2
     (MATCH: match_prog sp pr1 pr2)
     (PROGDEFS1: In (id, gd) (prog_defs pr1))
@@ -3720,6 +3722,8 @@ Lemma init_mem_characterization_rel sp (pr1 pr2: program) id gd m1 m2 b1 b2
   (forall ofs, memval_inject init_meminj (ZMap.get ofs (Mem.mem_contents m1) !! b1)
                                          (ZMap.get ofs (Mem.mem_contents m2) !! b2)).
 Proof.
+  (* From PROGDEFS and MEM we can get SYM and DEF, although without
+     these there is no explicit link between blocks *)
   change (In _ _)
     with (In (id, gd) (AST.prog_defs (program_of_program pr1)))
     in PROGDEFS1.
@@ -3734,25 +3738,62 @@ Proof.
   assert (DEFMAP2 := prog_defmap_norepet _ _ _ (match_prog_unique2 _ _ _ MATCH) PROGDEFS2).
   apply Genv.find_def_symbol in DEFMAP1 as (b1' & SYM1' & DEF1').
   apply Genv.find_def_symbol in DEFMAP2 as (b2' & SYM2' & DEF2').
+  setoid_rewrite SYM1 in SYM1'. injection SYM1' as <-.
+  setoid_rewrite SYM2 in SYM2'. injection SYM2' as <-.
+  clear DEF1' DEF2'.
   (* So those four we can get, but we need to tie id and gd to b1, b2 *)
 Abort.
 
 Lemma init_mem_characterization_rel sp (pr1 pr2: program) id gd m1 m2 b1 b2
-    (MATCH: match_prog sp pr1 pr2)
-    (* (PROGDEFS1: In (id, gd) (prog_defs pr1)) *)
-    (* (PROGDEFS2: In (id, gd) (prog_defs pr2)) *)
-    (MEM1: Genv.init_mem pr1 = Some m1)
-    (MEM2: Genv.init_mem pr2 = Some m2)
-    (SYM1: Genv.find_symbol (globalenv pr1) id = Some b1)
-    (SYM2: Genv.find_symbol (globalenv pr2) id = Some b2)
-    (DEF1: Genv.find_def (globalenv pr1) b1 = Some gd)
-    (DEF2: Genv.find_def (globalenv pr2) b2 = Some gd):
+      (MATCH: match_prog sp pr1 pr2)
+      (* (PROGDEFS1: In (id, gd) (prog_defs pr1)) *)
+      (* (PROGDEFS2: In (id, gd) (prog_defs pr2)) *)
+      (MEM1: Genv.init_mem pr1 = Some m1)
+      (MEM2: Genv.init_mem pr2 = Some m2)
+      (SYM1: Genv.find_symbol (globalenv pr1) id = Some b1)
+      (SYM2: Genv.find_symbol (globalenv pr2) id = Some b2)
+      (DEF1: Genv.find_def (globalenv pr1) b1 = Some gd)
+      (DEF2: Genv.find_def (globalenv pr2) b2 = Some gd):
   (forall ofs k p, Mem.perm m1 b1 ofs k p <-> Mem.perm m2 b2 ofs k p) /\
   (forall cp, Mem.can_access_block m1 b1 cp <-> Mem.can_access_block m2 b2 cp) /\
   (* Any restrictions on gvar_init and init_data, esp. Init_addrof? *)
   (forall ofs, memval_inject init_meminj (ZMap.get ofs (Mem.mem_contents m1) !! b1)
                                          (ZMap.get ofs (Mem.mem_contents m2) !! b2)).
 Admitted.
+
+Definition globdef_blocks p1 p2 '(id, gd) b1 b2 :=
+  Genv.find_symbol (globalenv p1) id = Some b1 /\
+  Genv.find_symbol (globalenv p2) id = Some b2 /\
+  Genv.find_def (globalenv p1) b1 = Some gd /\
+  Genv.find_def (globalenv p2) b2 = Some gd.
+
+Lemma globdef_right id gd1 gd2 b1 b2 cp
+      (COMP : Genv.find_comp_of_ident (Genv.globalenv W1) id = Some cp)
+      (SYM1 : Genv.find_symbol ge1 id = Some b1)
+      (SYM2 : Genv.find_symbol ge2 id = Some b2)
+      (DEF1 : Genv.find_def (Genv.globalenv W1) b1 = Some gd1)
+      (DEF2 : Genv.find_def (Genv.globalenv W2) b2 = Some gd2):
+  gd1 = gd2.
+Admitted.
+
+Lemma init_mem_characterization_rel' sp (pr1 pr2: program) id gd m1 m2
+      (MATCH: match_prog sp pr1 pr2)
+      (PROGDEFS1: In (id, gd) (prog_defs pr1))
+      (PROGDEFS2: In (id, gd) (prog_defs pr2))
+      (MEM1: Genv.init_mem pr1 = Some m1)
+      (MEM2: Genv.init_mem pr2 = Some m2):
+  (forall b1 b2 ofs k p,
+     globdef_blocks pr1 pr2 (id, gd) b1 b2 ->
+     Mem.perm m1 b1 ofs k p <-> Mem.perm m2 b2 ofs k p) /\
+  (forall b1 b2 cp,
+     globdef_blocks pr1 pr2 (id, gd) b1 b2 ->
+     Mem.can_access_block m1 b1 cp <-> Mem.can_access_block m2 b2 cp) /\
+  (* Any restrictions on gvar_init and init_data, esp. Init_addrof? *)
+  (forall b1 b2 ofs,
+     globdef_blocks pr1 pr2 (id, gd) b1 b2 ->
+     memval_inject init_meminj (ZMap.get ofs (Mem.mem_contents m1) !! b1)
+                               (ZMap.get ofs (Mem.mem_contents m2) !! b2)).
+Abort.
 
 (* Genv.initmem_inject *)
 Lemma inject_init_meminj m1 m2
@@ -3777,7 +3818,8 @@ Proof.
       apply Genv.invert_find_symbol in SYM1.
       destruct (Genv.find_symbol_find_def_inversion _ _ SYM1) as (gd1 & DEF1).
       destruct (Genv.find_symbol_find_def_inversion _ _ SYM2) as (gd2 & DEF2).
-      assert (gd1 = gd2) as <- by admit; rename gd1 into gd. (* still missing *)
+      assert (gd1 = gd2) as <- by (eapply globdef_right; eassumption).
+      rename gd1 into gd.
       destruct (init_mem_characterization_rel
                   _ _ _ _ _ _ _ _ _
                   match_W1_W2 MEM1 MEM2 SYM1 SYM2 DEF1 DEF2)
@@ -3797,7 +3839,8 @@ Proof.
       apply Genv.invert_find_symbol in SYM1.
       destruct (Genv.find_symbol_find_def_inversion _ _ SYM1) as (gd1 & DEF1).
       destruct (Genv.find_symbol_find_def_inversion _ _ SYM2) as (gd2 & DEF2).
-      assert (gd1 = gd2) as <- by admit; rename gd1 into gd. (* still missing *)
+      assert (gd1 = gd2) as <- by (eapply globdef_right; eassumption).
+      rename gd1 into gd.
       destruct (init_mem_characterization_rel
                   _ _ _ _ _ _ _ _ _
                   match_W1_W2 MEM1 MEM2 SYM1 SYM2 DEF1 DEF2)
@@ -3829,7 +3872,8 @@ Proof.
       apply Genv.invert_find_symbol in SYM1.
       destruct (Genv.find_symbol_find_def_inversion _ _ SYM1) as (gd1 & DEF1).
       destruct (Genv.find_symbol_find_def_inversion _ _ SYM2) as (gd2 & DEF2).
-      assert (gd1 = gd2) as <- by admit; rename gd1 into gd. (* still missing *)
+      assert (gd1 = gd2) as <- by (eapply globdef_right; eassumption).
+      rename gd1 into gd.
       destruct (init_mem_characterization_rel
                   _ _ _ _ _ _ _ _ _
                   match_W1_W2 MEM1 MEM2 SYM1 SYM2 DEF1 DEF2)
@@ -3883,13 +3927,14 @@ Proof.
     apply Genv.invert_find_symbol in SYM1.
     destruct (Genv.find_symbol_find_def_inversion _ _ SYM1) as (gd1 & DEF1).
     destruct (Genv.find_symbol_find_def_inversion _ _ SYM2) as (gd2 & DEF2).
-    assert (gd1 = gd2) as <- by admit; rename gd1 into gd. (* still missing *)
+    assert (gd1 = gd2) as <- by (eapply globdef_right; eassumption).
+    rename gd1 into gd.
     destruct (init_mem_characterization_rel
                 _ _ _ _ _ _ _ _ _
                 match_W1_W2 MEM1 MEM2 SYM1 SYM2 DEF1 DEF2)
       as (PERMS & _).
     left. apply PERMS. rewrite Z.add_0_r in PERM. assumption.
-Admitted.
+Qed.
 
 Lemma symbols_inject_init_meminj:
   symbols_inject init_meminj ge1 ge2.
