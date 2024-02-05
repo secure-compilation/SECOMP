@@ -3053,6 +3053,36 @@ Qed.
     constructor; try assumption.
   Qed.
 
+  Lemma eventval_match_inject_inv j v ty v1 v2 :
+    eventval_match ge1 v ty v1 ->
+    eventval_match ge2 v ty v2 ->
+    not_ptr v1 ->
+    not_ptr v2 ->
+    Val.inject j v1 v2.
+  Proof.
+    intros match1 match2 not_ptr1 not_ptr2.
+    inv match1; inv match2; simpl in *; solve [easy|constructor].
+  Qed.
+
+  Lemma eventval_list_match_inject_inv j vl tyargs vargs1 vargs2 :
+    eventval_list_match ge1 vl tyargs vargs1 ->
+    eventval_list_match ge2 vl tyargs vargs2 ->
+    Forall not_ptr vargs1 ->
+    Forall not_ptr vargs2 ->
+    Val.inject_list j vargs1 vargs2.
+  Proof.
+    intros match1 match2 not_ptr1 not_ptr2.
+    revert vargs2 match2 not_ptr2.
+    induction match1; intros vargs2 match2 not_ptr2;
+    inv match2;
+    repeat match goal with
+    | H : Forall _ nil |- _ => inv H
+    | H : Forall _ (_ :: _) |- _ => inv H
+    end;
+    constructor;
+    eauto using eventval_match_inject_inv.
+  Qed.
+
   Lemma parallel_abstract_ev: forall j s1 s2 s1' s2' e,
     right_state_injection s j ge1 ge2 s1 s2 ->
     s |= s1 ∈ Left ->
@@ -3090,20 +3120,7 @@ Qed.
                 specialize (NO_CROSS_PTR0 H21).
                 rewrite H3 in H10.
                 injection H10 as <- <- <-.
-                { (* Lemma *)
-                  clear -H1 H8 H13 H24 NO_CROSS_PTR NO_CROSS_PTR0.
-                  revert al al0 tyargs vargs vargs0 H1 H8 H13 H24 NO_CROSS_PTR NO_CROSS_PTR0.
-                  induction vl; intros.
-                  - inv H13. inv H24. constructor.
-                  - inv H13. inv H24.
-                    destruct tyargs; [discriminate |].
-                    inv H2. inv H4.
-                    inv H1. inv H8.
-                    inv NO_CROSS_PTR. inv NO_CROSS_PTR0.
-                    constructor.
-                    + inv H3; inv H6; try constructor.
-                      inv H1.
-                    + eapply IHvl; eassumption. }
+                now eauto using eventval_list_match_inject_inv.
       + destruct (ec_no_crossing (external_call_spec ef) _ _ _ _ _ _ H6).
       + destruct (ec_no_crossing (external_call_spec ef) _ _ _ _ _ _ H4).
       + inv EV.
