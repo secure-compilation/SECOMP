@@ -32,16 +32,16 @@ Extended requirements for automated testing support:
 
 ## Structure
 
-This source code distribution comprises the contents of the following branches,
-which we are currently working to merge into a single release.
+Our current development is currently split into four branches, that we are working on
+merging into a single release:
 
- - `correctness`: compiler correctness proof and testing infrastructure (main)
+ - `ccs-submission`: compiler correctness proof and testing infrastructure (main)
 
  - `backtranslation`: proof of back-translation
 
- - `recomposition`: proof of recomposition
+ - `recomp-ccs`: proof of recomposition
 
- - `blame`: proof of blame
+ - `secure-compilation`: proof of blame
 
 ## Building
 
@@ -53,9 +53,9 @@ CompCert build process, e.g., by going to that folder and running:
 
 When this step succeeds, running `make proof` runs the proofs and `make` builds the sub-project.
 
-## `correctness`
+## Main branch: `ccs-submission`
 
-This folder contains the extension of CompCert to compartments, which involved
+This branch contains the extension of CompCert to compartments, which involved
 updating the languages, passes, and correctness proofs. This extension can be
 built into a compiler binary that can be used to compile compartmentalized C
 programs that can be executed. It also includes the automated testing
@@ -95,9 +95,9 @@ make test_backtranslation
 
 Running the `test_backtranslation` binary performs the testing.
 
-## `backtranslation`
+## Back-translation branch: `backtranslation`
 
-This folder contains the recomposition proof. Use `make proof` to replay the proof.
+This branch contains the recomposition proof. Use `make proof` to replay the proof.
 
 This proof is complete and done in a slightly more complex setting where system calls
 can belong to particular compartments. Also some recent changes to the mainline
@@ -119,9 +119,9 @@ back-translation, starting from the intermediate language: `ir_to_clight`.
 The `security/BacktranslationProof2.v` contains the complete proof from assembly
 to Clight: `backtranslation_proof`.
 
-## `recomposition`
+## Recomposition branch: `recomp-ccs`
 
-This folder contains the recomposition proof. Use `make proof` to replay the proof.
+This branch contains the recomposition proof. Use `make proof` to replay the proof.
 
 The proof is mostly complete. Some recent changes to the mainline `correctness`
 branch are in the process of being integrated.
@@ -143,9 +143,9 @@ There are a few admitted low-level lemmas, which are of two types:
   is already implemented in the main branch and we will solve these lemmas
   by merging.
 
-## `blame`
+## Blame branch: `secure-compilation`
 
-This folder contains the blame proof. Use `make proof` to replay the proof.
+This branch contains the blame proof. Use `make proof` to replay the proof.
 
 The high-level structure of the proof is complete.  Some recent changes to the
 mainline `correctness` branch are in the process of being integrated.
