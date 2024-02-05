@@ -62,14 +62,10 @@ programs that can be executed. It also includes the automated testing
 infrastructure employed to validate the assumptions and expected behavior of the
 back-translation function.
 
-The updated correctness proof is basically complete and can be
+The updated correctness proof is complete and can be
 found in file `driver/Compiler.v`, theorems
-`transf_c_program_correct` and `separate_transf_c_program_correct`,
-and only depends on CompCert's axioms, our axioms regarding compartments,
-and a couple of very small technical lemmas that are assumed.
-- `Unusedglob.transform_program_obligation_1`
-- `Unusedglobproof.transf_program_match`
-- `Unusedglobproof.link_match_pol`
+`transf_c_program_correct` and `separate_transf_c_program_correct`, and only
+depends on CompCert's existing axioms, and similar axioms regarding compartments.
 
 The following files include the most interesting changes:
  - Compartment model: file `common/AST.v`, modules `COMPTYPE` and `COMP`.
