@@ -497,6 +497,19 @@ Proof.
   - assumption.
 Qed.
 
+Lemma right_state_injection_same_side_right: forall {j ge1 ge2 s1 s2 sd},
+  right_state_injection s j ge1 ge2 s1 s2 ->
+  s |= s1 ∈ sd ->
+  s |= s2 ∈ sd.
+Proof.
+  intros j ge1 ge2 s1 s2 sd RINJ SIDE.
+  destruct sd; inv RINJ.
+  - assumption.
+  - exfalso. eapply state_split_contra; eauto.
+  - exfalso. eauto using state_split_contra.
+  - assumption.
+Qed.
+
 Lemma right_cont_injection_call_cont: forall j k1 k2,
   right_cont_injection s j k1 k2 ->
   right_cont_injection s j (call_cont k1) (call_cont k2).
@@ -881,9 +894,9 @@ Qed.
     eapply alloc_variables_can_access_block_1; eauto.
   Qed.
 
-  Lemma same_blocks_step1 s1 s1'
+  Lemma same_blocks_step1 s1 t s1'
     (BLKS : same_blocks ge1 (memory_of s1))
-    (STEP : step1 ge1 s1 E0 s1'):
+    (STEP : step1 ge1 s1 t s1'):
     same_blocks ge1 (memory_of s1').
   Proof.
     inv STEP; auto.
@@ -2285,13 +2298,13 @@ Qed.
 
   (** Sub-invariant lemmas, mostly on injections *)
 
-  Lemma right_mem_injection_left_step_E0_1: forall j s1 s2 s1',
+  Lemma right_mem_injection_left_step_1: forall j s1 t s2 s1',
     right_mem_injection s j ge1 ge2 (memory_of s1) (memory_of s2) ->
     s |= s1 ∈ Left ->
-    step1 ge1 s1 E0 s1' ->
+    step1 ge1 s1 t s1' ->
     right_mem_injection s j ge1 ge2 (memory_of s1') (memory_of s2).
   Proof.
-    intros j s1 s2 s1' RMEMINJ LEFT STEP.
+    intros j s1 t s2 s1' RMEMINJ LEFT STEP.
     inversion STEP; subst; try eauto.
     - (* assign *)
       simpl in *.
@@ -2323,13 +2336,13 @@ Qed.
       exploit right_mem_injection_external_call_left; eauto.
   Qed.
 
-  Lemma right_mem_injection_left_step_E0_2: forall j s1 s2 s2',
+  Lemma right_mem_injection_left_step_2: forall j s1 s2 t s2',
     right_mem_injection s j ge1 ge2 (memory_of s1) (memory_of s2) ->
     s |= s2 ∈ Left ->
-    step1 ge2 s2 E0 s2' ->
+    step1 ge2 s2 t s2' ->
     right_mem_injection s j ge1 ge2 (memory_of s1) (memory_of s2').
   Proof.
-    intros j s1 s2 s2' RMEMINJ LEFT STEP.
+    intros j s1 s2 t s2' RMEMINJ LEFT STEP.
     inversion STEP; subst; try eauto.
     - (* assign *)
       simpl in *.
@@ -2471,12 +2484,13 @@ Proof.
     + eapply H0; eauto.
 Qed.
 
-Lemma remove_until_right_step: forall ge s1 s1',
+Lemma remove_until_right_step: forall ge s1 t s1',
   s |= s1 ∈ Left ->
-  step1 ge s1 E0 s1' ->
+  s |= s1' ∈ Left ->
+  step1 ge s1 t s1' ->
   remove_until_right s (cont_of s1') = remove_until_right s (cont_of s1).
 Proof.
-  intros ge s1 s1' LEFT STEP. inv STEP; auto; simpl.
+  intros ge s1 t s1' LEFT LEFT' STEP. inv STEP; auto; simpl.
   - rewrite LEFT. reflexivity.
   - symmetry. rewrite remove_until_right_call_cont. reflexivity.
   - symmetry. rewrite remove_until_right_call_cont. reflexivity.
@@ -2486,26 +2500,29 @@ Proof.
     destruct (Pos.eqb_spec (comp_of f) cp) as [<- | NEQ].
     + rewrite LEFT. reflexivity.
     + contradiction.
+    + simpl in LEFT'. now rewrite LEFT'.
 Qed.
 
-Lemma right_cont_injection_left_step_E0_1: forall j s1 s2 s1',
+Lemma right_cont_injection_left_step_left_1: forall j s1 t s2 s1',
   right_cont_injection s j (remove_until_right s (cont_of s1)) (remove_until_right s (cont_of s2)) ->
+  step1 ge1 s1 t s1' ->
   s |= s1 ∈ Left ->
-  step1 ge1 s1 E0 s1' ->
+  s |= s1' ∈ Left ->
   right_cont_injection s j (remove_until_right s (cont_of s1')) (remove_until_right s (cont_of s2)).
 Proof.
-  intros j s1 s2 s1' RCONTINJ LEFT STEP.
-  now rewrite (remove_until_right_step _ _ _ LEFT STEP).
+  intros j s1 t s2 s1' RCONTINJ STEP LEFT LEFT'.
+  now rewrite (remove_until_right_step _ _ _ _ LEFT LEFT' STEP).
 Qed.
 
-Lemma right_cont_injection_left_step_E0_2: forall j s1 s2 s2',
+Lemma right_cont_injection_left_step_left_2: forall j s1 s2 t s2',
   right_cont_injection s j (remove_until_right s (cont_of s1)) (remove_until_right s (cont_of s2)) ->
+  step1 ge2 s2 t s2' ->
   s |= s2 ∈ Left ->
-  step1 ge2 s2 E0 s2' ->
+  s |= s2' ∈ Left ->
   right_cont_injection s j (remove_until_right s (cont_of s1)) (remove_until_right s (cont_of s2')).
 Proof.
-  intros j s1 s2 s2' RCONTINJ LEFT STEP.
-  now rewrite (remove_until_right_step _ _ _ LEFT STEP).
+  intros j s1 s2 t s2' RCONTINJ STEP LEFT LEFT'.
+  now rewrite (remove_until_right_step _ _ _ _ LEFT LEFT' STEP).
 Qed.
 
   (* WIP *)
@@ -3018,37 +3035,36 @@ Qed.
       inv STEP2. inv H0.
   Qed.
 
-  Lemma parallel_abstract_E0_1: forall j s1 s2 s1',
+  Lemma parallel_abstract_1: forall j s1 t s2 s1',
     right_state_injection s j ge1 ge2 s1 s2 ->
+    step1 ge1 s1 t s1' ->
     s |= s1 ∈ Left ->
-    step1 ge1 s1 E0 s1' ->
+    s |= s1' ∈ Left ->
     right_state_injection s j ge1 ge2 s1' s2.
   Proof.
-    intros j s1 s2 s1' INJ LEFT STEP.
+    intros j s1 t s2 s1' INJ LEFT LEFT' STEP.
     inversion INJ as [? ? SIDE1 SIDE2 MEMINJ CONTINJ |]; subst; clear INJ;
-      [| exfalso; eapply state_split_contra; eassumption].
-    apply (step_E0_same_side STEP) in LEFT.
-    exploit right_mem_injection_left_step_E0_1; eauto.
+    [| exfalso; eauto using state_split_contra].
+    exploit right_mem_injection_left_step_1; eauto.
     intros MEMINJ'.
-    exploit right_cont_injection_left_step_E0_1; eauto.
+    exploit right_cont_injection_left_step_left_1; eauto.
     intros CONTINJ'.
     constructor; try assumption.
   Qed.
 
-  Lemma parallel_abstract_E0_2: forall j s1 s2 s2',
+  Lemma parallel_abstract_2: forall j s1 s2 t s2',
     right_state_injection s j ge1 ge2 s1 s2 ->
+    step1 ge2 s2 t s2' ->
     s |= s1 ∈ Left ->
-    step1 ge2 s2 E0 s2' ->
+    s |= s2' ∈ Left ->
     right_state_injection s j ge1 ge2 s1 s2'.
   Proof.
-    intros j s1 s2 s2' INJ LEFT STEP.
+    intros j s1 s2 t s2' INJ STEP LEFT LEFT'.
     inversion INJ as [? ? SIDE1 SIDE2 MEMINJ CONTINJ |]; subst; clear INJ;
-      [| exfalso; eapply state_split_contra; eassumption].
-    assert (s |= s2' ∈ Left) as SIDE2'.
-    { now apply (step_E0_same_side STEP). }
-    exploit right_mem_injection_left_step_E0_2; eauto.
+      [| exfalso; eauto using state_split_contra].
+    exploit right_mem_injection_left_step_2; eauto.
     intros MEMINJ'.
-    exploit right_cont_injection_left_step_E0_2; eauto.
+    exploit right_cont_injection_left_step_left_2; eauto.
     intros CONTINJ'.
     constructor; try assumption.
   Qed.
@@ -3125,10 +3141,16 @@ Qed.
       + destruct (ec_no_crossing (external_call_spec ef) _ _ _ _ _ _ H4).
       + inv EV.
     - (* step_builtin *)
-      inv INJ; [| congruence]. inv STEP2.
+      inv INJ; [| congruence]. simpl in *. inv STEP2.
       + inv EV.
         destruct (ec_no_crossing (external_call_spec ef) _ _ _ _ _ _ H0).
-      + (* matching case *) admit.
+      + simpl in *.
+        exploit (ec_mem_inject (external_call_spec ef)); eauto.
+        * exploit same_symb; eauto.
+        * exploit partial_mem_inject; eauto.
+        * (* AAA: Could this follow from general properties of evel_exprlist? *)
+          assert (Val.inject_list j vargs vargs0) by admit. eauto.
+        * admit.
       + admit.
       + inv EV.
         destruct (ec_no_crossing (external_call_spec ef) _ _ _ _ _ _ H0).
@@ -3262,12 +3284,17 @@ Qed.
   exists j',
     right_state_injection s j' ge1 ge2 s1' s2'.
   Proof.
-    intros j s1 s2 s1' s2' t RINJ LEFT STEP1 STEP2.
+    intros j s1 s2 s1' s2' t RINJ LEFT1 STEP1 STEP2.
     destruct t as [| e1 [| e2 t]].
-    - pose proof (parallel_abstract_E0_1 _ _ _ _ RINJ LEFT STEP1) as RINJ'.
-      apply (step_E0_same_side STEP1) in LEFT.
-      pose proof (parallel_abstract_E0_2 _ _ _ _ RINJ' LEFT STEP2) as RINJ''.
-      exists j. assumption.
+    - assert (s |= s1' ∈ Left) as LEFT1'.
+      { now apply (step_E0_same_side STEP1). }
+      assert (s |= s2 ∈ Left) as LEFT2.
+      { eauto using right_state_injection_same_side_right. }
+      assert (s |= s2' ∈ Left) as LEFT2'.
+      { now apply (step_E0_same_side STEP2). }
+      pose proof (parallel_abstract_1 _ _ _ _ _ RINJ STEP1 LEFT1 LEFT1') as RINJ'.
+      pose proof (parallel_abstract_2 _ _ _ _ _ RINJ' STEP2 LEFT1' LEFT2') as RINJ''.
+      eauto.
     - eapply parallel_abstract_ev; eauto.
     - assert (CONTRA := sr_traces (semantics_receptive _) _ _ _ STEP1).
       inv CONTRA. inv H0.
@@ -3415,22 +3442,30 @@ Proof.
       [now eauto |].
     intros -> s1' j s1'' s2''' e INJ LEFT STEP1 STEP2'.
     symmetry in SILENT. apply Eapp_E0_inv in SILENT as [-> ->].
-    exploit parallel_abstract_E0_2; eauto.
+    exploit @right_state_injection_same_side_right; eauto. intros LEFT2.
+    assert (s |= s2' ∈ Left) as LEFT2'.
+    { apply (step_E0_same_side STEP2); eauto. }
+    exploit parallel_abstract_2; eauto.
   - intros -> j s1''' s2 s2' s2'' e INJ LEFT STEP1' STAR2 STEP2.
     symmetry in SILENT. apply Eapp_E0_inv in SILENT as [-> ->].
     remember E0 as t eqn:SILENT.
     revert SILENT j s1''' s2'' e INJ LEFT STEP1' STEP2.
     induction STAR2 as [s2' | s2 t1 s2' t2 s2'' ? STEP2 STAR2 IH' SILENT].
     + intros _ j s1''' s2'' e INJ LEFT STEP1' STEP2.
+      assert (s |= s1' ∈ Left) as LEFT1.
+      { erewrite <- step_E0_same_side; eauto. }
       assert (right_state_injection s j ge1 ge2 s1' s2')
-        as INJ' by (eapply parallel_abstract_E0_1; eauto).
-      apply (step_E0_same_side STEP1) in LEFT.
+        as INJ' by (eapply parallel_abstract_1; eauto).
       exact (IH eq_refl _ _ _ _ _ _
-               INJ' LEFT STEP1' (star_refl _ _ _) STEP2).
+               INJ' LEFT1 STEP1' (star_refl _ _ _) STEP2).
     + intros -> j s1''' s2''' e INJ LEFT STEP1' STEP2'.
       symmetry in SILENT. apply Eapp_E0_inv in SILENT as [-> ->].
+      assert (s |= s2 ∈ Left).
+      { eauto using right_state_injection_same_side_right. }
+      assert (s |= s2' ∈ Left).
+      { erewrite <- step_E0_same_side; eauto. }
       assert (right_state_injection s j ge1 ge2 s1 s2')
-        as INJ' by (eapply parallel_abstract_E0_2; eauto).
+        as INJ' by (eapply parallel_abstract_2; eauto).
       exact (IH'
                STEP1 STAR1 IH eq_refl
                _ _ _ _
