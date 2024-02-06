@@ -3099,15 +3099,71 @@ Qed.
     eauto using eventval_match_inject_inv.
   Qed.
 
-  Lemma parallel_abstract_ev: forall j s1 s2 s1' s2' e,
+  Definition event_next_compartment e :=
+    match e with
+    | Event_call _ cp _ _
+    | Event_return cp _ _ => Some cp
+    | _ => None
+    end.
+
+  Definition trace_next_compartment t :=
+    match t with
+    | e :: nil => event_next_compartment e
+    | _ => None
+    end.
+
+  Lemma step1_next_compartment: forall ge s1 t s1',
+    step1 ge s1 t s1' ->
+    match trace_next_compartment t with
+    | Some cp => s |= s1' ∈ s cp
+    | None => forall δ, s |= s1 ∈ δ -> s |= s1' ∈ δ
+    end.
+  Proof.
+    intros ge s1 t s1' STEP.
+    case STEP; simpl; clear t STEP; try solve [unfold E0; trivial; congruence].
+    - intros f optid a al k e0 le m tyargs tyres cconv vf vargs fd t.
+      intros _ _ _ _ _ _ _ TRACE. simpl.
+      case TRACE; simpl; try solve [unfold E0; congruence]; trivial.
+      unfold Genv.type_of_call.
+      intros cp cp'.
+      destruct (Pos.eqb_spec cp cp') as [->|]; congruence.
+    - intros f optid ef tyargs al k e le m vars t vres m' _ _ CALL.
+      exploit ec_no_crossing; eauto.
+      { eapply external_call_spec. }
+      destruct t as [|[] [|??]]; simpl; intuition eauto.
+    - intros ef targs tres cconv vargs k m vres t m' CALL.
+      exploit ec_no_crossing; eauto.
+      { eapply external_call_spec. }
+      destruct t as [|[] [|??]]; simpl; intuition eauto.
+    - intros v optid f e le ty cp k m t _ RET. simpl.
+      case RET; simpl; eauto.
+      intros cp1 cp2 _ _.
+      unfold Genv.type_of_call.
+      destruct (Pos.eqb_spec cp1 cp2) as [->|]; congruence.
+  Qed.
+
+  Lemma parallel_abstract_t: forall j s1 s2 s1' s2' t,
     right_state_injection s j ge1 ge2 s1 s2 ->
     s |= s1 ∈ Left ->
-    step1 ge1 s1 (e :: nil) s1' ->
-    step1 ge2 s2 (e :: nil) s2' ->
+    step1 ge1 s1 t s1' ->
+    step1 ge2 s2 t s2' ->
   exists j',
     right_state_injection s j' ge1 ge2 s1' s2'.
   Proof.
-    intros j s1 s2 s1' s2' e INJ LEFT STEP1 STEP2.
+    intros j s1 s2 s1' s2' t INJ LEFT1 STEP1 STEP2.
+    assert (s |= s2 ∈ Left) as LEFT2.
+    { eauto using right_state_injection_same_side_right. }
+    pose proof (step1_next_compartment _ _ _ _ STEP1) as EV1.
+    pose proof (step1_next_compartment _ _ _ _ STEP2) as EV2.
+    simpl trace_next_compartment in *.
+    assert (trace_next_compartment t = None \/
+            exists cp, trace_next_compartment t = Some cp)
+      as [E|[cp E]]; try rewrite E in *.
+    { destruct trace_next_compartment; eauto. }
+    { eauto 6 using parallel_abstract_1, parallel_abstract_2. }
+    destruct (s cp);
+    eauto 6 using parallel_abstract_1, parallel_abstract_2.
+    destruct t as [|e [|??]]; simpl in E; try congruence.
     inv STEP1.
     - (* step_call *)
       inv EV. inv STEP2.
@@ -3275,30 +3331,6 @@ Qed.
                 simpl. rewrite PTree.gso; [| assumption].
                 specialize (H20 id' v' GET). assumption.
   Admitted.
-
-  Lemma parallel_abstract_t: forall j s1 s2 s1' s2' t,
-    right_state_injection s j ge1 ge2 s1 s2 ->
-    s |= s1 ∈ Left ->
-    step1 ge1 s1 t s1' ->
-    step1 ge2 s2 t s2' ->
-  exists j',
-    right_state_injection s j' ge1 ge2 s1' s2'.
-  Proof.
-    intros j s1 s2 s1' s2' t RINJ LEFT1 STEP1 STEP2.
-    destruct t as [| e1 [| e2 t]].
-    - assert (s |= s1' ∈ Left) as LEFT1'.
-      { now apply (step_E0_same_side STEP1). }
-      assert (s |= s2 ∈ Left) as LEFT2.
-      { eauto using right_state_injection_same_side_right. }
-      assert (s |= s2' ∈ Left) as LEFT2'.
-      { now apply (step_E0_same_side STEP2). }
-      pose proof (parallel_abstract_1 _ _ _ _ _ RINJ STEP1 LEFT1 LEFT1') as RINJ'.
-      pose proof (parallel_abstract_2 _ _ _ _ _ RINJ' STEP2 LEFT1' LEFT2') as RINJ''.
-      eauto.
-    - eapply parallel_abstract_ev; eauto.
-    - assert (CONTRA := sr_traces (semantics_receptive _) _ _ _ STEP1).
-      inv CONTRA. inv H0.
-  Qed.
 
 (* Lemma parallel_concrete p1 p2 scs1 scs2: *)
 (*   left_side s p1 -> (* use definitions from RSC.v *) *)
