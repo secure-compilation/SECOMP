@@ -3198,8 +3198,7 @@ Qed.
     s |= s1 ∈ Left ->
     step1 ge1 s1 t s1' ->
     step1 ge2 s2 t s2' ->
-  exists j',
-    right_state_injection s j' ge1 ge2 s1' s2'.
+    right_state_injection s j ge1 ge2 s1' s2'.
   Proof.
     intros j s1 s2 s1' s2' t INJ LEFT1 STEP1 STEP2.
     assert (s |= s2 ∈ Left) as LEFT2.
@@ -3213,9 +3212,9 @@ Qed.
             exists cp, trace_next_compartment t = Some cp)
       as [E|[cp E]]; try rewrite E in *.
     { destruct trace_next_compartment; eauto. }
-    { eauto 6 using parallel_abstract_1, parallel_abstract_2. }
+    { eauto using parallel_abstract_1, parallel_abstract_2. }
     destruct (s cp);
-    eauto 6 using parallel_abstract_1, parallel_abstract_2.
+    eauto using parallel_abstract_1, parallel_abstract_2.
     (* Now, we know that s1' and s2' are on the right. *)
     rename EV1 into RIGHT1'. rename EV2 into RIGHT2'.
     assert (trace_next_compartment t <> None) as DEF by congruence.
@@ -3265,7 +3264,7 @@ Qed.
         destruct Ptrofs.eq_dec in vf2_fd2; try congruence.
         assert (fd1 = fd2) as <- by (eapply find_funct_ptr_right; eauto).
         assert (tyargs2 = tyargs1) as -> by congruence.
-        exists j. apply RightControl; trivial.
+        apply RightControl; trivial.
         apply inject_callstates; trivial.
         * apply right_cont_injection_kcall_left; try assumption.
         * eauto using eventval_list_match_inject_inv.
@@ -3306,7 +3305,7 @@ Qed.
         specialize (cross1 cross). specialize (cross2 cross).
         assert (Val.inject j v1 v2) as VALINJ.
         { inv H12; try easy; inv H22; try easy. }
-        exists j. apply RightControl; eauto.
+        apply RightControl; eauto.
         apply inject_states; try assumption.
         destruct optid1 as [id|]; try assumption.
         intros id' v' GET. simpl in *.
