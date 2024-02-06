@@ -2174,9 +2174,50 @@ Qed.
         * split; eauto.
           rewrite <- Mem.block_compartment_valid_block in block_m1'_b.
           eapply Mem.mi_freeblocks in block_m1'_b; eauto.
-    - admit.
-    - admit.
-    - admit.
+    - intros b b' delta j'_b.
+      destruct (j b) as [[b'' delta'']|] eqn:j_b.
+      + exploit D0; eauto. intros ->.
+        exploit incr; eauto. congruence.
+      + exploit j_j'_sep; eauto. intros [invalid_b _].
+        enough (Mem.valid_block m1' b) as valid_b.
+        { exploit comps_m1'; eauto.
+          intros (? & ? & ?). congruence. }
+        apply Classical_Prop.NNPP. (* FIXME *) intros contra.
+        exploit Mem.mi_freeblocks; eauto. congruence.
+    - (* Right now, this cannot be proved because it contradicts
+         same_domain_right. *)
+      admit.
+    - intros b1 b2 b1' b2' ofs1 ofs2 b1_b2 j'_b1 j'_b2.
+      destruct (j b1) as [[b1'' ofs1']|] eqn:j_b1.
+      + exploit incr; eauto. intros E.
+        assert (b1'' = b1' /\ ofs1' = ofs1) as [-> ->]
+            by (split; congruence).
+        clear E.
+        destruct (j b2) as [[b2'' ofs2']|] eqn:j_b2.
+        * exploit incr; eauto. intros E.
+          assert (b2'' = b2' /\ ofs2' = ofs2) as [-> ->]
+              by (split; congruence).
+          eauto.
+        * left. intros <-.
+          exploit j_j'_sep; eauto. intros [_ contra].
+          apply contra. eauto using Mem.mi_mappedblocks.
+      + destruct (j b2) as [[b2'' ofs2']|] eqn:j_b2.
+        * exploit incr; eauto. intros E.
+          assert (b2'' = b2' /\ ofs2' = ofs2) as [-> ->]
+              by (split; congruence).
+          left. intros <-.
+          exploit j_j'_sep; eauto. intros [_ contra].
+          apply contra. eauto using Mem.mi_mappedblocks.
+        * assert (~ Mem.valid_block m1 b1 /\ ~ Mem.valid_block m2 b1')
+            as [invalid_b1 invalid_b1'].
+          { eauto. }
+          assert (~ Mem.valid_block m1 b2 /\ ~ Mem.valid_block m2 b2')
+            as [invalid_b2 invalid_b2'].
+          { eauto. }
+          (* FIXME: It seems that we are stuck now. Apparently, it is possible
+             for an extended injection to allow two blocks to alias if they do
+             not have the appropriate permissions. *)
+          admit.
     - admit.
     - admit.
   Admitted. (* The axiomatization of external calls needs to be
