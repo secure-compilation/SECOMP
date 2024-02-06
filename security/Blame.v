@@ -391,8 +391,8 @@ Definition cont_of (st: state): cont :=
   | Returnstate _ k _ _ _ => k
   end.
 
-Variant right_state_injection (ge1 ge2: genv): state -> state -> Prop :=
-| LeftControl: forall st1 st2,
+Variant right_state_injection (ge1 ge2: genv) (st1 st2: state) : Prop :=
+| LeftControl:
     (* program (left) has control *)
     s |= st1 ∈ Left ->
     s |= st2 ∈ Left ->
@@ -405,7 +405,7 @@ Variant right_state_injection (ge1 ge2: genv): state -> state -> Prop :=
     right_cont_injection (remove_until_right (cont_of st1)) (remove_until_right (cont_of st2)) ->
 
     right_state_injection ge1 ge2 st1 st2
-| RightControl: forall st1 st2,
+| RightControl:
     (* context (right) has control *)
     s |= st1 ∈ Right ->
     s |= st2 ∈ Right ->
@@ -2541,9 +2541,9 @@ Qed.
           right_state_injection s j' ge1 ge2 s1' s2'.
   Proof.
     intros j s1 s2 s1' t rs_inj is_r1 step1.
-    destruct rs_inj as [? | st1 st2 _ is_r2 right_exec_inj].
+    destruct rs_inj as [| _ is_r2 right_exec_inj].
     { (* contradiction *)
-      destruct st1; simpl in *; congruence. }
+      destruct s1; simpl in *; congruence. }
     inv step1; inv right_exec_inj.
     + (* step_assign *)
       rename m into m1. rename m' into m1'.
@@ -3043,7 +3043,7 @@ Qed.
     right_state_injection s j ge1 ge2 s1' s2.
   Proof.
     intros j s1 t s2 s1' INJ LEFT LEFT' STEP.
-    inversion INJ as [? ? SIDE1 SIDE2 MEMINJ CONTINJ |]; subst; clear INJ;
+    inversion INJ as [SIDE1 SIDE2 MEMINJ CONTINJ |]; subst; clear INJ;
     [| exfalso; eauto using state_split_contra].
     exploit right_mem_injection_left_step_1; eauto.
     intros MEMINJ'.
@@ -3060,7 +3060,7 @@ Qed.
     right_state_injection s j ge1 ge2 s1 s2'.
   Proof.
     intros j s1 s2 t s2' INJ STEP LEFT LEFT'.
-    inversion INJ as [? ? SIDE1 SIDE2 MEMINJ CONTINJ |]; subst; clear INJ;
+    inversion INJ as [SIDE1 SIDE2 MEMINJ CONTINJ |]; subst; clear INJ;
       [| exfalso; eauto using state_split_contra].
     exploit right_mem_injection_left_step_2; eauto.
     intros MEMINJ'.
@@ -3142,6 +3142,57 @@ Qed.
       destruct (Pos.eqb_spec cp1 cp2) as [->|]; congruence.
   Qed.
 
+  Lemma ec_no_crossing' ef ge vargs m t vres m' :
+    external_call ef ge vargs m t vres m' ->
+    trace_next_compartment t = None.
+  Proof.
+    intros SEM.
+    exploit ec_no_crossing; eauto.
+    { eauto using external_call_spec. }
+    now destruct t as [|[] [|??]].
+  Qed.
+
+  Lemma call_trace_cons_inv F V (ge: Genv.t F V) cp cp' vf vargs ty t :
+    call_trace ge cp cp' vf vargs ty t ->
+    t <> E0 ->
+    exists b ofs id vl,
+      t = Event_call cp cp' id vl :: nil /\
+      vf = Vptr b ofs /\
+      cp <> cp' /\
+      Genv.invert_symbol ge b = Some id /\
+      eventval_list_match ge vl ty vargs.
+  Proof.
+    intros ct; inv ct; try congruence; eauto.
+    intros _.
+    unfold Genv.type_of_call in *.
+    destruct (Pos.eqb_spec cp cp') as [->|?]; try congruence.
+    eauto 10.
+  Qed.
+
+  Lemma return_trace_cons_inv F V (ge: Genv.t F V) cp cp' vret tyret t :
+    return_trace ge cp cp' vret tyret t ->
+    t <> E0 ->
+    exists res,
+      t = Event_return cp cp' res :: nil /\
+      cp <> cp' /\
+      eventval_match ge res (proj_rettype tyret) vret.
+  Proof.
+    intros rt; inv rt; try congruence; eauto.
+    intros _.
+    unfold Genv.type_of_call in *.
+    destruct (Pos.eqb_spec cp cp') as [->|?]; try congruence.
+    eauto 10.
+  Qed.
+
+  Lemma call_trace_return_trace F V (ge1 ge2: Genv.t F V)
+    cp cp' cp'' cp''' vf vargs ty t vret tyret :
+    call_trace ge1 cp cp' vf vargs ty t ->
+    return_trace ge2 cp'' cp''' vret tyret t ->
+    t = E0.
+  Proof.
+    intros H1 H2. inv H1; trivial. inv H2; trivial.
+  Qed.
+
   Lemma parallel_abstract_t: forall j s1 s2 s1' s2' t,
     right_state_injection s j ge1 ge2 s1 s2 ->
     s |= s1 ∈ Left ->
@@ -3155,7 +3206,9 @@ Qed.
     { eauto using right_state_injection_same_side_right. }
     pose proof (step1_next_compartment _ _ _ _ STEP1) as EV1.
     pose proof (step1_next_compartment _ _ _ _ STEP2) as EV2.
-    simpl trace_next_compartment in *.
+    (* If the next states remain on the left (which we can check by analyzing
+       the value of trace_next_compartment), then the goal follows by a simple
+       application of the previous parallel_abstract lemmas. *)
     assert (trace_next_compartment t = None \/
             exists cp, trace_next_compartment t = Some cp)
       as [E|[cp E]]; try rewrite E in *.
@@ -3163,174 +3216,106 @@ Qed.
     { eauto 6 using parallel_abstract_1, parallel_abstract_2. }
     destruct (s cp);
     eauto 6 using parallel_abstract_1, parallel_abstract_2.
-    destruct t as [|e [|??]]; simpl in E; try congruence.
-    inv STEP1.
+    (* Now, we know that s1' and s2' are on the right. *)
+    rename EV1 into RIGHT1'. rename EV2 into RIGHT2'.
+    assert (trace_next_compartment t <> None) as DEF by congruence.
+    clear cp E.
+    destruct INJ as [_ _ MEMINJ CONTINJ|];
+      try solve [exfalso; eauto using state_split_contra].
+    revert STEP2 DEF MEMINJ CONTINJ LEFT1 RIGHT1'.
+    case STEP1; clear STEP1 s1 s1' t;
+      try solve [ simpl; congruence
+                | intros; exploit ec_no_crossing'; eauto; congruence ].
     - (* step_call *)
-      inv EV. inv STEP2.
+      intros f1 optid1 a1 al1 k1 e1 le1 m1 tyargs1 tyres1 cconv1 vf1 vargs1
+        fd1 t _ _ _ vf1_fd1 type_fd1 _ not_ptr1
+        trace_t1 STEP2 DEF MEMINJ CONTINJ LEFT1 RIGHT1'.
+      simpl in LEFT1, RIGHT1', MEMINJ, CONTINJ.
+      assert (Genv.type_of_call (comp_of f1) (comp_of fd1) =
+                Genv.CrossCompartmentCall) as cross1.
+      { unfold Genv.type_of_call.
+        destruct (Pos.eqb_spec (comp_of f1) (comp_of fd1));
+        congruence. }
+      specialize (not_ptr1 cross1). clear cross1.
+      revert DEF MEMINJ CONTINJ trace_t1 LEFT2 RIGHT2'.
+      case STEP2; clear STEP2 s2 s2' t;
+        try solve [ simpl; congruence
+                  | intros; exploit ec_no_crossing'; eauto; congruence ].
       + (* matching case *)
-        inv EV.
-        simpl in H2. destruct Ptrofs.eq_dec; [| discriminate]. subst ofs.
-        simpl in H9. destruct Ptrofs.eq_dec; [| discriminate]. subst ofs0.
-        inv INJ; [| congruence].
-        destruct (state_split_decidable (Callstate fd vargs (Kcall optid f e0 le k) m))
-          as [LEFT' | RIGHT'].
-        * exists j. apply LeftControl.
-          -- assumption.
-          -- congruence.
-          -- assumption.
-          -- simpl. rewrite H14, H15. assumption.
-        * exists j. apply RightControl.
-          -- assumption.
-          -- congruence.
-          -- assert (fd = fd0) as <-
-               by (eapply find_funct_ptr_right; eassumption).
-             apply inject_callstates.
-             ++ assumption.
-             ++ apply right_cont_injection_kcall_left; try assumption.
-                congruence.
-             ++ specialize (NO_CROSS_PTR H5).
-                specialize (NO_CROSS_PTR0 H21).
-                rewrite H3 in H10.
-                injection H10 as <- <- <-.
-                now eauto using eventval_list_match_inject_inv.
-      + destruct (ec_no_crossing (external_call_spec ef) _ _ _ _ _ _ H6).
-      + destruct (ec_no_crossing (external_call_spec ef) _ _ _ _ _ _ H4).
-      + inv EV.
-    - (* step_builtin *)
-      inv INJ; [| congruence]. simpl in *. inv STEP2.
-      + inv EV.
-        destruct (ec_no_crossing (external_call_spec ef) _ _ _ _ _ _ H0).
-      + simpl in *.
-        exploit (ec_mem_inject (external_call_spec ef)); eauto.
-        * exploit same_symb; eauto.
-        * exploit partial_mem_inject; eauto.
-        * (* AAA: Could this follow from general properties of evel_exprlist? *)
-          assert (Val.inject_list j vargs vargs0) by admit. eauto.
-        * admit.
-      + admit.
-      + inv EV.
-        destruct (ec_no_crossing (external_call_spec ef) _ _ _ _ _ _ H0).
-    - (* step_external_function *)
-      inv INJ; [| congruence]. inv STEP2.
-      + inv EV.
-        destruct (ec_no_crossing (external_call_spec ef) _ _ _ _ _ _ H).
-      + admit. (* contra? *)
-      + (* matching case *)
-        simpl in *.
-        assert (ARGS: Val.inject_list j vargs vargs0) by admit.
-        destruct (external_call_spec ef).
-        specialize (ec_mem_inject _ _ _ _ _ _ _ _ _ _
-                      (same_symb _ _ _ _ _ _ H2) H
-                      (partial_mem_inject _ _ _ _ _ _ H2) ARGS)
-          as (j' & vres' & m2' & EXT & VINJ & MINJ & MAPPED & REACH & INCR & SEP & BLOCKS).
-        exists j'. apply LeftControl; try assumption.
-        assert (vres0 = vres' /\ m'0 = m2') as [<- <-]. {
-          (* Assuming [ef0] corresponds to the original [ef], we can
-             use [external_call_deterministic] to yield this. *)
-          admit.
-        }
-        constructor.
-        * destruct H2 as [DOM _ _ _ _ _ _].
-          admit. (* see comments *)
-        * exact MINJ.
-        * destruct H2 as [_ _ DELTA _ _ _ _].
-          admit. (* should follow from the properties of external calls, like INCR *)
-        * destruct H2 as [_ _ _ (SINJ1 & SINJ2 & SINJ3 & SINJ4) _ _ _]. simpl.
-          split; [assumption |].
-          split.
-          { (* external calls don't modify the global environment, so any mapped block
-               after the call should also be mapped before the call, making the property
-               invariant *)
-            intros id b1 b2 delta b1_b2 FIND. specialize (SINJ2 id b1 b2 delta).
-            apply SINJ2; [| assumption].
-            admit. }
-          split.
-          { intros id b1 PUB FIND.
-            specialize (SINJ3 id b1 PUB FIND) as (b2 & b1_b2 & FIND').
-            exists b2. split; [| assumption].
-            apply INCR. assumption. }
-          { (* volatile global variables aren't modifed by external calls, so new
-               mappings to those shouldn't be added, making the property invariant *)
-            intros b1 b2 delta b1_b2. admit. }
-        * destruct H2 as [_ MEMINJ _ _ INJ _ _].
-          intros b1 b2 b1' b2' ofs1 ofs2 NEQ b1_b1' b2_b2'.
-          specialize (INJ b1 b2 b1' b2' ofs1 ofs2 NEQ).
-          destruct (j b1) as [[b1'' ofs1']|] eqn:b1_b1''.
-          -- rewrite (INCR _ _ _ b1_b1'') in b1_b1'. injection b1_b1' as -> ->.
-             destruct (j b2) as [[b2'' ofs2']|] eqn:b2_b2''.
-             ++ rewrite (INCR _ _ _ b2_b2'') in b2_b2'. injection b2_b2' as -> ->.
-                apply INJ; reflexivity.
-             ++ destruct (SEP _ _ _ b2_b2'' b2_b2') as [m_b2 m0_b2'].
-                assert (m'_b2: Mem.valid_block m' b2). {
-                  destruct (plt b2 (Mem.nextblock m')) as [LT | GE];
-                    [exact LT |].
-                  rewrite (Mem.mi_freeblocks _ _ _ MINJ _ GE) in b2_b2'.
-                  discriminate. }
-                assert (m'0_b2' := Mem.mi_mappedblocks _ _ _ MINJ _ _ _ b2_b2').
-                Check b1_b1''.
-                Check b2_b2''.
-                (* - [b2] is not valid in [m] (before the external call) but
-                     it is valid in [m'] (after the call)
-                   - same for [b2'] between [m0] and [m'0] *)
-                clear ec_well_typed ec_max_perm ec_symbols_preserved ec_valid_block ec_can_access_block ec_readonly ec_trace_length ec_receptive ec_determ ec_no_crossing.
-                Check Mem.mi_mappedblocks _ _ _ MEMINJ _ _ _ b1_b1''.
-                Check BLOCKS _ m_b2 m'_b2.
-                Check INCR _ _ _ b1_b1''.
-                admit.
-          -- destruct (SEP _ _ _ b1_b1'' b1_b1') as [m_b1 m0_b1'].
-             destruct (j b2) as [[b2'' ofs2']|] eqn:b2_b2''.
-             ++ rewrite (INCR _ _ _ b2_b2'') in b2_b2'. injection b2_b2' as -> ->.
-                admit.
-             ++ destruct (SEP _ _ _ b2_b2'' b2_b2') as [m_b2 m0_b2'].
-                admit.
-        * destruct H2 as [_ _ _ _ _ SAME _]. simpl.
-          intros b cp' FIND. specialize (SAME b cp' FIND).
-          change (Mem.block_compartment m b = Some cp')
-            with (Mem.can_access_block m b (Some cp')) in SAME.
-          exact (external_call_can_access_block _ _ _ _ _ _ _ _ _ H SAME).
-        * destruct H2 as [_ _ _ _ _ _ SAME]. simpl.
-          intros b cp' FIND. specialize (SAME b cp' FIND).
-          change (Mem.block_compartment m0 b = Some cp')
-            with (Mem.can_access_block m0 b (Some cp')) in SAME.
-          exact (external_call_can_access_block _ _ _ _ _ _ _ _ _ H4 SAME).
-        * eapply right_cont_injection_inject_incr; eauto.
-      + inv EV.
-        destruct (ec_no_crossing (external_call_spec ef) _ _ _ _ _ _ H).
-    - (* step_returnstate *)
-      inv EV. inv STEP2.
-      + inv EV.
-      + destruct (ec_no_crossing (external_call_spec ef) _ _ _ _ _ _ H1).
-      + destruct (ec_no_crossing (external_call_spec ef) _ _ _ _ _ _ H).
-      + (* matching case *)
-        inv EV.
-        inv INJ; [| congruence].
-        simpl in *.
-        destruct (state_split_decidable (State f Sskip k e0 (set_opttemp optid v le) m))
-          as [LEFT' | RIGHT'].
-        * exists j. apply LeftControl.
-          -- assumption.
-          -- congruence.
-          -- assumption.
-          -- rewrite H, LEFT' in H4. assumption.
-        * rewrite H, RIGHT' in H4.
-          inv H4; [congruence |].
-          exists j. apply RightControl.
-          -- assumption.
-          -- congruence.
-          -- apply inject_states; try assumption.
-             destruct optid0 as [id |]; [| assumption].
-             intros id' v' GET.
-             destruct (peq id' id) as [-> | NEQ].
-             ++ simpl in GET. rewrite PTree.gss in GET. injection GET as <-.
-                simpl. rewrite PTree.gss.
-                exists v0. split; [| reflexivity].
-                specialize (NO_CROSS_PTR H0). specialize (NO_CROSS_PTR0 H0).
-                inv H5; inv H9; try constructor.
-                contradiction.
-             ++ simpl in GET. rewrite PTree.gso in GET; [| assumption].
-                simpl. rewrite PTree.gso; [| assumption].
-                specialize (H20 id' v' GET). assumption.
-  Admitted.
+        intros f2 optid2 a2 al2 k2 e2 le2 m2 tyargs2 tyres2 cconv2 vf2 vargs2
+          fd2 t _ _ _ vf2_fd2 type_fd2 _ not_ptr2
+          trace_t2 DEF MEMINJ CONTINJ trace_t1 LEFT2 RIGHT2'.
+        simpl in LEFT2, RIGHT2', MEMINJ, CONTINJ.
+        assert (Genv.type_of_call (comp_of f2) (comp_of fd2) =
+                  Genv.CrossCompartmentCall) as cross2.
+        { unfold Genv.type_of_call.
+          destruct (Pos.eqb_spec (comp_of f2) (comp_of fd2));
+          congruence. }
+        specialize (not_ptr2 cross2). clear cross2.
+        exploit call_trace_cons_inv; eauto.
+        { intros ->; simpl in *; congruence. }
+        clear trace_t1.
+        intros (b1 & ofs1 & id & vl & -> & -> & _ & b1_id & match1).
+        exploit call_trace_cons_inv; eauto.
+        { unfold E0. congruence. }
+        intros (b2 & ofs2 & id' & vl' & E1 & -> & _ & b2_id & match2).
+        injection E1 as E11 E12 <- <-.
+        simpl in vf1_fd1, vf2_fd2.
+        destruct Ptrofs.eq_dec in vf1_fd1; try congruence.
+        destruct Ptrofs.eq_dec in vf2_fd2; try congruence.
+        assert (fd1 = fd2) as <- by (eapply find_funct_ptr_right; eauto).
+        assert (tyargs2 = tyargs1) as -> by congruence.
+        exists j. apply RightControl; trivial.
+        apply inject_callstates; trivial.
+        * apply right_cont_injection_kcall_left; try assumption.
+        * eauto using eventval_list_match_inject_inv.
+      + intros. exploit call_trace_return_trace; eauto.
+        intros ->. simpl in *. congruence.
+    - intros v1 optid1 f1 e1 le1 ty1 cp1 k1 m1 t cross1 ret1
+        STEP2 DEF MEMINJ CONTINJ LEFT1 RIGHT1'.
+      simpl in DEF, MEMINJ, CONTINJ, LEFT1, RIGHT1'.
+      rewrite RIGHT1' in CONTINJ.
+      revert DEF MEMINJ CONTINJ ret1 LEFT2 RIGHT2'.
+      case STEP2; clear STEP2 s2 s2' t;
+        try solve [ simpl; congruence
+                  | intros; exploit ec_no_crossing'; eauto; congruence ].
+      + intros. exploit call_trace_return_trace; eauto.
+        intros ->. simpl in *. congruence.
+      + intros v2 optid2 f2 e2 le2 ty2 cp2 k2 m2 t cross2 ret2
+          DEF MEMINJ CONTINJ ret1 LEFT2 RIGHT2'.
+        simpl in MEMINJ, CONTINJ, LEFT2, RIGHT2'.
+        rewrite RIGHT2' in CONTINJ.
+        assert (optid2 = optid1 /\
+                  f2 = f1 /\
+                  right_env_injection j e1 e2 /\
+                  right_tenv_injection j le1 le2 /\
+                  right_cont_injection s j k1 k2)
+          as (-> & -> & ENVINJ & TENVINJ & CONTINJ').
+        { inv CONTINJ; eauto. simpl in *. congruence. }
+        exploit return_trace_cons_inv; eauto.
+        { intros ->; simpl in *; congruence. }
+        intros (res & -> & H11 & H12). clear ret1.
+        exploit return_trace_cons_inv; eauto; try easy.
+        intros (res' & E & _ & H22). clear ret2.
+        injection E as <- <-.
+        assert (Genv.type_of_call (comp_of f1) cp1 =
+                  Genv.CrossCompartmentCall) as cross.
+        { unfold Genv.type_of_call.
+          destruct (Pos.eqb_spec (comp_of f1) cp1); trivial.
+          congruence. }
+        specialize (cross1 cross). specialize (cross2 cross).
+        assert (Val.inject j v1 v2) as VALINJ.
+        { inv H12; try easy; inv H22; try easy. }
+        exists j. apply RightControl; eauto.
+        apply inject_states; try assumption.
+        destruct optid1 as [id|]; try assumption.
+        intros id' v' GET. simpl in *.
+        destruct (peq id' id) as [-> | NEQ].
+        * rewrite PTree.gss in GET. injection GET as <-.
+          simpl. rewrite PTree.gss. eauto.
+        * rewrite PTree.gso in GET; trivial. rewrite PTree.gso; trivial.
+          eauto.
+  Qed.
 
 (* Lemma parallel_concrete p1 p2 scs1 scs2: *)
 (*   left_side s p1 -> (* use definitions from RSC.v *) *)
