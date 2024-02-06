@@ -2128,7 +2128,8 @@ Qed.
   Lemma right_mem_injection_external_call_right {j ef vargs1 vargs2 vres1 t m1 m1' m2}
     (RMEMINJ : right_mem_injection s j ge1 ge2 m1 m2)
     (EXTCALL: external_call ef ge1 vargs1 m1 t vres1 m1')
-    (ARGINJ: Val.inject_list j vargs1 vargs2):
+    (ARGINJ: Val.inject_list j vargs1 vargs2)
+    (RIGHT: s (comp_of ef) = Right):
     exists j' m2' vres2,
       external_call ef ge2 vargs2 m2 t vres2 m2' /\
       right_mem_injection s j' ge1 ge2 m1' m2' /\
@@ -2169,15 +2170,7 @@ Qed.
           intros (b' & -> & block_m1'_b_alt).
           assert (cp = comp_of ef) as -> by congruence.
           clear block_m1'_b_alt.
-          split; try congruence. intros _. clear b'.
-          admit.
-          (* AAA: At this point, we know that b is a new block that was
-             allocated by the call to ef. Our goal is to prove that the ef's
-             compartment is on the right.  However, I believe that there is
-             nothing that allows us to conclude that, since it is perfectly
-             possible to call an external function defined on the left.  We
-             probably need to adjust the new memory injection j' to remove any
-             block on the left. *)
+          split; try congruence.
         * split; eauto.
           rewrite <- Mem.block_compartment_valid_block in block_m1'_b.
           eapply Mem.mi_freeblocks in block_m1'_b; eauto.
@@ -2804,6 +2797,7 @@ Qed.
       (* same as step_external_function *)
       destruct (right_mem_injection_external_call_right RMEMINJ H0 H1)
         as (j' & m2' & vres' & EXTCALL' & RMEMINJ' & INCR & RESINJ).
+      { simpl in *. congruence. }
       exists j'; eexists; split.
       econstructor; eauto.
       apply RightControl; eauto.
@@ -2927,6 +2921,7 @@ Qed.
       (* very similar to step_builtin *)
       destruct (right_mem_injection_external_call_right RMEMINJ H ARGINJ)
         as (j' & m2' & vres' & EXTCALL' & RMEMINJ' & INCR & RESINJ).
+      { simpl in *. eauto. }
       exists j'; eexists; split.
       econstructor; eauto.
       apply RightControl; eauto.
