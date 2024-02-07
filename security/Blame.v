@@ -2218,12 +2218,18 @@ Qed.
              for an extended injection to allow two blocks to alias if they do
              not have the appropriate permissions. *)
           admit.
-    - admit.
-    - admit.
-  Admitted. (* The axiomatization of external calls needs to be
-               extended to account for details required explicitly by
-               the memory invariants, the theorem should follow easily
-               from those.  *)
+    - intros b cp b_cp.
+      specialize (BLKS1 _ _ b_cp).
+      enough (Mem.can_access_block m1' b (Some cp)) by trivial.
+      eauto using ec_can_access_block, external_call_spec.
+    - intros b cp b_cp.
+      specialize (BLKS2 _ _ b_cp).
+      enough (Mem.can_access_block m2' b (Some cp)) by trivial.
+      eauto using ec_can_access_block, external_call_spec.
+  Admitted.
+ (* The axiomatization of external calls needs to be extended to account for
+    details required explicitly by the memory invariants, the theorem should
+    follow easily from those.  *)
 
   Lemma right_mem_injection_external_call_left :
     forall j ef vargs1 vres1 t m1 m1' m2
