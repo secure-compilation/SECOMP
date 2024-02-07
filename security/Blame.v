@@ -413,6 +413,10 @@ Section Simulation.
   Hypothesis W1_ini: exists s, Smallstep.initial_state (semantics1 W1) s.
   Hypothesis W2_ini: exists s, Smallstep.initial_state (semantics1 W2) s.
 
+  Hypothesis c_Right: s |= c ∈ Right.
+  Hypothesis p1_Left: s |= p1 ∈ Left.
+  Hypothesis p2_Left: s |= p2 ∈ Left.
+
   (* Context (ge1 ge2: genv). *)
   Notation ge1 := (globalenv W1).
   Notation ge2 := (globalenv W2).
@@ -3643,7 +3647,20 @@ Lemma find_symbol_init_mem_compartment (pr: program) m1 id b
       (MEM: Genv.init_mem pr = Some m1):
   Genv.find_comp_of_ident (Genv.globalenv pr) id =
   Mem.block_compartment m1 b.
-Admitted.
+Admitted. (* Should be easy *)
+
+Lemma find_symbol_right id cp
+  (SYM: Genv.find_symbol ge1 id <> None)
+  (COMP : Genv.find_comp_of_ident ge1 id = Some cp)
+  (RIGHT: s cp = Right):
+  Genv.find_symbol ge2 id <> None.
+Admitted. (* Should be easy *)
+
+Lemma init_mem_invert_symbol (pr: program) m b
+  (MEM: Genv.init_mem pr = Some m)
+  (COMP : Mem.block_compartment m b <> None):
+  Genv.invert_symbol (globalenv pr) b <> None.
+Admitted. (* Should be easy *)
 
 Lemma same_domain_right_init_meminj m1
       (MEM: Genv.init_mem W1 = Some m1):
@@ -3676,10 +3693,11 @@ Proof.
         setoid_rewrite COMP in COMP'. injection COMP' as <-. reflexivity. }
       rewrite RIGHT in INJ.
       destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [discriminate |].
-      admit.
+      assert (CONTRA := find_symbol_right _ _ NONE COMP RIGHT). contradiction.
     + destruct Mem.block_compartment as [cp |] eqn:COMP; [| contradiction].
-      admit.
-Admitted. (* Should be easy *)
+      assert (NONE: Mem.block_compartment m1 b <> None) by congruence.
+      assert (CONTRA := init_mem_invert_symbol _ _ _ MEM NONE). contradiction.
+Qed.
 
 Lemma delta_zero_init_meminj:
   Mem.delta_zero init_meminj.
