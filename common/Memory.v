@@ -4580,6 +4580,43 @@ Proof.
   eapply mi_perm_inv0; eauto.
 Qed.
 
+Theorem alloc_left_unmapped_inject_strong:
+  forall f m1 m2 c lo hi m1' b1,
+  inject f m1 m2 ->
+  alloc m1 c lo hi = (m1', b1) ->
+  inject f m1' m2.
+Proof.
+  intros. inversion H.
+  assert (f b1 = None) as f_b1.
+  { apply mi_freeblocks0.
+    eapply fresh_block_alloc; eauto. }
+  constructor.
+(* inj *)
+{ eapply alloc_left_unmapped_inj; eauto. }
+(* freeblocks *)
+{ intros.
+  apply mi_freeblocks0. red; intro; elim H1. eauto with mem. }
+(* mappedblocks *)
+{ eauto. }
+(* no overlap *)
+{ intros b11 b11' delta1 b12 b12' delta2 ofs1 ofs2 neq f_b11 f_b12 perm1 perm2.
+  eapply mi_no_overlap0; try eexact neq; eauto.
+  - pose proof (perm_alloc_inv _ _ _ _ _ _ H0 _ _ _ _ perm1) as perm1'.
+    rewrite dec_eq_false in perm1'; trivial. congruence.
+  - pose proof (perm_alloc_inv _ _ _ _ _ _ H0 _ _ _ _ perm2) as perm2'.
+    rewrite dec_eq_false in perm2'; trivial. congruence. }
+(* representable *)
+{ intros b b' delta ofs f_b perm_m1'.
+  assert (b <> b1) by congruence.
+  eapply mi_representable0; try eassumption.
+  destruct perm_m1'; eauto using perm_alloc_4. }
+(* perm inv *)
+{ intros.
+  assert (b0 <> b1) by congruence.
+  exploit mi_perm_inv0; eauto.
+  intuition eauto using perm_alloc_1, perm_alloc_4. }
+Qed.
+
 Theorem alloc_left_unmapped_inject:
   forall f m1 m2 c lo hi m1' b1,
   inject f m1 m2 ->
@@ -5419,6 +5456,33 @@ Proof.
 - erewrite <- free_preserves_comp; eauto with comps.
 Qed.
 
+Lemma free_list_unchanged_on m blks cp m' :
+  free_list m blks cp = Some m' ->
+  Forall (fun '(b, lo, hi) =>
+            can_access_block m b (Some cp) ->
+            forall i, lo <= i < hi -> ~ P b i) blks ->
+  unchanged_on m m'.
+Proof.
+  revert m.
+  induction blks as [|[[b lo] hi] blks IH]; simpl.
+  { intros m E _.
+    pose proof (unchanged_on_refl m). congruence. }
+  rename m' into m''. intros m FREELIST WEAK.
+  destruct (Mem.free m b lo hi cp) as [m'|] eqn:FREE; try congruence.
+  rewrite List.Forall_cons_iff in WEAK. destruct WEAK as [WEAK1 WEAK2].
+  assert (Mem.can_access_block m b (Some cp)) as ACCESS.
+  { eauto using free_can_access_block_1. }
+  specialize (WEAK1 ACCESS).
+  assert (unchanged_on m m') as m_m'.
+  { eauto using free_unchanged_on. }
+  enough (unchanged_on m' m'') by eauto using unchanged_on_trans.
+  exploit IH; eauto. clear ACCESS.
+  pose proof (free_can_access_block_inj_2 _ _ _ _ _ _ FREE)
+    as ACCESS.
+  eapply List.Forall_impl; try eassumption. clear - m_m' ACCESS.
+  intros [[b lo] hi] WEAK H%ACCESS; eauto.
+Qed.
+
 Lemma drop_perm_unchanged_on:
   forall m b lo hi p cp m',
   drop_perm m b lo hi p cp = Some m' ->
@@ -5438,6 +5502,83 @@ Proof.
   destruct (can_access_block_dec m b cp);
   inv H; simpl. auto.
 - erewrite <- drop_preserves_comp; eauto with comps.
+Qed.
+
+Lemma unchanged_on_inject f m1 m1' m2 :
+  inject f m1 m2 ->
+  unchanged_on m1 m1' ->
+  (forall b off, f b <> None -> P b off) ->
+  inject f m1' m2.
+Proof.
+  intros [inj_m1 freeblocks_m1 mappedblocks_m1 no_overlap_m1
+            representable_m1 perm_inv_m1] unchanged_m1 weak.
+  destruct inj_m1 as [perm_m1 own_m1 align_m1 memval_m1].
+  assert (forall b b' ofs, f b = Some (b', ofs) -> valid_block m1 b)
+    as freeblocks_m1_alt.
+  { intros ????.
+    apply Classical_Prop.NNPP. (* FIXME *)
+    intros ?%freeblocks_m1. congruence. }
+  assert (forall b b' ofs ofs', f b = Some (b', ofs') -> P b ofs) as weak'.
+  { intros ?????; apply weak; congruence. }
+  split; [split|..]; eauto.
+  - intros b1 b2 delta ofs k p j_b1 m1'_b1.
+    apply (perm_m1 _ _ _ _ _ _ j_b1).
+    rewrite (unchanged_on_perm _ _ unchanged_m1); eauto.
+  - intros b1 b2 delta [cp|] j_b1 m1'_b1; simpl in *; trivial.
+    apply (own_m1 _ _ _ (Some cp) j_b1). simpl.
+    apply (unchanged_on_own _ _ unchanged_m1 b1 (Some cp)); trivial.
+    eauto.
+  - intros b1 b2 delta chunk ofs p j_b1 range.
+    eapply align_m1; eauto.
+    intros ofs' ?%range.
+    apply (unchanged_on_perm _ _ unchanged_m1); eauto.
+  - intros b1 ofs b2 delta j_b1 perm_m1'.
+    apply (unchanged_on_perm _ _ unchanged_m1) in perm_m1';
+      eauto.
+    rewrite (unchanged_on_contents _ _ unchanged_m1); eauto.
+  - intros b invalid_m1'. apply freeblocks_m1.
+    intros valid_b. apply invalid_m1'.
+    eauto using valid_block_unchanged_on.
+  - intros b1 b1' delta1 b2 b2' delta2 orfs1 ofs2
+      b1_b2 j_b1 j_b2 perm_b1 perm_b2.
+    apply (unchanged_on_perm _ _ unchanged_m1) in perm_b1; eauto.
+    apply (unchanged_on_perm _ _ unchanged_m1) in perm_b2; eauto.
+  - intros b1 b2 delta ofs j_b1 perm_b1.
+    eapply representable_m1; eauto.
+    destruct perm_b1 as [perm_b1|perm_b1]; [left|right];
+      apply (unchanged_on_perm _ _ unchanged_m1) in perm_b1; eauto;
+      apply (unchanged_on_perm _ _ unchanged_m1).
+  - intros b1 ofs b2 delta k p j_b1 perm_b2.
+    exploit perm_inv_m1; eauto.
+    intros [perm_b1|perm_b1].
+    + left.
+      apply (unchanged_on_perm _ _ unchanged_m1) in perm_b1; eauto;
+        apply (unchanged_on_perm _ _ unchanged_m1).
+    + right. intros contra. apply perm_b1.
+      apply (unchanged_on_perm _ _ unchanged_m1) in contra; eauto;
+        apply (unchanged_on_perm _ _ unchanged_m1).
+Qed.
+
+Lemma unchanged_on_inject' f m1 m2 m2' :
+  inject f m1 m2 ->
+  unchanged_on m2 m2' ->
+  (forall b1 b2 delta ofs, f b1 = Some (b2, delta) -> P b2 ofs) ->
+  inject f m1 m2'.
+Proof.
+  intros [inj_m1 freeblocks_m1 mappedblocks_m1 no_overlap_m1
+            representable_m1 perm_inv_m1] unchanged_m2 weak.
+  destruct inj_m1 as [perm_m1 own_m1 align_m1 memval_m1].
+  split; [split|..]; eauto.
+  - intros b1 b2 delta ofs k p j_b1 m1'_b1.
+    rewrite <- (unchanged_on_perm _ _ unchanged_m2); eauto.
+  - intros b1 b2 delta cp j_b1 m1'_b1; simpl in *; trivial.
+    apply (unchanged_on_own _ _ unchanged_m2 b2 cp); eauto.
+  - intros b1 ofs b2 delta j_b1 perm_m1'.
+    rewrite (unchanged_on_contents _ _ unchanged_m2); eauto.
+  - intros b1 b2' delta f_b1.
+    eapply valid_block_unchanged_on; eauto.
+  - intros b1 ofs b2 delta k p j_b1 perm_b2.
+    rewrite <- (unchanged_on_perm _ _ unchanged_m2) in perm_b2; eauto.
 Qed.
 
 End UNCHANGED_ON.

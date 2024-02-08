@@ -1070,13 +1070,13 @@ Proof.
 Qed.
 
 Lemma assign_loc_inject:
-  forall c f ty m loc ofs bf v m' tm loc' ofs' v',
-  assign_loc ge c ty m loc ofs bf v m' ->
+  forall ce c f ty m loc ofs bf v m' tm loc' ofs' v',
+  assign_loc ce c ty m loc ofs bf v m' ->
   Val.inject f (Vptr loc ofs) (Vptr loc' ofs') ->
   Val.inject f v v' ->
   Mem.inject f m tm ->
   exists tm',
-     assign_loc tge c ty tm loc' ofs' bf v' tm'
+     assign_loc ce c ty tm loc' ofs' bf v' tm'
   /\ Mem.inject f m' tm'
   /\ (forall c' b chunk v,
       f b = None -> Mem.load chunk m b 0 c' = Some v -> Mem.load chunk m' b 0 c' = Some v).
@@ -1093,11 +1093,10 @@ Proof.
   rename b' into bsrc. rename ofs'0 into osrc.
   rename loc into bdst. rename ofs into odst.
   rename loc' into bdst'. rename b2 into bsrc'.
-  rewrite <- comp_env_preserved in *.
-  destruct (zeq (sizeof tge ty) 0).
+  destruct (zeq (sizeof ce ty) 0).
 + (* special case size = 0 *)
   assert (bytes = nil).
-  { exploit (Mem.loadbytes_empty m bsrc (Ptrofs.unsigned osrc) (sizeof tge ty)).
+  { exploit (Mem.loadbytes_empty m bsrc (Ptrofs.unsigned osrc) (sizeof ce ty)).
     lia. eapply Mem.loadbytes_can_access_block_inj; eauto. congruence. }
   subst.
   destruct (Mem.range_perm_storebytes tm bdst' (Ptrofs.unsigned (Ptrofs.add odst (Ptrofs.repr delta))) nil c)
@@ -1116,12 +1115,12 @@ Proof.
   left. congruence.
 + (* general case size > 0 *)
   exploit Mem.loadbytes_length; eauto. intros LEN.
-  assert (SZPOS: sizeof tge ty > 0).
-  { generalize (sizeof_pos tge ty); lia. }
-  assert (RPSRC: Mem.range_perm m bsrc (Ptrofs.unsigned osrc) (Ptrofs.unsigned osrc + sizeof tge ty) Cur Nonempty).
+  assert (SZPOS: sizeof ce ty > 0).
+  { generalize (sizeof_pos ce ty); lia. }
+  assert (RPSRC: Mem.range_perm m bsrc (Ptrofs.unsigned osrc) (Ptrofs.unsigned osrc + sizeof ce ty) Cur Nonempty).
     eapply Mem.range_perm_implies. eapply Mem.loadbytes_range_perm; eauto. auto with mem.
-  assert (RPDST: Mem.range_perm m bdst (Ptrofs.unsigned odst) (Ptrofs.unsigned odst + sizeof tge ty) Cur Nonempty).
-    replace (sizeof tge ty) with (Z.of_nat (List.length bytes)).
+  assert (RPDST: Mem.range_perm m bdst (Ptrofs.unsigned odst) (Ptrofs.unsigned odst + sizeof ce ty) Cur Nonempty).
+    replace (sizeof ce ty) with (Z.of_nat (List.length bytes)).
     eapply Mem.range_perm_implies. eapply Mem.storebytes_range_perm; eauto. auto with mem.
     rewrite LEN. apply Z2Nat.id. lia.
   assert (PSRC: Mem.perm m bsrc (Ptrofs.unsigned osrc) Cur Nonempty).
@@ -1243,7 +1242,7 @@ Local Opaque Conventions1.parameter_needs_normalization.
     apply PTree.gss.
     simpl. instantiate (1 := v'). apply cast_val_casted.
     eapply val_casted_inject with (v := v1); eauto.
-    simpl. eexact A.
+    simpl. rewrite <- comp_env_preserved in *. eexact A.
   apply star_one. constructor.
   reflexivity. reflexivity.
   eexact U.
@@ -2212,7 +2211,7 @@ Proof.
   eexact A. repeat rewrite typeof_simpl_expr. eexact C.
   rewrite typeof_simpl_expr; auto.
   rewrite <- (comp_transl_partial _ TRF).
-  eexact X.
+  rewrite <- comp_env_preserved in *. eexact X.
   econstructor; eauto with compat.
   eapply match_envs_invariant; eauto.
   eapply match_cont_invariant; eauto.

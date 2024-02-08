@@ -777,6 +777,12 @@ Proof.
   unfold globalenv; intros. rewrite genv_public_add_globals. auto.
 Qed.
 
+Theorem globalenv_policy:
+  forall p, genv_policy (globalenv p) = prog_pol p.
+Proof.
+  intros p. unfold globalenv. now rewrite genv_pol_add_globals.
+Qed.
+
 Theorem block_is_volatile_below:
   forall ge b, block_is_volatile ge b = true ->  Plt b ge.(genv_next).
 Proof.
@@ -2463,7 +2469,7 @@ Lemma match_genvs_allowed_addrof:
 Proof.
   unfold allowed_addrof.
   intros cp id.
-  now rewrite match_genvs_find_comp_of_ident, match_genvs_public_symbol.
+  now rewrite match_genvs_find_comp_of_ident.
 Qed.
 
 Lemma match_genvs_allowed_calls:

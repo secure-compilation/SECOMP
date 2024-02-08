@@ -26,3 +26,4 @@ Extract Constant Archi.pic_code => "fun () -> false".  (* for the time being *)
 (* Asm *)
 Extract Constant Asm.low_half => "fun _ _ _ -> assert false".
 Extract Constant Asm.high_half => "fun _ _ _ -> assert false".
+

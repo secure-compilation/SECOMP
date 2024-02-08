@@ -31,7 +31,7 @@ Require Import Axioms.
 Require Import Coqlib.
 Require Intv.
 Require Import Maps.
-Require Archi.
+Require CapArchi.
 Require Import CapAST.
 Require Import Integers.
 Require Import Floats.
