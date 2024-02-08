@@ -2100,6 +2100,60 @@ Qed.
     unfold program, fundef in *. rewrite def_ge_b. eauto.
   Qed.
 
+  Lemma same_blocks_extcall :
+    forall sem cp sg (ge: genv) vargs m t v m',
+      extcall_properties sem cp sg ->
+      sem ge vargs m t v m' ->
+      same_blocks ge m ->
+      same_blocks ge m'.
+  Proof.
+    intros sem cp sg ge vargs m t v m' EXT m_m' BLKS b cp' b_cp'.
+    specialize (BLKS _ _ b_cp').
+    enough (Mem.can_access_block m' b (Some cp')) by trivial.
+    eauto using ec_can_access_block.
+  Qed.
+
+  Lemma symbols_inject_incr : forall j j' m1 m2,
+      symbols_inject j ge1 ge2 ->
+      same_blocks ge1 m1 ->
+      same_blocks ge2 m2 ->
+      inject_incr j j' ->
+      inject_separated j j' m1 m2 ->
+      symbols_inject j' ge1 ge2.
+  Proof.
+    intros j j' m1 m2 SYMB BLKS1 BLKS2 incr j_j'_sep.
+    destruct SYMB as (SYMB1 & SYMB2 & SYMB3 & SYMB4).
+    split; [|split; [|split]]; eauto.
+    - intros id b1 b2 delta j'_b1 ge1_id.
+      destruct (j b1) as [[b2' delta']|] eqn:j_b1.
+      { exploit incr; eauto. rewrite j'_b1.
+        intros I. injection I as <- <-.
+        eauto. }
+      exploit j_j'_sep; eauto. intros (invalid_b1 & invalid_b2).
+      pose proof (Genv.find_invert_symbol _ _ ge1_id) as ge1_b1.
+      apply invert_symbol_find_comp_of_block in ge1_b1.
+      destruct ge1_b1 as [cp ge1_b1].
+      exploit BLKS1; eauto. intros m1_b1.
+      apply Mem.block_compartment_valid_block in invalid_b1.
+      congruence.
+    - intros id b1 public_id id_b1.
+      exploit SYMB3; eauto. intros (b2 & j_b1 & id_b2).
+      eauto.
+    - intros b1 b2 delta j'_b1.
+      destruct (j b1) as [[b2' delta']|] eqn:j_b1.
+      { exploit incr; eauto. rewrite j'_b1.
+        intros I. injection I as <- <-.
+        eauto. }
+      exploit j_j'_sep; eauto. intros (invalid_b1 & invalid_b2).
+      simpl.
+      destruct (Genv.block_is_volatile _ b2) eqn:volatile_b2.
+      { exfalso. apply invalid_b2.
+        eauto using block_is_volatile_valid_block. }
+      destruct (Genv.block_is_volatile _ b1) eqn:volatile_b1; trivial.
+      exfalso. apply invalid_b2.
+      eauto using block_is_volatile_valid_block.
+  Qed.
+
   Lemma right_mem_injection_external_call_right {j ef vargs1 vargs2 vres1 t m1 m1' m2}
     (RMEMINJ : right_mem_injection s j ge1 ge2 m1 m2)
     (EXTCALL: external_call ef ge1 vargs1 m1 t vres1 m1')
@@ -2120,8 +2174,10 @@ Qed.
     exists j', m2', vres2.
     split; [| split; [| split]]; auto.
     destruct RMEMINJ as [DOM MI D0 SYMB BLKS1 BLKS2].
-    constructor; eauto.
-    - intros b. specialize (DOM b). simpl in *.
+    assert (same_domain_right s j' m1') as DOM'.
+    { (* FIXME: Separate lemma? *)
+      clear - DOM incr j_j'_sep comps_m1' unchanged1 RIGHT inj'.
+      intros b. specialize (DOM b). simpl in *.
       destruct (Mem.block_compartment m1 b) as [cp|] eqn:block_m1_b.
       + assert (Mem.valid_block m1 b) as valid_m1_b.
         { eapply Mem.can_access_block_valid_block; simpl; eauto. }
@@ -2148,32 +2204,20 @@ Qed.
           split; try congruence.
         * split; eauto.
           rewrite <- Mem.block_compartment_valid_block in block_m1'_b.
-          eapply Mem.mi_freeblocks in block_m1'_b; eauto.
-    - intros b b' delta j'_b.
-      destruct (j b) as [[b'' delta'']|] eqn:j_b.
-      + exploit D0; eauto. intros ->.
-        exploit incr; eauto. congruence.
-      + exploit j_j'_sep; eauto. intros [invalid_b _].
-        enough (Mem.valid_block m1' b) as valid_b.
-        { exploit comps_m1'; eauto.
-          intros (? & ? & ?). congruence. }
-        apply Classical_Prop.NNPP. (* FIXME *) intros contra.
-        exploit Mem.mi_freeblocks; eauto. congruence.
-    - (* Right now, this cannot be proved because it contradicts
-         same_domain_right. *)
-      admit.
-    - intros b cp b_cp.
-      specialize (BLKS1 _ _ b_cp).
-      enough (Mem.can_access_block m1' b (Some cp)) by trivial.
-      eauto using ec_can_access_block, external_call_spec.
-    - intros b cp b_cp.
-      specialize (BLKS2 _ _ b_cp).
-      enough (Mem.can_access_block m2' b (Some cp)) by trivial.
-      eauto using ec_can_access_block, external_call_spec.
-  Admitted.
- (* The axiomatization of external calls needs to be extended to account for
-    details required explicitly by the memory invariants, the theorem should
-    follow easily from those.  *)
+          eapply Mem.mi_freeblocks in block_m1'_b; eauto. }
+    constructor;
+    eauto using symbols_inject_incr, external_call_spec, same_blocks_extcall.
+    intros b b' delta j'_b.
+    destruct (j b) as [[b'' delta'']|] eqn:j_b.
+    - exploit D0; eauto. intros ->.
+      exploit incr; eauto. congruence.
+    - exploit j_j'_sep; eauto. intros [invalid_b _].
+      enough (Mem.valid_block m1' b) as valid_b.
+      { exploit comps_m1'; eauto.
+        intros (? & ? & ?). congruence. }
+      apply Classical_Prop.NNPP. (* FIXME *) intros contra.
+      exploit Mem.mi_freeblocks; eauto. congruence.
+  Qed.
 
   Lemma right_mem_injection_external_call_left :
     forall j ef vargs1 vres1 t m1 m1' m2
