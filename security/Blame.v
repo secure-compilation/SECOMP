@@ -232,9 +232,6 @@ Section Equivalence.
          side has a public symbol.  This is because symbols_inject says that any
          public symbol must be covered by the memory injection. *)
       same_symb: symbols_inject j ge1 ge2;
-      (* FIXME: Do we really need the condition below? Why isn't
-         Mem.meminj_no_overlap enough? *)
-      jinjective: Mem.meminj_injective j;
       same_blks1: same_blocks ge1 m1;
       same_blks2: same_blocks ge2 m2;
     }.
@@ -245,7 +242,7 @@ Lemma right_mem_injection_right ge1 ge2 m1 m2 b1 b2 delta :
   j b1 = Some (b2, delta) ->
   exists cp, Mem.block_compartment m2 b2 = Some cp /\ s cp = Right.
 Proof.
-  intros [DOM MI _ _ _ _ _] j_b1.
+  intros [DOM MI _ _ _ _] j_b1.
   assert (j b1 <> None) as j_b1_def by congruence.
   apply DOM in j_b1_def. simpl in j_b1_def.
   destruct (Mem.block_compartment m1 b1) as [cp|] eqn:m1_b1;
@@ -1014,8 +1011,7 @@ Lemma right_mem_injection_free: forall {j ge1 ge2 m1 m2 b1 b2 lo hi cp m1'},
     right_mem_injection s j ge1 ge2 m1' m2'.
 Proof.
   intros j ge1 ge2 m1 m2 b1 b2 lo hi cp m1' MEMINJ FREE1 j_b1.
-  destruct MEMINJ
-    as [DOM MI D0 SYMB MI_INJ BLKS1 BLKS2].
+  destruct MEMINJ as [DOM MI D0 SYMB BLKS1 BLKS2].
   pose proof (Mem.free_range_perm _ _ _ _ _ _ FREE1) as RANGE1.
   pose proof (Mem.free_can_access_block_1 _ _ _ _ _ _ FREE1) as ACCESS1.
   assert (Mem.range_perm m2 b2 lo hi Cur Freeable) as RANGE2.
@@ -1082,7 +1078,7 @@ Lemma right_mem_injection_free_list_left:
     right_mem_injection s j ge1 ge2 m1' m2.
 Proof.
   intros.
-  destruct RMEMINJ as [DOM MI D0 SYMB MI_INJ BLKS1 BLKS2].
+  destruct RMEMINJ as [DOM MI D0 SYMB BLKS1 BLKS2].
   split; trivial.
   - eauto using same_domain_right_free_list.
   - eauto using Mem.free_list_left_inject.
@@ -1168,7 +1164,7 @@ Qed.
         eval_lvalue ge2 e2 cp le2 m2 a loc' (Ptrofs.add ofs (Ptrofs.repr ofs')) bf).
   Proof.
     intros.
-    destruct inj as [inj_dom inj_inject j_delta_zero same_symb jinj SAMEBLKS].
+    destruct inj as [inj_dom inj_inject j_delta_zero same_symb SAMEBLKS].
     apply eval_expr_lvalue_ind; intros;
     try now match goal with
     | |- exists _, Val.inject _ (Vint _) _ /\ _ => eexists; split; [eapply Val.inject_int | econstructor; eauto]
@@ -1589,7 +1585,7 @@ Qed.
     exists j', m2', b2.
     split; [| split; [| split; [| split]]].
     - rewrite sizeof_preserved. assumption.
-    - destruct RMEMINJ as [DOM MI D0 SYMB MI_INJ BLKS1 BLKS2].
+    - destruct RMEMINJ as [DOM MI D0 SYMB BLKS1 BLKS2].
       constructor; auto.
       + intros b. specialize (DOM b).
         simpl in *.
@@ -1651,25 +1647,6 @@ Qed.
              reflexivity.
           -- rewrite (EXT _ NEQ) in b1'_b2'.
              exact (VOL _ _ _ b1'_b2').
-      + intros b1' b2' b1'' b2'' ofs1 ofs2 b1'_b2' b1'_b1'' b2'_b2''.
-        specialize (MI_INJ b1' b2' b1'' b2'' ofs1 ofs2 b1'_b2').
-        destruct (peq b1' b1) as [-> | NEQ1].
-        * left. intros <-.
-          assert (b1'' = b2) as -> by congruence.
-          clear b1'_b1''.
-          assert (j b2' = Some (b2, ofs2)) as j_b2'.
-          { rewrite <- EXT; congruence. }
-          pose proof (Mem.mi_mappedblocks _ _ _ MI _ _ _ j_b2').
-          clear ALLOC. exploit Mem.fresh_block_alloc; eauto.
-        * rewrite (EXT _ NEQ1) in b1'_b1''.
-          destruct (peq b2' b1) as [-> | NEQ2].
-          -- assert (b2'' = b2) as -> by congruence.
-             left. intros ->.
-             clear NEQ1.
-             pose proof (Mem.mi_mappedblocks _ _ _ MI _ _ _ b1'_b1'').
-             clear ALLOC. exploit Mem.fresh_block_alloc; eauto.
-          -- rewrite (EXT _ NEQ2) in b2'_b2''.
-             auto.
       + intros b cp' FIND. specialize (BLKS1 b cp' FIND).
         change (Mem.block_compartment _ _ = _)
           with (Mem.can_access_block m1' b (Some cp')).
@@ -1726,7 +1703,7 @@ Qed.
     (ALLOC: Mem.alloc m1 cp lo hi = (m1', b1)):
     right_mem_injection s j ge1 ge2 m1' m2.
   Proof.
-    destruct RMEMINJ as [DOM MI D0 SYMB MI_INJ BLKS1 BLKS2].
+    destruct RMEMINJ as [DOM MI D0 SYMB BLKS1 BLKS2].
     split; trivial.
     - eauto using same_domain_right_alloc_left.
     - eauto using Mem.alloc_left_unmapped_inject_strong.
@@ -1739,7 +1716,7 @@ Qed.
     (ALLOC: Mem.alloc m2 cp lo hi = (m2', b2)):
     right_mem_injection s j ge1 ge2 m1 m2'.
   Proof.
-    destruct RMEMINJ as [DOM MI D0 SYMB MI_INJ BLKS1 BLKS2].
+    destruct RMEMINJ as [DOM MI D0 SYMB BLKS1 BLKS2].
     split; trivial.
     - eauto using Mem.alloc_right_inject.
     - eauto using same_blocks_alloc.
@@ -1811,7 +1788,7 @@ Qed.
       right_mem_injection s j ge1 ge2 m1' m2'.
   Proof.
     intros.
-    destruct RMEMINJ as [DOM MI D0 SYMB MI_INJ BLKS1 BLKS2].
+    destruct RMEMINJ as [DOM MI D0 SYMB BLKS1 BLKS2].
     exploit Mem.store_mapped_inject; eauto.
     rewrite Z.add_0_r. intros (m2' & STORE2 & INJ').
     exists m2'; split; trivial. constructor; trivial;
@@ -1826,7 +1803,7 @@ Qed.
       right_mem_injection s j ge1 ge2 m1' m2.
   Proof.
     intros.
-    destruct RMEMINJ as [DOM MI D0 SYMB MI_INJ BLKS1 BLKS2].
+    destruct RMEMINJ as [DOM MI D0 SYMB BLKS1 BLKS2].
     exploit Mem.store_unmapped_inject; eauto.
     intros MI'.
     constructor; trivial;
@@ -1841,7 +1818,7 @@ Qed.
       right_mem_injection s j ge1 ge2 m1 m2'.
   Proof.
     intros.
-    destruct RMEMINJ as [DOM MI D0 SYMB MI_INJ BLKS1 BLKS2].
+    destruct RMEMINJ as [DOM MI D0 SYMB BLKS1 BLKS2].
     exploit Mem.store_outside_inject; eauto.
     { intros ??? INJ. destruct (LOCINJ _ _ INJ). }
     intros MI'.
@@ -1858,7 +1835,7 @@ Qed.
       Mem.storebytes m2 b2 ofs bytes2 cp = Some m2' /\
       right_mem_injection s j ge1 ge2 m1' m2'.
   Proof.
-    intros [DOM MI D0 SYMB MI_INJ BLKS1 BLKS2] b1_b2 BYTESINJ STORE1.
+    intros [DOM MI D0 SYMB BLKS1 BLKS2] b1_b2 BYTESINJ STORE1.
     exploit Mem.storebytes_mapped_inject; eauto.
     rewrite Z.add_0_r. intros (m2' & STORE2 & MI').
     exists m2'. split; trivial.
@@ -1873,7 +1850,7 @@ Qed.
            (STORE1: Mem.storebytes m1 b1 ofs bytes1 cp = Some m1'),
       right_mem_injection s j ge1 ge2 m1' m2.
   Proof.
-    intros [DOM MI D0 SYMB MI_INJ BLKS1 BLKS2] LOCINJ STORE1.
+    intros [DOM MI D0 SYMB BLKS1 BLKS2] LOCINJ STORE1.
     exploit Mem.storebytes_unmapped_inject; eauto. intros MI'.
     constructor;
     eauto using same_domain_right_storebytes, same_blocks_storebytes.
@@ -1886,69 +1863,142 @@ Qed.
            (STORE1: Mem.storebytes m2 b2 ofs bytes2 cp = Some m2'),
       right_mem_injection s j ge1 ge2 m1 m2'.
   Proof.
-    intros [DOM MI D0 SYMB MI_INJ BLKS1 BLKS2] LOCINJ STORE2.
+    intros [DOM MI D0 SYMB BLKS1 BLKS2] LOCINJ STORE2.
     exploit Mem.storebytes_outside_inject; eauto.
     { intros. eapply LOCINJ. eauto. }
     constructor;
     eauto using same_domain_right_storebytes, same_blocks_storebytes.
   Qed.
 
+(* FIXME: This is a generalization of an analogous lemma in SimplLocalsproof,
+   which could be backported there. *)
+Lemma assign_loc_inject:
+  forall ge cp f ty m loc ofs bf v m' tm loc' ofs' v',
+  assign_loc ge cp ty m loc ofs bf v m' ->
+  Val.inject f (Vptr loc ofs) (Vptr loc' ofs') ->
+  Val.inject f v v' ->
+  Mem.inject f m tm ->
+  exists tm',
+     assign_loc ge cp ty tm loc' ofs' bf v' tm'
+  /\ Mem.inject f m' tm'
+  /\ (forall c' b chunk v,
+      f b = None -> Mem.load chunk m b 0 c' = Some v -> Mem.load chunk m' b 0 c' = Some v).
+Proof.
+  intros. inv H.
+- (* by value *)
+  exploit Mem.storev_mapped_inject; eauto. intros [tm' [A B]].
+  exists tm'; split. eapply assign_loc_value; eauto.
+  split. auto.
+  intros. rewrite <- H5. eapply Mem.load_store_other; eauto.
+  left. inv H0. congruence.
+- (* by copy *)
+  inv H0. inv H1.
+  rename b' into bsrc. rename ofs'0 into osrc.
+  rename loc into bdst. rename ofs into odst.
+  rename loc' into bdst'. rename b2 into bsrc'.
+  destruct (zeq (sizeof ge ty) 0).
++ (* special case size = 0 *)
+  assert (bytes = nil).
+  { exploit (Mem.loadbytes_empty m bsrc (Ptrofs.unsigned osrc) (sizeof ge ty)).
+    lia. eapply Mem.loadbytes_can_access_block_inj; eauto. congruence. }
+  subst.
+  destruct (Mem.range_perm_storebytes tm bdst' (Ptrofs.unsigned (Ptrofs.add odst (Ptrofs.repr delta))) nil cp)
+  as [tm' SB].
+  simpl. red; intros; extlia.
+  eapply (Mem.mi_own _ _ _ (Mem.mi_inj _ _ _ H2)); eauto using Mem.storebytes_can_access_block_1.
+  exists tm'.
+  split. eapply assign_loc_copy; eauto.
+  intros; extlia.
+  intros; extlia.
+  rewrite e; right; lia.
+  apply Mem.loadbytes_empty. lia.
+  eapply (Mem.mi_own _ _ _ (Mem.mi_inj _ _ _ H2)); eauto using Mem.loadbytes_can_access_block_inj.
+  split. eapply Mem.storebytes_empty_inject; eauto.
+  intros. rewrite <- H0. eapply Mem.load_storebytes_other; eauto.
+  left. congruence.
++ (* general case size > 0 *)
+  exploit Mem.loadbytes_length; eauto. intros LEN.
+  assert (SZPOS: sizeof ge ty > 0).
+  { generalize (sizeof_pos ge ty); lia. }
+  assert (RPSRC: Mem.range_perm m bsrc (Ptrofs.unsigned osrc) (Ptrofs.unsigned osrc + sizeof ge ty) Cur Nonempty).
+    eapply Mem.range_perm_implies. eapply Mem.loadbytes_range_perm; eauto. auto with mem.
+  assert (RPDST: Mem.range_perm m bdst (Ptrofs.unsigned odst) (Ptrofs.unsigned odst + sizeof ge ty) Cur Nonempty).
+    replace (sizeof ge ty) with (Z.of_nat (List.length bytes)).
+    eapply Mem.range_perm_implies. eapply Mem.storebytes_range_perm; eauto. auto with mem.
+    rewrite LEN. apply Z2Nat.id. lia.
+  assert (PSRC: Mem.perm m bsrc (Ptrofs.unsigned osrc) Cur Nonempty).
+    apply RPSRC. lia.
+  assert (PDST: Mem.perm m bdst (Ptrofs.unsigned odst) Cur Nonempty).
+    apply RPDST. lia.
+  exploit Mem.address_inject.  eauto. eexact PSRC. eauto. intros EQ1.
+  exploit Mem.address_inject.  eauto. eexact PDST. eauto. intros EQ2.
+  exploit Mem.loadbytes_inject; eauto. intros [bytes2 [A B]].
+  exploit Mem.storebytes_mapped_inject; eauto. intros [tm' [C D]].
+  exists tm'.
+  split. eapply assign_loc_copy; try rewrite EQ1; try rewrite EQ2; eauto.
+  intros; eapply Mem.aligned_area_inject with (m := m); eauto.
+  apply alignof_blockcopy_1248.
+  apply sizeof_alignof_blockcopy_compat.
+  eapply Mem.loadbytes_can_access_block_inj; eauto.
+  intros; eapply Mem.aligned_area_inject with (m := m); eauto.
+  apply alignof_blockcopy_1248.
+  apply sizeof_alignof_blockcopy_compat.
+  eapply Mem.storebytes_can_access_block_1; eauto.
+  eapply Mem.disjoint_or_equal_inject with (m := m); eauto.
+  apply Mem.range_perm_max with Cur; auto.
+  apply Mem.range_perm_max with Cur; auto.
+  split. auto.
+  intros. rewrite <- H0. eapply Mem.load_storebytes_other; eauto.
+  left. congruence.
+- (* bitfield *)
+  inv H3.
+  exploit Mem.loadv_inject; eauto. intros (vc' & LD' & INJ). inv INJ.
+  exploit Mem.storev_mapped_inject; eauto. intros [tm' [A B]].
+  inv H1.
+  exists tm'; split. eapply assign_loc_bitfield; eauto. econstructor; eauto.
+  split. auto.
+  intros. rewrite <- H3. eapply Mem.load_store_other; eauto.
+  left. inv H0. congruence.
+Qed.
+
+Lemma same_domain_right_assign_loc
+        ge j cp ty m b ofs bf v m' :
+  assign_loc ge cp ty m b ofs bf v m' ->
+  same_domain_right s j m ->
+  same_domain_right s j m'.
+Proof.
+  intros ASSIGN DOM.
+  destruct ASSIGN as [
+      v chunk m' ACCESS STORE
+    | b' ofs' bytes m' ACCESS H1 H2 H3 LOAD STORE
+    | v sz sg pos width m' v' STORE ].
+  - eapply same_domain_right_store in STORE; eauto.
+  - eapply same_domain_right_storebytes in STORE; eauto.
+  - remember (Vptr b ofs) as addr1 eqn:Eaddr1.
+    destruct STORE as
+      [ sz sg1 attr sg pos width m addr c' n m' cp
+          pos_0 width_bounds pos_width sg_eq LOAD STORE
+      ]; subst addr.
+    eapply same_domain_right_store in STORE; eauto.
+Qed.
+
   Lemma right_mem_injection_assign_loc_mapped
     {j m1 m1' m2 ofs bf v1 v2 ty b1 b2 cp}
     (RMEMINJ: right_mem_injection s j ge1 ge2 m1 m2)
     (LOCINJ: j b1 = Some (b2, 0))
     (VALINJ: Val.inject j v1 v2)
-    (ASSIGN: assign_loc ge1 cp ty m1 b1 ofs bf v1 m1'):
+    (ASSIGN1: assign_loc ge1 cp ty m1 b1 ofs bf v1 m1'):
     exists m2',
       assign_loc ge2 cp ty m2 b2 ofs bf v2 m2' /\
       right_mem_injection s j ge1 ge2 m1' m2'.
   Proof.
-    destruct ASSIGN as [
-        v1 chunk m1' ACCESS1 STORE1
-      | b1' ofs' bytes1 m1' ACCESS H11 H12 H13 LOAD1 STORE1
-      | v1 sz sg pos width m1' v1' STORE1 ].
-    - simpl in *.
-      exploit @right_mem_injection_store_mapped; eauto.
-      intros (m2' & STORE2 & INJ'). exists m2'; split; trivial.
-      now eapply assign_loc_value; eauto.
-    - assert (exists b2' delta,
-         j b1' = Some (b2', delta) /\
-          v2 = Vptr b2' (Ptrofs.add ofs' (Ptrofs.repr delta)))
-        as (b2' & delta & b1'_b2' & ->).
-      { inv VALINJ; eauto. }
-      assert (delta = 0) as ->.
-      { destruct RMEMINJ as [_ _ D0].
-        now pose proof (D0 _ _ _ b1'_b2') as ->. }
-      rewrite Ptrofs.add_zero.
-      exploit partial_mem_inject; eauto. intros ?.
-      exploit Mem.loadbytes_inject; eauto. intros (bytes2 & LOAD2 & INJ).
-      rewrite Z.add_0_r in LOAD2.
-      destruct (right_mem_injection_storebytes_mapped
-                  RMEMINJ LOCINJ INJ STORE1)
-        as (m2' & STORE2 & INJ').
-      exists m2'. split; trivial.
-      rewrite genv_cenv_preserved.
-      eapply assign_loc_copy; eauto.
-      destruct H13 as [NEQ1|BOUNDS1]; [|now right].
-      left. destruct RMEMINJ as [_ _ _ _ MI_INJ].
-      destruct (MI_INJ _ _ _ _ _ _ NEQ1 b1'_b2' LOCINJ); congruence.
-    - remember (Vptr b1 ofs) as addr1 eqn:Eaddr1.
-      destruct STORE1 as
-        [ sz sg1 attr sg pos width m1 addr1 c1 n1 m1' cp
-          pos_0 width_bounds pos_width sg1_eq LOAD1 STORE1
-        ]; subst addr1.
-      simpl in *.
-      assert (v2 = Vint n1) as -> by now inv VALINJ. clear VALINJ.
-      exploit partial_mem_inject; eauto. intros MI.
-      exploit Mem.load_inject; eauto. rewrite Z.add_0_r.
-      intros (v2' & LOAD2 & INJ).
-      assert (v2' = Vint c1) as -> by now inv INJ. clear INJ.
-      set (vn := Int.bitfield_insert _ _ _ _) in STORE1.
-      assert (Val.inject j (Vint vn) (Vint vn)) as ? by constructor.
-      destruct (right_mem_injection_store_mapped RMEMINJ LOCINJ H STORE1)
-        as (m2' & STORE2 & RMEMINJ').
-      exists m2'. split; trivial. eapply assign_loc_bitfield; eauto.
-      econstructor; eauto.
+    assert (Val.inject j (Vptr b1 ofs) (Vptr b2 ofs)) as LOCINJ'.
+    { econstructor; eauto. now rewrite Ptrofs.add_zero. }
+    exploit assign_loc_inject; eauto using partial_mem_inject.
+    intros (m2' & ASSIGN2 & MEMINJ & LOAD).
+    rewrite genv_cenv_preserved. exists m2'; split; trivial.
+    destruct RMEMINJ as [DOM MI D0 SYMB BLKS1 BLKS2].
+    constructor; eauto using same_domain_right_assign_loc, same_blocks_assign_loc.
   Qed.
 
   Lemma right_mem_injection_assign_loc_unmapped
@@ -2159,7 +2209,7 @@ Qed.
               incr & j_j'_sep & comps_m1').
     exists j', m2', vres2.
     split; [| split; [| split]]; auto.
-    destruct RMEMINJ as [DOM MI D0 SYMB MI_INJ BLKS1 BLKS2].
+    destruct RMEMINJ as [DOM MI D0 SYMB BLKS1 BLKS2].
     constructor; eauto.
     - intros b. specialize (DOM b). simpl in *.
       destruct (Mem.block_compartment m1 b) as [cp|] eqn:block_m1_b.
@@ -2202,37 +2252,6 @@ Qed.
     - (* Right now, this cannot be proved because it contradicts
          same_domain_right. *)
       admit.
-    - intros b1 b2 b1' b2' ofs1 ofs2 b1_b2 j'_b1 j'_b2.
-      destruct (j b1) as [[b1'' ofs1']|] eqn:j_b1.
-      + exploit incr; eauto. intros E.
-        assert (b1'' = b1' /\ ofs1' = ofs1) as [-> ->]
-            by (split; congruence).
-        clear E.
-        destruct (j b2) as [[b2'' ofs2']|] eqn:j_b2.
-        * exploit incr; eauto. intros E.
-          assert (b2'' = b2' /\ ofs2' = ofs2) as [-> ->]
-              by (split; congruence).
-          eauto.
-        * left. intros <-.
-          exploit j_j'_sep; eauto. intros [_ contra].
-          apply contra. eauto using Mem.mi_mappedblocks.
-      + destruct (j b2) as [[b2'' ofs2']|] eqn:j_b2.
-        * exploit incr; eauto. intros E.
-          assert (b2'' = b2' /\ ofs2' = ofs2) as [-> ->]
-              by (split; congruence).
-          left. intros <-.
-          exploit j_j'_sep; eauto. intros [_ contra].
-          apply contra. eauto using Mem.mi_mappedblocks.
-        * assert (~ Mem.valid_block m1 b1 /\ ~ Mem.valid_block m2 b1')
-            as [invalid_b1 invalid_b1'].
-          { eauto. }
-          assert (~ Mem.valid_block m1 b2 /\ ~ Mem.valid_block m2 b2')
-            as [invalid_b2 invalid_b2'].
-          { eauto. }
-          (* FIXME: It seems that we are stuck now. Apparently, it is possible
-             for an extended injection to allow two blocks to alias if they do
-             not have the appropriate permissions. *)
-          admit.
     - intros b cp b_cp.
       specialize (BLKS1 _ _ b_cp).
       enough (Mem.can_access_block m1' b (Some cp)) by trivial.
@@ -2254,7 +2273,7 @@ Qed.
       right_mem_injection s j ge1 ge2 m1' m2.
   Proof.
     intros.
-    destruct RMEMINJ as [DOM MI D0 SYMB MI_INJ BLKS1 BLKS2].
+    destruct RMEMINJ as [DOM MI D0 SYMB BLKS1 BLKS2].
     constructor; eauto.
     - intros b. specialize (DOM b). simpl in *.
       destruct (Mem.block_compartment m1 b) as [cp|] eqn:m1_b.
@@ -2292,7 +2311,7 @@ Qed.
       right_mem_injection s j ge1 ge2 m1 m2'.
   Proof.
     intros.
-    destruct RMEMINJ as [DOM MI D0 SYMB MI_INJ BLKS1 BLKS2].
+    destruct RMEMINJ as [DOM MI D0 SYMB BLKS1 BLKS2].
     constructor; eauto.
     - exploit ec_mem_outside_compartment; eauto.
       { apply external_call_spec. }
@@ -2610,99 +2629,21 @@ Qed.
       rename H into eval_lhs1.
       rename H0 into eval_rhs1.
       rename H1 into cast_v1.
-      rename H2 into ASSIGN.
+      rename H2 into ASSIGN1.
       assert (f_right : s (comp_of f) = Right) by exact is_r2.
       exploit eval_lvalue_injection; eauto.
       exploit eval_expr_injection; eauto.
       intros [v2 [v1_v2 eval_rhs2]] [loc2 [loc1_ofs [j_loc1 eval_lhs2]]].
-      destruct_mem_inj.
-      exploit sem_cast_inject; eauto.
+      exploit sem_cast_inject; eauto using partial_mem_inject.
       intros [v2' [cast_v2 v1'_v2']].
-      exploit delta_zero; eauto. intros ?; subst loc1_ofs.
+      exploit j_delta_zero; eauto. intros ->.
       rewrite Ptrofs.add_zero in *.
-      inv ASSIGN.
-      * rename H into ACCESS.
-        rename H0 into store_v1'.
-        exploit Mem.store_mapped_inject; eauto.
-        rewrite Z.add_0_r.
-        intros [m2' [store_v2' mem_inject']].
-        exists j; eexists; split.
-        - econstructor; eauto.
-          econstructor; eauto.
-        - apply RightControl; eauto.
-          constructor; eauto.
-          split; eauto.
-          ++ unfold same_domain_right in *.
-             intros b. specialize same_dom with b.
-             enough (((s, m1') |= b ∈ Right) = ((s, m1) |= b ∈ Right))
-               as -> by easy.
-             unfold Mem.has_side_block. simpl.
-             erewrite Mem.store_block_compartment; eauto.
-          ++ unfold same_blocks in *.
-             intros b cp b_cp.
-             specialize (SAMEBLKS b cp b_cp).
-             erewrite Mem.store_block_compartment; eauto.
-          ++ unfold same_blocks in *.
-             intros b cp b_cp.
-             specialize (same_blks3 b cp b_cp).
-             erewrite Mem.store_block_compartment; eauto.
-      * rename b' into b1'. rename ofs' into ofs1'.
-        rename H into ACCESS.
-        rename H0 into align_lhs1'.
-        rename H1 into align_lhs1.
-        rename H2 into sizes1.
-        rename H3 into load_b1'.
-        rename H4 into store_loc1.
-        inv v1'_v2'.
-        rename b2 into b2'. rename H1 into j_b1'.
-        rename bytes into bytes1.
-        exploit delta_zero; try exact j_b1'; eauto. intros ?; subst delta.
-        exploit Mem.loadbytes_inj; eauto using Mem.mi_inj.
-        rewrite Z.add_0_r.
-        intros [bytes2 [load_b2' MVALINJ]].
-        exploit Mem.storebytes_mapped_inject; eauto using Mem.mi_inj.
-        rewrite Z.add_0_r.
-        intros [m2' [store_loc2 mem_inject']].
-        exists j; eexists; split.
-        - econstructor; eauto.
-          rewrite genv_cenv_preserved in *.
-          eapply assign_loc_copy; try rewrite Ptrofs.add_zero; eauto.
-          { destruct sizes1.
-            - exploit injective; eauto. intros []; [now left| contradiction].
-            - auto. }
-        - apply RightControl; eauto.
-          constructor; eauto.
-          split; eauto.
-          ++ clear -same_dom store_loc1.
-             unfold same_domain_right in *.
-             intros b.
-             unfold in_side in *; simpl in *.
-             erewrite Mem.storebytes_block_compartment; eauto.
-          ++ eapply same_blocks_storebytes; eauto.
-          ++ eapply same_blocks_storebytes; eauto.
-      * inv H.
-        exploit Mem.load_inject; eauto using Mem.mi_inj.
-        intros [? [? ?]].
-        exploit Mem.store_mapped_inject; eauto.
-        intros [? [? ?]].
-        inv H8.
-        exploit delta_zero; eauto; intros; subst.
-        rewrite Z.add_0_r in *.
-        exists j; eexists; split.
-        - econstructor; eauto.
-          eapply assign_loc_bitfield. rewrite <- H0. inv H4. inv v1'_v2'.
-          econstructor; eauto.
-        - apply RightControl; eauto.
-          constructor; eauto.
-          split; eauto.
-          ++ clear -same_dom H6.
-             unfold same_domain_right in *.
-             intros b.
-             unfold in_side in *; simpl in *.
-             erewrite Mem.store_block_compartment; eauto.
-          ++ now constructor.
-          ++ eapply same_blocks_store; eauto.
-          ++ eapply same_blocks_store; eauto.
+      exploit @right_mem_injection_assign_loc_mapped; eauto.
+      intros (m2' & ASSIGN2 & RMEMINJ').
+      exists j; eexists; split.
+      { econstructor; eauto. }
+      apply RightControl; eauto.
+      constructor; eauto.
     + (* step_set *)
       exploit eval_expr_injection; eauto.
       auto.
@@ -3807,44 +3748,6 @@ Proof.
   reflexivity.
 Qed.
 
-(* This one should always be fairly easy *)
-Lemma meminj_injective_init_meminj:
-  Mem.meminj_injective init_meminj.
-Proof.
-  unfold init_meminj.
-  intros b1 b2 b' b'' ofs1 ofs2 b1_b2 INJ1 INJ2.
-  destruct (init_meminj_block b1) eqn:b1_b'; [| discriminate].
-  injection INJ1 as -> <-.
-  destruct (init_meminj_block b2) eqn:b2_b'; [| discriminate].
-  injection INJ2 as -> <-.
-  left. intros <-.
-  unfold init_meminj_block in b1_b', b2_b'.
-  destruct (Genv.invert_symbol ge1 b1) as [id1 |] eqn:SYM1; [| discriminate].
-  assert (NONE1: Genv.find_symbol ge1 id1 <> None). {
-    apply Genv.invert_find_symbol in SYM1. congruence. }
-  destruct (Genv.find_symbol_find_comp _ _ NONE1) as (cp1 & COMP1).
-  setoid_rewrite COMP1 in b1_b'.
-  destruct (s cp1) eqn:RIGHT1; [discriminate |].
-  destruct (Genv.find_symbol ge2 id1) as [b1' |] eqn:SYM1'; [| discriminate].
-  injection b1_b' as ->.
-  destruct (Genv.invert_symbol ge1 b2) as [id2 |] eqn:SYM2; [| discriminate].
-  (* Same processing as above, can be automated *)
-  assert (NONE2: Genv.find_symbol ge1 id2 <> None). {
-    apply Genv.invert_find_symbol in SYM2. congruence. }
-  destruct (Genv.find_symbol_find_comp _ _ NONE2) as (cp2 & COMP2).
-  setoid_rewrite COMP2 in b2_b'.
-  destruct (s cp2) eqn:RIGHT2; [discriminate |].
-  destruct (Genv.find_symbol ge2 id2) as [b2' |] eqn:SYM2'; [| discriminate].
-  injection b2_b' as ->.
-  destruct (peq id1 id2) as [<- | NEQ].
-  - apply Genv.invert_find_symbol in SYM1, SYM2.
-    rewrite SYM1 in SYM2. injection SYM2 as <-.
-    contradiction.
-  - destruct (Genv.genv_vars_inj _ _ _ SYM1' SYM2').
-    contradiction.
-Qed.
-
-
 (* These characterizations need to be a bit more general to be
    independent of init_meminj in particular *)
 Lemma init_mem_characterization_rel sp (pr1 pr2: program) id gd m1 m2 b1 b2
@@ -4036,12 +3939,24 @@ Proof.
     injection INJ as -> <-.
     exact (Genv.find_symbol_not_fresh _ _ MEM2 SYM2).
   - intros b1 b1' delta1 b2 b2' delta2 ofs1 ofs2 b1_b2 INJ1 INJ2 PERM1 PERM2.
-    left.
-    exploit meminj_injective_init_meminj; eauto; [].
-    intros [b1'_b2' | CONTRA]; [assumption |].
-    rewrite (delta_zero_init_meminj _ _ _ INJ1) in CONTRA.
-    rewrite (delta_zero_init_meminj _ _ _ INJ2) in CONTRA.
-    contradiction.
+    left. intros <-. apply b1_b2.
+    unfold init_meminj, init_meminj_block in INJ1, INJ2.
+    destruct (Genv.invert_symbol ge1 b1) as [id1|] eqn:ge1_b1; try easy.
+    destruct (Genv.invert_symbol ge1 b2) as [id2|] eqn:ge1_b2; try easy.
+    destruct (Genv.find_comp_of_ident ge1 id1) as [cp1|] eqn:id1_cp1; try easy.
+    destruct (Genv.find_comp_of_ident ge1 id2) as [cp2|] eqn:id2_cp2; try easy.
+    destruct (s cp1); try easy.
+    destruct (s cp2); try easy.
+    destruct (Genv.find_symbol ge2 id1) as [b'|] eqn:ge2_id1; try easy.
+    injection INJ1 as -> <-.
+    destruct (Genv.find_symbol ge2 id2) as [b'|] eqn:ge2_id2; try easy.
+    injection INJ2 as -> <-.
+    apply Genv.find_invert_symbol in ge2_id1.
+    apply Genv.find_invert_symbol in ge2_id2.
+    assert (id2 = id1) as -> by congruence.
+    apply Genv.invert_find_symbol in ge1_b1.
+    apply Genv.invert_find_symbol in ge1_b2.
+    congruence.
   - unfold init_meminj, init_meminj_block.
     intros b1 b2 delta ofs INJ PERM.
     destruct (Genv.invert_symbol ge1 b1) as [id |] eqn:SYM1; [| discriminate].
@@ -4092,7 +4007,6 @@ Proof.
   - apply inject_init_meminj; assumption.
   - apply delta_zero_init_meminj.
   - apply symbols_inject_init_meminj.
-  - apply meminj_injective_init_meminj.
   - apply init_mem_same_blocks; assumption.
   - apply init_mem_same_blocks; assumption.
 Qed.
