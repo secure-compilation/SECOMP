@@ -1,6 +1,7 @@
 Require Import String.
 Require Import Coqlib Maps Errors Integers.
 Require Import AST Globalenvs Linking Smallstep Events Behaviors Memory Values.
+Require Import SimplLocalsproof.
 Require Import Complements.
 Require Import Ctypes Cop Clight.
 Require Import Split.
@@ -1869,97 +1870,6 @@ Qed.
     constructor;
     eauto using same_domain_right_storebytes, same_blocks_storebytes.
   Qed.
-
-(* FIXME: This is a generalization of an analogous lemma in SimplLocalsproof,
-   which could be backported there. *)
-Lemma assign_loc_inject:
-  forall ge cp f ty m loc ofs bf v m' tm loc' ofs' v',
-  assign_loc ge cp ty m loc ofs bf v m' ->
-  Val.inject f (Vptr loc ofs) (Vptr loc' ofs') ->
-  Val.inject f v v' ->
-  Mem.inject f m tm ->
-  exists tm',
-     assign_loc ge cp ty tm loc' ofs' bf v' tm'
-  /\ Mem.inject f m' tm'
-  /\ (forall c' b chunk v,
-      f b = None -> Mem.load chunk m b 0 c' = Some v -> Mem.load chunk m' b 0 c' = Some v).
-Proof.
-  intros. inv H.
-- (* by value *)
-  exploit Mem.storev_mapped_inject; eauto. intros [tm' [A B]].
-  exists tm'; split. eapply assign_loc_value; eauto.
-  split. auto.
-  intros. rewrite <- H5. eapply Mem.load_store_other; eauto.
-  left. inv H0. congruence.
-- (* by copy *)
-  inv H0. inv H1.
-  rename b' into bsrc. rename ofs'0 into osrc.
-  rename loc into bdst. rename ofs into odst.
-  rename loc' into bdst'. rename b2 into bsrc'.
-  destruct (zeq (sizeof ge ty) 0).
-+ (* special case size = 0 *)
-  assert (bytes = nil).
-  { exploit (Mem.loadbytes_empty m bsrc (Ptrofs.unsigned osrc) (sizeof ge ty)).
-    lia. eapply Mem.loadbytes_can_access_block_inj; eauto. congruence. }
-  subst.
-  destruct (Mem.range_perm_storebytes tm bdst' (Ptrofs.unsigned (Ptrofs.add odst (Ptrofs.repr delta))) nil cp)
-  as [tm' SB].
-  simpl. red; intros; extlia.
-  eapply (Mem.mi_own _ _ _ (Mem.mi_inj _ _ _ H2)); eauto using Mem.storebytes_can_access_block_1.
-  exists tm'.
-  split. eapply assign_loc_copy; eauto.
-  intros; extlia.
-  intros; extlia.
-  rewrite e; right; lia.
-  apply Mem.loadbytes_empty. lia.
-  eapply (Mem.mi_own _ _ _ (Mem.mi_inj _ _ _ H2)); eauto using Mem.loadbytes_can_access_block_inj.
-  split. eapply Mem.storebytes_empty_inject; eauto.
-  intros. rewrite <- H0. eapply Mem.load_storebytes_other; eauto.
-  left. congruence.
-+ (* general case size > 0 *)
-  exploit Mem.loadbytes_length; eauto. intros LEN.
-  assert (SZPOS: sizeof ge ty > 0).
-  { generalize (sizeof_pos ge ty); lia. }
-  assert (RPSRC: Mem.range_perm m bsrc (Ptrofs.unsigned osrc) (Ptrofs.unsigned osrc + sizeof ge ty) Cur Nonempty).
-    eapply Mem.range_perm_implies. eapply Mem.loadbytes_range_perm; eauto. auto with mem.
-  assert (RPDST: Mem.range_perm m bdst (Ptrofs.unsigned odst) (Ptrofs.unsigned odst + sizeof ge ty) Cur Nonempty).
-    replace (sizeof ge ty) with (Z.of_nat (List.length bytes)).
-    eapply Mem.range_perm_implies. eapply Mem.storebytes_range_perm; eauto. auto with mem.
-    rewrite LEN. apply Z2Nat.id. lia.
-  assert (PSRC: Mem.perm m bsrc (Ptrofs.unsigned osrc) Cur Nonempty).
-    apply RPSRC. lia.
-  assert (PDST: Mem.perm m bdst (Ptrofs.unsigned odst) Cur Nonempty).
-    apply RPDST. lia.
-  exploit Mem.address_inject.  eauto. eexact PSRC. eauto. intros EQ1.
-  exploit Mem.address_inject.  eauto. eexact PDST. eauto. intros EQ2.
-  exploit Mem.loadbytes_inject; eauto. intros [bytes2 [A B]].
-  exploit Mem.storebytes_mapped_inject; eauto. intros [tm' [C D]].
-  exists tm'.
-  split. eapply assign_loc_copy; try rewrite EQ1; try rewrite EQ2; eauto.
-  intros; eapply Mem.aligned_area_inject with (m := m); eauto.
-  apply alignof_blockcopy_1248.
-  apply sizeof_alignof_blockcopy_compat.
-  eapply Mem.loadbytes_can_access_block_inj; eauto.
-  intros; eapply Mem.aligned_area_inject with (m := m); eauto.
-  apply alignof_blockcopy_1248.
-  apply sizeof_alignof_blockcopy_compat.
-  eapply Mem.storebytes_can_access_block_1; eauto.
-  eapply Mem.disjoint_or_equal_inject with (m := m); eauto.
-  apply Mem.range_perm_max with Cur; auto.
-  apply Mem.range_perm_max with Cur; auto.
-  split. auto.
-  intros. rewrite <- H0. eapply Mem.load_storebytes_other; eauto.
-  left. congruence.
-- (* bitfield *)
-  inv H3.
-  exploit Mem.loadv_inject; eauto. intros (vc' & LD' & INJ). inv INJ.
-  exploit Mem.storev_mapped_inject; eauto. intros [tm' [A B]].
-  inv H1.
-  exists tm'; split. eapply assign_loc_bitfield; eauto. econstructor; eauto.
-  split. auto.
-  intros. rewrite <- H3. eapply Mem.load_store_other; eauto.
-  left. inv H0. congruence.
-Qed.
 
 Lemma same_domain_right_assign_loc
         ge j cp ty m b ofs bf v m' :
