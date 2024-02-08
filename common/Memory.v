@@ -5459,7 +5459,7 @@ Qed.
 Lemma free_list_unchanged_on m blks cp m' :
   free_list m blks cp = Some m' ->
   Forall (fun '(b, lo, hi) =>
-            can_access_block m b (Some cp) ->
+            can_access_block m b cp ->
             forall i, lo <= i < hi -> ~ P b i) blks ->
   unchanged_on m m'.
 Proof.
@@ -5470,7 +5470,7 @@ Proof.
   rename m' into m''. intros m FREELIST WEAK.
   destruct (Mem.free m b lo hi cp) as [m'|] eqn:FREE; try congruence.
   rewrite List.Forall_cons_iff in WEAK. destruct WEAK as [WEAK1 WEAK2].
-  assert (Mem.can_access_block m b (Some cp)) as ACCESS.
+  assert (Mem.can_access_block m b cp) as ACCESS.
   { eauto using free_can_access_block_1. }
   specialize (WEAK1 ACCESS).
   assert (unchanged_on m m') as m_m'.
@@ -5524,9 +5524,9 @@ Proof.
   - intros b1 b2 delta ofs k p j_b1 m1'_b1.
     apply (perm_m1 _ _ _ _ _ _ j_b1).
     rewrite (unchanged_on_perm _ _ unchanged_m1); eauto.
-  - intros b1 b2 delta [cp|] j_b1 m1'_b1; simpl in *; trivial.
-    apply (own_m1 _ _ _ (Some cp) j_b1). simpl.
-    apply (unchanged_on_own _ _ unchanged_m1 b1 (Some cp)); trivial.
+  - intros b1 b2 delta cp j_b1 m1'_b1; simpl in *; trivial.
+    apply (own_m1 _ _ _ cp j_b1). simpl.
+    rewrite <- (unchanged_on_own _ _ unchanged_m1 b1); trivial.
     eauto.
   - intros b1 b2 delta chunk ofs p j_b1 range.
     eapply align_m1; eauto.
@@ -5572,7 +5572,7 @@ Proof.
   - intros b1 b2 delta ofs k p j_b1 m1'_b1.
     rewrite <- (unchanged_on_perm _ _ unchanged_m2); eauto.
   - intros b1 b2 delta cp j_b1 m1'_b1; simpl in *; trivial.
-    apply (unchanged_on_own _ _ unchanged_m2 b2 cp); eauto.
+    rewrite (unchanged_on_own _ _ unchanged_m2 b2); eauto.
   - intros b1 ofs b2 delta j_b1 perm_m1'.
     rewrite (unchanged_on_contents _ _ unchanged_m2); eauto.
   - intros b1 b2' delta f_b1.

@@ -146,9 +146,9 @@ SECURITY= Split.v Tactics.v MemoryWeak.v MemoryDelta.v BtBasics.v BtInfoAsm.v Bt
 
 # Low-level backend (in cheririscV/)
 
-SECARCH=CapArchi.v CapAST.v OCapValues.v CapMemdata.v CapMemtype.v \
-  CapMemory.v CapGlobalenvs.v CapOp.v CapMachregs.v CapLocations.v CapAsm.v \
-  CapConventions1.v CapConventions.v CapAsmgen.v
+SECARCH=CapArchi.v #CapAST.v OCapValues.v CapMemdata.v CapMemtype.v \
+#  CapMemory.v CapGlobalenvs.v CapOp.v CapMachregs.v CapLocations.v CapAsm.v \
+#  CapConventions1.v CapConventions.v CapAsmgen.v
 
 # Parser
 

@@ -2469,7 +2469,9 @@ Lemma match_genvs_allowed_addrof:
 Proof.
   unfold allowed_addrof.
   intros cp id.
-  now rewrite match_genvs_find_comp_of_ident.
+  rewrite match_genvs_find_comp_of_ident.
+  rewrite match_genvs_public_symbol.
+  reflexivity.
 Qed.
 
 Lemma match_genvs_allowed_calls:
