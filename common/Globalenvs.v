@@ -1647,6 +1647,16 @@ Proof.
   exploit init_mem_characterization_gen; eauto.
 Qed.
 
+Lemma init_mem_block_compartment:
+  forall p m b,
+  init_mem p = Some m ->
+  list_norepet (prog_defs_names p) ->
+  Mem.block_compartment m b =
+  find_comp_of_block (globalenv p) b.
+Proof.
+Admitted.
+
+
 (** ** Compatibility with memory injections *)
 
 Section INITMEM_INJ.

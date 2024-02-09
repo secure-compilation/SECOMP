@@ -3637,24 +3637,41 @@ Definition init_meminj: meminj :=
     end.
 
 Lemma find_symbol_init_mem_compartment (pr: program) m1 id b
+      (NOREPET: list_norepet (prog_defs_names pr))
       (SYM: Genv.find_symbol (Genv.globalenv pr) id = Some b)
       (MEM: Genv.init_mem pr = Some m1):
   Genv.find_comp_of_ident (Genv.globalenv pr) id =
   Mem.block_compartment m1 b.
-Admitted. (* Should be easy *)
+Proof.
+  unfold Genv.find_comp_of_ident.
+  rewrite SYM.
+  erewrite Genv.init_mem_block_compartment; eauto.
+Qed.
 
 Lemma find_symbol_right id cp
   (SYM: Genv.find_symbol ge1 id <> None)
   (COMP : Genv.find_comp_of_ident ge1 id = Some cp)
   (RIGHT: s cp = Right):
   Genv.find_symbol ge2 id <> None.
-Admitted. (* Should be easy *)
+Proof.
+  exploit match_prog_globdefs; eauto.
+  intros (? & ? & ? & ? & ?). congruence.
+Qed.
 
 Lemma init_mem_invert_symbol (pr: program) m b
+  (NOREPET: list_norepet (prog_defs_names pr))
   (MEM: Genv.init_mem pr = Some m)
   (COMP : Mem.block_compartment m b <> None):
   Genv.invert_symbol (globalenv pr) b <> None.
-Admitted. (* Should be easy *)
+Proof.
+  erewrite Genv.init_mem_block_compartment in COMP; eauto.
+  unfold Genv.find_comp_of_block in *.
+  destruct Genv.find_def as [d|] eqn:pr_b; try congruence.
+  exploit Genv.find_def_find_symbol_inversion; eauto.
+  intros (id & id_b).
+  apply Genv.find_invert_symbol in id_b.
+  simpl. unfold fundef in *. rewrite id_b. congruence.
+Qed.
 
 Lemma same_domain_right_init_meminj m1
       (MEM: Genv.init_mem W1 = Some m1):
@@ -3671,8 +3688,9 @@ Proof.
     destruct (s cp) eqn:RIGHT; [contradiction |].
     destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [| contradiction].
     apply Genv.invert_find_symbol in SYM1.
-    setoid_rewrite (find_symbol_init_mem_compartment _ _ _ _ SYM1 MEM) in COMP.
-    simpl. rewrite COMP. assumption.
+    setoid_rewrite (find_symbol_init_mem_compartment _ _ _ _ _ SYM1 MEM) in COMP.
+    { simpl. rewrite COMP. assumption. }
+    { eapply match_prog_unique1; eauto. }
   - simpl. unfold init_meminj, init_meminj_block. intros RIGHT INJ.
     (* Variation on standard processing *)
     destruct (Genv.invert_symbol ge1 b) as [id |] eqn:SYM1.
@@ -3683,14 +3701,17 @@ Proof.
       destruct (Mem.block_compartment m1 b) as [cp' |] eqn:COMP'; [| contradiction].
       apply Genv.invert_find_symbol in SYM1.
       assert (cp = cp') as <-. {
-        setoid_rewrite (find_symbol_init_mem_compartment _ _ _ _ SYM1 MEM) in COMP.
-        setoid_rewrite COMP in COMP'. injection COMP' as <-. reflexivity. }
+        setoid_rewrite (find_symbol_init_mem_compartment _ _ _ _ _ SYM1 MEM) in COMP.
+        { setoid_rewrite COMP in COMP'. injection COMP' as <-. reflexivity. }
+        { exploit match_prog_unique1; eauto. }
+      }
       rewrite RIGHT in INJ.
       destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [discriminate |].
       assert (CONTRA := find_symbol_right _ _ NONE COMP RIGHT). contradiction.
     + destruct Mem.block_compartment as [cp |] eqn:COMP; [| contradiction].
       assert (NONE: Mem.block_compartment m1 b <> None) by congruence.
-      assert (CONTRA := init_mem_invert_symbol _ _ _ MEM NONE). contradiction.
+      exploit init_mem_invert_symbol; eauto.
+      exploit match_prog_unique1; eauto.
 Qed.
 
 Lemma delta_zero_init_meminj:
