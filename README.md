@@ -22,7 +22,7 @@ Together with the above, the toolchain relies on the riscv64 architecture
 version of the GCC compiler, available for example from the
 `gcc-riscv64-linux-gnu` package on Debian-based systems.
 
-Extended requirements for automated testing support:
+Extended requirements for systematic testing:
 
  - OCaml version 4.14.0 or greater.
 
@@ -32,7 +32,7 @@ Extended requirements for automated testing support:
 
 ## Structure
 
-Our current development is currently split into four branches, that we are working on
+The development is currently split into four branches, which we are working on
 merging into a single release:
 
  - `ccs-submission`: compiler correctness proof and testing infrastructure (main)
@@ -58,7 +58,7 @@ When this step succeeds, running `make proof` runs the proofs and `make` builds 
 This branch contains the extension of CompCert to compartments, which involved
 updating the languages, passes, and correctness proofs. This extension can be
 built into a compiler binary that can be used to compile compartmentalized C
-programs that can be executed. It also includes the automated testing
+programs that can be executed. It also includes the systematic testing
 infrastructure employed to validate the assumptions and expected behavior of the
 back-translation function.
 
@@ -101,7 +101,7 @@ This branch contains the recomposition proof. Use `make proof` to replay the pro
 
 This proof is complete and done in a slightly more complex setting where system calls
 can belong to particular compartments. Also some recent changes to the mainline
-`correctness` branch are in the process of being integrated.
+`ccs-submission` branch are in the process of being integrated.
 
 The memory deltas are defined in the file `security/MemoryDelta.v`.
 
@@ -123,7 +123,7 @@ to Clight: `backtranslation_proof`.
 
 This branch contains the recomposition proof. Use `make proof` to replay the proof.
 
-The proof is mostly complete. Some recent changes to the mainline `correctness`
+The proof is mostly complete. Some recent changes to the mainline `ccs-submission`
 branch are in the process of being integrated.
 
 File `common/Smallstep.v` contains the definition of the three-way simulation
@@ -148,7 +148,7 @@ There are a few admitted low-level lemmas, which are of two types:
 This branch contains the blame proof. Use `make proof` to replay the proof.
 
 The high-level structure of the proof is complete.  Some recent changes to the
-mainline `correctness` branch are in the process of being integrated.
+mainline `ccs-submission` branch are in the process of being integrated.
 
 Definition 6 (Blame) can be found in file `security/Blame.v`, theorem `blame_program`.
 
