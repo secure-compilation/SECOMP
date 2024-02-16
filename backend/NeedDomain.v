@@ -840,7 +840,6 @@ Definition default (x: nval) :=
 Section DEFAULT.
 
 Variable ge: genv.
-Variable cp: compartment.
 Variable sp: block.
 Variables m1 m2: mem.
 Hypothesis PERM: forall b ofs k p, Mem.perm m1 b ofs k p -> Mem.perm m2 b ofs k p.
@@ -901,14 +900,14 @@ Qed.
 
 Lemma default_needs_of_operation_sound:
   forall op args1 v1 args2 nv,
-  eval_operation ge cp (Vptr sp Ptrofs.zero) op args1 m1 = Some v1 ->
+  eval_operation ge (Vptr sp Ptrofs.zero) op args1 m1 = Some v1 ->
   vagree_list args1 args2 nil
   \/ vagree_list args1 args2 (default nv :: nil)
   \/ vagree_list args1 args2 (default nv :: default nv :: nil)
   \/ vagree_list args1 args2 (default nv :: default nv :: default nv :: nil) ->
   nv <> Nothing ->
   exists v2,
-     eval_operation ge cp (Vptr sp Ptrofs.zero) op args2 m2 = Some v2
+     eval_operation ge (Vptr sp Ptrofs.zero) op args2 m2 = Some v2
   /\ vagree v1 v2 nv.
 Proof.
   intros. assert (default nv = All) by (destruct nv; simpl; congruence).
@@ -920,9 +919,9 @@ Proof.
     destruct H0. inv H0. constructor. inv H8; constructor; auto with na. 
     inv H0; constructor; auto with na. inv H8; constructor; auto with na. inv H9; constructor; auto with na.
   }
-  exploit (@eval_operation_inj _ _ _ _ ge ge _ _ inject_id).
+  exploit (@eval_operation_inj _ _ _ _ ge ge inject_id).
   eassumption. auto. auto. auto.
-  instantiate (3 := op). intros. apply val_inject_lessdef; auto.
+  instantiate (1 := op). intros. apply val_inject_lessdef; auto.
   apply val_inject_lessdef. instantiate (1 := Vptr sp Ptrofs.zero). instantiate (1 := Vptr sp Ptrofs.zero). auto.
   apply val_inject_list_lessdef; eauto.
   eauto.
@@ -1197,10 +1196,10 @@ Definition nmem_add (nm: nmem) (p: aptr) (sz: Z) : nmem :=
   end.
 
 Lemma nlive_add:
-  forall bc cp b ofs p nm sz i,
+  forall bc b ofs p nm sz i,
   genv_match bc ge ->
   bc sp = BCstack ->
-  pmatch bc ge cp b ofs p ->
+  pmatch bc b ofs p ->
   Ptrofs.unsigned ofs <= i < Ptrofs.unsigned ofs + sz ->
   nlive (nmem_add nm p sz) b i.
 Proof.
@@ -1212,7 +1211,7 @@ Proof.
   + constructor; simpl; intros.
     congruence.
     assert (id0 = id) by (eapply Genv.genv_vars_inj; eauto). subst id0.
-    rewrite PTree.gss in H7. inv H7. rewrite ISet.In_remove.
+    rewrite PTree.gss in H5. inv H5. rewrite ISet.In_remove.
     intros [A B]. elim A; auto.
   + constructor; simpl; intros.
     congruence.
@@ -1280,10 +1279,10 @@ Definition nmem_remove (nm: nmem) (p: aptr) (sz: Z) : nmem :=
   end.
 
 Lemma nlive_remove:
-  forall bc cp b ofs p nm sz b' i,
+  forall bc b ofs p nm sz b' i,
   genv_match bc ge ->
   bc sp = BCstack ->
-  pmatch bc ge cp b ofs p ->
+  pmatch bc b ofs p ->
   nlive nm b' i ->
   b' <> b \/ i < Ptrofs.unsigned ofs \/ Ptrofs.unsigned ofs + sz <= i ->
   nlive (nmem_remove nm p sz) b' i.
@@ -1297,10 +1296,10 @@ Proof.
                       ISet.interval (Ptrofs.unsigned ofs)
                         (Ptrofs.unsigned ofs + sz)
               end).
-  assert (Genv.find_symbol ge id = Some b) by (eapply H4; eauto).
+  assert (Genv.find_symbol ge id = Some b) by (eapply H; eauto).
   split; simpl; auto; intros.
-  rewrite PTree.gsspec in H8. destruct (peq id0 id).
-+ inv H8. destruct H3. congruence. destruct gl!id as [iv0|] eqn:NG.
+  rewrite PTree.gsspec in H6. destruct (peq id0 id).
++ inv H6. destruct H3. congruence. destruct gl!id as [iv0|] eqn:NG.
   unfold iv'; rewrite ISet.In_add. intros [P|P]. lia. eelim GL; eauto.
   unfold iv'; rewrite ISet.In_interval. lia.
 + eauto.
@@ -1330,10 +1329,10 @@ Definition nmem_contains (nm: nmem) (p: aptr) (sz: Z) :=
   end.
 
 Lemma nlive_contains:
-  forall bc cp b ofs p nm sz i,
+  forall bc b ofs p nm sz i,
   genv_match bc ge ->
   bc sp = BCstack ->
-  pmatch bc ge cp b ofs p ->
+  pmatch bc b ofs p ->
   nmem_contains nm p sz = false ->
   Ptrofs.unsigned ofs <= i < Ptrofs.unsigned ofs + sz ->
   ~(nlive nm b i).

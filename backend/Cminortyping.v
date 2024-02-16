@@ -449,11 +449,11 @@ Inductive wt_state: state -> Prop :=
         (WT_ENV: wt_env env e)
         (DEF_ENV: def_env f e),
       wt_state (State f s k sp e m)
-  | wt_call_state: forall f args k m
+  | wt_call_state: forall f args k m cp
         (WT_FD: wt_fundef f)
         (WT_ARGS: Val.has_type_list args (funsig f).(sig_args))
         (WT_CONT: wt_cont_call k (funsig f).(sig_res)),
-      wt_state (Callstate f args k m)
+      wt_state (Callstate f args k m cp)
   | wt_return_state: forall v k m cp tret sg
         (WT_RES: Val.has_type v (proj_rettype tret))
         (WT_CONT: wt_cont_call k tret),
@@ -580,8 +580,8 @@ Ltac VHT' :=
   | _ => idtac
   end.
 
-Lemma type_constant_sound: forall cp sp cst v,
-  eval_constant ge cp sp cst = Some v ->
+Lemma type_constant_sound: forall sp cst v,
+  eval_constant ge sp cst = Some v ->
   Val.has_type v (type_constant cst).
 Proof.
   intros until v; intros EV. destruct cst; simpl in *; inv EV; VHT.
@@ -784,7 +784,7 @@ Proof.
   - apply known_id_sound_2 in H0.
     destruct (H i H0) as [v E].
     exists v; constructor; auto.
-  - destruct (eval_constant ge cp sp c) as [v|] eqn:E.
+  - destruct (eval_constant ge sp c) as [v|] eqn:E.
     exists v; constructor; auto.
     destruct c; discriminate.
   - InvBooleans. destruct IHa as [v1 E1]; auto.

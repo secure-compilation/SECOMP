@@ -393,7 +393,7 @@ Inductive wt_rvalue : expr -> Prop :=
       classify_fun (typeof r1) = fun_case_f tyargs tyres cconv ->
       wt_arguments rargs tyargs ->
       wt_rvalue (Ecall r1 rargs tyres)
-  | wt_Ebuiltin: forall ef cp tyargs rargs ty,
+  | wt_Ebuiltin: forall ef tyargs rargs ty,
       wt_exprlist rargs ->
       wt_arguments rargs tyargs ->
       (* This typing rule is specialized to the builtin invocations generated
@@ -402,7 +402,7 @@ Inductive wt_rvalue : expr -> Prop :=
       \/ (tyargs = Tcons type_bool (Tcons ty (Tcons ty Tnil))
           /\ let t := typ_of_type ty in
              let sg := mksignature (AST.Tint :: t :: t :: nil) t cc_default in
-             ef = EF_builtin cp "__builtin_sel"%string sg) ->
+             ef = EF_builtin "__builtin_sel"%string sg) ->
       wt_rvalue (Ebuiltin ef tyargs rargs ty)
   | wt_Eparen: forall r tycast ty,
       wt_rvalue r ->
@@ -930,6 +930,28 @@ Definition retype_fundef (ce: composite_env) (e: typenv) (fd: fundef) : res fund
       assertion (rettype_eq (ef_sig ef).(sig_res) (rettype_of_type res)); OK fd
   end.
 
+Lemma todo_fix: forall (tp: AST.program fundef type) (p: program),
+  agr_comps (AST.prog_pol tp) (AST.prog_defs tp) ->
+    agr_comps (prog_pol p) (AST.prog_defs tp).
+Proof.
+  Admitted.
+
+Instance has_comp_retype_function (ce: composite_env) (e: typenv):
+  has_comp_transl_partial (retype_function ce e).
+Proof.
+  intros f tf.
+  unfold retype_function. intros H.
+  monadInv H. reflexivity.
+Qed.
+
+Instance has_comp_retype_fundef (ce: composite_env) (e: typenv):
+  has_comp_transl_partial (retype_fundef ce e).
+Proof.
+  intros f tf.
+  destruct f; simpl; intros H; monadInv H; auto.
+  exploit has_comp_retype_function; eauto.
+Qed.
+
 Definition typecheck_program (p: program) : res program :=
   let e := bind_globdef (PTree.empty _) p.(prog_defs) in
   let ce := p.(prog_comp_env) in
@@ -941,7 +963,9 @@ Definition typecheck_program (p: program) : res program :=
         prog_types := p.(prog_types);
         prog_comp_env := ce;
         prog_comp_env_eq := p.(prog_comp_env_eq);
-        prog_pol_pub := p.(prog_pol_pub) |}.
+        prog_pol_pub := p.(prog_pol_pub);
+        prog_agr_comps := todo_fix tp p tp.(AST.prog_agr_comps)
+     |}.
 
 (** Soundness of the smart constructors.  *)
 
@@ -1258,7 +1282,6 @@ Proof.
   destruct (type_eq tyres Tvoid); simpl in EQ2; try discriminate.
   destruct (rettype_eq (sig_res (ef_sig ef)) AST.Tvoid); inv EQ2.
   econstructor; eauto. eapply check_arguments_sound; eauto.
-  Unshelve. exact default_compartment.
 Qed.
 
 Lemma eselection_sound:
@@ -1826,22 +1849,22 @@ Proof.
   constructor; auto.
 - (* comma *) auto.
 - (* paren *) inv H3. constructor. apply H5. eapply pres_sem_cast; eauto.
-- (* builtin *) subst. destruct H8 as [(A & B) | (A & B)].
+- (* builtin *) subst. destruct H7 as [(A & B) | (A & B)].
 + subst ty. auto with ty.
 + simpl in B. set (T := typ_of_type ty) in *. 
   set (sg := mksignature (AST.Tint :: T :: T :: nil) T cc_default) in *.
   assert (LK: lookup_builtin_function "__builtin_sel"%string sg = Some (BI_standard (BI_select T))).
   { unfold sg, T; destruct ty as   [ | ? ? ? | ? | [] ? | ? ? | ? ? ? | ? ? ? | ? ? | ? ? ];
     simpl; unfold Tptr; destruct Archi.ptr64; reflexivity. }
-  subst ef. red in H1. red in H1. rewrite LK in H1. inv H1.
-  inv H. inv H8. inv H9. inv H10. simpl in H0.
+  subst ef. red in H0. red in H0. rewrite LK in H0. inv H0.
+  inv H. inv H8. inv H9. inv H10. simpl in H1.
   assert (A: val_casted v1 type_bool) by (eapply cast_val_is_casted; eauto).
   inv A. 
   set (v' := if Int.eq n Int.zero then v4 else v2) in *.
   constructor.
   destruct (type_eq ty Tvoid).
   subst. constructor.
-  inv H0.
+  inv H1.
   assert (C: val_casted v' ty).
   { unfold v'; destruct (Int.eq n Int.zero); eapply cast_val_is_casted; eauto. }
   assert (EQ: Val.normalize v' T = v').

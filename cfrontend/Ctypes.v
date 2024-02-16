@@ -1499,6 +1499,7 @@ Set Implicit Arguments.
 Section PROGRAMS.
 
 Variable F: Type.
+Context {CF: has_comp F}.
 
 (** Functions can either be defined ([Internal]) or declared as
   external functions ([External]). *)
@@ -1507,11 +1508,11 @@ Inductive fundef : Type :=
   | Internal: F -> fundef
   | External: external_function -> typelist -> type -> calling_convention -> fundef.
 
-Global Instance has_comp_fundef {CF: has_comp F} : has_comp fundef :=
+#[export] Instance has_comp_fundef : has_comp fundef :=
   fun fd =>
     match fd with
     | Internal f => comp_of f
-    | External ef _ _ _ => comp_of ef
+    | External ef _ _ _ => bottom
     end.
 
 (** A program, or compilation unit, is composed of:
@@ -1531,6 +1532,7 @@ Record program : Type := {
   prog_comp_env: composite_env;
   prog_comp_env_eq: build_composite_env prog_types = OK prog_comp_env;
   prog_pol_pub: Policy.in_pub prog_pol prog_public;
+  prog_agr_comps : agr_comps prog_pol prog_defs;
 }.
 
 Definition program_of_program (p: program) : AST.program fundef type :=
@@ -1538,9 +1540,21 @@ Definition program_of_program (p: program) : AST.program fundef type :=
      AST.prog_public := p.(prog_public);
      AST.prog_main := p.(prog_main);
      AST.prog_pol := p.(prog_pol);
-     AST.prog_pol_pub := p.(prog_pol_pub) |}.
+     AST.prog_pol_pub := p.(prog_pol_pub);
+     AST.prog_agr_comps := p.(prog_agr_comps);
+  |}.
 
 Coercion program_of_program: program >-> AST.program.
+
+Lemma agr_enforce_update_policy:
+  forall (pol : Policy.t) (defs : list (ident * globdef fundef type))
+                                (public: list ident),
+    agr_comps (Policy.enforce_in_pub (update_policy pol defs) public) defs.
+Proof.
+  intros.
+  unfold Policy.enforce_in_pub.
+  exploit agr_update_policy; eauto.
+Qed.
 
 Program Definition make_program (types: list composite_definition)
                                 (defs: list (ident * globdef fundef type))
@@ -1552,15 +1566,17 @@ Program Definition make_program (types: list composite_definition)
       OK {| prog_defs := defs;
             prog_public := public;
             prog_main := main;
-            prog_pol := Policy.enforce_in_pub pol public;
+            prog_pol := Policy.enforce_in_pub (update_policy pol defs) public;
             prog_types := types;
             prog_comp_env := ce;
             prog_comp_env_eq := _;
-            prog_pol_pub := Policy.enforce_in_pub_correct pol public; |}
+            prog_pol_pub := Policy.enforce_in_pub_correct pol public;
+            prog_agr_comps := (agr_enforce_update_policy _ _ _) |}
   end.
 
 End PROGRAMS.
 
+Arguments program F {CF}.
 Arguments External {F} _ _ _ _.
 
 Unset Implicit Arguments.
@@ -1782,7 +1798,7 @@ Qed.
 
 (** ** Linking function definitions *)
 
-Definition link_fundef {F: Type} {CF: has_comp F} (fd1 fd2: fundef F) :=
+Definition link_fundef {F: Type} (fd1 fd2: fundef F) :=
   match fd1, fd2 with
   | Internal _, Internal _ => None
   | External ef1 targs1 tres1 cc1, External ef2 targs2 tres2 cc2 =>
@@ -1794,27 +1810,25 @@ Definition link_fundef {F: Type} {CF: has_comp F} (fd1 fd2: fundef F) :=
       else None
   | Internal f, External ef targs tres cc =>
       match ef with
-      | EF_external cp id sg =>
-        if eq_compartment cp (comp_of f) then Some (Internal f)
-        else None
+      | EF_external id sg =>
+        Some (Internal f)
       | _ => None
       end
   | External ef targs tres cc, Internal f =>
       match ef with
-      | EF_external cp id sg =>
-        if eq_compartment cp (comp_of f) then Some (Internal f)
-        else None
+      | EF_external id sg =>
+        Some (Internal f)
       | _ => None
       end
   end.
 
-Inductive linkorder_fundef {F: Type} {CF: has_comp F}: fundef F -> fundef F -> Prop :=
+Inductive linkorder_fundef {F: Type}: fundef F -> fundef F -> Prop :=
   | linkorder_fundef_refl: forall fd,
       linkorder_fundef fd fd
   | linkorder_fundef_ext_int: forall f id sg targs tres cc,
-      linkorder_fundef (External (EF_external (comp_of f) id sg) targs tres cc) (Internal f).
+      linkorder_fundef (External (EF_external id sg) targs tres cc) (Internal f).
 
-Global Program Instance Linker_fundef (F: Type) {CF: has_comp F}: Linker (fundef F) := {
+Global Program Instance Linker_fundef (F: Type): Linker (fundef F) := {
   link := link_fundef;
   linkorder := linkorder_fundef
 }.
@@ -1828,27 +1842,38 @@ Next Obligation.
   destruct x, y; simpl in H.
 + discriminate.
 + destruct e; try easy.
-  destruct eq_compartment; try easy.
-  subst cp. inv H.
+  inv H.
   split; constructor.
 + destruct e; try easy.
-  destruct eq_compartment; try easy.
-  subst cp. inv H.
+  inv H.
   split; constructor.
 + destruct (external_function_eq e e0 && typelist_eq t t1 && type_eq t0 t2 && calling_convention_eq c c0) eqn:A; inv H.
   InvBooleans. subst. split; constructor.
 Defined.
+
+Global Instance Linker_Side_fundef {F: Type}: Linker_Side (Linker_fundef F).
+Proof.
+  intros f f0 g. simpl. unfold link_fundef.
+  destruct f, f0; try congruence.
+  - destruct e; try congruence.
+    intros H; inv H; eauto.
+  - destruct e; try congruence.
+    intros H; inv H; eauto.
+  - destruct external_function_eq; simpl; try congruence;
+      destruct typelist_eq; simpl; try congruence;
+      destruct type_eq; simpl; try congruence;
+      destruct calling_convention_eq; simpl; try congruence.
+    intros H; inv H; eauto.
+Qed.
 
 Remark link_fundef_either:
   forall (F: Type) {CF: has_comp F} (f1 f2 f: fundef F), link f1 f2 = Some f -> f = f1 \/ f = f2.
 Proof.
   simpl; intros. unfold link_fundef in H. destruct f1, f2; try discriminate.
 - destruct e; try easy.
-  destruct eq_compartment; try easy.
-  subst cp. inv H; eauto.
+  inv H; eauto.
 - destruct e; try easy.
-  destruct eq_compartment; try easy.
-  subst cp. inv H; eauto.
+  inv H; eauto.
 - destruct (external_function_eq e e0 && typelist_eq t t1 && type_eq t0 t2 && calling_convention_eq c c0); inv H; auto.
 Qed.
 
@@ -1881,6 +1906,7 @@ Definition link_program {F:Type} {CF: has_comp F} (p1 p2: program F): option (pr
                       prog_comp_env := env;
                       prog_comp_env_eq := P;
                       prog_pol_pub := p.(AST.prog_pol_pub);
+                      prog_agr_comps := p.(AST.prog_agr_comps);
                    |}
           end
       end
@@ -1922,6 +1948,7 @@ Section LINK_MATCH_PROGRAM_GEN.
 Context {F G: Type}.
 Context {CF: has_comp F} {CG: has_comp G}.
 Variable match_fundef: program F -> fundef F -> fundef G -> Prop.
+Context {comp_match_fundef: has_comp_match match_fundef}.
 
 Hypothesis link_match_fundef:
   forall ctx1 ctx2 f1 tf1 f2 tf2 f,
@@ -1974,6 +2001,8 @@ Section LINK_MATCH_PROGRAM.
 Context {F G: Type}.
 Context {CF: has_comp F} {CG: has_comp G}.
 Variable match_fundef: fundef F -> fundef G -> Prop.
+Context {comp_match_fundef: has_comp_match (fun (_ : AST.program (fundef F) type) f g => match_fundef f g)}.
+
 
 Hypothesis link_match_fundef:
   forall f1 tf1 f2 tf2 f,
@@ -1997,7 +2026,8 @@ Local Transparent Linker_program.
   assert (A: exists tpp,
                link (program_of_program tp1) (program_of_program tp2) = Some tpp
              /\ Linking.match_program (fun ctx f tf => match_fundef f tf) eq pp tpp).
-  { eapply Linking.link_match_program. 
+  { eapply Linking.link_match_program.
+  (* - exact comp_match_fundef. *)
   - intros. exploit link_match_fundef; eauto. intros (tf & A & B). exists tf; auto.
   - intros.
     Local Transparent Linker_types.

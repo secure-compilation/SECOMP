@@ -201,5 +201,14 @@ Definition transf_function (f: Linear.function) : res Mach.function :=
 Definition transf_fundef (f: Linear.fundef) : res Mach.fundef :=
   AST.transf_partial_fundef transf_function f.
 
+#[global] Instance comp_transf_function: has_comp_transl_partial transf_function.
+Proof.
+  unfold transf_function.
+  intros f tf H.
+  destruct negb; try easy.
+  destruct zlt; try easy.
+  now monadInv H.
+Qed.
+
 Definition transf_program (p: Linear.program) : res Mach.program :=
   transform_partial_program transf_fundef p.

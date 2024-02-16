@@ -189,7 +189,7 @@ if the called function was compiled by another compiler.
 Definition callee_save_loc (l: loc) :=
   match l with
   | R r => is_callee_save r = true
-  | S sl ofs ty => (* sl <> Outgoing *) False
+  | S sl ofs ty => sl <> Outgoing
   end.
 
 Definition agree_callee_save (ls1 ls2: Locmap.t) : Prop :=

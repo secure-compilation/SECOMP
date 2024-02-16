@@ -190,6 +190,8 @@ Definition funsig (fd: fundef) :=
 *)
 
 Definition genv := Genv.t fundef unit.
+(* Let to_senv: genv -> Senv.t := (@Genv.to_senv _ _ (@has_comp_fundef _ has_comp_function)). *)
+(* Coercion to_senv: genv >-> Senv.t. *)
 Definition env := PTree.t val.
 
 (** The following functions build the initial local environment at
@@ -239,7 +241,10 @@ Inductive state: Type :=
       forall (f: fundef)                (**r function to invoke *)
              (args: list val)           (**r arguments provided by caller *)
              (k: cont)                  (**r what to do next  *)
-             (m: mem),                  (**r memory state *)
+             (m: mem)                   (**r memory state *)
+             (cp: compartment),   (**r the compartment that lead to this [Callstate]. /!\ This is not necessary [call_comp k] *)
+                                  (* this is because of tailcalls: after a tailcall, we are calling from the current comp,
+                                     but [call_comp k] return the previous caller's compartment (which might be different )*)
       state
   | Returnstate:                (**r Return from a function *)
       forall (v: val)                   (**r Return value *)
@@ -258,28 +263,13 @@ Variable ge: genv.
     if arguments are of the wrong types, or in case of an integer division
     by zero. *)
 
-Definition eval_constant (cp: compartment) (sp: val) (cst: constant) : option val :=
+Definition eval_constant (sp: val) (cst: constant) : option val :=
   match cst with
   | Ointconst n => Some (Vint n)
   | Ofloatconst n => Some (Vfloat n)
   | Osingleconst n => Some (Vsingle n)
   | Olongconst n => Some (Vlong n)
-  | Oaddrsymbol s ofs => Some (match Genv.symbol_address ge s ofs with
-           | Vptr b ofs0 =>
-               match Genv.find_comp_of_block ge b with
-               | Some cp' =>
-                   if (cp =? cp')%positive
-                   then Vptr b ofs0
-                   else
-                    match Genv.find_def ge b with
-                    | Some (Gfun _) => Vptr b ofs0
-                    | _ => Vundef
-                    end
-               | None => Vundef
-               end
-           | _ => Vundef
-           end)
-                            (* Genv.symbol_address ge s ofs) *)
+  | Oaddrsymbol s ofs => Some (Genv.symbol_address ge s ofs)
   | Oaddrstack ofs => Some (Val.offset_ptr sp ofs)
   end.
 
@@ -385,7 +375,7 @@ Inductive eval_expr: expr -> val -> Prop :=
       PTree.get id e = Some v ->
       eval_expr (Evar id) v
   | eval_Econst: forall cst v,
-      eval_constant cp sp cst = Some v ->
+      eval_constant sp cst = Some v ->
       eval_expr (Econst cst) v
   | eval_Eunop: forall op a1 v1 v,
       eval_expr a1 v1 ->
@@ -398,7 +388,7 @@ Inductive eval_expr: expr -> val -> Prop :=
       eval_expr (Ebinop op a1 a2) v
   | eval_Eload: forall chunk addr vaddr v,
       eval_expr addr vaddr ->
-      Mem.loadv chunk m vaddr (Some cp) = Some v ->
+      Mem.loadv chunk m vaddr cp = Some v ->
       eval_expr (Eload chunk addr) v.
 
 Inductive eval_exprlist: list expr -> list val -> Prop :=
@@ -426,10 +416,10 @@ Definition is_call_cont (k: cont) : Prop :=
   | _ => False
   end.
 
-Definition call_comp (k: cont) : option compartment :=
+Definition call_comp (k: cont) : compartment :=
   match call_cont k with
-  | Kcall _ f _ _ _ => Some (comp_of f)
-  | _ => None
+  | Kcall _ f _ _ _ => comp_of f
+  | _ => top
   end.
 
 (** Find the statement and manufacture the continuation
@@ -495,26 +485,22 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (NO_CROSS_PTR: Genv.type_of_call (comp_of f) (comp_of fd) = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
       forall (EV: call_trace ge (comp_of f) (comp_of fd) vf vargs (sig_args sig) t),
       step (State f (Scall optid sig a bl) k sp e m)
-        t (Callstate fd vargs (Kcall optid f sp e k) m)
+        t (Callstate fd vargs (Kcall optid f sp e k) m (comp_of f))
 
   | step_tailcall: forall f sig a bl k sp e m vf vargs fd m',
       eval_expr (Vptr sp Ptrofs.zero) e m (comp_of f) a vf ->
       eval_exprlist (Vptr sp Ptrofs.zero) e m (comp_of f) bl vargs ->
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
-      forall (COMP: comp_of fd = (comp_of f)),
+      forall (COMP: comp_of fd = comp_of f),
       forall (SIG: sig_res (fn_sig f) = sig_res sig),
-      (* forall (ALLOWED: needs_calling_comp (comp_of f) = false), *)
-      (* forall (ALLOWED': Genv.allowed_call ge (comp_of f) vf), *) (* Not needed: call is allowed because we don't change compartment (hypothesis COMP) *)
       Mem.free m sp 0 f.(fn_stackspace) (comp_of f) = Some m' ->
-      (* forall (EV: call_trace ge (comp_of f) (Genv.find_comp ge vf) vf vargs (sig_args sig) t), *)
       step (State f (Stailcall sig a bl) k (Vptr sp Ptrofs.zero) e m)
-        E0 (Callstate fd vargs (call_cont k) m')
+        E0 (Callstate fd vargs (call_cont k) m' (comp_of f))
 
   | step_builtin: forall f optid ef bl k sp e m vargs t vres m',
       eval_exprlist sp e m (comp_of f) bl vargs ->
-      external_call ef ge vargs m t vres m' ->
-      forall ALLOWED: comp_of ef = comp_of f,
+      external_call ef ge (comp_of f) vargs m t vres m' ->
       step (State f (Sbuiltin optid ef bl) k sp e m)
          t (State f Sskip k sp (set_optvar optid vres e) m')
 
@@ -571,15 +557,15 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State f (Sgoto lbl) k sp e m)
         E0 (State f s' k' sp e m)
 
-  | step_internal_function: forall f vargs k m m' sp e,
+  | step_internal_function: forall f vargs k m cp m' sp e,
       Mem.alloc m (comp_of f) 0 f.(fn_stackspace) = (m', sp) ->
       set_locals f.(fn_vars) (set_params vargs f.(fn_params)) = e ->
-      step (Callstate (Internal f) vargs k m)
+      step (Callstate (Internal f) vargs k m cp)
         E0 (State f f.(fn_body) k (Vptr sp Ptrofs.zero) e m')
-  | step_external_function: forall ef vargs k m t vres m',
-      external_call ef ge vargs m t vres m' ->
-      step (Callstate (External ef) vargs k m)
-         t (Returnstate vres k m' (sig_res (ef_sig ef)) (comp_of ef))
+  | step_external_function: forall ef vargs k m cp t vres m',
+      external_call ef ge cp vargs m t vres m' ->
+      step (Callstate (External ef) vargs k m cp)
+         t (Returnstate vres k m' (sig_res (ef_sig ef)) bottom)
 
   | step_return: forall v optid f sp e cp k m ty t,
       forall (NO_CROSS_PTR: Genv.type_of_call (comp_of f) cp = Genv.CrossCompartmentCall -> not_ptr v),
@@ -601,7 +587,7 @@ Inductive initial_state (p: program): state -> Prop :=
       Genv.find_symbol ge p.(prog_main) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
       funsig f = signature_main ->
-      initial_state p (Callstate f nil Kstop m0).
+      initial_state p (Callstate f nil Kstop m0 top).
 
 (** A final state is a [Returnstate] with an empty continuation. *)
 
@@ -628,7 +614,7 @@ Proof.
   exploit external_call_receptive; eauto. intros [vres2 [m2 EC2]].
   exists (State f Sskip k sp (set_optvar optid vres2 e) m2). econstructor; eauto.
   exploit external_call_receptive; eauto. intros [vres2 [m2 EC2]].
-  exists (Returnstate vres2 k m2 (sig_res (ef_sig ef)) (comp_of ef)). econstructor; eauto.
+  exists (Returnstate vres2 k m2 (sig_res (ef_sig ef)) bottom). econstructor; eauto.
   inv EV; inv H0; eexists; eauto.
 (* trace length *)
   red; intros; inv H; simpl; try lia; try now eapply external_call_trace_length; eauto.
@@ -666,7 +652,7 @@ Qed.
 Ltac Determ :=
   try congruence;
   match goal with
-  | [ |- match_traces _ E0 E0 /\ (_ -> _) ]  =>
+  | [ |- match_traces _ _ E0 E0 /\ (_ -> _) ]  =>
           split; [constructor|intros _; Determ]
   | [ H: is_call_cont ?k |- _ ] =>
           contradiction || (clear H; Determ)
@@ -697,7 +683,7 @@ Proof.
     apply B in H; destruct H; congruence.
   + subst. inv H2; inv H13; auto.
   + subst. inv H2; inv H14; reflexivity.
-  + exploit external_call_determ. eexact H1. eexact H7.
+  + exploit external_call_determ. eexact H1. eexact H8.
     intros (A & B). split; intros; auto.
     apply B in H; destruct H; congruence.
   + subst.
@@ -792,7 +778,7 @@ Inductive eval_funcall:
       eval_funcall cp m (Internal f) vargs t m3 vres
   | eval_funcall_external:
       forall ef cp m args t res m',
-      external_call ef ge args m t res m' ->
+      external_call ef ge cp args m t res m' ->
       eval_funcall cp m (External ef) args t m' res
 
 (** Execution of a statement: [exec_stmt ge f sp e m s t e' m' out]
@@ -835,9 +821,9 @@ with exec_stmt:
   | exec_Sbuiltin:
       forall f sp e m optid ef bl t m' vargs vres e',
       eval_exprlist ge sp e m (comp_of f) bl vargs ->
-      external_call ef ge vargs m t vres m' ->
+      external_call ef ge (comp_of f) vargs m t vres m' ->
       e' = set_optvar optid vres e ->
-      forall ALLOWED: comp_of ef = comp_of f,
+      (* forall ALLOWED: comp_of ef = comp_of f, *)
       exec_stmt f sp e m (Sbuiltin optid ef bl) t e' m' Out_normal
   | exec_Sifthenelse:
       forall f sp e m a s1 s2 v b t e' m' out,
@@ -915,13 +901,14 @@ Combined Scheme eval_funcall_exec_stmt_ind2
 *)
 
 CoInductive evalinf_funcall:
+  compartment ->
         mem -> fundef -> list val -> traceinf -> Prop :=
   | evalinf_funcall_internal:
-      forall m f vargs m1 sp e t,
+      forall cp m f vargs m1 sp e t,
       Mem.alloc m (comp_of f) 0 f.(fn_stackspace) = (m1, sp) ->
       set_locals f.(fn_vars) (set_params vargs f.(fn_params)) = e ->
       execinf_stmt f (Vptr sp Ptrofs.zero) e m1 f.(fn_body) t ->
-      evalinf_funcall m (Internal f) vargs t
+      evalinf_funcall cp m (Internal f) vargs t
 
 (** [execinf_stmt ge sp e m s t] means that statement [s] diverges.
   [e] is the initial environment, [m] is the initial memory state,
@@ -935,7 +922,7 @@ with execinf_stmt:
       eval_exprlist ge sp e m (comp_of f) bl vargs ->
       Genv.find_funct ge vf = Some fd ->
       funsig fd = sig ->
-      evalinf_funcall m fd vargs t ->
+      evalinf_funcall (comp_of f) m fd vargs t ->
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
       forall (NO_CROSS_PTR: Genv.type_of_call (comp_of f) (comp_of fd) = Genv.CrossCompartmentCall -> Forall not_ptr vargs),
       forall (EV: call_trace ge (comp_of f) (comp_of fd) vf vargs (sig_args sig) t'),
@@ -978,10 +965,9 @@ with execinf_stmt:
       funsig fd = sig ->
       forall (COMP: comp_of fd = (comp_of f)),
       forall (SIG: sig_res (fn_sig f) = sig_res sig),
-      forall (ALLOWED: needs_calling_comp (comp_of f) = false),
-      forall (ALLOWED': Genv.allowed_call ge (comp_of f) vf),
+      forall (ALLOWED: Genv.allowed_call ge (comp_of f) vf),
       Mem.free m sp 0 f.(fn_stackspace) (comp_of f) = Some m' ->
-      evalinf_funcall  m' fd vargs t ->
+      evalinf_funcall (comp_of f) m' fd vargs t ->
       (* forall (EV: call_trace ge (comp_of f) (Genv.find_comp ge vf) vf vargs (sig_args sig) t'), *)
       execinf_stmt f (Vptr sp Ptrofs.zero) e m (Stailcall sig a bl) t.
 
@@ -997,7 +983,7 @@ Inductive bigstep_program_terminates (p: program): trace -> int -> Prop :=
       Genv.find_symbol ge p.(prog_main) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
       funsig f = signature_main ->
-      eval_funcall ge default_compartment m0 f nil t m (Vint r) ->
+      eval_funcall ge top m0 f nil t m (Vint r) ->
       bigstep_program_terminates p t r.
 
 Inductive bigstep_program_diverges (p: program): traceinf -> Prop :=
@@ -1008,7 +994,7 @@ Inductive bigstep_program_diverges (p: program): traceinf -> Prop :=
       Genv.find_symbol ge p.(prog_main) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
       funsig f = signature_main ->
-      evalinf_funcall ge m0 f nil t ->
+      evalinf_funcall ge top m0 f nil t ->
       bigstep_program_diverges p t.
 
 Definition bigstep_semantics (p: program) :=
@@ -1064,9 +1050,8 @@ Lemma eval_funcall_exec_stmt_steps:
   (forall cp m fd args t m' res,
    eval_funcall ge cp m fd args t m' res ->
    forall k,
-   (* forall UPD: cp = call_comp k, *)
    is_call_cont k ->
-   star step ge (Callstate fd args k m)
+   star step ge (Callstate fd args k m cp)
               t (Returnstate res k m' (sig_res (funsig fd)) (comp_of fd)))
 /\(forall f sp e m s t e' m' out,
    exec_stmt ge f sp e m s t e' m' out ->
@@ -1222,7 +1207,7 @@ Proof.
 (* tailcall *)
   econstructor; split.
   eapply star_left. econstructor; eauto.
-  apply H5; eauto; try apply is_call_cont_call_cont. simpl.
+  apply H5 ;eauto; try apply is_call_cont_call_cont.
   traceEq.
   rewrite COMP. subst sig. rewrite <- SIG.
   econstructor.
@@ -1233,7 +1218,7 @@ Lemma eval_funcall_steps:
    eval_funcall ge cp m fd args t m' res ->
    forall k,
    is_call_cont k ->
-   star step ge (Callstate fd args k m)
+   star step ge (Callstate fd args k m cp)
               t (Returnstate res k m' (sig_res (funsig fd)) (comp_of fd)).
 Proof. exact (proj1 eval_funcall_exec_stmt_steps). Qed.
 
@@ -1247,9 +1232,9 @@ Lemma exec_stmt_steps:
 Proof. exact (proj2 eval_funcall_exec_stmt_steps). Qed.
 
 Lemma evalinf_funcall_forever:
-  forall m fd args T k,
-  evalinf_funcall ge m fd args T ->
-  forever_plus step ge (Callstate fd args k m) T.
+  forall cp m fd args T k,
+  evalinf_funcall ge cp m fd args T ->
+  forever_plus step ge (Callstate fd args k m cp) T.
 Proof.
   cofix CIH_FUN.
   assert (forall sp e m s T f k,
@@ -1321,7 +1306,7 @@ Proof.
 (* termination *)
   inv H. econstructor; econstructor.
   split. econstructor; eauto.
-  split. eapply (eval_funcall_steps default_compartment); try red; eauto.
+  split. eapply (eval_funcall_steps top); try red; eauto.
   econstructor.
 (* divergence *)
   inv H. econstructor.

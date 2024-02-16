@@ -35,22 +35,133 @@ Definition ident_eq := peq.
 (** Programs entities can be grouped into compartments, which remain isolated
   from each other during execution. *)
 
-Definition compartment : Type := positive.
-Definition privileged_compartment : compartment := 1%positive.
-Notation default_compartment := privileged_compartment. (* TODO: fix this *)
-Definition eq_compartment (c1 c2: compartment) :=
-  peq c1 c2.
+Module Type COMPTYPE.
 
-(** Calls into certain compartments cannot be inlined or transformed into tail
-  calls because they need to know who the calling compartment is.  These
-  compartments are recorded in the following map. *)
+Parameter compartment: Type.
+Parameters top bottom: compartment.
+Parameter flowsto: compartment -> compartment -> Prop.
+Notation "c '⊆' c'" := (flowsto c c') (no associativity, at level 95).
+Notation "c '⊈' c'" := (not (flowsto c c')) (no associativity, at level 95).
+Axiom flowsto_dec: forall cp cp', {cp ⊆ cp'} + {cp ⊈ cp'}.
+Axiom flowsto_refl: forall cp, cp ⊆ cp.
+Axiom flowsto_antisym: forall cp cp', cp ⊆ cp' -> cp' ⊆ cp -> cp = cp'.
+Axiom flowsto_trans: forall cp cp' cp'', cp ⊆ cp' -> cp' ⊆ cp'' -> cp ⊆ cp''.
 
-Definition needs_calling_comp_map : PMap.t bool :=
-  let comps := privileged_compartment :: nil in
-  fold_left (fun m cp => PMap.set cp true m) comps (PMap.init false).
+Lemma cp_eq_dec: forall (cp cp': compartment), {cp = cp'} + {cp <> cp'}.
+  intros cp cp'.
+  destruct (flowsto_dec cp cp') as [f1 | n1]; destruct (flowsto_dec cp' cp) as [f2 | n2].
+  - left; eapply flowsto_antisym; eauto.
+  - right; intros ?; subst cp'; contradiction.
+  - right; intros ?; subst cp'; contradiction.
+  - right; intros ?; subst cp'; apply n1; now eapply flowsto_refl.
+Qed.
 
-Definition needs_calling_comp (cp: compartment) : bool :=
-  PMap.get cp needs_calling_comp_map.
+Parameter comp_to_pos: compartment -> positive.
+Axiom comp_to_pos_inj: forall x y: compartment, comp_to_pos x = comp_to_pos y -> x = y.
+
+Module COMPARTMENT_INDEXED_TYPE <: INDEXED_TYPE.
+  Definition t := compartment.
+  Definition index := comp_to_pos.
+  Definition index_inj := comp_to_pos_inj.
+  Definition eq := cp_eq_dec.
+End COMPARTMENT_INDEXED_TYPE.
+
+Module CompTree := ITree (COMPARTMENT_INDEXED_TYPE).
+
+Axiom bottom_flowsto: forall cp, bottom ⊆ cp.
+Axiom flowsto_top: forall cp, cp ⊆ top.
+
+End COMPTYPE.
+
+Module COMP <: COMPTYPE.
+
+  Variant compartment' :=
+    | bottom': compartment'
+    | top': compartment'
+    | Comp: ident -> compartment'
+  .
+
+  Definition compartment := compartment'.
+  Definition bottom := bottom'.
+  Definition top := top'.
+
+  Variant flowsto': compartment -> compartment -> Prop :=
+    | bottom_flowsto': forall cp, flowsto' bottom cp
+    | flowsto_top': forall cp, flowsto' cp top
+    | flowsto_refl': forall cp, flowsto' cp cp.
+
+  Definition flowsto := flowsto'.
+
+  Lemma bottom_flowsto: forall cp, flowsto bottom cp.
+  Proof. exact bottom_flowsto'. Qed.
+
+  Lemma flowsto_top: forall cp, flowsto cp top.
+  Proof. exact flowsto_top'. Qed.
+  Lemma flowsto_refl: forall cp, flowsto cp cp.
+  Proof. exact flowsto_refl'. Qed.
+
+Notation "c '⊆' c'" := (flowsto c c') (no associativity, at level 95).
+Notation "c '⊈' c'" := (not (flowsto c c')) (no associativity, at level 95).
+
+
+Lemma flowsto_dec: forall cp cp', {cp ⊆ cp'} + {cp ⊈ cp'}.
+Proof.
+  destruct cp as [] eqn:?, cp' as [] eqn:?; try (now left; constructor).
+  now right; intros H; inv H.
+  now right; intros H; inv H.
+  now right; intros H; inv H.
+  subst. destruct (Pos.eq_dec i i0); subst.
+  - left; constructor.
+  - now right; intros H; inv H.
+Defined.
+
+Lemma flowsto_antisym: forall cp cp', cp ⊆ cp' -> cp' ⊆ cp -> cp = cp'.
+Proof.
+  intros ? ? H1 H2;
+    inv H1; inv H2; auto.
+Qed.
+
+Lemma flowsto_trans: forall cp cp' cp'', cp ⊆ cp' -> cp' ⊆ cp'' -> cp ⊆ cp''.
+Proof.
+  intros ? ? ? H1 H2.
+  inv H1; inv H2; try now constructor.
+Qed.
+
+Lemma cp_eq_dec: forall (cp cp': compartment), {cp = cp'} + {cp <> cp'}.
+  intros cp cp'.
+  destruct (flowsto_dec cp cp') as [f1 | n1]; destruct (flowsto_dec cp' cp) as [f2 | n2].
+  - left; eapply flowsto_antisym; eauto.
+  - right; intros ?; subst cp'; contradiction.
+  - right; intros ?; subst cp'; contradiction.
+  - right; intros ?; subst cp'; apply n1; now eapply flowsto_refl.
+Qed.
+
+Definition comp_to_pos: compartment -> positive :=
+  fun c => match c with
+        | bottom' => Z.to_pos 0
+        | top' => Z.to_pos 1
+        | Comp i => (Z.to_pos 2 + i)%positive
+        end.
+
+Axiom comp_to_pos_inj: forall x y: compartment, comp_to_pos x = comp_to_pos y -> x = y.
+
+Module COMPARTMENT_INDEXED_TYPE <: INDEXED_TYPE.
+  Definition t := compartment.
+  Definition index := comp_to_pos.
+  Definition index_inj := comp_to_pos_inj.
+  Definition eq := cp_eq_dec.
+End COMPARTMENT_INDEXED_TYPE.
+
+Module CompTree := ITree (COMPARTMENT_INDEXED_TYPE).
+
+End COMP.
+Export COMP.
+Global Opaque flowsto_dec.
+
+
+Create HintDb comps.
+#[export] Hint Resolve flowsto_refl flowsto_antisym flowsto_trans bottom_flowsto flowsto_top: comps.
+
 
 Set Typeclasses Strict Resolution.
 (** An instance of [has_comp] represents a syntactic entity that belongs to a
@@ -58,6 +169,8 @@ Set Typeclasses Strict Resolution.
   triggering when the type parameter is still unknown.  *)
 Class has_comp (T: Type) := comp_of: T -> compartment.
 Unset Typeclasses Strict Resolution.
+
+Arguments comp_of _ _ !_ /.
 
 Class has_comp_transl {T S: Type}
                       {CT: has_comp T} {CS: has_comp S}
@@ -76,14 +189,14 @@ Class has_comp_match {C T S: Type} {CT: has_comp T} {CS: has_comp S}
   comp_match:
     forall c x y, R c x y -> comp_of x = comp_of y.
 
-Instance has_comp_transl_match:
+#[export] Instance has_comp_transl_match:
   forall {C T S: Type}
          {CT: has_comp T} {CS: has_comp S}
          (f: T -> S) {Cf: has_comp_transl f},
   has_comp_match (fun (c : C) x y => y = f x).
 Proof. now intros C T S ???? c x y ->; rewrite comp_transl. Qed.
 
-Instance has_comp_transl_partial_match:
+#[export] Instance has_comp_transl_partial_match:
   forall {C T S: Type}
          {CT: has_comp T} {CS: has_comp S}
          (f: T -> res S) {Cf: has_comp_transl_partial f},
@@ -92,7 +205,7 @@ Proof.
   intros C T S ???? c. exact comp_transl_partial.
 Qed.
 
-Instance has_comp_transl_match_contextual:
+#[export] Instance has_comp_transl_match_contextual:
   forall {C D T S: Type}
          {CT: has_comp T} {CS: has_comp S}
          (f: D -> T -> S) {Cf: forall d, has_comp_transl (f d)}
@@ -102,7 +215,7 @@ Proof.
 now intros C D T S CT CS f Cf g ??? ->; rewrite comp_transl.
 Qed.
 
-Instance has_comp_transl_partial_match_contextual:
+#[export] Instance has_comp_transl_partial_match_contextual:
   forall {C D T S: Type}
          {CT: has_comp T} {CS: has_comp S}
          (f: D -> T -> res S) {Cf: forall d, has_comp_transl_partial (f d)}
@@ -379,16 +492,17 @@ Instance has_comp_globvar V : has_comp (globvar V) := @gvar_comp _.
 Module Policy.
 
   Record t: Type := mkpolicy {
-    policy_export: PTree.t (list ident);
-    policy_import: PTree.t (list (compartment * ident))
+    policy_comps: PTree.t compartment;
+    policy_export: CompTree.t (list ident);
+    policy_import: CompTree.t (list (compartment * ident))
   }.
 
   Definition in_pub_exports (pol: t) (pubs: list ident) : Prop :=
-    forall cp exps, (policy_export pol) ! cp = Some exps ->
+    forall cp exps, CompTree.get cp (policy_export pol) = Some exps ->
     forall id, In id exps -> In id pubs.
 
   Definition in_pub_imports (pol: t) (pubs: list ident) : Prop :=
-    forall cp imps, (policy_import pol) ! cp = Some imps ->
+    forall cp imps, CompTree.get cp (policy_import pol) = Some imps ->
     forall cp' id, In (cp', id) imps -> In id pubs.
 
   Definition in_pub (pol: t) (pubs: list ident) : Prop :=
@@ -398,12 +512,13 @@ Module Policy.
      policy is well-formed, we might be running spurious filters, which could
      have performance impacts in compilation.  *)
   Definition enforce_in_pub (pol: t) (pubs: list ident) :=
-    {| policy_export :=
-        PTree.map1
+    {| policy_comps := pol.(policy_comps);
+      policy_export :=
+        CompTree.map1
           (filter (fun id : ident => in_dec ident_eq id pubs))
           pol.(policy_export);
        policy_import :=
-        PTree.map1
+        CompTree.map1
           (filter (fun p : compartment * ident => in_dec ident_eq (snd p) pubs))
           pol.(policy_import);
     |}.
@@ -413,19 +528,20 @@ Module Policy.
       in_pub (enforce_in_pub pol pubs) pubs.
   Proof.
     split.
-    - intros cp imps. simpl. rewrite PTree.gmap1.
-      destruct PTree.get as [exps|] eqn:pol_cp; simpl; try congruence.
+    - intros cp imps. simpl. rewrite CompTree.gmap1.
+      destruct CompTree.get as [exps|] eqn:pol_cp; simpl; try congruence.
       intros e. injection e as e. rewrite <- e. clear e.
       intros id. rewrite filter_In. intros [_ Hin]. now destruct in_dec.
-    - intros cp exps. simpl. rewrite PTree.gmap1.
-      destruct PTree.get as [imps|] eqn:pol_cp; simpl; try congruence.
+    - intros cp exps. simpl. rewrite CompTree.gmap1.
+      destruct CompTree.get as [imps|] eqn:pol_cp; simpl; try congruence.
       intros e. injection e as e. rewrite <- e. clear e.
       intros cp' id. rewrite filter_In. simpl. intros [_ Hin].
       now destruct in_dec.
   Qed.
 
   (* The empty policy is the policy where there is no imported procedure and no exported procedure for all compartments *)
-  Definition empty_pol: t := mkpolicy (PTree.empty (list ident)) (PTree.empty (list (compartment * ident))).
+  Definition empty_pol: t := mkpolicy (PTree.empty compartment)
+                               (CompTree.empty (list ident)) (CompTree.empty (list (compartment * ident))).
 
   (* Decidable equality for the elements contained in the policies *)
   Definition list_id_eq: forall (x y: list ident),
@@ -443,25 +559,30 @@ Module Policy.
     decide equality.
     decide equality.
     apply Pos.eq_dec.
-    apply Pos.eq_dec.
+    apply cp_eq_dec.
   Qed.
 
   (* Defines an equivalence between two policies: two policies are equivalent iff for each compartment,
      they define the same exported and imported procedures *)
   Definition eqb (t1 t2: t): bool :=
-    PTree.beq list_id_eq t1.(policy_export) t2.(policy_export) &&
-    PTree.beq list_cpt_id_eq t1.(policy_import) t2.(policy_import).
+    PTree.beq cp_eq_dec t1.(policy_comps) t2.(policy_comps) &&
+    CompTree.beq list_id_eq t1.(policy_export) t2.(policy_export) &&
+    CompTree.beq list_cpt_id_eq t1.(policy_import) t2.(policy_import).
 
   (* Properties of an equivalence relation: reflexivity, commutativity, transitivity *)
   Lemma eqb_refl: forall pol, eqb pol pol = true.
   Proof.
     intros pol.
     unfold eqb.
+    assert (PTree.beq cp_eq_dec (policy_comps pol) (policy_comps pol) = true).
+    rewrite PTree.beq_correct.
+    intros x. destruct ((policy_comps pol) ! x); auto. destruct cp_eq_dec; auto.
     assert (PTree.beq (fun x y : list ident => list_id_eq x y) (policy_export pol) (policy_export pol) = true).
     rewrite PTree.beq_correct.
     intros x. destruct ((policy_export pol) ! x); auto.
     destruct (list_id_eq l l); auto.
-    rewrite H. simpl.
+    unfold CompTree.beq.
+    rewrite H, H0. simpl.
     rewrite PTree.beq_correct.
     intros x. destruct ((policy_import pol) ! x); auto.
     destruct (list_cpt_id_eq l l); auto.
@@ -471,35 +592,59 @@ Module Policy.
   Proof.
     intros pol pol' H.
     unfold eqb in *.
-    apply andb_prop in H as [H1 H2].
-    assert (H1': PTree.beq (fun x y : list ident => list_id_eq x y) (policy_export pol') (policy_export pol) = true).
+    apply andb_prop in H as [H2 H3].
+    apply andb_prop in H2 as [H1 H2].
+    assert (H1': PTree.beq cp_eq_dec (policy_comps pol') (policy_comps pol) = true).
     rewrite PTree.beq_correct. rewrite PTree.beq_correct in H1.
-    intros x. specialize (H1 x). destruct ((policy_export pol') ! x); auto.
+    intros x. specialize (H1 x). destruct ((policy_comps pol') ! x); auto.
+    destruct ((policy_comps pol) ! x); auto.
+    destruct (cp_eq_dec c0 c); subst.
+    destruct (cp_eq_dec c c); auto.
+    destruct (cp_eq_dec c c0); auto.
+    assert (H2': PTree.beq (fun x y : list ident => list_id_eq x y) (policy_export pol') (policy_export pol) = true).
+    rewrite PTree.beq_correct. rewrite PTree.beq_correct in H2.
+    intros x. specialize (H2 x). destruct ((policy_export pol') ! x); auto.
     destruct ((policy_export pol) ! x); auto.
     destruct (list_id_eq l0 l); subst.
     destruct (list_id_eq l l); auto.
     destruct (list_id_eq l l0); auto.
-    assert (H2': PTree.beq (fun x y => list_cpt_id_eq x y) (policy_import pol') (policy_import pol) = true).
-    rewrite PTree.beq_correct. rewrite PTree.beq_correct in H2.
-    intros x. specialize (H2 x). destruct ((policy_import pol') ! x); auto.
+    assert (H3': PTree.beq (fun x y => list_cpt_id_eq x y) (policy_import pol') (policy_import pol) = true).
+    rewrite PTree.beq_correct. rewrite PTree.beq_correct in H3.
+    intros x. specialize (H3 x). destruct ((policy_import pol') ! x); auto.
     destruct ((policy_import pol) ! x); auto.
     destruct (list_cpt_id_eq l0 l); subst.
     destruct (list_cpt_id_eq l l); auto.
     destruct (list_cpt_id_eq l l0); auto.
-    rewrite H1', H2'. auto.
+    unfold CompTree.beq.
+    rewrite H1', H2', H3'. auto.
   Qed.
 
-  Lemma eqb_trans: forall pol pol' pol'', eqb pol pol' = true -> eqb pol' pol'' = true -> eqb pol pol'' = true.
+  Lemma eqb_trans: forall pol pol' pol'', eqb pol pol' = true ->
+                                     eqb pol' pol'' = true -> eqb pol pol'' = true.
   Proof.
     intros pol pol' pol'' H1 H2.
     unfold eqb in *.
+    apply andb_prop in H1 as [H1 H1''].
     apply andb_prop in H1 as [H1 H1'].
+    apply andb_prop in H2 as [H2 H2''].
     apply andb_prop in H2 as [H2 H2'].
-    assert (H3: PTree.beq (fun x y : list ident => list_id_eq x y) (policy_export pol) (policy_export pol'') = true).
+    assert (H3: PTree.beq cp_eq_dec (policy_comps pol) (policy_comps pol'') = true).
     { clear -H1 H2.
       rewrite PTree.beq_correct in H1, H2.
       rewrite PTree.beq_correct.
       intros x. specialize (H1 x); specialize (H2 x).
+      destruct ((policy_comps pol) ! x);
+        destruct ((policy_comps pol') ! x);
+        destruct ((policy_comps pol'') ! x); auto.
+      destruct (cp_eq_dec c c0);
+        destruct (cp_eq_dec c0 c1);
+        destruct (cp_eq_dec c c1); auto.
+      now subst. }
+    assert (H3': PTree.beq (fun x y : list ident => list_id_eq x y) (policy_export pol) (policy_export pol'') = true).
+    { clear -H1' H2'.
+      rewrite PTree.beq_correct in H1', H2'.
+      rewrite PTree.beq_correct.
+      intros x. specialize (H1' x); specialize (H2' x).
       destruct ((policy_export pol) ! x);
         destruct ((policy_export pol') ! x);
         destruct ((policy_export pol'') ! x); auto.
@@ -508,11 +653,11 @@ Module Policy.
         destruct (list_id_eq l l1); auto.
       now subst.
     }
-    assert (H3': PTree.beq (fun x y => list_cpt_id_eq x y) (policy_import pol) (policy_import pol'') = true).
-    { clear -H1' H2'.
-      rewrite PTree.beq_correct in H1', H2'.
+    assert (H3'': PTree.beq (fun x y => list_cpt_id_eq x y) (policy_import pol) (policy_import pol'') = true).
+    { clear -H1'' H2''.
+      rewrite PTree.beq_correct in H1'', H2''.
       rewrite PTree.beq_correct.
-      intros x. specialize (H1' x); specialize (H2' x).
+      intros x. specialize (H1'' x); specialize (H2'' x).
       destruct ((policy_import pol) ! x);
         destruct ((policy_import pol') ! x);
         destruct ((policy_import pol'') ! x); auto.
@@ -521,6 +666,7 @@ Module Policy.
         destruct (list_cpt_id_eq l l1); auto.
       now subst.
     }
+    unfold CompTree.beq.
     rewrite H3, H3'. auto.
   Qed.
 
@@ -554,31 +700,45 @@ Instance has_comp_globdef F V {CF: has_comp F} : has_comp (globdef F V) :=
     | Gvar v => comp_of v
     end.
 
-Record program (F V: Type) : Type := mkprogram {
+Definition agr_comps {F V: Type} {CF: has_comp F} (pol: Policy.t) (defs: list (ident * globdef F V)): Prop :=
+  Forall
+    (fun idg => forall cp, pol.(Policy.policy_comps) ! (fst idg) = Some cp ->
+                   (comp_of (snd idg)) ⊆ cp)
+    defs.
+  (* /\ *)
+  (* forall (id: ident) (cp: compartment), *)
+  (*   pol.(Policy.policy_comps) ! id = Some cp -> *)
+  (*   exists gd, In (id, gd) defs /\ cp = comp_of gd. *)
+
+Record program (F V: Type) {CF: has_comp F} : Type := mkprogram {
   prog_defs: list (ident * globdef F V);
   prog_public: list ident;
   prog_main: ident;
   prog_pol: Policy.t;
   prog_pol_pub: Policy.in_pub prog_pol prog_public;
+  prog_agr_comps: agr_comps prog_pol prog_defs;
 }.
 
-Arguments mkprogram {F V} _ _ _ _ _.
+Arguments program F V {CF}.
+Arguments mkprogram {F V CF} _ _ _ _ _ _.
 
-Definition prog_defs_names (F V: Type) (p: program F V) : list ident :=
+Definition prog_defs_names (F V: Type) {CF: has_comp F} (p: program F V) : list ident :=
   List.map fst p.(prog_defs).
 
 (** The "definition map" of a program maps names of globals to their definitions.
   If several definitions have the same name, the one appearing last in [p.(prog_defs)] wins. *)
 
-Definition prog_defmap (F V: Type) (p: program F V) : PTree.t (globdef F V) :=
+Definition prog_defmap (F V: Type) {CF: has_comp F} (p: program F V) : PTree.t (globdef F V) :=
   PTree_Properties.of_list p.(prog_defs).
 
-Definition list_comp (F V: Type) (p: program F V) {CF: has_comp F}: list compartment :=
-  List.map (fun x => comp_of (snd x)) p.(prog_defs). (* TODO: filter out duplicate compartments from this list *)
+(* FIXME: I don't think this is needed anymore *)
+(* Definition list_comp (F V: Type) (p: program F V) {CF: has_comp F}: list compartment := *)
+(*   List.map (fun x => comp_of (snd x)) p.(prog_defs). *)
 
 Section DEFMAP.
 
 Variables F V: Type.
+Context {CF: has_comp F}.
 Variable p: program F V.
 
 Lemma in_prog_defmap:
@@ -618,11 +778,38 @@ End DEFMAP.
 (** We now define a general iterator over programs that applies a given
   code transformation function to all function descriptions and leaves
   the other parts of the program unchanged. *)
+Section TRANSF_POL.
+
+Variable B W: Type.
+Context {CB: has_comp B}.
+Definition update_list_comps (defs: list (ident * globdef B W)): PTree.t compartment :=
+  PTree_Properties.of_list (List.map (fun '(id, a) => (id, comp_of a)) defs).
+
+Definition update_policy (pol: Policy.t) (defs: list (ident * globdef B W)): Policy.t :=
+  {| Policy.policy_comps := update_list_comps defs;
+     Policy.policy_import := pol.(Policy.policy_import);
+     Policy.policy_export := pol.(Policy.policy_export);
+  |}.
+
+Lemma agr_update_policy (pol: Policy.t) (defs: list (ident * globdef B W)):
+  agr_comps (update_policy pol defs) defs.
+Proof.
+  unfold agr_comps.
+  rewrite Forall_forall.
+  induction defs.
+  - intros x H; inv H.
+  - intros [id gd] H. inv H.
+    + simpl. admit.
+    + simpl. admit.
+Admitted.
+End TRANSF_POL.
 
 Section TRANSF_PROGRAM.
 
 Variable A B V: Type.
+Context {CA: has_comp A} {CB: has_comp B}.
 Variable transf: A -> B.
+Context {comp_transf: has_comp_transl transf}.
 
 Definition transform_program_globdef (idg: ident * globdef A V) : ident * globdef B V :=
   match idg with
@@ -630,15 +817,34 @@ Definition transform_program_globdef (idg: ident * globdef A V) : ident * globde
   | (id, Gvar v) => (id, Gvar v)
   end.
 
+
+Lemma agr_comps_transf: forall {pol defs},
+  agr_comps pol defs ->
+  agr_comps pol (List.map transform_program_globdef defs).
+Proof.
+  unfold agr_comps; intros pol defs H.
+  - induction H.
+    + now simpl.
+    + simpl; constructor.
+      * destruct x as [id [fd | vd]]; simpl in *.
+        -- now rewrite comp_transf.
+        -- assumption.
+    * assumption.
+Qed.
+
 Definition transform_program (p: program A V) : program B V :=
   mkprogram
     (List.map transform_program_globdef p.(prog_defs))
     p.(prog_public)
     p.(prog_main)
+    (* (update_policy p.(prog_pol) (List.map transform_program_globdef p.(prog_defs))) *)
     p.(prog_pol)
-    p.(prog_pol_pub).
+    p.(prog_pol_pub)
+    (agr_comps_transf p.(prog_agr_comps)).
 
 End TRANSF_PROGRAM.
+
+Arguments transform_program [A B V] {CA CB} transf {comp_transf} p.
 
 (** The following is a more general presentation of [transform_program]:
 - Global variable information can be transformed, in addition to function
@@ -655,7 +861,10 @@ Local Open Scope error_monad_scope.
 Section TRANSF_PROGRAM_GEN.
 
 Variables A B V W: Type.
+Context {CA: has_comp A} {CB: has_comp B}.
 Variable transf_fun: ident -> A -> res B.
+Context {Cf: forall id, has_comp_transl_partial (transf_fun id)}.
+(* Context {comp_transf: has_comp_match transf}. *)
 Variable transf_var: ident -> V -> res W.
 
 Definition transf_globvar (i: ident) (g: globvar V) : res (globvar W) :=
@@ -679,9 +888,45 @@ Fixpoint transf_globdefs (l: list (ident * globdef A V)) : res (list (ident * gl
     end
   end.
 
+Lemma agr_comps_transf_partial: forall {pol defs},
+  agr_comps pol defs ->
+  forall defs',
+    transf_globdefs defs = OK defs' ->
+    agr_comps pol defs'.
+Proof.
+  unfold agr_comps; intros pol defs H defs' def_trans.
+  revert defs' def_trans.
+  induction H.
+  - now intros defs' H; simpl in H; inv H.
+  - intros defs' defs'_OK.
+    destruct x as [id [fd | vd]] eqn:?; simpl in *.
+    + destruct transf_fun eqn:?; try congruence; simpl in *.
+      monadInv defs'_OK.
+      simpl; constructor.
+      * simpl.
+        apply has_comp_transl_partial_match_contextual with (g := fun id => id) in Cf.
+        now erewrite Cf in H; eauto.
+      * now eauto.
+    + destruct transf_globvar eqn:?; try congruence; simpl in *.
+      monadInv defs'_OK.
+      simpl; constructor.
+      * now monadInv Heqr; eauto.
+      * now eauto.
+Qed.
+
 Definition transform_partial_program2 (p: program A V) : res (program B W) :=
-  do gl' <- transf_globdefs p.(prog_defs);
-  OK (mkprogram gl' p.(prog_public) p.(prog_main) p.(prog_pol) p.(prog_pol_pub)).
+  match transf_globdefs p.(prog_defs) as x
+        return (transf_globdefs p.(prog_defs) = x ->
+                res (program B W)) with
+  | OK gl' =>
+  fun e => OK (mkprogram gl'
+        p.(prog_public)
+        p.(prog_main)
+        p.(prog_pol)
+        p.(prog_pol_pub)
+        (agr_comps_transf_partial p.(prog_agr_comps) e))
+  | Error err => fun e => Error err
+  end eq_refl.
 
 End TRANSF_PROGRAM_GEN.
 
@@ -692,26 +937,47 @@ End TRANSF_PROGRAM_GEN.
 Section TRANSF_PARTIAL_PROGRAM.
 
 Variable A B V: Type.
+Context {CA: has_comp A} {CB: has_comp B}.
 Variable transf_fun: A -> res B.
+Context {comp_transf_fun: has_comp_transl_partial transf_fun}.
 
 Definition transform_partial_program (p: program A V) : res (program B V) :=
   transform_partial_program2 (fun i f => transf_fun f) (fun i v => OK v) p.
 
 End TRANSF_PARTIAL_PROGRAM.
+Arguments transform_partial_program [A B V] {CA CB} transf_fun {comp_transf_fun} p.
+
+Instance comp_transf_total_to_partial {A B: Type} {CA: has_comp A} {CB: has_comp B} (transf_fun: A -> B)
+  {comp_transf_fun: has_comp_transl transf_fun}:
+  has_comp_transl_partial (fun f => OK (transf_fun f)).
+Proof.
+  intros x y H. inv H. rewrite comp_transf_fun. reflexivity.
+Defined.
 
 Lemma transform_program_partial_program:
-  forall (A B V: Type) (transf_fun: A -> B) (p: program A V),
+  forall (A B V: Type) {CA: has_comp A} {CB: has_comp B} (transf_fun: A -> B)
+    {comp_transf_fun: has_comp_transl transf_fun} (p: program A V),
   transform_partial_program (fun f => OK (transf_fun f)) p = OK (transform_program transf_fun p).
 Proof.
   intros. unfold transform_partial_program, transform_partial_program2.
   assert (EQ: forall l,
-              transf_globdefs (fun i f => OK (transf_fun f)) (fun i (v: V) => OK v) l =
-              OK (List.map (transform_program_globdef transf_fun) l)).
+             transf_globdefs (fun i f => OK (transf_fun f)) (fun i (v: V) => OK v) l =
+               OK (List.map (transform_program_globdef transf_fun) l)).
   { induction l as [ | [id g] l]; simpl.
-  - auto.
-  - destruct g; simpl; rewrite IHl; simpl. auto. destruct v; auto.
+    - auto.
+    - destruct g; simpl; rewrite IHl; simpl. auto. destruct v; auto.
   }
-  rewrite EQ; simpl. auto.
+  specialize (EQ (prog_defs p)).
+  generalize (agr_comps_transf_partial
+                (fun (_ : ident) (f : A) => OK (transf_fun f))
+                (fun (_ : ident) (v : V) => OK v)
+            (prog_agr_comps p)).
+  rewrite EQ. intros a.
+  unfold transform_program.
+  replace (agr_comps_transf (prog_agr_comps p)) with
+  (a (map (transform_program_globdef transf_fun) (prog_defs p)) eq_refl).
+  reflexivity.
+  apply Classical_Prop.proof_irrelevance.
 Qed.
 
 (** * External functions *)
@@ -723,80 +989,75 @@ Qed.
   and associated operations. *)
 
 Inductive external_function : Type :=
-  | EF_external (cp: compartment) (name: string) (sg: signature)
+  | EF_external (name: string) (sg: signature)
      (** A system call or library function.  Produces an event
          in the trace. *)
-  | EF_builtin (cp: compartment) (name: string) (sg: signature)
+  | EF_builtin (name: string) (sg: signature)
      (** A compiler built-in function.  Behaves like an external, but
          can be inlined by the compiler. *)
-  | EF_runtime (cp: compartment) (name: string) (sg: signature)
+  | EF_runtime (name: string) (sg: signature)
      (** A function from the run-time library.  Behaves like an
          external, but must not be redefined. *)
-  | EF_vload (cp: compartment) (chunk: memory_chunk)
+  | EF_vload (chunk: memory_chunk)
      (** A volatile read operation.  If the address given as first argument
          points within a volatile global variable, generate an
          event and return the value found in this event.  Otherwise,
          produce no event and behave like a regular memory load. *)
-  | EF_vstore (cp: compartment) (chunk: memory_chunk)
+  | EF_vstore (chunk: memory_chunk)
      (** A volatile store operation.   If the address given as first argument
          points within a volatile global variable, generate an event.
          Otherwise, produce no event and behave like a regular memory store. *)
-  | EF_malloc (cp: compartment)
+  | EF_malloc
      (** Dynamic memory allocation.  Takes the requested size in bytes
          as argument; returns a pointer to a fresh block of the given size.
          Produces no observable event. *)
-  | EF_free (cp: compartment)
+  | EF_free
      (** Dynamic memory deallocation.  Takes a pointer to a block
          allocated by an [EF_malloc] external call and frees the
          corresponding block.
          Produces no observable event. *)
-  | EF_memcpy (cp: compartment) (sz: Z) (al: Z)
+  | EF_memcpy (sz: Z) (al: Z)
      (** Block copy, of [sz] bytes, between addresses that are [al]-aligned. *)
-  | EF_annot (cp: compartment) (kind: positive) (text: string) (targs: list typ)
+  | EF_annot (kind: positive) (text: string) (targs: list typ)
      (** A programmer-supplied annotation.  Takes zero, one or several arguments,
          produces an event carrying the text and the values of these arguments,
          and returns no value. *)
-  | EF_annot_val (cp: compartment) (kind: positive) (text: string) (targ: typ)
+  | EF_annot_val (kind: positive) (text: string) (targ: typ)
      (** Another form of annotation that takes one argument, produces
          an event carrying the text and the value of this argument,
          and returns the value of the argument. *)
-  | EF_inline_asm (cp: compartment) (text: string) (sg: signature) (clobbers: list string)
+  | EF_inline_asm (text: string) (sg: signature) (clobbers: list string)
      (** Inline [asm] statements.  Semantically, treated like an
          annotation with no parameters ([EF_annot text nil]).  To be
          used with caution, as it can invalidate the semantic
          preservation theorem.  Generated only if [-finline-asm] is
          given. *)
-  | EF_debug (cp: compartment) (kind: positive) (text: ident) (targs: list typ).
+  | EF_debug (kind: positive) (text: ident) (targs: list typ).
      (** Transport debugging information from the front-end to the generated
          assembly.  Takes zero, one or several arguments like [EF_annot].
          Unlike [EF_annot], produces no observable event. *)
 
 
-Instance has_comp_external_function : has_comp (external_function) :=
-  fun ef =>
-    match ef with
-    | EF_external cp _ _ | EF_builtin cp _ _ | EF_runtime cp _ _
-    | EF_malloc cp| EF_free cp | EF_vload cp _ | EF_vstore cp _ | EF_memcpy cp _ _
-    | EF_annot cp _ _ _ | EF_annot_val cp _ _ _ | EF_inline_asm cp _ _ _
-    | EF_debug cp _ _ _ => cp
-    end.
+(* (** External functions don't have compartment *) *)
+(* Instance has_comp_external_function : has_comp (external_function) := fun _ => bottom. *)
+
 
 (** The type signature of an external function. *)
 
 Definition ef_sig (ef: external_function): signature :=
   match ef with
-  | EF_external _ name sg => sg
-  | EF_builtin _ name sg => sg
-  | EF_runtime _ name sg => sg
-  | EF_vload _ chunk => mksignature (Tptr :: nil) (rettype_of_chunk chunk) cc_default
-  | EF_vstore _ chunk => mksignature (Tptr :: type_of_chunk chunk :: nil) Tvoid cc_default
-  | EF_malloc _ => mksignature (Tptr :: nil) Tptr cc_default
-  | EF_free _ => mksignature (Tptr :: nil) Tvoid cc_default
-  | EF_memcpy _ sz al => mksignature (Tptr :: Tptr :: nil) Tvoid cc_default
-  | EF_annot _ kind text targs => mksignature targs Tvoid cc_default
-  | EF_annot_val _ kind text targ => mksignature (targ :: nil) targ cc_default
-  | EF_inline_asm _ text sg clob => sg
-  | EF_debug _ kind text targs => mksignature targs Tvoid cc_default
+  | EF_external name sg => sg
+  | EF_builtin name sg => sg
+  | EF_runtime name sg => sg
+  | EF_vload chunk => mksignature (Tptr :: nil) (rettype_of_chunk chunk) cc_default
+  | EF_vstore chunk => mksignature (Tptr :: type_of_chunk chunk :: nil) Tvoid cc_default
+  | EF_malloc => mksignature (Tptr :: nil) Tptr cc_default
+  | EF_free => mksignature (Tptr :: nil) Tvoid cc_default
+  | EF_memcpy sz al => mksignature (Tptr :: Tptr :: nil) Tvoid cc_default
+  | EF_annot kind text targs => mksignature targs Tvoid cc_default
+  | EF_annot_val kind text targ => mksignature (targ :: nil) targ cc_default
+  | EF_inline_asm text sg clob => sg
+  | EF_debug kind text targs => mksignature targs Tvoid cc_default
   end.
 
 
@@ -804,26 +1065,26 @@ Definition ef_sig (ef: external_function): signature :=
 
 Definition ef_inline (ef: external_function) : bool :=
   match ef with
-  | EF_external _ name sg => false
-  | EF_builtin _ name sg => true
-  | EF_runtime _ name sg => false
-  | EF_vload _ chunk => true
-  | EF_vstore _ chunk => true
-  | EF_malloc _ => false
-  | EF_free _ => false
-  | EF_memcpy _ sz al => true
-  | EF_annot _ kind text targs => true
-  | EF_annot_val _ kind Text rg => true
-  | EF_inline_asm _ text sg clob => true
-  | EF_debug _ kind text targs => true
+  | EF_external name sg => false
+  | EF_builtin name sg => true
+  | EF_runtime name sg => false
+  | EF_vload chunk => true
+  | EF_vstore chunk => true
+  | EF_malloc => false
+  | EF_free => false
+  | EF_memcpy sz al => true
+  | EF_annot kind text targs => true
+  | EF_annot_val kind Text rg => true
+  | EF_inline_asm text sg clob => true
+  | EF_debug kind text targs => true
   end.
 
 (** Whether an external function must reload its arguments. *)
 
-Definition ef_reloads(ef: external_function) : bool :=
+Definition ef_reloads (ef: external_function) : bool :=
   match ef with
-  | EF_annot _ kind text targs => false
-  | EF_debug _ kind text targs => false
+  | EF_annot kind text targs => false
+  | EF_debug kind text targs => false
   | _ => true
   end.
 
@@ -843,12 +1104,11 @@ Inductive fundef (F: Type): Type :=
   | External: external_function -> fundef F.
 
 Arguments External [F].
-
-Instance has_comp_fundef F {CF: has_comp F} : has_comp (fundef F) :=
+#[export] Instance has_comp_fundef F {CF: has_comp F}: has_comp (fundef F) :=
   fun fd =>
     match fd with
     | Internal f => comp_of f
-    | External ef => comp_of ef
+    | External ef => bottom
     end.
 
 Section TRANSF_FUNDEF.
@@ -862,7 +1122,7 @@ Definition transf_fundef (fd: fundef A): fundef B :=
   | External ef => External ef
   end.
 
-Global Instance comp_transf_fundef:
+#[export] Instance comp_transf_fundef:
   forall {CA: has_comp A} {CB: has_comp B}
          {CAB: has_comp_transl transf},
   has_comp_transl transf_fundef.
@@ -883,7 +1143,7 @@ Definition transf_partial_fundef (fd: fundef A): res (fundef B) :=
   | External ef => OK (External ef)
   end.
 
-Global Instance comp_transf_partial_fundef:
+#[export] Instance comp_transf_partial_fundef:
   forall {CA: has_comp A} {CB: has_comp B}
          {CAB: has_comp_transl_partial transf_partial},
   has_comp_transl_partial transf_partial_fundef.

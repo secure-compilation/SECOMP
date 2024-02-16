@@ -457,23 +457,22 @@ Qed.
 (** Translation of arguments and results to builtins. *)
 
 Remark builtin_arg_match:
-  forall {F V: Type} {CF: has_comp F} (ge: Genv.t F V) (rs: regset) cp sp m a v,
-  eval_builtin_arg ge (fun r => rs (preg_of r)) cp sp m a v ->
-  eval_builtin_arg ge rs cp sp m (map_builtin_arg preg_of a) v.
+  forall ge (rs: regset) sp m a v,
+  eval_builtin_arg ge (fun r => rs (preg_of r)) sp m a v ->
+  eval_builtin_arg ge rs sp m (map_builtin_arg preg_of a) v.
 Proof.
   induction 1; simpl; eauto with barg.
 Qed.
 
 Lemma builtin_args_match:
-  forall {F V: Type} {CF: has_comp F} (ge: Genv.t F V) ms cp sp rs m m',
-    agree ms sp rs -> Mem.extends m m' ->
-  forall al vl, eval_builtin_args ge ms cp sp m al vl ->
-  exists vl', eval_builtin_args ge rs cp sp m' (map (map_builtin_arg preg_of) al) vl'
+  forall ge ms sp rs m m', agree ms sp rs -> Mem.extends m m' ->
+  forall al vl, eval_builtin_args ge ms sp m al vl ->
+  exists vl', eval_builtin_args ge rs sp m' (map (map_builtin_arg preg_of) al) vl'
            /\ Val.lessdef_list vl vl'.
 Proof.
   induction 3; intros; simpl.
   exists (@nil val); split; constructor.
-  exploit (@eval_builtin_arg_lessdef _ _ _ _ ge ms (fun r => rs (preg_of r))); eauto.
+  exploit (@eval_builtin_arg_lessdef _ ge ms (fun r => rs (preg_of r))); eauto.
   intros; eapply preg_val; eauto.
   intros (v1' & A & B).
   destruct IHlist_forall2 as [vl' [C D]].
@@ -601,7 +600,7 @@ Inductive transl_code_at_pc (ge: Mach.genv):
     val -> block -> Mach.function -> Mach.code -> bool -> Asm.function -> Asm.code -> Prop :=
   transl_code_at_pc_intro:
     forall b ofs f c ep tf tc,
-    Genv.find_def ge b = Some (Gfun (Internal f)) ->
+    Genv.find_funct_ptr ge b = Some (Internal f) ->
     transf_function f = Errors.OK tf ->
     transl_code f c ep = OK tc ->
     code_tail (Ptrofs.unsigned ofs) (fn_code tf) tc ->
@@ -930,11 +929,11 @@ Lemma exec_straight_steps_1:
   forall s c rs m c' rs' m',
   exec_straight c rs m c' rs' m' ->
   list_length_z (fn_code fn) <= Ptrofs.max_unsigned ->
-  forall b ofs,
+  forall b ofs cp,
   rs#PC = Vptr b ofs ->
-  Genv.find_def ge b = Some (Gfun (Internal fn)) ->
+  Genv.find_funct_ptr ge b = Some (Internal fn) ->
   code_tail (Ptrofs.unsigned ofs) (fn_code fn) c ->
-  plus step ge (State s rs m) E0 (State s rs' m').
+  plus step ge (State s rs m cp) E0 (State s rs' m' (comp_of fn)).
 Proof.
   induction 1; intros.
   apply plus_one.
@@ -942,16 +941,17 @@ Proof.
     eapply find_instr_tail. eauto. eauto.
     eauto. eauto. eauto.
     now rewrite H2, H4.
-    now rewrite (Genv.find_def_find_comp_of_block _ _ H5). }
+    now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ H5). }
   eapply plus_left'.
   { econstructor. eauto. eauto.
     eapply find_instr_tail. eauto.
     eauto. eauto. eauto.
     now rewrite H2, H5.
-    now rewrite (Genv.find_def_find_comp_of_block _ _ H6).
+    now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ H6).
   }
   apply IHexec_straight with b (Ptrofs.add ofs Ptrofs.one).
   auto. rewrite H2. rewrite H5. reflexivity.
+  auto.
   auto.
   apply code_tail_next_int with i; auto.
   traceEq.
@@ -964,7 +964,7 @@ Lemma exec_straight_steps_2:
   list_length_z (fn_code fn) <= Ptrofs.max_unsigned ->
   forall b ofs,
   rs#PC = Vptr b ofs ->
-  Genv.find_def ge b = Some (Gfun (Internal fn)) ->
+  Genv.find_funct_ptr ge b = Some (Internal fn) ->
   code_tail (Ptrofs.unsigned ofs) (fn_code fn) c ->
   exists ofs',
      rs'#PC = Vptr b ofs'

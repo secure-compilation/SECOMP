@@ -22,10 +22,6 @@ Require Import Tunneling.
 Definition match_prog (p tp: program) :=
   match_program (fun ctx f tf => tf = tunnel_fundef f) eq p tp.
 
-#[global]
-Instance comp_tunnel_fundef: has_comp_transl tunnel_function.
-Proof. now intro. Qed.
-
 Lemma transf_program_match:
   forall p, match_prog p (tunnel_program p).
 Proof.
@@ -297,10 +293,10 @@ Qed.
 
 Lemma find_comp_translated:
   forall vf,
-    Genv.find_comp ge vf = Genv.find_comp tge vf.
+    Genv.find_comp_in_genv ge vf = Genv.find_comp_in_genv tge vf.
 Proof.
   intros vf.
-  eapply (Genv.match_genvs_find_comp TRANSL).
+  eapply (Genv.match_genvs_find_comp_in_genv TRANSL).
 Qed.
 
 Lemma senv_preserved:
@@ -412,12 +408,12 @@ Inductive match_states: state -> state -> Prop :=
       match_states (Block s f sp (Lcond cond args pc1 pc2 :: bb) ls m)
                    (State ts (tunnel_function f) sp (branch_target f pc1) tls tm)
   | match_states_call:
-      forall s f ls m ts tls tm sig
+      forall s f ls m ts tls tm sig cp
         (STK: list_forall2 match_stackframes s ts)
         (LS: locmap_lessdef ls tls)
         (MEM: Mem.extends m tm),
-      match_states (Callstate s f sig ls m)
-                   (Callstate ts (tunnel_fundef f) sig tls tm)
+      match_states (Callstate s f sig ls m cp)
+                   (Callstate ts (tunnel_fundef f) sig tls tm cp)
   | match_states_return:
       forall s ls m cp ts tls tm
         (STK: list_forall2 match_stackframes s ts)
@@ -563,10 +559,10 @@ Proof.
 Qed. 
 
 Lemma return_regs_ext_lessdef:
-  forall callee1 callee2 sg,
-  (* locmap_lessdef caller1 caller2 -> *)
+  forall caller1 callee1 caller2 callee2 sg,
+  locmap_lessdef caller1 caller2 ->
   locmap_lessdef callee1 callee2 ->
-  locmap_lessdef (return_regs_ext callee1 sg) (return_regs_ext callee2 sg).
+  locmap_lessdef (return_regs_ext caller1 callee1 sg) (return_regs_ext caller2 callee2 sg).
 Proof.
   intros; red; intros. destruct l; simpl.
 - destruct (in_mreg r (regs_of_rpair (Conventions1.loc_result sg))); auto.
@@ -584,7 +580,7 @@ Definition measure (st: state) : nat :=
   | Block s f sp (Lbranch pc :: _) ls m => (count_gotos f pc * 2 + 1)%nat
   | Block s f sp (Lcond _ _ pc1 pc2 :: _) ls m => (Nat.max (count_gotos f pc1) (count_gotos f pc2) * 2 + 1)%nat
   | Block s f sp bb ls m => 0%nat
-  | Callstate s f sig ls m => 0%nat
+  | Callstate s f sig ls m cp => 0%nat
   | Returnstate s ls m cp => 0%nat
   end.
 
@@ -644,7 +640,6 @@ Proof.
   left; simpl; econstructor; split.
   eapply exec_Lop with (v := tv); eauto.
   rewrite <- EV. apply eval_operation_preserved. exact symbols_preserved.
-  admit. admit. admit.
   econstructor; eauto using locmap_set_lessdef, locmap_undef_regs_lessdef.
 - (* Lload *)
   exploit eval_addressing_lessdef. apply reglist_lessdef; eauto. eauto. 
@@ -654,7 +649,6 @@ Proof.
   left; simpl; econstructor; split.
   eapply exec_Lload with (a := ta).
   rewrite <- EV. apply eval_addressing_preserved. exact symbols_preserved.
-  admit. admit. admit.
   eauto. eauto.
   econstructor; eauto using locmap_set_lessdef, locmap_undef_regs_lessdef.
 - (* Lgetstack *)
@@ -673,7 +667,6 @@ Proof.
   left; simpl; econstructor; split.
   eapply exec_Lstore with (a := ta).
   rewrite <- EV. apply eval_addressing_preserved. exact symbols_preserved.
-  admit. admit. admit.
   eauto. eauto.
   econstructor; eauto using locmap_undef_regs_lessdef.
 - (* Lcall *)
@@ -690,15 +683,13 @@ Proof.
     (* rewrite X in NO_CROSS_PTR, EV. rewrite H1. *)
     apply Forall_forall. rewrite Forall_forall in NO_CROSS_PTR.
     intros v Hin. apply in_map_iff in Hin as [v' [Heq Hin]].
-    apply in_map with (f := (fun p : rpair loc => Locmap.getpair p (undef_regs destroyed_at_function_entry (call_regs (call_regs_ext rs (funsig fd))))))
+    apply in_map with (f := (fun p : rpair loc => Locmap.getpair p (undef_regs destroyed_at_function_entry (call_regs_ext rs (funsig fd)))))
                          in Hin.
     specialize (NO_CROSS_PTR _ Hin).
-    assert (Val.lessdef
-              (Locmap.getpair v' (undef_regs destroyed_at_function_entry (call_regs (call_regs_ext rs (funsig fd))))) v).
+    assert (Val.lessdef (Locmap.getpair v' (undef_regs destroyed_at_function_entry (call_regs_ext rs (funsig fd)))) v).
     { subst.
       apply locmap_getpair_lessdef; auto.
       apply locmap_undef_regs_lessdef; auto.
-      eapply call_regs_lessdef; eauto.
       apply call_regs_ext_lessdef; auto. }
     inv H2; eauto.
     rewrite <- H4 in NO_CROSS_PTR; inv NO_CROSS_PTR.
@@ -708,27 +699,27 @@ Proof.
                    (fun p : rpair loc =>
                     Locmap.getpair p
                       (undef_regs destroyed_at_function_entry
-                         (* match Genv.type_of_call ge (comp_of f) (Genv.find_comp ge vf) with *)
+                         (* match Genv.type_of_call ge (comp_of f) (Genv.find_comp_in_genv ge vf) with *)
                          (* | Genv.CrossCompartmentCall => call_regs_ext rs (funsig fd) *)
                          (* | _ => call_regs rs *)
                          (* end *)
-                         (call_regs (call_regs_ext rs (funsig fd)))
+                         (call_regs_ext rs (funsig fd))
                    )) (Conventions.loc_parameters (funsig fd)))
                 (map
                    (fun p : rpair loc =>
                     Locmap.getpair p
                       (undef_regs destroyed_at_function_entry
-                         (* match Genv.type_of_call tge (comp_of (tunnel_function f)) (Genv.find_comp ge vf) with *)
+                         (* match Genv.type_of_call tge (comp_of (tunnel_function f)) (Genv.find_comp_in_genv ge vf) with *)
                          (* | Genv.CrossCompartmentCall => call_regs_ext tls (funsig fd) *)
                          (* | _ => call_regs tls *)
                          (* end *)
-                         (call_regs (call_regs_ext tls (funsig fd)))
+                         (call_regs_ext tls (funsig fd))
                    )) (Conventions.loc_parameters (funsig fd)))).
   { apply locmap_getpairs_lessdef.
     apply locmap_undef_regs_lessdef.
     (* rewrite EQ. *)
-    (* destruct (Genv.type_of_call tge (comp_of (tunnel_function f)) (Genv.find_comp ge vf)). *)
-    apply call_regs_lessdef. auto.
+    (* destruct (Genv.type_of_call tge (comp_of (tunnel_function f)) (Genv.find_comp_in_genv ge vf)). *)
+    (* apply call_regs_lessdef. auto. *)
     apply call_regs_ext_lessdef. auto.
     (* apply call_regs_lessdef. auto. *)
   }
@@ -737,8 +728,6 @@ Proof.
   econstructor; eauto.
   constructor; auto.
   constructor; auto.
-    apply call_regs_ext_lessdef. auto.
-    (* apply call_regs_ext_lessdef. auto. *)
 - (* Ltailcall *)
   exploit Mem.free_parallel_extends. eauto. eauto. intros (tm' & FREE & MEM'). 
   left; simpl; econstructor; split.
@@ -752,8 +741,7 @@ Proof.
   exploit external_call_mem_extends; eauto. intros (tvres & tm' & A & B & C & D).
   left; simpl; econstructor; split.
   eapply exec_Lbuiltin; eauto.
-  eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
-  admit. admit. admit.
+  eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved. 
   eapply external_call_symbols_preserved. apply senv_preserved. eauto.
   econstructor; eauto using locmap_setres_lessdef, locmap_undef_regs_lessdef.
 - (* Lbranch (preserved) *)
@@ -793,12 +781,12 @@ Proof.
   exploit Mem.free_parallel_extends. eauto. eauto. intros (tm' & FREE & MEM'). 
   left; simpl; econstructor; split.
   eapply exec_Lreturn; eauto.
-  (* assert (SIG : parent_signature s = parent_signature ts). *)
-  (* { inv STK; [reflexivity |]. inv H0; reflexivity. } *)
-  (* rewrite SIG. *)
+  assert (SIG : parent_signature s = parent_signature ts).
+  { inv STK; [reflexivity |]. inv H0; reflexivity. }
+  rewrite SIG.
   assert (CALLER : call_comp s = call_comp ts).
   { inv STK; [reflexivity |]. inv H0; reflexivity. }
-  constructor; eauto using return_regs_lessdef, match_parent_locset.
+  constructor; eauto using return_regs_ext_lessdef, match_parent_locset.
 - (* internal function *)
   exploit Mem.alloc_extends. eauto. eauto. apply Z.le_refl. apply Z.le_refl.
   intros (tm' & ALLOC & MEM'). 
@@ -813,15 +801,17 @@ Proof.
   (* rewrite type_of_call_translated, CALLER, CALLEE. *)
   (* destruct (Genv.type_of_call tge (call_comp ts) (comp_of (tunnel_function f))). *)
   (* simpl. econstructor; eauto using locmap_undef_regs_lessdef, call_regs_lessdef. *)
-  (* simpl. econstructor; eauto using locmap_undef_regs_lessdef, call_regs_ext_lessdef. *)
-  simpl. econstructor; eauto using locmap_undef_regs_lessdef, call_regs_lessdef.
+  simpl. econstructor; eauto using locmap_undef_regs_lessdef, call_regs_ext_lessdef.
+  (* simpl. econstructor; eauto using locmap_undef_regs_lessdef, call_regs_lessdef. *)
 - (* external function *)
   exploit external_call_mem_extends; eauto using locmap_getpairs_lessdef.
   intros (tvres & tm' & A & B & C & D).
   left; simpl; econstructor; split.
   eapply exec_function_external; eauto.
+  replace (call_comp ts) with (call_comp s) by (inv STK; auto; inv H; auto).
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  simpl. econstructor; eauto using locmap_setpair_lessdef, locmap_undef_caller_save_regs_lessdef.
+  replace (call_comp ts) with (call_comp s) by (inv STK; auto; inv H; auto).
+  econstructor; eauto using locmap_setpair_lessdef, locmap_undef_caller_save_regs_lessdef.
 - (* return *)
   inv STK. inv H1.
   left; econstructor; split.
@@ -834,16 +824,14 @@ Proof.
   rewrite comp_tunnel_fundef.
   eapply return_trace_lessdef; eauto using senv_preserved.
   constructor; auto.
-  eapply return_regs_ext_lessdef; eauto.
-  (* eapply match_parent_locset; eauto. *)
-Admitted.
+Qed.
 
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 ->
   exists st2, initial_state tprog st2 /\ match_states st1 st2.
 Proof.
   intros. inversion H.
-  exists (Callstate nil (tunnel_fundef f) signature_main (Locmap.init Vundef) m0); split.
+  exists (Callstate nil (tunnel_fundef f) signature_main (Locmap.init Vundef) m0 top); split.
   econstructor; eauto.
   apply (Genv.init_mem_transf TRANSL); auto.
   rewrite (match_program_main TRANSL).
@@ -867,6 +855,7 @@ Theorem transf_program_correct:
   forward_simulation (LTL.semantics prog) (LTL.semantics tprog).
 Proof.
   eapply forward_simulation_opt.
+  apply senv_preserved.
   apply senv_preserved.
   eexact transf_initial_states.
   eexact transf_final_states.

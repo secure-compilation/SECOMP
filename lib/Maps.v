@@ -170,6 +170,14 @@ Module Type MAP.
   Axiom gmap:
     forall (A B: Type) (f: A -> B) (i: elt) (m: t A),
     get i (map f m) = f(get i m).
+
+  (* (** Extensional equality between trees. *) *)
+  (* Parameter beq: forall (A: Type), (A -> A -> bool) -> t A -> t A -> bool. *)
+  (* Axiom beq_correct: *)
+  (*   forall (A: Type) (eqA: A -> A -> bool) (t1 t2: t A), *)
+  (*   beq eqA t1 t2 = true <-> *)
+  (*   (forall (x: elt), *)
+  (*       eqA (get x t1) = eqA (get x t2)). *)
 End MAP.
 
 (** * An implementation of trees over type [positive] *)
@@ -1558,6 +1566,16 @@ Module ITree(X: INDEXED_TYPE).
   Proof.
     intros. apply PTree.gcombine. auto.
   Qed.
+
+  Definition map1 {A B} (f: A -> B) (m: t A) : t B := PTree.map1 f m.
+
+  Theorem gmap1:
+    forall {A B} (f: A -> B) (i: elt) (m: t A),
+    get i (map1 f m) = option_map f (get i m).
+  Proof.
+    intros. eapply PTree.gmap1.
+  Qed.
+
 End ITree.
 
 Module ZTree := ITree(ZIndexed).

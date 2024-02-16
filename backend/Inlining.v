@@ -291,7 +291,7 @@ Variable rec: forall fenv', (size_fenv fenv' < size_fenv fenv)%nat -> context ->
 
 Inductive inline_decision cp (ros: reg + ident) : Type :=
   | Cannot_inline
-  | Can_inline (id: ident) (f: function) (P: ros = inr reg id) (Q: fenv!id = Some f) (R: cp = (comp_of f)).
+  | Can_inline (id: ident) (f: function) (P: ros = inr reg id) (Q: fenv!id = Some f) (R: cp = comp_of f).
 
 Arguments Cannot_inline {cp} {ros}.
 Arguments Can_inline {cp} {ros}.
@@ -302,7 +302,7 @@ Program Definition can_inline (cp: compartment) (ros: reg + ident): inline_decis
   | inr id =>
     match fenv!id with
     | Some f =>
-      if eq_compartment cp (comp_of f) then
+      if cp_eq_dec cp (comp_of f) then
         Can_inline id f _ _ _
       else Cannot_inline
     | None => Cannot_inline
@@ -471,6 +471,17 @@ Definition transf_function (fenv: funenv) (f: function) : Errors.res function :=
 
 Definition transf_fundef (fenv: funenv) (fd: fundef) : Errors.res fundef :=
   AST.transf_partial_fundef (transf_function fenv) fd.
+
+#[global] Instance comp_transl_function fenv:
+  has_comp_transl_partial (transf_function fenv).
+Proof.
+  unfold transf_function.
+  intros f tf H; try now inv H.
+  destruct (expand_function _ _ _).
+  destruct (zlt _ _); try easy.
+  simpl in *.
+  now inv H.
+Qed.
 
 Definition transf_program (p: program): Errors.res program :=
   let fenv := funenv_program p in

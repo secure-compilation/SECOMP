@@ -24,13 +24,6 @@ Module NodesetFacts := FSetFacts.Facts(Nodeset).
 Definition match_prog (p: LTL.program) (tp: Linear.program) :=
   match_program (fun ctx f tf => transf_fundef f = OK tf) eq p tp.
 
-#[global]
-Instance comp_transf_fundef: has_comp_transl_partial transf_function.
-Proof.
-  unfold transf_function.
-  intros f ? H; now monadInv H.
-Qed.
-
 Lemma transf_program_match:
   forall p tp, transf_program p = OK tp -> match_prog p tp.
 Proof.
@@ -132,9 +125,9 @@ Qed.
 
 Lemma find_comp_translated:
   forall vf,
-    Genv.find_comp ge vf = Genv.find_comp tge vf.
+    Genv.find_comp_in_genv ge vf = Genv.find_comp_in_genv tge vf.
 Proof.
-  eapply (Genv.match_genvs_find_comp TRANSF).
+  eapply (Genv.match_genvs_find_comp_in_genv TRANSF).
 Qed.
 
 (** * Correctness of reachability analysis *)
@@ -572,11 +565,11 @@ Inductive match_states: LTL.state -> Linear.state -> Prop :=
       match_states (LTL.Block s f sp bb ls m)
                    (Linear.State ts tf sp (linearize_block bb c) ls m)
   | match_states_call:
-      forall s f ls m tf ts sig,
+      forall s f ls m tf ts sig cp,
       list_forall2 match_stackframes s ts ->
       transf_fundef f = OK tf ->
-      match_states (LTL.Callstate s f sig ls m) (* parent_signature ts *)
-                   (Linear.Callstate ts tf sig ls m)
+      match_states (LTL.Callstate s f sig ls m cp) (* parent_signature ts *)
+                   (Linear.Callstate ts tf sig ls m cp)
   | match_states_return:
       forall s ls m cp ts,
       list_forall2 match_stackframes s ts ->
@@ -649,18 +642,15 @@ Proof.
   (* Lop *)
   left; econstructor; split. simpl.
   apply plus_one. econstructor; eauto.
-  instantiate (1 := v); rewrite <- H; rewrite <- comp_transf_fundef; eauto; apply eval_operation_preserved.
-  exact symbols_preserved. admit. admit. admit.
+  instantiate (1 := v); rewrite <- H; apply eval_operation_preserved.
+  exact symbols_preserved.
   econstructor; eauto.
 
   (* Lload *)
   left; econstructor; split. simpl.
   apply plus_one. econstructor.
-  instantiate (1 := a).
-  erewrite comp_preserved; eauto.
-  rewrite <- H; apply eval_addressing_preserved.
+  instantiate (1 := a). rewrite <- H; apply eval_addressing_preserved.
   exact symbols_preserved.
-  admit. admit. admit.
   erewrite comp_preserved; eauto. eauto.
   econstructor; eauto.
 
@@ -677,10 +667,8 @@ Proof.
   (* Lstore *)
   left; econstructor; split. simpl.
   apply plus_one. econstructor.
-  instantiate (1 := a).
-  erewrite comp_preserved; eauto. eauto.
-  rewrite <- H; apply eval_addressing_preserved.
-  exact symbols_preserved. admit. admit. admit.
+  instantiate (1 := a). rewrite <- H; apply eval_addressing_preserved.
+  exact symbols_preserved.
   erewrite comp_preserved; eauto. eauto.
   econstructor; eauto.
 
@@ -703,6 +691,7 @@ Proof.
   {
     rewrite <- (comp_transl_partial _ TRF). rewrite <- (comp_transl_partial _ B).
     eapply call_trace_eq; eauto using symbols_preserved, senv_preserved. }
+  rewrite <- comp_transf_fundef; eauto.
   econstructor; eauto. constructor; auto.
   econstructor; eauto.
 
@@ -717,14 +706,13 @@ Proof.
   rewrite <- comp_transf_fundef; eauto.
   rewrite (stacksize_preserved _ _ TRF); eauto.
   rewrite (match_parent_locset _ _ STACKS).
+  rewrite <- comp_transf_fundef; eauto.
   econstructor; eauto.
 
   (* Lbuiltin *)
   left; econstructor; split. simpl.
   apply plus_one. eapply exec_Lbuiltin; eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
-  admit. admit. admit.
-  rewrite <- (comp_transl_partial _ TRF); eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   rewrite <- (comp_transl_partial _ TRF); eauto.
   econstructor; eauto.
@@ -772,27 +760,27 @@ Proof.
   assert (CALLER: LTL.call_comp s = call_comp ts).
   { inv STACKS. reflexivity.
     inv H0. simpl. erewrite comp_preserved; eauto. }
-  (* assert (SIG: LTL.parent_signature s = parent_signature ts). *)
-  (* { inv STACKS. reflexivity. *)
-  (*   inv H0. reflexivity. } *)
-  (* rewrite SIG. *)
+  assert (SIG: LTL.parent_signature s = parent_signature ts).
+  { inv STACKS. reflexivity.
+    inv H0. reflexivity. }
+  rewrite SIG.
   rewrite <- comp_transf_fundef; eauto.
   econstructor; eauto.
 
   (* internal functions *)
   assert (REACH: (reachable f)!!(LTL.fn_entrypoint f) = true).
     apply reachable_entrypoint.
-  monadInv H8.
+  monadInv H9.
   left; econstructor; split.
   apply plus_one. eapply exec_function_internal; eauto.
   rewrite (stacksize_preserved _ _ EQ).
   rewrite (comp_preserved _ _ EQ). eauto.
   generalize EQ; intro EQ'; monadInv EQ'. simpl.
   assert (CALLER: LTL.call_comp s = call_comp ts).
-  { inv H7. reflexivity.
+  { inv H8. reflexivity.
     inv H0. simpl. erewrite comp_preserved; eauto. }
   assert (SIG: LTL.parent_signature s = parent_signature ts).
-  { inv H7. reflexivity.
+  { inv H8. reflexivity.
     inv H0. reflexivity. }
   (* rewrite type_of_call_translated, CALLER, SIG. *)
   change (LTL.fn_comp f) with (comp_of f).
@@ -806,7 +794,7 @@ Proof.
   econstructor; eauto. simpl. eapply is_tail_add_branch. constructor.
 
   (* external function *)
-  monadInv H9. left; econstructor; split.
+  monadInv H10. left; econstructor; split.
   apply plus_one. eapply exec_function_external; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   econstructor; eauto.
@@ -818,9 +806,8 @@ Proof.
   erewrite comp_preserved; eauto.
   erewrite comp_preserved; eauto.
   eapply return_trace_eq; eauto using senv_preserved.
-  reflexivity.
   econstructor; eauto.
-Admitted.
+Qed.
 
 Lemma transf_initial_states:
   forall st1, LTL.initial_state prog st1 ->
@@ -828,7 +815,7 @@ Lemma transf_initial_states:
 Proof.
   intros. inversion H.
   exploit function_ptr_translated; eauto. intros [tf [A B]].
-  exists (Callstate nil tf signature_main (Locmap.init Vundef) m0); split.
+  exists (Callstate nil tf signature_main (Locmap.init Vundef) m0 top); split.
   econstructor; eauto. eapply (Genv.init_mem_transf_partial TRANSF); eauto.
   rewrite (match_program_main TRANSF).
   rewrite symbols_preserved. eauto.
@@ -847,6 +834,7 @@ Theorem transf_program_correct:
   forward_simulation (LTL.semantics prog) (Linear.semantics tprog).
 Proof.
   eapply forward_simulation_star.
+  apply senv_preserved.
   apply senv_preserved.
   eexact transf_initial_states.
   eexact transf_final_states.

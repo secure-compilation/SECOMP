@@ -108,7 +108,7 @@ Definition do_deref_loc (w: world) (ty: type) (m: mem) (b: block) (ofs: ptrofs) 
     match access_mode ty with
     | By_value chunk =>
       match type_is_volatile ty with
-      | false => do v <- Mem.loadv chunk m (Vptr b ofs) (Some cp); Some(w, E0, v)
+      | false => do v <- Mem.loadv chunk m (Vptr b ofs) cp; Some(w, E0, v)
       | true => do_volatile_load _ _ ge w chunk cp m b ofs
       end
     | By_reference => Some(w, E0, Vptr b ofs)
@@ -121,7 +121,7 @@ Definition do_deref_loc (w: world) (ty: type) (m: mem) (b: block) (ofs: ptrofs) 
       check (intsize_eq sz1 sz &&
              signedness_eq sg1 (if zlt width (bitsize_intsize sz) then Signed else sg) &&
              zle 0 pos && zlt 0 width && zle width (bitsize_intsize sz) && zle (pos + width) (bitsize_carrier sz));
-      match Mem.loadv (chunk_for_carrier sz) m (Vptr b ofs) (Some cp) with
+      match Mem.loadv (chunk_for_carrier sz) m (Vptr b ofs) cp with
       | Some (Vint c) => Some (w, E0, Vint (bitfield_extract sz sg pos width c))
       | _ => None
       end
@@ -171,7 +171,7 @@ Definition do_assign_loc (w: world) (ty: type) (m: mem) (b: block) (ofs: ptrofs)
         match v with
         | Vptr b' ofs' =>
             if check_assign_copy ty b ofs b' ofs' then
-              do bytes <- Mem.loadbytes m b' (Ptrofs.unsigned ofs') (sizeof ge ty) (Some cp);
+              do bytes <- Mem.loadbytes m b' (Ptrofs.unsigned ofs') (sizeof ge ty) cp;
               do m' <- Mem.storebytes m b (Ptrofs.unsigned ofs) bytes cp;
               Some(w, E0, m', v)
             else None
@@ -181,7 +181,7 @@ Definition do_assign_loc (w: world) (ty: type) (m: mem) (b: block) (ofs: ptrofs)
     end
   | Bits sz sg pos width =>
     check (zle 0 pos && zlt 0 width && zle width (bitsize_intsize sz) && zle (pos + width) (bitsize_carrier sz));
-    match ty, v, Mem.loadv (chunk_for_carrier sz) m (Vptr b ofs) (Some cp) with
+    match ty, v, Mem.loadv (chunk_for_carrier sz) m (Vptr b ofs) cp with
     | Tint sz1 sg1 _, Vint n, Some (Vint c) =>
         check (intsize_eq sz1 sz &&
                signedness_eq sg1 (if zlt width (bitsize_intsize sz) then Signed else sg));
@@ -268,32 +268,32 @@ Proof.
 Qed.
 
 Variable do_external_function:
-  string -> signature -> Senv.t -> world -> list val -> mem -> option (world * trace * val * mem).
+   string -> signature -> Senv.t -> compartment -> world -> list val -> mem -> option (world * trace * val * mem).
 
 Hypothesis do_external_function_sound:
-  forall id sg ge vargs m t vres m' w w',
-  do_external_function id sg ge w vargs m = Some(w', t, vres, m') ->
-  external_functions_sem id sg ge vargs m t vres m' /\ possible_trace w t w'.
+  forall cp id sg ge vargs m t vres m' w w',
+  do_external_function id sg ge cp w vargs m = Some(w', t, vres, m') ->
+  external_functions_sem id sg ge cp vargs m t vres m' /\ possible_trace w t w'.
 
 Hypothesis do_external_function_complete:
-  forall id sg ge vargs m t vres m' w w',
-  external_functions_sem id sg ge vargs m t vres m' ->
+  forall cp id sg ge vargs m t vres m' w w',
+  external_functions_sem id sg ge cp vargs m t vres m' ->
   possible_trace w t w' ->
-  do_external_function id sg ge w vargs m = Some(w', t, vres, m').
+  do_external_function id sg ge cp w vargs m = Some(w', t, vres, m').
 
 Variable do_inline_assembly:
-  compartment -> string -> signature -> Senv.t -> world -> list val -> mem -> option (world * trace * val * mem).
+   string -> signature -> Senv.t -> compartment -> world -> list val -> mem -> option (world * trace * val * mem).
 
 Hypothesis do_inline_assembly_sound:
   forall txt sg ge cp vargs m t vres m' w w',
-  do_inline_assembly cp txt sg ge w vargs m = Some(w', t, vres, m') ->
-  inline_assembly_sem cp txt sg ge vargs m t vres m' /\ possible_trace w t w'.
+  do_inline_assembly txt sg ge cp w vargs m = Some(w', t, vres, m') ->
+  inline_assembly_sem txt sg ge cp vargs m t vres m' /\ possible_trace w t w'.
 
 Hypothesis do_inline_assembly_complete:
   forall txt sg ge cp vargs m t vres m' w w',
-  inline_assembly_sem cp txt sg ge vargs m t vres m' ->
+  inline_assembly_sem txt sg ge cp vargs m t vres m' ->
   possible_trace w t w' ->
-  do_inline_assembly cp txt sg ge w vargs m = Some(w', t, vres, m').
+  do_inline_assembly txt sg ge cp w vargs m = Some(w', t, vres, m').
 
 (** * Reduction of expressions *)
 
@@ -561,8 +561,8 @@ Fixpoint step_expr (cp: compartment) (k: kind) (a: expr) (m: mem): reducts expr 
       match is_val_list rargs with
       | Some vtl =>
           do vargs <- sem_cast_arguments vtl tyargs m;
-          check (Pos.eqb (comp_of ef) cp);
-          match do_external _ _ ge do_external_function do_inline_assembly ef w vargs m with
+          (* check (Pos.eqb (comp_of ef) cp); *)
+          match do_external _ _ ge do_external_function do_inline_assembly ef cp w vargs m with
           | None => stuck
           | Some(w',t,v,m') => topred (Rred "red_builtin" (Eval v ty) m' t)
           end
@@ -626,8 +626,7 @@ Definition invert_expr_prop (cp: compartment) (a: expr) (m: mem) : Prop :=
       exists b,
       e!x = Some(b, ty)
       \/ (e!x = None /\ Genv.find_symbol ge x = Some b /\
-           (Genv.find_comp_of_block ge b = Some cp \/
-       (exists fd : fundef, Genv.find_def ge b = Some (Gfun fd))))
+            Genv.allowed_addrof ge cp x)
   | Ederef (Eval v ty1) ty =>
       exists b, exists ofs, v = Vptr b ofs
   | Eaddrof (Eloc b ofs bf ty1) ty =>
@@ -681,8 +680,7 @@ Definition invert_expr_prop (cp: compartment) (a: expr) (m: mem) : Prop :=
       exprlist_all_values rargs ->
       exists vargs t vres m' w',
          cast_arguments m rargs tyargs vargs
-      /\ external_call ef ge vargs m t vres m'
-      /\ comp_of ef = cp
+      /\ external_call ef ge cp vargs m t vres m'
       /\ possible_trace w t w'
   | _ => True
   end.
@@ -692,7 +690,7 @@ Lemma lred_invert:
 Proof.
   induction 1; red; auto.
   exists b; auto.
-  exists b; right. split; auto.
+  exists b; auto.
   exists b; exists ofs; auto.
   exists b; exists ofs; split; auto. exists co, delta, bf; auto.
   exists b; exists ofs; split; auto. exists co, delta, bf; auto.
@@ -1032,16 +1030,10 @@ Proof with (try (apply not_invert_ok; simpl; intro; myinv; intuition congruence;
   destruct (Genv.find_symbol ge x) as [b|] eqn:?...
   destruct Genv.allowed_addrof_b eqn:CHECK...
   { apply topred_ok; auto. apply red_var_global; auto.
-    eapply Genv.allowed_addrof_b_reflect in CHECK.
-    destruct CHECK as (b' & ? & ?). assert (b' = b) by congruence. subst b'.
-    eauto. }
+    now apply Genv.allowed_addrof_b_reflect. }
   apply not_invert_ok. simpl. rewrite Heqo.
-  intros (? & [?|(_ & ? & CONTRA)]); try easy.
-  assert (CONTRA': (exists b : block,
-     Genv.find_symbol ge x = Some b /\
-     (Genv.find_comp_of_block ge b = Some cp \/
-      (exists fd , Genv.find_def ge b = Some (Gfun fd))))). { eexists; split; eauto. }
-  apply Genv.allowed_addrof_b_reflect in CONTRA'. congruence.
+  intros (? & [?|(_ & _ & CONTRA)]); try easy.
+  apply Genv.allowed_addrof_b_reflect in CONTRA. congruence.
 (* Efield *)
   destruct (is_val a) as [[v ty'] | ] eqn:?.
   rewrite (is_val_inv _ _ _ Heqo).
@@ -1185,12 +1177,12 @@ Proof with (try (apply not_invert_ok; simpl; intro; myinv; intuition congruence;
   destruct (Genv.allowed_call_b ge cp vf) eqn:ALLOWED...
   destruct (sem_cast_arguments vtl tyargs m) as [vargs|] eqn:?...
   destruct (type_eq (type_of_fundef fd) (Tfunction tyargs tyres cconv))...
-  destruct (Genv.type_of_call cp (comp_of fd)) eqn:?...
+  destruct (flowsto_dec (comp_of fd) cp) eqn:?...
   destruct (get_call_trace _ _ ge cp (comp_of fd) vf vargs (typlist_of_typelist tyargs)) eqn:?...
   apply topred_ok; auto. red. split; auto. eapply red_call; eauto.
   eapply sem_cast_arguments_sound; eauto.
   (* Use Heqb *)
-  eapply Genv.allowed_call_reflect; eauto. congruence.
+  eapply Genv.allowed_call_reflect; eauto. simpl. rewrite Heqs. congruence.
   eapply get_call_trace_eq; eauto.
   apply not_invert_ok; simpl; intros; myinv. specialize (H ALLVAL). myinv.
   eapply get_call_trace_eq in H5.
@@ -1207,14 +1199,14 @@ Proof with (try (apply not_invert_ok; simpl; intro; myinv; intuition congruence;
   eapply get_call_trace_eq; eauto.
   apply not_invert_ok; simpl; intros; myinv. specialize (H ALLVAL). myinv.
   (* apply Genv.cross_call_reflect in Heqb. *)
-  assert (x2 = fd) as -> by congruence. specialize (H4 Heqc0).
+  assert (x2 = fd) as -> by congruence. rewrite Heqs in H4. specialize (H4 eq_refl).
   rewrite Heqc in H; inv H.
   rewrite Heqo1 in H0; inv H0.
   exploit sem_cast_arguments_complete; eauto. intros [vtl' [P Q]]. rewrite Heqo0 in P. inv P.
   rewrite Heqo2 in Q; inv Q. eapply get_call_trace_eq in H5; congruence.
   apply not_invert_ok; simpl; intros; myinv. specialize (H ALLVAL). myinv.
   (* apply Genv.cross_call_reflect in Heqb. *)
-  assert (x2 = fd) as -> by congruence. specialize (H4 Heqc0).
+  assert (x2 = fd) as -> by congruence. rewrite Heqs in H4. specialize (H4 eq_refl).
   rewrite Heqc in H; inv H.
   rewrite Heqo1 in H0; inv H0.
   exploit sem_cast_arguments_complete; eauto. intros [vtl' [P Q]]. rewrite Heqo0 in P. inv P.
@@ -1253,18 +1245,19 @@ Proof with (try (apply not_invert_ok; simpl; intro; myinv; intuition congruence;
   exploit is_val_list_all_values; eauto. intros ALLVAL.
   (* top *)
   destruct (sem_cast_arguments vtl tyargs m) as [vargs|] eqn:?...
-  destruct (Pos.eqb (comp_of ef) cp) eqn:?...
-  destruct (do_external _ _ ge do_external_function do_inline_assembly ef w vargs m) as [[[[? ?] v] m'] | ] eqn:?...
+  (* destruct (Pos.eqb (comp_of ef) cp) eqn:?... *)
+  destruct (do_external _ _ ge do_external_function do_inline_assembly ef cp w vargs m) as [[[[? ?] v] m'] | ] eqn:?...
   exploit do_ef_external_sound; eauto. intros [EC PT].
   apply topred_ok; auto. red. split; auto. eapply red_builtin; eauto.
-  eapply sem_cast_arguments_sound; eauto. now apply Peqb_true_eq.
+  eapply sem_cast_arguments_sound; eauto.
   exists w0; auto.
   apply not_invert_ok; simpl; intros; myinv. specialize (H ALLVAL). myinv.
   assert (x = vargs).
     exploit sem_cast_arguments_complete; eauto. intros [vtl' [A B]]. congruence.
   subst x. exploit do_ef_external_complete; eauto. congruence.
-  apply not_invert_ok; simpl; intros; myinv. specialize (H ALLVAL). myinv. subst. now rewrite Pos.eqb_refl in Heqb.
   apply not_invert_ok; simpl; intros; myinv. specialize (H ALLVAL). myinv.
+  (* subst. now rewrite Pos.eqb_refl in Heqb. *)
+  (* apply not_invert_ok; simpl; intros; myinv. specialize (H ALLVAL). myinv. *)
   exploit sem_cast_arguments_complete; eauto. intros [vtl' [A B]]. congruence.
   (* depth *)
   eapply incontext_list_ok; eauto.
@@ -1309,13 +1302,8 @@ Proof.
   rewrite H. rewrite dec_eq_true. econstructor; eauto.
 (* var global *)
   rewrite H; rewrite H0.
-  assert (Genv.allowed_addrof_b ge cp x = true) as ->.
-  { assert (OK: (exists b : block,
-     Genv.find_symbol ge x = Some b /\
-     (Genv.find_comp_of_block ge b = Some cp \/
-      (exists fd , Genv.find_def ge b = Some (Gfun fd))))). { eexists; split; eauto. }
-  apply Genv.allowed_addrof_b_reflect in OK. congruence. }
-    (* by now rewrite <- Genv.allowed_addrof_b_reflect. *)
+  assert (Genv.allowed_addrof_b ge cp x = true) as ->
+    by now rewrite <- Genv.allowed_addrof_b_reflect.
   econstructor; eauto.
 (* deref *)
   econstructor; eauto.
@@ -1369,9 +1357,8 @@ Proof.
   inv H0. rewrite H; econstructor; eauto.
 (* builtin *)
   exploit sem_cast_arguments_complete; eauto. intros [vtl [A B]].
-  subst cp.
   exploit do_ef_external_complete; eauto. intros C.
-  rewrite A. rewrite B. rewrite Pos.eqb_refl. rewrite C. econstructor; eauto.
+  rewrite A. rewrite B. rewrite C. econstructor; eauto.
 Qed.
 
 Lemma callred_topred:
@@ -1385,8 +1372,9 @@ Proof.
   eapply Genv.allowed_call_reflect in ALLOWED.
   rewrite ALLOWED.
   econstructor; eauto.
-  destruct (Genv.type_of_call cp (comp_of fd)) eqn:?; try reflexivity.
+  destruct (flowsto_dec (comp_of fd) cp) eqn:?; try reflexivity.
   eapply get_call_trace_eq in EV; rewrite EV; eauto.
+  simpl in NO_CROSS_PTR; rewrite Heqs in NO_CROSS_PTR.
   specialize (NO_CROSS_PTR eq_refl).
   pose proof (proj1 (Forall_forall _ _) NO_CROSS_PTR) as G.
   assert (forallb not_ptr_b vargs = true) as G'.
@@ -1827,9 +1815,9 @@ Definition do_step (w: world) (s: state) : list transition :=
       do m2 <- sem_bind_parameters w e m1 f.(fn_params) vargs (fn_comp f);
       ret "step_internal_function" (State f f.(fn_body) k e m2)
   | Callstate (External ef _ tres _) vargs k m =>
-      match do_external _ _ ge do_external_function do_inline_assembly ef w vargs m with
+      match do_external _ _ ge do_external_function do_inline_assembly ef (call_comp k) w vargs m with
       | None => nil
-      | Some(w',t,v,m') => TR "step_external_function" t (Returnstate v k m' (rettype_of_type tres) (comp_of ef)) :: nil
+      | Some(w',t,v,m') => TR "step_external_function" t (Returnstate v k m' (rettype_of_type tres) bottom) :: nil
       end
 
   | Returnstate v (Kcall f e C ty k) m ty' cp =>
@@ -1909,6 +1897,7 @@ Proof with try (left; right; econstructor; eauto; fail).
   eapply do_ef_external_sound; eauto.
 (* returnstate *)
   destruct k; myinv... left; right; constructor.
+  simpl.
   intros REWR; rewrite REWR in Heqb. now apply not_ptr_reflect.
   now apply get_return_trace_eq in Heqo.
 (* stuckstate *)
@@ -2015,6 +2004,7 @@ Proof with (unfold ret; eauto with coqlib).
   { destruct (Genv.type_of_call (comp_of f) cp) eqn:eq_type_of_call;
       [reflexivity | ].
     apply not_ptr_reflect; auto. }
+  simpl in H.
   rewrite H. apply get_return_trace_eq in EV; rewrite EV. simpl.
   left; reflexivity.
 Qed.

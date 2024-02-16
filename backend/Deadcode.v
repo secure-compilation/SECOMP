@@ -85,26 +85,26 @@ Function transfer_builtin (app: VA.t) (ef: external_function)
                           (args: list (builtin_arg reg)) (res: builtin_res reg)
                           (ne: NE.t) (nm: nmem) : NA.t :=
   match ef, args with
-  | EF_vload _ chunk, a1::nil =>
+  | EF_vload chunk, a1::nil =>
       transfer_builtin_arg All
         (kill_builtin_res res ne,
          nmem_add nm (aaddr_arg app a1) (size_chunk chunk))
         a1
-  | EF_vstore _ chunk, a1::a2::nil =>
+  | EF_vstore chunk, a1::a2::nil =>
       transfer_builtin_arg All
           (transfer_builtin_arg (store_argument chunk)
                                 (kill_builtin_res res ne, nm) a2)
           a1
-  | EF_memcpy _ sz al, dst::src::nil =>
+  | EF_memcpy sz al, dst::src::nil =>
       if nmem_contains nm (aaddr_arg app dst) sz then
         transfer_builtin_args
            (kill_builtin_res res ne,
             nmem_add (nmem_remove nm (aaddr_arg app dst) sz) (aaddr_arg app src) sz)
            args
       else (ne, nm)
-  | (EF_annot _ _ _ _ | EF_annot_val _ _ _ _), _ =>
+  | (EF_annot _ _ _ | EF_annot_val _ _ _), _ =>
       transfer_builtin_args (kill_builtin_res res ne, nm) args
-  | EF_debug _ _ _ _, _ =>
+  | EF_debug _ _ _, _ =>
       (kill_builtin_res res ne, nm)
   | _, _ =>
       transfer_builtin_args (kill_builtin_res res ne, nmem_all) args
@@ -188,7 +188,7 @@ Definition transf_instr (approx: PMap.t VA.t) (an: PMap.t NA.t)
       if nmem_contains (snd an!!pc) p (size_chunk chunk)
       then instr
       else Inop s
-  | Ibuiltin (EF_memcpy _ sz al) (dst :: src :: nil) res s =>
+  | Ibuiltin (EF_memcpy sz al) (dst :: src :: nil) res s =>
       if nmem_contains (snd an!!pc) (aaddr_arg approx!!pc dst) sz
       then instr
       else Inop s
@@ -211,6 +211,14 @@ Definition transf_function (rm: romem) (f: function) : res function :=
   | None =>
       Error (msg "Neededness analysis failed")
   end.
+
+#[global] Instance comp_transf_function rm: has_comp_transl_partial (transf_function rm).
+Proof.
+  unfold transf_function.
+  intros f ? H.
+  destruct analyze; try easy.
+  now inv H.
+Qed.
 
 Definition transf_fundef (rm: romem) (fd: fundef) : res fundef :=
   AST.transf_partial_fundef (transf_function rm) fd.

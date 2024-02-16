@@ -43,7 +43,10 @@ Set Warnings "-unsupported-attributes".
   we use the following type for events.  Each event represents either:
 
 - A system call (e.g. an input/output operation), recording the
-  name of the system call, its parameters, and its result.
+  name of the system call, its parameters, the contents of any memory
+  buffers it writes, its result, and the contents of any memory buffers
+  it reads. We do not bother recording the addresses of the buffers, which
+  can (presumably) be inferred from the parameters.
 
 - A volatile load from a global memory location, recording the chunk
   and address being read and the value just read.
@@ -68,7 +71,7 @@ Inductive eventval: Type :=
   | EVptr_global: ident -> ptrofs -> eventval.
 
 Inductive event: Type :=
-  | Event_syscall: string -> list eventval -> eventval -> event
+  | Event_syscall: string -> list eventval -> list (list byte) -> eventval -> list (list byte) -> event
   | Event_vload: memory_chunk -> ident -> ptrofs -> eventval -> event
   | Event_vstore: memory_chunk -> ident -> ptrofs -> eventval -> event
   | Event_annot: string -> list eventval -> event
@@ -272,6 +275,7 @@ Section EVENTVAL.
 
 (** Symbol environment used to translate between global variable names and their block identifiers. *)
 Variable ge: Senv.t.
+Variable cp: compartment.
 
 (** Translation between values and event values. *)
 
@@ -287,6 +291,7 @@ Inductive eventval_match: eventval -> typ -> val -> Prop :=
   | ev_match_ptr: forall id b ofs,
       Senv.public_symbol ge id = true ->
       Senv.find_symbol ge id = Some b ->
+      (* Senv.find_comp ge id ⊆ cp -> *)
       eventval_match (EVptr_global id ofs) Tptr (Vptr b ofs).
 
 Inductive eventval_list_match: list eventval -> list typ -> list val -> Prop :=
@@ -371,10 +376,18 @@ Definition eventval_type (ev: eventval) : typ :=
   | EVptr_global id ofs => Tptr
   end.
 
+Definition eventval_comp (ev: eventval) : compartment :=
+  match ev with
+  | EVint _ | EVlong _ | EVfloat _ | EVsingle _ => bottom
+  | EVptr_global id ofs => Senv.find_comp ge id
+  end.
+
 Lemma eventval_match_receptive:
   forall ev1 ty v1 ev2,
   eventval_match ev1 ty v1 ->
-  eventval_valid ev1 -> eventval_valid ev2 -> eventval_type ev1 = eventval_type ev2 ->
+  eventval_valid ev1 -> eventval_valid ev2 ->
+  eventval_type ev1 = eventval_type ev2 ->
+  (* eventval_comp ev1 = eventval_comp ev2 -> *)
   exists v2, eventval_match ev2 ty v2.
 Proof.
   intros. unfold eventval_type, Tptr in H2. remember Archi.ptr64 as ptr64.
@@ -382,9 +395,11 @@ Proof.
 - exists (Vint i0); constructor.
 - simpl in H1; exploit Senv.public_symbol_exists; eauto. intros [b FS].
   exists (Vptr b i1); rewrite H3. constructor; auto.
+  (* simpl in H3. rewrite <- H3. auto with comps. *)
 - exists (Vlong i0); constructor.
 - simpl in H1; exploit Senv.public_symbol_exists; eauto. intros [b FS].
   exists (Vptr b i1); rewrite H3; constructor; auto.
+  (* simpl in H3. rewrite <- H3. auto with comps. *)
 - exists (Vfloat f0); constructor.
 - destruct Archi.ptr64; discriminate.
 - exists (Vsingle f0); constructor; auto.
@@ -395,6 +410,7 @@ Proof.
 - destruct Archi.ptr64; discriminate.
 - exploit Senv.public_symbol_exists. eexact H1. intros [b' FS].
   exists (Vptr b' i0); constructor; auto.
+  (* simpl in H3. rewrite <- H3. assumption. *)
 Qed.
 
 Lemma eventval_match_valid:
@@ -417,6 +433,7 @@ End EVENTVAL.
 Section EVENTVAL_INV.
 
 Variables ge1 ge2: Senv.t.
+Variable cp: compartment.
 
 Hypothesis public_preserved:
   forall id, Senv.public_symbol ge2 id = Senv.public_symbol ge1 id.
@@ -430,6 +447,29 @@ Qed.
 Hypothesis symbols_preserved:
   forall id, Senv.find_symbol ge2 id = Senv.find_symbol ge1 id.
 
+Hypothesis comp_preserved:
+  forall id, Senv.find_comp ge2 id = Senv.find_comp ge1 id.
+
+Lemma eventval_comp_preserved:
+  forall ev, eventval_comp ge2 ev = eventval_comp ge1 ev.
+Proof.
+  intros. destruct ev; simpl in *; auto with comps.
+Qed.
+
+Lemma eventval_list_comp_preserved:
+  forall args, Forall (fun ev => eventval_comp ge1 ev ⊆ cp) args ->
+          Forall (fun ev => eventval_comp ge2 ev ⊆ cp) args.
+Proof.
+  intros args H.
+  induction H.
+  - constructor.
+  - constructor; eauto.
+    destruct x; auto.
+    simpl in *.
+    (* now eapply flowsto_trans. *)
+    now rewrite comp_preserved.
+Qed.
+
 Lemma eventval_match_preserved:
   forall ev ty v,
   eventval_match ge1 ev ty v -> eventval_match ge2 ev ty v.
@@ -437,6 +477,7 @@ Proof.
   induction 1; constructor; auto.
   rewrite public_preserved; auto.
   rewrite symbols_preserved; auto.
+  (* rewrite comp_preserved; auto. *)
 Qed.
 
 Lemma eventval_list_match_preserved:
@@ -454,6 +495,7 @@ Section EVENTVAL_INJECT.
 
 Variable f: block -> option (block * Z).
 Variable ge1 ge2: Senv.t.
+Variable cp: compartment.
 
 Definition symbols_inject : Prop :=
    (forall id, Senv.public_symbol ge2 id = Senv.public_symbol ge1 id)
@@ -462,46 +504,69 @@ Definition symbols_inject : Prop :=
      delta = 0 /\ Senv.find_symbol ge2 id = Some b2)
 /\ (forall id b1,
      Senv.public_symbol ge1 id = true -> Senv.find_symbol ge1 id = Some b1 ->
+     Senv.find_comp ge1 id ⊆ cp ->
      exists b2, f b1 = Some(b2, 0) /\ Senv.find_symbol ge2 id = Some b2)
 /\ (forall b1 b2 delta,
      f b1 = Some(b2, delta) ->
-     Senv.block_is_volatile ge2 b2 = Senv.block_is_volatile ge1 b1).
-
+     Senv.block_is_volatile ge2 b2 = Senv.block_is_volatile ge1 b1)
+/\ (forall id,
+     (* f b1 = Some(b2, delta) -> Senv.find_symbol ge1 id = Some b1 -> *)
+      Senv.find_comp ge1 id = Senv.find_comp ge2 id).
 Hypothesis symb_inj: symbols_inject.
 
 Lemma eventval_match_inject:
   forall ev ty v1 v2,
+  forall (COMP: eventval_comp ge1 ev ⊆ cp),
   eventval_match ge1 ev ty v1 -> Val.inject f v1 v2 -> eventval_match ge2 ev ty v2.
 Proof.
   intros. inv H; inv H0; try constructor; auto.
-  destruct symb_inj as (A & B & C & D). exploit C; eauto. intros [b3 [EQ FS]]. rewrite H4 in EQ; inv EQ.
+  destruct symb_inj as (A & B & C & D & E). exploit C; eauto. intros [b3 [EQ FS]].
+  rewrite H4 in EQ; inv EQ.
   rewrite Ptrofs.add_zero. constructor; auto. rewrite A; auto.
 Qed.
 
 Lemma eventval_match_inject_2:
   forall ev ty v1,
+  forall (COMP: eventval_comp ge1 ev ⊆ cp),
   eventval_match ge1 ev ty v1 ->
   exists v2, eventval_match ge2 ev ty v2 /\ Val.inject f v1 v2.
 Proof.
   intros. inv H; try (econstructor; split; eauto; constructor; fail).
-  destruct symb_inj as (A & B & C & D). exploit C; eauto. intros [b2 [EQ FS]].
-  exists (Vptr b2 ofs); split. econstructor; eauto.
-  econstructor; eauto. rewrite Ptrofs.add_zero; auto.
+  destruct symb_inj as (A & B & C & D & E). exploit C; eauto. intros [b2 [EQ FS]].
+  exists (Vptr b2 ofs); split. econstructor; eauto. econstructor; eauto. rewrite Ptrofs.add_zero; auto.
 Qed.
 
 Lemma eventval_list_match_inject:
   forall evl tyl vl1, eventval_list_match ge1 evl tyl vl1 ->
+  forall (COMP: Forall (fun ev => eventval_comp ge1 ev ⊆ cp) evl),
   forall vl2, Val.inject_list f vl1 vl2 -> eventval_list_match ge2 evl tyl vl2.
 Proof.
   induction 1; intros. inv H; constructor.
-  inv H1. constructor. eapply eventval_match_inject; eauto. eauto.
+  inv H1.
+  inv COMP.
+  constructor. eapply eventval_match_inject; eauto.
+  eauto.
 Qed.
 
 End EVENTVAL_INJECT.
 
+
 (** * Matching traces. *)
 
+(** To define trace matching, we need a notion of well-formed syscall events.
+    Some system calls enforce that certain relationships hold between
+    arguments and results; for example, a `read` call never reads more bytes
+    than requested. When defining receptivity of a call, it only make sense
+    to consider such well-formed events; the stronger notion of receptivity
+    in vanilla CompCert would fail. Clearly, the definition of well-formedness
+    must depend on the particular system call in question. *)
+
+Definition well_formed_syscall_event_spec :=
+  String.string -> signature -> compartment -> list eventval -> list (list byte) -> eventval -> list (list byte) -> Prop.
+
 Section MATCH_TRACES.
+
+Variable wfse: well_formed_syscall_event_spec.
 
 Variable ge: Senv.t.
 
@@ -513,20 +578,30 @@ Variable ge: Senv.t.
 Inductive match_traces: trace -> trace -> Prop :=
   | match_traces_E0:
       match_traces nil nil
+(*  was:
   | match_traces_syscall: forall id args res1 res2,
       eventval_valid ge res1 -> eventval_valid ge res2 -> eventval_type res1 = eventval_type res2 ->
+      (* eventval_comp ge res1 = eventval_comp ge res2 -> *)
+      eventval_comp ge res1 = eventval_comp ge res2 ->
       match_traces (Event_syscall id args res1 :: nil) (Event_syscall id args res2 :: nil)
+ *)
+  | match_traces_syscall: forall id sg cp args res1 res2 reads writes1 writes2,
+      wfse id sg cp args reads res1 writes1 ->
+      wfse id sg cp args reads res2 writes2 -> 
+      match_traces (Event_syscall id args reads res1 writes1 :: nil) (Event_syscall id args reads res2 writes2:: nil)
   | match_traces_vload: forall chunk id ofs res1 res2,
       eventval_valid ge res1 -> eventval_valid ge res2 -> eventval_type res1 = eventval_type res2 ->
+      eventval_comp ge res1 ⊆ Senv.find_comp ge id ->
+      eventval_comp ge res2 ⊆ Senv.find_comp ge id ->
       match_traces (Event_vload chunk id ofs res1 :: nil) (Event_vload chunk id ofs res2 :: nil)
   | match_traces_vstore: forall chunk id ofs arg,
       match_traces (Event_vstore chunk id ofs arg :: nil) (Event_vstore chunk id ofs arg :: nil)
   | match_traces_annot: forall id args,
       match_traces (Event_annot id args :: nil) (Event_annot id args :: nil)
-  | match_traces_call: forall cp cp' id args,
-      match_traces (Event_call cp cp' id args :: nil) (Event_call cp cp' id args :: nil)
-  | match_traces_return: forall cp cp' res,
-      match_traces (Event_return cp cp' res :: nil) (Event_return cp cp' res :: nil).
+  | match_traces_call: forall cp1 cp2 id args,
+      match_traces (Event_call cp1 cp2 id args :: nil) (Event_call cp1 cp2 id args :: nil)
+  | match_traces_return: forall cp1 cp2 res,
+      match_traces (Event_return cp1 cp2 res :: nil) (Event_return cp1 cp2 res :: nil).
 
 End MATCH_TRACES.
 
@@ -534,15 +609,28 @@ End MATCH_TRACES.
 
 Section MATCH_TRACES_INV.
 
+Variable wfse: well_formed_syscall_event_spec.
+
 Variables ge1 ge2: Senv.t.
+Variable cp: compartment.
 
 Hypothesis public_preserved:
   forall id, Senv.public_symbol ge2 id = Senv.public_symbol ge1 id.
+Hypothesis comp_preserved:
+  forall id, Senv.find_comp ge2 id = Senv.find_comp ge1 id.
 
 Lemma match_traces_preserved:
-  forall t1 t2, match_traces ge1 t1 t2 -> match_traces ge2 t1 t2.
+  forall t1 t2, match_traces wfse ge1 t1 t2 -> match_traces wfse ge2 t1 t2.
 Proof.
-  induction 1; constructor; auto; eapply eventval_valid_preserved; eauto.
+  induction 1; econstructor; auto;
+    try (match goal with
+    | |- eventval_valid _ _ => eapply eventval_valid_preserved; eauto
+    | |- eventval_comp _ _ ⊆ _ =>
+        destruct res1, res2; simpl in *; auto; rewrite !comp_preserved; eauto
+    | |- eventval_comp _ _ = eventval_comp _ _ =>
+        destruct res1, res2; simpl in *; auto; rewrite !comp_preserved; eauto
+    end; eauto).
+  eauto. eauto.
 Qed.
 
 End MATCH_TRACES_INV.
@@ -552,7 +640,7 @@ End MATCH_TRACES_INV.
 
 Definition output_event (ev: event) : Prop :=
   match ev with
-  | Event_syscall _ _ _ => False
+  | Event_syscall _ _ _ _ _ => False
   | Event_vload _ _ _ _ => False
   | Event_vstore _ _ _ _ => True
   | Event_annot _ _ => True
@@ -585,14 +673,18 @@ Inductive volatile_load (ge: Senv.t) (cp: compartment):
   | volatile_load_vol: forall chunk m b ofs id ev v,
       Senv.block_is_volatile ge b = true ->
       Senv.find_symbol ge id = Some b ->
+      (* Condition: we're doing a volatile load to a location [cp] is allowed to access *)
+      Senv.find_comp ge id ⊆ cp ->
       eventval_match ge ev (type_of_chunk chunk) v ->
+      (* we load a value (that might be a pointer) that is allowed to be stored inside this location *)
+      eventval_comp ge ev ⊆ Senv.find_comp ge id ->
       volatile_load ge cp chunk m b ofs
                       (Event_vload chunk id ofs ev :: nil)
                       (Val.load_result chunk v)
   | volatile_load_nonvol: forall chunk m b ofs v,
       Senv.block_is_volatile ge b = false ->
-      forall OWN : Mem.can_access_block m b (Some cp),
-      Mem.load chunk m b (Ptrofs.unsigned ofs) (Some cp) = Some v ->
+      forall OWN : Mem.can_access_block m b cp,
+      Mem.load chunk m b (Ptrofs.unsigned ofs) cp = Some v ->
       volatile_load ge cp chunk m b ofs E0 v.
 
 Inductive volatile_store (ge: Senv.t) (cp: compartment):
@@ -600,46 +692,35 @@ Inductive volatile_store (ge: Senv.t) (cp: compartment):
   | volatile_store_vol: forall chunk m b ofs id ev v,
       Senv.block_is_volatile ge b = true ->
       Senv.find_symbol ge id = Some b ->
+      (* Condition: we're doing a volatile store to a location [cp] is allowed to access *)
+      Senv.find_comp ge id ⊆ cp ->
       eventval_match ge ev (type_of_chunk chunk) (Val.load_result chunk v) ->
+      (* Condition: what we're storing can be stored in this location *)
+      eventval_comp ge ev ⊆ Senv.find_comp ge id ->
       volatile_store ge cp chunk m b ofs v
                       (Event_vstore chunk id ofs ev :: nil)
                       m
   | volatile_store_nonvol: forall chunk m b ofs v m',
       Senv.block_is_volatile ge b = false ->
-      forall OWN : Mem.can_access_block m b (Some cp),
+      forall OWN : Mem.can_access_block m b cp,
       Mem.store chunk m b (Ptrofs.unsigned ofs) v cp = Some m' ->
       volatile_store ge cp chunk m b ofs v E0 m'.
+
 
 (** * Semantics of external functions *)
 
 (** For each external function, its behavior is defined by a predicate relating:
 - the global symbol environment
-- the calling compartment
 - the values of the arguments passed to this function
 - the memory state before the call
 - the result value of the call
 - the memory state after the call
 - the trace generated by the call (can be empty).
 
-Most external calls do not use the calling compartment, as formalized
-in extcall_caller_independent.
 *)
 
 Definition extcall_sem : Type :=
-  Senv.t -> list val -> mem -> trace -> val -> mem -> Prop.
-
-(* (** This invariant guarantees that external calls performed to [cp] can *)
-(*   correctly use either [cp1] or [cp2] to find out who the calling compartment *)
-(*   is. *) *)
-(* Definition uptodate_caller (cp cp1 cp2: compartment) := *)
-(*   needs_calling_comp cp = true -> *)
-(*   cp1 = cp2. *)
-
-(* Definition extcall_caller_independent (cp: compartment) (sem: extcall_sem) := *)
-(*   forall ge cp1 cp2 args m t v m', *)
-(*   uptodate_caller cp cp1 cp2 -> *)
-(*   sem ge cp1 args m t v m' -> *)
-(*   sem ge cp2 args m t v m'. *)
+  Senv.t -> compartment -> list val -> mem -> trace -> val -> mem -> Prop.
 
 (** We now specify the expected properties of this predicate. *)
 
@@ -657,34 +738,35 @@ Definition loc_out_of_reach (f: meminj) (m: mem) (b: block) (ofs: Z): Prop :=
   f b0 = Some(b, delta) -> ~Mem.perm m b0 (ofs - delta) Max Nonempty.
 
 Definition loc_not_in_compartment (cp: compartment) (m: mem) (b: block) (ofs: Z): Prop :=
-  Mem.block_compartment m b <> Some cp.
+  Mem.block_compartment m b <> cp.
 
 Definition inject_separated (f f': meminj) (m1 m2: mem): Prop :=
   forall b1 b2 delta,
   f b1 = None -> f' b1 = Some(b2, delta) ->
   ~Mem.valid_block m1 b1 /\ ~Mem.valid_block m2 b2.
 
-Record extcall_properties (sem: extcall_sem) (cp: compartment) (sg: signature) : Prop :=
+Record extcall_properties (wfse: well_formed_syscall_event_spec)
+  (sem: extcall_sem) (cp: compartment) (sg: signature) : Prop :=
   mk_extcall_properties {
 
 (** The return value of an external call must agree with its signature. *)
   ec_well_typed:
     forall ge vargs m1 t vres m2,
-    sem ge vargs m1 t vres m2 ->
+    sem ge cp vargs m1 t vres m2 ->
     Val.has_rettype vres sg.(sig_res);
 
 (** The semantics is invariant under change of global environment that preserves symbols. *)
   ec_symbols_preserved:
     forall ge1 ge2 vargs m1 t vres m2,
     Senv.equiv ge1 ge2 ->
-    sem ge1 vargs m1 t vres m2 ->
-    sem ge2 vargs m1 t vres m2;
+    sem ge1 cp vargs m1 t vres m2 ->
+    sem ge2 cp vargs m1 t vres m2;
 
 (** External calls cannot invalidate memory blocks.  (Remember that
   freeing a block does not invalidate its block identifier.) *)
   ec_valid_block:
     forall ge vargs m1 t vres m2 b,
-    sem ge vargs m1 t vres m2 ->
+    sem ge cp vargs m1 t vres m2 ->
     Mem.valid_block m1 b -> Mem.valid_block m2 b;
 
 (** External calls cannot change the ownership of memory blocks.
@@ -692,50 +774,52 @@ Record extcall_properties (sem: extcall_sem) (cp: compartment) (sg: signature) :
       notion of [can_access_block] must be completely changed anyway
  *)
   ec_can_access_block:
-    forall ge vargs m1 t vres m2 b cp,
-    sem ge vargs m1 t vres m2 ->
-    Mem.can_access_block m1 b cp -> Mem.can_access_block m2 b cp;
+    forall ge vargs m1 t vres m2 b ocp,
+    sem ge cp vargs m1 t vres m2 ->
+    Mem.can_access_block m1 b ocp -> Mem.can_access_block m2 b ocp;
 
 (** External calls cannot increase the max permissions of a valid block.
     They can decrease the max permissions, e.g. by freeing. *)
   ec_max_perm:
     forall ge vargs m1 t vres m2 b ofs p,
-    sem ge vargs m1 t vres m2 ->
+    sem ge cp vargs m1 t vres m2 ->
     Mem.valid_block m1 b -> Mem.perm m2 b ofs Max p -> Mem.perm m1 b ofs Max p;
 
 (** External call cannot modify memory unless they have [Max, Writable]
    permissions. *)
   ec_readonly:
-    forall ge vargs m1 t vres m2 b ofs n bytes cp,
-    sem ge vargs m1 t vres m2 ->
+    forall ge vargs m1 t vres m2 b ofs n bytes ocp,
+    sem ge cp vargs m1 t vres m2 ->
     Mem.valid_block m1 b ->
-    Mem.loadbytes m2 b ofs n cp = Some bytes ->
+    (* Mem.can_access_block m1 b ocp -> *)
+    Mem.loadbytes m2 b ofs n ocp = Some bytes ->
     (forall i, ofs <= i < ofs + n -> ~Mem.perm m1 b i Max Writable) ->
-    Mem.loadbytes m1 b ofs n cp = Some bytes;
+    Mem.loadbytes m1 b ofs n ocp = Some bytes;
 
-(** External call can only allocate in the calling compartment *)
-  ec_new_valid:
-    forall ge vargs m1 t vres m2 b,
-    sem ge vargs m1 t vres m2 ->
-    ~ Mem.valid_block m1 b ->
-    Mem.valid_block m2 b ->
-    Mem.block_compartment m2 b = Some cp;
+(* (** External call can only allocate in the calling compartment *) *)
+(*   ec_new_valid: *)
+(*     forall ge vargs m1 t vres m2 b, *)
+(*     sem ge cp vargs m1 t vres m2 -> *)
+(*     ~ Mem.valid_block m1 b -> *)
+(*     Mem.valid_block m2 b -> *)
+(*     Mem.block_compartment m2 b = cp; *)
 
-(** TODO: External call should not be able to modify other compartment's memory *)
-  ec_mem_outside_compartment:
-    forall ge vargs m1 t vres m2,
-    sem ge vargs m1 t vres m2 ->
-    Mem.unchanged_on (loc_not_in_compartment cp m1) m1 m2;
+(* (** TODO: External call should not be able to modify other compartment's memory *) *)
+(* (** TODO: Is this an acceptable axiom? *) *)
+(*   ec_mem_outside_compartment: *)
+(*     forall ge vargs m1 t vres m2, *)
+(*     sem ge cp vargs m1 t vres m2 -> *)
+(*     Mem.unchanged_on (loc_not_in_compartment cp m1) m1 m2; *)
 
 (** External calls must commute with memory extensions, in the
   following sense. *)
   ec_mem_extends:
     forall ge vargs m1 t vres m2 m1' vargs',
-    sem ge vargs m1 t vres m2 ->
+    sem ge cp vargs m1 t vres m2 ->
     Mem.extends m1 m1' ->
     Val.lessdef_list vargs vargs' ->
     exists vres', exists m2',
-       sem ge vargs' m1' t vres' m2'
+       sem ge cp vargs' m1' t vres' m2'
     /\ Val.lessdef vres vres'
     /\ Mem.extends m2 m2'
     /\ Mem.unchanged_on (loc_out_of_bounds m1) m1' m2';
@@ -744,60 +828,71 @@ Record extcall_properties (sem: extcall_sem) (cp: compartment) (sg: signature) :
   in the following sense. *)
   ec_mem_inject:
     forall ge1 ge2 vargs m1 t vres m2 f m1' vargs',
-    symbols_inject f ge1 ge2 ->
-    sem ge1 vargs m1 t vres m2 ->
+    symbols_inject f ge1 ge2 cp ->
+    sem ge1 cp vargs m1 t vres m2 ->
     Mem.inject f m1 m1' ->
     Val.inject_list f vargs vargs' ->
     exists f', exists vres', exists m2',
-       sem ge2 vargs' m1' t vres' m2'
+       sem ge2 cp vargs' m1' t vres' m2'
     /\ Val.inject f' vres vres'
     /\ Mem.inject f' m2 m2'
     /\ Mem.unchanged_on (loc_unmapped f) m1 m2
     /\ Mem.unchanged_on (loc_out_of_reach f m1) m1' m2'
     /\ inject_incr f f'
-    /\ inject_separated f f' m1 m1' /\
-         (* TODO: redundancy with [ec_new_valid]? *)
-         (forall b,
-    ~ Mem.valid_block m1 b ->
-    Mem.valid_block m2 b ->
-   exists b', f' b = Some (b', 0) /\ Mem.block_compartment m2 b = Some cp);
+    /\ inject_separated f f' m1 m1';
+   (*    /\ *)
+   (*       (* TODO: is this a redundancy with [ec_new_valid]? *) *)
+   (*       (forall b, *)
+   (*  ~ Mem.valid_block m1 b -> *)
+   (*  Mem.valid_block m2 b -> *)
+   (* exists b', f' b = Some (b', 0) /\ Mem.block_compartment m2 b = cp); *)
 
 
 (** External calls produce at most one event. *)
   ec_trace_length:
     forall ge vargs m t vres m',
-    sem ge vargs m t vres m' -> (length t <= 1)%nat;
+    sem ge cp vargs m t vres m' -> (length t <= 1)%nat;
 
 (** External calls must be receptive to changes of traces by another, matching trace. *)
   ec_receptive:
     forall ge vargs m t1 vres1 m1 t2,
-    sem ge vargs m t1 vres1 m1 -> match_traces ge t1 t2 ->
-    exists vres2, exists m2, sem ge vargs m t2 vres2 m2;
+    sem ge cp vargs m t1 vres1 m1 -> match_traces wfse ge t1 t2 ->
+    exists vres2, exists m2, sem ge cp vargs m t2 vres2 m2;
 
 (** External calls must be deterministic up to matching between traces. *)
   ec_determ:
     forall ge vargs m t1 vres1 m1 t2 vres2 m2,
-    sem ge vargs m t1 vres1 m1 -> sem ge vargs m t2 vres2 m2 ->
-    match_traces ge t1 t2 /\ (t1 = t2 -> vres1 = vres2 /\ m1 = m2);
+    sem ge cp vargs m t1 vres1 m1 -> sem ge cp vargs m t2 vres2 m2 ->
+    match_traces wfse ge t1 t2 /\ (t1 = t2 -> vres1 = vres2 /\ m1 = m2);
 
 (** External calls cannot produce [Event_call] or [Event_return] events *)
   ec_no_crossing:
     forall ge vargs m t vres m',
-    sem ge vargs m t vres m' ->
+    sem ge cp vargs m t vres m' ->
     match t with
     | Event_call _ _ _ _ :: _
     | Event_return _ _ _ :: _ => False
     | _ => True
-    end
+    end;
+
+(** External calls cannot free public blocks without the Max Freeable permission *)
+  ec_public_not_freeable:
+    forall ge vargs m1 t vres m2 b ofs id,
+    sem ge cp vargs m1 t vres m2 ->
+    Mem.valid_block m1 b ->
+    Senv.invert_symbol ge b = Some id -> Senv.public_symbol ge id = true ->
+    Mem.perm m1 b ofs Max Nonempty -> (~ Mem.perm m1 b ofs Max Freeable) ->
+    Mem.perm m2 b ofs Max Nonempty;
+
 }.
 
 (** ** Semantics of volatile loads *)
 
-Inductive volatile_load_sem (cp: compartment) (chunk: memory_chunk) (ge: Senv.t) :
+Inductive volatile_load_sem (chunk: memory_chunk) (ge: Senv.t) (cp: compartment) :
               list val -> mem -> trace -> val -> mem -> Prop :=
   | volatile_load_sem_intro: forall b ofs m t v,
       volatile_load ge cp chunk m b ofs t v ->
-      volatile_load_sem cp chunk ge (Vptr b ofs :: nil) m t v m.
+      volatile_load_sem chunk ge cp (Vptr b ofs :: nil) m t v m.
 
 Lemma volatile_load_preserved:
   forall ge1 ge2 cp chunk m b ofs t v,
@@ -805,9 +900,13 @@ Lemma volatile_load_preserved:
   volatile_load ge1 cp chunk m b ofs t v ->
   volatile_load ge2 cp chunk m b ofs t v.
 Proof.
-  intros. destruct H as (A & B & C). inv H0; econstructor; eauto.
-  rewrite A; auto.
+  intros. destruct H as (A & B & C & D). inv H0; econstructor; eauto.
+  rewrite A; auto. rewrite D; auto.
   eapply eventval_match_preserved; eauto.
+  rewrite D; auto with comps.
+  eapply flowsto_trans; eauto.
+  erewrite eventval_comp_preserved; eauto with comps.
+  (* intros; rewrite D; auto with comps. *)
 Qed.
 
 Lemma volatile_load_extends:
@@ -820,27 +919,33 @@ Proof.
   econstructor; split; eauto. econstructor; eauto.
   exploit Mem.load_extends; eauto. intros [v' [A B]]. exists v'; split; auto. econstructor; eauto.
   Local Transparent Mem.load.
-  unfold Mem.load in A. destruct (Mem.valid_access_dec m' chunk b (Ptrofs.unsigned ofs) Readable (Some cp)); try discriminate.
+  unfold Mem.load in A. destruct (Mem.valid_access_dec m' chunk b (Ptrofs.unsigned ofs) Readable cp); try discriminate.
   Local Opaque Mem.load.
   inv v0. intuition.
 Qed.
 
 Lemma volatile_load_inject:
   forall ge1 ge2 cp f chunk m b ofs t v b' ofs' m',
-  symbols_inject f ge1 ge2 ->
+  symbols_inject f ge1 ge2 cp ->
   volatile_load ge1 cp chunk m b ofs t v ->
   Val.inject f (Vptr b ofs) (Vptr b' ofs') ->
   Mem.inject f m m' ->
   exists v', volatile_load ge2 cp chunk m' b' ofs' t v' /\ Val.inject f v v'.
 Proof.
-  intros until m'; intros SI VL VI MI. generalize SI; intros (A & B & C & D).
+  intros until m'; intros SI VL VI MI. generalize SI; intros (A & B & C & D & E).
   inv VL.
 - (* volatile load *)
   inv VI. exploit B; eauto. intros [U V]. subst delta.
-  exploit eventval_match_inject_2; eauto. intros (v2 & X & Y).
+  exploit eventval_match_inject_2; eauto.
+  eapply flowsto_trans; eauto.
+  intros (v2 & X & Y).
   rewrite Ptrofs.add_zero. exists (Val.load_result chunk v2); split.
   constructor; auto.
   erewrite D; eauto.
+
+  erewrite <- E; eauto.
+  { erewrite <- E; eauto.
+    erewrite <- eventval_comp_preserved; eauto. }
   apply Val.load_result_inject. auto.
 - (* normal load *)
   exploit Mem.loadv_inject; eauto. simpl; eauto. simpl; intros (v2 & X & Y).
@@ -848,14 +953,14 @@ Proof.
   econstructor; eauto.
   inv VI. erewrite D; eauto.
   Local Transparent Mem.load.
-  unfold Mem.load in X. destruct (Mem.valid_access_dec m' chunk b' (Ptrofs.unsigned ofs') Readable (Some cp)); try discriminate.
+  unfold Mem.load in X. destruct (Mem.valid_access_dec m' chunk b' (Ptrofs.unsigned ofs') Readable cp); try discriminate.
   Local Opaque Mem.load.
   inv v0. intuition.
 Qed.
 
 Lemma volatile_load_receptive:
-  forall ge cp chunk m b ofs t1 t2 v1,
-  volatile_load ge cp chunk m b ofs t1 v1 -> match_traces ge t1 t2 ->
+  forall wfse ge cp chunk m b ofs t1 t2 v1,
+  volatile_load ge cp chunk m b ofs t1 v1 -> match_traces wfse ge t1 t2 ->
   exists v2, volatile_load ge cp chunk m b ofs t2 v2.
 Proof.
   intros. inv H; inv H0.
@@ -865,8 +970,8 @@ Proof.
 Qed.
 
 Lemma volatile_load_ok:
-  forall chunk cp,
-  extcall_properties (volatile_load_sem cp chunk)
+  forall wfse chunk cp,
+  extcall_properties wfse (volatile_load_sem chunk)
                      cp (mksignature (Tptr :: nil) (rettype_of_chunk chunk) cc_default).
 Proof.
   intros; constructor; intros.
@@ -883,10 +988,6 @@ Proof.
 - inv H; auto.
 (* readonly *)
 - inv H; auto.
-(* mem alloc *)
-- inv H; congruence.
-(* outside cp *)
-- inv H; apply Mem.unchanged_on_refl.
 (* mem extends *)
 - inv H. inv H1. inv H6. inv H4.
   exploit volatile_load_extends; eauto. intros [v' [A B]].
@@ -908,23 +1009,26 @@ Proof.
   eapply eventval_match_valid; eauto.
   eapply eventval_match_valid; eauto.
   eapply eventval_match_same_type; eauto.
+  auto. auto.
   intros EQ; inv EQ.
   assert (v = v0) by (eapply eventval_match_determ_1; eauto). subst v0.
   auto.
   split. constructor. intuition congruence.
 (* no cross *)
 - inv H; inv H0; simpl; auto.
+(* not freeable *)
+- inv H; eauto.
 Qed.
 
 (** ** Semantics of volatile stores *)
 
 (* JT: Note: Same remarks as for volatile loads *)
 
-Inductive volatile_store_sem (cp: compartment) (chunk: memory_chunk)(ge: Senv.t):
+Inductive volatile_store_sem (chunk: memory_chunk) (ge: Senv.t) (cp: compartment):
               list val -> mem -> trace -> val -> mem -> Prop :=
   | volatile_store_sem_intro: forall b ofs m1 v t m2,
       volatile_store ge cp chunk m1 b ofs v t m2 ->
-      volatile_store_sem cp chunk ge (Vptr b ofs :: v :: nil) m1 t Vundef m2.
+      volatile_store_sem chunk ge cp (Vptr b ofs :: v :: nil) m1 t Vundef m2.
 
 Lemma volatile_store_preserved:
   forall ge1 ge2 cp chunk m1 b ofs v t m2,
@@ -932,24 +1036,25 @@ Lemma volatile_store_preserved:
   volatile_store ge1 cp chunk m1 b ofs v t m2 ->
   volatile_store ge2 cp chunk m1 b ofs v t m2.
 Proof.
-  intros. destruct H as (A & B & C). inv H0; econstructor; eauto.
+  intros. destruct H as (A & B & C & D). inv H0; econstructor; eauto.
   rewrite A; auto.
+  rewrite D; auto.
   eapply eventval_match_preserved; eauto.
+  erewrite <- eventval_comp_preserved, D; eauto.
 Qed.
 
 Lemma unchanged_on_readonly:
   forall m1 m2 b ofs n cp bytes,
   Mem.unchanged_on (loc_not_writable m1) m1 m2 ->
   Mem.valid_block m1 b ->
+  Mem.can_access_block m1 b cp ->
   Mem.loadbytes m2 b ofs n cp = Some bytes ->
   (forall i, ofs <= i < ofs + n -> ~Mem.perm m1 b i Max Writable) ->
   Mem.loadbytes m1 b ofs n cp = Some bytes.
 Proof.
   intros.
-  rewrite <- H1. symmetry.
+  rewrite <- H2. symmetry.
   apply Mem.loadbytes_unchanged_on_1 with (P := loc_not_writable m1); auto.
-  eapply Mem.unchanged_on_own; eauto.
-  eapply Mem.loadbytes_can_access_block_inj ; eauto.
 Qed.
 
 Lemma volatile_store_readonly:
@@ -994,7 +1099,7 @@ Qed.
 
 Lemma volatile_store_inject:
   forall ge1 ge2 cp f chunk m1 b ofs v t m2 m1' b' ofs' v',
-  symbols_inject f ge1 ge2 ->
+  symbols_inject f ge1 ge2 cp ->
   volatile_store ge1 cp chunk m1 b ofs v t m2 ->
   Val.inject f (Vptr b ofs) (Vptr b' ofs') ->
   Val.inject f v v' ->
@@ -1006,13 +1111,17 @@ Lemma volatile_store_inject:
     /\ Mem.unchanged_on (loc_out_of_reach f m1) m1' m2'.
 Proof.
   intros until v'; intros SI VS AI VI MI.
-  generalize SI; intros (P & Q & R & S).
+  generalize SI; intros (P & Q & R & S & T).
   inv VS.
 - (* volatile store *)
   inv AI. exploit Q; eauto. intros [A B]. subst delta.
   rewrite Ptrofs.add_zero. exists m1'; split.
   constructor; auto. erewrite S; eauto.
-  eapply eventval_match_inject; eauto. apply Val.load_result_inject. auto.
+  rewrite <- T; auto.
+  eapply eventval_match_inject; eauto.
+  eapply flowsto_trans; eauto.
+  apply Val.load_result_inject. auto.
+  erewrite <- eventval_comp_preserved, <- T; eauto.
   intuition auto with mem.
 - (* normal store *)
   inversion AI; subst.
@@ -1036,15 +1145,15 @@ Proof.
 Qed.
 
 Lemma volatile_store_receptive:
-  forall ge cp chunk m b ofs v t1 m1 t2,
-  volatile_store ge cp chunk m b ofs v t1 m1 -> match_traces ge t1 t2 -> t1 = t2.
+  forall wfse ge cp chunk m b ofs v t1 m1 t2,
+  volatile_store ge cp chunk m b ofs v t1 m1 -> match_traces wfse ge t1 t2 -> t1 = t2.
 Proof.
   intros. inv H; inv H0; auto.
 Qed.
 
 Lemma volatile_store_ok:
-  forall cp chunk,
-  extcall_properties (volatile_store_sem cp chunk)
+  forall wfse cp chunk,
+  extcall_properties wfse (volatile_store_sem chunk)
                      cp (mksignature (Tptr :: type_of_chunk chunk :: nil) Tvoid cc_default).
 Proof.
   intros; constructor; intros.
@@ -1060,12 +1169,10 @@ Proof.
 - inv H. inv H2. auto. eauto with mem.
 (* readonly *)
 - inv H. eapply unchanged_on_readonly; eauto. eapply volatile_store_readonly; eauto.
-(* mem alloc *)
-- inv H. inv H2. congruence.
-  exploit Mem.store_valid_block_2; eauto. congruence.
-(* outside cp *)
-- inv H. inv H0. apply Mem.unchanged_on_refl.
-  eapply Mem.store_unchanged_on; eauto.
+  inv H3; eauto.
+  + eapply Mem.loadbytes_can_access_block_inj; eauto.
+  + simpl. erewrite <- Mem.store_block_compartment; eauto.
+    eapply Mem.loadbytes_can_access_block_inj; eauto.
 (* mem extends*)
 - inv H. inv H1. inv H6. inv H7. inv H4.
   exploit volatile_store_extends; eauto. intros [m2' [A [B C]]].
@@ -1073,8 +1180,8 @@ Proof.
 (* mem inject *)
 - inv H0. inv H2. inv H7. inv H8. inversion H5; subst.
   exploit volatile_store_inject; eauto. intros [m2' [A [B [C D]]]].
-  exists f; exists Vundef; exists m2'; intuition. constructor; auto. red; intros; congruence.
-  inv H3. congruence. eapply Mem.store_valid_block_2 in H2; eauto. congruence.
+  exists f; exists Vundef; exists m2'; intuition. constructor; auto.
+  red; intros; congruence.
 (* trace length *)
 - inv H; inv H0; simpl; lia.
 (* receptive *)
@@ -1088,22 +1195,24 @@ Proof.
   split. constructor. intuition congruence.
 (* no cross *)
 - inv H; inv H0; simpl; auto.
+(* not freeable *)
+- inv H. inv H5; auto. eauto with mem.
 Qed.
 
 (** ** Semantics of dynamic memory allocation (malloc) *)
 
 (* JT: NOTE: Same remarks as for volatile loads and stores *)
 
-Inductive extcall_malloc_sem (cp: compartment) (ge: Senv.t):
+Inductive extcall_malloc_sem (ge: Senv.t) (cp: compartment):
               list val -> mem -> trace -> val -> mem -> Prop :=
   | extcall_malloc_sem_intro: forall sz m m' b m'',
       Mem.alloc m cp (- size_chunk Mptr) (Ptrofs.unsigned sz) = (m', b) ->
       Mem.store Mptr m' b (- size_chunk Mptr) (Vptrofs sz) cp = Some m'' ->
-      extcall_malloc_sem cp ge (Vptrofs sz :: nil) m E0 (Vptr b Ptrofs.zero) m''.
+      extcall_malloc_sem ge cp (Vptrofs sz :: nil) m E0 (Vptr b Ptrofs.zero) m''.
 
 Lemma extcall_malloc_ok:
-  forall cp,
-  extcall_properties (extcall_malloc_sem cp)
+  forall wfse cp,
+  extcall_properties wfse (extcall_malloc_sem)
                      cp (mksignature (Tptr :: nil) Tptr cc_default).
 Proof.
   intros.
@@ -1135,17 +1244,13 @@ Proof.
   rewrite dec_eq_false. auto.
   apply Mem.valid_not_valid_diff with m1; eauto with mem.
 (* readonly *)
-- inv H. eapply unchanged_on_readonly; eauto. 
-(* mem alloc *)
-- inv H.
-  destruct (eq_block b0 b).
-  subst b0.
-  { erewrite Mem.store_block_compartment; eauto.
-    erewrite Mem.alloc_block_compartment; eauto. rewrite peq_true. eauto. }
-  exploit Mem.store_valid_block_2; eauto. intros ?.
-  exploit Mem.valid_block_alloc_inv; eauto. intros [|]; congruence.
-(* outside cp *)
-- inv H. eapply UNCHANGED; eauto.
+- inv H. eapply unchanged_on_readonly; eauto.
+  assert (b <> b0).
+  { intros ?; subst b0.
+    exploit Mem.fresh_block_alloc; eauto. }
+  eapply Mem.alloc_can_access_block_other_inj_2; eauto.
+  simpl. erewrite <- Mem.store_block_compartment; eauto.
+  eapply Mem.loadbytes_can_access_block_inj; eauto.
 (* mem extends *)
 - inv H. inv H1. inv H7.
   assert (SZ: v2 = Vptrofs sz).
@@ -1176,12 +1281,6 @@ Proof.
   red; intros. destruct (eq_block b1 b).
   subst b1. rewrite C in H2. inv H2. eauto with mem.
   rewrite D in H2 by auto. congruence.
-  destruct (eq_block b0 b); subst.
-  { erewrite Mem.store_block_compartment; eauto.
-    erewrite Mem.alloc_block_compartment; eauto. rewrite peq_true. eauto. }
-  eapply Mem.store_valid_block_2 in H2; eauto.
-  clear ALLOC.
-  exploit Mem.valid_block_alloc_inv; eauto. intros [ | ]; congruence.
 (* trace length *)
 - inv H; simpl; lia.
 (* receptive *)
@@ -1198,25 +1297,27 @@ Proof.
   split. constructor. intuition congruence.
 (* no cross *)
 - inv H; inv H0; simpl; auto.
+(* not freeable *)
+- inv H. eapply Mem.perm_store_1; eauto. eapply Mem.perm_alloc_1; eauto.
 Qed.
 
 (** ** Semantics of dynamic memory deallocation (free) *)
 
 (* JT: NOTE: Same remarks as before. *)
 
-Inductive extcall_free_sem (cp: compartment) (ge: Senv.t):
+Inductive extcall_free_sem (ge: Senv.t) (cp: compartment):
               list val -> mem -> trace -> val -> mem -> Prop :=
   | extcall_free_sem_ptr: forall b lo sz m m',
-      Mem.load Mptr m b (Ptrofs.unsigned lo - size_chunk Mptr) (Some cp) = Some (Vptrofs sz) ->
+      Mem.load Mptr m b (Ptrofs.unsigned lo - size_chunk Mptr) cp = Some (Vptrofs sz) ->
       Ptrofs.unsigned sz > 0 ->
       Mem.free m b (Ptrofs.unsigned lo - size_chunk Mptr) (Ptrofs.unsigned lo + Ptrofs.unsigned sz) cp = Some m' ->
-      extcall_free_sem cp ge (Vptr b lo :: nil) m E0 Vundef m'
+      extcall_free_sem ge cp (Vptr b lo :: nil) m E0 Vundef m'
   | extcall_free_sem_null: forall m,
-      extcall_free_sem cp ge (Vnullptr :: nil) m E0 Vundef m.
+      extcall_free_sem ge cp (Vnullptr :: nil) m E0 Vundef m.
 
 Lemma extcall_free_ok:
-  forall cp,
-  extcall_properties (extcall_free_sem cp)
+  forall wfse cp,
+  extcall_properties wfse (extcall_free_sem)
                      cp (mksignature (Tptr :: nil) Tvoid cc_default).
 Proof.
   intros.
@@ -1238,14 +1339,10 @@ Proof.
   apply Mem.perm_cur_max. apply Mem.perm_implies with Freeable; auto with mem.
   eapply Mem.free_range_perm; eauto.
 + apply Mem.unchanged_on_refl.
-(* mem alloc *)
-- inv H; try congruence.
-  exploit Mem.valid_block_free_2; eauto. congruence.
-(* outside cp *)
-- inv H.
-  eapply Mem.free_unchanged_on; eauto. intros. unfold loc_not_in_compartment.
-  exploit Mem.free_can_access_block_1; eauto.
-  eapply Mem.unchanged_on_refl.
++ inv H.
+  * eapply Mem.free_can_access_block_inj_2; eauto.
+    eapply Mem.loadbytes_can_access_block_inj; eauto.
+  * eapply Mem.loadbytes_can_access_block_inj; eauto.
 (* mem extends *)
 - inv H.
 + inv H1. inv H8. inv H6.
@@ -1321,6 +1418,13 @@ Proof.
 + split. constructor. intuition auto.
 (* no cross *)
 - inv H; simpl; auto.
+(* not freeable *)
+- inv H; auto. eapply Mem.perm_free_1; eauto.
+  eapply Mem.free_range_perm in H7. unfold Mem.range_perm in H7.
+  specialize (H7 ofs).
+  destruct (Z.le_gt_cases (Ptrofs.unsigned lo - size_chunk Mptr) ofs);
+    destruct (Z.lt_ge_cases ofs (Ptrofs.unsigned lo + Ptrofs.unsigned sz)); try lia.
+  left; intros EQ; subst b0. apply H4. eapply Mem.perm_max. eapply H7. lia.
 Qed.
 
 (** ** Semantics of [memcpy] operations. *)
@@ -1329,7 +1433,7 @@ Qed.
 (* RB: NOTE: This operation seems particularly interesting in the sense that it
    copies between two blocks, and their respective ownerships must agree. *)
 
-Inductive extcall_memcpy_sem (cp: compartment) (sz al: Z) (ge: Senv.t):
+Inductive extcall_memcpy_sem (sz al: Z) (ge: Senv.t) (cp: compartment):
                         list val -> mem -> trace -> val -> mem -> Prop :=
   | extcall_memcpy_sem_intro: forall bdst odst bsrc osrc m bytes m',
       al = 1 \/ al = 2 \/ al = 4 \/ al = 8 -> sz >= 0 -> (al | sz) ->
@@ -1338,13 +1442,13 @@ Inductive extcall_memcpy_sem (cp: compartment) (sz al: Z) (ge: Senv.t):
       bsrc <> bdst \/ Ptrofs.unsigned osrc = Ptrofs.unsigned odst
                    \/ Ptrofs.unsigned osrc + sz <= Ptrofs.unsigned odst
                    \/ Ptrofs.unsigned odst + sz <= Ptrofs.unsigned osrc ->
-      Mem.loadbytes m bsrc (Ptrofs.unsigned osrc) sz (Some cp) = Some bytes ->
+      Mem.loadbytes m bsrc (Ptrofs.unsigned osrc) sz cp = Some bytes ->
       Mem.storebytes m bdst (Ptrofs.unsigned odst) bytes cp = Some m' ->
-      extcall_memcpy_sem cp sz al ge (Vptr bdst odst :: Vptr bsrc osrc :: nil) m E0 Vundef m'.
+      extcall_memcpy_sem sz al ge cp (Vptr bdst odst :: Vptr bsrc osrc :: nil) m E0 Vundef m'.
 
 Lemma extcall_memcpy_ok:
-  forall cp sz al,
-  extcall_properties (extcall_memcpy_sem cp sz al)
+  forall wfse cp sz al,
+  extcall_properties wfse (extcall_memcpy_sem sz al)
                      cp (mksignature (Tptr :: Tptr :: nil) Tvoid cc_default).
 Proof.
   intros. constructor.
@@ -1363,14 +1467,8 @@ Proof.
   eapply Mem.storebytes_unchanged_on; eauto.
   intros; red; intros. elim H11.
   apply Mem.perm_cur_max. eapply Mem.storebytes_range_perm; eauto.
-- (* new blocks *)
-  intros.
-  inv H.
-  exploit Mem.storebytes_valid_block_2; eauto. congruence.
-(* outside cp *)
-- intros. inv H.
-  eapply Mem.storebytes_unchanged_on; eauto. intros. unfold loc_not_in_compartment.
-  exploit Mem.storebytes_can_access_block_1; eauto.
+  eapply Mem.storebytes_can_access_block_inj_2; eauto.
+  eapply Mem.loadbytes_can_access_block_inj; eauto.
 - (* extensions *)
   intros. inv H.
   inv H1. inv H13. inv H14. inv H10. inv H11.
@@ -1392,7 +1490,7 @@ Proof.
   destruct (zeq sz 0).
 + (* special case sz = 0 *)
   assert (bytes = nil).
-  { exploit (Mem.loadbytes_empty m1 bsrc (Ptrofs.unsigned osrc) sz (Some cp)). lia.
+  { exploit (Mem.loadbytes_empty m1 bsrc (Ptrofs.unsigned osrc) sz cp). lia.
     eapply Mem.loadbytes_can_access_block_inj; eauto.
     congruence. }
   subst.
@@ -1468,29 +1566,34 @@ Proof.
   intros; inv H; inv H0. split. constructor. intros; split; congruence.
 (* no cross *)
 - intros; inv H; simpl; auto.
+(* not freeable *)
+- intros. inv H. eapply Mem.perm_storebytes_1; eauto.
 Qed.
 
 (** ** Semantics of annotations. *)
 
 (* JT: NOTE: Same as before *)
 
-Inductive extcall_annot_sem (cp: compartment) (text: string) (targs: list typ) (ge: Senv.t):
+Inductive extcall_annot_sem (text: string) (targs: list typ) (ge: Senv.t) (cp: compartment):
               list val -> mem -> trace -> val -> mem -> Prop :=
   | extcall_annot_sem_intro: forall vargs m args,
       eventval_list_match ge args targs vargs ->
-      extcall_annot_sem cp text targs ge vargs m (Event_annot text args :: E0) Vundef m.
+      (* Condition: only output from the current compartment *)
+      Forall (fun ev : eventval => eventval_comp ge ev ⊆ cp) args ->
+      extcall_annot_sem text targs ge cp vargs m (Event_annot text args :: E0) Vundef m.
 
 Lemma extcall_annot_ok:
-  forall cp text targs,
-  extcall_properties (extcall_annot_sem cp text targs)
+  forall wfse cp text targs,
+  extcall_properties wfse (extcall_annot_sem text targs)
                      cp (mksignature targs Tvoid cc_default).
 Proof.
   intros; constructor; intros.
 (* well typed *)
 - inv H. simpl. auto.
 (* symbols *)
-- destruct H as (A & B & C). inv H0. econstructor; eauto.
+- destruct H as (A & B & C & D). inv H0. econstructor; eauto.
   eapply eventval_list_match_preserved; eauto.
+  eapply eventval_list_comp_preserved; eauto.
 (* valid blocks *)
 - inv H; auto.
 (* accessibility *)
@@ -1499,11 +1602,6 @@ Proof.
 - inv H; auto.
 (* readonly *)
 - inv H; auto.
-(* mem alloc *)
-- inv H. congruence.
-(* outside cp *)
-- intros. inv H.
-  eapply Mem.unchanged_on_refl.
 (* mem extends *)
 - inv H.
   exists Vundef; exists m1'; intuition.
@@ -1514,6 +1612,8 @@ Proof.
   exists f; exists Vundef; exists m1'; intuition.
   econstructor; eauto.
   eapply eventval_list_match_inject; eauto.
+  destruct H as (A & B & C & D & E).
+  eapply eventval_list_comp_preserved with (ge1 := ge1); eauto.
   red; intros; congruence.
 (* trace length *)
 - inv H; simpl; lia.
@@ -1526,25 +1626,31 @@ Proof.
   split. constructor. auto.
 (* no cross *)
 - inv H; simpl; auto.
+(* not freeable *)
+- inv H; auto.
 Qed.
 
-Inductive extcall_annot_val_sem (cp: compartment) (text: string) (targ: typ) (ge: Senv.t):
+
+Inductive extcall_annot_val_sem (text: string) (targ: typ) (ge: Senv.t) (cp: compartment):
               list val -> mem -> trace -> val -> mem -> Prop :=
   | extcall_annot_val_sem_intro: forall varg m arg,
       eventval_match ge arg targ varg ->
-      extcall_annot_val_sem cp text targ ge (varg :: nil) m (Event_annot text (arg :: nil) :: E0) varg m.
+      (* Condition: only output from the current compartment *)
+      eventval_comp ge arg ⊆ cp ->
+      extcall_annot_val_sem text targ ge cp (varg :: nil) m (Event_annot text (arg :: nil) :: E0) varg m.
 
 Lemma extcall_annot_val_ok:
-  forall cp text targ,
-  extcall_properties (extcall_annot_val_sem cp text targ)
+  forall wfse cp text targ,
+  extcall_properties wfse (extcall_annot_val_sem text targ)
                      cp (mksignature (targ :: nil) targ cc_default).
 Proof.
   intros; constructor; intros.
 (* well typed *)
 - inv H. eapply eventval_match_type; eauto.
 (* symbols *)
-- destruct H as (A & B & C). inv H0. econstructor; eauto.
+- destruct H as (A & B & C & D). inv H0. econstructor; eauto.
   eapply eventval_match_preserved; eauto.
+  erewrite eventval_comp_preserved; eauto.
 (* valid blocks *)
 - inv H; auto.
 (* accessibility *)
@@ -1553,21 +1659,18 @@ Proof.
 - inv H; auto.
 (* readonly *)
 - inv H; auto.
-(* mem alloc *)
-- inv H; congruence.
-(* outside cp *)
-- intros. inv H.
-  eapply Mem.unchanged_on_refl.
 (* mem extends *)
-- inv H. inv H1. inv H6.
+- inv H. inv H1. inv H7.
   exists v2; exists m1'; intuition.
   econstructor; eauto.
   eapply eventval_match_lessdef; eauto.
 (* mem inject *)
-- inv H0. inv H2. inv H7.
+- inv H0. inv H2. inv H8.
   exists f; exists v'; exists m1'; intuition.
   econstructor; eauto.
   eapply eventval_match_inject; eauto.
+  destruct H as (A & B & C & D & E).
+  erewrite eventval_comp_preserved; eauto.
   red; intros; congruence.
 (* trace length *)
 - inv H; simpl; lia.
@@ -1580,16 +1683,18 @@ Proof.
   split. constructor. auto.
 (* no cross *)
 - inv H; simpl; auto.
+(* not freeable *)
+- inv H; auto.
 Qed.
 
-Inductive extcall_debug_sem (cp: compartment) (ge: Senv.t):
+Inductive extcall_debug_sem (ge: Senv.t) (cp: compartment):
               list val -> mem -> trace -> val -> mem -> Prop :=
   | extcall_debug_sem_intro: forall vargs m,
-      extcall_debug_sem cp ge vargs m E0 Vundef m.
+      extcall_debug_sem ge cp vargs m E0 Vundef m.
 
 Lemma extcall_debug_ok:
-  forall cp targs,
-  extcall_properties (extcall_debug_sem cp)
+  forall wfse cp targs,
+  extcall_properties wfse (extcall_debug_sem)
                      cp (mksignature targs Tvoid cc_default).
 Proof.
   intros; constructor; intros.
@@ -1605,11 +1710,11 @@ Proof.
 - inv H; auto.
 (* readonly *)
 - inv H; auto.
-(* mem alloc *)
-- inv H; congruence.
-(* outside cp *)
-- intros. inv H.
-  eapply Mem.unchanged_on_refl.
+(* (* mem alloc *) *)
+(* - inv H; congruence. *)
+(* (* outside cp *) *)
+(* - intros. inv H. *)
+(*   eapply Mem.unchanged_on_refl. *)
 (* mem extends *)
 - inv H.
   exists Vundef; exists m1'; intuition.
@@ -1628,6 +1733,8 @@ Proof.
   split. constructor. auto.
 (* no cross *)
 - inv H; simpl; auto.
+(* not freeable *)
+- inv H; auto.
 Qed.
 
 (** ** Semantics of known built-in functions. *)
@@ -1640,14 +1747,14 @@ Qed.
   as defined in the [Builtin] modules.
   These built-in functions have no observable effects and do not access memory. *)
 
-Inductive known_builtin_sem (bf: builtin_function) (ge: Senv.t):
+Inductive known_builtin_sem (bf: builtin_function) (ge: Senv.t) (cp: compartment):
               list val -> mem -> trace -> val -> mem -> Prop :=
   | known_builtin_sem_intro: forall vargs vres m,
       builtin_function_sem bf vargs = Some vres ->
-      known_builtin_sem bf ge vargs m E0 vres m.
+      known_builtin_sem bf ge cp vargs m E0 vres m.
 
-Lemma known_builtin_ok: forall bf cp,
-  extcall_properties (known_builtin_sem bf) cp (builtin_function_sig bf).
+Lemma known_builtin_ok: forall wfse bf cp,
+  extcall_properties wfse (known_builtin_sem bf) cp (builtin_function_sig bf).
 Proof.
   intros. set (bsem := builtin_function_sem bf). constructor; intros.
 (* well typed *)
@@ -1665,11 +1772,11 @@ Proof.
 - inv H; auto.
 (* readonly *)
 - inv H; auto.
-(* mem alloc *)
-- inv H; congruence.
-(* outside cp *)
-- intros. inv H.
-  eapply Mem.unchanged_on_refl.
+(* (* mem alloc *) *)
+(* - inv H; congruence. *)
+(* (* outside cp *) *)
+(* - intros. inv H. *)
+(*   eapply Mem.unchanged_on_refl. *)
 (* mem extends *)
 - inv H. fold bsem in H2. apply val_inject_list_lessdef in H1.
   specialize (bs_inject _ bsem _ _ _ H1).
@@ -1695,6 +1802,8 @@ Proof.
   split. constructor. intuition congruence. 
 (* no cross *)
 - inv H; simpl; auto.
+(* not freeable *)
+- inv H; auto.
 Qed.
 
 (** ** Semantics of external functions. *)
@@ -1708,23 +1817,34 @@ Qed.
 
 Parameter external_functions_sem: String.string -> signature -> extcall_sem.
 
-Axiom external_functions_properties:
-  forall id sg cp, extcall_properties (external_functions_sem id sg) cp sg.
+(* Axiom external_functions_properties: *)
+(*   forall wfse id sg cp, extcall_properties wfse (external_functions_sem id sg) cp sg. *)
 
-(* Axiom external_functions_caller_independent: *)
-(*   forall cp id sg, extcall_caller_independent cp (external_functions_sem id sg). *)
-(* Hint Resolve external_functions_caller_independent : caller_independent. *)
+(** We say a syscall event is well-formed if it could possibly be produced by
+    the behavior of that call for _some_ choice of environment and memories. *)
+
+Inductive well_formed_syscall_event 
+  (efs_sem: String.string -> signature -> extcall_sem)
+  (id:String.string) (sg: signature) (cp: compartment) (eargs: list eventval) (reads: list (list byte))
+  (eres: eventval) (writes: list (list byte)) : Prop :=
+| wfse_intro: forall m m' args res env,
+    eventval_list_match env eargs sg.(sig_args) args ->
+    eventval_match env eres (proj_rettype sg.(sig_res)) res ->
+    efs_sem id sg env cp args m (Event_syscall id eargs reads eres writes :: nil) res m' ->
+    well_formed_syscall_event efs_sem id sg cp eargs reads eres writes.
+ 
+Definition wf_syscall_event : well_formed_syscall_event_spec := well_formed_syscall_event external_functions_sem. 
+
+Axiom external_functions_properties:
+  forall id sg cp, extcall_properties wf_syscall_event (external_functions_sem id sg) cp sg.
+
 
 (** We treat inline assembly similarly. *)
 
-Parameter inline_assembly_sem: compartment -> String.string -> signature -> extcall_sem.
+Parameter inline_assembly_sem: String.string -> signature -> extcall_sem.
 
 Axiom inline_assembly_properties:
-  forall cp id sg, extcall_properties (inline_assembly_sem cp id sg) cp sg.
-
-(* Axiom inline_assembly_caller_independent: *)
-(*   forall cp id sg, extcall_caller_independent cp (inline_assembly_sem id sg). *)
-(* Hint Resolve inline_assembly_caller_independent : caller_independent. *)
+  forall cp id sg, extcall_properties wf_syscall_event (inline_assembly_sem id sg) cp sg.
 
 (** ** Combined semantics of external calls *)
 
@@ -1735,7 +1855,7 @@ Definition builtin_or_external_sem name sg :=
   end.
 
 Lemma builtin_or_external_sem_ok: forall name sg cp,
-  extcall_properties (builtin_or_external_sem name sg) cp sg.
+  extcall_properties wf_syscall_event  (builtin_or_external_sem name sg) cp sg.
 Proof.
   unfold builtin_or_external_sem; intros. 
   destruct (lookup_builtin_function name sg) as [bf|] eqn:L.
@@ -1744,17 +1864,6 @@ Proof.
 - apply external_functions_properties.
 Qed.
 
-(* Lemma builtin_or_external_caller_independent: *)
-(*   forall cp name sg, *)
-(*   extcall_caller_independent cp (builtin_or_external_sem name sg). *)
-(* Proof. *)
-(*   unfold builtin_or_external_sem. *)
-(*   intros cp name sg. *)
-(*   destruct (lookup_builtin_function name sg). *)
-(*   - now intros ????????? H; inv H; constructor. *)
-(*   - now apply external_functions_caller_independent. *)
-(* Qed. *)
-(* Hint Resolve builtin_or_external_caller_independent : caller_independent. *)
 
 (** Combining the semantics given above for the various kinds of external calls,
   we define the predicate [external_call] that relates:
@@ -1769,19 +1878,32 @@ This predicate is used in the semantics of all CompCert languages. *)
 
 Definition external_call (ef: external_function): extcall_sem :=
   match ef with
-  | EF_external cp name sg  => external_functions_sem name sg
-  | EF_builtin cp name sg      => builtin_or_external_sem name sg
-  | EF_runtime cp name sg      => builtin_or_external_sem name sg
-  | EF_vload cp chunk          => volatile_load_sem cp chunk
-  | EF_vstore cp chunk         => volatile_store_sem cp chunk
-  | EF_malloc cp                => extcall_malloc_sem cp
-  | EF_free cp                 => extcall_free_sem cp
-  | EF_memcpy cp sz al         => extcall_memcpy_sem cp sz al
-  | EF_annot cp kind txt targs   => extcall_annot_sem cp txt targs
-  | EF_annot_val cp kind txt targ => extcall_annot_val_sem cp txt targ
-  | EF_inline_asm cp txt sg clb => inline_assembly_sem cp txt sg
-  | EF_debug cp kind txt targs => extcall_debug_sem cp
+  | EF_external name sg  => external_functions_sem name sg
+  | EF_builtin name sg      => builtin_or_external_sem name sg
+  | EF_runtime name sg      => builtin_or_external_sem name sg
+  | EF_vload chunk          => volatile_load_sem chunk
+  | EF_vstore chunk         => volatile_store_sem chunk
+  | EF_malloc                => extcall_malloc_sem
+  | EF_free                 => extcall_free_sem
+  | EF_memcpy sz al         => extcall_memcpy_sem sz al
+  | EF_annot kind txt targs   => extcall_annot_sem txt targs
+  | EF_annot_val kind txt targ => extcall_annot_val_sem txt targ
+  | EF_inline_asm txt sg clb => inline_assembly_sem txt sg
+  | EF_debug kind txt targs => extcall_debug_sem
   end.
+
+Definition has_fo (ef: external_function) :=
+  match ef with
+  | EF_external _ _ | EF_builtin _ _ | EF_runtime _ _ | EF_inline_asm _ _ _ => True
+  | _ => False
+  end.
+
+(** External calls fail if public symbols are not first order *)
+Axiom ec_public_first_order: forall (ef: external_function),
+    has_fo ef ->
+    forall (ge: Senv.t) cp vargs m1 t vres m2,
+      external_call ef ge cp vargs m1 t vres m2 ->
+      Senv.public_first_order ge m1 cp.
 
 Ltac external_call_caller_independent :=
   intros ????????? CALL;
@@ -1789,51 +1911,9 @@ Ltac external_call_caller_independent :=
   econstructor;
   eauto.
 
-(* Lemma external_call_caller_independent: *)
-(*   forall ef: external_function, *)
-(*   extcall_caller_independent (comp_of ef) (external_call ef). *)
-(* Proof. *)
-(*   destruct ef; simpl; try easy; *)
-(*   eauto with caller_independent; *)
-(*   try solve [external_call_caller_independent]. *)
-(*   { *)
-(*   intros ge cp1 cp2 args m t v m'. *)
-(*   unfold uptodate_caller, needs_calling_comp, needs_calling_comp_map. simpl. *)
-(*   rewrite PMap.gsspec, PMap.gi. *)
-(*   destruct (peq cp default_compartment) as [|neq]; try easy. *)
-(*   intros E. rewrite E; trivial. *)
-(*   } *)
-(*   { *)
-(*   intros ge cp1 cp2 args m t v m'. *)
-(*   unfold uptodate_caller, needs_calling_comp, needs_calling_comp_map. simpl. *)
-(*   rewrite PMap.gsspec, PMap.gi. *)
-(*   destruct (peq (comp_of (EF_vstore chunk)) privileged_compartment) as [|neq]; try easy. *)
-(*   intros E. rewrite E; trivial. *)
-(*   } *)
-(*   intros ge cp1 cp2 args m t v m'. *)
-(*   unfold uptodate_caller, needs_calling_comp, needs_calling_comp_map. simpl. *)
-(*   rewrite PMap.gsspec, PMap.gi. *)
-(*   destruct (peq (comp_of EF_malloc) privileged_compartment) as [|neq]; try easy. *)
-(*   intros E. rewrite E; trivial. *)
-(*   (* RB: NOTE: Two new goals left to solve. One of them can be solved by an *)
-(*      identical procedure. *) *)
-(*   intros ge cp1 cp2 args m t v m'. *)
-(*   unfold uptodate_caller, needs_calling_comp, needs_calling_comp_map. simpl. *)
-(*   rewrite PMap.gsspec, PMap.gi. *)
-(*   destruct (peq (comp_of EF_free) privileged_compartment) as [|neq]; try easy. *)
-(*   intros E. rewrite E; trivial. *)
-(*   (* RB: NOTE: The last goal, on EF_memcpy, cannot be solved by means of this *)
-(*      strategy, and needs a closer look. *) *)
-(*   intros ge cp1 cp2 args m t v m'. *)
-(*   unfold uptodate_caller, needs_calling_comp, needs_calling_comp_map. simpl. *)
-(*   rewrite PMap.gsspec, PMap.gi. *)
-(*   destruct (peq (comp_of (EF_memcpy sz al)) privileged_compartment) as [|neq]; try easy. *)
-(*   intros E. rewrite E; trivial. *)
-(* Qed. *)
-
 Theorem external_call_spec:
-  forall ef,
-  extcall_properties (external_call ef) (comp_of ef) (ef_sig ef).
+  forall ef cp,
+  extcall_properties wf_syscall_event (external_call ef) cp (ef_sig ef).
 Proof.
   intros. unfold external_call, ef_sig; destruct ef.
   apply external_functions_properties.
@@ -1850,23 +1930,23 @@ Proof.
   apply extcall_debug_ok.
 Qed.
 
-Definition external_call_well_typed_gen ef := ec_well_typed (external_call_spec ef).
-Definition external_call_symbols_preserved ef := ec_symbols_preserved (external_call_spec ef).
-Definition external_call_valid_block ef := ec_valid_block (external_call_spec ef).
-Definition external_call_can_access_block ef := ec_can_access_block (external_call_spec ef).
-Definition external_call_max_perm ef := ec_max_perm (external_call_spec ef).
-Definition external_call_readonly ef := ec_readonly (external_call_spec ef).
-Definition external_call_mem_extends ef := ec_mem_extends (external_call_spec ef).
-Definition external_call_mem_inject_gen ef := ec_mem_inject (external_call_spec ef).
-Definition external_call_trace_length ef := ec_trace_length (external_call_spec ef).
-Definition external_call_receptive ef := ec_receptive (external_call_spec ef).
-Definition external_call_determ ef := ec_determ (external_call_spec ef).
+Definition external_call_well_typed_gen ef cp := ec_well_typed (external_call_spec ef cp).
+Definition external_call_symbols_preserved ef cp := ec_symbols_preserved (external_call_spec ef cp).
+Definition external_call_valid_block ef cp := ec_valid_block (external_call_spec ef cp).
+Definition external_call_can_access_block ef cp := ec_can_access_block (external_call_spec ef cp).
+Definition external_call_max_perm ef cp := ec_max_perm (external_call_spec ef cp).
+Definition external_call_readonly ef cp := ec_readonly (external_call_spec ef cp).
+Definition external_call_mem_extends ef cp := ec_mem_extends (external_call_spec ef cp).
+Definition external_call_mem_inject_gen ef cp := ec_mem_inject (external_call_spec ef cp).
+Definition external_call_trace_length ef cp := ec_trace_length (external_call_spec ef cp).
+Definition external_call_receptive ef cp := ec_receptive (external_call_spec ef cp).
+Definition external_call_determ ef cp := ec_determ (external_call_spec ef cp).
 
 (** Corollary of [external_call_well_typed_gen]. *)
 
 Lemma external_call_well_typed:
-  forall ef ge vargs m1 t vres m2,
-  external_call ef ge vargs m1 t vres m2 ->
+  forall ef ge cp vargs m1 t vres m2,
+  external_call ef ge cp vargs m1 t vres m2 ->
   Val.has_type vres (proj_sig_res (ef_sig ef)).
 Proof.
   intros. apply Val.has_proj_rettype. eapply external_call_well_typed_gen; eauto.
@@ -1875,8 +1955,8 @@ Qed.
 (** Corollary of [external_call_valid_block]. *)
 
 Lemma external_call_nextblock:
-  forall ef ge vargs m1 t vres m2,
-  external_call ef ge vargs m1 t vres m2 ->
+  forall ef ge cp vargs m1 t vres m2,
+  external_call ef ge cp vargs m1 t vres m2 ->
   Ple (Mem.nextblock m1) (Mem.nextblock m2).
 Proof.
   intros. destruct (plt (Mem.nextblock m2) (Mem.nextblock m1)).
@@ -1891,27 +1971,24 @@ Definition meminj_preserves_globals (F V: Type) (ge: Genv.t F V) (f: block -> op
      (forall id b, Genv.find_symbol ge id = Some b -> f b = Some(b, 0))
   /\ (forall b gv, Genv.find_var_info ge b = Some gv -> f b = Some(b, 0))
   /\ (forall b1 b2 delta gv, Genv.find_var_info ge b2 = Some gv -> f b1 = Some(b2, delta) -> b2 = b1).
+  (* /\ (forall id, Genv.find_comp_of_ident ge id = Genv.find_comp_) *)
 
 Lemma external_call_mem_inject:
-  forall ef F V (ge: Genv.t F V) vargs m1 t vres m2 f m1' vargs',
+  forall ef F V (ge: Genv.t F V) {CF: has_comp F} cp vargs m1 t vres m2 f m1' vargs',
   meminj_preserves_globals ge f ->
-  external_call ef ge vargs m1 t vres m2 ->
+  external_call ef (Genv.to_senv ge) cp vargs m1 t vres m2 ->
   Mem.inject f m1 m1' ->
   Val.inject_list f vargs vargs' ->
   exists f', exists vres', exists m2',
-     external_call ef ge vargs' m1' t vres' m2'
+     external_call ef (Genv.to_senv ge) cp vargs' m1' t vres' m2'
     /\ Val.inject f' vres vres'
     /\ Mem.inject f' m2 m2'
     /\ Mem.unchanged_on (loc_unmapped f) m1 m2
     /\ Mem.unchanged_on (loc_out_of_reach f m1) m1' m2'
     /\ inject_incr f f'
-    /\ inject_separated f f' m1 m1'
-   /\ (forall b : block,
-         ~ Mem.valid_block m1 b ->
-         Mem.valid_block m2 b ->
-         exists b' : block, f' b = Some (b', 0) /\ Mem.block_compartment m2 b = Some (comp_of ef)).
+    /\ inject_separated f f' m1 m1'.
 Proof.
-  intros. destruct H as (A & B & C). eapply external_call_mem_inject_gen with (ge1 := ge); eauto.
+  intros. destruct H as (A & B & C). eapply external_call_mem_inject_gen with (ge1 := (Genv.to_senv ge)); eauto.
   repeat split; intros.
   + simpl in H3. exploit A; eauto. intros EQ; rewrite EQ in H; inv H. auto.
   + simpl in H3. exploit A; eauto. intros EQ; rewrite EQ in H; inv H. auto.
@@ -1926,18 +2003,18 @@ Qed.
 (** Corollaries of [external_call_determ]. *)
 
 Lemma external_call_match_traces:
-  forall ef ge vargs m t1 vres1 m1 t2 vres2 m2,
-  external_call ef ge vargs m t1 vres1 m1 ->
-  external_call ef ge vargs m t2 vres2 m2 ->
-  match_traces ge t1 t2.
+  forall ef ge cp vargs m t1 vres1 m1 t2 vres2 m2,
+  external_call ef ge cp vargs m t1 vres1 m1 ->
+  external_call ef ge cp vargs m t2 vres2 m2 ->
+  match_traces wf_syscall_event ge t1 t2.
 Proof.
   intros. exploit external_call_determ. eexact H. eexact H0. tauto.
 Qed.
 
 Lemma external_call_deterministic:
-  forall ef ge vargs m t vres1 m1 vres2 m2,
-  external_call ef ge vargs m t vres1 m1 ->
-  external_call ef ge vargs m t vres2 m2 ->
+  forall ef ge cp vargs m t vres1 m1 vres2 m2,
+  external_call ef ge cp vargs m t vres1 m1 ->
+  external_call ef ge cp vargs m t vres2 m2 ->
   vres1 = vres2 /\ m1 = m2.
 Proof.
   intros. exploit external_call_determ. eexact H. eexact H0. intuition.
@@ -1948,10 +2025,9 @@ Qed.
 Section EVAL_BUILTIN_ARG.
 
 Variable A: Type.
-Context (F V: Type) {CF: has_comp F}.
-Variable ge: (Genv.t F V).
-Variable e: A -> val.
+Variable ge: Senv.t.
 Variable cp: compartment.
+Variable e: A -> val.
 Variable sp: val.
 Variable m: mem.
 
@@ -1966,31 +2042,16 @@ Inductive eval_builtin_arg: builtin_arg A -> val -> Prop :=
       eval_builtin_arg (BA_float n) (Vfloat n)
   | eval_BA_single: forall n,
       eval_builtin_arg (BA_single n) (Vsingle n)
-  | eval_BA_loadstack: forall chunk ofs v,
-      Mem.loadv chunk m (Val.offset_ptr sp ofs) (Some cp) = Some v ->
+  | eval_BA_loadstack: forall chunk ofs cp v,
+      Mem.loadv chunk m (Val.offset_ptr sp ofs) cp = Some v ->
       eval_builtin_arg (BA_loadstack chunk ofs) v
   | eval_BA_addrstack: forall ofs,
       eval_builtin_arg (BA_addrstack ofs) (Val.offset_ptr sp ofs)
-  | eval_BA_loadglobal: forall chunk id ofs v,
-      Mem.loadv chunk m (Genv.symbol_address ge id ofs) (Some cp) = Some v ->
+  | eval_BA_loadglobal: forall chunk id ofs cp v,
+      Mem.loadv chunk m (Senv.symbol_address ge id ofs) cp = Some v ->
       eval_builtin_arg (BA_loadglobal chunk id ofs) v
-  | eval_BA_addrglobal: forall id ofs res,
-      res =
-      match Genv.symbol_address ge id ofs with
-      | Vptr b ofs0 =>
-          match Genv.find_comp_of_block ge b with
-          | Some cp' =>
-              if (cp =? cp')%positive
-              then Vptr b ofs0
-              else match Genv.find_def ge b with
-                   | Some (Gfun _) => Vptr b ofs0
-                   | _ => Vundef
-                   end
-          | None => Vundef
-          end
-      | _ => Vundef
-      end ->
-      eval_builtin_arg (BA_addrglobal id ofs) res
+  | eval_BA_addrglobal: forall id ofs,
+      eval_builtin_arg (BA_addrglobal id ofs) (Senv.symbol_address ge id ofs)
   | eval_BA_splitlong: forall hi lo vhi vlo,
       eval_builtin_arg hi vhi -> eval_builtin_arg lo vlo ->
       eval_builtin_arg (BA_splitlong hi lo) (Val.longofwords vhi vlo)
@@ -2006,14 +2067,14 @@ Lemma eval_builtin_arg_determ:
   forall a v, eval_builtin_arg a v -> forall v', eval_builtin_arg a v' -> v' = v.
 Proof.
   induction 1; intros v' EV; inv EV; try congruence.
-  (* { unfold Mem.loadv in H, H3. *)
-  (*   destruct (Val.offset_ptr sp ofs) eqn:E; try discriminate. *)
-  (*   apply Mem.load_result in H. *)
-  (*   apply Mem.load_result in H3. now subst. } *)
-  (* { unfold Mem.loadv in H, H4. *)
-  (*   destruct (Genv.symbol_address ge id ofs) eqn:E; try discriminate. *)
-  (*   apply Mem.load_result in H. *)
-  (*   apply Mem.load_result in H4. now subst. } *)
+  { unfold Mem.loadv in H, H3.
+    destruct (Val.offset_ptr sp ofs) eqn:E; try discriminate.
+    apply Mem.load_result in H.
+    apply Mem.load_result in H3. now subst. }
+  { unfold Mem.loadv in H, H4.
+    destruct (Senv.symbol_address ge id ofs) eqn:E; try discriminate.
+    apply Mem.load_result in H.
+    apply Mem.load_result in H4. now subst. }
   f_equal; eauto.
   apply IHeval_builtin_arg1 in H3. apply IHeval_builtin_arg2 in H5. subst; auto.
 Qed.
@@ -2037,48 +2098,27 @@ Variable ge1: Genv.t F1 V1.
 Variable ge2: Genv.t F2 V2.
 Context {CF1: has_comp F1} {CF2: has_comp F2}.
 Variable e: A -> val.
-Variable cp: compartment.
 Variable sp: val.
 Variable m: mem.
 
+Let se1 := Genv.to_senv ge1.
+Let se2 := Genv.to_senv ge2.
+
 Hypothesis symbols_preserved:
   forall id, Genv.find_symbol ge2 id = Genv.find_symbol ge1 id.
-Hypothesis find_comp_preserved:
+Hypothesis comp_preserved:
   forall id, Genv.find_comp_of_ident ge2 id = Genv.find_comp_of_ident ge1 id.
-Hypothesis agree_on_defs:
-  forall b fd', Genv.find_def ge2 b = Some (Gfun fd') ->
-       exists fd, Genv.find_def ge1 b = Some (Gfun fd).
-Hypothesis agree_on_defs':
-  forall b fd, Genv.find_def ge1 b = Some (Gfun fd) ->
-       exists fd', Genv.find_def ge2 b = Some (Gfun fd').
 
 Lemma eval_builtin_arg_preserved:
-  forall a v, eval_builtin_arg ge1 e cp sp m a v -> eval_builtin_arg ge2 e cp sp m a v.
+  forall a v, eval_builtin_arg se1 e sp m a v -> eval_builtin_arg se2 e sp m a v.
 Proof.
-  assert (EQ: forall id ofs, Genv.symbol_address ge2 id ofs = Genv.symbol_address ge1 id ofs).
-  { unfold Genv.symbol_address; simpl; intros. rewrite symbols_preserved; auto. }
-  induction 1; eauto with barg. rewrite <- EQ in H; eauto with barg. subst res.
-  rewrite <- EQ; eauto with barg. constructor; eauto.
-  destruct (Genv.symbol_address ge2 id ofs) eqn:?; auto.
-  specialize (find_comp_preserved id).
-  unfold Genv.find_comp_of_ident in find_comp_preserved.
-  rewrite symbols_preserved in find_comp_preserved.
-  unfold Genv.symbol_address in Heqv. rewrite symbols_preserved in Heqv.
-  destruct (Genv.find_symbol ge1 id) eqn:?; auto. inv Heqv.
-  rewrite find_comp_preserved.
-  destruct (Genv.find_comp_of_block ge1 b) eqn:?; auto.
-  destruct (cp =? c)%positive eqn:?; auto.
-  destruct (Genv.find_def ge1 b) as [[] |] eqn:?;
-  destruct (Genv.find_def ge2 b) as [[] |] eqn:?; auto.
-  exploit agree_on_defs'; eauto. intros [? ?]; congruence.
-  exploit agree_on_defs'; eauto. intros [? ?]; congruence.
-  exploit agree_on_defs; eauto. intros [? ?]; congruence.
-  exploit agree_on_defs; eauto. intros [? ?]; congruence.
-  congruence.
+  assert (EQ: forall id ofs, Senv.symbol_address se2 id ofs = Senv.symbol_address se1 id ofs).
+  { unfold Senv.symbol_address; simpl; intros. rewrite symbols_preserved; auto. }
+  induction 1; eauto with barg. rewrite <- EQ in H; eauto with barg. rewrite <- EQ; eauto with barg.
 Qed.
 
 Lemma eval_builtin_args_preserved:
-  forall al vl, eval_builtin_args ge1 e cp sp m al vl -> eval_builtin_args ge2 e cp sp m al vl.
+  forall al vl, eval_builtin_args se1 e sp m al vl -> eval_builtin_args se2 e sp m al vl.
 Proof.
   induction 1; constructor; auto; eapply eval_builtin_arg_preserved; eauto.
 Qed.
@@ -2090,10 +2130,8 @@ End EVAL_BUILTIN_ARG_PRESERVED.
 Section EVAL_BUILTIN_ARG_LESSDEF.
 
 Variable A: Type.
-Context (F V: Type) {CF: has_comp F}.
-Variable ge: (Genv.t F V).
+Variable ge: Senv.t.
 Variables e1 e2: A -> val.
-Variable cp: compartment.
 Variable sp: val.
 Variables m1 m2: mem.
 
@@ -2101,8 +2139,8 @@ Hypothesis env_lessdef: forall x, Val.lessdef (e1 x) (e2 x).
 Hypothesis mem_extends: Mem.extends m1 m2.
 
 Lemma eval_builtin_arg_lessdef:
-  forall a v1, eval_builtin_arg ge e1 cp sp m1 a v1 ->
-  exists v2, eval_builtin_arg ge e2 cp sp m2 a v2 /\ Val.lessdef v1 v2.
+  forall a v1, eval_builtin_arg ge e1 sp m1 a v1 ->
+  exists v2, eval_builtin_arg ge e2 sp m2 a v2 /\ Val.lessdef v1 v2.
 Proof.
   induction 1.
 - exists (e2 x); auto with barg.
@@ -2124,13 +2162,13 @@ Proof.
 Qed.
 
 Lemma eval_builtin_args_lessdef:
-  forall al vl1, eval_builtin_args ge e1 cp sp m1 al vl1 ->
-  exists vl2, eval_builtin_args ge e2 cp sp m2 al vl2 /\ Val.lessdef_list vl1 vl2.
+  forall al vl1, eval_builtin_args ge e1 sp m1 al vl1 ->
+  exists vl2, eval_builtin_args ge e2 sp m2 al vl2 /\ Val.lessdef_list vl1 vl2.
 Proof.
   induction 1.
 - econstructor; split. constructor. auto.
 - exploit eval_builtin_arg_lessdef; eauto. intros (v1' & P & Q).
-  destruct IHlist_forall2 as (vl' & U & W).
+  destruct IHlist_forall2 as (vl' & U & V).
   exists (v1'::vl'); split; constructor; auto.
 Qed.
 
@@ -2139,8 +2177,8 @@ End EVAL_BUILTIN_ARG_LESSDEF.
 Section INFORM_TRACES.
 
 Variable F V: Type.
-Context {CF: has_comp F}.
 Variable ge: Genv.t F V.
+Context {CF: has_comp F}.
 
 Inductive call_trace: compartment -> compartment -> val -> list val -> list typ -> trace -> Prop :=
   | call_trace_intra: forall cp cp' vf vargs ty,
@@ -2150,7 +2188,7 @@ Inductive call_trace: compartment -> compartment -> val -> list val -> list typ 
       Genv.type_of_call cp cp' = Genv.CrossCompartmentCall ->
       vf = Vptr b ofs ->
       Genv.invert_symbol ge b = Some i ->
-      eventval_list_match ge vl ty vargs ->
+      eventval_list_match (Genv.to_senv ge) vl ty vargs ->
       call_trace cp cp' vf vargs ty (Event_call cp cp' i vl :: nil).
 
 Lemma call_trace_same_cp:
@@ -2159,7 +2197,17 @@ Lemma call_trace_same_cp:
     t = E0.
 Proof.
   intros. inv H; auto.
-  now apply Genv.type_of_call_same_cp in H0.
+  now rewrite Genv.type_of_call_same_cp in H0.
+Qed.
+
+Lemma call_trace_internal_call:
+  forall cp cp' vf vargs tyargs t,
+    Genv.type_of_call cp cp' = Genv.InternalCall ->
+    call_trace cp cp' vf vargs tyargs t ->
+    t = E0.
+Proof.
+  intros. inv H0; auto.
+  congruence.
 Qed.
 
 Inductive return_trace: compartment -> compartment -> val -> rettype -> trace -> Prop :=
@@ -2168,7 +2216,7 @@ Inductive return_trace: compartment -> compartment -> val -> rettype -> trace ->
     return_trace cp cp' v ty E0
 | return_trace_cross: forall cp cp' res v ty,
     Genv.type_of_call cp cp' = Genv.CrossCompartmentCall ->
-    eventval_match ge res (proj_rettype ty) v ->
+    eventval_match (Genv.to_senv ge) res (proj_rettype ty) v ->
     return_trace cp cp' v ty (Event_return cp cp' res :: nil)
 .
 
@@ -2179,6 +2227,7 @@ Section INFORM_TRACES_INJECT.
   Variable F' V': Type.
   Variable ge: Genv.t F V.
   Variable ge': Genv.t F' V'.
+  Context {CF: has_comp F} {CF': has_comp F'}.
 
   Variable j: meminj.
 
@@ -2229,9 +2278,10 @@ Section INFORM_TRACES_PRESERVED.
   Variable F' V': Type.
   Variable ge: Genv.t F V.
   Variable ge': Genv.t F' V'.
+  Context {CF: has_comp F} {CF': has_comp F'}.
 
   Variable symbols_preserved: forall (s: ident), Genv.find_symbol ge' s = Genv.find_symbol ge s.
-  Variable senv_preserved: Senv.equiv ge ge'.
+  Variable senv_preserved: Senv.equiv (Genv.to_senv ge) (Genv.to_senv ge').
 
   Lemma call_trace_lessdef:
     forall cp cp' vf vs vs' tys t,
@@ -2247,7 +2297,7 @@ Section INFORM_TRACES_PRESERVED.
       apply Genv.find_invert_symbol.
       now rewrite symbols_preserved.
       eapply eventval_list_match_lessdef; eauto.
-      eapply eventval_list_match_preserved with (ge1 := ge); try eapply senv_preserved; eauto.
+      eapply eventval_list_match_preserved with (ge1 := Genv.to_senv ge); try eapply senv_preserved; eauto.
   Qed.
 
   Lemma call_trace_eq:
@@ -2272,7 +2322,7 @@ Section INFORM_TRACES_PRESERVED.
     - constructor; auto.
     - constructor; auto.
       eapply eventval_match_lessdef; eauto.
-      eapply eventval_match_preserved with (ge1 := ge); try eapply senv_preserved; eauto.
+      eapply eventval_match_preserved with (ge1 := Genv.to_senv ge); try eapply senv_preserved; eauto.
   Qed.
 
   Lemma return_trace_eq:
@@ -2285,3 +2335,455 @@ Section INFORM_TRACES_PRESERVED.
   Qed.
 
 End INFORM_TRACES_PRESERVED.
+
+Section DETERMINISM.
+  Lemma eventval_list_match_determ: forall {ge vl1 vl2 ty vargs},
+    eventval_list_match ge vl1 ty vargs ->
+    eventval_list_match ge vl2 ty vargs ->
+    vl1 = vl2.
+  Proof.
+    induction vl1 as [| v1 vl1 IH];
+      intros vl2 ty vargs MATCH1 MATCH2.
+    - inv MATCH1. inv MATCH2. reflexivity.
+    - inv MATCH1. inv MATCH2.
+      f_equal.
+      + (* This could be its own lemma *)
+        inv H1; inv H5; try reflexivity.
+        destruct (Senv.find_symbol_injective _ _ _ H0 H8). reflexivity.
+      + eapply IH; eassumption.
+  Qed.
+
+  Lemma call_trace_determ:
+    forall {F V} {ge: Genv.t F V} {CF: has_comp F} {cp cp' vf vargs ty t1 t2},
+      call_trace ge cp cp' vf vargs ty t1 ->
+      call_trace ge cp cp' vf vargs ty t2 ->
+      t1 = t2.
+  Proof.
+    intros F V ge CF cp cp' vf vargs ty t1 t2 CALL1 CALL2.
+    inv CALL1; inv CALL2.
+    - reflexivity.
+    - contradiction.
+    - contradiction.
+    - injection H3 as <- <-.
+      rewrite H1 in H4. injection H4 as <-.
+      destruct (eventval_list_match_determ H2 H5).
+      reflexivity.
+  Qed.
+
+  Lemma return_trace_determ:
+    forall {F V} {ge: Genv.t F V} {CF: has_comp F} {cp cp' v ty t1 t2},
+      return_trace ge cp cp' v ty t1 ->
+      return_trace ge cp cp' v ty t2 ->
+      t1 = t2.
+  Proof.
+  intros F V ge CF cp cp' v ty t1 t2 RET1 RET2.
+  inv RET1; inv RET2.
+  - reflexivity.
+  - contradiction.
+  - contradiction.
+  - inv H0; inv H2; try reflexivity.
+    destruct (Senv.find_symbol_injective _ _ _ H6 H10). reflexivity.
+  Qed.
+
+End DETERMINISM.
+
+Module SyscallSanityChecks.
+
+  (* A couple of example calls to check that the extended Event_syscall definition makes sense
+     and that we can indeed prove receptivity and determinacy for them. *)
+     
+
+  (** ** Semantics of read syscall *)
+
+  (* From the man page:
+     ssize_t read(int fildes, void *buf, size_t nbyte)
+   read() attempts to read nbyte bytes of data from the object referenced by
+     the descriptor fildes into the buffer pointed to by buf. 
+   Upon successful completion, read() returns
+     the number of bytes actually read and placed in the buffer.  The system
+     guarantees to read the number of bytes requested if the descriptor
+     references a normal file that has that many bytes left before the end-of-
+     file, but in no other case.
+   read() will fail if the parameter nbyte exceeds INT_MAX; [it does]
+     not attempt a partial read.
+   If successful, the number of bytes actually read is returned.  Upon reading
+     end-of-file, zero is returned.  Otherwise, a -1 is returned and the global
+     variable errno is set to indicate the error. [NB: We do not model errrno.]
+
+    We further restrict buf to be a writeable global, and we require it to be big enough to
+     hold nbyte bytes.
+ *)
+
+  Definition read_sg := mksignature (Tint :: Tptr :: Tlong :: nil) Tlong cc_default. 
+
+  Inductive extcall_read_sem (ge: Senv.t) (cp: compartment) :
+    list val -> mem -> trace -> val -> mem -> Prop :=
+  | extcall_read_sem_ok: forall fd bytes sz (sz':Z) m m' bdst odst id,
+      Senv.find_symbol ge id = Some bdst -> 
+      Senv.public_symbol ge id = true ->
+      Mem.range_perm m bdst (Ptrofs.unsigned odst)
+        (Ptrofs.unsigned odst + Int64.unsigned sz) Cur Writable -> (* needed for receptivity *)
+      Mem.storebytes m bdst (Ptrofs.unsigned odst) (map Byte bytes) cp = Some m' ->
+      sz' = Z_of_nat (length bytes) -> 
+      Int64.unsigned sz <= Int64.max_signed ->  (* see man page excerpt *)
+      sz' <= Int64.unsigned sz -> 
+      extcall_read_sem
+        ge cp (Vint fd :: Vptr bdst odst :: Vlong sz :: nil) m
+        (Event_syscall "read" (EVint fd :: EVptr_global id odst :: EVlong sz :: nil)
+           nil (EVlong (Int64.repr sz'))  (bytes :: nil) :: nil)
+        (Vlong (Int64.repr sz')) m'
+  | extcall_read_sem_fail: forall fd sz m bdst odst id,
+      Senv.find_symbol ge id = Some bdst -> 
+      Senv.public_symbol ge id = true ->
+      Mem.range_perm m bdst (Ptrofs.unsigned odst)
+        (Ptrofs.unsigned odst + Int64.unsigned sz) Cur Writable -> (* needed for receptivity *)
+      Mem.can_access_block m bdst cp -> (* needed for receptivity *)
+      extcall_read_sem 
+        ge cp (Vint fd :: Vptr bdst odst :: Vlong sz :: nil) m
+        (Event_syscall "read" (EVint fd :: EVptr_global id odst :: EVlong sz :: nil)
+           nil (EVlong (Int64.repr (-1))) nil :: nil)
+        (Vlong (Int64.repr (-1))) m
+  .                        
+
+
+  Lemma extcall_read_ok: forall (efs_sem: String.string -> signature -> extcall_sem)
+                                (cp:compartment),
+      (forall sg, efs_sem "read"%string sg = extcall_read_sem) ->  (* a bit bogus *)
+      extcall_properties (well_formed_syscall_event efs_sem) (extcall_read_sem ) cp read_sg. 
+  Proof.
+    intros ec_sems cp EQ. 
+    constructor; intros.
+    (* well typed *)
+    - inv H; simpl; auto. 
+    (* symbols preserved *)
+    - inv H0.
+      + econstructor; eauto. 
+        * rewrite <- H1; eapply H. 
+        * rewrite <- H2; eapply H. 
+      + econstructor; eauto. 
+        * rewrite <- H1; eapply H. 
+        * rewrite <- H2; eapply H. 
+    (* valid block *)
+    - inv H; eauto with mem.
+    (* accessiblity *)
+    - inv H.
+      + eapply Mem.storebytes_can_access_block_inj_1; eauto. 
+      + auto.
+    (* perms *)    
+    - inv H; eauto with mem. 
+    (* readonly *)
+    - eapply unchanged_on_readonly; eauto.
+      inv H. 
+      + eapply Mem.storebytes_unchanged_on; eauto.
+        intros. unfold loc_not_writable. intro X; apply X; clear X . 
+        exploit Mem.storebytes_range_perm; eauto.
+        intro. apply Mem.perm_cur_max; auto. 
+      + eapply Mem.unchanged_on_refl; eauto.
+      + inv H.
+        simpl; erewrite Mem.storebytes_preserves_comp; eauto.
+        eapply Mem.loadbytes_can_access_block_inj; eauto.
+        eapply Mem.loadbytes_can_access_block_inj; eauto.
+    (* (* mem alloc *) *)
+    (* - inv H. *)
+    (*   + assert (Mem.valid_block m2 b). *)
+    (*     pose proof (Mem.storebytes_valid_block_2 _ _ _ _ _ _ H5 _ H1).  congruence. *)
+    (*   + congruence. *)
+    (* (* outside cp *) *)
+    (* - inv H. *)
+    (*   +  pose proof (Mem.storebytes_can_access_block_1 _ _ _ _ _ _ H3).   *)
+    (*      eapply Mem.storebytes_unchanged_on; eauto. *)
+    (*   + eapply Mem.unchanged_on_refl. *)
+    (* mem extends *)
+    - inv H.
+      + pose proof (Val.lessdef_list_inv _ _ H1). destruct H. 
+        2: { inv H. congruence. inv H6.  congruence. inv H.  congruence. inv H6. }
+        subst vargs'.
+        assert (list_forall2 memval_lessdef (map Byte bytes) (map Byte bytes)).
+        { clear.
+          induction bytes.
+          - simpl. econstructor.
+          - simpl. econstructor.
+            + apply memval_lessdef_refl.
+            + auto. }
+        destruct (Mem.storebytes_within_extends _ _ _ _ _ _ _ _ H0 H5 H) as [m2' [P1 P2]]. 
+        econstructor; eauto. econstructor; eauto. split;[|split;[|split]].
+        * econstructor; eauto.
+          unfold Mem.range_perm in H4 |-*.
+          intros. eapply Mem.perm_extends; eauto.
+        * eapply Val.lessdef_refl.
+        * auto.
+        * eapply Mem.storebytes_unchanged_on; eauto.
+          intros. unfold loc_out_of_bounds. intro X; apply X; clear X. 
+          clear P1. 
+          exploit Mem.storebytes_range_perm; eauto.
+          intro.  apply Mem.perm_cur_max; auto.
+          eapply Mem.perm_implies; eauto. econstructor.
+      + pose proof (Val.lessdef_list_inv _ _ H1). destruct H.
+        2: { inv H. congruence. inv H6.  congruence. inv H.  congruence. inv H6. }
+        subst vargs'.
+        exists (Vlong (Int64.repr (-1))). exists m1'.
+        split;[|split;[|split]]; eauto.
+        * econstructor; eauto. 
+          -- unfold Mem.range_perm in H4 |-*.
+             intros. eapply Mem.perm_extends; eauto. 
+          -- inv H0. 
+             eapply Mem.can_access_block_inj; eauto. unfold inject_id. eauto.
+       * apply Mem.unchanged_on_refl.
+    (* mem injects *)
+    - inv H0. 
+      + inv H2. inv H12. inv H13. inv H14. 
+        inv H10. inv H7. inv H11. 
+        inv H. destruct H2.
+        destruct (H id bdst b2 delta H10 H3) as [P1 P2]. subst delta.
+        replace (Ptrofs.add odst (Ptrofs.repr 0)) with odst by (rewrite Ptrofs.add_zero; auto). 
+        edestruct Mem.storebytes_mapped_inject as [m2' [Q1 Q2]]; eauto.
+        instantiate (1 := (map Byte bytes)). 
+        { clear - bytes. 
+          induction bytes. simpl. econstructor.
+          simpl. econstructor. constructor. auto. }
+        inv H1. 
+        econstructor; econstructor; econstructor; [split;[|split;[|split;[|split;[|split;[|split;[|split]]]]]]] .  
+        * econstructor; eauto.
+          -- eapply Mem.range_perm_inj in H5.
+             2,3: eauto. repeat rewrite Z.add_0_r in H5. eauto. 
+          -- rewrite Z.add_0_r in Q1. eapply Q1. 
+        * instantiate (1:= f). econstructor. 
+        * eauto.
+        * eapply Mem.storebytes_unchanged_on; eauto.
+          intros.
+          unfold loc_unmapped. rewrite H10.  intros; discriminate.
+        * eapply Mem.storebytes_unchanged_on; eauto.
+          intros.
+          unfold loc_out_of_reach. intro. eapply H7. eauto.
+          replace (i - 0) with i by lia.
+          pose proof (Mem.storebytes_range_perm _ _ _ _ _ _ H6).
+          unfold Mem.range_perm in H11. 
+          eapply Mem.perm_cur_max.
+          eapply Mem.perm_implies with Writable. 2: constructor.
+          eapply H11. lia.
+        * apply inject_incr_refl. 
+        * unfold inject_separated. intros. rewrite H1 in H7; discriminate. 
+        * intros. congruence.
+          (* exfalso. apply H1.  eapply Mem.storebytes_valid_block_2; eauto.   *)
+      + inv H2. inv H10. inv H11. inv H12. 
+        inv H7. inv H9. inv H8. 
+        inv H. destruct H2.
+        destruct (H id bdst b2 delta H10 H3) as [P1 P2]. subst delta.
+        replace (Ptrofs.add odst (Ptrofs.repr 0)) with odst by (rewrite Ptrofs.add_zero; auto). 
+        econstructor.  exists (Vlong (Int64.repr (-1))). exists m1'.
+        split;[|split;[|split;[|split;[|split;[|split;[|split]]]]]].  
+        * econstructor; eauto.
+          -- eapply Mem.range_perm_inj in H5.
+             2,3: eauto. repeat rewrite Z.add_0_r in H5. eauto. 
+             inv H1. auto.
+          -- inv H1. 
+             eapply Mem.can_access_block_inj; eauto. 
+        * instantiate (1:= f). econstructor. 
+        * auto. 
+        * eapply Mem.unchanged_on_refl. 
+        * eapply Mem.unchanged_on_refl.
+        * apply inject_incr_refl. 
+        * unfold inject_separated. intros. rewrite H7 in H8; discriminate. 
+        * intros. congruence. 
+    (* trace length *)
+    - inv H;  simpl; lia.
+    (* receptive *)  
+    - inv H.
+      + inv H0. 
+        inv H12. inv H13. 
+        rewrite EQ in H10. 
+        inv H10. 
+        * exists (Vlong (Int64.repr (Z.of_nat (length bytes0)))). 
+          assert (Mem.range_perm m bdst (Ptrofs.unsigned odst)
+                    (Ptrofs.unsigned odst + (Z.of_nat (length (map Byte bytes0)))) Cur Writable).
+          { unfold Mem.range_perm in H3 |-*. 
+            intros. eapply H3. rewrite map_length in H10. lia. }
+          assert (exists m1', Mem.storebytes m bdst (Ptrofs.unsigned odst) (map Byte bytes0) cp = Some m1'). 
+          { eapply Mem.range_perm_storebytes in H10. destruct H10.  
+            eexists. eapply e. eapply Mem.storebytes_can_access_block_1; eauto. }
+          destruct H11 as [m1' P].
+          exists m1'. 
+          econstructor; eauto.
+        * exists (Vlong (Int64.repr (-1))). exists m. 
+          econstructor; eauto.
+          eapply Mem.storebytes_can_access_block_1; eauto. 
+      + inv H0. 
+        inv H10. inv H11. 
+        rewrite EQ in H8. 
+        inv H8. 
+        * exists (Vlong (Int64.repr (Z.of_nat (length bytes)))).
+          assert (Mem.range_perm m1 bdst (Ptrofs.unsigned odst)
+                    (Ptrofs.unsigned odst + (Z.of_nat (length (map Byte bytes)))) Cur Writable).
+          { unfold Mem.range_perm in H3 |-*. 
+            intros. eapply H3. rewrite map_length in H8. lia. }
+          assert (exists m1', Mem.storebytes m1 bdst (Ptrofs.unsigned odst) (map Byte bytes) cp = Some m1'). 
+          { eapply Mem.range_perm_storebytes in H8. destruct H8.  
+            eexists. eapply e.  eauto. }
+          destruct H9 as [m1' P].
+          exists m1'. 
+          econstructor; eauto.
+        * exists (Vlong (Int64.repr (-1))). exists m1. 
+          econstructor; eauto.
+    (* determ *)
+    - split.
+      + inv H; inv H0;  
+          rewrite (@Senv.find_symbol_injective ge id id0 bdst); eauto;
+          apply match_traces_syscall with (sg := read_sg) (cp:= cp); econstructor; try rewrite EQ; repeat econstructor; eauto. 
+      + intro; subst t1.
+        inv H; inv H0; split; auto. 
+        rewrite H4 in H19.  inv H19.  auto.
+    - inv H. auto. auto.
+    (* perm *)
+    - inv H; eauto with mem.
+  Qed.
+
+(* From the man page:
+   ssize_t write(int fildes, const void *buf, size_t nbyte)
+   write() attempts to read nbyte of data to the object referenced by
+     the descriptor fildes from the buffer pointed to by buf. 
+   write() will fail if the parameter nbyte exceeds INT_MAX; and [it does]
+     not attempt a partial read.
+   When using non-blocking I/O on objects, such as sockets, that are subject
+     to flow control, write() and writev() may write fewer bytes than requested;
+     the return value must be noted, and the remainder of the operation should
+     be retried when possible.
+   Upon successful completion the number of bytes which were written is
+     returned.  Otherwise, a -1 is returned and the global variable errno is set
+     to indicate the error. [NB: we do not model errno.]
+
+   We further restrict buf to be a readable global of size at least nbytes,
+     and we require it to contain only plain bytes (not pointer fragments).
+ *)
+
+
+Definition write_sg := mksignature (Tint :: Tptr :: Tlong :: nil) Tlong cc_default. 
+
+Inductive extcall_write_sem (ge: Senv.t) (cp: compartment):
+               list val -> mem -> trace -> val -> mem -> Prop :=
+| extcall_write_sem_intro: forall fd bytes sz sz' m bsrc osrc id mvs,
+    Senv.find_symbol ge id = Some bsrc -> 
+    Senv.public_symbol ge id = true ->
+    Mem.loadbytes m bsrc (Ptrofs.unsigned osrc) (Int64.unsigned sz) cp = Some mvs ->
+    proj_bytes mvs = Some bytes -> 
+    Int64.unsigned sz <= Int64.max_signed ->  (* see man page *)
+    -1 <= sz' <= Int64.unsigned sz -> 
+    extcall_write_sem
+      ge cp (Vint fd :: Vptr bsrc osrc :: Vlong sz :: nil) m
+      (Event_syscall "write" (EVint fd :: EVptr_global id osrc :: EVlong sz :: nil)
+         (bytes :: nil) (EVlong (Int64.repr sz')) nil :: nil)
+      (Vlong (Int64.repr sz')) m
+.                        
+
+
+Lemma proj_bytes_inject: forall mvs bs f mvs',
+    proj_bytes mvs = Some bs ->
+    list_forall2 (memval_inject f) mvs mvs' ->
+    mvs = mvs'.
+Proof.
+  induction mvs; intros. 
+  - inv H0; auto. 
+  - inv H0.
+    simpl in H. destruct a; try discriminate.  inv H3.
+    f_equal.  destruct (proj_bytes mvs) eqn:?; try inv H. 
+    eapply IHmvs; eauto.
+Qed.  
+
+Lemma proj_bytes_lessdef: forall mvs bs mvs',
+    proj_bytes mvs = Some bs ->
+    list_forall2 memval_lessdef mvs mvs' ->
+    mvs = mvs'.
+Proof.
+  intros. 
+  eapply proj_bytes_inject; eauto.
+Qed.
+
+Lemma extcall_write_ok: forall (efs_sem: String.string -> signature -> extcall_sem) (cp:compartment),
+  (forall sg, efs_sem "write"%string sg = extcall_write_sem) ->  (* a bit bogus *)
+  extcall_properties (well_formed_syscall_event efs_sem) (extcall_write_sem) cp write_sg.
+Proof.
+  intros ec_sems cp EQ. 
+  constructor; intros.
+  (* well typed *)
+  - inv H; simpl; auto. 
+  (* symbols preserved *)
+  - inv H0.
+    econstructor; eauto. 
+    * rewrite <- H1; eapply H. 
+    * rewrite <- H2; eapply H. 
+  (* valid block *)
+  - inv H; eauto with mem.
+  (* accessiblity *)
+  - inv H; auto.
+  (* perms *)    
+  - inv H; eauto with mem. 
+  (* readonly *)
+  - eapply unchanged_on_readonly; eauto.
+    inv H; eapply Mem.unchanged_on_refl.
+    inv H.
+    eapply Mem.loadbytes_can_access_block_inj; eauto.
+
+  (* (* mem alloc *) *)
+  (* - inv H. congruence. *)
+  (* (* outside cp *) *)
+  (* - inv H. *)
+  (*   eapply Mem.unchanged_on_refl. *)
+  (* mem extends *)
+  - inv H.
+    pose proof (Val.lessdef_list_inv _ _ H1). destruct H. 
+    2: { inv H. congruence. inv H8.  congruence. inv H.  congruence. inv H8. }
+    subst vargs'.
+    econstructor; eauto. econstructor; eauto. split;[|split;[|split]].
+    * econstructor; eauto.
+      destruct (Mem.loadbytes_extends _ _ _ _ _ _ _ H0 H4) as [mvs' [P1 P2]]. 
+      erewrite proj_bytes_lessdef with (mvs:= mvs); eauto.
+    * eapply Val.lessdef_refl.
+    * auto.
+    * apply Mem.unchanged_on_refl. 
+  (* mem injects *)
+  - inv H0. 
+    inv H2. inv H12. inv H13. inv H14. 
+    inv H10. inv H9. inv H11. 
+    inv H. destruct H2.
+    destruct (H id bsrc b2 delta H10 H3) as [P1 P2]. subst delta.
+    replace (Ptrofs.add osrc (Ptrofs.repr 0)) with osrc by (rewrite Ptrofs.add_zero; auto). 
+    econstructor; econstructor; econstructor; [split;[|split;[|split;[|split;[|split;[|split;[|split]]]]]]] .  
+    * econstructor; eauto.
+      destruct (Mem.loadbytes_inject _ _ _ _ _ _ _ _ _ _ H1 H5 H10) as [mvs' [Q1 Q2]].
+      replace (Ptrofs.unsigned osrc + 0) with (Ptrofs.unsigned osrc) in Q1 by lia.
+      erewrite proj_bytes_inject with (mvs := mvs); eauto.
+    * instantiate (1:= f). econstructor. 
+    * eauto.
+    * eapply Mem.unchanged_on_refl. 
+    * eapply Mem.unchanged_on_refl. 
+    * apply inject_incr_refl. 
+    * unfold inject_separated. intros. rewrite H9 in H11; discriminate. 
+    * intros. congruence.
+  (* trace length *)
+  - inv H;  simpl; lia.
+  (* receptive *)  
+  - inv H.
+    inv H0. 
+    inv H13. 
+    rewrite EQ in H7. inv H7. 
+    exists (Vlong (Int64.repr sz'0)).  exists m1. 
+    econstructor; eauto.
+  (* determ *)
+  - split.
+    + inv H; inv H0.  
+      rewrite (@Senv.find_symbol_injective ge id id0 bsrc); eauto. 
+      rewrite H3 in H12. inv H12. 
+      rewrite H4 in H17. inv H17.
+      apply match_traces_syscall with (sg := read_sg) (cp:=cp); econstructor; try rewrite EQ; repeat econstructor; eauto; try lia. 
+    + intro; subst t1.
+      inv H. inv H0.  (* not sure what's going on here with H12! *)
+      split; auto. f_equal.
+      destruct (Int64.repr sz'0).
+      destruct (Int64.repr sz'). 
+      generalize intrange. intro intrange'.
+      subst intval. f_equal.
+      apply Axioms.proof_irr.
+  - inv H; auto.
+  - inv H; eauto with mem.
+Qed.
+
+End SyscallSanityChecks.

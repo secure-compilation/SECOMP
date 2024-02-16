@@ -148,9 +148,8 @@ Proof.
   destruct (in_mreg r (parameters_mregs sg)). auto. reflexivity.
   destruct sl.
   red; auto.
+  change (Loc.type (S Incoming pos ty)) with (Loc.type (S Outgoing pos ty)). auto.
   red; auto.
-  replace (Loc.type (S Incoming pos ty)) with (Loc.type (S Outgoing pos ty)) by reflexivity.
-  auto.
 Qed.
 
 Lemma wt_return_regs:
@@ -165,7 +164,7 @@ Qed.
 
 Lemma wt_return_regs_ext:
   forall caller callee sg,
-  wt_locset caller -> wt_locset callee -> wt_locset (return_regs_ext callee sg).
+  wt_locset caller -> wt_locset callee -> wt_locset (return_regs_ext caller callee sg).
 Proof.
   intros; red; intros.
   unfold return_regs_ext. destruct l.
@@ -281,13 +280,13 @@ Inductive wt_state: state -> Prop :=
         (WTC: wt_code f c = true)
         (WTRS: wt_locset rs),
       wt_state (State s f sp c rs m)
-  | wt_call_state: forall s fd sig rs m
+  | wt_call_state: forall s fd sig rs m cp
         (WTSTK: wt_callstack s)
         (WTFD: wt_fundef fd)
         (WTRS: wt_locset rs)
         (AGCS: agree_callee_save rs (parent_locset s))
         (AGARGS: agree_outgoing_arguments (funsig fd) rs (parent_locset s)),
-      wt_state (Callstate s fd sig rs m)
+      wt_state (Callstate s fd sig rs m cp)
   | wt_return_state: forall s rs m cp
         (WTSTK: wt_callstack s)
         (WTRS: wt_locset rs)
@@ -363,25 +362,15 @@ Local Opaque mreg_type.
 - (* call *)
   simpl in *; InvBooleans.
   econstructor; eauto. econstructor; eauto.
- (*  { (* new case *) *)
- (* apply wt_call_regs_ext. auto. *)
- (*  } *)
   eapply wt_find_function; eauto.
-  { (* new case *)
- apply wt_call_regs_ext. auto.
-  }
-  red; simpl; intros. destruct l; simpl in *. destruct r; discriminate. contradiction.
-  (* admit. (* destruct sl; auto; congruence. *) *)
   red; simpl; auto.
-
+  red; simpl; auto.
 - (* tailcall *)
   simpl in *; InvBooleans.
   econstructor; eauto.
   eapply wt_find_function; eauto.
   apply wt_return_regs; auto. apply wt_parent_locset; auto.
-  red; simpl; intros. destruct l; simpl in *. destruct r; discriminate.
-  contradiction.
-  (* destruct sl; auto; congruence. *)
+  red; simpl; intros. destruct l; simpl in *. destruct r; discriminate. destruct sl; auto; congruence.
   red; simpl; intros. apply zero_size_arguments_tailcall_possible in H. apply H in H3. contradiction.
 - (* builtin *)
   simpl in *; InvBooleans.
@@ -410,17 +399,18 @@ Local Opaque mreg_type.
   (* red; simpl; intros. destruct l; simpl in *. rewrite H0; auto. destruct sl; auto; congruence. *)
   (* red; simpl; intros. auto. *)
   (* } *)
+  { (* new case*)
   econstructor; eauto.
-  eapply wt_return_regs; eauto.
-  apply wt_parent_locset; auto.
-  (* { (* new case*) *)
-  (* (* econstructor; eauto. *) *)
-  (* apply wt_return_regs_ext; auto. apply wt_parent_locset; auto. } *)
-  (* admit. *)
-  red; simpl; intros. destruct l; simpl in *. destruct r; discriminate.
-  contradiction.
-  (* destruct sl; auto; congruence. *)
+  apply wt_return_regs_ext; auto. apply wt_parent_locset; auto.
+  red; simpl; intros. destruct l; simpl in *. destruct r; discriminate. destruct sl; auto; congruence.
   red; simpl; intros. auto.
+  }
+  (* { (* same as Genv.InternalCall *) *)
+  (* econstructor; eauto. *)
+  (* apply wt_return_regs; auto. apply wt_parent_locset; auto. *)
+  (* red; simpl; intros. destruct l; simpl in *. rewrite H0; auto. destruct sl; auto; congruence. *)
+  (* red; simpl; intros. auto. *)
+  (* } *)
 - (* internal function *)
   simpl in WTFD.
   econstructor. eauto. eauto. eauto.
@@ -429,8 +419,7 @@ Local Opaque mreg_type.
   (* apply wt_undef_regs. apply wt_call_regs. auto. *)
   (* } *)
   { (* new case *)
-  apply wt_undef_regs. auto.
-  apply wt_call_regs. auto.
+  apply wt_undef_regs. apply wt_call_regs_ext. auto.
   }
   (* { (* same as Genv.InternalCall *) *)
   (* apply wt_undef_regs. apply wt_call_regs. auto. *)
@@ -442,14 +431,10 @@ Local Opaque mreg_type.
   red; simpl; intros. destruct l; simpl in *.
   (* rewrite locmap_get_set_loc_result by auto. simpl. rewrite H; auto.  *)
   destruct r; discriminate.
-  rewrite locmap_get_set_loc_result by auto. simpl.
-  contradiction.
-  (* destruct sl; auto; congruence. *)
+  rewrite locmap_get_set_loc_result by auto. simpl. destruct sl; auto; congruence.
   red; simpl; intros. rewrite locmap_get_set_loc_result by auto. auto.
 - (* return *)
   inv WTSTK. econstructor; eauto.
-  eapply wt_return_regs_ext; eauto.
-  (* apply wt_parent_locset; auto. *)
 Qed.
 
 Theorem wt_initial_state:
@@ -500,20 +485,18 @@ Proof.
 Qed.
 
 Lemma wt_callstate_wt_regs:
-  forall s f sig rs m,
-  wt_state (Callstate s f sig rs m) ->
+  forall s f sig rs m cp,
+  wt_state (Callstate s f sig rs m cp) ->
   forall r, Val.has_type (rs (R r)) (mreg_type r).
 Proof.
   intros. inv H. apply WTRS.
 Qed.
 
 Lemma wt_callstate_agree:
-  forall s f sig rs m,
-  wt_state (Callstate s f sig rs m) ->
-  (* agree_callee_save rs (parent_locset s) /\ *)
-(* agree_outgoing_arguments (funsig f) rs (parent_locset s). *)
-  agree_callee_save rs (parent_locset s) /\
-    agree_outgoing_arguments (funsig f) rs (parent_locset s).
+  forall s f sig rs m cp,
+  wt_state (Callstate s f sig rs m cp) ->
+  (* agree_callee_save rs (parent_locset s) /\ agree_outgoing_arguments (funsig f) rs (parent_locset s). *)
+  agree_callee_save rs (parent_locset s) /\ agree_outgoing_arguments (funsig f) rs (parent_locset s).
 Proof.
   intros. inv H; auto.
 Qed.

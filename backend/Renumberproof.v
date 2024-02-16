@@ -20,10 +20,6 @@ Require Import Op Registers RTL Renumber.
 Definition match_prog (p tp: RTL.program) :=
   match_program (fun ctx f tf => tf = transf_fundef f) eq p tp.
 
-#[global]
-Instance comp_transf_function: has_comp_transl transf_function.
-Proof. now intros. Qed.
-
 Lemma transf_program_match:
   forall p, match_prog p (transf_program p).
 Proof.
@@ -56,7 +52,7 @@ Lemma symbols_preserved:
 Proof (Genv.find_symbol_transf TRANSL).
 
 Lemma senv_preserved:
-  Senv.equiv ge tge.
+  Senv.equiv (Genv.to_senv ge) (Genv.to_senv tge).
 Proof (Genv.senv_transf TRANSL).
 
 Lemma sig_preserved:
@@ -104,10 +100,10 @@ Qed.
 
 Lemma find_comp_translated:
   forall vf,
-    Genv.find_comp ge vf = Genv.find_comp tge vf.
+    Genv.find_comp_in_genv ge vf = Genv.find_comp_in_genv tge vf.
 Proof.
   intros vf.
-  eapply (Genv.match_genvs_find_comp TRANSL).
+  eapply (Genv.match_genvs_find_comp_in_genv TRANSL).
 Qed.
 
 Lemma call_trace_translated:
@@ -213,10 +209,10 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
         (REACH: reach f pc),
       match_states (State stk f sp pc rs m)
                    (State stk' (transf_function f) sp (renum_pc (pnum f) pc) rs m)
-  | match_callstates: forall stk f args m stk'
+  | match_callstates: forall stk f args m cp stk'
         (STACKS: list_forall2 match_frames stk stk'),
-      match_states (Callstate stk f args m)
-                   (Callstate stk' (transf_fundef f) args m)
+      match_states (Callstate stk f args m cp)
+                   (Callstate stk' (transf_fundef f) args m cp)
   | match_returnstates: forall stk v m cp stk'
         (STACKS: list_forall2 match_frames stk stk'),
       match_states (Returnstate stk v m cp)
@@ -235,20 +231,17 @@ Proof.
   econstructor; split.
   eapply exec_Iop; eauto.
   instantiate (1 := v). rewrite <- H0. apply eval_operation_preserved. exact symbols_preserved.
-  admit. admit. admit.
   constructor; auto. eapply reach_succ; eauto. simpl; auto.
 (* load *)
   econstructor; split.
-  assert (eval_addressing tge (comp_of f) sp addr rs ## args = Some a).
+  assert (eval_addressing tge sp addr rs ## args = Some a).
   rewrite <- H0. apply eval_addressing_preserved. exact symbols_preserved.
-  admit. admit. admit.
   eapply exec_Iload; eauto.
   constructor; auto. eapply reach_succ; eauto. simpl; auto.
 (* store *)
   econstructor; split.
-  assert (eval_addressing tge (comp_of f) sp addr rs ## args = Some a).
+  assert (eval_addressing tge sp addr rs ## args = Some a).
   rewrite <- H0. apply eval_addressing_preserved. exact symbols_preserved.
-  admit. admit. admit.
   eapply exec_Istore; eauto.
   constructor; auto. eapply reach_succ; eauto. simpl; auto.
 (* call *)
@@ -277,7 +270,6 @@ Proof.
   econstructor; split.
   eapply exec_Ibuiltin; eauto.
     eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
-    admit. admit. admit.
     eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   constructor; auto. eapply reach_succ; eauto. simpl; auto.
 (* cond *)
@@ -312,7 +304,7 @@ Proof.
   rewrite comp_transf_function.
   now eapply return_trace_eq; eauto using senv_preserved.
   constructor; auto.
-Admitted.
+Qed.
 
 Lemma transf_initial_states:
   forall S1, RTL.initial_state prog S1 ->
@@ -337,6 +329,7 @@ Theorem transf_program_correct:
   forward_simulation (RTL.semantics prog) (RTL.semantics tprog).
 Proof.
   eapply forward_simulation_step.
+  apply senv_preserved.
   apply senv_preserved.
   eexact transf_initial_states.
   eexact transf_final_states.

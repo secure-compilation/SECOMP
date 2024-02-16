@@ -23,26 +23,18 @@ Require Import Debugvar.
 Definition match_prog (p tp: program) :=
   match_program (fun _ f tf => transf_fundef f = OK tf) eq p tp.
 
-#[global]
-Instance comp_transf_function: has_comp_transl_partial transf_function.
-Proof.
-  unfold transf_function.
-  intros f ? H.
-  now destruct ana_function; inv H.
-Qed.
-
 Lemma transf_program_match:
   forall p tp, transf_program p = OK tp -> match_prog p tp.
 Proof.
   intros. eapply match_transform_partial_program; eauto.
 Qed.
 
-Inductive match_code: compartment -> code -> code -> Prop :=
-  | match_code_nil: forall cp,
-      match_code cp nil nil
-  | match_code_cons: forall cp i before after c c',
-      match_code cp c c' ->
-      match_code cp (i :: c) (i :: add_delta_ranges cp before after c').
+Inductive match_code: code -> code -> Prop :=
+  | match_code_nil:
+      match_code nil nil
+  | match_code_cons: forall i before after c c',
+      match_code c c' ->
+      match_code (i :: c) (i :: add_delta_ranges before after c').
 
 Remark diff_same:
   forall s, diff s s = nil.
@@ -59,25 +51,25 @@ Proof.
 Qed.
 
 Lemma transf_code_match:
-  forall cp lm c before, match_code cp c (transf_code cp lm before c).
+  forall lm c before, match_code c (transf_code lm before c).
 Proof.
-  intros cp lm. fix REC 1. destruct c; intros before; simpl.
+  intros lm. fix REC 1. destruct c; intros before; simpl.
 - constructor.
 - assert (DEFAULT: forall before after,
-            match_code cp (i :: c)
-                       (i :: add_delta_ranges cp before after (transf_code cp lm after c))).
+            match_code (i :: c)
+                       (i :: add_delta_ranges before after (transf_code lm after c))).
   { intros. constructor. apply REC. }
   destruct i; auto. destruct c; auto. destruct i; auto.
   set (after := get_label l0 lm).
-  set (c1 := Llabel l0 :: add_delta_ranges cp before after (transf_code cp lm after c)).
-  replace c1 with (add_delta_ranges cp before before c1).
+  set (c1 := Llabel l0 :: add_delta_ranges before after (transf_code lm after c)).
+  replace c1 with (add_delta_ranges before before c1).
   constructor. constructor. apply REC.
   unfold add_delta_ranges. rewrite delta_state_same. auto.
 Qed.
 
 Inductive match_function: function -> function -> Prop :=
   | match_function_intro: forall f c,
-      match_code f.(fn_comp) f.(fn_code) c ->
+      match_code f.(fn_code) c ->
       match_function f (mkfunction f.(fn_comp) f.(fn_sig) f.(fn_stacksize) c).
 
 Lemma transf_function_match:
@@ -89,7 +81,7 @@ Proof.
 Qed.
 
 Remark find_label_add_delta_ranges:
-  forall cp lbl c before after, find_label lbl (add_delta_ranges cp before after c) = find_label lbl c.
+  forall lbl c before after, find_label lbl (add_delta_ranges before after c) = find_label lbl c.
 Proof.
   intros. unfold add_delta_ranges.
   destruct (delta_state before after) as [killed born].
@@ -98,10 +90,10 @@ Proof.
 Qed.
 
 Lemma find_label_match_rec:
-  forall cp lbl c' c tc,
-  match_code cp c tc ->
+  forall lbl c' c tc,
+  match_code c tc ->
   find_label lbl c = Some c' ->
-  exists before after tc', find_label lbl tc = Some (add_delta_ranges cp before after tc') /\ match_code cp c' tc'.
+  exists before after tc', find_label lbl tc = Some (add_delta_ranges before after tc') /\ match_code c' tc'.
 Proof.
   induction 1; simpl; intros.
 - discriminate.
@@ -114,7 +106,7 @@ Lemma find_label_match:
   forall f tf lbl c,
   match_function f tf ->
   find_label lbl f.(fn_code) = Some c ->
-  exists before after tc, find_label lbl tf.(fn_code) = Some (add_delta_ranges f.(fn_comp) before after tc) /\ match_code f.(fn_comp) c tc.
+  exists before after tc, find_label lbl tf.(fn_code) = Some (add_delta_ranges before after tc) /\ match_code c tc.
 Proof.
   intros. inv H. eapply find_label_match_rec; eauto.
 Qed.
@@ -370,17 +362,17 @@ Qed.
 
 Lemma find_comp_translated:
   forall vf,
-    Genv.find_comp ge vf = Genv.find_comp tge vf.
+    Genv.find_comp_in_genv ge vf = Genv.find_comp_in_genv tge vf.
 Proof.
   intros vf.
-  eapply (Genv.match_genvs_find_comp TRANSF).
+  eapply (Genv.match_genvs_find_comp_in_genv TRANSF).
 Qed.
 
 (** Evaluation of the debug annotations introduced by the transformation. *)
 
 Lemma can_eval_safe_arg:
-  forall (rs: locset) cp sp m (a: builtin_arg loc),
-  safe_builtin_arg a -> exists v, eval_builtin_arg tge rs cp sp m a v.
+  forall (rs: locset) sp m (a: builtin_arg loc),
+  safe_builtin_arg a -> exists v, eval_builtin_arg tge rs sp m a v.
 Proof.
   induction a; simpl; intros; try contradiction;
   try (econstructor; now eauto with barg).
@@ -391,7 +383,7 @@ Qed.
 
 Lemma eval_add_delta_ranges:
   forall s f sp c rs m before after,
-  star step tge (State s f sp (add_delta_ranges f.(fn_comp) before after c) rs m)
+  star step tge (State s f sp (add_delta_ranges before after c) rs m)
              E0 (State s f sp c rs m).
 Proof.
   intros. unfold add_delta_ranges.
@@ -406,14 +398,12 @@ Proof.
   constructor. eexact E1. constructor.
   simpl; econstructor.
   simpl; auto.
-  auto.
   traceEq.
 - eapply star_step; eauto.
   econstructor.
   constructor.
   simpl; constructor.
   simpl; auto.
-  auto.
   traceEq.
 Qed.
 
@@ -423,25 +413,25 @@ Inductive match_stackframes: Linear.stackframe -> Linear.stackframe -> Prop :=
   | match_stackframe_intro:
       forall f sg sp rs c tf tc before after,
       match_function f tf ->
-      match_code f.(fn_comp) c tc ->
+      match_code c tc ->
       match_stackframes
         (Stackframe f sg sp rs c)
-        (Stackframe tf sg sp rs (add_delta_ranges f.(fn_comp) before after tc)).
+        (Stackframe tf sg sp rs (add_delta_ranges before after tc)).
 
 Inductive match_states: Linear.state ->  Linear.state -> Prop :=
   | match_states_instr:
       forall s f sp c rs m tf ts tc
         (STACKS: list_forall2 match_stackframes s ts)
         (TRF: match_function f tf)
-        (TRC: match_code f.(fn_comp) c tc),
+        (TRC: match_code c tc),
       match_states (State s f sp c rs m)
                    (State ts tf sp tc rs m)
   | match_states_call:
-      forall s f rs m tf ts sig,
+      forall s f rs m tf ts sig cp,
       list_forall2 match_stackframes s ts ->
       transf_fundef f = OK tf ->
-      match_states (Callstate s f sig rs m)
-                   (Callstate ts tf sig rs m)
+      match_states (Callstate s f sig rs m cp)
+                   (Callstate ts tf sig rs m cp)
   | match_states_return:
       forall s rs m cp ts,
       list_forall2 match_stackframes s ts ->
@@ -494,18 +484,14 @@ Proof.
   econstructor; split.
   eapply plus_left.
   econstructor; eauto.
-  instantiate (1 := v). inv TRF.
-  rewrite <- H; eapply eval_operation_preserved; try exact symbols_preserved.
-  admit. admit. admit.
+  instantiate (1 := v). rewrite <- H; apply eval_operation_preserved; exact symbols_preserved.
   apply eval_add_delta_ranges. traceEq.
   constructor; auto.
 - (* load *)
   econstructor; split.
   eapply plus_left.
   eapply exec_Lload with (a := a).
-  inv TRF.
-  rewrite <- H; apply eval_addressing_preserved; try exact symbols_preserved.
-  admit. admit. admit.
+  rewrite <- H; apply eval_addressing_preserved; exact symbols_preserved.
   inv TRF; eauto. eauto.
   apply eval_add_delta_ranges. traceEq.
   constructor; auto.
@@ -513,9 +499,7 @@ Proof.
   econstructor; split.
   eapply plus_left.
   eapply exec_Lstore with (a := a).
-  inv TRF.
-  rewrite <- H; apply eval_addressing_preserved. exact symbols_preserved.
-  admit. admit. admit.
+  rewrite <- H; apply eval_addressing_preserved; exact symbols_preserved.
   inv TRF; eauto. eauto.
   apply eval_add_delta_ranges. traceEq.
   constructor; auto.
@@ -540,10 +524,9 @@ Proof.
   { rewrite <- (comp_transl_partial _ B).
     inv TRF; unfold comp_of; simpl.
     eapply call_trace_eq; eauto using senv_preserved, symbols_preserved. }
+  replace (comp_of tf) with (comp_of f) by now inv TRF.
   constructor; auto. constructor; auto.
-  replace (fn_comp tf) with (fn_comp f) by now inv TRF.
   constructor; auto.
-  (* constructor; auto. *)
 - (* tailcall *)
   exploit find_function_translated; eauto. intros (tf' & A & B).
   exploit parent_locset_match; eauto. intros PLS.
@@ -554,13 +537,14 @@ Proof.
   symmetry; apply sig_preserved; auto.
   now rewrite <- (comp_transl_partial _ B).
   eauto.
-  rewrite PLS. constructor; auto.
+  rewrite PLS.
+  replace (comp_of tf) with (comp_of f) by now inv TRF.
+  constructor; auto.
 - (* builtin *)
   econstructor; split.
   eapply plus_left.
   econstructor; eauto.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
-  admit. admit. admit.
   inv TRF; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   inversion TRF. simpl in *. eauto.
@@ -597,38 +581,36 @@ Proof.
   constructor; auto.
 - (* return *)
   econstructor; split.
-  apply plus_one.  econstructor. inv TRF; eauto. auto.
-  (* traceEq. *)
+  apply plus_one.  econstructor. inv TRF; eauto. traceEq.
   rewrite (parent_locset_match _ _ STACKS).
   assert (CALLER: call_comp s = call_comp ts).
   { inv STACKS. reflexivity.
     inv H0. inv H2. reflexivity. }
-  (* assert (SIG: parent_signature s = parent_signature ts). *)
-  (* { inv STACKS. reflexivity. *)
-  (*   inv H0. reflexivity. } *)
-  (* rewrite SIG. *)
+  assert (SIG: parent_signature s = parent_signature ts).
+  { inv STACKS. reflexivity.
+    inv H0. reflexivity. }
+  rewrite SIG.
   inv TRF; constructor; auto.
 - (* internal function *)
-  monadInv H8. rename x into tf.
+  monadInv H9. rename x into tf.
   assert (MF: match_function f tf) by (apply transf_function_match; auto).
   inversion MF; subst.
   econstructor; split.
 
-  apply plus_one. eapply exec_function_internal. simpl; eauto. reflexivity.
+  apply plus_one. eapply exec_function_internal. simpl; eauto. reflexivity. reflexivity.
 
-  (* assert (CALLER: call_comp s = call_comp ts). *)
-  (* { inv H7. reflexivity. *)
-  (*   inv H1. inv H3. reflexivity. } *)
-  (* assert (SIG: parent_signature s = parent_signature ts). *)
-  (* { inv H7. reflexivity. *)
-  (*   inv H1. reflexivity. } *)
-  (* change *)
-  (*   (comp_of {| fn_comp := fn_comp f; fn_sig := fn_sig f; fn_stacksize := fn_stacksize f; fn_code := c |}) *)
-  (*   with (comp_of f). *)
-  constructor; auto.
+  assert (CALLER: call_comp s = call_comp ts).
+  { inv H8. reflexivity.
+    inv H1. inv H3. reflexivity. }
+  assert (SIG: parent_signature s = parent_signature ts).
+  { inv H8. reflexivity.
+    inv H1. reflexivity. }
+  change
+    (comp_of {| fn_comp := fn_comp f; fn_sig := fn_sig f; fn_stacksize := fn_stacksize f; fn_code := c |})
+    with (comp_of f).
   constructor; auto.
 - (* external function *)
-  monadInv H9. econstructor; split.
+  monadInv H10. econstructor; split.
   apply plus_one. econstructor; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   constructor; auto.
@@ -638,14 +620,12 @@ Proof.
   eapply plus_left. econstructor.
   auto.
   eapply return_trace_eq; eauto using senv_preserved.
-  reflexivity.
   replace (fn_comp f) with
     (fn_comp {| fn_comp := fn_comp f; fn_sig := fn_sig f; fn_stacksize := fn_stacksize f; fn_code := c0 |})
     by reflexivity.
   apply eval_add_delta_ranges. traceEq.
-  (* erewrite <- parent_locset_match; eauto. *)
-  constructor; auto. constructor; auto.
-Admitted.
+  constructor; auto. simpl. constructor; auto.
+Qed.
 
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 ->
@@ -653,7 +633,7 @@ Lemma transf_initial_states:
 Proof.
   intros. inversion H.
   exploit function_ptr_translated; eauto. intros [tf [A B]].
-  exists (Callstate nil tf signature_main (Locmap.init Vundef) m0); split.
+  exists (Callstate nil tf signature_main (Locmap.init Vundef) m0 AST.COMP.top); split.
   econstructor; eauto. eapply (Genv.init_mem_transf_partial TRANSF); eauto.
   rewrite (match_program_main TRANSF), symbols_preserved. auto.
   rewrite <- H3. apply sig_preserved. auto.
@@ -671,6 +651,7 @@ Theorem transf_program_correct:
   forward_simulation (semantics prog) (semantics tprog).
 Proof.
   eapply forward_simulation_plus.
+  apply senv_preserved.
   apply senv_preserved.
   eexact transf_initial_states.
   eexact transf_final_states.

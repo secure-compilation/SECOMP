@@ -60,7 +60,7 @@ Inductive deref_loc (cp: compartment) (ty: type) (m: mem) (b: block) (ofs: ptrof
   | deref_loc_value: forall chunk v,
       access_mode ty = By_value chunk ->
       type_is_volatile ty = false ->
-      Mem.loadv chunk m (Vptr b ofs) (Some cp) = Some v ->
+      Mem.loadv chunk m (Vptr b ofs) cp = Some v ->
       deref_loc cp ty m b ofs Full E0 v
   | deref_loc_volatile: forall chunk t v,
       access_mode ty = By_value chunk -> type_is_volatile ty = true ->
@@ -73,7 +73,7 @@ Inductive deref_loc (cp: compartment) (ty: type) (m: mem) (b: block) (ofs: ptrof
       access_mode ty = By_copy ->
       deref_loc cp ty m b ofs Full E0 (Vptr b ofs)
   | deref_loc_bitfield: forall sz sg pos width v,
-      load_bitfield ty sz sg pos width m (Vptr b ofs) v (Some cp) ->
+      load_bitfield ty sz sg pos width m (Vptr b ofs) v cp ->
       deref_loc cp ty m b ofs (Bits sz sg pos width) E0 v.
 
 (** Symmetrically, [assign_loc ty m b ofs bf v t m' v'] returns the
@@ -106,7 +106,7 @@ Inductive assign_loc (cp: compartment) (ty: type) (m: mem) (b: block) (ofs: ptro
       b' <> b \/ Ptrofs.unsigned ofs' = Ptrofs.unsigned ofs
               \/ Ptrofs.unsigned ofs' + sizeof ge ty <= Ptrofs.unsigned ofs
               \/ Ptrofs.unsigned ofs + sizeof ge ty <= Ptrofs.unsigned ofs' ->
-      Mem.loadbytes m b' (Ptrofs.unsigned ofs') (sizeof ge ty) (Some cp) = Some bytes ->
+      Mem.loadbytes m b' (Ptrofs.unsigned ofs') (sizeof ge ty) cp = Some bytes ->
       Mem.storebytes m b (Ptrofs.unsigned ofs) bytes cp = Some m' ->
       assign_loc cp ty m b ofs Full (Vptr b' ofs') E0 m' (Vptr b' ofs')
   | assign_loc_bitfield: forall sz sg pos width v m' v',
@@ -220,8 +220,7 @@ Inductive lred: expr -> mem -> expr -> mem -> Prop :=
   | red_var_global: forall x ty m b,
       e!x = None ->
       Genv.find_symbol ge x = Some b ->
-      (Genv.find_comp_of_block ge b = Some cp \/
-       (exists fd : fundef, Genv.find_def ge b = Some (Gfun fd))) ->
+      Genv.allowed_addrof ge cp x ->
       lred (Evar x ty) m
            (Eloc b Ptrofs.zero Full ty) m
   | red_deref: forall b ofs ty1 ty m,
@@ -316,8 +315,7 @@ Inductive rred: expr -> mem -> trace -> expr -> mem -> Prop :=
         E0 (Eval v ty) m
   | red_builtin: forall ef tyargs el ty m vargs t vres m',
       cast_arguments m el tyargs vargs ->
-      comp_of ef = cp ->
-      external_call ef ge vargs m t vres m' ->
+      external_call ef ge cp vargs m t vres m' ->
       rred (Ebuiltin ef tyargs el ty) m
          t (Eval vres ty) m'.
 
@@ -481,7 +479,6 @@ Proof.
   constructor. eauto.
   constructor. eauto.
   constructor.
-- reflexivity.
 - red. red. rewrite LK. constructor. simpl. rewrite <- EQ.
   destruct b; auto.
 Qed.
@@ -561,10 +558,10 @@ Definition is_call_cont (k: cont) : Prop :=
   | _ => False
   end.
 
-Definition call_comp (k: cont) : option compartment :=
+Definition call_comp (k: cont) : compartment :=
   match call_cont k with
-  | Kcall f _ _ _ _ => Some (comp_of f)
-  | _ => None
+  | Kcall f _ _ _ _ => comp_of f
+  | _ => top
   end.
 
 (** Execution states of the program are grouped in 4 classes corresponding
@@ -823,9 +820,9 @@ Inductive sstep: state -> trace -> state -> Prop :=
          E0 (State f f.(fn_body) k e m2)
 
   | step_external_function: forall ef targs tres cc vargs k m vres t m',
-      external_call ef ge vargs m t vres m' ->
+      external_call ef ge (call_comp k) vargs m t vres m' ->
       sstep (Callstate (External ef targs tres cc) vargs k m)
-          t (Returnstate vres k m' (rettype_of_type tres) (comp_of ef))
+          t (Returnstate vres k m' (rettype_of_type tres) bottom)
           (* sig_res (ef_sig ef) *)
 
   | step_returnstate: forall v f e C ty ty' k m cp t,

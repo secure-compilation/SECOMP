@@ -91,30 +91,30 @@ Definition transfer_builtin
               (ae: aenv) (am: amem) (rm: romem) (ef: external_function)
               (args: list (builtin_arg reg)) (res: builtin_res reg) :=
   match ef, args with
-  | EF_vload _ chunk, addr :: nil =>
+  | EF_vload chunk, addr :: nil =>
       let aaddr := abuiltin_arg ae am rm addr in
       let a :=
         if va_strict tt
         then vlub (loadv chunk rm am aaddr) (vnormalize chunk (Ifptr Glob))
         else vnormalize chunk Vtop in
       VA.State (set_builtin_res res a ae) am
-  | EF_vstore _ chunk, addr :: v :: nil =>
+  | EF_vstore chunk, addr :: v :: nil =>
       let aaddr := abuiltin_arg ae am rm addr in
       let av := abuiltin_arg ae am rm v in
       let am' := storev chunk am aaddr av in
       VA.State (set_builtin_res res ntop ae) (mlub am am')
-  | EF_memcpy _ sz al, dst :: src :: nil =>
+  | EF_memcpy sz al, dst :: src :: nil =>
       let adst := abuiltin_arg ae am rm dst in
       let asrc := abuiltin_arg ae am rm src in
       let p := loadbytes am rm (aptr_of_aval asrc) in
       let am' := storebytes am (aptr_of_aval adst) sz p in
       VA.State (set_builtin_res res ntop ae) am'
-  | (EF_annot _ _ _ _ | EF_debug _ _ _ _), _ =>
+  | (EF_annot _ _ _ | EF_debug _ _ _), _ =>
       VA.State (set_builtin_res res ntop ae) am
-  | EF_annot_val _ _ _ _, v :: nil =>
+  | EF_annot_val _ _ _, v :: nil =>
       let av := abuiltin_arg ae am rm v in
       VA.State (set_builtin_res res av ae) am
-  | EF_builtin _ name sg, _ =>
+  | EF_builtin name sg, _ =>
       match lookup_builtin_function name sg with
       | Some bf => 
           match eval_static_builtin_function ae am rm bf args with
@@ -253,19 +253,17 @@ Definition romem_for (p: program) : romem :=
   List.fold_left alloc_global p.(prog_defs) (PTree.empty _).
 
 (** * Soundness proof *)
-Section Soundness.
-  Variable ge: genv.
 
 (** Properties of the dataflow solution. *)
 
 Lemma analyze_entrypoint:
   forall rm f vl m bc,
-  (forall v, In v vl -> vmatch bc ge (comp_of f) v (Ifptr Nonstack)) ->
-  mmatch bc ge (comp_of f) m mfunction_entry ->
+  (forall v, In v vl -> vmatch bc v (Ifptr Nonstack)) ->
+  mmatch bc m mfunction_entry ->
   exists ae am,
      (analyze rm f)!!(fn_entrypoint f) = VA.State ae am
-  /\ ematch bc ge (comp_of f) (init_regs vl (fn_params f)) ae
-  /\ mmatch bc ge (comp_of f) m am.
+  /\ ematch bc (init_regs vl (fn_params f)) ae
+  /\ mmatch bc m am.
 Proof.
   intros.
   unfold analyze.
@@ -316,12 +314,12 @@ Lemma analyze_succ:
   f.(fn_code)!n = Some instr ->
   In s (successors_instr instr) ->
   transfer f rm n ae am = VA.State ae' am' ->
-  ematch bc ge (comp_of f) e ae' ->
-  mmatch bc ge (comp_of f) m am' ->
+  ematch bc e ae' ->
+  mmatch bc m am' ->
   exists ae'' am'',
      (analyze rm f)!!s = VA.State ae'' am''
-  /\ ematch bc ge (comp_of f) e ae''
-  /\ mmatch bc ge (comp_of f) m am''.
+  /\ ematch bc e ae''
+  /\ mmatch bc m am''.
 Proof.
   intros. exploit analyze_successor; eauto. rewrite H2.
   destruct (analyze rm f)#s as [ | ae'' am'']; simpl; try tauto. intros [A B].
@@ -333,61 +331,49 @@ Qed.
 (** ** Analysis of registers and builtin arguments *)
 
 Lemma areg_sound:
-  forall bc cp e ae r, ematch bc ge cp e ae -> vmatch bc ge cp (e#r) (areg ae r).
+  forall bc e ae r, ematch bc e ae -> vmatch bc (e#r) (areg ae r).
 Proof.
   intros. apply H.
 Qed.
 
 Lemma aregs_sound:
-  forall bc cp e ae rl, ematch bc ge cp e ae -> list_forall2 (vmatch bc ge cp) (e##rl) (aregs ae rl).
+  forall bc e ae rl, ematch bc e ae -> list_forall2 (vmatch bc) (e##rl) (aregs ae rl).
 Proof.
   induction rl; simpl; intros. constructor. constructor; [apply areg_sound|]; auto.
 Qed.
-End Soundness.
 
 Global Hint Resolve areg_sound aregs_sound: va.
 
 Lemma abuiltin_arg_sound:
-  forall cp bc ge rs sp m ae rm am,
-  ematch bc ge cp rs ae ->
-  romatch bc ge cp m rm ->
-  mmatch bc ge cp m am ->
+  forall bc ge rs sp m ae rm am,
+  ematch bc rs ae ->
+  romatch bc m rm ->
+  mmatch bc m am ->
   genv_match bc ge ->
   bc sp = BCstack ->
   forall a v,
-  eval_builtin_arg ge (fun r => rs#r) cp (Vptr sp Ptrofs.zero) m a v ->
-  vmatch bc ge cp v (abuiltin_arg ae am rm a).
+  eval_builtin_arg ge (fun r => rs#r) (Vptr sp Ptrofs.zero) m a v ->
+  vmatch bc v (abuiltin_arg ae am rm a).
 Proof.
   intros until am; intros EM RM MM GM SP.
   induction 1; simpl; eauto with va.
 - eapply loadv_sound; eauto. simpl. rewrite Ptrofs.add_zero_l. auto with va.
 - simpl. rewrite Ptrofs.add_zero_l. auto with va.
-- eapply loadv_sound; eauto.
-  unfold Genv.symbol_address in *.
-  destruct (Genv.find_symbol ge id) eqn:?; try now constructor.
-  constructor. constructor.
-  unfold Mem.loadv in H.
-  Local Transparent Mem.load.
-  unfold Mem.load in H. destruct Mem.valid_access_dec as [e | n]; try discriminate.
-  Local Opaque Mem.load.
-  unfold Mem.valid_access in e. simpl in e.
-  destruct e as [_ [C _]]. auto.
-  simpl in *. admit.
-  apply GM; eauto.
-- subst res. apply symbol_address_sound; auto.
+- eapply loadv_sound; eauto. apply symbol_address_sound; auto.
+- apply symbol_address_sound; auto.
 - destruct Archi.ptr64; auto with va.
-Admitted.
+Qed.
 
 Lemma abuiltin_args_sound:
-  forall bc ge cp rs sp m ae rm am,
-  ematch bc ge cp rs ae ->
-  romatch bc ge cp m rm ->
-  mmatch bc ge cp m am ->
+  forall bc ge rs sp m ae rm am,
+  ematch bc rs ae ->
+  romatch bc m rm ->
+  mmatch bc m am ->
   genv_match bc ge ->
   bc sp = BCstack ->
   forall al vl,
-  eval_builtin_args ge (fun r => rs#r) cp (Vptr sp Ptrofs.zero) m al vl ->
-  list_forall2 (vmatch bc ge cp) vl (map (abuiltin_arg ae am rm) al).
+  eval_builtin_args ge (fun r => rs#r) (Vptr sp Ptrofs.zero) m al vl ->
+  list_forall2 (vmatch bc) vl (map (abuiltin_arg ae am rm) al).
 Proof.
   intros until am; intros EM RM MM GM SP.
   induction 1; simpl.
@@ -396,25 +382,25 @@ Proof.
 Qed.
 
 Lemma set_builtin_res_sound:
-  forall bc ge cp rs ae v av res,
-  ematch bc ge cp rs ae ->
-  vmatch bc ge cp v av ->
-  ematch bc ge cp (regmap_setres res v rs) (set_builtin_res res av ae).
+  forall bc rs ae v av res,
+  ematch bc rs ae ->
+  vmatch bc v av ->
+  ematch bc (regmap_setres res v rs) (set_builtin_res res av ae).
 Proof.
   intros. destruct res; simpl; auto. apply ematch_update; auto.
 Qed.
 
 Lemma eval_static_builtin_function_sound:
-  forall bc ge cp rs sp m ae rm am (bf: builtin_function) al vl v va,
-  ematch bc ge cp rs ae ->
-  romatch bc ge cp m rm ->
-  mmatch bc ge cp m am ->
+  forall bc ge rs sp m ae rm am (bf: builtin_function) al vl v va,
+  ematch bc rs ae ->
+  romatch bc m rm ->
+  mmatch bc m am ->
   genv_match bc ge ->
   bc sp = BCstack ->
-  eval_builtin_args ge (fun r => rs#r) cp (Vptr sp Ptrofs.zero) m al vl ->
+  eval_builtin_args ge (fun r => rs#r) (Vptr sp Ptrofs.zero) m al vl ->
   eval_static_builtin_function ae am rm bf al = Some va ->
   builtin_function_sem bf vl = Some v ->
-  vmatch bc ge cp v va.
+  vmatch bc v va.
 Proof.
   unfold eval_static_builtin_function; intros.
   exploit abuiltin_args_sound; eauto. 
@@ -437,21 +423,19 @@ Definition bc_nostack (bc: block_classification) : Prop :=
 Section NOSTACK.
 
 Variable bc: block_classification.
-Variable ge: genv.
-Variable cp: compartment.
 Hypothesis NOSTACK: bc_nostack bc.
 
-Lemma pmatch_no_stack: forall b ofs p, pmatch bc ge cp b ofs p -> pmatch bc ge cp b ofs Nonstack.
+Lemma pmatch_no_stack: forall b ofs p, pmatch bc b ofs p -> pmatch bc b ofs Nonstack.
 Proof.
   intros. inv H; constructor; congruence.
 Qed.
 
-Lemma vmatch_no_stack: forall v x, vmatch bc ge cp v x -> vmatch bc ge cp v (Ifptr Nonstack).
+Lemma vmatch_no_stack: forall v x, vmatch bc v x -> vmatch bc v (Ifptr Nonstack).
 Proof.
   induction 1; constructor; auto; eapply pmatch_no_stack; eauto.
 Qed.
 
-Lemma smatch_no_stack: forall m b p, smatch bc ge cp m b p -> smatch bc ge cp m b Nonstack.
+Lemma smatch_no_stack: forall m b p, smatch bc m b p -> smatch bc m b Nonstack.
 Proof.
   intros. destruct H as [A B]. split; intros.
   eapply vmatch_no_stack; eauto.
@@ -459,7 +443,7 @@ Proof.
 Qed.
 
 Lemma mmatch_no_stack: forall m am astk,
-  mmatch bc ge cp m am -> mmatch bc ge cp m {| am_stack := astk; am_glob := PTree.empty _; am_nonstack := Nonstack; am_top := Nonstack |}.
+  mmatch bc m am -> mmatch bc m {| am_stack := astk; am_glob := PTree.empty _; am_nonstack := Nonstack; am_top := Nonstack |}.
 Proof.
   intros. destruct H. constructor; simpl; intros.
 - elim (NOSTACK b); auto.
@@ -476,20 +460,20 @@ End NOSTACK.
 Ltac splitall := repeat (match goal with |- _ /\ _ => split end).
 
 Theorem allocate_stack:
-  forall m sz m' cp sp bc ge rm am,
-  Mem.alloc m cp 0 sz = (m', sp) ->
+  forall m c sz m' sp bc ge rm am,
+  Mem.alloc m c 0 sz = (m', sp) ->
   genv_match bc ge ->
-  romatch bc ge cp m rm ->
-  mmatch bc ge cp m am ->
+  romatch bc m rm ->
+  mmatch bc m am ->
   bc_nostack bc ->
   exists bc',
      bc_incr bc bc'
   /\ bc' sp = BCstack
   /\ genv_match bc' ge
-  /\ romatch bc' ge cp m' rm
-  /\ mmatch bc' ge cp m' mfunction_entry
+  /\ romatch bc' m' rm
+  /\ mmatch bc' m' mfunction_entry
   /\ (forall b, Plt b sp -> bc' b = bc b)
-  /\ (forall v x, vmatch bc ge cp v x -> vmatch bc' ge cp v (Ifptr Nonstack)).
+  /\ (forall v x, vmatch bc v x -> vmatch bc' v (Ifptr Nonstack)).
 Proof.
   intros until am; intros ALLOC GENV RO MM NOSTACK.
   exploit Mem.nextblock_alloc; eauto. intros NB.
@@ -516,7 +500,7 @@ Proof.
   assert (INCR: bc_incr bc bc').
   { red; simpl; intros. apply BC'EQ; auto. }
 (* Part 2: invariance properties *)
-  assert (SM: forall cp' b p, bc b <> BCinvalid -> smatch bc ge cp' m b p -> smatch bc' ge cp' m' b Nonstack).
+  assert (SM: forall b p, bc b <> BCinvalid -> smatch bc m b p -> smatch bc' m' b Nonstack).
   {
     intros.
     apply smatch_incr with bc; auto.
@@ -524,7 +508,7 @@ Proof.
     apply smatch_no_stack with p; auto.
     intros. eapply Mem.loadbytes_alloc_unchanged; eauto. eapply mmatch_below; eauto.
   }
-  assert (SMSTACK: forall cp', smatch bc' ge cp' m' sp Pbot).
+  assert (SMSTACK: smatch bc' m' sp Pbot).
   {
     split; intros.
     exploit Mem.load_alloc_same; eauto. intros EQ. subst v. constructor.
@@ -571,19 +555,19 @@ Qed.
 (** Construction 2: turn the stack into an "other" block, at public calls or function returns *)
 
 Theorem anonymize_stack:
-  forall m sp bc ge cp rm am,
+  forall m sp bc ge rm am,
   genv_match bc ge ->
-  romatch bc ge cp m rm ->
-  mmatch bc ge cp m am ->
+  romatch bc m rm ->
+  mmatch bc m am ->
   bc sp = BCstack ->
   exists bc',
      bc_nostack bc'
   /\ bc' sp = BCother
   /\ (forall b, b <> sp -> bc' b = bc b)
-  /\ (forall cp' v x, vmatch bc ge cp v x -> vmatch bc' ge cp' v Vtop)
+  /\ (forall v x, vmatch bc v x -> vmatch bc' v Vtop)
   /\ genv_match bc' ge
-  /\ romatch bc' ge cp m rm
-  /\ mmatch bc' ge cp m mtop.
+  /\ romatch bc' m rm
+  /\ mmatch bc' m mtop.
 Proof.
   intros until am; intros GENV RO MM SP.
 (* Part 1: constructing bc' *)
@@ -605,16 +589,16 @@ Proof.
   set (bc' := BC f F_stack F_glob). unfold f in bc'.
 
 (* Part 2: matching wrt bc' *)
-  assert (PM: forall cp' b ofs p, pmatch bc ge cp b ofs p -> pmatch bc' ge cp' b ofs Ptop).
+  assert (PM: forall b ofs p, pmatch bc b ofs p -> pmatch bc' b ofs Ptop).
   {
-    intros. assert (pmatch bc ge cp b ofs Ptop) by (eapply pmatch_top'; eauto).
+    intros. assert (pmatch bc b ofs Ptop) by (eapply pmatch_top'; eauto).
     inv H0. constructor; simpl. destruct (eq_block b sp); congruence.
   }
-  assert (VM: forall cp' v x, vmatch bc ge cp v x -> vmatch bc' ge cp' v Vtop).
+  assert (VM: forall v x, vmatch bc v x -> vmatch bc' v Vtop).
   {
     induction 1; constructor; eauto.
   }
-  assert (SM: forall b p, smatch bc ge cp m b p -> smatch bc' ge cp m b Ptop).
+  assert (SM: forall b p, smatch bc m b p -> smatch bc' m b Ptop).
   {
     intros. destruct H as [S1 S2]. split; intros.
     eapply VM. eapply S1; eauto.
@@ -656,20 +640,20 @@ Qed.
 (** Construction 3: turn the stack into an invalid block, at private calls *)
 
 Theorem hide_stack:
-  forall m cp sp bc ge rm am,
+  forall m sp bc ge rm am,
   genv_match bc ge ->
-  romatch bc ge cp m rm ->
-  mmatch bc ge cp m am ->
+  romatch bc m rm ->
+  mmatch bc m am ->
   bc sp = BCstack ->
   pge Nonstack am.(am_nonstack) ->
   exists bc',
      bc_nostack bc'
   /\ bc' sp = BCinvalid
   /\ (forall b, b <> sp -> bc' b = bc b)
-  /\ (forall cp' v x, vge (Ifptr Nonstack) x -> vmatch bc ge cp v x -> vmatch bc' ge cp' v Vtop)
+  /\ (forall v x, vge (Ifptr Nonstack) x -> vmatch bc v x -> vmatch bc' v Vtop)
   /\ genv_match bc' ge
-  /\ romatch bc' ge cp m rm
-  /\ mmatch bc' ge cp m mtop.
+  /\ romatch bc' m rm
+  /\ mmatch bc' m mtop.
 Proof.
   intros until am; intros GENV RO MM SP NOLEAK.
 (* Part 1: constructing bc' *)
@@ -691,17 +675,17 @@ Proof.
   set (bc' := BC f F_stack F_glob). unfold f in bc'.
 
 (* Part 2: matching wrt bc' *)
-  assert (PM: forall cp' b ofs p, pge Nonstack p -> pmatch bc ge cp b ofs p -> pmatch bc' ge cp' b ofs Ptop).
+  assert (PM: forall b ofs p, pge Nonstack p -> pmatch bc b ofs p -> pmatch bc' b ofs Ptop).
   {
-    intros. assert (pmatch bc ge cp b ofs Nonstack) by (eapply pmatch_ge; eauto).
+    intros. assert (pmatch bc b ofs Nonstack) by (eapply pmatch_ge; eauto).
     inv H1. constructor; simpl; destruct (eq_block b sp); congruence.
   }
-  assert (VM: forall cp' v x, vge (Ifptr Nonstack) x -> vmatch bc ge cp v x -> vmatch bc' ge cp' v Vtop).
+  assert (VM: forall v x, vge (Ifptr Nonstack) x -> vmatch bc v x -> vmatch bc' v Vtop).
   {
     intros. apply vmatch_ifptr; intros. subst v.
     inv H0; inv H; eapply PM; eauto.
   }
-  assert (SM: forall b p, pge Nonstack p -> smatch bc ge cp m b p -> smatch bc' ge cp m b Ptop).
+  assert (SM: forall b p, pge Nonstack p -> smatch bc m b p -> smatch bc' m b Ptop).
   {
     intros. destruct H0 as [S1 S2]. split; intros.
     eapply VM with (x := Ifptr p). constructor; auto. eapply S1; eauto.
@@ -741,24 +725,24 @@ Qed.
 (** Construction 4: restore the stack after a public call *)
 
 Theorem return_from_public_call:
-  forall (caller callee: block_classification) bound sp ge cp e ae v m rm,
+  forall (caller callee: block_classification) bound sp ge e ae v m rm,
   bc_below caller bound ->
   callee sp = BCother ->
   caller sp = BCstack ->
   (forall b, Plt b bound -> b <> sp -> caller b = callee b) ->
   genv_match caller ge ->
-  ematch caller ge cp e ae ->
+  ematch caller e ae ->
   Ple bound (Mem.nextblock m) ->
-  vmatch callee ge cp v Vtop ->
-  romatch callee ge cp m rm ->
-  mmatch callee ge cp m mtop ->
+  vmatch callee v Vtop ->
+  romatch callee m rm ->
+  mmatch callee m mtop ->
   genv_match callee ge ->
   bc_nostack callee ->
   exists bc,
-      vmatch bc ge cp v Vtop
-   /\ ematch bc ge cp e ae
-   /\ romatch bc ge cp m rm
-   /\ mmatch bc ge cp m mafter_public_call
+      vmatch bc v Vtop
+   /\ ematch bc e ae
+   /\ romatch bc m rm
+   /\ mmatch bc m mafter_public_call
    /\ genv_match bc ge
    /\ bc sp = BCstack
    /\ (forall b, Plt b sp -> bc b = caller b).
@@ -785,17 +769,17 @@ Proof.
     symmetry; apply SAME; auto.
   }
 (* Invariance properties *)
-  assert (PM: forall b ofs p, pmatch callee ge cp b ofs p -> pmatch bc ge cp b ofs Ptop).
+  assert (PM: forall b ofs p, pmatch callee b ofs p -> pmatch bc b ofs Ptop).
   {
-    intros. assert (pmatch callee ge cp b ofs Ptop) by (eapply pmatch_top'; eauto).
+    intros. assert (pmatch callee b ofs Ptop) by (eapply pmatch_top'; eauto).
     inv H0. constructor; simpl. destruct (eq_block b sp); congruence.
   }
-  assert (VM: forall v x, vmatch callee ge cp v x -> vmatch bc ge cp v Vtop).
+  assert (VM: forall v x, vmatch callee v x -> vmatch bc v Vtop).
   {
-    intros. assert (vmatch callee ge cp v0 Vtop) by (eapply vmatch_top; eauto).
+    intros. assert (vmatch callee v0 Vtop) by (eapply vmatch_top; eauto).
     inv H0; constructor; eauto.
   }
-  assert (SM: forall b p, smatch callee ge cp m b p -> smatch bc ge cp m b Ptop).
+  assert (SM: forall b p, smatch callee m b p -> smatch bc m b Ptop).
   {
     intros. destruct H; split; intros. eapply VM; eauto. eapply PM; eauto.
   }
@@ -842,25 +826,25 @@ Qed.
 (** Construction 5: restore the stack after a private call *)
 
 Theorem return_from_private_call:
-  forall (caller callee: block_classification) bound sp ge cp e ae v m rm am,
+  forall (caller callee: block_classification) bound sp ge e ae v m rm am,
   bc_below caller bound ->
   callee sp = BCinvalid ->
   caller sp = BCstack ->
   (forall b, Plt b bound -> b <> sp -> caller b = callee b) ->
   genv_match caller ge ->
-  ematch caller ge cp e ae ->
-  bmatch caller ge cp m sp am.(am_stack) ->
+  ematch caller e ae ->
+  bmatch caller m sp am.(am_stack) ->
   Ple bound (Mem.nextblock m) ->
-  vmatch callee ge cp v Vtop ->
-  romatch callee ge cp m rm ->
-  mmatch callee ge cp m mtop ->
+  vmatch callee v Vtop ->
+  romatch callee m rm ->
+  mmatch callee m mtop ->
   genv_match callee ge ->
   bc_nostack callee ->
   exists bc,
-      vmatch bc ge cp v (Ifptr Nonstack)
-   /\ ematch bc ge cp e ae
-   /\ romatch bc ge cp m rm
-   /\ mmatch bc ge cp m (mafter_private_call am)
+      vmatch bc v (Ifptr Nonstack)
+   /\ ematch bc e ae
+   /\ romatch bc m rm
+   /\ mmatch bc m (mafter_private_call am)
    /\ genv_match bc ge
    /\ bc sp = BCstack
    /\ (forall b, Plt b sp -> bc b = caller b).
@@ -892,21 +876,21 @@ Proof.
   }
 
 (* Invariance properties *)
-  assert (PM: forall b ofs p, pmatch callee ge cp b ofs p -> pmatch bc ge cp b ofs Nonstack).
+  assert (PM: forall b ofs p, pmatch callee b ofs p -> pmatch bc b ofs Nonstack).
   {
-    intros. assert (pmatch callee ge cp b ofs Ptop) by (eapply pmatch_top'; eauto).
+    intros. assert (pmatch callee b ofs Ptop) by (eapply pmatch_top'; eauto).
     inv H0. constructor; simpl; destruct (eq_block b sp); congruence.
   }
-  assert (VM: forall v x, vmatch callee ge cp v x -> vmatch bc ge cp v (Ifptr Nonstack)).
+  assert (VM: forall v x, vmatch callee v x -> vmatch bc v (Ifptr Nonstack)).
   {
-    intros. assert (vmatch callee ge cp v0 Vtop) by (eapply vmatch_top; eauto).
+    intros. assert (vmatch callee v0 Vtop) by (eapply vmatch_top; eauto).
     inv H0; constructor; eauto.
   }
-  assert (SM: forall b p, smatch callee ge cp m b p -> smatch bc ge cp m b Nonstack).
+  assert (SM: forall b p, smatch callee m b p -> smatch bc m b Nonstack).
   {
     intros. destruct H; split; intros. eapply VM; eauto. eapply PM; eauto.
   }
-  assert (BSTK: bmatch bc ge cp m sp (am_stack am)).
+  assert (BSTK: bmatch bc m sp (am_stack am)).
   {
     apply bmatch_incr with caller; eauto.
   }
@@ -952,36 +936,36 @@ Qed.
 
 Theorem external_call_match:
   forall ef (ge: genv) cp vargs m t vres m' bc rm am,
-  external_call ef ge vargs m t vres m' ->
+  external_call ef ge cp vargs m t vres m' ->
   genv_match bc ge ->
-  (forall v, In v vargs -> vmatch bc ge cp v Vtop) ->
-  romatch bc ge cp m rm ->
-  mmatch bc ge cp m am ->
+  (forall v, In v vargs -> vmatch bc v Vtop) ->
+  romatch bc m rm ->
+  mmatch bc m am ->
   bc_nostack bc ->
   exists bc',
      bc_incr bc bc'
   /\ (forall b, Plt b (Mem.nextblock m) -> bc' b = bc b)
-  /\ vmatch bc' ge cp vres Vtop
+  /\ vmatch bc' vres Vtop
   /\ genv_match bc' ge
-  /\ romatch bc' ge cp m' rm
-  /\ mmatch bc' ge cp m' mtop
+  /\ romatch bc' m' rm
+  /\ mmatch bc' m' mtop
   /\ bc_nostack bc'
   /\ (forall b ofs n cp,
       Mem.valid_block m b ->
-      (* forall OWN : Mem.can_access_block m b cp, *)
+      (* Mem.can_access_block m b cp -> *)
       bc b = BCinvalid ->
       Mem.loadbytes m' b ofs n cp = Mem.loadbytes m b ofs n cp).
 Proof.
   intros until am; intros EC GENV ARGS RO MM NOSTACK.
   (* Part 1: using ec_mem_inject *)
-  exploit (@external_call_mem_inject ef _ _ ge vargs m t vres m' (inj_of_bc bc) m vargs).
+  exploit (@external_call_mem_inject ef _ _ ge _ cp vargs m t vres m' (inj_of_bc bc) m vargs).
   apply inj_of_bc_preserves_globals; auto.
   exact EC.
   eapply mmatch_inj; eauto. eapply mmatch_below; eauto.
   revert ARGS. generalize vargs.
   induction vargs0; simpl; intros; constructor.
   eapply vmatch_inj; eauto. auto.
-  intros (j' & vres' & m'' & EC' & IRES & IMEM & UNCH1 & UNCH2 & IINCR & ISEP & _).
+  intros (j' & vres' & m'' & EC' & IRES & IMEM & UNCH1 & UNCH2 & IINCR & ISEP).
   assert (JBELOW: forall b, Plt b (Mem.nextblock m) -> j' b = inj_of_bc bc b).
   {
     intros. destruct (inj_of_bc bc b) as [[b' delta] | ] eqn:EQ.
@@ -1020,18 +1004,18 @@ Proof.
   }
 
   (* Part 3: injection wrt j' implies matching with top wrt bc' *)
-  assert (PMTOP: forall b b' delta ofs, j' b = Some (b', delta) -> pmatch bc' ge cp b ofs Ptop).
+  assert (PMTOP: forall b b' delta ofs, j' b = Some (b', delta) -> pmatch bc' b ofs Ptop).
   {
     intros. constructor. simpl; unfold f.
     destruct (plt b (Mem.nextblock m)).
     rewrite JBELOW in H by auto. eapply inj_of_bc_inv; eauto.
     rewrite H; congruence.
   }
-  assert (VMTOP: forall v v', Val.inject j' v v' -> vmatch bc' ge cp v Vtop).
+  assert (VMTOP: forall v v', Val.inject j' v v' -> vmatch bc' v Vtop).
   {
     intros. inv H; constructor. eapply PMTOP; eauto.
   }
-  assert (SMTOP: forall b, bc' b <> BCinvalid -> smatch bc' ge cp m' b Ptop).
+  assert (SMTOP: forall b, bc' b <> BCinvalid -> smatch bc' m' b Ptop).
   {
     intros; split; intros.
   - exploit BC'INV; eauto. intros (b' & delta & J').
@@ -1081,14 +1065,8 @@ Proof.
   destruct (j' b); congruence.
 - (* unmapped blocks are invariant *)
   intros.
-  destruct (Mem.can_access_block_dec m b cp0) eqn:e.
   eapply Mem.loadbytes_unchanged_on_1; auto.
   apply UNCH1; auto. intros; red. unfold inj_of_bc; rewrite H0; auto.
-  destruct (Mem.can_access_block_dec m' b cp0) eqn:e'.
-  eapply Mem.unchanged_on_own in UNCH1; eauto. clear e'. eapply (proj2 UNCH1) in c. contradiction.
-  Local Transparent Mem.loadbytes. unfold Mem.loadbytes.
-  rewrite e, e'. simpl. rewrite 2!andb_false_r. reflexivity.
-  Local Opaque Mem.loadbytes.
 Qed.
 
 (** ** Semantic invariant *)
@@ -1113,8 +1091,8 @@ Inductive sound_stack: block_classification -> list stackframe -> mem -> block -
         (SAME: forall b, Plt b bound' -> b <> sp -> bc b = bc' b)
         (GE: genv_match bc' ge)
         (AN: VA.ge (analyze rm f)!!pc (VA.State (AE.set res Vtop ae) mafter_public_call))
-        (EM: ematch bc' ge (comp_of f) e ae)
-        (ACC: Mem.can_access_block m sp (Some (comp_of f))),
+        (EM: ematch bc' e ae)
+        (ACC: Mem.can_access_block m sp (comp_of f)),
       sound_stack bc (Stackframe res ty f (Vptr sp Ptrofs.zero) pc e :: stk) m bound
   | sound_stack_private_call:
      forall (bc: block_classification) res ty f sp pc e stk m bound bc' bound' ae am
@@ -1126,9 +1104,9 @@ Inductive sound_stack: block_classification -> list stackframe -> mem -> block -
         (SAME: forall b, Plt b bound' -> b <> sp -> bc b = bc' b)
         (GE: genv_match bc' ge)
         (AN: VA.ge (analyze rm f)!!pc (VA.State (AE.set res (Ifptr Nonstack) ae) (mafter_private_call am)))
-        (EM: ematch bc' ge (comp_of f) e ae)
-        (ACC: Mem.can_access_block m sp (Some (comp_of f)))
-        (CONTENTS: bmatch bc' ge (comp_of f) m sp am.(am_stack)),
+        (EM: ematch bc' e ae)
+        (ACC: Mem.can_access_block m sp (comp_of f))
+        (CONTENTS: bmatch bc' m sp am.(am_stack)),
       sound_stack bc (Stackframe res ty f (Vptr sp Ptrofs.zero) pc e :: stk) m bound.
 
 Inductive sound_state_base: state -> Prop :=
@@ -1136,28 +1114,28 @@ Inductive sound_state_base: state -> Prop :=
       forall s f sp pc e m ae am bc
         (STK: sound_stack bc s m sp)
         (AN: (analyze rm f)!!pc = VA.State ae am)
-        (EM: ematch bc ge (comp_of f) e ae)
-        (RO: romatch bc ge (comp_of f) m rm)
-        (MM: mmatch bc ge (comp_of f) m am)
+        (EM: ematch bc e ae)
+        (RO: romatch bc m rm)
+        (MM: mmatch bc m am)
         (GE: genv_match bc ge)
         (SP: bc sp = BCstack)
-        (ACC: Mem.can_access_block m sp (Some (comp_of f))),
+        (ACC: Mem.can_access_block m sp (comp_of f)),
       sound_state_base (State s f (Vptr sp Ptrofs.zero) pc e m)
   | sound_call_state:
-      forall s fd args m bc cp
+      forall s fd args m cp bc
         (STK: sound_stack bc s m (Mem.nextblock m))
-        (ARGS: forall v, In v args -> vmatch bc ge (comp_of fd) v Vtop)
-        (RO: romatch bc ge cp m rm)
-        (MM: mmatch bc ge cp m mtop)
+        (ARGS: forall v, In v args -> vmatch bc v Vtop)
+        (RO: romatch bc m rm)
+        (MM: mmatch bc m mtop)
         (GE: genv_match bc ge)
         (NOSTK: bc_nostack bc),
-      sound_state_base (Callstate s fd args m)
+      sound_state_base (Callstate s fd args m cp)
   | sound_return_state:
       forall s v m cp bc
         (STK: sound_stack bc s m (Mem.nextblock m))
-        (RES: vmatch bc ge cp v  Vtop)
-        (RO: romatch bc ge cp m rm)
-        (MM: mmatch bc ge cp m mtop)
+        (RES: vmatch bc v Vtop)
+        (RO: romatch bc m rm)
+        (MM: mmatch bc m mtop)
         (GE: genv_match bc ge)
         (NOSTK: bc_nostack bc),
       sound_state_base (Returnstate s v m cp).
@@ -1203,15 +1181,15 @@ Proof.
 Qed.
 
 Lemma sound_stack_storev:
-  forall chunk m addr v cp cp' m' bc aaddr stk bound,
-  Mem.storev chunk m addr v cp' = Some m' ->
-  vmatch bc ge cp addr aaddr ->
+  forall chunk m addr v cp m' bc aaddr stk bound,
+  Mem.storev chunk m addr v cp = Some m' ->
+  vmatch bc addr aaddr ->
   sound_stack bc stk m bound ->
   sound_stack bc stk m' bound.
 Proof.
   intros. apply sound_stack_inv with m; auto.
   destruct addr; simpl in H; try discriminate.
-  assert (A: pmatch bc ge cp b i Ptop).
+  assert (A: pmatch bc b i Ptop).
   { inv H0; eapply pmatch_top'; eauto. }
   inv A.
   intros. eapply Mem.loadbytes_store_other; eauto. left; congruence.
@@ -1220,14 +1198,14 @@ Proof.
 Qed.
 
 Lemma sound_stack_storebytes:
-  forall m b ofs bytes cp cp' m' bc aaddr stk bound,
-  Mem.storebytes m b (Ptrofs.unsigned ofs) bytes cp' = Some m' ->
-  vmatch bc ge cp (Vptr b ofs) aaddr ->
+  forall m b ofs bytes cp m' bc aaddr stk bound,
+  Mem.storebytes m b (Ptrofs.unsigned ofs) bytes cp = Some m' ->
+  vmatch bc (Vptr b ofs) aaddr ->
   sound_stack bc stk m bound ->
   sound_stack bc stk m' bound.
 Proof.
   intros. apply sound_stack_inv with m; auto.
-  assert (A: pmatch bc ge cp b ofs Ptop).
+  assert (A: pmatch bc b ofs Ptop).
   { inv H0; eapply pmatch_top'; eauto. }
   inv A.
   intros. eapply Mem.loadbytes_storebytes_other; eauto. left; congruence.
@@ -1283,13 +1261,13 @@ Lemma sound_succ_state:
   f.(fn_code)!pc = Some instr ->
   In pc' (successors_instr instr) ->
   transfer f rm pc ae am = VA.State ae' am' ->
-  ematch bc ge (comp_of f) e' ae' ->
-  mmatch bc ge (comp_of f) m' am' ->
-  romatch bc ge (comp_of f) m' rm ->
+  ematch bc e' ae' ->
+  mmatch bc m' am' ->
+  romatch bc m' rm ->
   genv_match bc ge ->
   bc sp = BCstack ->
   sound_stack bc s m' sp ->
-  Mem.can_access_block m' sp (Some (comp_of f)) ->
+  Mem.can_access_block m' sp (comp_of f) ->
   sound_state_base (State s f (Vptr sp Ptrofs.zero) pc' e' m').
 Proof.
   intros. exploit analyze_succ; eauto. intros (ae'' & am'' & AN & EM & MM).
@@ -1337,7 +1315,7 @@ Proof.
   exploit analyze_successor; eauto. simpl; eauto. rewrite TR. intros SUCC.
   exploit hide_stack; eauto. apply pincl_ge; auto.
   intros (bc' & A & B & C & D & E & F & G).
-  apply sound_call_state with bc' (comp_of f); auto.
+  apply sound_call_state with bc'; auto.
   * eapply sound_stack_private_call with (bound' := Mem.nextblock m) (bc' := bc); eauto.
     apply Ple_refl.
     eapply mmatch_below; eauto.
@@ -1350,7 +1328,7 @@ Proof.
 + (* public call *)
   exploit analyze_successor; eauto. simpl; eauto. rewrite TR. intros SUCC.
   exploit anonymize_stack; eauto. intros (bc' & A & B & C & D & E & F & G).
-  apply sound_call_state with bc' (comp_of f); auto.
+  apply sound_call_state with bc'; auto.
   * eapply sound_stack_public_call with (bound' := Mem.nextblock m) (bc' := bc); eauto.
     apply Ple_refl.
     eapply mmatch_below; eauto.
@@ -1359,7 +1337,7 @@ Proof.
 
 - (* tailcall *)
   exploit anonymize_stack; eauto. intros (bc' & A & B & C & D & E & F & G).
-  apply sound_call_state with bc' (comp_of f); auto.
+  apply sound_call_state with bc'; auto.
   erewrite Mem.nextblock_free by eauto.
   apply sound_stack_new_bound with stk.
   apply sound_stack_exten with bc.
@@ -1382,7 +1360,7 @@ Proof.
                (State s f (Vptr sp0 Ptrofs.zero) pc' (regmap_setres res vres rs) m')).
   { unfold transfer_builtin_default, analyze_call; intros TR'.
   set (aargs := map (abuiltin_arg ae am rm) args) in *.
-  assert (ARGS: list_forall2 (vmatch bc ge (comp_of f)) vargs aargs) by (eapply abuiltin_args_sound; eauto).
+  assert (ARGS: list_forall2 (vmatch bc) vargs aargs) by (eapply abuiltin_args_sound; eauto).
   destruct (pincl (am_nonstack am) Nonstack &&
             forallb (fun av => vpincl av Nonstack) aargs)
         eqn: NOLEAK.
@@ -1399,7 +1377,7 @@ Proof.
   rewrite K; auto.
   intros. rewrite K; auto. rewrite C; auto.
   apply bmatch_inv with m. eapply mmatch_stack; eauto.
-  intros. apply Q; auto.
+  intros. apply Q; eauto.
   eapply external_call_nextblock; eauto.
   intros (bc3 & U & V & W & X & Y & Z & AA).
   eapply sound_succ_state with (bc := bc3); eauto. simpl; auto.
@@ -1449,8 +1427,8 @@ Proof.
   apply set_builtin_res_sound; auto.
   inv H2.
   * (* true volatile access *)
-    assert (V: vmatch bc ge (comp_of f) v (Ifptr Glob)).
-    { inv H3; simpl in *; constructor. econstructor. eapply GE; eauto. }
+    assert (V: vmatch bc v (Ifptr Glob)).
+    { inv H4; simpl in *; constructor. econstructor. eapply GE; eauto. }
     destruct (va_strict tt). apply vmatch_lub_r. apply vnormalize_sound. auto.
     apply vnormalize_sound. eapply vmatch_ge; eauto. constructor. constructor.
   * (* normal memory access *)
@@ -1521,9 +1499,9 @@ Proof.
   eapply mmatch_free; eauto.
 
 - (* internal function *)
-  exploit allocate_stack; eauto. admit. admit.
+  exploit allocate_stack; eauto.
   intros (bc' & A & B & C & D & E & F & G).
-  exploit (analyze_entrypoint ge rm f args m' bc'); eauto.
+  exploit (analyze_entrypoint rm f args m' bc'); eauto.
   intros (ae & am & AN & EM & MM').
   econstructor; eauto.
   erewrite Mem.alloc_result by eauto.
@@ -1532,10 +1510,10 @@ Proof.
   intros. eapply Mem.loadbytes_alloc_unchanged; eauto.
   intros. eapply Mem.alloc_can_access_block_other_inj_1; eauto.
   intros. apply F. erewrite Mem.alloc_result by eauto. auto.
-  eapply Mem.owned_new_block; eauto.
+  simpl. erewrite Mem.owned_new_block; eauto. now apply flowsto_refl.
 
 - (* external function *)
-  exploit external_call_match; eauto with va. admit. admit.
+  exploit external_call_match; eauto with va.
   intros (bc' & A & B & C & D & E & F & G & K).
   econstructor; eauto.
   apply sound_stack_new_bound with (Mem.nextblock m).
@@ -1548,21 +1526,21 @@ Proof.
   inv STK.
   + (* from public call *)
    exploit return_from_public_call; eauto.
-   intros; rewrite SAME; auto. admit. admit. admit.
+   intros; rewrite SAME; auto.
    intros (bc1 & A & B & C & D & E & F & G).
    destruct (analyze rm f)#pc as [ |ae' am'] eqn:EQ; simpl in AN; try contradiction. destruct AN as [A1 A2].
    eapply sound_regular_state with (bc := bc1); eauto.
    apply sound_stack_exten with bc'; auto.
-   eapply ematch_ge; eauto. apply ematch_update. auto. eauto.
+   eapply ematch_ge; eauto. apply ematch_update. auto. auto.
   + (* from private call *)
    exploit return_from_private_call; eauto.
-   intros; rewrite SAME; auto. admit. admit. admit.
+   intros; rewrite SAME; auto.
    intros (bc1 & A & B & C & D & E & F & G).
    destruct (analyze rm f)#pc as [ |ae' am'] eqn:EQ; simpl in AN; try contradiction. destruct AN as [A1 A2].
    eapply sound_regular_state with (bc := bc1); eauto.
    apply sound_stack_exten with bc'; auto.
-   eapply ematch_ge; eauto. apply ematch_update. auto. eauto.
-Admitted.
+   eapply ematch_ge; eauto. apply ematch_update. auto. auto.
+Qed.
 
 End SOUNDNESS.
 
@@ -1700,8 +1678,8 @@ Qed.
 Lemma store_init_data_sound:
   forall m b p id cp m' ab,
   Genv.store_init_data ge m b p id cp = Some m' ->
-  bmatch bc ge cp m b ab ->
-  bmatch bc ge cp m' b (store_init_data ab p id).
+  bmatch bc m b ab ->
+  bmatch bc m' b (store_init_data ab p id).
 Proof.
   intros. destruct id; try (eapply ablock_store_sound; eauto; constructor).
 - (* float32 *)
@@ -1712,15 +1690,14 @@ Proof.
   simpl in H. inv H. auto.
 - (* addrof *)
   simpl in H. destruct (Genv.find_symbol ge i) as [b'|] eqn:FS; try discriminate.
-  eapply ablock_store_sound; eauto. constructor. constructor. auto.
-  admit. apply GMATCH; auto.
-Admitted.
+  eapply ablock_store_sound; eauto. constructor. constructor. apply GMATCH; auto.
+Qed.
 
 Lemma store_init_data_list_sound:
   forall idl m b p cp m' ab,
   Genv.store_init_data_list ge m b p idl cp = Some m' ->
-  bmatch bc ge cp m b ab ->
-  bmatch bc ge cp m' b (store_init_data_list ab p idl).
+  bmatch bc m b ab ->
+  bmatch bc m' b (store_init_data_list ab p idl).
 Proof.
   induction idl; simpl; intros.
 - inv H; auto.
@@ -1732,8 +1709,8 @@ Lemma store_init_data_other:
   forall m b p id cp m' ab b',
   Genv.store_init_data ge m b p id cp = Some m' ->
   b' <> b ->
-  bmatch bc ge cp m b' ab ->
-  bmatch bc ge cp m' b' ab.
+  bmatch bc m b' ab ->
+  bmatch bc m' b' ab.
 Proof.
   intros. eapply bmatch_inv; eauto.
   intros. destruct id; try (eapply Mem.loadbytes_store_other; eauto; fail); simpl in H.
@@ -1746,8 +1723,8 @@ Lemma store_init_data_list_other:
   forall b b' ab idl cp m p m',
   Genv.store_init_data_list ge m b p idl cp = Some m' ->
   b' <> b ->
-  bmatch bc ge cp m b' ab ->
-  bmatch bc ge cp m' b' ab.
+  bmatch bc m b' ab ->
+  bmatch bc m' b' ab.
 Proof.
   induction idl; simpl; intros.
   inv H; auto.
@@ -1758,8 +1735,8 @@ Qed.
 Lemma store_zeros_same:
   forall p m b pos n cp m',
   store_zeros m b pos n cp = Some m' ->
-  smatch bc ge cp m b p ->
-  smatch bc ge cp m' b p.
+  smatch bc m b p ->
+  smatch bc m' b p.
 Proof.
   intros until cp. functional induction (store_zeros m b pos n cp); intros.
 - inv H. auto.
@@ -1772,8 +1749,8 @@ Lemma store_zeros_other:
   forall b' ab m b p n cp m',
   store_zeros m b p n cp = Some m' ->
   b' <> b ->
-  bmatch bc ge cp m b' ab ->
-  bmatch bc ge cp m' b' ab.
+  bmatch bc m b' ab ->
+  bmatch bc m' b' ab.
 Proof.
   intros until cp. functional induction (store_zeros m b p n cp); intros.
 - inv H. auto.
@@ -1782,18 +1759,18 @@ Proof.
 - discriminate.
 Qed.
 
-Definition initial_mem_match (bc: block_classification) (m: mem) (g: genv) (cp: compartment) :=
+Definition initial_mem_match (bc: block_classification) (m: mem) (g: genv) :=
   forall id b v,
   Genv.find_symbol g id = Some b -> Genv.find_var_info g b = Some v ->
   v.(gvar_volatile) = false -> v.(gvar_readonly) = true ->
-  bmatch bc g cp m b (store_init_data_list (ablock_init Pbot) 0 v.(gvar_init)).
+  bmatch bc m b (store_init_data_list (ablock_init Pbot) 0 v.(gvar_init)).
 
 Lemma alloc_global_match:
-  forall m g cp idg m',
+  forall m g idg m',
   Genv.genv_next g = Mem.nextblock m ->
-  initial_mem_match bc m g cp ->
+  initial_mem_match bc m g ->
   Genv.alloc_global ge m idg = Some m' ->
-  initial_mem_match bc m' (Genv.add_global g idg) cp.
+  initial_mem_match bc m' (Genv.add_global g idg).
 Proof.
   intros; red; intros. destruct idg as [id1 [fd |gv]]; simpl in *.
 - destruct (Mem.alloc m _ 0 1) as [m1 b1] eqn:ALLOC.
@@ -1806,9 +1783,8 @@ Proof.
   assert (Mem.valid_block m b) by (red; rewrite <- H; auto).
   assert (b <> b1) by (apply Mem.valid_not_valid_diff with m; eauto with mem).
   apply bmatch_inv with m.
-  admit.
-  (* eapply H0; eauto. *)
-  intros. transitivity (Mem.loadbytes m1 b ofs n0 cp').
+  eapply H0; eauto.
+  intros. transitivity (Mem.loadbytes m1 b ofs n0 cp).
   eapply Mem.loadbytes_drop; eauto.
   eapply Mem.loadbytes_alloc_unchanged; eauto.
 - set (sz := init_data_list_size (gvar_init gv)) in *.
@@ -1823,13 +1799,12 @@ Proof.
   assert (b = b1). { erewrite Mem.alloc_result by eauto. congruence. }
   clear EQ. subst b.
   apply bmatch_inv with m3.
-  admit.
-  (* eapply store_init_data_list_sound; eauto. *)
-  (* apply ablock_init_sound. *)
-  (* eapply store_zeros_same; eauto. *)
-  (* split; intros. *)
-  (* exploit Mem.load_alloc_same; eauto. intros EQ; subst v; constructor. *)
-  (* exploit Mem.loadbytes_alloc_same; eauto with coqlib. congruence. *)
+  eapply store_init_data_list_sound; eauto.
+  apply ablock_init_sound.
+  eapply store_zeros_same; eauto.
+  split; intros.
+  exploit Mem.load_alloc_same; eauto. intros EQ; subst v; constructor.
+  exploit Mem.loadbytes_alloc_same; eauto with coqlib. congruence.
   intros. eapply Mem.loadbytes_drop; eauto.
   right; right; right. unfold Genv.perm_globvar. rewrite H4, H5. constructor.
 + assert (Plt b (Genv.genv_next g)) by (eapply Genv.genv_symb_range; eauto).
@@ -1837,21 +1812,20 @@ Proof.
   assert (Mem.valid_block m b) by (red; rewrite <- H; auto).
   assert (b <> b1) by (apply Mem.valid_not_valid_diff with m; eauto with mem).
   apply bmatch_inv with m3.
-  admit.
-  (* eapply store_init_data_list_other; eauto. *)
-  (* eapply store_zeros_other; eauto. *)
-  (* apply bmatch_inv with m. *)
-  (* eapply H0; eauto. *)
-  (* intros. eapply Mem.loadbytes_alloc_unchanged; eauto. *)
+  eapply store_init_data_list_other; eauto.
+  eapply store_zeros_other; eauto.
+  apply bmatch_inv with m.
+  eapply H0; eauto.
+  intros. eapply Mem.loadbytes_alloc_unchanged; eauto.
   intros. eapply Mem.loadbytes_drop; eauto.
-Admitted.
+Qed.
 
 Lemma alloc_globals_match:
-  forall gl m g cp m',
+  forall gl m g m',
   Genv.genv_next g = Mem.nextblock m ->
-  initial_mem_match bc m g cp ->
+  initial_mem_match bc m g ->
   Genv.alloc_globals ge m gl = Some m' ->
-  initial_mem_match bc m' (Genv.add_globals g gl) cp.
+  initial_mem_match bc m' (Genv.add_globals g gl).
 Proof.
   induction gl; simpl; intros.
 - inv H1; auto.
@@ -1922,14 +1896,14 @@ Theorem initial_mem_matches:
      genv_match bc ge
   /\ bc_below bc (Mem.nextblock m)
   /\ bc_nostack bc
-  /\ (forall cp cunit, linkorder cunit prog -> romatch bc ge cp m (romem_for cunit))
+  /\ (forall cunit, linkorder cunit prog -> romatch bc m (romem_for cunit))
   /\ (forall b, Mem.valid_block m b -> bc b <> BCinvalid).
 Proof.
   intros.
   exploit initial_block_classification; eauto. intros (bc & GE & BELOW & NOSTACK & INV & VALID).
   exists bc; splitall; auto.
   intros.
-  assert (A: initial_mem_match bc m ge cp).
+  assert (A: initial_mem_match bc m ge).
   {
     apply alloc_globals_match with (m := Mem.empty); auto.
     red. unfold Genv.find_symbol; simpl; intros. rewrite PTree.gempty in H1; discriminate.
@@ -1958,7 +1932,7 @@ Theorem sound_initial:
 Proof.
   destruct 1.
   exploit initial_mem_matches; eauto. intros (bc & GE & BELOW & NOSTACK & RM & VALID).
-  constructor; intros. apply sound_call_state with bc (comp_of f).
+  constructor; intros. apply sound_call_state with bc.
 - constructor.
 - simpl; tauto.
 - apply RM; auto.
@@ -1994,7 +1968,7 @@ Lemma avalue_sound:
   sound_state prog (State s f (Vptr sp Ptrofs.zero) pc e m) ->
   linkorder cunit prog ->
   exists bc,
-     vmatch bc (Genv.globalenv prog) (comp_of f) e#r (avalue (analyze (romem_for cunit) f)!!pc r)
+     vmatch bc e#r (avalue (analyze (romem_for cunit) f)!!pc r)
   /\ genv_match bc (Genv.globalenv prog)
   /\ bc sp = BCstack.
 Proof.
@@ -2013,7 +1987,7 @@ Lemma aaddr_sound:
   linkorder cunit prog ->
   e#r = Vptr b ofs ->
   exists bc,
-     pmatch bc (Genv.globalenv prog) (comp_of f) b ofs (aaddr (analyze (romem_for cunit) f)!!pc r)
+     pmatch bc b ofs (aaddr (analyze (romem_for cunit) f)!!pc r)
   /\ genv_match bc (Genv.globalenv prog)
   /\ bc sp = BCstack.
 Proof.
@@ -2031,9 +2005,9 @@ Lemma aaddressing_sound:
   forall cunit prog s f sp pc e m addr args b ofs,
   sound_state prog (State s f (Vptr sp Ptrofs.zero) pc e m) ->
   linkorder cunit prog ->
-  eval_addressing (Genv.globalenv prog) (comp_of f) (Vptr sp Ptrofs.zero) addr e##args = Some (Vptr b ofs) ->
+  eval_addressing (Genv.globalenv prog) (Vptr sp Ptrofs.zero) addr e##args = Some (Vptr b ofs) ->
   exists bc,
-     pmatch bc (Genv.globalenv prog) (comp_of f) b ofs (aaddressing (analyze (romem_for cunit) f)!!pc addr args)
+     pmatch bc b ofs (aaddressing (analyze (romem_for cunit) f)!!pc addr args)
   /\ genv_match bc (Genv.globalenv prog)
   /\ bc sp = BCstack.
 Proof.
@@ -2058,14 +2032,14 @@ Definition aaddr_arg (a: VA.t) (ba: builtin_arg reg) : aptr :=
   end.
 
 Lemma aaddr_arg_sound_1:
-  forall cp bc rs ae m rm am ge sp a b ofs,
-  ematch bc ge cp rs ae ->
-  romatch bc ge cp m rm ->
-  mmatch bc ge cp m am ->
+  forall bc rs ae m rm am ge sp a b ofs,
+  ematch bc rs ae ->
+  romatch bc m rm ->
+  mmatch bc m am ->
   genv_match bc ge ->
   bc sp = BCstack ->
-  eval_builtin_arg ge (fun r : positive => rs # r) cp (Vptr sp Ptrofs.zero) m a (Vptr b ofs) ->
-  pmatch bc ge cp b ofs (aaddr_arg (VA.State ae am) a).
+  eval_builtin_arg ge (fun r : positive => rs # r) (Vptr sp Ptrofs.zero) m a (Vptr b ofs) ->
+  pmatch bc b ofs (aaddr_arg (VA.State ae am) a).
 Proof.
   intros.
   apply pmatch_ge with (aptr_of_aval (abuiltin_arg ae am rm a)).
@@ -2077,14 +2051,12 @@ Lemma aaddr_arg_sound:
   forall cunit prog s f sp pc e m a b ofs,
   sound_state prog (State s f (Vptr sp Ptrofs.zero) pc e m) ->
   linkorder cunit prog ->
-  eval_builtin_arg (Genv.globalenv prog) (fun r => e#r) (comp_of f) (Vptr sp Ptrofs.zero) m a (Vptr b ofs) ->
+  eval_builtin_arg (Genv.to_senv (Genv.globalenv prog)) (fun r => e#r) (Vptr sp Ptrofs.zero) m a (Vptr b ofs) ->
   exists bc,
-     pmatch bc (Genv.globalenv prog) (comp_of f) b ofs (aaddr_arg (analyze (romem_for cunit) f)!!pc a)
+     pmatch bc b ofs (aaddr_arg (analyze (romem_for cunit) f)!!pc a)
   /\ genv_match bc (Genv.globalenv prog)
   /\ bc sp = BCstack.
 Proof.
   intros. InvSoundState. rewrite AN. exists bc; split; auto.
   eapply aaddr_arg_sound_1; eauto.
 Qed.
-
-Global Hint Resolve areg_sound aregs_sound: va.

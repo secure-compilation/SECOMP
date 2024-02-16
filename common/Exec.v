@@ -47,6 +47,7 @@ Local Open Scope option_monad_scope.
 Section Exec.
 
 Variable F V: Type.
+Context {CF: has_comp F}.
 Variable ge: Genv.t F V.
 
 Definition eventval_of_val (v: val) (t: typ) : option eventval :=
@@ -97,14 +98,14 @@ Ltac mydestr :=
   end.
 
 Lemma eventval_of_val_sound:
-  forall v t ev, eventval_of_val v t = Some ev -> eventval_match ge ev t v.
+  forall v t ev, eventval_of_val v t = Some ev -> eventval_match (Genv.to_senv ge) ev t v.
 Proof.
   intros until ev. destruct v; simpl; mydestr; constructor.
   auto. apply Genv.invert_find_symbol; auto.
 Qed.
 
 Lemma eventval_of_val_complete:
-  forall ev t v, eventval_match ge ev t v -> eventval_of_val v t = Some ev.
+  forall ev t v, eventval_match (Genv.to_senv ge) ev t v -> eventval_of_val v t = Some ev.
 Proof.
   induction 1; simpl.
 - auto.
@@ -116,7 +117,7 @@ Proof.
 Qed.
 
 Lemma list_eventval_of_val_sound:
-  forall vl tl evl, list_eventval_of_val vl tl = Some evl -> eventval_list_match ge evl tl vl.
+  forall vl tl evl, list_eventval_of_val vl tl = Some evl -> eventval_list_match (Genv.to_senv ge) evl tl vl.
 Proof with try discriminate.
   induction vl; destruct tl; simpl; intros; inv H.
   constructor.
@@ -126,20 +127,20 @@ Proof with try discriminate.
 Qed.
 
 Lemma list_eventval_of_val_complete:
-  forall evl tl vl, eventval_list_match ge evl tl vl -> list_eventval_of_val vl tl = Some evl.
+  forall evl tl vl, eventval_list_match (Genv.to_senv ge) evl tl vl -> list_eventval_of_val vl tl = Some evl.
 Proof.
   induction 1; simpl. auto.
   rewrite (eventval_of_val_complete _ _ _ H). rewrite IHeventval_list_match. auto.
 Qed.
 
 Lemma val_of_eventval_sound:
-  forall ev t v, val_of_eventval ev t = Some v -> eventval_match ge ev t v.
+  forall ev t v, val_of_eventval ev t = Some v -> eventval_match (Genv.to_senv ge) ev t v.
 Proof.
   intros until v. destruct ev; simpl; mydestr; constructor; auto.
 Qed.
 
 Lemma val_of_eventval_complete:
-  forall ev t v, eventval_match ge ev t v -> val_of_eventval ev t = Some v.
+  forall ev t v, eventval_match (Genv.to_senv ge) ev t v -> val_of_eventval ev t = Some v.
 Proof.
   induction 1; simpl.
 - auto.
@@ -173,7 +174,7 @@ Lemma get_call_trace_eq:
 Proof.
   intros. split.
   - intros H. unfold get_call_trace.
-    inv H; simpl. destruct (Genv.type_of_call cp cp'); try congruence.
+    inv H. destruct (Genv.type_of_call cp cp'); try congruence.
     erewrite H0, H2, list_eventval_of_val_complete; eauto.
   - unfold get_call_trace.
     intros H.
@@ -203,7 +204,7 @@ Lemma get_return_trace_eq:
 Proof.
   intros. split.
   - intros H. unfold get_return_trace.
-    inv H; simpl. destruct (Genv.type_of_call cp cp'); try congruence.
+    inv H. destruct (Genv.type_of_call cp cp'); try congruence.
     rewrite H0. rewrite (eventval_of_val_complete res); auto.
   - unfold get_return_trace.
     intros H.
@@ -222,21 +223,25 @@ Definition do_volatile_load (w: world) (chunk: memory_chunk) (cp: compartment) (
                              : option (world * trace * val) :=
   if Genv.block_is_volatile ge b then
     do id <- Genv.invert_symbol ge b;
+    check (flowsto_dec (Senv.find_comp (Genv.to_senv ge) id) cp);
     match nextworld_vload w chunk id ofs with
     | None => None
     | Some(res, w') =>
+        check (flowsto_dec (eventval_comp (Genv.to_senv ge) res) (Senv.find_comp (Genv.to_senv ge) id));
         do vres <- val_of_eventval res (type_of_chunk chunk);
         Some(w', Event_vload chunk id ofs res :: nil, Val.load_result chunk vres)
     end
   else
-    do v <- Mem.load chunk m b (Ptrofs.unsigned ofs) (Some cp);
+    do v <- Mem.load chunk m b (Ptrofs.unsigned ofs) cp;
     Some(w, E0, v).
 
 Definition do_volatile_store (w: world) (chunk: memory_chunk) (cp: compartment) (m: mem) (b: block) (ofs: ptrofs) (v: val)
                              : option (world * trace * mem * val) :=
   if Genv.block_is_volatile ge b then
     do id <- Genv.invert_symbol ge b;
+    check (flowsto_dec (Senv.find_comp (Genv.to_senv ge) id) cp);
     do ev <- eventval_of_val (Val.load_result chunk v) (type_of_chunk chunk);
+    check (flowsto_dec (eventval_comp (Genv.to_senv ge) ev) (Senv.find_comp (Genv.to_senv ge) id));
     do w' <- nextworld_vstore w chunk id ofs ev;
     Some(w', Event_vstore chunk id ofs ev :: nil, m, v)
   else
@@ -246,7 +251,7 @@ Definition do_volatile_store (w: world) (chunk: memory_chunk) (cp: compartment) 
 Lemma do_volatile_load_sound:
   forall w chunk cp m b ofs w' t v,
   do_volatile_load w chunk cp m b ofs = Some(w', t, v) ->
-  volatile_load ge cp chunk m b ofs t v /\ possible_trace w t w'.
+  volatile_load (Genv.to_senv ge) cp chunk m b ofs t v /\ possible_trace w t w'.
 Proof.
   intros until v. unfold do_volatile_load. mydestr.
   destruct p as [ev w'']. mydestr.
@@ -261,20 +266,22 @@ Proof.
 Qed.
 
 Lemma do_volatile_load_complete:
-  forall w chunk cp m b ofs w' t v,
-  volatile_load ge cp chunk m b ofs t v -> possible_trace w t w' ->
+  forall w chunk cp m b ofs w' t v ,
+  volatile_load (Genv.to_senv ge) cp chunk m b ofs t v -> possible_trace w t w' ->
   do_volatile_load w chunk cp m b ofs = Some(w', t, v).
 Proof.
   unfold do_volatile_load; intros. inv H; simpl in *.
-  rewrite H1. rewrite (Genv.find_invert_symbol _ _ H2). inv H0. inv H8. inv H6. rewrite H9.
-  rewrite (val_of_eventval_complete _ _ _ H3). auto.
+  rewrite H1. rewrite (Genv.find_invert_symbol _ _ H2). inv H0. inv H8. inv H10. rewrite H12.
+  destruct flowsto_dec; try congruence.
+  destruct flowsto_dec; try congruence.
+  rewrite (val_of_eventval_complete _ _ _ H4). auto.
   rewrite H1. rewrite H2. inv H0. auto.
 Qed.
 
 Lemma do_volatile_store_sound:
   forall w chunk cp m b ofs v w' t m' v',
   do_volatile_store w chunk cp m b ofs v = Some(w', t, m', v') ->
-  volatile_store ge cp chunk m b ofs v t m' /\ possible_trace w t w' /\ v' = v.
+  volatile_store (Genv.to_senv ge) cp chunk m b ofs v t m' /\ possible_trace w t w' /\ v' = v.
 Proof.
   intros until v'. unfold do_volatile_store. mydestr.
   split. constructor; auto. apply Genv.invert_find_symbol; auto.
@@ -287,68 +294,79 @@ Qed.
 
 Lemma do_volatile_store_complete:
   forall w chunk cp m b ofs v w' t m',
-  volatile_store ge cp chunk m b ofs v t m' -> possible_trace w t w' ->
+  volatile_store (Genv.to_senv ge) cp chunk m b ofs v t m' -> possible_trace w t w' ->
   do_volatile_store w chunk cp m b ofs v = Some(w', t, m', v).
 Proof.
   unfold do_volatile_store; intros. inv H; simpl in *.
   rewrite H1. rewrite (Genv.find_invert_symbol _ _ H2).
-  rewrite (eventval_of_val_complete _ _ _ H3).
-  inv H0. inv H8. inv H6. rewrite H9. auto.
+  rewrite (eventval_of_val_complete _ _ _ H4).
+  inv H0. inv H8. inv H10. rewrite H12.
+  destruct flowsto_dec; try congruence.
+  destruct flowsto_dec; try congruence.
+  auto.
   rewrite H1. rewrite H2. inv H0. auto.
 Qed.
-
 
 (** External calls *)
 
 Variable do_external_function:
-  string -> signature -> Senv.t -> world -> list val -> mem -> option (world * trace * val * mem).
+  string -> signature -> Senv.t -> compartment -> world -> list val -> mem -> option (world * trace * val * mem).
 
 Hypothesis do_external_function_sound:
-  forall id sg ge vargs m t vres m' w w',
-  do_external_function id sg ge w vargs m = Some(w', t, vres, m') ->
-  external_functions_sem id sg ge vargs m t vres m' /\ possible_trace w t w'.
+  forall id sg ge cp vargs m t vres m' w w',
+  do_external_function id sg ge cp w vargs m = Some(w', t, vres, m') ->
+  external_functions_sem id sg ge cp vargs m t vres m' /\ possible_trace w t w'.
 
 Hypothesis do_external_function_complete:
-  forall id sg ge vargs m t vres m' w w',
-  external_functions_sem id sg ge vargs m t vres m' ->
+  forall id sg ge cp vargs m t vres m' w w',
+  external_functions_sem id sg ge cp vargs m t vres m' ->
+(* ======= *)
+(*   forall cp id sg ge vargs m t vres m' w w', *)
+(*   do_external_function cp id sg ge w vargs m = Some(w', t, vres, m') -> *)
+(*   external_functions_sem id sg cp ge vargs m t vres m' /\ possible_trace w t w'. *)
+
+(* Hypothesis do_external_function_complete: *)
+(*   forall cp id sg ge vargs m t vres m' w w', *)
+(*   external_functions_sem id sg cp ge vargs m t vres m' -> *)
+(* >>>>>>> origin/apt_io_events *)
   possible_trace w t w' ->
-  do_external_function id sg ge w vargs m = Some(w', t, vres, m').
+  do_external_function id sg ge cp w vargs m = Some(w', t, vres, m').
 
 Variable do_inline_assembly:
-  compartment -> string -> signature -> Senv.t -> world -> list val -> mem -> option (world * trace * val * mem).
+ string -> signature -> Senv.t -> compartment -> world -> list val -> mem -> option (world * trace * val * mem).
 
 Hypothesis do_inline_assembly_sound:
-  forall cp txt sg ge vargs m t vres m' w w',
-  do_inline_assembly cp txt sg ge w vargs m = Some(w', t, vres, m') ->
-  inline_assembly_sem cp txt sg ge vargs m t vres m' /\ possible_trace w t w'.
+  forall txt sg ge cp vargs m t vres m' w w',
+  do_inline_assembly txt sg ge cp w vargs m = Some(w', t, vres, m') ->
+  inline_assembly_sem txt sg ge cp vargs m t vres m' /\ possible_trace w t w'.
 
 Hypothesis do_inline_assembly_complete:
-  forall cp txt sg ge vargs m t vres m' w w',
-  inline_assembly_sem cp txt sg ge vargs m t vres m' ->
+  forall txt sg ge cp vargs m t vres m' w w',
+  inline_assembly_sem txt sg ge cp vargs m t vres m' ->
   possible_trace w t w' ->
-  do_inline_assembly cp txt sg ge w vargs m = Some(w', t, vres, m').
+  do_inline_assembly txt sg ge cp w vargs m = Some(w', t, vres, m').
 
-Definition do_ef_volatile_load (cp: compartment) (chunk: memory_chunk)
-       (w: world) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
+Definition do_ef_volatile_load (chunk: memory_chunk)
+       (cp: compartment) (w: world) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
   match vargs with
   | Vptr b ofs :: nil => do w',t,v <- do_volatile_load w chunk cp m b ofs; Some(w',t,v,m)
   | _ => None
   end.
 
-Definition do_ef_volatile_store (cp: compartment) (chunk: memory_chunk)
-       (w: world) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
+Definition do_ef_volatile_store (chunk: memory_chunk)
+       (cp: compartment) (w: world) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
   match vargs with
   | Vptr b ofs :: v :: nil => do w',t,m',v' <- do_volatile_store w chunk cp m b ofs v; Some(w',t,Vundef,m')
   | _ => None
   end.
 
-Definition do_ef_volatile_load_global (cp: compartment) (chunk: memory_chunk) (id: ident) (ofs: ptrofs)
-       (w: world) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
-  do b <- Genv.find_symbol ge id; do_ef_volatile_load cp chunk w (Vptr b ofs :: vargs) m.
+Definition do_ef_volatile_load_global (chunk: memory_chunk) (id: ident) (ofs: ptrofs)
+       (cp: compartment) (w: world) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
+  do b <- Genv.find_symbol ge id; do_ef_volatile_load chunk cp w (Vptr b ofs :: vargs) m.
 
-Definition do_ef_volatile_store_global (cp: compartment) (chunk: memory_chunk) (id: ident) (ofs: ptrofs)
-       (w: world) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
-  do b <- Genv.find_symbol ge id; do_ef_volatile_store cp chunk w (Vptr b ofs :: vargs) m.
+Definition do_ef_volatile_store_global (chunk: memory_chunk) (id: ident) (ofs: ptrofs)
+       (cp: compartment) (w: world) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
+  do b <- Genv.find_symbol ge id; do_ef_volatile_store chunk cp w (Vptr b ofs :: vargs) m.
 
 Definition do_alloc_size (v: val) : option ptrofs :=
   match v with
@@ -372,7 +390,7 @@ Definition do_ef_free (cp: compartment)
        (w: world) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
   match vargs with
   | Vptr b lo :: nil =>
-      do vsz <- Mem.load Mptr m b (Ptrofs.unsigned lo - size_chunk Mptr) (Some cp);
+      do vsz <- Mem.load Mptr m b (Ptrofs.unsigned lo - size_chunk Mptr) cp;
       do sz <- do_alloc_size vsz;
       check (zlt 0 (Ptrofs.unsigned sz));
       do m' <- Mem.free m b (Ptrofs.unsigned lo - size_chunk Mptr) (Ptrofs.unsigned lo + Ptrofs.unsigned sz) cp;
@@ -396,72 +414,74 @@ Definition memcpy_args_ok
    /\ (sz > 0 -> (al | odst))
    /\ (bsrc <> bdst \/ osrc = odst \/ osrc + sz <= odst \/ odst + sz <= osrc).
 
-Definition do_ef_memcpy (cp: compartment) (sz al: Z)
-       (w: world) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
+Definition do_ef_memcpy (sz al: Z)
+       (cp: compartment) (w: world) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
   match vargs with
   | Vptr bdst odst :: Vptr bsrc osrc :: nil =>
       if decide (memcpy_args_ok sz al bdst (Ptrofs.unsigned odst) bsrc (Ptrofs.unsigned osrc)) then
-        do bytes <- Mem.loadbytes m bsrc (Ptrofs.unsigned osrc) sz (Some cp);
+        do bytes <- Mem.loadbytes m bsrc (Ptrofs.unsigned osrc) sz cp;
         do m' <- Mem.storebytes m bdst (Ptrofs.unsigned odst) bytes cp;
         Some(w, E0, Vundef, m')
       else None
   | _ => None
   end.
 
-Definition do_ef_annot (cp: compartment) (text: string) (targs: list typ)
-       (w: world) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
+Definition do_ef_annot (text: string) (targs: list typ)
+       (cp: compartment) (w: world) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
   do args <- list_eventval_of_val vargs targs;
+  check (forallb (fun ev => flowsto_dec (eventval_comp (Genv.to_senv ge) ev) cp)) args;
   Some(w, Event_annot text args :: E0, Vundef, m).
 
-Definition do_ef_annot_val (cp: compartment) (text: string) (targ: typ)
-       (w: world) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
+Definition do_ef_annot_val (text: string) (targ: typ)
+       (cp: compartment) (w: world) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
   match vargs with
   | varg :: nil =>
       do arg <- eventval_of_val varg targ;
+      check (flowsto_dec (eventval_comp (Genv.to_senv ge) arg) cp);
       Some(w, Event_annot text (arg :: nil) :: E0, varg, m)
   | _ => None
   end.
 
-Definition do_ef_debug (cp: compartment) (kind: positive) (text: ident) (targs: list typ)
-       (w: world) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
+Definition do_ef_debug (kind: positive) (text: ident) (targs: list typ)
+       (cp: compartment) (w: world) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
   Some(w, E0, Vundef, m).
 
-Definition do_builtin_or_external (name: string) (sg: signature)
+Definition do_builtin_or_external (name: string) (sg: signature) (cp: compartment)
        (w: world) (vargs: list val) (m: mem) : option (world * trace * val * mem) :=
   match lookup_builtin_function name sg with
   | Some bf => match builtin_function_sem bf vargs with Some v => Some(w, E0, v, m) | None => None end
-  | None    => do_external_function name sg ge w vargs m
+  | None    => do_external_function name sg (Genv.to_senv ge) cp w vargs m
   end.
 
 Definition do_external (ef: external_function):
-       world -> list val -> mem -> option (world * trace * val * mem) :=
+       compartment -> world -> list val -> mem -> option (world * trace * val * mem) :=
   match ef with
-  | EF_external cp name sg => do_external_function name sg ge
-  | EF_builtin cp name sg => do_builtin_or_external name sg
-  | EF_runtime cp name sg => do_builtin_or_external name sg
-  | EF_vload cp chunk => do_ef_volatile_load cp chunk
-  | EF_vstore cp chunk => do_ef_volatile_store cp chunk
-  | EF_malloc cp => do_ef_malloc cp
-  | EF_free cp => do_ef_free cp
-  | EF_memcpy cp sz al => do_ef_memcpy cp sz al
-  | EF_annot cp kind text targs => do_ef_annot cp text targs
-  | EF_annot_val cp kind text targ => do_ef_annot_val cp text targ
-  | EF_inline_asm cp text sg clob => do_inline_assembly cp text sg ge
-  | EF_debug cp kind text targs => do_ef_debug cp kind text targs
+  | EF_external name sg => do_external_function name sg (Genv.to_senv ge)
+  | EF_builtin name sg => do_builtin_or_external name sg
+  | EF_runtime name sg => do_builtin_or_external name sg
+  | EF_vload chunk => do_ef_volatile_load chunk
+  | EF_vstore chunk => do_ef_volatile_store chunk
+  | EF_malloc => do_ef_malloc
+  | EF_free => do_ef_free
+  | EF_memcpy sz al => do_ef_memcpy sz al
+  | EF_annot kind text targs => do_ef_annot text targs
+  | EF_annot_val kind text targ => do_ef_annot_val text targ
+  | EF_inline_asm text sg clob => do_inline_assembly text sg (Genv.to_senv ge)
+  | EF_debug kind text targs => do_ef_debug kind text targs
   end.
 
 Lemma do_ef_external_sound:
-  forall ef w vargs m w' t vres m',
-  do_external ef w vargs m = Some(w', t, vres, m') ->
-  external_call ef ge vargs m t vres m' /\ possible_trace w t w'.
+  forall ef cp w vargs m w' t vres m',
+  do_external ef cp w vargs m = Some(w', t, vres, m') ->
+  external_call ef (Genv.to_senv ge) cp vargs m t vres m' /\ possible_trace w t w'.
 Proof with try congruence.
   intros until m'.
   assert (SIZE: forall v sz, do_alloc_size v = Some sz -> v = Vptrofs sz).
   { intros until sz; unfold Vptrofs; destruct v; simpl; destruct Archi.ptr64 eqn:SF;
     intros EQ; inv EQ; f_equal; symmetry; eauto with ptrofs. }
   assert (BF_EX: forall name sg,
-    do_builtin_or_external name sg w vargs m = Some (w', t, vres, m') ->
-    builtin_or_external_sem name sg ge vargs m t vres m' /\ possible_trace w t w').
+    do_builtin_or_external name sg cp w vargs m = Some (w', t, vres, m') ->
+    builtin_or_external_sem name sg (Genv.to_senv ge) cp vargs m t vres m' /\ possible_trace w t w').
   { unfold do_builtin_or_external, builtin_or_external_sem; intros.
     destruct (lookup_builtin_function name sg ) as [bf|].
   - destruct (builtin_function_sem bf vargs) as [vres1|] eqn:BF; inv H.
@@ -506,10 +526,12 @@ Proof with try congruence.
 - (* EF_annot *)
   unfold do_ef_annot. mydestr.
   split. constructor. apply list_eventval_of_val_sound; auto.
+  rewrite forallb_forall in Heqb. rewrite Forall_forall.
+  intros. exploit Heqb; eauto. now destruct flowsto_dec; eauto.
   econstructor. constructor; eauto. constructor.
 - (* EF_annot_val *)
   unfold do_ef_annot_val. destruct vargs... destruct vargs... mydestr.
-  split. constructor. apply eventval_of_val_sound; auto.
+  split. constructor. apply eventval_of_val_sound; auto. auto.
   econstructor. constructor; eauto. constructor.
 - (* EF_inline_asm *)
   eapply do_inline_assembly_sound; eauto.
@@ -518,9 +540,9 @@ Proof with try congruence.
 Qed.
 
 Lemma do_ef_external_complete:
-  forall ef w vargs m w' t vres m',
-  external_call ef ge vargs m t vres m' -> possible_trace w t w' ->
-  do_external ef w vargs m = Some(w', t, vres, m').
+  forall ef cp w vargs m w' t vres m',
+  external_call ef (Genv.to_senv ge) cp vargs m t vres m' -> possible_trace w t w' ->
+  do_external ef cp w vargs m = Some(w', t, vres, m').
 Proof.
   intros.
   assert (SIZE: forall n, do_alloc_size (Vptrofs n) = Some n).
@@ -528,8 +550,8 @@ Proof.
     rewrite Ptrofs.of_int64_to_int64; auto.
     rewrite Ptrofs.of_int_to_int; auto. }
   assert (BF_EX: forall name sg,
-    builtin_or_external_sem name sg ge vargs m t vres m' ->
-    do_builtin_or_external name sg w vargs m = Some (w', t, vres, m')).
+    builtin_or_external_sem name sg (Genv.to_senv ge) cp vargs m t vres m' ->
+    do_builtin_or_external name sg cp w vargs m = Some (w', t, vres, m')).
   { unfold do_builtin_or_external, builtin_or_external_sem; intros.
     destruct (lookup_builtin_function name sg) as [bf|].
   - inv H1. inv H0. rewrite H2. auto.
@@ -560,11 +582,16 @@ Proof.
   inv H0. rewrite Decidable_complete. rewrite H7; rewrite H8; auto.
   red. tauto.
 - (* EF_annot *)
-  inv H; unfold do_ef_annot. inv H0. inv H6. inv H4.
-  rewrite (list_eventval_of_val_complete _ _ _ H1). auto.
+  inv H; unfold do_ef_annot. inv H0. inv H7. inv H5.
+  rewrite (list_eventval_of_val_complete _ _ _ H1).
+  rewrite Forall_forall in H2.
+  assert (H: forallb (fun ev : eventval => flowsto_dec (eventval_comp (Genv.to_senv ge) ev) cp) args = true).
+  { rewrite forallb_forall. intros. exploit H2; eauto. now destruct flowsto_dec; eauto. }
+  now rewrite H.
 - (* EF_annot_val *)
-  inv H; unfold do_ef_annot_val. inv H0. inv H6. inv H4.
-  rewrite (eventval_of_val_complete _ _ _ H1). auto.
+  inv H; unfold do_ef_annot_val. inv H0. inv H7. inv H5.
+  rewrite (eventval_of_val_complete _ _ _ H1).
+  now destruct flowsto_dec; auto.
 - (* EF_inline_asm *)
   eapply do_inline_assembly_complete; eauto.
 - (* EF_debug *)

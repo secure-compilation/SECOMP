@@ -260,7 +260,7 @@ let rec expr p (prec, e) =
   | Ebuiltin(EF_annot_val(_,txt, _), _, args, _) ->
       fprintf p "__builtin_annot_intval@[<hov 1>(%S%a)@]"
                 (camlstring_of_coqstring txt) exprlist (false, args)
-  | Ebuiltin(EF_external(id, _, sg), _, args, _) ->
+  | Ebuiltin(EF_external(id, sg), _, args, _) ->
       fprintf p "%s@[<hov 1>(%a)@]" (camlstring_of_coqstring id) exprlist (true, args)
   | Ebuiltin(EF_runtime(id, sg), _, args, _) ->
       fprintf p "%s@[<hov 1>(%a)@]" (camlstring_of_coqstring id) exprlist (true, args)

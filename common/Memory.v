@@ -66,7 +66,7 @@ Record mem' : Type := mkmem {
   mem_contents: PMap.t (ZMap.t memval);  (**r [block -> offset -> memval] *)
   mem_access: PMap.t (Z -> perm_kind -> option permission);
                                          (**r [block -> offset -> kind -> option permission] *)
-  mem_compartments: PTree.t compartment; (**r [block -> compartment] *)
+  mem_compartments: PMap.t (compartment); (**r [block -> compartment] *)
   nextblock: block;
   access_max:
     forall b ofs, perm_order'' (mem_access#b ofs Max) (mem_access#b ofs Cur);
@@ -75,7 +75,7 @@ Record mem' : Type := mkmem {
   contents_default:
     forall b, fst mem_contents#b = Undef;
   nextblock_compartments:
-    forall b, ~Plt b nextblock <-> mem_compartments!b = None;
+    forall b, ~Plt b nextblock -> mem_compartments#b = top;
 }.
 
 Definition mem := mem'.
@@ -109,38 +109,38 @@ Local Hint Resolve valid_not_valid_diff: mem.
   [b] in the memory [m], or [None] if [b] is not allocated in [m]. *)
 
 Definition block_compartment (m: mem) (b: block) :=
-  m.(mem_compartments)!b.
+  m.(mem_compartments)#b.
 
 Theorem block_compartment_valid_block:
   forall m b,
-  ~valid_block m b <->
-  block_compartment m b = None.
+  ~valid_block m b ->
+  block_compartment m b = top.
 Proof.
   apply nextblock_compartments.
 Qed.
 
-Definition val_compartment (m: mem) (v: val): option compartment :=
+Definition val_compartment (m: mem) (v: val): compartment :=
   match v with
   | Vptr b _ => block_compartment m b
-  | _ => None
+  | _ => top
   end.
 
-Lemma nextblock_compartments_pos:
-  forall m b,
-  Plt b (nextblock m) <-> exists cp, block_compartment m b = Some cp.
-Proof.
-  unfold block_compartment. intros m b. split; intro H.
-  - destruct ((mem_compartments m) ! b) as [cp |] eqn:Hcase.
-    + exists cp. reflexivity.
-    + apply nextblock_compartments in Hcase. contradiction.
-  - destruct (plt b (nextblock m)) as [Hlt | Hlt].
-    + assumption.
-    + apply PTree.get_not_none_get_some in H.
-      pose proof nextblock_compartments m b as Hcomp.
-      apply not_iff_compat in Hcomp.
-      apply Hcomp in H.
-      contradiction.
-Qed.
+(* Lemma nextblock_compartments_pos: *)
+(*   forall m b, *)
+(*   Plt b (nextblock m) <-> exists cp, block_compartment m b = Some cp. *)
+(* Proof. *)
+(*   unfold block_compartment. intros m b. split; intro H. *)
+(*   - destruct ((mem_compartments m) ! b) as [cp |] eqn:Hcase. *)
+(*     + exists cp. reflexivity. *)
+(*     + apply nextblock_compartments in Hcase. contradiction. *)
+(*   - destruct (plt b (nextblock m)) as [Hlt | Hlt]. *)
+(*     + assumption. *)
+(*     + apply PTree.get_not_none_get_some in H. *)
+(*       pose proof nextblock_compartments m b as Hcomp. *)
+(*       apply not_iff_compat in Hcomp. *)
+(*       apply Hcomp in H. *)
+(*       contradiction. *)
+(* Qed. *)
 
 (** Permissions *)
 
@@ -267,22 +267,20 @@ Defined.
     components.
 *)
 
-Definition can_access_block (m: mem) (b: block) (cp: option compartment): Prop :=
-  match cp with
-  | None => True
-  | Some cp => block_compartment m b = Some cp
-  end.
+Definition can_access_block (m: mem) (b: block) (cp: compartment): Prop :=
+  block_compartment m b ⊆ cp.
+
+Arguments can_access_block /.
+
+#[export] Hint Unfold can_access_block: comps.
+
 
 Remark can_access_block_dec:
   forall m b cp, {can_access_block m b cp} + {~can_access_block m b cp}.
 Proof.
   unfold can_access_block.
-  intros m b [cp |]; [| left; trivial].
-  destruct (block_compartment m b) as [cp' |] eqn:Heq.
-  - destruct (Pos.eq_dec cp cp').
-    + left. subst. reflexivity.
-    + right. intro Hcontra. inv Hcontra. easy.
-  - right. easy.
+  intros m b cp.
+  destruct (flowsto_dec (block_compartment m b) cp); auto.
 Defined.
 
 (** [valid_access m chunk b ofs p cp] holds if a memory access
@@ -294,7 +292,7 @@ Defined.
 - The offset [ofs] is aligned.
 *)
 
-Definition valid_access (m: mem) (chunk: memory_chunk) (b: block) (ofs: Z) (p: permission) (cp: option compartment): Prop :=
+Definition valid_access (m: mem) (chunk: memory_chunk) (b: block) (ofs: Z) (p: permission) (cp: compartment): Prop :=
   range_perm m b ofs (ofs + size_chunk chunk) Cur p
   /\ can_access_block m b cp
   /\ (align_chunk chunk | ofs).
@@ -379,39 +377,41 @@ Proof.
   intuition congruence.
 Qed.
 
-Theorem valid_pointer_valid_access_nonpriv:
-  forall m b cp ofs,
-    block_compartment m b = Some cp ->
-    valid_pointer m b ofs = true <-> valid_access m Mint8unsigned b ofs Nonempty (Some cp).
-Proof.
-  intros. rewrite valid_pointer_nonempty_perm.
-  split; intros.
-  split. simpl; red; intros. replace ofs0 with ofs by lia. auto.
-  split; auto.
-  simpl. apply Z.divide_1_l.
-  destruct H. apply H0. simpl. lia.
-Qed.
-
-Theorem valid_pointer_valid_access_priv:
-  forall m b ofs,
-    valid_pointer m b ofs = true <-> valid_access m Mint8unsigned b ofs Nonempty None.
-Proof.
-  intros. rewrite valid_pointer_nonempty_perm.
-  split; intros.
-  split. simpl; red; intros. replace ofs0 with ofs by lia. auto.
-  split; auto. reflexivity.
-  simpl. apply Z.divide_1_l.
-  destruct H. apply H. simpl. lia.
-Qed.
-
 Theorem valid_pointer_valid_access:
-  forall m b ocp ofs,
-    can_access_block m b ocp ->
-    valid_pointer m b ofs = true <-> valid_access m Mint8unsigned b ofs Nonempty ocp.
+  forall m b cp ofs,
+    block_compartment m b ⊆ cp ->
+    valid_pointer m b ofs = true <-> valid_access m Mint8unsigned b ofs Nonempty cp.
 Proof.
-  intros.
-  destruct ocp; auto using valid_pointer_valid_access_nonpriv, valid_pointer_valid_access_priv.
+  intros. rewrite valid_pointer_nonempty_perm.
+  split; intros.
+  split. simpl; red; intros. replace ofs0 with ofs by lia. auto.
+  split; [unfold can_access_block; auto with comps|].
+  simpl. apply Z.divide_1_l.
+  destruct H0. apply H0. simpl. lia.
 Qed.
+
+(* Theorem valid_pointer_valid_access_priv: *)
+(*   forall m b ofs, *)
+(*     valid_pointer m b ofs = true <-> valid_access m Mint8unsigned b ofs Nonempty top. *)
+(* Proof. *)
+(*   intros. rewrite valid_pointer_nonempty_perm. *)
+(*   split; intros. *)
+(*   split. simpl; red; intros. replace ofs0 with ofs by lia. auto. *)
+(*   split; auto. unfold can_access_block. destruct (block_compartment m b); auto with comps. *)
+(*   simpl. apply Z.divide_1_l. *)
+(*   destruct H. apply H. simpl. lia. *)
+(* Qed. *)
+
+(* Theorem valid_pointer_valid_access: *)
+(*   forall m b cp ofs, *)
+(*     can_access_block m b cp -> *)
+(*     valid_pointer m b ofs = true <-> valid_access m Mint8unsigned b ofs Nonempty cp. *)
+(* Proof. *)
+(*   intros. *)
+(*   destruct (cp_eq_dec cp top); subst; auto using valid_pointer_valid_access_priv. *)
+(*   destruct (Mem.block_compartment m b) eqn:?; *)
+(*     auto using valid_pointer_valid_access_nonpriv, valid_pointer_valid_access_priv with comps. *)
+(* Qed. *)
 
 (** C allows pointers one past the last element of an array.  These are not
   valid according to the previously defined [valid_pointer]. The property
@@ -438,48 +438,48 @@ Qed.
 (** Some useful facts relating the various notions of validity and access
     permissions. *)
 
-Theorem valid_block_can_access_block:
-  forall m b,
-  valid_block m b ->
-  exists cp,
-  can_access_block m b (Some cp).
-Proof.
-  unfold valid_block, can_access_block. intros m b Hvalid.
-  apply nextblock_compartments_pos in Hvalid.
-  assumption.
-Qed.
+(* Theorem valid_block_can_access_block: *)
+(*   forall m b, *)
+(*   valid_block m b -> *)
+(*   exists cp, *)
+(*   can_access_block m b (Some cp). *)
+(* Proof. *)
+(*   unfold valid_block, can_access_block. intros m b Hvalid. *)
+(*   apply nextblock_compartments_pos in Hvalid. *)
+(*   assumption. *)
+(* Qed. *)
 
 Theorem valid_block_can_access_block_priv:
   forall m b,
   valid_block m b ->
-  can_access_block m b None.
+  can_access_block m b top.
 Proof.
-  simpl; trivial.
+  unfold can_access_block. intros. simpl; auto with comps.
 Qed.
 
-Theorem can_access_block_valid_block:
-  forall m b cp,
-  can_access_block m b (Some cp) ->
-  valid_block m b.
-Proof.
-  unfold valid_block, can_access_block. intros m b cp Hown.
-  apply nextblock_compartments_pos. exists cp. assumption.
-Qed.
+(* Theorem can_access_block_valid_block: *)
+(*   forall m b cp, *)
+(*   can_access_block m b cp -> *)
+(*   valid_block m b. *)
+(* Proof. *)
+(*   unfold valid_block, can_access_block. intros m b cp Hown. *)
+(*   apply nextblock_compartments_pos. exists cp. assumption. *)
+(* Qed. *)
 
-Theorem valid_pointer_can_access_block:
-  forall m b ofs,
-  valid_pointer m b ofs = true ->
-  exists cp,
-  can_access_block m b (Some cp).
-Proof.
-  unfold valid_pointer. intros m b ofs Hperm.
-  destruct (perm_dec m b ofs Cur Nonempty) as [Hperm' | Hperm'];
-    simpl in Hperm.
-  - apply perm_valid_block in Hperm'.
-    apply valid_block_can_access_block in Hperm'.
-    assumption.
-  - congruence.
-Qed.
+(* Theorem valid_pointer_can_access_block: *)
+(*   forall m b ofs, *)
+(*   valid_pointer m b ofs = true -> *)
+(*   exists cp, *)
+(*   can_access_block m b (Some cp). *)
+(* Proof. *)
+(*   unfold valid_pointer. intros m b ofs Hperm. *)
+(*   destruct (perm_dec m b ofs Cur Nonempty) as [Hperm' | Hperm']; *)
+(*     simpl in Hperm. *)
+(*   - apply perm_valid_block in Hperm'. *)
+(*     apply valid_block_can_access_block in Hperm'. *)
+(*     assumption. *)
+(*   - congruence. *)
+(* Qed. *)
 
 (** * Operations over memory stores *)
 
@@ -488,16 +488,8 @@ Qed.
 Program Definition empty: mem :=
   mkmem (PMap.init (ZMap.init Undef))
         (PMap.init (fun ofs k => None))
-        (PTree.empty _)
+        (PMap.init top)
         1%positive _ _ _ _.
-Next Obligation.
-  unfold Plt.
-  rewrite PTree.gempty.
-  split; trivial.
-  intros _.
-  apply Pos.nlt_1_r.
-Qed.
-
 (** Allocation of a fresh block with the given bounds.  Return an updated
   memory state and the address of the fresh block, which initially contains
   undefined cells.  Note that allocation never fails: we model an
@@ -510,7 +502,7 @@ Program Definition alloc (m: mem) (c: compartment) (lo hi: Z) :=
          (PMap.set m.(nextblock)
                    (fun ofs k => if zle lo ofs && zlt ofs hi then Some Freeable else None)
                    m.(mem_access))
-         (PTree.set m.(nextblock) c m.(mem_compartments))
+         (PMap.set m.(nextblock) c m.(mem_compartments))
          (Pos.succ m.(nextblock))
          _ _ _ _,
    m.(nextblock)).
@@ -529,16 +521,13 @@ Next Obligation.
   rewrite PMap.gsspec. destruct (peq b (nextblock m)). auto. apply contents_default.
 Qed.
 Next Obligation.
-  rewrite PTree.gsspec.
+  rewrite PMap.gsspec.
   destruct (peq b (nextblock m)) as [->|ne].
-- split; try easy.
-  intros H. exfalso. apply H. apply Plt_succ.
-- rewrite <- nextblock_compartments; split.
-+ intros H. contradict H.
+- exfalso. apply H. apply Plt_succ.
+- erewrite <- nextblock_compartments. reflexivity.
+  intros H'.
+  apply H.
   now apply Plt_trans_succ.
-+ intros H. contradict H.
-  apply Plt_succ_inv in H.
-  destruct H; trivial; congruence.
 Qed.
 
 (** Freeing a block between the given bounds.
@@ -573,7 +562,7 @@ Qed.
 
 Definition free (m: mem) (b: block) (lo hi: Z) (cp: compartment): option mem :=
   if range_perm_dec m b lo hi Cur Freeable &&
-     can_access_block_dec m b (Some cp)
+     can_access_block_dec m b cp
   then Some(unchecked_free m b lo hi)
   else None.
 
@@ -603,7 +592,7 @@ Fixpoint getN (n: nat) (p: Z) (c: ZMap.t memval) {struct n}: list memval :=
   memory chunk at that address.  [None] is returned if the accessed bytes
   are not readable. *)
 
-Definition load (chunk: memory_chunk) (m: mem) (b: block) (ofs: Z) (cp: option compartment): option val :=
+Definition load (chunk: memory_chunk) (m: mem) (b: block) (ofs: Z) (cp: compartment): option val :=
   if valid_access_dec m chunk b ofs Readable cp
   then Some(decode_val chunk (getN (size_chunk_nat chunk) ofs (m.(mem_contents)#b)))
   else None.
@@ -611,7 +600,7 @@ Definition load (chunk: memory_chunk) (m: mem) (b: block) (ofs: Z) (cp: option c
 (** [loadv chunk m addr cp] is similar, but the address and offset are given
   as a single value [addr], which must be a pointer value. *)
 
-Definition loadv (chunk: memory_chunk) (m: mem) (addr: val) (cp: option compartment) : option val :=
+Definition loadv (chunk: memory_chunk) (m: mem) (addr: val) (cp: compartment) : option val :=
   match addr with
   | Vptr b ofs => load chunk m b (Ptrofs.unsigned ofs) cp
   | _ => None
@@ -621,7 +610,7 @@ Definition loadv (chunk: memory_chunk) (m: mem) (addr: val) (cp: option compartm
   location [(b, ofs)].  Returns [None] if the accessed locations are
   not readable. *)
 
-Definition loadbytes (m: mem) (b: block) (ofs n: Z) (cp: option compartment): option (list memval) :=
+Definition loadbytes (m: mem) (b: block) (ofs n: Z) (cp: compartment): option (list memval) :=
   if range_perm_dec m b ofs (ofs + n) Cur Readable &&
      can_access_block_dec m b cp
   then Some (getN (Z.to_nat n) ofs (m.(mem_contents)#b))
@@ -709,7 +698,7 @@ Qed.
   are not writable. *)
 
 Program Definition store (chunk: memory_chunk) (m: mem) (b: block) (ofs: Z) (v: val) (cp : compartment): option mem :=
-  if valid_access_dec m chunk b ofs Writable (Some cp) then
+  if valid_access_dec m chunk b ofs Writable cp then
     Some (mkmem (PMap.set b
                           (setN (encode_val chunk v) ofs (m.(mem_contents)#b))
                           m.(mem_contents))
@@ -727,7 +716,7 @@ Next Obligation.
   apply contents_default.
 Qed.
 Next Obligation.
-  eapply nextblock_compartments.
+  eapply nextblock_compartments; eauto.
 Qed.
 
 (** [storev chunk m addr v cp] is similar, but the address and offset are given
@@ -745,7 +734,7 @@ Definition storev (chunk: memory_chunk) (m: mem) (addr v: val) (cp : compartment
 
 Program Definition storebytes (m: mem) (b: block) (ofs: Z) (bytes: list memval) (cp: compartment) : option mem :=
   if range_perm_dec m b ofs (ofs + Z.of_nat (length bytes)) Cur Writable &&
-     can_access_block_dec m b (Some cp)
+     can_access_block_dec m b cp
   then
     Some (mkmem
              (PMap.set b (setN bytes ofs (m.(mem_contents)#b)) m.(mem_contents))
@@ -776,7 +765,7 @@ Qed.
    funny [Program Definition] misbehavior in the second [Obligation]. *)
 Program Definition drop_perm (m: mem) (b: block) (lo hi: Z) (p: permission) (cp: compartment): option mem :=
   if range_perm_dec m b lo hi Cur Freeable then
-    if can_access_block_dec m b (Some cp) then
+    if can_access_block_dec m b cp then
       Some (mkmem m.(mem_contents)
                       (PMap.set b
                                 (fun ofs k => if zle lo ofs && zlt ofs hi then Some p else m.(mem_access)#b ofs k)
@@ -858,18 +847,18 @@ Qed.
 Lemma load_Some_None:
   forall chunk m sp ofs cp v,
     Mem.load chunk m sp ofs cp = Some v ->
-    Mem.load chunk m sp ofs None = Some v.
+    Mem.load chunk m sp ofs top = Some v.
 Proof.
-    intros. destruct cp as [cp |]; [|auto].
+    intros. destruct (cp_eq_dec cp top) as [e | n0]; [subst; auto|].
     unfold load in *.
-    destruct (Mem.valid_access_dec m chunk sp ofs Readable (Some cp)); try discriminate.
+    destruct (Mem.valid_access_dec m chunk sp ofs Readable cp); try discriminate.
     inv H.
     destruct v0 as [? [? ?]].
-    destruct (Mem.valid_access_dec m chunk sp ofs Readable None).
+    destruct (Mem.valid_access_dec m chunk sp ofs Readable top).
     reflexivity.
     apply Classical_Prop.not_and_or in n as [? | n]; try contradiction.
     apply Classical_Prop.not_and_or in n as [? | ?]; try contradiction.
-    simpl in H2. contradiction.
+    unfold can_access_block in H2. pose proof (flowsto_top (block_compartment m sp)); contradiction.
 Qed.
 
 Local Hint Resolve load_valid_access valid_access_load: mem.
@@ -1181,7 +1170,7 @@ Qed.
 
 Theorem valid_access_store:
   forall m1 chunk b ofs cp v,
-  valid_access m1 chunk b ofs Writable (Some cp) ->
+  valid_access m1 chunk b ofs Writable cp ->
   { m2: mem | store chunk m1 b ofs v cp = Some m2 }.
 Proof.
   intros.
@@ -1259,7 +1248,7 @@ Theorem store_valid_access_1:
 Proof.
   intros. inv H. destruct H1 as [H1 H2]. constructor; try red; auto with mem. split.
   - unfold store in STORE.
-    destruct (valid_access_dec m1 chunk b ofs Writable (Some cp)); [| congruence].
+    destruct (valid_access_dec m1 chunk b ofs Writable cp); [| congruence].
     inv STORE. auto.
   - auto.
 Qed.
@@ -1270,25 +1259,25 @@ Theorem store_valid_access_2:
 Proof.
   intros. inv H. destruct H1 as [H1 H2]. constructor; try red; auto with mem. split.
   - unfold store in STORE.
-    destruct (valid_access_dec m1 chunk b ofs Writable (Some cp)); [| congruence].
+    destruct (valid_access_dec m1 chunk b ofs Writable cp); [| congruence].
     inv STORE. auto.
   - auto.
 Qed.
 
 Theorem store_valid_access_3:
-  valid_access m1 chunk b ofs Writable (Some cp).
+  valid_access m1 chunk b ofs Writable cp.
 Proof.
-  unfold store in STORE. destruct (valid_access_dec m1 chunk b ofs Writable (Some cp)).
+  unfold store in STORE. destruct (valid_access_dec m1 chunk b ofs Writable cp).
   auto.
   congruence.
 Qed.
 
 Theorem store_valid_access_4:
-  valid_access m1 chunk b ofs Writable None.
+  valid_access m1 chunk b ofs Writable top.
 Proof.
   unfold store in STORE.
-  destruct (valid_access_dec m1 chunk b ofs Writable (Some cp)) as [[? [? ?]] |].
-  split; [| split]; now simpl.
+  destruct (valid_access_dec m1 chunk b ofs Writable cp) as [[? [? ?]] |].
+  split; [| split]; try now simpl; auto with comps.
   congruence.
 Qed.
 
@@ -1309,12 +1298,12 @@ Theorem load_store_similar:
   forall chunk',
   size_chunk chunk' = size_chunk chunk ->
   align_chunk chunk' <= align_chunk chunk ->
-  exists v', load chunk' m2 b ofs (Some cp) = Some v' /\ decode_encode_val v chunk chunk' v'.
+  exists v', load chunk' m2 b ofs cp = Some v' /\ decode_encode_val v chunk chunk' v'.
 Proof.
   intros.
   exploit (valid_access_load m2 chunk').
   eapply valid_access_compat. symmetry; eauto. auto.
-    instantiate (1 := Some cp). eauto with mem.
+    instantiate (1 := cp). eauto with mem.
   intros [v' LOAD].
   exists v'; split; auto.
   exploit load_result; eauto. intros B.
@@ -1331,14 +1320,14 @@ Theorem load_store_similar_2:
   size_chunk chunk' = size_chunk chunk ->
   align_chunk chunk' <= align_chunk chunk ->
   type_of_chunk chunk' = type_of_chunk chunk ->
-  load chunk' m2 b ofs (Some cp) = Some (Val.load_result chunk' v).
+  load chunk' m2 b ofs cp = Some (Val.load_result chunk' v).
 Proof.
   intros. destruct (load_store_similar chunk') as [v' [A B]]; auto.
   rewrite A. decEq. eapply decode_encode_val_similar with (chunk1 := chunk); eauto.
 Qed.
 
 Theorem load_store_same:
-  load chunk m2 b ofs (Some cp) = Some (Val.load_result chunk v).
+  load chunk m2 b ofs cp = Some (Val.load_result chunk v).
 Proof.
   apply load_store_similar_2; auto. lia.
 Qed.
@@ -1364,11 +1353,11 @@ Proof.
 Qed.
 
 Theorem loadbytes_store_same:
-  loadbytes m2 b ofs (size_chunk chunk) (Some cp) = Some(encode_val chunk v).
+  loadbytes m2 b ofs (size_chunk chunk) cp = Some(encode_val chunk v).
 Proof.
   intros.
-  assert (valid_access m2 chunk b ofs Readable (Some cp)) by eauto with mem.
-  destruct (can_access_block_dec m2 b (Some cp));
+  assert (valid_access m2 chunk b ofs Readable cp) by eauto with mem.
+  destruct (can_access_block_dec m2 b cp);
     [ | inversion H as [_ [Hcontra _]]; contradiction].
   unfold loadbytes.
   rewrite andb_lazy_alt. setoid_rewrite pred_dec_true. setoid_rewrite pred_dec_true.
@@ -1382,11 +1371,11 @@ Proof.
 Qed.
 
 Theorem loadbytes_store_same_priv:
-  loadbytes m2 b ofs (size_chunk chunk) None = Some(encode_val chunk v).
+  loadbytes m2 b ofs (size_chunk chunk) top = Some(encode_val chunk v).
 Proof.
   intros.
-  assert (valid_access m2 chunk b ofs Readable None) by (eauto with mem).
-  destruct (can_access_block_dec m2 b None);
+  assert (valid_access m2 chunk b ofs Readable top) by (eauto with mem).
+  destruct (can_access_block_dec m2 b top);
     [ | inversion H as [_ [Hcontra _]]; contradiction].
   unfold loadbytes.
   rewrite andb_lazy_alt. setoid_rewrite pred_dec_true. setoid_rewrite pred_dec_true.
@@ -1410,39 +1399,50 @@ Proof.
     destruct (range_perm_dec m2 b' ofs' (ofs' + n) Cur Readable);
     try contradiction; try assumption;
     (unfold store in STORE;
-     destruct (valid_access_dec m1 chunk b ofs Writable (Some cp));
+     destruct (valid_access_dec m1 chunk b ofs Writable cp);
      inv STORE; now auto).
 Qed.
 
 Remark store_can_access_block_1 :
-  can_access_block m1 b (Some cp).
+  can_access_block m1 b cp.
 Proof.
   unfold store in STORE.
-  destruct (valid_access_dec m1 chunk b ofs Writable (Some cp))
+  destruct (valid_access_dec m1 chunk b ofs Writable cp)
     as [[_ [OWN _]] |];
     easy.
 Qed.
 
 Remark store_can_access_block_2 :
-  can_access_block m2 b (Some cp).
+  can_access_block m2 b cp.
 Proof.
   unfold store in STORE.
-  destruct (Mem.valid_access_dec m1 chunk b ofs Writable (Some cp))
+  destruct (Mem.valid_access_dec m1 chunk b ofs Writable cp)
     as [[_ [OWN _]] |]; try discriminate.
   inv STORE. easy.
+Qed.
+
+Remark store_preserves_comp :
+  forall b',
+    block_compartment m1 b' = block_compartment m2 b'.
+Proof.
+  intros;
+    (unfold store in STORE;
+     destruct (valid_access_dec m1 chunk b ofs Writable cp);
+     inv STORE; now auto).
 Qed.
 
 Remark store_can_access_block_inj :
   forall b' cp',
   can_access_block m1 b' cp' <-> can_access_block m2 b' cp'.
 Proof.
-  split; intros;
-    destruct (can_access_block_dec m1 b' cp');
-    destruct (can_access_block_dec m2 b' cp');
-    try contradiction; try assumption;
-    (unfold store in STORE;
-     destruct (valid_access_dec m1 chunk b ofs Writable (Some cp));
-     inv STORE; now auto).
+  intros b' cp'; simpl. rewrite store_preserves_comp; intuition.
+Qed.
+
+
+Lemma store_can_access_block_inj_1 :
+  forall b' cp', can_access_block m1 b' cp' -> can_access_block m2 b' cp'.
+Proof.
+  simpl; intros; rewrite <- store_preserves_comp; eauto.
 Qed.
 
 Theorem loadbytes_store_other:
@@ -1467,9 +1467,9 @@ Proof.
   apply getN_setN_outside. rewrite encode_val_length. rewrite <- size_chunk_conv.
   rewrite Z2Nat.id. auto. lia.
   auto.
-  apply store_can_access_block_inj; auto.
+  simpl; rewrite <- store_preserves_comp; auto.
 * setoid_rewrite pred_dec_false; auto.
-  intro Hcontra. apply store_can_access_block_inj in Hcontra. contradiction.
+  simpl; rewrite <- store_preserves_comp; auto.
 + red; intros. eauto with mem.
 - setoid_rewrite pred_dec_false at 1.
 + auto.
@@ -1736,7 +1736,7 @@ Qed.
 Theorem range_perm_storebytes:
   forall m1 b ofs bytes cp,
   range_perm m1 b ofs (ofs + Z.of_nat (length bytes)) Cur Writable ->
-  can_access_block m1 b (Some cp) ->
+  can_access_block m1 b cp ->
   { m2 : mem | storebytes m1 b ofs bytes cp = Some m2 }.
 Proof.
   intros. unfold storebytes.
@@ -1752,7 +1752,7 @@ Theorem storebytes_store:
   store chunk m1 b ofs v cp = Some m2.
 Proof.
   unfold storebytes, store. intros.
-  destruct (can_access_block_dec m1 b (Some cp)); [| rewrite andb_false_r in H; now inversion H].
+  destruct (can_access_block_dec m1 b cp); [| rewrite andb_false_r in H; now inversion H].
   destruct (range_perm_dec m1 b ofs (ofs + Z.of_nat (length (encode_val chunk v))) Cur Writable); inv H.
   destruct (valid_access_dec m1 chunk b ofs Writable).
   f_equal. apply mkmem_ext; auto.
@@ -1768,7 +1768,7 @@ Proof.
   unfold storebytes, store. intros.
   destruct (valid_access_dec m1 chunk b ofs Writable); inv H.
   inversion v0 as [_ [Hown _]].
-  destruct (can_access_block_dec m1 b (Some cp)); [| contradiction].
+  destruct (can_access_block_dec m1 b cp); [| contradiction].
   destruct (range_perm_dec m1 b ofs (ofs + Z.of_nat (length (encode_val chunk v))) Cur Writable).
   simpl.
   f_equal. apply mkmem_ext; auto.
@@ -1785,24 +1785,33 @@ Variable cp: compartment.
 Variable m2: mem.
 Hypothesis STORE: storebytes m1 b ofs bytes cp = Some m2.
 
-Lemma storebytes_can_access_block_1 : can_access_block m1 b (Some cp).
+Lemma storebytes_can_access_block_1 : can_access_block m1 b cp.
 Proof.
   unfold storebytes in STORE.
   destruct (range_perm_dec m1 b ofs (ofs + Z.of_nat (Datatypes.length bytes)) Cur Writable);
     [| now inversion STORE].
-  destruct (can_access_block_dec m1 b (Some cp));
+  destruct (can_access_block_dec m1 b cp);
     [| now inversion STORE].
   assumption.
 Qed.
 
-Lemma storebytes_can_access_block_2 : can_access_block m2 b (Some cp).
+Lemma storebytes_can_access_block_2 : can_access_block m2 b cp.
 Proof.
   unfold storebytes in STORE.
   destruct (range_perm_dec m1 b ofs (ofs + Z.of_nat (Datatypes.length bytes)) Cur Writable);
     [| now inversion STORE].
-  destruct (can_access_block_dec m1 b (Some cp));
+  destruct (can_access_block_dec m1 b cp);
     inv STORE.
   assumption.
+Qed.
+
+Lemma storebytes_preserves_comp:
+  forall b', block_compartment m1 b' = block_compartment m2 b'.
+Proof.
+  unfold storebytes in *. intros b'.
+  destruct (range_perm_dec m1 b ofs (ofs + Z.of_nat (Datatypes.length bytes)) Cur Writable);
+    destruct (can_access_block_dec m1 b cp);
+    inv STORE; simpl in *. reflexivity.
 Qed.
 
 (* RB: NOTE: Names and split adapted from storebytes_valid_block_1 and _2 below,
@@ -1814,7 +1823,7 @@ Proof.
   unfold can_access_block, storebytes in *;
     intros b' cp' H;
     destruct (range_perm_dec m1 b ofs (ofs + Z.of_nat (Datatypes.length bytes)) Cur Writable);
-    destruct (can_access_block_dec m1 b (Some cp));
+    destruct (can_access_block_dec m1 b cp);
     inv STORE;
     assumption.
 Qed.
@@ -1825,7 +1834,7 @@ Proof.
   unfold can_access_block, storebytes in *;
     intros b' cp' H;
     destruct (range_perm_dec m1 b ofs (ofs + Z.of_nat (Datatypes.length bytes)) Cur Writable);
-    destruct (can_access_block_dec m1 b (Some cp));
+    destruct (can_access_block_dec m1 b cp);
     inv STORE;
     assumption.
 Qed.
@@ -1834,7 +1843,7 @@ Lemma storebytes_access: mem_access m2 = mem_access m1.
 Proof.
   unfold storebytes in STORE.
   destruct (range_perm_dec m1 b ofs (ofs + Z.of_nat (length bytes)) Cur Writable);
-  destruct (can_access_block_dec m1 b (Some cp));
+  destruct (can_access_block_dec m1 b cp);
   inv STORE.
   auto.
 Qed.
@@ -1844,7 +1853,7 @@ Lemma storebytes_mem_contents:
 Proof.
   unfold storebytes in STORE.
   destruct (range_perm_dec m1 b ofs (ofs + Z.of_nat (length bytes)) Cur Writable);
-  destruct (can_access_block_dec m1 b (Some cp));
+  destruct (can_access_block_dec m1 b cp);
   inv STORE.
   auto.
 Qed.
@@ -1901,7 +1910,7 @@ Proof.
   intros.
   unfold storebytes in STORE.
   destruct (range_perm_dec m1 b ofs (ofs + Z.of_nat (length bytes)) Cur Writable);
-  destruct (can_access_block_dec m1 b (Some cp));
+  destruct (can_access_block_dec m1 b cp);
   inv STORE.
   auto.
 Qed.
@@ -1931,11 +1940,11 @@ Proof.
 Qed.
 
 Theorem loadbytes_storebytes_same:
-  loadbytes m2 b ofs (Z.of_nat (length bytes)) (Some cp) = Some bytes.
+  loadbytes m2 b ofs (Z.of_nat (length bytes)) cp = Some bytes.
 Proof.
   intros. assert (STORE2:=STORE). unfold storebytes in STORE2. unfold loadbytes.
   destruct (range_perm_dec m1 b ofs (ofs + Z.of_nat (length bytes)) Cur Writable);
-  destruct (can_access_block_dec m1 b (Some cp));
+  destruct (can_access_block_dec m1 b cp);
   try discriminate.
   setoid_rewrite pred_dec_true. simpl.
   decEq. inv STORE2; simpl. rewrite PMap.gss. rewrite Nat2Z.id.
@@ -1944,18 +1953,33 @@ Proof.
   apply storebytes_can_access_block_inj_1; eassumption.
 Qed.
 
+Theorem loadbytes_change_comp:
+  forall ofs' z cp' v',
+    0 < z ->
+    loadbytes m2 b ofs' z cp' = Some v' ->
+    loadbytes m2 b ofs (Z.of_nat (length bytes)) cp' = Some bytes.
+Proof.
+  intros ofs' z cp' v' z0 H.
+  pose proof loadbytes_storebytes_same as G.
+  unfold loadbytes in *.
+  destruct andb eqn:E1; try congruence. apply andb_prop in E1 as [E1 E1'].
+  destruct andb eqn:E2; try congruence. apply andb_prop in E2 as [E2 E2'].
+  destruct andb eqn:E3; try congruence. apply andb_false_iff in E3 as [E3 | E3];
+    congruence.
+Qed.
+
 Theorem loadbytes_storebytes_same_None:
-  loadbytes m2 b ofs (Z.of_nat (length bytes)) None = Some bytes.
+  loadbytes m2 b ofs (Z.of_nat (length bytes)) top = Some bytes.
 Proof.
   intros. assert (STORE2:=STORE). unfold storebytes in STORE2. unfold loadbytes.
   destruct (range_perm_dec m1 b ofs (ofs + Z.of_nat (length bytes)) Cur Writable);
-  destruct (can_access_block_dec m1 b (Some cp));
+  destruct (can_access_block_dec m1 b cp);
   try discriminate.
   setoid_rewrite pred_dec_true. simpl.
   decEq. inv STORE2; simpl. rewrite PMap.gss. rewrite Nat2Z.id.
   apply getN_setN_same.
   red; eauto with mem.
-  reflexivity.
+  simpl; auto with comps.
 Qed.
 
 Theorem loadbytes_storebytes_disjoint:
@@ -2042,16 +2066,15 @@ Proof.
   intros. generalize H; intro ST1. generalize H0; intro ST2.
   unfold storebytes; unfold storebytes in ST1; unfold storebytes in ST2.
   destruct (range_perm_dec m b ofs (ofs + Z.of_nat(length bytes1)) Cur Writable);
-  destruct (can_access_block_dec m b (Some cp));
+  destruct (can_access_block_dec m b cp);
   simpl in *;
   try congruence.
-  destruct (range_perm_dec m1 b (ofs + Z.of_nat(length bytes1)) (ofs + Z.of_nat(length bytes1) + Z.of_nat(length bytes2)) Cur Writable);
+  destruct (range_perm_dec m1 b (ofs + Z.of_nat(length bytes1))
+              (ofs + Z.of_nat(length bytes1) + Z.of_nat(length bytes2)) Cur Writable);
     simpl in *; try congruence.
-  destruct (can_access_block_dec m1 b (Some cp)) eqn:rewr; simpl in rewr; rewrite rewr in ST2;
-  simpl in *;
-  try congruence.
-  destruct (range_perm_dec m b ofs (ofs + Z.of_nat (length (bytes1 ++ bytes2))) Cur Writable).
-  inv ST1; inv ST2; simpl. decEq. apply mkmem_ext; auto.
+  destruct (can_access_block_dec m1 b cp) eqn:rewr; simpl in *; try congruence.
+  destruct (range_perm_dec m b ofs (ofs + Z.of_nat (length (bytes1 ++ bytes2))) Cur Writable); simpl in *.
+  inv ST1; inv ST2; simpl in *; try congruence. decEq. apply mkmem_ext; auto.
   rewrite PMap.gss.  rewrite setN_concat. symmetry. apply PMap.set2.
   elim n.
   rewrite app_length. rewrite Nat2Z.inj_add. red; intros.
@@ -2121,7 +2144,7 @@ Qed.
 
 (* RB: NOTE: Maybe add these new lemmas to hint databases. *)
 Lemma block_compartment_nextblock m:
-  block_compartment m (nextblock m) = None.
+  block_compartment m (nextblock m) = top.
 Proof.
   destruct m. simpl in *.
   apply nextblock_compartments0. apply Plt_strict.
@@ -2170,20 +2193,21 @@ Proof.
 Qed.
 
 Theorem unowned_fresh_block:
-  forall c', ~can_access_block m1 b (Some c').
+  forall c', can_access_block m1 b c' -> c' = top.
 Proof.
   unfold can_access_block. intros c'.
   injection ALLOC as _ <-.
   rewrite block_compartment_nextblock.
-  congruence.
+  intros ?. assert (c' ⊆ top) by now apply flowsto_top.
+  exploit flowsto_antisym; eauto.
 Qed.
 
 Theorem owned_new_block:
-  can_access_block m2 b (Some c).
+  Mem.block_compartment m2 b = c.
 Proof.
-  unfold can_access_block.
+  unfold block_compartment.
   unfold alloc in ALLOC. destruct m1. inv ALLOC. simpl in *.
-  apply PTree.gss.
+  rewrite PMap.gss; auto with comps.
 Qed.
 
 Local Hint Resolve valid_block_alloc fresh_block_alloc valid_new_block: mem.
@@ -2247,35 +2271,45 @@ Local Hint Resolve perm_alloc_1 perm_alloc_2 perm_alloc_3 perm_alloc_4: mem.
 
 Theorem alloc_block_compartment:
   forall b', block_compartment m2 b' =
-  if eq_block b' b then Some c else block_compartment m1 b'.
+  if eq_block b' b then c else block_compartment m1 b'.
 Proof.
 intros b'. injection ALLOC as <- <-. unfold block_compartment. simpl.
 destruct eq_block as [->|neq].
-- now rewrite PTree.gss.
-- now rewrite PTree.gso.
+- now rewrite PMap.gss; auto with comps.
+- now rewrite PMap.gso.
 Qed.
 
-Lemma alloc_can_access_block_inj :
-  forall b' c', can_access_block m1 b' (Some c') -> b <> b'.
+(* Lemma alloc_can_access_block_inj : *)
+(*   forall b' c', can_access_block m1 b' c' -> b <> b'. *)
+(* Proof. *)
+(*   intros b' c' Hown Heq; subst b'. *)
+(*   unfold can_access_block in Hown. *)
+(*   now rewrite alloc_result, block_compartment_nextblock in Hown. *)
+(* Qed. *)
+
+Lemma alloc_lowers_comp:
+  forall b', block_compartment m2 b' ⊆ block_compartment m1 b'.
 Proof.
-  intros b' c' Hown Heq; subst b'.
-  unfold can_access_block in Hown.
-  now rewrite alloc_result, block_compartment_nextblock in Hown.
+  intros b'.
+  rewrite alloc_block_compartment.
+  destruct eq_block as [->|neq]; auto with comps.
+  rewrite alloc_result, block_compartment_nextblock; auto with comps.
 Qed.
 
 Lemma alloc_can_access_block_other_inj_1 :
   forall b' c', can_access_block m1 b' c' -> can_access_block m2 b' c'.
 Proof.
-  unfold can_access_block. intros b' [c' |] Hown; [| trivial].
+  unfold can_access_block. intros b' c' Hown.
   rewrite alloc_block_compartment.
   destruct eq_block as [->|neq]; trivial.
-  now rewrite alloc_result, block_compartment_nextblock in Hown.
+  rewrite alloc_result, block_compartment_nextblock in Hown.
+  eapply flowsto_trans. eapply flowsto_top. eauto.
 Qed.
 
 Lemma alloc_can_access_block_other_inj_2 :
   forall b' c', b' <> b -> can_access_block m2 b' c' -> can_access_block m1 b' c'.
 Proof.
-  unfold can_access_block. intros b' [c' |] Hneq Hown; [| trivial].
+  unfold can_access_block. intros b' c' Hneq Hown.
   rewrite alloc_block_compartment in Hown.
   destruct eq_block; congruence.
 Qed.
@@ -2295,12 +2329,12 @@ Qed.
 Theorem valid_access_alloc_same:
   forall chunk ofs,
   lo <= ofs -> ofs + size_chunk chunk <= hi -> (align_chunk chunk | ofs) ->
-  valid_access m2 chunk b ofs Freeable (Some c).
+  valid_access m2 chunk b ofs Freeable c.
 Proof.
   intros. constructor; auto with mem.
   red; intros. apply perm_alloc_2. lia.
   split.
-  apply owned_new_block.
+  simpl; rewrite owned_new_block; auto with comps.
   auto.
 Qed.
 
@@ -2369,10 +2403,10 @@ Qed.
    known facts. *)
 Theorem load_alloc_same':
   forall chunk ofs,
-  lo <= ofs -> ofs + size_chunk chunk <= hi -> can_access_block m2 b (Some c) -> (align_chunk chunk | ofs) ->
-  load chunk m2 b ofs (Some c) = Some Vundef.
+  lo <= ofs -> ofs + size_chunk chunk <= hi -> can_access_block m2 b c -> (align_chunk chunk | ofs) ->
+  load chunk m2 b ofs c = Some Vundef.
 Proof.
-  intros. assert (exists v, load chunk m2 b ofs (Some c) = Some v).
+  intros. assert (exists v, load chunk m2 b ofs c = Some v).
     apply valid_access_load. constructor; auto.
     red; intros. eapply perm_implies. apply perm_alloc_2. lia. auto with mem.
   destruct H3 as [v LOAD]. rewrite LOAD. decEq.
@@ -2428,7 +2462,7 @@ Local Hint Resolve valid_access_alloc_other valid_access_alloc_same: mem.
 Theorem range_perm_free:
   forall m1 b lo hi cp,
   range_perm m1 b lo hi Cur Freeable ->
-  can_access_block m1 b (Some cp) ->
+  can_access_block m1 b cp ->
   { m2: mem | free m1 b lo hi cp = Some m2 }.
 Proof.
   intros; unfold free. econstructor. setoid_rewrite pred_dec_true; auto. simpl. eauto.
@@ -2447,7 +2481,7 @@ Theorem free_range_perm:
   range_perm m1 bf lo hi Cur Freeable.
 Proof.
   unfold free in FREE. destruct (range_perm_dec m1 bf lo hi Cur Freeable); auto.
-  destruct (can_access_block_dec m1 bf (Some cp)); simpl in FREE;
+  destruct (can_access_block_dec m1 bf cp); simpl in FREE;
   congruence.
 Qed.
 
@@ -2456,7 +2490,7 @@ Lemma free_result:
 Proof.
   unfold free in FREE.
   destruct (range_perm_dec m1 bf lo hi Cur Freeable);
-  destruct (can_access_block_dec m1 bf (Some cp));
+  destruct (can_access_block_dec m1 bf cp);
   simpl in FREE;
   congruence.
 Qed.
@@ -2526,46 +2560,57 @@ Proof.
   destruct (zlt ofs hi); simpl; auto.
 Qed.
 
-Lemma free_can_access_block_1 : can_access_block m1 bf (Some cp).
+Lemma free_can_access_block_1 : can_access_block m1 bf cp.
 Proof.
   unfold free in FREE.
   destruct (range_perm_dec m1 bf lo hi Cur Freeable);
-    destruct (can_access_block_dec m1 bf (Some cp));
+    destruct (can_access_block_dec m1 bf cp);
     simpl in FREE;
     congruence.
 Qed.
 
-Lemma free_can_access_block_2 : can_access_block m2 bf (Some cp).
+Lemma free_can_access_block_2 : can_access_block m2 bf cp.
 Proof.
   unfold free in FREE.
   destruct (range_perm_dec m1 bf lo hi Cur Freeable);
-    destruct (can_access_block_dec m1 bf (Some cp));
+    destruct (can_access_block_dec m1 bf cp);
     inv FREE.
   unfold unchecked_free; destruct (zle hi lo); assumption.
+Qed.
+
+Lemma free_preserves_comp:
+  forall b, block_compartment m1 b = block_compartment m2 b.
+Proof.
+  intros b.
+  unfold free in FREE.
+  destruct (range_perm_dec m1 bf lo hi Cur Freeable); [| simpl in FREE; congruence].
+  destruct (can_access_block_dec m1 bf cp); [| simpl in FREE; congruence].
+  inv FREE.
+  unfold unchecked_free; destruct (zle hi lo); auto.
 Qed.
 
 Lemma free_can_access_block_inj_1 :
   forall b cp', can_access_block m1 b cp' -> can_access_block m2 b cp'.
 Proof.
   unfold can_access_block.
-  intros b [cp' |] Hown; [| trivial].
+  intros b cp' Hown.
   unfold free in FREE.
   destruct (range_perm_dec m1 bf lo hi Cur Freeable); [| simpl in FREE; congruence].
-  destruct (can_access_block_dec m1 bf (Some cp)); [| simpl in FREE; congruence].
-  inv FREE. rewrite <- Hown.
-  unfold unchecked_free; destruct (zle hi lo); reflexivity.
+  destruct (can_access_block_dec m1 bf cp); [| simpl in FREE; congruence].
+  inv FREE. (* rewrite <- Hown. *)
+  unfold unchecked_free; destruct (zle hi lo); auto.
 Qed.
 
 Lemma free_can_access_block_inj_2 :
   forall b cp', can_access_block m2 b cp' -> can_access_block m1 b cp'.
 Proof.
   unfold can_access_block.
-  intros b [cp' |] Hown; [| trivial].
+  intros b cp' Hown.
   unfold free in FREE.
   destruct (range_perm_dec m1 bf lo hi Cur Freeable); [| simpl in FREE; congruence].
-  destruct (can_access_block_dec m1 bf (Some cp)); [| simpl in FREE; congruence].
-  inv FREE. rewrite <- Hown.
-  unfold unchecked_free; destruct (zle hi lo); reflexivity.
+  destruct (can_access_block_dec m1 bf cp); [| simpl in FREE; congruence].
+  inv FREE. (* rewrite <- Hown. *)
+  unfold unchecked_free in *; destruct (zle hi lo); auto.
 Qed.
 
 Theorem valid_access_free_1:
@@ -2703,12 +2748,12 @@ Qed.
 Theorem range_perm_drop_2:
   forall m b lo hi cp p,
   range_perm m b lo hi Cur Freeable ->
-  can_access_block m b (Some cp) ->
+  can_access_block m b cp ->
   {m' | drop_perm m b lo hi p cp = Some m' }.
 Proof.
   unfold drop_perm; intros.
   destruct (range_perm_dec m b lo hi Cur Freeable).
-- destruct (can_access_block_dec m b (Some cp)).
+- destruct (can_access_block_dec m b cp).
 + econstructor. eauto.
 + contradiction.
 - contradiction.
@@ -2729,7 +2774,7 @@ Theorem nextblock_drop:
 Proof.
   unfold drop_perm in DROP.
   destruct (range_perm_dec m b lo hi Cur Freeable);
-  destruct (can_access_block_dec m b (Some cp));
+  destruct (can_access_block_dec m b cp);
   inv DROP; auto.
 Qed.
 
@@ -2760,7 +2805,7 @@ Proof.
   intros.
   unfold drop_perm in DROP.
   destruct (range_perm_dec m b lo hi Cur Freeable);
-  destruct (can_access_block_dec m b (Some cp));
+  destruct (can_access_block_dec m b cp);
   inv DROP.
   unfold perm. simpl. rewrite PMap.gss. unfold proj_sumbool.
   rewrite zle_true. rewrite zlt_true. simpl. constructor.
@@ -2773,7 +2818,7 @@ Proof.
   intros.
   unfold drop_perm in DROP.
   destruct (range_perm_dec m b lo hi Cur Freeable);
-  destruct (can_access_block_dec m b (Some cp));
+  destruct (can_access_block_dec m b cp);
   inv DROP.
   revert H0. unfold perm; simpl. rewrite PMap.gss. unfold proj_sumbool.
   rewrite zle_true. rewrite zlt_true. simpl. auto.
@@ -2786,7 +2831,7 @@ Proof.
   intros.
   unfold drop_perm in DROP.
   destruct (range_perm_dec m b lo hi Cur Freeable);
-  destruct (can_access_block_dec m b (Some cp));
+  destruct (can_access_block_dec m b cp);
   inv DROP.
   unfold perm; simpl. rewrite PMap.gsspec. destruct (peq b' b). subst b'.
   unfold proj_sumbool. destruct (zle lo ofs). destruct (zlt ofs hi).
@@ -2800,7 +2845,7 @@ Proof.
   intros.
   unfold drop_perm in DROP.
   destruct (range_perm_dec m b lo hi Cur Freeable);
-  destruct (can_access_block_dec m b (Some cp));
+  destruct (can_access_block_dec m b cp);
   inv DROP.
   revert H. unfold perm; simpl. rewrite PMap.gsspec. destruct (peq b' b).
   subst b'. unfold proj_sumbool. destruct (zle lo ofs). destruct (zlt ofs hi).
@@ -2809,13 +2854,23 @@ Proof.
   auto. auto. auto.
 Qed.
 
+Lemma drop_preserves_comp:
+  forall b', block_compartment m b' = block_compartment m' b'.
+Proof.
+  intros b'.
+  unfold drop_perm in DROP.
+  destruct (range_perm_dec m b lo hi Cur Freeable); [| now inversion DROP].
+  destruct (can_access_block_dec m b cp); [| now inversion DROP].
+  inv DROP. reflexivity.
+Qed.
+
 Theorem can_access_block_drop_1:
   forall b' cp', can_access_block m b' cp' -> can_access_block m' b' cp'.
 Proof.
   unfold can_access_block. intros b' cp' Hown.
   unfold drop_perm in DROP.
   destruct (range_perm_dec m b lo hi Cur Freeable); [| now inversion DROP].
-  destruct (can_access_block_dec m b (Some cp)); [| now inversion DROP].
+  destruct (can_access_block_dec m b cp); [| now inversion DROP].
   inv DROP. assumption.
 Qed.
 
@@ -2825,23 +2880,23 @@ Proof.
   unfold can_access_block. intros b' cp' Hown.
   unfold drop_perm in DROP.
   destruct (range_perm_dec m b lo hi Cur Freeable); [| now inversion DROP].
-  destruct (can_access_block_dec m b (Some cp)); [| now inversion DROP].
+  destruct (can_access_block_dec m b cp); [| now inversion DROP].
   inv DROP. assumption.
 Qed.
 
 Theorem can_access_block_drop_3:
-  can_access_block m b (Some cp).
+  can_access_block m b cp.
   unfold drop_perm in DROP.
   destruct (range_perm_dec m b lo hi Cur Freeable); [| congruence].
-  destruct (can_access_block_dec m b (Some cp)); [| congruence].
+  destruct (can_access_block_dec m b cp); [| congruence].
   assumption.
 Qed.
 
 Theorem can_access_block_drop_4:
-  can_access_block m' b (Some cp).
+  can_access_block m' b cp.
   unfold drop_perm in DROP.
   destruct (range_perm_dec m b lo hi Cur Freeable); [| congruence].
-  destruct (can_access_block_dec m b (Some cp)); [| congruence].
+  destruct (can_access_block_dec m b cp); [| congruence].
   inv DROP. destruct m. unfold can_access_block in *. simpl in *.
   assumption.
 Qed.
@@ -2884,7 +2939,7 @@ Proof.
   rewrite pred_dec_true.
   unfold drop_perm in DROP.
   destruct (range_perm_dec m b lo hi Cur Freeable);
-  destruct (can_access_block_dec m b (Some cp));
+  destruct (can_access_block_dec m b cp);
   inv DROP. simpl. auto.
   eapply valid_access_drop_1; eauto.
   rewrite pred_dec_false. auto.
@@ -2903,7 +2958,7 @@ Proof.
 + setoid_rewrite pred_dec_true.
 * unfold drop_perm in DROP.
   destruct (range_perm_dec m b lo hi Cur Freeable);
-  destruct (can_access_block_dec m b (Some cp));
+  destruct (can_access_block_dec m b cp);
   inv DROP. simpl. auto.
 * red; intros.
   destruct (eq_block b' b). subst b'.
@@ -2956,71 +3011,6 @@ Record mem_inj (f: meminj) (m1 m2: mem) : Prop :=
       perm m1 b1 ofs Cur Readable ->
       memval_inject f (ZMap.get ofs m1.(mem_contents)#b1) (ZMap.get (ofs+delta) m2.(mem_contents)#b2)
   }.
-
-Lemma mem_inj_disjoint_union (f f': meminj) (m1 m2: mem):
-  mem_inj f m1 m2 ->
-  mem_inj f' m1 m2 ->
-  (forall b, f b <> None -> f' b <> None -> False) ->
-  exists f'', mem_inj f'' m1 m2 /\
-           (forall b, f'' b <> None <-> f b <> None \/ f' b <> None).
-Proof.
-  intros mem_inj1 mem_inj2 disj.
-  exists (fun b => match f b with
-           | Some (b', delta) => Some (b', delta)
-           | None => match f' b with
-                    |  Some (b', delta) => Some (b', delta)
-                    | _ => None
-                    end
-           end).
-  split.
-  - constructor.
-    + intros.
-      destruct (f b1) as [[] |] eqn:f_b1.
-      inv H; exploit (mi_perm f); eauto.
-      destruct (f' b1) as [[] |] eqn:f'_b1.
-      inv H; exploit (mi_perm f'); eauto.
-      congruence.
-    + intros.
-      destruct (f b1) as [[] |] eqn:f_b1.
-      inv H; exploit (mi_own f); eauto.
-      destruct (f' b1) as [[] |] eqn:f'_b1.
-      inv H; exploit (mi_own f'); eauto.
-      congruence.
-    + intros.
-      destruct (f b1) as [[] |] eqn:f_b1.
-      inv H; exploit (mi_align f); eauto.
-      destruct (f' b1) as [[] |] eqn:f'_b1.
-      inv H; exploit (mi_align f'); eauto.
-      congruence.
-    + intros.
-      destruct (f b1) as [[] |] eqn:f_b1.
-      * inv H; exploit (mi_memval f); eauto.
-        intros ?. inv H.
-        constructor; eauto. constructor; eauto.
-        { inv H3; econstructor.
-          rewrite H. eauto. eauto. }
-        constructor; eauto.
-      * destruct (f' b1) as [[] |] eqn:f'_b1.
-        inv H; exploit (mi_memval f'); eauto.
-        intros ?. inv H.
-        constructor; eauto. constructor; eauto.
-        { inv H3; econstructor.
-          rewrite H. assert (f b0 = None) as ->.
-          { destruct (f b0) eqn:?; auto.
-            exploit (disj b0); try congruence. contradiction. }
-          eauto. eauto. }
-        constructor; eauto.
-        congruence.
-  - intros b.
-    destruct (f b) as [[] |] eqn:f_b;
-      destruct (f' b) as [[] |] eqn:f'_b.
-    + split; auto; congruence.
-    + split; auto; congruence.
-    + split; auto; congruence.
-    + split; intros H.
-      congruence.
-      destruct H; congruence.
-Qed.
 
 (** Preservation of permissions *)
 
@@ -3172,7 +3162,7 @@ Lemma store_mapped_inj:
     /\ mem_inj f n1 n2.
 Proof.
   intros.
-  assert (valid_access m2 chunk b2 (ofs + delta) Writable (Some cp)).
+  assert (valid_access m2 chunk b2 (ofs + delta) Writable cp).
     eapply valid_access_inj; eauto with mem.
   destruct (valid_access_store _ _ _ _ _ v2 H4) as [n2 STORE].
   exists n2; split. auto.
@@ -3183,10 +3173,9 @@ Proof.
   eapply perm_store_2; eauto.
 (* own *)
   intros.
-  apply (proj1 (store_can_access_block_inj _ _ _ _ _ _ _ STORE _ _)).
+  simpl. rewrite <- (store_preserves_comp _ _ _ _ _ _ _ STORE); eauto.
   eapply mi_own; try eassumption.
-  apply (proj2 (store_can_access_block_inj _ _ _ _ _ _ _ H0 _ _)).
-  assumption.
+  simpl. erewrite (store_preserves_comp _ _ _ _ _ _ _ H0); eauto.
 (* align *)
   intros. eapply mi_align with (ofs := ofs0) (p := p); eauto.
   red; intros; eauto with mem.
@@ -3228,8 +3217,7 @@ Proof.
 (* own *)
   intros. eapply mi_own; eauto.
   (* RB: NOTE: Should be solvable by properly extended hint databases. *)
-  apply (proj2 (store_can_access_block_inj _ _ _ _ _ _ _ H0 _ _)).
-  assumption.
+  simpl. erewrite store_preserves_comp; eauto.
 (* align *)
   intros. eapply mi_align with (ofs := ofs0) (p := p); eauto.
   red; intros; eauto with mem.
@@ -3256,7 +3244,8 @@ Proof.
 (* own *)
   intros.
   (* RB: NOTE: Ditto re: hint databases. *)
-  apply (proj1 (store_can_access_block_inj _ _ _ _ _ _ _ H1 _ _)); eauto.
+  simpl; rewrite <- (store_preserves_comp _ _ _ _ _ _ _ H1); eauto.
+  eapply mi_own0; eauto.
 (* access *)
   intros; eapply mi_align0; eauto.
 (* mem_contents *)
@@ -3328,7 +3317,6 @@ Proof.
     rewrite (list_forall2_length H3). lia.
     eauto 6 with mem.
   destruct H9. congruence. lia.
-  (* block <> b1, block <> b2 *)
   eauto.
 Qed.
 
@@ -3440,13 +3428,6 @@ Proof.
   rewrite NEXT. eauto with mem.
 Qed.
 
-(* RB: NOTE: Move up, use in previous proofs. *)
-Remark can_access_block_component :
-  forall m b cp cp', can_access_block m b (Some cp) -> can_access_block m b (Some cp') -> cp = cp'.
-Proof.
-  congruence.
-Qed.
-
 Lemma alloc_left_unmapped_inj:
   forall f m1 m2 c lo hi m1' b1,
   mem_inj f m1 m2 ->
@@ -3486,7 +3467,7 @@ Lemma alloc_left_mapped_inj:
   inj_offset_aligned delta (hi-lo) ->
   (forall ofs k p, lo <= ofs < hi -> perm m2 b2 (ofs + delta) k p) ->
   f b1 = Some(b2, delta) ->
-  forall OWN : can_access_block m2 b2 (Some c),
+  forall OWN : can_access_block m2 b2 c,
   mem_inj f m1' m2.
 Proof.
   intros. inversion H. constructor.
@@ -3495,12 +3476,15 @@ Proof.
   exploit perm_alloc_inv; eauto. intros. destruct (eq_block b0 b1). subst b0.
   rewrite H4 in H5; inv H5. eauto. eauto.
 (* own *)
-  intros. destruct cp as [cp |]; [| trivial]. destruct (eq_block b0 b1).
+  intros. destruct (eq_block b0 b1).
   {
+    (* assert (Mem.block_compartment m2 b3 = Mem.block_compartment m1' b1). *)
+    (* { subst b0. unfold block_compartment.  *)
+    (* } *)
     subst b0. rewrite H4 in H5. inv H5.
-    apply owned_new_block in H0.
-    unfold can_access_block in *. rewrite H0 in H6. inv H6.
-    exact OWN.
+    apply owned_new_block in H0. simpl in *.
+    rewrite H0 in H6.
+    now eapply flowsto_trans; eauto.
   }
   {
     eapply mi_own0; eauto. eapply alloc_can_access_block_other_inj_2; eassumption.
@@ -3598,7 +3582,7 @@ Proof.
   apply mi_memval0; auto. eapply perm_drop_4; eauto.
   unfold drop_perm in H0;
   destruct (range_perm_dec m1 b lo hi Cur Freeable);
-  destruct (can_access_block_dec m1 b (Some cp));
+  destruct (can_access_block_dec m1 b cp);
   inv H0; auto.
 Qed.
 
@@ -3672,11 +3656,11 @@ Proof.
   apply mi_memval0; auto. eapply perm_drop_4; eauto.
   unfold drop_perm in DROP;
   destruct (range_perm_dec m2 b2 (lo + delta) (hi + delta) Cur Freeable);
-  destruct (can_access_block_dec m2 b2 (Some cp));
+  destruct (can_access_block_dec m2 b2 cp);
   inv DROP; auto.
   unfold drop_perm in H0;
   destruct (range_perm_dec m1 b1 lo hi Cur Freeable);
-  destruct (can_access_block_dec m1 b1 (Some cp));
+  destruct (can_access_block_dec m1 b1 cp);
   inv H0; auto.
 Qed.
 
@@ -3706,7 +3690,7 @@ Proof.
   apply mi_memval0; auto.
   unfold drop_perm in H0;
   destruct (range_perm_dec m2 b lo hi Cur Freeable);
-  destruct (can_access_block_dec m2 b (Some cp));
+  destruct (can_access_block_dec m2 b cp);
   inv H0; auto.
 Qed.
 
@@ -3898,7 +3882,7 @@ Proof.
   eapply perm_implies with Freeable; auto with mem.
   eapply perm_alloc_2; eauto.
   lia.
-  eapply owned_new_block; eassumption.
+  simpl. apply owned_new_block in ALLOC; subst; auto with comps.
   intros. eapply perm_alloc_inv in H; eauto.
   generalize (perm_alloc_inv _ _ _ _ _ _ H0 b0 ofs Max Nonempty); intros PERM.
   destruct (eq_block b0 b).
@@ -4007,11 +3991,10 @@ Theorem valid_pointer_extends:
   extends m1 m2 -> valid_pointer m1 b ofs = true -> valid_pointer m2 b ofs = true.
 Proof.
   intros m1 m2 b ofs Hextend Hvalid.
-  destruct (valid_pointer_can_access_block _ _ _ Hvalid) as [cp Hown1].
-  rewrite valid_pointer_valid_access_nonpriv in Hvalid; [| eassumption].
+  eapply valid_pointer_valid_access in Hvalid; eauto.
   destruct (valid_access_extends _ _ _ _ _ _ _ Hextend Hvalid) as [Hperm [Hown2 Halign]].
-  rewrite valid_pointer_valid_access_nonpriv; [| eassumption].
-  split; auto.
+  rewrite valid_pointer_valid_access; eauto .
+  repeat (split; simpl); eauto with comps. eapply flowsto_refl.
 Qed.
 
 Theorem weak_valid_pointer_extends:
@@ -4031,7 +4014,7 @@ Qed.
   is itself valid;
 - the memory value associated in [m1] to an accessible address
   must inject into [m2]'s memory value at the corersponding address;
-- unallocated blocks in [m1] must be mapped to [None] by [f];
+- unallocated blocks in [m1] must be mapped to [top] by [f];
 - if [f b = Some(b', delta)], [b'] must be valid in [m2];
 - distinct blocks in [m1] are mapped to non-overlapping sub-blocks in [m2];
 - the sizes of [m2]'s blocks are representable with unsigned machine integers;
@@ -4133,12 +4116,10 @@ Theorem valid_pointer_inject:
   valid_pointer m2 b2 (ofs + delta) = true.
 Proof.
   intros.
-  pose proof valid_pointer_can_access_block _ _ _ H1 as [cp Hown].
-  unfold can_access_block in Hown.
-  rewrite (valid_pointer_valid_access_nonpriv _ _ _ _ Hown) in H1.
-  rewrite valid_pointer_valid_access_nonpriv.
-  eapply valid_access_inject; eauto.
-  inv H0. inv mi_inj0. eapply mi_own0 with (cp := Some cp); eauto.
+  eapply valid_pointer_valid_access in H1; eauto using flowsto_refl.
+  eapply valid_access_inject in H1; eauto.
+  eapply valid_pointer_valid_access in H1; eauto.
+  inv H0. inv mi_inj0. eapply mi_own0; eauto. now apply flowsto_refl.
 Qed.
 
 Theorem weak_valid_pointer_inject:
@@ -4215,11 +4196,11 @@ Theorem valid_pointer_inject_val:
   valid_pointer m2 b' (Ptrofs.unsigned ofs') = true.
 Proof.
   intros. inv H1.
-  pose proof valid_pointer_can_access_block _ _ _ H0 as [cp Hown].
+  (* pose proof valid_pointer_can_access_block _ _ _ H0 as [cp Hown]. *)
   erewrite address_inject'; eauto.
   eapply valid_pointer_inject; eauto.
-  rewrite valid_pointer_valid_access_nonpriv in H0. eauto.
-  eauto.
+  rewrite valid_pointer_valid_access in H0. eauto.
+  now eapply flowsto_refl.
 Qed.
 
 Theorem weak_valid_pointer_inject_val:
@@ -4265,18 +4246,16 @@ Theorem different_pointers_inject:
   Ptrofs.unsigned (Ptrofs.add ofs2 (Ptrofs.repr delta2)).
 Proof.
   intros.
-  destruct (valid_pointer_can_access_block _ _ _ H1) as [cp1 Hown1].
-  destruct (valid_pointer_can_access_block _ _ _ H2) as [cp2 Hown2].
-  rewrite valid_pointer_valid_access_nonpriv in H1.
-  rewrite valid_pointer_valid_access_nonpriv in H2.
-  rewrite (address_inject' _ _ _ _ _ _ (Some cp1) _ _ H H1 H3).
-  rewrite (address_inject' _ _ _ _ _ _ (Some cp2) _ _ H H2 H4).
+  (* destruct (valid_pointer_can_access_block _ _ _ H1) as [cp1 Hown1]. *)
+  (* destruct (valid_pointer_can_access_block _ _ _ H2) as [cp2 Hown2]. *)
+  rewrite valid_pointer_valid_access in H1; eauto using flowsto_refl.
+  rewrite valid_pointer_valid_access in H2; eauto using flowsto_refl.
+  rewrite (address_inject' _ _ _ _ _ _ _ _ _ H H1 H3).
+  rewrite (address_inject' _ _ _ _ _ _ _ _ _ H H2 H4).
   inv H1. simpl in H5. inv H2. simpl in H1.
   eapply mi_no_overlap; eauto.
   apply perm_cur_max. apply (H5 (Ptrofs.unsigned ofs1)). lia.
   apply perm_cur_max. apply (H1 (Ptrofs.unsigned ofs2)). lia.
-  congruence.
-  congruence.
 Qed.
 
 Theorem disjoint_or_equal_inject:
@@ -4662,7 +4641,7 @@ Theorem alloc_left_mapped_inject:
   inject f m1 m2 ->
   alloc m1 c lo hi = (m1', b1) ->
   valid_block m2 b2 ->
-  forall OWN : can_access_block m2 b2 (Some c),
+  forall OWN : can_access_block m2 b2 c,
   0 <= delta <= Ptrofs.max_unsigned ->
   (forall ofs k p, perm m2 b2 ofs k p -> delta = 0 \/ 0 <= ofs < Ptrofs.max_unsigned) ->
   (forall ofs k p, lo <= ofs < hi -> perm m2 b2 (ofs + delta) k p) ->
@@ -4689,9 +4668,9 @@ Proof.
       inversion H8. subst b0 b3 delta0.
       elim (fresh_block_alloc _ _ _ _ _ _ H0). eauto with mem.
       eauto.
-    unfold f'; intros. destruct cp as [cp |]; [| trivial]. destruct (eq_block b0 b1).
+    unfold f'; intros. destruct (eq_block b0 b1).
       inversion H8. subst b0 b3 delta0.
-      apply unowned_fresh_block with (c' := cp) in H0. contradiction.
+      apply unowned_fresh_block with (c' := cp) in H0; eauto. subst. now apply flowsto_top.
       eapply mi_own0; eauto.
     unfold f'; intros. destruct (eq_block b0 b1).
       inversion H8. subst b0 b3 delta0.
@@ -4770,7 +4749,7 @@ Proof.
   eapply alloc_right_inject; eauto.
   eauto.
   instantiate (1 := b2). eauto with mem.
-  eapply owned_new_block; eauto.
+  eapply owned_new_block in ALLOC; subst; eauto with comps.
   instantiate (1 := 0). unfold Ptrofs.max_unsigned. generalize Ptrofs.modulus_pos; lia.
   auto.
   intros. apply perm_implies with Freeable; auto with mem.
@@ -5133,9 +5112,10 @@ Proof.
   unfold flat_inj; intros. destruct (plt b1 thr); inv H.
   replace (ofs + 0) with ofs by lia; auto.
 (* own *)
-  intros. destruct cp as [cp| ]; [| trivial].
+  intros.
   unfold can_access_block, block_compartment in H0.
-  now rewrite PTree.gempty in H0.
+  unfold empty in H0. simpl in H0.
+  rewrite PMap.gi in H0. eapply flowsto_trans; eauto with comps.
 (* align *)
   unfold flat_inj; intros. destruct (plt b1 thr); inv H. apply Z.divide_0_r.
 (* mem_contents *)
@@ -5158,7 +5138,7 @@ Proof.
   eapply perm_alloc_2; eauto. lia.
   unfold flat_inj. apply pred_dec_true.
   rewrite (alloc_result _ _ _ _ _ _ H). auto.
-  eapply owned_new_block; eauto.
+  eapply owned_new_block in H; subst; eauto with comps.
 Qed.
 
 Theorem store_inject_neutral:
@@ -5208,16 +5188,17 @@ Record unchanged_on (m_before m_after: mem) : Prop := mk_unchanged_on {
     ZMap.get ofs (PMap.get b m_after.(mem_contents)) =
     ZMap.get ofs (PMap.get b m_before.(mem_contents));
   unchanged_on_own:
-    forall b cp,
-    (* P b ofs -> *)
+    forall b,
     valid_block m_before b -> (* Adjust preconditions as needed. *)
-    (can_access_block m_before b cp <-> can_access_block m_after b cp)
+      block_compartment m_after b = block_compartment m_before b
+    (* valid_block m_before b -> (* Adjust preconditions as needed. *) *)
+    (* (can_access_block m_before b cp -> can_access_block m_after b cp) *)
 }.
 
 Lemma unchanged_on_refl:
   forall m, unchanged_on m m.
 Proof.
-  intros; constructor. apply Ple_refl. tauto. tauto. tauto.
+  intros; constructor. apply Ple_refl. tauto. tauto. auto with comps.
 Qed.
 
 Lemma valid_block_unchanged_on:
@@ -5252,8 +5233,10 @@ Proof.
   eapply valid_block_unchanged_on; eauto.
 - intros. transitivity (ZMap.get ofs (mem_contents m2)#b); apply unchanged_on_contents; auto.
   eapply perm_unchanged_on; eauto.
-- intros. transitivity (can_access_block m2 b cp); apply unchanged_on_own; auto.
-  eapply valid_block_unchanged_on; eauto.
+- intros. transitivity (block_compartment m2 b).
+  (* eapply flowsto_trans; eauto. *)
+  eapply unchanged_on_own; eauto using valid_block_unchanged_on.
+  eapply unchanged_on_own; eauto using valid_block_unchanged_on.
 Qed.
 
 Lemma loadbytes_unchanged_on_1:
@@ -5261,13 +5244,21 @@ Lemma loadbytes_unchanged_on_1:
   unchanged_on m m' ->
   valid_block m b ->
   (forall i, ofs <= i < ofs + n -> P b i) ->
-  forall OWN : can_access_block m b cp,
+  (* forall OWN : can_access_block m b cp, *)
   loadbytes m' b ofs n cp = loadbytes m b ofs n cp.
 Proof.
   intros.
   destruct (zle n 0).
-- erewrite ! loadbytes_empty; try easy.
-  inv H. apply unchanged_on_own0; auto.
+- (* destruct (plt b (nextblock m)) as [e0 | n0]. *)
+  destruct (can_access_block_dec m b cp).
+  + erewrite ! loadbytes_empty; try easy.
+    simpl. erewrite unchanged_on_own; eauto.
+  + unfold loadbytes.
+    rewrite 2!andb_false_intro2; auto.
+    destruct can_access_block_dec; now auto.
+    destruct can_access_block_dec; auto.
+    simpl in *.
+    erewrite unchanged_on_own in c; eauto. contradiction.
 - unfold loadbytes. destruct H.
   destruct (range_perm_dec m b ofs (ofs + n) Cur Readable).
 + destruct (can_access_block_dec m b cp).
@@ -5275,11 +5266,13 @@ Proof.
   apply getN_exten. intros. rewrite Z2Nat.id in H by lia.
   apply unchanged_on_contents0; auto.
   red; intros. apply unchanged_on_perm0; auto.
-  apply unchanged_on_own0; auto.
-* setoid_rewrite pred_dec_false at 2.
-  rewrite andb_comm. reflexivity.
-  intro Hcontra. apply n0.
-  apply unchanged_on_own0; auto.
+  simpl. eapply flowsto_trans; eauto.
+  erewrite unchanged_on_own0; auto with comps.
+* simpl.
+  rewrite andb_false_intro2; auto.
+    destruct can_access_block_dec; auto.
+    simpl in *.
+    erewrite unchanged_on_own0 in c; eauto. contradiction.
 + setoid_rewrite pred_dec_false at 1. auto.
   red; intros; elim n0; red; intros. apply <- unchanged_on_perm0; auto.
 Qed.
@@ -5306,10 +5299,15 @@ Proof.
   intros.
   pose proof loadbytes_can_access_block_inj _ _ _ _ _ _ H1 as Hown.
   destruct (zle n 0).
-+ erewrite loadbytes_empty in *; try assumption.
-  destruct cp as [cp |]; [| trivial].
-  inv H. eapply unchanged_on_own0; eauto.
-  eapply can_access_block_valid_block. eassumption.
++ destruct (plt b (nextblock m)).
+  - rewrite <- H1. apply loadbytes_unchanged_on_1; auto.
+  - assert (cp = top).
+    { exploit block_compartment_valid_block; eauto. simpl in Hown.
+      intros R; rewrite R in Hown.
+      inv Hown; auto. }
+    subst cp.
+    erewrite loadbytes_empty in *; try assumption.
+    simpl; auto with comps.
 + rewrite <- H1. apply loadbytes_unchanged_on_1; auto.
   exploit loadbytes_range_perm; eauto. instantiate (1 := ofs). lia.
   intros. eauto with mem.
@@ -5319,6 +5317,7 @@ Lemma load_unchanged_on_1:
   forall m m' chunk b cp ofs,
   unchanged_on m m' ->
   valid_block m b ->
+  forall (OWN: can_access_block m b cp),
   (forall i, ofs <= i < ofs + size_chunk chunk -> P b i) ->
   load chunk m' b ofs cp = load chunk m b ofs cp.
 Proof.
@@ -5327,11 +5326,10 @@ Proof.
   rewrite <- size_chunk_conv in H4. eapply unchanged_on_contents; eauto.
   split; auto. red; intros. eapply perm_unchanged_on; eauto.
   split; auto.
-  destruct H. eapply unchanged_on_own0; eauto.
+  simpl; eapply flowsto_trans; eauto using unchanged_on_own.
+  erewrite unchanged_on_own; eauto with comps.
 - rewrite pred_dec_false. auto.
   red; intros [A [B C]]; elim n; split; auto. red; intros; eapply perm_unchanged_on_2; eauto.
-  split; auto.
-  destruct H. eapply unchanged_on_own0; eauto.
 Qed.
 
 Lemma load_unchanged_on:
@@ -5342,6 +5340,8 @@ Lemma load_unchanged_on:
   load chunk m' b ofs cp = Some v.
 Proof.
   intros. rewrite <- H1. eapply load_unchanged_on_1; eauto with mem.
+  unfold load in H1. destruct (valid_access_dec m chunk b ofs Readable cp) as [v0 | ?]; try congruence.
+  destruct v0 as [? [? ?]]; auto.
 Qed.
 
 Lemma store_unchanged_on:
@@ -5359,7 +5359,7 @@ Proof.
   destruct (zlt ofs0 ofs); auto.
   destruct (zlt ofs0 (ofs + size_chunk chunk)); auto.
   elim (H0 ofs0). lia. auto.
-- eapply store_can_access_block_inj; eauto.
+- erewrite <- store_preserves_comp; eauto with comps.
 Qed.
 
 Lemma storebytes_unchanged_on:
@@ -5376,9 +5376,7 @@ Proof.
   destruct (zlt ofs0 ofs); auto.
   destruct (zlt ofs0 (ofs + Z.of_nat (length bytes))); auto.
   elim (H0 ofs0). lia. auto.
-- split.
-  eapply storebytes_can_access_block_inj_1; eauto.
-  eapply storebytes_can_access_block_inj_2; eauto.
+- erewrite <- storebytes_preserves_comp; eauto with comps.
 Qed.
 
 Lemma alloc_unchanged_on:
@@ -5395,10 +5393,10 @@ Proof.
 - injection H; intros A B. rewrite <- B; simpl.
   rewrite PMap.gso; auto. rewrite A.  eapply valid_not_valid_diff; eauto with mem.
 - destruct (peq b0 b).
-+ subst b0. apply fresh_block_alloc in H. contradiction.
-+ split.
-  eapply alloc_can_access_block_other_inj_1; eauto.
-  eapply alloc_can_access_block_other_inj_2; eauto.
++ subst b0.
+  apply fresh_block_alloc in H; contradiction.
++ unfold alloc in H. inv H; subst. unfold block_compartment. simpl.
+  rewrite PMap.gso; auto.
 Qed.
 
 Lemma free_unchanged_on:
@@ -5416,11 +5414,9 @@ Proof.
   eapply perm_free_3; eauto.
 - unfold free in H.
   destruct (range_perm_dec m b lo hi Cur Freeable);
-  destruct (can_access_block_dec m b (Some cp));
+  destruct (can_access_block_dec m b cp);
   inv H. unfold unchecked_free; destruct (zle hi lo); simpl; auto.
-- split.
-  eapply free_can_access_block_inj_1; eauto.
-  eapply free_can_access_block_inj_2; eauto.
+- erewrite <- free_preserves_comp; eauto with comps.
 Qed.
 
 Lemma drop_perm_unchanged_on:
@@ -5439,11 +5435,9 @@ Proof.
   eapply perm_drop_4; eauto.
 - unfold drop_perm in H.
   destruct (range_perm_dec m b lo hi Cur Freeable);
-  destruct (can_access_block_dec m b (Some cp));
+  destruct (can_access_block_dec m b cp);
   inv H; simpl. auto.
-- split.
-  eapply can_access_block_drop_1; eauto.
-  eapply can_access_block_drop_2; eauto.
+- erewrite <- drop_preserves_comp; eauto with comps.
 Qed.
 
 End UNCHANGED_ON.
@@ -5465,16 +5459,19 @@ Qed.
 Section SECURITY.
 
 #[export] Instance has_side_block: has_side block :=
-  { in_side '(s, m) := fun b δ => match Mem.block_compartment m b with
-                               | Some cp => s cp = δ
-                               | _ => False
-                               end }.
+  { in_side '(s, m) := fun b δ => s (Mem.block_compartment m b) = δ }.
 
 #[export] Instance has_side_value: has_side val :=
   {| in_side := fun '(s, m) v δ => match v with
                                 | Vptr b _=> (s, m) |= b ∈ δ
                                 | _ => False
                                 end |}.
+
+Definition same_domain (s: split) (j: meminj) (δ: side) (m: mem): Prop :=
+  forall b, (j b <> None <-> (s, m) |= b ∈ δ).
+
+Definition delta_zero (j: meminj): Prop :=
+  forall loc loc' delta, j loc = Some (loc', delta) -> delta = 0.
 
 Definition meminj_injective (j: meminj): Prop :=
   forall b1 b2 b1' b2' ofs1 ofs2,

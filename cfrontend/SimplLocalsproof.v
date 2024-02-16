@@ -25,26 +25,11 @@ Definition match_prog (p tp: program) : Prop :=
     match_program (fun ctx f tf => transf_fundef f = OK tf) eq p tp
  /\ prog_types tp = prog_types p.
 
-#[global]
-Instance comp_transf_function: has_comp_transl_partial transf_function.
-Proof.
-  unfold transf_function.
-  intros f ? H; monadInv H; trivial.
-Qed.
-
-#[global]
-Instance comp_transf_fundef: has_comp_transl_partial transf_fundef.
-Proof.
-  unfold transf_fundef, transf_function.
-  intros [f|ef] ? H; monadInv H; trivial.
-  now monadInv EQ.
-Qed.
-
 Lemma match_transf_program:
   forall p tp, transf_program p = OK tp -> match_prog p tp.
 Proof.
-  unfold transf_program; intros. monadInv H. 
-  split; auto. apply match_transform_partial_program. rewrite EQ. destruct x; auto.
+  unfold transf_program; intros. monadInv H.
+  split; auto. eapply match_transform_partial_program. rewrite EQ. destruct x; auto.
 Qed.
 
 Section PRESERVATION.
@@ -89,16 +74,16 @@ Proof.
   monadInv EQ. simpl; unfold type_of_function; simpl. auto.
 Qed.
 
-(* Lemma allowed_addrof_translated: *)
-(*   forall cp id, *)
-(*     Genv.allowed_addrof ge cp id -> *)
-(*     Genv.allowed_addrof tge cp id. *)
-(* Proof. *)
-(*   intros cp id. *)
-(*   destruct TRANSF as [H _]. *)
-(*   unfold ge, tge. *)
-(*   now rewrite (Genv.match_genvs_allowed_addrof H). *)
-(* Qed. *)
+Lemma allowed_addrof_translated:
+  forall cp id,
+    Genv.allowed_addrof ge cp id ->
+    Genv.allowed_addrof tge cp id.
+Proof.
+  intros cp id.
+  destruct TRANSF as [H _].
+  unfold ge, tge.
+  now rewrite (Genv.match_genvs_allowed_addrof H).
+Qed.
 
 Lemma allowed_call_translated:
   forall f tf vf,
@@ -114,10 +99,10 @@ Qed.
 
 Lemma find_comp_translated:
   forall vf,
-    Genv.find_comp ge vf = Genv.find_comp tge vf.
+    Genv.find_comp_in_genv ge vf = Genv.find_comp_in_genv tge vf.
 Proof.
   destruct TRANSF.
-  eapply (Genv.match_genvs_find_comp H).
+  eapply (Genv.match_genvs_find_comp_in_genv H).
 Qed.
 
 Lemma type_of_call_translated:
@@ -128,7 +113,7 @@ Lemma type_of_call_translated:
 Proof.
   intros f tf cp TRF.
   erewrite <- (comp_transl_partial _ TRF).
-  eapply (Genv.match_genvs_type_of_call).
+  reflexivity.
 Qed.
 
 Lemma call_trace_translated:
@@ -164,7 +149,7 @@ Inductive match_var (f: meminj) (cenv: compilenv) (e: env) (m: mem) (te: env) (t
       (LIFTED: VSet.mem id cenv = true)
       (MAPPED: f b = None)
       (MODE: access_mode ty = By_value chunk)
-      (LOAD: Mem.load chunk m b 0 (Some c) = Some v)
+      (LOAD: Mem.load chunk m b 0 c = Some v)
       (TLENV: tle!(id) = Some tv)
       (VINJ: Val.inject f v tv),
       match_var f cenv e m te tle id
@@ -371,7 +356,7 @@ Lemma step_Sdebug_temp:
   forall f id ty k e le m v,
   le!id = Some v ->
   val_casted v ty ->
-  step2 tge (State f (Sdebug_temp (comp_of f) id ty) k e le m)
+  step2 tge (State f (Sdebug_temp id ty) k e le m)
          E0 (State f Sskip k e le m).
 Proof.
   intros. unfold Sdebug_temp. eapply step_builtin with (optid := None); eauto.
@@ -382,7 +367,7 @@ Qed.
 Lemma step_Sdebug_var:
   forall f id ty k e le m b,
   e!id = Some(b, ty) ->
-  step2 tge (State f (Sdebug_var (comp_of f) id ty) k e le m)
+  step2 tge (State f (Sdebug_var id ty) k e le m)
          E0 (State f Sskip k e le m).
 Proof.
   intros. unfold Sdebug_var. eapply step_builtin with (optid := None); eauto.
@@ -395,7 +380,7 @@ Lemma step_Sset_debug:
   forall f id ty a k e le m v v',
   eval_expr tge e (comp_of f) le m a v ->
   sem_cast v (typeof a) ty m = Some v' ->
-  plus step2 tge (State f (Sset_debug (comp_of f) id ty a) k e le m)
+  plus step2 tge (State f (Sset_debug id ty a) k e le m)
               E0 (State f Sskip k e (PTree.set id v' le) m).
 Proof.
   intros; unfold Sset_debug.
@@ -415,7 +400,7 @@ Qed.
 Lemma step_add_debug_vars:
   forall f s e le m vars k,
   (forall id ty, In (id, ty) vars -> exists b, e!id = Some (b, ty)) ->
-  star step2 tge (State f (add_debug_vars (comp_of f) vars s) k e le m)
+  star step2 tge (State f (add_debug_vars vars s) k e le m)
               E0 (State f s k e le m).
 Proof.
   unfold add_debug_vars. destruct (Compopts.debug tt).
@@ -449,7 +434,7 @@ Lemma step_add_debug_params:
   list_norepet (var_names params) ->
   list_forall2 val_casted vl (map snd params) ->
   bind_parameter_temps params vl le1 = Some le ->
-  star step2 tge (State f (add_debug_params (comp_of f) params s) k e le m)
+  star step2 tge (State f (add_debug_params params s) k e le m)
               E0 (State f s k e le m).
 Proof.
   unfold add_debug_params. destruct (Compopts.debug tt).
@@ -846,7 +831,7 @@ Qed.
 
 Definition env_initial_value (c: compartment) (e: env) (m: mem) :=
   forall id b ty chunk,
-  e!id = Some(b, ty) -> access_mode ty = By_value chunk -> Mem.load chunk m b 0 (Some c) = Some Vundef.
+  e!id = Some(b, ty) -> access_mode ty = By_value chunk -> Mem.load chunk m b 0 c = Some Vundef.
 
 Lemma alloc_variables_initial_value:
   forall c e m vars e' m',
@@ -860,7 +845,7 @@ Proof.
   destruct (peq id0 id). inv H2.
   eapply Mem.load_alloc_same'; eauto.
   lia. rewrite Z.add_0_l. eapply sizeof_by_value; eauto.
-  eapply Mem.owned_new_block; eauto.
+  simpl. erewrite Mem.owned_new_block; eauto. apply flowsto_refl.
   apply Z.divide_0_r.
   eapply Mem.load_alloc_other; eauto.
 Qed.
@@ -1344,7 +1329,7 @@ Fixpoint freelist_no_overlap (l: list (block * Z * Z)) : Prop :=
 Lemma can_free_list:
   forall l m c,
   (forall b lo hi, In (b, lo, hi) l -> Mem.range_perm m b lo hi Cur Freeable) ->
-  forall (OWN_BLOCKS: (forall b lo hi, In (b, lo, hi) l -> Mem.can_access_block m b (Some c))),
+  forall (OWN_BLOCKS: (forall b lo hi, In (b, lo, hi) l -> Mem.can_access_block m b c)),
   freelist_no_overlap l ->
   exists m', Mem.free_list m l c = Some m'.
 Proof.
@@ -1605,18 +1590,16 @@ Proof.
   rewrite ENV in H7; inv H7.
   inv H0; try congruence.
   assert (chunk0 = chunk). simpl in H. congruence. subst chunk0.
-  assert (v0 = v). unfold Mem.loadv in H2. rewrite Ptrofs.unsigned_zero in H2.
-  (* JT: TODO: clean this proof! also make sure it's the right way to do things back
-   in the [match_envs] definition *)
-  assert (c = c0).
-  { clear -LOAD H2.
+  assert (v0 = v).
+  { unfold Mem.loadv in H2. rewrite Ptrofs.unsigned_zero in H2.
+    clear -LOAD H2.
     Local Transparent Mem.load.
     unfold Mem.load in *.
-    destruct (Mem.valid_access_dec m chunk loc 0 Readable (Some c0)) eqn:?;
-             destruct (Mem.valid_access_dec m chunk loc 0 Readable (Some c)) eqn:?;
+    destruct (Mem.valid_access_dec m chunk loc 0 Readable c0) eqn:?;
+             destruct (Mem.valid_access_dec m chunk loc 0 Readable c) eqn:?;
              try discriminate. destruct v1 as [? [? ?]]. destruct v2 as [? [? ?]].
-    simpl in *. eapply Mem.can_access_block_component; eauto. }
-  congruence. subst v0.
+    simpl in *. congruence. }
+  subst v0.
   exists tv; split; auto. constructor; auto.
   simpl in H; congruence.
   simpl in H; congruence.
@@ -1639,15 +1622,7 @@ Proof.
   exploit me_vars; eauto. instantiate (1 := id). intros MV. inv MV; try congruence.
   exists l; exists Ptrofs.zero; split.
   apply eval_Evar_global. auto. rewrite <- H0. apply symbols_preserved.
-  destruct H1.
-    left. rewrite <- (Genv.match_genvs_find_comp_of_block (proj1 TRANSF)). auto.
-    right. destruct H1 as [fd ?].
-    pose proof (Genv.find_def_match_2 (proj1 TRANSF) l) as J.
-    simpl in *. Local Transparent ge tge.
-    unfold ge, tge in *. setoid_rewrite H1 in J.
-    inv J. setoid_rewrite <- H5. inv H6; eauto.
-    Local Opaque ge tge.
-  (* { now apply allowed_addrof_translated. } *)
+  { now apply allowed_addrof_translated. }
   destruct GLOB as [bound GLOB1]. inv GLOB1.
   econstructor; eauto.
 (* deref *)
@@ -2180,14 +2155,14 @@ Proof.
 Qed.
 
 Lemma find_label_add_debug_vars:
-  forall s k vars, find_label lbl (add_debug_vars cp vars s) k = find_label lbl s k.
+  forall s k vars, find_label lbl (add_debug_vars vars s) k = find_label lbl s k.
 Proof.
   unfold add_debug_vars. destruct (Compopts.debug tt); auto.
   induction vars; simpl; auto. destruct a as [id ty]; simpl. auto.
 Qed.
 
 Lemma find_label_add_debug_params:
-  forall s k vars, find_label lbl (add_debug_params cp vars s) k = find_label lbl s k.
+  forall s k vars, find_label lbl (add_debug_params vars s) k = find_label lbl s k.
 Proof.
   unfold add_debug_params. destruct (Compopts.debug tt); auto.
   induction vars; simpl; auto. destruct a as [id ty]; simpl. auto.
@@ -2212,7 +2187,7 @@ Proof.
   inv H.
   (* local variable *)
   econstructor; split.
-  rewrite (comp_transl_partial _ TRF).
+  (* rewrite (comp_transl_partial _ TRF). *)
   eapply step_Sset_debug.
   rewrite <- (comp_transl_partial _ TRF). eauto. rewrite typeof_simpl_expr. eauto.
   econstructor; eauto with compat.
@@ -2265,9 +2240,9 @@ Proof.
   eauto.
   erewrite type_of_fundef_preserved; eauto.
   eapply allowed_call_translated; eauto.
-  erewrite <- type_of_call_translated; eauto.
+  erewrite <- type_of_call_translated; eauto. simpl.
   intros. eapply Val.inject_list_not_ptr; eauto. eapply NO_CROSS_PTR.
-  rewrite comp_transf_fundef; eauto.
+  erewrite comp_transf_fundef; eauto.
   rewrite <- comp_transf_fundef; eauto.
   eapply call_trace_translated; eauto.
   rewrite <- comp_transf_function; eauto.
@@ -2278,8 +2253,11 @@ Proof.
 
 (* builtin *)
   exploit eval_simpl_exprlist; eauto with compat. intros [CASTED [tvargs [C D]]].
-  exploit external_call_mem_inject; eauto. apply match_globalenvs_preserves_globals; eauto with compat.
-  intros [j' [tvres [tm' [P [Q [R [S [T [U [V W]]]]]]]]]].
+  exploit external_call_mem_inject; eauto.
+  (* TODO: why can't Coq find the instance automatically? *)
+  eapply has_comp_fundef. eapply has_comp_function.
+  apply match_globalenvs_preserves_globals; eauto with compat.
+  intros [j' [tvres [tm' [P [Q [R [S [T [U V]]]]]]]]].
   econstructor; split.
   apply plus_one. econstructor; eauto.
   rewrite <- (comp_transl_partial _ TRF). eauto.
@@ -2443,9 +2421,9 @@ Proof.
          fn_vars := remove_lifted (cenv_for f) (fn_params f ++ fn_vars f);
          fn_temps := add_lifted (cenv_for f) (fn_vars f) (fn_temps f);
          fn_body :=
-           add_debug_params (fn_comp f) (fn_params f)
+           add_debug_params (fn_params f)
              (store_params (cenv_for f) (fn_params f)
-                (add_debug_vars (fn_comp f) (remove_lifted (cenv_for f) (fn_params f ++ fn_vars f)) x0))
+                (add_debug_vars (remove_lifted (cenv_for f) (fn_params f ++ fn_vars f)) x0))
        |}) by reflexivity.
   eapply step_add_debug_params. auto. eapply forall2_val_casted_inject; eauto. eexact Q.
   eapply star_trans. eexact P.
@@ -2467,11 +2445,16 @@ Proof.
 
 (* external function *)
   monadInv TRFD. inv FUNTY.
-  exploit external_call_mem_inject; eauto. apply match_globalenvs_preserves_globals.
-  eapply match_cont_globalenv. eexact (MCONT VSet.empty (comp_of ef)).
-  intros [j' [tvres [tm' [P [Q [R [S [T [U [V W]]]]]]]]]].
+  exploit external_call_mem_inject; eauto.
+  eapply has_comp_fundef. eapply has_comp_function.
+  apply match_globalenvs_preserves_globals.
+  eapply match_cont_globalenv. eexact (MCONT VSet.empty top).
+  intros [j' [tvres [tm' [P [Q [R [S [T [U V]]]]]]]]].
   econstructor; split.
-  apply plus_one. econstructor; eauto. eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  (* NOTE: strange specialize here *)
+  specialize (MCONT (VSet.empty) top).
+  exploit match_cont_call_comp; eauto. intros G.
+  apply plus_one. econstructor; eauto. rewrite <- G. eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   econstructor; eauto.
   intros. apply match_cont_incr_bounds with (Mem.nextblock m) (Mem.nextblock tm).
   eapply match_cont_extcall; eauto. extlia. extlia.
@@ -2535,6 +2518,7 @@ Theorem transf_program_correct:
 Proof.
   eapply forward_simulation_plus.
   apply senv_preserved.
+  apply senv_preserved.
   eexact initial_states_simulation.
   eexact final_states_simulation.
   eexact step_simulation.
@@ -2546,21 +2530,17 @@ End PRESERVATION.
 
 Global Instance TransfSimplLocalsLink : TransfLink match_prog.
 Proof.
-  red; intros. eapply Ctypes.link_match_program; eauto. 
+  red; intros. eapply Ctypes.link_match_program; eauto.
   intros.
 Local Transparent Linker_fundef.
   simpl in *; unfold link_fundef in *.
   destruct f1; monadInv H3; destruct f2; monadInv H4; try discriminate.
 - destruct e; inv H2.
-  destruct eq_compartment; try easy. subst cp. inv H4.
   exists (Internal x); split; auto.
-* now rewrite <- (comp_transl_partial _ EQ), dec_eq_true.
-* simpl; rewrite EQ; auto.
+  simpl; rewrite EQ; auto.
 - destruct e; inv H2.
-  destruct eq_compartment; try easy. subst cp. inv H4.
   exists (Internal x); split; auto.
-* now rewrite <- (comp_transl_partial _ EQ), dec_eq_true.
-* simpl; rewrite EQ; auto.
+  simpl; rewrite EQ; auto.
 - destruct (external_function_eq e e0 && typelist_eq t t1 &&
             type_eq t0 t2 && calling_convention_eq c c0); inv H2.
   econstructor; split; eauto. 

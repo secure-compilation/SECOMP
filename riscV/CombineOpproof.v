@@ -28,15 +28,14 @@ Require Import CombineOp.
 Section COMBINE.
 
 Variable ge: genv.
-Variable cp: compartment.
 Variable sp: val.
 Variable m: mem.
 Variable get: valnum -> option rhs.
 Variable valu: valnum -> val.
-Hypothesis get_sound: forall v rhs, get v = Some rhs -> rhs_eval_to valu ge cp sp m rhs (valu v).
+Hypothesis get_sound: forall v rhs, get v = Some rhs -> rhs_eval_to valu ge sp m rhs (valu v).
 
 Lemma get_op_sound:
-  forall v op vl, get v = Some (Op op vl) -> eval_operation ge cp sp op (map valu vl) m = Some (valu v).
+  forall v op vl, get v = Some (Op op vl) -> eval_operation ge sp op (map valu vl) m = Some (valu v).
 Proof.
   intros. exploit get_sound; eauto. intros REV; inv REV; auto.
 Qed.
@@ -124,7 +123,7 @@ Qed.
 Theorem combine_addr_sound:
   forall addr args addr' args',
   combine_addr get addr args = Some(addr', args') ->
-  eval_addressing ge cp sp addr' (map valu args') = eval_addressing ge cp sp addr (map valu args).
+  eval_addressing ge sp addr' (map valu args') = eval_addressing ge sp addr (map valu args).
 Proof.
   intros. functional inversion H; subst.
 - (* indexed - addimm *)
@@ -138,7 +137,7 @@ Qed.
 Theorem combine_op_sound:
   forall op args op' args',
   combine_op get op args = Some(op', args') ->
-  eval_operation ge cp sp op' (map valu args') m = eval_operation ge cp sp op (map valu args) m.
+  eval_operation ge sp op' (map valu args') m = eval_operation ge sp op (map valu args) m.
 Proof.
   intros. functional inversion H; subst.
   (* addimm - addimm *)

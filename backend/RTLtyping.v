@@ -132,7 +132,7 @@ Inductive wt_instr : instruction -> Prop :=
   | wt_Ibuiltin:
       forall ef args res s,
       match ef with
-      | EF_annot _ _ _ _ | EF_debug _ _ _ _ => True
+      | EF_annot _ _ _ | EF_debug _ _ _ => True
       | _ => map type_of_builtin_arg args = (ef_sig ef).(sig_args)
       end ->
       type_of_builtin_res res = proj_sig_res (ef_sig ef) ->
@@ -309,7 +309,7 @@ Definition type_instr (e: S.typenv) (i: instruction) : res S.typenv :=
       do x <- check_successor s;
       do e1 <-
         match ef with
-        | EF_annot _ _ _ _ | EF_debug _ _ _ _ => OK e
+        | EF_annot _ _ _ | EF_debug _ _ _ => OK e
         | _ => type_builtin_args e args sig.(sig_args)
         end;
       type_builtin_res e1 res (proj_sig_res sig)
@@ -705,7 +705,7 @@ Proof.
   exploit type_builtin_res_complete; eauto. instantiate (1 := res). intros [e2 [C D]].
   exploit type_builtin_res_complete. eexact H. instantiate (1 := res). intros [e3 [E F]].
   rewrite check_successor_complete by auto. simpl.
-  exists (match ef with EF_annot _ _ _ _ | EF_debug _ _ _ _ => e3 | _ => e2 end); split.
+  exists (match ef with EF_annot _ _ _ | EF_debug _ _ _ => e3 | _ => e2 end); split.
   rewrite H1 in C, E.
   destruct ef; try (rewrite <- H0; rewrite A); simpl; auto.
   destruct ef; auto.
@@ -832,7 +832,7 @@ Qed.
 Lemma wt_exec_Iop:
   forall (ge: genv) env f sp op args res s rs m v,
   wt_instr f env (Iop op args res s) ->
-  eval_operation ge (comp_of f) sp op rs##args m = Some v ->
+  eval_operation ge sp op rs##args m = Some v ->
   wt_regset env rs ->
   wt_regset env (rs#res <- v).
 Proof.
@@ -857,14 +857,13 @@ Qed.
 Lemma wt_exec_Ibuiltin:
   forall env f ef (ge: genv) args res s vargs m t vres m' rs,
   wt_instr f env (Ibuiltin ef args res s) ->
-  external_call ef ge vargs m t vres m' ->
+  external_call ef ge (comp_of f) vargs m t vres m' ->
   wt_regset env rs ->
-  comp_of ef = comp_of f ->
   wt_regset env (regmap_setres res vres rs).
 Proof.
   intros. inv H.
   eapply wt_regset_setres; eauto.
-  rewrite H8. eapply external_call_well_typed; eauto.
+  rewrite H7. eapply external_call_well_typed; eauto.
 Qed.
 
 Lemma wt_instr_at:
@@ -894,11 +893,11 @@ Inductive wt_state: state -> Prop :=
         (WT_RS: wt_regset env rs),
       wt_state (State s f sp pc rs m)
   | wt_state_call:
-      forall s f args m,
+      forall s f cp args m,
       wt_stackframes s (funsig f) ->
       wt_fundef f ->
       Val.has_type_list args (sig_args (funsig f)) ->
-      wt_state (Callstate s f args m)
+      wt_state (Callstate s f args m cp)
   | wt_state_return:
       forall s v m cp sg,
       wt_stackframes s sg ->
@@ -946,11 +945,11 @@ Proof.
   (* Icall *)
   assert (wt_fundef fd).
     destruct ros; simpl in H0.
-    pattern fd. apply Genv.find_funct_prop with unit p (rs#r).
+    pattern fd. apply Genv.find_funct_prop with unit _ p (rs#r).
     exact wt_p. exact H0.
     unfold find_function in H0. simpl in H0.
     caseEq (Genv.find_symbol ge i); intros; rewrite H1 in H0.
-    pattern fd. apply Genv.find_funct_ptr_prop with unit p b.
+    pattern fd. apply Genv.find_funct_ptr_prop with unit _ p b.
     exact wt_p. exact H0.
     discriminate.
   econstructor; eauto.
@@ -959,11 +958,11 @@ Proof.
   (* Itailcall *)
   assert (wt_fundef fd).
     destruct ros; simpl in H0.
-    pattern fd. apply Genv.find_funct_prop with unit p (rs#r).
+    pattern fd. apply Genv.find_funct_prop with unit _ p (rs#r).
     exact wt_p. now eauto.
     unfold find_function in H0. simpl in H0.
     caseEq (Genv.find_symbol ge i); intros; rewrite H1 in H0.
-    pattern fd. apply Genv.find_funct_ptr_prop with unit p b.
+    pattern fd. apply Genv.find_funct_ptr_prop with unit _ p b.
     exact wt_p. now eauto.
     discriminate.
   econstructor; eauto.
@@ -979,7 +978,7 @@ Proof.
   econstructor; eauto.
   inv WTI; simpl. auto. rewrite <- H3. auto.
   (* internal function *)
-  simpl in *. inv H5.
+  simpl in *. inv H6.
   econstructor; eauto.
   inv H1. apply wt_init_regs; auto. rewrite wt_params0. auto.
   (* external function *)
@@ -994,7 +993,7 @@ Lemma wt_initial_state:
   forall S, initial_state p S -> wt_state S.
 Proof.
   intros. inv H. constructor. constructor. rewrite H3; auto.
-  pattern f. apply Genv.find_funct_ptr_prop with unit p b.
+  pattern f. apply Genv.find_funct_ptr_prop with unit _ p b.
   exact wt_p. exact H2.
   rewrite H3. constructor.
 Qed.

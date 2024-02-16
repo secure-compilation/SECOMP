@@ -26,7 +26,7 @@ let emit i = current_code := i :: !current_code
 
 (* Generation of fresh labels *)
 
-let dummy_function = { fn_comp = privileged_compartment; fn_code = []; fn_sig = signature_main }
+let dummy_function = { fn_comp = COMP.top; fn_code = []; fn_sig = signature_main }
 let current_function = ref dummy_function
 let next_label = ref (None: label option)
 
@@ -155,7 +155,7 @@ let expand_debug id sp preg simple l =
     | (Pbuiltin(EF_annot (kind, _, _),_,_) as annot)::rest ->
       simple annot;
       if P.to_int kind = 2 && lbl_follows rest then
-        simple builtin_nop;
+        simple (builtin_nop);
       aux None scopes rest
     | (Plabel lbl)::rest -> simple (Plabel lbl); aux (Some lbl) scopes rest
     | i::rest -> simple i; aux None scopes rest in
@@ -176,7 +176,7 @@ let expand_simple simple l =
    | (Pbuiltin(EF_annot (kind, _, _),_,_) as annot)::rest ->
      simple annot;
      if P.to_int kind = 2 && lbl_follows rest then
-       simple builtin_nop;
+       simple (builtin_nop);
      aux rest
    | i::rest -> simple i; aux rest
    | [] -> () in

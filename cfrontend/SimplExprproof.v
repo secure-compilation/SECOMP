@@ -100,16 +100,16 @@ Proof.
   intros. inv H; auto.
 Qed.
 
-(* Lemma allowed_addrof_translated: *)
-(*   forall cp id, *)
-(*     Genv.allowed_addrof ge cp id -> *)
-(*     Genv.allowed_addrof tge cp id. *)
-(* Proof. *)
-(*   intros cp id. *)
-(*   destruct TRANSL as [H _]. *)
-(*   unfold ge, tge. *)
-(*   now rewrite (Genv.match_genvs_allowed_addrof H). *)
-(* Qed. *)
+Lemma allowed_addrof_translated:
+  forall cp id,
+    Genv.allowed_addrof ge cp id ->
+    Genv.allowed_addrof tge cp id.
+Proof.
+  intros cp id.
+  destruct TRANSL as [H _].
+  unfold ge, tge.
+  now rewrite (Genv.match_genvs_allowed_addrof H).
+Qed.
 
 Lemma allowed_call_translated:
   forall cp vf,
@@ -123,10 +123,10 @@ Qed.
 
 Lemma find_comp_translated:
   forall vf,
-    Genv.find_comp ge vf = Genv.find_comp tge vf.
+    Genv.find_comp_in_genv ge vf = Genv.find_comp_in_genv tge vf.
 Proof.
   destruct TRANSL.
-  eapply (Genv.match_genvs_find_comp H).
+  eapply (Genv.match_genvs_find_comp_in_genv H).
 Qed.
 
 Lemma call_trace_translated:
@@ -426,17 +426,7 @@ Opaque makeif.
 - (* var global *)
   split; auto. split; auto. apply eval_Evar_global; auto.
   + rewrite symbols_preserved; auto.
-  + destruct H1.
-    left.
-    unfold ge, tge in *.
-    destruct TRANSL as [G _].
-    rewrite <- (Genv.match_genvs_find_comp_of_block G). auto.
-    right. destruct H1 as [fd ?].
-    unfold ge, tge in *.
-    destruct TRANSL as [G _].
-    pose proof (Genv.find_def_match_2 G b) as J.
-    simpl in *. setoid_rewrite H1 in J.
-    inv J. setoid_rewrite <- H3. inv H4; eauto.
+  + now apply allowed_addrof_translated.
 - (* deref *)
   exploit H0; eauto. intros [A [B C]]. subst sl1.
   split; auto. split. rewrite typeof_Ederef'; auto. apply eval_Ederef'; auto. 
@@ -2209,7 +2199,8 @@ Ltac NOTIN :=
   econstructor; split.
   left. eapply plus_left. constructor.  apply star_one.
   econstructor; eauto.
-  rewrite CO; eauto. congruence.
+  rewrite CO; eauto.
+  rewrite CO; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   traceEq.
   econstructor; eauto.
@@ -2220,7 +2211,8 @@ Ltac NOTIN :=
   econstructor; split.
   left. eapply plus_left. constructor. apply star_one.
   econstructor; eauto.
-  rewrite CO; eauto. congruence.
+  rewrite CO; eauto.
+  rewrite CO; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   traceEq.
   econstructor; eauto.
@@ -2544,6 +2536,8 @@ Proof.
   inv TR.
   econstructor; split.
   left; apply plus_one. econstructor; eauto.
+  specialize (MK (prog_comp_env cu)).
+  exploit match_cont_call_comp; eauto. intros <-.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   apply match_returnstates. auto.
 
@@ -2555,7 +2549,6 @@ Proof.
   now rewrite CO.
   rewrite CO. eapply return_trace_eq; eauto using senv_preserved.
   econstructor; eauto.
-
 Qed.
 
 (** Semantic preservation *)
@@ -2603,6 +2596,7 @@ Theorem transl_program_correct:
 Proof.
   eapply forward_simulation_star_wf with (order := ltof _ measure).
   eapply senv_preserved.
+  eapply senv_preserved.
   eexact transl_initial_states.
   eexact transl_final_states.
   apply well_founded_ltof.
@@ -2616,23 +2610,17 @@ End PRESERVATION.
 Global Instance TransfSimplExprLink : TransfLink match_prog.
 Proof.
   red; intros. eapply Ctypes.link_match_program_gen; eauto.
-- intros.
+  intros.
 Local Transparent Linker_fundef.
   simpl in *; unfold link_fundef in *. inv H3; inv H4; try discriminate.
   destruct ef; inv H2.
-  destruct (eq_compartment cp (comp_of f0)); [| discriminate].
-  injection H4 as ?; subst f cp.
   exists (Internal tf); split.
-  inv H5. rewrite H2.
-  destruct (eq_compartment (comp_of f0) (comp_of f0)); [| contradiction].
+  inv H5.
   reflexivity.
   left; constructor; auto.
   destruct ef; inv H2.
-  destruct (eq_compartment cp (comp_of f0)); [| discriminate].
-  injection H5 as ?; subst f cp.
   exists (Internal tf); split.
-  inv H3. rewrite H2.
-  destruct (eq_compartment (comp_of f0) (comp_of f0)); [| contradiction].
+  inv H3.
   reflexivity.
   right; constructor; auto.
   destruct (external_function_eq ef ef0 && typelist_eq targs targs0 &&

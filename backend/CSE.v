@@ -404,9 +404,9 @@ End REDUCE.
 Module Numbering.
   Definition t := numbering.
   Definition ge (n1 n2: numbering) : Prop :=
-    forall valu ge cp sp rs m,
-    numbering_holds valu ge cp sp rs m n2 ->
-    numbering_holds valu ge cp sp rs m n1.
+    forall valu ge sp rs m,
+    numbering_holds valu ge sp rs m n2 ->
+    numbering_holds valu ge sp rs m n1.
   Definition top := empty_numbering.
   Lemma top_ge: forall x, ge top x.
   Proof.
@@ -471,16 +471,16 @@ Definition transfer (f: function) (approx: PMap.t VA.t) (pc: node) (before: numb
           empty_numbering
       | Ibuiltin ef args res s =>
           match ef with
-          | EF_external _ _ _ | EF_runtime _ _ _ | EF_malloc _ | EF_free _ | EF_inline_asm _ _ _ _ =>
+          | EF_external _ _ | EF_runtime _ _ | EF_malloc | EF_free | EF_inline_asm _ _ _ =>
               empty_numbering
-          | EF_vstore _ _ =>
+          | EF_vstore _ =>
               set_res_unknown (kill_all_loads before) res
-          | EF_builtin _ name sg =>
+          | EF_builtin name sg =>
               match lookup_builtin_function name sg with
               | Some bf => set_res_unknown before res
               | None    => set_res_unknown (kill_all_loads before) res
               end
-          | EF_memcpy _ sz al =>
+          | EF_memcpy sz al =>
               match args with
               | dst :: src :: nil =>
                   let app := approx!!pc in
@@ -491,7 +491,7 @@ Definition transfer (f: function) (approx: PMap.t VA.t) (pc: node) (before: numb
               | _ =>
                   empty_numbering
               end
-          | EF_vload _ _ | EF_annot _ _ _ _ | EF_annot_val _ _ _ _ | EF_debug _ _ _ _ =>
+          | EF_vload _ | EF_annot _ _ _ | EF_annot_val _ _ _ | EF_debug _ _ _ =>
               set_res_unknown before res
           end
       | Icond cond args ifso ifnot =>
@@ -573,6 +573,15 @@ Definition transf_function (rm: romem) (f: function) : res function :=
            (transf_code approxs f.(fn_code))
            f.(fn_entrypoint))
   end.
+
+#[global] Instance comp_transf_function rm:
+  has_comp_transl_partial (transf_function rm).
+Proof.
+  unfold transf_function.
+  intros f ? H.
+  destruct analyze; try easy.
+  now inv H.
+Qed.
 
 Definition transf_fundef (rm: romem) (f: fundef) : res fundef :=
   AST.transf_partial_fundef (transf_function rm) f.

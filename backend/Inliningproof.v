@@ -20,18 +20,6 @@ Require Import Inlining Inliningspec.
 Definition match_prog (prog tprog: program) :=
   match_program (fun cunit f tf => transf_fundef (funenv_program cunit) f = OK tf) eq prog tprog.
 
-#[global]
-Instance comp_transl_function fenv:
-  has_comp_transl_partial (transf_function fenv).
-Proof.
-  unfold transf_function.
-  intros f tf H; try now inv H.
-  destruct (expand_function _ _ _).
-  destruct (zlt _ _); try easy.
-  simpl in *.
-  now inv H.
-Qed.
-
 Lemma transf_program_match:
   forall prog tprog, transf_program prog = OK tprog -> match_prog prog tprog.
 Proof.
@@ -46,12 +34,14 @@ Hypothesis TRANSF: match_prog prog tprog.
 Let ge := Genv.globalenv prog.
 Let tge := Genv.globalenv tprog.
 
+Let HYPOTHESIS := @has_comp_fundef function _.
+
 Lemma symbols_preserved:
   forall (s: ident), Genv.find_symbol tge s = Genv.find_symbol ge s.
 Proof (Genv.find_symbol_match TRANSF).
 
 Lemma senv_preserved:
-  Senv.equiv ge tge.
+  Senv.equiv (Genv.to_senv ge) (Genv.to_senv tge).
 Proof (Genv.senv_match TRANSF).
 
 Lemma functions_translated:
@@ -77,10 +67,10 @@ Qed.
 
 Lemma find_comp_translated:
   forall vf,
-    Genv.find_comp ge vf = Genv.find_comp tge vf.
+    Genv.find_comp_in_genv ge vf = Genv.find_comp_in_genv tge vf.
 Proof.
   intros vf.
-  eapply (Genv.match_genvs_find_comp TRANSF).
+  eapply (Genv.match_genvs_find_comp_in_genv TRANSF).
 Qed.
 
 Lemma sig_function_translated:
@@ -487,17 +477,17 @@ Qed.
 (** Translation of builtin arguments. *)
 
 Lemma tr_builtin_arg:
-  forall F bound ctx rs rs' sp sp' m m' cp,
+  forall F bound ctx rs rs' sp sp' m m',
   match_globalenvs F bound ->
   agree_regs F ctx rs rs' ->
   F sp = Some(sp', ctx.(dstk)) ->
   Mem.inject F m m' ->
   forall a v,
-  eval_builtin_arg ge (fun r => rs#r) cp (Vptr sp Ptrofs.zero) m a v ->
-  exists v', eval_builtin_arg tge (fun r => rs'#r) cp (Vptr sp' Ptrofs.zero) m' (sbuiltinarg ctx a) v'
+  eval_builtin_arg (Genv.to_senv ge) (fun r => rs#r) (Vptr sp Ptrofs.zero) m a v ->
+  exists v', eval_builtin_arg (Genv.to_senv tge) (fun r => rs'#r) (Vptr sp' Ptrofs.zero) m' (sbuiltinarg ctx a) v'
           /\ Val.inject F v v'.
 Proof.
-  intros until cp; intros MG AG SP MI. induction 1; simpl.
+  intros until m'; intros MG AG SP MI. induction 1; simpl.
 - exists rs'#(sreg ctx x); split. constructor. eapply agree_val_reg; eauto.
 - econstructor; eauto with barg.
 - econstructor; eauto with barg.
@@ -508,22 +498,15 @@ Proof.
   simpl. econstructor; eauto. rewrite Ptrofs.add_zero_l; auto.
   intros (v' & A & B). exists v'; split; auto. econstructor. simpl. rewrite Ptrofs.add_zero_l; eauto.
 - econstructor; split. constructor. simpl. econstructor; eauto. rewrite ! Ptrofs.add_zero_l; auto.
-- assert (Val.inject F (Senv.symbol_address ge id ofs) (Senv.symbol_address tge id ofs)).
+- assert (Val.inject F (Senv.symbol_address (Genv.to_senv ge) id ofs) (Senv.symbol_address (Genv.to_senv tge) id ofs)).
   { unfold Senv.symbol_address; simpl; unfold Genv.symbol_address.
     rewrite symbols_preserved. destruct (Genv.find_symbol ge id) as [b|] eqn:FS; auto.
     inv MG. econstructor. eauto. rewrite Ptrofs.add_zero; auto. }
   exploit Mem.loadv_inject; eauto. intros (v' & A & B).
   exists v'; eauto with barg.
-- subst. econstructor; split. constructor. eauto.
+- econstructor; split. constructor.
   unfold Senv.symbol_address; simpl; unfold Genv.symbol_address.
   rewrite symbols_preserved. destruct (Genv.find_symbol ge id) as [b|] eqn:FS; auto.
-  unfold ge, tge. rewrite (Genv.match_genvs_find_comp_of_block TRANSF); eauto.
-  destruct (Genv.find_comp_of_block (Genv.globalenv tprog) b) eqn:?; eauto.
-  destruct (cp =? c)%positive; eauto.
-  inv MG. econstructor. eauto. rewrite Ptrofs.add_zero; auto.
-  destruct (Genv.find_def (Genv.globalenv prog) b) as [[] |] eqn:?; eauto.
-  pose proof (Genv.find_def_match_2 TRANSF b) as H; eauto.
-  inv H; try congruence. inv H2; try congruence.
   inv MG. econstructor. eauto. rewrite Ptrofs.add_zero; auto.
 - destruct IHeval_builtin_arg1 as (v1' & A1 & B1).
   destruct IHeval_builtin_arg2 as (v2' & A2 & B2).
@@ -535,14 +518,14 @@ Proof.
 Qed.
 
 Lemma tr_builtin_args:
-  forall F bound ctx rs rs' sp sp' m m' cp,
+  forall F bound ctx rs rs' sp sp' m m',
   match_globalenvs F bound ->
   agree_regs F ctx rs rs' ->
   F sp = Some(sp', ctx.(dstk)) ->
   Mem.inject F m m' ->
   forall al vl,
-  eval_builtin_args ge (fun r => rs#r) cp (Vptr sp Ptrofs.zero) m al vl ->
-  exists vl', eval_builtin_args tge (fun r => rs'#r) cp (Vptr sp' Ptrofs.zero) m' (map (sbuiltinarg ctx) al) vl'
+  eval_builtin_args (Genv.to_senv ge) (fun r => rs#r) (Vptr sp Ptrofs.zero) m al vl ->
+  exists vl', eval_builtin_args (Genv.to_senv tge) (fun r => rs'#r) (Vptr sp' Ptrofs.zero) m' (map (sbuiltinarg ctx) al) vl'
           /\ Val.inject_list F vl vl'.
 Proof.
   induction 5; simpl.
@@ -572,7 +555,7 @@ Inductive match_stacks (F: meminj) (m m': mem):
         (SSZ2: forall ofs, Mem.perm m' sp' ofs Max Nonempty -> 0 <= ofs <= f'.(fn_stacksize))
         (RES: Ple res ctx.(mreg))
         (BELOW: Plt sp' bound)
-        (ACCESS: Mem.can_access_block m' sp' (Some (comp_of f'))),
+        (ACCESS: Mem.can_access_block m' sp' (comp_of f')),
       match_stacks F m m' cp
                    (Stackframe res ty f (Vptr sp Ptrofs.zero) pc rs :: stk)
                    (Stackframe (sreg ctx res) ty f' (Vptr sp' Ptrofs.zero) (spc ctx pc) rs' :: stk')
@@ -585,7 +568,7 @@ Inductive match_stacks (F: meminj) (m m': mem):
         (RET: ctx.(retinfo) = Some (rpc, res))
         (BELOW: Plt sp' bound)
         (COMP: cp = comp_of f')
-        (ACCESS: Mem.can_access_block m' sp' (Some (comp_of f'))),
+        (ACCESS: Mem.can_access_block m' sp' (comp_of f')),
       match_stacks F m m' cp
                    stk
                    (Stackframe res ty f' (Vptr sp' Ptrofs.zero) rpc rs' :: stk')
@@ -610,7 +593,7 @@ with match_stacks_inside (F: meminj) (m m': mem):
         (RET: ctx.(retinfo) = Some (spc ctx' pc, sreg ctx' res))
         (BELOW: context_below ctx' ctx)
         (SBELOW: context_stack_call ctx' ctx)
-        (ACCESS: Mem.can_access_block m' sp' (Some (comp_of f'))),
+        (ACCESS: Mem.can_access_block m' sp' (comp_of f')),
       match_stacks_inside F m m'
         (Stackframe res ty f (Vptr sp Ptrofs.zero) pc rs :: stk)
         stk' f' ctx sp' rs'.
@@ -1029,23 +1012,23 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
         (SP: F sp = Some(sp', ctx.(dstk)))
         (MINJ: Mem.inject F m m')
         (VB: Mem.valid_block m' sp')
-        (AC: Mem.can_access_block m' sp' (Some (comp_of f')))
+        (AC: Mem.can_access_block m' sp' (comp_of f'))
         (PRIV: range_private F m m' sp' (ctx.(dstk) + ctx.(mstk)) f'.(fn_stacksize))
         (SSZ1: 0 <= f'.(fn_stacksize) < Ptrofs.max_unsigned)
         (SSZ2: forall ofs, Mem.perm m' sp' ofs Max Nonempty -> 0 <= ofs <= f'.(fn_stacksize)),
       match_states (State stk f (Vptr sp Ptrofs.zero) pc rs m)
                    (State stk' f' (Vptr sp' Ptrofs.zero) (spc ctx pc) rs' m')
-  | match_call_states: forall stk fd args m stk' fd' args' m' cunit F
+  | match_call_states: forall stk fd args m stk' fd' args' m' cp cunit F
         (MS: match_stacks F m m' (comp_of fd) stk stk' (Mem.nextblock m'))
         (LINK: linkorder cunit prog)
         (FD: transf_fundef (funenv_program cunit) fd = OK fd')
         (VINJ: Val.inject_list F args args')
         (MINJ: Mem.inject F m m'),
-      match_states (Callstate stk fd args m)
-                   (Callstate stk' fd' args' m')
+      match_states (Callstate stk fd args m cp)
+                   (Callstate stk' fd' args' m' cp)
   | match_call_regular_states: forall stk f vargs m stk' f' sp' rs' m' F fenv ctx ctx' pc' pc1' rargs
         (MS: match_stacks_inside F m m' stk stk' f' ctx sp' rs')
-        (SAMECOMP: (comp_of f) = comp_of f')
+        (SAMECOMP: comp_of f' = comp_of f)
         (COMPAT: fenv_compat prog fenv)
         (FB: tr_funbody fenv f'.(fn_stacksize) ctx f f'.(fn_code))
         (BELOW: context_below ctx' ctx)
@@ -1054,11 +1037,11 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
         (VINJ: list_forall2 (val_reg_charact F ctx' rs') vargs rargs)
         (MINJ: Mem.inject F m m')
         (VB: Mem.valid_block m' sp')
-        (AC: Mem.can_access_block m' sp' (Some (comp_of f')))
+        (AC: Mem.can_access_block m' sp' (comp_of f'))
         (PRIV: range_private F m m' sp' ctx.(dstk) f'.(fn_stacksize))
         (SSZ1: 0 <= f'.(fn_stacksize) < Ptrofs.max_unsigned)
         (SSZ2: forall ofs, Mem.perm m' sp' ofs Max Nonempty -> 0 <= ofs <= f'.(fn_stacksize)),
-      match_states (Callstate stk (Internal f) vargs m)
+      match_states (Callstate stk (Internal f) vargs m (comp_of f'))
                    (State stk' f' (Vptr sp' Ptrofs.zero) pc' rs' m')
   | match_return_states: forall stk v m stk' v' m' F cp
         (MS: match_stacks F m m' cp stk stk' (Mem.nextblock m'))
@@ -1073,7 +1056,7 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
         (VINJ: match or with None => v = Vundef | Some r => Val.inject F v rs'#(sreg ctx r) end)
         (MINJ: Mem.inject F m m')
         (VB: Mem.valid_block m' sp')
-        (AC: Mem.can_access_block m' sp' (Some (comp_of f')))
+        (AC: Mem.can_access_block m' sp' (comp_of f'))
         (PRIV: range_private F m m' sp' ctx.(dstk) f'.(fn_stacksize))
         (SSZ1: 0 <= f'.(fn_stacksize) < Ptrofs.max_unsigned)
         (SSZ2: forall ofs, Mem.perm m' sp' ofs Max Nonempty -> 0 <= ofs <= f'.(fn_stacksize)),
@@ -1085,7 +1068,7 @@ Inductive match_states: RTL.state -> RTL.state -> Prop :=
 Definition measure (S: RTL.state) : nat :=
   match S with
   | State _ _ _ _ _ _   => 1%nat
-  | Callstate _ _ _ _   => 0%nat
+  | Callstate _ _ _ _ _   => 0%nat
   | Returnstate _ _ _ _ => 0%nat
   end.
 
@@ -1120,9 +1103,8 @@ Proof.
     eexact MINJ. eauto.
   fold (sop ctx op). intros [v' [A B]].
   left; econstructor; split.
-  eapply plus_one. eapply exec_Iop; eauto. rewrite <- SAMECOMP.
-  erewrite eval_operation_preserved; eauto.
-  exact symbols_preserved. admit. admit. admit.
+  eapply plus_one. eapply exec_Iop; eauto. erewrite eval_operation_preserved; eauto.
+  exact symbols_preserved.
   econstructor; eauto.
   apply match_stacks_inside_set_reg; eauto.
   apply agree_set_reg; auto.
@@ -1136,12 +1118,10 @@ Proof.
     eauto.
   fold (saddr ctx addr). intros [a' [P Q]].
   exploit Mem.loadv_inject; eauto. intros [v' [U V]].
-  assert (eval_addressing tge (comp_of f) (Vptr sp' Ptrofs.zero) (saddr ctx addr) rs' ## (sregs ctx args) = Some a').
+  assert (eval_addressing tge (Vptr sp' Ptrofs.zero) (saddr ctx addr) rs' ## (sregs ctx args) = Some a').
   rewrite <- P. apply eval_addressing_preserved. exact symbols_preserved.
-  admit. admit. admit.
   left; econstructor; split.
   eapply plus_one. eapply exec_Iload; eauto.
-  rewrite <- SAMECOMP; eauto.
   rewrite <- SAMECOMP; eauto.
   econstructor; eauto.
   apply match_stacks_inside_set_reg; eauto.
@@ -1157,12 +1137,10 @@ Proof.
   fold saddr. intros [a' [P Q]].
   exploit Mem.storev_mapped_inject; eauto. eapply agree_val_reg; eauto.
   intros [m1' [U V]].
-  assert (eval_addressing tge (comp_of f) (Vptr sp' Ptrofs.zero) (saddr ctx addr) rs' ## (sregs ctx args) = Some a').
+  assert (eval_addressing tge (Vptr sp' Ptrofs.zero) (saddr ctx addr) rs' ## (sregs ctx args) = Some a').
     rewrite <- P. apply eval_addressing_preserved. exact symbols_preserved.
-    admit. admit. admit.
   left; econstructor; split.
   eapply plus_one. eapply exec_Istore; eauto.
-  rewrite <- SAMECOMP; eauto.
   rewrite <- SAMECOMP; eauto.
   destruct a; simpl in H1; try discriminate.
   destruct a'; simpl in U; try discriminate.
@@ -1210,6 +1188,7 @@ Proof.
   now rewrite (comp_transf_partial_fundef _ B).
   rewrite <- SAMECOMP, <- (comp_transf_partial_fundef _ B).
   eapply call_trace_translated; eauto.
+  rewrite SAMECOMP.
   econstructor; eauto.
   eapply match_stacks_cons; eauto.
   eapply agree_val_regs; eauto.
@@ -1217,7 +1196,11 @@ Proof.
   assert (EQ: fd = Internal f0) by (eapply find_inlined_function; eauto).
   subst fd.
   right; split. simpl; lia. split.
-  eapply call_trace_same_cp; eauto. rewrite SAMECOMP0 in EV. exact EV.
+  eapply call_trace_internal_call; eauto. simpl.
+  rewrite SAMECOMP0.
+  destruct (flowsto_dec (comp_of f) (comp_of f)); pose proof (flowsto_refl (comp_of f));
+    congruence.
+  rewrite SAMECOMP.
   econstructor; eauto.
   eapply match_stacks_inside_inlined; eauto.
   red; intros; apply PRIV. inv H14. destruct H17. lia.
@@ -1245,6 +1228,7 @@ Proof.
   eapply plus_one. eapply exec_Itailcall; eauto.
   eapply sig_function_translated; eauto.
     now rewrite <- (comp_transl_partial _ B), COMP.
+  rewrite SAMECOMP.
   econstructor; eauto.
   eapply match_stacks_bound with (bound := sp').
   rewrite COMP, SAMECOMP.
@@ -1274,23 +1258,28 @@ Proof.
     - destruct (Genv.find_symbol ge i); try discriminate.
       inv Hvf. congruence. }
   (* TODO: Clean this up *)
-  assert (FINDCOMP: Genv.find_comp tge vf = Some (comp_of f)).
+  assert (FINDCOMP: Genv.find_comp_in_genv tge vf = comp_of f).
   { rewrite <- find_comp_translated, <- SAMECOMP'.
     unfold find_function in *.
     unfold find_function_ptr in *.
     destruct ros; simpl in *.
-    - inv Hvf. rewrite (Genv.find_funct_find_comp _ _ H0). congruence.
+    - inv Hvf. rewrite (Genv.find_funct_find_comp_in_genv _ _ H0). congruence.
     - destruct (Genv.find_symbol ge i); try discriminate.
-      inv Hvf. rewrite (Genv.find_funct_find_comp _ _ H0). congruence. }
+      inv Hvf. rewrite (Genv.find_funct_find_comp_in_genv _ _ H0). congruence. }
   left; econstructor; split.
   eapply plus_one. eapply exec_Icall; eauto.
 
   eapply sig_function_translated; eauto.
-  rewrite <- SAMECOMP. left; rewrite FINDCOMP; reflexivity.
+  rewrite <- SAMECOMP. left; rewrite FINDCOMP; apply flowsto_refl.
   (* This is a tailcall, so the type of call is InternalCall *)
-  rewrite <- SAMECOMP, <- (comp_transl_partial _ B), COMP. unfold Genv.type_of_call. now rewrite Pos.eqb_refl.
+  rewrite <- SAMECOMP, <- (comp_transl_partial _ B), COMP.
+  simpl; destruct (flowsto_dec (comp_of f) (comp_of f)); pose proof (flowsto_refl (comp_of f));
+    now auto.
   econstructor; eauto.
-  rewrite <- SAMECOMP, <- (comp_transl_partial _ B), COMP. unfold Genv.type_of_call. now rewrite Pos.eqb_refl.
+  rewrite <- SAMECOMP, <- (comp_transl_partial _ B), COMP.
+  simpl; destruct (flowsto_dec (comp_of f) (comp_of f)); pose proof (flowsto_refl (comp_of f));
+    now auto.
+  rewrite SAMECOMP.
   econstructor; eauto.
   eapply match_stacks_untailcall; eauto.
   eapply match_stacks_inside_invariant; eauto.
@@ -1304,6 +1293,7 @@ Proof.
   assert (EQ: fd = Internal f0) by (eapply find_inlined_function; eauto).
   subst fd.
   right; split. simpl; lia. split. auto.
+  rewrite SAMECOMP.
   econstructor; eauto.
   eapply match_stacks_inside_inlined_tailcall; eauto.
   eapply match_stacks_inside_invariant; eauto.
@@ -1322,9 +1312,10 @@ Proof.
   exploit tr_builtin_args; eauto. intros (vargs' & P & Q).
   exploit external_call_mem_inject; eauto.
     eapply match_stacks_inside_globals; eauto.
-  intros [F1 [v1 [m1' [A [B [C [D [E [J [K L]]]]]]]]]].
+  intros [F1 [v1 [m1' [A [B [C [D [E [J K]]]]]]]]].
   left; econstructor; split.
-  eapply plus_one. eapply exec_Ibuiltin; eauto. congruence. rewrite <- SAMECOMP; eauto.
+  eapply plus_one. eapply exec_Ibuiltin; eauto.
+    rewrite <- SAMECOMP.
     eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   econstructor.
     eapply match_stacks_inside_set_res.
@@ -1438,8 +1429,8 @@ Proof.
     eapply Mem.alloc_can_access_block_other_inj_1; eauto. }
   auto. auto. auto. eauto. auto.
   rewrite H6. apply agree_regs_init_regs. eauto. auto. inv H1; auto. congruence. auto.
-  eapply Mem.valid_new_block; eauto.
-  rewrite H4; eapply Mem.owned_new_block; eauto.
+  eapply Mem.valid_new_block; eauto. simpl.
+  rewrite H4; erewrite <- Mem.owned_new_block; eauto with comps.
   red; intros. split.
   eapply Mem.perm_alloc_2; eauto. inv H1; extlia.
   intros; red; intros. exploit Mem.perm_alloc_inv. eexact H. eauto.
@@ -1456,7 +1447,7 @@ Proof.
     eauto.
     (* sp' is valid *)
     instantiate (1 := sp'). auto.
-    rewrite SAMECOMP. auto.
+    simpl. eapply flowsto_trans; eauto. rewrite SAMECOMP; apply flowsto_refl.
     (* offset is representable *)
     instantiate (1 := dstk ctx). generalize (Z.le_max_r (fn_stacksize f) 0). lia.
     (* size of target block is representable *)
@@ -1491,7 +1482,7 @@ Proof.
   exploit match_stacks_globalenvs; eauto. intros [bound MG].
   exploit external_call_mem_inject; eauto.
     eapply match_globalenvs_preserves_globals; eauto.
-  intros [F1 [v1 [m1' [A [B [C [D [E [J [K L]]]]]]]]]].
+  intros [F1 [v1 [m1' [A [B [C [D [E [J K]]]]]]]]].
   simpl in FD. inv FD.
   left; econstructor; split.
   eapply plus_one. eapply exec_function_external; eauto.
@@ -1522,12 +1513,18 @@ Proof.
   rewrite RET in RET0; inv RET0.
   left; econstructor; split.
   eapply plus_one. eapply exec_return.
-  intros G. exfalso. eapply Genv.type_of_call_same_cp; eauto.
+  simpl.
+  destruct (flowsto_dec (comp_of f') (comp_of f')); pose proof (flowsto_refl (comp_of f'));
+    congruence.
   assert (t = E0).
   { clear -EV SAMECOMP. inv EV; auto.
-    exfalso. rewrite SAMECOMP in H.
-    eapply Genv.type_of_call_same_cp; eauto. }
-  subst; constructor; eauto using Genv.type_of_call_same_cp.
+    simpl in H. rewrite SAMECOMP in H.
+    destruct (flowsto_dec (comp_of f') (comp_of f')); pose proof (flowsto_refl (comp_of f'));
+    congruence. }
+  subst t.
+  subst; constructor; simpl; eauto using Genv.type_of_call_same_cp.
+  destruct (flowsto_dec (comp_of f') (comp_of f')); pose proof (flowsto_refl (comp_of f'));
+    congruence.
   eapply match_regular_states.
   eapply match_stacks_inside_set_reg; eauto.
   auto. eauto. auto.
@@ -1541,11 +1538,11 @@ Proof.
   unfold inline_return in AT.
   assert (PRIV': range_private F m m' sp' (dstk ctx' + mstk ctx') f'.(fn_stacksize)).
     red; intros. destruct (zlt ofs (dstk ctx)). apply PAD. lia. apply PRIV. lia.
-  assert (t = E0). { rewrite SAMECOMP in EV. pose proof return_trace_intra as G.
-                     assert  (Genv.type_of_call (comp_of f') (comp_of f') <> Genv.CrossCompartmentCall) by
-                       (unfold Genv.type_of_call; now rewrite Pos.eqb_refl).
-                     specialize (G _ _ ge (comp_of f') (comp_of f') vres ty H).
-                     now inv EV; inv G. }
+  assert (t = E0).
+  { clear -EV SAMECOMP. inv EV; auto.
+    simpl in H. rewrite SAMECOMP in H.
+    destruct (flowsto_dec (comp_of f') (comp_of f')); pose proof (flowsto_refl (comp_of f'));
+    congruence. }
   subst t.
   destruct or.
 + (* with a result *)
@@ -1559,14 +1556,14 @@ Proof.
   eapply plus_one. eapply exec_Inop; eauto.
   econstructor; eauto.
   subst vres. apply agree_set_reg_undef'; auto.
-Admitted.
+Qed.
 
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 -> exists st2, initial_state tprog st2 /\ match_states st1 st2.
 Proof.
   intros. inv H.
   exploit function_ptr_translated; eauto. intros (cu & tf & FIND & TR & LINK).
-  exists (Callstate nil tf nil m0); split.
+  exists (Callstate nil tf nil m0 top); split.
   econstructor; eauto.
     eapply (Genv.init_mem_match TRANSF); eauto.
     rewrite symbols_preserved. replace (prog_main tprog) with (prog_main prog). auto.
@@ -1598,6 +1595,7 @@ Theorem transf_program_correct:
   forward_simulation (semantics prog) (semantics tprog).
 Proof.
   eapply forward_simulation_star.
+  apply senv_preserved.
   apply senv_preserved.
   eexact transf_initial_states.
   eexact transf_final_states.

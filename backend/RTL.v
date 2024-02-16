@@ -91,8 +91,7 @@ Record function: Type := mkfunction {
   fn_entrypoint: node
 }.
 
-#[global]
-Instance has_comp_function : has_comp function := fn_comp.
+#[global] Instance has_comp_function : has_comp function := fn_comp.
 
 (** A function description comprises a control-flow graph (CFG) [fn_code]
     (a partial finite mapping from nodes to instructions).  As in Cminor,
@@ -176,7 +175,8 @@ Inductive state : Type :=
       forall (stack: list stackframe) (**r call stack *)
              (f: fundef)              (**r function to call *)
              (args: list val)         (**r arguments to the call *)
-             (m: mem),                (**r memory state *)
+             (m: mem)                 (**r memory state *)
+             (cp: compartment),       (**r calling compartment (cf Cminor.v for why we dont use [call_comp]) *)
       state
   | Returnstate:
       forall (stack: list stackframe) (**r call stack *)
@@ -185,10 +185,10 @@ Inductive state : Type :=
              (cp: compartment),       (**r compartment we're returning from *)
       state.
 
-Definition call_comp (stack: list stackframe): option compartment :=
+Definition call_comp (stack: list stackframe): compartment :=
   match stack with
-  | nil => None
-  | Stackframe _ _ f _ _ _ :: _ => Some (comp_of f)
+  | nil => top
+  | Stackframe _ _ f _ _ _ :: _ => comp_of f
   end.
 
 Section RELSEM.
@@ -238,20 +238,20 @@ Inductive step: state -> trace -> state -> Prop :=
   | exec_Iop:
       forall s f sp pc rs m op args res pc' v,
       (fn_code f)!pc = Some(Iop op args res pc') ->
-      eval_operation ge (comp_of f) sp op rs##args m = Some v ->
+      eval_operation ge sp op rs##args m = Some v ->
       step (State s f sp pc rs m)
         E0 (State s f sp pc' (rs#res <- v) m)
   | exec_Iload:
       forall s f sp pc rs m chunk addr args dst pc' a v,
       (fn_code f)!pc = Some(Iload chunk addr args dst pc') ->
-      eval_addressing ge (comp_of f) sp addr rs##args = Some a ->
-      Mem.loadv chunk m a (Some (comp_of f)) = Some v ->
+      eval_addressing ge sp addr rs##args = Some a ->
+      Mem.loadv chunk m a (comp_of f) = Some v ->
       step (State s f sp pc rs m)
         E0 (State s f sp pc' (rs#dst <- v) m)
   | exec_Istore:
       forall s f sp pc rs m chunk addr args src pc' a m',
       (fn_code f)!pc = Some(Istore chunk addr args src pc') ->
-      eval_addressing ge (comp_of f) sp addr rs##args = Some a ->
+      eval_addressing ge sp addr rs##args = Some a ->
       Mem.storev chunk m a rs#src (comp_of f) = Some m' ->
       step (State s f sp pc rs m)
         E0 (State s f sp pc' rs m')
@@ -265,7 +265,7 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (NO_CROSS_PTR: Genv.type_of_call (comp_of f) (comp_of fd) = Genv.CrossCompartmentCall -> Forall not_ptr (rs##args)),
       forall (EV: call_trace ge (comp_of f) (comp_of fd) vf (rs##args) (sig_args sig) t),
       step (State s f sp pc rs m)
-        t (Callstate (Stackframe res (sig_res sig) f sp pc' rs :: s) fd rs##args m)
+        t (Callstate (Stackframe res (sig_res sig) f sp pc' rs :: s) fd rs##args m (comp_of f))
   | exec_Itailcall:
       forall s f stk pc rs m sig ros args fd m',
       (fn_code f)!pc = Some(Itailcall sig ros args) ->
@@ -274,13 +274,12 @@ Inductive step: state -> trace -> state -> Prop :=
       forall COMP: comp_of fd = (comp_of f),
       Mem.free m stk 0 f.(fn_stacksize) (comp_of f) = Some m' ->
       step (State s f (Vptr stk Ptrofs.zero) pc rs m)
-        E0 (Callstate s fd rs##args m')
+        E0 (Callstate s fd rs##args m' (comp_of f))
   | exec_Ibuiltin:
       forall s f sp pc rs m ef args res pc' vargs t vres m',
-      forall ALLOWED: comp_of ef = comp_of f,
       (fn_code f)!pc = Some(Ibuiltin ef args res pc') ->
-      eval_builtin_args ge (fun r => rs#r) (comp_of f) sp m args vargs ->
-      external_call ef ge vargs m t vres m' ->
+      eval_builtin_args ge (fun r => rs#r) sp m args vargs ->
+      external_call ef ge (comp_of f) vargs m t vres m' ->
       step (State s f sp pc rs m)
          t (State s f sp pc' (regmap_setres res vres rs) m')
   | exec_Icond:
@@ -304,9 +303,9 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State s f (Vptr stk Ptrofs.zero) pc rs m)
         E0 (Returnstate s (regmap_optget or Vundef rs) m' (comp_of f))
   | exec_function_internal:
-      forall s f args m m' stk,
+      forall s f args m cp m' stk,
       Mem.alloc m (comp_of f) 0 f.(fn_stacksize) = (m', stk) ->
-      step (Callstate s (Internal f) args m)
+      step (Callstate s (Internal f) args m cp)
         E0 (State s
                   f
                   (Vptr stk Ptrofs.zero)
@@ -314,10 +313,10 @@ Inductive step: state -> trace -> state -> Prop :=
                   (init_regs args f.(fn_params))
                   m')
   | exec_function_external:
-      forall s ef args res t m m',
-      external_call ef ge args m t res m' ->
-      step (Callstate s (External ef) args m)
-         t (Returnstate s res m' (comp_of ef))
+      forall s ef args res t m m' cp,
+      external_call ef ge cp args m t res m' ->
+      step (Callstate s (External ef) args m cp)
+         t (Returnstate s res m' bottom)
   | exec_return:
       forall res f cp sp pc rs s vres m ty t,
       forall (NO_CROSS_PTR: Genv.type_of_call (comp_of f) cp = Genv.CrossCompartmentCall ->
@@ -329,7 +328,7 @@ Inductive step: state -> trace -> state -> Prop :=
 Lemma exec_Iop':
   forall s f sp pc rs m op args res pc' rs' v,
   (fn_code f)!pc = Some(Iop op args res pc') ->
-  eval_operation ge (comp_of f) sp op rs##args m = Some v ->
+  eval_operation ge sp op rs##args m = Some v ->
   rs' = (rs#res <- v) ->
   step (State s f sp pc rs m)
     E0 (State s f sp pc' rs' m).
@@ -340,8 +339,8 @@ Qed.
 Lemma exec_Iload':
   forall s f sp pc rs m chunk addr args dst pc' rs' a v,
   (fn_code f)!pc = Some(Iload chunk addr args dst pc') ->
-  eval_addressing ge (comp_of f) sp addr rs##args = Some a ->
-  Mem.loadv chunk m a (Some (comp_of f)) = Some v ->
+  eval_addressing ge sp addr rs##args = Some a ->
+  Mem.loadv chunk m a (comp_of f) = Some v ->
   rs' = (rs#dst <- v) ->
   step (State s f sp pc rs m)
     E0 (State s f sp pc' rs' m).
@@ -363,7 +362,7 @@ Inductive initial_state (p: program): state -> Prop :=
       Genv.find_symbol ge p.(prog_main) = Some b ->
       Genv.find_funct_ptr ge b = Some f ->
       funsig f = signature_main ->
-      initial_state p (Callstate nil f nil m0).
+      initial_state p (Callstate nil f nil m0 top).
 
 (** A final state is a [Returnstate] with an empty call stack. *)
 
@@ -390,7 +389,7 @@ Proof.
   exploit external_call_receptive; eauto. intros [vres2 [m2 EC2]].
   exists (State s0 f sp pc' (regmap_setres res vres2 rs) m2). eapply exec_Ibuiltin; eauto.
   exploit external_call_receptive; eauto. intros [vres2 [m2 EC2]].
-  exists (Returnstate s0 vres2 m2 (comp_of ef)). econstructor; eauto.
+  exists (Returnstate s0 vres2 m2 bottom). econstructor; eauto.
   inv EV; inv H0; eauto.
 (* trace length *)
   red; intros; inv H; simpl; try lia.

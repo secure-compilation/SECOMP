@@ -736,9 +736,9 @@ let expand_instruction instr =
      begin match ef with
      | EF_builtin (name,sg) ->
         expand_builtin_inline (camlstring_of_coqstring name) args res
-     | EF_vload chunk ->
+     | EF_vload (chunk) ->
         expand_builtin_vload chunk args res
-     | EF_vstore chunk ->
+     | EF_vstore (chunk) ->
         expand_builtin_vstore chunk args
      | EF_annot_val (kind,txt,targ) ->
         expand_annot_val kind txt targ args res
@@ -798,4 +798,5 @@ let expand_fundef id = function
       Errors.OK (External ef)
 
 let expand_program (p: Asm.program) : Asm.program Errors.res =
-  AST.transform_partial_program2 expand_fundef (fun id v -> Errors.OK v) p
+  AST.transform_partial_program2 (AST.has_comp_fundef Asm.has_comp_function) (AST.has_comp_fundef Asm.has_comp_function)
+    expand_fundef (fun id v -> Errors.OK v) p

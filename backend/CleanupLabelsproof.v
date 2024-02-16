@@ -24,10 +24,6 @@ Module LabelsetFacts := FSetFacts.Facts(Labelset).
 Definition match_prog (p tp: Linear.program) :=
   match_program (fun ctx f tf => tf = transf_fundef f) eq p tp.
 
-#[global]
-Instance comp_match_prog: has_comp_transl transf_function.
-Proof. now intros f. Qed.
-
 Lemma transf_program_match:
   forall p, match_prog p (transf_program p).
 Proof.
@@ -109,10 +105,10 @@ Qed.
 
 Lemma find_comp_translated:
   forall vf,
-    Genv.find_comp ge vf = Genv.find_comp tge vf.
+    Genv.find_comp_in_genv ge vf = Genv.find_comp_in_genv tge vf.
 Proof.
   intros vf.
-  eapply (Genv.match_genvs_find_comp TRANSL).
+  eapply (Genv.match_genvs_find_comp_in_genv TRANSL).
 Qed.
 
 (** Correctness of [labels_branched_to]. *)
@@ -243,10 +239,10 @@ Inductive match_states: state -> state -> Prop :=
       match_states (State s f sp c ls m)
                    (State ts (transf_function f) sp (remove_unused_labels (labels_branched_to f.(fn_code)) c) ls m)
   | match_states_call:
-      forall s f ls m ts sig,
+      forall s f ls m ts sig cp,
       list_forall2 match_stackframes s ts ->
-      match_states (Callstate s f sig ls m)
-                   (Callstate ts (transf_fundef f) sig ls m)
+      match_states (Callstate s f sig ls m cp)
+                   (Callstate ts (transf_fundef f) sig ls m cp)
   | match_states_return:
       forall s ls m ts cp,
       list_forall2 match_stackframes s ts ->
@@ -298,19 +294,16 @@ Proof.
   left; econstructor; split.
   econstructor; eauto. instantiate (1 := v). rewrite <- H.
   apply eval_operation_preserved. exact symbols_preserved.
-  admit. admit. admit.
   econstructor; eauto with coqlib.
 (* Lload *)
-  assert (eval_addressing tge (comp_of f) sp addr (LTL.reglist rs args) = Some a).
+  assert (eval_addressing tge sp addr (LTL.reglist rs args) = Some a).
     rewrite <- H. apply eval_addressing_preserved. exact symbols_preserved.
-    admit. admit. admit.
   left; econstructor; split.
   econstructor; eauto.
   econstructor; eauto with coqlib.
 (* Lstore *)
-  assert (eval_addressing tge (comp_of f) sp addr (LTL.reglist rs args) = Some a).
+  assert (eval_addressing tge sp addr (LTL.reglist rs args) = Some a).
     rewrite <- H. apply eval_addressing_preserved. exact symbols_preserved.
-    admit. admit. admit.
   left; econstructor; split.
   econstructor; eauto.
   econstructor; eauto with coqlib.
@@ -345,9 +338,10 @@ Proof.
   left; econstructor; split.
   econstructor.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
-  admit. admit. admit.
+  rewrite comp_transl; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
-  eauto. rewrite comp_transl; eauto.
+  eauto.
+  (* rewrite comp_transl; eauto. *)
   econstructor; eauto with coqlib.
 (* Llabel *)
   case_eq (Labelset.mem lbl (labels_branched_to (fn_code f))); intros.
@@ -381,19 +375,19 @@ Proof.
   assert (CALLER: call_comp s = call_comp ts).
   { inv STACKS. reflexivity.
     inv H0. reflexivity. }
-  (* assert (SIG: parent_signature s = parent_signature ts). *)
-  (* { inv STACKS. reflexivity. *)
-  (*   inv H0. reflexivity. } *)
-  (* rewrite SIG. *)
+  assert (SIG: parent_signature s = parent_signature ts).
+  { inv STACKS. reflexivity.
+    inv H0. reflexivity. }
+  rewrite SIG.
   econstructor; eauto with coqlib.
 (* internal function *)
   left; econstructor; split.
   econstructor; simpl; eauto.
   assert (CALLER: call_comp s = call_comp ts).
-  { inv H7. reflexivity.
+  { inv H8. reflexivity.
     inv H0. reflexivity. }
   assert (SIG: parent_signature s = parent_signature ts).
-  { inv H7. reflexivity.
+  { inv H8. reflexivity.
     inv H0. reflexivity. }
   (* rewrite type_of_call_translated, CALLER, SIG. *)
   change (comp_of (transf_function f)) with (comp_of f).
@@ -408,7 +402,7 @@ Proof.
   rewrite comp_match_prog.
   eapply return_trace_eq; eauto using senv_preserved.
   econstructor; eauto.
-Admitted.
+Qed.
 
 Lemma transf_initial_states:
   forall st1, initial_state prog st1 ->
@@ -435,6 +429,7 @@ Theorem transf_program_correct:
   forward_simulation (Linear.semantics prog) (Linear.semantics tprog).
 Proof.
   eapply forward_simulation_opt.
+  apply senv_preserved.
   apply senv_preserved.
   eexact transf_initial_states.
   eexact transf_final_states.

@@ -54,19 +54,19 @@ Definition make_cast (a: expr) (tto: type) : expr :=
 
 (** Insertion of debug annotations *)
 
-Definition Sdebug_temp (cp: compartment) (id: ident) (ty: type) :=
-  Sbuiltin None (EF_debug cp 2%positive id (typ_of_type ty :: nil))
+Definition Sdebug_temp (id: ident) (ty: type) :=
+  Sbuiltin None (EF_debug 2%positive id (typ_of_type ty :: nil))
                 (Tcons (typeconv ty) Tnil)
                 (Etempvar id ty :: nil).
 
-Definition Sdebug_var (cp: compartment) (id: ident) (ty: type) :=
-  Sbuiltin None (EF_debug cp 5%positive id (AST.Tptr :: nil))
+Definition Sdebug_var (id: ident) (ty: type) :=
+  Sbuiltin None (EF_debug 5%positive id (AST.Tptr :: nil))
                 (Tcons (Tpointer ty noattr) Tnil)
                 (Eaddrof (Evar id ty) (Tpointer ty noattr) :: nil).
 
-Definition Sset_debug (cp: compartment) (id: ident) (ty: type) (a: expr) :=
+Definition Sset_debug (id: ident) (ty: type) (a: expr) :=
   if Compopts.debug tt
-  then Ssequence (Sset id (make_cast a ty)) (Sdebug_temp cp id ty)
+  then Ssequence (Sset id (make_cast a ty)) (Sdebug_temp id ty)
   else Sset id (make_cast a ty).
 
 (** Rewriting of expressions and statements. *)
@@ -109,7 +109,7 @@ Fixpoint simpl_stmt (cenv: compilenv) (cp: compartment) (s: statement) : res sta
   | Sassign a1 a2 =>
       match is_liftable_var cenv a1 with
       | Some id =>
-          OK (Sset_debug cp id (typeof a1) (simpl_expr cenv a2))
+          OK (Sset_debug id (typeof a1) (simpl_expr cenv a2))
       | None =>
           OK (Sassign (simpl_expr cenv a1) (simpl_expr cenv a2))
       end
@@ -245,20 +245,20 @@ Definition cenv_for (f: function) : compilenv :=
 
 (** Transform a function *)
 
-Definition add_debug_var (cp: compartment) (id_ty: ident * type) (s: statement) :=
-  let (id, ty) := id_ty in Ssequence (Sdebug_var cp id ty) s.
+Definition add_debug_var (id_ty: ident * type) (s: statement) :=
+  let (id, ty) := id_ty in Ssequence (Sdebug_var id ty) s.
 
-Definition add_debug_vars (cp: compartment) (vars: list (ident * type)) (s: statement) :=
+Definition add_debug_vars (vars: list (ident * type)) (s: statement) :=
   if Compopts.debug tt
-  then List.fold_right (add_debug_var cp) s vars
+  then List.fold_right add_debug_var s vars
   else s.
 
-Definition add_debug_param (cp: compartment) (id_ty: ident * type) (s: statement) :=
-  let (id, ty) := id_ty in Ssequence (Sdebug_temp cp id ty) s.
+Definition add_debug_param (id_ty: ident * type) (s: statement) :=
+  let (id, ty) := id_ty in Ssequence (Sdebug_temp id ty) s.
 
-Definition add_debug_params (cp: compartment) (params: list (ident * type)) (s: statement) :=
+Definition add_debug_params (params: list (ident * type)) (s: statement) :=
   if Compopts.debug tt
-  then List.fold_right (add_debug_param cp) s params
+  then List.fold_right add_debug_param s params
   else s.
 
 Definition remove_lifted (cenv: compilenv) (vars: list (ident * type)) :=
@@ -279,9 +279,9 @@ Definition transf_function (f: function) : res function :=
         fn_params := f.(fn_params);
         fn_vars := vars';
         fn_temps := temps';
-        fn_body := add_debug_params f.(fn_comp) f.(fn_params)
+        fn_body := add_debug_params f.(fn_params)
                       (store_params cenv f.(fn_params)
-                        (add_debug_vars f.(fn_comp) vars' body')) |}.
+                        (add_debug_vars vars' body')) |}.
 
 (** Whole-program transformation *)
 
@@ -290,6 +290,21 @@ Definition transf_fundef (fd: fundef) : res fundef :=
   | Internal f => do tf <- transf_function f; OK (Internal tf)
   | External ef targs tres cconv => OK (External ef targs tres cconv)
   end.
+
+#[global]
+Instance comp_transf_function: has_comp_transl_partial transf_function.
+Proof.
+  unfold transf_function.
+  intros f ? H; monadInv H; trivial.
+Qed.
+
+#[global]
+Instance comp_transf_fundef: has_comp_transl_partial transf_fundef.
+Proof.
+  unfold transf_fundef, transf_function.
+  intros [f|ef] ? H; monadInv H; trivial.
+  now monadInv EQ.
+Qed.
 
 Definition transf_program (p: program) : res program :=
   do p1 <- AST.transform_partial_program transf_fundef p;
@@ -300,4 +315,5 @@ Definition transf_program (p: program) : res program :=
         prog_types := prog_types p;
         prog_comp_env := prog_comp_env p;
         prog_comp_env_eq := prog_comp_env_eq p;
-        prog_pol_pub := AST.prog_pol_pub p1; |}.
+        prog_pol_pub := AST.prog_pol_pub p1;
+        prog_agr_comps := AST.prog_agr_comps p1; |}.
