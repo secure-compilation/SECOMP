@@ -3778,6 +3778,35 @@ Lemma init_mem_characterization_rel sp (pr1 pr2: program) id gd m1 m2 b1 b2
   (* Any restrictions on gvar_init and init_data, esp. Init_addrof? *)
   (forall ofs, memval_inject init_meminj (ZMap.get ofs (Mem.mem_contents m1) !! b1)
                                          (ZMap.get ofs (Mem.mem_contents m2) !! b2)).
+Proof.
+  destruct gd as [fd | gv].
+  - apply Genv.find_funct_ptr_iff in DEF1, DEF2.
+    destruct (Genv.init_mem_characterization_2' _ _ DEF1 MEM1) as (PERM1 & ACC1 & INJ1).
+    destruct (Genv.init_mem_characterization_2' _ _ DEF2 MEM2) as (PERM2 & ACC2 & INJ2).
+    split; [| split].
+    + intros ofs k p. specialize (PERM1 ofs k). specialize (PERM2 ofs k).
+      unfold Mem.perm. rewrite PERM1, PERM2.
+      reflexivity.
+    + intros [cp |]; [| reflexivity].
+      unfold Mem.can_access_block, Mem.block_compartment.
+      rewrite ACC1, ACC2.
+      reflexivity.
+    + intros ofs. specialize (INJ1 ofs). specialize (INJ2 ofs).
+      rewrite INJ1, INJ2.
+      exact (memval_inject_undef _ _).
+  - apply Genv.find_var_info_iff in DEF1, DEF2.
+    destruct (Genv.init_mem_characterization' _ _ DEF1 MEM1) as (PERM1 & ACC1 & INJ1).
+    destruct (Genv.init_mem_characterization' _ _ DEF2 MEM2) as (PERM2 & ACC2 & INJ2).
+    split; [| split].
+    + intros ofs k p. specialize (PERM1 ofs k). specialize (PERM2 ofs k).
+      unfold Mem.perm. rewrite PERM1, PERM2.
+      reflexivity.
+    + intros [cp |]; [| reflexivity].
+      unfold Mem.can_access_block, Mem.block_compartment.
+      rewrite ACC1, ACC2.
+      reflexivity.
+    + intros ofs.
+      admit.
 Admitted.
 
 Definition globdef_blocks p1 p2 '(id, gd) b1 b2 :=
