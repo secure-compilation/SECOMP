@@ -1447,6 +1447,27 @@ Definition globals_initialized (g: t) (m: mem) :=
       /\ (v.(gvar_volatile) = false -> Mem.loadbytes m b 0 (init_data_list_size v.(gvar_init)) (Some v.(gvar_comp)) = Some (bytes_of_init_data_list v.(gvar_init)))
   end.
 
+(* Alternative characterization of [globals_initialized], trivial but
+   may require exposing some additional details about the
+   implementation of memory operations. The key difference is that
+   this is meant to hold only for the initial memory. *)
+Definition globals_initialized' (g: t) (m: mem) :=
+  forall b gd,
+  find_def g b = Some gd ->
+  match gd with
+  | Gfun f =>
+    (forall ofs k, ((Mem.mem_access m) !! b) ofs k = if zeq ofs 0 then Some Nonempty else None)
+      /\ ((Mem.mem_compartments m) ! b) = Some (comp_of f)
+      /\ (forall ofs, ZMap.get ofs ((Mem.mem_contents m) !! b) = Undef)
+  | Gvar v =>
+    (forall ofs k, ((Mem.mem_access m) !! b) ofs k =
+                     if zle 0 ofs && zlt ofs (init_data_list_size v.(gvar_init)) then Some (perm_globvar v) else None)
+      /\ (Mem.mem_compartments m) ! b = Some (gvar_comp v)
+      (* avoid low-level operations on memory contents, but extend to
+         all variables, not just non-volatiles *)
+      /\ (Mem.loadbytes m b 0 (init_data_list_size v.(gvar_init)) (Some v.(gvar_comp)) = Some (bytes_of_init_data_list v.(gvar_init)))
+  end.
+
 Lemma alloc_global_initialized:
   forall g m id gd m',
   genv_next g = Mem.nextblock m ->
@@ -1514,6 +1535,84 @@ Proof.
 - simpl. congruence.
 Qed.
 
+Lemma alloc_global_initialized':
+  forall g m id gd m',
+  genv_next g = Mem.nextblock m ->
+  alloc_global m (id, gd) = Some m' ->
+  globals_initialized' g m ->
+     globals_initialized' (add_global g (id, gd)) m'
+  /\ genv_next (add_global g (id, gd)) = Mem.nextblock m'.
+Proof.
+  intros.
+  exploit alloc_global_nextblock; eauto. intros NB. split.
+- (* globals-initialized *)
+  red; intros. unfold find_def in H2; simpl in H2.
+  rewrite PTree.gsspec in H2. destruct (peq b (genv_next g)).
++ inv H2. destruct gd0 as [f|v]; simpl in H0.
+* destruct (Mem.alloc m _ 0 1) as [m1 b] eqn:ALLOC.
+  exploit Mem.alloc_result; eauto. intros RES.
+  rewrite H, <- RES. split.
+  (* eapply Mem.perm_drop_1; eauto. lia. *)
+  admit.
+  split.
+  apply Mem.owned_new_block in ALLOC. apply Mem.can_access_block_drop_4 in H0. auto.
+  intros.
+  (* assert (0 <= ofs < 1). { eapply Mem.perm_alloc_3; eauto. eapply Mem.perm_drop_4; eauto. } *)
+  (* exploit Mem.perm_drop_2; eauto. intros ORD. *)
+  (* split. lia. inv ORD; auto. *)
+  admit.
+* set (init := gvar_init v) in *.
+  set (sz := init_data_list_size init) in *.
+  destruct (Mem.alloc m _ 0 sz) as [m1 b] eqn:?.
+  destruct (store_zeros m1 b 0 sz) as [m2|] eqn:?; try discriminate.
+  destruct (store_init_data_list m2 b 0 init) as [m3|] eqn:?; try discriminate.
+  exploit Mem.alloc_result; eauto. intro RES.
+  replace (genv_next g) with b by congruence.
+  split.
+  (* red; intros. eapply Mem.perm_drop_1; eauto. *)
+  admit. split. admit.
+(*   split. intros. *)
+(*   assert (0 <= ofs < sz). *)
+(*   { eapply Mem.perm_alloc_3; eauto. *)
+(*     erewrite store_zeros_perm by eauto. *)
+(*     erewrite store_init_data_list_perm by eauto. *)
+(*     eapply Mem.perm_drop_4; eauto. } *)
+(*   split; auto. *)
+(*   eapply Mem.perm_drop_2; eauto. *)
+(*   split. intros NOTVOL. apply load_store_init_data_invariant with m3. *)
+(*   intros. eapply Mem.load_drop; eauto. right; right; right. *)
+(*   unfold perm_globvar. rewrite NOTVOL. destruct (gvar_readonly v); auto with mem. *)
+(*   eapply store_init_data_list_charact; eauto. *)
+(*   eapply store_zeros_read_as_zero; eauto. eapply Mem.owned_new_block; eauto. *)
+(*   intros NOTVOL. *)
+(*   transitivity (Mem.loadbytes m3 b 0 sz (Some v.(gvar_comp))). *)
+(*   eapply Mem.loadbytes_drop; eauto. right; right; right. *)
+(*   unfold perm_globvar. rewrite NOTVOL. destruct (gvar_readonly v); auto with mem. *)
+(*   eapply store_init_data_list_loadbytes; eauto. *)
+(*   eapply store_zeros_loadbytes; eauto. eapply Mem.owned_new_block; eauto. *)
+(*   eapply store_zeros_loadbytes; eauto. eapply Mem.owned_new_block; eauto. *)
+  admit.
++ assert (U: Mem.unchanged_on (fun _ _ => True) m m') by (eapply alloc_global_unchanged; eauto).
+  assert (VALID: Mem.valid_block m b).
+  { red. rewrite <- H. eapply genv_defs_range; eauto. }
+  exploit H1; eauto.
+  destruct gd0 as [f|v].
+  * intros [A B]; split; intros.
+  (* eapply Mem.perm_unchanged_on; eauto. exact I. *)
+  admit.
+  (* eapply B. eapply Mem.perm_unchanged_on_2; eauto. exact I. *)
+  admit.
+* admit.
+  (* intros (A & B & C & D). split; [| split; [| split]]. *)
+  (* red; intros. eapply Mem.perm_unchanged_on; eauto. exact I. *)
+  (* intros. eapply B. eapply Mem.perm_unchanged_on_2; eauto. exact I. *)
+  (* intros. apply load_store_init_data_invariant with m; auto. *)
+  (* intros. eapply Mem.load_unchanged_on_1; eauto. intros; exact I. *)
+  (* intros. eapply Mem.loadbytes_unchanged_on; eauto. intros; exact I. *)
+- simpl. congruence.
+(* Qed. *)
+Admitted.
+
 Lemma alloc_globals_initialized:
   forall gl ge m m',
   alloc_globals m gl = Some m' ->
@@ -1525,6 +1624,20 @@ Proof.
 - inv H; auto.
 - destruct a as [id g]. destruct (alloc_global m (id, g)) as [m1|] eqn:?; try discriminate.
   exploit alloc_global_initialized; eauto. intros [P Q].
+  eapply IHgl; eauto.
+Qed.
+
+Lemma alloc_globals_initialized':
+  forall gl ge m m',
+  alloc_globals m gl = Some m' ->
+  genv_next ge = Mem.nextblock m ->
+  globals_initialized' ge m ->
+  globals_initialized' (add_globals ge gl) m'.
+Proof.
+  induction gl; simpl; intros.
+- inv H; auto.
+- destruct a as [id g]. destruct (alloc_global m (id, g)) as [m1|] eqn:?; try discriminate.
+  exploit alloc_global_initialized'; eauto. intros [P Q].
   eapply IHgl; eauto.
 Qed.
 
@@ -1620,6 +1733,17 @@ Proof.
   red; intros. unfold find_def in H0; simpl in H0; rewrite PTree.gempty in H0; discriminate.
 Qed.
 
+Lemma init_mem_characterization_gen':
+  forall p m,
+  init_mem p = Some m ->
+  globals_initialized' (globalenv p) (globalenv p) m.
+Proof.
+  intros. apply alloc_globals_initialized' with Mem.empty.
+  auto.
+  rewrite Mem.nextblock_empty. auto.
+  red; intros. unfold find_def in H0; simpl in H0; rewrite PTree.gempty in H0; discriminate.
+Qed.
+
 Theorem init_mem_characterization:
   forall p b gv m,
   find_var_info (globalenv p) b = Some gv ->
@@ -1636,6 +1760,20 @@ Proof.
   exploit init_mem_characterization_gen; eauto.
 Qed.
 
+Theorem init_mem_characterization':
+  forall p b gv m,
+  find_var_info (globalenv p) b = Some gv ->
+  init_mem p = Some m ->
+  (forall ofs k, ((Mem.mem_access m) !! b) ofs k =
+                   if zle 0 ofs && zlt ofs (init_data_list_size gv.(gvar_init)) then Some (perm_globvar gv) else None)
+  /\ (Mem.mem_compartments m) ! b = Some (gvar_comp gv)
+  /\ (Mem.loadbytes m b 0 (init_data_list_size gv.(gvar_init)) (Some gv.(gvar_comp)) = Some (bytes_of_init_data_list (globalenv p) gv.(gvar_init)))
+.
+Proof.
+  intros. rewrite find_var_info_iff in H.
+  exploit init_mem_characterization_gen'; eauto.
+Qed.
+
 Theorem init_mem_characterization_2:
   forall p b fd m,
   find_funct_ptr (globalenv p) b = Some fd ->
@@ -1645,6 +1783,18 @@ Theorem init_mem_characterization_2:
 Proof.
   intros. rewrite find_funct_ptr_iff in H.
   exploit init_mem_characterization_gen; eauto.
+Qed.
+
+Theorem init_mem_characterization_2':
+  forall p b fd m,
+  find_funct_ptr (globalenv p) b = Some fd ->
+  init_mem p = Some m ->
+  (forall ofs k, ((Mem.mem_access m) !! b) ofs k = if zeq ofs 0 then Some Nonempty else None)
+  /\ ((Mem.mem_compartments m) ! b) = Some (comp_of fd)
+  /\ (forall ofs, ZMap.get ofs ((Mem.mem_contents m) !! b) = Undef).
+Proof.
+  intros. rewrite find_funct_ptr_iff in H.
+  exploit init_mem_characterization_gen'; eauto.
 Qed.
 
 Lemma init_mem_block_compartment:
