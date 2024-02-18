@@ -426,6 +426,10 @@ Section Simulation.
   Hypothesis W1_ini: exists s, Smallstep.initial_state (semantics1 W1) s.
   Hypothesis W2_ini: exists s, Smallstep.initial_state (semantics1 W2) s.
 
+  Hypothesis W1_compat: clight_compatible s p1 c.
+  Hypothesis W2_compat: clight_compatible s p2 c.
+
+  (* TODO These become redundant *)
   Hypothesis c_Right: s |= c ∈ Right.
   Hypothesis p1_Left: s |= p1 ∈ Left.
   Hypothesis p2_Left: s |= p2 ∈ Left.
@@ -3817,12 +3821,23 @@ Definition globdef_blocks p1 p2 '(id, gd) b1 b2 :=
 
 Lemma globdef_right id gd1 gd2 b1 b2 cp
       (COMP : Genv.find_comp_of_ident (Genv.globalenv W1) id = Some cp)
+      (SIDE : s cp = Right)
       (SYM1 : Genv.find_symbol ge1 id = Some b1)
       (SYM2 : Genv.find_symbol ge2 id = Some b2)
       (DEF1 : Genv.find_def (Genv.globalenv W1) b1 = Some gd1)
       (DEF2 : Genv.find_def (Genv.globalenv W2) b2 = Some gd2):
   gd1 = gd2.
-Admitted.
+Proof.
+  destruct (match_prog_globdefs _ _ _ match_W1_W2
+              _ _ (or_introl COMP) (or_introl SIDE))
+    as (b1' & b2' & SYM1' & SYM2' & GLOBDEFS).
+  (* unfold globalenv, Genv.globalenv in *. simpl in *. *)
+  rewrite SYM1 in SYM1'. injection SYM1' as <-.
+  rewrite SYM2 in SYM2'. injection SYM2' as <-.
+  rewrite SIDE in GLOBDEFS. simpl in GLOBDEFS.
+  setoid_rewrite DEF1 in GLOBDEFS. setoid_rewrite DEF2 in GLOBDEFS.
+  injection GLOBDEFS as <-. reflexivity.
+Qed.
 
 Lemma init_mem_characterization_rel' sp (pr1 pr2: program) id gd m1 m2
       (MATCH: match_prog sp pr1 pr2)
