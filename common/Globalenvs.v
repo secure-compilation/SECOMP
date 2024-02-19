@@ -977,29 +977,38 @@ intros m [id [v|f]] m' b ALLOCGLOB; simpl in *.
   erewrite <- Mem.alloc_result; eauto.
 Qed.
 
-Fixpoint alloc_globals_block_compartment_spec
-         dflt b0 (gl : list (ident * globdef F V)) b : option block :=
-  match gl with
-  | nil => dflt
-  | g :: gl =>
-    let dflt' := if eq_block b b0 then Some (comp_of g#2)
-                 else dflt in
-    alloc_globals_block_compartment_spec dflt' (Pos.succ b0) gl b
-  end.
-
 Remark alloc_globals_block_compartment:
-  forall m gl m',
-  alloc_globals m gl = Some m' ->
+  forall m idgs m',
+  alloc_globals m idgs = Some m' ->
   forall b, Mem.block_compartment m' b =
-  alloc_globals_block_compartment_spec
-    (Mem.block_compartment m b) (Mem.nextblock m) gl b.
+  if (b <? Mem.nextblock m)%positive then
+    Mem.block_compartment m b
+  else option_map (fun idg => comp_of idg#2)
+         (nth_error idgs (Pos.to_nat b - Pos.to_nat (Mem.nextblock m))).
 Proof.
-intros m gl m' ALLOC b. revert m m' ALLOC.
-induction gl as [|g gl IH]; simpl; try congruence.
-intros m1 m3 ALLOCGLOBALS.
-destruct alloc_global as [m2|] eqn:ALLOC; try congruence.
-rewrite (IH _ _ ALLOCGLOBALS), (alloc_global_block_compartment _ _ _ ALLOC).
-erewrite <- alloc_global_nextblock; eauto.
+  intros m idgs. revert m.
+  induction idgs as [|idg idgs IH]; simpl.
+  - intros m m' E. injection E as <-.
+    intros b. case Pos.ltb_spec; trivial.
+    intros Hmb. rewrite nth_error_nil. simpl.
+    apply Mem.block_compartment_valid_block.
+    unfold Mem.valid_block, Plt. lia.
+  - intros m m'' Hallocs b.
+    destruct alloc_global as [m'|] eqn:Halloc; try congruence.
+    rewrite (IH _ _ Hallocs), (alloc_global_nextblock _ _ Halloc).
+    destruct (Pos.ltb_spec b (Mem.nextblock m)) as [Hbm|Hbm].
+    + case Pos.ltb_spec; try lia. intros Hbm'.
+      rewrite (alloc_global_block_compartment _ _ _ Halloc).
+      destruct eq_block; trivial; lia.
+    + case Pos.ltb_spec.
+      * intros Hbm'.
+        assert (b = Mem.nextblock m) as -> by lia.
+        rewrite Nat.sub_diag, (alloc_global_block_compartment _ _ _ Halloc).
+        destruct eq_block; trivial; lia.
+      * intros Hbm'.
+        set (b0 := Mem.nextblock m).
+        set (n := (Pos.to_nat b - Pos.to_nat (Pos.succ _))%nat).
+        now assert (Pos.to_nat b - Pos.to_nat b0 = S n)%nat as -> by lia.
 Qed.
 
 (** Permissions *)
@@ -1646,35 +1655,101 @@ End INITMEM.
 Definition init_mem (p: program F V) :=
   alloc_globals (globalenv p) Mem.empty p.(prog_defs).
 
+Lemma init_mem_block_compartment:
+  forall p m b,
+  init_mem p = Some m ->
+  Mem.block_compartment m b =
+    option_map (fun idg => comp_of idg#2)
+      (nth_error (prog_defs p) (Nat.pred (Pos.to_nat b))).
+Proof.
+  intros p m b p_m.
+  rewrite (alloc_globals_block_compartment _ _ _ p_m).
+  simpl. case Pos.ltb_spec; try lia. intros _.
+  now assert (Pos.to_nat b - Pos.to_nat 1 = Nat.pred (Pos.to_nat b))%nat
+    as -> by lia.
+Qed.
+
+Lemma find_def_add_globals :
+  forall ge idgs b,
+    find_def (add_globals ge idgs) b =
+      if (b <? genv_next ge)%positive then
+        find_def ge b
+      else option_map snd
+             (nth_error idgs (Pos.to_nat b - Pos.to_nat (genv_next ge))).
+Proof.
+  intros ge idgs b. revert ge.
+  induction idgs as [|idg idgs IH]; simpl; intros ge.
+  - case Pos.ltb_spec; trivial. intros ge_b.
+    rewrite nth_error_nil. simpl.
+    destruct find_def as [g|] eqn:Hfind; trivial.
+    specialize (genv_defs_range _ _ Hfind). unfold Plt. lia.
+  - rewrite IH. simpl.
+    case (Pos.ltb_spec b (genv_next ge)).
+    * intros b_ge.
+      case Pos.ltb_spec; try lia.
+      intros b_ge'.
+      unfold add_global, find_def; simpl.
+      rewrite PTree.gso; trivial; lia.
+    * intros ge_b.
+      case Pos.ltb_spec.
+      + intros b_ge'.
+        assert (b = genv_next ge) as -> by lia.
+        rewrite Nat.sub_diag. simpl.
+        unfold find_def, add_global; simpl.
+        now rewrite PTree.gss.
+      + intros b_ge'.
+        set (b0 := genv_next ge).
+        set (n := (Pos.to_nat b - Pos.to_nat (Pos.succ _))%nat).
+        now assert (Pos.to_nat b - Pos.to_nat b0 = S n)%nat as -> by lia.
+Qed.
+
+Lemma find_def_globalenv:
+  forall p b,
+    find_def (globalenv p) b =
+      option_map snd
+        (nth_error (prog_defs p) (Nat.pred (Pos.to_nat b))).
+Proof.
+  intros p b. unfold globalenv.
+  rewrite find_def_add_globals. simpl.
+  case Pos.ltb_spec; try lia. intros _.
+  now assert (Pos.to_nat b - Pos.to_nat 1 = Nat.pred (Pos.to_nat b))%nat
+    as -> by lia.
+Qed.
+
 Lemma init_mem_find_def:
   forall p m b g,
   init_mem p = Some m ->
   find_def (globalenv p) b = Some g ->
   Mem.block_compartment m b = Some (comp_of g).
 Proof.
-  intros p m b g.
-  unfold init_mem, find_def.
-  intros ALLOC.
-  rewrite (alloc_globals_block_compartment _ _ _ ALLOC). clear ALLOC.
-  unfold globalenv.
-  assert (Mem.block_compartment Mem.empty b = None) as ->.
-  { rewrite <- Mem.block_compartment_valid_block.
-    unfold Mem.valid_block. rewrite Mem.nextblock_empty.
-    now destruct b. }
-  simpl.
-  set (ge := @empty_genv _ _ _).
-  change 1%positive with (genv_next ge).
-  assert (forall g', (genv_defs ge) ! b = Some g' ->
-                     None = Some (comp_of g')) as INV.
-  { intros g'. unfold ge. simpl. now rewrite PTree.gempty. }
-  generalize ge (@None compartment) INV. clear ge INV.
-  generalize (prog_defs p). clear p. intros idgl.
-  induction idgl as [|idg idgl IH]; simpl.
-  - eauto.
-  - intros ge o INV. apply IH. clear IH g.
-    intros g. simpl. destruct eq_block as [->|neq].
-    + rewrite PTree.gss. intros H. now injection H as <-.
-    + rewrite PTree.gso; trivial. apply INV.
+  intros p m b g p_m b_g.
+  rewrite (init_mem_block_compartment _ _ p_m).
+  rewrite find_def_globalenv in b_g.
+  destruct nth_error as [idg|]; simpl in *; congruence.
+Qed.
+
+Lemma find_def_add_globals_default ge idgs b :
+  (b < genv_next ge)%positive ->
+  find_def (add_globals ge idgs) b = find_def ge b.
+Proof.
+  revert ge. induction idgs as [|idg idgs IH]; simpl; trivial.
+  intros ge Hub.
+  rewrite IH; simpl; try lia.
+  destruct idg as [id g]; simpl. unfold add_global, find_def. simpl.
+  rewrite PTree.gso; trivial; lia.
+Qed.
+
+Lemma init_mem_block_compartment_find_comp_of_block:
+  forall p m b,
+  init_mem p = Some m ->
+  Mem.block_compartment m b =
+  find_comp_of_block (globalenv p) b.
+Proof.
+  intros p m b Hinit_mem.
+  erewrite init_mem_block_compartment; eauto.
+  unfold find_comp_of_block.
+  rewrite find_def_globalenv.
+  now destruct nth_error.
 Qed.
 
 Lemma init_mem_genv_next: forall p m,
@@ -1796,15 +1871,6 @@ Proof.
   intros. rewrite find_funct_ptr_iff in H.
   exploit init_mem_characterization_gen'; eauto.
 Qed.
-
-Lemma init_mem_block_compartment:
-  forall p m b,
-  init_mem p = Some m ->
-  list_norepet (prog_defs_names p) ->
-  Mem.block_compartment m b =
-  find_comp_of_block (globalenv p) b.
-Proof.
-Admitted.
 
 
 (** ** Compatibility with memory injections *)
