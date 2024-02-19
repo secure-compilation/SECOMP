@@ -2288,19 +2288,6 @@ Qed.
       { apply external_call_spec. }
   Qed.
 
-  Lemma memval_inject_alloc {j m1 m2 b1 b2 ofs delta cp lo hi m1' m2' b1' b2'}
-    (INJ: memval_inject j
-            (ZMap.get ofs (Mem.mem_contents m1) !! b1)
-            (ZMap.get (ofs + delta) (Mem.mem_contents m2) !! b2))
-    (b1_b2: j b1 = Some (b2, delta))
-    (ALLOC1: Mem.alloc m1 cp lo hi = (m1', b1'))
-    (ALLOC2: Mem.alloc m2 cp lo hi = (m2', b2')):
-    memval_inject j
-      (ZMap.get ofs (Mem.mem_contents m1') !! b1)
-      (ZMap.get (ofs + delta) (Mem.mem_contents m2') !! b2).
-  Admitted. (* Currently unused, a variation on this lemma is likely
-               needed while proving preservation on external calls*)
-
   Lemma find_funct_ptr_right id fd1 fd2 b1 b2
     (RIGHT: s (comp_of fd1) = Right)
     (SYM1: Genv.invert_symbol (Genv.globalenv W1) b1 = Some id)
