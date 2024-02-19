@@ -434,6 +434,9 @@ Section Simulation.
   Hypothesis p1_Left: s |= p1 ∈ Left.
   Hypothesis p2_Left: s |= p2 ∈ Left.
 
+  Hypothesis main_is_public:
+    forall {F} (p: Ctypes.program F), In (prog_main p) (prog_public p).
+
   (* Context (ge1 ge2: genv). *)
   Notation ge1 := (globalenv W1).
   Notation ge2 := (globalenv W2).
@@ -4057,7 +4060,12 @@ Proof.
                   Some (comp_of main1)). {
     unfold Genv.find_comp_of_ident. rewrite MAINSYM1. assumption. }
   exploit (@match_prog_globdefs _ _ _ match_W1_W2 (prog_main W1) (comp_of main1)); eauto.
-  { admit. (* Not quite right at the moment *) }
+  { right. left.
+    unfold Genv.public_symbol. simpl.
+    unfold ge1 in MAINSYM1. setoid_rewrite MAINSYM1.
+    destruct in_dec as [IN | NOTIN]; [reflexivity |].
+    exfalso. apply NOTIN. setoid_rewrite (Genv.globalenv_public W1).
+    exact (main_is_public W1). }
   intros (b1' & b2' & MAINSYM1'' & MAINSYM2'' & MATCHDEFS).
   unfold Simulation.ge1 in MAINSYM1''. unfold ge1 in MAINSYM1.
   setoid_rewrite MAINSYM1 in MAINSYM1''.
@@ -4086,9 +4094,7 @@ Proof.
     injection MAINBLOCK2 as <-.
     apply RightControl; try assumption.
     constructor; assumption.
-Admitted. (* Standard assumption about initial states, easy but
-             cumbersome technical lemma about them (construction of
-             initial injection) *)
+Qed.
 
 (* - Quantify over p vs. W1 *)
 Lemma does_prefix_star
