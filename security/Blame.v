@@ -3745,7 +3745,8 @@ Lemma init_mem_characterization_rel sp (pr1 pr2: program) id gd m1 m2 b1 b2
   (forall ofs k p, Mem.perm m1 b1 ofs k p <-> Mem.perm m2 b2 ofs k p) /\
   (forall cp, Mem.can_access_block m1 b1 cp <-> Mem.can_access_block m2 b2 cp) /\
   (* Any restrictions on gvar_init and init_data, esp. Init_addrof? *)
-  (forall ofs, memval_inject init_meminj (ZMap.get ofs (Mem.mem_contents m1) !! b1)
+  (forall ofs, Mem.perm m1 b1 ofs Cur Readable ->
+               memval_inject init_meminj (ZMap.get ofs (Mem.mem_contents m1) !! b1)
                                          (ZMap.get ofs (Mem.mem_contents m2) !! b2)).
 Proof.
   (* From PROGDEFS and MEM we can get SYM and DEF, although without
@@ -3783,7 +3784,8 @@ Lemma init_mem_characterization_rel sp (pr1 pr2: program) id gd m1 m2 b1 b2
   (forall ofs k p, Mem.perm m1 b1 ofs k p <-> Mem.perm m2 b2 ofs k p) /\
   (forall cp, Mem.can_access_block m1 b1 cp <-> Mem.can_access_block m2 b2 cp) /\
   (* Any restrictions on gvar_init and init_data, esp. Init_addrof? *)
-  (forall ofs, memval_inject init_meminj (ZMap.get ofs (Mem.mem_contents m1) !! b1)
+  (forall ofs, Mem.perm m1 b1 ofs Cur Readable ->
+               memval_inject init_meminj (ZMap.get ofs (Mem.mem_contents m1) !! b1)
                                          (ZMap.get ofs (Mem.mem_contents m2) !! b2)).
 Proof.
   destruct gd as [fd | gv].
@@ -3798,7 +3800,7 @@ Proof.
       unfold Mem.can_access_block, Mem.block_compartment.
       rewrite ACC1, ACC2.
       reflexivity.
-    + intros ofs. specialize (INJ1 ofs). specialize (INJ2 ofs).
+    + intros ofs PERM. specialize (INJ1 ofs). specialize (INJ2 ofs).
       rewrite INJ1, INJ2.
       exact (memval_inject_undef _ _).
   - apply Genv.find_var_info_iff in DEF1, DEF2.
@@ -3812,7 +3814,28 @@ Proof.
       unfold Mem.can_access_block, Mem.block_compartment.
       rewrite ACC1, ACC2.
       reflexivity.
-    + intros ofs.
+    + intros ofs PERM.
+      unfold Mem.perm, Mem.perm_order' in PERM.
+      destruct ((Mem.mem_access m1) !! b1 ofs Cur) as [p' |] eqn:ACC;
+        [| contradiction].
+      assert (PERMEQ: (if zle 0 ofs && zlt ofs (init_data_list_size (gvar_init gv))
+                       then Some (Genv.perm_globvar gv) else None) = Some p'). {
+        rewrite <- ACC. erewrite <- PERM1. reflexivity. }
+      destruct (zle 0 ofs && zlt ofs (init_data_list_size (gvar_init gv))) eqn:RANGE;
+        [| discriminate].
+      injection PERMEQ as <-.
+      unfold Genv.perm_globvar in PERM.
+      destruct (gvar_volatile gv) eqn:VOL; [now inversion PERM |].
+      (* this we are in the process of proving, see if loadbytes_inj
+         could be specialized to only use things we already know *)
+      assert (m1_m2: Mem.mem_inj init_meminj m1 m2) by admit.
+      (* add as assumption to the lemma? *)
+      assert (b1_b2: init_meminj b1 = Some (b2, 0)) by admit.
+      destruct (Mem.loadbytes_inj _ _ _ _ _ _ _ _ _ _ m1_m2 INJ1 b1_b2)
+        as (bytes & INJ2' & MEMVAL).
+      setoid_rewrite INJ2 in INJ2'. injection INJ2' as <-.
+      (* The conclusion should follow easily if slightly technically
+         from MEMVAL and the proof context *)
       admit.
 Admitted.
 
@@ -3857,6 +3880,7 @@ Lemma init_mem_characterization_rel' sp (pr1 pr2: program) id gd m1 m2
   (* Any restrictions on gvar_init and init_data, esp. Init_addrof? *)
   (forall b1 b2 ofs,
      globdef_blocks pr1 pr2 (id, gd) b1 b2 ->
+     Mem.perm m1 b1 ofs Cur Readable ->
      memval_inject init_meminj (ZMap.get ofs (Mem.mem_contents m1) !! b1)
                                (ZMap.get ofs (Mem.mem_contents m2) !! b2)).
 Abort.
@@ -3944,7 +3968,7 @@ Proof.
                   _ _ _ _ _ _ _ _ _
                   match_W1_W2 MEM1 MEM2 SYM1 SYM2 DEF1 DEF2)
         as (_ & _ & MEMVAL).
-      rewrite Z.add_0_r.  exact (MEMVAL ofs).
+      rewrite Z.add_0_r.  exact (MEMVAL ofs PERM).
   - intros b VALID. unfold init_meminj, init_meminj_block.
     destruct Genv.invert_symbol as [id |] eqn:SYM; [| reflexivity].
     apply Genv.invert_find_symbol in SYM.
