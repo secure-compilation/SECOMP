@@ -3779,6 +3779,7 @@ Lemma init_mem_characterization_rel sp (pr1 pr2: program) id gd m1 m2 b1 b2
       (MEM2: Genv.init_mem pr2 = Some m2)
       (SYM1: Genv.find_symbol (globalenv pr1) id = Some b1)
       (SYM2: Genv.find_symbol (globalenv pr2) id = Some b2)
+      (b1_b2: init_meminj b1 = Some (b2, 0))
       (DEF1: Genv.find_def (globalenv pr1) b1 = Some gd)
       (DEF2: Genv.find_def (globalenv pr2) b2 = Some gd):
   (forall ofs k p, Mem.perm m1 b1 ofs k p <-> Mem.perm m2 b2 ofs k p) /\
@@ -3829,8 +3830,6 @@ Proof.
       (* this we are in the process of proving, see if loadbytes_inj
          could be specialized to only use things we already know *)
       assert (m1_m2: Mem.mem_inj init_meminj m1 m2) by admit.
-      (* add as assumption to the lemma? *)
-      assert (b1_b2: init_meminj b1 = Some (b2, 0)) by admit.
       destruct (Mem.loadbytes_inj _ _ _ _ _ _ _ _ _ _ m1_m2 INJ1 b1_b2)
         as (bytes & INJ2' & MEMVAL).
       setoid_rewrite INJ2 in INJ2'. injection INJ2' as <-.
@@ -3910,9 +3909,14 @@ Proof.
       destruct (Genv.find_symbol_find_def_inversion _ _ SYM2) as (gd2 & DEF2).
       assert (gd1 = gd2) as <- by (eapply globdef_right; eassumption).
       rename gd1 into gd.
+      assert (INJ: init_meminj b1 = Some (b2, 0)). { (* inversion lemma? *)
+        unfold init_meminj, init_meminj_block.
+        apply Genv.find_invert_symbol in SYM1. rewrite SYM1.
+        setoid_rewrite COMP.
+        rewrite RIGHT. rewrite SYM2. reflexivity. }
       destruct (init_mem_characterization_rel
                   _ _ _ _ _ _ _ _ _
-                  match_W1_W2 MEM1 MEM2 SYM1 SYM2 DEF1 DEF2)
+                  match_W1_W2 MEM1 MEM2 SYM1 SYM2 INJ DEF1 DEF2)
         as (PERMS & _).
       apply PERMS. rewrite Z.add_0_r. assumption.
     + unfold init_meminj, init_meminj_block.
@@ -3931,9 +3935,14 @@ Proof.
       destruct (Genv.find_symbol_find_def_inversion _ _ SYM2) as (gd2 & DEF2).
       assert (gd1 = gd2) as <- by (eapply globdef_right; eassumption).
       rename gd1 into gd.
+      assert (INJ: init_meminj b1 = Some (b2, 0)). { (* inversion lemma? *)
+        unfold init_meminj, init_meminj_block.
+        apply Genv.find_invert_symbol in SYM1. rewrite SYM1.
+        setoid_rewrite COMP.
+        rewrite RIGHT. rewrite SYM2. reflexivity. }
       destruct (init_mem_characterization_rel
                   _ _ _ _ _ _ _ _ _
-                  match_W1_W2 MEM1 MEM2 SYM1 SYM2 DEF1 DEF2)
+                  match_W1_W2 MEM1 MEM2 SYM1 SYM2 INJ DEF1 DEF2)
         as (_ & BLOCKS & _).
       apply BLOCKS. assumption.
     + unfold init_meminj, init_meminj_block.
@@ -3964,9 +3973,14 @@ Proof.
       destruct (Genv.find_symbol_find_def_inversion _ _ SYM2) as (gd2 & DEF2).
       assert (gd1 = gd2) as <- by (eapply globdef_right; eassumption).
       rename gd1 into gd.
+      assert (INJ: init_meminj b1 = Some (b2, 0)). { (* inversion lemma? *)
+        unfold init_meminj, init_meminj_block.
+        apply Genv.find_invert_symbol in SYM1. rewrite SYM1.
+        setoid_rewrite COMP.
+        rewrite RIGHT. rewrite SYM2. reflexivity. }
       destruct (init_mem_characterization_rel
                   _ _ _ _ _ _ _ _ _
-                  match_W1_W2 MEM1 MEM2 SYM1 SYM2 DEF1 DEF2)
+                  match_W1_W2 MEM1 MEM2 SYM1 SYM2 INJ DEF1 DEF2)
         as (_ & _ & MEMVAL).
       rewrite Z.add_0_r.  exact (MEMVAL ofs PERM).
   - intros b VALID. unfold init_meminj, init_meminj_block.
@@ -4031,9 +4045,14 @@ Proof.
     destruct (Genv.find_symbol_find_def_inversion _ _ SYM2) as (gd2 & DEF2).
     assert (gd1 = gd2) as <- by (eapply globdef_right; eassumption).
     rename gd1 into gd.
+    assert (INJ: init_meminj b1 = Some (b2, 0)). { (* inversion lemma? *)
+      unfold init_meminj, init_meminj_block.
+      apply Genv.find_invert_symbol in SYM1. rewrite SYM1.
+      setoid_rewrite COMP.
+      rewrite RIGHT. rewrite SYM2. reflexivity. }
     destruct (init_mem_characterization_rel
                 _ _ _ _ _ _ _ _ _
-                match_W1_W2 MEM1 MEM2 SYM1 SYM2 DEF1 DEF2)
+                match_W1_W2 MEM1 MEM2 SYM1 SYM2 INJ DEF1 DEF2)
       as (PERMS & _).
     left. apply PERMS. rewrite Z.add_0_r in PERM. assumption.
 Qed.
