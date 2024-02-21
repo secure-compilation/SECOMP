@@ -3827,12 +3827,45 @@ Proof.
       injection PERMEQ as <-.
       unfold Genv.perm_globvar in PERM.
       destruct (gvar_volatile gv) eqn:VOL; [now inversion PERM |].
-      (* this we are in the process of proving, see if loadbytes_inj
-         could be specialized to only use things we already know *)
-      assert (m1_m2: Mem.mem_inj init_meminj m1 m2) by admit.
-      destruct (Mem.loadbytes_inj _ _ _ _ _ _ _ _ _ _ m1_m2 INJ1 b1_b2)
-        as (bytes & INJ2' & MEMVAL).
-      setoid_rewrite INJ2 in INJ2'. injection INJ2' as <-.
+      (* in the process of proving this, we can replicate the use of
+         [Mem.loadbytes_inj] with a modified proof that exploits facts
+         we know from our specific context *)
+      assert (MEMVAL: list_forall2 (memval_inject init_meminj)
+                        (Genv.bytes_of_init_data_list (Genv.globalenv pr1) (gvar_init gv))
+                        (Genv.bytes_of_init_data_list (Genv.globalenv pr2) (gvar_init gv))). {
+Local Transparent Mem.loadbytes.
+  unfold Mem.loadbytes in *.
+Local Opaque Mem.loadbytes.
+  destruct (Mem.range_perm_dec m1 b1 0 (0 + init_data_list_size (gvar_init gv)) Cur Readable) as [RANGE1 |];
+  destruct (Mem.can_access_block_dec m1 b1 (Some (gvar_comp gv))) as [BLOCK1 |];
+  inv INJ1.
+  (* same thing for the second memory now, replacing the use of
+     [Mem.range_perm_inj] and [Mem.mi_own] *)
+  destruct (Mem.range_perm_dec m2 b2 0 (0 + init_data_list_size (gvar_init gv)) Cur Readable) as [RANGE2 |];
+  destruct (Mem.can_access_block_dec m2 b2 (Some (gvar_comp gv))) as [BLOCK2 |];
+  inv INJ2.
+  (* (* we can use the first sub-characterization above *)
+  (*    replacing the use of [Mem.range_perm_inj] *) *)
+  (* assert (CHAR: *)
+  (*          (forall ofs k p, Mem.perm m1 b1 ofs k p <-> Mem.perm m2 b2 ofs k p) -> *)
+  (*          (forall lo hi k p, Mem.range_perm m1 b1 lo hi k p <-> Mem.range_perm m2 b2 lo hi k p)). { *)
+  (*   unfold Mem.range_perm. split; intros. *)
+  (*   - specialize (H ofs0 k p). apply H; auto. *)
+  (*   - specialize (H ofs0 k p). apply H; auto. } *)
+  (* assert (RANGE2: Mem.range_perm m2 b2 0 (0 + init_data_list_size (gvar_init gv)) Cur Readable) by admit. *)
+  (* (* and the second sub-characterization in turn *)
+  (*    replacing the use of [Mem.mi_own] *) *)
+  (* assert (BLOCK2: Mem.can_access_block m2 b2 (Some (gvar_comp gv))) by admit. *)
+  assert (MEMVAL: list_forall2 (memval_inject init_meminj)
+                    (Mem.getN (Z.to_nat (init_data_list_size (gvar_init gv))) 0 (m1.(Mem.mem_contents) !! b1))
+                    (Mem.getN (Z.to_nat (init_data_list_size (gvar_init gv))) 0 (m2.(Mem.mem_contents) !! b2))). {
+    (* replicate the use of [Mem.getN_inj] *)
+    admit.
+  }
+  destruct (zle 0 (init_data_list_size (gvar_init gv))) as [LE | GT].
+  - rewrite H0, H1 in MEMVAL. exact MEMVAL.
+  - assert (CONTRA := init_data_list_size_pos (gvar_init gv)). lia.
+      }
       (* The conclusion should follow easily if slightly technically
          from MEMVAL and the proof context *)
       admit.
