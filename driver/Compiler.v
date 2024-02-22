@@ -422,6 +422,7 @@ Remark forward_simulation_identity:
 Proof.
   intros. apply forward_simulation_step with (fun s1 s2 => s2 = s1); intros.
 - auto.
+- auto.
 - exists s1; auto.
 - subst s2; auto.
 - subst s2. exists s1'; auto.
@@ -536,6 +537,7 @@ Theorem transf_c_program_correct:
 Proof.
   intros. apply c_semantic_preservation. apply transf_c_program_match; auto.
 Qed.
+
 
 (** Here is the separate compilation case.  Consider a nonempty list [c_units]
   of C source files (compilation units), [C1 ,,, Cn].  Assume that every

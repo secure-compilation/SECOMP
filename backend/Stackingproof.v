@@ -2087,9 +2087,6 @@ Inductive match_states: Linear.state -> Mach.state -> Prop :=
       forall cs ls m cs' rs m' j sg cp
         (STACKS: match_stacks j cs cs' sg)
         (AGREGS: agree_regs j ls rs)
-        (RETREGS: forall r,
-            (LTL.in_mreg r (regs_of_rpair (loc_result (parent_signature cs'))) = false) ->
-            rs r = Vundef)
         (SEP: m' |= stack_contents j cs cs'
                  ** minjection j m
                  ** globalenv_inject ge j),
@@ -2429,7 +2426,6 @@ Proof.
     - exact E.
     - constructor.
   }
-intros. unfold undef_non_return_regs_ext. rewrite H0. auto.
   rewrite sep_swap; exact G.
   }
 
@@ -2473,17 +2469,7 @@ intros. unfold undef_non_return_regs_ext. rewrite H0. auto.
   eapply match_stacks_change_meminj; eauto.
   apply agree_regs_set_pair. apply agree_regs_undef_caller_save_regs. 
   apply agree_regs_inject_incr with j; auto.
-  auto. admit.
-  (* { intros. unfold undef_caller_save_regs, is_callee_save. *)
-  (*   unfold set_pair. *)
-  (*   destruct (loc_result (ef_sig ef)). *)
-  (*   rewrite Regmap.gso. auto. unfold in_mreg in H. *)
-  (*   simpl in H. rewrite orb_false_r in H. destruct mreg_eq; try now auto. *)
-  (*   rewrite !Regmap.gso. auto. unfold in_mreg in H. *)
-  (*   simpl in H. rewrite orb_false_r in H. destruct mreg_eq; try now auto. *)
-  (*   unfold in_mreg in H. *)
-  (*   simpl in H. rewrite orb_false_r in H. destruct mreg_eq; try now auto. simpl in H. *)
-  (*   destruct mreg_eq; try now auto. } *)
+  auto.
   apply stack_contents_change_meminj with j; auto.
   rewrite sep_comm, sep_assoc; auto.
 
@@ -2511,7 +2497,6 @@ intros. unfold undef_non_return_regs_ext. rewrite H0. auto.
       now rewrite <- H1 in NO_CROSS_PTR.
     (* TODO: write a lemma about that *)
   }
-  { simpl in RETREGS. eauto. }
   { assert (SAMECOMP: comp_of (Internal trf) = comp_of f) by
       (rewrite (comp_transl_partial _ TRF); reflexivity).
     setoid_rewrite SAMECOMP.
@@ -2530,7 +2515,7 @@ intros. unfold undef_non_return_regs_ext. rewrite H0. auto.
   (* TODO: fix this unshelving *)
   Unshelve.
   exact (Linear.funsig f').
-Admitted.
+Qed.
 
 Lemma transf_initial_states:
   forall st1, Linear.initial_state prog st1 ->

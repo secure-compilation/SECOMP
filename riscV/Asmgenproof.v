@@ -562,7 +562,10 @@ Inductive match_states: Mach.state -> Asm.state -> Prop :=
       (STACKS': match_stacks cp s s')
       (MEXT: Mem.extends m m')
       (AG: agree ms (parent_sp s) rs)
-      (ATPC: rs PC = parent_ra s),
+      (ATPC: rs PC = parent_ra s)
+      (INVREGS: forall r : mreg,
+          cp ⊈ Genv.find_comp_in_genv tge (rs PC) ->
+          LTL.in_mreg r (regs_of_rpair (loc_result (sig_of_call s'))) = false -> ms r = Vundef),
       match_states (Mach.Returnstate s ms m cp)
                    (Asm.ReturnState s' rs m' cp).
 
@@ -1282,6 +1285,17 @@ Local Transparent destroyed_by_op.
     inv V. constructor; auto.
     intros r. specialize (agree_mregs r). unfold undef_non_return_regs_ext.
     destruct (LTL.in_mreg r (regs_of_rpair (loc_result (parent_signature s)))); auto. }
+  Simpl. rewrite X. intros r C.
+  assert (sig_of_call s' = parent_signature s) as ->.
+  { clear -STACKS' C TRANSF. revert STACKS' C. generalize (comp_of f).
+    intros cp H.
+    inv H; eauto.
+    - simpl in *.
+      destruct f0; simpl in *.
+      rewrite <- find_comp_of_block_translated; congruence.
+    - simpl; eauto. inv H4; eauto. }
+  { unfold undef_non_return_regs_ext. intros ->. reflexivity. }
+
 
 - (* internal function *)
   exploit functions_translated; eauto. intros [tf [A B]]. monadInv B.
@@ -1359,6 +1373,7 @@ Local Transparent destroyed_at_function_entry.
   (* Simpl. rewrite ATLR. eauto. *)
   eapply agree_set_other; eauto.
   eapply agree_set_pair; eauto. eapply agree_undef_caller_save_regs; eauto.
+  { intros ? G. exfalso; apply G; auto with comps. }
 
 - inv STACKS.
   assert (exists s'', update_stack_return tge s' cp rs0 = Some s'' /\
@@ -1471,9 +1486,68 @@ Local Transparent destroyed_at_function_entry.
      constructor; auto.
      unfold invalidate_return. simpl. eapply agree_sp; eauto.
      unfold invalidate_return.
-     admit.
+     { rewrite ATPC in INVREGS. simpl in INVREGS.
+       assert (NCP: cp ⊈ Genv.find_comp_of_block tge f).
+       { rewrite <- find_comp_of_block_translated; eauto.
+         erewrite Genv.find_funct_ptr_find_comp_of_block; eauto. exact n. }
+
+       clear -prog tprog ge tge comp_of_main LD AG ATPC NCP INVREGS.
+       intros r.
+       destruct (preg_eq (preg_of r) PC).
+       - simpl in *. eapply agree_mregs in AG; eauto.
+       - rewrite orb_false_l.
+         destruct (preg_eq (preg_of r) X2).
+         + simpl in *. eapply agree_mregs in AG; eauto.
+         + rewrite orb_false_l.
+           destruct in_dec.
+           * simpl. eapply agree_mregs in AG; eauto.
+           * simpl.
+             rewrite INVREGS; eauto.
+             revert n1.
+             assert (H: In R10 all_mregs /\ In R11 all_mregs /\ In Machregs.F10 all_mregs).
+             { split; [| split]; now eapply all_mregs_complete; eauto. }
+             revert H.
+             unfold loc_result.
+             generalize (proj_sig_res (sig_of_call s')).
+             generalize all_mregs.
+             clear.
+             intros.
+             destruct t; simpl in *.
+             -- destruct (mreg_eq r R10); simpl in *; auto.
+                subst. exfalso. apply n1.
+                simpl. replace (IR X10) with (preg_of R10) by reflexivity. apply in_map.
+                rewrite filter_In; split; intuition auto.
+             -- destruct (mreg_eq r Machregs.F10); simpl in *; auto.
+                subst. exfalso. apply n1.
+                simpl. replace (FR F10) with (preg_of (Machregs.F10)) by reflexivity. apply in_map.
+                rewrite filter_In; split; intuition auto.
+             -- destruct Archi.ptr64; simpl.
+                ++ destruct (mreg_eq r R10); simpl in *; auto.
+                   subst. exfalso. apply n1.
+                   simpl. replace (IR X10) with (preg_of R10) by reflexivity. apply in_map.
+                   rewrite filter_In; split; intuition auto.
+                ++ destruct (mreg_eq r R11); simpl in *; auto.
+                   subst. exfalso. apply n1.
+                   simpl. replace (IR X11) with (preg_of R11) by reflexivity. apply in_map.
+                   rewrite filter_In; split; intuition auto.
+                   destruct (mreg_eq r R10); simpl in *; auto.
+                   subst. exfalso. apply n1.
+                   simpl. replace (IR X10) with (preg_of R10) by reflexivity. apply in_map.
+                   rewrite filter_In; split; intuition auto.
+             -- destruct (mreg_eq r Machregs.F10); simpl in *; auto.
+                subst. exfalso. apply n1.
+                simpl. replace (FR F10) with (preg_of (Machregs.F10)) by reflexivity. apply in_map.
+                rewrite filter_In; split; intuition auto.
+             -- destruct (mreg_eq r R10); simpl in *; auto.
+                subst. exfalso. apply n1.
+                simpl. replace (IR X10) with (preg_of R10) by reflexivity. apply in_map.
+                rewrite filter_In; split; intuition auto.
+             -- destruct (mreg_eq r Machregs.F10); simpl in *; auto.
+                subst. exfalso. apply n1.
+                simpl. replace (FR F10) with (preg_of (Machregs.F10)) by reflexivity. apply in_map.
+                rewrite filter_In; split; intuition auto. }
      easy.
-Admitted.
+Qed.
 
 Lemma transf_initial_states:
   forall st1, Mach.initial_state prog st1 ->

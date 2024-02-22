@@ -528,8 +528,8 @@ Inductive step: state -> trace -> state -> Prop :=
       forall cp' (CURCOMP: Genv.find_comp_of_block ge f = cp'),
       forall (NO_CROSS_PTR: Genv.type_of_call cp' cp = Genv.CrossCompartmentCall ->
                        not_ptr (return_value rs sg)),
-      forall (RETREGS: forall r, (LTL.in_mreg r (regs_of_rpair (loc_result sg)) = false) ->
-        rs r = Vundef),
+      (* forall (RETREGS: forall r, (LTL.in_mreg r (regs_of_rpair (loc_result sg)) = false) -> *)
+      (*   rs r = Vundef), *)
       forall (EV: return_trace ge cp' cp (return_value rs sg) (sig_res sg) t),
       step (Returnstate (Stackframe f sg sp ra c :: s) rs m cp)
         t (State s f sp c rs m).
