@@ -498,7 +498,8 @@ Variable ge1 ge2: Senv.t.
 Variable cp: compartment.
 
 Definition symbols_inject : Prop :=
-   (forall id, Senv.public_symbol ge2 id = Senv.public_symbol ge1 id)
+   (forall id, Senv.find_comp ge1 id ⊆ cp ->
+          Senv.public_symbol ge2 id = Senv.public_symbol ge1 id)
 /\ (forall id b1 b2 delta,
      f b1 = Some(b2, delta) -> Senv.find_symbol ge1 id = Some b1 ->
      delta = 0 /\ Senv.find_symbol ge2 id = Some b2)
@@ -2421,6 +2422,8 @@ Module SyscallSanityChecks.
   | extcall_read_sem_ok: forall fd bytes sz (sz':Z) m m' bdst odst id,
       Senv.find_symbol ge id = Some bdst -> 
       Senv.public_symbol ge id = true ->
+      (* Condition: we're doing a volatile load to a location [cp] is allowed to access *)
+      Senv.find_comp ge id ⊆ cp ->
       Mem.range_perm m bdst (Ptrofs.unsigned odst)
         (Ptrofs.unsigned odst + Int64.unsigned sz) Cur Writable -> (* needed for receptivity *)
       Mem.storebytes m bdst (Ptrofs.unsigned odst) (map Byte bytes) cp = Some m' ->
@@ -2435,6 +2438,8 @@ Module SyscallSanityChecks.
   | extcall_read_sem_fail: forall fd sz m bdst odst id,
       Senv.find_symbol ge id = Some bdst -> 
       Senv.public_symbol ge id = true ->
+      (* Condition: we're doing a volatile load to a location [cp] is allowed to access *)
+      Senv.find_comp ge id ⊆ cp ->
       Mem.range_perm m bdst (Ptrofs.unsigned odst)
         (Ptrofs.unsigned odst + Int64.unsigned sz) Cur Writable -> (* needed for receptivity *)
       Mem.can_access_block m bdst cp -> (* needed for receptivity *)
@@ -2459,10 +2464,12 @@ Module SyscallSanityChecks.
     - inv H0.
       + econstructor; eauto. 
         * rewrite <- H1; eapply H. 
-        * rewrite <- H2; eapply H. 
-      + econstructor; eauto. 
+        * rewrite <- H2; eapply H.
+        * destruct H; intuition. now rewrite H10.
+      + econstructor; eauto.
         * rewrite <- H1; eapply H. 
-        * rewrite <- H2; eapply H. 
+        * rewrite <- H2; eapply H.
+        * destruct H; intuition. now rewrite H8.
     (* valid block *)
     - inv H; eauto with mem.
     (* accessiblity *)
@@ -2496,7 +2503,7 @@ Module SyscallSanityChecks.
     (* mem extends *)
     - inv H.
       + pose proof (Val.lessdef_list_inv _ _ H1). destruct H. 
-        2: { inv H. congruence. inv H6.  congruence. inv H.  congruence. inv H6. }
+        2: { inv H. congruence. inv H7.  congruence. inv H.  congruence. inv H7. }
         subst vargs'.
         assert (list_forall2 memval_lessdef (map Byte bytes) (map Byte bytes)).
         { clear.
@@ -2505,7 +2512,7 @@ Module SyscallSanityChecks.
           - simpl. econstructor.
             + apply memval_lessdef_refl.
             + auto. }
-        destruct (Mem.storebytes_within_extends _ _ _ _ _ _ _ _ H0 H5 H) as [m2' [P1 P2]]. 
+        destruct (Mem.storebytes_within_extends _ _ _ _ _ _ _ _ H0 H6 H) as [m2' [P1 P2]].
         econstructor; eauto. econstructor; eauto. split;[|split;[|split]].
         * econstructor; eauto.
           unfold Mem.range_perm in H4 |-*.
@@ -2519,7 +2526,7 @@ Module SyscallSanityChecks.
           intro.  apply Mem.perm_cur_max; auto.
           eapply Mem.perm_implies; eauto. econstructor.
       + pose proof (Val.lessdef_list_inv _ _ H1). destruct H.
-        2: { inv H. congruence. inv H6.  congruence. inv H.  congruence. inv H6. }
+        2: { inv H. congruence. inv H7.  congruence. inv H.  congruence. inv H7. }
         subst vargs'.
         exists (Vlong (Int64.repr (-1))). exists m1'.
         split;[|split;[|split]]; eauto.
@@ -2531,10 +2538,10 @@ Module SyscallSanityChecks.
        * apply Mem.unchanged_on_refl.
     (* mem injects *)
     - inv H0. 
-      + inv H2. inv H12. inv H13. inv H14. 
-        inv H10. inv H7. inv H11. 
+      + inv H2. inv H13. inv H14. inv H15.
+        inv H12. inv H8. inv H11.
         inv H. destruct H2.
-        destruct (H id bdst b2 delta H10 H3) as [P1 P2]. subst delta.
+        destruct (H id bdst b2 delta H12 H3) as [P1 P2]. subst delta.
         replace (Ptrofs.add odst (Ptrofs.repr 0)) with odst by (rewrite Ptrofs.add_zero; auto). 
         edestruct Mem.storebytes_mapped_inject as [m2' [Q1 Q2]]; eauto.
         instantiate (1 := (map Byte bytes)). 
@@ -2544,37 +2551,39 @@ Module SyscallSanityChecks.
         inv H1. 
         econstructor; econstructor; econstructor; [split;[|split;[|split;[|split;[|split;[|split;[|split]]]]]]] .  
         * econstructor; eauto.
-          -- eapply Mem.range_perm_inj in H5.
-             2,3: eauto. repeat rewrite Z.add_0_r in H5. eauto. 
+          -- intuition. now rewrite <- H11.
+          -- eapply Mem.range_perm_inj in H6.
+             2,3: eauto. repeat rewrite Z.add_0_r in H6. eauto.
           -- rewrite Z.add_0_r in Q1. eapply Q1. 
         * instantiate (1:= f). econstructor. 
         * eauto.
         * eapply Mem.storebytes_unchanged_on; eauto.
           intros.
-          unfold loc_unmapped. rewrite H10.  intros; discriminate.
+          unfold loc_unmapped. rewrite H12. intros; discriminate.
         * eapply Mem.storebytes_unchanged_on; eauto.
           intros.
-          unfold loc_out_of_reach. intro. eapply H7. eauto.
+          unfold loc_out_of_reach. intro. eapply H8. eauto.
           replace (i - 0) with i by lia.
-          pose proof (Mem.storebytes_range_perm _ _ _ _ _ _ H6).
-          unfold Mem.range_perm in H11. 
+          pose proof (Mem.storebytes_range_perm _ _ _ _ _ _ H7).
+          (* unfold Mem.range_perm in H11. *)
           eapply Mem.perm_cur_max.
           eapply Mem.perm_implies with Writable. 2: constructor.
           eapply H11. lia.
         * apply inject_incr_refl. 
-        * unfold inject_separated. intros. rewrite H1 in H7; discriminate. 
+        * unfold inject_separated. intros. rewrite H1 in H8; discriminate.
         * intros. congruence.
           (* exfalso. apply H1.  eapply Mem.storebytes_valid_block_2; eauto.   *)
-      + inv H2. inv H10. inv H11. inv H12. 
-        inv H7. inv H9. inv H8. 
+      + inv H2. inv H11. inv H12. inv H13.
+        inv H8. inv H10. inv H9.
         inv H. destruct H2.
-        destruct (H id bdst b2 delta H10 H3) as [P1 P2]. subst delta.
+        destruct (H id bdst b2 delta H11 H3) as [P1 P2]. subst delta.
         replace (Ptrofs.add odst (Ptrofs.repr 0)) with odst by (rewrite Ptrofs.add_zero; auto). 
         econstructor.  exists (Vlong (Int64.repr (-1))). exists m1'.
         split;[|split;[|split;[|split;[|split;[|split;[|split]]]]]].  
         * econstructor; eauto.
-          -- eapply Mem.range_perm_inj in H5.
-             2,3: eauto. repeat rewrite Z.add_0_r in H5. eauto. 
+          -- intuition. now rewrite <- H10.
+          -- eapply Mem.range_perm_inj in H6.
+             2,3: eauto. repeat rewrite Z.add_0_r in H6. eauto.
              inv H1. auto.
           -- inv H1. 
              eapply Mem.can_access_block_inj; eauto. 
@@ -2583,43 +2592,43 @@ Module SyscallSanityChecks.
         * eapply Mem.unchanged_on_refl. 
         * eapply Mem.unchanged_on_refl.
         * apply inject_incr_refl. 
-        * unfold inject_separated. intros. rewrite H7 in H8; discriminate. 
+        * unfold inject_separated. intros. rewrite H8 in H9; discriminate.
         * intros. congruence. 
     (* trace length *)
     - inv H;  simpl; lia.
     (* receptive *)  
     - inv H.
       + inv H0. 
-        inv H12. inv H13. 
-        rewrite EQ in H10. 
-        inv H10. 
+        inv H13. inv H14.
+        rewrite EQ in H11.
+        inv H11.
         * exists (Vlong (Int64.repr (Z.of_nat (length bytes0)))). 
           assert (Mem.range_perm m bdst (Ptrofs.unsigned odst)
                     (Ptrofs.unsigned odst + (Z.of_nat (length (map Byte bytes0)))) Cur Writable).
           { unfold Mem.range_perm in H3 |-*. 
-            intros. eapply H3. rewrite map_length in H10. lia. }
+            intros. eapply H4. rewrite map_length in H11. lia. }
           assert (exists m1', Mem.storebytes m bdst (Ptrofs.unsigned odst) (map Byte bytes0) cp = Some m1'). 
-          { eapply Mem.range_perm_storebytes in H10. destruct H10.  
+          { eapply Mem.range_perm_storebytes in H11. destruct H11.
             eexists. eapply e. eapply Mem.storebytes_can_access_block_1; eauto. }
-          destruct H11 as [m1' P].
+          destruct H12 as [m1' P].
           exists m1'. 
           econstructor; eauto.
         * exists (Vlong (Int64.repr (-1))). exists m. 
           econstructor; eauto.
           eapply Mem.storebytes_can_access_block_1; eauto. 
       + inv H0. 
-        inv H10. inv H11. 
-        rewrite EQ in H8. 
-        inv H8. 
+        inv H11. inv H12.
+        rewrite EQ in H9.
+        inv H9.
         * exists (Vlong (Int64.repr (Z.of_nat (length bytes)))).
           assert (Mem.range_perm m1 bdst (Ptrofs.unsigned odst)
                     (Ptrofs.unsigned odst + (Z.of_nat (length (map Byte bytes)))) Cur Writable).
           { unfold Mem.range_perm in H3 |-*. 
-            intros. eapply H3. rewrite map_length in H8. lia. }
+            intros. eapply H4. rewrite map_length in H9. lia. }
           assert (exists m1', Mem.storebytes m1 bdst (Ptrofs.unsigned odst) (map Byte bytes) cp = Some m1'). 
-          { eapply Mem.range_perm_storebytes in H8. destruct H8.  
+          { eapply Mem.range_perm_storebytes in H9. destruct H9.
             eexists. eapply e.  eauto. }
-          destruct H9 as [m1' P].
+          destruct H10 as [m1' P].
           exists m1'. 
           econstructor; eauto.
         * exists (Vlong (Int64.repr (-1))). exists m1. 
@@ -2631,7 +2640,7 @@ Module SyscallSanityChecks.
           apply match_traces_syscall with (sg := read_sg) (cp:= cp); econstructor; try rewrite EQ; repeat econstructor; eauto. 
       + intro; subst t1.
         inv H; inv H0; split; auto. 
-        rewrite H4 in H19.  inv H19.  auto.
+        rewrite H5 in H21. inv H21.  auto.
     - inv H. auto. auto.
     (* perm *)
     - inv H; eauto with mem.
@@ -2663,6 +2672,8 @@ Inductive extcall_write_sem (ge: Senv.t) (cp: compartment):
 | extcall_write_sem_intro: forall fd bytes sz sz' m bsrc osrc id mvs,
     Senv.find_symbol ge id = Some bsrc -> 
     Senv.public_symbol ge id = true ->
+    (* Condition: we're doing a volatile load to a location [cp] is allowed to access *)
+    Senv.find_comp ge id ⊆ cp ->
     Mem.loadbytes m bsrc (Ptrofs.unsigned osrc) (Int64.unsigned sz) cp = Some mvs ->
     proj_bytes mvs = Some bytes -> 
     Int64.unsigned sz <= Int64.max_signed ->  (* see man page *)
@@ -2709,7 +2720,8 @@ Proof.
   - inv H0.
     econstructor; eauto. 
     * rewrite <- H1; eapply H. 
-    * rewrite <- H2; eapply H. 
+    * rewrite <- H2; eapply H.
+    * destruct H; intuition. now rewrite H11.
   (* valid block *)
   - inv H; eauto with mem.
   (* accessiblity *)
@@ -2730,49 +2742,50 @@ Proof.
   (* mem extends *)
   - inv H.
     pose proof (Val.lessdef_list_inv _ _ H1). destruct H. 
-    2: { inv H. congruence. inv H8.  congruence. inv H.  congruence. inv H8. }
+    2: { inv H. congruence. inv H9.  congruence. inv H.  congruence. inv H9. }
     subst vargs'.
     econstructor; eauto. econstructor; eauto. split;[|split;[|split]].
     * econstructor; eauto.
-      destruct (Mem.loadbytes_extends _ _ _ _ _ _ _ H0 H4) as [mvs' [P1 P2]]. 
+      destruct (Mem.loadbytes_extends _ _ _ _ _ _ _ H0 H5) as [mvs' [P1 P2]].
       erewrite proj_bytes_lessdef with (mvs:= mvs); eauto.
     * eapply Val.lessdef_refl.
     * auto.
     * apply Mem.unchanged_on_refl. 
   (* mem injects *)
   - inv H0. 
-    inv H2. inv H12. inv H13. inv H14. 
-    inv H10. inv H9. inv H11. 
+    inv H2. inv H13. inv H14. inv H15.
+    inv H11. inv H10. inv H12.
     inv H. destruct H2.
-    destruct (H id bsrc b2 delta H10 H3) as [P1 P2]. subst delta.
+    destruct (H id bsrc b2 delta H11 H3) as [P1 P2]. subst delta.
     replace (Ptrofs.add osrc (Ptrofs.repr 0)) with osrc by (rewrite Ptrofs.add_zero; auto). 
     econstructor; econstructor; econstructor; [split;[|split;[|split;[|split;[|split;[|split;[|split]]]]]]] .  
     * econstructor; eauto.
-      destruct (Mem.loadbytes_inject _ _ _ _ _ _ _ _ _ _ H1 H5 H10) as [mvs' [Q1 Q2]].
-      replace (Ptrofs.unsigned osrc + 0) with (Ptrofs.unsigned osrc) in Q1 by lia.
-      erewrite proj_bytes_inject with (mvs := mvs); eauto.
+      -- intuition. now rewrite <- H14.
+      -- destruct (Mem.loadbytes_inject _ _ _ _ _ _ _ _ _ _ H1 H6 H11) as [mvs' [Q1 Q2]].
+         replace (Ptrofs.unsigned osrc + 0) with (Ptrofs.unsigned osrc) in Q1 by lia.
+         erewrite proj_bytes_inject with (mvs := mvs); eauto.
     * instantiate (1:= f). econstructor. 
     * eauto.
     * eapply Mem.unchanged_on_refl. 
     * eapply Mem.unchanged_on_refl. 
     * apply inject_incr_refl. 
-    * unfold inject_separated. intros. rewrite H9 in H11; discriminate. 
+    * unfold inject_separated. intros. rewrite H10 in H12; discriminate.
     * intros. congruence.
   (* trace length *)
   - inv H;  simpl; lia.
   (* receptive *)  
   - inv H.
     inv H0. 
-    inv H13. 
-    rewrite EQ in H7. inv H7. 
+    inv H14.
+    rewrite EQ in H8. inv H8.
     exists (Vlong (Int64.repr sz'0)).  exists m1. 
     econstructor; eauto.
   (* determ *)
   - split.
     + inv H; inv H0.  
       rewrite (@Senv.find_symbol_injective ge id id0 bsrc); eauto. 
-      rewrite H3 in H12. inv H12. 
-      rewrite H4 in H17. inv H17.
+      rewrite H4 in H14. inv H14.
+      rewrite H5 in H19. inv H19.
       apply match_traces_syscall with (sg := read_sg) (cp:=cp); econstructor; try rewrite EQ; repeat econstructor; eauto; try lia. 
     + intro; subst t1.
       inv H. inv H0.  (* not sure what's going on here with H12! *)

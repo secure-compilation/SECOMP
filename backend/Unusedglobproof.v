@@ -1470,14 +1470,13 @@ Lemma transf_program_correct_1:
 Proof.
   intros.
   eapply forward_simulation_step.
-  exploit globals_symbols_inject. apply init_meminj_preserves_globals. intros [A B]. exact A.
+  exploit globals_symbols_inject. apply init_meminj_preserves_globals. intros [A B]. intros id. rewrite A; eauto with comps.
   exploit globals_symbols_inject. apply init_meminj_preserves_globals. intros (A & B & C & D & E).
   intros; rewrite E; eauto.
   eexact transf_initial_states.
   eexact transf_final_states.
   eexact step_simulation.
   Unshelve.
-  exact bottom.
   exact bottom.
 Qed.
 
