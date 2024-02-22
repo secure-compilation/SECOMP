@@ -447,6 +447,19 @@ Section Simulation.
   Proof (Genv.find_symbol_match match_W1_W2).
 *)
 
+  Definition wf_gvar_init (ge: genv) :=
+    forall gv b,
+      Genv.find_var_info ge b = Some gv ->
+      Forall
+        (fun i =>
+           forall id ofs,
+             i = Init_addrof id ofs ->
+             Genv.find_comp_of_ident ge id = Some (comp_of gv))
+        (gvar_init gv).
+
+  Hypothesis W1_gvars: wf_gvar_init ge1.
+  Hypothesis W2_gvars: wf_gvar_init ge2.
+
 (** New helpers *)
 
 Lemma state_split_decidable:
@@ -3757,24 +3770,10 @@ Proof.
   (* So those four we can get, but we need to tie id and gd to b1, b2 *)
 Abort.
 
-(* FIXME: Things are a little broken in that init_meminj is defined in
-   terms of ge1 and ge2 yet this lemma is phrased in terms of two
-   arbitrary (and disconnected) pr1 and pr2. *)
-
-Definition wf_gvar_init (ge: genv) :=
-  forall gv b,
-    Genv.find_var_info ge b = Some gv ->
-    Forall
-      (fun i =>
-         forall id ofs,
-           i = Init_addrof id ofs ->
-           Genv.find_comp_of_ident ge id = Some (comp_of gv))
-      (gvar_init gv).
-
 Lemma init_mem_characterization_rel id gd m1 m2 b1 b2
       (* (MATCH: match_prog sp pr1 pr2) *)
-      (VAR1: wf_gvar_init ge1)
-      (VAR2: wf_gvar_init ge2)
+      (* (VAR1: wf_gvar_init ge1) *)
+      (* (VAR2: wf_gvar_init ge2) *)
       (* (PROGDEFS1: In (id, gd) (prog_defs pr1)) *)
       (* (PROGDEFS2: In (id, gd) (prog_defs pr2)) *)
       (MEM1: Genv.init_mem W1 = Some m1)
@@ -3863,9 +3862,18 @@ Local Opaque Mem.loadbytes.
                     (Mem.getN (Z.to_nat (init_data_list_size (gvar_init gv))) 0 (m2.(Mem.mem_contents) !! b2))). {
     (* replicate the use of [Mem.getN_inj] *)
     rewrite H0, H1.
-    specialize (VAR1 gv b1 DEF1). specialize (VAR2 gv b2 DEF2).
-    assert (RIGHT: s (comp_of gv) = Right) by admit. (* by way of b1_b2 *)
-    remember (gvar_init gv) as il eqn:INIT. clear -VAR1 VAR2 RIGHT.
+    specialize (W1_gvars gv b1 DEF1). specialize (W2_gvars gv b2 DEF2).
+    assert (RIGHT: s (comp_of gv) = Right). {
+      clear -W1_gvars SYM1 DEF1 b1_b2.
+      unfold init_meminj, init_meminj_block in b1_b2.
+      apply Genv.find_invert_symbol in SYM1. rewrite SYM1 in b1_b2.
+      unfold Genv.find_comp_of_ident in b1_b2.
+      apply Genv.invert_find_symbol in SYM1. rewrite SYM1 in b1_b2.
+      unfold Genv.find_comp_of_block in b1_b2.
+      apply Genv.find_var_info_iff in DEF1. rewrite DEF1 in b1_b2.
+      destruct (s (comp_of (Gvar gv))) eqn:RIGHT; [discriminate |].
+      exact RIGHT. }
+    remember (gvar_init gv) as il eqn:INIT. clear -W1_gvars W2_gvars RIGHT.
     induction il as [| i il IHil].
     - constructor.
     - simpl.
@@ -3879,7 +3887,7 @@ Local Opaque Mem.loadbytes.
             - constructor.
               + constructor.
               + apply IHn. }
-        * inv VAR1. inv VAR2.
+        * inv W1_gvars. inv W2_gvars.
           specialize (IHil H2 H4). clear H2 H4.
           specialize (H1 _ _ eq_refl). specialize (H3 _ _ eq_refl).
           unfold Genv.find_comp_of_ident in H1, H3.
@@ -3893,7 +3901,7 @@ Local Opaque Mem.loadbytes.
              unfold Genv.find_comp_of_ident.
              rewrite SYM1', H1, RIGHT, SYM2'. reflexivity.
           -- rewrite Ptrofs.add_zero. reflexivity.
-      + inv VAR1. inv VAR2.
+      + inv W1_gvars. inv W2_gvars.
         eapply IHil; eauto. }
   destruct (zle 0 (init_data_list_size (gvar_init gv))) as [LE | GT].
   - rewrite H0, H1 in MEMVAL. exact MEMVAL.
@@ -3915,7 +3923,7 @@ Local Opaque Mem.loadbytes.
       injection INJ2 as INJ2.
       rewrite INJ1, INJ2.
       exact MEMVAL.
-Admitted.
+Qed.
 
 Definition globdef_blocks p1 p2 '(id, gd) b1 b2 :=
   Genv.find_symbol (globalenv p1) id = Some b1 /\
@@ -3994,8 +4002,8 @@ Proof.
         setoid_rewrite COMP.
         rewrite RIGHT. rewrite SYM2. reflexivity. }
       destruct (init_mem_characterization_rel
-                  _ _ _ _ _ _ _ _ _
-                  match_W1_W2 MEM1 MEM2 SYM1 SYM2 INJ DEF1 DEF2)
+                  _ _ _ _ _ _
+                  MEM1 MEM2 SYM1 SYM2 INJ DEF1 DEF2)
         as (PERMS & _).
       apply PERMS. rewrite Z.add_0_r. assumption.
     + unfold init_meminj, init_meminj_block.
@@ -4020,8 +4028,8 @@ Proof.
         setoid_rewrite COMP.
         rewrite RIGHT. rewrite SYM2. reflexivity. }
       destruct (init_mem_characterization_rel
-                  _ _ _ _ _ _ _ _ _
-                  match_W1_W2 MEM1 MEM2 SYM1 SYM2 INJ DEF1 DEF2)
+                  _ _ _ _ _ _
+                  MEM1 MEM2 SYM1 SYM2 INJ DEF1 DEF2)
         as (_ & BLOCKS & _).
       apply BLOCKS. assumption.
     + unfold init_meminj, init_meminj_block.
@@ -4058,8 +4066,8 @@ Proof.
         setoid_rewrite COMP.
         rewrite RIGHT. rewrite SYM2. reflexivity. }
       destruct (init_mem_characterization_rel
-                  _ _ _ _ _ _ _ _ _
-                  match_W1_W2 MEM1 MEM2 SYM1 SYM2 INJ DEF1 DEF2)
+                  _ _ _ _ _ _
+                  MEM1 MEM2 SYM1 SYM2 INJ DEF1 DEF2)
         as (_ & _ & MEMVAL).
       rewrite Z.add_0_r.  exact (MEMVAL ofs PERM).
   - intros b VALID. unfold init_meminj, init_meminj_block.
@@ -4130,8 +4138,8 @@ Proof.
       setoid_rewrite COMP.
       rewrite RIGHT. rewrite SYM2. reflexivity. }
     destruct (init_mem_characterization_rel
-                _ _ _ _ _ _ _ _ _
-                match_W1_W2 MEM1 MEM2 SYM1 SYM2 INJ DEF1 DEF2)
+                _ _ _ _ _ _
+                MEM1 MEM2 SYM1 SYM2 INJ DEF1 DEF2)
       as (PERMS & _).
     left. apply PERMS. rewrite Z.add_0_r in PERM. assumption.
 Qed.
