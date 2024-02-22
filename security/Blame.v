@@ -4146,6 +4146,42 @@ Qed.
 
 Lemma symbols_inject_init_meminj:
   symbols_inject init_meminj ge1 ge2.
+Proof.
+  split; [| split; [| split]].
+  - intros id. simpl.
+    rewrite public_symbol_preserved. reflexivity.
+  - intros id b1 b2 ofs b1_b2 SYM1.
+    unfold init_meminj, init_meminj_block in b1_b2.
+    (* Slightly modified standard processing *)
+    apply Genv.find_invert_symbol in SYM1. rewrite SYM1 in b1_b2.
+    assert (NONE: Genv.find_symbol ge1 id <> None). {
+      apply Genv.invert_find_symbol in SYM1. congruence. }
+    destruct (Genv.find_symbol_find_comp _ _ NONE) as (cp & COMP).
+    setoid_rewrite COMP in b1_b2.
+    destruct (s cp) eqn:RIGHT; [discriminate |].
+    destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [| discriminate].
+    injection b1_b2 as -> <-.
+    (* Done *)
+    auto.
+  - admit. (* <- The troublemaker *)
+  - intros b1 b2 ofs b1_b2.
+    unfold init_meminj, init_meminj_block in b1_b2.
+    (* Slightly modified standard processing *)
+    destruct (Genv.invert_symbol ge1 b1) as [id |] eqn:SYM1; [| discriminate].
+    assert (NONE: Genv.find_symbol ge1 id <> None). {
+      apply Genv.invert_find_symbol in SYM1. congruence. }
+    destruct (Genv.find_symbol_find_comp _ _ NONE) as (cp & COMP).
+    setoid_rewrite COMP in b1_b2.
+    destruct (s cp) eqn:RIGHT; [discriminate |].
+    destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [| discriminate].
+    injection b1_b2 as -> <-.
+    (* Continue *)
+    apply Genv.invert_find_symbol in SYM1.
+    destruct (Genv.find_symbol_find_def_inversion _ _ SYM1) as (gd1 & DEF1).
+    destruct (Genv.find_symbol_find_def_inversion _ _ SYM2) as (gd2 & DEF2).
+    destruct (globdef_right _ _ _ _ _ _ COMP RIGHT SYM1 SYM2 DEF1 DEF2).
+    simpl. unfold Genv.block_is_volatile, Genv.find_var_info.
+    setoid_rewrite DEF1. setoid_rewrite DEF2. reflexivity.
 Admitted. (* FIXME: This one will not hold at the moment *)
 
 Lemma initial_mem_injection m1 m2
