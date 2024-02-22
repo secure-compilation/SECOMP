@@ -2,6 +2,7 @@ Require Import String.
 Require Import Coqlib Maps Errors Integers.
 Require Import AST Globalenvs Linking Smallstep Events Behaviors Memory Values.
 Require Import SimplLocalsproof.
+Require Import Unusedglobproof.
 Require Import Complements.
 Require Import Ctypes Cop Clight.
 Require Import Split.
@@ -3596,6 +3597,7 @@ Qed.
 
 (* CS.s_component scs2 \in domm (prog_interface c) -> *)
 (* last_comp t \in domm (prog_interface c). *)
+(* TODO: delete? *)
 Lemma blame_last_comp_star p s1 t s2:
   Smallstep.initial_state (semantics1 p) s1 ->
   Star (semantics1 p) s1 t s2 ->
@@ -3758,8 +3760,21 @@ Abort.
 (* FIXME: Things are a little broken in that init_meminj is defined in
    terms of ge1 and ge2 yet this lemma is phrased in terms of two
    arbitrary (and disconnected) pr1 and pr2. *)
+
+Definition wf_gvar_init (ge: genv) :=
+  forall gv b,
+    Genv.find_var_info ge b = Some gv ->
+    Forall
+      (fun i =>
+         forall id ofs,
+           i = Init_addrof id ofs ->
+           Genv.find_comp_of_ident ge id = Some (comp_of gv))
+      (gvar_init gv).
+
 Lemma init_mem_characterization_rel sp (pr1 pr2: program) id gd m1 m2 b1 b2
       (MATCH: match_prog sp pr1 pr2)
+      (VAR1: wf_gvar_init (globalenv pr1))
+      (VAR2: wf_gvar_init (globalenv pr2))
       (* (PROGDEFS1: In (id, gd) (prog_defs pr1)) *)
       (* (PROGDEFS2: In (id, gd) (prog_defs pr2)) *)
       (MEM1: Genv.init_mem pr1 = Some m1)
@@ -3848,10 +3863,12 @@ Local Opaque Mem.loadbytes.
                     (Mem.getN (Z.to_nat (init_data_list_size (gvar_init gv))) 0 (m2.(Mem.mem_contents) !! b2))). {
     (* replicate the use of [Mem.getN_inj] *)
     rewrite H0, H1.
-    remember (gvar_init gv) as il eqn:INIT. revert INIT.
+    specialize (VAR1 gv b1 DEF1). specialize (VAR2 gv b2 DEF2).
+    assert (RIGHT: s (comp_of gv) = Right) by admit. (* by way of b1_b2 *)
+    remember (gvar_init gv) as il eqn:INIT. clear -VAR1 VAR2 RIGHT.
     induction il as [| i il IHil].
     - constructor.
-    - intros INIT. simpl.
+    - simpl.
       apply list_forall2_app.
       + destruct i; simpl;
           try (now apply inj_bytes_inject).
@@ -3862,10 +3879,16 @@ Local Opaque Mem.loadbytes.
             - constructor.
               + constructor.
               + apply IHn. }
-        * destruct (Genv.find_symbol (Genv.globalenv pr1) i) as [b1' |] eqn:SYM1';
+        * inv VAR1. inv VAR2.
+          specialize (IHil H2 H4). clear H2 H4.
+          specialize (H1 _ _ eq_refl). specialize (H3 _ _ eq_refl).
+          destruct (Genv.find_symbol (Genv.globalenv pr1) i) as [b1' |] eqn:SYM1';
             destruct (Genv.find_symbol (Genv.globalenv pr2) i) as [b2' |] eqn:SYM2';
             setoid_rewrite SYM1'; setoid_rewrite SYM2'.
-          -- admit. (* easy if b1' and b2' are in the injection *)
+          -- apply inj_value_inject. econstructor.
+             unfold init_meminj, init_meminj_block.
+             erewrite Genv.find_invert_symbol; eauto. in SYM1'.
+             admit. (* easy if b1' and b2' are in the injection *)
           -- admit. (* contra *)
           -- admit. (* contra *)
           -- apply repeat_Undef_inject_self.
