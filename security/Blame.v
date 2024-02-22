@@ -3771,19 +3771,19 @@ Definition wf_gvar_init (ge: genv) :=
            Genv.find_comp_of_ident ge id = Some (comp_of gv))
       (gvar_init gv).
 
-Lemma init_mem_characterization_rel sp (pr1 pr2: program) id gd m1 m2 b1 b2
-      (MATCH: match_prog sp pr1 pr2)
-      (VAR1: wf_gvar_init (globalenv pr1))
-      (VAR2: wf_gvar_init (globalenv pr2))
+Lemma init_mem_characterization_rel id gd m1 m2 b1 b2
+      (* (MATCH: match_prog sp pr1 pr2) *)
+      (VAR1: wf_gvar_init ge1)
+      (VAR2: wf_gvar_init ge2)
       (* (PROGDEFS1: In (id, gd) (prog_defs pr1)) *)
       (* (PROGDEFS2: In (id, gd) (prog_defs pr2)) *)
-      (MEM1: Genv.init_mem pr1 = Some m1)
-      (MEM2: Genv.init_mem pr2 = Some m2)
-      (SYM1: Genv.find_symbol (globalenv pr1) id = Some b1)
-      (SYM2: Genv.find_symbol (globalenv pr2) id = Some b2)
+      (MEM1: Genv.init_mem W1 = Some m1)
+      (MEM2: Genv.init_mem W2 = Some m2)
+      (SYM1: Genv.find_symbol ge1 id = Some b1)
+      (SYM2: Genv.find_symbol ge2 id = Some b2)
       (b1_b2: init_meminj b1 = Some (b2, 0))
-      (DEF1: Genv.find_def (globalenv pr1) b1 = Some gd)
-      (DEF2: Genv.find_def (globalenv pr2) b2 = Some gd):
+      (DEF1: Genv.find_def ge1 b1 = Some gd)
+      (DEF2: Genv.find_def ge2 b2 = Some gd):
   (forall ofs k p, Mem.perm m1 b1 ofs k p <-> Mem.perm m2 b2 ofs k p) /\
   (forall cp, Mem.can_access_block m1 b1 cp <-> Mem.can_access_block m2 b2 cp) /\
   (* Any restrictions on gvar_init and init_data, esp. Init_addrof? *)
@@ -3833,8 +3833,8 @@ Proof.
          [Mem.loadbytes_inj] with a modified proof that exploits facts
          we know from our specific context *)
       assert (MEMVAL: list_forall2 (memval_inject init_meminj)
-                        (Genv.bytes_of_init_data_list (Genv.globalenv pr1) (gvar_init gv))
-                        (Genv.bytes_of_init_data_list (Genv.globalenv pr2) (gvar_init gv))). {
+                        (Genv.bytes_of_init_data_list ge1 (gvar_init gv))
+                        (Genv.bytes_of_init_data_list ge2 (gvar_init gv))). {
 Local Transparent Mem.loadbytes.
   unfold Mem.loadbytes in *.
 Local Opaque Mem.loadbytes.
@@ -3882,25 +3882,39 @@ Local Opaque Mem.loadbytes.
         * inv VAR1. inv VAR2.
           specialize (IHil H2 H4). clear H2 H4.
           specialize (H1 _ _ eq_refl). specialize (H3 _ _ eq_refl).
-          destruct (Genv.find_symbol (Genv.globalenv pr1) i) as [b1' |] eqn:SYM1';
-            destruct (Genv.find_symbol (Genv.globalenv pr2) i) as [b2' |] eqn:SYM2';
-            setoid_rewrite SYM1'; setoid_rewrite SYM2'.
-          -- apply inj_value_inject. econstructor.
-             unfold init_meminj, init_meminj_block.
-             erewrite Genv.find_invert_symbol; eauto. in SYM1'.
-             admit. (* easy if b1' and b2' are in the injection *)
-          -- admit. (* contra *)
-          -- admit. (* contra *)
-          -- apply repeat_Undef_inject_self.
-      + eapply IHil; admit. (* tweak induction *)
-  }
+          unfold Genv.find_comp_of_ident in H1, H3.
+          destruct (Genv.find_symbol ge1 i) as [b1' |] eqn:SYM1';
+            destruct (Genv.find_symbol ge2 i) as [b2' |] eqn:SYM2';
+            try congruence.
+          setoid_rewrite SYM1'. setoid_rewrite SYM2'.
+          apply inj_value_inject. econstructor.
+          -- unfold init_meminj, init_meminj_block.
+             erewrite Genv.find_invert_symbol; eauto.
+             unfold Genv.find_comp_of_ident.
+             rewrite SYM1', H1, RIGHT, SYM2'. reflexivity.
+          -- rewrite Ptrofs.add_zero. reflexivity.
+      + inv VAR1. inv VAR2.
+        eapply IHil; eauto. }
   destruct (zle 0 (init_data_list_size (gvar_init gv))) as [LE | GT].
   - rewrite H0, H1 in MEMVAL. exact MEMVAL.
   - assert (CONTRA := init_data_list_size_pos (gvar_init gv)). lia.
       }
-      (* The conclusion should follow easily if slightly technically
-         from MEMVAL and the proof context *)
-      admit.
+      clear -INJ1 INJ2 MEMVAL RANGE.
+      unfold zle, zlt in RANGE.
+      destruct Z_le_gt_dec; [| discriminate].
+      destruct Z_lt_dec; [| discriminate].
+      apply Mem_getN_forall2
+        with (p := 0) (n := Z.to_nat (init_data_list_size (gvar_init gv)));
+        try lia.
+Local Transparent Mem.loadbytes.
+      unfold Mem.loadbytes in *.
+Local Opaque Mem.loadbytes.
+      destruct andb in INJ1; [| discriminate].
+      destruct andb in INJ2; [| discriminate].
+      injection INJ1 as INJ1.
+      injection INJ2 as INJ2.
+      rewrite INJ1, INJ2.
+      exact MEMVAL.
 Admitted.
 
 Definition globdef_blocks p1 p2 '(id, gd) b1 b2 :=
