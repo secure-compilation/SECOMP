@@ -3755,6 +3755,9 @@ Proof.
   (* So those four we can get, but we need to tie id and gd to b1, b2 *)
 Abort.
 
+(* FIXME: Things are a little broken in that init_meminj is defined in
+   terms of ge1 and ge2 yet this lemma is phrased in terms of two
+   arbitrary (and disconnected) pr1 and pr2. *)
 Lemma init_mem_characterization_rel sp (pr1 pr2: program) id gd m1 m2 b1 b2
       (MATCH: match_prog sp pr1 pr2)
       (* (PROGDEFS1: In (id, gd) (prog_defs pr1)) *)
@@ -3844,7 +3847,29 @@ Local Opaque Mem.loadbytes.
                     (Mem.getN (Z.to_nat (init_data_list_size (gvar_init gv))) 0 (m1.(Mem.mem_contents) !! b1))
                     (Mem.getN (Z.to_nat (init_data_list_size (gvar_init gv))) 0 (m2.(Mem.mem_contents) !! b2))). {
     (* replicate the use of [Mem.getN_inj] *)
-    admit.
+    rewrite H0, H1.
+    remember (gvar_init gv) as il eqn:INIT. revert INIT.
+    induction il as [| i il IHil].
+    - constructor.
+    - intros INIT. simpl.
+      apply list_forall2_app.
+      + destruct i; simpl;
+          try (now apply inj_bytes_inject).
+        * remember (Z.to_nat z) as n eqn:ZtoN. clear ZtoN.
+          { clear.
+            induction n as [| n IHn]. (* Lemma *)
+            - constructor.
+            - constructor.
+              + constructor.
+              + apply IHn. }
+        * destruct (Genv.find_symbol (Genv.globalenv pr1) i) as [b1' |] eqn:SYM1';
+            destruct (Genv.find_symbol (Genv.globalenv pr2) i) as [b2' |] eqn:SYM2';
+            setoid_rewrite SYM1'; setoid_rewrite SYM2'.
+          -- admit. (* easy if b1' and b2' are in the injection *)
+          -- admit. (* contra *)
+          -- admit. (* contra *)
+          -- apply repeat_Undef_inject_self.
+      + eapply IHil; admit. (* tweak induction *)
   }
   destruct (zle 0 (init_data_list_size (gvar_init gv))) as [LE | GT].
   - rewrite H0, H1 in MEMVAL. exact MEMVAL.
