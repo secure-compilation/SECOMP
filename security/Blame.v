@@ -86,12 +86,18 @@ Record match_prog (s: split) (p p': program) : Prop := {
     list_norepet (prog_defs_names p')
 }.
 
+(* FIXME add definitions *)
+
 Section Equivalence.
   Variable s: split.
   Variable j: meminj.
 
   Definition same_domain_right (m1: mem) :=
     forall b, j b <> None <-> (s, m1) |= b ∈ Right.
+
+  (* Definition same_domain_right (ge1: genv) (m1: mem) := *)
+  (*   forall b, j b <> None <-> (s, m1) |= b ∈ Right \/ *)
+  (*                             exists fd, Genv.find_def ge1 b = Some (Gfun fd). *)
 
   Definition same_domain_left (ge1: genv) :=
     forall b,
@@ -233,6 +239,7 @@ Section Equivalence.
       (* FIXME: The condition below contradicts same_domain_right when the left
          side has a public symbol.  This is because symbols_inject says that any
          public symbol must be covered by the memory injection. *)
+      (* TODO replace symbols_inject with meminj_preserves_globals *)
       same_symb: forall cp, s cp = Right -> symbols_inject j ge1 ge2 (Genv.find_comp_of_ident ge1) cp;
       same_blks1: same_blocks ge1 m1;
       same_blks2: same_blocks ge2 m2;
