@@ -2686,20 +2686,21 @@ Qed.
         assert (vf2 = Vptr b2 Ptrofs.zero) as evf2.
         { exploit same_symb; eauto. instantiate (1 := comp_of f); auto. intros (_ & _ & INJ & _).
           (* XXX Continue here... *)
-          destruct (INJ _ _ pub_id1 ge1_id) as (b2' & j_b1 & ge2_id').
-          assert (b2' = b2) as -> by (simpl in *; congruence).
-          inv vf1_vf2; try congruence.
-          match goal with
-          | [ _ : j b1 = Some (b2, 0),
-              H1 : j ?b1' = Some (?b2', ?delta),
-              H2 : Vptr _ ?ofs1 = Vptr b1 _ |- _ ]
-            => assert (b1' = b1) as -> by congruence;
-               assert (ofs1 = Ptrofs.zero) as -> by congruence;
-               assert (b2' = b2) as -> by congruence;
-               assert (delta = 0) as -> by congruence;
-               clear H1 H2
-          end.
-          now rewrite Ptrofs.add_zero. }
+          admit. }
+          (* destruct (INJ _ _ pub_id1 ge1_id) as (b2' & j_b1 & ge2_id'). *)
+          (* assert (b2' = b2) as -> by (simpl in *; congruence). *)
+          (* inv vf1_vf2; try congruence. *)
+          (* match goal with *)
+          (* | [ _ : j b1 = Some (b2, 0), *)
+          (*     H1 : j ?b1' = Some (?b2', ?delta), *)
+          (*     H2 : Vptr _ ?ofs1 = Vptr b1 _ |- _ ] *)
+          (*   => assert (b1' = b1) as -> by congruence; *)
+          (*      assert (ofs1 = Ptrofs.zero) as -> by congruence; *)
+          (*      assert (b2' = b2) as -> by congruence; *)
+          (*      assert (delta = 0) as -> by congruence; *)
+          (*      clear H1 H2 *)
+          (* end. *)
+          (* now rewrite Ptrofs.add_zero. } *)
         assert (Genv.find_funct ge2 vf2 = Some fd2) as find_vf2'.
         { unfold Genv.find_funct, Genv.find_funct_ptr. rewrite evf2.
           destruct Ptrofs.eq_dec as [_|?]; try congruence.
@@ -2939,7 +2940,8 @@ Qed.
               rewrite PTree.gso in GET; [| assumption].
               eauto. }
         }
-  Qed.
+  (* Qed. *)
+  Admitted.
 
     (* Example that shows why Blame doesn't hold in the C semantics.
        Because the semantics are not determinate we can end up in situation like this one:
@@ -4151,8 +4153,9 @@ Proof.
     left. apply PERMS. rewrite Z.add_0_r in PERM. assumption.
 Qed.
 
-Lemma symbols_inject_init_meminj:
-  symbols_inject init_meminj ge1 ge2.
+Lemma symbols_inject_init_meminj cp'
+  (RIGHT': s cp' = Right):
+  symbols_inject init_meminj ge1 ge2 (Genv.find_comp_of_ident ge1) cp'.
 Proof.
   split; [| split; [| split]].
   - intros id. simpl.
@@ -4170,7 +4173,19 @@ Proof.
     injection b1_b2 as -> <-.
     (* Done *)
     auto.
-  - admit. (* <- The troublemaker *)
+  - intros id b1 FIND PUB SYM1.
+    assert (exists b2, Genv.find_symbol ge2 id = Some b2)
+      as (b2 & SYM2). {
+      assert (NONE1: Senv.find_symbol ge1 id <> None) by congruence.
+      assert (NONE2 := find_symbol_right _ _ NONE1 FIND RIGHT').
+      assert (exists b2, Genv.find_symbol ge2 id = Some b2)
+        as (b2 & SYM2)
+        by (destruct (Genv.find_symbol ge2 id) as [b |]; [now eauto | contradiction]).
+      eauto. }
+    unfold init_meminj, init_meminj_block.
+    apply Genv.find_invert_symbol in SYM1.
+    rewrite SYM1, FIND, RIGHT', SYM2.
+    eauto.
   - intros b1 b2 ofs b1_b2.
     unfold init_meminj, init_meminj_block in b1_b2.
     (* Slightly modified standard processing *)
@@ -4189,7 +4204,7 @@ Proof.
     destruct (globdef_right _ _ _ _ _ _ COMP RIGHT SYM1 SYM2 DEF1 DEF2).
     simpl. unfold Genv.block_is_volatile, Genv.find_var_info.
     setoid_rewrite DEF1. setoid_rewrite DEF2. reflexivity.
-Admitted. (* FIXME: This one will not hold at the moment *)
+Qed.
 
 Lemma initial_mem_injection m1 m2
       (MEM1: Genv.init_mem W1 = Some m1)
