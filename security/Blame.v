@@ -233,7 +233,7 @@ Section Equivalence.
       (* FIXME: The condition below contradicts same_domain_right when the left
          side has a public symbol.  This is because symbols_inject says that any
          public symbol must be covered by the memory injection. *)
-      same_symb: symbols_inject j ge1 ge2;
+      same_symb: forall cp, s cp = Right -> symbols_inject j ge1 ge2 (Genv.find_comp_of_ident ge1) cp;
       same_blks1: same_blocks ge1 m1;
       same_blks2: same_blocks ge2 m2;
     }.
@@ -1285,7 +1285,7 @@ Qed.
       exists loc', ofs'. split; trivial.
       assert (ofs' = 0 /\ Genv.find_symbol (globalenv W2) id = Some loc')
           as [? W2_id].
-      { destruct same_symb as (_ & same_symb & _).
+      { specialize (same_symb cp) as (_ & same_symb & _); auto.
         eapply same_symb; eauto. }
       subst ofs'.
       rewrite Ptrofs.add_zero_l.
@@ -1375,7 +1375,7 @@ Qed.
   Lemma find_funct_preserved j f v v' :
     s (comp_of f) = Right ->
     Val.inject j v v' ->
-    symbols_inject j ge1 ge2 ->
+    symbols_inject j ge1 ge2 (Genv.find_comp_of_ident ge1) (comp_of f) ->
     Genv.find_funct ge1 v = Some f ->
     Genv.find_funct ge2 v' = Some f.
   Proof.
@@ -1448,7 +1448,7 @@ Qed.
         eapply Genv.find_def_find_symbol_inversion; eauto.
         exploit match_prog_unique1; eauto. }
       assert (Genv.find_symbol ge2 id = Some b2).
-      { exploit same_symb; eauto.
+      { exploit same_symb; eauto. instantiate (1 := cp). admit.
         intros (H1 & H2 & H3 & H4).
         exploit H2; eauto. intros (-> & ge2_id). now simpl in ge2_id. }
       now exploit find_comp_of_block_preserved; eauto.
@@ -1457,7 +1457,7 @@ Qed.
       simpl. intros b1 _ b2 ofs2 delta j_b1 _.
       intros (id & cp' & ge1_b1 & ge1_b1' & imp & exp).
       exists id, cp'.
-      exploit same_symb; eauto. intros (H1 & H2 & H3 & H4). simpl in *.
+      exploit same_symb; eauto. instantiate (1 := cp). admit. intros (H1 & H2 & H3 & H4). simpl in *.
       exploit Genv.invert_find_symbol; eauto. intros ge1_id.
       exploit H2; eauto. intros (-> & ge2_id).
       split; [now apply Genv.find_invert_symbol|].
@@ -1465,7 +1465,8 @@ Qed.
       { exploit find_comp_of_block_preserved; eauto. }
       rewrite Genv.globalenv_policy in *. simpl in *.
       now rewrite (match_prog_pol _ _ _ match_W1_W2); split.
-  Qed.
+  (* Qed. *)
+  Admitted.
 
   Lemma inject_list_not_ptr: forall j vl1 vl2,
     Val.inject_list j vl1 vl2 ->
@@ -1492,10 +1493,11 @@ Qed.
     Genv.find_symbol ge2 id = Some b2.
   Proof.
     intros j m1 m2 id b1 b2 delta INJ FIND1 j_b1.
-    exploit same_symb; eauto.
+    exploit same_symb; eauto. admit.
     intros (_ & H & ?).
     now destruct (H id b1 b2 delta j_b1 FIND1) as [??].
-  Qed.
+  (* Qed. *)
+  Admitted.
 
   (* This lemma relies on just one of the properties of
      [right_mem_injection], except for the appeal to (what is now
@@ -1621,7 +1623,8 @@ Qed.
           reflexivity.
         * specialize (EXT b1' NEQ). rewrite EXT in j'_b1.
           auto.
-      + destruct SYMB as (PUB & FIND & PUB_FIND & VOL).
+      + intros cp' RIGHT'.
+        specialize (SYMB cp' RIGHT') as (PUB & FIND & PUB_FIND & VOL).
         split; [| split; [| split]].
         * auto.
         * intros id' b1' b2' delta b1'_b2' id'_b1'.
@@ -1638,7 +1641,7 @@ Qed.
           specialize (EXT _ NEQ). rewrite EXT in b1'_b2'.
           auto.
         * intros id' b1' PUB_id id_b1'.
-          specialize (PUB_FIND id' b1' PUB_id id_b1') as (b2' & b1'_b2' & id'_b2').
+          specialize (PUB_FIND id' b1' PUB_id id_b1') as (b2' & b1'_b2' & id'_b2'). admit.
           destruct (peq b1' b1) as [-> | NEQ].
           -- eauto.
           -- specialize (EXT _ NEQ). rewrite <- EXT in b1'_b2'.
@@ -1697,7 +1700,8 @@ Qed.
           specialize (ENDNONE id' GET). auto.
     - intros id' v GET. specialize (RTENVINJ id' v GET) as (v' & INJ' & GET').
       inv INJ'; eauto.
-  Qed.
+  (* Qed. *)
+  Admitted.
 
   Lemma same_domain_right_alloc_left :
     forall j m cp lo hi m' b,
@@ -2134,15 +2138,15 @@ Qed.
     eauto using ec_can_access_block.
   Qed.
 
-  Lemma symbols_inject_incr : forall j j' m1 m2,
-      symbols_inject j ge1 ge2 ->
+  Lemma symbols_inject_incr : forall j j' m1 m2 find_comp cp,
+      symbols_inject j ge1 ge2 find_comp cp ->
       same_blocks ge1 m1 ->
       same_blocks ge2 m2 ->
       inject_incr j j' ->
       inject_separated j j' m1 m2 ->
-      symbols_inject j' ge1 ge2.
+      symbols_inject j' ge1 ge2 find_comp cp.
   Proof.
-    intros j j' m1 m2 SYMB BLKS1 BLKS2 incr j_j'_sep.
+    intros j j' m1 m2 find_comp cp SYMB BLKS1 BLKS2 incr j_j'_sep.
     destruct SYMB as (SYMB1 & SYMB2 & SYMB3 & SYMB4).
     split; [|split; [|split]]; eauto.
     - intros id b1 b2 delta j'_b1 ge1_id.
@@ -2153,11 +2157,11 @@ Qed.
       exploit j_j'_sep; eauto. intros (invalid_b1 & invalid_b2).
       pose proof (Genv.find_invert_symbol _ _ ge1_id) as ge1_b1.
       apply invert_symbol_find_comp_of_block in ge1_b1.
-      destruct ge1_b1 as [cp ge1_b1].
+      destruct ge1_b1 as [cp' ge1_b1].
       exploit BLKS1; eauto. intros m1_b1.
       apply Mem.block_compartment_valid_block in invalid_b1.
       congruence.
-    - intros id b1 public_id id_b1.
+    - intros id b1 comp_id public_id id_b1.
       exploit SYMB3; eauto. intros (b2 & j_b1 & id_b2).
       eauto.
     - intros b1 b2 delta j'_b1.
@@ -2561,11 +2565,6 @@ Proof.
   now rewrite (remove_until_right_step _ _ _ _ LEFT LEFT' STEP).
 Qed.
 
-  (* WIP *)
-  (* FIXME: Is this needed? *)
-  Definition abstract_step_inj (j: meminj): meminj :=
-    j.
-
   (** Step diagram lemmas *)
 
   Lemma parallel_concrete: forall j s1 s2 s1' t,
@@ -2678,7 +2677,8 @@ Qed.
           as (fd2 & -> & match_fd'').
         { inv match_fd'. eauto. }
         assert (vf2 = Vptr b2 Ptrofs.zero) as evf2.
-        { exploit same_symb; eauto. intros (_ & _ & INJ & _).
+        { exploit same_symb; eauto. instantiate (1 := comp_of f); auto. intros (_ & _ & INJ & _).
+          (* XXX Continue here... *)
           destruct (INJ _ _ pub_id1 ge1_id) as (b2' & j_b1 & ge2_id').
           assert (b2' = b2) as -> by (simpl in *; congruence).
           inv vf1_vf2; try congruence.

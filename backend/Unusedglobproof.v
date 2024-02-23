@@ -591,7 +591,7 @@ Proof.
 Qed.
 
 Lemma globals_symbols_inject:
-  forall j, meminj_preserves_globals j -> symbols_inject j ge tge.
+  forall j cp, meminj_preserves_globals j -> symbols_inject j ge tge (Genv.find_comp_of_ident ge) cp.
 Proof.
   intros.
   assert (E1: Genv.genv_public ge = p.(prog_public)).
@@ -608,10 +608,10 @@ Proof.
     eapply kept_public; eauto.
     intros (b' & TFS' & INJ). congruence.
   + eapply symbols_inject_1; eauto.
-  + simpl in *; unfold Genv.public_symbol in H0.
+  + simpl in *; unfold Genv.public_symbol in H1.
     destruct (Genv.find_symbol ge id) as [b|] eqn:FS; try discriminate.
-    rewrite E1 in H0.
-    destruct (in_dec ident_eq id (prog_public p)); try discriminate. inv H1.
+    rewrite E1 in H1.
+    destruct (in_dec ident_eq id (prog_public p)); try discriminate. inv H2.
     exploit symbols_inject_2; eauto.
     eapply kept_public; eauto.
     intros (b' & A & B); exists b'; auto.
@@ -877,7 +877,7 @@ Proof.
         * apply Genv.find_invert_symbol.
           apply Genv.invert_find_symbol in H21.
           pose proof (globals_symbols_inject) as E.
-          specialize (E j H). unfold symbols_inject in E.
+          specialize (E j cp H). unfold symbols_inject in E.
           destruct E as [E1 [E2 [E3 E4]]].
           specialize (E2 i _ _ _ H6). simpl in E2. specialize (E2 H21). destruct E2. auto.
         * rewrite <- H22. unfold Genv.find_comp. now rewrite D.
@@ -917,7 +917,7 @@ Proof.
         * apply Genv.find_invert_symbol.
           apply Genv.invert_find_symbol in H21.
           pose proof (globals_symbols_inject) as E.
-          specialize (E j H). unfold symbols_inject in E.
+          specialize (E j cp H). unfold symbols_inject in E.
           destruct E as [E1 [E2 [E3 E4]]].
           specialize (E2 i _ _ _ Q). simpl in E2. specialize (E2 H21). destruct E2. auto.
         * now rewrite <- H22.
@@ -1457,6 +1457,8 @@ Proof.
   eexact transf_initial_states.
   eexact transf_final_states.
   eexact step_simulation.
+Unshelve.
+  exact default_compartment.
 Qed.
 
 End SOUNDNESS.

@@ -454,6 +454,8 @@ Section EVENTVAL_INJECT.
 
 Variable f: block -> option (block * Z).
 Variable ge1 ge2: Senv.t.
+Variable find_comp: ident -> option compartment.
+Variable cp: compartment.
 
 Definition symbols_inject : Prop :=
    (forall id, Senv.public_symbol ge2 id = Senv.public_symbol ge1 id)
@@ -461,6 +463,7 @@ Definition symbols_inject : Prop :=
      f b1 = Some(b2, delta) -> Senv.find_symbol ge1 id = Some b1 ->
      delta = 0 /\ Senv.find_symbol ge2 id = Some b2)
 /\ (forall id b1,
+     find_comp id = Some cp ->
      Senv.public_symbol ge1 id = true -> Senv.find_symbol ge1 id = Some b1 ->
      exists b2, f b1 = Some(b2, 0) /\ Senv.find_symbol ge2 id = Some b2)
 /\ (forall b1 b2 delta,
@@ -474,9 +477,10 @@ Lemma eventval_match_inject:
   eventval_match ge1 ev ty v1 -> Val.inject f v1 v2 -> eventval_match ge2 ev ty v2.
 Proof.
   intros. inv H; inv H0; try constructor; auto.
-  destruct symb_inj as (A & B & C & D). exploit C; eauto. intros [b3 [EQ FS]]. rewrite H4 in EQ; inv EQ.
+  destruct symb_inj as (A & B & C & D). exploit C; eauto. admit. intros [b3 [EQ FS]]. rewrite H4 in EQ; inv EQ.
   rewrite Ptrofs.add_zero. constructor; auto. rewrite A; auto.
-Qed.
+(* Qed. *)
+Admitted.
 
 Lemma eventval_match_inject_2:
   forall ev ty v1,
@@ -484,10 +488,11 @@ Lemma eventval_match_inject_2:
   exists v2, eventval_match ge2 ev ty v2 /\ Val.inject f v1 v2.
 Proof.
   intros. inv H; try (econstructor; split; eauto; constructor; fail).
-  destruct symb_inj as (A & B & C & D). exploit C; eauto. intros [b2 [EQ FS]].
+  destruct symb_inj as (A & B & C & D). exploit C; eauto. admit. intros [b2 [EQ FS]].
   exists (Vptr b2 ofs); split. econstructor; eauto.
   econstructor; eauto. rewrite Ptrofs.add_zero; auto.
-Qed.
+(* Qed. *)
+Admitted.
 
 Lemma eventval_list_match_inject:
   forall evl tyl vl1, eventval_list_match ge1 evl tyl vl1 ->
@@ -743,8 +748,8 @@ Record extcall_properties (sem: extcall_sem) (cp: compartment) (sg: signature) :
 (** External calls must commute with memory injections,
   in the following sense. *)
   ec_mem_inject:
-    forall ge1 ge2 vargs m1 t vres m2 f m1' vargs',
-    symbols_inject f ge1 ge2 ->
+    forall ge1 ge2 find_comp vargs m1 t vres m2 f m1' vargs',
+    symbols_inject f ge1 ge2 find_comp cp ->
     sem ge1 vargs m1 t vres m2 ->
     Mem.inject f m1 m1' ->
     Val.inject_list f vargs vargs' ->
@@ -826,8 +831,8 @@ Proof.
 Qed.
 
 Lemma volatile_load_inject:
-  forall ge1 ge2 cp f chunk m b ofs t v b' ofs' m',
-  symbols_inject f ge1 ge2 ->
+  forall ge1 ge2 find_comp cp f chunk m b ofs t v b' ofs' m',
+  symbols_inject f ge1 ge2 find_comp cp ->
   volatile_load ge1 cp chunk m b ofs t v ->
   Val.inject f (Vptr b ofs) (Vptr b' ofs') ->
   Mem.inject f m m' ->
@@ -993,8 +998,8 @@ Proof.
 Qed.
 
 Lemma volatile_store_inject:
-  forall ge1 ge2 cp f chunk m1 b ofs v t m2 m1' b' ofs' v',
-  symbols_inject f ge1 ge2 ->
+  forall ge1 ge2 find_comp cp f chunk m1 b ofs v t m2 m1' b' ofs' v',
+  symbols_inject f ge1 ge2 find_comp cp ->
   volatile_store ge1 cp chunk m1 b ofs v t m2 ->
   Val.inject f (Vptr b ofs) (Vptr b' ofs') ->
   Val.inject f v v' ->
@@ -1915,13 +1920,14 @@ Proof.
   repeat split; intros.
   + simpl in H3. exploit A; eauto. intros EQ; rewrite EQ in H; inv H. auto.
   + simpl in H3. exploit A; eauto. intros EQ; rewrite EQ in H; inv H. auto.
-  + simpl in H3. exists b1; split; eauto.
+  + simpl in H3. exists b1; split; eauto. admit.
   + simpl; unfold Genv.block_is_volatile.
     destruct (Genv.find_var_info ge b1) as [[c1 gv1]|] eqn:V1.
     * exploit B; eauto. intros EQ; rewrite EQ in H; inv H. rewrite V1; auto.
     * destruct (Genv.find_var_info ge b2) as [[c2 gv2]|] eqn:V2; auto.
       exploit C; eauto. intros EQ; subst b2. congruence.
-Qed.
+(* Qed. *)
+Admitted.
 
 (** Corollaries of [external_call_determ]. *)
 
