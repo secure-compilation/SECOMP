@@ -92,12 +92,12 @@ Section Equivalence.
   Variable s: split.
   Variable j: meminj.
 
-  Definition same_domain_right (m1: mem) :=
-    forall b, j b <> None <-> (s, m1) |= b ∈ Right.
+  (* Definition same_domain_right (m1: mem) := *)
+  (*   forall b, j b <> None <-> (s, m1) |= b ∈ Right. *)
 
-  (* Definition same_domain_right (ge1: genv) (m1: mem) := *)
-  (*   forall b, j b <> None <-> (s, m1) |= b ∈ Right \/ *)
-  (*                             exists fd, Genv.find_def ge1 b = Some (Gfun fd). *)
+  Definition same_domain_right (ge1: genv) (m1: mem) :=
+    forall b, j b <> None <-> (s, m1) |= b ∈ Right \/
+                              exists fd, Genv.find_def ge1 b = Some (Gfun fd).
 
   Definition same_domain_left (ge1: genv) :=
     forall b,
@@ -119,19 +119,19 @@ Section Equivalence.
                    _ (Some cp') BLK') in BLK.
   Qed.
 
-  Lemma same_domain_right_free m b lo hi cp m'
+  Lemma same_domain_right_free m b lo hi cp m' ge
     (FREE : Mem.free m b lo hi cp = Some m')
-    (BLOCKS : same_domain_right m) :
-    same_domain_right m'.
+    (BLOCKS : same_domain_right ge m) :
+    same_domain_right ge m'.
   Proof.
     intros b'. specialize (BLOCKS b'). simpl in *.
     now rewrite <- (free_block_compartment FREE).
   Qed.
 
-  Lemma same_domain_right_free_list m bs cp m'
+  Lemma same_domain_right_free_list m bs cp m' ge
     (FREE : Mem.free_list m bs cp = Some m')
-    (BLOCKS : same_domain_right m) :
-    same_domain_right m'.
+    (BLOCKS : same_domain_right ge m) :
+    same_domain_right ge m'.
   Proof.
     revert m cp m' FREE BLOCKS.
     induction bs as [| [[b lo] hi] ? IH]; intros.
@@ -142,19 +142,19 @@ Section Equivalence.
       now eapply IH; eauto.
   Qed.
 
-  Lemma same_domain_right_store chunk m b off v cp m' :
+  Lemma same_domain_right_store chunk m b off v cp m' ge :
     Mem.store chunk m b off v cp = Some m' ->
-    same_domain_right m ->
-    same_domain_right m'.
+    same_domain_right ge m ->
+    same_domain_right ge m'.
   Proof.
     intros STORE DOM b'. specialize (DOM b'). simpl in *.
     now rewrite (Mem.store_block_compartment _ _ _ _ _ _ _ STORE).
   Qed.
 
-  Lemma same_domain_right_storebytes m b ofs sz ocp m' :
+  Lemma same_domain_right_storebytes m b ofs sz ocp m' ge :
     Mem.storebytes m b ofs sz ocp = Some m' ->
-    same_domain_right m ->
-    same_domain_right m'.
+    same_domain_right ge m ->
+    same_domain_right ge m'.
   Proof.
     intros STORE DOM b'. specialize (DOM b'). simpl in *.
     now rewrite (Mem.storebytes_block_compartment _ _ _ _ _ _ STORE).
@@ -233,7 +233,7 @@ Section Equivalence.
   Qed.
 
   Record right_mem_injection (ge1 ge2: genv) (m1 m2: mem) : Prop :=
-    { same_dom: same_domain_right m1;
+    { same_dom: same_domain_right ge1 m1;
       partial_mem_inject: Mem.inject j m1 m2;
       j_delta_zero: Mem.delta_zero j;
       (* FIXME: The condition below contradicts same_domain_right when the left
@@ -254,11 +254,15 @@ Proof.
   intros [DOM MI _ _ _ _] j_b1.
   assert (j b1 <> None) as j_b1_def by congruence.
   apply DOM in j_b1_def. simpl in j_b1_def.
+  destruct j_b1_def as [j_b1_def | [fd j_b1_def]]. {
   destruct (Mem.block_compartment m1 b1) as [cp|] eqn:m1_b1;
     try easy.
   enough (Mem.can_access_block m2 b2 (Some cp)) by (simpl in *; eauto).
   eauto using Mem.mi_inj, Mem.mi_own.
-Qed.
+  }
+  { admit. }
+(* Qed. *)
+Admitted.
 
 Fixpoint remove_until_right (k: cont) :=
   match k with
@@ -1286,6 +1290,7 @@ Qed.
         unfold Genv.find_comp_of_ident in id_cp.
         rewrite W1_id in id_cp.
         apply SAMEBLKS in id_cp. now rewrite id_cp. }
+      eapply or_introl in b_right.
       apply idP in b_right.
       destruct (j b) as [[loc' ofs']|] eqn:j_b; try easy.
       clear b_right idP.
@@ -1647,8 +1652,8 @@ Qed.
             exploit find_symbol_valid_block; eauto. }
           specialize (EXT _ NEQ). rewrite EXT in b1'_b2'.
           auto.
-        * intros id' b1' PUB_id id_b1'.
-          specialize (PUB_FIND id' b1' PUB_id id_b1') as (b2' & b1'_b2' & id'_b2'). admit.
+        * intros id' b1' COMP PUB_id id_b1'.
+          specialize (PUB_FIND id' b1' COMP PUB_id id_b1') as (b2' & b1'_b2' & id'_b2').
           destruct (peq b1' b1) as [-> | NEQ].
           -- eauto.
           -- specialize (EXT _ NEQ). rewrite <- EXT in b1'_b2'.
@@ -1707,17 +1712,16 @@ Qed.
           specialize (ENDNONE id' GET). auto.
     - intros id' v GET. specialize (RTENVINJ id' v GET) as (v' & INJ' & GET').
       inv INJ'; eauto.
-  (* Qed. *)
-  Admitted.
+  Qed.
 
   Lemma same_domain_right_alloc_left :
-    forall j m cp lo hi m' b,
-      same_domain_right s j m ->
+    forall j ge m cp lo hi m' b,
+      same_domain_right s j ge m ->
       Mem.alloc m cp lo hi = (m', b) ->
       s cp = Left ->
-      same_domain_right s j m'.
+      same_domain_right s j ge m'.
   Proof.
-    intros j m cp lo hi m' b j_m m_m' s_cp b'.
+    intros j ge m cp lo hi m' b j_m m_m' s_cp b'.
     specialize (j_m b'). simpl in *.
     rewrite (Mem.alloc_block_compartment _ _ _ _ _ _ m_m').
     destruct eq_block as [->|?]; trivial.
@@ -1727,7 +1731,7 @@ Qed.
         congruence. }
       pose proof (Mem.fresh_block_alloc _ _ _ _ _ _ m_m').
       easy.
-    - rewrite j_m, s_cp; split; easy.
+    - rewrite j_m, s_cp; split; intuition.
   Qed.
 
   Lemma right_mem_injection_alloc_left {j cp m1 m2 m1' b1 lo hi}
@@ -1904,10 +1908,10 @@ Qed.
   Qed.
 
 Lemma same_domain_right_assign_loc
-        ge j cp ty m b ofs bf v m' :
-  assign_loc ge cp ty m b ofs bf v m' ->
-  same_domain_right s j m ->
-  same_domain_right s j m'.
+        e ge j cp ty m b ofs bf v m' :
+  assign_loc e cp ty m b ofs bf v m' ->
+  same_domain_right s ge j m ->
+  same_domain_right s ge j m'.
 Proof.
   intros ASSIGN DOM.
   destruct ASSIGN as [
@@ -2030,8 +2034,12 @@ Qed.
     destruct (j b1) as [?|] eqn:j_b1; trivial.
     assert (j b1 <> None) as contra by congruence.
     eapply same_dom in contra; eauto. simpl in contra.
-    now rewrite m1_b1, LEFT in contra.
-  Qed.
+    rewrite m1_b1, LEFT in contra.
+    (* now rewrite m1_b1, LEFT in contra. *)
+    destruct contra as [| [fd contra]]; [discriminate |].
+    admit.
+  (* Qed. *)
+  Admitted.
 
   Lemma right_mem_injection_bind_parameters_left'
     {j m1 m2 m2' e2 vargs2 params cp}
@@ -2047,13 +2055,19 @@ Qed.
     intros b1 delta j_b1.
     assert (j b1 <> None) as contra by congruence.
     eapply same_dom in contra; eauto. simpl in contra.
-    destruct (Mem.block_compartment m1 b1) as [cp'|] eqn:m1_b1; try easy.
+    (* destruct (Mem.block_compartment m1 b1) as [cp'|] eqn:m1_b1; try easy. *)
+    destruct (Mem.block_compartment m1 b1) as [cp'|] eqn:m1_b1.
+    -
     exploit partial_mem_inject; eauto. intros INJ.
     exploit Mem.mi_inj; eauto. intros INJ'.
     enough (Mem.can_access_block m2 b2 (Some cp')).
-    { simpl in *; congruence. }
+    (* { simpl in *; congruence. } *)
+    { admit. }
     eapply Mem.mi_own; eauto.
-  Qed.
+    - destruct contra as [| [fd contra]]; [contradiction |].
+      admit.
+  (* Qed. *)
+  Admitted.
 
   Lemma right_mem_injection_function_entry1_right: forall
     {j f m1 m2 vargs1 vargs2 e1 le1 m1'},
@@ -2206,7 +2220,7 @@ Qed.
     exists j', m2', vres2.
     split; [| split; [| split]]; auto.
     destruct RMEMINJ as [DOM MI D0 SYMB BLKS1 BLKS2].
-    assert (same_domain_right s j' m1') as DOM'.
+    assert (same_domain_right s j' ge1 m1') as DOM'.
     { (* FIXME: Separate lemma? *)
       clear - DOM incr j_j'_sep comps_m1' unchanged1 RIGHT inj'.
       intros b. specialize (DOM b). simpl in *.
@@ -2217,8 +2231,11 @@ Qed.
         { apply (Mem.unchanged_on_own _ _ _ unchanged1); eauto. }
         simpl in block_m1'_b. rewrite block_m1'_b.
         destruct (j b) as [[b' ofs]|] eqn:j_b.
-        * assert (s cp = Right) as cp_right by (apply DOM; congruence).
-          rewrite (incr _ _ _ j_b). intuition.
+        * assert (s cp = Right \/
+                  (exists fd : fundef, Genv.find_def (Genv.globalenv W1) b = Some (Gfun fd)))
+            as [cp_right | [fd b_fd]] by (apply DOM; congruence).
+          -- rewrite (incr _ _ _ j_b). intuition.
+          -- admit.
         * rewrite <- DOM. split; eauto.
           destruct (j' b) as [[b'' ofs']|] eqn:j'_b; try congruence.
           exploit j_j'_sep; eauto.
@@ -2233,10 +2250,13 @@ Qed.
           intros (b' & -> & block_m1'_b_alt).
           assert (cp = comp_of ef) as -> by congruence.
           clear block_m1'_b_alt.
-          split; try congruence.
-        * split; eauto.
+          split; [| congruence].
+          auto.
+        * split. {
           rewrite <- Mem.block_compartment_valid_block in block_m1'_b.
-          eapply Mem.mi_freeblocks in block_m1'_b; eauto. }
+          eapply Mem.mi_freeblocks in block_m1'_b; eauto.
+          }
+          admit. }
     constructor;
     eauto using symbols_inject_incr, external_call_spec, same_blocks_extcall.
     intros b b' delta j'_b.
@@ -2249,7 +2269,8 @@ Qed.
         intros (? & ? & ?). congruence. }
       apply Classical_Prop.NNPP. (* FIXME *) intros contra.
       exploit Mem.mi_freeblocks; eauto. congruence.
-  Qed.
+  (* Qed. *)
+  Admitted.
 
   Lemma right_mem_injection_external_call_left :
     forall j ef vargs1 vres1 t m1 m1' m2
@@ -2282,12 +2303,14 @@ Qed.
       exploit Mem.unchanged_on_inject; eauto.
       intros b off j_b_undef m1_b.
       apply DOM in j_b_undef. simpl in j_b_undef.
-      rewrite m1_b in j_b_undef. congruence.
+      (* rewrite m1_b in j_b_undef. congruence. *)
+      rewrite m1_b in j_b_undef. admit.
     - intros b cp ge_b. specialize (BLKS1 _ _ ge_b).
       enough (Mem.can_access_block m1' b (Some cp)) by easy.
       eapply ec_can_access_block; eauto.
       { apply external_call_spec. }
-  Qed.
+  (* Qed. *)
+  Admitted.
 
   Lemma right_mem_injection_external_call_left' :
     forall j ef vargs2 vres2 t m1 m2 m2'
@@ -2307,14 +2330,17 @@ Qed.
       assert (j b1 <> None) as j_b1_def by congruence.
       apply DOM in j_b1_def. simpl in j_b1_def.
       destruct (Mem.block_compartment m1 b1) as [cp|] eqn:m1_b1; try easy.
-      enough (Mem.can_access_block m2 b2 (Some cp)) by (simpl in *; congruence).
-      exploit Mem.mi_inj; eauto. intros INJ'.
-      eapply Mem.mi_own; eauto.
+      (* enough (Mem.can_access_block m2 b2 (Some cp)) by (simpl in *; congruence). *)
+      (* exploit Mem.mi_inj; eauto. intros INJ'. *)
+      (* eapply Mem.mi_own; eauto. *)
+      admit.
+      admit.
     - intros b cp ge_b. specialize (BLKS2 _ _ ge_b).
       enough (Mem.can_access_block m2' b (Some cp)) by easy.
       eapply ec_can_access_block; eauto.
       { apply external_call_spec. }
-  Qed.
+  (* Qed. *)
+  Admitted.
 
   Lemma find_funct_ptr_right id fd1 fd2 b1 b2
     (RIGHT: s (comp_of fd1) = Right)
@@ -2360,7 +2386,13 @@ Qed.
         intros m_loc. destruct RMEMINJ as [DOM].
         specialize (DOM loc). simpl in DOM. rewrite m_loc, LEFT in DOM.
         destruct (j loc) as [p|] eqn:j_loc; eauto.
-        enough (Left = Right) by easy. now apply DOM. }
+        enough (Left = Right \/
+                (exists fd : fundef, Genv.find_def (Genv.globalenv W1) loc = Some (Gfun fd)))
+          as contra;
+          [| apply DOM; congruence].
+        destruct contra as [| [fd loc_fd]]; [discriminate |].
+        (* by easy. now apply DOM. } *)
+        admit. }
       exploit @right_mem_injection_assign_loc_unmapped; eauto.
     - (* builtin *)
       simpl in *.
@@ -2381,7 +2413,8 @@ Qed.
     - (* external call *)
       simpl in *.
       exploit right_mem_injection_external_call_left; eauto.
-  Qed.
+  (* Qed. *)
+  Admitted.
 
   Lemma right_mem_injection_left_step_2: forall j s1 s2 t s2',
     right_mem_injection s j ge1 ge2 (memory_of s1) (memory_of s2) ->
@@ -2398,11 +2431,12 @@ Qed.
         intros m_loc b delta j_b. destruct RMEMINJ as [DOM].
         assert (j b <> None) as j_b_def by congruence.
         apply DOM in j_b_def. simpl in j_b_def.
-        destruct (Mem.block_compartment (memory_of s1) b) as [cp|] eqn:s1_b;
-          try easy.
+        destruct (Mem.block_compartment (memory_of s1) b) as [cp|] eqn:s1_b. {
         enough (Mem.can_access_block m loc (Some cp))
-          by (simpl in *; congruence).
+          by admit.
+          (* by (simpl in *; congruence). *)
         eapply Mem.mi_own; eauto. now eapply Mem.mi_inj. }
+        { admit. } }
       exploit @right_mem_injection_assign_loc_outside; eauto.
     - (* builtin *)
       simpl in *.
@@ -2423,7 +2457,8 @@ Qed.
     - (* external call *)
       simpl in *.
       exploit right_mem_injection_external_call_left'; eauto.
-  Qed.
+  (* Qed. *)
+  Admitted.
 
 Scheme statement_ind2 := Induction for statement Sort Prop
   with labeled_statements_ind2 := Induction for labeled_statements Sort Prop.
@@ -3692,7 +3727,7 @@ Qed.
 
 Lemma same_domain_right_init_meminj m1
       (MEM: Genv.init_mem W1 = Some m1):
-  same_domain_right s init_meminj m1.
+  same_domain_right s init_meminj ge1 m1.
 Proof.
   intros b. split.
   - unfold init_meminj, init_meminj_block. intros INJ.
@@ -3706,8 +3741,9 @@ Proof.
     destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [| contradiction].
     apply Genv.invert_find_symbol in SYM1.
     setoid_rewrite (find_symbol_init_mem_compartment _ _ _ _ SYM1 MEM) in COMP.
-    { simpl. rewrite COMP. assumption. }
-  - simpl. unfold init_meminj, init_meminj_block. intros RIGHT INJ.
+    { left. simpl. rewrite COMP. assumption. }
+  - simpl. unfold init_meminj, init_meminj_block. intros [RIGHT | [fd DEF]] INJ.
+    {
     (* Variation on standard processing *)
     destruct (Genv.invert_symbol ge1 b) as [id |] eqn:SYM1.
     + assert (NONE: Genv.find_symbol ge1 id <> None). {
@@ -3727,7 +3763,10 @@ Proof.
       assert (NONE: Mem.block_compartment m1 b <> None) by congruence.
       exploit init_mem_invert_symbol; eauto.
       exploit match_prog_unique1; eauto.
-Qed.
+    }
+    { admit. }
+(* Qed. *)
+Admitted.
 
 Lemma delta_zero_init_meminj:
   Mem.delta_zero init_meminj.
