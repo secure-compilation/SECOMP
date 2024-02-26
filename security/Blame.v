@@ -3754,32 +3754,52 @@ Proof.
       apply Genv.invert_find_symbol in SYM1. congruence. }
     destruct (Genv.find_symbol_find_comp _ _ NONE) as (cp & COMP).
     setoid_rewrite COMP in INJ.
-    destruct (s cp) eqn:RIGHT; [contradiction |].
-    destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [| contradiction].
-    apply Genv.invert_find_symbol in SYM1.
-    setoid_rewrite (find_symbol_init_mem_compartment _ _ _ _ SYM1 MEM) in COMP.
-    { simpl. rewrite COMP. assumption. }
-  - simpl. unfold init_meminj, init_meminj_block. intros RIGHT INJ.
-    (* Variation on standard processing *)
-    destruct (Genv.invert_symbol ge1 b) as [id |] eqn:SYM1.
-    + assert (NONE: Genv.find_symbol ge1 id <> None). {
-        apply Genv.invert_find_symbol in SYM1. congruence. }
-      destruct (Genv.find_symbol_find_comp _ _ NONE) as (cp & COMP).
-      setoid_rewrite COMP in INJ.
-      destruct (Mem.block_compartment m1 b) as [cp' |] eqn:COMP'; [| contradiction].
+    destruct (s cp) eqn:SIDE.
+    + destruct (Genv.find_def ge1 b) as [gd |]; [| contradiction].
+      destruct gd as [fd | gv]; [| contradiction].
+      destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [| contradiction].
+      right. eauto.
+    + destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [| contradiction].
       apply Genv.invert_find_symbol in SYM1.
-      assert (cp = cp') as <-. {
-        setoid_rewrite (find_symbol_init_mem_compartment _ _ _ _ SYM1 MEM) in COMP.
-        { setoid_rewrite COMP in COMP'. injection COMP' as <-. reflexivity. }
-      }
-      rewrite RIGHT in INJ.
-      destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [discriminate |].
-      assert (CONTRA := find_symbol_right _ _ NONE COMP RIGHT). contradiction.
-    + destruct Mem.block_compartment as [cp |] eqn:COMP; [| contradiction].
-      assert (NONE: Mem.block_compartment m1 b <> None) by congruence.
-      exploit init_mem_invert_symbol; eauto.
-      exploit match_prog_unique1; eauto.
-Qed.
+      setoid_rewrite (find_symbol_init_mem_compartment _ _ _ _ SYM1 MEM) in COMP.
+      { simpl. rewrite COMP. left. assumption. }
+  - simpl. unfold init_meminj, init_meminj_block. intros RIGHT INJ.
+    destruct RIGHT as [RIGHT | [fd DEF]].
+    (* Variation on standard processing *)
+    + destruct (Genv.invert_symbol ge1 b) as [id |] eqn:SYM1.
+      * assert (NONE: Genv.find_symbol ge1 id <> None). {
+          apply Genv.invert_find_symbol in SYM1. congruence. }
+        destruct (Genv.find_symbol_find_comp _ _ NONE) as (cp & COMP).
+        setoid_rewrite COMP in INJ.
+        destruct (Mem.block_compartment m1 b) as [cp' |] eqn:COMP'; [| contradiction].
+        apply Genv.invert_find_symbol in SYM1.
+        assert (cp = cp') as <-. {
+          setoid_rewrite (find_symbol_init_mem_compartment _ _ _ _ SYM1 MEM) in COMP.
+          { setoid_rewrite COMP in COMP'. injection COMP' as <-. reflexivity. }
+        }
+        rewrite RIGHT in INJ.
+        destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [discriminate |].
+        assert (CONTRA := find_symbol_right _ _ NONE COMP RIGHT). contradiction.
+      * destruct Mem.block_compartment as [cp |] eqn:COMP; [| contradiction].
+        assert (NONE: Mem.block_compartment m1 b <> None) by congruence.
+        exploit init_mem_invert_symbol; eauto.
+        exploit match_prog_unique1; eauto.
+    + (* Initially very similar to the right case, can reuse *)
+      destruct (Genv.invert_symbol ge1 b) as [id |] eqn:SYM1.
+      * assert (NONE: Genv.find_symbol ge1 id <> None). {
+          apply Genv.invert_find_symbol in SYM1. congruence. }
+        destruct (Genv.find_symbol_find_comp _ _ NONE) as (cp & COMP).
+        setoid_rewrite COMP in INJ.
+        destruct (s cp) eqn:SIDE.
+        -- simpl in INJ. rewrite DEF in INJ.
+           destruct (Genv.find_symbol (Genv.globalenv W2) id) as [b' |] eqn:SYM2;
+             setoid_rewrite SYM2 in INJ; [discriminate |].
+           admit.
+        -- destruct (Genv.find_symbol ge2 id) eqn:SYM2; [discriminate |].
+           admit.
+      * admit.
+(* Qed. *)
+Admitted.
 
 Lemma delta_zero_init_meminj:
   Mem.delta_zero init_meminj.
@@ -4047,26 +4067,46 @@ Proof.
         apply Genv.invert_find_symbol in SYM1. congruence. }
       destruct (Genv.find_symbol_find_comp _ _ NONE) as (cp & COMP).
       setoid_rewrite COMP in INJ.
-      destruct (s cp) eqn:RIGHT; [discriminate |].
-      destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [| discriminate].
-      injection INJ as -> <-.
-      (* Post standard processing *)
-      (* apply Genv.invert_find_symbol in SYM2. *)
-      apply Genv.invert_find_symbol in SYM1.
-      destruct (Genv.find_symbol_find_def_inversion _ _ SYM1) as (gd1 & DEF1).
-      destruct (Genv.find_symbol_find_def_inversion _ _ SYM2) as (gd2 & DEF2).
-      assert (gd1 = gd2) as <- by (eapply globdef_right; eassumption).
-      rename gd1 into gd.
-      assert (INJ: init_meminj b1 = Some (b2, 0)). { (* inversion lemma? *)
-        unfold init_meminj, init_meminj_block.
-        apply Genv.find_invert_symbol in SYM1. rewrite SYM1.
-        setoid_rewrite COMP.
-        rewrite RIGHT. rewrite SYM2. reflexivity. }
-      destruct (init_mem_characterization_rel
-                  _ _ _ _ _ _
-                  MEM1 MEM2 SYM1 SYM2 INJ DEF1 DEF2)
-        as (PERMS & _).
-      apply PERMS. rewrite Z.add_0_r. assumption.
+      destruct (s cp) eqn:SIDE.
+      * apply Genv.invert_find_symbol in SYM1.
+        destruct (Genv.find_symbol_find_def_inversion _ _ SYM1) as (gd1 & DEF1).
+        setoid_rewrite DEF1 in INJ.
+        destruct gd1 as [fd1 |]; [| discriminate].
+        destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [| discriminate].
+        injection INJ as -> <-.
+        (* Post standard processing *)
+        destruct (Genv.find_symbol_find_def_inversion _ _ SYM2) as (gd2 & DEF2).
+        assert (Gfun fd1 = gd2) as <- by admit. (* TODO: need globdef_left *)
+        rename fd1 into fd.
+        assert (INJ: init_meminj b1 = Some (b2, 0)). { (* inversion lemma? *)
+          unfold init_meminj, init_meminj_block.
+          apply Genv.find_invert_symbol in SYM1. rewrite SYM1.
+          setoid_rewrite COMP.
+          rewrite SIDE. rewrite SYM2. setoid_rewrite DEF1. reflexivity. }
+        destruct (init_mem_characterization_rel
+                    _ _ _ _ _ _
+                    MEM1 MEM2 SYM1 SYM2 INJ DEF1 DEF2)
+          as (PERMS & _).
+        apply PERMS. rewrite Z.add_0_r. assumption.
+      * destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [| discriminate].
+        injection INJ as -> <-.
+        (* Post standard processing *)
+        (* apply Genv.invert_find_symbol in SYM2. *)
+        apply Genv.invert_find_symbol in SYM1.
+        destruct (Genv.find_symbol_find_def_inversion _ _ SYM1) as (gd1 & DEF1).
+        destruct (Genv.find_symbol_find_def_inversion _ _ SYM2) as (gd2 & DEF2).
+        assert (gd1 = gd2) as <- by (eapply globdef_right; eassumption).
+        rename gd1 into gd.
+        assert (INJ: init_meminj b1 = Some (b2, 0)). { (* inversion lemma? *)
+          unfold init_meminj, init_meminj_block.
+          apply Genv.find_invert_symbol in SYM1. rewrite SYM1.
+          setoid_rewrite COMP.
+          rewrite SIDE. rewrite SYM2. reflexivity. }
+        destruct (init_mem_characterization_rel
+                    _ _ _ _ _ _
+                    MEM1 MEM2 SYM1 SYM2 INJ DEF1 DEF2)
+          as (PERMS & _).
+        apply PERMS. rewrite Z.add_0_r. assumption.
     + unfold init_meminj, init_meminj_block.
       intros b1 b2 delta cp INJ BLOCK.
       destruct (Genv.invert_symbol ge1 b1) as [id |] eqn:SYM1; [| discriminate].
@@ -4074,25 +4114,46 @@ Proof.
         apply Genv.invert_find_symbol in SYM1. congruence. }
       destruct (Genv.find_symbol_find_comp _ _ NONE) as (cp' & COMP).
       setoid_rewrite COMP in INJ.
-      destruct (s cp') eqn:RIGHT; [discriminate |].
-      destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [| discriminate].
-      injection INJ as -> <-.
-      (* Post standard processing *)
-      apply Genv.invert_find_symbol in SYM1.
-      destruct (Genv.find_symbol_find_def_inversion _ _ SYM1) as (gd1 & DEF1).
-      destruct (Genv.find_symbol_find_def_inversion _ _ SYM2) as (gd2 & DEF2).
-      assert (gd1 = gd2) as <- by (eapply globdef_right; eassumption).
-      rename gd1 into gd.
-      assert (INJ: init_meminj b1 = Some (b2, 0)). { (* inversion lemma? *)
-        unfold init_meminj, init_meminj_block.
-        apply Genv.find_invert_symbol in SYM1. rewrite SYM1.
-        setoid_rewrite COMP.
-        rewrite RIGHT. rewrite SYM2. reflexivity. }
-      destruct (init_mem_characterization_rel
-                  _ _ _ _ _ _
-                  MEM1 MEM2 SYM1 SYM2 INJ DEF1 DEF2)
-        as (_ & BLOCKS & _).
-      apply BLOCKS. assumption.
+      destruct (s cp') eqn:SIDE.
+      * (* Extended standard processing - very similar to Right case *)
+        apply Genv.invert_find_symbol in SYM1.
+        destruct (Genv.find_symbol_find_def_inversion _ _ SYM1) as (gd1 & DEF1).
+        setoid_rewrite DEF1 in INJ.
+        destruct gd1 as [fd1 |]; [| discriminate].
+        destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [| discriminate].
+        injection INJ as -> <-.
+        (* Post standard processing *)
+        destruct (Genv.find_symbol_find_def_inversion _ _ SYM2) as (gd2 & DEF2).
+        assert (Gfun fd1 = gd2) as <- by admit.
+        rename fd1 into fd.
+        assert (INJ: init_meminj b1 = Some (b2, 0)). { (* inversion lemma? *)
+          unfold init_meminj, init_meminj_block.
+          apply Genv.find_invert_symbol in SYM1. rewrite SYM1.
+          setoid_rewrite COMP.
+          rewrite SIDE. rewrite SYM2. setoid_rewrite DEF1. reflexivity. }
+        destruct (init_mem_characterization_rel
+                    _ _ _ _ _ _
+                    MEM1 MEM2 SYM1 SYM2 INJ DEF1 DEF2)
+          as (_ & BLOCKS & _).
+        apply BLOCKS. assumption.
+      * destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [| discriminate].
+        injection INJ as -> <-.
+        (* Post standard processing *)
+        apply Genv.invert_find_symbol in SYM1.
+        destruct (Genv.find_symbol_find_def_inversion _ _ SYM1) as (gd1 & DEF1).
+        destruct (Genv.find_symbol_find_def_inversion _ _ SYM2) as (gd2 & DEF2).
+        assert (gd1 = gd2) as <- by (eapply globdef_right; eassumption).
+        rename gd1 into gd.
+        assert (INJ: init_meminj b1 = Some (b2, 0)). { (* inversion lemma? *)
+          unfold init_meminj, init_meminj_block.
+          apply Genv.find_invert_symbol in SYM1. rewrite SYM1.
+          setoid_rewrite COMP.
+          rewrite SIDE. rewrite SYM2. reflexivity. }
+        destruct (init_mem_characterization_rel
+                    _ _ _ _ _ _
+                    MEM1 MEM2 SYM1 SYM2 INJ DEF1 DEF2)
+          as (_ & BLOCKS & _).
+        apply BLOCKS. assumption.
     + unfold init_meminj, init_meminj_block.
       intros b1 b2 delta chunk ofs p INJ RANGE.
       destruct (Genv.invert_symbol ge1 b1) as [id |] eqn:SYM1; [| discriminate].
@@ -4100,11 +4161,19 @@ Proof.
         apply Genv.invert_find_symbol in SYM1. congruence. }
       destruct (Genv.find_symbol_find_comp _ _ NONE) as (cp & COMP).
       setoid_rewrite COMP in INJ.
-      destruct (s cp) eqn:RIGHT; [discriminate |].
-      destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [| discriminate].
-      injection INJ as -> <-.
-      (* Post standard processing *)
-      apply Z.divide_0_r.
+      destruct (s cp) eqn:SIDE.
+      * (* Extended standard processing - very similar to Right case *)
+        apply Genv.invert_find_symbol in SYM1.
+        destruct (Genv.find_symbol_find_def_inversion _ _ SYM1) as (gd1 & DEF1).
+        setoid_rewrite DEF1 in INJ.
+        destruct gd1 as [fd1 |]; [| discriminate].
+        destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [| discriminate].
+        injection INJ as -> <-.
+        apply Z.divide_0_r.
+      * destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [| discriminate].
+        injection INJ as -> <-.
+        (* Post standard processing *)
+        apply Z.divide_0_r.
     + unfold init_meminj, init_meminj_block.
       intros b1 ofs b2 delta INJ PERM.
       destruct (Genv.invert_symbol ge1 b1) as [id |] eqn:SYM1; [| discriminate].
@@ -4112,25 +4181,46 @@ Proof.
         apply Genv.invert_find_symbol in SYM1. congruence. }
       destruct (Genv.find_symbol_find_comp _ _ NONE) as (cp & COMP).
       setoid_rewrite COMP in INJ.
-      destruct (s cp) eqn:RIGHT; [discriminate |].
-      destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [| discriminate].
-      injection INJ as -> <-.
-      (* Post standard processing *)
-      apply Genv.invert_find_symbol in SYM1.
-      destruct (Genv.find_symbol_find_def_inversion _ _ SYM1) as (gd1 & DEF1).
-      destruct (Genv.find_symbol_find_def_inversion _ _ SYM2) as (gd2 & DEF2).
-      assert (gd1 = gd2) as <- by (eapply globdef_right; eassumption).
-      rename gd1 into gd.
-      assert (INJ: init_meminj b1 = Some (b2, 0)). { (* inversion lemma? *)
-        unfold init_meminj, init_meminj_block.
-        apply Genv.find_invert_symbol in SYM1. rewrite SYM1.
-        setoid_rewrite COMP.
-        rewrite RIGHT. rewrite SYM2. reflexivity. }
-      destruct (init_mem_characterization_rel
-                  _ _ _ _ _ _
-                  MEM1 MEM2 SYM1 SYM2 INJ DEF1 DEF2)
-        as (_ & _ & MEMVAL).
-      rewrite Z.add_0_r.  exact (MEMVAL ofs PERM).
+      destruct (s cp) eqn:SIDE.
+      * (* Extended standard processing - very similar to Right case *)
+        apply Genv.invert_find_symbol in SYM1.
+        destruct (Genv.find_symbol_find_def_inversion _ _ SYM1) as (gd1 & DEF1).
+        setoid_rewrite DEF1 in INJ.
+        destruct gd1 as [fd1 |]; [| discriminate].
+        destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [| discriminate].
+        injection INJ as -> <-.
+        (* Post standard processing *)
+        destruct (Genv.find_symbol_find_def_inversion _ _ SYM2) as (gd2 & DEF2).
+        assert (Gfun fd1 = gd2) as <- by admit.
+        rename fd1 into fd.
+        assert (INJ: init_meminj b1 = Some (b2, 0)). { (* inversion lemma? *)
+          unfold init_meminj, init_meminj_block.
+          apply Genv.find_invert_symbol in SYM1. rewrite SYM1.
+          setoid_rewrite COMP.
+          rewrite SIDE. rewrite SYM2. setoid_rewrite DEF1. reflexivity. }
+        destruct (init_mem_characterization_rel
+                    _ _ _ _ _ _
+                    MEM1 MEM2 SYM1 SYM2 INJ DEF1 DEF2)
+          as (_ & _ & MEMVAL).
+        rewrite Z.add_0_r. exact (MEMVAL ofs PERM).
+      * destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [| discriminate].
+        injection INJ as -> <-.
+        (* Post standard processing *)
+        apply Genv.invert_find_symbol in SYM1.
+        destruct (Genv.find_symbol_find_def_inversion _ _ SYM1) as (gd1 & DEF1).
+        destruct (Genv.find_symbol_find_def_inversion _ _ SYM2) as (gd2 & DEF2).
+        assert (gd1 = gd2) as <- by (eapply globdef_right; eassumption).
+        rename gd1 into gd.
+        assert (INJ: init_meminj b1 = Some (b2, 0)). { (* inversion lemma? *)
+          unfold init_meminj, init_meminj_block.
+          apply Genv.find_invert_symbol in SYM1. rewrite SYM1.
+          setoid_rewrite COMP.
+          rewrite SIDE. rewrite SYM2. reflexivity. }
+        destruct (init_mem_characterization_rel
+                    _ _ _ _ _ _
+                    MEM1 MEM2 SYM1 SYM2 INJ DEF1 DEF2)
+          as (_ & _ & MEMVAL).
+        rewrite Z.add_0_r. exact (MEMVAL ofs PERM).
   - intros b VALID. unfold init_meminj, init_meminj_block.
     destruct Genv.invert_symbol as [id |] eqn:SYM; [| reflexivity].
     apply Genv.invert_find_symbol in SYM.
@@ -4142,10 +4232,18 @@ Proof.
       apply Genv.invert_find_symbol in SYM1. congruence. }
     destruct (Genv.find_symbol_find_comp _ _ NONE) as (cp & COMP).
     setoid_rewrite COMP in INJ.
-    destruct (s cp) eqn:RIGHT; [discriminate |].
-    destruct (Genv.find_symbol ge2 id) as [b'' |] eqn:SYM2; [| discriminate].
-    injection INJ as -> <-.
-    exact (Genv.find_symbol_not_fresh _ _ MEM2 SYM2).
+    destruct (s cp) eqn:SIDE.
+    + (* Extended standard processing - very similar to Right case *)
+      apply Genv.invert_find_symbol in SYM1.
+      destruct (Genv.find_symbol_find_def_inversion _ _ SYM1) as (gd1 & DEF1).
+      setoid_rewrite DEF1 in INJ.
+      destruct gd1 as [fd1 |]; [| discriminate].
+      destruct (Genv.find_symbol ge2 id) as [b'' |] eqn:SYM2; [| discriminate].
+      injection INJ as -> <-.
+      exact (Genv.find_symbol_not_fresh _ _ MEM2 SYM2).
+    + destruct (Genv.find_symbol ge2 id) as [b'' |] eqn:SYM2; [| discriminate].
+      injection INJ as -> <-.
+      exact (Genv.find_symbol_not_fresh _ _ MEM2 SYM2).
   - intros b1 b1' delta1 b2 b2' delta2 ofs1 ofs2 b1_b2 INJ1 INJ2 PERM1 PERM2.
     left. intros <-. apply b1_b2.
     unfold init_meminj, init_meminj_block in INJ1, INJ2.
@@ -4153,18 +4251,28 @@ Proof.
     destruct (Genv.invert_symbol ge1 b2) as [id2|] eqn:ge1_b2; try easy.
     destruct (Genv.find_comp_of_ident ge1 id1) as [cp1|] eqn:id1_cp1; try easy.
     destruct (Genv.find_comp_of_ident ge1 id2) as [cp2|] eqn:id2_cp2; try easy.
-    destruct (s cp1); try easy.
-    destruct (s cp2); try easy.
-    destruct (Genv.find_symbol ge2 id1) as [b'|] eqn:ge2_id1; try easy.
-    injection INJ1 as -> <-.
-    destruct (Genv.find_symbol ge2 id2) as [b'|] eqn:ge2_id2; try easy.
-    injection INJ2 as -> <-.
-    apply Genv.find_invert_symbol in ge2_id1.
-    apply Genv.find_invert_symbol in ge2_id2.
-    assert (id2 = id1) as -> by congruence.
-    apply Genv.invert_find_symbol in ge1_b1.
-    apply Genv.invert_find_symbol in ge1_b2.
-    congruence.
+    destruct (s cp1).
+    + apply Genv.invert_find_symbol in ge1_b1.
+      destruct (Genv.find_symbol_find_def_inversion _ _ ge1_b1) as (gd1 & DEF1).
+      setoid_rewrite DEF1 in INJ1.
+      destruct gd1 as [fd1 |]; [| discriminate].
+      destruct (Genv.find_symbol ge2 id1) as [b'|] eqn:ge2_id1; try easy.
+      injection INJ1 as -> <-.
+      (* Second injection *)
+      apply Genv.invert_find_symbol in ge1_b2.
+      destruct (Genv.find_symbol_find_def_inversion _ _ ge1_b2) as (gd2 & DEF2).
+      setoid_rewrite DEF2 in INJ2.
+      destruct (s cp2).
+      * destruct (Genv.find_symbol ge2 id2) as [b'|] eqn:ge2_id2.
+        -- admit.
+        -- admit.
+      * destruct (Genv.find_symbol ge2 id2) as [b'|] eqn:ge2_id2; try easy.
+        injection INJ2 as -> <-.
+        apply Genv.find_invert_symbol in ge2_id1.
+        apply Genv.find_invert_symbol in ge2_id2.
+        assert (id2 = id1) as -> by congruence.
+        congruence.
+    + admit.
   - unfold init_meminj, init_meminj_block.
     intros b1 b2 delta ofs INJ PERM.
     destruct (Genv.invert_symbol ge1 b1) as [id |] eqn:SYM1; [| discriminate].
@@ -4172,11 +4280,19 @@ Proof.
       apply Genv.invert_find_symbol in SYM1. congruence. }
     destruct (Genv.find_symbol_find_comp _ _ NONE) as (cp & COMP).
     setoid_rewrite COMP in INJ.
-    destruct (s cp) eqn:RIGHT; [discriminate |].
-    destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [| discriminate].
-    injection INJ as -> <-.
-    (* Post standard processing *)
-    split; [lia |]. rewrite Z.add_0_r. apply Ptrofs.unsigned_range_2.
+    destruct (s cp) eqn:SIDE.
+    + apply Genv.invert_find_symbol in SYM1.
+      destruct (Genv.find_symbol_find_def_inversion _ _ SYM1) as (gd1 & DEF1).
+      setoid_rewrite DEF1 in INJ.
+      destruct gd1 as [fd1 |]; [| discriminate].
+      destruct (Genv.find_symbol ge2 id) as [b'' |] eqn:SYM2; [| discriminate].
+      injection INJ as -> <-.
+      (* Post standard processing *)
+      split; [lia |]. rewrite Z.add_0_r. apply Ptrofs.unsigned_range_2.
+    + destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [| discriminate].
+      injection INJ as -> <-.
+      (* Post standard processing *)
+      split; [lia |]. rewrite Z.add_0_r. apply Ptrofs.unsigned_range_2.
   - unfold init_meminj, init_meminj_block.
     intros b1 ofs b2 delta k p INJ PERM.
     destruct (Genv.invert_symbol ge1 b1) as [id |] eqn:SYM1; [| discriminate].
@@ -4184,26 +4300,47 @@ Proof.
       apply Genv.invert_find_symbol in SYM1. congruence. }
     destruct (Genv.find_symbol_find_comp _ _ NONE) as (cp & COMP).
     setoid_rewrite COMP in INJ.
-    destruct (s cp) eqn:RIGHT; [discriminate |].
-    destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [| discriminate].
-    injection INJ as -> <-.
-    (* Post standard processing *)
-    apply Genv.invert_find_symbol in SYM1.
-    destruct (Genv.find_symbol_find_def_inversion _ _ SYM1) as (gd1 & DEF1).
-    destruct (Genv.find_symbol_find_def_inversion _ _ SYM2) as (gd2 & DEF2).
-    assert (gd1 = gd2) as <- by (eapply globdef_right; eassumption).
-    rename gd1 into gd.
-    assert (INJ: init_meminj b1 = Some (b2, 0)). { (* inversion lemma? *)
-      unfold init_meminj, init_meminj_block.
-      apply Genv.find_invert_symbol in SYM1. rewrite SYM1.
-      setoid_rewrite COMP.
-      rewrite RIGHT. rewrite SYM2. reflexivity. }
-    destruct (init_mem_characterization_rel
-                _ _ _ _ _ _
-                MEM1 MEM2 SYM1 SYM2 INJ DEF1 DEF2)
-      as (PERMS & _).
-    left. apply PERMS. rewrite Z.add_0_r in PERM. assumption.
-Qed.
+    destruct (s cp) eqn:SIDE.
+    + apply Genv.invert_find_symbol in SYM1.
+      destruct (Genv.find_symbol_find_def_inversion _ _ SYM1) as (gd1 & DEF1).
+      setoid_rewrite DEF1 in INJ.
+      destruct gd1 as [fd1 |]; [| discriminate].
+      destruct (Genv.find_symbol ge2 id) as [b'' |] eqn:SYM2; [| discriminate].
+      injection INJ as -> <-.
+      (* Post standard processing *)
+      destruct (Genv.find_symbol_find_def_inversion _ _ SYM2) as (gd2 & DEF2).
+      assert (Gfun fd1 = gd2) as <- by admit.
+      rename fd1 into fd.
+      assert (INJ: init_meminj b1 = Some (b2, 0)). { (* inversion lemma? *)
+        unfold init_meminj, init_meminj_block.
+        apply Genv.find_invert_symbol in SYM1. rewrite SYM1.
+        setoid_rewrite COMP.
+        rewrite SIDE. rewrite SYM2. setoid_rewrite DEF1. reflexivity. }
+      destruct (init_mem_characterization_rel
+                  _ _ _ _ _ _
+                  MEM1 MEM2 SYM1 SYM2 INJ DEF1 DEF2)
+        as (PERMS & _).
+      left. apply PERMS. rewrite Z.add_0_r in PERM. assumption.
+    + destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [| discriminate].
+      injection INJ as -> <-.
+      (* Post standard processing *)
+      apply Genv.invert_find_symbol in SYM1.
+      destruct (Genv.find_symbol_find_def_inversion _ _ SYM1) as (gd1 & DEF1).
+      destruct (Genv.find_symbol_find_def_inversion _ _ SYM2) as (gd2 & DEF2).
+      assert (gd1 = gd2) as <- by (eapply globdef_right; eassumption).
+      rename gd1 into gd.
+      assert (INJ: init_meminj b1 = Some (b2, 0)). { (* inversion lemma? *)
+        unfold init_meminj, init_meminj_block.
+        apply Genv.find_invert_symbol in SYM1. rewrite SYM1.
+        setoid_rewrite COMP.
+        rewrite SIDE. rewrite SYM2. reflexivity. }
+      destruct (init_mem_characterization_rel
+                  _ _ _ _ _ _
+                  MEM1 MEM2 SYM1 SYM2 INJ DEF1 DEF2)
+        as (PERMS & _).
+      left. apply PERMS. rewrite Z.add_0_r in PERM. assumption.
+(* Qed. *)
+Admitted.
 
 Lemma symbols_inject_init_meminj cp'
   (RIGHT': s cp' = Right):
@@ -4220,11 +4357,19 @@ Proof.
       apply Genv.invert_find_symbol in SYM1. congruence. }
     destruct (Genv.find_symbol_find_comp _ _ NONE) as (cp & COMP).
     setoid_rewrite COMP in b1_b2.
-    destruct (s cp) eqn:RIGHT; [discriminate |].
-    destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [| discriminate].
-    injection b1_b2 as -> <-.
-    (* Done *)
-    auto.
+    destruct (s cp) eqn:SIDE.
+    + apply Genv.invert_find_symbol in SYM1.
+      destruct (Genv.find_symbol_find_def_inversion _ _ SYM1) as (gd1 & DEF1).
+      setoid_rewrite DEF1 in b1_b2.
+      destruct gd1 as [fd1 |]; [| discriminate].
+      destruct (Genv.find_symbol ge2 id) as [b'' |] eqn:SYM2; [| discriminate].
+      injection b1_b2 as -> <-.
+      (* Done *)
+      auto.
+    + destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [| discriminate].
+      injection b1_b2 as -> <-.
+      (* Done *)
+      auto.
   - intros id b1 FIND PUB SYM1.
     assert (exists b2, Genv.find_symbol ge2 id = Some b2)
       as (b2 & SYM2). {
@@ -4246,17 +4391,28 @@ Proof.
       apply Genv.invert_find_symbol in SYM1. congruence. }
     destruct (Genv.find_symbol_find_comp _ _ NONE) as (cp & COMP).
     setoid_rewrite COMP in b1_b2.
-    destruct (s cp) eqn:RIGHT; [discriminate |].
-    destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [| discriminate].
-    injection b1_b2 as -> <-.
-    (* Continue *)
-    apply Genv.invert_find_symbol in SYM1.
-    destruct (Genv.find_symbol_find_def_inversion _ _ SYM1) as (gd1 & DEF1).
-    destruct (Genv.find_symbol_find_def_inversion _ _ SYM2) as (gd2 & DEF2).
-    destruct (globdef_right _ _ _ _ _ _ COMP RIGHT SYM1 SYM2 DEF1 DEF2).
-    simpl. unfold Genv.block_is_volatile, Genv.find_var_info.
-    setoid_rewrite DEF1. setoid_rewrite DEF2. reflexivity.
-Qed.
+    destruct (s cp) eqn:SIDE.
+    + apply Genv.invert_find_symbol in SYM1.
+      destruct (Genv.find_symbol_find_def_inversion _ _ SYM1) as (gd1 & DEF1).
+      setoid_rewrite DEF1 in b1_b2.
+      destruct gd1 as [fd1 |]; [| discriminate].
+      destruct (Genv.find_symbol ge2 id) as [b'' |] eqn:SYM2; [| discriminate].
+      injection b1_b2 as -> <-.
+      (* Continue *)
+      destruct (Genv.find_symbol_find_def_inversion _ _ SYM2) as (gd2 & DEF2).
+      (* TODO: Needs globdef_left as well *)
+      admit.
+    + destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [| discriminate].
+      injection b1_b2 as -> <-.
+      (* Continue *)
+      apply Genv.invert_find_symbol in SYM1.
+      destruct (Genv.find_symbol_find_def_inversion _ _ SYM1) as (gd1 & DEF1).
+      destruct (Genv.find_symbol_find_def_inversion _ _ SYM2) as (gd2 & DEF2).
+      destruct (globdef_right _ _ _ _ _ _ COMP SIDE SYM1 SYM2 DEF1 DEF2).
+      simpl. unfold Genv.block_is_volatile, Genv.find_var_info.
+      setoid_rewrite DEF1. setoid_rewrite DEF2. reflexivity.
+(* Qed. *)
+Admitted.
 
 Lemma initial_mem_injection m1 m2
       (MEM1: Genv.init_mem W1 = Some m1)
