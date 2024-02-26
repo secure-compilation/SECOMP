@@ -1658,12 +1658,9 @@ Admitted.
             exploit find_symbol_valid_block; eauto. }
           specialize (EXT _ NEQ). rewrite EXT in b1'_b2'.
           auto.
-        * intros id' b1' PUB_id id_b1'.
-          specialize (PUB_FIND id' b1' PUB_id id_b1') as (b2' & b1'_b2' & id'_b2'). admit.
-          destruct (peq b1' b1) as [-> | NEQ].
-          -- eauto.
-          -- specialize (EXT _ NEQ). rewrite <- EXT in b1'_b2'.
-             eauto.
+        * intros id' b1' PUB_id id_b1' id'_b1'.
+          specialize (PUB_FIND id' b1' PUB_id id_b1' id'_b1') as (b2' & b1'_b2' & id'_b2').
+          eauto.
         * intros b1' b2' delta b1'_b2'.
           (* Like symbols, volatile blocks are declared and defined at
              the outset and this property is invariant throughout
@@ -1718,8 +1715,7 @@ Admitted.
           specialize (ENDNONE id' GET). auto.
     - intros id' v GET. specialize (RTENVINJ id' v GET) as (v' & INJ' & GET').
       inv INJ'; eauto.
-  (* Qed. *)
-  Admitted.
+  Qed.
 
   Lemma same_domain_right_alloc_left :
     forall j ge m cp lo hi m' b,
@@ -2344,7 +2340,9 @@ Qed.
           eapply Mem.mi_own; eauto.
         * admit.
       + destruct j_b1_def as [[] | [fd DEF]].
-        admit.
+        apply Genv.find_funct_ptr_iff in DEF.
+        assert (COMP := Genv.find_funct_ptr_find_comp_of_block _ _ DEF).
+        exploit BLKS1; eauto. congruence.
     - intros b cp ge_b. specialize (BLKS2 _ _ ge_b).
       enough (Mem.can_access_block m2' b (Some cp)) by easy.
       eapply ec_can_access_block; eauto.
