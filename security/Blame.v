@@ -2728,23 +2728,13 @@ Qed.
           as (fd2 & -> & match_fd'').
         { inv match_fd'. eauto. }
         assert (vf2 = Vptr b2 Ptrofs.zero) as evf2.
-        { exploit same_symb; eauto. instantiate (1 := comp_of f); auto. intros (_ & _ & INJ & _).
-          (* XXX Continue here... *)
-          admit. }
-          (* destruct (INJ _ _ pub_id1 ge1_id) as (b2' & j_b1 & ge2_id'). *)
-          (* assert (b2' = b2) as -> by (simpl in *; congruence). *)
-          (* inv vf1_vf2; try congruence. *)
-          (* match goal with *)
-          (* | [ _ : j b1 = Some (b2, 0), *)
-          (*     H1 : j ?b1' = Some (?b2', ?delta), *)
-          (*     H2 : Vptr _ ?ofs1 = Vptr b1 _ |- _ ] *)
-          (*   => assert (b1' = b1) as -> by congruence; *)
-          (*      assert (ofs1 = Ptrofs.zero) as -> by congruence; *)
-          (*      assert (b2' = b2) as -> by congruence; *)
-          (*      assert (delta = 0) as -> by congruence; *)
-          (*      clear H1 H2 *)
-          (* end. *)
-          (* now rewrite Ptrofs.add_zero. } *)
+        { inv vf1_vf2; try discriminate.
+          injection H1 as -> ->.
+          exploit same_symb; eauto. instantiate (1 := comp_of f); auto. intros (_ & FIND & _ & _).
+          destruct (FIND _ _ _ _ H ge1_id) as (-> & ge2_id').
+          setoid_rewrite ge2_id in ge2_id'.
+          injection ge2_id' as <-.
+          reflexivity. }
         assert (Genv.find_funct ge2 vf2 = Some fd2) as find_vf2'.
         { unfold Genv.find_funct, Genv.find_funct_ptr. rewrite evf2.
           destruct Ptrofs.eq_dec as [_|?]; try congruence.
@@ -2984,8 +2974,7 @@ Qed.
               rewrite PTree.gso in GET; [| assumption].
               eauto. }
         }
-  (* Qed. *)
-  Admitted.
+  Qed.
 
     (* Example that shows why Blame doesn't hold in the C semantics.
        Because the semantics are not determinate we can end up in situation like this one:
