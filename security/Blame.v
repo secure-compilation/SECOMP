@@ -4052,6 +4052,21 @@ Lemma init_mem_characterization_rel' sp (pr1 pr2: program) id gd m1 m2
                                (ZMap.get ofs (Mem.mem_contents m2) !! b2)).
 Abort.
 
+(* TODO: relocate *)
+Lemma global_addresses_distinct_id
+      {F V} (ge : Genv.t F V) (id1 id2 : ident) (b1 b2 : block):
+  b1 <> b2 ->
+  Genv.find_symbol ge id1 = Some b1 ->
+  Genv.find_symbol ge id2 = Some b2 ->
+  id1 <> id2.
+Proof.
+  clear. (* remove later *)
+  intros b1_b2 SYM1 SYM2 <-.
+  rewrite SYM1 in SYM2.
+  injection SYM2 as <-.
+  contradiction.
+Qed.
+
 (* Genv.initmem_inject *)
 Lemma inject_init_meminj m1 m2
       (MEM1: Genv.init_mem W1 = Some m1)
@@ -4264,15 +4279,31 @@ Proof.
       setoid_rewrite DEF2 in INJ2.
       destruct (s cp2).
       * destruct (Genv.find_symbol ge2 id2) as [b'|] eqn:ge2_id2.
-        -- admit.
-        -- admit.
+        -- destruct gd2 as [fd2 |]; [| discriminate].
+           injection INJ2 as -> <-.
+           assert (id1_id2 := global_addresses_distinct_id _ _ _ _ _ b1_b2 ge1_b1 ge1_b2).
+           assert (b1'_b1' := Genv.global_addresses_distinct _ id1_id2 ge2_id1 ge2_id2).
+           contradiction.
+        -- destruct gd2 as [fd2 |]; discriminate.
       * destruct (Genv.find_symbol ge2 id2) as [b'|] eqn:ge2_id2; try easy.
         injection INJ2 as -> <-.
         apply Genv.find_invert_symbol in ge2_id1.
         apply Genv.find_invert_symbol in ge2_id2.
         assert (id2 = id1) as -> by congruence.
         congruence.
-    + admit.
+    + destruct (Genv.find_symbol ge2 id1) as [b2' |] eqn:ge2_id1; [| discriminate].
+      injection INJ1 as -> <-.
+      destruct (s cp2).
+      * apply Genv.invert_find_symbol in ge1_b2.
+        destruct (Genv.find_symbol_find_def_inversion _ _ ge1_b2) as (gd2 & DEF2).
+        setoid_rewrite DEF2 in INJ2.
+        destruct gd2 as [fd2 |]; [| discriminate].
+        destruct (Genv.find_symbol ge2 id2) as [b2' |] eqn:ge2_id2; [| discriminate].
+        injection INJ2 as -> <-.
+        apply Genv.invert_find_symbol in ge1_b1.
+        assert (id1_id2 := global_addresses_distinct_id _ _ _ _ _ b1_b2 ge1_b1 ge1_b2).
+        assert (b1'_b1' := Genv.global_addresses_distinct _ id1_id2 ge2_id1 ge2_id2).
+        contradiction.
   - unfold init_meminj, init_meminj_block.
     intros b1 b2 delta ofs INJ PERM.
     destruct (Genv.invert_symbol ge1 b1) as [id |] eqn:SYM1; [| discriminate].
