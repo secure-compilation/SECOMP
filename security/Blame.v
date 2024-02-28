@@ -1468,23 +1468,42 @@ Admitted.
         eapply Genv.find_def_find_symbol_inversion; eauto.
         exploit match_prog_unique1; eauto. }
       assert (Genv.find_symbol ge2 id = Some b2).
-      { exploit same_symb; eauto. instantiate (1 := cp). admit.
-        intros (H1 & H2 & H3 & H4).
-        exploit H2; eauto. intros (-> & ge2_id). now simpl in ge2_id. }
+      { assert (j_b1_None: j b1 <> None) by congruence.
+        destruct (s cp) eqn:SIDE.
+        - apply (same_dom _ _ _ _ _ _ inj) in j_b1_None as [RIGHT | [fd DEF]].
+          + simpl in RIGHT.
+            destruct (Mem.block_compartment m1 b1) as [cp' |] eqn:COMP ; [| contradiction].
+            erewrite same_blks1 in COMP; eauto. congruence.
+          + exploit right_mem_injection_right; eauto. intros (cp' & COMP & _).
+            admit. (* id is on the left in p1, so it is also on the left in p2
+                      and their blocks are related by the injection *)
+        - destruct (Mem.block_compartment m1 b1) as [cp' |] eqn:COMP.
+          + exploit same_symb; eauto.
+            intros (H1 & H2 & H3 & H4).
+            exploit H2; eauto. intros (-> & ge2_id). now simpl in ge2_id.
+          + erewrite same_blks1 in COMP; eauto. discriminate. }
       now exploit find_comp_of_block_preserved; eauto.
     - unfold Genv.allowed_cross_call in *.
       revert cross. case vf12; try easy.
       simpl. intros b1 _ b2 ofs2 delta j_b1 _.
       intros (id & cp' & ge1_b1 & ge1_b1' & imp & exp).
       exists id, cp'.
-      exploit same_symb; eauto. instantiate (1 := cp). admit. intros (H1 & H2 & H3 & H4). simpl in *.
-      exploit Genv.invert_find_symbol; eauto. intros ge1_id.
-      exploit H2; eauto. intros (-> & ge2_id).
-      split; [now apply Genv.find_invert_symbol|].
-      split.
-      { exploit find_comp_of_block_preserved; eauto. }
-      rewrite Genv.globalenv_policy in *. simpl in *.
-      now rewrite (match_prog_pol _ _ _ match_W1_W2); split.
+      destruct (s cp') eqn:SIDE.
+      + assert (j_b1_None: j b1 <> None) by congruence.
+        apply (same_dom _ _ _ _ _ _ inj) in j_b1_None as [RIGHT | [fd DEF]].
+        * simpl in RIGHT.
+          destruct (Mem.block_compartment m1 b1) as [cp'' |] eqn:COMP ; [| contradiction].
+          erewrite same_blks1 in COMP; eauto. congruence.
+        * admit. (* id is on the left in p1, so it is also on the left in p2
+                    and their blocks are related by the injection *)
+      + exploit same_symb; eauto. intros (H1 & H2 & H3 & H4). simpl in *.
+        exploit Genv.invert_find_symbol; eauto. intros ge1_id.
+        exploit H2; eauto. intros (-> & ge2_id).
+        split; [now apply Genv.find_invert_symbol|].
+        split.
+        { exploit find_comp_of_block_preserved; eauto. }
+        rewrite Genv.globalenv_policy in *. simpl in *.
+        now rewrite (match_prog_pol _ _ _ match_W1_W2); split.
   (* Qed. *)
   Admitted.
 
@@ -1513,9 +1532,21 @@ Admitted.
     Genv.find_symbol ge2 id = Some b2.
   Proof.
     intros j m1 m2 id b1 b2 delta INJ FIND1 j_b1.
-    exploit same_symb; eauto. admit.
-    intros (_ & H & ?).
-    now destruct (H id b1 b2 delta j_b1 FIND1) as [??].
+    assert (FIND1_None: Genv.find_symbol ge1 id <> None) by congruence.
+    destruct (Genv.find_symbol_find_comp _ _ FIND1_None) as (cp & id_cp).
+    destruct (s cp) eqn:SIDE.
+    - assert (j_b1_None: j b1 <> None) by congruence.
+      apply (same_dom _ _ _ _ _ _ INJ) in j_b1_None as [RIGHT | [fd DEF]].
+      + simpl in RIGHT.
+        destruct (Mem.block_compartment m1 b1) as [cp' |] eqn:COMP ; [| contradiction].
+        unfold Genv.find_comp_of_ident in id_cp. setoid_rewrite FIND1 in id_cp.
+        erewrite same_blks1 in COMP; eauto. injection COMP as <-. congruence.
+      + exploit right_mem_injection_right; eauto. intros (cp' & COMP & _).
+        admit. (* id is on the left in p1, so it is also on the left in p2
+                  and their blocks are related by the injection *)
+    - exploit same_symb; eauto.
+      intros (_ & H & ?).
+      now destruct (H id b1 b2 delta j_b1 FIND1) as [??].
   (* Qed. *)
   Admitted.
 
