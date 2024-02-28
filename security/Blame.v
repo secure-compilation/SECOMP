@@ -474,6 +474,8 @@ Section Simulation.
   Hypothesis W1_gvars: wf_gvar_init ge1.
   Hypothesis W2_gvars: wf_gvar_init ge2.
 
+  Hypothesis prog_defs_p1_p2: prog_defs p1 = prog_defs p2.
+
 (** New helpers *)
 
 Lemma state_split_decidable:
@@ -4019,6 +4021,21 @@ Proof.
   injection GLOBDEFS as <-. reflexivity.
 Qed.
 
+Lemma globdef_left id fd1 gd2 b1 b2 cp
+      (COMP : Genv.find_comp_of_ident (Genv.globalenv W1) id = Some cp)
+      (SIDE : s cp = Left)
+      (SYM1 : Genv.find_symbol ge1 id = Some b1)
+      (SYM2 : Genv.find_symbol ge2 id = Some b2)
+      (DEF1 : Genv.find_def (Genv.globalenv W1) b1 = Some (Gfun fd1))
+      (DEF2 : Genv.find_def (Genv.globalenv W2) b2 = Some gd2):
+  Gfun fd1 = gd2.
+Proof.
+  (* If [prog_defs p1 = prog_defs p2] (or if we are only concerned
+     with public symbols, given the existing definition of
+     [match_prog_globdefs], this is easy and could even be made a bit
+     more general. *)
+Admitted.
+
 Lemma init_mem_characterization_rel' sp (pr1 pr2: program) id gd m1 m2
       (MATCH: match_prog sp pr1 pr2)
       (PROGDEFS1: In (id, gd) (prog_defs pr1))
@@ -4078,7 +4095,7 @@ Proof.
         injection INJ as -> <-.
         (* Post standard processing *)
         destruct (Genv.find_symbol_find_def_inversion _ _ SYM2) as (gd2 & DEF2).
-        assert (Gfun fd1 = gd2) as <- by admit. (* TODO: need globdef_left *)
+        assert (Gfun fd1 = gd2) as <- by (eapply globdef_left; eassumption).
         rename fd1 into fd.
         assert (INJ: init_meminj b1 = Some (b2, 0)). { (* inversion lemma? *)
           unfold init_meminj, init_meminj_block.
@@ -4126,7 +4143,7 @@ Proof.
         injection INJ as -> <-.
         (* Post standard processing *)
         destruct (Genv.find_symbol_find_def_inversion _ _ SYM2) as (gd2 & DEF2).
-        assert (Gfun fd1 = gd2) as <- by admit.
+        assert (Gfun fd1 = gd2) as <- by (eapply globdef_left; eassumption).
         rename fd1 into fd.
         assert (INJ: init_meminj b1 = Some (b2, 0)). { (* inversion lemma? *)
           unfold init_meminj, init_meminj_block.
@@ -4193,7 +4210,7 @@ Proof.
         injection INJ as -> <-.
         (* Post standard processing *)
         destruct (Genv.find_symbol_find_def_inversion _ _ SYM2) as (gd2 & DEF2).
-        assert (Gfun fd1 = gd2) as <- by admit.
+        assert (Gfun fd1 = gd2) as <- by (eapply globdef_left; eassumption).
         rename fd1 into fd.
         assert (INJ: init_meminj b1 = Some (b2, 0)). { (* inversion lemma? *)
           unfold init_meminj, init_meminj_block.
@@ -4334,7 +4351,7 @@ Proof.
       injection INJ as -> <-.
       (* Post standard processing *)
       destruct (Genv.find_symbol_find_def_inversion _ _ SYM2) as (gd2 & DEF2).
-      assert (Gfun fd1 = gd2) as <- by admit.
+      assert (Gfun fd1 = gd2) as <- by (eapply globdef_left; eassumption).
       rename fd1 into fd.
       assert (INJ: init_meminj b1 = Some (b2, 0)). { (* inversion lemma? *)
         unfold init_meminj, init_meminj_block.
@@ -4364,8 +4381,7 @@ Proof.
                   MEM1 MEM2 SYM1 SYM2 INJ DEF1 DEF2)
         as (PERMS & _).
       left. apply PERMS. rewrite Z.add_0_r in PERM. assumption.
-(* Qed. *)
-Admitted.
+Qed.
 
 Lemma symbols_inject_init_meminj cp'
   (RIGHT': s cp' = Right):
@@ -4425,8 +4441,9 @@ Proof.
       injection b1_b2 as -> <-.
       (* Continue *)
       destruct (Genv.find_symbol_find_def_inversion _ _ SYM2) as (gd2 & DEF2).
-      (* TODO: Needs globdef_left as well *)
-      admit.
+      destruct (globdef_left _ _ _ _ _ _ COMP SIDE SYM1 SYM2 DEF1 DEF2).
+      simpl. unfold Genv.block_is_volatile, Genv.find_var_info.
+      setoid_rewrite DEF1. setoid_rewrite DEF2. reflexivity.
     + destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [| discriminate].
       injection b1_b2 as -> <-.
       (* Continue *)
@@ -4436,8 +4453,7 @@ Proof.
       destruct (globdef_right _ _ _ _ _ _ COMP SIDE SYM1 SYM2 DEF1 DEF2).
       simpl. unfold Genv.block_is_volatile, Genv.find_var_info.
       setoid_rewrite DEF1. setoid_rewrite DEF2. reflexivity.
-(* Qed. *)
-Admitted.
+Qed.
 
 Lemma initial_mem_injection m1 m2
       (MEM1: Genv.init_mem W1 = Some m1)
