@@ -4291,6 +4291,13 @@ Proof.
         assert (id1_id2 := global_addresses_distinct_id _ _ _ _ _ b1_b2 ge1_b1 ge1_b2).
         assert (b1'_b1' := Genv.global_addresses_distinct _ id1_id2 ge2_id1 ge2_id2).
         contradiction.
+      * destruct (Genv.find_symbol ge2 id2) as [b2' |] eqn:ge2_id2; [| discriminate].
+        injection INJ2 as -> <-.
+        apply Genv.invert_find_symbol in ge1_b1.
+        apply Genv.invert_find_symbol in ge1_b2.
+        assert (id1_id2 := global_addresses_distinct_id _ _ _ _ _ b1_b2 ge1_b1 ge1_b2).
+        assert (b1'_b1' := Genv.global_addresses_distinct _ id1_id2 ge2_id1 ge2_id2).
+        contradiction.
   - unfold init_meminj, init_meminj_block.
     intros b1 b2 delta ofs INJ PERM.
     destruct (Genv.invert_symbol ge1 b1) as [id |] eqn:SYM1; [| discriminate].
