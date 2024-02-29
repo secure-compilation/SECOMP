@@ -1544,6 +1544,17 @@ Proof.
 - simpl. congruence.
 Qed.
 
+(* TODO Attempt to minimize the extensions to the invariant and its
+   proof w.r.t. the standard memory characterizations. One could prove
+   the top-level relational characterization directly, although (at
+   least without further refinements on its spec) it still requires
+   more information than is readily available from the unary
+   characterizations. The helper lemmas we would need reason about the
+   low-level composition of memory elements instead of the high-level
+   view of e.g. memory permissions derived from the former. Instead of
+   polluting the interface with those, direct manipulations or
+   lemmas-as-asserts could be posed as part of this proof for the time
+   being. *)
 Lemma alloc_global_initialized':
   forall g m id gd m',
   genv_next g = Mem.nextblock m ->
@@ -1560,16 +1571,24 @@ Proof.
 + inv H2. destruct gd0 as [f|v]; simpl in H0.
 * destruct (Mem.alloc m _ 0 1) as [m1 b] eqn:ALLOC.
   exploit Mem.alloc_result; eauto. intros RES.
-  rewrite H, <- RES. split.
-  (* eapply Mem.perm_drop_1; eauto. lia. *)
-  admit.
-  split.
-  apply Mem.owned_new_block in ALLOC. apply Mem.can_access_block_drop_4 in H0. auto.
-  intros.
-  (* assert (0 <= ofs < 1). { eapply Mem.perm_alloc_3; eauto. eapply Mem.perm_drop_4; eauto. } *)
-  (* exploit Mem.perm_drop_2; eauto. intros ORD. *)
-  (* split. lia. inv ORD; auto. *)
-  admit.
+  rewrite H, <- RES.
+  (* any simplifications above? *)
+Local Transparent Mem.alloc Mem.drop_perm.
+  unfold Mem.alloc in ALLOC. unfold Mem.drop_perm in H0.
+Local Opaque Mem.alloc Mem.drop_perm.
+  destruct m1. destruct m'.
+  injection ALLOC as ? ? ? ? ?; subst.
+  destruct Mem.range_perm_dec; [| discriminate].
+  destruct Mem.can_access_block_dec; [| discriminate].
+  injection H0 as ? ? ?; subst.
+  split; [| split]; simpl.
+  -- intros ofs k. rewrite 2!PMap.gss.
+     destruct (zle 0 ofs);
+       destruct (zlt ofs 1);
+       destruct (zeq ofs 0);
+       (reflexivity || lia).
+  -- rewrite PTree.gss. reflexivity.
+  -- intros ofs. rewrite PMap.gss, ZMap.gi. reflexivity.
 * set (init := gvar_init v) in *.
   set (sz := init_data_list_size init) in *.
   destruct (Mem.alloc m _ 0 sz) as [m1 b] eqn:?.
