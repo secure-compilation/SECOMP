@@ -1555,6 +1555,102 @@ Qed.
    polluting the interface with those, direct manipulations or
    lemmas-as-asserts could be posed as part of this proof for the time
    being. *)
+Local Lemma store_mem_access:
+  forall chunk m b ofs v cp m' b' ofs' k,
+    Mem.store chunk m b ofs v cp = Some m' ->
+    (Mem.mem_access m) !! b' ofs' k = (Mem.mem_access m') !! b' ofs' k.
+Proof.
+  clear.
+Local Transparent Mem.store. unfold Mem.store. Local Opaque Mem.store.
+  intros until k; intros STORE.
+  destruct Mem.valid_access_dec; [| discriminate].
+  destruct m'; injection STORE as ? ? ? ?; subst.
+  reflexivity.
+Qed.
+
+Local Lemma store_init_data_mem_access:
+  forall m b p id cp m' b' ofs k,
+    store_init_data m b p id cp = Some m' ->
+    (Mem.mem_access m) !! b' ofs k = (Mem.mem_access m') !! b' ofs k.
+Proof.
+  clear.
+  intros until k; intros STORE.
+  destruct id; try (eapply store_mem_access; eassumption); simpl in STORE.
+  - injection STORE as <-. reflexivity.
+  - destruct find_symbol; [| discriminate].
+    eapply store_mem_access; eassumption.
+Qed.
+
+Local Lemma store_init_data_list_mem_access:
+  forall m b p idl cp m' b' ofs k,
+    store_init_data_list m b p idl cp = Some m' ->
+    (Mem.mem_access m) !! b' ofs k = (Mem.mem_access m') !! b' ofs k.
+Proof.
+  clear.
+  intros until idl. revert m b p.
+  induction idl as [| id idl IHidl]; simpl; intros until k; intros STORES.
+  - injection STORES as <-. reflexivity.
+  - destruct store_init_data as [m'' |] eqn:STORE; [| discriminate].
+    eapply store_init_data_mem_access in STORE. rewrite STORE.
+    eapply IHidl; eassumption.
+Qed.
+
+Local Lemma store_zeros_mem_access:
+  forall m b p n cp m' b' ofs k,
+    store_zeros m b p n cp = Some m' ->
+    (Mem.mem_access m) !! b' ofs k = (Mem.mem_access m') !! b' ofs k.
+Proof.
+  clear.
+Admitted.
+
+Local Lemma store_mem_compartments:
+  forall chunk m b ofs v cp m' b',
+    Mem.store chunk m b ofs v cp = Some m' ->
+    (Mem.mem_compartments m) ! b' = (Mem.mem_compartments m') ! b'.
+Proof.
+  clear.
+Local Transparent Mem.store. unfold Mem.store. Local Opaque Mem.store.
+  intros until b'; intros STORE.
+  destruct Mem.valid_access_dec; [| discriminate].
+  destruct m'; injection STORE as ? ? ? ?; subst.
+  reflexivity.
+Qed.
+
+Local Lemma store_init_data_mem_compartments:
+  forall m b p id cp m' b',
+    store_init_data m b p id cp = Some m' ->
+    (Mem.mem_compartments m) ! b' = (Mem.mem_compartments m') ! b'.
+Proof.
+  clear.
+  intros until b'; intros STORE.
+  destruct id; try (eapply store_mem_compartments; eassumption); simpl in STORE.
+  - injection STORE as <-. reflexivity.
+  - destruct find_symbol; [| discriminate].
+    eapply store_mem_compartments; eassumption.
+Qed.
+
+Local Lemma store_init_data_list_mem_compartments:
+  forall m b p idl cp m' b',
+    store_init_data_list m b p idl cp = Some m' ->
+    (Mem.mem_compartments m) ! b' = (Mem.mem_compartments m') ! b'.
+Proof.
+  clear.
+  intros until idl. revert m b p.
+  induction idl as [| id idl IHidl]; simpl; intros until b'; intros STORES.
+  - injection STORES as <-. reflexivity.
+  - destruct store_init_data as [m'' |] eqn:STORE; [| discriminate].
+    eapply store_init_data_mem_compartments in STORE. rewrite STORE.
+    eapply IHidl; eassumption.
+Qed.
+
+Local Lemma store_zeros_mem_compartments:
+  forall m b p n cp m' b',
+    store_zeros m b p n cp = Some m' ->
+    (Mem.mem_compartments m) ! b' = (Mem.mem_compartments m') ! b'.
+Proof.
+  clear.
+Admitted.
+
 Lemma alloc_global_initialized':
   forall g m id gd m',
   genv_next g = Mem.nextblock m ->
@@ -1596,10 +1692,33 @@ Local Opaque Mem.alloc Mem.drop_perm.
   destruct (store_init_data_list m2 b 0 init) as [m3|] eqn:?; try discriminate.
   exploit Mem.alloc_result; eauto. intro RES.
   replace (genv_next g) with b by congruence.
-  split.
-  (* red; intros. eapply Mem.perm_drop_1; eauto. *)
-  admit. split. admit.
-(*   split. intros. *)
+  (* any simplifications above? *)
+  split; [| split].
+  -- intros ofs k.
+Local Transparent Mem.alloc Mem.drop_perm.
+     unfold Mem.alloc in Heqp. unfold Mem.drop_perm in H0.
+Local Opaque Mem.alloc Mem.drop_perm.
+     destruct Mem.range_perm_dec; [| discriminate].
+     destruct Mem.can_access_block_dec; [| discriminate].
+     injection H0 as <-. simpl in *. rewrite PMap.gss.
+     erewrite <- store_init_data_list_mem_access; [| eassumption].
+     erewrite <- store_zeros_mem_access; [| eassumption].
+     destruct m1; injection Heqp as ? ? ? ? ?; subst.
+     simpl. rewrite PMap.gss.
+     destruct (zle 0 ofs); destruct (zlt ofs sz); reflexivity.
+  -- (* TODO common preprocessing, helper lemmas *)
+Local Transparent Mem.alloc Mem.drop_perm.
+     unfold Mem.alloc in Heqp. unfold Mem.drop_perm in H0.
+Local Opaque Mem.alloc Mem.drop_perm.
+     destruct Mem.range_perm_dec; [| discriminate].
+     destruct Mem.can_access_block_dec; [| discriminate].
+     injection H0 as <-. simpl in *.
+     erewrite <- store_init_data_list_mem_compartments; [| eassumption].
+     erewrite <- store_zeros_mem_compartments; [| eassumption].
+     destruct m1; injection Heqp as ? ? ? ? ?; subst.
+     simpl. rewrite PTree.gss.
+     reflexivity.
+  -- admit.
 (*   assert (0 <= ofs < sz). *)
 (*   { eapply Mem.perm_alloc_3; eauto. *)
 (*     erewrite store_zeros_perm by eauto. *)
