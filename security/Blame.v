@@ -35,16 +35,6 @@ Qed.
 
 Definition match_varinfo (ty1 ty2: type): Prop := ty1 = ty2.
 
-Definition kept_genv (s: split) (ge: genv) (δ: side) (id: ident): bool :=
-  match Genv.find_symbol ge id with
-  | Some b =>
-      match (Genv.genv_defs ge)!b with
-      | None => false
-      | Some gd => side_eq (s (comp_of gd)) δ
-      end
-  | None => false
-  end.
-
 Variant match_globdef : gdef -> gdef -> Prop :=
 | match_gfun f1 f2 :
   match_fundef tt f1 f2 -> match_globdef (Gfun f1) (Gfun f2)
@@ -52,22 +42,41 @@ Variant match_globdef : gdef -> gdef -> Prop :=
   match_globvar match_varinfo v1 v2 ->
   match_globdef (Gvar v1) (Gvar v2).
 
+Definition def_of_ident (ge: genv) id :=
+  match Genv.find_symbol ge id with
+  | Some b => Genv.find_def ge b
+  | None => None
+  end.
+
+Definition match_type_of_ident s (ge: genv) id :=
+  match def_of_ident ge id with
+  | Some gd =>
+      if side_eq (s (comp_of gd)) Right ||
+           Genv.public_symbol ge id
+      then Some (s (comp_of gd)) else None
+  | None => None
+  end.
+
 Definition match_opt_globdefs sd d1 d2 :=
   match sd with
   | Left => option_rel match_globdef d1 d2
   | Right => d1 = d2
   end.
 
+Variant match_ident s (ge1 ge2: genv) id : Prop :=
+| match_ident_def : forall δ,
+  match_type_of_ident s ge1 id = Some δ ->
+  match_type_of_ident s ge2 id = Some δ ->
+  match_opt_globdefs δ (def_of_ident ge1 id) (def_of_ident ge2 id) ->
+  match_ident s ge1 ge2 id
+
+| match_ident_drop :
+  match_type_of_ident s ge1 id = None ->
+  match_type_of_ident s ge2 id = None ->
+  match_ident s ge1 ge2 id.
+
 Definition match_globdefs (s: split) (ge1 ge2: genv) :=
-  forall id cp,
-    (Genv.find_comp_of_ident ge1 id = Some cp \/
-       Genv.find_comp_of_ident ge2 id = Some cp) ->
-    (s cp = Right \/ Genv.public_symbol ge1 id = true \/
-       Genv.public_symbol ge2 id = true) ->
-    exists b1 b2,
-      Genv.find_symbol ge1 id = Some b1 /\
-      Genv.find_symbol ge2 id = Some b2 /\
-      match_opt_globdefs (s cp) (Genv.find_def ge1 b1) (Genv.find_def ge2 b2).
+  forall id, match_ident s ge1 ge2 id.
 
 Record match_prog (s: split) (p p': program) : Prop := {
   match_prog_main:
@@ -980,37 +989,86 @@ Qed.
       as public_eq.
     { simpl. rewrite !Genv.globalenv_public. simpl.
       now rewrite (match_prog_public _ _ _ match_W1_W2). }
-    destruct (Genv.public_symbol ge1 id) eqn:public1.
-    - destruct (Genv.public_symbol_exists _ _ public1) as [b1 ge1_id_b1].
-      assert (exists cp, Genv.find_comp_of_ident ge1 id = Some cp)
-        as [cp ge1_id_cp].
-      { apply Genv.find_symbol_find_comp.
-        unfold ge1, fundef in *. simpl in *. congruence. }
-      assert (exists b2, Genv.find_symbol ge2 id = Some b2)
-        as [b2 ge2_id_b2].
-      { exploit match_prog_globdefs; eauto.
-        intros (? & b2 & _ & H & _). eauto. }
-      unfold Genv.public_symbol in *.
-      rewrite ge1_id_b1 in public1.
-      rewrite ge2_id_b2. congruence.
-    - unfold Genv.public_symbol in public1.
-      destruct (Genv.find_symbol ge1 id) as [b1|] eqn:ge1_id.
-      + assert (exists cp, Genv.find_comp_of_ident ge1 id = Some cp)
-          as [cp ge1_id_cp].
-        { apply Genv.find_symbol_find_comp.
-          unfold ge1, fundef in *. simpl in *. congruence. }
-        unfold Genv.public_symbol.
-        destruct (Genv.find_symbol ge2 id) as [b2|] eqn:ge2_id; trivial.
-        congruence.
-      + destruct (Genv.public_symbol ge2 id) eqn:public2; trivial.
-        destruct (Genv.public_symbol_exists _ _ public2) as [b2 ge2_id_b2].
-        assert (exists cp, Genv.find_comp_of_ident ge2 id = Some cp)
-          as [cp ge2_id_cp].
-        { apply Genv.find_symbol_find_comp.
-          unfold ge1, fundef in *. simpl in *. congruence. }
-        exploit match_prog_globdefs; eauto.
-        intros (? & _ & ? & _). congruence.
+    unfold Genv.public_symbol. rewrite public_eq.
+    destruct (match_prog_globdefs _ _ _ match_W1_W2 id)
+      as [δ ge1_id ge2_id match_id|ge1_id ge2_id].
+    - unfold match_type_of_ident, def_of_ident in *.
+      destruct (Genv.find_symbol ge1 id);
+      destruct (Genv.find_symbol ge2 id);
+      easy.
+    - unfold match_type_of_ident, def_of_ident, Genv.public_symbol in *.
+      destruct (Genv.find_symbol ge1 id) as [b1|] eqn:id_b1;
+      destruct (Genv.find_symbol ge2 id) as [b2|] eqn:id_b2;
+      trivial.
+      + assert (exists gd1, Genv.find_def ge1 b1 = Some gd1) as (gd1 & E).
+        { eapply Genv.find_symbol_find_def_inversion; eauto. }
+        rewrite E in ge1_id.
+        destruct side_eq; simpl in *; try easy.
+        unfold fundef in *.
+        now destruct (in_dec ident_eq _ (Genv.genv_public (Genv.globalenv W1))).
+      + assert (exists gd2, Genv.find_def ge2 b2 = Some gd2) as (gd2 & E).
+        { eapply Genv.find_symbol_find_def_inversion; eauto. }
+        rewrite E in ge2_id.
+        destruct side_eq; simpl in *; try easy.
+        unfold fundef in *.
+        now destruct (in_dec ident_eq _ (Genv.genv_public (Genv.globalenv W2))).
   Qed.
+
+(* Backwards compatibility lemma. *)
+Lemma match_prog_globdefs' :
+  forall id cp,
+    (Genv.find_comp_of_ident ge1 id = Some cp \/
+       Genv.find_comp_of_ident ge2 id = Some cp) ->
+    (s cp = Right \/
+       Genv.public_symbol ge1 id = true \/
+       Genv.public_symbol ge2 id = true) ->
+    exists b1 b2,
+      Genv.find_symbol ge1 id = Some b1 /\
+      Genv.find_symbol ge2 id = Some b2 /\
+      match_opt_globdefs (s cp) (Genv.find_def ge1 b1) (Genv.find_def ge2 b2).
+Proof.
+  unfold Genv.find_comp_of_ident, Genv.find_comp_of_block.
+  intros id cp Hcomp Hside.
+  pose proof (match_prog_globdefs _ _ _ match_W1_W2) as match_gd.
+  specialize (match_gd id).
+  destruct match_gd as [δ ge1_id_δ ge2_id_δ|ge1_id ge2_id].
+  - unfold match_type_of_ident, def_of_ident in *.
+    destruct (Genv.find_symbol ge1 id) as [b1|] eqn:ge1_id_b1;
+      try discriminate.
+    destruct (Genv.find_symbol ge2 id) as [b2|] eqn:ge2_id_b2;
+      try discriminate.
+    exists b1, b2.
+    split; trivial. split; trivial.
+    destruct (Genv.find_def ge1 b1) as [gd1|] eqn:ge1_b1;
+      try discriminate.
+    destruct (Genv.find_def ge2 b2) as [gd2|] eqn:ge2_b2;
+      try discriminate.
+    destruct (side_eq (s (comp_of gd1)) _ || _) eqn:guard1; try discriminate.
+    destruct (side_eq (s (comp_of gd2)) _ || _) eqn:guard2; try discriminate.
+    injection ge1_id_δ as <-.
+    destruct Hcomp; congruence.
+  - unfold match_type_of_ident, def_of_ident in *.
+    rewrite public_symbol_preserved in *.
+    destruct Hcomp as [Hcomp|Hcomp].
+    + destruct (Genv.find_symbol ge1 id) as [b1|] eqn:ge1_id_b1;
+        try discriminate.
+      destruct (Genv.find_def ge1 b1) as [gd1|] eqn:ge1_b1;
+        try discriminate.
+      injection Hcomp as <-.
+      destruct Hside as [Hside | [Hside | Hside]].
+      * rewrite Hside in ge1_id. simpl in ge1_id. discriminate.
+      * rewrite Hside in ge1_id. rewrite orb_true_r in ge1_id. discriminate.
+      * rewrite Hside in ge1_id. rewrite orb_true_r in ge1_id. discriminate.
+    + destruct (Genv.find_symbol ge2 id) as [b2|] eqn:ge2_id_b2;
+        try discriminate.
+      destruct (Genv.find_def ge2 b2) as [gd2|] eqn:ge2_b2;
+        try discriminate.
+      injection Hcomp as <-.
+      destruct Hside as [Hside | [Hside | Hside]].
+      * rewrite Hside in ge2_id. simpl in ge2_id. discriminate.
+      * rewrite Hside in ge2_id. rewrite orb_true_r in ge2_id. discriminate.
+      * rewrite Hside in ge2_id. rewrite orb_true_r in ge2_id. discriminate.
+Qed.
 
   Lemma allowed_addrof_translated:
     forall cp id,
@@ -1020,7 +1078,8 @@ Qed.
   Proof.
     unfold Genv.allowed_addrof.
     intros cp id RIGHT H.
-    exploit match_prog_globdefs; eauto. rewrite RIGHT. simpl.
+    exploit match_prog_globdefs'; eauto using match_prog_globdefs.
+    rewrite RIGHT. simpl.
     intros (b1 & b2 & ge1_id & ge2_id & MATCH).
     unfold Genv.find_comp_of_ident in *.
     simpl in H. rewrite ge1_id in H.
@@ -1416,7 +1475,7 @@ Admitted.
     assert (Genv.find_comp_of_ident ge1 id = Some (comp_of f)) as ge1_id_comp.
     { unfold Genv.find_comp_of_ident. rewrite ge1_id.
       unfold Genv.find_comp_of_block. now rewrite ge1_b. }
-    exploit match_prog_globdefs; eauto.
+    exploit match_prog_globdefs'; eauto.
     intros (b1 & b2 & ge1_id_alt & ge2_id_alt & MATCH).
     assert (b1 = b) by congruence. subst b1.
     assert (b2 = b') by congruence. subst b2.
@@ -2397,8 +2456,7 @@ Qed.
       unfold Genv.find_comp_of_ident. setoid_rewrite SYM1.
       eapply Genv.find_funct_ptr_find_comp_of_block in FUN1.
       exact FUN1. }
-    destruct (match_prog_globdefs _ _ _ match_W1_W2
-                                  _ _ (or_introl COMP1) (or_introl RIGHT))
+    destruct (@match_prog_globdefs' _ _ (or_introl COMP1) (or_introl RIGHT))
       as (b1' & b2' & SYM1' & SYM2' & MATCH).
     setoid_rewrite SYM1 in SYM1'. injection SYM1' as <-.
     setoid_rewrite SYM2 in SYM2'. injection SYM2' as <-.
@@ -2739,7 +2797,7 @@ Qed.
           destruct (Genv.find_def _ b1) as [def1|]; try easy.
           destruct def1 as [fd1'|?]; try easy.
           now injection find_vf1 as ->. }
-        exploit (@match_prog_globdefs _ _ _ match_W1_W2 id (comp_of fd1)); eauto.
+        exploit (match_prog_globdefs' id (comp_of fd1)); eauto.
         { left.
           unfold Genv.find_comp_of_ident.
           rewrite ge1_id.
@@ -3743,7 +3801,7 @@ Lemma find_symbol_right id cp
   (RIGHT: s cp = Right):
   Genv.find_symbol ge2 id <> None.
 Proof.
-  exploit match_prog_globdefs; eauto.
+  exploit match_prog_globdefs'; eauto.
   intros (? & ? & ? & ? & ?). congruence.
 Qed.
 
@@ -4041,8 +4099,7 @@ Lemma globdef_right id gd1 gd2 b1 b2 cp
       (DEF2 : Genv.find_def (Genv.globalenv W2) b2 = Some gd2):
   gd1 = gd2.
 Proof.
-  destruct (match_prog_globdefs _ _ _ match_W1_W2
-              _ _ (or_introl COMP) (or_introl SIDE))
+  destruct (match_prog_globdefs' _ _ (or_introl COMP) (or_introl SIDE))
     as (b1' & b2' & SYM1' & SYM2' & GLOBDEFS).
   (* unfold globalenv, Genv.globalenv in *. simpl in *. *)
   rewrite SYM1 in SYM1'. injection SYM1' as <-.
@@ -4527,7 +4584,7 @@ Proof.
   assert (COMP1': Genv.find_comp_of_ident ge1 (prog_main W1) =
                   Some (comp_of main1)). {
     unfold Genv.find_comp_of_ident. rewrite MAINSYM1. assumption. }
-  exploit (@match_prog_globdefs _ _ _ match_W1_W2 (prog_main W1) (comp_of main1)); eauto.
+  exploit (@match_prog_globdefs' (prog_main W1) (comp_of main1)); eauto.
   { right. left.
     unfold Genv.public_symbol. simpl.
     unfold ge1 in MAINSYM1. setoid_rewrite MAINSYM1.
