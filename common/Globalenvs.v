@@ -1555,6 +1555,9 @@ Qed.
    polluting the interface with those, direct manipulations or
    lemmas-as-asserts could be posed as part of this proof for the time
    being. *)
+
+(* Helpers for [alloc_global_initialized'] *)
+
 Local Lemma store_mem_access:
   forall chunk m b ofs v cp m' b' ofs' k,
     Mem.store chunk m b ofs v cp = Some m' ->
@@ -1650,6 +1653,512 @@ Local Lemma store_zeros_mem_compartments:
 Proof.
   clear.
 Admitted.
+
+(* Modified [unchanged_on] and helpers - these are all simple because
+   they talk about lower-level definitions, and in turn add some
+   repetitive unfolding to expose those definitions within memory
+   operations *)
+
+Lemma mem_access_valid_block:
+  forall m b ofs k p,
+    m.(Mem.mem_access) !! b ofs k = Some p -> Mem.valid_block m b.
+Proof.
+  intros. destruct m. simpl in H. unfold Mem.valid_block. simpl.
+  destruct (plt b nextblock); [assumption |].
+  erewrite (nextblock_noaccess _ _ _ n) in H. congruence.
+Qed.
+
+Section UNCHANGED_ON.
+
+Variable P: block -> Z -> Prop.
+
+Record unchanged_on (m_before m_after: mem) : Prop := mk_unchanged_on {
+  unchanged_on_nextblock:
+    Ple (Mem.nextblock m_before) (Mem.nextblock m_after);
+  unchanged_on_mem_access:
+    forall b ofs k,
+    P b ofs -> Mem.valid_block m_before b ->
+    m_before.(Mem.mem_access) !! b ofs k = m_after.(Mem.mem_access) !! b ofs k;
+  unchanged_on_contents:
+    forall b ofs,
+    P b ofs -> Mem.perm m_before b ofs Cur Readable ->
+    ZMap.get ofs (PMap.get b m_after.(Mem.mem_contents)) =
+    ZMap.get ofs (PMap.get b m_before.(Mem.mem_contents));
+  unchanged_on_own:
+    forall b,
+    (* P b ofs -> *)
+    Mem.valid_block m_before b -> (* Adjust preconditions as needed. *)
+    m_before.(Mem.mem_compartments) ! b = m_after.(Mem.mem_compartments) ! b
+}.
+
+Lemma unchanged_on_refl:
+  forall m, unchanged_on m m.
+Proof.
+  intros; constructor. apply Ple_refl. tauto. tauto. tauto.
+Qed.
+
+Lemma valid_block_unchanged_on:
+  forall m m' b,
+  unchanged_on m m' -> Mem.valid_block m b -> Mem.valid_block m' b.
+Proof.
+  unfold Mem.valid_block; intros. apply unchanged_on_nextblock in H. extlia.
+Qed.
+
+Lemma mem_access_unchanged_on:
+  forall m m' b ofs k p,
+  unchanged_on m m' -> P b ofs ->
+  m.(Mem.mem_access) !! b ofs k = Some p -> m'.(Mem.mem_access) !! b ofs k = Some p.
+Proof.
+  intros. destruct H. rewrite <- unchanged_on_mem_access0; auto. eapply mem_access_valid_block; eauto.
+Qed.
+
+Lemma mem_access_unchanged_on_2:
+  forall m m' b ofs k p,
+  unchanged_on m m' -> P b ofs -> Mem.valid_block m b ->
+  m'.(Mem.mem_access) !! b ofs k = Some p -> m.(Mem.mem_access) !! b ofs k = Some p.
+Proof.
+  intros. destruct H. rewrite unchanged_on_mem_access0; auto.
+Qed.
+
+Lemma unchanged_on_trans:
+  forall m1 m2 m3, unchanged_on m1 m2 -> unchanged_on m2 m3 -> unchanged_on m1 m3.
+Proof.
+  intros; constructor.
+- apply Ple_trans with (Mem.nextblock m2); apply unchanged_on_nextblock; auto.
+- intros. transitivity (m2.(Mem.mem_access) !! b ofs k); erewrite unchanged_on_mem_access; auto.
+  eapply valid_block_unchanged_on; eauto.
+- intros. transitivity (ZMap.get ofs (Mem.mem_contents m2) !! b); apply unchanged_on_contents; auto.
+  assert (exists p, (Mem.mem_access m1) !! b ofs Cur = Some p) as [p H3].
+  { unfold Mem.perm, Mem.perm_order' in H2.
+    destruct ((Mem.mem_access m1) !! b ofs Cur) eqn:H3. eauto. contradiction. }
+  unfold Mem.perm, Mem.perm_order'. unfold Mem.perm, Mem.perm_order' in H2.
+  rewrite H3 in H2. erewrite mem_access_unchanged_on; eauto.
+- intros. transitivity ((Mem.mem_compartments m2) ! b); apply unchanged_on_own; auto.
+  eapply valid_block_unchanged_on; eauto.
+Qed.
+
+Lemma loadbytes_unchanged_on_1:
+  forall m m' b ofs n cp,
+  unchanged_on m m' ->
+  Mem.valid_block m b ->
+  (forall i, ofs <= i < ofs + n -> P b i) ->
+  forall OWN : Mem.can_access_block m b cp,
+  Mem.loadbytes m' b ofs n cp = Mem.loadbytes m b ofs n cp.
+Proof.
+  intros.
+  destruct (zle n 0).
+- erewrite ! Mem.loadbytes_empty; try easy.
+  unfold Mem.can_access_block.
+  destruct cp; [| assumption]. unfold Mem.block_compartment.
+  inv H. rewrite <- unchanged_on_own0; auto.
+-
+Local Transparent Mem.loadbytes. unfold Mem.loadbytes. Local Opaque Mem.loadbytes.
+  destruct H.
+  destruct (Mem.range_perm_dec m b ofs (ofs + n) Cur Readable).
++ destruct (Mem.can_access_block_dec m b cp).
+* setoid_rewrite pred_dec_true. simpl. f_equal.
+  apply Mem.getN_exten. intros. rewrite Z2Nat.id in H by lia.
+  apply unchanged_on_contents0; auto.
+  red; intros.
+  specialize (r _ H). unfold Mem.perm, Mem.perm_order' in r.
+  destruct ((Mem.mem_access m) !! b ofs0 Cur) eqn:H2; [| contradiction].
+  unfold Mem.perm, Mem.perm_order'. rewrite <- unchanged_on_mem_access0; auto.
+  rewrite H2. assumption.
+  unfold Mem.can_access_block in c. unfold Mem.can_access_block.
+  destruct cp; [| reflexivity].
+  unfold Mem.block_compartment. rewrite <- unchanged_on_own0; auto.
+* setoid_rewrite pred_dec_false at 2.
+  rewrite andb_comm. reflexivity.
+  intro Hcontra. apply n0.
+  destruct cp; [| reflexivity].
+  unfold Mem.can_access_block, Mem.block_compartment.
+  erewrite unchanged_on_own0; auto.
++ setoid_rewrite pred_dec_false at 1. auto.
+  red; intros; elim n0; red; intros.
+  specialize (H _ H2). unfold Mem.perm, Mem.perm_order' in H.
+  destruct ((Mem.mem_access m') !! b ofs0 Cur) eqn:H3; [| contradiction].
+  unfold Mem.perm, Mem.perm_order'. rewrite unchanged_on_mem_access0; auto.
+  rewrite H3; auto.
+Qed.
+
+Lemma loadbytes_unchanged_on:
+  forall m m' b ofs n cp bytes,
+  unchanged_on m m' ->
+  (forall i, ofs <= i < ofs + n -> P b i) ->
+  Mem.loadbytes m b ofs n cp = Some bytes ->
+  Mem.loadbytes m' b ofs n cp = Some bytes.
+Proof.
+  intros.
+  pose proof Mem.loadbytes_can_access_block_inj _ _ _ _ _ _ H1 as Hown.
+  destruct (zle n 0).
++ erewrite Mem.loadbytes_empty in *; try assumption.
+  destruct cp as [cp |]; [| trivial].
+  inv H.
+  unfold Mem.can_access_block, Mem.block_compartment in *.
+  rewrite <- unchanged_on_own0; eauto.
+  eapply Mem.can_access_block_valid_block. eassumption.
++ rewrite <- H1. apply loadbytes_unchanged_on_1; auto.
+  exploit Mem.loadbytes_range_perm; eauto. instantiate (1 := ofs). lia.
+  intros. eauto with mem.
+Qed.
+
+Lemma load_unchanged_on_1:
+  forall m m' chunk b cp ofs,
+  unchanged_on m m' ->
+  Mem.valid_block m b ->
+  (forall i, ofs <= i < ofs + size_chunk chunk -> P b i) ->
+  Mem.load chunk m' b ofs cp = Mem.load chunk m b ofs cp.
+Proof.
+  intros.
+Local Transparent Mem.load. unfold Mem.load. Local Opaque Mem.load.
+  destruct (Mem.valid_access_dec m chunk b ofs Readable cp).
+- destruct v as [H2 [H' H3]]. rewrite pred_dec_true. f_equal. f_equal. apply Mem.getN_exten. intros.
+  rewrite <- size_chunk_conv in H4. eapply unchanged_on_contents; eauto.
+  split; auto. red; intros.
+  specialize (H2 _ H4). unfold Mem.perm, Mem.perm_order' in *.
+  destruct ((Mem.mem_access m) !! b ofs0 Cur) eqn:H5; [| contradiction].
+  erewrite mem_access_unchanged_on; eauto.
+  split; auto.
+  destruct cp; [| assumption].
+  unfold Mem.can_access_block, Mem.block_compartment in *.
+  destruct H. rewrite <- unchanged_on_own0; eauto.
+- rewrite pred_dec_false. auto.
+  red; intros [A [B C]]; elim n; split; auto.
+  red; intros. specialize (A _ H2). unfold Mem.perm, Mem.perm_order' in *.
+  destruct ((Mem.mem_access m') !! b ofs0 Cur) eqn:H3; [| contradiction].
+  erewrite mem_access_unchanged_on_2; eauto.
+  split; auto.
+  destruct H. destruct cp; [| assumption].
+  unfold Mem.can_access_block, Mem.block_compartment in *.
+  erewrite unchanged_on_own0; eauto.
+Qed.
+
+Lemma load_unchanged_on:
+  forall m m' chunk b ofs cp v,
+  unchanged_on m m' ->
+  (forall i, ofs <= i < ofs + size_chunk chunk -> P b i) ->
+  Mem.load chunk m b ofs cp = Some v ->
+  Mem.load chunk m' b ofs cp = Some v.
+Proof.
+  intros. rewrite <- H1. eapply load_unchanged_on_1; eauto with mem.
+Qed.
+
+Lemma store_unchanged_on:
+  forall chunk m b ofs v cp m',
+  Mem.store chunk m b ofs v cp = Some m' ->
+  (forall i, ofs <= i < ofs + size_chunk chunk -> ~ P b i) ->
+  unchanged_on m m'.
+Proof.
+  intros; constructor; intros.
+- rewrite (Mem.nextblock_store _ _ _ _ _ _ _ H). apply Ple_refl.
+- eapply store_mem_access; eauto.
+- erewrite Mem.store_mem_contents; eauto. rewrite PMap.gsspec.
+  destruct (peq b0 b); auto. subst b0. apply Mem.setN_outside.
+  rewrite encode_val_length. rewrite <- size_chunk_conv.
+  destruct (zlt ofs0 ofs); auto.
+  destruct (zlt ofs0 (ofs + size_chunk chunk)); auto.
+  elim (H0 ofs0). lia. auto.
+- apply Mem.valid_block_can_access_block in H1 as [cp0 H1].
+  assert (H2 := Mem.store_can_access_block_inj _ _ _ _ _ _ _ H b0 (Some cp0)).
+  unfold Mem.can_access_block, Mem.block_compartment in *.
+  destruct H2 as [H2 H3]. specialize (H2 H1). congruence.
+Qed.
+
+(* Lemma storebytes_unchanged_on: *)
+(*   forall m b ofs bytes cp m', *)
+(*   storebytes m b ofs bytes cp = Some m' -> *)
+(*   (forall i, ofs <= i < ofs + Z.of_nat (length bytes) -> ~ P b i) -> *)
+(*   unchanged_on m m'. *)
+(* Proof. *)
+(*   intros; constructor; intros. *)
+(* - rewrite (nextblock_storebytes _ _ _ _ _ _ H). apply Ple_refl. *)
+(* - split; intros. eapply perm_storebytes_1; eauto. eapply perm_storebytes_2; eauto. *)
+(* - erewrite storebytes_mem_contents; eauto. rewrite PMap.gsspec. *)
+(*   destruct (peq b0 b); auto. subst b0. apply setN_outside. *)
+(*   destruct (zlt ofs0 ofs); auto. *)
+(*   destruct (zlt ofs0 (ofs + Z.of_nat (length bytes))); auto. *)
+(*   elim (H0 ofs0). lia. auto. *)
+(* - split. *)
+(*   eapply storebytes_can_access_block_inj_1; eauto. *)
+(*   eapply storebytes_can_access_block_inj_2; eauto. *)
+(* Qed. *)
+
+Lemma alloc_unchanged_on:
+  forall m c lo hi m' b,
+  Mem.alloc m c lo hi = (m', b) ->
+  unchanged_on m m'.
+Proof.
+  intros; constructor; intros.
+- rewrite (Mem.nextblock_alloc _ _ _ _ _ _ H). apply Ple_succ.
+-
+Local Transparent Mem.alloc. unfold Mem.alloc in H. Local Opaque Mem.alloc.
+  destruct m'. injection H as ? ? ? ? ?; subst. simpl.
+  rewrite PMap.gso; auto.
+  intros ->. unfold Mem.valid_block in H1. extlia.
+-
+Local Transparent Mem.alloc. unfold Mem.alloc in H. Local Opaque Mem.alloc.
+  destruct m'. injection H as ? ? ? ? ?; subst. simpl.
+  rewrite PMap.gso; auto. intros ->.
+  unfold Mem.perm, Mem.perm_order' in H1.
+  destruct ((Mem.mem_access m) !! (Mem.nextblock m) ofs Cur) eqn:H2; [| contradiction].
+  rewrite (Mem.nextblock_noaccess _ (Mem.nextblock m)) in H2. discriminate. extlia.
+- destruct (peq b0 b).
++ subst b0. apply Mem.fresh_block_alloc in H. contradiction.
++
+Local Transparent Mem.alloc. unfold Mem.alloc in H. Local Opaque Mem.alloc.
+  destruct m'. injection H as ? ? ? ? ?; subst. simpl.
+  rewrite PTree.gso; auto.
+Qed.
+
+(* Lemma free_unchanged_on: *)
+(*   forall m b lo hi cp m', *)
+(*   free m b lo hi cp = Some m' -> *)
+(*   (forall i, lo <= i < hi -> ~ P b i) -> *)
+(*   unchanged_on m m'. *)
+(* Proof. *)
+(*   intros; constructor; intros. *)
+(* - rewrite (nextblock_free _ _ _ _ _ _ H). apply Ple_refl. *)
+(* - split; intros. *)
+(*   eapply perm_free_1; eauto. *)
+(*   destruct (eq_block b0 b); auto. destruct (zlt ofs lo); auto. destruct (zle hi ofs); auto. *)
+(*   subst b0. elim (H0 ofs). lia. auto. *)
+(*   eapply perm_free_3; eauto. *)
+(* - unfold free in H. *)
+(*   destruct (range_perm_dec m b lo hi Cur Freeable); *)
+(*   destruct (can_access_block_dec m b (Some cp)); *)
+(*   inv H. unfold unchecked_free; destruct (zle hi lo); simpl; auto. *)
+(* - split. *)
+(*   eapply free_can_access_block_inj_1; eauto. *)
+(*   eapply free_can_access_block_inj_2; eauto. *)
+(* Qed. *)
+
+(* Lemma free_list_unchanged_on m blks cp m' : *)
+(*   free_list m blks cp = Some m' -> *)
+(*   Forall (fun '(b, lo, hi) => *)
+(*             can_access_block m b (Some cp) -> *)
+(*             forall i, lo <= i < hi -> ~ P b i) blks -> *)
+(*   unchanged_on m m'. *)
+(* Proof. *)
+(*   revert m. *)
+(*   induction blks as [|[[b lo] hi] blks IH]; simpl. *)
+(*   { intros m E _. *)
+(*     pose proof (unchanged_on_refl m). congruence. } *)
+(*   rename m' into m''. intros m FREELIST WEAK. *)
+(*   destruct (Mem.free m b lo hi cp) as [m'|] eqn:FREE; try congruence. *)
+(*   rewrite List.Forall_cons_iff in WEAK. destruct WEAK as [WEAK1 WEAK2]. *)
+(*   assert (Mem.can_access_block m b (Some cp)) as ACCESS. *)
+(*   { eauto using free_can_access_block_1. } *)
+(*   specialize (WEAK1 ACCESS). *)
+(*   assert (unchanged_on m m') as m_m'. *)
+(*   { eauto using free_unchanged_on. } *)
+(*   enough (unchanged_on m' m'') by eauto using unchanged_on_trans. *)
+(*   exploit IH; eauto. clear ACCESS. *)
+(*   pose proof (free_can_access_block_inj_2 _ _ _ _ _ _ FREE) *)
+(*     as ACCESS. *)
+(*   eapply List.Forall_impl; try eassumption. clear - m_m' ACCESS. *)
+(*   intros [[b lo] hi] WEAK H%ACCESS; eauto. *)
+(* Qed. *)
+
+Lemma drop_perm_unchanged_on:
+  forall m b lo hi p cp m',
+  Mem.drop_perm m b lo hi p cp = Some m' ->
+  (forall i, lo <= i < hi -> ~ P b i) ->
+  unchanged_on m m'.
+Proof.
+  intros; constructor; intros.
+- rewrite (Mem.nextblock_drop _ _ _ _ _ _ _ H). apply Ple_refl.
+- unfold Mem.drop_perm in H.
+  destruct Mem.range_perm_dec; [| discriminate].
+  destruct Mem.can_access_block_dec; [| discriminate].
+  destruct m'. injection H as ? ? ? ?; subst. simpl.
+  destruct (eq_block b0 b).
+  + subst b0.
+    rewrite PMap.gss.
+    assert (~ (lo <= ofs < hi)). { red; intros; eelim H0; eauto. }
+    destruct (zle lo ofs); destruct (zlt ofs hi); try reflexivity.
+    exfalso. apply H. lia.
+  + rewrite PMap.gso; auto.
+- unfold Mem.drop_perm in H.
+  destruct (Mem.range_perm_dec m b lo hi Cur Freeable);
+  destruct (Mem.can_access_block_dec m b (Some cp));
+  inv H; simpl. auto.
+- unfold Mem.drop_perm in H.
+  destruct (Mem.range_perm_dec m b lo hi Cur Freeable);
+  destruct (Mem.can_access_block_dec m b (Some cp));
+  inv H; simpl. auto.
+Qed.
+
+(* Lemma unchanged_on_inject f m1 m1' m2 : *)
+(*   inject f m1 m2 -> *)
+(*   unchanged_on m1 m1' -> *)
+(*   (forall b off, f b <> None -> P b off) -> *)
+(*   inject f m1' m2. *)
+(* Proof. *)
+(*   intros [inj_m1 freeblocks_m1 mappedblocks_m1 no_overlap_m1 *)
+(*             representable_m1 perm_inv_m1] unchanged_m1 weak. *)
+(*   destruct inj_m1 as [perm_m1 own_m1 align_m1 memval_m1]. *)
+(*   assert (forall b b' ofs, f b = Some (b', ofs) -> valid_block m1 b) *)
+(*     as freeblocks_m1_alt. *)
+(*   { intros ????. *)
+(*     apply Classical_Prop.NNPP. (* FIXME *) *)
+(*     intros ?%freeblocks_m1. congruence. } *)
+(*   assert (forall b b' ofs ofs', f b = Some (b', ofs') -> P b ofs) as weak'. *)
+(*   { intros ?????; apply weak; congruence. } *)
+(*   split; [split|..]; eauto. *)
+(*   - intros b1 b2 delta ofs k p j_b1 m1'_b1. *)
+(*     apply (perm_m1 _ _ _ _ _ _ j_b1). *)
+(*     rewrite (unchanged_on_perm _ _ unchanged_m1); eauto. *)
+(*   - intros b1 b2 delta [cp|] j_b1 m1'_b1; simpl in *; trivial. *)
+(*     apply (own_m1 _ _ _ (Some cp) j_b1). simpl. *)
+(*     apply (unchanged_on_own _ _ unchanged_m1 b1 (Some cp)); trivial. *)
+(*     eauto. *)
+(*   - intros b1 b2 delta chunk ofs p j_b1 range. *)
+(*     eapply align_m1; eauto. *)
+(*     intros ofs' ?%range. *)
+(*     apply (unchanged_on_perm _ _ unchanged_m1); eauto. *)
+(*   - intros b1 ofs b2 delta j_b1 perm_m1'. *)
+(*     apply (unchanged_on_perm _ _ unchanged_m1) in perm_m1'; *)
+(*       eauto. *)
+(*     rewrite (unchanged_on_contents _ _ unchanged_m1); eauto. *)
+(*   - intros b invalid_m1'. apply freeblocks_m1. *)
+(*     intros valid_b. apply invalid_m1'. *)
+(*     eauto using valid_block_unchanged_on. *)
+(*   - intros b1 b1' delta1 b2 b2' delta2 orfs1 ofs2 *)
+(*       b1_b2 j_b1 j_b2 perm_b1 perm_b2. *)
+(*     apply (unchanged_on_perm _ _ unchanged_m1) in perm_b1; eauto. *)
+(*     apply (unchanged_on_perm _ _ unchanged_m1) in perm_b2; eauto. *)
+(*   - intros b1 b2 delta ofs j_b1 perm_b1. *)
+(*     eapply representable_m1; eauto. *)
+(*     destruct perm_b1 as [perm_b1|perm_b1]; [left|right]; *)
+(*       apply (unchanged_on_perm _ _ unchanged_m1) in perm_b1; eauto; *)
+(*       apply (unchanged_on_perm _ _ unchanged_m1). *)
+(*   - intros b1 ofs b2 delta k p j_b1 perm_b2. *)
+(*     exploit perm_inv_m1; eauto. *)
+(*     intros [perm_b1|perm_b1]. *)
+(*     + left. *)
+(*       apply (unchanged_on_perm _ _ unchanged_m1) in perm_b1; eauto; *)
+(*         apply (unchanged_on_perm _ _ unchanged_m1). *)
+(*     + right. intros contra. apply perm_b1. *)
+(*       apply (unchanged_on_perm _ _ unchanged_m1) in contra; eauto; *)
+(*         apply (unchanged_on_perm _ _ unchanged_m1). *)
+(* Qed. *)
+
+(* Lemma unchanged_on_inject' f m1 m2 m2' : *)
+(*   inject f m1 m2 -> *)
+(*   unchanged_on m2 m2' -> *)
+(*   (forall b1 b2 delta ofs, f b1 = Some (b2, delta) -> P b2 ofs) -> *)
+(*   inject f m1 m2'. *)
+(* Proof. *)
+(*   intros [inj_m1 freeblocks_m1 mappedblocks_m1 no_overlap_m1 *)
+(*             representable_m1 perm_inv_m1] unchanged_m2 weak. *)
+(*   destruct inj_m1 as [perm_m1 own_m1 align_m1 memval_m1]. *)
+(*   split; [split|..]; eauto. *)
+(*   - intros b1 b2 delta ofs k p j_b1 m1'_b1. *)
+(*     rewrite <- (unchanged_on_perm _ _ unchanged_m2); eauto. *)
+(*   - intros b1 b2 delta cp j_b1 m1'_b1; simpl in *; trivial. *)
+(*     apply (unchanged_on_own _ _ unchanged_m2 b2 cp); eauto. *)
+(*   - intros b1 ofs b2 delta j_b1 perm_m1'. *)
+(*     rewrite (unchanged_on_contents _ _ unchanged_m2); eauto. *)
+(*   - intros b1 b2' delta f_b1. *)
+(*     eapply valid_block_unchanged_on; eauto. *)
+(*   - intros b1 ofs b2 delta k p j_b1 perm_b2. *)
+(*     rewrite <- (unchanged_on_perm _ _ unchanged_m2) in perm_b2; eauto. *)
+(* Qed. *)
+
+End UNCHANGED_ON.
+
+Lemma unchanged_on_implies:
+  forall (P Q: block -> Z -> Prop) m m',
+  unchanged_on P m m' ->
+  (forall b ofs, Q b ofs -> Mem.valid_block m b -> P b ofs) ->
+  unchanged_on Q m m'.
+Proof.
+  intros. destruct H. constructor; intros.
+- auto.
+- apply unchanged_on_mem_access0; auto.
+- apply unchanged_on_contents0; auto.
+  apply H0; auto. eapply Mem.perm_valid_block; eauto.
+- apply unchanged_on_own0; auto.
+Qed.
+
+(* Some of the helpers proper to Globalenvs need to be proved for both
+   versions of [unchanged_on], ideally these will be unified. *)
+
+Remark store_zeros_unchanged':
+  forall (P: block -> Z -> Prop) m b p n cp m',
+  store_zeros m b p n cp = Some m' ->
+  (forall i, p <= i < p + n -> ~ P b i) ->
+  unchanged_on P m m'.
+Proof.
+  intros until cp. functional induction (store_zeros m b p n cp); intros.
+- inv H; apply unchanged_on_refl.
+- apply unchanged_on_trans with m'.
++ eapply store_unchanged_on; eauto. simpl. intros. apply H0. lia.
++ apply IHo; auto. intros; apply H0; lia.
+- discriminate.
+Qed.
+
+Remark store_init_data_unchanged':
+  forall (P: block -> Z -> Prop) b i cp m p m',
+  store_init_data m b p i cp = Some m' ->
+  (forall ofs, p <= ofs < p + init_data_size i -> ~ P b ofs) ->
+  unchanged_on P m m'.
+Proof.
+  intros. destruct i; simpl in *;
+  try (eapply store_unchanged_on; eauto; fail).
+  inv H; apply unchanged_on_refl.
+  destruct (find_symbol ge i); try congruence.
+  eapply store_unchanged_on; eauto;
+  unfold Mptr; destruct Archi.ptr64; eauto.
+Qed.
+
+Remark store_init_data_list_unchanged':
+  forall (P: block -> Z -> Prop) b il cp m p m',
+  store_init_data_list m b p il cp = Some m' ->
+  (forall ofs, p <= ofs -> ~ P b ofs) ->
+  unchanged_on P m m'.
+Proof.
+  induction il; simpl; intros.
+- inv H. apply unchanged_on_refl.
+- destruct (store_init_data m b p a) as [m1|] eqn:?; try congruence.
+  apply unchanged_on_trans with m1.
+  eapply store_init_data_unchanged'; eauto. intros; apply H0; tauto.
+  eapply IHil; eauto. intros; apply H0. generalize (init_data_size_pos a); lia.
+Qed.
+
+Remark alloc_global_unchanged':
+  forall (P: block -> Z -> Prop) m id g m',
+  alloc_global m (id, g) = Some m' ->
+  unchanged_on P m m'.
+Proof.
+  intros. destruct g as [f|v]; simpl in H.
+- (* function *)
+  destruct (Mem.alloc m _ 0 1) as [m1 b] eqn:?.
+  set (Q := fun b' (ofs: Z) => b' <> b).
+  apply unchanged_on_implies with Q.
+  apply unchanged_on_trans with m1.
+  eapply alloc_unchanged_on; eauto.
+  eapply drop_perm_unchanged_on; eauto.
+  intros; red. apply Mem.valid_not_valid_diff with m; eauto with mem.
+- (* variable *)
+  set (init := gvar_init v) in *.
+  set (sz := init_data_list_size init) in *.
+  destruct (Mem.alloc m _ 0 sz) as [m1 b] eqn:?.
+  destruct (store_zeros m1 b 0 sz) as [m2|] eqn:?; try discriminate.
+  destruct (store_init_data_list m2 b 0 init) as [m3|] eqn:?; try discriminate.
+  set (Q := fun b' (ofs: Z) => b' <> b).
+  apply unchanged_on_implies with Q.
+  apply unchanged_on_trans with m1.
+  eapply alloc_unchanged_on; eauto.
+  apply unchanged_on_trans with m2.
+  eapply store_zeros_unchanged'; eauto.
+  apply unchanged_on_trans with m3.
+  eapply store_init_data_list_unchanged'; eauto.
+  eapply drop_perm_unchanged_on; eauto.
+  intros; red. apply Mem.valid_not_valid_diff with m; eauto with mem.
+Qed.
+
+(* Main helper *)
 
 Lemma alloc_global_initialized':
   forall g m id gd m',
