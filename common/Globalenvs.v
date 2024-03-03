@@ -1604,7 +1604,11 @@ Local Lemma store_zeros_mem_access:
     (Mem.mem_access m) !! b' ofs k = (Mem.mem_access m') !! b' ofs k.
 Proof.
   clear.
-Admitted.
+  intros until cp. functional induction (store_zeros m b p n cp); intros.
+  inv H; auto.
+  rewrite <- (IHo _ _ _ _ H). eapply store_mem_access; eauto.
+  congruence.
+Qed.
 
 Local Lemma store_mem_compartments:
   forall chunk m b ofs v cp m' b',
@@ -1652,7 +1656,11 @@ Local Lemma store_zeros_mem_compartments:
     (Mem.mem_compartments m) ! b' = (Mem.mem_compartments m') ! b'.
 Proof.
   clear.
-Admitted.
+  intros until cp. functional induction (store_zeros m b p n cp); intros.
+  inv H; auto.
+  rewrite <- (IHo _ _ H). eapply store_mem_compartments; eauto.
+  congruence.
+Qed.
 
 (* Modified [unchanged_on] and helpers - these are all simple because
    they talk about lower-level definitions, and in turn add some
@@ -1681,7 +1689,7 @@ Record unchanged_on (m_before m_after: mem) : Prop := mk_unchanged_on {
     m_before.(Mem.mem_access) !! b ofs k = m_after.(Mem.mem_access) !! b ofs k;
   unchanged_on_contents:
     forall b ofs,
-    P b ofs -> Mem.perm m_before b ofs Cur Readable ->
+    P b ofs -> Mem.valid_block m_before b ->
     ZMap.get ofs (PMap.get b m_after.(Mem.mem_contents)) =
     ZMap.get ofs (PMap.get b m_before.(Mem.mem_contents));
   unchanged_on_own:
@@ -1712,6 +1720,14 @@ Proof.
   intros. destruct H. rewrite <- unchanged_on_mem_access0; auto. eapply mem_access_valid_block; eauto.
 Qed.
 
+Lemma mem_access_unchanged_on':
+  forall m m' b ofs k p,
+  unchanged_on m m' -> P b ofs -> Mem.valid_block m b ->
+  m.(Mem.mem_access) !! b ofs k = p -> m'.(Mem.mem_access) !! b ofs k = p.
+Proof.
+  intros. destruct H. rewrite <- unchanged_on_mem_access0; auto.
+Qed.
+
 Lemma mem_access_unchanged_on_2:
   forall m m' b ofs k p,
   unchanged_on m m' -> P b ofs -> Mem.valid_block m b ->
@@ -1728,11 +1744,7 @@ Proof.
 - intros. transitivity (m2.(Mem.mem_access) !! b ofs k); erewrite unchanged_on_mem_access; auto.
   eapply valid_block_unchanged_on; eauto.
 - intros. transitivity (ZMap.get ofs (Mem.mem_contents m2) !! b); apply unchanged_on_contents; auto.
-  assert (exists p, (Mem.mem_access m1) !! b ofs Cur = Some p) as [p H3].
-  { unfold Mem.perm, Mem.perm_order' in H2.
-    destruct ((Mem.mem_access m1) !! b ofs Cur) eqn:H3. eauto. contradiction. }
-  unfold Mem.perm, Mem.perm_order'. unfold Mem.perm, Mem.perm_order' in H2.
-  rewrite H3 in H2. erewrite mem_access_unchanged_on; eauto.
+  unfold Mem.valid_block in *. destruct H. extlia.
 - intros. transitivity ((Mem.mem_compartments m2) ! b); apply unchanged_on_own; auto.
   eapply valid_block_unchanged_on; eauto.
 Qed.
@@ -1899,9 +1911,7 @@ Local Transparent Mem.alloc. unfold Mem.alloc in H. Local Opaque Mem.alloc.
 Local Transparent Mem.alloc. unfold Mem.alloc in H. Local Opaque Mem.alloc.
   destruct m'. injection H as ? ? ? ? ?; subst. simpl.
   rewrite PMap.gso; auto. intros ->.
-  unfold Mem.perm, Mem.perm_order' in H1.
-  destruct ((Mem.mem_access m) !! (Mem.nextblock m) ofs Cur) eqn:H2; [| contradiction].
-  rewrite (Mem.nextblock_noaccess _ (Mem.nextblock m)) in H2. discriminate. extlia.
+  unfold Mem.valid_block in H1. extlia.
 - destruct (peq b0 b).
 + subst b0. apply Mem.fresh_block_alloc in H. contradiction.
 +
@@ -2077,7 +2087,6 @@ Proof.
 - auto.
 - apply unchanged_on_mem_access0; auto.
 - apply unchanged_on_contents0; auto.
-  apply H0; auto. eapply Mem.perm_valid_block; eauto.
 - apply unchanged_on_own0; auto.
 Qed.
 
@@ -2248,23 +2257,28 @@ Local Opaque Mem.alloc Mem.drop_perm.
 (*   eapply store_zeros_loadbytes; eauto. eapply Mem.owned_new_block; eauto. *)
 (*   eapply store_zeros_loadbytes; eauto. eapply Mem.owned_new_block; eauto. *)
   admit.
-+ assert (U: Mem.unchanged_on (fun _ _ => True) m m') by (eapply alloc_global_unchanged; eauto).
++ (* [Mem.unchanged_on] is phrased in a way that would be useful for
+     top-level memory characterizations, but not for the current,
+     lower-level intermediates we are using. Ideally this use can be
+     restored later, or a separate [unchanged_on] invariant and
+     related helper lemmas can be proved separately. (These involve a
+     large amount of repetition and are not very interesting.) *)
+  assert (U: unchanged_on (fun _ _ => True) m m') by (eapply alloc_global_unchanged'; eauto).
   assert (VALID: Mem.valid_block m b).
   { red. rewrite <- H. eapply genv_defs_range; eauto. }
   exploit H1; eauto.
   destruct gd0 as [f|v].
-  * intros [A B]; split; intros.
-  (* eapply Mem.perm_unchanged_on; eauto. exact I. *)
-  admit.
-  (* eapply B. eapply Mem.perm_unchanged_on_2; eauto. exact I. *)
-  admit.
-* admit.
-  (* intros (A & B & C & D). split; [| split; [| split]]. *)
-  (* red; intros. eapply Mem.perm_unchanged_on; eauto. exact I. *)
-  (* intros. eapply B. eapply Mem.perm_unchanged_on_2; eauto. exact I. *)
-  (* intros. apply load_store_init_data_invariant with m; auto. *)
-  (* intros. eapply Mem.load_unchanged_on_1; eauto. intros; exact I. *)
-  (* intros. eapply Mem.loadbytes_unchanged_on; eauto. intros; exact I. *)
+* intros (A & B & C). split; [| split]; intros.
+  { specialize (A ofs k). rewrite <- A.
+    erewrite mem_access_unchanged_on'; eauto. exact I. }
+  { rewrite <- B. erewrite <- unchanged_on_own; eauto. }
+  { specialize (C ofs). rewrite <- C.
+    erewrite unchanged_on_contents; eauto. exact I. }
+* intros (A & B & C). split; [| split].
+  { intros ofs k. specialize (A ofs k). rewrite <- A.
+    erewrite mem_access_unchanged_on'; eauto. exact I. }
+  { rewrite <- B. erewrite <- unchanged_on_own; eauto. }
+  { eapply loadbytes_unchanged_on; eauto. intros; exact I. }
 - simpl. congruence.
 (* Qed. *)
 Admitted.
