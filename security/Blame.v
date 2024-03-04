@@ -3929,6 +3929,7 @@ Proof.
       injection PERMEQ as <-.
       unfold Genv.perm_globvar in PERM.
       destruct (gvar_volatile gv) eqn:VOL; [now inversion PERM |].
+      specialize (INJ1 eq_refl). specialize (INJ2 eq_refl).
       (* in the process of proving this, we can replicate the use of
          [Mem.loadbytes_inj] with a modified proof that exploits facts
          we know from our specific context *)

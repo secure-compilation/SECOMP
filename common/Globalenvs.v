@@ -1474,7 +1474,7 @@ Definition globals_initialized' (g: t) (m: mem) :=
       /\ (Mem.mem_compartments m) ! b = Some (gvar_comp v)
       (* avoid low-level operations on memory contents, but extend to
          all variables, not just non-volatiles *)
-      /\ (Mem.loadbytes m b 0 (init_data_list_size v.(gvar_init)) (Some v.(gvar_comp)) = Some (bytes_of_init_data_list v.(gvar_init)))
+      /\ (v.(gvar_volatile) = false -> Mem.loadbytes m b 0 (init_data_list_size v.(gvar_init)) (Some v.(gvar_comp)) = Some (bytes_of_init_data_list v.(gvar_init)))
   end.
 
 Lemma alloc_global_initialized:
@@ -2187,6 +2187,7 @@ Proof.
   exploit Mem.alloc_result; eauto. intros RES.
   rewrite H, <- RES.
   (* any simplifications above? *)
+  (* TODO local lemmas *)
 Local Transparent Mem.alloc Mem.drop_perm.
   unfold Mem.alloc in ALLOC. unfold Mem.drop_perm in H0.
 Local Opaque Mem.alloc Mem.drop_perm.
@@ -2236,27 +2237,13 @@ Local Opaque Mem.alloc Mem.drop_perm.
      destruct m1; injection Heqp as ? ? ? ? ?; subst.
      simpl. rewrite PTree.gss.
      reflexivity.
-  -- admit.
-(*   assert (0 <= ofs < sz). *)
-(*   { eapply Mem.perm_alloc_3; eauto. *)
-(*     erewrite store_zeros_perm by eauto. *)
-(*     erewrite store_init_data_list_perm by eauto. *)
-(*     eapply Mem.perm_drop_4; eauto. } *)
-(*   split; auto. *)
-(*   eapply Mem.perm_drop_2; eauto. *)
-(*   split. intros NOTVOL. apply load_store_init_data_invariant with m3. *)
-(*   intros. eapply Mem.load_drop; eauto. right; right; right. *)
-(*   unfold perm_globvar. rewrite NOTVOL. destruct (gvar_readonly v); auto with mem. *)
-(*   eapply store_init_data_list_charact; eauto. *)
-(*   eapply store_zeros_read_as_zero; eauto. eapply Mem.owned_new_block; eauto. *)
-(*   intros NOTVOL. *)
-(*   transitivity (Mem.loadbytes m3 b 0 sz (Some v.(gvar_comp))). *)
-(*   eapply Mem.loadbytes_drop; eauto. right; right; right. *)
-(*   unfold perm_globvar. rewrite NOTVOL. destruct (gvar_readonly v); auto with mem. *)
-(*   eapply store_init_data_list_loadbytes; eauto. *)
-(*   eapply store_zeros_loadbytes; eauto. eapply Mem.owned_new_block; eauto. *)
-(*   eapply store_zeros_loadbytes; eauto. eapply Mem.owned_new_block; eauto. *)
-  admit.
+  -- intros NOTVOL.
+     transitivity (Mem.loadbytes m3 b 0 sz (Some v.(gvar_comp))).
+     eapply Mem.loadbytes_drop; eauto. right; right; right.
+     unfold perm_globvar. rewrite NOTVOL. destruct (gvar_readonly v); auto with mem.
+     eapply store_init_data_list_loadbytes; eauto.
+     eapply store_zeros_loadbytes; eauto. eapply Mem.owned_new_block; eauto.
+     eapply store_zeros_loadbytes; eauto. eapply Mem.owned_new_block; eauto.
 + (* [Mem.unchanged_on] is phrased in a way that would be useful for
      top-level memory characterizations, but not for the current,
      lower-level intermediates we are using. Ideally this use can be
@@ -2278,10 +2265,9 @@ Local Opaque Mem.alloc Mem.drop_perm.
   { intros ofs k. specialize (A ofs k). rewrite <- A.
     erewrite mem_access_unchanged_on'; eauto. exact I. }
   { rewrite <- B. erewrite <- unchanged_on_own; eauto. }
-  { eapply loadbytes_unchanged_on; eauto. intros; exact I. }
+  { intros VOL. eapply loadbytes_unchanged_on; eauto. intros; exact I. }
 - simpl. congruence.
-(* Qed. *)
-Admitted.
+Qed.
 
 Lemma alloc_globals_initialized:
   forall gl ge m m',
@@ -2503,7 +2489,7 @@ Theorem init_mem_characterization':
   (forall ofs k, ((Mem.mem_access m) !! b) ofs k =
                    if zle 0 ofs && zlt ofs (init_data_list_size gv.(gvar_init)) then Some (perm_globvar gv) else None)
   /\ (Mem.mem_compartments m) ! b = Some (gvar_comp gv)
-  /\ (Mem.loadbytes m b 0 (init_data_list_size gv.(gvar_init)) (Some gv.(gvar_comp)) = Some (bytes_of_init_data_list (globalenv p) gv.(gvar_init)))
+  /\ (gv.(gvar_volatile) = false -> Mem.loadbytes m b 0 (init_data_list_size gv.(gvar_init)) (Some gv.(gvar_comp)) = Some (bytes_of_init_data_list (globalenv p) gv.(gvar_init)))
 .
 Proof.
   intros. rewrite find_var_info_iff in H.
