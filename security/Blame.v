@@ -1260,12 +1260,12 @@ Proof.
       as UNCHANGED.
     { exploit Mem.free_list_unchanged_on; eauto.
       apply Forall_forall. simpl. unfold loc_not_in_compartment.
-      intros [[b lo] hi] _ m2_b _ _ ?. congruence. }
+      intros [[b lo] hi] _ _ m2_b _ _ ?. congruence. }
     exploit Mem.unchanged_on_inject'; eauto using partial_mem_inject.
     intros b1 b2 delta ofs j_b1 m2_b2.
     exploit right_mem_injection_right; eauto.
     intros (? & m2_b2' & DEF). rewrite m2_b2 in m2_b2'. injection m2_b2' as <-.
-    specialize (DEF LEFT) as [fd DEF].
+    specialize (DEF LEFT) as [fd1 DEF].
     admit.
   - destruct RMEMINJ; eauto using same_blocks_free_list.
 (* Qed. *)

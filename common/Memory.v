@@ -5398,6 +5398,7 @@ Qed.
 Lemma free_list_unchanged_on m blks cp m' :
   free_list m blks cp = Some m' ->
   Forall (fun '(b, lo, hi) =>
+            range_perm m b lo hi Cur Freeable ->
             can_access_block m b (Some cp) ->
             forall i, lo <= i < hi -> ~ P b i) blks ->
   unchanged_on m m'.
@@ -5409,17 +5410,24 @@ Proof.
   rename m' into m''. intros m FREELIST WEAK.
   destruct (Mem.free m b lo hi cp) as [m'|] eqn:FREE; try congruence.
   rewrite List.Forall_cons_iff in WEAK. destruct WEAK as [WEAK1 WEAK2].
+  assert (range_perm m b lo hi Cur Freeable) as PERM.
+  { eauto using free_range_perm. }
   assert (Mem.can_access_block m b (Some cp)) as ACCESS.
   { eauto using free_can_access_block_1. }
-  specialize (WEAK1 ACCESS).
+  specialize (WEAK1 PERM ACCESS).
   assert (unchanged_on m m') as m_m'.
   { eauto using free_unchanged_on. }
   enough (unchanged_on m' m'') by eauto using unchanged_on_trans.
-  exploit IH; eauto. clear ACCESS.
+  exploit IH; eauto. clear PERM ACCESS.
+  assert (forall b' lo' hi',
+             range_perm m' b' lo' hi' Cur Freeable ->
+             range_perm m b' lo' hi' Cur Freeable) as PERM.
+  { intros b' lo' hi' PERM ofs range.
+    eapply perm_free_3; eauto. }
   pose proof (free_can_access_block_inj_2 _ _ _ _ _ _ FREE)
     as ACCESS.
-  eapply List.Forall_impl; try eassumption. clear - m_m' ACCESS.
-  intros [[b lo] hi] WEAK H%ACCESS; eauto.
+  eapply List.Forall_impl; try eassumption. clear - m_m' PERM ACCESS.
+  intros [[b lo] hi] WEAK ?%PERM H%ACCESS; eauto.
 Qed.
 
 Lemma drop_perm_unchanged_on:
