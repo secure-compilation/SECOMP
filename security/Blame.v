@@ -42,6 +42,15 @@ Variant match_globdef : gdef -> gdef -> Prop :=
   match_globvar match_varinfo v1 v2 ->
   match_globdef (Gvar v1) (Gvar v2).
 
+Lemma match_globdef_comp_of gd1 gd2 :
+  match_globdef gd1 gd2 -> comp_of gd1 = comp_of gd2.
+Proof.
+  intros match_gd.
+  destruct match_gd as [f1 f2 match_f|v1 v2 match_v].
+  + now inv match_f.
+  + now inv match_v.
+Qed.
+
 Definition def_of_ident (ge: genv) id :=
   match Genv.find_symbol ge id with
   | Some b => Genv.find_def ge b
@@ -1070,21 +1079,77 @@ Proof.
       * rewrite Hside in ge2_id. rewrite orb_true_r in ge2_id. discriminate.
 Qed.
 
+  Lemma allowed_addrof_b_translated:
+    forall cp id,
+      s cp = Right ->
+      Genv.allowed_addrof_b ge1 cp id =
+      Genv.allowed_addrof_b ge2 cp id.
+  Proof.
+    unfold Genv.allowed_addrof_b.
+    intros cp id RIGHT.
+    pose proof (match_prog_globdefs _ _ _ match_W1_W2 id) as match_id.
+    destruct match_id as [δ ge1_id ge2_id match_id|ge1_id ge2_id].
+    - unfold match_type_of_ident, def_of_ident in *.
+      destruct (Genv.find_symbol ge1 id) as [b1|] eqn:ge1_id_b1;
+        try discriminate.
+      destruct (Genv.find_symbol ge2 id) as [b2|] eqn:ge2_id_b2;
+        try discriminate.
+      destruct (Genv.find_def ge1 b1) as [gd1|] eqn:ge1_b1;
+        try discriminate.
+      destruct (Genv.find_def ge2 b2) as [gd2|] eqn:ge2_b2;
+        try discriminate.
+      destruct orb eqn:guard1 in ge1_id; try discriminate.
+      destruct orb eqn:guard2 in ge2_id; try discriminate.
+      injection ge1_id as <-.
+      injection ge2_id as E.
+      rewrite E in guard2.
+      rewrite public_symbol_preserved in *.
+      destruct (s (comp_of gd1)); simpl in *.
+      + assert (match_globdef gd1 gd2) as match_id'.
+        { now inv match_id. }
+        erewrite match_globdef_comp_of; eauto.
+        now inv match_id'.
+      + now injection match_id as <-.
+    - unfold match_type_of_ident, def_of_ident in *.
+      rewrite public_symbol_preserved in *.
+      destruct (Genv.find_symbol ge1 id) as [b1|] eqn:ge1_id_b1;
+      destruct (Genv.find_symbol ge2 id) as [b2|] eqn:ge2_id_b2;
+      try destruct (Genv.find_def ge1 b1) as [gd1|] eqn:ge1_b1;
+      try destruct (Genv.find_def ge2 b2) as [gd2|] eqn:ge2_b2;
+      try congruence.
+      * destruct (s (comp_of gd1)) eqn:E1; try solve [simpl in *; congruence].
+        destruct (s (comp_of gd2)) eqn:E2; try solve [simpl in *; congruence].
+        destruct (Genv.public_symbol ge1 id); try solve [simpl in *; congruence].
+        destruct eq_compartment; simpl; try congruence.
+        destruct eq_compartment; simpl; try congruence.
+        now destruct gd1; destruct gd2.
+      * destruct (s (comp_of gd1)) eqn:E1; try solve [simpl in *; congruence].
+        destruct (Genv.public_symbol ge1 id); try solve [simpl in *; congruence].
+        destruct eq_compartment; simpl; try congruence.
+        now destruct gd1.
+      * destruct (s (comp_of gd2)) eqn:E2; try solve [simpl in *; congruence].
+        destruct (Genv.public_symbol ge1 id); try solve [simpl in *; congruence].
+        destruct eq_compartment; simpl; try congruence.
+        now destruct gd2.
+      * destruct (s (comp_of gd1)) eqn:E1; try solve [simpl in *; congruence].
+        destruct (Genv.public_symbol ge1 id); try solve [simpl in *; congruence].
+        destruct eq_compartment; simpl; try congruence.
+        now destruct gd1.
+      * destruct (s (comp_of gd2)) eqn:E2; try solve [simpl in *; congruence].
+        destruct (Genv.public_symbol ge1 id); try solve [simpl in *; congruence].
+        destruct eq_compartment; simpl; try congruence.
+        now destruct gd2.
+  Qed.
+
   Lemma allowed_addrof_translated:
     forall cp id,
       s cp = Right ->
-      Genv.allowed_addrof ge1 cp id ->
+      Genv.allowed_addrof ge1 cp id <->
       Genv.allowed_addrof ge2 cp id.
   Proof.
     unfold Genv.allowed_addrof.
-    intros cp id RIGHT H.
-    exploit match_prog_globdefs'; eauto using match_prog_globdefs.
-    rewrite RIGHT. simpl.
-    intros (b1 & b2 & ge1_id & ge2_id & MATCH).
-    unfold Genv.find_comp_of_ident in *.
-    simpl in H. rewrite ge1_id in H.
-    rewrite ge2_id.
-    unfold Genv.find_comp_of_block in *. now rewrite <- MATCH.
+    intros cp id RIGHT. rewrite !allowed_addrof_b_translated; trivial.
+    reflexivity.
   Qed.
 
   Lemma genv_cenv_preserved : ge2 = ge1 :> composite_env.
@@ -1341,35 +1406,40 @@ Admitted.
       econstructor; eauto.
     - (* eval_Evar_global *)
       destruct env_inj as [_ env_inj].
-      rename l into b.
+      rename l into b1.
       rename H into e1_id.
       rename H0 into W1_id.
-      rename H1 into ALLOWED.
-      exploit env_inj; eauto.
-      intros e2_id.
-      exploit Genv.find_invert_symbol; eauto.
-      intros W1_b.
-      pose proof (idP := inj_dom b).
-      assert (id_cp : Genv.find_comp_of_ident ge1 id = Some cp).
-      { trivial. }
-      assert (b_right : (s, m1) |= b ∈ Right).
-      { unfold Mem.has_side_block. simpl.
+      rename H1 into ALLOWED1.
+      assert (Genv.allowed_addrof ge2 cp id) as ALLOWED2.
+      { now apply allowed_addrof_translated. }
+      exploit env_inj; eauto. intros e2_id.
+      exploit Genv.find_invert_symbol; eauto. intros W1_b1.
+      assert (exists gd1, Genv.find_def ge1 b1 = Some gd1) as [gd1 ge1_b1].
+      { eapply Genv.find_symbol_find_def_inversion; eauto. }
+      assert (Genv.find_comp_of_ident ge1 id = Some (comp_of gd1)) as id_cp.
+      { unfold Genv.find_comp_of_ident, Genv.find_comp_of_block.
+        now rewrite W1_id, ge1_b1. }
+      assert (j b1 <> None) as ?.
+      { apply inj_dom.
+        unfold Genv.allowed_addrof, Genv.allowed_addrof_b in ALLOWED1.
+        rewrite W1_id, ge1_b1 in ALLOWED1.
+        destruct gd1 as [fd1|v1]; eauto.
+        simpl in ALLOWED1.
+        destruct eq_compartment as [<-|?]; simpl in ALLOWED1; try congruence.
+        left.
+        unfold Mem.has_side_block. simpl.
         unfold Genv.find_comp_of_ident in id_cp.
         rewrite W1_id in id_cp.
         apply SAMEBLKS in id_cp. now rewrite id_cp. }
-      eapply or_introl in b_right.
-      apply idP in b_right.
-      destruct (j b) as [[loc' ofs']|] eqn:j_b; try easy.
-      clear b_right idP.
-      exists loc', ofs'. split; trivial.
-      assert (ofs' = 0 /\ Genv.find_symbol (globalenv W2) id = Some loc')
+      destruct (j b1) as [[b1' ofs]|] eqn:j_b1; try congruence.
+      exists b1', ofs; split; trivial.
+      assert (ofs = 0 /\ Genv.find_symbol (globalenv W2) id = Some b1')
           as [? W2_id].
       { specialize (same_symb cp) as (_ & same_symb & _); auto.
         eapply same_symb; eauto. }
-      subst ofs'.
+      subst ofs.
       rewrite Ptrofs.add_zero_l.
-      apply eval_Evar_global; eauto.
-      now apply allowed_addrof_translated.
+      now apply eval_Evar_global; eauto.
     - (* eval_Ederef *)
       destruct H0 as [v' [? ?]].
       inv H0.

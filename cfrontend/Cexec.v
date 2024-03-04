@@ -1030,11 +1030,7 @@ Proof with (try (apply not_invert_ok; simpl; intro; myinv; intuition congruence;
   subst. apply topred_ok; auto. apply red_var_local; auto.
   destruct (Genv.find_symbol ge x) as [b|] eqn:?...
   destruct Genv.allowed_addrof_b eqn:CHECK...
-  { apply topred_ok; auto. apply red_var_global; auto.
-    now apply Genv.allowed_addrof_b_reflect. }
-  apply not_invert_ok. simpl. rewrite Heqo.
-  intros (? & [?|(_ & _ & CONTRA)]); try easy.
-  apply Genv.allowed_addrof_b_reflect in CONTRA. congruence.
+  apply topred_ok; auto. apply red_var_global; auto.
 (* Efield *)
   destruct (is_val a) as [[v ty'] | ] eqn:?.
   rewrite (is_val_inv _ _ _ Heqo).
