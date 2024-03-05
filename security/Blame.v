@@ -250,11 +250,135 @@ Section Equivalence.
       eapply same_blocks_store; eauto.
   Qed.
 
-  Definition symbols_inject_left f ge1 ge2 (cp: compartment) :=
+  Definition symbols_inject_left f (ge1 ge2: genv) m cp :=
     forall id b1 b2 delta,
       f b1 = Some (b2, delta) ->
-      Senv.find_symbol ge1 id = Some b1 ->
-      delta = 0 /\ Senv.find_symbol ge2 id = Some b2.
+      Genv.find_symbol ge1 id = Some b1 ->
+      Genv.find_comp_of_block ge1 b1 = Some cp ->
+      delta = 0 /\ Senv.find_symbol ge2 id = Some b2 /\
+      (Mem.mem_access m) !! b1 delta Cur = Some Nonempty.
+
+  (* TODO It would be nice to avoid these low-level helpers *)
+  Lemma mem_access_free_1:
+    forall m1 bf lo hi cp m2,
+    Mem.free m1 bf lo hi cp = Some m2 ->
+    forall b ofs k,
+    b <> bf \/ ofs < lo \/ hi <= ofs ->
+    (Mem.mem_access m1) !! b ofs k = (Mem.mem_access m2) !! b ofs k.
+  Proof.
+    clear.
+    intros.
+Local Transparent Mem.free. unfold Mem.free in H. Local Opaque Mem.free.
+    destruct Mem.range_perm_dec; [| discriminate].
+    destruct Mem.can_access_block_dec; [| discriminate].
+    injection H as <-.
+    unfold Mem.unchecked_free.
+    destruct zle; [reflexivity |].
+    simpl. rewrite PMap.gsspec.
+    destruct peq; [subst b | reflexivity].
+    destruct H0 as [| H0]; [contradiction |].
+    destruct H0 as [H0 | H0].
+    - destruct (zle lo ofs); [lia |]. reflexivity.
+    - destruct (zlt ofs hi); [lia |]. rewrite andb_false_r. reflexivity.
+  Qed.
+
+  (* TODO It would be nice to avoid these low-level helpers *)
+  Lemma mem_access_free_inv:
+    forall m1 bf lo hi cp m2,
+    Mem.free m1 bf lo hi cp = Some m2 ->
+    forall b ofs k p,
+    (Mem.mem_access m1) !! b ofs k = Some p ->
+    b = bf /\ lo <= ofs < hi \/ (Mem.mem_access m2) !! b ofs k = Some p.
+  Proof.
+    clear.
+    intros. exploit Mem.free_result; eauto. intros. subst m2.
+    unfold Mem.unchecked_free; destruct (zle hi lo); auto; simpl.
+    rewrite PMap.gsspec. destruct (peq b bf); auto. subst b.
+    destruct (zle lo ofs); simpl; auto.
+    destruct (zlt ofs hi); simpl; auto.
+  Qed.
+
+  (* TODO It would be nice to avoid these low-level helpers *)
+  Lemma mem_access_alloc_1:
+    forall m1 c lo hi m2 b,
+    Mem.alloc m1 c lo hi = (m2, b) ->
+    forall b' ofs k,
+    b' <> b ->
+    (Mem.mem_access m1) !! b' ofs k = (Mem.mem_access m2) !! b' ofs k.
+  Proof.
+    clear.
+    intros.
+Local Transparent Mem.alloc. unfold Mem.alloc in H. Local Opaque Mem.alloc.
+    injection H as <- <-.
+    simpl. rewrite PMap.gso; auto.
+  Qed.
+
+  Lemma symbols_inject_left_free m b lo hi cp m' ge1 ge2 cp'
+    (FREE : Mem.free m b lo hi cp = Some m')
+    (SYMB : symbols_inject_left j ge1 ge2 m cp') :
+    symbols_inject_left j ge1 ge2 m' cp'.
+  Proof.
+    (* destruct SYMB as [FIND ACC]. split; [exact FIND |]. *)
+    intros id b1 b2 ofs b1_b2 FIND1 COMP1.
+    specialize (SYMB _ _ _ _ b1_b2 FIND1 COMP1) as (-> & FIND2 & ACC).
+    split; [reflexivity |]. split; [exact FIND2 |].
+    destruct (peq b1 b) as [-> | NEQ].
+    - destruct (mem_access_free_inv _ _ _ _ _ _ FREE _ _ _ _ ACC)
+        as [[_ RANGE] | PERM]; [| exact PERM].
+Local Transparent Mem.free. unfold Mem.free in FREE. Local Opaque Mem.free.
+      destruct Mem.range_perm_dec; [| discriminate].
+      assert (PERM := r). specialize (PERM _ RANGE).
+      unfold Mem.perm, Mem.perm_order' in PERM. rewrite ACC in PERM.
+      inv PERM.
+    - erewrite <- mem_access_free_1; eauto.
+  Qed.
+
+  Lemma symbols_inject_left_free_list m bs cp m' ge1 ge2 cp'
+    (FREE : Mem.free_list m bs cp = Some m')
+    (SYMB : symbols_inject_left j ge1 ge2 m cp') :
+    symbols_inject_left j ge1 ge2 m' cp'.
+  Proof.
+    revert m cp m' ge1 ge2 cp' FREE SYMB.
+    induction bs as [| [[b lo] hi] ? IH]; intros.
+    - now inv FREE.
+    - simpl in FREE.
+      destruct (Mem.free m b lo hi cp) as [m1 |] eqn:FREE1; [| discriminate].
+      eapply symbols_inject_left_free in FREE1; eauto.
+  Qed.
+
+  Lemma symbols_inject_left_store chunk m b ofs sz cp m' ge1 ge2 cp'
+    (STORE : Mem.store chunk m b ofs sz cp = Some m')
+    (SYMB : symbols_inject_left j ge1 ge2 m cp') :
+    symbols_inject_left j ge1 ge2 m' cp'.
+  Proof.
+    intros id b1 b2 ofs' b1_b2 id_b1 b1_cp'.
+    specialize (SYMB _ _ _ _ b1_b2 id_b1 b1_cp') as (-> & id_b2 & m'_b1).
+    split; [| split]; auto.
+    erewrite Mem.store_access; eauto.
+  Qed.
+
+  Lemma symbols_inject_left_storebytes m b ofs sz ocp m' ge1 ge2 cp
+    (STORE : Mem.storebytes m b ofs sz ocp = Some m')
+    (SYMB : symbols_inject_left j ge1 ge2 m cp) :
+    symbols_inject_left j ge1 ge2 m' cp.
+  Proof.
+    intros id b1 b2 ofs' b1_b2 id_b1 b1_cp.
+    specialize (SYMB _ _ _ _ b1_b2 id_b1 b1_cp) as (-> & id_b2 & m'_b1).
+    split; [| split]; auto.
+    erewrite Mem.storebytes_access; eauto.
+  Qed.
+
+  Lemma symbols_inject_left_assign_loc {ce cp ty m b ofs bf v m' ge1 ge2 cp'}
+    (ASSIGN : assign_loc ce cp ty m b ofs bf v m')
+    (SYMB : symbols_inject_left j ge1 ge2 m cp') :
+    symbols_inject_left j ge1 ge2 m' cp'.
+  Proof.
+    inv ASSIGN.
+    - eapply symbols_inject_left_store; eauto.
+    - eapply symbols_inject_left_storebytes; eauto.
+    - inv H.
+      eapply symbols_inject_left_store; eauto.
+  Qed.
 
   Record right_mem_injection (ge1 ge2: genv) (m1 m2: mem) : Prop :=
     { same_dom: same_domain_right ge1 m1;
@@ -265,7 +389,7 @@ Section Equivalence.
          public symbol must be covered by the memory injection. *)
       (* TODO replace symbols_inject with meminj_preserves_globals *)
       same_symb: forall cp, s cp = Right -> symbols_inject j ge1 ge2 (Genv.find_comp_of_ident ge1) cp;
-      same_symb_left: forall cp, s cp = Left -> symbols_inject_left j ge1 ge2 cp;
+      same_symb_left: forall cp, s cp = Left -> symbols_inject_left j ge1 ge2 m1 cp;
       same_blks1: same_blocks ge1 m1;
       same_blks2: same_blocks ge2 m2;
     }.
@@ -1179,7 +1303,7 @@ Lemma right_mem_injection_free: forall {j ge1 ge2 m1 m2 b1 b2 lo hi cp m1'},
     right_mem_injection s j ge1 ge2 m1' m2'.
 Proof.
   intros j ge1 ge2 m1 m2 b1 b2 lo hi cp m1' MEMINJ FREE1 j_b1.
-  destruct MEMINJ as [DOM MI D0 SYMB BLKS1 BLKS2].
+  destruct MEMINJ as [DOM MI D0 SYMB SYMBL BLKS1 BLKS2].
   pose proof (Mem.free_range_perm _ _ _ _ _ _ FREE1) as RANGE1.
   pose proof (Mem.free_can_access_block_1 _ _ _ _ _ _ FREE1) as ACCESS1.
   assert (Mem.range_perm m2 b2 lo hi Cur Freeable) as RANGE2.
@@ -1197,6 +1321,17 @@ Proof.
   - eauto using same_domain_right_free.
   - exploit Mem.free_parallel_inject; eauto.
     rewrite !Z.add_0_r. intros (? & ? & ?). congruence.
+  - intros cp' LEFT id b1' b2' ofs b1'_b2' id_b1' b1'_cp'.
+    specialize (SYMBL _ LEFT _ _ _ _ b1'_b2' id_b1' b1'_cp') as (-> & FINDL & PERML).
+    split; [reflexivity |]. split; [eassumption |].
+    destruct (peq b1' b1) as [-> | NEQ].
+    + rewrite j_b1 in b1'_b2'. injection b1'_b2' as <-.
+      destruct (mem_access_free_inv _ _ _ _ _ _ FREE1 _ _ _ _ PERML)
+        as [[_ RANGE] | PERM]; [| exact PERM].
+      specialize (RANGE1 _ RANGE).
+      unfold Mem.perm, Mem.perm_order' in RANGE1. rewrite PERML in RANGE1.
+      inv RANGE1.
+    + erewrite <- mem_access_free_1; eauto.
   - eapply same_blocks_free; eauto.
   - eapply same_blocks_free; eauto.
 Qed.
@@ -1246,10 +1381,11 @@ Lemma right_mem_injection_free_list_left:
     right_mem_injection s j ge1 ge2 m1' m2.
 Proof.
   intros.
-  destruct RMEMINJ as [DOM MI D0 SYMB BLKS1 BLKS2].
+  destruct RMEMINJ as [DOM MI D0 SYMB SYMBL BLKS1 BLKS2].
   split; trivial.
   - eauto using same_domain_right_free_list.
   - eauto using Mem.free_list_left_inject.
+  - eauto using symbols_inject_left_free_list.
   - eauto using same_blocks_free_list.
 Qed.
 
@@ -1610,7 +1746,8 @@ Admitted.
             destruct (Mem.block_compartment m1 b1) as [cp' |] eqn:COMP ; [| contradiction].
             erewrite same_blks1 in COMP; eauto. congruence.
           + exploit right_mem_injection_right; eauto. intros (cp' & COMP & _).
-            exploit same_symb_left; eauto. easy.
+            exploit same_symb_left; eauto. intros (-> & SYMBL & ACCL).
+            easy.
         - destruct (Mem.block_compartment m1 b1) as [cp' |] eqn:COMP.
           + exploit same_symb; eauto.
             intros (H1 & H2 & H3 & H4).
@@ -1631,8 +1768,8 @@ Admitted.
         * rewrite Genv.globalenv_policy in imp, exp. rewrite Genv.globalenv_policy.
           simpl. rewrite (match_prog_pol _ _ _ match_W1_W2).
           apply Genv.invert_find_symbol in ge1_b1.
-          destruct (same_symb_left _ _ _ _ _ _ inj _ SIDE _ _ _ _ j_b1 ge1_b1)
-            as (-> & ge2_b2).
+          destruct (same_symb_left _ _ _ _ _ _ inj _ SIDE _ _ _ _ j_b1 ge1_b1 ge1_b1')
+            as (-> & ge2_b2 & m1_b1).
           split; [| split].
           -- apply Genv.find_invert_symbol in ge2_b2. assumption.
           -- exploit find_comp_of_block_preserved; eauto.
@@ -1682,7 +1819,9 @@ Admitted.
         unfold Genv.find_comp_of_ident in id_cp. setoid_rewrite FIND1 in id_cp.
         erewrite same_blks1 in COMP; eauto. injection COMP as <-. congruence.
       + exploit right_mem_injection_right; eauto. intros (cp' & COMP & _).
-        exploit same_symb_left; eauto. easy.
+        unfold Genv.find_comp_of_ident in id_cp. setoid_rewrite FIND1 in id_cp.
+        exploit same_symb_left; eauto. intros (-> & SYMBL & ACCL).
+        easy.
     - exploit same_symb; eauto.
       intros (_ & H & ?).
       now destruct (H id b1 b2 delta j_b1 FIND1) as [??].
@@ -1858,13 +1997,16 @@ Admitted.
              reflexivity.
           -- rewrite (EXT _ NEQ) in b1'_b2'.
              exact (VOL _ _ _ b1'_b2').
-      + intros cp' LEFT id' b1' b2' delta b1'_b2' ge1_b1'.
+      + intros cp' LEFT id' b1' b2' delta b1'_b2' id'_b1' b1'_cp'.
         assert (NEQ: b1' <> b1).
         { eapply Mem.valid_block_alloc_inv'; eauto.
-          clear -ge1_b1' BLKS1. simpl in *.
+          clear -id'_b1' BLKS1. simpl in *.
           exploit find_symbol_valid_block; eauto. }
-        rewrite (EXT _ NEQ) in b1'_b2'.
-        eapply SYMBL; eauto.
+        specialize (EXT _ NEQ). rewrite EXT in b1'_b2'.
+        specialize (SYMBL _ LEFT _ _ _ _ b1'_b2' id'_b1' b1'_cp')
+          as (-> & id'_b2' & m1_b1').
+        split; [reflexivity |]. split; [assumption |].
+        erewrite <- mem_access_alloc_1; eauto.
       + intros b cp' FIND. specialize (BLKS1 b cp' FIND).
         change (Mem.block_compartment _ _ = _)
           with (Mem.can_access_block m1' b (Some cp')).
@@ -1917,16 +2059,34 @@ Admitted.
       + intros [| [fd DEF]]; [discriminate |]. eauto.
   Qed.
 
+  Lemma symbols_inject_left_alloc_left :
+    forall j ge1 ge2 m cp lo hi cp' m' b,
+      symbols_inject_left j ge1 ge2 m cp ->
+      Mem.alloc m cp' lo hi = (m', b) ->
+      s cp = Left ->
+      symbols_inject_left j ge1 ge2 m' cp.
+  Proof.
+    intros j ge1 ge2 m cp lo hi cp' m' b j_m m_m' s_cp
+           id b1 b2 ofs b1_b2 id_b1 b1_cp.
+    specialize (j_m _ _ _ _ b1_b2 id_b1 b1_cp) as (-> & id_b2 & m_b1).
+    split; [| split]; auto.
+    assert (NEQ: b1 <> b).
+    { eapply Mem.valid_block_alloc_inv'; eauto.
+      eapply Genv.mem_access_valid_block; eauto. }
+    erewrite <- mem_access_alloc_1; eauto.
+  Qed.
+
   Lemma right_mem_injection_alloc_left {j cp m1 m2 m1' b1 lo hi}
     (RMEMINJ: right_mem_injection s j ge1 ge2 m1 m2)
     (LEFT: s cp = Left)
     (ALLOC: Mem.alloc m1 cp lo hi = (m1', b1)):
     right_mem_injection s j ge1 ge2 m1' m2.
   Proof.
-    destruct RMEMINJ as [DOM MI D0 SYMB BLKS1 BLKS2].
+    destruct RMEMINJ as [DOM MI D0 SYMB SYMBL BLKS1 BLKS2].
     split; trivial.
     - eauto using same_domain_right_alloc_left.
     - eauto using Mem.alloc_left_unmapped_inject_strong.
+    - eauto using symbols_inject_left_alloc_left.
     - eauto using same_blocks_alloc.
   Qed.
 
@@ -2012,7 +2172,7 @@ Admitted.
     exploit Mem.store_mapped_inject; eauto.
     rewrite Z.add_0_r. intros (m2' & STORE2 & INJ').
     exists m2'; split; trivial. constructor; trivial;
-    eauto using same_domain_right_store, same_blocks_store.
+    eauto using same_domain_right_store, same_blocks_store, symbols_inject_left_store.
   Qed.
 
   Lemma right_mem_injection_store_unmapped :
@@ -2027,7 +2187,7 @@ Admitted.
     exploit Mem.store_unmapped_inject; eauto.
     intros MI'.
     constructor; trivial;
-    eauto using same_domain_right_store, same_blocks_store.
+    eauto using same_domain_right_store, same_blocks_store, symbols_inject_left_store.
   Qed.
 
   Lemma right_mem_injection_store_outside :
@@ -2060,7 +2220,7 @@ Admitted.
     rewrite Z.add_0_r. intros (m2' & STORE2 & MI').
     exists m2'. split; trivial.
     constructor;
-    eauto using same_domain_right_storebytes, same_blocks_storebytes.
+    eauto using same_domain_right_storebytes, same_blocks_storebytes, symbols_inject_left_storebytes.
   Qed.
 
   Lemma right_mem_injection_storebytes_unmapped
@@ -2073,7 +2233,7 @@ Admitted.
     intros [DOM MI D0 SYMB BLKS1 BLKS2] LOCINJ STORE1.
     exploit Mem.storebytes_unmapped_inject; eauto. intros MI'.
     constructor;
-    eauto using same_domain_right_storebytes, same_blocks_storebytes.
+    eauto using same_domain_right_storebytes, same_blocks_storebytes, symbols_inject_left_storebytes.
   Qed.
 
   Lemma right_mem_injection_storebytes_outside
@@ -2127,7 +2287,7 @@ Qed.
     intros (m2' & ASSIGN2 & MEMINJ & LOAD).
     rewrite genv_cenv_preserved. exists m2'; split; trivial.
     destruct RMEMINJ as [DOM MI D0 SYMB BLKS1 BLKS2].
-    constructor; eauto using same_domain_right_assign_loc, same_blocks_assign_loc.
+    constructor; eauto using same_domain_right_assign_loc, same_blocks_assign_loc, symbols_inject_left_assign_loc.
   Qed.
 
   Lemma right_mem_injection_assign_loc_unmapped
@@ -2486,6 +2646,10 @@ Qed.
       apply DOM in j_b_undef. simpl in j_b_undef.
       rewrite m1_b in j_b_undef.
       destruct j_b_undef as [| [fd DEF]]; [congruence |].
+      admit.
+    - intros cp' LEFT' id b1 b2 ofs b1_b2 id_b1 b1_cp'.
+      specialize (SYMBL _ LEFT' _ _ _ _ b1_b2 id_b1 b1_cp') as (-> & id_b2 & m1_b1).
+      split; [| split]; auto.
       admit.
     - intros b cp ge_b. specialize (BLKS1 _ _ ge_b).
       enough (Mem.can_access_block m1' b (Some cp)) by easy.
@@ -4630,11 +4794,12 @@ Proof.
       setoid_rewrite DEF1. setoid_rewrite DEF2. reflexivity.
 Qed.
 
-Lemma symbols_inject_left_init_meminj cp'
+Lemma symbols_inject_left_init_meminj m1 cp'
+  (MEM1: Genv.init_mem W1 = Some m1)
   (LEFT': s cp' = Left):
-  symbols_inject_left init_meminj ge1 ge2 cp'.
+  symbols_inject_left init_meminj ge1 ge2 m1 cp'.
 Proof.
-  intros id b1 b2 ofs b1_b2 SYM1.
+  intros id b1 b2 ofs b1_b2 SYM1 COMP1.
   unfold init_meminj, init_meminj_block in b1_b2.
   (* Slightly modified standard processing *)
   apply Genv.find_invert_symbol in SYM1. rewrite SYM1 in b1_b2.
@@ -4650,11 +4815,16 @@ Proof.
     destruct (Genv.find_symbol ge2 id) as [b'' |] eqn:SYM2; [| discriminate].
     injection b1_b2 as -> <-.
     (* Done *)
-    auto.
+    split; [| split]; auto.
+    apply Genv.find_funct_ptr_iff in DEF1.
+    exploit Genv.init_mem_characterization_2'; eauto. intros (ACC1 & _).
+    rewrite ACC1, zeq_true. reflexivity.
   - destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [| discriminate].
     injection b1_b2 as -> <-.
     (* Done *)
-    auto.
+    apply Genv.invert_find_symbol in SYM1.
+    unfold Genv.find_comp_of_ident in COMP. setoid_rewrite SYM1 in COMP.
+    setoid_rewrite COMP1 in COMP. injection COMP as ->. congruence.
 Qed.
 
 Lemma initial_mem_injection m1 m2
@@ -4668,7 +4838,7 @@ Proof.
   - apply inject_init_meminj; assumption.
   - apply delta_zero_init_meminj.
   - apply symbols_inject_init_meminj.
-  - apply symbols_inject_left_init_meminj.
+  - intros. apply symbols_inject_left_init_meminj; assumption.
   - apply init_mem_same_blocks; assumption.
   - apply init_mem_same_blocks; assumption.
 Qed.
