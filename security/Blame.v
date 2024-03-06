@@ -2190,22 +2190,74 @@ Admitted.
       unfold empty_env. setoid_rewrite PTree.gempty. discriminate. }
     intros (RMEMINJ' & ENV).
     split; [assumption |].
-    intros id b ty e1'_b1. specialize (ENV  _ _ _ e1'_b1) as (j_b & id_vars).
+    intros id b ty e1'_id. specialize (ENV  _ _ _ e1'_id) as (j_b & id_vars).
     split; [assumption |].
     rewrite app_nil_r in id_vars. assumption.
   Qed.
 
   Lemma right_mem_injection_alloc_variables_left'
-    {j cp m1 m2 m2' e2 e2' vars}
+    j cp m1 m2 m2' e2 e2' oldnames vars
     (RMEMINJ: right_mem_injection s j ge1 ge2 m1 m2)
+    (ENV: forall id b2 ty, e2 ! id = Some (b2, ty) -> (forall b1 ofs, j b1 = Some (b2, ofs) -> False) /\
+                                                       In id oldnames)
+    (NOREPET: list_norepet (var_names vars))
     (LEFT: s cp = Left)
     (ALLOC: alloc_variables ge2 cp e2 m2 vars e2' m2'):
-    right_mem_injection s j ge1 ge2 m1 m2'.
+    right_mem_injection s j ge1 ge2 m1 m2' /\
+    (forall id b2 ty, e2' ! id = Some (b2, ty) -> (forall b1 ofs, j b1 = Some (b2, ofs) -> False) /\
+                                                   In id ((var_names vars) ++ oldnames)).
   Proof.
+    revert j m1 oldnames RMEMINJ NOREPET ENV LEFT.
     induction ALLOC as [
         e2 m2
-      | e2 m2 id ty vars m2' b1 m2'' e2' ALLOC _ IH]; trivial.
-    eauto using right_mem_injection_alloc_left'.
+      | e2 m2 id ty vars m2' b2 m2'' e2' ALLOC _ IH];
+      auto.
+    simpl. intros.
+    inv NOREPET.
+    assert (RMEMINJ': right_mem_injection s j ge1 ge2 m1 m2')
+      by eauto using right_mem_injection_alloc_left'.
+    assert (ENV':
+             (forall (id0 : positive) (b3 : block) (ty0 : type),
+                 (PTree.set id (b2, ty) e2) ! id0 = Some (b3, ty0) ->
+                 (forall (b1 : block) (ofs : Z), j b1 = Some (b3, ofs) -> False) /\ In id0 (id :: oldnames))). {
+      setoid_rewrite PTree.gsspec. intros id' b2' ty'.
+      destruct (peq id' id) as [-> | NEQ].
+      - intros H. injection H as <- <-. split.
+        + intros b1 ofs b1_b2.
+          assert (INJ := partial_mem_inject _ _ _ _ _ _ RMEMINJ).
+          apply Mem.fresh_block_alloc in ALLOC.
+          exploit Mem.mi_mappedblocks; eauto.
+        + left. auto.
+      - intros H. specialize (ENV _ _ _ H) as (j_b & id'_oldnames).
+        split; auto. right; auto. }
+    specialize (IH _ _ _ RMEMINJ' H2 ENV' LEFT) as (RMEMINJ'' & ENV'').
+    split; auto.
+    intros id' b2' ty' e2'_id'. specialize (ENV'' _ _ _ e2'_id') as (j_b & IN).
+    split; auto.
+    apply in_app_or in IN as [IN | [IN | IN]].
+    - right. apply in_or_app; auto.
+    - auto.
+    - right. apply in_or_app; auto.
+  Qed.
+
+  Lemma right_mem_injection_alloc_variables_left_empty_env'
+    {j cp m1 m2 m2' e2' vars}
+    (RMEMINJ: right_mem_injection s j ge1 ge2 m1 m2)
+    (NOREPET: list_norepet (var_names vars))
+    (LEFT: s cp = Left)
+    (ALLOC: alloc_variables ge2 cp empty_env m2 vars e2' m2'):
+    right_mem_injection s j ge1 ge2 m1 m2' /\
+    (forall id b2 ty, e2' ! id = Some (b2, ty) -> (forall b1 ofs, j b1 = Some (b2, ofs) -> False) /\
+                                                  In id (var_names vars)).
+  Proof.
+    exploit right_mem_injection_alloc_variables_left'; eauto.
+    { instantiate (1 := nil).
+      unfold empty_env. setoid_rewrite PTree.gempty. discriminate. }
+    intros (RMEMINJ' & ENV).
+    split; [assumption |].
+    intros id b1 ty e2'_id. specialize (ENV  _ _ _ e2'_id) as (j_b & id_vars).
+    split; [assumption |].
+    rewrite app_nil_r in id_vars. assumption.
   Qed.
 
   Lemma right_mem_injection_store_mapped {j chunk m1 m2 b1 b2 ofs v1 v2 cp m1'} :
@@ -2430,26 +2482,14 @@ Qed.
     {j m1 m2 m2' e2 vargs2 params cp}
     (RMEMINJ: right_mem_injection s j ge1 ge2 m1 m2)
     (BIND: bind_parameters ge2 cp e2 m2 params vargs2 m2')
+    (ENV: forall id ty b1 b2 ofs, e2 ! id = Some (b2, ty) -> j b1 = Some (b2, ofs) -> False)
     (LEFT: s cp = Left):
     right_mem_injection s j ge1 ge2 m1 m2'.
   Proof.
     induction BIND as [
       | m2 id ty params v2 vl2 b2 m2' m2'' e2_id ASSIGN2 _ IH]; trivial.
     exploit @right_mem_injection_assign_loc_outside; eauto.
-    exploit assign_loc_can_access_block; eauto. intros m2_b2.
-    intros b1 delta j_b1.
-    assert (j b1 <> None) as contra by congruence.
-    eapply same_dom in contra; eauto. simpl in contra.
-    destruct contra as [contra | [fd DEF]].
-    - destruct (Mem.block_compartment m1 b1) as [cp'|] eqn:m1_b1; try easy.
-      exploit partial_mem_inject; eauto. intros INJ.
-      exploit Mem.mi_inj; eauto. intros INJ'.
-      enough (Mem.can_access_block m2 b2 (Some cp')).
-      { simpl in *; congruence. }
-      eapply Mem.mi_own; eauto.
-    - admit. (* cannot bind parameters to function block *)
-  (* Qed. *)
-  Admitted.
+  Qed.
 
   Lemma right_mem_injection_function_entry1_right: forall
     {j f m1 m2 vargs1 vargs2 e1 le1 m1'},
@@ -2529,9 +2569,14 @@ Qed.
     intros until m2'; intros RMEMINJ LEFT ENTRY.
     destruct ENTRY as [m2'' NOREPET ALLOC FIND E].
     simpl in *.
-    exploit @right_mem_injection_alloc_variables_left'; eauto.
-    intros RMEMINJ'.
-    eauto using right_mem_injection_bind_parameters_left'.
+    exploit @right_mem_injection_alloc_variables_left_empty_env'; eauto.
+    { eapply list_norepet_map_fst; eauto. }
+    intros (RMEMINJ' & ENV).
+    eapply right_mem_injection_bind_parameters_left'; eauto.
+    intros id ty b1 b2 ofs e2_id b1_b2.
+    specialize (ENV _ _ _ e2_id) as (j_b & _).
+    specialize (j_b _ _ b1_b2).
+    assumption.
   Qed.
 
   (* FIXME: Move to Genv. *)
