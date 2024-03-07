@@ -622,7 +622,11 @@ Section Simulation.
   Hypothesis W1_gvars: wf_gvar_init ge1.
   Hypothesis W2_gvars: wf_gvar_init ge2.
 
-  Hypothesis prog_defs_p1_p2: prog_defs p1 = prog_defs p2.
+  (* See [globdef_left]. We can weaken this to the equality of the
+     definitions of [p1] and [p2] by their shared context and the
+     prperties of linking. This has some implications for [match_prog]
+     and [globdef_right] that we should explore. *)
+  Hypothesis prog_defs_W1_W2: prog_defs W1 = prog_defs W2.
 
 (** New helpers *)
 
@@ -4467,19 +4471,28 @@ Proof.
 Qed.
 
 Lemma globdef_left id fd1 gd2 b1 b2 cp
-      (COMP : Genv.find_comp_of_ident (Genv.globalenv W1) id = Some cp)
-      (SIDE : s cp = Left)
-      (SYM1 : Genv.find_symbol ge1 id = Some b1)
-      (SYM2 : Genv.find_symbol ge2 id = Some b2)
-      (DEF1 : Genv.find_def (Genv.globalenv W1) b1 = Some (Gfun fd1))
-      (DEF2 : Genv.find_def (Genv.globalenv W2) b2 = Some gd2):
+  (COMP : Genv.find_comp_of_ident (Genv.globalenv W1) id = Some cp)
+  (SIDE : s cp = Left)
+  (SYM1 : Genv.find_symbol ge1 id = Some b1)
+  (SYM2 : Genv.find_symbol ge2 id = Some b2)
+  (DEF1 : Genv.find_def (Genv.globalenv W1) b1 = Some (Gfun fd1))
+  (DEF2 : Genv.find_def (Genv.globalenv W2) b2 = Some gd2):
   Gfun fd1 = gd2.
 Proof.
   (* If [prog_defs p1 = prog_defs p2] (or if we are only concerned
      with public symbols, given the existing definition of
      [match_prog_globdefs], this is easy and could even be made a bit
-     more general. *)
-Admitted.
+     more general. For us, this implies [prog_defs W1 = prog_defs W2],
+     if we reason explicitly about linking. *)
+  assert (DEFMAP1: (prog_defmap W1) ! id = Some (Gfun fd1))
+    by (eapply Genv.find_def_symbol; eauto).
+  assert (DEFMAP2: (prog_defmap W2) ! id = Some gd2)
+    by (eapply Genv.find_def_symbol; eauto).
+  (* assert (DEFS: prog_defs W1 = prog_defs W2). { ... } *)
+  assert (DEFMAP: prog_defmap W1 = prog_defmap W2).
+  { unfold prog_defmap. setoid_rewrite prog_defs_W1_W2. reflexivity. }
+  congruence.
+Qed.
 
 Lemma init_mem_characterization_rel' sp (pr1 pr2: program) id gd m1 m2
       (MATCH: match_prog sp pr1 pr2)
