@@ -2851,6 +2851,12 @@ Qed.
 
   (** Sub-invariant lemmas, mostly on injections *)
 
+  (* TODO move *)
+  Remark size_chunk_range ofs chunk: ofs <= ofs < ofs + size_chunk chunk.
+  Proof.
+    destruct chunk; simpl; lia.
+  Qed.
+
   Lemma right_mem_injection_left_step_1: forall j s1 t s2 s1',
     right_mem_injection s j ge1 ge2 (memory_of s1) (memory_of s2) ->
     s |= s1 ∈ Left ->
@@ -2882,23 +2888,53 @@ Qed.
         rewrite <- COMP' in COMP.
         destruct (same_symb_left0 _ LEFT _ _ _ _ j_loc id_loc COMP)
           as (-> & FIND' & ACC).
-        specialize (ACC (Ptrofs.unsigned ofs)).
-        destruct zeq as [-> | NEQ].
-        - admit.
-        - inv H2.
+        (* Plenty of repetition in storebytes due to inessential but
+           necessary case analysis *)
+        destruct (Ptrofs.eq_dec ofs Ptrofs.zero) as [-> | NONZERO].
+        - specialize (ACC (Ptrofs.unsigned Ptrofs.zero)).
+          inv H2.
           + unfold Mem.storev in H4.
 Local Transparent Mem.store. unfold Mem.store in H4. Local Opaque Mem.store.
             destruct Mem.valid_access_dec; [| discriminate].
             destruct v0 as (PERM & ? & ?).
-            assert (RANGE: Ptrofs.unsigned ofs <=
-                           Ptrofs.unsigned ofs <
-                           Ptrofs.unsigned ofs + size_chunk chunk)
-              by (destruct chunk; simpl; lia).
-            specialize (PERM _ RANGE).
-            unfold Mem.perm, Mem.perm_order' in PERM. rewrite ACC in PERM.
+            specialize (PERM _ (size_chunk_range _ _)).
+            unfold Mem.perm, Mem.perm_order' in PERM.
+            rewrite ACC in PERM.
+            inv PERM.
+          + admit. (* If [sizeof (prog_comp_env W1) (typeof a1) > 0],
+                      same as before, otherwise the memory is
+                      unchanged and we need to act earlier. *)
+          + inv H3.
+            unfold Mem.storev in H9.
+Local Transparent Mem.store. unfold Mem.store in H9. Local Opaque Mem.store.
+            destruct Mem.valid_access_dec; [| discriminate].
+            destruct v as (PERM & ? & ?).
+            specialize (PERM _ (size_chunk_range _ _)).
+            unfold Mem.perm, Mem.perm_order' in PERM.
+            rewrite ACC in PERM.
+            inv PERM.
+        - specialize (ACC (Ptrofs.unsigned ofs)).
+          inv H2.
+          + unfold Mem.storev in H4.
+Local Transparent Mem.store. unfold Mem.store in H4. Local Opaque Mem.store.
+            destruct Mem.valid_access_dec; [| discriminate].
+            destruct v0 as (PERM & ? & ?).
+            specialize (PERM _ (size_chunk_range _ _)).
+            unfold Mem.perm, Mem.perm_order' in PERM.
+            rewrite ACC in PERM.
+            destruct zeq as [-> | NEQ]; [| contradiction].
             inv PERM.
           + admit.
-          + admit. }
+          + inv H3.
+            unfold Mem.storev in H9.
+Local Transparent Mem.store. unfold Mem.store in H9. Local Opaque Mem.store.
+            destruct Mem.valid_access_dec; [| discriminate].
+            destruct v as (PERM & ? & ?).
+            specialize (PERM _ (size_chunk_range _ _)).
+            unfold Mem.perm, Mem.perm_order' in PERM.
+            rewrite ACC in PERM.
+            destruct zeq as [-> | NEQ]; [| contradiction].
+            inv PERM. }
         (* admit. (* cannot assign_loc to function block *) } *)
       exploit @right_mem_injection_assign_loc_unmapped; eauto.
     - (* builtin *)
