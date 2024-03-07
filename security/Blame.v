@@ -2668,10 +2668,10 @@ Qed.
               incr & j_j'_sep & comps_m1').
     exists j', m2', vres2.
     split; [| split; [| split]]; auto.
-    destruct RMEMINJ as [DOM MI D0 SYMB BLKS1 BLKS2].
+    destruct RMEMINJ as [DOM MI D0 SYMB SYMBL BLKS1 BLKS2].
     assert (same_domain_right s j' ge1 m1') as DOM'.
     { (* FIXME: Separate lemma? *)
-      clear - DOM incr j_j'_sep comps_m1' unchanged1 RIGHT inj'.
+      clear - DOM BLKS1 incr j_j'_sep comps_m1' unchanged1 RIGHT inj'.
       intros b. specialize (DOM b). simpl in *.
       destruct (Mem.block_compartment m1 b) as [cp|] eqn:block_m1_b.
       + assert (Mem.valid_block m1 b) as valid_m1_b.
@@ -2686,7 +2686,8 @@ Qed.
           -- rewrite (incr _ _ _ j_b). intuition.
           -- split; eauto.
              intros ? j'_b.
-             admit. (* cannot invalidate function block *)
+             rewrite (incr _ _ _ j_b) in j'_b.
+             discriminate.
         * rewrite <- DOM. split; eauto.
           destruct (j' b) as [[b'' ofs']|] eqn:j'_b; try congruence.
           exploit j_j'_sep; eauto.
@@ -2707,9 +2708,13 @@ Qed.
           -- rewrite <- Mem.block_compartment_valid_block in block_m1'_b.
              eapply Mem.mi_freeblocks in block_m1'_b; eauto.
           -- intros [[] | [fd DEF]].
-             admit. (* cannot invalidate function block *) }
+             apply Genv.find_funct_ptr_iff in DEF.
+             assert (COMP := Genv.find_funct_ptr_find_comp_of_block _ _ DEF).
+             rewrite (BLKS1 _ _ COMP) in block_m1_b.
+             discriminate. }
     constructor;
     eauto using symbols_inject_incr, external_call_spec, same_blocks_extcall.
+    {
     intros b b' delta j'_b.
     destruct (j b) as [[b'' delta'']|] eqn:j_b.
     - exploit D0; eauto. intros ->.
@@ -2720,6 +2725,8 @@ Qed.
         intros (? & ? & ?). congruence. }
       apply Classical_Prop.NNPP. (* FIXME *) intros contra.
       exploit Mem.mi_freeblocks; eauto. congruence.
+    }
+    { admit. } (* new *)
   (* Qed. *)
   Admitted.
 
