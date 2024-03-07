@@ -4180,6 +4180,19 @@ Proof.
   simpl. unfold fundef in *. rewrite id_b. congruence.
 Qed.
 
+(* TODO: Something more limited, like equality of [Genv.genv_symb] and
+   consequently [Genv.find_symbol], to avoid the messiness of the
+   equality of [prog_pol_pub]. The principle is similar to
+   [find_symbol_right], but this does not apply on the left because
+   the underlying [match_prog_globdefs'] only relates symbols that are
+   either on the right or public, and we are relying on equality of
+   program definitions rather than restriction to public
+   symbols. Other than that the proof is simple. As already noted, the
+   equality of program definitions can further simplify some of the
+   side-specific reasoning as it strengthens [match_prog]. *)
+Remark globalenv_W1_W2: Genv.globalenv W1 = Genv.globalenv W2.
+Admitted.
+
 Lemma same_domain_right_init_meminj m1
       (MEM: Genv.init_mem W1 = Some m1):
   same_domain_right s init_meminj ge1 m1.
@@ -4232,12 +4245,19 @@ Proof.
         -- simpl in INJ. rewrite DEF in INJ.
            destruct (Genv.find_symbol (Genv.globalenv W2) id) as [b' |] eqn:SYM2;
              setoid_rewrite SYM2 in INJ; [discriminate |].
-           admit.
+           apply Genv.invert_find_symbol in SYM1.
+           setoid_rewrite globalenv_W1_W2 in SYM1.
+           setoid_rewrite SYM1 in SYM2.
+           discriminate.
         -- destruct (Genv.find_symbol ge2 id) eqn:SYM2; [discriminate |].
-           admit.
-      * admit.
-(* Qed. *)
-Admitted.
+           apply Genv.invert_find_symbol in SYM1.
+           exploit find_symbol_right; eauto.
+      * apply Genv.find_def_find_symbol_inversion in DEF as (id & SYM1');
+          [| eapply match_prog_unique1; eassumption].
+        apply Genv.find_invert_symbol in SYM1'.
+        setoid_rewrite SYM1 in SYM1'.
+        discriminate.
+Qed.
 
 Lemma delta_zero_init_meminj:
   Mem.delta_zero init_meminj.
