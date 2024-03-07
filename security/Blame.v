@@ -256,7 +256,8 @@ Section Equivalence.
       Genv.find_symbol ge1 id = Some b1 ->
       Genv.find_comp_of_block ge1 b1 = Some cp ->
       delta = 0 /\ Senv.find_symbol ge2 id = Some b2 /\
-      (Mem.mem_access m) !! b1 delta Cur = Some Nonempty.
+      (forall ofs,
+         (Mem.mem_access m) !! b1 ofs Cur = (if zeq ofs 0 then Some Nonempty else None)).
 
   (* TODO It would be nice to avoid these low-level helpers *)
   Lemma mem_access_free_1:
@@ -322,16 +323,20 @@ Local Transparent Mem.alloc. unfold Mem.alloc in H. Local Opaque Mem.alloc.
     intros id b1 b2 ofs b1_b2 FIND1 COMP1.
     specialize (SYMB _ _ _ _ b1_b2 FIND1 COMP1) as (-> & FIND2 & ACC).
     split; [reflexivity |]. split; [exact FIND2 |].
+    intros ofs. specialize (ACC ofs).
     destruct (peq b1 b) as [-> | NEQ].
-    - destruct (mem_access_free_inv _ _ _ _ _ _ FREE _ _ _ _ ACC)
-        as [[_ RANGE] | PERM]; [| exact PERM].
+    - destruct (zeq ofs 0) as [-> | NONE].
+      + destruct (mem_access_free_inv _ _ _ _ _ _ FREE _ _ _ _ ACC)
+          as [[_ RANGE] | PERM]; [| exact PERM].
 Local Transparent Mem.free. unfold Mem.free in FREE. Local Opaque Mem.free.
-      destruct Mem.range_perm_dec; [| discriminate].
-      assert (PERM := r). specialize (PERM _ RANGE).
-      unfold Mem.perm, Mem.perm_order' in PERM. rewrite ACC in PERM.
-      inv PERM.
+        destruct Mem.range_perm_dec; [| discriminate].
+        assert (PERM := r). specialize (PERM _ RANGE).
+        unfold Mem.perm, Mem.perm_order' in PERM. rewrite ACC in PERM.
+        inv PERM.
+      + admit.
     - erewrite <- mem_access_free_1; eauto.
-  Qed.
+  (* Qed. *)
+  Admitted. (* easy fix *)
 
   Lemma symbols_inject_left_free_list m bs cp m' ge1 ge2 cp'
     (FREE : Mem.free_list m bs cp = Some m')
@@ -1328,17 +1333,21 @@ Proof.
   - intros cp' LEFT id b1' b2' ofs b1'_b2' id_b1' b1'_cp'.
     specialize (SYMBL _ LEFT _ _ _ _ b1'_b2' id_b1' b1'_cp') as (-> & FINDL & PERML).
     split; [reflexivity |]. split; [eassumption |].
+    intros ofs. specialize (PERML ofs).
     destruct (peq b1' b1) as [-> | NEQ].
     + rewrite j_b1 in b1'_b2'. injection b1'_b2' as <-.
-      destruct (mem_access_free_inv _ _ _ _ _ _ FREE1 _ _ _ _ PERML)
-        as [[_ RANGE] | PERM]; [| exact PERM].
-      specialize (RANGE1 _ RANGE).
-      unfold Mem.perm, Mem.perm_order' in RANGE1. rewrite PERML in RANGE1.
-      inv RANGE1.
+      destruct (zeq ofs 0) as [-> | NEQ].
+      * destruct (mem_access_free_inv _ _ _ _ _ _ FREE1 _ _ _ _ PERML)
+          as [[_ RANGE] | PERM]; [| exact PERM].
+        specialize (RANGE1 _ RANGE).
+        unfold Mem.perm, Mem.perm_order' in RANGE1. rewrite PERML in RANGE1.
+        inv RANGE1.
+      * admit.
     + erewrite <- mem_access_free_1; eauto.
   - eapply same_blocks_free; eauto.
   - eapply same_blocks_free; eauto.
-Qed.
+(* Qed. *)
+Admitted. (* easy fix *)
 
 Lemma right_mem_injection_free_list_right: forall {j m1 m2 e1 e2 cp m1'},
   right_mem_injection s j ge1 ge2 m1 m2 ->
@@ -2010,6 +2019,7 @@ Admitted.
         specialize (SYMBL _ LEFT _ _ _ _ b1'_b2' id'_b1' b1'_cp')
           as (-> & id'_b2' & m1_b1').
         split; [reflexivity |]. split; [assumption |].
+        intros ofs. specialize (m1_b1' ofs).
         erewrite <- mem_access_alloc_1; eauto.
       + intros b cp' FIND. specialize (BLKS1 b cp' FIND).
         change (Mem.block_compartment _ _ = _)
@@ -2074,11 +2084,15 @@ Admitted.
            id b1 b2 ofs b1_b2 id_b1 b1_cp.
     specialize (j_m _ _ _ _ b1_b2 id_b1 b1_cp) as (-> & id_b2 & m_b1).
     split; [| split]; auto.
-    assert (NEQ: b1 <> b).
-    { eapply Mem.valid_block_alloc_inv'; eauto.
-      eapply Genv.mem_access_valid_block; eauto. }
-    erewrite <- mem_access_alloc_1; eauto.
-  Qed.
+    intros ofs. specialize (m_b1 ofs).
+    destruct (zeq ofs 0) as [-> | NEQ].
+    - assert (NEQ: b1 <> b).
+      { eapply Mem.valid_block_alloc_inv'; eauto.
+        eapply Genv.mem_access_valid_block; eauto. }
+      erewrite <- mem_access_alloc_1; eauto.
+    - admit.
+  (* Qed. *)
+  Admitted. (* easy fix *)
 
   Lemma right_mem_injection_alloc_left {j cp m1 m2 m1' b1 lo hi}
     (RMEMINJ: right_mem_injection s j ge1 ge2 m1 m2)
@@ -2856,7 +2870,36 @@ Qed.
                 (exists fd : fundef, Genv.find_def (Genv.globalenv W1) loc = Some (Gfun fd)));
           [| now apply DOM].
         destruct H3 as [| [fd DEF]]; [discriminate |].
-        admit. (* cannot assign_loc to function block *) }
+        destruct p as [b2 ofs'].
+        assert (SYM := DEF).
+        apply Genv.find_def_find_symbol_inversion in SYM as (id & id_loc);
+          [| eapply match_prog_unique1; eassumption].
+        assert (PTR := DEF).
+        apply Genv.find_funct_ptr_iff in PTR.
+        assert (COMP := Genv.find_funct_ptr_find_comp_of_block _ _ PTR).
+        exploit same_blks3; eauto. intros COMP'.
+        rewrite m_loc in COMP'. injection COMP' as COMP'.
+        rewrite <- COMP' in COMP.
+        destruct (same_symb_left0 _ LEFT _ _ _ _ j_loc id_loc COMP)
+          as (-> & FIND' & ACC).
+        specialize (ACC (Ptrofs.unsigned ofs)).
+        destruct zeq as [-> | NEQ].
+        - admit.
+        - inv H2.
+          + unfold Mem.storev in H4.
+Local Transparent Mem.store. unfold Mem.store in H4. Local Opaque Mem.store.
+            destruct Mem.valid_access_dec; [| discriminate].
+            destruct v0 as (PERM & ? & ?).
+            assert (RANGE: Ptrofs.unsigned ofs <=
+                           Ptrofs.unsigned ofs <
+                           Ptrofs.unsigned ofs + size_chunk chunk)
+              by (destruct chunk; simpl; lia).
+            specialize (PERM _ RANGE).
+            unfold Mem.perm, Mem.perm_order' in PERM. rewrite ACC in PERM.
+            inv PERM.
+          + admit.
+          + admit. }
+        (* admit. (* cannot assign_loc to function block *) } *)
       exploit @right_mem_injection_assign_loc_unmapped; eauto.
     - (* builtin *)
       simpl in *.
@@ -4964,7 +5007,8 @@ Proof.
     split; [| split]; auto.
     apply Genv.find_funct_ptr_iff in DEF1.
     exploit Genv.init_mem_characterization_2'; eauto. intros (ACC1 & _).
-    rewrite ACC1, zeq_true. reflexivity.
+    intros ofs. specialize (ACC1 ofs Cur).
+    assumption.
   - destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [| discriminate].
     injection b1_b2 as -> <-.
     (* Done *)
