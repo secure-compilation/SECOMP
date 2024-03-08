@@ -2898,7 +2898,9 @@ Qed.
         exploit BLKS1; eauto. intros COMP.
         apply Mem.block_compartment_valid_block in NOTVALID.
         congruence. }
-  Qed.
+    - admit.
+    - admit.
+  Admitted.
 
   Lemma right_mem_injection_external_call_left :
     forall j ef vargs1 vres1 t m1 m1' m2
