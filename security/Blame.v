@@ -489,7 +489,9 @@ Local Transparent Mem.free. unfold Mem.free in FREE. Local Opaque Mem.free.
       same_symb: forall cp, s cp = Right -> symbols_inject j ge1 ge2 (Genv.find_comp_of_ident ge1) cp;
       same_symb_left: forall cp, s cp = Left -> symbols_inject_left j ge1 ge2 m1 cp;
       same_blks1: same_blocks ge1 m1;
+      gfun_perms1: gfun_permissions ge1 m1;
       same_blks2: same_blocks ge2 m2;
+      gfun_perms2: gfun_permissions ge2 m2;
     }.
 
 Lemma right_mem_injection_right ge1 ge2 m1 m2 b1 b2 delta :
@@ -1451,8 +1453,10 @@ Proof.
       * admit.
     + erewrite <- mem_access_free_1; eauto.
   - eapply same_blocks_free; eauto.
+  - eapply gfun_permissions_free; eauto.
   - eapply same_blocks_free; eauto.
-Admitted. (* easy fix *)
+  - eapply gfun_permissions_free; eauto.
+Admitted.
 
 Lemma right_mem_injection_free_list_right: forall {j m1 m2 e1 e2 cp m1'},
   right_mem_injection s j ge1 ge2 m1 m2 ->
@@ -1505,6 +1509,7 @@ Proof.
   - eauto using Mem.free_list_left_inject.
   - eauto using symbols_inject_left_free_list.
   - eauto using same_blocks_free_list.
+  - eauto using gfun_permissions_free_list.
 Qed.
 
 Lemma right_mem_injection_free_list_left':
@@ -1533,8 +1538,17 @@ Proof.
     intros b1 b2 delta ofs j_b1. simpl.
     exploit right_mem_injection_right; eauto.
     intros (cp' & m2_b2 & DEF).
-    admit.
+    destruct (s cp') eqn:s_cp'.
+    + assert (public_fun_block ge1 b1) as pub1 by eauto.
+      assert (public_fun_block ge2 b2) as pub2 by admit.
+      right. intros Hperm.
+      destruct pub2 as (id & fd & _ & _ & ge2_b2).
+      exploit gfun_perms2; eauto.
+      intros (_ & Hperm').
+      specialize (Hperm' _ _ _ Hperm) as [??]. congruence.
+    + left. intros ?. congruence.
   - destruct RMEMINJ; eauto using same_blocks_free_list.
+  - destruct RMEMINJ; eauto using gfun_permissions_free_list.
 Admitted.
 
   (* AAA: [2023-08-08: This next part is not true anymore because left symbols
@@ -2066,7 +2080,7 @@ Admitted.
     exists j', m2', b2.
     split; [| split; [| split; [| split]]].
     - rewrite sizeof_preserved. assumption.
-    - destruct RMEMINJ as [DOM MI D0 SYMB SYMBL BLKS1 BLKS2].
+    - destruct RMEMINJ as [DOM MI D0 SYMB SYMBL BLKS1 PERMS1 BLKS2 PERMS2].
       constructor; auto.
       + intros b. specialize (DOM b).
         simpl in *.
@@ -2141,10 +2155,12 @@ Admitted.
         change (Mem.block_compartment _ _ = _)
           with (Mem.can_access_block m1' b (Some cp')).
         eapply Mem.alloc_can_access_block_other_inj_1; eauto.
+      + eauto using gfun_permissions_alloc.
       + intros b cp' FIND. specialize (BLKS2 b cp' FIND).
         change (Mem.block_compartment _ _ = _)
           with (Mem.can_access_block m2' b (Some cp')).
         eapply Mem.alloc_can_access_block_other_inj_1; eauto.
+      + eauto using gfun_permissions_alloc.
     - assumption.
     - destruct RENVINJ as [ENVSOME ENDNONE]. split.
       + intros id' b ty' GET.
@@ -2222,6 +2238,7 @@ Admitted.
     - eauto using Mem.alloc_left_unmapped_inject_strong.
     - eauto using symbols_inject_left_alloc_left.
     - eauto using same_blocks_alloc.
+    - eauto using gfun_permissions_alloc.
   Qed.
 
   Lemma right_mem_injection_alloc_left' {j cp m1 m2 m2' b2 lo hi}
@@ -2234,6 +2251,7 @@ Admitted.
     split; trivial.
     - eauto using Mem.alloc_right_inject.
     - eauto using same_blocks_alloc.
+    - eauto using gfun_permissions_alloc.
   Qed.
 
   Lemma right_mem_injection_alloc_variables_right
@@ -2408,7 +2426,8 @@ Admitted.
     exploit Mem.store_mapped_inject; eauto.
     rewrite Z.add_0_r. intros (m2' & STORE2 & INJ').
     exists m2'; split; trivial. constructor; trivial;
-    eauto using same_domain_store, same_blocks_store, symbols_inject_left_store.
+    eauto using same_domain_store, same_blocks_store,
+      symbols_inject_left_store, gfun_permissions_store.
   Qed.
 
   Lemma right_mem_injection_store_unmapped :
@@ -2423,7 +2442,8 @@ Admitted.
     exploit Mem.store_unmapped_inject; eauto.
     intros MI'.
     constructor; trivial;
-    eauto using same_domain_store, same_blocks_store, symbols_inject_left_store.
+    eauto using same_domain_store, same_blocks_store,
+      symbols_inject_left_store, gfun_permissions_store.
   Qed.
 
   Lemma right_mem_injection_store_outside :
@@ -2456,7 +2476,8 @@ Admitted.
     rewrite Z.add_0_r. intros (m2' & STORE2 & MI').
     exists m2'. split; trivial.
     constructor;
-    eauto using same_domain_storebytes, same_blocks_storebytes, symbols_inject_left_storebytes.
+    eauto using same_domain_storebytes, same_blocks_storebytes,
+      symbols_inject_left_storebytes, gfun_permissions_storebytes.
   Qed.
 
   Lemma right_mem_injection_storebytes_unmapped
@@ -2469,7 +2490,8 @@ Admitted.
     intros [DOM MI D0 SYMB BLKS1 BLKS2] LOCINJ STORE1.
     exploit Mem.storebytes_unmapped_inject; eauto. intros MI'.
     constructor;
-    eauto using same_domain_storebytes, same_blocks_storebytes, symbols_inject_left_storebytes.
+    eauto using same_domain_storebytes, same_blocks_storebytes,
+      symbols_inject_left_storebytes, gfun_permissions_storebytes.
   Qed.
 
   Lemma right_mem_injection_storebytes_outside
@@ -2483,7 +2505,8 @@ Admitted.
     exploit Mem.storebytes_outside_inject; eauto.
     { intros. eapply LOCINJ. eauto. }
     constructor;
-    eauto using same_domain_storebytes, same_blocks_storebytes.
+    eauto using same_domain_storebytes, same_blocks_storebytes,
+      gfun_permissions_storebytes.
   Qed.
 
 Lemma same_domain_assign_loc
@@ -2523,7 +2546,9 @@ Qed.
     intros (m2' & ASSIGN2 & MEMINJ & LOAD).
     rewrite genv_cenv_preserved. exists m2'; split; trivial.
     destruct RMEMINJ as [DOM MI D0 SYMB BLKS1 BLKS2].
-    constructor; eauto using same_domain_assign_loc, same_blocks_assign_loc, symbols_inject_left_assign_loc.
+    constructor;
+      eauto using same_domain_assign_loc, same_blocks_assign_loc,
+      symbols_inject_left_assign_loc, gfun_permissions_assign_loc.
   Qed.
 
   Lemma right_mem_injection_assign_loc_unmapped
@@ -2798,7 +2823,7 @@ Qed.
               incr & j_j'_sep & comps_m1').
     exists j', m2', vres2.
     split; [| split; [| split]]; auto.
-    destruct RMEMINJ as [DOM MI D0 SYMB SYMBL BLKS1 BLKS2].
+    destruct RMEMINJ as [DOM MI D0 SYMB SYMBL BLKS1 PERMS1 BLKS2 PERMS2].
     assert (same_domain s j' ge1 m1') as DOM'.
     { (* FIXME: Separate lemma? *)
       clear - DOM BLKS1 incr j_j'_sep comps_m1' unchanged1 RIGHT inj'.
@@ -2928,7 +2953,7 @@ Qed.
       right_mem_injection s j ge1 ge2 m1 m2'.
   Proof.
     intros.
-    destruct RMEMINJ as [DOM MI D0 SYMB SYMBL BLKS1 BLKS2].
+    destruct RMEMINJ as [DOM MI D0 SYMB SYMBL BLKS1 PERMS1 BLKS2 PERMS2].
     constructor; eauto.
     - exploit ec_mem_outside_compartment; eauto.
       { apply external_call_spec. }
@@ -5332,8 +5357,10 @@ Proof.
   - apply symbols_inject_init_meminj.
   - intros. apply symbols_inject_left_init_meminj; assumption.
   - apply init_mem_same_blocks; assumption.
+  - admit.
   - apply init_mem_same_blocks; assumption.
-Qed.
+  - admit.
+Admitted.
 
 (* - Related to old [partialize_partition]
    - We may want to be more explicit about the initial injection *)
