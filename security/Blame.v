@@ -633,6 +633,14 @@ Section Simulation.
      and [globdef_right] that we should explore. *)
   Hypothesis prog_defs_W1_W2: prog_defs W1 = prog_defs W2.
 
+  (* TODO: Move this to axiomatization of EC, this is simply an
+     adaptation to the slightly stronger preservation properties that
+     we used in [Globalenv] to prove the memory characterizations. *)
+  Hypothesis ec_mem_outside_compartment':
+    forall ef ge vargs m1 t vres m2,
+      external_call ef ge vargs m1 t vres m2 ->
+      Genv.unchanged_on (loc_not_in_compartment (comp_of ef) m1) m1 m2.
+
 (** New helpers *)
 
 Lemma state_split_decidable:
@@ -2728,21 +2736,37 @@ Qed.
              discriminate. }
     constructor;
     eauto using symbols_inject_incr, external_call_spec, same_blocks_extcall.
-    {
-    intros b b' delta j'_b.
-    destruct (j b) as [[b'' delta'']|] eqn:j_b.
-    - exploit D0; eauto. intros ->.
-      exploit incr; eauto. congruence.
-    - exploit j_j'_sep; eauto. intros [invalid_b _].
-      enough (Mem.valid_block m1' b) as valid_b.
-      { exploit comps_m1'; eauto.
-        intros (? & ? & ?). congruence. }
-      apply Classical_Prop.NNPP. (* FIXME *) intros contra.
-      exploit Mem.mi_freeblocks; eauto. congruence.
-    }
-    { admit. } (* new *)
-  (* Qed. *)
-  Admitted.
+    { intros b b' delta j'_b.
+      destruct (j b) as [[b'' delta'']|] eqn:j_b.
+      - exploit D0; eauto. intros ->.
+        exploit incr; eauto. congruence.
+      - exploit j_j'_sep; eauto. intros [invalid_b _].
+        enough (Mem.valid_block m1' b) as valid_b.
+        { exploit comps_m1'; eauto.
+          intros (? & ? & ?). congruence. }
+        apply Classical_Prop.NNPP. (* FIXME *) intros contra.
+        exploit Mem.mi_freeblocks; eauto. congruence. }
+    { intros cp LEFT id b1 b2 ofs b1_b2 id_b1 b1_cp.
+      destruct (j b1) as [[b2' ofs'] |] eqn:b1_b2'.
+      - erewrite incr in b1_b2; eauto. injection b1_b2 as -> ->.
+        destruct (SYMBL _ LEFT _ _ _ _ b1_b2' id_b1 b1_cp) as (-> & id_b2 & ACC).
+        split; [reflexivity |]. split; [assumption |].
+        intros ofs. specialize (ACC ofs).
+        exploit BLKS1; eauto. intros COMP.
+        assert (Mem.valid_block m1 b1). {
+          unfold Mem.valid_block.
+          destruct (plt b1 (Mem.nextblock m1)) as [| CONTRA]; [assumption |].
+          apply Mem.block_compartment_valid_block in CONTRA.
+          congruence. }
+        eapply ec_mem_outside_compartment' in EXTCALL.
+        erewrite <- Genv.unchanged_on_mem_access; eauto.
+        intros CONTRA.
+        congruence.
+      - exploit j_j'_sep; eauto. intros [NOTVALID _].
+        exploit BLKS1; eauto. intros COMP.
+        apply Mem.block_compartment_valid_block in NOTVALID.
+        congruence. }
+  Qed.
 
   Lemma right_mem_injection_external_call_left :
     forall j ef vargs1 vres1 t m1 m1' m2
