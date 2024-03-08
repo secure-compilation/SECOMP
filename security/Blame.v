@@ -4348,7 +4348,7 @@ Proof.
   (* So those four we can get, but we need to tie id and gd to b1, b2 *)
 Abort.
 
-Lemma init_mem_characterization_rel id gd m1 m2 b1 b2
+Lemma init_mem_characterization_rel gd m1 m2 b1 b2
       (* (MATCH: match_prog sp pr1 pr2) *)
       (* (VAR1: wf_gvar_init ge1) *)
       (* (VAR2: wf_gvar_init ge2) *)
@@ -4356,8 +4356,6 @@ Lemma init_mem_characterization_rel id gd m1 m2 b1 b2
       (* (PROGDEFS2: In (id, gd) (prog_defs pr2)) *)
       (MEM1: Genv.init_mem W1 = Some m1)
       (MEM2: Genv.init_mem W2 = Some m2)
-      (SYM1: Genv.find_symbol ge1 id = Some b1)
-      (SYM2: Genv.find_symbol ge2 id = Some b2)
       (b1_b2: init_meminj b1 = Some (b2, 0))
       (DEF1: Genv.find_def ge1 b1 = Some gd)
       (DEF2: Genv.find_def ge2 b2 = Some gd):
@@ -4443,11 +4441,14 @@ Local Opaque Mem.loadbytes.
     rewrite H0, H1.
     specialize (W1_gvars gv b1 DEF1). specialize (W2_gvars gv b2 DEF2).
     assert (RIGHT: s (comp_of gv) = Right). {
-      clear -W1_gvars SYM1 DEF1 b1_b2.
+      clear -W1_gvars DEF1 b1_b2.
       unfold init_meminj, init_meminj_block in b1_b2.
-      apply Genv.find_invert_symbol in SYM1. rewrite SYM1 in b1_b2.
+      destruct (Genv.invert_symbol ge1 b1) as [id1|] eqn:b1_id;
+        try discriminate.
+      assert (Genv.find_symbol ge1 id1 = Some b1) as id1_b1
+          by eauto using Genv.invert_find_symbol.
       unfold Genv.find_comp_of_ident in b1_b2.
-      apply Genv.invert_find_symbol in SYM1. rewrite SYM1 in b1_b2.
+      rewrite id1_b1 in b1_b2.
       unfold Genv.find_comp_of_block in b1_b2.
       apply Genv.find_var_info_iff in DEF1. rewrite DEF1 in b1_b2.
       destruct (s (comp_of (Gvar gv))) eqn:RIGHT; [discriminate |].
@@ -4623,8 +4624,8 @@ Proof.
           rewrite SIDE. rewrite SYM2. setoid_rewrite DEF1.
           rewrite public_id. reflexivity. }
         destruct (init_mem_characterization_rel
-                    _ _ _ _ _ _
-                    MEM1 MEM2 SYM1 SYM2 INJ DEF1 DEF2)
+                    _ _ _ _ _
+                    MEM1 MEM2 INJ DEF1 DEF2)
           as (PERMS & _).
         apply PERMS. rewrite Z.add_0_r. assumption.
       * destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [| discriminate].
@@ -4642,8 +4643,8 @@ Proof.
           setoid_rewrite COMP.
           rewrite SIDE. rewrite SYM2. reflexivity. }
         destruct (init_mem_characterization_rel
-                    _ _ _ _ _ _
-                    MEM1 MEM2 SYM1 SYM2 INJ DEF1 DEF2)
+                    _ _ _ _ _
+                    MEM1 MEM2 INJ DEF1 DEF2)
           as (PERMS & _).
         apply PERMS. rewrite Z.add_0_r. assumption.
     + unfold init_meminj, init_meminj_block.
@@ -4672,8 +4673,8 @@ Proof.
           setoid_rewrite COMP.
           rewrite SIDE. rewrite SYM2. setoid_rewrite DEF1. rewrite public_id. reflexivity. }
         destruct (init_mem_characterization_rel
-                    _ _ _ _ _ _
-                    MEM1 MEM2 SYM1 SYM2 INJ DEF1 DEF2)
+                    _ _ _ _ _
+                    MEM1 MEM2 INJ DEF1 DEF2)
           as (_ & BLOCKS & _).
         apply BLOCKS. assumption.
       * destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [| discriminate].
@@ -4690,8 +4691,8 @@ Proof.
           setoid_rewrite COMP.
           rewrite SIDE. rewrite SYM2. reflexivity. }
         destruct (init_mem_characterization_rel
-                    _ _ _ _ _ _
-                    MEM1 MEM2 SYM1 SYM2 INJ DEF1 DEF2)
+                    _ _ _ _ _
+                    MEM1 MEM2 INJ DEF1 DEF2)
           as (_ & BLOCKS & _).
         apply BLOCKS. assumption.
     + unfold init_meminj, init_meminj_block.
@@ -4741,8 +4742,8 @@ Proof.
           setoid_rewrite COMP.
           rewrite SIDE. rewrite SYM2. setoid_rewrite DEF1. rewrite public_id. reflexivity. }
         destruct (init_mem_characterization_rel
-                    _ _ _ _ _ _
-                    MEM1 MEM2 SYM1 SYM2 INJ DEF1 DEF2)
+                    _ _ _ _ _
+                    MEM1 MEM2 INJ DEF1 DEF2)
           as (_ & _ & MEMVAL).
         rewrite Z.add_0_r. exact (MEMVAL ofs PERM).
       * destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [| discriminate].
@@ -4759,8 +4760,8 @@ Proof.
           setoid_rewrite COMP.
           rewrite SIDE. rewrite SYM2. reflexivity. }
         destruct (init_mem_characterization_rel
-                    _ _ _ _ _ _
-                    MEM1 MEM2 SYM1 SYM2 INJ DEF1 DEF2)
+                    _ _ _ _ _
+                    MEM1 MEM2 INJ DEF1 DEF2)
           as (_ & _ & MEMVAL).
         rewrite Z.add_0_r. exact (MEMVAL ofs PERM).
   - intros b VALID. unfold init_meminj, init_meminj_block.
@@ -4888,8 +4889,8 @@ Proof.
         setoid_rewrite COMP.
         rewrite SIDE. rewrite SYM2. setoid_rewrite DEF1. rewrite public_id. reflexivity. }
       destruct (init_mem_characterization_rel
-                  _ _ _ _ _ _
-                  MEM1 MEM2 SYM1 SYM2 INJ DEF1 DEF2)
+                  _ _ _ _ _
+                  MEM1 MEM2 INJ DEF1 DEF2)
         as (PERMS & _).
       left. apply PERMS. rewrite Z.add_0_r in PERM. assumption.
     + destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [| discriminate].
@@ -4906,8 +4907,8 @@ Proof.
         setoid_rewrite COMP.
         rewrite SIDE. rewrite SYM2. reflexivity. }
       destruct (init_mem_characterization_rel
-                  _ _ _ _ _ _
-                  MEM1 MEM2 SYM1 SYM2 INJ DEF1 DEF2)
+                  _ _ _ _ _
+                  MEM1 MEM2 INJ DEF1 DEF2)
         as (PERMS & _).
       left. apply PERMS. rewrite Z.add_0_r in PERM. assumption.
 Qed.
