@@ -3179,19 +3179,69 @@ Local Transparent Mem.store. unfold Mem.store in H10. Local Opaque Mem.store.
     inversion STEP; subst; try eauto.
     - (* assign *)
       simpl in *.
-      assert (forall b delta, j b <> Some (loc, delta)).
-      { exploit assign_loc_can_access_block; eauto.
-        intros m_loc b delta j_b. destruct RMEMINJ as [DOM].
-        assert (j b <> None) as j_b_def by congruence.
-        apply DOM in j_b_def. simpl in j_b_def.
-        destruct j_b_def as [j_b_def | [fd DEF]].
-        + destruct (Mem.block_compartment (memory_of s1) b) as [cp|] eqn:s1_b;
-            try easy.
-          enough (Mem.can_access_block m loc (Some cp))
-            by (simpl in *; congruence).
-          eapply Mem.mi_own; eauto. now eapply Mem.mi_inj.
-        + admit. (* cannot assign loc to function block *) }
-      exploit @right_mem_injection_assign_loc_outside; eauto.
+      (* case analysis - terrrible, could use a good refactoring *)
+      inversion H2; subst.
+      + assert (forall b delta, j b <> Some (loc, delta)).
+        { exploit assign_loc_can_access_block; eauto.
+          intros m_loc b delta j_b. inversion RMEMINJ as [DOM].
+          assert (j b <> None) as j_b_def by congruence.
+          apply DOM in j_b_def. simpl in j_b_def.
+          destruct j_b_def as [j_b_def | (id & fd & id_b & id_pub & b_fd)].
+          - destruct (Mem.block_compartment (memory_of s1) b) as [cp|] eqn:s1_b;
+              try easy.
+            enough (Mem.can_access_block m loc (Some cp))
+              by (simpl in *; congruence).
+            eapply Mem.mi_own; eauto. now eapply Mem.mi_inj.
+          - assert (COMP := Genv.find_funct_ptr_find_comp_of_block _ _ b_fd).
+            exploit same_blks3; eauto. intros comp_b_fd.
+            exploit Mem.can_access_block_inj; eauto.
+            { inversion partial_mem_inject0; eauto. }
+            { instantiate (1 := Some (comp_of fd)). eauto. }
+            intros comp_loc_fd.
+            unfold Mem.can_access_block in comp_loc_fd. rewrite m_loc in comp_loc_fd.
+            injection comp_loc_fd as f_fd.
+            rewrite <- f_fd in COMP.
+            exploit same_symb_left0; eauto. intros (-> & id_loc & ACC).
+            destruct (Ptrofs.eq_dec ofs Ptrofs.zero) as [-> | NONZERO].
+            + specialize (ACC (Ptrofs.unsigned Ptrofs.zero)).
+              unfold Mem.storev in H4.
+Local Transparent Mem.store. unfold Mem.store in H4. Local Opaque Mem.store.
+              destruct Mem.valid_access_dec; [| discriminate].
+              destruct v0 as (PERM & ? & ?).
+              specialize (PERM _ (size_chunk_range _ _)).
+              inversion partial_mem_inject0.
+              rewrite Ptrofs.unsigned_zero, <- (Z.add_0_r 0) in PERM.
+              exploit mi_perm_inv; eauto. intros [PERM' | PERM'].
+              * unfold Mem.perm, Mem.perm_order' in PERM'.
+                rewrite Ptrofs.unsigned_zero in ACC. rewrite ACC, zeq_true in PERM'.
+                inv PERM'.
+              * apply PERM'. apply Mem.perm_cur_max.
+                unfold Mem.perm, Mem.perm_order'.
+                rewrite Ptrofs.unsigned_zero in ACC. rewrite ACC, zeq_true.
+                constructor.
+            + specialize (ACC (Ptrofs.unsigned ofs)).
+              unfold Mem.storev in H4.
+Local Transparent Mem.store. unfold Mem.store in H4. Local Opaque Mem.store.
+              destruct Mem.valid_access_dec; [| discriminate].
+              destruct v0 as (PERM & ? & ?).
+              specialize (PERM _ (size_chunk_range _ _)).
+              inversion partial_mem_inject0.
+              rewrite <- (Z.add_0_r (_ ofs)) in PERM.
+              exploit mi_perm_inv; eauto. intros [PERM' | PERM'].
+              * unfold Mem.perm, Mem.perm_order' in PERM'.
+                rewrite ACC in PERM'.
+                destruct zeq as [-> | NEQ]; [| contradiction].
+                inv PERM'.
+              * (* close, but no cigar yet -- need to cover the None case *)
+                apply PERM'.
+                apply Mem.perm_cur_max.
+                unfold Mem.perm, Mem.perm_order'.
+                rewrite ACC.
+                destruct zeq as [-> | NEQ]; [now constructor |].
+                admit. }
+        exploit @right_mem_injection_assign_loc_outside; eauto.
+      + admit. (* and similarly for the other cases *)
+      + admit. (* ditto *)
     - (* builtin *)
       simpl in *.
       exploit right_mem_injection_external_call_left'; eauto.
