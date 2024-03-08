@@ -58,11 +58,10 @@ Definition def_of_ident (ge: genv) id :=
   end.
 
 Definition match_type_of_ident s (ge: genv) id :=
-  match def_of_ident ge id with
-  | Some gd =>
-      if side_eq (s (comp_of gd)) Right ||
-           Genv.public_symbol ge id
-      then Some (s (comp_of gd)) else None
+  match Genv.find_comp_of_ident ge id with
+  | Some cp =>
+      if side_eq (s cp) Right || Genv.public_symbol ge id
+      then Some (s cp) else None
   | None => None
   end.
 
@@ -110,18 +109,14 @@ Section Equivalence.
   Variable s: split.
   Variable j: meminj.
 
-  (* Definition same_domain_right (m1: mem) := *)
-  (*   forall b, j b <> None <-> (s, m1) |= b ∈ Right. *)
+  Definition public_fun_block (ge: genv) (b : block) :=
+    exists id fd,
+      Genv.find_symbol ge id = Some b /\
+        Genv.public_symbol ge id = true /\
+        Genv.find_funct_ptr ge b = Some fd.
 
-  Definition same_domain_right (ge1: genv) (m1: mem) :=
-    forall b, j b <> None <-> (s, m1) |= b ∈ Right \/
-                              exists fd, Genv.find_def ge1 b = Some (Gfun fd).
-
-  Definition same_domain_left (ge1: genv) :=
-    forall b,
-      j b <> None <->
-      exists cp, Genv.find_comp_of_block ge1 b = Some cp /\
-                 s cp = Left.
+  Definition same_domain (ge1: genv) (m1: mem) :=
+    forall b, j b <> None <-> (s, m1) |= b ∈ Right \/ public_fun_block ge1 b.
 
   (* TODO: Move to memory *)
   Lemma free_block_compartment {m b lo hi cp m' b'} :
@@ -137,42 +132,55 @@ Section Equivalence.
                    _ (Some cp') BLK') in BLK.
   Qed.
 
-  Lemma same_domain_right_free m b lo hi cp m' ge
+  (* TODO: Move to memory *)
+  Lemma free_list_block_compartment {m blks cp m' b'} :
+    Mem.free_list m blks cp = Some m' ->
+    Mem.block_compartment m b' = Mem.block_compartment m' b'.
+  Proof.
+    revert m m'.
+    induction blks as [|[[b lo] hi] blks IH]; simpl.
+    - intros *; congruence.
+    - intros m m''. destruct Mem.free as [m'|] eqn:Hfree; try congruence.
+      intros Hfrees. rewrite (free_block_compartment Hfree).
+      now rewrite (IH _ _ Hfrees).
+  Qed.
+
+  Lemma same_domain_free m b lo hi cp m' ge
     (FREE : Mem.free m b lo hi cp = Some m')
-    (BLOCKS : same_domain_right ge m) :
-    same_domain_right ge m'.
+    (BLOCKS : same_domain ge m) :
+    same_domain ge m'.
   Proof.
     intros b'. specialize (BLOCKS b'). simpl in *.
     now rewrite <- (free_block_compartment FREE).
   Qed.
 
-  Lemma same_domain_right_free_list m bs cp m' ge
+  Lemma same_domain_free_list m bs cp m' ge
     (FREE : Mem.free_list m bs cp = Some m')
-    (BLOCKS : same_domain_right ge m) :
-    same_domain_right ge m'.
+    (BLOCKS : same_domain ge m) :
+    same_domain ge m'.
   Proof.
     revert m cp m' FREE BLOCKS.
     induction bs as [| [[b lo] hi] ? IH]; intros.
     - now inv FREE.
     - simpl in FREE.
       destruct (Mem.free m b lo hi cp) as [m1 |] eqn:FREE1; [| discriminate].
-      eapply same_domain_right_free in FREE1; [| exact BLOCKS].
+      eapply same_domain_free in FREE1; [| exact BLOCKS].
       now eapply IH; eauto.
   Qed.
 
-  Lemma same_domain_right_store chunk m b off v cp m' ge :
+  Lemma same_domain_store chunk m b off v cp m' ge :
     Mem.store chunk m b off v cp = Some m' ->
-    same_domain_right ge m ->
-    same_domain_right ge m'.
+    same_domain ge m ->
+    same_domain ge m'.
   Proof.
     intros STORE DOM b'. specialize (DOM b'). simpl in *.
     now rewrite (Mem.store_block_compartment _ _ _ _ _ _ _ STORE).
   Qed.
 
-  Lemma same_domain_right_storebytes m b ofs sz ocp m' ge :
+  Lemma same_domain_storebytes m b ofs sz ocp m' ge :
     Mem.storebytes m b ofs sz ocp = Some m' ->
-    same_domain_right ge m ->
-    same_domain_right ge m'.
+    same_domain ge m ->
+    same_domain ge m'.
   Proof.
     intros STORE DOM b'. specialize (DOM b'). simpl in *.
     now rewrite (Mem.storebytes_block_compartment _ _ _ _ _ _ STORE).
@@ -385,11 +393,96 @@ Local Transparent Mem.free. unfold Mem.free in FREE. Local Opaque Mem.free.
       eapply symbols_inject_left_store; eauto.
   Qed.
 
+  Definition gfun_permissions (ge: genv) (m : mem) :=
+    forall b f,
+      Genv.find_funct_ptr ge b = Some f ->
+      Mem.perm m b 0 Cur Nonempty /\
+      forall ofs k p, Mem.perm m b ofs k p -> ofs = 0 /\ p = Nonempty.
+
+  Lemma gfun_permissions_store chunk m b ofs sz cp m' ge
+    (STORE : Mem.store chunk m b ofs sz cp = Some m')
+    (BLOCKS : gfun_permissions ge m) :
+    gfun_permissions ge m'.
+  Proof.
+    intros. intros b' cp' FIND.
+    exploit BLOCKS; eauto. intros [H1 H2].
+    eauto using Mem.perm_store_1, Mem.perm_store_2.
+  Qed.
+
+  Lemma gfun_permissions_storebytes m b ofs sz ocp m' ge
+    (STORE : Mem.storebytes m b ofs sz ocp = Some m')
+    (BLOCKS : gfun_permissions ge m) :
+    gfun_permissions ge m'.
+  Proof.
+    intros. intros b' cp FIND.
+    exploit BLOCKS; eauto. intros [H1 H2].
+    eauto using Mem.perm_storebytes_1, Mem.perm_storebytes_2.
+  Qed.
+
+  Lemma gfun_permissions_alloc m cp lo hi m' b ge
+    (ALLOC : Mem.alloc m cp lo hi = (m', b))
+    (BLOCKS : gfun_permissions ge m) :
+    gfun_permissions ge m'.
+  Proof.
+    intros b' cp' FIND.
+    exploit BLOCKS; eauto. intros [H1 H2].
+    assert (b' <> b) as neq.
+    { intros ->.
+      exploit Mem.alloc_result; eauto. intros ->.
+      exploit Mem.perm_valid_block; eauto.
+      unfold Mem.valid_block, Plt. lia. }
+    exploit Mem.perm_alloc_1; eauto. intros H1'. split; trivial.
+    intros ofs k p Hperm.
+    exploit Mem.perm_alloc_4; eauto.
+  Qed.
+
+  Lemma gfun_permissions_free m b lo hi cp m' ge
+    (FREE : Mem.free m b lo hi cp = Some m')
+    (BLOCKS : gfun_permissions ge m) :
+    gfun_permissions ge m'.
+  Proof.
+    intros b' cp' FIND. specialize (BLOCKS b' cp' FIND).
+    destruct BLOCKS as [H1 H2].
+    exploit Mem.perm_free_inv; eauto. intros [[-> in_bounds]|Hperm'].
+    { exploit Mem.free_range_perm; eauto.
+      intros Hperm. clear H1. exploit H2; eauto.
+      intuition congruence. }
+    split; trivial.
+    intros ofs' k' p' H1'.
+    eauto using Mem.perm_free_3.
+  Qed.
+
+  Lemma gfun_permissions_free_list m bs cp m' ge
+    (FREE : Mem.free_list m bs cp = Some m')
+    (BLOCKS : gfun_permissions ge m) :
+    gfun_permissions ge m'.
+  Proof.
+    revert m cp m' ge FREE BLOCKS.
+    induction bs as [| [[b lo] hi] ? IH]; intros.
+    - now inv FREE.
+    - simpl in FREE.
+      destruct (Mem.free m b lo hi cp) as [m1 |] eqn:FREE1; [| discriminate].
+      eapply gfun_permissions_free in FREE1; [| exact BLOCKS].
+      now eapply IH; eauto.
+  Qed.
+
+  Lemma gfun_permissions_assign_loc {ce cp ty m b ofs bf v m' ge}
+    (ASSIGN : assign_loc ce cp ty m b ofs bf v m')
+    (BLOCKS : gfun_permissions ge m) :
+    gfun_permissions ge m'.
+  Proof.
+    inv ASSIGN.
+    - eapply gfun_permissions_store; eauto.
+    - eapply gfun_permissions_storebytes; eauto.
+    - inv H.
+      eapply gfun_permissions_store; eauto.
+  Qed.
+
   Record right_mem_injection (ge1 ge2: genv) (m1 m2: mem) : Prop :=
-    { same_dom: same_domain_right ge1 m1;
+    { same_dom: same_domain ge1 m1;
       partial_mem_inject: Mem.inject j m1 m2;
       j_delta_zero: Mem.delta_zero j;
-      (* FIXME: The condition below contradicts same_domain_right when the left
+      (* FIXME: The condition below contradicts same_domain when the left
          side has a public symbol.  This is because symbols_inject says that any
          public symbol must be covered by the memory injection. *)
       (* TODO replace symbols_inject with meminj_preserves_globals *)
@@ -403,7 +496,7 @@ Lemma right_mem_injection_right ge1 ge2 m1 m2 b1 b2 delta :
   right_mem_injection ge1 ge2 m1 m2 ->
   j b1 = Some (b2, delta) ->
   exists cp, Mem.block_compartment m2 b2 = Some cp /\
-             (s cp = Left -> exists fd, Genv.find_def ge1 b1 = Some (Gfun fd)).
+             (s cp = Left -> public_fun_block ge1 b1).
 Proof.
   intros [DOM MI _ _ _ BLOCKS1 BLOCKS2] j_b1.
   assert (j b1 <> None) as j_b1_def by congruence.
@@ -413,9 +506,8 @@ Proof.
     + enough (Mem.can_access_block m2 b2 (Some cp)) by (simpl in *; eauto).
       eauto using Mem.mi_inj, Mem.mi_own.
     + intros LEFT.
-      destruct j_b1_def as [RIGHT | [fd DEF]]; [congruence | now eauto].
-  - destruct j_b1_def as [CONTRA | [fd DEF]]; [contradiction |].
-    apply Genv.find_funct_ptr_iff in DEF.
+      destruct j_b1_def as [RIGHT | ?]; [congruence | now eauto].
+  - destruct j_b1_def as [[] | (id & fd1 & ge1_id & pub_id & ge1_b1)].
     exploit Genv.find_funct_ptr_find_comp_of_block; eauto. intros COMP.
     exploit BLOCKS1; eauto. congruence.
 Qed.
@@ -1141,10 +1233,12 @@ Qed.
     destruct (match_prog_globdefs _ _ _ match_W1_W2 id)
       as [δ ge1_id ge2_id match_id|ge1_id ge2_id].
     - unfold match_type_of_ident, def_of_ident in *.
+      unfold Genv.find_comp_of_ident, Genv.find_comp_of_block in *.
       destruct (Genv.find_symbol ge1 id);
       destruct (Genv.find_symbol ge2 id);
       easy.
     - unfold match_type_of_ident, def_of_ident, Genv.public_symbol in *.
+      unfold Genv.find_comp_of_ident, Genv.find_comp_of_block in *.
       destruct (Genv.find_symbol ge1 id) as [b1|] eqn:id_b1;
       destruct (Genv.find_symbol ge2 id) as [b2|] eqn:id_b2;
       trivial.
@@ -1181,6 +1275,7 @@ Proof.
   specialize (match_gd id).
   destruct match_gd as [δ ge1_id_δ ge2_id_δ|ge1_id ge2_id].
   - unfold match_type_of_ident, def_of_ident in *.
+    unfold Genv.find_comp_of_ident, Genv.find_comp_of_block in *.
     destruct (Genv.find_symbol ge1 id) as [b1|] eqn:ge1_id_b1;
       try discriminate.
     destruct (Genv.find_symbol ge2 id) as [b2|] eqn:ge2_id_b2;
@@ -1196,6 +1291,7 @@ Proof.
     injection ge1_id_δ as <-.
     destruct Hcomp; congruence.
   - unfold match_type_of_ident, def_of_ident in *.
+    unfold Genv.find_comp_of_ident, Genv.find_comp_of_block in *.
     rewrite public_symbol_preserved in *.
     destruct Hcomp as [Hcomp|Hcomp].
     + destruct (Genv.find_symbol ge1 id) as [b1|] eqn:ge1_id_b1;
@@ -1229,6 +1325,7 @@ Qed.
     pose proof (match_prog_globdefs _ _ _ match_W1_W2 id) as match_id.
     destruct match_id as [δ ge1_id ge2_id match_id|ge1_id ge2_id].
     - unfold match_type_of_ident, def_of_ident in *.
+      unfold Genv.find_comp_of_ident, Genv.find_comp_of_block in *.
       destruct (Genv.find_symbol ge1 id) as [b1|] eqn:ge1_id_b1;
         try discriminate.
       destruct (Genv.find_symbol ge2 id) as [b2|] eqn:ge2_id_b2;
@@ -1250,6 +1347,7 @@ Qed.
         now inv match_id'.
       + now injection match_id as <-.
     - unfold match_type_of_ident, def_of_ident in *.
+      unfold Genv.find_comp_of_ident, Genv.find_comp_of_block in *.
       rewrite public_symbol_preserved in *.
       destruct (Genv.find_symbol ge1 id) as [b1|] eqn:ge1_id_b1;
       destruct (Genv.find_symbol ge2 id) as [b2|] eqn:ge2_id_b2;
@@ -1327,7 +1425,7 @@ Proof.
   destruct (Mem.range_perm_free _ _ _ _ _ RANGE2 ACCESS2)
     as (m2' & FREE2).
   exists m2'; split; trivial; split; trivial.
-  - eauto using same_domain_right_free.
+  - eauto using same_domain_free.
   - exploit Mem.free_parallel_inject; eauto.
     rewrite !Z.add_0_r. intros (? & ? & ?). congruence.
   - intros cp' LEFT id b1' b2' ofs b1'_b2' id_b1' b1'_cp'.
@@ -1346,7 +1444,6 @@ Proof.
     + erewrite <- mem_access_free_1; eauto.
   - eapply same_blocks_free; eauto.
   - eapply same_blocks_free; eauto.
-(* Qed. *)
 Admitted. (* easy fix *)
 
 Lemma right_mem_injection_free_list_right: forall {j m1 m2 e1 e2 cp m1'},
@@ -1396,7 +1493,7 @@ Proof.
   intros.
   destruct RMEMINJ as [DOM MI D0 SYMB SYMBL BLKS1 BLKS2].
   split; trivial.
-  - eauto using same_domain_right_free_list.
+  - eauto using same_domain_free_list.
   - eauto using Mem.free_list_left_inject.
   - eauto using symbols_inject_left_free_list.
   - eauto using same_blocks_free_list.
@@ -1411,19 +1508,25 @@ Lemma right_mem_injection_free_list_left':
 Proof.
   intros.
   split; try now destruct RMEMINJ.
-  - assert (Mem.unchanged_on (loc_not_in_compartment cp m2) m2 m2')
+  - assert (Mem.unchanged_on (fun b ofs =>
+                                loc_not_in_compartment cp m2 b ofs \/
+                                  loc_not_writable m2 b ofs) m2 m2')
       as UNCHANGED.
     { exploit Mem.free_list_unchanged_on; eauto.
-      apply Forall_forall. simpl. unfold loc_not_in_compartment.
-      intros [[b lo] hi] _ _ m2_b _ _ ?. congruence. }
+      apply Forall_forall. simpl.
+      unfold loc_not_in_compartment, loc_not_writable.
+      intros [[b2 lo2] hi2] _ Hperm m2_b2 i2 in_bounds [H|H]; try congruence.
+      exploit Hperm; eauto. intros Hperm'.
+      apply H.
+      apply Mem.perm_cur_max in Hperm'.
+      apply (Mem.perm_implies _ _ _ _ _ _ Hperm').
+      constructor. }
     exploit Mem.unchanged_on_inject'; eauto using partial_mem_inject.
-    intros b1 b2 delta ofs j_b1 m2_b2.
+    intros b1 b2 delta ofs j_b1. simpl.
     exploit right_mem_injection_right; eauto.
-    intros (? & m2_b2' & DEF). rewrite m2_b2 in m2_b2'. injection m2_b2' as <-.
-    specialize (DEF LEFT) as [fd1 DEF].
+    intros (cp' & m2_b2 & DEF).
     admit.
   - destruct RMEMINJ; eauto using same_blocks_free_list.
-(* Qed. *)
 Admitted.
 
   (* AAA: [2023-08-08: This next part is not true anymore because left symbols
@@ -1577,15 +1680,20 @@ Admitted.
       assert (j b1 <> None) as ?.
       { apply inj_dom.
         unfold Genv.allowed_addrof, Genv.allowed_addrof_b in ALLOWED1.
-        rewrite W1_id, ge1_b1 in ALLOWED1.
-        destruct gd1 as [fd1|v1]; eauto.
-        simpl in ALLOWED1.
+        rewrite W1_id, ge1_b1, orb_comm in ALLOWED1.
         destruct eq_compartment as [<-|?]; simpl in ALLOWED1; try congruence.
-        left.
-        unfold Mem.has_side_block. simpl.
-        unfold Genv.find_comp_of_ident in id_cp.
-        rewrite W1_id in id_cp.
-        apply SAMEBLKS in id_cp. now rewrite id_cp. }
+        - left.
+          unfold Mem.has_side_block. simpl.
+          unfold Genv.find_comp_of_ident in id_cp.
+          rewrite W1_id in id_cp.
+          apply SAMEBLKS in id_cp.
+          now rewrite id_cp.
+        - right.
+          destruct gd1 as [fd1|v1]; simpl in ALLOWED1; try congruence.
+          exists id, fd1.
+          split; trivial. split; trivial.
+          unfold Genv.find_funct_ptr.
+          now rewrite ge1_b1. }
       destruct (j b1) as [[b1' ofs]|] eqn:j_b1; try congruence.
       exists b1', ofs; split; trivial.
       assert (ofs = 0 /\ Genv.find_symbol (globalenv W2) id = Some b1')
@@ -2051,12 +2159,12 @@ Admitted.
       inv INJ'; eauto.
   Qed.
 
-  Lemma same_domain_right_alloc_left :
+  Lemma same_domain_alloc_left :
     forall j ge m cp lo hi m' b,
-      same_domain_right s j ge m ->
+      same_domain s j ge m ->
       Mem.alloc m cp lo hi = (m', b) ->
       s cp = Left ->
-      same_domain_right s j ge m'.
+      same_domain s j ge m'.
   Proof.
     intros j ge m cp lo hi m' b j_m m_m' s_cp b'.
     specialize (j_m b'). simpl in *.
@@ -2069,8 +2177,8 @@ Admitted.
       pose proof (Mem.fresh_block_alloc _ _ _ _ _ _ m_m').
       easy.
     - rewrite j_m, s_cp. split.
-      + intros [[] | [fd DEF]]. eauto.
-      + intros [| [fd DEF]]; [discriminate |]. eauto.
+      + intros [[] | ?]. eauto.
+      + intros [|?]; [discriminate |]. eauto.
   Qed.
 
   Lemma symbols_inject_left_alloc_left :
@@ -2102,7 +2210,7 @@ Admitted.
   Proof.
     destruct RMEMINJ as [DOM MI D0 SYMB SYMBL BLKS1 BLKS2].
     split; trivial.
-    - eauto using same_domain_right_alloc_left.
+    - eauto using same_domain_alloc_left.
     - eauto using Mem.alloc_left_unmapped_inject_strong.
     - eauto using symbols_inject_left_alloc_left.
     - eauto using same_blocks_alloc.
@@ -2292,7 +2400,7 @@ Admitted.
     exploit Mem.store_mapped_inject; eauto.
     rewrite Z.add_0_r. intros (m2' & STORE2 & INJ').
     exists m2'; split; trivial. constructor; trivial;
-    eauto using same_domain_right_store, same_blocks_store, symbols_inject_left_store.
+    eauto using same_domain_store, same_blocks_store, symbols_inject_left_store.
   Qed.
 
   Lemma right_mem_injection_store_unmapped :
@@ -2307,7 +2415,7 @@ Admitted.
     exploit Mem.store_unmapped_inject; eauto.
     intros MI'.
     constructor; trivial;
-    eauto using same_domain_right_store, same_blocks_store, symbols_inject_left_store.
+    eauto using same_domain_store, same_blocks_store, symbols_inject_left_store.
   Qed.
 
   Lemma right_mem_injection_store_outside :
@@ -2322,7 +2430,7 @@ Admitted.
     exploit Mem.store_outside_inject; eauto.
     { intros ??? INJ. destruct (LOCINJ _ _ INJ). }
     intros MI'.
-    constructor; trivial; eauto using same_blocks_store.
+    constructor; trivial; eauto using same_blocks_store, gfun_permissions_store.
   Qed.
 
   Lemma right_mem_injection_storebytes_mapped
@@ -2340,7 +2448,7 @@ Admitted.
     rewrite Z.add_0_r. intros (m2' & STORE2 & MI').
     exists m2'. split; trivial.
     constructor;
-    eauto using same_domain_right_storebytes, same_blocks_storebytes, symbols_inject_left_storebytes.
+    eauto using same_domain_storebytes, same_blocks_storebytes, symbols_inject_left_storebytes.
   Qed.
 
   Lemma right_mem_injection_storebytes_unmapped
@@ -2353,7 +2461,7 @@ Admitted.
     intros [DOM MI D0 SYMB BLKS1 BLKS2] LOCINJ STORE1.
     exploit Mem.storebytes_unmapped_inject; eauto. intros MI'.
     constructor;
-    eauto using same_domain_right_storebytes, same_blocks_storebytes, symbols_inject_left_storebytes.
+    eauto using same_domain_storebytes, same_blocks_storebytes, symbols_inject_left_storebytes.
   Qed.
 
   Lemma right_mem_injection_storebytes_outside
@@ -2367,28 +2475,28 @@ Admitted.
     exploit Mem.storebytes_outside_inject; eauto.
     { intros. eapply LOCINJ. eauto. }
     constructor;
-    eauto using same_domain_right_storebytes, same_blocks_storebytes.
+    eauto using same_domain_storebytes, same_blocks_storebytes.
   Qed.
 
-Lemma same_domain_right_assign_loc
+Lemma same_domain_assign_loc
         e ge j cp ty m b ofs bf v m' :
   assign_loc e cp ty m b ofs bf v m' ->
-  same_domain_right s ge j m ->
-  same_domain_right s ge j m'.
+  same_domain s ge j m ->
+  same_domain s ge j m'.
 Proof.
   intros ASSIGN DOM.
   destruct ASSIGN as [
       v chunk m' ACCESS STORE
     | b' ofs' bytes m' ACCESS H1 H2 H3 LOAD STORE
     | v sz sg pos width m' v' STORE ].
-  - eapply same_domain_right_store in STORE; eauto.
-  - eapply same_domain_right_storebytes in STORE; eauto.
+  - eapply same_domain_store in STORE; eauto.
+  - eapply same_domain_storebytes in STORE; eauto.
   - remember (Vptr b ofs) as addr1 eqn:Eaddr1.
     destruct STORE as
       [ sz sg1 attr sg pos width m addr c' n m' cp
           pos_0 width_bounds pos_width sg_eq LOAD STORE
       ]; subst addr.
-    eapply same_domain_right_store in STORE; eauto.
+    eapply same_domain_store in STORE; eauto.
 Qed.
 
   Lemma right_mem_injection_assign_loc_mapped
@@ -2407,7 +2515,7 @@ Qed.
     intros (m2' & ASSIGN2 & MEMINJ & LOAD).
     rewrite genv_cenv_preserved. exists m2'; split; trivial.
     destruct RMEMINJ as [DOM MI D0 SYMB BLKS1 BLKS2].
-    constructor; eauto using same_domain_right_assign_loc, same_blocks_assign_loc, symbols_inject_left_assign_loc.
+    constructor; eauto using same_domain_assign_loc, same_blocks_assign_loc, symbols_inject_left_assign_loc.
   Qed.
 
   Lemma right_mem_injection_assign_loc_unmapped
@@ -2683,7 +2791,7 @@ Qed.
     exists j', m2', vres2.
     split; [| split; [| split]]; auto.
     destruct RMEMINJ as [DOM MI D0 SYMB SYMBL BLKS1 BLKS2].
-    assert (same_domain_right s j' ge1 m1') as DOM'.
+    assert (same_domain s j' ge1 m1') as DOM'.
     { (* FIXME: Separate lemma? *)
       clear - DOM BLKS1 incr j_j'_sep comps_m1' unchanged1 RIGHT inj'.
       intros b. specialize (DOM b). simpl in *.
@@ -2695,8 +2803,8 @@ Qed.
         simpl in block_m1'_b. rewrite block_m1'_b.
         destruct (j b) as [[b' ofs]|] eqn:j_b.
         * assert (s cp = Right \/
-                  (exists fd : fundef, Genv.find_def (Genv.globalenv W1) b = Some (Gfun fd)))
-            as [cp_right | [fd DEF]] by (apply DOM; congruence).
+                    public_fun_block ge1 b)
+            as [cp_right | DEF] by (apply DOM; congruence).
           -- rewrite (incr _ _ _ j_b). intuition.
           -- split; eauto.
              intros ? j'_b.
@@ -2721,8 +2829,7 @@ Qed.
         * split; eauto.
           -- rewrite <- Mem.block_compartment_valid_block in block_m1'_b.
              eapply Mem.mi_freeblocks in block_m1'_b; eauto.
-          -- intros [[] | [fd DEF]].
-             apply Genv.find_funct_ptr_iff in DEF.
+          -- intros [[] | (id & fd & ? & ? & DEF)].
              assert (COMP := Genv.find_funct_ptr_find_comp_of_block _ _ DEF).
              rewrite (BLKS1 _ _ COMP) in block_m1_b.
              discriminate. }
@@ -2812,8 +2919,7 @@ Qed.
           exploit Mem.mi_inj; eauto. intros INJ'.
           eapply Mem.mi_own; eauto.
         * admit.
-      + destruct j_b1_def as [[] | [fd DEF]].
-        apply Genv.find_funct_ptr_iff in DEF.
+      + destruct j_b1_def as [[] | (id & fd & ? & ? & DEF)].
         assert (COMP := Genv.find_funct_ptr_find_comp_of_block _ _ DEF).
         exploit BLKS1; eauto. congruence.
     - intros b cp ge_b. specialize (BLKS2 _ _ ge_b).
@@ -2874,16 +2980,10 @@ Qed.
           intros m_loc. destruct RMEMINJ as [DOM].
           specialize (DOM loc). simpl in DOM. rewrite m_loc, LEFT in DOM.
           destruct (j loc) as [p|] eqn:j_loc; eauto.
-          enough (Left = Right \/
-                  (exists fd : fundef, Genv.find_def (Genv.globalenv W1) loc = Some (Gfun fd)));
-            [| now apply DOM].
-          destruct H5 as [| [fd DEF]]; [discriminate |].
+          enough (Left = Right \/ public_fun_block ge1 loc); [| now apply DOM].
+          destruct H5 as [| (id & fd & id_loc & ? & DEF)]; [discriminate |].
           destruct p as [b2 ofs'].
-          assert (SYM := DEF).
-          apply Genv.find_def_find_symbol_inversion in SYM as (id & id_loc);
-            [| eapply match_prog_unique1; eassumption].
           assert (PTR := DEF).
-          apply Genv.find_funct_ptr_iff in PTR.
           assert (COMP := Genv.find_funct_ptr_find_comp_of_block _ _ PTR).
           exploit same_blks3; eauto. intros COMP'.
           rewrite m_loc in COMP'. injection COMP' as COMP'.
@@ -2941,16 +3041,10 @@ Local Transparent Mem.loadbytes. unfold Mem.loadbytes in H7. Local Opaque Mem.lo
             intros m_loc. destruct RMEMINJ as [DOM].
             specialize (DOM loc). simpl in DOM. rewrite m_loc, LEFT in DOM.
             destruct (j loc) as [p|] eqn:j_loc; eauto.
-            enough (Left = Right \/
-                    (exists fd : fundef, Genv.find_def (Genv.globalenv W1) loc = Some (Gfun fd)));
-              [| now apply DOM].
-            destruct H9 as [| [fd DEF]]; [discriminate |].
+            enough (Left = Right \/ public_fun_block ge1 loc); [| now apply DOM].
+            destruct H9 as [| (id & fd & id_loc & ? & DEF)]; [discriminate |].
             destruct p as [b2 ofs''].
-            assert (SYM := DEF).
-            apply Genv.find_def_find_symbol_inversion in SYM as (id & id_loc);
-              [| eapply match_prog_unique1; eassumption].
             assert (PTR := DEF).
-            apply Genv.find_funct_ptr_iff in PTR.
             assert (COMP := Genv.find_funct_ptr_find_comp_of_block _ _ PTR).
             exploit same_blks3; eauto. intros COMP'.
             rewrite m_loc in COMP'. injection COMP' as COMP'.
@@ -2997,16 +3091,10 @@ Local Transparent Mem.storebytes. unfold Mem.storebytes in H8. Local Opaque Mem.
           intros m_loc. destruct RMEMINJ as [DOM].
           specialize (DOM loc). simpl in DOM. rewrite m_loc, LEFT in DOM.
           destruct (j loc) as [p|] eqn:j_loc; eauto.
-          enough (Left = Right \/
-                  (exists fd : fundef, Genv.find_def (Genv.globalenv W1) loc = Some (Gfun fd)));
-            [| now apply DOM].
-          destruct H3 as [| [fd DEF]]; [discriminate |].
+          enough (Left = Right \/ public_fun_block ge1 loc); [| now apply DOM].
+          destruct H3 as [| (id & fd & id_loc & ? & DEF)]; [discriminate |].
           destruct p as [b2 ofs'].
-          assert (SYM := DEF).
-          apply Genv.find_def_find_symbol_inversion in SYM as (id & id_loc);
-            [| eapply match_prog_unique1; eassumption].
           assert (PTR := DEF).
-          apply Genv.find_funct_ptr_iff in PTR.
           assert (COMP := Genv.find_funct_ptr_find_comp_of_block _ _ PTR).
           exploit same_blks3; eauto. intros COMP'.
           rewrite m_loc in COMP'. injection COMP' as COMP'.
@@ -4305,7 +4393,7 @@ Definition init_meminj_block (b: block): option block :=
           match Genv.find_def ge1 b with
           | Some (Gfun fd) =>
               match  Genv.find_symbol ge2 id with
-              | Some b' => Some b'
+              | Some b' => if Genv.public_symbol ge1 id then Some b' else None
               | None => None
               end
           | _ => None
@@ -4364,22 +4452,9 @@ Proof.
   simpl. unfold fundef in *. rewrite id_b. congruence.
 Qed.
 
-(* TODO: Something more limited, like equality of [Genv.genv_symb] and
-   consequently [Genv.find_symbol], to avoid the messiness of the
-   equality of [prog_pol_pub]. The principle is similar to
-   [find_symbol_right], but this does not apply on the left because
-   the underlying [match_prog_globdefs'] only relates symbols that are
-   either on the right or public, and we are relying on equality of
-   program definitions rather than restriction to public
-   symbols. Other than that the proof is simple. As already noted, the
-   equality of program definitions can further simplify some of the
-   side-specific reasoning as it strengthens [match_prog]. *)
-Remark globalenv_W1_W2: Genv.globalenv W1 = Genv.globalenv W2.
-Admitted.
-
-Lemma same_domain_right_init_meminj m1
+Lemma same_domain_init_meminj m1
       (MEM: Genv.init_mem W1 = Some m1):
-  same_domain_right s init_meminj ge1 m1.
+  same_domain s init_meminj ge1 m1.
 Proof.
   intros b. split.
   - unfold init_meminj, init_meminj_block. intros INJ.
@@ -4390,16 +4465,20 @@ Proof.
     destruct (Genv.find_symbol_find_comp _ _ NONE) as (cp & COMP).
     setoid_rewrite COMP in INJ.
     destruct (s cp) eqn:SIDE.
-    + destruct (Genv.find_def ge1 b) as [gd |]; [| contradiction].
+    + destruct (Genv.find_def ge1 b) as [gd |] eqn:ge1_b; [| contradiction].
       destruct gd as [fd | gv]; [| contradiction].
       destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [| contradiction].
-      right. eauto.
+      destruct (Genv.public_symbol ge1 id) eqn:public_id1; try congruence.
+      right. exists id, fd. split.
+      { now apply Genv.invert_find_symbol. }
+      split; trivial.
+      now apply Genv.find_funct_ptr_iff.
     + destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [| contradiction].
       apply Genv.invert_find_symbol in SYM1.
       setoid_rewrite (find_symbol_init_mem_compartment _ _ _ _ SYM1 MEM) in COMP.
       { simpl. rewrite COMP. left. assumption. }
   - simpl. unfold init_meminj, init_meminj_block. intros RIGHT INJ.
-    destruct RIGHT as [RIGHT | [fd DEF]].
+    destruct RIGHT as [RIGHT | (id & fd & id_b & public_id & DEF)].
     (* Variation on standard processing *)
     + destruct (Genv.invert_symbol ge1 b) as [id |] eqn:SYM1.
       * assert (NONE: Genv.find_symbol ge1 id <> None). {
@@ -4420,27 +4499,27 @@ Proof.
         exploit init_mem_invert_symbol; eauto.
         exploit match_prog_unique1; eauto.
     + (* Initially very similar to the right case, can reuse *)
-      destruct (Genv.invert_symbol ge1 b) as [id |] eqn:SYM1.
-      * assert (NONE: Genv.find_symbol ge1 id <> None). {
-          apply Genv.invert_find_symbol in SYM1. congruence. }
-        destruct (Genv.find_symbol_find_comp _ _ NONE) as (cp & COMP).
-        setoid_rewrite COMP in INJ.
-        destruct (s cp) eqn:SIDE.
-        -- simpl in INJ. rewrite DEF in INJ.
-           destruct (Genv.find_symbol (Genv.globalenv W2) id) as [b' |] eqn:SYM2;
-             setoid_rewrite SYM2 in INJ; [discriminate |].
-           apply Genv.invert_find_symbol in SYM1.
-           setoid_rewrite globalenv_W1_W2 in SYM1.
-           setoid_rewrite SYM1 in SYM2.
-           discriminate.
-        -- destruct (Genv.find_symbol ge2 id) eqn:SYM2; [discriminate |].
-           apply Genv.invert_find_symbol in SYM1.
-           exploit find_symbol_right; eauto.
-      * apply Genv.find_def_find_symbol_inversion in DEF as (id & SYM1');
-          [| eapply match_prog_unique1; eassumption].
-        apply Genv.find_invert_symbol in SYM1'.
-        setoid_rewrite SYM1 in SYM1'.
-        discriminate.
+      assert (Genv.invert_symbol ge1 b = Some id) as b_id
+          by eauto using Genv.find_invert_symbol.
+      rewrite b_id in INJ.
+      apply Genv.find_funct_ptr_iff in DEF.
+      assert (NONE: Genv.find_symbol ge1 id <> None). {
+        congruence. }
+      destruct (Genv.find_symbol_find_comp _ _ NONE) as (cp & COMP).
+      setoid_rewrite COMP in INJ.
+      destruct (s cp) eqn:SIDE.
+      -- rewrite public_id, DEF in INJ.
+         destruct Genv.find_symbol as [b'|] eqn:SYM2 in INJ;
+           try discriminate.
+         assert (match_type_of_ident s ge1 id = Some Left).
+         { unfold match_type_of_ident.
+           setoid_rewrite COMP. now rewrite SIDE, public_id. }
+         assert (match_type_of_ident s ge2 id = None).
+         { unfold match_type_of_ident, Genv.find_comp_of_ident.
+           now rewrite SYM2. }
+         destruct (match_prog_globdefs _ _ _ match_W1_W2 id); congruence.
+      -- destruct (Genv.find_symbol ge2 id) eqn:SYM2; [discriminate |].
+         exploit find_symbol_right; eauto.
 Qed.
 
 Lemma delta_zero_init_meminj:
@@ -4754,6 +4833,7 @@ Proof.
         setoid_rewrite DEF1 in INJ.
         destruct gd1 as [fd1 |]; [| discriminate].
         destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [| discriminate].
+        destruct (Genv.public_symbol ge1 id) eqn:public_id; try congruence.
         injection INJ as -> <-.
         (* Post standard processing *)
         destruct (Genv.find_symbol_find_def_inversion _ _ SYM2) as (gd2 & DEF2).
@@ -4761,9 +4841,11 @@ Proof.
         rename fd1 into fd.
         assert (INJ: init_meminj b1 = Some (b2, 0)). { (* inversion lemma? *)
           unfold init_meminj, init_meminj_block.
+          unfold match_type_of_ident.
           apply Genv.find_invert_symbol in SYM1. rewrite SYM1.
           setoid_rewrite COMP.
-          rewrite SIDE. rewrite SYM2. setoid_rewrite DEF1. reflexivity. }
+          rewrite SIDE. rewrite SYM2. setoid_rewrite DEF1.
+          rewrite public_id. reflexivity. }
         destruct (init_mem_characterization_rel
                     _ _ _ _ _ _
                     MEM1 MEM2 SYM1 SYM2 INJ DEF1 DEF2)
@@ -4802,6 +4884,7 @@ Proof.
         setoid_rewrite DEF1 in INJ.
         destruct gd1 as [fd1 |]; [| discriminate].
         destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [| discriminate].
+        destruct (Genv.public_symbol ge1 id) eqn:public_id; try congruence.
         injection INJ as -> <-.
         (* Post standard processing *)
         destruct (Genv.find_symbol_find_def_inversion _ _ SYM2) as (gd2 & DEF2).
@@ -4811,7 +4894,7 @@ Proof.
           unfold init_meminj, init_meminj_block.
           apply Genv.find_invert_symbol in SYM1. rewrite SYM1.
           setoid_rewrite COMP.
-          rewrite SIDE. rewrite SYM2. setoid_rewrite DEF1. reflexivity. }
+          rewrite SIDE. rewrite SYM2. setoid_rewrite DEF1. rewrite public_id. reflexivity. }
         destruct (init_mem_characterization_rel
                     _ _ _ _ _ _
                     MEM1 MEM2 SYM1 SYM2 INJ DEF1 DEF2)
@@ -4849,6 +4932,7 @@ Proof.
         setoid_rewrite DEF1 in INJ.
         destruct gd1 as [fd1 |]; [| discriminate].
         destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [| discriminate].
+        destruct (Genv.public_symbol ge1 id) eqn:public_id; try congruence.
         injection INJ as -> <-.
         apply Z.divide_0_r.
       * destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [| discriminate].
@@ -4869,6 +4953,7 @@ Proof.
         setoid_rewrite DEF1 in INJ.
         destruct gd1 as [fd1 |]; [| discriminate].
         destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [| discriminate].
+        destruct (Genv.public_symbol ge1 id) eqn:public_id; try congruence.
         injection INJ as -> <-.
         (* Post standard processing *)
         destruct (Genv.find_symbol_find_def_inversion _ _ SYM2) as (gd2 & DEF2).
@@ -4878,7 +4963,7 @@ Proof.
           unfold init_meminj, init_meminj_block.
           apply Genv.find_invert_symbol in SYM1. rewrite SYM1.
           setoid_rewrite COMP.
-          rewrite SIDE. rewrite SYM2. setoid_rewrite DEF1. reflexivity. }
+          rewrite SIDE. rewrite SYM2. setoid_rewrite DEF1. rewrite public_id. reflexivity. }
         destruct (init_mem_characterization_rel
                     _ _ _ _ _ _
                     MEM1 MEM2 SYM1 SYM2 INJ DEF1 DEF2)
@@ -4920,6 +5005,7 @@ Proof.
       setoid_rewrite DEF1 in INJ.
       destruct gd1 as [fd1 |]; [| discriminate].
       destruct (Genv.find_symbol ge2 id) as [b'' |] eqn:SYM2; [| discriminate].
+      destruct (Genv.public_symbol ge1 id) eqn:public_id; try congruence.
       injection INJ as -> <-.
       exact (Genv.find_symbol_not_fresh _ _ MEM2 SYM2).
     + destruct (Genv.find_symbol ge2 id) as [b'' |] eqn:SYM2; [| discriminate].
@@ -4938,6 +5024,7 @@ Proof.
       setoid_rewrite DEF1 in INJ1.
       destruct gd1 as [fd1 |]; [| discriminate].
       destruct (Genv.find_symbol ge2 id1) as [b'|] eqn:ge2_id1; try easy.
+      destruct (Genv.public_symbol ge1 id1) eqn:public_id1; try congruence.
       injection INJ1 as -> <-.
       (* Second injection *)
       apply Genv.invert_find_symbol in ge1_b2.
@@ -4946,6 +5033,7 @@ Proof.
       destruct (s cp2).
       * destruct (Genv.find_symbol ge2 id2) as [b'|] eqn:ge2_id2.
         -- destruct gd2 as [fd2 |]; [| discriminate].
+           destruct (Genv.public_symbol ge1 id2) eqn:public_id2; try congruence.
            injection INJ2 as -> <-.
            assert (id1_id2 := global_addresses_distinct_id _ _ _ _ _ b1_b2 ge1_b1 ge1_b2).
            assert (b1'_b1' := Genv.global_addresses_distinct _ id1_id2 ge2_id1 ge2_id2).
@@ -4965,6 +5053,7 @@ Proof.
         setoid_rewrite DEF2 in INJ2.
         destruct gd2 as [fd2 |]; [| discriminate].
         destruct (Genv.find_symbol ge2 id2) as [b2' |] eqn:ge2_id2; [| discriminate].
+        destruct (Genv.public_symbol ge1 id2) eqn:public_id2; try discriminate.
         injection INJ2 as -> <-.
         apply Genv.invert_find_symbol in ge1_b1.
         assert (id1_id2 := global_addresses_distinct_id _ _ _ _ _ b1_b2 ge1_b1 ge1_b2).
@@ -4990,6 +5079,7 @@ Proof.
       setoid_rewrite DEF1 in INJ.
       destruct gd1 as [fd1 |]; [| discriminate].
       destruct (Genv.find_symbol ge2 id) as [b'' |] eqn:SYM2; [| discriminate].
+      destruct (Genv.public_symbol ge1 id) eqn:public_id; try congruence.
       injection INJ as -> <-.
       (* Post standard processing *)
       split; [lia |]. rewrite Z.add_0_r. apply Ptrofs.unsigned_range_2.
@@ -5010,6 +5100,7 @@ Proof.
       setoid_rewrite DEF1 in INJ.
       destruct gd1 as [fd1 |]; [| discriminate].
       destruct (Genv.find_symbol ge2 id) as [b'' |] eqn:SYM2; [| discriminate].
+      destruct (Genv.public_symbol ge1 id) eqn:public_id; try congruence.
       injection INJ as -> <-.
       (* Post standard processing *)
       destruct (Genv.find_symbol_find_def_inversion _ _ SYM2) as (gd2 & DEF2).
@@ -5019,7 +5110,7 @@ Proof.
         unfold init_meminj, init_meminj_block.
         apply Genv.find_invert_symbol in SYM1. rewrite SYM1.
         setoid_rewrite COMP.
-        rewrite SIDE. rewrite SYM2. setoid_rewrite DEF1. reflexivity. }
+        rewrite SIDE. rewrite SYM2. setoid_rewrite DEF1. rewrite public_id. reflexivity. }
       destruct (init_mem_characterization_rel
                   _ _ _ _ _ _
                   MEM1 MEM2 SYM1 SYM2 INJ DEF1 DEF2)
@@ -5066,6 +5157,7 @@ Proof.
       setoid_rewrite DEF1 in b1_b2.
       destruct gd1 as [fd1 |]; [| discriminate].
       destruct (Genv.find_symbol ge2 id) as [b'' |] eqn:SYM2; [| discriminate].
+      destruct (Genv.public_symbol ge1 id) eqn:public_id; try congruence.
       injection b1_b2 as -> <-.
       (* Done *)
       auto.
@@ -5100,6 +5192,7 @@ Proof.
       setoid_rewrite DEF1 in b1_b2.
       destruct gd1 as [fd1 |]; [| discriminate].
       destruct (Genv.find_symbol ge2 id) as [b'' |] eqn:SYM2; [| discriminate].
+      destruct (Genv.public_symbol ge1 id) eqn:public_id; try congruence.
       injection b1_b2 as -> <-.
       (* Continue *)
       destruct (Genv.find_symbol_find_def_inversion _ _ SYM2) as (gd2 & DEF2).
@@ -5136,6 +5229,7 @@ Proof.
     setoid_rewrite DEF1 in b1_b2.
     destruct gd1 as [fd1 |]; [| discriminate].
     destruct (Genv.find_symbol ge2 id) as [b'' |] eqn:SYM2; [| discriminate].
+    destruct (Genv.public_symbol ge1 id) eqn:public_id; try congruence.
     injection b1_b2 as -> <-.
     (* Done *)
     split; [| split]; auto.
@@ -5158,7 +5252,7 @@ Lemma initial_mem_injection m1 m2
 Proof.
   unfold init_meminj.
   constructor.
-  - apply same_domain_right_init_meminj; assumption.
+  - apply same_domain_init_meminj; assumption.
   - apply inject_init_meminj; assumption.
   - apply delta_zero_init_meminj.
   - apply symbols_inject_init_meminj.
