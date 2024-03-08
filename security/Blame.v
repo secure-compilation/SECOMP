@@ -2867,33 +2867,34 @@ Qed.
     inversion STEP; subst; try eauto.
     - (* assign *)
       simpl in *.
-      assert (j loc = None).
-      { exploit assign_loc_can_access_block; eauto.
-        intros m_loc. destruct RMEMINJ as [DOM].
-        specialize (DOM loc). simpl in DOM. rewrite m_loc, LEFT in DOM.
-        destruct (j loc) as [p|] eqn:j_loc; eauto.
-        enough (Left = Right \/
-                (exists fd : fundef, Genv.find_def (Genv.globalenv W1) loc = Some (Gfun fd)));
-          [| now apply DOM].
-        destruct H3 as [| [fd DEF]]; [discriminate |].
-        destruct p as [b2 ofs'].
-        assert (SYM := DEF).
-        apply Genv.find_def_find_symbol_inversion in SYM as (id & id_loc);
-          [| eapply match_prog_unique1; eassumption].
-        assert (PTR := DEF).
-        apply Genv.find_funct_ptr_iff in PTR.
-        assert (COMP := Genv.find_funct_ptr_find_comp_of_block _ _ PTR).
-        exploit same_blks3; eauto. intros COMP'.
-        rewrite m_loc in COMP'. injection COMP' as COMP'.
-        rewrite <- COMP' in COMP.
-        destruct (same_symb_left0 _ LEFT _ _ _ _ j_loc id_loc COMP)
-          as (-> & FIND' & ACC).
-        (* Plenty of repetition in storebytes due to inessential but
-           necessary case analysis *)
-        destruct (Ptrofs.eq_dec ofs Ptrofs.zero) as [-> | NONZERO].
-        - specialize (ACC (Ptrofs.unsigned Ptrofs.zero)).
-          inv H2.
-          + unfold Mem.storev in H4.
+      (* case analysis - terrrible, could use a good refactoring *)
+      inversion H2; subst.
+      + assert (j loc = None).
+        { exploit assign_loc_can_access_block; eauto.
+          intros m_loc. destruct RMEMINJ as [DOM].
+          specialize (DOM loc). simpl in DOM. rewrite m_loc, LEFT in DOM.
+          destruct (j loc) as [p|] eqn:j_loc; eauto.
+          enough (Left = Right \/
+                  (exists fd : fundef, Genv.find_def (Genv.globalenv W1) loc = Some (Gfun fd)));
+            [| now apply DOM].
+          destruct H5 as [| [fd DEF]]; [discriminate |].
+          destruct p as [b2 ofs'].
+          assert (SYM := DEF).
+          apply Genv.find_def_find_symbol_inversion in SYM as (id & id_loc);
+            [| eapply match_prog_unique1; eassumption].
+          assert (PTR := DEF).
+          apply Genv.find_funct_ptr_iff in PTR.
+          assert (COMP := Genv.find_funct_ptr_find_comp_of_block _ _ PTR).
+          exploit same_blks3; eauto. intros COMP'.
+          rewrite m_loc in COMP'. injection COMP' as COMP'.
+          rewrite <- COMP' in COMP.
+          destruct (same_symb_left0 _ LEFT _ _ _ _ j_loc id_loc COMP)
+            as (-> & FIND' & ACC).
+          (* Plenty of repetition in storebytes due to inessential but
+             necessary case analysis *)
+          destruct (Ptrofs.eq_dec ofs Ptrofs.zero) as [-> | NONZERO].
+          - specialize (ACC (Ptrofs.unsigned Ptrofs.zero)).
+            unfold Mem.storev in H4.
 Local Transparent Mem.store. unfold Mem.store in H4. Local Opaque Mem.store.
             destruct Mem.valid_access_dec; [| discriminate].
             destruct v0 as (PERM & ? & ?).
@@ -2901,21 +2902,8 @@ Local Transparent Mem.store. unfold Mem.store in H4. Local Opaque Mem.store.
             unfold Mem.perm, Mem.perm_order' in PERM.
             rewrite ACC in PERM.
             inv PERM.
-          + admit. (* If [sizeof (prog_comp_env W1) (typeof a1) > 0],
-                      same as before, otherwise the memory is
-                      unchanged and we need to act earlier. *)
-          + inv H3.
-            unfold Mem.storev in H9.
-Local Transparent Mem.store. unfold Mem.store in H9. Local Opaque Mem.store.
-            destruct Mem.valid_access_dec; [| discriminate].
-            destruct v as (PERM & ? & ?).
-            specialize (PERM _ (size_chunk_range _ _)).
-            unfold Mem.perm, Mem.perm_order' in PERM.
-            rewrite ACC in PERM.
-            inv PERM.
-        - specialize (ACC (Ptrofs.unsigned ofs)).
-          inv H2.
-          + unfold Mem.storev in H4.
+          - specialize (ACC (Ptrofs.unsigned ofs)).
+            unfold Mem.storev in H4.
 Local Transparent Mem.store. unfold Mem.store in H4. Local Opaque Mem.store.
             destruct Mem.valid_access_dec; [| discriminate].
             destruct v0 as (PERM & ? & ?).
@@ -2923,11 +2911,123 @@ Local Transparent Mem.store. unfold Mem.store in H4. Local Opaque Mem.store.
             unfold Mem.perm, Mem.perm_order' in PERM.
             rewrite ACC in PERM.
             destruct zeq as [-> | NEQ]; [| contradiction].
+            inv PERM. }
+        exploit @right_mem_injection_assign_loc_unmapped; eauto.
+      + assert (sizeof (prog_comp_env W1) (typeof a1) = 0 \/
+                  sizeof (prog_comp_env W1) (typeof a1) > 0)
+          as [ZERO | NONZERO]. {
+          assert (SIZE := sizeof_pos (prog_comp_env W1) (typeof a1)).
+          lia. }
+        *
+Local Transparent Mem.storebytes. unfold Mem.storebytes in H8. Local Opaque Mem.storebytes.
+          destruct Mem.range_perm_dec; [| discriminate].
+          destruct Mem.can_access_block_dec; [| discriminate].
+          assert (bytes = nil) as ->. {
+            rewrite ZERO in H7.
+Local Transparent Mem.loadbytes. unfold Mem.loadbytes in H7. Local Opaque Mem.loadbytes.
+            destruct Mem.range_perm_dec; [| discriminate].
+            destruct Mem.can_access_block_dec; [| discriminate].
+            injection H7 as <-. reflexivity. }
+          simpl in H8.
+          injection H8 as <-. simpl.
+          inversion RMEMINJ. constructor; eauto.
+          inversion partial_mem_inject0. constructor; eauto.
+          inversion mi_inj. constructor; eauto.
+          simpl.
+          intros b1 ofs'' b2 delta b1_b2 PERM.
+          rewrite PMap.gsident. eauto.
+        * assert (j loc = None).
+          { exploit assign_loc_can_access_block; eauto.
+            intros m_loc. destruct RMEMINJ as [DOM].
+            specialize (DOM loc). simpl in DOM. rewrite m_loc, LEFT in DOM.
+            destruct (j loc) as [p|] eqn:j_loc; eauto.
+            enough (Left = Right \/
+                    (exists fd : fundef, Genv.find_def (Genv.globalenv W1) loc = Some (Gfun fd)));
+              [| now apply DOM].
+            destruct H9 as [| [fd DEF]]; [discriminate |].
+            destruct p as [b2 ofs''].
+            assert (SYM := DEF).
+            apply Genv.find_def_find_symbol_inversion in SYM as (id & id_loc);
+              [| eapply match_prog_unique1; eassumption].
+            assert (PTR := DEF).
+            apply Genv.find_funct_ptr_iff in PTR.
+            assert (COMP := Genv.find_funct_ptr_find_comp_of_block _ _ PTR).
+            exploit same_blks3; eauto. intros COMP'.
+            rewrite m_loc in COMP'. injection COMP' as COMP'.
+            rewrite <- COMP' in COMP.
+            destruct (same_symb_left0 _ LEFT _ _ _ _ j_loc id_loc COMP)
+              as (-> & FIND' & ACC).
+            (* Plenty of repetition in storebytes due to inessential but
+               necessary case analysis *)
+            destruct (Ptrofs.eq_dec ofs Ptrofs.zero) as [-> | NONZERO'].
+            - specialize (ACC (Ptrofs.unsigned Ptrofs.zero)).
+Local Transparent Mem.storebytes. unfold Mem.storebytes in H8. Local Opaque Mem.storebytes.
+              destruct Mem.range_perm_dec; [| discriminate].
+              assert (RANGE: Ptrofs.unsigned Ptrofs.zero <=
+                               Ptrofs.unsigned Ptrofs.zero <
+                               Ptrofs.unsigned Ptrofs.zero + Z.of_nat (Datatypes.length bytes)). {
+                assert (Z.of_nat (Datatypes.length bytes) > 0). {
+                  apply Mem.loadbytes_length in H7.
+                  lia. }
+                lia. }
+              assert (PERM := r). specialize (PERM _ RANGE).
+              unfold Mem.perm, Mem.perm_order' in PERM.
+              rewrite ACC in PERM.
+              inv PERM.
+            - specialize (ACC (Ptrofs.unsigned ofs)).
+Local Transparent Mem.storebytes. unfold Mem.storebytes in H8. Local Opaque Mem.storebytes.
+              destruct Mem.range_perm_dec; [| discriminate].
+              assert (RANGE: Ptrofs.unsigned ofs <=
+                               Ptrofs.unsigned ofs <
+                               Ptrofs.unsigned ofs + Z.of_nat (Datatypes.length bytes)). {
+                assert (Z.of_nat (Datatypes.length bytes) > 0). {
+                  apply Mem.loadbytes_length in H7.
+                  lia. }
+                lia. }
+              assert (PERM := r). specialize (PERM _ RANGE).
+              unfold Mem.perm, Mem.perm_order' in PERM.
+              rewrite ACC in PERM.
+              destruct zeq as [-> | NEQ]; [| contradiction].
+              inv PERM. }
+          exploit @right_mem_injection_assign_loc_unmapped; eauto.
+      + inv H3.
+        (* Same proof as the first sub-case *)
+        assert (j loc = None).
+        { exploit assign_loc_can_access_block; eauto.
+          intros m_loc. destruct RMEMINJ as [DOM].
+          specialize (DOM loc). simpl in DOM. rewrite m_loc, LEFT in DOM.
+          destruct (j loc) as [p|] eqn:j_loc; eauto.
+          enough (Left = Right \/
+                  (exists fd : fundef, Genv.find_def (Genv.globalenv W1) loc = Some (Gfun fd)));
+            [| now apply DOM].
+          destruct H3 as [| [fd DEF]]; [discriminate |].
+          destruct p as [b2 ofs'].
+          assert (SYM := DEF).
+          apply Genv.find_def_find_symbol_inversion in SYM as (id & id_loc);
+            [| eapply match_prog_unique1; eassumption].
+          assert (PTR := DEF).
+          apply Genv.find_funct_ptr_iff in PTR.
+          assert (COMP := Genv.find_funct_ptr_find_comp_of_block _ _ PTR).
+          exploit same_blks3; eauto. intros COMP'.
+          rewrite m_loc in COMP'. injection COMP' as COMP'.
+          rewrite <- COMP' in COMP.
+          destruct (same_symb_left0 _ LEFT _ _ _ _ j_loc id_loc COMP)
+            as (-> & FIND' & ACC).
+          (* Plenty of repetition in storebytes due to inessential but
+             necessary case analysis *)
+          destruct (Ptrofs.eq_dec ofs Ptrofs.zero) as [-> | NONZERO].
+          - specialize (ACC (Ptrofs.unsigned Ptrofs.zero)).
+            unfold Mem.storev in H10.
+Local Transparent Mem.store. unfold Mem.store in H10. Local Opaque Mem.store.
+            destruct Mem.valid_access_dec; [| discriminate].
+            destruct v as (PERM & ? & ?).
+            specialize (PERM _ (size_chunk_range _ _)).
+            unfold Mem.perm, Mem.perm_order' in PERM.
+            rewrite ACC in PERM.
             inv PERM.
-          + admit.
-          + inv H3.
-            unfold Mem.storev in H9.
-Local Transparent Mem.store. unfold Mem.store in H9. Local Opaque Mem.store.
+          - specialize (ACC (Ptrofs.unsigned ofs)).
+            unfold Mem.storev in H10.
+Local Transparent Mem.store. unfold Mem.store in H10. Local Opaque Mem.store.
             destruct Mem.valid_access_dec; [| discriminate].
             destruct v as (PERM & ? & ?).
             specialize (PERM _ (size_chunk_range _ _)).
@@ -2935,8 +3035,7 @@ Local Transparent Mem.store. unfold Mem.store in H9. Local Opaque Mem.store.
             rewrite ACC in PERM.
             destruct zeq as [-> | NEQ]; [| contradiction].
             inv PERM. }
-        (* admit. (* cannot assign_loc to function block *) } *)
-      exploit @right_mem_injection_assign_loc_unmapped; eauto.
+        exploit @right_mem_injection_assign_loc_unmapped; eauto.
     - (* builtin *)
       simpl in *.
       exploit right_mem_injection_external_call_left; eauto.
@@ -2956,8 +3055,7 @@ Local Transparent Mem.store. unfold Mem.store in H9. Local Opaque Mem.store.
     - (* external call *)
       simpl in *.
       exploit right_mem_injection_external_call_left; eauto.
-  (* Qed. *)
-  Admitted.
+  Qed.
 
   Lemma right_mem_injection_left_step_2: forall j s1 s2 t s2',
     right_mem_injection s j ge1 ge2 (memory_of s1) (memory_of s2) ->
