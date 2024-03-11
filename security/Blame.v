@@ -2897,14 +2897,126 @@ Qed.
     inversion STEP; subst; try eauto.
     - (* assign *)
       simpl in *.
-      (* FIXME: Before, we could simply invoke
-         right_mem_injection_assigh_loc_unmapped to solve this case, because
-         being on the left used to imply that the value was unmapped by the
-         memory injection.  We should now adapt the proof of
-         right_mem_injection_assign_loc_unmapped so that it works in the case
-         where the block we're assigning to belongs to a function (i.e., has at
-         most nonempty permission). *)
-      admit.
+      inversion H2 as [
+        v1 chunk m1' ACCESS1 STORE1
+      | b1' ofs' bytes1 m1' ACCESS H11 H12 H13 LOAD1 STORE1
+      | v1 sz sg pos width m1' v1' STORE1 ]; subst.
+      (* case analysis - terrrible, could use a good refactoring *)
+      + assert (j loc = None).
+        { exploit assign_loc_can_access_block; eauto.
+          intros m_loc. destruct RMEMINJ as [DOM].
+          specialize (DOM loc). simpl in DOM. rewrite m_loc, LEFT in DOM.
+          destruct (j loc) as [p|] eqn:j_loc; eauto.
+          enough (Left = Right \/ public_fun_block ge1 loc); [| now apply DOM].
+          destruct H3 as [| (id & fd & id_loc & id_pub & loc_fd)]; [discriminate |].
+          destruct (gfun_perms3 _ _ loc_fd) as (PERM & PERMINV).
+          (* Plenty of repetition in storebytes due to inessential but
+             necessary case analysis *)
+          destruct (Ptrofs.eq_dec ofs Ptrofs.zero) as [-> | NONZERO].
+          - unfold Mem.storev in STORE1.
+Local Transparent Mem.store. unfold Mem.store in STORE1. Local Opaque Mem.store.
+            destruct Mem.valid_access_dec; [| discriminate].
+            destruct v0 as (RANGE & ? & ?).
+            specialize (RANGE _ (size_chunk_range _ _)).
+            specialize (PERMINV 0 _ _ RANGE) as [_ CONTRA].
+            discriminate.
+          - unfold Mem.storev in STORE1.
+Local Transparent Mem.store. unfold Mem.store in STORE1. Local Opaque Mem.store.
+            destruct Mem.valid_access_dec; [| discriminate].
+            destruct v0 as (RANGE & ? & ?).
+            specialize (RANGE _ (size_chunk_range _ _)).
+            specialize (PERMINV (Ptrofs.unsigned ofs) _ _ RANGE) as [_ CONTRA].
+            discriminate. }
+        exploit @right_mem_injection_assign_loc_unmapped; eauto.
+      + assert (sizeof (prog_comp_env W1) (typeof a1) = 0 \/
+                sizeof (prog_comp_env W1) (typeof a1) > 0)
+          as [ZERO | NONZERO]. {
+          assert (SIZE := sizeof_pos (prog_comp_env W1) (typeof a1)).
+          lia. }
+        *
+Local Transparent Mem.storebytes. unfold Mem.storebytes in STORE1. Local Opaque Mem.storebytes.
+          destruct Mem.range_perm_dec; [| discriminate].
+          destruct Mem.can_access_block_dec; [| discriminate].
+          assert (bytes1 = nil) as ->. {
+            rewrite ZERO in LOAD1.
+Local Transparent Mem.loadbytes. unfold Mem.loadbytes in LOAD1. Local Opaque Mem.loadbytes.
+            destruct Mem.range_perm_dec; [| discriminate].
+            destruct Mem.can_access_block_dec; [| discriminate].
+            injection LOAD1 as <-. reflexivity. }
+          simpl in STORE1.
+          injection STORE1 as <-. simpl.
+          inversion RMEMINJ. constructor; eauto.
+          inversion partial_mem_inject0. constructor; eauto.
+          inversion mi_inj. constructor; eauto.
+          simpl.
+          intros b1 ofs'' b2 delta b1_b2 PERM.
+          rewrite PMap.gsident. eauto.
+        * assert (j loc = None).
+          { exploit assign_loc_can_access_block; eauto.
+            intros m_loc. destruct RMEMINJ as [DOM].
+            specialize (DOM loc). simpl in DOM. rewrite m_loc, LEFT in DOM.
+            destruct (j loc) as [p|] eqn:j_loc; eauto.
+            enough (Left = Right \/ public_fun_block ge1 loc); [| now apply DOM].
+            destruct H3 as [| (id & fd & id_loc & id_pub & loc_fd)]; [discriminate |].
+            destruct (gfun_perms3 _ _ loc_fd) as (PERM & PERMINV).
+            (* Plenty of repetition in storebytes due to inessential but
+               necessary case analysis *)
+            destruct (Ptrofs.eq_dec ofs Ptrofs.zero) as [-> | NONZERO'].
+            -
+Local Transparent Mem.storebytes. unfold Mem.storebytes in STORE1. Local Opaque Mem.storebytes.
+              destruct Mem.range_perm_dec; [| discriminate].
+              assert (RANGE: Ptrofs.unsigned Ptrofs.zero <=
+                               Ptrofs.unsigned Ptrofs.zero <
+                               Ptrofs.unsigned Ptrofs.zero + Z.of_nat (Datatypes.length bytes1)). {
+                assert (Z.of_nat (Datatypes.length bytes1) > 0). {
+                  apply Mem.loadbytes_length in LOAD1.
+                  lia. }
+                lia. }
+              assert (PERM' := r). specialize (PERM' _ RANGE).
+              specialize (PERMINV _ _ _ PERM') as [_ CONTRA].
+              discriminate.
+            -
+Local Transparent Mem.storebytes. unfold Mem.storebytes in STORE1. Local Opaque Mem.storebytes.
+              destruct Mem.range_perm_dec; [| discriminate].
+              assert (RANGE: Ptrofs.unsigned ofs <=
+                               Ptrofs.unsigned ofs <
+                               Ptrofs.unsigned ofs + Z.of_nat (Datatypes.length bytes1)). {
+                assert (Z.of_nat (Datatypes.length bytes1) > 0). {
+                  apply Mem.loadbytes_length in LOAD1.
+                  lia. }
+                lia. }
+              assert (PERM' := r). specialize (PERM' _ RANGE).
+              specialize (PERMINV _ _ _ PERM') as [_ CONTRA].
+              discriminate. }
+          exploit @right_mem_injection_assign_loc_unmapped; eauto.
+      + inv STORE1.
+        (* Same proof as the first sub-case *)
+        assert (j loc = None).
+        { exploit assign_loc_can_access_block; eauto.
+          intros m_loc. destruct RMEMINJ as [DOM].
+          specialize (DOM loc). simpl in DOM. rewrite m_loc, LEFT in DOM.
+          destruct (j loc) as [p|] eqn:j_loc; eauto.
+          enough (Left = Right \/ public_fun_block ge1 loc); [| now apply DOM].
+          destruct H7 as [| (id & fd & id_loc & id_pub & loc_fd)]; [discriminate |].
+          destruct (gfun_perms3 _ _ loc_fd) as (PERM & PERMINV).
+          (* Plenty of repetition in storebytes due to inessential but
+             necessary case analysis *)
+          destruct (Ptrofs.eq_dec ofs Ptrofs.zero) as [-> | NONZERO].
+          - unfold Mem.storev in H9.
+Local Transparent Mem.store. unfold Mem.store in H9. Local Opaque Mem.store.
+            destruct Mem.valid_access_dec; [| discriminate].
+            destruct v as (RANGE & ? & ?).
+            specialize (RANGE _ (size_chunk_range _ _)).
+            specialize (PERMINV 0 _ _ RANGE) as [_ CONTRA].
+            discriminate.
+          - unfold Mem.storev in H9.
+Local Transparent Mem.store. unfold Mem.store in H9. Local Opaque Mem.store.
+            destruct Mem.valid_access_dec; [| discriminate].
+            destruct v as (RANGE & ? & ?).
+            specialize (RANGE _ (size_chunk_range _ _)).
+            specialize (PERMINV (Ptrofs.unsigned ofs) _ _ RANGE) as [_ CONTRA].
+            discriminate. }
+        exploit @right_mem_injection_assign_loc_unmapped; eauto.
     - (* builtin *)
       simpl in *.
       exploit right_mem_injection_external_call_left; eauto.
@@ -2924,7 +3036,7 @@ Qed.
     - (* external call *)
       simpl in *.
       exploit right_mem_injection_external_call_left; eauto.
-  Admitted.
+  Qed.
 
   Lemma right_mem_injection_left_step_2: forall j s1 s2 t s2',
     right_mem_injection s j ge1 ge2 (memory_of s1) (memory_of s2) ->
