@@ -2257,7 +2257,7 @@ Proof.
   (* TODO: why can't Coq find the instance automatically? *)
   eapply has_comp_fundef. eapply has_comp_function.
   apply match_globalenvs_preserves_globals; eauto with compat.
-  intros [j' [tvres [tm' [P [Q [R [S [T [U V]]]]]]]]].
+  intros [j' [tvres [tm' [P [Q [R [S [T [U [V W]]]]]]]]]].
   econstructor; split.
   apply plus_one. econstructor; eauto.
   rewrite <- (comp_transl_partial _ TRF). eauto.
@@ -2449,7 +2449,7 @@ Proof.
   eapply has_comp_fundef. eapply has_comp_function.
   apply match_globalenvs_preserves_globals.
   eapply match_cont_globalenv. eexact (MCONT VSet.empty top).
-  intros [j' [tvres [tm' [P [Q [R [S [T [U V]]]]]]]]].
+  intros [j' [tvres [tm' [P [Q [R [S [T [U [V W]]]]]]]]]].
   econstructor; split.
   (* NOTE: strange specialize here *)
   specialize (MCONT (VSet.empty) top).

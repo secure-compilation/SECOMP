@@ -127,7 +127,8 @@ Proof.
   destruct Archi.ptr64; auto.
   destruct (addlimm_match a); InvEval.
 - econstructor; split. apply eval_longconst. rewrite Int64.add_commut; auto.
-- econstructor; split. EvalOp. simpl; eauto. 
+- destruct Genv.allowed_addrof_b eqn:EQ; try discriminate. inv H1.
+  econstructor; split. EvalOp. simpl; eauto. rewrite EQ. simpl; eauto.
   unfold Genv.symbol_address. destruct (Genv.find_symbol ge s); simpl; auto. 
   destruct Archi.ptr64; auto. rewrite Ptrofs.add_commut; auto. 
 - econstructor; split. EvalOp. simpl; eauto. 

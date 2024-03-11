@@ -150,6 +150,20 @@ Lemma symbols_preserved:
   forall (s: ident), Genv.find_symbol tge s = Genv.find_symbol ge s.
 Proof (Genv.find_symbol_match TRANSF).
 
+Lemma allowed_addrof_preserved:
+  forall (cp : compartment) (id : ident), Genv.allowed_addrof_b tge cp id = Genv.allowed_addrof_b ge cp id.
+Proof.
+  intros.
+  pose proof (Genv.match_genvs_allowed_addrof TRANSF).
+  specialize (H cp id).
+  destruct (Genv.allowed_addrof_b tge cp id) eqn:EQ.
+  - apply Genv.allowed_addrof_b_reflect in EQ. apply H in EQ. apply Genv.allowed_addrof_b_reflect in EQ.
+    now rewrite <- EQ.
+  - destruct (Genv.allowed_addrof_b ge cp id) eqn:EQ'; try reflexivity.
+    apply Genv.allowed_addrof_b_reflect in EQ'. apply H in EQ'. apply Genv.allowed_addrof_b_reflect in EQ'.
+    now rewrite <- EQ'.
+Qed.
+
 Lemma senv_preserved:
   Senv.equiv (Genv.to_senv ge) (Genv.to_senv tge).
 Proof (Genv.senv_match TRANSF).
@@ -507,7 +521,8 @@ Proof.
   unfold classify_call; intros.
   destruct (expr_is_addrof_ident a) as [id|] eqn:EA; auto.
   exploit expr_is_addrof_ident_correct; eauto. intros EQ; subst a.
-  inv H0. inv H3. unfold Genv.symbol_address in *.
+  inv H0. inv H3. destruct (Genv.allowed_addrof_b ge cp id) eqn:EQ; try discriminate; inv H2.
+  unfold Genv.symbol_address in *.
   destruct (Genv.find_symbol ge id) as [b|] eqn:FS; try discriminate.
   rewrite Genv.find_funct_find_funct_ptr in H1.
   assert (DFL: exists b1, Genv.find_symbol ge id = Some b1 /\ Vptr b Ptrofs.zero = Vptr b1 Ptrofs.zero) by (exists b; auto).
@@ -825,7 +840,9 @@ Proof.
   exists (Vfloat f); split; auto. econstructor. constructor. auto.
   exists (Vsingle f); split; auto. econstructor. constructor. auto.
   exists (Vlong i); split; auto. apply eval_longconst.
+  destruct (Genv.allowed_addrof_b ge cp i) eqn:EQ; try discriminate; inv H3.
   unfold Genv.symbol_address; rewrite <- symbols_preserved; fold (Genv.symbol_address tge i i0). apply eval_addrsymbol.
+  rewrite <- allowed_addrof_preserved in EQ. apply Genv.allowed_addrof_b_reflect. auto.
   apply eval_addrstack.
   (* Eunop *)
   exploit IHeval_expr; eauto. intros [v1' [A B]].

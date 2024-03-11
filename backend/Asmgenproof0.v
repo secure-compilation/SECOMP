@@ -454,30 +454,46 @@ Proof.
   unfold Mach.call_arguments, Asm.call_arguments; intros.
   eapply call_args_match; eauto.
 Qed.
+
+
+Section Builtins.
 (** Translation of arguments and results to builtins. *)
 
+Variable ge: Mach.genv.
+Variable tge: genv.
+Hypothesis allowed_addrof_preserved:
+  forall (cp : compartment) (id : ident), Genv.allowed_addrof_b tge cp id = Genv.allowed_addrof_b ge cp id.
+Hypothesis symbols_preserved:
+  forall (s: ident), Genv.find_symbol tge s = Genv.find_symbol ge s.
+
 Remark builtin_arg_match:
-  forall ge (rs: regset) sp m a v,
-  eval_builtin_arg ge (fun r => rs (preg_of r)) sp m a v ->
-  eval_builtin_arg ge rs sp m (map_builtin_arg preg_of a) v.
+  forall cp (rs: regset) sp m a v,
+  eval_builtin_arg ge cp (fun r => rs (preg_of r)) sp m a v ->
+  eval_builtin_arg tge cp rs sp m (map_builtin_arg preg_of a) v.
 Proof.
   induction 1; simpl; eauto with barg.
+  - econstructor. unfold Genv.symbol_address in *.
+    rewrite symbols_preserved; eauto.
+  - unfold Genv.symbol_address. rewrite <- symbols_preserved. fold (Genv.symbol_address tge id ofs).
+    eapply eval_BA_addrglobal. unfold Genv.allowed_addrof. rewrite allowed_addrof_preserved; auto.
 Qed.
 
 Lemma builtin_args_match:
-  forall ge ms sp rs m m', agree ms sp rs -> Mem.extends m m' ->
-  forall al vl, eval_builtin_args ge ms sp m al vl ->
-  exists vl', eval_builtin_args ge rs sp m' (map (map_builtin_arg preg_of) al) vl'
+  forall cp ms sp rs m m', agree ms sp rs -> Mem.extends m m' ->
+  forall al vl, eval_builtin_args ge cp ms sp m al vl ->
+  exists vl', eval_builtin_args tge cp rs sp m' (map (map_builtin_arg preg_of) al) vl'
            /\ Val.lessdef_list vl vl'.
 Proof.
   induction 3; intros; simpl.
   exists (@nil val); split; constructor.
-  exploit (@eval_builtin_arg_lessdef _ ge ms (fun r => rs (preg_of r))); eauto.
+  exploit (@eval_builtin_arg_lessdef _ _ _ _ ge ms (fun r => rs (preg_of r))); eauto.
   intros; eapply preg_val; eauto.
   intros (v1' & A & B).
   destruct IHlist_forall2 as [vl' [C D]].
   exists (v1' :: vl'); split; constructor; auto. apply builtin_arg_match; auto.
 Qed.
+
+End Builtins.
 
 Lemma agree_set_res:
   forall res ms sp rs v v',

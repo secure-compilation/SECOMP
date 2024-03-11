@@ -301,12 +301,12 @@ Inductive step: state -> trace -> state -> Prop :=
       step (State s f sp pc rs m)
         E0 (Block s f sp bb rs m)
   | exec_Lop: forall s f sp op args res bb rs m v rs',
-      eval_operation ge sp op (reglist rs args) m = Some v ->
+      eval_operation ge (comp_of f) sp op (reglist rs args) m = Some v ->
       rs' = Locmap.set (R res) v (undef_regs (destroyed_by_op op) rs) ->
       step (Block s f sp (Lop op args res :: bb) rs m)
         E0 (Block s f sp bb rs' m)
   | exec_Lload: forall s f sp chunk addr args dst bb rs m a v rs',
-      eval_addressing ge sp addr (reglist rs args) = Some a ->
+      eval_addressing ge (comp_of f) sp addr (reglist rs args) = Some a ->
       Mem.loadv chunk m a (comp_of f) = Some v ->
       rs' = Locmap.set (R dst) v (undef_regs (destroyed_by_load chunk addr) rs) ->
       step (Block s f sp (Lload chunk addr args dst :: bb) rs m)
@@ -320,7 +320,7 @@ Inductive step: state -> trace -> state -> Prop :=
       step (Block s f sp (Lsetstack src sl ofs ty :: bb) rs m)
         E0 (Block s f sp bb rs' m)
   | exec_Lstore: forall s f sp chunk addr args src bb rs m a rs' m',
-      eval_addressing ge sp addr (reglist rs args) = Some a ->
+      eval_addressing ge (comp_of f) sp addr (reglist rs args) = Some a ->
       Mem.storev chunk m a (rs (R src)) (comp_of f) = Some m' ->
       rs' = undef_regs (destroyed_by_store chunk addr) rs ->
       step (Block s f sp (Lstore chunk addr args src :: bb) rs m)
@@ -350,7 +350,7 @@ Inductive step: state -> trace -> state -> Prop :=
       step (Block s f (Vptr sp Ptrofs.zero) (Ltailcall sig ros :: bb) rs m)
         E0 (Callstate s fd sig rs' m' (comp_of f))
   | exec_Lbuiltin: forall s f sp ef args res bb rs m vargs t vres rs' m',
-      eval_builtin_args ge rs sp m args vargs ->
+      eval_builtin_args ge (comp_of f) rs sp m args vargs ->
       external_call ef ge (comp_of f) vargs m t vres m' ->
       rs' = Locmap.setres res vres (undef_regs (destroyed_by_builtin ef) rs) ->
       (* forall ALLOWED: comp_of f = comp_of ef, *)

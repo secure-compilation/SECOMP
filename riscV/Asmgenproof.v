@@ -41,6 +41,20 @@ Lemma symbols_preserved:
   forall (s: ident), Genv.find_symbol tge s = Genv.find_symbol ge s.
 Proof (Genv.find_symbol_match TRANSF).
 
+Lemma allowed_addrof_preserved:
+  forall (cp : compartment) (id : ident), Genv.allowed_addrof_b tge cp id = Genv.allowed_addrof_b ge cp id.
+Proof.
+  intros.
+  pose proof (Genv.match_genvs_allowed_addrof TRANSF).
+  specialize (H cp id).
+  destruct (Genv.allowed_addrof_b tge cp id) eqn:EQ.
+  - apply Genv.allowed_addrof_b_reflect in EQ. apply H in EQ. apply Genv.allowed_addrof_b_reflect in EQ.
+    now rewrite <- EQ.
+  - destruct (Genv.allowed_addrof_b ge cp id) eqn:EQ'; try reflexivity.
+    apply Genv.allowed_addrof_b_reflect in EQ'. apply H in EQ'. apply Genv.allowed_addrof_b_reflect in EQ'.
+    now rewrite <- EQ'.
+Qed.
+
 Lemma senv_preserved:
   Senv.equiv ge tge.
 Proof (Genv.senv_match TRANSF).
@@ -809,8 +823,12 @@ Opaque loadind.
   apply preg_of_not_X30; auto.
 
 - (* Mop *)
-  assert (eval_operation tge sp op (map rs args) m = Some v).
-    rewrite <- H. apply eval_operation_preserved. exact symbols_preserved.
+  assert (eval_operation tge (comp_of tf) sp op (map rs args) m = Some v).
+    rewrite <- H. erewrite (Genv.find_funct_ptr_find_comp_of_block); eauto.
+    replace (comp_of (Internal f0)) with (comp_of (Internal tf)).
+    apply eval_operation_preserved.
+    exact allowed_addrof_preserved. exact symbols_preserved.
+    inv AT. simpl. rewrite (comp_transf_function _ _ H2); eauto.
   exploit eval_operation_lessdef. eapply preg_vals; eauto. eauto. eexact H0.
   intros [v' [A B]]. rewrite (sp_val _ _ _ AG) in A.
   left; eapply exec_straight_steps; eauto; intros. simpl in TR.
@@ -824,8 +842,12 @@ Local Transparent destroyed_by_op.
   destruct op; simpl; auto; congruence.
 
 - (* Mload *)
-  assert (eval_addressing tge sp addr (map rs args) = Some a).
-    rewrite <- H. apply eval_addressing_preserved. exact symbols_preserved.
+  assert (eval_addressing tge (comp_of tf) sp addr (map rs args) = Some a).
+    rewrite <- H. erewrite (Genv.find_funct_ptr_find_comp_of_block); eauto.
+    replace (comp_of (Internal f0)) with (comp_of (Internal tf)).
+    apply eval_addressing_preserved.
+    exact allowed_addrof_preserved. exact symbols_preserved.
+    inv AT. simpl. rewrite (comp_transf_function _ _ H3); eauto.
   exploit eval_addressing_lessdef. eapply preg_vals; eauto. eexact H1.
   intros [a' [A B]]. rewrite (sp_val _ _ _ AG) in A.
   exploit Mem.loadv_extends; eauto. intros [v' [C D]].
@@ -841,8 +863,12 @@ Local Transparent destroyed_by_op.
   simpl; congruence.
 
 - (* Mstore *)
-  assert (eval_addressing tge sp addr (map rs args) = Some a).
-    rewrite <- H. apply eval_addressing_preserved. exact symbols_preserved.
+  assert (eval_addressing tge (comp_of tf) sp addr (map rs args) = Some a).
+    rewrite <- H. erewrite (Genv.find_funct_ptr_find_comp_of_block); eauto.
+    replace (comp_of (Internal f0)) with (comp_of (Internal tf)).
+    apply eval_addressing_preserved.
+    exact allowed_addrof_preserved. exact symbols_preserved.
+    inv AT. simpl. rewrite (comp_transf_function _ _ H3); eauto.
   exploit eval_addressing_lessdef. eapply preg_vals; eauto. eexact H1.
   intros [a' [A B]]. rewrite (sp_val _ _ _ AG) in A.
   assert (Val.lessdef (rs src) (rs0 (preg_of src))). eapply preg_val; eauto.
@@ -993,6 +1019,9 @@ Local Transparent destroyed_by_op.
       rewrite <- H2; simpl; eauto.
       eapply functions_transl; eauto.
       eapply find_instr_tail; eauto.
+      simpl. unfold Genv.allowed_addrof_b.
+      rewrite symbols_preserved, H.
+      apply Genv.find_funct_ptr_iff in TFIND. unfold tge; rewrite TFIND. fold tge.
       simpl; eauto.
       simpl; eauto.
       Simpl; eauto.
@@ -1041,6 +1070,9 @@ Local Transparent destroyed_by_op.
     rewrite <- H2; simpl; eauto.
     eapply functions_transl; eauto.
     eapply find_instr_tail; eauto.
+    simpl. unfold Genv.allowed_addrof_b.
+    rewrite symbols_preserved, H.
+    apply Genv.find_funct_ptr_iff in TFIND. unfold tge; rewrite TFIND. fold tge.
     simpl; eauto.
     simpl; eauto.
     Simpl; eauto.
@@ -1138,6 +1170,9 @@ Local Transparent destroyed_by_op.
     rewrite <- comp_transf_function; eauto.
     now rewrite <- H4; simpl; erewrite Genv.find_funct_ptr_find_comp_of_block; eauto.
     econstructor. eexact P. eapply functions_transl; eauto. eapply find_instr_tail. eexact Q.
+      simpl. unfold Genv.allowed_addrof_b.
+      rewrite symbols_preserved, H.
+      assert (exists fd', Genv.find_def tge f' = Some (Gfun fd')) as [? ->] by admit.
     reflexivity.
     simpl. reflexivity. eauto. eauto.
     Simpl; eauto.
@@ -1156,7 +1191,8 @@ Local Transparent destroyed_by_op.
   inv AT. monadInv H4.
   exploit functions_transl; eauto. intro FN.
   generalize (transf_function_no_overflow _ _ H3); intro NOOV.
-  exploit builtin_args_match; eauto. intros [vargs' [P Q]].
+  exploit builtin_args_match; eauto. exact allowed_addrof_preserved. exact symbols_preserved.
+  intros [vargs' [P Q]].
   exploit external_call_mem_extends; eauto.
   intros [vres' [m2' [A [B [C D]]]]].
   left. econstructor; split. apply plus_one.
@@ -1164,7 +1200,9 @@ Local Transparent destroyed_by_op.
   eapply exec_step_builtin. eauto. eauto.
   eapply find_instr_tail; eauto.
   erewrite <- sp_val by eauto.
-  eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
+  rewrite <- (comp_transl_partial _ H3).
+  erewrite Genv.find_funct_ptr_find_comp_of_block in P; eauto. simpl in P. eauto.
+  (* eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact allowed_addrof_preserved. exact symbols_preserved. *)
   rewrite <- (comp_transl_partial _ H3).
   erewrite Genv.find_funct_ptr_find_comp_of_block in A; eauto. simpl in A.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
@@ -1427,127 +1465,131 @@ Local Transparent destroyed_at_function_entry.
     (* inv Hs''1. *)
     eapply exec_step_return.
     rewrite ATPC. unfold Vnullptr. now destruct Archi.ptr64.
+    { rewrite ATPC. simpl. exists f; exists ra.
+      exploit functions_translated; eauto.
+      intros [tf0 [? ?]]. simpl in H0. monadInv H0.
+      exists x. split; eauto.
+      apply Genv.find_funct_ptr_iff; eauto. }
     { rewrite ATPC. simpl. rewrite <- find_comp_of_block_translated.
       now erewrite (Genv.find_funct_ptr_find_comp_of_block); eauto. }
     auto.
     econstructor; eauto.
     { rewrite ATPC in *. eauto. }
     easy.
-  +
-   eexists (State s'' (invalidate_return rs0 (sig_of_call s')) m' (comp_of f0)). split.
+  + eexists (State s'' (invalidate_return rs0 (sig_of_call s')) m' (comp_of f0)). split.
     eapply plus_one.
     unfold update_stack_return in Hs''1.
     rewrite ATPC in Hs''1; simpl in Hs''1.
     rewrite <- find_comp_of_block_translated in Hs''1.
     erewrite Genv.find_funct_ptr_find_comp_of_block in Hs''1; eauto. simpl in Hs''1.
     destruct flowsto_dec; try congruence.
-     econstructor; eauto.
-     rewrite ATPC. unfold Vnullptr. now destruct Archi.ptr64.
-     { rewrite ATPC. simpl. rewrite <- find_comp_of_block_translated.
-       now erewrite (Genv.find_funct_ptr_find_comp_of_block); eauto. }
-     { rewrite ATPC. simpl.
-       (* intros diff. *)
-       inv STACKS'; auto.
-       - simpl in *.
-         erewrite Genv.find_funct_ptr_find_comp_of_block in H9; eauto. now auto.
-       - inv H11. reflexivity. }
-     { inv STACKS'; auto.
-       - simpl in *.
-         erewrite Genv.find_funct_ptr_find_comp_of_block in H9; eauto. now auto.
-       - inv H11. eapply agree_sp; eauto. }
-     { unfold update_stack_return.
-       inv STACKS'; auto.
-       - simpl in *.
-         erewrite Genv.find_funct_ptr_find_comp_of_block in H9; eauto. simpl in H9.
-         now destruct (flowsto_dec cp (comp_of f0)).
-       - simpl in *. inv Hs''1.
-         rewrite ATPC; simpl. rewrite <- find_comp_of_block_translated.
-         erewrite Genv.find_funct_ptr_find_comp_of_block; eauto. simpl.
-         destruct (flowsto_dec cp (comp_of f0)); try congruence. reflexivity.
-     }
-     { inv STACKS'; auto.
-       - simpl in *.
-         erewrite Genv.find_funct_ptr_find_comp_of_block in *; eauto.
-         contradiction.
-       - inv H11.
-         eapply Genv.not_ptr_transf_lessdef; eauto.
-         erewrite Genv.find_funct_ptr_find_comp_of_block; eauto. simpl.
-         now destruct flowsto_dec. }
-     { inv STACKS'; auto.
-       - simpl in *.
-         erewrite Genv.find_funct_ptr_find_comp_of_block in *; eauto.
-         contradiction.
-       - simpl in *. inv H11.
-         erewrite Genv.find_funct_ptr_find_comp_of_block in EV; eauto.
-         eapply return_trace_lessdef with (ge := ge) (v := Mach.return_value rs sg);
-           eauto using senv_preserved. }
-     econstructor; eauto.
-     { rewrite invalidate_return_PC. rewrite ATPC in *. eauto. }
-     constructor; auto.
-     unfold invalidate_return. simpl. eapply agree_sp; eauto.
-     unfold invalidate_return.
-     { rewrite ATPC in INVREGS. simpl in INVREGS.
-       assert (NCP: cp ⊈ Genv.find_comp_of_block tge f).
-       { rewrite <- find_comp_of_block_translated; eauto.
-         erewrite Genv.find_funct_ptr_find_comp_of_block; eauto. exact n. }
+    econstructor; eauto.
+    rewrite ATPC. unfold Vnullptr. now destruct Archi.ptr64.
+    { rewrite ATPC. simpl. rewrite <- find_comp_of_block_translated.
+      now erewrite (Genv.find_funct_ptr_find_comp_of_block); eauto. }
+    { rewrite ATPC. simpl.
+      (* intros diff. *)
+      inv STACKS'; auto.
+      - simpl in *.
+        erewrite Genv.find_funct_ptr_find_comp_of_block in H9; eauto. now auto.
+      - inv H11. reflexivity. }
+    { inv STACKS'; auto.
+      - simpl in *.
+        erewrite Genv.find_funct_ptr_find_comp_of_block in H9; eauto. now auto.
+      - inv H11. eapply agree_sp; eauto. }
+    { unfold update_stack_return.
+      inv STACKS'; auto.
+      - simpl in *.
+        erewrite Genv.find_funct_ptr_find_comp_of_block in H9; eauto. simpl in H9.
+        now destruct (flowsto_dec cp (comp_of f0)).
+      - simpl in *. inv Hs''1.
+        rewrite ATPC; simpl. rewrite <- find_comp_of_block_translated.
+        erewrite Genv.find_funct_ptr_find_comp_of_block; eauto. simpl.
+        destruct (flowsto_dec cp (comp_of f0)); try congruence. reflexivity.
+    }
+    { inv STACKS'; auto.
+      - simpl in *.
+        erewrite Genv.find_funct_ptr_find_comp_of_block in *; eauto.
+        contradiction.
+      - inv H11.
+        eapply Genv.not_ptr_transf_lessdef; eauto.
+        erewrite Genv.find_funct_ptr_find_comp_of_block; eauto. simpl.
+        now destruct flowsto_dec. }
+    { inv STACKS'; auto.
+      - simpl in *.
+        erewrite Genv.find_funct_ptr_find_comp_of_block in *; eauto.
+        contradiction.
+      - simpl in *. inv H11.
+        erewrite Genv.find_funct_ptr_find_comp_of_block in EV; eauto.
+        eapply return_trace_lessdef with (ge := ge) (v := Mach.return_value rs sg);
+          eauto using senv_preserved. }
+    econstructor; eauto.
+    { rewrite invalidate_return_PC. rewrite ATPC in *. eauto. }
+    constructor; auto.
+    unfold invalidate_return. simpl. eapply agree_sp; eauto.
+    unfold invalidate_return.
+    { rewrite ATPC in INVREGS. simpl in INVREGS.
+      assert (NCP: cp ⊈ Genv.find_comp_of_block tge f).
+      { rewrite <- find_comp_of_block_translated; eauto.
+        erewrite Genv.find_funct_ptr_find_comp_of_block; eauto. exact n. }
 
-       clear -prog tprog ge tge comp_of_main LD AG ATPC NCP INVREGS.
-       intros r.
-       destruct (preg_eq (preg_of r) PC).
-       - simpl in *. eapply agree_mregs in AG; eauto.
-       - rewrite orb_false_l.
-         destruct (preg_eq (preg_of r) X2).
-         + simpl in *. eapply agree_mregs in AG; eauto.
-         + rewrite orb_false_l.
-           destruct in_dec.
-           * simpl. eapply agree_mregs in AG; eauto.
-           * simpl.
-             rewrite INVREGS; eauto.
-             revert n1.
-             assert (H: In R10 all_mregs /\ In R11 all_mregs /\ In Machregs.F10 all_mregs).
-             { split; [| split]; now eapply all_mregs_complete; eauto. }
-             revert H.
-             unfold loc_result.
-             generalize (proj_sig_res (sig_of_call s')).
-             generalize all_mregs.
-             clear.
-             intros.
-             destruct t; simpl in *.
-             -- destruct (mreg_eq r R10); simpl in *; auto.
-                subst. exfalso. apply n1.
-                simpl. replace (IR X10) with (preg_of R10) by reflexivity. apply in_map.
-                rewrite filter_In; split; intuition auto.
-             -- destruct (mreg_eq r Machregs.F10); simpl in *; auto.
-                subst. exfalso. apply n1.
-                simpl. replace (FR F10) with (preg_of (Machregs.F10)) by reflexivity. apply in_map.
-                rewrite filter_In; split; intuition auto.
-             -- destruct Archi.ptr64; simpl.
-                ++ destruct (mreg_eq r R10); simpl in *; auto.
-                   subst. exfalso. apply n1.
-                   simpl. replace (IR X10) with (preg_of R10) by reflexivity. apply in_map.
-                   rewrite filter_In; split; intuition auto.
-                ++ destruct (mreg_eq r R11); simpl in *; auto.
-                   subst. exfalso. apply n1.
-                   simpl. replace (IR X11) with (preg_of R11) by reflexivity. apply in_map.
-                   rewrite filter_In; split; intuition auto.
-                   destruct (mreg_eq r R10); simpl in *; auto.
-                   subst. exfalso. apply n1.
-                   simpl. replace (IR X10) with (preg_of R10) by reflexivity. apply in_map.
-                   rewrite filter_In; split; intuition auto.
-             -- destruct (mreg_eq r Machregs.F10); simpl in *; auto.
-                subst. exfalso. apply n1.
-                simpl. replace (FR F10) with (preg_of (Machregs.F10)) by reflexivity. apply in_map.
-                rewrite filter_In; split; intuition auto.
-             -- destruct (mreg_eq r R10); simpl in *; auto.
-                subst. exfalso. apply n1.
-                simpl. replace (IR X10) with (preg_of R10) by reflexivity. apply in_map.
-                rewrite filter_In; split; intuition auto.
-             -- destruct (mreg_eq r Machregs.F10); simpl in *; auto.
-                subst. exfalso. apply n1.
-                simpl. replace (FR F10) with (preg_of (Machregs.F10)) by reflexivity. apply in_map.
-                rewrite filter_In; split; intuition auto. }
-     easy.
-Qed.
+      clear -prog tprog ge tge comp_of_main LD AG ATPC NCP INVREGS.
+      intros r.
+      destruct (preg_eq (preg_of r) PC).
+      - simpl in *. eapply agree_mregs in AG; eauto.
+      - rewrite orb_false_l.
+        destruct (preg_eq (preg_of r) X2).
+        + simpl. eapply agree_mregs in AG; eauto.
+        + rewrite orb_false_l.
+          destruct in_dec.
+          * simpl. eapply agree_mregs in AG; eauto.
+          * simpl.
+            rewrite INVREGS; eauto.
+            revert n1.
+            assert (H: In R10 all_mregs /\ In R11 all_mregs /\ In Machregs.F10 all_mregs).
+            { split; [| split]; now eapply all_mregs_complete; eauto. }
+            revert H.
+            unfold loc_result.
+            generalize (proj_sig_res (sig_of_call s')).
+            generalize all_mregs.
+            clear.
+            intros.
+            destruct t; simpl in *.
+            -- destruct (mreg_eq r R10); simpl in *; auto.
+               subst. exfalso. apply n1.
+               simpl. replace (IR X10) with (preg_of R10) by reflexivity. apply in_map.
+               rewrite filter_In; split; intuition auto.
+            -- destruct (mreg_eq r Machregs.F10); simpl in *; auto.
+               subst. exfalso. apply n1.
+               simpl. replace (FR F10) with (preg_of (Machregs.F10)) by reflexivity. apply in_map.
+               rewrite filter_In; split; intuition auto.
+            -- destruct Archi.ptr64; simpl.
+               ++ destruct (mreg_eq r R10); simpl in *; auto.
+                  subst. exfalso. apply n1.
+                  simpl. replace (IR X10) with (preg_of R10) by reflexivity. apply in_map.
+                  rewrite filter_In; split; intuition auto.
+               ++ destruct (mreg_eq r R11); simpl in *; auto.
+                  subst. exfalso. apply n1.
+                  simpl. replace (IR X11) with (preg_of R11) by reflexivity. apply in_map.
+                  rewrite filter_In; split; intuition auto.
+                  destruct (mreg_eq r R10); simpl in *; auto.
+                  subst. exfalso. apply n1.
+                  simpl. replace (IR X10) with (preg_of R10) by reflexivity. apply in_map.
+                  rewrite filter_In; split; intuition auto.
+            -- destruct (mreg_eq r Machregs.F10); simpl in *; auto.
+               subst. exfalso. apply n1.
+               simpl. replace (FR F10) with (preg_of (Machregs.F10)) by reflexivity. apply in_map.
+               rewrite filter_In; split; intuition auto.
+            -- destruct (mreg_eq r R10); simpl in *; auto.
+               subst. exfalso. apply n1.
+               simpl. replace (IR X10) with (preg_of R10) by reflexivity. apply in_map.
+               rewrite filter_In; split; intuition auto.
+            -- destruct (mreg_eq r Machregs.F10); simpl in *; auto.
+               subst. exfalso. apply n1.
+               simpl. replace (FR F10) with (preg_of (Machregs.F10)) by reflexivity. apply in_map.
+               rewrite filter_In; split; intuition auto. }
+    easy.
+Admitted.
 
 Lemma transf_initial_states:
   forall st1, Mach.initial_state prog st1 ->

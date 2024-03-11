@@ -277,6 +277,20 @@ Lemma function_ptr_translated:
   Genv.find_funct_ptr tge v = Some (tunnel_fundef f).
 Proof (Genv.find_funct_ptr_transf TRANSL).
 
+Lemma allowed_addrof_preserved:
+  forall (cp : compartment) (id : ident), Genv.allowed_addrof_b tge cp id = Genv.allowed_addrof_b ge cp id.
+Proof.
+  intros.
+  pose proof (Genv.match_genvs_allowed_addrof TRANSL).
+  specialize (H cp id).
+  destruct (Genv.allowed_addrof_b tge cp id) eqn:EQ.
+  - apply Genv.allowed_addrof_b_reflect in EQ. apply H in EQ. apply Genv.allowed_addrof_b_reflect in EQ.
+    now rewrite <- EQ.
+  - destruct (Genv.allowed_addrof_b ge cp id) eqn:EQ'; try reflexivity.
+    apply Genv.allowed_addrof_b_reflect in EQ'. apply H in EQ'. apply Genv.allowed_addrof_b_reflect in EQ'.
+    now rewrite <- EQ'.
+Qed.
+
 Lemma symbols_preserved:
   forall id,
   Genv.find_symbol tge id = Genv.find_symbol ge id.
@@ -639,7 +653,8 @@ Proof.
   intros (tv & EV & LD).
   left; simpl; econstructor; split.
   eapply exec_Lop with (v := tv); eauto.
-  rewrite <- EV. apply eval_operation_preserved. exact symbols_preserved.
+  rewrite <- EV. apply eval_operation_preserved.
+  exact allowed_addrof_preserved. exact symbols_preserved.
   econstructor; eauto using locmap_set_lessdef, locmap_undef_regs_lessdef.
 - (* Lload *)
   exploit eval_addressing_lessdef. apply reglist_lessdef; eauto. eauto. 
@@ -648,7 +663,8 @@ Proof.
   intros (tv & LOAD & LD').
   left; simpl; econstructor; split.
   eapply exec_Lload with (a := ta).
-  rewrite <- EV. apply eval_addressing_preserved. exact symbols_preserved.
+  rewrite <- EV. apply eval_addressing_preserved.
+  exact allowed_addrof_preserved. exact symbols_preserved.
   eauto. eauto.
   econstructor; eauto using locmap_set_lessdef, locmap_undef_regs_lessdef.
 - (* Lgetstack *)
@@ -666,7 +682,8 @@ Proof.
   intros (tm' & STORE & MEM').
   left; simpl; econstructor; split.
   eapply exec_Lstore with (a := ta).
-  rewrite <- EV. apply eval_addressing_preserved. exact symbols_preserved.
+  rewrite <- EV. apply eval_addressing_preserved.
+  exact allowed_addrof_preserved. exact symbols_preserved.
   eauto. eauto.
   econstructor; eauto using locmap_undef_regs_lessdef.
 - (* Lcall *)
@@ -741,7 +758,7 @@ Proof.
   exploit external_call_mem_extends; eauto. intros (tvres & tm' & A & B & C & D).
   left; simpl; econstructor; split.
   eapply exec_Lbuiltin; eauto.
-  eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved. 
+  eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact allowed_addrof_preserved. exact symbols_preserved.
   eapply external_call_symbols_preserved. apply senv_preserved. eauto.
   econstructor; eauto using locmap_setres_lessdef, locmap_undef_regs_lessdef.
 - (* Lbranch (preserved) *)

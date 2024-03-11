@@ -60,6 +60,20 @@ Lemma symbols_preserved:
   Genv.find_symbol tge id = Genv.find_symbol ge id.
 Proof (Genv.find_symbol_transf_partial TRANSF).
 
+Lemma allowed_addrof_preserved:
+  forall (cp : compartment) (id : ident), Genv.allowed_addrof_b tge cp id = Genv.allowed_addrof_b ge cp id.
+Proof.
+  intros.
+  pose proof (Genv.match_genvs_allowed_addrof TRANSF).
+  specialize (H cp id).
+  destruct (Genv.allowed_addrof_b tge cp id) eqn:EQ.
+  - apply Genv.allowed_addrof_b_reflect in EQ. apply H in EQ. apply Genv.allowed_addrof_b_reflect in EQ.
+    now rewrite <- EQ.
+  - destruct (Genv.allowed_addrof_b ge cp id) eqn:EQ'; try reflexivity.
+    apply Genv.allowed_addrof_b_reflect in EQ'. apply H in EQ'. apply Genv.allowed_addrof_b_reflect in EQ'.
+    now rewrite <- EQ'.
+Qed.
+
 Lemma senv_preserved:
   Senv.equiv ge tge.
 Proof. exact (Genv.senv_transf_partial TRANSF). Qed.
@@ -642,15 +656,15 @@ Proof.
   (* Lop *)
   left; econstructor; split. simpl.
   apply plus_one. econstructor; eauto.
-  instantiate (1 := v); rewrite <- H; apply eval_operation_preserved.
-  exact symbols_preserved.
+  instantiate (1 := v); rewrite <- H; erewrite <- (comp_preserved); eauto; apply eval_operation_preserved.
+  exact allowed_addrof_preserved. exact symbols_preserved.
   econstructor; eauto.
 
   (* Lload *)
   left; econstructor; split. simpl.
   apply plus_one. econstructor.
-  instantiate (1 := a). rewrite <- H; apply eval_addressing_preserved.
-  exact symbols_preserved.
+  instantiate (1 := a). erewrite <- H, <- comp_preserved; eauto; apply eval_addressing_preserved.
+  exact allowed_addrof_preserved. exact symbols_preserved.
   erewrite comp_preserved; eauto. eauto.
   econstructor; eauto.
 
@@ -667,8 +681,8 @@ Proof.
   (* Lstore *)
   left; econstructor; split. simpl.
   apply plus_one. econstructor.
-  instantiate (1 := a). rewrite <- H; apply eval_addressing_preserved.
-  exact symbols_preserved.
+  instantiate (1 := a). erewrite <- H, <- comp_preserved; eauto; apply eval_addressing_preserved.
+  exact allowed_addrof_preserved. exact symbols_preserved.
   erewrite comp_preserved; eauto. eauto.
   econstructor; eauto.
 
@@ -712,7 +726,8 @@ Proof.
   (* Lbuiltin *)
   left; econstructor; split. simpl.
   apply plus_one. eapply exec_Lbuiltin; eauto.
-  eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
+  rewrite <- (comp_transl_partial _ TRF); eauto.
+  eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact allowed_addrof_preserved. exact symbols_preserved.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   rewrite <- (comp_transl_partial _ TRF); eauto.
   econstructor; eauto.

@@ -178,11 +178,11 @@ Inductive eval_expr: letenv -> expr -> val -> Prop :=
       eval_expr le (Evar id) v
   | eval_Eop: forall le op al vl v,
       eval_exprlist le al vl ->
-      eval_operation ge sp op vl m = Some v ->
+      eval_operation ge cp sp op vl m = Some v ->
       eval_expr le (Eop op al) v
   | eval_Eload: forall le chunk addr al vl vaddr v,
       eval_exprlist le al vl ->
-      eval_addressing ge sp addr vl = Some vaddr ->
+      eval_addressing ge cp sp addr vl = Some vaddr ->
       Mem.loadv chunk m vaddr cp = Some v ->
       eval_expr le (Eload chunk addr al) v
   | eval_Econdition: forall le a b c va v,
@@ -274,10 +274,11 @@ Inductive eval_builtin_arg: builtin_arg expr -> val -> Prop :=
       eval_builtin_arg (BA_loadstack chunk ofs) v
   | eval_BA_addrstack: forall ofs,
       eval_builtin_arg (BA_addrstack ofs) (Val.offset_ptr sp ofs)
-  | eval_BA_loadglobal: forall chunk id ofs cp v,
+  | eval_BA_loadglobal: forall chunk id ofs v,
       Mem.loadv chunk m (Genv.symbol_address ge id ofs) cp = Some v ->
       eval_builtin_arg (BA_loadglobal chunk id ofs) v
   | eval_BA_addrglobal: forall id ofs,
+      Genv.allowed_addrof ge cp id ->
       eval_builtin_arg (BA_addrglobal id ofs) (Genv.symbol_address ge id ofs)
   | eval_BA_splitlong: forall a1 a2 v1 v2,
       eval_expr nil a1 v1 -> eval_expr nil a2 v2 ->
@@ -370,7 +371,7 @@ Inductive step: state -> trace -> state -> Prop :=
       cp = (comp_of f) ->
       eval_exprlist sp e cp m nil al vl ->
       eval_expr sp e cp m nil b v ->
-      eval_addressing ge sp addr vl = Some vaddr ->
+      eval_addressing ge cp sp addr vl = Some vaddr ->
       Mem.storev chunk m vaddr v cp = Some m' ->
       step (State f (Sstore chunk addr al b) k sp e m)
         E0 (State f Sskip k sp e m')

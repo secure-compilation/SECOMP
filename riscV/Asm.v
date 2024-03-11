@@ -782,13 +782,19 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) (cp: 
   | Pj_l l =>
       goto_label f l rs m
   | Pj_s s sg =>
-      Next (rs#PC <- (Genv.symbol_address ge s Ptrofs.zero) #X31 <- Vundef) m
+      if Genv.allowed_addrof_b ge cp s then
+        Next (rs#PC <- (Genv.symbol_address ge s Ptrofs.zero) #X31 <- Vundef) m
+      else
+        Stuck
   | Pj_r r sg _ =>
       Next (rs#PC <- (rs#r)) m
   | Pjal_s s sg _ =>
+      if Genv.allowed_addrof_b ge cp s then
     Next (rs#PC <- (Genv.symbol_address ge s Ptrofs.zero)
             #RA <- (Val.offset_ptr rs#PC Ptrofs.one)
          ) m
+      else
+        Stuck
   | Pjal_r r sg _ =>
       Next (rs#PC <- (rs#r)
               #RA <- (Val.offset_ptr rs#PC Ptrofs.one)
@@ -976,9 +982,15 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) (cp: 
   | Plabel lbl =>
       Next (nextinstr rs) m
   | Ploadsymbol rd s ofs =>
-      Next (nextinstr (rs#rd <- (Genv.symbol_address ge s ofs))) m
+      if Genv.allowed_addrof_b ge cp s then
+        Next (nextinstr (rs#rd <- (Genv.symbol_address ge s ofs))) m
+      else
+        Stuck
   | Ploadsymbol_high rd s ofs =>
-      Next (nextinstr (rs#rd <- (high_half ge s ofs))) m
+      if Genv.allowed_addrof_b ge cp s then
+        Next (nextinstr (rs#rd <- (high_half ge s ofs))) m
+      else
+        Stuck
   | Ploadli rd i =>
       Next (nextinstr (rs#X31 <- Vundef #rd <- (Vlong i))) m
   | Ploadfi rd f =>
@@ -1298,30 +1310,18 @@ Definition funsig (fd: fundef): signature :=
 
 Definition invalidate_call (rs: regset) (sig: signature) : regset :=
   fun r =>
-    if preg_eq r PC ||
+    if preg_eq r PC || preg_eq r RA || preg_eq r SP ||
        in_dec preg_eq r (map preg_of (filter (fun x => LTL.in_mreg x (LTL.parameters_mregs sig)) all_mregs)) then
       rs r
     else
       Vundef.
-
-Definition invalidate_cross_call (rs: regset) (cp cp': compartment): regset :=
-  fun r =>
-    match Genv.type_of_call cp cp' with
-    | Genv.CrossCompartmentCall => if preg_eq r X1 then
-                                    Vundef
-                                  else if preg_eq r X2 then
-                                      Vundef
-                                    else
-                                      rs r
-    | _ => rs r
-    end.
 
 Notation "'SP'" := X2 (only parsing) : asm.
 Notation "'RA'" := X1 (only parsing) : asm.
 
 Definition invalidate_return (rs: regset) (sig: signature): regset :=
   fun r =>
-    if preg_eq r PC || preg_eq r X2 ||
+    if preg_eq r PC || preg_eq r SP ||
        in_dec preg_eq r (map preg_of
                            (filter (fun x => LTL.in_mreg x (regs_of_rpair (loc_result sig))) all_mregs)) then
       rs r
@@ -1337,10 +1337,6 @@ Definition invalidate_cross_return (rs: regset) (st: stack): regset :=
 
 Lemma invalidate_call_PC: forall rs sig, invalidate_call rs sig PC = rs PC.
   unfold invalidate_call. intros. reflexivity.
-Qed.
-Lemma invalidate_cross_call_PC: forall rs cp cp', invalidate_cross_call rs cp cp' PC = rs PC.
-  unfold invalidate_cross_call. intros.
-  destruct (Genv.type_of_call cp cp'); reflexivity.
 Qed.
 
 Lemma invalidate_return_PC: forall rs sig, invalidate_return rs sig PC = rs PC.
@@ -1392,6 +1388,7 @@ Inductive step: state -> trace -> state -> Prop :=
   | exec_step_return:
       forall st rs m cp rec_cp,
         rs PC <> Vnullptr ->
+        (exists b ofs fd, rs PC = Vptr b ofs /\ Genv.find_def ge b = Some (Gfun (Internal fd))) ->
         (* rs PC <> asm_parent_dummy_ra st -> *)
         (* rs PC <> Vone -> *)
         forall (NEXTCOMP: Genv.find_comp_in_genv ge (rs PC) = cp),
@@ -1416,14 +1413,13 @@ Inductive step: state -> trace -> state -> Prop :=
         forall (NO_CROSS_PTR: not_ptr (return_value rs sg)),
         forall (EV: return_trace ge cp' rec_cp (return_value rs sg) (sig_res sg) t),
         forall (INVALIDATE: invalidate_return rs sg = rs'),
-        (* forall (INVALIDATE: invalidate_cross_return rs' st = rs''), *)
           step (ReturnState st rs m rec_cp) t (State st' rs' m cp')
   | exec_step_builtin:
       forall b ofs f ef args res rs m vargs t vres rs' m' st,
       rs PC = Vptr b ofs ->
       Genv.find_funct_ptr ge b = Some (Internal f) ->
       find_instr (Ptrofs.unsigned ofs) f.(fn_code) = Some (Pbuiltin ef args res) ->
-      eval_builtin_args ge rs (rs SP) m args vargs ->
+      eval_builtin_args ge (comp_of f) rs (rs SP) m args vargs ->
       external_call ef ge (comp_of f) vargs m t vres m' ->
       rs' = nextinstr
               (set_res res vres

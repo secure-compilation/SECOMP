@@ -830,9 +830,9 @@ Proof.
 Qed.
 
 Lemma wt_exec_Iop:
-  forall (ge: genv) env f sp op args res s rs m v,
+  forall (ge: genv) cp env f sp op args res s rs m v,
   wt_instr f env (Iop op args res s) ->
-  eval_operation ge sp op rs##args m = Some v ->
+  eval_operation ge cp sp op rs##args m = Some v ->
   wt_regset env rs ->
   wt_regset env (rs#res <- v).
 Proof.

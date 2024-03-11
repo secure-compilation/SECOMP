@@ -2173,13 +2173,13 @@ Proof.
 Qed.
 
 Lemma add_equations_builtin_arg_lessdef:
-  forall env (ge: RTL.genv) sp rs ls m arg v,
-  eval_builtin_arg ge (fun r => rs#r) sp m arg v ->
+  forall env (ge: RTL.genv) cp sp rs ls m arg v,
+  eval_builtin_arg ge cp (fun r => rs#r) sp m arg v ->
   forall e e' arg',
   add_equations_builtin_arg env arg arg' e = Some e' ->
   satisf rs ls e' ->
   wt_regset env rs ->
-  exists v', eval_builtin_arg ge ls sp m arg' v' /\ Val.lessdef v v'.
+  exists v', eval_builtin_arg ge cp ls sp m arg' v' /\ Val.lessdef v v'.
 Proof.
   induction 1; simpl; intros e e' arg' AE SAT WT; destruct arg'; MonadInv.
 - exploit add_equation_lessdef; eauto. simpl; intros.
@@ -2218,21 +2218,21 @@ Proof.
 Qed.
 
 Lemma add_equations_builtin_args_lessdef:
-  forall env (ge: RTL.genv) sp rs ls m tm arg vl,
-  eval_builtin_args ge (fun r => rs#r) sp m arg vl ->
+  forall env (ge: RTL.genv) cp sp rs ls m tm arg vl,
+  eval_builtin_args ge cp (fun r => rs#r) sp m arg vl ->
   forall arg' e e',
   add_equations_builtin_args env arg arg' e = Some e' ->
   satisf rs ls e' ->
   wt_regset env rs ->
   Mem.extends m tm ->
-  exists vl', eval_builtin_args ge ls sp tm arg' vl' /\ Val.lessdef_list vl vl'.
+  exists vl', eval_builtin_args ge cp ls sp tm arg' vl' /\ Val.lessdef_list vl vl'.
 Proof.
   induction 1; simpl; intros; destruct arg'; MonadInv.
 - exists (@nil val); split; constructor.
 - exploit IHlist_forall2; eauto. intros (vl' & A & B).
   exploit add_equations_builtin_arg_lessdef; eauto.
   eapply add_equations_builtin_args_satisf; eauto. intros (v1' & C & D).
-  exploit (@eval_builtin_arg_lessdef _ ge ls ls); eauto. intros (v1'' & E & F).
+  exploit (@eval_builtin_arg_lessdef _ _ _ _ ge ls ls); eauto. intros (v1'' & E & F).
   exists (v1'' :: vl'); split; constructor; auto. eapply Val.lessdef_trans; eauto.
 Qed.
 
@@ -2247,14 +2247,14 @@ Proof.
 Qed.
 
 Lemma add_equations_debug_args_eval:
-  forall env (ge: RTL.genv) sp rs ls m tm arg vl,
-  eval_builtin_args ge (fun r => rs#r) sp m arg vl ->
+  forall env (ge: RTL.genv) cp sp rs ls m tm arg vl,
+  eval_builtin_args ge cp (fun r => rs#r) sp m arg vl ->
   forall arg' e e',
   add_equations_debug_args env arg arg' e = Some e' ->
   satisf rs ls e' ->
   wt_regset env rs ->
   Mem.extends m tm ->
-  exists vl', eval_builtin_args ge ls sp tm arg' vl'.
+  exists vl', eval_builtin_args ge cp ls sp tm arg' vl'.
 Proof.
   induction 1; simpl; intros; destruct arg'; MonadInv.
 - exists (@nil val); constructor.
@@ -2263,7 +2263,7 @@ Proof.
 + exploit IHlist_forall2; eauto. intros (vl' & B).
   exploit add_equations_builtin_arg_lessdef; eauto.
   eapply add_equations_debug_args_satisf; eauto. intros (v1' & C & D).
-  exploit (@eval_builtin_arg_lessdef _ ge ls ls); eauto. intros (v1'' & E & F).
+  exploit (@eval_builtin_arg_lessdef _ _ _ _ ge ls ls); eauto. intros (v1'' & E & F).
   exists (v1'' :: vl'); constructor; auto.
 + eauto.
 Qed.
@@ -2277,11 +2277,11 @@ Lemma add_equations_builtin_eval:
   end = Some e2 ->
   Mem.extends m1 m1' ->
   satisf rs ls e2 ->
-  eval_builtin_args ge (fun r => rs # r) sp m1 args vargs ->
+  eval_builtin_args ge cp (fun r => rs # r) sp m1 args vargs ->
   external_call ef ge cp vargs m1 t vres m2 ->
   satisf rs ls e1 /\
   exists vargs' vres' m2',
-     eval_builtin_args ge ls sp m1' args' vargs'
+     eval_builtin_args ge cp ls sp m1' args' vargs'
   /\ external_call ef ge cp vargs' m1' t vres' m2'
   /\ Val.lessdef vres vres'
   /\ Mem.extends m2 m2'.
@@ -2290,7 +2290,7 @@ Proof.
   assert (DEFAULT: add_equations_builtin_args env args args' e1 = Some e2 ->
     satisf rs ls e1 /\
     exists vargs' vres' m2',
-       eval_builtin_args ge ls sp m1' args' vargs'
+       eval_builtin_args ge cp ls sp m1' args' vargs'
     /\ external_call ef ge cp vargs' m1' t vres' m2'
     /\ Val.lessdef vres vres'
     /\ Mem.extends m2 m2').
@@ -2445,6 +2445,20 @@ Let tge := Genv.globalenv tprog.
 Lemma symbols_preserved:
   forall (s: ident), Genv.find_symbol tge s = Genv.find_symbol ge s.
 Proof. exact (Genv.find_symbol_match TRANSF). Qed.
+
+Lemma allowed_addrof_preserved:
+  forall (cp : compartment) (id : ident), Genv.allowed_addrof_b tge cp id = Genv.allowed_addrof_b ge cp id.
+Proof.
+  intros.
+  pose proof (Genv.match_genvs_allowed_addrof TRANSF).
+  specialize (H cp id).
+  destruct (Genv.allowed_addrof_b tge cp id) eqn:EQ.
+  - apply Genv.allowed_addrof_b_reflect in EQ. apply H in EQ. apply Genv.allowed_addrof_b_reflect in EQ.
+    now rewrite <- EQ.
+  - destruct (Genv.allowed_addrof_b ge cp id) eqn:EQ'; try reflexivity.
+    apply Genv.allowed_addrof_b_reflect in EQ'. apply H in EQ'. apply Genv.allowed_addrof_b_reflect in EQ'.
+    now rewrite <- EQ'.
+Qed.
 
 Lemma senv_preserved:
   Senv.equiv ge tge.
@@ -2711,7 +2725,7 @@ Proof.
   econstructor; eauto.
 
 (* op move *)
-- generalize (wt_exec_Iop _ _ _ _ _ _ _ _ _ _ _ WTI H0 WTRS). intros WTRS'.
+- generalize (wt_exec_Iop _ _ _ _ _ _ _ _ _ _ _ _ WTI H0 WTRS). intros WTRS'.
   simpl in H0. inv H0.
   exploit (exec_moves mv); eauto. intros [ls1 [X Y]].
   econstructor; split.
@@ -2723,7 +2737,7 @@ Proof.
   econstructor; eauto.
 
 (* op makelong *)
-- generalize (wt_exec_Iop _ _ _ _ _ _ _ _ _ _ _ WTI H0 WTRS). intros WTRS'.
+- generalize (wt_exec_Iop _ _ _ _ _ _ _ _ _ _ _ _ WTI H0 WTRS). intros WTRS'.
   simpl in H0. inv H0.
   exploit (exec_moves mv); eauto. intros [ls1 [X Y]].
   econstructor; split.
@@ -2736,7 +2750,7 @@ Proof.
   econstructor; eauto.
 
 (* op lowlong *)
-- generalize (wt_exec_Iop _ _ _ _ _ _ _ _ _ _ _ WTI H0 WTRS). intros WTRS'.
+- generalize (wt_exec_Iop _ _ _ _ _ _ _ _ _ _ _ _ WTI H0 WTRS). intros WTRS'.
   simpl in H0. inv H0.
   exploit (exec_moves mv); eauto. intros [ls1 [X Y]].
   econstructor; split.
@@ -2749,7 +2763,7 @@ Proof.
   econstructor; eauto.
 
 (* op highlong *)
-- generalize (wt_exec_Iop _ _ _ _ _ _ _ _ _ _ _ WTI H0 WTRS). intros WTRS'.
+- generalize (wt_exec_Iop _ _ _ _ _ _ _ _ _ _ _ _ WTI H0 WTRS). intros WTRS'.
   simpl in H0. inv H0.
   exploit (exec_moves mv); eauto. intros [ls1 [X Y]].
   econstructor; split.
@@ -2762,7 +2776,7 @@ Proof.
   econstructor; eauto.
 
 (* op regular *)
-- generalize (wt_exec_Iop _ _ _ _ _ _ _ _ _ _ _ WTI H0 WTRS). intros WTRS'.
+- generalize (wt_exec_Iop _ _ _ _ _ _ _ _ _ _ _ _ WTI H0 WTRS). intros WTRS'.
   exploit (exec_moves mv1); eauto. intros [ls1 [A1 B1]].
   exploit transfer_use_def_satisf; eauto. intros [X Y].
   exploit eval_operation_lessdef; eauto. intros [v' [F G]].
@@ -2771,7 +2785,8 @@ Proof.
   eapply plus_left. econstructor; eauto.
   eapply star_trans. eexact A1.
   eapply star_left. econstructor. instantiate (1 := v'). rewrite <- F.
-  apply eval_operation_preserved. exact symbols_preserved.
+  rewrite comp_transf_function.
+  apply eval_operation_preserved. exact allowed_addrof_preserved. exact symbols_preserved. eauto.
   eauto. eapply star_right. eexact A2. constructor.
   eauto. eauto. eauto. traceEq.
   exploit satisf_successors; eauto. simpl; eauto. intros [enext [U V]].
@@ -2799,8 +2814,8 @@ Proof.
   econstructor; split.
   eapply plus_left. econstructor; eauto.
   eapply star_trans. eexact A1.
-  eapply star_left. econstructor. instantiate (1 := a'). rewrite <- F.
-  apply eval_addressing_preserved. exact symbols_preserved.
+  eapply star_left. econstructor. instantiate (1 := a'). rewrite <- F. rewrite comp_transf_function; eauto.
+  apply eval_addressing_preserved. exact allowed_addrof_preserved. exact symbols_preserved.
   rewrite <- comp_transf_function; eauto.
   eauto.
   eapply star_right. eexact A2. constructor.
@@ -2851,12 +2866,14 @@ Proof.
   eapply plus_left. econstructor; eauto.
   eapply star_trans. eexact A1.
   eapply star_left. econstructor.
-  instantiate (1 := a1'). rewrite <- F1. apply eval_addressing_preserved. exact symbols_preserved.
+  instantiate (1 := a1'). rewrite <- F1. rewrite comp_transf_function; eauto.
+  apply eval_addressing_preserved. exact allowed_addrof_preserved. exact symbols_preserved.
   rewrite <- comp_transf_function; eauto.
   eauto.
   eapply star_trans. eexact A3.
   eapply star_left. econstructor.
-  instantiate (1 := a2'). rewrite <- F2. apply eval_addressing_preserved. exact symbols_preserved.
+  instantiate (1 := a2'). rewrite <- F2. rewrite comp_transf_function; eauto.
+  apply eval_addressing_preserved. exact allowed_addrof_preserved. exact symbols_preserved.
   rewrite <- comp_transf_function; eauto.
   eauto.
   eapply star_right. eexact A5.
@@ -2887,7 +2904,8 @@ Proof.
   eapply plus_left. econstructor; eauto.
   eapply star_trans. eexact A1.
   eapply star_left. econstructor.
-  instantiate (1 := a1'). rewrite <- F1. apply eval_addressing_preserved. exact symbols_preserved.
+  instantiate (1 := a1'). rewrite <- F1. rewrite comp_transf_function; eauto.
+  apply eval_addressing_preserved. exact allowed_addrof_preserved. exact symbols_preserved.
   rewrite <- comp_transf_function; eauto.
   eauto.
   eapply star_right. eexact A3.
@@ -2921,7 +2939,8 @@ Proof.
   eapply plus_left. econstructor; eauto.
   eapply star_trans. eexact A1.
   eapply star_left. econstructor.
-  instantiate (1 := a1'). rewrite <- F1. apply eval_addressing_preserved. exact symbols_preserved.
+  instantiate (1 := a1'). rewrite <- F1. rewrite comp_transf_function; eauto.
+  apply eval_addressing_preserved. exact allowed_addrof_preserved. exact symbols_preserved.
   rewrite <- comp_transf_function; eauto.
   eauto.
   eapply star_right. eexact A3.
@@ -2950,8 +2969,8 @@ Proof.
   econstructor; split.
   eapply plus_left. econstructor; eauto.
   eapply star_trans. eexact X.
-  eapply star_two. econstructor. instantiate (1 := a'). rewrite <- F.
-  apply eval_addressing_preserved. exact symbols_preserved.
+  eapply star_two. econstructor. instantiate (1 := a'). rewrite <- F. rewrite comp_transf_function; eauto.
+  apply eval_addressing_preserved. exact allowed_addrof_preserved. exact symbols_preserved.
   rewrite <- comp_transf_function; eauto.
   eauto.
   constructor. eauto. eauto. traceEq.
@@ -2978,8 +2997,9 @@ Proof.
     eapply can_undef_satisf. eauto.
     eapply add_equation_satisf. eapply add_equations_satisf; eauto.
   exploit eval_addressing_lessdef. eexact LD1. eauto. intros [a1' [F1 G1]].
-  assert (F1': eval_addressing tge sp addr (reglist ls1 args1') = Some a1').
-    rewrite <- F1. apply eval_addressing_preserved. exact symbols_preserved.
+  assert (F1': eval_addressing tge (comp_of f) sp addr (reglist ls1 args1') = Some a1').
+    rewrite <- F1. rewrite comp_transf_function; eauto.
+    apply eval_addressing_preserved. exact allowed_addrof_preserved. exact symbols_preserved.
   exploit Mem.storev_extends. eauto. eexact STORE1. eexact G1. eauto.
   intros [m1' [STORE1' EXT1]].
   exploit (exec_moves mv2); eauto. intros [ls3 [U V]].
@@ -2987,8 +3007,9 @@ Proof.
   exploit add_equation_lessdef. eapply add_equations_satisf. eexact Heqo. eexact V.
   simpl. intros LD4.
   exploit eval_addressing_lessdef. eexact LD3. eauto. intros [a2' [F2 G2]].
-  assert (F2': eval_addressing tge sp addr (reglist ls3 args2') = Some a2').
-    rewrite <- F2. apply eval_addressing_preserved. exact symbols_preserved.
+  assert (F2': eval_addressing tge (comp_of f) sp addr (reglist ls3 args2') = Some a2').
+    rewrite <- F2. rewrite comp_transf_function; eauto.
+    apply eval_addressing_preserved. exact allowed_addrof_preserved. exact symbols_preserved.
   exploit (eval_offset_addressing tge); eauto. intros F2''.
   assert (STOREX: exists m2', Mem.storev Mint32 m1' (Val.add a2' (Vint (Int.repr 4))) (ls3 (R src2')) (comp_of f) = Some m2' /\ Mem.extends m' m2').
   { try discriminate;
@@ -2999,12 +3020,12 @@ Proof.
   eapply plus_left. econstructor; eauto.
   eapply star_trans. eexact X.
   eapply star_left.
-  econstructor. eexact F1'.
+  econstructor. rewrite <- comp_transf_function. eexact F1'. assumption.
   rewrite <- comp_transf_function; eauto.
   eauto.
   eapply star_trans. eexact U.
   eapply star_two.
-  eapply exec_Lstore with (m' := m2'). eexact F2''.
+  eapply exec_Lstore with (m' := m2'). rewrite <- comp_transf_function. eexact F2''. assumption.
   discriminate||(rewrite <- comp_transf_function; eauto).
   eauto.
   constructor. eauto. eauto. eauto. eauto. traceEq.
@@ -3205,7 +3226,8 @@ Proof.
   eapply plus_left. econstructor; eauto.
   eapply star_trans. eexact A1.
   eapply star_left. econstructor.
-  eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
+  rewrite <- comp_transf_function; eauto.
+  eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact allowed_addrof_preserved. exact symbols_preserved.
   rewrite <- comp_transf_function; eauto.
   eapply external_call_symbols_preserved. apply senv_preserved. eauto.
   eauto.

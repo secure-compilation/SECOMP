@@ -306,16 +306,17 @@ Variable ge: genv.
    [eval_var_addr prg ge e id b] states that variable [id]
    in environment [e] evaluates to block [b]. *)
 
-Inductive eval_var_addr: env -> ident -> block -> Prop :=
+Inductive eval_var_addr: env -> compartment -> ident -> block -> Prop :=
   | eval_var_addr_local:
-      forall e id b sz,
+      forall e cp id b sz,
       PTree.get id e = Some (b, sz) ->
-      eval_var_addr e id b
+      eval_var_addr e cp id b
   | eval_var_addr_global:
-      forall e id b,
+      forall e cp id b,
       PTree.get id e = None ->
       Genv.find_symbol ge id = Some b ->
-      eval_var_addr e id b.
+      Genv.allowed_addrof ge cp id ->
+      eval_var_addr e cp id b.
 
 (** Evaluation of an expression: [eval_expr prg e m a v] states
   that expression [a], in initial memory state [m] and local
@@ -333,7 +334,7 @@ Inductive eval_expr: expr -> val -> Prop :=
       le!id = Some v ->
       eval_expr (Evar id) v
   | eval_Eaddrof: forall id b,
-      eval_var_addr e id b ->
+      eval_var_addr e cp id b ->
       eval_expr (Eaddrof id) (Vptr b Ptrofs.zero)
   | eval_Econst: forall cst v,
       eval_constant cst = Some v ->

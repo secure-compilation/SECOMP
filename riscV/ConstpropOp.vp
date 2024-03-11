@@ -27,7 +27,7 @@ Definition const_for_result (a: aval) : option operation :=
   | L n => if Archi.ptr64 then Some(Olongconst n) else None
   | F n => if Compopts.generate_float_constants tt then Some(Ofloatconst n) else None
   | FS n => if Compopts.generate_float_constants tt then Some(Osingleconst n) else None
-  | Ptr(Gl id ofs) => Some(Oaddrsymbol id ofs)
+  | Ptr(Gl id ofs) => None
   | Ptr(Stk ofs) => Some(Oaddrstack ofs)
   | _ => None
   end.
@@ -300,7 +300,7 @@ Nondetfunction addr_strength_reduction
   | Aindexed n, r1 :: nil, Ptr(Gl symb n1) :: nil =>
       if Archi.pic_code tt
       then (addr, args)
-      else (Aglobal symb (Ptrofs.add n1 n), nil)
+      else (addr, args)
   | Aindexed n, r1 :: nil, Ptr(Stk n1) :: nil =>
       (Ainstack (Ptrofs.add n1 n), nil)
   | _, _, _ =>

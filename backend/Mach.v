@@ -401,14 +401,14 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State s fb sp c rs' m)
   | exec_Mop:
       forall s f sp op args res c rs m v rs',
-      eval_operation ge sp op rs##args m = Some v ->
+      eval_operation ge (Genv.find_comp_of_block ge f) sp op rs##args m = Some v ->
       rs' = ((undef_regs (destroyed_by_op op) rs)#res <- v) ->
       step (State s f sp (Mop op args res :: c) rs m)
         E0 (State s f sp c rs' m)
   | exec_Mload:
       forall s f sp chunk addr args dst c rs m a v rs' cp,
       forall (CURCOMP: Genv.find_comp_of_block ge f = cp),
-      eval_addressing ge sp addr rs##args = Some a ->
+      eval_addressing ge (Genv.find_comp_of_block ge f) sp addr rs##args = Some a ->
       Mem.loadv chunk m a cp = Some v ->
       rs' = ((undef_regs (destroyed_by_load chunk addr) rs)#dst <- v) ->
       step (State s f sp (Mload chunk addr args dst :: c) rs m)
@@ -416,7 +416,7 @@ Inductive step: state -> trace -> state -> Prop :=
   | exec_Mstore:
       forall s f sp chunk addr args src c rs m m' a rs' cp,
       forall (CURCOMP: Genv.find_comp_of_block ge f = cp),
-      eval_addressing ge sp addr rs##args = Some a ->
+      eval_addressing ge (Genv.find_comp_of_block ge f) sp addr rs##args = Some a ->
       Mem.storev chunk m a (rs src) cp = Some m' ->
       rs' = undef_regs (destroyed_by_store chunk addr) rs ->
       step (State s f sp (Mstore chunk addr args src :: c) rs m)
@@ -453,7 +453,7 @@ Inductive step: state -> trace -> state -> Prop :=
   | exec_Mbuiltin:
       forall s fb sp rs m ef cp args res b vargs t vres rs' m',
       forall (CURCOMP: Genv.find_comp_of_block ge fb = cp),
-      eval_builtin_args ge rs sp m args vargs ->
+      eval_builtin_args ge cp rs sp m args vargs ->
       external_call ef ge cp vargs m t vres m' ->
       rs' = set_res res vres (undef_regs (destroyed_by_builtin ef) rs) ->
       step (State s fb sp (Mbuiltin ef args res :: b) rs m)

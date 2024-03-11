@@ -50,6 +50,20 @@ Lemma senv_preserved:
   Senv.equiv (Genv.to_senv ge) (Genv.to_senv tge).
 Proof (Genv.senv_match TRANSL).
 
+Lemma allowed_addrof_preserved:
+  forall (cp : compartment) (id : ident), Genv.allowed_addrof_b tge cp id = Genv.allowed_addrof_b ge cp id.
+Proof.
+  intros.
+  pose proof (Genv.match_genvs_allowed_addrof TRANSL).
+  specialize (H cp id).
+  destruct (Genv.allowed_addrof_b tge cp id) eqn:EQ.
+  - apply Genv.allowed_addrof_b_reflect in EQ. apply H in EQ. apply Genv.allowed_addrof_b_reflect in EQ.
+    now rewrite <- EQ.
+  - destruct (Genv.allowed_addrof_b ge cp id) eqn:EQ'; try reflexivity.
+    apply Genv.allowed_addrof_b_reflect in EQ'. apply H in EQ'. apply Genv.allowed_addrof_b_reflect in EQ'.
+    now rewrite <- EQ'.
+Qed.
+
 Lemma functions_translated:
   forall (v: val) (f: fundef),
   Genv.find_funct ge v = Some f ->
@@ -182,18 +196,20 @@ Proof.
 Qed.
 
 Lemma const_for_result_correct:
-  forall a op bc v sp m,
+  forall cp a op bc v sp m,
   const_for_result a = Some op ->
   vmatch bc v a ->
   bc sp = BCstack ->
   genv_match bc ge ->
-  exists v', eval_operation tge (Vptr sp Ptrofs.zero) op nil m = Some v' /\ Val.lessdef v v'.
+  exists v', eval_operation tge cp (Vptr sp Ptrofs.zero) op nil m = Some v' /\ Val.lessdef v v'.
 Proof.
-  intros. exploit ConstpropOpproof.const_for_result_correct; eauto. intros (v' & A & B).
-  exists v'; split.
-  rewrite <- A; apply eval_operation_preserved. exact symbols_preserved.
-  auto.
+  intros. exploit ConstpropOpproof.const_for_result_correct; eauto.
 Qed.
+(*   intros (v' & A & B). *)
+(*   exists v'; split. *)
+(*   rewrite <- A; apply eval_operation_preserved. exact symbols_preserved. *)
+(*   auto. *)
+(* Qed. *)
 
 Inductive match_pc (f: function) (rs: regset) (m: mem): nat -> node -> node -> Prop :=
   | match_pc_base: forall n pc,
@@ -237,10 +253,10 @@ Proof.
 Qed.
 
 Lemma builtin_arg_reduction_correct:
-  forall bc sp m rs ae, ematch bc rs ae ->
+  forall cp bc sp m rs ae, ematch bc rs ae ->
   forall a v,
-  eval_builtin_arg (Genv.to_senv ge) (fun r => rs#r) sp m a v ->
-  eval_builtin_arg (Genv.to_senv ge) (fun r => rs#r) sp m (builtin_arg_reduction ae a) v.
+  eval_builtin_arg ge cp (fun r => rs#r) sp m a v ->
+  eval_builtin_arg ge cp (fun r => rs#r) sp m (builtin_arg_reduction ae a) v.
 Proof.
   induction 2; simpl; eauto with barg.
 - specialize (H x). unfold areg. destruct (AE.get x ae); try constructor.
@@ -254,10 +270,10 @@ Proof.
 Qed.
 
 Lemma builtin_arg_strength_reduction_correct:
-  forall bc sp m rs ae a v c,
+  forall cp bc sp m rs ae a v c,
   ematch bc rs ae ->
-  eval_builtin_arg (Genv.to_senv ge) (fun r => rs#r) sp m a v ->
-  eval_builtin_arg (Genv.to_senv ge) (fun r => rs#r) sp m (builtin_arg_strength_reduction ae a c) v.
+  eval_builtin_arg ge cp (fun r => rs#r) sp m a v ->
+  eval_builtin_arg ge cp (fun r => rs#r) sp m (builtin_arg_strength_reduction ae a c) v.
 Proof.
   intros. unfold builtin_arg_strength_reduction.
   destruct (builtin_arg_ok (builtin_arg_reduction ae a) c).
@@ -266,11 +282,11 @@ Proof.
 Qed.
 
 Lemma builtin_args_strength_reduction_correct:
-  forall bc sp m rs ae, ematch bc rs ae ->
+  forall cp bc sp m rs ae, ematch bc rs ae ->
   forall al vl,
-  eval_builtin_args (Genv.to_senv ge) (fun r => rs#r) sp m al vl ->
+  eval_builtin_args ge cp (fun r => rs#r) sp m al vl ->
   forall cl,
-  eval_builtin_args (Genv.to_senv ge) (fun r => rs#r) sp m (builtin_args_strength_reduction ae al cl) vl.
+  eval_builtin_args ge cp (fun r => rs#r) sp m (builtin_args_strength_reduction ae al cl) vl.
 Proof.
   induction 2; simpl; constructor.
   eapply builtin_arg_strength_reduction_correct; eauto.
@@ -278,15 +294,15 @@ Proof.
 Qed.
 
 Lemma debug_strength_reduction_correct:
-  forall bc sp m rs ae, ematch bc rs ae ->
+  forall cp bc sp m rs ae, ematch bc rs ae ->
   forall al vl,
-  eval_builtin_args (Genv.to_senv ge) (fun r => rs#r) sp m al vl ->
-  exists vl', eval_builtin_args (Genv.to_senv ge) (fun r => rs#r) sp m (debug_strength_reduction ae al) vl'.
+  eval_builtin_args ge cp (fun r => rs#r) sp m al vl ->
+  exists vl', eval_builtin_args ge cp (fun r => rs#r) sp m (debug_strength_reduction ae al) vl'.
 Proof.
   induction 2; simpl.
 - exists (@nil val); constructor.
 - destruct IHlist_forall2 as (vl' & A).
-  assert (eval_builtin_args (Genv.to_senv ge) (fun r => rs#r) sp m
+  assert (eval_builtin_args ge cp (fun r => rs#r) sp m
              (a1 :: debug_strength_reduction ae al) (b1 :: vl'))
   by (constructor; eauto).
   destruct a1; try (econstructor; eassumption).
@@ -296,16 +312,16 @@ Qed.
 Lemma builtin_strength_reduction_correct:
   forall cp sp bc ae rs ef args vargs m t vres m',
   ematch bc rs ae ->
-  eval_builtin_args (Genv.to_senv ge) (fun r => rs#r) sp m args vargs ->
+  eval_builtin_args ge cp (fun r => rs#r) sp m args vargs ->
   external_call ef (Genv.to_senv ge) cp vargs m t vres m' ->
   exists vargs',
-     eval_builtin_args (Genv.to_senv ge) (fun r => rs#r) sp m (builtin_strength_reduction ae ef args) vargs'
+     eval_builtin_args ge cp (fun r => rs#r) sp m (builtin_strength_reduction ae ef args) vargs'
   /\ external_call ef (Genv.to_senv ge) cp vargs' m t vres m'.
 Proof.
   intros.
   assert (DEFAULT: forall cl,
     exists vargs',
-       eval_builtin_args (Genv.to_senv ge) (fun r => rs#r) sp m (builtin_args_strength_reduction ae args cl) vargs'
+       eval_builtin_args ge cp (fun r => rs#r) sp m (builtin_args_strength_reduction ae args cl) vargs'
     /\ external_call ef (Genv.to_senv ge) cp vargs' m t vres m').
   { exists vargs; split; auto. eapply builtin_args_strength_reduction_correct; eauto. }
   unfold builtin_strength_reduction.
@@ -457,17 +473,17 @@ Proof.
   assert(OP:
      let (op', args') := op_strength_reduction op args (aregs ae args) in
      exists v',
-        eval_operation ge (Vptr sp0 Ptrofs.zero) op' rs ## args' m = Some v' /\
+        eval_operation ge (comp_of f) (Vptr sp0 Ptrofs.zero) op' rs ## args' m = Some v' /\
         Val.lessdef v v').
   { eapply op_strength_reduction_correct with (ae := ae); eauto with va. }
   destruct (op_strength_reduction op args (aregs ae args)) as [op' args'].
   destruct OP as [v' [EV' LD']].
-  assert (EV'': exists v'', eval_operation ge (Vptr sp0 Ptrofs.zero) op' rs'##args' m' = Some v'' /\ Val.lessdef v' v'').
+  assert (EV'': exists v'', eval_operation ge (comp_of f) (Vptr sp0 Ptrofs.zero) op' rs'##args' m' = Some v'' /\ Val.lessdef v' v'').
   { eapply eval_operation_lessdef; eauto. eapply regs_lessdef_regs; eauto. }
   destruct EV'' as [v'' [EV'' LD'']].
   left; econstructor; econstructor; split.
   eapply exec_Iop; eauto.
-  erewrite eval_operation_preserved. eexact EV''. exact symbols_preserved.
+  erewrite eval_operation_preserved. eexact EV''. exact allowed_addrof_preserved. exact symbols_preserved.
   apply match_states_intro; auto.
   eapply match_successor; eauto.
   apply set_reg_lessdef; auto. eapply Val.lessdef_trans; eauto.
@@ -489,15 +505,15 @@ Proof.
   assert (ADDR:
      let (addr', args') := addr_strength_reduction addr args (aregs ae args) in
      exists a',
-        eval_addressing ge (Vptr sp0 Ptrofs.zero) addr' rs ## args' = Some a' /\
+        eval_addressing ge (comp_of f) (Vptr sp0 Ptrofs.zero) addr' rs ## args' = Some a' /\
         Val.lessdef a a').
   { eapply addr_strength_reduction_correct with (ae := ae); eauto with va. }
   destruct (addr_strength_reduction addr args (aregs ae args)) as [addr' args'].
   destruct ADDR as (a' & P & Q).
   exploit eval_addressing_lessdef. eapply regs_lessdef_regs; eauto. eexact P.
   intros (a'' & U & V).
-  assert (W: eval_addressing tge (Vptr sp0 Ptrofs.zero) addr' rs'##args' = Some a'').
-  { rewrite <- U. apply eval_addressing_preserved. exact symbols_preserved. }
+  assert (W: eval_addressing tge (comp_of f) (Vptr sp0 Ptrofs.zero) addr' rs'##args' = Some a'').
+  { rewrite <- U. apply eval_addressing_preserved. exact allowed_addrof_preserved. exact symbols_preserved. }
   exploit Mem.loadv_extends. eauto. eauto. apply Val.lessdef_trans with a'; eauto.
   intros (v' & X & Y).
   left; econstructor; econstructor; split.
@@ -509,15 +525,15 @@ Proof.
   assert (ADDR:
      let (addr', args') := addr_strength_reduction addr args (aregs ae args) in
      exists a',
-        eval_addressing ge (Vptr sp0 Ptrofs.zero) addr' rs ## args' = Some a' /\
+        eval_addressing ge (comp_of f) (Vptr sp0 Ptrofs.zero) addr' rs ## args' = Some a' /\
         Val.lessdef a a').
   { eapply addr_strength_reduction_correct with (ae := ae); eauto with va. }
   destruct (addr_strength_reduction addr args (aregs ae args)) as [addr' args'].
   destruct ADDR as (a' & P & Q).
   exploit eval_addressing_lessdef. eapply regs_lessdef_regs; eauto. eexact P.
   intros (a'' & U & V).
-  assert (W: eval_addressing tge (Vptr sp0 Ptrofs.zero) addr' rs'##args' = Some a'').
-  { rewrite <- U. apply eval_addressing_preserved. exact symbols_preserved. }
+  assert (W: eval_addressing tge (comp_of f) (Vptr sp0 Ptrofs.zero) addr' rs'##args' = Some a'').
+  { rewrite <- U. apply eval_addressing_preserved. exact allowed_addrof_preserved. exact symbols_preserved. }
   exploit Mem.storev_extends. eauto. eauto. apply Val.lessdef_trans with a'; eauto. apply REGS.
   intros (m2' & X & Y).
   left; econstructor; econstructor; split.
@@ -585,14 +601,14 @@ Opaque builtin_strength_reduction.
              (State s f (Vptr sp0 Ptrofs.zero) pc' (regmap_setres res vres rs) m') s2').
   {
     exploit builtin_strength_reduction_correct; eauto. intros (vargs' & P & Q).
-    exploit (@eval_builtin_args_lessdef _ (Genv.to_senv ge) (fun r => rs#r) (fun r => rs'#r)).
+    exploit (@eval_builtin_args_lessdef _ _ _ _ ge (fun r => rs#r) (fun r => rs'#r)).
     apply REGS. eauto. eexact P.
     intros (vargs'' & U & V).
     exploit external_call_mem_extends; eauto.
     intros (v' & m2' & A & B & C & D).
     econstructor; econstructor; split.
     eapply exec_Ibuiltin; eauto.
-    eapply eval_builtin_args_preserved. eexact symbols_preserved. eauto.
+    eapply eval_builtin_args_preserved. eexact allowed_addrof_preserved. eexact symbols_preserved. eauto.
     eapply external_call_symbols_preserved; eauto. apply senv_preserved.
     eapply match_states_succ; eauto.
     apply set_res_lessdef; auto.
