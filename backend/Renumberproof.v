@@ -51,6 +51,20 @@ Lemma symbols_preserved:
   Genv.find_symbol tge id = Genv.find_symbol ge id.
 Proof (Genv.find_symbol_transf TRANSL).
 
+Lemma allowed_addrof_preserved:
+  forall (cp : compartment) (id : ident), Genv.allowed_addrof_b tge cp id = Genv.allowed_addrof_b ge cp id.
+Proof.
+  intros.
+  pose proof (Genv.match_genvs_allowed_addrof TRANSL).
+  specialize (H cp id).
+  destruct (Genv.allowed_addrof_b tge cp id) eqn:EQ.
+  - apply Genv.allowed_addrof_b_reflect in EQ. apply H in EQ. apply Genv.allowed_addrof_b_reflect in EQ.
+    now rewrite <- EQ.
+  - destruct (Genv.allowed_addrof_b ge cp id) eqn:EQ'; try reflexivity.
+    apply Genv.allowed_addrof_b_reflect in EQ'. apply H in EQ'. apply Genv.allowed_addrof_b_reflect in EQ'.
+    now rewrite <- EQ'.
+Qed.
+
 Lemma senv_preserved:
   Senv.equiv (Genv.to_senv ge) (Genv.to_senv tge).
 Proof (Genv.senv_transf TRANSL).
@@ -230,18 +244,18 @@ Proof.
 (* op *)
   econstructor; split.
   eapply exec_Iop; eauto.
-  instantiate (1 := v). rewrite <- H0. apply eval_operation_preserved. exact symbols_preserved.
+  instantiate (1 := v). rewrite <- H0. apply eval_operation_preserved. exact allowed_addrof_preserved. exact symbols_preserved.
   constructor; auto. eapply reach_succ; eauto. simpl; auto.
 (* load *)
   econstructor; split.
-  assert (eval_addressing tge sp addr rs ## args = Some a).
-  rewrite <- H0. apply eval_addressing_preserved. exact symbols_preserved.
+  assert (eval_addressing tge (comp_of f) sp addr rs ## args = Some a).
+  rewrite <- H0. apply eval_addressing_preserved. exact allowed_addrof_preserved. exact symbols_preserved.
   eapply exec_Iload; eauto.
   constructor; auto. eapply reach_succ; eauto. simpl; auto.
 (* store *)
   econstructor; split.
-  assert (eval_addressing tge sp addr rs ## args = Some a).
-  rewrite <- H0. apply eval_addressing_preserved. exact symbols_preserved.
+  assert (eval_addressing tge (comp_of f) sp addr rs ## args = Some a).
+  rewrite <- H0. apply eval_addressing_preserved. exact allowed_addrof_preserved. exact symbols_preserved.
   eapply exec_Istore; eauto.
   constructor; auto. eapply reach_succ; eauto. simpl; auto.
 (* call *)
@@ -269,7 +283,7 @@ Proof.
 (* builtin *)
   econstructor; split.
   eapply exec_Ibuiltin; eauto.
-    eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
+    eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact allowed_addrof_preserved. exact symbols_preserved.
     eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   constructor; auto. eapply reach_succ; eauto. simpl; auto.
 (* cond *)

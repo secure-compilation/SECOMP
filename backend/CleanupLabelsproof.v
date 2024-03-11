@@ -43,6 +43,20 @@ Lemma symbols_preserved:
   Genv.find_symbol tge id = Genv.find_symbol ge id.
 Proof (Genv.find_symbol_transf TRANSL).
 
+Lemma allowed_addrof_preserved:
+  forall (cp : compartment) (id : ident), Genv.allowed_addrof_b tge cp id = Genv.allowed_addrof_b ge cp id.
+Proof.
+  intros.
+  pose proof (Genv.match_genvs_allowed_addrof TRANSL).
+  specialize (H cp id).
+  destruct (Genv.allowed_addrof_b tge cp id) eqn:EQ.
+  - apply Genv.allowed_addrof_b_reflect in EQ. apply H in EQ. apply Genv.allowed_addrof_b_reflect in EQ.
+    now rewrite <- EQ.
+  - destruct (Genv.allowed_addrof_b ge cp id) eqn:EQ'; try reflexivity.
+    apply Genv.allowed_addrof_b_reflect in EQ'. apply H in EQ'. apply Genv.allowed_addrof_b_reflect in EQ'.
+    now rewrite <- EQ'.
+Qed.
+
 Lemma senv_preserved:
   Senv.equiv ge tge.
 Proof (Genv.senv_transf TRANSL).
@@ -293,17 +307,19 @@ Proof.
 (* Lop *)
   left; econstructor; split.
   econstructor; eauto. instantiate (1 := v). rewrite <- H.
-  apply eval_operation_preserved. exact symbols_preserved.
+  apply eval_operation_preserved. exact allowed_addrof_preserved. exact symbols_preserved.
   econstructor; eauto with coqlib.
 (* Lload *)
-  assert (eval_addressing tge sp addr (LTL.reglist rs args) = Some a).
-    rewrite <- H. apply eval_addressing_preserved. exact symbols_preserved.
+  assert (eval_addressing tge (comp_of f) sp addr (LTL.reglist rs args) = Some a).
+    rewrite <- H. apply eval_addressing_preserved.
+    exact allowed_addrof_preserved. exact symbols_preserved.
   left; econstructor; split.
   econstructor; eauto.
   econstructor; eauto with coqlib.
 (* Lstore *)
-  assert (eval_addressing tge sp addr (LTL.reglist rs args) = Some a).
-    rewrite <- H. apply eval_addressing_preserved. exact symbols_preserved.
+  assert (eval_addressing tge (comp_of f) sp addr (LTL.reglist rs args) = Some a).
+    rewrite <- H. apply eval_addressing_preserved.
+    exact allowed_addrof_preserved. exact symbols_preserved.
   left; econstructor; split.
   econstructor; eauto.
   econstructor; eauto with coqlib.
@@ -337,7 +353,8 @@ Proof.
 (* Lbuiltin *)
   left; econstructor; split.
   econstructor.
-  eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
+  rewrite comp_transl; eauto.
+  eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact allowed_addrof_preserved. exact symbols_preserved.
   rewrite comp_transl; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   eauto.

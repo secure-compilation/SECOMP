@@ -51,13 +51,13 @@ Ltac InvEval1 :=
 
 Ltac InvEval2 :=
   match goal with
-  | [ H: (eval_operation _ _ _ nil _ = Some _) |- _ ] =>
+  | [ H: (eval_operation _ _ _ _ nil _ = Some _) |- _ ] =>
       simpl in H; inv H
-  | [ H: (eval_operation _ _ _ (_ :: nil) _ = Some _) |- _ ] =>
+  | [ H: (eval_operation _ _ _ _ (_ :: nil) _ = Some _) |- _ ] =>
       simpl in H; FuncInv
-  | [ H: (eval_operation _ _ _ (_ :: _ :: nil) _ = Some _) |- _ ] =>
+  | [ H: (eval_operation _ _ _ _ (_ :: _ :: nil) _ = Some _) |- _ ] =>
       simpl in H; FuncInv
-  | [ H: (eval_operation _ _ _ (_ :: _ :: _ :: nil) _ = Some _) |- _ ] =>
+  | [ H: (eval_operation _ _ _ _ (_ :: _ :: _ :: nil) _ = Some _) |- _ ] =>
       simpl in H; FuncInv
   | _ =>
       idtac
@@ -113,10 +113,11 @@ Definition binary_constructor_sound (cstr: expr -> expr -> expr) (sem: val -> va
 
 Theorem eval_addrsymbol:
   forall le id ofs,
+    Genv.allowed_addrof ge  cp id ->
   exists v, eval_expr ge sp e cp m le (addrsymbol id ofs) v /\ Val.lessdef (Genv.symbol_address ge id ofs) v.
 Proof.
   intros. unfold addrsymbol. econstructor; split.
-  EvalOp. simpl; eauto.
+  EvalOp. simpl; eauto. apply Genv.allowed_addrof_b_reflect in H. rewrite H. auto.
   auto.
 Qed.
 
@@ -140,7 +141,8 @@ Proof.
     destruct Archi.ptr64; auto. rewrite Ptrofs.add_zero; auto.
   - case (addimm_match a); intros; InvEval; simpl.
     + TrivialExists; simpl. rewrite Int.add_commut. auto.
-    + econstructor; split. EvalOp. simpl; eauto.
+    + destruct (Genv.allowed_addrof_b ge cp s) eqn:EQ; try discriminate. inv H1.
+      econstructor; split. EvalOp. simpl; eauto. rewrite EQ; auto.
       unfold Genv.symbol_address. destruct (Genv.find_symbol ge s); simpl; auto.
       destruct Archi.ptr64; auto. rewrite Ptrofs.add_commut; auto.
     + econstructor; split. EvalOp. simpl; eauto.
@@ -887,15 +889,16 @@ Theorem eval_addressing:
   match addressing chunk a with (mode, args) =>
     exists vl,
     eval_exprlist ge sp e cp m le args vl /\
-    eval_addressing ge sp mode vl = Some v
+    eval_addressing ge cp sp mode vl = Some v
   end.
 Proof.
   intros until v. unfold addressing; case (addressing_match a); intros; InvEval.
   - exists (@nil val);  split. eauto with evalexpr. simpl. auto.
-  - destruct (Archi.pic_code tt).
+  - destruct (Genv.allowed_addrof_b) eqn:EQ; try discriminate. inv H0.
+    destruct (Archi.pic_code tt).
   + exists (Vptr b ofs0 :: nil); split.
-    constructor. EvalOp. simpl. congruence. constructor. simpl. rewrite Ptrofs.add_zero. congruence.
-  + exists (@nil val); split. constructor. simpl; auto.
+    constructor. EvalOp. simpl. rewrite EQ. congruence. constructor. simpl. rewrite Ptrofs.add_zero. congruence.
+  + exists (@nil val); split. constructor. simpl; auto. rewrite EQ. auto.
   - exists (v1 :: nil); split. eauto with evalexpr. simpl.
     destruct v1; simpl in H; try discriminate. destruct Archi.ptr64 eqn:SF; inv H. 
     simpl. auto.
@@ -912,7 +915,7 @@ Theorem eval_builtin_arg:
 Proof.
   intros until v. unfold builtin_arg; case (builtin_arg_match a); intros.
 - InvEval. constructor.
-- InvEval. constructor.
+- InvEval. destruct Genv.allowed_addrof_b eqn:EQ; try discriminate. inv H0. constructor. auto.
 - InvEval. constructor.
 - InvEval. simpl in H5. inv H5. constructor.
 - InvEval. subst v. constructor; auto.

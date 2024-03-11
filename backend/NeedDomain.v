@@ -840,6 +840,7 @@ Definition default (x: nval) :=
 Section DEFAULT.
 
 Variable ge: genv.
+Variable cp: compartment.
 Variable sp: block.
 Variables m1 m2: mem.
 Hypothesis PERM: forall b ofs k p, Mem.perm m1 b ofs k p -> Mem.perm m2 b ofs k p.
@@ -874,7 +875,6 @@ Let weak_valid_pointer_no_overflow:
 Proof.
   unfold inject_id; intros. inv H. rewrite Z.add_0_r. apply Ptrofs.unsigned_range_2.
 Qed.
-
 Let valid_different_pointers_inj:
   forall b1 ofs1 b2 ofs2 b1' delta1 b2' delta2,
   b1 <> b2 ->
@@ -900,14 +900,14 @@ Qed.
 
 Lemma default_needs_of_operation_sound:
   forall op args1 v1 args2 nv,
-  eval_operation ge (Vptr sp Ptrofs.zero) op args1 m1 = Some v1 ->
+  eval_operation ge cp (Vptr sp Ptrofs.zero) op args1 m1 = Some v1 ->
   vagree_list args1 args2 nil
   \/ vagree_list args1 args2 (default nv :: nil)
   \/ vagree_list args1 args2 (default nv :: default nv :: nil)
   \/ vagree_list args1 args2 (default nv :: default nv :: default nv :: nil) ->
   nv <> Nothing ->
   exists v2,
-     eval_operation ge (Vptr sp Ptrofs.zero) op args2 m2 = Some v2
+     eval_operation ge cp (Vptr sp Ptrofs.zero) op args2 m2 = Some v2
   /\ vagree v1 v2 nv.
 Proof.
   intros. assert (default nv = All) by (destruct nv; simpl; congruence).
@@ -919,7 +919,8 @@ Proof.
     destruct H0. inv H0. constructor. inv H8; constructor; auto with na. 
     inv H0; constructor; auto with na. inv H8; constructor; auto with na. inv H9; constructor; auto with na.
   }
-  exploit (@eval_operation_inj _ _ _ _ ge ge inject_id).
+  exploit (@eval_operation_inj _ _ _ _ _ _ ge ge inject_id).
+  reflexivity.
   eassumption. auto. auto. auto.
   instantiate (1 := op). intros. apply val_inject_lessdef; auto.
   apply val_inject_lessdef. instantiate (1 := Vptr sp Ptrofs.zero). instantiate (1 := Vptr sp Ptrofs.zero). auto.

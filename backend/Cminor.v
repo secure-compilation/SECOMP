@@ -263,13 +263,13 @@ Variable ge: genv.
     if arguments are of the wrong types, or in case of an integer division
     by zero. *)
 
-Definition eval_constant (sp: val) (cst: constant) : option val :=
+Definition eval_constant (cp: compartment) (sp: val) (cst: constant) : option val :=
   match cst with
   | Ointconst n => Some (Vint n)
   | Ofloatconst n => Some (Vfloat n)
   | Osingleconst n => Some (Vsingle n)
   | Olongconst n => Some (Vlong n)
-  | Oaddrsymbol s ofs => Some (Genv.symbol_address ge s ofs)
+  | Oaddrsymbol s ofs => if Genv.allowed_addrof_b ge cp s then Some (Genv.symbol_address ge s ofs) else None
   | Oaddrstack ofs => Some (Val.offset_ptr sp ofs)
   end.
 
@@ -375,7 +375,7 @@ Inductive eval_expr: expr -> val -> Prop :=
       PTree.get id e = Some v ->
       eval_expr (Evar id) v
   | eval_Econst: forall cst v,
-      eval_constant sp cst = Some v ->
+      eval_constant cp sp cst = Some v ->
       eval_expr (Econst cst) v
   | eval_Eunop: forall op a1 v1 v,
       eval_expr a1 v1 ->

@@ -1127,7 +1127,8 @@ Section PROOF.
   Proof.
     destruct MEM as (MEM0 & MEM1 & MEM2 & MEM3 & MEM4 & MEM5 & MEM6).
     (** step --- ReturnState *)
-    inv STEP. inv EV; simpl in *.
+    inv STEP. admit.
+    inv EV; simpl in *.
     2:{ rewrite H in NCCC. congruence with NCCC. }
     (** return is nccc *)
     clear H. pose proof STAR as STAR0. inv STAR.
@@ -1140,18 +1141,17 @@ Section PROOF.
     { simpl. split.
       - unfold Genv.type_of_call in NCCC.
         unfold update_stack_return in STUPD.
-        admit.
-        (* destruct (flowsto_dec); try congruence. *)
-        (* rewrite Pos.eqb_sym, Heq in STUPD. inv STUPD. auto. *)
-      - unfold wf_regset in *. rewrite NEXTPC, NEXTF. auto.
+        destruct (flowsto_dec); try congruence.
+      - unfold wf_regset in *. rewrite invalidate_return_PC, NEXTPC, NEXTF. auto.
     }
     { instantiate (4:=k). instantiate (3:=m_a0). instantiate (2:=d). instantiate (1:=Some (cur, m_i, ik)).
       assert (st' = st).
-      { unfold Genv.type_of_call in NCCC. des_ifs. unfold update_stack_return in STUPD.
-        admit. }
+      { unfold Genv.type_of_call in NCCC. des_ifs. }
         (* rewrite Pos.eqb_sym, Heq in STUPD. inv STUPD. auto. } *)
       subst st'. simpl. split; auto. split; auto. split; auto. split.
       { unfold match_cur_regset in *.
+        rewrite invalidate_return_PC.
+        rewrite NEXTPC.
         admit. }
         (* rewrite CURCOMP. unfold Genv.type_of_call in NCCC. des_ifs. apply Pos.eqb_eq in Heq. auto. } *)
       split; auto.
@@ -1618,7 +1618,8 @@ Section PROOF.
   Proof.
     destruct MEM as (MEM0 & MEM1 & MEM2 & MEM3 & MEM4 & MEM5 & MEM6).
     (** step --- ReturnState *)
-    inv STEP. inv EV; simpl in *.
+    inv STEP. admit.
+    inv EV; simpl in *.
     2:{ rewrite H in NCCC. congruence with NCCC. }
     (** return is nccc *)
     clear H. pose proof STAR as STAR0. inv STAR.
@@ -1629,14 +1630,13 @@ Section PROOF.
     rename H into STEP, H0 into STAR.
 
     assert (st' = st).
-    { unfold Genv.type_of_call in NCCC. des_ifs. unfold update_stack_return in STUPD.
-      admit. }
-      (* rewrite Pos.eqb_sym, Heq in STUPD. inv STUPD. auto. } *)
+    { unfold Genv.type_of_call in NCCC. des_ifs. }
     subst st'.
     exploit asm_to_ir_step_external.
-    12: eapply STAR. 11: eapply NEXTF. 10: eapply NEXTPC. 9: eapply STEP.
+    12: eapply STAR. 11: eapply NEXTF. 10: eapply NEXTPC.
+    (* 9: eapply STEP. *)
+    9: admit.
     all: eauto.
-    admit.
     { rr; splits; eauto. }
     clear STEP STAR.
     intros (btr1 & k' & d' & m_a0' & m_i' & m_a' & UTR1 & ISTAR1 & MM' & (res & STAR)).
@@ -1651,21 +1651,24 @@ Section PROOF.
     (* now at Returnstate *)
     inv H; simpl in *. rewrite Pregmap.gss in *. inv H0.
     (* end case *)
-    { inv EV.
+    {
+      (* inv EV. *)
       (* return is NCCC - silent *)
       { exists []. simpl. eexists. split; auto. econstructor 1. }
-      (* return is CCC - return event *)
-      { unfold Genv.type_of_call in H. des_ifs. unfold update_stack_return in STUPD0.
-        clear H. rewrite Pregmap.gss in *.
-        admit.
-        (* rewrite Pos.eqb_sym in Heq. rewrite Heq in STUPD0. des_ifs. *)
-        (* pose proof Heq as NEQ. eapply Pos.eqb_neq in NEQ. specialize (PC_RA0 NEQ). *)
-        (* (* stuck --- return PC is Vundef *) *)
-        (* rewrite STUCK in PC_RA0. clear - PC_RA0. exfalso. simpl in PC_RA0. des_ifs. *)
-      }
     }
+    (*   (* return is CCC - return event *) *)
+    (*   { unfold Genv.type_of_call in H. des_ifs. unfold update_stack_return in STUPD0. *)
+    (*     clear H. rewrite Pregmap.gss in *. *)
+    (*     admit. *)
+    (*     (* rewrite Pos.eqb_sym in Heq. rewrite Heq in STUPD0. des_ifs. *) *)
+    (*     (* pose proof Heq as NEQ. eapply Pos.eqb_neq in NEQ. specialize (PC_RA0 NEQ). *) *)
+    (*     (* (* stuck --- return PC is Vundef *) *) *)
+    (*     (* rewrite STUCK in PC_RA0. clear - PC_RA0. exfalso. simpl in PC_RA0. des_ifs. *) *)
+    (*   } *)
+    (* } *)
     (* stuck case *)
     inv H; simpl in *; rewrite Pregmap.gss in *; rewrite STUCK in H6; inv H6.
+    exfalso; apply CROSS0; auto with comps.
   Admitted.
 
   Lemma asm_to_ir_returnstate_ccc
@@ -1706,7 +1709,7 @@ Section PROOF.
     des. rename H into IDCUR.
     destruct MEM as (MEM0 & MEM1 & MEM2 & MEM3 & MEM4 & MEM5 & MEM6).
     (** step --- ReturnState *)
-    inv STEP. inv EV; simpl in *.
+    inv STEP. admit. inv EV; simpl in *.
     { rewrite CCC in H. congruence with H. }
     (* TODO: add CHECKPUB to sem *)
     (* clear H. specialize (CHECKPUB CCC). *)
@@ -1786,7 +1789,9 @@ Section PROOF.
   Proof.
     destruct MEM as (MEM0 & MEM1 & MEM2 & MEM3 & MEM4 & MEM5 & MEM6).
     (** step --- ReturnState *)
-    pose proof STEP as STEP0. inv STEP. inv EV; simpl in *.
+    pose proof STEP as STEP0. inv STEP.
+    admit.
+    inv EV; simpl in *.
     (** return is nccc *)
     { rename H into NCCC. pose proof STAR as STAR0. inv STAR.
       (* end case *)
@@ -1808,7 +1813,7 @@ Section PROOF.
     { exploit asm_to_ir_returnstate_ccc. 2: eapply IH.
       11: eapply STAR. 10: eapply STEP0. all: eauto. rr; splits; eauto.
     }
-  Qed.
+  Admitted.
 
   Lemma asm_to_ir_returnstate_nccc_external
         (ge: genv) cur_comp n n0
@@ -1847,7 +1852,7 @@ Section PROOF.
   Proof.
     destruct MEM as (MEM0 & MEM1 & MEM2 & MEM3 & MEM4 & MEM5 & MEM6).
     (** step --- ReturnState *)
-    inv STEP. inv EV; simpl in *.
+    inv STEP. admit. inv EV; simpl in *.
     2:{ rewrite H in NCCC. congruence with NCCC. }
     (** return is nccc *)
     clear H. pose proof STAR as STAR0. inv STAR.
@@ -1858,14 +1863,13 @@ Section PROOF.
     rename H into STEP, H0 into STAR.
 
     assert (st' = st).
-    { unfold Genv.type_of_call in NCCC. des_ifs. unfold update_stack_return in STUPD.
-      admit. }
-      (* rewrite Pos.eqb_sym, Heq in STUPD. inv STUPD. auto. } *)
+    { unfold Genv.type_of_call in NCCC. des_ifs. }
     subst st'.
     exploit asm_to_ir_step_external.
-    12: eapply STAR. 11: eapply NEXTF. 10: eapply NEXTPC. 9: eapply STEP.
+    12: eapply STAR. 11: eapply NEXTF. 10: eapply NEXTPC.
+    9: admit.
+    (* 9: eapply STEP. *)
     all: eauto.
-    admit.
     { rr; splits; eauto. }
     clear STEP STAR.
     intros (btr1 & k' & d' & m_a0' & m_i' & m_a' & UTR1 & ISTAR1 & MM' & (res & STAR)).
@@ -1912,7 +1916,7 @@ Section PROOF.
   Proof.
     destruct MEM as (MEM0 & MEM1 & MEM2 & MEM3 & MEM4 & MEM5 & MEM6).
     (** step --- ReturnState *)
-    pose proof STEP as STEP0. inv STEP. inv EV; simpl in *.
+    pose proof STEP as STEP0. inv STEP. admit. inv EV; simpl in *.
     (** return is nccc *)
     { rename H into NCCC. pose proof STAR as STAR0. inv STAR.
       (* end case *)
@@ -1934,7 +1938,7 @@ Section PROOF.
     { exploit asm_to_ir_returnstate_ccc. 2: eapply IH.
       11: eapply STAR. 10: eapply STEP0. all: eauto. rr; splits; eauto.
     }
-  Qed.
+  Admitted.
 
   Lemma asm_to_ir_nccc_internal
         ge cur_comp n n'
@@ -2337,6 +2341,9 @@ Section PROOF.
       all: eauto.
       admit.
       (* { rewrite <- REC_CURCOMP. apply MTST1. } *)
+
+    - (** return *)
+      exfalso. unfold wf_asm in WFASM. contradiction WFASM.
 
     - (** return *)
       exfalso. unfold wf_asm in WFASM. contradiction WFASM.

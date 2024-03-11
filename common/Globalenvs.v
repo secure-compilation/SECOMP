@@ -2039,18 +2039,28 @@ Definition allowed_cross_call (ge: t) (cp: compartment) (vf: val) :=
   | _ => False
   end.
 
-Definition allowed_addrof (ge: t) (cp: compartment) (id: ident) :=
-  (find_comp_of_ident ge id ⊆ cp) \/
-  public_symbol ge id = true.
-
 Definition allowed_addrof_b (ge: t) (cp: compartment) (id: ident) : bool :=
-  flowsto_dec (find_comp_of_ident ge id) cp || public_symbol ge id.
+  match find_symbol ge id with
+  | Some b =>
+      match find_def ge b with
+      | Some gd =>
+          match gd with
+            | Gfun _ => true
+            | _ => (* public_symbol ge id || *) flowsto_dec (comp_of gd) cp
+          end
+      | None => false
+      end
+  | None => false
+  end.
+
+Definition allowed_addrof (ge: t) (cp: compartment) (id: ident) :=
+  allowed_addrof_b ge cp id = true.
 
 Lemma allowed_addrof_b_reflect :
   forall ge cp id,
     allowed_addrof ge cp id <->
       allowed_addrof_b ge cp id = true.
-Proof. Admitted.
+Proof. reflexivity. Qed.
 
 Variant call_type :=
   | InternalCall
@@ -2456,14 +2466,28 @@ Proof.
   now destruct progmatch as (_ & _ & -> & _).
 Qed.
 
+Lemma match_genvs_allowed_addrof_b:
+  forall cp id,
+    allowed_addrof_b (globalenv p) cp id =
+    allowed_addrof_b (globalenv tp) cp id.
+Proof.
+  unfold allowed_addrof_b.
+  intros cp id.
+  rewrite find_symbol_match.
+  destruct find_symbol as [b|]; trivial.
+  destruct (find_def_match_2 b) as [|? ? MATCH]; trivial.
+  destruct MATCH as [? ? ? ? MATCH|? ? MATCH]; trivial.
+  (* rewrite match_genvs_public_symbol. *)
+  destruct MATCH; simpl; trivial.
+Qed.
+
 Lemma match_genvs_allowed_addrof:
   forall cp id,
     allowed_addrof (globalenv p) cp id <->
     allowed_addrof (globalenv tp) cp id.
 Proof.
-  unfold allowed_addrof.
-  intros cp id.
-  now rewrite match_genvs_find_comp_of_ident, match_genvs_public_symbol.
+  unfold allowed_addrof. intros. rewrite match_genvs_allowed_addrof_b.
+  reflexivity.
 Qed.
 
 Lemma match_genvs_allowed_calls:

@@ -299,6 +299,20 @@ Lemma symbols_preserved:
   forall (s: ident), Genv.find_symbol tge s = Genv.find_symbol ge s.
 Proof (Genv.find_symbol_match TRANSF).
 
+Lemma allowed_addrof_preserved:
+  forall (cp : compartment) (id : ident), Genv.allowed_addrof_b tge cp id = Genv.allowed_addrof_b ge cp id.
+Proof.
+  intros.
+  pose proof (Genv.match_genvs_allowed_addrof TRANSF).
+  specialize (H cp id).
+  destruct (Genv.allowed_addrof_b tge cp id) eqn:EQ.
+  - apply Genv.allowed_addrof_b_reflect in EQ. apply H in EQ. apply Genv.allowed_addrof_b_reflect in EQ.
+    now rewrite <- EQ.
+  - destruct (Genv.allowed_addrof_b ge cp id) eqn:EQ'; try reflexivity.
+    apply Genv.allowed_addrof_b_reflect in EQ'. apply H in EQ'. apply Genv.allowed_addrof_b_reflect in EQ'.
+    now rewrite <- EQ'.
+Qed.
+
 Lemma senv_preserved:
   Senv.equiv ge tge.
 Proof (Genv.senv_match TRANSF).
@@ -371,8 +385,8 @@ Qed.
 (** Evaluation of the debug annotations introduced by the transformation. *)
 
 Lemma can_eval_safe_arg:
-  forall (rs: locset) sp m (a: builtin_arg loc),
-  safe_builtin_arg a -> exists v, eval_builtin_arg tge rs sp m a v.
+  forall (rs: locset) cp sp m (a: builtin_arg loc),
+  safe_builtin_arg a -> exists v, eval_builtin_arg tge cp rs sp m a v.
 Proof.
   induction a; simpl; intros; try contradiction;
   try (econstructor; now eauto with barg).
@@ -484,14 +498,17 @@ Proof.
   econstructor; split.
   eapply plus_left.
   econstructor; eauto.
-  instantiate (1 := v). rewrite <- H; apply eval_operation_preserved; exact symbols_preserved.
+  instantiate (1 := v).
+  replace (comp_of tf) with (comp_of f) by now inv TRF.
+  rewrite <- H; apply eval_operation_preserved; try exact symbols_preserved; try exact allowed_addrof_preserved.
   apply eval_add_delta_ranges. traceEq.
   constructor; auto.
 - (* load *)
   econstructor; split.
   eapply plus_left.
   eapply exec_Lload with (a := a).
-  rewrite <- H; apply eval_addressing_preserved; exact symbols_preserved.
+  replace (comp_of tf) with (comp_of f) by now inv TRF.
+  rewrite <- H; apply eval_addressing_preserved; try exact symbols_preserved; try exact allowed_addrof_preserved.
   inv TRF; eauto. eauto.
   apply eval_add_delta_ranges. traceEq.
   constructor; auto.
@@ -499,7 +516,8 @@ Proof.
   econstructor; split.
   eapply plus_left.
   eapply exec_Lstore with (a := a).
-  rewrite <- H; apply eval_addressing_preserved; exact symbols_preserved.
+  replace (comp_of tf) with (comp_of f) by now inv TRF.
+  rewrite <- H; apply eval_addressing_preserved; try exact symbols_preserved; try exact allowed_addrof_preserved.
   inv TRF; eauto. eauto.
   apply eval_add_delta_ranges. traceEq.
   constructor; auto.
@@ -544,7 +562,8 @@ Proof.
   econstructor; split.
   eapply plus_left.
   econstructor; eauto.
-  eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
+  inv TRF; eauto.
+  eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact allowed_addrof_preserved. exact symbols_preserved.
   inv TRF; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   inversion TRF. simpl in *. eauto.

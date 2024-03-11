@@ -43,6 +43,20 @@ Lemma symbols_preserved:
   forall (s: ident), Genv.find_symbol tge s = Genv.find_symbol ge s.
 Proof (Genv.find_symbol_transf_partial TRANSL).
 
+Lemma allowed_addrof_preserved:
+  forall (cp : compartment) (id : ident), Genv.allowed_addrof_b tge cp id = Genv.allowed_addrof_b ge cp id.
+Proof.
+  intros.
+  pose proof (Genv.match_genvs_allowed_addrof TRANSL).
+  specialize (H cp id).
+  destruct (Genv.allowed_addrof_b tge cp id) eqn:EQ.
+  - apply Genv.allowed_addrof_b_reflect in EQ. apply H in EQ. apply Genv.allowed_addrof_b_reflect in EQ.
+    now rewrite <- EQ.
+  - destruct (Genv.allowed_addrof_b ge cp id) eqn:EQ'; try reflexivity.
+    apply Genv.allowed_addrof_b_reflect in EQ'. apply H in EQ'. apply Genv.allowed_addrof_b_reflect in EQ'.
+    now rewrite <- EQ'.
+Qed.
+
 Lemma senv_preserved:
   Senv.equiv ge tge.
 Proof (Genv.senv_transf_partial TRANSL).
@@ -1468,7 +1482,7 @@ Qed.
 Lemma var_addr_correct:
   forall cenv id f tf e le te sp lo hi m cs tm b,
   match_callstack f m tm (Frame cenv tf e le te sp lo hi :: cs) (Mem.nextblock m) (Mem.nextblock tm) ->
-  eval_var_addr ge e id b ->
+  eval_var_addr ge e (comp_of tf) id b ->
   exists tv,
      eval_expr tge (Vptr sp Ptrofs.zero) te tm (comp_of tf) (var_addr cenv id) tv
   /\ Val.inject f (Vptr b Ptrofs.zero) tv.
@@ -1484,7 +1498,9 @@ Proof.
   (* global *)
   exploit match_callstack_match_globalenvs; eauto. intros [bnd MG]. inv MG.
   exists (Vptr b Ptrofs.zero); split.
-  constructor. simpl. unfold Genv.symbol_address. 
+  constructor. simpl. rewrite Genv.allowed_addrof_b_reflect in H5.
+  rewrite allowed_addrof_preserved. rewrite H5.
+  unfold Genv.symbol_address.
   rewrite symbols_preserved. rewrite H2. auto.
   econstructor; eauto.
 Qed.
@@ -1523,10 +1539,10 @@ Proof.
 Qed.
 
 Lemma transl_constant_correct:
-  forall f sp cst v,
+  forall cp f sp cst v,
   Csharpminor.eval_constant cst = Some v ->
   exists tv,
-     eval_constant tge sp (transl_constant cst) = Some tv
+     eval_constant tge cp sp (transl_constant cst) = Some tv
   /\ Val.inject f v tv.
 Proof.
   destruct cst; simpl; intros; inv H.
@@ -1589,8 +1605,7 @@ Lemma transl_exprlist_correct:
   /\ Val.inject_list f v tv.
 Proof.
   induction 3; intros; monadInv TR.
-  exists (@nil val); split. constructor. constructor.
-  exploit transl_expr_correct; eauto. intros [tv1 [EVAL1 VINJ1]].
+  exists (@nil val); split. constructor. constructor. exploit transl_expr_correct; eauto. intros [tv1 [EVAL1 VINJ1]].
   exploit IHeval_exprlist; eauto. intros [tv2 [EVAL2 VINJ2]].
   exists (tv1 :: tv2); split. constructor; auto. constructor; auto.
 Qed.
@@ -2135,7 +2150,7 @@ Proof.
   (* TODO: why can't Coq find this on its own? *)
   eapply has_comp_fundef. eapply Csharpminor.has_comp_function.
   eapply inj_preserves_globals; eauto.
-  intros [f' [vres' [tm' [EC [VINJ [MINJ' [UNMAPPED [OUTOFREACH [INCR SEPARATED]]]]]]]]].
+  intros [f' [vres' [tm' [EC [VINJ [MINJ' [UNMAPPED [OUTOFREACH [INCR [SEPARATED NEW]]]]]]]]]].
   left; econstructor; split.
   apply plus_one. econstructor. eauto.
   rewrite <- (comp_transl_partial _ TRF).
@@ -2303,7 +2318,7 @@ Opaque PTree.set.
   exploit external_call_mem_inject; eauto.
   eapply has_comp_fundef. eapply Csharpminor.has_comp_function.
   eapply inj_preserves_globals; eauto.
-  intros [f' [vres' [tm' [EC [VINJ [MINJ' [UNMAPPED [OUTOFREACH [INCR SEPARATED]]]]]]]]].
+  intros [f' [vres' [tm' [EC [VINJ [MINJ' [UNMAPPED [OUTOFREACH [INCR [SEPARATED NEW]]]]]]]]]].
   left; econstructor; split.
   apply plus_one. econstructor.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved. econstructor; eauto.

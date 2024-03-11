@@ -82,3 +82,4 @@
 .nia.cache
 .nra.cache
 .csdp.cache
+/runtime/*.s-e

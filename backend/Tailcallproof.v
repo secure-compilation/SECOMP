@@ -224,6 +224,20 @@ Lemma symbols_preserved:
   forall (s: ident), Genv.find_symbol tge s = Genv.find_symbol ge s.
 Proof (Genv.find_symbol_match TRANSL).
 
+Lemma allowed_addrof_preserved:
+  forall (cp : compartment) (id : ident), Genv.allowed_addrof_b tge cp id = Genv.allowed_addrof_b ge cp id.
+Proof.
+  intros.
+  pose proof (Genv.match_genvs_allowed_addrof TRANSL).
+  specialize (H cp id).
+  destruct (Genv.allowed_addrof_b tge cp id) eqn:EQ.
+  - apply Genv.allowed_addrof_b_reflect in EQ. apply H in EQ. apply Genv.allowed_addrof_b_reflect in EQ.
+    now rewrite <- EQ.
+  - destruct (Genv.allowed_addrof_b ge cp id) eqn:EQ'; try reflexivity.
+    apply Genv.allowed_addrof_b_reflect in EQ'. apply H in EQ'. apply Genv.allowed_addrof_b_reflect in EQ'.
+    now rewrite <- EQ'.
+Qed.
+
 Lemma functions_translated:
   forall (v: val) (f: RTL.fundef),
   Genv.find_funct ge v = Some f ->
@@ -588,8 +602,8 @@ Proof.
   exploit eval_operation_lessdef; eauto.
   intros [v' [EVAL' VLD]].
   left. exists (State s' (transf_function ce f) (Vptr sp0 Ptrofs.zero) pc' (rs'#res <- v') m'); split.
-  eapply exec_Iop; eauto.  rewrite <- EVAL'.
-  apply eval_operation_preserved. exact symbols_preserved.
+  eapply exec_Iop; eauto.  rewrite <- EVAL'. rewrite comp_transl.
+  eapply eval_operation_preserved. exact allowed_addrof_preserved. exact symbols_preserved.
   econstructor; eauto. apply set_reg_lessdef; auto.
 - (* eliminated move *)
   rewrite H1 in H. clear H1. inv H.
@@ -604,8 +618,8 @@ Proof.
   exploit Mem.loadv_extends; eauto.
   intros [v' [LOAD' VLD]].
   left. exists (State s' (transf_function ce f) (Vptr sp0 Ptrofs.zero) pc' (rs'#dst <- v') m'); split.
-  eapply exec_Iload with (a := a'). eauto.  rewrite <- ADDR'.
-  apply eval_addressing_preserved. exact symbols_preserved.
+  eapply exec_Iload with (a := a'). eauto.  rewrite <- ADDR'. rewrite comp_transl; eauto.
+  apply eval_addressing_preserved. exact allowed_addrof_preserved. exact symbols_preserved.
   rewrite comp_transl. eauto.
   econstructor; eauto. apply set_reg_lessdef; auto.
 
@@ -617,8 +631,8 @@ Proof.
   exploit Mem.storev_extends. 2: eexact H1. eauto. eauto. apply RLD.
   intros [m'1 [STORE' MLD']].
   left. exists (State s' (transf_function ce f) (Vptr sp0 Ptrofs.zero) pc' rs' m'1); split.
-  eapply exec_Istore with (a := a'). eauto.  rewrite <- ADDR'.
-  apply eval_addressing_preserved. exact symbols_preserved.
+  eapply exec_Istore with (a := a'). eauto.  rewrite <- ADDR'. rewrite comp_transl; eauto.
+  apply eval_addressing_preserved. exact allowed_addrof_preserved. exact symbols_preserved.
   rewrite comp_transl. eauto.
   destruct a; simpl in H1; try discriminate.
   econstructor; eauto.
@@ -734,13 +748,14 @@ Proof.
 
 - (* builtin *)
   TransfInstr.
-  exploit (@eval_builtin_args_lessdef _ (Genv.to_senv ge) (fun r => rs#r) (fun r => rs'#r)); eauto.
+  exploit (@eval_builtin_args_lessdef _ _ _ _ ge (fun r => rs#r) (fun r => rs'#r)); eauto.
   intros (vargs' & P & Q).
   exploit external_call_mem_extends; eauto.
   intros [v' [m'1 [A [B [C D]]]]].
   left. exists (State s' (transf_function ce f) (Vptr sp0 Ptrofs.zero) pc' (regmap_setres res v' rs') m'1); split.
   eapply exec_Ibuiltin; eauto.
-  eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
+  rewrite comp_transf_function; eauto.
+  eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact allowed_addrof_preserved. exact symbols_preserved.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   rewrite comp_transf_function; eauto.
   econstructor; eauto.

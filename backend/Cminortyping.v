@@ -580,11 +580,12 @@ Ltac VHT' :=
   | _ => idtac
   end.
 
-Lemma type_constant_sound: forall sp cst v,
-  eval_constant ge sp cst = Some v ->
+Lemma type_constant_sound: forall cp sp cst v,
+  eval_constant ge cp sp cst = Some v ->
   Val.has_type v (type_constant cst).
 Proof.
   intros until v; intros EV. destruct cst; simpl in *; inv EV; VHT.
+  destruct Genv.allowed_addrof_b; try discriminate; inv H0; VHT.
 Qed.
 
 Lemma type_unop_sound: forall op v1 v,
@@ -739,10 +740,17 @@ Definition safe_binop (op: binary_operation) : bool :=
   | _ => true
   end.
 
+Definition safe_constant (c: constant): bool :=
+  match c with
+  | Oaddrsymbol _ _ => false
+  | _ => true
+  end.
+
+
 Fixpoint safe_expr (ki: known_idents) (a: expr) : bool :=
   match a with
   | Evar v => is_known ki v
-  | Econst c => true
+  | Econst c => safe_constant c
   | Eunop op e1 => safe_unop op && safe_expr ki e1
   | Ebinop op e1 e2 => safe_binop op && safe_expr ki e1 && safe_expr ki e2
   | Eload chunk e => false
@@ -784,7 +792,7 @@ Proof.
   - apply known_id_sound_2 in H0.
     destruct (H i H0) as [v E].
     exists v; constructor; auto.
-  - destruct (eval_constant ge sp c) as [v|] eqn:E.
+  - destruct (eval_constant ge cp sp c) as [v|] eqn:E.
     exists v; constructor; auto.
     destruct c; discriminate.
   - InvBooleans. destruct IHa as [v1 E1]; auto.

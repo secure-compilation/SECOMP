@@ -1090,6 +1090,20 @@ Lemma symbols_preserved:
   forall s, Genv.find_symbol tge s = Genv.find_symbol ge s.
 Proof (Genv.find_symbol_match TRANSL).
 
+Lemma allowed_addrof_preserved:
+  forall (cp : compartment) (id : ident), Genv.allowed_addrof_b tge cp id = Genv.allowed_addrof_b ge cp id.
+Proof.
+  intros.
+  pose proof (Genv.match_genvs_allowed_addrof TRANSL).
+  specialize (H cp id).
+  destruct (Genv.allowed_addrof_b tge cp id) eqn:EQ.
+  - apply Genv.allowed_addrof_b_reflect in EQ. apply H in EQ. apply Genv.allowed_addrof_b_reflect in EQ.
+    now rewrite <- EQ.
+  - destruct (Genv.allowed_addrof_b ge cp id) eqn:EQ'; try reflexivity.
+    apply Genv.allowed_addrof_b_reflect in EQ'. apply H in EQ'. apply Genv.allowed_addrof_b_reflect in EQ'.
+    now rewrite <- EQ'.
+Qed.
+
 Lemma senv_preserved:
   Senv.equiv ge tge.
 Proof (Genv.senv_match TRANSL).
@@ -1394,7 +1408,7 @@ Proof.
 - (* var global *)
   split; auto. econstructor. eapply eval_var_addr_global.
   eapply match_env_globals; eauto.
-  rewrite symbols_preserved. auto.
+  rewrite symbols_preserved. auto. rewrite Genv.allowed_addrof_b_reflect; rewrite allowed_addrof_preserved; auto.
 - (* deref *)
   eauto.
 - (* field struct *)

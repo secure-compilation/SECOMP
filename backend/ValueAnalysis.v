@@ -345,14 +345,14 @@ Qed.
 Global Hint Resolve areg_sound aregs_sound: va.
 
 Lemma abuiltin_arg_sound:
-  forall bc ge rs sp m ae rm am,
+  forall bc ge cp rs sp m ae rm am,
   ematch bc rs ae ->
   romatch bc m rm ->
   mmatch bc m am ->
   genv_match bc ge ->
   bc sp = BCstack ->
   forall a v,
-  eval_builtin_arg ge (fun r => rs#r) (Vptr sp Ptrofs.zero) m a v ->
+  eval_builtin_arg ge cp (fun r => rs#r) (Vptr sp Ptrofs.zero) m a v ->
   vmatch bc v (abuiltin_arg ae am rm a).
 Proof.
   intros until am; intros EM RM MM GM SP.
@@ -360,19 +360,19 @@ Proof.
 - eapply loadv_sound; eauto. simpl. rewrite Ptrofs.add_zero_l. auto with va.
 - simpl. rewrite Ptrofs.add_zero_l. auto with va.
 - eapply loadv_sound; eauto. apply symbol_address_sound; auto.
-- apply symbol_address_sound; auto.
+(* - apply symbol_address_sound; auto. *)
 - destruct Archi.ptr64; auto with va.
 Qed.
 
 Lemma abuiltin_args_sound:
-  forall bc ge rs sp m ae rm am,
+  forall bc ge cp rs sp m ae rm am,
   ematch bc rs ae ->
   romatch bc m rm ->
   mmatch bc m am ->
   genv_match bc ge ->
   bc sp = BCstack ->
   forall al vl,
-  eval_builtin_args ge (fun r => rs#r) (Vptr sp Ptrofs.zero) m al vl ->
+  eval_builtin_args ge cp (fun r => rs#r) (Vptr sp Ptrofs.zero) m al vl ->
   list_forall2 (vmatch bc) vl (map (abuiltin_arg ae am rm) al).
 Proof.
   intros until am; intros EM RM MM GM SP.
@@ -391,13 +391,13 @@ Proof.
 Qed.
 
 Lemma eval_static_builtin_function_sound:
-  forall bc ge rs sp m ae rm am (bf: builtin_function) al vl v va,
+  forall bc ge cp rs sp m ae rm am (bf: builtin_function) al vl v va,
   ematch bc rs ae ->
   romatch bc m rm ->
   mmatch bc m am ->
   genv_match bc ge ->
   bc sp = BCstack ->
-  eval_builtin_args ge (fun r => rs#r) (Vptr sp Ptrofs.zero) m al vl ->
+  eval_builtin_args ge cp (fun r => rs#r) (Vptr sp Ptrofs.zero) m al vl ->
   eval_static_builtin_function ae am rm bf al = Some va ->
   builtin_function_sem bf vl = Some v ->
   vmatch bc v va.
@@ -965,7 +965,7 @@ Proof.
   revert ARGS. generalize vargs.
   induction vargs0; simpl; intros; constructor.
   eapply vmatch_inj; eauto. auto.
-  intros (j' & vres' & m'' & EC' & IRES & IMEM & UNCH1 & UNCH2 & IINCR & ISEP).
+  intros (j' & vres' & m'' & EC' & IRES & IMEM & UNCH1 & UNCH2 & IINCR & ISEP & INEW).
   assert (JBELOW: forall b, Plt b (Mem.nextblock m) -> j' b = inj_of_bc bc b).
   {
     intros. destruct (inj_of_bc bc b) as [[b' delta] | ] eqn:EQ.
@@ -2005,7 +2005,7 @@ Lemma aaddressing_sound:
   forall cunit prog s f sp pc e m addr args b ofs,
   sound_state prog (State s f (Vptr sp Ptrofs.zero) pc e m) ->
   linkorder cunit prog ->
-  eval_addressing (Genv.globalenv prog) (Vptr sp Ptrofs.zero) addr e##args = Some (Vptr b ofs) ->
+  eval_addressing (Genv.globalenv prog) (comp_of f) (Vptr sp Ptrofs.zero) addr e##args = Some (Vptr b ofs) ->
   exists bc,
      pmatch bc b ofs (aaddressing (analyze (romem_for cunit) f)!!pc addr args)
   /\ genv_match bc (Genv.globalenv prog)
@@ -2032,13 +2032,13 @@ Definition aaddr_arg (a: VA.t) (ba: builtin_arg reg) : aptr :=
   end.
 
 Lemma aaddr_arg_sound_1:
-  forall bc rs ae m rm am ge sp a b ofs,
+  forall cp bc rs ae m rm am ge sp a b ofs,
   ematch bc rs ae ->
   romatch bc m rm ->
   mmatch bc m am ->
   genv_match bc ge ->
   bc sp = BCstack ->
-  eval_builtin_arg ge (fun r : positive => rs # r) (Vptr sp Ptrofs.zero) m a (Vptr b ofs) ->
+  eval_builtin_arg ge cp (fun r : positive => rs # r) (Vptr sp Ptrofs.zero) m a (Vptr b ofs) ->
   pmatch bc b ofs (aaddr_arg (VA.State ae am) a).
 Proof.
   intros.
@@ -2051,7 +2051,7 @@ Lemma aaddr_arg_sound:
   forall cunit prog s f sp pc e m a b ofs,
   sound_state prog (State s f (Vptr sp Ptrofs.zero) pc e m) ->
   linkorder cunit prog ->
-  eval_builtin_arg (Genv.to_senv (Genv.globalenv prog)) (fun r => e#r) (Vptr sp Ptrofs.zero) m a (Vptr b ofs) ->
+  eval_builtin_arg (Genv.globalenv prog) (comp_of f) (fun r => e#r) (Vptr sp Ptrofs.zero) m a (Vptr b ofs) ->
   exists bc,
      pmatch bc b ofs (aaddr_arg (analyze (romem_for cunit) f)!!pc a)
   /\ genv_match bc (Genv.globalenv prog)

@@ -1675,6 +1675,20 @@ Lemma symbols_preserved:
   forall (s: ident), Genv.find_symbol tge s = Genv.find_symbol ge s.
 Proof. exact (Genv.find_symbol_match TRANSF). Qed.
 
+Lemma allowed_addrof_preserved:
+  forall (cp : compartment) (id : ident), Genv.allowed_addrof_b tge cp id = Genv.allowed_addrof_b ge cp id.
+Proof.
+  intros.
+  pose proof (Genv.match_genvs_allowed_addrof TRANSF).
+  specialize (H cp id).
+  destruct (Genv.allowed_addrof_b tge cp id) eqn:EQ.
+  - apply Genv.allowed_addrof_b_reflect in EQ. apply H in EQ. apply Genv.allowed_addrof_b_reflect in EQ.
+    now rewrite <- EQ.
+  - destruct (Genv.allowed_addrof_b ge cp id) eqn:EQ'; try reflexivity.
+    apply Genv.allowed_addrof_b_reflect in EQ'. apply H in EQ'. apply Genv.allowed_addrof_b_reflect in EQ'.
+    now rewrite <- EQ'.
+Qed.
+
 Lemma senv_preserved:
   Senv.equiv ge tge.
 Proof. exact (Genv.senv_match TRANSF). Qed.
@@ -1967,15 +1981,15 @@ Hypothesis AGR: agree_regs j ls rs.
 Hypothesis SEP: m' |= frame_contents f j sp' ls ls0 parent retaddr (comp_of f) ** minjection j m ** globalenv_inject ge j.
 
 Lemma transl_builtin_arg_correct:
-  forall a v,
-  eval_builtin_arg ge ls (Vptr sp Ptrofs.zero) m a v ->
+  forall cp a v,
+  eval_builtin_arg ge cp ls (Vptr sp Ptrofs.zero) m a v ->
   (forall l, In l (params_of_builtin_arg a) -> loc_valid f l = true) ->
   (forall sl ofs ty, In (S sl ofs ty) (params_of_builtin_arg a) -> slot_within_bounds b sl ofs ty) ->
   exists v',
-     eval_builtin_arg ge rs (Vptr sp' Ptrofs.zero) m' (transl_builtin_arg fe a) v'
+     eval_builtin_arg ge cp rs (Vptr sp' Ptrofs.zero) m' (transl_builtin_arg fe a) v'
   /\ Val.inject j v v'.
 Proof.
-  assert (SYMB: forall id ofs, Val.inject j (Senv.symbol_address ge id ofs) (Senv.symbol_address ge id ofs)).
+  assert (SYMB: forall id ofs, Val.inject j (Genv.symbol_address ge id ofs) (Genv.symbol_address ge id ofs)).
   { assert (G: meminj_preserves_globals ge j).
     { eapply globalenv_inject_preserves_globals. eapply sep_proj2. eapply sep_proj2. eexact SEP. }
     intros; unfold Senv.symbol_address; simpl; unfold Genv.symbol_address.
@@ -2013,12 +2027,12 @@ Local Opaque fe.
 Qed.
 
 Lemma transl_builtin_args_correct:
-  forall al vl,
-  eval_builtin_args ge ls (Vptr sp Ptrofs.zero) m al vl ->
+  forall cp al vl,
+  eval_builtin_args ge cp ls (Vptr sp Ptrofs.zero) m al vl ->
   (forall l, In l (params_of_builtin_args al) -> loc_valid f l = true) ->
   (forall sl ofs ty, In (S sl ofs ty) (params_of_builtin_args al) -> slot_within_bounds b sl ofs ty) ->
   exists vl',
-     eval_builtin_args ge rs (Vptr sp' Ptrofs.zero) m' (List.map (transl_builtin_arg fe) al) vl'
+     eval_builtin_args ge cp rs (Vptr sp' Ptrofs.zero) m' (List.map (transl_builtin_arg fe) al) vl'
   /\ Val.inject_list j vl vl'.
 Proof.
   induction 1; simpl; intros VALID BOUNDS.
@@ -2188,7 +2202,7 @@ Proof.
 
 - (* Lop *)
   assert (exists v',
-          eval_operation ge (Vptr sp' Ptrofs.zero) (transl_op (make_env (function_bounds f)) op) rs0##args m' = Some v'
+          eval_operation ge (comp_of f) (Vptr sp' Ptrofs.zero) (transl_op (make_env (function_bounds f)) op) rs0##args m' = Some v'
        /\ Val.inject j v v').
   eapply eval_operation_inject; eauto.
   eapply globalenv_inject_preserves_globals. eapply sep_proj2. eapply sep_proj2. eapply sep_proj2. eexact SEP.
@@ -2197,8 +2211,12 @@ Proof.
   destruct H0 as [v' [A B]].
   econstructor; split.
   apply plus_one. econstructor.
-  instantiate (1 := v'). rewrite <- A. apply eval_operation_preserved.
-  exact symbols_preserved. eauto.
+  instantiate (1 := v'). rewrite <- A.
+  replace (Genv.find_comp_of_block tge fb) with (comp_of f). apply eval_operation_preserved.
+  exact allowed_addrof_preserved. exact symbols_preserved.
+  erewrite Genv.find_funct_ptr_find_comp_of_block; eauto. rewrite comp_transf_function; eauto. reflexivity.
+
+  eauto.
   econstructor; eauto with coqlib.
   apply agree_regs_set_reg; auto.
   rewrite transl_destroyed_by_op.  apply agree_regs_undef_regs; auto.
@@ -2207,7 +2225,7 @@ Proof.
 
 - (* Lload *)
   assert (exists a',
-          eval_addressing ge (Vptr sp' Ptrofs.zero) (transl_addr (make_env (function_bounds f)) addr) rs0##args = Some a'
+          eval_addressing ge (comp_of f) (Vptr sp' Ptrofs.zero) (transl_addr (make_env (function_bounds f)) addr) rs0##args = Some a'
        /\ Val.inject j a a').
   eapply eval_addressing_inject; eauto.
   eapply globalenv_inject_preserves_globals. eapply sep_proj2. eapply sep_proj2. eapply sep_proj2. eexact SEP.
@@ -2220,7 +2238,10 @@ Proof.
   econstructor; split.
   apply plus_one. econstructor.
     rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND); eauto.
-  instantiate (1 := a'). rewrite <- A. apply eval_addressing_preserved. exact symbols_preserved.
+  instantiate (1 := a'). rewrite <- A. replace (Genv.find_comp_of_block tge fb) with (comp_of f).
+  apply eval_addressing_preserved.
+  exact allowed_addrof_preserved. exact symbols_preserved.
+  erewrite Genv.find_funct_ptr_find_comp_of_block; eauto. rewrite comp_transf_function; eauto. reflexivity.
   unfold comp_of; simpl. erewrite <- transf_function_comp; eauto.
   eauto.
   econstructor; eauto with coqlib.
@@ -2229,7 +2250,7 @@ Proof.
 
 - (* Lstore *)
   assert (exists a',
-          eval_addressing ge (Vptr sp' Ptrofs.zero) (transl_addr (make_env (function_bounds f)) addr) rs0##args = Some a'
+          eval_addressing ge (comp_of f) (Vptr sp' Ptrofs.zero) (transl_addr (make_env (function_bounds f)) addr) rs0##args = Some a'
        /\ Val.inject j a a').
   eapply eval_addressing_inject; eauto.
   eapply globalenv_inject_preserves_globals. eapply sep_proj2. eapply sep_proj2. eapply sep_proj2. eexact SEP.
@@ -2242,7 +2263,10 @@ Proof.
   econstructor; split.
   apply plus_one. econstructor.
     rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND); eauto.
-  instantiate (1 := a'). rewrite <- A. apply eval_addressing_preserved. exact symbols_preserved.
+  instantiate (1 := a'). rewrite <- A. replace (Genv.find_comp_of_block tge fb) with (comp_of f).
+  apply eval_addressing_preserved.
+  exact allowed_addrof_preserved. exact symbols_preserved.
+  erewrite Genv.find_funct_ptr_find_comp_of_block; eauto. rewrite comp_transf_function; eauto. reflexivity.
   unfold comp_of; simpl. erewrite <- transf_function_comp; eauto.
   eauto.
   econstructor. eauto. eauto. eauto.
@@ -2348,7 +2372,10 @@ Proof.
     (* rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND); eauto. *)
     change (comp_of (Internal tf)) with (comp_of tf).
     (* now erewrite ALLOWED, <- transf_function_comp; eauto. *)
-  eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
+    rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND); eauto.
+    change (comp_of (Internal tf)) with (comp_of tf).
+    erewrite <- transf_function_comp; eauto.
+  eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact allowed_addrof_preserved. exact symbols_preserved.
     rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ FIND); eauto.
     change (comp_of (Internal tf)) with (comp_of tf).
     erewrite <- transf_function_comp; eauto.

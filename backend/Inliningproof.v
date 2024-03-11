@@ -44,6 +44,20 @@ Lemma senv_preserved:
   Senv.equiv (Genv.to_senv ge) (Genv.to_senv tge).
 Proof (Genv.senv_match TRANSF).
 
+Lemma allowed_addrof_preserved:
+  forall (cp : compartment) (id : ident), Genv.allowed_addrof_b tge cp id = Genv.allowed_addrof_b ge cp id.
+Proof.
+  intros.
+  pose proof (Genv.match_genvs_allowed_addrof TRANSF).
+  specialize (H cp id).
+  destruct (Genv.allowed_addrof_b tge cp id) eqn:EQ.
+  - apply Genv.allowed_addrof_b_reflect in EQ. apply H in EQ. apply Genv.allowed_addrof_b_reflect in EQ.
+    now rewrite <- EQ.
+  - destruct (Genv.allowed_addrof_b ge cp id) eqn:EQ'; try reflexivity.
+    apply Genv.allowed_addrof_b_reflect in EQ'. apply H in EQ'. apply Genv.allowed_addrof_b_reflect in EQ'.
+    now rewrite <- EQ'.
+Qed.
+
 Lemma functions_translated:
   forall (v: val) (f: fundef),
   Genv.find_funct ge v = Some f ->
@@ -477,14 +491,14 @@ Qed.
 (** Translation of builtin arguments. *)
 
 Lemma tr_builtin_arg:
-  forall F bound ctx rs rs' sp sp' m m',
+  forall cp F bound ctx rs rs' sp sp' m m',
   match_globalenvs F bound ->
   agree_regs F ctx rs rs' ->
   F sp = Some(sp', ctx.(dstk)) ->
   Mem.inject F m m' ->
   forall a v,
-  eval_builtin_arg (Genv.to_senv ge) (fun r => rs#r) (Vptr sp Ptrofs.zero) m a v ->
-  exists v', eval_builtin_arg (Genv.to_senv tge) (fun r => rs'#r) (Vptr sp' Ptrofs.zero) m' (sbuiltinarg ctx a) v'
+  eval_builtin_arg ge cp (fun r => rs#r) (Vptr sp Ptrofs.zero) m a v ->
+  exists v', eval_builtin_arg tge cp (fun r => rs'#r) (Vptr sp' Ptrofs.zero) m' (sbuiltinarg ctx a) v'
           /\ Val.inject F v v'.
 Proof.
   intros until m'; intros MG AG SP MI. induction 1; simpl.
@@ -505,7 +519,8 @@ Proof.
   exploit Mem.loadv_inject; eauto. intros (v' & A & B).
   exists v'; eauto with barg.
 - econstructor; split. constructor.
-  unfold Senv.symbol_address; simpl; unfold Genv.symbol_address.
+  unfold Genv.allowed_addrof. rewrite allowed_addrof_preserved; auto.
+  unfold Genv.symbol_address.
   rewrite symbols_preserved. destruct (Genv.find_symbol ge id) as [b|] eqn:FS; auto.
   inv MG. econstructor. eauto. rewrite Ptrofs.add_zero; auto.
 - destruct IHeval_builtin_arg1 as (v1' & A1 & B1).
@@ -518,14 +533,14 @@ Proof.
 Qed.
 
 Lemma tr_builtin_args:
-  forall F bound ctx rs rs' sp sp' m m',
+  forall cp F bound ctx rs rs' sp sp' m m',
   match_globalenvs F bound ->
   agree_regs F ctx rs rs' ->
   F sp = Some(sp', ctx.(dstk)) ->
   Mem.inject F m m' ->
   forall al vl,
-  eval_builtin_args (Genv.to_senv ge) (fun r => rs#r) (Vptr sp Ptrofs.zero) m al vl ->
-  exists vl', eval_builtin_args (Genv.to_senv tge) (fun r => rs'#r) (Vptr sp' Ptrofs.zero) m' (map (sbuiltinarg ctx) al) vl'
+  eval_builtin_args ge cp (fun r => rs#r) (Vptr sp Ptrofs.zero) m al vl ->
+  exists vl', eval_builtin_args tge cp (fun r => rs'#r) (Vptr sp' Ptrofs.zero) m' (map (sbuiltinarg ctx) al) vl'
           /\ Val.inject_list F vl vl'.
 Proof.
   induction 5; simpl.
@@ -1103,7 +1118,10 @@ Proof.
     eexact MINJ. eauto.
   fold (sop ctx op). intros [v' [A B]].
   left; econstructor; split.
-  eapply plus_one. eapply exec_Iop; eauto. erewrite eval_operation_preserved; eauto.
+  eapply plus_one. eapply exec_Iop; eauto.
+  rewrite <- SAMECOMP.
+  erewrite eval_operation_preserved; eauto.
+  exact allowed_addrof_preserved.
   exact symbols_preserved.
   econstructor; eauto.
   apply match_stacks_inside_set_reg; eauto.
@@ -1118,10 +1136,11 @@ Proof.
     eauto.
   fold (saddr ctx addr). intros [a' [P Q]].
   exploit Mem.loadv_inject; eauto. intros [v' [U V]].
-  assert (eval_addressing tge (Vptr sp' Ptrofs.zero) (saddr ctx addr) rs' ## (sregs ctx args) = Some a').
-  rewrite <- P. apply eval_addressing_preserved. exact symbols_preserved.
+  assert (eval_addressing tge (comp_of f) (Vptr sp' Ptrofs.zero) (saddr ctx addr) rs' ## (sregs ctx args) = Some a').
+  rewrite <- P. apply eval_addressing_preserved. exact allowed_addrof_preserved. exact symbols_preserved.
   left; econstructor; split.
   eapply plus_one. eapply exec_Iload; eauto.
+  rewrite <- SAMECOMP; eauto.
   rewrite <- SAMECOMP; eauto.
   econstructor; eauto.
   apply match_stacks_inside_set_reg; eauto.
@@ -1137,10 +1156,11 @@ Proof.
   fold saddr. intros [a' [P Q]].
   exploit Mem.storev_mapped_inject; eauto. eapply agree_val_reg; eauto.
   intros [m1' [U V]].
-  assert (eval_addressing tge (Vptr sp' Ptrofs.zero) (saddr ctx addr) rs' ## (sregs ctx args) = Some a').
-    rewrite <- P. apply eval_addressing_preserved. exact symbols_preserved.
+  assert (eval_addressing tge (comp_of f) (Vptr sp' Ptrofs.zero) (saddr ctx addr) rs' ## (sregs ctx args) = Some a').
+    rewrite <- P. apply eval_addressing_preserved. exact allowed_addrof_preserved. exact symbols_preserved.
   left; econstructor; split.
   eapply plus_one. eapply exec_Istore; eauto.
+  rewrite <- SAMECOMP; eauto.
   rewrite <- SAMECOMP; eauto.
   destruct a; simpl in H1; try discriminate.
   destruct a'; simpl in U; try discriminate.
@@ -1312,9 +1332,10 @@ Proof.
   exploit tr_builtin_args; eauto. intros (vargs' & P & Q).
   exploit external_call_mem_inject; eauto.
     eapply match_stacks_inside_globals; eauto.
-  intros [F1 [v1 [m1' [A [B [C [D [E [J K]]]]]]]]].
+  intros [F1 [v1 [m1' [A [B [C [D [E [J [K L]]]]]]]]]].
   left; econstructor; split.
   eapply plus_one. eapply exec_Ibuiltin; eauto.
+    rewrite <- SAMECOMP; eauto.
     rewrite <- SAMECOMP.
     eapply external_call_symbols_preserved; eauto. apply senv_preserved.
   econstructor.
@@ -1482,7 +1503,7 @@ Proof.
   exploit match_stacks_globalenvs; eauto. intros [bound MG].
   exploit external_call_mem_inject; eauto.
     eapply match_globalenvs_preserves_globals; eauto.
-  intros [F1 [v1 [m1' [A [B [C [D [E [J K]]]]]]]]].
+  intros [F1 [v1 [m1' [A [B [C [D [E [J [K L]]]]]]]]]].
   simpl in FD. inv FD.
   left; econstructor; split.
   eapply plus_one. eapply exec_function_external; eauto.

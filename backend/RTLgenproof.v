@@ -374,6 +374,20 @@ Lemma symbols_preserved:
 Proof
   (Genv.find_symbol_transf_partial TRANSL).
 
+Lemma allowed_addrof_preserved:
+  forall (cp : compartment) (id : ident), Genv.allowed_addrof_b tge cp id = Genv.allowed_addrof_b ge cp id.
+Proof.
+  intros.
+  pose proof (Genv.match_genvs_allowed_addrof TRANSL).
+  specialize (H cp id).
+  destruct (Genv.allowed_addrof_b tge cp id) eqn:EQ.
+  - apply Genv.allowed_addrof_b_reflect in EQ. apply H in EQ. apply Genv.allowed_addrof_b_reflect in EQ.
+    now rewrite <- EQ.
+  - destruct (Genv.allowed_addrof_b ge cp id) eqn:EQ'; try reflexivity.
+    apply Genv.allowed_addrof_b_reflect in EQ'. apply H in EQ'. apply Genv.allowed_addrof_b_reflect in EQ'.
+    now rewrite <- EQ'.
+Qed.
+
 Lemma function_ptr_translated:
   forall (b: block) (f: CminorSel.fundef),
   Genv.find_funct_ptr ge b = Some f ->
@@ -612,7 +626,7 @@ Lemma transl_expr_Eop_correct:
          (vargs : list val) (v : val),
   eval_exprlist ge sp e cp m le args vargs ->
   transl_exprlist_prop le args vargs ->
-  eval_operation ge sp op vargs m = Some v ->
+  eval_operation ge cp sp op vargs m = Some v ->
   transl_expr_prop le (Eop op args) v.
 Proof.
   intros; red; intros. inv TE.
@@ -623,7 +637,9 @@ Proof.
 (* Exec *)
   split. eapply star_right. eexact EX1.
   eapply exec_Iop; eauto.
-  rewrite (@eval_operation_preserved CminorSel.fundef _ _ _ ge tge). eauto.
+  rewrite <- COMP.
+  rewrite (@eval_operation_preserved CminorSel.fundef _ _ _ _ _ ge tge). eauto.
+  exact allowed_addrof_preserved.
   exact symbols_preserved. traceEq.
 (* Match-env *)
   split. eauto with rtlg.
@@ -641,7 +657,7 @@ Lemma transl_expr_Eload_correct:
          (v : val),
   eval_exprlist ge sp e cp m le args vargs ->
   transl_exprlist_prop le args vargs ->
-  Op.eval_addressing ge sp addr vargs = Some vaddr ->
+  Op.eval_addressing ge cp sp addr vargs = Some vaddr ->
   Mem.loadv chunk m vaddr cp = Some v ->
   transl_expr_prop le (Eload chunk addr args) v.
 Proof.
@@ -655,8 +671,8 @@ Proof.
   exists (rs1#rd <- v'); exists tm1.
 (* Exec *)
   split. eapply star_right. eexact EX1. eapply exec_Iload. eauto.
-  instantiate (1 := vaddr'). rewrite <- H3.
-  apply eval_addressing_preserved. exact symbols_preserved. rewrite <- COMP.
+  instantiate (1 := vaddr'). rewrite <- H3. rewrite <- COMP.
+  apply eval_addressing_preserved. exact allowed_addrof_preserved. exact symbols_preserved. rewrite <- COMP.
   eassumption. traceEq.
 (* Match-env *)
   split. eauto with rtlg.
@@ -756,7 +772,7 @@ Qed.
 
 Remark eval_builtin_args_trivial:
   forall (ge: RTL.genv) (rs: regset) sp m rl,
-  eval_builtin_args ge (fun r => rs#r) sp m (List.map (@BA reg) rl) rs##rl.
+  eval_builtin_args ge cp (fun r => rs#r) sp m (List.map (@BA reg) rl) rs##rl.
 Proof.
   induction rl; simpl.
 - constructor.
@@ -779,6 +795,7 @@ Proof.
   split. eapply star_right. eexact EX1.
   change (rs1#rd <- v') with (regmap_setres (BR rd) v' rs1).
   eapply exec_Ibuiltin; eauto.
+  rewrite <- COMP.
   eapply eval_builtin_args_trivial.
   rewrite <- COMP.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
@@ -1106,12 +1123,12 @@ Lemma invert_eval_builtin_arg:
   eval_builtin_arg ge sp e cp m a v ->
   exists vl,
      eval_exprlist ge sp e cp m nil (exprlist_of_expr_list (params_of_builtin_arg a)) vl
-  /\ Events.eval_builtin_arg ge (fun v => v) sp m (fst (convert_builtin_arg a vl)) v
+  /\ Events.eval_builtin_arg ge cp (fun v => v) sp m (fst (convert_builtin_arg a vl)) v
   /\ (forall vl', convert_builtin_arg a (vl ++ vl') = (fst (convert_builtin_arg a vl), vl')).
 Proof.
   induction 1; simpl. 2-8: try (econstructor; intuition eauto with evalexpr barg; fail).
 - econstructor; split; eauto with evalexpr. split. constructor. auto. 
-- econstructor; split; eauto with evalexpr. split. constructor. auto. 
+- econstructor; split; eauto with evalexpr. split. constructor. auto. auto.
 - econstructor; split; eauto with evalexpr. split. repeat constructor. auto. 
 - destruct IHeval_builtin_arg1 as (vl1 & A1 & B1 & C1).
   destruct IHeval_builtin_arg2 as (vl2 & A2 & B2 & C2).
@@ -1128,7 +1145,7 @@ Lemma invert_eval_builtin_args:
   list_forall2 (eval_builtin_arg ge sp e cp m) al vl ->
   exists vl',
      eval_exprlist ge sp e cp m nil (exprlist_of_expr_list (params_of_builtin_args al)) vl'
-  /\ Events.eval_builtin_args ge (fun v => v) sp m (convert_builtin_args al vl') vl.
+  /\ Events.eval_builtin_args ge cp (fun v => v) sp m (convert_builtin_args al vl') vl.
 Proof.
   induction 1; simpl.
 - exists (@nil val); split; constructor.
@@ -1142,9 +1159,9 @@ Qed.
 Lemma transl_eval_builtin_arg:
   forall rs a vl rl v,
   Val.lessdef_list vl rs##rl ->
-  Events.eval_builtin_arg ge (fun v => v) sp m (fst (convert_builtin_arg a vl)) v ->
+  Events.eval_builtin_arg ge cp (fun v => v) sp m (fst (convert_builtin_arg a vl)) v ->
   exists v',
-     Events.eval_builtin_arg ge (fun r => rs#r) sp m (fst (convert_builtin_arg a rl)) v'
+     Events.eval_builtin_arg ge cp (fun r => rs#r) sp m (fst (convert_builtin_arg a rl)) v'
   /\ Val.lessdef v v'
   /\ Val.lessdef_list (snd (convert_builtin_arg a vl)) rs##(snd (convert_builtin_arg a rl)).
 Proof.
@@ -1180,9 +1197,9 @@ Qed.
 Lemma transl_eval_builtin_args:
   forall rs al vl1 rl vl,
   Val.lessdef_list vl1 rs##rl ->
-  Events.eval_builtin_args ge (fun v => v) sp m (convert_builtin_args al vl1) vl ->
+  Events.eval_builtin_args ge cp (fun v => v) sp m (convert_builtin_args al vl1) vl ->
   exists vl',
-     Events.eval_builtin_args ge (fun r => rs#r) sp m (convert_builtin_args al rl) vl'
+     Events.eval_builtin_args ge cp (fun r => rs#r) sp m (convert_builtin_args al rl) vl'
   /\ Val.lessdef_list vl vl'.
 Proof.
   induction al; simpl; intros until vl; intros LD EV.
@@ -1469,7 +1486,7 @@ Proof.
   econstructor; split.
   left; eapply plus_right. eapply star_trans. eexact A. eexact F. reflexivity.
   eapply exec_Istore with (a := vaddr'). eauto.
-  rewrite <- H4. apply eval_addressing_preserved. exact symbols_preserved.
+  rewrite <- H4. rewrite <- COMP. apply eval_addressing_preserved. exact allowed_addrof_preserved. exact symbols_preserved.
   rewrite <- COMP; eauto. traceEq.
   econstructor; eauto. constructor.
 
@@ -1570,14 +1587,16 @@ Proof.
   intros [rs' [tm' [E [F [G [J K]]]]]].
   exploit transl_eval_builtin_args; eauto.
   intros (vargs' & U & V).
-  exploit (@eval_builtin_args_lessdef _ ge (fun r => rs'#r) (fun r => rs'#r)); eauto.
+  exploit (@eval_builtin_args_lessdef _ _ _ _ ge (fun r => rs'#r) (fun r => rs'#r)); eauto.
   intros (vargs'' & X & Y).
   assert (Z: Val.lessdef_list vl vargs'') by (eapply Val.lessdef_list_trans; eauto).
   edestruct external_call_mem_extends as [tv [tm'' [A [B [C D]]]]]; eauto.
   econstructor; split.
   left. eapply plus_right. eexact E.
   eapply exec_Ibuiltin; eauto.
-  eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
+  eapply eval_builtin_args_preserved with (ge1 := ge); eauto.
+  exact allowed_addrof_preserved. exact symbols_preserved.
+  rewrite <- COMP. eauto.
   rewrite <- COMP.
   eapply external_call_symbols_preserved. apply senv_preserved. eauto.
   traceEq.
