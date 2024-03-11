@@ -3048,14 +3048,86 @@ Local Transparent Mem.store. unfold Mem.store in H9. Local Opaque Mem.store.
     inversion STEP; subst; try eauto.
     - (* assign *)
       simpl in *.
-      (* FIXME: Before, we could simply invoke
-         right_mem_injection_assign_loc_outside to solve this case, because
-         being on the left used to imply that the value was unmapped by the
-         memory injection.  We should now adapt the proof of
-         right_mem_injection_assign_loc_unmapped so that it works in the case
-         where the block we're assigning to belongs to a function (i.e., has at
-         most nonempty permission). *)
-      admit.
+      (* case analysis - terrrible, could use a good refactoring *)
+      inversion H2 as [
+        v1 chunk m1' ACCESS1 STORE1
+      | b1' ofs' bytes1 m1' ACCESS H11 H12 H13 LOAD1 STORE1
+      | v1 sz sg pos width m1' v1' STORE1 ]; subst.
+      (* case analysis - terrrible, could use a good refactoring *)
+      + assert (forall b delta, j b <> Some (loc, delta)).
+        { exploit assign_loc_can_access_block; eauto.
+          intros m_loc b delta j_b. inversion RMEMINJ as [DOM].
+          assert (j b <> None) as j_b_def by congruence.
+          apply DOM in j_b_def. simpl in j_b_def.
+          destruct j_b_def as [j_b_def | (id & fd & id_b & id_pub & b_fd)].
+          - destruct (Mem.block_compartment (memory_of s1) b) as [cp|] eqn:s1_b;
+              [| contradiction].
+            enough (Mem.can_access_block m loc (Some cp))
+              by (simpl in *; congruence).
+            eapply Mem.mi_own; eauto. now eapply Mem.mi_inj.
+          - destruct (gfun_perms3 _ _ b_fd) as (PERM & PERMINV).
+            (* Plenty of repetition in storebytes due to inessential but
+               necessary case analysis *)
+            destruct (Ptrofs.eq_dec ofs Ptrofs.zero) as [-> | NONZERO].
+            + unfold Mem.storev in STORE1.
+Local Transparent Mem.store. unfold Mem.store in STORE1. Local Opaque Mem.store.
+              destruct Mem.valid_access_dec; [| discriminate].
+              destruct v0 as (RANGE & ? & ?).
+              specialize (RANGE _ (size_chunk_range _ _)).
+              rewrite Ptrofs.unsigned_zero, <- (Z.add_0_r 0) in RANGE.
+              exploit j_delta_zero0; eauto. intros ->.
+              inversion partial_mem_inject0; eauto.
+              exploit mi_perm_inv; eauto. intros [PERM' | PERM'].
+              * specialize (PERMINV _ _ _ PERM') as [_CONTRA].
+                discriminate.
+              * apply Mem.perm_cur_max in PERM.
+                contradiction.
+            + unfold Mem.storev in STORE1.
+Local Transparent Mem.store. unfold Mem.store in STORE1. Local Opaque Mem.store.
+              destruct Mem.valid_access_dec; [| discriminate].
+              destruct v0 as (PERM' & ? & ?).
+              specialize (PERM' _ (size_chunk_range _ _)).
+              assert (IDENTCOMP: Genv.find_comp_of_ident ge1 id = Some (comp_of fd)). {
+                assert (exists cp, Genv.find_comp_of_ident ge1 id = Some cp)
+                  as [cp IDENTCOMP]. {
+                  apply Genv.find_symbol_find_comp. intros CONTRA.
+                  setoid_rewrite id_b in CONTRA. discriminate. }
+                assert (BLOCKCOMP := Genv.find_funct_ptr_find_comp_of_block _ _ b_fd).
+                exploit same_blks3; eauto. intros MEMCOMP.
+                unfold Genv.find_comp_of_ident in IDENTCOMP. rewrite id_b in IDENTCOMP.
+                rewrite BLOCKCOMP in IDENTCOMP. injection IDENTCOMP as <-.
+                unfold Genv.find_comp_of_ident. rewrite id_b.
+                assumption. }
+              assert (f_fd: comp_of f = comp_of fd). {
+                unfold Genv.find_comp_of_ident in IDENTCOMP.
+                rewrite id_b in IDENTCOMP.
+                exploit same_blks3; eauto. intros BLOCKCOMP.
+                change (Mem.block_compartment _ _ = _)
+                  with (Mem.can_access_block (memory_of s1) b (Some (comp_of fd)))
+                  in BLOCKCOMP.
+                inversion partial_mem_inject0.
+                inversion mi_inj.
+                exploit mi_own; eauto. intros BLOCKCOMP'.
+                simpl in BLOCKCOMP'. rewrite m_loc in BLOCKCOMP'.
+                injection BLOCKCOMP' as ->. reflexivity. }
+              exploit right_mem_injection_find_symbol; eauto. intros id_loc.
+              exploit match_prog_globdefs'; eauto.
+              intros (b1 & b' & id_b1 & id_b' & DEFS).
+              rewrite id_b in id_b1. injection id_b1 as <-.
+              rewrite id_loc in id_b'. injection id_b' as <-.
+              unfold match_opt_globdefs in DEFS. rewrite <- f_fd, LEFT in DEFS.
+              destruct (Genv.find_symbol_find_def_inversion _ _ id_b) as [gd DEF1].
+              inv DEFS; [setoid_rewrite DEF1 in H6; congruence |].
+              apply Genv.find_funct_ptr_iff in b_fd.
+              setoid_rewrite b_fd in H5. injection H5 as ->.
+              inv H7.
+              symmetry in H6. apply Genv.find_funct_ptr_iff in H6.
+              destruct (gfun_perms4 _ _ H6) as (PERM2 & PERMINV2).
+              specialize (PERMINV2 _ _ _ PERM') as [_ CONTRA].
+              discriminate. }
+        exploit @right_mem_injection_assign_loc_outside; eauto.
+      + admit. (* and similarly for the other cases *)
+      + admit. (* ditto *)
     - (* builtin *)
       simpl in *.
       exploit right_mem_injection_external_call_left'; eauto.
