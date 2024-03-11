@@ -1587,15 +1587,6 @@ Section Lemmas.
   Notation ge2 := (Genv.globalenv W2).
   Notation ge3 := (Genv.globalenv W3).
 
-  Lemma invert_symb_eq_block: forall j1 j2 b1 b2 b3 i1,
-      meminj_preserves_globals s δ W1 W3 j1 ->
-      meminj_preserves_globals s (opposite δ) W2 W3 j2 ->
-      Genv.invert_symbol ge1 b2 = Some i1 ->
-      Genv.invert_symbol ge2 b1 = Some i1 ->
-      Genv.invert_symbol ge3 b3 = Some i1 ->
-      j2 b1 = Some (b3, 0%Z).
-  Proof. Admitted.
-
   Lemma alloc_preserves_rel1:
     forall cp j__δ j__oppδ m1 m1' m2 m3 lo hi b1 rs1 rs3
       (not_bottom: cp <> bottom)
