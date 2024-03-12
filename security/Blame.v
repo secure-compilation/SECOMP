@@ -599,6 +599,14 @@ Section Simulation.
      and [globdef_right] that we should explore. *)
   Hypothesis prog_defs_W1_W2: prog_defs W1 = prog_defs W2.
 
+  (* TODO: Move this to axiomatization of EC, this is simply an
+     adaptation to the slightly stronger preservation properties that
+     we used in [Globalenv] to prove the memory characterizations. *)
+  Hypothesis ec_mem_outside_compartment':
+    forall ef ge vargs m1 t vres m2,
+      external_call ef ge vargs m1 t vres m2 ->
+      Genv.unchanged_on (loc_not_in_compartment (comp_of ef) m1) m1 m2.
+
 (** New helpers *)
 
 Lemma state_split_decidable:
