@@ -2624,6 +2624,38 @@ Qed.
     eauto using ec_can_access_block.
   Qed.
 
+  Lemma gfun_permissions_extcall :
+    forall sem cp sg (ge: genv) vargs m t v m',
+      extcall_properties sem cp sg ->
+      sem ge vargs m t v m' ->
+      same_blocks ge m ->
+      gfun_permissions ge m ->
+      gfun_permissions ge m'.
+  Proof.
+    intros sem cp sg ge vargs m t v m' sem_props m_m' blocks_m perms_m.
+    intros b f ge_b. split.
+    - (* FIXME: Here, we need to show that b has nonempty permission in the next
+         memory m', knowing that b has nonempty permission in the original
+         memory m.  It is not clear if we can show this, because an external
+         call can cause the permissions of a memory location to decrease
+         (e.g. when freeing memory). *)
+      admit.
+    - intros ofs k p perm_m'.
+      assert (Genv.find_comp_of_block ge b = Some (comp_of f)) as comp_b.
+      { unfold Genv.find_comp_of_block.
+        apply Genv.find_funct_ptr_iff in ge_b.
+        now rewrite ge_b. }
+      assert (Mem.block_compartment m b = Some (comp_of f)) as m_b by eauto.
+      apply Mem.perm_max in perm_m'.
+      assert (Mem.valid_block m b) as valid_b.
+      { apply Classical_Prop.NNPP. (* FIXME *)
+        rewrite Mem.block_compartment_valid_block, m_b.
+        congruence. }
+      exploit ec_max_perm; eauto.
+      intros perm_m.
+      destruct (perms_m _ _ ge_b); eauto.
+  Admitted.
+
   Lemma symbols_inject_incr : forall j j' m1 m2 find_comp cp,
       symbols_inject j ge1 ge2 find_comp cp ->
       same_blocks ge1 m1 ->
@@ -2728,7 +2760,8 @@ Qed.
              rewrite (BLKS1 _ _ COMP) in block_m1_b.
              discriminate. }
     constructor;
-    eauto using symbols_inject_incr, external_call_spec, same_blocks_extcall.
+    eauto using symbols_inject_incr, external_call_spec, same_blocks_extcall,
+      gfun_permissions_extcall.
     { intros b b' delta j'_b.
       destruct (j b) as [[b'' delta'']|] eqn:j_b.
       - exploit D0; eauto. intros ->.
@@ -2748,9 +2781,7 @@ Qed.
         exploit BLKS1; eauto. intros COMP.
         apply Mem.block_compartment_valid_block in NOTVALID.
         congruence. }
-    - admit.
-    - admit.
-  Admitted.
+  Qed.
 
   Lemma right_mem_injection_external_call_left :
     forall j ef vargs1 vres1 t m1 m1' m2
