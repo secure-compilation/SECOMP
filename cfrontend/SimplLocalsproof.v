@@ -1097,20 +1097,19 @@ Proof.
   destruct (zeq (sizeof tge ty) 0).
 + (* special case size = 0 *)
   assert (bytes = nil).
-  { exploit (Mem.loadbytes_empty m bsrc (Ptrofs.unsigned osrc) (sizeof tge ty)).
-    lia. eapply Mem.loadbytes_can_access_block_inj; eauto. congruence. }
+  { rewrite Mem.loadbytes_empty in H7; inv H7; eauto. lia. }
   subst.
   destruct (Mem.range_perm_storebytes tm bdst' (Ptrofs.unsigned (Ptrofs.add odst (Ptrofs.repr delta))) nil c)
   as [tm' SB].
-  simpl. red; intros; extlia.
-  eapply (Mem.mi_own _ _ _ (Mem.mi_inj _ _ _ H2)); eauto using Mem.storebytes_can_access_block_1.
+  simpl. red; intros; extlia. right; auto.
+  (* eapply (Mem.mi_own _ _ _ (Mem.mi_inj _ _ _ H2)); eauto using Mem.storebytes_can_access_block_1. *)
   exists tm'.
   split. eapply assign_loc_copy; eauto.
   intros; extlia.
   intros; extlia.
   rewrite e; right; lia.
   apply Mem.loadbytes_empty. lia.
-  eapply (Mem.mi_own _ _ _ (Mem.mi_inj _ _ _ H2)); eauto using Mem.loadbytes_can_access_block_inj.
+  (* eapply (Mem.mi_own _ _ _ (Mem.mi_inj _ _ _ H2)); eauto using Mem.loadbytes_can_access_block_inj. *)
   split. eapply Mem.storebytes_empty_inject; eauto.
   intros. rewrite <- H0. eapply Mem.load_storebytes_other; eauto.
   left. congruence.
@@ -1137,11 +1136,11 @@ Proof.
   intros; eapply Mem.aligned_area_inject with (m := m); eauto.
   apply alignof_blockcopy_1248.
   apply sizeof_alignof_blockcopy_compat.
-  eapply Mem.loadbytes_can_access_block_inj; eauto.
+  eapply Mem.loadbytes_can_access_block_inj in H7 as []; eauto. lia.
   intros; eapply Mem.aligned_area_inject with (m := m); eauto.
   apply alignof_blockcopy_1248.
   apply sizeof_alignof_blockcopy_compat.
-  eapply Mem.storebytes_can_access_block_1; eauto.
+  eapply Mem.storebytes_can_access_block_1 in H8 as []; eauto. lia.
   eapply Mem.disjoint_or_equal_inject with (m := m); eauto.
   apply Mem.range_perm_max with Cur; auto.
   apply Mem.range_perm_max with Cur; auto.
@@ -1329,20 +1328,27 @@ Fixpoint freelist_no_overlap (l: list (block * Z * Z)) : Prop :=
 Lemma can_free_list:
   forall l m c,
   (forall b lo hi, In (b, lo, hi) l -> Mem.range_perm m b lo hi Cur Freeable) ->
-  forall (OWN_BLOCKS: (forall b lo hi, In (b, lo, hi) l -> Mem.can_access_block m b c)),
+  forall (OWN_BLOCKS: (forall b lo hi, In (b, lo, hi) l -> Mem.can_access_block m b c \/ hi <= lo)),
   freelist_no_overlap l ->
   exists m', Mem.free_list m l c = Some m'.
 Proof.
   induction l; simpl; intros.
 - exists m; auto.
 - destruct a as [[b lo] hi]. destruct H0.
+
   destruct (Mem.range_perm_free m b lo hi c) as [m1 A]; auto.
+  (* { intros x ?. exploit H; eauto. intros [G |]. *)
+  (*   eapply G; auto. lia. } *)
+  (* left. *)
   eapply OWN_BLOCKS; eauto.
   rewrite A. apply IHl; auto.
-  intros. red; intros. eapply Mem.perm_free_1; eauto.
-  exploit H1; eauto. intros [B|B]. auto. right; lia.
-  eapply H; eauto.
-  intros. eapply Mem.free_can_access_block_inj_1; eauto. eapply OWN_BLOCKS. eauto.
+  intros.
+  + red; intros. eapply Mem.perm_free_1; eauto.
+    exploit H1; eauto. intros [B|B]. auto. right; lia.
+    exploit H; eauto.
+  + intros. exploit OWN_BLOCKS; eauto. intros []; try now auto.
+    left.
+    eapply Mem.free_can_access_block_inj_1; eauto.
 Qed.
 
 Lemma blocks_of_env_no_overlap:
@@ -1434,26 +1440,30 @@ Local Opaque ge tge.
     exploit me_mapped; eauto. eapply PTree.elements_complete; eauto.
     intros [b [A B]].
     unfold blocks_of_env in H1.
+    destruct (Z_le_dec (sizeof ge ty) 0). right; auto.
+    left.
     eapply (Mem.mi_own _ _ _ (Mem.mi_inj _ _ _ H0)). eauto.
-    assert (exists lo hi, In (b, lo, hi) (map (block_of_binding ge) (PTree.elements e))) as [lo' [hi' IN']].
-    { clear -B.
+    eapply free_blocks_of_env_perm_2; eauto. instantiate (1 := 0). lia.
+
+    assert (exists lo hi, In (b, lo, hi) (map (block_of_binding ge) (PTree.elements e)) /\ lo < hi) as [lo' [hi' [IN' X]]].
+    { clear -B n.
       eapply PTree.elements_correct in B.
       eapply in_map with (f := block_of_binding ge) in B.
       simpl in B.
-      eexists; eexists; eauto. }
+      eexists; eexists; split; eauto. lia. }
     remember (map (block_of_binding ge) (PTree.elements e)) as l.
-    clear -H1 IN'.
-    revert b lo' hi' m m' H1 IN'.
+    clear -H1 IN' X.
+    revert b lo' hi' m m' H1 IN' X.
     induction l; intros.
     + inv IN'.
     + destruct IN' as [EQ | IN].
       * subst. simpl in H1.
         destruct (Mem.free m b lo' hi' c) eqn:FREE; try discriminate.
-        eapply Mem.free_can_access_block_1; eauto.
+        exploit Mem.free_can_access_block_1; eauto. intros []; eauto. lia.
       * simpl in H1. destruct a as [[b' lo] hi].
         destruct (Mem.free m b' lo hi c) eqn:FREE; try discriminate.
         eapply Mem.free_can_access_block_inj_2. eauto.
-        eapply IHl. eauto. eauto.
+        eapply IHl. eauto. eauto. eauto.
   - (* no overlap *)
     unfold blocks_of_env; eapply blocks_of_env_no_overlap; eauto.
     intros. eapply free_blocks_of_env_perm_2; eauto.

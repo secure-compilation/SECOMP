@@ -1242,7 +1242,7 @@ Proof.
     replace ofs with (ofs + dstk ctx) by lia. eapply Mem.perm_inject; eauto.
     eapply Mem.free_range_perm; eauto. lia.
     inv FB. eapply range_private_perms; eauto. extlia.
-    eapply AC.
+    left; eapply AC.
   destruct X as [m1' FREE].
   left; econstructor; split.
   eapply plus_one. eapply exec_Itailcall; eauto.

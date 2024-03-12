@@ -1374,12 +1374,29 @@ Proof.
   { unfold Genv.perm_globvar in H1. destruct (gvar_volatile v); auto. inv H1. }
 Local Transparent Mem.loadbytes.
   generalize (S1 NO). unfold Mem.loadbytes. destruct Mem.range_perm_dec; destruct Mem.can_access_block_dec; intros E1; inv E1.
-  generalize (S2 NO). unfold Mem.loadbytes. destruct Mem.range_perm_dec; destruct Mem.can_access_block_dec; intros E2; inv E2.
-  rewrite Z.add_0_r.
-  apply Mem_getN_forall2 with (p := 0) (n := Z.to_nat (init_data_list_size (gvar_init v))).
-  rewrite H3, H4. apply bytes_of_init_inject. auto.
-  lia.
-  rewrite Z2Nat.id by (apply Z.ge_le; apply init_data_list_size_pos). lia.
+  * generalize (S2 NO). unfold Mem.loadbytes. destruct Mem.range_perm_dec; destruct Mem.can_access_block_dec; intros E2; inv E2.
+    rewrite Z.add_0_r.
+    apply Mem_getN_forall2 with (p := 0) (n := Z.to_nat (init_data_list_size (gvar_init v))).
+    rewrite H3, H4. apply bytes_of_init_inject. auto.
+    lia.
+    rewrite Z2Nat.id by (apply Z.ge_le; apply init_data_list_size_pos). lia.
+    destruct (Z_le_dec); inv H4.
+    rewrite Z.add_0_r.
+    apply Mem_getN_forall2 with (p := 0) (n := Z.to_nat (init_data_list_size (gvar_init v))).
+    rewrite H3, H5. apply bytes_of_init_inject. auto.
+    lia. lia.
+  * destruct (Z_le_dec); inv H3.
+    generalize (S2 NO). unfold Mem.loadbytes. destruct Mem.range_perm_dec; destruct Mem.can_access_block_dec; intros E2; inv E2.
+    rewrite Z.add_0_r.
+    apply Mem_getN_forall2 with (p := 0) (n := Z.to_nat (init_data_list_size (gvar_init v))).
+    rewrite H3, H4. apply bytes_of_init_inject. auto.
+    lia.
+    rewrite Z2Nat.id by (apply Z.ge_le; apply init_data_list_size_pos). lia.
+    destruct (Z_le_dec); inv H3.
+    rewrite Z.add_0_r.
+    apply Mem_getN_forall2 with (p := 0) (n := Z.to_nat (init_data_list_size (gvar_init v))).
+    rewrite H4, H5. apply bytes_of_init_inject. auto.
+    lia. lia.
 Qed.
 
 Lemma init_mem_inj_2:

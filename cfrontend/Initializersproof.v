@@ -815,7 +815,7 @@ Proof.
   intros until to; intros RZ.
   induction len using (well_founded_induction (Zwf_well_founded 0)).
   intros. destruct (zeq len 0).
-- subst len. simpl. apply Mem.loadbytes_empty. lia. auto.
+- subst len. simpl. apply Mem.loadbytes_empty. lia.
 - replace (Z.to_nat len) with (S (Z.to_nat (len - 1))).
   change (repeat (Byte Byte.zero) (S (Z.to_nat (len - 1))))
     with ((Byte Byte.zero :: nil) ++ repeat (Byte Byte.zero) (Z.to_nat (len - 1))).
@@ -991,7 +991,9 @@ Proof.
   { destruct i; simpl; auto. simpl in SI. destruct (Genv.find_symbol ge i); try discriminate. exists b0; auto. }
   unfold store_data in ST.
   set (sz := init_data_size i) in *.
-  assert (sz >= 0) by (apply init_data_size_pos).
+  assert (sz > 0).
+  { destruct i; simpl in *; auto; try lia.
+    destruct Archi.ptr64; lia. }
   set (s1 := pad_to s (pos + sz)) in *.
   monadInv ST. InvBooleans.
   assert (U: Mem.unchanged_on (fun b i => ~(pos <= i < pos + sz)) m m').
@@ -1031,7 +1033,8 @@ Proof.
   + eapply reads_as_zeros_unchanged; eauto.
     eapply reads_as_zeros_mono. eapply match_uninitialized; eauto. lia. lia.
     intros. simpl. lia.
-  + apply Mem.loadbytes_can_access_block_inj in D. simpl in *. congruence.
+  + apply Mem.loadbytes_can_access_block_inj in D. simpl in *.
+    destruct D; try lia. congruence.
 - monadInv ST. destruct x as [[bytes1 bytes2] il]. inv EQ0.
   assert (pos + sz <= curr s1) by (apply curr_pad_to).
   assert (MS': match_state s1 m b cp) by (apply pad_to_correct; auto).
@@ -1055,7 +1058,8 @@ Proof.
       rewrite Z2Nat.id by lia. simpl. tauto.
   + eapply reads_as_zeros_unchanged; eauto. eapply match_uninitialized; eauto.
     intros. simpl. lia.
-  + apply Mem.loadbytes_can_access_block_inj in D. simpl in *. congruence.
+  + apply Mem.loadbytes_can_access_block_inj in D. simpl in *. destruct D; try lia.
+    congruence.
 Qed.
 
 Corollary store_int_correct: forall s m b cp pos isz n s' m',
@@ -1370,7 +1374,6 @@ Proof.
   { constructor; simpl.
   - generalize (sizeof_pos ge ty). fold sz. lia.
   - apply Mem.loadbytes_empty. lia.
-    assumption.
   - auto.
   - assumption.
   - simpl in OWN. apply OWN.
