@@ -5446,6 +5446,14 @@ Proof.
     setoid_rewrite COMP1 in COMP. injection COMP as ->. congruence.
 Qed.
 
+Lemma gfun_permissions_init_meminj (p: program) m1
+  (MEM1: Genv.init_mem p = Some m1):
+  gfun_permissions (globalenv p) m1.
+Proof.
+  intros b fd DEF. unfold globalenv in DEF. simpl in DEF.
+  eapply Genv.init_mem_characterization_2; eassumption.
+Qed.
+
 Lemma initial_mem_injection m1 m2
       (MEM1: Genv.init_mem W1 = Some m1)
       (MEM2: Genv.init_mem W2 = Some m2):
@@ -5459,10 +5467,10 @@ Proof.
   - apply symbols_inject_init_meminj.
   - intros. eapply symbols_inject_left_init_meminj; eassumption.
   - apply init_mem_same_blocks; assumption.
-  - admit.
+  - apply gfun_permissions_init_meminj; assumption.
   - apply init_mem_same_blocks; assumption.
-  - admit.
-Admitted.
+  - apply gfun_permissions_init_meminj; assumption.
+Qed.
 
 (* - Related to old [partialize_partition]
    - We may want to be more explicit about the initial injection *)
