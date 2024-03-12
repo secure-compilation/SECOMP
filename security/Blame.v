@@ -265,61 +265,6 @@ Section Equivalence.
       Genv.find_comp_of_block ge1 b1 = Some cp ->
       delta = 0 /\ Senv.find_symbol ge2 id = Some b2.
 
-  (* TODO It would be nice to avoid these low-level helpers *)
-  Lemma mem_access_free_1:
-    forall m1 bf lo hi cp m2,
-    Mem.free m1 bf lo hi cp = Some m2 ->
-    forall b ofs k,
-    b <> bf \/ ofs < lo \/ hi <= ofs ->
-    (Mem.mem_access m1) !! b ofs k = (Mem.mem_access m2) !! b ofs k.
-  Proof.
-    clear.
-    intros.
-Local Transparent Mem.free. unfold Mem.free in H. Local Opaque Mem.free.
-    destruct Mem.range_perm_dec; [| discriminate].
-    destruct Mem.can_access_block_dec; [| discriminate].
-    injection H as <-.
-    unfold Mem.unchecked_free.
-    destruct zle; [reflexivity |].
-    simpl. rewrite PMap.gsspec.
-    destruct peq; [subst b | reflexivity].
-    destruct H0 as [| H0]; [contradiction |].
-    destruct H0 as [H0 | H0].
-    - destruct (zle lo ofs); [lia |]. reflexivity.
-    - destruct (zlt ofs hi); [lia |]. rewrite andb_false_r. reflexivity.
-  Qed.
-
-  (* TODO It would be nice to avoid these low-level helpers *)
-  Lemma mem_access_free_inv:
-    forall m1 bf lo hi cp m2,
-    Mem.free m1 bf lo hi cp = Some m2 ->
-    forall b ofs k p,
-    (Mem.mem_access m1) !! b ofs k = Some p ->
-    b = bf /\ lo <= ofs < hi \/ (Mem.mem_access m2) !! b ofs k = Some p.
-  Proof.
-    clear.
-    intros. exploit Mem.free_result; eauto. intros. subst m2.
-    unfold Mem.unchecked_free; destruct (zle hi lo); auto; simpl.
-    rewrite PMap.gsspec. destruct (peq b bf); auto. subst b.
-    destruct (zle lo ofs); simpl; auto.
-    destruct (zlt ofs hi); simpl; auto.
-  Qed.
-
-  (* TODO It would be nice to avoid these low-level helpers *)
-  Lemma mem_access_alloc_1:
-    forall m1 c lo hi m2 b,
-    Mem.alloc m1 c lo hi = (m2, b) ->
-    forall b' ofs k,
-    b' <> b ->
-    (Mem.mem_access m1) !! b' ofs k = (Mem.mem_access m2) !! b' ofs k.
-  Proof.
-    clear.
-    intros.
-Local Transparent Mem.alloc. unfold Mem.alloc in H. Local Opaque Mem.alloc.
-    injection H as <- <-.
-    simpl. rewrite PMap.gso; auto.
-  Qed.
-
   Definition gfun_permissions (ge: genv) (m : mem) :=
     forall b f,
       Genv.find_funct_ptr ge b = Some f ->
