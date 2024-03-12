@@ -10,7 +10,10 @@ Require Import Split.
   Lemma filter_all_mregs_find_one:
     forall r, r :: nil = filter (fun x0 : mreg => mreg_eq x0 r || false) all_mregs.
   Proof.
-    admit.
+    intros r.
+    replace ((fun x0 : mreg => mreg_eq x0 r || false)) with (fun x0: mreg => (mreg_eq x0 r: bool)).
+    { admit. }
+    apply Axioms.functional_extensionality. intros ?. now rewrite orb_false_r.
   Admitted.
 
   Lemma filter_all_mregs_find_two:
@@ -19,12 +22,6 @@ Require Import Split.
         filter (fun x0 : mreg => mreg_eq x0 rhi || (mreg_eq x0 rlo || false)) all_mregs.
   Proof.
     intros.
-  Admitted.
-
-  Lemma inject_distributes_longofwords:
-    forall j a b a' b', not_ptr a -> not_ptr b ->
-                   Val.inject j (Val.longofwords a b) (Val.longofwords a' b') ->
-                   Val.inject j a a' /\ Val.inject j b b'.
   Admitted.
 
   Lemma eq_distributes_longofwords:
@@ -40,7 +37,73 @@ Require Import Split.
     destruct b, b'; simpl; try contradiction.
     intros _ _.
     unfold Int64.ofwords; simpl.
-  Admitted.
+    rewrite 2!Int64.shifted_or_is_add.
+    - simpl. intros H.
+      assert (Int64.repr
+                (Int64.unsigned (Int64.repr (Int.unsigned i)) * two_power_pos 32
+                 + Int64.unsigned (Int64.repr (Int.unsigned i1))) =
+              Int64.repr (Int64.unsigned (Int64.repr (Int.unsigned i0)) * two_power_pos 32 +
+                            Int64.unsigned (Int64.repr (Int.unsigned i2)))) as G.
+      congruence.
+      clear H.
+      revert G.
+      rewrite !Int64.unsigned_repr_eq.
+      unfold Int64.modulus, Int.modulus; simpl. unfold two_power_nat, two_power_pos. simpl.
+      unfold Int.unsigned. destruct i, i1, i0, i2; simpl.
+      intros H.
+      assert (intval = intval1 /\ intval0 = intval2) as [? ?].
+      unfold Int.modulus, two_power_nat in *; simpl in *.
+      rewrite !Z.mod_small in H; try lia.
+      Local Transparent Int64.repr.
+      unfold Int64.repr in H. inv H.
+      rewrite !Int64.Z_mod_modulus_eq in H1.
+      unfold Int64.modulus, two_power_nat in H1. simpl in H1.
+      rewrite !Z.mod_small in H1; try lia.
+      subst.
+      assert (intrange = intrange1); subst.
+      { eapply Axioms.proof_irr. }
+      assert (intrange0 = intrange2); subst.
+      { eapply Axioms.proof_irr. }
+      split; auto.
+    - unfold Int.zwordsize, Int64.zwordsize; simpl. lia.
+    - rewrite Int64.unsigned_repr_eq. pose proof (Int.unsigned_range i2) as H. revert H.
+    unfold Int64.modulus, Int.modulus; simpl. unfold two_power_nat, two_power_pos. simpl.
+    rewrite Z.mod_small; try lia.
+    pose proof (Int.unsigned_range i2) as H. unfold Int.modulus, two_power_nat in H; simpl in H.
+    lia.
+    - unfold Int.zwordsize, Int64.zwordsize; simpl. lia.
+    - rewrite Int64.unsigned_repr_eq. pose proof (Int.unsigned_range i1) as H. revert H.
+    unfold Int64.modulus, Int.modulus; simpl. unfold two_power_nat, two_power_pos. simpl.
+    rewrite Z.mod_small; try lia.
+    pose proof (Int.unsigned_range i1) as H. unfold Int.modulus, two_power_nat in H; simpl in H.
+    lia.
+    Local Opaque Int64.repr.
+  Qed.
+
+  Lemma inject_distributes_longofwords:
+    forall j a b a' b',
+      not_ptr (Val.longofwords a b) ->
+      not_ptr (Val.longofwords a' b') ->
+      Val.inject j (Val.longofwords a b) (Val.longofwords a' b') ->
+      Val.inject j a a' /\ Val.inject j b b'.
+  Proof.
+    intros.
+    assert (Val.longofwords a b = Val.longofwords a' b').
+    { revert H H0. unfold Val.longofwords.
+      destruct a, a'; simpl; try contradiction.
+      destruct b, b'; simpl; try contradiction.
+      simpl in H1.
+      revert H1.
+      generalize (Int64.ofwords i i1).
+      generalize (Int64.ofwords i0 i2).
+      intros ? ? G. inv G; auto. }
+    clear H1.
+    eapply eq_distributes_longofwords in H2; eauto. destruct H2; subst.
+    unfold not_ptr in *. revert H.
+    unfold Val.longofwords.
+    destruct a', b'; simpl; try contradiction. intros _. split; constructor.
+  Qed.
+
 
 Variant match_fundef: fundef -> fundef -> Prop :=
   | match_fundef_internal:
