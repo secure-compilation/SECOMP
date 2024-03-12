@@ -1338,6 +1338,34 @@ Qed.
   Lemma sizeof_preserved : forall ty, sizeof ge2 ty = sizeof ge1 ty.
   Proof. intros ty. now rewrite genv_cenv_preserved. Qed.
 
+  (* Symbols are present in the program memory from the very beginning
+     (cf. [Genv.init_mem] and the correspondence should also be
+     reflected in and preserved by the memory injection. *)
+  Lemma right_mem_injection_find_symbol: forall j m1 m2 id b1 b2 delta,
+    right_mem_injection s j ge1 ge2 m1 m2 ->
+    Genv.find_symbol ge1 id = Some b1 ->
+    j b1 = Some (b2, delta) ->
+    Genv.find_symbol ge2 id = Some b2.
+  Proof.
+    intros j m1 m2 id b1 b2 delta INJ FIND1 j_b1.
+    assert (FIND1_None: Genv.find_symbol ge1 id <> None) by congruence.
+    destruct (Genv.find_symbol_find_comp _ _ FIND1_None) as (cp & id_cp).
+    destruct (s cp) eqn:SIDE.
+    - assert (j_b1_None: j b1 <> None) by congruence.
+      apply (same_dom _ _ _ _ _ _ INJ) in j_b1_None as [RIGHT | [fd DEF]].
+      + simpl in RIGHT.
+        destruct (Mem.block_compartment m1 b1) as [cp' |] eqn:COMP ; [| contradiction].
+        unfold Genv.find_comp_of_ident in id_cp. setoid_rewrite FIND1 in id_cp.
+        erewrite same_blks1 in COMP; eauto. injection COMP as <-. congruence.
+      + exploit right_mem_injection_right; eauto. intros (cp' & COMP & _).
+        unfold Genv.find_comp_of_ident in id_cp. setoid_rewrite FIND1 in id_cp.
+        exploit same_symb_left; eauto. intros (-> & SYMBL).
+        easy.
+    - exploit same_symb; eauto.
+      intros (_ & H & ?).
+      now destruct (H id b1 b2 delta j_b1 FIND1) as [??].
+  Qed.
+
 Lemma right_mem_injection_free: forall {j ge1 ge2 m1 m2 b1 b2 lo hi cp m1'},
   right_mem_injection s j ge1 ge2 m1 m2 ->
   Mem.free m1 b1 lo hi cp = Some m1' ->
@@ -1452,7 +1480,43 @@ Proof.
     intros (cp' & m2_b2 & DEF).
     destruct (s cp') eqn:s_cp'.
     + assert (public_fun_block ge1 b1) as pub1 by eauto.
-      assert (public_fun_block ge2 b2) as pub2 by admit.
+      assert (public_fun_block ge2 b2) as pub2. {
+        destruct pub1 as (id & fd1 & id_b1 & id_pub & b1_fd1).
+        assert (id_cp': Genv.find_comp_of_ident ge1 id = Some cp'). {
+          (* TODO refactor into lemma, exactly the same reasoning used
+             in [right_mem_injection_left_step_2] below *)
+          assert (exists cp, Genv.find_comp_of_ident ge1 id = Some cp)
+            as (cp'' & id_cp'').  {
+            apply Genv.find_symbol_find_comp. intros CONTRA.
+            setoid_rewrite id_b1 in CONTRA. discriminate. }
+          assert (cp' = cp'') as <-. {
+            unfold Genv.find_comp_of_ident in id_cp''.
+            rewrite id_b1 in id_cp''.
+            inversion RMEMINJ.
+            exploit same_blks3; eauto. intros b1_cp''.
+            change (Mem.block_compartment _ _ = _)
+              with (Mem.can_access_block m1 b1 (Some cp''))
+              in b1_cp''.
+            inversion partial_mem_inject0.
+            inversion mi_inj.
+            exploit mi_own; eauto. intros b2_cp''.
+            simpl in b2_cp''. rewrite m2_b2 in b2_cp''.
+            injection b2_cp'' as ->. reflexivity. }
+          assumption. }
+        exploit right_mem_injection_find_symbol; eauto. intros id_b2.
+        exploit match_prog_globdefs'; eauto.
+        intros (b1' & b2' & id_b1' & id_b2' & DEFS).
+        rewrite id_b1 in id_b1'. injection id_b1' as <-.
+        rewrite id_b2 in id_b2'. injection id_b2' as <-.
+        unfold match_opt_globdefs in DEFS. rewrite s_cp' in DEFS.
+        destruct (Genv.find_symbol_find_def_inversion _ _ id_b1) as [gd1 DEF1].
+        inv DEFS; [setoid_rewrite DEF1 in H0; congruence |].
+        apply Genv.find_funct_ptr_iff in b1_fd1.
+        setoid_rewrite b1_fd1 in H. injection H as ->.
+        inv H1.
+        symmetry in H0. apply Genv.find_funct_ptr_iff in H0.
+        exists id, f2. split; [| split]; auto.
+        rewrite public_symbol_preserved. assumption. }
       right. intros Hperm.
       destruct pub2 as (id & fd & _ & _ & ge2_b2).
       exploit gfun_perms2; eauto.
@@ -1461,7 +1525,7 @@ Proof.
     + left. intros ?. congruence.
   - destruct RMEMINJ; eauto using same_blocks_free_list.
   - destruct RMEMINJ; eauto using gfun_permissions_free_list.
-Admitted.
+Qed.
 
   (* AAA: [2023-08-08: This next part is not true anymore because left symbols
      can be covered by a memory injection] Right now, this statement is forcing
@@ -1852,34 +1916,6 @@ Admitted.
       specialize (IHINJ H3).
       constructor; [| assumption].
       inv H; inv H2; constructor.
-  Qed.
-
-  (* Symbols are present in the program memory from the very beginning
-     (cf. [Genv.init_mem] and the correspondence should also be
-     reflected in and preserved by the memory injection. *)
-  Lemma right_mem_injection_find_symbol: forall j m1 m2 id b1 b2 delta,
-    right_mem_injection s j ge1 ge2 m1 m2 ->
-    Genv.find_symbol ge1 id = Some b1 ->
-    j b1 = Some (b2, delta) ->
-    Genv.find_symbol ge2 id = Some b2.
-  Proof.
-    intros j m1 m2 id b1 b2 delta INJ FIND1 j_b1.
-    assert (FIND1_None: Genv.find_symbol ge1 id <> None) by congruence.
-    destruct (Genv.find_symbol_find_comp _ _ FIND1_None) as (cp & id_cp).
-    destruct (s cp) eqn:SIDE.
-    - assert (j_b1_None: j b1 <> None) by congruence.
-      apply (same_dom _ _ _ _ _ _ INJ) in j_b1_None as [RIGHT | [fd DEF]].
-      + simpl in RIGHT.
-        destruct (Mem.block_compartment m1 b1) as [cp' |] eqn:COMP ; [| contradiction].
-        unfold Genv.find_comp_of_ident in id_cp. setoid_rewrite FIND1 in id_cp.
-        erewrite same_blks1 in COMP; eauto. injection COMP as <-. congruence.
-      + exploit right_mem_injection_right; eauto. intros (cp' & COMP & _).
-        unfold Genv.find_comp_of_ident in id_cp. setoid_rewrite FIND1 in id_cp.
-        exploit same_symb_left; eauto. intros (-> & SYMBL).
-        easy.
-    - exploit same_symb; eauto.
-      intros (_ & H & ?).
-      now destruct (H id b1 b2 delta j_b1 FIND1) as [??].
   Qed.
 
   (* This lemma relies on just one of the properties of
