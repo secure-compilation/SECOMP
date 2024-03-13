@@ -2646,7 +2646,11 @@ Qed.
          memory m', knowing that b has nonempty permission in the original
          memory m.  It is not clear if we can show this, because an external
          call can cause the permissions of a memory location to decrease
-         (e.g. when freeing memory). *)
+         (e.g. when freeing memory).
+         NOTE: This is probably fine because external calls should not be able
+         to free code memory, at least not memory associated with public
+         symbols. [perm_order Nonempty Freeable] is false, so any checks
+         performed while attempting to free code memory would fail. *)
       admit.
     - intros ofs k p perm_m'.
       assert (Genv.find_comp_of_block ge b = Some (comp_of f)) as comp_b.
@@ -2791,6 +2795,13 @@ Qed.
         congruence. }
   Qed.
 
+  Definition loc_public_inside_compartment cp (ge: genv) m b (ofs: Z) :=
+    exists id fd,
+      Genv.find_symbol ge id = Some b /\
+      Genv.public_symbol ge id = true /\
+      Genv.find_funct_ptr ge b = Some fd /\
+      Mem.block_compartment m b = Some cp.
+
   Lemma right_mem_injection_external_call_left :
     forall j ef vargs1 vres1 t m1 m1' m2
            (RMEMINJ: right_mem_injection s j ge1 ge2 m1 m2)
@@ -2799,7 +2810,7 @@ Qed.
       right_mem_injection s j ge1 ge2 m1' m2.
   Proof.
     intros.
-    destruct RMEMINJ as [DOM MI D0 SYMB SYMBL BLKS1 BLKS2].
+    destruct RMEMINJ as [DOM MI D0 SYMB SYMBL BLKS1 BLKS2]. (* TODO rename *)
     constructor; eauto.
     - intros b. specialize (DOM b). simpl in *.
       destruct (Mem.block_compartment m1 b) as [cp|] eqn:m1_b.
@@ -2819,12 +2830,33 @@ Qed.
     - exploit ec_mem_outside_compartment; eauto.
       { apply external_call_spec. }
       intros m1_m1'.
+      (* we could obtain this property from the external call as well *)
+      assert (m1_m1'_public:
+               Mem.unchanged_on (loc_public_inside_compartment (comp_of ef) ge1 m1) m1 m1')
+        by admit.
+      (* just combine the two and proceed *)
+      assert (m1_m1'_total:
+               Mem.unchanged_on
+                 (fun b ofs =>
+                    (loc_not_in_compartment (comp_of ef) m1) b ofs \/
+                    (loc_public_inside_compartment (comp_of ef) ge1 m1) b ofs)
+                 m1 m1')
+        by admit.
+      clear m1_m1' m1_m1'_public.
       exploit Mem.unchanged_on_inject; eauto.
-      intros b off j_b_undef m1_b.
+      simpl. intros b off j_b_undef.
       apply DOM in j_b_undef. simpl in j_b_undef.
-      rewrite m1_b in j_b_undef.
-      destruct j_b_undef as [| [fd DEF]]; [congruence |].
-      admit.
+      destruct Mem.block_compartment as [cp |] eqn:m1_cp.
+      + destruct (peq cp (comp_of ef)) as [-> | NEQ].
+        * destruct j_b_undef as [| (id & fd & id_b & id_pub & b_fd)]; [congruence |].
+          right. exists id, fd. auto.
+        * left. intros m1_b.
+          rewrite m1_b in m1_cp. injection m1_cp as <-.
+          contradiction.
+      + destruct j_b_undef as [| (id & fd & id_b & id_pub & b_fd)]; [contradiction |].
+        assert (CONTRA := Genv.find_funct_ptr_find_comp_of_block _ _ b_fd).
+        exploit BLKS1; eauto.
+        congruence.
     - intros b cp ge_b. specialize (BLKS1 _ _ ge_b).
       enough (Mem.can_access_block m1' b (Some cp)) by easy.
       eapply ec_can_access_block; eauto.
