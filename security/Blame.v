@@ -607,7 +607,31 @@ Section Simulation.
       external_call ef ge vargs m1 t vres m2 ->
       Genv.unchanged_on (loc_not_in_compartment (comp_of ef) m1) m1 m2.
 
+  (* TODO: Move this *)
+  Definition loc_public_inside_compartment cp (ge: genv) m b (ofs: Z) :=
+    exists id fd,
+      Genv.find_symbol ge id = Some b /\
+      Genv.public_symbol ge id = true /\
+      Genv.find_funct_ptr ge b = Some fd /\
+      Mem.block_compartment m b = Some cp.
+
+  Hypothesis ec_mem_gfun_inside_compartment:
+    forall ef ge vargs m1 t vres m2,
+      external_call ef (Genv.to_senv ge.(genv_genv)) vargs m1 t vres m2 ->
+      Mem.unchanged_on (loc_public_inside_compartment (comp_of ef) ge m1) m1 m2.
+
 (** New helpers *)
+
+  Lemma unchanged_on_or P Q m1 m2
+    (UNCHANGED1: Mem.unchanged_on P m1 m2)
+    (UNCHANGED2: Mem.unchanged_on Q m1 m2):
+    Mem.unchanged_on (fun b ofs => P b ofs \/ Q b ofs) m1 m2.
+  Proof.
+    inv UNCHANGED1. inv UNCHANGED2.
+    constructor; auto.
+    - intros ? ? ? ? [|]; eauto.
+    - intros ? ? [|]; eauto.
+  Qed.
 
 Lemma state_split_decidable:
   forall st, s |= st ∈ Left \/ s |= st ∈ Right.
@@ -2795,13 +2819,6 @@ Qed.
         congruence. }
   Qed.
 
-  Definition loc_public_inside_compartment cp (ge: genv) m b (ofs: Z) :=
-    exists id fd,
-      Genv.find_symbol ge id = Some b /\
-      Genv.public_symbol ge id = true /\
-      Genv.find_funct_ptr ge b = Some fd /\
-      Mem.block_compartment m b = Some cp.
-
   Lemma right_mem_injection_external_call_left :
     forall j ef vargs1 vres1 t m1 m1' m2
            (RMEMINJ: right_mem_injection s j ge1 ge2 m1 m2)
@@ -2830,18 +2847,8 @@ Qed.
     - exploit ec_mem_outside_compartment; eauto.
       { apply external_call_spec. }
       intros m1_m1'.
-      (* we could obtain this property from the external call as well *)
-      assert (m1_m1'_public:
-               Mem.unchanged_on (loc_public_inside_compartment (comp_of ef) ge1 m1) m1 m1')
-        by admit.
-      (* just combine the two and proceed *)
-      assert (m1_m1'_total:
-               Mem.unchanged_on
-                 (fun b ofs =>
-                    (loc_not_in_compartment (comp_of ef) m1) b ofs \/
-                    (loc_public_inside_compartment (comp_of ef) ge1 m1) b ofs)
-                 m1 m1')
-        by admit.
+      exploit ec_mem_gfun_inside_compartment; eauto. intros m1_m1'_public.
+      assert (m1_m1'_total := unchanged_on_or _ _ _ _ m1_m1' m1_m1'_public).
       clear m1_m1' m1_m1'_public.
       exploit Mem.unchanged_on_inject; eauto.
       simpl. intros b off j_b_undef.
@@ -2861,8 +2868,9 @@ Qed.
       enough (Mem.can_access_block m1' b (Some cp)) by easy.
       eapply ec_can_access_block; eauto.
       { apply external_call_spec. }
-  (* Qed. *)
-  Admitted.
+    - eapply gfun_permissions_extcall; eauto.
+      { apply external_call_spec. }
+  Qed.
 
   Lemma right_mem_injection_external_call_left' :
     forall j ef vargs2 vres2 t m1 m2 m2'
