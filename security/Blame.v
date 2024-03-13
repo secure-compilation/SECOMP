@@ -2880,21 +2880,71 @@ Qed.
       right_mem_injection s j ge1 ge2 m1 m2'.
   Proof.
     intros.
-    destruct RMEMINJ as [DOM MI D0 SYMB SYMBL BLKS1 PERMS1 BLKS2 PERMS2].
+    inversion RMEMINJ as [DOM MI D0 SYMB SYMBL BLKS1 PERMS1 BLKS2 PERMS2].
     constructor; eauto.
     - exploit ec_mem_outside_compartment; eauto.
       { apply external_call_spec. }
       intros m2_m2'.
+      exploit ec_mem_gfun_inside_compartment; eauto. intros m2_m2'_public.
+      assert (m2_m2'_total := unchanged_on_or _ _ _ _ m2_m2' m2_m2'_public).
+      clear m2_m2' m2_m2'_public.
       exploit Mem.unchanged_on_inject'; eauto.
-      intros b1 b2 delta ofs j_b1 m2_b2.
+      simpl. intros b1 b2 delta ofs j_b1.
       assert (j b1 <> None) as j_b1_def by congruence.
       apply DOM in j_b1_def. simpl in j_b1_def.
       destruct (Mem.block_compartment m1 b1) as [cp|] eqn:m1_b1.
-      + destruct j_b1_def as [j_b1_def | [fd DEF]].
-        * enough (Mem.can_access_block m2 b2 (Some cp)) by (simpl in *; congruence).
+      + assert (m2_b2: Mem.can_access_block m2 b2 (Some cp)). {
           exploit Mem.mi_inj; eauto. intros INJ'.
-          eapply Mem.mi_own; eauto.
-        * admit.
+          eapply Mem.mi_own; eauto. }
+        destruct (peq cp (comp_of ef)) as [-> | NEQ].
+        * destruct j_b1_def as [| (id & fd & id_b & id_pub & b_fd)]; [congruence |].
+          (* TODO: This preprocessing is very similar to other parts
+             that should be extracted as lemmas. Here this is done up
+             front to be able to instantiate the existential. *)
+          assert (IDENTCOMP: Genv.find_comp_of_ident ge1 id = Some (comp_of fd)). {
+            assert (exists cp, Genv.find_comp_of_ident ge1 id = Some cp)
+              as [cp IDENTCOMP]. {
+              apply Genv.find_symbol_find_comp. intros CONTRA.
+              setoid_rewrite id_b in CONTRA. discriminate. }
+            assert (BLOCKCOMP := Genv.find_funct_ptr_find_comp_of_block _ _ b_fd).
+            exploit BLKS1; eauto. intros MEMCOMP.
+            unfold Genv.find_comp_of_ident in IDENTCOMP. rewrite id_b in IDENTCOMP.
+            rewrite BLOCKCOMP in IDENTCOMP. injection IDENTCOMP as <-.
+            unfold Genv.find_comp_of_ident. rewrite id_b.
+            assumption. }
+          assert (ef_fd: comp_of ef = comp_of fd). {
+            unfold Genv.find_comp_of_ident in IDENTCOMP.
+            rewrite id_b in IDENTCOMP.
+            exploit BLKS1; eauto. intros BLOCKCOMP.
+            change (Mem.block_compartment _ _ = _)
+              with (Mem.can_access_block m1 b1 (Some (comp_of fd)))
+              in BLOCKCOMP.
+            inversion MI.
+            inversion mi_inj.
+            exploit mi_own; eauto. intros BLOCKCOMP'.
+            simpl in BLOCKCOMP'. rewrite m2_b2 in BLOCKCOMP'.
+            injection BLOCKCOMP' as ->. reflexivity. }
+          exploit right_mem_injection_find_symbol; eauto. intros id_b2.
+          exploit match_prog_globdefs'; eauto.
+          intros (b1' & b2' & id_b1' & id_b2' & DEFS).
+          rewrite id_b1' in id_b. injection id_b as <-.
+          rewrite id_b2 in id_b2'. injection id_b2' as <-.
+          unfold match_opt_globdefs in DEFS. rewrite <- ef_fd, LEFT in DEFS.
+          destruct (Genv.find_symbol_find_def_inversion _ _ id_b1') as [gd DEF1].
+          inv DEFS; [setoid_rewrite DEF1 in H0; congruence |].
+          apply Genv.find_funct_ptr_iff in b_fd.
+          setoid_rewrite b_fd in H. injection H as ->.
+          inv H1.
+          symmetry in H0. apply Genv.find_funct_ptr_iff in H0.
+          (* Done *)
+          right. exists id, f2. split; [| split; [| split]].
+          -- exploit right_mem_injection_find_symbol; eauto.
+          -- rewrite public_symbol_preserved. assumption.
+          -- assumption.
+          -- assumption.
+        * left. intros m2_b.
+          simpl in m2_b2. rewrite m2_b in m2_b2. injection m2_b2 as <-.
+          contradiction.
       + destruct j_b1_def as [[] | (id & fd & ? & ? & DEF)].
         assert (COMP := Genv.find_funct_ptr_find_comp_of_block _ _ DEF).
         exploit BLKS1; eauto. congruence.
@@ -2902,8 +2952,9 @@ Qed.
       enough (Mem.can_access_block m2' b (Some cp)) by easy.
       eapply ec_can_access_block; eauto.
       { apply external_call_spec. }
-  (* Qed. *)
-  Admitted.
+    - eapply gfun_permissions_extcall; eauto.
+      { apply external_call_spec. }
+  Qed.
 
   Lemma find_funct_ptr_right id fd1 fd2 b1 b2
     (RIGHT: s (comp_of fd1) = Right)
