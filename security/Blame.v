@@ -563,9 +563,6 @@ Section Simulation.
   Hypothesis W1_compat: clight_compatible s p1 c.
   Hypothesis W2_compat: clight_compatible s p2 c.
 
-  Hypothesis main_is_public:
-    forall {F} (p: Ctypes.program F), In (prog_main p) (prog_public p).
-
   (* Context (ge1 ge2: genv). *)
   Notation ge1 := (globalenv W1).
   Notation ge2 := (globalenv W2).
@@ -5539,46 +5536,56 @@ Proof.
   change ge1' with (genv_genv ge1) in *.
   change ge2' with (genv_genv ge2) in *.
   clear ge1' ge2'.
-  assert (MAINSYM1': Genv.find_symbol ge1 (prog_main W1) <> None).
-  { setoid_rewrite MAINSYM1. congruence. }
-  assert (COMP1 := Genv.find_funct_ptr_find_comp_of_block _ _ MAINBLOCK1).
-  assert (COMP1': Genv.find_comp_of_ident ge1 (prog_main W1) =
-                  Some (comp_of main1)). {
-    unfold Genv.find_comp_of_ident. setoid_rewrite MAINSYM1. assumption. }
-  exploit (@match_prog_globdefs' (prog_main W1) (comp_of main1)); eauto.
-  { right. left.
-    unfold Genv.public_symbol. simpl.
-    unfold ge1 in MAINSYM1. setoid_rewrite MAINSYM1.
-    destruct in_dec as [IN | NOTIN]; [reflexivity |].
-    exfalso. apply NOTIN. setoid_rewrite (Genv.globalenv_public W1).
-    exact (main_is_public W1). }
-  intros (b1' & b2' & MAINSYM1'' & MAINSYM2'' & MATCHDEFS).
-  setoid_rewrite MAINSYM1 in MAINSYM1''.
-  injection MAINSYM1'' as <-.
-  setoid_rewrite MAINSYM2 in MAINSYM2''.
-  injection MAINSYM2'' as <-.
-  destruct (s (comp_of main1)) eqn:SIDE.
-  - assert (COMP2: comp_of main1 = comp_of main2). {
-      apply Genv.find_funct_ptr_iff in MAINBLOCK1, MAINBLOCK2.
-      unfold Simulation.ge1 in MATCHDEFS. simpl in MATCHDEFS.
-      unfold ge1 in MAINBLOCK1. unfold ge2 in MAINBLOCK2.
-      setoid_rewrite MAINBLOCK1 in MATCHDEFS.
-      setoid_rewrite MAINBLOCK2 in MATCHDEFS.
-      inversion MATCHDEFS as [| f1 f2 MATCHGLOBS EQ1 EQ2];
-        subst f1 f2; clear MATCHDEFS.
-      inversion MATCHGLOBS as [f1 f2 MATCHDEFS EQ1 EQ2 |];
-        subst f1 f2; clear MATCHGLOBS.
-      inversion MATCHDEFS; reflexivity. }
-    apply LeftControl; try easy.
-    simpl. setoid_rewrite <- COMP2. assumption.
-  - assert (E : Genv.find_def ge1 b1 = Genv.find_def ge2 b2).
-    { destruct MATCHDEFS; simpl in *; congruence. }
-    apply Genv.find_funct_ptr_iff in MAINBLOCK1, MAINBLOCK2.
-    setoid_rewrite <- E in MAINBLOCK2.
-    unfold ge1 in MAINBLOCK1. setoid_rewrite MAINBLOCK1 in MAINBLOCK2.
-    injection MAINBLOCK2 as <-.
-    apply RightControl; try assumption.
-    constructor; assumption.
+  pose proof (match_prog_idents _ _ _ match_W1_W2 (prog_main W1)) as match_main.
+  destruct (s (comp_of main1)) eqn:s_main1.
+  {
+    assert (s (comp_of main2) = Left) as s_main2.
+    { destruct (s (comp_of main2)) eqn:s_main2; trivial.
+      assert (match_type_of_ident s ge2 (prog_main W1) = Some Right)
+        as match2.
+      { unfold match_type_of_ident, Genv.find_comp_of_ident,
+          Genv.find_comp_of_block.
+        setoid_rewrite MAINSYM2.
+        apply Genv.find_funct_ptr_iff in MAINBLOCK2.
+        setoid_rewrite MAINBLOCK2.
+        change (comp_of (Gfun main2)) with (comp_of main2).
+        now rewrite s_main2. }
+      destruct match_main as [δ match1 match2' match_main|];
+        try congruence.
+      assert (δ = Right) as -> by congruence.
+      unfold match_type_of_ident, Genv.find_comp_of_ident,
+        Genv.find_comp_of_block in match1.
+      setoid_rewrite MAINSYM1 in match1.
+      apply Genv.find_funct_ptr_iff in MAINBLOCK1.
+      setoid_rewrite MAINBLOCK1 in match1.
+      change (comp_of (Gfun main1)) with (comp_of main1) in match1.
+      rewrite s_main1 in match1.
+      destruct (Genv.public_symbol ge1 _); simpl in *; congruence. }
+    apply LeftControl; simpl; trivial. }
+  assert (match_type_of_ident s ge1 (prog_main W1) = Some Right)
+    as match1.
+  { unfold match_type_of_ident, Genv.find_comp_of_ident,
+      Genv.find_comp_of_block.
+    setoid_rewrite MAINSYM1.
+    apply Genv.find_funct_ptr_iff in MAINBLOCK1.
+    setoid_rewrite MAINBLOCK1.
+    change (comp_of (Gfun main1)) with (comp_of main1).
+    now rewrite s_main1. }
+  destruct match_main as [δ match1' match2 match_main|];
+    try congruence.
+  assert (δ = Right) as -> by congruence.
+  clear match1'.
+  unfold def_of_ident in match_main.
+  setoid_rewrite MAINSYM1 in match_main.
+  setoid_rewrite MAINSYM2 in match_main.
+  apply Genv.find_funct_ptr_iff in MAINBLOCK1, MAINBLOCK2.
+  assert (Genv.find_def ge1 b1 = Genv.find_def ge2 b2) as E.
+  { destruct match_main; simpl in *; congruence. }
+  setoid_rewrite MAINBLOCK1 in E.
+  setoid_rewrite MAINBLOCK2 in E.
+  assert (main1 = main2) as <- by congruence.
+  apply RightControl; trivial.
+  now constructor.
 Qed.
 
 (* - Quantify over p vs. W1 *)
