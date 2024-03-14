@@ -97,7 +97,7 @@ Running the `test_backtranslation` binary performs the testing.
 
 ## Back-translation branch: `backtranslation`
 
-This branch contains the recomposition proof. Use `make proof` to replay the proof.
+This branch contains the back-translation proof. Use `make proof` to replay the proof.
 
 The proof is complete. This proof is done in a slightly more complex setting
 where system calls can belong to particular compartments. Also some recent
