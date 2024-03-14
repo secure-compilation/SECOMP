@@ -608,17 +608,17 @@ Section Simulation.
       Genv.unchanged_on (loc_not_in_compartment (comp_of ef) m1) m1 m2.
 
   (* TODO: Move this *)
-  Definition loc_public_inside_compartment cp (ge: genv) m b (ofs: Z) :=
+  Definition loc_public_inside_compartment (* cp *) (ge: genv) (* m *) b (ofs: Z) :=
     exists id fd,
       Genv.find_symbol ge id = Some b /\
-      Genv.public_symbol ge id = true /\
-      Genv.find_funct_ptr ge b = Some fd /\
-      Mem.block_compartment m b = Some cp.
+      (* Genv.public_symbol ge id = true /\ *)
+      Genv.find_funct_ptr ge b = Some fd.
+      (* Mem.block_compartment m b = Some cp. *)
 
   Hypothesis ec_mem_gfun_inside_compartment:
     forall ef ge vargs m1 t vres m2,
       external_call ef (Genv.to_senv ge.(genv_genv)) vargs m1 t vres m2 ->
-      Mem.unchanged_on (loc_public_inside_compartment (comp_of ef) ge m1) m1 m2.
+      Mem.unchanged_on (loc_public_inside_compartment (* comp_of ef *) ge (* m1 *)) m1 m2.
 
 (** New helpers *)
 
@@ -2657,14 +2657,17 @@ Qed.
   Qed.
 
   Lemma gfun_permissions_extcall :
-    forall sem cp sg (ge: genv) vargs m t v m',
+    forall sem cp sg ef (p: program) vargs m t vres v m',
+      external_call ef (globalenv p) vargs m t vres m' ->
       extcall_properties sem cp sg ->
-      sem ge vargs m t v m' ->
-      same_blocks ge m ->
-      gfun_permissions ge m ->
-      gfun_permissions ge m'.
+      sem (globalenv p) vargs m t v m' ->
+      list_norepet (prog_defs_names p) ->
+      same_blocks (globalenv p) m ->
+      gfun_permissions (globalenv p) m ->
+      gfun_permissions (globalenv p) m'.
   Proof.
-    intros sem cp sg ge vargs m t v m' sem_props m_m' blocks_m perms_m.
+    intros sem cp sg ef p vargs m t vres v m'
+           ext_call sem_props m_m' norepet_p blocks_m perms_m.
     intros b f ge_b. split.
     - (* FIXME: Here, we need to show that b has nonempty permission in the next
          memory m', knowing that b has nonempty permission in the original
@@ -2675,9 +2678,24 @@ Qed.
          to free code memory, at least not memory associated with public
          symbols. [perm_order Nonempty Freeable] is false, so any checks
          performed while attempting to free code memory would fail. *)
-      admit.
-    - intros ofs k p perm_m'.
-      assert (Genv.find_comp_of_block ge b = Some (comp_of f)) as comp_b.
+      exploit ec_mem_gfun_inside_compartment; eauto.
+      intros UNCHANGED.
+      assert (b_f := Genv.find_funct_ptr_find_comp_of_block _ _ ge_b).
+      exploit blocks_m; eauto. intros block_b_f.
+      apply (Mem.unchanged_on_perm _ _ _ UNCHANGED); auto.
+      + apply Genv.find_funct_ptr_iff in ge_b.
+        destruct (Genv.find_def_find_symbol_inversion _ _ ge_b norepet_p)
+          as (id & id_b).
+        exists id, f. split.
+        * assumption.
+        * apply Genv.find_funct_ptr_iff. assumption.
+      + unfold Mem.valid_block.
+        destruct (plt b (Mem.nextblock m)) as [| GT]; [assumption |].
+        apply Mem.block_compartment_valid_block in GT.
+        congruence.
+      + specialize (perms_m _ _ ge_b) as (G & _). exact G.
+    - intros ofs k p' perm_m'.
+      assert (Genv.find_comp_of_block (globalenv p) b = Some (comp_of f)) as comp_b.
       { unfold Genv.find_comp_of_block.
         apply Genv.find_funct_ptr_iff in ge_b.
         now rewrite ge_b. }
@@ -2690,7 +2708,7 @@ Qed.
       exploit ec_max_perm; eauto.
       intros perm_m.
       destruct (perms_m _ _ ge_b); eauto.
-  Admitted.
+  Qed.
 
   Lemma symbols_inject_incr : forall j j' m1 m2 find_comp cp,
       symbols_inject j ge1 ge2 find_comp cp ->
@@ -2795,6 +2813,8 @@ Qed.
              assert (COMP := Genv.find_funct_ptr_find_comp_of_block _ _ DEF).
              rewrite (BLKS1 _ _ COMP) in block_m1_b.
              discriminate. }
+    exploit match_prog_unique1; eauto. intros NOREPET1.
+    exploit match_prog_unique2; eauto. intros NOREPET2.
     constructor;
     eauto using symbols_inject_incr, external_call_spec, same_blocks_extcall,
       gfun_permissions_extcall.
@@ -2828,6 +2848,8 @@ Qed.
   Proof.
     intros.
     destruct RMEMINJ as [DOM MI D0 SYMB SYMBL BLKS1 BLKS2]. (* TODO rename *)
+    exploit match_prog_unique1; eauto. intros NOREPET1.
+    exploit match_prog_unique2; eauto. intros NOREPET2.
     constructor; eauto.
     - intros b. specialize (DOM b). simpl in *.
       destruct (Mem.block_compartment m1 b) as [cp|] eqn:m1_b.
@@ -2881,6 +2903,8 @@ Qed.
   Proof.
     intros.
     inversion RMEMINJ as [DOM MI D0 SYMB SYMBL BLKS1 PERMS1 BLKS2 PERMS2].
+    exploit match_prog_unique1; eauto. intros NOREPET1.
+    exploit match_prog_unique2; eauto. intros NOREPET2.
     constructor; eauto.
     - exploit ec_mem_outside_compartment; eauto.
       { apply external_call_spec. }
@@ -2937,11 +2961,11 @@ Qed.
           inv H1.
           symmetry in H0. apply Genv.find_funct_ptr_iff in H0.
           (* Done *)
-          right. exists id, f2. split; [| split; [| split]].
+          right. exists id, f2. split.
           -- exploit right_mem_injection_find_symbol; eauto.
-          -- rewrite public_symbol_preserved. assumption.
+          (* -- rewrite public_symbol_preserved. assumption. *)
           -- assumption.
-          -- assumption.
+          (* -- assumption. *)
         * left. intros m2_b.
           simpl in m2_b2. rewrite m2_b in m2_b2. injection m2_b2 as <-.
           contradiction.
