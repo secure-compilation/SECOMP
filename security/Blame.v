@@ -563,11 +563,6 @@ Section Simulation.
   Hypothesis W1_compat: clight_compatible s p1 c.
   Hypothesis W2_compat: clight_compatible s p2 c.
 
-  (* TODO These become redundant *)
-  Hypothesis c_Right: s |= c ∈ Right.
-  Hypothesis p1_Left: s |= p1 ∈ Left.
-  Hypothesis p2_Left: s |= p2 ∈ Left.
-
   Hypothesis main_is_public:
     forall {F} (p: Ctypes.program F), In (prog_main p) (prog_public p).
 
