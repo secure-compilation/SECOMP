@@ -5720,6 +5720,9 @@ Qed.
    dealing with symmetry here. *)
 Theorem blame (t m: trace):
   clight_program_has_initial_trace W1 t ->
+  (* FIXME: If t has a proper prefix, then it cannot be empty.  This
+     automatically implies that W1 must have an initial state, rendering W1_ini
+     redundant. It does not seem (yet) that W2_ini is redundant. *)
   trace_prefix m t ->
   m <> t ->
   program_behaves (semantics1 W2) (Goes_wrong m) ->
