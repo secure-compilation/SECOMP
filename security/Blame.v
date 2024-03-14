@@ -593,12 +593,6 @@ Section Simulation.
   Hypothesis W1_gvars: wf_gvar_init ge1.
   Hypothesis W2_gvars: wf_gvar_init ge2.
 
-  (* See [globdef_left]. We can weaken this to the equality of the
-     definitions of [p1] and [p2] by their shared context and the
-     prperties of linking. This has some implications for [match_prog]
-     and [globdef_right] that we should explore. *)
-  Hypothesis prog_defs_W1_W2: prog_defs W1 = prog_defs W2.
-
   (* TODO: Move this to axiomatization of EC, this is simply an
      adaptation to the slightly stronger preservation properties that
      we used in [Globalenv] to prove the memory characterizations. *)
