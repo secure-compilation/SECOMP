@@ -65,17 +65,17 @@ Definition match_type_of_ident s (ge: genv) id :=
   | None => None
   end.
 
-Definition match_opt_globdefs sd d1 d2 :=
-  match sd with
-  | Left => option_rel match_globdef d1 d2
-  | Right => d1 = d2
+Definition match_globdefs δ gd1 gd2 :=
+  match δ with
+  | Left => match_globdef gd1 gd2
+  | Right => gd1 = gd2
   end.
 
 Variant match_ident s (ge1 ge2: genv) id : Prop :=
 | match_ident_def : forall δ,
   match_type_of_ident s ge1 id = Some δ ->
   match_type_of_ident s ge2 id = Some δ ->
-  match_opt_globdefs δ (def_of_ident ge1 id) (def_of_ident ge2 id) ->
+  option_rel (match_globdefs δ) (def_of_ident ge1 id) (def_of_ident ge2 id) ->
   match_ident s ge1 ge2 id
 
 | match_ident_drop :
@@ -83,7 +83,7 @@ Variant match_ident s (ge1 ge2: genv) id : Prop :=
   match_type_of_ident s ge2 id = None ->
   match_ident s ge1 ge2 id.
 
-Definition match_globdefs (s: split) (ge1 ge2: genv) :=
+Definition match_idents (s: split) (ge1 ge2: genv) :=
   forall id, match_ident s ge1 ge2 id.
 
 Record match_prog (s: split) (p p': program) : Prop := {
@@ -95,8 +95,8 @@ Record match_prog (s: split) (p p': program) : Prop := {
     p'.(prog_types) = p.(prog_types);
   match_prog_pol:
     p'.(prog_pol) = p.(prog_pol);
-  match_prog_globdefs:
-    match_globdefs s (globalenv p) (globalenv p');
+  match_prog_idents:
+    match_idents s (globalenv p) (globalenv p');
   match_prog_unique1:
     list_norepet (prog_defs_names p);
   match_prog_unique2:
@@ -1136,7 +1136,7 @@ Qed.
     { simpl. rewrite !Genv.globalenv_public. simpl.
       now rewrite (match_prog_public _ _ _ match_W1_W2). }
     unfold Genv.public_symbol. rewrite public_eq.
-    destruct (match_prog_globdefs _ _ _ match_W1_W2 id)
+    destruct (match_prog_idents _ _ _ match_W1_W2 id)
       as [δ ge1_id ge2_id match_id|ge1_id ge2_id].
     - unfold match_type_of_ident, def_of_ident in *.
       unfold Genv.find_comp_of_ident, Genv.find_comp_of_block in *.
@@ -1173,12 +1173,11 @@ Lemma match_prog_globdefs' :
     exists b1 b2,
       Genv.find_symbol ge1 id = Some b1 /\
       Genv.find_symbol ge2 id = Some b2 /\
-      match_opt_globdefs (s cp) (Genv.find_def ge1 b1) (Genv.find_def ge2 b2).
+      option_rel (match_globdefs (s cp)) (Genv.find_def ge1 b1) (Genv.find_def ge2 b2).
 Proof.
   unfold Genv.find_comp_of_ident, Genv.find_comp_of_block.
   intros id cp Hcomp Hside.
-  pose proof (match_prog_globdefs _ _ _ match_W1_W2) as match_gd.
-  specialize (match_gd id).
+  pose proof (match_prog_idents _ _ _ match_W1_W2 id) as match_gd.
   destruct match_gd as [δ ge1_id_δ ge2_id_δ|ge1_id ge2_id].
   - unfold match_type_of_ident, def_of_ident in *.
     unfold Genv.find_comp_of_ident, Genv.find_comp_of_block in *.
@@ -1228,7 +1227,7 @@ Qed.
   Proof.
     unfold Genv.allowed_addrof_b.
     intros cp id RIGHT.
-    pose proof (match_prog_globdefs _ _ _ match_W1_W2 id) as match_id.
+    pose proof (match_prog_idents _ _ _ match_W1_W2 id) as match_id.
     destruct match_id as [δ ge1_id ge2_id match_id|ge1_id ge2_id].
     - unfold match_type_of_ident, def_of_ident in *.
       unfold Genv.find_comp_of_ident, Genv.find_comp_of_block in *.
@@ -1251,7 +1250,7 @@ Qed.
         { now inv match_id. }
         erewrite match_globdef_comp_of; eauto.
         now inv match_id'.
-      + now injection match_id as <-.
+      + inv match_id; simpl in *. now subst gd1.
     - unfold match_type_of_ident, def_of_ident in *.
       unfold Genv.find_comp_of_ident, Genv.find_comp_of_block in *.
       rewrite public_symbol_preserved in *.
@@ -1477,7 +1476,7 @@ Proof.
         intros (b1' & b2' & id_b1' & id_b2' & DEFS).
         rewrite id_b1 in id_b1'. injection id_b1' as <-.
         rewrite id_b2 in id_b2'. injection id_b2' as <-.
-        unfold match_opt_globdefs in DEFS. rewrite s_cp' in DEFS.
+        rewrite s_cp' in DEFS.
         destruct (Genv.find_symbol_find_def_inversion _ _ id_b1) as [gd1 DEF1].
         inv DEFS; [setoid_rewrite DEF1 in H0; congruence |].
         apply Genv.find_funct_ptr_iff in b1_fd1.
@@ -1779,9 +1778,10 @@ Qed.
     intros (b1 & b2 & ge1_id_alt & ge2_id_alt & MATCH).
     assert (b1 = b) by congruence. subst b1.
     assert (b2 = b') by congruence. subst b2.
-    rewrite ge1_b, s_cp in MATCH. simpl in MATCH.
-    unfold Genv.find_funct_ptr, ge2. simpl.
-    rewrite <- MATCH. split; trivial.
+    rewrite ge1_b, s_cp in MATCH.
+    apply Genv.find_funct_ptr_iff.
+    destruct MATCH as [|x y H]; trivial.
+    simpl in H; congruence.
   Qed.
 
   Lemma find_comp_of_block_preserved j m1 m2 b1 b2 delta id cp :
@@ -2921,27 +2921,28 @@ Qed.
           exploit Mem.mi_inj; eauto. intros INJ'.
           eapply Mem.mi_own; eauto. }
         destruct (peq cp (comp_of ef)) as [-> | NEQ].
-        * destruct j_b1_def as [| (id & fd & id_b & id_pub & b_fd)]; [congruence |].
+        * destruct j_b1_def as [| (id & fd1 & id_b1 & id_pub & b1_fd1)];
+            [congruence |].
           (* TODO: This preprocessing is very similar to other parts
              that should be extracted as lemmas. Here this is done up
              front to be able to instantiate the existential. *)
-          assert (IDENTCOMP: Genv.find_comp_of_ident ge1 id = Some (comp_of fd)). {
+          assert (IDENTCOMP: Genv.find_comp_of_ident ge1 id = Some (comp_of fd1)). {
             assert (exists cp, Genv.find_comp_of_ident ge1 id = Some cp)
               as [cp IDENTCOMP]. {
               apply Genv.find_symbol_find_comp. intros CONTRA.
-              setoid_rewrite id_b in CONTRA. discriminate. }
-            assert (BLOCKCOMP := Genv.find_funct_ptr_find_comp_of_block _ _ b_fd).
+              setoid_rewrite id_b1 in CONTRA. discriminate. }
+            assert (BLOCKCOMP := Genv.find_funct_ptr_find_comp_of_block _ _ b1_fd1).
             exploit BLKS1; eauto. intros MEMCOMP.
-            unfold Genv.find_comp_of_ident in IDENTCOMP. rewrite id_b in IDENTCOMP.
+            unfold Genv.find_comp_of_ident in IDENTCOMP. rewrite id_b1 in IDENTCOMP.
             rewrite BLOCKCOMP in IDENTCOMP. injection IDENTCOMP as <-.
-            unfold Genv.find_comp_of_ident. rewrite id_b.
+            unfold Genv.find_comp_of_ident. rewrite id_b1.
             assumption. }
-          assert (ef_fd: comp_of ef = comp_of fd). {
+          assert (ef_fd1: comp_of ef = comp_of fd1). {
             unfold Genv.find_comp_of_ident in IDENTCOMP.
-            rewrite id_b in IDENTCOMP.
+            rewrite id_b1 in IDENTCOMP.
             exploit BLKS1; eauto. intros BLOCKCOMP.
             change (Mem.block_compartment _ _ = _)
-              with (Mem.can_access_block m1 b1 (Some (comp_of fd)))
+              with (Mem.can_access_block m1 b1 (Some (comp_of fd1)))
               in BLOCKCOMP.
             inversion MI.
             inversion mi_inj.
@@ -2951,23 +2952,20 @@ Qed.
           exploit right_mem_injection_find_symbol; eauto. intros id_b2.
           exploit match_prog_globdefs'; eauto.
           intros (b1' & b2' & id_b1' & id_b2' & DEFS).
-          rewrite id_b1' in id_b. injection id_b as <-.
+          rewrite id_b1' in id_b1. injection id_b1 as ->.
           rewrite id_b2 in id_b2'. injection id_b2' as <-.
-          unfold match_opt_globdefs in DEFS. rewrite <- ef_fd, LEFT in DEFS.
-          destruct (Genv.find_symbol_find_def_inversion _ _ id_b1') as [gd DEF1].
-          inv DEFS; [setoid_rewrite DEF1 in H0; congruence |].
-          apply Genv.find_funct_ptr_iff in b_fd.
-          setoid_rewrite b_fd in H. injection H as ->.
-          inv H1.
-          symmetry in H0. apply Genv.find_funct_ptr_iff in H0.
-          (* Done *)
-          right. exists id, f2. split.
+          rewrite <- ef_fd1, LEFT in DEFS.
+          apply Genv.find_funct_ptr_iff in b1_fd1.
+          assert (exists fd2, Genv.find_def ge2 b2 = Some (Gfun fd2))
+            as [fd2 ge2_b2].
+          { destruct DEFS as [|gd1 gd2 Hmatch_gd]; try congruence.
+            injection b1_fd1 as ->.
+            inv Hmatch_gd; eauto. }
+          right. exists id, fd2. split.
           -- exploit right_mem_injection_find_symbol; eauto.
-          (* -- rewrite public_symbol_preserved. assumption. *)
-          -- assumption.
-          (* -- assumption. *)
-        * left. intros m2_b.
-          simpl in m2_b2. rewrite m2_b in m2_b2. injection m2_b2 as <-.
+          -- now apply Genv.find_funct_ptr_iff.
+        * left. intros m2_b2'.
+          simpl in m2_b2. rewrite m2_b2' in m2_b2. injection m2_b2 as <-.
           contradiction.
       + destruct j_b1_def as [[] | (id & fd & ? & ? & DEF)].
         assert (COMP := Genv.find_funct_ptr_find_comp_of_block _ _ DEF).
@@ -2982,10 +2980,10 @@ Qed.
 
   Lemma find_funct_ptr_right id fd1 fd2 b1 b2
     (RIGHT: s (comp_of fd1) = Right)
-    (SYM1: Genv.invert_symbol (Genv.globalenv W1) b1 = Some id)
-    (SYM2: Genv.invert_symbol (Genv.globalenv W2) b2 = Some id)
-    (FUN1: Genv.find_funct_ptr (Genv.globalenv W1) b1 = Some fd1)
-    (FUN2: Genv.find_funct_ptr (Genv.globalenv W2) b2 = Some fd2):
+    (SYM1: Genv.invert_symbol ge1 b1 = Some id)
+    (SYM2: Genv.invert_symbol ge2 b2 = Some id)
+    (FUN1: Genv.find_funct_ptr ge1 b1 = Some fd1)
+    (FUN2: Genv.find_funct_ptr ge2 b2 = Some fd2):
     fd1 = fd2.
   Proof.
     apply Genv.invert_find_symbol in SYM1.
@@ -2996,14 +2994,12 @@ Qed.
       exact FUN1. }
     destruct (@match_prog_globdefs' _ _ (or_introl COMP1) (or_introl RIGHT))
       as (b1' & b2' & SYM1' & SYM2' & MATCH).
-    setoid_rewrite SYM1 in SYM1'. injection SYM1' as <-.
-    setoid_rewrite SYM2 in SYM2'. injection SYM2' as <-.
-    unfold match_opt_globdefs in MATCH. rewrite RIGHT in MATCH.
-    unfold Genv.find_funct_ptr in FUN1, FUN2.
-    setoid_rewrite <- MATCH in FUN2.
-    destruct (Genv.find_def _ b1) as [f |] eqn:DEF; [| discriminate].
-    destruct f; [| discriminate].
-    congruence.
+    apply Genv.find_funct_ptr_iff in FUN1.
+    apply Genv.find_funct_ptr_iff in FUN2.
+    assert (b1' = b1) as -> by congruence.
+    assert (b2' = b2) as -> by congruence.
+    rewrite FUN1, FUN2, RIGHT in MATCH.
+    inv MATCH. simpl in *. congruence.
   Qed.
 
   (** Sub-invariant lemmas, mostly on injections *)
@@ -3242,7 +3238,7 @@ Local Transparent Mem.store. unfold Mem.store in STORE1. Local Opaque Mem.store.
               intros (b1 & b' & id_b1 & id_b' & DEFS).
               rewrite id_b in id_b1. injection id_b1 as <-.
               rewrite id_loc in id_b'. injection id_b' as <-.
-              unfold match_opt_globdefs in DEFS. rewrite <- f_fd, LEFT in DEFS.
+              rewrite <- f_fd, LEFT in DEFS.
               destruct (Genv.find_symbol_find_def_inversion _ _ id_b) as [gd DEF1].
               inv DEFS; [setoid_rewrite DEF1 in H6; congruence |].
               apply Genv.find_funct_ptr_iff in b_fd.
@@ -3330,7 +3326,7 @@ Local Transparent Mem.storebytes. unfold Mem.storebytes in STORE1. Local Opaque 
                 intros (b1 & b' & id_b1 & id_b' & DEFS).
                 rewrite id_b in id_b1. injection id_b1 as <-.
                 rewrite id_loc in id_b'. injection id_b' as <-.
-                unfold match_opt_globdefs in DEFS. rewrite <- f_fd, LEFT in DEFS.
+                rewrite <- f_fd, LEFT in DEFS.
                 destruct (Genv.find_symbol_find_def_inversion _ _ id_b) as [gd DEF1].
                 inv DEFS; [setoid_rewrite DEF1 in H4; congruence |].
                 apply Genv.find_funct_ptr_iff in b_fd.
@@ -3379,7 +3375,7 @@ Local Transparent Mem.storebytes. unfold Mem.storebytes in STORE1. Local Opaque 
                 intros (b1 & b' & id_b1 & id_b' & DEFS).
                 rewrite id_b in id_b1. injection id_b1 as <-.
                 rewrite id_loc in id_b'. injection id_b' as <-.
-                unfold match_opt_globdefs in DEFS. rewrite <- f_fd, LEFT in DEFS.
+                rewrite <- f_fd, LEFT in DEFS.
                 destruct (Genv.find_symbol_find_def_inversion _ _ id_b) as [gd DEF1].
                 inv DEFS; [setoid_rewrite DEF1 in H4; congruence |].
                 apply Genv.find_funct_ptr_iff in b_fd.
@@ -3453,7 +3449,7 @@ Local Transparent Mem.store. unfold Mem.store in H9. Local Opaque Mem.store.
               intros (b1 & b' & id_b1 & id_b' & DEFS).
               rewrite id_b in id_b1. injection id_b1 as <-.
               rewrite id_loc in id_b'. injection id_b' as <-.
-              unfold match_opt_globdefs in DEFS. rewrite <- f_fd, LEFT in DEFS.
+              rewrite <- f_fd, LEFT in DEFS.
               destruct (Genv.find_symbol_find_def_inversion _ _ id_b) as [gd DEF1].
               inv DEFS; [setoid_rewrite DEF1 in H12; congruence |].
               apply Genv.find_funct_ptr_iff in b_fd.
@@ -4812,7 +4808,7 @@ Proof.
          assert (match_type_of_ident s ge2 id = None).
          { unfold match_type_of_ident, Genv.find_comp_of_ident.
            now rewrite SYM2. }
-         destruct (match_prog_globdefs _ _ _ match_W1_W2 id); congruence.
+         destruct (match_prog_idents _ _ _ match_W1_W2 id); congruence.
       -- destruct (Genv.find_symbol ge2 id) eqn:SYM2; [discriminate |].
          exploit find_symbol_right; eauto.
 Qed.
@@ -4826,202 +4822,232 @@ Proof.
   reflexivity.
 Qed.
 
-(* These characterizations need to be a bit more general to be
-   independent of init_meminj in particular *)
-Lemma init_mem_characterization_rel sp (pr1 pr2: program) id gd m1 m2 b1 b2
-    (MATCH: match_prog sp pr1 pr2)
-    (PROGDEFS1: In (id, gd) (prog_defs pr1))
-    (PROGDEFS2: In (id, gd) (prog_defs pr2))
-    (MEM1: Genv.init_mem pr1 = Some m1)
-    (MEM2: Genv.init_mem pr2 = Some m2)
-    (SYM1: Genv.find_symbol (globalenv pr1) id = Some b1)
-    (SYM2: Genv.find_symbol (globalenv pr2) id = Some b2)
-    (DEF1: Genv.find_def (globalenv pr1) b1 = Some gd)
-    (DEF2: Genv.find_def (globalenv pr2) b2 = Some gd):
-  (forall ofs k p, Mem.perm m1 b1 ofs k p <-> Mem.perm m2 b2 ofs k p) /\
-  (forall cp, Mem.can_access_block m1 b1 cp <-> Mem.can_access_block m2 b2 cp) /\
-  (* Any restrictions on gvar_init and init_data, esp. Init_addrof? *)
-  (forall ofs, Mem.perm m1 b1 ofs Cur Readable ->
-               memval_inject init_meminj (ZMap.get ofs (Mem.mem_contents m1) !! b1)
-                                         (ZMap.get ofs (Mem.mem_contents m2) !! b2)).
+(* FIXME: move *)
+Lemma option_rel_inv_some_1 {A B} {R : A -> B -> Prop} x oy :
+  option_rel R (Some x) oy ->
+  exists y, oy = Some y /\ R x y.
 Proof.
-  (* From PROGDEFS and MEM we can get SYM and DEF, although without
-     these there is no explicit link between blocks *)
-  change (In _ _)
-    with (In (id, gd) (AST.prog_defs (program_of_program pr1)))
-    in PROGDEFS1.
-  change (In _ _)
-    with (In (id, gd) (AST.prog_defs (program_of_program pr2)))
-    in PROGDEFS2.
-  destruct (Genv.find_symbol_exists _ _ _ PROGDEFS1) as (b1' & SYM1').
-  destruct (Genv.find_symbol_exists _ _ _ PROGDEFS2) as (b2' & SYM2').
-  setoid_rewrite SYM1 in SYM1'. injection SYM1' as <-.
-  setoid_rewrite SYM2 in SYM2'. injection SYM2' as <-.
-  assert (DEFMAP1 := prog_defmap_norepet _ _ _ (match_prog_unique1 _ _ _ MATCH) PROGDEFS1).
-  assert (DEFMAP2 := prog_defmap_norepet _ _ _ (match_prog_unique2 _ _ _ MATCH) PROGDEFS2).
-  apply Genv.find_def_symbol in DEFMAP1 as (b1' & SYM1' & DEF1').
-  apply Genv.find_def_symbol in DEFMAP2 as (b2' & SYM2' & DEF2').
-  setoid_rewrite SYM1 in SYM1'. injection SYM1' as <-.
-  setoid_rewrite SYM2 in SYM2'. injection SYM2' as <-.
-  clear DEF1' DEF2'.
-  (* So those four we can get, but we need to tie id and gd to b1, b2 *)
-Abort.
+  intros H. inv H; eauto.
+Qed.
 
-Lemma init_mem_characterization_rel gd m1 m2 b1 b2
-      (* (MATCH: match_prog sp pr1 pr2) *)
-      (* (VAR1: wf_gvar_init ge1) *)
-      (* (VAR2: wf_gvar_init ge2) *)
-      (* (PROGDEFS1: In (id, gd) (prog_defs pr1)) *)
-      (* (PROGDEFS2: In (id, gd) (prog_defs pr2)) *)
+(* FIXME: move *)
+Lemma option_rel_inv_some_2 {A B} {R : A -> B -> Prop} ox y :
+  option_rel R ox (Some y) ->
+  exists x, ox = Some x /\ R x y.
+Proof.
+  intros H. inv H; eauto.
+Qed.
+
+Lemma init_meminj_spec b1 b2 delta :
+  init_meminj b1 = Some (b2, delta) ->
+  delta = 0 /\
+  exists id gd1 gd2,
+    Genv.find_symbol ge1 id = Some b1 /\
+    Genv.find_symbol ge2 id = Some b2 /\
+    Genv.find_def ge1 b1 = Some gd1 /\
+    Genv.find_def ge2 b2 = Some gd2 /\
+    (s (comp_of gd1) = Left ->
+      Genv.public_symbol ge1 id = true /\
+      match gd1 with Gfun _ => True | _ => False end) /\
+    match_globdefs (s (comp_of gd1)) gd1 gd2.
+Proof.
+  unfold init_meminj, init_meminj_block.
+  destruct (Genv.invert_symbol ge1 b1) as [id|] eqn:ge1_b1;
+    try congruence.
+  assert (Genv.find_symbol ge1 id = Some b1) as ge1_id.
+  { eauto using Genv.invert_find_symbol. }
+  pose proof (match_prog_idents _ _ _ match_W1_W2 id) as match_id.
+  unfold Genv.find_comp_of_ident, Genv.find_comp_of_block.
+  rewrite ge1_id.
+  destruct (Genv.find_def ge1 b1) as [gd1|] eqn:ge1_b1_def;
+    try congruence.
+  destruct (s (comp_of gd1)) eqn:s_cp.
+  - destruct gd1 as [fd1|?]; try congruence.
+    destruct (Genv.find_symbol ge2 id) as [b2'|] eqn:ge2_id;
+      try congruence.
+    destruct (Genv.public_symbol ge1 id) eqn:ge1_id_pub; try congruence.
+    intros b1_b2. injection b1_b2 as -> <-.
+    split; trivial.
+    assert (match_type_of_ident s ge1 id = Some Left) as Hmatch_type1.
+    { unfold match_type_of_ident, Genv.find_comp_of_ident, Genv.find_comp_of_block.
+      now rewrite ge1_id, ge1_b1_def, s_cp, ge1_id_pub. }
+    destruct match_id as [δ gd1' gd2' match_gd|]; try congruence.
+    assert (δ = Left) as -> by congruence.
+    unfold def_of_ident in *.
+    rewrite ge1_id, ge2_id, ge1_b1_def in match_gd.
+    exists id, (Gfun fd1).
+    apply option_rel_inv_some_1 in match_gd.
+    destruct match_gd as (gd2 & gd2_b2_def & match_gd).
+    exists gd2. rewrite s_cp. intuition eauto.
+  - destruct (Genv.find_symbol ge2 id) as [b2'|] eqn:ge2_id;
+      try congruence.
+    intros E. injection E as -> <-. split; trivial.
+    assert (match_type_of_ident s ge1 id = Some Right) as Hmatch_type1.
+    { unfold match_type_of_ident, Genv.find_comp_of_ident, Genv.find_comp_of_block.
+      now rewrite ge1_id, ge1_b1_def, s_cp. }
+    destruct match_id as [δ gd1' gd2' match_gd|]; try congruence.
+    assert (δ = Right) as -> by congruence.
+    unfold def_of_ident in *.
+    rewrite ge1_id, ge2_id, ge1_b1_def in match_gd.
+    apply option_rel_inv_some_1 in match_gd.
+    destruct match_gd as (gd2 & gd2_b2_def & match_gd).
+    exists id, gd1, gd2. rewrite s_cp. intuition congruence.
+Qed.
+
+(* FIXME: move *)
+Lemma repeat_Byte_inject_self f b n :
+  list_forall2 (memval_inject f) (repeat (Byte b) n) (repeat (Byte b) n).
+Proof.
+  induction n as [|n IH]; simpl; constructor; trivial.
+  constructor.
+Qed.
+
+(* FIXME: move? *)
+Lemma bytes_of_init_data_list_inject b1 b2 (gv : globvar type) :
+  Genv.find_var_info ge1 b1 = Some gv ->
+  Genv.find_var_info ge2 b2 = Some gv ->
+  s (comp_of gv) = Right ->
+  list_forall2 (memval_inject init_meminj)
+    (Genv.bytes_of_init_data_list ge1 (gvar_init gv))
+    (Genv.bytes_of_init_data_list ge2 (gvar_init gv)).
+Proof.
+  intros ge1_b1 ge2_b2 s_cp.
+  pose proof (W1_gvars _ _ ge1_b1) as wf_gv1.
+  pose proof (W2_gvars _ _ ge2_b2) as wf_gv2.
+  clear - wf_gv1 wf_gv2 s_cp.
+  induction (gvar_init gv) as [|init inits IH]; [constructor|].
+  apply Forall_cons_iff in wf_gv1.
+  destruct wf_gv1 as [wf_init1 wf_gv1].
+  apply Forall_cons_iff in wf_gv2.
+  destruct wf_gv2 as [wf_init2 wf_gv2].
+  specialize (IH wf_gv1 wf_gv2).
+  apply list_forall2_app; trivial.
+  clear - wf_init1 wf_init2 s_cp.
+  revert wf_init1 wf_init2.
+  case init;
+    try solve [simpl;eauto using inj_bytes_inject, repeat_Byte_inject_self].
+  intros id ofs wf_init1 wf_init2.
+  specialize (wf_init1 _ _ eq_refl).
+  specialize (wf_init2 _ _ eq_refl).
+  unfold Genv.find_comp_of_ident, Genv.find_comp_of_block in *.
+  unfold Genv.bytes_of_init_data.
+  destruct (Genv.find_symbol ge1 id) as [b1|] eqn:ge1_id; try congruence.
+  destruct (Genv.find_symbol ge2 id) as [b2|] eqn:ge2_id; try congruence.
+  destruct (Genv.find_def ge1 b1) as [gd1|] eqn:ge1_b1; try congruence.
+  destruct (Genv.find_def ge2 b2) as [gd2|] eqn:ge2_b2; try congruence.
+  apply inj_value_inject.
+  assert (init_meminj b1 = Some (b2, 0)) as b1_b2.
+  { unfold init_meminj, init_meminj_block.
+    unfold Genv.find_comp_of_ident, Genv.find_comp_of_block.
+    rewrite (Genv.find_invert_symbol _ _ ge1_id).
+    rewrite ge1_id, ge1_b1, ge2_id.
+    injection wf_init1 as ->. now setoid_rewrite s_cp. }
+  econstructor; eauto.
+  now rewrite Ptrofs.add_zero.
+Qed.
+
+Lemma init_mem_characterization_rel m1 m2 b1 b2
       (MEM1: Genv.init_mem W1 = Some m1)
       (MEM2: Genv.init_mem W2 = Some m2)
-      (b1_b2: init_meminj b1 = Some (b2, 0))
-      (DEF1: Genv.find_def ge1 b1 = Some gd)
-      (DEF2: Genv.find_def ge2 b2 = Some gd):
+      (b1_b2: init_meminj b1 = Some (b2, 0)):
   (forall ofs k p, Mem.perm m1 b1 ofs k p <-> Mem.perm m2 b2 ofs k p) /\
-  (forall cp, Mem.can_access_block m1 b1 cp <-> Mem.can_access_block m2 b2 cp) /\
+  Mem.block_compartment m1 b1 = Mem.block_compartment m2 b2 /\
   (* Any restrictions on gvar_init and init_data, esp. Init_addrof? *)
   (forall ofs, Mem.perm m1 b1 ofs Cur Readable ->
                memval_inject init_meminj (ZMap.get ofs (Mem.mem_contents m1) !! b1)
                                          (ZMap.get ofs (Mem.mem_contents m2) !! b2)).
 Proof.
-  destruct gd as [fd | gv].
-  - apply Genv.find_funct_ptr_iff in DEF1, DEF2.
-    destruct (Genv.init_mem_characterization_2' _ _ DEF1 MEM1) as (PERM1 & ACC1 & INJ1).
-    destruct (Genv.init_mem_characterization_2' _ _ DEF2 MEM2) as (PERM2 & ACC2 & INJ2).
-    split; [| split].
-    + intros ofs k p. specialize (PERM1 ofs k). specialize (PERM2 ofs k).
-      unfold Mem.perm. rewrite PERM1, PERM2.
-      reflexivity.
-    + intros [cp |]; [| reflexivity].
-      unfold Mem.can_access_block, Mem.block_compartment.
-      rewrite ACC1, ACC2.
-      reflexivity.
-    + intros ofs PERM. specialize (INJ1 ofs). specialize (INJ2 ofs).
-      rewrite INJ1, INJ2.
-      exact (memval_inject_undef _ _).
-  - apply Genv.find_var_info_iff in DEF1, DEF2.
-    destruct (Genv.init_mem_characterization' _ _ DEF1 MEM1) as (PERM1 & ACC1 & INJ1).
-    destruct (Genv.init_mem_characterization' _ _ DEF2 MEM2) as (PERM2 & ACC2 & INJ2).
-    split; [| split].
-    + intros ofs k p. specialize (PERM1 ofs k). specialize (PERM2 ofs k).
-      unfold Mem.perm. rewrite PERM1, PERM2.
-      reflexivity.
-    + intros [cp |]; [| reflexivity].
-      unfold Mem.can_access_block, Mem.block_compartment.
-      rewrite ACC1, ACC2.
-      reflexivity.
-    + intros ofs PERM.
-      unfold Mem.perm, Mem.perm_order' in PERM.
-      destruct ((Mem.mem_access m1) !! b1 ofs Cur) as [p' |] eqn:ACC;
-        [| contradiction].
-      assert (PERMEQ: (if zle 0 ofs && zlt ofs (init_data_list_size (gvar_init gv))
-                       then Some (Genv.perm_globvar gv) else None) = Some p'). {
-        rewrite <- ACC. erewrite <- PERM1. reflexivity. }
-      destruct (zle 0 ofs && zlt ofs (init_data_list_size (gvar_init gv))) eqn:RANGE;
-        [| discriminate].
-      injection PERMEQ as <-.
-      unfold Genv.perm_globvar in PERM.
-      destruct (gvar_volatile gv) eqn:VOL; [now inversion PERM |].
-      specialize (INJ1 eq_refl). specialize (INJ2 eq_refl).
-      (* in the process of proving this, we can replicate the use of
-         [Mem.loadbytes_inj] with a modified proof that exploits facts
-         we know from our specific context *)
-      assert (MEMVAL: list_forall2 (memval_inject init_meminj)
-                        (Genv.bytes_of_init_data_list ge1 (gvar_init gv))
-                        (Genv.bytes_of_init_data_list ge2 (gvar_init gv))). {
-Local Transparent Mem.loadbytes.
-  unfold Mem.loadbytes in *.
-Local Opaque Mem.loadbytes.
-  destruct (Mem.range_perm_dec m1 b1 0 (0 + init_data_list_size (gvar_init gv)) Cur Readable) as [RANGE1 |];
-  destruct (Mem.can_access_block_dec m1 b1 (Some (gvar_comp gv))) as [BLOCK1 |];
-  inv INJ1.
-  (* same thing for the second memory now, replacing the use of
-     [Mem.range_perm_inj] and [Mem.mi_own] *)
-  destruct (Mem.range_perm_dec m2 b2 0 (0 + init_data_list_size (gvar_init gv)) Cur Readable) as [RANGE2 |];
-  destruct (Mem.can_access_block_dec m2 b2 (Some (gvar_comp gv))) as [BLOCK2 |];
-  inv INJ2.
-  (* (* we can use the first sub-characterization above *)
-  (*    replacing the use of [Mem.range_perm_inj] *) *)
-  (* assert (CHAR: *)
-  (*          (forall ofs k p, Mem.perm m1 b1 ofs k p <-> Mem.perm m2 b2 ofs k p) -> *)
-  (*          (forall lo hi k p, Mem.range_perm m1 b1 lo hi k p <-> Mem.range_perm m2 b2 lo hi k p)). { *)
-  (*   unfold Mem.range_perm. split; intros. *)
-  (*   - specialize (H ofs0 k p). apply H; auto. *)
-  (*   - specialize (H ofs0 k p). apply H; auto. } *)
-  (* assert (RANGE2: Mem.range_perm m2 b2 0 (0 + init_data_list_size (gvar_init gv)) Cur Readable) by admit. *)
-  (* (* and the second sub-characterization in turn *)
-  (*    replacing the use of [Mem.mi_own] *) *)
-  (* assert (BLOCK2: Mem.can_access_block m2 b2 (Some (gvar_comp gv))) by admit. *)
-  assert (MEMVAL: list_forall2 (memval_inject init_meminj)
-                    (Mem.getN (Z.to_nat (init_data_list_size (gvar_init gv))) 0 (m1.(Mem.mem_contents) !! b1))
-                    (Mem.getN (Z.to_nat (init_data_list_size (gvar_init gv))) 0 (m2.(Mem.mem_contents) !! b2))). {
-    (* replicate the use of [Mem.getN_inj] *)
-    rewrite H0, H1.
-    specialize (W1_gvars gv b1 DEF1). specialize (W2_gvars gv b2 DEF2).
-    assert (RIGHT: s (comp_of gv) = Right). {
-      clear -W1_gvars DEF1 b1_b2.
-      unfold init_meminj, init_meminj_block in b1_b2.
-      destruct (Genv.invert_symbol ge1 b1) as [id1|] eqn:b1_id;
-        try discriminate.
-      assert (Genv.find_symbol ge1 id1 = Some b1) as id1_b1
-          by eauto using Genv.invert_find_symbol.
-      unfold Genv.find_comp_of_ident in b1_b2.
-      rewrite id1_b1 in b1_b2.
-      unfold Genv.find_comp_of_block in b1_b2.
-      apply Genv.find_var_info_iff in DEF1. rewrite DEF1 in b1_b2.
-      destruct (s (comp_of (Gvar gv))) eqn:RIGHT; [discriminate |].
-      exact RIGHT. }
-    remember (gvar_init gv) as il eqn:INIT. clear -W1_gvars W2_gvars RIGHT.
-    induction il as [| i il IHil].
-    - constructor.
-    - simpl.
-      apply list_forall2_app.
-      + destruct i; simpl;
-          try (now apply inj_bytes_inject).
-        * remember (Z.to_nat z) as n eqn:ZtoN. clear ZtoN.
-          { clear.
-            induction n as [| n IHn]. (* Lemma *)
-            - constructor.
-            - constructor.
-              + constructor.
-              + apply IHn. }
-        * inv W1_gvars. inv W2_gvars.
-          specialize (IHil H2 H4). clear H2 H4.
-          specialize (H1 _ _ eq_refl). specialize (H3 _ _ eq_refl).
-          unfold Genv.find_comp_of_ident in H1, H3.
-          destruct (Genv.find_symbol ge1 i) as [b1' |] eqn:SYM1';
-            destruct (Genv.find_symbol ge2 i) as [b2' |] eqn:SYM2';
-            try congruence.
-          setoid_rewrite SYM1'. setoid_rewrite SYM2'.
-          apply inj_value_inject. econstructor.
-          -- unfold init_meminj, init_meminj_block.
-             erewrite Genv.find_invert_symbol; eauto.
-             unfold Genv.find_comp_of_ident.
-             rewrite SYM1', H1, RIGHT, SYM2'. reflexivity.
-          -- rewrite Ptrofs.add_zero. reflexivity.
-      + inv W1_gvars. inv W2_gvars.
-        eapply IHil; eauto. }
-  destruct (zle 0 (init_data_list_size (gvar_init gv))) as [LE | GT].
-  - rewrite H0, H1 in MEMVAL. exact MEMVAL.
-  - assert (CONTRA := init_data_list_size_pos (gvar_init gv)). lia.
-      }
-      clear -INJ1 INJ2 MEMVAL RANGE.
-      unfold zle, zlt in RANGE.
-      destruct Z_le_gt_dec; [| discriminate].
-      destruct Z_lt_dec; [| discriminate].
-      apply Mem_getN_forall2
-        with (p := 0) (n := Z.to_nat (init_data_list_size (gvar_init gv)));
-        try lia.
-Local Transparent Mem.loadbytes.
-      unfold Mem.loadbytes in *.
-Local Opaque Mem.loadbytes.
-      destruct andb in INJ1; [| discriminate].
-      destruct andb in INJ2; [| discriminate].
-      injection INJ1 as INJ1.
-      injection INJ2 as INJ2.
-      rewrite INJ1, INJ2.
-      exact MEMVAL.
+  apply init_meminj_spec in b1_b2.
+  destruct b1_b2 as (_ & id & gd1 & gd2 & ge1_id & ge2_id &
+                       ge1_b1_def & ge2_b2_def & if_left &
+                       match_gd).
+  assert (Genv.globals_initialized ge1 ge1 m1) as init_m1.
+  { eapply Genv.init_mem_characterization_gen; eauto. }
+  assert (Genv.globals_initialized ge2 ge2 m2) as init_m2.
+  { eapply Genv.init_mem_characterization_gen; eauto. }
+  specialize (init_m1 _ _ ge1_b1_def).
+  specialize (init_m2 _ _ ge2_b2_def).
+  rewrite (Genv.init_mem_find_def _ _ MEM1 ge1_b1_def).
+  rewrite (Genv.init_mem_find_def _ _ MEM2 ge2_b2_def).
+  destruct (s (comp_of gd1)) eqn:s_cp.
+  { specialize (if_left eq_refl).
+    destruct if_left as [ge1_id_pub is_fun].
+    simpl in match_gd.
+    destruct match_gd as [fd1 fd2 match_fd|???]; try contradiction.
+    clear is_fun. split; [|split].
+    - destruct init_m1 as [init_m11 init_m12].
+      destruct init_m2 as [init_m21 init_m22].
+      intros ofs k p; split; intros Hperm.
+      + apply init_m12 in Hperm. destruct Hperm as [-> ->].
+        eauto using Mem.perm_cur.
+      + apply init_m22 in Hperm. destruct Hperm as [-> ->].
+        eauto using Mem.perm_cur.
+    - inv match_fd; simpl; intuition congruence.
+    - intros ofs Hperm. destruct init_m1 as [_ init_m1]. apply init_m1 in Hperm.
+      destruct Hperm as [??]. congruence. }
+  clear if_left. simpl in match_gd. subst gd2. rename gd1 into gd.
+  split; [|split]; trivial; destruct gd as [fd|gv].
+  - destruct init_m1 as [init_m11 init_m12].
+    destruct init_m2 as [init_m21 init_m22].
+    intros ofs k p; split; intros Hperm.
+    + apply init_m12 in Hperm. destruct Hperm as [-> ->].
+      eauto using Mem.perm_cur.
+    + apply init_m22 in Hperm. destruct Hperm as [-> ->].
+      eauto using Mem.perm_cur.
+  - destruct init_m1 as (init_m11 & init_m12 & init_m13 & init_m14).
+    destruct init_m2 as (init_m21 & init_m22 & init_m23 & init_m24).
+    intros ofs k p. split.
+    + intros Hperm.
+      destruct (init_m12 _ _ _ Hperm) as [Hrange Horder].
+      simpl in Hrange, Horder.
+      specialize (init_m21 ofs Hrange).
+      simpl in init_m21.
+      eapply Mem.perm_implies; [|apply Horder].
+      apply Mem.perm_cur. apply init_m21.
+    + intros Hperm.
+      destruct (init_m22 _ _ _ Hperm) as [Hrange Horder].
+      simpl in Hrange, Horder.
+      specialize (init_m11 ofs Hrange).
+      simpl in init_m11.
+      eapply Mem.perm_implies; [|apply Horder].
+      apply Mem.perm_cur. apply init_m11.
+  - intros ofs Hperm. destruct init_m1 as [_ init_m1]. apply init_m1 in Hperm.
+    destruct Hperm as [??]. congruence.
+  - intros ofs Hperm1.
+    destruct init_m1 as (init_m11 & init_m12 & init_m13 & init_m14).
+    destruct init_m2 as (init_m21 & init_m22 & init_m23 & init_m24).
+    destruct (init_m12 _ _ _ Hperm1) as [Hrange Horder].
+    assert (gvar_volatile gv = false) as not_vol.
+    { unfold Genv.perm_globvar in *.
+      destruct gvar_volatile; trivial.
+      inv Horder. }
+    specialize (init_m13 not_vol). specialize (init_m14 not_vol).
+    specialize (init_m23 not_vol). specialize (init_m24 not_vol).
+    assert (list_forall2 (memval_inject init_meminj)
+                         (Genv.bytes_of_init_data_list ge1 (gvar_init gv))
+                         (Genv.bytes_of_init_data_list ge2 (gvar_init gv)))
+      as inj.
+    { eapply bytes_of_init_data_list_inject; eauto;
+        apply Genv.find_var_info_iff; eauto. }
+    Local Transparent Mem.loadbytes.
+    unfold Mem.loadbytes in init_m14, init_m24.
+    Local Opaque Mem.loadbytes.
+    destruct andb in init_m14; try congruence.
+    destruct andb in init_m24; try congruence.
+    set (sz := init_data_list_size (gvar_init gv)) in *.
+    assert (sz = Z.of_nat (Z.to_nat sz)) as sz_eq.
+    { pose proof (init_data_list_size_pos (gvar_init gv)). lia. }
+    rewrite sz_eq in Hrange. destruct Hrange as [Hrange1 Hrange2].
+    assert (Genv.bytes_of_init_data_list ge1 (gvar_init gv) =
+              Mem.getN (Z.to_nat sz) 0 (Mem.mem_contents m1)!!b1)
+      as E1 by congruence.
+    clear init_m14.
+    assert (Genv.bytes_of_init_data_list ge2 (gvar_init gv) =
+              Mem.getN (Z.to_nat sz) 0 (Mem.mem_contents m2)!!b2)
+      as E2 by congruence.
+    clear init_m24.
+    rewrite E1, E2 in inj.
+    apply (Mem_getN_forall2 _ _ _ _ _ _ inj Hrange1 Hrange2).
 Qed.
 
 Definition globdef_blocks p1 p2 '(id, gd) b1 b2 :=
@@ -5046,52 +5072,8 @@ Proof.
   rewrite SYM2 in SYM2'. injection SYM2' as <-.
   rewrite SIDE in GLOBDEFS. simpl in GLOBDEFS.
   setoid_rewrite DEF1 in GLOBDEFS. setoid_rewrite DEF2 in GLOBDEFS.
-  injection GLOBDEFS as <-. reflexivity.
+  inv GLOBDEFS; simpl in *; trivial.
 Qed.
-
-Lemma globdef_left id fd1 gd2 b1 b2 cp
-  (COMP : Genv.find_comp_of_ident (Genv.globalenv W1) id = Some cp)
-  (SIDE : s cp = Left)
-  (SYM1 : Genv.find_symbol ge1 id = Some b1)
-  (SYM2 : Genv.find_symbol ge2 id = Some b2)
-  (DEF1 : Genv.find_def (Genv.globalenv W1) b1 = Some (Gfun fd1))
-  (DEF2 : Genv.find_def (Genv.globalenv W2) b2 = Some gd2):
-  Gfun fd1 = gd2.
-Proof.
-  (* If [prog_defs p1 = prog_defs p2] (or if we are only concerned
-     with public symbols, given the existing definition of
-     [match_prog_globdefs], this is easy and could even be made a bit
-     more general. For us, this implies [prog_defs W1 = prog_defs W2],
-     if we reason explicitly about linking. *)
-  assert (DEFMAP1: (prog_defmap W1) ! id = Some (Gfun fd1))
-    by (eapply Genv.find_def_symbol; eauto).
-  assert (DEFMAP2: (prog_defmap W2) ! id = Some gd2)
-    by (eapply Genv.find_def_symbol; eauto).
-  (* assert (DEFS: prog_defs W1 = prog_defs W2). { ... } *)
-  assert (DEFMAP: prog_defmap W1 = prog_defmap W2).
-  { unfold prog_defmap. setoid_rewrite prog_defs_W1_W2. reflexivity. }
-  congruence.
-Qed.
-
-Lemma init_mem_characterization_rel' sp (pr1 pr2: program) id gd m1 m2
-      (MATCH: match_prog sp pr1 pr2)
-      (PROGDEFS1: In (id, gd) (prog_defs pr1))
-      (PROGDEFS2: In (id, gd) (prog_defs pr2))
-      (MEM1: Genv.init_mem pr1 = Some m1)
-      (MEM2: Genv.init_mem pr2 = Some m2):
-  (forall b1 b2 ofs k p,
-     globdef_blocks pr1 pr2 (id, gd) b1 b2 ->
-     Mem.perm m1 b1 ofs k p <-> Mem.perm m2 b2 ofs k p) /\
-  (forall b1 b2 cp,
-     globdef_blocks pr1 pr2 (id, gd) b1 b2 ->
-     Mem.can_access_block m1 b1 cp <-> Mem.can_access_block m2 b2 cp) /\
-  (* Any restrictions on gvar_init and init_data, esp. Init_addrof? *)
-  (forall b1 b2 ofs,
-     globdef_blocks pr1 pr2 (id, gd) b1 b2 ->
-     Mem.perm m1 b1 ofs Cur Readable ->
-     memval_inject init_meminj (ZMap.get ofs (Mem.mem_contents m1) !! b1)
-                               (ZMap.get ofs (Mem.mem_contents m2) !! b2)).
-Abort.
 
 (* TODO: relocate *)
 Lemma global_addresses_distinct_id
@@ -5133,8 +5115,6 @@ Proof.
         injection INJ as -> <-.
         (* Post standard processing *)
         destruct (Genv.find_symbol_find_def_inversion _ _ SYM2) as (gd2 & DEF2).
-        assert (Gfun fd1 = gd2) as <- by (eapply globdef_left; eassumption).
-        rename fd1 into fd.
         assert (INJ: init_meminj b1 = Some (b2, 0)). { (* inversion lemma? *)
           unfold init_meminj, init_meminj_block.
           unfold match_type_of_ident.
@@ -5143,8 +5123,8 @@ Proof.
           rewrite SIDE. rewrite SYM2. setoid_rewrite DEF1.
           rewrite public_id. reflexivity. }
         destruct (init_mem_characterization_rel
-                    _ _ _ _ _
-                    MEM1 MEM2 INJ DEF1 DEF2)
+                    _ _ _ _
+                    MEM1 MEM2 INJ)
           as (PERMS & _).
         apply PERMS. rewrite Z.add_0_r. assumption.
       * destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [| discriminate].
@@ -5154,16 +5134,14 @@ Proof.
         apply Genv.invert_find_symbol in SYM1.
         destruct (Genv.find_symbol_find_def_inversion _ _ SYM1) as (gd1 & DEF1).
         destruct (Genv.find_symbol_find_def_inversion _ _ SYM2) as (gd2 & DEF2).
-        assert (gd1 = gd2) as <- by (eapply globdef_right; eassumption).
-        rename gd1 into gd.
         assert (INJ: init_meminj b1 = Some (b2, 0)). { (* inversion lemma? *)
           unfold init_meminj, init_meminj_block.
           apply Genv.find_invert_symbol in SYM1. rewrite SYM1.
           setoid_rewrite COMP.
           rewrite SIDE. rewrite SYM2. reflexivity. }
         destruct (init_mem_characterization_rel
-                    _ _ _ _ _
-                    MEM1 MEM2 INJ DEF1 DEF2)
+                    _ _ _ _
+                    MEM1 MEM2 INJ)
           as (PERMS & _).
         apply PERMS. rewrite Z.add_0_r. assumption.
     + unfold init_meminj, init_meminj_block.
@@ -5184,36 +5162,32 @@ Proof.
         injection INJ as -> <-.
         (* Post standard processing *)
         destruct (Genv.find_symbol_find_def_inversion _ _ SYM2) as (gd2 & DEF2).
-        assert (Gfun fd1 = gd2) as <- by (eapply globdef_left; eassumption).
-        rename fd1 into fd.
         assert (INJ: init_meminj b1 = Some (b2, 0)). { (* inversion lemma? *)
           unfold init_meminj, init_meminj_block.
           apply Genv.find_invert_symbol in SYM1. rewrite SYM1.
           setoid_rewrite COMP.
           rewrite SIDE. rewrite SYM2. setoid_rewrite DEF1. rewrite public_id. reflexivity. }
         destruct (init_mem_characterization_rel
-                    _ _ _ _ _
-                    MEM1 MEM2 INJ DEF1 DEF2)
+                    _ _ _ _
+                    MEM1 MEM2 INJ)
           as (_ & BLOCKS & _).
-        apply BLOCKS. assumption.
+        destruct cp as [cp|]; trivial. simpl in *; congruence.
       * destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [| discriminate].
         injection INJ as -> <-.
         (* Post standard processing *)
         apply Genv.invert_find_symbol in SYM1.
         destruct (Genv.find_symbol_find_def_inversion _ _ SYM1) as (gd1 & DEF1).
         destruct (Genv.find_symbol_find_def_inversion _ _ SYM2) as (gd2 & DEF2).
-        assert (gd1 = gd2) as <- by (eapply globdef_right; eassumption).
-        rename gd1 into gd.
         assert (INJ: init_meminj b1 = Some (b2, 0)). { (* inversion lemma? *)
           unfold init_meminj, init_meminj_block.
           apply Genv.find_invert_symbol in SYM1. rewrite SYM1.
           setoid_rewrite COMP.
           rewrite SIDE. rewrite SYM2. reflexivity. }
         destruct (init_mem_characterization_rel
-                    _ _ _ _ _
-                    MEM1 MEM2 INJ DEF1 DEF2)
+                    _ _ _ _
+                    MEM1 MEM2 INJ)
           as (_ & BLOCKS & _).
-        apply BLOCKS. assumption.
+        unfold Mem.can_access_block in *. rewrite <- BLOCKS. trivial.
     + unfold init_meminj, init_meminj_block.
       intros b1 b2 delta chunk ofs p INJ RANGE.
       destruct (Genv.invert_symbol ge1 b1) as [id |] eqn:SYM1; [| discriminate].
@@ -5253,16 +5227,14 @@ Proof.
         injection INJ as -> <-.
         (* Post standard processing *)
         destruct (Genv.find_symbol_find_def_inversion _ _ SYM2) as (gd2 & DEF2).
-        assert (Gfun fd1 = gd2) as <- by (eapply globdef_left; eassumption).
-        rename fd1 into fd.
         assert (INJ: init_meminj b1 = Some (b2, 0)). { (* inversion lemma? *)
           unfold init_meminj, init_meminj_block.
           apply Genv.find_invert_symbol in SYM1. rewrite SYM1.
           setoid_rewrite COMP.
           rewrite SIDE. rewrite SYM2. setoid_rewrite DEF1. rewrite public_id. reflexivity. }
         destruct (init_mem_characterization_rel
-                    _ _ _ _ _
-                    MEM1 MEM2 INJ DEF1 DEF2)
+                    _ _ _ _
+                    MEM1 MEM2 INJ)
           as (_ & _ & MEMVAL).
         rewrite Z.add_0_r. exact (MEMVAL ofs PERM).
       * destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [| discriminate].
@@ -5271,16 +5243,14 @@ Proof.
         apply Genv.invert_find_symbol in SYM1.
         destruct (Genv.find_symbol_find_def_inversion _ _ SYM1) as (gd1 & DEF1).
         destruct (Genv.find_symbol_find_def_inversion _ _ SYM2) as (gd2 & DEF2).
-        assert (gd1 = gd2) as <- by (eapply globdef_right; eassumption).
-        rename gd1 into gd.
         assert (INJ: init_meminj b1 = Some (b2, 0)). { (* inversion lemma? *)
           unfold init_meminj, init_meminj_block.
           apply Genv.find_invert_symbol in SYM1. rewrite SYM1.
           setoid_rewrite COMP.
           rewrite SIDE. rewrite SYM2. reflexivity. }
         destruct (init_mem_characterization_rel
-                    _ _ _ _ _
-                    MEM1 MEM2 INJ DEF1 DEF2)
+                    _ _ _ _
+                    MEM1 MEM2 INJ)
           as (_ & _ & MEMVAL).
         rewrite Z.add_0_r. exact (MEMVAL ofs PERM).
   - intros b VALID. unfold init_meminj, init_meminj_block.
@@ -5400,16 +5370,14 @@ Proof.
       injection INJ as -> <-.
       (* Post standard processing *)
       destruct (Genv.find_symbol_find_def_inversion _ _ SYM2) as (gd2 & DEF2).
-      assert (Gfun fd1 = gd2) as <- by (eapply globdef_left; eassumption).
-      rename fd1 into fd.
       assert (INJ: init_meminj b1 = Some (b2, 0)). { (* inversion lemma? *)
         unfold init_meminj, init_meminj_block.
         apply Genv.find_invert_symbol in SYM1. rewrite SYM1.
         setoid_rewrite COMP.
         rewrite SIDE. rewrite SYM2. setoid_rewrite DEF1. rewrite public_id. reflexivity. }
       destruct (init_mem_characterization_rel
-                  _ _ _ _ _
-                  MEM1 MEM2 INJ DEF1 DEF2)
+                  _ _ _ _
+                  MEM1 MEM2 INJ)
         as (PERMS & _).
       left. apply PERMS. rewrite Z.add_0_r in PERM. assumption.
     + destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [| discriminate].
@@ -5418,16 +5386,14 @@ Proof.
       apply Genv.invert_find_symbol in SYM1.
       destruct (Genv.find_symbol_find_def_inversion _ _ SYM1) as (gd1 & DEF1).
       destruct (Genv.find_symbol_find_def_inversion _ _ SYM2) as (gd2 & DEF2).
-      assert (gd1 = gd2) as <- by (eapply globdef_right; eassumption).
-      rename gd1 into gd.
       assert (INJ: init_meminj b1 = Some (b2, 0)). { (* inversion lemma? *)
         unfold init_meminj, init_meminj_block.
         apply Genv.find_invert_symbol in SYM1. rewrite SYM1.
         setoid_rewrite COMP.
         rewrite SIDE. rewrite SYM2. reflexivity. }
       destruct (init_mem_characterization_rel
-                  _ _ _ _ _
-                  MEM1 MEM2 INJ DEF1 DEF2)
+                  _ _ _ _
+                  MEM1 MEM2 INJ)
         as (PERMS & _).
       left. apply PERMS. rewrite Z.add_0_r in PERM. assumption.
 Qed.
@@ -5491,10 +5457,21 @@ Proof.
       destruct (Genv.public_symbol ge1 id) eqn:public_id; try congruence.
       injection b1_b2 as -> <-.
       (* Continue *)
-      destruct (Genv.find_symbol_find_def_inversion _ _ SYM2) as (gd2 & DEF2).
-      destruct (globdef_left _ _ _ _ _ _ COMP SIDE SYM1 SYM2 DEF1 DEF2).
-      simpl. unfold Genv.block_is_volatile, Genv.find_var_info.
-      setoid_rewrite DEF1. setoid_rewrite DEF2. reflexivity.
+      pose proof (match_prog_idents _ _ _ match_W1_W2 id) as match_id.
+      assert (match_type_of_ident s ge1 id = Some Left).
+      { unfold match_type_of_ident.
+        setoid_rewrite COMP. rewrite SIDE, public_id. trivial. }
+      destruct match_id as [δ type1 type2 match_id|]; try congruence.
+      assert (δ = Left) as -> by congruence.
+      unfold def_of_ident in *.
+      rewrite SYM1, SYM2 in match_id.
+      setoid_rewrite DEF1 in match_id.
+      apply option_rel_inv_some_1 in match_id.
+      destruct match_id as (gd2 & DEF2 & match_fd).
+      simpl.
+      unfold Genv.block_is_volatile, Genv.find_var_info.
+      setoid_rewrite DEF1. setoid_rewrite DEF2.
+      now inv match_fd.
     + destruct (Genv.find_symbol ge2 id) as [b' |] eqn:SYM2; [| discriminate].
       injection b1_b2 as -> <-.
       (* Continue *)
@@ -5571,24 +5548,22 @@ Lemma initial_state_injection s1 s2 :
   exists j,
     right_state_injection s j ge1 ge2 s1 s2.
 Proof.
-  intros [b1 main1 m1 ge1 MEM1 MAINSYM1 MAINBLOCK1 MAINTYPE1]
-         [b2 main2 m2 ge2 MEM2 MAINSYM2 MAINBLOCK2 MAINTYPE2].
+  intros [b1 main1 m1 ge1' MEM1 MAINSYM1 MAINBLOCK1 MAINTYPE1]
+         [b2 main2 m2 ge2' MEM2 MAINSYM2 MAINBLOCK2 MAINTYPE2].
   exists init_meminj.
   assert (RMEMINJ := initial_mem_injection _ _ MEM1 MEM2).
-  (* assert (exists j, *)
-  (*           right_mem_injection s j Simulation.ge1 Simulation.ge2 m1 m2) *)
-  (*   as (j & RMEMINJ). { *)
-  (*   clear s1 s2 b1 b2 main1 main2 *)
-  (*         MAINSYM1 MAINSYM2 MAINBLOCK1 MAINBLOCK2 MAINTYPE1 MAINTYPE2. *)
-  (*   admit. } *)
   assert (RCONTINJ: right_cont_injection s init_meminj Kstop Kstop) by constructor.
   assert (VALINJ: Val.inject_list init_meminj nil nil) by constructor.
   rewrite (match_prog_main _ _ _ match_W1_W2) in MAINSYM2.
-  assert (MAINSYM1': Genv.find_symbol ge1 (prog_main W1) <> None) by congruence.
+  change ge1' with (genv_genv ge1) in *.
+  change ge2' with (genv_genv ge2) in *.
+  clear ge1' ge2'.
+  assert (MAINSYM1': Genv.find_symbol ge1 (prog_main W1) <> None).
+  { setoid_rewrite MAINSYM1. congruence. }
   assert (COMP1 := Genv.find_funct_ptr_find_comp_of_block _ _ MAINBLOCK1).
   assert (COMP1': Genv.find_comp_of_ident ge1 (prog_main W1) =
                   Some (comp_of main1)). {
-    unfold Genv.find_comp_of_ident. rewrite MAINSYM1. assumption. }
+    unfold Genv.find_comp_of_ident. setoid_rewrite MAINSYM1. assumption. }
   exploit (@match_prog_globdefs' (prog_main W1) (comp_of main1)); eauto.
   { right. left.
     unfold Genv.public_symbol. simpl.
@@ -5597,13 +5572,11 @@ Proof.
     exfalso. apply NOTIN. setoid_rewrite (Genv.globalenv_public W1).
     exact (main_is_public W1). }
   intros (b1' & b2' & MAINSYM1'' & MAINSYM2'' & MATCHDEFS).
-  unfold Simulation.ge1 in MAINSYM1''. unfold ge1 in MAINSYM1.
   setoid_rewrite MAINSYM1 in MAINSYM1''.
   injection MAINSYM1'' as <-.
-  unfold Simulation.ge2 in MAINSYM2''. unfold ge2 in MAINSYM2.
   setoid_rewrite MAINSYM2 in MAINSYM2''.
   injection MAINSYM2'' as <-.
-  unfold match_opt_globdefs in MATCHDEFS. destruct (s (comp_of main1)) eqn:SIDE.
+  destruct (s (comp_of main1)) eqn:SIDE.
   - assert (COMP2: comp_of main1 = comp_of main2). {
       apply Genv.find_funct_ptr_iff in MAINBLOCK1, MAINBLOCK2.
       unfold Simulation.ge1 in MATCHDEFS. simpl in MATCHDEFS.
@@ -5617,9 +5590,10 @@ Proof.
       inversion MATCHDEFS; reflexivity. }
     apply LeftControl; try easy.
     simpl. setoid_rewrite <- COMP2. assumption.
-  - apply Genv.find_funct_ptr_iff in MAINBLOCK1, MAINBLOCK2.
-    simpl in MATCHDEFS. unfold ge2 in MAINBLOCK2.
-    setoid_rewrite <- MATCHDEFS in MAINBLOCK2.
+  - assert (E : Genv.find_def ge1 b1 = Genv.find_def ge2 b2).
+    { destruct MATCHDEFS; simpl in *; congruence. }
+    apply Genv.find_funct_ptr_iff in MAINBLOCK1, MAINBLOCK2.
+    setoid_rewrite <- E in MAINBLOCK2.
     unfold ge1 in MAINBLOCK1. setoid_rewrite MAINBLOCK1 in MAINBLOCK2.
     injection MAINBLOCK2 as <-.
     apply RightControl; try assumption.
