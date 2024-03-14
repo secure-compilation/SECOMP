@@ -99,9 +99,10 @@ Running the `test_backtranslation` binary performs the testing.
 
 This branch contains the recomposition proof. Use `make proof` to replay the proof.
 
-This proof is complete and done in a slightly more complex setting where system calls
-can belong to particular compartments. Also some recent changes to the mainline
-`ccs-submission` branch are in the process of being integrated.
+The proof is complete. This proof is done in a slightly more complex setting
+where system calls can belong to particular compartments. Also some recent
+changes to the mainline `ccs-submission` branch are in the process of being
+integrated.
 
 The memory deltas are defined in the file `security/MemoryDelta.v`.
 
@@ -147,10 +148,21 @@ There are a few admitted low-level lemmas, which are of two types:
 
 This branch contains the blame proof. Use `make proof` to replay the proof.
 
-The high-level structure of the proof is complete.  Some recent changes to the
-mainline `ccs-submission` branch are in the process of being integrated.
+The proof is complete. Some recent changes to the mainline `ccs-submission`
+branch are in the process of being integrated.
 
-Definition 6 (Blame) can be found in file `security/Blame.v`, theorem `blame_program`.
+The main blame theorem can be found in file `security/Blame.v`, theorem
+`does_prefix_star`.
+
+Definition 6 (Blame) can be found in file `security/Blame.v`, theorem
+`blame_program`.
+
+- This follows directly from `does_prefix_star` and uses a simple technical
+  lemma that is to be proved after integration on the mainline `ccs-submission`
+  branch.
+
+- Theorem `blame` is a simple corollary that matches the one used in the
+  top-level security proof.
 
 Full program run lemmas: file `security/Blame.v`, theorems `parallel_exec` and
 `parallel_exec'`.
@@ -160,13 +172,6 @@ and `parallel_exec1`.
 
 Stepwise lemmas: file `security/Blame.v`, theorems `parallel_concrete` and
 `parallel_abstract_t`.
-
-There are a few admitted low-level lemmas, of three types:
-- a few purely technical lemmas
-- symmetric lemmas, completely analogous to existing ones
-- a few lemmas that rely more precise characterization of the interplay between
-  system calls and compartments (for instance, the fact that system calls
-  do not arbitrarily modify the memory of other compartments).
 
 ### Capability backend
 
