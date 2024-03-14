@@ -588,14 +588,6 @@ Section Simulation.
   Hypothesis W1_gvars: wf_gvar_init ge1.
   Hypothesis W2_gvars: wf_gvar_init ge2.
 
-  (* TODO: Move this to axiomatization of EC, this is simply an
-     adaptation to the slightly stronger preservation properties that
-     we used in [Globalenv] to prove the memory characterizations. *)
-  Hypothesis ec_mem_outside_compartment':
-    forall ef ge vargs m1 t vres m2,
-      external_call ef ge vargs m1 t vres m2 ->
-      Genv.unchanged_on (loc_not_in_compartment (comp_of ef) m1) m1 m2.
-
   (* TODO: Move this *)
   Definition loc_public_inside_compartment (* cp *) (ge: genv) (* m *) b (ofs: Z) :=
     exists id fd,
