@@ -620,8 +620,8 @@ meminj_preserves_globals which will allow us to prove preservation of events.
       find_def_perm1: forall b fd, Genv.find_def ge1 b = Some (Gfun fd) -> forall ofs, not (Mem.perm m1 b ofs Max Readable);
       find_def_perm2: forall b fd, Genv.find_def ge2 b = Some (Gfun fd) -> forall ofs, not (Mem.perm m2 b ofs Max Readable);
 
-      same_high_half: forall id ofs,
-        Val.inject j (high_half ge1 id ofs) (high_half ge2 id ofs)
+      (* same_high_half: forall id ofs, *)
+      (*   Val.inject j (high_half ge1 id ofs) (high_half ge2 id ofs) *)
     }.
 
   Variant comp_of_state (ge: genv): state -> compartment -> Prop :=
@@ -869,7 +869,7 @@ Proof.
   - intros. eapply find_def_perm1 with (b := b0) in m1_m3; eauto.
     intros n. apply m1_m3. eapply Mem.perm_store_2; eauto.
   - intros. eapply find_def_perm2 with (b := b0) in m1_m3; eauto.
-  - intros. eapply same_high_half; eauto.
+  (* - intros. eapply same_high_half; eauto. *)
   - { rename H into j_b.
       induction st_rel.
       constructor; eauto.
@@ -1033,7 +1033,7 @@ Proof.
     intros ->. eapply Plt_strict.
     eapply Plt_Ple_trans; eauto.
   - intros. eapply find_def_perm2; eauto.
-  - intros id ofs. eapply val_inject_incr; eauto using same_high_half.
+  (* - intros id ofs. eapply val_inject_incr; eauto using same_high_half. *)
   - { eapply inject_incr_stack_rel1; eauto.
       induction st_rel.
       - constructor; eauto.
@@ -1205,8 +1205,8 @@ Proof.
   - intros. intros n. eapply external_call_max_perm in n; eauto.
     exploit find_def_perm2; eauto.
     eapply find_def_valid2; eauto.
-  - (* same high half *)
-    intros. eapply same_high_half in m1_m3; eauto.
+  (* same high half *)
+    (* intros. eapply same_high_half in m1_m3; eauto. *)
   - eapply inject_incr_stack_rel1; eauto.
     induction st_rel;
       econstructor; eauto.
@@ -1516,8 +1516,8 @@ Proof.
     eapply find_def_valid1; eauto.
   - (* find def perm 2 *)
     eapply find_def_perm2; eauto.
-  - (* same high half *)
-    intros. eapply same_high_half in m1_m3; eauto.
+  (* - (* same high half *) *)
+  (*   intros. eapply same_high_half in m1_m3; eauto. *)
   - induction st_rel;
       constructor; eauto.
     inv H.
@@ -2090,8 +2090,8 @@ Proof.
     intros. intros n. eapply external_call_max_perm in n; eauto.
     exploit find_def_perm2; eauto.
     eapply find_def_valid2; eauto.
-  - (* same high half *)
-    intros. eapply same_high_half in m1_m3; eauto.
+  (* - (* same high half *) *)
+  (*   intros. eapply same_high_half in m1_m3; eauto. *)
 Qed.
 
   Lemma alloc_preserves_rel1:
@@ -2210,9 +2210,9 @@ Qed.
         eapply Genv.find_def_find_symbol_inversion in H3 as [id H3]; eauto.
         exploit (Senv.find_symbol_below (Genv.globalenv W3)); eauto. intros ?.
         exploit (Mem.alloc_result m3); eauto. intros -> ->.
-        eapply Plt_strict. eapply Plt_Ple_trans; eauto.
-      - intros id ofs.
-        exploit same_high_half; eauto. }
+        eapply Plt_strict. eapply Plt_Ple_trans; eauto. }
+      (* - intros id ofs. *)
+      (*   exploit same_high_half; eauto. } *)
     { clear dependent j__δ.
       destruct m2_m3.
       constructor; eauto.
@@ -2430,8 +2430,8 @@ Qed.
         eapply Genv.find_def_find_symbol_inversion in H as [id H]; eauto.
         exploit (Senv.find_symbol_below (Genv.globalenv W3)); eauto. intros ?.
         eapply Plt_strict. eapply Plt_Ple_trans; eauto using ple_nextblock2.
-      - intros id ofs.
-        exploit same_high_half; eauto.
+      (* - intros id ofs. *)
+      (*   exploit same_high_half; eauto. *)
     }
     { clear dependent j__δ.
       destruct m2_m3.
@@ -2676,8 +2676,9 @@ Qed.
         exploit (Senv.find_symbol_below (Genv.globalenv W3)); eauto. intros ?.
         exploit (Mem.alloc_result m3); eauto. intros -> ->.
         eapply Plt_strict. eapply Plt_Ple_trans; eauto.
-      - intros id ofs.
-        exploit same_high_half; eauto. }
+      (* - intros id ofs. *)
+      (*   exploit same_high_half; eauto. } *)
+    }
     { clear dependent j__δ.
       destruct m2_m3.
       constructor; eauto.
@@ -2893,8 +2894,8 @@ Qed.
         eapply Genv.find_def_find_symbol_inversion in H as [id H]; eauto.
         exploit (Senv.find_symbol_below (Genv.globalenv W3)); eauto. intros ?.
         eapply Plt_strict. eapply Plt_Ple_trans; eauto using ple_nextblock2.
-      - intros id ofs.
-        exploit same_high_half; eauto.
+      (* - intros id ofs. *)
+      (*   exploit same_high_half; eauto. *)
     }
     { clear dependent j__δ.
       destruct m2_m3.
@@ -3068,8 +3069,9 @@ Qed.
       - intros. intros n.
         eapply find_def_perm2; eauto.
         eapply Mem.perm_free_3; eauto.
-      - intros id ofs.
-        exploit same_high_half; eauto. }
+      (* - intros id ofs. *)
+      (*   exploit same_high_half; eauto. } *)
+    }
     { destruct m2_m3.
       constructor; auto.
       - eapply Mem.free_right_inject; eauto.
@@ -3311,8 +3313,9 @@ Proof.
         eapply Mem.perm_store_2; eauto.
       - intros; intros n. exploit find_def_perm2; eauto.
         eapply Mem.perm_store_2; eauto.
-      - intros id ofs0.
-        exploit same_high_half; eauto. }
+      (* - intros id ofs0. *)
+      (*   exploit same_high_half; eauto. } *)
+    }
     { destruct m2_m3.
       constructor; eauto.
       - eapply Mem.store_outside_inject; eauto.
@@ -4668,7 +4671,8 @@ Section Theorems.
           eapply find_def_perm1; eauto.
           eapply Mem.perm_free_3; eauto.
         + intros. eapply find_def_perm2; eauto.
-        + intros. eapply same_high_half; eauto. }
+        (* + intros. eapply same_high_half; eauto. } *)
+      }
       { induction st_rel.
         constructor.
         constructor; eauto.
@@ -7801,7 +7805,19 @@ Qed.
                                mem_rel s ge1 ge3 (init_meminj s Left W1 W3) Left m1 m3.
   Proof.
     intros. constructor.
-    - intros ?. simpl. unfold init_meminj. admit.
+    - intros ?. simpl. unfold init_meminj.
+      split.
+      + destruct Genv.invert_symbol eqn:IS; try congruence.
+        destruct kept_genv eqn:EQ; try congruence.
+        apply Genv.invert_find_symbol in IS.
+        unfold kept_genv in EQ. rewrite IS in EQ.
+        fold (Genv.find_def ge1 b) in EQ. destruct Genv.find_def as [[]|] eqn:FD; try now auto.
+        * intros; now right; eauto.
+        * intros ?. left.
+          exploit (Genv.init_mem_find_def W1); eauto. intros ->.
+          simpl in *.
+          now destruct side_eq.
+      + admit.
     - constructor.
       + { constructor; intros.
           - exploit init_meminj_invert; eauto.
@@ -7959,7 +7975,9 @@ Qed.
       assert (Genv.init_mem W1 = Some m1 ->
              Mem.valid_block m1 b ->
              exists gd, Genv.find_def ge1 b = Some gd).
-      { admit. }
+      { clear.
+        revert m1.
+        unfold Genv.init_mem. admit. }
       exploit H2; eauto. eapply Mem.perm_valid_block; eauto.
       intros [gd G].
       admit.
@@ -7972,23 +7990,6 @@ Qed.
       simpl. admit.
     - intros. exploit (Genv.init_mem_characterization_gen W3); eauto.
       simpl. admit.
-    - intros. unfold high_half.
-      destruct (Genv.find_symbol ge1 id) eqn:?; try now constructor.
-      exploit Genv.init_mem_characterization_gen; eauto.
-
-        exploit (Genv.init_mem_characterization_gen W3); eauto.
-      intros. eapply Genv.find_def_not_fresh; eauto.
-    - intros. eapply Genv.find_def_not_fresh; eauto.
-      unfold Genv.init_mem in *.
-
-      exploit init_meminj_invert; eauto.
-      intros [? [? [? ?]]]. subst.
-        eapply Genv.find_symbol_find_def_inversion in H4 as G1.
-        destruct G1 as [gd G1].
-        eapply Genv.find_symbol_find_def_inversion in H5 as G2.
-        destruct G2 as [gd' G2].
-        exploit (Genv.init_mem_characterization_gen W1); eauto.
-        exploit (Genv.init_mem_characterization_gen W3); eauto.
 Qed.
 
 Lemma init_mem_inj_2:
