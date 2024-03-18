@@ -1773,7 +1773,7 @@ Lemma alloc_global_match:
   initial_mem_match bc m' (Genv.add_global g idg).
 Proof.
   intros; red; intros. destruct idg as [id1 [fd |gv]]; simpl in *.
-- destruct (Mem.alloc m _ 0 1) as [m1 b1] eqn:ALLOC.
+- destruct (Mem.alloc m _ 0 0) as [m1 b1] eqn:ALLOC.
   unfold Genv.find_symbol in H2; simpl in H2.
   unfold Genv.find_var_info, Genv.find_def in H3; simpl in H3.
   rewrite PTree.gsspec in H2. destruct (peq id id1).
