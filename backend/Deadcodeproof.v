@@ -43,7 +43,8 @@ Record magree (m1 m2: mem) (P: locset) : Prop := mk_magree {
     forall b ofs k p,
       Mem.perm m1 b ofs k p -> Mem.perm m2 b ofs k p;
   ma_access:
-    forall b cp,
+    forall b cp ofs k p,
+      Mem.perm m1 b ofs k p ->
       Mem.can_access_block m1 b cp -> Mem.can_access_block m2 b cp;
   ma_perm_inv:
     forall b ofs k p,
@@ -112,13 +113,24 @@ Local Transparent Mem.loadbytes.
   unfold Mem.loadbytes; intros. destruct H.
   destruct (Mem.range_perm_dec m1 b ofs (ofs + n) Cur Readable);
     destruct (Mem.can_access_block_dec m1 b cp);
+    destruct Z_le_dec;
     inv H0.
-  setoid_rewrite pred_dec_true. simpl. econstructor; split; eauto.
+  setoid_rewrite pred_dec_true at 1. rewrite orb_true_r. simpl. econstructor; split; eauto.
   apply GETN. intros. rewrite Z_to_nat_max in H.
   assert (ofs <= i < ofs + n) by extlia.
   apply ma_memval0; auto.
   red; intros; eauto.
-  eapply ma_access0; eauto.
+  setoid_rewrite pred_dec_true at 1 2. simpl. econstructor; split; eauto.
+  apply GETN. intros. rewrite Z_to_nat_max in H.
+  assert (ofs <= i < ofs + n) by extlia.
+  apply ma_memval0; auto.
+  red; intros; eauto.
+  eapply ma_access0; eauto. eapply r. instantiate (1 := ofs). lia.
+  setoid_rewrite pred_dec_true at 1. rewrite orb_true_r. simpl. econstructor; split; eauto.
+  apply GETN. intros. rewrite Z_to_nat_max in H.
+  assert (ofs <= i < ofs + n) by extlia.
+  apply ma_memval0; auto.
+  red; intros; eauto.
 Qed.
 
 Lemma magree_load:
@@ -166,13 +178,21 @@ Proof.
   { erewrite <- list_forall2_length by eauto. red; intros.
     eapply ma_perm; eauto.
     eapply Mem.storebytes_range_perm; eauto. }
-  { eapply ma_access; eauto.
-    eapply Mem.storebytes_can_access_block_1; eauto. }
+  { exploit Mem.storebytes_can_access_block_1; eauto.
+    erewrite list_forall2_length; eauto.
+    intros []; try now auto.
+    destruct (length bytes2) eqn:?; try now auto.
+    left. eapply ma_access; eauto.
+    eapply Mem.storebytes_range_perm; eauto.
+    instantiate (1 := ofs).
+    erewrite list_forall2_length; eauto.
+    lia. }
   exists m2'; split; auto.
   constructor; intros.
 - eapply Mem.perm_storebytes_1; eauto. eapply ma_perm; eauto.
   eapply Mem.perm_storebytes_2; eauto.
 - eapply Mem.storebytes_can_access_block_inj_1; eauto. eapply ma_access; eauto.
+  eapply Mem.perm_storebytes_2; eauto.
   eapply Mem.storebytes_can_access_block_inj_2; eauto.
 - exploit ma_perm_inv; eauto using Mem.perm_storebytes_2.
   intuition eauto using Mem.perm_storebytes_1, Mem.perm_storebytes_2.
@@ -219,7 +239,9 @@ Lemma magree_storebytes_left:
 Proof.
   intros. constructor; intros.
 - eapply ma_perm; eauto. eapply Mem.perm_storebytes_2; eauto.
-- eapply ma_access; eauto. eapply Mem.storebytes_can_access_block_inj_2; eauto.
+- eapply ma_access; eauto.
+  eapply Mem.perm_storebytes_2; eauto.
+  eapply Mem.storebytes_can_access_block_inj_2; eauto.
 - exploit ma_perm_inv; eauto.
   intuition eauto using Mem.perm_storebytes_1, Mem.perm_storebytes_2.
 - rewrite (Mem.storebytes_mem_contents _ _ _ _ _ _ H0).
@@ -257,7 +279,10 @@ Proof.
   intros.
   destruct (Mem.range_perm_free m2 b lo hi cp) as [m2' FREE].
   red; intros. eapply ma_perm; eauto. eapply Mem.free_range_perm; eauto.
-  eapply ma_access; eauto. eapply Mem.free_can_access_block_1; eauto.
+  exploit Mem.free_can_access_block_1; eauto. intros [? | ?]; try now auto.
+  destruct (zle hi lo); try now auto. left.
+  eapply ma_access; eauto.
+  eapply Mem.free_range_perm; eauto. instantiate (1 := lo). lia.
   exists m2'; split; auto.
   constructor; intros.
 - (* permissions *)
@@ -266,6 +291,7 @@ Proof.
   subst b0. eelim Mem.perm_free_2. eexact H0. eauto. eauto.
 - (* access *)
   eapply Mem.free_can_access_block_inj_1; eauto. eapply ma_access; eauto.
+  eapply Mem.perm_free_3; eauto.
   eapply Mem.free_can_access_block_inj_2; eauto.
 - (* inverse permissions *)
   exploit ma_perm_inv; eauto using Mem.perm_free_3. intros [A|A].
@@ -300,6 +326,7 @@ Proof.
   red; intros. eapply ma_perm; eauto.
   split; auto.
   eapply ma_access; eauto.
+  eapply H0. instantiate (1 := ofs). destruct chunk; simpl; lia.
 Qed.
 
 (** * Properties of the need environment *)
@@ -823,6 +850,8 @@ Proof.
   intros (tm' & P & Q).
   exists tm'; split. econstructor. econstructor; eauto.
   eapply ma_access; eauto.
+  eapply Mem.store_valid_access_3; eauto. instantiate (1 := Ptrofs.unsigned ofs).
+  destruct chunk; simpl; lia.
   auto.
 Qed.
 
@@ -1058,6 +1087,8 @@ Ltac UseTransfer :=
     intros (tv & P & Q).
     exists tv; split; auto. econstructor; eauto.
     eapply ma_access; eauto.
+    eapply Mem.load_valid_access; eauto. instantiate (1 := Ptrofs.unsigned ofs).
+    destruct chunk; simpl; lia.
   }
   destruct X as (tvres & P & Q).
   econstructor; split.
@@ -1141,8 +1172,7 @@ Ltac UseTransfer :=
   simpl in B1; inv B1. simpl in B2; inv B2. econstructor; eauto.
   eapply match_succ_states; eauto. simpl; auto.
   apply eagree_set_res; auto.
-+ (* memcpy eliminated *)
-  rewrite e1 in TI.
++ (* memcpy eliminated *) rewrite e1 in TI.
   inv H0. inv H6. inv H7. rename b1 into v1. rename b0 into v2.
   set (adst := aaddr_arg (vanalyze cu f) # pc dst) in *.
   set (asrc := aaddr_arg (vanalyze cu f) # pc src) in *.

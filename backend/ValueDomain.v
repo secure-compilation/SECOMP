@@ -3244,8 +3244,8 @@ Proof.
 - apply Zwf_well_founded.
 - intros sz REC ofs cp bytes LOAD IN.
   destruct (zle sz 0).
-  + rewrite (Mem.loadbytes_empty m b ofs sz cp) in LOAD; try auto;
-      [| eapply Mem.loadbytes_can_access_block_inj; eauto].
+  + rewrite (Mem.loadbytes_empty m b ofs sz cp) in LOAD; try auto.
+      (* [| eapply Mem.loadbytes_can_access_block_inj; eauto]. *)
     inv LOAD. contradiction.
   + exploit (Mem.loadbytes_split m b ofs 1 (sz - 1) cp bytes).
     replace (1 + (sz - 1)) with sz by lia. auto.

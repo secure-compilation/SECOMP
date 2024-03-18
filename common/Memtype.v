@@ -403,7 +403,6 @@ Axiom loadbytes_length:
 Axiom loadbytes_empty:
   forall m b ofs n cp,
   n <= 0 ->
-  can_access_block m b cp ->
   loadbytes m b ofs n cp = Some nil.
 
 (** Composing or decomposing [loadbytes] operations at adjacent addresses. *)
@@ -560,11 +559,12 @@ Axiom store_int16_sign_ext:
   Moreover, a [storebytes] succeeds if and only if we have write permissions
   on the addressed memory area. *)
 
-(* Now I see for example _valid_access_1 actually has two cp and the conclusion picks one, arbitrarily ... *)
+(* Now I see for example _valid_access_1 actually has two cp and
+ the conclusion picks one, arbitrarily ... *)
 Axiom range_perm_storebytes:
   forall m1 b ofs bytes cp,
   range_perm m1 b ofs (ofs + Z.of_nat (length bytes)) Cur Writable ->
-  can_access_block m1 b cp ->
+  can_access_block m1 b cp \/ length bytes = 0%nat ->
   { m2 : mem | storebytes m1 b ofs bytes cp = Some m2 }.
 Axiom storebytes_range_perm:
   forall m1 b ofs bytes cp m2, storebytes m1 b ofs bytes cp = Some m2 ->
@@ -749,7 +749,7 @@ Axiom load_alloc_same':
 Axiom range_perm_free:
   forall m1 b lo hi cp,
   range_perm m1 b lo hi Cur Freeable ->
-  can_access_block m1 b cp ->
+  can_access_block m1 b cp \/ hi <= lo ->
   { m2: mem | free m1 b lo hi cp = Some m2 }.
 Axiom free_range_perm:
   forall m1 bf lo hi cp m2, free m1 bf lo hi cp = Some m2 ->

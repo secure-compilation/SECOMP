@@ -1337,9 +1337,10 @@ Proof.
   exploit (Genv.init_mem_characterization_gen p); eauto.
   exploit (Genv.init_mem_characterization_gen tp); eauto.
   destruct gd as [f|v].
-+ intros (P2 & Q2) (P1 & Q1).
-  apply Q1 in H0. destruct H0. subst.
-  apply Mem.perm_cur. auto.
+  + intros ? ?. exploit H2; eauto. contradiction.
+(* + intros (P2 & Q2) (P1 & Q1). *)
+(*   apply Q1 in H0. destruct H0. subst. *)
+(*   apply Mem.perm_cur. auto. *)
 + intros (P2 & Q2 & R2 & S2) (P1 & Q1 & R1 & S1).
   apply Q1 in H0. destruct H0. subst.
   apply Mem.perm_cur. eapply Mem.perm_implies; eauto.
@@ -1366,20 +1367,39 @@ Proof.
   exploit (Genv.init_mem_characterization_gen p); eauto.
   exploit (Genv.init_mem_characterization_gen tp); eauto.
   destruct gd as [f|v].
-+ intros (P2 & Q2) (P1 & Q1).
-  apply Q1 in H0. destruct H0; discriminate.
+  + intros. exploit H2; eauto. contradiction.
+(* + intros (P2 & Q2) (P1 & Q1). *)
+(*   apply Q1 in H0. destruct H0; discriminate. *)
 + intros (P2 & Q2 & R2 & S2) (P1 & Q1 & R1 & S1).
   apply Q1 in H0. destruct H0.
   assert (NO: gvar_volatile v = false).
+
   { unfold Genv.perm_globvar in H1. destruct (gvar_volatile v); auto. inv H1. }
 Local Transparent Mem.loadbytes.
   generalize (S1 NO). unfold Mem.loadbytes. destruct Mem.range_perm_dec; destruct Mem.can_access_block_dec; intros E1; inv E1.
-  generalize (S2 NO). unfold Mem.loadbytes. destruct Mem.range_perm_dec; destruct Mem.can_access_block_dec; intros E2; inv E2.
-  rewrite Z.add_0_r.
-  apply Mem_getN_forall2 with (p := 0) (n := Z.to_nat (init_data_list_size (gvar_init v))).
-  rewrite H3, H4. apply bytes_of_init_inject. auto.
-  lia.
-  rewrite Z2Nat.id by (apply Z.ge_le; apply init_data_list_size_pos). lia.
+  * generalize (S2 NO). unfold Mem.loadbytes. destruct Mem.range_perm_dec; destruct Mem.can_access_block_dec; intros E2; inv E2.
+    rewrite Z.add_0_r.
+    apply Mem_getN_forall2 with (p := 0) (n := Z.to_nat (init_data_list_size (gvar_init v))).
+    rewrite H3, H4. apply bytes_of_init_inject. auto.
+    lia.
+    rewrite Z2Nat.id by (apply Z.ge_le; apply init_data_list_size_pos). lia.
+    destruct (Z_le_dec); inv H4.
+    rewrite Z.add_0_r.
+    apply Mem_getN_forall2 with (p := 0) (n := Z.to_nat (init_data_list_size (gvar_init v))).
+    rewrite H3, H5. apply bytes_of_init_inject. auto.
+    lia. lia.
+  * destruct (Z_le_dec); inv H3.
+    generalize (S2 NO). unfold Mem.loadbytes. destruct Mem.range_perm_dec; destruct Mem.can_access_block_dec; intros E2; inv E2.
+    rewrite Z.add_0_r.
+    apply Mem_getN_forall2 with (p := 0) (n := Z.to_nat (init_data_list_size (gvar_init v))).
+    rewrite H3, H4. apply bytes_of_init_inject. auto.
+    lia.
+    rewrite Z2Nat.id by (apply Z.ge_le; apply init_data_list_size_pos). lia.
+    destruct (Z_le_dec); inv H3.
+    rewrite Z.add_0_r.
+    apply Mem_getN_forall2 with (p := 0) (n := Z.to_nat (init_data_list_size (gvar_init v))).
+    rewrite H4, H5. apply bytes_of_init_inject. auto.
+    lia. lia.
 Qed.
 
 Lemma init_mem_inj_2:
@@ -1402,9 +1422,10 @@ Proof.
   exploit (Genv.init_mem_characterization_gen p); eauto.
   exploit (Genv.init_mem_characterization_gen tp); eauto.
   destruct gd as [f|v].
-+ intros (P2 & Q2) (P1 & Q1).
-  apply Q2 in H0. destruct H0. subst. replace ofs with 0 by lia.
-  left; apply Mem.perm_cur; auto.
+  + intros. exploit H1; eauto.
+(* + intros (P2 & Q2) (P1 & Q1). *)
+(*   apply Q2 in H0. destruct H0. subst. replace ofs with 0 by lia. *)
+(*   left; apply Mem.perm_cur; auto. *)
 + intros (P2 & Q2 & R2 & S2) (P1 & Q1 & R1 & S1).
   apply Q2 in H0. destruct H0. subst.
   left. apply Mem.perm_cur. eapply Mem.perm_implies; eauto.

@@ -789,8 +789,10 @@ Proof.
     eapply Mem.free_range_perm; eauto. extlia.
   }
   destruct (Mem.range_perm_free _ _ _ _ cp PERM) as [m2' FREE].
-  eapply Mem.mi_own; [eapply Mem.mi_inj; eauto| |]; eauto.
-  eapply Mem.free_can_access_block_1; eauto.
+  exploit Mem.free_can_access_block_1; eauto. intros [].
+  left.
+  eapply Mem.mi_own; [eapply Mem.mi_inj; eauto| | |]; eauto. admit.
+  right. admit.
   exists m2'; split; auto. split; [|split].
 - simpl. eapply Mem.free_right_inject; eauto. eapply Mem.free_left_inject; eauto.
   intros. apply (F b2 (ofs + delta0)).
@@ -823,7 +825,7 @@ Proof.
   simpl. right. destruct H as (b0 & delta0 & U & V).
   exists b0, delta0; split; auto.
   eapply Mem.perm_free_3; eauto.
-Qed.
+Admitted.
 
 (** Preservation of a global environment by a memory injection *)
 

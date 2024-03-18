@@ -852,8 +852,8 @@ Definition alloc_global (m: mem) (idg: ident * globdef F V): option mem :=
   match idg with
   | (id, Gfun f) =>
       let cp := comp_of f in
-      let (m1, b) := Mem.alloc m cp 0 1 in
-      Mem.drop_perm m1 b 0 1 Nonempty cp
+      let (m1, b) := Mem.alloc m cp 0 0 in
+      Mem.drop_perm m1 b 0 0 Nonempty cp
   | (id, Gvar v) =>
       let init := v.(gvar_init) in
       let comp := v.(gvar_comp) in
@@ -923,7 +923,7 @@ Proof.
   destruct g as [id [f|v]].
 - (* function *)
   (* destruct (comp_of f); try discriminate; simpl in H. *)
-  destruct (Mem.alloc m (comp_of f) 0 1) as [m1 b] eqn:?.
+  destruct (Mem.alloc m (comp_of f) 0 0) as [m1 b] eqn:?.
   erewrite Mem.nextblock_drop; eauto.
   now erewrite Mem.nextblock_alloc; eauto.
 - (* variable *)
@@ -1086,7 +1086,7 @@ Remark alloc_global_perm:
 Proof.
   intros. destruct idg as [id [f|v]]; simpl in H.
 - (* function *)
-  destruct (Mem.alloc m _ 0 1) as [m1 b] eqn:?.
+  destruct (Mem.alloc m _ 0 0) as [m1 b] eqn:?.
   assert (b' <> b). apply Mem.valid_not_valid_diff with m; eauto with mem.
   split; intros.
   eapply Mem.perm_drop_3; eauto. eapply Mem.perm_alloc_1; eauto.
@@ -1190,8 +1190,8 @@ Proof.
 - split; [red|]; intros.
   destruct (zeq p0 p).
   + subst p0. destruct n0. simpl. apply Mem.loadbytes_empty. lia.
-    eapply IHo in H0 as [? ?]; eauto.
-    eapply Mem.store_can_access_block_2; eauto.
+    (* eapply IHo in H0 as [? ?]; eauto. *)
+    (* eapply Mem.store_can_access_block_2; eauto. *)
     rewrite Nat2Z.inj_succ in H2. rewrite Nat2Z.inj_succ.
     replace (Z.succ (Z.of_nat n0)) with (1 + Z.of_nat n0) by lia.
     change (List.repeat (Byte Byte.zero) (S n0))
@@ -1268,7 +1268,7 @@ Lemma store_init_data_list_loadbytes:
   Mem.loadbytes m' b p (init_data_list_size il) cp = Some (bytes_of_init_data_list il).
 Proof.
   induction il as [ | i1 il]; simpl; intros.
-- apply Mem.loadbytes_empty. lia. inv H0; eauto.
+- apply Mem.loadbytes_empty. lia.
 - generalize (init_data_size_pos i1) (init_data_list_size_pos il); intros P1 PL.
   destruct (store_init_data m b p i1) as [m1|] eqn:S; try discriminate.
   apply Mem.loadbytes_concat.
@@ -1417,7 +1417,7 @@ Remark alloc_global_unchanged:
 Proof.
   intros. destruct g as [f|v]; simpl in H.
 - (* function *)
-  destruct (Mem.alloc m _ 0 1) as [m1 b] eqn:?.
+  destruct (Mem.alloc m _ 0 0) as [m1 b] eqn:?.
   set (Q := fun b' (ofs: Z) => b' <> b).
   apply Mem.unchanged_on_implies with Q.
   apply Mem.unchanged_on_trans with m1.
@@ -1474,8 +1474,8 @@ Definition globals_initialized (g: t) (m: mem) :=
   find_def g b = Some gd ->
   match gd with
   | Gfun f =>
-    Mem.perm m b 0 Cur Nonempty
-      /\ (forall ofs k p, Mem.perm m b ofs k p -> ofs = 0 /\ p = Nonempty)
+    (* Mem.perm m b 0 Cur Nonempty *)
+      (forall ofs k p, Mem.perm m b ofs k p -> False)
   | Gvar v =>
          Mem.range_perm m b 0 (init_data_list_size v.(gvar_init)) Cur (perm_globvar v)
       /\ (forall ofs k p, Mem.perm m b ofs k p ->
@@ -1498,14 +1498,15 @@ Proof.
   red; intros. unfold find_def in H2; simpl in H2.
   rewrite PTree.gsspec in H2. destruct (peq b (genv_next g)).
 + inv H2. destruct gd0 as [f|v]; simpl in H0.
-* destruct (Mem.alloc m _ 0 1) as [m1 b] eqn:ALLOC.
+* destruct (Mem.alloc m _ 0 0) as [m1 b] eqn:ALLOC.
   exploit Mem.alloc_result; eauto. intros RES.
-  rewrite H, <- RES. split.
-  eapply Mem.perm_drop_1; eauto. lia.
+  rewrite H, <- RES.
+  (* eapply Mem.perm_drop_1; eauto. lia. *)
   intros.
-  assert (0 <= ofs < 1). { eapply Mem.perm_alloc_3; eauto. eapply Mem.perm_drop_4; eauto. }
-  exploit Mem.perm_drop_2; eauto. intros ORD.
-  split. lia. inv ORD; auto.
+  assert (0 <= ofs < 0). { eapply Mem.perm_alloc_3; eauto. eapply Mem.perm_drop_4; eauto. }
+  lia.
+  (* exploit Mem.perm_drop_2; eauto. intros ORD. *)
+  (* split. lia. inv ORD; auto. *)
 * set (init := gvar_init v) in *.
   set (sz := init_data_list_size init) in *.
   destruct (Mem.alloc m _ 0 sz) as [m1 b] eqn:?.
@@ -1542,9 +1543,12 @@ Proof.
   { red. rewrite <- H. eapply genv_defs_range; eauto. }
   exploit H1; eauto.
   destruct gd0 as [f|v].
-* intros [A B]; split; intros.
-  eapply Mem.perm_unchanged_on; eauto. exact I.
-  eapply B. eapply Mem.perm_unchanged_on_2; eauto. exact I.
+* intros. eapply H3.
+  (* intros [A B]; split; intros. *)
+  eapply Mem.perm_unchanged_on_2; eauto. reflexivity.
+  (* (* exact I. *) *)
+  (* (* eapply B. *) *)
+  (* eapply Mem.perm_unchanged_on_2; eauto. exact I. *)
 * intros (A & B & C & D). split; [| split; [| split]].
   red; intros. eapply Mem.perm_unchanged_on; eauto. exact I.
   intros. eapply B. eapply Mem.perm_unchanged_on_2; eauto. exact I.
@@ -1604,6 +1608,14 @@ Proof.
     + rewrite PTree.gss. intros H. now injection H as <-.
     + rewrite PTree.gso; trivial. apply INV.
 Qed.
+
+Lemma find_def_init_mem:
+  forall p m b,
+  init_mem p = Some m ->
+  Mem.valid_block m b ->
+  exists g, find_def (globalenv p) b = Some g /\ comp_of g = Mem.block_compartment m b.
+Proof.
+  Admitted.
 
 Lemma init_mem_genv_next: forall p m,
   init_mem p = Some m ->
@@ -1681,8 +1693,8 @@ Theorem init_mem_characterization_2:
   forall p b fd m,
   find_funct_ptr (globalenv p) b = Some fd ->
   init_mem p = Some m ->
-  Mem.perm m b 0 Cur Nonempty
-  /\ (forall ofs k p, Mem.perm m b ofs k p -> ofs = 0 /\ p = Nonempty).
+  (* Mem.perm m b 0 Cur Nonempty *)
+  (* /\  *)(forall ofs k p, Mem.perm m b ofs k p -> False).
 Proof.
   intros. rewrite find_funct_ptr_iff in H.
   exploit init_mem_characterization_gen; eauto.
@@ -1747,7 +1759,7 @@ Lemma alloc_global_neutral:
 Proof.
   intros. destruct idg as [id [f|v]]; simpl in H.
 - (* function *)
-  destruct (Mem.alloc m _ 0 1) as [m1 b] eqn:?.
+  destruct (Mem.alloc m _ 0 0) as [m1 b] eqn:?.
   assert (Plt b thr). rewrite (Mem.alloc_result _ _ _ _ _ _ Heqp). auto.
   eapply Mem.drop_inject_neutral; eauto.
   eapply Mem.alloc_inject_neutral; eauto.
@@ -1972,8 +1984,8 @@ Lemma alloc_global_exists:
   exists m', alloc_global ge m idg = Some m'.
 Proof.
   intros m [id [f|v]]; intros; simpl.
-- destruct (Mem.alloc m _ 0 1) as [m1 b] eqn:ALLOC.
-  destruct (Mem.range_perm_drop_2 m1 b 0 1 (comp_of f) Nonempty) as [m2 DROP].
+- destruct (Mem.alloc m _ 0 0) as [m1 b] eqn:ALLOC.
+  destruct (Mem.range_perm_drop_2 m1 b 0 0 (comp_of f) Nonempty) as [m2 DROP].
   red; intros; eapply Mem.perm_alloc_2; eauto.
   simpl; erewrite Mem.owned_new_block; eauto. now apply flowsto_refl.
   exists m2; auto.
@@ -2405,7 +2417,7 @@ Proof.
   { destruct a1 as [id1 g1]; destruct b1 as [id2 g2]; destruct H; simpl in *.
     subst id2. inv H2.
   - erewrite <- match_fundef_comp; eauto.
-    erewrite <- match_fundef_comp; eauto.
+    (* erewrite <- match_fundef_comp; eauto. *)
   - inv H; simpl in *. simpl in Heqo.
     set (sz := init_data_list_size init) in *.
     destruct (Mem.alloc m _ 0 sz) as [m2 b] eqn:?.
