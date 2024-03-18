@@ -796,6 +796,38 @@ Next Obligation.
   now apply nextblock_compartments.
 Qed.
 
+(* [set_perm] sets the permission of an entire block *)
+Program Definition set_perm (m: mem) (b: block) (p: permission): option mem :=
+  if plt b m.(nextblock) then
+    Some (mkmem m.(mem_contents)
+               (PMap.set b
+                  (fun ofs k => if m.(mem_access)#b ofs k then Some p else None)
+                  m.(mem_access))
+               m.(mem_compartments)
+                   m.(nextblock) _ _ _ _)
+  else
+    None.
+Next Obligation.
+  repeat rewrite PMap.gsspec. destruct (peq b0 b). subst b0.
+  destruct ((mem_access m) # b ofs Max) eqn:?.
+  destruct ((mem_access m) # b ofs Cur).
+  red; auto with mem. red; auto with mem.
+  exploit access_max; eauto. rewrite Heqo.
+  intros H'. destruct ((mem_access m) # b ofs Cur). contradiction. auto.
+  apply access_max.
+Qed.
+Next Obligation.
+  exploit (nextblock_noaccess m b0 ofs k). auto. intros NOACC.
+  rewrite PMap.gsspec. destruct (peq b0 b). subst b0.
+  rewrite NOACC. auto.
+  auto.
+Qed.
+Next Obligation.
+  apply contents_default.
+Qed.
+Next Obligation.
+  now apply nextblock_compartments.
+Qed.
 (** * Properties of the memory operations *)
 
 (** Properties of the empty store. *)
@@ -3189,6 +3221,229 @@ Qed.
 
 End DROP.
 
+
+Section SET.
+
+Variable m: mem.
+Variable b: block.
+Variable p: permission.
+Variable cp: compartment.
+Variable m': mem.
+Hypothesis SET: set_perm m b p = Some m'.
+
+Theorem nextblock_set:
+  nextblock m' = nextblock m.
+Proof.
+  unfold set_perm in SET.
+  destruct plt; try discriminate.
+  inv SET; auto.
+Qed.
+
+Theorem set_perm_valid_block_1:
+  forall b', valid_block m b' -> valid_block m' b'.
+Proof.
+  unfold valid_block; rewrite nextblock_set; auto.
+Qed.
+
+Theorem set_perm_valid_block_2:
+  forall b', valid_block m' b' -> valid_block m b'.
+Proof.
+  unfold valid_block; rewrite nextblock_set; auto.
+Qed.
+
+Theorem set_block_compartment:
+  forall b', block_compartment m' b' = block_compartment m b'.
+Proof.
+unfold set_perm in *. destruct plt; try discriminate.
+inv SET. intros b'. reflexivity.
+Qed.
+
+
+Lemma set_preserves_comp:
+  forall b', block_compartment m b' = block_compartment m' b'.
+Proof.
+  intros b'.
+  unfold set_perm in SET. destruct plt; try discriminate.
+  inv SET. reflexivity.
+Qed.
+
+Theorem can_access_block_set_1:
+  forall b' cp', can_access_block m b' cp' -> can_access_block m' b' cp'.
+Proof.
+  unfold can_access_block. intros b' cp' Hown.
+  unfold set_perm in SET. destruct plt; try discriminate.
+  inv SET. assumption.
+Qed.
+
+Theorem can_access_block_set_2:
+  forall b' cp', can_access_block m' b' cp' -> can_access_block m b' cp'.
+Proof.
+  unfold can_access_block. intros b' cp' Hown.
+  unfold set_perm in SET. destruct plt; try discriminate.
+  inv SET. assumption.
+Qed.
+
+Theorem perm_set_1:
+  forall ofs k p', perm m b ofs k p' -> perm m' b ofs k p.
+Proof.
+  intros.
+  unfold set_perm in SET.
+  destruct plt; try discriminate.
+  (* destruct Z_le_dec; try lia; *)
+  (* destruct (range_perm_dec m b lo hi Cur Freeable); *)
+  (* destruct (can_access_block_dec m b cp); *)
+  inv SET.
+  unfold perm. simpl. rewrite PMap.gss. unfold perm in *.
+  destruct ((mem_access m) # b ofs k) eqn:?. constructor. simpl. inv H.
+Qed.
+
+(* Theorem perm_set_2: *)
+(*   forall ofs k p', lo <= ofs < hi -> perm m' b ofs k p' -> perm_order p p'. *)
+(* Proof. *)
+(*   intros. *)
+(*   unfold set_perm in SET. *)
+(*   destruct Z_le_dec; try lia; *)
+(*   destruct (range_perm_dec m b lo hi Cur Freeable); *)
+(*   destruct (can_access_block_dec m b cp); *)
+(*   inv SET. *)
+(*   revert H0. unfold perm; simpl. rewrite PMap.gss. unfold proj_sumbool. *)
+(*   rewrite zle_true. rewrite zlt_true. simpl. auto. *)
+(*   lia. lia. *)
+(* Qed. *)
+
+Theorem perm_set_3:
+  forall b' ofs k p', perm_order p p' -> perm m b' ofs k p' ->
+                 perm m' b' ofs k p'.
+Proof.
+  intros.
+  unfold set_perm in SET.
+  destruct plt; try discriminate.
+  (* destruct Z_le_dec; *)
+  (* destruct (range_perm_dec m b lo hi Cur Freeable); *)
+  (* destruct (can_access_block_dec m b cp); *)
+  inv SET; auto.
+  unfold perm in *; simpl in *. rewrite PMap.gsspec. destruct (peq b' b). subst b'.
+  destruct (((mem_access m) # b ofs k)); auto.
+  auto.
+Qed.
+
+Theorem perm_set_4:
+  forall b' ofs k p', b' <> b \/ not (perm m b ofs k Nonempty) -> perm m' b' ofs k p' -> perm m b' ofs k p'.
+Proof.
+  intros.
+  unfold set_perm in SET. destruct plt; try discriminate.
+  inv SET; auto.
+  revert H H0. unfold perm; simpl. rewrite PMap.gsspec. destruct (peq b' b).
+  subst b'. intros []; try now contradiction.
+  destruct ((mem_access m) # b ofs k). intros G. exfalso. eapply H. constructor.
+  intros G. inv G. eauto.
+Qed.
+
+Lemma valid_access_set_1:
+  forall chunk b' ofs cp',
+  perm_order p Readable ->
+  valid_access m chunk b' ofs Readable cp' -> valid_access m' chunk b' ofs Readable cp'.
+Proof.
+  intros. destruct H0. split; auto.
+  red; intros.
+  destruct (eq_block b' b). subst b'.
+  (* destruct (zlt ofs0 lo). *) eapply perm_set_3; eauto.
+  (* destruct (zle hi ofs0). *) eapply perm_set_3; eauto.
+  split. apply can_access_block_set_1; easy. easy.
+Qed.
+
+(* Lemma valid_access_set_2: *)
+(*   forall chunk b' ofs p' cp', *)
+(*   perm_order p Readable -> *)
+(*   valid_access m' chunk b' ofs p' cp' -> valid_access m chunk b' ofs p' cp'. *)
+(* Proof. *)
+(*   intros. destruct H; split; auto. *)
+(*   red; intros. eapply perm_set_4; eauto. *)
+(*   split. apply can_access_block_set_2; easy. easy. *)
+(* Qed. *)
+
+Theorem load_set:
+  forall chunk b' ofs cp' v,
+  perm_order p Readable ->
+  load chunk m b' ofs cp' = Some v ->
+  load chunk m' b' ofs cp' = Some v.
+Proof.
+  intros. revert H0.
+  unfold load.
+  destruct (valid_access_dec m chunk b' ofs Readable).
+  rewrite pred_dec_true.
+  unfold set_perm in SET. destruct plt; try discriminate.
+  inv SET; auto.
+  eapply valid_access_set_1; eauto.
+  discriminate.
+Qed.
+
+Theorem load_set':
+  forall chunk b' ofs cp' v,
+  perm_order p Readable ->
+  Mem.range_perm m b' ofs (ofs + size_chunk chunk) Cur Readable ->
+  load chunk m' b' ofs cp' = Some v ->
+  load chunk m b' ofs cp' = Some v.
+Proof.
+  intros. revert H1.
+  unfold load.
+  destruct (valid_access_dec m chunk b' ofs Readable).
+  rewrite pred_dec_true.
+  unfold set_perm in SET. destruct plt; try discriminate.
+  inv SET; auto.
+  eapply valid_access_set_1; eauto.
+  destruct (valid_access_dec m' chunk b' ofs Readable); try discriminate.
+  elim n.
+  destruct v0. split. eauto. split; try easy.
+  simpl. unfold set_perm in SET. inv SET; auto. simpl in *.
+ destruct plt; try discriminate. inv H4. easy.
+Qed.
+
+(* Theorem loadbytes_set: *)
+(*   forall b' ofs n cp', *)
+(*   b' <> b \/ ofs + n <= lo \/ hi <= ofs \/ perm_order p Readable -> *)
+(*   loadbytes m' b' ofs n cp' = loadbytes m b' ofs n cp'. *)
+(* Proof. *)
+(*   intros. *)
+(*   unfold loadbytes. *)
+(*   destruct (range_perm_dec m b' ofs (ofs + n) Cur Readable). *)
+(* - destruct (can_access_block_dec m b' cp'). *)
+(* + setoid_rewrite pred_dec_true at 1 2; simpl. *)
+(* * unfold set_perm in SET. *)
+(*   destruct (Z_le_dec); *)
+(*   destruct (range_perm_dec m b lo hi Cur Freeable); *)
+(*   destruct (can_access_block_dec m b cp); *)
+(*   inv SET; auto. *)
+(* * red; intros. *)
+(*   destruct (eq_block b' b). subst b'. *)
+(*   destruct (zlt ofs0 lo). eapply perm_set_3; eauto. *)
+(*   destruct (zle hi ofs0). eapply perm_set_3; eauto. *)
+(*   apply perm_implies with p. eapply perm_set_1; eauto. lia. intuition. *)
+(*   eapply perm_set_3; eauto. *)
+(* * apply can_access_block_set_1; assumption. *)
+(* + setoid_rewrite pred_dec_false at 2. *)
+(*   destruct (Z_le_dec n 0); simpl in *; try rewrite orb_true_r; try congruence. *)
+(*   setoid_rewrite pred_dec_true; simpl; auto. *)
+(* * unfold set_perm in SET. *)
+(*   destruct Z_le_dec; *)
+(*   destruct (range_perm_dec m b lo hi Cur Freeable); *)
+(*   destruct (can_access_block_dec m b cp); *)
+(*   inv SET; auto. *)
+(* * red; intros. *)
+(*   destruct (eq_block b' b). subst b'. *)
+(*   destruct (zlt ofs0 lo). eapply perm_set_3; eauto. *)
+(*   destruct (zle hi ofs0). eapply perm_set_3; eauto. *)
+(*   apply perm_implies with p. eapply perm_set_1; eauto. lia. intuition. *)
+(*   eapply perm_set_3; eauto. *)
+(* * rewrite andb_comm. reflexivity. *)
+(* * intro Hcontra. apply n0. apply can_access_block_set_2; assumption. *)
+(* - setoid_rewrite pred_dec_false at 1; eauto. *)
+(*   red; intros; elim n0; red; intros. *)
+(*   eapply perm_set_4; eauto. *)
+(* Qed. *)
+
+End SET.
+
 (** * Generic injections *)
 
 (** A memory state [m1] generically injects into another memory state [m2] via the
@@ -3967,6 +4222,71 @@ Proof.
   destruct (can_access_block_dec m2 b cp);
   inv H0; auto.
 Qed.
+
+
+(** Preservation of [set_perm] operations. *)
+
+Lemma set_unmapped_inj:
+  forall f m1 m2 b p m1',
+  mem_inj f m1 m2 ->
+  set_perm m1 b p = Some m1' ->
+  f b = None ->
+  mem_inj f m1' m2.
+Proof.
+  intros. unfold set_perm in *; destruct plt; try discriminate.
+  inv H0.
+  inv H. constructor.
+(* perm *)
+  intros. eapply mi_perm0; eauto. unfold perm in *.
+  destruct (peq b1 b); try congruence. simpl in H0. rewrite PMap.gso in H0; auto.
+(* own *)
+  intros. eapply mi_own0; eauto. unfold perm in *.
+  destruct (peq b1 b); try congruence. simpl in H0. rewrite PMap.gso in H0; eauto.
+(* align *)
+  intros. eapply mi_align0 with (ofs := ofs) (p := p1); eauto.
+  red; intros. specialize (H0 ofs0 H2).
+  unfold perm in *.
+  destruct (peq b1 b); try congruence. simpl in H0. rewrite PMap.gso in H0; eauto.
+(* contents *)
+  intros.
+  (* replace (ZMap.get ofs m1'.(mem_contents)#b1) with (ZMap.get ofs m1.(mem_contents)#b1). *)
+  apply mi_memval0; auto.
+  unfold perm in *.
+  destruct (peq b1 b); try congruence. simpl in H0. rewrite PMap.gso in H0; eauto.
+Qed.
+
+(* Definition meminj_no_dispute (f: meminj) (m: mem) : Prop := *)
+(*   forall b1 b1' delta1 cp1 b2 b2' delta2 cp2, *)
+(*   b1 <> b2 -> *)
+(*   f b1 = Some (b1', delta1) -> *)
+(*   f b2 = Some (b2', delta2) -> *)
+(*   can_access_block m b1 cp1 -> *)
+(*   can_access_block m b2 cp2 -> *)
+(*   b1' <> b2' \/ cp1 <> cp2. *)
+
+Lemma set_mapped_inj:
+  forall f m1 m2 b1 b2 delta p m1',
+  mem_inj f m1 m2 ->
+  set_perm m1 b1 p = Some m1' ->
+  meminj_no_overlap f m1 ->
+  (* forall DISP : meminj_no_dispute f m1, *)
+  f b1 = Some(b2, delta) ->
+  exists m2',
+      set_perm m2 b2 p = Some m2'
+   /\ mem_inj f m1' m2'.
+Proof.
+Admitted.
+
+Lemma set_outside_inj: forall f m1 m2 b p m2',
+  mem_inj f m1 m2 ->
+  set_perm m2 b p = Some m2' ->
+  (forall b' delta ofs' k p,
+    f b' = Some(b, delta) ->
+    perm m1 b' ofs' k p ->
+    False) ->
+  mem_inj f m1 m2'.
+Proof.
+  Admitted.
 
 (** * Memory extensions *)
 

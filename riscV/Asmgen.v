@@ -835,6 +835,18 @@ Definition make_epilogue (f: Mach.function) (k: code) :=
 
 (** Translation of a Mach instruction. *)
 
+Definition loadarg (base: ireg) (ofs: ptrofs) (ty: typ) (dst: mreg) (k: code) :=
+  match ty, preg_of dst with
+  | Tint,    IR rd => OK (indexed_memory_access (fun i o => Pld_arg Mint32 (inl rd) i o) base ofs k)
+  | Tlong,   IR rd => OK (indexed_memory_access (fun i o => Pld_arg Mint64 (inl rd) i o) base ofs k)
+  | Tsingle, FR rd => OK (indexed_memory_access (fun i o => Pld_arg Mfloat32 (inr rd) i o) base ofs k)
+  | Tfloat,  FR rd => OK (indexed_memory_access (fun i o => Pld_arg Mfloat64 (inr rd) i o) base ofs k)
+  | Tany32,  IR rd => OK (indexed_memory_access (fun i o => Pld_arg Many32 (inl rd) i o) base ofs k)
+  | Tany64,  IR rd => OK (indexed_memory_access (fun i o => Pld_arg Many64 (inl rd) i o) base ofs k)
+  | Tany64,  FR rd => OK (indexed_memory_access (fun i o => Pld_arg Many64 (inr rd) i o) base ofs k)
+  | _, _           => Error (msg "Asmgen.loadarg")
+  end.
+
 Definition transl_instr (f: Mach.function) (i: Mach.instruction)
                         (ep: bool) (k: code) :=
   match i with
@@ -844,9 +856,10 @@ Definition transl_instr (f: Mach.function) (i: Mach.instruction)
       storeind src SP ofs ty k
   | Mgetparam ofs ty dst =>
       (* load via the frame pointer if it is valid *)
-      do c <- loadind X30 ofs ty dst k true;
+      do c <- loadarg X30 ofs ty dst k;
+      (* do c <- loadind X30 ofs ty dst k true; *)
       OK (if ep then c
-                else loadind_ptr SP f.(fn_link_ofs) X30 c true)
+                else loadind_ptr SP f.(fn_link_ofs) X30 c false)
   | Mop op args res =>
       transl_op op args res k
   | Mload chunk addr args dst =>

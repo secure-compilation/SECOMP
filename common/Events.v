@@ -810,10 +810,17 @@ Record extcall_properties (wfse: well_formed_syscall_event_spec)
     forall ge vargs m1 t vres m2 b ofs n bytes ocp,
     sem ge cp vargs m1 t vres m2 ->
     Mem.valid_block m1 b ->
-    (* Mem.can_access_block m1 b ocp -> *)
     Mem.loadbytes m2 b ofs n ocp = Some bytes ->
     (forall i, ofs <= i < ofs + n -> ~Mem.perm m1 b i Max Writable) ->
     Mem.loadbytes m1 b ofs n ocp = Some bytes;
+
+  ec_readonly':
+    forall ge vargs m1 t vres m2 b ofs n bytes ocp,
+    sem ge cp vargs m1 t vres m2 ->
+    Mem.valid_block m1 b ->
+    Mem.loadbytes m1 b ofs n ocp = Some bytes ->
+    (forall i, ofs <= i < ofs + n -> ~Mem.perm m1 b i Max Writable) ->
+    Mem.loadbytes m2 b ofs n ocp = Some bytes;
 
 (* (** External call can only allocate in the calling compartment *) *)
 (*   ec_new_valid: *)
@@ -1006,6 +1013,7 @@ Proof.
 - inv H; auto.
 (* readonly *)
 - inv H; auto.
+- inv H; auto.
 (* mem extends *)
 - inv H. inv H1. inv H6. inv H4.
   exploit volatile_load_extends; eauto. intros [v' [A B]].
@@ -1086,6 +1094,20 @@ Proof.
   exploit Mem.store_valid_access_3; eauto. intros [P [Q R]].
   intros. unfold loc_not_writable. red; intros. apply H2.
   apply Mem.perm_cur_max. apply P. auto.
+Qed.
+
+Lemma unchanged_on_readonly':
+  forall m1 m2 b ofs n cp bytes,
+  Mem.unchanged_on (loc_not_writable m1) m1 m2 ->
+  Mem.valid_block m1 b ->
+  (Mem.can_access_block m1 b cp \/ n <= 0) ->
+  Mem.loadbytes m1 b ofs n cp = Some bytes ->
+  (forall i, ofs <= i < ofs + n -> ~Mem.perm m1 b i Max Writable) ->
+  Mem.loadbytes m2 b ofs n cp = Some bytes.
+Proof.
+  intros.
+  rewrite <- H2.
+  apply Mem.loadbytes_unchanged_on_1 with (P := loc_not_writable m1); auto.
 Qed.
 
 Lemma volatile_store_extends:
@@ -1201,6 +1223,10 @@ Proof.
   + eapply Mem.loadbytes_can_access_block_inj; eauto.
   + simpl. erewrite <- Mem.store_block_compartment; eauto.
     eapply Mem.loadbytes_can_access_block_inj; eauto.
+- inv H. eapply unchanged_on_readonly'; eauto. eapply volatile_store_readonly; eauto.
+  inv H3; eauto.
+  + eapply Mem.loadbytes_can_access_block_inj; eauto.
+  + simpl. eapply Mem.loadbytes_can_access_block_inj; eauto.
 (* mem extends*)
 - inv H. inv H1. inv H6. inv H7. inv H4.
   exploit volatile_store_extends; eauto. intros [m2' [A [B C]]].
@@ -1296,6 +1322,11 @@ Proof.
   left.
   eapply Mem.alloc_can_access_block_other_inj_2; eauto.
   simpl. erewrite <- Mem.store_block_compartment; eauto.
+- inv H. eapply unchanged_on_readonly'; eauto.
+  assert (b <> b0).
+  { intros ?; subst b0.
+    exploit Mem.fresh_block_alloc; eauto. }
+  exploit Mem.loadbytes_can_access_block_inj; eauto.
 (* mem extends *)
 - inv H. inv H1. inv H7.
   assert (SZ: v2 = Vptrofs sz).
@@ -1400,6 +1431,15 @@ Proof.
     intros []; try now auto.
     left.
     eapply Mem.free_can_access_block_inj_2; eauto.
+  * eapply Mem.loadbytes_can_access_block_inj; eauto.
+- eapply unchanged_on_readonly'; eauto. inv H.
++ eapply Mem.free_unchanged_on; eauto.
+  intros. red; intros. elim H6.
+  apply Mem.perm_cur_max. apply Mem.perm_implies with Freeable; auto with mem.
+  eapply Mem.free_range_perm; eauto.
++ apply Mem.unchanged_on_refl.
++ inv H.
+  * exploit Mem.loadbytes_can_access_block_inj; eauto.
   * eapply Mem.loadbytes_can_access_block_inj; eauto.
 (* mem extends *)
 - inv H.
@@ -1545,6 +1585,19 @@ Proof.
     apply Mem.perm_cur_max. eapply Mem.storebytes_range_perm; eauto.
     eapply Mem.loadbytes_can_access_block_inj in H1; eauto. destruct H1.
     left. eapply Mem.storebytes_can_access_block_inj_2; eauto. now right.
+- (* readonly *)
+  intros. inv H.
+  exploit Mem.loadbytes_can_access_block_inj; eauto. intros [].
+  + eapply unchanged_on_readonly'; eauto.
+    eapply Mem.storebytes_unchanged_on; eauto.
+    intros; red; intros. elim H12.
+    apply Mem.perm_cur_max. eapply Mem.storebytes_range_perm; eauto.
+    eapply Mem.loadbytes_can_access_block_inj in H1; eauto.
+  + eapply unchanged_on_readonly'; eauto.
+    eapply Mem.storebytes_unchanged_on; eauto.
+    intros; red; intros. elim H12.
+    apply Mem.perm_cur_max. eapply Mem.storebytes_range_perm; eauto.
+    eapply Mem.loadbytes_can_access_block_inj in H1; eauto.
 - (* extensions *)
   intros. inv H.
   inv H1. inv H13. inv H14. inv H10. inv H11.
@@ -1683,11 +1736,11 @@ Proof.
 - inv H; auto.
 (* readonly *)
 - inv H; auto.
+- inv H; auto.
 (* mem extends *)
 - inv H.
   exists Vundef; exists m1'; intuition. econstructor; eauto.
-  eapply eventval_list_match_lessdef; eauto.
-(* mem injects *)
+  eapply eventval_list_match_lessdef; eauto. (* mem injects *)
 - inv H0.
   exists f; exists Vundef; exists m1'; intuition.
   econstructor; eauto.
@@ -1742,6 +1795,7 @@ Proof.
 - inv H; auto.
 (* readonly *)
 - inv H; auto.
+- inv H; auto.
 (* mem extends *)
 - inv H. inv H1. inv H7.
   exists v2; exists m1'; intuition.
@@ -1795,6 +1849,7 @@ Proof.
 (* perms *)
 - inv H; auto.
 (* readonly *)
+- inv H; auto.
 - inv H; auto.
 (* (* mem alloc *) *)
 (* - inv H; congruence. *)
@@ -1861,11 +1916,7 @@ Proof.
 - inv H; auto.
 (* readonly *)
 - inv H; auto.
-(* (* mem alloc *) *)
-(* - inv H; congruence. *)
-(* (* outside cp *) *)
-(* - intros. inv H. *)
-(*   eapply Mem.unchanged_on_refl. *)
+- inv H; auto.
 (* mem extends *)
 - inv H. fold bsem in H2. apply val_inject_list_lessdef in H1.
   specialize (bs_inject _ bsem _ _ _ H1).
@@ -2599,16 +2650,16 @@ Module SyscallSanityChecks.
         simpl; erewrite Mem.storebytes_preserves_comp; eauto.
         eapply Mem.loadbytes_can_access_block_inj; eauto.
         eapply Mem.loadbytes_can_access_block_inj; eauto.
-    (* (* mem alloc *) *)
-    (* - inv H. *)
-    (*   + assert (Mem.valid_block m2 b). *)
-    (*     pose proof (Mem.storebytes_valid_block_2 _ _ _ _ _ _ H5 _ H1).  congruence. *)
-    (*   + congruence. *)
-    (* (* outside cp *) *)
-    (* - inv H. *)
-    (*   +  pose proof (Mem.storebytes_can_access_block_1 _ _ _ _ _ _ H3).   *)
-    (*      eapply Mem.storebytes_unchanged_on; eauto. *)
-    (*   + eapply Mem.unchanged_on_refl. *)
+    - eapply unchanged_on_readonly'; eauto.
+      inv H.
+      + eapply Mem.storebytes_unchanged_on; eauto.
+        intros. unfold loc_not_writable. intro X; apply X; clear X .
+        exploit Mem.storebytes_range_perm; eauto.
+        intro. apply Mem.perm_cur_max; auto.
+      + eapply Mem.unchanged_on_refl; eauto.
+      + inv H.
+        eapply Mem.loadbytes_can_access_block_inj; eauto.
+        eapply Mem.loadbytes_can_access_block_inj; eauto.
     (* mem extends *)
     - inv H.
       + pose proof (Val.lessdef_list_inv _ _ H1). destruct H. 
@@ -2851,12 +2902,10 @@ Proof.
     inv H; eapply Mem.unchanged_on_refl.
     inv H.
     eapply Mem.loadbytes_can_access_block_inj; eauto.
-
-  (* (* mem alloc *) *)
-  (* - inv H. congruence. *)
-  (* (* outside cp *) *)
-  (* - inv H. *)
-  (*   eapply Mem.unchanged_on_refl. *)
+  - eapply unchanged_on_readonly'; eauto.
+    inv H; eapply Mem.unchanged_on_refl.
+    inv H.
+    eapply Mem.loadbytes_can_access_block_inj; eauto.
   (* mem extends *)
   - inv H.
     pose proof (Val.lessdef_list_inv _ _ H1). destruct H. 
