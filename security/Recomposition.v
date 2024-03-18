@@ -7754,10 +7754,301 @@ Section Simulation.
   Hypothesis main_not_top: Genv.find_comp_in_genv ge1 (Genv.symbol_address ge1 (prog_main W1) Ptrofs.zero) <> top.
   Hypothesis main_not_bottom: Genv.find_comp_in_genv ge1 (Genv.symbol_address ge1 (prog_main W1) Ptrofs.zero) <> bottom.
 
+Lemma bytes_of_init_inject:
+  forall m tm,
+    Genv.init_mem W1 = Some m ->
+    Genv.init_mem W3 = Some tm ->
+  forall il,
+  (* (forall id, ref_init il id -> kept id) -> *)
+  list_forall2 (memval_inject (init_meminj s Left W1 W3)) (Genv.bytes_of_init_data_list ge1 il)
+    (Genv.bytes_of_init_data_list ge3 il).
+Proof.
+  induction il as [ | i1 il]; simpl; intros.
+- constructor.
+- apply list_forall2_app.
++ destruct i1; simpl; try (apply inj_bytes_inject).
+  induction (Z.to_nat z); simpl; constructor. constructor. auto.
+  destruct (Genv.find_symbol ge1 i) as [b|] eqn:FS.
+  destruct (kept_genv s ge1 Left i) eqn:KEPT.
+  * (* assert (kept i). { apply H. red. exists i0; auto with coqlib. } *)
+    exploit (symbols_inject2 s Left). apply init_meminj_preserves_globals. eauto. eauto. eauto.
+    intros (b' & A & B). rewrite A. apply inj_value_inject.
+    econstructor; eauto. symmetry; apply Ptrofs.add_zero.
+  * admit.
+  * destruct (Genv.find_symbol ge3 i) as [b'|] eqn:FS'.
+    exploit (symbols_inject3 s Left). apply init_meminj_preserves_globals. eauto. eauto.
+    admit.
+    intros (b & A & B). admit. admit.
++ apply IHil.
+  (* intros id [ofs IN]. apply H. exists ofs; auto with coqlib. *)
+Admitted.
 
-  Hypothesis init_mem_correct1: forall m1 m3, Genv.init_mem W1 = Some m1 ->
+Lemma Mem_getN_forall2:
+  forall (P: memval -> memval -> Prop) c1 c2 i n p,
+  list_forall2 P (Mem.getN n p c1) (Mem.getN n p c2) ->
+  p <= i -> i < p + Z.of_nat n ->
+  P (ZMap.get i c1) (ZMap.get i c2).
+Proof.
+  induction n; simpl Mem.getN; intros.
+- simpl in H1. extlia.
+- inv H. rewrite Nat2Z.inj_succ in H1. destruct (zeq i p).
++ congruence.
++ apply IHn with (p + 1); auto. lia. lia.
+Qed.
+
+  Lemma init_mem_correct1: forall m1 m3, Genv.init_mem W1 = Some m1 ->
                                Genv.init_mem W3 = Some m3 ->
                                mem_rel s ge1 ge3 (init_meminj s Left W1 W3) Left m1 m3.
+  Proof.
+    intros. constructor.
+    - intros ?. simpl. unfold init_meminj. admit.
+    - constructor.
+      + { constructor; intros.
+          - exploit init_meminj_invert; eauto.
+            intros [? [? [? ?]]]. subst.
+            eapply Genv.find_symbol_find_def_inversion in H4 as G1.
+            destruct G1 as [gd G1].
+            eapply Genv.find_symbol_find_def_inversion in H5 as G2.
+            destruct G2 as [gd' G2].
+            exploit (Genv.init_mem_characterization_gen W1); eauto.
+            exploit (Genv.init_mem_characterization_gen W3); eauto.
+            assert (match_globdef gd gd') as G.
+            { exploit defs_inject; eauto.
+              eapply init_meminj_preserves_globals; eauto.
+              intros [? [? [? [? ?]]]]. congruence. }
+            inv G.
+            + intros (P2 & Q2) (P1 & Q1).
+              apply Q1 in H2. destruct H2. subst.
+              apply Mem.perm_cur. auto.
+            + intros (P2 & Q2 & R2 & S2) (P1 & Q1 & R1 & S1).
+              apply Q1 in H2. destruct H2. subst.
+              apply Mem.perm_cur. eapply Mem.perm_implies; eauto.
+              inv H3.
+              apply P2. simpl in *. lia.
+          - exploit init_meminj_invert; eauto. intros (A & id & B & C).
+            subst delta.
+            (* destruct cp as [cp|]; simpl in *; trivial. *)
+            destruct (Genv.find_symbol_find_def_inversion _ _ B) as [g B'].
+            assert ((prog_defmap W1) ! id = Some g) as DEF1.
+            { apply Genv.find_def_symbol. eauto. }
+            destruct (Genv.find_symbol_find_def_inversion _ _ C) as [g' C'].
+            assert ((prog_defmap W3) ! id = Some g') as DEF2.
+            { apply Genv.find_def_symbol. eauto. }
+
+            destruct (kept_prog s W1 Left id) eqn:G; try congruence.
+            + pose proof (match_prog_def _ _ _ _ match_W1_W3 id G) as DEF2'.
+              rewrite DEF1, DEF2 in DEF2'.
+              injection DEF2' as ->.
+              simpl in *.
+              rewrite (Genv.init_mem_find_def _ _ H B') in *.
+              now rewrite (Genv.init_mem_find_def _ _ H0 C') in *.
+            + pose proof (match_prog_notdef _ _ _ _ match_W1_W3 id G) as DEF2'.
+              rewrite DEF1, DEF2 in DEF2'.
+              inv DEF2'. inv H6. inv H4.
+              (* injection DEF2' as ->. *)
+              simpl in *.
+              rewrite (Genv.init_mem_find_def _ _ H B') in *.
+              now rewrite (Genv.init_mem_find_def _ _ H0 C') in *.
+              simpl in *.
+              rewrite (Genv.init_mem_find_def _ _ H B') in *.
+              now rewrite (Genv.init_mem_find_def _ _ H0 C') in *.
+              inv H4.
+              simpl in *.
+              rewrite (Genv.init_mem_find_def _ _ H B') in *.
+              now rewrite (Genv.init_mem_find_def _ _ H0 C') in *.
+          - exploit init_meminj_invert; eauto. intros (A & id & B & C).
+            subst delta. apply Z.divide_0_r.
+          - exploit init_meminj_invert; eauto.
+            intros [? [? [? ?]]]. subst.
+            eapply Genv.find_symbol_find_def_inversion in H4 as G1.
+            destruct G1 as [gd G1].
+            eapply Genv.find_symbol_find_def_inversion in H5 as G2.
+            destruct G2 as [gd' G2].
+            exploit (Genv.init_mem_characterization_gen W1); eauto.
+            exploit (Genv.init_mem_characterization_gen W3); eauto.
+            assert (match_globdef gd gd') as G.
+            { exploit defs_inject; eauto.
+              eapply init_meminj_preserves_globals; eauto.
+              intros [? [? [? [? ?]]]]. congruence. }
+            inv G.
+            + intros (P2 & Q2) (P1 & Q1).
+              apply Q1 in H2 as [? ?]. discriminate.
+            + intros (P2 & Q2 & R2 & S2) (P1 & Q1 & R1 & S1).
+              apply Q1 in H2. destruct H2.
+              assert (NO: gvar_volatile v = false).
+              { unfold Genv.perm_globvar in H6. destruct (gvar_volatile v); auto. inv H6. }
+              assert (NO': gvar_volatile v' = false).
+              { inv H3. simpl in *. eauto. }
+              (* inv H3. simpl in *. *)
+              Local Transparent Mem.loadbytes.
+              generalize (S1 NO). unfold Mem.loadbytes. destruct Mem.range_perm_dec; destruct Mem.can_access_block_dec; intros E1; inv E1.
+              * generalize (S2 NO'). unfold Mem.loadbytes. destruct Mem.range_perm_dec; destruct Mem.can_access_block_dec; intros E2; inv E2.
+                rewrite Z.add_0_r.
+                apply Mem_getN_forall2 with (p := 0) (n := Z.to_nat (init_data_list_size (gvar_init v'))).
+                assert ((init_data_list_size (gvar_init v')) = (init_data_list_size (gvar_init v))) as EQ.
+                { inv H3. simpl in *. eauto. }
+                rewrite H9. rewrite EQ. rewrite H8.
+                inv H3; simpl in *; subst.
+                eapply bytes_of_init_inject. eauto. eauto.
+                lia.
+                rewrite Z2Nat.id by (apply Z.ge_le; apply init_data_list_size_pos). inv H3; simpl in *; lia.
+                destruct (Z_le_dec); inv H4.
+                rewrite Z.add_0_r.
+                apply Mem_getN_forall2 with (p := 0) (n := Z.to_nat (init_data_list_size (gvar_init v))).
+                simpl in *. inv H9. inv H3; simpl in *.
+                rewrite H8, H7.
+                eapply bytes_of_init_inject. eauto. eauto.
+                lia. lia. auto. inv H9.
+              * destruct (Z_le_dec); inv H8.
+                generalize (S2 NO'). unfold Mem.loadbytes. destruct Mem.range_perm_dec; destruct Mem.can_access_block_dec; intros E2; inv E2.
+                rewrite Z.add_0_r.
+                apply Mem_getN_forall2 with (p := 0) (n := Z.to_nat (init_data_list_size (gvar_init v))).
+                assert ((init_data_list_size (gvar_init v')) = (init_data_list_size (gvar_init v))) as EQ.
+                { inv H3. simpl in *. eauto. }
+                rewrite H9.
+                inv H3; simpl in *; subst.
+                rewrite H8.
+                eapply bytes_of_init_inject. eauto. eauto.
+                lia.
+                rewrite Z2Nat.id by (apply Z.ge_le; apply init_data_list_size_pos). inv H3; simpl in *; lia.
+                destruct (Z_le_dec); inv H4.
+                rewrite Z.add_0_r.
+                apply Mem_getN_forall2 with (p := 0) (n := Z.to_nat (init_data_list_size (gvar_init v))).
+                simpl in *. inv H9. inv H3; simpl in *.
+                rewrite H7. inv H8. rewrite H9.
+                eapply bytes_of_init_inject. eauto. eauto.
+                lia. lia. auto. inv H9.
+                inv H8. }
+      + intros.
+        destruct (init_meminj s Left W1 W3 b) as [[b' delta]|] eqn:INJ; auto.
+        elim H1. exploit init_meminj_invert; eauto. intros (A & id & B & C).
+        eapply Genv.find_symbol_not_fresh; eauto.
+      + intros. exploit init_meminj_invert; eauto. intros (A & id & B & C).
+        eapply Genv.find_symbol_not_fresh; eauto.
+      + red; intros.
+        exploit init_meminj_invert. eexact H2. intros (A1 & id1 & B1 & C1).
+        exploit init_meminj_invert. eexact H3. intros (A2 & id2 & B2 & C2).
+        destruct (ident_eq id1 id2). congruence. left; eapply Genv.global_addresses_distinct; eauto.
+      + intros. exploit init_meminj_invert; eauto. intros (A & id & B & C). subst delta.
+        split. lia. generalize (Ptrofs.unsigned_range_2 ofs). lia.
+      + intros. exploit init_meminj_invert; eauto.
+        intros [? [? [? ?]]]. subst.
+        eapply Genv.find_symbol_find_def_inversion in H4 as G1.
+        destruct G1 as [gd G1].
+        eapply Genv.find_symbol_find_def_inversion in H5 as G2.
+        destruct G2 as [gd' G2].
+        exploit (Genv.init_mem_characterization_gen W1); eauto.
+        exploit (Genv.init_mem_characterization_gen W3); eauto.
+        assert (match_globdef gd gd') as G.
+        { exploit defs_inject; eauto.
+          eapply init_meminj_preserves_globals; eauto.
+          intros [? [? [? [? ?]]]]. congruence. }
+        inv G.
+        * intros (P2 & Q2) (P1 & Q1).
+          apply Q2 in H2. destruct H2. subst. replace ofs with 0 by lia.
+          left; apply Mem.perm_cur; auto.
+        * intros (P2 & Q2 & R2 & S2) (P1 & Q1 & R1 & S1).
+          apply Q2 in H2. destruct H2. subst.
+          left. apply Mem.perm_cur. eapply Mem.perm_implies; eauto.
+          inv H3; simpl in *; subst.
+          apply P1. lia.
+    - intros ?. unfold init_meminj. destruct (Genv.invert_symbol); try discriminate.
+      destruct kept_genv; try discriminate. destruct Genv.find_symbol; try discriminate.
+      congruence.
+    - intros.
+      assert (Genv.init_mem W1 = Some m1 ->
+             Mem.valid_block m1 b ->
+             exists gd, Genv.find_def ge1 b = Some gd).
+      { admit. }
+      exploit H2; eauto. eapply Mem.perm_valid_block; eauto.
+      intros [gd G].
+      admit.
+    - admit.
+    - eapply Genv.init_mem_genv_next in H. simpl. rewrite H. now apply Ple_refl.
+    - eapply Genv.init_mem_genv_next in H0. simpl. rewrite H0. now apply Ple_refl.
+    - intros. eapply Genv.find_def_not_fresh; eauto.
+    - intros. eapply Genv.find_def_not_fresh; eauto.
+    - intros. exploit (Genv.init_mem_characterization_gen W1); eauto.
+      simpl. admit.
+    - intros. exploit (Genv.init_mem_characterization_gen W3); eauto.
+      simpl. admit.
+    - intros. unfold high_half.
+      destruct (Genv.find_symbol ge1 id) eqn:?; try now constructor.
+      exploit Genv.init_mem_characterization_gen; eauto.
+
+        exploit (Genv.init_mem_characterization_gen W3); eauto.
+      intros. eapply Genv.find_def_not_fresh; eauto.
+    - intros. eapply Genv.find_def_not_fresh; eauto.
+      unfold Genv.init_mem in *.
+
+      exploit init_meminj_invert; eauto.
+      intros [? [? [? ?]]]. subst.
+        eapply Genv.find_symbol_find_def_inversion in H4 as G1.
+        destruct G1 as [gd G1].
+        eapply Genv.find_symbol_find_def_inversion in H5 as G2.
+        destruct G2 as [gd' G2].
+        exploit (Genv.init_mem_characterization_gen W1); eauto.
+        exploit (Genv.init_mem_characterization_gen W3); eauto.
+Qed.
+
+Lemma init_mem_inj_2:
+  Mem.inject init_meminj m tm.
+Proof.
+  constructor; intros.
+- apply init_mem_inj_1.
+- destruct (init_meminj b) as [[b' delta]|] eqn:INJ; auto.
+  elim H. exploit init_meminj_invert; eauto. intros (A & id & B & C).
+  eapply Genv.find_symbol_not_fresh; eauto.
+- exploit init_meminj_invert; eauto. intros (A & id & B & C).
+  eapply Genv.find_symbol_not_fresh; eauto.
+- red; intros.
+  exploit init_meminj_invert. eexact H0. intros (A1 & id1 & B1 & C1).
+  exploit init_meminj_invert. eexact H1. intros (A2 & id2 & B2 & C2).
+  destruct (ident_eq id1 id2). congruence. left; eapply Genv.global_addresses_distinct; eauto.
+- exploit init_meminj_invert; eauto. intros (A & id & B & C). subst delta.
+  split. lia. generalize (Ptrofs.unsigned_range_2 ofs). lia.
+- exploit init_meminj_invert_strong; eauto. intros (A & id & gd & B & C & D & E & F).
+  exploit (Genv.init_mem_characterization_gen p); eauto.
+  exploit (Genv.init_mem_characterization_gen tp); eauto.
+  destruct gd as [f|v].
++ intros (P2 & Q2) (P1 & Q1).
+  apply Q2 in H0. destruct H0. subst. replace ofs with 0 by lia.
+  left; apply Mem.perm_cur; auto.
++ intros (P2 & Q2 & R2 & S2) (P1 & Q1 & R1 & S1).
+  apply Q2 in H0. destruct H0. subst.
+  left. apply Mem.perm_cur. eapply Mem.perm_implies; eauto.
+  apply P1. lia.
+Qed.
+    -
+Lemma init_mem_exists:
+  forall m, Genv.init_mem p = Some m ->
+  exists tm, Genv.init_mem tp = Some tm.
+Proof.
+  intros. apply Genv.init_mem_exists.
+  intros id v H0.
+  assert (P: (prog_defmap tp)!id = Some (Gvar v)).
+  { eapply prog_defmap_norepet; eauto. eapply match_prog_unique; eauto. }
+  rewrite (match_prog_def _ _ _ TRANSF) in P. destruct (IS.mem id used) eqn:U; try discriminate.
+  exploit Genv.init_mem_inversion; eauto. apply in_prog_defmap; eauto. intros [AL FV].
+  split. auto.
+  intros. exploit FV; eauto. intros (b & FS).
+  apply transform_find_symbol_1 with b; auto.
+  apply kept_closed with id (Gvar v).
+  apply IS.mem_2; auto. auto. red. red. exists o; auto.
+Qed.
+
+Theorem init_mem_inject:
+  forall m,
+  Genv.init_mem p = Some m ->
+  exists f tm, Genv.init_mem tp = Some tm /\ Mem.inject f m tm /\ meminj_preserves_globals f.
+Proof.
+  intros.
+  exploit init_mem_exists; eauto. intros [tm INIT].
+  exists init_meminj, tm.
+  split. auto.
+  split. eapply init_mem_inj_2; eauto.
+  apply init_meminj_preserves_globals.
+Qed.
 
 
   Hypothesis init_mem_correct2: forall m2 m3, Genv.init_mem W2 = Some m2 ->
