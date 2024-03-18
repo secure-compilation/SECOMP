@@ -1190,8 +1190,8 @@ Proof.
 - split; [red|]; intros.
   destruct (zeq p0 p).
   + subst p0. destruct n0. simpl. apply Mem.loadbytes_empty. lia.
-    eapply IHo in H0 as [? ?]; eauto.
-    eapply Mem.store_can_access_block_2; eauto.
+    (* eapply IHo in H0 as [? ?]; eauto. *)
+    (* eapply Mem.store_can_access_block_2; eauto. *)
     rewrite Nat2Z.inj_succ in H2. rewrite Nat2Z.inj_succ.
     replace (Z.succ (Z.of_nat n0)) with (1 + Z.of_nat n0) by lia.
     change (List.repeat (Byte Byte.zero) (S n0))
@@ -1268,7 +1268,7 @@ Lemma store_init_data_list_loadbytes:
   Mem.loadbytes m' b p (init_data_list_size il) cp = Some (bytes_of_init_data_list il).
 Proof.
   induction il as [ | i1 il]; simpl; intros.
-- apply Mem.loadbytes_empty. lia. inv H0; eauto.
+- apply Mem.loadbytes_empty. lia.
 - generalize (init_data_size_pos i1) (init_data_list_size_pos il); intros P1 PL.
   destruct (store_init_data m b p i1) as [m1|] eqn:S; try discriminate.
   apply Mem.loadbytes_concat.

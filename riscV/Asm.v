@@ -346,6 +346,7 @@ Inductive instruction : Type :=
   | Pfcvtsd  (rd: freg) (rs: freg)                  (**r float   -> float32 *)
 
   (* Pseudo-instructions *)
+  | Pld_arg   (ch: memory_chunk) (rd: ireg + freg) (ra: ireg) (ofs: offset)   (**r load arg *)
   | Pallocframe (sz: Z) (pos: ptrofs)               (**r allocate new stack frame *)
   | Pfreeframe  (sz: Z) (pos: ptrofs)               (**r deallocate stack frame and restore previous frame *)
   | Plabel  (lbl: label)                            (**r define a code label *)
@@ -539,6 +540,7 @@ Fixpoint label_pos (lbl: label) (pos: Z) (c: code) {struct c} : option Z :=
   end.
 
 Variable ge: genv.
+Variable cp_main: compartment.
 
 (** The two functions below axiomatize how the linker processes
   symbolic references [symbol + offset)] and splits their
@@ -644,7 +646,8 @@ Definition eval_branch (f: function) (l: label) (rs: regset) (m: mem) (res: opti
     we generate cannot use those registers to hold values that must
     survive the execution of the pseudo-instruction. *)
 
-Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) (cp: compartment) : outcome :=
+Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) (cp: compartment)
+                      : outcome :=
   match i with
   | Pmv d s =>
       Next (nextinstr (rs#d <- (rs#s))) m
@@ -959,6 +962,7 @@ Definition exec_instr (f: function) (i: instruction) (rs: regset) (m: mem) (cp: 
       Next (nextinstr (rs#d <- (Val.singleoffloat rs#s))) m
 
 (** Pseudo-instructions *)
+  | Pld_arg _ _ _ _ => Stuck
   | Pallocframe sz pos =>
       let (m1, stk) := Mem.alloc m (comp_of f) 0 sz in
       let sp := (Vptr stk Ptrofs.zero) in
@@ -1208,8 +1212,11 @@ Inductive stackframe: Type :=
 | Stackframe:
     forall (f: block)       (**r pointer to calling function *)
       (sg: signature)   (**r signature of the callee *)
+      (cp: compartment) (**r compartment of the callee *)
       (sp: val)         (**r stack pointer in calling function *)
-      (retaddr: ptrofs), (**r Asm return address in calling function *)
+      (retaddr: ptrofs) (**r Asm return address in calling function *)
+      (dummy_retaddr: block)
+      (dummy_sp: block),
       stackframe.
 
 Definition stack := list stackframe.
@@ -1217,7 +1224,18 @@ Definition stack := list stackframe.
 Definition call_comp (s: stack) :=
   match s with
   | nil => top
-  | Stackframe f _ _ _ :: _ => Genv.find_comp_of_block ge f
+  | Stackframe f _ _ _ _ _ _ :: _ => Genv.find_comp_of_block ge f
+  end.
+
+Definition callee_comp_stackframe (st: stackframe) :=
+  match st with
+  | Stackframe _ _ cp _ _ _ _ => cp
+  end.
+
+Definition callee_comp (s: stack) :=
+  match s with
+  | nil => cp_main
+  | f :: _ => callee_comp_stackframe f
   end.
 
 (* The state of the stack when we start the execution *)
@@ -1229,41 +1247,56 @@ Definition initial_stack: stack := nil.
    invariants *)
 (* The two definitions only update the stack when a cross-compartment change
    is detected *)
-Definition update_stack_call (s: stack) (sg: signature) (cp: compartment) rs' :=
-  let pc' := rs' # PC in
-  let ra' := rs' # RA in
-  let sp' := rs' # SP in
-  let cp' := Genv.find_comp_in_genv ge pc' in
-  if flowsto_dec cp' cp then
-    (* If we are in the same compartment as previously recorded, we
+  Definition update_stack_call (s: stack) (sg: signature) (cp: compartment) rs' (m: mem):=
+    let pc' := rs' # PC in
+    let ra' := rs' # RA in
+    let sp' := rs' # SP in
+    let cp' := Genv.find_comp_in_genv ge pc' in
+    if flowsto_dec cp' cp then
+      (* If we are in the same compartment as previously recorded, we
            don't update the stack *)
-    Some s
-  else
-    (* Otherwise, we simply push a new frame on the stack *)
-    match ra' with
-    | Vptr f retaddr =>
-        Some (Stackframe f sg sp' retaddr :: s)
-    | _ => None
-    end
-.
+      Some (s, rs', m)
+    else
+      (* Otherwise, we simply push the new frame on the stack *)
+      let (m', dummy_ra) := Mem.alloc m cp' 0 0 in
+      let (m'', dummy_sp) := Mem.alloc m' cp' 0 0 in
+      match sp' with
+        | Vptr bsp _ => match Mem.set_perm m'' bsp Readable with
+                         | Some m''' => match ra' with
+                                       | Vptr f retaddr =>
+                                           Some (Stackframe f sg cp' sp' retaddr dummy_ra dummy_sp :: s,
+                                               (rs' # SP <- (Vptr dummy_sp Ptrofs.zero) # RA <- (Vptr dummy_ra Ptrofs.zero)),
+                                               m''')
+                                       | _ => None
+                                       end
+                       | _ => None
+                       end
+      | _ => None
+      end.
 
-  
-Definition update_stack_return (s: stack) (cp: compartment) rs' :=
-  let pc' := rs' # PC in
-  let cp' := Genv.find_comp_in_genv ge pc' in
-  if flowsto_dec cp cp' then
-    (* If we are in the same compartment as previously recorded, we
-         don't update the stack *)
-    Some s
-  else
-    (* Otherwise we just pop the top stackframe, if it exists *)
+  Lemma update_stack_call_PC s sg cp rs m:
+    forall s' rs' m',
+      update_stack_call s sg cp rs m = Some (s', rs', m') ->
+      rs' PC = rs PC.
+  Proof.
+    intros.
+    unfold update_stack_call in H.
+    destruct flowsto_dec; try congruence.
+    do 2 destruct Mem.alloc.
+    destruct (rs X2); try discriminate.
+    destruct (Mem.set_perm); try discriminate.
+    destruct (rs X1); try discriminate. inv H.
+    rewrite Pregmap.gso; auto; now congruence.
+  Qed.
+
+  Definition update_stack_return (s: stack) :=
     match s with
-    | nil => Some nil
+    | nil => None
     | _ :: st' => Some st'
     end
-.
+  .
 
-Inductive state: Type :=
+  Inductive state: Type :=
   | State: stack -> regset -> mem -> compartment -> state
   | ReturnState: stack -> regset -> mem -> compartment -> state.
 
@@ -1281,73 +1314,103 @@ Definition is_return i :=
   | _ => false
   end.
 
-Definition asm_parent_ra s :=
-  match s with
-  | nil => Vnullptr
-  | Stackframe b _ sp retaddr :: _ => Vptr b retaddr
+  Definition asm_parent_ra s :=
+    match s with
+    | nil => Vnullptr
+    | Stackframe b _ _ sp retaddr _ _ :: _ => Vptr b retaddr
+    end.
+
+  Definition asm_parent_sp s :=
+    match s with
+    | nil => Vnullptr
+    | Stackframe b _ _ sp retaddr _ _ :: _ => sp
+    end.
+
+  Definition asm_parent_dummy_ra s :=
+    match s with
+    | nil => Vnullptr
+    | Stackframe _ _ _ _ _ b _ :: _ => Vptr b Ptrofs.zero
+    end.
+
+  Definition asm_parent_dummy_sp s :=
+    match s with
+    | nil => Vnullptr
+    | Stackframe _ _ _ _ _ _ b :: _ => Vptr b Ptrofs.zero
+    end.
+
+  Definition parent_signature (stack: list stackframe) : signature :=
+  match stack with
+  | nil => signature_main
+  | Stackframe _ sig _ _ _ _ _:: _ => sig
   end.
 
-Definition asm_parent_sp s :=
-  match s with
-  | nil => Vnullptr
-  | Stackframe b _ sp retaddr :: _ => sp
-  end.
+  Definition sig_of_call s :=
+    match s with
+    | Stackframe _ sg _ _ _ _ _ :: _ => sg
+    | _ => signature_main
+    end.
 
-Definition sig_of_call s :=
-  match s with
-  | Stackframe _ sg _ _ :: _ => sg
-  | _ => signature_main
-  end.
+  Definition funsig (fd: fundef): signature :=
+    match fd with
+    | Internal f => fn_sig f
+    | External ef => ef_sig ef
+    end.
 
-Definition funsig (fd: fundef): signature :=
-  match fd with
-  | Internal f => fn_sig f
-  | External ef => ef_sig ef
-  end.
+  Definition invalidate_call (rs: regset) (sig: signature) : regset :=
+    fun r =>
+      if preg_eq r PC || preg_eq r RA || preg_eq r SP ||
+           in_dec preg_eq r (map preg_of (filter (fun x => LTL.in_mreg x (LTL.parameters_mregs sig)) all_mregs)) then
+        rs r
+      else
+        Vundef.
 
-(* LTL.call_regs_ext *)
-(*   LTL.return_regs_ext *)
+  Notation "'SP'" := X2 (only parsing) : asm.
+  Notation "'RA'" := X1 (only parsing) : asm.
 
-Definition invalidate_call (rs: regset) (sig: signature) : regset :=
-  fun r =>
-    if preg_eq r PC || preg_eq r RA || preg_eq r SP ||
-       in_dec preg_eq r (map preg_of (filter (fun x => LTL.in_mreg x (LTL.parameters_mregs sig)) all_mregs)) then
-      rs r
-    else
-      Vundef.
+  Definition invalidate_return (rs: regset) (sig: signature): regset :=
+    fun r =>
+      if preg_eq r PC || preg_eq r SP ||
+           in_dec preg_eq r (map preg_of
+                               (filter (fun x => LTL.in_mreg x (regs_of_rpair (loc_result sig))) all_mregs)) then
+        rs r
+      else
+        Vundef.
 
-Notation "'SP'" := X2 (only parsing) : asm.
-Notation "'RA'" := X1 (only parsing) : asm.
-
-Definition invalidate_return (rs: regset) (sig: signature): regset :=
-  fun r =>
-    if preg_eq r PC || preg_eq r SP ||
-       in_dec preg_eq r (map preg_of
-                           (filter (fun x => LTL.in_mreg x (regs_of_rpair (loc_result sig))) all_mregs)) then
-      rs r
-    else
-      Vundef.
-
-Definition invalidate_cross_return (rs: regset) (st: stack): regset :=
-  fun r =>
+  Definition invalidate_cross_return (rs: regset) (st: stack): regset :=
+    fun r =>
       if preg_eq r PC then asm_parent_ra st
       else if preg_eq r SP then
              asm_parent_sp st
            else rs r.
 
-Lemma invalidate_call_PC: forall rs sig, invalidate_call rs sig PC = rs PC.
-  unfold invalidate_call. intros. reflexivity.
-Qed.
+  Lemma invalidate_call_PC: forall rs sig, invalidate_call rs sig PC = rs PC.
+    unfold invalidate_call. intros. reflexivity.
+  Qed.
 
-Lemma invalidate_return_PC: forall rs sig, invalidate_return rs sig PC = rs PC.
-  unfold invalidate_return. intros. reflexivity.
-Qed.
+  Lemma invalidate_return_PC: forall rs sig, invalidate_return rs sig PC = rs PC.
+    unfold invalidate_return. intros. reflexivity.
+  Qed.
+
+  Lemma exec_instr_call_pc: forall f i sig rs rs' m m' cp,
+    sig_call i = Some sig ->
+    exec_instr f i rs m cp = Next rs' m' ->
+    rs' X1 = (Val.offset_ptr (rs PC) Ptrofs.one).
+  Proof.
+    intros f i sig rs rs' m m' cp H exec.
+    destruct i; simpl in H; try congruence;
+      match goal with
+      | H: (if ?iscl then Some _ else None) = Some _ |- _ => destruct iscl; try congruence; inv H
+      end;
+      simpl in exec; inv exec; auto.
+    destruct Genv.allowed_addrof_b; inv H0; auto.
+  Qed.
+
 
 Inductive step: state -> trace -> state -> Prop :=
   | exec_step_internal:
       forall b ofs f i rs m rs' m' b' ofs' st cp,
       rs PC = Vptr b ofs ->
-      Genv.find_funct_ptr ge b = Some (Internal f) ->
+      Genv.find_def ge b = Some (Gfun (Internal f)) ->
       find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
       exec_instr f i rs m (comp_of f) = Next rs' m' ->
       sig_call i = None ->
@@ -1355,72 +1418,131 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (NEXTPC: rs' PC = Vptr b' ofs'),
       forall (ALLOWED: comp_of f = Genv.find_comp_of_block ge b'),
       step (State st rs m cp) E0 (State st rs' m' (comp_of f))
-  | exec_step_internal_call:
-      forall b ofs f i sig rs m rs' rs'' m' b' ofs' st st' args t,
+
+  | exec_step_load_arg_cross:
+      forall b ofs f ch rd ra rs m st cp dsp dosp o o' sp v rs' ofs_arg ty,
       rs PC = Vptr b ofs ->
-      Genv.find_funct_ptr ge b = Some (Internal f) ->
+      Genv.find_def ge b = Some (Gfun (Internal f)) ->
+      find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some (Pld_arg ch rd ra o) ->
+
+      (asm_parent_dummy_sp st = Vptr dsp dosp) ->
+      (rs ra = Vptr dsp o') ->
+      (asm_parent_sp st = sp) ->
+      (* !! *)
+      eval_offset o = Ptrofs.repr (Stacklayout.fe_ofs_arg + 4 * ofs_arg) ->
+
+      (In (One (S Incoming ofs_arg ty)) (loc_parameters (parent_signature st)) \/
+      (exists l : loc,
+          In (Twolong (S Incoming ofs_arg ty) l) (loc_parameters (parent_signature st))) \/
+       (exists l0 : loc,
+           In (Twolong l0 (S Incoming ofs_arg ty)) (loc_parameters (parent_signature st)))) ->
+
+      Mem.loadv (chunk_of_type ty) m
+                (Val.offset_ptr sp (eval_offset o)) top = Some v ->
+      (* *)
+      (* (Mem.loadv ch m (Val.offset_ptr sp (eval_offset o)) top = Some v) -> *)
+      (forall ird, rd = inl ird -> rs' = nextinstr rs # ird <- v) ->
+      (forall frd, rd = inr frd -> rs' = nextinstr rs # frd <- v) ->
+
+      step (State st rs m cp) E0 (State st rs' m (comp_of f))
+
+  | exec_step_load_arg_int:
+      forall b ofs f ch rd ra rs m st cp dsp dosp o rs' m',
+      rs PC = Vptr b ofs ->
+      Genv.find_def ge b = Some (Gfun (Internal f)) ->
+      find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some (Pld_arg ch rd ra o) ->
+
+      (asm_parent_dummy_sp st = Vptr dsp dosp) ->
+      (forall o', rs ra <> Vptr dsp o') ->
+      forall (EXECi: forall ird, rd = inl ird ->
+                       exec_load ch rs m ird ra o (comp_of f) false = Next rs' m'),
+      forall (EXECf: forall frd, rd = inr frd ->
+                       exec_load ch rs m frd ra o (comp_of f) false = Next rs' m'),
+
+      step (State st rs m cp) E0 (State st rs' m' (comp_of f))
+
+  | exec_step_internal_call:
+      forall b ofs f i sig rs m rs' m' m'' b'  st st' args t rs'' rs''',
+      rs PC = Vptr b ofs ->
+      Genv.find_def ge b = Some (Gfun (Internal f)) ->
       find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
       exec_instr f i rs m (comp_of f) = Next rs' m' ->
       sig_call i = Some sig ->
-      forall (NEXTPC: rs' PC = Vptr b' ofs'),
+      forall (NEXTPC: rs' PC = Vptr b' Ptrofs.zero), (* Only allow to call to ofs zero *)
       forall (ALLOWED: Genv.allowed_call ge (comp_of f) (Vptr b' Ptrofs.zero)),
       forall cp' (NEXTCOMP: Genv.find_comp_of_block ge b' = cp'),
       (* Is a call, we update the stack *)
-      forall (STUPD: update_stack_call st sig (comp_of f) rs' = Some st'),
+      forall (SP_HAS_PTR: Genv.type_of_call (comp_of f) cp' = Genv.CrossCompartmentCall ->
+                     exists bsp osp, rs SP = Vptr bsp osp),
+      forall (STUPD: update_stack_call st sig (comp_of f) rs' m' = Some (st', rs'', m'')),
       forall (ARGS: call_arguments rs' m' sig args),
+      (* note: it doesn't matter which register file we use to get the arguments *)
+      (* Check signature *)
+      forall (CALLSIG:
+          Genv.type_of_call (comp_of f) cp' = Genv.CrossCompartmentCall ->
+        (exists fd, Genv.find_def ge b' = Some (Gfun fd) /\ sig = funsig fd)),
       (* Is a call, we check whether we are allowed to pass pointers *)
       forall (NO_CROSS_PTR:
           Genv.type_of_call (comp_of f) cp' = Genv.CrossCompartmentCall ->
           List.Forall not_ptr args),
-      forall (EV: call_trace ge (comp_of f) cp' (Vptr b' ofs')
+      forall (EV: call_trace ge (comp_of f) cp' (Vptr b' Ptrofs.zero)
               args (sig_args sig) t),
-      forall (INVALIDATE: invalidate_call rs' sig = rs''),
-      step (State st rs m (comp_of f)) t (State st' rs' m' (comp_of f))
+      forall (INVALIDATE: invalidate_call rs'' sig = rs'''),
+      step (State st rs m (comp_of f)) t (State st' rs''' m'' (comp_of f))
   | exec_step_internal_return:
       forall b ofs f i rs m rs' m' st cp,
       rs PC = Vptr b ofs ->
-      Genv.find_funct_ptr ge b = Some (Internal f) ->
+      Genv.find_def ge b = Some (Gfun (Internal f)) ->
       find_instr (Ptrofs.unsigned ofs) (fn_code f) = Some i ->
       exec_instr f i rs m (comp_of f) = Next rs' m' ->
       is_return i = true ->
       (* We attempt a return, so we go to a ReturnState*)
       step (State st rs m cp) E0 (ReturnState st rs' m' (comp_of f))
   | exec_step_return:
-      forall st rs m cp rec_cp,
+      forall st rs rs' m sg rec_cp cp,
         rs PC <> Vnullptr ->
-        (exists b ofs fd, rs PC = Vptr b ofs /\ Genv.find_def ge b = Some (Gfun (Internal fd))) ->
+        rs PC <> Vundef ->
         (* rs PC <> asm_parent_dummy_ra st -> *)
-        (* rs PC <> Vone -> *)
+        (exists b ofs fd, rs PC = Vptr b ofs /\
+                       Genv.find_def ge b = Some (Gfun (Internal fd)) /\
+                       fn_sig fd = sg) ->
         forall (NEXTCOMP: Genv.find_comp_in_genv ge (rs PC) = cp),
-        forall (INTERNAL: rec_cp ⊆ cp),
-      (*   forall (SIG_STACK: sig_of_call st = sg), *)
-      (* forall (INVALIDATE: invalidate_return rs sg = rs'), *)
-          step (ReturnState st rs m rec_cp) E0 (State st rs m cp)
+        forall (INTERNAL_RET: rec_cp ⊆ cp),
+        (* forall (SIG_STACK: fn_sig fd = sg), *)
+        forall (INVALIDATE: invalidate_return rs sg = rs'),
+          step (ReturnState st rs m rec_cp) E0 (State st rs' m cp)
   | exec_step_return_cross:
-      forall st st' rs rs' m sg t rec_cp cp',
+      forall st st' rs rs' rs'' m m' sg t rec_cp cp',
         rs PC <> Vnullptr ->
-        forall (CROSS: rec_cp ⊈ cp'),
-        forall (NEXTCOMP: Genv.find_comp_in_genv ge (rs PC) = cp'),
-        (* We only impose conditions on when returns can be executed for cross-compartment
-           returns. These conditions are that we restore the previous RA and SP *)
-        forall (PC_RA: rs PC = asm_parent_ra st),
-        forall (RESTORE_SP: rs SP = asm_parent_sp st),
+        rs PC <> Vundef ->
+        rs PC = asm_parent_dummy_ra st ->
+        (* rs PC = Vone -> *)
+        forall (RESTORE_SP: rs SP = asm_parent_dummy_sp st),
         (* Note that in the same manner, this definition only updates the stack when doing
          cross-compartment returns *)
-        forall (STUPD: update_stack_return st rec_cp rs = Some st'),
-        (* We do not return a pointer *)
+        forall (STUPD: update_stack_return st = Some st'),
         forall (SIG_STACK: sig_of_call st = sg),
+        (* We do not return a pointer *)
         forall (NO_CROSS_PTR: not_ptr (return_value rs sg)),
+        forall (COMP: Genv.find_comp_in_genv ge (asm_parent_ra st) = cp'),
         forall (EV: return_trace ge cp' rec_cp (return_value rs sg) (sig_res sg) t),
-        forall (INVALIDATE: invalidate_return rs sg = rs'),
-          step (ReturnState st rs m rec_cp) t (State st' rs' m cp')
+        forall (EV': t <> E0),
+      forall (INVALIDATE: invalidate_return rs sg = rs'),
+      forall (INVALIDATE: invalidate_cross_return rs' st = rs''),
+      forall (MAKE_FREEABLE: Some m' = match asm_parent_sp st with
+                             | Vptr bsp _ => Mem.set_perm m bsp Freeable
+                             | _ => None
+                             end),
+          step (ReturnState st rs m rec_cp) t (State st' rs'' m' cp')
   | exec_step_builtin:
       forall b ofs f ef args res rs m vargs t vres rs' m' st,
       rs PC = Vptr b ofs ->
-      Genv.find_funct_ptr ge b = Some (Internal f) ->
+      Genv.find_def ge b = Some (Gfun (Internal f)) ->
       find_instr (Ptrofs.unsigned ofs) f.(fn_code) = Some (Pbuiltin ef args res) ->
       eval_builtin_args ge (comp_of f) rs (rs SP) m args vargs ->
       external_call ef ge (comp_of f) vargs m t vres m' ->
+        (* this condition makes explicit the fact a builtin can't modify the PC directly *)
+      forall (RES_NOT_PC: exists reg, res = map_builtin_res preg_of reg),
       rs' = nextinstr
               (set_res res vres
                 (undef_regs (map preg_of (destroyed_by_builtin ef))
@@ -1429,7 +1551,7 @@ Inductive step: state -> trace -> state -> Prop :=
   | exec_step_external:
       forall b ef args res rs m t rs' m' st cp,
       rs PC = Vptr b Ptrofs.zero ->
-      Genv.find_funct_ptr ge b = Some (External ef) ->
+      Genv.find_def ge b = Some (Gfun (External ef)) ->
       external_call ef ge cp args m t res m' ->
       extcall_arguments rs m (ef_sig ef) args ->
       rs' = (set_pair (loc_external_result (ef_sig ef)) res (undef_caller_save_regs rs))#PC <- (rs RA) ->
@@ -1448,13 +1570,13 @@ Inductive initial_state (p: program): state -> Prop :=
         # SP <- Vnullptr
         # RA <- Vnullptr in
       Genv.init_mem p = Some m0 ->
-      initial_state p (State initial_stack rs0 m0 top).
+      initial_state p (State nil rs0 m0 (Genv.find_comp_of_ident ge (prog_main p))).
 
 Inductive final_state (p: program): state -> int -> Prop :=
   | final_state_intro: forall rs m r cp,
       rs PC = Vnullptr ->
       rs X10 = Vint r ->
-      final_state p (ReturnState initial_stack rs m cp) r
+      final_state p (ReturnState nil rs m cp) r
 .
 
 Definition comp_of_main (p: program) :=
@@ -1462,18 +1584,6 @@ Definition comp_of_main (p: program) :=
   Genv.find_comp_of_ident ge (prog_main p).
 Definition semantics (p: program) :=
   Semantics step (initial_state p) (final_state p) (Genv.globalenv p).
-
-(** [has_comp] instan(* ce for [Asm] states *) *)
-(* #[export] Instance has_comp_state (p: program): has_comp state := *)
-(*   fun s => match s with *)
-(*         | State _ rs _ *)
-(*         | ReturnState _ rs _ _ => *)
-(*             match  Genv.find_comp_in_genv (Genv.globalenv p) (rs PC) with *)
-(*             | Some cp => cp *)
-(*             | None => default_compartment *)
-(*             end *)
-(*         end. *)
-
 (** Determinacy of the [Asm] semantics. *)
 
 Remark extcall_arguments_determ:
@@ -1550,9 +1660,22 @@ Ltac Equalities :=
   end.
 intros; constructor; simpl; intros.
 - (* determ *)
-  inv H; inv H0; Equalities.
+  inv H; inv H0; Equalities; try discriminate.
   + split. constructor. auto.
-  + discriminate.
+  + split. constructor.
+    destruct rd0.
+    * exploit H10; eauto. exploit H25; eauto.
+      admit.
+    * exploit H11; eauto. exploit H26; eauto.
+      admit.
+  + congruence.
+  + congruence.
+  + split. constructor. auto.
+    destruct rd0.
+    * exploit EXECi; eauto. exploit EXECi0; eauto.
+      congruence.
+    * exploit EXECf; eauto. exploit EXECf0; eauto.
+      congruence.
   + inv EV; inv EV0; try congruence.
     split. constructor. auto.
     assert (i1 = i) by congruence. subst.
@@ -1560,20 +1683,19 @@ intros; constructor; simpl; intros.
     assert (vl0 = vl) by (eapply eventval_list_match_determ_2; eauto). subst.
     split. constructor. auto.
   + now destruct i0.
-  + discriminate.
   + now destruct i0.
   + split. constructor. auto.
-  + discriminate.
-  + split; constructor; eauto.
-  + now auto.
-  + now auto.
+  + destruct H3 as (? & ? & ? & ? &? & ?).
+    destruct H11 as (? & ? & ? & ? &? & ?). assert (sg = sg0) by congruence. subst.
+    rewrite H7.
+    split; econstructor; eauto.
+  + admit.
+  + admit.
   + inv EV; inv EV0; try congruence.
-    split. constructor. auto.
-    assert (res = res0) by (eapply eventval_match_determ_2; eauto). subst.
-    split. constructor. auto.
-  + discriminate.
-  + discriminate.
-  + discriminate.
+    assert (res0 = res) by (eapply eventval_match_determ_2; eauto). subst.
+    destruct (asm_parent_sp st); try discriminate. assert (m'0 = m') by congruence. subst.
+    split; constructor; auto.
+    (* split. constructor. auto. *)
   + assert (vargs0 = vargs) by (eapply eval_builtin_args_determ; eauto). subst vargs0.
     exploit external_call_determ. eexact H5. eexact H15. intros [A B].
     split. auto. intros. destruct B; auto. subst. auto.
@@ -1582,7 +1704,7 @@ intros; constructor; simpl; intros.
     split. auto. intros. destruct B; auto. subst. congruence.
 - (* trace length *)
   red; intros. inv H; simpl.
-  lia.
+  lia. lia. lia.
   inv EV; auto.
   lia. lia.
   inv EV; auto.
@@ -1596,7 +1718,7 @@ intros; constructor; simpl; intros.
   inv H. congruence. congruence.
 - (* final states *)
   inv H; inv H0. congruence.
-Qed.
+Admitted.
 
 (** Classification functions for processor registers (used in Asmgenproof). *)
 
@@ -1667,68 +1789,6 @@ Section ExecSem.
       possible_trace w t w' ->
       do_inline_assembly txt sg ge cp w vargs m = Some(w', t, vres, m').
 
-  Definition take_step (p: program) (ge: genv) (w: world) (s: state): option (trace * state) :=
-    let comp_of_main := comp_of_main p in
-    match s with
-    | State st rs m _ =>
-        do Vptr b ofs <- rs PC;
-        do fd <- Genv.find_funct_ptr ge b;
-        match fd with
-        | Internal f =>
-            do i <- find_instr (Ptrofs.unsigned ofs) (fn_code f);
-            match exec_instr ge f i rs m (comp_of f) with
-            | Next rs' m' =>
-                match sig_call i, is_return i with
-                | None, false => (* exec_step_internal *)
-                    do Vptr b' ofs' <- rs' PC;
-                    let cp := Genv.find_comp_of_block ge b' in
-                    check (cp_eq_dec (comp_of f) cp);
-                    Some (E0, State st rs' m' (comp_of f))
-                | Some sig, false => (* exec_step_internal_call *)
-                    do Vptr b' ofs' <- rs' PC;
-                    check (Genv.allowed_call_b ge (comp_of f) (rs' PC));
-                    do st' <- update_stack_call ge st sig (comp_of f) rs';
-                    do vargs <- get_call_arguments rs' m' sig;
-                    let cp := Genv.find_comp_in_genv ge (rs' PC) in
-                    check (match Genv.type_of_call (comp_of f) cp with
-                           | Genv.CrossCompartmentCall => forallb not_ptr_b vargs
-                           | _ => true
-                           end);
-                    do t <- get_call_trace _ _ ge (comp_of f) cp (rs' PC) vargs (sig_args sig);
-                    Some (t, State st' rs' m' (comp_of f))
-                | None, true => (* exec_step_internal_return *)
-                    check (Genv.allowed_call_b ge (comp_of f) (rs' PC));
-                    Some (E0, ReturnState st rs' m' (comp_of f))
-                | Some _, true => None
-                end
-            | Stuck => None
-            end
-        | External ef =>
-            check (Ptrofs.eq ofs Ptrofs.zero);
-            let cp := Genv.find_comp_in_genv ge (rs X1) in
-            do vargs <- get_extcall_arguments rs m (ef_sig ef);
-            do res_external <- do_external _ _ ge do_external_function do_inline_assembly ef cp w vargs m;
-            let '(w', t, res, m') := res_external in
-            let rs' := (set_pair (loc_external_result (ef_sig ef)) res (undef_caller_save_regs rs)) # PC <- (rs X1) in
-            let cp' := Genv.find_comp_in_genv ge (rs PC) in
-            Some (t, ReturnState st rs' m' cp')
-        end
-    | ReturnState st rs m rec_cp =>
-        check (negb (Val.eq (rs PC) Vnullptr));
-        let rec_cp' := call_comp ge st in
-        let cp' := Genv.find_comp_in_genv ge (rs PC) in
-        check (match cp_eq_dec rec_cp cp' with
-               | left _ => true
-               | right _ => andb (Val.eq (rs PC) (asm_parent_ra st)) (Val.eq (rs X2) (asm_parent_sp st))
-               end);
-        do st' <- update_stack_return ge st rec_cp rs;
-        let sg := sig_of_call st in
-        check (match Genv.type_of_call cp' rec_cp with
-               | Genv.CrossCompartmentCall => not_ptr_b (return_value rs sg)
-               | _ => true end);
-        do t <- get_return_trace _ _ ge cp' rec_cp (return_value rs sg) (sig_res sg);
-        Some (t, State st' rs m bottom)
-    end.
 
 Definition build_initial_state (p: program): option state :=
   let ge := Genv.globalenv p in

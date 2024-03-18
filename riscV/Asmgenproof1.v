@@ -1508,19 +1508,19 @@ Qed.
 
 Lemma make_epilogue_correct:
   forall ge0 f m stk soff cs m' ms rs k tm,
-  load_stack m (Vptr stk soff) Tptr f.(fn_link_ofs) (comp_of f) = Some (parent_sp cs) ->
-  load_stack m (Vptr stk soff) Tptr f.(fn_retaddr_ofs) (comp_of f) = Some (parent_ra cs) ->
+  load_stack m (Vptr stk soff) Tptr f.(fn_link_ofs) (comp_of f) = Some (dummy_parent_sp cs) ->
+  load_stack m (Vptr stk soff) Tptr f.(fn_retaddr_ofs) (comp_of f) = Some (dummy_parent_ra cs) ->
   Mem.free m stk 0 f.(fn_stacksize) (comp_of f) = Some m' ->
   agree ms (Vptr stk soff) rs ->
   Mem.extends m tm ->
-  match_stack ge0 cs ->
+  match_stack ge0 (Mach.fn_sig f) cs ->
   comp_of f = comp_of fn ->
   exists rs', exists tm',
      exec_straight ge fn (make_epilogue f k) rs tm k rs' tm'
-  /\ agree ms (parent_sp cs) rs'
+  /\ agree ms (dummy_parent_sp cs) rs'
   /\ Mem.extends m' tm'
-  /\ rs'#RA = parent_ra cs
-  /\ rs'#SP = parent_sp cs
+  /\ rs'#RA = dummy_parent_ra cs
+  /\ rs'#SP = dummy_parent_sp cs
   /\ (forall r, r <> PC -> r <> RA -> r <> SP -> r <> X31 -> rs'#r = rs#r).
 Proof.
   intros until tm; intros LP LRA FREE AG MEXT MCS COMP.

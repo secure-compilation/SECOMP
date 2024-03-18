@@ -953,13 +953,13 @@ Lemma exec_straight_steps_1:
 Proof.
   induction 1; intros.
   apply plus_one.
-  { econstructor. eauto. eauto.
+  { econstructor. eauto. eapply Genv.find_funct_ptr_iff; eauto.
     eapply find_instr_tail. eauto. eauto.
     eauto. eauto. eauto.
     now rewrite H2, H4.
     now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ H5). }
   eapply plus_left'.
-  { econstructor. eauto. eauto.
+  { econstructor. eauto. eapply Genv.find_funct_ptr_iff; eauto.
     eapply find_instr_tail. eauto.
     eauto. eauto. eauto.
     now rewrite H2, H5.
@@ -1057,40 +1057,40 @@ Section MATCH_STACK.
 
 Variable ge: Mach.genv.
 
-Inductive match_stack: list Mach.stackframe -> Prop :=
-  | match_stack_nil:
-      match_stack nil
-  | match_stack_cons: forall fb sg sp ra c s f tf tc,
+Inductive match_stack: signature -> list Mach.stackframe -> Prop :=
+  | match_stack_nil: forall sg,
+      match_stack sg nil
+  | match_stack_cons: forall fb sg sp ra c s f tf tc dra dsp,
       Genv.find_funct_ptr ge fb = Some (Internal f) ->
       transl_code_at_pc ge (Vptr fb ra) fb f c false tf tc ->
       sp <> Vundef ->
-      match_stack s ->
-      match_stack (Mach.Stackframe fb sg sp ra c :: s).
+      match_stack (Mach.fn_sig f) s ->
+      match_stack sg (Mach.Stackframe fb sg sp ra c dra dsp :: s).
 
-Lemma parent_sp_def: forall s, match_stack s -> parent_sp s <> Vundef.
+Lemma parent_sp_def: forall sg s, match_stack sg s -> dummy_parent_sp s <> Vundef.
 Proof.
   induction 1; simpl.
   unfold Vnullptr; destruct Archi.ptr64; congruence.
-  auto.
+  destruct dsp; auto. discriminate.
 Qed.
 
-Lemma parent_ra_def: forall s, match_stack s -> parent_ra s <> Vundef.
+Lemma parent_ra_def: forall sg s, match_stack sg s -> dummy_parent_ra s <> Vundef.
 Proof.
   induction 1; simpl.
   unfold Vnullptr; destruct Archi.ptr64; congruence.
-  inv H0. congruence.
+  inv H0. destruct dra; auto; congruence.
 Qed.
 
 Lemma lessdef_parent_sp:
-  forall s v,
-  match_stack s -> Val.lessdef (parent_sp s) v -> v = parent_sp s.
+  forall sg s v,
+  match_stack sg s -> Val.lessdef (dummy_parent_sp s) v -> v = dummy_parent_sp s.
 Proof.
   intros. inv H0. auto. exploit parent_sp_def; eauto. tauto.
 Qed.
 
 Lemma lessdef_parent_ra:
-  forall s v,
-  match_stack s -> Val.lessdef (parent_ra s) v -> v = parent_ra s.
+  forall sg s v,
+  match_stack sg s -> Val.lessdef (dummy_parent_ra s) v -> v = dummy_parent_ra s.
 Proof.
   intros. inv H0. auto. exploit parent_ra_def; eauto. tauto.
 Qed.
