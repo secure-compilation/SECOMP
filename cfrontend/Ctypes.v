@@ -1533,6 +1533,7 @@ Record program : Type := {
   prog_comp_env_eq: build_composite_env prog_types = OK prog_comp_env;
   prog_pol_pub: Policy.in_pub prog_pol prog_public;
   prog_agr_comps : agr_comps prog_pol prog_defs;
+  prog_pol_complete: pol_complete prog_pol prog_defs;
 }.
 
 Definition program_of_program (p: program) : AST.program fundef type :=
@@ -1542,6 +1543,7 @@ Definition program_of_program (p: program) : AST.program fundef type :=
      AST.prog_pol := p.(prog_pol);
      AST.prog_pol_pub := p.(prog_pol_pub);
      AST.prog_agr_comps := p.(prog_agr_comps);
+     AST.prog_pol_complete := p.(prog_pol_complete);
   |}.
 
 Coercion program_of_program: program >-> AST.program.
@@ -1554,6 +1556,16 @@ Proof.
   intros.
   unfold Policy.enforce_in_pub.
   exploit agr_update_policy; eauto.
+Qed.
+
+Lemma complete_enforce_update_policy:
+  forall (pol : Policy.t) (defs : list (ident * globdef fundef type))
+                                (public: list ident),
+    pol_complete (Policy.enforce_in_pub (update_policy pol defs) public) defs.
+Proof.
+  intros.
+  unfold Policy.enforce_in_pub.
+  exploit complete_update_policy; eauto.
 Qed.
 
 Program Definition make_program (types: list composite_definition)
@@ -1571,7 +1583,8 @@ Program Definition make_program (types: list composite_definition)
             prog_comp_env := ce;
             prog_comp_env_eq := _;
             prog_pol_pub := Policy.enforce_in_pub_correct pol public;
-            prog_agr_comps := (agr_enforce_update_policy _ _ _) |}
+            prog_agr_comps := (agr_enforce_update_policy _ _ _);
+            prog_pol_complete := (complete_enforce_update_policy _ _ _)|}
   end.
 
 End PROGRAMS.
@@ -1907,6 +1920,7 @@ Definition link_program {F:Type} {CF: has_comp F} (p1 p2: program F): option (pr
                       prog_comp_env_eq := P;
                       prog_pol_pub := p.(AST.prog_pol_pub);
                       prog_agr_comps := p.(AST.prog_agr_comps);
+                      prog_pol_complete := p.(AST.prog_pol_complete);
                    |}
           end
       end

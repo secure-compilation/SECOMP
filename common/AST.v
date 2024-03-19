@@ -710,6 +710,11 @@ Definition agr_comps {F V: Type} {CF: has_comp F} (pol: Policy.t) (defs: list (i
   (*   pol.(Policy.policy_comps) ! id = Some cp -> *)
   (*   exists gd, In (id, gd) defs /\ cp = comp_of gd. *)
 
+Definition pol_complete {F V: Type} {CF: has_comp F}(pol: Policy.t) (defs: list (ident * globdef F V)) :=
+  Forall
+    (fun idg => exists cp, pol.(Policy.policy_comps) ! (fst idg) = Some cp)
+    defs.
+
 Record program (F V: Type) {CF: has_comp F} : Type := mkprogram {
   prog_defs: list (ident * globdef F V);
   prog_public: list ident;
@@ -717,6 +722,7 @@ Record program (F V: Type) {CF: has_comp F} : Type := mkprogram {
   prog_pol: Policy.t;
   prog_pol_pub: Policy.in_pub prog_pol prog_public;
   prog_agr_comps: agr_comps prog_pol prog_defs;
+  prog_pol_complete: pol_complete prog_pol prog_defs;
 }.
 
 Arguments program F V {CF}.
@@ -802,6 +808,19 @@ Proof.
     + simpl. admit.
     + simpl. admit.
 Admitted.
+
+Lemma complete_update_policy (pol: Policy.t) (defs: list (ident * globdef B W)):
+  pol_complete (update_policy pol defs) defs.
+Proof.
+  unfold pol_complete.
+  rewrite Forall_forall.
+  induction defs.
+  - intros x H; inv H.
+  - intros [id gd] H. inv H.
+    + simpl. admit.
+    + simpl. admit.
+Admitted.
+
 End TRANSF_POL.
 
 Section TRANSF_PROGRAM.
@@ -832,6 +851,21 @@ Proof.
     * assumption.
 Qed.
 
+Lemma pol_complete_transf: forall {pol defs},
+  pol_complete pol defs ->
+  pol_complete pol (List.map transform_program_globdef defs).
+Proof.
+  unfold pol_complete; intros pol defs H.
+  induction H.
+  - now simpl.
+  - simpl; constructor.
+    + destruct x as [id [fd | vd]]; simpl in *.
+      * assumption.
+      * assumption.
+    + assumption.
+Qed.
+
+
 Definition transform_program (p: program A V) : program B V :=
   mkprogram
     (List.map transform_program_globdef p.(prog_defs))
@@ -840,7 +874,8 @@ Definition transform_program (p: program A V) : program B V :=
     (* (update_policy p.(prog_pol) (List.map transform_program_globdef p.(prog_defs))) *)
     p.(prog_pol)
     p.(prog_pol_pub)
-    (agr_comps_transf p.(prog_agr_comps)).
+    (agr_comps_transf p.(prog_agr_comps))
+    (pol_complete_transf p.(prog_pol_complete)).
 
 End TRANSF_PROGRAM.
 
@@ -914,6 +949,30 @@ Proof.
       * now eauto.
 Qed.
 
+Lemma pol_complete_transf_partial: forall {pol defs},
+  pol_complete pol defs ->
+  forall defs',
+    transf_globdefs defs = OK defs' ->
+    pol_complete pol defs'.
+Proof.
+  unfold pol_complete; intros pol defs H defs' def_trans.
+  revert defs' def_trans.
+  induction H.
+  - now intros defs' H; simpl in H; inv H.
+  - intros defs' defs'_OK.
+    destruct x as [id [fd | vd]] eqn:?; simpl in *.
+    + destruct transf_fun eqn:?; try congruence; simpl in *.
+      monadInv defs'_OK.
+      simpl; constructor.
+      * assumption.
+      * now eauto.
+    + destruct transf_globvar eqn:?; try congruence; simpl in *.
+      monadInv defs'_OK.
+      simpl; constructor.
+      * now monadInv Heqr; eauto.
+      * now eauto.
+Qed.
+
 Definition transform_partial_program2 (p: program A V) : res (program B W) :=
   match transf_globdefs p.(prog_defs) as x
         return (transf_globdefs p.(prog_defs) = x ->
@@ -924,7 +983,8 @@ Definition transform_partial_program2 (p: program A V) : res (program B W) :=
         p.(prog_main)
         p.(prog_pol)
         p.(prog_pol_pub)
-        (agr_comps_transf_partial p.(prog_agr_comps) e))
+        (agr_comps_transf_partial p.(prog_agr_comps) e)
+        (pol_complete_transf_partial p.(prog_pol_complete) e))
   | Error err => fun e => Error err
   end eq_refl.
 
@@ -972,11 +1032,18 @@ Proof.
                 (fun (_ : ident) (f : A) => OK (transf_fun f))
                 (fun (_ : ident) (v : V) => OK v)
             (prog_agr_comps p)).
-  rewrite EQ. intros a.
+  generalize (pol_complete_transf_partial
+                (fun (_ : ident) (f : A) => OK (transf_fun f))
+                (fun (_ : ident) (v : V) => OK v)
+            (prog_pol_complete p)).
+  rewrite EQ. intros b a.
   unfold transform_program.
   replace (agr_comps_transf (prog_agr_comps p)) with
   (a (map (transform_program_globdef transf_fun) (prog_defs p)) eq_refl).
+  replace (pol_complete_transf transf_fun (prog_pol_complete p)) with
+  (b (map (transform_program_globdef transf_fun) (prog_defs p)) eq_refl).
   reflexivity.
+  apply Classical_Prop.proof_irrelevance.
   apply Classical_Prop.proof_irrelevance.
 Qed.
 

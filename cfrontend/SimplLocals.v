@@ -316,4 +316,5 @@ Definition transf_program (p: program) : res program :=
         prog_comp_env := prog_comp_env p;
         prog_comp_env_eq := prog_comp_env_eq p;
         prog_pol_pub := AST.prog_pol_pub p1;
-        prog_agr_comps := AST.prog_agr_comps p1; |}.
+        prog_agr_comps := AST.prog_agr_comps p1;
+        prog_pol_complete := AST.prog_pol_complete p1; |}.

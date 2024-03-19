@@ -493,6 +493,62 @@ Proof.
     specialize (G (i, gd') H0 c EQ). simpl; rewrite <- H. auto.
 Qed.
 
+Lemma prog_pol_complete_link':
+  (Policy.eqb p1.(prog_pol) p2.(prog_pol)) = true ->
+  pol_complete (p1.(prog_pol))
+    (PTree.elements (PTree.combine link_prog_merge dm1 dm2)).
+Proof.
+  intros eq_pol.
+  unfold pol_complete.
+  rewrite Forall_forall.
+  intros x IN. destruct x as [i gd].
+  assert (G: (exists gd', comp_of gd' = comp_of gd /\ In (i, gd') (PTree.elements dm1)) \/
+               (exists gd', comp_of gd' = comp_of gd /\ In (i, gd') (PTree.elements dm2))).
+  { apply PTree.elements_complete in IN.
+    rewrite PTree.gcombine in IN; auto.
+    destruct (dm1 ! i) eqn:?; destruct (dm2 ! i) eqn:?; simpl in IN.
+    - Local Transparent Linker_def Linker_vardef Linker_varinit.
+      destruct g, g0; simpl in IN; try congruence.
+      + destruct (link f f0) eqn:?; try congruence.
+        exploit HLF; eauto. intros [G | G].
+        * subst; left; eexists; split; eauto. eapply PTree.elements_correct; eauto.
+          now inv IN.
+        * subst; right; eexists; split; eauto. eapply PTree.elements_correct; eauto.
+          now inv IN.
+      + destruct (link_vardef v v0) eqn:EQ; try congruence.
+        inv IN.
+        unfold link_vardef in EQ.
+        destruct (link (gvar_info v) (gvar_info v0)) eqn:?; try discriminate.
+        destruct (link (gvar_init v) (gvar_init v0)) eqn:?; try discriminate.
+        destruct (cp_eq_dec (gvar_comp v) (gvar_comp v0) && eqb (gvar_readonly v) (gvar_readonly v0) &&
+         eqb (gvar_volatile v) (gvar_volatile v0)); try discriminate.
+        inv EQ.
+        left; eexists. split.
+        2: eapply PTree.elements_correct; eauto. eauto.
+    - left; eexists; split; [|eapply PTree.elements_correct; eauto]. congruence.
+    - right; eexists; split; [|eapply PTree.elements_correct; eauto]. congruence.
+    - congruence. }
+  destruct G as [[gd' [? ?]] | [gd' [? ?]]].
+  - pose proof (prog_pol_complete p1) as G.
+    unfold pol_complete in G. rewrite Forall_forall in G.
+    eapply PTree.elements_complete in H0. eapply in_prog_defmap in H0.
+    specialize (G (i, gd') H0). eauto.
+  - unfold Policy.eqb in eq_pol.
+    apply andb_prop in eq_pol as [eq_pol2 eq_pol3].
+    apply andb_prop in eq_pol2 as [eq_pol1 eq_pol2].
+    (* apply PTree.beq_correct in eq_pol1. *)
+    (* rewrite <- eq_pol in *. *)
+    pose proof (prog_pol_complete p2) as G.
+    unfold pol_complete in G. rewrite Forall_forall in G.
+    eapply PTree.elements_complete in H0. eapply in_prog_defmap in H0.
+    (* intros cp ?. *)
+    rewrite PTree.beq_correct in eq_pol1.
+    specialize (eq_pol1 i). (* simpl in H1. rewrite H1 in eq_pol1. *)
+    destruct ((Policy.policy_comps (prog_pol p2)) ! i) eqn:EQ; try contradiction.
+    simpl. destruct ((Policy.policy_comps (prog_pol p1)) ! i) eqn:EQ'; try contradiction. eauto.
+    exploit G; eauto. intros [? ?]; simpl in *; congruence.
+Qed.
+
 
 Definition link_prog :=
   if ident_eq p1.(prog_main) p2.(prog_main)
@@ -505,7 +561,8 @@ Definition link_prog :=
                 prog_defs := PTree.elements (PTree.combine link_prog_merge dm1 dm2);
                 prog_pol := prog_pol p1;
                 prog_pol_pub := link_prog_subproof yes;
-                prog_agr_comps := prog_agr_comps_link' yes |}
+                prog_agr_comps := prog_agr_comps_link' yes;
+                prog_pol_complete := prog_pol_complete_link' yes |}
     | right _ => None
     end
   else
@@ -525,7 +582,8 @@ Lemma link_prog_inv:
             prog_defs := PTree.elements (PTree.combine link_prog_merge dm1 dm2);
             prog_pol := prog_pol p1;
             prog_pol_pub := link_prog_subproof yes;
-            prog_agr_comps := prog_agr_comps_link' yes |}.
+            prog_agr_comps := prog_agr_comps_link' yes;
+            prog_pol_complete := prog_pol_complete_link' yes |}.
 Proof.
   unfold link_prog; intros p E.
   destruct (ident_eq (prog_main p1) (prog_main p2)); try discriminate.
@@ -556,6 +614,7 @@ Lemma link_prog_succeeds:
             prog_pol := (prog_pol p1);
             prog_pol_pub := link_prog_subproof yes;
             prog_agr_comps := prog_agr_comps_link' yes;
+           prog_pol_complete := prog_pol_complete_link' yes
          |}.
 Proof.
   intros. unfold link_prog. unfold proj_sumbool. rewrite H, dec_eq_true. simpl.
@@ -568,13 +627,14 @@ Proof.
 Qed.
 
 Lemma prog_defmap_elements:
-  forall (m: PTree.t (globdef F V)) pub mn pol H H' x,
+  forall (m: PTree.t (globdef F V)) pub mn pol H H' H'' x,
   (prog_defmap {| prog_defs := PTree.elements m;
                  prog_public := pub;
                  prog_main := mn;
                  prog_pol := pol;
                  prog_pol_pub := H;
                  prog_agr_comps := H';
+                 prog_pol_complete := H'';
                |})!x = m!x.
 Proof.
   intros. unfold prog_defmap; simpl. apply PTree_Properties.of_list_elements.
@@ -762,11 +822,12 @@ Theorem match_transform_partial_program2:
 Proof.
   unfold transform_partial_program2; intros. revert H.
   generalize (agr_comps_transf_partial transf_fun transf_var (prog_agr_comps p)).
-  intros a H.
+  generalize (pol_complete_transf_partial transf_fun transf_var (prog_pol_complete p)).
+  intros b a H.
   destruct transf_globdefs eqn:EQ; try congruence.
   inv H.
   red; simpl; split; auto.
-  clear a.
+  clear a b.
   revert l EQ. generalize (prog_defs p).
   induction l as [ | [i g] l]; simpl; intros.
 - monadInv EQ. constructor.

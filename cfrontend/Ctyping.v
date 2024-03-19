@@ -936,6 +936,12 @@ Lemma todo_fix: forall (tp: AST.program fundef type) (p: program),
 Proof.
   Admitted.
 
+Lemma todo_fix': forall (tp: AST.program fundef type) (p: program),
+  pol_complete (AST.prog_pol tp) (AST.prog_defs tp) ->
+    pol_complete (prog_pol p) (AST.prog_defs tp).
+Proof.
+  Admitted.
+
 Instance has_comp_retype_function (ce: composite_env) (e: typenv):
   has_comp_transl_partial (retype_function ce e).
 Proof.
@@ -964,7 +970,8 @@ Definition typecheck_program (p: program) : res program :=
         prog_comp_env := ce;
         prog_comp_env_eq := p.(prog_comp_env_eq);
         prog_pol_pub := p.(prog_pol_pub);
-        prog_agr_comps := todo_fix tp p tp.(AST.prog_agr_comps)
+        prog_agr_comps := todo_fix tp p tp.(AST.prog_agr_comps);
+        prog_pol_complete := todo_fix' tp p tp.(AST.prog_pol_complete)
      |}.
 
 (** Soundness of the smart constructors.  *)

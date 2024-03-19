@@ -374,7 +374,14 @@ Section MEMINJ.
     econstructor; eauto. rewrite Ptrofs.add_zero; auto.
   Qed.
 
-  Lemma globals_symbols_inject (cp: compartment) (side_cp: s cp = δ):
+  Hypothesis no_bottom1': forall b v,
+      Genv.find_def ge b = Some (Gvar v) ->
+      comp_of v <> bottom.
+  Hypothesis no_top1': forall b v,
+      Genv.find_def ge b = Some (Gvar v) ->
+      comp_of v <> top.
+
+  Lemma globals_symbols_inject (cp: compartment) (not_top: cp <> top) (side_cp: s cp = δ):
     forall j, meminj_preserves_globals j -> symbols_inject j ge ge__recomp cp.
   Proof.
     intros.
@@ -402,8 +409,21 @@ Section MEMINJ.
         { apply in_prog_defmap.
           rewrite Genv.find_def_symbol. eexists; split; eauto. }
         destruct ((Policy.policy_comps (prog_pol p)) ! id) as [c |] eqn:EQ.
-        - specialize (G X c EQ). simpl in G. admit.
-        - admit. }
+        - specialize (G X c EQ). simpl in G.
+          assert (exists cp', comp_of v = Comp cp') as [cp' ?].
+          { destruct (comp_of v) eqn:?; try now eauto.
+            exploit no_bottom1'; eauto; contradiction.
+            exploit no_top1'; eauto; contradiction. }
+          intros A.
+          assert (c <> top). { intros ->. inv A; try contradiction. }
+          rewrite H1 in G.
+          assert (c = Comp cp'). { inv G; try contradiction. reflexivity. }
+          subst c.
+          inv A; try contradiction. rewrite H1, side_cp.
+          now destruct side_eq.
+        - exploit prog_pol_complete; eauto.
+          intros Y. unfold pol_complete in Y. eapply Forall_forall in Y; eauto.
+          destruct Y as [? ?]; simpl in *; congruence. }
       intros (b' & A & B); exists b'; auto.
     + simpl. unfold Genv.block_is_volatile.
       destruct (Genv.find_var_info ge b1) as [[c gv]|] eqn:V1.
@@ -420,7 +440,7 @@ Section MEMINJ.
       do 2 rewrite Genv.genv_pol_add_globals.
       unfold prog_pol_pub. simpl.
       erewrite <- match_prog_pol; eauto.
-  Admitted.
+  Qed.
 
 End MEMINJ.
 
@@ -3627,54 +3647,6 @@ Qed.
       mem_rel s ge2 ge3 j' (opposite δ) m2' m3' /\
       stack_rel s cp_main ge3 δ j j' m1' m2' m3' st1 st2 st3.
   Admitted.
-
-  (* Lemma set_perm_preserves_rel': forall cp_main j j' m1 m2 m3 m1' m2' b1 b2 b3 delta st1 st2 st3, *)
-  (*   j' b1 = Some (b3, delta) -> *)
-  (*   Mem.set_perm m1 b1 Readable = Some m1' -> *)
-  (*   Mem.set_perm m2 b2 Readable = Some m2' -> *)
-  (*   mem_rel s ge1 ge3 j (opposite δ) m1 m3 -> *)
-  (*   mem_rel s ge2 ge3 j' δ m2 m3 -> *)
-  (*   stack_rel s cp_main ge3 δ j' j m1 m2 m3 st1 st2 st3 -> *)
-  (*   exists m3', Mem.set_perm m3 b3 Readable = Some m3' /\ *)
-  (*   mem_rel s ge1 ge3 j (opposite δ) m1' m3' /\ *)
-  (*     mem_rel s ge2 ge3 j' δ m2' m3' /\ *)
-  (*     stack_rel s cp_main ge3 δ j' j m1' m2' m3' st1 st2 st3. *)
-  (* Admitted. *)
-
-  (* Lemma set_perm_ok: forall cp_main j__δ j__oppδ v v0 v' m1 m2 m3 st1 st2 st3, *)
-  (*     Val.inject j__δ v v' -> *)
-  (*     mem_rel s ge1 ge3 j__δ δ m1 m3 -> *)
-  (*     mem_rel s ge2 ge3 j__oppδ (opposite δ) m2 m3 -> *)
-  (*     stack_rel s cp_main ge3 δ j__δ j__oppδ m1 m2 m3 st1 st2 st3 -> *)
-
-  (*     (mem_rel s ge1 ge3 j__δ δ *)
-  (*        match v with *)
-  (*        | Vptr bsp _ => Mem.set_perm m1 bsp Readable *)
-  (*        | _ => m1 *)
-  (*        end match v' with *)
-  (*        | Vptr bsp _ => Mem.set_perm m3 bsp Readable *)
-  (*        | _ => m3 *)
-  (*        end) /\ *)
-  (*         (mem_rel s ge2 ge3 j__oppδ (opposite δ) *)
-  (*            match v0 with *)
-  (*            | Vptr bsp _ => Mem.set_perm m2 bsp Readable *)
-  (*            | _ => m2 *)
-  (*            end match v' with *)
-  (*            | Vptr bsp _ => Mem.set_perm m3 bsp Readable *)
-  (*            | _ => m3 *)
-  (*            end) /\ *)
-  (*       (stack_rel s cp_main ge3 δ j__δ j__oppδ *)
-  (*   match v with *)
-  (*   | Vptr bsp _ => Mem.set_perm m1 bsp Readable *)
-  (*   | _ => m1 *)
-  (*   end match v0 with *)
-  (*       | Vptr bsp _ => Mem.set_perm m2 bsp Readable *)
-  (*       | _ => m2 *)
-  (*       end match v' with *)
-  (*           | Vptr bsp _ => Mem.set_perm m3 bsp Readable *)
-  (*           | _ => m3 *)
-  (*           end st1 st2 st3). *)
-  (*   Admitted. *)
 
 End Lemmas.
 
@@ -8232,6 +8204,15 @@ Qed.
       intros (s3' & j__left' & ? & ? & ? & ? & ? & ?).
       exists s3'; exists (j__left', j__right); split; [assumption |].
       split; [| split]; [| | assumption]; split; eauto.
+      intros (s3' & j__left' & ? & ? & ? & ? & ? & ?).
+      exists s3'; exists (j__left', j__right); split; [assumption |].
+      split; [| split]; [| | assumption]; split; eauto.
+      intros (s3' & j__left' & ? & ? & ? & ? & ? & ?).
+      exists s3'; exists (j__left', j__right); split; [assumption |].
+      split; [| split]; [| | assumption]; split; eauto.
+      intros (s3' & j__left' & ? & ? & ? & ? & ? & ?).
+      exists s3'; exists (j__left', j__right); split; [assumption |].
+      split; [| split]; [| | assumption]; split; eauto.
     - intros s1 s1' H s2 s3 (j__left & j__right) (? & ?) (? & ?) ?.
       exploit (step_E0_strong s W2 W1 W3 (opposite Left)); eauto using stack_rel_comm. simpl.
       intros id.
@@ -8246,8 +8227,9 @@ Qed.
       exploit transform_find_symbol_2; eauto. intros [? ?]; auto. congruence.
       auto.
       simpl. intros. eapply Genv.find_symbol_find_def_inversion; eauto.
-      unfold comp_of_main. rewrite <- 2!rewr_cp_main.
-      clear -same_cp_main2 same_cp_main1. congruence.
+      (* unfold comp_of_main. rewrite <- rewr_cp_main. *)
+      (* (* unfold comp_of_main. rewrite <- 2!rewr_cp_main. *) *)
+      (* clear -same_cp_main2 same_cp_main1. congruence. *)
       unfold comp_of_main. eapply stack_rel_comm; eauto.
       rewrite <- rewr_cp_main, same_cp_main1, rewr_cp_main. auto.
       unfold comp_of_main. rewrite <- rewr_cp_main, same_cp_main1, rewr_cp_main. auto.

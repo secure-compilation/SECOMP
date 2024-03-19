@@ -137,7 +137,8 @@ Program Definition transform_program (p: program) : res program :=
               prog_main := p.(prog_main);
               prog_pol := p.(prog_pol);
               prog_pol_pub := p.(prog_pol_pub);
-              prog_agr_comps := _ |}
+              prog_agr_comps := _;
+              prog_pol_complete := _; |}
       else
         Error (msg "Unusedglob: reference to undefined global")
   end.
@@ -165,6 +166,33 @@ Next Obligation.
   rewrite in_rev in H. rewrite rev_involutive in H.
   pose proof (prog_agr_comps p) as G.
   unfold agr_comps in G.
+  rewrite Forall_forall in G.
+  now eapply G.
+Qed.
+Next Obligation.
+  unfold pol_complete.
+  apply Forall_forall.
+  intros [id gd] IN.
+  assert (H: In (id, gd) (rev (prog_defs p))).
+  { clear Heq_anonymous.
+    revert used IN.
+    assert (G: ~ In (id, gd) (nil: list (ident * globdef fundef unit))) by eauto.
+    revert G.
+    generalize (nil: list (ident * globdef fundef unit)) as acc.
+    generalize (rev (prog_defs p)).
+    induction l.
+    - intros acc NOTIN; eauto.
+    - intros acc NOTIN used IN. simpl in IN.
+      destruct (Classical_Prop.classic (a = (id, gd))); try now left.
+      right.
+      destruct a as [id' gd']; destruct (IS.mem id' used) eqn:is_used; simpl in IN.
+      + eapply IHl with (acc := (id', gd') :: acc).
+        * intros contra. inv contra; eauto.
+        * eauto.
+      + eapply IHl with (acc := acc); eauto. }
+  rewrite in_rev in H. rewrite rev_involutive in H.
+  pose proof (prog_pol_complete p) as G.
+  unfold pol_complete in G.
   rewrite Forall_forall in G.
   now eapply G.
 Qed.
