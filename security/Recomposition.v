@@ -640,6 +640,9 @@ meminj_preserves_globals which will allow us to prove preservation of events.
       find_def_perm1: forall b fd, Genv.find_def ge1 b = Some (Gfun fd) -> forall ofs, not (Mem.perm m1 b ofs Max Readable);
       find_def_perm2: forall b fd, Genv.find_def ge2 b = Some (Gfun fd) -> forall ofs, not (Mem.perm m2 b ofs Max Readable);
 
+      (* var comp *)
+      find_var_comp1: forall b v, Genv.find_def ge1 b = Some (Gvar v) -> Mem.block_compartment m1 b = comp_of v;
+
       (* same_high_half: forall id ofs, *)
       (*   Val.inject j (high_half ge1 id ofs) (high_half ge2 id ofs) *)
     }.
@@ -895,6 +898,7 @@ Proof.
   - intros. eapply find_def_perm1 with (b := b0) in m1_m3; eauto.
     intros n. apply m1_m3. eapply Mem.perm_store_2; eauto.
   - intros. eapply find_def_perm2 with (b := b0) in m1_m3; eauto.
+  - intros. erewrite <- Mem.store_preserves_comp; eauto using find_var_comp1.
   (* - intros. eapply same_high_half; eauto. *)
   - { rename H into j_b.
       induction st_rel.
@@ -1064,6 +1068,9 @@ Proof.
     intros ->. eapply Plt_strict.
     eapply Plt_Ple_trans; eauto.
   - intros. eapply find_def_perm2; eauto.
+  - intros. erewrite Mem.alloc_block_compartment; eauto.
+    rewrite pred_dec_false; eauto using find_var_comp1.
+    intros ?; subst; eapply Mem.fresh_block_alloc; eauto using find_def_valid1.
   (* - intros id ofs. eapply val_inject_incr; eauto using same_high_half. *)
   - { eapply inject_incr_stack_rel1; eauto.
       induction st_rel.
@@ -1232,6 +1239,7 @@ Proof.
   - intros. intros n. eapply external_call_max_perm in n; eauto.
     exploit find_def_perm2; eauto.
     eapply find_def_valid2; eauto.
+  - intros. erewrite <- ec_preserves_comp; eauto using external_call_spec, find_var_comp1, find_def_valid1.
   (* same high half *)
     (* intros. eapply same_high_half in m1_m3; eauto. *)
   - eapply inject_incr_stack_rel1; eauto.
@@ -1540,6 +1548,7 @@ Proof.
     eapply find_def_perm2; eauto.
   (* - (* same high half *) *)
   (*   intros. eapply same_high_half in m1_m3; eauto. *)
+  - intros. erewrite <- ec_preserves_comp; eauto using external_call_spec, find_var_comp1, find_def_valid1.
   - induction st_rel;
       constructor; eauto.
     inv H.
@@ -2113,6 +2122,7 @@ Proof.
     intros. intros n. eapply external_call_max_perm in n; eauto.
     exploit find_def_perm2; eauto.
     eapply find_def_valid2; eauto.
+  - eapply find_var_comp1; eauto.
   (* - (* same high half *) *)
   (*   intros. eapply same_high_half in m1_m3; eauto. *)
 Qed.
@@ -2240,7 +2250,11 @@ Qed.
         eapply Genv.find_def_find_symbol_inversion in H3 as [id H3]; eauto.
         exploit (Senv.find_symbol_below (Genv.globalenv W3)); eauto. intros ?.
         exploit (Mem.alloc_result m3); eauto. intros -> ->.
-        eapply Plt_strict. eapply Plt_Ple_trans; eauto. }
+        eapply Plt_strict. eapply Plt_Ple_trans; eauto.
+      - intros. erewrite Mem.alloc_block_compartment; eauto.
+        rewrite pred_dec_false; eauto using find_var_comp1.
+        intros ?; subst; eapply (Mem.fresh_block_alloc m1); eauto using find_def_valid1.
+    }
       (* - intros id ofs. *)
       (*   exploit same_high_half; eauto. } *)
     { clear dependent j__δ.
@@ -2465,6 +2479,9 @@ Qed.
         eapply Genv.find_def_find_symbol_inversion in H as [id H]; eauto.
         exploit (Senv.find_symbol_below (Genv.globalenv W3)); eauto. intros ?.
         eapply Plt_strict. eapply Plt_Ple_trans; eauto using ple_nextblock2.
+      - intros. erewrite Mem.alloc_block_compartment; eauto.
+        rewrite pred_dec_false; eauto using find_var_comp1.
+        intros ?; subst; eapply (Mem.fresh_block_alloc m1); eauto using find_def_valid1.
       (* - intros id ofs. *)
       (*   exploit same_high_half; eauto. *)
     }
@@ -2718,6 +2735,9 @@ Qed.
         exploit (Senv.find_symbol_below (Genv.globalenv W3)); eauto. intros ?.
         exploit (Mem.alloc_result m3); eauto. intros -> ->.
         eapply Plt_strict. eapply Plt_Ple_trans; eauto.
+      - intros. erewrite Mem.alloc_block_compartment; eauto.
+        rewrite pred_dec_false; eauto using find_var_comp1.
+        intros ?; subst; eapply (Mem.fresh_block_alloc m1); eauto using find_def_valid1.
       (* - intros id ofs. *)
       (*   exploit same_high_half; eauto. } *)
     }
@@ -2941,6 +2961,9 @@ Qed.
         eapply Genv.find_def_find_symbol_inversion in H as [id H]; eauto.
         exploit (Senv.find_symbol_below (Genv.globalenv W3)); eauto. intros ?.
         eapply Plt_strict. eapply Plt_Ple_trans; eauto using ple_nextblock2.
+      - intros. erewrite Mem.alloc_block_compartment; eauto.
+        rewrite pred_dec_false; eauto using find_var_comp1.
+        intros ?; subst; eapply (Mem.fresh_block_alloc m1); eauto using find_def_valid1.
       (* - intros id ofs. *)
       (*   exploit same_high_half; eauto. *)
     }
@@ -3116,8 +3139,7 @@ Qed.
       - intros. intros n.
         eapply find_def_perm2; eauto.
         eapply Mem.perm_free_3; eauto.
-      (* - intros id ofs. *)
-      (*   exploit same_high_half; eauto. } *)
+      - intros. erewrite <- Mem.free_preserves_comp; eauto using find_var_comp1.
     }
     { destruct m2_m3.
       constructor; auto.
@@ -3364,6 +3386,7 @@ Proof.
         eapply Mem.perm_store_2; eauto.
       - intros; intros n. exploit find_def_perm2; eauto.
         eapply Mem.perm_store_2; eauto.
+      - intros. erewrite <- Mem.store_preserves_comp; eauto using find_var_comp1.
       (* - intros id ofs0. *)
       (*   exploit same_high_half; eauto. } *)
     }
@@ -4275,6 +4298,7 @@ Section Theorems.
       (sideof: s cp = δ)
       (no_top: cp <> top)
       (inj_pres: meminj_preserves_globals s δ W1 W3 j__δ)
+      (m_m': mem_rel s ge1 ge3 j__δ δ m m')
       (delta_zero: mem_delta_zero j__δ),
       regset_rel j__δ rs rs' ->
       Mem.inject j__δ m m' ->
@@ -4282,7 +4306,7 @@ Section Theorems.
         eval_builtin_arg ge3 cp rs' (rs' X2) m' a v'
         /\ Val.inject j__δ v v'.
   Proof.
-    induction 1; intros SIDE NOTOP MINJ DZ (* SP  *)RS MI.
+    induction 1; intros SIDE NOTOP MINJ MR DZ (* SP  *)RS MI.
     - exists rs'#x; split; auto. constructor.
     - econstructor; eauto with barg.
     - econstructor; eauto with barg.
@@ -4310,9 +4334,14 @@ Section Theorems.
           exploit Genv.find_symbol_find_def_inversion; eauto. intros [g G]. rewrite G.
           destruct g; auto.
           assert (has_comp_globvar v0 = cp) as ->.
-          { exploit perm_compartment1; eauto. admit.
-            admit.
-            intros [? ?]. admit. }
+          { exploit find_var_comp1; eauto. intros ?.
+            exploit perm_compartment1; eauto.
+            eapply Mem.perm_max. eapply Mem.perm_implies. eapply PERM. destruct chunk; simpl; lia.
+            constructor.
+            intros [? R]; rewrite R in *.
+            assert (cp = Comp x).
+            { inv H; try now contradiction. auto. }
+            subst cp. simpl in *; auto. }
           now destruct side_eq. }
         intros (b' & A & B). rewrite A.
         econstructor; eauto. rewrite Ptrofs.add_zero; auto. }
@@ -4353,7 +4382,7 @@ Section Theorems.
       destruct IHeval2 as (v2' & A2 & B2); eauto using in_or_app.
       econstructor; split; eauto with barg.
       destruct Archi.ptr64; auto using Val.add_inject, Val.addl_inject.
-  Admitted.
+  Qed.
 
   Lemma eval_builtin_args_inject:
     forall cp (rs: regset) m j__δ rs' m' al vl
@@ -4361,6 +4390,7 @@ Section Theorems.
       (sideof: s cp = δ)
       (no_top: cp <> top)
       (inj_pres: meminj_preserves_globals s δ W1 W3 j__δ)
+      (m_m': mem_rel s ge1 ge3 j__δ δ m m')
       (delta_zero: mem_delta_zero j__δ),
       regset_rel j__δ rs rs' ->
       Mem.inject j__δ m m' ->
@@ -4674,7 +4704,7 @@ Section Theorems.
           eapply find_def_perm1; eauto.
           eapply Mem.perm_free_3; eauto.
         + intros. eapply find_def_perm2; eauto.
-        (* + intros. eapply same_high_half; eauto. } *)
+        + intros. erewrite <- Mem.free_preserves_comp; eauto using find_var_comp1.
       }
       { induction st_rel.
         constructor.
@@ -8009,6 +8039,7 @@ Hypothesis no_init_ptr3: forall b v, Genv.find_def ge3 b = Some (Gvar v) ->
     - intros. eapply Genv.find_def_not_fresh; eauto.
     - intros. exploit (Genv.init_mem_characterization_gen W1); eauto.
     - intros. exploit (Genv.init_mem_characterization_gen W3); eauto.
+    - intros. exploit (Genv.init_mem_find_def W1); eauto.
 Qed.
 
   Hypothesis init_mem_correct2: forall m2 m3, Genv.init_mem W2 = Some m2 ->
