@@ -124,8 +124,10 @@ to Clight: `backtranslation_proof`.
 
 This branch contains the recomposition proof. Use `make proof` to replay the proof.
 
-The proof is mostly complete. Some recent changes to the mainline `ccs-submission`
-branch are in the process of being integrated.
+The proof is mostly complete and most of the main `correctness` branch has been
+merged. Compared to the main correctness branch, this branch contains fixes to
+the way programs access arguments stored on the stack. The recomposition proof
+is modified to account for these changes.
 
 File `common/Smallstep.v` contains the definition of the three-way simulation
 relation (`tsim_properties`), and the proof that it implies preservation
@@ -135,14 +137,14 @@ simulation diagrams depicted in Section 6 (`Section THREEWAY_SIMU_DIAGRAM`).
 File `security/Recomposition.v` contains the proof of recomposition: lemma `simulation`,
 as well as the three cores lemmas used to instantiate the diagrams:
 `step_E0_strong`, `step_E0_weak`, and `step_t`.
+The simulation invariants can be found at `strong_equivalence`, `weak_equivalence`, `stack_rel`.
 
-There are a few admitted low-level lemmas, which are of two types:
-- a few purely technical lemmas
-- a few lemmas that rely more precise characterization of the interplay between
-  system calls and compartments (for instance, the fact that system calls
-  do not arbitrarily modify the memory of other compartments). This axiomatization
-  is already implemented in the main branch and we will solve these lemmas
-  by merging.
+There are some low-level lemmas admitted, that we are in the process of fixing:
+- `set_perm_preserves_rel` states that a new `set_perm` operation, that we use
+  in the enforcement mechanism to protect the stack, respects the invariants.
+- `eval_builtin_arg_inject` is used to prove the preservation of the arguments
+  to system calls. The similar result `extcall_arguments_preserved` is fully proved.
+- `step_t` contains some admits that are the symmetric cases of other proved goals.
 
 ## Blame branch: `secure-compilation`
 
