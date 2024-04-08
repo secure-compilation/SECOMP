@@ -6,108 +6,108 @@ Require Import Complements.
 
 Require Import Split.
 
-  (* This is trivial *)
-  Lemma filter_all_mregs_find_one:
-    forall r, r :: nil = filter (fun x0 : mreg => mreg_eq x0 r || false) all_mregs.
-  Proof.
-    intros r.
-    Local Transparent mreg_eq.
-    destruct r; compute; trivial.
-  Qed.
+(* This is trivial *)
+Lemma filter_all_mregs_find_one:
+  forall r, r :: nil = filter (fun x0 : mreg => mreg_eq x0 r || false) all_mregs.
+Proof.
+  intros r.
+  Local Transparent mreg_eq.
+  destruct r; compute; trivial.
+Qed.
 
-  Lemma filter_all_mregs_find_two:
-    forall rhi rlo,
-      rhi :: rlo :: nil =
-        filter (fun x0 : mreg => mreg_eq x0 rhi || (mreg_eq x0 rlo || false)) all_mregs \/
+Lemma filter_all_mregs_find_two:
+  forall rhi rlo,
+    rhi :: rlo :: nil =
+      filter (fun x0 : mreg => mreg_eq x0 rhi || (mreg_eq x0 rlo || false)) all_mregs \/
       rlo :: rhi :: nil =
         filter (fun x0 : mreg => mreg_eq x0 rhi || (mreg_eq x0 rlo || false)) all_mregs \/
       rlo :: nil =
         filter (fun x0 : mreg => mreg_eq x0 rhi || (mreg_eq x0 rlo || false)) all_mregs.
-  Proof.
-    intros rhi rlo.
-    Local Transparent mreg_eq. 
-    destruct rhi, rlo; compute; auto.
-  Qed.
+Proof.
+  intros rhi rlo.
+  Local Transparent mreg_eq.
+  destruct rhi, rlo; compute; auto.
+Qed.
 
-  Lemma eq_distributes_longofwords:
-    forall a b a' b',
-      not_ptr (Val.longofwords a b) ->
-      not_ptr (Val.longofwords a' b') ->
-      Val.longofwords a b = Val.longofwords a' b' ->
-      a = a' /\ b = b'.
-  Proof.
-    intros a b a' b'.
-    unfold Val.longofwords.
-    destruct a, a'; simpl; try contradiction.
-    destruct b, b'; simpl; try contradiction.
-    intros _ _.
-    unfold Int64.ofwords; simpl.
-    rewrite 2!Int64.shifted_or_is_add.
-    - simpl. intros H.
-      assert (Int64.repr
-                (Int64.unsigned (Int64.repr (Int.unsigned i)) * two_power_pos 32
-                 + Int64.unsigned (Int64.repr (Int.unsigned i1))) =
+Lemma eq_distributes_longofwords:
+  forall a b a' b',
+    not_ptr (Val.longofwords a b) ->
+    not_ptr (Val.longofwords a' b') ->
+    Val.longofwords a b = Val.longofwords a' b' ->
+    a = a' /\ b = b'.
+Proof.
+  intros a b a' b'.
+  unfold Val.longofwords.
+  destruct a, a'; simpl; try contradiction.
+  destruct b, b'; simpl; try contradiction.
+  intros _ _.
+  unfold Int64.ofwords; simpl.
+  rewrite 2!Int64.shifted_or_is_add.
+  - simpl. intros H.
+    assert (Int64.repr
+              (Int64.unsigned (Int64.repr (Int.unsigned i)) * two_power_pos 32
+               + Int64.unsigned (Int64.repr (Int.unsigned i1))) =
               Int64.repr (Int64.unsigned (Int64.repr (Int.unsigned i0)) * two_power_pos 32 +
                             Int64.unsigned (Int64.repr (Int.unsigned i2)))) as G.
-      congruence.
-      clear H.
-      revert G.
-      rewrite !Int64.unsigned_repr_eq.
-      unfold Int64.modulus, Int.modulus; simpl. unfold two_power_nat, two_power_pos. simpl.
-      unfold Int.unsigned. destruct i, i1, i0, i2; simpl.
-      intros H.
-      assert (intval = intval1 /\ intval0 = intval2) as [? ?].
-      unfold Int.modulus, two_power_nat in *; simpl in *.
-      rewrite !Z.mod_small in H; try lia.
-      Local Transparent Int64.repr.
-      unfold Int64.repr in H. inv H.
-      rewrite !Int64.Z_mod_modulus_eq in H1.
-      unfold Int64.modulus, two_power_nat in H1. simpl in H1.
-      rewrite !Z.mod_small in H1; try lia.
-      subst.
-      assert (intrange = intrange1); subst.
-      { eapply Axioms.proof_irr. }
-      assert (intrange0 = intrange2); subst.
-      { eapply Axioms.proof_irr. }
-      split; auto.
-    - unfold Int.zwordsize, Int64.zwordsize; simpl. lia.
-    - rewrite Int64.unsigned_repr_eq. pose proof (Int.unsigned_range i2) as H. revert H.
+    congruence.
+    clear H.
+    revert G.
+    rewrite !Int64.unsigned_repr_eq.
+    unfold Int64.modulus, Int.modulus; simpl. unfold two_power_nat, two_power_pos. simpl.
+    unfold Int.unsigned. destruct i, i1, i0, i2; simpl.
+    intros H.
+    assert (intval = intval1 /\ intval0 = intval2) as [? ?].
+    unfold Int.modulus, two_power_nat in *; simpl in *.
+    rewrite !Z.mod_small in H; try lia.
+    Local Transparent Int64.repr.
+    unfold Int64.repr in H. inv H.
+    rewrite !Int64.Z_mod_modulus_eq in H1.
+    unfold Int64.modulus, two_power_nat in H1. simpl in H1.
+    rewrite !Z.mod_small in H1; try lia.
+    subst.
+    assert (intrange = intrange1); subst.
+    { eapply Axioms.proof_irr. }
+    assert (intrange0 = intrange2); subst.
+    { eapply Axioms.proof_irr. }
+    split; auto.
+  - unfold Int.zwordsize, Int64.zwordsize; simpl. lia.
+  - rewrite Int64.unsigned_repr_eq. pose proof (Int.unsigned_range i2) as H. revert H.
     unfold Int64.modulus, Int.modulus; simpl. unfold two_power_nat, two_power_pos. simpl.
     rewrite Z.mod_small; try lia.
     pose proof (Int.unsigned_range i2) as H. unfold Int.modulus, two_power_nat in H; simpl in H.
     lia.
-    - unfold Int.zwordsize, Int64.zwordsize; simpl. lia.
-    - rewrite Int64.unsigned_repr_eq. pose proof (Int.unsigned_range i1) as H. revert H.
+  - unfold Int.zwordsize, Int64.zwordsize; simpl. lia.
+  - rewrite Int64.unsigned_repr_eq. pose proof (Int.unsigned_range i1) as H. revert H.
     unfold Int64.modulus, Int.modulus; simpl. unfold two_power_nat, two_power_pos. simpl.
     rewrite Z.mod_small; try lia.
     pose proof (Int.unsigned_range i1) as H. unfold Int.modulus, two_power_nat in H; simpl in H.
     lia.
     Local Opaque Int64.repr.
-  Qed.
+Qed.
 
-  Lemma inject_distributes_longofwords:
-    forall j a b a' b',
-      not_ptr (Val.longofwords a b) ->
-      not_ptr (Val.longofwords a' b') ->
-      Val.inject j (Val.longofwords a b) (Val.longofwords a' b') ->
-      Val.inject j a a' /\ Val.inject j b b'.
-  Proof.
-    intros.
-    assert (Val.longofwords a b = Val.longofwords a' b').
-    { revert H H0. unfold Val.longofwords.
-      destruct a, a'; simpl; try contradiction.
-      destruct b, b'; simpl; try contradiction.
-      simpl in H1.
-      revert H1.
-      generalize (Int64.ofwords i i1).
-      generalize (Int64.ofwords i0 i2).
-      intros ? ? G. inv G; auto. }
-    clear H1.
-    eapply eq_distributes_longofwords in H2; eauto. destruct H2; subst.
-    unfold not_ptr in *. revert H.
-    unfold Val.longofwords.
-    destruct a', b'; simpl; try contradiction. intros _. split; constructor.
-  Qed.
+Lemma inject_distributes_longofwords:
+  forall j a b a' b',
+    not_ptr (Val.longofwords a b) ->
+    not_ptr (Val.longofwords a' b') ->
+    Val.inject j (Val.longofwords a b) (Val.longofwords a' b') ->
+    Val.inject j a a' /\ Val.inject j b b'.
+Proof.
+  intros.
+  assert (Val.longofwords a b = Val.longofwords a' b').
+  { revert H H0. unfold Val.longofwords.
+    destruct a, a'; simpl; try contradiction.
+    destruct b, b'; simpl; try contradiction.
+    simpl in H1.
+    revert H1.
+    generalize (Int64.ofwords i i1).
+    generalize (Int64.ofwords i0 i2).
+    intros ? ? G. inv G; auto. }
+  clear H1.
+  eapply eq_distributes_longofwords in H2; eauto. destruct H2; subst.
+  unfold not_ptr in *. revert H.
+  unfold Val.longofwords.
+  destruct a', b'; simpl; try contradiction. intros _. split; constructor.
+Qed.
 
 
 Variant match_fundef: fundef -> fundef -> Prop :=
@@ -263,10 +263,10 @@ Section MEMINJ.
       defs_inject: forall b b' delta gd,
         j b = Some(b', delta) -> Genv.find_def ge b = Some gd ->
         exists gd', Genv.find_def ge__recomp b' = Some gd' /\
-                 delta = 0 /\
-                 match_globdef gd gd' /\
-                 (forall id, Genv.find_symbol ge id = Some b -> kept_prog s p δ id = true ->
-                        gd' = gd);
+                      delta = 0 /\
+                      match_globdef gd gd' /\
+                      (forall id, Genv.find_symbol ge id = Some b -> kept_prog s p δ id = true ->
+                                  gd' = gd);
       defs_rev_inject: forall b b' delta gd,
         j b = Some(b', delta) -> Genv.find_def ge__recomp b' = Some gd ->
         exists gd', Genv.find_def ge b = Some gd' /\ delta = 0 /\ match_globdef gd' gd;
@@ -353,9 +353,9 @@ Section MEMINJ.
         exploit Genv.find_symbol_find_def_inversion; [exact B|].
         intros (gd_base & find_gd_base).
         assert (H1: exists b, Genv.find_symbol (Genv.globalenv p) id = Some b /\
-                           Genv.find_def (Genv.globalenv p) b = Some gd_base) by eauto.
+                                Genv.find_def (Genv.globalenv p) b = Some gd_base) by eauto.
         assert (H2: exists b, Genv.find_symbol (Genv.globalenv p__recomp) id = Some b /\
-                           Genv.find_def (Genv.globalenv p__recomp) b = Some gd_recomp) by eauto.
+                                Genv.find_def (Genv.globalenv p__recomp) b = Some gd_recomp) by eauto.
         apply F in H1, H2.
         assert (gd = gd_recomp) by (unfold ge__recomp in *; congruence). subst gd_recomp.
         eexists; split; [| split]; eauto.
@@ -451,13 +451,13 @@ Section Invariants.
   Definition same_content_stack m1 m3 sp1 sp3 sg :=
     forall ofs ty,
       (In (One (S Incoming ofs ty)) (loc_parameters sg) \/
-        (exists l, In (Twolong (S Incoming ofs ty) l) (loc_parameters sg)) \/
-        (exists l, In (Twolong l (S Incoming ofs ty)) (loc_parameters sg))) ->
+         (exists l, In (Twolong (S Incoming ofs ty) l) (loc_parameters sg)) \/
+         (exists l, In (Twolong l (S Incoming ofs ty)) (loc_parameters sg))) ->
       forall bofs, bofs = Stacklayout.fe_ofs_arg + 4 * ofs ->
-      forall v, Mem.loadv (chunk_of_type ty) m1
-             (Val.offset_ptr sp1 (Ptrofs.repr bofs)) top = Some v ->
-           not_ptr v /\ Mem.loadv (chunk_of_type ty) m3
-             (Val.offset_ptr sp3 (Ptrofs.repr bofs)) top = Some v.
+                   forall v, Mem.loadv (chunk_of_type ty) m1
+                               (Val.offset_ptr sp1 (Ptrofs.repr bofs)) top = Some v ->
+                             not_ptr v /\ Mem.loadv (chunk_of_type ty) m3
+                                            (Val.offset_ptr sp3 (Ptrofs.repr bofs)) top = Some v.
 
   Definition at_most_readable (m: mem) (sp: val) :=
     match sp with
@@ -472,55 +472,55 @@ Section Invariants.
   Variant stackframe_rel (ge3: genv) (δ: side) (j__δ j__oppδ: meminj) (m1 m2 m3: mem):
     stackframe -> stackframe -> stackframe -> Prop :=
     | stackframe_related_δ: forall cp cp' sg b1 b2 b3 sp1 sp2 sp3 ofs1 ofs2 ofs3
-                              dummy_ra1 dummy_ra2 dummy_ra3 dummy_sp1 dummy_sp2 dummy_sp3,
+                                   dummy_ra1 dummy_ra2 dummy_ra3 dummy_sp1 dummy_sp2 dummy_sp3,
         Genv.find_comp_of_block ge3 b3 = cp ->
         forall (NOBOTTOM: cp <> bottom)
-          (NOTOP: cp <> top),
-        s cp = δ ->
-        Val.inject j__δ (Vptr b1 ofs1) (Vptr b3 ofs3) ->
-        Val.inject j__δ sp1 sp3 ->
-        Val.inject (if side_eq (s cp') δ then j__δ else j__oppδ)
-          (Vptr (if side_eq (s cp') δ then dummy_ra1 else dummy_ra2) Ptrofs.zero)
-          (Vptr dummy_ra3 Ptrofs.zero) ->
-        Val.inject (if side_eq (s cp') δ then j__δ else j__oppδ)
-          (Vptr (if side_eq (s cp') δ then dummy_sp1 else dummy_sp2) Ptrofs.zero) (Vptr dummy_sp3 Ptrofs.zero) ->
-        forall (STACK_CONTENT1: same_content_stack m1 m3 sp1 sp3 sg),
-        forall (STACK_CONTENT2: same_content_stack m2 m3 sp2 sp3 sg),
-        forall (PERM1: at_most_readable m1 sp1),
-        forall (PERM2: at_most_readable m2 sp2),
-        forall (PERM3: at_most_readable m3 sp3),
-        forall (EMPTY1: empty_perm m1 dummy_sp1),
-        forall (EMPTY2: empty_perm m2 dummy_sp2),
-        forall (EMPTY3: empty_perm m3 dummy_sp3),
-        stackframe_rel ge3 δ j__δ j__oppδ m1 m2 m3
-          (Stackframe b1 sg cp' sp1 ofs1 dummy_ra1 dummy_sp1)
-          (Stackframe b2 sg cp' sp2 ofs2 dummy_ra2 dummy_sp2)
-          (Stackframe b3 sg cp' sp3 ofs3 dummy_ra3 dummy_sp3)
+               (NOTOP: cp <> top),
+          s cp = δ ->
+          Val.inject j__δ (Vptr b1 ofs1) (Vptr b3 ofs3) ->
+          Val.inject j__δ sp1 sp3 ->
+          Val.inject (if side_eq (s cp') δ then j__δ else j__oppδ)
+            (Vptr (if side_eq (s cp') δ then dummy_ra1 else dummy_ra2) Ptrofs.zero)
+            (Vptr dummy_ra3 Ptrofs.zero) ->
+          Val.inject (if side_eq (s cp') δ then j__δ else j__oppδ)
+            (Vptr (if side_eq (s cp') δ then dummy_sp1 else dummy_sp2) Ptrofs.zero) (Vptr dummy_sp3 Ptrofs.zero) ->
+          forall (STACK_CONTENT1: same_content_stack m1 m3 sp1 sp3 sg),
+          forall (STACK_CONTENT2: same_content_stack m2 m3 sp2 sp3 sg),
+          forall (PERM1: at_most_readable m1 sp1),
+          forall (PERM2: at_most_readable m2 sp2),
+          forall (PERM3: at_most_readable m3 sp3),
+          forall (EMPTY1: empty_perm m1 dummy_sp1),
+          forall (EMPTY2: empty_perm m2 dummy_sp2),
+          forall (EMPTY3: empty_perm m3 dummy_sp3),
+            stackframe_rel ge3 δ j__δ j__oppδ m1 m2 m3
+              (Stackframe b1 sg cp' sp1 ofs1 dummy_ra1 dummy_sp1)
+              (Stackframe b2 sg cp' sp2 ofs2 dummy_ra2 dummy_sp2)
+              (Stackframe b3 sg cp' sp3 ofs3 dummy_ra3 dummy_sp3)
     | stackframe_related_opp_δ: forall cp cp' sg b1 b2 b3 sp1 sp2 sp3 ofs1 ofs2 ofs3
-                              dummy_ra1 dummy_ra2 dummy_ra3 dummy_sp1 dummy_sp2 dummy_sp3,
+                                       dummy_ra1 dummy_ra2 dummy_ra3 dummy_sp1 dummy_sp2 dummy_sp3,
         Genv.find_comp_of_block ge3 b3 = cp ->
         forall (NOBOTTOM: cp <> bottom)
-          (NOTOP: cp <> top),
-        s cp = opposite δ ->
-        Val.inject j__oppδ (Vptr b2 ofs2) (Vptr b3 ofs3) ->
-        Val.inject j__oppδ sp2 sp3 ->
-        Val.inject (if side_eq (s cp') δ then j__δ else j__oppδ)
-          (Vptr (if side_eq (s cp') δ then dummy_ra1 else dummy_ra2) Ptrofs.zero)
-          (Vptr dummy_ra3 Ptrofs.zero) ->
-        Val.inject (if side_eq (s cp') δ then j__δ else j__oppδ)
-          (Vptr (if side_eq (s cp') δ then dummy_sp1 else dummy_sp2) Ptrofs.zero) (Vptr dummy_sp3 Ptrofs.zero) ->
-        forall (STACK_CONTENT1: same_content_stack m1 m3 sp1 sp3 sg),
-        forall (STACK_CONTENT2: same_content_stack m2 m3 sp2 sp3 sg),
-        forall (PERM1: at_most_readable m1 sp1),
-        forall (PERM2: at_most_readable m2 sp2),
-        forall (PERM3: at_most_readable m3 sp3),
-        forall (EMPTY1: empty_perm m1 dummy_sp1),
-        forall (EMPTY2: empty_perm m2 dummy_sp2),
-        forall (EMPTY3: empty_perm m3 dummy_sp3),
-        stackframe_rel ge3 δ j__δ j__oppδ m1 m2 m3
-          (Stackframe b1 sg cp' sp1 ofs1 dummy_ra1 dummy_sp1)
-          (Stackframe b2 sg cp' sp2 ofs2 dummy_ra2 dummy_sp2)
-          (Stackframe b3 sg cp' sp3 ofs3 dummy_ra3 dummy_sp3)
+               (NOTOP: cp <> top),
+          s cp = opposite δ ->
+          Val.inject j__oppδ (Vptr b2 ofs2) (Vptr b3 ofs3) ->
+          Val.inject j__oppδ sp2 sp3 ->
+          Val.inject (if side_eq (s cp') δ then j__δ else j__oppδ)
+            (Vptr (if side_eq (s cp') δ then dummy_ra1 else dummy_ra2) Ptrofs.zero)
+            (Vptr dummy_ra3 Ptrofs.zero) ->
+          Val.inject (if side_eq (s cp') δ then j__δ else j__oppδ)
+            (Vptr (if side_eq (s cp') δ then dummy_sp1 else dummy_sp2) Ptrofs.zero) (Vptr dummy_sp3 Ptrofs.zero) ->
+          forall (STACK_CONTENT1: same_content_stack m1 m3 sp1 sp3 sg),
+          forall (STACK_CONTENT2: same_content_stack m2 m3 sp2 sp3 sg),
+          forall (PERM1: at_most_readable m1 sp1),
+          forall (PERM2: at_most_readable m2 sp2),
+          forall (PERM3: at_most_readable m3 sp3),
+          forall (EMPTY1: empty_perm m1 dummy_sp1),
+          forall (EMPTY2: empty_perm m2 dummy_sp2),
+          forall (EMPTY3: empty_perm m3 dummy_sp3),
+            stackframe_rel ge3 δ j__δ j__oppδ m1 m2 m3
+              (Stackframe b1 sg cp' sp1 ofs1 dummy_ra1 dummy_sp1)
+              (Stackframe b2 sg cp' sp2 ofs2 dummy_ra2 dummy_sp2)
+              (Stackframe b3 sg cp' sp3 ofs3 dummy_ra3 dummy_sp3)
   .
 
   Inductive stack_rel (ge3: genv) (δ: side) (j__δ j__oppδ: meminj) m1 m2 m3: stack -> stack -> stack -> Prop :=
@@ -531,7 +531,7 @@ Section Invariants.
       stackframe_rel ge3 δ j__δ j__oppδ m1 m2 m3 f1 f2 f3 ->
       callee_comp cp_main st3 = call_comp ge3 (f3 :: st3) ->
       forall (DIFF: callee_comp cp_main st3 <> callee_comp cp_main (f3 :: st3)),
-      stack_rel ge3 δ j__δ j__oppδ m1 m2 m3 (f1 :: st1) (f2 :: st2) (f3 :: st3)
+        stack_rel ge3 δ j__δ j__oppδ m1 m2 m3 (f1 :: st1) (f2 :: st2) (f3 :: st3)
   .
 
   Lemma stack_rel_comm (ge3: genv) (δ: side) (j__δ j__oppδ: meminj) m1 m2 m3:
@@ -676,15 +676,15 @@ meminj_preserves_globals which will allow us to prove preservation of events.
 
   Inductive strong_equivalence (ge ge': genv) (j: meminj) (δ: side): state -> state -> Prop :=
   | strong_equivalence_State: forall st st' rs rs' m m' cp cp',
-      (* Genv.find_comp_in_genv ge (rs PC) = cp -> *)
-      forall (COMP1: comp_of_state ge (State st rs m cp') cp)
-        (COMP2: comp_of_state ge' (State st' rs' m' cp') cp)
-        (SIDE: s cp = δ),
-      forall (NOTOP: cp <> top)
-        (NOBOTTOM: cp <> bottom),
-      forall (NOTOP': cp' <> top)
-        (NOBOTTOM': cp' <> bottom),
-      forall (ST_RS: callee_comp cp_main st' = cp),
+    (* Genv.find_comp_in_genv ge (rs PC) = cp -> *)
+    forall (COMP1: comp_of_state ge (State st rs m cp') cp)
+           (COMP2: comp_of_state ge' (State st' rs' m' cp') cp)
+           (SIDE: s cp = δ),
+    forall (NOTOP: cp <> top)
+           (NOBOTTOM: cp <> bottom),
+    forall (NOTOP': cp' <> top)
+           (NOBOTTOM': cp' <> bottom),
+    forall (ST_RS: callee_comp cp_main st' = cp),
       (* forall (forall b ofs ef, *)
       (*       Genv.find_def ge b = Some (Gfun (External ef)) -> *)
       (*                cp = cp') *)
@@ -692,12 +692,12 @@ meminj_preserves_globals which will allow us to prove preservation of events.
       mem_rel ge ge' j δ m m' ->
       strong_equivalence ge ge' j δ (State st rs m cp') (State st' rs' m' cp')
   | strong_equivalence_ReturnState: forall st st' (rs rs': regset) m m' cp rec_cp,
-      (* careful, the current comp in a returnstate is given by [rec_cp] *)
-      (* (s (Genv.find_comp_in_genv ge (rs PC)) = δ) -> *)
-      forall (COMP1: comp_of_state ge (ReturnState st rs m rec_cp) cp)
-        (COMP2: comp_of_state ge' (ReturnState st' rs' m' rec_cp) cp)
-        (SIDE: s cp = δ),
-      forall (ST_RS: callee_comp cp_main st' = cp),
+    (* careful, the current comp in a returnstate is given by [rec_cp] *)
+    (* (s (Genv.find_comp_in_genv ge (rs PC)) = δ) -> *)
+    forall (COMP1: comp_of_state ge (ReturnState st rs m rec_cp) cp)
+           (COMP2: comp_of_state ge' (ReturnState st' rs' m' rec_cp) cp)
+           (SIDE: s cp = δ),
+    forall (ST_RS: callee_comp cp_main st' = cp),
       regset_rel j rs rs' ->
       mem_rel ge ge' j δ m m' ->
       strong_equivalence ge ge' j δ (ReturnState st rs m rec_cp) (ReturnState st' rs' m' rec_cp)
@@ -706,44 +706,44 @@ meminj_preserves_globals which will allow us to prove preservation of events.
 
   Inductive weak_equivalence (ge ge': genv) (j: meminj) (δ: side): state -> state -> Prop :=
   | weak_equivalence_State: forall st st' rs rs' m m' cp cp' cp'',
-      forall (COMP1: comp_of_state ge (State st rs m cp') cp)
-        (COMP2: comp_of_state ge' (State st' rs' m' cp'') cp)
-        (SIDE: s cp = opposite δ),
-      forall (NOTOP: cp <> top)
-        (NOBOTTOM: cp <> bottom),
-      forall (NOTOP': cp' <> top)
-        (NOBOTTOM': cp' <> bottom),
-      forall (NOTOP'': cp'' <> top)
-        (NOBOTTOM'': cp'' <> bottom),
+    forall (COMP1: comp_of_state ge (State st rs m cp') cp)
+           (COMP2: comp_of_state ge' (State st' rs' m' cp'') cp)
+           (SIDE: s cp = opposite δ),
+    forall (NOTOP: cp <> top)
+           (NOBOTTOM: cp <> bottom),
+    forall (NOTOP': cp' <> top)
+           (NOBOTTOM': cp' <> bottom),
+    forall (NOTOP'': cp'' <> top)
+           (NOBOTTOM'': cp'' <> bottom),
       mem_rel ge ge' j δ m m' ->
       weak_equivalence ge ge' j δ (State st rs m cp') (State st' rs' m' cp'')
   | weak_equivalence_ReturnState: forall st st' rs rs' m m' cp rec_cp rec_cp',
-      (* careful, the current comp in a returnstate is given by [callee_comp] *)
-      forall (COMP1: comp_of_state ge (ReturnState st rs m rec_cp) cp)
-        (COMP2: comp_of_state ge' (ReturnState st' rs' m' rec_cp') cp)
-        (SIDE: s cp = opposite δ),
-      forall (NOTOP: cp <> top)
-        (NOBOTTOM: cp <> bottom),
+    (* careful, the current comp in a returnstate is given by [callee_comp] *)
+    forall (COMP1: comp_of_state ge (ReturnState st rs m rec_cp) cp)
+           (COMP2: comp_of_state ge' (ReturnState st' rs' m' rec_cp') cp)
+           (SIDE: s cp = opposite δ),
+    forall (NOTOP: cp <> top)
+           (NOBOTTOM: cp <> bottom),
       mem_rel ge ge' j δ m m' ->
       weak_equivalence ge ge' j δ (ReturnState st rs m rec_cp) (ReturnState st' rs' m' rec_cp')
   | weak_equivalence_State_ReturnState: forall st st' rs rs' m m' cp cp' rec_cp',
-      forall (COMP1: comp_of_state ge (State st rs m cp') cp)
-        (COMP2: comp_of_state ge' (ReturnState st' rs' m' rec_cp') cp)
-        (SIDE: s cp = opposite δ),
-      forall (NOTOP: cp <> top)
-        (NOBOTTOM: cp <> bottom),
-      forall (NOTOP': cp' <> top)
-        (NOBOTTOM': cp' <> bottom),
+    forall (COMP1: comp_of_state ge (State st rs m cp') cp)
+           (COMP2: comp_of_state ge' (ReturnState st' rs' m' rec_cp') cp)
+           (SIDE: s cp = opposite δ),
+    forall (NOTOP: cp <> top)
+           (NOBOTTOM: cp <> bottom),
+    forall (NOTOP': cp' <> top)
+           (NOBOTTOM': cp' <> bottom),
       mem_rel ge ge' j δ m m' ->
       weak_equivalence ge ge' j δ (State st rs m cp') (ReturnState st' rs' m' rec_cp')
   | weak_equivalence_ReturnState_State: forall st st' rs rs' m m' cp cp' rec_cp,
-      forall (COMP1: comp_of_state ge (ReturnState st rs m rec_cp) cp)
-        (COMP2: comp_of_state ge' (State st' rs' m' cp') cp)
-        (SIDE: s cp = opposite δ),
-      forall (NOTOP: cp <> top)
-        (NOBOTTOM: cp <> bottom),
-      forall (NOTOP': cp' <> top)
-        (NOBOTTOM': cp' <> bottom),
+    forall (COMP1: comp_of_state ge (ReturnState st rs m rec_cp) cp)
+           (COMP2: comp_of_state ge' (State st' rs' m' cp') cp)
+           (SIDE: s cp = opposite δ),
+    forall (NOTOP: cp <> top)
+           (NOBOTTOM: cp <> bottom),
+    forall (NOTOP': cp' <> top)
+           (NOBOTTOM': cp' <> bottom),
       mem_rel ge ge' j δ m m' ->
       weak_equivalence ge ge' j δ (ReturnState st rs m rec_cp) (State st' rs' m' cp')
   .
@@ -840,15 +840,15 @@ Arguments opposite /.
 
 Lemma store_preserves_weak:
   forall s ge1 ge3 cp_main j j__oppδ ch cp b ofs v m1 m1' m2 m3 st1 st2 st3
-    (not_bottom: cp <> bottom)
-    (not_top: cp <> top),
+         (not_bottom: cp <> bottom)
+         (not_top: cp <> top),
     Mem.store ch m1 b ofs v cp = Some m1' ->
     stack_rel s cp_main ge3 (opposite (s cp)) j j__oppδ m1 m2 m3 st1 st2 st3 ->
     mem_rel s ge1 ge3 j (opposite (s cp)) m1 m3 ->
 
 
     mem_rel s ge1 ge3 j (opposite (s cp)) m1' m3 /\
-    stack_rel s cp_main ge3 (opposite (s cp)) j j__oppδ m1' m2 m3 st1 st2 st3.
+      stack_rel s cp_main ge3 (opposite (s cp)) j j__oppδ m1' m2 m3 st1 st2 st3.
 Proof.
   intros s ge1 ge3 cp_main j j__oppδ ch cp b ofs v m1 m1' m2 m3 st1 st2 st3
     not_bottom not_top exec st_rel m1_m3.
@@ -945,20 +945,20 @@ Proof.
         + unfold empty_perm in *.
           split. eapply Mem.store_valid_block_1; eauto; eapply EMPTY1.
           intros ? ?. eapply EMPTY1. eapply Mem.perm_store_2; eauto.
-  }
+    }
 Qed.
 
 Lemma exec_store_preserves_weak:
   forall s cp_main ge1 ge3 j j__oppδ cp ch m1 m1' m2 m3 rs1 rs1' rs ra ofs st1 st2 st3
-    (not_bottom: cp <> bottom)
-    (not_top: cp <> top),
+         (not_bottom: cp <> bottom)
+         (not_top: cp <> top),
 
     stack_rel s cp_main ge3 (opposite (s cp)) j j__oppδ m1 m2 m3 st1 st2 st3 ->
     exec_store ge1 ch rs1 m1 rs ra ofs cp = Next rs1' m1' ->
     mem_rel s ge1 ge3 j (opposite (s cp)) m1 m3 ->
 
     mem_rel s ge1 ge3 j (opposite (s cp)) m1' m3 /\
-    stack_rel s cp_main ge3 (opposite (s cp)) j j__oppδ m1' m2 m3 st1 st2 st3.
+      stack_rel s cp_main ge3 (opposite (s cp)) j j__oppδ m1' m2 m3 st1 st2 st3.
 Proof.
   intros s cp_main ge1 ge3 j j' cp ch m1 m1' m2 m3 rs1 rs1' rs ra ofs st1 st2 st3 ? ? st_rel exec m1_m3.
   unfold exec_store in exec.
@@ -969,58 +969,58 @@ Qed.
 
 Lemma alloc_preserves_weak:
   forall s δ W1 (_: list_norepet (prog_defs_names W1)) W3 cp_main j j__oppδ cp lo hi m1 m2 m1' b1 m3 st1 st2 st3
-    (not_bottom: cp <> bottom)
-    (not_top: cp <> top),
+         (not_bottom: cp <> bottom)
+         (not_top: cp <> top),
     Mem.alloc m1 cp lo hi = (m1', b1) ->
     meminj_preserves_globals s δ W1 W3 j ->
     mem_rel s (Genv.globalenv W1) (Genv.globalenv W3) j (opposite (s cp)) m1 m3 ->
     stack_rel s cp_main (Genv.globalenv W3) (opposite (s cp)) j j__oppδ m1 m2 m3 st1 st2 st3 ->
     exists j',
-    meminj_preserves_globals s δ W1 W3 j' /\
-      mem_rel s (Genv.globalenv W1) (Genv.globalenv W3) j' (opposite (s cp)) m1' m3 /\ inject_incr j j' /\
-    stack_rel s cp_main (Genv.globalenv W3) (opposite (s cp)) j' j__oppδ m1' m2 m3 st1 st2 st3.
+      meminj_preserves_globals s δ W1 W3 j' /\
+        mem_rel s (Genv.globalenv W1) (Genv.globalenv W3) j' (opposite (s cp)) m1' m3 /\ inject_incr j j' /\
+        stack_rel s cp_main (Genv.globalenv W3) (opposite (s cp)) j' j__oppδ m1' m2 m3 st1 st2 st3.
 Proof.
   intros s δ W1 norepet1 W3 cp_main j j__oppδ cp lo hi m1 m2 m1' b1 m3 st1 st2 st3 ? ? exec inj_pres m1_m3 st_rel.
   exploit Mem.alloc_left_unmapped_inject; eauto using partial_mem_inject.
   intros (j' & m1'_m3 & incr & j'_b1 & same_inj).
   exists j'. split; [| split; [| split]]; auto.
   { assert (G: forall s δ p1 p2 j j',
-                 meminj_preserves_globals s δ p1 p2 j ->
-                 (forall (id: ident) (b: block), Genv.find_symbol (Genv.globalenv p1) id = Some b ->
-                                   j' b = j b) ->
-                 (forall (b: block) gd, Genv.find_def (Genv.globalenv p1) b = Some gd ->
-                                   j' b = j b) ->
-                 (forall (b b': block) delta gd, Genv.find_def (Genv.globalenv p2) b' = Some gd ->
-                                            j' b = Some (b', delta) ->
-                                            j b = Some (b', delta)) ->
-                 inject_incr j j' ->
-                 meminj_preserves_globals s δ p1 p2 j').
-      { clear.
-        intros s δ p1 p2 j j' [A B C D E] rewr1 rewr2 rewr3 incr.
-        constructor.
-        - intros. erewrite rewr1 in H; eauto.
-        - intros. exploit B; eauto. intros (? & ? & ?).
-          exploit incr; eauto.
-        - intros. exploit C; eauto. intros (? & ? & ?).
-          exploit incr; eauto.
-        - intros. erewrite rewr2 in H; eauto.
-        - intros. eapply rewr3 in H; eauto. }
-      eapply G; eauto.
-      - clear G.
-        intros. eapply same_inj.
-        exploit Genv.find_symbol_find_def_inversion; eauto. intros [gd ?].
-        eapply find_def_valid1 in m1_m3; eauto. unfold Mem.valid_block in m1_m3.
-        eapply Mem.alloc_result in exec; subst. intros N; subst b; exploit Plt_strict; eauto.
-      - clear G.
-        intros. eapply same_inj.
-        eapply find_def_valid1 in m1_m3; eauto. unfold Mem.valid_block in m1_m3.
-        eapply Mem.alloc_result in exec; subst. intros N; subst b; exploit Plt_strict; eauto.
-      - clear G.
-        intros. rewrite <- same_inj; eauto.
-        eapply find_def_valid2 in m1_m3; eauto. unfold Mem.valid_block in m1_m3.
-        eapply Mem.alloc_result in exec; subst. intros N; subst b.
-        assert (b' = Mem.nextblock m3) by congruence. subst b'.
-        now exploit Plt_strict; eauto. }
+               meminj_preserves_globals s δ p1 p2 j ->
+               (forall (id: ident) (b: block), Genv.find_symbol (Genv.globalenv p1) id = Some b ->
+                                               j' b = j b) ->
+               (forall (b: block) gd, Genv.find_def (Genv.globalenv p1) b = Some gd ->
+                                      j' b = j b) ->
+               (forall (b b': block) delta gd, Genv.find_def (Genv.globalenv p2) b' = Some gd ->
+                                               j' b = Some (b', delta) ->
+                                               j b = Some (b', delta)) ->
+               inject_incr j j' ->
+               meminj_preserves_globals s δ p1 p2 j').
+    { clear.
+      intros s δ p1 p2 j j' [A B C D E] rewr1 rewr2 rewr3 incr.
+      constructor.
+      - intros. erewrite rewr1 in H; eauto.
+      - intros. exploit B; eauto. intros (? & ? & ?).
+        exploit incr; eauto.
+      - intros. exploit C; eauto. intros (? & ? & ?).
+        exploit incr; eauto.
+      - intros. erewrite rewr2 in H; eauto.
+      - intros. eapply rewr3 in H; eauto. }
+    eapply G; eauto.
+    - clear G.
+      intros. eapply same_inj.
+      exploit Genv.find_symbol_find_def_inversion; eauto. intros [gd ?].
+      eapply find_def_valid1 in m1_m3; eauto. unfold Mem.valid_block in m1_m3.
+      eapply Mem.alloc_result in exec; subst. intros N; subst b; exploit Plt_strict; eauto.
+    - clear G.
+      intros. eapply same_inj.
+      eapply find_def_valid1 in m1_m3; eauto. unfold Mem.valid_block in m1_m3.
+      eapply Mem.alloc_result in exec; subst. intros N; subst b; exploit Plt_strict; eauto.
+    - clear G.
+      intros. rewrite <- same_inj; eauto.
+      eapply find_def_valid2 in m1_m3; eauto. unfold Mem.valid_block in m1_m3.
+      eapply Mem.alloc_result in exec; subst. intros N; subst b.
+      assert (b' = Mem.nextblock m3) by congruence. subst b'.
+      now exploit Plt_strict; eauto. }
   (* split; auto. *)
   constructor.
   - intros b; apply same_dom in m1_m3; specialize (m1_m3 b).
@@ -1121,8 +1121,8 @@ Qed.
 
 Lemma extcall_preserves_mem_rel_same_side:
   forall s ge1 ge2 ge3 cp_main j j' j__oppδ m1 m1' m2 m3 m3' ef vres vres' t vargs vargs' δ cp st1 st2 st3
-    (not_bottom: cp <> bottom)
-    (not_top: cp <> top),
+         (not_bottom: cp <> bottom)
+         (not_top: cp <> top),
     (* (callee: callee_comp cp_main st3 = cp), *)
     stack_rel s cp_main ge3 (s cp) j j__oppδ m1 m2 m3 st1 st2 st3 ->
     Mem.unchanged_on (loc_unmapped j) m1 m1' ->
@@ -1140,7 +1140,7 @@ Lemma extcall_preserves_mem_rel_same_side:
     external_call ef ge1 cp vargs m1 t vres m1' ->
     external_call ef ge3 cp vargs' m3 t vres' m3' ->
     mem_rel s ge1 ge3 j' δ m1' m3' /\
-    stack_rel s cp_main ge3 (s cp) j' j__oppδ m1' m2 m3' st1 st2 st3.
+      stack_rel s cp_main ge3 (s cp) j' j__oppδ m1' m2 m3' st1 st2 st3.
 Proof.
   intros s ge1 ge2 ge3 cp_main j j' j__oppδ m1 m1' m2 m3 m3' ef vres vres' t vargs vargs' δ cp st1 st2 st3
     ? ? st_rel unchanged inj_incr inj_sep comp_new comp_ef m1_m3 m2_m3 inj_m1'_m3' extcall1 extcall3.
@@ -1157,8 +1157,8 @@ Proof.
       intros [[] | ?]; try now auto.
       assert (Mem.valid_block m1 b).
       { destruct (Classical_Prop.classic (Mem.valid_block m1 b)); auto. }
-        (* exploit (Mem.mi_freeblocks j); eauto. *)
-        (* eapply partial_mem_inject; eauto. congruence. } *)
+      (* exploit (Mem.mi_freeblocks j); eauto. *)
+      (* eapply partial_mem_inject; eauto. congruence. } *)
       pose proof (ec_preserves_comp (external_call_spec ef cp)) as G.
       simpl. erewrite <- G; eauto. left; split; auto.
       eapply external_call_valid_block; eauto.
@@ -1178,7 +1178,7 @@ Proof.
       * clear C1.
         intros [H | H].
         -- assert (not (s (Mem.block_compartment m1 b) = δ /\
-                  Mem.valid_block m1 b)). intros ?. exploit C2; eauto.
+                          Mem.valid_block m1 b)). intros ?. exploit C2; eauto.
            intros G. eapply Classical_Prop.not_and_or in H0.
            destruct H.
            destruct (Classical_Prop.classic (Mem.valid_block m1 b)); auto.
@@ -1241,7 +1241,7 @@ Proof.
     eapply find_def_valid2; eauto.
   - intros. erewrite <- ec_preserves_comp; eauto using external_call_spec, find_var_comp1, find_def_valid1.
   (* same high half *)
-    (* intros. eapply same_high_half in m1_m3; eauto. *)
+  (* intros. eapply same_high_half in m1_m3; eauto. *)
   - eapply inject_incr_stack_rel1; eauto.
     induction st_rel;
       econstructor; eauto.
@@ -1351,8 +1351,8 @@ Proof.
 Qed.
 
 Lemma extcall_preserves_mem_rel_opp_side1: forall s cp cp_main ge1 ge3 j j__oppδ δ m1 m1' m2 m3 ef vargs t vres st1 st2 st3
-    (not_bottom: cp <> bottom)
-    (not_top: cp <> top),
+                                                  (not_bottom: cp <> bottom)
+                                                  (not_top: cp <> top),
     s cp = opposite δ ->
     mem_rel s ge1 ge3 j δ m1 m3 ->
     stack_rel s cp_main ge3 δ j j__oppδ m1 m2 m3 st1 st2 st3 ->
@@ -1381,7 +1381,7 @@ Proof.
       * clear C1.
         intros [H | H].
         -- assert (not (s (Mem.block_compartment m1 b) = δ /\
-                  Mem.valid_block m1 b)). intros ?. exploit C2; eauto.
+                          Mem.valid_block m1 b)). intros ?. exploit C2; eauto.
            intros G. eapply Classical_Prop.not_and_or in H0.
            destruct H.
            destruct (Classical_Prop.classic (Mem.valid_block m1 b)); auto.
@@ -1420,32 +1420,32 @@ Proof.
             simpl in *; rewrite G'' in *. intros n. inv n; eauto. now destruct s, δ.
             destruct p; constructor.
         +           assert (Mem.perm m1 b ofs k p -> p = Nonempty).
-          { destruct H as [? H].
-            eapply find_def_perm1 with (ofs := ofs) in H; eauto.
-            intros G. eapply Mem.perm_max in G.
-            destruct p; auto;
-              eapply Mem.perm_implies with (p2 := Readable) in G; try contradiction; try constructor. }
-          assert (Mem.perm m1' b ofs k p -> p = Nonempty).
-          { destruct H as [? H].
-            intros G. eapply Mem.perm_max in G.
-            eapply external_call_max_perm in G; eauto.
-            eapply find_def_perm1 with (ofs := ofs) in H; eauto.
-            destruct p; auto;
-              eapply Mem.perm_implies with (p2 := Readable) in G; try contradiction; try constructor. }
-          destruct H as [? H].
-          split.
-          * intros G. exploit H1; eauto. intros ->.
-            revert G. eapply proj1.
-            eapply ec_public_not_freeable; eauto using external_call_spec.
-            eapply find_def_perm1 with (ofs := ofs) in H; eauto. intros G.
-            eapply Mem.perm_implies with (p2 := Readable) in G; try contradiction.
-            constructor.
-          * intros G. exploit H2; eauto. intros ->.
-            revert G. eapply proj2.
-            eapply ec_public_not_freeable; eauto using external_call_spec.
-            eapply find_def_perm1 with (ofs := ofs) in H; eauto. intros G.
-            eapply Mem.perm_implies with (p2 := Readable) in G; try contradiction.
-            constructor.
+                    { destruct H as [? H].
+                      eapply find_def_perm1 with (ofs := ofs) in H; eauto.
+                      intros G. eapply Mem.perm_max in G.
+                      destruct p; auto;
+                        eapply Mem.perm_implies with (p2 := Readable) in G; try contradiction; try constructor. }
+                    assert (Mem.perm m1' b ofs k p -> p = Nonempty).
+                    { destruct H as [? H].
+                      intros G. eapply Mem.perm_max in G.
+                      eapply external_call_max_perm in G; eauto.
+                      eapply find_def_perm1 with (ofs := ofs) in H; eauto.
+                      destruct p; auto;
+                        eapply Mem.perm_implies with (p2 := Readable) in G; try contradiction; try constructor. }
+                    destruct H as [? H].
+                    split.
+                    * intros G. exploit H1; eauto. intros ->.
+                      revert G. eapply proj1.
+                      eapply ec_public_not_freeable; eauto using external_call_spec.
+                      eapply find_def_perm1 with (ofs := ofs) in H; eauto. intros G.
+                      eapply Mem.perm_implies with (p2 := Readable) in G; try contradiction.
+                      constructor.
+                    * intros G. exploit H2; eauto. intros ->.
+                      revert G. eapply proj2.
+                      eapply ec_public_not_freeable; eauto using external_call_spec.
+                      eapply find_def_perm1 with (ofs := ofs) in H; eauto. intros G.
+                      eapply Mem.perm_implies with (p2 := Readable) in G; try contradiction.
+                      constructor.
       - (* unchanged_on_contents *)
         intros. destruct H.
         + eapply Mem.unchanged_on_contents; eauto. simpl in *.
@@ -1916,221 +1916,221 @@ Section Lemmas.
     eauto.
   Qed.
 
-Lemma extcall_preserves_mem_rel_opp_side2: forall cp j m1 m3 m3' ef vargs t vres
-    (not_bottom: cp <> bottom)
-    (not_top: cp <> top),
-    s cp = opposite δ ->
-    meminj_preserves_globals s δ W1 W3 j ->
-    mem_rel s ge1 ge3 j δ m1 m3 ->
-    external_call ef ge3 cp vargs m3 t vres m3' ->
-    mem_rel s ge1 ge3 j δ m1 m3'.
-Proof.
-  intros cp j m1 m3 m3' ef vargs t vres ? ? side_ef inj_pres m1_m3 extcall.
-  constructor.
-  - (* same dom *)
-    eapply same_dom in m1_m3; eauto.
-  - (* injection *)
-    exploit partial_mem_inject; eauto. intros m1_inject_m3.
-    assert (UNCH1: Mem.unchanged_on (fun b ofs => not (Mem.can_access_block m3 b cp)) m3 m3').
-    { eapply ec_outside_comp; eauto using external_call_spec. }
-    assert (UNCH: Mem.unchanged_on (fun b ofs => (s, m3) |= b ∈ δ \/ (exists fd : fundef, Genv.find_def ge3 b = Some (Gfun fd))) m3 m3').
-    { constructor.
-      - (* unchanged_on_nextblock *)
-        eapply Mem.unchanged_on_nextblock; eauto.
-      - (* unchanged_on_perm *)
-        intros. destruct H.
-        + pose proof (Mem.unchanged_on_perm _ _ _ UNCH1).
-          split.
-          * intros ?.
-            eapply H1; eauto.
-            eapply Mem.perm_max in H2. eapply Mem.perm_implies with (p2 := Nonempty) in H2.
+  Lemma extcall_preserves_mem_rel_opp_side2: forall cp j m1 m3 m3' ef vargs t vres
+                                                    (not_bottom: cp <> bottom)
+                                                    (not_top: cp <> top),
+      s cp = opposite δ ->
+      meminj_preserves_globals s δ W1 W3 j ->
+      mem_rel s ge1 ge3 j δ m1 m3 ->
+      external_call ef ge3 cp vargs m3 t vres m3' ->
+      mem_rel s ge1 ge3 j δ m1 m3'.
+  Proof.
+    intros cp j m1 m3 m3' ef vargs t vres ? ? side_ef inj_pres m1_m3 extcall.
+    constructor.
+    - (* same dom *)
+      eapply same_dom in m1_m3; eauto.
+    - (* injection *)
+      exploit partial_mem_inject; eauto. intros m1_inject_m3.
+      assert (UNCH1: Mem.unchanged_on (fun b ofs => not (Mem.can_access_block m3 b cp)) m3 m3').
+      { eapply ec_outside_comp; eauto using external_call_spec. }
+      assert (UNCH: Mem.unchanged_on (fun b ofs => (s, m3) |= b ∈ δ \/ (exists fd : fundef, Genv.find_def ge3 b = Some (Gfun fd))) m3 m3').
+      { constructor.
+        - (* unchanged_on_nextblock *)
+          eapply Mem.unchanged_on_nextblock; eauto.
+        - (* unchanged_on_perm *)
+          intros. destruct H.
+          + pose proof (Mem.unchanged_on_perm _ _ _ UNCH1).
+            split.
+            * intros ?.
+              eapply H1; eauto.
+              eapply Mem.perm_max in H2. eapply Mem.perm_implies with (p2 := Nonempty) in H2.
+              exploit perm_compartment2; eauto. intros [? G].
+              simpl in *; rewrite G in *. intros n. inv n; eauto. now destruct s.
+              destruct p; constructor.
+            * intros G.
+              eapply Mem.perm_max in G as G'. eapply Mem.perm_implies with (p2 := Nonempty) in G'.
+              eapply external_call_max_perm in G'; eauto.
+              eapply H1; eauto.
+              exploit perm_compartment2; eauto. intros [? G''].
+              simpl in *; rewrite G'' in *. intros n. inv n; eauto. now destruct s.
+              destruct p; constructor.
+          + assert (Mem.perm m3 b ofs k p -> p = Nonempty).
+            { destruct H as [? H].
+              eapply find_def_perm2 with (ofs := ofs) in H; eauto.
+              intros G. eapply Mem.perm_max in G.
+              destruct p; auto;
+                eapply Mem.perm_implies with (p2 := Readable) in G; try contradiction; try constructor. }
+            assert (Mem.perm m3' b ofs k p -> p = Nonempty).
+            { destruct H as [? H].
+              intros G. eapply Mem.perm_max in G.
+              eapply external_call_max_perm in G; eauto.
+              eapply find_def_perm2 with (ofs := ofs) in H; eauto.
+              destruct p; auto;
+                eapply Mem.perm_implies with (p2 := Readable) in G; try contradiction; try constructor. }
+            destruct H as [? H].
+            split.
+            * intros G. exploit H1; eauto. intros ->.
+              revert G. eapply proj1.
+              eapply ec_public_not_freeable; eauto using external_call_spec.
+              eapply find_def_perm2 with (ofs := ofs) in H; eauto. intros G.
+              eapply Mem.perm_implies with (p2 := Readable) in G; try contradiction.
+              constructor.
+            * intros G. exploit H2; eauto. intros ->.
+              revert G. eapply proj2.
+              eapply ec_public_not_freeable; eauto using external_call_spec.
+              eapply find_def_perm2 with (ofs := ofs) in H; eauto. intros G.
+              eapply Mem.perm_implies with (p2 := Readable) in G; try contradiction.
+              constructor.
+        - (* unchanged_on_contents *)
+          intros. destruct H.
+          + eapply Mem.unchanged_on_contents; eauto. simpl in *.
+            eapply Mem.perm_max in H0. eapply Mem.perm_implies with (p2 := Nonempty) in H0.
             exploit perm_compartment2; eauto. intros [? G].
             simpl in *; rewrite G in *. intros n. inv n; eauto. now destruct s.
-            destruct p; constructor.
-          * intros G.
-            eapply Mem.perm_max in G as G'. eapply Mem.perm_implies with (p2 := Nonempty) in G'.
-            eapply external_call_max_perm in G'; eauto.
-            eapply H1; eauto.
-            exploit perm_compartment2; eauto. intros [? G''].
-            simpl in *; rewrite G'' in *. intros n. inv n; eauto. now destruct s.
-            destruct p; constructor.
-        + assert (Mem.perm m3 b ofs k p -> p = Nonempty).
-          { destruct H as [? H].
-            eapply find_def_perm2 with (ofs := ofs) in H; eauto.
-            intros G. eapply Mem.perm_max in G.
-            destruct p; auto;
-              eapply Mem.perm_implies with (p2 := Readable) in G; try contradiction; try constructor. }
-          assert (Mem.perm m3' b ofs k p -> p = Nonempty).
-          { destruct H as [? H].
-            intros G. eapply Mem.perm_max in G.
-            eapply external_call_max_perm in G; eauto.
-            eapply find_def_perm2 with (ofs := ofs) in H; eauto.
-            destruct p; auto;
-              eapply Mem.perm_implies with (p2 := Readable) in G; try contradiction; try constructor. }
-          destruct H as [? H].
-          split.
-          * intros G. exploit H1; eauto. intros ->.
-            revert G. eapply proj1.
-            eapply ec_public_not_freeable; eauto using external_call_spec.
-            eapply find_def_perm2 with (ofs := ofs) in H; eauto. intros G.
-            eapply Mem.perm_implies with (p2 := Readable) in G; try contradiction.
             constructor.
-          * intros G. exploit H2; eauto. intros ->.
-            revert G. eapply proj2.
-            eapply ec_public_not_freeable; eauto using external_call_spec.
-            eapply find_def_perm2 with (ofs := ofs) in H; eauto. intros G.
-            eapply Mem.perm_implies with (p2 := Readable) in G; try contradiction.
-            constructor.
-      - (* unchanged_on_contents *)
-        intros. destruct H.
-        + eapply Mem.unchanged_on_contents; eauto. simpl in *.
-          eapply Mem.perm_max in H0. eapply Mem.perm_implies with (p2 := Nonempty) in H0.
-          exploit perm_compartment2; eauto. intros [? G].
-          simpl in *; rewrite G in *. intros n. inv n; eauto. now destruct s.
-          constructor.
-        + (* contradiction *)
-          exfalso.
-          destruct H as [? H].
-          eapply find_def_perm2 with (ofs := ofs) in H; eauto.
-          eapply H. eapply Mem.perm_max; eauto.
-      - (* unchanged_on_own *)
-        eapply Mem.unchanged_on_own; eauto.
-    }
-    (* assert (domain': forall b b' delta, j b = Some (b', delta) <-> (s, m3) |= b' ∈ δ \/ *)
-    (*                                                           exists fd, Genv.find_def ge3 b' = Some (Gfun fd)). *)
-    (* { intros b b' delta. *)
-    (*   eapply same_dom in m1_m3. unfold same_domain in m1_m3. *)
-    (* } *)
-    constructor.
-    + apply Mem.mi_inj in m1_inject_m3 as mi_inj.
-      apply same_dom in m1_m3 as domain. unfold same_domain in domain.
-
+          + (* contradiction *)
+            exfalso.
+            destruct H as [? H].
+            eapply find_def_perm2 with (ofs := ofs) in H; eauto.
+            eapply H. eapply Mem.perm_max; eauto.
+        - (* unchanged_on_own *)
+          eapply Mem.unchanged_on_own; eauto.
+      }
+      (* assert (domain': forall b b' delta, j b = Some (b', delta) <-> (s, m3) |= b' ∈ δ \/ *)
+      (*                                                           exists fd, Genv.find_def ge3 b' = Some (Gfun fd)). *)
+      (* { intros b b' delta. *)
+      (*   eapply same_dom in m1_m3. unfold same_domain in m1_m3. *)
+      (* } *)
       constructor.
-      * intros.
-        eapply Mem.perm_unchanged_on; eauto. simpl.
+      + apply Mem.mi_inj in m1_inject_m3 as mi_inj.
+        apply same_dom in m1_m3 as domain. unfold same_domain in domain.
+
+        constructor.
+        * intros.
+          eapply Mem.perm_unchanged_on; eauto. simpl.
+          assert (G: j b1 <> None) by congruence.
+          apply domain in G. simpl in G.
+          destruct G as [G | G].
+          -- left. exploit perm_compartment1; eauto. eapply Mem.perm_max.
+             eapply Mem.perm_implies with (p1 := p); eauto. constructor.
+             intros [cp' G'].
+             assert (Mem.can_access_block m3 b2 (Comp cp')).
+             eapply Mem.mi_own; eauto. simpl; rewrite G'; auto with comps.
+             simpl in H1.
+             exploit perm_compartment2; eauto. eapply Mem.perm_max.
+             eapply Mem.perm_implies with (p1 := p); eauto.
+             eapply Mem.mi_perm; eauto. constructor.
+             intros [? G'']. rewrite G'' in *. inv H1. destruct G. congruence.
+          -- right. destruct G as [? G].
+             exploit delta_zero; eauto. intros ->.
+             exploit find_def_preserved; eauto. intros [? [? [X ?]]]; inv X.
+             eauto.
+          -- eapply Mem.mi_perm; eauto.
+        * intros. simpl in *.
+          erewrite <- ec_preserves_comp; eauto using external_call_spec.
+          eapply Mem.mi_own; eauto.
+          eapply Mem.valid_block_inject_2; eauto.
+        * intros. exploit delta_zero; eauto. intros ->. now apply Z.divide_0_r.
+        * intros.
+          erewrite Mem.unchanged_on_contents with (m_after := m3'); eauto.
+          eapply Mem.mi_memval; eauto. simpl.
+          assert (G: j b1 <> None) by congruence.
+          apply domain in G. simpl in G.
+          destruct G as [G | G].
+          -- left. exploit perm_compartment1; eauto. eapply Mem.perm_max.
+             eapply Mem.perm_implies with (p1 := Readable); eauto. constructor.
+             intros [cp' G'].
+             assert (Mem.can_access_block m3 b2 (Comp cp')).
+             eapply Mem.mi_own; eauto. simpl; rewrite G'; auto with comps.
+             simpl in H1.
+             exploit perm_compartment2; eauto. eapply Mem.perm_max.
+             eapply Mem.perm_implies with (p1 := Readable); eauto.
+             eapply Mem.mi_perm; eauto. constructor.
+             intros [? G'']. rewrite G'' in *. inv H1. destruct G. congruence.
+          -- right. destruct G as [? G].
+             exploit delta_zero; eauto. intros ->.
+             exploit find_def_preserved; eauto. intros [? [? [X ?]]]; inv X.
+             eauto.
+          -- eapply Mem.mi_perm; eauto.
+      + intros. destruct (j b) as [[]|] eqn:?; auto.
+        exfalso.
+        exploit (Mem.mi_freeblocks j m1 m3 m1_inject_m3 b); eauto. congruence.
+      + intros. exploit Mem.mi_mappedblocks; eauto.
+        intros. eapply Mem.valid_block_unchanged_on; eauto.
+      + eapply Mem.mi_no_overlap; eauto.
+      + eapply Mem.mi_representable; eauto.
+      + intros.
+        (* exploit Mem.perm_unchanged_on_2; eauto. *)
+        simpl.
+        apply same_dom in m1_m3 as domain. unfold same_domain in domain.
         assert (G: j b1 <> None) by congruence.
         apply domain in G. simpl in G.
         destruct G as [G | G].
-        -- left. exploit perm_compartment1; eauto. eapply Mem.perm_max.
+        -- destruct (Mem.perm_dec m1 b1 ofs Max Nonempty); try now right.
+           eapply Mem.perm_unchanged_on_2 in H0; try exact UNCH1; eauto.
+           eapply Mem.mi_perm_inv; eauto.
+           simpl.
+           exploit perm_compartment2; eauto. eapply ec_max_perm; eauto using external_call_spec.
+           eapply Mem.valid_block_inject_2; eauto.
+           eapply Mem.perm_max.
            eapply Mem.perm_implies with (p1 := p); eauto. constructor.
            intros [cp' G'].
-           assert (Mem.can_access_block m3 b2 (Comp cp')).
-           eapply Mem.mi_own; eauto. simpl; rewrite G'; auto with comps.
-           simpl in H1.
-           exploit perm_compartment2; eauto. eapply Mem.perm_max.
-           eapply Mem.perm_implies with (p1 := p); eauto.
-           eapply Mem.mi_perm; eauto. constructor.
-           intros [? G'']. rewrite G'' in *. inv H1. destruct G. congruence.
-        -- right. destruct G as [? G].
+           exploit perm_compartment1; eauto.
+           intros [cp'' G''].
+           assert (cp' = cp'') as <-.
+           { assert (Mem.can_access_block m3 b2 (Comp cp'')).
+             { eapply Mem.mi_own; eauto. eapply Mem.mi_inj; eauto.
+               simpl; rewrite G''; auto with comps. }
+             simpl in H1. rewrite G' in H1. now inv H1. }
+           rewrite G'. intros X; inv X. congruence. destruct G.
+           rewrite G'' in *; now destruct s, δ.
+           eapply Mem.valid_block_inject_2; eauto.
+        -- destruct G as [? G].
+           eapply Mem.perm_unchanged_on_2 in H0; try exact UNCH; eauto.
+           eapply Mem.mi_perm_inv; eauto.
+           simpl. right.
            exploit delta_zero; eauto. intros ->.
            exploit find_def_preserved; eauto. intros [? [? [X ?]]]; inv X.
            eauto.
-        -- eapply Mem.mi_perm; eauto.
-      * intros. simpl in *.
-        erewrite <- ec_preserves_comp; eauto using external_call_spec.
-        eapply Mem.mi_own; eauto.
-        eapply Mem.valid_block_inject_2; eauto.
-      * intros. exploit delta_zero; eauto. intros ->. now apply Z.divide_0_r.
-      * intros.
-        erewrite Mem.unchanged_on_contents with (m_after := m3'); eauto.
-        eapply Mem.mi_memval; eauto. simpl.
-        assert (G: j b1 <> None) by congruence.
-        apply domain in G. simpl in G.
-        destruct G as [G | G].
-        -- left. exploit perm_compartment1; eauto. eapply Mem.perm_max.
-           eapply Mem.perm_implies with (p1 := Readable); eauto. constructor.
-           intros [cp' G'].
-           assert (Mem.can_access_block m3 b2 (Comp cp')).
-           eapply Mem.mi_own; eauto. simpl; rewrite G'; auto with comps.
-           simpl in H1.
-           exploit perm_compartment2; eauto. eapply Mem.perm_max.
-           eapply Mem.perm_implies with (p1 := Readable); eauto.
-           eapply Mem.mi_perm; eauto. constructor.
-           intros [? G'']. rewrite G'' in *. inv H1. destruct G. congruence.
-        -- right. destruct G as [? G].
-           exploit delta_zero; eauto. intros ->.
-           exploit find_def_preserved; eauto. intros [? [? [X ?]]]; inv X.
-           eauto.
-        -- eapply Mem.mi_perm; eauto.
-    + intros. destruct (j b) as [[]|] eqn:?; auto.
-      exfalso.
-      exploit (Mem.mi_freeblocks j m1 m3 m1_inject_m3 b); eauto. congruence.
-    + intros. exploit Mem.mi_mappedblocks; eauto.
-      intros. eapply Mem.valid_block_unchanged_on; eauto.
-    + eapply Mem.mi_no_overlap; eauto.
-    + eapply Mem.mi_representable; eauto.
-    + intros.
-      (* exploit Mem.perm_unchanged_on_2; eauto. *)
-      simpl.
-      apply same_dom in m1_m3 as domain. unfold same_domain in domain.
-      assert (G: j b1 <> None) by congruence.
-      apply domain in G. simpl in G.
-      destruct G as [G | G].
-      -- destruct (Mem.perm_dec m1 b1 ofs Max Nonempty); try now right.
-         eapply Mem.perm_unchanged_on_2 in H0; try exact UNCH1; eauto.
-         eapply Mem.mi_perm_inv; eauto.
-         simpl.
-         exploit perm_compartment2; eauto. eapply ec_max_perm; eauto using external_call_spec.
-         eapply Mem.valid_block_inject_2; eauto.
-         eapply Mem.perm_max.
-         eapply Mem.perm_implies with (p1 := p); eauto. constructor.
-         intros [cp' G'].
-         exploit perm_compartment1; eauto.
-         intros [cp'' G''].
-         assert (cp' = cp'') as <-.
-         { assert (Mem.can_access_block m3 b2 (Comp cp'')).
-           { eapply Mem.mi_own; eauto. eapply Mem.mi_inj; eauto.
-             simpl; rewrite G''; auto with comps. }
-           simpl in H1. rewrite G' in H1. now inv H1. }
-         rewrite G'. intros X; inv X. congruence. destruct G.
-         rewrite G'' in *; now destruct s, δ.
-         eapply Mem.valid_block_inject_2; eauto.
-      -- destruct G as [? G].
-         eapply Mem.perm_unchanged_on_2 in H0; try exact UNCH; eauto.
-         eapply Mem.mi_perm_inv; eauto.
-         simpl. right.
-         exploit delta_zero; eauto. intros ->.
-         exploit find_def_preserved; eauto. intros [? [? [X ?]]]; inv X.
-         eauto.
-         eapply Mem.valid_block_inject_2; eauto.
-  - (* Delta zero *)
-    intros b b' delta j'_b.
-    apply delta_zero in m1_m3; eauto.
-  - eapply perm_compartment1; eauto.
-  - intros b ofs ?.
-    destruct (Classical_Prop.classic (Mem.valid_block m3 b)).
-    + pose proof (ec_preserves_comp (external_call_spec ef cp)) as G.
-      erewrite <- G; eauto.
-      eapply external_call_max_perm in H; eauto.
-      exploit perm_compartment2; eauto.
-    + exploit Mem.perm_valid_block; eauto. intros ?.
-      exploit (ec_new_blocks_comp (external_call_spec ef cp)); eauto.
-      intros ->. destruct cp; try contradiction.
-      eauto.
-  - (* Ple nextblock 1 *)
-    eapply ple_nextblock1; eauto.
-  - (* Ple nextblock 2 *)
-    eapply Ple_trans. eapply ple_nextblock2; eauto. eapply external_call_nextblock; eauto.
-  - (* find_def valid 1 *)
-    intros. eapply find_def_valid1; eauto.
-  - (* find_def valid 2 *)
-    intros. eapply external_call_valid_block; eauto.
-    eapply find_def_valid2; eauto.
-  - (* find_def perm 1 *)
-    intros. eapply find_def_perm1; eauto.
-  - (* find_def valid 2 *)
-    intros. intros n. eapply external_call_max_perm in n; eauto.
-    exploit find_def_perm2; eauto.
-    eapply find_def_valid2; eauto.
-  - eapply find_var_comp1; eauto.
-  (* - (* same high half *) *)
-  (*   intros. eapply same_high_half in m1_m3; eauto. *)
-Qed.
+           eapply Mem.valid_block_inject_2; eauto.
+    - (* Delta zero *)
+      intros b b' delta j'_b.
+      apply delta_zero in m1_m3; eauto.
+    - eapply perm_compartment1; eauto.
+    - intros b ofs ?.
+      destruct (Classical_Prop.classic (Mem.valid_block m3 b)).
+      + pose proof (ec_preserves_comp (external_call_spec ef cp)) as G.
+        erewrite <- G; eauto.
+        eapply external_call_max_perm in H; eauto.
+        exploit perm_compartment2; eauto.
+      + exploit Mem.perm_valid_block; eauto. intros ?.
+        exploit (ec_new_blocks_comp (external_call_spec ef cp)); eauto.
+        intros ->. destruct cp; try contradiction.
+        eauto.
+    - (* Ple nextblock 1 *)
+      eapply ple_nextblock1; eauto.
+    - (* Ple nextblock 2 *)
+      eapply Ple_trans. eapply ple_nextblock2; eauto. eapply external_call_nextblock; eauto.
+    - (* find_def valid 1 *)
+      intros. eapply find_def_valid1; eauto.
+    - (* find_def valid 2 *)
+      intros. eapply external_call_valid_block; eauto.
+      eapply find_def_valid2; eauto.
+    - (* find_def perm 1 *)
+      intros. eapply find_def_perm1; eauto.
+    - (* find_def valid 2 *)
+      intros. intros n. eapply external_call_max_perm in n; eauto.
+      exploit find_def_perm2; eauto.
+      eapply find_def_valid2; eauto.
+    - eapply find_var_comp1; eauto.
+      (* - (* same high half *) *)
+      (*   intros. eapply same_high_half in m1_m3; eauto. *)
+  Qed.
 
   Lemma alloc_preserves_rel1:
     forall cp cp_main j__δ j__oppδ m1 m1' m2 m3 lo hi b1 rs1 rs3 st1 st2 st3
-      (not_bottom: cp <> bottom)
-      (not_top: cp <> top),
+           (not_bottom: cp <> bottom)
+           (not_top: cp <> top),
       s |= cp ∈ δ ->
       meminj_preserves_globals s δ W1 W3 j__δ ->
       mem_rel s ge1 ge3 j__δ δ m1 m3 ->
@@ -2139,13 +2139,13 @@ Qed.
       Mem.alloc m1 cp lo hi = (m1', b1) ->
       stack_rel s cp_main ge3 δ j__δ j__oppδ m1 m2 m3 st1 st2 st3 ->
       exists j__δ' m3' b3, Mem.alloc m3 cp lo hi = (m3', b3) /\
-                      meminj_preserves_globals s δ W1 W3 j__δ' /\
-                      mem_rel s ge1 ge3 j__δ' δ m1' m3' /\
-                      mem_rel s ge2 ge3 j__oppδ (opposite δ) m2 m3' /\
-                      regset_rel j__δ' rs1 rs3 /\
-                      j__δ' b1 = Some (b3, 0) /\
-                      inject_incr j__δ j__δ' /\
-                      stack_rel s cp_main ge3 δ j__δ' j__oppδ m1' m2 m3' st1 st2 st3.
+                             meminj_preserves_globals s δ W1 W3 j__δ' /\
+                             mem_rel s ge1 ge3 j__δ' δ m1' m3' /\
+                             mem_rel s ge2 ge3 j__oppδ (opposite δ) m2 m3' /\
+                             regset_rel j__δ' rs1 rs3 /\
+                             j__δ' b1 = Some (b3, 0) /\
+                             inject_incr j__δ j__δ' /\
+                             stack_rel s cp_main ge3 δ j__δ' j__oppδ m1' m2 m3' st1 st2 st3.
 
   Proof.
     intros cp cp_main j__δ j__oppδ m1 m1' m2 m3 lo hi b1 rs1 rs3 st1 st2 st3? ?
@@ -2158,11 +2158,11 @@ Qed.
     { assert (G: forall s δ p1 p2 j j',
                  meminj_preserves_globals s δ p1 p2 j ->
                  (forall (id: ident) (b: block), Genv.find_symbol (Genv.globalenv p1) id = Some b ->
-                                   j' b = j b) ->
+                                                 j' b = j b) ->
                  (forall (b: block) gd, Genv.find_def (Genv.globalenv p1) b = Some gd -> j' b = j b) ->
                  (forall (b b': block) delta gd, Genv.find_def (Genv.globalenv p2) b' = Some gd ->
-                                            j' b = Some (b', delta) ->
-                                            j b = Some (b', delta)) ->
+                                                 j' b = Some (b', delta) ->
+                                                 j b = Some (b', delta)) ->
                  inject_incr j j' ->
                  meminj_preserves_globals s δ p1 p2 j').
       { clear.
@@ -2255,8 +2255,8 @@ Qed.
         rewrite pred_dec_false; eauto using find_var_comp1.
         intros ?; subst; eapply (Mem.fresh_block_alloc m1); eauto using find_def_valid1.
     }
-      (* - intros id ofs. *)
-      (*   exploit same_high_half; eauto. } *)
+    (* - intros id ofs. *)
+    (*   exploit same_high_half; eauto. } *)
     { clear dependent j__δ.
       destruct m2_m3.
       constructor; eauto.
@@ -2360,8 +2360,8 @@ Qed.
 
   Lemma alloc_preserves_rel2:
     forall cp cp_main j__δ j__oppδ m1 m1' m2 m3 lo hi b1 rs1 rs3 st1 st2 st3
-      (not_bottom: cp <> bottom)
-      (not_top: cp <> top),
+           (not_bottom: cp <> bottom)
+           (not_top: cp <> top),
       s |= cp ∈ opposite δ ->
       meminj_preserves_globals s δ W1 W3 j__δ ->
       mem_rel s ge1 ge3 j__δ δ m1 m3 ->
@@ -2370,12 +2370,12 @@ Qed.
       Mem.alloc m1 cp lo hi = (m1', b1) ->
       stack_rel s cp_main ge3 δ j__δ j__oppδ m1 m2 m3 st1 st2 st3 ->
       exists j__δ' m3' b3, Mem.alloc m3 cp lo hi = (m3', b3) /\
-                      meminj_preserves_globals s δ W1 W3 j__δ' /\
-                      mem_rel s ge1 ge3 j__δ' δ m1' m3' /\
-                      mem_rel s ge2 ge3 j__oppδ (opposite δ) m2 m3' /\
-                      regset_rel j__δ' rs1 rs3 /\
-                      inject_incr j__δ j__δ' /\
-                      stack_rel s cp_main ge3 δ j__δ' j__oppδ m1' m2 m3' st1 st2 st3.
+                             meminj_preserves_globals s δ W1 W3 j__δ' /\
+                             mem_rel s ge1 ge3 j__δ' δ m1' m3' /\
+                             mem_rel s ge2 ge3 j__oppδ (opposite δ) m2 m3' /\
+                             regset_rel j__δ' rs1 rs3 /\
+                             inject_incr j__δ j__δ' /\
+                             stack_rel s cp_main ge3 δ j__δ' j__oppδ m1' m2 m3' st1 st2 st3.
   Proof.
     intros cp cp_main j__δ j__oppδ m1 m1' m2 m3 lo hi b1 rs1 rs3 st1 st2 st3
       ? ? side_cp inj_pres m1_m3 m2_m3 rs1_rs3 alloc1 st_rel1.
@@ -2389,11 +2389,11 @@ Qed.
     { assert (G: forall s δ p1 p2 j j',
                  meminj_preserves_globals s δ p1 p2 j ->
                  (forall (id: ident) (b: block), Genv.find_symbol (Genv.globalenv p1) id = Some b ->
-                                   j' b = j b) ->
+                                                 j' b = j b) ->
                  (forall (b: block) gd, Genv.find_def (Genv.globalenv p1) b = Some gd -> j' b = j b) ->
                  (forall (b b': block) delta gd, Genv.find_def (Genv.globalenv p2) b' = Some gd ->
-                                            j' b = Some (b', delta) ->
-                                            j b = Some (b', delta)) ->
+                                                 j' b = Some (b', delta) ->
+                                                 j b = Some (b', delta)) ->
                  inject_incr j j' ->
                  meminj_preserves_globals s δ p1 p2 j').
       { clear.
@@ -2482,8 +2482,8 @@ Qed.
       - intros. erewrite Mem.alloc_block_compartment; eauto.
         rewrite pred_dec_false; eauto using find_var_comp1.
         intros ?; subst; eapply (Mem.fresh_block_alloc m1); eauto using find_def_valid1.
-      (* - intros id ofs. *)
-      (*   exploit same_high_half; eauto. *)
+        (* - intros id ofs. *)
+        (*   exploit same_high_half; eauto. *)
     }
     { clear dependent j__δ.
       destruct m2_m3.
@@ -2505,7 +2505,7 @@ Qed.
         exploit (Senv.find_symbol_below (Genv.globalenv W3)); eauto. intros ?.
         eapply Plt_strict. eapply Plt_Ple_trans; eauto using ple_nextblock2. }
     {
-     eapply inject_incr_stack_rel1; eauto. induction st_rel1.
+      eapply inject_incr_stack_rel1; eauto. induction st_rel1.
       - constructor; eauto.
       - constructor; eauto.
         inv H.
@@ -2582,13 +2582,13 @@ Qed.
             intros ? N. eapply EMPTY3. eapply Mem.perm_alloc_4; eauto.
             intros <-. eapply Mem.fresh_block_alloc with (b := dummy_sp3); eauto.
             eapply EMPTY3.
-            }
+    }
   Qed.
 
   Lemma alloc_preserves_rel:
     forall cp cp_main j__δ j__oppδ m1 m1' m2 m3 lo hi b1 rs1 rs3 st1 st2 st3
-      (not_bottom: cp <> bottom)
-      (not_top: cp <> top),
+           (not_bottom: cp <> bottom)
+           (not_top: cp <> top),
       meminj_preserves_globals s δ W1 W3 j__δ ->
       mem_rel s ge1 ge3 j__δ δ m1 m3 ->
       mem_rel s ge2 ge3 j__oppδ (opposite δ) m2 m3 ->
@@ -2596,13 +2596,13 @@ Qed.
       stack_rel s cp_main ge3 δ j__δ j__oppδ m1 m2 m3 st1 st2 st3 ->
       Mem.alloc m1 cp lo hi = (m1', b1) ->
       exists j__δ' m3' b3, Mem.alloc m3 cp lo hi = (m3', b3) /\
-                      meminj_preserves_globals s δ W1 W3 j__δ' /\
-                      mem_rel s ge1 ge3 j__δ' δ m1' m3' /\
-                      mem_rel s ge2 ge3 j__oppδ (opposite δ) m2 m3' /\
-                      regset_rel j__δ' rs1 rs3 /\
-                      (s |= cp ∈ δ -> j__δ' b1 = Some (b3, 0)) /\
-                      inject_incr j__δ j__δ' /\
-                      stack_rel s cp_main ge3 δ j__δ' j__oppδ m1' m2 m3' st1 st2 st3.
+                             meminj_preserves_globals s δ W1 W3 j__δ' /\
+                             mem_rel s ge1 ge3 j__δ' δ m1' m3' /\
+                             mem_rel s ge2 ge3 j__oppδ (opposite δ) m2 m3' /\
+                             regset_rel j__δ' rs1 rs3 /\
+                             (s |= cp ∈ δ -> j__δ' b1 = Some (b3, 0)) /\
+                             inject_incr j__δ j__δ' /\
+                             stack_rel s cp_main ge3 δ j__δ' j__oppδ m1' m2 m3' st1 st2 st3.
   Proof.
     intros.
     destruct (side_eq (s cp) δ) as [s_cp | s_cp].
@@ -2616,8 +2616,8 @@ Qed.
 
   Lemma alloc_preserves_rel1_no_regset:
     forall cp cp_main j__δ j__oppδ m1 m1' m2 m3 lo hi b1 st1 st2 st3
-      (not_bottom: cp <> bottom)
-      (not_top: cp <> top),
+           (not_bottom: cp <> bottom)
+           (not_top: cp <> top),
       s |= cp ∈ δ ->
       meminj_preserves_globals s δ W1 W3 j__δ ->
       mem_rel s ge1 ge3 j__δ δ m1 m3 ->
@@ -2625,12 +2625,12 @@ Qed.
       stack_rel s cp_main ge3 δ j__δ j__oppδ m1 m2 m3 st1 st2 st3 ->
       Mem.alloc m1 cp lo hi = (m1', b1) ->
       exists j__δ' m3' b3, Mem.alloc m3 cp lo hi = (m3', b3) /\
-                      meminj_preserves_globals s δ W1 W3 j__δ' /\
-                      mem_rel s ge1 ge3 j__δ' δ m1' m3' /\
-                      mem_rel s ge2 ge3 j__oppδ (opposite δ) m2 m3' /\
-                      j__δ' b1 = Some (b3, 0) /\
-                      inject_incr j__δ j__δ' /\
-                      stack_rel s cp_main ge3 δ j__δ' j__oppδ m1' m2 m3' st1 st2 st3.
+                             meminj_preserves_globals s δ W1 W3 j__δ' /\
+                             mem_rel s ge1 ge3 j__δ' δ m1' m3' /\
+                             mem_rel s ge2 ge3 j__oppδ (opposite δ) m2 m3' /\
+                             j__δ' b1 = Some (b3, 0) /\
+                             inject_incr j__δ j__δ' /\
+                             stack_rel s cp_main ge3 δ j__δ' j__oppδ m1' m2 m3' st1 st2 st3.
   Proof.
     intros cp cp_main j__δ j__oppδ m1 m1' m2 m3 lo hi b1 st1 st2 st3 ? ?
       side_cp inj_pres m1_m3 m2_m3 st_rel alloc1.
@@ -2642,11 +2642,11 @@ Qed.
     { assert (G: forall s δ p1 p2 j j',
                  meminj_preserves_globals s δ p1 p2 j ->
                  (forall (id: ident) (b: block), Genv.find_symbol (Genv.globalenv p1) id = Some b ->
-                                   j' b = j b) ->
+                                                 j' b = j b) ->
                  (forall (b: block) gd, Genv.find_def (Genv.globalenv p1) b = Some gd -> j' b = j b) ->
                  (forall (b b': block) delta gd, Genv.find_def (Genv.globalenv p2) b' = Some gd ->
-                                            j' b = Some (b', delta) ->
-                                            j b = Some (b', delta)) ->
+                                                 j' b = Some (b', delta) ->
+                                                 j b = Some (b', delta)) ->
                  inject_incr j j' ->
                  meminj_preserves_globals s δ p1 p2 j').
       { clear.
@@ -2738,8 +2738,8 @@ Qed.
       - intros. erewrite Mem.alloc_block_compartment; eauto.
         rewrite pred_dec_false; eauto using find_var_comp1.
         intros ?; subst; eapply (Mem.fresh_block_alloc m1); eauto using find_def_valid1.
-      (* - intros id ofs. *)
-      (*   exploit same_high_half; eauto. } *)
+        (* - intros id ofs. *)
+        (*   exploit same_high_half; eauto. } *)
     }
     { clear dependent j__δ.
       destruct m2_m3.
@@ -2844,8 +2844,8 @@ Qed.
 
   Lemma alloc_preserves_rel2_no_regset:
     forall cp cp_main j__δ j__oppδ m1 m1' m2 m3 lo hi b1 st1 st2 st3
-      (not_bottom: cp <> bottom)
-      (not_top: cp <> top),
+           (not_bottom: cp <> bottom)
+           (not_top: cp <> top),
       s |= cp ∈ opposite δ ->
       meminj_preserves_globals s δ W1 W3 j__δ ->
       mem_rel s ge1 ge3 j__δ δ m1 m3 ->
@@ -2853,11 +2853,11 @@ Qed.
       stack_rel s cp_main ge3 δ j__δ j__oppδ m1 m2 m3 st1 st2 st3 ->
       Mem.alloc m1 cp lo hi = (m1', b1) ->
       exists j__δ' m3' b3, Mem.alloc m3 cp lo hi = (m3', b3) /\
-                      meminj_preserves_globals s δ W1 W3 j__δ' /\
-                      mem_rel s ge1 ge3 j__δ' δ m1' m3' /\
-                      mem_rel s ge2 ge3 j__oppδ (opposite δ) m2 m3' /\
-                      inject_incr j__δ j__δ' /\
-                      stack_rel s cp_main ge3 δ j__δ' j__oppδ m1' m2 m3' st1 st2 st3.
+                             meminj_preserves_globals s δ W1 W3 j__δ' /\
+                             mem_rel s ge1 ge3 j__δ' δ m1' m3' /\
+                             mem_rel s ge2 ge3 j__oppδ (opposite δ) m2 m3' /\
+                             inject_incr j__δ j__δ' /\
+                             stack_rel s cp_main ge3 δ j__δ' j__oppδ m1' m2 m3' st1 st2 st3.
   Proof.
     intros cp cp_main j__δ j__oppδ m1 m1' m2 m3 lo hi b1 st1 st2 st3
       ? ? side_cp inj_pres m1_m3 m2_m3 st_rel alloc1.
@@ -2871,11 +2871,11 @@ Qed.
     { assert (G: forall s δ p1 p2 j j',
                  meminj_preserves_globals s δ p1 p2 j ->
                  (forall (id: ident) (b: block), Genv.find_symbol (Genv.globalenv p1) id = Some b ->
-                                   j' b = j b) ->
+                                                 j' b = j b) ->
                  (forall (b: block) gd, Genv.find_def (Genv.globalenv p1) b = Some gd -> j' b = j b) ->
                  (forall (b b': block) delta gd, Genv.find_def (Genv.globalenv p2) b' = Some gd ->
-                                            j' b = Some (b', delta) ->
-                                            j b = Some (b', delta)) ->
+                                                 j' b = Some (b', delta) ->
+                                                 j b = Some (b', delta)) ->
                  inject_incr j j' ->
                  meminj_preserves_globals s δ p1 p2 j').
       { clear.
@@ -2964,8 +2964,8 @@ Qed.
       - intros. erewrite Mem.alloc_block_compartment; eauto.
         rewrite pred_dec_false; eauto using find_var_comp1.
         intros ?; subst; eapply (Mem.fresh_block_alloc m1); eauto using find_def_valid1.
-      (* - intros id ofs. *)
-      (*   exploit same_high_half; eauto. *)
+        (* - intros id ofs. *)
+        (*   exploit same_high_half; eauto. *)
     }
     { clear dependent j__δ.
       destruct m2_m3.
@@ -2987,7 +2987,7 @@ Qed.
         exploit (Senv.find_symbol_below (Genv.globalenv W3)); eauto. intros ?.
         eapply Plt_strict. eapply Plt_Ple_trans; eauto using ple_nextblock2. }
 
-     { eapply inject_incr_stack_rel1; eauto. induction st_rel.
+    { eapply inject_incr_stack_rel1; eauto. induction st_rel.
       - constructor; eauto.
       - constructor; eauto.
         inv H.
@@ -3069,20 +3069,20 @@ Qed.
 
   Lemma alloc_preserves_rel_no_regset:
     forall cp cp_main j__δ j__oppδ m1 m1' m2 m3 lo hi b1 st1 st2 st3
-      (not_bottom: cp <> bottom)
-      (not_top: cp <> top),
+           (not_bottom: cp <> bottom)
+           (not_top: cp <> top),
       meminj_preserves_globals s δ W1 W3 j__δ ->
       mem_rel s ge1 ge3 j__δ δ m1 m3 ->
       mem_rel s ge2 ge3 j__oppδ (opposite δ) m2 m3 ->
       stack_rel s cp_main ge3 δ j__δ j__oppδ m1 m2 m3 st1 st2 st3 ->
       Mem.alloc m1 cp lo hi = (m1', b1) ->
       exists j__δ' m3' b3, Mem.alloc m3 cp lo hi = (m3', b3) /\
-                      meminj_preserves_globals s δ W1 W3 j__δ' /\
-                      mem_rel s ge1 ge3 j__δ' δ m1' m3' /\
-                      mem_rel s ge2 ge3 j__oppδ (opposite δ) m2 m3' /\
-                      (s |= cp ∈ δ -> j__δ' b1 = Some (b3, 0)) /\
-                      inject_incr j__δ j__δ' /\
-                      stack_rel s cp_main ge3 δ j__δ' j__oppδ m1' m2 m3' st1 st2 st3.
+                             meminj_preserves_globals s δ W1 W3 j__δ' /\
+                             mem_rel s ge1 ge3 j__δ' δ m1' m3' /\
+                             mem_rel s ge2 ge3 j__oppδ (opposite δ) m2 m3' /\
+                             (s |= cp ∈ δ -> j__δ' b1 = Some (b3, 0)) /\
+                             inject_incr j__δ j__δ' /\
+                             stack_rel s cp_main ge3 δ j__δ' j__oppδ m1' m2 m3' st1 st2 st3.
   Proof.
     intros.
     destruct (side_eq (s cp) δ) as [s_cp | s_cp].
@@ -3104,9 +3104,9 @@ Qed.
       stack_rel s cp_main ge3 δ j__δ j__oppδ m1 m2 m3 st1 st2 st3 ->
       Mem.free m1 b1 lo hi cp = Some m1' ->
       exists m3', Mem.free m3 b3 lo hi cp = Some m3' /\
-               mem_rel s ge1 ge3 j__δ δ m1' m3' /\
-               mem_rel s ge2 ge3 j__oppδ (opposite δ) m2 m3' /\
-               stack_rel s cp_main ge3 δ j__δ j__oppδ m1' m2 m3' st1 st2 st3.
+                    mem_rel s ge1 ge3 j__δ δ m1' m3' /\
+                    mem_rel s ge2 ge3 j__oppδ (opposite δ) m2 m3' /\
+                    stack_rel s cp_main ge3 δ j__δ j__oppδ m1' m2 m3' st1 st2 st3.
   Proof.
     intros cp cp_main j__δ j__oppδ m1 m1' m2 m3 lo hi b1 b3 st1 st2 st3
       pres_globs1 pres_globs2 ptr_inj m1_m3 m2_m3 st_rel1 free1 .
@@ -3340,8 +3340,8 @@ Qed.
 
   Lemma store_preserves_rel:
     forall cp cp_main (j__δ j__oppδ: meminj) m1 m1' m2 m3 ch ofs v1 v3 b1 b3 st1 st2 st3
-      (not_bottom: cp <> bottom)
-      (not_top: cp <> top),
+           (not_bottom: cp <> bottom)
+           (not_top: cp <> top),
       meminj_preserves_globals s δ W1 W3 j__δ ->
       meminj_preserves_globals s (opposite δ) W2 W3 j__oppδ ->
       j__δ b1 = Some (b3, 0) -> (* we are necessarily in the δ case *)
@@ -3351,10 +3351,10 @@ Qed.
       stack_rel s cp_main ge3 δ j__δ j__oppδ m1 m2 m3 st1 st2 st3 ->
       Mem.store ch m1 b1 ofs v1 cp = Some m1' ->
       exists m3', Mem.store ch m3 b3 ofs v3 cp = Some m3' /\
-               mem_rel s ge1 ge3 j__δ δ m1' m3' /\
-               mem_rel s ge2 ge3 j__oppδ (opposite δ) m2 m3' /\
-               stack_rel s cp_main ge3 δ j__δ j__oppδ m1' m2 m3' st1 st2 st3.
-Proof.
+                    mem_rel s ge1 ge3 j__δ δ m1' m3' /\
+                    mem_rel s ge2 ge3 j__oppδ (opposite δ) m2 m3' /\
+                    stack_rel s cp_main ge3 δ j__δ j__oppδ m1' m2 m3' st1 st2 st3.
+  Proof.
     intros cp cp_main j__δ j__oppδ m1 m1' m2 m3 ch ofs v1 v3 b1 b3 st1 st2 st3 ? ?
       pres_globs1 pres_globs2 ptr_inj m1_m3 m2_m3 val_inj st_rel store1.
     exploit (Mem.store_mapped_inject j__δ); eauto using partial_mem_inject.
@@ -3387,8 +3387,8 @@ Proof.
       - intros; intros n. exploit find_def_perm2; eauto.
         eapply Mem.perm_store_2; eauto.
       - intros. erewrite <- Mem.store_preserves_comp; eauto using find_var_comp1.
-      (* - intros id ofs0. *)
-      (*   exploit same_high_half; eauto. } *)
+        (* - intros id ofs0. *)
+        (*   exploit same_high_half; eauto. } *)
     }
     { destruct m2_m3.
       constructor; eauto.
@@ -3396,7 +3396,7 @@ Proof.
         intros.
         apply Mem.mi_inj in partial_mem_inject0.
         eapply Mem.mi_own with (cp := (Mem.block_compartment m2 b')) in partial_mem_inject0; eauto.
-          (* [| now destruct Mem.block_compartment eqn:?]; eauto. *)
+        (* [| now destruct Mem.block_compartment eqn:?]; eauto. *)
         specialize (same_dom0 b').
         assert (X: j__oppδ b' <> None) by congruence.
         apply same_dom0 in X. simpl in *.
@@ -3408,7 +3408,7 @@ Proof.
         apply partial_mem_inject in m1_m3.
         apply Mem.mi_inj in m1_m3.
         eapply Mem.mi_own with (cp := (Mem.block_compartment m1 b1)) in m1_m3; eauto.
-          (* [| now destruct (Mem.block_compartment m1 b1) eqn:?]; eauto. *)
+        (* [| now destruct (Mem.block_compartment m1 b1) eqn:?]; eauto. *)
         simpl in m1_m3.
         assert (R1: Mem.block_compartment m3 b3 = Mem.block_compartment m1 b1).
         { exploit Mem.store_valid_access_3; eauto.
@@ -3487,112 +3487,112 @@ Proof.
       - intros. exploit find_def_valid2; eauto. eapply Mem.store_valid_block_1; eauto.
       - intros; intros n. exploit find_def_perm2; eauto.
         eapply Mem.perm_store_2; eauto. }
-  - { induction st_rel.
-      constructor; eauto.
-      constructor; eauto.
-      inv H0; eauto.
-      - econstructor; eauto.
-        + unfold same_content_stack in *.
-          intros ? ? G ? G'.
-          specialize (STACK_CONTENT1 _ _ G _ G').
-          Opaque Stacklayout.fe_ofs_arg Z.mul. simpl in *.
-          destruct sp1; simpl in *; try congruence.
-          intros ? G''.
-          erewrite Mem.load_store_other in G''; eauto.
-          specialize (STACK_CONTENT1 _ G'') as [? R].
-          split; auto.
-          destruct sp3; simpl in *; try congruence.
-          erewrite Mem.load_store_other; eauto.
-          { left.
-            intros ?; subst.
-            exploit Mem.store_valid_access_3; eauto. intros [VA [? ?]].
-            eapply PERM3, Mem.perm_max, VA; eauto.
-            instantiate (1 := ofs).
-            destruct ch; simpl; lia. }
-          { left.
-            intros ?; subst.
-            eapply Mem.store_valid_access_3 in store1; eauto.
-            destruct store1 as [VA [? ?]].
-            eapply PERM1, Mem.perm_max, VA; eauto.
-            instantiate (1 := ofs).
-            destruct ch; simpl; lia. }
-        + unfold same_content_stack in *.
-          intros ? ? G ? G' ? G''.
-          specialize (STACK_CONTENT2 _ _ G _ G' _ G'') as [? R].
-          Opaque Stacklayout.fe_ofs_arg Z.mul. simpl in *.
-          split; auto.
-          destruct sp3; simpl in *; try congruence.
-          erewrite Mem.load_store_other; eauto.
-          { left.
-            intros ?; subst.
-            exploit Mem.store_valid_access_3; eauto. intros [VA [? ?]].
-            eapply PERM3, Mem.perm_max, VA; eauto.
-            instantiate (1 := ofs).
-            destruct ch; simpl; lia. }
-        + unfold at_most_readable in *.
-          destruct sp1; try auto.
-          split. eapply Mem.store_valid_block_1; eauto. eapply PERM1.
-          intros o N. eapply PERM1. now eapply Mem.perm_store_2; eauto.
-        + unfold at_most_readable in *.
-          destruct sp3; try auto.
-          split. eapply Mem.store_valid_block_1; eauto. eapply PERM3.
-          intros o N. eapply PERM3. now eapply Mem.perm_store_2; eauto.
-        + split. eapply Mem.store_valid_block_1; eauto. eapply EMPTY1.
-          intros o N. eapply EMPTY1. now eapply Mem.perm_store_2; eauto.
-        + split. eapply Mem.store_valid_block_1; eauto. eapply EMPTY3.
-          intros o N. eapply EMPTY3. now eapply Mem.perm_store_2; eauto.
-      - eapply stackframe_related_opp_δ; eauto.
-        + unfold same_content_stack in *.
-          intros ? ? G ? G'.
-          specialize (STACK_CONTENT1 _ _ G _ G').
-          Opaque Stacklayout.fe_ofs_arg Z.mul. simpl in *.
-          destruct sp1; simpl in *; try congruence.
-          intros ? G''.
-          erewrite Mem.load_store_other in G''; eauto.
-          specialize (STACK_CONTENT1 _ G'') as [? R].
-          split; auto.
-          destruct sp3; simpl in *; try congruence.
-          erewrite Mem.load_store_other; eauto.
-          { left.
-            intros ?; subst.
-            exploit Mem.store_valid_access_3; eauto. intros [VA [? ?]].
-            eapply PERM3, Mem.perm_max, VA; eauto.
-            instantiate (1 := ofs).
-            destruct ch; simpl; lia. }
-          { left.
-            intros ?; subst.
-            eapply Mem.store_valid_access_3 in store1; eauto.
-            destruct store1 as [VA [? ?]].
-            eapply PERM1, Mem.perm_max, VA; eauto.
-            instantiate (1 := ofs).
-            destruct ch; simpl; lia. }
-        + unfold same_content_stack in *.
-          intros ? ? G ? G' ? G''.
-          specialize (STACK_CONTENT2 _ _ G _ G' _ G'') as [? R].
-          Opaque Stacklayout.fe_ofs_arg Z.mul. simpl in *.
-          split; auto.
-          destruct sp3; simpl in *; try congruence.
-          erewrite Mem.load_store_other; eauto.
-          { left.
-            intros ?; subst.
-            exploit Mem.store_valid_access_3; eauto. intros [VA [? ?]].
-            eapply PERM3, Mem.perm_max, VA; eauto.
-            instantiate (1 := ofs).
-            destruct ch; simpl; lia. }
-        + unfold at_most_readable in *.
-          destruct sp1; try auto.
-          split. eapply Mem.store_valid_block_1; eauto. eapply PERM1.
-          intros o N. eapply PERM1. now eapply Mem.perm_store_2; eauto.
-        + unfold at_most_readable in *.
-          destruct sp3; try auto.
-          split. eapply Mem.store_valid_block_1; eauto. eapply PERM3.
-          intros o N. eapply PERM3. now eapply Mem.perm_store_2; eauto.
-        + split. eapply Mem.store_valid_block_1; eauto. eapply EMPTY1.
-          intros o N. eapply EMPTY1. now eapply Mem.perm_store_2; eauto.
-        + split. eapply Mem.store_valid_block_1; eauto. eapply EMPTY3.
-          intros o N. eapply EMPTY3. now eapply Mem.perm_store_2; eauto.
-  }
-Qed.
+    - { induction st_rel.
+        constructor; eauto.
+        constructor; eauto.
+        inv H0; eauto.
+        - econstructor; eauto.
+          + unfold same_content_stack in *.
+            intros ? ? G ? G'.
+            specialize (STACK_CONTENT1 _ _ G _ G').
+            Opaque Stacklayout.fe_ofs_arg Z.mul. simpl in *.
+            destruct sp1; simpl in *; try congruence.
+            intros ? G''.
+            erewrite Mem.load_store_other in G''; eauto.
+            specialize (STACK_CONTENT1 _ G'') as [? R].
+            split; auto.
+            destruct sp3; simpl in *; try congruence.
+            erewrite Mem.load_store_other; eauto.
+            { left.
+              intros ?; subst.
+              exploit Mem.store_valid_access_3; eauto. intros [VA [? ?]].
+              eapply PERM3, Mem.perm_max, VA; eauto.
+              instantiate (1 := ofs).
+              destruct ch; simpl; lia. }
+            { left.
+              intros ?; subst.
+              eapply Mem.store_valid_access_3 in store1; eauto.
+              destruct store1 as [VA [? ?]].
+              eapply PERM1, Mem.perm_max, VA; eauto.
+              instantiate (1 := ofs).
+              destruct ch; simpl; lia. }
+          + unfold same_content_stack in *.
+            intros ? ? G ? G' ? G''.
+            specialize (STACK_CONTENT2 _ _ G _ G' _ G'') as [? R].
+            Opaque Stacklayout.fe_ofs_arg Z.mul. simpl in *.
+            split; auto.
+            destruct sp3; simpl in *; try congruence.
+            erewrite Mem.load_store_other; eauto.
+            { left.
+              intros ?; subst.
+              exploit Mem.store_valid_access_3; eauto. intros [VA [? ?]].
+              eapply PERM3, Mem.perm_max, VA; eauto.
+              instantiate (1 := ofs).
+              destruct ch; simpl; lia. }
+          + unfold at_most_readable in *.
+            destruct sp1; try auto.
+            split. eapply Mem.store_valid_block_1; eauto. eapply PERM1.
+            intros o N. eapply PERM1. now eapply Mem.perm_store_2; eauto.
+          + unfold at_most_readable in *.
+            destruct sp3; try auto.
+            split. eapply Mem.store_valid_block_1; eauto. eapply PERM3.
+            intros o N. eapply PERM3. now eapply Mem.perm_store_2; eauto.
+          + split. eapply Mem.store_valid_block_1; eauto. eapply EMPTY1.
+            intros o N. eapply EMPTY1. now eapply Mem.perm_store_2; eauto.
+          + split. eapply Mem.store_valid_block_1; eauto. eapply EMPTY3.
+            intros o N. eapply EMPTY3. now eapply Mem.perm_store_2; eauto.
+        - eapply stackframe_related_opp_δ; eauto.
+          + unfold same_content_stack in *.
+            intros ? ? G ? G'.
+            specialize (STACK_CONTENT1 _ _ G _ G').
+            Opaque Stacklayout.fe_ofs_arg Z.mul. simpl in *.
+            destruct sp1; simpl in *; try congruence.
+            intros ? G''.
+            erewrite Mem.load_store_other in G''; eauto.
+            specialize (STACK_CONTENT1 _ G'') as [? R].
+            split; auto.
+            destruct sp3; simpl in *; try congruence.
+            erewrite Mem.load_store_other; eauto.
+            { left.
+              intros ?; subst.
+              exploit Mem.store_valid_access_3; eauto. intros [VA [? ?]].
+              eapply PERM3, Mem.perm_max, VA; eauto.
+              instantiate (1 := ofs).
+              destruct ch; simpl; lia. }
+            { left.
+              intros ?; subst.
+              eapply Mem.store_valid_access_3 in store1; eauto.
+              destruct store1 as [VA [? ?]].
+              eapply PERM1, Mem.perm_max, VA; eauto.
+              instantiate (1 := ofs).
+              destruct ch; simpl; lia. }
+          + unfold same_content_stack in *.
+            intros ? ? G ? G' ? G''.
+            specialize (STACK_CONTENT2 _ _ G _ G' _ G'') as [? R].
+            Opaque Stacklayout.fe_ofs_arg Z.mul. simpl in *.
+            split; auto.
+            destruct sp3; simpl in *; try congruence.
+            erewrite Mem.load_store_other; eauto.
+            { left.
+              intros ?; subst.
+              exploit Mem.store_valid_access_3; eauto. intros [VA [? ?]].
+              eapply PERM3, Mem.perm_max, VA; eauto.
+              instantiate (1 := ofs).
+              destruct ch; simpl; lia. }
+          + unfold at_most_readable in *.
+            destruct sp1; try auto.
+            split. eapply Mem.store_valid_block_1; eauto. eapply PERM1.
+            intros o N. eapply PERM1. now eapply Mem.perm_store_2; eauto.
+          + unfold at_most_readable in *.
+            destruct sp3; try auto.
+            split. eapply Mem.store_valid_block_1; eauto. eapply PERM3.
+            intros o N. eapply PERM3. now eapply Mem.perm_store_2; eauto.
+          + split. eapply Mem.store_valid_block_1; eauto. eapply EMPTY1.
+            intros o N. eapply EMPTY1. now eapply Mem.perm_store_2; eauto.
+          + split. eapply Mem.store_valid_block_1; eauto. eapply EMPTY3.
+            intros o N. eapply EMPTY3. now eapply Mem.perm_store_2; eauto.
+      }
+  Qed.
 
   Lemma regset_rel_inject: forall j rs1 rs3 rd v v',
       regset_rel j rs1 rs3 ->
@@ -3607,8 +3607,8 @@ Qed.
 
   Lemma find_comp_of_block_preserved:
     forall j__δ b b' delta
-      (inj_pres: meminj_preserves_globals s δ W1 W3 j__δ)
-      (delta_zero: mem_delta_zero j__δ),
+           (inj_pres: meminj_preserves_globals s δ W1 W3 j__δ)
+           (delta_zero: mem_delta_zero j__δ),
       j__δ b = Some (b', delta) ->
       Genv.find_comp_of_block ge1 b = Genv.find_comp_of_block ge3 b'.
   Proof.
@@ -3626,8 +3626,8 @@ Qed.
 
   Lemma find_comp_preserved:
     forall j__δ v v'
-      (inj_pres: meminj_preserves_globals s δ W1 W3 j__δ)
-      (delta_zero: mem_delta_zero j__δ),
+           (inj_pres: meminj_preserves_globals s δ W1 W3 j__δ)
+           (delta_zero: mem_delta_zero j__δ),
       v <> Vundef ->
       Val.inject j__δ v v' ->
       Genv.find_comp_in_genv ge1 v = Genv.find_comp_in_genv ge3 v'.
@@ -3640,8 +3640,8 @@ Qed.
 
   Lemma update_stack_call_preserved_internal:
     forall j__δ sg rs1 rs1' rs3 st1 st1' m1 m1' m3 st3 cp
-      (inj_pres: meminj_preserves_globals s δ W1 W3 j__δ)
-      (delta_zero: mem_delta_zero j__δ),
+           (inj_pres: meminj_preserves_globals s δ W1 W3 j__δ)
+           (delta_zero: mem_delta_zero j__δ),
       (rs1 PC <> Vundef) ->
       Genv.find_comp_in_genv ge1 (rs1 PC) ⊆ cp ->
       regset_rel j__δ rs1 rs3 ->
@@ -3659,16 +3659,65 @@ Qed.
   Qed.
 
   Lemma set_perm_preserves_rel: forall cp_main j j' m1 m2 m3 m1' m2' b1 b2 b3 delta st1 st2 st3,
-    j b1 = Some (b3, delta) ->
-    Mem.set_perm m1 b1 Readable = Some m1' ->
-    Mem.set_perm m2 b2 Readable = Some m2' ->
-    mem_rel s ge1 ge3 j δ m1 m3 ->
-    mem_rel s ge2 ge3 j' (opposite δ) m2 m3 ->
-    stack_rel s cp_main ge3 δ j j' m1 m2 m3 st1 st2 st3 ->
-    exists m3', Mem.set_perm m3 b3 Readable = Some m3' /\
-    mem_rel s ge1 ge3 j δ m1' m3' /\
-      mem_rel s ge2 ge3 j' (opposite δ) m2' m3' /\
-      stack_rel s cp_main ge3 δ j j' m1' m2' m3' st1 st2 st3.
+      j b1 = Some (b3, delta) ->
+      Mem.set_perm m1 b1 Readable = Some m1' ->
+      Mem.set_perm m2 b2 Readable = Some m2' ->
+      mem_rel s ge1 ge3 j δ m1 m3 ->
+      mem_rel s ge2 ge3 j' (opposite δ) m2 m3 ->
+      stack_rel s cp_main ge3 δ j j' m1 m2 m3 st1 st2 st3 ->
+      exists m3', Mem.set_perm m3 b3 Readable = Some m3' /\
+               mem_rel s ge1 ge3 j δ m1' m3' /\
+               mem_rel s ge2 ge3 j' (opposite δ) m2' m3' /\
+               stack_rel s cp_main ge3 δ j j' m1' m2' m3' st1 st2 st3.
+  Proof.
+    intros cp_main j j' m1 m2 m3 m1' m2' b1 b2 b3 delta st1 st2 st3 j_b1 set1 set2 m1_m3 m2_m3 st_rel.
+    exploit (Mem.set_parallel_inject j m1 m3); eauto;
+      [eapply partial_mem_inject; eauto | | |].
+    { admit. }
+    { admit. }
+    intros [m3' [set3 m1'_m3'_inj]].
+    eexists; split; eauto.
+    split; [| split].
+    - constructor; eauto.
+      + eapply same_dom in m1_m3; eauto. admit.
+      + eapply delta_zero; eauto.
+      + admit.
+      + admit.
+      + admit.
+      + admit.
+      + admit.
+      + admit.
+      + admit.
+      + admit.
+      + admit.
+    - admit.
+    - admit.
+  Admitted.
+
+  Lemma set_perm_preserves_rel': forall cp_main j j' m1 m2 m3 m1' m2' b1 b2 b3 delta st1 st2 st3,
+      j b1 = Some (b3, delta) ->
+      Mem.set_perm m1 b1 Freeable = Some m1' ->
+      Mem.set_perm m2 b2 Freeable = Some m2' ->
+      mem_rel s ge1 ge3 j δ m1 m3 ->
+      mem_rel s ge2 ge3 j' (opposite δ) m2 m3 ->
+      stack_rel s cp_main ge3 δ j j' m1 m2 m3 st1 st2 st3 ->
+      exists m3', Mem.set_perm m3 b3 Freeable = Some m3' /\
+               mem_rel s ge1 ge3 j δ m1' m3' /\
+               mem_rel s ge2 ge3 j' (opposite δ) m2' m3' /\
+               stack_rel s cp_main ge3 δ j j' m1' m2' m3' st1 st2 st3.
+  Proof.
+    intros cp_main j j' m1 m2 m3 m1' m2' b1 b2 b3 delta st1 st2 st3 j_b1 set1 set2 m1_m3 m2_m3 st_rel.
+    exploit (Mem.set_mapped_inj j m1 m3); eauto;
+      [eapply Mem.mi_inj, partial_mem_inject; eauto | |
+        eapply Mem.mi_mappedblocks, partial_mem_inject; eauto |
+        eapply Mem.mi_no_overlap, partial_mem_inject; eauto | |].
+    admit. admit.
+    intros [m3' [set3 m1'_m3'_inj]].
+    eexists; split; eauto.
+    split; [| split].
+    - admit.
+    - admit.
+    - admit.
   Admitted.
 
 End Lemmas.
@@ -3712,11 +3761,10 @@ Ltac simpl_before_exists :=
                   (* agr: agrees_with ?j__δ (init_meminj _ _), *)
                   (* addr: def_on_addressable _ _ ?j__δ ?δ, *)
                   inj_pres : meminj_preserves_globals _ ?δ _ _ ?j__δ,
-                  rs1_rs3: regset_rel _ _ _,
-                  not_bottom: ?cp <> bottom,
-                  not_top: ?cp <> top,
-            st_rel: stack_rel _ _ _ _ _ _ _ _ _ _ _ _ |- _ =>
-              idtac "alloc case";
+                    rs1_rs3: regset_rel _ _ _,
+                      not_bottom: ?cp <> bottom,
+                        not_top: ?cp <> top,
+                          st_rel: stack_rel _ _ _ _ _ _ _ _ _ _ _ _ |- _ =>
               let j__δ' := fresh "j__δ" in
               let m3' := fresh "m3" in
               let b3 := fresh "b3" in
@@ -3730,10 +3778,9 @@ Ltac simpl_before_exists :=
               let incr := fresh "incr" in
               let st_rel' := fresh "st_rel" in
               eapply (alloc_preserves_rel _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
-                                          not_bottom not_top
-                                          inj_pres m1_m3 m2_m3 rs1_rs3 st_rel) in H as
+                        not_bottom not_top
+                        inj_pres m1_m3 m2_m3 rs1_rs3 st_rel) in H as
                   [j__δ' [m3' [b3 [alloc3 [inj_pres' [m1'_m3' [m2_m3' [? [proj [incr st_rel']]]]]]]]]];
-              idtac "done with alloc";
               clear m1_m3 rs1_rs3 m2_m3 inj_pres st_rel
           | H: ?s ?cp = ?δ -> _,
               side_cp: ?s ?cp = ?δ |- _ =>
@@ -3745,129 +3792,105 @@ Ltac simpl_before_exists :=
               m1_m3: mem_rel _ _ _ ?j__δ ?δ ?m1 ?m3,
                 m2_m3: mem_rel _ _ _ ?j__oppδ (opposite ?δ) ?m2 ?m3,
                   ptr_inj: ?j__δ ?b1 = Some (?b3, 0),
-                  (* inj_pres : meminj_preserves_globals _ ?δ _ _ ?j__δ, *)
-                  inj_pres1 : meminj_preserves_globals _ ?δ _ _ ?j__δ,
-                  inj_pres2 : meminj_preserves_globals _ (opposite ?δ) _ _ ?j__oppδ,
-                    rs1_rs3: regset_rel ?j__δ ?rs1 ?rs3,
-            st_rel: stack_rel _ _ _ _ _ _ _ _ _ _ _ _,
-                  not_bottom: ?cp <> bottom,
-                  not_top: ?cp <> top |- _ =>
-              idtac "store case";
+                    (* inj_pres : meminj_preserves_globals _ ?δ _ _ ?j__δ, *)
+                    inj_pres1 : meminj_preserves_globals _ ?δ _ _ ?j__δ,
+                      inj_pres2 : meminj_preserves_globals _ (opposite ?δ) _ _ ?j__oppδ,
+                        rs1_rs3: regset_rel ?j__δ ?rs1 ?rs3,
+                          st_rel: stack_rel _ _ _ _ _ _ _ _ _ _ _ _,
+                            not_bottom: ?cp <> bottom,
+                              not_top: ?cp <> top |- _ =>
               let m3' := fresh "m3" in
               eapply (store_preserves_rel _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
                         not_bottom not_top
                         inj_pres1 inj_pres2 ptr_inj m1_m3 m2_m3 (rs1_rs3 r) st_rel) in H as
                   [m3' [? [? [? ?]]]];
-              idtac "done with store";
               clear m1_m3 m2_m3
 
           | H: Mem.free ?m1 ?b1 ?lo ?hi ?cp = Some ?m1',
               m1_m3: mem_rel _ _ _ ?j__δ ?δ ?m1 ?m3,
                 m2_m3: mem_rel _ _ _ ?j__oppδ (opposite ?δ) ?m2 ?m3,
                   inj_pres1 : meminj_preserves_globals _ ?δ _ _ ?j__δ,
-                  inj_pres2 : meminj_preserves_globals _ (opposite ?δ) _ _ ?j__oppδ,
-            st_rel: stack_rel _ _ _ _ _ _ _ _ _ _ _ _,
-                  ptr_inj: ?j__δ ?b1 = Some (?b3, 0) |- _ =>
+                    inj_pres2 : meminj_preserves_globals _ (opposite ?δ) _ _ ?j__oppδ,
+                      st_rel: stack_rel _ _ _ _ _ _ _ _ _ _ _ _,
+                        ptr_inj: ?j__δ ?b1 = Some (?b3, 0) |- _ =>
               (* rs1_rs3: regset_rel ?j ?rs1 ?rs3 |- _ => *)
-              idtac "free case";
               let m3' := fresh "m3" in
               eapply (free_preserves_rel _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
                         inj_pres1 inj_pres2 ptr_inj m1_m3 m2_m3 st_rel) in H as
                   [m3' [? [? ?]]];
-              idtac "done with free";
               clear m1_m3
 
           | H: Mem.load ?ch ?m1 ?b1 ?ofs ?cp = Some ?v1,
               m1_m3: mem_rel _ _ _ ?j _ ?m1 ?m3,
                 ptr_inj: ?j ?b1 = Some (?b3, 0) |- _ =>
-              idtac "load case";
               let v3 := fresh "v3" in
               let load3 := fresh "load3" in
               destruct (Mem.load_inject _ _ _ _ _ _ _ _ _ _ (partial_mem_inject _ _ _ _ _ _ _ m1_m3) H ptr_inj) as
                 [v3 [load3 ?]];
               rewrite Z.add_0_r in load3;
-              idtac "done with load";
               clear H
 
           | H: Val.cmpu_bool (Mem.valid_pointer ?m1) ?op (?rs1 ?r) (?rs1 ?r') = Some ?b,
               m1_m3: mem_rel _ _ _ ?j _ ?m1 ?m3,
                 rs1_rs3: regset_rel ?j ?rs1 ?rs3 |- _ =>
-              (* idtac "Val.cmpu_bool case 0"; *)
               eapply cmpu_bool_preserved with (m3 := m3) in H; eauto using rs1_rs3;
               try rewrite H in *;
-              (* idtac "done with Val.cmpu_bool 0"; *)
               try congruence
 
           | H: Val.cmpu_bool (Mem.valid_pointer ?m1) ?op (Vint ?x) (?rs1 ?r') = Some ?b,
               m1_m3: mem_rel _ _ _ ?j _ ?m1 ?m3,
                 rs1_rs3: regset_rel ?j ?rs1 ?rs3 |- _ =>
-              (* idtac "Val.cmpu_bool case 1"; *)
               eapply cmpu_bool_preserved with (m3 := m3) (v1' := Vint x) in H; eauto using rs1_rs3;
               try rewrite H in *;
-              (* idtac "done with Val.cmpu_bool 1"; *)
               try congruence
 
           | H: Val.cmpu_bool (Mem.valid_pointer ?m1) ?op (?rs1 ?r) (Vint ?x) = Some ?b,
               m1_m3: mem_rel _ _ _ ?j _ ?m1 ?m3,
                 rs1_rs3: regset_rel ?j ?rs1 ?rs3 |- _ =>
-              (* idtac "Val.cmpu_bool case 2"; *)
               eapply cmpu_bool_preserved with (m3 := m3) (v2' := Vint x) in H; eauto using rs1_rs3;
               try rewrite H in *;
-              (* idtac "done with Val.cmpu_bool 2"; *)
               try congruence
 
           | H: Val.cmpu_bool (Mem.valid_pointer ?m1) ?op (Vint ?x) (Vint ?y) = Some ?b,
               m1_m3: mem_rel _ _ _ ?j _ ?m1 ?m3,
                 rs1_rs3: regset_rel ?j ?rs1 ?rs3 |- _ =>
-              (* idtac "Val.cmpu_bool case 3"; *)
               eapply cmpu_bool_preserved with (m3 := m3) (v1' := Vint x) (v2' := Vint y) in H; eauto using rs1_rs3;
               try rewrite H in *;
-              (* idtac "done with Val.cmpu_bool 3"; *)
               try congruence
 
           | H: Val.cmplu_bool (Mem.valid_pointer ?m1) ?op (?rs1 ?r) (?rs1 ?r') = Some ?b,
               m1_m3: mem_rel _ _ _ ?j _ ?m1 ?m3,
                 rs1_rs3: regset_rel ?j ?rs1 ?rs3 |- _ =>
-              (* idtac "Val.cmplu_bool case 0"; *)
               eapply cmplu_bool_preserved with (m3 := m3) in H; eauto using rs1_rs3;
               try rewrite H in *;
-              (* idtac "done with Val.cmplu_bool 0"; *)
               try congruence
 
           | H: Val.cmplu_bool (Mem.valid_pointer ?m1) ?op (Vlong ?x) (?rs1 ?r') = Some ?b,
               m1_m3: mem_rel _ _ _ ?j _ ?m1 ?m3,
                 rs1_rs3: regset_rel ?j ?rs1 ?rs3 |- _ =>
-              (* idtac "Val.cmplu_bool case 1"; *)
               eapply cmplu_bool_preserved with (m3 := m3) (v1' := Vlong x) in H; eauto using rs1_rs3;
               try rewrite H in *;
-              (* idtac "done with Val.cmplu_bool 1"; *)
               try congruence
 
           | H: Val.cmplu_bool (Mem.valid_pointer ?m1) ?op (?rs1 ?r) (Vlong ?x) = Some ?b,
               m1_m3: mem_rel _ _ _ ?j _ ?m1 ?m3,
                 rs1_rs3: regset_rel ?j ?rs1 ?rs3 |- _ =>
-              (* idtac "Val.cmplu_bool case 2"; *)
               eapply cmplu_bool_preserved with (m3 := m3) (v2' := Vlong x) in H; eauto using rs1_rs3;
               try rewrite H in *;
-              (* idtac "done with Val.cmplu_bool 2"; *)
               try congruence
 
           | H: Val.cmplu_bool (Mem.valid_pointer ?m1) ?op (Vlong ?x) (Vlong ?y) = Some ?b,
               m1_m3: mem_rel _ _ _ ?j _ ?m1 ?m3,
                 rs1_rs3: regset_rel ?j ?rs1 ?rs3 |- _ =>
-              (* idtac "Val.cmplu_bool case 3"; *)
               eapply cmplu_bool_preserved with (m3 := m3) (v1' := Vlong x) (v2' := Vlong y) in H; eauto using rs1_rs3;
               try rewrite H in *;
-              (* idtac "done with Val.cmplu_bool 3"; *)
               try congruence
 
           | H: Val.cmp_bool ?op (?rs1 ?r) (?rs1 ?r') = Some ?b,
               m1_m3: mem_rel _ _ _ ?j _ ?m1 ?m3,
                 rs1_rs3: regset_rel ?j ?rs1 ?rs3 |- _ =>
-              (* idtac "Val.cmp_bool case"; *)
               eapply Val.cmp_bool_inject in H; eauto using rs1_rs3;
               try rewrite H in *;
-              (* idtac "done with Val.cmp_bool"; *)
               try congruence
 
           | d: Z |- _ =>
@@ -4070,8 +4093,8 @@ Section Theorems.
   (* Calls *)
   Lemma allowed_call_preserved:
     forall j__δ cp v v'
-      (inj_pres: meminj_preserves_globals s δ W1 W3 j__δ)
-      (delta_zero: mem_delta_zero j__δ),
+           (inj_pres: meminj_preserves_globals s δ W1 W3 j__δ)
+           (delta_zero: mem_delta_zero j__δ),
       v <> Vundef ->
       Val.inject j__δ v v' ->
       Genv.allowed_call ge1 cp v ->
@@ -4101,8 +4124,8 @@ Section Theorems.
       mem_rel s ge1 ge3 j__δ δ m1 m3 ->
       regset_rel j__δ rs1 rs3 ->
       forall sig args, call_arguments rs1 m1 sig args ->
-                  exists args', Val.inject_list j__δ args args'
-                           /\ call_arguments rs3 m3 sig args'.
+                       exists args', Val.inject_list j__δ args args'
+                                     /\ call_arguments rs3 m3 sig args'.
   Proof.
     intros * m1_m3 rs1_rs3 sig args H.
     unfold call_arguments in H.
@@ -4152,8 +4175,8 @@ Section Theorems.
 
   Lemma call_trace_preserved:
     forall j__δ cp cp' v v' args args' sig t
-      (inj_pres: meminj_preserves_globals s δ W1 W3 j__δ)
-      (delta_zero: mem_delta_zero j__δ),
+           (inj_pres: meminj_preserves_globals s δ W1 W3 j__δ)
+           (delta_zero: mem_delta_zero j__δ),
       Val.inject j__δ v v' ->
       Val.inject_list j__δ args args' ->
       (Genv.type_of_call cp cp' = Genv.CrossCompartmentCall -> Forall not_ptr args) ->
@@ -4294,12 +4317,12 @@ Section Theorems.
   (* Builtins and external calls arguments *)
   Lemma eval_builtin_arg_inject:
     forall cp (rs: regset) m j__δ rs' m' a v
-      (eval: eval_builtin_arg ge1 cp rs (rs X2) m a v)
-      (sideof: s cp = δ)
-      (no_top: cp <> top)
-      (inj_pres: meminj_preserves_globals s δ W1 W3 j__δ)
-      (m_m': mem_rel s ge1 ge3 j__δ δ m m')
-      (delta_zero: mem_delta_zero j__δ),
+           (eval: eval_builtin_arg ge1 cp rs (rs X2) m a v)
+           (sideof: s cp = δ)
+           (no_top: cp <> top)
+           (inj_pres: meminj_preserves_globals s δ W1 W3 j__δ)
+           (m_m': mem_rel s ge1 ge3 j__δ δ m m')
+           (delta_zero: mem_delta_zero j__δ),
       regset_rel j__δ rs rs' ->
       Mem.inject j__δ m m' ->
       exists v',
@@ -4386,12 +4409,12 @@ Section Theorems.
 
   Lemma eval_builtin_args_inject:
     forall cp (rs: regset) m j__δ rs' m' al vl
-      (eval: eval_builtin_args ge1 cp rs (rs X2) m al vl)
-      (sideof: s cp = δ)
-      (no_top: cp <> top)
-      (inj_pres: meminj_preserves_globals s δ W1 W3 j__δ)
-      (m_m': mem_rel s ge1 ge3 j__δ δ m m')
-      (delta_zero: mem_delta_zero j__δ),
+           (eval: eval_builtin_args ge1 cp rs (rs X2) m al vl)
+           (sideof: s cp = δ)
+           (no_top: cp <> top)
+           (inj_pres: meminj_preserves_globals s δ W1 W3 j__δ)
+           (m_m': mem_rel s ge1 ge3 j__δ δ m m')
+           (delta_zero: mem_delta_zero j__δ),
       regset_rel j__δ rs rs' ->
       Mem.inject j__δ m m' ->
       exists vl',
@@ -4410,8 +4433,8 @@ Section Theorems.
       mem_rel s ge1 ge3 j__δ δ m1 m3 ->
       regset_rel j__δ rs1 rs3 ->
       forall sig args, extcall_arguments rs1 m1 sig args ->
-                  exists args', Val.inject_list j__δ args args'
-                           /\ extcall_arguments rs3 m3 sig args'.
+                       exists args', Val.inject_list j__δ args args'
+                                     /\ extcall_arguments rs3 m3 sig args'.
   Proof.
     intros * m1_m3 rs1_rs3 sig args H.
     unfold extcall_arguments in H.
@@ -4461,8 +4484,8 @@ Section Theorems.
 
   Lemma exec_instr_preserved:
     forall j__δ j__oppδ f i rs1 rs1' rs3 m1 m1' m2 m3 st1 st2 st3
-      (not_bottom: has_comp_function f <> bottom)
-      (not_top: has_comp_function f <> top),
+           (not_bottom: has_comp_function f <> bottom)
+           (not_top: has_comp_function f <> top),
       s |= has_comp_function f ∈ δ ->
       meminj_preserves_globals s δ W1 W3 j__δ ->
       meminj_preserves_globals s (opposite δ) W2 W3 j__oppδ ->
@@ -4621,16 +4644,16 @@ Section Theorems.
 
   Lemma exec_instr_preserves_weak:
     forall j__δ j__oppδ f i rs2 rs2' m1 m2 m2' m3 st1 st2 st3
-      (not_bottom: has_comp_function f <> bottom)
-      (not_top: has_comp_function f <> top),
+           (not_bottom: has_comp_function f <> bottom)
+           (not_top: has_comp_function f <> top),
       s (has_comp_function f) = δ ->
       exec_instr ge2 f i rs2 m2 (has_comp_function f) = Next rs2' m2' ->
       meminj_preserves_globals s (opposite δ) W2 W3 j__oppδ ->
       mem_rel s ge2 ge3 j__oppδ (opposite δ) m2 m3 ->
       stack_rel s cp_main ge3 δ j__δ j__oppδ m1 m2 m3 st1 st2 st3 ->
       exists j__oppδ',
-      meminj_preserves_globals s (opposite δ) W2 W3 j__oppδ' /\
-        mem_rel s ge2 ge3 j__oppδ' (opposite δ) m2' m3 /\
+        meminj_preserves_globals s (opposite δ) W2 W3 j__oppδ' /\
+          mem_rel s ge2 ge3 j__oppδ' (opposite δ) m2' m3 /\
           stack_rel s cp_main ge3 δ j__δ j__oppδ' m1 m2' m3 st1 st2 st3.
   Proof.
     intros j__δ j__oppδ f i rs2 rs2' m1 m2 m2' m3 st1 st2 st3
@@ -4754,8 +4777,8 @@ Section Theorems.
   (* External calls preserved *)
   Lemma external_call_inject_left:
     forall ef cp vargs m1 t vres m2 j__δ j__oppδ m1' vargs' m3 rs1 rs3 st1 st2 st3
-      (not_bottom: cp <> bottom)
-      (not_top: cp <> top),
+           (not_bottom: cp <> bottom)
+           (not_top: cp <> top),
       s cp = δ ->
       meminj_preserves_globals s δ W1 W3 j__δ ->
       meminj_preserves_globals s (opposite δ) W2 W3 j__oppδ ->
@@ -4838,7 +4861,7 @@ Section Theorems.
   (* Lemmas about correct register invalidation *)
   Lemma regset_rel_return_from_builtin:
     forall j rs1 rs2 vres vres' ef res
-      (RES_NOT_PC : exists reg : builtin_res mreg, res = map_builtin_res preg_of reg),
+           (RES_NOT_PC : exists reg : builtin_res mreg, res = map_builtin_res preg_of reg),
       regset_rel j rs1 rs2 ->
       Val.inject j vres vres' ->
       regset_rel j
@@ -4945,9 +4968,9 @@ Section Theorems.
 
   Lemma nextinstr_pc_return_builtin_value:
     forall rs res vres ef
-      (RES_NOT_PC : exists reg : builtin_res mreg, res = map_builtin_res preg_of reg),
-    nextinstr (set_res res vres (undef_regs (map preg_of (destroyed_by_builtin ef))
-                                   (rs # X1 <- Vundef) # X31 <- Vundef)) PC =
+           (RES_NOT_PC : exists reg : builtin_res mreg, res = map_builtin_res preg_of reg),
+      nextinstr (set_res res vres (undef_regs (map preg_of (destroyed_by_builtin ef))
+                                     (rs # X1 <- Vundef) # X31 <- Vundef)) PC =
         Val.offset_ptr (rs PC) Ptrofs.one.
   Proof.
     intros rs res vres ef RES_NOT_PC.
@@ -5103,39 +5126,39 @@ Section Theorems.
       { inv strong_s1_s3. inv st_rel.
         simpl in *; subst; simpl in *;
           unfold Vnullptr in *; destruct Archi.ptr64; congruence.
-            simpl in *. inv H12. simpl in *. eauto.
-            simpl in *. inv COMP2; eauto. }
+        simpl in *. inv H12. simpl in *. eauto.
+        simpl in *. inv COMP2; eauto. }
       { assert (rs3 ra = Vptr dsp3 o').
         { specialize (rs1_rs3 ra). rewrite H4 in rs1_rs3.
-            inv st_rel.
-            - simpl in *; subst; simpl in *;
-                unfold Vnullptr in *; destruct Archi.ptr64; discriminate.
-            - inv H12; simpl in *.
-              + inv H; inv H3; simpl in *.
-                inv strong_s1_s3; simpl in *.
-                rewrite SIDE in *. destruct side_eq; try congruence.
-                inv H21; inv rs1_rs3; try congruence.
-                assert (dsp3 = b5) by congruence. subst b5.
-                assert (delta = delta0) by congruence. subst delta0.
-                exploit delta_zero; eauto. intros ->. rewrite Ptrofs.add_zero.
-                reflexivity.
-              + inv H; inv H3; simpl in *.
-                inv strong_s1_s3; simpl in *. (* H11 + *)
-                inv COMP1; eauto. rewrite H0 in *; simpl in *.
-                unfold Genv.find_comp_of_block in *; rewrite H1 in *; simpl in *.
-                destruct side_eq; try congruence.
-                inv H21; inv rs1_rs3; try congruence.
-                assert (dsp3 = b5) by congruence. subst b5.
-                assert (delta = delta0) by congruence. subst delta0.
-                exploit delta_zero; eauto. intros ->. rewrite Ptrofs.add_zero.
-                reflexivity.
-                rewrite H0 in *; simpl in *.
-                unfold Genv.find_comp_of_block in *; rewrite H1 in *; simpl in *.
-                exploit no_bottom1; eauto. contradiction. }
+          inv st_rel.
+          - simpl in *; subst; simpl in *;
+              unfold Vnullptr in *; destruct Archi.ptr64; discriminate.
+          - inv H12; simpl in *.
+            + inv H; inv H3; simpl in *.
+              inv strong_s1_s3; simpl in *.
+              rewrite SIDE in *. destruct side_eq; try congruence.
+              inv H21; inv rs1_rs3; try congruence.
+              assert (dsp3 = b5) by congruence. subst b5.
+              assert (delta = delta0) by congruence. subst delta0.
+              exploit delta_zero; eauto. intros ->. rewrite Ptrofs.add_zero.
+              reflexivity.
+            + inv H; inv H3; simpl in *.
+              inv strong_s1_s3; simpl in *. (* H11 + *)
+              inv COMP1; eauto. rewrite H0 in *; simpl in *.
+              unfold Genv.find_comp_of_block in *; rewrite H1 in *; simpl in *.
+              destruct side_eq; try congruence.
+              inv H21; inv rs1_rs3; try congruence.
+              assert (dsp3 = b5) by congruence. subst b5.
+              assert (delta = delta0) by congruence. subst delta0.
+              exploit delta_zero; eauto. intros ->. rewrite Ptrofs.add_zero.
+              reflexivity.
+              rewrite H0 in *; simpl in *.
+              unfold Genv.find_comp_of_block in *; rewrite H1 in *; simpl in *.
+              exploit no_bottom1; eauto. contradiction. }
         simpl in *.
         assert (Mem.loadv (chunk_of_type ty) m3
-    (Val.offset_ptr (asm_parent_sp st3) (eval_offset ge3 o)) top =
-  Some v /\ not_ptr v) as [? ?].
+                  (Val.offset_ptr (asm_parent_sp st3) (eval_offset ge3 o)) top =
+                  Some v /\ not_ptr v) as [? ?].
         {
           inv st_rel; [simpl in *; unfold Vnullptr in *; destruct Archi.ptr64; congruence|].
           simpl_before_exists.
@@ -5143,84 +5166,84 @@ Section Theorems.
           - simpl in *. exploit STACK_CONTENT1; eauto. intros []; eauto.
           - simpl in *. exploit STACK_CONTENT1; eauto. intros []; eauto.
           - inv H13.
-          + simpl in *. rewrite H6 in *. exploit STACK_CONTENT1; eauto. intros []; eauto.
-          + simpl in *. rewrite H6 in *. exploit STACK_CONTENT1; eauto. intros []; eauto. }
-      destruct rd; [specialize (H9 _ eq_refl); clear H10 | specialize (H10 _ eq_refl); clear H9].
+            + simpl in *. rewrite H6 in *. exploit STACK_CONTENT1; eauto. intros []; eauto.
+            + simpl in *. rewrite H6 in *. exploit STACK_CONTENT1; eauto. intros []; eauto. }
+        destruct rd; [specialize (H9 _ eq_refl); clear H10 | specialize (H10 _ eq_refl); clear H9].
 
-      { eexists; eexists; split; [| split; [| split; [| split; [| split]]]].
-        + econstructor; [| now eapply star_refl | now traceEq].
-          eapply exec_step_load_arg_cross; eauto.
-          { inv st_rel; eauto. inv H14; eauto. }
+        { eexists; eexists; split; [| split; [| split; [| split; [| split]]]].
+          + econstructor; [| now eapply star_refl | now traceEq].
+            eapply exec_step_load_arg_cross; eauto.
+            { inv st_rel; eauto. inv H14; eauto. }
 
-          intros ? G; inv G. reflexivity.
-          intros ? G; inv G.
-        + eauto.
-        + eauto.
-        + eauto.
-        + inv strong_s1_s3; econstructor; eauto.
-          * inv COMP1; econstructor; auto.
-            -- Simpl. rewrite H0 in *; simpl; eauto.
-            -- rewrite H0 in *; simpl in *;
-                 unfold Genv.find_comp_of_block in *; rewrite H1 in *.
-               exploit no_bottom1; eauto; contradiction.
-          * inv COMP2; econstructor; eauto.
-            -- Simpl. rewrite eq_pc' in *; simpl; eauto.
-            -- rewrite eq_pc' in *; simpl in *;
-                 unfold Genv.find_comp_of_block in *; rewrite find_funct in *.
-               exploit no_bottom1; eauto; contradiction.
-          * eapply regset_rel_inject. eapply regset_rel_inject. eauto.
-            destruct v; try now constructor.
-            contradiction.
-            Simpl. eapply Val.offset_ptr_inject; eauto.
-      + inv weak_s2_s3; inv A; econstructor; eauto.
-        * inv COMP2; econstructor; eauto.
-          -- Simpl. rewrite eq_pc' in *; simpl; eauto.
-          -- rewrite eq_pc' in *; simpl in *;
-               unfold Genv.find_comp_of_block in *; rewrite find_funct in *.
-             exploit no_bottom1; eauto; contradiction.
-        * inv COMP2; econstructor; eauto.
-          -- Simpl. rewrite eq_pc' in *; simpl; eauto.
-          -- rewrite eq_pc' in *; simpl in *;
-               unfold Genv.find_comp_of_block in *; rewrite find_funct in *.
-             exploit no_bottom1; eauto; contradiction.
-      }
-      { eexists; eexists; split; [| split; [| split; [| split; [| split]]]].
-        + econstructor; [| now eapply star_refl | now traceEq].
-          eapply exec_step_load_arg_cross; eauto.
-          { inv st_rel; eauto. inv H14; eauto. }
+            intros ? G; inv G. reflexivity.
+            intros ? G; inv G.
+          + eauto.
+          + eauto.
+          + eauto.
+          + inv strong_s1_s3; econstructor; eauto.
+            * inv COMP1; econstructor; auto.
+              -- Simpl. rewrite H0 in *; simpl; eauto.
+              -- rewrite H0 in *; simpl in *;
+                   unfold Genv.find_comp_of_block in *; rewrite H1 in *.
+                 exploit no_bottom1; eauto; contradiction.
+            * inv COMP2; econstructor; eauto.
+              -- Simpl. rewrite eq_pc' in *; simpl; eauto.
+              -- rewrite eq_pc' in *; simpl in *;
+                   unfold Genv.find_comp_of_block in *; rewrite find_funct in *.
+                 exploit no_bottom1; eauto; contradiction.
+            * eapply regset_rel_inject. eapply regset_rel_inject. eauto.
+              destruct v; try now constructor.
+              contradiction.
+              Simpl. eapply Val.offset_ptr_inject; eauto.
+          + inv weak_s2_s3; inv A; econstructor; eauto.
+            * inv COMP2; econstructor; eauto.
+              -- Simpl. rewrite eq_pc' in *; simpl; eauto.
+              -- rewrite eq_pc' in *; simpl in *;
+                   unfold Genv.find_comp_of_block in *; rewrite find_funct in *.
+                 exploit no_bottom1; eauto; contradiction.
+            * inv COMP2; econstructor; eauto.
+              -- Simpl. rewrite eq_pc' in *; simpl; eauto.
+              -- rewrite eq_pc' in *; simpl in *;
+                   unfold Genv.find_comp_of_block in *; rewrite find_funct in *.
+                 exploit no_bottom1; eauto; contradiction.
+        }
+        { eexists; eexists; split; [| split; [| split; [| split; [| split]]]].
+          + econstructor; [| now eapply star_refl | now traceEq].
+            eapply exec_step_load_arg_cross; eauto.
+            { inv st_rel; eauto. inv H14; eauto. }
 
-          intros ? G; inv G.
-          intros ? G; inv G. reflexivity.
-        + eauto.
-        + eauto.
-        + eauto.
-        + inv strong_s1_s3; econstructor; eauto.
-          * inv COMP1; econstructor; auto.
-            -- Simpl. rewrite H0 in *; simpl; eauto.
-            -- rewrite H0 in *; simpl in *;
-                 unfold Genv.find_comp_of_block in *; rewrite H1 in *.
-               exploit no_bottom1; eauto; contradiction.
-          * inv COMP2; econstructor; eauto.
-            -- Simpl. rewrite eq_pc' in *; simpl; eauto.
-            -- rewrite eq_pc' in *; simpl in *;
-                 unfold Genv.find_comp_of_block in *; rewrite find_funct in *.
-               exploit no_bottom1; eauto; contradiction.
-          * eapply regset_rel_inject. eapply regset_rel_inject. eauto.
-            destruct v; try now constructor.
-            contradiction.
-            Simpl. eapply Val.offset_ptr_inject; eauto.
-      + inv weak_s2_s3; inv A; econstructor; eauto.
-        * inv COMP2; econstructor; eauto.
-          -- Simpl. rewrite eq_pc' in *; simpl; eauto.
-          -- rewrite eq_pc' in *; simpl in *;
-               unfold Genv.find_comp_of_block in *; rewrite find_funct in *.
-             exploit no_bottom1; eauto; contradiction.
-        * inv COMP2; econstructor; eauto.
-          -- Simpl. rewrite eq_pc' in *; simpl; eauto.
-          -- rewrite eq_pc' in *; simpl in *;
-               unfold Genv.find_comp_of_block in *; rewrite find_funct in *.
-             exploit no_bottom1; eauto; contradiction.
-      }
+            intros ? G; inv G.
+            intros ? G; inv G. reflexivity.
+          + eauto.
+          + eauto.
+          + eauto.
+          + inv strong_s1_s3; econstructor; eauto.
+            * inv COMP1; econstructor; auto.
+              -- Simpl. rewrite H0 in *; simpl; eauto.
+              -- rewrite H0 in *; simpl in *;
+                   unfold Genv.find_comp_of_block in *; rewrite H1 in *.
+                 exploit no_bottom1; eauto; contradiction.
+            * inv COMP2; econstructor; eauto.
+              -- Simpl. rewrite eq_pc' in *; simpl; eauto.
+              -- rewrite eq_pc' in *; simpl in *;
+                   unfold Genv.find_comp_of_block in *; rewrite find_funct in *.
+                 exploit no_bottom1; eauto; contradiction.
+            * eapply regset_rel_inject. eapply regset_rel_inject. eauto.
+              destruct v; try now constructor.
+              contradiction.
+              Simpl. eapply Val.offset_ptr_inject; eauto.
+          + inv weak_s2_s3; inv A; econstructor; eauto.
+            * inv COMP2; econstructor; eauto.
+              -- Simpl. rewrite eq_pc' in *; simpl; eauto.
+              -- rewrite eq_pc' in *; simpl in *;
+                   unfold Genv.find_comp_of_block in *; rewrite find_funct in *.
+                 exploit no_bottom1; eauto; contradiction.
+            * inv COMP2; econstructor; eauto.
+              -- Simpl. rewrite eq_pc' in *; simpl; eauto.
+              -- rewrite eq_pc' in *; simpl in *;
+                   unfold Genv.find_comp_of_block in *; rewrite find_funct in *.
+                 exploit no_bottom1; eauto; contradiction.
+        }
       }
 
 
@@ -5241,8 +5264,8 @@ Section Theorems.
       { inv strong_s1_s3. inv st_rel.
         simpl in *; subst; simpl in *;
           unfold Vnullptr in *; destruct Archi.ptr64; congruence.
-            simpl in *. inv H7. simpl in *. eauto.
-            simpl in *. inv COMP2; eauto. }
+        simpl in *. inv H7. simpl in *. eauto.
+        simpl in *. inv COMP2; eauto. }
       destruct rd; [specialize (EXECi _ eq_refl); clear EXECf | specialize (EXECf _ eq_refl); clear EXECi].
 
       simpl_before_exists.
@@ -5559,7 +5582,7 @@ Section Theorems.
           now rewrite H0 in H11; simpl in H11; unfold Genv.find_comp_of_block in H11; rewrite H1 in H11.
           rewrite H0 in H11; simpl in H11; unfold Genv.find_comp_of_block in H11; rewrite H1 in H11.
           eauto.
-          (* exploit no_bottom1; eauto. contradiction. *)
+        (* exploit no_bottom1; eauto. contradiction. *)
         * eapply regset_rel_invalidate_call; eauto.
       + inv weak_s2_s3; inv A; econstructor; eauto.
         * assert (cp = comp_of f) as ->.
@@ -5682,8 +5705,8 @@ Section Theorems.
           intros [? [? [R ?]]].
           inv R; eauto. inv H8; eauto.
           eexists; eexists; eexists; eauto.
-          (* split; eauto. split; eauto. *)
-          (* simpl. *)
+        (* split; eauto. split; eauto. *)
+        (* simpl. *)
         * erewrite <- (find_comp_preserved _ W1 W3); eauto using delta_zero.
       + eauto.
       + eauto.
@@ -5931,10 +5954,10 @@ Section Theorems.
         weak_equivalence s ge2 ge3 j__oppδ (opposite δ) s2 s3 ->
         exists j__oppδ',
           meminj_preserves_globals s (opposite δ) W2 W3 j__oppδ' /\
-          stack_rel s cp_main ge3 δ j__δ j__oppδ' (mem_of_state s1) (mem_of_state s2') (mem_of_state s3)
-            (stack_of_state s1) (stack_of_state s2') (stack_of_state s3) /\
-                    strong_equivalence s cp_main ge1 ge3 j__δ δ s1 s3 /\
-                    weak_equivalence s ge2 ge3 j__oppδ' (opposite δ) s2' s3.
+            stack_rel s cp_main ge3 δ j__δ j__oppδ' (mem_of_state s1) (mem_of_state s2') (mem_of_state s3)
+              (stack_of_state s1) (stack_of_state s2') (stack_of_state s3) /\
+            strong_equivalence s cp_main ge1 ge3 j__δ δ s1 s3 /\
+            weak_equivalence s ge2 ge3 j__oppδ' (opposite δ) s2' s3.
   Proof.
     intros s2 s2' H s1 s3 j__left j__right inj_pres1 inj_pres2 st_rel strong_s1_s3 weak_s2_s3.
     (* exploit step_E0_same_cp; eauto. intros same_comp. *)
@@ -6341,8 +6364,8 @@ Section Theorems.
         weak_equivalence s ge2 ge3 j__oppδ (opposite δ) s2 s3 ->
         exists s3' j__δ' j__oppδ',
           Plus (semantics W3) s3 (e :: nil) s3' /\
-          meminj_preserves_globals s δ W1 W3 j__δ' /\
-          meminj_preserves_globals s (opposite δ) W2 W3 j__oppδ' /\
+            meminj_preserves_globals s δ W1 W3 j__δ' /\
+            meminj_preserves_globals s (opposite δ) W2 W3 j__oppδ' /\
             stack_rel s cp_main ge3 δ j__δ' j__oppδ' (mem_of_state s1') (mem_of_state s2') (mem_of_state s3') (stack_of_state s1') (stack_of_state s2') (stack_of_state s3') /\
             ((strong_equivalence s cp_main ge1 ge3 j__δ' δ s1' s3' /\
                 weak_equivalence s ge2 ge3 j__oppδ' (opposite δ) s2' s3') \/
@@ -6358,7 +6381,7 @@ Section Theorems.
                  | H: call_trace _ _ _ _ _ _ (?e :: nil) |- _ => inv H
                  | H: return_trace _ _ _ _ _ (?e :: nil) |- _ => inv H
                  | H: external_call _ _ _ _ _ (?e :: nil) _ _ |- _ => eapply ec_no_crossing in H;
-                                                                 eauto using external_call_spec
+                                                                   eauto using external_call_spec
                  end); try contradiction.
     (* Should get 6 cases *)
 
@@ -6459,18 +6482,18 @@ Section Theorems.
       }
       subst sig0.
       assert (G: exists dra1 dsp1 dra2 dsp2 st3' j__δ'' j__oppδ'' rs3'' m3'',
-        st' = Stackframe b sig cp' (rs' X2) (Ptrofs.add ofs Ptrofs.one) dra1 dsp1 :: st /\
-        st'0 = Stackframe b0 sig cp' (rs'0 X2) (Ptrofs.add ofs0 Ptrofs.one) dra2 dsp2 :: st2 /\
-        update_stack_call ge3 st3 sig (comp_of f) rs3' m3' = Some (st3', rs3'', m3'') /\
-        meminj_preserves_globals s δ W1 W3 j__δ'' /\
-        meminj_preserves_globals s (opposite δ) W2 W3 j__oppδ'' /\
-        mem_rel s (Genv.globalenv W1) (Genv.globalenv W3) j__δ'' δ m'' m3'' /\
-        mem_rel s (Genv.globalenv W2) (Genv.globalenv W3) j__oppδ'' (opposite δ) m''0 m3'' /\
-        inject_incr j__δ' j__δ'' /\ inject_incr j__oppδ' j__oppδ'' /\
-        stack_rel s cp_main ge3 δ j__δ'' j__oppδ'' m'' m''0 m3'' st' st'0 st3' /\
-        rs3'' PC = rs3' PC /\
-        (s cp' = δ -> regset_rel j__δ'' rs'' rs3'') /\
-        (s cp' = opposite δ -> regset_rel j__oppδ'' (invalidate_call rs''0 sig) (invalidate_call rs3'' sig))).
+                 st' = Stackframe b sig cp' (rs' X2) (Ptrofs.add ofs Ptrofs.one) dra1 dsp1 :: st /\
+                   st'0 = Stackframe b0 sig cp' (rs'0 X2) (Ptrofs.add ofs0 Ptrofs.one) dra2 dsp2 :: st2 /\
+                   update_stack_call ge3 st3 sig (comp_of f) rs3' m3' = Some (st3', rs3'', m3'') /\
+                   meminj_preserves_globals s δ W1 W3 j__δ'' /\
+                   meminj_preserves_globals s (opposite δ) W2 W3 j__oppδ'' /\
+                   mem_rel s (Genv.globalenv W1) (Genv.globalenv W3) j__δ'' δ m'' m3'' /\
+                   mem_rel s (Genv.globalenv W2) (Genv.globalenv W3) j__oppδ'' (opposite δ) m''0 m3'' /\
+                   inject_incr j__δ' j__δ'' /\ inject_incr j__oppδ' j__oppδ'' /\
+                   stack_rel s cp_main ge3 δ j__δ'' j__oppδ'' m'' m''0 m3'' st' st'0 st3' /\
+                   rs3'' PC = rs3' PC /\
+                   (s cp' = δ -> regset_rel j__δ'' rs'' rs3'') /\
+                   (s cp' = opposite δ -> regset_rel j__oppδ'' (invalidate_call rs''0 sig) (invalidate_call rs3'' sig))).
       { unfold update_stack_call in STUPD, STUPD0.
         rewrite NEXTPC in STUPD; simpl in STUPD. rewrite <- Heqcp' in STUPD.
         destruct (flowsto_dec cp' (has_comp_function f)); try contradiction.
@@ -6478,12 +6501,12 @@ Section Theorems.
         destruct (flowsto_dec cp' (has_comp_function f0)); try contradiction.
         rewrite rs'_X1 in STUPD. rewrite rs'0_X1 in STUPD0.
         destruct (Mem.alloc m' cp' 0 0) eqn:alloc1,
-          (Mem.alloc m0 cp' 0 0) eqn:alloc1'.
+            (Mem.alloc m0 cp' 0 0) eqn:alloc1'.
         inv STUPD.
         remember (Genv.find_comp_of_block ge1 b') as cp'.
         remember (Genv.find_comp_of_block ge2 b'0) as cp'0.
         destruct (Mem.alloc m'0 cp' 0 0) eqn:alloc2,
-          (Mem.alloc m4 cp' 0 0) eqn:alloc2'; inv STUPD0.
+            (Mem.alloc m4 cp' 0 0) eqn:alloc2'; inv STUPD0.
         remember (Genv.find_comp_of_block ge1 b') as cp'.
         remember (Genv.find_comp_of_block ge2 b'0) as cp'0.
         destruct (side_eq (s cp') (s (comp_of f))) as [e1 | n1].
@@ -6547,31 +6570,26 @@ Section Theorems.
             * econstructor; eauto using inject_incr_stack_rel1, inject_incr_stack_rel2.
               eapply stackframe_related_δ with (cp := comp_of f); eauto.
               -- eapply Genv.find_funct_ptr_iff in find_funct.
-                erewrite Genv.find_funct_ptr_find_comp_of_block; eauto. reflexivity.
+                 erewrite Genv.find_funct_ptr_find_comp_of_block; eauto. reflexivity.
               -- specialize (H19 X1). rewrite rs'_X1, rs3'_X1 in H19. eauto.
               -- rewrite e1. destruct side_eq; try now congruence.
                  eapply val_inject_incr; eauto. econstructor; eauto.
                  eapply H15; eauto. reflexivity. rewrite Ptrofs.add_zero. reflexivity.
               -- rewrite e1. destruct side_eq; try now congruence.
-                econstructor.
+                 econstructor.
                  eapply H20; eauto. reflexivity. rewrite Ptrofs.add_zero. reflexivity.
-              -- {
-                  assert (m = m').
-                  { clear -H2 H3.
-                    destruct i; try discriminate; simpl in *.
-                    destruct Genv.allowed_addrof_b; inv H2; auto.
-                    inv H2; auto. } subst m'.
-                  apply incr, H16, H21 in H27.
-                  clear -ARGS NO_CROSS_PTR n H18 H19 alloc1 alloc1' m1_m3' H2 rs'_X2 H26 H27 set_perm1 mrel1.
+              -- { assert (m = m').
+                   { clear -H2 H3.
+                     destruct i; try discriminate; simpl in *.
+                     destruct Genv.allowed_addrof_b; inv H2; auto.
+                     inv H2; auto. } subst m'.
+                   apply incr, H16, H21 in H27.
+                   clear -ARGS NO_CROSS_PTR n H18 H19 alloc1 alloc1' m1_m3' H2 rs'_X2 H26 H27 set_perm1 mrel1.
                    rename H18 into m1_m3. rename H19 into rs1_rs3.
                    rename H2 into exec_instr1.
                    intros ? ? G ? G' ? G''.
 
                    exploit delta_zero; eauto. intros ->.
-                   (* specialize (rs1_rs3 X2). *)
-                   (* rewrite rs'_X2, <- H26 in *. *)
-                   (* destruct (rs' X2) eqn:rs'_X2; simpl in *; try congruence. *)
-                   (* inv rs1_rs3. *)
                    eapply Mem.load_inject in G'' as G'''; eauto using partial_mem_inject.
                    destruct G''' as [v2 [load' v_v2]].
                    rewrite !Ptrofs.add_zero, Z.add_0_r in *.
@@ -6667,8 +6685,279 @@ Section Theorems.
                        apply R in IN.
                        destruct v, vhi; simpl in *; try now auto. }
                    inv v_v2; simpl in *; split; eauto; contradiction.
-                }
-              -- admit.
+                 }
+              -- { assert (m = m').
+                   { clear -H2 H3.
+                     destruct i; try discriminate; simpl in *.
+                     destruct Genv.allowed_addrof_b; inv H2; auto.
+                     inv H2; auto. } subst m'.
+                   assert (m'0 = m2).
+                   { clear -H7 H8.
+                     destruct i0; try discriminate; simpl in *.
+                     destruct Genv.allowed_addrof_b; inv H7; auto.
+                     inv H7; auto. } subst m'0.
+                   assert (CROSS: Genv.type_of_call (comp_of f) (Genv.find_comp_of_block ge1 b') = Genv.CrossCompartmentCall).
+                   { simpl. destruct flowsto_dec; try congruence. }
+                   specialize (NO_CROSS_PTR CROSS).
+                   assert (args0 = args).
+                   { clear -EV EV0 NO_CROSS_PTR. inv EV; inv EV0; auto.
+                     clear -H8 H14 NO_CROSS_PTR. revert H8 H14.
+                     generalize (sig_args sig).
+                     generalize dependent args0. generalize dependent args. induction vl.
+                     - intros; inv H8; inv H14; eauto.
+                     - intros; inv H8; inv H14; eauto.
+                       assert (v0 = v1).
+                       { inv H1; inv H6; eauto. inv NO_CROSS_PTR; eauto. now simpl in *. }
+                       subst v1.
+                       inv NO_CROSS_PTR.
+                       exploit IHvl; eauto. intros ->; eauto. }
+                   subst args0.
+                   intros ? ? G ? G' ? G''.
+                   assert (G''': Mem.loadv (chunk_of_type ty) m''
+                                   (Val.offset_ptr (Vptr b6 i1) (Ptrofs.repr bofs)) top
+                                 = Some v).
+                   { destruct G as [G | [[l G] | [l G]]].
+                     - unfold call_arguments in ARGS, ARGS0.
+                       clear call_args'.
+                       pose proof (parallel_list_forall2_in_left _ ARGS ARGS0 G)
+                         as [arg [IN [P1 P2]]].
+                       inv P1; inv P2.
+                       inv H12; inv H28.
+                       assert (arg = v).
+                       { rewrite rs'_X2, rs'0_X2 in *; simpl in *.
+                         eapply Mem.load_Some_None in H31.
+
+                         eapply Mem.load_set' in G''; eauto.
+                         erewrite Mem.load_alloc_unchanged in G''; eauto.
+                         erewrite Mem.load_alloc_unchanged in G''; eauto.
+                         congruence.
+                         eapply Mem.valid_access_valid_block; eauto.
+                         eapply Mem.valid_access_implies; eauto.
+                         eapply Mem.load_valid_access; eauto.
+                         constructor.
+                         eapply Mem.valid_block_alloc; eauto.
+                         eapply Mem.valid_access_valid_block; eauto.
+                         eapply Mem.valid_access_implies; eauto.
+                         eapply Mem.load_valid_access; eauto.
+                         constructor. constructor.
+                         intros ? ?.
+                         eapply Mem.perm_alloc_1; eauto.
+                         eapply Mem.perm_alloc_1; eauto.
+                         eapply Mem.load_valid_access; eauto. }
+                       subst arg.
+                       rewrite rs'_X2, rs'0_X2 in *; simpl in *.
+                       eapply Mem.load_Some_None in H32.
+                       eapply Mem.load_set; eauto. constructor.
+                       erewrite Mem.load_alloc_unchanged with (m1 := m0); eauto.
+                       erewrite Mem.load_alloc_unchanged with (m1 := m); eauto.
+                       eapply Mem.valid_access_valid_block; eauto.
+                       eapply Mem.valid_access_implies; eauto.
+                       eapply Mem.load_valid_access; eauto.
+                       constructor.
+                       eapply Mem.valid_block_alloc; eauto.
+                       eapply Mem.valid_access_valid_block; eauto.
+                       eapply Mem.valid_access_implies; eauto.
+                       eapply Mem.load_valid_access; eauto.
+                       constructor.
+                     - unfold call_arguments in ARGS, ARGS0.
+                       clear call_args'.
+                       pose proof (parallel_list_forall2_in_left _ ARGS ARGS0 G)
+                         as [arg [IN [P1 P2]]].
+                       inv P1; inv P2.
+                       assert (vhi = vhi0).
+                       {  exploit eq_distributes_longofwords; eauto.
+                          rewrite H29.
+                          eapply Forall_forall; eauto.
+                          eapply Forall_forall; eauto.
+                          now intros [].
+                       }
+                       subst vhi0.
+                       inv H28; inv H31.
+                       assert (vhi = v).
+                       { rewrite rs'_X2, rs'0_X2 in *; simpl in *.
+                         eapply Mem.load_Some_None in H34.
+
+                         eapply Mem.load_set' in G''; eauto.
+                         erewrite Mem.load_alloc_unchanged in G''; eauto.
+                         erewrite Mem.load_alloc_unchanged in G''; eauto.
+                         congruence.
+                         eapply Mem.valid_access_valid_block; eauto.
+                         eapply Mem.valid_access_implies; eauto.
+                         eapply Mem.load_valid_access; eauto.
+                         constructor.
+                         eapply Mem.valid_block_alloc; eauto.
+                         eapply Mem.valid_access_valid_block; eauto.
+                         eapply Mem.valid_access_implies; eauto.
+                         eapply Mem.load_valid_access; eauto.
+                         constructor. constructor.
+                         intros ? ?.
+                         eapply Mem.perm_alloc_1; eauto.
+                         eapply Mem.perm_alloc_1; eauto.
+                         eapply Mem.load_valid_access; eauto. }
+                       subst vhi.
+                       rewrite rs'_X2, rs'0_X2 in *; simpl in *.
+                       eapply Mem.load_Some_None in H35.
+                       eapply Mem.load_set; eauto. constructor.
+                       erewrite Mem.load_alloc_unchanged with (m1 := m0); eauto.
+                       erewrite Mem.load_alloc_unchanged with (m1 := m); eauto.
+                       eapply Mem.valid_access_valid_block; eauto.
+                       eapply Mem.valid_access_implies; eauto.
+                       eapply Mem.load_valid_access; eauto.
+                       constructor.
+                       eapply Mem.valid_block_alloc; eauto.
+                       eapply Mem.valid_access_valid_block; eauto.
+                       eapply Mem.valid_access_implies; eauto.
+                       eapply Mem.load_valid_access; eauto.
+                       constructor.
+                     - unfold call_arguments in ARGS, ARGS0.
+                       clear call_args'.
+                       pose proof (parallel_list_forall2_in_left _ ARGS ARGS0 G)
+                         as [arg [IN [P1 P2]]].
+                       inv P1; inv P2.
+                       assert (vlo = vlo0).
+                       {  exploit eq_distributes_longofwords; eauto.
+                          rewrite H29.
+                          eapply Forall_forall; eauto.
+                          eapply Forall_forall; eauto.
+                          now intros [].
+                       }
+                       subst vlo0.
+                       inv H30; inv H32.
+                       assert (vlo = v).
+                       { rewrite rs'_X2, rs'0_X2 in *; simpl in *.
+                         eapply Mem.load_Some_None in H34.
+
+                         eapply Mem.load_set' in G''; eauto.
+                         erewrite Mem.load_alloc_unchanged in G''; eauto.
+                         erewrite Mem.load_alloc_unchanged in G''; eauto.
+                         congruence.
+                         eapply Mem.valid_access_valid_block; eauto.
+                         eapply Mem.valid_access_implies; eauto.
+                         eapply Mem.load_valid_access; eauto.
+                         constructor.
+                         eapply Mem.valid_block_alloc; eauto.
+                         eapply Mem.valid_access_valid_block; eauto.
+                         eapply Mem.valid_access_implies; eauto.
+                         eapply Mem.load_valid_access; eauto.
+                         constructor. constructor.
+                         intros ? ?.
+                         eapply Mem.perm_alloc_1; eauto.
+                         eapply Mem.perm_alloc_1; eauto.
+                         eapply Mem.load_valid_access; eauto. }
+                       subst vlo.
+                       rewrite rs'_X2, rs'0_X2 in *; simpl in *.
+                       eapply Mem.load_Some_None in H35.
+                       eapply Mem.load_set; eauto. constructor.
+                       erewrite Mem.load_alloc_unchanged with (m1 := m0); eauto.
+                       erewrite Mem.load_alloc_unchanged with (m1 := m); eauto.
+                       eapply Mem.valid_access_valid_block; eauto.
+                       eapply Mem.valid_access_implies; eauto.
+                       eapply Mem.load_valid_access; eauto.
+                       constructor.
+                       eapply Mem.valid_block_alloc; eauto.
+                       eapply Mem.valid_access_valid_block; eauto.
+                       eapply Mem.valid_access_implies; eauto.
+                       eapply Mem.load_valid_access; eauto.
+                       constructor. }
+
+                   clear G''; rename G''' into G''.
+                   apply incr, H16, H21 in H27.
+                   clear -ARGS NO_CROSS_PTR n H18 H19 alloc1 alloc1' m1_m3' H2 rs'_X2 H26 H27 set_perm1 mrel1 G G' G''.
+                   rename H18 into m1_m3. rename H19 into rs1_rs3.
+                   rename H2 into exec_instr1.
+
+                   exploit delta_zero; eauto. intros ->.
+                   eapply Mem.load_inject in G'' as G'''; eauto using partial_mem_inject.
+                   destruct G''' as [v2 [load' v_v2]].
+                   rewrite !Ptrofs.add_zero, Z.add_0_r in *.
+                   assert (not_ptr v).
+                   { destruct G as [G | [[l G] | [l G]]].
+                     - unfold call_arguments in ARGS.
+                       exploit list_forall2_in_left; eauto.
+                       intros [arg [IN P]].
+                       inv P. inv H0.
+                       assert (arg = v).
+                       { rewrite rs'_X2 in *; simpl in *.
+                         eapply Mem.load_Some_None in H4.
+
+                         eapply Mem.load_set' in G''; eauto.
+                         erewrite Mem.load_alloc_unchanged in G''; eauto.
+                         erewrite Mem.load_alloc_unchanged in G''; eauto.
+                         congruence.
+                         eapply Mem.valid_access_valid_block; eauto.
+                         eapply Mem.valid_access_implies; eauto.
+                         eapply Mem.load_valid_access; eauto.
+                         constructor.
+                         eapply Mem.valid_block_alloc; eauto.
+                         eapply Mem.valid_access_valid_block; eauto.
+                         eapply Mem.valid_access_implies; eauto.
+                         eapply Mem.load_valid_access; eauto.
+                         constructor. constructor.
+                         intros ? ?.
+                         eapply Mem.perm_alloc_1; eauto.
+                         eapply Mem.perm_alloc_1; eauto.
+                         eapply Mem.load_valid_access; eauto.
+                       }
+                       subst arg.
+                       eapply Forall_forall in NO_CROSS_PTR; eauto.
+                     - unfold call_arguments in ARGS.
+                       exploit list_forall2_in_left; eauto.
+                       intros [arg [IN P]].
+                       inv P. inv H1.
+                       assert (vhi = v).
+                       { rewrite rs'_X2 in *; simpl in *.
+                         eapply Mem.load_Some_None in H5.
+                         eapply Mem.load_set' in G''; eauto.
+                         erewrite Mem.load_alloc_unchanged in G''; eauto.
+                         erewrite Mem.load_alloc_unchanged in G''; eauto.
+                         congruence.
+                         eapply Mem.valid_access_valid_block; eauto.
+                         eapply Mem.valid_access_implies; eauto.
+                         eapply Mem.load_valid_access; eauto.
+                         constructor.
+                         eapply Mem.valid_block_alloc; eauto.
+                         eapply Mem.valid_access_valid_block; eauto.
+                         eapply Mem.valid_access_implies; eauto.
+                         eapply Mem.load_valid_access; eauto.
+                         constructor. constructor.
+                         intros ? ?.
+                         eapply Mem.perm_alloc_1; eauto.
+                         eapply Mem.perm_alloc_1; eauto.
+                         eapply Mem.load_valid_access; eauto. }
+                       subst vhi.
+                       rewrite Forall_forall in NO_CROSS_PTR.
+                       apply NO_CROSS_PTR in IN.
+                       destruct v; simpl in *; try now auto.
+                     - unfold call_arguments in ARGS.
+                       exploit list_forall2_in_left; eauto.
+                       intros [arg [IN P]].
+                       inv P. inv H3.
+                       assert (vlo = v).
+                       { rewrite rs'_X2 in *; simpl in *.
+                         eapply Mem.load_Some_None in H5.
+                         eapply Mem.load_set' in G''; eauto.
+                         erewrite Mem.load_alloc_unchanged in G''; eauto.
+                         erewrite Mem.load_alloc_unchanged in G''; eauto.
+                         congruence.
+                         eapply Mem.valid_access_valid_block; eauto.
+                         eapply Mem.valid_access_implies; eauto.
+                         eapply Mem.load_valid_access; eauto.
+                         constructor.
+                         eapply Mem.valid_block_alloc; eauto.
+                         eapply Mem.valid_access_valid_block; eauto.
+                         eapply Mem.valid_access_implies; eauto.
+                         eapply Mem.load_valid_access; eauto.
+                         constructor. constructor.
+                         intros ? ?.
+                         eapply Mem.perm_alloc_1; eauto.
+                         eapply Mem.perm_alloc_1; eauto.
+                         eapply Mem.load_valid_access; eauto. }
+                       subst vlo.
+                       rewrite Forall_forall in NO_CROSS_PTR.
+                       apply NO_CROSS_PTR in IN.
+                       destruct v, vhi; simpl in *; try now auto. }
+                   inv v_v2; simpl in *; split; eauto; contradiction.
+                 }
               -- rewrite <- X2_1 in *.
                  destruct (SP_HAS_PTR) as [? [? ?]].
                  simpl. now destruct flowsto_dec.
@@ -6756,7 +7045,7 @@ Section Theorems.
           destruct alloc2'' as (j0 & temp_m3 & dra3 & alloc3 & ? & ? & R1 & ? & ? & ?).
           eapply (alloc_preserves_rel_no_regset s W2 W1 W3) in alloc2' as alloc2'';
             eauto using match_prog_unique.
-            destruct alloc2'' as (j & m3'' & dsp3 & alloc3' & ? & ? & R2 & ? & ? & ?).
+          destruct alloc2'' as (j & m3'' & dsp3 & alloc3' & ? & ? & R2 & ? & ? & ?).
           (* rewrite <- e1 in *. *)
           assert (e1: s cp' = opposite (s (comp_of f))).
           { clear -n1. now destruct (s cp'), (s (comp_of f)). }
@@ -6789,29 +7078,647 @@ Section Theorems.
           destruct (Mem.set_perm m5 b7 Readable) eqn:set_perm2; try discriminate.
           inv H11. inv H12.
 
-          (* inv rs1_rs3. *)
-          (* inv rs1_rs3; try rewrite H27, H28 in *; try congruence. *)
-          (* specialize (rs) *)
-          (* destruct (rs'0 X2); try discriminate. *)
-          (* eapply (set_perm_ok s W1 W2 W3) with (v0 := rs'0 X2) in SS' as [? [? ?]]; eauto using match_prog_unique; try now destruct s. *)
           unfold update_stack_call.
           rewrite NEXTCOMP'. simpl. destruct flowsto_dec; try contradiction.
           rewrite alloc3; simpl; rewrite alloc3'; simpl.
           inv X2_inj.
-
-          eapply (set_perm_preserves_rel s W1 W2 W3) in S; eauto using match_prog_unique.
-
 
           assert (mem_rel s ge2 ge3 j (opposite (opposite (s (Genv.find_comp_of_block ge1 b')))) m5 m3'').
           { replace (opposite (opposite (s (Genv.find_comp_of_block ge1 b')))) with (s (Genv.find_comp_of_block ge1 b')).
             rewrite e1; eauto.
             clear. now destruct s.
           }
+          eapply (set_perm_preserves_rel s W1 W2 W3) in S; eauto using match_prog_unique.
+
+
           destruct S as [m3''' [set_perm3 [mrel1 [mrel2 strel]]]].
           rewrite set_perm3.
           rewrite rs3'_X1.
+          do 9 eexists.
+          split; eauto.
+          split; eauto.
+          split; eauto.
+          split; eauto.
+          split; eauto.
+          split; eauto.
+          rewrite e1 in mrel1. clear -mrel1. now destruct s; auto.
+          split; eauto.
+          rewrite e1 in mrel2. clear -mrel2. now destruct s; auto.
+          split; eauto.
+          eapply inject_incr_trans; eauto.
+          split; eauto.
+          eapply inject_incr_trans; eauto.
+          split; eauto.
+          { rewrite e1 in strel.
+            replace (opposite (opposite (s (comp_of f)))) with (s (has_comp_function f)) in strel by now destruct s.
+            econstructor; eauto using inject_incr_stack_rel1, inject_incr_stack_rel2.
+            eapply stackframe_related_δ with (cp := comp_of f); eauto.
+            -- eapply Genv.find_funct_ptr_iff in find_funct.
+               erewrite Genv.find_funct_ptr_find_comp_of_block; eauto. reflexivity.
+            -- specialize (rs1_rs3' X1). rewrite rs'_X1, rs3'_X1 in *. eauto.
+            -- rewrite e1. destruct side_eq; try now destruct s.
+               eapply val_inject_incr; eauto.
+            -- rewrite e1. destruct side_eq; try now destruct s.
+               eauto.
+            -- { assert (m = m').
+                 { clear -H2 H3.
+                   destruct i; try discriminate; simpl in *.
+                   destruct Genv.allowed_addrof_b; inv H2; auto.
+                   inv H2; auto. } subst m'.
+                 apply incr, H23, H26 in H28.
+                 clear -ARGS NO_CROSS_PTR n H18 rs1_rs3 alloc1 alloc1' m1_m3' H2 rs'_X2 H26 H28 set_perm1 mrel1.
+                 rename H18 into m1_m3.
+                 rename H2 into exec_instr1.
+                 intros ? ? G ? G' ? G''.
 
-          admit. admit.
+                 exploit delta_zero; eauto. intros ->.
+                 eapply Mem.load_inject in G'' as G'''; eauto using partial_mem_inject.
+                 destruct G''' as [v2 [load' v_v2]].
+                 rewrite !Ptrofs.add_zero, Z.add_0_r in *.
+                 assert (not_ptr v).
+                 { destruct G as [G | [[l G] | [l G]]].
+                   - unfold call_arguments in ARGS.
+                     exploit list_forall2_in_left; eauto.
+                     intros [arg [IN P]].
+                     inv P. inv H0.
+                     assert (arg = v).
+                     { rewrite rs'_X2 in *; simpl in *.
+                       eapply Mem.load_Some_None in H4.
+
+                       eapply Mem.load_set' in G''; eauto.
+                       erewrite Mem.load_alloc_unchanged in G''; eauto.
+                       erewrite Mem.load_alloc_unchanged in G''; eauto.
+                       congruence.
+                       eapply Mem.valid_access_valid_block; eauto.
+                       eapply Mem.valid_access_implies; eauto.
+                       eapply Mem.load_valid_access; eauto.
+                       constructor.
+                       eapply Mem.valid_block_alloc; eauto.
+                       eapply Mem.valid_access_valid_block; eauto.
+                       eapply Mem.valid_access_implies; eauto.
+                       eapply Mem.load_valid_access; eauto.
+                       constructor. constructor.
+                       intros ? ?.
+                       eapply Mem.perm_alloc_1; eauto.
+                       eapply Mem.perm_alloc_1; eauto.
+                       eapply Mem.load_valid_access; eauto.
+                     }
+                     subst arg.
+                     exploit NO_CROSS_PTR; eauto. simpl. destruct flowsto_dec; try now auto.
+                     intros R. eapply Forall_forall in R; eauto.
+                   - unfold call_arguments in ARGS.
+                     exploit list_forall2_in_left; eauto.
+                     intros [arg [IN P]].
+                     inv P. inv H1.
+                     assert (vhi = v).
+                     { rewrite rs'_X2 in *; simpl in *.
+                       eapply Mem.load_Some_None in H5.
+                       eapply Mem.load_set' in G''; eauto.
+                       erewrite Mem.load_alloc_unchanged in G''; eauto.
+                       erewrite Mem.load_alloc_unchanged in G''; eauto.
+                       congruence.
+                       eapply Mem.valid_access_valid_block; eauto.
+                       eapply Mem.valid_access_implies; eauto.
+                       eapply Mem.load_valid_access; eauto.
+                       constructor.
+                       eapply Mem.valid_block_alloc; eauto.
+                       eapply Mem.valid_access_valid_block; eauto.
+                       eapply Mem.valid_access_implies; eauto.
+                       eapply Mem.load_valid_access; eauto.
+                       constructor. constructor.
+                       intros ? ?.
+                       eapply Mem.perm_alloc_1; eauto.
+                       eapply Mem.perm_alloc_1; eauto.
+                       eapply Mem.load_valid_access; eauto. }
+                     subst vhi.
+                     exploit NO_CROSS_PTR; eauto. simpl. destruct flowsto_dec; try now auto.
+
+                     intros R. rewrite Forall_forall in R.
+                     apply R in IN.
+                     destruct v; simpl in *; try now auto.
+                   - unfold call_arguments in ARGS.
+                     exploit list_forall2_in_left; eauto.
+                     intros [arg [IN P]].
+                     inv P. inv H3.
+                     assert (vlo = v).
+                     { rewrite rs'_X2 in *; simpl in *.
+                       eapply Mem.load_Some_None in H5.
+                       eapply Mem.load_set' in G''; eauto.
+                       erewrite Mem.load_alloc_unchanged in G''; eauto.
+                       erewrite Mem.load_alloc_unchanged in G''; eauto.
+                       congruence.
+                       eapply Mem.valid_access_valid_block; eauto.
+                       eapply Mem.valid_access_implies; eauto.
+                       eapply Mem.load_valid_access; eauto.
+                       constructor.
+                       eapply Mem.valid_block_alloc; eauto.
+                       eapply Mem.valid_access_valid_block; eauto.
+                       eapply Mem.valid_access_implies; eauto.
+                       eapply Mem.load_valid_access; eauto.
+                       constructor. constructor.
+                       intros ? ?.
+                       eapply Mem.perm_alloc_1; eauto.
+                       eapply Mem.perm_alloc_1; eauto.
+                       eapply Mem.load_valid_access; eauto. }
+                     subst vlo.
+                     exploit NO_CROSS_PTR; eauto. simpl. destruct flowsto_dec; try now auto.
+
+                     intros R. rewrite Forall_forall in R.
+                     apply R in IN.
+                     destruct v, vhi; simpl in *; try now auto. }
+                 inv v_v2; simpl in *; split; eauto; contradiction.
+               }
+            -- { assert (m = m').
+                 { clear -H2 H3.
+                   destruct i; try discriminate; simpl in *.
+                   destruct Genv.allowed_addrof_b; inv H2; auto.
+                   inv H2; auto. } subst m'.
+                 assert (m'0 = m2).
+                 { clear -H7 H8.
+                   destruct i0; try discriminate; simpl in *.
+                   destruct Genv.allowed_addrof_b; inv H7; auto.
+                   inv H7; auto. } subst m'0.
+                 assert (CROSS: Genv.type_of_call (comp_of f) (Genv.find_comp_of_block ge1 b') = Genv.CrossCompartmentCall).
+                 { simpl. destruct flowsto_dec; try congruence. }
+                 specialize (NO_CROSS_PTR CROSS).
+                 assert (args0 = args).
+                 { clear -EV EV0 NO_CROSS_PTR. inv EV; inv EV0; auto.
+                   clear -H8 H14 NO_CROSS_PTR. revert H8 H14.
+                   generalize (sig_args sig).
+                   generalize dependent args0. generalize dependent args. induction vl.
+                   - intros; inv H8; inv H14; eauto.
+                   - intros; inv H8; inv H14; eauto.
+                     assert (v0 = v1).
+                     { inv H1; inv H6; eauto. inv NO_CROSS_PTR; eauto. now simpl in *. }
+                     subst v1.
+                     inv NO_CROSS_PTR.
+                     exploit IHvl; eauto. intros ->; eauto. }
+                 subst args0.
+                 intros ? ? G ? G' ? G''.
+                 assert (G''': Mem.loadv (chunk_of_type ty) m''
+                                 (Val.offset_ptr (Vptr b6 i1) (Ptrofs.repr bofs)) top
+                               = Some v).
+                 { destruct G as [G | [[l G] | [l G]]].
+                   - unfold call_arguments in ARGS, ARGS0.
+                     clear call_args'.
+                     pose proof (parallel_list_forall2_in_left _ ARGS ARGS0 G)
+                       as [arg [IN [P1 P2]]].
+                     inv P1; inv P2.
+                     inv H29; inv H30.
+                     assert (arg = v).
+                     { rewrite rs'_X2, rs'0_X2 in *; simpl in *.
+                       eapply Mem.load_Some_None in H33.
+
+                       eapply Mem.load_set' in G''; eauto.
+                       erewrite Mem.load_alloc_unchanged in G''; eauto.
+                       erewrite Mem.load_alloc_unchanged in G''; eauto.
+                       congruence.
+                       eapply Mem.valid_access_valid_block; eauto.
+                       eapply Mem.valid_access_implies; eauto.
+                       eapply Mem.load_valid_access; eauto.
+                       constructor.
+                       eapply Mem.valid_block_alloc; eauto.
+                       eapply Mem.valid_access_valid_block; eauto.
+                       eapply Mem.valid_access_implies; eauto.
+                       eapply Mem.load_valid_access; eauto.
+                       constructor. constructor.
+                       intros ? ?.
+                       eapply Mem.perm_alloc_1; eauto.
+                       eapply Mem.perm_alloc_1; eauto.
+                       eapply Mem.load_valid_access; eauto. }
+                     subst arg.
+                     rewrite rs'_X2, rs'0_X2 in *; simpl in *.
+                     eapply Mem.load_Some_None in H34.
+                     eapply Mem.load_set; eauto. constructor.
+                     erewrite Mem.load_alloc_unchanged with (m1 := m0); eauto.
+                     erewrite Mem.load_alloc_unchanged with (m1 := m); eauto.
+                     eapply Mem.valid_access_valid_block; eauto.
+                     eapply Mem.valid_access_implies; eauto.
+                     eapply Mem.load_valid_access; eauto.
+                     constructor.
+                     eapply Mem.valid_block_alloc; eauto.
+                     eapply Mem.valid_access_valid_block; eauto.
+                     eapply Mem.valid_access_implies; eauto.
+                     eapply Mem.load_valid_access; eauto.
+                     constructor.
+                   - unfold call_arguments in ARGS, ARGS0.
+                     clear call_args'.
+                     pose proof (parallel_list_forall2_in_left _ ARGS ARGS0 G)
+                       as [arg [IN [P1 P2]]].
+                     inv P1; inv P2.
+                     assert (vhi = vhi0).
+                     {  exploit eq_distributes_longofwords; eauto.
+                        rewrite H31.
+                        eapply Forall_forall; eauto.
+                        eapply Forall_forall; eauto.
+                        now intros [].
+                     }
+                     subst vhi0.
+                     inv H30; inv H33.
+                     assert (vhi = v).
+                     { rewrite rs'_X2, rs'0_X2 in *; simpl in *.
+                       eapply Mem.load_Some_None in H36.
+
+                       eapply Mem.load_set' in G''; eauto.
+                       erewrite Mem.load_alloc_unchanged in G''; eauto.
+                       erewrite Mem.load_alloc_unchanged in G''; eauto.
+                       congruence.
+                       eapply Mem.valid_access_valid_block; eauto.
+                       eapply Mem.valid_access_implies; eauto.
+                       eapply Mem.load_valid_access; eauto.
+                       constructor.
+                       eapply Mem.valid_block_alloc; eauto.
+                       eapply Mem.valid_access_valid_block; eauto.
+                       eapply Mem.valid_access_implies; eauto.
+                       eapply Mem.load_valid_access; eauto.
+                       constructor. constructor.
+                       intros ? ?.
+                       eapply Mem.perm_alloc_1; eauto.
+                       eapply Mem.perm_alloc_1; eauto.
+                       eapply Mem.load_valid_access; eauto. }
+                     subst vhi.
+                     rewrite rs'_X2, rs'0_X2 in *; simpl in *.
+                     eapply Mem.load_Some_None in H37.
+                     eapply Mem.load_set; eauto. constructor.
+                     erewrite Mem.load_alloc_unchanged with (m1 := m0); eauto.
+                     erewrite Mem.load_alloc_unchanged with (m1 := m); eauto.
+                     eapply Mem.valid_access_valid_block; eauto.
+                     eapply Mem.valid_access_implies; eauto.
+                     eapply Mem.load_valid_access; eauto.
+                     constructor.
+                     eapply Mem.valid_block_alloc; eauto.
+                     eapply Mem.valid_access_valid_block; eauto.
+                     eapply Mem.valid_access_implies; eauto.
+                     eapply Mem.load_valid_access; eauto.
+                     constructor.
+                   - unfold call_arguments in ARGS, ARGS0.
+                     clear call_args'.
+                     pose proof (parallel_list_forall2_in_left _ ARGS ARGS0 G)
+                       as [arg [IN [P1 P2]]].
+                     inv P1; inv P2.
+                     assert (vlo = vlo0).
+                     {  exploit eq_distributes_longofwords; eauto.
+                        rewrite H31.
+                        eapply Forall_forall; eauto.
+                        eapply Forall_forall; eauto.
+                        now intros [].
+                     }
+                     subst vlo0.
+                     inv H32; inv H34.
+                     assert (vlo = v).
+                     { rewrite rs'_X2, rs'0_X2 in *; simpl in *.
+                       eapply Mem.load_Some_None in H36.
+
+                       eapply Mem.load_set' in G''; eauto.
+                       erewrite Mem.load_alloc_unchanged in G''; eauto.
+                       erewrite Mem.load_alloc_unchanged in G''; eauto.
+                       congruence.
+                       eapply Mem.valid_access_valid_block; eauto.
+                       eapply Mem.valid_access_implies; eauto.
+                       eapply Mem.load_valid_access; eauto.
+                       constructor.
+                       eapply Mem.valid_block_alloc; eauto.
+                       eapply Mem.valid_access_valid_block; eauto.
+                       eapply Mem.valid_access_implies; eauto.
+                       eapply Mem.load_valid_access; eauto.
+                       constructor. constructor.
+                       intros ? ?.
+                       eapply Mem.perm_alloc_1; eauto.
+                       eapply Mem.perm_alloc_1; eauto.
+                       eapply Mem.load_valid_access; eauto. }
+                     subst vlo.
+                     rewrite rs'_X2, rs'0_X2 in *; simpl in *.
+                     eapply Mem.load_Some_None in H37.
+                     eapply Mem.load_set; eauto. constructor.
+                     erewrite Mem.load_alloc_unchanged with (m1 := m0); eauto.
+                     erewrite Mem.load_alloc_unchanged with (m1 := m); eauto.
+                     eapply Mem.valid_access_valid_block; eauto.
+                     eapply Mem.valid_access_implies; eauto.
+                     eapply Mem.load_valid_access; eauto.
+                     constructor.
+                     eapply Mem.valid_block_alloc; eauto.
+                     eapply Mem.valid_access_valid_block; eauto.
+                     eapply Mem.valid_access_implies; eauto.
+                     eapply Mem.load_valid_access; eauto.
+                     constructor. }
+
+                 clear G''; rename G''' into G''.
+                 apply incr, H23, H26 in H28.
+                 clear -ARGS NO_CROSS_PTR n H18 rs1_rs3 alloc1 alloc1' m1_m3' H2 rs'_X2 H26 H28 set_perm1 mrel1 G G' G''.
+                 rename H18 into m1_m3.
+                 rename H2 into exec_instr1.
+
+                 exploit delta_zero; eauto. intros ->.
+                 eapply Mem.load_inject in G'' as G'''; eauto using partial_mem_inject.
+                 destruct G''' as [v2 [load' v_v2]].
+                 rewrite !Ptrofs.add_zero, Z.add_0_r in *.
+                 assert (not_ptr v).
+                 { destruct G as [G | [[l G] | [l G]]].
+                   - unfold call_arguments in ARGS.
+                     exploit list_forall2_in_left; eauto.
+                     intros [arg [IN P]].
+                     inv P. inv H0.
+                     assert (arg = v).
+                     { rewrite rs'_X2 in *; simpl in *.
+                       eapply Mem.load_Some_None in H4.
+
+                       eapply Mem.load_set' in G''; eauto.
+                       erewrite Mem.load_alloc_unchanged in G''; eauto.
+                       erewrite Mem.load_alloc_unchanged in G''; eauto.
+                       congruence.
+                       eapply Mem.valid_access_valid_block; eauto.
+                       eapply Mem.valid_access_implies; eauto.
+                       eapply Mem.load_valid_access; eauto.
+                       constructor.
+                       eapply Mem.valid_block_alloc; eauto.
+                       eapply Mem.valid_access_valid_block; eauto.
+                       eapply Mem.valid_access_implies; eauto.
+                       eapply Mem.load_valid_access; eauto.
+                       constructor. constructor.
+                       intros ? ?.
+                       eapply Mem.perm_alloc_1; eauto.
+                       eapply Mem.perm_alloc_1; eauto.
+                       eapply Mem.load_valid_access; eauto.
+                     }
+                     subst arg.
+                     eapply Forall_forall in NO_CROSS_PTR; eauto.
+                   - unfold call_arguments in ARGS.
+                     exploit list_forall2_in_left; eauto.
+                     intros [arg [IN P]].
+                     inv P. inv H1.
+                     assert (vhi = v).
+                     { rewrite rs'_X2 in *; simpl in *.
+                       eapply Mem.load_Some_None in H5.
+                       eapply Mem.load_set' in G''; eauto.
+                       erewrite Mem.load_alloc_unchanged in G''; eauto.
+                       erewrite Mem.load_alloc_unchanged in G''; eauto.
+                       congruence.
+                       eapply Mem.valid_access_valid_block; eauto.
+                       eapply Mem.valid_access_implies; eauto.
+                       eapply Mem.load_valid_access; eauto.
+                       constructor.
+                       eapply Mem.valid_block_alloc; eauto.
+                       eapply Mem.valid_access_valid_block; eauto.
+                       eapply Mem.valid_access_implies; eauto.
+                       eapply Mem.load_valid_access; eauto.
+                       constructor. constructor.
+                       intros ? ?.
+                       eapply Mem.perm_alloc_1; eauto.
+                       eapply Mem.perm_alloc_1; eauto.
+                       eapply Mem.load_valid_access; eauto. }
+                     subst vhi.
+                     rewrite Forall_forall in NO_CROSS_PTR.
+                     apply NO_CROSS_PTR in IN.
+                     destruct v; simpl in *; try now auto.
+                   - unfold call_arguments in ARGS.
+                     exploit list_forall2_in_left; eauto.
+                     intros [arg [IN P]].
+                     inv P. inv H3.
+                     assert (vlo = v).
+                     { rewrite rs'_X2 in *; simpl in *.
+                       eapply Mem.load_Some_None in H5.
+                       eapply Mem.load_set' in G''; eauto.
+                       erewrite Mem.load_alloc_unchanged in G''; eauto.
+                       erewrite Mem.load_alloc_unchanged in G''; eauto.
+                       congruence.
+                       eapply Mem.valid_access_valid_block; eauto.
+                       eapply Mem.valid_access_implies; eauto.
+                       eapply Mem.load_valid_access; eauto.
+                       constructor.
+                       eapply Mem.valid_block_alloc; eauto.
+                       eapply Mem.valid_access_valid_block; eauto.
+                       eapply Mem.valid_access_implies; eauto.
+                       eapply Mem.load_valid_access; eauto.
+                       constructor. constructor.
+                       intros ? ?.
+                       eapply Mem.perm_alloc_1; eauto.
+                       eapply Mem.perm_alloc_1; eauto.
+                       eapply Mem.load_valid_access; eauto. }
+                     subst vlo.
+                     rewrite Forall_forall in NO_CROSS_PTR.
+                     apply NO_CROSS_PTR in IN.
+                     destruct v, vhi; simpl in *; try now auto. }
+                 inv v_v2; simpl in *; split; eauto; contradiction.
+               }
+            -- rewrite <- X2_1 in *.
+               destruct (SP_HAS_PTR) as [? [? ?]].
+               simpl. now destruct flowsto_dec.
+               simpl. split; auto. unfold Mem.set_perm in set_perm1.
+               unfold Mem.valid_block. clear -set_perm1. destruct plt; try discriminate.
+               inv set_perm1. auto.
+               clear -set_perm1. revert set_perm1.
+               unfold Mem.set_perm. unfold Mem.perm. intros ?. destruct plt; try discriminate. inv set_perm1.
+               simpl.
+               rewrite PMap.gss; auto. intros ? ?.
+               destruct ((Mem.mem_access m1) !! b6 ofs Max); auto. inv H.
+            -- rewrite <- X2_2 in *.
+               destruct (SP_HAS_PTR0) as [? [? ?]].
+               simpl. now destruct flowsto_dec.
+               simpl. split; auto.
+               unfold Mem.set_perm in set_perm2.
+               unfold Mem.valid_block. clear -set_perm2. destruct plt; try discriminate.
+               inv set_perm2. auto.
+               clear -set_perm2. revert set_perm2.
+               unfold Mem.set_perm. unfold Mem.perm. intros ?. destruct plt; try discriminate. inv set_perm2.
+               simpl.
+               rewrite PMap.gss; auto. intros ? ?.
+               destruct ((Mem.mem_access m5) !! b7 ofs Max); auto. inv H.
+            -- destruct (SP_HAS_PTR) as [? [? ?]].
+               simpl. now destruct flowsto_dec.
+               simpl. split; auto.
+               unfold Mem.set_perm in set_perm3.
+               unfold Mem.valid_block. clear -set_perm3. destruct plt; try discriminate.
+               inv set_perm3. auto.
+               clear -set_perm3. revert set_perm3.
+               unfold Mem.set_perm. unfold Mem.perm. intros ?. destruct plt; try discriminate. inv set_perm3.
+               simpl.
+               rewrite PMap.gss; auto. intros ? ?.
+               destruct ((Mem.mem_access m3'') !! b9 ofs Max); auto. inv H.
+            -- split.
+               rewrite <- X2_1 in *.
+               eapply Mem.set_perm_valid_block_1; eauto. eapply Mem.valid_new_block; eauto.
+               intros ? G.
+               eapply Mem.perm_set_4 in G; eauto.
+               eapply Mem.perm_alloc_3 in G; eauto. lia.
+               destruct (peq b2 b6). right. subst.
+               intros R.
+               eapply Mem.perm_alloc_3 in R; eauto. lia. now left.
+            -- split.
+               rewrite <- X2_2 in *.
+               eapply Mem.set_perm_valid_block_1; eauto. eapply Mem.valid_new_block; eauto.
+               intros ? G.
+               eapply Mem.perm_set_4 in G; eauto.
+               eapply Mem.perm_alloc_3 in G; eauto. lia.
+               destruct (peq b5 b7). right. subst.
+               intros R.
+               eapply Mem.perm_alloc_3 in R; eauto. lia. now left.
+            -- split.
+               rewrite <- X2_1 in *.
+               eapply Mem.set_perm_valid_block_1; eauto. eapply Mem.valid_new_block; eauto.
+               intros ? G.
+               eapply Mem.perm_set_4 in G; eauto.
+               eapply Mem.perm_alloc_3 in G; eauto. lia.
+               destruct (peq dsp3 b9). right. subst.
+               intros R.
+               eapply Mem.perm_alloc_3 in R; eauto. lia. now left.
+            -- simpl. inv strong_s1_s3.
+               inv COMP2; eauto. rewrite eq_pc' in *; auto.
+               unfold Genv.find_comp_of_block; rewrite find_funct; auto.
+            -- simpl. inv strong_s1_s3.
+               inv COMP2; eauto. rewrite eq_pc' in *; auto.
+               ++ rewrite <- H34. simpl.
+                  unfold Genv.find_comp_of_block at 1; rewrite find_funct; auto.
+                  clear -diff_comp. intros ?. apply diff_comp. rewrite <- H.
+                  auto with comps.
+               ++ rewrite <- H37. simpl.
+                  clear -diff_comp. intros ?. apply diff_comp. rewrite <- H.
+                  auto with comps.
+          }
+          split; eauto.
+          split; eauto. now destruct s.
+          intros _.
+          { intros r. unfold invalidate_call.
+            destruct preg_eq; [subst; simpl; Simpl|].
+            rewrite NEXTPC0, rs3'_PC.
+            {
+              specialize (rs1_rs3' PC); rewrite rs3'_PC, NEXTPC in rs1_rs3'.
+              exploit CALLSIG0; eauto. simpl. destruct flowsto_dec; try congruence.
+              exploit CALLSIG; eauto. simpl. destruct flowsto_dec; try congruence.
+              revert rs1_rs3'.
+              clear -H17 inj_pres' EV EV0. rename H17 into inj_pres.
+              intros ? [fd1 [b'_fd ?]] [fd2 [b'0_fd ?]].
+              inv EV; inv EV0.
+              inv H3; inv H13.
+              eapply Genv.invert_find_symbol in H4, H14.
+              exploit (symbols_inject2 s (s (comp_of f)) W1 W3); eauto.
+              now unfold kept_genv; rewrite H4; fold (Genv.find_def ge1 b); rewrite b'_fd.
+              exploit (symbols_inject2 s (opposite (s (comp_of f))) W2 W3); eauto.
+              now unfold kept_genv; rewrite H14; fold (Genv.find_def ge2 b0); rewrite b'0_fd.
+              intros [b1 [? ?]] [b2 [? ?]]. assert (b1 = b2) by congruence; subst.
+              inv rs1_rs3'. assert (b3' = b2) by congruence; subst.
+              econstructor; eauto. }
+            destruct preg_eq; [subst; simpl; Simpl|]. eapply val_inject_incr; eauto.
+            destruct preg_eq; [subst; simpl; Simpl|]. eauto.
+            destruct in_dec; simpl; Simpl; eauto.
+
+            assert (args0 = args).
+            { exploit NO_CROSS_PTR; eauto. simpl; now destruct flowsto_dec; congruence.
+              clear -EV EV0. inv EV; inv EV0; auto. intros NO_CROSS_PTR.
+              clear -H8 H14 NO_CROSS_PTR. revert H8 H14.
+              generalize (sig_args sig).
+              generalize dependent args0. generalize dependent args. induction vl.
+              - intros; inv H8; inv H14; eauto.
+              - intros; inv H8; inv H14; eauto.
+                assert (v0 = v1).
+                { inv H1; inv H6; eauto. inv NO_CROSS_PTR; eauto. now simpl in *. }
+                subst v1.
+                inv NO_CROSS_PTR.
+                exploit IHvl; eauto. intros ->; eauto. }
+            subst args0.
+            exploit NO_CROSS_PTR; eauto. simpl. destruct flowsto_dec; try congruence.
+            clear -ARGS0 inj_args call_args' i3.
+            eapply list_in_map_inv in i3 as [R [? G]]. subst r.
+            eapply filter_In in G as [_ G].
+            unfold LTL.parameters_mregs in *.
+
+
+            inv ARGS0; inv call_args'; try congruence.
+            now rewrite <- H0 in *.
+            assert (a1 = a0) by congruence; subst.
+            assert (al0 = al) by congruence; subst. rename a0 into a.  rewrite <- H in *.
+            clear H; clear H2.
+            assert (HYP1: list_forall2 (call_arg_pair rs'0 m'0) (a :: al) (b1 :: bl)) by now constructor; eauto.
+            assert (HYP2: list_forall2 (call_arg_pair rs3' m3') (a :: al) (b0 :: bl0)) by now constructor; eauto.
+            clear H3 H4 H1 H0.
+            remember (a :: al) as l; clear Heql.
+            remember (b1 :: bl) as l'; clear Heql'. remember (b0 :: bl0) as l''; clear Heql''.
+            generalize dependent l''. generalize dependent l'.
+            generalize dependent l. clear.
+            induction l.
+            - now simpl.
+            - destruct a as [[|]|]; simpl.
+              + destruct (mreg_eq R r); try subst R; simpl.
+                * intros _ ? ? ? ? ? PTR.
+                  inv HYP1; inv HYP2; inv inj_args.
+                  inv H1; inv H2.
+                  inv H0; inv H1.
+                  inv PTR. inv H6; eauto. now rewrite <- H in H1.
+                * intros ? ? ? ? ? ? PTR. inv HYP1; inv HYP2; inv inj_args; inv PTR.
+                  exploit IHl; eauto.
+              + intros. inv HYP1; inv HYP2; inv inj_args; inv H.
+                exploit IHl; eauto.
+              + destruct rhi; destruct rlo; eauto.
+                * simpl.
+                  destruct (mreg_eq R r); [subst R | destruct (mreg_eq R r0); [subst R| ]]; simpl.
+                  -- intros _ ? ? ? ? ? PTR.
+                     inv HYP1; inv HYP2; inv inj_args.
+                     inv H1; inv H2.
+                     inv H4; inv H9; inv H1; inv H10. inv PTR.
+                     assert (not_ptr (Val.longofwords (rs3' (preg_of r)) (rs3' (preg_of r0)))).
+                     { inv H6; simpl; auto. rewrite <- H in *; contradiction.
+                       rewrite <- H0 in *; contradiction. }
+                     exploit (inject_distributes_longofwords j__δ' (rs'0 (preg_of r)) (rs'0 (preg_of r0)) (rs3' (preg_of r)));
+                       eauto.
+                     intros [? ?].
+                     assert (not_ptr (rs'0 (preg_of r))).
+                     { destruct (rs'0 (preg_of r)); simpl; auto. }
+                     inv H0; eauto. rewrite <- H9 in *; contradiction.
+                  -- intros _ ? ? ? ? ? PTR.
+                     inv HYP1; inv HYP2; inv inj_args.
+                     inv H1; inv H2.
+                     inv H4; inv H9; inv H1; inv H10. inv PTR.
+                     assert (not_ptr (Val.longofwords (rs3' (preg_of r)) (rs3' (preg_of r0)))).
+                     { inv H6; simpl; auto. rewrite <- H in *; contradiction.
+                       rewrite <- H0 in *; contradiction. }
+                     exploit (inject_distributes_longofwords j__δ' (rs'0 (preg_of r)) (rs'0 (preg_of r0)) (rs3' (preg_of r)));
+                       eauto.
+                     intros [? ?].
+                     assert (not_ptr (rs'0 (preg_of r0))).
+                     { destruct (rs'0 (preg_of r0)); simpl; auto.
+                       destruct (rs'0 (preg_of r)); auto.
+                       destruct (rs'0 (preg_of r)); auto. }
+                     inv H4; eauto. rewrite <- H9 in *; contradiction.
+                  -- intros. inv HYP1; inv HYP2; inv inj_args; inv H.
+                     exploit IHl; eauto.
+                * simpl.
+                  destruct (mreg_eq R r); try subst R; simpl.
+                  -- intros _ ? ? ? ? ? PTR.
+                     inv HYP1; inv HYP2; inv inj_args.
+                     inv H1; inv H2.
+                     inv H4; inv H1. inv PTR.
+                     assert (not_ptr (Val.longofwords (rs3' (preg_of r)) vlo0)).
+                     { inv H6; simpl; auto. rewrite <- H in *; contradiction.
+                       rewrite <- H0 in *; contradiction. }
+                     exploit (inject_distributes_longofwords j__δ' (rs'0 (preg_of r)) vlo (rs3' (preg_of r)));
+                       eauto.
+                     intros [? ?].
+                     assert (not_ptr (rs'0 (preg_of r))).
+                     { destruct (rs'0 (preg_of r)); simpl; auto. }
+                     inv H0; eauto. rewrite <- H11 in *; contradiction.
+                  -- intros ? ? ? ? ? ? PTR. inv HYP1; inv HYP2; inv inj_args; inv PTR.
+                     exploit IHl; eauto.
+                * simpl.
+                  destruct (mreg_eq R r); try subst R; simpl.
+                  -- intros _ ? ? ? ? ? PTR.
+                     inv HYP1; inv HYP2; inv inj_args.
+                     inv H1; inv H2.
+                     inv H9; inv H10. inv PTR.
+                     assert (not_ptr (Val.longofwords vhi0 (rs3' (preg_of r)))).
+                     { inv H6; simpl; auto. rewrite <- H in *; contradiction.
+                       rewrite <- H0 in *; contradiction. }
+                     exploit (inject_distributes_longofwords j__δ' vhi (rs'0 (preg_of r)) vhi0);
+                       eauto.
+                     intros [? ?].
+                     assert (not_ptr (rs'0 (preg_of r))).
+                     { destruct (rs'0 (preg_of r)); simpl; auto.
+                       destruct vhi; auto.
+                       destruct vhi; auto. }
+                     inv H9; eauto. rewrite <- H11 in *; contradiction.
+                  -- intros ? ? ? ? ? ? PTR. inv HYP1; inv HYP2; inv inj_args; inv PTR.
+                     exploit IHl; eauto.
+                * intros ? ? ? ? ? ? PTR. inv HYP1; inv HYP2; inv inj_args; inv PTR.
+                  exploit IHl; eauto.
+            }
       }
       destruct G as (dra1 & dsp1 & dra2 & dsp2 & st3' & j__δ'' & j__oppδ'' & rs3'' & m3'' & ? & ? & STUPD3 & ? & ? & ? & ? & ? & ? & ? & ? & ? & ?).
       subst st' st'0.
@@ -6826,7 +7733,12 @@ Section Theorems.
           congruence.
           specialize (rs1_rs3' PC) as inj_pc. rewrite NEXTPC, rs3'_PC in inj_pc.
           inv inj_pc; try congruence. exploit (delta_zero s ge1 ge3); eauto; intros ->.
-        * admit.
+        * intros.
+          specialize (rs1_rs3 X2). revert rs1_rs3.
+          exploit SP_HAS_PTR; eauto.
+          simpl. destruct flowsto_dec; simpl in *; try congruence.
+          intros [? [? ->]].
+          intros G; inv G; eauto.
         * intros.
           specialize (rs1_rs3' PC). rewrite rs3'_PC, NEXTPC in rs1_rs3'.
           exploit CALLSIG; eauto.
@@ -7013,14 +7925,38 @@ Section Theorems.
           erewrite <- find_comp_of_block_preserved; eauto using delta_zero. subst cp'. reflexivity.
         - simpl. inv H10.
           erewrite <- find_comp_of_block_preserved; eauto using delta_zero. rewrite <- EQ_CP. subst cp'0. reflexivity. }
+      assert (exists m3', Some m3' = match asm_parent_sp (frame3 :: st3') with
+                                | Vptr bsp _ => Mem.set_perm m3 bsp Freeable
+                                | _ => None
+                                end /\
+            mem_rel s ge1 ge3 j__δ δ m' m3' /\
+     mem_rel s ge2 ge3 j__oppδ (opposite δ) m'0 m3' /\
+     stack_rel s cp_main ge3 δ j__δ j__oppδ m' m'0 m3' st' st'0 st3') as [m3' [eq_m3' A]].
+      {
+        (* clear -frame_rel MAKE_FREEABLE MAKE_FREEABLE0. *)
+        inv frame_rel; simpl in *.
+        - destruct sp1; try congruence. inv H11; eauto.
+          destruct sp2; try congruence.
+          symmetry in MAKE_FREEABLE0. symmetry in MAKE_FREEABLE.
+          exploit (set_perm_preserves_rel' s W1 W2 W3); eauto using match_prog_unique.
+          intros [? [? ?]]. eauto.
+        - destruct sp1; try congruence.
+          destruct sp2; try congruence. inv H11; eauto.
+          symmetry in MAKE_FREEABLE0. symmetry in MAKE_FREEABLE.
+          eapply stack_rel_comm in st_rel'.
+          eapply (set_perm_preserves_rel' s W2 W1 W3) in st_rel'; eauto using match_prog_unique.
+          destruct st_rel' as [? [? [? [? ?]]]]. eexists; split; eauto.
+          split; eauto.
+          now destruct δ. split; eauto. eapply stack_rel_comm in H16; eauto. now destruct δ.
+          now destruct δ. }
       eexists (State st3' (invalidate_cross_return (invalidate_return rs3 (sig_of_call (frame3 :: st3'))) (frame3 :: st3'))
-                 m3 _);
+                 m3' _);
         exists j__δ, j__oppδ; split; [| split; [| split; [| split]]].
       + econstructor; [| now eapply star_refl | now traceEq].
-        econstructor; eauto. admit.
+        econstructor; eauto.
       + eauto.
       + eauto.
-      + simpl. admit.
+      + simpl. destruct A as [? [? ?]]; eauto.
       + (* simpl in *. *)
         destruct (side_eq (s cp') δ) as [e1 | n1].
         * left; split.
@@ -7065,17 +8001,17 @@ Section Theorems.
                    inv st_rel; eauto.
                 ** rewrite CP3 in *. now destruct (s cp').
              ++ { intros x.
-               simpl. unfold invalidate_cross_return.
-               destruct preg_eq; try now auto. simpl in *.
-               inv frame_rel; auto; simpl in *. rewrite CP3 in H9.
-               clear -H9. now destruct (s cp').
-               destruct preg_eq; try now auto. simpl in *.
-               inv frame_rel; auto; simpl in *. rewrite CP3 in H9.
-               clear -H9. now destruct (s cp').
-               inv frame_rel; auto; simpl in *;
-                 eapply regset_rel_invalidate_return; eauto. }
-             ++ admit.
-                (* assumption. *)
+                  simpl. unfold invalidate_cross_return.
+                  destruct preg_eq; try now auto. simpl in *.
+                  inv frame_rel; auto; simpl in *. rewrite CP3 in H9.
+                  clear -H9. now destruct (s cp').
+                  destruct preg_eq; try now auto. simpl in *.
+                  inv frame_rel; auto; simpl in *. rewrite CP3 in H9.
+                  clear -H9. now destruct (s cp').
+                  inv frame_rel; auto; simpl in *;
+                    eapply regset_rel_invalidate_return; eauto. }
+             ++ destruct A; eauto.
+          (* assumption. *)
           -- econstructor; eauto.
              ++ econstructor; eauto.
                 subst cp'. simpl.
@@ -7105,7 +8041,7 @@ Section Theorems.
                 ** inv H10.
                    erewrite find_comp_of_block_preserved; eauto using delta_zero.
                 ** rewrite CP3 in *. now destruct (s cp').
-             ++ admit.
+             ++ destruct A as [? [? ?]]; eauto.
         * right; split.
           -- econstructor; eauto.
              ++ econstructor; eauto.
@@ -7136,10 +8072,10 @@ Section Theorems.
                 ** inv H10.
                    erewrite find_comp_of_block_preserved; eauto using delta_zero.
                 ** rewrite CP3 in *. now destruct (s cp').
-             ++ admit.
+             ++ destruct A as [? [? ?]]; eauto.
           -- assert (OPP: s cp' = opposite δ).
              { clear -n1. now destruct δ, (s cp'). }
-            inv strong_s1_s3; econstructor.
+             inv strong_s1_s3; econstructor.
              ++ econstructor; eauto.
                 subst cp'. simpl.
                 inv frame_rel; auto; simpl in *.
@@ -7180,7 +8116,7 @@ Section Theorems.
                 rewrite !orb_false_l.
                 inv frame_rel. simpl in CP3; congruence.
                 ** Local Opaque all_mregs.
-                  destruct in_dec; simpl in *.
+                   destruct in_dec; simpl in *.
                    --- unfold return_value in inj_res, NO_CROSS_PTR, NO_CROSS_PTR0, EV0, EV.
                        destruct (loc_result sg) eqn:?; simpl in i.
                        +++ simpl in i. replace (filter (fun x: mreg => mreg_eq x r || false) all_mregs)
@@ -7197,120 +8133,272 @@ Section Theorems.
                            inv inj_res; eauto.
                            rewrite <- H in NO_CROSS_PTR; now contradiction.
                            eapply filter_all_mregs_find_one.
-                       +++ replace (filter (fun x : mreg => mreg_eq x rhi || (mreg_eq x rlo || false))
-                                      all_mregs)
-                             with (rhi :: rlo :: nil) in i.
-                           simpl in i. destruct i as [| []]; try contradiction. subst x.
-                           (* rewrite Heqr in inj_res, NO_CROSS_PTR. subst x. *)
-                           simpl in *.
-                           clear -NO_CROSS_PTR NO_CROSS_PTR0 inj_res EV0 EV.
-                           inv EV0; inv EV. clear H1 H0.
-                           assert (R: rs (preg_of rhi) = rs0 (preg_of rhi)).
-                           { inv H5; inv H7; auto.
-                             - rewrite H2 in H4.
-                               exploit eq_distributes_longofwords.
-                               eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
-                               intros [? ?]; auto.
-                             - rewrite H2 in H4.
-                               exploit eq_distributes_longofwords.
-                               eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
-                               intros [? ?]; auto.
-                             - rewrite H2 in H4.
-                               exploit eq_distributes_longofwords.
-                               eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
-                               intros [? ?]; auto.
-                             - rewrite H2 in H4.
-                               exploit eq_distributes_longofwords.
-                               eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
-                               intros [? ?]; auto.
-                             - rewrite <- H6 in NO_CROSS_PTR; now contradiction.
-                           }
-                           rewrite R in *. clear R.
-                           assert (R: rs (preg_of rlo) = rs0 (preg_of rlo)).
-                           { inv H5; inv H7; auto.
-                             - rewrite H2 in H4.
-                               exploit eq_distributes_longofwords.
-                               eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
-                               intros [? ?]; auto.
-                             - rewrite H2 in H4.
-                               exploit eq_distributes_longofwords.
-                               eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
-                               intros [? ?]; auto.
-                             - rewrite H2 in H4.
-                               exploit eq_distributes_longofwords.
-                               eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
-                               intros [? ?]; auto.
-                             - rewrite H2 in H4.
-                               exploit eq_distributes_longofwords.
-                               eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
-                               intros [? ?]; auto.
-                             - rewrite <- H6 in NO_CROSS_PTR; now contradiction.
-                           }
-                           rewrite R in *. clear R.
-                           eapply inject_distributes_longofwords in inj_res as [? ?].
-                           { inv H; auto. rewrite <- H1 in NO_CROSS_PTR; contradiction. }
-                           eauto.  inv inj_res; try now auto.
-                           rewrite <- H in *. contradiction.
-                           rewrite <- H0 in *. contradiction.
-                           subst x.
-                           clear -NO_CROSS_PTR NO_CROSS_PTR0 inj_res EV0 EV.
-                           inv EV0; inv EV. clear H1 H0.
-                           assert (R: rs (preg_of rhi) = rs0 (preg_of rhi)).
-                           { inv H5; inv H7; auto.
-                             - rewrite H2 in H4.
-                               exploit eq_distributes_longofwords.
-                               eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
-                               intros [? ?]; auto.
-                             - rewrite H2 in H4.
-                               exploit eq_distributes_longofwords.
-                               eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
-                               intros [? ?]; auto.
-                             - rewrite H2 in H4.
-                               exploit eq_distributes_longofwords.
-                               eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
-                               intros [? ?]; auto.
-                             - rewrite H2 in H4.
-                               exploit eq_distributes_longofwords.
-                               eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
-                               intros [? ?]; auto.
-                             - rewrite <- H6 in NO_CROSS_PTR; now contradiction.
-                           }
-                           rewrite R in *. clear R.
-                           assert (R: rs (preg_of rlo) = rs0 (preg_of rlo)).
-                           { inv H5; inv H7; auto.
-                             - rewrite H2 in H4.
-                               exploit eq_distributes_longofwords.
-                               eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
-                               intros [? ?]; auto.
-                             - rewrite H2 in H4.
-                               exploit eq_distributes_longofwords.
-                               eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
-                               intros [? ?]; auto.
-                             - rewrite H2 in H4.
-                               exploit eq_distributes_longofwords.
-                               eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
-                               intros [? ?]; auto.
-                             - rewrite H2 in H4.
-                               exploit eq_distributes_longofwords.
-                               eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
-                               intros [? ?]; auto.
-                             - rewrite <- H6 in NO_CROSS_PTR; now contradiction.
-                           }
-                           rewrite R in *. clear R.
-                           eapply inject_distributes_longofwords in inj_res as [? ?]; eauto.
-                           { inv H0; auto. rewrite <- H1 in NO_CROSS_PTR.
-                             destruct (rs0 (preg_of rhi)); try contradiction. }
-                           eauto.  inv inj_res; try now auto.
-                           rewrite <- H in *. contradiction.
-                           rewrite <- H0 in *. contradiction.
-                           (* destruct (rs0 (preg_of rhi)); simpl in *; auto; try contradiction. *)
-                           (* destruct (rs0 (preg_of rhi)), (rs0 (preg_of rlo)); *)
-                           (*   simpl in *; try now auto; try contradiction. *)
-                           admit.
-                           (* eapply filter_all_mregs_find_two. *)
+                       +++
+                         (* replace (filter (fun x : mreg => mreg_eq x rhi || (mreg_eq x rlo || false)) *)
+                         (*              all_mregs) *)
+                         (*     with (rhi :: rlo :: nil) in i. *)
+                         pose proof (filter_all_mregs_find_two rhi rlo) as CASE.
+                         destruct CASE as [CASE | [CASE | CASE]];
+                           rewrite <- CASE in *.
+                         *** simpl in i. destruct i as [| []]; try contradiction. subst x.
+                             (* rewrite Heqr in inj_res, NO_CROSS_PTR. subst x. *)
+                             simpl in *.
+                             clear -NO_CROSS_PTR NO_CROSS_PTR0 inj_res EV0 EV.
+                             inv EV0; inv EV. clear H1 H0.
+                             assert (R: rs (preg_of rhi) = rs0 (preg_of rhi)).
+                             { inv H5; inv H7; auto.
+                               - rewrite H2 in H4.
+                                 exploit eq_distributes_longofwords.
+                                 eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
+                                 intros [? ?]; auto.
+                               - rewrite H2 in H4.
+                                 exploit eq_distributes_longofwords.
+                                 eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
+                                 intros [? ?]; auto.
+                               - rewrite H2 in H4.
+                                 exploit eq_distributes_longofwords.
+                                 eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
+                                 intros [? ?]; auto.
+                               - rewrite H2 in H4.
+                                 exploit eq_distributes_longofwords.
+                                 eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
+                                 intros [? ?]; auto.
+                               - rewrite <- H6 in NO_CROSS_PTR; now contradiction.
+                             }
+                             rewrite R in *. clear R.
+                             assert (R: rs (preg_of rlo) = rs0 (preg_of rlo)).
+                             { inv H5; inv H7; auto.
+                               - rewrite H2 in H4.
+                                 exploit eq_distributes_longofwords.
+                                 eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
+                                 intros [? ?]; auto.
+                               - rewrite H2 in H4.
+                                 exploit eq_distributes_longofwords.
+                                 eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
+                                 intros [? ?]; auto.
+                               - rewrite H2 in H4.
+                                 exploit eq_distributes_longofwords.
+                                 eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
+                                 intros [? ?]; auto.
+                               - rewrite H2 in H4.
+                                 exploit eq_distributes_longofwords.
+                                 eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
+                                 intros [? ?]; auto.
+                               - rewrite <- H6 in NO_CROSS_PTR; now contradiction.
+                             }
+                             rewrite R in *. clear R.
+                             eapply inject_distributes_longofwords in inj_res as [? ?].
+                             { inv H; auto. rewrite <- H1 in NO_CROSS_PTR; contradiction. }
+                             eauto.  inv inj_res; try now auto.
+                             rewrite <- H in *. contradiction.
+                             rewrite <- H0 in *. contradiction.
+                             subst x.
+                             clear -NO_CROSS_PTR NO_CROSS_PTR0 inj_res EV0 EV.
+                             inv EV0; inv EV. clear H1 H0.
+                             assert (R: rs (preg_of rhi) = rs0 (preg_of rhi)).
+                             { inv H5; inv H7; auto.
+                               - rewrite H2 in H4.
+                                 exploit eq_distributes_longofwords.
+                                 eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
+                                 intros [? ?]; auto.
+                               - rewrite H2 in H4.
+                                 exploit eq_distributes_longofwords.
+                                 eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
+                                 intros [? ?]; auto.
+                               - rewrite H2 in H4.
+                                 exploit eq_distributes_longofwords.
+                                 eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
+                                 intros [? ?]; auto.
+                               - rewrite H2 in H4.
+                                 exploit eq_distributes_longofwords.
+                                 eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
+                                 intros [? ?]; auto.
+                               - rewrite <- H6 in NO_CROSS_PTR; now contradiction.
+                             }
+                             rewrite R in *. clear R.
+                             assert (R: rs (preg_of rlo) = rs0 (preg_of rlo)).
+                             { inv H5; inv H7; auto.
+                               - rewrite H2 in H4.
+                                 exploit eq_distributes_longofwords.
+                                 eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
+                                 intros [? ?]; auto.
+                               - rewrite H2 in H4.
+                                 exploit eq_distributes_longofwords.
+                                 eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
+                                 intros [? ?]; auto.
+                               - rewrite H2 in H4.
+                                 exploit eq_distributes_longofwords.
+                                 eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
+                                 intros [? ?]; auto.
+                               - rewrite H2 in H4.
+                                 exploit eq_distributes_longofwords.
+                                 eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
+                                 intros [? ?]; auto.
+                               - rewrite <- H6 in NO_CROSS_PTR; now contradiction.
+                             }
+                             rewrite R in *. clear R.
+                             eapply inject_distributes_longofwords in inj_res as [? ?]; eauto.
+                             { inv H0; auto. rewrite <- H1 in NO_CROSS_PTR.
+                               destruct (rs0 (preg_of rhi)); try contradiction. }
+                             eauto.  inv inj_res; try now auto.
+                             rewrite <- H in *. contradiction.
+                             rewrite <- H0 in *. contradiction.
+                         *** simpl in i. destruct i as [| []]; try contradiction. subst x.
+                             (* rewrite Heqr in inj_res, NO_CROSS_PTR. subst x. *)
+                             simpl in *.
+                             clear -NO_CROSS_PTR NO_CROSS_PTR0 inj_res EV0 EV.
+                             inv EV0; inv EV. clear H1 H0.
+                             assert (R: rs (preg_of rhi) = rs0 (preg_of rhi)).
+                             { inv H5; inv H7; auto.
+                               - rewrite H2 in H4.
+                                 exploit eq_distributes_longofwords.
+                                 eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
+                                 intros [? ?]; auto.
+                               - rewrite H2 in H4.
+                                 exploit eq_distributes_longofwords.
+                                 eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
+                                 intros [? ?]; auto.
+                               - rewrite H2 in H4.
+                                 exploit eq_distributes_longofwords.
+                                 eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
+                                 intros [? ?]; auto.
+                               - rewrite H2 in H4.
+                                 exploit eq_distributes_longofwords.
+                                 eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
+                                 intros [? ?]; auto.
+                               - rewrite <- H6 in NO_CROSS_PTR; now contradiction.
+                             }
+                             rewrite R in *. clear R.
+                             assert (R: rs (preg_of rlo) = rs0 (preg_of rlo)).
+                             { inv H5; inv H7; auto.
+                               - rewrite H2 in H4.
+                                 exploit eq_distributes_longofwords.
+                                 eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
+                                 intros [? ?]; auto.
+                               - rewrite H2 in H4.
+                                 exploit eq_distributes_longofwords.
+                                 eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
+                                 intros [? ?]; auto.
+                               - rewrite H2 in H4.
+                                 exploit eq_distributes_longofwords.
+                                 eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
+                                 intros [? ?]; auto.
+                               - rewrite H2 in H4.
+                                 exploit eq_distributes_longofwords.
+                                 eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
+                                 intros [? ?]; auto.
+                               - rewrite <- H6 in NO_CROSS_PTR; now contradiction.
+                             }
+                             rewrite R in *. clear R.
+                             eapply inject_distributes_longofwords in inj_res as [? ?].
+                             { inv H0; auto. rewrite <- H1 in NO_CROSS_PTR; destruct (rs0 (preg_of rhi)); contradiction. }
+                             eauto.  inv inj_res; try now auto.
+                             rewrite <- H in *. contradiction.
+                             rewrite <- H0 in *. contradiction.
+                             subst x.
+                             clear -NO_CROSS_PTR NO_CROSS_PTR0 inj_res EV0 EV.
+                             inv EV0; inv EV. clear H1 H0.
+                             assert (R: rs (preg_of rhi) = rs0 (preg_of rhi)).
+                             { inv H5; inv H7; auto.
+                               - rewrite H2 in H4.
+                                 exploit eq_distributes_longofwords.
+                                 eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
+                                 intros [? ?]; auto.
+                               - rewrite H2 in H4.
+                                 exploit eq_distributes_longofwords.
+                                 eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
+                                 intros [? ?]; auto.
+                               - rewrite H2 in H4.
+                                 exploit eq_distributes_longofwords.
+                                 eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
+                                 intros [? ?]; auto.
+                               - rewrite H2 in H4.
+                                 exploit eq_distributes_longofwords.
+                                 eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
+                                 intros [? ?]; auto.
+                               - rewrite <- H6 in NO_CROSS_PTR; now contradiction.
+                             }
+                             rewrite R in *. clear R.
+                             assert (R: rs (preg_of rlo) = rs0 (preg_of rlo)).
+                             { inv H5; inv H7; auto.
+                               - rewrite H2 in H4.
+                                 exploit eq_distributes_longofwords.
+                                 eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
+                                 intros [? ?]; auto.
+                               - rewrite H2 in H4.
+                                 exploit eq_distributes_longofwords.
+                                 eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
+                                 intros [? ?]; auto.
+                               - rewrite H2 in H4.
+                                 exploit eq_distributes_longofwords.
+                                 eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
+                                 intros [? ?]; auto.
+                               - rewrite H2 in H4.
+                                 exploit eq_distributes_longofwords.
+                                 eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
+                                 intros [? ?]; auto.
+                               - rewrite <- H6 in NO_CROSS_PTR; now contradiction.
+                             }
+                             rewrite R in *. clear R.
+                             eapply inject_distributes_longofwords in inj_res as [? ?]; eauto.
+                             { inv H; auto. rewrite <- H1 in NO_CROSS_PTR; contradiction. }
+                             eauto.  inv inj_res; try now auto.
+                             rewrite <- H in *. contradiction.
+                             rewrite <- H0 in *. contradiction.
+                         *** destruct i; try contradiction.
+                             subst.
+                             simpl in *.
+                             clear -NO_CROSS_PTR NO_CROSS_PTR0 inj_res EV0 EV.
+                             inv EV0; inv EV. clear H1 H0.
+                             assert (R: rs (preg_of rhi) = rs0 (preg_of rhi)).
+                             { inv H5; inv H7; auto.
+                               - rewrite H2 in H4.
+                                 exploit eq_distributes_longofwords.
+                                 eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
+                                 intros [? ?]; auto.
+                               - rewrite H2 in H4.
+                                 exploit eq_distributes_longofwords.
+                                 eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
+                                 intros [? ?]; auto.
+                               - rewrite H2 in H4.
+                                 exploit eq_distributes_longofwords.
+                                 eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
+                                 intros [? ?]; auto.
+                               - rewrite H2 in H4.
+                                 exploit eq_distributes_longofwords.
+                                 eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
+                                 intros [? ?]; auto.
+                               - rewrite <- H6 in NO_CROSS_PTR; now contradiction.
+                             }
+                             rewrite R in *. clear R.
+                             assert (R: rs (preg_of rlo) = rs0 (preg_of rlo)).
+                             { inv H5; inv H7; auto.
+                               - rewrite H2 in H4.
+                                 exploit eq_distributes_longofwords.
+                                 eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
+                                 intros [? ?]; auto.
+                               - rewrite H2 in H4.
+                                 exploit eq_distributes_longofwords.
+                                 eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
+                                 intros [? ?]; auto.
+                               - rewrite H2 in H4.
+                                 exploit eq_distributes_longofwords.
+                                 eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
+                                 intros [? ?]; auto.
+                               - rewrite H2 in H4.
+                                 exploit eq_distributes_longofwords.
+                                 eapply NO_CROSS_PTR. eapply NO_CROSS_PTR0. eauto.
+                                 intros [? ?]; auto.
+                               - rewrite <- H6 in NO_CROSS_PTR; now contradiction.
+                             }
+                             rewrite R in *. clear R.
+                             eapply inject_distributes_longofwords in inj_res as [? ?].
+                             { inv H0; auto. rewrite <- H1 in NO_CROSS_PTR; destruct (rs0 (preg_of rhi)); contradiction. }
+                             eauto.  inv inj_res; try now auto.
+                             rewrite <- H in *. contradiction.
+                             rewrite <- H0 in *. contradiction.
                    --- econstructor.
-             ++ simpl in *. admit.
-             (* ++ assumption. *)
+             ++ destruct A as [? [? ?]]; eauto.
 
     - (* Builtin *)
       exploit strong_equiv_state_internal_inv; eauto.
@@ -7353,68 +8441,68 @@ Section Theorems.
                                 (undef_regs (map preg_of (destroyed_by_builtin ef))
                                    (rs # X1 <- Vundef) # X31 <- Vundef)) PC =
                      Val.offset_ptr (rs PC) Ptrofs.one).
-             { clear -RES_NOT_PC.
-               destruct RES_NOT_PC as [reg ?]; subst res.
-               Simpl.
-               rewrite Asmgenproof0.set_res_other; eauto.
-               assert (H': Asmgenproof0.preg_notin PC (destroyed_by_builtin ef)).
-               { Local Transparent destroyed_by_builtin.
-                 unfold destroyed_by_builtin.
-                 destruct ef; simpl; auto.
-                 - destruct orb; simpl; intuition.
-                   destruct orb; simpl; intuition.
-                 - intuition.
-                 - induction clobbers.
-                   + simpl; auto.
-                   + simpl. destruct register_by_name; auto.
-                     simpl; intuition.
-                     destruct (destroyed_by_clobber clobbers); [| split]; now destruct m.
-                     Local Opaque destroyed_by_builtin. }
-               rewrite Asmgenproof0.undef_regs_other_2; eauto. }
-             assert (R': nextinstr (set_res res vres'
-                                     (undef_regs (map preg_of (destroyed_by_builtin ef))
-                                        (rs3 # X1 <- Vundef) # X31 <- Vundef)) PC =
-                          Val.offset_ptr (rs3 PC) Ptrofs.one).
-             { clear -RES_NOT_PC.
-               destruct RES_NOT_PC as [reg ?]; subst res.
-               Simpl.
-               rewrite Asmgenproof0.set_res_other; eauto.
-               assert (H': Asmgenproof0.preg_notin PC (destroyed_by_builtin ef)).
-               { Local Transparent destroyed_by_builtin.
-                 unfold destroyed_by_builtin.
-                 destruct ef; simpl; auto.
-                 - destruct orb; simpl; intuition.
-                   destruct orb; simpl; intuition.
-                 - intuition.
-                 - induction clobbers.
-                   + simpl; auto.
-                   + simpl. destruct register_by_name; auto.
-                     simpl; intuition.
-                     destruct (destroyed_by_clobber clobbers); [| split]; now destruct m.
-                     Local Opaque destroyed_by_builtin. }
-               rewrite Asmgenproof0.undef_regs_other_2; eauto. }
-             assert (R0: nextinstr (set_res res0 vres0
-                                     (undef_regs (map preg_of (destroyed_by_builtin ef0))
-                                        (rs2 # X1 <- Vundef) # X31 <- Vundef)) PC =
-                          Val.offset_ptr (rs2 PC) Ptrofs.one).
-             { clear -RES_NOT_PC0.
-               destruct RES_NOT_PC0 as [reg ?]; subst res0.
-               Simpl.
-               rewrite Asmgenproof0.set_res_other; eauto.
-               assert (H': Asmgenproof0.preg_notin PC (destroyed_by_builtin ef0)).
-               { Local Transparent destroyed_by_builtin.
-                 unfold destroyed_by_builtin.
-                 destruct ef0; simpl; auto.
-                 - destruct orb; simpl; intuition.
-                   destruct orb; simpl; intuition.
-                 - intuition.
-                 - induction clobbers.
-                   + simpl; auto.
-                   + simpl. destruct register_by_name; auto.
-                     simpl; intuition.
-                     destruct (destroyed_by_clobber clobbers); [| split]; now destruct m.
-                     Local Opaque destroyed_by_builtin. }
-               rewrite Asmgenproof0.undef_regs_other_2; eauto. }
+        { clear -RES_NOT_PC.
+          destruct RES_NOT_PC as [reg ?]; subst res.
+          Simpl.
+          rewrite Asmgenproof0.set_res_other; eauto.
+          assert (H': Asmgenproof0.preg_notin PC (destroyed_by_builtin ef)).
+          { Local Transparent destroyed_by_builtin.
+            unfold destroyed_by_builtin.
+            destruct ef; simpl; auto.
+            - destruct orb; simpl; intuition.
+              destruct orb; simpl; intuition.
+            - intuition.
+            - induction clobbers.
+              + simpl; auto.
+              + simpl. destruct register_by_name; auto.
+                simpl; intuition.
+                destruct (destroyed_by_clobber clobbers); [| split]; now destruct m.
+                Local Opaque destroyed_by_builtin. }
+          rewrite Asmgenproof0.undef_regs_other_2; eauto. }
+        assert (R': nextinstr (set_res res vres'
+                                 (undef_regs (map preg_of (destroyed_by_builtin ef))
+                                    (rs3 # X1 <- Vundef) # X31 <- Vundef)) PC =
+                      Val.offset_ptr (rs3 PC) Ptrofs.one).
+        { clear -RES_NOT_PC.
+          destruct RES_NOT_PC as [reg ?]; subst res.
+          Simpl.
+          rewrite Asmgenproof0.set_res_other; eauto.
+          assert (H': Asmgenproof0.preg_notin PC (destroyed_by_builtin ef)).
+          { Local Transparent destroyed_by_builtin.
+            unfold destroyed_by_builtin.
+            destruct ef; simpl; auto.
+            - destruct orb; simpl; intuition.
+              destruct orb; simpl; intuition.
+            - intuition.
+            - induction clobbers.
+              + simpl; auto.
+              + simpl. destruct register_by_name; auto.
+                simpl; intuition.
+                destruct (destroyed_by_clobber clobbers); [| split]; now destruct m.
+                Local Opaque destroyed_by_builtin. }
+          rewrite Asmgenproof0.undef_regs_other_2; eauto. }
+        assert (R0: nextinstr (set_res res0 vres0
+                                 (undef_regs (map preg_of (destroyed_by_builtin ef0))
+                                    (rs2 # X1 <- Vundef) # X31 <- Vundef)) PC =
+                      Val.offset_ptr (rs2 PC) Ptrofs.one).
+        { clear -RES_NOT_PC0.
+          destruct RES_NOT_PC0 as [reg ?]; subst res0.
+          Simpl.
+          rewrite Asmgenproof0.set_res_other; eauto.
+          assert (H': Asmgenproof0.preg_notin PC (destroyed_by_builtin ef0)).
+          { Local Transparent destroyed_by_builtin.
+            unfold destroyed_by_builtin.
+            destruct ef0; simpl; auto.
+            - destruct orb; simpl; intuition.
+              destruct orb; simpl; intuition.
+            - intuition.
+            - induction clobbers.
+              + simpl; auto.
+              + simpl. destruct register_by_name; auto.
+                simpl; intuition.
+                destruct (destroyed_by_clobber clobbers); [| split]; now destruct m.
+                Local Opaque destroyed_by_builtin. }
+          rewrite Asmgenproof0.undef_regs_other_2; eauto. }
         left; split.
         * inv strong_s1_s3; econstructor; eauto.
           -- econstructor; eauto. rewrite R. inv COMP1; eauto.
@@ -7476,46 +8564,46 @@ Section Theorems.
                                 (undef_regs (map preg_of (destroyed_by_builtin ef))
                                    (rs # X1 <- Vundef) # X31 <- Vundef)) PC =
                      Val.offset_ptr (rs PC) Ptrofs.one).
-             { clear -RES_NOT_PC.
-               destruct RES_NOT_PC as [reg ?]; subst res.
-               Simpl.
-               rewrite Asmgenproof0.set_res_other; eauto.
-               assert (H': Asmgenproof0.preg_notin PC (destroyed_by_builtin ef)).
-               { Local Transparent destroyed_by_builtin.
-                 unfold destroyed_by_builtin.
-                 destruct ef; simpl; auto.
-                 - destruct orb; simpl; intuition.
-                   destruct orb; simpl; intuition.
-                 - intuition.
-                 - induction clobbers.
-                   + simpl; auto.
-                   + simpl. destruct register_by_name; auto.
-                     simpl; intuition.
-                     destruct (destroyed_by_clobber clobbers); [| split]; now destruct m.
-                     Local Opaque destroyed_by_builtin. }
-               rewrite Asmgenproof0.undef_regs_other_2; eauto. }
-             assert (R': nextinstr (set_res res vres'
-                                     (undef_regs (map preg_of (destroyed_by_builtin ef))
-                                        (rs3 # X1 <- Vundef) # X31 <- Vundef)) PC =
-                          Val.offset_ptr (rs3 PC) Ptrofs.one).
-             { clear -RES_NOT_PC.
-               destruct RES_NOT_PC as [reg ?]; subst res.
-               Simpl.
-               rewrite Asmgenproof0.set_res_other; eauto.
-               assert (H': Asmgenproof0.preg_notin PC (destroyed_by_builtin ef)).
-               { Local Transparent destroyed_by_builtin.
-                 unfold destroyed_by_builtin.
-                 destruct ef; simpl; auto.
-                 - destruct orb; simpl; intuition.
-                   destruct orb; simpl; intuition.
-                 - intuition.
-                 - induction clobbers.
-                   + simpl; auto.
-                   + simpl. destruct register_by_name; auto.
-                     simpl; intuition.
-                     destruct (destroyed_by_clobber clobbers); [| split]; now destruct m.
-                     Local Opaque destroyed_by_builtin. }
-               rewrite Asmgenproof0.undef_regs_other_2; eauto. }
+        { clear -RES_NOT_PC.
+          destruct RES_NOT_PC as [reg ?]; subst res.
+          Simpl.
+          rewrite Asmgenproof0.set_res_other; eauto.
+          assert (H': Asmgenproof0.preg_notin PC (destroyed_by_builtin ef)).
+          { Local Transparent destroyed_by_builtin.
+            unfold destroyed_by_builtin.
+            destruct ef; simpl; auto.
+            - destruct orb; simpl; intuition.
+              destruct orb; simpl; intuition.
+            - intuition.
+            - induction clobbers.
+              + simpl; auto.
+              + simpl. destruct register_by_name; auto.
+                simpl; intuition.
+                destruct (destroyed_by_clobber clobbers); [| split]; now destruct m.
+                Local Opaque destroyed_by_builtin. }
+          rewrite Asmgenproof0.undef_regs_other_2; eauto. }
+        assert (R': nextinstr (set_res res vres'
+                                 (undef_regs (map preg_of (destroyed_by_builtin ef))
+                                    (rs3 # X1 <- Vundef) # X31 <- Vundef)) PC =
+                      Val.offset_ptr (rs3 PC) Ptrofs.one).
+        { clear -RES_NOT_PC.
+          destruct RES_NOT_PC as [reg ?]; subst res.
+          Simpl.
+          rewrite Asmgenproof0.set_res_other; eauto.
+          assert (H': Asmgenproof0.preg_notin PC (destroyed_by_builtin ef)).
+          { Local Transparent destroyed_by_builtin.
+            unfold destroyed_by_builtin.
+            destruct ef; simpl; auto.
+            - destruct orb; simpl; intuition.
+              destruct orb; simpl; intuition.
+            - intuition.
+            - induction clobbers.
+              + simpl; auto.
+              + simpl. destruct register_by_name; auto.
+                simpl; intuition.
+                destruct (destroyed_by_clobber clobbers); [| split]; now destruct m.
+                Local Opaque destroyed_by_builtin. }
+          rewrite Asmgenproof0.undef_regs_other_2; eauto. }
         left; split.
         * inv strong_s1_s3; econstructor; eauto.
           -- econstructor; eauto. rewrite R. inv COMP1; eauto.
@@ -7589,27 +8677,27 @@ Section Theorems.
              simpl in *; congruence.
           -- eapply regset_rel_return_from_external; eauto.
         * assert (R: nextinstr (set_res res0 vres
-                                   (undef_regs (map preg_of (destroyed_by_builtin ef0))
-                                      (rs0 # X1 <- Vundef) # X31 <- Vundef)) PC =
-                        Val.offset_ptr (rs0 PC) Ptrofs.one).
-             { clear -RES_NOT_PC.
-               destruct RES_NOT_PC as [reg ?]; subst res0.
-               Simpl.
-               rewrite Asmgenproof0.set_res_other; eauto.
-               assert (H': Asmgenproof0.preg_notin PC (destroyed_by_builtin ef0)).
-               { Local Transparent destroyed_by_builtin.
-                 unfold destroyed_by_builtin.
-                 destruct ef0; simpl; auto.
-                 - destruct orb; simpl; intuition.
-                   destruct orb; simpl; intuition.
-                 - intuition.
-                 - induction clobbers.
-                   + simpl; auto.
-                   + simpl. destruct register_by_name; auto.
-                     simpl; intuition.
-                     destruct (destroyed_by_clobber clobbers); [| split]; now destruct m.
-                     Local Opaque destroyed_by_builtin. }
-               rewrite Asmgenproof0.undef_regs_other_2; eauto. }
+                                  (undef_regs (map preg_of (destroyed_by_builtin ef0))
+                                     (rs0 # X1 <- Vundef) # X31 <- Vundef)) PC =
+                       Val.offset_ptr (rs0 PC) Ptrofs.one).
+          { clear -RES_NOT_PC.
+            destruct RES_NOT_PC as [reg ?]; subst res0.
+            Simpl.
+            rewrite Asmgenproof0.set_res_other; eauto.
+            assert (H': Asmgenproof0.preg_notin PC (destroyed_by_builtin ef0)).
+            { Local Transparent destroyed_by_builtin.
+              unfold destroyed_by_builtin.
+              destruct ef0; simpl; auto.
+              - destruct orb; simpl; intuition.
+                destruct orb; simpl; intuition.
+              - intuition.
+              - induction clobbers.
+                + simpl; auto.
+                + simpl. destruct register_by_name; auto.
+                  simpl; intuition.
+                  destruct (destroyed_by_clobber clobbers); [| split]; now destruct m.
+                  Local Opaque destroyed_by_builtin. }
+            rewrite Asmgenproof0.undef_regs_other_2; eauto. }
           inv weak_s2_s3; inv A; econstructor; eauto.
           -- econstructor; eauto. rewrite R.
              inv COMP1; eauto.
@@ -7696,7 +8784,7 @@ Section Theorems.
              inv COMP2; eauto.
              rewrite eq_pc' in *; simpl in *; unfold Genv.find_comp_of_block in *; rewrite find_funct in *.
              simpl in *; congruence.
-  Admitted.
+  Qed.
 
 End Theorems.
 
@@ -7773,11 +8861,11 @@ Section Simulation.
   Hypothesis same_low_half2: low_half ge2 = low_half ge3.
 
   Hypothesis found_in_W3_kept1: forall id v,
-    (s (comp_of v) = Left -> In (id, Gvar v) (prog_defs W3) ->
-                 kept_prog s W1 Left id = true).
+      (s (comp_of v) = Left -> In (id, Gvar v) (prog_defs W3) ->
+       kept_prog s W1 Left id = true).
   Hypothesis found_in_W3_kept2: forall id v,
-    (s (comp_of v) = Right -> In (id, Gvar v) (prog_defs W3) ->
-                 kept_prog s W2 Right id = true).
+      (s (comp_of v) = Right -> In (id, Gvar v) (prog_defs W3) ->
+       kept_prog s W2 Right id = true).
 
   Lemma kept_prog_kept_genv: forall s W δ id,
       kept_prog s W δ id = true -> kept_genv s (Genv.globalenv W) δ id = true.
@@ -7791,48 +8879,67 @@ Section Simulation.
   Hypothesis main_not_top: Genv.find_comp_in_genv ge1 (Genv.symbol_address ge1 (prog_main W1) Ptrofs.zero) <> top.
   Hypothesis main_not_bottom: Genv.find_comp_in_genv ge1 (Genv.symbol_address ge1 (prog_main W1) Ptrofs.zero) <> bottom.
 
-Lemma bytes_of_init_inject:
-  forall m tm,
-    Genv.init_mem W1 = Some m ->
-    Genv.init_mem W3 = Some tm ->
-  forall il,
-    (forall id ofs, In (Init_addrof id ofs) il -> False) ->
-  (* (forall id, ref_init il id -> kept id) -> *)
-  list_forall2 (memval_inject (init_meminj s Left W1 W3)) (Genv.bytes_of_init_data_list ge1 il)
-    (Genv.bytes_of_init_data_list ge3 il).
-Proof.
-  induction il as [ | i1 il]; simpl; intros.
-- constructor.
-- apply list_forall2_app.
-+ destruct i1; simpl; try (apply inj_bytes_inject).
-  induction (Z.to_nat z); simpl; constructor. constructor. auto.
-  exploit H1; eauto. contradiction.
-+ apply IHil. eauto.
-Qed.
+  Lemma bytes_of_init_inject:
+    forall m tm,
+      Genv.init_mem W1 = Some m ->
+      Genv.init_mem W3 = Some tm ->
+      forall il,
+        (forall id ofs, In (Init_addrof id ofs) il -> False) ->
+        (* (forall id, ref_init il id -> kept id) -> *)
+        list_forall2 (memval_inject (init_meminj s Left W1 W3)) (Genv.bytes_of_init_data_list ge1 il)
+          (Genv.bytes_of_init_data_list ge3 il).
+  Proof.
+    induction il as [ | i1 il]; simpl; intros.
+    - constructor.
+    - apply list_forall2_app.
+      + destruct i1; simpl; try (apply inj_bytes_inject).
+        induction (Z.to_nat z); simpl; constructor. constructor. auto.
+        exploit H1; eauto. contradiction.
+      + apply IHil. eauto.
+  Qed.
 
-Lemma Mem_getN_forall2:
-  forall (P: memval -> memval -> Prop) c1 c2 i n p,
-  list_forall2 P (Mem.getN n p c1) (Mem.getN n p c2) ->
-  p <= i -> i < p + Z.of_nat n ->
-  P (ZMap.get i c1) (ZMap.get i c2).
-Proof.
-  induction n; simpl Mem.getN; intros.
-- simpl in H1. extlia.
-- inv H. rewrite Nat2Z.inj_succ in H1. destruct (zeq i p).
-+ congruence.
-+ apply IHn with (p + 1); auto. lia. lia.
-Qed.
+  Lemma bytes_of_init_inject':
+    forall m tm,
+      Genv.init_mem W2 = Some m ->
+      Genv.init_mem W3 = Some tm ->
+      forall il,
+        (forall id ofs, In (Init_addrof id ofs) il -> False) ->
+        (* (forall id, ref_init il id -> kept id) -> *)
+        list_forall2 (memval_inject (init_meminj s Right W2 W3)) (Genv.bytes_of_init_data_list ge2 il)
+          (Genv.bytes_of_init_data_list ge3 il).
+  Proof.
+    induction il as [ | i1 il]; simpl; intros.
+    - constructor.
+    - apply list_forall2_app.
+      + destruct i1; simpl; try (apply inj_bytes_inject).
+        induction (Z.to_nat z); simpl; constructor. constructor. auto.
+        exploit H1; eauto. contradiction.
+      + apply IHil. eauto.
+  Qed.
 
-Hypothesis no_init_ptr1: forall b v, Genv.find_def ge1 b = Some (Gvar v) ->
-  forall (id : ident) (ofs0 : ptrofs), In (Init_addrof id ofs0) (gvar_init v) -> False.
-Hypothesis no_init_ptr2: forall b v, Genv.find_def ge2 b = Some (Gvar v) ->
-  forall (id : ident) (ofs0 : ptrofs), In (Init_addrof id ofs0) (gvar_init v) -> False.
-Hypothesis no_init_ptr3: forall b v, Genv.find_def ge3 b = Some (Gvar v) ->
-  forall (id : ident) (ofs0 : ptrofs), In (Init_addrof id ofs0) (gvar_init v) -> False.
+  Lemma Mem_getN_forall2:
+    forall (P: memval -> memval -> Prop) c1 c2 i n p,
+      list_forall2 P (Mem.getN n p c1) (Mem.getN n p c2) ->
+      p <= i -> i < p + Z.of_nat n ->
+      P (ZMap.get i c1) (ZMap.get i c2).
+  Proof.
+    induction n; simpl Mem.getN; intros.
+    - simpl in H1. extlia.
+    - inv H. rewrite Nat2Z.inj_succ in H1. destruct (zeq i p).
+      + congruence.
+      + apply IHn with (p + 1); auto. lia. lia.
+  Qed.
+
+  Hypothesis no_init_ptr1: forall b v, Genv.find_def ge1 b = Some (Gvar v) ->
+                                       forall (id : ident) (ofs0 : ptrofs), In (Init_addrof id ofs0) (gvar_init v) -> False.
+  Hypothesis no_init_ptr2: forall b v, Genv.find_def ge2 b = Some (Gvar v) ->
+                                       forall (id : ident) (ofs0 : ptrofs), In (Init_addrof id ofs0) (gvar_init v) -> False.
+  Hypothesis no_init_ptr3: forall b v, Genv.find_def ge3 b = Some (Gvar v) ->
+                                       forall (id : ident) (ofs0 : ptrofs), In (Init_addrof id ofs0) (gvar_init v) -> False.
 
   Lemma init_mem_correct1: forall m1 m3, Genv.init_mem W1 = Some m1 ->
-                               Genv.init_mem W3 = Some m3 ->
-                               mem_rel s ge1 ge3 (init_meminj s Left W1 W3) Left m1 m3.
+                                         Genv.init_mem W3 = Some m3 ->
+                                         mem_rel s ge1 ge3 (init_meminj s Left W1 W3) Left m1 m3.
   Proof.
     intros. constructor.
     - intros ?. simpl. unfold init_meminj.
@@ -8040,18 +9147,226 @@ Hypothesis no_init_ptr3: forall b v, Genv.find_def ge3 b = Some (Gvar v) ->
     - intros. exploit (Genv.init_mem_characterization_gen W1); eauto.
     - intros. exploit (Genv.init_mem_characterization_gen W3); eauto.
     - intros. exploit (Genv.init_mem_find_def W1); eauto.
-Qed.
+  Qed.
 
-  Hypothesis init_mem_correct2: forall m2 m3, Genv.init_mem W2 = Some m2 ->
-                               Genv.init_mem W3 = Some m3 ->
-                               mem_rel s ge2 ge3 (init_meminj s Right W2 W3) Right m2 m3.
+  Lemma init_mem_correct2: forall m2 m3, Genv.init_mem W2 = Some m2 ->
+                                    Genv.init_mem W3 = Some m3 ->
+                                    mem_rel s ge2 ge3 (init_meminj s Right W2 W3) Right m2 m3.
+  Proof.
+    intros. constructor.
+    - intros ?. simpl. unfold init_meminj.
+      split.
+      + destruct Genv.invert_symbol eqn:IS; try congruence.
+        destruct kept_genv eqn:EQ; try congruence.
+        apply Genv.invert_find_symbol in IS.
+        unfold kept_genv in EQ. rewrite IS in EQ.
+        fold (Genv.find_def ge2 b) in EQ. destruct Genv.find_def as [[]|] eqn:FD; try now auto.
+        * intros; now right; eauto.
+        * intros ?. left.
+          exploit (Genv.init_mem_find_def W2); eauto. intros ->.
+          simpl in *. split.
+          now destruct side_eq.
+          eapply Genv.find_symbol_not_fresh; eauto.
+      + intros [[X Y] | [fd X]].
+        * exploit (Genv.find_def_init_mem W2); eauto.
+          intros [g [? ?]].
+          exploit Genv.find_def_find_symbol_inversion; eauto.
+          intros [id FS]. eapply Genv.find_invert_symbol in FS as IS.
+          rewrite IS.
+          assert (R: kept_genv s ge2 Right id = true).
+          { unfold kept_genv. rewrite FS. fold (Genv.find_def ge2 b).
+            rewrite H1. destruct g; auto. simpl in *; rewrite H2.
+            now destruct s. }
+          rewrite R.
+          exploit (symbols_inject2 s Right W2); eauto using init_meminj_preserves_globals.
+          intros [? [-> ?]]. congruence.
+        *
+          exploit Genv.find_def_find_symbol_inversion; eauto.
+          intros [id FS]. eapply Genv.find_invert_symbol in FS as IS.
+          rewrite IS.
+          assert (R: kept_genv s ge2 Right id = true).
+          { unfold kept_genv. rewrite FS. fold (Genv.find_def ge2 b).
+            rewrite X. auto. }
+          rewrite R.
+          exploit (symbols_inject2 s Right W2); eauto using init_meminj_preserves_globals.
+          intros [? [-> ?]]. congruence.
+
+    - constructor.
+      + { constructor; intros.
+          - exploit init_meminj_invert; eauto.
+            intros [? [? [? ?]]]. subst.
+            eapply Genv.find_symbol_find_def_inversion in H4 as G1.
+            destruct G1 as [gd G1].
+            eapply Genv.find_symbol_find_def_inversion in H5 as G2.
+            destruct G2 as [gd' G2].
+            exploit (Genv.init_mem_characterization_gen W2); eauto.
+            exploit (Genv.init_mem_characterization_gen W3); eauto.
+            assert (match_globdef gd gd') as G.
+            { exploit defs_inject; eauto.
+              eapply init_meminj_preserves_globals; eauto.
+              intros [? [? [? [? ?]]]]. congruence. }
+            inv G.
+            + intros. exploit H7; eauto. contradiction.
+            + intros (P2 & Q2 & R2 & S2) (P1 & Q1 & R1 & S1).
+              apply Q1 in H2. destruct H2. subst.
+              apply Mem.perm_cur. eapply Mem.perm_implies; eauto.
+              inv H3.
+              apply P2. simpl in *. lia.
+          - exploit init_meminj_invert; eauto. intros (A & id & B & C).
+            subst delta.
+            (* destruct cp as [cp|]; simpl in *; trivial. *)
+            destruct (Genv.find_symbol_find_def_inversion _ _ B) as [g B'].
+            assert ((prog_defmap W2) ! id = Some g) as DEF1.
+            { apply Genv.find_def_symbol. eauto. }
+            destruct (Genv.find_symbol_find_def_inversion _ _ C) as [g' C'].
+            assert ((prog_defmap W3) ! id = Some g') as DEF2.
+            { apply Genv.find_def_symbol. eauto. }
+
+            destruct (kept_prog s W2 Right id) eqn:G; try congruence.
+            + pose proof (match_prog_def _ _ _ _ match_W2_W3 id G) as DEF2'.
+              rewrite DEF1, DEF2 in DEF2'.
+              injection DEF2' as ->.
+              simpl in *.
+              rewrite (Genv.init_mem_find_def _ _ H B') in *.
+              now rewrite (Genv.init_mem_find_def _ _ H0 C') in *.
+            + pose proof (match_prog_notdef _ _ _ _ match_W2_W3 id G) as DEF2'.
+              rewrite DEF1, DEF2 in DEF2'.
+              inv DEF2'. inv H6. inv H4.
+              (* injection DEF2' as ->. *)
+              simpl in *.
+              rewrite (Genv.init_mem_find_def _ _ H B') in *.
+              now rewrite (Genv.init_mem_find_def _ _ H0 C') in *.
+              simpl in *.
+              rewrite (Genv.init_mem_find_def _ _ H B') in *.
+              now rewrite (Genv.init_mem_find_def _ _ H0 C') in *.
+              inv H4.
+              simpl in *.
+              rewrite (Genv.init_mem_find_def _ _ H B') in *.
+              now rewrite (Genv.init_mem_find_def _ _ H0 C') in *.
+          - exploit init_meminj_invert; eauto. intros (A & id & B & C).
+            subst delta. apply Z.divide_0_r.
+          - exploit init_meminj_invert; eauto.
+            intros [? [? [? ?]]]. subst.
+            eapply Genv.find_symbol_find_def_inversion in H4 as G1.
+            destruct G1 as [gd G1].
+            eapply Genv.find_symbol_find_def_inversion in H5 as G2.
+            destruct G2 as [gd' G2].
+            exploit (Genv.init_mem_characterization_gen W2); eauto.
+            exploit (Genv.init_mem_characterization_gen W3); eauto.
+            assert (match_globdef gd gd') as G.
+            { exploit defs_inject; eauto.
+              eapply init_meminj_preserves_globals; eauto.
+              intros [? [? [? [? ?]]]]. congruence. }
+            inv G.
+            + intros. exploit H7; eauto. contradiction.
+            + intros (P2 & Q2 & R2 & S2) (P1 & Q1 & R1 & S1).
+              apply Q1 in H2. destruct H2.
+              assert (NO: gvar_volatile v = false).
+              { unfold Genv.perm_globvar in H6. destruct (gvar_volatile v); auto. inv H6. }
+              assert (NO': gvar_volatile v' = false).
+              { inv H3. simpl in *. eauto. }
+              (* inv H3. simpl in *. *)
+              Local Transparent Mem.loadbytes.
+              generalize (S1 NO). unfold Mem.loadbytes. destruct Mem.range_perm_dec; destruct Mem.can_access_block_dec; intros E1; inv E1.
+              * generalize (S2 NO'). unfold Mem.loadbytes. destruct Mem.range_perm_dec; destruct Mem.can_access_block_dec; intros E2; inv E2.
+                rewrite Z.add_0_r.
+                apply Mem_getN_forall2 with (p := 0) (n := Z.to_nat (init_data_list_size (gvar_init v'))).
+                assert ((init_data_list_size (gvar_init v')) = (init_data_list_size (gvar_init v))) as EQ.
+                { inv H3. simpl in *. eauto. }
+                rewrite H9. rewrite EQ. rewrite H8.
+                inv H3; simpl in *; subst.
+                eapply bytes_of_init_inject'. eauto. eauto. eauto.
+                lia.
+                rewrite Z2Nat.id by (apply Z.ge_le; apply init_data_list_size_pos). inv H3; simpl in *; lia.
+                destruct (Z_le_dec); inv H4.
+                rewrite Z.add_0_r.
+                apply Mem_getN_forall2 with (p := 0) (n := Z.to_nat (init_data_list_size (gvar_init v))).
+                simpl in *. inv H9. inv H3; simpl in *.
+                rewrite H8, H7.
+                eapply bytes_of_init_inject'. eauto. eauto. eauto.
+                lia. lia. auto. inv H9.
+              * destruct (Z_le_dec); inv H8.
+                generalize (S2 NO'). unfold Mem.loadbytes. destruct Mem.range_perm_dec; destruct Mem.can_access_block_dec; intros E2; inv E2.
+                rewrite Z.add_0_r.
+                apply Mem_getN_forall2 with (p := 0) (n := Z.to_nat (init_data_list_size (gvar_init v))).
+                assert ((init_data_list_size (gvar_init v')) = (init_data_list_size (gvar_init v))) as EQ.
+                { inv H3. simpl in *. eauto. }
+                rewrite H9.
+                inv H3; simpl in *; subst.
+                rewrite H8.
+                eapply bytes_of_init_inject'. eauto. eauto. eauto.
+                lia. lia. lia. }
+      + intros.
+        destruct (init_meminj s Right W2 W3 b) as [[b' delta]|] eqn:INJ; auto.
+        elim H1. exploit init_meminj_invert; eauto. intros (A & id & B & C).
+        eapply Genv.find_symbol_not_fresh; eauto.
+      + intros. exploit init_meminj_invert; eauto. intros (A & id & B & C).
+        eapply Genv.find_symbol_not_fresh; eauto.
+      + red; intros.
+        exploit init_meminj_invert. eexact H2. intros (A1 & id1 & B1 & C1).
+        exploit init_meminj_invert. eexact H3. intros (A2 & id2 & B2 & C2).
+        destruct (ident_eq id1 id2). congruence. left; eapply Genv.global_addresses_distinct; eauto.
+      + intros. exploit init_meminj_invert; eauto. intros (A & id & B & C). subst delta.
+        split. lia. generalize (Ptrofs.unsigned_range_2 ofs). lia.
+      + intros. exploit init_meminj_invert; eauto.
+        intros [? [? [? ?]]]. subst.
+        eapply Genv.find_symbol_find_def_inversion in H4 as G1.
+        destruct G1 as [gd G1].
+        eapply Genv.find_symbol_find_def_inversion in H5 as G2.
+        destruct G2 as [gd' G2].
+        exploit (Genv.init_mem_characterization_gen W2); eauto.
+        exploit (Genv.init_mem_characterization_gen W3); eauto.
+        assert (match_globdef gd gd') as G.
+        { exploit defs_inject; eauto.
+          eapply init_meminj_preserves_globals; eauto.
+          intros [? [? [? [? ?]]]]. congruence. }
+        inv G.
+        * intros. exploit H6; eauto.
+        * intros (P2 & Q2 & R2 & S2) (P1 & Q1 & R1 & S1).
+          apply Q2 in H2. destruct H2. subst.
+          left. apply Mem.perm_cur. eapply Mem.perm_implies; eauto.
+          inv H3; simpl in *; subst.
+          apply P1. lia.
+    - intros ?. unfold init_meminj. destruct (Genv.invert_symbol); try discriminate.
+      destruct kept_genv; try discriminate. destruct Genv.find_symbol; try discriminate.
+      congruence.
+    - intros.
+      eapply Mem.perm_valid_block in H1 as ?.
+      exploit (Genv.find_def_init_mem W2); eauto.
+      intros [g [? ?]].
+      exploit (Genv.init_mem_characterization_gen W2); eauto.
+      intros X.
+      destruct g; try now exploit X; eauto.
+      rewrite <- H4.
+      eapply no_bottom2' in H3 as ?.
+      eapply no_top2' in H3 as ?. simpl.
+      destruct (comp_of v); eauto; try now contradiction.
+    - intros.
+      eapply Mem.perm_valid_block in H1 as ?.
+      exploit (Genv.find_def_init_mem W3); eauto.
+      intros [g [? ?]].
+      exploit (Genv.init_mem_characterization_gen W3); eauto.
+      intros X.
+      destruct g; try now exploit X; eauto.
+      rewrite <- H4.
+      eapply no_bottom3' in H3 as ?.
+      eapply no_top3' in H3 as ?. simpl.
+      destruct (comp_of v); eauto; try now contradiction.
+    - eapply Genv.init_mem_genv_next in H. simpl. rewrite H. now apply Ple_refl.
+    - eapply Genv.init_mem_genv_next in H0. simpl. rewrite H0. now apply Ple_refl.
+    - intros. eapply Genv.find_def_not_fresh; eauto.
+    - intros. eapply Genv.find_def_not_fresh; eauto.
+    - intros. exploit (Genv.init_mem_characterization_gen W2); eauto.
+    - intros. exploit (Genv.init_mem_characterization_gen W3); eauto.
+    - intros. exploit (Genv.init_mem_find_def W2); eauto.
+  Qed.
 
   Let single_L1 := sd_traces (semantics_determinate W1).
   Let single_L2 := sd_traces (semantics_determinate W2).
   Let single_L3 := sd_traces (semantics_determinate W3).
 
   Lemma rewr_cp_main: forall (ge: Genv.t fundef unit) id, Genv.find_comp_in_genv ge (Genv.symbol_address ge id Ptrofs.zero) =
-                          Genv.find_comp_of_ident ge id.
+                                                            Genv.find_comp_of_ident ge id.
   Proof.
     unfold Genv.find_comp_of_ident, Genv.symbol_address.
     intros. destruct Genv.find_symbol; auto.
@@ -8068,18 +9383,18 @@ Qed.
                                       (mem_of_state s1) (mem_of_state s2) (mem_of_state s3)
                                       (stack_of_state s1) (stack_of_state s2) (stack_of_state s3))
            (strong_equivalence1 := fun '(j__left, j__right) s1 s3 =>
-                                       meminj_preserves_globals s Left W1 W3 j__left /\
-                                         strong_equivalence s cp_main ge1 ge3 j__left Left s1 s3)
+                                     meminj_preserves_globals s Left W1 W3 j__left /\
+                                       strong_equivalence s cp_main ge1 ge3 j__left Left s1 s3)
            (strong_equivalence2 := fun '(j__left, j__right) s2 s3 =>
-                                       meminj_preserves_globals s Right W2 W3 j__right /\
-                                         strong_equivalence s cp_main ge2 ge3 j__right Right s2 s3)
+                                     meminj_preserves_globals s Right W2 W3 j__right /\
+                                       strong_equivalence s cp_main ge2 ge3 j__right Right s2 s3)
            (weak_equivalence1   := fun '(j__left, j__right) s1 s3 =>
-                                       meminj_preserves_globals s Left W1 W3 j__left /\
-                                         weak_equivalence   s ge1 ge3 j__left Left s1 s3)
+                                     meminj_preserves_globals s Left W1 W3 j__left /\
+                                       weak_equivalence   s ge1 ge3 j__left Left s1 s3)
            (weak_equivalence2   := fun '(j__left, j__right) s2 s3 =>
-                                       meminj_preserves_globals s Right W2 W3 j__right /\
-                                         weak_equivalence   s ge2 ge3 j__right Right s2 s3).
-           (* (order := fun _ _ => True). *)
+                                     meminj_preserves_globals s Right W2 W3 j__right /\
+                                       weak_equivalence   s ge2 ge3 j__right Right s2 s3).
+    (* (order := fun _ _ => True). *)
     - simpl. intros id. transitivity (Genv.public_symbol ge3 id).
       clear -match_W2_W3. exploit init_meminj_preserves_globals; eauto.
       intros ?.
@@ -8137,84 +9452,86 @@ Qed.
       + inv ini1; inv ini2. subst ge. subst ge0.
         set (cp := Genv.find_comp_in_genv ge1 (Genv.symbol_address ge1 (prog_main W1) Ptrofs.zero)) in *.
         destruct (s cp) eqn:ini_side.
-          -- eapply match_states_left; simpl; eauto.
-             ++ econstructor; eauto.
-             ++ split; eauto using init_meminj_preserves_globals.
-                rewrite <- !rewr_cp_main, same_cp_main2.
-                econstructor; eauto.
-                ** constructor. subst rs0. Simpl. eauto.
-                ** constructor. Simpl. eauto.
-                ** simpl. unfold cp_main. rewrite <- rewr_cp_main. auto.
-                ** { subst rs0. intros x.
-                     setoid_rewrite Pregmap.gsspec.
-                     destruct (Pregmap.elt_eq).
-                     { unfold Vnullptr. destruct Archi.ptr64; now constructor. }
-                     setoid_rewrite Pregmap.gsspec.
-                     destruct (Pregmap.elt_eq).
-                     { unfold Vnullptr. destruct Archi.ptr64; now constructor. }
-                     setoid_rewrite Pregmap.gsspec.
-                     destruct (Pregmap.elt_eq).
-                     { unfold Genv.symbol_address.
-                       destruct (Genv.find_symbol ge1 (prog_main W1)) eqn:?; try now constructor.
-                       exploit (symbols_inject2 s Left W1 W3 (init_meminj s Left W1 W3)); eauto.
-                       now eapply init_meminj_preserves_globals.
-                       clear -Heqo ini_side main_not_bottom.
-                       unfold kept_genv. rewrite Heqo.
-                       fold (Genv.find_def ge1 b). unfold cp in *.
-                       unfold Genv.symbol_address in *.
-                       rewrite Heqo in *. simpl in *. unfold Genv.find_comp_of_block in *.
-                       destruct Genv.find_def; try contradiction. destruct g; auto. simpl in *.
-                       rewrite ini_side. auto.
-                       erewrite (match_prog_main _ _ _ _ match_W1_W3); eauto.
-                       intros [? [-> ?]]. econstructor; eauto. }
-                     setoid_rewrite Pregmap.gi. now constructor. auto. }
-                   ** eapply init_mem_correct1; eauto.
-             ++ split; eauto using init_meminj_preserves_globals.
-                econstructor; eauto.
-                ** constructor. subst rs1. Simpl. eauto.
-                ** constructor. Simpl. eauto.
-                ** rewrite <- !rewr_cp_main, same_cp_main1. auto.
-                ** rewrite <- !rewr_cp_main, same_cp_main1. auto.
-                ** rewrite <- !rewr_cp_main, same_cp_main2. auto.
-                ** rewrite <- !rewr_cp_main, same_cp_main2. auto.
-          -- eapply match_states_right; simpl; eauto.
-             ++ econstructor; eauto.
-             ++ split; eauto using init_meminj_preserves_globals.
-                rewrite <- !rewr_cp_main, same_cp_main2.
-                econstructor; eauto.
-                ** constructor. subst rs1. Simpl. eauto. eauto.
-                ** constructor. Simpl. eauto.
-                ** eapply init_mem_correct1; eauto.
-             ++ split; eauto using init_meminj_preserves_globals.
-                rewrite <- !rewr_cp_main, same_cp_main1, same_cp_main2.
-                econstructor; eauto.
-                ** constructor. subst rs1. Simpl. eauto.
-                ** constructor. Simpl. eauto.
-                ** simpl. unfold cp_main. rewrite <- rewr_cp_main. auto.
-                ** { subst rs1. intros x.
-                     setoid_rewrite Pregmap.gsspec.
-                     destruct (Pregmap.elt_eq).
-                     { unfold Vnullptr. destruct Archi.ptr64; now constructor. }
-                     setoid_rewrite Pregmap.gsspec.
-                     destruct (Pregmap.elt_eq).
-                     { unfold Vnullptr. destruct Archi.ptr64; now constructor. }
-                     setoid_rewrite Pregmap.gsspec.
-                     destruct (Pregmap.elt_eq).
-                     { unfold Genv.symbol_address.
-                       destruct (Genv.find_symbol ge2 (prog_main W2)) eqn:?; try now constructor.
-                       exploit (symbols_inject2 s Right W2 W3 (init_meminj s Right W2 W3)); eauto.
-                       now eapply init_meminj_preserves_globals.
-                       clear -Heqo ini_side main_not_bottom same_cp_main1. subst cp.
-                       unfold kept_genv. rewrite Heqo.
-                       fold (Genv.find_def ge2 b).
-                       unfold Genv.symbol_address in *.
-                       rewrite Heqo in *. simpl in *. unfold Genv.find_comp_of_block in *.
-                       destruct Genv.find_def; try contradiction. destruct g; auto. simpl in *.
-                       rewrite same_cp_main1. rewrite ini_side. auto.
-                       congruence.
-                       erewrite (match_prog_main _ _ _ _ match_W2_W3); eauto.
-                       intros [? [-> ?]]. econstructor; eauto. }
-                     setoid_rewrite Pregmap.gi. now constructor. auto. }
+        -- eapply match_states_left; simpl; eauto.
+           ++ econstructor; eauto.
+           ++ split; eauto using init_meminj_preserves_globals.
+              rewrite <- !rewr_cp_main, same_cp_main2.
+              econstructor; eauto.
+              ** constructor. subst rs0. Simpl. eauto.
+              ** constructor. Simpl. eauto.
+              ** simpl. unfold cp_main. rewrite <- rewr_cp_main. auto.
+              ** { subst rs0. intros x.
+                   setoid_rewrite Pregmap.gsspec.
+                   destruct (Pregmap.elt_eq).
+                   { unfold Vnullptr. destruct Archi.ptr64; now constructor. }
+                   setoid_rewrite Pregmap.gsspec.
+                   destruct (Pregmap.elt_eq).
+                   { unfold Vnullptr. destruct Archi.ptr64; now constructor. }
+                   setoid_rewrite Pregmap.gsspec.
+                   destruct (Pregmap.elt_eq).
+                   { unfold Genv.symbol_address.
+                     destruct (Genv.find_symbol ge1 (prog_main W1)) eqn:?; try now constructor.
+                     exploit (symbols_inject2 s Left W1 W3 (init_meminj s Left W1 W3)); eauto.
+                     now eapply init_meminj_preserves_globals.
+                     clear -Heqo ini_side main_not_bottom.
+                     unfold kept_genv. rewrite Heqo.
+                     fold (Genv.find_def ge1 b). unfold cp in *.
+                     unfold Genv.symbol_address in *.
+                     rewrite Heqo in *. simpl in *. unfold Genv.find_comp_of_block in *.
+                     destruct Genv.find_def; try contradiction. destruct g; auto. simpl in *.
+                     rewrite ini_side. auto.
+                     erewrite (match_prog_main _ _ _ _ match_W1_W3); eauto.
+                     intros [? [-> ?]]. econstructor; eauto. }
+                   setoid_rewrite Pregmap.gi. now constructor. auto. }
+              ** eapply init_mem_correct1; eauto.
+           ++ split; eauto using init_meminj_preserves_globals.
+              econstructor; eauto.
+              ** constructor. subst rs1. Simpl. eauto.
+              ** constructor. Simpl. eauto.
+              ** rewrite <- !rewr_cp_main, same_cp_main1. auto.
+              ** rewrite <- !rewr_cp_main, same_cp_main1. auto.
+              ** rewrite <- !rewr_cp_main, same_cp_main2. auto.
+              ** rewrite <- !rewr_cp_main, same_cp_main2. auto.
+              ** eapply init_mem_correct2; eauto.
+        -- eapply match_states_right; simpl; eauto.
+           ++ econstructor; eauto.
+           ++ split; eauto using init_meminj_preserves_globals.
+              rewrite <- !rewr_cp_main, same_cp_main2.
+              econstructor; eauto.
+              ** constructor. subst rs1. Simpl. eauto. eauto.
+              ** constructor. Simpl. eauto.
+              ** eapply init_mem_correct1; eauto.
+           ++ split; eauto using init_meminj_preserves_globals.
+              rewrite <- !rewr_cp_main, same_cp_main1, same_cp_main2.
+              econstructor; eauto.
+              ** constructor. subst rs1. Simpl. eauto.
+              ** constructor. Simpl. eauto.
+              ** simpl. unfold cp_main. rewrite <- rewr_cp_main. auto.
+              ** { subst rs1. intros x.
+                   setoid_rewrite Pregmap.gsspec.
+                   destruct (Pregmap.elt_eq).
+                   { unfold Vnullptr. destruct Archi.ptr64; now constructor. }
+                   setoid_rewrite Pregmap.gsspec.
+                   destruct (Pregmap.elt_eq).
+                   { unfold Vnullptr. destruct Archi.ptr64; now constructor. }
+                   setoid_rewrite Pregmap.gsspec.
+                   destruct (Pregmap.elt_eq).
+                   { unfold Genv.symbol_address.
+                     destruct (Genv.find_symbol ge2 (prog_main W2)) eqn:?; try now constructor.
+                     exploit (symbols_inject2 s Right W2 W3 (init_meminj s Right W2 W3)); eauto.
+                     now eapply init_meminj_preserves_globals.
+                     clear -Heqo ini_side main_not_bottom same_cp_main1. subst cp.
+                     unfold kept_genv. rewrite Heqo.
+                     fold (Genv.find_def ge2 b).
+                     unfold Genv.symbol_address in *.
+                     rewrite Heqo in *. simpl in *. unfold Genv.find_comp_of_block in *.
+                     destruct Genv.find_def; try contradiction. destruct g; auto. simpl in *.
+                     rewrite same_cp_main1. rewrite ini_side. auto.
+                     congruence.
+                     erewrite (match_prog_main _ _ _ _ match_W2_W3); eauto.
+                     intros [? [-> ?]]. econstructor; eauto. }
+                   setoid_rewrite Pregmap.gi. now constructor. auto. }
+              ** eapply init_mem_correct2; eauto.
     - intros s1 s1' H s2 s3 (j__left & j__right) (? & ?) (? & ?) ?.
       exploit (step_E0_strong s W1 W2 W3 Left); eauto.
       intros id.
@@ -8258,9 +9575,6 @@ Qed.
       exploit transform_find_symbol_2; eauto. intros [? ?]; auto. congruence.
       auto.
       simpl. intros. eapply Genv.find_symbol_find_def_inversion; eauto.
-      (* unfold comp_of_main. rewrite <- rewr_cp_main. *)
-      (* (* unfold comp_of_main. rewrite <- 2!rewr_cp_main. *) *)
-      (* clear -same_cp_main2 same_cp_main1. congruence. *)
       unfold comp_of_main. eapply stack_rel_comm; eauto.
       rewrite <- rewr_cp_main, same_cp_main1, rewr_cp_main. auto.
       unfold comp_of_main. rewrite <- rewr_cp_main, same_cp_main1, rewr_cp_main. auto.
@@ -8305,10 +9619,6 @@ Qed.
         exploit transform_find_symbol_2; eauto. intros [? ?]; auto. congruence.
         auto.
         simpl. intros. eapply Genv.find_symbol_find_def_inversion; eauto.
-        unfold cp_main. clear -same_cp_main2 same_cp_main1.
-        unfold Genv.find_comp_of_ident, Genv.symbol_address in *.
-        destruct (Genv.find_symbol ge3 (prog_main W3)); destruct (Genv.find_symbol ge1 (prog_main W1));
-          destruct (Genv.find_symbol ge2 (prog_main W2)); simpl in *; try now auto; try now congruence.
         intros (s3' & j__left' & j__right' & ? & ? & ? & ? & X).
         exists s3'; exists (j__left', j__right'); split; eauto.
         destruct X as [[? ?] | [? ?]]; [left; eauto | right; eauto].
@@ -8325,10 +9635,6 @@ Qed.
         exploit transform_find_symbol_2; eauto. intros [? ?]; auto. congruence.
         auto.
         simpl. intros. eapply Genv.find_symbol_find_def_inversion; eauto.
-        unfold cp_main. clear -same_cp_main2 same_cp_main1.
-        unfold Genv.find_comp_of_ident, Genv.symbol_address in *.
-        destruct (Genv.find_symbol ge3 (prog_main W3)); destruct (Genv.find_symbol ge1 (prog_main W1));
-          destruct (Genv.find_symbol ge2 (prog_main W2)); simpl in *; try now auto; try now congruence.
         unfold comp_of_main. eapply stack_rel_comm; eauto.
         rewrite <- rewr_cp_main, same_cp_main1, rewr_cp_main. auto.
         unfold comp_of_main. rewrite <- rewr_cp_main, same_cp_main1, rewr_cp_main. auto.
@@ -8336,15 +9642,15 @@ Qed.
         eapply stack_rel_comm in S; simpl in S.
         exists s3'; exists (j__left', j__right'); split; eauto.
         destruct X as [[? ?] | [? ?]]; [right; eauto | left; eauto].
-      unfold comp_of_main.
-      rewrite <- rewr_cp_main, <- same_cp_main1, rewr_cp_main. auto.
-      split; eauto.
-      unfold comp_of_main. rewrite <- rewr_cp_main, <- same_cp_main1, rewr_cp_main. auto.
-      unfold comp_of_main. rewrite <- rewr_cp_main, <- same_cp_main1, rewr_cp_main. auto.
-      split; eauto.
-      unfold comp_of_main. rewrite <- rewr_cp_main, <- same_cp_main1, rewr_cp_main. auto.
+        unfold comp_of_main.
+        rewrite <- rewr_cp_main, <- same_cp_main1, rewr_cp_main. auto.
+        split; eauto.
+        unfold comp_of_main. rewrite <- rewr_cp_main, <- same_cp_main1, rewr_cp_main. auto.
+        unfold comp_of_main. rewrite <- rewr_cp_main, <- same_cp_main1, rewr_cp_main. auto.
+        split; eauto.
+        unfold comp_of_main. rewrite <- rewr_cp_main, <- same_cp_main1, rewr_cp_main. auto.
   Qed.
 
-  (* Print Assumptions simulation. *)
+  Print Assumptions simulation.
 
 End Simulation.

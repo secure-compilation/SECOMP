@@ -1428,7 +1428,6 @@ Inductive step: state -> trace -> state -> Prop :=
       (asm_parent_dummy_sp st = Vptr dsp dosp) ->
       (rs ra = Vptr dsp o') ->
       (asm_parent_sp st = sp) ->
-      (* !! *)
       eval_offset o = Ptrofs.repr (Stacklayout.fe_ofs_arg + 4 * ofs_arg) ->
 
       (In (One (S Incoming ofs_arg ty)) (loc_parameters (parent_signature st)) \/
@@ -1439,8 +1438,6 @@ Inductive step: state -> trace -> state -> Prop :=
 
       Mem.loadv (chunk_of_type ty) m
                 (Val.offset_ptr sp (eval_offset o)) top = Some v ->
-      (* *)
-      (* (Mem.loadv ch m (Val.offset_ptr sp (eval_offset o)) top = Some v) -> *)
       (forall ird, rd = inl ird -> rs' = nextinstr rs # ird <- v) ->
       (forall frd, rd = inr frd -> rs' = nextinstr rs # frd <- v) ->
 

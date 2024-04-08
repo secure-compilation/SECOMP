@@ -1187,7 +1187,30 @@ Proof.
   exploit IHlist_forall2; eauto. intros (x1 & U & V); exists x1; auto.
 Qed.
 
+
+
 End FORALL2.
+
+Lemma parallel_list_forall2_in_left:
+  forall (A B : Type) (P : A -> B -> Prop) (P': A -> B -> Prop)
+    (x1 : A) (l1 : list A) (l2 : list B),
+    list_forall2 P l1 l2 -> list_forall2 P' l1 l2 ->
+    In x1 l1 ->
+    exists (x2 : B), In x2 l2 /\ P x1 x2 /\ P' x1 x2.
+Proof.
+  intros until l2.
+  intros H1 H2 G.
+  assert (H: list_forall2 (fun x1 x2 => P x1 x2 /\ P' x1 x2) l1 l2).
+  { clear -H1 H2.
+    revert l1 l2 H1 H2.
+    induction 1.
+    - intros; constructor.
+    - intros. inv H2. exploit IHlist_forall2; eauto.
+      intros ?.
+      constructor; eauto. }
+  clear H1 H2.
+  eapply list_forall2_in_left in H; eauto.
+Qed.
 
 Lemma list_forall2_imply:
   forall (A B: Type) (P1: A -> B -> Prop) (l1: list A) (l2: list B),

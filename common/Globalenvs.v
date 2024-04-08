@@ -1587,6 +1587,7 @@ Proof.
   intros p m b g.
   unfold init_mem, find_def.
   intros ALLOC.
+  unfold alloc_globals in ALLOC.
   rewrite (alloc_globals_block_compartment _ _ _ ALLOC). clear ALLOC.
   unfold globalenv.
   assert (Mem.block_compartment Mem.empty b = top) as ->.
