@@ -150,7 +150,7 @@ let reproduction_mode _ =
   let () = assert (!root_seed != 0) in
   let () = assert (!trace_seed != 0) in
   let () = assert (!asm_seed != 0) in
-  let () = Printf.printf "Root seed = %d\nASM seed = %d\nTrace seed = %d\n" !root_seed !trace_seed !asm_seed in
+  let () = Printf.printf "Root seed = %d\nTrace seed = %d\nASM seed = %d\n" !root_seed !trace_seed !asm_seed in
   let () = Random.init !root_seed in
   let config = gen_config (Random.get_state ()) in
   let discard_out = Out_channel.open_text "/dev/null" in
