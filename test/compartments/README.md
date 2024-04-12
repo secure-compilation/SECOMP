@@ -17,6 +17,6 @@ $ ccomp -c ./test/compartments/add.c
 The compiler automatically produces an additional `out.cap_asm` file with the
 capability assembly code for the given program.
 
-Note that not all instructions are fully supported yet. If you see `"TODO: \_\_Inst\_Name\_\_"`
+Note that not all instructions are fully supported yet. If you see `"TODO: __Inst_Name__"`
 then the pretty-printer does not support this instruction yet. Also, not all instructions
 are supported internally.
