@@ -759,6 +759,18 @@ Definition semantics2 (p: program) :=
 
 (** This semantics is receptive to changes in events. *)
 
+Lemma step1_length:
+  forall ge s1 t s2, step1 ge s1 t s2 -> (length t <= 1)%nat.
+Proof.
+  simpl; intros. inv H; simpl; try lia.
+  (* call *)
+  inv EV; auto.
+  eapply external_call_trace_length; eauto.
+  eapply external_call_trace_length; eauto.
+  (* return *)
+  inv EV; auto.
+Qed.
+
 Lemma semantics_receptive:
   forall (p: program), receptive (semantics1 p).
 Proof.
@@ -779,13 +791,7 @@ Proof.
   (* return *)
   inv EV; inv H0; eauto.
 (* trace length *)
-  red; simpl; intros. inv H; simpl; try lia.
-  (* call *)
-  inv EV; auto.
-  eapply external_call_trace_length; eauto.
-  eapply external_call_trace_length; eauto.
-  (* return *)
-  inv EV; auto.
+  red. apply step1_length.
 Qed.
 
 Section DETERMINISM.

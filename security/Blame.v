@@ -502,6 +502,13 @@ Variant right_executing_injection (ge1 ge2: genv): state -> state -> Prop :=
     right_executing_injection ge1 ge2 (Returnstate v k1 m1 ty cp) (Returnstate v' k2 m2 ty cp)
 .
 
+#[export] Instance state_has_comp: has_comp state := fun st =>
+  match st with
+  | State f _ _ _ _ _ => comp_of f
+  | Callstate fd _ _ _ => comp_of fd
+  | Returnstate _ _ _ _ cp => cp
+  end.
+
 #[export] Instance state_has_side: has_side state :=
     { in_side s := fun st δ =>
                      match st with
@@ -510,6 +517,9 @@ Variant right_executing_injection (ge1 ge2: genv): state -> state -> Prop :=
                      | Returnstate _ _ _ _ cp => s |= cp ∈ δ
                      end
     }.
+
+Lemma state_has_side_eq s' st δ : (s' |= st ∈ δ) = (s' |= comp_of st ∈ δ).
+Proof. now destruct st. Qed.
 
 Definition memory_of (st: state): mem :=
   match st with
@@ -1473,46 +1483,6 @@ Proof.
   - destruct RMEMINJ; eauto using gfun_permissions_free_list.
 Qed.
 
-  (* AAA: [2023-08-08: This next part is not true anymore because left symbols
-     can be covered by a memory injection] Right now, this statement is forcing
-     every global identifier id that occurs in an expression to refer to a
-     function or variable that is defined on the right.  This is because, when
-     you evaluate an lvalue, you get something that is defined in the memory
-     injection j.  Here are possible solutions:
-
-     1. Modify the second implication so that, if we evaluate an lvalue that is
-     not defined in the memory injection j (and, therefore, is on the Left),
-     then this lvalue must be either a global function or variable.  The problem
-     with this is that we would probably have to extend this to an invariant on
-     memories: every pointer to a non-global-function-or-variable that is stored
-     in Right memory must point to the Right. And this sounds complicated to
-     reason about.
-
-     2. Change the second implication so that we do not care if we get a
-     non-global-function-or-variable pointer that is on the left.
-
-     [2023-08-23] We realized that, if we allow programs to take the address of
-     arbitrary variables, we run into issues when a program running on the right
-     attempts to take the address of a private variable on the left. The issue
-     is that, according to our current matching definitions, this private
-     variable must not have a corresponding address in the memory injection
-     relating the two executions. Therefore, it would not be possible to produce
-     a matching evaluation on the other execution.
-
-     One solution would be to dynamically disallow taking the address of a
-     non-public variable that lives in a different compartment. But at lower
-     levels it might not be possible to impose this check, because there
-     probably isn't a difference between variables and their addresses (NB we
-     should double-check this!). But this might not be an issue, because we are
-     always free to omit checks at the target level.
-
-     Moreover, it sounds like this check might be necessary for blame to
-     hold. Consider a context C that is linked against two programs p1 and p2.
-     If C tries to access a private variable of p1 that is not defined by p2,
-     and the check is not performed, the execution with p1 might succeed,
-     whereas the one with p2 will definitely fail.
-
-   *)
   Lemma eval_expr_lvalue_injection:
     forall j m1 m2 e1 e2 le1 le2 cp,
     forall inj: right_mem_injection s j ge1 ge2 m1 m2,
@@ -1865,12 +1835,8 @@ Qed.
       inv H; inv H2; constructor.
   Qed.
 
-  (* This lemma relies on just one of the properties of
-     [right_mem_injection], except for the appeal to (what is now
-     known as) [right_mem_inj_find_symbol], namely Mem.delta_zero. *)
   Lemma right_mem_injection_list_match: forall j m1 m2 vargs1 vargs2 vl tyl,
     right_mem_injection s j ge1 ge2 m1 m2 ->
-    (* Mem.delta_zero j -> *)
     Val.inject_list j vargs1 vargs2 ->
     eventval_list_match ge1 vl tyl vargs1 ->
     eventval_list_match ge2 vl tyl vargs2.
@@ -4007,7 +3973,7 @@ Qed.
       inv STEP2. inv H0.
   Qed.
 
-  (* Can get rid of uses of this? *)
+  (* FIXME: Can get rid of uses of this? *)
   Lemma parallel_concrete_E0': forall j s1 s2 s1' s2' t,
     right_state_injection s j ge1 ge2 s1 s2 ->
     s |= s1 ∈ Right -> (* in the context *)
@@ -4104,6 +4070,39 @@ Qed.
     | _ => None
     end.
 
+  Lemma step1_next_compartment': forall ge s1 t s1',
+    step1 ge s1 t s1' ->
+    comp_of s1' = match trace_next_compartment t with
+                  | Some cp => cp
+                  | None => comp_of s1
+                  end.
+  Proof.
+    intros ge s1 t s1' STEP.
+    case STEP; simpl; clear t STEP; try solve [unfold E0; trivial; congruence].
+    - intros f optid a al k e0 le m tyargs tyres cconv vf vargs fd t.
+      intros _ _ _ _ _ _ _ TRACE. unfold comp_of. simpl.
+      case TRACE; simpl; try solve [unfold E0; congruence]; trivial.
+      unfold Genv.type_of_call. simpl.
+      intros cp cp'.
+      destruct (Pos.eqb_spec cp cp') as [->|]; congruence.
+    - intros f optid ef tyargs al k e le m vars t vres m' _ _ CALL.
+      unfold comp_of. simpl.
+      exploit ec_no_crossing; eauto.
+      { eapply external_call_spec. }
+      destruct t as [|[] [|??]]; simpl; intuition eauto.
+    - intros ef targs tres cconv vargs k m vres t m' CALL.
+      unfold comp_of. simpl.
+      exploit ec_no_crossing; eauto.
+      { eapply external_call_spec. }
+      destruct t as [|[] [|??]]; simpl; intuition eauto.
+    - intros v optid f e le ty cp k m t _ RET. simpl.
+      unfold comp_of. simpl.
+      case RET; simpl; eauto.
+      intros cp1 cp2 _ _.
+      unfold Genv.type_of_call.
+      destruct (Pos.eqb_spec cp1 cp2) as [->|]; congruence.
+  Qed.
+
   Lemma step1_next_compartment: forall ge s1 t s1',
     step1 ge s1 t s1' ->
     match trace_next_compartment t with
@@ -4111,27 +4110,10 @@ Qed.
     | None => forall δ, s |= s1 ∈ δ -> s |= s1' ∈ δ
     end.
   Proof.
-    intros ge s1 t s1' STEP.
-    case STEP; simpl; clear t STEP; try solve [unfold E0; trivial; congruence].
-    - intros f optid a al k e0 le m tyargs tyres cconv vf vargs fd t.
-      intros _ _ _ _ _ _ _ TRACE. simpl.
-      case TRACE; simpl; try solve [unfold E0; congruence]; trivial.
-      unfold Genv.type_of_call.
-      intros cp cp'.
-      destruct (Pos.eqb_spec cp cp') as [->|]; congruence.
-    - intros f optid ef tyargs al k e le m vars t vres m' _ _ CALL.
-      exploit ec_no_crossing; eauto.
-      { eapply external_call_spec. }
-      destruct t as [|[] [|??]]; simpl; intuition eauto.
-    - intros ef targs tres cconv vargs k m vres t m' CALL.
-      exploit ec_no_crossing; eauto.
-      { eapply external_call_spec. }
-      destruct t as [|[] [|??]]; simpl; intuition eauto.
-    - intros v optid f e le ty cp k m t _ RET. simpl.
-      case RET; simpl; eauto.
-      intros cp1 cp2 _ _.
-      unfold Genv.type_of_call.
-      destruct (Pos.eqb_spec cp1 cp2) as [->|]; congruence.
+    intros ge s1 t s1' Hstep1%step1_next_compartment'.
+    destruct (trace_next_compartment t) as [cp|].
+    - now rewrite state_has_side_eq, Hstep1.
+    - intros δ. rewrite !state_has_side_eq. congruence.
   Qed.
 
   Lemma ec_no_crossing' ef ge vargs m t vres m' :
@@ -4308,16 +4290,6 @@ Qed.
           eauto.
   Qed.
 
-(* Lemma parallel_concrete p1 p2 scs1 scs2: *)
-(*   left_side s p1 -> (* use definitions from RSC.v *) *)
-(*   left_side s p2 -> (* use definitions from RSC.v *) *)
-(*   partial_state_equivalent s scs1 scs2 -> (* to define --> using memory injections? *) *)
-(*   pc_in_left_part scs1 -> (* to define *) *)
-(*   CS.kstep (prepare_global_env (program_link p p1)) scs1 t scs1' -> (* use step of Csem instead *) *)
-(*   exists2 scs2', *)
-(*     CS.kstep (prepare_global_env (program_link p p2)) scs2 t scs2' /\ (* use step of Csem instead *) *)
-(*       partial_state_equivalent s scs1' scs2'. (* to define *) *)
-
 Definition comp_of_event_or_default (e: event) (cp: compartment) :=
   match e with
   | Event_syscall _ _ _ => cp
@@ -4325,20 +4297,43 @@ Definition comp_of_event_or_default (e: event) (cp: compartment) :=
   | Event_vstore _ _ _ _ => cp
   | Event_annot _ _ => cp
   | Event_call _ cp' _ _ => cp'
-  | Event_return _ cp' _ => cp'
+  | Event_return cp' _ _ => cp'
   end.
 
-Fixpoint last_comp_in_trace' (t: trace) (cp: compartment): compartment :=
+Fixpoint last_comp_in_trace (cp: compartment) (t: trace): compartment :=
   match t with
   | nil => cp
-  | e :: t' => last_comp_in_trace' t' (comp_of_event_or_default e cp)
+  | e :: t' => last_comp_in_trace (comp_of_event_or_default e cp) t'
   end.
 
-Definition last_comp_in_trace (t: trace): compartment :=
-  last_comp_in_trace' t default_compartment.
+Lemma last_comp_in_trace_app:
+  forall cp t1 t2,
+    last_comp_in_trace cp (t1 ** t2)
+    = last_comp_in_trace (last_comp_in_trace cp t1) t2.
+Proof.
+  intros cp t1 t2. revert cp. induction t1 as [|e t1 IH]; simpl; trivial.
+Qed.
 
-Definition blame_on_program (t: trace) :=
-  s (last_comp_in_trace t) = Left.
+Lemma star_next_compartment ge s1 t s2 :
+  star step1 ge s1 t s2 ->
+  comp_of s2 = last_comp_in_trace (comp_of s1) t.
+Proof.
+  intros Hstar.
+  induction Hstar as [s1|s1 t1 s2 t2 s3 t Hstep _ IH ->]; simpl; trivial.
+  rewrite last_comp_in_trace_app.
+  assert (length t1 <= 1)%nat as Hlength.
+  { eauto using step1_length. }
+  apply step1_next_compartment' in Hstep.
+  destruct t1 as [|e1 [|e2 t1']]; simpl in *; try lia.
+  - congruence.
+  - destruct e1 eqn:E; simpl in *; try congruence.
+Qed.
+
+Definition blame_on_program (p: program) (t: trace) :=
+  match Genv.find_comp_of_ident (globalenv p) (prog_main p) with
+  | Some cp => s (last_comp_in_trace cp t) = Left
+  | None => False
+  end.
 
 (** Traces and prefixes *)
 
@@ -4480,7 +4475,6 @@ Proof.
                INJ' LEFT STEP1' STEP2').
 Qed.
 
-(* Related to old [context_epsilon_star_is_silent'] *)
 Lemma parallel_star_E0: forall {j s1 s1' s1'' s2 s2' s2'' e},
   right_state_injection s j ge1 ge2 s1 s2 ->
   Star (semantics1 W1) s1 E0 s1' ->
@@ -4496,13 +4490,6 @@ Proof.
   - intros; eapply parallel_concrete_star_E0; eassumption.
 Qed.
 
-(* Lemma state_determinism': forall {p s s1 s2 e1 e2}, *)
-(*   step1 (globalenv p) s (e1 :: nil) s1 -> *)
-(*   step1 (globalenv p) s (e2 :: nil) s2 -> *)
-(*   e1 = e2 /\ s1 = s2. *)
-
-(* - [scs] naming scheme no longer makes sense, retooled
-   - No need for [s |= s1 ∈ Left] type assumption *)
 Lemma parallel_exec1: forall j s1 s2 s1'' s2'' t t1 t2,
   right_state_injection s j ge1 ge2 s1 s2 ->
   Star (semantics1 W1) s1 (t ** t1) s1'' ->
@@ -4640,18 +4627,27 @@ Proof.
       exact (IH _ _ star1 part' nostep2 in_prog2).
 Qed.
 
-(* CS.s_component scs2 \in domm (prog_interface c) -> *)
-(* last_comp t \in domm (prog_interface c). *)
-(* TODO: delete? *)
 Lemma blame_last_comp_star p s1 t s2:
   Smallstep.initial_state (semantics1 p) s1 ->
   Star (semantics1 p) s1 t s2 ->
   s |= s2 ∈ Left ->
-  blame_on_program t.
+  blame_on_program p t.
 Proof.
-Admitted. (* With default_compartment gone, needs minor adjustments *)
+  intros Hinitial Hstar Hleft.
+  unfold blame_on_program.
+  assert (Genv.find_comp_of_ident (globalenv p) (prog_main p) = Some (comp_of s1))
+    as ->.
+  { simpl in Hinitial.
+    case Hinitial; clear Hinitial. simpl.
+    intros b f m0 _ main_b b_f _.
+    unfold Genv.find_comp_of_ident. setoid_rewrite main_b.
+    unfold Genv.find_comp_of_block in *.
+    apply Genv.find_funct_ptr_iff in b_f. now setoid_rewrite b_f. }
+  simpl in Hstar.
+  apply star_next_compartment in Hstar. setoid_rewrite <- Hstar.
+  now rewrite state_has_side_eq in Hleft.
+Qed.
 
-(* WIP *)
 Definition init_meminj_block (b: block): option block :=
   match Genv.invert_symbol ge1 b with
   | Some id =>
@@ -5663,7 +5659,7 @@ Lemma blame_program (m: finpref_behavior) (t': trace)
   (HP'_Cs_beh_new: does_prefix (semantics1 W1) m)
   (Hnot_wrong': not_wrong_finpref m)
   (K: trace_finpref_prefix t' m):
-  prefix m (Goes_wrong t') \/ blame_on_program t'.
+  prefix m (Goes_wrong t') \/ blame_on_program W2 t'.
 Proof.
   apply does_prefix_star in HP'_Cs_beh_new; [| easy].
   destruct HP'_Cs_beh_new as [sini1 [sfin1 [Hini1 [HStar1 Hfinal1']]]].
@@ -5708,14 +5704,6 @@ Proof.
       eapply blame_last_comp_star; eassumption.
 Qed.
 
-(* Theorem blame (t m: trace): *)
-(*   clight_program_has_initial_trace W2 t -> *)
-(*   trace_prefix m t -> *)
-(*   m <> t -> *)
-(*   program_behaves (semantics1 W1) (Goes_wrong m) -> *)
-(*   blame_on_program m. *)
-(* Proof. *)
-
 (* The mirror form of the above statement (W1 <-> W2), to avoid
    dealing with symmetry here. *)
 Theorem blame (t m: trace):
@@ -5726,7 +5714,7 @@ Theorem blame (t m: trace):
   trace_prefix m t ->
   m <> t ->
   program_behaves (semantics1 W2) (Goes_wrong m) ->
-  blame_on_program m.
+  blame_on_program W2 m.
 Proof.
   intros INI PREFIX NEQ WRONG.
   inversion WRONG as [s2 b _ s2_m | CONTRA];
