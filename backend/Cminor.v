@@ -244,9 +244,9 @@ Inductive state: Type :=
   | Returnstate:                (**r Return from a function *)
       forall (v: val)                   (**r Return value *)
              (k: cont)                  (**r what to do next *)
-             (m: mem)         (**r memory state *)
+             (m: mem)                   (**r memory state *)
              (ty: rettype)
-             (cp: compartment),
+             (cp: compartment),         (**r callee compartment *)
         state.
 
 Section RELSEM.
