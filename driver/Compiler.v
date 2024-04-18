@@ -540,7 +540,7 @@ Proof.
   intros. apply c_semantic_preservation. apply transf_c_program_match; auto.
 Qed.
 
-Print Assumptions transf_c_program_correct.
+(* Print Assumptions transf_c_program_correct. *)
 
 
 (** Here is the separate compilation case.  Consider a nonempty list [c_units]
@@ -572,4 +572,4 @@ Proof.
   exists asm_program; split; auto. apply c_semantic_preservation; auto.
 Qed.
 
-Print Assumptions separate_transf_c_program_correct.
+(* Print Assumptions separate_transf_c_program_correct. *)

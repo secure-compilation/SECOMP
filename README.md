@@ -68,6 +68,9 @@ The updated correctness proof is complete and can be
 found in file `driver/Compiler.v`, theorems
 `transf_c_program_correct` and `separate_transf_c_program_correct`, and only
 depends on CompCert's existing axioms, and similar axioms regarding compartments.
+To verify this, uncomment and execute `Print Assumptions transf_c_program_correct` and
+`Print Assumptions separate_transf_c_program_correct`. This will load and print the list
+of axiomatised results used in the proofs.
 
 The following files include the most interesting changes:
  - Compartment model: file `common/AST.v`, modules `COMPTYPE` and `COMP`.
@@ -84,7 +87,7 @@ Compartmentalized program examples can be found under `test/compartments`.
 ### Testing the compilation of the back-translation
 
 The property-based testing infrastructure for Assumption 1 can be found under
-`tests/backtranslation`.
+`test/backtranslation`.
 
 The extended requirements detailed above are needed.
 From the testing folder, run:
