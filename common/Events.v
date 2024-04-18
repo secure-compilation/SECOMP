@@ -701,6 +701,16 @@ Record extcall_properties (sem: extcall_sem) (cp: compartment) (sg: signature) :
     sem ge vargs m1 t vres m2 ->
     Mem.can_access_block m1 b cp -> Mem.can_access_block m2 b cp;
 
+(** External calls must preserve non-freeable valid pointers; that is, they
+    must preserve their nonempty permissions. *)
+  ec_valid_pointer:
+    forall ge vargs m1 t vres m2,
+      sem ge vargs m1 t vres m2 ->
+      forall b ofs k,
+      ~ Mem.perm m1 b ofs Cur Freeable ->
+      Mem.perm m1 b ofs k Nonempty ->
+      Mem.perm m2 b ofs k Nonempty;
+
 (** External calls cannot increase the max permissions of a valid block.
     They can decrease the max permissions, e.g. by freeing. *)
   ec_max_perm:
@@ -884,6 +894,8 @@ Proof.
 - inv H; auto.
 (* accessiblity *)
 - inv H; auto.
+(* valid pointer *)
+- inv H; auto.
 (* max perms *)
 - inv H; auto.
 (* readonly *)
@@ -1061,6 +1073,8 @@ Proof.
 - inv H. inv H1. auto. eauto with mem.
 (* accessibility block *)
 - inv H. inv H1. auto. eapply Mem.store_can_access_block_inj in H2. eapply H2. eauto.
+(* valid pointer *)
+- inv H. inv H2. auto. eauto with mem.
 (* perms *)
 - inv H. inv H2. auto. eauto with mem.
 (* readonly *)
@@ -1135,6 +1149,8 @@ Proof.
 (* accessibility *)
 - inv H. eapply Mem.store_can_access_block_inj in H2; eapply H2.
   eapply Mem.alloc_can_access_block_other_inj_1; eauto.
+(* valid pointer *)
+- inv H. eauto with mem.
 (* perms *)
 - inv H. exploit Mem.perm_alloc_inv. eauto. eapply Mem.perm_store_2; eauto.
   rewrite dec_eq_false. auto.
@@ -1234,6 +1250,14 @@ Proof.
 - inv H; eauto with mem.
 (* accessibility *)
 - inv H; eauto. eapply Mem.free_can_access_block_inj_1; eauto.
+(* valid pointer *)
+- inv H; eauto with mem.
+  pose proof (Mem.free_range_perm _ _ _ _ _ _ H4) as Hrange.
+  eapply Mem.perm_free_1; eauto.
+  destruct (eq_block b b0) as [<-|?]; [|now eauto].
+  enough (~ (Ptrofs.unsigned lo - size_chunk Mptr <= ofs <
+               Ptrofs.unsigned lo + Ptrofs.unsigned sz)) by (right; lia).
+  eauto.
 (* perms *)
 - inv H; eauto using Mem.perm_free_3.
 (* readonly *)
@@ -1361,6 +1385,8 @@ Proof.
   intros. inv H. eauto with mem.
 - (* accessibility *)
   intros. inv H. eapply Mem.storebytes_can_access_block_inj_1; eauto.
+- (* valid pointer *)
+  intros. inv H. eauto with mem.
 - (* perms *)
   intros. inv H. eapply Mem.perm_storebytes_2; eauto.
 - (* readonly *)
@@ -1500,6 +1526,8 @@ Proof.
 - inv H; auto.
 (* accessibility *)
 - inv H; auto.
+(* valid pointer *)
+- inv H; auto.
 (* perms *)
 - inv H; auto.
 (* readonly *)
@@ -1554,6 +1582,8 @@ Proof.
 - inv H; auto.
 (* accessibility *)
 - inv H; auto.
+(* valid pointer *)
+- inv H; auto.
 (* perms *)
 - inv H; auto.
 (* readonly *)
@@ -1605,6 +1635,8 @@ Proof.
 (* valid blocks *)
 - inv H; auto.
 (* accessibility *)
+- inv H; auto.
+(* valid pointer *)
 - inv H; auto.
 (* perms *)
 - inv H; auto.
@@ -1665,6 +1697,8 @@ Proof.
 (* valid blocks *)
 - inv H; auto.
 (* accessibility *)
+- inv H; auto.
+(* valid pointer *)
 - inv H; auto.
 (* perms *)
 - inv H; auto.

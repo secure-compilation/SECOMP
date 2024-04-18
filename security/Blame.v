@@ -586,14 +586,6 @@ Section Simulation.
   Hypothesis W1_gvars: wf_gvar_init ge1.
   Hypothesis W2_gvars: wf_gvar_init ge2.
 
-  Hypothesis ec_valid_pointer:
-    forall ef (ge: genv) vargs m1 t vres m2,
-      external_call ef ge vargs m1 t vres m2 ->
-      forall b ofs k,
-        ~ Mem.perm m1 b ofs Cur Freeable ->
-        Mem.perm m1 b ofs k Nonempty ->
-        Mem.perm m2 b ofs k Nonempty.
-
 (** New helpers *)
 
   Lemma unchanged_on_or P Q m1 m2
@@ -2759,8 +2751,8 @@ Qed.
     Mem.unchanged_on P m1 m2.
   Proof.
     intros m1_m2 P.
+    pose proof (external_call_spec ef).
     exploit ec_mem_outside_compartment; eauto.
-    { apply external_call_spec. }
     intros unchanged. split.
     - eapply Mem.unchanged_on_nextblock; eauto.
     - intros b ofs k p (Hnonempty & Hmax) Hvalid. split.
