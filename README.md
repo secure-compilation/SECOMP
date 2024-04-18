@@ -1,39 +1,50 @@
-# CompCert
-The formally-verified C compiler.
-
 ## Overview
-The CompCert C verified compiler is a compiler for a large subset of the
-C programming language that generates code for the PowerPC, ARM, x86 and
-RISC-V processors.
 
-The distinguishing feature of CompCert is that it has been formally
-verified using the Coq proof assistant: the generated assembly code is
-formally guaranteed to behave as prescribed by the semantics of the
-source C code.
+This branch contains the proof of back-translation for the SECOMP compiler.
 
-For more information on CompCert (supported platforms, supported C
-features, installation instructions, using the compiler, etc), please
-refer to the [Web site](https://compcert.org/) and especially
-the [user's manual](https://compcert.org/man/).
+## Requirements
 
-## License
-CompCert is not free software.  This non-commercial release can only
-be used for evaluation, research, educational and personal purposes.
-A commercial version of CompCert, without this restriction and with
-professional support and extra features, can be purchased from
-[AbsInt](https://www.absint.com).  See the file `LICENSE` for more
-information.
+This development is built and tested with Coq 8.15.2. It is based on the 64-bit
+RISC-V backend of CompCert 3.12.
 
-## Copyright
-The CompCert verified compiler is Copyright Institut National de
-Recherche en Informatique et en Automatique (INRIA) and 
-AbsInt Angewandte Informatik GmbH.
+General requirements:
 
+ - OCaml version 4.5.0 or greater (OCaml 5 is not supported).
 
-## Contact
-General discussions on CompCert take place on the
-[compcert-users@inria.fr](https://sympa.inria.fr/sympa/info/compcert-users)
-mailing list.
+ - Coq version 8.15.2 (OPAM package: `coq`)
 
-For inquiries on the commercial version of CompCert, please contact
-info@absint.com
+ - Menhir version 20190626 or greater (OPAM package: `menhir`).
+
+System requirements can be verified through CompCert's `configure` script
+(see below).
+
+## Building
+
+This branch can be built after installing its dependencies by configuring the
+CompCert build process first, by running:
+```
+./configure rv64-linux
+```
+
+Then, one can then compile the project by running `make` (optionally with the `-j` command line argument).
+
+## Proof of back-translation
+
+The proof of back-translation is complete. This proof is done in a slightly more complex setting
+where system calls can belong to particular compartments.
+
+The memory deltas are defined in the file `security/MemoryDelta.v`.
+
+The informative events (called `bundled_events`), and the intermediate language
+characterizing the well-formedness of informative traces (`ir_step`) are defined
+in `security/BtAsm.v`. The proof going from RISC-V assembly to the intermediate
+language is called `asm_to_ir`.
+
+The `security/Backtranslation.v` contains the implementation of the
+back-translation function, `gen_program`.
+
+The `security/BacktranslationProof.v` contains the proof of correctness of the
+back-translation, starting from the intermediate language: `ir_to_clight`.
+
+The `security/BacktranslationProof2.v` contains the complete proof from assembly
+to Clight: `backtranslation_proof`.
