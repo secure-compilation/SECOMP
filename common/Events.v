@@ -868,7 +868,11 @@ Record extcall_properties (wfse: well_formed_syscall_event_spec)
     /\ inject_separated f f' m1 m1'
     /\ (forall b, ~ Mem.valid_block m1 b ->
             Mem.valid_block m2 b ->
-            exists b', f' b = Some (b', 0));
+            exists b', f' b = Some (b', 0))
+    /\ (forall b1 b2 b1' b2' delta1 delta2, b1 <> b2 -> f b1 = None -> f b2 = None ->
+                f' b1 = Some (b1', delta1) ->
+                f' b2 = Some (b2', delta2) ->
+                b1' <> b2');
 
 
 (** External calls produce at most one event. *)
@@ -1023,6 +1027,7 @@ Proof.
   exploit volatile_load_inject; eauto. intros [v' [A B]].
   exists f; exists v'; exists m1'; intuition. constructor; auto.
   red; intros. congruence.
+  congruence.
 (* trace length *)
 - inv H; inv H0; simpl; lia.
 (* receptive *)
@@ -1238,6 +1243,7 @@ Proof.
   red; intros; congruence.
   inv H3; try contradiction.
   exploit Mem.store_valid_block_2; eauto; contradiction.
+  congruence.
 (* trace length *)
 - inv H; inv H0; simpl; lia.
 (* receptive *)
@@ -1360,6 +1366,14 @@ Proof.
   eapply Mem.store_valid_block_2 in H2; eauto.
   eapply Mem.valid_block_alloc_inv in H2; eauto.
   destruct H2; try contradiction. subst; eauto.
+  subst; eauto.
+  destruct (Pos.eqb_spec b1 b);
+  destruct (Pos.eqb_spec b2 b).
+  + congruence.
+  + rewrite D in H8; eauto. congruence.
+  + rewrite D in H7; eauto. congruence.
+  + rewrite D in H7; eauto. congruence.
+
 (* trace length *)
 - inv H; simpl; lia.
 (* receptive *)
@@ -1491,12 +1505,15 @@ Proof.
     apply P. lia.
   split. auto. split.
   red; intros. congruence.
+  split.
   intros. clear C.
   exploit Mem.nextblock_free; eauto; congruence.
+  congruence.
 + inv H2. inv H6. replace v' with Vnullptr.
   exists f, Vundef, m1'; intuition auto using Mem.unchanged_on_refl.
   constructor.
   red; intros; congruence.
+  unfold Vnullptr in *; destruct Archi.ptr64; inv H4; auto. congruence. congruence.
   unfold Vnullptr in *; destruct Archi.ptr64; inv H4; auto.
 (* trace length *)
 - inv H; simpl; lia.
@@ -1643,8 +1660,9 @@ Proof.
   simpl; intros; extlia.
   split. apply inject_incr_refl.
   split. red; intros; congruence.
-  intros. clear SB.
+  intros. clear SB. split.
   exploit Mem.nextblock_storebytes; eauto; congruence.
+  congruence.
 + (* general case sz > 0 *)
   exploit Mem.loadbytes_length; eauto. intros LEN.
   assert (RPSRC: Mem.range_perm m1 bsrc (Ptrofs.unsigned osrc) (Ptrofs.unsigned osrc + sz) Cur Nonempty).
@@ -1682,9 +1700,9 @@ Proof.
   erewrite list_forall2_length; eauto.
   lia.
   split. apply inject_incr_refl.
-  split. red; intros; congruence.
+  split. red; intros; congruence. split.
   intros. clear C.
-  exploit Mem.nextblock_storebytes; eauto; congruence.
+  exploit Mem.nextblock_storebytes; eauto; congruence. congruence.
 - (* trace length *)
   intros; inv H. simpl; lia.
 - (* receptive *)
@@ -1747,7 +1765,7 @@ Proof.
   eapply eventval_list_match_inject; eauto.
   destruct H as (A & B & C & D & E).
   eapply eventval_list_comp_preserved with (ge1 := ge1); eauto.
-  red; intros; congruence.
+  red; intros; congruence. congruence.
 (* trace length *)
 - inv H; simpl; lia.
 (* receptive *)
@@ -1808,7 +1826,7 @@ Proof.
   eapply eventval_match_inject; eauto.
   destruct H as (A & B & C & D & E).
   erewrite eventval_comp_preserved; eauto.
-  red; intros; congruence.
+  red; intros; congruence. congruence.
 (* trace length *)
 - inv H; simpl; lia.
 (* receptive *)
@@ -1864,7 +1882,7 @@ Proof.
 - inv H0.
   exists f; exists Vundef; exists m1'; intuition.
   econstructor; eauto.
-  red; intros; congruence.
+  red; intros; congruence. congruence.
 (* trace length *)
 - inv H; simpl; lia.
 (* receptive *)
@@ -1932,7 +1950,7 @@ Proof.
   destruct (bsem vargs') as [vres'|] eqn:?; try contradiction.
   exists f, vres', m1'; intuition auto using Mem.extends_refl, Mem.unchanged_on_refl.
   constructor; auto.
-  red; intros; congruence.
+  red; intros; congruence. congruence.
 (* trace length *)
 - inv H; simpl; lia.
 (* receptive *)
@@ -2128,7 +2146,11 @@ Lemma external_call_mem_inject:
     /\ inject_incr f f'
     /\ inject_separated f f' m1 m1'
     /\ (forall b : block, ~ Mem.valid_block m1 b ->
-                    Mem.valid_block m2 b -> exists b' : block, f' b = Some (b', 0)).
+                    Mem.valid_block m2 b -> exists b' : block, f' b = Some (b', 0))
+    /\ (forall (b1 b2 b1' b2' : block) (delta1 delta2 : Z),
+          b1 <> b2 ->
+          f b1 = None ->
+          f b2 = None -> f' b1 = Some (b1', delta1) -> f' b2 = Some (b2', delta2) -> b1' <> b2').
 Proof.
   intros. destruct H as (A & B & C).
   eapply external_call_mem_inject_gen with (ge1 := (Genv.to_senv ge)); eauto.
@@ -2732,8 +2754,8 @@ Module SyscallSanityChecks.
           eapply H12. lia.
         * apply inject_incr_refl. 
         * unfold inject_separated. intros. rewrite H1 in H8; discriminate.
-        * intros.
-          exfalso. apply H1.  eapply Mem.storebytes_valid_block_2; eauto.
+        * split. intros.
+          exfalso. apply H1.  eapply Mem.storebytes_valid_block_2; eauto. congruence.
       + inv H2. inv H12. inv H13. inv H14.
         inv H9. inv H11. inv H10.
         inv H. destruct H2.
@@ -2755,7 +2777,7 @@ Module SyscallSanityChecks.
         * eapply Mem.unchanged_on_refl.
         * apply inject_incr_refl. 
         * unfold inject_separated. intros. rewrite H9 in H10; discriminate.
-        * intros. congruence. 
+        * split. intros. congruence.  congruence.
     (* trace length *)
     - inv H;  simpl; lia.
     (* receptive *)  
@@ -2937,7 +2959,7 @@ Proof.
     * eapply Mem.unchanged_on_refl. 
     * apply inject_incr_refl. 
     * unfold inject_separated. intros. rewrite H10 in H12; discriminate.
-    * intros. congruence.
+    * split. intros. congruence. congruence.
   (* trace length *)
   - inv H;  simpl; lia.
   (* receptive *)  

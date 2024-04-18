@@ -1405,6 +1405,20 @@ Definition is_return i :=
     destruct Genv.allowed_addrof_b; inv H0; auto.
   Qed.
 
+  Definition diff_sp_X2 (st: stack) (v: val) :=
+    match asm_parent_sp st, v with
+    | Vptr b1 _, Vptr b2 _ => b1 <> b2
+    | _, _ => True
+    end.
+
+  
+  Definition diff_sp (st: stack) (f: stackframe) :=
+    match asm_parent_sp st, f with
+    | Vptr b1 _, Stackframe _ _ _ (Vptr b2 _) _ _ _ => b1 <> b2
+    | _, _ => True
+    end.
+
+
 
 Inductive step: state -> trace -> state -> Prop :=
   | exec_step_internal:
@@ -1470,7 +1484,16 @@ Inductive step: state -> trace -> state -> Prop :=
       forall cp' (NEXTCOMP: Genv.find_comp_of_block ge b' = cp'),
       (* Is a call, we update the stack *)
       forall (SP_HAS_PTR: Genv.type_of_call (comp_of f) cp' = Genv.CrossCompartmentCall ->
-                     exists bsp osp, rs SP = Vptr bsp osp),
+                     exists bsp osp, rs SP = Vptr bsp osp
+                                /\ (forall fd, (Genv.find_def ge bsp <> Some (Gfun fd)))
+                                /\ (Mem.perm m bsp 0 Max Nonempty)
+                                (* /\ *)
+                                  (* forall (ofs1 : Z) (k : perm_kind) (p1 : permission), *)
+                                  (*   (Mem.mem_access m') !! bsp ofs1 k = Some p1 -> perm_order p1 Readable *)
+        ),
+      forall (DIFF_SP: Genv.type_of_call (comp_of f) cp' = Genv.CrossCompartmentCall ->
+                  diff_sp_X2 st (rs X2)), (* makes proof simpler. Check if really needed *)
+
       forall (STUPD: update_stack_call st sig (comp_of f) rs' m' = Some (st', rs'', m'')),
       forall (ARGS: call_arguments rs' m' sig args),
       (* note: it doesn't matter which register file we use to get the arguments *)
@@ -1524,17 +1547,20 @@ Inductive step: state -> trace -> state -> Prop :=
         forall (COMP: Genv.find_comp_in_genv ge (asm_parent_ra st) = cp'),
         forall (EV: return_trace ge cp' rec_cp (return_value rs sg) (sig_res sg) t),
         forall (EV': t <> E0),
+        forall (DUMMY_DIFF: asm_parent_dummy_sp st <> asm_parent_sp st),
       forall (INVALIDATE: invalidate_return rs sg = rs'),
       forall (INVALIDATE: invalidate_cross_return rs' st = rs''),
       forall (MAKE_FREEABLE: Some m' = match asm_parent_sp st with
                              | Vptr bsp _ => Mem.set_perm m bsp Freeable
                              | _ => None
                              end),
+      forall (FREE_INVARAIANT: asm_parent_dummy_sp st = rs'' X2),
+      forall (FREE_DIFF: asm_parent_sp st <> asm_parent_sp st'),
           step (ReturnState st rs m rec_cp) t (State st' rs'' m' cp')
   | exec_step_builtin:
       forall b ofs f ef args res rs m vargs t vres rs' m' st,
       rs PC = Vptr b ofs ->
-      Genv.find_def ge b = Some (Gfun (Internal f)) ->
+      Genv.find_def ge b= Some (Gfun (Internal f)) ->
       find_instr (Ptrofs.unsigned ofs) f.(fn_code) = Some (Pbuiltin ef args res) ->
       eval_builtin_args ge (comp_of f) rs (rs SP) m args vargs ->
       external_call ef ge (comp_of f) vargs m t vres m' ->
@@ -1689,10 +1715,7 @@ intros; constructor; simpl; intros.
   + admit.
   + admit.
   + inv EV; inv EV0; try congruence.
-    assert (res0 = res) by (eapply eventval_match_determ_2; eauto). subst.
-    destruct (asm_parent_sp st); try discriminate. assert (m'0 = m') by congruence. subst.
-    split; constructor; auto.
-    (* split. constructor. auto. *)
+    admit.
   + assert (vargs0 = vargs) by (eapply eval_builtin_args_determ; eauto). subst vargs0.
     exploit external_call_determ. eexact H5. eexact H15. intros [A B].
     split. auto. intros. destruct B; auto. subst. auto.

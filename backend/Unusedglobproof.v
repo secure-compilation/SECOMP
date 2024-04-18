@@ -823,7 +823,11 @@ Lemma external_call_inject:
     /\ (forall b : block,
           ~ Mem.valid_block m1 b ->
           Mem.valid_block m2 b ->
-          exists b' : block, f' b = Some (b', 0)).
+          exists b' : block, f' b = Some (b', 0))
+    /\ (forall (b1 b2 b1' b2' : block) (delta1 delta2 : Z),
+          b1 <> b2 ->
+          f b1 = None ->
+          f b2 = None -> f' b1 = Some (b1', delta1) -> f' b2 = Some (b2', delta2) -> b1' <> b2').
 Proof.
   intros. eapply external_call_mem_inject_gen; eauto.
   apply globals_symbols_inject; auto.

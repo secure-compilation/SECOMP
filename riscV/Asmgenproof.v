@@ -956,6 +956,7 @@ Local Transparent destroyed_by_op.
     { left. simpl. erewrite Genv.find_funct_ptr_find_comp_of_block; eauto. }
     unfold tge. now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ TFIND).
     { admit. }
+    admit.
     unfold update_stack_call. Simpl.
     rewrite H7; simpl.
     unfold tge.
@@ -1052,6 +1053,7 @@ Local Transparent destroyed_by_op.
     { left. simpl; erewrite Genv.find_funct_ptr_find_comp_of_block; eauto. }
     now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ TFIND).
     { admit. }
+    admit.
     unfold update_stack_call. Simpl.
     unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H.
     rewrite <- (comp_transl_partial _ H4). simpl.
@@ -1162,6 +1164,7 @@ Local Transparent destroyed_by_op.
     simpl.
     now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ TFIND).
     { admit. }
+    admit.
     { unfold update_stack_call. Simpl. rewrite H7; simpl.
       unfold tge; rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ TFIND).
       rewrite <- (comp_transl_partial _ H4).
@@ -1241,6 +1244,7 @@ Local Transparent destroyed_by_op.
     eapply allowed_call_translated; eauto.
 
     now rewrite (Genv.find_funct_ptr_find_comp_of_block _ _ TFIND).
+    { admit. }
     { admit. }
     { unfold update_stack_call. Simpl.
     unfold Genv.symbol_address. rewrite symbols_preserved. rewrite H. simpl.
@@ -1723,10 +1727,10 @@ Local Transparent destroyed_at_function_entry.
     eapply return_trace_lessdef with (ge := ge) (v := Mach.return_value rs sg);
           eauto using senv_preserved.
     inv EV; simpl in *; try now destruct flowsto_dec.
-    reflexivity.
-    reflexivity.
     admit.
-
+    reflexivity.
+    reflexivity.
+    admit. admit. admit.
     rewrite <- find_comp_of_block_translated; eauto.
     erewrite Genv.find_funct_ptr_find_comp_of_block; eauto. simpl.
     econstructor; eauto.

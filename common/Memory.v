@@ -4335,8 +4335,6 @@ Lemma set_mapped_inj:
   forall f m1 m2 b1 b2 delta p m1',
   mem_inj f m1 m2 ->
   set_perm m1 b1 p = Some m1' ->
-  forall (READABLE: forall ofs k p1, (mem_access m1) # b1 ofs k = Some p1 ->
-                           perm_order p1 Readable),
   forall (MAPPED_BLOCKS: forall b b' delta, f b = Some(b', delta) -> valid_block m2 b'),
   meminj_no_overlap f m1 ->
   forall (NO_OVERLAP_STRONG: forall b1 b2 b1' b2' delta1 delta2,
@@ -4349,7 +4347,7 @@ Lemma set_mapped_inj:
       set_perm m2 b2 p = Some m2'
    /\ mem_inj f m1' m2'.
 Proof.
-  intros f m1 m2 b1 b2 delta p m1' m1_m2 set1 readable mapped_blocks no_overlap no_overlap_strong f_b1.
+  intros f m1 m2 b1 b2 delta p m1' m1_m2 set1 mapped_blocks no_overlap no_overlap_strong f_b1.
   assert (X: { m2' | set_perm m2 b2 p = Some m2' }).
   { unfold set_perm in *.
     destruct (plt b1 (nextblock m1)); try discriminate.
@@ -4386,19 +4384,15 @@ Proof.
   - intros.
     replace (m1'.(mem_contents)#b0) with (m1.(mem_contents)#b0).
     replace (m2'.(mem_contents)#b3) with (m2.(mem_contents)#b3).
-    apply mi_memval; auto.
     destruct (peq b0 b1); eauto. subst.
-    { unfold set_perm in set1.
-      destruct plt; inv set1. unfold perm in *; simpl in *.
-      rewrite PMap.gsspec in *. destruct (peq b1 b1); try congruence.
-      destruct ((mem_access m1) # b1 ofs Cur) eqn:EQ; try now auto.
-      exploit readable; eauto. }
+    { admit. }
+    eapply mi_memval; eauto.
     eapply perm_set_2'; eauto.
     unfold set_perm in set2;
       destruct (plt b2 (nextblock m2)); inv set2; auto.
     unfold set_perm in set1;
       destruct (plt b1 (nextblock m1)); inv set1; auto.
-Qed.
+Admitted.
 
 Lemma set_outside_inj: forall f m1 m1' m2 b p,
   mem_inj f m1 m2 ->
@@ -4428,6 +4422,35 @@ Proof.
     apply mi_memval0; auto.
     assert (b1 <> b) by congruence.
     eapply perm_set_2'; eauto.
+    unfold set_perm in H0;
+      destruct plt;
+      inv H0; auto.
+Qed.
+
+Lemma set_outside_inj':
+  forall f m1 m2 b p m2',
+  mem_inj f m1 m2 ->
+  set_perm m2 b p = Some m2' ->
+  (forall b0 delta, not (f b0 = Some (b, delta))) ->
+  mem_inj f m1 m2'.
+Proof.
+  intros. inv H. constructor.
+  (* perm *)
+  - intros. exploit mi_perm0; eauto.
+    intros.
+    eapply perm_set_2; eauto.
+    intros ?. subst. exploit H1; eauto.
+  (* own *)
+  - intros. exploit mi_own0; eauto.
+    intros.
+    eapply can_access_block_set_1; eauto.
+  (* align *)
+  - intros. eapply mi_align0; eauto.
+  (* contents *)
+  - intros.
+    replace (m2'.(mem_contents)#b2) with (m2.(mem_contents)#b2).
+    apply mi_memval0; auto.
+    (* eapply perm_set_2; eauto. *)
     unfold set_perm in H0;
       destruct plt;
       inv H0; auto.
@@ -5685,7 +5708,6 @@ Theorem set_parallel_inject:
   forall f m1 m2 b p m1' b' delta,
   inject f m1 m2 ->
   set_perm m1 b p = Some m1' ->
-  (forall (ofs : Z) (k : perm_kind) (p1 : permission), (mem_access m1) # b ofs k = Some p1 -> perm_order p1 Readable) ->
   (forall (b1 b2 b1' b2' : block) (delta1 delta2 : Z),
       b1 <> b2 -> f b1 = Some (b1', delta1) -> f b2 = Some (b2', delta2) -> b1' <> b2') ->
   f b = Some(b', delta) ->
@@ -5698,22 +5720,22 @@ Proof.
   intros [m2' [? ?]].
   eexists; split; eauto.
   constructor; eauto.
-  - intros. eapply mi_freeblocks0. intros ?. eapply H5. eapply set_perm_valid_block_1; eauto.
+  - intros. eapply mi_freeblocks0. intros ?. eapply H4. eapply set_perm_valid_block_1; eauto.
   - intros. exploit set_perm_valid_block_1; eauto.
   - intros ?????????????. eapply mi_no_overlap0; eauto.
+    eapply set_perm_perm in H7 as [? ?]; eauto. eapply Mem.perm_implies; eauto; constructor.
     eapply set_perm_perm in H8 as [? ?]; eauto. eapply Mem.perm_implies; eauto; constructor.
-    eapply set_perm_perm in H9 as [? ?]; eauto. eapply Mem.perm_implies; eauto; constructor.
   - intros. eapply mi_representable0; eauto.
-    destruct H6.
-    + left. eapply set_perm_perm in H6 as [? ?]; eauto. eapply Mem.perm_implies; eauto; constructor.
-    + right. eapply set_perm_perm in H6 as [? ?]; eauto. eapply Mem.perm_implies; eauto; constructor.
+    destruct H5.
+    + left. eapply set_perm_perm in H5 as [? ?]; eauto. eapply Mem.perm_implies; eauto; constructor.
+    + right. eapply set_perm_perm in H5 as [? ?]; eauto. eapply Mem.perm_implies; eauto; constructor.
   - intros.
     destruct (peq b1 b).
     + admit.
     + exploit mi_perm_inv0; eauto.
       eapply perm_set_2'; eauto. intros [].
       * left; eapply perm_set_2; eauto.
-      * right; intros ?. eapply H7. eapply perm_set_2'; eauto.
+      * right; intros ?. eapply H6. eapply perm_set_2'; eauto.
 Admitted.
 
 Theorem set_outside_inject:
@@ -5738,6 +5760,39 @@ Proof.
       eapply perm_set_2; eauto.
     + right. assert (b <> b1) by congruence.
       intros ?. eapply H3. eapply perm_set_2'; eauto.
+Qed.
+
+
+Lemma set_outside_inject_parallel:
+  forall f m1 m2 m3 b1 b3 delta b2 m1' m2' m3' P f',
+    f b1 = Some (b3, delta) ->
+    perm_order P Readable ->
+    Mem.set_perm m1 b1 P = Some m1' ->
+    Mem.inject f m1 m3 ->
+    Mem.set_perm m2 b2 P = Some m2' ->
+    Mem.inject f' m2 m3 ->
+    Mem.set_perm m3 b3 P = Some m3' ->
+    Mem.inject f' m2' m3'.
+Proof.
+Admitted.
+
+Theorem set_outside_inject':
+  forall f m1 m2 b p m2',
+  inject f m1 m2 ->
+  set_perm m2 b p = Some m2' ->
+  (forall b0 delta, not (f b0 = Some (b, delta))) ->
+  inject f m1 m2'.
+Proof.
+  intros. destruct H. constructor; eauto.
+  - eapply set_outside_inj'; eauto.
+  - intros.
+    exploit set_perm_valid_block_1; eauto.
+  - intros.
+    destruct (Pos.eqb_spec b2 b).
+    + subst.
+      exploit mi_perm_inv0; eauto. eapply H1 in H. contradiction.
+    + exploit mi_perm_inv0; eauto.
+      eapply perm_set_2'; eauto.
 Qed.
 
 (* Lemma set_outside_inject': forall f m1 m2 b p m2', *)
