@@ -1162,12 +1162,4 @@ Definition clight_in_side (s: split) (lr: side) (p: Clight.program) :=
 Definition clight_compatible (s: split) (p p': Clight.program) :=
   s |= p ∈ Left /\ s |= p' ∈ Right.
 
-Lemma link_compatible: forall s p p',
-    clight_compatible s p p' ->
-    Ctypes.prog_pol p = Ctypes.prog_pol p' ->
-    exists W, link p p' = Some W.
-Proof.
-  admit.
-Admitted.
-
 End SECURITY.

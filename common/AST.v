@@ -802,6 +802,7 @@ Proof.
     + simpl. admit.
     + simpl. admit.
 Admitted.
+
 End TRANSF_POL.
 
 Section TRANSF_PROGRAM.

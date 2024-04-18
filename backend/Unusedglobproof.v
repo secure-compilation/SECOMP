@@ -1609,17 +1609,6 @@ Proof.
   rewrite PTree.gcombine; auto.
 Qed.
 
-(* (* Technical result: proving this result requires doing complicated unfoldings and *)
-(*  case analysis, but the result should hold *) *)
-(* Lemma link_match_pol: *)
-(*   forall p1 p2 tp1 tp2 p, *)
-(*   link p1 p2 = Some p -> *)
-(*   match_prog p1 tp1 -> match_prog p2 tp2 -> *)
-(*   link_pol tp1 tp2 (prog_pol tp1) (prog_pol tp2) = *)
-(*     link_pol p1 p2 (prog_pol p1) (prog_pol p2). *)
-(* Proof. *)
-(* Admitted. *)
-
 Theorem link_match_program:
   forall p1 p2 tp1 tp2 p,
   link p1 p2 = Some p ->

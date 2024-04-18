@@ -2056,7 +2056,15 @@ Lemma allowed_addrof_b_reflect :
   forall ge cp id,
     allowed_addrof ge cp id <->
       allowed_addrof_b ge cp id = true.
-Proof. Admitted.
+Proof.
+  intros. unfold allowed_addrof, allowed_addrof_b.
+  split.
+  - destruct flowsto_dec; try auto.
+    intros []; try congruence. rewrite H; auto.
+  - intros H; apply orb_prop in H as [].
+    + left; now destruct flowsto_dec.
+    + rewrite H; now right.
+Qed.
 
 Variant call_type :=
   | InternalCall

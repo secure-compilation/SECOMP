@@ -1131,13 +1131,6 @@ Definition get_extcall_arguments' (rs: regset) (m: mem) (sg: signature) :=
 Definition get_extcall_arguments (rs: regset) (m: mem) (sg: signature) :=
   list_option_option_list (get_extcall_arguments' rs m sg).
 
-Lemma extcall_arguments_equiv:
-  forall rs m sg args,
-    extcall_arguments rs m sg args <-> get_extcall_arguments rs m sg = Some args.
-Proof.
-  admit.
-Admitted.
-
 (** Extract the values of the arguments to a call. *)
 (* Note the difference: [loc_parameters] vs [loc_arguments] *)
 Inductive call_arg (rs: regset) (m: mem): loc -> val -> Prop :=
@@ -1175,12 +1168,6 @@ Definition get_call_arguments' (rs: regset) (m: mem) (sg: signature) :=
 Definition get_call_arguments (rs: regset) (m: mem) (sg: signature) :=
   list_option_option_list (get_call_arguments' rs m sg).
 
-Lemma call_arguments_equiv:
-  forall rs m sg args,
-    call_arguments rs m sg args <-> get_call_arguments rs m sg = Some args.
-Proof.
-  admit.
-Admitted.
 
 Definition loc_external_result (sg: signature) : rpair preg :=
   map_rpair preg_of (loc_result sg).
