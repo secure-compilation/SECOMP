@@ -233,7 +233,7 @@ Axiom perm_valid_block:
 
 (** If a pointer has some permission, it has nonempty permission. *)
 Axiom perm_nonempty:
-  forall m b ofs k p, perm m b ofs k p -> perm m b ofs Cur Nonempty.
+  forall m b ofs k p k', perm m b ofs k p -> perm m b ofs k' Nonempty.
 
 (* Unused?
 (** The [Mem.perm] predicate is decidable. *)

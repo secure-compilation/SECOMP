@@ -199,18 +199,20 @@ Qed.
 Local Hint Resolve perm_valid_block: mem.
 
 Theorem perm_nonempty:
-  forall m b ofs k p, perm m b ofs k p -> perm m b ofs Cur Nonempty.
+  forall m b ofs k p k', perm m b ofs k p -> perm m b ofs k' Nonempty.
 Proof.
-  intros m b ofs k p.
-  destruct k.
-  { unfold perm.
-    pose proof (access_max m b ofs).
-    destruct ((mem_access m)#b ofs Max), ((mem_access m)#b ofs Cur);
-      simpl in *; try easy.
-    intros _. constructor. }
-  unfold perm.
-  destruct ((mem_access m)#b ofs Cur); simpl; trivial.
-  intros _. constructor.
+  intros m b ofs k p k' perm_k.
+  assert (perm m b ofs Cur Nonempty) as perm_cur.
+  { unfold perm in *.
+    destruct k.
+    { pose proof (access_max m b ofs).
+      destruct ((mem_access m)#b ofs Max), ((mem_access m)#b ofs Cur);
+        simpl in *; try easy.
+      constructor. }
+    destruct ((mem_access m)#b ofs Cur); simpl; trivial.
+    constructor. }
+  destruct k'; eauto.
+  eauto using perm_max.
 Qed.
 
 Remark perm_order_dec:
