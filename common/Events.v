@@ -705,11 +705,11 @@ Record extcall_properties (sem: extcall_sem) (cp: compartment) (sg: signature) :
     must preserve their nonempty permissions. *)
   ec_valid_pointer:
     forall ge vargs m1 t vres m2,
-      sem ge vargs m1 t vres m2 ->
-      forall b ofs k,
-      ~ Mem.perm m1 b ofs Cur Freeable ->
-      Mem.perm m1 b ofs k Nonempty ->
-      Mem.perm m2 b ofs k Nonempty;
+    sem ge vargs m1 t vres m2 ->
+    forall b ofs k,
+    ~ Mem.perm m1 b ofs Cur Freeable ->
+    Mem.perm m1 b ofs k Nonempty ->
+    Mem.perm m2 b ofs k Nonempty;
 
 (** External calls cannot increase the max permissions of a valid block.
     They can decrease the max permissions, e.g. by freeing. *)
