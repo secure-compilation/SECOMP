@@ -37,8 +37,6 @@ Require Parser.
 Require Initializers.
 (* Backtranslation *)
 Require Backtranslation.
-(* Capability backend *)
-Require CapAsmgen.
 
 (* Standard lib *)
 Require Import ExtrOcamlBasic.
@@ -145,7 +143,6 @@ Extract Constant Cabs.char_code => "int64".
 (* Processor-specific extraction directives *)
 
 Load extractionMachdep.
-Load CapextractionMachdep.
 
 (* Avoid name clashes *)
 Extraction Blacklist List String Int.
@@ -159,7 +156,6 @@ Cd "extraction".
 
 Separate Extraction
    Compiler.transf_c_program Compiler.transf_cminor_program
-   CapAsmgen.transf_program
    Cexec.do_initial_state Cexec.do_step Cexec.at_final_state
    Ctypes.merge_attributes Ctypes.remove_attributes 
    Ctypes.build_composite_env Ctypes.layout_struct

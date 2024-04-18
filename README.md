@@ -50,8 +50,10 @@ CompCert build process, e.g., by going to that folder and running:
 ```
 ./configure -toolprefix "riscv64-linux-gnu-" rv64-linux
 ```
+where you should replace `riscv64-linux–gnu-` by the prefix used by your RISC-V compilation chain.
 
-When this step succeeds, running `make proof` runs the proofs and `make` builds the sub-project.
+One can then compile the project by running `make` (optionally with the `-j` command line argument).
+The command `make proof` can also be used to only check the proofs.
 
 ## Main branch: `ccs-submission`
 
