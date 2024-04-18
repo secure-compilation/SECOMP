@@ -570,17 +570,8 @@ Section Simulation.
   Hypothesis W1_ini: exists s, Smallstep.initial_state (semantics1 W1) s.
   Hypothesis W2_ini: exists s, Smallstep.initial_state (semantics1 W2) s.
 
-  Hypothesis W1_compat: clight_compatible s p1 c.
-  Hypothesis W2_compat: clight_compatible s p2 c.
-
-  (* Context (ge1 ge2: genv). *)
   Notation ge1 := (globalenv W1).
   Notation ge2 := (globalenv W2).
-(*
-  Lemma symbols_preserved:
-    forall (s: ident), Genv.find_symbol ge2 s = Genv.find_symbol ge1 s.
-  Proof (Genv.find_symbol_match match_W1_W2).
-*)
 
   Definition wf_gvar_init (ge: genv) :=
     forall gv b,
@@ -595,18 +586,13 @@ Section Simulation.
   Hypothesis W1_gvars: wf_gvar_init ge1.
   Hypothesis W2_gvars: wf_gvar_init ge2.
 
-  (* TODO: Move this *)
-  Definition loc_public_inside_compartment (* cp *) (ge: genv) (* m *) b (ofs: Z) :=
-    exists id fd,
-      Genv.find_symbol ge id = Some b /\
-      (* Genv.public_symbol ge id = true /\ *)
-      Genv.find_funct_ptr ge b = Some fd.
-      (* Mem.block_compartment m b = Some cp. *)
-
-  Hypothesis ec_mem_gfun_inside_compartment:
-    forall ef ge vargs m1 t vres m2,
-      external_call ef (Genv.to_senv ge.(genv_genv)) vargs m1 t vres m2 ->
-      Mem.unchanged_on (loc_public_inside_compartment (* comp_of ef *) ge (* m1 *)) m1 m2.
+  Hypothesis ec_valid_pointer:
+    forall ef (ge: genv) vargs m1 t vres m2,
+      external_call ef ge vargs m1 t vres m2 ->
+      forall b ofs k,
+        ~ Mem.perm m1 b ofs Cur Freeable ->
+        Mem.perm m1 b ofs k Nonempty ->
+        Mem.perm m2 b ofs k Nonempty.
 
 (** New helpers *)
 
@@ -2613,31 +2599,11 @@ Qed.
     intros sem cp sg ef p vargs m t vres v m'
            ext_call sem_props m_m' norepet_p blocks_m perms_m.
     intros b f ge_b. split.
-    - (* FIXME: Here, we need to show that b has nonempty permission in the next
-         memory m', knowing that b has nonempty permission in the original
-         memory m.  It is not clear if we can show this, because an external
-         call can cause the permissions of a memory location to decrease
-         (e.g. when freeing memory).
-         NOTE: This is probably fine because external calls should not be able
-         to free code memory, at least not memory associated with public
-         symbols. [perm_order Nonempty Freeable] is false, so any checks
-         performed while attempting to free code memory would fail. *)
-      exploit ec_mem_gfun_inside_compartment; eauto.
-      intros UNCHANGED.
-      assert (b_f := Genv.find_funct_ptr_find_comp_of_block _ _ ge_b).
-      exploit blocks_m; eauto. intros block_b_f.
-      apply (Mem.unchanged_on_perm _ _ _ UNCHANGED); auto.
-      + apply Genv.find_funct_ptr_iff in ge_b.
-        destruct (Genv.find_def_find_symbol_inversion _ _ ge_b norepet_p)
-          as (id & id_b).
-        exists id, f. split.
-        * assumption.
-        * apply Genv.find_funct_ptr_iff. assumption.
-      + unfold Mem.valid_block.
-        destruct (plt b (Mem.nextblock m)) as [| GT]; [assumption |].
-        apply Mem.block_compartment_valid_block in GT.
-        congruence.
-      + specialize (perms_m _ _ ge_b) as (G & _). exact G.
+    - destruct (perms_m _ _ ge_b) as [perm_m_b perm_m_b_max].
+      assert (~ Mem.perm m b 0 Cur Freeable) as not_freeable.
+      { intros contra. apply perm_m_b_max in contra.
+        destruct contra; congruence. }
+      eauto using ec_valid_pointer.
     - intros ofs k p' perm_m'.
       assert (Genv.find_comp_of_block (globalenv p) b = Some (comp_of f)) as comp_b.
       { unfold Genv.find_comp_of_block.
@@ -2783,6 +2749,37 @@ Qed.
         congruence. }
   Qed.
 
+  Lemma unchanged_on_fun ef (ge: genv) vargs m1 t vres m2 :
+    external_call ef ge vargs m1 t vres m2 ->
+    let P b ofs :=
+       (ofs = 0 -> Mem.perm m1 b ofs Cur Nonempty) /\
+       forall k p,
+         Mem.perm m1 b ofs k p ->
+         ofs = 0 /\ p = Nonempty in
+    Mem.unchanged_on P m1 m2.
+  Proof.
+    intros m1_m2 P.
+    exploit ec_mem_outside_compartment; eauto.
+    { apply external_call_spec. }
+    intros unchanged. split.
+    - eapply Mem.unchanged_on_nextblock; eauto.
+    - intros b ofs k p (Hnonempty & Hmax) Hvalid. split.
+      + intros perm_m1_b.
+        pose proof (Hmax _ _ perm_m1_b) as [-> ->].
+        eapply ec_valid_pointer; eauto.
+        intros contra. pose proof (Hmax _ _ contra) as [??]. congruence.
+      + intros perm_m2_b.
+        pose proof (external_call_spec ef).
+        apply Mem.perm_max in perm_m2_b.
+        exploit ec_max_perm; eauto.
+        intros perm_m1_b. destruct (Hmax _ _ perm_m1_b). subst ofs p.
+        destruct k; trivial.
+        eauto using Mem.perm_nonempty.
+    - intros b ofs (Hnonempty & Hmax) contra.
+      destruct (Hmax _ _ contra). congruence.
+    - eauto using Mem.unchanged_on_own.
+  Qed.
+
   Lemma right_mem_injection_external_call_left :
     forall j ef vargs1 vres1 t m1 m1' m2
            (RMEMINJ: right_mem_injection s j ge1 ge2 m1 m2)
@@ -2812,20 +2809,21 @@ Qed.
         intuition congruence.
     - exploit ec_mem_outside_compartment; eauto.
       { apply external_call_spec. }
-      intros m1_m1'.
-      exploit ec_mem_gfun_inside_compartment; eauto. intros m1_m1'_public.
-      assert (m1_m1'_total := unchanged_on_or _ _ _ _ m1_m1' m1_m1'_public).
-      clear m1_m1' m1_m1'_public.
+      intros unchanged1.
+      exploit unchanged_on_fun; eauto.
+      intros unchanged2.
+      pose proof (unchanged_on_or _ _ _ _ unchanged1 unchanged2).
+      clear unchanged1 unchanged2.
       exploit Mem.unchanged_on_inject; eauto.
       simpl. intros b off j_b_undef.
       apply DOM in j_b_undef. simpl in j_b_undef.
       destruct Mem.block_compartment as [cp |] eqn:m1_cp.
       + destruct (peq cp (comp_of ef)) as [-> | NEQ].
         * destruct j_b_undef as [| (id & fd & id_b & id_pub & b_fd)]; [congruence |].
-          right. exists id, fd. auto.
-        * left. intros m1_b.
-          rewrite m1_b in m1_cp. injection m1_cp as <-.
-          contradiction.
+          right. apply BLKS2 in b_fd.
+          destruct b_fd as [H1 H2]. split; eauto.
+          intros ->. eauto using Mem.perm_max.
+        * left. intros ?. congruence.
       + destruct j_b_undef as [| (id & fd & id_b & id_pub & b_fd)]; [contradiction |].
         assert (CONTRA := Genv.find_funct_ptr_find_comp_of_block _ _ b_fd).
         exploit BLKS1; eauto.
@@ -2852,10 +2850,10 @@ Qed.
     constructor; eauto.
     - exploit ec_mem_outside_compartment; eauto.
       { apply external_call_spec. }
-      intros m2_m2'.
-      exploit ec_mem_gfun_inside_compartment; eauto. intros m2_m2'_public.
-      assert (m2_m2'_total := unchanged_on_or _ _ _ _ m2_m2' m2_m2'_public).
-      clear m2_m2' m2_m2'_public.
+      intros unchanged1.
+      exploit unchanged_on_fun; eauto. intros unchanged2.
+      assert (m2_m2'_total := unchanged_on_or _ _ _ _ unchanged1 unchanged2).
+      clear unchanged1 unchanged2.
       exploit Mem.unchanged_on_inject'; eauto.
       simpl. intros b1 b2 delta ofs j_b1.
       assert (j b1 <> None) as j_b1_def by congruence.
@@ -2905,9 +2903,11 @@ Qed.
           { destruct DEFS as [|gd1 gd2 Hmatch_gd]; try congruence.
             injection b1_fd1 as ->.
             inv Hmatch_gd; eauto. }
-          right. exists id, fd2. split.
-          -- exploit right_mem_injection_find_symbol; eauto.
-          -- now apply Genv.find_funct_ptr_iff.
+          right.
+          apply Genv.find_funct_ptr_iff in ge2_b2.
+          apply PERMS2 in ge2_b2. destruct ge2_b2 as [perm_b2_cur perm_b2_max].
+          split; [congruence|].
+          apply perm_b2_max.
         * left. intros m2_b2'.
           simpl in m2_b2. rewrite m2_b2' in m2_b2. injection m2_b2 as <-.
           contradiction.
