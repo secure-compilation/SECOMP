@@ -90,8 +90,7 @@ Compartmentalized program examples can be found under `test/compartments`.
 The property-based testing infrastructure for Assumption 1 can be found under
 `test/backtranslation`.
 
-The extended requirements detailed above are needed.
-From the testing folder, run:
+After compiling CompCert, from the testing folder, run:
 ```
 touch .depend
 make clean
