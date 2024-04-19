@@ -118,6 +118,25 @@ Running the `test_backtranslation` binary performs the testing.
 | Memory containing compartment information | common/Memory.v | Record mem' and in particular field mem_compartments |  |
 | Memory operations require compartment permissions | common/Memory.v | Definition valid_access  | Given by the conjunct can_access_block m b cp meaning that cp can access the block b in memory m |
 
+Checking changes to CompCert’s languages:
+all the languages are changed in similar ways. As such, we describe the location of the changes on the Cminor language, and invite the reviewers to check the other languages if they wish to do so.
+
+| Claim | File | Location in file | Notes |
+| --- | --- | --- | --- |
+| Interface checks at the point of calls and returns | backend/Cminor.v | In step, conditions (ALLOWED: Genv.allowed_call ge (comp_of f) vf) for calls. | There is no check for allowed returns in most languages, including Cminor. |
+| Cross-compartment calls and returns don’t pass pointers | backend/Cminor.v | In step, conditions (NO_CROSS_PTR: Genv.type_of_call (comp_of f) (comp_of fd) = Genv.CrossCompartmentCall -> Forall not_ptr vargs) and (NO_CROSS_PTR: Genv.type_of_call (comp_of f) cp = Genv.CrossCompartmentCall -> not_ptr v) |  |
+| Generation of events | backend/Cminor.v | In step, condition (EV: call_trace ge (comp_of f) (comp_of fd) vf vargs (sig_args sig) t) and (EV: return_trace ge (comp_of f) cp v ty t) |  |
+| Correctness of the pass from Csharpminor to Cminor | cfrontend/Cminorgenproof.v | Entire file. The most important theorem is the theorem transl_step_correct |  |
+
+Language-specific claims:
+| Claim | File | Location in file | Notes |
+| --- | --- | --- | --- |
+| Cross-compartment inlining disabled | backend/Inlining.v | Definition can_inline | This comes from the check cp_eq_dec cp (comp_of f) |
+| Cross-compartment tailcall optimization disabled | backend/Tailcall.v | Definition transf_instr | The Itailcall instruction is only generated when the condition intra_compartment_call holds. |
+| Cross-compartment tailcalls disabled | All languages definition | Semantics of the languages | When a tailcall instruction exists, then the semantics prevent it from being executed cross-compartment by having a condition (COMP: comp_of fd = comp_of f)  |
+
+
+
 
 ## Back-translation branch: `backtranslation`
 
