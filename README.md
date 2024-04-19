@@ -100,6 +100,25 @@ make test_backtranslation
 
 Running the `test_backtranslation` binary performs the testing.
 
+### Claims
+
+| Claim | File | Location in file | Notes |
+| --- | --- | --- | --- |
+| Compartment model | common/AST.v | Module COMP |  |
+| Compartments | common/AST.v | Definition compartment |  |
+| Interfaces | common/AST.v | Module Policy |  |
+| Programs | common/AST.v | Record program | Standard CompCert definition with the addition of a Policy.t(interface) component, properties related to well-formedness of this component |
+| Assignment of compartment to definitions and objects | common/AST.v | Typeclass has_comp | This is defined as a typeclass because the type of functions varies. |
+| Interface checks: definition of allowed cross-compartment calls | common/Globalenvs.v | Definition allowed_cross_call |  |
+| Interface checks: allowed calls | common/Globalenvs.v | Definition allowed_call | Builds on top of the previous definition to allow for intra-compartment calls  |
+| Interface checks: preservation by compilation of allowed calls | common/Globalenvs.v | Theorems match_genvs_allowed_calls, allowed_call_transf_partial, allowed_call_transf |  |
+| Trace events | common/Events.v | Definition event |  |
+| Properties of system calls | common/Events.v | Record extcall_properties |  |
+| Generation of the new trace events | common/Events.v | Definitions call_trace and return_trace |  |
+| Memory containing compartment information | common/Memory.v | Record mem' and in particular field mem_compartments |  |
+| Memory operations require compartment permissions | common/Memory.v | Definition valid_access  | Given by the conjunct can_access_block m b cp meaning that cp can access the block b in memory m |
+
+
 ## Back-translation branch: `backtranslation`
 
 This branch contains the back-translation proof. Use `make proof` to replay the proof.
