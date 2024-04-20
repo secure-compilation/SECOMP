@@ -18,8 +18,8 @@ General requirements:
 System requirements can be verified through CompCert's `configure` script
 (see below).
 
-Together with the above, the toolchain relies on the riscv64 architecture
-version of the GCC compiler, available for example from the
+In addition to the above, some of the toolchain relies on the riscv64
+architecture version of the GCC compiler, available for example from the
 `gcc-riscv64-linux-gnu` package on Debian-based systems.
 
 Extended requirements for systematic testing:
