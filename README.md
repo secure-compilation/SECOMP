@@ -48,14 +48,17 @@ CompCert build process, e.g., by going to that folder and running:
     $ ./configure -toolprefix "riscv64-linux-gnu-" rv64-linux
 
 where `riscv64-linux–gnu-` stands for the prefix used by the local RISC-V
-compilation chain.
+compilation chain. Installing and using a RISC-V compiler is only necessary
+for running the tests and examples in the `ccs-submission` branch.
 
 One can then compile CompCert and check the proofs on that branch by running
-`make`, optionally with the `-j` command line argument:
+`make`, optionally with the `-j` command line option, where `N` is an optional
+argument to limit the number of simultaneous jobs:
 
-    $ make -j8
+    $ make -jN
 
-The command `make proof` can also be used to only check the proofs.
+After building once, or after running `make depend`, the command `make proof` can also be used 
+to only check the proofs.
 
 ## Main branch: `ccs-submission`
 
@@ -84,7 +87,28 @@ The following files include the most interesting changes:
 
 ### Examples
 
-Compartmentalized program examples can be found under `test/compartments`.
+Compartmentalized program examples can be found under `test/compartments`. You can inspect
+the source code of the examples by opening the C files, and test the functionality of the compiler by using
+`../../ccomp file.c -o file`.
+
+To run the compiled files, we suggest using [Fabrice Bellard's
+TinyEmu](https://bellard.org/tinyemu/), which is included in the virtual image.
+
+On the virtual image, you can use the following to run compiled programs:
+
+Start the emulator with `temu root_9p-riscv64.cfg` then `mount -t 9p /dev/root /mnt`
+in the guest to be able to access the content of the folder `/tmp` on the host.
+
+Then, compile a file and copy it to the `/tmp` directory:
+```
+../../ccomp -L../../runtime test/c/fib.c -v -static
+cp a.out /tmp/a.out
+```
+
+Then, on the guest, run `/mnt/a.out`.
+
+We statically link the libraries to avoid issues arising from version
+discrepancies between the system's libc and the emulator's libc.
 
 ### Testing the compilation of the back-translation
 
