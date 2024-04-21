@@ -8,52 +8,53 @@ This development is built and tested with Coq 8.15.2. It is based on the 64-bit
 RISC-V backend of CompCert 3.12.
 
 General requirements:
-
  - OCaml version 4.5.0 or greater (OCaml 5 is not supported).
-
+   + systematic testing needs OCaml version 4.14.0 or later (see below)
  - Coq version 8.15.2 (OPAM package: `coq`)
-
  - Menhir version 20190626 or greater (OPAM package: `menhir`).
 
-System requirements can be verified through CompCert's `configure` script
-(see below).
+Extended requirements for systematic testing:
+ - OCaml version 4.14.0 or later.
+ - QCheck (OPAM package: `qcheck`).
+ - MenhirLib (OPAM package: `menhirLib`).
+
+Here are the OPAM commands one can use to install all OCaml dependencies above:
+
+    $ opam switch create 4.14.0
+    $ eval $(opam env --switch=4.14.0)
+    $ opam install coq.8.15.2 menhir qcheck menhirLib
 
 In addition to the above, some of the toolchain relies on the riscv64
 architecture version of the GCC compiler, available for example from the
 `gcc-riscv64-linux-gnu` package on Debian-based systems.
 
-Extended requirements for systematic testing:
-
- - OCaml version 4.14.0 or greater.
-
- - QCheck (OPAM package: `qcheck`).
-
- - MenhirLib (OPAM package: `menhirLib`).
+System requirements can be verified through CompCert's `configure` script
+(see Building below).
 
 ## Structure
 
 The development is currently split into four branches, which we are working on
 merging into a single release:
-
  - `ccs-submission`: compiler correctness proof and testing infrastructure (main)
-
  - `backtranslation`: proof of back-translation
-
  - `recomp-ccs`: proof of recomposition
-
  - `secure-compilation`: proof of blame
 
 ## Building
 
 Each branch can be built after installing its dependencies by configuring the
 CompCert build process, e.g., by going to that folder and running:
-```
-./configure -toolprefix "riscv64-linux-gnu-" rv64-linux
-```
+
+    $ ./configure -toolprefix "riscv64-linux-gnu-" rv64-linux
+
 where `riscv64-linux–gnu-` stands for the prefix used by the local RISC-V
 compilation chain.
 
-One can then compile the project by running `make` (optionally with the `-j` command line argument).
+One can then compile CompCert and check the proofs on that branch by running
+`make`, optionally with the `-j` command line argument:
+
+    $ make -j8
+
 The command `make proof` can also be used to only check the proofs.
 
 ## Main branch: `ccs-submission`
@@ -88,17 +89,18 @@ Compartmentalized program examples can be found under `test/compartments`.
 ### Testing the compilation of the back-translation
 
 The property-based testing infrastructure for Assumption 1 can be found under
-`test/backtranslation`.
+`test/backtranslation`. After compiling CompCert, from this folder, run:
 
-After compiling CompCert, from the testing folder, run:
-```
-touch .depend
-make clean
-make depend
-make test_backtranslation
-```
+    $ touch .depend
+    $ make clean
+    $ make depend
+    $ make test_backtranslation
 
-Running the `test_backtranslation` binary performs the testing.
+Running the `test_backtranslation` binary performs the testing:
+
+    $ ./test_backtranslation
+
+A few more details are provided in `test/backtranslation/README.md`.
 
 ### Claims
 
@@ -228,3 +230,4 @@ Simple compilation examples are in file `cheririscV/CapAsmgen.v`, section
 
 The compiler binary is instrumented to produce capability assembly in addition
 to regular compartmentalized CompCert assembly.
+
