@@ -73,6 +73,30 @@ argument number `N` can limit the number of simultaneous jobs:
 After building once, or after running `make depend`, the alternative command
 `make proof` can be used to only check the proofs.
 
+## How to check the theorems and proofs
+
+For the users using the provided virtual machine, we recommend using Emacs with
+Proof General and Company Coq to explore the development.
+
+To start, load a `v` file from the development in Emacs (`C-x C-f`).
+After that, you can use the following commands to navigate through the file:
+- `C-c C-n`: process next command
+- `C-c C-p`: go back one command
+- `C-c C-Enter`: process the file up to the current location.
+
+To inspect a particular theorem, locate that theorem, and process the file up to
+the start of the theorem (`C-c C-Enter`). Then, you may step through the proof one step
+at a time using `C-c C-n`. The state of the proof (with goals and assumptions) is displayed
+in one of the side window. Messages are displayed in the other side window.
+
+A proved theorem ends with `Qed.`. When running `Qed`, the interactive prover will check
+the validity of the proof; if the command succeed, then the proof is accepted by Coq.
+After a theorem is proved, you can use the following command (write it inside the file and then `C-c C-n`):
+`Print Assumptions theorem.` to display all the assumptions and axioms `theorem` depends on.
+
+At any point, you can use the commands `Print ident.` (`C-c C-a C-p`) to print the definition of `ident`,
+and `Check ident.` (`C-c C-a C-c`) to print the type of `ident`.
+
 ## Main branch: `ccs-submission`
 
 This branch contains the extension of CompCert to compartments, which involved
