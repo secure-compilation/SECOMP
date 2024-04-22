@@ -48,8 +48,21 @@ CompCert build process, e.g., by going to that folder and running:
     $ ./configure -toolprefix "riscv64-linux-gnu-" rv64-linux
 
 where `riscv64-linux–gnu-` stands for the prefix used by the local RISC-V
-compilation chain. Installing and using a RISC-V compiler is only necessary
-for running the tests and examples in the `ccs-submission` branch.
+compilation chain.
+
+Installing and using a RISC-V compiler is not necessary to build the compiler itself,
+but it will result in errors when running `make` as CompCert won't be able to compile
+its runtime, resulting in errors resembling:
+``` shell
+error: unsupported argument 'rv64imafd' to option '-march='
+```
+Running `make proof` will not generate any error.
+
+However, installing and using a RISC-V compiler is strictly necessary in order
+to compile the tests and examples in the `ccs-submission` branch.
+
+In case one doesn't want to install a RISC-V compiler,
+then running `./configure rv64-linux` will be enough.
 
 One can then compile CompCert and check the proofs on that branch by running
 `make`, optionally with the `-j` command line option, where an optional
