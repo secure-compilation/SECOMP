@@ -50,6 +50,15 @@ CompCert build process, e.g., by going to that folder and running:
 where `riscv64-linux–gnu-` stands for the prefix used by the local RISC-V
 compilation chain.
 
+One can then compile CompCert and check the proofs on that branch by running
+`make`, optionally with the `-j` command line option, where an optional
+argument number `N` can limit the number of simultaneous jobs:
+
+    $ make -jN
+
+After building once, or after running `make depend`, the alternative command
+`make proof` can be used to only check the proofs.
+
 Installing and using a RISC-V compiler is not necessary to build the compiler itself,
 but it will result in errors when running `make` as CompCert won't be able to compile
 its runtime, resulting in errors resembling:
@@ -64,14 +73,6 @@ to compile the tests and examples in the `ccs-submission` branch.
 In case one doesn't want to install a RISC-V compiler,
 then running `./configure rv64-linux` will be enough.
 
-One can then compile CompCert and check the proofs on that branch by running
-`make`, optionally with the `-j` command line option, where an optional
-argument number `N` can limit the number of simultaneous jobs:
-
-    $ make -jN
-
-After building once, or after running `make depend`, the alternative command
-`make proof` can be used to only check the proofs.
 
 ## Main branch: `ccs-submission`
 
