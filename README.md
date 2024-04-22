@@ -72,7 +72,8 @@ back-translation function.
 The updated correctness proof is complete and can be
 found in file `driver/Compiler.v`, theorems
 `transf_c_program_correct` and `separate_transf_c_program_correct`, and only
-depends on CompCert's existing axioms, and similar axioms regarding compartments.
+depends on CompCert's existing axioms, or small adaptions thereof to account for
+the addition of compartments to the compiler.
 To verify this, uncomment and execute `Print Assumptions transf_c_program_correct` and
 `Print Assumptions separate_transf_c_program_correct`. This will load and print the list
 of axiomatised results used in the proofs.
