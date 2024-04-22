@@ -90,9 +90,13 @@ The following files include the most interesting changes:
 
 Compartmentalized program examples can be found under `test/compartments`. You can inspect
 the source code of the examples by opening the C files, and test the functionality of the compiler by using
-`../../ccomp file.c -o file`.
+`../../ccomp file.c -L../../runtime -dasm -dparse`. Then, you can inspect the content
+of the generated assembly.
 
-To run the compiled files, we suggest using [Fabrice Bellard's
+Note that the binaries are stripped from the compartment information; this means that one should be
+able to run them on a standard RISC-V machine.
+
+If you wish to run the compiled binaries, we suggest using [Fabrice Bellard's
 TinyEmu](https://bellard.org/tinyemu/), which is included in the virtual image.
 
 On the virtual image, you can use the following to run compiled programs:
