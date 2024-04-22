@@ -52,13 +52,13 @@ compilation chain. Installing and using a RISC-V compiler is only necessary
 for running the tests and examples in the `ccs-submission` branch.
 
 One can then compile CompCert and check the proofs on that branch by running
-`make`, optionally with the `-j` command line option, where `N` is an optional
-argument to limit the number of simultaneous jobs:
+`make`, optionally with the `-j` command line option, where an optional
+argument number `N` can limit the number of simultaneous jobs:
 
     $ make -jN
 
-After building once, or after running `make depend`, the command `make proof` can also be used 
-to only check the proofs.
+After building once, or after running `make depend`, the alternative command
+`make proof` can be used to only check the proofs.
 
 ## Main branch: `ccs-submission`
 
@@ -194,7 +194,7 @@ to Clight: `backtranslation_proof`.
 
 This branch contains the recomposition proof. Use `make proof` to replay the proof.
 
-The proof is mostly complete and most of the main `correctness` branch has been
+The proof is complete and most of the main correctness branch has been
 merged. Compared to the main correctness branch, this branch contains fixes to
 the way programs access arguments stored on the stack. The recomposition proof
 is modified to account for these changes.
@@ -204,10 +204,10 @@ relation (`tsim_properties`), and the proof that it implies preservation
 of finite prefixes (`tsimulation_star`). The same file also contains the
 simulation diagrams depicted in Section 6 (`Section THREEWAY_SIMU_DIAGRAM`).
 
-File `security/Recomposition.v` contains the proof of recomposition: lemma `simulation`,
-as well as the three cores lemmas used to instantiate the diagrams:
-`step_E0_strong`, `step_E0_weak`, and `step_t`.
-The simulation invariants can be found at `strong_equivalence`, `weak_equivalence`, `stack_rel`.
+File `security/Recomposition.v` contains the proof of recomposition: lemma
+`simulation`, as well as the three cores lemmas used to instantiate the diagrams:
+`step_E0_strong`, `step_E0_weak`, and `step_t`.  The simulation invariants can
+be found at `strong_equivalence`, `weak_equivalence`, `stack_rel`.
 
 There are some low-level lemmas admitted, that we are in the process of fixing:
 - `set_perm_preserves_rel` states that a new `set_perm` operation, that we use
