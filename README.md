@@ -1,6 +1,19 @@
 ## Overview
 
-This repository contains the SECOMP formally secure compiler.
+This artifact contains the SECOMP formally secure compiler and its
+machine-checked security proofs in Coq, both of which are based on the CompCert
+formally verified C compiler. The Coq development contains the proofs and
+theorems described in the paper, split into different sub-folders corresponding
+to different parts of the proof. Each sub-folder can be compiled and checked
+independently from the others.
+
+This README file contains detailed instructions on how to build, run and check
+the development. It should run on most modern hardware, and depends only on
+OCaml, Coq, and some libraries that are available via the OCaml package manager
+OPAM. Additionally, running some tests relies on the GCC RISC-V cross-compiler.
+
+Beyond the SECOMP sources, we also provide a VM that has all these dependencies
+already installed.
 
 ## Requirements
 
