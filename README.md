@@ -92,7 +92,7 @@ After a theorem is proved, you can use the following command (write it inside th
 
 At any point, you can use the commands `Print ident.` (`C-c C-a C-p`) to print the definition of `ident`,
 and `Check ident.` (`C-c C-a C-c`) to print the type of `ident`.
-=======
+
 ## Main branch: `ccs-submission`
 
 This branch contains the extension of CompCert to compartments, which involved
