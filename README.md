@@ -189,7 +189,7 @@ To compile a compartmentalized program, invoke CompCert as follows, for example
 for the case of compartmentalized addition available on
 `test/compartments/add.c`, from the root of the branch:
 
-    [compartments]$ ./ccomp -c test/compartments/add.c
+    [compartments]$ ../../ccomp -c add.c
 
 The compiler automatically produces an additional file, `out.cap_asm`, with the
 capability assembly code for the given program.
