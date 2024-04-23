@@ -108,6 +108,8 @@ At any point, you can use the commands `Print ident.` (`C-c C-a C-p`) to print
 the definition of `ident`, and `Check ident.` (`C-c C-a C-c`) to print the type
 of `ident`.
 
+The file `table.html` contains a mapping from claims from the paper to definitions and proofs.
+
 ## Main branch: `ccs-submission`
 
 This branch contains the extension of CompCert to compartments, which involved
@@ -185,44 +187,6 @@ Running the `test_backtranslation` binary performs the testing:
     [backtranslation]$ ./test_backtranslation
 
 A few more details are provided in `test/backtranslation/README.md`.
-
-### Claims
-
-| Claim | File | Location in file | Notes |
-| --- | --- | --- | --- |
-| Compartment model | common/AST.v | Module COMP |  |
-| Compartments | common/AST.v | Definition compartment |  |
-| Interfaces | common/AST.v | Module Policy |  |
-| Programs | common/AST.v | Record program | Standard CompCert definition with the addition of a Policy.t(interface) component, properties related to well-formedness of this component |
-| Assignment of compartment to definitions and objects | common/AST.v | Typeclass has_comp | This is defined as a typeclass because the type of functions varies. |
-| Interface checks: definition of allowed cross-compartment calls | common/Globalenvs.v | Definition allowed_cross_call |  |
-| Interface checks: allowed calls | common/Globalenvs.v | Definition allowed_call | Builds on top of the previous definition to allow for intra-compartment calls  |
-| Interface checks: preservation by compilation of allowed calls | common/Globalenvs.v | Theorems match_genvs_allowed_calls, allowed_call_transf_partial, allowed_call_transf |  |
-| Trace events | common/Events.v | Definition event |  |
-| Properties of system calls | common/Events.v | Record extcall_properties |  |
-| Generation of the new trace events | common/Events.v | Definitions call_trace and return_trace |  |
-| Memory containing compartment information | common/Memory.v | Record mem' and in particular field mem_compartments |  |
-| Memory operations require compartment permissions | common/Memory.v | Definition valid_access  | Given by the conjunct can_access_block m b cp meaning that cp can access the block b in memory m |
-
-Checking changes to CompCert’s languages:
-all the languages are changed in similar ways. As such, we describe the location of the changes on the Cminor language, and invite the reviewers to check the other languages if they wish to do so.
-
-| Claim | File | Location in file | Notes |
-| --- | --- | --- | --- |
-| Interface checks at the point of calls and returns | backend/Cminor.v | In step, conditions (ALLOWED: Genv.allowed_call ge (comp_of f) vf) for calls. | There is no check for allowed returns in most languages, including Cminor. |
-| Cross-compartment calls and returns don’t pass pointers | backend/Cminor.v | In step, conditions (NO_CROSS_PTR: Genv.type_of_call (comp_of f) (comp_of fd) = Genv.CrossCompartmentCall -> Forall not_ptr vargs) and (NO_CROSS_PTR: Genv.type_of_call (comp_of f) cp = Genv.CrossCompartmentCall -> not_ptr v) |  |
-| Generation of events | backend/Cminor.v | In step, condition (EV: call_trace ge (comp_of f) (comp_of fd) vf vargs (sig_args sig) t) and (EV: return_trace ge (comp_of f) cp v ty t) |  |
-| Correctness of the pass from Csharpminor to Cminor | cfrontend/Cminorgenproof.v | Entire file. The most important theorem is the theorem transl_step_correct |  |
-
-Language-specific claims:
-| Claim | File | Location in file | Notes |
-| --- | --- | --- | --- |
-| Cross-compartment inlining disabled | backend/Inlining.v | Definition can_inline | This comes from the check cp_eq_dec cp (comp_of f) |
-| Cross-compartment tailcall optimization disabled | backend/Tailcall.v | Definition transf_instr | The Itailcall instruction is only generated when the condition intra_compartment_call holds. |
-| Cross-compartment tailcalls disabled | All languages definition | Semantics of the languages | When a tailcall instruction exists, then the semantics prevent it from being executed cross-compartment by having a condition (COMP: comp_of fd = comp_of f)  |
-
-
-
 
 ## Back-translation branch: `backtranslation`
 
