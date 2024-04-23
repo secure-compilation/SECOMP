@@ -197,17 +197,6 @@ GENERATED=\
 all:
 	@test -f .depend || $(MAKE) depend
 	$(MAKE) proof
-	$(MAKE) extraction
-	$(MAKE) ccomp
-ifeq ($(HAS_RUNTIME_LIB),true)
-	$(MAKE) runtime
-endif
-ifeq ($(CLIGHTGEN),true)
-	$(MAKE) clightgen
-endif
-ifeq ($(INSTALL_COQDEV),true)
-	$(MAKE) compcert.config
-endif
 
 proof: $(FILES:.v=.vo)
 
