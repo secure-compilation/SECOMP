@@ -242,8 +242,8 @@ as only the compilation procedure is needed for this part.
 The property-based testing infrastructure for Assumption 1 can be found under
 `test/backtranslation`. After compiling CompCert, from this folder, run:
 
-    [backtranslation]$ make clean
     [backtranslation]$ touch .depend
+    [backtranslation]$ make clean
     [backtranslation]$ make depend
     [backtranslation]$ make test_backtranslation
 
