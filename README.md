@@ -88,29 +88,30 @@ the tests and examples in the `ccs-submission` branch (see Examples below).
 
 ## How one can inspect the Coq theorems and proofs
 
-For those using the provided virtual machine, we recommend using Emacs with
-Proof General and Company Coq if you wish to explore the Coq development.
+For those using the provided virtual machine, we recommend using the built-in
+CoqIDE environment to explore the Coq development. Users of the virtual machine
+can install other editors, like Proof General, if they prefer. The `sudo`
+password of the virtual machine is `secomp`.
 
-To start, load a `v` file from the development in Emacs (`C-x C-f`).
-After that, you can use the following commands to navigate through the file:
-- `C-c C-n`: process next command
-- `C-c C-p`: go back one command
-- `C-c C-Enter`: process the file up to the current location.
+To start CoqIDE, simply run the `coqide` command and navigate to the files you
+wish to inspect. The simplest way to evaluate a file is by using the buttons
+"Run to end" and "Run to cursor". Keyboard shortcuts for those commands can be
+found on the Navigation menu.
 
 To inspect a particular theorem, locate that theorem, and process the file up to
-the start of the theorem (`C-c C-Enter`). Then, you may step through the proof one step
-at a time using `C-c C-n`. The state of the proof (with goals and assumptions) is displayed
+the start of the theorem. Then, you may step through the proof one step
+at a time using the buttom "Forward one step". The state of the proof (with goals and assumptions) is displayed
 in one of the side window. Messages are displayed in the other side window.
 
 A proved theorem ends with `Qed.`. When running `Qed`, the interactive prover will check
 the validity of the proof; if the command succeed, then the proof is accepted by Coq.
 After a theorem is proved, you can use the following command (write it inside
-the file and then `C-c C-n`): `Print Assumptions theorem.` to display all the
+the file and then "Forward one step"): `Print Assumptions theorem.` to display all the
 assumptions and axioms `theorem` depends on.
 
-At any point, you can use the commands `Print ident.` (`C-c C-a C-p`) to print
-the definition of `ident`, and `Check ident.` (`C-c C-a C-c`) to print the type
-of `ident`.
+At any point, you can use the commands on the Query meny to Print
+the definition of and identifier and Check the type
+of an identifier, among others.
 
 ## Main branch: `ccs-submission`
 
