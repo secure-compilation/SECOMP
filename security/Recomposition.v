@@ -9101,20 +9101,20 @@ Section Theorems.
                       destruct sp3; try auto.
                       destruct sp2; try contradiction.
                       destruct sp1; try contradiction.
-                      intros diff1 diff2 inj1 inj2. clear inj1. rename H33 into inj1.
+                      intros diff1 diff2 inj1 inj2.
+                      inv inj1. rename H37 into inj1. revert inj1.
+                      inv inj2. rename H37 into inj2. revert inj2.
+                      intros inj1 inj2.
+                      (* clear inj1. rename H33 into inj1. *)
                       intros ?; subst b12.
-                      inv inj1.
                       assert (delta = 0).
                       { eapply delta_zero. eapply m2_m3. eauto. } subst delta.
-                      revert H34. intros inj1.
-                      inv inj2.
-                      assert (delta = 0).
-                      { eapply delta_zero. eapply m1_m3. eauto. } subst delta.
-                      revert H34. intros inj2.
+                      assert (delta0 = 0).
+                      { eapply delta_zero. eapply m1_m3. eauto. } subst delta0.
                       revert m1_m3; revert m2_m3.
                       intros m2_m3 m1_m3.
                       assert (C1: j__δ b6 <> None) by congruence.
-                      assert (C2: j__oppδ b10 <> None) by congruence.
+                      assert (C2: j__oppδ b13 <> None) by congruence.
                       eapply same_dom in m1_m3 as D1.
                       eapply same_dom in m2_m3 as D2.
                       apply D1 in C1; apply D2 in C2.
@@ -9136,34 +9136,28 @@ Section Theorems.
                         eapply partial_mem_inject in m1_m3.
                         eapply Mem.mi_inj in m1_m3.
                         pose proof (Mem.mi_own _ _ _ m1_m3) as Y1.
-                        (* specialize (X1 _ _ _ _ _ _ _ inj2) *)
+                        (* specialize (Y1 _ _ _ _ _ _ _ inj1). *)
                         eapply partial_mem_inject in m2_m3.
                         eapply Mem.mi_inj in m2_m3.
-                        (* exploit SP_HAS_PTR; eauto. *)
-                        (* now destruct flowsto_dec. *)
-                        (* intros [? [? [? [? ?]]]]. *)
-                        (* assert (x2 = b6) by congruence. subst. *)
-                        (* pose proof (Mem.mi_own _ _ _ m2_m3) as Y2. *)
-                        (* specialize (Y2 _ _ _ _ _ _ _ inj1 NONEMPTY3 (flowsto_refl _)). *)
-                        (* simpl in Y2. *)
-                        (* rewrite eq_cp1 in *. rewrite R' in *. *)
-                        (* assert (x2 = x0) by now inv Y2. *)
-                        (* subst. rewrite e1 in *. *)
                         exploit SP_HAS_PTR; eauto.
                         now destruct flowsto_dec.
                         intros [? [? [? [? ?]]]].
                         assert (x2 = b6) by congruence. subst.
-                        specialize (Y1 _ _ _ _ 0 Nonempty Max inj2 H33 (flowsto_refl _)).
-                        simpl in Y1. rewrite R'' in *. subst.
-                        (* rewrite eq_cp1 in *. *)
-                        assert (exists xa, Mem.block_compartment m b6 = Comp xa).
-                        eapply perm_compartment1; eauto. destruct H34. rewrite H34 in *.
-                        inv Y1. admit.
-                      - eapply defs_inject in C2 as [? [? [? [X ?]]]].
-                        2: eapply inj_pres_opp_δ. 2: eauto.
-                        admit.
-                      - eapply defs_inject in C1 as [? [? [? [X ?]]]]; eauto.
-                        inv X; eauto. congruence.
+                        specialize (Y1 _ _ _ _ _ _ _ inj1 H34 (flowsto_refl _)).
+                        simpl in Y1.
+                        rewrite R'' in Y1.
+                        exploit perm_compartment1. eapply m1_m3''. eapply H34.
+                        intros [? R''']. rewrite R''' in *.
+                        inv Y1.
+                        pose proof (Mem.mi_own _ _ _ m2_m3) as Y2.
+                        specialize (Y2 _ _ _ _ _ _ _ inj2 NONEMPTY2 (flowsto_refl _)).
+                        simpl in Y2. rewrite R'' in *; rewrite R' in *.
+                        inv Y2. clear -C11 C21.
+
+                        destruct (s (has_comp_function f)). congruence. congruence.
+                      (* - eapply defs_inject in C1 as [? [? [? [X ?]]]]. *)
+                      (*   2: eapply inj_pres_opp_δ. 2: eauto. *)
+                      (*   admit. *)
                       - eapply defs_inject in C1 as [? [? [? [X ?]]]]; eauto.
                         inv X; eauto. congruence. }
             -- simpl. inv strong_s1_s3.
@@ -9883,7 +9877,7 @@ Section Theorems.
              inv COMP2; eauto.
              rewrite eq_pc' in *; simpl in *; unfold Genv.find_comp_of_block in *; rewrite find_funct in *.
              simpl in *; congruence.
-  Admitted.
+  Qed.
 
 End Theorems.
 
@@ -10760,8 +10754,6 @@ Section Simulation.
         exploit transform_find_symbol_2; eauto. intros [? ?]; auto. congruence.
         auto.
         simpl. intros. eapply Genv.find_symbol_find_def_inversion; eauto.
-        rewrite comp_main.
-        unfold comp_of_main. rewrite <- rewr_cp_main, <- same_cp_main1, rewr_cp_main. auto.
         unfold comp_of_main. eapply stack_rel_comm; eauto.
         rewrite <- rewr_cp_main, same_cp_main1, rewr_cp_main. auto.
         unfold comp_of_main. rewrite <- rewr_cp_main, same_cp_main1, rewr_cp_main. auto.
