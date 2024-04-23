@@ -112,6 +112,10 @@ Definition partial_if {A: Type}
           (flag: unit -> bool) (f: A -> res A) (prog: A) : res A :=
   if flag tt then f prog else OK prog.
 
+Definition check_init_data (p : Clight.program) :=
+  if wf_prog_init_data (Ctypes.program_of_program p) then OK p
+  else Error (MSG "Initial data does not satisfy compartment checks" :: nil).
+
 (** We define three translation functions for whole programs: one
   starting with a C program, one with a Cminor program, one with an
   RTL program.  The three translations produce Asm programs ready for
@@ -156,6 +160,7 @@ Definition transf_cminor_program (p: Cminor.program) : res Asm.program :=
 Definition transf_clight_program (p: Clight.program) : res Asm.program :=
   OK p
    @@ print print_Clight
+  @@@ time "Checking initial data" check_init_data
   @@@ time "Simplification of locals" SimplLocals.transf_program
   @@@ time "C#minor generation" Cshmgen.transl_program
   @@@ time "Cminor generation" Cminorgen.transl_program
@@ -299,6 +304,7 @@ Proof.
   unfold transf_c_program, time in T. simpl in T.
   destruct (SimplExpr.transl_program p) as [p1|e] eqn:P1; simpl in T; try discriminate.
   unfold transf_clight_program, time in T. rewrite ! compose_print_identity in T. simpl in T.
+  unfold check_init_data in T. destruct wf_prog_init_data; simpl in T; try discriminate.
   destruct (SimplLocals.transf_program p1) as [p2|e] eqn:P2; simpl in T; try discriminate.
   destruct (Cshmgen.transl_program p2) as [p3|e] eqn:P3; simpl in T; try discriminate.
   destruct (Cminorgen.transl_program p3) as [p4|e] eqn:P4; simpl in T; try discriminate.
@@ -356,6 +362,7 @@ Proof.
   (* unfold transf_c_program, time in T. simpl in T. *)
   (* destruct (SimplExpr.transl_program p) as [p1|e] eqn:P1; simpl in T; try discriminate. *)
   unfold transf_clight_program, time in T. rewrite ! compose_print_identity in T. simpl in T.
+  unfold check_init_data in T. destruct wf_prog_init_data; simpl in T; try discriminate.
   destruct (SimplLocals.transf_program p1) as [p2|e] eqn:P2; simpl in T; try discriminate.
   destruct (Cshmgen.transl_program p2) as [p3|e] eqn:P3; simpl in T; try discriminate.
   destruct (Cminorgen.transl_program p3) as [p4|e] eqn:P4; simpl in T; try discriminate.

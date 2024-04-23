@@ -613,6 +613,43 @@ Qed.
 
 End DEFMAP.
 
+(** * Well-formedness of variable initializers *)
+
+(** These checks ensure that every variable is only initialized with valid
+  data. We prevent a variable from mentioning another variable that lives in a
+  different compartment, or from mentioning a non-public function that lives in
+  a different compartment. *)
+
+Section WFINIT.
+
+Context {F V : Type} {FC : has_comp F}.
+
+Definition wf_init_data (p: program F V) (cp: compartment) (i: init_data) : bool :=
+  match i with
+  | Init_addrof id ofs =>
+      match (prog_defmap p)!id with
+      | Some (Gfun f) =>
+          eq_compartment cp (comp_of f) ||
+            in_dec ident_eq id p.(prog_public)
+      | Some (Gvar v) =>
+          eq_compartment cp (comp_of v)
+      | None => false
+      end
+  | _ => true
+  end.
+
+Definition wf_globdef (p: program F V) (gd: globdef F V) : bool :=
+  match gd with
+  | Gfun f => true
+  | Gvar v => List.forallb (wf_init_data p (comp_of v)) v.(gvar_init)
+  end.
+
+Definition wf_prog_init_data (p: program F V) : bool :=
+  List.forallb (fun '(_, gd) => wf_globdef p gd)
+               p.(prog_defs).
+
+End WFINIT.
+
 (** * Generic transformations over programs *)
 
 (** We now define a general iterator over programs that applies a given

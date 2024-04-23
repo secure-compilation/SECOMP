@@ -3228,6 +3228,36 @@ Proof.
   eapply alloc_globals_match; eauto. apply progmatch.
 Qed.
 
+Lemma wf_init_data_match: forall cp i,
+  wf_init_data tp cp i = wf_init_data p cp i.
+Proof.
+  intros cp i. case i; simpl; trivial.
+  intros id _.
+  destruct (match_program_defmap _ _ _ _ _ progmatch id)
+    as [|gd1 gd2 gdmatch]; trivial.
+  rewrite (match_program_public _ _ _ _ _ progmatch).
+  destruct gdmatch as [c f1 f2 _ fmatch|v1 v2 vmatch].
+  - now rewrite (comp_match _ _ _ fmatch).
+  - now destruct vmatch.
+Qed.
+
+Lemma wf_prog_init_data_match:
+  wf_prog_init_data tp = wf_prog_init_data p.
+Proof.
+  unfold wf_prog_init_data.
+  destruct (progmatch) as (defmatch & _).
+  induction defmatch as [|[id gd] gds [tid tgd] tgds [idmatch gdmatch] _ IH];
+    simpl; trivial.
+  simpl in *. subst tid.
+  destruct gdmatch as [c f1 f2 _ fmatch|v1 v2 vmatch]; simpl in *; trivial.
+  destruct vmatch as [i1 i2 cp init ro vo _].
+  unfold comp_of in *. simpl in *. rewrite IH.
+  enough (forallb (wf_init_data tp cp) init =
+          forallb (wf_init_data p cp) init) by congruence.
+  clear IH. induction init as [|i init IH]; simpl; trivial.
+  now rewrite wf_init_data_match, IH.
+Qed.
+
 Lemma match_genvs_find_comp_of_block:
   forall b,
     find_comp_of_block (globalenv p) b = find_comp_of_block (globalenv tp) b.
@@ -3410,7 +3440,6 @@ Proof.
   intros. eapply match_genvs_not_ptr_list_lessdef; eauto.
   clear. now induction vargs; auto.
 Qed.
-
 
 End MATCH_PROGRAMS.
 
