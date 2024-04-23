@@ -628,11 +628,10 @@ Definition wf_init_data (p: program F V) (cp: compartment) (i: init_data) : bool
   match i with
   | Init_addrof id ofs =>
       match (prog_defmap p)!id with
-      | Some (Gfun f) =>
-          eq_compartment cp (comp_of f) ||
-            in_dec ident_eq id p.(prog_public)
-      | Some (Gvar v) =>
-          eq_compartment cp (comp_of v)
+      | Some gd =>
+          match gd with Gfun _ => true | Gvar _ => false end
+            && in_dec ident_eq id p.(prog_public)
+          || eq_compartment (comp_of gd) cp
       | None => false
       end
   | _ => true

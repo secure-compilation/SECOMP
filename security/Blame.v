@@ -580,7 +580,7 @@ Section Simulation.
         (fun i =>
            forall id ofs,
              i = Init_addrof id ofs ->
-             Genv.find_comp_of_ident ge id = Some (comp_of gv))
+             Genv.allowed_addrof_b ge (comp_of gv) id = true)
         (gvar_init gv).
 
   Hypothesis W1_gvars: wf_gvar_init ge1.
@@ -4897,6 +4897,7 @@ Proof.
   specialize (wf_init2 _ _ eq_refl).
   unfold Genv.find_comp_of_ident, Genv.find_comp_of_block in *.
   unfold Genv.bytes_of_init_data.
+  unfold Genv.allowed_addrof_b in *.
   destruct (Genv.find_symbol ge1 id) as [b1|] eqn:ge1_id; try congruence.
   destruct (Genv.find_symbol ge2 id) as [b2|] eqn:ge2_id; try congruence.
   destruct (Genv.find_def ge1 b1) as [gd1|] eqn:ge1_b1; try congruence.
@@ -4907,7 +4908,13 @@ Proof.
     unfold Genv.find_comp_of_ident, Genv.find_comp_of_block.
     rewrite (Genv.find_invert_symbol _ _ ge1_id).
     rewrite ge1_id, ge1_b1, ge2_id.
-    injection wf_init1 as ->. now setoid_rewrite s_cp. }
+    rewrite orb_true_iff in wf_init1.
+    destruct wf_init1 as [wf_init1|wf_init1].
+    - destruct gd1 as [f1|v1]; try discriminate.
+      setoid_rewrite wf_init1.
+      now destruct (s (comp_of (Gfun f1))).
+    - destruct eq_compartment as [->|?]; try discriminate.
+      now rewrite s_cp. }
   econstructor; eauto.
   now rewrite Ptrofs.add_zero.
 Qed.

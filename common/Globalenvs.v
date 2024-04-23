@@ -3007,6 +3007,36 @@ Proof.
   destruct (contra Hexp).
 Qed.
 
+Lemma wf_prog_init_data_allowed_addrof:
+  forall (p: program F V),
+    wf_prog_init_data p = true ->
+    forall b gv,
+      find_var_info (globalenv p) b = Some gv ->
+      Forall (fun i =>
+                forall id ofs,
+                  i = Init_addrof id ofs ->
+                  allowed_addrof_b (globalenv p) gv.(gvar_comp) id = true)
+             gv.(gvar_init).
+Proof.
+  intros p wf_p b gv find_b.
+  apply find_var_info_iff in find_b.
+  apply find_def_inversion in find_b.
+  destruct find_b as [id id_p].
+  unfold wf_prog_init_data in wf_p.
+  rewrite forallb_forall in wf_p.
+  apply wf_p in id_p. simpl in id_p.
+  apply Forall_forall.
+  rewrite forallb_forall in id_p.
+  intros i i_gv id' ofs ->.
+  apply id_p in i_gv. simpl in i_gv.
+  destruct ((prog_defmap p) ! id') as [gd|] eqn:p_id';
+    simpl in *; try discriminate.
+  apply find_def_symbol in p_id'.
+  destruct p_id' as (b' & p_id' & p_b').
+  unfold allowed_addrof_b. rewrite p_id', p_b'.
+  unfold public_symbol. now rewrite p_id', globalenv_public.
+Qed.
+
 Section SECURITY.
 
 Definition same_symbols (j: meminj) (ge1: t): Prop :=
@@ -3237,7 +3267,7 @@ Proof.
     as [|gd1 gd2 gdmatch]; trivial.
   rewrite (match_program_public _ _ _ _ _ progmatch).
   destruct gdmatch as [c f1 f2 _ fmatch|v1 v2 vmatch].
-  - now rewrite (comp_match _ _ _ fmatch).
+  - unfold comp_of. simpl. now rewrite (comp_match _ _ _ fmatch).
   - now destruct vmatch.
 Qed.
 
