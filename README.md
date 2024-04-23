@@ -49,7 +49,11 @@ System requirements can be verified through CompCert's `configure` script
 The development is currently split into four branches, which we are working on
 merging into a single release:
  - `ccs-submission`: compiler correctness proof and testing infrastructure (main)
+   + A modified version of the compiler with support for generation of
+     CHERI RISC-V code is available on the branch `secure-compilation-captest`
  - `backtranslation`: proof of back-translation
+   + A modified version of the compiler with support for systematic testing is
+     available on the branch `cross-external-call-removal-test-backtranslation`
  - `recomp-ccs`: proof of recomposition
  - `secure-compilation`: proof of blame
 
@@ -172,21 +176,40 @@ Then, on the guest, run `/mnt/a.out`.
 Above, we statically link the libraries to avoid issues arising from version
 discrepancies between the system's libc and the emulator's libc.
 
-### Testing the compilation of the back-translation
+### Compiling compartmentalized programs with the CHERI backend.
 
-The property-based testing infrastructure for Assumption 1 can be found under
-`test/backtranslation`. After compiling CompCert, from this folder, run:
+For this part, build the modified compiler available under branch
+`secure-compilation-captest` following the general invocations of `configure`
+and `make`.
 
-    [backtranslation]$ touch .depend
-    [backtranslation]$ make clean
-    [backtranslation]$ make depend
-    [backtranslation]$ make test_backtranslation
+For this part, build the modified compiler available under branch
+`secure-compilation-captest` following the general invocations of `configure`
+and `make`.
 
-Running the `test_backtranslation` binary performs the testing:
+You do not need to install `ccomp` globally or worry about linking, as only the
+compilation procedure is needed for this part.
 
-    [backtranslation]$ ./test_backtranslation
+To compile a compartmentalized program, invoke CompCert as follows, for example
+for the case of compartmentalized addition available on
+`test/compartments.add.c`, from the root of the branch:
 
-A few more details are provided in `test/backtranslation/README.md`.
+    [compartments]$ ./ccomp -c test/compartments/add.c
+
+The compiler automatically produces an additional file, `out.cap_asm`, with the
+capability assembly code for the given program.
+
+Note that not all instructions are fully supported by the pretty-printer at the
+moment, and programs with unsupported instructions will emit invalid
+placeholders including the special placeholder `__Inst_Name__` in them.
+
+Our prototype implementation of the capability-based backend and secure calling
+convention is found under `cheririscV/`.
+
+Simple compilation examples (in Coq) are in file `cheririscV/CapAsmgen.v`, section
+`Examples`.
+
+The compiler binary is instrumented to produce capability assembly in addition
+to regular compartmentalized CompCert assembly, as described above.
 
 ## Back-translation branch: `backtranslation`
 
@@ -212,6 +235,41 @@ back-translation, starting from the intermediate language: `ir_to_clight`.
 
 The `security/BacktranslationProof2.v` contains the complete proof from assembly
 to Clight: `backtranslation_proof`.
+
+### Testing the compilation of the back-translation
+
+For this part, build the modified compiler available under branch
+`cross-external-call-removal-test-backtranslation` following the general
+invocations of `configure` and `make`.
+
+You do not need to install `ccomp` globally or worry about linking, as only the
+compilation procedure is needed for this part.
+
+The property-based testing infrastructure for Assumption 1 can be found under
+`test/backtranslation`. After compiling CompCert, from this folder, run:
+
+    [backtranslation]$ make clean
+    [backtranslation]$ touch .depend
+    [backtranslation]$ make depend
+    [backtranslation]$ make test_backtranslation
+
+Running the `test_backtranslation` binary performs the testing:
+
+    [backtranslation]$ ./test_backtranslation
+
+More in detail,
+you can run the tests in two modes: *test mode* and *reproduction mode*. The test mode is the default mode
+and designed to run tests. In case of any failures, all intermediate seeds are printed, otherwise a statistic
+of the generated values is shown. Note that the number of tests grows **multiplicatively** so choose
+the parameters accordingly. In reproduction mode the specified seeds allow you to reproduce a very specific run.
+The commands below exemplarily show how to run the tests in test- and reproduction mode respectively.
+
+    [backtranslation]$ ./test_backtranslation -num_asm_progs 5 -num_traces 20
+    [backtranslation]$ ./test_backtranslation -root_seed 4 -asm_seed 3 -trace_seed 8
+
+A few more details are provided in `test/backtranslation/README.md`.
+
+We have run our tests using version 0.21.3 of QuickCheck.
 
 ## Recomposition branch: `recomp-ccs`
 
@@ -267,15 +325,3 @@ and `parallel_exec1`.
 
 Stepwise lemmas: file `security/Blame.v`, theorems `parallel_concrete` and
 `parallel_abstract_t`.
-
-### Capability backend
-
-Our prototype implementation of the capability-based backend and secure calling
-convention is found under `cheririscV/`.
-
-Simple compilation examples are in file `cheririscV/CapAsmgen.v`, section
-`Examples`.
-
-The compiler binary is instrumented to produce capability assembly in addition
-to regular compartmentalized CompCert assembly.
-
