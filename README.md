@@ -290,13 +290,6 @@ File `security/Recomposition.v` contains the proof of recomposition: lemma
 `step_E0_strong`, `step_E0_weak`, and `step_t`.  The simulation invariants can
 be found at `strong_equivalence`, `weak_equivalence`, `stack_rel`.
 
-There are some low-level lemmas admitted, that we are in the process of fixing:
-- `set_perm_preserves_rel` states that a new `set_perm` operation, that we use
-  in the enforcement mechanism to protect the stack, respects the invariants.
-- `eval_builtin_arg_inject` is used to prove the preservation of the arguments
-  to system calls. The similar result `extcall_arguments_preserved` is fully proved.
-- `step_t` contains some admits that are the symmetric cases of other proved goals.
-
 ## Blame branch: `secure-compilation`
 
 This branch contains the blame proof. Use `make proof` to replay the proof.
