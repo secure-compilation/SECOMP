@@ -558,13 +558,9 @@ Variant right_state_injection (ge1 ge2: genv) (st1 st2: state) : Prop :=
 End Equivalence.
 
 Section Simulation.
-  Context (c p1 p2: Clight.program).
   Variable s: split.
 
   Context (W1 W2: Clight.program).
-  Hypothesis c_p1: link p1 c = Some W1.
-  Hypothesis c_p2: link p2 c = Some W2.
-
   Hypothesis match_W1_W2: match_prog s W1 W2.
 
   Hypothesis W1_ini: exists s, Smallstep.initial_state (semantics1 W1) s.
@@ -573,18 +569,7 @@ Section Simulation.
   Notation ge1 := (globalenv W1).
   Notation ge2 := (globalenv W2).
 
-  Definition wf_gvar_init (ge: genv) :=
-    forall gv b,
-      Genv.find_var_info ge b = Some gv ->
-      Forall
-        (fun i =>
-           forall id ofs,
-             i = Init_addrof id ofs ->
-             Genv.allowed_addrof_b ge (comp_of gv) id = true)
-        (gvar_init gv).
-
-  Hypothesis W1_gvars: wf_gvar_init ge1.
-  Hypothesis W2_gvars: wf_gvar_init ge2.
+  Hypothesis W1_gvars: wf_prog_init_data W1 = true.
 
 (** New helpers *)
 
@@ -4878,43 +4863,45 @@ Lemma bytes_of_init_data_list_inject b1 b2 (gv : globvar type) :
     (Genv.bytes_of_init_data_list ge2 (gvar_init gv)).
 Proof.
   intros ge1_b1 ge2_b2 s_cp.
-  pose proof (W1_gvars _ _ ge1_b1) as wf_gv1.
-  pose proof (W2_gvars _ _ ge2_b2) as wf_gv2.
-  clear - wf_gv1 wf_gv2 s_cp.
+  pose proof (Genv.wf_prog_init_data_allowed_addrof _ W1_gvars _ ge1_b1)
+    as wf_gv1.
+  clear - wf_gv1 s_cp match_W1_W2.
   induction (gvar_init gv) as [|init inits IH]; [constructor|].
   apply Forall_cons_iff in wf_gv1.
   destruct wf_gv1 as [wf_init1 wf_gv1].
-  apply Forall_cons_iff in wf_gv2.
-  destruct wf_gv2 as [wf_init2 wf_gv2].
-  specialize (IH wf_gv1 wf_gv2).
+  specialize (IH wf_gv1).
   apply list_forall2_app; trivial.
-  clear - wf_init1 wf_init2 s_cp.
-  revert wf_init1 wf_init2.
+  clear - wf_init1 s_cp match_W1_W2. revert wf_init1.
   case init;
     try solve [simpl;eauto using inj_bytes_inject, repeat_Byte_inject_self].
-  intros id ofs wf_init1 wf_init2.
+  intros id ofs wf_init1.
   specialize (wf_init1 _ _ eq_refl).
-  specialize (wf_init2 _ _ eq_refl).
-  unfold Genv.find_comp_of_ident, Genv.find_comp_of_block in *.
+  change (Genv.globalenv W1) with (genv_genv ge1) in *.
+  assert (Genv.allowed_addrof_b ge2 (gvar_comp gv) id = true) as wf_init2.
+  { now rewrite <- allowed_addrof_b_translated. }
   unfold Genv.bytes_of_init_data.
   unfold Genv.allowed_addrof_b in *.
-  destruct (Genv.find_symbol ge1 id) as [b1|] eqn:ge1_id; try congruence.
+  destruct (Genv.find_symbol _ _ ) as [b1|] eqn:ge1_id in wf_init1;
+    try congruence.
   destruct (Genv.find_symbol ge2 id) as [b2|] eqn:ge2_id; try congruence.
-  destruct (Genv.find_def ge1 b1) as [gd1|] eqn:ge1_b1; try congruence.
+  setoid_rewrite ge1_id.
+  destruct (Genv.find_def _ _) as [gd1|] eqn:ge1_b1 in wf_init1;
+    try congruence.
   destruct (Genv.find_def ge2 b2) as [gd2|] eqn:ge2_b2; try congruence.
   apply inj_value_inject.
   assert (init_meminj b1 = Some (b2, 0)) as b1_b2.
   { unfold init_meminj, init_meminj_block.
     unfold Genv.find_comp_of_ident, Genv.find_comp_of_block.
-    rewrite (Genv.find_invert_symbol _ _ ge1_id).
-    rewrite ge1_id, ge1_b1, ge2_id.
+    setoid_rewrite (Genv.find_invert_symbol _ _ ge1_id).
+    setoid_rewrite ge1_id. setoid_rewrite ge1_b1. setoid_rewrite ge2_id.
     rewrite orb_true_iff in wf_init1.
     destruct wf_init1 as [wf_init1|wf_init1].
     - destruct gd1 as [f1|v1]; try discriminate.
+      setoid_rewrite ge1_b1. setoid_rewrite ge2_id.
       setoid_rewrite wf_init1.
-      now destruct (s (comp_of (Gfun f1))).
-    - destruct eq_compartment as [->|?]; try discriminate.
-      now rewrite s_cp. }
+      clear s_cp. now destruct (s _).
+    - destruct eq_compartment as [e|?]; try discriminate.
+      setoid_rewrite e. now setoid_rewrite s_cp. }
   econstructor; eauto.
   now rewrite Ptrofs.add_zero.
 Qed.
