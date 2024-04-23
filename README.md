@@ -99,18 +99,18 @@ found on the Navigation menu.
 
 To inspect a particular theorem, locate that theorem, and process the file up to
 the start of the theorem. Then, you may step through the proof one step
-at a time using the buttom "Forward one step". The state of the proof (with goals and assumptions) is displayed
-in one of the side window. Messages are displayed in the other side window.
+at a time using the button "Forward one step". The state of the proof (with
+goals and assumptions) is displayed in one of the side window. Messages are
+displayed in the other side window.
 
 A proved theorem ends with `Qed.`. When running `Qed`, the interactive prover will check
-the validity of the proof; if the command succeed, then the proof is accepted by Coq.
+the validity of the proof; if the command succeeds, then the proof is accepted by Coq.
 After a theorem is proved, you can use the following command (write it inside
 the file and then "Forward one step"): `Print Assumptions theorem.` to display all the
 assumptions and axioms `theorem` depends on.
 
-At any point, you can use the commands on the Query meny to Print
-the definition of and identifier and Check the type
-of an identifier, among others.
+At any point, you can use the commands on the Query menu to Print the definition
+of and identifier and Check the type of an identifier, among others.
 
 The file `table.html` contains a mapping from claims from the paper to definitions and proofs.
 
