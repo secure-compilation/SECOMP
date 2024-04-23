@@ -200,6 +200,15 @@ Note that not all instructions are fully supported by the pretty-printer at the
 moment, and programs with unsupported instructions will emit invalid
 placeholders including the special placeholder `__Inst_Name__` in them.
 
+Our prototype implementation of the capability-based backend and secure calling
+convention is found under `cheririscV/`.
+
+Simple compilation examples (in Coq) are in file `cheririscV/CapAsmgen.v`, section
+`Examples`.
+
+The compiler binary is instrumented to produce capability assembly in addition
+to regular compartmentalized CompCert assembly, as described above.
+
 ### Claims
 
 | Claim | File | Location in file | Notes |
@@ -352,15 +361,3 @@ and `parallel_exec1`.
 
 Stepwise lemmas: file `security/Blame.v`, theorems `parallel_concrete` and
 `parallel_abstract_t`.
-
-### Capability backend
-
-Our prototype implementation of the capability-based backend and secure calling
-convention is found under `cheririscV/`.
-
-Simple compilation examples are in file `cheririscV/CapAsmgen.v`, section
-`Examples`.
-
-The compiler binary is instrumented to produce capability assembly in addition
-to regular compartmentalized CompCert assembly.
-
