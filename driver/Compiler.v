@@ -292,6 +292,16 @@ Definition match_prog: Csyntax.program -> Asm.program -> Prop :=
 Definition match_prog_Clight: Clight.program -> Asm.program -> Prop :=
   pass_match (compose_passes CLightCompCert's_passes).
 
+Theorem transf_clight_program_init_data:
+  forall p tp,
+  transf_clight_program p = OK tp ->
+  wf_prog_init_data (Ctypes.program_of_program p) = true.
+Proof.
+  unfold transf_clight_program, time, check_init_data.
+  intros p tp. simpl. rewrite print_identity.
+  destruct wf_prog_init_data; simpl; congruence.
+Qed.
+
 (** The [transf_c_program] function, when successful, produces
   assembly code that is in the [match_prog] relation with the source C program. *)
 
