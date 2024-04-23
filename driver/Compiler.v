@@ -112,9 +112,19 @@ Definition partial_if {A: Type}
           (flag: unit -> bool) (f: A -> res A) (prog: A) : res A :=
   if flag tt then f prog else OK prog.
 
-Definition check_init_data (p : Clight.program) :=
+(** The following two checks simplify the proof of compiler security.  They
+  guarantee that, if a program compiles without errors, then they satisfy basic
+  hypotheses that are required by the security proofs. *)
+
+Definition check_init_data (p: Clight.program) :=
   if wf_prog_init_data (Ctypes.program_of_program p) then OK p
   else Error (MSG "Initial data does not satisfy compartment checks" :: nil).
+
+Definition check_norepet (p: Clight.program) :=
+  let p' := Ctypes.program_of_program p in
+  if list_norepet_dec ident_eq (prog_defs_names p') then OK p
+  else Error (MSG "Program contains duplicate definitions" :: nil).
+
 
 (** We define three translation functions for whole programs: one
   starting with a C program, one with a Cminor program, one with an
@@ -161,6 +171,7 @@ Definition transf_clight_program (p: Clight.program) : res Asm.program :=
   OK p
    @@ print print_Clight
   @@@ time "Checking initial data" check_init_data
+  @@@ time "Checking duplicates" check_norepet
   @@@ time "Simplification of locals" SimplLocals.transf_program
   @@@ time "C#minor generation" Cshmgen.transl_program
   @@@ time "Cminor generation" Cminorgen.transl_program
@@ -302,6 +313,18 @@ Proof.
   destruct wf_prog_init_data; simpl; congruence.
 Qed.
 
+Theorem transf_clight_program_norepet:
+  forall p tp,
+  transf_clight_program p = OK tp ->
+  list_norepet (prog_defs_names (Ctypes.program_of_program p)).
+Proof.
+  unfold transf_clight_program, time, check_init_data.
+  unfold check_norepet.
+  intros p tp. simpl. rewrite print_identity.
+  destruct wf_prog_init_data; simpl; try congruence.
+  destruct list_norepet_dec; simpl; try congruence. trivial.
+Qed.
+
 (** The [transf_c_program] function, when successful, produces
   assembly code that is in the [match_prog] relation with the source C program. *)
 
@@ -315,6 +338,7 @@ Proof.
   destruct (SimplExpr.transl_program p) as [p1|e] eqn:P1; simpl in T; try discriminate.
   unfold transf_clight_program, time in T. rewrite ! compose_print_identity in T. simpl in T.
   unfold check_init_data in T. destruct wf_prog_init_data; simpl in T; try discriminate.
+  unfold check_norepet in T. destruct list_norepet_dec; simpl in T; try discriminate.
   destruct (SimplLocals.transf_program p1) as [p2|e] eqn:P2; simpl in T; try discriminate.
   destruct (Cshmgen.transl_program p2) as [p3|e] eqn:P3; simpl in T; try discriminate.
   destruct (Cminorgen.transl_program p3) as [p4|e] eqn:P4; simpl in T; try discriminate.
@@ -373,6 +397,7 @@ Proof.
   (* destruct (SimplExpr.transl_program p) as [p1|e] eqn:P1; simpl in T; try discriminate. *)
   unfold transf_clight_program, time in T. rewrite ! compose_print_identity in T. simpl in T.
   unfold check_init_data in T. destruct wf_prog_init_data; simpl in T; try discriminate.
+  unfold check_norepet in T. destruct list_norepet_dec; simpl in T; try discriminate.
   destruct (SimplLocals.transf_program p1) as [p2|e] eqn:P2; simpl in T; try discriminate.
   destruct (Cshmgen.transl_program p2) as [p3|e] eqn:P3; simpl in T; try discriminate.
   destruct (Cminorgen.transl_program p3) as [p4|e] eqn:P4; simpl in T; try discriminate.
