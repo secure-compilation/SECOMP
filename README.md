@@ -3,9 +3,8 @@
 This artifact contains the SECOMP formally secure compiler and its
 machine-checked security proofs in Coq, both of which are based on the CompCert
 formally verified C compiler. The Coq development contains the proofs, theorems,
-and testing described in the paper, split into different sub-folders corresponding
-to different parts of the proof. Each sub-folder can be compiled and checked
-independently from the others.
+and testing described in the paper, split into sub-folders that can be compiled
+and checked independently from the others.
 
 This README file contains detailed instructions on how to build, run and check
 the development. It should run on most modern hardware, and depends only on
@@ -52,8 +51,9 @@ merging into a single release:
    + A modified version of the compiler with support for generation of
      CHERI RISC-V code is available on the branch `secure-compilation-captest`
  - `ccs-backtranslation`: proof of back-translation
-   + A modified version of the compiler with support for systematic testing is
-     available on the branch `cross-external-call-removal-test-backtranslation`
+   + A modified version of the compiler with support for systematic testing of
+     the back-translation is available on the branch
+     `cross-external-call-removal-test-backtranslation`
  - `ccs-recomposition`: proof of recomposition
  - `secure-compilation`: proof of blame
 
@@ -130,7 +130,7 @@ depends on CompCert's existing axioms, or small adaptions thereof to account for
 the addition of compartments to the compiler.
 To verify this, uncomment and execute `Print Assumptions transf_c_program_correct` and
 `Print Assumptions separate_transf_c_program_correct`. This will load and print the list
-of axiomatised results used in the proofs.
+of axiomatized results used in the proofs.
 
 The following files include the most interesting changes:
  - Compartment model: file `common/AST.v`, modules `COMPTYPE` and `COMP`.
