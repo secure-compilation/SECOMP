@@ -5,7 +5,7 @@ Require Import Split.
 
 (* TODO: Change everything to start from Clight instead of C. *)
 Require Import Clight Asm.
-Require Import Compiler Complements.
+Require Import Compiler Complements Blame.
 
 Section RSC.
 
@@ -59,9 +59,6 @@ Section RSC.
     admit.
   Admitted.
 
-  (* TODO: What does blame mean? *)
-  Axiom c_program_blame: Clight.program -> Clight.program -> trace -> Prop.
-
   Axiom backtranslation: Policy.t -> split -> trace -> Clight.program * Clight.program.
   Axiom backtranslation_correct:
     forall pol s t p C,
@@ -87,7 +84,6 @@ Section RSC.
       clight_program_has_initial_trace W t ->
       asm_program_has_initial_trace W' t.
 
-
   Axiom recomposition:
     forall W W'' p1 p2 p1'' p2'' t,
       link p1 p2 = Some W ->
@@ -108,46 +104,34 @@ Section RSC.
       (clight_program_has_initial_trace W t \/
          exists m, trace_prefix m t /\ m <> t /\ program_behaves (Clight.semantics1 W) (Goes_wrong m)).
 
-  Definition comp_of_event_or_default (e: event) (cp: compartment) :=
-    match e with
-    | Event_syscall _ _ _ => cp
-    | Event_vload _ _ _ _ => cp
-    | Event_vstore _ _ _ _ => cp
-    | Event_annot _ _ => cp
-    | Event_call _ cp' _ _ => cp'
-    | Event_return _ cp' _ => cp'
-    end.
+  (* TODO: Move to Behaviors.v *)
+  Lemma behavior_prefix_goes_wrong:
+    forall t1 t2,
+      behavior_prefix t1 (Goes_wrong t2) ->
+      trace_prefix t1 t2.
+  Proof.
+    intros t1 t2 [suf H]. revert H.
+    case suf; clear suf; simpl; try easy.
+    intros suf ?. exists suf. congruence.
+  Qed.
 
-  Fixpoint last_comp_in_trace' (t: trace) (cp: compartment): compartment :=
-    match t with
-    | nil => cp
-    | e :: t' => last_comp_in_trace' t' (comp_of_event_or_default e cp)
-    end.
-
-  Definition last_comp_in_trace (t: trace): compartment :=
-    last_comp_in_trace' t default_compartment.
-
-  Definition blame_on_program (t: trace) :=
-    s (last_comp_in_trace t) = Left.
-
-  Axiom blame:
-    forall W W' p1 p2 C t m,
-      link p1 C = Some W ->
-      link p2 C = Some W' ->
-      clight_program_has_initial_trace W' t ->
-      trace_prefix m t ->
-      m <> t ->
-      program_behaves (Clight.semantics1 W) (Goes_wrong m) ->
-      blame_on_program m.
+  (* TODO: Move to Events.v? *)
+  Lemma trace_prefix_E0:
+    forall t, trace_prefix t E0 -> t = E0.
+  Proof.
+    intros t [suf E]. symmetry in E.
+    apply app_eq_nil in E. destruct E. trivial.
+  Qed.
 
   Theorem RSC:
     forall (t: trace),
       asm_program_has_initial_trace W_t t ->
       exists (Cs: Clight.program) (W: Clight.program),
         link p Cs = Some W /\
-        (clight_program_has_initial_trace W t \/
-         exists (m: trace), trace_prefix m t /\ m <> t /\
-                         program_behaves (Clight.semantics1 W) (Goes_wrong m) /\ blame_on_program m).
+          (clight_program_has_initial_trace W t \/
+             exists (m: trace), trace_prefix m t /\ m <> t /\
+                                  program_behaves (Clight.semantics1 W) (Goes_wrong m) /\
+                                  blame_on_program s W m).
   Proof.
     intros t H.
     (* Backtranslation *)
@@ -192,7 +176,47 @@ Section RSC.
     exploit backward_correctness; eauto.
     intros [G | [m [prefix_m_t [m_not_t W_behaves_m]]]]; [now left | right].
     exists m; split; [| split; [| split]]; eauto.
-    eapply blame with (W' := Wbt); eauto.
-  Qed.
+    assert (match_prog s Wbt W).
+    { split.
+      - (* The backtranslation preserves the main function. *)
+        admit.
+      - (* The backtranslation preserves public symbols. *)
+        admit.
+      - (* The backtranslation preserves the types of a program. *)
+        admit.
+      - (* The backtranslation preserves the policy of a program. *)
+        admit.
+      - (* The backtranslation generates matching definitions. *)
+        admit.
+      - (* We need to show that the backtranslated program Wbt does not have
+           repeated definitions. We know that Wbt is the result of linking p'
+           and Cs. Since both p' and Cs can be compiled, we know that they do
+           not have repeated symbols.  Therefore, it should be possible to
+           conclude by showing that p' and Cs have disjoint symbols
+           (e.g. because they can be linked together). *)
+        admit.
+      - (* Similar, but for the original whole program W. *)
+        admit. }
+    exploit blame; eauto.
+    - (* The backtranslated program must have an initial state: since its trace
+         t has a proper prefix, it cannot be empty. *)
+      destruct (program_behaves_exists (semantics1 Wbt)) as [beh Wbt_behaves_beh].
+      specialize (bt_does_t _ Wbt_behaves_beh).
+      enough (beh <> Goes_wrong E0).
+      { inv Wbt_behaves_beh; try congruence. eauto. }
+      intros ->.
+      apply behavior_prefix_goes_wrong in bt_does_t.
+      apply trace_prefix_E0 in bt_does_t. subst t.
+      apply trace_prefix_E0 in prefix_m_t.
+      congruence.
+    - (* On the other hand, there is nothing that guarantees that the original
+         source program has an initial state... *)
+      admit.
+    - apply transf_clight_program_init_data in p'_compiles.
+      apply transf_clight_program_init_data in Cs_compiles.
+      (* We know that both p' and Cs satisfy wf_prog_init_data.  Therefore,
+         we could conclude by showing that linking preserves this property. *)
+      admit.
+  Admitted.
 
 End RSC.
