@@ -52,8 +52,8 @@ merging into a single release:
      CHERI RISC-V code is available on the branch `secure-compilation-captest`
  - `ccs-backtranslation`: proof of back-translation
    + A modified version of the compiler with support for systematic testing of
-     the back-translation is available on the branch
-     `cross-external-call-removal-test-backtranslation`
+     the compilation of the back-translation (Assumption 1) is available on
+     the branch `cross-external-call-removal-test-backtranslation`
  - `ccs-recomposition`: proof of recomposition
  - `secure-compilation`: proof of blame
 
@@ -232,7 +232,7 @@ back-translation, starting from the intermediate language: `ir_to_clight`.
 The `security/BacktranslationProof2.v` contains the complete proof from assembly
 to Clight: `backtranslation_proof`.
 
-### Testing the compilation of the back-translation
+### Systematic testing the compilation of the back-translation (Assumption 1)
 
 For this part, build the modified compiler available under branch
 `cross-external-call-removal-test-backtranslation` following the general
@@ -253,19 +253,21 @@ Running the `test_backtranslation` binary performs the testing:
 
     [backtranslation]$ ./test_backtranslation
 
-More in detail,
-you can run the tests in two modes: *test mode* and *reproduction mode*. The test mode is the default mode
-and designed to run tests. In case of any failures, all intermediate seeds are printed, otherwise a statistic
-of the generated values is shown. Note that the number of tests grows **multiplicatively** so choose
-the parameters accordingly. In reproduction mode the specified seeds allow you to reproduce a very specific run.
-The commands below exemplarily show how to run the tests in test- and reproduction mode respectively.
+More in detail, you can run the tests in two modes: *test mode* and
+*reproduction mode*. The test mode is the default mode and designed to run
+tests. In case of any failures, all intermediate seeds are printed, otherwise a
+statistic of the generated values is shown. Note that the number of tests grows
+**multiplicatively** so choose the parameters accordingly. In reproduction mode
+the specified seeds allow you to reproduce a very specific run.  The commands
+below exemplarily show how to run the tests in test- and reproduction mode
+respectively.
 
     [backtranslation]$ ./test_backtranslation -num_asm_progs 5 -num_traces 20
     [backtranslation]$ ./test_backtranslation -root_seed 4 -asm_seed 3 -trace_seed 8
 
 A few more details are provided in `test/backtranslation/README.md`.
 
-We have run our tests using version 0.21.3 of QuickCheck.
+If one is interested in reproduction, we have run our tests using QCheck 0.21.3.
 
 ## Recomposition branch: `ccs-recomposition`
 
