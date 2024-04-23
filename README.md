@@ -2,8 +2,8 @@
 
 This artifact contains the SECOMP formally secure compiler and its
 machine-checked security proofs in Coq, both of which are based on the CompCert
-formally verified C compiler. The Coq development contains the proofs and
-theorems described in the paper, split into different sub-folders corresponding
+formally verified C compiler. The Coq development contains the proofs, theorems,
+and testing described in the paper, split into different sub-folders corresponding
 to different parts of the proof. Each sub-folder can be compiled and checked
 independently from the others.
 
@@ -13,7 +13,7 @@ OCaml, Coq, and some libraries that are available via the OCaml package manager
 OPAM. Additionally, running some tests relies on the GCC RISC-V cross-compiler.
 
 Beyond the SECOMP sources, we also provide a VM that has all these dependencies
-already installed.
+already installed. The `sudo` password of the virtual machine is `secomp`.
 
 ## Requirements
 
@@ -46,7 +46,7 @@ System requirements can be verified through CompCert's `configure` script
 
 ## Structure
 
-The development is currently split into four branches, which we are working on
+The development is currently split into six branches, which we are working on
 merging into a single release:
  - `ccs-submission`: compiler correctness proof and testing infrastructure (main)
    + A modified version of the compiler with support for generation of
@@ -90,8 +90,7 @@ the tests and examples in the `ccs-submission` branch (see Examples below).
 
 For those using the provided virtual machine, we recommend using the built-in
 CoqIDE environment to explore the Coq development. Users of the virtual machine
-can install other editors, like Proof General, if they prefer. The `sudo`
-password of the virtual machine is `secomp`.
+can install other editors, like Proof General, if they prefer.
 
 To start CoqIDE, simply run the `coqide` command and navigate to the files you
 wish to inspect. The simplest way to evaluate a file is by using the buttons
