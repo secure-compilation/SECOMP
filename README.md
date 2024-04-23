@@ -7,12 +7,12 @@ and testing described in the paper, split into sub-folders that can be compiled
 and checked independently from the others.
 
 This README file contains detailed instructions on how to build, run and check
-the development. It should run on most modern hardware, and depends only on
+the development. These can be done on most modern hardware, and depend only on
 OCaml, Coq, and some libraries that are available via the OCaml package manager
-OPAM. Additionally, running some tests relies on the GCC RISC-V cross-compiler.
+OPAM. Additionally, some tests rely on the GCC RISC-V cross-compiler.
 
-Beyond the SECOMP sources, we also provide a VM that has all these dependencies
-already installed. The `sudo` password of the virtual machine is `secomp`.
+Beyond the SECOMP sources, we also provide a virtual machine (VM) that has all
+these dependencies already installed. The `sudo` password of the VM is `secomp`.
 
 ## Requirements
 
