@@ -51,10 +51,10 @@ merging into a single release:
  - `ccs-submission`: compiler correctness proof and testing infrastructure (main)
    + A modified version of the compiler with support for generation of
      CHERI RISC-V code is available on the branch `secure-compilation-captest`
- - `backtranslation`: proof of back-translation
+ - `ccs-backtranslation`: proof of back-translation
    + A modified version of the compiler with support for systematic testing is
      available on the branch `cross-external-call-removal-test-backtranslation`
- - `recomp-ccs`: proof of recomposition
+ - `ccs-recompisition`: proof of recomposition
  - `secure-compilation`: proof of blame
 
 ## Building
