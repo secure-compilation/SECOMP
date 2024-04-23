@@ -54,7 +54,7 @@ merging into a single release:
  - `ccs-backtranslation`: proof of back-translation
    + A modified version of the compiler with support for systematic testing is
      available on the branch `cross-external-call-removal-test-backtranslation`
- - `ccs-recompisition`: proof of recomposition
+ - `ccs-recomposition`: proof of recomposition
  - `secure-compilation`: proof of blame
 
 ## Building
@@ -182,10 +182,6 @@ For this part, build the modified compiler available under branch
 `secure-compilation-captest` following the general invocations of `configure`
 and `make`.
 
-For this part, build the modified compiler available under branch
-`secure-compilation-captest` following the general invocations of `configure`
-and `make`.
-
 You do not need to install `ccomp` globally or worry about linking, as only the
 compilation procedure is needed for this part.
 
@@ -271,7 +267,7 @@ A few more details are provided in `test/backtranslation/README.md`.
 
 We have run our tests using version 0.21.3 of QuickCheck.
 
-## Recomposition branch: `recomp-ccs`
+## Recomposition branch: `ccs-recomposition`
 
 This branch contains the recomposition proof. Use `make proof` to replay the proof.
 
