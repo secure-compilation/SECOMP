@@ -58,8 +58,8 @@ Definition perm_order' (po: option permission) (p: permission) :=
 Definition perm_order'' (po1 po2: option permission) :=
   match po1, po2 with
   | Some p1, Some p2 => perm_order p1 p2
-  | None, None => True
-  | _, _ => False
+  | _, None => True
+  | None, Some _ => False
  end.
 
 Record mem' : Type := mkmem {
@@ -197,23 +197,6 @@ Proof.
 Qed.
 
 Local Hint Resolve perm_valid_block: mem.
-
-Theorem perm_nonempty:
-  forall m b ofs k p k', perm m b ofs k p -> perm m b ofs k' Nonempty.
-Proof.
-  intros m b ofs k p k' perm_k.
-  assert (perm m b ofs Cur Nonempty) as perm_cur.
-  { unfold perm in *.
-    destruct k.
-    { pose proof (access_max m b ofs).
-      destruct ((mem_access m)#b ofs Max), ((mem_access m)#b ofs Cur);
-        simpl in *; try easy.
-      constructor. }
-    destruct ((mem_access m)#b ofs Cur); simpl; trivial.
-    constructor. }
-  destruct k'; eauto.
-  eauto using perm_max.
-Qed.
 
 Remark perm_order_dec:
   forall p1 p2, {perm_order p1 p2} + {~perm_order p1 p2}.

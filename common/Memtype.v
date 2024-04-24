@@ -231,10 +231,6 @@ Axiom perm_max:
 Axiom perm_valid_block:
   forall m b ofs k p, perm m b ofs k p -> valid_block m b.
 
-(** If a pointer has some permission, it has nonempty permission. *)
-Axiom perm_nonempty:
-  forall m b ofs k p k', perm m b ofs k p -> perm m b ofs k' Nonempty.
-
 (* Unused?
 (** The [Mem.perm] predicate is decidable. *)
 Axiom perm_dec:

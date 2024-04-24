@@ -2736,7 +2736,7 @@ Qed.
     Mem.unchanged_on P m1 m2.
   Proof.
     intros m1_m2 P.
-    pose proof (external_call_spec ef).
+    pose proof (external_call_spec ef) as Hef.
     exploit ec_mem_outside_compartment; eauto.
     intros unchanged. split.
     - eapply Mem.unchanged_on_nextblock; eauto.
@@ -2746,12 +2746,10 @@ Qed.
         eapply ec_valid_pointer; eauto.
         intros contra. pose proof (Hmax _ _ contra) as [??]. congruence.
       + intros perm_m2_b.
-        pose proof (external_call_spec ef).
         apply Mem.perm_max in perm_m2_b.
         exploit ec_max_perm; eauto.
         intros perm_m1_b. destruct (Hmax _ _ perm_m1_b). subst ofs p.
-        destruct k; trivial.
-        eauto using Mem.perm_nonempty.
+        destruct k; eauto.
     - intros b ofs (Hnonempty & Hmax) contra.
       destruct (Hmax _ _ contra). congruence.
     - eauto using Mem.unchanged_on_own.
