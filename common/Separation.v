@@ -770,6 +770,7 @@ Lemma free_parallel_rule:
   Mem.free m1 b1 0 sz1 cp = Some m1' ->
   j b1 = Some (b2, delta) ->
   lo = delta -> hi = delta + Z.max 0 sz1 ->
+  forall (access_ok: Mem.can_access_block m2 b2 cp),
   exists m2',
      Mem.free m2 b2 0 sz2 cp = Some m2'
   /\ m2' |= minjection j m1' ** P.
@@ -789,10 +790,7 @@ Proof.
     eapply Mem.free_range_perm; eauto. extlia.
   }
   destruct (Mem.range_perm_free _ _ _ _ cp PERM) as [m2' FREE].
-  exploit Mem.free_can_access_block_1; eauto. intros [].
-  left.
-  eapply Mem.mi_own; [eapply Mem.mi_inj; eauto| | |]; eauto. admit.
-  right. admit.
+  exploit Mem.free_can_access_block_1; eauto.
   exists m2'; split; auto. split; [|split].
 - simpl. eapply Mem.free_right_inject; eauto. eapply Mem.free_left_inject; eauto.
   intros. apply (F b2 (ofs + delta0)).
@@ -825,7 +823,7 @@ Proof.
   simpl. right. destruct H as (b0 & delta0 & U & V).
   exists b0, delta0; split; auto.
   eapply Mem.perm_free_3; eauto.
-Admitted.
+Qed.
 
 (** Preservation of a global environment by a memory injection *)
 

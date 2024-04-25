@@ -1397,6 +1397,8 @@ Proof.
     eexact FREE.
     eexact INJ.
     auto. rewrite Z.max_comm; reflexivity.
+    { destruct SEP as [[[A _] _] _].
+      destruct A as [_ [_ [_ [_ [A _]]]]]. auto. }
   intros (m1' & FREE' & SEP').
   (* Reloading the callee-save registers *)
   exploit restore_callee_save_correct.
