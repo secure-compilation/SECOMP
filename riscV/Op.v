@@ -909,9 +909,9 @@ Variable f: meminj.
 Variable m1: mem.
 Variable m2: mem.
 
-Hypothesis same_allowed_addrof:
-  forall cp id,
-    Genv.allowed_addrof_b ge1 cp id = true -> Genv.allowed_addrof_b ge2 cp id = true.
+(* Hypothesis same_allowed_addrof: *)
+(*   forall cp id, *)
+(*     Genv.allowed_addrof_b ge1 cp id = true -> Genv.allowed_addrof_b ge2 cp id = true. *)
 
 Hypothesis valid_pointer_inj:
   forall b1 ofs b2 delta,
@@ -989,16 +989,22 @@ Lemma eval_operation_inj':
   (forall id ofs,
       In id (globals_operation op) ->
       Val.inject f (Genv.symbol_address ge1 id ofs) (Genv.symbol_address ge2 id ofs)) ->
+  (forall id cp,
+      In id (globals_operation op) ->
+      Genv.allowed_addrof ge1 cp id -> Genv.allowed_addrof ge2 cp id) ->
+      (* Val.inject f (Genv.symbol_address ge1 id ofs) (Genv.symbol_address ge2 id ofs)) -> *)
   Val.inject f sp1 sp2 ->
   Val.inject_list f vl1 vl2 ->
   eval_operation ge1 cp sp1 op vl1 m1 = Some v1 ->
   exists v2, eval_operation ge2 cp sp2 op vl2 m2 = Some v2 /\ Val.inject f v1 v2.
 Proof.
-  intros until v1; intros GL; intros. destruct op; simpl in H1; simpl; FuncInv; InvInject; TrivialExists.
+  intros until v1; intros GL GL'; intros. destruct op; simpl in H1; simpl; FuncInv; InvInject; TrivialExists.
   (* addrsymbol *)
   - destruct (Genv.allowed_addrof_b ge1 cp id) eqn:EQ; try discriminate. inv H1.
-    apply same_allowed_addrof in EQ. rewrite EQ.
+    apply GL' in EQ; simpl; auto. rewrite EQ.
     eexists; split; auto. eapply GL; simpl; auto.
+    (* apply same_allowed_addrof in EQ. rewrite EQ. *)
+    (* eexists; split; auto. eapply GL; simpl; auto. *)
   (* addrstack *)
   - apply Val.offset_ptr_inject; auto.
   (* castsigned *)
@@ -1159,6 +1165,28 @@ Proof.
     exploit eval_condition_inj'; eauto. intros EQ; rewrite EQ.
     destruct b; simpl; constructor.
     simpl; constructor.
+Qed.
+
+Lemma eval_addressing_inj': forall cp addr sp1 vl1 sp2 vl2 v1,
+  (forall id ofs,
+      In id (globals_addressing addr) ->
+      Val.inject f (Genv.symbol_address ge1 id ofs) (Genv.symbol_address ge2 id ofs)) ->
+  (forall id cp,
+      In id (globals_addressing addr) ->
+      Genv.allowed_addrof ge1 cp id -> Genv.allowed_addrof ge2 cp id) ->
+  Val.inject f sp1 sp2 ->
+  Val.inject_list f vl1 vl2 ->
+  eval_addressing ge1 cp sp1 addr vl1 = Some v1 ->
+  exists v2, eval_addressing ge2 cp sp2 addr vl2 = Some v2 /\ Val.inject f v1 v2.
+Proof.
+  intros. destruct addr; simpl in H3; simpl; FuncInv; InvInject; TrivialExists.
+  apply Val.offset_ptr_inject; auto.
+  rewrite H0.
+  destruct Genv.allowed_addrof_b; inv H3.
+  eexists; split; eauto. apply H; simpl; auto.
+  simpl. auto.
+  unfold Genv.allowed_addrof. destruct Genv.allowed_addrof_b; inv H3. auto.
+  apply Val.offset_ptr_inject; auto.
 Qed.
 
 End EVAL_COMPAT.
@@ -1428,8 +1456,7 @@ Proof.
     simpl; constructor.
 Qed.
 
-Lemma eval_addressing_inj:
-  forall cp addr sp1 vl1 sp2 vl2 v1,
+Lemma eval_addressing_inj: forall cp addr sp1 vl1 sp2 vl2 v1,
   (forall id ofs,
       In id (globals_addressing addr) ->
       Val.inject f (Genv.symbol_address ge1 id ofs) (Genv.symbol_address ge2 id ofs)) ->

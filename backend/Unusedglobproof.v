@@ -652,6 +652,21 @@ Proof.
   econstructor; eauto. rewrite Ptrofs.add_zero; auto.
 Qed.
 
+Lemma allowed_addrof_preserved:
+  forall j id cp,
+    meminj_preserves_globals j -> kept id ->
+    Genv.allowed_addrof ge cp id -> Genv.allowed_addrof tge cp id.
+Proof.
+  intros j id cp pres_globs kept.
+  unfold Genv.allowed_addrof, Genv.allowed_addrof_b.
+  destruct (Genv.find_symbol ge id) as [b|] eqn:FS; try discriminate.
+  exploit symbols_inject_2; eauto.
+  intros [b' [-> j_b]].
+  destruct (Genv.find_def ge b) as [[]|] eqn:FD; try discriminate.
+  exploit defs_inject; eauto. intros [-> [_ _]]; auto.
+  exploit defs_inject; eauto. intros [-> [_ _]]; auto.
+Qed.
+
 (** Semantic preservation *)
 
 Definition regset_inject (f: meminj) (rs rs': regset): Prop :=
@@ -982,7 +997,15 @@ Proof.
     econstructor; eauto. rewrite Ptrofs.add_zero; auto. }
   exploit Mem.loadv_inject; eauto. intros (v' & A & B). exists v'; split; auto with barg.
 - econstructor; split; eauto with barg.
-  constructor. admit.
+  constructor.
+  revert H. unfold Genv.allowed_addrof, Genv.allowed_addrof_b.
+  destruct (Genv.find_symbol ge id) as [b|] eqn:FS; try discriminate.
+  exploit symbols_inject_2; eauto. intros (b' & A & B). rewrite A.
+  destruct (Genv.find_def ge b) as [[] |] eqn:FD; try discriminate.
+  exploit defs_inject; eauto.
+  intros [-> [_ ?]]. auto.
+  exploit defs_inject; eauto.
+  intros [-> [_ ?]]. auto.
   unfold Senv.symbol_address; simpl; unfold Genv.symbol_address.
   destruct (Genv.find_symbol ge id) as [b|] eqn:FS; auto.
   exploit symbols_inject_2; eauto. intros (b' & A & B). rewrite A.
@@ -995,7 +1018,7 @@ Proof.
   destruct IHeval_builtin_arg2 as (v2' & A2 & B2); eauto using in_or_app.
   econstructor; split; eauto with barg.
   destruct Archi.ptr64; auto using Val.add_inject, Val.addl_inject.
-Admitted.
+Qed.
 
 Lemma eval_builtin_args_inject:
   forall cp rs sp m j rs' sp' m' al vl,
@@ -1066,13 +1089,14 @@ Proof.
   assert (A: exists tv,
                eval_operation tge (comp_of f) (Vptr tsp Ptrofs.zero) op trs##args tm = Some tv
             /\ Val.inject j v tv).
-  { eapply eval_operation_inj' with (ge1 := ge) (m1 := m) (sp1 := Vptr sp0 Ptrofs.zero) (vl1 := rs##args).
-    admit.
+  { eapply eval_operation_inj' with (ge1 := ge) (ge2 := tge) (m1 := m) (sp1 := Vptr sp0 Ptrofs.zero) (vl1 := rs##args).
     intros; eapply Mem.valid_pointer_inject_val; eauto.
     intros; eapply Mem.weak_valid_pointer_inject_val; eauto.
     intros; eapply Mem.weak_valid_pointer_inject_no_overflow; eauto.
     intros; eapply Mem.different_pointers_inject; eauto.
     intros. apply symbol_address_inject. eapply match_stacks_preserves_globals; eauto.
+    apply KEPT. red. exists pc, (Iop op args res pc'); auto.
+    intros. eapply allowed_addrof_preserved; eauto. eapply match_stacks_preserves_globals; eauto.
     apply KEPT. red. exists pc, (Iop op args res pc'); auto.
     econstructor; eauto.
     apply regs_inject; auto.
@@ -1085,9 +1109,10 @@ Proof.
   assert (A: exists ta,
                eval_addressing tge (comp_of f) (Vptr tsp Ptrofs.zero) addr trs##args = Some ta
             /\ Val.inject j a ta).
-  { eapply eval_addressing_inj with (ge1 := ge) (sp1 := Vptr sp0 Ptrofs.zero) (vl1 := rs##args).
-    admit.
+  { eapply eval_addressing_inj' with (ge1 := ge) (sp1 := Vptr sp0 Ptrofs.zero) (vl1 := rs##args).
     intros. apply symbol_address_inject. eapply match_stacks_preserves_globals; eauto.
+    apply KEPT. red. exists pc, (Iload chunk addr args dst pc'); auto.
+    intros. eapply allowed_addrof_preserved; eauto. eapply match_stacks_preserves_globals; eauto.
     apply KEPT. red. exists pc, (Iload chunk addr args dst pc'); auto.
     econstructor; eauto.
     apply regs_inject; auto.
@@ -1101,9 +1126,10 @@ Proof.
   assert (A: exists ta,
                eval_addressing tge (comp_of f) (Vptr tsp Ptrofs.zero) addr trs##args = Some ta
             /\ Val.inject j a ta).
-  { eapply eval_addressing_inj with (ge1 := ge) (sp1 := Vptr sp0 Ptrofs.zero) (vl1 := rs##args).
-    admit.
+  { eapply eval_addressing_inj' with (ge1 := ge) (sp1 := Vptr sp0 Ptrofs.zero) (vl1 := rs##args).
     intros. apply symbol_address_inject. eapply match_stacks_preserves_globals; eauto.
+    apply KEPT. red. exists pc, (Istore chunk addr args src pc'); auto.
+    intros. eapply allowed_addrof_preserved; eauto. eapply match_stacks_preserves_globals; eauto.
     apply KEPT. red. exists pc, (Istore chunk addr args src pc'); auto.
     econstructor; eauto.
     apply regs_inject; auto.
@@ -1248,7 +1274,7 @@ eapply call_trace_translated; eauto.
   intros G; specialize (NO_CROSS_PTR G); inv RESINJ; auto; contradiction.
   eapply return_trace_inj; eauto.
   econstructor; eauto. apply set_reg_inject; auto.
-Admitted.
+Qed.
 
 (** Relating initial memory states *)
 
@@ -1635,17 +1661,6 @@ Proof.
   change id with (fst (id, g)). apply in_map. apply PTree.elements_correct.
   rewrite PTree.gcombine; auto.
 Qed.
-
-(* (* Technical result: proving this result requires doing complicated unfoldings and *)
-(*  case analysis, but the result should hold *) *)
-(* Lemma link_match_pol: *)
-(*   forall p1 p2 tp1 tp2 p, *)
-(*   link p1 p2 = Some p -> *)
-(*   match_prog p1 tp1 -> match_prog p2 tp2 -> *)
-(*   link_pol tp1 tp2 (prog_pol tp1) (prog_pol tp2) = *)
-(*     link_pol p1 p2 (prog_pol p1) (prog_pol p2). *)
-(* Proof. *)
-(* Admitted. *)
 
 Theorem link_match_program:
   forall p1 p2 tp1 tp2 p,
