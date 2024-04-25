@@ -391,6 +391,18 @@ Module IndexedEqKind <: INDEXED_TYPE.
   Proof. destruct x; destruct y; simpl; congruence. Qed.
   Definition eq (x y: t) : {x=y} + {x<>y}.
   Proof. decide equality. Defined.
+  Definition left_inverse (p: positive) :=
+    match p with
+    | 1%positive => Full
+    | 2%positive => Low
+    | 3%positive => High
+    | _ => Low
+    end.
+  Lemma left_inverse_inv:
+    forall x, left_inverse (index x) = x.
+  Proof.
+    now destruct x.
+  Qed.
 End IndexedEqKind.
 
 Module OrderedEqKind := OrderedIndexed(IndexedEqKind).

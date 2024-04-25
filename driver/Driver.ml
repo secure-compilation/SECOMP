@@ -78,7 +78,7 @@ let compile_c_file sourcename ifile ofile =
   AsmToJSON.print_if asm sourcename;
   (* Print Asm in text form *)
   let oc = open_out ofile in
-  PrintAsm.print_program oc asm;
+  PrintAsm.print_program_asm oc asm;
   close_out oc
 
 (* From C source to asm *)

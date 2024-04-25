@@ -1500,7 +1500,7 @@ let build_policy (gl: (AST.ident * ('f Ctypes.fundef, Ctypes.coq_type) AST.globd
   let exports'': AST.ident list CompTree.t = of_list' exports' in
   let imports' = List.map (function Import(id1, id2, id3) ->
       (Comp (intern_string id1.name), (Comp (intern_string id2.name), intern_string id3.name))) imports in
-  let imports'': (compartment * AST.ident) list Maps.PTree.t = of_list' imports' in
+  let imports'': (compartment * AST.ident) list CompTree.t = of_list' imports' in
   (* let imports'': (AST.compartment * AST.ident) list Maps.PTree.t = Maps.PTree_Properties.of_list [] in *)
   let p = { policy_comps = Maps.PTree_Properties.of_list (List.map (function (id, gd) ->
       (id, AST.comp_of (AST.comp_of (AST.has_comp_globdef (Ctypes.has_comp_fundef Csyntax.has_comp_function))) gd)) gl);

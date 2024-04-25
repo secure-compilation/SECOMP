@@ -1333,6 +1333,8 @@ Module Type INDEXED_TYPE.
   Parameter index: t -> positive.
   Axiom index_inj: forall (x y: t), index x = index y -> x = y.
   Parameter eq: forall (x y: t), {x = y} + {x <> y}.
+  Parameter left_inverse: positive -> t.
+  Axiom left_inverse_inv: forall x, left_inverse (index x) = x.
 End INDEXED_TYPE.
 
 Module IMap(X: INDEXED_TYPE).
@@ -1409,6 +1411,17 @@ Module ZIndexed.
     congruence.
   Qed.
   Definition eq := zeq.
+  Definition left_inverse (p: positive): Z :=
+    match p with
+    | xH => Z0
+    | xO p => Zpos p
+    | xI p => Zneg p
+    end.
+  Lemma left_inverse_inv: forall x, left_inverse (index x) = x.
+  Proof.
+    unfold index, left_inverse.
+    destruct x eqn:?; auto.
+  Qed.
 End ZIndexed.
 
 Module ZMap := IMap(ZIndexed).
@@ -1429,6 +1442,17 @@ Module NIndexed.
   Lemma eq: forall (x y: N), {x = y} + {x <> y}.
   Proof.
     decide equality. apply peq.
+  Qed.
+  Definition left_inverse (p: positive): N :=
+    match p with
+    | xH => N0
+    | xO p => Npos p
+    | xI p => Npos p
+    end.
+  Lemma left_inverse_inv: forall x, left_inverse (index x) = x.
+  Proof.
+    unfold index, left_inverse.
+    destruct x eqn:?; auto.
   Qed.
 End NIndexed.
 
@@ -1575,6 +1599,10 @@ Module ITree(X: INDEXED_TYPE).
   Proof.
     intros. eapply PTree.gmap1.
   Qed.
+
+  Definition elements {A} (m: t A): list (elt * A) :=
+    let elems := PTree.elements m in
+    List.map (fun '(x, y) => (X.left_inverse x, y)) elems.
 
 End ITree.
 

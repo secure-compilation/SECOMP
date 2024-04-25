@@ -266,11 +266,21 @@ let print_Z_asm p n =
 let print_ident_asm p id =
   Format.fprintf p "%ld" (P.to_int32 id)
 
+
+let string_of_ident_asm id =
+  Int32.to_string (P.to_int32 id)
+
 let print_comp_asm p c =
   match c with
   | COMP.Coq_bottom' -> Format.fprintf p "CompBottom"
   | COMP.Coq_top' -> Format.fprintf p "CompTop"
   | COMP.Comp id -> Format.fprintf p "Comp%ld" (P.to_int32 id)
+
+let string_of_comp_asm c =
+  match c with
+  | COMP.Coq_bottom' -> "CompBottom"
+  | COMP.Coq_top' -> "CompTop"
+  | COMP.Comp id -> "Comp" ^ Int32.to_string (P.to_int32 id)
 
 let print_string_asm p s =
   Format.fprintf p "\"%s\"%%string" (camlstring_of_coqstring s)
@@ -521,13 +531,32 @@ let print_prog_def_asm p (id, glob) =
   print_globdef_asm p glob;
   Format.fprintf p ")@]@,"
 
+let rec string_of_exports (exports: (AST.COMP.compartment' * BinNums.positive list) list): string =
+  match exports with
+  | [] -> "]"
+  | (c, []) :: exports' -> string_of_exports exports'
+  | (c, f :: t) :: exports' ->
+    let rest = string_of_exports ((c, t) :: exports') in
+    (string_of_comp_asm c ^ " exports " ^ string_of_ident_asm f ^ (if rest = "]" then "]" else "\n" ^ rest))
+
+
+let rec string_of_imports (imports: (AST.COMP.compartment' * (AST.COMP.compartment' * BinNums.positive) list) list): string =
+  match imports with
+  | [] -> "]"
+  | (c, []) :: imports' -> string_of_imports imports'
+  | (c, (c', f) :: t) :: imports' ->
+    let rest = string_of_imports ((c, t) :: imports') in
+    (string_of_comp_asm c ^ " imports " ^ string_of_ident_asm f ^ " from " ^ string_of_comp_asm c' ^ (if rest = "]" then "]" else "\n" ^ rest))
+
 (* TODO list vs tree *)
 let print_policy_asm p Policy.{ policy_export; policy_import } =
-  (* let _ = Maps.PTree.elements policy_export in
-   * let _ = Maps.PTree.elements policy_import in *)
-  Format.fprintf p "{|@ policy_export@ :=@ nil";
+  let exports = AST.COMP.CompTree.elements policy_export in
+  let imports = AST.COMP.CompTree.elements policy_import in
+  Format.fprintf p "{| policy_export := [";
+  Format.pp_print_string p (string_of_exports exports);
   (* TODO *)
-  Format.fprintf p ";@ policy_import@ :=@ nil";
+  Format.fprintf p ";\n policy_import := [";
+  Format.pp_print_string p (string_of_imports imports);
   (* TODO *)
   Format.fprintf p "|}@,"
 

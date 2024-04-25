@@ -58,12 +58,16 @@ Qed.
 
 Parameter comp_to_pos: compartment -> positive.
 Axiom comp_to_pos_inj: forall x y: compartment, comp_to_pos x = comp_to_pos y -> x = y.
+Parameter pos_to_comp: positive -> compartment.
+Axiom pos_to_comp_inv: forall x, pos_to_comp (comp_to_pos x) = x.
 
 Module COMPARTMENT_INDEXED_TYPE <: INDEXED_TYPE.
   Definition t := compartment.
   Definition index := comp_to_pos.
   Definition index_inj := comp_to_pos_inj.
   Definition eq := cp_eq_dec.
+  Definition left_inverse := pos_to_comp.
+  Definition left_inverse_inv := pos_to_comp_inv.
 End COMPARTMENT_INDEXED_TYPE.
 
 Module CompTree := ITree (COMPARTMENT_INDEXED_TYPE).
@@ -138,18 +142,36 @@ Qed.
 
 Definition comp_to_pos: compartment -> positive :=
   fun c => match c with
-        | bottom' => Z.to_pos 0
-        | top' => Z.to_pos 1
+        | bottom' => Z.to_pos 1
+        | top' => Z.to_pos 2
         | Comp i => (Z.to_pos 2 + i)%positive
         end.
 
 Axiom comp_to_pos_inj: forall x y: compartment, comp_to_pos x = comp_to_pos y -> x = y.
+
+Definition pos_to_comp: positive -> compartment :=
+  fun p => match p with
+        | xH => bottom'
+        | xO xH => top'
+        | _ => Comp (Pos.pred (Pos.pred p))%positive
+        end.
+
+Lemma pos_to_comp_inv: forall x, pos_to_comp (comp_to_pos x) = x.
+Proof.
+  unfold pos_to_comp, comp_to_pos.
+  destruct x eqn:?; simpl; auto. destruct i; simpl; auto.
+  destruct i; auto. simpl. rewrite Pos.pred_double_succ. reflexivity.
+  destruct i; auto. simpl. rewrite Pos.pred_double_succ. reflexivity.
+Qed.
+
 
 Module COMPARTMENT_INDEXED_TYPE <: INDEXED_TYPE.
   Definition t := compartment.
   Definition index := comp_to_pos.
   Definition index_inj := comp_to_pos_inj.
   Definition eq := cp_eq_dec.
+  Definition left_inverse := pos_to_comp.
+  Definition left_inverse_inv := pos_to_comp_inv.
 End COMPARTMENT_INDEXED_TYPE.
 
 Module CompTree := ITree (COMPARTMENT_INDEXED_TYPE).
