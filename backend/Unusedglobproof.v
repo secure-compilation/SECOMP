@@ -1166,7 +1166,7 @@ Proof.
         rewrite <- H0 in H2; inv H2.
       + eauto. }
   eapply H1; eauto.
-eapply call_trace_translated; eauto.
+  eapply call_trace_translated; eauto.
   eapply match_stacks_preserves_globals; eauto.
   econstructor; eauto.
   econstructor; eauto.
@@ -1180,10 +1180,6 @@ eapply call_trace_translated; eauto.
   destruct ros as [r|id]. eauto. apply KEPT. red. econstructor; econstructor; split; eauto. simpl; auto.
   intros (A & B).
   exploit Mem.free_parallel_inject; eauto. rewrite ! Z.add_0_r. intros (tm' & C & D).
-  (* exploit find_function_ptr_inject. *)
-  (* eapply match_stacks_preserves_globals; eauto. eauto. apply FUNPTR. eapply ALLOWED'. *)
-  (* destruct ros as [r|id]. eauto. apply KEPT. red. econstructor; econstructor; split; eauto. simpl; auto. *)
-  (* intros (tvf & E & F & G). *)
   econstructor; split.
   eapply exec_Itailcall; eauto.
   econstructor; eauto.
@@ -1259,7 +1255,6 @@ eapply call_trace_translated; eauto.
   intros (j' & tres & tm' & A & B & C & D & E & F & G & I).
   econstructor; split.
   eapply exec_function_external; eauto.
-  (* { rewrite <- (match_stacks_call_comp _ _ _ _ _ STACKS); eauto. } *)
   eapply match_states_return with (j := j'); eauto.
   apply match_stacks_bound with (Mem.nextblock m) (Mem.nextblock tm).
   apply match_stacks_incr with j; auto.
@@ -1277,25 +1272,6 @@ eapply call_trace_translated; eauto.
 Qed.
 
 (** Relating initial memory states *)
-
-(*
-Remark genv_find_def_exists:
-  forall (F V: Type) (p: AST.program F V) b,
-  Plt b (Genv.genv_next (Genv.globalenv p)) ->
-  exists gd, Genv.find_def (Genv.globalenv p) b = Some gd.
-Proof.
-  intros until b.
-  set (P := fun (g: Genv.t F V) =>
-        Plt b (Genv.genv_next g) -> exists gd, (Genv.genv_defs g)!b = Some gd).
-  assert (forall l g, P g -> P (Genv.add_globals g l)).
-  { induction l as [ | [id1 g1] l]; simpl; intros.
-  - auto.
-  - apply IHl. unfold Genv.add_global, P; simpl. intros LT. apply Plt_succ_inv in LT. destruct LT.
-  + rewrite PTree.gso. apply H; auto. apply Plt_ne; auto.
-  + rewrite H0. rewrite PTree.gss. exists g1; auto. }
-  apply H. red; simpl; intros. exfalso; extlia.
-Qed.
-*)
 
 Lemma init_meminj_invert_strong:
   forall b b' delta,
@@ -1368,16 +1344,12 @@ Proof.
   exploit (Genv.init_mem_characterization_gen tp); eauto.
   destruct gd as [f|v].
   + intros ? ?. exploit H2; eauto. contradiction.
-(* + intros (P2 & Q2) (P1 & Q1). *)
-(*   apply Q1 in H0. destruct H0. subst. *)
-(*   apply Mem.perm_cur. auto. *)
 + intros (P2 & Q2 & R2 & S2) (P1 & Q1 & R1 & S1).
   apply Q1 in H0. destruct H0. subst.
   apply Mem.perm_cur. eapply Mem.perm_implies; eauto.
   apply P2. lia.
 - exploit init_meminj_invert; eauto. intros (A & id & B & C).
   subst delta.
-  (* destruct cp as [cp|]; simpl in *; trivial. *)
   destruct (Genv.find_symbol_find_def_inversion _ _ B) as [g B'].
   assert ((prog_defmap p) ! id = Some g) as DEF1.
   { apply Genv.find_def_symbol. eauto. }
@@ -1398,8 +1370,6 @@ Proof.
   exploit (Genv.init_mem_characterization_gen tp); eauto.
   destruct gd as [f|v].
   + intros. exploit H2; eauto. contradiction.
-(* + intros (P2 & Q2) (P1 & Q1). *)
-(*   apply Q1 in H0. destruct H0; discriminate. *)
 + intros (P2 & Q2 & R2 & S2) (P1 & Q1 & R1 & S1).
   apply Q1 in H0. destruct H0.
   assert (NO: gvar_volatile v = false).
@@ -1453,9 +1423,6 @@ Proof.
   exploit (Genv.init_mem_characterization_gen tp); eauto.
   destruct gd as [f|v].
   + intros. exploit H1; eauto.
-(* + intros (P2 & Q2) (P1 & Q1). *)
-(*   apply Q2 in H0. destruct H0. subst. replace ofs with 0 by lia. *)
-(*   left; apply Mem.perm_cur; auto. *)
 + intros (P2 & Q2 & R2 & S2) (P1 & Q1 & R1 & S1).
   apply Q2 in H0. destruct H0. subst.
   left. apply Mem.perm_cur. eapply Mem.perm_implies; eauto.
@@ -1555,10 +1522,8 @@ Local Transparent Linker_def Linker_fundef Linker_varinit Linker_vardef Linker_u
   simpl.
   destruct f1 as [f1|ef1], f2 as [f2|ef2]; simpl...
   + destruct ef2; try easy.
-    (* destruct eq_compartment; try easy. subst cp. *)
     intros H. inv H. auto.
   + destruct ef1; try easy.
-    (* destruct eq_compartment; try easy. subst cp. *)
     intros H. inv H. auto.
   + destruct (external_function_eq ef1 ef2); intuition congruence.
 - (* Two vardefs *)
@@ -1669,7 +1634,6 @@ Theorem link_match_program:
   exists tp, link tp1 tp2 = Some tp /\ match_prog p tp.
 Proof.
   intros.
-  (* exploit link_match_pol; eauto. intros link_pol_match. clear link_pol_match. *)
   destruct H0 as (used1 & A1 & B1). destruct H1 as (used2 & A2 & B2).
   destruct (link_prog_inv _ _ _ H) as (U & V & W' & W).
   assert (yes : Policy.eqb (prog_pol tp1) (prog_pol tp2) = true).
@@ -1689,7 +1653,6 @@ Proof.
   split. rewrite (match_prog_public _ _ _ B1); auto.
   split. rewrite (match_prog_public _ _ _ B2); auto.
   congruence.
-(* + rewrite (match_prog_pol _ _ _ B1), (match_prog_pol _ _ _ B2). auto. *)
 - exists (IS.union used1 used2); split.
 + eapply link_valid_used_set; eauto.
 + rewrite W. constructor; simpl; intros.
