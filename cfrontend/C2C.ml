@@ -963,6 +963,15 @@ let rec convertExpr cp env e =
       Ebuiltin( AST.EF_external(coqstring_of_camlstring "printf", sg), (* NOTE old: privileged_compartment *)
                targs, convertExprList cp env args, tres)
 
+  | C.ECall({edesc = C.EVar {name = "fgets"}}, [arg1; arg2; arg3])
+    when !Clflags.option_interp ->
+      (* drop third argument *)
+      let targs = convertTypArgs env [] [arg1; arg2]
+      and tres = convertTyp env e.etyp in
+      let sg = signature_of_type targs tres AST.cc_default in
+      Ebuiltin( AST.EF_external(coqstring_of_camlstring "fgets", sg),
+               targs, convertExprList cp env [arg1;arg2], tres)
+
   | C.ECall(fn, args) ->
       begin match projFunType env fn.etyp with
       | None ->
