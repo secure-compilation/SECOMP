@@ -707,7 +707,7 @@ Record extcall_properties (sem: extcall_sem) (cp: compartment) (sg: signature) :
     forall ge vargs m1 t vres m2,
     sem ge vargs m1 t vres m2 ->
     forall b ofs k,
-    ~ Mem.perm m1 b ofs Cur Freeable ->
+    ~ Mem.perm m1 b ofs Max Freeable ->
     Mem.perm m1 b ofs k Nonempty ->
     Mem.perm m2 b ofs k Nonempty;
 
@@ -1253,6 +1253,7 @@ Proof.
 (* valid pointer *)
 - inv H; eauto with mem.
   pose proof (Mem.free_range_perm _ _ _ _ _ _ H4) as Hrange.
+  apply Mem.range_perm_max in Hrange.
   eapply Mem.perm_free_1; eauto.
   destruct (eq_block b b0) as [<-|?]; [|now eauto].
   enough (~ (Ptrofs.unsigned lo - size_chunk Mptr <= ofs <

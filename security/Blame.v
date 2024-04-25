@@ -2577,7 +2577,7 @@ Qed.
            ext_call sem_props m_m' norepet_p blocks_m perms_m.
     intros b f ge_b. split.
     - destruct (perms_m _ _ ge_b) as [perm_m_b perm_m_b_max].
-      assert (~ Mem.perm m b 0 Cur Freeable) as not_freeable.
+      assert (~ Mem.perm m b 0 Max Freeable) as not_freeable.
       { intros contra. apply perm_m_b_max in contra.
         destruct contra; congruence. }
       eauto using ec_valid_pointer.
