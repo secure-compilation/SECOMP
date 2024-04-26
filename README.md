@@ -190,9 +190,9 @@ For this part, build the modified compiler available under branch
 and `make`. One does not need to worry about linking, as only the compilation
 procedure is needed for this part.
 
-To compile a compartmentalized program, invoke CompCert as follows, for example
-for the compartmentalized addition example available at
-`test/compartments/add.c`, from the `test/compartments` folder:
+To compile a compartmentalized program, invoke CompCert as follows, for instance
+for a simple compartmentalized addition example available at
+`test/compartments/add.c`, run from the `test/compartments` folder:
 
     [compartments]$ ../../ccomp -c add.c
 
