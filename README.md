@@ -187,13 +187,11 @@ discrepancies between the system's libc and the emulator's libc.
 
 For this part, build the modified compiler available under branch
 `secure-compilation-captest` following the general invocations of `configure`
-and `make`.
-
-You do not need to install `ccomp` globally or worry about linking, as only the
-compilation procedure is needed for this part.
+and `make`. One does not need to worry about linking, as only the compilation
+procedure is needed for this part.
 
 To compile a compartmentalized program, invoke CompCert as follows, for example
-for the case of compartmentalized addition available on
+for the compartmentalized addition example available at
 `test/compartments/add.c`, from the `test/compartments` folder:
 
     [compartments]$ ../../ccomp -c add.c
