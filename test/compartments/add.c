@@ -2,7 +2,7 @@
 
 §comp_add§ » add
 
-static §comp_add§ int add(int x, int y) {
+/* static  */§comp_add§ int add(int x, int y) {
   return x + y;
 }
 
