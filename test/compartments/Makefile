@@ -10,4 +10,4 @@ all: $(OBJECTS)
 	../../ccomp $*.c -L../../runtime -dasm -dparse -o $*.compcert
 
 clean:
-	rm -f $(OBJECTS) $(PARSED_SOURCES) $(PARSED_IMPORTS) $(EXECUTABLES)
+	rm -f $(OBJECTS) $(PARSED_SOURCES) $(PARSED_IMPORTS) $(EXECUTABLES) *.intf

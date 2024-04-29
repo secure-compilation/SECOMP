@@ -8,3 +8,4 @@
 *.light.c
 *.compcert
 *.gcc
+*.imports
