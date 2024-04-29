@@ -770,6 +770,35 @@ and world_vstore_asm ge m chunk id ofs ev =
   Mem.store chunk m b ofs v (Mem.block_compartment m b) >>= fun m' ->
   Some(world_asm ge m')
 
+let diagnose_stuck_asm p ge (s: Asm.state) =
+  let open Asm in
+  match s with
+  | Asm.State (st, rs, m, cp) ->
+    begin match rs PC with
+      | Vptr (b, ofs) ->
+        begin match Genv.find_funct_ptr ge b with
+          | Some fd ->
+            begin match fd with
+              | AST.Internal f ->
+                begin match Asm.find_instr (Ptrofs.unsigned ofs) f.fn_code with
+                  | Some i ->
+                    fprintf p "Stuck: ";
+                        PrintAsm.print_instruction_asm p i;
+                    begin match exec_instr ge f i rs m (comp_of Asm.has_comp_function f) with
+                      | Next _ -> fprintf p "can step@."
+                      | Stuck -> fprintf p "can't step@."
+                    end
+                  | None -> fprintf p "Stuck: didn't find instruction to execute@."
+                end
+              | AST.External _ -> fprintf p "Stuck: external function@."
+            end
+          | None -> fprintf p "Stuck: didn't find function to execute@."
+        end
+      | _ -> fprintf p "Stuck: PC isn't a pointer@."
+    end
+  | Asm.ReturnState _ -> fprintf p "Stuck: Returnstate@."
+
+
 let do_step_asm p prog ge time s w =
     if !trace >= 1 && time <= 0 then begin
       fprintf p "Time %d: out of fuel@."
@@ -780,8 +809,8 @@ let do_step_asm p prog ge time s w =
     match Asm.take_step do_external_function do_inline_assembly prog ge w s with
     | None ->
         if !trace >= 1 then
-          fprintf p "Time %d: program terminated (machine stuck)@."
-                    time;
+          fprintf p "Time %d: program terminated (machine stuck)@." time;
+          diagnose_stuck_asm p ge s;
           (* exit 0 *)
           None
     | Some(t, s') ->
@@ -789,7 +818,7 @@ let do_step_asm p prog ge time s w =
 
 let rec explore_one_asm p prog ge time s w =
   if !trace >= 2 then
-    (* fprintf p "@[<hov 2>Time %d:@ %a@]@." time print_state (prog, ge, s); *)
+    (* fprintf p "@[<hov 2>Time %d:@ %a@]@." time print_state_asm (prog, ge, s); *)
     fprintf p "@[<hov 2>Time %d:@ @]@." time;
   match do_step_asm p prog ge time s w with
   | Some (r, s', w') ->

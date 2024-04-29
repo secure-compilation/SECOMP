@@ -1586,54 +1586,57 @@ Section ExecSem.
   Definition take_step (p: program) (ge: genv) (w: world) (s: state): option (trace * state) :=
     let comp_of_main := comp_of_main p in
     match s with
-    | State st rs m _ =>
+    | State st rs m cp =>
         do Vptr b ofs <- rs PC;
         do fd <- Genv.find_funct_ptr ge b;
         match fd with
         | Internal f =>
             do i <- find_instr (Ptrofs.unsigned ofs) (fn_code f);
-            match exec_instr ge f i rs m (comp_of f) with
-            | Next rs' m' =>
-                match sig_call i, is_return i with
-                | None, false => (* exec_step_internal *)
-                    do Vptr b' ofs' <- rs' PC;
-                    let cp := Genv.find_comp_of_block ge b' in
-                    check (cp_eq_dec (comp_of f) cp);
-                    Some (E0, State st rs' m' (comp_of f))
-                | Some sig, false => (* exec_step_internal_call *)
-                    do Vptr b' ofs' <- rs' PC;
-                    check (Genv.allowed_call_b ge (comp_of f) (rs' PC));
-                    do st' <- update_stack_call ge st sig (comp_of f) rs';
-                    do vargs <- get_call_arguments rs' m' sig;
-                    let cp := Genv.find_comp_in_genv ge (rs' PC) in
-                    check (match Genv.type_of_call (comp_of f) cp with
-                           | Genv.CrossCompartmentCall => forallb not_ptr_b vargs
-                           | _ => true
-                           end);
-                    do t <- get_call_trace _ _ ge (comp_of f) cp (rs' PC) vargs (sig_args sig);
-                    Some (t, State st' rs' m' (comp_of f))
-                | None, true => (* exec_step_internal_return *)
-                    check (Genv.allowed_call_b ge (comp_of f) (rs' PC));
-                    Some (E0, ReturnState st rs' m' (comp_of f))
-                | Some _, true => None
+            match i with
+            | Pbuiltin ef args res => None
+            | _ =>
+                match exec_instr ge f i rs m (comp_of f) with
+                | Next rs' m' =>
+                    match sig_call i, is_return i with
+                    | None, false => (* exec_step_internal *)
+                        do Vptr b' ofs' <- rs' PC;
+                        let cp' := Genv.find_comp_of_block ge b' in
+                        check (cp_eq_dec (comp_of f) cp');
+                        Some (E0, State st rs' m' (comp_of f))
+                    | Some sig, false => (* exec_step_internal_call *)
+                        do Vptr b' ofs' <- rs' PC;
+                        check (Genv.allowed_call_b ge (comp_of f) (Vptr b' ofs'));
+                        do st' <- update_stack_call ge st sig (comp_of f) rs';
+                        do vargs <- get_call_arguments rs' m' sig;
+                        let cp' := Genv.find_comp_of_block ge b' in
+                        check (match Genv.type_of_call (comp_of f) cp' with
+                               | Genv.CrossCompartmentCall => forallb not_ptr_b vargs
+                               | _ => true
+                               end);
+                        do t <- get_call_trace _ _ ge (comp_of f) cp' (Vptr b' ofs') vargs (sig_args sig);
+                        Some (t, State st' rs' m' (comp_of f))
+                    | None, true => (* exec_step_internal_return *)
+                        (* check (Genv.allowed_call_b ge (comp_of f) (rs' PC)); *)
+                        Some (E0, ReturnState st rs' m' (comp_of f))
+                    | Some _, true => None
+                    end
+                | Stuck => None
                 end
-            | Stuck => None
             end
         | External ef =>
             check (Ptrofs.eq ofs Ptrofs.zero);
-            let cp := Genv.find_comp_in_genv ge (rs X1) in
             do vargs <- get_extcall_arguments rs m (ef_sig ef);
             do res_external <- do_external _ _ ge do_external_function do_inline_assembly ef cp w vargs m;
             let '(w', t, res, m') := res_external in
             let rs' := (set_pair (loc_external_result (ef_sig ef)) res (undef_caller_save_regs rs)) # PC <- (rs X1) in
-            let cp' := Genv.find_comp_in_genv ge (rs PC) in
-            Some (t, ReturnState st rs' m' cp')
+            Some (t, ReturnState st rs' m' bottom)
         end
     | ReturnState st rs m rec_cp =>
         check (negb (Val.eq (rs PC) Vnullptr));
-        let rec_cp' := call_comp ge st in
         let cp' := Genv.find_comp_in_genv ge (rs PC) in
-        check (match cp_eq_dec rec_cp cp' with
+
+        (* let rec_cp' := call_comp ge st in *)
+        check (match flowsto_dec rec_cp cp' with
                | left _ => true
                | right _ => andb (Val.eq (rs PC) (asm_parent_ra st)) (Val.eq (rs X2) (asm_parent_sp st))
                end);
@@ -1643,7 +1646,7 @@ Section ExecSem.
                | Genv.CrossCompartmentCall => not_ptr_b (return_value rs sg)
                | _ => true end);
         do t <- get_return_trace _ _ ge cp' rec_cp (return_value rs sg) (sig_res sg);
-        Some (t, State st' rs m bottom)
+        Some (t, State st' rs m cp')
     end.
 
 Definition build_initial_state (p: program): option state :=

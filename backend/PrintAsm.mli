@@ -18,3 +18,5 @@ val print_program_asm: out_channel -> Asm.program -> unit
 val print_if: Asm.program -> unit
 
 val destination: string option ref
+
+val print_instruction_asm: Format.formatter -> Asm.instruction -> unit

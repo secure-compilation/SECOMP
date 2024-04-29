@@ -28,7 +28,7 @@ let tool_name = "C verified compiler"
 let sdump_suffix = ref ".json"
 
 let nolink () =
-  !option_c || !option_S || !option_E || !option_interp
+  !option_c || !option_S || !option_E || !option_interp || !option_interp_asm
 
 let object_filename sourcename =
   if nolink () then
@@ -81,6 +81,20 @@ let compile_i_file sourcename preproname =
     Machine.config := Machine.compcert_interpreter !Machine.config;
     let csyntax = parse_c_file sourcename preproname in
     Interp.execute csyntax;
+        ""
+  end else if !option_interp_asm then begin
+    Machine.config := Machine.compcert_interpreter !Machine.config;
+    let csyntax = parse_c_file sourcename preproname in
+    let asm =
+      match Compiler.apply_partial
+              (Compiler.transf_c_program csyntax)
+              Asmexpand.expand_program with
+      | Errors.OK asm ->
+        asm
+      | Errors.Error msg ->
+        let loc = file_loc sourcename in
+        fatal_error loc "%a"  print_error msg in
+    Interp.execute_asm asm;
         ""
   end else if !option_S then begin
     compile_c_file sourcename preproname
@@ -232,6 +246,7 @@ Code generation options: (use -fno-<opt> to turn off -f<opt>)
   warning_help ^
   {|Interpreter mode:
   -interp        Execute given .c files using the reference interpreter
+  -interp-asm    Compile given .c files to CompCert's assembly and interpret them using the ASM interpreter
   -quiet         Suppress diagnostic messages for the interpreter
   -trace         Have the interpreter produce a detailed trace of reductions
   -random        Randomize execution order
@@ -356,6 +371,7 @@ let cmdline_actions =
   warning_options @
 (* Interpreter mode *)
  [ Exact "-interp", Set option_interp;
+  Exact "-interp-asm", Set option_interp_asm;
   Exact "-quiet", Unit (fun () -> Interp.trace := 0);
   Exact "-trace", Unit (fun () -> Interp.trace := 2);
   Exact "-random", Unit (fun () -> Interp.mode := Interp.Random);
@@ -415,8 +431,10 @@ let _ =
       fatal_error no_loc "ambiguous '-o' option (multiple source files)";
     if !num_input_files = 0 then
       fatal_error no_loc "no input file";
-    if not !option_interp && !main_function_name <> "main" then
-      fatal_error no_loc "option '-main' requires option '-interp'";
+    if !option_interp && !option_interp_asm then
+      fatal_error no_loc "can only have one of '-interp' or '-interp-asm'";
+    if not !option_interp_asm && not !option_interp && !main_function_name <> "main" then
+      fatal_error no_loc "option '-main' requires option '-interp' or '-interp-asm'";
     let linker_args = time "Total compilation time" perform_actions () in
     if not (nolink ()) && linker_args <> [] then begin
       linker (output_filename_default "a.out") linker_args
