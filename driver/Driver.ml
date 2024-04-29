@@ -36,8 +36,6 @@ let object_filename sourcename =
   else
     tmp_file ".o"
 
-let option_print_details: bool ref = ref false
-
 (* From CompCert C AST to asm *)
 
 let compile_c_file sourcename ifile ofile =
@@ -46,7 +44,7 @@ let compile_c_file sourcename ifile ofile =
     dst := if !opt then Some (output_filename sourcename ~suffix:ext)
       else None in
   set_dest Cprint.destination option_dparse ".parsed.c";
-  set_dest Cprint.destination' option_dparse ".parsed.imports";
+  set_dest Cprint.destination' option_dparse ".parsed.intf";
   set_dest PrintCsyntax.destination option_dcmedium ".compcert.c";
   set_dest PrintClight.destination option_dclight ".light.c";
   set_dest PrintCminor.destination option_dcminor ".cm";
@@ -54,6 +52,7 @@ let compile_c_file sourcename ifile ofile =
   set_dest Regalloc.destination_alloctrace option_dalloctrace ".alloctrace";
   set_dest PrintLTL.destination option_dltl ".ltl";
   set_dest PrintMach.destination option_dmach ".mach";
+  set_dest PrintAsm.destination option_dasm ".s.intf";
   set_dest AsmToJSON.destination option_sdump !sdump_suffix;
   (* Parse the ast *)
   let csyntax = parse_c_file sourcename ifile in
@@ -67,27 +66,12 @@ let compile_c_file sourcename ifile ofile =
     | Errors.Error msg ->
       let loc = file_loc sourcename in
         fatal_error loc "%a"  print_error msg in
-  (* let _  = (\* TEMP *\) *)
-  (*   if !Interp.emulate_backend then *)
-  (*     match Compiler.transf_c_program csyntax with *)
-  (*     | Errors.OK asm -> *)
-  (*         PrintAsm.print_program_asm stderr asm; *)
-  (*         Interp.execute_asm asm; *)
-  (*     | Errors.Error msg -> *)
-  (*       let loc = file_loc sourcename in *)
-  (*         fatal_error loc "%a"  print_error msg in *)
   (* Dump Asm in binary and JSON format *)
   AsmToJSON.print_if asm sourcename;
   (* Print Asm in text form *)
-  if !option_print_details then begin
-    let oc = open_out ofile in
-    PrintAsm.print_program_asm oc asm;
-    close_out oc
-  end
-  else
-    let oc = open_out ofile in
-    PrintAsm.print_program oc asm;
-    close_out oc
+  let oc = open_out ofile in
+  PrintAsm.print_program oc asm;
+  close_out oc
 
 
 (* From C source to asm *)
@@ -233,17 +217,16 @@ Code generation options: (use -fno-<opt> to turn off -f<opt>)
  linker_help ^
 {|Tracing options:
   -dprepro       Save C file after preprocessing in <file>.i
-  -dparse        Save C file after parsing and elaboration in <file>.parsed.c
+  -dparse        Save C file after parsing and elaboration in <file>.parsed.c and interface information in <file>.parsed.intf
   -dc            Save generated Compcert C in <file>.compcert.c
   -dclight       Save generated Clight in <file>.light.c
   -dcminor       Save generated Cminor in <file>.cm
   -drtl          Save RTL at various optimization points in <file>.rtl.<n>
   -dltl          Save LTL after register allocation in <file>.ltl
   -dmach         Save generated Mach code in <file>.mach
-  -dasm          Save generated assembly in <file>.s
+  -dasm          Save generated assembly in <file>.s and interface information in <file>.s.intf
   -dall          Save all generated intermediate files in <file>.<ext>
   -sdump         Save info for post-linking validation in <file>.json
-  -compdetails   Print debugging information for compartmentalization
 |} ^
   general_help ^
   warning_help ^
@@ -364,7 +347,6 @@ let cmdline_actions =
     option_dalloctrace := true;
     option_dmach := true;
     option_dasm := true);
-  Exact "-compdetails", Set option_print_details;
   Exact "-sdump", Set option_sdump;
   Exact "-sdump-suffix", String (fun s -> option_sdump := true; sdump_suffix:= s);
   Exact "-sdump-folder", String (fun s -> AsmToJSON.sdump_folder := s);] @

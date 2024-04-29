@@ -560,8 +560,10 @@ let print_policy_asm p Policy.{ policy_export; policy_import } =
   (* TODO *)
   Format.fprintf p "|}@,"
 
+let destination : string option ref = ref None
+
 let print_program_asm oc prog =
-  let p = Format.std_formatter in
+  let p = Format.formatter_of_out_channel oc in
   Format.fprintf p "@[{|@.prog_defs :=@.@[";
   print_list_asm p print_prog_def_asm prog.prog_defs;
   Format.fprintf p "@];@.prog_public :=@.@[";
@@ -571,6 +573,14 @@ let print_program_asm oc prog =
   Format.fprintf p "@];@.prog_pol :=@.@[";
   print_policy_asm p prog.prog_pol;
   Format.fprintf p "|}@]@."
+
+let print_if prog =
+  match !destination with
+  | None -> ()
+  | Some f ->
+      let oc = open_out f in
+      print_program_asm oc prog;
+      close_out oc
 
 (* end module contents *)
 
