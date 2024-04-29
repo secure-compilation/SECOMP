@@ -6,7 +6,7 @@ EXECUTABLES := $(SOURCES:.c=.compcert)
 
 all: $(OBJECTS)
 
-%.compcert %.s %.parsed.c %.parsed.imports: %.c
+%.compcert %.s %.s.intf %.parsed.c %.parsed.intf: %.c
 	../../ccomp $*.c -L../../runtime -dasm -dparse -o $*.compcert
 
 clean:
