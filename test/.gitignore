@@ -1,7 +1,9 @@
 # CompCert-generated files
 *.s
+*.s.intf
 *.sdump
 *.parsed.c
+*.parsed.intf
 *.compcert.c
 *.light.c
 *.compcert

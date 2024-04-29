@@ -560,7 +560,7 @@ let globdecl pp g =
 let imp pp g =
   match g with
   | Import(id1, id2, id3) ->
-      fprintf pp "%a imports %a from %a"
+      fprintf pp "%a imports %a from %a@."
         ident id1
         ident id3
         ident id2
@@ -568,7 +568,7 @@ let imp pp g =
 let expor pp g =
   match g with
   | Export(id1, id2) ->
-      fprintf pp "%a exports %a"
+      fprintf pp "%a exports %a@."
         ident id1
         ident id2
 
