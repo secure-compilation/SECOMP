@@ -262,6 +262,11 @@ let print_list_asm p f xs =
 let print_Z_asm p n =
   Format.fprintf p "%s" (Z.to_string n)
 
+let print_float32_asm p n =
+  Format.fprintf p "%.15Ff" (camlfloat_of_coqfloat32 n)
+let print_float64_asm p n =
+  Format.fprintf p "%.15F" (camlfloat_of_coqfloat n)
+
 (* TODO to_string *)
 let print_ident_asm p id =
   Format.fprintf p "%ld" (P.to_int32 id)
@@ -449,26 +454,26 @@ let print_external_function_asm p = function
       Format.fprintf p ",@ ";
       print_signature_asm p fsig;
       Format.fprintf p ")"
-  | _ ->
-      failwith "unimplemented external function"
-  (* | EF_vload chunk ->
-   *     Format.fprintf p "EF_vload _"
-   * | EF_vstore chunk ->
-   *     Format.fprintf p "EF_vstore _"
-   * | EF_malloc ->
-   *     Format.fprintf p "EF_malloc _"
-   * | EF_free ->
-   *     Format.fprintf p "EF_free _"
-   * | EF_memcpy (n1, n2) ->
-   *     Format.fprintf p "EF_memcpy _"
-   * | EF_annot (lvl, str, tys) ->
-   *     Format.fprintf p "EF_annot _"
-   * | EF_annot_val (lvl, str, tys) ->
-   *     Format.fprintf p "EF_annot_val _"
-   * | EF_inline_asm (str, fsig, strs) ->
-   *     Format.fprintf p "EF_inline_asm _"
-   * | EF_debug (lvl, id, tys) ->
-   *     Format.fprintf p "EF_debug _" *)
+  (* | _ -> *)
+  (*     failwith "unimplemented external function" *)
+  | EF_vload chunk ->
+      Format.fprintf p "EF_vload _"
+  | EF_vstore chunk ->
+      Format.fprintf p "EF_vstore _"
+  | EF_malloc ->
+      Format.fprintf p "EF_malloc _"
+  | EF_free ->
+      Format.fprintf p "EF_free _"
+  | EF_memcpy (n1, n2) ->
+      Format.fprintf p "EF_memcpy _"
+  | EF_annot (lvl, str, tys) ->
+      Format.fprintf p "EF_annot _"
+  | EF_annot_val (lvl, str, tys) ->
+      Format.fprintf p "EF_annot_val _"
+  | EF_inline_asm (str, fsig, strs) ->
+      Format.fprintf p "EF_inline_asm _"
+  | EF_debug (lvl, id, tys) ->
+      Format.fprintf p "EF_debug _"
 
 let print_fundef_asm p = function
   | Internal f ->
@@ -493,8 +498,19 @@ let print_init_data_asm p = function
   | Init_int64 n ->
       Format.fprintf p "Init_int64@ ";
       print_Z_asm p n
-  | _ ->
-      failwith "unimplemented initial data"
+  | Init_float32 n ->
+      Format.fprintf p "Init_float32@ ";
+      print_float32_asm p n
+  | Init_float64 n ->
+      Format.fprintf p "Init_float64@ ";
+      print_float64_asm p n
+  | Init_space z ->
+      Format.fprintf p "Init_space@ ";
+      print_Z_asm p z
+  | Init_addrof _ ->
+      Format.fprintf p "Init_addrof@ "
+  (* | _ -> *)
+  (*     failwith "unimplemented initial data" *)
   (* | Init_float32 of float32
    * | Init_float64 of float
    * | Init_space of coq_Z
