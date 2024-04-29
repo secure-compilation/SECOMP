@@ -48,6 +48,14 @@ let name_of_chunk = function
   | Many32 -> "any32"
   | Many64 -> "any64"
 
+let string_of_value = function
+  | Values.Vptr (b, ofs) -> "Vptr"
+  | Values.Vint i -> "Vint"
+  | Values.Vlong i -> "Vlong"
+  | Values.Vfloat f -> "Vfloat"
+  | Values.Vsingle f -> "Vsingle"
+  | Values.Vundef -> "Vundef"
+
 let name_of_external = function
   | EF_external(name, sg) -> sprintf "extern %S" (camlstring_of_coqstring name)
   | EF_builtin(name, sg) -> sprintf "builtin %S" (camlstring_of_coqstring name)

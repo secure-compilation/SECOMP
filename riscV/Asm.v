@@ -1382,17 +1382,6 @@ Definition comp_of_main (p: program) :=
 Definition semantics (p: program) :=
   Semantics step (initial_state p) (final_state p) (Genv.globalenv p).
 
-(** [has_comp] instan(* ce for [Asm] states *) *)
-(* #[export] Instance has_comp_state (p: program): has_comp state := *)
-(*   fun s => match s with *)
-(*         | State _ rs _ *)
-(*         | ReturnState _ rs _ _ => *)
-(*             match  Genv.find_comp_in_genv (Genv.globalenv p) (rs PC) with *)
-(*             | Some cp => cp *)
-(*             | None => default_compartment *)
-(*             end *)
-(*         end. *)
-
 (** Determinacy of the [Asm] semantics. *)
 
 Remark extcall_arguments_determ:
