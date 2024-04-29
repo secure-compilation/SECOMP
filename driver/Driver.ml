@@ -36,6 +36,8 @@ let object_filename sourcename =
   else
     tmp_file ".o"
 
+let option_print_details: bool ref = ref false
+
 (* From CompCert C AST to asm *)
 
 let compile_c_file sourcename ifile ofile =
@@ -77,9 +79,16 @@ let compile_c_file sourcename ifile ofile =
   (* Dump Asm in binary and JSON format *)
   AsmToJSON.print_if asm sourcename;
   (* Print Asm in text form *)
-  let oc = open_out ofile in
-  PrintAsm.print_program_asm oc asm;
-  close_out oc
+  if !option_print_details then begin
+    let oc = open_out ofile in
+    PrintAsm.print_program_asm oc asm;
+    close_out oc
+  end
+  else
+    let oc = open_out ofile in
+    PrintAsm.print_program oc asm;
+    close_out oc
+
 
 (* From C source to asm *)
 
@@ -234,6 +243,7 @@ Code generation options: (use -fno-<opt> to turn off -f<opt>)
   -dasm          Save generated assembly in <file>.s
   -dall          Save all generated intermediate files in <file>.<ext>
   -sdump         Save info for post-linking validation in <file>.json
+  -compdetails   Print debugging information for compartmentalization
 |} ^
   general_help ^
   warning_help ^
@@ -354,6 +364,7 @@ let cmdline_actions =
     option_dalloctrace := true;
     option_dmach := true;
     option_dasm := true);
+  Exact "-compdetails", Set option_print_details;
   Exact "-sdump", Set option_sdump;
   Exact "-sdump-suffix", String (fun s -> option_sdump := true; sdump_suffix:= s);
   Exact "-sdump-folder", String (fun s -> AsmToJSON.sdump_folder := s);] @
