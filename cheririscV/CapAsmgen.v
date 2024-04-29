@@ -1838,7 +1838,7 @@ Proof.
 Qed.
 
 (* A tiny compartmentalized Mach program *)
-Program Definition test_program_1 :=
+Definition test_program_1 :=
   let main_id := 10%positive in
   let main_cp := 1%positive in
   let twice_id := 20%positive in
@@ -1875,13 +1875,11 @@ Program Definition test_program_1 :=
           (Maps.PTree.set main_cp nil (Maps.PTree.empty _)))
        (Maps.PTree.set twice_cp nil
           (Maps.PTree.set main_cp ((twice_cp, twice_id) :: nil) (Maps.PTree.empty _))))
-    _
     : Mach.program.
-Next Obligation. Admitted.
 
 
 (* A more elaborate compartmentalized Mach program with conditions *)
-Program Definition test_program_2 :=
+Definition test_program_2 :=
   let main_id := 10%positive in
   let main_cp := 1%positive in
   let maximum_id := 20%positive in
@@ -1989,13 +1987,11 @@ Program Definition test_program_2 :=
        (Maps.PTree.set minmax_cp nil
           (Maps.PTree.set clip_cp ((minmax_cp, minimum_id) :: (minmax_cp, maximum_id) :: nil)
              (Maps.PTree.set main_cp ((clip_cp, clip_id) :: nil)
-                (Maps.PTree.empty _))))) _
+                (Maps.PTree.empty _)))))
     : Mach.program.
-Next Obligation.
-Admitted.
 
 (* A Mach program with stack usage and recursive function calls *)
-Program Definition test_program_3 :=
+Definition test_program_3 :=
   let main_id := 10%positive in
   let main_cp := 1%positive in
   let sum_id := 20%positive in
@@ -2057,10 +2053,8 @@ Program Definition test_program_3 :=
              (Maps.PTree.empty _)))
        (Maps.PTree.set sum_cp nil
           (Maps.PTree.set main_cp ((sum_cp, sum_id) :: nil)
-             (Maps.PTree.empty _)))) _
+             (Maps.PTree.empty _))))
     : Mach.program.
-Next Obligation.
-  Admitted.
 
 (* Program transformation in proof mode *)
 Goal (* (forall y, exists off, find_symbol_offset y = Some off) -> *)
