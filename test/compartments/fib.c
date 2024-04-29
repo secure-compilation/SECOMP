@@ -2,7 +2,7 @@
 
 §comp_fib§ » fib
 
-static §comp_fib§ int fib(int n)
+§comp_fib§ int fib(int n)
 {
   if (n < 2) 
     return 1;
