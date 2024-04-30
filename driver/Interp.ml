@@ -807,6 +807,12 @@ let diagnose_stuck_asm p ge (s: Asm.state) =
 
 
 let do_step_asm p prog ge time s w =
+  match Asm.at_final_state s with
+  | Some r ->
+    fprintf p "Time %d: program terminated (exit code = %ld)@."
+      time (camlint_of_coqint r);
+    None
+  | None ->
     if !trace >= 1 && time <= 0 then begin
       fprintf p "Time %d: out of fuel@."
                 time;
@@ -815,9 +821,10 @@ let do_step_asm p prog ge time s w =
     end else
     match Asm.take_step do_external_function do_inline_assembly prog ge w s with
     | None ->
-        if !trace >= 1 then
+        if !trace >= 1 then begin
           fprintf p "Time %d: program terminated (machine stuck)@." time;
-          diagnose_stuck_asm p ge s;
+          diagnose_stuck_asm p ge s
+        end;
           (* exit 0 *)
           None
     | Some(t, s') ->

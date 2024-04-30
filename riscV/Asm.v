@@ -1638,6 +1638,27 @@ Section ExecSem.
         Some (t, State st' rs m cp')
     end.
 
+  Definition at_final_state (s: state): option int :=
+    match s with
+    | ReturnState nil rs m cp =>
+        match rs X10 with
+        | Vint r => if Val.eq (rs PC) Vnullptr then Some r else None
+        | _ => None
+        end
+    | _ => None
+    end.
+
+  Lemma take_step_correct: forall p w s t s',
+      let ge := Genv.globalenv p in
+      step ge s t s' ->
+      take_step p ge w s = Some (t, s').
+  Proof.
+    intros p w s t s' ge H.
+    inv H; simpl; eauto.
+    - rewrite H0, H1, H2, H3, H4, H5, NEXTPC, ALLOWED.
+      destruct cp_eq_dec; try congruence. destruct i; auto. inv H3.
+  Admitted.
+
 Definition build_initial_state (p: program): option state :=
   let ge := Genv.globalenv p in
   let rs0 :=

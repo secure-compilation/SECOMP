@@ -174,7 +174,7 @@ Separate Extraction
    Machregs.mregs_for_operation Machregs.mregs_for_builtin
    Machregs.two_address_op Machregs.is_stack_reg
    Machregs.destroyed_at_indirect_call
-   Asm.build_initial_state Asm.take_step
+   Asm.build_initial_state Asm.take_step Asm.at_final_state
    AST.Policy
    AST.signature_main
    Floats.Float32.from_parsed Floats.Float.from_parsed

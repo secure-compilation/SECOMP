@@ -86,9 +86,7 @@ let compile_i_file sourcename preproname =
     Machine.config := Machine.compcert_interpreter !Machine.config;
     let csyntax = parse_c_file sourcename preproname in
     let asm =
-      match Compiler.apply_partial
-              (Compiler.transf_c_program csyntax)
-              Asmexpand.expand_program with
+      match (Compiler.transf_c_program csyntax) with
       | Errors.OK asm ->
         asm
       | Errors.Error msg ->
