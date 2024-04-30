@@ -140,6 +140,31 @@ Module IndexedMreg <: INDEXED_TYPE.
   Proof.
     decide_goal.
   Qed.
+  Definition left_inverse (p: positive): mreg :=
+    match p with
+                |  1 => R5  |  2 => R6  |  3 => R7
+    |  4 => R8  |  5 => R9  |  6 => R10 |  7 => R11
+    |  8 => R12 |  9 => R13 | 10 => R14 | 11 => R15
+    | 12 => R16 | 13 => R17 | 14 => R18 | 15 => R19
+    | 16 => R20 | 17 => R21 | 18 => R22 | 19 => R23
+    | 20 => R24 | 21 => R25 | 22 => R26 | 23 => R27
+    | 24 => R28 | 25 => R29 | 26 => R30
+
+    | 28 => F0  | 29 => F1  | 30 => F2  | 31 => F3
+    | 32 => F4  | 33 => F5  | 34 => F6  | 35 => F7
+    | 36 => F8  | 37 => F9  | 38 => F10 | 39 => F11
+    | 40 => F12 | 41 => F13 | 42 => F14 | 43 => F15
+    | 44 => F16 | 45 => F17 | 46 => F18 | 47 => F19
+    | 48 => F20 | 49 => F21 | 50 => F22 | 51 => F23
+    | 52 => F24 | 53 => F25 | 54 => F26 | 55 => F27
+    | 56 => F28 | 57 => F29 | 58 => F30 | 59 => F31
+    | _ => R5 (* default value *)
+    end.
+  Lemma left_inverse_inv:
+    forall x, left_inverse (index x) = x.
+  Proof.
+    decide_goal.
+  Qed.
 End IndexedMreg.
 
 Definition is_stack_reg (r: mreg) : bool := false.
