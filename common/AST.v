@@ -72,6 +72,13 @@ End COMPARTMENT_INDEXED_TYPE.
 
 Module CompTree := ITree (COMPARTMENT_INDEXED_TYPE).
 
+Module COMPARTMENT_EQUALITY_TYPE <: EQUALITY_TYPE.
+  Definition t := compartment.
+  Definition eq := cp_eq_dec.
+End COMPARTMENT_EQUALITY_TYPE.
+
+Module CompMap := EMap (COMPARTMENT_EQUALITY_TYPE).
+
 Axiom bottom_flowsto: forall cp, bottom ⊆ cp.
 Axiom flowsto_top: forall cp, cp ⊆ top.
 
@@ -175,6 +182,13 @@ Module COMPARTMENT_INDEXED_TYPE <: INDEXED_TYPE.
 End COMPARTMENT_INDEXED_TYPE.
 
 Module CompTree := ITree (COMPARTMENT_INDEXED_TYPE).
+
+Module COMPARTMENT_EQUALITY_TYPE <: EQUALITY_TYPE.
+  Definition t := compartment.
+  Definition eq := cp_eq_dec.
+End COMPARTMENT_EQUALITY_TYPE.
+
+Module CompMap := EMap (COMPARTMENT_EQUALITY_TYPE).
 
 End COMP.
 Export COMP.
