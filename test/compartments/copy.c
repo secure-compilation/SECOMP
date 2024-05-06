@@ -1,5 +1,8 @@
 #include <stdio.h>
 
+§comp_main§ imports_syscall fgets
+§comp_main§ imports_syscall printf
+
 §comp_main§ char c[10];
 
 §comp_main§ int main()
@@ -8,4 +11,3 @@
   printf("%s",p);
   return 0;
 }
-

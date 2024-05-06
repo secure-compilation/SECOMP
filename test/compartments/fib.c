@@ -12,6 +12,8 @@
 
 §comp_main§ imports §comp_fib§[fib]
 
+§comp_main§ imports_syscall printf
+
 // XXX main() full interface and undefined behavior
 // §comp_main§ int main(int argc, char ** argv)
 §comp_main§ int main()

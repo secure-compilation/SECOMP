@@ -1,5 +1,8 @@
 #include <stdio.h>
 
+§comp_copy§ imports_syscall fgets
+§comp_copy§ imports_syscall printf
+
 §comp_copy§ exports copy
 
 §comp_copy§ char c[10];
@@ -19,5 +22,3 @@
   copy();
   return 0;
 }
-
-
