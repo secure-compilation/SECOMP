@@ -2179,6 +2179,17 @@ Proof.
   destruct (contra Hexp).
 Qed.
 
+Definition allowed_syscall_b (ge: t) (cp: compartment) (name: string): bool :=
+  match CompTree.get cp (Policy.policy_syscalls ge.(genv_policy)) with
+  | Some l => in_dec string_dec name l
+  | _ => false
+  end.
+
+Definition allowed_syscall (ge: t) (cp: compartment) (name: string): Prop :=
+  allowed_syscall_b ge cp name = true.
+Hint Unfold allowed_syscall_b.
+
+
 Section SECURITY.
 
 Definition same_symbols (j: meminj) (ge1: t): Prop :=
@@ -2542,6 +2553,22 @@ Proof.
     destruct (Policy.list_id_eq l l0); subst; simpl in *; auto; try discriminate. contradiction.
 Qed.
 
+Lemma match_genvs_allowed_syscalls:
+  forall cp name,
+    allowed_syscall (globalenv p) cp name ->
+    allowed_syscall (globalenv tp) cp name.
+Proof.
+  intros cp name. unfold allowed_syscall, allowed_syscall_b.
+  destruct progmatch as [_ [_ [_ H]]].
+  unfold Policy.eqb in H.
+  rewrite !andb_true_iff in H. destruct H as [[[? ?] ?] ?].
+  eapply CompTree.beq_sound with (x := cp) in H2.
+  rewrite !globalenv_policy.
+  destruct CompTree.get; try discriminate.
+  destruct CompTree.get; try discriminate. destruct Policy.list_string_eq; try subst; now auto.
+  destruct CompTree.get; try discriminate. contradiction.
+Qed.
+
 Lemma match_genvs_not_ptr_inj:
   forall j cp cp' v v',
     Val.inject j v v' ->
@@ -2699,6 +2726,13 @@ Proof.
   eapply (match_genvs_allowed_calls progmatch).
 Qed.
 
+Theorem allowed_syscall_transf_partial:
+  forall cp name,
+    allowed_syscall (globalenv p) cp name -> allowed_syscall (globalenv tp) cp name.
+Proof.
+  eapply (match_genvs_allowed_syscalls progmatch).
+Qed.
+
 Lemma not_ptr_transf_partial_inj:
   forall j cp cp' v v',
     Val.inject j v v' ->
@@ -2811,6 +2845,13 @@ Theorem allowed_call_transf:
     allowed_call (globalenv p) cp vf -> allowed_call (globalenv tp) cp vf.
 Proof.
   eapply (match_genvs_allowed_calls progmatch).
+Qed.
+
+Theorem allowed_syscall_transf:
+  forall cp vf,
+    allowed_syscall (globalenv p) cp vf -> allowed_syscall (globalenv tp) cp vf.
+Proof.
+  eapply (match_genvs_allowed_syscalls progmatch).
 Qed.
 
 Lemma find_comp_of_block_transf:
