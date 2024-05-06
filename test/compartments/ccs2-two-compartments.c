@@ -16,8 +16,8 @@
   return handle(y);
 }
 
-/* §C0§ imports_syscall [printf] */
-/* §C0§ imports_syscall [fgets] */
+§C0§ imports_syscall printf
+§C0§ imports_syscall fgets
 §C0§ imports §C1§[init]
 §C0§ imports §C1§[process]
 
