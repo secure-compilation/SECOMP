@@ -52,6 +52,7 @@ let compile_c_file sourcename ifile ofile =
   set_dest Regalloc.destination_alloctrace option_dalloctrace ".alloctrace";
   set_dest PrintLTL.destination option_dltl ".ltl";
   set_dest PrintMach.destination option_dmach ".mach";
+  set_dest PrintCapAsm.destination option_dcapasm ".cap_asm";
   set_dest PrintAsm.destination option_dasm ".s.intf";
   set_dest AsmToJSON.destination option_sdump !sdump_suffix;
   (* Parse the ast *)
@@ -236,6 +237,7 @@ Code generation options: (use -fno-<opt> to turn off -f<opt>)
   -drtl          Save RTL at various optimization points in <file>.rtl.<n>
   -dltl          Save LTL after register allocation in <file>.ltl
   -dmach         Save generated Mach code in <file>.mach
+  -dcapasm       Save generated capability assembly in <file>.cap_asm
   -dasm          Save generated assembly in <file>.s and interface information in <file>.s.intf
   -dall          Save all generated intermediate files in <file>.<ext>
   -sdump         Save info for post-linking validation in <file>.json
@@ -349,6 +351,7 @@ let cmdline_actions =
   Exact "-dalloctrace", Set option_dalloctrace;
   Exact "-dmach", Set option_dmach;
   Exact "-dasm", Set option_dasm;
+  Exact "-dcapasm", Set option_dcapasm;
   Exact "-dall", Self (fun _ ->
     option_dprepro := true;
     option_dparse := true;
@@ -359,7 +362,8 @@ let cmdline_actions =
     option_dltl := true;
     option_dalloctrace := true;
     option_dmach := true;
-    option_dasm := true);
+    option_dasm := true;
+    option_dcapasm := true);
   Exact "-sdump", Set option_sdump;
   Exact "-sdump-suffix", String (fun s -> option_sdump := true; sdump_suffix:= s);
   Exact "-sdump-folder", String (fun s -> AsmToJSON.sdump_folder := s);] @

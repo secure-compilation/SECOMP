@@ -702,7 +702,7 @@ let print_policy_asm p Policy.{ policy_export; policy_import } =
   print_list_capasm p print_policy_imports_capasm imports;
   Format.fprintf p "|}@,"
 
-let print_program_asm oc prog =
+let print_program_capasm oc prog =
   let p = Format.formatter_of_out_channel oc in
   Format.fprintf p "@[{|@.prog_defs :=@.@[";
   print_list_capasm p print_prog_def_asm prog.prog_defs;
@@ -722,10 +722,15 @@ let show_errmsg em =
   | CTX p -> fmt "CTX: %d" (Camlcoq.P.to_int p)
   | POS p -> fmt "POS: %d" (Camlcoq.P.to_int p)
 
-let print_cap_asm mach_prog =
-  (* TODO: this function is called twice and thus also produces the file twice (in cwd and in runtime/) *)
-  Out_channel.with_open_text "out.cap_asm" (fun oc ->
-      match CapAsmgen.transf_program mach_prog with
-      | Errors.Error msg -> List.iter (fun em -> Printf.fprintf oc "%s\n" (show_errmsg em)) msg
-      | Errors.OK cap_asm_prog -> print_program_asm oc cap_asm_prog)
+let destination : string option ref = ref None
 
+let print_if prog =
+   match !destination with
+   | None -> ()
+   | Some f ->
+       let oc = open_out f in
+       let _ = match CapAsmgen.transf_program prog with
+         | Errors.Error msg -> Format.fprintf (Format.formatter_of_out_channel oc) "Fatal error: could not generate CapAsm for given program"
+         | Errors.OK cap_asm_prog -> print_program_capasm oc cap_asm_prog
+       in
+       close_out oc

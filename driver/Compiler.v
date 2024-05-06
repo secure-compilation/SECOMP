@@ -79,8 +79,8 @@ Parameter print_Cminor: Cminor.program -> unit.
 Parameter print_RTL: Z -> RTL.program -> unit.
 Parameter print_LTL: LTL.program -> unit.
 Parameter print_Mach: Mach.program -> unit.
-Parameter print_Asm: Asm.program -> unit.
 Parameter print_CapAsm : Mach.program -> unit.
+Parameter print_Asm: Asm.program -> unit.
 
 Local Open Scope string_scope.
 

@@ -47,6 +47,7 @@ let option_drtl = ref false
 let option_dltl = ref false
 let option_dalloctrace = ref false
 let option_dmach = ref false
+let option_dcapasm = ref false
 let option_dasm = ref false
 let option_sdump = ref false
 let option_g = ref false
