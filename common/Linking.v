@@ -398,6 +398,7 @@ Definition link_pol  (pol1 pol2: Policy.t): Policy.t :=
   {| Policy.policy_comps := comb;
      Policy.policy_export := pol1.(Policy.policy_export);
      Policy.policy_import := pol1.(Policy.policy_import);
+     Policy.policy_syscalls := pol1.(Policy.policy_syscalls);
   |}.
 
 Lemma prog_agr_comps_link:
@@ -480,14 +481,15 @@ Proof.
   - unfold Policy.eqb in eq_pol.
     apply andb_prop in eq_pol as [eq_pol2 eq_pol3].
     apply andb_prop in eq_pol2 as [eq_pol1 eq_pol2].
+    apply andb_prop in eq_pol1 as [eq_pol0 eq_pol1].
     (* apply PTree.beq_correct in eq_pol1. *)
     (* rewrite <- eq_pol in *. *)
     pose proof (prog_agr_comps p2) as G.
     unfold agr_comps in G. rewrite Forall_forall in G.
     eapply PTree.elements_complete in H0. eapply in_prog_defmap in H0.
     intros cp ?.
-    rewrite PTree.beq_correct in eq_pol1.
-    specialize (eq_pol1 i). simpl in H1. rewrite H1 in eq_pol1.
+    rewrite PTree.beq_correct in eq_pol0.
+    specialize (eq_pol0 i). simpl in H1. rewrite H1 in eq_pol0.
     destruct ((Policy.policy_comps (prog_pol p2)) ! i) eqn:EQ; try contradiction.
     destruct (cp_eq_dec cp c); try discriminate. subst.
     specialize (G (i, gd') H0 c EQ). simpl; rewrite <- H. auto.
@@ -790,6 +792,9 @@ Proof.
   + rewrite PTree.beq_correct.
     intros y. destruct (policy_import ! y); auto.
     destruct (Policy.list_cpt_id_eq l0 l0); auto.
+  + rewrite PTree.beq_correct.
+    intros y. destruct (policy_syscalls ! y); auto.
+    destruct (Policy.list_string_eq l0 l0); auto.
 Qed.
 
 Theorem match_transform_partial_program_contextual:

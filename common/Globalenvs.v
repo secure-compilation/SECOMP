@@ -2374,6 +2374,7 @@ Proof.
   unfold globalenv. rewrite !genv_pol_add_globals.
   simpl. apply andb_prop in S as [S _].
   apply andb_prop in S as [S _].
+  apply andb_prop in S as [S _].
   unfold to_map_ident.
   rewrite PTree.beq_correct in S.
   specialize (S id).
@@ -2528,10 +2529,11 @@ Proof.
     unfold Policy.eqb in EQPOL.
     apply andb_prop in EQPOL. destruct EQPOL as [EQPOL EQPOL3].
     apply andb_prop in EQPOL. destruct EQPOL as [EQPOL1 EQPOL2].
+    apply andb_prop in EQPOL1. destruct EQPOL1 as [EQPOL0 EQPOL1].
     set (cp := find_comp_of_block (add_globals (empty_genv F1 V1 prog_pol_pub) prog_defs) b).
     fold cp in H2.
+    eapply CompTree.beq_sound with (x := cp) in EQPOL1.
     eapply CompTree.beq_sound with (x := cp) in EQPOL2.
-    eapply CompTree.beq_sound with (x := cp) in EQPOL3.
     (* rewrite PTree.beq_correct in EQPOL2. *)
     (* specialize (EQPOL2 cp). *)
     simpl in *.
