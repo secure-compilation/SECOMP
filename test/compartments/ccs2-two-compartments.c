@@ -1,7 +1,7 @@
 #include <stdio.h>
 
-§C1§ » init
-§C1§ » process
+§C1§ exports init
+§C1§ exports process
 
 §C1§ int initialized = 0;
 
@@ -18,8 +18,8 @@
 
 /* §C0§ imports_syscall [printf] */
 /* §C0§ imports_syscall [fgets] */
-§C0§ « §C1§[init]
-§C0§ « §C1§[process]
+§C0§ imports §C1§[init]
+§C0§ imports §C1§[process]
 
 §C0§ char x[10];
 

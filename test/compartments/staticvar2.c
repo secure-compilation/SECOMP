@@ -1,6 +1,6 @@
 #include <stdio.h>
 
-§comp_init§ » init
+§comp_init§ exports init
 
 static §comp_init§ int ready = 0;
 
@@ -11,7 +11,7 @@ static §comp_init§ int ready = 0;
   return x;
 }
 
-§comp_main§ « §comp_init§[init]
+§comp_main§ imports §comp_init§[init]
 
 §comp_main§ int main() {
   init();

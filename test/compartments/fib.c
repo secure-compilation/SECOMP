@@ -1,6 +1,6 @@
 #include <stdio.h>
 
-§comp_fib§ » fib
+§comp_fib§ exports fib
 
 §comp_fib§ int fib(int n)
 {
@@ -10,7 +10,7 @@
     return fib(n-1) + fib(n-2);
 }
 
-§comp_main§ « §comp_fib§[fib]
+§comp_main§ imports §comp_fib§[fib]
 
 // XXX main() full interface and undefined behavior
 // §comp_main§ int main(int argc, char ** argv)

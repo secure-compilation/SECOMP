@@ -1,6 +1,6 @@
 #include <stdio.h>
 
-§comp_copy§ » copy
+§comp_copy§ exports copy
 
 §comp_copy§ char c[10];
 
@@ -11,7 +11,7 @@
   return 0;
 }
 
-§comp_main§ « §comp_copy§[copy]
+§comp_main§ imports §comp_copy§[copy]
 
 // §comp_main§ int main(int argc, char ** argv)
 §comp_main§ int main()

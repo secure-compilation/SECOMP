@@ -1,13 +1,13 @@
 #include <stdio.h>
 
-§C0§ » valid
+§C0§ exports valid
 
 §C0§ int valid(int data) { return data % 2; }
 
-/* §C2§ imports_syscall [printf] */
-§C2§ « §C0§[valid]
-§C2§ » init
-§C2§ » process
+§C2§ imports_syscall printf
+§C2§ imports §C0§[valid]
+§C2§ exports init
+§C2§ exports process
 
 §C2§ int initialized = 0;
 
@@ -26,9 +26,9 @@
   return 0;
 }
 
-/* §C1§ imports_syscall [fgets] */
-§C1§ « §C2§[init]
-§C1§ « §C2§[process]
+§C1§ imports_syscall fgets
+§C1§ imports §C2§[init]
+§C1§ imports §C2§[process]
 
 // can yield Undef for some x
 §C1§ int parse(char* x) {

@@ -14,7 +14,7 @@
 (*                                                                     *)
 (* *********************************************************************)
 
-val elab_file : (Cabs.definition list * (Cabs.import list * Cabs.export list)) -> C.program
+val elab_file : (Cabs.definition list * Cabs.pol) -> C.program
   (* This is the main entry point.  It transforms a list of toplevel
      definitions as produced by the parser into a program in C abstract
      syntax. *)
