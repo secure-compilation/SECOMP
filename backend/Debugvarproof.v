@@ -360,6 +360,15 @@ Proof.
   eapply (Genv.match_genvs_allowed_calls TRANSF). eauto.
 Qed.
 
+Lemma allowed_syscall_translated:
+  forall cp ef,
+    Genv.allowed_syscall ge cp ef ->
+    Genv.allowed_syscall tge cp ef.
+Proof.
+  intros cp ef H.
+  eapply (Genv.match_genvs_allowed_syscalls TRANSF). eauto.
+Qed.
+
 Lemma find_comp_translated:
   forall vf,
     Genv.find_comp_in_genv ge vf = Genv.find_comp_in_genv tge vf.
@@ -397,12 +406,14 @@ Proof.
   econstructor.
   constructor. eexact E1. constructor.
   simpl; econstructor.
+  unfold Genv.allowed_syscall; now simpl.
   simpl; auto.
   traceEq.
 - eapply star_step; eauto.
   econstructor.
   constructor.
   simpl; constructor.
+  unfold Genv.allowed_syscall; now simpl.
   simpl; auto.
   traceEq.
 Qed.
@@ -547,6 +558,7 @@ Proof.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
   inv TRF; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  eapply allowed_syscall_translated; eauto. inv TRF; eauto.
   inversion TRF. simpl in *. eauto.
   apply eval_add_delta_ranges. traceEq.
   constructor; auto.
@@ -613,6 +625,7 @@ Proof.
   monadInv H10. econstructor; split.
   apply plus_one. econstructor; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  eapply allowed_syscall_translated; eauto.
   constructor; auto.
 - (* return *)
   inv H4. inv H1. inv H7.

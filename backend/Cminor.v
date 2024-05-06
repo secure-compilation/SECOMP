@@ -501,6 +501,7 @@ Inductive step: state -> trace -> state -> Prop :=
   | step_builtin: forall f optid ef bl k sp e m vargs t vres m',
       eval_exprlist sp e m (comp_of f) bl vargs ->
       external_call ef ge (comp_of f) vargs m t vres m' ->
+      forall (ALLOWED: Genv.allowed_syscall ge (comp_of f) ef),
       step (State f (Sbuiltin optid ef bl) k sp e m)
          t (State f Sskip k sp (set_optvar optid vres e) m')
 
@@ -564,6 +565,7 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State f f.(fn_body) k (Vptr sp Ptrofs.zero) e m')
   | step_external_function: forall ef vargs k m cp t vres m',
       external_call ef ge cp vargs m t vres m' ->
+      forall (ALLOWED: Genv.allowed_syscall ge cp ef),
       step (Callstate (External ef) vargs k m cp)
          t (Returnstate vres k m' (sig_res (ef_sig ef)) bottom)
 
@@ -779,6 +781,7 @@ Inductive eval_funcall:
   | eval_funcall_external:
       forall ef cp m args t res m',
       external_call ef ge cp args m t res m' ->
+      forall (ALLOWED: Genv.allowed_syscall ge cp ef),
       eval_funcall cp m (External ef) args t m' res
 
 (** Execution of a statement: [exec_stmt ge f sp e m s t e' m' out]
@@ -823,6 +826,7 @@ with exec_stmt:
       eval_exprlist ge sp e m (comp_of f) bl vargs ->
       external_call ef ge (comp_of f) vargs m t vres m' ->
       e' = set_optvar optid vres e ->
+      forall (ALLOWED: Genv.allowed_syscall ge (comp_of f) ef),
       (* forall ALLOWED: comp_of ef = comp_of f, *)
       exec_stmt f sp e m (Sbuiltin optid ef bl) t e' m' Out_normal
   | exec_Sifthenelse:

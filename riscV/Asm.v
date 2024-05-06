@@ -1340,6 +1340,7 @@ Inductive step: state -> trace -> state -> Prop :=
       find_instr (Ptrofs.unsigned ofs) f.(fn_code) = Some (Pbuiltin ef args res) ->
       eval_builtin_args ge rs (rs SP) m args vargs ->
       external_call ef ge (comp_of f) vargs m t vres m' ->
+      forall (ALLOWED: Genv.allowed_syscall ge (comp_of f) ef),
       rs' = nextinstr
               (set_res res vres
                 (undef_regs (map preg_of (destroyed_by_builtin ef))
@@ -1350,6 +1351,7 @@ Inductive step: state -> trace -> state -> Prop :=
       rs PC = Vptr b Ptrofs.zero ->
       Genv.find_funct_ptr ge b = Some (External ef) ->
       external_call ef ge cp args m t res m' ->
+      forall (ALLOWED: Genv.allowed_syscall ge cp ef),
       extcall_arguments rs m (ef_sig ef) args ->
       rs' = (set_pair (loc_external_result (ef_sig ef)) res (undef_caller_save_regs rs))#PC <- (rs RA) ->
       step (State st rs m cp) t (ReturnState st rs' m' bottom).
@@ -1616,6 +1618,7 @@ Section ExecSem.
             check (Ptrofs.eq ofs Ptrofs.zero);
             do vargs <- get_extcall_arguments rs m (ef_sig ef);
             do res_external <- do_external _ _ ge do_external_function do_inline_assembly ef cp w vargs m;
+            check (Genv.allowed_syscall_b ge cp ef);
             let '(w', t, res, m') := res_external in
             let rs' := (set_pair (loc_external_result (ef_sig ef)) res (undef_caller_save_regs rs)) # PC <- (rs X1) in
             Some (t, ReturnState st rs' m' bottom)

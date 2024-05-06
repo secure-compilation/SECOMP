@@ -1031,6 +1031,7 @@ Proof.
   apply alignof_blockcopy_1248.
   apply sizeof_pos.
   apply sizeof_alignof_blockcopy_compat.
+  unfold Genv.allowed_syscall; now simpl.
 Qed.
 
 Lemma make_store_correct:
@@ -1115,6 +1116,15 @@ Proof.
   intros vf f ce tf H TRF.
   erewrite <- (comp_transl_partial _ TRF).
   eapply (Genv.match_genvs_allowed_calls TRANSL). eauto.
+Qed.
+
+Lemma allowed_syscall_translated:
+  forall cp ef,
+    Genv.allowed_syscall ge cp ef ->
+    Genv.allowed_syscall tge cp ef.
+Proof.
+  intros cp ef H.
+  eapply (Genv.match_genvs_allowed_syscalls TRANSL). eauto.
 Qed.
 
 Lemma find_comp_translated:
@@ -1831,6 +1841,7 @@ Proof.
   eapply transl_arglist_correct; eauto.
   rewrite <- (comp_transl_function _ _ _ TRF). eauto. rewrite <- (comp_transl_function _ _ _ TRF); eauto.
   eapply external_call_symbols_preserved with (ge1 := ge). apply senv_preserved. eauto.
+  rewrite <- (comp_transl_function _ _ _ TRF); eauto using allowed_syscall_translated.
   change tf.(fn_comp) with (comp_of tf).
   eapply match_states_skip; eauto.
 
@@ -2027,6 +2038,7 @@ Proof.
   apply plus_one. constructor.
   exploit match_cont_call_comp; eauto. intros <-.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  exploit match_cont_call_comp; eauto. intros <-. eauto using allowed_syscall_translated.
   replace (rettype_of_type tres) with (sig_res (ef_sig ef)) by now rewrite H5.
   eapply match_returnstate with (ce := ce); eauto.
   apply has_rettype_wt_val. 

@@ -199,6 +199,7 @@ Inductive eval_expr: letenv -> expr -> val -> Prop :=
   | eval_Ebuiltin: forall le ef al vl v,
       eval_exprlist le al vl ->
       external_call ef ge cp vl m E0 v m ->
+      forall (ALLOWED: Genv.allowed_syscall ge cp ef),
       eval_expr le (Ebuiltin ef al) v
   | eval_Eexternal: forall le id sg al b ef vl v,
       Genv.find_symbol ge id = Some b ->
@@ -206,6 +207,7 @@ Inductive eval_expr: letenv -> expr -> val -> Prop :=
       ef_sig ef = sg ->
       eval_exprlist le al vl ->
       external_call ef ge cp vl m E0 v m ->
+      forall (ALLOWED: Genv.allowed_syscall ge cp ef),
       eval_expr le (Eexternal id sg al) v
 
 with eval_exprlist: letenv -> exprlist -> list val -> Prop :=
@@ -401,6 +403,7 @@ Inductive step: state -> trace -> state -> Prop :=
   | step_builtin: forall f res ef al k sp e m vl t v m',
       list_forall2 (eval_builtin_arg sp e (comp_of f) m) al vl ->
       external_call ef ge (comp_of f) vl m t v m' ->
+      forall (ALLOWED: Genv.allowed_syscall ge (comp_of f) ef),
       step (State f (Sbuiltin res ef al) k sp e m)
          t (State f Sskip k sp (set_builtin_res res v e) m')
 
@@ -466,6 +469,7 @@ Inductive step: state -> trace -> state -> Prop :=
         E0 (State f f.(fn_body) k (Vptr sp Ptrofs.zero) e m')
   | step_external_function: forall ef vargs k m cp t vres m',
       external_call ef ge cp vargs m t vres m' ->
+      forall (ALLOWED: Genv.allowed_syscall ge cp ef),
       step (Callstate (External ef) vargs k m cp)
          t (Returnstate vres k m' (sig_res (ef_sig ef)) bottom)
 

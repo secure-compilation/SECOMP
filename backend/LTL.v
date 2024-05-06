@@ -353,6 +353,7 @@ Inductive step: state -> trace -> state -> Prop :=
       eval_builtin_args ge rs sp m args vargs ->
       external_call ef ge (comp_of f) vargs m t vres m' ->
       rs' = Locmap.setres res vres (undef_regs (destroyed_by_builtin ef) rs) ->
+      forall (ALLOWED: Genv.allowed_syscall ge (comp_of f) ef),
       (* forall ALLOWED: comp_of f = comp_of ef, *)
       step (Block s f sp (Lbuiltin ef args res :: bb) rs m)
          t (Block s f sp bb rs' m')
@@ -389,6 +390,7 @@ Inductive step: state -> trace -> state -> Prop :=
   | exec_function_external: forall s ef t args res rs m rs' sig m' cp,
       args = map (fun p => Locmap.getpair p rs) (loc_arguments (ef_sig ef)) ->
       external_call ef ge cp args m t res m' ->
+      forall (ALLOWED: Genv.allowed_syscall ge cp ef),
       rs' = Locmap.setpair (loc_result (ef_sig ef)) res (undef_caller_save_regs rs) ->
       step (Callstate s (External ef) sig rs m cp)
          t (Returnstate s rs' m' bottom)

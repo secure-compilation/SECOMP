@@ -98,6 +98,15 @@ Proof.
   eapply (Genv.match_genvs_allowed_calls TRANSL). eauto.
 Qed.
 
+Lemma allowed_syscall_translated:
+  forall cp vf,
+    Genv.allowed_syscall ge cp vf ->
+    Genv.allowed_syscall tge cp vf.
+Proof.
+  intros cp vf H.
+  eapply (Genv.match_genvs_allowed_syscalls TRANSL). eauto.
+Qed.
+
 Lemma find_comp_translated:
   forall vf,
     Genv.find_comp_in_genv ge vf = Genv.find_comp_in_genv tge vf.
@@ -271,6 +280,7 @@ Proof.
   eapply exec_Ibuiltin; eauto.
     eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
     eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+    eapply allowed_syscall_translated; eauto.
   constructor; auto. eapply reach_succ; eauto. simpl; auto.
 (* cond *)
   econstructor; split.
@@ -296,6 +306,7 @@ Proof.
   eapply exec_function_external; eauto.
     eapply external_call_symbols_preserved; eauto.
      apply senv_preserved.
+     eapply allowed_syscall_translated; eauto.
   constructor; auto.
 (* return *)
   inv STACKS. inv H1.

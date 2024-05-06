@@ -455,6 +455,7 @@ Inductive step: state -> trace -> state -> Prop :=
       forall (CURCOMP: Genv.find_comp_of_block ge fb = cp),
       eval_builtin_args ge rs sp m args vargs ->
       external_call ef ge cp vargs m t vres m' ->
+      forall (ALLOWED: Genv.allowed_syscall ge cp ef),
       rs' = set_res res vres (undef_regs (destroyed_by_builtin ef) rs) ->
       step (State s fb sp (Mbuiltin ef args res :: b) rs m)
          t (State s fb sp b rs' m')
@@ -520,6 +521,7 @@ Inductive step: state -> trace -> state -> Prop :=
       Genv.find_funct_ptr ge fb = Some (External ef) ->
       extcall_arguments rs m (parent_sp s) (ef_sig ef) args ->
       external_call ef ge cp args m t res m' ->
+      forall (ALLOWED: Genv.allowed_syscall ge cp ef),
       rs' = set_pair (loc_result (ef_sig ef)) res (undef_caller_save_regs rs) ->
       step (Callstate s fb sig rs m cp)
          t (Returnstate s rs' m' bottom)

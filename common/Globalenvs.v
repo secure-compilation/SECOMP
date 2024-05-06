@@ -2179,15 +2179,18 @@ Proof.
   destruct (contra Hexp).
 Qed.
 
-Definition allowed_syscall_b (ge: t) (cp: compartment) (name: string): bool :=
-  match CompTree.get cp (Policy.policy_syscalls ge.(genv_policy)) with
-  | Some l => in_dec string_dec name l
-  | _ => false
+Definition allowed_syscall_b (ge: t) (cp: compartment) (ef: external_function): bool :=
+  match ef with
+  | EF_external name _ => match CompTree.get cp (Policy.policy_syscalls ge.(genv_policy)) with
+                         | Some l => in_dec string_dec name l
+                         | _ => false
+                         end
+  | _ => true
   end.
 
-Definition allowed_syscall (ge: t) (cp: compartment) (name: string): Prop :=
-  allowed_syscall_b ge cp name = true.
-Hint Unfold allowed_syscall_b.
+
+Definition allowed_syscall (ge: t) (cp: compartment) (ef: external_function): Prop :=
+  allowed_syscall_b ge cp ef = true.
 
 
 Section SECURITY.
@@ -2558,7 +2561,8 @@ Lemma match_genvs_allowed_syscalls:
     allowed_syscall (globalenv p) cp name ->
     allowed_syscall (globalenv tp) cp name.
 Proof.
-  intros cp name. unfold allowed_syscall, allowed_syscall_b.
+  intros cp ef. unfold allowed_syscall, allowed_syscall_b.
+  destruct ef; auto.
   destruct progmatch as [_ [_ [_ H]]].
   unfold Policy.eqb in H.
   rewrite !andb_true_iff in H. destruct H as [[[? ?] ?] ?].

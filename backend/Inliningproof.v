@@ -65,6 +65,15 @@ Proof.
   eapply (Genv.match_genvs_allowed_calls TRANSF). eauto.
 Qed.
 
+Lemma allowed_syscall_translated:
+  forall cp ef,
+    Genv.allowed_syscall ge cp ef ->
+    Genv.allowed_syscall tge cp ef.
+Proof.
+  intros cp ef H.
+  eapply (Genv.match_genvs_allowed_syscalls TRANSF). eauto.
+Qed.
+
 Lemma find_comp_translated:
   forall vf,
     Genv.find_comp_in_genv ge vf = Genv.find_comp_in_genv tge vf.
@@ -1317,6 +1326,7 @@ Proof.
   eapply plus_one. eapply exec_Ibuiltin; eauto.
     rewrite <- SAMECOMP.
     eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+    rewrite <- SAMECOMP; eauto using allowed_syscall_translated.
   econstructor.
     eapply match_stacks_inside_set_res.
     eapply match_stacks_inside_extcall with (F1 := F) (F2 := F1) (m1 := m) (m1' := m'0); eauto.
@@ -1487,6 +1497,7 @@ Proof.
   left; econstructor; split.
   eapply plus_one. eapply exec_function_external; eauto.
     eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+    eauto using allowed_syscall_translated.
   econstructor.
     eapply match_stacks_bound with (Mem.nextblock m'0).
     eapply match_stacks_extcall with (F1 := F) (F2 := F1) (m1 := m) (m1' := m'0); eauto.

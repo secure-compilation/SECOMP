@@ -103,6 +103,15 @@ Proof.
   eapply (Genv.match_genvs_allowed_calls TRANSL). eauto.
 Qed.
 
+Lemma allowed_syscall_translated:
+  forall cp ef,
+    Genv.allowed_syscall ge cp ef ->
+    Genv.allowed_syscall tge cp ef.
+Proof.
+  intros cp ef H.
+  eapply (Genv.match_genvs_allowed_syscalls TRANSL). eauto.
+Qed.
+
 Lemma find_comp_translated:
   forall vf,
     Genv.find_comp_in_genv ge vf = Genv.find_comp_in_genv tge vf.
@@ -340,8 +349,8 @@ Proof.
   eapply eval_builtin_args_preserved with (ge1 := ge); eauto. exact symbols_preserved.
   rewrite comp_transl; eauto.
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  rewrite comp_transl; eauto using allowed_syscall_translated.
   eauto.
-  (* rewrite comp_transl; eauto. *)
   econstructor; eauto with coqlib.
 (* Llabel *)
   case_eq (Labelset.mem lbl (labels_branched_to (fn_code f))); intros.
@@ -395,6 +404,7 @@ Proof.
 (* external function *)
   left; econstructor; split.
   econstructor; eauto. eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  eauto using allowed_syscall_translated.
   econstructor; eauto with coqlib.
 (* return *)
   inv H4. inv H1. left; econstructor; split.

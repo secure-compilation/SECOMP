@@ -108,6 +108,7 @@ Inductive exec_stmt: env -> compartment -> temp_env ->
   | exec_Sbuiltin:   forall e c le m optid ef al tyargs vargs t m' vres,
       eval_exprlist ge e c le m al tyargs vargs ->
       external_call ef ge c vargs m t vres m' ->
+      forall (ALLOWED: Genv.allowed_syscall ge c ef),
       exec_stmt e c le m (Sbuiltin optid ef tyargs al)
                 t (set_opttemp optid vres le) m' Out_normal
   | exec_Sseq_1:   forall e c le m s1 s2 t1 le1 m1 t2 le2 m2 out,
@@ -179,6 +180,7 @@ with eval_funcall: compartment -> mem -> fundef -> list val -> trace -> mem -> v
       eval_funcall cp m (Internal f) vargs t m4 vres
   | eval_funcall_external: forall cp m ef targs tres cconv vargs t vres m',
       external_call ef ge cp vargs m t vres m' ->
+      forall (ALLOWED: Genv.allowed_syscall ge cp ef),
       eval_funcall cp m (External ef targs tres cconv) vargs t m' vres.
 
 Scheme exec_stmt_ind2 := Minimality for exec_stmt Sort Prop

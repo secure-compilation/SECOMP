@@ -1994,6 +1994,15 @@ Proof.
   eapply (Genv.allowed_call_transf_partial TRANSL) in ALLOWED. eauto.
 Qed.
 
+Lemma allowed_syscall_translated:
+  forall cp ef,
+    Genv.allowed_syscall ge cp ef ->
+    Genv.allowed_syscall tge cp ef.
+Proof.
+  intros cp ef H.
+  eapply (Genv.match_genvs_allowed_syscalls TRANSL). eauto.
+Qed.
+
 Lemma comp_of_fun_transl: forall {f tf},
   transl_fundef f = OK tf ->
   comp_of f = comp_of tf.
@@ -2140,6 +2149,7 @@ Proof.
   apply plus_one. econstructor. eauto.
   rewrite <- (comp_transl_partial _ TRF).
   eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  rewrite <- (comp_transl_partial _ TRF); eauto using allowed_syscall_translated.
   (* monadInv TRF; auto. *)
   assert (MCS': match_callstack f' m' tm'
                  (Frame cenv tfn e le te sp lo hi :: cs)
@@ -2306,7 +2316,9 @@ Opaque PTree.set.
   intros [f' [vres' [tm' [EC [VINJ [MINJ' [UNMAPPED [OUTOFREACH [INCR SEPARATED]]]]]]]]].
   left; econstructor; split.
   apply plus_one. econstructor.
-  eapply external_call_symbols_preserved; eauto. apply senv_preserved. econstructor; eauto.
+  eapply external_call_symbols_preserved; eauto. apply senv_preserved.
+  eauto using allowed_syscall_translated.
+  econstructor; eauto.
   apply match_callstack_incr_bound with (Mem.nextblock m) (Mem.nextblock tm).
   eapply match_callstack_external_call; eauto.
   intros. eapply external_call_max_perm; eauto.
