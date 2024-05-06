@@ -33,6 +33,11 @@ let print_Z_capasm p n =
 let print_ident_capasm p id =
   Format.fprintf p "%ld" (P.to_int32 id)
 
+let print_comp_capasm p = function
+  | AST.COMP.Coq_bottom' -> Format.fprintf p "bottom"
+  | AST.COMP.Coq_top' -> Format.fprintf p "top"
+  | AST.COMP.Comp i -> print_ident_capasm p i
+
 let print_bool_capasm p b =
   if b
   then Format.fprintf p "true"
@@ -564,7 +569,7 @@ let print_instruction_capasm p = function
 
 let print_coq_function_asm p CapAsm.{ fn_comp; fn_sig; fn_code } =
   Format.fprintf p "{|@ fn_comp@ :=@ ";
-  print_ident_capasm p fn_comp;
+  print_comp_capasm p fn_comp;
   Format.fprintf p ";@ fn_sig@ :=@ ";
   print_signature_capasm p fn_sig;
   Format.fprintf p ";@ fn_code@ :=@ ";
@@ -573,21 +578,19 @@ let print_coq_function_asm p CapAsm.{ fn_comp; fn_sig; fn_code } =
 
 (* TODO cases *)
 let print_external_function_asm p = function
-  | EF_external (comp, str, fsig) ->
+  | EF_external (str, fsig) ->
      Format.fprintf p "EF_external@ (";
      print_string_capasm p str;
      Format.fprintf p ",@ ";
-     print_ident_capasm p comp;
-     Format.fprintf p ",@ ";
      print_signature_capasm p fsig;
      Format.fprintf p ")"
-  | EF_builtin (_, str, fsig) ->
+  | EF_builtin (str, fsig) ->
      Format.fprintf p "EF_builtin@ (";
      print_string_capasm p str;
      Format.fprintf p ",@ ";
      print_signature_capasm p fsig;
      Format.fprintf p ")"
-  | EF_runtime (_, str, fsig) ->
+  | EF_runtime (str, fsig) ->
      Format.fprintf p "EF_runtime@ (";
      print_string_capasm p str;
      Format.fprintf p ",@ ";
@@ -649,7 +652,7 @@ let print_globvar_asm
   (* TODO unit *)
   Format.fprintf p "{|@ gvar_info@ := tt;@ ";
   Format.fprintf p ";@ gvar_comp@ :=@ ";
-  print_ident_capasm p gvar_comp;
+  print_comp_capasm p gvar_comp;
   Format.fprintf p ";@ gvar_init@ :=@ ";
   print_list_capasm p print_init_data_asm gvar_init;
   Format.fprintf p ";@ gvar_readonly@ :=@ ";
@@ -681,7 +684,11 @@ let print_policy_exports_capasm p (comp_id, funcs) =
   Format.fprintf p ")@]"
 
 let print_policy_imports_capasm p (comp_id, imports) =
-  let print_aux p' (comp_id, func) = Format.fprintf p' "(%ld, %ld)" (P.to_int32 comp_id) (P.to_int32 func) in
+  let print_aux p' (comp_id, func) =
+    Format.fprintf p' "(";
+    print_comp_capasm p' comp_id;
+    Format.fprintf p' "%ld" (P.to_int32 func)
+  in
   Format.fprintf p "@[(%ld, " (P.to_int32 comp_id);
   print_list_capasm p print_aux imports;
   Format.fprintf p ")@]"
