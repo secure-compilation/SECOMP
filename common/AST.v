@@ -1060,11 +1060,6 @@ Inductive external_function : Type :=
          assembly.  Takes zero, one or several arguments like [EF_annot].
          Unlike [EF_annot], produces no observable event. *)
 
-
-(* (** External functions don't have compartment *) *)
-(* Instance has_comp_external_function : has_comp (external_function) := fun _ => bottom. *)
-
-
 (** The type signature of an external function. *)
 
 Definition ef_sig (ef: external_function): signature :=
