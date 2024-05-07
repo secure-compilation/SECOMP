@@ -1168,6 +1168,11 @@ Definition get_call_arguments' (rs: regset) (m: mem) (sg: signature) :=
 Definition get_call_arguments (rs: regset) (m: mem) (sg: signature) :=
   list_option_option_list (get_call_arguments' rs m sg).
 
+Lemma get_call_arguments_equiv: forall rs m sg vargs,
+    get_call_arguments rs m sg = Some vargs <-> call_arguments rs m sg vargs.
+Proof.
+Admitted.
+
 
 Definition loc_external_result (sg: signature) : rpair preg :=
   map_rpair preg_of (loc_result sg).
@@ -1574,6 +1579,84 @@ Section ExecSem.
       possible_trace w t w' ->
       do_inline_assembly txt sg ge cp w vargs m = Some(w', t, vres, m').
 
+  Fixpoint get_builtin_arg (ge: genv) (rs: regset) (sp: val) (m: mem) (b: builtin_arg preg): option val :=
+    match b with
+    | BA x => Some (rs x)
+    | BA_int n => Some (Vint n)
+    | BA_long n => Some (Vlong n)
+    | BA_float n => Some (Vfloat n)
+    | BA_single n => Some (Vsingle n)
+    | BA_loadstack chunk ofs => Mem.loadv chunk m (Val.offset_ptr sp ofs) top
+    | BA_addrstack ofs => Some (Val.offset_ptr sp ofs)
+    | BA_loadglobal chunk id ofs => Mem.loadv chunk m (Genv.symbol_address ge id ofs) top
+    | BA_addrglobal id ofs => Some (Genv.symbol_address ge id ofs)
+    | BA_splitlong hi lo =>
+        match get_builtin_arg ge rs sp m hi, get_builtin_arg ge rs sp m lo with
+        | Some vhi, Some vlo => Some (Val.longofwords vhi vlo)
+        | _, _ => None
+        end
+    | BA_addptr a1 a2 =>
+        match get_builtin_arg ge rs sp m a1, get_builtin_arg ge rs sp m a2 with
+        | Some v1, Some v2 => Some (if Archi.ptr64 then Val.addl v1 v2 else Val.add v1 v2)
+        | _, _ => None
+        end
+    end.
+
+  Lemma get_eval_builtin_arg: forall ge rs sp m b v,
+      get_builtin_arg ge rs sp m b = Some v <-> eval_builtin_arg ge rs sp m b v.
+  Proof.
+    intros until b.
+    induction b; intros; simpl;
+      try now (split; [intros H; inv H; constructor | intros H; inv H; auto]).
+    - split; [intros H; econstructor; eauto | intros H; inv H].
+      destruct (Val.offset_ptr); try discriminate; simpl in *.
+      eapply Mem.load_Some_None; eauto.
+    - split; [intros H; econstructor; eauto | intros H; inv H].
+      unfold Genv.symbol_address, Senv.symbol_address in *; simpl in *.
+      destruct (Genv.find_symbol ge id); try discriminate; simpl in *.
+      eapply Mem.load_Some_None; eauto.
+    - split; [intros H | intros H; inv H].
+      + destruct (get_builtin_arg ge rs sp m b1); try discriminate.
+        destruct (get_builtin_arg ge rs sp m b2); try discriminate.
+        inv H. econstructor; [eapply IHb1 | eapply IHb2]; eauto.
+      + now eapply IHb1 in H2; eapply IHb2 in H4;
+          rewrite H2, H4.
+    - split; [intros H | intros H; inv H].
+      + destruct (get_builtin_arg ge rs sp m b1); try discriminate.
+        destruct (get_builtin_arg ge rs sp m b2); try discriminate.
+        inv H. econstructor; [eapply IHb1 | eapply IHb2]; eauto.
+      + now eapply IHb1 in H2; eapply IHb2 in H4;
+          rewrite H2, H4.
+  Qed.
+
+  Definition get_builtin_args' (ge: genv) (rs: regset) (v: val) (m: mem) (args: list (builtin_arg preg)): list (option val) :=
+    List.map (get_builtin_arg ge rs v m) args.
+
+  Definition get_builtin_args ge rs v m args := list_option_option_list (get_builtin_args' ge rs v m args).
+
+
+  Lemma get_eval_builtin_args: forall ge rs sp m bl vl,
+      get_builtin_args ge rs sp m bl = Some vl <-> eval_builtin_args ge rs sp m bl vl.
+  Proof.
+    intros until bl.
+    induction bl; intros.
+    - unfold get_builtin_args; simpl.
+      split; intros H; inv H; [constructor | reflexivity].
+    - unfold get_builtin_args; simpl.
+      split.
+      + intros H. destruct (get_builtin_arg ge rs sp m a) eqn:get_a.
+        * destruct (list_option_option_list (get_builtin_args' ge rs sp m bl)) eqn:get_rest; try discriminate.
+          inv H.
+          constructor; [eapply get_eval_builtin_arg; eauto | eapply IHbl; exact get_rest].
+        * destruct (list_option_option_list (get_builtin_args' ge rs sp m bl)); discriminate.
+      + intros H.
+        inv H.
+        eapply get_eval_builtin_arg in H2; rewrite H2.
+        specialize (IHbl bl0) as [IHbl1 IHbl2].
+        unfold get_builtin_args in IHbl2. rewrite IHbl2; auto.
+  Qed.
+
+
   Definition take_step (p: program) (ge: genv) (w: world) (s: state): option (trace * state) :=
     let comp_of_main := comp_of_main p in
     match s with
@@ -1584,7 +1667,14 @@ Section ExecSem.
         | Internal f =>
             do i <- find_instr (Ptrofs.unsigned ofs) (fn_code f);
             match i with
-            | Pbuiltin ef args res => None
+            | Pbuiltin ef args res =>
+                do vargs <- get_builtin_args ge rs (rs X2) m args;
+                do res_builtin <- do_external _ _ ge do_external_function do_inline_assembly ef cp w vargs m;
+                check (Genv.allowed_syscall_b ge (comp_of f) ef);
+                let '(w', t, vres, m') := res_builtin in
+                let rs' := nextinstr
+                          (set_res res vres (undef_regs (map preg_of (destroyed_by_builtin ef)) (rs # X1 <- Vundef) # X31 <- Vundef)) in
+                Some (t, State st rs' m' (comp_of f))
             | _ =>
                 match exec_instr ge f i rs m (comp_of f) with
                 | Next rs' m' =>
@@ -1596,7 +1686,7 @@ Section ExecSem.
                         Some (E0, State st rs' m' (comp_of f))
                     | Some sig, false => (* exec_step_internal_call *)
                         do Vptr b' ofs' <- rs' PC;
-                        check (Genv.allowed_call_b ge (comp_of f) (Vptr b' ofs'));
+                        check (Genv.allowed_call_b ge (comp_of f) (Vptr b' Ptrofs.zero));
                         do st' <- update_stack_call ge st sig (comp_of f) rs';
                         do vargs <- get_call_arguments rs' m' sig;
                         let cp' := Genv.find_comp_of_block ge b' in
@@ -1660,6 +1750,37 @@ Section ExecSem.
     inv H; simpl; eauto.
     - rewrite H0, H1, H2, H3, H4, H5, NEXTPC, ALLOWED.
       destruct cp_eq_dec; try congruence. destruct i; auto. inv H3.
+    - rewrite H0, H1, H2, H3, H4, NEXTPC.
+      destruct i; inv H4; simpl.
+      + apply Genv.allowed_call_reflect in ALLOWED; rewrite ALLOWED.
+        rewrite STUPD. eapply get_call_arguments_equiv in ARGS; eauto; rewrite ARGS.
+        simpl in NO_CROSS_PTR. destruct flowsto_dec; try auto.
+        * apply get_call_trace_eq in EV; rewrite EV. reflexivity.
+        * exploit NO_CROSS_PTR; eauto; intros G.
+          rewrite Forall_forall in G.
+          pose proof forallb_forall as [X Y]. rewrite Y.
+          apply get_call_trace_eq in EV; rewrite EV. reflexivity.
+          intros. exploit G; eauto. intros. eapply not_ptr_reflect; eauto.
+      + apply Genv.allowed_call_reflect in ALLOWED; rewrite ALLOWED.
+        rewrite STUPD. eapply get_call_arguments_equiv in ARGS; eauto; rewrite ARGS.
+        simpl in NO_CROSS_PTR. destruct flowsto_dec; try auto.
+        * apply get_call_trace_eq in EV; rewrite EV. reflexivity.
+        * exploit NO_CROSS_PTR; eauto; intros G.
+          rewrite Forall_forall in G.
+          pose proof forallb_forall as [X Y]. rewrite Y.
+          apply get_call_trace_eq in EV; rewrite EV. reflexivity.
+          intros. exploit G; eauto. intros. eapply not_ptr_reflect; eauto.
+    - rewrite H0, H1, H2, H3, H4.
+      destruct i; inv H4; simpl. reflexivity.
+    - destruct Val.eq; try congruence; simpl in *.
+      rewrite STUPD. apply get_return_trace_eq in EV. rewrite EV.
+      destruct flowsto_dec; simpl; auto.
+      rewrite RESTORE_SP, PC_RA; eauto.
+      do 2 destruct Val.eq; try contradiction. simpl.
+      exploit NO_CROSS_PTR; eauto; intros G.
+      apply not_ptr_reflect in G; rewrite G. reflexivity.
+    - admit.
+    - admit.
   Admitted.
 
 Definition build_initial_state (p: program): option state :=
