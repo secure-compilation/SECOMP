@@ -38,9 +38,11 @@
 
 §C1§ char x[10];
 
+§C1§ imports_syscall printf
+
 §C1§ int main() {
   init();
-  if (fgets(x,10,stdin) != NULL) {
+  if (fgets(x,10, NULL) != NULL) {
     int y = parse(x);
     process(y);
     return 0;
