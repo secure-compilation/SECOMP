@@ -397,7 +397,8 @@ let print_instruction_asm p = function
       Format.fprintf p "@ (";
       print_offset_asm p ofs;
       Format.fprintf p ")@ ";
-      Format.pp_print_bool p priv
+      Format.pp_print_bool p priv;
+      Format.fprintf p "@."
   | Asm.Psw (rs, ra, ofs) ->
       Format.fprintf p "Psw@ ";
       print_ireg_asm p rs;

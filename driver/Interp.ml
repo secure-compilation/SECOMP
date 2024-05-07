@@ -784,13 +784,6 @@ let diagnose_stuck_asm p ge (s: Asm.state) =
                   | Some i ->
                     fprintf p "Stuck: ";
                     PrintAsm.print_instruction_asm p i;
-                    begin match i with
-                      | Psd (isource, idest, ofs) ->
-                        fprintf p "Source: %s; Dest: %s; Ofs: @."
-                          (PrintAST.string_of_value (rs (IR isource)))
-                          (PrintAST.string_of_value (rs (IR idest)))
-                      | _ -> ()
-                    end;
                     begin match exec_instr ge f i rs m (comp_of Asm.has_comp_function f) with
                       | Next _ -> fprintf p "can step@."
                       | Stuck -> fprintf p "can't step@."
