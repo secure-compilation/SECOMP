@@ -4,7 +4,7 @@
 
 §comp_main§ int main()
 {
-  char *p  = fgets(c,10,stdin);
+  char *p  = fgets(c,10,NULL);
   printf("%s",p);
   return 0;
 }

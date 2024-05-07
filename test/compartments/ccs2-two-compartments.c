@@ -29,7 +29,7 @@
 
 §C0§ int main() {
   init();
-  if (fgets(x,100,stdin) != NULL) {
+  if (fgets(x,100,NULL) != NULL) {
     int y = parse(x); /* <- should be atoi(x) instead (drop parse) */
     int data = process(y);
     if (valid(data)) { printf("%d,%s\n",data,x); }

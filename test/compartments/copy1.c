@@ -6,7 +6,7 @@
 
 §comp_copy§ int copy()    // making this void leads to UB
 {
-  char *p  = fgets(c,10,stdin);
+  char *p  = fgets(c,10,NULL);
   printf("%s",p);
   return 0;
 }

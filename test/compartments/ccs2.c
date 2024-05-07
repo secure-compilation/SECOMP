@@ -19,7 +19,7 @@
 
 §C0§ int main() {
   init();
-  if (fgets(x,100,stdin) != NULL) {
+  if (fgets(x,100,NULL) != NULL) {
     int y = parse(x[0]); /* can only pass single char here */
     int data = process(y);
     if (valid(data)) {
