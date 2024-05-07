@@ -13,6 +13,9 @@
 §C0§ imports §C1§[parse]
 §C0§ imports §C2§[process]
 
+§C0§ imports_syscall fgets
+§C0§ imports_syscall printf
+
 §C0§ char x[100];
 
 §C0§ int valid(int data) { return 1; }

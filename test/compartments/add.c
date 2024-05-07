@@ -8,6 +8,8 @@
 
 §comp_main§ imports §comp_add§[add]
 
+§comp_main§ imports_syscall printf
+
 §comp_main§ int main() {
   int x;
   x = add(3, 3);
