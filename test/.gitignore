@@ -9,3 +9,5 @@
 *.compcert
 *.gcc
 *.imports
+*.interp
+*.interp-asm
