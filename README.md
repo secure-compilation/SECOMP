@@ -165,9 +165,6 @@ Alternatively, one can use the `-interp-asm` flag to both compile a file like
 
     [compartments]$ ../../ccomp -interp-asm ccs1.c
 
-There is still a known issue with `printf` displaying `<missing argument>` in
-this ASM interpreter (#5).
-
 ### Running compartment-stripped binaries in vanilla RISC-V emulator
 
 Running `make` in `test/compartments` also generates `.compcert` binaries using
