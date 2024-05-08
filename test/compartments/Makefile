@@ -9,7 +9,7 @@ INTERPASMS := $(SOURCES:.c=.interp-asm)
 all: $(OBJECTS) $(INTERPS)
 
 %.compcert %.s %.parsed.c %.parsed.intf: %.c
-	../../ccomp $*.c -L../../runtime -dasm -dparse -o $*.compcert
+	../../ccomp $*.c -L../../runtime -dasm -dparse -v -static -o $*.compcert
 
 %.interp %.interp-asm: %.c
 	echo "dummy" | ../../ccomp $*.c -interp &> $*.interp
