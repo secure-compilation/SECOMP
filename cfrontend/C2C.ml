@@ -954,7 +954,7 @@ let rec convertExpr cp env e =
       convertExpr cp env arg1
 
   | C.ECall({edesc = C.EVar {name = "printf"}}, args)
-    when !Clflags.option_interp ->
+    when !Clflags.option_interp || !Clflags.option_interp_asm ->
       let targs = convertTypArgs env [] args
       and tres = convertTyp env e.etyp in
       let sg =
@@ -964,7 +964,7 @@ let rec convertExpr cp env e =
                targs, convertExprList cp env args, tres)
 
   | C.ECall({edesc = C.EVar {name = "fgets"}}, [arg1; arg2; arg3])
-    when !Clflags.option_interp ->
+    when !Clflags.option_interp || !Clflags.option_interp_asm ->
       (* drop third argument *)
       let targs = convertTypArgs env [] [arg1; arg2]
       and tres = convertTyp env e.etyp in
