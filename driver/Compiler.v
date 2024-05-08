@@ -79,7 +79,7 @@ Parameter print_Cminor: Cminor.program -> unit.
 Parameter print_RTL: Z -> RTL.program -> unit.
 Parameter print_LTL: LTL.program -> unit.
 Parameter print_Mach: Mach.program -> unit.
-Parameter print_Asm: Asm.program -> unit.
+(* Parameter print_Asm: Asm.program -> unit. *)
 
 Local Open Scope string_scope.
 
@@ -145,8 +145,8 @@ Definition transf_rtl_program (f: RTL.program) : res Asm.program :=
   @@@ partial_if Compopts.debug (time "Debugging info for local variables" Debugvar.transf_program)
   @@@ time "Mach generation" Stacking.transf_program
    @@ print print_Mach
-  @@@ time "Asm generation" Asmgen.transf_program
-   @@ print print_Asm.
+  @@@ time "Asm generation" Asmgen.transf_program.
+   (* @@ print print_Asm. *)
 
 Definition transf_cminor_program (p: Cminor.program) : res Asm.program :=
    OK p
