@@ -563,7 +563,6 @@ Section Simulation.
   Context (W1 W2: Clight.program).
   Hypothesis match_W1_W2: match_prog s W1 W2.
 
-  Hypothesis W1_ini: exists s, Smallstep.initial_state (semantics1 W1) s.
   Hypothesis W2_ini: exists s, Smallstep.initial_state (semantics1 W2) s.
 
   Notation ge1 := (globalenv W1).
@@ -5572,7 +5571,8 @@ Qed.
 Lemma does_prefix_star
   (m : finpref_behavior)
   (Hprefix : does_prefix (semantics1 W1) m)
-  (NOT_WRONG : not_wrong_finpref m) :
+  (NOT_WRONG : not_wrong_finpref m)
+  (W1_ini : exists s, Smallstep.initial_state (semantics1 W1) s) :
   exists (sti : Smallstep.state (semantics1 W1))
          (stf : Smallstep.state (semantics1 W1)),
     Smallstep.initial_state (semantics1 W1) sti /\
@@ -5642,10 +5642,11 @@ Lemma blame_program (m: finpref_behavior) (t': trace)
   (HpCs_beh: program_behaves (semantics1 W2) (Goes_wrong t'))
   (HP'_Cs_beh_new: does_prefix (semantics1 W1) m)
   (Hnot_wrong': not_wrong_finpref m)
-  (K: trace_finpref_prefix t' m):
+  (K: trace_finpref_prefix t' m)
+  (W1_ini : exists s, Smallstep.initial_state (semantics1 W1) s) :
   prefix m (Goes_wrong t') \/ blame_on_program W2 t'.
 Proof.
-  apply does_prefix_star in HP'_Cs_beh_new; [| easy].
+  apply does_prefix_star in HP'_Cs_beh_new; [|easy| easy].
   destruct HP'_Cs_beh_new as [sini1 [sfin1 [Hini1 [HStar1 Hfinal1']]]].
   inversion HpCs_beh as [sini2 ? Hini2 Hstbeh2 | Hnot_initial2]; subst;
     [| destruct W2_ini as [s2 initial_s2];
@@ -5692,15 +5693,24 @@ Qed.
    dealing with symmetry here. *)
 Theorem blame (t m: trace):
   clight_program_has_initial_trace W1 t ->
-  (* FIXME: If t has a proper prefix, then it cannot be empty.  This
-     automatically implies that W1 must have an initial state, rendering W1_ini
-     redundant. It does not seem (yet) that W2_ini is redundant. *)
   trace_prefix m t ->
   m <> t ->
   program_behaves (semantics1 W2) (Goes_wrong m) ->
   blame_on_program W2 m.
 Proof.
   intros INI PREFIX NEQ WRONG.
+  assert (W1_ini : exists s,
+    Smallstep.initial_state (semantics1 W1) s).
+  { destruct (program_behaves_exists (semantics1 W1))
+      as (b & W1_b).
+    destruct (INI _ W1_b) as [pre ->].
+    destruct PREFIX as [suf ->].
+    assert (m ** suf <> E0) as nonempty.
+    { unfold "**", E0. intros isempty. apply app_eq_nil in isempty.
+      destruct isempty as [-> ->]; simpl in *; congruence. }
+    inv W1_b; eauto.
+    destruct pre; simpl in *; try congruence.
+    destruct (m ** suf); simpl in *; unfold E0 in *; congruence. }
   inversion WRONG as [s2 b _ s2_m | CONTRA];
     [| destruct W2_ini as (s2 & INI2); specialize (CONTRA s2); contradiction];
     subst b.
@@ -5719,7 +5729,7 @@ Proof.
     exists b'. reflexivity. }
   assert (FINPREF: trace_finpref_prefix m (FTbc (m ** e :: tm))). {
     exists (e :: tm). reflexivity. }
-  destruct (blame_program _ _ WRONG PREFIX I FINPREF) as [[b CONTRA] | G];
+  destruct (blame_program _ _ WRONG PREFIX I FINPREF W1_ini) as [[b CONTRA] | G];
     [| assumption].
   destruct b; try discriminate.
   injection CONTRA as CONTRA.

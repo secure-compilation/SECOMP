@@ -198,19 +198,8 @@ Section RSC.
       - (* Similar, but for the original whole program W. *)
         admit. }
     exploit blame; eauto.
-    - (* The backtranslated program must have an initial state: since its trace
-         t has a proper prefix, it cannot be empty. *)
-      destruct (program_behaves_exists (semantics1 Wbt)) as [beh Wbt_behaves_beh].
-      specialize (bt_does_t _ Wbt_behaves_beh).
-      enough (beh <> Goes_wrong E0).
-      { inv Wbt_behaves_beh; try congruence. eauto. }
-      intros ->.
-      apply behavior_prefix_goes_wrong in bt_does_t.
-      apply trace_prefix_E0 in bt_does_t. subst t.
-      apply trace_prefix_E0 in prefix_m_t.
-      congruence.
-    - (* On the other hand, there is nothing that guarantees that the original
-         source program has an initial state... *)
+    - (* There is nothing that guarantees yet that the original source program
+         has an initial state... *)
       admit.
     - apply transf_clight_program_init_data in p'_compiles.
       apply transf_clight_program_init_data in Cs_compiles.
