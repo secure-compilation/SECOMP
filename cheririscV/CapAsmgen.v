@@ -1882,8 +1882,8 @@ Program Definition test_program_1 :=
     (main_id :: twice_id :: nil)
     main_id
     (Policy.mkpolicy
-       (Maps.PTree.set twice_cp (Comp twice_id)
-          (Maps.PTree.set main_cp (Comp main_cp) (Maps.PTree.empty _)))
+       (Maps.PTree.set twice_id (Comp twice_cp)
+          (Maps.PTree.set main_id (Comp main_cp) (Maps.PTree.empty _)))
        (CompTree.set (Comp twice_cp) (twice_id :: nil)
           (CompTree.set (Comp main_cp) nil (CompTree.empty _)))
        (CompTree.set (Comp twice_cp) nil
@@ -1896,19 +1896,38 @@ Next Obligation.
   unfold Policy.in_pub. split.
   - unfold Policy.in_pub_exports.
     intros cp idents.
+    simpl Policy.policy_export.
     simpl.
-    (* Proof idea: since the tree is given, idents can only be
-       - Some []
-       - Some [2]
-       - None
-       no matter what index we look up.
-       How can I tell Coq that or which lemma/theorem can I use?
-     *)
-    admit.
-  - admit. (* CHECK ME *)
-Admitted.
+    destruct (COMPARTMENT_INDEXED_TYPE.index cp); simpl; try discriminate.
+    + destruct p; simpl; intros; try discriminate.
+      * inversion H. rewrite <- H2 in H0. contradiction.
+    + destruct p; simpl.
+      * intros. discriminate.
+      * destruct p; simpl; try discriminate.
+        -- intros. inversion H. rewrite <- H2 in H0. unfold In in H0. right. assumption.
+      * discriminate.
+  - unfold Policy.in_pub_imports.
+    intros cp idents.
+    simpl Policy.policy_import.
+    simpl.
+    destruct (COMPARTMENT_INDEXED_TYPE.index cp); simpl.
+    + destruct p; simpl; try discriminate.
+      * intros. inversion H. rewrite <- H2 in H0. unfold In in H0. destruct H0.
+        -- inversion H0. right. left. reflexivity.
+        -- contradiction.
+    + destruct p; simpl; try discriminate.
+      * destruct p; simpl; try discriminate.
+        -- intros. inversion H. rewrite <- H2 in H0. unfold In in H0. contradiction.
+    + simpl. discriminate.
+Qed.
 Next Obligation.
-Admitted.
+  unfold agr_comps.
+  simpl.
+  repeat apply Forall_cons; unfold Maps.PTree.get; simpl.
+  - intros. inversion H. rewrite H1. apply flowsto_refl.
+  - intros. inversion H. rewrite H1. apply flowsto_refl.
+  - apply Forall_nil.
+Qed.
 
 (* A more elaborate compartmentalized Mach program with conditions *)
 Program Definition test_program_2 :=
@@ -2029,10 +2048,54 @@ Program Definition test_program_2 :=
     _
     : Mach.program.
 Next Obligation.
-(* CHECK ME *)
-Admitted.
+  unfold Policy.in_pub. split.
+  - unfold Policy.in_pub_exports.
+    intros cp idents.
+    simpl Policy.policy_export.
+    simpl.
+    destruct (COMPARTMENT_INDEXED_TYPE.index cp); simpl; try discriminate.
+    + destruct p; simpl; intros; try discriminate.
+      * inversion H. rewrite <- H2 in H0. contradiction.
+    + destruct p; simpl.
+      * destruct p; simpl; try discriminate. intros. inversion H. rewrite <- H2 in H0. unfold In in H0.
+        right. right. right. assumption.
+      * destruct p; simpl; try discriminate. intros. inversion H. rewrite <- H2 in H0. unfold In in H0.
+        destruct H0.
+        -- rewrite H0. auto.
+        -- destruct H0.
+          ++ rewrite H0. auto.
+          ++ contradiction.
+      * discriminate.
+  - unfold Policy.in_pub_imports.
+    intros cp idents.
+    simpl Policy.policy_import.
+    simpl.
+    destruct (COMPARTMENT_INDEXED_TYPE.index cp); simpl.
+    + destruct p; simpl; try discriminate.
+      * intros. inversion H. rewrite <- H2 in H0. unfold In in H0. destruct H0.
+        -- inversion H0. auto.
+        -- contradiction.
+    + destruct p; simpl; try discriminate.
+      * destruct p; simpl; try discriminate.
+        -- intros. inversion H. rewrite <- H2 in H0. unfold In in H0. destruct H0.
+          ++ inversion H0. rewrite H4. auto.
+          ++ destruct H0.
+            ** inversion H0. rewrite H4. auto.
+            ** contradiction.
+      * destruct p; simpl; try discriminate.
+        -- intros. inversion H. rewrite <- H2 in H0. unfold In in H0. contradiction.
+    + intros.  discriminate.
+Qed.
 Next Obligation.
-Admitted.
+  unfold agr_comps.
+  simpl.
+  repeat apply Forall_cons; unfold Maps.PTree.get; simpl; intros.
+  - discriminate.
+  - discriminate.
+  - discriminate.
+  - discriminate.
+  - apply Forall_nil.
+Qed.
 
 (* A Mach program with stack usage and recursive function calls *)
 Program Definition test_program_3 :=
@@ -2106,10 +2169,43 @@ Program Definition test_program_3 :=
     _
     : Mach.program.
 Next Obligation.
-Admitted.
-(* CHECK ME *)
+unfold Policy.in_pub. split.
+- unfold Policy.in_pub_exports.
+  intros cp idents.
+  simpl Policy.policy_export.
+  simpl.
+  destruct (COMPARTMENT_INDEXED_TYPE.index cp); simpl; try discriminate.
+  + destruct p; simpl; intros.
+    * discriminate.
+    * discriminate.
+    * inversion H. rewrite <- H2 in H0. unfold In in H0. contradiction.
+  + destruct p; simpl.
+    * intros. discriminate.
+    * destruct p; simpl; try discriminate.
+      -- intros. inversion H. rewrite <- H2 in H0. unfold In in H0. right. assumption.
+    * intros. discriminate.
+- unfold Policy.in_pub_imports.
+  intros cp idents.
+  simpl Policy.policy_import.
+  simpl.
+  destruct (COMPARTMENT_INDEXED_TYPE.index cp); simpl.
+  + destruct p; simpl; try discriminate.
+    * intros. inversion H. rewrite <- H2 in H0. unfold In in H0. destruct H0.
+      -- inversion H0. auto.
+      -- contradiction.
+  + destruct p; simpl; try discriminate.
+    * destruct p; simpl; try discriminate.
+      -- intros. inversion H. rewrite <- H2 in H0. unfold In in H0. contradiction.
+  + intros. discriminate.
+Qed.
 Next Obligation.
-Admitted.
+unfold agr_comps.
+simpl.
+repeat apply Forall_cons; unfold Maps.PTree.get; simpl; intros.
+- discriminate.
+- discriminate.
+- apply Forall_nil.
+Qed.
 
 (* Program transformation in proof mode *)
 Goal (* (forall y, exists off, find_symbol_offset y = Some off) -> *)
@@ -2118,6 +2214,7 @@ Goal (* (forall y, exists off, find_symbol_offset y = Some off) -> *)
      exists x, OK x = transf_program test_program_1.
 Proof.
 Admitted.
+(* CHECK ME *)
 (*   intros (* H *) G I. *)
 (*   unfold transf_program, transform_partial_program, transform_partial_program2. *)
 (*   simpl. *)
