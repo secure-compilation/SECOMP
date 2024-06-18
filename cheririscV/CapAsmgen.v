@@ -2213,36 +2213,33 @@ Goal (* (forall y, exists off, find_symbol_offset y = Some off) -> *)
      (Archi.ptr64 = true) ->
      exists x, OK x = transf_program test_program_1.
 Proof.
+  intros H G.
+
+  unfold transf_program.
+  
+  unfold transform_partial_program.
+  
+  unfold transform_partial_program2.
+
+  unfold transf_globdefs. simpl.
+
+  unfold transf_function.
+
+  unfold transl_function.
+
+  unfold transl_code'.
+
+  unfold transl_code_rec.
+
+  unfold Mach.fn_code.
+
+  unfold transl_instr.
+
+  unfold make_epilogue.
+
+  unfold loadind_ptr_stk.
+  (* CHECK ME *)
 Admitted.
-(* CHECK ME *)
-(*   intros (* H *) G I. *)
-(*   unfold transf_program, transform_partial_program, transform_partial_program2. *)
-(*   simpl. *)
-(*   unfold transf_function, transl_function, transl_code', transl_code_rec. *)
-(*   simpl. *)
-
-(*   unfold load_symbol. *)
-(*   simpl. *)
-
-(*   (* destruct (H 20%positive) as [off H1]. *) *)
-(*   (* rewrite H1. *) *)
-(*   (* simpl. *) *)
-(*   unfold zlt, Z_lt_dec. *)
-(*   simpl. *)
-
-(*   rewrite G. *)
-(*   simpl. *)
-(*   unfold Ptrofs.max_unsigned. *)
-(*   simpl. *)
-(*   unfold shift_nat, Ptrofs.wordsize, Wordsize_Ptrofs.wordsize. *)
-(*   simpl. *)
-(*   rewrite I. *)
-(*   simpl. *)
-(*   rewrite G. *)
-(*   simpl. *)
-(*   eexists. *)
-(*   reflexivity. *)
-(* Qed. *)
 
 Goal (* (forall y, exists off, find_symbol_offset y = Some off) -> *)
      (forall (T : Type) (zs : list T), list_length_z zs = 1) ->
@@ -2251,78 +2248,13 @@ Goal (* (forall y, exists off, find_symbol_offset y = Some off) -> *)
 Proof.
 (* CHECK ME *)
 Admitted.
-(*   intros (* H *) G I. *)
-(*   unfold transf_program, transform_partial_program, transform_partial_program2. *)
-(*   simpl. *)
-(*   unfold transf_function, transl_function, transl_code', transl_code_rec. *)
-(*   simpl. *)
-
-(*   unfold load_symbol. *)
-(*   simpl. *)
-(*   (* destruct (H 40%positive) as [off1 H1]. *) *)
-(*   (* rewrite H1. *) *)
-(*   (* simpl. *) *)
-(*   unfold zlt, Z_lt_dec. *)
-(*   simpl. *)
-
-(*   rewrite G. *)
-(*   simpl. *)
-(*   unfold Ptrofs.max_unsigned. *)
-(*   simpl. *)
-(*   unfold shift_nat, Ptrofs.wordsize, Wordsize_Ptrofs.wordsize. *)
-(*   simpl. *)
-(*   rewrite I. *)
-(*   simpl. *)
-(*   rewrite G. *)
-(*   simpl. *)
-(*   rewrite G. *)
-(*   simpl. *)
-
-(*   (* destruct (H 30%positive) as [off2 H2]. *) *)
-(*   (* rewrite H2. *) *)
-(*   (* simpl. *) *)
-(*   (* destruct (H 20%positive) as [off3 H3]. *) *)
-(*   (* rewrite H3. *) *)
-(*   (* simpl. *) *)
-(*   rewrite G. *)
-(*   simpl. *)
-(*   eexists. *)
-(*   reflexivity. *)
-(* Qed. *)
 
 Goal (* (forall y, exists off, find_symbol_offset y = Some off) -> *)
      (forall (T : Type) (zs : list T), list_length_z zs = 1) ->
      (Archi.ptr64 = true) ->
      exists x, OK x = transf_program test_program_3.
 Proof.
-Admitted.
 (* CHECK ME *)
-(*   intros (* H *) G I. *)
-(*   unfold transf_program, transform_partial_program, transform_partial_program2. *)
-(*   simpl. *)
-(*   unfold transf_function, transl_function, transl_code', transl_code_rec. *)
-(*   simpl. *)
-
-(*   unfold load_symbol. *)
-(*   simpl. *)
-(*   (* destruct (H 20%positive) as [off1 H1]. *) *)
-(*   (* rewrite H1. *) *)
-(*   (* simpl. *) *)
-(*   unfold zlt, Z_lt_dec. *)
-(*   simpl. *)
-
-(*   rewrite G. *)
-(*   simpl. *)
-(*   unfold Ptrofs.max_unsigned. *)
-(*   simpl. *)
-(*   unfold shift_nat, Ptrofs.wordsize, Wordsize_Ptrofs.wordsize. *)
-(*   simpl. *)
-(*   rewrite I. *)
-(*   simpl. *)
-(*   rewrite G. *)
-(*   simpl. *)
-(*   eexists. *)
-(*   reflexivity. *)
-(* Qed. *)
+Admitted.
 
 End Examples.
